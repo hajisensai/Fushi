@@ -1,6 +1,6 @@
 import 'dart:io' hide Cookie;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -77,7 +77,7 @@ fetch('http://example.net/verification-resource').then(r => r.text()).then(() =>
                       try {
                         await runtime.solveCloudflare(
                           Uri.parse('http://example.com/challenge-fixture'),
-                          userAgent: 'Hibiki challenge fixture/1',
+                          userAgent: 'Fushi challenge fixture/1',
                         );
                       } on Object catch (error) {
                         failure = error;
@@ -121,7 +121,7 @@ fetch('http://example.net/verification-resource').then(r => r.text()).then(() =>
         expect(failure, isNull);
         expect(proxied.any((Uri uri) => uri.host == 'example.com'), isTrue);
         expect(proxied.any((Uri uri) => uri.host == 'example.net'), isTrue);
-        expect(agents, everyElement('Hibiki challenge fixture/1'));
+        expect(agents, everyElement('Fushi challenge fixture/1'));
         expect(readerAtChallenge, isNotNull);
         expect(
           readerRequests,

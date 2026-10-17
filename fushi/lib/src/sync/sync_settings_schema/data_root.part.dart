@@ -24,7 +24,7 @@ enum DataRootTargetRejection {
 ///
 /// BUG-1115：[sharedDocumentsRoot] 为真表示 [oldDocumentsRoot] 是**共享**的平台
 /// `Documents`（老安装的扁平布局）。此时迁移是白名单选择性搬移，把新根设在它下面的一个
-/// 非白名单子目录（典型：`Documents\Hibiki`，即用户把散落的 16 个目录收进自己的子目录）
+/// 非白名单子目录（典型：`Documents\Fushi`，即用户把散落的 16 个目录收进自己的子目录）
 /// 是安全的，不再按 [DataRootTargetRejection.insideCurrentRoot] 一刀切拒绝。
 DataRootTargetRejection? validateDataRootTarget({
   required DataRootMigrationTarget target,
@@ -92,6 +92,238 @@ void _exitDataRootMigrationProcess() {
   }
 }
 
+/// 一次数据根迁移的计划：用户挑的目录已解析成迁移目标并通过触发前校验，还没动任何
+/// 文件。设置页「更改位置」与控制通道 `storage migrate` 共用（[planDataRootMigration]
+/// → 确认 → [runDataRootMigration]）。
+class DataRootMigrationPlan {
+  const DataRootMigrationPlan({
+    required this.picked,
+    required this.target,
+    required this.oldDocumentsRoot,
+    required this.oldSupportRoot,
+    required this.sharedDocumentsRoot,
+  });
+
+  /// 用户挑的目录（原样）。
+  final String picked;
+
+  /// 解析后的迁移目标（documents / support 两个根）。
+  final DataRootMigrationTarget target;
+  final String oldDocumentsRoot;
+  final String oldSupportRoot;
+
+  /// 旧 documents 根是否就是共享的平台 `Documents`（老安装的扁平布局）。
+  final bool sharedDocumentsRoot;
+}
+
+/// 迁移开始前就失败（解析失败 / 目标不合法 / macOS 授权失败）：此时数据库还开着、
+/// 文件一个没动，[message] 是给用户看的原因。
+class DataRootMigrationPrecheckFailure implements Exception {
+  const DataRootMigrationPrecheckFailure(this.message, {this.rejection});
+
+  final String message;
+
+  /// 触发前校验的拒绝原因；解析 / 授权失败时为 null。
+  final DataRootTargetRejection? rejection;
+
+  @override
+  String toString() => message;
+}
+
+/// [runDataRootMigration] 的结局（成功且自动重启时进程通常已退出，拿不到返回值）。
+enum DataRootMigrationRunOutcome {
+  /// 迁移成功，已发起自动重启。
+  restarting,
+
+  /// 迁移成功，但没能自动重启：遮罩停在终态提示用户手动重开。
+  restartFailed,
+
+  /// 迁移失败：数据已由引擎回滚，遮罩切到失败态（重启回到旧根）。
+  failed,
+}
+
+/// 解析 [picked] 并做触发前校验，返回迁移计划；不合法抛
+/// [DataRootMigrationPrecheckFailure]。
+Future<DataRootMigrationPlan> planDataRootMigration({
+  required AppModel appModel,
+  required String picked,
+}) async {
+  final String oldDocs = appModel.appDirectory.path;
+  final String oldSupport = appModel.databaseDirectory.path;
+
+  // TODO-1226：判定旧 documents 根是否就是**共享的平台 Documents**（老安装的扁平布局）。
+  // 不看 data_root pref（pref 存了失效路径时 AppPaths 仍回退默认根，此时按 pref 判
+  // 会把共享 Documents 误当专属根整树搬走）——直接与平台 Documents 实路径比对。
+  // 探测失败按共享处理：宁可少搬（白名单），绝不整搬/整删共享目录。
+  //
+  // BUG-1115：这个判定必须在**校验之前**拿到——共享根下的非白名单子目录
+  // （`Documents\Fushi`）是合法目标，校验要据此放行。
+  bool sharedDocumentsRoot;
+  try {
+    final Directory platformDocuments =
+        await getApplicationDocumentsDirectory();
+    sharedDocumentsRoot = p.equals(oldDocs, platformDocuments.path);
+  } catch (_) {
+    sharedDocumentsRoot = true;
+  }
+  // BUG-1188：把用户挑的目录解析成迁移目标。挑中默认位置（`<Documents>\Fushi` 或
+  // `<Documents>\Fushi\data`；存量安装容器为 `Hibiki`）时归一化成「与全新安装同形」：
+  // documents 根落 `<Documents>\Fushi\data`、DB 留在平台固定落点。旧实现无条件按
+  // `<picked>/documents` + `<picked>/support` 派生，用户照文档指引整理完就得到
+  // 第三种布局（DB 还被拖进文档目录）。
+  final DataRootMigrationTarget target;
+  try {
+    final Directory defaultDocs = await AppPaths.defaultLocationDocumentsRoot();
+    final Directory platformSupport = await getApplicationSupportDirectory();
+    target = resolveDataRootMigrationTarget(
+      pickedRoot: picked,
+      defaultDocumentsRoot: defaultDocs.path,
+      platformSupportRoot: platformSupport.path,
+    );
+  } catch (e, stack) {
+    ErrorLogService.instance.logFatal('DataRootMigration.resolveTarget', e, stack);
+    throw DataRootMigrationPrecheckFailure(
+      t.data_storage_migrate_failed(message: e.toString()),
+    );
+  }
+
+  // 触发前纯校验：自我迁移 / 目标非空，直接报错，不进确认弹窗。
+  final DataRootTargetRejection? rejection = validateDataRootTarget(
+    target: target,
+    oldDocumentsRoot: oldDocs,
+    oldSupportRoot: oldSupport,
+    existsAndHasFiles: _DataRootWidgetState._dirExistsAndHasFiles,
+    executablePath: Platform.resolvedExecutable,
+    sharedDocumentsRoot: sharedDocumentsRoot,
+  );
+  if (rejection != null) {
+    throw DataRootMigrationPrecheckFailure(
+      _DataRootWidgetState._rejectionMessage(rejection),
+      rejection: rejection,
+    );
+  }
+  return DataRootMigrationPlan(
+    picked: picked,
+    target: target,
+    oldDocumentsRoot: oldDocs,
+    oldSupportRoot: oldSupport,
+    sharedDocumentsRoot: sharedDocumentsRoot,
+  );
+}
+
+/// 执行 [plan]：建 macOS 授权（失败抛 [DataRootMigrationPrecheckFailure]，此时什么都
+/// 没动）→ [onStarted] → 迁移遮罩上屏 → 关运行时资源 → 搬移 → [onMigrated] → 自动重启。
+/// 搬移失败不抛：遮罩切到失败态，返回 [DataRootMigrationRunOutcome.failed]。
+Future<DataRootMigrationRunOutcome> runDataRootMigration({
+  required AppModel appModel,
+  required DataRootMigrationPlan plan,
+  void Function()? onStarted,
+  void Function()? onMigrated,
+}) async {
+  final String picked = plan.picked;
+  final DataRootMigrationTarget target = plan.target;
+  final bool sharedDocumentsRoot = plan.sharedDocumentsRoot;
+  // 默认位置不需要 macOS 安全域书签（平台固定落点 + 应用自己的 Documents 容器，沙箱本就
+  // 可访问）；提交时反而要把可能存在的旧书签清掉。
+  final String? macOSBookmark;
+  try {
+    macOSBookmark = target.isDefaultLocation
+        ? null
+        : await MacOSDataRootAccess.createBookmarkForPath(picked);
+  } catch (e, stack) {
+    ErrorLogService.instance
+        .logFatal('DataRootMigration.createBookmark', e, stack);
+    throw DataRootMigrationPrecheckFailure(
+      t.data_storage_migrate_failed(message: e.toString()),
+    );
+  }
+
+  onStarted?.call();
+  // TODO-959: 先把全屏迁移遮罩顶上来，再让引擎 closeResources（含 closeDatabase 置
+  // isInitialised=false）。这样 DB 关闭引发的根 widget rebuild 命中迁移遮罩分支，而不
+  // 是裸 loading 近黑屏。顺序铁律：beginDataRootMigration（遮罩上屏）→ migrate（内部
+  // 先 closeResources 关 DB 释放文件锁，再搬文件）。
+  appModel.beginDataRootMigration();
+  try {
+    final DataRootMigrationRequest req = DataRootMigrationRequest(
+      oldDocumentsRoot: Directory(plan.oldDocumentsRoot),
+      oldSupportRoot: Directory(plan.oldSupportRoot),
+      target: target,
+      closeResources: () =>
+          _DataRootWidgetState._closeRuntimeResources(appModel),
+      commitLocation: (DataRootMigrationTarget t) async {
+        final SharedPreferences sp = await SharedPreferences.getInstance();
+        if (t.isDefaultLocation) {
+          await _DataRootWidgetState._commitDefaultLocation(sp);
+          return;
+        }
+        await _DataRootWidgetState._commitCustomRoot(
+          sp,
+          t.dataRootPrefValue!,
+          macOSBookmark,
+        );
+      },
+      // 跨盘复制进度回灌到遮罩进度条（同盘 rename 不触发，遮罩显示不确定进度）。
+      onProgress: (int copied, int total) =>
+          appModel.updateDataRootMigrationProgress(copied, total),
+      // TODO-1182：引擎据此二次拒绝安装目录/exe 目录，回滚也绝不删含运行 exe 的根。
+      resolvedExecutablePath: Platform.resolvedExecutable,
+      // TODO-1226：默认根 = 共享用户 Documents → 只搬 Fushi 自有顶层项白名单，
+      // 且迁移引擎绝不删除 Documents 本体；自定义专属根（<root>/documents）→ 整树。
+      documentsTopLevelIncludeNames:
+          sharedDocumentsRoot ? AppPaths.fushiOwnedDocumentsEntries : null,
+    );
+    await const DataRootMigrator().migrate(req);
+  } on DataRootMigrationException catch (e, stack) {
+    // 迁移失败：旧数据已由引擎完整回滚保留、未写 pref。但 closeResources 在搬移前就
+    // 已关掉 DB（_isInitialised=false），本进程无法原地恢复 → 切到失败态遮罩，由用户
+    // 重启回到**未改变**的旧根（pref 没写，新进程仍解析到旧位置，干净重新初始化）。
+    ErrorLogService.instance.logFatal('DataRootMigration.migrate', e, stack);
+    _recoverAfterFailedMigration(
+      appModel,
+      t.data_storage_migrate_failed(message: e.message),
+    );
+    return DataRootMigrationRunOutcome.failed;
+  } catch (e, stack) {
+    ErrorLogService.instance.logFatal('DataRootMigration.migrate', e, stack);
+    _recoverAfterFailedMigration(
+      appModel,
+      t.data_storage_migrate_failed(message: e.toString()),
+    );
+    return DataRootMigrationRunOutcome.failed;
+  }
+
+  // 迁移成功，自动重启（仅桌面，supportsRestart=true）。重启会拉新进程并退出本
+  // 进程，下面的代码通常不会执行到；restartApp 抛错（Process.start 失败）才落到
+  // 降级提示。
+  onMigrated?.call();
+  bool restartFailed = false;
+  await _DataRootWidgetState._restartOrPromptManualImpl(appModel, (
+    String message,
+  ) {
+    // TODO-1324：迁移已成功，只是自动重启失败。**绝不**依赖 `if (mounted) _showSnackBar`
+    // ——迁移一开始 beginDataRootMigration 就把根 widget 换成遮罩、设置页 State 已
+    // unmount（mounted==false），snackbar 静默丢失 → 遮罩永远停在转圈（用户报的「转圈
+    // 永不完成」的根因之一）。改切到迁移遮罩的**终态**（消息 + 重启按钮，由 main.dart 注入
+    // onRestart），用户永远能看到结果并手动重启；数据已安全落在新根。
+    restartFailed = true;
+    appModel.failDataRootMigration(message);
+  });
+  return restartFailed
+      ? DataRootMigrationRunOutcome.restartFailed
+      : DataRootMigrationRunOutcome.restarting;
+}
+
+/// TODO-1182：迁移失败 → 切到**失败态遮罩**（原因 + 建议 + 重启按钮），由根 widget 渲染。
+/// **不**在这里直接重启：旧实现桌面 supportsRestart=true 时立刻 `restartApp()`，用户永远
+/// 看不到失败原因（「换数据位置不生效且无提示」根因之一）。而且迁移期间根 widget 树已被
+/// 换成迁移遮罩，设置页 State 已 unmount，snackbar 从不触发。closeResources 已在搬移前
+/// 关 DB，本进程无法原地恢复 → 保持遮罩激活（撤了会落到裸 loading），由用户在失败视图点
+/// 「重启」回到未改变的旧根重新初始化（数据已由引擎完整回滚保留、pref 未写）。
+void _recoverAfterFailedMigration(AppModel appModel, String failureMessage) {
+  appModel.failDataRootMigration(failureMessage);
+}
+
 /// 设置行：显示当前数据根 + 更改位置按钮。仅桌面构造（section 已门控）。
 class _DataRootWidget extends StatefulWidget {
   const _DataRootWidget({required this.settingsContext});
@@ -128,7 +360,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     try {
       // BUG-1115：显示 documents 根**本身**（内容真正落的地方）。旧实现显示它的父目录，
       // 那在扁平老布局下是用户主目录（`C:\Users\<name>`，根本不是数据位置），在
-      // `<Documents>/Hibiki/data` 新布局下则是导出目录 `Hibiki` —— 两种都误导。
+      // `<Documents>/Fushi/data` 新布局下则是容器目录 `Fushi` —— 两种都误导。
       defaultRootPath = appModel.appDirectory.path;
     } on Error {
       defaultRootPath = null; // late 未初始化 → 只显示「默认位置」不带路径。
@@ -155,143 +387,35 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     if (picked == null || picked.isEmpty || !mounted) return;
 
     final AppModel appModel = widget.settingsContext.appModel;
-    final String oldDocs = appModel.appDirectory.path;
-    final String oldSupport = appModel.databaseDirectory.path;
-
-    // TODO-1226：判定旧 documents 根是否就是**共享的平台 Documents**（老安装的扁平布局）。
-    // 不看 data_root pref（pref 存了失效路径时 AppPaths 仍回退默认根，此时按 pref 判
-    // 会把共享 Documents 误当专属根整树搬走）——直接与平台 Documents 实路径比对。
-    // 探测失败按共享处理：宁可少搬（白名单），绝不整搬/整删共享目录。
-    //
-    // BUG-1115：这个判定必须在**校验之前**拿到——共享根下的非白名单子目录
-    // （`Documents\Hibiki`）是合法目标，校验要据此放行。
-    bool sharedDocumentsRoot;
+    // 解析 + 触发前纯校验（自我迁移 / 目标非空 / 安装目录）：不合法直接报错，不进
+    // 确认弹窗。与控制通道 `storage migrate` 同一入口 [planDataRootMigration]。
+    final DataRootMigrationPlan plan;
     try {
-      final Directory platformDocuments =
-          await getApplicationDocumentsDirectory();
-      sharedDocumentsRoot = p.equals(oldDocs, platformDocuments.path);
-    } catch (_) {
-      sharedDocumentsRoot = true;
-    }
-    // BUG-1188：把用户挑的目录解析成迁移目标。挑中默认位置（`<Documents>\Hibiki` 或
-    // `<Documents>\Hibiki\data`）时归一化成「与全新安装同形」：documents 根落
-    // `<Documents>\Hibiki\data`、DB 留在平台固定落点。旧实现无条件按 `<picked>/documents`
-    // + `<picked>/support` 派生，用户照文档指引整理完就得到第三种布局（DB 还被拖进文档目录）。
-    final DataRootMigrationTarget target;
-    try {
-      final Directory defaultDocs =
-          await AppPaths.defaultLocationDocumentsRoot();
-      final Directory platformSupport = await getApplicationSupportDirectory();
-      target = resolveDataRootMigrationTarget(
-        pickedRoot: picked,
-        defaultDocumentsRoot: defaultDocs.path,
-        platformSupportRoot: platformSupport.path,
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance
-          .logFatal('DataRootMigration.resolveTarget', e, stack);
-      if (mounted) {
-        _showSnackBar(
-          context,
-          t.data_storage_migrate_failed(message: e.toString()),
-        );
-      }
+      plan = await planDataRootMigration(appModel: appModel, picked: picked);
+    } on DataRootMigrationPrecheckFailure catch (e) {
+      if (mounted) _showSnackBar(context, e.message);
       return;
     }
     if (!mounted) return;
 
-    // 触发前纯校验：自我迁移 / 目标非空，直接报错，不进确认弹窗。
-    final DataRootTargetRejection? rejection = validateDataRootTarget(
-      target: target,
-      oldDocumentsRoot: oldDocs,
-      oldSupportRoot: oldSupport,
-      existsAndHasFiles: _dirExistsAndHasFiles,
-      executablePath: Platform.resolvedExecutable,
-      sharedDocumentsRoot: sharedDocumentsRoot,
-    );
-    if (rejection != null) {
-      if (mounted) {
-        _showSnackBar(context, _rejectionMessage(rejection));
-      }
-      return;
-    }
-
-    final bool confirmed = await _confirmMigrate(target);
+    final bool confirmed = await _confirmMigrate(plan.target);
     if (!confirmed || !mounted) return;
 
-    // 默认位置不需要 macOS 安全域书签（平台固定落点 + 应用自己的 Documents 容器，沙箱本就
-    // 可访问）；提交时反而要把可能存在的旧书签清掉。
-    final String? macOSBookmark;
     try {
-      macOSBookmark = target.isDefaultLocation
-          ? null
-          : await MacOSDataRootAccess.createBookmarkForPath(picked);
-    } catch (e, stack) {
-      ErrorLogService.instance
-          .logFatal('DataRootMigration.createBookmark', e, stack);
-      if (mounted) {
-        _showSnackBar(
-          context,
-          t.data_storage_migrate_failed(message: e.toString()),
-        );
-      }
-      return;
-    }
-
-    setState(() => _migrating = true);
-    // TODO-959: 先把全屏迁移遮罩顶上来，再让引擎 closeResources（含 closeDatabase 置
-    // isInitialised=false）。这样 DB 关闭引发的根 widget rebuild 命中迁移遮罩分支，而不
-    // 是裸 loading 近黑屏。顺序铁律：beginDataRootMigration（遮罩上屏）→ migrate（内部
-    // 先 closeResources 关 DB 释放文件锁，再搬文件）。
-    appModel.beginDataRootMigration();
-    try {
-      final DataRootMigrationRequest req = DataRootMigrationRequest(
-        oldDocumentsRoot: Directory(oldDocs),
-        oldSupportRoot: Directory(oldSupport),
-        target: target,
-        closeResources: () => _closeRuntimeResources(appModel),
-        commitLocation: (DataRootMigrationTarget t) async {
-          final SharedPreferences sp = await SharedPreferences.getInstance();
-          if (t.isDefaultLocation) {
-            await _commitDefaultLocation(sp);
-            return;
-          }
-          await _commitCustomRoot(sp, t.dataRootPrefValue!, macOSBookmark);
+      await runDataRootMigration(
+        appModel: appModel,
+        plan: plan,
+        onStarted: () {
+          if (mounted) setState(() => _migrating = true);
         },
-        // 跨盘复制进度回灌到遮罩进度条（同盘 rename 不触发，遮罩显示不确定进度）。
-        onProgress: (int copied, int total) =>
-            appModel.updateDataRootMigrationProgress(copied, total),
-        // TODO-1182：引擎据此二次拒绝安装目录/exe 目录，回滚也绝不删含运行 exe 的根。
-        resolvedExecutablePath: Platform.resolvedExecutable,
-        // TODO-1226：默认根 = 共享用户 Documents → 只搬 Hibiki 自有顶层项白名单，
-        // 且迁移引擎绝不删除 Documents 本体；自定义专属根（<root>/documents）→ 整树。
-        documentsTopLevelIncludeNames:
-            sharedDocumentsRoot ? AppPaths.fushiOwnedDocumentsEntries : null,
+        onMigrated: () {
+          if (mounted) {
+            _showSnackBar(context, t.data_storage_migrate_success);
+          }
+        },
       );
-      await const DataRootMigrator().migrate(req);
-
-      // 迁移成功，自动重启（仅桌面，supportsRestart=true）。重启会拉新进程并退出本
-      // 进程，下面的代码通常不会执行到；restartApp 抛错（Process.start 失败）才落到
-      // catch 的降级提示。
-      if (mounted) {
-        _showSnackBar(context, t.data_storage_migrate_success);
-      }
-      await _restartOrPromptManual(appModel);
-    } on DataRootMigrationException catch (e, stack) {
-      // 迁移失败：旧数据已由引擎完整回滚保留、未写 pref。但 closeResources 在搬移前就
-      // 已关掉 DB（_isInitialised=false），本进程无法原地恢复 → 重启回到**未改变**的
-      // 旧根（pref 没写，新进程仍解析到旧位置，干净重新初始化）。
-      ErrorLogService.instance.logFatal('DataRootMigration.migrate', e, stack);
-      await _recoverAfterFailedMigration(
-        appModel,
-        t.data_storage_migrate_failed(message: e.message),
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.logFatal('DataRootMigration.migrate', e, stack);
-      await _recoverAfterFailedMigration(
-        appModel,
-        t.data_storage_migrate_failed(message: e.toString()),
-      );
+    } on DataRootMigrationPrecheckFailure catch (e) {
+      if (mounted) _showSnackBar(context, e.message);
     } finally {
       if (mounted) setState(() => _migrating = false);
     }
@@ -336,7 +460,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
   /// 两个键必须**同时**生效，否则下次启动必然解析到错误的根：
   ///  - 只锚 nested、`data_root` 还在 ⇒ 仍走自定义根分支，指向已经搬空的旧根。
   ///  - 只清 `data_root`、锚点还是 `flat` ⇒ documents 根解析回共享 `Documents`，而数据
-  ///    已经在 `Hibiki/data` 里 = 书库/有声书/词典资源在 UI 上集体消失。
+  ///    已经在 `Fushi/data` 里 = 书库/有声书/词典资源在 UI 上集体消失。
   /// 故任一步失败就把已改的键全部复原并抛错，由引擎回滚整次迁移。
   static Future<void> _commitDefaultLocation(SharedPreferences sp) async {
     final String? previousLayout =
@@ -383,27 +507,13 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     }
   }
 
-  /// TODO-1182：迁移失败 → 切到**失败态遮罩**（原因 + 建议 + 重启按钮），由根 widget 渲染。
-  /// **不**在这里直接重启：旧实现桌面 supportsRestart=true 时立刻 `restartApp()`，用户永远
-  /// 看不到失败原因（「换数据位置不生效且无提示」根因之一）。而且迁移期间根 widget 树已被
-  /// 换成迁移遮罩，本设置页 State 已 unmount（`mounted==false`），旧的 `_showSnackBar` 也
-  /// 从不触发。closeResources 已在搬移前关 DB，本进程无法原地恢复 → 保持遮罩激活（撤了会落
-  /// 到裸 loading），由用户在失败视图点「重启」回到未改变的旧根重新初始化（数据已由引擎完整
-  /// 回滚保留、pref 未写）。
-  Future<void> _recoverAfterFailedMigration(
-    AppModel appModel,
-    String failureMessage,
-  ) async {
-    appModel.failDataRootMigration(failureMessage);
-  }
-
   /// 注入给迁移引擎的真实资源关闭：停音频（含 media_kit/libmpv 对数据根内音频文件的
   /// 句柄）、清 Flutter 图片缓存、关词典 FFI、checkpoint+关 DB，确保 Windows 上数据根
   /// 子树里的文件句柄尽量释放、整目录可被 rename/搬移。顺序与 main.dart 退出闸门一致，
   /// 额外补上音频、图片缓存与 FFI（退出闸门没做这几步）。
   ///
   /// 关于 WebView2：常驻热 WebView2 的 user-data 目录在数据根**之外**（进程默认基于
-  /// exe 名的目录 + 应用外查词覆盖窗的 `%LOCALAPPDATA%\Hibiki\GlobalLookupWebView2`，
+  /// exe 名的目录 + 应用外查词覆盖窗的 `%LOCALAPPDATA%\Fushi\GlobalLookupWebView2`，
   /// 见 `windows/runner/global_lookup_window.cpp`），不落在被迁移的 documents/support
   /// 子树里，故 dispose 它对释放数据根文件锁无意义、此处不做（避免无效的连带拆引擎）。
   /// 真正压在数据根子树上的句柄是：正在播放的音频/视频文件（media_kit/libmpv）、封面/
@@ -497,22 +607,14 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     }
   }
 
-  Future<void> _restartOrPromptManual(AppModel appModel) =>
-      _restartOrPromptManualImpl(appModel, (String message) {
-        // TODO-1324：迁移已成功，只是自动重启失败。**绝不**依赖 `if (mounted) _showSnackBar`
-        // ——迁移一开始 beginDataRootMigration 就把根 widget 换成遮罩、本设置页 State 已
-        // unmount（mounted==false），snackbar 静默丢失 → 遮罩永远停在转圈（用户报的「转圈
-        // 永不完成」的根因之一）。改切到迁移遮罩的**终态**（消息 + 重启按钮，由 main.dart 注入
-        // onRestart），用户永远能看到结果并手动重启；数据已安全落在新根。
-        appModel.failDataRootMigration(message);
-      });
-
   /// BUG-1188：确认弹窗里把**解析后的**两个根原样列出来。挑中默认位置时目标会被归一化
-  /// （`<Documents>\Hibiki` → 内容落 `<Documents>\Hibiki\data`、DB 留在平台固定落点），
+  /// （`<Documents>\Fushi` → 内容落 `<Documents>\Fushi\data`、DB 留在平台固定落点），
   /// 用户必须在按下确认前就看到数据到底会去哪，而不是重启后自己找。
   Future<bool> _confirmMigrate(DataRootMigrationTarget target) async {
-    final String body = '${t.data_storage_change_confirm_body}\n\n'
-        '${target.documentsRoot.path}\n${target.supportRoot.path}';
+    final List<String> roots = <String>[
+      target.documentsRoot.path,
+      target.supportRoot.path,
+    ];
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) {
@@ -526,6 +628,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
           scrollable: false,
           child: FushiModalSheetFrame(
             title: t.data_storage_change_confirm_title,
+            leadingIcon: FushiIcons.moveFile,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
@@ -539,7 +642,40 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
               tokens.spacing.card,
               tokens.spacing.card,
             ),
-            body: Text(body),
+            // 说明 + 两个解析后的落点（M3E 分段卡片：首尾大圆角、行间 2，
+            // 等宽数字便于逐字核对路径）。
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(t.data_storage_change_confirm_body),
+                SizedBox(height: tokens.spacing.gap),
+                for (int i = 0; i < roots.length; i++)
+                  FushiGroupedListItem(
+                    index: i,
+                    count: roots.length,
+                    child: Padding(
+                      padding: EdgeInsets.all(tokens.spacing.gap),
+                      child: Row(
+                        children: <Widget>[
+                          const FushiListLeadingIcon(
+                            FushiIcons.folder,
+                            shape: FushiLeadingShape.square,
+                            size: 36,
+                          ),
+                          SizedBox(width: tokens.spacing.gap),
+                          Expanded(
+                            child: SelectableText(
+                              roots[i],
+                              style: ctx.fushiType.bodyMedium.tabular,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             footer: Wrap(
               alignment: WrapAlignment.end,
               spacing: tokens.spacing.gap,
@@ -565,7 +701,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     return confirmed == true;
   }
 
-  String _rejectionMessage(DataRootTargetRejection rejection) {
+  static String _rejectionMessage(DataRootTargetRejection rejection) {
     // 两种拒绝都是目标不合法，复用迁移失败文案承载具体原因（引擎也会再拒一次）。
     switch (rejection) {
       case DataRootTargetRejection.insideCurrentRoot:
@@ -598,7 +734,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       subtitle: _migrating
           ? t.data_storage_migrating
           : '${t.data_storage_location_hint}\n${_currentLocationLabel()}',
-      icon: Icons.folder_special_outlined,
+      icon: FushiIcons.folder,
       controlBelow: true,
       // 行 onTap 注册焦点目标（方向导航可达）；trailing 按钮是视觉入口。
       onTap: _changeLocation,
@@ -615,12 +751,12 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
                 Text(t.data_storage_migrating),
               ],
             )
-          : FilledButton.tonal(
+          : FushiFilledButton.tonal(
               onPressed: _changeLocation,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  const Icon(Icons.drive_folder_upload_outlined, size: 18),
+                  const FushiIcon(FushiIcons.moveFile, size: 18),
                   const SizedBox(width: 8),
                   Text(t.data_storage_change_button),
                 ],

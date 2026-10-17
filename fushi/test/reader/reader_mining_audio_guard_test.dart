@@ -126,12 +126,17 @@ void main() {
             'Gating sentence audio on `cue != null` silently drops sentence '
             'audio for gap words; resolve by sentence span instead.',
       );
+      // The only extra condition allowed besides "audio files exist" is the
+      // user's explicit per-card "no audio" choice from advanced mining
+      // (MiningRequestOverrides.omitAudio) — never the lookup cue.
       expect(
         source,
-        contains('if (audioFiles != null) {'),
+        contains(
+            'if (audioFiles != null && !(overrides?.omitAudio ?? false)) {'),
         reason:
             'Sentence-audio mining should attempt a clip whenever audio files '
-            'exist and let miningSentenceAudioRange decide if a range is found.',
+            'exist (unless the user opted out for this card) and let '
+            'miningSentenceAudioRange decide if a range is found.',
       );
       expect(
         source,

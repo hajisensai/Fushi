@@ -1,7 +1,7 @@
 /// 漫画发现页的「可浏览来源」一节 + 它的数据快照。
 ///
 /// 这一节是此前独立存在的「浏览」视图（`manga_browse_page.dart`）的全部内容：
-/// 内置 mokuro.moe 目录 + 已启用 Aidoku 包 + 已启用 Mihon 在线源，各自一张卡片、
+/// 内置 mokuro.moe 目录 + 已启用 Mihon 在线源 + OPDS 服务器，各自一张卡片、
 /// 点进各自的浏览页。两个 tab 的文案被改成同一个「发现」之后
 /// （`library_view_discover` 与 `library_view_browse` 在漫画库同时挂着），用户点
 /// 哪个都分不清；能力合进发现页，冗余 tab 删掉（BUG-1710）。
@@ -10,15 +10,17 @@
 /// 发现来源（或在测试里直接注入），本节只负责渲染。这样 widget 测试不用架起真实
 /// 扩展宿主，也不用碰 `AppModel`。
 ///
-/// 平台差异只体现在**内容**上，不体现在结构上：Mihon 仅桌面/安卓有宿主，Aidoku
-/// 只在 macOS / iOS 有宿主，Linux 两者皆无时这一节仍在原位，只列内置来源。
+/// 平台差异只体现在**内容**上，不体现在结构上：Mihon 仅桌面/安卓有宿主，没有
+/// 宿主的平台（iOS）这一节仍在原位，只列内置来源。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/discovery/manga_source_display_name.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/utils.dart';
@@ -31,18 +33,12 @@ import 'package:fushi/utils.dart';
 class MangaSourceCatalog {
   const MangaSourceCatalog({
     this.mokuroEnabled = false,
-    this.aidokuPackages = const <AidokuInstalledPackage>[],
     this.mihonSources = const <MangaOnlineSourceRow>[],
     this.opdsServers = const <OpdsServerConfig>[],
-    this.aidokuError,
   });
 
   /// 内置 mokuro.moe 目录的来源 id。
   static const String mokuroSourceId = 'mokuro';
-
-  /// Aidoku 已装包的来源 id。
-  static String aidokuSourceId(AidokuInstalledPackage package) =>
-      'aidoku:${package.id}';
 
   /// Mihon 在线源的来源 id（与 `mihonDiscoverySourceFeeds` 生成的 feed id 同式）。
   static String mihonSourceId(MangaOnlineSourceRow source) =>
@@ -50,9 +46,6 @@ class MangaSourceCatalog {
 
   /// 内置 mokuro.moe 目录是否参与浏览（「来源」视图里的开关）。
   final bool mokuroEnabled;
-
-  /// 已启用的 Aidoku 已装包。
-  final List<AidokuInstalledPackage> aidokuPackages;
 
   /// 已启用、且提供它的扩展也启用的 Mihon 在线源。
   final List<MangaOnlineSourceRow> mihonSources;
@@ -65,26 +58,15 @@ class MangaSourceCatalog {
   /// （mokuro 已有先例：它同样不在聚合搜索的源模型里，选中即直接开目录页）。
   final List<OpdsServerConfig> opdsServers;
 
-  /// Aidoku 包清单读取失败时的错误（渲染成一行提示，不吞）。
-  final Object? aidokuError;
-
   bool get isEmpty =>
-      !mokuroEnabled &&
-      aidokuPackages.isEmpty &&
-      mihonSources.isEmpty &&
-      opdsServers.isEmpty;
+      !mokuroEnabled && mihonSources.isEmpty && opdsServers.isEmpty;
 
-  /// 下拉选项（按 mokuro -> Aidoku -> Mihon 的展示顺序，与卡片顺序一致）。
+  /// 下拉选项（按 mokuro -> Mihon 的展示顺序，与卡片顺序一致）。
   List<DiscoverySourceOption> get sourceOptions => <DiscoverySourceOption>[
         if (mokuroEnabled)
           DiscoverySourceOption(
             id: mokuroSourceId,
             label: t.mihon_source_browse_mokuro,
-          ),
-        for (final AidokuInstalledPackage package in aidokuPackages)
-          DiscoverySourceOption(
-            id: aidokuSourceId(package),
-            label: package.name,
           ),
         for (final MangaOnlineSourceRow source in mihonSources)
           DiscoverySourceOption(
@@ -104,10 +86,6 @@ class MangaSourceCatalog {
     if (sourceId == kDiscoveryAllSourcesId) return this;
     return MangaSourceCatalog(
       mokuroEnabled: mokuroEnabled && sourceId == mokuroSourceId,
-      aidokuPackages: aidokuPackages
-          .where((AidokuInstalledPackage package) =>
-              aidokuSourceId(package) == sourceId)
-          .toList(growable: false),
       mihonSources: mihonSources
           .where((MangaOnlineSourceRow source) =>
               mihonSourceId(source) == sourceId)
@@ -116,7 +94,6 @@ class MangaSourceCatalog {
       // 用户选中了具体来源就意味着「只看这一个」，OPDS 卡片必须一并让位，
       // 否则收窄后的列表里会留着一堆与选择无关的卡片。
       opdsServers: const <OpdsServerConfig>[],
-      aidokuError: aidokuError,
     );
   }
 }
@@ -134,7 +111,6 @@ class MangaSourceCatalogSection extends StatelessWidget {
   const MangaSourceCatalogSection({
     required this.catalog,
     required this.onOpenMokuro,
-    required this.onOpenAidoku,
     required this.onOpenMihon,
     required this.onOpenOpds,
     super.key,
@@ -142,7 +118,6 @@ class MangaSourceCatalogSection extends StatelessWidget {
 
   final MangaSourceCatalog catalog;
   final VoidCallback onOpenMokuro;
-  final ValueChanged<AidokuInstalledPackage> onOpenAidoku;
   final ValueChanged<MangaOnlineSourceRow> onOpenMihon;
   final ValueChanged<OpdsServerConfig> onOpenOpds;
 
@@ -151,25 +126,20 @@ class MangaSourceCatalogSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Object? error = catalog.aidokuError;
     final List<Widget> tiles = <Widget>[
       if (catalog.mokuroEnabled)
         _SourceTile(
           key: const ValueKey<String>('manga-source-mokuro'),
-          leading: const Icon(Icons.auto_stories_outlined),
+          leading: const FushiListLeadingIcon(
+            FushiIcons.books,
+            shape: FushiLeadingShape.cookie,
+            tone: FushiCardTone.primary,
+            size: 36,
+            iconSize: 20,
+          ),
           title: t.mihon_source_browse_mokuro,
           subtitle: 'mokuro.moe',
           onTap: onOpenMokuro,
-        ),
-      for (final AidokuInstalledPackage package in catalog.aidokuPackages)
-        _SourceTile(
-          key: ValueKey<String>('manga-aidoku-${package.id}'),
-          leading: _LanguageBadge(
-            package.languages.isEmpty ? '' : package.languages.first,
-          ),
-          title: package.name,
-          subtitle: package.id,
-          onTap: () => onOpenAidoku(package),
         ),
       for (final MangaOnlineSourceRow source in catalog.mihonSources)
         _SourceTile(
@@ -187,48 +157,57 @@ class MangaSourceCatalogSection extends StatelessWidget {
       for (final OpdsServerConfig server in catalog.opdsServers)
         _SourceTile(
           key: ValueKey<String>('manga-opds-${server.id}'),
-          leading: const Icon(Icons.menu_book_outlined),
+          leading: const FushiListLeadingIcon(
+            FushiIcons.books,
+            shape: FushiLeadingShape.cookie,
+            tone: FushiCardTone.primary,
+            size: 36,
+            iconSize: 20,
+          ),
           title: server.displayName,
           subtitle: server.catalogUrl.host,
           onTap: () => onOpenOpds(server),
         ),
     ];
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(bottom: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              t.manga_discovery_sources_browse,
-              style: Theme.of(context).textTheme.titleMedium,
+          // 区块标题与下方热门横滑行同一套 [FushiSectionTitle]（MD3 titleLarge /
+          // Apple Title 2 粗体），不再是小一号的 titleMedium。
+          // 本区块是发现页正文的首个分区：上方只隔工具区底边的 gap，合计 16
+          // （与视频发现页工具区到首屏内容同一间距），不再叠一个 section 大边距。
+          FushiSectionTitle(
+            t.manga_discovery_sources_browse,
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.gap,
+              tokens.spacing.page,
+              tokens.spacing.gap,
             ),
           ),
-          const SizedBox(height: 8),
           if (tiles.isNotEmpty)
             // 桌面端默认 dragDevices 不含 mouse，横滑条必须包
             // HorizontalDragScrollable（横向滚动守卫）。
             SizedBox(
               height: stripHeight,
-              child: HorizontalDragScrollable(
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: tiles.length,
-                  separatorBuilder: (BuildContext context, int index) =>
-                      const SizedBox(width: 8),
-                  itemBuilder: (BuildContext context, int index) =>
-                      tiles[index],
+              child: FushiHorizontalEdgeFade(
+                child: HorizontalDragScrollable(
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    // 与区块标题、下方横滑行同一页边距，左缘对齐。
+                    padding: EdgeInsets.symmetric(
+                      horizontal: tokens.spacing.page,
+                    ),
+                    itemCount: tiles.length,
+                    separatorBuilder: (BuildContext context, int index) =>
+                        SizedBox(width: tokens.spacing.gap),
+                    itemBuilder: (BuildContext context, int index) =>
+                        tiles[index],
+                  ),
                 ),
-              ),
-            ),
-          if (error != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text(
-                '$error',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
         ],
@@ -256,7 +235,18 @@ class _SourceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 次级文字 / 行尾图标：Apple 取 secondaryLabel / tertiaryLabel 灰阶，MD3
+    // onSurfaceVariant（与共享列表行同口径）。
+    final bool apple = isGlassDesign(context);
+    final Color secondary = apple
+        ? appleColorsOf(context).secondaryLabel
+        : tokens.surfaces.onVariant;
+    final Color chevron = apple
+        ? appleColorsOf(context).tertiaryLabel
+        : tokens.surfaces.onVariant;
+    // 实色内容卡（MD3 surfaceContainerLow / Apple secondarySystemGrouped），
+    // 不是玻璃；焦点 / Enter 由 FushiCard 提供。
     return SizedBox(
       width: 216,
       child: FushiCard(
@@ -277,23 +267,21 @@ class _SourceTile extends StatelessWidget {
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall,
+                      style: tokens.type.listTitle,
                     ),
                     Text(
                       subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                      style: tokens.type.metadata.copyWith(color: secondary),
                     ),
                   ],
                 ),
               ),
-              Icon(
-                pinned ? Icons.push_pin_outlined : Icons.chevron_right,
+              FushiIcon(
+                pinned ? FushiIcons.pin : FushiIcons.chevronRight,
                 size: 18,
-                color: theme.colorScheme.onSurfaceVariant,
+                color: chevron,
               ),
             ],
           ),
@@ -311,20 +299,17 @@ class _LanguageBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
+    // 中性底徽标（不再是 secondaryContainer 彩块），文字次级标签色。
     return Container(
       width: 36,
       height: 36,
       alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: scheme.secondaryContainer,
-        borderRadius: FushiBorderRadius.control,
-      ),
+      decoration: fushiNeutralBlockDecoration(context),
       child: Text(
         language.isEmpty ? '?' : language.toUpperCase(),
         maxLines: 1,
         style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: scheme.onSecondaryContainer,
+              color: fushiNeutralSecondaryForeground(context),
               fontWeight: FontWeight.w600,
             ),
       ),

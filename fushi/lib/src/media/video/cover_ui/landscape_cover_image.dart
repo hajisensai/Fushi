@@ -1,9 +1,8 @@
-import 'dart:ui' show ImageFilter;
-
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_backdrop_color.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 
 /// 宽幅（约 2.7:1）封面槽的填充组件 —— [PortraitCoverImage] 的镜像。
 ///
@@ -152,24 +151,16 @@ class _LandscapeCoverImageState extends State<LandscapeCoverImage>
         DecoratedBox(decoration: decoration),
       // 压暗在内、模糊在外：压暗作用于**原图的 alpha**，透明区因此原样透出下面
       // 的主色底；随后整体模糊，边缘羽化也跟着自然衰减。反过来嵌套（先模糊再压暗）
-      // 视觉几乎等价，但会把 ImageFiltered 从 Stack 的直接子节点上挪走，hero 的
-      // 层序守卫按类型认这一层（collection_hero_cover_orientation_test）。
-      ImageFiltered(
-        imageFilter: ImageFilter.blur(
-          sigmaX: LandscapeCoverImage.backdropBlurSigma,
-          sigmaY: LandscapeCoverImage.backdropBlurSigma,
-        ),
-        child: ColorFiltered(
-          colorFilter: const ColorFilter.mode(
-            LandscapeCoverImage.backdropDimColor,
-            BlendMode.srcATop,
-          ),
-          child: Image(
-            image: widget.image,
-            fit: BoxFit.cover,
-            // 垫底解码失败不接管整块（前景/流监听兜底），静默留空。
-            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-          ),
+      // 视觉几乎等价，但会把模糊层从 Stack 的直接子节点上挪走，hero 的层序守卫
+      // 按类型认这一层（collection_hero_cover_orientation_test）。
+      // 模糊预烘焙（[PrebakedBlurImage]）而非渲染期 ImageFiltered：库网格里每张
+      // 比例不符的封面都有这一层，渲染期模糊在滚动时每帧对每张卡重算卷积。
+      PrebakedBlurImage(
+        image: widget.image,
+        sigma: LandscapeCoverImage.backdropBlurSigma,
+        colorFilter: const ColorFilter.mode(
+          LandscapeCoverImage.backdropDimColor,
+          BlendMode.srcATop,
         ),
       ),
     ];

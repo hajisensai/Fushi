@@ -24,7 +24,8 @@ void main() {
   const String appModelPath = 'lib/src/models/app_model.dart';
   const String systemSchemaPath =
       'lib/src/settings/settings_schema_system.dart';
-  const String detailPagePath = 'lib/src/settings/settings_detail_page.dart';
+  const String schemaWidgetsPath =
+      'lib/src/settings/settings_schema_widgets.dart';
   const String homePagePath = 'lib/src/pages/implementations/home_page.dart';
   const String settingsHomePath = 'lib/src/settings/settings_home_page.dart';
   const String controllerPath =
@@ -77,16 +78,21 @@ void main() {
       isTrue,
       reason: '设置里那一行必须读同一个 app 级 controller，不能自建状态',
     );
-    final String detail = read(detailPagePath);
+    // 下载阶段是异步事件：那一行所在分组经 liveListenable 声明它，分组组件
+    // 自己订阅（ListenableBuilder 随组件卸载自动摘掉订阅）。不订阅那一行就停在
+    // 进页面那一刻的旧状态。
     expect(
-      detail.contains('recommendedPackDownloadController.stage.addListener'),
+      RegExp(
+        r'liveListenable:[^;]*recommendedPackDownloadController\s*\.stage',
+      ).hasMatch(schema),
       isTrue,
       reason: '下载阶段是异步事件，不订阅它那一行就停在进页面那一刻的旧状态',
     );
+    final String widgets = read(schemaWidgetsPath);
     expect(
-      detail.contains('recommendedPackDownloadController.stage.removeListener'),
+      widgets.contains('section.liveListenable'),
       isTrue,
-      reason: '订阅必须在 dispose 里摘掉，否则页面走了还在拉活它',
+      reason: '分组组件必须订阅 liveListenable，否则声明了也没人听',
     );
   });
 
@@ -133,13 +139,19 @@ void main() {
   });
 
   test('设置页宽屏内联路径同样订阅下载阶段', () {
+    // 宽屏（>=720，桌面主用形态）详情是内联渲染的：订阅落在两条路径共用的分组
+    // 组件（SettingsSchemaSection）里，内联与 push 出去的详情页同一份订阅；宿主页
+    // 不得再各自整页 setState（那会让日志 / 下载事件逐帧重建整页设置行）。
     final String settingsHome = read(settingsHomePath);
     expect(
-      settingsHome.contains('recommendedPackDownloadController.stage'),
+      settingsHome.contains('MaterialSettingsRenderer'),
       isTrue,
-      reason:
-          '宽屏（>=720，桌面主用形态）详情是内联渲染的，走不到 SettingsDetailPage '
-          '那份订阅——不听这一条，那一行的显隐只能靠 AppModel 顺带 notify 撞上',
+      reason: '宽屏内联详情必须走共享渲染器（经 SettingsSchemaSection 订阅）',
+    );
+    expect(
+      settingsHome.contains('recommendedPackDownloadController.stage.addListener'),
+      isFalse,
+      reason: '宿主页整页订阅会把每次阶段变化放大成整页重建；订阅归分组组件',
     );
   });
 

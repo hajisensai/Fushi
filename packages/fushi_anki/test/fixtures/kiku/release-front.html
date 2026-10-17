@@ -1,0 +1,169 @@
+<!-- Kiku Note v2.1.0
+This file is auto-generated. Any manual changes will be lost on save.
+-->
+
+<kiku-host-anki
+  id="kiku-host"
+  side="front"
+  ssr
+  data-theme="light"
+  data-theme-dark="dark"
+></kiku-host-anki>
+<div
+  id="kiku-root"
+  part="root"
+  data-kiku-cloak
+  data-side="front"
+  data-theme="light"
+  data-theme-dark="dark"
+  data-blur-nsfw="true"
+  data-picture-on-front="false"
+  data-mod-vertical="false"
+>
+  <!-- Do not modify anything if you don't know what you're doing Σ(°ロ°) -->
+  <div data-hk="00000200000003000000" class="font-primary transition-colors relative"><div class="flex flex-col gap-2 sm:gap-4 p-2 sm:p-4 bg-base-100 min-h-full mx-auto pt-10 sm:pt-12 pb-24 sm:pb-4 layout-max-width"><div data-hk="0000020000000300000102" class="flex flex-col"><div class="flex justify-between gap-2 items-start mb-0.5 sm:mb-2"><div class="text-xl sm:text-2xl min-h-lh hover:h-auto overflow-hidden transition-[height] [interpolate-size:allow-keywords] w-full h-lh "></div></div><div class="expression-picture-box tappable"><div class="expression-audio-box"><!--$--><div data-hk="00000200000003000001030" class="expression font-secondary text-center vertical-rl transition-colors text-pitch   hide-rt "><div data-hk="000002000000030000010314" class="contents">{{#IsSentenceCard}} <span class="horizontal-tb">?</span> {{/IsSentenceCard}} {{#IsAudioCard}} <span class="horizontal-tb">?</span> {{/IsAudioCard}} {{^IsSentenceCard}} {{^IsAudioCard}} {{Expression}} {{/IsAudioCard}} {{/IsSentenceCard}}</div></div><!--/--><!--$--><!--/--></div><!--$--><div data-hk="00000200000003000001050" class="picture-field-container tappable " data-has-picture="{{#Picture}}true{{/Picture}}"><div class="picture-field-background tappable" style="">{{Picture}}</div><div class="picture-field tappable " style="" data-tags="{{Tags}}" data-nsfw="false" >{{Picture}}</div><!--$--><!--/--></div><!--/--></div><!--$--><!--/--></div><div data-hk="0000020000000300000106" class="flex flex-col gap-4 items-center text-center justify-center "></div><div data-hk="0000020000000300000107" class="gap-2 items-center justify-center text-center border-t hint text-base-content-calm hint-field border-base-200 p-2 " data-has-hint="{{#Hint}}true{{/Hint}}"><div>{{Hint}}</div></div><!--!$--></div><!--$--><!--/--></div>
+</div>
+
+<link rel="stylesheet" href="_kiku.css" id="kiku-css" />
+<link rel="stylesheet" href="_kiku_plugin.css" id="kiku-css-plugin" />
+<link href="_kiku.js" data-anki-include />
+<link href="_kiku_libs.js" data-anki-include />
+<link href="_kiku_shared.js" data-anki-include />
+<link href="_kiku_lazy.js" data-anki-include />
+<link href="_kiku_worker.js" data-anki-include />
+<link href="_kiku_plugin.js" data-anki-include />
+<link href="_kiku_db_main.tar" data-anki-include />
+<link href="_kiku_db_main_manifest.json" data-anki-include />
+<link href="_kiku_back.html" data-anki-include />
+<link href="_kiku_front.html" data-anki-include />
+<link href="_kiku_style.css" data-anki-include />
+
+<template id="anki-fields">
+  {{#IsAudioCard}}
+  <template data-field="ExpressionAudio"></template>
+  <template data-field="SentenceAudio">{{SentenceAudio}}</template>
+  {{/IsAudioCard}} {{^IsAudioCard}}
+  <template data-field="ExpressionAudio"></template>
+  <template data-field="SentenceAudio"></template>
+  {{/IsAudioCard}}
+
+  <template data-field="Expression">{{Expression}}</template>
+  <template data-field="ExpressionFurigana">{{ExpressionFurigana}}</template>
+  <template data-field="ExpressionReading">{{ExpressionReading}}</template>
+  <template data-field="RelatedExpression">{{RelatedExpression}}</template>
+  <template data-field="SelectionText">{{SelectionText}}</template>
+  <template data-field="MainDefinition">{{MainDefinition}}</template>
+  <template data-field="DefinitionPicture">{{DefinitionPicture}}</template>
+  <template data-field="Sentence">{{Sentence}}</template>
+  <template data-field="SentenceFurigana">{{SentenceFurigana}}</template>
+  <template data-field="SentenceTranslation">{{SentenceTranslation}}</template>
+  <template data-field="Picture">{{Picture}}</template>
+  <template data-field="Glossary">{{Glossary}}</template>
+  <template data-field="Hint">{{Hint}}</template>
+  <template data-field="IsWordAndSentenceCard">{{IsWordAndSentenceCard}}</template>
+  <template data-field="IsClickCard">{{IsClickCard}}</template>
+  <template data-field="IsSentenceCard">{{IsSentenceCard}}</template>
+  <template data-field="IsAudioCard">{{IsAudioCard}}</template>
+  <template data-field="PitchPosition">{{PitchPosition}}</template>
+  <template data-field="PitchCategories">{{PitchCategories}}</template>
+  <template data-field="Frequency">{{Frequency}}</template>
+  <template data-field="FreqSort">{{FreqSort}}</template>
+  <template data-field="MiscInfo">{{MiscInfo}}</template>
+  <template data-field="Tags">{{Tags}}</template>
+  <template data-field="CardID">{{CardID}}</template>
+  <template data-field="furigana:ExpressionFurigana">{{furigana:ExpressionFurigana}}</template>
+  <template data-field="kana:ExpressionFurigana">{{kana:ExpressionFurigana}}</template>
+  <template data-field="furigana:Sentence">{{furigana:Sentence}}</template>
+  <template data-field="kanji:Sentence">{{kanji:Sentence}}</template>
+  <template data-field="furigana:SentenceFurigana">{{furigana:SentenceFurigana}}</template>
+  <template data-field="kana:SentenceFurigana">{{kana:SentenceFurigana}}</template>
+</template>
+
+<template id="kiku-error">
+  <span>Failed to render card.</span>
+  <span> <b>Error Name:</b> <span data-kiku-error-name></span> </span>
+  <span> <b>Error Message:</b> <span data-kiku-error-message></span> </span>
+  <span> <b>Error Cause:</b> <span data-kiku-error-cause></span> </span>
+  <span>
+    <b>Error Stack:</b><br />
+    <pre
+      data-kiku-error-stack
+      style="
+        white-space: pre-wrap;
+        background: oklch(82% 0.189 84.429);
+        color: oklch(41% 0.112 45.904);
+        padding: 8px;
+      "
+    ></pre>
+  </span>
+  <br />
+  <span>
+    Make sure you have Anki updated to at least
+    <a
+      href="https://apps.ankiweb.net/"
+      target="_blank"
+      style="color: aqua; text-decoration: underline"
+    >
+      25.09
+    </a>
+  </span>
+  <span>If you feel you messed up something, try to reinstall Kiku.</span>
+</template>
+
+<script>
+  if (!window.renderErrorFallback) {
+    window.renderErrorFallback = (error) => {
+      sessionStorage.clear();
+      Object.assign(document.body.style, {
+        margin: 0,
+        padding: 0,
+        height: "100vh",
+        width: "100vw",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        alignItems: "center",
+        backgroundColor: "oklch(21.15% .012 254.09)",
+        color: "oklch(71% .194 13.428)",
+        textAlign: "center",
+      });
+
+      const errorTemplate = document.querySelector("#kiku-error");
+      if (!(errorTemplate instanceof HTMLTemplateElement)) return;
+
+      const fragment = errorTemplate.content.cloneNode(true);
+      if (error instanceof Error) {
+        const setText = (selector, value) => {
+          const el = fragment.querySelector(selector);
+          if (el) el.textContent = value;
+        };
+
+        setText("[data-kiku-error-name]", error.name);
+        setText("[data-kiku-error-message]", error.message);
+        setText("[data-kiku-error-cause]", String(error.cause ?? "N/A"));
+        setText("[data-kiku-error-stack]", error.stack ?? "");
+      }
+
+      document.body.replaceChildren(fragment);
+    };
+
+    window.addEventListener(
+      "error",
+      (event) => {
+        if (!(event.target instanceof HTMLScriptElement)) return;
+        if (event.target.id !== "kiku-script") return;
+        window.renderErrorFallback?.(
+          new Error("Failed to load _kiku.js. Did you delete Kiku files without reinstalling?"),
+        );
+      },
+      true,
+    );
+  }
+</script>
+
+
+<script>window._$HY||(e=>{let t=e=>e&&e.hasAttribute&&(e.hasAttribute("data-hk")?e:t(e.host&&e.host.nodeType?e.host:e.parentNode));["click", "input"].forEach((o=>document.addEventListener(o,(o=>{if(!e.events)return;let s=t(o.composedPath&&o.composedPath()[0]||o.target);s&&!e.completed.has(s)&&e.events.push([s,o])}))))})(_$HY={events:[],completed:new WeakSet,r:{},fe(){}});</script><!--xs-->
+
+<script type="module" id="kiku-script">
+  import "./_kiku.js";
+</script>

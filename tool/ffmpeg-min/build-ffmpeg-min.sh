@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# 构建 Hibiki 桌面用的「精简 ffmpeg」（~10MB 量级），只含 Hibiki 实际调用的组件：
+# 构建 Fushi 桌面用的「精简 ffmpeg」（~10MB 量级），只含 Fushi 实际调用的组件：
 #   - 内封字幕枚举/抽取（-i 探测 + -map 0:s:N 转 srt/ass/vtt）
 #   - cue 动图（fps,scale,palettegen,paletteuse → gif）
 #   - 句子音频片段（解码 → aac/adts）
 #   - 视频帧/封面（-frames:v 1 → jpg/png）
 #   - YouTube/远端制卡（http(s) googlevideo 流 + -reconnect 系列网络韧性开关）
 #   - 片段导出 mp4（h264/libx264 + aac → .mp4，跨平台可打开，TODO-1257）
+#   - 有声书工作室成书（TTS 渲染 → 响度归一 loudnorm → M4B，含章节/封面/元数据）
 #
 # 产物是**两个** exe：ffmpeg(.exe) + ffprobe(.exe)。BUG-1420 之前本脚本传
 # `--disable-ffprobe`，但 Dart 侧 resolveFfprobeExecutable()（ffmpeg_backend.dart）
@@ -45,6 +46,10 @@
 # 会静态比对本脚本与入库 exe 内嵌的 configure 串，漏 vendor 直接单测红。
 set -euo pipefail
 
+# 脚本自身目录（绝对路径）。必须在任何 cd 之前算：CI 用相对路径调用本脚本，
+# cd "$SRC" 之后再解析 BASH_SOURCE 就找不到 patches/ 了。
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 FFMPEG_REF="${FFMPEG_REF:-n7.1.5}"
 OUT="${OUT:-$PWD/ffmpeg-min-out}"
 SRC="${SRC:-$PWD/ffmpeg-src}"
@@ -59,20 +64,21 @@ LIBWEBP_REF="${LIBWEBP_REF:-v1.5.0}"
 DAV1D_REF="${DAV1D_REF:-1.5.1}"
 LIBVPX_REF="${LIBVPX_REF:-v1.15.0}"
 OPUS_REF="${OPUS_REF:-v1.5.2}"
+LIBXML2_REF="${LIBXML2_REF:-v2.13.8}"
 
-# BUG-1668：macOS 目标架构（`x86_64` / `arm64`），默认跟随构建机。
+# macOS 目标架构。macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac，所以
+# 默认就是 arm64，而且只接受 arm64（ffmpeg-min.yml 的 macOS job 显式传它）。
 #
-# 为什么必须能指定：Flutter 的 `flutter build macos --release` 产出的是 **universal**
-# （x86_64 + arm64）app，而本脚本历来只编构建机自己的架构。CI 的 macOS runner 是
-# Apple Silicon，于是随包的 ffmpeg/ffprobe 是 arm64-only 瘦二进制。在 **Intel Mac**
-# 上后果是：app 本体照常启动、查词照常能用，但每次 `Process.start('…/ffmpeg')` 都
-# 被内核以 `Bad CPU type in executable`(EBADARCH) 拒掉 → 制卡音频/封面、内封字幕
-# 抽取、片段导出全线失效。ffmpeg-min.yml 与 release-desktop.yml 的 `ffmpeg -version`
-# 硬门都跑在 arm64 runner 上，对这个缺口天然免疫，所以它一路溜到了用户机器上。
-#
-# 用法：单独跑一次只出一个架构；两个架构各跑一次到不同 OUT，再 `lipo -create`
-# 合成 universal（见 .github/workflows/ffmpeg-min.yml 的 macOS job）。
-MACOS_ARCH="${MACOS_ARCH:-$(uname -m)}"
+# BUG-1668 的教训：目标架构必须显式钉死，不能靠「构建机恰好是什么」——当年 app 是
+# universal 而随包 ffmpeg 是 arm64-only，Intel Mac 上 helper 被内核以 EBADARCH 拒掉。
+# 现在 app 本体与 helper 都只有 arm64，release-desktop.yml 按 app 本体的 `lipo -archs`
+# 核对两者一致。下面依赖库里的 `-arch` / `--host` / cross file 仍按 MACOS_ARCH 参数化，
+# 在 arm64 构建机上编 arm64 时走的是同架构路径。
+MACOS_ARCH="${MACOS_ARCH:-arm64}"
+if [ "$(uname -s)" = "Darwin" ] && [ "$MACOS_ARCH" != "arm64" ]; then
+  echo "[ffmpeg-min] FATAL: macOS 版只出 arm64（不再支持 Intel Mac），MACOS_ARCH=$MACOS_ARCH 不受支持" >&2
+  exit 1
+fi
 
 # BUG-1443：macOS 上把 libx264 / SVT-AV1 / libwebp / dav1d 从源码编成**静态库**，
 # 装进一个私有 prefix，让 ffmpeg 只从那里取。
@@ -245,10 +251,29 @@ EOF
     cmake --install "$work/opus/build"
   fi
 
+  if [ ! -f "$prefix/lib/libxml2.a" ]; then
+    # dash demuxer 的 MPD 解析器（见 DEMUXERS 注释，BUG-3503）。只要 XML 树解析：
+    # iconv / zlib / lzma / icu / http / python 全关，免得把一串传递依赖带进静态链；
+    # MPD 是 UTF-8，libxml2 不靠 iconv 也原生支持 UTF-8/UTF-16/Latin-1。
+    echo "[ffmpeg-min] build static libxml2 @ $LIBXML2_REF"
+    rm -rf "$work/libxml2"
+    git clone --depth 1 --branch "$LIBXML2_REF" \
+      https://gitlab.gnome.org/GNOME/libxml2.git "$work/libxml2"
+    cmake -S "$work/libxml2" -B "$work/libxml2/build" \
+      -DCMAKE_OSX_ARCHITECTURES="$MACOS_ARCH" \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DLIBXML2_WITH_ICONV=OFF -DLIBXML2_WITH_ZLIB=OFF -DLIBXML2_WITH_LZMA=OFF \
+      -DLIBXML2_WITH_ICU=OFF -DLIBXML2_WITH_HTTP=OFF -DLIBXML2_WITH_PYTHON=OFF \
+      -DLIBXML2_WITH_PROGRAMS=OFF -DLIBXML2_WITH_TESTS=OFF
+    cmake --build "$work/libxml2/build" -j "$JOBS"
+    cmake --install "$work/libxml2/build"
+  fi
+
   # 缺任何一个 .a 就当场停：继续跑下去只会又编出一个动态依赖 Homebrew 的产物，
   # 而那个缺陷要到发版流水线才暴露。
   local archive
-  for archive in libx264.a libSvtAv1Enc.a libwebp.a libwebpmux.a libdav1d.a libvpx.a libopus.a; do
+  for archive in libx264.a libSvtAv1Enc.a libwebp.a libwebpmux.a libdav1d.a libvpx.a libopus.a libxml2.a; do
     if [ ! -f "$prefix/lib/$archive" ]; then
       echo "[ffmpeg-min] FATAL(BUG-1443): 缺静态库 $prefix/lib/$archive" >&2
       ls -la "$prefix/lib" >&2 || true
@@ -265,7 +290,23 @@ if [ ! -d "$SRC/.git" ]; then
 fi
 cd "$SRC"
 
-# 组件白名单（覆盖 Hibiki 四类命令；按需在调优清单里增删）。
+# BUG-3504：互联 host 的自签 https 流按 TOFU 指纹放行，制卡给 ffmpeg 传
+# `-tls_pin_sha256 <指纹>`（desktop_audio_clipper.dart ffmpegRemoteInputArgs）。这个选项
+# 来自本仓补丁，移动端 ffmpeg-kit 早已打上（BUG-891），桌面 ffmpeg-min 却从没打过 →
+# 桌面作为客户端从互联 host 制卡时 ffmpeg 直接 "Unrecognized option 'tls_pin_sha256'"，
+# 截图 / 动图 / 片段全挂。补丁覆盖 schannel / securetransport / gnutls / openssl 四个后端；
+# 这份是对 n7.1 上下文的移植（逻辑与 third_party/ffmpeg_kit_flutter/patches/ 那份一致）。
+# 已打过（重复跑本脚本复用 $SRC）就跳过，打不上就当场失败——静默跳过会产出不认该
+# 选项的二进制，正是本条要堵的洞。
+TLS_PIN_PATCH="$SCRIPT_DIR/patches/ffmpeg-n7.1-tls-pin-sha256.patch"
+if git apply --reverse --check "$TLS_PIN_PATCH" 2>/dev/null; then
+  echo "[ffmpeg-min] tls pin patch already applied"
+else
+  git apply "$TLS_PIN_PATCH"
+  echo "[ffmpeg-min] applied $(basename "$TLS_PIN_PATCH")"
+fi
+
+# 组件白名单（覆盖 Fushi 四类命令；按需在调优清单里增删）。
 # image2/image2pipe：有声书片段导出（TODO-945 M4 / TODO-1096）用 `-loop 1 -i clip.png`
 # 把单张 PNG 当循环视频流喂进合成命令。`-loop` 是 image2 demuxer 的输入选项，读命名 PNG
 # 文件走 image2；若改走管道则用 image2pipe——两者都加，零体积成本、LGPL。漏 image2 会让
@@ -281,7 +322,23 @@ cd "$SRC"
 # `-safe` 是 concat demuxer 的私有选项：缺 concat 时 ffmpeg 报 "Unrecognized option
 # 'safe'" 直接退出，gal 片段（WebM / MP4 两档）在正式版全挂、只能靠调用方降级成动图。
 # 列表里的每一帧再经上面的 image2（按扩展名）+ mjpeg 解码器读入。LGPL，体积增量近零。
-DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls,concat"
+# aiff：macOS 把音频 CD 挂载成 `/Volumes/<盘名>/N Audio Track.aiff`（cddafs），抓轨导入
+# （BUG-3312，audio_cd_ripper.dart）要把它读出来转 FLAC；样本 PCM 是大端 pcm_s16be，
+# 解码器早已在 DECODERS 里。缺它 ffmpeg 报 "Invalid data found when processing input"。
+# ffmetadata：有声书工作室导出 M4B 时把章节表 + 书名/作者等元数据写成 `;FFMETADATA1`
+# 文本，作为第二路输入 `-i chapters.txt -map_metadata 1 -map_chapters 1` 喂给封装。
+# 缺它这个文本文件无从识别 → AVERROR_INVALIDDATA，成书没有章节。纯文本解析，LGPL，零依赖。
+# dash：在线视频源除了 `.m3u8` 还有给 MPEG-DASH 清单 `manifest.mpd` 的（如 AnimeOnsen）。
+# 与 BUG-2642 同一形态：播放走 libmpv 的完整 FFmpeg 能放，制卡的句子音频 / 封面走本
+# 捆绑 ffmpeg，缺 dash demuxer 时清单被当成未知格式 → AVERROR_INVALIDDATA，制卡中止在
+# `required audio missing`（BUG-3503）。FFmpeg 的 dash demuxer 硬依赖 libxml2（下方
+# --enable-libxml2，MIT 许可）；分片走已开启的 mov(fMP4) / webm(matroska) demuxer 与
+# http/https 协议。⚠️ CI 需装 libxml2 开发包（MSYS2: mingw-w64-x86_64-libxml2；apt:
+# libxml2-dev）；macOS 在 build_darwin_static_deps 里静态自编。
+# 封面（`-i cover.jpg|png -map N:v -c:v copy -disposition:v attached_pic`）不需要新增
+# 组件：image2 demuxer（按扩展名）+ mjpeg/png parser/decoder 早已在表内，mp4/ipod 的
+# movenc 把 mjpeg/png 附图写成 `covr` atom。
+DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls,concat,aiff,ffmetadata,dash"
 # libdav1d（而不是原生 `av1`）：FFmpeg 自带的 `av1` 解码器**只是 hwaccel 挂钩壳**
 # （libavcodec/av1dec.c，allcodecs.c 里注明 "hwaccel hooks only, so prefer external
 # decoders"），本 build `--disable-everything` 后一个 hwaccel 都没有，于是任何 AV1 源
@@ -293,7 +350,19 @@ DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac
 # 之后 `av1` 那个壳就没有存在意义，从清单里去掉，避免再有人以为 AV1 已经覆盖。
 # ⚠️ CI 构建环境需装 dav1d 开发包（MSYS2: mingw-w64-x86_64-dav1d；Ubuntu: libdav1d-dev；
 # macOS 在 build_darwin_static_deps 里从源码静态编，需要 meson + ninja + nasm）。
-DECODERS="h264,hevc,libdav1d,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_bluray,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text"
+# BUG-3504 补全（用完整 ffmpeg 生成样本、拿入库 ffmpeg-min 照制卡命令实跑出来的缺口，
+# 对应容器都在导入白名单 kVideoExtensions / audioExtensions 或 galgame 语音资源里；
+# 全是 FFmpeg 原生解码器，零外部依赖、LGPL）：
+#   aac_latm：日本 ISDB / 欧洲 DVB 电视录制的 .ts/.m2ts 常把 AAC 封成 LATM（parser 早在
+#     PARSERS，解码器一直没开）→ 句子音频 "no decoder found for: aac_latm"。
+#   adpcm_ms / adpcm_ima_wav / adpcm_yamaha / adpcm_g726(le) / gsm(_ms)：.wav 里的压缩
+#     PCM；galgame 语音资源（.wav）大量用 MS/IMA ADPCM。adpcm_ima_qt：.mov 的 IMA4 音轨。
+#   adpcm_swf / nellymoser / vp6 / vp6a / vp6f：老 .flv（Flash 时代）的音视频轨。
+#   prores / dnxhd / qtrle / cinepak / svq1 / svq3：剪辑软件导出 / 录屏 / 老 QuickTime 的 .mov。
+#   ffv1 / utvideo / huffyuv / ffvhuff / msrle / msvideo1 / rawvideo：录屏与无损存档常用的
+#     .mkv / .avi 视频轨（缺了截帧 / 动图 / 片段全挂，句子音频照常）。
+#   h263：.3gp / 老 .flv / .avi 的 H.263 轨（此前靠别的解码器连带编入，显式声明免得漂）。
+DECODERS="h264,hevc,libdav1d,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_bluray,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text,aac_latm,nellymoser,adpcm_ms,adpcm_ima_wav,adpcm_ima_qt,adpcm_swf,adpcm_yamaha,adpcm_g726,adpcm_g726le,gsm,gsm_ms,prores,dnxhd,qtrle,cinepak,ffv1,utvideo,huffyuv,ffvhuff,vp6,vp6a,vp6f,svq1,svq3,msrle,msvideo1,rawvideo,h263"
 # movtext：视频片段导出把「用户正在看的字幕」封成软字幕流（`-c:s mov_text`）。片段
 # 输出恒 .mp4（BUG-917），而 ISO-BMFF 只认 3GPP Timed Text = movtext 编码器；缺它
 # ffmpeg 直接 "Unknown encoder 'mov_text'"，字幕封装在桌面全挂（导出会自动降级成
@@ -311,7 +380,9 @@ DECODERS="h264,hevc,libdav1d,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,r
 # 一族能内嵌；AV1 片段（libsvtav1）同样配 Opus 音轨。二者 BSD 许可。
 # ⚠️ CI 需装 libvpx / opus 开发包（MSYS2: mingw-w64-x86_64-{libvpx,opus}；apt: libvpx-dev
 # libopus-dev）；macOS 在 build_darwin_static_deps 里静态自编。
-ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,libopus,ass,ssa,subrip,webvtt,movtext,pcm_s16le"
+# flac：音频 CD 抓轨（BUG-3312）把 CDDA / AIFF 无损存成 FLAC（体积约为 WAV 的一半），
+# 与 MUXERS 里的 flac 成对；FFmpeg 原生编码器，LGPL，体积增量很小。
+ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,libopus,ass,ssa,subrip,webvtt,movtext,pcm_s16le,flac"
 # pcm_s16le：能量探针（audio_energy_probe.dart，TODO-701）用 `-f null -`；null muxer 的
 # 默认音频编码器是 pcm_s16le，缺它会报 "Default encoder for format null (codec pcm_s16le)
 # is probably disabled ... Encoder not found"，探针在三平台全挂（TODO-1096）。
@@ -330,7 +401,23 @@ ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,li
 # 设计的形态，也是 Jellyfin / Emby 给 mpv 客户端的标准形态。h264 进 TS 由已编入的
 # h264_mp4toannexb bsf 转 Annex B（见 BSFS）。
 # webm：音画同步片段的 WebM 容器（VP9/AV1 + Opus）。它与 matroska 共用 matroskaenc。
-MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts"
+# sup：图形字幕整轨 OCR（graphic_subtitle_track_ocr.dart）把 PGS 轨 `-c copy -f sup`
+# 原样抽成 `.sup` 段流再由 Dart 解析。supenc.c 只是给每段补 `PG`+PTS/DTS 头，LGPL、
+# 几十行；缺它 ffmpeg 报 "Requested output format 'sup' is not known"（exit -22）。
+# flac：音频 CD 抓轨输出 `Track NN.flac`（BUG-3312），缺它报 "Requested output format
+# 'flac' is not known"。
+# ipod：有声书工作室导出 `.m4b`（ffmpeg 按 .m4a/.m4b 扩展名自动选 ipod，也可 `-f ipod`）。
+# 与 mov/mp4 同一个 movenc，体积增量近零；区别在模式位：ipod 模式写 `M4B ` brand +
+# iTunes `ilst` 元数据，并且（与 mov 一样）生成 QuickTime 文本章节轨——Apple Books /
+# iOS 播放器认的是这条章节轨，mp4 模式只写 Nero `chpl`。
+# ⚠️ 入库二进制重编之前桌面上仍没有 ipod：BUG-460 / TODO-1217 那几条「桌面句子音频
+# 写 .aac 不写 .m4a」的约束继续成立，别因为配方里有了 ipod 就把它们改回 .m4a。
+# pcm_s16le：上游 fushi_asr_core 抽 ASR 用的裸 PCM（`-f s16le`；格式名是 s16le，configure
+# 的组件名却是 pcm_s16le，写成 s16le 会被静默忽略——实测踩过），缺它时每次转录都先白跑
+# 一遍失败再回退 mov（BUG-3504）。
+# 刻意**不**开 matroska muxer：片段导出恒写 .mp4 / .webm（BUG-917，守卫
+# fushi/test/build/ffmpeg_min_clip_muxer_guard_test.dart 钉着「没有 matroska」这一事实）。
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts,sup,flac,ipod,pcm_s16le"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +
@@ -355,7 +442,16 @@ MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts"
 #   时一致。移动端自编 ffmpeg-kit（完整内建滤镜集）本就带；桌面精简构建漏掉它会让
 #   倍速制卡整条 ffmpeg 失败（"No such filter: 'atempo'"）→ 卡片没句子音频。
 # Blu-ray MPLS concat input must discard packets decoded outside each IN/OUT.
-FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,select,aselect,trim,atrim,pad,asetnsamples,astats,ametadata,overlay,atempo"
+# loudnorm / ebur128 / volume / alimiter：有声书工作室成书的响度处理。TTS 各角色/
+#   各引擎输出响度参差，成书前按 EBU R128（有声书常用 -18~-16 LUFS）归一：
+#   loudnorm 两遍（第一遍 print_format=json 测量、第二遍 measured_* 线性归一），
+#   ebur128 只做测量（质检报告），volume 做角色间增益微调，alimiter 兜真峰值。
+#   全是内建 filter，零外部库；loudnorm 内部的 R128 计算（libavfilter/ebur128.c）随
+#   filter 一起编进来。loudnorm 输出固定 192 kHz，下游靠已在表内的 aresample 降回。
+# apad / anullsrc：章节间/段落间插静音（apad 尾补、anullsrc 在 -filter_complex 里做
+#   静音源）。只开 filter、不开 lavfi 输入设备：`-f lavfi` 要拖进 avdevice 链路，而
+#   filter_complex 里直接写 anullsrc 已经够用。
+FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,select,aselect,trim,atrim,pad,asetnsamples,astats,ametadata,overlay,atempo,loudnorm,ebur128,volume,alimiter,apad,anullsrc"
 PARSERS="h264,hevc,av1,vp9,vp8,mpeg4video,mpegvideo,vc1,aac,aac_latm,ac3,dca,mlp,mpegaudio,vorbis,opus,flac,mjpeg,png,webp"
 BSFS="aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb"
 # http/https/tcp/tls/crypto：YouTube/远端制卡（TODO-1214）的 http(s) googlevideo
@@ -376,9 +472,11 @@ case "$(uname -s)" in
   # Windows：静态链接，把 libwinpthread/zlib/libgcc/x264 等折进 exe → 发布单文件，
   # 不依赖 MSYS2 mingw64 运行时 DLL（用户机没有 MSYS2）。schannel 是系统 secur32，无外链。
   MINGW*|MSYS*)
+    # -lcrypt32：证书钉扎补丁在 schannel 里取对端证书后要 CertFreeCertificateContext
+    # （crypt32），FFmpeg configure 只给 schannel 链 -lsecur32。
     # Windows-only galgame 卡可能捕获 RIFF/XWMA。它需要专用 xwma demuxer；只有 wav
     # demuxer + WMA decoder 不足以打开该容器。输出仍走现有 AAC/ADTS 链。
-    EXTRA_CONFIG=(--target-os=mingw32 --arch=x86_64 --extra-ldflags=-static --pkg-config-flags=--static --enable-schannel --enable-demuxer=xwma)
+    EXTRA_CONFIG=(--target-os=mingw32 --arch=x86_64 --extra-ldflags=-static --pkg-config-flags=--static --enable-schannel --enable-demuxer=xwma --extra-libs=-lcrypt32)
     ;;
   # macOS（BUG-1443）：本分支曾只传 --enable-securetransport，于是 Homebrew 装的
   # x264 / svt-av1 / webp 全部以**动态依赖**留在产物里：
@@ -425,7 +523,7 @@ esac
   --enable-ffmpeg \
   --enable-small --enable-zlib \
   --enable-gpl --enable-libx264 --enable-libsvtav1 --enable-libwebp --enable-libdav1d \
-  --enable-libvpx --enable-libopus \
+  --enable-libvpx --enable-libopus --enable-libxml2 \
   --enable-avcodec --enable-avformat --enable-avfilter \
   --enable-swscale --enable-swresample \
   --enable-demuxer="$DEMUXERS" \

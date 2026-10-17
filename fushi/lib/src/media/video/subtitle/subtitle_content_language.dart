@@ -181,3 +181,27 @@ SubtitleContentLanguage detectSubtitleContentLanguage(String text) {
   if (totalLatin >= 30) return SubtitleContentLanguage.english;
   return SubtitleContentLanguage.unknown;
 }
+
+/// 正文检测结果是否**正面否定**「这是 [wanted] 语言的字幕」（BUG-3069）。
+///
+/// [wanted] 是字幕域语言码（`normalizeSubtitleLanguageCode` 的值域）。检测器只认得
+/// 假名 / 汉字 / 拉丁字母三类，所以：
+/// - 检测成日语 / 中文 / 中日双语是硬证据：与 [wanted] 不符即否定（双语对 `ja` 与
+///   `zh` 都算符合——两条轨都在）；
+/// - 检测成「英语」其实只是「拉丁字母为主」：法语、印尼语也长这样。它只能否定
+///   中日韩这类非拉丁文字的 [wanted]；
+/// - 检测不出（[SubtitleContentLanguage.unknown]）不否定任何东西——**不猜**。
+bool subtitleContentContradictsLanguage(
+  SubtitleContentLanguage detected,
+  String wanted,
+) =>
+    switch (detected) {
+      SubtitleContentLanguage.japanese => wanted != 'ja',
+      SubtitleContentLanguage.simplifiedChinese ||
+      SubtitleContentLanguage.traditionalChinese =>
+        wanted != 'zh',
+      SubtitleContentLanguage.bilingualJaZh => wanted != 'ja' && wanted != 'zh',
+      SubtitleContentLanguage.english =>
+        const <String>{'ja', 'zh', 'ko'}.contains(wanted),
+      SubtitleContentLanguage.unknown => false,
+    };

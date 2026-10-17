@@ -180,6 +180,27 @@ const int kMediaServerRowLimit = 20;
 /// 同量级：网格卡最宽约 240 逻辑像素 × 3 倍 dpr。
 const int kMediaServerCoverMaxWidth = 720;
 
+/// 可选能力：「查看全部」按**库类型**列一个媒体库的作品（BUG-3198）。
+///
+/// [MediaServerBrowser.listChildren] 列的是库的**直接子级**——Emby 的库下面挂的是
+/// 库路径对应的物理文件夹（一个库配了两条路径就是两个「动漫」文件夹），用户点
+/// 「查看全部」看到的是文件夹而不是剧。Emby 官方客户端与 Jellyfin web 的做法是按
+/// 库类型递归取作品：剧集库递归取 Series、电影库递归取 Movie；混合库没有单一作品
+/// 类型，仍按文件夹树浏览。按文件夹浏览的入口保留（网格页头的切换）。
+///
+/// 能力判据沿用本仓口径 `browser is MediaServerLibraryItems`；不实现它的服务器
+/// （Plex 的分区本来就直接是作品）照旧走 [MediaServerBrowser.listChildren]。
+abstract interface class MediaServerLibraryItems {
+  /// 列 [library] 的作品（翻页与 [MediaServerBrowser.listChildren] 同口径：只认
+  /// [MediaServerPage.nextStartIndex]）。混合库等价于 `listChildren(library.id)`。
+  Future<MediaServerPage> listLibraryItems({
+    required MediaServerLibrary library,
+    int startIndex = 0,
+    int limit = kMediaServerPageSize,
+    MediaServerSort sort = MediaServerSort.name,
+  });
+}
+
 /// 服务器上的一个媒体库（Jellyfin「视图」）。
 class MediaServerLibrary {
   const MediaServerLibrary({
@@ -254,6 +275,7 @@ class MediaServerItem {
     this.communityRating,
     this.genres = const <String>[],
     this.hasSubtitle = false,
+    this.versions = const <MediaServerVersion>[],
   });
 
   final String id;
@@ -319,6 +341,13 @@ class MediaServerItem {
   /// 服务器粗粒度 `HasSubtitles`（图形轨也算 true；精确判断在播放页按详情取）。
   final bool hasSubtitle;
 
+  /// 可播叶子的全部版本（Emby / Jellyfin `MediaSources[]`：同一部电影 / 同一集挂了
+  /// 1080p 与 4K 两个文件时就有两条）。只有 [MediaServerBrowser.itemDetail] 填它，
+  /// 清单条目恒空（BUG-1891：清单不带 MediaSources）。多于一条时详情页给「版本」
+  /// 选择，选中的经 [rememberMediaServerVersion] 记住、播放取流时按它带
+  /// `MediaSourceId`。
+  final List<MediaServerVersion> versions;
+
   bool get isPlayable =>
       type == MediaServerItemType.movie || type == MediaServerItemType.episode;
 
@@ -365,4 +394,238 @@ class MediaServerPage {
   /// 条目在服务器那边照样占着序号，拿 `startIndex + items.length` 会把下一页的
   /// 前几条重复取回来。
   int get nextStartIndex => _nextStartIndex ?? startIndex + items.length;
+}
+
+/// 一个可播条目的一个版本（Emby / Jellyfin 的一条 `MediaSource`）。
+class MediaServerVersion {
+  const MediaServerVersion({
+    required this.id,
+    this.name,
+    this.container,
+    this.sizeBytes,
+    this.bitrate,
+    this.width,
+    this.height,
+    this.videoCodec,
+    this.videoRange,
+    this.audioTracks = const <MediaServerStreamTrack>[],
+    this.subtitleTracks = const <MediaServerStreamTrack>[],
+  });
+
+  /// MediaSource id（取流时作 `MediaSourceId`；与条目 id 互相独立）。
+  final String id;
+
+  /// 服务器给的版本名（Emby 多版本时通常是文件名去掉公共前缀后的部分，如
+  /// `1080p` / `4K HDR`）。
+  final String? name;
+  final String? container;
+  final int? sizeBytes;
+
+  /// 总码率（bps）。
+  final int? bitrate;
+  final int? width;
+  final int? height;
+  final String? videoCodec;
+
+  /// `SDR` / `HDR10` / `DOVI` …；SDR 不显示。
+  final String? videoRange;
+  final List<MediaServerStreamTrack> audioTracks;
+  final List<MediaServerStreamTrack> subtitleTracks;
+
+  /// 分辨率档：按宽度判（宽银幕 1920×800 仍是 1080p），宽度缺失再看高度。
+  String? get resolutionLabel {
+    final int? w = width;
+    final int? h = height;
+    if (w != null && w > 0) {
+      if (w >= 3800) return '2160p';
+      if (w >= 2500) return '1440p';
+      if (w >= 1900) return '1080p';
+      if (w >= 1260) return '720p';
+      if (w >= 950) return '540p';
+      if (h != null && h > 0) return '${h}p';
+      return '480p';
+    }
+    return h != null && h > 0 ? '${h}p' : null;
+  }
+
+  /// 规格摘要：`1080p H264 · 1.9 GB · 11.2 Mbps`（与主流 Emby 客户端版本菜单同
+  /// 口径，纯数字与编码名，不进 i18n）。缺项省略。
+  String get qualitySummary {
+    final List<String> head = <String>[
+      ?resolutionLabel,
+      if (videoCodec case final String codec when codec.isNotEmpty)
+        codec.toUpperCase(),
+      if (videoRange case final String range
+          when range.isNotEmpty && range.toUpperCase() != 'SDR')
+        range,
+    ];
+    return <String>[
+      if (head.isNotEmpty) head.join(' '),
+      if (sizeBytes case final int size when size > 0)
+        formatMediaServerBytes(size),
+      if (bitrate case final int rate when rate > 0)
+        formatMediaServerBitrate(rate),
+    ].join(' · ');
+  }
+
+  /// 菜单 / 胶囊的主文案：有版本名用版本名，否则用规格摘要。
+  String get title {
+    final String? n = name?.trim();
+    if (n != null && n.isNotEmpty) return n;
+    final String summary = qualitySummary;
+    return summary.isEmpty ? id : summary;
+  }
+
+  /// 「同一部剧换一集也选同类版本」的匹配签名（分辨率 + 编码 + 动态范围）。
+  String get signature => <String>[
+    resolutionLabel ?? '',
+    (videoCodec ?? '').toLowerCase(),
+    (videoRange ?? '').toLowerCase(),
+  ].join('|');
+}
+
+/// 一个版本里的一条音轨 / 字幕轨（`MediaStreams[]`）。
+class MediaServerStreamTrack {
+  const MediaServerStreamTrack({
+    required this.index,
+    this.displayTitle,
+    this.language,
+    this.codec,
+    this.isDefault = false,
+    this.isExternal = false,
+  });
+
+  /// 服务器全局流号（`MediaStreams[].Index`）。
+  final int index;
+
+  /// 服务器拼好的展示名（`DisplayTitle`，如 `Japanese AAC stereo (默认)`）。
+  final String? displayTitle;
+  final String? language;
+  final String? codec;
+  final bool isDefault;
+  final bool isExternal;
+
+  String get label {
+    final String? title = displayTitle?.trim();
+    if (title != null && title.isNotEmpty) return title;
+    return <String>[
+      if (language case final String l when l.isNotEmpty) l,
+      if (codec case final String c when c.isNotEmpty) c.toUpperCase(),
+    ].join(' ');
+  }
+}
+
+/// 版本的单行文案（播放页版本菜单）：`版本名 · 1080p H264 · 1.9 GB · 11.2 Mbps`；
+/// 没有版本名只给规格摘要。
+String mediaServerVersionLabel(MediaServerVersion version) {
+  final String title = version.title;
+  final String summary = version.qualitySummary;
+  if (summary.isEmpty || summary == title) return title;
+  return '$title · $summary';
+}
+
+/// `1.9 GB` / `850 MB`（1024 进制，与 Emby 客户端同口径）。
+String formatMediaServerBytes(int bytes) {
+  const int mib = 1024 * 1024;
+  const int gib = 1024 * mib;
+  if (bytes >= gib) return '${(bytes / gib).toStringAsFixed(1)} GB';
+  if (bytes >= mib) return '${(bytes / mib).round()} MB';
+  return '${(bytes / 1024).round()} KB';
+}
+
+/// `11.2 Mbps` / `640 kbps`。
+String formatMediaServerBitrate(int bitsPerSecond) {
+  if (bitsPerSecond >= 1000000) {
+    return '${(bitsPerSecond / 1000000).toStringAsFixed(1)} Mbps';
+  }
+  return '${(bitsPerSecond / 1000).round()} kbps';
+}
+
+/// 「同一条目多版本选哪个」的记忆存储（键 → 值的字符串 KV）。
+///
+/// 进程级装配点：缺省是进程内 map（测试 / 弹窗入口），主进程在偏好装载时
+/// （`PreferencesRepository.loadFromDb`）换成落偏好表的实现，重启后仍记得。
+abstract interface class MediaServerVersionMemory {
+  String? read(String key);
+  void write(String key, String value);
+}
+
+class InMemoryMediaServerVersionMemory implements MediaServerVersionMemory {
+  final Map<String, String> _values = <String, String>{};
+
+  @override
+  String? read(String key) => _values[key];
+
+  @override
+  void write(String key, String value) => _values[key] = value;
+}
+
+/// 全局装配点（见 [MediaServerVersionMemory]）。
+MediaServerVersionMemory mediaServerVersionMemory =
+    InMemoryMediaServerVersionMemory();
+
+String _versionItemKey(String serverId, String itemId) =>
+    '$serverId|item|$itemId';
+
+String _versionSeriesKey(String serverId, String seriesId) =>
+    '$serverId|series|$seriesId';
+
+/// 记住用户给 [itemId] 选的版本；同时按剧记住签名，这部剧的其它集没单独选过时
+/// 优先挑同名 / 同规格的版本（双版本剧不用每集重选）。
+void rememberMediaServerVersion({
+  required String serverId,
+  required String itemId,
+  required String? seriesId,
+  required MediaServerVersion version,
+}) {
+  mediaServerVersionMemory.write(_versionItemKey(serverId, itemId), version.id);
+  if (seriesId != null && seriesId.isNotEmpty) {
+    mediaServerVersionMemory.write(
+      _versionSeriesKey(serverId, seriesId),
+      '${version.signature}\n${version.name ?? ''}',
+    );
+  }
+}
+
+/// 该条目此刻会播的版本在 [versions] 里的下标：本条目记住的选择 > 同剧记住的
+/// 同名版本 > 同剧记住的同规格版本 > 0（服务器默认的第一条）。[versions] 为空
+/// 返回 -1。
+int resolveMediaServerVersionIndex({
+  required String serverId,
+  required String itemId,
+  required String? seriesId,
+  required List<MediaServerVersion> versions,
+}) {
+  if (versions.isEmpty) return -1;
+  if (versions.length == 1) return 0;
+  final String? pinned = mediaServerVersionMemory.read(
+    _versionItemKey(serverId, itemId),
+  );
+  if (pinned != null) {
+    final int index = versions.indexWhere(
+      (MediaServerVersion v) => v.id == pinned,
+    );
+    if (index >= 0) return index;
+  }
+  if (seriesId != null && seriesId.isNotEmpty) {
+    final String? raw = mediaServerVersionMemory.read(
+      _versionSeriesKey(serverId, seriesId),
+    );
+    if (raw != null) {
+      final int split = raw.indexOf('\n');
+      final String signature = split < 0 ? raw : raw.substring(0, split);
+      final String name = split < 0 ? '' : raw.substring(split + 1);
+      if (name.isNotEmpty) {
+        final int byName = versions.indexWhere(
+          (MediaServerVersion v) => v.name == name,
+        );
+        if (byName >= 0) return byName;
+      }
+      final int bySignature = versions.indexWhere(
+        (MediaServerVersion v) => v.signature == signature,
+      );
+      if (bySignature >= 0) return bySignature;
+    }
+  }
+  return 0;
 }

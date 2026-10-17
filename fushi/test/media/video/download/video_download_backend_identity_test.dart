@@ -18,7 +18,11 @@ void main() {
         isA<VideoDownloadBackendUnavailable>().having(
           (VideoDownloadBackendUnavailable error) => error.message,
           'message',
-          contains('built-in download engine runtime is missing'),
+          allOf(
+            contains('built-in download engine runtime could not be loaded'),
+            // BUG-3284：Android / macOS / Linux 也走这条，不能指向 Windows。
+            isNot(contains('Windows')),
+          ),
         ),
       ),
     );

@@ -229,6 +229,45 @@ void main() {
     });
   });
 
+  group('decodeEdlSources', () {
+    test('与 buildBlurayEdlUri 往返：非 ASCII、逗号、分号、URL 查询串都不歧义', () {
+      final List<String> sources = <String>[
+        r'D:\映画,a;b\BDMV\STREAM\00001.m2ts',
+        'http://h:1/api/library/videos/d/bdclip.m2ts?token=t&n=1',
+      ];
+      expect(
+        decodeEdlSources(
+          buildBlurayEdlUri(<BlurayEdlSegment>[
+            for (final String s in sources)
+              (source: s, inTimeTicks: 468000, durationTicks: 54000),
+          ]),
+        ),
+        sources,
+      );
+    });
+
+    test('mapEdlSources 只改来源，起止与 key=value 选项按原字节保留', () {
+      expect(
+        mapEdlSources(
+          'edl://a.mkv,1,2,title=x;%5%b.mkv,start=3',
+          (String s) => 'new-$s',
+        ),
+        'edl://%9%new-a.mkv,1,2,title=x;%9%new-b.mkv,start=3',
+      );
+      expect(mapEdlSources('http://h/x', (String s) => 'y'), 'http://h/x');
+      // 长度前缀坏了：不交半截改写的 EDL。
+      expect(mapEdlSources('edl://%99%a', (String s) => 'y'), 'edl://%99%a');
+    });
+
+    test('不带长度前缀的条目与非 EDL', () {
+      expect(decodeEdlSources('edl://a.mkv,1,2;b.mkv'), <String>[
+        'a.mkv',
+        'b.mkv',
+      ]);
+      expect(decodeEdlSources('http://h/x.m2ts'), isEmpty);
+    });
+  });
+
   group('blurayDiscRootForPlaylistPath', () {
     test('认 BDMV/PLAYLIST 下的 mpls', () {
       expect(

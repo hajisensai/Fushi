@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/illustrations_viewer_page.dart';
@@ -38,7 +38,7 @@ void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    extractDir = Directory.systemTemp.createTempSync('hibiki_illust_unread');
+    extractDir = Directory.systemTemp.createTempSync('fushi_illust_unread');
     tempDirs.add(extractDir);
 
     writeText('META-INF/container.xml', '''

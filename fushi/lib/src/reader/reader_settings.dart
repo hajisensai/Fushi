@@ -4,7 +4,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
+import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
+    show FontFaceWeight, readFontFaceWeightSync;
 import 'package:fushi/src/reader/font_catalog.dart';
+import 'package:fushi/src/reader/highlight_stroke_style.dart';
+import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
@@ -13,7 +17,8 @@ import 'package:fushi_engine/epub/reader_resource_host.dart' as engine_host;
 
 /// The independent font targets a user can configure (TODO-049 / TODO-864):
 /// 软件系统字体 ([appUi]) / 小说正文字体 ([body]) / 词典字体 ([dictionary]) /
-/// 视频字幕字体 ([videoSubtitle]) / 游戏查词窗口字体 ([gameLookup]). Each maps to its own persisted
+/// 视频字幕字体 ([videoSubtitle]) / 游戏查词窗口字体 ([gameLookup]) /
+/// 有声书悬浮字幕字体 ([floatingLyric]). Each maps to its own persisted
 /// `[{name,path,enabled}]` list; see [ReaderSettings.fontKeyForTarget].
 enum FontTarget {
   /// App-wide UI (ThemeData) font — menus, buttons, settings, etc.
@@ -26,7 +31,7 @@ enum FontTarget {
   dictionary,
 
   /// Video subtitle font (Flutter `VideoSubtitleOverlay` `TextStyle.fontFamily`,
-  /// not libmpv — Hibiki renders text subtitles in the Flutter layer). New in
+  /// not libmpv — Fushi renders text subtitles in the Flutter layer). New in
   /// TODO-864.
   videoSubtitle,
 
@@ -44,19 +49,34 @@ enum FontTarget {
   /// .resolveForNativeOverlay`）；缺字回退靠 native 追加的系统字体集，
   /// **不是**用户列表里的第二条。语义与 [appUi] 的整链回退不同。
   gameLookup,
+
+  /// Windows 有声书**悬浮字幕**（native 分层窗 `FloatingLyricWindow`，与
+  /// [gameLookup] 同一个原生窗类，DirectWrite 自绘）的字体。
+  ///
+  /// 语义、平台可用性（只 Windows）与导入格式限制都与 [gameLookup] 相同：
+  /// native 只吃**第一条可用**的 family/file，且只认 `.ttf/.otf/.ttc`；
+  /// 缺字回退靠 native 追加的系统字体集。
+  floatingLyric,
+
+  /// 复习（SRS）「Fushi 卡片」卡面的字体：卡面是 WebView 渲染，整条字体链按
+  /// 字形回落，语义与 [body]（阅读器正文）相同——不是 native 单字体表面。
+  /// 五平台通用。
+  srsCard
 }
 
 /// 这个用途在当前平台**是否真有消费端**。
 ///
-/// [FontTarget.gameLookup] 只有 Windows 有 native 消费端（分层窗 DirectWrite），
+/// [FontTarget.gameLookup] / [FontTarget.floatingLyric] 只有 Windows 有 native
+/// 消费端（分层窗 DirectWrite），
 /// 其余平台勾上等于写一个永远没人读的偏好键——UI 必须据此隐藏，否则用户会以为
 /// 自己已经设好了。其余用途五平台通用。
 bool isFontTargetAvailableOnPlatform(FontTarget target) => switch (target) {
-      FontTarget.gameLookup => Platform.isWindows,
+      FontTarget.gameLookup || FontTarget.floatingLyric => Platform.isWindows,
       FontTarget.appUi ||
       FontTarget.body ||
       FontTarget.dictionary ||
-      FontTarget.videoSubtitle =>
+      FontTarget.videoSubtitle ||
+      FontTarget.srsCard =>
         true,
     };
 
@@ -207,6 +227,18 @@ class ReaderSettings {
   /// 清除自定义歌词色 → 回退跟随主题（哨兵 0）。
   Future<void> clearLyricsTextColor() => _set<int>('lyrics_text_color', 0);
 
+  /// 歌词模式当前行高亮色（BUG：歌词模式高亮颜色无法修改）。ARGB int；`0` 哨兵 =
+  /// 未设置，跟随播放器设计系统（MD3 primary / Apple 白）。覆盖层主题下当前行色
+  /// 只认 CSS 变量 `--ly-current`，此偏好经 `LyricsModeHtml.themeVars` 的
+  /// `currentColorOverride` 写进去，是用户改歌词高亮色的唯一通路。
+  int get lyricsHighlightColor => _get<int>('lyrics_highlight_color', 0);
+  Future<void> setLyricsHighlightColor(int v) =>
+      _set<int>('lyrics_highlight_color', v);
+
+  /// 清除自定义歌词高亮色 → 回退跟随播放器主题（哨兵 0）。
+  Future<void> clearLyricsHighlightColor() =>
+      _set<int>('lyrics_highlight_color', 0);
+
   double get lyricsMarginTop => _get<double>('lyrics_margin_top', 0);
   Future<void> setLyricsMarginTop(double v) =>
       _set<double>('lyrics_margin_top', v);
@@ -235,6 +267,89 @@ class ReaderSettings {
   /// hover / 点击显形。
   bool get lyricsBlur => _get<bool>('lyrics_blur', false);
   Future<void> setLyricsBlur(bool v) => _set<bool>('lyrics_blur', v);
+
+  /// 歌词模式当前行的逐字跟读渐变（按播放进度从已读色扫到未读色）。默认 `true`
+  /// = 历史行为；关掉后当前行整行用当前行色，不扫过（封面 / 背景与当前行同色系时
+  /// 渐变看久了刺眼）。
+  bool get lyricsSweep => _get<bool>('lyrics_sweep', true);
+  Future<void> setLyricsSweep(bool v) => _set<bool>('lyrics_sweep', v);
+
+  /// 歌词模式在两句之间灰显没被任何字幕认领的原文（朗读者跳读 / 转录没对上）。
+  /// 默认 `true`；纯显示，不影响高亮、计时、统计。
+  bool get lyricsShowSkippedText =>
+      _get<bool>('lyrics_show_skipped_text', true);
+  Future<void> setLyricsShowSkippedText(bool v) =>
+      _set<bool>('lyrics_show_skipped_text', v);
+
+  /// 歌词模式宽屏双栏左右互换（默认 `false` = 封面与播放卡在左、歌词在右）。
+  bool get lyricsPanelMirrored => _get<bool>('lyrics_panel_mirrored', false);
+  Future<void> setLyricsPanelMirrored(bool v) =>
+      _set<bool>('lyrics_panel_mirrored', v);
+
+  /// 有声书正文当前句是否铺底色。默认 `true` = 历史行为；关掉后只靠
+  /// [audioHighlightTextColor]（未设时用高亮色本身）给字上色、不加底色。
+  bool get audioHighlightBackground =>
+      _get<bool>('audio_highlight_background', true);
+  Future<void> setAudioHighlightBackground(bool v) =>
+      _set<bool>('audio_highlight_background', v);
+
+  /// 有声书正文当前句的文字颜色。ARGB int；`0` 哨兵 = 不改字色（跟随正文）。
+  int get audioHighlightTextColor => _get<int>('audio_highlight_text_color', 0);
+  Future<void> setAudioHighlightTextColor(int v) =>
+      _set<int>('audio_highlight_text_color', v);
+
+  /// 一类高亮的笔触配置：`<前缀>_style` / `_thickness` / `_opacity` / `_cover_ruby` /
+  /// `_roughness` / `_animate` 六个键，前缀见 [HighlightKind.prefPrefix]（收藏
+  /// `favorite_highlight`、查词 `lookup_highlight`、有声书 `audio_highlight`、搜索
+  /// `search_highlight`）。没写过的键取 [HighlightKind.defaults]。
+  HighlightStrokeConfig highlightStrokeConfig(HighlightKind kind) {
+    final String p = kind.prefPrefix;
+    final HighlightStrokeConfig d = kind.defaults;
+    return HighlightStrokeConfig(
+      style: HighlightStrokeStyle.fromWire(
+        _get<String>('${p}_style', d.style.wireName),
+      ),
+      thickness: _get<double>('${p}_thickness', d.thickness),
+      opacity: _get<double>('${p}_opacity', d.opacity),
+      coverRuby: _get<bool>('${p}_cover_ruby', d.coverRuby),
+      roughness: _get<double>('${p}_roughness', d.roughness),
+      animate: _get<bool>('${p}_animate', d.animate),
+    );
+  }
+
+  /// 写一类高亮的笔触配置（只写变了的键）。
+  Future<void> setHighlightStrokeConfig(
+    HighlightKind kind,
+    HighlightStrokeConfig next,
+  ) async {
+    final String p = kind.prefPrefix;
+    final HighlightStrokeConfig prev = highlightStrokeConfig(kind);
+    if (next.style != prev.style) {
+      await _set<String>('${p}_style', next.style.wireName);
+    }
+    if (next.thickness != prev.thickness) {
+      await _set<double>('${p}_thickness', next.thickness);
+    }
+    if (next.opacity != prev.opacity) {
+      await _set<double>('${p}_opacity', next.opacity);
+    }
+    if (next.coverRuby != prev.coverRuby) {
+      await _set<bool>('${p}_cover_ruby', next.coverRuby);
+    }
+    if (next.roughness != prev.roughness) {
+      await _set<double>('${p}_roughness', next.roughness);
+    }
+    if (next.animate != prev.animate) {
+      await _set<bool>('${p}_animate', next.animate);
+    }
+  }
+
+  /// 四类高亮的笔触配置（正文 CSS 生成器读它）。
+  Map<HighlightKind, HighlightStrokeConfig> get highlightStrokeConfigs =>
+      <HighlightKind, HighlightStrokeConfig>{
+        for (final HighlightKind kind in HighlightKind.values)
+          kind: highlightStrokeConfig(kind),
+      };
 
   double get lineHeight => _get<double>('line_height', 1.65);
   Future<void> setLineHeight(double v) => _set<double>('line_height', v);
@@ -379,6 +494,11 @@ class ReaderSettings {
 
   int get pageColumns => _get<int>('page_columns', 0);
   Future<void> setPageColumns(int v) => _set<int>('page_columns', v);
+
+  /// 「中缝折痕」显示风格：翻页模式一屏两栏时在两页之间画书脊阴影（见
+  /// [ReaderContentStyles.pageCreaseCss]）。默认关：不改变既有书面观感。
+  bool get pageCrease => _get<bool>('page_crease', false);
+  Future<void> setPageCrease(bool v) => _set<bool>('page_crease', v);
 
   /// `off`, `on`, or `auto`.
   ///
@@ -582,6 +702,45 @@ class ReaderSettings {
   Future<void> setWheelPageTurnInterval(int v) =>
       _set<int>('wheel_page_turn_interval', v);
 
+  // ── 翻页动画（只在翻页 / paginated 模式生效）────────────────────────
+  // 值域与降级规则唯一出处 page_turn_animation.dart（与漫画阅读器共用）；小说默认淡入淡出。
+
+  static const String pageTurnAnimationKey = 'page_turn_animation';
+  static const String pageTurnAnimationSpeedKey = 'page_turn_animation_speed';
+  static const String pageTurnFollowDragKey = 'page_turn_follow_drag';
+
+  /// 小说阅读器翻页效果的出厂默认（用户拍板：淡入淡出）。
+  static const PageTurnAnimation defaultPageTurnAnimation =
+      PageTurnAnimation.fade;
+  static const PageTurnAnimationSpeed defaultPageTurnAnimationSpeed =
+      PageTurnAnimationSpeed.normal;
+  static const bool defaultPageTurnFollowDrag = true;
+
+  /// 用户选的翻页效果（未经墨水屏 / 减弱动态效果降级，降级见
+  /// [effectivePageTurnAnimation]）。存字符串 key，未知值回落默认。
+  PageTurnAnimation get pageTurnAnimation => PageTurnAnimation.fromKey(
+    _cache[pageTurnAnimationKey]?.toString(),
+    fallback: defaultPageTurnAnimation,
+  );
+  Future<void> setPageTurnAnimation(PageTurnAnimation v) =>
+      _set<String>(pageTurnAnimationKey, v.key);
+
+  PageTurnAnimationSpeed get pageTurnAnimationSpeed {
+    final dynamic stored = _cache[pageTurnAnimationSpeedKey];
+    return stored == null
+        ? defaultPageTurnAnimationSpeed
+        : PageTurnAnimationSpeed.fromKey(stored.toString());
+  }
+
+  Future<void> setPageTurnAnimationSpeed(PageTurnAnimationSpeed v) =>
+      _set<String>(pageTurnAnimationSpeedKey, v.key);
+
+  /// 拖动跟手（只对平移 / 覆盖两种有位移的效果有意义）。
+  bool get pageTurnFollowDrag =>
+      _get<bool>(pageTurnFollowDragKey, defaultPageTurnFollowDrag);
+  Future<void> setPageTurnFollowDrag(bool v) =>
+      _set<bool>(pageTurnFollowDragKey, v);
+
   bool get highlightOnTap => _get<bool>('highlight_on_tap', true);
   Future<void> toggleHighlightOnTap() =>
       _set<bool>('highlight_on_tap', !highlightOnTap);
@@ -693,6 +852,14 @@ class ReaderSettings {
   /// Persistence key for the Windows galgame Hook text / lookup overlay font.
   static const String fontKeyGameLookup = 'game_lookup_fonts';
 
+  /// Persistence key for the Windows audiobook floating-subtitle overlay font.
+  /// Backs [FontTarget.floatingLyric].
+  static const String fontKeyFloatingLyric = 'floating_lyric_fonts';
+
+  /// Persistence key for the SRS "Fushi Card" card-face font chain.
+  /// Backs [FontTarget.srsCard].
+  static const String fontKeySrsCard = 'srs_card_fonts';
+
   /// Persistence key for the shared font catalog.
   static const String fontCatalogKey = 'font_catalog';
 
@@ -705,6 +872,8 @@ class ReaderSettings {
     fontKeyDictionary,
     fontKeyVideoSubtitle,
     fontKeyGameLookup,
+    fontKeyFloatingLyric,
+    fontKeySrsCard
   ];
 
   bool get _hasAnyFontPrefs =>
@@ -740,6 +909,10 @@ class ReaderSettings {
         fontKeyVideoSubtitle: _legacyFontListForKey(fontKeyVideoSubtitle),
       if (_cache.containsKey(fontKeyGameLookup))
         fontKeyGameLookup: _legacyFontListForKey(fontKeyGameLookup),
+      if (_cache.containsKey(fontKeyFloatingLyric))
+        fontKeyFloatingLyric: _legacyFontListForKey(fontKeyFloatingLyric),
+      if (_cache.containsKey(fontKeySrsCard))
+        fontKeySrsCard: _legacyFontListForKey(fontKeySrsCard)
     };
   }
 
@@ -907,6 +1080,15 @@ class ReaderSettings {
   List<Map<String, dynamic>> get gameLookupFonts =>
       _fontListForTargetKey(fontKeyGameLookup);
 
+  /// Windows audiobook floating-subtitle overlay font list. Empty when unset so
+  /// the native renderer keeps its default family.
+  List<Map<String, dynamic>> get floatingLyricFonts =>
+      _fontListForTargetKey(fontKeyFloatingLyric);
+
+  /// SRS "Fushi Card" card-face font chain (WebView, glyph-fallback order).
+  List<Map<String, dynamic>> get srsCardFonts =>
+      _fontListForTargetKey(fontKeySrsCard);
+
   /// Resolves the persisted font list for a [FontTarget].
   List<Map<String, dynamic>> fontsForTarget(FontTarget target) =>
       switch (target) {
@@ -915,6 +1097,8 @@ class ReaderSettings {
         FontTarget.dictionary => dictionaryFonts,
         FontTarget.videoSubtitle => videoSubtitleFonts,
         FontTarget.gameLookup => gameLookupFonts,
+        FontTarget.floatingLyric => floatingLyricFonts,
+        FontTarget.srsCard => srsCardFonts
       };
 
   /// CSS font-family string and @font-face declarations for the BODY fonts.
@@ -960,6 +1144,8 @@ class ReaderSettings {
         FontTarget.dictionary => fontKeyDictionary,
         FontTarget.videoSubtitle => fontKeyVideoSubtitle,
         FontTarget.gameLookup => fontKeyGameLookup,
+        FontTarget.floatingLyric => fontKeyFloatingLyric,
+        FontTarget.srsCard => fontKeySrsCard
       };
 
   /// Persists the whole list for [target]. The body convenience overload
@@ -1071,17 +1257,82 @@ class ReaderCustomFontCss {
       if (safePath == null) {
         continue;
       }
-      families.add(cssFontFamilyName(normalizedName));
+      final String family = cssFontFamilyName(normalizedName);
+      // 同名条目 = 同一家族的不同字重文件：家族名只进链一次，每个文件各出一条
+      // 声明了真实字重的 @font-face。
+      if (!families.contains(family)) families.add(family);
       final String uri = fontUrlBuilder(safePath);
       faces.add(
-        '@font-face { font-family: ${cssFontFamilyName(normalizedName)}; '
-        'src: url("$uri"); font-display: swap; }',
+        '@font-face { font-family: $family; '
+        'src: url("$uri"); ${fontWeightDescriptor(safePath)}'
+        'font-display: swap; }',
       );
     }
     return (
       fontFamily: families.join(', '),
       fontFaces: faces.join('\n'),
     );
+  }
+
+  /// 关闭字重合成的声明：**只**给查词弹窗用（它的粗体是纯装饰性的词头 / 标签强调，
+  /// 没有用户可调的字重设置）。导入字体只有常规字重时，WebView 会把粗体请求
+  /// 合成加粗，而合成加粗对轮廓自相交的字形（Klee One 的「費」）会描成中空——
+  /// 关掉后没有粗体文件就按常规字重显示，有粗体文件则按 [fontWeightDescriptor]
+  /// 声明的真实字重选中它，本来就不需要合成。
+  ///
+  /// 阅读器正文 / 歌词**不**套用：正文有用户可调的字重设置，导入字体只有常规字面时
+  /// 那个设置正是靠合成加粗生效的，关掉就是把用户的设置静默作废。
+  ///
+  /// 先写简写 `font-synthesis: style`（iOS 15 WKWebView 只认简写），再写长写。
+  static const String noWeightSynthesisDeclarations =
+      'font-synthesis: style; font-synthesis-weight: none;';
+
+  /// 导入字体文件的 `@font-face` 字重描述符（带尾随空格），读不出字重时为空串
+  /// （= CSS 默认 `normal`，与改动前逐字节相同）。
+  ///
+  /// 静态字体声明 `OS/2.usWeightClass`（如 SemiBold 文件声明 600，浏览器才会在粗体
+  /// 请求时选中它）；可变字体声明 `wght` 轴范围（否则描述符默认只覆盖 400，粗体
+  /// 请求会被夹回 400 再叠一层合成加粗）。
+  static String fontWeightDescriptor(String safePath) {
+    final String? value = fontWeightValue(safePath);
+    return value == null ? '' : 'font-weight: $value; ';
+  }
+
+  /// [fontWeightDescriptor] 的值部分（`400` / `100 900`），读不出为 null。浏览器扩展
+  /// 用 `new FontFace(family, buffer, {weight})` 注册时要的就是这个串。
+  static String? fontWeightValue(String safePath) {
+    final FontFaceWeight? weight = _cachedFaceWeight(safePath);
+    if (weight == null) return null;
+    return weight.min == weight.max
+        ? '${weight.min}'
+        : '${weight.min} ${weight.max}';
+  }
+
+  /// (mtime, size) 内容键的进程内缓存：阅读器每次重建样式都会走 [build]，
+  /// 同一文件只读一次表头。文件原地覆盖时 mtime/size 变，自动失效。
+  static final Map<String, ({int mtimeUs, int size, FontFaceWeight? weight})>
+      _faceWeightCache =
+      <String, ({int mtimeUs, int size, FontFaceWeight? weight})>{};
+
+  static FontFaceWeight? _cachedFaceWeight(String path) {
+    final FileStat stat;
+    try {
+      stat = FileStat.statSync(path);
+    } catch (_) {
+      return null;
+    }
+    if (stat.type == FileSystemEntityType.notFound) return null;
+    final int mtimeUs = stat.modified.microsecondsSinceEpoch;
+    final ({int mtimeUs, int size, FontFaceWeight? weight})? cached =
+        _faceWeightCache[path];
+    if (cached != null &&
+        cached.mtimeUs == mtimeUs &&
+        cached.size == stat.size) {
+      return cached.weight;
+    }
+    final FontFaceWeight? weight = readFontFaceWeightSync(path);
+    _faceWeightCache[path] = (mtimeUs: mtimeUs, size: stat.size, weight: weight);
+    return weight;
   }
 
   static String normalizedFontFamilyName(String name) {
@@ -1112,7 +1363,15 @@ class ReaderCustomFontCss {
     return canonicalPath;
   }
 
-  static String fontUrl(String path) =>
-      '${defaultTargetPlatform == TargetPlatform.macOS || defaultTargetPlatform == TargetPlatform.iOS ? kReaderResourceScheme : 'https'}'
+  // WKWebView 与 Linux 的 WPE WebKit 只能注册自定义 scheme、拦不到 https，
+  // 与 `webViewUsesCustomSchemeTransport` 同一判据（这里用 defaultTargetPlatform
+  // 以便测试覆写平台）。
+  static String fontUrl(String path) => '${switch (defaultTargetPlatform) {
+        TargetPlatform.macOS ||
+        TargetPlatform.iOS ||
+        TargetPlatform.linux =>
+          kReaderResourceScheme,
+        _ => 'https',
+      }}'
       '://$kReaderResourceHost/fonts/${Uri.encodeComponent(path)}';
 }

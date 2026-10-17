@@ -52,7 +52,7 @@ void main() {
     final int takenPort = blocker.port;
 
     final Directory dir =
-        await Directory.systemTemp.createTemp('hibiki_srv_port_');
+        await Directory.systemTemp.createTemp('fushi_srv_port_');
     addTearDown(() => dir.delete(recursive: true));
 
     final FushiSyncServer server = FushiSyncServer(

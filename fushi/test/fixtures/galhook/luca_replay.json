@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "engine_id": "luca",
+  "status": "implemented_unverified",
+  "config": {
+    "selected_thread": "luca:2a",
+    "pair_tolerance_ms": 500,
+    "resource_late_wait_ms": 500
+  },
+  "events": [
+    {
+      "kind": "text",
+      "id": "synthetic-luna-generic-line",
+      "timestamp_ms": 900,
+      "thread": "hook:2a",
+      "text": "synthetic generic hook text"
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-voiced-message",
+      "timestamp_ms": 1000,
+      "thread": "luca:2a",
+      "text": "synthetic voiced message"
+    },
+    {
+      "kind": "resource_audio",
+      "id": "synthetic-voice-pak-member",
+      "timestamp_ms": 1004,
+      "available_at_ms": 1040,
+      "format": "ogg",
+      "channels": 1
+    },
+    {
+      "kind": "loopback",
+      "id": "synthetic-loopback",
+      "timestamp_ms": 1030,
+      "format": "s16le",
+      "sample_rate_hz": 48000,
+      "channels": 2
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-voiced-message-republished",
+      "timestamp_ms": 1300,
+      "thread": "luca:2a",
+      "text": "synthetic voiced message"
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-unvoiced-message",
+      "timestamp_ms": 4000,
+      "thread": "luca:2a",
+      "text": "synthetic unvoiced message"
+    },
+    {
+      "kind": "session_end",
+      "id": "synthetic-session-end",
+      "timestamp_ms": 6000
+    }
+  ],
+  "expected": {
+    "cards": [
+      {
+        "text_id": "synthetic-voiced-message",
+        "audio_backend": "resource_audio",
+        "audio_id": "synthetic-voice-pak-member"
+      },
+      {
+        "text_id": "synthetic-unvoiced-message",
+        "audio_backend": null,
+        "audio_id": null
+      }
+    ],
+    "duplicate_text_events": 1,
+    "thread_filtered_events": 1,
+    "session_clean": true
+  }
+}

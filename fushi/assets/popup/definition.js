@@ -1,6 +1,6 @@
 //
 //  definition.js
-//  Hibiki - Shared structured content rendering for dictionary definitions
+//  Fushi - Shared structured content rendering for dictionary definitions
 //
 //  Extracted from popup.js to unify rendering between popup and main dictionary views.
 //  Copyright © 2026 Manhhao.
@@ -48,6 +48,14 @@ function setStructuredContentElementStyle(element, style) {
         } else {
             element.style[property] = value;
         }
+    }
+    // 行内 nowrap 组改原子 inline-block + max-width:100%，组宽超过一行时不再画到框外
+    // （与 popup.js setStructuredContentElementStyle 同一规则，理由见那里）。
+    const tag = element.tagName;
+    if (style.whiteSpace === 'nowrap' && style.display === undefined && (tag === 'SPAN' || tag === 'A')) {
+        element.style.whiteSpace = '';
+        element.style.display = 'inline-block';
+        element.style.maxWidth = '100%';
     }
 }
 
@@ -359,6 +367,24 @@ function renderTaggedTermPairsDef(parent, pairs) {
     parent.appendChild(list);
 }
 
+// 链接可见文本的基字部分：剔 rt / rp / .ruby-rt / .ruby-reserve，空白折叠后 trim。
+function linkBaseText(root) {
+    let out = '';
+    const walk = (n) => {
+        if (n.nodeType === Node.TEXT_NODE) {
+            out += n.textContent || '';
+            return;
+        }
+        if (n.nodeType !== Node.ELEMENT_NODE) return;
+        if (n.tagName === 'RT' || n.tagName === 'RP') return;
+        const cls = n.classList;
+        if (cls && (cls.contains('ruby-rt') || cls.contains('ruby-reserve'))) return;
+        for (const child of n.childNodes) walk(child);
+    };
+    walk(root);
+    return out.replace(/\s+/g, ' ').trim();
+}
+
 function renderStructuredContent(parent, node, language, dictName, exporting) {
     if (typeof node === 'string') {
         node.split(/\r?\n/).forEach((line, i) => {
@@ -442,9 +468,11 @@ function renderStructuredContent(parent, node, language, dictName, exporting) {
             if (isExternal) {
                 openExternalLink(node.href);
             } else {
+                // 退回可见文本时只取基字，不带振假名（与 popup.js linkVisibleBaseText 同一过滤集）。
+                const baseText = linkBaseText(element);
                 const query = node.href.indexOf('?') >= 0
-                    ? new URLSearchParams(node.href.substring(node.href.indexOf('?'))).get('query') || element.textContent || ''
-                    : element.textContent || '';
+                    ? new URLSearchParams(node.href.substring(node.href.indexOf('?'))).get('query') || baseText
+                    : baseText;
                 const rect = element.getBoundingClientRect();
                 window.flutter_inappwebview.callHandler('onLinkClick', query, {
                     x: rect.left,

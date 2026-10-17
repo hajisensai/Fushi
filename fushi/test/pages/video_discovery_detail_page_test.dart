@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
+import '../helpers/glass_unwrap.dart';
 
 VideoDiscoveryItem _item(String id, String title) {
   return VideoDiscoveryItem(
@@ -180,15 +181,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    final OutlinedButton resource = tester.widget<OutlinedButton>(
-      find.byKey(const ValueKey<String>('video-discovery-search-resource')),
-    );
-    final OutlinedButton subtitle = tester.widget<OutlinedButton>(
-      find.byKey(const ValueKey<String>('video-discovery-search-subtitle')),
-    );
-    final FilledButton subscribe = tester.widget<FilledButton>(
-      find.byKey(const ValueKey<String>('video-discovery-subscribe')),
-    );
+    // M3E 详情骨架：「找资源」是主按钮（filled）、字幕是 tonal 次按钮，两者都是
+    // FilledButton。
+    final FilledButton resource = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-discovery-search-resource'))),);
+    final FilledButton subtitle = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-discovery-search-subtitle'))),);
+    final FilledButton subscribe = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-discovery-subscribe'))),);
     expect(resource.onPressed, isNotNull,
         reason: '下载进行中要能换源重下；per-series 并发限制在队列层根本不存在。');
     expect(subscribe.onPressed, isNull);

@@ -84,7 +84,7 @@ void main() {
   });
 
   test('browser binding chain: server → AppModel → main.dart wiring', () {
-    final String server = read('lib/src/sync/yomitan_api_server.dart');
+    final String server = read('lib/src/sync/fushi_api_server.dart');
     expect(
       server.contains('_kLookupActivityPaths') &&
           server.contains('_onLookupActivity?.call()'),
@@ -102,7 +102,7 @@ void main() {
           'lookup-activity trigger (TODO-2936)',
     );
 
-    final String manager = read('lib/src/sync/yomitan_api_server_manager.dart');
+    final String manager = read('lib/src/sync/fushi_api_server_manager.dart');
     expect(
       manager.contains('onLookupActivity: _onLookupActivity'),
       isTrue,

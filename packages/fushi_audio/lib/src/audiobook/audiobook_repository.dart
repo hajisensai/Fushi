@@ -5,6 +5,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_health.dart';
 import 'audiobook_model.dart';
 import 'audiobook_local_files.dart';
+import 'audiobook_position_rebase.dart';
 import 'audiobook_storage.dart';
 
 class AudiobookRepository {
@@ -52,13 +53,28 @@ class AudiobookRepository {
     return AudioCue.fromRow(row);
   }
 
+  /// 整组替换 [bookKey] 的 cue。播放进度按**真实时间位置**跟着换编码
+  /// （BUG-3197，见 [rebaseStoredPositionForCueChange]）：全书毫秒是按 cue 推出的
+  /// 文件时长编码的，换字幕不换算就等于把听书断点挪到别处。
+  ///
+  /// 换 cue 与换算进度在**同一个事务**里（BUG-3251）：正在播这本书的会话监听
+  /// cue 表的提交通知、随即改用新 cue 编码周期写入；通知若早于换算，换算就会把
+  /// 会话已按新编码写下的位置当旧编码再换一遍。
   Future<void> saveCues({
     required String bookKey,
     required List<AudioCue> cues,
-  }) async {
-    await _db.replaceCuesForBook(
-        bookKey, cues.map(AudioCue.toCompanion).toList());
-  }
+  }) =>
+      _db.transaction(() async {
+        final List<AudioCueRow> before = await _db.getCuesForBook(bookKey);
+        await _db.replaceCuesForBook(
+            bookKey, cues.map(AudioCue.toCompanion).toList());
+        await rebaseStoredPositionForCueChange(
+          positionKey: bookKey,
+          oldDurationsMs:
+              audiobookFileDurationsFromCues(before.map(AudioCue.fromRow)),
+          newDurationsMs: audiobookFileDurationsFromCues(cues),
+        );
+      });
 
   // ── 窄写入：一次只改一件事 ───────────────────────────────────────
   //
@@ -76,6 +92,13 @@ class AudiobookRepository {
     // 墓碑还在」误判（范式仿书/视频的插入清墓碑）。
     await _db.clearSyncDeletionTombstone(
         SyncTombstoneKind.audiobook.dbValue, bookKey);
+    // 书从对端下载、落地键不同时删除墓碑写的是对端键（见 [deleteAudiobook]），
+    // 同一条也要撤销，否则重新配上有声书后那条旧墓碑仍会推给 host。
+    final String peerKey = await _db.syncDeletionBookKeyOf(bookKey);
+    if (peerKey != bookKey) {
+      await _db.clearSyncDeletionTombstone(
+          SyncTombstoneKind.audiobook.dbValue, peerKey);
+    }
   }
 
   /// 换音频（唯一写音频两列的入口）。[audioPaths] 为落地后的绝对路径列表，
@@ -116,7 +139,7 @@ class AudiobookRepository {
     if (audioChanged) {
       await updatePositionMs(bookKey: bookKey, positionMs: 0);
     }
-    fushiDebugPrint('[hibiki-audiobook] replaceAudio bookKey=$bookKey '
+    fushiDebugPrint('[fushi-audiobook] replaceAudio bookKey=$bookKey '
         'files=${audioPaths.length} audioChanged=$audioChanged');
   }
 
@@ -182,13 +205,18 @@ class AudiobookRepository {
   }) async {
     final Audiobook? before =
         deleteLocalFiles ? await findByBookKey(bookKey) : null;
+    // 有声书与书共享 bookKey：书从对端下载、落地键不同时墓碑写对端键（别名表），
+    // 否则推给 host（只按 bookKey 精确匹配）与对端消费都对不上（BUG-3443 同类）。
+    final String syncTombstoneKey = propagateDeletion
+        ? await _db.syncDeletionBookKeyOf(bookKey)
+        : bookKey;
     // deleteAudiobookByBookKey 内部已先删 audioCues 再删 audiobooks。
     await _db.deleteAudiobookByBookKey(bookKey);
     if (propagateDeletion) {
       try {
         await _db.writeSyncDeletionTombstone(
             SyncTombstoneKind.audiobook.dbValue,
-            bookKey,
+            syncTombstoneKey,
             DateTime.now().millisecondsSinceEpoch);
       } catch (_) {
         // best-effort：记账失败不影响有声书已删。
@@ -237,6 +265,32 @@ class AudiobookRepository {
     await _db.setPrefTyped(posKey, positionMs);
     await _db.setPrefTyped('$_kPositionAtMsKeyPrefix$bookKey',
         DateTime.now().millisecondsSinceEpoch);
+  }
+
+  /// BUG-3197：cue 整组换过之后，把 `audiobook_pos_<positionKey>` 存着的全书毫秒
+  /// 从 [oldDurationsMs] 编码换算到 [newDurationsMs] 编码（真实时间位置不变，见
+  /// [rebaseAudiobookGlobalPositionMs]）。
+  ///
+  /// **不盖时间戳**：`audiobook_pos_at_` 的语义是「位置最后一次变动的时刻」
+  /// （BUG-2328），这里用户听到的地方一毫秒没动，只是同一个位置换了个写法；
+  /// 盖了新戳，开书 LWW 会让音频进度无故压过阅读进度。
+  Future<void> rebaseStoredPositionForCueChange({
+    required String positionKey,
+    required List<int> oldDurationsMs,
+    required List<int> newDurationsMs,
+  }) async {
+    final String posKey = '$_kPositionMsKeyPrefix$positionKey';
+    final int current = await _db.getPrefTyped<int>(posKey, 0);
+    if (current <= 0) return;
+    final int rebased = rebaseAudiobookGlobalPositionMs(
+      current,
+      oldDurationsMs,
+      newDurationsMs,
+    );
+    if (rebased == current) return;
+    await _db.setPrefTyped(posKey, rebased);
+    fushiDebugPrint('[fushi-audiobook] rebase position key=$positionKey '
+        '$current -> $rebased (cue durations changed)');
   }
 
   // ── follow audio (preferences) ─────────────────────────────────
@@ -359,7 +413,7 @@ class AudiobookRepository {
       );
     } catch (e, stack) {
       fushiDebugPrint('AudiobookRepository.healthOverlay: $e\n$stack');
-      fushiDebugPrint('[hibiki-audiobook] readHealthOverlay parse failed: $e');
+      fushiDebugPrint('[fushi-audiobook] readHealthOverlay parse failed: $e');
       return null;
     }
   }

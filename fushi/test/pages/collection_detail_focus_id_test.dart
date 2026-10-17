@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,7 +32,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_collection_focus_pp');
+        Directory.systemTemp.createTempSync('fushi_collection_focus_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -62,7 +62,7 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    storeDir = Directory.systemTemp.createTempSync('hibiki_collection_focus');
+    storeDir = Directory.systemTemp.createTempSync('fushi_collection_focus');
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
@@ -139,6 +139,7 @@ void main() {
     expect(memberUid, isNotNull, reason: 'insertEpubBook 必须给书生成稳定 uid');
     await db.addToCollection(cid, MediaKind.epub, memberUid!);
     final String mediaId = ReaderFushiSource.mediaIdentifierFor('memberKey');
+    // 书架合集是单个格子（整行展开已移除）：成员卡只在详情页出现。
 
     tester.view.physicalSize = const Size(1400, 1200);
     tester.view.devicePixelRatio = 1.0;
@@ -147,16 +148,19 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    // 书架合集行内的成员卡：无前缀 id（既有语义不变）。
+    // 书架上是合集格子（无前缀 id），成员书不外露。
     List<String> onstageIds() => tester
         .widgetList<FushiFocusTarget>(find.byType(FushiFocusTarget))
         .map((FushiFocusTarget w) => w.id.value)
         .toList();
-    expect(onstageIds(), contains('reader-shelf-book-$mediaId'),
-        reason: '书架成员卡保持既有无前缀 focusId');
+    expect(onstageIds(), contains('reader-shelf-collection-$cid'),
+        reason: '书架合集格子保持既有无前缀 focusId');
+    expect(onstageIds(), isNot(contains('reader-shelf-book-$mediaId')),
+        reason: '合集成员折进格子，书架上没有它自己的卡');
 
-    // 进详情页。
-    await tester.tap(find.text(t.collection_view_all));
+    // 进详情页（点合集格子）。
+    await tester.tap(find.byKey(
+        ValueKey<String>('reader_shelf_collection_card_$cid')));
     await tester.pumpAndSettle();
     expect(find.byType(MediaCollectionGridDetailPage), findsOneWidget);
 
@@ -167,14 +171,14 @@ void main() {
     expect(detailIds, isNot(contains('reader-shelf-book-$mediaId')),
         reason: '详情页（onstage）不得复用书架同名 focusId');
 
-    // 书架路由仍在其下存活（offstage），其无前缀 id 未被改动——两条路由并存时
+    // 书架路由仍在其下存活（offstage），其合集格子的 id 未被改动——两条路由并存时
     // 注册表里是两个不同 id，不再互相覆盖。
     final List<String> allIds = tester
         .widgetList<FushiFocusTarget>(
             find.byType(FushiFocusTarget, skipOffstage: false))
         .map((FushiFocusTarget w) => w.id.value)
         .toList();
-    expect(allIds, contains('reader-shelf-book-$mediaId'));
+    expect(allIds, contains('reader-shelf-collection-$cid'));
     expect(allIds, contains('collection-detail-reader-shelf-book-$mediaId'));
   });
 }

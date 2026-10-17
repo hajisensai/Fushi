@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -20,7 +20,7 @@ import 'test_helpers.dart';
 
 /// 设备验收 itest（TODO-1018 / BUG-477 + TODO-1022 / BUG-478）。
 ///
-/// 在真实 Hibiki 阅读器上打开一个真词典查词弹窗（Windows 上是 forked
+/// 在真实 Fushi 阅读器上打开一个真词典查词弹窗（Windows 上是 forked
 /// flutter_inappwebview_windows 引擎渲染的独立第二个 WebView），对该弹窗
 /// WebView 文档做 DOM-rect / computed-style 探针，断言两个修复在真引擎里生效。
 ///

@@ -48,21 +48,24 @@ void main() {
         reason: '异名确认应复用 DictionaryConfirmationDialog');
   });
 
-  test('action bar「更新全部词典」常驻且排第一，桌面/移动动作栏同样有', () {
+  // 2026-10 词典管理重做：Material 动作条按频率分层，「导入词典」成为主操作排第一；
+  // 「更新全部」不再排第一，但仍常驻（宽屏铺在动作条上、窄屏与 Apple 窄屏标题栏进
+  // 溢出菜单、Apple 桌面标题栏一枚图标钮），且绝不按可更新词典存在性隐藏。
+  test('action bar「更新全部词典」常驻，桌面/移动动作栏同样有', () {
     expect(
       src.contains(
           'appModel.dictionaries.any((Dictionary d) => d.isUpdatable)'),
       isFalse,
       reason: '更新全部词典按钮不得再按可更新词典存在性隐藏',
     );
-    final int bar = src.indexOf('Widget _buildActionBar()');
+    final int bar = src.indexOf('Widget _buildActionBar({');
+    final int barEnd = src.indexOf('Widget _buildOverflowMenu(', bar);
     final int update = src.indexOf("focusPrefix: 'dict-action-update'", bar);
-    final int download =
-        src.indexOf("focusPrefix: 'dict-action-download'", bar);
+    expect(bar, isNonNegative);
     expect(update, greaterThan(bar));
-    expect(update, lessThan(download), reason: '更新全部词典应排在第一个');
+    expect(update, lessThan(barEnd), reason: '宽屏动作条上直接铺开「更新全部」');
     expect('label: t.dict_update_all,'.allMatches(src).length, 2,
-        reason: 'Material 动作栏 + 移动端溢出菜单');
+        reason: 'Material 宽屏动作栏 + 共享溢出菜单（窄屏 / Apple 窄屏）');
     expect('tooltip: t.dict_update_all,'.allMatches(src).length, 1,
         reason: '桌面 Cupertino 动作栏');
     expect(src.contains('msg: t.dict_update_all_no_source,'), isTrue,
@@ -98,8 +101,12 @@ void main() {
     );
   });
 
-  test('非可在线更新词典的行尾按钮 tooltip 说明是从本地文件更新', () {
-    expect(src.contains('t.dict_update_from_file_tooltip'), isTrue);
+  test('非可在线更新词典的更新按钮 tooltip 说明是从本地文件更新', () {
+    // 2026-10 起单本更新按钮住在词典详情（宽屏侧板 / 窄屏底部 sheet）里。
+    final String panels = File(
+      'lib/src/pages/implementations/dictionary_manager_panels.dart',
+    ).readAsStringSync();
+    expect(panels.contains('t.dict_update_from_file_tooltip'), isTrue);
   });
 
   test('单本/批量/从文件更新以被点击词典为显式替换目标（replaceTarget）', () {
@@ -147,16 +154,28 @@ void main() {
 
   test('在线下载落来源（catalog 回填 downloadUrl，可更新源再补 isUpdatable+indexUrl）', () {
     // TODO-1075：初装即把可更新性锚定在 catalog 来源真值。
-    // - 恒回填 downloadUrl（供更新时重下载）。
-    expect(src.contains("'downloadUrl': rec.url"), isTrue,
+    // 下载 + 导入已抽成 recommended_dictionary_installer.dart，词典管理页与控制通道
+    // `dict install` 共用；守卫跟着两段：页面必须走共享实现，回填断言落在它身上。
+    expect(src.contains('await downloadAndImportRecommendedDictionary('), isTrue,
+        reason: '词典管理页下载推荐词典必须走共享安装实现，不得另抄一份来源回填');
+    final String installer =
+        File('lib/src/models/recommended_dictionary_installer.dart')
+            .readAsStringSync();
+    expect(
+        installer.contains(
+            'sourceOverride: recommendedDictionarySourceOverride(rec),'),
+        isTrue,
+        reason: '共享安装实现导入时必须带 catalog 来源回填');
+    // - 恒回填 downloadUrl（供更新时重下载）：可更新源与普通源两个分支都要。
+    expect(RegExp(r"'downloadUrl': rec\.url").allMatches(installer).length, 2,
         reason: '下载在线词典必须把 catalog url 当 downloadUrl 回填来源');
     // - 对存在分离 index 端点的来源，据 rec.indexUrl 回填 isUpdatable:'true' + indexUrl，
     //   让 catalog 导入的词典初装即 isUpdatable==true（修初装 gate 空档）。
-    expect(src.contains('final String? recIndexUrl = rec.indexUrl;'), isTrue,
+    expect(installer.contains('final String? indexUrl = rec.indexUrl;'), isTrue,
         reason: 'catalog 导入应读 rec.indexUrl 判定该来源是否可在线更新');
-    expect(src.contains("'isUpdatable': 'true',"), isTrue,
+    expect(installer.contains("'isUpdatable': 'true',"), isTrue,
         reason: '可更新源导入必须回填 isUpdatable:true');
-    expect(src.contains("'indexUrl': recIndexUrl,"), isTrue,
+    expect(installer.contains("'indexUrl': indexUrl,"), isTrue,
         reason: '可更新源导入必须回填分离 index 端点 URL');
   });
 }

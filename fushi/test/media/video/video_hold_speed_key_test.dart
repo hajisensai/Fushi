@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -17,7 +17,9 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 ///    视频键不误命中。
 /// 3. 接线约束：videoHoldSpeed 的键盘绑定**不进** CallbackShortcuts activator 表
 ///    （装进去 keydown 就被消费，页面级 Focus.onKeyEvent 永远收不到、keyup 语义
-///    无从谈起）；手柄通道经 videoActionCallbacks 的 toggleHoldSpeed 仍然活着。
+///    无从谈起）；没有松开沿的入口（鼠标侧键 / 屏幕自定义按钮）经
+///    videoActionCallbacks 的 toggleHoldSpeed 仍然活着。手柄有松开沿，走按住语义，
+///    见 `video_gamepad_input_semantics_test.dart`（BUG-3330）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -216,8 +218,9 @@ void main() {
         ..loadDefaults(TargetPlatform.windows);
       final Map<ShortcutActivator, VoidCallback> activators =
           buildVideoPlayerShortcutsFromRegistry(registry, actions(<String>[]));
-      for (final ShortcutActivator activator in activators.keys) {
-        if (activator is! SingleActivator) continue;
+      expect(activators, isNotEmpty);
+      for (final ShortcutActivator raw in activators.keys) {
+        final SingleActivator activator = (raw as InputBindingActivator).exact;
         expect(
           activator.trigger,
           isNot(LogicalKeyboardKey.keyE),
@@ -228,7 +231,7 @@ void main() {
     });
 
     test(
-        '手柄通道仍活着：videoActionCallbacks 把 videoHoldSpeed 派发到 '
+        '无松开沿的入口仍活着：videoActionCallbacks 把 videoHoldSpeed 派发到 '
         'toggleHoldSpeed', () {
       final List<String> log = <String>[];
       final Map<ShortcutAction, VoidCallback> callbacks =

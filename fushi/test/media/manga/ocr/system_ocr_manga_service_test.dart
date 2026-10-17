@@ -204,6 +204,33 @@ void main() {
       );
     });
 
+    // Windows OCR 按语言随系统语言包安装：没装日语时该让用户去装语言，同样不是
+    // 「这张图识别失败」。
+    test('识别语言没装单独成一类（language_unavailable）', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const MethodChannel channel =
+          MethodChannel('test.fushi/system_ocr_language');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        throw PlatformException(code: 'LANGUAGE_UNAVAILABLE', message: 'ja');
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      const MethodChannelSystemOcr platform =
+          MethodChannelSystemOcr(channel: channel);
+      await expectLater(
+        () => platform.recognize(Uint8List(0), language: 'ja'),
+        throwsA(isA<SystemOcrUnavailableException>().having(
+          (SystemOcrUnavailableException e) => e.reason,
+          'reason',
+          kSystemOcrLanguageUnavailableReason,
+        )),
+      );
+    });
+
     test('真正的识别失败不被冒充成「不可用」', () async {
       TestWidgetsFlutterBinding.ensureInitialized();
       const MethodChannel channel =

@@ -18,7 +18,7 @@ import '../helpers/source_guard.dart';
 /// 一直有 charset 故从不复现，本守卫锁 popup.html / definition.html / global_lookup_host.html
 /// 三个宿主都不回退。
 ///
-/// flutter test cwd 是 hibiki 包根。
+/// flutter test cwd 是 fushi 包根。
 void main() {
   const List<String> popupHosts = <String>[
     'assets/popup/popup.html',

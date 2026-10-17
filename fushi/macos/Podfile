@@ -45,6 +45,10 @@ post_install do |installer|
       # `platform :osx` 声明的 13.4，必须与它和 Runner 的 MACOSX_DEPLOYMENT_TARGET
       # 同步移动。
       config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '13.4'
+      # macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac。与 Runner 工程
+      # 级 EXCLUDED_ARCHS 同步：`flutter build macos` 会把工程的 EXCLUDED_ARCHS
+      # 透传给 xcodebuild，这里再钉一份让直接用 Xcode 构建的 Pods 也只编 arm64。
+      config.build_settings['EXCLUDED_ARCHS'] = 'x86_64'
     end
   end
 end

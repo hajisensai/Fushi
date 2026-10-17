@@ -20,7 +20,7 @@ void main() {
   late Map<String, String> peerTable;
 
   Future<void> startServer({bool wirePeerCallbacks = true}) async {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_peer_token_test');
+    tempDir = Directory.systemTemp.createTempSync('fushi_peer_token_test');
     peerTable = <String, String>{};
     server = FushiSyncServer(
       syncDataDir: tempDir.path,

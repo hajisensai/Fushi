@@ -24,7 +24,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 ///   *全部* Drift prefs 逐行复制进快照，而备份导出只 DELETE `preferences`。
 ///   默认导出类别包含 `profiles`（见 `defaultBackupExportCategories()`），所以
 ///   只要用户切换过一次 Profile，`preferences` 那份删了也白删——凭据以
-///   `category='pref'` 行原样躺在导出的 `hibiki.db` 里。
+///   `category='pref'` 行原样躺在导出的 `fushi.db` 里。
 ///
 /// 所以判定必须收敛成一个谓词，由所有出境通道共用。形状兜底不再限定 `sync_`
 /// 前缀：一个 key 只要长得像凭据，无论属于哪个子系统都不出境。
@@ -99,6 +99,11 @@ abstract final class PrefRedactionPolicy {
     'discovery_opds_servers',
     // 同形：AList / OpenList 站点清单里的 base64 密码。
     'discovery_alist_sites',
+    // 同形：Audiobookshelf 服务器清单里的 base64 access / refresh token。
+    'discovery_audiobookshelf_servers',
+    // 同形：朗读声音预设清单里 base64 的 Azure / Google API key 与网关 Bearer。
+    // 也在 deviceLocalPrefKeys 中。
+    'tts_voice_presets',
   };
 
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON

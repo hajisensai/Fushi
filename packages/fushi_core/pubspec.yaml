@@ -1,6 +1,6 @@
 name: fushi_core
 resolution: workspace
-description: Shared models, database, language config, and i18n for Hibiki
+description: Shared models, database, language config, and i18n for Fushi
 publish_to: none
 
 

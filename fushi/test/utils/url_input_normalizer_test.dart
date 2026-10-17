@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_repository_client.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
 /// BUG-1804：中文/日文输入法把 URL 结构字符转成全角，导致合法仓库地址
@@ -126,23 +125,6 @@ void main() {
       );
       expect(bad3.hasAuthority, isTrue);
       expect(bad3.authority, isNot('github.com'));
-    });
-  });
-
-  group('Aidoku 仓库入口同族收敛', () {
-    test('全角输入的 github 仓库地址能被正确归一化并映射', () {
-      final Uri resolved = AidokuRepositoryClient.normalizeRepositoryUri(
-        'https：//github.com/Skittyblock/aidoku-community-sources',
-      );
-      expect(resolved.host, 'skittyblock.github.io');
-      expect(resolved.path, '/aidoku-community-sources/index.min.json');
-    });
-
-    test('全角句点不再产出垃圾 host', () {
-      final Uri resolved = AidokuRepositoryClient.normalizeRepositoryUri(
-        'https://example．org/repo/index.json',
-      );
-      expect(resolved.host, 'example.org');
     });
   });
 }

@@ -1,5 +1,5 @@
 import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 

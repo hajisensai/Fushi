@@ -113,6 +113,38 @@ ShortcutAction? resolveReaderArrowPageTurn({
 bool swipeLeftIsForward({required bool invert, required bool rtl}) =>
     invert ^ rtl;
 
+/// 分页模式一拍滚轮 / 触控板（`onWheelPaginate`）→ 是否前进（反馈 794gISjvgV）。
+///
+/// [deltaPositive] = JS 主轴 delta > 0（handler 收到的 `'forward'`）；[horizontal] =
+/// 主轴是横向；[trackpad] = JS `_isTrackpadWheel` 判为触控板。
+///
+/// * **纵向鼠标**：delta > 0 = 前进，与连续模式滚轮同口径；鼠标滚轮的这条约定由
+///   TODO-737 定死，不受任何反转开关影响。
+/// * **纵向触控板**（BUG-3358 补漏）：两指上下滑与两指横滑同属「滑动翻页」，同一判据——
+///   默认开关（invert = true）下按原生滚动语义（delta > 0，即内容跟手往上走 = 前进，
+///   与修复前逐拍一致），关掉「反转滑动翻页方向」则整体反转。纵向与书写方向无关
+///   （横排 / 竖排的分页都不沿纵轴排页），故不看 [rtl]。此前这一象限直接返回
+///   delta 符号，翻页（paginated）与视觉小说（vn）模式下两指上下滑不认开关。
+/// * **横向鼠标**（倾斜滚轮 / Shift+滚轮）：按原生滚动语义——视口往书页前进的方向滚
+///   就是前进。横排书页往右排（delta > 0 前进），竖排 vertical-rl 往左排（delta < 0
+///   前进）。此前不看书写方向，竖排里向「下一页那一侧」滚反而后退。
+/// * **横向触控板**：两指横滑就是滑动翻页，与触摸滑动同一套语义——原生滚动内容跟手，
+///   delta > 0 即手指向左划，按 [swipeLeftIsForward] 折成前进 / 后退，于是用户的
+///   「反转滑动翻页方向」开关也管到触控板。此前这条走的是滚轮约定、不认任何开关
+///   （反馈原话：「试过几个开关，都对触摸板的方向反转没用」）。默认开关（invert =
+///   true）下与「视口往前进方向滚」逐象限一致。
+bool readerWheelTickIsForward({
+  required bool deltaPositive,
+  required bool horizontal,
+  required bool trackpad,
+  required bool rtl,
+  required bool invertSwipe,
+}) {
+  if (!trackpad) return horizontal ? deltaPositive != rtl : deltaPositive;
+  if (!horizontal) return deltaPositive == invertSwipe;
+  return deltaPositive == swipeLeftIsForward(invert: invertSwipe, rtl: rtl);
+}
+
 /// 桌面 Windows 阅读器「Ctrl+C 复制选中文字」止血兼容层（BUG-402）。
 ///
 /// 根因：Windows 端 WebView 走 WebView2 合成模式，fork 的

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -69,6 +70,7 @@ class HdrDisplayInfo {
     required this.colorSpace,
     required this.maxLuminance,
     required this.bitsPerColor,
+    this.sdrWhiteNits = 0,
   });
 
   static const HdrDisplayInfo unknown = HdrDisplayInfo(
@@ -81,6 +83,11 @@ class HdrDisplayInfo {
   final double maxLuminance;
   final int bitsPerColor;
 
+  /// Windows「SDR 内容亮度」滑块（`DISPLAYCONFIG_SDR_WHITE_LEVEL`，尼特）：HDR 模式下
+  /// DWM 把每个 SDR 窗口（含叠在 HDR 视频上的 Flutter 主窗）的 sRGB 1.0 映射到这个
+  /// 亮度。0 = 未知（查询失败 / 旧系统）。
+  final double sdrWhiteNits;
+
   /// 显示器当前是否以 HDR10 输出（判据只看当前 colorspace，不看面板能力——
   /// 面板支持 HDR 但 Windows 没开时仍是 SDR）。
   bool get isHdr => colorSpace == kDxgiColorSpaceHdr10;
@@ -90,15 +97,17 @@ class HdrDisplayInfo {
       other is HdrDisplayInfo &&
       other.colorSpace == colorSpace &&
       other.maxLuminance == maxLuminance &&
-      other.bitsPerColor == bitsPerColor;
+      other.bitsPerColor == bitsPerColor &&
+      other.sdrWhiteNits == sdrWhiteNits;
 
   @override
-  int get hashCode => Object.hash(colorSpace, maxLuminance, bitsPerColor);
+  int get hashCode =>
+      Object.hash(colorSpace, maxLuminance, bitsPerColor, sdrWhiteNits);
 
   @override
   String toString() =>
       'HdrDisplayInfo(colorSpace: $colorSpace, maxLuminance: $maxLuminance, '
-      'bitsPerColor: $bitsPerColor)';
+      'bitsPerColor: $bitsPerColor, sdrWhiteNits: $sdrWhiteNits)';
 }
 
 /// 片源是否 HDR：libmpv `video-params/primaries` 为 bt.2020 且 `gamma` 为 PQ / HLG。
@@ -222,6 +231,101 @@ const Map<String, String> kTextureMpvProperties = <String, String>{
   'vo': 'libmpv',
 };
 
+/// libmpv 的 HDR 参考白（`MP_REF_WHITE`）：线性输出里 1.0 对应的尼特数。
+const double kMpvReferenceWhiteNits = 203;
+
+/// scRGB 的 1.0 对应的尼特数（DWM 的约定）。
+const double kScRgbWhiteNits = 80;
+
+/// 合成器内 HDR（视频留在 `vo=libmpv` 纹理里、Flutter 交换链出 scRGB）的三个亮度
+/// 参数，按显示器当前状态算一次，引擎与视频纹理各取所需。
+@immutable
+class CompositorHdrTarget {
+  const CompositorHdrTarget({
+    required this.engineSdrWhiteNits,
+    required this.referenceWhiteNits,
+    required this.targetPeakNits,
+  });
+
+  /// 交给引擎：Flutter 界面的白（sRGB 1.0）落到多少尼特。
+  final double engineSdrWhiteNits;
+
+  /// 交给视频纹理：libmpv 的 203 尼特参考白落到「界面白」的哪里——等于这个值时
+  /// 参考白与界面白同亮。
+  final double referenceWhiteNits;
+
+  /// 交给 libmpv：色调映射的目标峰值（≤0 = 让 mpv 自己推断）。
+  final double targetPeakNits;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CompositorHdrTarget &&
+      other.engineSdrWhiteNits == engineSdrWhiteNits &&
+      other.referenceWhiteNits == referenceWhiteNits &&
+      other.targetPeakNits == targetPeakNits;
+
+  @override
+  int get hashCode =>
+      Object.hash(engineSdrWhiteNits, referenceWhiteNits, targetPeakNits);
+
+  @override
+  String toString() =>
+      'CompositorHdrTarget(engineSdrWhite: $engineSdrWhiteNits, '
+      'referenceWhite: $referenceWhiteNits, peak: $targetPeakNits)';
+}
+
+/// 唯一的亮度换算判据。
+///
+/// - HDR 显示器：界面白 = Windows「SDR 内容亮度」；HDR 片源按绝对亮度出（参考白
+///   就是 203 尼特，比界面白亮还是暗取决于用户那个滑块）；面板峰值以上才色调映射。
+/// - SDR 显示器（「总是」模式）：scRGB 1.0 就是显示器白，DWM 会截掉更高的值，所以
+///   参考白对齐界面白、峰值压到参考白——与 mpv 自己输出到 SDR 屏时的约定一致。
+CompositorHdrTarget compositorHdrTarget(HdrDisplayInfo display) {
+  if (!display.isHdr) {
+    return const CompositorHdrTarget(
+      engineSdrWhiteNits: kScRgbWhiteNits,
+      referenceWhiteNits: kMpvReferenceWhiteNits,
+      targetPeakNits: kMpvReferenceWhiteNits,
+    );
+  }
+  final double white = display.sdrWhiteNits > 0
+      ? display.sdrWhiteNits
+      : kScRgbWhiteNits;
+  return CompositorHdrTarget(
+    engineSdrWhiteNits: white,
+    referenceWhiteNits: white,
+    targetPeakNits: display.maxLuminance,
+  );
+}
+
+/// 合成器内 HDR 某一步没成时该怎么退：失败的**层级**决定记忆的范围。
+enum CompositorHdrFallback {
+  /// 引擎没开成（原版引擎 / 导出缺失）：进程内不会变，记成「不支持」。
+  engineUnsupported,
+
+  /// 视频纹理还没建好：本轮走宿主窗，纹理就绪后重判，不记任何失败。
+  awaitTexture,
+
+  /// 这一路纹理拒绝切 HDR：只对当前 Player 退回宿主窗，换片后再试。
+  textureRefused,
+}
+
+/// 合成器内 HDR 进入失败时的分流（[engineOn]：引擎交换链切成功；[textureReady]：
+/// 视频纹理已建好；[textureOn]：纹理切成功）。都成功返回 null。
+///
+/// 早先任何一步失败都把整个进程记成「不支持」，一次偶发（纹理晚一帧建好）就让 HDR
+/// 一直走宿主窗直到重启 app。
+CompositorHdrFallback? compositorHdrFallback({
+  required bool engineOn,
+  required bool textureReady,
+  required bool textureOn,
+}) {
+  if (!engineOn) return CompositorHdrFallback.engineUnsupported;
+  if (!textureReady) return CompositorHdrFallback.awaitTexture;
+  if (!textureOn) return CompositorHdrFallback.textureRefused;
+  return null;
+}
+
 /// 宿主窗模式下画面 fit 由 mpv 自己算（宿主窗矩形 = [Video] 矩形）：
 /// contain = 保比例留黑边；cover = 保比例裁切（`panscan=1`）；fill = 拉伸。
 Map<String, String> hdrHostFitProperties(VideoFitMode fit) {
@@ -232,6 +336,78 @@ Map<String, String> hdrHostFitProperties(VideoFitMode fit) {
       return const <String, String>{'keepaspect': 'yes', 'panscan': '1'};
     case VideoFitMode.fill:
       return const <String, String>{'keepaspect': 'no', 'panscan': '0'};
+  }
+}
+
+/// HDR 输出里图形（字幕 / 弹幕）白的亮度：BT.2408 graphics white，也是 libplacebo
+/// 的 `PL_COLOR_SDR_WHITE` 与 mpv `sub-hdr-peak` 的默认值——mpv 自己画字幕时就把它
+/// 放在这个亮度，片源里的参考白（漫散白）也在这里。
+const double kHdrGraphicsWhiteNits = 203;
+
+/// 叠在 HDR 视频上的 Flutter 图形层（字幕 / 弹幕）该乘的**线性**亮度系数。
+///
+/// 宿主窗模式下视频与图形各走一套亮度基准：mpv（gpu-next，HDR10）把参考白放在
+/// [kHdrGraphicsWhiteNits]，而 Flutter 主窗是 SDR 窗口，DWM 把它的白映射到用户的
+/// 「SDR 内容亮度」（[HdrDisplayInfo.sdrWhiteNits]，常见 200～480 尼特）。不归一时
+/// 字幕比画面里的白亮出一截、像一层贴上去的发光白（用户 2026-10-05 报「HDR 下字幕
+/// 颜色怪怪的」，实测该机 SDR 白 280 尼特）。归一后与 mpv 原生字幕同一亮度。
+///
+/// 只在宿主窗激活且显示器真处于 HDR 时 < 1：纹理路径 / SDR 显示器上视频与 Flutter
+/// 同在 SDR 基准里，无需换算。SDR 白低于 203 时 8-bit SDR 窗口无法更亮，取 1。
+double hdrGraphicsWhiteScale({
+  required bool hostActive,
+  required HdrDisplayInfo display,
+}) {
+  if (!hostActive || !display.isHdr || display.sdrWhiteNits <= 0) return 1;
+  final double scale = kHdrGraphicsWhiteNits / display.sdrWhiteNits;
+  return scale >= 1 ? 1 : scale;
+}
+
+/// 线性亮度系数 → sRGB 编码域的乘数。
+///
+/// Flutter 在编码域混色、DWM 按 sRGB EOTF 把 SDR 窗口解成线性再乘 SDR 白，所以要让
+/// 纯白落在 `scale` 倍线性亮度，编码值得是 sRGB OETF(scale)；其余颜色按幂律近似同比。
+double hdrGraphicsEncodedGain(double linearScale) {
+  if (linearScale >= 1) return 1;
+  if (linearScale <= 0) return 0;
+  if (linearScale <= 0.0031308) return 12.92 * linearScale;
+  return 1.055 * math.pow(linearScale, 1 / 2.4) - 0.055;
+}
+
+/// 把 [child]（字幕 / 弹幕这类画在视频平面上的图形）的亮度按 [linearScale] 压到 HDR
+/// 图形白（[hdrGraphicsWhiteScale]）。系数为 1 时不套滤镜（不引入 saveLayer）；进出
+/// 直通时子树经 [GlobalKey] 换父节点，字幕层的 State（悬停 / 选词光标 / 拖拽）不重建。
+class HdrGraphicsWhiteLevel extends StatefulWidget {
+  const HdrGraphicsWhiteLevel({
+    super.key,
+    required this.linearScale,
+    required this.child,
+  });
+
+  final double linearScale;
+  final Widget child;
+
+  @override
+  State<HdrGraphicsWhiteLevel> createState() => _HdrGraphicsWhiteLevelState();
+}
+
+class _HdrGraphicsWhiteLevelState extends State<HdrGraphicsWhiteLevel> {
+  final GlobalKey _subtreeKey = GlobalKey();
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget subtree = KeyedSubtree(key: _subtreeKey, child: widget.child);
+    final double gain = hdrGraphicsEncodedGain(widget.linearScale);
+    if (gain >= 1) return subtree;
+    return ColorFiltered(
+      colorFilter: ColorFilter.matrix(<double>[
+        gain, 0, 0, 0, 0, //
+        0, gain, 0, 0, 0, //
+        0, 0, gain, 0, 0, //
+        0, 0, 0, 1, 0, //
+      ]),
+      child: subtree,
+    );
   }
 }
 
@@ -304,6 +480,41 @@ class HdrVideoHostChannel {
     }
   }
 
+  /// 引擎是否带合成器内 HDR 输出（打过 `ci/patches/flutter-engine` 补丁、导出了
+  /// `FlutterDesktopViewSetHdrOutput`）。原版引擎 / 非 Windows 恒 false。
+  Future<bool> compositorHdrSupported() async {
+    if (!_isWindows) return false;
+    try {
+      return await _channel.invokeMethod<bool>('compositorHdrSupported') ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  /// 开 / 关 Flutter 自己交换链的 HDR 输出（FP16 scRGB）。[sdrWhiteNits] 是显示器
+  /// 的「SDR 内容亮度」，UI 的白按它显示。返回调用后 HDR 输出是否开着（关闭或
+  /// 引擎做不到时为 false）。
+  Future<bool> setCompositorHdrOutput({
+    required bool enabled,
+    required double sdrWhiteNits,
+  }) async {
+    if (!_isWindows) return false;
+    try {
+      return await _channel.invokeMethod<bool>(
+            'setCompositorHdrOutput',
+            <String, Object>{'enabled': enabled, 'sdrWhiteNits': sdrWhiteNits},
+          ) ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   /// 主窗所在显示器的当前输出色彩空间 / 峰值亮度。
   Future<HdrDisplayInfo> displayInfo() async {
     if (!_isWindows) return HdrDisplayInfo.unknown;
@@ -313,10 +524,12 @@ class HdrVideoHostChannel {
       final Object? cs = value['colorSpace'];
       final Object? lum = value['maxLuminance'];
       final Object? bits = value['bitsPerColor'];
+      final Object? white = value['sdrWhiteNits'];
       return HdrDisplayInfo(
         colorSpace: cs is int ? cs : -1,
         maxLuminance: lum is num ? lum.toDouble() : 0,
         bitsPerColor: bits is int ? bits : 0,
+        sdrWhiteNits: white is num ? white.toDouble() : 0,
       );
     } on PlatformException {
       return HdrDisplayInfo.unknown;

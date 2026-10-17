@@ -3,11 +3,12 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:fake_async/fake_async.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/net/github_mirrors.dart';
 
 /// TODO-683：候选并发竞速选源 + 首字节超时 + Step1 connecting 文案。
 void main() {
@@ -21,13 +22,33 @@ void main() {
       required int? total,
       required int ms,
       required bool direct,
+      bool relay = false,
     }) =>
         UpdateProbeOutcome(
           url: url,
           total: total,
           elapsed: Duration(milliseconds: ms),
           isDirect: direct,
+          isRelay: relay,
         );
+
+    test('首选档（Cloudflare / GitHub）可用时，中转镜像再快也不胜出', () {
+      final String? winner = selectRaceWinnerUrl(<UpdateProbeOutcome>[
+        outcome('relay', total: 100, ms: 10, direct: false, relay: true),
+        outcome('github', total: 100, ms: 3000, direct: false),
+        outcome('r2', total: 100, ms: 4000, direct: true),
+      ]);
+      expect(winner, 'github',
+          reason: '中转只在首选档全部不可用时启用；首选档内仍按最快 + 锚点 tie-break');
+    });
+
+    test('首选档无一可用 → 在中转镜像里取最快', () {
+      final String? winner = selectRaceWinnerUrl(<UpdateProbeOutcome>[
+        outcome('relay-slow', total: 100, ms: 300, direct: false, relay: true),
+        outcome('relay-fast', total: 100, ms: 40, direct: false, relay: true),
+      ]);
+      expect(winner, 'relay-fast');
+    });
 
     test('空列表 → null', () {
       expect(selectRaceWinnerUrl(const <UpdateProbeOutcome>[]), isNull);
@@ -153,6 +174,54 @@ void main() {
       expect(result!.first, mirrorFast, reason: '最快返 206 者提首位');
       // 不删减：仍含全部候选。
       expect(result.toSet(), <String>{direct, mirrorFast, mirrorSlow});
+    });
+
+    test('中转镜像更快也不抢：GitHub 直连慢但可用 → 直连胜出', () async {
+      const String direct =
+          'https://github.com/x/y/releases/download/v1/app.exe';
+      final String relay = '${kGitHubMirrorPrefixes.first}$direct';
+
+      final List<String>? result = await raceSelectFastestCandidate(
+        candidateUrls: <String>[direct, relay],
+        directUrl: direct,
+        openUrl: (Uri uri, Map<String, String> headers) async {
+          if (uri.host == 'github.com') {
+            // 远超 500ms tie-break 窗口：旧语义下中转会干净胜出。
+            await Future<void>.delayed(const Duration(milliseconds: 900));
+          }
+          return _probe206(1000);
+        },
+      );
+
+      expect(result, <String>[direct, relay],
+          reason: '中转只在连不上 Cloudflare 与 GitHub 时才启用');
+    });
+
+    test('首选档全部失败 → 中转镜像胜出', () async {
+      const String r2 = 'https://fushi.moe/releases/v/v1/app.exe?src=r2';
+      const String direct =
+          'https://github.com/x/y/releases/download/v1/app.exe';
+      final String relayFast = '${kGitHubMirrorPrefixes.first}$direct';
+      final String relaySlow = '${kGitHubMirrorPrefixes[1]}$direct';
+
+      final List<String>? result = await raceSelectFastestCandidate(
+        candidateUrls: <String>[r2, direct, relayFast, relaySlow],
+        directUrl: r2,
+        openUrl: (Uri uri, Map<String, String> headers) async {
+          if (uri.host == 'fushi.moe' || uri.host == 'github.com') {
+            await Future<void>.delayed(const Duration(milliseconds: 30));
+            throw const SocketException('blocked');
+          }
+          if (uri.toString().startsWith(kGitHubMirrorPrefixes[1])) {
+            await Future<void>.delayed(const Duration(milliseconds: 300));
+          }
+          return _probe206(1000);
+        },
+      );
+
+      expect(result, isNotNull);
+      expect(result!.first, relayFast);
+      expect(result.toSet(), <String>{r2, direct, relayFast, relaySlow});
     });
 
     test('落败/坏候选被 drain：无 uncaught error、无未消费 Stream 告警（R1）', () async {
@@ -349,7 +418,7 @@ void main() {
     late Directory updatesDir;
 
     setUp(() async {
-      updatesDir = await Directory.systemTemp.createTemp('hibiki-update-race');
+      updatesDir = await Directory.systemTemp.createTemp('fushi-update-race');
     });
 
     tearDown(() async {
@@ -423,10 +492,11 @@ void main() {
     // 用户在设置里显式选了下载来源时，竞速**必须**让位：探针只比「谁首字节快」，
     // 让它重排就会把所选源顶掉，只剩 500ms 的 tie-break 宽限，设置页承诺的
     // 「优先尝试所选来源」根本不成立。下面一正一反两条钉住这个分流。
-    test('未钉源（自动）：探针竞速把更快的镜像提首位，实际分段走它', () async {
+    test('未钉源（自动）：中转镜像探针更快也不抢 GitHub，实际分段走直连', () async {
       final List<int> payload = _largePayload();
       final UpdateAsset asset = _asset(payload);
-      final String fastMirror = 'https://fast.example/${asset.url}';
+      final String fastMirror = '${kGitHubMirrorPrefixes.first}${asset.url}';
+      final String relayHost = Uri.parse(fastMirror).host;
       final List<String> segmentHosts = <String>[];
 
       final File file = await downloadUpdateAsset(
@@ -439,7 +509,7 @@ void main() {
         openUrl: (Uri uri, Map<String, String> headers) async {
           final String? range = headers[HttpHeaders.rangeHeader];
           final bool isProbe = range == 'bytes=0-0';
-          // 直连探针慢到超出 500ms tie-break 窗口 → 镜像干净胜出。
+          // 直连探针慢到超出 500ms tie-break 窗口；旧语义下镜像会干净胜出。
           if (uri.host == 'github.com' && isProbe) {
             await Future<void>.delayed(const Duration(milliseconds: 700));
           }
@@ -449,8 +519,9 @@ void main() {
       );
 
       expect(await file.readAsBytes(), payload);
-      expect(segmentHosts.toSet(), <String>{'fast.example'},
-          reason: '自动模式下竞速仍然生效：明显更快的镜像承担分段');
+      expect(segmentHosts.toSet(), <String>{'github.com'},
+          reason: '中转只在连不上 Cloudflare 与 GitHub 时才启用');
+      expect(segmentHosts, isNot(contains(relayHost)));
     });
 
     test('钉住所选源：不竞速、不探其它候选，分段就走所选源', () async {

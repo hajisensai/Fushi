@@ -19,7 +19,7 @@ import '../helpers/source_guard.dart';
 /// 写着 `kanji-breakdown` 与 `kanji-tag`（说明这段历史），裸 `contains` 会被注释喂成
 /// 假红；反过来，若有人删掉实现只留同文注释，不掩码的要求型断言又会假绿。
 ///
-/// flutter test cwd 是 hibiki package 根。
+/// flutter test cwd 是 fushi package 根。
 void main() {
   const String appPopup = 'assets/popup';
   const String extAssets = 'assets/browser_extension';

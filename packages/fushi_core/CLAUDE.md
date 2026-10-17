@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-共享核心模块：定义 Drift SQLite 数据库 schema（当前 schemaVersion=116；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照。v82：ReaderPositions/Bookmarks/BookCustomCss/RevealedImages 书键从 bookKey 切稳定 uid；v90：网页播放器自动制卡队列 `web_mine_queue`；v114：收藏词上下文；v115：排行榜 isbn / completedAt；v116：设备端待发制卡队列 `pending_mine_queue`）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
+共享核心模块：定义 Drift SQLite 数据库 schema（当前 schemaVersion=118；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照。v82：ReaderPositions/Bookmarks/BookCustomCss/RevealedImages 书键从 bookKey 切稳定 uid；v90：网页播放器自动制卡队列 `web_mine_queue`；v114：收藏词上下文；v115：排行榜 isbn / completedAt；v116：设备端待发制卡队列 `pending_mine_queue`；v117：Fushi SRS——`profiles.uid` 全局身份 + 八张 `srs_*` 表；v118：`epub_books` / `srt_books` / `video_books` 加 `localAddedAt`——本机开始拥有的时刻，与原始入库时刻 `importedAt` 拆开，删除墓碑仲裁与首页「最近添加」读它，设备本地不进 wire）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
 
 ## 入口与启动
 
@@ -26,7 +26,7 @@
 
 ## 数据模型
 
-90 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
+98 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
 
 | 分组 | 表名 |
 |------|------|
@@ -51,6 +51,7 @@
 | 互联 | `FushiPairedPeers` |
 | 游戏库 | `Galgames`, `GalgameSources`, `GalgameSessions` |
 | 删除墓碑 | `BookTombstones`, `StatisticsTombstones`, `CollectionMemberTombstones`, `BookTagMembershipTombstones`, `SyncDeletionTombstones` |
+| SRS（v117） | 同步事件本体 `SrsEntities`, `SrsFieldEdits`, `SrsReviewLogs`, `SrsUnknownEvents`（随备份走，合并导入走 SRS 专用步骤）；本机状态 / 可重建缓存 `SrsEventLocal`, `SrsLocalState`, `SrsNotesCache`, `SrsCardsCache`（设备本地，不进备份、恢复后清空）。身份是 `profiles.uid` |
 
 新增表（相对旧文档的 28 张补齐的 18 张）用途：
 
@@ -77,7 +78,7 @@
 - `GalgameSessions` -- 游玩会话事实表，由前台窗口计时器写入（脱离 hook 文本）。**刻意无统计投影表**，时长/次数/最后游玩一律现算 GROUP BY。
 - `GalgameTagMappings` -- v59（BUG-1113）游戏 ↔ 用户标签映射（复用共享 `BookTags` 池）。**无 `addedAt` 时钟、无移除墓碑**：游戏是本机局域身份，整套游戏数据不进 live-sync 也不进备份合并导入，标签跟随宿主不跨端传播。与游戏**元数据标签**（bgm/vndb 刮削字符串）是两条正交轴。
 
-迁移策略：`onUpgrade` 逐版本增量迁移（v1->v57），支持降级时自动备份并重建。
+迁移策略：`onUpgrade` 逐版本增量迁移，**最低可升级 schema 是 `kMinSupportedSchemaVersion`（v75）**——v2–v75 的阶梯（含 Hibiki 时代的 `hibiki.db` 改名与 `reader_ttu` / `sasayaki` / `hoshi://` / `s:hibikiServer` 等存量改写）已删除。低于门槛的库（含目录里只有改名前 `hibiki.db` 的情况）在任何迁移语句之前抛 `UnsupportedLegacySchemaException`，库文件原样保留，app 提示先装 `kLegacySchemaBridgeAppVersion`（v2.9.1，仍带完整阶梯）打开一次再更新；备份恢复 / 合并导入用 `checkSupportedSchemaVersion` + 文件头 `user_version` 在覆盖前做同样判定。降级（库比代码新）同样拒绝打开（`FushiDatabaseDowngradeException`），绝不重建。
 
 ## 测试与质量
 

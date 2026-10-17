@@ -8,7 +8,7 @@
 // 源码守卫：锁住手势→notifier 的接线（start/move 写 localPosition、end 清空、Stack 挂层）。
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_long_press_speed_badge.dart';
 

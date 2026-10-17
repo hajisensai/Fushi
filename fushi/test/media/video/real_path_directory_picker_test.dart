@@ -53,7 +53,7 @@ void main() {
       );
     });
 
-    test('video addSource offers local/network chooser (network = WebDAV only)',
+    test('video addSource offers local/network chooser (network = no FTP)',
         () {
       // 网络来源三域开放后，视频不再短路直选文件夹：与书/漫画共用同一个
       // 本地/网络选择对话框；本地文件夹入口仍在对话框内可达。
@@ -64,8 +64,8 @@ void main() {
       expect(body, isNotEmpty, reason: '来源视图必须保留公开的 addSource 入口');
       expect(body, contains('showAppDialog<_AddSourceChoice>'));
       expect(body, contains('await addLocalFolder()'));
-      expect(src, contains("const <String>['webdav', 'alist']"),
-          reason: '视频网络 transport 必须收窄到 WebDAV/AList');
+      expect(src, contains("const <String>['sftp', 'webdav', 'alist']"),
+          reason: '视频网络 transport 必须收窄到可原地流播的 SFTP/WebDAV/AList');
     });
 
     test('android branch uses native SAF channel, no custom browser', () {

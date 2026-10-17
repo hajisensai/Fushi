@@ -11,7 +11,7 @@ import rx.Observable
 /**
  * A basic interface for creating a source. It could be an online source, a local source, etc...
  *
- * Hibiki host ABI: the union of extensions-lib 14 (`getVideoList(episode)` and the
+ * Fushi host ABI: the union of extensions-lib 14 (`getVideoList(episode)` and the
  * Rx `fetch*` shapes) and extensions-lib 16 (`getSeasonList`, `getHosterList`,
  * `getVideoList(hoster)`) plus the Anikku/KMK `getRelatedAnimeList` slot. Every
  * lib-16 member has a default body so a lib-14 extension that never heard of it

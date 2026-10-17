@@ -199,7 +199,7 @@ void main() {
     final int handler = src.indexOf('void _handleVideoPointerUp(');
     expect(handler, greaterThanOrEqualTo(0));
     final String body = src.substring(
-        handler, src.indexOf('bool _isVideoChromePointer(', handler));
+        handler, src.indexOf('void _handleVideoWheelSignal(', handler));
     expect(body, contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)'),
         reason: '点视频画面必须收回键盘（与原生播放器一致）');
     // 「查词浮层期间除外」现在由 _canOwnVideoFocus 的统一门控保证，不再由调用点手写。
@@ -218,5 +218,46 @@ void main() {
     // 否则会夺走压在本页上方对话框的键盘。
     expect(src, contains('owner.isCurrent'),
         reason: 'appResumed 判据必须确认本页仍是当前路由');
+  });
+
+  test('图形字幕 OCR 的询问框（LLM 默认 / Lens 披露）都在焦点守卫里弹', () {
+    // 暂停帧查词与整轨转文字第一次用时会弹「默认交给 LLM」与 Google Lens 上传披露，
+    // 两者都走 root navigator 夺焦；没包 guardOverlay 关掉后空格 / 方向键就失灵。
+    final String masked = maskComments(src);
+    for (final String dialog in <String>[
+      'ensureMangaAiOcrDefaultDecided(',
+      'ensureGoogleLensDisclosure(',
+    ]) {
+      final List<int> calls =
+          dialog.allMatches(masked).map((Match m) => m.start).toList();
+      expect(calls, isNotEmpty, reason: '$dialog 的调用点不见了，守卫需要跟着改');
+      for (final int at in calls) {
+        final int guard = masked.lastIndexOf('_focusOwnership.guardOverlay(', at);
+        expect(guard >= 0 && at - guard < 80, isTrue,
+            reason: '$dialog 必须直接包在 _focusOwnership.guardOverlay 里');
+      }
+    }
+    // 引擎装配里的 decideAiDefault 也会弹同一个框（prepareMangaStreamOcr 内部调）。
+    final List<int> resolves = 'MangaOcrWizardEngines.resolve('
+        .allMatches(masked)
+        .map((Match m) => m.start)
+        .toList();
+    expect(resolves, isNotEmpty);
+    // 唯一允许的例外：桌面 CLI 的无头同意（`consent != null`）不弹框，直接写同意
+    // 状态，因此不夺焦、无需守卫；app 内（`consent == null`）仍必须套守卫。
+    final RegExp guarded = RegExp(
+      r'\.wrapDecideAiDefault\(\s*(?:_focusOwnership\.guardOverlay\s*\)'
+      r'|consent\s*==\s*null\s*\?\s*_focusOwnership\.guardOverlay\s*:'
+      r'\s*\(Future<void> Function\(\) _\)\s*=>\s*'
+      r'consent\.decideAiDefault\(\)\s*,?\s*\))',
+    );
+    for (final int at in resolves) {
+      expect(
+        guarded.hasMatch(masked.substring(at, at + 400)),
+        isTrue,
+        reason: '视频页装配的引擎必须把 decideAiDefault 套进焦点守卫'
+            '（仅 CLI 无头同意分支可换成不弹框的 consent.decideAiDefault）',
+      );
+    }
   });
 }

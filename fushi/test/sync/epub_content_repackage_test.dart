@@ -25,7 +25,7 @@ import 'package:path/path.dart' as p;
 /// upper-case `META-INF/container.xml`.
 void main() {
   late Directory tmp;
-  setUp(() => tmp = Directory.systemTemp.createTempSync('hibiki_repack_test'));
+  setUp(() => tmp = Directory.systemTemp.createTempSync('fushi_repack_test'));
   tearDown(() {
     try {
       tmp.deleteSync(recursive: true);

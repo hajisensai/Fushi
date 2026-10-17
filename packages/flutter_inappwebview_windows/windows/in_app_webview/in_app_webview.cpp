@@ -210,9 +210,20 @@ namespace flutter_inappwebview_plugin
       // intended behavior. NOTE: all environments created against the same user
       // data folder must use identical options (mismatch fails with
       // 0x8007139F) — this is the plugin's single default-environment site.
+      //
+      // BUG-3497: `fushi.local` is a virtual host served entirely by the
+      // WebResourceRequested interceptor, yet Chromium still resolves it on
+      // every main-frame navigation. `.local` goes to Windows multicast name
+      // resolution (mDNS/LLMNR), which only fails after ~2.7 s and is not
+      // negatively cached, so every book open and chapter turn sat blank for
+      // ~2 s. The lookup already fails today (NavigationCompleted below turns
+      // that failure into success); `~NOTFOUND` makes it fail immediately
+      // without touching the system resolver. Keep the host in sync with
+      // kReaderResourceHost (guard: webview2_reader_host_resolver_guard_test).
       auto options = Make<CoreWebView2EnvironmentOptions>();
       options->put_AdditionalBrowserArguments(
-        L"--autoplay-policy=no-user-gesture-required");
+        L"--autoplay-policy=no-user-gesture-required "
+        L"--host-resolver-rules=\"MAP fushi.local ~NOTFOUND\"");
       hr = CreateCoreWebView2EnvironmentWithOptions(
         nullptr, userDataFolder.empty() ? nullptr : userDataFolder.c_str(),
         options.Get(),
@@ -258,7 +269,7 @@ namespace flutter_inappwebview_plugin
       // Deliberately UNCONDITIONAL — not a missing knob. Exposing it as a
       // setting would need a matching Dart field in
       // flutter_inappwebview_platform_interface, which lives in pub-cache and is
-      // NOT forked here (only this windows package is vendored). And no Hibiki
+      // NOT forked here (only this windows package is vendored). And no Fushi
       // surface wants a browser status bar: every WebView in this app renders
       // EPUB / dictionary content, never a browsing chrome.
       //
@@ -285,7 +296,7 @@ namespace flutter_inappwebview_plugin
     //
     // WebView2 defaults AllowExternalDrop=TRUE, which makes the runtime register
     // its own IDropTarget on the HOST top-level HWND so files can be dropped INTO
-    // the web page. Hibiki only renders trusted EPUB/dictionary HTML in WebView,
+    // the web page. Fushi only renders trusted EPUB/dictionary HTML in WebView,
     // so dropping OS files into the page is never wanted. Worse, that registration
     // fights desktop_drop, which calls RegisterDragDrop once for the whole window:
     // WebView2 silently takes over the host HWND's drop target while a reader /
@@ -2122,9 +2133,17 @@ namespace flutter_inappwebview_plugin
     }
 
     if (horizontal) {
+      // 两个滚轮轴的符号约定相反：WM_MOUSEWHEEL 正值 = 向上滚（内容下移），
+      // WM_MOUSEHWHEEL 正值 = 向右滚（内容左移；Chromium 的 Win 输入构建器把它取反
+      // 成 WebKit 的「正 = 向左」，DOM deltaX 因而为正）。本入口的 delta 是「内容
+      // 移动量」（Dart 侧传 -scrollDelta / 触控板 panDelta，两者都是内容跟着走的
+      // 方向），纵向正好对上 WHEEL 的约定，横向必须取反才对上 HWHEEL。此前横向原样
+      // 下发 → 倾斜滚轮向右滚成向左、触控板两指横滑内容逆着手指走，阅读器横向
+      // 翻页随之反向（反馈 794gISjvgV）。
       webViewCompositionController->SendMouseInput(
         COREWEBVIEW2_MOUSE_EVENT_KIND_HORIZONTAL_WHEEL,
-        virtualKeys_.state() | extraKeys, offset, lastCursorPos_);
+        virtualKeys_.state() | extraKeys, static_cast<short>(-offset),
+        lastCursorPos_);
     }
     else {
       webViewCompositionController->SendMouseInput(COREWEBVIEW2_MOUSE_EVENT_KIND_WHEEL,

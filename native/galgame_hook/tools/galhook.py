@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hibiki engine-adapter evidence/probe/new/replay workflow (stdlib only)."""
+"""Fushi engine-adapter evidence/probe/new/replay workflow (stdlib only)."""
 
 from __future__ import annotations
 
@@ -201,7 +201,7 @@ def command_probe(args: argparse.Namespace) -> int:
         bundle.writestr("diagnostic.json", json.dumps(report, ensure_ascii=False, indent=2) + "\n")
         bundle.writestr(
             "README.txt",
-            "Hibiki galhook diagnostic bundle. Contains metadata only; no executable, script, image, or audio payloads.\n",
+            "Fushi galhook diagnostic bundle. Contains metadata only; no executable, script, image, or audio payloads.\n",
         )
     print(output)
     return 0

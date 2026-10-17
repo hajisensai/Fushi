@@ -1,6 +1,10 @@
 #!/bin/bash
 # Rebuild Android ffmpeg-kit (arthenica v6.0): libx264 (GPL, TODO-2357) + openssl/cert-pin
-# (BUG-891) + libvpx/libopus (inline WebM clip export).
+# (BUG-891) + libvpx/libopus (inline WebM clip export) + dav1d (BUG-2947: FFmpeg's native
+# `av1` decoder is a hwaccel-only shell, and --disable-mediacodec leaves no hwaccel, so every
+# AV1 source failed frame/GIF extraction with "doesn't support hardware accelerated AV1").
+#
+# dav1d is built with meson + ninja (scripts/android/dav1d.sh), so both must be on PATH.
 #
 # Two callers, one recipe:
 #   - Mac build box: run with no env -> uses ~/ffmpegkit-build layout + local proxy (as before).
@@ -27,10 +31,32 @@ FFMPEG_KIT_DIR="${FFMPEG_KIT_DIR:-$HOME/ffmpegkit-build/ffmpeg-kit}"
 echo "=== prepare src/ffmpeg (clone n6.0 if absent + cert-pin patch) ==="
 bash "${HERE}/prepare_ffmpeg_src.sh" "${FFMPEG_KIT_DIR}"
 
+for tool in meson ninja; do
+  command -v "${tool}" >/dev/null || { echo "(*) ${tool} not found in PATH (needed by dav1d)"; exit 6; }
+done
+
+# BUG-3503: --enable-libxml2 pulls libiconv on Android. ffmpeg-kit clones libiconv v1.17
+# from git and runs `gitsub.sh pull`, whose gnulib is a plain "subcheckout" -> it clones
+# gnulib *HEAD* (the arthenica mirror tracks upstream). Four years of gnulib drift break
+# libiconv 1.17's autogen ("gl_HOST_CPU_C_ABI_32BIT: command not found", libcharset
+# configure fails). Pin gnulib to the last commit before the v1.17 tag (2022-05-15
+# 13:01 UTC) and hand it over via GNULIB_SRCDIR, which both gitsub.sh and autogen.sh honour.
+GNULIB_PIN_SHA="4bc2b6f67259e3fb54d21d3b93e7cab12161f7fd"
+GNULIB_PIN_DIR="${FFMPEG_KIT_DIR}/.tmp/gnulib-libiconv-1.17"
+if [ "$(git -C "${GNULIB_PIN_DIR}" rev-parse HEAD 2>/dev/null)" != "${GNULIB_PIN_SHA}" ]; then
+  rm -rf "${GNULIB_PIN_DIR}"
+  mkdir -p "${GNULIB_PIN_DIR}"
+  git -C "${GNULIB_PIN_DIR}" init -q
+  git -C "${GNULIB_PIN_DIR}" fetch -q --depth 1 https://github.com/arthenica/gnulib "${GNULIB_PIN_SHA}"
+  git -C "${GNULIB_PIN_DIR}" checkout -q FETCH_HEAD
+fi
+export GNULIB_SRCDIR="${GNULIB_PIN_DIR}"
+echo "gnulib pinned for libiconv: $(git -C "${GNULIB_SRCDIR}" rev-parse HEAD)"
+
 cd "${FFMPEG_KIT_DIR}"
-echo "=== android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus START $(date) ==="
+echo "=== android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --enable-libxml2 START $(date) ==="
 rc=0
-./android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus \
+./android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --enable-libxml2 \
   --disable-x86 --disable-x86-64 --api-level=24 || rc=$?
 echo "ANDROID_BUILD_EXIT=${rc}"
 if [ "${rc}" -ne 0 ]; then

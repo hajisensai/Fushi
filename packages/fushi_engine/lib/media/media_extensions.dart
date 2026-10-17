@@ -63,6 +63,8 @@ const Set<String> kAudioExtensions = <String>{
   '.wma',
   '.ac3',
   '.eac3',
+  '.aiff',
+  '.aif',
 };
 
 /// 视频库能收录的本地媒体文件扩展名 = [kVideoExtensions] ∪ [kAudioExtensions]。

@@ -1,9 +1,18 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
+import 'package:fushi/src/settings/overlay_color_setting_item.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
@@ -42,12 +51,29 @@ List<SettingsSection> buildListeningSections() {
           id: 'listening.audiobook_background_play',
           title: t.audiobook_background_play,
           subtitle: t.audiobook_background_play_hint,
-          icon: Icons.play_circle_outline,
+          icon: FushiIcons.playCircle,
           value: (SettingsContext settingsContext) =>
               settingsContext.appModel.audiobookBackgroundPlay,
           onChanged: (SettingsContext settingsContext, bool value) async {
             await settingsContext.appModel.setAudiobookBackgroundPlay(
               value: value,
+            );
+            settingsContext.refresh();
+          },
+        ),
+        // 朗读声音（TTS）：没有录音有声书的书也能由阅读器朗读并逐句高亮。
+        SettingsActionItem(
+          id: 'listening.tts_voices',
+          title: t.audiobook_tts_voice_settings,
+          subtitle: t.audiobook_tts_voice_settings_hint,
+          icon: FushiIcons.voice,
+          cli: const SettingsCliAction.unsupported(
+            '朗读声音的增删改与设默认用 fushi_cli voice ls/add/set/use/rm',
+          ),
+          onTap: (SettingsContext settingsContext) async {
+            await openTtsVoiceSettingsPage(
+              settingsContext.context,
+              TtsServices.of(settingsContext.appModel.prefsRepo),
             );
             settingsContext.refresh();
           },
@@ -58,7 +84,29 @@ List<SettingsSection> buildListeningSections() {
           id: 'listening.audiobook_material_library',
           title: t.audiobook_material_library,
           subtitle: t.audiobook_material_library_hint,
-          icon: Icons.library_books_outlined,
+          icon: FushiIcons.dictionary,
+          // CLI：加 / 删素材目录（代替目录选择器），每次都重扫并回报认出几部作品。
+          cli: SettingsCliAction(
+            params: const <SettingsCliParam>[
+              SettingsCliParam(
+                'add',
+                help: '要加入的素材目录（绝对路径）',
+                required: false,
+                path: true,
+              ),
+              SettingsCliParam(
+                'remove',
+                help: '要移除的素材目录（与列表里的写法一致）',
+                required: false,
+              ),
+            ],
+            run: (SettingsContext c, Map<String, String> args) =>
+                editAudiobookMaterialDirs(
+                  c.appModel,
+                  add: args['add'],
+                  remove: args['remove'],
+                ),
+          ),
           onTap: (SettingsContext settingsContext) async {
             await showAppDialog<void>(
               context: settingsContext.context,
@@ -69,10 +117,27 @@ List<SettingsSection> buildListeningSections() {
             settingsContext.refresh();
           },
         ),
+        // 只有音频的有声书下载完成后自动转录入库（默认开）。本机没有设备端
+        // ASR 的平台这条开关没有意义，不显示。
+        SettingsSwitchItem(
+          id: 'listening.audiobook_auto_transcribe',
+          title: t.audiobook_auto_transcribe,
+          subtitle: t.audiobook_auto_transcribe_hint,
+          icon: FushiIcons.voice,
+          visible: (_) => isAsrSupported,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.audiobookAutoTranscribe,
+          onChanged: (SettingsContext settingsContext, bool value) async {
+            await settingsContext.appModel.setAudiobookAutoTranscribe(
+              value: value,
+            );
+            settingsContext.refresh();
+          },
+        ),
         SettingsSwitchItem(
           id: 'listening.media_notification',
           title: t.show_media_notification,
-          icon: Icons.notifications_outlined,
+          icon: FushiIcons.notifications,
           value: (SettingsContext settingsContext) =>
               settingsContext.appModel.showMediaNotification,
           onChanged: (SettingsContext settingsContext, bool value) async {
@@ -83,7 +148,7 @@ List<SettingsSection> buildListeningSections() {
         SettingsSwitchItem(
           id: 'listening.volume_key_sentence_nav',
           title: t.volume_key_sentence_nav,
-          icon: Icons.skip_next_outlined,
+          icon: FushiIcons.skipNext,
           // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
           visible: (_) => Platform.isAndroid,
           reader: const ReaderPlacement(
@@ -99,8 +164,8 @@ List<SettingsSection> buildListeningSections() {
         ),
       ],
     ),
-    // 悬浮歌词全家桶（总开关 + 7 个样式/行为子项）独立成组：原先与后台播放/
-    // 媒体通知平铺同级，一个子功能占了「有声书」分区 2/3 的行数。
+    // 悬浮歌词：总开关 + 常用行为独立成组；外观 / 排版另起一组默认折叠
+    // （与 galgame 台词浮窗「窗口与可读性」同构——两者是同一个原生窗类）。
     SettingsSection(
       // 模块门原先挂在 destination 上，并入阅读后下放到分区自己身上。
       visible: listeningModuleOn,
@@ -112,7 +177,7 @@ List<SettingsSection> buildListeningSections() {
           id: 'listening.floating_lyric',
           title: t.show_floating_lyric,
           subtitle: t.floating_lyric_hint,
-          icon: Icons.subtitles_outlined,
+          icon: FushiIcons.subtitles,
           // The strip is the desktop counterpart of the Android overlay
           // (windows/runner/floating_lyric_window.cpp), so Windows must see
           // this switch too — gating it to Android hid it from desktop users
@@ -130,13 +195,43 @@ List<SettingsSection> buildListeningSections() {
             settingsContext.refresh();
           },
         ),
+        // 同时显示句数（当前句居中，与歌词模式一致）。0 = 自动：Windows 按窗口
+        // 高度显示（拖高窗口看到更多句），Android 没有可裁的视口，自动档不提供。
+        // 改值后调 resyncFloatingLyricText 即时重推文本。
+        SettingsStepperItem(
+          id: 'listening.floating_lyric_visible_lines',
+          title: t.floating_lyric_visible_lines,
+          subtitle: t.floating_lyric_visible_lines_hint,
+          icon: Icons.format_line_spacing_outlined,
+          visible: _floatingLyricOn,
+          defaultValue: PreferencesRepository.floatingLyricVisibleLinesDefault
+              .toDouble(),
+          min: Platform.isWindows ? 0 : 1,
+          max: PreferencesRepository.floatingLyricVisibleLinesMax.toDouble(),
+          step: 1,
+          value: (SettingsContext settingsContext) {
+            final int lines =
+                settingsContext.appModel.floatingLyricVisibleLines;
+            // Android 上自动档按 3 句渲染（见 floatingLyricVisibleSpan）。
+            return (!Platform.isWindows && lines == 0 ? 3 : lines).toDouble();
+          },
+          format: (double value) => value.round() == 0
+              ? t.floating_lyric_visible_lines_auto
+              : value.round().toString(),
+          onChanged: (SettingsContext settingsContext, double value) async {
+            await settingsContext.appModel.setFloatingLyricVisibleLines(
+              value.round(),
+            );
+            await settingsContext.appModel.audiobookSession
+                .resyncFloatingLyricText();
+            settingsContext.refresh();
+          },
+        ),
         SettingsStepperItem(
           id: 'listening.floating_lyric_font_size',
           title: t.floating_lyric_font_size,
-          icon: Icons.format_size,
-          visible: (SettingsContext c) =>
-              (Platform.isAndroid || Platform.isWindows) &&
-              c.appModel.showFloatingLyric,
+          icon: FushiIcons.fontSize,
+          visible: _floatingLyricOn,
           min: 8,
           max: 64,
           step: 1,
@@ -153,95 +248,273 @@ List<SettingsSection> buildListeningSections() {
             settingsContext.refresh();
           },
         ),
-        // TODO-370: 悬浮字幕「文字透明度」+「按钮底色透明度」自定义（0..100%，
-        // 100=保持现观感）。与字号一样仅 Android/Windows 可见（有原生悬浮窗后端）。
-        SettingsStepperItem(
-          id: 'listening.floating_lyric_text_opacity',
-          title: t.floating_lyric_text_opacity,
-          icon: Icons.opacity_outlined,
-          visible: (SettingsContext c) =>
-              (Platform.isAndroid || Platform.isWindows) &&
-              c.appModel.showFloatingLyric,
-          min: 0,
-          max: 100,
-          step: 5,
+        SettingsSwitchItem(
+          id: 'listening.floating_lyric_click_lookup',
+          title: t.floating_lyric_click_lookup,
+          subtitle: t.floating_lyric_click_lookup_hint,
+          icon: FushiIcons.touch,
+          visible: _floatingLyricOn,
           value: (SettingsContext settingsContext) =>
-              settingsContext.appModel.floatingLyricTextOpacity.toDouble(),
-          format: (double value) => '${value.round()}%',
-          onChanged: (SettingsContext settingsContext, double value) async {
-            await settingsContext.appModel.setFloatingLyricTextOpacity(
-              value.round(),
+              settingsContext.appModel.floatingLyricClickLookup,
+          onChanged: (SettingsContext settingsContext, bool value) async {
+            await settingsContext.appModel.setFloatingLyricClickLookup(value);
+            settingsContext.refresh();
+          },
+        ),
+      ],
+    ),
+    SettingsSection(
+      // 分区级只判模块门（与另外两个听书分区同粒度）；平台与「悬浮字幕开没开」
+      // 由每一项自己的 visible 判，项全不可见时分区整个被过滤掉。
+      visible: listeningModuleOn,
+      id: 'listening.section.floating_lyric_appearance',
+      title: t.floating_lyric_appearance_section,
+      collapsedByDefault: true,
+      items: <SettingsItem>[
+        // 字体只有 Windows 原生窗（DirectWrite）吃；Android TextView 用系统字体。
+        SettingsNavigationItem(
+          id: 'listening.floating_lyric_font',
+          title: t.floating_lyric_font,
+          subtitle: t.floating_lyric_font_hint,
+          icon: FushiIcons.font,
+          showIcon: true,
+          visible: _floatingLyricWindowsOn,
+          onTap: (SettingsContext settingsContext) async {
+            await pushSettingsPage(
+              settingsContext,
+              (_) => const CustomFontsPage(target: FontTarget.floatingLyric),
             );
             await settingsContext.appModel.audiobookSession
                 .applyFloatingLyricStyle();
             settingsContext.refresh();
           },
         ),
-        SettingsStepperItem(
-          id: 'listening.floating_lyric_button_bg_opacity',
-          title: t.floating_lyric_button_bg_opacity,
-          icon: Icons.smart_button_outlined,
-          visible: (SettingsContext c) =>
-              (Platform.isAndroid || Platform.isWindows) &&
-              c.appModel.showFloatingLyric,
-          min: 0,
-          max: 100,
-          step: 5,
-          value: (SettingsContext settingsContext) => settingsContext
-              .appModel
-              .floatingLyricButtonBgOpacity
+        SettingsSwitchItem(
+          id: 'listening.floating_lyric_vertical',
+          title: t.floating_lyric_vertical,
+          subtitle: t.floating_lyric_vertical_hint,
+          icon: FushiIcons.textVertical,
+          visible: _floatingLyricWindowsOn,
+          defaultValue: false,
+          value: (SettingsContext c) =>
+              c.appModel.prefsRepo.floatingLyricVertical,
+          onChanged: (SettingsContext c, bool value) =>
+              _commitFloatingLyricStyle(
+                c,
+                () => c.appModel.prefsRepo.setFloatingLyricVertical(value),
+              ),
+        ),
+        SettingsSwitchItem(
+          id: 'listening.floating_lyric_bold',
+          title: t.gal_hook_text_bold,
+          subtitle: t.gal_hook_text_bold_hint,
+          icon: FushiIcons.bold,
+          visible: _floatingLyricWindowsOn,
+          defaultValue: true,
+          value: (SettingsContext c) => c.appModel.prefsRepo.floatingLyricBold,
+          onChanged: (SettingsContext c, bool value) =>
+              _commitFloatingLyricStyle(
+                c,
+                () => c.appModel.prefsRepo.setFloatingLyricBold(value),
+              ),
+        ),
+        SettingsSliderItem(
+          id: 'listening.floating_lyric_line_height',
+          title: t.gal_hook_text_line_height,
+          subtitle: t.gal_hook_text_line_height_hint,
+          icon: FushiIcons.lineSpacing,
+          visible: _floatingLyricWindowsOn,
+          defaultValue: PreferencesRepository.floatingLyricLineHeightDefault,
+          min: PreferencesRepository.floatingLyricLineHeightMin,
+          max: PreferencesRepository.floatingLyricLineHeightMax,
+          divisions: 24,
+          step: 0.05,
+          titleReadout: true,
+          label: (double value) => '${value.toStringAsFixed(2)}×',
+          value: (SettingsContext c) =>
+              c.appModel.prefsRepo.floatingLyricLineHeight,
+          onChanged: (SettingsContext c, double value) =>
+              _commitFloatingLyricStyle(
+                c,
+                () => c.appModel.prefsRepo.setFloatingLyricLineHeight(value),
+              ),
+        ),
+        SettingsSliderItem(
+          id: 'listening.floating_lyric_letter_spacing',
+          title: t.gal_hook_text_letter_spacing,
+          subtitle: t.gal_hook_text_letter_spacing_hint,
+          icon: FushiIcons.spaceBar,
+          visible: _floatingLyricWindowsOn,
+          defaultValue: 0,
+          min: PreferencesRepository.floatingLyricLetterSpacingMin,
+          max: PreferencesRepository.floatingLyricLetterSpacingMax,
+          divisions: 28,
+          step: 0.5,
+          titleReadout: true,
+          label: (double value) => '${value.toStringAsFixed(1)} px',
+          value: (SettingsContext c) =>
+              c.appModel.prefsRepo.floatingLyricLetterSpacing,
+          onChanged: (SettingsContext c, double value) =>
+              _commitFloatingLyricStyle(
+                c,
+                () => c.appModel.prefsRepo.setFloatingLyricLetterSpacing(value),
+              ),
+        ),
+        SettingsSegmentedItem<int>(
+          id: 'listening.floating_lyric_text_alignment',
+          title: t.gal_hook_text_alignment,
+          icon: FushiIcons.alignJustify,
+          visible: _floatingLyricWindowsOn,
+          defaultValue: 0,
+          options: <SettingsSegmentOption<int>>[
+            SettingsSegmentOption<int>(
+              value: 0,
+              label: t.gal_hook_text_alignment_center,
+            ),
+            SettingsSegmentOption<int>(
+              value: 1,
+              label: t.gal_hook_text_alignment_left,
+            ),
+          ],
+          selected: (SettingsContext c) =>
+              c.appModel.prefsRepo.floatingLyricTextAlignment,
+          onChanged: (SettingsContext c, int value) =>
+              _commitFloatingLyricStyle(
+                c,
+                () => c.appModel.prefsRepo.setFloatingLyricTextAlignment(value),
+              ),
+        ),
+        SettingsSliderItem(
+          id: 'listening.floating_lyric_text_padding',
+          title: t.gal_hook_text_padding,
+          subtitle: t.gal_hook_text_padding_hint,
+          icon: FushiIcons.formatShapes,
+          visible: _floatingLyricWindowsOn,
+          defaultValue: PreferencesRepository.floatingLyricTextPaddingDefault
               .toDouble(),
-          format: (double value) => '${value.round()}%',
-          onChanged: (SettingsContext settingsContext, double value) async {
-            await settingsContext.appModel.setFloatingLyricButtonBgOpacity(
-              value.round(),
-            );
-            await settingsContext.appModel.audiobookSession
-                .applyFloatingLyricStyle();
-            settingsContext.refresh();
-          },
+          min: 0,
+          max: PreferencesRepository.floatingLyricTextPaddingMax.toDouble(),
+          divisions: PreferencesRepository.floatingLyricTextPaddingMax ~/ 2,
+          step: 2,
+          titleReadout: true,
+          label: (double value) => '${value.round()} px',
+          value: (SettingsContext c) =>
+              c.appModel.prefsRepo.floatingLyricTextPadding.toDouble(),
+          onChanged: (SettingsContext c, double value) =>
+              _commitFloatingLyricStyle(
+                c,
+                () => c.appModel.prefsRepo.setFloatingLyricTextPadding(
+                  value.round(),
+                ),
+              ),
+        ),
+        _floatingLyricColorItem(
+          id: 'listening.floating_lyric_color_text',
+          visible: _floatingLyricOn,
+          title: t.gal_hook_text_color,
+          icon: FushiIcons.textFields,
+          role: FloatingLyricColorRole.text,
+        ),
+        _floatingLyricColorItem(
+          id: 'listening.floating_lyric_color_current',
+          title: t.floating_lyric_current_line_color,
+          icon: FushiIcons.lightbulb,
+          role: FloatingLyricColorRole.current,
+          visible: _floatingLyricWindowsOn,
+        ),
+        _floatingLyricColorItem(
+          id: 'listening.floating_lyric_color_background',
+          visible: _floatingLyricOn,
+          title: t.gal_hook_text_background_color,
+          icon: FushiIcons.blur,
+          role: FloatingLyricColorRole.background,
         ),
         // TODO-576: 悬浮字幕/歌词条「背景透明度」自定义（0..100%，默认 70=更不挡
-        // 视野）。同样仅 Android/Windows 可见（有原生悬浮窗后端）。
-        SettingsStepperItem(
+        // 视野）。
+        _floatingLyricPercentItem(
           id: 'listening.floating_lyric_bg_opacity',
+          visible: _floatingLyricOn,
           title: t.floating_lyric_bg_opacity,
           icon: Icons.gradient_outlined,
-          visible: (SettingsContext c) =>
-              (Platform.isAndroid || Platform.isWindows) &&
-              c.appModel.showFloatingLyric,
-          min: 0,
-          max: 100,
-          step: 5,
-          value: (SettingsContext settingsContext) =>
-              settingsContext.appModel.floatingLyricBgOpacity.toDouble(),
-          format: (double value) => '${value.round()}%',
-          onChanged: (SettingsContext settingsContext, double value) async {
-            await settingsContext.appModel.setFloatingLyricBgOpacity(
-              value.round(),
-            );
-            await settingsContext.appModel.audiobookSession
-                .applyFloatingLyricStyle();
-            settingsContext.refresh();
-          },
+          value: (SettingsContext c) => c.appModel.floatingLyricBgOpacity,
+          write: (SettingsContext c, int v) =>
+              c.appModel.setFloatingLyricBgOpacity(v),
         ),
-        // TODO-708 P2: 悬浮字幕/歌词条「圆角半径」自定义（dp，0=平台原生观感）。同样仅
-        // Android/Windows 可见（有原生悬浮窗后端）。镜像透明度那条 apply 链路。
+        // TODO-370: 悬浮字幕「文字透明度」+「按钮底色透明度」自定义（0..100%，
+        // 100=保持现观感）。
+        _floatingLyricPercentItem(
+          id: 'listening.floating_lyric_text_opacity',
+          visible: _floatingLyricOn,
+          title: t.floating_lyric_text_opacity,
+          icon: Icons.opacity_outlined,
+          value: (SettingsContext c) => c.appModel.floatingLyricTextOpacity,
+          write: (SettingsContext c, int v) =>
+              c.appModel.setFloatingLyricTextOpacity(v),
+        ),
+        _floatingLyricPercentItem(
+          id: 'listening.floating_lyric_context_opacity',
+          title: t.floating_lyric_context_opacity,
+          subtitle: t.floating_lyric_context_opacity_hint,
+          icon: FushiIcons.blurLinear,
+          visible: _floatingLyricWindowsOn,
+          value: (SettingsContext c) =>
+              c.appModel.prefsRepo.floatingLyricContextOpacity,
+          write: (SettingsContext c, int v) =>
+              c.appModel.prefsRepo.setFloatingLyricContextOpacity(v),
+        ),
+        _floatingLyricPercentItem(
+          id: 'listening.floating_lyric_button_bg_opacity',
+          visible: _floatingLyricOn,
+          title: t.floating_lyric_button_bg_opacity,
+          icon: Icons.smart_button_outlined,
+          value: (SettingsContext c) => c.appModel.floatingLyricButtonBgOpacity,
+          write: (SettingsContext c, int v) =>
+              c.appModel.setFloatingLyricButtonBgOpacity(v),
+        ),
+        SettingsSliderItem(
+          id: 'listening.floating_lyric_outline_width',
+          title: t.gal_hook_text_outline_width,
+          subtitle: t.gal_hook_text_outline_width_hint,
+          icon: FushiIcons.outline,
+          visible: _floatingLyricWindowsOn,
+          defaultValue: 0,
+          min: 0,
+          max: PreferencesRepository.floatingLyricOutlineWidthMax,
+          divisions: 24,
+          step: 0.25,
+          titleReadout: true,
+          label: (double value) => '${value.toStringAsFixed(2)} px',
+          value: (SettingsContext c) =>
+              c.appModel.prefsRepo.floatingLyricOutlineWidth,
+          onChanged: (SettingsContext c, double value) =>
+              _commitFloatingLyricStyle(
+                c,
+                () => c.appModel.prefsRepo.setFloatingLyricOutlineWidth(value),
+              ),
+        ),
+        _floatingLyricColorItem(
+          id: 'listening.floating_lyric_color_outline',
+          title: t.gal_hook_text_outline_color,
+          icon: FushiIcons.outlineColor,
+          role: FloatingLyricColorRole.outline,
+          visible: _floatingLyricWindowsOn,
+          enableAlpha: true,
+        ),
+        // TODO-708 P2: 悬浮字幕/歌词条「圆角半径」自定义（dp，0=直角）。
         SettingsStepperItem(
           id: 'listening.floating_lyric_corner_radius',
           title: t.floating_lyric_corner_radius,
           subtitle: t.floating_lyric_corner_radius_hint,
           icon: Icons.rounded_corner_outlined,
-          visible: (SettingsContext c) =>
-              (Platform.isAndroid || Platform.isWindows) &&
-              c.appModel.showFloatingLyric,
+          visible: _floatingLyricOn,
+          defaultValue: PreferencesRepository.floatingLyricCornerRadiusDefault
+              .toDouble(),
           min: 0,
           max: 48,
           step: 2,
           value: (SettingsContext settingsContext) =>
               settingsContext.appModel.floatingLyricCornerRadius.toDouble(),
-          format: (double value) =>
-              value.round() == 0 ? t.audio_panel_auto : '${value.round()}',
+          format: (double value) => '${value.round()}',
           onChanged: (SettingsContext settingsContext, double value) async {
             await settingsContext.appModel.setFloatingLyricCornerRadius(
               value.round(),
@@ -251,16 +524,14 @@ List<SettingsSection> buildListeningSections() {
             settingsContext.refresh();
           },
         ),
-        // TODO-708 P2: 悬浮字幕/歌词条「宽度」自定义（dp，0=平台默认宽）。0 显示为「自动」，
-        // 其余 200..1200 逐 40 dp 步进。
+        // TODO-708 P2: 悬浮字幕/歌词条「宽度」自定义（dp，0=平台默认宽 / Windows
+        // 拖角缩放后的宽度）。0 显示为「自动」，其余 200..1200 逐 40 dp 步进。
         SettingsStepperItem(
           id: 'listening.floating_lyric_width',
           title: t.floating_lyric_width,
           subtitle: t.floating_lyric_width_hint,
           icon: Icons.width_normal_outlined,
-          visible: (SettingsContext c) =>
-              (Platform.isAndroid || Platform.isWindows) &&
-              c.appModel.showFloatingLyric,
+          visible: _floatingLyricOn,
           min: 0,
           max: 1200,
           step: 40,
@@ -280,48 +551,79 @@ List<SettingsSection> buildListeningSections() {
             settingsContext.refresh();
           },
         ),
-        // TODO-708 P4: 悬浮字幕/歌词条「上下文行数」（对称单值，0=只当前行=今天单行
-        // 观感）。0 显示为「自动」/单行语义，1..3 在当前行上下各显示 N 行。改值后调
-        // resyncFloatingLyricText 即时重推（对称透明度那条的 applyFloatingLyricStyle）。
-        SettingsStepperItem(
-          id: 'listening.floating_lyric_context_lines',
-          title: t.floating_lyric_context_lines,
-          subtitle: t.floating_lyric_context_lines_hint,
-          icon: Icons.format_line_spacing_outlined,
-          visible: (SettingsContext c) =>
-              (Platform.isAndroid || Platform.isWindows) &&
-              c.appModel.showFloatingLyric,
-          min: 0,
-          max: 3,
-          step: 1,
-          value: (SettingsContext settingsContext) =>
-              settingsContext.appModel.floatingLyricContextLines.toDouble(),
-          format: (double value) => value.round().toString(),
-          onChanged: (SettingsContext settingsContext, double value) async {
-            await settingsContext.appModel.setFloatingLyricContextLines(
-              value.round(),
-            );
-            await settingsContext.appModel.audiobookSession
-                .resyncFloatingLyricText();
-            settingsContext.refresh();
-          },
-        ),
-        SettingsSwitchItem(
-          id: 'listening.floating_lyric_click_lookup',
-          title: t.floating_lyric_click_lookup,
-          subtitle: t.floating_lyric_click_lookup_hint,
-          icon: Icons.touch_app_outlined,
-          visible: (SettingsContext c) =>
-              (Platform.isAndroid || Platform.isWindows) &&
-              c.appModel.showFloatingLyric,
-          value: (SettingsContext settingsContext) =>
-              settingsContext.appModel.floatingLyricClickLookup,
-          onChanged: (SettingsContext settingsContext, bool value) async {
-            await settingsContext.appModel.setFloatingLyricClickLookup(value);
-            settingsContext.refresh();
-          },
-        ),
       ],
     ),
   ];
+}
+
+/// 悬浮字幕有原生后端（Android overlay / Windows 原生窗）且已开启。
+bool _floatingLyricOn(SettingsContext c) =>
+    (Platform.isAndroid || Platform.isWindows) && c.appModel.showFloatingLyric;
+
+/// 只有 Windows 原生窗（DirectWrite，与 galgame 台词浮窗同一个窗类）吃的项。
+bool _floatingLyricWindowsOn(SettingsContext c) =>
+    Platform.isWindows && c.appModel.showFloatingLyric;
+
+/// 写偏好 → 整份样式重推给原生窗 → 刷新设置页。
+Future<void> _commitFloatingLyricStyle(
+  SettingsContext context,
+  Future<void> Function() write,
+) async {
+  await write();
+  await context.appModel.audiobookSession.applyFloatingLyricStyle();
+  context.refresh();
+}
+
+SettingsStepperItem _floatingLyricPercentItem({
+  required String id,
+  required String title,
+  required IconData icon,
+  required int Function(SettingsContext c) value,
+  required Future<void> Function(SettingsContext c, int value) write,
+  String? subtitle,
+  required bool Function(SettingsContext c) visible,
+}) {
+  return SettingsStepperItem(
+    id: id,
+    title: title,
+    subtitle: subtitle,
+    icon: icon,
+    visible: visible,
+    min: 0,
+    max: 100,
+    step: 5,
+    value: (SettingsContext c) => value(c).toDouble(),
+    format: (double v) => '${v.round()}%',
+    onChanged: (SettingsContext c, double v) =>
+        _commitFloatingLyricStyle(c, () => write(c, v.round())),
+  );
+}
+
+/// 悬浮字幕颜色行：默认跟随主题（M3E 配对色，与浮窗下发同一个
+/// [floatingLyricThemeColor]），可自选。与 galgame 台词浮窗共用同一个组件。
+SettingsCustomItem _floatingLyricColorItem({
+  required String id,
+  required String title,
+  required IconData icon,
+  required FloatingLyricColorRole role,
+  required bool Function(SettingsContext c) visible,
+  bool enableAlpha = false,
+}) {
+  return overlayColorSettingItem(
+    id: id,
+    title: title,
+    icon: icon,
+    visible: visible,
+    enableAlpha: enableAlpha,
+    followThemeValue: PreferencesRepository.floatingLyricColorFollowTheme,
+    followsTheme: (int stored) =>
+        stored == PreferencesRepository.floatingLyricColorFollowTheme,
+    value: (SettingsContext c) => c.appModel.prefsRepo.floatingLyricColor(role),
+    themedColor: (ThemeData theme) =>
+        floatingLyricThemeColor(theme.colorScheme, role),
+    commit: (SettingsContext c, int color) => _commitFloatingLyricStyle(
+      c,
+      () => c.appModel.prefsRepo.setFloatingLyricColor(role, color),
+    ),
+  );
 }

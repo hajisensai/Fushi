@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/port_kill_confirm.dart';
 import 'package:fushi/src/sync/port_process_terminator.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 「一键结束占用端口进程」杀前确认弹窗（PR#420 审查红线修复）的 widget 测试。
 ///
@@ -79,7 +80,7 @@ void main() {
     expect(find.byType(FushiDestructiveConfirmDialog), findsNothing);
   });
 
-  testWidgets('占用者是 hibiki 自身旧实例 → 弹窗明确标注本应用另一实例', (WidgetTester tester) async {
+  testWidgets('占用者是 Fushi 自身旧实例 → 弹窗明确标注本应用另一实例', (WidgetTester tester) async {
     final BuildContext context = await pumpHost(tester);
     final Future<PortKillDecision> decisionFuture = decidePortKill(
       context,
@@ -130,9 +131,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final FilledButton confirmButton = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, t.yomitan_port_kill_confirm),
-    );
+    final FilledButton confirmButton = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(FilledButton, t.yomitan_port_kill_confirm)),);
     confirmButton.onPressed!();
     await tester.pumpAndSettle();
 
@@ -158,9 +157,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final FilledButton confirmButton = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, t.yomitan_port_kill_confirm),
-    );
+    final FilledButton confirmButton = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(FilledButton, t.yomitan_port_kill_confirm)),);
     confirmButton.onPressed!();
     await tester.pumpAndSettle();
 

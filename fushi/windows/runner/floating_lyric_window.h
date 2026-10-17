@@ -98,6 +98,18 @@ class FloatingLyricWindow {
     uint32_t button_bg_color = 0x33000000;
     uint32_t highlight_color = 0x80FFD54F;
     uint32_t active_color = 0xFFFFD54F;
+    // M3E floating toolbar palette resolved from the app theme on the Dart side
+    // (galgame hook overlay only). toolbar_bg_color alpha 0 = field absent ->
+    // the pass-through toolbar keeps the legacy look built from the four colours
+    // above. See hook_toolbar::Style::surface_color.
+    uint32_t toolbar_bg_color = 0;
+    uint32_t toolbar_icon_color = 0;
+    uint32_t toolbar_hover_color = 0;
+    uint32_t toolbar_active_bg_color = 0;
+    uint32_t toolbar_active_icon_color = 0;
+    // 工具条悬停提示气泡（alpha 0 = 系统样式）。
+    uint32_t toolbar_tooltip_bg_color = 0;
+    uint32_t toolbar_tooltip_text_color = 0;
     // TODO-708 P2: 窗宽/窗高仍用 0 = 平台原生默认（720dip 起始宽 + 可拖拽）：0 宽窗
     // 不是合法用户取值，拿它当哨兵没有歧义。
     //
@@ -108,6 +120,14 @@ class FloatingLyricWindow {
     double corner_radius = 14.0;
     double window_width = 0.0;
     double window_height = 0.0;
+    // 多行上下文（有声书悬浮字幕）：当前句的字色。alpha 0 = 字段缺省，当前句沿用
+    // text_color（老 payload 逐像素不变）。
+    uint32_t current_line_color = 0;
+    // 多行上下文：非当前句相对 text_color 的不透明度（0..1）。历史固定 0.55。
+    double context_line_opacity = 0.55;
+    // 用户「竖排」偏好：只在 hook 台词模式（有声书悬浮字幕 / galgame 台词浮窗）
+    // 生效——字从上往下、行从右往左，溢出改为横向滚动。false = 老行为逐像素不变。
+    bool vertical_text = false;
   };
 
   struct Labels {
@@ -185,6 +205,9 @@ class FloatingLyricWindow {
   // 工具条所在区域才现身。**真隐藏而不是降透明度**——这个窗口盖在游戏上，每一个
   // 还在的像素都是玩家点不到的像素（BUG-951 的原话）。
   void SetToolbarAutoHide(bool enabled);
+  // 工具条在图标下方显示简短文字（文案经 hook_toolbar::SetSlotLabels 下发）。
+  // 台词窗不够宽放不下带字的一排时自动退回纯图标 + 悬停提示。
+  void SetToolbarLabels(bool enabled);
   // 穿透态下正文是否仍然拦截落在**文字行盒**上的鼠标（默认 true = 拦截，历史行为，
   // 点字查词才成立）。关掉后连字也不接，整窗对游戏彻底透明——用户原话「穿透不彻底
   // 等于彻底不穿透」「我想点击文字底下的东西点不到了」。关掉后自然也没有点字查词，
@@ -425,6 +448,12 @@ class FloatingLyricWindow {
     float hit_right = 0.0f;
   };
   ScrollBarGeometry ComputeScrollBar() const;
+  // 文本排版块在客户区里的绘制原点（物理 px）。横排：x = text_rect_.left，
+  // y = text_rect_.top - scroll_offset_px_（与引入竖排之前同一表达式）；竖排：
+  // x = text_rect_.left + vertical_flow_shift_px_ + scroll_offset_px_，y 恒为
+  // text_rect_.top。所有 DrawTextLayout / 高亮框 / catch fill / CharIndexAt 共用。
+  float TextOriginX() const;
+  float TextOriginY() const;
   // 客户区点是否落在滚动条命中带里（hook 模式且真有溢出时才可能为 true）。
   bool ScrollBarContains(float x, float y) const;
   // 从客户区 y 开始拖 thumb：按在 thumb 外先把 thumb 中心搬到指针下。返回 false
@@ -467,6 +496,10 @@ class FloatingLyricWindow {
   int lookup_trigger_ = 0;
   // 工具条自动隐藏（见 SetToolbarAutoHide）。
   bool toolbar_auto_hide_ = true;
+  // 工具条文字标签开关（见 SetToolbarLabels）。
+  bool toolbar_labels_ = false;
+  // 当前宽度 |body_width_px| 下是否真的画文字标签（开关开 + 有文案 + 放得下）。
+  bool ToolbarLabelsActive(float body_width_px) const;
   // 工具条当前是否处于「已揭示」状态（自动隐藏关时恒 true）。
   bool toolbar_revealed_ = false;
   // 揭示轮询定时器是否已挂。
@@ -534,6 +567,12 @@ class FloatingLyricWindow {
   // TODO-708 P4: 块内当前行区间（UTF-16）。-1/0 = 无行标记（不 dim）。
   int current_line_start_ = -1;
   int current_line_length_ = 0;
+  // 多行上下文溢出视口时，每帧把当前句滚到视口中央（歌词模式式跟随）。新的一句
+  // 到来时置位；用户滚轮 / 拖滚动条手动翻看后清零，直到下一句再接管。窗口被拖高
+  // 拖矮时跟随照旧生效，所以拖大窗口就是「看到更多前后句」。
+  bool follow_current_line_ = false;
+  // 渲染目标已套上「清晰文字」渲染参数（重建渲染目标后重置）。
+  bool text_rendering_params_applied_ = false;
   Style style_;
   Labels labels_;
 
@@ -545,6 +584,17 @@ class FloatingLyricWindow {
   // 把偏移留在旧行程外。
   float scroll_offset_px_ = 0.0f;
   float scroll_max_px_ = 0.0f;
+  // 竖排模式是否**真的**生效：hook 模式 + style_.vertical_text + text_format_ /
+  // text_layout_ 的竖排方向设置成功。由 Render 在建 format / layout 时写入
+  // （失败即回退横排并保持 false），CharIndexAt / ComputeScrollBar 等 Render 之外
+  // 的读者只信它，不各自再判 style_.vertical_text。
+  //
+  // 竖排时滚动轴是 x：scroll_offset_px_ = 0 显示最右侧的开头（第一行贴视口右沿），
+  // 增大 = 内容右移、向左看后文；scroll_max_px_ = max(0, metrics.width - 视口宽)。
+  bool vertical_active_ = false;
+  // 竖排溢出时把「排版块右沿」对齐到视口右沿所需的 x 平移（layout 坐标 → 视口），
+  // 每帧由 Render 按实测 metrics 重算；不溢出 / 横排时恒 0。
+  float vertical_flow_shift_px_ = 0.0f;
   // BUG-1860 — 拖滚动条 thumb 的手势状态。与 pressed_ / dragging_ 互斥，同样由
   // CancelPointerGesture 统一终结。
   bool scroll_thumb_dragging_ = false;

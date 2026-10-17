@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Flutter widget for displaying fading edge at start/end of scroll views
 class FadingEdgeScrollView extends StatefulWidget {

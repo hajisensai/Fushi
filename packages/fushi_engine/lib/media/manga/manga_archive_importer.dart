@@ -347,7 +347,7 @@ abstract final class MangaArchiveImporter {
     final String extension = p.extension(archivePath).toLowerCase();
     _OpenedArchive? opened;
     final Directory staging = await Directory.systemTemp.createTemp(
-      'hibiki_manga_archive_',
+      'fushi_manga_archive_',
     );
     Directory? epubExtraction;
     try {
@@ -413,7 +413,7 @@ abstract final class MangaArchiveImporter {
 
         if (extension == '.epub') {
           epubExtraction = await Directory.systemTemp.createTemp(
-            'hibiki_manga_epub_',
+            'fushi_manga_epub_',
           );
           final EpubBook book = EpubParser.parseSyncFromPath(
             archivePath,
@@ -809,7 +809,7 @@ abstract final class MangaArchiveImporter {
       opened.close();
       opened = null;
       extraction = Directory.systemTemp.createTempSync(
-        'hibiki_manga_epub_probe_',
+        'fushi_manga_epub_probe_',
       );
       final EpubBook book = EpubParser.parseSyncFromPath(
         archivePath,

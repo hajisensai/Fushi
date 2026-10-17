@@ -1,16 +1,18 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 /// BUG-1364（BUG-797 / BUG-1040 / BUG-1327 同族遗留）：查词浮层子树里「搜索中」的
 /// 加载占位卡此前没接 `_popupHidingDialogDepth`。
@@ -39,6 +41,9 @@ class _PlaceholderTestAppModel extends AppModel {
 
   @override
   double get popupMaxWidth => 360;
+
+  @override
+  double get dictionaryFontSize => 16;
 
   @override
   double get popupMaxHeight => 360;
@@ -142,7 +147,10 @@ class _PlaceholderHostPageState extends ConsumerState<_PlaceholderHostPage>
 
 Widget _wrap(AppModel appModel, GlobalKey<_PlaceholderHostPageState> key) {
   return ProviderScope(
-    overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+    overrides: <Override>[
+      appProvider.overrideWith((Ref ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
+    ],
     child: TranslationProvider(
       child: MaterialApp(
         builder: (BuildContext context, Widget? child) =>
@@ -153,10 +161,11 @@ Widget _wrap(AppModel appModel, GlobalKey<_PlaceholderHostPageState> key) {
   );
 }
 
-/// 占位卡「正在画」的判据：外层 [Positioned] 槽位内还有那条进度条。
+/// 占位卡「正在画」的判据：外层 [Positioned] 槽位内还有那块延迟加载层
+/// （[FushiDeferredLoading]，指示器 150ms 后才露出，判「在画」看加载层本身）。
 Finder get _placeholderProgress => find.descendant(
       of: find.byKey(kLookupSearchPlaceholderKey),
-      matching: find.byType(LinearProgressIndicator),
+      matching: find.byType(FushiDeferredLoading),
     );
 
 void main() {

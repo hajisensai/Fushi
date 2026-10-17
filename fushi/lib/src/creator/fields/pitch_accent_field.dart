@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/creator.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -37,9 +37,9 @@ class PitchAccentField extends Field {
   /// Extra value key for pitch-category HTML.
   static const String pitchCategoriesExtraKey = 'pitchCategories';
 
-  /// Builds pitch extra values from a dictionary entry.
+  /// Builds pitch extra values from a dictionary entry（与弹窗制卡同名的
+  /// `pitchPositions` / `pitchCategories` 字段；无头可用，桌面 CLI 制卡用它补字段）。
   static Map<String, String> extraValuesFromEntry({
-    required AppModel appModel,
     required DictionaryEntry entry,
   }) {
     final reading = entry.reading.isNotEmpty ? entry.reading : entry.word;

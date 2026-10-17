@@ -1,0 +1,10 @@
+## BUG-2976 · 切到视频首页与回到 app 首页卡顿
+- **报告**：2026-10-06（用户：转述协作者 shishamo「切换到视频模块的首页的时候会很卡；app 首页也会卡一下」）
+- **真实性**：✅ 真 bug（沿代码路径定位；未拿到真机 timeline，见备注）。切 tab 那一帧上叠了四份 UI isolate 重活：
+  1. `fushi/lib/src/pages/implementations/home_page.dart:1881`（`_keepAliveTabs`）不含 `HomeTab.home` → 首页走 `:3277` 的非保活 `KeyedSubtree`，每次切回整页 dispose → 重挂载：整树 inflate、`home_dashboard_page.dart:606` `initState` 重跑整批聚合（`loadStatFacts` 全表 study_segments、`getAllMediaImages`、`listForShelf` 内同步 `listSync` 封面目录，行物化与聚合都在 UI isolate）、`FushiEntranceScope` 五个分区错峰进场重放（动画期 OpacityLayer 离屏合成）、`PrebakedBlurImage` 重新烘焙；聚合回来再整页 `setState`（`:884`）。
+  2. `home_page.dart:3258-3274` `buildBody` 每次 new 页面 widget（`VideoLibraryShell` 带闭包与非 const 参数），Flutter 只对同一实例跳过子树 → 每次切 tab / HomePage 任一 setState，**被 Offstage 藏着的**视频页也整页 build（全库过滤 + 四条横滚行重算 + 卡片逐个 update）。
+  3. `home_video_page.dart:626-633` `onTabActivated` 每次切回都 `_refreshPendingScrape` → `video_library_scrape_sweep.dart:300-315` `_plannedWorks`：每个来源全表 `allVideoBooks` + 合集表重读、逐文件 `parseVideoFilename`、逐作品查规范身份（N+1），再 `_refreshBacklog` 逐作品查。它要追的变化本就由 uid 流 / 刮削展示表流 / 批次忙闲信号驱动（隐藏时照常在跑），切 tab 不改变待确认数。
+  4. `home_video_page.dart:1479-1482` 切回时 `_loadRemoteVideos` 对 TTL 缓存回来的**同一个**远端清单逐条重做合集收养（每条一个事务）并整套重载 14 张映射表；首页 `_loadRemoteDashboardData` 同病（书侧每轮还全表装载身份索引）。
+- **[x] ① 已修复** — `d1a6569413f`（视频：切回不再重跑补刮规划；同一缓存清单不再重收养 / 重载映射）、`dae51d7571f`（首页 dashboard 保活，隐藏期间表变更推迟到切回时重载、远端清单未变不重算不 setState；隐藏的保活 tab 复用被藏起时构建的 widget 实例，Flutter 跳过整棵子树）。视频首页信息架构本就是「继续观看 / 下一集 / 已更新未看 / 最近添加」四条懒加载横滚行（各取前 15），不需要重设计。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_tab_keepalive_guard_test.dart`：保活集合必须含 `HomeTab.home`；隐藏的保活 tab 必须经 `_keepAliveTabContent` 复用缓存实例、重新可见时丢缓存重建（源码扫描守卫，HomePage 在 headless widget 测试里挂不起来，同文件既有说明）。按用户 10-06 指示未运行。
+- **备注**：未做修前 / 修后量化对比：用户的调试实例在取证时已断开（只抓到 14 秒、与切 tab 无关的 ring buffer），且 10-06 起禁止跑 itest / 测试。需要用户在 profile 构建上用 DevTools Performance 各录一次「首页 → 视频」「视频 → 首页」对比。剩余已知项（未改）：`listForShelf` 的 `_CoverDirSnapshot.take` 仍在 UI isolate `listSync`（为 fake-async 测试刻意同步）；dashboard build 里每张书封面 1–2 次 `existsSync`（`media_source.dart:612/621`）；切回视频 tab 时远端 future 换新仍会让正文多 build 一次。

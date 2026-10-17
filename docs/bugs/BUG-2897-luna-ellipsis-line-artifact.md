@@ -1,0 +1,6 @@
+## BUG-2897 · 省略号台词被 Luna 伪影过滤器当逐字双写丢弃
+- **报告**：2026-10-03（用户：适配 ceshi / 官方体验版，初恋サンカイメ体验版真机测试中发现）
+- **真实性**：✅ 真 bug。CatSystem2 2016 版真机（HA8:-1C 文本线程）lunadiag 里有声台词 `「…………」【少女】` 多次出现（开场 E_00_01_001–003 三句），但从未进入文本环，三句语音发布时 `text_event=0`、配不到文本。根因 `native/galgame_hook/include/luna_text_selector.h` `LunaTextIsArtifact` 末段：相邻相等字符 ≥30% 即判逐字双写伪影；该行 10 字里 `…` 连写贡献 3 对相等（3/9 = 33%），被当噪声丢掉。injector 在 `injector/injector_main.cpp` 的发布门前调用它，故与引擎无关，所有用 Luna 文本的引擎上「……」「――」「ーー」类短台词都有同样风险。
+- **[x] ① 已修复** — 新增 `LunaIsTypographicRunChar`（… ‥ ― — ─ ー ・ ～ 〜 . -，剧本有意成串书写的停顿 / 延长符）：相邻相等率只在非这类字符的位置上统计（分母同步只数这些位置）；整串只由这类字符组成时不判伪影（单独一行「…………」是合法台词，否则会被「整串二倍」规则误杀）。整串二倍、等长游程两条规则对含正文的行不变。提交：（见本分支 `fix(galgame): stop treating ellipsis runs as Luna doubled-write noise`）
+- **[x] ② 已加自动化测试** — `native/galgame_hook/tests/luna_text_replay_test.cpp`：`「…………」【少女】`、`あーーーっ！――――`、`…………` 不再判伪影（返回码 91）；同一行逐字双写仍判伪影（92）、整行二倍仍判伪影（93），原 `AABBCC` 断言不变。变异实测：去掉统计里的排版字符跳过，`fushi_luna_text_replay_test` 变红；还原后字节一致、x86 132/132、x64 128/128 全绿，Python 392 OK。
+- **备注**：运行时证据（2026-10-03 07:47–08:00，原始启动路径：启动器 → WCBOOTMENU → `data\cs2.exe` pid=128148，x86 helper 装入 Debug 宿主，文本线程 HA8:-1C@277330）：三句 `「…………」【少女】` 进入文本环，分别 `matched/game_resource` 配到 `E_00_01_001.ogg`（ev=49）、`E_00_01_002.ogg`（ev=55）、`E_00_01_003.ogg`（ev=65)；修复前同一位置三句语音 `text_event=0`。

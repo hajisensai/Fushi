@@ -11,6 +11,7 @@ library;
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 
@@ -127,7 +128,7 @@ class DiscoveryArchiveExtractor {
           await outFile.parent.create(recursive: true);
           final OutputFileStream output = OutputFileStream(outPath);
           try {
-            entry.writeContent(output);
+            writeZipEntryStreaming(entry, output);
           } finally {
             await output.close();
           }

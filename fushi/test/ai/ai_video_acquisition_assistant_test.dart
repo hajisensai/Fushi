@@ -168,6 +168,20 @@ void main() {
       }
     });
 
+    // BUG-2963：「全部哆啦A梦剧场版」被解析成 category=movie，作品搜索只剩 TMDB，
+    // 服务端没配 TMDB key 就直接「TMDB is not configured」；动画剧场版属于 anime。
+    test('BUG-2963 category 是媒介不是形态：动画剧场版归 anime，用 scope 表达「全部剧场版」', () {
+      final String prompt = buildVideoAcquisitionIntentSystemPrompt(
+        locale: 'zh-CN',
+      );
+      expect(prompt, contains('"category" is the medium, not the format'));
+      expect(prompt, contains('including anime theatrical films'));
+      expect(
+        prompt,
+        contains('"category": "anime" with "scope": "movies", never'),
+      );
+    });
+
     test('「帮我下 X」不算选了模式：放送中的作品要留给 app 去问下载还是订阅', () {
       final String prompt = buildVideoAcquisitionIntentSystemPrompt(
         locale: 'zh-CN',
@@ -300,6 +314,22 @@ void main() {
       expect(intent.patch.quality, VideoAcquisitionQuality.p720);
     });
 
+    test('「哪个最好」→ recommend，choiceIndex 可选且按 optionCount 校验（BUG-2933）', () {
+      final VideoAcquisitionIntent bare = _parse('{"intent": "recommend"}');
+      expect(bare.kind, VideoAcquisitionIntentKind.recommend);
+      expect(bare.patch.choiceIndex, isNull);
+      final VideoAcquisitionIntent picked = _parse(
+        '{"intent": "recommend", "choiceIndex": 1}',
+      );
+      expect(picked.kind, VideoAcquisitionIntentKind.recommend);
+      expect(picked.patch.choiceIndex, 1);
+      final VideoAcquisitionIntent outOfRange = _parse(
+        '{"intent": "recommend", "choiceIndex": 9}',
+      );
+      expect(outOfRange.kind, VideoAcquisitionIntentKind.recommend);
+      expect(outOfRange.patch.choiceIndex, isNull);
+    });
+
     test('坏 JSON / 非对象 / intent 越界 → unclear', () {
       for (final String reply in <String>[
         '{"intent": }',
@@ -412,6 +442,49 @@ void main() {
           jsonDecode(buildVideoAcquisitionIntentUserPrompt(query))
               as Map<String, Object?>;
       expect(decoded['pendingQuestion'], isNull);
+    });
+
+    test('candidates：非空时进用户提示，空时整个键不出现（BUG-2933）', () {
+      final VideoAcquisitionIntentQuery withCandidates =
+          VideoAcquisitionIntentQuery(
+            utterance: '哪个最好',
+            stage: VideoAcquisitionStage.awaitingResourceConfirm.name,
+            locale: 'zh-CN',
+            pendingQuestion: null,
+            slots: const <String, Object?>{},
+            candidates: const <Map<String, Object?>>[
+              <String, Object?>{
+                'optionIndex': 0,
+                'current': true,
+                'releaseGroup': 'Alpha',
+              },
+              <String, Object?>{
+                'optionIndex': 1,
+                'current': false,
+                'releaseGroup': 'Beta',
+              },
+            ],
+          );
+      final Map<String, Object?> decoded =
+          jsonDecode(buildVideoAcquisitionIntentUserPrompt(withCandidates))
+              as Map<String, Object?>;
+      final List<Object?> candidates = decoded['candidates'] as List<Object?>;
+      expect(candidates, hasLength(2));
+      expect((candidates[1] as Map<String, Object?>)['releaseGroup'], 'Beta');
+
+      final Map<String, Object?> without =
+          jsonDecode(buildVideoAcquisitionIntentUserPrompt(_query()))
+              as Map<String, Object?>;
+      expect(without.containsKey('candidates'), isFalse);
+    });
+
+    test('系统提示讲清 recommend 与 candidates 的用法（BUG-2933）', () {
+      final String prompt = buildVideoAcquisitionIntentSystemPrompt(
+        locale: 'zh-CN',
+      );
+      expect(prompt, contains('"recommend"'));
+      expect(prompt, contains('"candidates"'));
+      expect(prompt, contains('optionIndex'));
     });
 
     test('身份判定系统提示：口头作品名语境、多季无季号 → null、不选剧场版', () {

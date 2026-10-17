@@ -17,12 +17,22 @@ void main() {
   const String race = '$dir/update_checker_race.dart';
   const String release = '$dir/update_checker_release.dart';
   const String ui = '$dir/update_checker_ui.dart';
-  const List<String> parts = <String>[net, download, race, release, ui];
+  // 反馈 Pp8XPyve0N：下载会话（浮层 + 取消）与不经对话框的远程更新入口独立成 part，
+  // release part 不再为互联远程更新长行数（PR #2100 审查：不上调 release 天花板）。
+  const String headless = '$dir/update_checker_headless.dart';
+  const List<String> parts = <String>[
+    net,
+    download,
+    race,
+    release,
+    ui,
+    headless,
+  ];
 
   String read(String path) => File(path).readAsStringSync();
   int lineCount(String path) => File(path).readAsLinesSync().length;
 
-  test('barrel + 5 part files all exist', () {
+  test('barrel + 6 part files all exist', () {
     for (final String path in <String>[barrel, ...parts]) {
       expect(File(path).existsSync(), isTrue, reason: '$path must exist');
     }
@@ -231,6 +241,31 @@ void main() {
     expect(source, contains('const String kBetaManifestUrl ='));
     expect(source, contains('const String kDebugManifestUrl ='));
     expect(source, contains('kUpdateManifestSchemaVersion'));
+  });
+
+  /// 反馈 Pp8XPyve0N（PR #2100 审查）：远程触发的下载在 host 上必须与本机 UI 流用
+  /// **同一个**下载浮层 / 取消路径，不另写一套；两条流都经 `_UpdateDownloadSession`。
+  test('headless part owns the shared download session + headless entry', () {
+    final String source = read(headless);
+    expect(source, contains('class _UpdateDownloadSession'));
+    expect(source, contains('abstract final class HeadlessUpdateFlow'));
+    expect(source, contains('resolveAvailableUpdate('));
+    expect(source, contains('static bool isActive(String version)'));
+    expect(source, contains('static Future<void> downloadAndApply('));
+    // 远程触发也挂浮层（host 上的人能看见、能取消）。
+    expect(source, contains('session.showIn(overlay)'));
+    // 出站装配纪律（outbound_http_discipline_guard_test）：本 part 不登记裸 client，
+    // 一律经 release part 的 _newUpdateHttpClient。
+    // 只判裸构造：`_newUpdateHttpClient()` 的名字里也含 `HttpClient()`，子串判会误报。
+    expect(source, isNot(matches(RegExp(r'(?<![\w.])HttpClient\('))));
+    expect(source, contains('UpdateChecker._newUpdateHttpClient()'));
+
+    final String releaseSource = read(release);
+    // 本机 UI 流用同一个会话，浮层不在 release part 里再长一份。
+    expect(releaseSource, contains('_UpdateDownloadSession()'));
+    expect(releaseSource, isNot(contains('_DownloadOverlay(')),
+        reason: 'the download overlay is built once, in _UpdateDownloadSession');
+    expect(releaseSource, isNot(contains('downloadAndApplyHeadless(')));
   });
 
   test('ui part owns dialogs + overlay and not the HttpClient engine', () {

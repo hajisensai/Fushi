@@ -1,6 +1,6 @@
 name: fushi_audio
 resolution: workspace
-description: Audio playback, recording, audiobook matching, and subtitle parsing for Hibiki
+description: Audio playback, recording, audiobook matching, and subtitle parsing for Fushi
 publish_to: none
 
 environment:

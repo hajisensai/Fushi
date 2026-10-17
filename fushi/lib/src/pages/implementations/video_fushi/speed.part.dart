@@ -72,6 +72,15 @@ extension _VideoSpeed on _VideoFushiPageState {
 
   void _handleVideoLongPressStart(LongPressStartDetails details) {
     if (_longPressPreviousSpeed != null) return;
+    // 长按落在控件上（控制条空隙 / 只认单击的按钮 / 浮层面板）不是长按画面：外层长按
+    // 手势是所有控件的祖先，不拦就会在按住按钮时顺手临时加速。判据与双击 / 滚轮同一个
+    // （[videoPointerHitsChrome]，真实 hit-test）。start 早退后 move / end 都是空操作。
+    if (videoPointerHitsChrome(
+      globalPosition: details.globalPosition,
+      viewId: View.of(context).viewId,
+    )) {
+      return;
+    }
     _longPressPreviousSpeed = _playbackSpeed;
     final double speed = _asbConfig.longPressSpeed;
     // 长按拖动以固定加速速为基准（TODO-338）：拖动位移在此基础上连续加减。
@@ -149,8 +158,9 @@ extension _VideoSpeed on _VideoFushiPageState {
     _showOsd('${previous}x', icon: Icons.speed);
   }
 
-  /// 手柄通道的翻转语义（手柄没有可靠的松开事件管线）：按一下进入临时倍速、
-  /// 再按恢复。与键盘按住共用同一状态，二者混用也不会叠加。
+  /// 没有松开沿的入口（鼠标侧键绑定、屏幕自定义按钮）的翻转语义：按一下进入
+  /// 临时倍速、再按恢复。键盘与手柄有松开沿，走按住语义（BUG-3330）。三者共用
+  /// 同一状态，混用也不会叠加。
   void _toggleHoldSpeed() {
     if (_holdSpeedActive) {
       _releaseHoldSpeed();

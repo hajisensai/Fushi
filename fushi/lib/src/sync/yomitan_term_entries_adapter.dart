@@ -2,12 +2,12 @@ import 'dart:convert';
 
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-/// 把 Hibiki 查词结果包装成 Yomitan `termEntries` 顶层响应形状（宽松兼容）。
+/// 把 Fushi 查词结果包装成 Yomitan `termEntries` 顶层响应形状（宽松兼容）。
 ///
 /// 形状对照 `Kuuuube/yomitan-api` 的 termEntries.md：
 /// `{ index, dictionaryEntries: [...], originalTextLength }`。
 /// 展示字段（term/reading/glossary/frequency/pitch/wordClasses）真实，
-/// 内部字段（score/sequences/tags 元数据/...）填合理默认——Hibiki 在导入时
+/// 内部字段（score/sequences/tags 元数据/...）填合理默认——Fushi 在导入时
 /// 已丢弃这些数据，运行期无法还原。
 Map<String, dynamic> buildYomitanTermEntriesResponse(
   DictionarySearchResult? result,

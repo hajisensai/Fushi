@@ -1,11 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
+import 'package:fushi/src/settings/settings_schema_models.dart';
 import 'package:fushi/src/settings/settings_schema_profiles.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
 import 'package:fushi/src/settings/settings_schema_storage.dart';
@@ -19,6 +22,7 @@ List<SettingsDestination> _destinations() => <SettingsDestination>[
   buildMangaDestination(),
   buildVideoDestination(),
   buildLookupDestination(),
+  buildModelsDestination(),
   buildProfilesDestination(),
   buildStorageDestination(),
   buildSystemDestination(),
@@ -42,21 +46,38 @@ void main() {
     expect(ids.toSet(), hasLength(ids.length));
   });
 
-  test('video exposes subtitles before library and advanced processing', () {
+  test('video groups follow playback, picture, subtitles, audio, controls', () {
+    // 2026-10 重排：播放 → 显示（下接四个折叠的 mpv 画面进阶组）→ 字幕外观 →
+    // 字幕行为与来源 → 音频 → 控制与手势 → 截图与片段 → 弹幕 → 媒体库 →
+    // 高级（Lua）→ 播放中专属。
     expect(
       buildVideoDestination().sections.map((SettingsSection s) => s.id),
       <String>[
         'video.section.playback',
-        'video.section.subtitles',
-        'video.section.library',
-        'video.section.danmaku',
-        'video.section.hdr',
+        'video.section.display',
         'video.section.quality',
+        'video.section.hdr',
         'video.section.geometry',
         'video.section.color',
+        'video.section.subtitles',
+        'video.section.subtitle_behavior',
         'video.section.audio',
+        'video.section.controls',
+        'video.section.capture',
+        'video.section.danmaku',
+        'video.section.library',
+        'video.section.advanced',
         'video.section.session',
       ],
+    );
+    expect(
+      buildVideoDestination().sections
+          .singleWhere((SettingsSection s) => s.id == 'video.section.subtitles')
+          .items
+          .first
+          .id,
+      'video.subtitle.preview',
+      reason: 'The subtitle style preview leads the subtitle group.',
     );
     for (final SettingsSection section in buildVideoDestination().sections) {
       final bool advanced = <String>{
@@ -65,6 +86,7 @@ void main() {
         'video.section.geometry',
         'video.section.color',
         'video.section.audio',
+        'video.section.advanced',
       }.contains(section.id);
       expect(
         section.presentation,
@@ -95,6 +117,8 @@ void main() {
           // buildListeningSections）。同一本 EPUB 的「读」与「听」从此同分类。
           'listening.section.playback',
           'listening.section.floating_lyric',
+          // 悬浮字幕外观与排版（默认折叠，与 galgame 浮窗「窗口与可读性」同构）。
+          'listening.section.floating_lyric_appearance',
         ],
       );
     },
@@ -120,7 +144,9 @@ void main() {
     () {
       for (final (SettingsDestination destination, String itemId)
           in <(SettingsDestination, String)>[
-            (buildStorageDestination(), 'listening.asr_models'),
+            (buildModelsDestination(), 'listening.asr_models'),
+            (buildModelsDestination(), 'models.ocr'),
+            (buildModelsDestination(), 'storage.ocr_models'),
             (buildMangaDestination(), 'manga.ocr'),
           ]) {
         final SettingsNavigationItem navigation =
@@ -139,7 +165,7 @@ void main() {
   );
 
   test(
-    'ASR models have one global storage owner independent of module settings',
+    'ASR models have one global Models owner independent of module settings',
     () {
       final List<SettingsDestination> owners = _destinations()
           .where(
@@ -152,17 +178,17 @@ void main() {
           .toList();
       expect(
         owners.map((SettingsDestination d) => d.id),
-        <SettingsDestinationId>[SettingsDestinationId.storage],
+        <SettingsDestinationId>[SettingsDestinationId.models],
       );
-      final SettingsDestination storage = owners.single;
+      final SettingsDestination models = owners.single;
       expect(
-        storage.visible,
+        models.visible,
         isNull,
         reason: 'Global models must not be gated by the listening module',
       );
       final List<SettingsSearchEntry> results =
           flattenVisibleSettings(<SettingsDestination>[
-                storage,
+                models,
               ], _GlobalModelContext())
               .where(
                 (SettingsSearchEntry e) => e.item.id == 'listening.asr_models',
@@ -170,11 +196,11 @@ void main() {
               .toList();
       expect(results, hasLength(isAsrSupported ? 1 : 0));
       if (isAsrSupported) {
-        expect(results.single.destination.id, SettingsDestinationId.storage);
+        expect(results.single.destination.id, SettingsDestinationId.models);
         expect(results.single.hasRevealTarget, isTrue);
         expect(
           results.single.sectionTitle,
-          _section(storage, 'storage.section.models_components').title,
+          _section(models, 'models.section.kinds').title,
         );
       }
     },
@@ -237,9 +263,26 @@ void main() {
 }
 
 /// Global resources must not require a listening configuration or a live host.
+///
+/// The only state exposed is module visibility with **every module off**: the
+/// Models page's LLM row is gated by the services module, while ASR models must
+/// stay reachable regardless.
 class _GlobalModelContext implements SettingsContext {
+  @override
+  AppModel get appModel => _NoModulesAppModel();
+
   @override
   dynamic noSuchMethod(Invocation invocation) => throw StateError(
     'Unexpected context dependency: ${invocation.memberName}',
+  );
+}
+
+class _NoModulesAppModel implements AppModel {
+  @override
+  ModuleVisibility get moduleVisibility => const ModuleVisibility(<ModuleId>{});
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw StateError(
+    'Unexpected AppModel dependency: ${invocation.memberName}',
   );
 }

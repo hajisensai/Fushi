@@ -474,7 +474,7 @@ class OffscreenVideoFrameGrabber {
     try {
       final String dir = ffmpegTempDir ?? Directory.systemTemp.path;
       final String outPath =
-          '$dir/hibiki_thumb_${identityHashCode(this)}_${_ffmpegSeq++}.jpg';
+          '$dir/fushi_thumb_${identityHashCode(this)}_${_ffmpegSeq++}.jpg';
       final String? produced = await extractVideoFrameViaFfmpeg(
         inputPath: _sourceUri(),
         outputPath: outPath,
@@ -490,7 +490,7 @@ class OffscreenVideoFrameGrabber {
         outFile.deleteSync();
       } catch (_) {}
       if (bytes.isEmpty) return null;
-      return _decode(bytes);
+      return await _decode(bytes);
     } catch (_) {
       return null;
     }

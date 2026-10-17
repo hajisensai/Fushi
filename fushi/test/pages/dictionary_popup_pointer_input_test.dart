@@ -1,5 +1,5 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 // `show` 限定：services 自己也有一个同名的 ModifierKey，全量导入会与注册表的
 // ModifierKey（input_binding.dart）撞名。
 import 'package:flutter/services.dart'

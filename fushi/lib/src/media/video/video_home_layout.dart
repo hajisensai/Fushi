@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 
 /// 视频首页（hayase 式改版，TODO-2486）的布局与筛选纯函数。
@@ -89,6 +90,20 @@ double allVideoThumbnailTargetWidthForWidth(double width) {
 double videoHeroHeightForWidth(double width) =>
     (width * 9 / 21).clamp(220.0, 420.0);
 
+/// 视频库搜索行的单行排版下限（2026-10 体验优化）：宽度低于此值时搜索框独占
+/// 一行、年份 / 看完状态 chip 落到第二行可横滑。宽度取 LayoutBuilder 的逻辑
+/// 像素，界面缩放已折算在内。
+const double kVideoSearchBarInlineMinWidth = 600;
+
+/// 「全部视频」列表行的紧凑断点（2026-10 体验优化）：低于此宽度行封面缩小，
+/// 给标题与操作按钮留出空间。
+const double kVideoListRowCompactWidth = 420;
+
+/// 「全部视频」列表行的封面槽宽：常规 164，窄于 [kVideoListRowCompactWidth]
+/// 时收到 112（行高固定 96 不变，只让出横向空间）。
+double videoListRowCoverWidth(double rowWidth) =>
+    rowWidth < kVideoListRowCompactWidth ? 112 : 164;
+
 /// 发现页详情 hero 的窄屏断点：低于此宽度按单栏紧凑排版。
 const double kVideoDiscoveryCompactWidth = 700;
 
@@ -136,13 +151,9 @@ int? videoAirSeasonQuarter(String? airDate) {
 /// 数据结构消掉特例：`year == null && unknownOnly == false` 即「全部」，
 /// 不需要独立的 all 标志位。
 class VideoYearFilter {
-  const VideoYearFilter.all()
-      : year = null,
-        unknownOnly = false;
+  const VideoYearFilter.all() : year = null, unknownOnly = false;
 
-  const VideoYearFilter.unknown()
-      : year = null,
-        unknownOnly = true;
+  const VideoYearFilter.unknown() : year = null, unknownOnly = true;
 
   const VideoYearFilter.year(int this.year) : unknownOnly = false;
 
@@ -184,7 +195,12 @@ enum VideoSeriesFilter { all, inSeries, standalone }
 /// 偏好值 → 系列归属档位；空值 / 脏值退回默认的 [VideoSeriesFilter.standalone]
 /// （BUG-2835：合集成员在系列页折成卡，「全部视频」默认只看散片）。
 VideoSeriesFilter videoSeriesFilterFromName(String name) =>
-    VideoSeriesFilter.values.asNameMap()[name] ?? VideoSeriesFilter.standalone;
+    VideoSeriesFilter.values.asNameMap()[name] ?? kDefaultVideoSeriesFilter;
+
+/// 「全部视频」系列归属的分区默认档（BUG-2835：默认只看散片）。库页筛选按钮的
+/// 圆点与生效 chip 只认**偏离**这一档的选择，chip 的 ✕ 也复位回这一档。
+const VideoSeriesFilter kDefaultVideoSeriesFilter =
+    VideoSeriesFilter.standalone;
 
 /// 「全部视频」媒体类型筛选档位（BUG-2835）：纯音频（专辑曲目等）与视频分开看。
 enum VideoMediaTypeFilter { all, video, audio }
@@ -197,23 +213,21 @@ enum VideoExtrasFilter { all, main, extras }
 bool matchesVideoMediaType({
   required VideoMediaTypeFilter filter,
   required bool isAudio,
-}) =>
-    switch (filter) {
-      VideoMediaTypeFilter.all => true,
-      VideoMediaTypeFilter.video => !isAudio,
-      VideoMediaTypeFilter.audio => isAudio,
-    };
+}) => switch (filter) {
+  VideoMediaTypeFilter.all => true,
+  VideoMediaTypeFilter.video => !isAudio,
+  VideoMediaTypeFilter.audio => isAudio,
+};
 
 /// 条目级正片 / 特典判定（本地即筛）。
 bool matchesVideoExtras({
   required VideoExtrasFilter filter,
   required bool isExtra,
-}) =>
-    switch (filter) {
-      VideoExtrasFilter.all => true,
-      VideoExtrasFilter.main => !isExtra,
-      VideoExtrasFilter.extras => isExtra,
-    };
+}) => switch (filter) {
+  VideoExtrasFilter.all => true,
+  VideoExtrasFilter.main => !isExtra,
+  VideoExtrasFilter.extras => isExtra,
+};
 
 /// 条目级来源判定：[sourceFilter] 为 null = 不限；否则只留该来源的条目
 /// （无来源的手动导入条目、远端占位都不属于任何来源）。
@@ -226,13 +240,24 @@ class VideoSeriesPlaybackState {
     required this.lastWatchedAtMs,
     required this.positionMs,
     required this.completed,
+    this.durationMs,
   });
 
   final int lastWatchedAtMs;
   final int positionMs;
   final bool completed;
 
-  bool get hasTrace => lastWatchedAtMs > 0 || positionMs > 0 || completed;
+  /// 片长毫秒（播放器记下的 / host 下发的）；null = 不知道。只用来分辨「已打勾的
+  /// 集正在重看」（BUG-3491，见 [CollectionMemberProgress.isRewatching]）。
+  final int? durationMs;
+
+  /// 换成合集续播的共享输入，锚点判据只走 [latestPlayedMemberIndex] 一处。
+  CollectionMemberProgress get progress => CollectionMemberProgress(
+    positionMs: positionMs,
+    completed: completed,
+    lastPlayedAt: lastWatchedAtMs,
+    durationMs: durationMs,
+  );
 }
 
 /// 成员的有效「最近观看时刻」（epoch 毫秒，0 = 没看过）。纯函数。
@@ -261,46 +286,44 @@ int effectiveWatchedAtMs({
 /// to episode 3 after reaching episode 12; Continue Watching must resume 3.
 /// Legacy rows without a watch timestamp fall back to the last traced member in
 /// stable episode order.
-int? latestPlayedSeriesIndex(List<VideoSeriesPlaybackState> members) {
-  int? bestIndex;
-  int bestWatchedAt = 0;
-  for (int index = 0; index < members.length; index++) {
-    final VideoSeriesPlaybackState member = members[index];
-    if (!member.hasTrace) continue;
-    if (member.lastWatchedAtMs >= bestWatchedAt) {
-      bestWatchedAt = member.lastWatchedAtMs;
-      bestIndex = index;
-    }
-  }
-  return bestIndex;
-}
+///
+/// 判据委托 [latestPlayedMemberIndex]（与详情大卡 [continueMemberIndex] 同一
+/// 实现，BUG-3370）：只打开过、进度 0 的那集也是锚点。
+int? latestPlayedSeriesIndex(List<VideoSeriesPlaybackState> members) =>
+    latestPlayedMemberIndex(<CollectionMemberProgress>[
+      for (final VideoSeriesPlaybackState member in members) member.progress,
+    ]);
 
-/// The Next Episode target is always the member immediately after the episode
-/// returned by [latestPlayedSeriesIndex].
-int? nextEpisodeAfterLatestPlayed(
-  List<VideoSeriesPlaybackState> members,
-) {
+/// 「下一集」行的目标集（Next-Up）：
+///
+/// * 锚点（[latestPlayedSeriesIndex]）**已开始看**（看完或有进度）→ 紧接的下一集；
+///   没有下一集 → null；
+/// * 锚点**只打开过**（有时刻、进度 0、未完成）→ 停在它自己——它就是还没看的
+///   下一集。此前一律取锚点 +1：看完第 7 集自动连播第 8 集几秒退出，「下一集」
+///   跳到第 9 集，第 8 集在首页无入口（BUG-3370）。
+int? nextEpisodeAfterLatestPlayed(List<VideoSeriesPlaybackState> members) {
   final int? current = latestPlayedSeriesIndex(members);
-  if (current == null || current + 1 >= members.length) return null;
+  if (current == null) return null;
+  if (!members[current].progress.hasStarted) return current;
+  if (current + 1 >= members.length) return null;
   return current + 1;
 }
 
 /// 「继续观看」行的合集目标集（Next-Up 语义，与 hero 大卡的
-/// `continueMemberIndex` 同口径）：
+/// [continueMemberIndex] 同一锚点、给同一答案）：
 ///
-/// * 最近实际播放的那集**没看完**（有进度）→ 停在它；
+/// * 最近实际播放的那集**没看完**（有进度，或只打开过、进度 0）→ 停在它；
 /// * 它**已看完** → 紧接的下一集（整部看完、没有下一集 → null，不再占继续行）；
-/// * 没有播放痕迹、或有痕迹但位置被拖回 0 且未标完成 → null（与改动前一致）。
+///   已打勾但**重看到一半**退出不算看完，停在它（BUG-3491）；
+/// * 整部合集没有任何播放痕迹 → null。
 ///
-/// 此前本行只认第一种情况：一集从头看到尾再退出，`completedAt` 一落库合集就从
-/// 「继续观看」消失、只剩「下一集」行有它；中途退出的反而在。用户视角是同一部番
-/// 在首页时有时无。看完一集的用户下一步显然是看下一集——那就是「继续观看」。
+/// 「只打开过」也进本行（BUG-3370）：用户确实打开过这部合集，此前按「进度为 0」
+/// 整部丢掉，只碰过第 1 集几秒的合集在首页彻底消失，大卡却显示「继续看 第1集」。
 int? continueWatchingSeriesIndex(List<VideoSeriesPlaybackState> members) {
   final int? current = latestPlayedSeriesIndex(members);
   if (current == null) return null;
-  final VideoSeriesPlaybackState state = members[current];
-  if (state.completed) return nextEpisodeAfterLatestPlayed(members);
-  return state.positionMs > 0 ? current : null;
+  if (!members[current].progress.isFinished) return current;
+  return current + 1 < members.length ? current + 1 : null;
 }
 
 /// 条目级看完状态判定（本地即筛）：
@@ -383,17 +406,19 @@ List<T> selectVideoHeroUnits<T>(
   List<VideoHeroCandidate<T>> candidates, {
   int limit = 5,
 }) {
-  final List<VideoHeroCandidate<T>> watching = <VideoHeroCandidate<T>>[
-    for (final VideoHeroCandidate<T> c in candidates)
-      if (c.hasUnfinishedTrace && c.lastWatchedAt != null) c,
-  ]..sort((VideoHeroCandidate<T> a, VideoHeroCandidate<T> b) =>
-      b.lastWatchedAt!.compareTo(a.lastWatchedAt!));
+  final List<VideoHeroCandidate<T>> watching =
+      <VideoHeroCandidate<T>>[
+        for (final VideoHeroCandidate<T> c in candidates)
+          if (c.hasUnfinishedTrace && c.lastWatchedAt != null) c,
+      ]..sort(
+        (VideoHeroCandidate<T> a, VideoHeroCandidate<T> b) =>
+            b.lastWatchedAt!.compareTo(a.lastWatchedAt!),
+      );
   final List<VideoHeroCandidate<T>> pool = watching.isNotEmpty
       ? watching
-      : (List<VideoHeroCandidate<T>>.of(candidates)
-        ..sort((VideoHeroCandidate<T> a, VideoHeroCandidate<T> b) =>
-            b.latestImportedAt.compareTo(a.latestImportedAt)));
-  return <T>[
-    for (final VideoHeroCandidate<T> c in pool.take(limit)) c.unit,
-  ];
+      : (List<VideoHeroCandidate<T>>.of(candidates)..sort(
+          (VideoHeroCandidate<T> a, VideoHeroCandidate<T> b) =>
+              b.latestImportedAt.compareTo(a.latestImportedAt),
+        ));
+  return <T>[for (final VideoHeroCandidate<T> c in pool.take(limit)) c.unit];
 }

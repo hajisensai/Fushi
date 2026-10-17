@@ -1,0 +1,6 @@
+## BUG-3201 · Fushi 在前台时应用内与应用外两颗悬浮球并排出现
+- **报告**：2026-10-09（用户：群反馈薄墨，截图为歌词播放页右侧并排两颗球；shishamo 给出方案「应用在前台时隐藏全局球」）
+- **真实性**：✅ 真 bug。① 桌面原生侧收到 `setAppForeground` 直接空转（`fushi/windows/runner/flutter_window.cpp` 的 `setAppForeground` 分支、`fushi/macos/Runner/FushiDesktopFloatingBall.swift` 的同名 case，注释「应用内外两颗球共存」），所以 Windows / macOS 上 Fushi 在前台时两颗球同时可见；② Dart 宿主 `fushi/lib/src/floating_ball/app_floating_ball_host.dart` 的 `didChangeAppLifecycleState` 下发裸「在前台」，不看「应用内」开关——用户关了应用内球时 Android 前台一颗球都没有。
+- **[x] ① 已修复** — 纯函数 `floatingBallSystemBallYieldsToInApp`（`floating_ball_config.dart`）：「应用内」开着 且 在前台（桌面只认 resumed；Android 按 resumed / paused / hidden 维持的前台判定，inactive 不变，画中画算后台、分屏算前台）才让位；宿主在生命周期 / 偏好 / 画中画变化时按需下发、起球前先下发；Windows `FloatingBallWindow::SetHiddenForApp`、macOS `setHiddenForApp` 实现藏球，与截屏隐藏相互独立、跨起停保留。
+- **[x] ② 已加自动化测试** — `fushi/test/floating_ball/system_ball_yield_test.dart`（生命周期 × 平台 × 开关真值表）、`fushi/test/floating_ball/app_floating_ball_host_test.dart`「应用在前台且应用内球开着：应用外球让位」组（宿主下发序列、关掉应用外球不被前后台切换打开）、`fushi/test/floating_ball/desktop_system_ball_native_guard_test.dart`（原生接线源码守卫）。
+- **备注**：桌面此前是 2026-09-30 有意设计成两颗球共存（`docs/specs/2026-09-30-desktop-system-floating-ball.md`），本次按群反馈改为与 Android 一致，spec 已同步。

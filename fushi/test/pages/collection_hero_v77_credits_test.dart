@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
@@ -200,7 +200,8 @@ void main() {
 
     expect(find.text('无职转生 ～到了异世界就拿出真本事～'), findsOneWidget);
     expect(find.textContaining('一名家里蹲转生到剑与魔法世界'), findsWidgets);
-    expect(find.text('1. 无职者的转生'), findsOneWidget);
-    expect(find.text('1. Show S01E01'), findsNothing);
+    // 集号进了缩略图上的集号胶囊，集卡标题只剩集名。
+    expect(find.text('无职者的转生'), findsOneWidget);
+    expect(find.text('Show S01E01'), findsNothing);
   });
 }

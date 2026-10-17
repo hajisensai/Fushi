@@ -16,7 +16,7 @@
 #   冲突不存在了——formal 在 fushi-server 里就是正常的 Latest。断言让这条硬规则
 #   不再依赖「记得 make_latest 恒 false」。
 # * 版本号独立：取 packages/fushi_server/pubspec.yaml 的 `version:`，与 fushi/pubspec
-#   无关；发布序号仍共用 tool/release_sequence.sh（同一条单调序列，从 hibiki 的
+#   无关；发布序号仍共用 tool/release_sequence.sh（同一条单调序列，从 fushi 的
 #   checkout 上算，别再造第二条）。
 # * 通道只有 beta / formal，没有 push 自动 debug：服务端装在别人的 NAS 上，滚动
 #   debug 包没有消费者。
@@ -28,7 +28,8 @@
 #   fushi_server-<version>-<seq>-windows-x64.zip    同上
 # lib/ 里随包：sqlite3（dart build native asset）、内置 torrent 引擎（Linux 静态链
 # libtorrent 的 .so；Windows 是 vcpkg 出的 DLL + 3 个运行时 DLL）、onnxruntime 1.22.0
-# CPU 版、互联 P2P 隧道 fushi_p2p（Rust/iroh，只依赖 libc）。目标机不需要任何
+# CPU 版、互联 P2P 隧道 fushi_p2p（Rust/iroh，只依赖 libc）、SRS 排程内核 fushi_fsrs
+# （Rust/fsrs-rs，只依赖 libc）。目标机不需要任何
 # libtorrent / ssl 运行库（README「安装」）。
 name: release-server
 
@@ -115,7 +116,7 @@ jobs:
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
             exit 1
           fi
-          # 源码 sha 是 hibiki checkout 的 HEAD，不是 GITHUB_SHA（那是调用方仓库的）。
+          # 源码 sha 是 fushi checkout 的 HEAD，不是 GITHUB_SHA（那是调用方仓库的）。
           SOURCE_SHA="$(git rev-parse --short HEAD)"
           SOURCE="${SOURCE_REPO}@${INPUT_SOURCE_REF} (${SOURCE_SHA})"
           CHANNEL="${INPUT_CHANNEL:-beta}"
@@ -174,7 +175,7 @@ jobs:
           ref: ${{ inputs.source_ref }}
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
       - name: Install build tools
         run: |
@@ -245,6 +246,19 @@ jobs:
           set -euo pipefail
           bash native/fushi_p2p/build_linux_so.sh
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so nm
+      # SRS 排程内核（fsrs-rs）.so：服务端按 bin/../lib/libfushi_fsrs.so 定位。同 fushi_p2p：
+      # 只依赖 glibc，构建失败即 job 失败。
+      - name: Cache Rust build (fushi_fsrs)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_fsrs -> target
+          key: fushi-fsrs-linux-x64-ubuntu22
+      - name: Build fushi_fsrs (Linux x64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_fsrs/build_linux_so.sh
+          bash native/fushi_fsrs/verify_abi.sh native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so nm
       - name: Build fushi_server bundle
         shell: bash
         run: |
@@ -253,14 +267,62 @@ jobs:
           mkdir -p build/fushi_server_linux/bundle/lib
           cp native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so build/fushi_server_linux/bundle/lib/
           cp native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so build/fushi_server_linux/bundle/lib/
+          cp native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so build/fushi_server_linux/bundle/lib/
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/ort.tgz" \
             "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
           tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
           cp -a "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* build/fushi_server_linux/bundle/lib/
           ls -la build/fushi_server_linux/bundle/bin build/fushi_server_linux/bundle/lib
+      # 词典引擎 libfushidicts_ffi.so：服务端查词按 bin/../lib/ 定位、变形表按
+      # bin/../share/fushi/transforms 定位。fushidicts 要 C++23（std::ranges::to 等），
+      # 下限 GCC 14；ubuntu-22.04 系统源只到 gcc-12，所以从 ubuntu-toolchain-r/test PPA
+      # 装 g++-14。libstdc++ / libgcc 静态链进 .so，目标机不需要这个 PPA 的运行库；
+      # 下面断言产物的 GLIBC 符号版本不超过 2.35，守住本 job 承诺的 glibc 下限。
+      # 失败口径同 torrent bridge：构建失败即 job 失败，不发缺查词能力的服务端包。
+      - name: Install gcc-14 (ubuntu-toolchain-r/test PPA)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-14 g++-14 libstdc++-14-dev
+          g++-14 --version | head -n 1
+      - name: Build and bundle fushidicts (Linux x64)
+        shell: bash
+        env:
+          CC: gcc-14
+          CXX: g++-14
+        run: |
+          set -euo pipefail
+          bash native/fushidicts/build_linux_so.sh
+          lib=build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so
+          mkdir -p "$(dirname "$lib")"
+          cp native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so "$lib"
+          max_glibc="$(objdump -T "$lib" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -n 1)"
+          echo "libfushidicts_ffi.so requires glibc >= $max_glibc"
+          if [ "$(printf '%s\n' "$max_glibc" 2.35 | sort -V | tail -n 1)" != "2.35" ]; then
+            echo "::error::libfushidicts_ffi.so needs glibc $max_glibc (> 2.35)"; exit 1
+          fi
+          DICTS_LIB="$lib" python3 - <<'PY'
+          import ctypes
+          import os
+          lib = ctypes.CDLL(os.environ["DICTS_LIB"])
+          lib.fushidicts_create.restype = ctypes.c_void_p
+          lib.fushidicts_destroy.argtypes = [ctypes.c_void_p]
+          handle = lib.fushidicts_create()
+          if not handle:
+              raise SystemExit("fushidicts_create returned null")
+          lib.fushidicts_destroy(handle)
+          print("fushidicts .so smoke ok")
+          PY
+          share=build/fushi_server_linux/bundle/share/fushi
+          mkdir -p "$share"
+          rm -rf "$share/transforms"
+          cp -a fushi/assets/transforms "$share/transforms"
+          test -f "$share/transforms/manifest.json"
       # fushi-anki-sync（native/fushi_anki_sync，链 Anki 官方 rslib 的 AGPL helper）放
       # bundle/bin/，与 fushi_server 可执行文件同级。build.sh 生成 AGPL 源码说明
-      # fushi-anki-sync.SOURCE.txt（commit 取 hibiki checkout 的 HEAD——这里 GITHUB_SHA
+      # fushi-anki-sync.SOURCE.txt（commit 取 fushi checkout 的 HEAD——这里 GITHUB_SHA
       # 是调用方仓库的）并对装好的副本跑 version 冒烟。
       - name: Set up fushi-anki-sync toolchain
         uses: ./.github/actions/setup-fushi-anki-sync
@@ -315,6 +377,21 @@ jobs:
             echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
             exit 1
           fi
+      # 同上：拿 bundle 里那一份 .so 跑 packages/fushi_srs 的真 FFI 测试，并断言没有整组 skip。
+      - name: fushi_fsrs FFI tests against the bundled .so
+        shell: bash
+        working-directory: packages/fushi_srs
+        env:
+          FUSHI_FSRS_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushi_fsrs.so
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_FSRS_LIB" || { echo "::error::$FUSHI_FSRS_LIB missing"; exit 1; }
+          dart pub get
+          dart test test/ffi_fsrs_engine_test.dart --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_fsrs_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_fsrs_test.log"; then
+            echo "::error::fushi_fsrs tests were skipped: $FUSHI_FSRS_LIB did not load"
+            exit 1
+          fi
       - name: Package
         shell: bash
         env:
@@ -343,7 +420,7 @@ jobs:
           ref: ${{ inputs.source_ref }}
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
       - name: Pub get (workspace)
         working-directory: fushi
@@ -406,6 +483,17 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File native/fushi_p2p/build_windows_dll.ps1
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_p2p) failed" }
+      # SRS 排程内核（fsrs-rs）DLL：服务端按 bin/../lib/fushi_fsrs.dll 定位。失败即 job 失败。
+      - name: Cache Rust build (fushi_fsrs)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_fsrs -> target
+          key: fushi-fsrs-windows-x64
+      - name: Build fushi_fsrs DLL
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_fsrs/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_fsrs) failed" }
       - name: Build fushi_server bundle
         shell: pwsh
         run: |
@@ -415,6 +503,7 @@ jobs:
           New-Item -ItemType Directory -Force $lib | Out-Null
           Copy-Item native/fushi_torrent/prebuilt/windows-x64/*.dll $lib -Force
           Copy-Item native/fushi_p2p/prebuilt/windows-x64/fushi_p2p.dll $lib -Force
+          Copy-Item native/fushi_fsrs/prebuilt/windows-x64/fushi_fsrs.dll $lib -Force
           $zip = "$env:RUNNER_TEMP/ort.zip"
           Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/onnxruntime-win-x64-$env:ORT_VERSION.zip" -OutFile $zip
           Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP/ort" -Force
@@ -472,6 +561,20 @@ jobs:
           dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_p2p_test.log"
           if grep -q 'native library not found' "$RUNNER_TEMP/fushi_p2p_test.log"; then
             echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
+            exit 1
+          fi
+      - name: fushi_fsrs FFI tests against the bundled DLL
+        shell: bash
+        working-directory: packages/fushi_srs
+        env:
+          FUSHI_FSRS_LIB: ${{ github.workspace }}\build\fushi_server_win\bundle\lib\fushi_fsrs.dll
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_FSRS_LIB" || { echo "::error::$FUSHI_FSRS_LIB missing"; exit 1; }
+          dart pub get
+          dart test test/ffi_fsrs_engine_test.dart --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_fsrs_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_fsrs_test.log"; then
+            echo "::error::fushi_fsrs tests were skipped: $FUSHI_FSRS_LIB did not load"
             exit 1
           fi
       - name: Package

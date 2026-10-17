@@ -13,13 +13,18 @@
 - 只改补丁里点名的文件；打之前把它们的 CRLF 规范成 LF（Windows 的 SDK checkout 是 CRLF）。
 - 打补丁会**改本机全局 SDK**，同机所有项目都会用上；这里只放上游已合入的修复的回移。
 
-## 3.44.0
+## 3.47.6
 
 ### `0001-semantics-no-orphan-traversal-child.patch`（BUG-2839）
 
-回移上游 flutter/flutter #186118、#186826、#193372（修 issue #190357），改
+回移上游 flutter/flutter #193372（修 issue #190357），改
 `packages/flutter/lib/src/semantics/semantics.dart` 并带上游测试
 `test/semantics/semantics_update_test.dart`。
+
+3.44.0 时这份补丁还合并了 #186118 / #186826；二者已进 3.47.6（`gh api
+repos/flutter/flutter/compare/<merge_sha>...3.47.6` 为 ahead），升级时只保留 #193372
+（截至 2026-10-05 仍 open，head `c0c4d54eb5`），由 PR diff 对 3.47.6 的 LF 源重新生成，
+`-F 0` 零 fuzz 可打。
 
 修的问题：OverlayPortal 的 traversal child（Slider 数值气泡 / Tooltip / MenuAnchor /
 DropdownMenu 都走它）在锚点被排除出语义树时（例如路由转场首帧 opacity 0）仍被下发，

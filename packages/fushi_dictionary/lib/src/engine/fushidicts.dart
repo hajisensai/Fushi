@@ -1,12 +1,18 @@
 import 'dart:convert' show jsonDecode, utf8;
 import 'dart:ffi';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
+import 'package:meta/meta.dart';
 
 import '../ffi/fushidicts_ffi_bindings.dart';
+// 变形表资源的读法按宿主分：Flutter app 走 rootBundle（`dart.library.ui` 分支），
+// 纯 Dart 宿主（无头服务端）落到 stub，改用 [FushiDicts.preloadTransformsFrom]
+// 自己读文件。本文件因此零 Flutter，可进 fushi_dictionary_core 子 barrel。
+import 'transform_asset_loader_stub.dart'
+    if (dart.library.ui) 'transform_asset_loader_flutter.dart';
 import 'fushidicts_models.dart';
 
 export 'fushidicts_models.dart';
@@ -177,6 +183,14 @@ class FushiDicts {
   /// 「我是批量的」——少写一个声明就退化回 O(N²) 的设计不算修好。
   static _PendingDicts? _pending;
 
+  /// 原生库绝对路径覆盖（null = 平台默认的裸名 / exe 旁 `lib/` 搜索）。纯 Dart 宿主
+  /// （无头服务端）按自己的 bundle 布局定位后在**首次用引擎之前**设好；绑定一旦创建
+  /// 就缓存，之后再改不会换库。原始 FFI 绑定不对外导出（HBK-AUDIT-098），只开这一个口。
+  static String? get nativeLibraryPath =>
+      FushidictsFfiBindings.libraryPathOverride;
+  static set nativeLibraryPath(String? path) =>
+      FushidictsFfiBindings.libraryPathOverride = path;
+
   static FushiDicts get instance {
     _applyPendingIfAny();
     assert(_instance != null, 'FushiDicts.initialize() must be called first');
@@ -213,28 +227,47 @@ class FushiDicts {
 
   static List<String>? _cachedTransformJsons;
 
-  static Future<void> preloadTransforms() async {
+  /// app 入口用：从 Flutter 资源包读 `assets/transforms/`。纯 Dart 宿主没有资源包，
+  /// 调这里只会在日志里留一条「不支持」并保持空变形表——它们应改调
+  /// [preloadTransformsFrom]，传自己的读文件函数。
+  static Future<void> preloadTransforms() =>
+      preloadTransformsFrom(loadBundledTransformAsset);
+
+  /// 用 [loadAsset] 读 `assets/transforms/manifest.json` 与其中列出的每种语言的
+  /// `<lang>.json`，缓存起来供之后创建的引擎实例装载（去屈折规则表）。[loadAsset]
+  /// 收的是资源键（`assets/transforms/...`），由宿主映射到 rootBundle 或磁盘目录。
+  ///
+  /// 已在装载中的实例不受影响：变形表只在 [initialize] / [scheduleTyped] 之后
+  /// 新建实例时装进去。
+  static Future<void> preloadTransformsFrom(
+    Future<String> Function(String assetKey) loadAsset,
+  ) async {
     final List<String> languages;
     try {
-      final manifest =
-          await rootBundle.loadString('assets/transforms/manifest.json');
+      final manifest = await loadAsset('assets/transforms/manifest.json');
       languages = List<String>.from(jsonDecode(manifest) as List);
     } catch (e) {
-      debugPrint('[FushiDicts.preloadTransforms(manifest)] $e');
+      fushiDebugPrint('[FushiDicts.preloadTransforms(manifest)] $e');
       return;
     }
     final jsons = <String>[];
     for (final lang in languages) {
       try {
-        final json =
-            await rootBundle.loadString('assets/transforms/$lang.json');
+        final json = await loadAsset('assets/transforms/$lang.json');
         jsons.add(json);
       } catch (e) {
-        debugPrint('[FushiDicts.preloadTransforms($lang)] $e');
+        fushiDebugPrint('[FushiDicts.preloadTransforms($lang)] $e');
       }
     }
     _cachedTransformJsons = jsons;
   }
+
+  /// [preloadTransforms] 用的资源读取后端：Flutter 宿主 `'rootBundle'`，纯 Dart 宿主
+  /// `'none'`（条件 import 选中的分支；测试据此钉住两端各自选对了）。
+  static String get transformAssetBackend => kTransformAssetBackend;
+
+  /// 已缓存的变形表份数（null = 从未成功预载）。给宿主自检用。
+  static int? get loadedTransformCount => _cachedTransformJsons?.length;
 
   void _loadCachedTransforms() {
     if (_cachedTransformJsons == null) return;
@@ -568,7 +601,11 @@ class FushiDicts {
   static Future<FushiImportResult> importDictionary(
       String zipPath, String outputDir,
       {String breadcrumbDir = ''}) async {
+    // 宿主指定的原生库绝对路径是 isolate 局部的静态量，新 isolate 里要重新带上，
+    // 否则后台导入按裸名 dlopen（无头服务端的 bundle/lib 不在系统搜索路径上）。
+    final String? libraryPath = FushidictsFfiBindings.libraryPathOverride;
     return Isolate.run(() {
+      FushidictsFfiBindings.libraryPathOverride = libraryPath;
       _bindings ??= FushidictsFfiBindings();
       final zp = zipPath.toNativeUtf8(allocator: calloc);
       final od = outputDir.toNativeUtf8(allocator: calloc);
@@ -779,7 +816,7 @@ class FushiDicts {
           // `Uint8List?` so the unguarded WebView callers keep degrading to a
           // 404 rather than crashing; the true fix (size=0 / error flag on
           // alloc failure) belongs in fushidicts_ffi.cpp.
-          debugPrint(
+          fushiDebugPrint(
             '[fushidicts] getMediaFile: native allocation failed for '
             '"$dictName/$mediaPath" (size=${r.size}, data=null); reporting '
             'as not-found.',

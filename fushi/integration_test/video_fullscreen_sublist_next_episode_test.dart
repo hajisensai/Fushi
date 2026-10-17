@@ -7,7 +7,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -35,7 +35,7 @@ const Key _kSubtitlePanelKey = ValueKey<String>('video-subtitle-jump-panel');
 Future<Directory> _fixturesDir() async {
   const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
   final Directory dir = testRoot.isEmpty
-      ? await Directory.systemTemp.createTemp('hibiki_fixtures_')
+      ? await Directory.systemTemp.createTemp('fushi_fixtures_')
       : Directory('$testRoot${Platform.pathSeparator}fixtures');
   await dir.create(recursive: true);
   return dir;

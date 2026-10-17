@@ -1,5 +1,5 @@
 import 'package:flutter/services.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -11,7 +11,7 @@ import '../helpers/test_platform_services.dart';
 void main() {
   test('floating dictionary page compiles with shared popup chrome', () {
     expect(
-      const FloatingDictPage(channel: MethodChannel('hibiki.test/floating')),
+      const FloatingDictPage(channel: MethodChannel('fushi.test/floating')),
       isA<FloatingDictPage>(),
     );
   });
@@ -25,7 +25,7 @@ void main() {
         ],
         child: const MaterialApp(
           home: FloatingDictPage(
-            channel: MethodChannel('hibiki.test/floating'),
+            channel: MethodChannel('fushi.test/floating'),
           ),
         ),
       ),

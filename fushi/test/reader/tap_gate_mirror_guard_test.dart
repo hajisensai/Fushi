@@ -86,7 +86,7 @@ void main() {
     final int syncCall = mainShell.indexOf('_syncTapGateJs();', runnerDef);
     expect(syncCall, greaterThan(runnerDef),
         reason: 'highlightOnTap 镜像同步必须在合并执行器动作内（BUG-969）');
-    final int liveHook = mainShell.indexOf('onSettingsChangedLive = ()');
+    final int liveHook = mainShell.indexOf('settingsChanged: ()');
     expect(liveHook, greaterThan(-1));
     expect(mainShell.indexOf('_liveSettingsRunner.trigger()', liveHook),
         greaterThan(liveHook),

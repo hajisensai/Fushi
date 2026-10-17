@@ -60,7 +60,76 @@ enum ModifierKey {
     }
     return null;
   }
+
+  /// 给用户看的修饰键名（BUG-3203）。[label] 是**持久化 token**（`Ctrl` / `Meta`，
+  /// 进 JSON、同步与 popup 线协议），绝不能拿来显示：macOS 上把它原样显示出来，
+  /// 用户看到的就是 Windows 的 `Ctrl` / `Alt` / `Meta`，而不是键帽上印的
+  /// ⌃ ⌥ ⇧ ⌘。所有显示快捷键的地方都经 [shortcutModifierDisplayLabel] 走这里。
+  String displayLabelOn(TargetPlatform platform) {
+    if (!shortcutUsesAppleSymbols(platform)) return label;
+    switch (this) {
+      case ctrl:
+        return '⌃'; // ⌃ Control
+      case shift:
+        return '⇧'; // ⇧ Shift
+      case alt:
+        return '⌥'; // ⌥ Option
+      case meta:
+        return '⌘'; // ⌘ Command
+    }
+  }
 }
+
+/// 快捷键显示走 Apple 键帽符号（⌃ ⌥ ⇧ ⌘）的平台：macOS，以及接了实体键盘的
+/// iPad（iPadOS 的快捷键菜单同样印这套符号）。
+bool shortcutUsesAppleSymbols(TargetPlatform platform) =>
+    platform == TargetPlatform.macOS || platform == TargetPlatform.iOS;
+
+/// 快捷键显示的平台口径：默认 [defaultTargetPlatform]（widget test 可经
+/// `debugDefaultTargetPlatformOverride` 覆盖）。
+TargetPlatform get shortcutDisplayPlatform => defaultTargetPlatform;
+
+/// 修饰键按显示顺序排好、换成显示名（BUG-3203）。Apple 平台按 HIG 的
+/// ⌃ ⌥ ⇧ ⌘ 排，其它平台沿用 [ModifierKey] 的声明顺序（Ctrl+Shift+Alt+Meta，
+/// 与历史显示一致）。
+List<String> shortcutModifierDisplayLabels(
+  Iterable<ModifierKey> modifiers, {
+  TargetPlatform? platform,
+}) {
+  final TargetPlatform p = platform ?? shortcutDisplayPlatform;
+  final List<ModifierKey> order = shortcutUsesAppleSymbols(p)
+      ? const <ModifierKey>[
+          ModifierKey.ctrl,
+          ModifierKey.alt,
+          ModifierKey.shift,
+          ModifierKey.meta,
+        ]
+      : ModifierKey.values;
+  final Set<ModifierKey> present = modifiers.toSet();
+  return <String>[
+    for (final ModifierKey m in order)
+      if (present.contains(m)) m.displayLabelOn(p),
+  ];
+}
+
+/// 单个修饰键的显示名（键盘示意图的修饰键键帽等只显示一个键的地方）。
+String shortcutModifierDisplayLabel(
+  ModifierKey modifier, {
+  TargetPlatform? platform,
+}) =>
+    modifier.displayLabelOn(platform ?? shortcutDisplayPlatform);
+
+/// 把「修饰键显示名 + 主键显示名」拼成一行文本（BUG-3203）：Apple 平台按系统
+/// 菜单的写法直接相连（`⌃⌥D`），其它平台用 `+` 连接（`Ctrl+Alt+D`）。键帽式
+/// 展示请直接用分段列表（[InputBinding.displayParts]），不要再把这行文本按 `+`
+/// 拆回去——主键本身可能就是 `+`。
+String joinShortcutDisplayParts(
+  List<String> parts, {
+  TargetPlatform? platform,
+}) =>
+    parts.join(
+      shortcutUsesAppleSymbols(platform ?? shortcutDisplayPlatform) ? '' : '+',
+    );
 
 @immutable
 class InputBinding {
@@ -157,6 +226,8 @@ class InputBinding {
     LogicalKeyboardKey.slash: 'Slash',
     LogicalKeyboardKey.semicolon: 'Semicolon',
     LogicalKeyboardKey.backquote: 'Backquote',
+    LogicalKeyboardKey.quoteSingle: 'Quote',
+    LogicalKeyboardKey.backslash: 'Backslash',
     LogicalKeyboardKey.gameButtonA: 'GameA',
     LogicalKeyboardKey.gameButtonB: 'GameB',
     LogicalKeyboardKey.gameButtonX: 'GameX',
@@ -265,6 +336,8 @@ class InputBinding {
     LogicalKeyboardKey.slash: PhysicalKeyboardKey.slash,
     LogicalKeyboardKey.semicolon: PhysicalKeyboardKey.semicolon,
     LogicalKeyboardKey.backquote: PhysicalKeyboardKey.backquote,
+    LogicalKeyboardKey.quoteSingle: PhysicalKeyboardKey.quote,
+    LogicalKeyboardKey.backslash: PhysicalKeyboardKey.backslash,
   };
 
   /// [_logicalToPhysical] 的反向索引（同一张真相源，不是第二份手写表）。
@@ -300,11 +373,25 @@ class InputBinding {
   /// 真实逻辑键时一律原样返回，非美式布局（AZERTY / QWERTZ）的字母语义不被物理位
   /// 覆盖。表外的物理键（numpad、F13+、game*）保持 `process` 原样返回，由调用方的
   /// 既有流程处理，不猜。
+  ///
+  /// BUG-2948：第二条归一——引擎给出的逻辑键**不在 [_knownKeys] 里**、而物理键在
+  /// 覆盖表里时，按物理键取逻辑键。macOS 嵌入层对符号键按「当前修饰下产出的字符」
+  /// 定逻辑键：Shift+/ 报 `question`、Shift+[ 报 `braceLeft`、Shift+= 报 `plus`
+  /// （Mac 真机 NSEvent 实测；Windows 同一按键报 `slash` / `bracketLeft` /
+  /// `equal`）。这些表外键录进去只能存成 `#<keyId>`，WebView 键盘桥按 DOM `code`
+  /// 拼的 token 永远对不上，跨设备同步也换了一个键。表内键（字母、数字、
+  /// AZERTY 的 A/Q 等）原样返回，所以布局的字母语义不受影响；只有表外字符被收拢
+  /// 回它所在的物理键。运行时（[FushiShortcutRegistry.resolveKeyboard]、
+  /// [toActivator]）先按原始逻辑键精确匹配、再按本函数结果匹配，存量的 `#<keyId>`
+  /// 绑定照旧生效。
   static LogicalKeyboardKey normalizeCapturedKey({
     required LogicalKeyboardKey logicalKey,
     required PhysicalKeyboardKey physicalKey,
   }) {
-    if (logicalKey != LogicalKeyboardKey.process) return logicalKey;
+    if (logicalKey != LogicalKeyboardKey.process &&
+        _knownKeys.containsKey(logicalKey)) {
+      return logicalKey;
+    }
     return _physicalToLogical[physicalKey] ?? logicalKey;
   }
 
@@ -325,31 +412,52 @@ class InputBinding {
   String _keyToken(LogicalKeyboardKey k) => _knownKeys[k] ?? '#${k.keyId}';
 
   // Human-readable label for the key part, used only for display in the UI.
-  String _keyLabel(LogicalKeyboardKey k) => _knownKeys[k] ?? k.keyLabel;
+  // The persistence tokens of letter / digit keys are DOM codes (`KeyF`,
+  // `Digit1`); showing them verbatim put `Ctrl+KeyF` in the reader toolbar and
+  // the shortcut settings chips (BUG-3040) — the UI shows the bare character.
+  String _keyLabel(LogicalKeyboardKey k) {
+    final String? token = _knownKeys[k];
+    if (token == null) return k.keyLabel;
+    final RegExpMatch? code = _domCodeCharacter.firstMatch(token);
+    return code?.group(1) ?? token;
+  }
+
+  static final RegExp _domCodeCharacter = RegExp(r'^(?:Key|Digit)(.)$');
 
   String serialize() => <String>[
         ..._sortedModifierLabels,
         _keyToken(key),
       ].join('+');
 
-  String get displayLabel => <String>[
-        ..._sortedModifierLabels,
+  /// 给用户看的分段（修饰键在前、主键在后），每段一枚键帽。显示快捷键的唯一
+  /// 入口（BUG-3203）：修饰键名按平台走 [shortcutModifierDisplayLabels]，macOS
+  /// 上是 ⌃ ⌥ ⇧ ⌘ 而不是持久化 token 的 Ctrl / Alt / Meta。
+  List<String> displayPartsOn([TargetPlatform? platform]) => <String>[
+        ...shortcutModifierDisplayLabels(modifiers, platform: platform),
         _keyLabel(key),
-      ].join('+');
+      ];
+
+  /// [displayPartsOn] 的当前平台版本。
+  List<String> get displayParts => displayPartsOn();
+
+  /// 一行文本形式（tooltip / 菜单后缀 / 设置里的 chip）：见
+  /// [joinShortcutDisplayParts]。
+  String get displayLabel => joinShortcutDisplayParts(displayParts);
 
   /// Flutter [SingleActivator] for this binding, so a registry binding can be
   /// installed into widgets that take a `Map<ShortcutActivator, VoidCallback>`
   /// (e.g. media_kit's `keyboardShortcuts`). [includeRepeats] is exposed so the
   /// video player can keep its press-edge-only keys (e.g. subtitle blur toggle)
   /// non-repeating while everything else honours OS key-repeat.
-  SingleActivator toActivator({bool includeRepeats = true}) => SingleActivator(
-        key,
-        control: modifiers.contains(ModifierKey.ctrl),
-        shift: modifiers.contains(ModifierKey.shift),
-        alt: modifiers.contains(ModifierKey.alt),
-        meta: modifiers.contains(ModifierKey.meta),
-        includeRepeats: includeRepeats,
-      );
+  ///
+  /// BUG-2948：不是裸 [SingleActivator]——macOS 上 Shift+/ 的逻辑键是 `question`，
+  /// 而 [SingleActivator] 的 `triggers` 只有 `slash`（[CallbackShortcuts] 先按
+  /// triggers 过滤，`accepts` 都轮不到），
+  /// `SingleActivator(slash, shift: true)` 永远不认。精确匹配不中时再按
+  /// [normalizeCapturedKey] 的结果比一次，与录入、[FushiShortcutRegistry.resolveKeyboard]
+  /// 同一条契约。
+  InputBindingActivator toActivator({bool includeRepeats = true}) =>
+      InputBindingActivator(this, includeRepeats: includeRepeats);
 
   static InputBinding? deserialize(String s) {
     if (s.isEmpty) return null;
@@ -390,6 +498,56 @@ class InputBinding {
 
   @override
   String toString() => 'InputBinding(${serialize()})';
+}
+
+/// [InputBinding.toActivator] 的产物：先按原始逻辑键走 [exact]（[SingleActivator]），
+/// 不中再按 [InputBinding.normalizeCapturedKey] 归一后的键比一次（BUG-2948）。
+class InputBindingActivator extends ShortcutActivator {
+  InputBindingActivator(this.binding, {bool includeRepeats = true})
+      : exact = SingleActivator(
+          binding.key,
+          control: binding.modifiers.contains(ModifierKey.ctrl),
+          shift: binding.modifiers.contains(ModifierKey.shift),
+          alt: binding.modifiers.contains(ModifierKey.alt),
+          meta: binding.modifiers.contains(ModifierKey.meta),
+          includeRepeats: includeRepeats,
+        );
+
+  final InputBinding binding;
+
+  /// 按原始逻辑键匹配的那一半；也供测试按 `trigger` / `includeRepeats` 内省。
+  final SingleActivator exact;
+
+  // 不给固定的 trigger 集：同一绑定在 macOS 上的事件逻辑键可能是布局字符
+  // （Shift+/ → `question`），枚举不全；null 让 [CallbackShortcuts] /
+  // ShortcutManager 对每个按键都问 [accepts]，绑定表很小，代价可以忽略。
+  @override
+  Iterable<LogicalKeyboardKey>? get triggers => null;
+
+  @override
+  bool accepts(KeyEvent event, HardwareKeyboard state) {
+    if (exact.accepts(event, state)) return true;
+    final bool pressEdge = event is KeyDownEvent ||
+        (exact.includeRepeats && event is KeyRepeatEvent);
+    if (!pressEdge) return false;
+    final LogicalKeyboardKey normalized = InputBinding.normalizeCapturedKey(
+      logicalKey: event.logicalKey,
+      physicalKey: event.physicalKey,
+    );
+    if (normalized == event.logicalKey || normalized != binding.key) {
+      return false;
+    }
+    final Set<ModifierKey> pressed = <ModifierKey>{
+      if (state.isControlPressed) ModifierKey.ctrl,
+      if (state.isShiftPressed) ModifierKey.shift,
+      if (state.isAltPressed) ModifierKey.alt,
+      if (state.isMetaPressed) ModifierKey.meta,
+    };
+    return setEquals(pressed, binding.modifiers);
+  }
+
+  @override
+  String debugDescribeKeys() => exact.debugDescribeKeys();
 }
 
 enum GamepadButton {
@@ -628,9 +786,13 @@ class WheelBinding {
         direction.token,
       ].join('+');
 
-  /// 与 [InputBinding.displayLabel] 同形（`Alt+WheelDown`）。本地化显示名在
-  /// `shortcut_labels.dart` 的 [WheelBindingLabel] 里（那里把方向换成人话）。
-  String get displayLabel => serialize();
+  /// 与 [InputBinding.displayLabel] 同形（`Alt+WheelDown`，macOS 上 `⌥WheelDown`）。
+  /// 本地化显示名在 `shortcut_labels.dart` 的 [WheelBindingLabel] 里（那里把方向
+  /// 换成人话）。
+  String get displayLabel => joinShortcutDisplayParts(<String>[
+        ...shortcutModifierDisplayLabels(modifiers),
+        direction.token,
+      ]);
 
   static WheelBinding? deserialize(String s) {
     if (s.isEmpty) return null;

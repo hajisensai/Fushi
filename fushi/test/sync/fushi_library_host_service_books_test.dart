@@ -211,7 +211,7 @@ void main() {
     late FushiDatabase db;
 
     setUp(() {
-      tmp = Directory.systemTemp.createTempSync('hibiki_books_host');
+      tmp = Directory.systemTemp.createTempSync('fushi_books_host');
       db = FushiDatabase.forTesting(NativeDatabase.memory());
     });
 

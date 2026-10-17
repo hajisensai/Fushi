@@ -4,7 +4,7 @@ import 'package:meta/meta.dart';
 
 /// 片段导出的字幕封装：把**播放器内存里的 cue 列表**裁成片段区间的 SRT 文本。
 ///
-/// 为什么真相源是 cue 而不是源文件的 `0:s:N`：Hibiki 的视频字幕不走 libmpv 渲染
+/// 为什么真相源是 cue 而不是源文件的 `0:s:N`：Fushi 的视频字幕不走 libmpv 渲染
 /// （[VideoPlayerController.load] 里 `setSubtitleTrack(SubtitleTrack.no())` +
 /// `buildSubtitleSuppressionProperties()` 把 libmpv 字幕彻底关掉），内嵌轨、外挂
 /// 文件、自动对轴结果全部被解析成统一的 `List<AudioCue>` 交给 Flutter overlay 渲染
@@ -64,6 +64,7 @@ class ClipSubtitleCue {
     required this.endMs,
     required this.text,
     this.isSecondary = false,
+    this.markup,
   });
 
   /// 相对片段起点的出现时刻（毫秒）。
@@ -82,16 +83,23 @@ class ClipSubtitleCue {
   /// 副字幕会和主字幕叠印在同一个位置。SRT 生成不看它（两条轨各生成各的）。
   final bool isSecondary;
 
+  /// 源 cue 解析出的行内 / 样式表样式（ASS 颜色、粗体、斜体……），原样透传自
+  /// [AudioCue.markup]；纯文本来源也可能非 null（无样式段）。只有硬字幕烧录用得到
+  /// （BUG-3291：导出件要保留原字幕的颜色 / 加粗），SRT 生成不看它。按引用比较。
+  final SubtitleMarkup? markup;
+
   @override
   bool operator ==(Object other) =>
       other is ClipSubtitleCue &&
       other.startMs == startMs &&
       other.endMs == endMs &&
       other.text == text &&
-      other.isSecondary == isSecondary;
+      other.isSecondary == isSecondary &&
+      identical(other.markup, markup);
 
   @override
-  int get hashCode => Object.hash(startMs, endMs, text, isSecondary);
+  int get hashCode =>
+      Object.hash(startMs, endMs, text, isSecondary, identityHashCode(markup));
 
   @override
   String toString() => 'ClipSubtitleCue($startMs..$endMs, "$text"'
@@ -138,9 +146,29 @@ List<ClipSubtitleCue> buildClipSubtitleCues({
       endMs: outEnd,
       text: text,
       isSecondary: isSecondary,
+      markup: cue.markup,
     ));
   }
   return List<ClipSubtitleCue>.unmodifiable(out);
+}
+
+/// 纯函数：把待烧录的 cue 排成**叠画顺序**——按源 cue 的 ASS `Layer`
+/// （[SubtitleMarkup.layer]，无 markup 视作 0）升序**稳定**排序，同层保持原序。
+///
+/// 烧录是 overlay 链：列表里越靠后的图越画在上面。这与 libass / 屏幕 overlay 的
+/// z 序约定一致（低层先画、高层盖在上面；同层按出现顺序）。不排序时，多层叠字
+/// （黑字 + 白描边的底层与彩色上层同位叠出一行）若底层在文件里排在上层之后，
+/// 开「尊重字幕自带样式」导出时底层的黑字会盖住上层，烧出一行黑字（BUG-3291 审查）。
+/// SRT 生成不调它：软字幕没有叠画顺序，[buildClipSubtitleCues] 的原序就是 SRT 序号。
+List<ClipSubtitleCue> orderClipCuesForBurn(List<ClipSubtitleCue> cues) {
+  final List<int> order = List<int>.generate(cues.length, (int i) => i);
+  int layerOf(int i) => cues[i].markup?.layer ?? 0;
+  // List.sort 不保证稳定：以原下标作次序键，保证同层原序不变。
+  order.sort((int a, int b) {
+    final int byLayer = layerOf(a).compareTo(layerOf(b));
+    return byLayer != 0 ? byLayer : a.compareTo(b);
+  });
+  return List<ClipSubtitleCue>.unmodifiable(order.map((int i) => cues[i]));
 }
 
 /// SRT 时间戳：`HH:MM:SS,mmm`。负值 clamp 到 0（SRT 无负时间轴）。

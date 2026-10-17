@@ -1,7 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart';
 import 'package:fushi/src/media/acquisition/media_acquisition_backends.dart';
+import 'package:fushi/src/media/downloads/download_start_result.dart';
 import 'package:fushi/src/pages/implementations/ai_media_acquisition_page.dart';
 import 'package:fushi/utils.dart';
 
@@ -25,13 +27,16 @@ class _FakeBackend implements MediaAcquisitionBackend {
     ];
   }
 
+  /// 下一次 [acquire] 的结果（缺省：已开始）。
+  DownloadStartResult result = const DownloadStartResult.started();
+
   @override
-  Future<bool> acquire(
+  Future<DownloadStartResult> acquire(
     BuildContext context,
     MediaAcquisitionCandidate candidate,
   ) async {
     acquired.add(candidate.id);
-    return true;
+    return result;
   }
 }
 
@@ -115,10 +120,63 @@ void main() {
     expect(
       find.descendant(
         of: recommended,
-        matching: find.byIcon(Icons.check_circle),
+        matching: find.byIcon(FushiIcons.filled(FushiIcons.success)),
       ),
       findsOneWidget,
     );
+  });
+
+  // 后端不再自己 toast：页面按结果显示提示，失败的候选不标成「已开始」。
+  testWidgets('下载失败：页面显示后端给的原因，不标已开始', (WidgetTester tester) async {
+    final _FakeBackend backend = _FakeBackend()
+      ..result = const DownloadStartResult.failed(<DownloadStartNotice>[
+        DownloadStartNotice.error('源站要求登录'),
+      ]);
+    final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+    FushiToast.navigatorKey = navigatorKey;
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
+          home: AiMediaAcquisitionPage(
+            domain: AiMediaAcquisitionDomain.manga,
+            domainLabel: 'Manga',
+            initialQuery: 'x',
+            backends: <MediaAcquisitionBackend>[backend],
+            ai: AiMediaAcquisitionAi(
+              parseIntent: (AiMediaAcquisitionDomain _, String __) async =>
+                  null,
+              pick:
+                  (
+                    AiMediaAcquisitionDomain _,
+                    String __,
+                    List<AiMediaAcquisitionCandidateFact> ___,
+                  ) async => <String>['c0'],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Finder row = find.byKey(
+      const ValueKey<String>('ai-media-acquire-candidate-c0'),
+    );
+    await tester.tap(
+      find.descendant(of: row, matching: find.byType(FilledButton)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(backend.acquired, <String>['c0']);
+    expect(find.text('源站要求登录'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.byIcon(FushiIcons.filled(FushiIcons.success)),
+      ),
+      findsNothing,
+    );
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('AI 两步都失败：按原文搜、按本地分列出并提示降级', (WidgetTester tester) async {

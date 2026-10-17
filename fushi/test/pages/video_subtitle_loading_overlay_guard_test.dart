@@ -111,9 +111,9 @@ void main() {
       reason: '预抽不应混进统计初始化，保持 fire-and-forget 入口清晰',
     );
     expect(
-      src.substring(seedAt, prewarmAt),
-      contains('if (videoPath != null)'),
-      reason: '远程流没有本地容器文件，不应触发内封字幕预抽',
+      src.substring(seedAt, prewarmAt).replaceAll(RegExp(r'\s+'), ''),
+      contains('if(videoPath!=null&&!controller.isBlurayNavigationSession)'),
+      reason: '普通本地视频仍预抽；远端无容器、原盘导航可能读加密文件，均不得预抽',
     );
   });
 

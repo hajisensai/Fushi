@@ -167,14 +167,14 @@ func (c Config) checkBasicAuth(w http.ResponseWriter, r *http.Request) bool {
 	if ok && ctEqual(user, c.BasicUser) && ctEqual(pass, c.BasicPass) {
 		return true
 	}
-	w.Header().Set("WWW-Authenticate", `Basic realm="hibiki-logs", charset="UTF-8"`)
+	w.Header().Set("WWW-Authenticate", `Basic realm="fushi-logs", charset="UTF-8"`)
 	http.Error(w, "unauthorized", http.StatusUnauthorized)
 	return false
 }
 
 var listTmpl = template.Must(template.New("list").Parse(`<!doctype html>
-<html><head><meta charset="utf-8"><title>hibiki logs</title></head>
-<body><h1>hibiki logs ({{len .}})</h1><ul>
+<html><head><meta charset="utf-8"><title>Fushi logs</title></head>
+<body><h1>Fushi logs ({{len .}})</h1><ul>
 {{range .}}<li><a href="/log/{{.}}">{{.}}</a></li>{{end}}
 </ul></body></html>`))
 

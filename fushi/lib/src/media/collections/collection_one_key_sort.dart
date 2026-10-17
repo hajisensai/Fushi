@@ -82,37 +82,8 @@ Future<List<MediaCollectionItemRow>> sortedCollectionRows({
   required List<MediaCollectionItemRow> rows,
   required bool byTitle,
 }) async {
-  final List<EpubBookMeta> epubs = await db.getEpubBookMetas();
-  final List<SrtBookRow> srts = await db.getAllSrtBooks();
-  final List<GalgameRow> games = await db.getAllGalgames();
-  final List<VideoBookRow> videos = await db.allVideoBooks();
   final Map<String, ({String title, int importedAt})> meta =
-      <String, ({String title, int importedAt})>{
-    // v83：成员表 epub entryKey = `epub_books.uid`，meta 直接按行内 uid 建键
-    // （uid 为空的异常行回退 bookKey）。透传成员行（远端-only 书，entryKey =
-    // 对端 bookKey）本地无行可查，落 metaOf 的 `(entryKey, 0)` 兜底——刻意如此。
-    for (final EpubBookMeta r in epubs)
-      MediaKind.epub.compositeKey(r.uid.isNotEmpty ? r.uid : r.bookKey): (
-        title: r.title,
-        importedAt: r.importedAt,
-      ),
-    for (final SrtBookRow r in srts)
-      MediaKind.srt.compositeKey(r.uid): (
-        title: r.title,
-        importedAt: r.importedAt,
-      ),
-    for (final GalgameRow r in games)
-      MediaKind.game.compositeKey(r.id): (
-        title: GalgameCustomData.decode(r.customDataJson).name ?? r.name,
-        importedAt: r.addedAt,
-      ),
-    for (final VideoBookRow r in videos)
-      MediaKind.video.compositeKey(r.bookUid): (
-        title: r.title,
-        // v57 起 importedAt 才有真值；旧数据 null 按 0（最旧）兜底。
-        importedAt: r.importedAt ?? 0,
-      ),
-  };
+      await loadCollectionMemberMeta(db);
   ({String title, int importedAt}) metaOf(MediaCollectionItemRow r) =>
       meta['${r.mediaType}|${r.entryKey}'] ??
       (title: r.entryKey, importedAt: 0);
@@ -136,6 +107,22 @@ Future<List<MediaCollectionItemRow>> sortedCollectionRows({
     );
 }
 
+/// 合集详情页「成员排序方式」的每合集偏好键前缀（值 = `CollectionMemberSort.name`）。
+///
+/// 没有这条偏好时详情页默认按**卷号**（显示名 natural）排——成员表的 sortIndex 是
+/// 加入顺序（逐本加入 / 目录自动合集按扫描序），不是用户排出来的序；只有用户
+/// 明确选过「手动」、拖拽过或「存为手动顺序 / 一键整理」落过盘，才写 `manual`，
+/// 此后默认走手动序。键里是本机合集自增 id，属于设备本地状态，不进 Profile 快照
+/// （见 `ProfileKeys._excludedPrefPrefixes`）。
+const String kCollectionDetailSortPrefPrefix = 'collection_detail_sort_';
+
+/// 合集 [collectionId] 的详情页排序偏好键。
+String collectionDetailSortPrefKey(int collectionId) =>
+    '$kCollectionDetailSortPrefPrefix$collectionId';
+
+/// 偏好里「用户保存过手动顺序」的取值。
+const String kCollectionDetailManualSortValue = 'manual';
+
 /// 从库页合集右键菜单触发的一键整理：取成员 → [sortedCollectionRows] →
 /// 一次落盘 sortIndex。成员少于 2 个时无序可整，直接返回（不空写库）。
 Future<void> applyCollectionOneKeySort({
@@ -155,4 +142,47 @@ Future<void> applyCollectionOneKeySort({
         (mediaType: r.mediaType, entryKey: r.entryKey),
     ],
   );
+  // 一键整理落盘的就是用户要的手动序：详情页此后默认按手动序展示。
+  await db.setPref(
+    collectionDetailSortPrefKey(collectionId),
+    kCollectionDetailManualSortValue,
+  );
+}
+
+/// 合集成员的标题 / 导入时刻（键 = `'<mediaType>|<entryKey>'`），从 epub / srt /
+/// galgames / videoBooks 四表现查。一键整理与合集详情页（搜索 / 卷号 / 添加时间
+/// 排序）共用这一份，两处同口径。
+Future<Map<String, ({String title, int importedAt})>> loadCollectionMemberMeta(
+  FushiDatabase db,
+) async {
+  final List<EpubBookMeta> epubs = await db.getEpubBookMetas();
+  final List<SrtBookRow> srts = await db.getAllSrtBooks();
+  final List<GalgameRow> games = await db.getAllGalgames();
+  final List<VideoBookRow> videos = await db.allVideoBooks();
+  return <String, ({String title, int importedAt})>{
+    // v83：成员表 epub entryKey = `epub_books.uid`，meta 直接按行内 uid 建键
+    // （uid 为空的异常行回退 bookKey）。透传成员行（远端-only 书，entryKey =
+    // 对端 bookKey）本地无行可查，落调用方的 `(entryKey, 0)` 兜底——刻意如此。
+    for (final EpubBookMeta r in epubs)
+      MediaKind.epub.compositeKey(r.uid.isNotEmpty ? r.uid : r.bookKey): (
+        title: r.title,
+        importedAt: r.importedAt,
+      ),
+    for (final SrtBookRow r in srts)
+      MediaKind.srt.compositeKey(r.uid): (
+        title: r.title,
+        importedAt: r.importedAt,
+      ),
+    for (final GalgameRow r in games)
+      MediaKind.game.compositeKey(r.id): (
+        title: GalgameCustomData.decode(r.customDataJson).name ?? r.name,
+        importedAt: r.addedAt,
+      ),
+    for (final VideoBookRow r in videos)
+      MediaKind.video.compositeKey(r.bookUid): (
+        title: r.title,
+        // v57 起 importedAt 才有真值；旧数据 null 按 0（最旧）兜底。
+        importedAt: r.importedAt ?? 0,
+      ),
+  };
 }

@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:fushi/creator.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/creator/mining_tts_fallback.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart'
     show LocalAudioUnavailableError;
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
@@ -26,8 +28,9 @@ Future<File?> materializeWordAudioRef(
 }) async {
   if (ref.isEmpty) return null;
   if (!ref.startsWith('http')) {
-    final String path =
-        ref.startsWith('file://') ? Uri.parse(ref).toFilePath() : ref;
+    final String path = ref.startsWith('file://')
+        ? Uri.parse(ref).toFilePath()
+        : ref;
     final File f = File(path);
     return f.existsSync() ? f : null;
   }
@@ -86,13 +89,13 @@ String wordAudioExtFor(Uri uri, String? contentType) {
 /// Fetches term audio from local Yomitan audio DB, online sources, or TTS.
 class LocalAudioEnhancement extends AudioEnhancement {
   LocalAudioEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Local Audio',
-          description:
-              'Fetch audio from the local database, online sources, or TTS.',
-          icon: Icons.audio_file_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Local Audio',
+        description:
+            'Fetch audio from the local database, online sources, or TTS.',
+        icon: Icons.audio_file_outlined,
+      );
 
   static const String key = 'local_audio';
 
@@ -110,10 +113,14 @@ class LocalAudioEnhancement extends AudioEnhancement {
   }) async {
     final audioField = field as AudioExportField;
 
-    String term =
-        creatorModel.getFieldController(TermField.instance).text.trim();
-    String reading =
-        creatorModel.getFieldController(ReadingField.instance).text.trim();
+    String term = creatorModel
+        .getFieldController(TermField.instance)
+        .text
+        .trim();
+    String reading = creatorModel
+        .getFieldController(ReadingField.instance)
+        .text
+        .trim();
 
     if (term.isEmpty) return;
 
@@ -143,7 +150,10 @@ class LocalAudioEnhancement extends AudioEnhancement {
   }
 
   Future<File?> _generateAudio(
-      AppModel appModel, String term, String reading) async {
+    AppModel appModel,
+    String term,
+    String reading,
+  ) async {
     // 1. Local audio database (Yomitan SQLite): query metadata, then extract
     //    the blob. Native handler on Android; pure-Dart sqlite3 on desktop —
     //    both behind TtsChannel, so this call site is platform-agnostic.
@@ -185,25 +195,37 @@ class LocalAudioEnhancement extends AudioEnhancement {
       final String? ref = await resolveLookupAudioUrl(appModel, term, reading);
       if (ref != null && ref.isNotEmpty) {
         final Directory remoteDir = await getApplicationSupportDirectory();
-        final File? materialized =
-            await materializeWordAudioRef(ref, dir: remoteDir);
+        final File? materialized = await materializeWordAudioRef(
+          ref,
+          dir: remoteDir,
+        );
         if (materialized != null) return materialized;
       }
     } catch (_) {
       // best-effort：解析/下载失败不阻断，落到 TTS 兜底。
     }
 
-    // 3. TTS to file
-    final dir = await getApplicationSupportDirectory();
-    final outPath = '${dir.path}/tts_term_audio.wav';
-    final word = reading.isNotEmpty ? reading : term;
-    final result = await TtsChannel.instance.ttsToFile(word, outPath);
-    if (result != null) {
-      final file = File(result);
-      if (file.existsSync()) return file;
-    }
-
-    return null;
+    // 3. TTS 兜底（只服务单词音频；句子音频不做 TTS 兜底，BUG-172）。声音由
+    //    「设置 › 模型 › 语音合成 › 制卡发音兜底」决定：系统语音（默认，沿用
+    //    ttsToFile 的既有行为）、任一朗读声音预设，或不使用。选了预设而合成失败时
+    //    抛 [WordAudioUnavailable]（带原因），不回退系统语音。
+    final MiningTtsFallbackVoice choice = miningTtsFallbackVoiceOf(
+      appModel.prefsRepo,
+    );
+    if (choice.kind == MiningTtsFallbackKind.none) return null;
+    final String word = reading.isNotEmpty ? reading : term;
+    return synthesizeMiningTtsFallback(
+      text: word,
+      choice: choice,
+      // 系统语音沿用支持目录下的固定文件名；预设产物按缓存键命名，放临时目录。
+      outputDir: choice.kind == MiningTtsFallbackKind.system
+          ? await getApplicationSupportDirectory()
+          : Directory(
+              '${(await getTemporaryDirectory()).path}/fushi_mining_tts',
+            ),
+      systemTts: TtsChannel.instance.ttsToFile,
+      voices: () => miningTtsVoiceSourceOf(TtsServices.of(appModel.prefsRepo)),
+    );
   }
 
   @override
@@ -213,6 +235,12 @@ class LocalAudioEnhancement extends AudioEnhancement {
     required String term,
     required String reading,
   }) async {
-    return _generateAudio(appModel, term, reading);
+    try {
+      return await _generateAudio(appModel, term, reading);
+    } on WordAudioUnavailable catch (e, stack) {
+      // 播放预览是用户手动点的：带原因提示，而不是静默没声音。
+      reportWordAudioUnavailable(e, stack, manual: true);
+      return null;
+    }
   }
 }

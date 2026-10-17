@@ -27,7 +27,7 @@ AnkiSettings _settings() => AnkiSettings(
       availableNoteTypes: const <AnkiNoteType>[
         AnkiNoteType(
           id: 2,
-          name: 'Hibiki',
+          name: 'Fushi',
           fields: <String>['Expression', 'Reading'],
         ),
       ],
@@ -88,7 +88,7 @@ void main() {
       final args = call.arguments as Map;
       expect(args['key'], '勉強');
       expect(args['reading'], 'べんきょう');
-      expect(args['models'], ['Hibiki']);
+      expect(args['models'], ['Fushi']);
       expect(args['readingFieldIndices'], [1]);
     });
 

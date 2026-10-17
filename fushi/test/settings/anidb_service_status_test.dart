@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
@@ -30,7 +30,7 @@ void main() {
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory tempDir = Directory.systemTemp.createTempSync(
-      'hibiki_anidb_status_',
+      'fushi_anidb_status_',
     );
     addTearDown(() {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);

@@ -174,6 +174,19 @@ String? _providerTextLanguage(
       _ => null,
     };
 
+/// [provider] 返回的简介是否是资料语言 [preferredLanguage] 的文本（同
+/// [_providerTextLanguage] 的约定）。发现列表合并多来源卡片时用它选简介：
+/// 动画来源（MAL / AniList）排在主位，但它们的简介恒英文，资料语言是中文时
+/// 必须让同组 TMDB 的中文简介顶上，而不是「主源有字就用主源」。
+bool videoMetadataTextMatchesLanguage(
+  VideoMetadataProviderKind provider,
+  String? preferredLanguage,
+) =>
+    _matchesPreferredLanguage(
+      _providerTextLanguage(provider, preferredLanguage),
+      preferredLanguage,
+    );
+
 /// Jellyfin `ResultLanguage` 规则：primary 文本已是首选语言、或 supplement
 /// 文本不是首选语言 → 沿用先到者优先；只有 primary 非首选且 supplement 首选
 /// 才让补充源覆盖。

@@ -18,6 +18,24 @@
   #define FUSHI_LOGE(...) do { fprintf(stderr, "[fushidicts ERROR] " __VA_ARGS__); fprintf(stderr, "\n"); } while(0)
 #endif
 
+// ── Import memory budget ────────────────────────────────────────────
+// Android and iOS kill a foreground app on its own footprint (lmkd / jetsam)
+// long before the device runs out of physical RAM, and that kill is invisible
+// to every catch. The importer's low_ram mode is the bounded shape for that:
+// two bank workers and single-threaded zstd training instead of a fan-out of
+// hardware_concurrency()+4 workers, each holding a whole decompressed and
+// parsed bank. It used to be hardwired off for every platform, which is what
+// took Android down on large English dictionaries (BUG-3234). Desktop and the
+// headless server keep the wide fan-out they have always had.
+#if defined(__APPLE__)
+  #include <TargetConditionals.h>
+#endif
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+  inline constexpr bool kFushiImportLowRam = true;
+#else
+  inline constexpr bool kFushiImportLowRam = false;
+#endif
+
 // ── Threading (large-stack import thread) ───────────────────────────
 #ifdef _WIN32
   #include <windows.h>

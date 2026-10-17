@@ -1,11 +1,14 @@
+import 'dart:async';
+
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, AudiobookStorage, SrtBookRepository;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/audiobook/audiobook_transcribe_tasks_section.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
@@ -13,7 +16,9 @@ import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart'
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
+import 'package:fushi/src/media/torrent/torrent_network_issue_banner.dart';
 import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/remote_download_tasks_section.dart';
@@ -37,6 +42,19 @@ import 'package:fushi/src/pages/implementations/video_download_subscriptions_pan
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show
+        FushiFloatingChromeBar,
+        FushiFloatingChromeController,
+        FushiFloatingChromeInset,
+        FushiFloatingChromeInsetPadding,
+        FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope;
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
+    show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
     show VideoDownloadJobFileRow, VideoDownloadJobRow;
@@ -100,6 +118,25 @@ bool browseHandOffRealignsSections(BrowseTab from, BrowseTab to) {
   return !(isOnline(from) && isOnline(to));
 }
 
+/// 测试入口：直接挂一份浏览页的「二级标签 + 横滑页面」（真页面要起 Mihon /
+/// LNReader manager，widget 测试挂不起来）。
+@visibleForTesting
+Widget debugBrowseSwipeSections<T extends Object>({
+  required List<LibrarySectionTab<T>> tabs,
+  required T selected,
+  required Widget Function(T value) pageBuilder,
+  Widget? trailing,
+}) => _BrowseSwipeSections<T>(
+  pickerKey: const ValueKey<String>('debug-browse-swipe-sections'),
+  tabs: tabs,
+  selected: selected,
+  onChanged: (T _) {},
+  focusIdPrefix: 'debug-browse-swipe-sections',
+  pageBuilder: pageBuilder,
+  onEdgeOverscroll: (int _) {},
+  trailing: trailing,
+);
+
 /// 「下载」页签里的两段。
 enum BrowseDownloadsSection { tasks, subscriptions }
 
@@ -109,10 +146,14 @@ class BrowseNavigationRequest {
   BrowseNavigationRequest(
     this.tab, {
     this.downloadsSection = BrowseDownloadsSection.tasks,
+    this.downloadsWorkFocus,
   });
 
   final BrowseTab tab;
   final BrowseDownloadsSection downloadsSection;
+
+  /// 落到下载任务时只看某部作品（发现详情页「任务」）；null = 看全部。
+  final DownloadTaskWorkFocus? downloadsWorkFocus;
 }
 
 class _BrowsePageState extends ConsumerState<BrowsePage>
@@ -126,21 +167,87 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   List<BrowseTab> _controllerTabs = const <BrowseTab>[];
 
   /// 当前选中的页签（按 id 记）；首次挂载时是跳转请求 / [BrowsePage.initialTab]。
-  late BrowseTab? _selectedTab =
-      widget.navigationRequest?.tab ?? widget.initialTab;
+  late BrowseTab? _selectedTab = _onlineSlotOf(
+    widget.navigationRequest?.tab ?? widget.initialTab,
+  );
 
-  /// 来源 / 扩展两个页签共用的内容域选择（在两页签之间来回切不丢选择）。
+  /// 来源 / 扩展共用的内容域选择（在两者之间来回切不丢选择）。
   OnlineSourcesDomain _onlineDomain = OnlineSourcesDomain.novel;
+
+  /// 「在线源」页签里此刻显示来源还是扩展（2026-10-14 用户：库页顶栏把来源 /
+  /// 扩展并成「在线源」后，「浏览模块也可以做」）。两者共用一个顶层页签
+  /// （[BrowseTab.sources] 这一槽），由二级行右侧的分段切换。
+  late OnlineSourcesSection _onlineSection = _onlineSectionOf(
+    widget.navigationRequest?.tab ?? widget.initialTab,
+  );
+
+  /// 访问过的在线源分区（惰性构建 + 保活，来回切不丢搜索词与滚动位置）。
+  late final Set<OnlineSourcesSection> _onlineVisited = <OnlineSourcesSection>{
+    _onlineSection,
+  };
+
+  /// [BrowseTab.extensions] 不再单独占顶层页签，跳转请求落到在线源那一槽。
+  static BrowseTab? _onlineSlotOf(BrowseTab? tab) =>
+      tab == BrowseTab.extensions ? BrowseTab.sources : tab;
+
+  static OnlineSourcesSection _onlineSectionOf(BrowseTab? tab) =>
+      tab == BrowseTab.extensions
+      ? OnlineSourcesSection.extensions
+      : OnlineSourcesSection.sources;
 
   late BrowseDownloadsSection _downloadsSection =
       widget.navigationRequest?.downloadsSection ??
       widget.initialDownloadsSection;
 
+  /// 下载任务列表当前只看的作品。由本页持有（跳转请求用后即清，任务页签可能
+  /// 晚于请求才建出来）；每次跳转请求覆盖它，用户点「显示全部任务」清空。
+  late DownloadTaskWorkFocus? _downloadsWorkFocus =
+      widget.navigationRequest?.downloadsWorkFocus;
+
   _DownloadsResourceDomain _resourceDomain = _DownloadsResourceDomain.books;
+
+  /// 页头动作（下载页签的「添加任务」+ 下载设置）登记的槽：由页签行右侧的
+  /// 悬浮按钮组胶囊画出（与库页壳 [MediaLibraryShell] 同构）。
+  final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
+
+  /// 「下载执行设备」指向的已配对主机名；null = 本机（任务汇总 hero 的设备 chip）。
+  String? _executionDeviceLabel;
+
+  /// 按偏好解析执行设备的显示名：与 [resolveDownloadExecution] 同一判据——偏好
+  /// 指向的主机已不在配对清单里就算本机（那边会退回本机下载）。只读名字，不探测。
+  Future<void> _refreshExecutionDevice() async {
+    final AppModel appModel = ref.read(appProvider);
+    final String url = appModel.prefsRepo.downloadExecutionHostUrl;
+    String? label;
+    if (url.isNotEmpty) {
+      final FushiClientUrl? paired = interconnectPeerRepresentativeOf(
+        await SyncRepository(appModel.database).getFushiClientUrls(),
+        url,
+      );
+      if (paired != null) {
+        label = paired.deviceName ?? Uri.tryParse(url)?.host ?? url;
+      }
+    }
+    if (!mounted || label == _executionDeviceLabel) return;
+    setState(() => _executionDeviceLabel = label);
+  }
+
+  /// 头部（一级页签行 + 各页签的二级页签行）随滚动收放的状态：与四个库页
+  /// 同一套规则（下滚收起、上滚弹回、只认主滚动区、平滑滚轮拉回不算）。头部
+  /// 叠在正文上，收放不改正文视口（BUG-2975）。
+  final FushiFloatingChromeController _chrome = FushiFloatingChromeController();
+
+  bool _onScroll(ScrollNotification notification) {
+    // 保活的离屏页签 / 内容域（TickerMode 关着）发来的通知不算；横向翻页在
+    // controller 内按轴过滤。
+    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    return _chrome.handleScrollNotification(notification);
+  }
 
   @override
   void initState() {
     super.initState();
+    unawaited(_refreshExecutionDevice());
     // 初始域 = 第一个可见域，不再硬编码 books：books 模块关掉时旧实现会停在一个
     // 已被过滤掉的域上（分段条选中值不在选项里 → 分段控件直接 assert，发现页也
     // 会挂在一个用户已关掉的模块上）。四个域全关时保持字段原值，此时
@@ -166,14 +273,23 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     }
     // 已挂载时的跳转：原地切页签 / 下载段，不重建整页。
     _downloadsSection = request.downloadsSection;
-    _selectedTab = request.tab;
-    final int index = _controllerTabs.indexOf(request.tab);
+    _downloadsWorkFocus = request.downloadsWorkFocus;
+    if (request.tab == BrowseTab.sources ||
+        request.tab == BrowseTab.extensions) {
+      _onlineSection = _onlineSectionOf(request.tab);
+      _onlineVisited.add(_onlineSection);
+    }
+    _selectedTab = _onlineSlotOf(request.tab);
+    final int index = _controllerTabs.indexOf(_selectedTab!);
     if (index >= 0) _tabController?.index = index;
   }
 
   @override
   void dispose() {
+    _actionsSlot.release(this);
+    _actionsSlot.dispose();
     _tabController?.dispose();
+    _chrome.dispose();
     super.dispose();
   }
 
@@ -194,7 +310,10 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     );
     next.addListener(() {
       if (identical(next, _tabController)) {
-        _selectedTab = _controllerTabs[next.index];
+        final BrowseTab tab = _controllerTabs[next.index];
+        // 换了页签：新页面从顶部开始，头部回来、遮罩撤掉。
+        if (tab != _selectedTab) _chrome.resetToTop();
+        _selectedTab = tab;
       }
     });
     _tabController = next;
@@ -228,8 +347,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     // 发现排第一（2026-09-28 用户拍板）：打开浏览默认落在发现页签。
     return <BrowseTab>[
       if (discover) BrowseTab.discover,
+      // 来源 / 扩展并成一个「在线源」页签（见 [_onlineSection]）。
       if (online) BrowseTab.sources,
-      if (online) BrowseTab.extensions,
       BrowseTab.downloads,
     ];
   }
@@ -243,11 +362,32 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 
   void _selectOnlineDomain(OnlineSourcesDomain domain) {
     if (domain == _onlineDomain) return;
+    _chrome.resetToTop();
     setState(() => _onlineDomain = domain);
   }
 
-  /// 来源 / 扩展页签：内容域选择条 + 各域可横滑、保活的在线来源面。
-  Widget _buildOnlineTab(BrowseTab tab) {
+  void _selectOnlineSection(OnlineSourcesSection section) {
+    if (section == _onlineSection) return;
+    _chrome.resetToTop();
+    setState(() {
+      _onlineSection = section;
+      _onlineVisited.add(section);
+    });
+  }
+
+  /// 在线源此刻选中的内容域（当前域已被模块开关关掉时回落第一个可见域）；
+  /// 没有可见域时为 null。
+  OnlineSourcesDomain? _selectedOnlineDomain() {
+    final List<OnlineSourcesDomain> domains = visibleOnlineSourcesDomains(
+      ref.read(appProvider).moduleVisibility,
+    );
+    if (domains.isEmpty) return null;
+    return domains.contains(_onlineDomain) ? _onlineDomain : domains.first;
+  }
+
+  /// 「在线源」页签：内容域选择条 + 来源 / 扩展切换 + 各域可横滑、保活的
+  /// 在线来源面。
+  Widget _buildOnlineTab() {
     final AppModel appModel = ref.watch(appProvider);
     final List<OnlineSourcesDomain> domains = visibleOnlineSourcesDomains(
       appModel.moduleVisibility,
@@ -256,9 +396,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     final OnlineSourcesDomain selected = domains.contains(_onlineDomain)
         ? _onlineDomain
         : domains.first;
-    final OnlineSourcesSection section = tab == BrowseTab.sources
-        ? OnlineSourcesSection.sources
-        : OnlineSourcesSection.extensions;
+    const BrowseTab tab = BrowseTab.sources;
     return _BrowseSwipeSections<OnlineSourcesDomain>(
       pickerKey: ValueKey<String>('browse-${tab.name}-domain-picker'),
       tabs: <LibrarySectionTab<OnlineSourcesDomain>>[
@@ -272,19 +410,54 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       onChanged: _selectOnlineDomain,
       focusIdPrefix: 'browse-${tab.name}-domain',
       onEdgeOverscroll: (int delta) => _handOffFrom(tab, delta),
-      trailing: tab == BrowseTab.extensions
-          ? FushiIconButton(
-              key: const ValueKey<String>('browse-extensions-stores'),
-              icon: Icons.hub_outlined,
-              tooltip: t.media_import_segment_stores,
-              label: t.media_import_segment_stores,
-              onTap: () => openOnlineSourceStores(context, selected),
-            )
-          : null,
-      pageBuilder: (OnlineSourcesDomain domain) => BrowseOnlineSourcesView(
-        key: ValueKey<String>('browse-${tab.name}-${domain.name}'),
-        domain: domain,
-        section: section,
+      // 来源 / 扩展与左边的内容域同一种二级胶囊页签（浏览页二级选择一律是
+      // 页签，不用分段按钮）。
+      trailing: LibrarySectionTabs<OnlineSourcesSection>(
+        key: const ValueKey<String>('browse-online-section-picker'),
+        tabs: <LibrarySectionTab<OnlineSourcesSection>>[
+          LibrarySectionTab<OnlineSourcesSection>(
+            value: OnlineSourcesSection.sources,
+            label: t.library_view_sources,
+          ),
+          LibrarySectionTab<OnlineSourcesSection>(
+            value: OnlineSourcesSection.extensions,
+            label: t.media_import_segment_extensions,
+          ),
+        ],
+        selected: _onlineSection,
+        onChanged: _selectOnlineSection,
+        focusIdPrefix: 'browse-online-section',
+        secondary: true,
+        floating: true,
+      ),
+      // 在线来源面的主滚动视图自己把头部高度加成顶部 sliver（内容滚到头部底下）。
+      pageHandlesInset: true,
+      pageBuilder: (OnlineSourcesDomain domain) => Stack(
+        children: <Widget>[
+          for (final OnlineSourcesSection section
+              in OnlineSourcesSection.values)
+            if (_onlineVisited.contains(section))
+              Offstage(
+                offstage: section != _onlineSection,
+                child: TickerMode(
+                  enabled: section == _onlineSection,
+                  child: SectionVisibilityScope(
+                    visible: section == _onlineSection,
+                    // 来源 / 扩展同时保活：各给一份主滚动控制器，共用外层
+                    // 那一个会让两个主滚动视图附着同一控制器、Scrollbar 断言。
+                    child: SectionPrimaryScrollScope(
+                      child: BrowseOnlineSourcesView(
+                        key: ValueKey<String>(
+                          'browse-${section.name}-${domain.name}',
+                        ),
+                        domain: domain,
+                        section: section,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+        ],
       ),
     );
   }
@@ -298,7 +471,11 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     final int index = _controllerTabs.indexOf(from);
     final int target = index + delta;
     if (index < 0 || index != controller.index) return;
-    if (target < 0 || target >= _controllerTabs.length) return;
+    if (target < 0 || target >= _controllerTabs.length) {
+      // 越过首 / 末顶层页签：再往外交给首页外壳切功能模块（手机布局）。
+      SectionSwipeOverflowScope.maybeOf(context)?.call(forward: delta > 0);
+      return;
+    }
     // 来源 / 扩展共用同一份内容域：两者之间接力只切顶层页签、落在同一个域上。
     // 若按「往后首段 / 往前末段」去改共享域，被拖的那一页的二级控制器会在拖动
     // 途中被改下标（TabBarView 拖动中不跟随跳页），标签条与页面就此错位。
@@ -320,9 +497,9 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
         case BrowseTab.discover:
           final List<_DownloadsResourceDomain> domains =
               _visibleResourceDomains(
-            appModel.moduleVisibility,
-            gamesForm: appModel.gamesModuleForm,
-          );
+                appModel.moduleVisibility,
+                gamesForm: appModel.gamesModuleForm,
+              );
           if (domains.isNotEmpty) {
             _resourceDomain = toFirst ? domains.first : domains.last;
           }
@@ -348,8 +525,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   /// 下载时写的作品主键），没有就退到音频文件名里的键。
   Future<void> _pairDownloadedAudiobook(VideoDownloadJobRow job) async {
     final AppModel appModel = ref.read(appProvider);
-    final List<VideoDownloadJobFileRow> rows =
-        await appModel.database.getVideoDownloadJobFiles(job.jobId);
+    final List<VideoDownloadJobFileRow> rows = await appModel.database
+        .getVideoDownloadJobFiles(job.jobId);
     final List<String> audioPaths = <String>[
       for (final VideoDownloadJobFileRow row in rows)
         if (row.selected &&
@@ -368,6 +545,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     await showAppDialog<bool>(
       context: context,
       builder: (_) => BookImportDialog(
+        prefs: appModel.prefsRepo,
         repo: SrtBookRepository(appModel.database),
         audiobookRepo: AudiobookRepository(appModel.database),
         db: appModel.database,
@@ -384,25 +562,25 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     required VideoDownloadJobRow job,
     required List<String> audioPaths,
   }) async {
-    final AudiobookMaterialScan scan =
-        await appModel.audiobookMaterialService.scan();
+    final AudiobookMaterialScan scan = await appModel.audiobookMaterialService
+        .scan();
     if (scan.index.isEmpty) return const AudiobookMaterialMatch();
     final String? externalId = job.externalId?.trim();
     final String? key = (externalId != null && externalId.isNotEmpty)
         ? externalId
         : audioPaths
-            .map(audiobookKeyFromAudioPath)
-            .firstWhere((String? k) => k != null, orElse: () => null);
+              .map(audiobookKeyFromAudioPath)
+              .firstWhere((String? k) => k != null, orElse: () => null);
     return matchAudiobookMaterial(scan.index, key: key, title: job.title);
   }
 
   Widget _buildVideoResourceTab() => VideoDiscoveryPage(
-        key: const ValueKey<String>('downloads-resource-video-discovery'),
-        navigation: const SizedBox.shrink(),
-        embedded: true,
-        controller: widget.videoDiscoveryController,
-        actions: widget.videoDiscoveryActions,
-      );
+    key: const ValueKey<String>('downloads-resource-video-discovery'),
+    navigation: const SizedBox.shrink(),
+    embedded: true,
+    controller: widget.videoDiscoveryController,
+    actions: widget.videoDiscoveryActions,
+  );
 
   String _resourceDomainLabel(_DownloadsResourceDomain domain) =>
       switch (domain) {
@@ -414,6 +592,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 
   void _selectResourceDomain(_DownloadsResourceDomain domain) {
     if (domain == _resourceDomain) return;
+    _chrome.resetToTop();
     setState(() => _resourceDomain = domain);
   }
 
@@ -430,7 +609,9 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     return () {
       final ModalRoute<Object?>? route = ModalRoute.of(context);
       if (route != null && !route.isCurrent) {
-        Navigator.of(context).popUntil((Route<dynamic> above) => above == route);
+        Navigator.of(
+          context,
+        ).popUntil((Route<dynamic> above) => above == route);
       }
       final int index = _controllerTabs.indexOf(BrowseTab.sources);
       if (index < 0) return;
@@ -442,21 +623,21 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   Widget _buildResourceDomain(_DownloadsResourceDomain domain) =>
       switch (domain) {
         _DownloadsResourceDomain.books => MediaDiscoveryPage(
-            kinds: const <DiscoveryMediaKind>[
-              DiscoveryMediaKind.novel,
-              DiscoveryMediaKind.audiobook,
-            ],
-            onAiAcquire: _aiAcquireAction(domain),
-          ),
+          kinds: const <DiscoveryMediaKind>[
+            DiscoveryMediaKind.novel,
+            DiscoveryMediaKind.audiobook,
+          ],
+          onAiAcquire: _aiAcquireAction(domain),
+        ),
         _DownloadsResourceDomain.manga => MangaDiscoveryPage(
-            embedded: true,
-            onOpenSources: _mangaSourcesAction(),
-            onAiAcquire: _aiAcquireAction(domain),
-          ),
+          embedded: true,
+          onOpenSources: _mangaSourcesAction(),
+          onAiAcquire: _aiAcquireAction(domain),
+        ),
         _DownloadsResourceDomain.games => MediaDiscoveryPage(
-            kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.game],
-            onAiAcquire: _aiAcquireAction(domain),
-          ),
+          kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.game],
+          onAiAcquire: _aiAcquireAction(domain),
+        ),
         _DownloadsResourceDomain.video => _buildVideoResourceTab(),
       };
 
@@ -466,17 +647,20 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   ValueChanged<String>? _aiAcquireAction(_DownloadsResourceDomain domain) {
     final (AiMediaAcquisitionDomain, OnlineSourcesDomain?)? target =
         switch (domain) {
-      _DownloadsResourceDomain.books => (
-          AiMediaAcquisitionDomain.novel,
-          OnlineSourcesDomain.novel,
-        ),
-      _DownloadsResourceDomain.manga => (
-          AiMediaAcquisitionDomain.manga,
-          OnlineSourcesDomain.manga,
-        ),
-      _DownloadsResourceDomain.games => (AiMediaAcquisitionDomain.game, null),
-      _DownloadsResourceDomain.video => null,
-    };
+          _DownloadsResourceDomain.books => (
+            AiMediaAcquisitionDomain.novel,
+            OnlineSourcesDomain.novel,
+          ),
+          _DownloadsResourceDomain.manga => (
+            AiMediaAcquisitionDomain.manga,
+            OnlineSourcesDomain.manga,
+          ),
+          _DownloadsResourceDomain.games => (
+            AiMediaAcquisitionDomain.game,
+            null,
+          ),
+          _DownloadsResourceDomain.video => null,
+        };
     if (target == null) return null;
     final (AiMediaAcquisitionDomain aiDomain, OnlineSourcesDomain? online) =
         target;
@@ -522,6 +706,9 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       onChanged: _selectResourceDomain,
       focusIdPrefix: 'browse-discover-domain',
       onEdgeOverscroll: (int delta) => _handOffFrom(BrowseTab.discover, delta),
+      // 各域发现页把自己的搜索 / 筛选行叠进浮动工具区、主滚动视图自己让位
+      // （内容在胶囊背后可见，不再被整块控件区底色盖住）。
+      pageHandlesInset: true,
       pageBuilder: (_DownloadsResourceDomain domain) => KeyedSubtree(
         key: ValueKey<String>('downloads-resource-${domain.name}'),
         child: _buildResourceDomain(domain),
@@ -545,7 +732,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     final DroppedFiles files = classifyDroppedFiles(paths);
     if (files.torrents.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.drag_drop_unsupported_on_downloads)),
+        FushiSnackBar(content: Text(t.drag_drop_unsupported_on_downloads)),
       );
       return;
     }
@@ -558,58 +745,102 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 
   /// 下载设置（原「设置」页签）：push 一页，入口在「下载」页签的页头齿轮与番剧
   /// 下载对话框「去设置」。
-  void _openDownloadSettings() {
-    Navigator.of(context).push(
+  Future<void> _openDownloadSettings() async {
+    await Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
         builder: (BuildContext context) => const BrowseDownloadSettingsPage(),
       ),
     );
+    // 执行设备可能在设置页里改过：回来刷新汇总 hero 的设备 chip。
+    if (mounted) await _refreshExecutionDevice();
   }
 
-  /// 统一门头：页签导航作页头主位 + 页头动作，与其余顶层库页同构；独立 push 进来
-  /// （无 home 壳）时在 leading 位保留返回按钮。
+  /// 统一门头：与四个库页（[MediaLibraryShell]）同一套 M3E 浮动工具栏行
+  /// （[FushiFloatingChromeBar]）——外壳大标题下面一行，左边是贴合内容宽的
+  /// 一级页签单层浮动胶囊（摆不下在胶囊里横滑渐隐），右边是同高的悬浮按钮组
+  /// 胶囊；整行左右缘与大标题、页面内容同一条页边。独立 push 进来（无 home
+  /// 壳）时页签胶囊左边多一枚返回键圆胶囊。
   ///
-  /// 走 [LibrarySectionTabs.controlled]：本页的 [TabController] 同时驱动
-  /// [TabBarView]，横滑时指示条跟手连续滑动。
+  /// 页签走 [LibrarySectionTabs.controlled]：本页的 [TabController] 同时驱动
+  /// [TabBarView]，横滑时指示器跟手连续滑动。
   ///
   /// 页头动作只在「下载」页签出现（「添加任务」+ 下载设置）：它们不是来源 / 扩展 /
-  /// 发现的动作。
+  /// 发现的动作。动作登记进本页自己的 [_actionsSlot]，由按钮组胶囊画出。
   Widget _buildHeader(TabController controller, List<BrowseTab> tabs) {
     // 下拉框会临时 push PopupRoute；只看本页自己的 PageRoute，避免展开菜单时
     // 左上角凭空出现返回键。
     final bool showBackButton = ModalRoute.of(context)?.isFirst == false;
+    // 不在首页外壳里（没有外壳大标题）时，工具栏行顶上留一点呼吸位。
+    final bool shellTitle = FushiShellTitleScope.maybeTitleOf(context) != null;
+    final double page = FushiDesignTokens.of(context).spacing.page;
     return AnimatedBuilder(
       animation: controller,
       builder: (BuildContext context, Widget? child) {
         final bool onDownloads =
             tabs[controller.index.clamp(0, tabs.length - 1)] ==
             BrowseTab.downloads;
-        return FushiPageHeader.customTitle(
-          leading: showBackButton
-              ? FushiIconButton(
-                  icon: Icons.arrow_back,
-                  tooltip: t.back,
-                  onTap: () => Navigator.of(context).maybePop(),
-                )
-              : null,
-          title: child!,
-          actions: <Widget>[
-            if (onDownloads) ...<Widget>[
-              FushiIconButton(
-                icon: Icons.add,
-                tooltip: t.download_task_add,
-                label: t.download_task_add,
-                onTap: _openManualTaskDialog,
-              ),
-              FushiIconButton(
-                key: const ValueKey<String>('browse-download-settings'),
-                icon: Icons.settings_outlined,
-                tooltip: t.download_settings,
-                onTap: _openDownloadSettings,
-              ),
-            ],
+        final BrowseTab current =
+            tabs[controller.index.clamp(0, tabs.length - 1)];
+        final OnlineSourcesDomain? storesDomain =
+            current == BrowseTab.sources &&
+                _onlineSection == OnlineSourcesSection.extensions
+            ? _selectedOnlineDomain()
+            : null;
+        final List<Widget> actions = <Widget>[
+          // 扩展的「仓库」是整页动作，与下载页签的动作同处顶栏右侧动作组
+          // （2026-10-14 用户截图：夹在内容域胶囊与来源 / 扩展切换之间不自然）。
+          if (storesDomain != null)
+            FushiIconButton(
+              key: const ValueKey<String>('browse-extensions-stores'),
+              icon: Icons.hub_outlined,
+              tooltip: t.media_import_segment_stores,
+              label: t.media_import_segment_stores,
+              onTap: () => openOnlineSourceStores(context, storesDomain),
+            ),
+          if (onDownloads) ...<Widget>[
+            FushiIconButton(
+              icon: Icons.add,
+              tooltip: t.download_task_add,
+              label: t.download_task_add,
+              onTap: _openManualTaskDialog,
+            ),
+            FushiIconButton(
+              key: const ValueKey<String>('browse-download-settings'),
+              icon: Icons.settings_outlined,
+              tooltip: t.download_settings,
+              onTap: _openDownloadSettings,
+            ),
           ],
+        ];
+        if (actions.isEmpty) {
+          _actionsSlot.release(this);
+        } else {
+          _actionsSlot.claim(
+            this,
+            visible: true,
+            actions: FushiShellHeaderActions(actions: actions),
+          );
+        }
+        return FushiFloatingChromeBar(
+          slot: _actionsSlot,
+          padding: shellTitle
+              ? null
+              : EdgeInsets.fromLTRB(page, page / 2, page, 4),
+          leading: !showBackButton
+              ? null
+              : isGlassDesign(context)
+              ? FushiRouteBackButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                )
+              : fushiFloatingLeading(
+                  FushiIconButton(
+                    icon: Icons.arrow_back,
+                    tooltip: t.back,
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
+                ),
+          tabs: child!,
         );
       },
       child: LibrarySectionTabs<BrowseTab>.controlled(
@@ -619,6 +850,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
         ],
         controller: controller,
         focusIdPrefix: 'browse-tab',
+        floating: true,
       ),
     );
   }
@@ -638,11 +870,14 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
         ),
       ],
       selected: _downloadsSection,
-      onChanged: (BrowseDownloadsSection value) =>
-          setState(() => _downloadsSection = value),
+      onChanged: (BrowseDownloadsSection value) {
+        _chrome.resetToTop();
+        setState(() => _downloadsSection = value);
+      },
       focusIdPrefix: 'browse-downloads-section',
-      onEdgeOverscroll: (int delta) =>
-          _handOffFrom(BrowseTab.downloads, delta),
+      onEdgeOverscroll: (int delta) => _handOffFrom(BrowseTab.downloads, delta),
+      // 任务 / 订阅两页的主滚动视图自己在顶部为浮动头部占位（内容滚到头部之下）。
+      pageHandlesInset: true,
       pageBuilder: (BrowseDownloadsSection section) => switch (section) {
         BrowseDownloadsSection.tasks => _buildTasks(),
         BrowseDownloadsSection.subscriptions =>
@@ -652,161 +887,197 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   }
 
   Widget _buildTasks() {
+    // 有声书「转录后入库」任务包在最外层：它的条目经闭包并进下面统一列表的
+    // additionalTasks，与各下载来源并列排序/筛选。
+    // BUG-2950：内置引擎网络被掐（fake-ip 不转发 UDP / DHT 不可达）时在任务区
+    // 顶部说明原因；无问题时横幅零高度。横幅作为任务列表的顶部一块随列表滚动
+    // （列表自己在最上方为浮动头部占位，横幅不会被头部盖住）。
+    final Widget banner = ValueListenableBuilder<TorrentNetworkIssue>(
+      valueListenable: ref.read(appProvider).torrentNetworkIssue,
+      builder: (BuildContext context, TorrentNetworkIssue issue, _) =>
+          TorrentNetworkIssueBanner(
+            issue: issue,
+            margin: const EdgeInsets.only(top: 12),
+          ),
+    );
+    return AudiobookTranscribeTasksSection(
+      tasksBuilder:
+          (BuildContext context, List<DownloadTaskEntry> transcribe) =>
+              _buildTaskSources(transcribe, banner),
+    );
+  }
+
+  Widget _buildTaskSources(List<DownloadTaskEntry> transcribe, Widget banner) {
     return AnimeDownloadDialog(
-                        embedded: true,
-                        tasksOnly: true,
-                        showTasks: false,
-                        onOpenSettings: _openDownloadSettings,
-                        tasksBuilder: (
-                          BuildContext context,
-                          List<DownloadTaskEntry> legacy,
-                        ) =>
-                            DiscoveryDownloadTasksSection(
-                          tasksBuilder: (
-                            BuildContext context,
-                            List<DownloadTaskEntry> direct,
-                          ) =>
-                              MangaDownloadTasksSection(
-                            tasksBuilder: (
+      embedded: true,
+      tasksOnly: true,
+      showTasks: false,
+      onOpenSettings: _openDownloadSettings,
+      tasksBuilder: (BuildContext context, List<DownloadTaskEntry> legacy) =>
+          DiscoveryDownloadTasksSection(
+            tasksBuilder:
+                (
+                  BuildContext context,
+                  List<DownloadTaskEntry> direct,
+                ) => MangaDownloadTasksSection(
+                  tasksBuilder:
+                      (
+                        BuildContext context,
+                        List<DownloadTaskEntry> manga,
+                      ) => RemoteDownloadTasksSection(
+                        tasksBuilder:
+                            (
                               BuildContext context,
-                              List<DownloadTaskEntry> manga,
-                            ) =>
-                                RemoteDownloadTasksSection(
-                              tasksBuilder: (
-                                BuildContext context,
-                                List<DownloadTaskEntry> remote,
-                              ) =>
-                                  InterconnectDownloadTasksSection(
-                              tasksBuilder: (
-                                BuildContext context,
-                                List<DownloadTaskEntry> interconnect,
-                              ) =>
-                                  VideoDownloadJobsPanel.database(
-                              unified: true,
-                              additionalTasks: <DownloadTaskEntry>[
-                                ...legacy,
-                                ...direct,
-                                ...manga,
-                                ...remote,
-                                ...interconnect,
-                              ],
-                              database: ref.read(appProvider).database,
-                              metricsLoader: ref
-                                  .read(appProvider)
-                                  .videoDownloadPipelineService
-                                  ?.loadTaskSnapshots,
-                              onRetry: (VideoDownloadJobRow job) async {
-                                await ref
-                                    .read(appProvider)
-                                    .videoDownloadPipelineService
-                                    ?.retryJob(job.jobId);
-                              },
-                              onResume: (VideoDownloadJobRow job) async {
-                                await ref
-                                    .read(appProvider)
-                                    .videoDownloadPipelineService
-                                    ?.resumeJob(job.jobId);
-                              },
-                              onCancel: (VideoDownloadJobRow job) async {
-                                await ref
-                                    .read(appProvider)
-                                    .videoDownloadPipelineService
-                                    ?.cancelJob(job.jobId);
-                              },
-                              onPairAudiobook: (VideoDownloadJobRow job) async {
-                                await _pairDownloadedAudiobook(
-                                  job,
-                                );
-                              },
-                              onOpenDetails: (VideoDownloadJobRow job) async {
-                                final appModel = ref.read(
-                                  appProvider,
-                                );
-                                final pipeline =
-                                    appModel.videoDownloadPipelineService;
-                                final details = pipeline != null
-                                    ? await pipeline.loadJobDetails(
-                                        job.jobId,
-                                      )
-                                    : buildPersistedVideoDownloadJobDetails(
-                                        job,
-                                        await appModel.database
-                                            .getVideoDownloadJobFiles(
-                                          job.jobId,
-                                        ),
+                              List<DownloadTaskEntry> remote,
+                            ) => InterconnectDownloadTasksSection(
+                              tasksBuilder:
+                                  (
+                                    BuildContext context,
+                                    List<DownloadTaskEntry> interconnect,
+                                  ) => VideoDownloadJobsPanel.database(
+                                    unified: true,
+                                    additionalTasks: <DownloadTaskEntry>[
+                                      ...legacy,
+                                      ...direct,
+                                      ...manga,
+                                      ...remote,
+                                      ...interconnect,
+                                      ...transcribe,
+                                    ],
+                                    database: ref.read(appProvider).database,
+                                    header: banner,
+                                    workFocus: _downloadsWorkFocus,
+                                    onClearWorkFocus: () => setState(
+                                      () => _downloadsWorkFocus = null,
+                                    ),
+                                    onAddTask: _openManualTaskDialog,
+                                    executionDeviceLabel: _executionDeviceLabel,
+                                    onOpenExecutionSettings:
+                                        _openDownloadSettings,
+                                    metricsLoader: ref
+                                        .read(appProvider)
+                                        .videoDownloadPipelineService
+                                        ?.loadTaskSnapshots,
+                                    onRetry: (VideoDownloadJobRow job) async {
+                                      await ref
+                                          .read(appProvider)
+                                          .videoDownloadPipelineService
+                                          ?.retryJob(job.jobId);
+                                    },
+                                    onResume: (VideoDownloadJobRow job) async {
+                                      await ref
+                                          .read(appProvider)
+                                          .videoDownloadPipelineService
+                                          ?.resumeJob(job.jobId);
+                                    },
+                                    onCancel: (VideoDownloadJobRow job) async {
+                                      await ref
+                                          .read(appProvider)
+                                          .videoDownloadPipelineService
+                                          ?.cancelJob(job.jobId);
+                                    },
+                                    onPairAudiobook:
+                                        (VideoDownloadJobRow job) async {
+                                          await _pairDownloadedAudiobook(job);
+                                        },
+                                    onOpenDetails: (VideoDownloadJobRow job) async {
+                                      final appModel = ref.read(appProvider);
+                                      final pipeline =
+                                          appModel.videoDownloadPipelineService;
+                                      final details = pipeline != null
+                                          ? await pipeline.loadJobDetails(
+                                              job.jobId,
+                                            )
+                                          : buildPersistedVideoDownloadJobDetails(
+                                              job,
+                                              await appModel.database
+                                                  .getVideoDownloadJobFiles(
+                                                    job.jobId,
+                                                  ),
+                                            );
+                                      if (!context.mounted) return;
+                                      final String torrentId =
+                                          (job.backendTaskId ??
+                                                  job.torrentHash ??
+                                                  '')
+                                              .trim();
+                                      await showAppDialog<void>(
+                                        context: context,
+                                        builder: (BuildContext dialogContext) =>
+                                            TorrentTaskDetailDialog.task(
+                                              torrentId: torrentId,
+                                              title: job.title,
+                                              torrentTitle:
+                                                  job.resourceTitle
+                                                          ?.trim()
+                                                          .isNotEmpty ==
+                                                      true
+                                                  ? job.resourceTitle!.trim()
+                                                  : job.title,
+                                              backendOverride: details.backend,
+                                              liveDataAbsence:
+                                                  details.liveDataAbsence,
+                                              initialSnapshot: details.snapshot,
+                                              initialFiles: details.files,
+                                              networkIssue:
+                                                  appModel.torrentNetworkIssue,
+                                            ),
                                       );
-                                if (!context.mounted) return;
-                                final String torrentId =
-                                    (job.backendTaskId ?? job.torrentHash ?? '')
-                                        .trim();
-                                await showAppDialog<void>(
-                                  context: context,
-                                  builder: (
-                                    BuildContext dialogContext,
-                                  ) =>
-                                      TorrentTaskDetailDialog.task(
-                                    torrentId: torrentId,
-                                    title: job.title,
-                                    torrentTitle:
-                                        job.resourceTitle?.trim().isNotEmpty ==
-                                                true
-                                            ? job.resourceTitle!.trim()
-                                            : job.title,
-                                    backendOverride: details.backend,
-                                    liveDataAbsence: details.liveDataAbsence,
-                                    initialSnapshot: details.snapshot,
-                                    initialFiles: details.files,
+                                    },
+                                    onSetPriority:
+                                        (
+                                          VideoDownloadJobRow job,
+                                          int priority,
+                                        ) async {
+                                          final pipeline = ref
+                                              .read(appProvider)
+                                              .videoDownloadPipelineService;
+                                          await pipeline?.setJobPriority(
+                                            job.jobId,
+                                            priority,
+                                          );
+                                        },
+                                    locationLoader:
+                                        (VideoDownloadJobRow job) async {
+                                          final pipeline = ref
+                                              .read(appProvider)
+                                              .videoDownloadPipelineService;
+                                          return pipeline == null
+                                              ? null
+                                              : await pipeline
+                                                    .resolveJobLocation(
+                                                      job.jobId,
+                                                    );
+                                        },
+                                    onDelete:
+                                        (
+                                          job, {
+                                          required bool deleteFiles,
+                                        }) async {
+                                          final appModel = ref.read(
+                                            appProvider,
+                                          );
+                                          final pipeline = appModel
+                                              .videoDownloadPipelineService;
+                                          if (pipeline != null) {
+                                            await pipeline.deleteJob(
+                                              job.jobId,
+                                              deleteFiles: deleteFiles,
+                                            );
+                                          } else {
+                                            await deletePersistedVideoDownloadJob(
+                                              database: appModel.database,
+                                              job: job,
+                                              deleteFiles: deleteFiles,
+                                            );
+                                          }
+                                        },
                                   ),
-                                );
-                              },
-                              onSetPriority: (
-                                VideoDownloadJobRow job,
-                                int priority,
-                              ) async {
-                                final pipeline = ref
-                                    .read(appProvider)
-                                    .videoDownloadPipelineService;
-                                await pipeline?.setJobPriority(
-                                  job.jobId,
-                                  priority,
-                                );
-                              },
-                              locationLoader: (VideoDownloadJobRow job) async {
-                                final pipeline = ref
-                                    .read(appProvider)
-                                    .videoDownloadPipelineService;
-                                return pipeline == null
-                                    ? null
-                                    : await pipeline.resolveJobLocation(
-                                        job.jobId,
-                                      );
-                              },
-                              onDelete: (
-                                job, {
-                                required bool deleteFiles,
-                              }) async {
-                                final appModel = ref.read(
-                                  appProvider,
-                                );
-                                final pipeline =
-                                    appModel.videoDownloadPipelineService;
-                                if (pipeline != null) {
-                                  await pipeline.deleteJob(
-                                    job.jobId,
-                                    deleteFiles: deleteFiles,
-                                  );
-                                } else {
-                                  await deletePersistedVideoDownloadJob(
-                                    database: appModel.database,
-                                    job: job,
-                                    deleteFiles: deleteFiles,
-                                  );
-                                }
-                              },
-                            ))),
-                          ),
-                        ),
-                      );
+                            ),
+                      ),
+                ),
+          ),
+    );
   }
 
   @override
@@ -819,22 +1090,39 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     return FushiFileDropTarget(
       debugLabel: 'downloads',
       onDrop: _handleDownloadsDrop,
-      child: Scaffold(
-        // BUG-1003：内联下载流程把 apikey/搜番等输入框全放在页面上半部，下载
-        // 任务折叠区贴底、中段结果列表是唯一的 Expanded。默认
-        // resizeToAvoidBottomInset:true 时，手机软键盘弹出会压掉 body 高度、
-        // 顶掉贴底任务区。关掉 inset 让键盘只覆盖下半部结果/任务区（打字时
-        // 本就不看），顶部输入框保持可见、布局不反流。
-        resizeToAvoidBottomInset: false,
+      // 2026-10 体验优化：BUG-1003 的 inset 关闭原先对整页生效，来源 / 扩展 /
+      // 发现页签里的搜索框在手机上会被软键盘直接盖住、列表也滚不到底。只在
+      // 「下载」页签（贴底任务区）关 inset，其它页签恢复默认让键盘顶起 body。
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (BuildContext context, Widget? body) {
+          final bool onDownloads =
+              tabs[controller.index.clamp(0, tabs.length - 1)] ==
+              BrowseTab.downloads;
+          return Scaffold(
+            // BUG-1003：下载页签把输入框放在上半部、任务折叠区贴底、中段列表是
+            // 唯一的 Expanded。默认 resizeToAvoidBottomInset:true 时，手机软键盘
+            // 弹出会压掉 body 高度、顶掉贴底任务区。在该页签关掉 inset 让键盘
+            // 只覆盖下半部（打字时本就不看），顶部输入框保持可见、布局不反流。
+            resizeToAvoidBottomInset: !onDownloads,
+            body: body,
+          );
+        },
         // 作为 home tab 时外层已有 SafeArea，这里的 SafeArea 兜的是独立 push
         // 进来（设置入口）时的状态栏避让，双层无副作用。
-        body: SafeArea(
+        child: SafeArea(
           bottom: false,
-          child: Column(
-            children: <Widget>[
-              if (!isCupertinoPlatform(context))
-                _buildHeader(controller, tabs),
-              Expanded(
+          // 头部（一级页签行）叠在正文上、随滚动收放（与库页同一套，见
+          // [FushiFloatingChromeOverlay]）；各页签的二级页签行在 [_BrowseSwipeSections]
+          // 里同样叠放，排在这一行下面、一起收。
+          child: FushiFloatingChromeScope(
+            controller: _chrome,
+            child: FushiFloatingChromeOverlay(
+              chrome: isCupertinoPlatform(context)
+                  ? const SizedBox.shrink()
+                  : _buildHeader(controller, tabs),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _onScroll,
                 // 只在选中页签变化时重建（controller 的 notifyListeners 只在下标
                 // 变化时触发），用来给隐藏页签关焦点。
                 child: AnimatedBuilder(
@@ -854,7 +1142,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                           active: tabs[controller.index] == tab,
                           child: switch (tab) {
                             BrowseTab.sources ||
-                            BrowseTab.extensions => _buildOnlineTab(tab),
+                            BrowseTab.extensions => _buildOnlineTab(),
                             BrowseTab.discover => _buildResourceHub(),
                             BrowseTab.downloads => _buildDownloadsTab(),
                           },
@@ -863,7 +1151,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                   ),
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -874,7 +1162,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 /// 页面内一排二级标签 + 可横滑的对应页面（MD3 secondary tabs + [TabBarView]），
 /// 「浏览」四个页签共用：来源 / 扩展的内容域、发现的内容域、下载的任务 / 订阅。
 ///
-/// * 标签条铺满整行（[LibrarySectionTabs.fill]），摆不下时退回可滚动。
+/// * 标签条是贴合内容宽的紧凑分段胶囊（`floating` + `secondary`），摆不下时
+///   在胶囊里横滑。
 /// * 页面可左右横滑（移动端触屏；桌面鼠标不拖页，走标签 / 方向键），首次滑到 /
 ///   点到的页面保活，来回切不丢搜索词、结果与滚动位置。
 /// * 横滑越过首 / 尾段时经 [onEdgeOverscroll] 把手势交给宿主切顶层页签：内层
@@ -893,8 +1182,13 @@ class _BrowseSwipeSections<T extends Object> extends StatefulWidget {
     required this.pageBuilder,
     required this.onEdgeOverscroll,
     this.trailing,
+    this.pageHandlesInset = false,
     super.key,
   });
+
+  /// true：[pageBuilder] 的页面自己消费 [FushiFloatingChromeInset]（主滚动视图
+  /// 加顶部 sliver）；false：页面整体下移头部高度（[FushiFloatingChromeInsetPadding]）。
+  final bool pageHandlesInset;
 
   /// 标签条的稳定 key（焦点导航与行为验证用）。
   final Key pickerKey;
@@ -920,7 +1214,8 @@ class _BrowseSwipeSections<T extends Object> extends StatefulWidget {
 const double _kSectionEdgeHandOffDistance = 48.0;
 
 class _BrowseSwipeSectionsState<T extends Object>
-    extends State<_BrowseSwipeSections<T>> with TickerProviderStateMixin {
+    extends State<_BrowseSwipeSections<T>>
+    with TickerProviderStateMixin {
   TabController? _controller;
 
   /// [_controller] 对应的段值序列。
@@ -1004,54 +1299,69 @@ class _BrowseSwipeSectionsState<T extends Object>
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TabController controller = _syncController();
-    return Column(
-      children: <Widget>[
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            0,
-            tokens.spacing.page,
-            tokens.spacing.gap,
-          ),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: LibrarySectionTabs<T>.controlled(
-                  key: widget.pickerKey,
-                  tabs: widget.tabs,
-                  controller: controller,
-                  focusIdPrefix: widget.focusIdPrefix,
-                  secondary: true,
-                  fill: true,
-                ),
+    // 只剩一个段（其余内容域被模块开关 / 平台门关掉）：一排只有一个标签的二级
+    // 页签既不能切换、又占一整行纵向空间，还会被误读成标题。此时不画标签条，
+    // 只在有尾随动作时留下那一行放动作。
+    final bool showTabs = widget.tabs.length > 1;
+    // 二级页签行叠在页面上、与一级页签行同一份显隐（[FushiFloatingChromeOverlay]
+    // 读同一个作用域），收放不改页面视口。
+    return FushiFloatingChromeOverlay(
+      chrome: !(showTabs || widget.trailing != null)
+          ? const SizedBox.shrink()
+          : Padding(
+              // 与上面的一级页签浮动胶囊、页面内容同一条页边（左缘对齐）；
+              // 顶上 8 + 浮动工具栏底边 4 = 两级页签之间 12。
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap,
+                tokens.spacing.page,
+                tokens.spacing.gap,
               ),
-              if (widget.trailing != null) widget.trailing!,
-            ],
-          ),
-        ),
-        Expanded(
-          child: NotificationListener<ScrollNotification>(
-            onNotification: _handleScroll,
-            // 只在选中段变化时重建，用来给离屏段关焦点与 ticker。
-            child: AnimatedBuilder(
-              animation: controller,
-              builder: (BuildContext context, Widget? _) => TabBarView(
-                // 段序列一变就整个换新（同顶层页签的理由）。
-                key: ValueKey<String>(_controllerValues.join(',')),
-                controller: controller,
+              child: Row(
                 children: <Widget>[
-                  for (final T value in _controllerValues)
-                    _BrowseTabKeepAlive(
-                      key: ValueKey<T>(value),
-                      active: _controllerValues[controller.index] == value,
-                      child: widget.pageBuilder(value),
-                    ),
+                  if (showTabs)
+                    Expanded(
+                      // 二级内容域：贴合内容宽的紧凑扁平分段胶囊（比一级悬浮
+                      // 页签胶囊矮一档、不浮），摆不下在胶囊里横滑。
+                      child: LibrarySectionTabs<T>.controlled(
+                        key: widget.pickerKey,
+                        tabs: widget.tabs,
+                        controller: controller,
+                        focusIdPrefix: widget.focusIdPrefix,
+                        secondary: true,
+                        floating: true,
+                      ),
+                    )
+                  else
+                    const Spacer(),
+                  if (widget.trailing != null) widget.trailing!,
                 ],
               ),
             ),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _handleScroll,
+        // 只在选中段变化时重建，用来给离屏段关焦点与 ticker。
+        child: AnimatedBuilder(
+          animation: controller,
+          builder: (BuildContext context, Widget? _) => TabBarView(
+            // 段序列一变就整个换新（同顶层页签的理由）。
+            key: ValueKey<String>(_controllerValues.join(',')),
+            controller: controller,
+            children: <Widget>[
+              for (final T value in _controllerValues)
+                _BrowseTabKeepAlive(
+                  key: ValueKey<T>(value),
+                  active: _controllerValues[controller.index] == value,
+                  child: widget.pageHandlesInset
+                      ? widget.pageBuilder(value)
+                      : FushiFloatingChromeInsetPadding(
+                          child: widget.pageBuilder(value),
+                        ),
+                ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -1082,9 +1392,14 @@ class _BrowseTabKeepAliveState extends State<_BrowseTabKeepAlive>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    // 保活页签同时挂在树上：各给一份主滚动控制器，否则多个页签的主滚动视图
+    // 附着同一个外壳控制器、Scrollbar 断言。
     return TickerMode(
       enabled: widget.active,
-      child: ExcludeFocus(excluding: !widget.active, child: widget.child),
+      child: ExcludeFocus(
+        excluding: !widget.active,
+        child: SectionPrimaryScrollScope(child: widget.child),
+      ),
     );
   }
 }
@@ -1096,44 +1411,59 @@ class BrowseDownloadSettingsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool servicesEnabled = ref
+        .watch(appProvider)
+        .moduleVisibility
+        .isEnabled(ModuleId.services);
     return BrowseSubPage(
       title: t.download_settings,
-      child: ListView(
-                        children: <Widget>[
-                          const TorrentSettingsSection(),
-                          // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务
-                          // （第三方凭据一个家）；下载页设置 tab 留一条跳转，
-                          // 番剧下载对话框「去设置」落到这里仍能一步到达。
-                          // 「在线服务」分类被 [ModuleId.services] 关掉时这一行
-                          // 不渲染：它指向的设置分类此刻已从设置页消失，留着就是
-                          // 一条通往不存在页面的死路。
-                          if (ref
-                              .watch(appProvider)
-                              .moduleVisibility
-                              .isEnabled(ModuleId.services))
-                            Builder(
-                              builder: (BuildContext rowContext) =>
-                                  AdaptiveSettingsNavigationRow(
-                                    title: t.settings_destination_services,
-                                    subtitle: t.settings_services_link_subtitle,
-                                    icon: Icons.cloud_outlined,
-                                    showIcon: true,
-                                    onTap: () => Navigator.of(rowContext).push(
-                                      adaptivePageRoute(
-                                        context: rowContext,
-                                        builder: (_) => SettingsDetailPage(
-                                          destination:
-                                              buildServicesDestination(),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+      // 与设置详情页同一种页面：页边距由这里给，正文全是真正的设置分组
+      // （MD3 分段卡 / Apple inset grouped），组件自己不再缩进。
+      // 页头浮在正文上：顶部让位（浮动工具区 inset）从 BrowseSubPage 正文子树
+      // 里读（本 build 的 context 在页面壳之上）。
+      child: Builder(
+        builder: (BuildContext context) => ListView(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            tokens.spacing.gap + FushiFloatingChromeInset.of(context),
+            tokens.spacing.page,
+            tokens.spacing.page + MediaQuery.paddingOf(context).bottom,
+          ),
+          children: <Widget>[
+            const TorrentSettingsSection(),
+            // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务（第三方凭据一个家）；
+            // 下载设置页留一条跳转，番剧下载对话框「去设置」落到这里仍能一步到达。
+            // 「在线服务」分类被 [ModuleId.services] 关掉时这一组不渲染：它指向的
+            // 设置分类此刻已从设置页消失，留着就是一条通往不存在页面的死路。
+            if (servicesEnabled)
+              AdaptiveSettingsSection(
+                children: <Widget>[
+                  Builder(
+                    builder: (BuildContext rowContext) =>
+                        AdaptiveSettingsNavigationRow(
+                          title: t.settings_destination_services,
+                          subtitle: t.settings_services_link_subtitle,
+                          icon: Icons.cloud_outlined,
+                          showIcon: true,
+                          onTap: () => Navigator.of(rowContext).push(
+                            adaptivePageRoute(
+                              context: rowContext,
+                              builder: (_) => SettingsDetailPage(
+                                destination: buildServicesDestination(),
+                              ),
                             ),
-                          const VideoExternalProviderSettingsSection(
-                            scope: VideoExternalProviderScope.downloadRouting,
                           ),
-                        ],
-                      ),
+                        ),
+                  ),
+                ],
+              ),
+            const VideoExternalProviderSettingsSection(
+              scope: VideoExternalProviderScope.downloadRouting,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1154,8 +1484,8 @@ ModuleId _moduleOfResourceDomain(_DownloadsResourceDomain domain) =>
 
 /// 此刻可见的资源域，顺序即标签顺序（枚举声明序）。
 ///
-/// games 域是「找 galgame 资源下到本机」，只对本机游戏库形态成立；Android 的
-/// games 模块是串流接收端（游戏装在 Windows 主机上），不出这个域。
+/// games 域是「找 galgame 资源下到本机」，只对本机游戏库形态成立；非 Windows
+/// 的 games 模块是串流接收端（游戏装在 Windows 主机上），不出这个域。
 List<_DownloadsResourceDomain> _visibleResourceDomains(
   ModuleVisibility visibility, {
   required GamesModuleForm? gamesForm,

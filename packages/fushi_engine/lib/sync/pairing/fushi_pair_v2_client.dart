@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
+import 'package:fushi_engine/sync/pairing/interconnect_device_key.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -80,13 +81,21 @@ class FushiPairV2Client {
   /// [clientDeviceId] 是本机稳定 deviceId（TODO-961 M1b）：随 pair/v2 上报，host 用它
   /// 作 `fushi_paired_peers.peerId` 落库并回派本设备专属 per-peer token。可空——host
   /// 侧无此字段时回退共享 token（向后兼容）。
+  ///
+  /// [deviceKey] 是本机的互联设备钥匙（`interconnect_device_key.dart`）：pair/v2 上报
+  /// 公钥、confirm 时用私钥签本会话。只有证明过设备钥匙的 peer 才能被 host 授予「我的
+  /// 设备」资格；不传（或没有 [clientDeviceId]）= 普通配对，旧 host 忽略这两个字段。
   Future<FushiPairV2Outcome> pair({
     required String deviceName,
     Future<String?> Function()? pinProvider,
     String? clientDeviceId,
     String? ticketId,
+    InterconnectDeviceKey? deviceKey,
   }) async {
     final http.Client client = _client();
+    final String? deviceId = clientDeviceId?.trim();
+    final InterconnectDeviceKey? key =
+        (deviceId != null && deviceId.isNotEmpty) ? deviceKey : null;
     try {
       final String clientNonce = FushiPairingProtocol.generateNonce();
       final http.Response startResp = await client
@@ -96,8 +105,9 @@ class FushiPairV2Client {
             body: jsonEncode(<String, String>{
               'name': deviceName,
               'clientNonce': clientNonce,
-              if (clientDeviceId != null && clientDeviceId.isNotEmpty)
-                'clientDeviceId': clientDeviceId,
+              if (deviceId != null && deviceId.isNotEmpty)
+                'clientDeviceId': deviceId,
+              if (key != null) 'devicePubkey': key.pubkey,
               // 扫码 / 复制链接：host 签发的一次性票据 id；[pinProvider] 此时应返回
               // 票据 secret（代替 PIN 进 HMAC）。
               if (ticketId != null && ticketId.isNotEmpty) 'ticket': ticketId,
@@ -124,6 +134,13 @@ class FushiPairV2Client {
 
       final Map<String, dynamic> confirmBody = <String, dynamic>{
         'sessionId': sessionId,
+        if (key != null)
+          'deviceProof': key.signPairProof(
+            sessionId: sessionId,
+            hostNonce: hostNonce,
+            clientNonce: clientNonce,
+            clientDeviceId: deviceId!,
+          ),
       };
       if (pinRequired) {
         // 只有 host 明确要求 PIN 时才向调用方索取——LAN 免 PIN 分支到不了这里，

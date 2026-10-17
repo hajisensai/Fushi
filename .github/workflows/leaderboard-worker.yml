@@ -2,8 +2,8 @@
 #
 # 只在 Worker 目录或本文件变动时触发；测试用 Node 22+ 自带的 node:sqlite 跑真实
 # D1 迁移与全部 SQL（见 services/leaderboard/test/harness.js），不需要 Cloudflare
-# 账号或网络上的 D1。本 workflow 只读：不部署、不上传产物（部署由维护者手动
-# `wrangler deploy`）。
+# 账号或网络上的 D1。本 workflow 只读：不部署、不上传产物（部署由维护者手动触发
+# leaderboard-worker-deploy.yml，或本机 `wrangler deploy --config ...`）。
 name: leaderboard-worker
 
 on:

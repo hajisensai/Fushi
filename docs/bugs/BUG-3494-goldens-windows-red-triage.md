@@ -1,0 +1,14 @@
+## BUG-3494 · Windows 本机 test/goldens 18 张基准图过期（CI 排除 golden，M3E 改版后无人重生成）
+- **报告**：2026-10-17（用户：主代理分派，upstream/develop `42f8912c6a` 起 Windows 本机 `flutter test test/goldens` 18 张对不上）
+- **真实性**：✅ 真问题（测试基线过期，不是产品回归、也不是本机环境差异）。在 upstream/develop `271b782271` 上 Windows 本机实跑 `flutter test --no-pub test/goldens`：+25 -18，差异 0.53%～56.36%，逐张看过 master/test 对照图，18 张全部是**有意改版**造成的界面变化：
+  - `list_tile_*`（9 张）：选中态改 M3E 圆角卡 + `onSecondaryContainer` 前景（`1410e01c1f`，PR #1984）；副标题 bodySmall → bodyMedium（`94b3aec67a`，PR #1971，代码注释「原来的 bodySmall 在两行列表里偏小」）。
+  - `placeholder_*`（3 张）：空状态重做为 M3E 72×72 图标色块 + titleMedium，去掉灰底卡（`8309ddcc15`，PR #1984；`fushi/lib/src/utils/components/fushi_placeholder_message.dart` 类注释）。
+  - `tag_overflow_all_parts`：标签矮一号、尾部计数改中性 surfaceContainerHighest 小块（`94b3aec67a`，PR #1971；`fushi/lib/src/utils/components/fushi_tag.dart` 构建注释）。
+  - `sync_compare_dialog_wide`：对比对话框 M3E 化（hero 图标、本地/远端两栏胜者高亮、连接式选择组；`2c0e01a027`，PR #1984）。
+  - `sync_settings_*`（4 张）：设置套件 M3E 化（分段卡片、段头移出卡片、带图标开关；`f349c08ecc` / `fd8dc2f8df`，PR #1984；页级重置 `4c97d379a6`，PR #1996）+ 新增设置行（被移除远端书恢复列表 `19796fb457` PR #2024、host 更新 `edde7ea4db` PR #2100、本地音频库传输行 `ac188c9a90` PR #2088）。
+  - 环境差异排除：golden 测试只用 flutter_tester 内置测试字体（Ahem 方块字形，不读系统字体），重生成后连跑两遍全绿、无抖动；本次 Windows 本机上没有找到任何「字体 / 光栅差异」型失败。（9 月记录的 sync_settings 13.7% 未回溯复核；当时描述的是「副标题多折一行、整体下移」，形态同样是排版变化而非光栅噪声。）
+  - 为什么 CI 没拦：`.github/workflows/main.yml:375` 与 `release.yml:1329` 的单测都是 `ubuntu-latest` + `--exclude-tags golden`（`fushi/dart_test.yaml` 把 golden 门控到参考平台 Windows），**没有任何 CI job 跑 golden**；而 Windows 开发机本地又不跑全量测试（CLAUDE.md 2026-09-06 拍板），于是 10-04～10-16 的 M3E 改版批次把 18 张基准悄悄弄过期，无人察觉。
+  - 附带发现：`sync_settings_layout_golden_test.dart` 写死视口高 2400，新版窄档页高约 3050，截图把页面下半截（约 650px）静默截掉，golden 只比上半页。
+- **[x] ① 已修复** — 只对上述 18 张用 `flutter test --update-goldens <文件> [--name/--plain-name 精确到失败用例]` 重生成（同文件里本来就过的 `list_tile_custom_fg` / `tag_*` 其余 5 张未动）；`fushi/test/goldens/sync_settings_layout_golden_test.dart` 视口高度改为按档给（宽 2400、窄 3400），让整页落进截图。没有改容差、没有跳过任何用例。
+- **[x] ② 已加自动化测试** — `fushi/test/goldens/sync_settings_layout_golden_test.dart` 新增 `_expectWholePageVisible`：截图前断言所有竖向 Scrollable 的 `maxScrollExtent == 0`，页面再长高装不下时直接红并提示加高，而不是让 golden 静默只截上半页。重生成后 Windows 本机 `flutter test --no-pub test/goldens` 连跑两遍全绿。
+- **备注**：防再次悄悄变红：所有者 2026-10-17 拍板加 `.github/workflows/golden-tests.yml`——每个 PR 与 develop push 在 windows-latest 上跑 `flutter test --no-pub --tags golden`，红了只显示不拦合并（不设 required check），失败时上传 `test/goldens/failures/` 对比图为 artifact。

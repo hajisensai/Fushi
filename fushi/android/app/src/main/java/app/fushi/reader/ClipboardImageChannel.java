@@ -2,15 +2,23 @@ package app.fushi.reader;
 
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 
 import androidx.annotation.NonNull;
 import androidx.core.content.FileProvider;
 
 import app.fushi.reader.constants.ChannelNames;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
@@ -42,6 +50,9 @@ import io.flutter.plugin.common.MethodChannel;
  */
 public final class ClipboardImageChannel {
     private static final String METHOD_COPY_IMAGE_FILE = "copyImageFile";
+    private static final String METHOD_READ_IMAGE = "readImage";
+    /** 粘贴的单张图读取上限：再大就不是截图了，也不该整个读进内存。 */
+    private static final int MAX_READ_BYTES = 64 * 1024 * 1024;
     private static final String ARG_PATH = "path";
     private static final String CLIP_LABEL = "Fushi image";
 
@@ -55,12 +66,80 @@ public final class ClipboardImageChannel {
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 ChannelNames.CLIPBOARD_IMAGE)
             .setMethodCallHandler((call, result) -> {
+                if (METHOD_READ_IMAGE.equals(call.method)) {
+                    handleReadImage(appContext, result);
+                    return;
+                }
                 if (!METHOD_COPY_IMAGE_FILE.equals(call.method)) {
                     result.notImplemented();
                     return;
                 }
                 handleCopyImageFile(appContext, call.argument(ARG_PATH), result);
             });
+    }
+
+    /**
+     * 反馈提交页「粘贴截图」：剪贴板里第一条 {@code image/*} 的 {@code content://} 条目，
+     * 读出原始字节（压缩 / 缩小由 Dart 侧按反馈上限处理）。没有图片回 null。
+     *
+     * <p>{@code getPrimaryClip} 在主线程取（Android 10 起只有拿着焦点的前台 app 能读，
+     * 用户点按钮 / 长按菜单时正是如此）；读流放后台线程，结果回主线程交给 Flutter。
+     */
+    private static void handleReadImage(@NonNull Context context,
+                                        @NonNull MethodChannel.Result result) {
+        final ClipboardManager clipboard =
+                (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) {
+            result.error("CLIPBOARD_FAILED", "ClipboardManager is unavailable", null);
+            return;
+        }
+        final ClipData clip = clipboard.getPrimaryClip();
+        if (clip == null) {
+            result.success(null);
+            return;
+        }
+        final ContentResolver resolver = context.getContentResolver();
+        Uri imageUri = null;
+        for (int i = 0; i < clip.getItemCount(); i++) {
+            final Uri uri = clip.getItemAt(i).getUri();
+            if (uri == null) continue;
+            final String type = resolver.getType(uri);
+            if (type != null && type.startsWith("image/")) {
+                imageUri = uri;
+                break;
+            }
+        }
+        if (imageUri == null) {
+            result.success(null);
+            return;
+        }
+        final Uri target = imageUri;
+        final Handler main = new Handler(Looper.getMainLooper());
+        new Thread(() -> {
+            try (InputStream in = resolver.openInputStream(target)) {
+                if (in == null) {
+                    main.post(() -> result.success(null));
+                    return;
+                }
+                final ByteArrayOutputStream out = new ByteArrayOutputStream();
+                final byte[] buffer = new byte[64 * 1024];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    if (out.size() + read > MAX_READ_BYTES) {
+                        main.post(() -> result.error("READ_FAILED",
+                                "Clipboard image is too large", null));
+                        return;
+                    }
+                    out.write(buffer, 0, read);
+                }
+                final Map<String, Object> map = new HashMap<>();
+                map.put("bytes", out.toByteArray());
+                main.post(() -> result.success(map));
+            } catch (IOException | SecurityException e) {
+                final String message = String.valueOf(e.getMessage());
+                main.post(() -> result.error("READ_FAILED", message, null));
+            }
+        }, "fushi-clipboard-read").start();
     }
 
     private static void handleCopyImageFile(@NonNull Context context,

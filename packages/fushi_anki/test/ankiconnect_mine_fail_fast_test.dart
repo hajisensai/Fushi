@@ -45,7 +45,7 @@ AnkiSettings _dupeCheckSettings() => const AnkiSettings(
       selectedNoteTypeId: 2,
       availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
       availableNoteTypes: <AnkiNoteType>[
-        AnkiNoteType(id: 2, name: 'Hibiki', fields: <String>['Expression']),
+        AnkiNoteType(id: 2, name: 'Fushi', fields: <String>['Expression']),
       ],
       fieldMappings: <String, String>{'Expression': '{expression}'},
       allowDupes: false,

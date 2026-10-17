@@ -27,9 +27,6 @@ class _CountingDb extends FushiDatabase {
   }
 }
 
-Future<void> _settle() =>
-    Future<void>.delayed(const Duration(milliseconds: 50));
-
 Dictionary _dict({
   String name = 'JMdict',
   String formatKey = 'yomichan',
@@ -75,7 +72,6 @@ void main() {
   });
 
   tearDown(() async {
-    await _settle();
     repo.dispose();
     await db.close();
   });
@@ -89,9 +85,8 @@ void main() {
     });
 
     test('loads dictionary metadata from DB sorted by order', () async {
-      repo.persistDictionary(_dict(name: 'B', order: 2));
-      repo.persistDictionary(_dict(name: 'A', order: 1));
-      await _settle();
+      await repo.persistDictionary(_dict(name: 'B', order: 2));
+      await repo.persistDictionary(_dict(name: 'A', order: 1));
 
       final repo2 = DictionaryRepository(db);
       await repo2.loadFromDb();
@@ -116,38 +111,38 @@ void main() {
   // ── dictionary getters ───────────────────────────────────────────────
 
   group('dictionary getters', () {
-    test('termDictionaries filters by term type', () {
-      repo.persistDictionary(
+    test('termDictionaries filters by term type', () async {
+      await repo.persistDictionary(
           _dict(name: 'term1', type: DictionaryType.term, order: 0));
-      repo.persistDictionary(
+      await repo.persistDictionary(
           _dict(name: 'freq1', type: DictionaryType.frequency, order: 1));
       expect(repo.termDictionaries.length, 1);
       expect(repo.termDictionaries.first.name, 'term1');
     });
 
-    test('freqDictionaries filters by frequency type', () {
-      repo.persistDictionary(
+    test('freqDictionaries filters by frequency type', () async {
+      await repo.persistDictionary(
           _dict(name: 'freq1', type: DictionaryType.frequency, order: 0));
-      repo.persistDictionary(
+      await repo.persistDictionary(
           _dict(name: 'term1', type: DictionaryType.term, order: 1));
       expect(repo.freqDictionaries.length, 1);
       expect(repo.freqDictionaries.first.name, 'freq1');
     });
 
-    test('pitchDictionaries filters by pitch type', () {
-      repo.persistDictionary(
+    test('pitchDictionaries filters by pitch type', () async {
+      await repo.persistDictionary(
           _dict(name: 'p1', type: DictionaryType.pitch, order: 0));
       expect(repo.pitchDictionaries.length, 1);
     });
 
-    test('kanjiDictionaries filters by kanji type', () {
-      repo.persistDictionary(
+    test('kanjiDictionaries filters by kanji type', () async {
+      await repo.persistDictionary(
           _dict(name: 'k1', type: DictionaryType.kanji, order: 0));
       expect(repo.kanjiDictionaries.length, 1);
     });
 
-    test('dictionaries list is unmodifiable', () {
-      repo.persistDictionary(_dict());
+    test('dictionaries list is unmodifiable', () async {
+      await repo.persistDictionary(_dict());
       expect(() => repo.dictionaries.add(_dict(name: 'x')),
           throwsUnsupportedError);
     });
@@ -164,27 +159,26 @@ void main() {
   // ── persistDictionary ────────────────────────────────────────────────
 
   group('persistDictionary', () {
-    test('adds new dictionary to cache sorted by order', () {
-      repo.persistDictionary(_dict(name: 'B', order: 2));
-      repo.persistDictionary(_dict(name: 'A', order: 1));
+    test('adds new dictionary to cache sorted by order', () async {
+      await repo.persistDictionary(_dict(name: 'B', order: 2));
+      await repo.persistDictionary(_dict(name: 'A', order: 1));
       expect(repo.dictionaries.map((d) => d.name), ['A', 'B']);
     });
 
-    test('updates existing dictionary in cache by name', () {
-      repo.persistDictionary(_dict(name: 'X', order: 0, metadata: {'v': '1'}));
-      repo.persistDictionary(_dict(name: 'X', order: 0, metadata: {'v': '2'}));
+    test('updates existing dictionary in cache by name', () async {
+      await repo.persistDictionary(_dict(name: 'X', order: 0, metadata: {'v': '1'}));
+      await repo.persistDictionary(_dict(name: 'X', order: 0, metadata: {'v': '2'}));
       expect(repo.dictionaries.length, 1);
       expect(repo.dictionaries.first.metadata['v'], '2');
     });
 
-    test('calls onCacheRebuild callback', () {
-      repo.persistDictionary(_dict());
+    test('calls onCacheRebuild callback', () async {
+      await repo.persistDictionary(_dict());
       expect(rebuildCount, 1);
     });
 
     test('persists to DB', () async {
-      repo.persistDictionary(_dict(name: 'Test'));
-      await _settle();
+      await repo.persistDictionary(_dict(name: 'Test'));
 
       final repo2 = DictionaryRepository(db);
       await repo2.loadFromDb();
@@ -197,12 +191,12 @@ void main() {
   // ── updateDictionaryOrder ────────────────────────────────────────────
 
   group('updateDictionaryOrder', () {
-    test('reorders dictionaries in cache', () {
-      repo.persistDictionary(_dict(name: 'A', order: 0));
-      repo.persistDictionary(_dict(name: 'B', order: 1));
+    test('reorders dictionaries in cache', () async {
+      await repo.persistDictionary(_dict(name: 'A', order: 0));
+      await repo.persistDictionary(_dict(name: 'B', order: 1));
       rebuildCount = 0;
 
-      repo.updateDictionaryOrder([
+      await repo.updateDictionaryOrder([
         _dict(name: 'B', order: 0),
         _dict(name: 'A', order: 1),
       ]);
@@ -212,15 +206,13 @@ void main() {
     });
 
     test('persists new order to DB', () async {
-      repo.persistDictionary(_dict(name: 'A', order: 0));
-      repo.persistDictionary(_dict(name: 'B', order: 1));
-      await _settle();
+      await repo.persistDictionary(_dict(name: 'A', order: 0));
+      await repo.persistDictionary(_dict(name: 'B', order: 1));
 
-      repo.updateDictionaryOrder([
+      await repo.updateDictionaryOrder([
         _dict(name: 'B', order: 0),
         _dict(name: 'A', order: 1),
       ]);
-      await _settle();
 
       final repo2 = DictionaryRepository(db);
       await repo2.loadFromDb();
@@ -228,18 +220,18 @@ void main() {
       repo2.dispose();
     });
 
-    test('clears stale search caches so next lookup re-merges (BUG-355)', () {
+    test('clears stale search caches so next lookup re-merges (BUG-355)', () async {
       // Reordering changes the effective merge order of lookup results, so a
       // result cached under the old order must not survive — otherwise the next
       // (cache-hit) query replays the stale order until the app restarts.
-      repo.persistDictionary(_dict(name: 'A', order: 0));
-      repo.persistDictionary(_dict(name: 'B', order: 1));
+      await repo.persistDictionary(_dict(name: 'A', order: 0));
+      await repo.persistDictionary(_dict(name: 'B', order: 1));
       repo.cacheSearchResult('猫', _result(searchTerm: '猫'));
       repo.cacheFfiLookup('猫', const []);
       expect(repo.getCachedSearch('猫'), isNotNull);
       expect(repo.getCachedFfiLookup('猫'), isNotNull);
 
-      repo.updateDictionaryOrder([
+      await repo.updateDictionaryOrder([
         _dict(name: 'B', order: 0),
         _dict(name: 'A', order: 1),
       ]);
@@ -254,43 +246,43 @@ void main() {
   // BUG-2158：折叠有三个态，一个 collapsedLanguages 名单只装得下两个。
   // 旧的 toggleDictionaryCollapsed 双态入口已删除。
   group('setDictionaryCollapseState / cycleDictionaryCollapseState', () {
-    test('三态循环：继承 → 显式展开 → 显式折叠 → 继承', () {
+    test('三态循环：继承 → 显式展开 → 显式折叠 → 继承', () async {
       final d = _dict(name: 'D');
-      repo.persistDictionary(d);
+      await repo.persistDictionary(d);
       expect(d.collapseStateForCode('ja'), DictionaryCollapseState.inherit,
           reason: '存量词典两个名单都空 = 继承');
 
-      repo.cycleDictionaryCollapseState(d, 'ja');
+      await repo.cycleDictionaryCollapseState(d, 'ja');
       expect(repo.dictionaries.first.expandedLanguages, contains('ja'));
       expect(repo.dictionaries.first.collapsedLanguages, isNot(contains('ja')));
       expect(d.collapseStateForCode('ja'), DictionaryCollapseState.expanded,
           reason: '第一次点下去必须是「显式展开」—— 那正是用户以为自己一直在做的事');
 
-      repo.cycleDictionaryCollapseState(d, 'ja');
+      await repo.cycleDictionaryCollapseState(d, 'ja');
       expect(repo.dictionaries.first.collapsedLanguages, contains('ja'));
       expect(repo.dictionaries.first.expandedLanguages, isNot(contains('ja')));
       expect(d.collapseStateForCode('ja'), DictionaryCollapseState.collapsed);
 
-      repo.cycleDictionaryCollapseState(d, 'ja');
+      await repo.cycleDictionaryCollapseState(d, 'ja');
       expect(repo.dictionaries.first.collapsedLanguages, isNot(contains('ja')));
       expect(repo.dictionaries.first.expandedLanguages, isNot(contains('ja')));
       expect(d.collapseStateForCode('ja'), DictionaryCollapseState.inherit);
     });
 
-    test('两个名单互斥：从显式折叠直接设成显式展开，不会两边都留', () {
+    test('两个名单互斥：从显式折叠直接设成显式展开，不会两边都留', () async {
       final d = _dict(name: 'D', collapsedLanguages: ['ja']);
-      repo.persistDictionary(d);
-      repo.setDictionaryCollapseState(
+      await repo.persistDictionary(d);
+      await repo.setDictionaryCollapseState(
           d, 'ja', DictionaryCollapseState.expanded);
       expect(repo.dictionaries.first.expandedLanguages, contains('ja'));
       expect(repo.dictionaries.first.collapsedLanguages, isNot(contains('ja')),
           reason: '同一语言同时出现在两个名单里 = 状态自相矛盾，写入点必须保证互斥');
     });
 
-    test('只动被指定的那个语言码，其它语言的表态不受影响', () {
+    test('只动被指定的那个语言码，其它语言的表态不受影响', () async {
       final d = _dict(name: 'D', collapsedLanguages: ['ja', 'en']);
-      repo.persistDictionary(d);
-      repo.setDictionaryCollapseState(d, 'ja', DictionaryCollapseState.inherit);
+      await repo.persistDictionary(d);
+      await repo.setDictionaryCollapseState(d, 'ja', DictionaryCollapseState.inherit);
       expect(repo.dictionaries.first.collapsedLanguages, <String>['en']);
       expect(repo.dictionaries.first.expandedLanguages, isEmpty);
     });
@@ -304,20 +296,20 @@ void main() {
   });
 
   group('toggleDictionaryHidden', () {
-    test('adds language code when not hidden', () {
+    test('adds language code when not hidden', () async {
       final d = _dict(name: 'D');
-      repo.persistDictionary(d);
-      repo.toggleDictionaryHidden(d, 'en');
+      await repo.persistDictionary(d);
+      await repo.toggleDictionaryHidden(d, 'en');
       expect(
         repo.dictionaries.first.hiddenLanguages,
         contains('en'),
       );
     });
 
-    test('removes language code when already hidden', () {
+    test('removes language code when already hidden', () async {
       final d = _dict(name: 'D', hiddenLanguages: ['en']);
-      repo.persistDictionary(d);
-      repo.toggleDictionaryHidden(d, 'en');
+      await repo.persistDictionary(d);
+      await repo.toggleDictionaryHidden(d, 'en');
       expect(
         repo.dictionaries.first.hiddenLanguages,
         isNot(contains('en')),
@@ -328,23 +320,23 @@ void main() {
   // ── hasDictionaryNamed / remove / clear ──────────────────────────────
 
   group('cache helpers', () {
-    test('hasDictionaryNamed returns true when present', () {
-      repo.persistDictionary(_dict(name: 'Test'));
+    test('hasDictionaryNamed returns true when present', () async {
+      await repo.persistDictionary(_dict(name: 'Test'));
       expect(repo.hasDictionaryNamed('Test'), true);
       expect(repo.hasDictionaryNamed('Other'), false);
     });
 
-    test('removeDictionaryFromCache removes by name', () {
-      repo.persistDictionary(_dict(name: 'A'));
-      repo.persistDictionary(_dict(name: 'B', order: 1));
+    test('removeDictionaryFromCache removes by name', () async {
+      await repo.persistDictionary(_dict(name: 'A'));
+      await repo.persistDictionary(_dict(name: 'B', order: 1));
       repo.removeDictionaryFromCache('A');
       expect(repo.dictionaries.length, 1);
       expect(repo.dictionaries.first.name, 'B');
     });
 
-    test('clearDictionariesCache empties the cache', () {
-      repo.persistDictionary(_dict(name: 'A'));
-      repo.persistDictionary(_dict(name: 'B', order: 1));
+    test('clearDictionariesCache empties the cache', () async {
+      await repo.persistDictionary(_dict(name: 'A'));
+      await repo.persistDictionary(_dict(name: 'B', order: 1));
       repo.clearDictionariesCache();
       expect(repo.dictionaries, isEmpty);
     });
@@ -578,7 +570,7 @@ void main() {
       // dispose 的 unregister 仍能命中）。
       ExitFlushRegistry.instance.clear();
       addTearDown(() {
-        ExitFlushRegistry.instance.register(repo.flushDictionaryHistoryNow);
+        ExitFlushRegistry.instance.register(repo.flushPendingWritesNow);
       });
 
       final db2 = _testDb();
@@ -630,44 +622,44 @@ void main() {
   });
 
   group('findUpdatable', () {
-    test('finds older version with different date', () {
-      repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
+    test('finds older version with different date', () async {
+      await repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
       final result = repo.findUpdatable('JMdict [2026-05-19]');
       expect(result, isNotNull);
       expect(result!.name, 'JMdict [2026-05-17]');
     });
 
-    test('returns null for exact same name', () {
-      repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
+    test('returns null for exact same name', () async {
+      await repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
       expect(repo.findUpdatable('JMdict [2026-05-17]'), isNull);
     });
 
-    test('returns null for two identical undated names', () {
-      repo.persistDictionary(_dict(name: 'Pixiv', order: 0));
+    test('returns null for two identical undated names', () async {
+      await repo.persistDictionary(_dict(name: 'Pixiv', order: 0));
       expect(repo.findUpdatable('Pixiv'), isNull);
     });
 
-    test('finds dated version when importing undated name', () {
-      repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
+    test('finds dated version when importing undated name', () async {
+      await repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
       final result = repo.findUpdatable('JMdict');
       expect(result, isNotNull);
       expect(result!.name, 'JMdict [2026-05-17]');
     });
 
-    test('finds undated version when importing dated name', () {
-      repo.persistDictionary(_dict(name: 'JMdict', order: 0));
+    test('finds undated version when importing dated name', () async {
+      await repo.persistDictionary(_dict(name: 'JMdict', order: 0));
       final result = repo.findUpdatable('JMdict [2026-05-19]');
       expect(result, isNotNull);
       expect(result!.name, 'JMdict');
     });
 
-    test('returns null when no match exists', () {
-      repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
+    test('returns null when no match exists', () async {
+      await repo.persistDictionary(_dict(name: 'JMdict [2026-05-17]', order: 0));
       expect(repo.findUpdatable('KANJIDIC [2026-05-19]'), isNull);
     });
 
-    test('does not match different base names', () {
-      repo.persistDictionary(
+    test('does not match different base names', () async {
+      await repo.persistDictionary(
           _dict(name: 'JMdict (Dutch) [2026-05-17]', order: 0));
       expect(repo.findUpdatable('JMdict [2026-05-19]'), isNull);
     });
@@ -675,8 +667,7 @@ void main() {
 
   group('deleteDictionaryMeta', () {
     test('removes from cache and DB', () async {
-      repo.persistDictionary(_dict(name: 'ToDelete', order: 0));
-      await _settle();
+      await repo.persistDictionary(_dict(name: 'ToDelete', order: 0));
       expect(repo.hasDictionaryNamed('ToDelete'), true);
 
       await repo.deleteDictionaryMeta('ToDelete');
@@ -702,8 +693,7 @@ void main() {
         hiddenLanguages: ['en', 'zh'],
         collapsedLanguages: ['ja'],
       );
-      repo.persistDictionary(d);
-      await _settle();
+      await repo.persistDictionary(d);
 
       final repo2 = DictionaryRepository(db);
       await repo2.loadFromDb();
@@ -720,10 +710,9 @@ void main() {
 
     test('all DictionaryType values survive round-trip', () async {
       for (final type in DictionaryType.values) {
-        repo.persistDictionary(
+        await repo.persistDictionary(
             _dict(name: type.name, type: type, order: type.index));
       }
-      await _settle();
 
       final repo2 = DictionaryRepository(db);
       await repo2.loadFromDb();

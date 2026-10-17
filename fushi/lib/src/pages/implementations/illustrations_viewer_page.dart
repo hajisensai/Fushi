@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show ReaderPosition, ReaderPositionRepository;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
@@ -15,7 +15,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show computeTocAnchorCharOffsets, tocAnchorKey;
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart';
 import 'package:fushi/src/reader/reader_collection_volumes.dart'
-    show epubImageFileFor, parseVolumeBookForPeek;
+    show epubImageFileFor, parseVolumeBookForPeekOffUi;
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -27,7 +27,7 @@ import 'package:fushi/utils.dart';
 /// 装载与接线，画廊本体只有一份。
 ///
 /// 与阅读器内打开的差别只在数据来源：
-/// - 结构在 isolate 里解析（[parseVolumeBookForPeek]，与看兄弟卷同一入口）；
+/// - 结构在 isolate 里解析（[parseVolumeBookForPeekOffUi]，与看兄弟卷同一入口）；
 /// - 阅读位置读 Drift `reader_positions`；没有位置行 = 这本一次都没打开过，
 ///   传 `currentChapter: null`——不按进度遮罩、不出「当前阅读位置」标记；
 /// - 揭开 / 恢复遮罩直接落 `revealed_images`（与阅读器共享真相源，BUG-898）；
@@ -100,7 +100,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     try {
       // 结构解析（isolate）与两次 Drift 读互不依赖，并行起跑。
       final Future<EpubBook> bookFuture =
-          compute(parseVolumeBookForPeek, widget.extractDir);
+          parseVolumeBookForPeekOffUi(widget.extractDir);
       final Future<ReaderPosition?> positionFuture = widget.bookUid.isEmpty
           ? Future<ReaderPosition?>.value(null)
           : ReaderPositionRepository(widget.database)
@@ -243,31 +243,23 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   }
 
   /// 装载中 / 出错：带返回键的普通页面壳。
+  ///
+  /// 走统一的加载 / 空态组件：MD3 Expressive 指示器 / Apple 菊花，错误用中性
+  /// 占位块 + 单色错误图标，不再整段铺 error 色文字。
   Widget _buildPending(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? error = _error;
     return FushiPageScaffold(
       title: widget.bookTitle,
-      body: Center(
+      // 页头浮在正文上（脚手架默认 extendBodyBehindHeader）：不滚动的占位整体
+      // 让开页头。
+      body: SafeArea(
+        bottom: false,
         child: error != null
-            ? Padding(
-                padding:
-                    EdgeInsets.all(tokens.spacing.page + tokens.spacing.card),
-                child: Text(
-                  error,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: theme.colorScheme.error),
-                ),
+            ? FushiPlaceholderMessage(
+                icon: Icons.error_outline_rounded,
+                message: error,
               )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  adaptiveIndicator(context: context),
-                  SizedBox(height: tokens.spacing.card),
-                  Text(t.loading_illustrations),
-                ],
-              ),
+            : FushiLoadingView(message: t.loading_illustrations),
       ),
     );
   }

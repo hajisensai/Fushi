@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
 
@@ -525,7 +526,7 @@ void main() {
       expect(continueWatchingSeriesIndex(members), isNull);
     });
 
-    test('继续观看：无痕迹 / 位置拖回 0 且未完成 → 不进本行', () {
+    test('继续观看：整部无痕迹 → 不进本行；位置拖回 0 且未完成 → 停在它', () {
       const List<VideoSeriesPlaybackState> untouched =
           <VideoSeriesPlaybackState>[
         VideoSeriesPlaybackState(
@@ -547,7 +548,99 @@ void main() {
           completed: false,
         ),
       ];
-      expect(continueWatchingSeriesIndex(rewound), isNull);
+      // BUG-3370：时刻就是痕迹，与大卡 continueMemberIndex 同答案。
+      expect(continueWatchingSeriesIndex(rewound), 0);
+    });
+
+    // BUG-3370：首页「继续观看」「下一集」与详情大卡（continueMemberIndex）必须
+    // 共用同一个「最近播放」锚点，三处给同一集。
+    group('三处入口同一答案 (BUG-3370)', () {
+      const VideoSeriesPlaybackState none = VideoSeriesPlaybackState(
+        lastWatchedAtMs: 0,
+        positionMs: 0,
+        completed: false,
+      );
+      VideoSeriesPlaybackState done(int at) => VideoSeriesPlaybackState(
+        lastWatchedAtMs: at,
+        positionMs: 0,
+        completed: true,
+      );
+      VideoSeriesPlaybackState openedOnly(int at) => VideoSeriesPlaybackState(
+        lastWatchedAtMs: at,
+        positionMs: 0,
+        completed: false,
+      );
+
+      int hero(List<VideoSeriesPlaybackState> members) =>
+          continueMemberIndex(<CollectionMemberProgress>[
+            for (final VideoSeriesPlaybackState m in members) m.progress,
+          ]);
+
+      void expectAllAt(List<VideoSeriesPlaybackState> members, int index) {
+        expect(continueWatchingSeriesIndex(members), index, reason: '继续观看');
+        expect(nextEpisodeAfterLatestPlayed(members), index, reason: '下一集');
+        expect(hero(members), index, reason: '详情大卡');
+      }
+
+      // 用户实报：看完第 7 集自动连播第 8 集，几秒后退出（第 8 集只有时刻、
+      // 进度 0）。此前「继续观看」整部消失、「下一集」跳到第 9 集。
+      test('相邻集：看完第 7 集、第 8 集只打开过 → 都落在第 8 集', () {
+        final List<VideoSeriesPlaybackState> members =
+            <VideoSeriesPlaybackState>[
+          for (int i = 0; i < 6; i++) done(100 + i),
+          done(200),
+          openedOnly(300),
+          none,
+          none,
+        ];
+        expect(latestPlayedSeriesIndex(members), 7);
+        expectAllAt(members, 7);
+      });
+
+      test('跳集：看完第 7 集、跳到第 12 集几秒退出 → 都落在第 12 集', () {
+        final List<VideoSeriesPlaybackState> members =
+            <VideoSeriesPlaybackState>[
+          for (int i = 0; i < 6; i++) done(100 + i),
+          done(200),
+          for (int i = 7; i < 11; i++) none,
+          openedOnly(300),
+          none,
+        ];
+        expect(latestPlayedSeriesIndex(members), 11);
+        expectAllAt(members, 11);
+      });
+
+      test('只打开过第 1 集几秒 → 继续观看 / 下一集 / 大卡都指向第 1 集', () {
+        final List<VideoSeriesPlaybackState> members =
+            <VideoSeriesPlaybackState>[openedOnly(300), none, none];
+        expect(latestPlayedSeriesIndex(members), 0);
+        expectAllAt(members, 0);
+      });
+
+      test('全部未碰 → 首页两行都不占，大卡从第 1 集开始', () {
+        const List<VideoSeriesPlaybackState> members =
+            <VideoSeriesPlaybackState>[none, none, none];
+        expect(latestPlayedSeriesIndex(members), isNull);
+        expect(continueWatchingSeriesIndex(members), isNull);
+        expect(nextEpisodeAfterLatestPlayed(members), isNull);
+        expect(hero(members), 0);
+      });
+
+      test('有进度的锚点：继续观看与大卡停在它，下一集推进到后一集', () {
+        final List<VideoSeriesPlaybackState> members =
+            <VideoSeriesPlaybackState>[
+          done(100),
+          const VideoSeriesPlaybackState(
+            lastWatchedAtMs: 300,
+            positionMs: 60000,
+            completed: false,
+          ),
+          none,
+        ];
+        expect(continueWatchingSeriesIndex(members), 1);
+        expect(hero(members), 1);
+        expect(nextEpisodeAfterLatestPlayed(members), 2);
+      });
     });
 
     test('最后一集之后没有下一集', () {

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -56,6 +56,9 @@ class _SourceLineAppModel extends AppModel {
 
   @override
   double get popupMaxWidth => 400;
+
+  @override
+  double get dictionaryFontSize => 16;
 
   @override
   double get appUiScale => 1.0;
@@ -140,6 +143,8 @@ Widget _buildApp({
   required BaseAnkiRepository repo,
   required String text,
   required int charIndex,
+  String? sourceBlock,
+  int sourceBlockOffset = -1,
 }) {
   return ProviderScope(
     overrides: [
@@ -152,6 +157,8 @@ Widget _buildApp({
         home: PopupDictionaryPage(
           searchTerm: text,
           sourceCharIndex: charIndex,
+          sourceBlock: sourceBlock,
+          sourceBlockOffset: sourceBlockOffset,
           closeInApp: () {},
         ),
       ),
@@ -474,6 +481,90 @@ void main() {
   );
 
   testWidgets(
+    'BUG-3487: a screen-OCR line mines the whole sentence from its text block',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
+      // 竖排：一句被 ML Kit 拆成三行；用户点的是第二行「良」。
+      const String block = '今日は\n良い天気ですね。\n散歩に行こう。';
+      const String line = '良い天気ですね。';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: repo,
+          text: line,
+          charIndex: 0,
+          sourceBlock: block,
+          sourceBlockOffset: block.indexOf(line),
+        ),
+      );
+      await _settle(tester);
+
+      final SourceLookupTextPanel panel = tester.widget(
+        find.byType(SourceLookupTextPanel),
+      );
+      expect(panel.text, line, reason: '源文本条仍是被点的那一行');
+      expect(
+        await _mineSentence(tester, repo),
+        '今日は良い天気ですね。',
+        reason: '句子是块里含被点字的整句，跨行拼回，不含下一句',
+      );
+    },
+  );
+
+  testWidgets(
+    'BUG-3487: tapping another glyph on the strip re-picks its sentence',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
+      const String block = 'まだ早い。\nもう行く。今日は雨';
+      const String line = 'もう行く。今日は雨';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: repo,
+          text: line,
+          charIndex: 0,
+          sourceBlock: block,
+          sourceBlockOffset: block.indexOf(line),
+        ),
+      );
+      await _settle(tester);
+      expect(await _mineSentence(tester, repo), 'もう行く。');
+
+      // 同一行上点「雨」：它在块里的下一句。
+      await tester.tap(find.text('雨'));
+      await _settle(tester);
+      expect(appModel.searched.last, '雨');
+      expect(await _mineSentence(tester, repo), '今日は雨');
+    },
+  );
+
+  testWidgets(
+    'BUG-3487: a block that does not contain the line at the given offset '
+    'falls back to the whole line',
+    (WidgetTester tester) async {
+      final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: _SourceLineAppModel(),
+          repo: repo,
+          text: 'もう行く。今日は雨',
+          charIndex: 0,
+          sourceBlock: 'まだ早い。もう行く。今日は雨',
+          sourceBlockOffset: 1,
+        ),
+      );
+      await _settle(tester);
+      expect(
+        await _mineSentence(tester, repo),
+        'もう行く。今日は雨',
+        reason: '偏移错位时绝不截错位的句子',
+      );
+    },
+  );
+
+  testWidgets(
     'BUG-2899: PopupDictApp hands the whole line from the native channel to '
     'the page without cutting it into a word',
     (WidgetTester tester) async {
@@ -499,11 +590,18 @@ void main() {
       );
       await _settle(tester);
 
-      Future<void> nativePush(String text, int charIndex) async {
+      Future<void> nativePush(
+        String text,
+        int charIndex, {
+        String? block,
+        int blockOffset = -1,
+      }) async {
         final ByteData message = const StandardMethodCodec().encodeMethodCall(
           MethodCall('onNewProcessText', <String, Object>{
             'text': text,
             'charIndex': charIndex,
+            if (block != null) 'sourceBlock': block,
+            if (block != null) 'sourceBlockOffset': blockOffset,
           }),
         );
         unawaited(
@@ -530,6 +628,21 @@ void main() {
       expect(appModel.searched.last, '雨が降る');
       panel = tester.widget(find.byType(SourceLookupTextPanel));
       expect(panel.text, '明日は雨が降る');
+
+      // BUG-3487：截屏识字带上所属块，页面拿到块全文与本行起点。
+      const String block = '朝から\n明日は雨が降る\nらしい。';
+      await nativePush('明日は雨が降る', 3, block: block, blockOffset: 4);
+      PopupDictionaryPage page = tester.widget(
+        find.byType(PopupDictionaryPage),
+      );
+      expect(page.sourceBlock, block);
+      expect(page.sourceBlockOffset, 4);
+
+      // 再推一个不带块的（悬浮字幕 / 系统划词）：块不得残留。
+      await nativePush('明日は雨が降る', 3);
+      page = tester.widget(find.byType(PopupDictionaryPage));
+      expect(page.sourceBlock, isNull);
+      expect(page.sourceBlockOffset, -1);
     },
   );
 }

@@ -223,7 +223,7 @@ class EpubSrtMatcher {
 
     final _Index idx = _buildIndex(sections);
     final List<String> normCueTexts = <String>[
-      for (final AudioCue c in cues) AudioTextNormalizer.normalize(c.text),
+      for (final AudioCue c in cues) _normalizeForMatch(c.text),
     ];
 
     for (final int w in windows) {
@@ -270,7 +270,7 @@ class EpubSrtMatcher {
     }
 
     final List<String> normCueTexts = <String>[
-      for (final AudioCue c in cues) AudioTextNormalizer.normalize(c.text),
+      for (final AudioCue c in cues) _normalizeForMatch(c.text),
     ];
     return _matchCore(
       idx: _buildIndex(sections),
@@ -349,7 +349,7 @@ class EpubSrtMatcher {
       final AudioCue cue = cues[ci];
       final String nc = preNormCueTexts != null
           ? preNormCueTexts[ci]
-          : AudioTextNormalizer.normalize(cue.text);
+          : _normalizeForMatch(cue.text);
       if (nc.isEmpty) {
         results.add(CueMatch.unmatched);
         continue;
@@ -412,6 +412,12 @@ class EpubSrtMatcher {
                 ? cursor - cueTailOverlap
                 : lastHitAbsStart + 1)
           : cursor;
+      // 读音轨命中换回基底轨后的下限：[searchFrom] 落在某处 ruby 基底中间时，
+      // `fromBase` 把读音轨起点映回该 ruby 读音开头（偏早不跳过），命中可能整个
+      // 落回前一条命中的那处 ruby 上——基底轨的 `indexOf(nc, searchFrom)` 天然守着
+      // 「不越过前一条命中的起点」，读音轨要显式守（BUG-2928：「おいらんシルフィード」
+      // 叠到上一条「オイレンシルフィード」的同一处 ruby 上）。
+      final int readingHitFloor = lastHitResult >= 0 ? lastHitAbsStart + 1 : 0;
       if (windowEnd - searchFrom >= nc.length) {
         int found = big.indexOf(nc, searchFrom);
         int matchEnd = found + nc.length;
@@ -425,15 +431,19 @@ class EpubSrtMatcher {
         bool hit = found >= 0 && matchEnd <= windowEnd && !tooFarForShortCue;
         if (!hit && reading != null) {
           // 基底轨没有精确命中：同一窗口在读音轨再找一次，命中换算回基底偏移。
-          final int rFound = reading.text.indexOf(
-            nc,
-            reading.fromBase[searchFrom],
-          );
-          if (rFound >= 0 &&
-              rFound + nc.length <= reading.fromBase[windowEnd]) {
-            found = reading.toBaseStart[rFound];
-            matchEnd = reading.toBaseEnd[rFound + nc.length];
-            hit = matchEnd > found;
+          final int rLimit = reading.fromBase[windowEnd];
+          int rFrom = reading.fromBase[searchFrom];
+          while (true) {
+            final int rFound = reading.text.indexOf(nc, rFrom);
+            if (rFound < 0 || rFound + nc.length > rLimit) break;
+            final int b0 = reading.toBaseStart[rFound];
+            if (b0 >= readingHitFloor) {
+              found = b0;
+              matchEnd = reading.toBaseEnd[rFound + nc.length];
+              hit = matchEnd > found;
+              break;
+            }
+            rFrom = rFound + 1;
           }
         }
         if (hit) {
@@ -505,9 +515,11 @@ class EpubSrtMatcher {
               end: rEnd,
             );
             if (rr.score > bestSim && rr.pos >= 0) {
-              final int b0 = reading.toBaseStart[rr.pos];
-              final int b1 = reading.toBaseEnd[rr.pos + rr.len];
-              if (b1 > b0) {
+              // 模糊命中按覆盖过半就近取整到 ruby 边界（见
+              // [_ReadingTrack.nearestBaseStart]），不一律向外扩。
+              final int b0 = reading.nearestBaseStart(rr.pos);
+              final int b1 = reading.nearestBaseEnd(rr.pos + rr.len);
+              if (b1 > b0 && b0 >= readingHitFloor) {
                 bestSim = rr.score;
                 bestPos = b0;
                 bestLen = b1 - b0;
@@ -790,7 +802,7 @@ class EpubSrtMatcher {
   }) {
     String norm(int i) => preNormCueTexts != null
         ? preNormCueTexts[i]
-        : AudioTextNormalizer.normalize(cues[i].text);
+        : _normalizeForMatch(cues[i].text);
 
     // 每条探测 cue 的候选位置（cue 序保持）；[perCueExactUnique] 同序，标记该
     // 条是否在全书恰好精确出现一次（模糊命中不算）。
@@ -952,6 +964,57 @@ class EpubSrtMatcher {
 
   // ---------- index ----------
 
+  /// 匹配专用归一化：[AudioTextNormalizer.normalize] 之后再把小書き仮名折成並字
+  /// （ぁぃぅぇぉっゃゅょゎゕゖ → あいうえおつやゆよわかけ）。
+  ///
+  /// 传统排版的 ruby 不用小书き仮名（BUG-2928：『やはり俺の青春ラブコメはまちがって
+  /// いる。』的 rt 是「オイレン・シルフイード」「きようがく」），ASR 却总吐现代
+  /// 写法「シルフィード」「きょうがく」——读音轨上真位置只拿到 0.78 分，过不了
+  /// 0.8 的阈值；bigram Dice 不看顺序，窗口里紧挨着的两处同读音 ruby 拼出的
+  /// 「ーど|おいれんしるふ」反而 0.82，游标越过中间七句正文，VN 随 cue 跳过三段。
+  ///
+  /// 只在匹配器内部折（全书索引两条轨 + cue 两侧同一口径）：逐码元 1:1，偏移不变，
+  /// [CueMatch] 照旧落在基底轨坐标上。共享的 [AudioTextNormalizer] 不动——它与阅读器
+  /// JS 的 `foldCodePoint` 逐值对齐，那条链路不需要这层宽松。
+  static String _normalizeForMatch(String s) =>
+      _foldSmallKana(AudioTextNormalizer.normalize(s));
+
+  static String _foldSmallKana(String s) {
+    StringBuffer? out;
+    for (int i = 0; i < s.length; i++) {
+      final int c = s.codeUnitAt(i);
+      final int f = _foldSmallKanaUnit(c);
+      if (f != c && out == null) {
+        out = StringBuffer(s.substring(0, i));
+      }
+      out?.writeCharCode(f);
+    }
+    return out?.toString() ?? s;
+  }
+
+  /// 归一化后（片假名已折成平假名）的小書き仮名 → 並字；其余原样。
+  static int _foldSmallKanaUnit(int c) {
+    switch (c) {
+      case 0x3041: // ぁ
+      case 0x3043: // ぃ
+      case 0x3045: // ぅ
+      case 0x3047: // ぇ
+      case 0x3049: // ぉ
+      case 0x3063: // っ
+      case 0x3083: // ゃ
+      case 0x3085: // ゅ
+      case 0x3087: // ょ
+      case 0x308E: // ゎ
+        return c + 1;
+      case 0x3095: // ゕ
+        return 0x304B; // か
+      case 0x3096: // ゖ
+        return 0x3051; // け
+      default:
+        return c;
+    }
+  }
+
   static _Index _buildIndex(List<EpubSection> sections) {
     final StringBuffer buf = StringBuffer();
     final List<int> normStarts = <int>[];
@@ -959,7 +1022,7 @@ class EpubSrtMatcher {
       normStarts.add(buf.length);
       AudioTextNormalizer.appendNormalized(buf, s.text);
     }
-    final String big = buf.toString();
+    final String big = _foldSmallKana(buf.toString());
     final bool anyRuby = sections.any((EpubSection s) => s.rubies.isNotEmpty);
     return _Index(
       big,
@@ -1046,6 +1109,8 @@ class _ReadingTrack {
     required this.toBaseStart,
     required this.toBaseEnd,
     required this.fromBase,
+    required this.atomReadStart,
+    required this.atomReadEnd,
   });
 
   /// 读音轨归一化全书串。
@@ -1061,6 +1126,33 @@ class _ReadingTrack {
   /// 位置映到该 ruby 读音起点，游标只会偏早不会跳过）。
   final Int32List fromBase;
 
+  /// 读音轨位置 `p` 所在原子（一整段 ruby 读音，或一个非 ruby 字符）在读音轨上的
+  /// 区间 `[atomReadStart[p], atomReadEnd[p])`；`atomReadStart[p] < p` 即 `p` 落在
+  /// 某段读音中间。
+  final Int32List atomReadStart;
+  final Int32List atomReadEnd;
+
+  /// 模糊命中的起点换回基底轨：落在某段读音中间时按**剩余部分是否过半**取整——
+  /// 过半取该 ruby 基底起点，不足一半取其基底终点（这段 ruby 不算进命中）。
+  ///
+  /// [toBaseStart] 一律向外扩：bigram Dice 不看顺序，窗口骑在两处相邻同读音 ruby
+  /// 之间（「…ーど|おいれんしるふ…」）也能凑出高分，向外扩会把只沾了两个尾字的
+  /// 前一处 ruby 整个算进来，与上一条 cue 的命中重叠（BUG-2928）。精确命中不走这里。
+  int nearestBaseStart(int p) {
+    final int r0 = atomReadStart[p];
+    if (r0 >= p) return toBaseStart[p];
+    final int r1 = atomReadEnd[p];
+    return (r1 - p) * 2 >= r1 - r0 ? toBaseStart[p] : toBaseEnd[p];
+  }
+
+  /// [nearestBaseStart] 的终点版：覆盖过半取该 ruby 基底终点，否则取其基底起点。
+  int nearestBaseEnd(int e) {
+    final int r0 = atomReadStart[e];
+    if (r0 >= e) return toBaseEnd[e];
+    final int r1 = atomReadEnd[e];
+    return (e - r0) * 2 >= r1 - r0 ? toBaseEnd[e] : toBaseStart[e];
+  }
+
   static _ReadingTrack build(
     List<EpubSection> sections,
     List<int> sectionNormStarts,
@@ -1069,6 +1161,8 @@ class _ReadingTrack {
     final StringBuffer buf = StringBuffer();
     final List<int> toStart = <int>[];
     final List<int> toEnd = <int>[];
+    final List<int> atomStart = <int>[];
+    final List<int> atomEnd = <int>[];
     final Int32List fromBase = Int32List(baseLength + 1);
     for (int si = 0; si < sections.length; si++) {
       final EpubSection s = sections[si];
@@ -1081,7 +1175,7 @@ class _ReadingTrack {
       final List<int> spanEnd = <int>[];
       final List<String> spanReading = <String>[];
       for (final EpubRubySpan r in s.rubies) {
-        final String reading = AudioTextNormalizer.normalize(r.reading);
+        final String reading = EpubSrtMatcher._normalizeForMatch(r.reading);
         if (reading.isEmpty || r.end <= r.start) continue;
         final int i = _lowerBound(norm.starts, r.start);
         int j = i;
@@ -1105,6 +1199,8 @@ class _ReadingTrack {
           for (int q = 0; q < reading.length; q++) {
             toStart.add(b0);
             toEnd.add(q == 0 ? b0 : b1);
+            atomStart.add(r0);
+            atomEnd.add(r0 + reading.length);
           }
           buf.write(reading);
           for (int bb = spanStart[k]; bb < spanEnd[k]; bb++) {
@@ -1116,19 +1212,27 @@ class _ReadingTrack {
         }
         toStart.add(baseOffset + b);
         toEnd.add(baseOffset + b);
+        atomStart.add(buf.length);
+        atomEnd.add(buf.length + 1);
         fromBase[baseOffset + b] = buf.length;
-        buf.writeCharCode(norm.text.codeUnitAt(b));
+        buf.writeCharCode(
+          EpubSrtMatcher._foldSmallKanaUnit(norm.text.codeUnitAt(b)),
+        );
         b++;
       }
     }
     toStart.add(baseLength);
     toEnd.add(baseLength);
+    atomStart.add(buf.length);
+    atomEnd.add(buf.length);
     fromBase[baseLength] = buf.length;
     return _ReadingTrack(
       text: buf.toString(),
       toBaseStart: Int32List.fromList(toStart),
       toBaseEnd: Int32List.fromList(toEnd),
       fromBase: fromBase,
+      atomReadStart: Int32List.fromList(atomStart),
+      atomReadEnd: Int32List.fromList(atomEnd),
     );
   }
 
@@ -1183,7 +1287,7 @@ MatchResult _matchEntrypoint(_MatchRequest req) {
     );
   }
   final List<String> normCueTexts = <String>[
-    for (final String t in req.cueTexts) AudioTextNormalizer.normalize(t),
+    for (final String t in req.cueTexts) EpubSrtMatcher._normalizeForMatch(t),
   ];
   return EpubSrtMatcher._matchCore(
     idx: EpubSrtMatcher._buildIndex(req.sections),

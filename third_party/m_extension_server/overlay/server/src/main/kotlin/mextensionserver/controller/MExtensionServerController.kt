@@ -22,7 +22,7 @@ class MExtensionServerController {
             server?.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
             val actualPort = server?.listeningPort ?: 0
             MihonImageProxy.configure(actualPort)
-            logger.info { "Hibiki M-Extension-Server started on loopback port $actualPort" }
+            logger.info { "Fushi M-Extension-Server started on loopback port $actualPort" }
             announceReady(actualPort)
         } catch (error: IOException) {
             logger.error(error) { "Failed to start M-Extension-Server" }
@@ -51,7 +51,7 @@ class MExtensionServerController {
 
     fun stop() {
         server?.stop()
-        logger.info { "Hibiki M-Extension-Server stopped" }
+        logger.info { "Fushi M-Extension-Server stopped" }
         MExtensionServerLoader.cleanupTempFiles()
     }
 
@@ -86,7 +86,7 @@ class MExtensionServerController {
                 "/inspect" -> InspectHandler().serve(session)
                 "/source-image" -> SourceImageHandler().serve(session)
                 "/source-data/clear" -> SourceDataHandler().serve(session)
-                "/" -> newFixedLengthResponse("Hibiki M-Extension-Server")
+                "/" -> newFixedLengthResponse("Fushi M-Extension-Server")
                 "/capabilities" ->
                     newFixedLengthResponse(
                         Response.Status.OK,

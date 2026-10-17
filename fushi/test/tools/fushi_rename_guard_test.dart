@@ -14,7 +14,7 @@ import '../helpers/source_guard.dart';
 //
 // 白名单按「文件 + 模式」收口，一条一个理由；且带过期豁免检测——某条白名单
 // 命中数归零（残留已被清掉/文件被删）时测试转红，逼着把这条豁免一起删掉，
-// 防止白名单退化成永久盲区（同 md3_design_system_static_test 的 allowlist 纪律）。
+// 防止白名单退化成永久盲区（同 m3e_design_system_static_test 的 allowlist 纪律）。
 // ---------------------------------------------------------------------------
 
 /// 一条被禁模式：老代号的代码位形态。
@@ -54,11 +54,6 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     name: 'hoshi://',
     regex: RegExp('hoshi://'),
     allowed: <String, String>{
-      'packages/fushi_core/lib/src/database/database.dart':
-          'v16 阶梯（legacy uid / identifier 重键）与 v73 前缀改写步的旧值'
-              '输入：读旧库做一次性改写的迁移代码。',
-      'packages/fushi_core/lib/src/database/database_tags_sync.part.dart':
-          'v16 重键 DAO 方法体（God 拆分后移居此 part），同上一次性迁移输入。',
       'lib/src/media/override_thumbnail_migration.dart':
           '按新 identifier 反推旧形态 hash 文件名的清扫输入（hoshi:// 前缀'
               '换回构造旧 key）。',
@@ -75,11 +70,6 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     name: 'reader_ttu',
     regex: RegExp('reader_ttu'),
     allowed: <String, String>{
-      'packages/fushi_core/lib/src/database/database.dart':
-          'v70 改写步的旧前缀输入：读旧库做一次性改写的迁移代码。',
-      'packages/fushi_core/lib/src/database/database_tags_sync.part.dart':
-          'v16 重键 _kLegacyUidPrefix（reader_ttu/hoshi://book/）——God 拆分后'
-              '移居此 part 的一次性迁移输入。',
       'lib/src/media/override_thumbnail_migration.dart':
           'BUG-1317 前 legacy 封面文件名烧入的历史源键（reader_ttu 当年的'
               '字面量永远不变），清扫反推旧 hash 名的必要输入。',
@@ -93,15 +83,10 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     name: "'ttu_ shortKey 前缀",
     regex: RegExp(r"'ttu_(?!sanitize\.dart')"),
     allowed: <String, String>{
-      'packages/fushi_core/lib/src/database/database.dart':
-          '历史 SQL 列名 ttu_book_id / ttu_char_offset（v16/v24 迁移阶梯输入）'
-              '与 v70 剥前缀步的旧前缀输入，只活在迁移代码里。',
-      'packages/fushi_core/lib/src/database/database_infra.part.dart':
-          '同上历史列名（God 拆分后基础设施探测代码移居此 part）。',
       'packages/fushi_core/lib/src/database/database_prefs_media.part.dart':
-          '同上（God 拆分后 prefs/书签 JSON 兼容读取移居此 part）。',
-      'packages/fushi_core/lib/src/database/database_tags_sync.part.dart':
-          '同上（God 拆分后 v16 重键 DAO 移居此 part）。',
+          '历史 SQL 列名 ttu_book_id：legacy bookmarks_<int> 偏好的兼容读取'
+              '（migrateLegacyBookmarkPreferences，BookmarkRepository 载入期调用）'
+              '按列存在性守卫，只认这个旧列名。',
     },
   ),
   _ForbiddenPattern(
@@ -124,10 +109,6 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     name: 'sasayaki',
     regex: RegExp('sasayaki', caseSensitive: false),
     allowed: <String, String>{
-      'packages/fushi_core/lib/src/database/database.dart':
-          "v71 迁移步的旧值输入：'sasayaki://' scheme 前缀、'sasayakiColor' "
-              "JSON 键、'custom_theme_sasayaki_color' 偏好键。读旧库做一次性"
-              '改写的迁移代码，旧字面量是必要输入。',
       'packages/fushi_anki/lib/src/base_anki_repository.dart':
           "'{sasayaki-audio}' handlebars 旧别名：loadSettings 载入期一次性改写"
               '为 {sentence-audio} 的迁移输入（SharedPreferences 无版本阶梯，'
@@ -187,9 +168,6 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
       'lib/src/models/audio_source_config.dart':
           "AudioSourceKind.fromWireName 的旧 wireName 兼容别名 'hibikiRemote'："
               '音频源配置以 JSON 落偏好、无版本阶梯，载入期认旧值即迁移通道。',
-      'packages/fushi_core/lib/src/database/database.dart':
-          "v74 迁移步的旧值输入 's:hibikiServer'（SyncBackendType 枚举名的 drift "
-              '字符串前缀编码）：读旧库做一次性改写的迁移代码。',
     },
   ),
   _ForbiddenPattern(
@@ -266,18 +244,13 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
       'lib/src/sync/backup_service.dart':
           '_legacyBooksPrefix：旧 Hibiki 归档书树前缀的读侧回退'
               '（archiveBooksPrefix），跨版本归档契约。',
-      'packages/fushi_core/lib/src/database/database.dart':
-          'v72 迁移步的旧目录段输入（extract_dir / image_url REPLACE）。',
     },
   ),
   _ForbiddenPattern(
-    // W2-7：Hoshi 共享空间功能已删，残留偏好行由 v72 迁移清掉。
+    // W2-7：Hoshi 共享空间功能已删，残留偏好行由 v72 迁移清掉（v72 及更早的阶梯
+    // 已随最低 schema 门槛 v75 删除，旧字面量不再有合法落点）。
     name: 'google_drive_hoshi_compat',
     regex: RegExp('google_drive_hoshi_compat'),
-    allowed: <String, String>{
-      'packages/fushi_core/lib/src/database/database.dart':
-          'v72 迁移步的清行输入（DELETE WHERE key = ...）。',
-    },
   ),
   _ForbiddenPattern(
     // W2-7：Anki 设置 SharedPreferences 键已是 fushi_anki_settings，存量由
@@ -383,26 +356,21 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     },
   ),
   _ForbiddenPattern(
-    // W1：SQL 表 hibiki_paired_peers 已在 v69 迁移改名 fushi_paired_peers。
-    // 旧表名只允许活在 fushi_core 的 v69 ALTER TABLE RENAME 迁移步里。
+    // W1：SQL 表 hibiki_paired_peers 已在 v69 迁移改名 fushi_paired_peers；v69 步
+    // 已随最低 schema 门槛 v75 删除，旧表名不再有合法落点。
     name: 'hibiki_paired_peers',
     regex: RegExp('hibiki_paired_peers'),
-    allowed: <String, String>{
-      'packages/fushi_core/lib/src/database/database.dart':
-          'v69 迁移步 ALTER TABLE hibiki_paired_peers RENAME TO '
-              'fushi_paired_peers 及其 _tableExists 守卫：读旧库做一次性改名的'
-              '迁移代码，旧表名是必要输入。',
-    },
   ),
   _ForbiddenPattern(
     // W1：主库文件已是 fushi.db（fushiDatabaseFileName）。旧文件名只允许活在
-    // 「读旧数据的迁移代码」里：开库前一次性改名 + 老归档条目名回退。
+    // 「识别旧数据」的代码里：开库前拒绝只有旧库的目录 + 老归档条目名回退。
     name: 'hibiki.db',
     regex: RegExp(r'hibiki\.db'),
     allowed: <String, String>{
       'packages/fushi_core/lib/src/database/database.dart':
-          'legacyHibikiDatabaseFileName 常量：_openDb 打开任何连接前把 '
-              'hibiki.db(+wal/shm) 一次性改名成 fushi.db 的迁移输入。',
+          'legacyHibikiDatabaseFileName 常量：_openDb 打开任何连接前识别只有 '
+              'hibiki.db 的改名前目录并抛 UnsupportedLegacySchemaException（不再'
+              '改名迁移）；存储页仍按它识别改名前的快照残留供清理。',
       'lib/src/migration/migration_manifest.dart':
           '_dbEntryNames 的 legacy 候选：老 Hibiki app 导出的迁移归档条目名'
               '（wire 冻结），读旧归档必需。',

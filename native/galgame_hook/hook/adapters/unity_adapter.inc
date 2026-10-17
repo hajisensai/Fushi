@@ -838,7 +838,7 @@ bool TryHookUnityIl2CppAudio() {
   }
   HMODULE game = GetModuleHandleW(L"GameAssembly.dll");
   if (game == nullptr) return false;
-  // Hibiki 的“启动并捕获”会先以 CREATE_SUSPENDED 创建游戏。旧版 IL2CPP 在播放器
+  // Fushi 的“启动并捕获”会先以 CREATE_SUSPENDED 创建游戏。旧版 IL2CPP 在播放器
   // 尚未创建窗口时连类型/方法枚举都可能进入未完成初始化的 Boehm GC；更不能在此时
   // 用 MH_EnableHook 再次枚举并挂起线程。外部窗口附加天然越过此门；启动模式则由
   // HookWorker 在窗口出现后按现有轮询节奏重试。

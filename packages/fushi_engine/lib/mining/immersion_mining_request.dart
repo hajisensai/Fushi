@@ -2,7 +2,12 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_anki/fushi_anki_core.dart'
-    show AnkiMiningSource, AnkiMiningContext, CardSourceLink, MineOutcome;
+    show
+        AnkiMiningSource,
+        AnkiMiningContext,
+        CardSourceLink,
+        MineOutcome,
+        MiningMosaicRegion;
 
 /// 沉浸制卡片段音频的容器扩展名，按平台分（TODO-1217 / BUG-460）：
 /// - iOS：`m4a`——AnkiMobile 只自动下载它识别为媒体的 localhost URL，`.aac` 裸流会被当成
@@ -404,6 +409,9 @@ class ImmersionMiningRequest {
     this.providedAudioBytes,
     this.providedAudioName,
     this.requireAudio = true,
+    this.omitAudio = false,
+    this.omitCover = false,
+    this.coverMosaic = const <MiningMosaicRegion>[],
     this.imageMode = VideoMiningImageMode.gif,
     this.animatedFormat = MiningAnimatedFormat.gif,
     this.stillFormat = MiningStillFormat.jpg,
@@ -411,6 +419,7 @@ class ImmersionMiningRequest {
     this.mediaSourceTlsPinSha256,
     this.mediaSourceHttpHeaders = const {},
     this.mediaSourceRouteReady,
+    this.fieldsMediaReady,
     this.remoteAudioClipper,
     this.cachedMediaSnapshot,
     this.mediaTimeOffsetMs = 0,
@@ -474,6 +483,25 @@ class ImmersionMiningRequest {
   /// true = 无音频则中止制卡（本地/YouTube 默认）；false = 允许无音频卡（Netflix 2A 截图卡）。
   final bool requireAudio;
 
+  /// 用户为**这一张卡**明确选了「不要句子音频」（高级制卡，`MiningRequestOverrides
+  /// .omitAudio`）。与 [requireAudio] 不是一回事：后者是来源能力（拿不到音频算不算
+  /// 失败），本字段是用户意图——引擎不启动音频抽取，也就不会因为「缺音频」中止。
+  ///
+  /// 为什么不在 [VideoMiningImageMode] 里加一个 none：那个枚举是持久化偏好的值域，
+  /// 「不要」只对单张卡有意义，不能变成一键制卡的设置值。
+  final bool omitAudio;
+
+  /// 用户为这一张卡明确选了「不要图片」：封面阶梯（动图 / 起点帧 / 当前帧）与外部
+  /// 给好的封面字节一律跳过。与 [omitAudio] 都为真时出纯文本卡（用户要的就是它，
+  /// 不再按「无封面也无音频」当空壳卡中止）。
+  final bool omitCover;
+
+  /// 用户为这一张卡框的打码区域（高级制卡，相对那一帧画面的 0..1 归一化矩形）。
+  ///
+  /// 非空时引擎只出**静态**封面（动图 / 片段改按「字幕开头」抽单帧——逐帧打码做不到
+  /// 所见即所得），封面落盘后打码；打码失败就不要封面，绝不退回没打码的画面。
+  final List<MiningMosaicRegion> coverMosaic;
+
   /// 视频制卡封面图片模式（见 [VideoMiningImageMode]）。值对象默认
   /// [VideoMiningImageMode.gif]（不读偏好的调用方行为不变；偏好默认是 videoClip）。仅本地/有 range 的封面解析路径读取；providedCoverBytes 路径不受影响。
   final VideoMiningImageMode imageMode;
@@ -503,7 +531,7 @@ class ImmersionMiningRequest {
   /// 显式透传偏好。与 [animatedFormat] 的默认取法一致。
   final MiningClipFormat clipFormat;
 
-  /// BUG-891：[mediaSource]/[audioSource] 若是远端自签 Hibiki 主机的 https 流，这里带上
+  /// BUG-891：[mediaSource]/[audioSource] 若是远端自签 Fushi 主机的 https 流，这里带上
   /// 该 host 经 TOFU 钉扎的证书 SHA-256 指纹（`aa:bb:..`）。引擎把它透传给 ffmpeg 抽取器的
   /// `-tls_pin_sha256`，使自编 ffmpeg-kit（`--enable-gnutls` + pin 补丁）按指纹接受自签，
   /// 而非无条件放行。null = 本地源 / 公网有效证书源（YouTube 等），不钉扎、走 ffmpeg 默认。
@@ -532,7 +560,17 @@ class ImmersionMiningRequest {
   /// 在队列里轮到本任务、构造 ffmpeg 参数之前先等它。它从不失败（宿主自己兜错）。
   final Future<void>? mediaSourceRouteReady;
 
-  /// BUG-1004：互联 host（LAN Hibiki 库）远端流的句子音频改由 **host 端**裁好再下载——host
+  /// [fields] 里登记的词典媒体（外字等，`dictionaryMedia`）落进 Anki 媒体缓存完成的
+  /// 信号；null = 已就位（调用方在入队前就写好了缓存）。
+  ///
+  /// 与 [mediaSourceRouteReady] 同一个理由：写缓存是异步的，而制卡请求必须在点击当下
+  /// **同步**冻结播放器输入并入队。先 await 写缓存再冻结，中间那段时间里换集，卡片就
+  /// 会拿旧集字幕的时间去截新集的音频和画面（手机遥控制卡曾如此）。所以调用方当场
+  /// 开始写、把 Future 挂在这里，引擎在队列里轮到本任务时先等它，再抽媒体、落卡。
+  /// 它失败时本次制卡按失败结束（与改动前 await 写缓存抛错同一结局）。
+  final Future<void>? fieldsMediaReady;
+
+  /// BUG-1004：互联 host（LAN Fushi 库）远端流的句子音频改由 **host 端**裁好再下载——host
   /// 用本地文件裁、不经网络/TLS，从根上绕开「client ffmpeg 抓 host 自签 https / token 流」的
   /// 整类失败（移动端自编 ffmpeg-kit 的 TLS pin 仍有残余缺口、URL 编码/网络脆弱等，见
   /// BUG-891）。非空且 [audioSource]/[mediaSource] 命中远端 http(s) 时优先调用：返回裁好的
@@ -595,10 +633,14 @@ class ImmersionMiningRequest {
         providedAudioBytes: providedAudioBytes,
         providedAudioName: providedAudioName,
         requireAudio: requireAudio,
+        omitAudio: omitAudio,
+        omitCover: omitCover,
+        coverMosaic: coverMosaic,
         imageMode: imageMode,
         animatedFormat: animatedFormat,
         stillFormat: stillFormat,
         clipFormat: clipFormat,
+        fieldsMediaReady: fieldsMediaReady,
         mediaTimeOffsetMs: snapshot.zeroMs,
         stageNote: stageNote,
       );
@@ -657,6 +699,9 @@ class ImmersionMiningRequest {
         : Uint8List.fromList(providedAudioBytes!),
     providedAudioName: providedAudioName,
     requireAudio: requireAudio,
+    omitAudio: omitAudio,
+    omitCover: omitCover,
+    coverMosaic: List<MiningMosaicRegion>.unmodifiable(coverMosaic),
     imageMode: imageMode,
     animatedFormat: animatedFormat,
     stillFormat: stillFormat,
@@ -668,6 +713,7 @@ class ImmersionMiningRequest {
       mediaSourceHttpHeaders,
     ),
     mediaSourceRouteReady: mediaSourceRouteReady,
+    fieldsMediaReady: fieldsMediaReady,
     remoteAudioClipper: remoteAudioClipper,
     cachedMediaSnapshot: cachedMediaSnapshot,
     mediaTimeOffsetMs: mediaTimeOffsetMs,

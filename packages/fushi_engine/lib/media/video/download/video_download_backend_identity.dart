@@ -62,9 +62,11 @@ class VideoDownloadBackendUnavailable implements Exception {
   String toString() => message;
 }
 
+/// 平台中性：Android / macOS / Linux 也走这条（BUG-3284 的 Android 用户看到的是
+/// 「恢复 Windows 运行库」，完全无从下手）。
 const String videoDownloadEmbeddedBackendUnavailableMessage =
-    'The built-in download engine runtime is missing. Restore the bundled '
-    'Windows runtime or reinstall the complete Windows package.';
+    'The built-in download engine runtime could not be loaded. Reinstall the '
+    'complete package, or switch to external qBittorrent in download settings.';
 
 /// 当前配置对应的后端**实例身份**（不含分类）。
 VideoDownloadBackendIdentity buildVideoDownloadBackendIdentity({

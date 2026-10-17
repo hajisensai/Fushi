@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -19,7 +19,7 @@ import 'test_helpers.dart';
 
 /// 设备验收 itest（TODO-1028 / BUG-481 + TODO-994 / BUG-468）。
 ///
-/// 在真实 Hibiki 阅读器 WebView（Windows 上是 forked flutter_inappwebview_windows
+/// 在真实 Fushi 阅读器 WebView（Windows 上是 forked flutter_inappwebview_windows
 /// 引擎渲染的真 EPUB）里驱动原生双击，断言修复真生效：
 ///
 /// TODO-1028：双击建立的原生框选必须被 capture 阶段的 `dblclick → removeAllRanges`
@@ -28,7 +28,7 @@ import 'test_helpers.dart';
 ///   `show-all-rt` 被 toggle；振假名三态改造后 dblclick 不再切整页，已删。）
 ///
 /// TODO-994：`InAppWebViewSettings.disableContextMenu` 在 Windows 上必须为真
-///   （关掉 WebView2 原生右键菜单，只留 Hibiki Flutter 菜单）。原生菜单是 OS 级
+///   （关掉 WebView2 原生右键菜单，只留 Fushi Flutter 菜单）。原生菜单是 OS 级
 ///   浏览器弹窗，不进页面 DOM，离屏无法目视其消失；这里退而求其次断言 fork 引擎
 ///   仍在真渲染、右键 DOM 事件可派发、Flutter 选区路径可用。原生菜单「只出一个」
 ///   的最终目视需可见窗，标 BLOCKED。

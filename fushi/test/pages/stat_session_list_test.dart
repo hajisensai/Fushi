@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 统计页会话流（用户 2026-09-08：每个域都要会话级统计，能删误点的会话）的行为守卫：
 ///  * 每行显示 标题 · 起止 · 量纲；空串标题回退 mediaKey；
@@ -137,7 +138,9 @@ void main() {
   });
 
   testWidgets('BUG-2417：长标题排到第二行而不是单行省略', (WidgetTester tester) async {
-    const String long = 'Re：从零开始的异世界生活 第三期 第七话 暗中行动する者たち';
+    // MD3 列表行重做（2026-10：行内缩 4 + 行首间距 16）后文本列比旧实现窄约
+    // 20dp；用一个在 400dp 下仍需两行、且两行装得下的长标题钉同一契约。
+    const String long = 'Re：从零开始的异世界生活 第七话 暗中行动する者たち';
     // 手机宽度：用户实报的截图就是这个宽度下的单行截断。
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -265,6 +268,41 @@ void main() {
     await tester.tap(showAll);
     await tester.pumpAndSettle();
     expect(find.text('S4'), findsOneWidget, reason: 'sheet 里是全量');
+  });
+
+  // PDF 图 3（2026-10-09）：手机宽下卡头「全部会话 (N)」+ 清除图标挤进一个 Wrap，
+  // 各占一行、标题被顶到中间。现在卡头只有标题 + 清除图标同一行，「全部会话」
+  // 在列表下方。
+  testWidgets('手机宽：卡头标题与清除钮同一行，「全部会话」在列表下方', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        for (int i = 0; i < 12; i++) _session('s$i', title: 'S$i'),
+      ],
+      onDelete: (_) async {},
+      limit: 3,
+    );
+    final Rect title = tester.getRect(find.text(t.stat_sessions_recent));
+    final Rect clear = tester.getRect(
+      find.byKey(const ValueKey<String>('stat-sessions-clear-all')),
+    );
+    expect(
+      (clear.center.dy - title.center.dy).abs(),
+      lessThan(clear.height / 2),
+      reason: '清除钮与标题同一行',
+    );
+    expect(clear.right, greaterThan(360 - 80), reason: '清除钮贴卡片右缘，不在中间');
+    final Rect showAll = tester.getRect(
+      find.byKey(const ValueKey<String>('stat-sessions-show-all')),
+    );
+    expect(showAll.top, greaterThan(tester.getRect(find.text('S2')).bottom),
+        reason: '「全部会话」在最后一行之下');
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('垃圾桶 → 会话专用确认文案 → 删除回调 + 行移除；取消不动', (
@@ -397,7 +435,7 @@ void main() {
     final Finder confirm =
         find.widgetWithText(FilledButton, t.stat_clear_all_confirm);
     expect(
-      tester.widget<FilledButton>(confirm).onPressed,
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm)).onPressed,
       isNull,
       reason: '防呆：没勾确认项之前不许清',
     );

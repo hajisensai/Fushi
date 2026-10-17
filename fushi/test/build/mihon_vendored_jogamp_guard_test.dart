@@ -37,7 +37,7 @@ const String _shScript = '$_repositoryRoot/tool/mihon/build_desktop_runtime.sh';
 
 /// 补丁与两个构建脚本必须逐字共用的构建树内路径。任何一处改了而另两处没改，
 /// Gradle 就找不到本地仓库、静默回落到远端 —— 正是本守卫要拦的静默失效。
-const String _inTreeRepoPath = 'hibiki-offline-maven/jogamp';
+const String _inTreeRepoPath = 'fushi-offline-maven/jogamp';
 
 /// vendored 构件的字节取证。SHA-256 变了就是「不再是上游那批字节」，必须重新取证
 /// 并更新 third_party/jogamp/UPSTREAM 里的表。
@@ -161,8 +161,8 @@ void main() {
       expect(ps.contains(r'third_party\jogamp'), isTrue,
           reason: 'ps1 里找不到源目录 third_party\\jogamp（已剥注释，'
               '所以不是被解释性注释骗到的）。');
-      expect(ps.contains(r'hibiki-offline-maven\jogamp'), isTrue,
-          reason: 'ps1 里找不到目标路径 hibiki-offline-maven\\jogamp；'
+      expect(ps.contains(r'fushi-offline-maven\jogamp'), isTrue,
+          reason: 'ps1 里找不到目标路径 fushi-offline-maven\\jogamp；'
               '它必须与补丁里的 "$_inTreeRepoPath" 指同一处。');
       expect(ps.contains('throw "Vendored org.jogamp repository is missing'),
           isTrue,
@@ -173,21 +173,21 @@ void main() {
     test('sh 把 third_party/jogamp 搬进构建树，并在缺失时硬失败', () {
       expect(sh.contains('third_party/jogamp'), isTrue,
           reason: 'sh 里找不到源目录 third_party/jogamp（已剥注释）。');
-      expect(sh.contains('hibiki-offline-maven/jogamp'), isTrue,
-          reason: 'sh 里找不到目标路径 hibiki-offline-maven/jogamp。');
+      expect(sh.contains('fushi-offline-maven/jogamp'), isTrue,
+          reason: 'sh 里找不到目标路径 fushi-offline-maven/jogamp。');
       expect(sh.contains('exit 1'), isTrue,
           reason: 'sh 必须在 vendored 仓库缺失时非零退出（同 ps1 的理由）。');
     });
 
     test('搬运发生在打补丁之后（补丁引用的是构建树里的路径）', () {
       final int psApply = ps.indexOf('server-build.gradle.patch');
-      final int psCopy = ps.indexOf(r'hibiki-offline-maven\jogamp');
+      final int psCopy = ps.indexOf(r'fushi-offline-maven\jogamp');
       expect(psApply, greaterThanOrEqualTo(0), reason: 'ps1 找不到 apply 补丁那步');
       expect(psCopy, greaterThan(psApply),
           reason: 'ps1 的搬运必须排在 apply 补丁之后，与 overlay 同一阶段。');
 
       final int shApply = sh.indexOf('server-build.gradle.patch');
-      final int shCopy = sh.indexOf('hibiki-offline-maven/jogamp');
+      final int shCopy = sh.indexOf('fushi-offline-maven/jogamp');
       expect(shApply, greaterThanOrEqualTo(0), reason: 'sh 找不到 apply 补丁那步');
       expect(shCopy, greaterThan(shApply),
           reason: 'sh 的搬运必须排在 apply 补丁之后（同上）。');

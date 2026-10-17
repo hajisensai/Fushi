@@ -112,6 +112,9 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 ; 可选：把 Fushi 注册为视频文件的「打开方式」候选（不抢占系统默认播放器，
 ; 只在资源管理器右键「打开方式」里出现 Fushi，并支持拖视频到 fushi.exe）。
 Name: "videoassoc"; Description: "将 Fushi 加入视频文件的「打开方式」（mkv / mp4 等）"; GroupDescription: "文件关联："
+; 同上，书 / 漫画文件（扩展名与 lib/src/media/import/external_book.dart 的
+; kExternalBookOpenExtensions 逐一对应，守卫 test/media/import/external_book_test.dart）。
+Name: "bookassoc"; Description: "将 Fushi 加入书和漫画文件的「打开方式」（epub / pdf / txt / cbz 等）"; GroupDescription: "文件关联："
 
 [InstallDelete]
 ; BUG-1449：galgame helper 现在以**普通文件**随包发在 {app}\voice_hook\<arch>\，
@@ -159,8 +162,12 @@ Root: HKCU; Subkey: "Software\Classes\Fushi.Video"; ValueType: string; ValueData
 Root: HKCU; Subkey: "Software\Classes\Fushi.Video\DefaultIcon"; ValueType: string; ValueData: "{app}\fushi.exe,0"; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\Fushi.Video\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""; Tasks: videoassoc
 
-; 让 fushi.exe 出现在「打开方式」应用列表，并声明它支持的视频扩展名。
-Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""; Flags: uninsdeletekey; Tasks: videoassoc
+; 让 fushi.exe 出现在「打开方式」应用列表，并声明它支持的视频 / 书扩展名。
+; 这个键两个关联任务共用：只勾其中一个也必须注册它。
+; 根键单独挂 uninsdeletekey：下面那条只删 shell\open\command 子键，SupportedTypes
+; 里的扩展名值卸载后会留下（视频关联原本就有这个残留）。
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe"; ValueType: none; Flags: uninsdeletekey; Tasks: videoassoc or bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""; Flags: uninsdeletekey; Tasks: videoassoc or bookassoc
 Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".mkv"; ValueData: ""; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".mp4"; ValueData: ""; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".m4v"; ValueData: ""; Tasks: videoassoc
@@ -177,6 +184,25 @@ Root: HKCU; Subkey: "Software\Classes\.avi\OpenWithProgids"; ValueType: string; 
 Root: HKCU; Subkey: "Software\Classes\.webm\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Video"; ValueData: ""; Flags: uninsdeletevalue; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\.mov\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Video"; ValueData: ""; Flags: uninsdeletevalue; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\.ts\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Video"; ValueData: ""; Flags: uninsdeletevalue; Tasks: videoassoc
+
+; 书 / 漫画：ProgId Fushi.Book + SupportedTypes + 各扩展名 OpenWithProgids 追加候选（不改默认关联）。
+Root: HKCU; Subkey: "Software\Classes\Fushi.Book"; ValueType: string; ValueData: "Fushi 书籍"; Flags: uninsdeletekey; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Fushi.Book\DefaultIcon"; ValueType: string; ValueData: "{app}\fushi.exe,0"; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Fushi.Book\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".epub"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".pdf"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".txt"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".cbz"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".cbr"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".cb7"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".mokuro"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.epub\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.pdf\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.txt\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.cbz\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.cbr\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.cb7\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.mokuro\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
 
 ; ── 旧 Hibiki 注册表迁移清理（无条件执行，不挂 videoassoc：用户这次没勾关联
 ;    也要把指向已删除 hibiki.exe 的死键清掉，否则「打开方式」里留一个坏条目）──
@@ -260,93 +286,24 @@ begin
             NamedMutexExists(LegacyAppMutexName);
 end;
 
-{ BUG-2203：这两个过程**绝不能带 /T**。
+{ 进程控制全部在 process_control.iss 里用 Win32 API 原生完成，安装器**不拉起任何
+  子进程**（不再有 taskkill、不再有隐藏 PowerShell）。根因与实测见该文件文件头：
+  「刚下载的 exe 静默运行 → 隐藏 PowerShell Stop-Process -Force → taskkill /F」这串
+  行为被 Kaspersky 判成 PDM:Trojan.Win32.Generic（2026-10-16，带有效签名照样误报）。
 
-  应用内静默更新时，本安装器就是被更新的那个 fushi.exe 的**孙进程**：
+  BUG-2203（仍然成立的不变式）：应用内静默更新时，本安装器是被更新的那个 fushi.exe
+  的**孙进程**：
       fushi.exe → fushi_update_launcher.exe → <本 setup.exe>
-  （launcher 由 app 用 CreateProcess 拉起、setup 由 launcher 拉起；Windows 无条件
-  把创建者记为父进程，detached 也不例外）。而 taskkill 的 /T 是**递归**杀整条后代树
-  ——不是只杀直接子进程。实测（同机，三层 cmd 副本）：
-      taskkill /F /IM fk_parent.exe /T
-      → 成功: 已终止 PID 88128 (属于 PID 47184 子进程)   ← 孙进程也被带走
-  于是 InitializeSetup 里这一句会把 launcher 和**安装器自己**一起杀掉：安装器在
-  自我防卫时自杀。现场（2026-09-06，用户机）：09:35:03.752 启动安装器，
-  09:35:04.039 Inno 日志戛然而止在启动段的 DLL import 之后，**没有**任何 abort /
-  exception / Deinitializing 行 —— 这正是被外部强杀而非自行中止的形状；磁盘保持旧版。
-  更糟的是 launcher 一并没了，BUG-1708 那条「安装失败时把 app 拉回来」的兜底随之
-  失效，Fushi 从用户桌面上静默消失（用户只能自己去开始菜单重开）。
+  （Windows 无条件把创建者记为父进程，detached 也不例外）。旧实现曾用
+  `taskkill /F /IM fushi.exe /T`，/T 递归杀整条后代树，把 launcher 和**安装器自己**
+  一起杀掉（现场 2026-09-06：Inno 日志戛然而止在启动段，磁盘保持旧版，BUG-1708 的
+  「失败时把 app 拉回来」兜底随 launcher 一起没了）。现在的 FushiTerminateAppProcessTree
+  往下只沿 msedgewebview2.exe 这一种镜像名扩展，launcher 与安装器永远进不了目标集。
 
-  /T 原本是为了带走 WebView2 子进程，但它们的 image 名就是 msedgewebview2.exe，
-  InitializeSetup 下面已经按 image 名单独扫了一遍 —— /T 不提供任何额外覆盖，
-  只提供自杀能力。按 image 名杀就够了：fushi.exe / hibiki.exe 的每个实例都会被
-  /IM 命中（包括那个持有互斥量的父进程），而 setup.exe 与 launcher 不叫这个名字
-  （/IM 是整名匹配，fushi.exe 不会命中 fushi_update_launcher.exe），于是安装器
-  活到装完、launcher 活到能兜底。
-
-  本阶段只负责一件事：**让互斥量被释放**，而互斥量只有 fushi.exe 持有。其余
-  helper 子进程（ffmpeg.exe / fushi_voice_injector.exe 之类）不归这里管 —— 它们
-  是「文件锁」问题，由 PrepareToInstall 的 KillProcessesUnderDir 按**镜像路径**
-  在复制前统一清掉（BUG-1459）。所以去掉 /T 没有留下覆盖缺口，只是把两件事各自
-  还给了负责它的那一层。 }
-
-{ Gentle close: taskkill WITHOUT /F sends WM_CLOSE so the app can save state
-  and release its mutex on its own. }
-procedure KillGracefully(const ExeName: String);
-var
-  ResultCode: Integer;
-begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'),
-       '/IM ' + ExeName,
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-end;
-
-{ Force kill: /F forces, /IM by image name. ResultCode=128 means no matching
-  process; that is not an error -- the mutex poll is the source of truth. }
-procedure KillImage(const ExeName: String);
-var
-  ResultCode: Integer;
-begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'),
-       '/F /IM ' + ExeName,
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-end;
-
-{ BUG-1459: the mutex layer only proves the main exe exited. Helper processes
-  launched from the install dir (ffmpeg.exe audio jobs, galgame helper) can
-  outlive it and keep their image files locked, so the file-copy phase dies
-  with "could not replace ...\ffmpeg.exe (DeleteFile code 5)". Sweep by image
-  PATH under the target dir (not by name) so unrelated same-named processes
-  elsewhere on the machine are untouched. }
-procedure KillProcessesUnderDir(const Dir: String);
-var
-  ResultCode: Integer;
-  EscapedDir: String;
-  Cmd: String;
-begin
-  EscapedDir := Dir;
-  StringChangeEx(EscapedDir, '''', '''''', True);
-  Cmd := '-NoProfile -NonInteractive -Command "$d = ''' + EscapedDir + '''; ' +
-    'if (-not $d.EndsWith(''\'')) { $d += ''\'' }; ' +
-    'Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($d, [System.StringComparison]::OrdinalIgnoreCase) ' +
-    '-and $_.ProcessName -ne ''fushi_update_launcher'' } | ' +
-    'Stop-Process -Force -ErrorAction SilentlyContinue"';
-  // BUG-1786：必须走 {sysnative} 而不是 {sys}。本安装器是 **32 位**进程
-  // （日志里的「64-bit install mode: No」），{sys} 会被 WOW64 重定向到 SysWOW64 的
-  // **32 位** PowerShell，而 32 位 PowerShell 读不到 64 位进程的 .Path（底层 MainModule
-  // 跨位宽访问失败，属性取到空串）。于是过滤条件 `$_.Path -and ...` 对**每一个** 64 位
-  // 进程都恒假——fushi.exe / injector / ffmpeg 一个都杀不掉，这个过程长期是发哑弹。
-  // 实测（同一份命令、同一个 x64 目标进程）：
-  // 64 位 PowerShell → alive=False，文件随即可写；
-  // 32 位 PowerShell → alive=True，文件仍被占用，且 Path 取到空串。
-  // {sysnative} 在 64 位 Windows 上绕过 WOW64 重定向指向真正的 System32；32 位 Windows
-  // 上它等同 {sys}，故无平台回归。
-  //
-  // launcher 被显式排除（上面的 ProcessName 判断）：它是拉起本安装器的进程，且要活到
-  // 安装结束才能在失败时把 app 拉回来（BUG-1708）。杀了它等于用那条 bug 的复发换这次
-  // 复制成功。它自己占住的文件由 MakeWayForRunningLauncher 改名让路解决。
-  Exec(ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe'), Cmd,
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-end;
+  本阶段只负责一件事：**让互斥量被释放**，而互斥量只有 fushi.exe 持有。其余 helper
+  子进程（ffmpeg.exe / fushi_voice_injector.exe 之类）是「文件锁」问题，由
+  PrepareToInstall 的 KillProcessesUnderDir 按**镜像路径**在复制前统一清掉（BUG-1459）。 }
+#include "process_control.iss"
 
 { BUG-1675: 能不能真的换掉这个文件——用「独占写方式打开」实测，而不是猜。
   被别的进程映射的 DLL 在 Windows 下**可以改名但不能覆盖**，所以 RenameFile
@@ -492,8 +449,8 @@ var
   NL: String;
 begin
   Result := '';
+  { 逐个 TerminateProcess 后同步等进程对象回收（镜像文件锁随之释放），不需要再睡。 }
   KillProcessesUnderDir(ExpandConstant('{app}'));
-  Sleep(500);
   { KillProcessesUnderDir 杀不到 launcher，也**不该**杀它（见上）。改名让路。 }
   MakeWayForRunningLauncher(ExpandConstant('{app}'));
 
@@ -781,9 +738,8 @@ begin
     Exit;
 
   { Gentle first: WM_CLOSE gives the app a chance to save state and release the
-    mutex on its own. 过渡期新旧 exe 名都发。 }
-  KillGracefully('fushi.exe');
-  KillGracefully('hibiki.exe');
+    mutex on its own. 过渡期新旧 exe 名（fushi.exe / hibiki.exe）都发。 }
+  FushiCloseAppWindows();
   for Attempt := 1 to GracefulCloseAttempts do
   begin
     if not AppMutexExists() then
@@ -791,12 +747,10 @@ begin
     Sleep(MutexReleasePollIntervalMs);
   end;
 
-  { Still alive: force-kill both exe names, then sweep every msedgewebview2.exe.
-    按 image 名逐个杀，**不用进程树**（BUG-2203：安装器自己就在 fushi.exe 的后代树里）；
-    WebView2 的每一个子进程都叫 msedgewebview2.exe，第三行已经全数覆盖。 }
-  KillImage('fushi.exe');
-  KillImage('hibiki.exe');
-  KillImage('msedgewebview2.exe');
+  { Still alive: force-terminate fushi.exe / hibiki.exe and the msedgewebview2.exe
+    processes parented under them. 不沿整棵进程树往下杀（BUG-2203：安装器自己就在
+    fushi.exe 的后代树里），也不再按名字杀全机的 WebView2（会误杀别的应用）。 }
+  FushiTerminateAppProcessTree();
 
   { Bounded poll until the mutex is truly released; on timeout still return True
     (do not hang forever) and let the [Setup] AppMutex fallback handle it. }

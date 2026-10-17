@@ -2,7 +2,7 @@
 /// 默认全选、取消返回 null、删除选中返回勾选候选、取消勾选后不含该条。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';

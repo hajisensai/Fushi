@@ -1,6 +1,6 @@
 // [FushiSearchField] 的**形态**守卫：它必须与三大媒体库页（书架 / 视频库 / 游戏库）
-// 手写的工具条搜索框长一个样——透明底 + [OutlineInputBorder] + 固定 40 高 +
-// 18px 图标 + `isDense`。
+// 的工具条搜索框长一个样——填充全胶囊（静止无描边，2026-10-04 输入框统一）+
+// 固定 40 高 + 18px 图标 + `isDense`。
 //
 // 为什么要钉：此前这里是 MD3 [SearchBar]（高填充容器色、圆角 12、高约 56、24px
 // 图标），于是同一导航里「发现」页与「全部视频」页两种外观，用户报了这条。改回
@@ -10,11 +10,14 @@
 //   fushi/lib/src/pages/implementations/home_video_page.dart      `_buildVideoSearchBar`
 //   fushi/lib/src/pages/implementations/reader_fushi_history_page.dart `_buildSearchBar`
 //   fushi/lib/src/pages/implementations/games_library_page.dart   `_buildToolbar`
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 import 'widget_test_helpers.dart';
+import '../helpers/glass_unwrap.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 三大库页搜索框的形态参数，逐字抄自上面三处调用点。
 const double _libraryPageFieldHeight = 40;
@@ -57,7 +60,7 @@ Future<void> _pumpSearchField(
 }
 
 InputDecoration _decorationOf(WidgetTester tester) {
-  final TextField field = tester.widget<TextField>(find.byType(TextField));
+  final TextField field = tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField)));
   final InputDecoration? decoration = field.decoration;
   expect(decoration, isNotNull, reason: '搜索框必须带 InputDecoration');
   return decoration!;
@@ -77,7 +80,7 @@ void main() {
     focusNode.dispose();
   });
 
-  testWidgets('搜索框是描边工具条形态，不再是 MD3 SearchBar', (WidgetTester tester) async {
+  testWidgets('搜索框是填充胶囊工具条形态，不再是 MD3 SearchBar', (WidgetTester tester) async {
     await _pumpSearchField(
       tester,
       controller: controller,
@@ -97,16 +100,19 @@ void main() {
     expect(kFushiSearchFieldHeight, _libraryPageFieldHeight);
 
     final InputDecoration decoration = _decorationOf(tester);
+    expect(decoration.border, isA<OutlineInputBorder>());
+    final OutlineInputBorder border = decoration.border! as OutlineInputBorder;
+    expect(border.borderSide, BorderSide.none, reason: '静止态不描边');
     expect(
-      decoration.border,
-      isA<OutlineInputBorder>(),
-      reason: '库页搜索框是描边框，不是填充底',
+      border.borderRadius,
+      BorderRadius.circular(999),
+      reason: '搜索框是全胶囊',
     );
     expect(decoration.isDense, isTrue);
-    expect(decoration.filled, isNot(true), reason: '描边形态不带填充底色');
+    expect(decoration.filled, isTrue, reason: '填充胶囊形态');
 
-    final Icon prefix = decoration.prefixIcon! as Icon;
-    expect(prefix.icon, Icons.search);
+    final FushiIcon prefix = decoration.prefixIcon! as FushiIcon;
+    expect(prefix.icon, FushiIcons.search);
     expect(prefix.size, _libraryPageIconSize);
     expect(kFushiSearchFieldIconSize, _libraryPageIconSize);
   });
@@ -124,8 +130,8 @@ void main() {
       platform: TargetPlatform.windows,
     );
 
-    expect(find.byIcon(Icons.close), findsOneWidget, reason: '有文字时应有清除键');
-    expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.close), findsOneWidget, reason: '有文字时应有清除键');
+    expect(find.byIcon(FushiIcons.keyboard), findsOneWidget);
     // RenderFlex overflow 会以异常形式记录，这里必须是干净的一帧。
     expect(tester.takeException(), isNull);
     expect(

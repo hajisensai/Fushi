@@ -164,7 +164,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
     required AnkiMiningContext context,
   });
 
-  /// TODO-270 D：覆盖一张**已存在**的 Hibiki 制卡（[noteId]）的字段，用同一字段
+  /// TODO-270 D：覆盖一张**已存在**的 Fushi 制卡（[noteId]）的字段，用同一字段
   /// 渲染链路从 [rawPayloadJson]+[context] 生成 fields 后按 id 覆盖（不新增卡片、
   /// 不查重）。供「刚制完卡又点 ✓」时真实 update 上一张卡片，而非删旧建新。
   ///
@@ -496,7 +496,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   // ── 媒体存储优化（字节级去重，见 anki_media_dedup.dart）────────────────
 
   /// 本后端能否做媒体字节级去重。需要**本机可直读** collection.media +
-  /// 全库检索 + 字段/模板改写；默认 false，仅 AnkiConnect（Anki 与 Hibiki
+  /// 全库检索 + 字段/模板改写；默认 false，仅 AnkiConnect（Anki 与 Fushi
   /// 同机）支持。
   ///
   /// **后端不对称（有意）**：AnkiDroid（`AnkiRepository`）与 AnkiMobile 都不覆写

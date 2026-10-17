@@ -49,8 +49,9 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
         await backend.getRemoteLocalAudio(
           name,
           tmp,
-          onProgress: (double f) => _emit(SyncPhase.localAudio,
-              itemIndex: index, itemTotal: total, title: name, fileFraction: f),
+          onProgress: (double f, [int? b]) => _emit(SyncPhase.localAudio,
+              itemIndex: index, itemTotal: total, title: name,
+              fileFraction: f, fileBytes: b),
         );
         final LocalAudioPackageContents contents =
             await _packages.importLocalAudioPackage(
@@ -99,8 +100,9 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
         await backend.putRemoteLocalAudio(
           name,
           tmp,
-          onProgress: (double f) => _emit(SyncPhase.localAudio,
-              itemIndex: index, itemTotal: total, title: name, fileFraction: f),
+          onProgress: (double f, [int? b]) => _emit(SyncPhase.localAudio,
+              itemIndex: index, itemTotal: total, title: name,
+              fileFraction: f, fileBytes: b),
         );
         report.localAudioExported++;
       } catch (e) {

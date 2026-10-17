@@ -107,6 +107,41 @@ AudioPlaybackRange? miningSentenceAudioRange({
   return _shiftRange(paddedRange, delayMs);
 }
 
+/// Sentence-audio range of a cue that IS the whole sentence (an audiobook
+/// lyrics-mode line): the cue's own start/end in its own
+/// [AudioCue.audioFileIndex], run through the same repair / padding / A/V-delay
+/// chokepoints as [miningSentenceAudioRange].
+///
+/// Unlike [miningSentenceAudioRange] this never consults a section index, a
+/// normalized char span or the cue text, so it cannot be steered onto another
+/// chapter or onto an earlier cue with the same text (BUG-3434: lyrics-mode
+/// context sentences resolved through the lookup sentence's chapter and merged
+/// into a "chapter start -> lookup sentence" clip). [cues] only bounds the
+/// padding against same-file neighbours.
+AudioPlaybackRange miningCueAudioRange({
+  required List<AudioCue> cues,
+  required AudioCue cue,
+  int delayMs = 0,
+  int headPadMs = kMiningHeadPadMs,
+  int tailPadMs = kMiningTailPadMs,
+}) {
+  final AudioPlaybackRange positiveRange = _ensurePositiveDuration(
+    AudioPlaybackRange(
+      audioFileIndex: cue.audioFileIndex,
+      startMs: cue.startMs,
+      endMs: cue.endMs,
+    ),
+    cues,
+  );
+  final AudioPlaybackRange paddedRange = padSentenceRange(
+    positiveRange,
+    cues: cues,
+    headPadMs: headPadMs,
+    tailPadMs: tailPadMs,
+  );
+  return _shiftRange(paddedRange, delayMs);
+}
+
 /// Widens [range] by up to [headPadMs] before its start and [tailPadMs] after its
 /// end, clamped against the nearest neighbouring cue in the SAME audio file so the
 /// padding never runs into an adjacent sentence.
@@ -185,6 +220,32 @@ AudioPlaybackRange padSentenceRange(
     audioFileIndex: range.audioFileIndex,
     startMs: paddedStart,
     endMs: paddedEnd,
+  );
+}
+
+/// 「高级制卡」里用户对句子音频起止的手动微调（`MiningRequestOverrides`
+/// 的 `audioStartDeltaMs` / `audioEndDeltaMs`）。
+///
+/// 加在宿主算好的**最终区间**上（已含首尾留白与 A/V 偏移）——两条车道补白的先后
+/// 不同（视频合并后才补白、阅读器合并前已补完），所以不能塞进
+/// `MiningSentenceDraft.composeAudioRange`。**不夹相邻句**：用户点「提前 / 推后」就是
+/// 要越过句界。只保证起点不早于文件开头、终点至少比起点晚 [minDurationMs]。
+/// 写卡与试听必须用同一个结果（BUG-2196 ②）。
+AudioPlaybackRange applyMiningAudioEdgeAdjust(
+  AudioPlaybackRange range, {
+  required int startDeltaMs,
+  required int endDeltaMs,
+  int minDurationMs = 100,
+}) {
+  if (startDeltaMs == 0 && endDeltaMs == 0) return range;
+  int start = range.startMs + startDeltaMs;
+  if (start < 0) start = 0;
+  int end = range.endMs + endDeltaMs;
+  if (end < start + minDurationMs) end = start + minDurationMs;
+  return AudioPlaybackRange(
+    audioFileIndex: range.audioFileIndex,
+    startMs: start,
+    endMs: end,
   );
 }
 
@@ -358,7 +419,7 @@ AudioPlaybackRange? _expandAroundCue({
 
 /// 归一化拼接索引：各 cue 归一化文本、其在拼接串中的起点，与拼接串本身。
 /// [_anchoredAdjacentMatch] 与 [_collectSpanCuesByText] 原各持一份逐字相同的
-/// 构建循环，收敛为文件内单一构建点。hibiki_audio 侧
+/// 构建循环，收敛为文件内单一构建点。fushi_audio 侧
 /// `CollectionAudioMatcher._normalizedAdjacentMatch` 的第三份刻意保持包内独立
 /// （不跨包新增共享面；归一化本体 AudioTextNormalizer / BUG-060 白名单不动）。
 ({List<int> cueStarts, List<String> normTexts, String concat})

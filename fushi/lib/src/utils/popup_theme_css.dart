@@ -8,7 +8,7 @@
 // 本文件收敛「颜色→CSS 字符串」的格式化 helper 与核心变量的取值公式；变量名字面量
 // 仍保留在各调用点（多份源码扫描守卫钉死了那些字面量，见
 // browser_extension_theme_var_parity_guard_test / popup_dictionary_columns_test 等）。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
@@ -71,6 +71,22 @@ Map<String, String> buildPopupThemeCssVars({
     '--md-outline-variant': cssRgb(scheme.outlineVariant),
     '--md-primary': cssRgb(scheme.primary),
     '--md-on-primary': cssRgb(scheme.onPrimary),
+    // M3E 视觉层（popup.css `html.fushi-m3e` / m3e-tokens.css 的 --md-sys-color-*）
+    // 要的饱和 container 色块与反色 / 分层表面角色。缺席时 CSS 按 --md-primary 推导回退。
+    '--md-primary-container': cssRgb(scheme.primaryContainer),
+    '--md-on-primary-container': cssRgb(scheme.onPrimaryContainer),
+    '--md-secondary-container': cssRgb(scheme.secondaryContainer),
+    '--md-on-secondary-container': cssRgb(scheme.onSecondaryContainer),
+    '--md-tertiary': cssRgb(scheme.tertiary),
+    '--md-on-tertiary': cssRgb(scheme.onTertiary),
+    '--md-tertiary-container': cssRgb(scheme.tertiaryContainer),
+    '--md-on-tertiary-container': cssRgb(scheme.onTertiaryContainer),
+    '--md-surface-container-low': cssRgb(scheme.surfaceContainerLow),
+    '--md-surface-container-highest': cssRgb(scheme.surfaceContainerHighest),
+    '--md-outline': cssRgb(scheme.outline),
+    '--md-inverse-surface': cssRgb(scheme.inverseSurface),
+    '--md-inverse-on-surface': cssRgb(scheme.onInverseSurface),
+    '--md-error': cssRgb(scheme.error),
     '--fushi-radius-card': '${FushiRadii.cardValue.toInt()}px',
     '--dict-columns': '$dictionaryColumns',
   };

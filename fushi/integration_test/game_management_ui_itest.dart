@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'support/test_app_launcher.dart';
@@ -63,7 +63,7 @@ void main() {
             matching: find.byType(FushiFocusTarget),
           ),
           findsOneWidget,
-          reason: '游戏分段导航应在真 app 中注册单一 Hibiki 焦点目标',
+          reason: '游戏分段导航应在真 app 中注册单一 Fushi 焦点目标',
         );
         expect(
           await _focusThroughFushi(
@@ -72,7 +72,7 @@ void main() {
             const FushiFocusId('game-library-tab-sections'),
           ),
           isTrue,
-          reason: '游戏分段导航必须可由 Hibiki 焦点系统聚焦',
+          reason: '游戏分段导航必须可由 Fushi 焦点系统聚焦',
         );
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump(const Duration(seconds: 1));
@@ -109,7 +109,7 @@ void main() {
         HomePage.debugSelectTab!(HomeTab.games);
         await tester.pump(const Duration(seconds: 1));
         expect(find.byType(TexthookerPage), findsOneWidget,
-            reason: '切换 Hibiki 一级模块后捕获工作台不应被销毁');
+            reason: '切换 Fushi 一级模块后捕获工作台不应被销毁');
         expect(TexthookerService.instance.entries.single.id, line.id,
             reason: '捕获台词必须跨一级模块切换保活');
         await _capture(tester, 'game-capture-after-tab-switch');
@@ -124,7 +124,7 @@ void main() {
             const FushiFocusId('game-capture-tab-sections'),
           ),
           isTrue,
-          reason: '捕获页分段导航必须可由 Hibiki 焦点系统聚焦',
+          reason: '捕获页分段导航必须可由 Fushi 焦点系统聚焦',
         );
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump(const Duration(seconds: 1));

@@ -82,6 +82,10 @@ extension _VideoSidePanel on _VideoFushiPageState {
         return t.video_setting_speed;
       case _VideoSidePanelKind.settings:
         return t.video_settings_title;
+      case _VideoSidePanelKind.subtitle:
+        return t.video_settings_cat_subtitle;
+      case _VideoSidePanelKind.audio:
+        return t.video_settings_cat_audio;
       case _VideoSidePanelKind.chapters:
         return t.video_chapters;
       case _VideoSidePanelKind.quality:
@@ -91,18 +95,46 @@ extension _VideoSidePanel on _VideoFushiPageState {
     }
   }
 
+  /// 侧栏页头图标（M3E 下画成标题前的饼干形徽标；Apple / 墨水屏不画）。
+  IconData _videoSidePanelIcon(_VideoSidePanelKind kind) {
+    switch (kind) {
+      case _VideoSidePanelKind.speed:
+        return FushiIcons.speed;
+      case _VideoSidePanelKind.settings:
+        return FushiIcons.settings;
+      case _VideoSidePanelKind.subtitle:
+        return FushiIcons.subtitles;
+      case _VideoSidePanelKind.audio:
+        return FushiIcons.music;
+      case _VideoSidePanelKind.chapters:
+        return FushiIcons.numberedList;
+      case _VideoSidePanelKind.quality:
+        return FushiIcons.highQuality;
+      case _VideoSidePanelKind.danmakuMatch:
+        return FushiIcons.forum;
+    }
+  }
+
   double _videoSidePanelWidth(_VideoSidePanelKind kind) {
     switch (kind) {
+      // 切换条成员（字幕 / 音频 / 章节 / 画质 / 设置）同宽：原地互换时面板不跳宽。
       case _VideoSidePanelKind.settings:
-        // BUG-1546：设置侧栏不再固定 560——桌面大窗口下随窗口宽度自适应放宽
-        // （560..900），窄窗仍是旧值；上限与快捷设置弹窗同源。
-        return fushiQuickSettingsPanelWidth(MediaQuery.sizeOf(context).width);
+      case _VideoSidePanelKind.subtitle:
+      case _VideoSidePanelKind.audio:
       case _VideoSidePanelKind.chapters:
-        return 420;
+      case _VideoSidePanelKind.quality:
+        final Size window = MediaQuery.sizeOf(context);
+        // 手机横屏（最短边 < 600）：与阅读器设置侧板同宽档（400 上限），不再占掉
+        // 大半个画面；手机竖屏走贴底面板，宽度由外壳决定。
+        if (videoQuickSettingsCompact(window)) {
+          return readerSideSheetWidth(window.width);
+        }
+        // BUG-1546：桌面设置侧栏不固定 560——大窗口下随窗口宽度自适应放宽
+        // （560..900）；上限与快捷设置弹窗同源。
+        return fushiQuickSettingsPanelWidth(window.width);
       case _VideoSidePanelKind.danmakuMatch:
         return 480;
       case _VideoSidePanelKind.speed:
-      case _VideoSidePanelKind.quality:
         return 320;
     }
   }
@@ -116,6 +148,18 @@ extension _VideoSidePanel on _VideoFushiPageState {
         return _buildSpeedSidePanel();
       case _VideoSidePanelKind.settings:
         return _buildVideoQuickSettingsSheet();
+      case _VideoSidePanelKind.subtitle:
+        return _buildVideoQuickSettingsSheet(
+          groups: const <settings_dest.VideoGroup>[
+            settings_dest.VideoGroup.subtitle,
+          ],
+        );
+      case _VideoSidePanelKind.audio:
+        return _buildVideoQuickSettingsSheet(
+          groups: const <settings_dest.VideoGroup>[
+            settings_dest.VideoGroup.audio,
+          ],
+        );
       case _VideoSidePanelKind.chapters:
         return _buildChapterSidePanel(controller);
       case _VideoSidePanelKind.quality:
@@ -129,11 +173,7 @@ extension _VideoSidePanel on _VideoFushiPageState {
     return Positioned.fill(
       child: ValueListenableBuilder<_VideoSidePanelState?>(
         valueListenable: _videoSidePanel,
-        builder: (
-          BuildContext context,
-          _VideoSidePanelState? panelState,
-          __,
-        ) {
+        builder: (BuildContext context, _VideoSidePanelState? panelState, __) {
           if (panelState == null) return const SizedBox.shrink();
           // 手柄重设计 P3：侧栏随打开挂载，挂载即领焦点进面板、卸载还给页面
           // 焦点——D-pad 才能在速度/设置/章节/画质行间移动。
@@ -141,10 +181,7 @@ extension _VideoSidePanel on _VideoFushiPageState {
             visible: true,
             restoreFocus: () =>
                 _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
-            child: _buildVideoSidePanelContent(
-              panelState,
-              controller,
-            ),
+            child: _buildVideoSidePanelContent(panelState, controller),
           );
           // BUG-254：面板打开时在面板「后面 / 左侧空白」铺一层全屏不可见 barrier，
           // 点面板之外任意位置 → [_hideVideoSidePanel] 关闭面板。barrier 用
@@ -167,24 +204,106 @@ extension _VideoSidePanel on _VideoFushiPageState {
     );
   }
 
+  /// 面板切换条成员：字幕 / 音频 / 章节（有章节时）/ 画质（有可选档时）/ 设置。
+  /// 倍速与弹幕手动匹配是一次性的小弹层，不进切换条。
+  List<_VideoSidePanelKind> _videoPanelSwitcherKinds() {
+    return <_VideoSidePanelKind>[
+      _VideoSidePanelKind.subtitle,
+      _VideoSidePanelKind.audio,
+      if (_hasChapters) _VideoSidePanelKind.chapters,
+      if (_qualityCurrentLabel != null || _isYoutubeStream)
+        _VideoSidePanelKind.quality,
+      _VideoSidePanelKind.settings,
+    ];
+  }
+
+  /// 切换条上点了某个面板：原地换内容（停靠位不变），各面板打开时的副作用
+  /// （画质懒解析）与按钮入口一致；字幕面板挂载时自己触发字幕源加载。
+  void _switchVideoSidePanel(_VideoSidePanelKind kind) {
+    final _VideoSidePanelState? current = _videoSidePanel.value;
+    if (current == null || current.kind == kind) return;
+    if (kind == _VideoSidePanelKind.quality &&
+        _isYoutubeStream &&
+        !_youtubeVariantsResolved &&
+        !_youtubeVariantsLoading) {
+      unawaited(_ensureYoutubeVariantsLoaded());
+    }
+    _videoSidePanel.value = _VideoSidePanelState(
+      kind: kind,
+      alignment: current.alignment,
+    );
+  }
+
+  ReaderPanelSwitcher? _videoPanelSwitcher(_VideoSidePanelKind kind) {
+    final List<_VideoSidePanelKind> kinds = _videoPanelSwitcherKinds();
+    if (!kinds.contains(kind)) return null;
+    return ReaderPanelSwitcher(
+      items: <({String id, IconData icon, String label})>[
+        for (final _VideoSidePanelKind k in kinds)
+          (
+            id: k.name,
+            icon: _videoSidePanelIcon(k),
+            label: _videoSidePanelTitle(k),
+          ),
+      ],
+      // 整块面板随 [_videoSidePanel] 重建，当前项是固定值即可。
+      current: AlwaysStoppedAnimation<String>(kind.name),
+      onSelect: (String id) {
+        for (final _VideoSidePanelKind k in kinds) {
+          if (k.name == id) _switchVideoSidePanel(k);
+        }
+      },
+    );
+  }
+
   /// 单纯构造侧栏面板的「内容 + 定位」部分（不含 BUG-254 的点外关闭 barrier）。
   /// 字幕跳转列表已改 push-aside（TODO-314），不再经此 overlay 路径。
+  ///
+  /// 切换条成员共用同一个外壳实例：互换时外壳不重新进场，只有内容交叉淡入
+  /// （与阅读器侧板原地换内容同款）。
   Widget _buildVideoSidePanelContent(
     _VideoSidePanelState panelState,
     VideoPlayerController controller,
   ) {
     final _VideoSidePanelKind kind = panelState.kind;
+    final ReaderPanelSwitcher? switcher = _videoPanelSwitcher(kind);
+    final bool member = switcher != null;
+    // 设置面板顶上就是分类页签，不画大标题页头（反馈 nGxUGtYot9）；字幕 / 音频
+    // 只有一个分组，同样不画——切换条本身已经标明当前面板。
+    final bool headerless =
+        kind == _VideoSidePanelKind.settings ||
+        kind == _VideoSidePanelKind.subtitle ||
+        kind == _VideoSidePanelKind.audio;
+    final Widget child = _buildVideoSidePanelChild(kind, controller);
     final Widget panel = VideoTranslucentSidePanel(
-      title: _videoSidePanelTitle(kind),
+      key: member ? const ValueKey<String>('video-switchable-panel') : null,
+      title: headerless ? null : _videoSidePanelTitle(kind),
+      icon: _videoSidePanelIcon(kind),
       width: _videoSidePanelWidth(kind),
       alignment: panelState.alignment,
+      // 切换条成员手机竖屏都改贴底面板（与阅读器设置面板同一判据）。
+      bottomSheetWhenCompact: member,
+      // 成片文字与控件背后不能透出字幕。
+      opaque: member,
+      switcher: switcher,
       onClose: _hideVideoSidePanel,
-      child: _buildVideoSidePanelChild(kind, controller),
+      child: member
+          ? AnimatedSwitcher(
+              duration: fushiMotionDuration(context, FushiMotion.medium),
+              switchInCurve: FushiMotion.enter,
+              switchOutCurve: FushiMotion.exit,
+              layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+                alignment: Alignment.topCenter,
+                children: <Widget>[...previous, if (current != null) current],
+              ),
+              child: KeyedSubtree(
+                key: ValueKey<String>('video-panel-${kind.name}'),
+                child: child,
+              ),
+            )
+          : child,
     );
-    if (kind != _VideoSidePanelKind.settings) return panel;
-    return FushiAppUiScale(
-      scale: _videoUiScale,
-      child: panel,
-    );
+    if (!member) return panel;
+    return FushiAppUiScale(scale: _videoUiScale, child: panel);
   }
 }

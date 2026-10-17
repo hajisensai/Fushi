@@ -8,7 +8,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
@@ -24,6 +24,8 @@ import 'package:fushi/src/reader/masked_illustration_cover.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart'
     show resolveTocEntryForImage;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 某一卷的插图表 + 文件解析（兄弟卷由页面层在 isolate 解析后提供）。
@@ -448,6 +450,16 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   /// 全屏单图查看器当前在解锁列表里的下标；null = 查看器关着。
   int? _viewerIndex;
 
+  /// 触屏查看器的横滑分页控制器（查看器开着且是触屏形态时才有）。
+  PageController? _viewerPages;
+
+  /// 桌面查看器：指针是否悬停在查看区（左右切图按钮只在悬停时出现）。
+  bool _viewerHover = false;
+
+  /// 触屏查看器当前页是否处于放大态：放大时 PageView 不吃单指横滑（交给
+  /// InteractiveViewer 平移），复原后才恢复横滑切图。
+  bool _viewerZoomed = false;
+
   _GalleryLayout? _layout;
 
   /// 当前查看那一卷里每张图的像素尺寸（按 `src` 记），开页 / 切卷后在 isolate 里
@@ -614,6 +626,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _viewerPages?.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -691,8 +704,8 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     if (animate) {
       _scrollController.animateTo(
         target,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
+        duration: FushiMotion.medium,
+        curve: FushiSpringCurve.effects,
       );
     } else {
       _scrollController.jumpTo(target);
@@ -846,7 +859,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   }
 
   Future<void> _showLockedDialog(EpubImageRef ref) async {
-    final _LockedAction? action = await showDialog<_LockedAction>(
+    final _LockedAction? action = await showAppDialog<_LockedAction>(
       context: context,
       builder: (BuildContext dialogContext) =>
           _LockedIllustrationDialog(hint: _lockedHint(ref)),
@@ -884,7 +897,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               key: const ValueKey<String>('fushi_gallery_menu_jump'),
               focusId: const FushiFocusId('fushi_gallery_menu_jump'),
               autofocus: true,
-              leading: const Icon(Icons.my_location_outlined),
+              leading: const FushiIcon(Icons.my_location_outlined),
               title: Text(t.reader_gallery_jump),
               onTap: () {
                 Navigator.of(sheetContext).pop();
@@ -895,7 +908,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               FushiListItem(
                 key: const ValueKey<String>('fushi_gallery_menu_reveal'),
                 focusId: const FushiFocusId('fushi_gallery_menu_reveal'),
-                leading: const Icon(Icons.visibility_outlined),
+                leading: const FushiIcon(Icons.visibility_outlined),
                 title: Text(t.reader_gallery_locked_reveal),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
@@ -906,7 +919,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               FushiListItem(
                 key: const ValueKey<String>('fushi_gallery_menu_relock'),
                 focusId: const FushiFocusId('fushi_gallery_menu_relock'),
-                leading: const Icon(Icons.visibility_off_outlined),
+                leading: const FushiIcon(Icons.visibility_off_outlined),
                 title: Text(t.reader_gallery_relock),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
@@ -958,11 +971,27 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   void _openViewer(EpubImageRef ref) {
     final int index = _unlocked.indexOf(ref);
     if (index < 0) return;
-    setState(() => _viewerIndex = index);
+    _replaceViewerPages(PageController(initialPage: index));
+    setState(() {
+      _viewerIndex = index;
+      _viewerHover = false;
+    });
     _precacheNeighbours(index);
   }
 
-  void _closeViewer() => setState(() => _viewerIndex = null);
+  void _closeViewer() {
+    setState(() => _viewerIndex = null);
+    _replaceViewerPages(null);
+  }
+
+  /// 换掉横滑分页控制器：旧的那个可能还挂在本帧要卸载的 PageView 上，帧末再释放。
+  void _replaceViewerPages(PageController? next) {
+    final PageController? old = _viewerPages;
+    _viewerPages = next;
+    if (old != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+    }
+  }
 
   void _viewerStep(int delta) {
     final int? current = _viewerIndex;
@@ -970,11 +999,31 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     final List<EpubImageRef> unlocked = _unlocked;
     final int next = (current + delta).clamp(0, unlocked.length - 1);
     if (next == current) return;
+    _showViewerPage(next);
+    // 触屏形态下页面跟着滑过去（键盘 / 手柄在触屏设备上也走这里）。
+    final PageController? pages = _viewerPages;
+    if (pages != null && pages.hasClients) {
+      unawaited(
+        pages.animateToPage(
+          next,
+          duration: fushiMotionDuration(context, FushiMotion.medium),
+          curve: FushiMotion.standard,
+        ),
+      );
+    }
+  }
+
+  /// 查看器落到第 [index] 张（键盘切图与触屏横滑共用）。
+  void _showViewerPage(int index) {
+    if (_viewerZoomed) setState(() => _viewerZoomed = false);
+    if (_viewerIndex == index) return;
+    final List<EpubImageRef> unlocked = _unlocked;
+    if (index < 0 || index >= unlocked.length) return;
     setState(() {
-      _viewerIndex = next;
-      _focusedSrc = unlocked[next].src;
+      _viewerIndex = index;
+      _focusedSrc = unlocked[index].src;
     });
-    _precacheNeighbours(next);
+    _precacheNeighbours(index);
   }
 
   /// 预解码相邻两张（前 / 后），箭头 / 滚轮连续切图时不闪白。
@@ -1210,9 +1259,8 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         ),
       ],
     );
-    final Widget filter = SegmentedButton<bool>(
+    final Widget filter = FushiSegmentedButton<bool>(
       key: const ValueKey<String>('fushi_gallery_filter'),
-      showSelectedIcon: false,
       segments: <ButtonSegment<bool>>[
         ButtonSegment<bool>(
           value: true,
@@ -1231,18 +1279,18 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     final List<Widget> actions = <Widget>[
       // 没有阅读位置（书架端打开没读过的书）就没有可定位的地方。
       if (showControls && _hasReadingPosition)
-        IconButton(
+        FushiIconButtonControl(
           key: const ValueKey<String>('fushi_gallery_position'),
           tooltip: t.reader_gallery_position_jump,
-          icon: const Icon(Icons.my_location_outlined),
+          icon: const FushiIcon(Icons.my_location_outlined),
           onPressed: () => _scrollToCurrentPosition(animate: true),
         ),
       Semantics(
-        identifier: 'hibiki.reader.gallery.close',
-        child: IconButton(
+        identifier: 'fushi.reader.gallery.close',
+        child: FushiIconButtonControl(
           key: const ValueKey<String>('fushi_gallery_close'),
           tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-          icon: const Icon(Icons.close),
+          icon: const FushiIcon(Icons.close),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
       ),
@@ -1293,7 +1341,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
           padding: const EdgeInsets.fromLTRB(20, 2, 20, 6),
           itemCount: volumes.labels.length,
           separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (BuildContext context, int i) => ChoiceChip(
+          itemBuilder: (BuildContext context, int i) => FushiChoiceChip(
             key: ValueKey<String>('reader-gallery-volume-chip-$i'),
             label: Text(
               volumes.labels[i],
@@ -1301,7 +1349,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               overflow: TextOverflow.ellipsis,
             ),
             avatar: i == volumes.currentIndex
-                ? const Icon(Icons.menu_book_outlined, size: 16)
+                ? const FushiIcon(Icons.menu_book_outlined, size: 16)
                 : null,
             selected: i == _viewedVolume,
             onSelected: (bool _) => _selectVolume(i),
@@ -1327,7 +1375,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     }
     if (_peekingSibling && _sibling == null) {
       _layout = null;
-      return const Center(child: CircularProgressIndicator());
+      return const FushiLoadingView();
     }
     if (_images.isEmpty) {
       _layout = null;
@@ -1393,7 +1441,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               Flexible(child: _PositionBadge(tokens: tokens)),
               const SizedBox(width: 8),
               Expanded(
-                child: Divider(color: tokens.surfaces.primary, thickness: 1),
+                child: FushiDividerControl(color: tokens.surfaces.primary, thickness: 1),
               ),
             ],
           ),
@@ -1436,7 +1484,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Divider(
+                child: FushiDividerControl(
                   color: current
                       ? tokens.surfaces.primary
                       : tokens.surfaces.outline,
@@ -1498,7 +1546,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   Widget _thumbnail(FushiDesignTokens tokens, EpubImageRef ref) {
     final File? file = _fileFor(ref);
     final Widget missing = Center(
-      child: Icon(
+      child: FushiIcon(
         Icons.broken_image_outlined,
         size: 24,
         color: tokens.surfaces.onVariant,
@@ -1520,20 +1568,15 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     );
   }
 
-  Widget _buildViewer(
-    FushiDesignTokens tokens,
-    EpubImageRef current,
-    int unlockedCount,
-  ) {
-    final ThemeData theme = Theme.of(context);
-    final int index = _viewerIndex ?? 0;
+  /// 查看器里的一张图（解码失败退回占位图标）。
+  Widget _viewerImage(FushiDesignTokens tokens, EpubImageRef current) {
     final File? file = _fileFor(current);
-    final Widget missing = Icon(
+    final Widget missing = FushiIcon(
       Icons.broken_image_outlined,
       size: 64,
       color: tokens.surfaces.onVariant,
     );
-    final Widget image = file == null
+    return file == null
         ? missing
         : Image.file(
             file,
@@ -1549,6 +1592,20 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               return missing;
             },
           );
+  }
+
+  Widget _buildViewer(
+    FushiDesignTokens tokens,
+    EpubImageRef current,
+    int unlockedCount,
+  ) {
+    final ThemeData theme = Theme.of(context);
+    final int index = _viewerIndex ?? 0;
+    final Widget image = _viewerImage(tokens, current);
+    // 触屏形态（手机 / 平板）：横滑切图、不画左右按钮；桌面：按钮在图外两侧。
+    final TargetPlatform platform = theme.platform;
+    final bool touch =
+        platform == TargetPlatform.android || platform == TargetPlatform.iOS;
     return ColoredBox(
       key: const ValueKey<String>('fushi_gallery_viewer'),
       color: tokens.surfaces.page,
@@ -1566,7 +1623,10 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
                     style: theme.textTheme.titleMedium,
                   ),
                   const SizedBox(width: 12),
-                  Flexible(
+                  // Expanded 而不是 Flexible + Spacer：后者与 Spacer 平分剩余宽度，
+                  // 跳转 / 关闭两个按钮被推到中间偏右，而不是贴右上角（2026-10-09
+                  // 反馈截图）。
+                  Expanded(
                     child: Text(
                       _sectionLabelOf(current),
                       maxLines: 1,
@@ -1574,69 +1634,136 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
                       style: tokens.type.metadata,
                     ),
                   ),
-                  const Spacer(),
-                  IconButton(
+                  FushiIconButtonControl(
                     key: const ValueKey<String>('fushi_gallery_jump'),
                     tooltip: t.reader_gallery_jump,
-                    icon: const Icon(Icons.my_location_outlined),
+                    icon: const FushiIcon(Icons.my_location_outlined),
                     onPressed: () => _jumpTo(current),
                   ),
-                  IconButton(
+                  FushiIconButtonControl(
                     key: const ValueKey<String>('fushi_gallery_viewer_close'),
                     tooltip: MaterialLocalizations.of(
                       context,
                     ).closeButtonTooltip,
-                    icon: const Icon(Icons.close),
+                    icon: const FushiIcon(Icons.close),
                     onPressed: _closeViewer,
                   ),
                 ],
               ),
             ),
             Expanded(
-              child: Stack(
-                children: <Widget>[
-                  Positioned.fill(
-                    child: Listener(
-                      onPointerSignal: _onViewerPointerSignal,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 72,
-                          vertical: 8,
-                        ),
-                        child: GestureDetector(
-                          onTap: () => _openImage(current),
-                          child: Center(child: image),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 16,
-                    top: 0,
-                    bottom: 0,
-                    child: Center(
-                      child: _arrowButton(
-                        tokens,
-                        icon: Icons.chevron_left,
-                        enabled: index > 0,
-                        onPressed: () => _viewerStep(-1),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    right: 16,
-                    top: 0,
-                    bottom: 0,
-                    child: Center(
-                      child: _arrowButton(
-                        tokens,
-                        icon: Icons.chevron_right,
-                        enabled: index < unlockedCount - 1,
-                        onPressed: () => _viewerStep(1),
-                      ),
-                    ),
-                  ),
-                ],
+              child: touch
+                  ? _buildTouchStage(tokens, unlockedCount)
+                  : _buildDesktopStage(tokens, image, index, unlockedCount),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 触屏查看器（手机 / 平板）：图片铺满整个查看区，左右横滑切上一张 / 下一张
+  /// （2026-10-09 反馈：移动端不要左右两个按钮，点进来就是大图）。双指缩放与
+  /// 横滑同时支持，见 [_ZoomableGalleryImage]。
+  Widget _buildTouchStage(FushiDesignTokens tokens, int unlockedCount) {
+    final List<EpubImageRef> unlocked = _unlocked;
+    return PageView.builder(
+      key: const ValueKey<String>('fushi_gallery_viewer_pages'),
+      controller: _viewerPages,
+      itemCount: unlockedCount,
+      // 放大态下单指拖动归 InteractiveViewer 平移，PageView 不参与；拖到图边再
+      // 继续拖由 [_ZoomableGalleryImage.onEdgePage] 切图（系统相册手感）。
+      physics: _viewerZoomed
+          ? const NeverScrollableScrollPhysics()
+          : const PageScrollPhysics(),
+      onPageChanged: _showViewerPage,
+      itemBuilder: (BuildContext context, int i) {
+        final EpubImageRef ref = unlocked[i];
+        return _ZoomableGalleryImage(
+          key: ValueKey<String>('fushi_gallery_zoom_${ref.src}'),
+          active: i == _viewerIndex,
+          onZoomChanged: (bool zoomed) {
+            if (i != _viewerIndex || zoomed == _viewerZoomed) return;
+            setState(() => _viewerZoomed = zoomed);
+          },
+          onEdgePage: _viewerStep,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Center(child: _viewerImage(tokens, ref)),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 桌面查看器：图片两侧各留一条按钮栏，左右切图按钮放在栏里、**不压在图上**，
+  /// 平时隐藏、指针进入查看区才淡入（2026-10-09 反馈）；方向键 / 滚轮照常切图。
+  /// 双击交给缩放查看器。
+  Widget _buildDesktopStage(
+    FushiDesignTokens tokens,
+    Widget image,
+    int index,
+    int unlockedCount,
+  ) {
+    final Duration fade = fushiMotionDuration(context, FushiMotion.short);
+    Widget arrow({
+      required bool left,
+      required bool enabled,
+      required VoidCallback onPressed,
+    }) {
+      return AnimatedOpacity(
+        opacity: _viewerHover ? 1 : 0,
+        duration: fade,
+        curve: FushiMotion.standard,
+        child: IgnorePointer(
+          ignoring: !_viewerHover,
+          child: _arrowButton(
+            tokens,
+            icon: left ? Icons.chevron_left : Icons.chevron_right,
+            enabled: enabled,
+            onPressed: onPressed,
+          ),
+        ),
+      );
+    }
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _viewerHover = true),
+      onExit: (_) => setState(() => _viewerHover = false),
+      child: Listener(
+        onPointerSignal: _onViewerPointerSignal,
+        child: Row(
+          children: <Widget>[
+            SizedBox(
+              width: _kViewerArrowGutter,
+              child: Center(
+                child: arrow(
+                  left: true,
+                  enabled: index > 0,
+                  onPressed: () => _viewerStep(-1),
+                ),
+              ),
+            ),
+            Expanded(
+              child: GestureDetector(
+                onDoubleTap: () {
+                  final EpubImageRef? current = _viewerRef();
+                  if (current != null) _openImage(current);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Center(child: image),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: _kViewerArrowGutter,
+              child: Center(
+                child: arrow(
+                  left: false,
+                  enabled: index < unlockedCount - 1,
+                  onPressed: () => _viewerStep(1),
+                ),
               ),
             ),
           ],
@@ -1654,11 +1781,154 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     return Material(
       color: tokens.surfaces.overlay.withValues(alpha: 0.8),
       shape: const CircleBorder(),
-      child: IconButton(
-        icon: Icon(icon),
+      child: FushiIconButtonControl(
+        icon: FushiIcon(icon),
         iconSize: 24,
         color: tokens.surfaces.onSurface,
         onPressed: enabled ? onPressed : null,
+      ),
+    );
+  }
+}
+
+/// 桌面查看器两侧放左右切图按钮的栏宽：按钮在栏里、不压在图上。
+const double _kViewerArrowGutter = 72;
+
+/// 触屏查看器的一页：[InteractiveViewer] 双指缩放 / 放大后单指平移，双击在
+/// 放大与复原之间切换（以双击点为中心放大到 [_kZoomDoubleTapScale] 倍）。
+///
+/// 手势冲突不自己识别：未放大时外层 PageView 用 PageScrollPhysics 吃单指横滑
+/// （横向拖动识别器的 slop 先于缩放识别器的平移 slop 胜出），双指仍交给
+/// InteractiveViewer；放大后宿主把 PageView 换成 NeverScrollableScrollPhysics，
+/// 单指拖动全归 InteractiveViewer 平移。平移已贴到左 / 右边、手指还在往外拖，
+/// 累计超过 [_kZoomEdgePageDistance] 就回调 [onEdgePage] 切上一张 / 下一张。
+class _ZoomableGalleryImage extends StatefulWidget {
+  const _ZoomableGalleryImage({
+    required this.active,
+    required this.onZoomChanged,
+    required this.onEdgePage,
+    required this.child,
+    super.key,
+  });
+
+  /// 是否是当前页；滑走后复原缩放，回来时从全图开始。
+  final bool active;
+  final ValueChanged<bool> onZoomChanged;
+  final ValueChanged<int> onEdgePage;
+  final Widget child;
+
+  @override
+  State<_ZoomableGalleryImage> createState() => _ZoomableGalleryImageState();
+}
+
+const double _kZoomDoubleTapScale = 2.5;
+const double _kZoomEdgePageDistance = 64;
+
+class _ZoomableGalleryImageState extends State<_ZoomableGalleryImage>
+    with SingleTickerProviderStateMixin<_ZoomableGalleryImage> {
+  final TransformationController _transform = TransformationController();
+  late final AnimationController _zoomAnimation = AnimationController(
+    vsync: this,
+  );
+  Animation<Matrix4>? _zoomTween;
+  Offset _doubleTapAt = Offset.zero;
+  bool _zoomed = false;
+  double _edgePull = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _transform.addListener(_onTransform);
+    _zoomAnimation.addListener(() {
+      final Animation<Matrix4>? tween = _zoomTween;
+      if (tween != null) _transform.value = tween.value;
+    });
+  }
+
+  @override
+  void didUpdateWidget(_ZoomableGalleryImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active && !widget.active) {
+      _zoomAnimation.stop();
+      _transform.value = Matrix4.identity();
+    }
+  }
+
+  @override
+  void dispose() {
+    _zoomAnimation.dispose();
+    _transform.dispose();
+    super.dispose();
+  }
+
+  void _onTransform() {
+    final bool zoomed = _transform.value.getMaxScaleOnAxis() > 1.01;
+    if (zoomed == _zoomed || !mounted) return;
+    // panEnabled 跟着放大态切换：未放大时单指不平移，留给外层 PageView 横滑。
+    setState(() => _zoomed = zoomed);
+    widget.onZoomChanged(zoomed);
+  }
+
+  void _animateTo(Matrix4 target) {
+    _zoomTween = Matrix4Tween(begin: _transform.value, end: target).animate(
+      CurvedAnimation(parent: _zoomAnimation, curve: FushiMotion.standard),
+    );
+    _zoomAnimation
+      ..duration = fushiMotionDuration(context, FushiMotion.medium)
+      ..forward(from: 0);
+  }
+
+  void _onDoubleTap() {
+    if (_zoomed) {
+      _animateTo(Matrix4.identity());
+      return;
+    }
+    const double s = _kZoomDoubleTapScale;
+    final Offset p = _doubleTapAt;
+    _animateTo(
+      Matrix4.identity()
+        ..translateByDouble(-p.dx * (s - 1), -p.dy * (s - 1), 0, 1)
+        ..scaleByDouble(s, s, 1, 1),
+    );
+  }
+
+  void _onInteractionUpdate(ScaleUpdateDetails details) {
+    if (!_zoomed || details.pointerCount != 1) {
+      _edgePull = 0;
+      return;
+    }
+    final Size? size = context.size;
+    if (size == null) return;
+    final Matrix4 m = _transform.value;
+    final double scale = m.getMaxScaleOnAxis();
+    final double tx = m.getTranslation().x;
+    final bool atLeft = tx >= -0.5;
+    final bool atRight = tx + size.width * scale <= size.width + 0.5;
+    final double dx = details.focalPointDelta.dx;
+    if ((dx > 0 && atLeft) || (dx < 0 && atRight)) {
+      _edgePull += dx;
+    } else {
+      _edgePull = 0;
+    }
+    if (_edgePull.abs() >= _kZoomEdgePageDistance) {
+      final int direction = _edgePull > 0 ? -1 : 1;
+      _edgePull = 0;
+      widget.onEdgePage(direction);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onDoubleTapDown: (TapDownDetails d) => _doubleTapAt = d.localPosition,
+      onDoubleTap: _onDoubleTap,
+      child: InteractiveViewer(
+        transformationController: _transform,
+        maxScale: 5,
+        panEnabled: _zoomed,
+        onInteractionStart: (_) => _edgePull = 0,
+        onInteractionUpdate: _onInteractionUpdate,
+        child: SizedBox.expand(child: widget.child),
       ),
     );
   }
@@ -1703,7 +1973,8 @@ class _PositionBadge extends StatelessWidget {
   }
 }
 
-/// 网格卡片外壳：圆角 + 细边框，键盘焦点用 2px 主色描边。
+/// 网格卡片外壳（M3E 填充卡）：小件 12 圆角、无可见描边（1px 透明边保几何），
+/// 键盘焦点用 2px 主色描边；按下轻微下沉（[FushiPressScale]）。
 class _GalleryCard extends StatelessWidget {
   const _GalleryCard({
     super.key,
@@ -1722,24 +1993,39 @@ class _GalleryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final BorderRadius radius = tokens.radii.cardRadius;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      decoration: ShapeDecoration(
-        color: tokens.surfaces.card,
-        shape: RoundedRectangleBorder(
-          borderRadius: radius,
-          side: BorderSide(
-            color: focused ? tokens.surfaces.primary : tokens.surfaces.outline,
-            width: focused ? 2 : 1,
+    const BorderRadius radius = FushiM3eShape.smallRadius;
+    // 墨水屏：填充塌缩成页面底，未聚焦的卡仍需实描边才看得出边界。
+    final bool eink = isEinkTheme(context);
+    return FushiPressScale(
+      child: AnimatedContainer(
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        curve: FushiMotion.standard,
+        decoration: ShapeDecoration(
+          color: tokens.surfaces.card,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: BorderSide(
+              color: focused
+                  ? tokens.surfaces.primary
+                  : (eink ? tokens.surfaces.outline : Colors.transparent),
+              width: focused ? 2 : 1,
+            ),
           ),
         ),
-      ),
-      child: Material(
-        type: MaterialType.transparency,
-        shape: RoundedRectangleBorder(borderRadius: radius),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(onTap: onTap, onLongPress: onLongPress, child: child),
+        child: Material(
+          type: MaterialType.transparency,
+          shape: const RoundedRectangleBorder(borderRadius: radius),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            onLongPress: onLongPress,
+            borderRadius: radius,
+            overlayColor: eink
+                ? null
+                : fushiMd3ContentStateLayer(Theme.of(context).colorScheme),
+            child: child,
+          ),
+        ),
       ),
     );
   }
@@ -1761,7 +2047,7 @@ class _LockedIllustrationDialog extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             Icons.auto_stories_outlined,
             size: 40,
             color: tokens.surfaces.onVariant,
@@ -1786,13 +2072,13 @@ class _LockedIllustrationDialog extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
-              TextButton(
+              FushiTextButton(
                 key: const ValueKey<String>('fushi_gallery_locked_reveal'),
                 onPressed: () =>
                     Navigator.of(context).pop(_LockedAction.revealAnyway),
                 child: Text(t.reader_gallery_locked_reveal),
               ),
-              FilledButton.tonal(
+              FushiFilledButton.tonal(
                 key: const ValueKey<String>('fushi_gallery_locked_back'),
                 onPressed: () =>
                     Navigator.of(context).pop(_LockedAction.backToLastSeen),

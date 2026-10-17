@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "kogado_hy",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": false,
+    "pcm_audio": false
+  },
+  "evidence": []
+}

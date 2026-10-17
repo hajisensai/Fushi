@@ -98,17 +98,49 @@ export function makeD1({ delayMs = 0 } = {}) {
   };
 }
 
+/**
+ * 模拟 Workers 运行时全局 FixedLengthStream（Node 没有）：按声明长度封口的 TransformStream，
+ * 实际字节超出或结束时不等于声明长度都让流出错——与 Workers 一样，R2 put 随之失败。
+ */
+if (typeof globalThis.FixedLengthStream === 'undefined') {
+  globalThis.FixedLengthStream = class FixedLengthStream extends TransformStream {
+    constructor(expected) {
+      const want = Number(expected);
+      let seen = 0;
+      super({
+        transform(chunk, controller) {
+          seen += chunk.byteLength;
+          if (seen > want) throw new TypeError(`FixedLengthStream: ${seen} > ${want}`);
+          controller.enqueue(chunk);
+        },
+        flush() {
+          if (seen !== want) throw new TypeError(`FixedLengthStream: ${seen} != ${want}`);
+        },
+      });
+    }
+  };
+}
+
+/**
+ * 内存 R2。put 吃字节或 ReadableStream（流就读完再存，流出错照抛）；lastPutWasStream 记最近一次 put
+ * 收到的是不是流（断言「视频是流式写入、没在 Worker 里整读」）。get 支持 {range: {offset, length}}。
+ */
 export function makeR2() {
   const store = new Map();
-  return {
+  const r2 = {
     store,
+    lastPutWasStream: false,
     async put(key, bytes, opts = {}) {
-      store.set(key, { bytes: new Uint8Array(bytes), httpMetadata: opts.httpMetadata || {} });
+      r2.lastPutWasStream = bytes instanceof ReadableStream;
+      const data = r2.lastPutWasStream ? new Uint8Array(await new Response(bytes).arrayBuffer()) : new Uint8Array(bytes);
+      store.set(key, { bytes: data, httpMetadata: opts.httpMetadata || {} });
     },
-    async get(key) {
+    async get(key, opts = {}) {
       const o = store.get(key);
       if (!o) return null;
-      return { body: o.bytes, httpMetadata: o.httpMetadata };
+      const r = opts && opts.range;
+      const body = r ? o.bytes.subarray(r.offset, r.offset + (r.length ?? o.bytes.length)) : o.bytes;
+      return { body, size: o.bytes.length, httpMetadata: o.httpMetadata };
     },
     async head(key) {
       const o = store.get(key);
@@ -118,6 +150,7 @@ export function makeR2() {
       for (const k of Array.isArray(keys) ? keys : [keys]) store.delete(k);
     },
   };
+  return r2;
 }
 
 /**
@@ -165,6 +198,7 @@ export const BASE = 'https://rank.example.com';
  *   now        服务器时刻（默认 Date.now()）
  *   body       对象（JSON）或 Uint8Array
  *   headers    额外头
+ *   ctx        Workers 的 ExecutionContext（省略 = 没有 waitUntil，后台任务在响应前做完）
  */
 let lastTime = 0;
 export async function call(env, method, path, opts = {}) {
@@ -198,7 +232,7 @@ export async function call(env, method, path, opts = {}) {
   const realNow = Date.now;
   Date.now = () => now;
   try {
-    const res = await worker.fetch(req, env);
+    const res = await worker.fetch(req, env, opts.ctx);
     if (env.autoSnapshot && method !== 'GET' && res.status < 300) await refreshSnapshots(env, now);
     const text = res.status === 204 ? '' : await res.text();
     let data = null;
@@ -248,3 +282,16 @@ export function entry(kind, refs, title, extra = {}) {
 }
 
 export const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+
+// 真 JPEG 构造器（封面哈希测试用）：独立模块，免得 node 直接跑的生成脚本把 worker.js 一起拉进来。
+export { coverJpeg, withExifOrientation } from './jpeg.js';
+
+/** PNG 头 + IHDR（宽高 w×h；服务端只读文件头，不解码像素）。 */
+export function pngHeader(w = 1, h = 1) {
+  const b = new Uint8Array(33);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  new DataView(b.buffer).setUint32(16, w);
+  new DataView(b.buffer).setUint32(20, h);
+  b.set([8, 2, 0, 0, 0], 24);
+  return b;
+}

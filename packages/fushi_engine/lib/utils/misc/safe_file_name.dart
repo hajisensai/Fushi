@@ -14,6 +14,37 @@ final RegExp windowsUnsafeFileNameChars = RegExp(r'[\\/:*?"<>|\x00-\x1f]');
 ///
 /// 刻意不折叠连续 `_`、不 trim、不处理保留设备名——调用方按各自既有产物命名
 /// 契约自行叠加（如 `_+` 折叠、`.trim()`、空串回退），保证既有磁盘文件名/数据库
-/// 键对全部现实输入字节不变。
+/// 键对全部现实输入字节不变。需要避开保留设备名时另问 [isWindowsReservedFileName]。
 String safeWindowsFileName(String value) =>
     value.replaceAll(windowsUnsafeFileNameChars, '_');
+
+/// [name] 是否会被 Windows 当成保留设备名（`CON` / `PRN` / `AUX` / `NUL` /
+/// `COM0-9` / `LPT0-9`，含上标 `¹²³` 变体）。
+///
+/// 按 Win32 命名规范判：第一个 `.` 之前的部分（去掉尾随空格、不分大小写）是设备名
+/// 就算——`NUL.txt`、`NUL.tar.gz`、`CON .x` 都等价于设备本身；`CON (1)`、`CONSOLE`
+/// 不是。命中时由调用方按自己的命名契约改写（常见做法是前缀 `_`）。
+bool isWindowsReservedFileName(String name) => _windowsReservedDeviceNames
+    .contains(name.split('.').first.trimRight().toUpperCase());
+
+final Set<String> _windowsReservedDeviceNames = <String>{
+  'CON',
+  'PRN',
+  'AUX',
+  'NUL',
+  for (final String n in const <String>[
+    '0',
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+    '¹',
+    '²',
+    '³',
+  ]) ...<String>['COM$n', 'LPT$n'],
+};

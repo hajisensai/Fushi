@@ -30,6 +30,57 @@ var FUSHI_POPUP_MAX_HEIGHT = 1600;  // = kLookupPopupMaxHeight
 // zoom 压到这个下限就不再压——再小字就不可读了，剩下的溢出交给横向滚动。
 var FUSHI_POPUP_MIN_ZOOM = 0.5;
 
+// 词典字号（用户群 10-09：「PC 端插件的弹窗和设置里都找不到调词典字号的地方」）。
+// 字号的 app 真相源是「词典字号」偏好，经 `--fushi-popup-zoom = dictionaryFontSize / 16` 下发；
+// 扩展这边多一个**只作用于浏览器**的可选覆盖 `popupFontSize`（px，缺省 = 跟随 Fushi）。
+// 与尺寸不同，这不是同一个值的第二份存档：字号覆盖只改浏览器里的缩放，app 内弹窗不受影响，
+// 「跟随 Fushi」时扩展完全不存值。范围与 app 词典字号滑杆同量级。
+var FUSHI_POPUP_FONT_SIZE_KEY = 'popupFontSize';
+var FUSHI_POPUP_FONT_SIZE_MIN = 10;
+var FUSHI_POPUP_FONT_SIZE_MAX = 40;
+var FUSHI_POPUP_FONT_SIZE_BASE = 16; // = app 的 dictionaryFontSize / 16 那个 16
+
+// 存储值 → 有效字号 px；缺省 / 非数 / 越界一律 null（= 跟随 Fushi），越界不静默夹成别的值。
+function fushiNormalizePopupFontSize(value) {
+  var n = typeof value === 'number' ? value : (typeof value === 'string' && value.trim() ? Number(value) : NaN);
+  if (!isFinite(n)) return null;
+  n = Math.round(n);
+  if (n < FUSHI_POPUP_FONT_SIZE_MIN || n > FUSHI_POPUP_FONT_SIZE_MAX) return null;
+  return n;
+}
+
+// 当前生效的字号覆盖（各表面共享：页面弹窗 / 嵌套弹窗 / 侧边栏都经 fushiResolvePopupBox 取 zoom）。
+var fushiPopupFontSizePx = null;
+var fushiPopupFontSizeListeners = [];
+function fushiOnPopupFontSizeChange(fn) {
+  if (typeof fn === 'function') fushiPopupFontSizeListeners.push(fn);
+}
+function fushiSetPopupFontSize(value) {
+  var next = fushiNormalizePopupFontSize(value);
+  if (next === fushiPopupFontSizePx) return;
+  fushiPopupFontSizePx = next;
+  for (var i = 0; i < fushiPopupFontSizeListeners.length; i++) {
+    try { fushiPopupFontSizeListeners[i](next); } catch (_) { /* 单个监听异常不吞其余 */ }
+  }
+}
+(function () {
+  try {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+    var got = chrome.storage.local.get(FUSHI_POPUP_FONT_SIZE_KEY, function (r) {
+      if (r) fushiSetPopupFontSize(r[FUSHI_POPUP_FONT_SIZE_KEY]);
+    });
+    if (got && typeof got.then === 'function') {
+      got.then(function (r) { if (r) fushiSetPopupFontSize(r[FUSHI_POPUP_FONT_SIZE_KEY]); }, function () {});
+    }
+    if (chrome.storage.onChanged && typeof chrome.storage.onChanged.addListener === 'function') {
+      chrome.storage.onChanged.addListener(function (changes, area) {
+        if (area !== 'local' || !changes || !changes[FUSHI_POPUP_FONT_SIZE_KEY]) return;
+        fushiSetPopupFontSize(changes[FUSHI_POPUP_FONT_SIZE_KEY].newValue);
+      });
+    }
+  } catch (_) { /* 非扩展环境（node 测试）：没有覆盖，跟随 Fushi */ }
+})();
+
 // CSS 长度串 → px 数。接受 '400px' / '400' / 400；无法解析返回 fallback。
 // `min(...)` / `calc(...)` 这类函数式长度不是数值，返回 fallback（调用方本就只在
 // 「纯 px 主题值」上做算术，函数式串按原样交给 CSS）。
@@ -73,6 +124,10 @@ function fushiResolvePopupBox(theme, viewport, opts) {
   var maxHeight = fushiParsePx(t['--fushi-popup-max-height'], 360);
   var zoom = parseFloat(t['--fushi-popup-zoom']) || 1;
   if (!(zoom > 0)) zoom = 1;
+  // 扩展字号覆盖：opts.fontSizePx 显式给出（测试 / 调用方）优先，否则用当前生效覆盖。
+  var fontPx = opts && Object.prototype.hasOwnProperty.call(opts, 'fontSizePx')
+    ? fushiNormalizePopupFontSize(opts.fontSizePx) : fushiPopupFontSizePx;
+  if (fontPx != null) zoom = fontPx / FUSHI_POPUP_FONT_SIZE_BASE;
 
   var clamped = false;
   var vw = viewport && isFinite(viewport.width) ? viewport.width : 0;
@@ -124,5 +179,11 @@ if (typeof module !== 'undefined' && module.exports) {
     fushiParsePx,
     fushiClampPopupSize,
     fushiResolvePopupBox,
+    FUSHI_POPUP_FONT_SIZE_KEY,
+    FUSHI_POPUP_FONT_SIZE_MIN,
+    FUSHI_POPUP_FONT_SIZE_MAX,
+    fushiNormalizePopupFontSize,
+    fushiSetPopupFontSize,
+    fushiOnPopupFontSizeChange,
   };
 }

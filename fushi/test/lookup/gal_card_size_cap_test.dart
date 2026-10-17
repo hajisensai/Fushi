@@ -218,7 +218,7 @@ void main() {
     late Directory pathProviderDir;
     setUpAll(() {
       pathProviderDir = Directory.systemTemp.createTempSync(
-        'hibiki_gal_cap_path_provider',
+        'fushi_gal_cap_path_provider',
       );
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),

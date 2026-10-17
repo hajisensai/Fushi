@@ -8,6 +8,7 @@ part of '../video_fushi_page.dart';
 /// directly).
 extension _VideoClipExport on _VideoFushiPageState {
   Future<void> _toggleClipExport() async {
+    if (_controller != null && !_discExtractionAllowed(_controller!)) return;
     if (_clipExporting) {
       _showOsd(t.video_clip_exporting, severity: ToastSeverity.info);
       return;
@@ -111,30 +112,14 @@ extension _VideoClipExport on _VideoFushiPageState {
     _rebuild(() => _clipExporting = true);
     _showOsd(t.video_clip_exporting, severity: ToastSeverity.info);
 
-    final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+    final VideoClipExportResult result = await _exportClipFile(
+      controller: controller,
       inputPath: startPath,
       startMs: startMs,
       endMs: endMs,
       outputPath: outputPath,
       audioStreamIndex: audioStreamIndex,
       audioStreamCount: audioStreamCount,
-      subtitleContents: _clipExportSubtitleContents(
-        controller: controller,
-        startMs: startMs,
-        endMs: endMs,
-      ),
-      // 硬字幕烧录（BUG-2202）：cue 带时间轴，导出层探出画面尺寸后回调渲染。
-      // 内封软字幕轨已经不用了——mp4 里的 tx3g 会让整个片段在 QQ 这类 IM 里判为
-      // 不可播（见 resolveClipSubtitleCodec）。
-      subtitleCues: _clipExportSubtitleCues(
-        controller: controller,
-        startMs: startMs,
-        endMs: endMs,
-      ),
-      subtitleRenderer: _clipExportSubtitleRenderer(),
-      // 用户设的视频码率（0 = 跟随源，导出层归一成 null）。在这里取值而不是在
-      // 标起点时取：用户常在标完起点、按导出前才去快捷面板改码率。
-      videoBitrateKbps: appModel.videoClipExportVideoBitrateKbps,
     );
 
     if (!mounted) {
@@ -175,7 +160,8 @@ extension _VideoClipExport on _VideoFushiPageState {
       // （BUG-2542）。旧实现先无条件报「已导出」再 fire-and-forget 分享，面板被
       // FushiShare 的防重入门丢弃时，用户看到的是绿色成功提示 + 一个进不去的路径，
       // 相册里没有、分享面板也没弹——体感就是「导出没反应」。
-      final bool shared = isDesktop ||
+      final bool shared =
+          isDesktop ||
           await FushiShare.shareFiles(<XFile>[
             XFile(exported),
           ], subject: p.basename(exported));
@@ -216,7 +202,7 @@ extension _VideoClipExport on _VideoFushiPageState {
 
   /// 收集片段区间内「用户正在看的字幕」，裁成 SRT 文本（主字幕一条、副字幕一条）。
   ///
-  /// 真相源是播放器内存里的 cue 列表，不是源文件的 `0:s:N`：Hibiki 的字幕全部由
+  /// 真相源是播放器内存里的 cue 列表，不是源文件的 `0:s:N`：Fushi 的字幕全部由
   /// Flutter overlay 渲染（libmpv 侧被 `setSubtitleTrack(no())` 关掉），外挂字幕在源
   /// 文件里压根没有对应流，内嵌轨也丢掉了用户调过的 [VideoPlayerController.delayMs]
   /// 偏移。从 cue 生成，导出的字幕恰好等于屏幕上看到的那条。
@@ -290,14 +276,12 @@ extension _VideoClipExport on _VideoFushiPageState {
     // 尺寸都在这里一次性取好。
     final VideoSubtitleStyle style = _subtitleStyle;
     final Size? area = context.size;
+    final bool respectAssStyle = appModel.videoRespectAssStyle;
 
     return (ClipSubtitleCue cue, ClipFrameSize frame) {
       final double viewportHeight = (area == null || frame.width <= 0)
           ? 0 // 拿不到就交给渲染器的回退基准，绝不让 scale 变成 0 或无穷
-          : math.min(
-              area.height,
-              area.width * frame.height / frame.width,
-            );
+          : math.min(area.height, area.width * frame.height / frame.width);
       // 锚定复用屏幕上那套解析（TODO-2838）：主层只有选了顶部才算显式，副层任何
       // 非 null 都算显式，都没有时副层自动取主层的对侧。ownNonBottom 恒 false——
       // 导出渲染的是纯文本，没有 ASS 自带定位。
@@ -306,8 +290,8 @@ extension _VideoClipExport on _VideoFushiPageState {
         userAnchor: cue.isSecondary
             ? style.secondaryAnchor
             : (style.mainAnchor == SubtitleLayerVAnchor.top
-                ? SubtitleLayerVAnchor.top
-                : null),
+                  ? SubtitleLayerVAnchor.top
+                  : null),
         mainUserAnchor: style.mainAnchor,
         ownNonBottom: false,
       );
@@ -319,9 +303,48 @@ extension _VideoClipExport on _VideoFushiPageState {
         anchorTop: anchor == SubtitleLayerVAnchor.top,
         // 副层有自己的位置基线；null = 跟随主层（历史行为）。
         overridePadding: cue.isSecondary ? style.secondaryBottomPadding : null,
+        // BUG-3291：与屏幕同一个开关——「尊重字幕自带样式」开着时导出也带上原字幕
+        // 的颜色 / 粗体 / 斜体；关着（纯字幕模式）屏幕上一律用户外观，导出同样不带。
+        markup: respectAssStyle ? clipCueStyledMarkup(cue) : null,
       );
     };
   }
+
+  /// 片段导出的 ffmpeg 一步（快捷键两段式导出与桌面 CLI `video clip` 共用）：
+  /// 当前看到的主 / 副字幕裁成 SRT、按 cue 烧录硬字幕、用户设的视频码率。
+  Future<VideoClipExportResult> _exportClipFile({
+    required VideoPlayerController controller,
+    required String inputPath,
+    required int startMs,
+    required int endMs,
+    required String outputPath,
+    required int? audioStreamIndex,
+    required int? audioStreamCount,
+  }) => exportVideoClipViaFfmpeg(
+    inputPath: inputPath,
+    startMs: startMs,
+    endMs: endMs,
+    outputPath: outputPath,
+    audioStreamIndex: audioStreamIndex,
+    audioStreamCount: audioStreamCount,
+    subtitleContents: _clipExportSubtitleContents(
+      controller: controller,
+      startMs: startMs,
+      endMs: endMs,
+    ),
+    // 硬字幕烧录（BUG-2202）：cue 带时间轴，导出层探出画面尺寸后回调渲染。
+    // 内封软字幕轨已经不用了——mp4 里的 tx3g 会让整个片段在 QQ 这类 IM 里判为
+    // 不可播（见 resolveClipSubtitleCodec）。
+    subtitleCues: _clipExportSubtitleCues(
+      controller: controller,
+      startMs: startMs,
+      endMs: endMs,
+    ),
+    subtitleRenderer: _clipExportSubtitleRenderer(),
+    // 用户设的视频码率（0 = 跟随源，导出层归一成 null）。在这里取值而不是在
+    // 标起点时取：用户常在标完起点、按导出前才去快捷面板改码率。
+    videoBitrateKbps: appModel.videoClipExportVideoBitrateKbps,
+  );
 
   void _clearClipExportState() {
     _clipExportGeneration++;
@@ -434,8 +457,10 @@ extension _VideoClipExport on _VideoFushiPageState {
     Uint8List bytes = raw;
     String extension = 'jpg';
     if (withSubtitles && controller != null) {
-      final Uint8List? composed =
-          await _composeScreenshotWithSubtitles(controller, raw);
+      final Uint8List? composed = await _composeScreenshotWithSubtitles(
+        controller,
+        raw,
+      );
       // 合成不出来（此刻屏幕上本就没字幕 / 渲染失败）就落回裸帧：少一层字幕远好过
       // 整张截图失败。
       if (composed != null) {
@@ -495,8 +520,9 @@ extension _VideoClipExport on _VideoFushiPageState {
     VideoPlayerController controller,
     Uint8List frameBytes,
   ) async {
-    final ({int width, int height})? size =
-        await screenshotFrameSize(frameBytes);
+    final ({int width, int height})? size = await screenshotFrameSize(
+      frameBytes,
+    );
     if (size == null || size.width <= 0 || size.height <= 0) return null;
     // 位置未知时按 0 处理：取不到当前时刻就选不出 cue，下面 cues 为空、落回裸帧。
     final int positionMs = controller.positionMs ?? 0;
@@ -510,7 +536,8 @@ extension _VideoClipExport on _VideoFushiPageState {
     final ClipFrameSize frame = ClipFrameSize(size.width, size.height);
     final ClipSubtitleFrameRenderer renderer = _clipExportSubtitleRenderer();
     final List<Uint8List> layers = <Uint8List>[];
-    for (final ClipSubtitleCue cue in cues) {
+    // 与烧录同一套叠画顺序：后合成的在上，按 ASS Layer 升序（同层原序）。
+    for (final ClipSubtitleCue cue in orderClipCuesForBurn(cues)) {
       final Uint8List? png = await renderer(cue, frame);
       if (png != null) layers.add(png);
     }
@@ -605,8 +632,10 @@ extension _VideoClipExport on _VideoFushiPageState {
           allowedExtensions: <String>[extension],
         );
         if (savePath != null) {
-          final String finalPath =
-              _uniqueScreenshotSavePath(savePath, extension: extension);
+          final String finalPath = _uniqueScreenshotSavePath(
+            savePath,
+            extension: extension,
+          );
           await tmp.copy(finalPath);
           _showOsd(
             t.video_screenshot_saved_to(path: finalPath),
@@ -655,8 +684,9 @@ extension _VideoClipExport on _VideoFushiPageState {
     String savePath, {
     String extension = 'jpg',
   }) {
-    final String desiredPath =
-        p.extension(savePath).isEmpty ? '$savePath.$extension' : savePath;
+    final String desiredPath = p.extension(savePath).isEmpty
+        ? '$savePath.$extension'
+        : savePath;
     return uniqueVideoScreenshotPath(
       desiredPath,
       exists: (String path) => File(path).existsSync(),

@@ -45,6 +45,12 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
         // 经导出缓存 + Range/If-Range：TTL 内的续传钉在同一份字节上（ETag 作验证器）；
         // 旧 client 不发 Range 收到 200 全量，行为不变。扩展名保留 → Content-Type
         // 仍由 _guessContentType 按扩展名判定。
+        // `?fresh=1`：client 显式「重新下载」——host 上的内容刚改过（重新转录 /
+        // 换字幕），TTL 内的旧导出不能再当成新的发出去。普通下载 / 续传不带它，
+        // 照旧钉在同一份字节上。
+        if (request.url.queryParameters['fresh'] == '1') {
+          _exportCache.invalidate(cacheKind, id);
+        }
         File file;
         try {
           file = await _exportCache.obtain(cacheKind, id, export);
@@ -214,18 +220,18 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       id: bookId,
       cacheKind: 'book',
       notFoundMessage: 'Book not found',
-      tempPrefix: 'hibiki_book_in',
+      tempPrefix: 'fushi_book_in',
       tempExtension: '.epub',
       export: () => svc.exportBook(bookId),
       // BUG-1503：body 是裸 .epub，推送方用户改的书名走 header 随行（视频推送的
-      // `X-Hibiki-Video-Title` 同一先例）。旧 client 不发 → 两参 null/0 → 与
+      // [kVideoTitleHeader] 同一先例）。旧 client 不发 → 两参 null/0 → 与
       // 原来的 `svc.importBook` tear-off 逐字同行为，故不必动
       // [_serveAssetPackage] 的四域共用签名。
       import: (File epubFile) => svc.importBook(
         epubFile,
         displayTitle: _decodeHeaderValue(request, kBookDisplayTitleHeader),
         displayTitleAt: int.tryParse(
-              request.headers[kBookDisplayTitleAtHeader] ?? '',
+              _interconnectHeaderValue(request, kBookDisplayTitleAtHeader) ?? '',
             ) ??
             0,
       ),
@@ -335,7 +341,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
         try {
           final File page =
               await svc.mangaChapterPageFile(bookKey, digest, index);
-          return serveFileWithRange(page, request);
+          return await serveFileWithRange(page, request);
         } on StateError {
           return shelf.Response.notFound('Manga chapter page not found');
         } on ArgumentError {
@@ -373,7 +379,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       if (index == null) return shelf.Response.notFound('Missing page index');
       try {
         final File page = await svc.mangaPageFile(bookKey, index);
-        return serveFileWithRange(page, request);
+        return await serveFileWithRange(page, request);
       } on StateError {
         return shelf.Response.notFound('Manga page not found');
       } on ArgumentError {
@@ -416,7 +422,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       id: displayName,
       cacheKind: 'localaudio',
       notFoundMessage: 'Local audio not found',
-      tempPrefix: 'hibiki_localaudio_in',
+      tempPrefix: 'fushi_localaudio_in',
       tempExtension: '.localaudio',
       export: () => svc.exportLocalAudio(displayName),
       import: svc.importLocalAudio,
@@ -546,6 +552,50 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       }
     }
 
+    // GET /api/library/audiobooks/<identity>/subtitles — 只打字幕侧（对齐文件 +
+    // 字幕 + token sidecar + cue，不含音频），供 client「只更新字幕」。同样必须在
+    // 整包 bookKey 提取之前匹配。不走导出缓存：包很小，且这条端点存在的意义就是
+    // 「host 刚改了字幕、马上拉新的」——TTL 内回旧字节等于没拉。host 不实现
+    // [AudiobookSubtitleHost] → 404，client 提示改走整本重下。
+    const String subtitlesSuffix = '/subtitles';
+    if (reqPath.startsWith(audiobookPrefix) &&
+        reqPath.endsWith(subtitlesSuffix)) {
+      if (method != 'GET') return shelf.Response(405);
+      final String identity = reqPath.substring(
+          audiobookPrefix.length, reqPath.length - subtitlesSuffix.length);
+      final shelf.Response? unsafeIdentity =
+          _rejectUnsafeAssetId(identity, 'bookKey');
+      if (unsafeIdentity != null) return unsafeIdentity;
+      if (svc is! AudiobookSubtitleHost) {
+        return shelf.Response.notFound('Audiobook subtitles not supported');
+      }
+      final File pkg;
+      try {
+        pkg = await (svc as AudiobookSubtitleHost)
+            .exportAudiobookSubtitles(identity);
+      } on StateError {
+        return shelf.Response.notFound('Audiobook not found');
+      } on ArgumentError {
+        return shelf.Response.forbidden('Invalid bookKey');
+      }
+      try {
+        final List<int> bytes = await pkg.readAsBytes();
+        return shelf.Response.ok(
+          bytes,
+          headers: <String, String>{
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': '${bytes.length}',
+          },
+        );
+      } finally {
+        try {
+          pkg.parent.deleteSync(recursive: true);
+        } catch (_) {
+          // best-effort：导出方的临时父目录
+        }
+      }
+    }
+
     final String bookKey = reqPath.substring('/api/library/audiobooks/'.length);
     final shelf.Response? unsafe = _rejectUnsafeAssetId(bookKey, 'bookKey');
     if (unsafe != null) return unsafe;
@@ -558,7 +608,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       id: bookKey,
       cacheKind: 'audiobook',
       notFoundMessage: 'Audiobook not found',
-      tempPrefix: 'hibiki_audiobook_in',
+      tempPrefix: 'fushi_audiobook_in',
       tempExtension: '.audiobook',
       export: () => svc.exportAudiobook(bookKey),
       import: (File tmp) => svc.importAudiobook(tmp, bookKeyOverride: bookKey),

@@ -1,0 +1,6 @@
+## BUG-3289 · Emby 短查询 TotalRecordCount 清零，搜索把整页命中丢弃
+- **报告**：2026-10-10（应用内反馈 #IxM-ouhaRK：「emby 无法搜索到四字以下关键字」；截图附了反馈人自己抓包的结论：两台 Emby 4.9.1.90 / 4.8.10.0 在 SearchTerm 不足 4 个字符时 `TotalRecordCount` 回 0，`Items` 里却有 50 条正确结果）
+- **真实性**：✅ 真 bug，与 BUG-2970（排序 / 扫描窗口）是不同机制。`fushi/lib/src/sync/jellyfin_video_client.dart` 的 `JellyfinVideoClient.search()`（修复前 `:2859-2860`）先 `roundTotal = page.totalCount`，再判 `localStart >= roundTotal` 就 break——总数被清零时 `0 >= 0` 成立，在 `hits.addAll(pageHits)` 之前退出，整页命中被丢弃；`hasMore = 0 < 0` 也为假，页面不会续扫。四字以上服务器给的总数正常，所以表现为「四字以下搜不到」。同文件其它分页路径都是先收数据再看计数，只有 `search()` 先看计数。
+- **[x] ① 已修复** — 新增 `JellyfinVideoClient.searchCountContradicted` / `searchRoundTotal`：服务器总数与这一页数据矛盾（有 N 行却报得比 startIndex+N 少；或偏移越过起点的空页却报 0）时不当边界，按数据定——没要满的页就是本轮末尾，否则从头逐页数到短页（`_measureSearchRound`，上限 `kSearchMeasureLimit` = 2000 行）。拼接分页的 cursor 仍靠每轮的准确总数换算，不拿下界凑。总数可信的服务器（含四字以上的 Emby）请求序列不变。提交 284c876368。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/media_server/jellyfin_search_zero_count_test.dart`：假 Emby 在不足 4 字符时把总数清零；断言 2 字中文能搜到电影 / 剧两轮的命中、四字查询不多发计数请求、命中跨多页时按 nextStartIndex 翻页不重不漏（160 条），以及 `searchRoundTotal` 四种形状（可信 / 未要满 / 满页需计数 / 拼接分页问前一轮总数的空页）。既有 `jellyfin_media_server_test.dart`、`jellyfin_search_short_query_test.dart` 同跑全绿。
+- **备注**：没有在反馈人的服务器上实测；依据是反馈截图里的抓包结论 + 代码路径。服务器自身「词首前缀」语义（BUG-2970 备注）仍是服务器侧限制，本修复不涉及。

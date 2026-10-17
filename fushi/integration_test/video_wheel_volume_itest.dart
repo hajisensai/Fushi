@@ -1,5 +1,5 @@
 // TODO-1058 运行时端到端验证：桌面在视频「画面区」滚鼠标滚轮真的改音量，
-// 且落在控制条 chrome 上的滚轮**不**改音量（`_isVideoChromePointer` 门控）。
+// 且落在控制条 chrome 上的滚轮**不**改音量（`videoPointerHitsChrome` 门控）。
 //
 // 现有 test/pages/video_wheel_volume_guard_test.dart 只在源码层锁接线契约
 // （断言 `_handleVideoWheelSignal` 被挂到画面 Listener、门控分支存在），从不真跑
@@ -20,9 +20,11 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:media_kit_video/media_kit_video.dart'
+    show VideoControlsChromeRegion;
 
 import 'support/test_app_launcher.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart'
@@ -36,6 +38,7 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
 import 'helpers/library_fixture.dart';
 import 'helpers/observe_capture.dart';
 import 'test_helpers.dart';
+import '../test/helpers/glass_unwrap.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -95,11 +98,12 @@ void main() {
           tester.renderObject<RenderBox>(pageFinder.first);
       final Offset topLeft = pageBox.localToGlobal(Offset.zero);
       final Size pageSize = pageBox.size;
-      // 画面区中心：远离顶/底 chrome，_isVideoChromePointer 判定为「非 chrome」放行。
+      // 画面区中心：远离顶/底 chrome，videoPointerHitsChrome 判定为「非 chrome」放行。
       final Offset pictureCenter =
           topLeft + Offset(pageSize.width / 2, pageSize.height / 2);
-      // 底栏 chrome：贴近底边（bottomChromeTop 之下）；_isVideoChromePointer=true 不接管。
-      final Offset bottomChrome =
+      // 底栏方向：先在这里 hover 唤出控制条，反证点再取真实渲染出的底栏区域中心
+      // （见 ③）——判据是 hit-test（videoPointerHitsChrome），不再是几何带。
+      final Offset bottomEdge =
           topLeft + Offset(pageSize.width / 2, pageSize.height - 6);
 
       // ── HUD 音量真值读取（videoVolumeHudProgressKey 的 LinearProgressIndicator
@@ -109,7 +113,7 @@ void main() {
         final Finder hud = find.byKey(videoVolumeHudProgressKey);
         if (hud.evaluate().isEmpty) return null;
         final LinearProgressIndicator w =
-            tester.widget<LinearProgressIndicator>(hud);
+            tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(hud));
         final double? v = w.value;
         return v == null ? null : v * 100.0;
       }
@@ -160,6 +164,18 @@ void main() {
       // ── ③ 门控反证：滚轮落在底栏 chrome 区 → 音量不变 ────────────────────
       // 先读一个稳定的「反证前」音量真值（再滚一次画面区确保 HUD 在场、拿到确定值）。
       await sendWheel(pictureCenter, 40);
+      // hover 底边唤出控制条，再取最靠下的 [VideoControlsChromeRegion]（底栏）中心。
+      await tester.sendEventToBinding(wheelPointer.hover(bottomEdge));
+      await tester.pump(const Duration(milliseconds: 400));
+      final List<Offset> regionCenters = find
+          .byType(VideoControlsChromeRegion)
+          .evaluate()
+          .map((Element e) => tester.getCenter(find.byWidget(e.widget)))
+          .toList();
+      expect(regionCenters, isNotEmpty, reason: '控制条应已被 hover 唤出');
+      final Offset bottomChrome = regionCenters.reduce(
+        (Offset a, Offset b) => a.dy >= b.dy ? a : b,
+      );
       final double? beforeChrome = readHudVolumePercent();
       debugPrint('[wheel-vol] beforeChrome=$beforeChrome '
           'chromeAt=$bottomChrome (page=$pageSize)');

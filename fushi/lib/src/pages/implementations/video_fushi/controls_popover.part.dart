@@ -68,29 +68,22 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     final Widget volumeButton = ValueListenableBuilder<double>(
       valueListenable: _volumeDisplay,
       builder: (BuildContext context, double value, Widget? child) {
-        return Tooltip(
+        return FushiTooltip(
           message: t.shortcut_action_video_toggle_mute,
-          child: desktop
-              ? MaterialDesktopCustomButton(
-                  icon:
-                      Icon(_volumeIconFor(value), size: _videoControlIconSize),
-                  onPressed: () => _toggleControlPopover(
-                    _VideoControlPopoverKind.volume,
-                    popoverLink: popoverLink,
-                    sourceSlot: slot,
-                    sourceItem: VideoControlItem.volume,
-                  ),
-                )
-              : MaterialCustomButton(
-                  icon:
-                      Icon(_volumeIconFor(value), size: _videoControlIconSize),
-                  onPressed: () => _toggleControlPopover(
-                    _VideoControlPopoverKind.volume,
-                    popoverLink: popoverLink,
-                    sourceSlot: slot,
-                    sourceItem: VideoControlItem.volume,
-                  ),
-                ),
+          child: _chromeIconButton(
+            icon: _volumeIconFor(value),
+            desktop: desktop,
+            // M3E：静音时音量键亮 error tonal 色块。
+            tone: value <= 0
+                ? VideoM3eButtonTone.error
+                : VideoM3eButtonTone.neutral,
+            onPressed: () => _toggleControlPopover(
+              _VideoControlPopoverKind.volume,
+              popoverLink: popoverLink,
+              sourceSlot: slot,
+              sourceItem: VideoControlItem.volume,
+            ),
+          ),
         );
       },
     );
@@ -462,14 +455,18 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     required double width,
     required Widget child,
   }) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
-    return Material(
+    final ColorScheme cs = _videoPopoverColorScheme(context);
+    final bool neutral = _m3eChrome && !isEinkTheme(context);
+    final Widget frame = Material(
       color: Colors.transparent,
       child: DecoratedBox(
         decoration: BoxDecoration(
           // 浮层 alpha 两档制的实底档（UI 巡检 PR-4）。
-          color: cs.surfaceContainerHighest
-              .withValues(alpha: kVideoOverlaySolidAlpha),
+          // M3E：与悬浮胶囊同一无色相中性表面（[videoM3eFloatingColor]）。
+          color: neutral
+              ? videoM3eFloatingColor(Theme.of(context).colorScheme)
+              : cs.surfaceContainerHighest
+                  .withValues(alpha: kVideoOverlaySolidAlpha),
           borderRadius: FushiBorderRadius.menu,
           border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.7)),
           boxShadow: <BoxShadow>[
@@ -489,6 +486,12 @@ extension _VideoControlsPopover on _VideoFushiPageState {
         ),
       ),
     );
+    if (!neutral) return frame;
+    // M3E：浮层内的文字按钮 / 滑条读无色相中性方案（白字，强调色仍是主题 primary）。
+    return Theme(
+      data: Theme.of(context).copyWith(colorScheme: cs),
+      child: frame,
+    );
   }
 
   Widget _buildVolumePopover({required double width}) {
@@ -496,8 +499,8 @@ extension _VideoControlsPopover on _VideoFushiPageState {
       valueListenable: _volumeDisplay,
       builder: (BuildContext context, double value, Widget? child) {
         final double clamped = value.clamp(0.0, 100.0).toDouble();
-        final ColorScheme cs = _videoChromeColorScheme(context);
-        return VideoVolumePopoverCard(
+        final ColorScheme cs = _videoPopoverColorScheme(context);
+        final Widget card = VideoVolumePopoverCard(
           width: width,
           value: clamped,
           uiScale: _videoUiScale,
@@ -506,6 +509,12 @@ extension _VideoControlsPopover on _VideoFushiPageState {
           tooltip: t.shortcut_action_video_toggle_mute,
           onToggleMute: () => unawaited(_toggleMute()),
           onChanged: _setVolumeFromSlider,
+        );
+        if (_appleChrome || isEinkTheme(context)) return card;
+        // M3E：浮层内的滑条读无色相中性方案（与悬浮胶囊同一表面）。
+        return Theme(
+          data: Theme.of(context).copyWith(colorScheme: cs),
+          child: card,
         );
       },
     );
@@ -525,7 +534,7 @@ extension _VideoControlsPopover on _VideoFushiPageState {
   }
 
   Widget _buildSpeedPopover({required double width}) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
+    final ColorScheme cs = _videoPopoverColorScheme(context);
     final List<double> speedPresets = _speedMenuPresets();
     final double sliderValue = _playbackSpeed.clamp(0.5, 2.0).toDouble();
     return _buildControlPopoverFrame(
@@ -536,7 +545,7 @@ extension _VideoControlsPopover on _VideoFushiPageState {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(Icons.speed, color: cs.primary, size: 20 * _videoUiScale),
+              FushiIcon(Icons.speed, color: cs.primary, size: 20 * _videoUiScale),
               SizedBox(width: 8 * _videoUiScale),
               Expanded(
                 child: Text(
@@ -548,13 +557,13 @@ extension _VideoControlsPopover on _VideoFushiPageState {
                   ),
                 ),
               ),
-              TextButton(
+              FushiTextButton(
                 onPressed: () => unawaited(_setSpeed(1.0)),
                 child: const Text('1.0x'),
               ),
             ],
           ),
-          Slider(
+          FushiSlider(
             value: sliderValue,
             min: 0.5,
             max: 2.0,

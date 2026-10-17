@@ -3127,6 +3127,163 @@ Promise.all([
   testQueueFailureKeepsPlusAndAllowsRetry(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
+// BUG-3492：app 内（在线视频后台制卡）没有宿主队列，「已加入」只是本弹窗的一个标记。
+// 以前它一旦置上就永不撤销：同一个弹窗里再点 ✓、或从「高级制卡」回点（同一个 onclick）
+// 一律直接 return——没反应、不覆盖、不提示，只有关掉弹窗重新查词才能覆盖。
+function appQueuedHarness(context) {
+  const state = { inAnki: false, mines: 0, actions: 0, queueCalls: [], queueReply: null };
+  context.window.__fushiMinedCardActionNative = true;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(state.inAnki);
+    if (name === 'mineEntry') {
+      state.mines++;
+      return Promise.resolve({ queued: true, ankiConnect: false });
+    }
+    if (name === 'minedCardAction') {
+      state.actions++;
+      return Promise.resolve({ ankiConnect: true, noteId: null, message: '' });
+    }
+    if (name === 'queueOverwrite') {
+      state.queueCalls.push(payload);
+      return Promise.resolve(state.queueReply);
+    }
+    return Promise.resolve(null);
+  };
+  return state;
+}
+
+async function testAppQueuedMarkAnswersClicksAndYieldsToOverwriteOnceLanded() {
+  const context = loadPopup();
+  context.window.i18nMineStillQueued = 'STILL_QUEUED';
+  const state = appQueuedHarness(context);
+  const button = buildMineHeaderFor(context, '離婚');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1', '后台制卡回 queued → 标「已加入」');
+  assert.equal(state.mines, 1);
+
+  // 还没落地：不重复入队、不弹操作单，但要就地说一声（以前是静默 return）。
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 1, '没落地时再点不得再制一张');
+  assert.equal(state.actions, 0);
+  assert.equal(inlineHintText(context), 'STILL_QUEUED', '没落地也必须有可见反馈');
+  assert.equal(button.disabled, false, 'BUG-077：永不卡死');
+  assert.equal(state.queueCalls.length, 1, '没落地时把覆盖交给宿主排队');
+  assert.equal(state.queueCalls[0].expression, '離婚', '排队请求带着完整制卡 payload');
+
+  // 落地了：同一个弹窗里点 ✓ 必须走已制卡的正常路径（覆盖 / 新增的操作单）。
+  state.inAnki = true;
+  await button.onclick();
+  await flush();
+  assert.equal(state.actions, 1, '落地后同一弹窗点 ✓ 必须交给宿主覆盖');
+  assert.equal(state.mines, 1, '不得绕过操作单直接再制一张');
+  assert.notEqual(button.dataset.queued, '1', '卡已在 Anki → 「已加入」标记作废');
+  assert.equal(button.dataset.mined, '1');
+}
+
+async function testHostRefreshAfterBackgroundLandingClearsAppQueuedMark() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '離縁');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1');
+
+  // 宿主（视频页后台落卡）落地后经 MinedStateSignal 回头刷这个词。
+  state.inAnki = true;
+  const refreshed = await context.window.fushiRefreshMineStates({
+    expression: '離縁',
+  });
+  await flush();
+  assert.equal(refreshed, 1);
+  assert.notEqual(button.dataset.queued, '1', '刷新拿到真 ✓ 后「已加入」必须撤掉');
+  assert.equal(button.dataset.mined, '1');
+  await button.onclick();
+  await flush();
+  assert.equal(state.actions, 1, '刷新之后点 ✓ 直接走覆盖');
+}
+
+// 所有者拍板的方案 B：宿主收下排队（视频页在线视频）→ 说宿主给的那句，不说「还没写进」。
+async function testAcceptedQueuedOverwriteShowsHostMessage() {
+  const context = loadPopup();
+  context.window.i18nMineStillQueued = 'STILL_QUEUED';
+  const state = appQueuedHarness(context);
+  state.queueReply = { accepted: true, message: 'QUEUED_OK' };
+  const button = buildMineHeaderFor(context, '離別');
+  await flush();
+  await button.onclick();
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(state.queueCalls.length, 1);
+  assert.equal(inlineHintText(context), 'QUEUED_OK');
+  assert.equal(state.mines, 1, '排队覆盖不得另制一张新卡');
+  assert.equal(button.dataset.queued, '1', '还没落地：仍显示「已加入」');
+}
+
+// 赛跑窗口：弹窗回问 Anki 时卡还没落地，覆盖请求到宿主前那次后台写入落地了。宿主回
+// settled:'landed' → 同一次点击直接落到已制卡的正常覆盖路径，不能说「还在写入」、
+// 也不能让用户再点一次。
+async function testSettledLandedReplyFallsThroughToOverwrite() {
+  const context = loadPopup();
+  context.window.i18nMineStillQueued = 'STILL_QUEUED';
+  const state = appQueuedHarness(context);
+  state.queueReply = { accepted: false, settled: 'landed' };
+  // 落地就发生在弹窗回问之后、宿主收到请求之前：此后 Anki 里确实有这张卡。
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'queueOverwrite') state.inAnki = true;
+    return base(name, payload);
+  };
+  const button = buildMineHeaderFor(context, '離散');
+  await flush();
+  await button.onclick();
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(state.queueCalls.length, 1);
+  assert.equal(state.actions, 1, '已落地：同一次点击交给宿主覆盖');
+  assert.equal(state.mines, 1, '不得另制一张');
+  assert.notEqual(inlineHintText(context), 'STILL_QUEUED', '已落地不能说还在写入');
+  assert.equal(button.dataset.queued, '', '「已加入」标记已撤');
+  assert.equal(button.dataset.mined, '1');
+}
+
+// 赛跑窗口：那次后台写入失败了。宿主回 settled:'failed' + 原因 → 撤掉「已加入」、按钮回
+// 「+」、说宿主给的原因；下一次点击按新卡制作，不再走排队。
+async function testSettledFailedReplyClearsQueuedMark() {
+  const context = loadPopup();
+  context.window.i18nMineStillQueued = 'STILL_QUEUED';
+  const state = appQueuedHarness(context);
+  state.queueReply = { accepted: false, settled: 'failed', message: 'NOT_SAVED' };
+  const button = buildMineHeaderFor(context, '離島');
+  await flush();
+  await button.onclick();
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(inlineHintText(context), 'NOT_SAVED');
+  assert.equal(button.dataset.queued, '', '写入失败：「已加入」必须撤掉');
+  assert.equal(button.textContent, '+');
+  assert.equal(state.actions, 0);
+  assert.equal(state.mines, 1);
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 2, '失败后再点按新卡制作');
+  assert.equal(state.queueCalls.length, 1, '不再走排队');
+}
+
+Promise.all([
+  testAcceptedQueuedOverwriteShowsHostMessage(),
+  testSettledLandedReplyFallsThroughToOverwrite(),
+  testSettledFailedReplyClearsQueuedMark(),
+  testAppQueuedMarkAnswersClicksAndYieldsToOverwriteOnceLanded(),
+  testHostRefreshAfterBackgroundLandingClearsAppQueuedMark(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
 // 宿主主动刷新已渲染的「已制卡 ✓ / 可制卡 +」（window.fushiRefreshMineStates）。
 //
 // 为什么需要这条入口：查词时探测出的 ✓ 画完就不再动。AnkiMobile 后端上「卡真的进库
@@ -3430,6 +3587,195 @@ Promise.all([
   testConfirmMiningReportsDisabledButton(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
+// BUG-3210：SelectionText 串字段。选区只在「+」的 pointerdown/touchstart 快照，
+// 而「调整上下文」确认回点（fushiPopupMineEntryByIndex）与快捷键/手柄制卡
+// （fushiPopupMineFirstEntry）都不经那颗按钮的 pointerdown——它们沿用的是**上一次**
+// 点「+」时的快照，热槽 WebView 跨查词不重载，于是上一个词释义里选中的文字被写进
+// 这张卡（用户的「自体」卡 SelectionText 成了另一个词的释义）。
+function findByClassName(node, name) {
+  const hasClass = (n) =>
+    (n.className || '').split(/\s+/).includes(name) ||
+    (n.classList && n.classList.contains(name));
+  if (hasClass(node)) return node;
+  for (const child of node.children ?? []) {
+    const found = findByClassName(child, name);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function testNewLookupDropsPreviousSelectionSnapshot() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  const [oldButton] = mountEntriesWith(context, ['抜かす']);
+  await flush();
+  // 上一个词：用户在释义里选了一段再点「+」。
+  context.window.getSelection().text = '② 好ましくないことばを口に出す。こく。';
+  oldButton.onpointerdown();
+  context.window.getSelection().removeAllRanges();
+  await oldButton.onclick();
+  await flush();
+  assert.equal(mined.length, 1);
+
+  // 换词重渲染（同一个热槽 WebView），这次什么都没选。
+  const container = new FakeElement('div');
+  stubRenderPopupRuntime(context, container);
+  context.window.lookupEntries = [];
+  context.window.kanjiResults = [];
+  context.window.renderPopup();
+  mountEntriesWith(context, ['自体']);
+  await flush();
+
+  assert.equal(await context.window.fushiPopupMineEntryByIndex(0), true);
+  await flush();
+  assert.equal(mined.length, 2);
+  assert.equal(mined[1].expression, '自体');
+  assert.equal(mined[1].popupSelectionText, '',
+    'a new lookup must not inherit the selected definition of the previous word');
+}
+
+async function testAdjustContextButtonSnapshotsSelectionForConfirm() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  context.window.advancedMiningEnabled = true;
+  mountEntriesWith(context, ['自体']);
+  await flush();
+  const adjust = findByClassName(context.window.__fushiRoot, 'ctx-adjust-button');
+  assert.ok(adjust, 'advanced-mining button must render when the host wired it');
+
+  const selected = 'それ自身。そのもの。';
+  context.window.getSelection().text = selected;
+  adjust.onpointerdown();
+  // 原生对话框弹出 / document click 处理器会把 WebView 里的活选区清掉。
+  context.window.getSelection().removeAllRanges();
+
+  assert.equal(await context.window.fushiPopupMineEntryByIndex(0), true);
+  await flush();
+  assert.equal(mined.length, 1);
+  assert.equal(mined[0].popupSelectionText, selected,
+    'confirm from the advanced-mining dialog must carry the selection made before opening it');
+}
+
+// 「高级制卡」入口：app 内由 window.advancedMiningEnabled 门控（所有表面，不再只限句子草稿
+// 表面），点它把 {entryIndex, matched, expression} **对象**（BUG-1326：不 stringify）交给
+// openAdvancedMining；entryIndex 是点的那个词条的 DOM 序。浏览器扩展没有这个宿主，仍走
+// 它自己的 openSentenceContextModal；制卡模块关掉（「+」不渲染）时入口也不渲染。
+async function testAdvancedMiningButtonOpensHostDialog() {
+  const context = loadPopup();
+  const calls = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    calls.push([name, payload]);
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    return Promise.resolve(null);
+  };
+  context.window.advancedMiningEnabled = true;
+  context.window.i18nCtx = { advancedMining: 'Advanced mining', adjust: 'Adjust context' };
+  mountEntriesWith(context, ['辞書', '事典']);
+  await flush();
+  const entries = context.window.__fushiRoot.children[0].children;
+  const second = findByClassName(entries[1], 'ctx-adjust-button');
+  assert.ok(second, 'every entry header renders the advanced-mining button');
+  second.onclick();
+  const opened = calls.filter(([name]) => name === 'openAdvancedMining');
+  assert.equal(opened.length, 1, 'one click opens the host dialog exactly once');
+  assert.equal(typeof opened[0][1], 'object', 'payload is an object, never a JSON string');
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(opened[0][1])),
+    { entryIndex: 1, matched: '事典', expression: '事典' });
+  assert.equal(calls.some(([name]) => name === 'openSentenceContextModal'), false,
+    'the in-app surface has a single entry point');
+}
+
+async function testAdvancedMiningButtonGating() {
+  // 没注入任何能力 → 不渲染。
+  const bare = loadPopup();
+  stubMineBridge(bare, []);
+  mountEntriesWith(bare, ['自体']);
+  await flush();
+  assert.equal(findByClassName(bare.window.__fushiRoot, 'ctx-adjust-button'), null,
+    'no host capability → no button');
+
+  // 制卡模块关掉：「+」不渲染，回点无从谈起 → 入口也不渲染。
+  const miningOff = loadPopup();
+  stubMineBridge(miningOff, []);
+  miningOff.window.advancedMiningEnabled = true;
+  miningOff.window.__fushiMiningEnabled = false;
+  // mountEntriesWith 断言每个词条都有「+」，这里「+」本就不该有，直接建词条头。
+  const offHeader = miningOff.createEntryHeader({
+    expression: '自体', reading: '自体', matched: '自体',
+    frequencies: [], pitches: [], rules: [],
+  }, 0);
+  await flush();
+  assert.equal(findByClassName(offHeader, 'mine-button'), null);
+  assert.equal(findByClassName(offHeader, 'ctx-adjust-button'), null,
+    'card creation off → no advanced-mining entry');
+
+  // 浏览器扩展：只有它自己的「调整上下文」能力 → 仍走 openSentenceContextModal。
+  const ext = loadPopup();
+  const calls = [];
+  ext.window.flutter_inappwebview.callHandler = (name, payload) => {
+    calls.push([name, payload]);
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    return Promise.resolve(null);
+  };
+  ext.window.sentenceContextPreviewEnabled = true;
+  mountEntriesWith(ext, ['自体']);
+  await flush();
+  const button = findByClassName(ext.window.__fushiRoot, 'ctx-adjust-button');
+  assert.ok(button, 'extension keeps its adjust-context entry');
+  button.onclick();
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'openSentenceContextModal')
+      .map(([, payload]) => JSON.parse(JSON.stringify(payload))),
+    [{ entryIndex: 0, matched: '自体' }]);
+  assert.equal(calls.some(([name]) => name === 'openAdvancedMining'), false);
+}
+
+async function testShortcutMineUsesLiveSelection() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  const [button] = mountEntriesWith(context, ['自体']);
+  await flush();
+  // 早先一次点「+」留下的旧快照。
+  context.window.getSelection().text = '旧い選択';
+  button.onpointerdown();
+  context.window.getSelection().removeAllRanges();
+
+  // 快捷键 / 手柄制卡：不经 pointerdown，必须按此刻的选区。
+  assert.equal(await context.window.fushiPopupMineFirstEntry(), true);
+  await flush();
+  assert.equal(mined.length, 1);
+  assert.equal(mined[0].popupSelectionText, '',
+    'shortcut mining with nothing selected must not reuse a stale snapshot');
+
+}
+
+async function testShortcutMineCapturesLiveSelection() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  mountEntriesWith(context, ['自体']);
+  await flush();
+  context.window.getSelection().text = '今の選択';
+  assert.equal(await context.window.fushiPopupMineFirstEntry(), true);
+  await flush();
+  assert.equal(mined.length, 1);
+  assert.equal(mined[0].popupSelectionText, '今の選択',
+    'shortcut mining must carry what is selected right now');
+}
+
+Promise.all([
+  testNewLookupDropsPreviousSelectionSnapshot(),
+  testAdjustContextButtonSnapshotsSelectionForConfirm(),
+  testAdvancedMiningButtonOpensHostDialog(),
+  testAdvancedMiningButtonGating(),
+  testShortcutMineUsesLiveSelection(),
+  testShortcutMineCapturesLiveSelection(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
 // ── 收藏夹一键制卡：fushiPopupBuildMinePayloadFor ─────────────────────────────
 // 批量制卡要的是「与手动点 + 逐字段相同的 payload」，但不能点按钮、不能走 mineEntry
 // 桥（落卡由 Dart 批量流程自己做）。这里钉住：选中的词条下标、payload 与该词条一致、
@@ -3506,3 +3852,93 @@ Promise.all([
   testFavoriteBatchPayloadPicksExactHeadword(),
   testFavoriteBatchPayloadWithoutEntriesIsNull(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
+
+// ── Fushi 复习（SRS）词状态标记：createSrsStatusBadge ─────────────────────────────
+// 宿主注入 __fushiSrsEnabled=false（复习模块关）时既不渲染标记、也不发 srsTermStatus
+// 桥（零开销）；开着时按宿主回包（文案由宿主本地化）画标记，点它把 cardId/noteId 交给
+// srsOpenCard；SRS 里没有这个词（回 null）时标记保持隐藏。与 Anki 的 ✓ 互不影响。
+function srsEntry() {
+  return {
+    expression: '刀', reading: '刀', matched: '刀',
+    frequencies: [], pitches: [], rules: [],
+  };
+}
+
+function findByClassDeep(node, name) {
+  const has = (n) => (n.className || '').split(/\s+/).includes(name) ||
+    (n.classList && n.classList.contains(name));
+  if (has(node)) return node;
+  for (const child of node.children ?? []) {
+    const found = findByClassDeep(child, name);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function testSrsBadgeAbsentAndSilentWhenModuleOff() {
+  const context = loadPopup();
+  context.window.__fushiSrsEnabled = false;
+  const calls = [];
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    calls.push(name);
+    return Promise.resolve(name === 'duplicateCheck' ? false : null);
+  };
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  assert.equal(findByClassDeep(header, 'srs-status-badge'), null,
+    'module off: no SRS badge is rendered');
+  assert.ok(!calls.includes('srsTermStatus'),
+    'module off: the srsTermStatus bridge is never called');
+}
+
+async function testSrsBadgeShowsHostLabelAndOpensCard() {
+  const context = loadPopup();
+  context.window.__fushiSrsEnabled = true;
+  const opened = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'srsTermStatus') {
+      return Promise.resolve({
+        queue: 'review', dueLabel: '复习中 · 3天后', suspended: false,
+        cardId: 'c1', noteId: 'n1', cardCount: 1, tooltip: 'Open',
+      });
+    }
+    if (name === 'srsOpenCard') {
+      opened.push(payload);
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(null);
+  };
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  const badge = findByClassDeep(header, 'srs-status-badge');
+  assert.ok(badge, 'module on: SRS badge exists');
+  assert.ok(!badge.classList.contains('srs-status-hidden'), 'status known -> visible');
+  assert.ok(badge.classList.contains('srs-status-review'), 'queue drives the color class');
+  assert.equal(badge.textContent, '复习中 · 3天后', 'host-localized label is shown verbatim');
+  const mine = findByClassDeep(header, 'mine-button');
+  assert.equal(mine.textContent, '✓', 'Anki ✓ still painted independently');
+  await badge.onclick({ stopPropagation() {} });
+  await flush();
+  assert.deepEqual(JSON.parse(JSON.stringify(opened)), [{ cardId: 'c1', noteId: 'n1' }]);
+}
+
+async function testSrsBadgeHiddenWhenWordNotInSrs() {
+  const context = loadPopup();
+  context.window.__fushiSrsEnabled = true;
+  context.window.flutter_inappwebview.callHandler = (name) =>
+    Promise.resolve(name === 'duplicateCheck' ? false : null);
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  const badge = findByClassDeep(header, 'srs-status-badge');
+  assert.ok(badge.classList.contains('srs-status-hidden'),
+    'no SRS card -> badge stays hidden');
+  assert.equal(badge.textContent, '');
+}
+
+Promise.all([
+  testSrsBadgeAbsentAndSilentWhenModuleOff(),
+  testSrsBadgeShowsHostLabelAndOpensCard(),
+  testSrsBadgeHiddenWhenWordNotInSrs(),
+]).then(() => console.log('SRS badge tests passed'))
+  .catch((error) => { console.error(error); process.exitCode = 1; });

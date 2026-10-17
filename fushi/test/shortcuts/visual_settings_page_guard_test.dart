@@ -18,6 +18,8 @@ void main() {
     'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart',
     'lib/src/pages/implementations/shortcut_settings/'
         'binding_edit_dialog.part.dart',
+    'lib/src/pages/implementations/shortcut_settings/'
+        'shortcut_browser.part.dart',
     'lib/src/shortcuts/shortcut_labels.dart',
   ].map((String path) => File(path).readAsStringSync()).join('\n');
 
@@ -81,15 +83,20 @@ void main() {
   });
 
   test('TODO-1050b: the list view renders mouse bindings (not data-only)', () {
-    // _ActionTile must iterate bindings.mouseBindings so the mouse channel is
-    // visible in the list, not silently passed through.
+    // 2026-10 重设计：行只列当前输入设备的绑定（shortcutBindingsForDevice），
+    // 鼠标设备必须同时覆盖鼠标按键与滚轮两条通道，否则鼠标绑定又会在列表里隐身。
+    expect(src.contains('shortcutBindingsForDevice(w.bindings, w.device)'),
+        isTrue,
+        reason: 'action tile must render the bindings of the selected device');
     expect(
-      RegExp(r'for\s*\(\s*final\s+MouseBinding\s+\w+\s+in\s+'
-              r'bindings\.mouseBindings')
+      RegExp(r'ShortcutInputDevice\.mouse\s*=>\s*const\s*<ShortcutChannel>\{'
+              r'\s*ShortcutChannel\.mouse,\s*ShortcutChannel\.wheel,')
           .hasMatch(src),
       isTrue,
-      reason: 'action tile must render each mouse binding',
+      reason: 'the mouse device must cover the mouse and wheel channels',
     );
+    expect(src.contains('final MouseBinding b => _InputIconChip('), isTrue,
+        reason: 'mouse bindings must render as icon keycaps');
   });
 
   test('TODO-1060: empty keycaps route to the empty-key assignment handler',

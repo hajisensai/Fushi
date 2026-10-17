@@ -224,7 +224,7 @@ void main() {
 
     setUp(() async {
       directory =
-          await Directory.systemTemp.createTemp('hibiki-subscription-test-');
+          await Directory.systemTemp.createTemp('fushi-subscription-test-');
       subscriptionStore = AnimeDownloadSubscriptionStore(baseDir: directory);
       planStore = AnimeDownloadPlanStore(baseDir: directory);
     });

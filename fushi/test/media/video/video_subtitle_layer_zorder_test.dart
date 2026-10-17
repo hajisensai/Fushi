@@ -1,7 +1,7 @@
 // BUG-2539：ASS `Layer` 曾只用作分组键后缀、不参与绘制 z 序——各组按活跃集发现顺序
 // （cue 文件序）进 Stack，谁靠后谁在上。招牌（Layer 0 手写字）排在对白（Layer 1）之后
 // 就盖住对白；libass 是先按 Layer 升序、同层再按事件序。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';

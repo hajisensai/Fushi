@@ -1,0 +1,19 @@
+## BUG-2998 · 查词同词条展开收起辞典后不按当前空间重新分列
+- **报告**：2026-10-06（用户：同一词条展开、收起其他辞典后，应像 Hoshi 一样按当前空间重新优化排列，而不是仅首次布局；随后要求先查 Git 历史、复用已有实现。）
+- **真实性**：✅ 当前行为与本次明确需求不符，真实生产脚本已复现。`fushi/assets/popup/popup.js:6122` 的 `canReuse` 只检查列数与既有列号，忽略本次量到的卡片高度；`ResizeObserver` 虽然正确触发重排，展开/收起后仍只更新旧列内的纵向位置。
+  - 两列、同词条四本辞典，初始高度 `[100,40,40,40]` 的列号为 `[0,1,1,1]`；展开第二本至 400 后，修前仍为 `[0,1,1,1]`，当前空间对应的最短列分配应是 `[0,1,0,0]`。没有新建第二套布局函数或靠强制重新渲染词条解决。
+  - **历史依据**：`331ae81cbc2`（等价提交 `293c2e398a6`，2026-07-10）已经引入每次按实测高度最短列打包的 masonry，并通过 `ResizeObserver` 处理辞典开关。当天 `f64881e8031`（等价提交 `750794c8f42`）按当时“只上下动、列不左右跳”的需求加入固定列复用；`3c71c13575f` 后续批处理优化保留了该策略。本次按现在的需求恢复先前自适应行为，不把 7 月的产品选择描述成无依据的实现错误。
+- **[x] ① 已修复** — 在原 `canReuse` 条件中增加“每张卡片的上一轮实测高度等于本轮高度”。真实尺寸变化时复用原最短列算法重新分列；尺寸未变时保持现有列。保留分相读写、脏词条范围、合帧调度、同高通知过滤和单列 CSS 回落，三份 `popup.js` 镜像同步。修复提交 `1b5b56d64a0`。独立修复分支 `codex/popup-masonry-reflow-1006` 基于上游 `develop` 的 `64ab2cd7600`，不包含样式迁移；依仓库规则只将 build number 加一至 `2.9.1+1352`。
+- **[x] ② 已加自动化测试** — 扩展既有 `fushi/test/pages/popup_render_tail_batching_test.js` 第⑧组，执行完整生产 `dict-media.js`、`popup.js`、`createGlossarySection`、`ResizeObserver` 回调、RAF 和布局函数；最小 DOM 仅提供测量值。
+  - 初次布局 → 展开第二本 → 重新分列、容器高 400 → 收起 → 恢复紧密布局、容器高 132。
+  - 五轮相同高度通知不排新帧，显式重新测量位置不变；重复变化通知合为一帧，另一词条不重新测量。
+  - 原 `<details>` 节点身份、顺序、其他辞典展开状态与 `scrollTop` 保留；240px 窄视口回落单列，继续展开保持自然 CSS 布局。
+  - 原 Dart 包装 `popup_render_tail_batching_test.dart` 会执行新增行为回归；`popup_dict_masonry_guard_test.dart` 更新旧固定列契约为“尺寸未变才复用”。Node 24.19.0：修前 exit 1（实际列号仍 `[0,1,1,1]`），修后 exit 0。
+  - 相邻 Node：自动展开行数、字体就绪门、词条重排、触屏有效列数全部 exit 0；`sync-mirrors.mjs --check` exit 0。
+  - 独立上游基线验证：将 `64ab2cd7600` 原 `popup.js` 喂给新增 Node 用例，exit 1（列号仍 `[0,1,1,1]`）；本分支脚本 exit 0。Flutter 3.44.0 经 `tool/heavy.dart` 执行上述两个 Dart 文件，实际 12/12 通过、exit 0；独立分支另复跑自动展开、字体就绪和词条排序 Node 测试及镜像检查，均通过。
+  - 同一 Flutter 3.44.0 SDK 经租约执行完整 `flutter analyze --no-pub`：`No issues found`，exit 0。
+  - **真实 Chrome 154 复测**：独立 PR 工作区原 `popup.html` / CSS / JS，经生产 `renderPopup` 注入十个合成词条；760×650 视口展开第二本辞典，列号 `[0,1,1,1] → [0,1,0,0]`，容器高度 `177 → 1038 → 177`，收起后恢复原列。八轮双 RAF 测量 bounds 不变；滚动至 96 后对第二词条展开/收起，`scrollTop=96` 与词条标题顶边 `156.15625` 均不变，原 DOM 引用保持。320×650 视口为 300px 单列，容器高度 `303 → 1563 → 303`。十项断言全部通过，控制台零 error / warning，截图已查看。
+- **备注**：
+  - 原始红/绿日志、退出码、Node 版本与相邻检查保存在审查工作区 `.codex-test/review-2026-10-06-round8/popup-disclosure/`；独立分支复核日志保存在本机 `work/popup-pr-node-{red,green}.log` 与 `work/popup-pr-target-tests.log`，不入库。
+  - 独立基线浏览器证据在本机 `output/playwright/bug2998-upstream/`（`validation.json`、各阶段几何 JSON、截图和可复跑夹具，不入库）；被测 `popup.js` SHA256 为 `BA26D4D9641C3EE1641FC947BB01A4977B6D2C6694F9C91262D9B5FF1FD62A52`。
+  - 本次不改词典偏好、数据仓库、HTML 外观、DOM 顺序或滚动调用。最小 DOM 测试与真实 Chrome 验证分开记录；Flutter 原生宿主、Android WebView 和 Safari 的设备复测尚未执行，不能由桌面 Chrome 结果代替。

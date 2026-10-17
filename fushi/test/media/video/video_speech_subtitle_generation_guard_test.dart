@@ -40,9 +40,20 @@ void main() {
     expect(preparation, contains('audioStreamIndex: audio.audioStreamIndex'));
     expect(preparation, contains('audioStreamCount: audio.audioStreamCount'));
     expect(preparation, contains('audioPaths: <String>[audioPath]'));
+    // Video is mixed audio (BGM / effects): the sheet must get a mixedAudio
+    // service. Without it the shared default is the audiobook (cleanSpeech)
+    // service — Japanese then runs ReazonSpeech behind an energy gate instead of
+    // Parakeet with sliding windows (8 anime episodes: kana CER 20.7% vs 13.9%).
+    expect(preparation, contains('service: createAsrTranscriptionService('));
+    expect(preparation, contains('audioProfile: AsrAudioProfile.mixedAudio'));
     // Both generating text and correcting existing text use that same track.
+    // The call may forward the caller's `transcribe:` override (desktop CLI runs
+    // the same transcription service headless) — the track preparation above is
+    // still the single shared path, so match the call with optional named args.
     expect(
-      '_transcribeVideoSpeech(controller)'.allMatches(source),
+      RegExp(
+        r'_transcribeVideoSpeech\(\s*controller\s*(?:,\s*transcribe:\s*transcribe\s*,?\s*)?\)',
+      ).allMatches(source),
       hasLength(2),
     );
     final String retiming = source

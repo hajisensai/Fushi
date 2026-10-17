@@ -5,7 +5,7 @@ import 'package:fushi/src/startup/test_environment.dart';
 
 void main() {
   test('fushiTestDirectory resolves children under an explicit test root', () {
-    final Directory temp = Directory.systemTemp.createTempSync('hibiki-root-');
+    final Directory temp = Directory.systemTemp.createTempSync('fushi-root-');
     addTearDown(() => temp.deleteSync(recursive: true));
 
     final Directory? docs = fushiTestDirectory(
@@ -22,9 +22,9 @@ void main() {
 
   test('dart-define root wins over process environment', () {
     final Directory envRoot =
-        Directory.systemTemp.createTempSync('hibiki-env-');
+        Directory.systemTemp.createTempSync('fushi-env-');
     final Directory defineRoot =
-        Directory.systemTemp.createTempSync('hibiki-define-');
+        Directory.systemTemp.createTempSync('fushi-define-');
     addTearDown(() => envRoot.deleteSync(recursive: true));
     addTearDown(() => defineRoot.deleteSync(recursive: true));
 

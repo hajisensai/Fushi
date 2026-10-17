@@ -41,7 +41,7 @@ class FushiPingResult {
 /// failure reason 共用同一套词汇）。
 ///
 /// 分型存在的唯一理由：旧实现把「证书指纹对不上」（安全事件）、「对端超时」、
-/// 「端口没人监听」和「那台机器不是 Hibiki」**全部**压成同一个 `null`，UI 只能
+/// 「端口没人监听」和「那台机器不是 Fushi」**全部**压成同一个 `null`，UI 只能
 /// 挑一句最含糊的话说，用户被引向完全错误的排查方向。
 enum FushiPingFailure {
   /// 证书类失败：钉扎指纹不符 / 握手被对端拒绝。**安全事件**，绝不可与
@@ -54,7 +54,7 @@ enum FushiPingFailure {
   /// 连不上：端口无监听、被防火墙拦、或明文请求打在 TLS-only 端口上被 reset。
   unreachable,
 
-  /// 连上了、也应答了，但对端不是 Hibiki（非 200 / 非 JSON / `app != 'fushi'`）。
+  /// 连上了、也应答了，但对端不是 Fushi（非 200 / 非 JSON / `app != 'fushi'`）。
   notFushi,
 }
 

@@ -124,10 +124,13 @@ String _declarations(DictStyleProps props) {
     decls.add('font-size: ${_num(props.fontScale!)}em !important');
   }
   if (props.cornerRadius != null) {
+    // 只写 border-radius，**不改 display**。旧实现顺手塞了一条
+    // `display: inline-block !important`（理由是「inline 元素没有盒子、圆角无效」——
+    // 这个前提是错的：行内盒的背景 / 边框照样按 border-radius 画圆角）。它把词条卡
+    // `.entry`、释义正文 `.glossary-content`、词典名行这些块级部位全部压成收缩包裹的
+    // 行内块：多列卡片里释义宽度塌成一两个字，正文被挤成竖排一字一行（用户 10-09
+    // 「词典样式开圆角后样式改炸」两张截图）。圆角是纯外观属性，不该动布局。
     decls.add('border-radius: ${_num(props.cornerRadius!)}px !important');
-    // 圆角只对 inline 元素（词头/标签）无效——它们没有盒子。给个最小 padding
-    // 让背景色+圆角在 inline 上也看得见，否则用户设了圆角却「没反应」。
-    decls.add('display: inline-block !important');
   }
   return decls.join('; ');
 }

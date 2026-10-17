@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:path/path.dart' as p;
 
@@ -230,7 +231,7 @@ Future<void> extractExternalReaderBackupEntry({
     File(outPath).parent.createSync(recursive: true);
     final OutputFileStream output = OutputFileStream(outPath);
     try {
-      match.writeContent(output);
+      writeZipEntryStreaming(match, output);
     } finally {
       output.closeSync();
     }

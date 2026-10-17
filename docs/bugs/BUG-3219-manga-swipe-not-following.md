@@ -1,0 +1,6 @@
+## BUG-3219 · 漫画横滑翻页不跟手：拖动中页面不动，松手才翻
+- **报告**：2026-10-09（用户：反馈处理台 qMRtA75fhO，Android vivo V2339FA，2.10.0-debug.18353，对比 Manatan「翻页手感有点差，滑动翻页不跟手」）
+- **真实性**：✅ 真 bug。spread（横向翻页）模式的手势机只在松手时判 swipe：`fushi/lib/src/media/manga/manga_overlay_html.dart`（upstream/develop）pointermove 监听 `:1392` 只喂 `_panBy`（放大态平移，ZOOM<=1 时是 no-op），`_end` `:1760` 松手才 `callHandler('onMangaTurn')`——拖动全程 `#manga-root` 的 translateX 一像素不动，拖 N px 的跟随误差恒为 N，松手后才从静止状态播翻页动画。另：首屏 ±1 跨页之外的邻页一直是 `loading=lazy`，翻过去后新的邻页不预解码。
+- **[x] ① 已修复** — 横向锁定（8px slop）后 `_swipeMove` 逐帧把 translateX 设为「落位值 + 手指横移 − 放大态平移吃掉的部分」，拖动中关 transition、挂 will-change；松手：过阈值 → 还原 transition 交给 Dart 翻页，Dart 处理完答复（`onMangaTurn` 处理器改为返回 Future），没换页（到头 / 分镜 / 换章中）才回弹；没过阈值或松手瞬时速度反向 ≥900px/s → 立即回弹；pointercancel / 第二指落下也回弹；宽页切半态不跟手。`_warmNeighbours` 每次落位把 ±2 跨页提成 eager 并 `img.decode()`。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_swipe_follow_js_test.dart`（node 跑生成文档里真实的 `_translateToSpread/_panBy/_start/_swipeMove/_swipeRelease/_end`：拖 240px/20 步逐步测跟随误差 = 0px；改前同一路径 translateX 不动、误差 = 拖动距离；另测过阈值交 Dart、Dart 未换页回弹、未过阈值回弹、反向甩取消、纵向不跟、放大态只跟余量、切半不跟）。
+- **备注**：Android 真机未连（`adb devices` 为空），本轮未在真机 / 模拟器上测手感，属 implemented_unverified；WebView 内跟手的帧率需真机复测。

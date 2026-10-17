@@ -1,9 +1,11 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/creator.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/creator/mining_tts_fallback.dart'
+    show WordAudioUnavailable, reportWordAudioUnavailable;
 import 'package:fushi/utils.dart';
 
 /// A special kind of field that has a special widget at the top of the creator.
@@ -30,9 +32,7 @@ abstract class AudioExportField extends Field with ExportFieldSearch {
 
   /// Clears this field's data. The state refresh afterwards is not performed
   /// here and should be performed by the invocation of the clear field button.
-  void clearFieldState({
-    required CreatorModel creatorModel,
-  }) {
+  void clearFieldState({required CreatorModel creatorModel}) {
     _exportFile = null;
     currentSearchTermInternal = null;
     _autoCannotOverride = false;
@@ -82,16 +82,18 @@ abstract class AudioExportField extends Field with ExportFieldSearch {
 
     if (creatorModel.scrollController.hasClients &&
         cause == EnhancementTriggerCause.manual) {
-      creatorModel.scrollController
-          .jumpTo(creatorModel.scrollController.position.minScrollExtent);
+      creatorModel.scrollController.jumpTo(
+        creatorModel.scrollController.position.minScrollExtent,
+      );
     }
 
     /// Show loading state.
     setSearching(
-        appModel: appModel,
-        creatorModel: creatorModel,
-        isSearching: true,
-        searchTerm: searchTerm);
+      appModel: appModel,
+      creatorModel: creatorModel,
+      isSearching: true,
+      searchTerm: searchTerm,
+    );
     try {
       File? file = await generateAudio();
 
@@ -113,6 +115,15 @@ abstract class AudioExportField extends Field with ExportFieldSearch {
         }
       }
 
+      _autoCannotOverride = newAutoCannotOverride;
+    } on WordAudioUnavailable catch (e, stack) {
+      // 选中的 TTS 兜底声音合成失败（服务没起 / 网络 / 凭据……）：手动触发带原因
+      // 提示，自动触发只记日志。与「没找到」同样结算覆盖锁。
+      reportWordAudioUnavailable(
+        e,
+        stack,
+        manual: cause == EnhancementTriggerCause.manual,
+      );
       _autoCannotOverride = newAutoCannotOverride;
     } finally {
       /// Finish loading state.

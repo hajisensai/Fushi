@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
+import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -25,9 +25,7 @@ Widget buildSettingsDetailShell({
   required SettingsContext settingsContext,
   required SettingsDestination destination,
 }) {
-  final SettingsRenderer renderer = isCupertinoPlatform(context)
-      ? const CupertinoSettingsRenderer()
-      : const MaterialSettingsRenderer();
+  final SettingsRenderer renderer = resolveSettingsRenderer(context);
   return renderer.buildDetailPage(
     settingsContext: settingsContext,
     destination: destination,
@@ -57,36 +55,10 @@ class SettingsDetailPage extends BasePage {
 
 class _SettingsDetailPageState extends BasePageState<SettingsDetailPage>
     with SettingsContextHost<SettingsDetailPage> {
-  @override
-  void initState() {
-    super.initState();
-    ErrorLogService.instance.addListener(_onLogChanged);
-    DebugLogService.instance.addListener(_onLogChanged);
-    // 游戏内查词准入是 hook **异步**报上来的：settingsContext.refresh 只由交互驱动，
-    // 事件走不到它。不听这一条，用户开着设置页启动游戏时那一行永远停在旧状态。
-    GalIngameLookupController.instance.admission.addListener(_onLogChanged);
-    // 推荐包下载同理（BUG-2097）：它跑在 app 级 controller 里，用户可能是在设置页
-    // 开着的时候点了下载、或者下载在后台跑完了——不听这一条，「推荐包」那一行的
-    // 显隐就停在进页面那一刻的旧状态。
-    appModelNoUpdate.recommendedPackDownloadController.stage.addListener(
-      _onLogChanged,
-    );
-  }
-
-  @override
-  void dispose() {
-    ErrorLogService.instance.removeListener(_onLogChanged);
-    DebugLogService.instance.removeListener(_onLogChanged);
-    GalIngameLookupController.instance.admission.removeListener(_onLogChanged);
-    appModelNoUpdate.recommendedPackDownloadController.stage.removeListener(
-      _onLogChanged,
-    );
-    super.dispose();
-  }
-
-  void _onLogChanged() {
-    if (mounted) setState(() {});
-  }
+  // 错误 / 调试日志、游戏内查词准入（hook 异步上报）、推荐包下载阶段（BUG-2097）
+  // 这些不经 settingsContext.refresh 的外部事件源，由读它们的分组自己订阅
+  // （SettingsSection.liveListenable），宿主页不再整页 setState——此前调试日志
+  // 开着时每条 debugPrint 都会把整页设置行重建一遍。
 
   /// 「不可见就退回去」只调度一次：build 每帧都会重跑，不设这个闸门就会往
   /// 队列里堆一串 pop，把上层页面一并弹掉。
@@ -118,6 +90,13 @@ class _SettingsDetailPageState extends BasePageState<SettingsDetailPage>
       _popInvisibleDestination();
       // 本帧还得返回点什么；pop 在帧末执行，用户看不到这一帧的空白。
       return const SizedBox.shrink();
+    }
+    // 「玻璃」设计系统：iOS / macOS 设置详情（见 GlassSettingsRenderer）。
+    if (isGlassDesign(context) && !isCupertinoPlatform(context)) {
+      return const GlassSettingsRenderer().buildDetailPage(
+        settingsContext: settingsContext,
+        destination: destination,
+      );
     }
     if (isCupertinoPlatform(context)) {
       return const CupertinoSettingsRenderer().buildDetailPage(

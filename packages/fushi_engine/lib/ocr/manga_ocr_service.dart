@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:fushi_engine/ocr/ocr_inference.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart';
 
 /// 漫画整卷 OCR 服务的稳定接口（设计 docs/specs/2026-07-24-manga-ocr-design.md §5.3 生产者 B）。
 ///
@@ -109,22 +111,48 @@ abstract interface class MangaOcrPageService {
   ///
   /// [onAcceleration] 在会话建成后回报一次实际生效的执行后端与降级原因
   /// （BUG-1163）。
+  ///
+  /// [textImagesOnly] 为真时会话只做文字图识别（[MangaOcrTextImageSession]，
+  /// 字幕位图整轨识别用）：不加载漫画检测器（RT-DETR）、不建补检，省下内存与
+  /// 建会话时间，便于并行开几个。这种会话上的 [MangaOcrPageSession.ocrPage]
+  /// 以 [StateError] 失败。
   Future<MangaOcrPageSession> openPageSession({
     required String imageDirPath,
     void Function(MangaOcrAcceleration acceleration)? onAcceleration,
+    bool textImagesOnly = false,
   });
 }
 
 /// 常驻的页级 OCR 会话：请求串行处理，推理会话在 [close] 前一直复用。
+///
+/// 生产实现同时实现 [MangaOcrTextImageSession]；调用方用 `is` 判断可选能力。
 abstract interface class MangaOcrPageSession {
   /// 识别 [relativeUrl]（相对会话图片目录的正斜杠路径）并写入逐页缓存，
   /// 返回缓存目录绝对路径（与 [MangaOcrPageService.resolvePageCacheDirPath]
-  /// 相同）。已有有效缓存时直接命中、不跑推理。会话关闭后以 [StateError] 失败。
+  /// 相同）。已有有效缓存时直接命中、不跑推理。会话关闭后以 [StateError] 失败；
+  /// 以 `textImagesOnly` 打开的会话上同样以 [StateError] 失败。
   Future<String> ocrPage(String relativeUrl);
 
   /// 关闭会话（幂等）：取消在跑页、让挂起请求失败，并释放 isolate 与 ORT 会话。
   /// 返回的 Future 在资源真正释放后完成。
   Future<void> close();
+}
+
+/// 页会话的可选能力：直接识别一张已裁好的文字图（字幕位图），跳过漫画检测器、补检、
+/// PNG 落盘与逐页缓存。整图当一个块交 RoutingOcrRecognizer（宽≥高 → PP 行检测 + 逐行识别；
+/// 竖排占多数 → 块识别器）。
+abstract interface class MangaOcrTextImageSession {
+  /// [rgba] 是 width*height*4 字节的 RGBA 像素（行优先）。返回整块识别结果
+  /// （text 为空 = 没读出字）。会话关闭 / 建会话失败时抛错（与 ocrPage 同语义）。
+  ///
+  /// 尺寸非正或 [rgba] 长度不等于 `width * height * 4` 时同步抛 [ArgumentError]。
+  /// 识别器只读 RGB、忽略 alpha：带透明的位图须先合成到底色上再交进来。
+  /// 结果里的坐标（行框）是这张图的像素坐标。
+  Future<OcrRecognition> recognizeTextImage(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+  });
 }
 
 /// 模型就绪状态。
@@ -135,7 +163,6 @@ class MangaOcrModelStatus {
     required this.diskBytes,
     required this.totalBytes,
     this.obtainedBytes = 0,
-    this.acceleratorMissingBytes = 0,
   });
 
   final bool detectorReady;
@@ -163,14 +190,7 @@ class MangaOcrModelStatus {
   /// Range 续传，再点就是接着下。能力早就在，缺的只是把它说出来。
   final int obtainedBytes;
 
-  /// 可选提速组件（经典 manga-ocr 的 KV cache decoder）还差多少字节没下；0 = 已装
-  /// 或本模型没有提速组件。不影响 [allReady]：缺了照样能识别，只是慢。
-  final int acceleratorMissingBytes;
-
   bool get allReady => detectorReady && recognizerReady;
-
-  /// 模型可用、但提速组件没装（设置页据此给「下载识别提速组件」）。
-  bool get acceleratorMissing => allReady && acceleratorMissingBytes > 0;
 
   /// 是否存在可续传的半成品（决定按钮显示「下载」还是「继续下载」）。
   bool get hasResumableDownload => !allReady && obtainedBytes > 0;
@@ -211,7 +231,6 @@ class MangaOcrAcceleration {
   const MangaOcrAcceleration({
     required this.detection,
     required this.recognition,
-    this.recognitionDecoder,
     this.degradeReasons = const <String>[],
   });
 
@@ -221,10 +240,6 @@ class MangaOcrAcceleration {
   /// 识别模型（encoder/decoder）实际生效的执行后端。
   final OcrExecutionProvider recognition;
 
-  /// Separate decoder backend for hybrid recognizers; null means the same
-  /// backend as [recognition].
-  final OcrExecutionProvider? recognitionDecoder;
-
   /// 非空表示发生过非预期降级，逐条给出原因（EP 拒绝码 / 探测异常）。
   final List<String> degradeReasons;
 
@@ -232,12 +247,9 @@ class MangaOcrAcceleration {
 
   /// 展示用短标签：两个模型同后端时只显示一个。
   String get label {
-    final String base = detection == recognition
+    return detection == recognition
         ? detection.name.toUpperCase()
         : '${detection.name.toUpperCase()}/${recognition.name.toUpperCase()}';
-    return recognitionDecoder == null || recognitionDecoder == recognition
-        ? base
-        : '$base+${recognitionDecoder!.name.toUpperCase()}';
   }
 
   @override

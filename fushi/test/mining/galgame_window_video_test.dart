@@ -9,6 +9,11 @@ import 'package:fushi/src/mining/window_capture_channel.dart';
 /// galgame「视频片段」封面：录制帧 → concat 计划 → ffmpeg 参数 → mp4 的纯函数与
 /// fail-open 契约。ffmpeg 用假后端（真编码只能在带 libx264 的桌面 ffmpeg 上验）。
 class _FakeFfmpeg implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   _FakeFfmpeg({
     this.probeOutput = '',
     this.encodeReturnCode = 0,

@@ -44,3 +44,10 @@ String torrentLibraryName() {
   if (Platform.isMacOS) return 'libfushi_torrent_ffi.dylib';
   return 'libfushi_torrent_ffi.so';
 }
+
+/// 各平台词典引擎（fushidicts）裸库名（与 fushi_dictionary 的 FFI 绑定同）。
+String fushiDictsLibraryName() {
+  if (Platform.isWindows) return 'fushidicts_ffi.dll';
+  if (Platform.isMacOS) return 'libfushidicts_ffi.dylib';
+  return 'libfushidicts_ffi.so';
+}

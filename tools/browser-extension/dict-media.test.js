@@ -95,6 +95,22 @@ test('applyFushiPopupCss 对老 app 的缺字段响应归零，绝不留 undefin
   assert.strictEqual(JSON.stringify(ctx.window.customDictCSS), '{}');
 });
 
+test('applyFushiPopupCss 把 app 的「统一词典样式」落到 popup.js 读的全局上（与 app 内弹窗同一开关）', () => {
+  const ctx = loadCtx();
+  ctx.applyFushiPopupCss({ dictionaryUnifiedStyle: true });
+  assert.strictEqual(ctx.window.__fushiDictUnifiedStyle, true, 'app 开着 -> 扩展弹窗统一');
+  ctx.applyFushiPopupCss({ dictionaryUnifiedStyle: false });
+  assert.strictEqual(ctx.window.__fushiDictUnifiedStyle, false, 'app 关掉 -> 下次查词即关');
+});
+
+test('applyFushiPopupCss：响应没带「统一词典样式」（旧 app / 未接线）一律按关，不沿用上次的值', () => {
+  const ctx = loadCtx({ window: { __fushiDictUnifiedStyle: true } });
+  ctx.applyFushiPopupCss({ type: 'dictionaryResult' });
+  assert.strictEqual(ctx.window.__fushiDictUnifiedStyle, false);
+  ctx.applyFushiPopupCss({ dictionaryUnifiedStyle: 'true' });
+  assert.strictEqual(ctx.window.__fushiDictUnifiedStyle, false, '只认布尔 true');
+});
+
 test('扩展环境下词条里的 <link> 样式表降级成无 token 占位（dictmedia:// 在真浏览器是死链）', () => {
   const ctx = loadCtx({ window: { __fushiDictMedia: { base: 'http://127.0.0.1:19633', token: 'secret-tok' } } });
   const out = ctx.rewriteDictLinks('<link rel="stylesheet" href="oaldpe.css">', 'OALDPE');
@@ -278,6 +294,29 @@ test('词典字体：媒体配置晚到时补取；用户停用字体后撤掉�
   env.ctx.applyFushiPopupCss({ dictionaryFontCss: '', dictionaryFontFaces: [] });
   assert.strictEqual(env.styles.get('fushi-dict-font'), undefined);
   assert.deepStrictEqual(env.deleted, env.added);
+});
+
+test('词典字体：同一家族的常规 + 粗体文件各带真实字重注册，非法字重值不进描述符', async () => {
+  const env = fontEnv();
+  env.ctx.applyFushiPopupCss({
+    dictionaryFontCss: '',
+    dictionaryFontFaces: [
+      { family: 'Klee One', src: '/api/extension/fonts/dictionary?path=R&v=1', format: 'truetype', weight: '400' },
+      { family: 'Klee One', src: '/api/extension/fonts/dictionary?path=SB&v=1', format: 'truetype', weight: '600' },
+      { family: 'Var', src: '/api/extension/fonts/dictionary?path=V&v=1', format: 'truetype', weight: '100 900' },
+      { family: 'Old', src: '/api/extension/fonts/dictionary?path=O&v=1', format: 'truetype' },
+      { family: 'Evil', src: '/api/extension/fonts/dictionary?path=E&v=1', format: 'truetype', weight: 'bold; x' },
+    ],
+  });
+  await flush();
+  const weights = env.added.map((f) => [f.family, f.descriptors.weight]);
+  assert.deepStrictEqual(weights, [
+    ['Klee One', '400'],
+    ['Klee One', '600'],
+    ['Var', '100 900'],
+    ['Old', undefined],
+    ['Evil', undefined],
+  ]);
 });
 
 test('词典字体：只接受 app 词典字体端点的相对路径，拒绝外部 URL', () => {

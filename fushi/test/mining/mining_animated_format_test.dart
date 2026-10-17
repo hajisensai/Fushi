@@ -655,6 +655,11 @@ void main() {
 
 /// 恒失败的 ffmpeg 后端：模拟「捆绑的 ffmpeg 没有 libsvtav1 → Unknown encoder」。
 class _AlwaysFailingBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   const _AlwaysFailingBackend();
 
   @override

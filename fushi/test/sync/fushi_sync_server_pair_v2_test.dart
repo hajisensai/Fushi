@@ -24,7 +24,7 @@ void main() {
   }) async {
     approvalPinRequired = <bool>[];
     sessionResolvedCount = 0;
-    tempDir = Directory.systemTemp.createTempSync('hibiki_pair_v2_test');
+    tempDir = Directory.systemTemp.createTempSync('fushi_pair_v2_test');
     server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,
@@ -319,7 +319,7 @@ void main() {
   });
 
   test('no approval UI yields pair v2 403 unavailable', () async {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_pair_v2_test');
+    tempDir = Directory.systemTemp.createTempSync('fushi_pair_v2_test');
     server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,

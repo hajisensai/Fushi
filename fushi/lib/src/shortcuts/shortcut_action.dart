@@ -331,6 +331,15 @@ enum ShortcutAction {
   homeTabPrev(ShortcutScope.home, 'home_tab_prev'),
   homeTabNext(ShortcutScope.home, 'home_tab_next'),
   homeFocusSearch(ShortcutScope.home, 'home_focus_search'),
+  // 库页（书架 / 漫画库 / 视频库 / 游戏库）页头搜索：展开单行页头的搜索栏
+  // （2026-10-14 用户拍板归入快捷键体系，此前在 fushi_header_search.dart 里写死
+  // Ctrl+F 与 `/`）。默认 Ctrl+F（macOS ⌘F）+ `/`；homeFocusSearch 同时让出
+  // Ctrl+F 改为 Ctrl+K（v14 迁移）。执行体不经 home 页的 _executeShortcutAction：
+  // 库页外壳的 FushiHeaderSearchKeys 挂在 home 键事件节点之下，先读本动作的绑定
+  // 命中即展开；库页之外 home 解析到它时返回 ignored 照常冒泡。必须声明在
+  // homeFocusSearch **之后**：老用户若把两者绑成同一个键，库页之外 resolve 按
+  // 声明序先命中 homeFocusSearch，跳查词照旧。
+  librarySearch(ShortcutScope.home, 'library_search'),
 
   // Universal —— 全 app 唯一的「返回上一级 / 退出当前界面」。
   //
@@ -471,6 +480,22 @@ enum ShortcutAction {
   // 表截获（reader caret 同款contextual 路由），见 video_fushi/subtitle_caret.part.dart。
   videoEnterCaret(ShortcutScope.video, 'video_enter_caret'),
 
+  // 暂停句「整句扫词」（2026-10-09）：手柄查词的无光标形态，把「选谁」与「做什么」
+  // 正交——扫词只在数据层移动一个**词游标**（暂停句分词后的词序列下标），每停一词
+  // 就复用点击查词链路弹/换同一张浮层；动词（翻词条 / 制卡 / 发音）全部交给既有
+  // dictionaryPopup 表，不新增任何模态。
+  //
+  // 与 videoEnterCaret 的关系是**互不依赖**：扫词不进 caret，故浮层的 X=制卡 /
+  // Y=发音在扫词中永远可达——进了 caret 就被 `_handleCaretGamepadButton` 的模态
+  // 路由吞掉（见 video_fushi/subtitle_caret.part.dart），这正是本动作存在的理由。
+  //
+  // 默认**空绑定**、由用户自配：video scope 内的手柄键已占满（B 另属 universal
+  // 的「返回上一级」），唯一空闲的 L3/R3 是摇杆按下键、易误触，且
+  // `video_gamepad_mapping_test` 明确断言它们保持空闲，故不设默认。二者是同一
+  // 件事的两个方向（上一词 / 下一词），句尾按用户要求**循环**回句首。
+  videoLookupNextWord(ShortcutScope.video, 'video_lookup_next_word'),
+  videoLookupPrevWord(ShortcutScope.video, 'video_lookup_prev_word'),
+
   // 字幕对轴/匹配快捷键（用户请求）：把埋在快速设置面板深处的「字幕调轴」直接搬到
   // 键盘。videoOpenSubtitleAlign 一键弹波形对轴放大视图（复用 SubtitleWaveformZoomView，
   // 与面板入口同一逻辑、零第二套状态）；videoSubtitleDelayIncrease/Decrease 像 mpv 的
@@ -555,7 +580,7 @@ enum ShortcutAction {
   // 修复「app 外查词快捷键没办法设置」。
   globalExternalLookup(ShortcutScope.globalExternal, 'global_external_lookup'),
 
-  // 用户请求：一个键把 Hibiki 主窗**唤到前台**并直接落在**查词页**上。
+  // 用户请求：一个键把 Fushi 主窗**唤到前台**并直接落在**查词页**上。
   //
   // 与上面的 globalExternalLookup 是两件不同的事，别合并：
   //   · globalExternalLookup —— 取当前前台程序的选中文本，在**无边框覆盖窗**里出

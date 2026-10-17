@@ -16,6 +16,42 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
+/// [FtpSyncBackend.listChildren] 逐个 MDTM 的文件数上限：超过就不取（每个文件一次往返）。
+const int kFtpListMdtmLimit = 50;
+
+/// MDTM 应答正文 → UTC 毫秒。
+///
+/// RFC 3659 §3：`213 YYYYMMDDHHMMSS[.sss]`，时间**一律 UTC**。[message] 可以带也可以不带
+/// 开头的 `213 `（ftpconnect 的 [FTPReply.message] 是整行）。格式不符或日期非法返回 null。
+int? ftpMdtmReplyToMs(String message) {
+  final RegExpMatch? m = _kMdtmReply.firstMatch(message.trim());
+  if (m == null) return null;
+  final String d = m.group(1)!;
+  final int year = int.parse(d.substring(0, 4));
+  final int month = int.parse(d.substring(4, 6));
+  final int day = int.parse(d.substring(6, 8));
+  final int hour = int.parse(d.substring(8, 10));
+  final int minute = int.parse(d.substring(10, 12));
+  final int second = int.parse(d.substring(12, 14));
+  final String frac = m.group(2) ?? '';
+  final int millis =
+      frac.isEmpty ? 0 : int.parse(frac.padRight(3, '0').substring(0, 3));
+  final DateTime t =
+      DateTime.utc(year, month, day, hour, minute, second, millis);
+  // DateTime.utc 会把越界字段进位（13 月 → 次年 1 月），进位了说明原串非法。
+  if (t.year != year ||
+      t.month != month ||
+      t.day != day ||
+      t.hour != hour ||
+      t.minute != minute ||
+      t.second != second) {
+    return null;
+  }
+  return t.millisecondsSinceEpoch;
+}
+
+final RegExp _kMdtmReply = RegExp(r'^(?:213[ -])?\s*(\d{14})(?:\.(\d+))?$');
+
 class FtpSyncBackend extends SyncBackend
     with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
   FtpSyncBackend._();
@@ -82,7 +118,7 @@ class FtpSyncBackend extends SyncBackend
     final int seq = _tempCounter++;
     final int token = _tempRng.nextInt(1 << 32);
     final String name =
-        'hibiki_${prefix}_${seq}_${token.toRadixString(16)}$extension';
+        'fushi_${prefix}_${seq}_${token.toRadixString(16)}$extension';
     return File('${Directory.systemTemp.path}/$name');
   }
 
@@ -380,7 +416,7 @@ class FtpSyncBackend extends SyncBackend
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) =>
       _opLock.withLock(() async {
         await _ensureConnected();
@@ -390,7 +426,8 @@ class FtpSyncBackend extends SyncBackend
             file,
             sRemoteName: fileName,
             onProgress: onProgress != null
-                ? (percent, received, total) => onProgress(percent / 100.0)
+                ? (percent, received, total) =>
+                    onProgress(percent / 100.0, received)
                 : null,
           );
         } catch (e) {
@@ -405,7 +442,7 @@ class FtpSyncBackend extends SyncBackend
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) =>
       _opLock.withLock(() async {
         await _ensureConnected();
@@ -417,7 +454,8 @@ class FtpSyncBackend extends SyncBackend
             name,
             destination,
             onProgress: onProgress != null
-                ? (percent, received, total) => onProgress(percent / 100.0)
+                ? (percent, received, total) =>
+                    onProgress(percent / 100.0, received)
                 : null,
           );
         } catch (e) {
@@ -497,11 +535,25 @@ class FtpSyncBackend extends SyncBackend
         try {
           await _client!.changeDirectory(namespaceId);
           final entries = await _client!.listDirectoryContent();
+          // 修改时间不用 LIST / MLSD 的日期：LIST 对新文件只精确到分钟、时区不定，ftpconnect
+          // 对 MLSD 的 modify 也按本机时区解析。改为逐个 MDTM（RFC 3659：秒级、UTC）。
+          // 每个文件一次控制连接往返，目录大时跳过（调用方需要单个文件的时间时走
+          // [findAsset]，它总会 MDTM）。
+          final List<FTPEntry> files = entries
+              .where((FTPEntry e) => e.type == FTPEntryType.file)
+              .toList();
+          final Map<String, int?> mtimes = <String, int?>{};
+          if (files.length <= kFtpListMdtmLimit) {
+            for (final FTPEntry f in files) {
+              mtimes[f.name] = await _mdtmMs(f.name);
+            }
+          }
           return entries
               .map((e) => AssetEntry(
                     id: '$namespaceId/${e.name}',
                     name: e.name,
                     isFolder: e.type == FTPEntryType.dir,
+                    modifiedAt: mtimes[e.name],
                   ))
               .toList();
         } catch (e) {
@@ -511,6 +563,36 @@ class FtpSyncBackend extends SyncBackend
               isRetryable: true);
         }
       });
+
+  /// 与默认实现同样按名查找，另用 MDTM 补上服务器修改时间（SRS 同步的服务器时间）。
+  /// 先走已加锁的 [findContentFile]（经 super），再单独取锁发 MDTM：AsyncMutex 不可重入。
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) async {
+    final AssetEntry? found = await super.findAsset(namespaceId, name);
+    if (found == null) return null;
+    final int? mtime = await _opLock.withLock(() async {
+      await _ensureConnected();
+      try {
+        return await _mdtmMs(found.id);
+      } catch (e) {
+        if (e is SyncBackendError || e is SyncAuthError) rethrow;
+        _resetConnection();
+        throw SyncBackendError('Failed to read modification time: $e',
+            isRetryable: true);
+      }
+    });
+    return AssetEntry(id: found.id, name: found.name, modifiedAt: mtime);
+  }
+
+  /// 发 `MDTM <path>`（调用方须持 [_opLock] 且已连接）。服务器不支持 / 文件不存在
+  /// （非 213 应答）返回 null。
+  Future<int?> _mdtmMs(String path) async {
+    // FTPReply 不在 ftpconnect 的公开导出里，按推断类型取用（code/message 是无类型 getter）。
+    final reply = await _client!.sendCustomCommand('MDTM $path');
+    if (reply.code != 213) return null;
+    final Object? message = reply.message;
+    return message is String ? ftpMdtmReplyToMs(message) : null;
+  }
 
   @override
   Future<Object?> getJsonAsset(String assetId) {

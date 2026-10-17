@@ -58,6 +58,11 @@ String? _metadataFileArg(List<String> args) {
 /// 模拟移动端 ffmpeg-kit：日志一行都不回（`getOutput` 空），只按参数把逐帧行写进
 /// `file=` 指定的文件。
 class _FileOnlyBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   _FileOnlyBackend(this.lines);
 
   final String lines;
@@ -134,6 +139,11 @@ String? _realFfmpeg() {
 
 /// 按固定可执行文件跑的桌面 CLI 后端（不走进程级单例解析，免得依赖测试进程旁有无捆绑）。
 class _FixedCliBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   _FixedCliBackend(this.executable);
 
   final String executable;

@@ -9,7 +9,7 @@ import '../helpers/workspace_pubspec.dart';
 /// Root cause: upstream `media_kit_video` 2.0.1 binds the central
 /// `GestureDetector.onPanUpdate` (gated by `modifyVolumeOnScroll`) so holding
 /// the left mouse button and dragging vertically changes the volume by
-/// `e.delta.dy`. Hibiki users found this accidental — any click-and-drag on the
+/// `e.delta.dy`. Fushi users found this accidental — any click-and-drag on the
 /// video surface silently jumped the volume — so TODO-1097 removes the drag
 /// handler while keeping the scroll-wheel volume path and every tap gesture.
 ///
@@ -77,9 +77,17 @@ void main() {
 
   test('tap play/pause and double-press fullscreen gestures are preserved', () {
     // The sibling tap handlers on the same GestureDetector must stay intact.
+    // Since the touch-on-desktop patch that GestureDetector lives in
+    // MaterialDesktopTapRouter (material_desktop.dart passes onTapUp through).
+    final String tapLayer =
+        source +
+        File(
+          '../third_party/media_kit_video/lib/media_kit_video_controls/'
+          'src/controls/widgets/desktop_tap_router.dart',
+        ).readAsStringSync();
     for (final String handler in <String>['onTap', 'onTapDown', 'onTapUp']) {
       expect(
-        source.contains(RegExp('$handler\\s*:')),
+        tapLayer.contains(RegExp('$handler\\s*:')),
         isTrue,
         reason:
             'TODO-1097 only removes onPanUpdate; the $handler handler '

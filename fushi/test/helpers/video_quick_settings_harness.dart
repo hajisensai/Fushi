@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -19,6 +19,7 @@ import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/settings/settings_destination.dart' show VideoGroup;
 
 import 'test_platform_services.dart';
 
@@ -34,16 +35,18 @@ class VideoSheetHarness {
   final Directory _tmpDir;
 
   static Future<VideoSheetHarness> create() async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_video_sheet_');
+    final Directory tmpDir = Directory.systemTemp.createTempSync(
+      'fushi_video_sheet_',
+    );
     final AppModel appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo, databaseDirectory: tmpDir);
+        prefsRepo: prefsRepo,
+        databaseDirectory: tmpDir,
+      );
     return VideoSheetHarness._(db, appModel, tmpDir);
   }
 
@@ -55,6 +58,27 @@ class VideoSheetHarness {
   }
 }
 
+/// 编辑器测试的固定布局夹具：2026-10-05 M3E 重排之前的出厂布局（设置在右侧栏、
+/// 播放键在底栏正中、字幕轨在右上……）。这些测试钉的是**编辑器行为**（拖动 / 移除 /
+/// 溢出 / 触屏门控），不是出厂默认；用固定夹具，出厂默认再怎么调都不会让它们串位。
+/// 出厂默认本身由 video_control_layout_test / video_m3e_chrome_test 钉。
+final VideoControlLayout
+videoLegacyChromeLayoutFixture = VideoControlLayout.decode(
+  '{"version":3,"slots":{'
+  '"topLeft":["back"],"topCenter":["title"],'
+  '"topRight":["episodeList","screenshot","clipExport","subtitleTrack",'
+  '"audioTrack","chapterList"],'
+  '"screenLeft":["immersiveLock"],'
+  '"bottomCenter":["seekBackward","frameBackward","previousCue","playPause",'
+  '"nextCue","frameForward","seekForward"],'
+  '"bottomLeft":["positionIndicator"],'
+  '"bottomRight":["volume","fullscreen","speed","customAction1",'
+  '"customAction2","customAction3","customAction4"],'
+  '"screenRight":["subtitleList","favoriteSentence","settings"]},'
+  '"removed":["previousEpisode","nextEpisode","previousChapter",'
+  '"nextChapter","replayCue"]}',
+);
+
 /// 测试版能力槽：页面权威值（倍速/延迟/字幕样式/弹幕样式/控件布局）以可变字段模拟，
 /// preview/commit 回调先更新本地值再转发测试传入的探针回调——与真实视频页
 /// `_setSpeed` / `onSubtitleStylePreview` 等「更新 State → 面板 getter 重读」同构。
@@ -65,9 +89,9 @@ class TestVideoHostState {
     VideoSubtitleStyle? subtitleStyle,
     VideoDanmakuStyle? danmakuStyle,
     VideoControlLayout? controlLayout,
-  })  : subtitleStyle = subtitleStyle ?? VideoSubtitleStyle.defaults,
-        danmakuStyle = danmakuStyle ?? VideoDanmakuStyle.defaults,
-        controlLayout = controlLayout ?? VideoControlLayout.currentChrome;
+  }) : subtitleStyle = subtitleStyle ?? VideoSubtitleStyle.defaults,
+       danmakuStyle = danmakuStyle ?? VideoDanmakuStyle.defaults,
+       controlLayout = controlLayout ?? videoLegacyChromeLayoutFixture;
 
   int delayMs;
   double speed;
@@ -82,6 +106,9 @@ VideoQuickSettingsHost buildTestVideoHost({
   bool isTouchControls = false,
   void Function(int delayMs)? onSetDelay,
   Future<int?> Function()? onAutoAlign,
+  int? Function({required bool next})? onSnapDelayToCue,
+  VoidCallback? onEnterSubtitleDelayBar,
+  Listenable? subtitlePositionListenable,
   List<AudioCue> subtitleWaveformCues = const <AudioCue>[],
   int videoDurationMs = 60000,
   Future<List<double>> Function()? loadSubtitleWaveform,
@@ -89,7 +116,7 @@ VideoQuickSettingsHost buildTestVideoHost({
   void Function(double speed)? onSetSpeed,
   void Function(VideoSubtitleObscureMode mode)? onSetSubtitleObscureMode,
   void Function(VideoSubtitleObscureMode mode)?
-      onSetSecondarySubtitleObscureMode,
+  onSetSecondarySubtitleObscureMode,
   void Function(VideoSubtitleStyle style)? onSubtitleStylePreview,
   void Function(VideoSubtitleStyle style)? onSubtitleStyleCommit,
   void Function(bool value)? onRespectAssStyleChanged,
@@ -127,6 +154,9 @@ VideoQuickSettingsHost buildTestVideoHost({
       onSetDelay?.call(v);
     },
     onAutoAlign: onAutoAlign,
+    onSnapDelayToCue: onSnapDelayToCue,
+    onEnterSubtitleDelayBar: onEnterSubtitleDelayBar,
+    subtitlePositionListenable: subtitlePositionListenable,
     subtitleWaveformCues: subtitleWaveformCues,
     videoDurationMs: videoDurationMs,
     loadSubtitleWaveform: loadSubtitleWaveform,
@@ -166,13 +196,14 @@ VideoQuickSettingsHost buildTestVideoHost({
     onApplyShaders: (List<String> enabledNames) async {
       await onApplyShaders?.call(enabledNames);
     },
-    onSelectShaderTier: (
-      VideoShaderTier tier,
-      bool highQuality,
-      List<String> enabledNames,
-    ) async {
-      onSelectShaderTier?.call(tier, highQuality);
-    },
+    onSelectShaderTier:
+        (
+          VideoShaderTier tier,
+          bool highQuality,
+          List<String> enabledNames,
+        ) async {
+          onSelectShaderTier?.call(tier, highQuality);
+        },
     onMpvShaderDirChanged: (String dir) async {
       onMpvShaderDirChanged?.call(dir);
     },
@@ -223,10 +254,16 @@ VideoQuickSettingsHost buildTestVideoHost({
 }
 
 /// 把面板包进 ProviderScope + Consumer（拿真实 [WidgetRef]），供 pumpWidget。
+///
+/// [groups] 默认是全部分组：面板本身是通用组件（传几个分组就几个页签），内容类
+/// 测试借它在一个面板里走遍所有分组。生产上的分组配置（设置面板不含字幕 / 音频，
+/// 字幕 / 音频是单分组面板）由 [VideoQuickSettingsSheet.settingsGroups] 与专门的
+/// 用例钉住。
 Widget buildVideoSheetUnderTest({
   required VideoSheetHarness harness,
   required VideoQuickSettingsHost host,
   String? initialCategory,
+  List<VideoGroup> groups = VideoGroup.values,
 }) {
   return ProviderScope(
     child: Consumer(
@@ -236,6 +273,7 @@ Widget buildVideoSheetUnderTest({
           ref: ref,
           host: host,
           initialCategory: initialCategory,
+          groups: groups,
         );
       },
     ),

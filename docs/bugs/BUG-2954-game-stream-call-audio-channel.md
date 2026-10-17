@@ -1,0 +1,6 @@
+## BUG-2954 · 串流音频走通话通道而不是媒体通道
+- **报告**：2026-10-05（用户：「手机上串流音频到了通话音频通道，不是媒体音频通道」）
+- **真实性**：✅ 真 bug。Android 接收端从未配置 flutter_webrtc 的音频属性，插件按「通话」默认值建音频栈：播放 AudioTrack 在 `initialize` 构建 ADM 时用默认 USAGE_VOICE_COMMUNICATION（`flutter_webrtc-1.6.2+hotfix.3/android/.../MethodCallHandlerImpl.java:265-357`，只读 `androidAudioConfiguration` 这一次），远端音轨到达时 `PeerConnectionObserver.java:538` 调 `AudioSwitchManager.start()`，其默认 `audioMode = MODE_IN_COMMUNICATION`（`AudioSwitchManager.java:84`）。我们这边第一次碰插件的是 `fushi/lib/src/sync/game_stream_receiver.dart` 里 `renderer.initialize()`，它触发 `WebRTC.invokeMethod` 的隐式默认初始化。两半配置在插件里是分开的：ADM 只认 `initialize` 的选项，AudioSwitchManager 只认 `setAndroidAudioConfiguration`。
+- **[x] ① 已修复** — `prepareGameStreamMediaAudio()`（`game_stream_receiver.dart`）在 `connect()` 里先于 renderer 初始化执行：`WebRTC.initialize(androidAudioConfiguration: media)` 定 AudioTrack 用途，再 `Helper.setAndroidAudioConfiguration(media)` 定音频模式 normal / 媒体焦点。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/game_stream_receiver_test.dart`：「routes audio as media before the first WebRTC call」（钉住先于 renderer 初始化）、「media audio setup hands the plugin a media configuration」（mock `FlutterWebRTC.Method` 断言 usage=media / mode=normal / stream=music）。变异实测：去掉 `_prepareAudio()` 调用该用例变红。
+- **备注**：`setAndroidAudioConfiguration` 在非 Android 宿主上被插件自己跳过，单测只能咬住 `initialize` 那半；真机侧（音量键调的是媒体音量、不走听筒）未在本轮验证。

@@ -438,7 +438,7 @@ void main() {
     }) => FushiGameStreamLibraryHost(
       loadGames: () async => games,
       isLaunchEnabled: () => true,
-      service: service,
+      service: () => service,
       startStream:
           start ??
           ({

@@ -96,7 +96,12 @@ class _SectionSwipeNavigatorState<T extends Object>
     final int index = widget.sections.indexOf(widget.selected);
     if (index < 0) return;
     final int target = index + (forward ? 1 : -1);
-    if (target < 0 || target >= widget.sections.length) return;
+    if (target < 0 || target >= widget.sections.length) {
+      // 越过首 / 末分区：交给外层（首页外壳的横滑切模块）接力；没有外层就
+      // 什么都不发生。
+      SectionSwipeOverflowScope.maybeOf(context)?.call(forward: forward);
+      return;
+    }
     widget.onSelect(widget.sections[target]);
   }
 
@@ -202,6 +207,32 @@ class _SectionSwipeNavigatorState<T extends Object>
   }
 }
 
+/// 分区横滑越过首 / 末分区时的外层接力点（见 [SectionSwipeNavigator._step]）。
+///
+/// 首页外壳在手机布局里用它把「库页最左分区再往右滑」「最右分区再往左滑」接成
+/// 切换功能模块（`home_module_swipe.dart`）。[onOverflow] 的 `forward` 是阅读方向
+/// 上的「下一个」（LTR 下即手指左移）。不在外壳里（推出来的页面、测试）时没有
+/// 这一层，越界照旧什么都不发生。
+class SectionSwipeOverflowScope extends InheritedWidget {
+  const SectionSwipeOverflowScope({
+    required this.onOverflow,
+    required super.child,
+    super.key,
+  });
+
+  final void Function({required bool forward}) onOverflow;
+
+  /// 不建立依赖：只在手势那一刻取。
+  static void Function({required bool forward})? maybeOf(
+    BuildContext context,
+  ) => context
+      .getInheritedWidgetOfExactType<SectionSwipeOverflowScope>()
+      ?.onOverflow;
+
+  @override
+  bool updateShouldNotify(SectionSwipeOverflowScope oldWidget) => false;
+}
+
 /// 圈定「参与边缘级联」的横向滚动区（见 [SectionSwipeNavigator]）。
 ///
 /// 只包媒体横滚行这类**内容性**滚动区；文本框、页签条等控件性横向滚动绝不能包。
@@ -216,4 +247,44 @@ class SectionSwipeCascade extends InheritedWidget {
 
   @override
   bool updateShouldNotify(SectionSwipeCascade oldWidget) => false;
+}
+
+/// 保活分区自己的主滚动控制器。
+///
+/// 库页外壳（视频库 / 书架 / 漫画库的 Offstage 栈、游戏库的 IndexedStack、浏览
+/// 模块的保活 [TabBarView]）把**所有**访问过的分区同时挂在树上，而它们都在首页
+/// 外壳为整个 tab 提供的同一个 [PrimaryScrollController] 之下。各分区里没传
+/// controller 的纵向 ScrollView 默认 `primary`，于是全部附着到这一个控制器上；
+/// 桌面端自动包的 Scrollbar 在全局 `thumbVisibility: true` 下要求控制器只有一个
+/// 位置，每次依赖变化都会抛「ScrollController is attached to more than one
+/// ScrollPosition」。给每个保活分区一份独立的主控制器，分区内的主滚动视图各挂各的；
+/// `FushiFocusScroll` 经 `PrimaryScrollController.maybeOf` 找到的也正是当前分区。
+class SectionPrimaryScrollScope extends StatefulWidget {
+  const SectionPrimaryScrollScope({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<SectionPrimaryScrollScope> createState() =>
+      _SectionPrimaryScrollScopeState();
+}
+
+class _SectionPrimaryScrollScopeState extends State<SectionPrimaryScrollScope> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PrimaryScrollController(
+      controller: _controller,
+      // 与首页外壳 / FushiPageScaffold 同口径：全平台继承（默认只在移动端）。
+      automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+      child: widget.child,
+    );
+  }
 }

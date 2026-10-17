@@ -22,16 +22,17 @@ import 'package:fushi_core/fushi_core.dart' show MediaKind;
 
 // ── HomeTab ────────────────────────────────────────────────────────────────
 
-/// 顶层 tab → 所属模块。`home` / `settings` 恒在（全部模块关光后的安全回退面），
-/// 故返回 `null`。
+/// 顶层 tab → 所属模块。`settings` 恒在（全部模块关光后的安全回退面），故返回
+/// `null`；首页 2026-10-09 起是可关的 [ModuleId.home]。
 ModuleId? moduleOfHomeTab(HomeTab tab) => switch (tab) {
-  HomeTab.home => null,
+  HomeTab.home => ModuleId.home,
   HomeTab.settings => null,
   HomeTab.books => ModuleId.books,
   HomeTab.manga => ModuleId.manga,
   HomeTab.video => ModuleId.video,
   HomeTab.browse => ModuleId.browse,
   HomeTab.dictionaries => ModuleId.lookup,
+  HomeTab.srs => ModuleId.srs,
   HomeTab.games => ModuleId.games,
   HomeTab.browserExtension => ModuleId.browserExtension,
 };
@@ -41,21 +42,43 @@ ModuleId? moduleOfHomeTab(HomeTab tab) => switch (tab) {
 bool isHomeTabVisible(HomeTab tab, ModuleVisibility visibility) =>
     visibility.isEnabledOrUngated(moduleOfHomeTab(tab));
 
-/// 模块 → 它的顶层 tab。四个横切模块（听书/制卡/在线服务/同步）**没有 tab**，
+/// 模块 → 它的顶层 tab。五个横切模块（听书/制卡/在线服务/AI/同步）**没有 tab**，
 /// 返回 `null`——它们只有设置分类与散落在各页的入口。
 HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
+  ModuleId.home => HomeTab.home,
   ModuleId.books => HomeTab.books,
   ModuleId.manga => HomeTab.manga,
   ModuleId.video => HomeTab.video,
   ModuleId.browse => HomeTab.browse,
   ModuleId.lookup => HomeTab.dictionaries,
+  ModuleId.srs => HomeTab.srs,
   ModuleId.games => HomeTab.games,
   ModuleId.browserExtension => HomeTab.browserExtension,
   ModuleId.listening ||
   ModuleId.cardCreation ||
   ModuleId.services ||
+  ModuleId.ai ||
   ModuleId.sync => null,
 };
+
+/// [module] 是否是此刻**唯一**还开着的导航模块（有顶层 tab 的模块）。
+///
+/// 「至少保留一个模块」的判据：设置 tab 恒在但它不是内容页，导航模块全关后
+/// 用户一打开 app 就只剩设置，等于把 app 关成了空壳。所以最后一个导航模块的
+/// 开关不允许关（设置页开关拒绝 + 提示），新手引导写回后若一个都不剩则把首页
+/// 开回来（见 `onboarding_wizard_page.dart` 的 `_applyModuleSelection`）。
+bool isLastNavigationModule(ModuleId module, ModuleVisibility visibility) {
+  if (homeTabOfModule(module) == null) return false;
+  if (!visibility.isEnabled(module)) return false;
+  for (final ModuleId other in visibility.enabled) {
+    if (other != module && homeTabOfModule(other) != null) return false;
+  }
+  return true;
+}
+
+/// 可见性快照里是否还有任何导航模块开着。
+bool hasAnyNavigationModule(ModuleVisibility visibility) =>
+    visibility.enabled.any((ModuleId id) => homeTabOfModule(id) != null);
 
 // ── SettingsDestinationId ──────────────────────────────────────────────────
 
@@ -84,6 +107,9 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.appIcon => null,
   SettingsDestinationId.videoQuickSettings => null,
   SettingsDestinationId.shortcuts => null,
+  // 模型是设备级资源（本机 OCR / ASR 模型、系统 TTS）：不属任何模块。其中的
+  // 「LLM」子页仍按 `ai` → services 门控，见下。
+  SettingsDestinationId.models => null,
   SettingsDestinationId.manga => ModuleId.manga,
   SettingsDestinationId.video => ModuleId.video,
   SettingsDestinationId.cardCreation => ModuleId.cardCreation,
@@ -93,9 +119,8 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   // 凭据跑的，分成两个开关只会让用户关了一半还留着另一半。
   SettingsDestinationId.services => ModuleId.services,
   SettingsDestinationId.mediaTracking => ModuleId.services,
-  // AI 提供商配置就是第三方在线服务的端点 + 凭据，与 Jimaku / OpenSubtitles /
-  // Torznab 同类，共用 services 这一个开关，不另开 ModuleId。
-  SettingsDestinationId.ai => ModuleId.services,
+  // AI 自 2026-10-13 起是独立模块（用户要能整块关掉 AI 而不连坐在线服务）。
+  SettingsDestinationId.ai => ModuleId.ai,
   // 互联是从同步备份拆出去的一级分类，共享同一套后端与私有状态，同一个开关。
   SettingsDestinationId.syncBackup => ModuleId.sync,
   SettingsDestinationId.interconnect => ModuleId.sync,
@@ -108,6 +133,19 @@ bool isSettingsDestinationVisible(
   SettingsDestinationId id,
   ModuleVisibility visibility,
 ) => visibility.isEnabledOrUngated(moduleOfSettingsDestination(id));
+
+/// AI 功能总开关（[ModuleId.ai]）的**唯一 UI 判据**。
+///
+/// 所有 AI 入口（设置 › AI、发现页 / 视频详情的「AI 下载」、刮削面板的「AI 识别」、
+/// 词典 / Lapis / 自定义主题 / galgame 文本处理编辑器里的「让 AI 帮忙」、漫画 OCR
+/// 的 AI 档位）渲染前一律问它，不各自拼 `isEnabled(ModuleId.ai)`；源码守卫
+/// `test/models/ai_module_gate_guard_test.dart` 钉死入口文件都经过它。
+///
+/// 运行时（后台刮削、补字幕重排、AI 下载、漫画 OCR 重读）不靠它：那一层由
+/// `PreferencesRepository.aiFeatureAssignments` 在模块关闭时投影成空指派兜住，
+/// 入口漏藏也不会发出任何 AI 请求。
+bool isAiModuleEnabled(ModuleVisibility visibility) =>
+    visibility.isEnabled(ModuleId.ai);
 
 // ── ShortcutScope ──────────────────────────────────────────────────────────
 

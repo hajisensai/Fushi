@@ -26,6 +26,7 @@
 // CLPI 的零点仍然要读，但只用在一个地方：判断这条 PlayItem 是不是把整段从头用到尾
 // （是就走形态 1）。读不到时仍按 MPLS 的 IN/OUT 走 EDL，保持播放、字幕和制卡同轴。
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -166,25 +167,15 @@ BluraySource? buildBluraySource(
     }
   }
 
-  final StringBuffer edl = StringBuffer('edl://');
-  for (final BlurayClipRef clip in playlist.clips) {
-    final String path = streamPath(clip.clipId);
-    edl.write(encodeEdlField(path));
-    // 每段一律显式写起止，**整段用满的段也写**：省略时 mpv 取 lavf 对 MPEG-TS 从尾部
-    // 扫出来的估计时长当段长（demux_edl.c `part->length = source->duration + …`），
-    // 每道接缝的误差累加到后续段的虚拟起点，而 [chapters] 是按 MPLS 精确 tick 算的
-    // ——多段正片后段章节与画面就错位。IN/OUT 本来就精确已知，没有理由交给估计。
-    // 起点直接用 MPLS 的 IN——EDL 的 start 在**源文件原始时间戳域**里，不减零点
-    // （零点未知的段同样成立：IN 本就是原始 PTS）。
-    edl.write(',');
-    edl.write(_seconds(clip.inTimeTicks));
-    edl.write(',');
-    edl.write(_seconds(clip.durationTicks));
-    edl.write(';');
-  }
-
   return BluraySource(
-    uri: edl.toString(),
+    uri: buildBlurayEdlUri(<BlurayEdlSegment>[
+      for (final BlurayClipRef clip in playlist.clips)
+        (
+          source: streamPath(clip.clipId),
+          inTimeTicks: clip.inTimeTicks,
+          durationTicks: clip.durationTicks,
+        ),
+    ]),
     isPlainFile: false,
     primaryStreamPath: primary,
     duration: playlist.duration,
@@ -206,6 +197,31 @@ bool _coversWholeClip(BlurayClipRef clip, BlurayClipTimebase timebase) {
       clip.outTimeTicks >= timebase.presentationEndTicks - tolerance;
 }
 
+/// 一条 EDL 条目：[source] 是 mpv 能直接打开的任何东西——本地 m2ts 路径、解密回环
+/// URL、或互联 host 的分段 URL；IN / 时长是 MPLS 的 45 kHz tick。
+typedef BlurayEdlSegment = ({String source, int inTimeTicks, int durationTicks});
+
+/// 把一条播放列表的各段拼成 `edl://`。本地播放与互联远端播放共用这一份拼法，两边
+/// 的时间轴、章节对齐因此逐 tick 相同。
+String buildBlurayEdlUri(Iterable<BlurayEdlSegment> segments) {
+  final StringBuffer edl = StringBuffer('edl://');
+  for (final BlurayEdlSegment segment in segments) {
+    edl.write(encodeEdlField(segment.source));
+    // 每段一律显式写起止，**整段用满的段也写**：省略时 mpv 取 lavf 对 MPEG-TS 从尾部
+    // 扫出来的估计时长当段长（demux_edl.c `part->length = source->duration + …`），
+    // 每道接缝的误差累加到后续段的虚拟起点，而章节是按 MPLS 精确 tick 算的
+    // ——多段正片后段章节与画面就错位。IN/OUT 本来就精确已知，没有理由交给估计。
+    // 起点直接用 MPLS 的 IN——EDL 的 start 在**源文件原始时间戳域**里，不减零点
+    // （零点未知的段同样成立：IN 本就是原始 PTS）。
+    edl.write(',');
+    edl.write(_seconds(segment.inTimeTicks));
+    edl.write(',');
+    edl.write(_seconds(segment.durationTicks));
+    edl.write(';');
+  }
+  return edl.toString();
+}
+
 /// 45 kHz tick → 秒；6 位小数把 1 tick（22.2 µs）也保住，mpv 按 double 解析。
 String _seconds(int ticks) => (ticks / kBlurayTimeScale).toStringAsFixed(6);
 
@@ -216,6 +232,69 @@ String _seconds(int ticks) => (ticks / kBlurayTimeScale).toStringAsFixed(6);
 String encodeEdlField(String value) {
   final int byteLength = utf8Length(value);
   return '%$byteLength%$value';
+}
+
+/// 列出 `edl://` 各条目的来源（第一个字段）。不是 EDL 返回空表。
+///
+/// 只认 [buildBlurayEdlUri] 写出的形状所需的语法：条目以 `;` 分隔、字段以 `,` 分隔、
+/// 字段可用 `%<字节数>%<内容>` 长度前缀（字节数按 UTF-8 计）。来源判定「这条流是不是
+/// 网络流」时要看的是各段，而不是 `edl://` 这个 scheme。
+List<String> decodeEdlSources(String uri) {
+  final List<String> sources = <String>[];
+  mapEdlSources(uri, (String source) {
+    sources.add(source);
+    return source;
+  });
+  return sources;
+}
+
+/// 逐条改写 `edl://` 的来源，其余字段（起止、选项）原样保留；不是 EDL 原样返回。
+///
+/// 交给播放内核前「每个 URL 都要过 `nativePlaybackUri`」的收口靠它覆盖拼接流：整串
+/// EDL 不是 URL，只能逐段改写。语法范围同 [decodeEdlSources]；解析不下去时原样返回
+/// 输入，不交出半截改写的 EDL。
+String mapEdlSources(String uri, String Function(String source) map) {
+  const String scheme = 'edl://';
+  if (!uri.startsWith(scheme)) return uri;
+  final List<int> bytes = utf8.encode(uri.substring(scheme.length));
+  final StringBuffer out = StringBuffer(scheme);
+  int i = 0;
+  bool entryStart = true;
+  while (i < bytes.length) {
+    final int c = bytes[i];
+    if (c == 0x3B /* ; */ || c == 0x2C /* , */) {
+      out.writeCharCode(c);
+      entryStart = c == 0x3B;
+      i++;
+      continue;
+    }
+    final int start = i;
+    final String field;
+    if (c == 0x25 /* % */) {
+      final int close = bytes.indexOf(0x25, i + 1);
+      final int? length = close < 0
+          ? null
+          : int.tryParse(ascii.decode(bytes.sublist(i + 1, close)));
+      if (length == null || close + 1 + length > bytes.length) return uri;
+      field = utf8.decode(bytes.sublist(close + 1, close + 1 + length));
+      i = close + 1 + length;
+    } else {
+      int end = i;
+      while (end < bytes.length && bytes[end] != 0x2C && bytes[end] != 0x3B) {
+        end++;
+      }
+      field = utf8.decode(bytes.sublist(i, end));
+      i = end;
+    }
+    // 只改写来源；起止 / `key=value` 选项按原始字节拷回，语义一个字不动。
+    out.write(
+      entryStart && field.isNotEmpty
+          ? encodeEdlField(map(field))
+          : utf8.decode(bytes.sublist(start, i)),
+    );
+    entryStart = false;
+  }
+  return out.toString();
 }
 
 /// [value] 的 UTF-8 字节数。EDL 的长度前缀按字节算，不是按码点。

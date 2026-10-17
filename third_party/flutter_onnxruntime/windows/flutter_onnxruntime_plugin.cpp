@@ -17,6 +17,7 @@
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/standard_method_codec.h>
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <sstream>
@@ -25,8 +26,10 @@
 
 // Include our implementation headers
 #include "src/async_dispatch.h"
+#include "src/cuda_provider.h"
 #include "src/dml_provider.h"
 #include "src/dxgi_memory.h"
+#include "src/ort_runtime_loader.h"
 #include "src/session_manager.h"
 #include "src/tensor_manager.h"
 #include "src/value_conversion.h"
@@ -61,6 +64,27 @@ void FailWith(flutter::MethodResult<flutter::EncodableValue> &result, const std:
 
 using SharedResult = std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>;
 
+std::string WideToUtf8(const std::wstring &wide) {
+  if (wide.empty()) {
+    return std::string();
+  }
+  const int size =
+      WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr);
+  std::string out(static_cast<size_t>(size), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()), &out[0], size, nullptr, nullptr);
+  return out;
+}
+
+std::wstring Utf8ToWide(const std::string &utf8) {
+  if (utf8.empty()) {
+    return std::wstring();
+  }
+  const int size = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), static_cast<int>(utf8.size()), nullptr, 0);
+  std::wstring out(static_cast<size_t>(size), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), static_cast<int>(utf8.size()), &out[0], size);
+  return out;
+}
+
 // Outcome of a worker-thread task, carried back to the platform thread.
 struct TaskOutcome {
   flutter::EncodableValue reply;
@@ -74,20 +98,36 @@ struct TaskOutcome {
 // Private implementation class to hold managers
 class FlutterOnnxruntimePluginImpl {
 public:
-  FlutterOnnxruntimePluginImpl()
-      : sessionManager_(std::make_unique<SessionManager>()), tensorManager_(std::make_unique<TensorManager>()) {}
+  FlutterOnnxruntimePluginImpl() = default;
 
-  // Manager instances
+  // Manager instances. Fushi fork: created on the first call that needs ONNX
+  // Runtime (EnsureRuntime), not at plugin registration — both constructors
+  // call into ORT, and the core must stay unbound until the app has had the
+  // chance to selectRuntime() a downloaded DirectML core.
   std::unique_ptr<SessionManager> sessionManager_;
   std::unique_ptr<TensorManager> tensorManager_;
 
-  // Hibiki fork: replies are marshalled back here; heavy ORT work runs on the
+  // Binds ORT (bundled core, or the one selected earlier) and creates the
+  // managers. Platform thread. Empty on success, else the reason.
+  std::string EnsureRuntime() {
+    std::string error = OrtRuntimeLoader::Instance().Ensure();
+    if (!error.empty()) {
+      return error;
+    }
+    if (!sessionManager_) {
+      sessionManager_ = std::make_unique<SessionManager>();
+      tensorManager_ = std::make_unique<TensorManager>();
+    }
+    return std::string();
+  }
+
+  // Fushi fork: replies are marshalled back here; heavy ORT work runs on the
   // two worker queues (declared after the dispatcher so they are joined before
   // the dispatcher window goes away).
   PlatformThreadDispatcher dispatcher_;
   WorkQueue gpuQueue_{"flutter_onnxruntime gpu"};
   WorkQueue cpuQueue_{"flutter_onnxruntime cpu"};
-  // Hibiki delta #11: every CPU session gets its own worker thread (created on
+  // Fushi delta #11: every CPU session gets its own worker thread (created on
   // first use, dropped after close) so independent CPU sessions run
   // concurrently — e.g. two greedy-search graphs each taking half of a batch.
   // ORT sessions are safe to Run from different threads; only GPU (DirectML)
@@ -161,6 +201,35 @@ void FlutterOnnxruntimePlugin::HandleMethodCall(
     return;
   }
 
+  // Fushi fork: methods that must not bind ONNX Runtime.
+  if (method_name == "probeCuda") {
+    HandleProbeCuda(method_call, std::move(result));
+    return;
+  } else if (method_name == "getDeviceMemoryInfo") {
+    // DXGI only: lets the app detect a GPU before choosing the core.
+    HandleGetDeviceMemoryInfo(method_call, std::move(result));
+    return;
+  } else if (method_name == "selectRuntime") {
+    HandleSelectRuntime(method_call, std::move(result));
+    return;
+  } else if (method_name == "getRuntimeInfo") {
+    flutter::EncodableMap info;
+    OrtRuntimeLoader &loader = OrtRuntimeLoader::Instance();
+    info[flutter::EncodableValue("loaded")] = flutter::EncodableValue(loader.IsLoaded());
+    info[flutter::EncodableValue("version")] = flutter::EncodableValue(loader.Version());
+    info[flutter::EncodableValue("selectedPath")] = flutter::EncodableValue(WideToUtf8(loader.SelectedPath()));
+    result->Success(flutter::EncodableValue(info));
+    return;
+  }
+
+  {
+    const std::string error = impl_->EnsureRuntime();
+    if (!error.empty()) {
+      FailWith(result, "RUNTIME_UNAVAILABLE", error);
+      return;
+    }
+  }
+
   // OrtValue-related methods
   if (method_name == "createOrtValue") {
     HandleCreateOrtValue(method_call, std::move(result));
@@ -180,8 +249,8 @@ void FlutterOnnxruntimePlugin::HandleMethodCall(
   if (method_name == "createSession") {
     HandleCreateSession(method_call, std::move(result));
     return;
-  } else if (method_name == "getDeviceMemoryInfo") {
-    HandleGetDeviceMemoryInfo(method_call, std::move(result));
+  } else if (method_name == "registerCudaRuntime") {
+    HandleRegisterCudaRuntime(method_call, std::move(result));
     return;
   } else if (method_name == "getAvailableProviders") {
     HandleGetAvailableProviders(method_call, std::move(result));
@@ -538,7 +607,7 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
         session_options.SetInterOpNumThreads(std::get<int32_t>(inter_threads_it->second));
       }
 
-      // Hibiki: pin named free dimensions (see OrtSessionOptions.freeDimensionOverrides).
+      // Fushi: pin named free dimensions (see OrtSessionOptions.freeDimensionOverrides).
       auto free_dims_it = options_map.find(flutter::EncodableValue("freeDimensionOverrides"));
       if (free_dims_it != options_map.end() && std::holds_alternative<flutter::EncodableMap>(free_dims_it->second)) {
         const auto &free_dims = std::get<flutter::EncodableMap>(free_dims_it->second);
@@ -602,39 +671,15 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
             // No specific options needed here usually.
             continue;
           } else if (provider == "CUDA") {
-            // Use CUDA if available
-            OrtCUDAProviderOptionsV2 *cuda_options = nullptr;
-            OrtStatus *status = Ort::GetApi().CreateCUDAProviderOptions(&cuda_options);
-            if (status != nullptr) {
-              std::string error_message = "Failed to create CUDA provider options: ";
-              error_message += Ort::GetApi().GetErrorMessage(status);
-              Ort::GetApi().ReleaseStatus(status);
-              FailWith(result, "PROVIDER_ERROR", error_message.c_str());
-              return;
-            }
-
-            // Use unique_ptr for automatic release
-            struct CudaOptionsDeleter {
-              void operator()(OrtCUDAProviderOptionsV2 *p) { Ort::GetApi().ReleaseCUDAProviderOptions(p); }
-            };
-            std::unique_ptr<OrtCUDAProviderOptionsV2, CudaOptionsDeleter> cuda_options_ptr(cuda_options);
-
-            // Set CUDA options
-            std::vector<const char *> keys{"device_id"};
-            std::vector<const char *> values{device_id_str.c_str()};
-            status = Ort::GetApi().UpdateCUDAProviderOptions(cuda_options_ptr.get(), keys.data(), values.data(),
-                                                             keys.size());
-
-            if (status != nullptr) {
-              std::string error_message = "Failed to update CUDA provider options: ";
-              error_message += Ort::GetApi().GetErrorMessage(status);
-              Ort::GetApi().ReleaseStatus(status);
-              FailWith(result, "PROVIDER_ERROR", error_message.c_str());
-              return;
-            }
-
-            // Append CUDA execution provider to session options
-            session_options.AppendExecutionProvider_CUDA_V2(*cuda_options_ptr);
+            // Fushi fork: CUDA is the runtime-registered plugin EP
+            // (registerCudaRuntime), appended through
+            // SessionOptionsAppendExecutionProvider_V2. The DirectML build of
+            // the core has no built-in CUDA provider, and the legacy
+            // AppendExecutionProvider_CUDA_V2 path would need the provider DLL
+            // next to onnxruntime.dll. Not registered -> Ort::Exception ->
+            // PROVIDER_ERROR, which the Dart fallback reports as a visible
+            // downgrade instead of silently running elsewhere.
+            impl_->sessionManager_->appendCudaProvider(session_options, device_id);
             is_gpu = true;
           } else if (provider == "DIRECT_ML") {
             // DirectML requires sequential execution. Memory patterns are
@@ -712,7 +757,7 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
   }
 }
 
-// Hibiki: DXGI budget for adapter `deviceId` (default 0). Errors as
+// Fushi: DXGI budget for adapter `deviceId` (default 0). Errors as
 // UNAVAILABLE so the Dart side can treat "unknown" distinctly from a number.
 void FlutterOnnxruntimePlugin::HandleGetDeviceMemoryInfo(
     const flutter::MethodCall<flutter::EncodableValue> &method_call,
@@ -745,6 +790,14 @@ void FlutterOnnxruntimePlugin::HandleGetAvailableProviders(
   try {
     // Get available providers from ONNX Runtime
     std::vector<std::string> providers = Ort::GetAvailableProviders();
+    // Fushi fork: plugin EPs registered at runtime (CUDA) are not reported by
+    // GetAvailableProviders; merge the EP names GetEpDevices returned when the
+    // plugin was registered.
+    for (const auto &ep_name : impl_->sessionManager_->registeredEpNames()) {
+      if (std::find(providers.begin(), providers.end(), ep_name) == providers.end()) {
+        providers.push_back(ep_name);
+      }
+    }
 
     // Map provider names to standardized enum names
     flutter::EncodableList providers_list;
@@ -785,6 +838,119 @@ void FlutterOnnxruntimePlugin::HandleGetAvailableProviders(
   } catch (...) {
     FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
+}
+
+// Fushi: CUDA driver probe (nvcuda.dll only; works before the CUDA runtime is
+// downloaded). Runs on the CPU creation queue: cuInit can take a while.
+// Fushi: map a downloaded onnxruntime.dll (the DirectML core) before ORT is
+// first bound. Platform thread, synchronous: LoadLibrary of a ~17 MB DLL. The
+// reply is {ok, error}; an already-bound process answers ok only for the same
+// path (switching needs a restart).
+void FlutterOnnxruntimePlugin::HandleSelectRuntime(
+    const flutter::MethodCall<flutter::EncodableValue> &method_call,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+  const flutter::EncodableValue *path_value = nullptr;
+  if (args) {
+    auto it = args->find(flutter::EncodableValue("path"));
+    if (it != args->end()) {
+      path_value = &it->second;
+    }
+  }
+  if (path_value == nullptr || !std::holds_alternative<std::string>(*path_value) ||
+      std::get<std::string>(*path_value).empty()) {
+    FailWith(result, "INVALID_ARG", "path must be a non-empty string");
+    return;
+  }
+  const std::string error = OrtRuntimeLoader::Instance().Select(Utf8ToWide(std::get<std::string>(*path_value)));
+  flutter::EncodableMap reply;
+  reply[flutter::EncodableValue("ok")] = flutter::EncodableValue(error.empty());
+  reply[flutter::EncodableValue("error")] =
+      error.empty() ? flutter::EncodableValue() : flutter::EncodableValue(WindowsUtils::toUtf8Message(error));
+  result->Success(flutter::EncodableValue(reply));
+}
+
+void FlutterOnnxruntimePlugin::HandleProbeCuda(
+    const flutter::MethodCall<flutter::EncodableValue> &method_call,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  SharedResult shared_result(std::move(result));
+  FlutterOnnxruntimePluginImpl *impl = impl_.get();
+  impl_->cpuQueue_.Post([impl, shared_result]() {
+    auto outcome = std::make_shared<TaskOutcome>();
+    CudaProbeResult probe = ProbeCudaDriver();
+    flutter::EncodableMap reply;
+    reply[flutter::EncodableValue("driverVersion")] =
+        probe.has_driver_version ? flutter::EncodableValue(static_cast<int32_t>(probe.driver_version))
+                                 : flutter::EncodableValue();
+    flutter::EncodableList devices;
+    for (const auto &device : probe.devices) {
+      flutter::EncodableMap entry;
+      entry[flutter::EncodableValue("index")] = flutter::EncodableValue(static_cast<int32_t>(device.index));
+      entry[flutter::EncodableValue("name")] = flutter::EncodableValue(WindowsUtils::toUtf8Message(device.name));
+      entry[flutter::EncodableValue("computeMajor")] =
+          flutter::EncodableValue(static_cast<int32_t>(device.compute_major));
+      entry[flutter::EncodableValue("computeMinor")] =
+          flutter::EncodableValue(static_cast<int32_t>(device.compute_minor));
+      entry[flutter::EncodableValue("totalMemBytes")] = flutter::EncodableValue(device.total_mem_bytes);
+      devices.push_back(flutter::EncodableValue(entry));
+    }
+    reply[flutter::EncodableValue("devices")] = flutter::EncodableValue(devices);
+    reply[flutter::EncodableValue("error")] = probe.error.empty()
+                                                  ? flutter::EncodableValue()
+                                                  : flutter::EncodableValue(WindowsUtils::toUtf8Message(probe.error));
+    outcome->reply = flutter::EncodableValue(reply);
+    impl->reply(shared_result, outcome);
+  });
+}
+
+// Fushi: register the CUDA plugin EP from args["dir"]. Runs on the GPU queue
+// so it is ordered with GPU session creation. A registration problem does not
+// fail the call: the reply carries {ok, error, deviceCount}.
+void FlutterOnnxruntimePlugin::HandleRegisterCudaRuntime(
+    const flutter::MethodCall<flutter::EncodableValue> &method_call,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+  if (!args) {
+    FailWith(result, "INVALID_ARG", "Arguments must be provided as a map");
+    return;
+  }
+  auto dir_it = args->find(flutter::EncodableValue("dir"));
+  if (dir_it == args->end() || !std::holds_alternative<std::string>(dir_it->second)) {
+    FailWith(result, "INVALID_ARG", "dir must be a non-null string");
+    return;
+  }
+  const std::string dir_utf8 = std::get<std::string>(dir_it->second);
+  std::wstring dir;
+  int wide_size = MultiByteToWideChar(CP_UTF8, 0, dir_utf8.c_str(), static_cast<int>(dir_utf8.size()), nullptr, 0);
+  if (wide_size > 0) {
+    dir.resize(static_cast<size_t>(wide_size));
+    MultiByteToWideChar(CP_UTF8, 0, dir_utf8.c_str(), static_cast<int>(dir_utf8.size()), &dir[0], wide_size);
+  }
+  SharedResult shared_result(std::move(result));
+  SessionManager *session_manager = impl_->sessionManager_.get();
+  FlutterOnnxruntimePluginImpl *impl = impl_.get();
+  impl_->gpuQueue_.Post([impl, session_manager, shared_result, dir]() {
+    auto outcome = std::make_shared<TaskOutcome>();
+    CudaRegistrationResult registration;
+    try {
+      registration = session_manager->registerCudaPlugin(dir);
+    } catch (const std::exception &e) {
+      registration.ok = false;
+      registration.error = e.what();
+    } catch (...) {
+      registration.ok = false;
+      registration.error = "Unknown error occurred";
+    }
+    flutter::EncodableMap reply;
+    reply[flutter::EncodableValue("ok")] = flutter::EncodableValue(registration.ok);
+    reply[flutter::EncodableValue("error")] =
+        registration.error.empty() ? flutter::EncodableValue()
+                                   : flutter::EncodableValue(WindowsUtils::toUtf8Message(registration.error));
+    reply[flutter::EncodableValue("deviceCount")] =
+        flutter::EncodableValue(static_cast<int32_t>(registration.device_count));
+    outcome->reply = flutter::EncodableValue(reply);
+    impl->reply(shared_result, outcome);
+  });
 }
 
 void FlutterOnnxruntimePlugin::HandleRunInference(

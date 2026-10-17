@@ -124,6 +124,11 @@ class _SingleVideoLibrary implements FushiLibraryHostService {
 
 /// ffprobe 替身：固定 15.5 秒，让 playlist 有三段。
 class _FixedDurationBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async =>
       FfmpegRunResult(returnCode: 0, output: '');

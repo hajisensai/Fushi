@@ -1,0 +1,12 @@
+## BUG-3067 · AI video download quality fallback prefers upscales and DVD over the requested 1080p tier
+- **报告**：2026-10-08（用户：「一口气下载全部哆啦A梦剧场版」，画质选 1080p）。实测：多部落到 DVD / 480p（`… 1985 dvd`、`[DVD][872x480]`、DVD ISO）或 720p；1980 年那部被选成 `[WEB-4k]` 的平台超分版。
+- **真实性**：✅ 真 bug。根因在整套下载的画质退路与排序键：
+  - `packages/fushi_engine/lib/media/video/acquisition/video_acquisition_reducer.dart:2297`（修前）`planFranchiseEntry` 会话画质（1080p）给不出计划时退到 `VideoAcquisitionQuality.best`；`video_acquisition_resource_picker.dart:69` 把 `best` 解释成「最高优先」，于是 1080p 缺席时 2160p 排第一——包括 1980 年作品的「WEB-4k」超分。用户选 1080p 表达的是「要 1080p 这一档」，退路应是离它最近的档，而不是最高。
+  - `video_acquisition_resource_picker.dart:135`（修前）`rankResourceGroups` 的高度键只看分辨率串，不认超分：标题写 `upscale` / `超分` / `AI 修复` 或前高清时代作品的网络源 4K 都按真 2160p 排。
+  - 同一处排序里 DVD 片源只在用户显式设了片源偏好 `best` 时才靠后（`_sourceScore`，默认偏好 `any` 恒 0），默认设置下「1080p」的 DVD 放大版与 WEB-DL / BD 同档、按做种排。
+- **[x] ① 已修复** — `2bd1f28e16`：
+  - `filterResourceGroups(nearestHeight:)` / `rankResourceGroups(nearestHeight:)`：`best` 带 `nearestHeight` 时按「与目标高度的距离」升序（同距取高，未知高度殿后）。`planFranchiseEntry` 的退路传会话画质高度——1080p 缺席时拿 720p 而不是 2160p。单部路径不变（画质不命中仍然问用户）。
+  - `isSuspectedUpscale(group, workYear:)`：标题明写 `upscale` / `waifu2x` / `topaz` / `超分` / `AI 修复|增强|remaster`，或 `workYear < kVideoPreHdEraYear (2006)` 的 ≥2160p 且片源不是蓝光 / Remux（官方 UHD 蓝光是胶片重扫，算真 4K）。超分嫌疑的卡在分辨率排序里按「未知高度」殿后。
+  - 新排序键「保真度」**总是**生效（排在分辨率之后、片源偏好之前）：超分嫌疑与 DVD 片源的卡排在同档其它卡后面。`workYear` 由单部 `_refilter` 与整套 `planFranchiseEntry` 传入作品年份。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/acquisition/video_acquisition_doraemon_franchise_picks_test.dart`「画质」组：超分判据（老片 WEB-4k / 明写 upscale / 超分算，UHD 蓝光 / 新片 / `Ai no Uta` 不算）、`best + nearestHeight=1080` 下 720p → 480p DVD → 2160p 超分的次序、1080p 下 DVDRip 排在 WEB-DL 后、`planFranchiseEntry` 会话 1080p 缺席时落到 720p。变异实测：去掉 reducer 的 `nearestHeight` 接线 / 保真度键 / 年份超分判据，各自变红。
+- **备注**：实测里「有 1080p 却下了 DVD」的另一半原因是召回（`Doraemon Movie NN` 编号写法的 1080p 单部发布用作品名搜不到，以及 `Doraemon Movies 01-25` 合集包无法按部选文件），见 BUG-3065 的剩余缺口。

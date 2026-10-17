@@ -25,7 +25,7 @@ foreach ($required in @(
 
 $port = Get-MihonFreeLoopbackPort
 $token = New-MihonAuthToken
-$dataRoot = Join-Path ([IO.Path]::GetTempPath()) ("hibiki-mihon-smoke-" + [Guid]::NewGuid().ToString("N"))
+$dataRoot = Join-Path ([IO.Path]::GetTempPath()) ("fushi-mihon-smoke-" + [Guid]::NewGuid().ToString("N"))
 [IO.Directory]::CreateDirectory($dataRoot) | Out-Null
 
 $startInfo = [Diagnostics.ProcessStartInfo]::new()

@@ -1,0 +1,11 @@
+## BUG-2942 · 删除合集后下载订阅仍启用并继续下载；任务页无法整组删除
+- **报告**：2026-10-04（用户：「我删除合集的时候应该把订阅任务也能一块删了」「我怎么删除一整个合集任务呢」，附浏览 › 下载 › 任务页截图）
+- **真实性**：✅ 真 bug。
+  - 订阅：`packages/fushi_core/lib/src/database/tables.dart` 的 `VideoDownloadSubscriptions.collectionId` 外键是 `onDelete: setNull`，删合集只把它置空，订阅仍 `enabled`、照旧按作品身份轮询下载。更糟的是这一列实际上几乎不被写入（只有 job 在整理入库时写 `video_download_jobs.collection_id`，见 `video_download_pipeline_service.dart` 整理段），所以订阅与合集的真实归属只能经「订阅派生的任务 → 任务的 collection_id」或「订阅作品身份 → 合集刮到的 `video_metadata_works`」推出——而这两条线都随删合集断掉（works 行 cascade 删、jobs.collection_id 置 NULL），删完再也找不回。
+  - 整组删除：`fushi/lib/src/media/downloads/download_task_browser.dart` 分组头只有展开 / 折叠与计数，没有任何作用于整组的动作；唯一路径是进多选逐条勾，且折叠组的成员按设计不被「全选」卷入。
+- **[x] ① 已修复** — `48f799abb0`
+  - `FushiDatabase.getVideoDownloadSubscriptionsOwnedByCollections`：三条归属线（订阅 collection_id / 派生任务所在合集 / 作品身份）任一命中；`deleteVideoDownloadSubscriptions` 批量删。
+  - `CollectionOwnedSubscriptions`（`fushi/lib/src/media/collections/collection_owned_subscriptions.dart`）在弹确认框**之前**取快照；用户主动删合集的三个入口（合集右键菜单、视频合集详情页、视频库批量解散）确认框多一行「同时删除该合集的 N 个下载订阅」（默认勾上，与「连同成员删除」正交），订阅先于合集删。刮削重组 / 合并合集 / 同步传播等内部删除路径不动订阅。
+  - 任务页分组头加「删除整组任务」按钮：目标是整组全部成员（含折叠的），复用批量删除确认框（写明条数、按需给「同时删除文件」）；选择态下不摆。
+- **[x] ② 已加自动化测试** — `2c283c8e83`：`fushi/test/database/video_download_subscriptions_owned_by_collection_test.dart`（三条线命中 + 反例 + 删后断线）、`fushi/test/pages/download_task_browser_test.dart`「整组删除」组（含 360 宽 ×2.0 文字不溢出）、`fushi/test/widgets/fushi_destructive_confirm_dialog_test.dart`「删合集连带订阅」组。变异实测：去掉派生任务线 / 去掉组头按钮各让对应测试红。
+- **备注**：书架合集（书 / 有声书）没有下载订阅，查询恒空、不出现勾选行。

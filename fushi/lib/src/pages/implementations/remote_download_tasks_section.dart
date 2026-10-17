@@ -8,13 +8,15 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -129,12 +131,11 @@ class _RemoteDownloadTasksSectionState
       // develop 把裸回调收敛成了 [DownloadTaskActions] 槽位；远端三个动作按语义
       // 各就各位，不再把「中止」和「删除」挤进同一个 onClear。
       //
-      // `deletesFiles: true` 是如实声明而非乐观假设：远端 DELETE
-      // /api/downloads/<id> 落到 `download_host.dart` 的
-      // `deleteJob(jobId, deleteFiles: true)`，**恒删磁盘文件且无法关闭**——
-      // 协议上没有「只移出列表」这一路。所以它进 [delete] 槽而不是 [clear]
-      // （放 clear 会让用户以为远端文件还在），且 deleteFiles 传 false 时也照删，
-      // 这一点由 deletesFiles 如实告知 UI。
+      // 删除与「同时删除已下载文件」（BUG-3437）：host 宣告 `deleteFilesParam` 时把
+      // 勾选结果原样带给 `DELETE /api/downloads/<id>?deleteFiles=`，勾选框按字面
+      // 生效。老 host 不认这个参数、删不删由它的历史缺省决定（app 当 host 保留，
+      // 无头服务端连数据一起删，客户端分不出是哪种），所以不摆勾选框
+      // （deletesFiles: false），改在卡片详情里如实提示。
       actions: DownloadTaskActions(
         retry: job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
                 job.lifecycle == VideoDownloadJobLifecycle.failed
@@ -144,20 +145,28 @@ class _RemoteDownloadTasksSectionState
             ? null
             : () => _action(() => client.cancel(target, job.jobId)),
         delete: finished
-            ? ({required bool deleteFiles}) =>
-                _action(() => client.delete(target, job.jobId))
+            ? ({required bool deleteFiles}) => _action(
+                  () => client.delete(
+                    target,
+                    job.jobId,
+                    deleteFiles: target.deleteFilesParam ? deleteFiles : null,
+                  ),
+                )
             : null,
-        deletesFiles: true,
+        deletesFiles: target.deleteFilesParam,
       ),
       // 与本地任务同一张卡（DownloadTaskCard），不再另开 ListTile 决策。
       builder: (BuildContext context) => DownloadTaskCard(
         key: ValueKey<String>('remote:${target.baseUrl}:${job.jobId}'),
         taskId: 'remote:${target.baseUrl}:${job.jobId}',
+        // host 代下载跑的是它自己的视频下载管线：BT。
+        method: DownloadTransferMethod.torrent,
+        externalSource: true,
         title: job.title,
         status: '${job.stage} · ${(job.stageProgress * 100).toStringAsFixed(0)}%',
         subtitle: target.label,
         progress: job.stageProgress,
-        leading: const Icon(Icons.cloud_download_outlined),
+        leading: const FushiIcon(Icons.cloud_download_outlined),
         details: _details(context, target, job),
       ),
     );
@@ -174,6 +183,11 @@ class _RemoteDownloadTasksSectionState
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Text('${target.label} · ${target.baseUrl}', style: text.bodySmall),
+        if (!target.deleteFilesParam)
+          Text(
+            t.download_remote_delete_files_host_default,
+            style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
         if (job.lastError != null)
           Text(
             job.lastError!,

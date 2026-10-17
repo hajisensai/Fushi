@@ -5,7 +5,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -314,7 +314,7 @@ Future<void> _importTestDictionary(
   final List<int> zipBytes = ZipEncoder().encode(archive)!;
 
   final Directory cache = await getTemporaryDirectory();
-  final File zipFile = File('${cache.path}/hibiki_caret_test_dict.zip');
+  final File zipFile = File('${cache.path}/fushi_caret_test_dict.zip');
   await zipFile.writeAsBytes(zipBytes, flush: true);
 
   final Completer<void> done = Completer<void>();

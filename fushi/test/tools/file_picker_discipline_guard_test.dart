@@ -40,6 +40,29 @@ import '../helpers/scan_scale.dart';
 const String kPickerImpl =
     'lib/src/media/import/real_path_directory_picker.dart';
 
+/// file_picker **平台实现的装饰层**（BUG-3286）：Windows 上包住注册的
+/// `FilePicker.platform`，只决定 `lockParentWindow`（让系统对话框以 Fushi 主窗为
+/// owner，视频全屏时不被压住），其余参数原样转给被包住的实现。
+///
+/// 它与 [kPickerImpl] 同类——是「选择器实现」这一层，不是调用点：所有调用点（含统一
+/// 入口）最终都经 `FilePicker.platform` 走到它，它自己不发起任何选择，也不碰安卓 /
+/// iOS 的真实路径分流（只在 Windows 装）。所以它既不进「只减不增」的
+/// [kFilePickerAllowlist]，也不算目录选择器「零豁免」的破例：目录零豁免防的是**调用点**
+/// 绕过统一入口，而它里面的 `inner.getDirectoryPath(` 是把统一入口发出的调用转发
+/// 给真正的平台实现。
+///
+/// 豁免可证伪：「装饰层只做透传」那条用例钉死它里面的选择器调用全部是 `inner.*`
+/// 的一对一转发、只在 Windows 装、不出现任何平台分流。哪天它开始自己调选择器或
+/// 改了分流，那条会红，而不是被这里的豁免静默放过。
+const String kPickerPlatformDecorator =
+    'lib/src/platform/desktop/windows_owned_file_picker.dart';
+
+/// 不算调用点、从两条调用点判据里剔除的「选择器实现层」文件。
+const Set<String> kPickerImplementationLayer = <String>{
+  kPickerImpl,
+  kPickerPlatformDecorator,
+};
+
 /// 允许裸调 `getDirectoryPath(` 的文件 → 理由。
 ///
 /// 只有一条，且是**刻意**不走统一入口的：词典目录导入在安卓与 iOS 都走原生
@@ -64,15 +87,18 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
   // 不按扩展名过滤（FileType.image / FileType.any）：没有可被丢弃的扩展名清单。
   'lib/src/media/audiobook/book_import_dialog.dart':
       '书籍封面：FileType.image，选中即拷进 app 存储与原路径脱钩'
-          '（书文件本身已收编到 pickFilesByExtensions）',
+      '（书文件本身已收编到 pickFilesByExtensions）',
   'lib/src/pages/implementations/miscellaneous_settings_page.dart':
       '应用图标：FileType.image，拷进 app 存储（image_picker 在 Windows 无实现，TODO-1239）',
   'lib/src/utils/misc/gallery_image_picker.dart':
       '制卡图片：FileType.image，选中即读字节写进卡片，不长期引用',
+  'lib/src/feedback/feedback_video.dart':
+      '反馈视频：FileType.video（不按扩展名过滤），选中当场转码 / 复制进 app 的待传区，'
+      '原路径不长期引用',
   'lib/src/media/manga/manga_ocr_settings_section.dart':
       '手动导入的 OCR 模型文件：FileType.any（模型文件无统一扩展名），选中即按清单'
-          '校验字节数并拷进 app 的模型目录（MangaOcrModelImporter，原子 rename），'
-          '原路径不入库。同一入口的「选择文件夹」走 pickRealDirectoryPath。',
+      '校验字节数并拷进 app 的模型目录（MangaOcrModelImporter，原子 rename），'
+      '原路径不入库。同一入口的「选择文件夹」走 pickRealDirectoryPath。',
   // Windows 专属入口（见 galgame SOP）：桌面原生对话框直接吃扩展名字符串，过滤
   // 可靠，且安卓那条腿根本跑不到。
   'lib/src/mining/galgame_add_flow.dart':
@@ -93,7 +119,8 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
 const Map<String, String> kCustomFileTypeAllowlist = <String, String>{
   // saveFile（保存对话框）：type 只决定「保存成什么类型」，不会让已存在的文件在
   // 选择器里置灰，不受 MIME 丢弃影响。
-  'lib/src/pages/implementations/media_sources_view.dart': 'saveFile：导出刮削诊断包 zip',
+  'lib/src/pages/implementations/media_sources_view.dart':
+      'saveFile：导出刮削诊断包 zip',
   'lib/src/pages/implementations/reader_fushi/audiobook.part.dart':
       'saveFile：导出有声书片段',
   'lib/src/pages/implementations/video_fushi/clip_export.part.dart':
@@ -160,19 +187,24 @@ Set<String> _filesCalling(String member) {
 
 void main() {
   test('扫描规模哨兵：lib/ 确实被枚举到了', () {
-    expectScanScale(_scannedDartFiles().length,
-        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+    expectScanScale(
+      _scannedDartFiles().length,
+      what: 'lib/ 下的 .dart',
+      atLeast: 750,
+      measured: 939,
+    );
   });
 
   test('目录选择器：除统一入口与登记豁免外，不得裸调 getDirectoryPath', () {
     final Set<String> callers = _filesCalling('getDirectoryPath')
-      ..remove(kPickerImpl);
+      ..removeAll(kPickerImplementationLayer);
     final Set<String> unexpected =
         callers.difference(kDirectoryPickerAllowlist.keys.toSet());
     expect(
       unexpected,
       isEmpty,
-      reason: '目录选完要用 dart:io 遍历，安卓裸 getDirectoryPath 拼出来的路径串没有'
+      reason:
+          '目录选完要用 dart:io 遍历，安卓裸 getDirectoryPath 拼出来的路径串没有'
           '全文件访问权限读不了（甚至退化成 /）。请改用 pickRealDirectoryPath（见 '
           '$kPickerImpl）。',
     );
@@ -180,32 +212,36 @@ void main() {
 
   test('目录豁免清单不得虚挂（清单里的文件必须真的还在裸调）', () {
     final Set<String> callers = _filesCalling('getDirectoryPath')
-      ..remove(kPickerImpl);
+      ..removeAll(kPickerImplementationLayer);
     for (final String path in kDirectoryPickerAllowlist.keys) {
       expect(
         callers,
         contains(path),
-        reason: '$path 已不再裸调 getDirectoryPath，请把它从豁免清单删掉——'
+        reason:
+            '$path 已不再裸调 getDirectoryPath，请把它从豁免清单删掉——'
             '清单只减不增，虚挂条目会让下一个人以为这里还有债。',
       );
     }
   });
 
   test('文件选择器：裸调 pickFiles 的文件必须已登记在案', () {
-    final Set<String> callers = _filesCalling('pickFiles')..remove(kPickerImpl);
+    final Set<String> callers = _filesCalling('pickFiles')
+      ..removeAll(kPickerImplementationLayer);
     final Set<String> unexpected =
         callers.difference(kFilePickerAllowlist.keys.toSet());
     expect(
       unexpected,
       isEmpty,
-      reason: '新增裸调 FilePicker.pickFiles。若选中的路径会被**长期引用**（存库/复扫/'
+      reason:
+          '新增裸调 FilePicker.pickFiles。若选中的路径会被**长期引用**（存库/复扫/'
           '启动），必须走 pickRealFilePath；若只是导入时当场读完就拷进 app 存储，'
           '请在 kFilePickerAllowlist 里登记并写明理由。',
     );
   });
 
   test('文件豁免清单不得虚挂', () {
-    final Set<String> callers = _filesCalling('pickFiles')..remove(kPickerImpl);
+    final Set<String> callers = _filesCalling('pickFiles')
+      ..removeAll(kPickerImplementationLayer);
     for (final String path in kFilePickerAllowlist.keys) {
       expect(
         callers,
@@ -215,15 +251,77 @@ void main() {
     }
   });
 
+  test('装饰层只做透传：选择器调用全是 inner.* 一对一转发，只在 Windows 装', () {
+    final String code = maskCommentsAndScriptLines(
+      File(kPickerPlatformDecorator).readAsStringSync(),
+    );
+    const List<String> members = <String>[
+      'pickFiles',
+      'getDirectoryPath',
+      'saveFile',
+      'clearTemporaryFiles',
+    ];
+    for (final String member in members) {
+      final int anyCalls = RegExp(
+        r'\.\s*' + member + r'\s*\(',
+      ).allMatches(code).length;
+      final int innerCalls = RegExp(
+        r'\binner\s*\.\s*' + member + r'\s*\(',
+      ).allMatches(code).length;
+      expect(
+        innerCalls,
+        1,
+        reason: '$kPickerPlatformDecorator 必须把 $member 原样转给 inner（恰一次）',
+      );
+      expect(
+        anyCalls,
+        innerCalls,
+        reason: '$kPickerPlatformDecorator 出现了 inner 之外的 $member 调用——'
+            '装饰层不得自己发起选择；要新增调用点请走 $kPickerImpl。',
+      );
+    }
+    // 不碰平台分流：安卓 / iOS 的真实路径分流只属于统一入口。
+    expect(
+      RegExp(r'\bisAndroid\b|\bisIOS\b|\bisMacOS\b|\bisLinux\b').hasMatch(code),
+      isFalse,
+      reason: '装饰层不得做平台分流（只在 Windows 装，分流归 $kPickerImpl）',
+    );
+    expect(
+      code,
+      contains('Platform.isWindows'),
+      reason: '装饰层的安装必须以 Windows 为门',
+    );
+    // 唯一改写的参数是 lockParentWindow：其余参数名与被转发值同名（原样透传）。
+    final RegExp namedArg = RegExp(r'(\w+)\s*:\s*([\w.()]+)\s*,');
+    final Iterable<RegExpMatch> forwarded = RegExp(
+      r'\binner\s*\.\s*\w+\s*\(([^;]*?)\)\s*;',
+    ).allMatches(code).expand(
+      (RegExpMatch call) => namedArg.allMatches(call.group(1)!),
+    );
+    expect(forwarded, isNotEmpty);
+    for (final RegExpMatch arg in forwarded) {
+      final String name = arg.group(1)!;
+      if (name == 'lockParentWindow') continue;
+      expect(
+        arg.group(2),
+        name,
+        reason: '$kPickerPlatformDecorator 改写了参数 $name——装饰层只许决定 '
+            'lockParentWindow，其余必须原样透传',
+      );
+    }
+  });
+
   test('按扩展名选文件：lib/ 下不得再裸用 FileType.custom（BUG-2099）', () {
     final Set<String> users = _filesContaining('FileType.custom')
       ..remove(kPickerImpl);
-    final Set<String> unexpected =
-        users.difference(kCustomFileTypeAllowlist.keys.toSet());
+    final Set<String> unexpected = users.difference(
+      kCustomFileTypeAllowlist.keys.toSet(),
+    );
     expect(
       unexpected,
       isEmpty,
-      reason: '安卓 SAF 只认 MIME：file_picker 会把 MimeTypeMap 查不到的扩展名'
+      reason:
+          '安卓 SAF 只认 MIME：file_picker 会把 MimeTypeMap 查不到的扩展名'
           '（mdx / dsl / ifo / ass / ssa / aix / lua / glsl…）静默丢掉，这些文件'
           '在选择器里是灰的、点不动。按扩展名选文件请走 $kPickerImpl 的 '
           'pickSystemFilePath(s) / pickFilesByExtensions（移动端自动降级成 '
@@ -245,6 +343,7 @@ void main() {
 
   test('统一入口文件本身存在（清单里的路径不是拼错的）', () {
     expect(File(kPickerImpl).existsSync(), isTrue);
+    expect(File(kPickerPlatformDecorator).existsSync(), isTrue);
     for (final String path in <String>[
       ...kDirectoryPickerAllowlist.keys,
       ...kFilePickerAllowlist.keys,

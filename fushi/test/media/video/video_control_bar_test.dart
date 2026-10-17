@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
@@ -423,6 +423,133 @@ void main() {
       // 结论不变时不重复通知。
       await tester.pump();
       expect(folded, hasLength(2));
+    });
+  });
+
+  // 反馈 eeWvjG93_d：右下「⋯」里只剩「倍速」一项时仍弹只有一行的菜单；点「⋯」
+  // 打开菜单时控制条连同「⋯」一起消失（菜单路由的 barrier 盖住控制条 → media_kit
+  // 的 MouseRegion onExit 收起控制条）。
+  group('VideoControlBar「⋯」只有一项 / 菜单开关', () {
+    const Key moreKey = Key('more');
+    const Key playKey = Key('play');
+
+    late List<String> selected;
+
+    VideoBarEntry foldedEntry(String label) => VideoBarEntry(
+      cluster: VideoBarCluster.end,
+      folded: true,
+      menuAction: VideoBarMenuAction(
+        icon: Icons.speed,
+        label: label,
+        onSelected: () => selected.add(label),
+      ),
+      child: const SizedBox.shrink(),
+    );
+
+    Future<void> pumpBar(
+      WidgetTester tester,
+      List<VideoBarEntry> extra, {
+      ValueChanged<bool>? onMenuOpenChanged,
+    }) async {
+      selected = <String>[];
+      tester.view.physicalSize = const Size(1200, 400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 600,
+                height: 48,
+                child: VideoControlBar(
+                  moreButtonBuilder: (VoidCallback open) => GestureDetector(
+                    onTap: open,
+                    child: const ColoredBox(
+                      key: moreKey,
+                      color: Color(0xFF000000),
+                      child: SizedBox(width: 48, height: 40),
+                    ),
+                  ),
+                  singleActionButtonBuilder: (VideoBarMenuAction action) =>
+                      GestureDetector(
+                        onTap: action.onSelected,
+                        child: ColoredBox(
+                          key: ValueKey<String>('single-${action.label}'),
+                          color: const Color(0xFF000000),
+                          child: const SizedBox(width: 48, height: 40),
+                        ),
+                      ),
+                  onMenuOpenChanged: onMenuOpenChanged,
+                  entries: <VideoBarEntry>[
+                    const VideoBarEntry(
+                      child: ColoredBox(
+                        key: playKey,
+                        color: Color(0xFF000000),
+                        child: SizedBox(width: 48, height: 40),
+                      ),
+                    ),
+                    ...extra,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    bool visible(Finder finder) => finder.hitTestable().evaluate().isNotEmpty;
+
+    testWidgets('只有一项：「⋯」位置直接画那一项的按钮，点一下就执行，不弹菜单', (WidgetTester tester) async {
+      await pumpBar(tester, <VideoBarEntry>[foldedEntry('speed')]);
+      // 首帧就画对，不先闪一帧「⋯」。
+      expect(find.byKey(moreKey), findsNothing);
+      final Finder single = find.byKey(const ValueKey<String>('single-speed'));
+      expect(visible(single), isTrue);
+      await tester.tap(single);
+      await tester.pumpAndSettle();
+      expect(selected, <String>['speed']);
+      expect(find.byType(PopupMenuItem<VideoBarMenuAction>), findsNothing);
+    });
+
+    testWidgets('两项及以上仍是「⋯」菜单', (WidgetTester tester) async {
+      await pumpBar(tester, <VideoBarEntry>[
+        foldedEntry('speed'),
+        foldedEntry('subtitle'),
+      ]);
+      expect(visible(find.byKey(moreKey)), isTrue);
+      expect(find.byKey(const ValueKey<String>('single-speed')), findsNothing);
+      await tester.tap(find.byKey(moreKey));
+      await tester.pumpAndSettle();
+      expect(find.text('speed'), findsOneWidget);
+      expect(find.text('subtitle'), findsOneWidget);
+    });
+
+    testWidgets('菜单开着期间报 true，关掉（选中 / 点外面）报 false', (
+      WidgetTester tester,
+    ) async {
+      final List<bool> events = <bool>[];
+      await pumpBar(tester, <VideoBarEntry>[
+        foldedEntry('speed'),
+        foldedEntry('subtitle'),
+      ], onMenuOpenChanged: events.add);
+      await tester.tap(find.byKey(moreKey));
+      await tester.pumpAndSettle();
+      expect(events, <bool>[true]);
+      await tester.tap(find.text('subtitle'));
+      await tester.pumpAndSettle();
+      expect(events, <bool>[true, false]);
+      expect(selected, <String>['subtitle']);
+
+      await tester.tap(find.byKey(moreKey));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(1100, 300));
+      await tester.pumpAndSettle();
+      expect(events, <bool>[true, false, true, false]);
+      expect(selected, <String>['subtitle']);
     });
   });
 }

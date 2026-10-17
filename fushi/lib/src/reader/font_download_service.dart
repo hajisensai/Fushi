@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
+    show readFontFamilyNameSync;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -171,7 +173,8 @@ class FontDownloadService {
   /// - zip（按魔数判）→ 解出其中所有字体条目；给了 [overrideName] 时只挑一个
   ///   （优先 `regular` / `[wght]` 那一份）并以 [overrideName] 命名。
   /// - 字体文件（按 [fileName] 扩展名或魔数判）→ 复制为
-  ///   `<name>_<epochMs><ext>`，name 取 [overrideName] 或去扩展名的 [fileName]。
+  ///   `<name>_<epochMs><ext>`，name 取 [overrideName]，否则取字体 `name` 表里的
+  ///   家族名（[importedFontDisplayName]），读不出才退回去扩展名的 [fileName]。
   /// - 都不是（如 7z/rar 或坏 zip）→ 抛 [FormatException]，由调用方决定怎么提示。
   ///
   /// 只动文件，不写目录偏好。
@@ -205,13 +208,33 @@ class FontDownloadService {
     String ext, {
     String? overrideName,
   }) async {
-    final String name = overrideName ?? p.basenameWithoutExtension(fileName);
+    final String name = overrideName ??
+        importedFontDisplayName(
+          src.path,
+          fallback: p.basenameWithoutExtension(fileName),
+        );
     final String destPath = p.join(
       _ensureFontsDir().path,
-      '${name}_${DateTime.now().millisecondsSinceEpoch}$ext',
+      '${safeWindowsFileName(name)}_${DateTime.now().millisecondsSinceEpoch}$ext',
     );
     await src.copy(destPath);
     return ImportedFontFile(name: name, path: destPath);
+  }
+
+  /// 导入字体文件的目录名：文件 `name` 表里的家族名（Typographic Family 优先），
+  /// 读不出（WOFF2、坏文件）才用 [fallback]（去扩展名的文件名，旧行为）。
+  ///
+  /// 用真实家族名的意义：同一家族的多个字重文件（`KleeOne-Regular.ttf` +
+  /// `KleeOne-SemiBold.ttf`）落成**同名**条目，CSS 生成器把同名条目合成一个家族、
+  /// 每个文件按真实字重各出一条 `@font-face`，粗体请求就会选中粗体文件，而不是把
+  /// 常规字面合成加粗。按文件名命名时两份永远是两个互不相干的家族。
+  @visibleForTesting
+  static String importedFontDisplayName(
+    String path, {
+    required String fallback,
+  }) {
+    final String? family = readFontFamilyNameSync(path);
+    return family == null || family.isEmpty ? fallback : family;
   }
 
   Future<List<ImportedFontFile>> _extractFontsFromArchive(
@@ -249,7 +272,12 @@ class FontDownloadService {
       final String ext = p.extension(entry.name);
       final String destPath = p.join(dir.path, '${baseName}_$ts$ext');
       File(destPath).writeAsBytesSync(entry.content as List<int>);
-      imported.add(ImportedFontFile(name: baseName, path: destPath));
+      // 家族包（Google Fonts 的 zip 里 Regular + SemiBold …）按真实家族名落成同名
+      // 条目，自动合成一个多字重家族。
+      imported.add(ImportedFontFile(
+        name: importedFontDisplayName(destPath, fallback: baseName),
+        path: destPath,
+      ));
     }
     return imported;
   }

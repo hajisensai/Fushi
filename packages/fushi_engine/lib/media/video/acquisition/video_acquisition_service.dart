@@ -11,6 +11,7 @@ library;
 
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatFailure;
 import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
@@ -103,8 +104,9 @@ class VideoAcquisitionPorts {
   /// 未启用资料站 / 未指派 AI → 空列表。默认恒空（测试与未接线的宿主不联网）。
   final Future<List<String>> Function(String query) resolveAlias;
 
-  /// 「整套下载」：[item] 所在系列的剧集与剧场版；null = 没有可用的系列来源。
-  final Future<VideoFranchise?> Function(VideoDiscoveryItem item) loadFranchise;
+  /// 「整套下载」：锚点作品所在系列的剧集与剧场版；null = 没有可用的系列来源。
+  final Future<VideoFranchise?> Function(VideoFranchiseQuery query)
+  loadFranchise;
 }
 
 /// 本机会话：页面经 [VideoAcquisitionSession] 消费它，互联 host 也用它代办。
@@ -285,7 +287,9 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
           _queue.add(const VideoAcquisitionSubmittedEvent(count: 1));
         });
       case VideoAcquisitionLoadFranchiseEffect():
-        await _loadFranchise(effect.item);
+        await _loadFranchise(effect.query);
+      case VideoAcquisitionContinueFranchiseEffect():
+        await _continueFranchise(effect.more);
       case VideoAcquisitionResolveFranchiseEntryEffect():
         await _resolveFranchiseEntry(effect);
       case VideoAcquisitionSubmitFranchiseEffect():
@@ -296,19 +300,44 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
     return true;
   }
 
-  Future<void> _loadFranchise(VideoDiscoveryItem item) async {
+  Future<void> _loadFranchise(VideoFranchiseQuery query) async {
     VideoFranchise? franchise;
     try {
-      franchise = await _ports.loadFranchise(item);
+      franchise = await _ports.loadFranchise(query);
     } catch (error, stack) {
       // 找不到系列 = 按单部继续（reducer 会说一声）；原因必须留痕。
       lastError = error;
       engineLog.logDiagnostic(
         'VideoAcquisition.loadFranchise',
-        '${item.reference.title}: $error\n$stack',
+        '${query.item.reference.title}: $error\n$stack',
       );
     }
     _queue.add(VideoAcquisitionFranchiseLoadedEvent(franchise));
+  }
+
+  /// 接着查下一批。续查本身出错（遍历内部已把请求失败收成 truncated，这里兜的是
+  /// 别的异常）时回灌一份空的 truncated 批：reducer 把已收到的部分照常交给用户，
+  /// 并说清单不全——而不是让会话停在「正在找系列」。
+  Future<void> _continueFranchise(
+    Future<VideoFranchise> Function() more,
+  ) async {
+    VideoFranchise batch;
+    try {
+      batch = await more();
+    } catch (error, stack) {
+      lastError = error;
+      engineLog.logDiagnostic(
+        'VideoAcquisition.continueFranchise',
+        '$error\n$stack',
+      );
+      batch = const VideoFranchise(
+        name: '',
+        series: <VideoDiscoveryItem>[],
+        movies: <VideoDiscoveryItem>[],
+        truncated: true,
+      );
+    }
+    _queue.add(VideoAcquisitionFranchiseLoadedEvent(batch));
   }
 
   /// 一部作品：详情（剧集才要——定下载还是订阅）+ 在库 / 已订阅 + 资源。任何一步
@@ -454,6 +483,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
       pendingQuestion: _state.question,
       slots: _slotsSnapshot(),
       history: _recentHistory(),
+      candidates: videoAcquisitionCandidateContext(_state),
       utterance: utterance,
     );
     VideoAcquisitionIntent? intent;
@@ -500,7 +530,9 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
     };
   }
 
-  /// 最近 6 条对话（助手句只给种类名，页面文案不回传给模型）。
+  /// 最近 6 条对话。助手句给结构化的 `{kind, args, question}`（事实参数，不含
+  /// 页面文案）：只给种类名时模型不知道「当前这个版本」是谁，「哪个最好 / 有没
+  /// 有更小的」这类追问一律解析不了（BUG-2933）。
   List<({String role, String text})> _recentHistory() {
     final List<VideoAcquisitionMessage> transcript = _state.transcript;
     final int start = transcript.length > 6 ? transcript.length - 6 : 0;
@@ -511,13 +543,32 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
             role: 'user',
             text: text,
           ),
-          VideoAcquisitionAssistantMessage(:final VideoAcquisitionSay say) => (
-            role: 'assistant',
-            text: say.kind.name,
-          ),
+          VideoAcquisitionAssistantMessage(
+            :final VideoAcquisitionSay say,
+            :final VideoAcquisitionQuestion? question,
+          ) =>
+            (role: 'assistant', text: _assistantTurnJson(say, question)),
         },
     ];
   }
+
+  static String _assistantTurnJson(
+    VideoAcquisitionSay say,
+    VideoAcquisitionQuestion? question,
+  ) => jsonEncode(<String, Object?>{
+    'kind': say.kind.name,
+    'args': <String, Object?>{
+      for (final MapEntry<String, Object?> entry in say.args.entries)
+        if (_isJsonScalar(entry.value) ||
+            (entry.value is List &&
+                (entry.value! as List<Object?>).every(_isJsonScalar)))
+          entry.key: entry.value,
+    },
+    if (question != null) 'question': question.slot.name,
+  });
+
+  static bool _isJsonScalar(Object? value) =>
+      value == null || value is String || value is num || value is bool;
 
   /// 查不到 / 失败都回灌空列表：reducer 据此说「没找到」，原因留诊断日志。
   Future<void> _resolveAlias(String query) async {

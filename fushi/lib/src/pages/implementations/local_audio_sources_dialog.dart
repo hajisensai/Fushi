@@ -1,6 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
+import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
+    show FushiDragHandle;
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 编辑「单个本地音频库」的子来源：拖拽调整优先级顺序 + 逐源启用/禁用。
@@ -28,8 +34,9 @@ class LocalAudioSourcesDialog extends StatefulWidget {
     List<LocalAudioSourcePref> saved,
     List<String> discovered,
   ) {
-    final Set<String> known =
-        saved.map((LocalAudioSourcePref s) => s.name).toSet();
+    final Set<String> known = saved
+        .map((LocalAudioSourcePref s) => s.name)
+        .toSet();
     return <LocalAudioSourcePref>[
       for (final LocalAudioSourcePref s in saved)
         if (discovered.contains(s.name)) s, // 保序、丢弃已消失的
@@ -56,15 +63,19 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog>
   Future<void> _load() async {
     final List<String> discovered = await widget.listSources();
     if (!mounted) return;
-    setState(() =>
-        _prefs = LocalAudioSourcesDialog.merge(widget.savedPrefs, discovered));
+    setState(
+      () =>
+          _prefs = LocalAudioSourcesDialog.merge(widget.savedPrefs, discovered),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double maxHeight =
-        (MediaQuery.of(context).size.height * 0.55).clamp(128.0, 420.0);
+    final double maxHeight = (MediaQuery.of(context).size.height * 0.55).clamp(
+      128.0,
+      420.0,
+    );
 
     return FushiDialogFrame(
       maxWidth: 480,
@@ -76,7 +87,7 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog>
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.local_audio_source_order_title,
-        leadingIcon: Icons.tune,
+        leadingIcon: FushiIcons.audio,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -101,7 +112,11 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog>
             maxWidth: double.maxFinite,
             maxHeight: maxHeight,
           ),
-          child: SingleChildScrollView(child: _buildBody(tokens)),
+          // 溢出时上 / 下端柔和淡出（只淡还有内容的那一侧），不再硬切最后一行。
+          child: FushiHorizontalEdgeFade(
+            axis: Axis.vertical,
+            child: SingleChildScrollView(child: _buildBody(tokens)),
+          ),
         ),
         footer: Align(
           alignment: Alignment.centerRight,
@@ -125,13 +140,12 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog>
       return buildLoading(padding: const EdgeInsets.all(24));
     }
     if (prefs.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t.local_audio_no_sources,
-            textAlign: TextAlign.center,
-          ),
+      // M3E 空状态：72 色块图标 + 弹入（FushiPlaceholderMessage）。
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: FushiPlaceholderMessage(
+          icon: FushiIcons.audio,
+          message: t.local_audio_no_sources,
         ),
       );
     }
@@ -139,56 +153,106 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog>
     // ReorderableListView：后者的 Overlay 拖拽代理不认祖先 FushiAppUiScale 的
     // Transform.scale，缩放界面下长按拖拽会飞出屏幕。前者把拖拽反馈渲染在列表自身坐标系、
     // 用 globalToLocal 消掉祖先缩放 → 任意缩放下都精确跟手、零偏移且视觉一致。
-    // 上下箭头按钮仍是无障碍/手柄重排路径。
-    return FushiReorderableColumn(
-      itemCount: prefs.length,
-      keyForIndex: (int index) =>
-          ValueKey<String>('local_audio_source_${prefs[index].name}'),
-      onReorder: (int from, int to) {
-        setState(() {
-          final LocalAudioSourcePref item = prefs.removeAt(from);
-          prefs.insert(to, item);
-        });
-      },
-      itemBuilder: (BuildContext context, int index) {
-        final LocalAudioSourcePref source = prefs[index];
-        return AdaptiveSettingsRow(
-          title: source.name,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Switch.adaptive(
-                value: source.enabled,
-                onChanged: (bool enabled) => setState(() {
-                  prefs[index] = source.copyWith(enabled: enabled);
-                }),
+    // 行尾把手的「上移 / 下移」菜单是无障碍 / 手柄重排路径。
+    // M3E 分段列表：每个来源一张分段卡（首尾大圆角、行间 2），行间缝交给
+    // FushiReorderableColumn 的 spacing（拖拽时缝不跟着行走）；首次出现错峰进场。
+    return FushiEntranceScope(
+      child: FushiReorderableColumn(
+        itemCount: prefs.length,
+        spacing: fushiGroupedListGap(context),
+        keyForIndex: (int index) =>
+            ValueKey<String>('local_audio_source_${prefs[index].name}'),
+        onReorder: (int from, int to) {
+          setState(() {
+            final LocalAudioSourcePref item = prefs.removeAt(from);
+            prefs.insert(to, item);
+          });
+        },
+        itemBuilder: (BuildContext context, int index) {
+          final LocalAudioSourcePref source = prefs[index];
+          return FushiStaggeredEntrance(
+            index: index,
+            child: FushiGroupedListItem(
+              index: index,
+              count: prefs.length,
+              includeGap: false,
+              child: AdaptiveSettingsRow(
+                title: source.name,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    FushiSwitch.adaptive(
+                      value: source.enabled,
+                      onChanged: (bool enabled) => setState(() {
+                        prefs[index] = source.copyWith(enabled: enabled);
+                      }),
+                    ),
+                    _buildReorderHandle(prefs, index),
+                  ],
+                ),
               ),
-              FushiIconButton(
-                icon: Icons.keyboard_arrow_up,
-                size: 18,
-                tooltip: t.move_up,
-                enabled: index > 0,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => setState(() {
-                  final LocalAudioSourcePref item = prefs.removeAt(index);
-                  prefs.insert(index - 1, item);
-                }),
-              ),
-              FushiIconButton(
-                icon: Icons.keyboard_arrow_down,
-                size: 18,
-                tooltip: t.move_down,
-                enabled: index < prefs.length - 1,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => setState(() {
-                  final LocalAudioSourcePref item = prefs.removeAt(index);
-                  prefs.insert(index + 1, item);
-                }),
-              ),
-            ],
-          ),
-        );
-      },
+            ),
+          );
+        },
+      ),
     );
+  }
+
+  /// 行尾重排把手：M3E drag_indicator（Apple 三横线），整行长按 / 鼠标按下即可
+  /// 拖动（手势归外层 [FushiReorderableColumn]）。把手本身是可聚焦的菜单按钮：
+  /// 点按 / Enter / 手柄确认弹出「上移 / 下移」，是键盘、手柄与读屏的重排路径
+  /// ——取代原先常驻的两枚裸 ^ / v 箭头（首行「上移」只是变灰，见 iOS 反馈截图）。
+  Widget _buildReorderHandle(List<LocalAudioSourcePref> prefs, int index) {
+    if (prefs.length < 2) return const SizedBox.shrink();
+    return FushiPopupMenuButton<int>(
+      key: ValueKey<String>('local_audio_source_handle_${prefs[index].name}'),
+      tooltip: t.local_audio_source_reorder_tooltip,
+      padding: EdgeInsets.zero,
+      // 命中 / 状态层与 48dp 热区同形（圆），视觉把手仍是 FushiDragHandle 原尺寸。
+      borderRadius: BorderRadius.circular(kMinInteractiveDimension / 2),
+      onSelected: (int delta) => _move(prefs, index, index + delta),
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
+        PopupMenuItem<int>(
+          value: -1,
+          enabled: index > 0,
+          child: _menuLabel(FushiIcons.expandLess, t.move_up),
+        ),
+        PopupMenuItem<int>(
+          value: 1,
+          enabled: index < prefs.length - 1,
+          child: _menuLabel(FushiIcons.expandMore, t.move_down),
+        ),
+      ],
+      // 把手视觉只有 size + 12 = 32px；触屏命中区按 M3 最小交互尺寸撑到 48dp，
+      // 把手居中、视觉尺寸不变（审查 PR #2098：32px 热区低于 48dp）。
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minWidth: kMinInteractiveDimension,
+          minHeight: kMinInteractiveDimension,
+        ),
+        child: Center(
+          widthFactor: 1,
+          heightFactor: 1,
+          child: FushiDragHandle(),
+        ),
+      ),
+    );
+  }
+
+  Widget _menuLabel(IconData icon, String label) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: <Widget>[
+      FushiIcon(icon, size: 20),
+      const SizedBox(width: 12),
+      Flexible(child: Text(label)),
+    ],
+  );
+
+  void _move(List<LocalAudioSourcePref> prefs, int from, int to) {
+    if (to < 0 || to >= prefs.length || to == from) return;
+    setState(() {
+      final LocalAudioSourcePref item = prefs.removeAt(from);
+      prefs.insert(to, item);
+    });
   }
 }

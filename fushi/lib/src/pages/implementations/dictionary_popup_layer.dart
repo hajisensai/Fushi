@@ -1,19 +1,28 @@
+import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_mining_target.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
     show dispatchClaimedMouseAction;
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/utils.dart';
 
+// BUG-2953：根 Overlay 查词浮层的自带导航层；宿主经本文件取用，故此处 re-export。
+export 'package:fushi/src/lookup/lookup_overlay_navigator.dart'
+    show LookupOverlayNavigator;
 // 占位单例的 canonical 声明已收口到 dictionary_popup_controller.dart（controller
 // 内部 seed/复位也用它，必须同一对象）；此处 re-export 维持既有宿主 import 不变。
 export 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart'
@@ -47,8 +56,10 @@ Rect calcPopupPosition({
   final double effectiveBottom = screen.height - reserve;
   final double horizontalInset = padding.clamp(0, screen.width / 2);
   final double verticalInset = padding.clamp(0, effectiveBottom / 2);
-  final double availableWidth =
-      (screen.width - horizontalInset * 2).clamp(0, maxWidth);
+  final double availableWidth = (screen.width - horizontalInset * 2).clamp(
+    0,
+    maxWidth,
+  );
   final double availableHeight =
       (effectiveBottom - effectiveTop - verticalInset * 2).clamp(0, maxHeight);
   final double minLeft = horizontalInset;
@@ -122,8 +133,9 @@ Rect calcPopupPosition({
         roomLeft < minPopupWidth) {
       final double roomBelow = maxBottom - (selectionRect.bottom + gap);
       final double roomAbove = (selectionRect.top - gap) - safeMinTop;
-      final double bestVerticalRoom =
-          roomBelow > roomAbove ? roomBelow : roomAbove;
+      final double bestVerticalRoom = roomBelow > roomAbove
+          ? roomBelow
+          : roomAbove;
       if (bestVerticalRoom >= minPopupHeight) {
         return placeAboveBelow();
       }
@@ -196,8 +208,10 @@ Rect dockedPopupRect({
   final double effectiveTop = topReserve.clamp(0, screen.height);
   final double effectiveBottom = screen.height - reserve;
   final double sideInset = horizontalInset.clamp(0, screen.width / 2);
-  final double verticalInset =
-      inset.clamp(0, (effectiveBottom).clamp(0, screen.height) / 2);
+  final double verticalInset = inset.clamp(
+    0,
+    (effectiveBottom).clamp(0, screen.height) / 2,
+  );
   final double width = (screen.width - sideInset * 2).clamp(0, screen.width);
   final double maxAvail = (effectiveBottom - effectiveTop - verticalInset * 2)
       .clamp(0, screen.height);
@@ -322,10 +336,14 @@ Rect anchorPopupTopLeft({
   final double maxTop = (screen.height - inset).clamp(0.0, screen.height);
   final double left = topLeft.dx.clamp(inset.clamp(0.0, maxLeft), maxLeft);
   final double top = topLeft.dy.clamp(inset.clamp(0.0, maxTop), maxTop);
-  final double width = anchored.width
-      .clamp(0.0, (screen.width - inset - left).clamp(0.0, screen.width));
-  final double height = anchored.height
-      .clamp(0.0, (screen.height - inset - top).clamp(0.0, screen.height));
+  final double width = anchored.width.clamp(
+    0.0,
+    (screen.width - inset - left).clamp(0.0, screen.width),
+  );
+  final double height = anchored.height.clamp(
+    0.0,
+    (screen.height - inset - top).clamp(0.0, screen.height),
+  );
   return Rect.fromLTWH(left, top, width, height);
 }
 
@@ -344,8 +362,7 @@ bool shouldShowLookupDismissBarrier({
   required bool hasVisiblePopup,
   required bool isSearching,
   required bool hiddenByDialog,
-}) =>
-    (hasVisiblePopup || isSearching) && !hiddenByDialog;
+}) => (hasVisiblePopup || isSearching) && !hiddenByDialog;
 
 /// BUG-2633：给查词浮层里的「悬停探针」补回**命中认领**。
 ///
@@ -372,10 +389,8 @@ bool shouldShowLookupDismissBarrier({
 /// （加载占位、停在屏外的 parked realm）都不认领命中。哪天给占位层加个
 /// `GestureDetector(behavior: opaque)`，就会出现「barrier exit 起了表、却没有任何
 /// 浮层 enter 来撤」——弹窗自己把自己关掉并续播。要加先想清楚这条。
-Widget lookupOverlayHitClaim({required Widget child}) => Listener(
-      behavior: HitTestBehavior.opaque,
-      child: child,
-    );
+Widget lookupOverlayHitClaim({required Widget child}) =>
+    Listener(behavior: HitTestBehavior.opaque, child: child);
 
 /// 把一个弹窗层 [child] 按 [pos] 摆放；隐藏层（[visible]=false，即 BUG-094 常驻热槽 /
 /// TODO-058 挂起冷层）停到屏幕右外侧 `(screen.width + 8, 0)` 继续预热。
@@ -394,6 +409,7 @@ Widget parkedPopupLayer({
   required Size screen,
   required Widget child,
   double entranceStartProgress = 0.0,
+  List<Rect> occluders = const <Rect>[],
 }) {
   return Positioned(
     key: key,
@@ -410,13 +426,114 @@ Widget parkedPopupLayer({
       // [entranceStartProgress]>0：本层接替已在屏上的搜索占位卡翻出，从占位卡当前的
       // 淡入进度接着淡；从 0 重来会在交接处露出一段透底空框（见
       // DictionaryPopupEntry.searchPlaceholderShownFor）。
-      child: _PopupEntranceFade(
+      child: _PopupLayerVisibility(
         visible: visible,
-        startProgress: entranceStartProgress,
-        child: child,
+        child: _PopupEntranceFade(
+          visible: visible,
+          startProgress: entranceStartProgress,
+          child: visible && occluders.isNotEmpty
+              ? PopupOccluderClip(
+                  layerRect: pos,
+                  occluders: occluders,
+                  child: child,
+                )
+              : child,
+        ),
       ),
     ),
   );
+}
+
+/// 嵌套查词「玻璃叠玻璃」修正：把本层被**更上层查词卡**盖住的区域整块裁掉。
+///
+/// 每层查词面板的 BackdropFilter 模糊的是「它下面已经画好的一切」。Skia 后端
+/// （Windows / Linux 默认渲染器）不认 [kFushiLookupPopupBackdropKey] 的背景快照分组，
+/// 子层压在父层卡上时采到的是父层那块 88% 面板，结果是 0.88 + 0.12 × 0.88 ≈ 99%
+/// 的实色板，与第一层（采到的是正文 / 视频）观感明显不同（用户 2026-10-05 截图：
+/// 第一层天空处 (44,52,48)，第二层同一片天空处 (23,29,23) ≈ 纯面板色）。
+///
+/// 把下层被上层覆盖的部分（含 WebView 纹理）裁掉后，上层模糊采到的就是正文本身，
+/// 每层同一背景、同一参数、同一观感。被盖住的部分本来就看不见（上层 88% 不透明），
+/// 命中测试也只该落在上层。
+///
+/// 只在 Flutter 自己能采到弹窗背后画面的平台生效（[fushiPopupBackdropSampleable]：
+/// Windows / Linux）：iOS / macOS 的模糊由原生系统材质在窗口内做，给平台视图挂路径
+/// 裁剪会让祖先多出 layer mask、原生材质失去模糊；Android 面板本就不透明。
+///
+/// [layerRect] 与 [occluders] 同在宿主 Stack 坐标系；[occluderRadius] 与查词面板
+/// 外圈圆角一致（[FushiDesignTokens] 卡片圆角 10），上层圆角外的那一小角仍露出下层。
+class PopupOccluderClip extends StatelessWidget {
+  const PopupOccluderClip({
+    required this.layerRect,
+    required this.occluders,
+    required this.child,
+    super.key,
+    this.occluderRadius = 10,
+  });
+
+  final Rect layerRect;
+  final List<Rect> occluders;
+  final double occluderRadius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!fushiPopupBackdropSampleable(context)) return child;
+    final List<Rect> local = <Rect>[
+      for (final Rect r in occluders)
+        if (r.overlaps(layerRect)) r.shift(-layerRect.topLeft),
+    ];
+    if (local.isEmpty) return child;
+    return ClipPath(
+      clipper: _PopupOccluderClipper(local, occluderRadius),
+      child: child,
+    );
+  }
+}
+
+class _PopupOccluderClipper extends CustomClipper<Path> {
+  _PopupOccluderClipper(this.occluders, this.radius);
+
+  final List<Rect> occluders;
+  final double radius;
+
+  @override
+  Path getClip(Size size) {
+    Path visible = Path()..addRect(Offset.zero & size);
+    for (final Rect r in occluders) {
+      visible = Path.combine(
+        PathOperation.difference,
+        visible,
+        Path()..addRRect(RRect.fromRectAndRadius(r, Radius.circular(radius))),
+      );
+    }
+    return visible;
+  }
+
+  @override
+  bool shouldReclip(_PopupOccluderClipper oldClipper) =>
+      oldClipper.radius != radius ||
+      !listEquals(oldClipper.occluders, occluders);
+}
+
+/// 把 [parkedPopupLayer] 的**最终**可见性（条目可见 && 未被对话框挪到屏外）交给层内
+/// 的 [DictionaryPopupLayer]，供 `popupLookupPending` 判「这一层当前真的在屏上」。
+/// 停驻层的 Visibility 维持了 TickerMode（maintainAnimation），无法借它判停驻，故单设。
+/// 不经 [parkedPopupLayer] 直接挂的层（串流查词等）本来就在屏上，缺省按可见。
+class _PopupLayerVisibility extends InheritedWidget {
+  const _PopupLayerVisibility({required this.visible, required super.child});
+
+  final bool visible;
+
+  static bool of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_PopupLayerVisibility>()
+          ?.visible ??
+      true;
+
+  @override
+  bool updateShouldNotify(_PopupLayerVisibility oldWidget) =>
+      visible != oldWidget.visible;
 }
 
 /// 停驻 realm 在停驻期的外壳尺寸（逻辑像素）。接管时 Positioned 换成真实几何，
@@ -496,8 +613,9 @@ Widget popupWebViewOverflow({
   required double overflowHeight,
   required Widget Function(double? visibleHeight) builder,
 }) {
-  final double extra =
-      overflowHeight.isFinite && overflowHeight > 0 ? overflowHeight : 0.0;
+  final double extra = overflowHeight.isFinite && overflowHeight > 0
+      ? overflowHeight
+      : 0.0;
   return LayoutBuilder(
     builder: (BuildContext context, BoxConstraints constraints) {
       final bool bounded = constraints.hasBoundedHeight;
@@ -573,7 +691,10 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade>
   void initState() {
     super.initState();
     _progress = AnimationController(vsync: this, duration: _kSlideDuration);
-    _opacity = CurvedAnimation(parent: _progress, curve: Curves.easeOut);
+    _opacity = CurvedAnimation(
+      parent: _progress,
+      curve: FushiSpringCurve.effects,
+    );
     if (widget.visible) _enterVisible();
   }
 
@@ -732,14 +853,199 @@ class DictionaryPopupHistoryNav {
   final VoidCallback onForward;
 }
 
-/// 弹窗顶栏「✨ 按句意挑词条」（`ai_lookup_context_assistant.dart`）的接线。宿主只在
-/// 给查词功能解析到了 AI 提供商时传入；[busy] 时按钮换成转圈且不可再点。
-class DictionaryPopupAiPick {
-  const DictionaryPopupAiPick({required this.busy, required this.onTap});
+/// 顶栏动作按钮的边长（= 命中区）：桌面 36（鼠标精确，压缩顶栏）；移动端 44——
+/// 触控目标下限，不得再往下收。
+///
+/// 这一个值同时是**三组**控件的可见尺寸——左簇按钮组胶囊高、中段宿主 header（收藏 /
+/// 有声书）胶囊高、右簇关闭圆钮直径，都等于它（BUG-3412）。中段此前被挤小不是 44 本身
+/// 的问题，而是对称预留布局只给 header 留 `宽 − 2×左簇宽`；[_PopupTopBarLayout] 改为把
+/// 两簇之间的全部剩余宽给 header 后，390 宽手机上 44 边长的 4 颗中段按钮放得下。
+/// 「可以变小」由统一的 [kDictionaryPopupTopActionIconSize]（20 → 18）承担。
+double dictionaryPopupTopActionExtent({required bool mobile}) =>
+    mobile ? 44 : 36;
 
-  final bool busy;
-  final VoidCallback onTap;
+/// 顶栏所有动作按钮（左簇 / 中段 header / 右簇关闭 / 溢出菜单 / 制卡目标）共用的图标
+/// 尺寸（BUG-3412）。宿主 header 也必须用它，不得各写各的 `size:`。
+const double kDictionaryPopupTopActionIconSize = 18;
+
+/// 顶栏所有动作按钮（左簇字号 / 导航、中段宿主 header 的收藏 / 有声书 / 视频句子动作、
+/// 右簇关闭）共用的命中盒（用户 10-09「中间的收藏句子按钮比其他按钮小一圈」）。宿主的
+/// [DictionaryPopupLayer.headerWidget] 里的按钮也用它，整条顶栏一个尺寸。
+BoxConstraints dictionaryPopupTopActionConstraints() {
+  final double extent = dictionaryPopupTopActionExtent(
+    mobile: isMobilePlatform,
+  );
+  return BoxConstraints.tightFor(width: extent, height: extent);
 }
+
+/// 顶栏随正文一起缩放的系数（用户 10-09「顶栏按钮不随缩放变化」）。与正文 CSS zoom
+/// 同一个公式（`DictionaryPopupWebViewState.popupContentZoom`：界面大小 × 词典字号/16，
+/// A−/A+ / Ctrl+滚轮改的就是词典字号），夹到 [0.8, 1.5]：再小点不中，再大顶栏会吃掉
+/// 正文高度。弹窗处在界面缩放中和器之下（净缩放 1），界面大小只能由这里乘进来——此前
+/// 只有阅读器 header 自己乘了界面大小，左右两簇没乘，于是中间的收藏按钮与两侧大小不一。
+double dictionaryPopupTopBarScale({
+  required double appUiScale,
+  required double dictionaryFontSize,
+}) {
+  final double raw = appUiScale * dictionaryFontSize / 16.0;
+  if (!raw.isFinite || raw <= 0) return 1.0;
+  return raw.clamp(0.8, 1.5).toDouble();
+}
+
+/// 顶栏宽度低于此值且有 [DictionaryPopupLayer.headerWidget] 时，A−/A+ 收进
+/// 「⋯」溢出菜单（2026-10 体验优化），优先保住居中 header 与关闭按钮的宽度。
+const double kDictionaryPopupTopBarCompactWidth = 360;
+
+/// 每个查词层（按其 WebView GlobalKey）的「正文已滚离顶部」状态，见
+/// [DictionaryPopupLayer._scrolledUnder]。
+final Expando<ValueNotifier<bool>> _popupScrolledUnderOf =
+    Expando<ValueNotifier<bool>>('popupScrolledUnder');
+
+/// 顶栏的 M3 scrolled-under 底：正文滚离顶部时淡入 surfaceContainerHigh 底，回到顶部
+/// 淡回透明。玻璃设计系统与墨水屏不铺底（前者是材质、后者灰阶下色块读不出来），
+/// 无可渲染词条（搜索中 / 空态）时恒透明。
+class _PopupScrolledUnderBar extends StatelessWidget {
+  const _PopupScrolledUnderBar({
+    required this.scrolledUnder,
+    required this.enabled,
+    required this.child,
+  });
+
+  final ValueListenable<bool> scrolledUnder;
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color? tone = dictionaryPopupToolGroupColor(context);
+    if (!enabled || tone == null) return child;
+    final Color under = Theme.of(context).colorScheme.surfaceContainer;
+    final Duration duration = fushiMotionDuration(
+      context,
+      const Duration(milliseconds: 200),
+    );
+    return ValueListenableBuilder<bool>(
+      valueListenable: scrolledUnder,
+      child: child,
+      builder: (BuildContext context, bool isUnder, Widget? child) {
+        return AnimatedContainer(
+          duration: duration,
+          curve: FushiMotion.enter,
+          decoration: BoxDecoration(
+            color: isUnder ? under : under.withValues(alpha: 0),
+            boxShadow: isUnder
+                ? <BoxShadow>[
+                    BoxShadow(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.shadow.withValues(alpha: 0.12),
+                      blurRadius: 6,
+                      offset: const Offset(0, 1),
+                    ),
+                  ]
+                : const <BoxShadow>[],
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+}
+
+/// 顶栏按钮组之间的间距、顶栏四周留白（M3E button group 口径）。
+const double _kTopBarGroupGap = 6;
+const double _kTopBarInset = 6;
+
+/// [DictionaryPopupToolGroup] 胶囊的左右内边距。
+const double _kToolGroupHorizontalPadding = 2;
+
+/// 查词弹窗顶栏按钮组 / 关闭圆钮的 tonal 底色；玻璃设计系统与墨水屏不铺色（null）。
+Color? dictionaryPopupToolGroupColor(BuildContext context) {
+  if (isGlassDesign(context) || isEinkTheme(context)) return null;
+  return Theme.of(context).colorScheme.surfaceContainerHigh;
+}
+
+/// 查词弹窗顶栏的 M3E 按钮组：一枚 surfaceContainerHigh 全圆角胶囊托住一组小号
+/// 图标按钮（字号组 / 导航组 / 阅读器的收藏 + 有声书动作组），组间留白分开语义，
+/// 取代旧的「一排裸图标挤在一起」。按钮自身的按压 / 悬停 / 焦点状态层不变（仍是
+/// [FushiIconButton]）。玻璃设计系统沿用原生玻璃按钮、不再套一层底；墨水屏改
+/// 1px 描边胶囊（灰阶抖动下色块读不出来）。
+class DictionaryPopupToolGroup extends StatelessWidget {
+  const DictionaryPopupToolGroup({required this.children, super.key});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget row = Row(mainAxisSize: MainAxisSize.min, children: children);
+    if (isGlassDesign(context)) return row;
+    final bool eink = isEinkTheme(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: dictionaryPopupToolGroupColor(context),
+        shape: StadiumBorder(
+          side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: _kToolGroupHorizontalPadding,
+        ),
+        child: row,
+      ),
+    );
+  }
+}
+
+/// [_PopupTopBarLayout] 的三个槽。
+enum _PopupTopBarSlot { left, header, right }
+
+/// 查词弹窗顶栏布局（BUG-3412）：左簇钉行首、右簇钉行尾，[DictionaryPopupLayer.headerWidget]
+/// 拿两簇之间（各留 [gap]）的全部剩余宽，优先相对整条顶栏居中，放不下居中位置时夹在
+/// 剩余区内——永不压到两簇（BUG-822 / BUG-826），也不因对称预留被无谓地缩小。
+class _PopupTopBarLayout extends MultiChildLayoutDelegate {
+  _PopupTopBarLayout({required this.gap});
+
+  final double gap;
+
+  @override
+  void performLayout(Size size) {
+    final BoxConstraints loose = BoxConstraints.loose(size);
+    final Size left = layoutChild(_PopupTopBarSlot.left, loose);
+    final Size right = layoutChild(_PopupTopBarSlot.right, loose);
+    positionChild(
+      _PopupTopBarSlot.left,
+      Offset(0, (size.height - left.height) / 2),
+    );
+    positionChild(
+      _PopupTopBarSlot.right,
+      Offset(size.width - right.width, (size.height - right.height) / 2),
+    );
+    if (!hasChild(_PopupTopBarSlot.header)) return;
+    final double start = left.width > 0 ? left.width + gap : 0;
+    final double end = size.width - (right.width > 0 ? right.width + gap : 0);
+    final double available = math.max(0, end - start);
+    final Size header = layoutChild(
+      _PopupTopBarSlot.header,
+      BoxConstraints(maxWidth: available, maxHeight: size.height),
+    );
+    final double centred = (size.width - header.width) / 2;
+    final double x = centred
+        .clamp(start, math.max(start, end - header.width))
+        .toDouble();
+    positionChild(
+      _PopupTopBarSlot.header,
+      Offset(x, (size.height - header.height) / 2),
+    );
+  }
+
+  @override
+  bool shouldRelayout(_PopupTopBarLayout oldDelegate) => oldDelegate.gap != gap;
+}
+
+/// 顶栏溢出菜单里的动作。
+enum _PopupTopBarOverflowAction { zoomOut, zoomIn }
 
 class DictionaryPopupLayer extends StatelessWidget {
   const DictionaryPopupLayer({
@@ -752,6 +1058,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onDuplicateCheck,
     this.onOverwriteTargetNoteId,
     this.onMinedCardAction,
+    this.onQueueOverwrite,
     this.onOpenInAnki,
     this.onUpdateEntry,
     this.onFavoriteEntry,
@@ -759,10 +1066,10 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onAppendSentence,
     this.onSetSentenceContext,
     this.onClearSentenceDraft,
-    this.onSentenceContextPreview,
-    this.onOpenSentenceContextModal,
+    this.onOpenAdvancedMining,
     this.isSearching = false,
     this.keepWebViewWarm = false,
+    this.showMiningTargetSwitch = false,
     this.hasChildPopup = false,
     this.onTapOutside,
     this.onScrolledToBottom,
@@ -773,6 +1080,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onHostInputToken,
     this.debugHostOwnsPointer,
     this.headerWidget,
+    this.topBarScale = 1.0,
     this.overlayWidget,
     this.isDark = false,
     this.overrideFillColor,
@@ -785,20 +1093,23 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onClose,
     this.onBack,
     this.historyNav,
-    this.aiPick,
     this.restoreScrollTop,
-    this.resultReorderOf,
     this.transparentDocumentBackground = false,
     this.showResizeGrip = false,
     this.onResizeStart,
     this.onResizeUpdate,
     this.onResizeEnd,
     this.onResizeCancel,
+    this.resourceSource,
     super.key,
   });
 
   final DictionarySearchResult? result;
   final bool isSearching;
+
+  /// 透传给 [DictionaryPopupWebView.resourceSource]：结果来自别的设备时，词典样式 /
+  /// 媒体 / 发音取自那台设备。null = 本机。
+  final DictionaryPopupResourceSource? resourceSource;
 
   /// When true, the popup's [DictionaryPopupWebView] is mounted (and stays
   /// mounted) even with no results and not searching — so the WebView cold-loads
@@ -807,6 +1118,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// [BaseSourcePageState] (BUG-092) to kill the per-lookup white flash on the
   /// reader/video/audiobook surfaces.
   final bool keepWebViewWarm;
+
+  /// 顶栏是否给出「制卡目标」按钮（[DictionaryPopupMiningTargetButton]：切配置 /
+  /// 牌组）。只有真能制卡的宿主（制卡模块开着）才开；默认关，app 外覆盖窗、停驻
+  /// 热槽等不制卡的层不出现，也不去碰 Anki / 配置 provider。
+  final bool showMiningTargetSwitch;
 
   /// TODO-869：本层弹窗是否有子（后代）弹窗。透传给 [DictionaryPopupWebView] 注入
   /// `window.__hasChildPopup`，让 popup.js 点卡片本体留白时据此关后代层（有子层才发
@@ -845,21 +1161,26 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 透传给 [DictionaryPopupWebView] 让更早的卡也能进「✓↩ 最新可改」态。null 时弹窗
   /// 维持旧两态行为（默认 latest / AnkiDroid 降级）。
   final Future<int?> Function(String expression, String reading)?
-      onOverwriteTargetNoteId;
+  onOverwriteTargetNoteId;
 
   /// TODO-1007/1008：点 ✓（卡已存在）弹操作选择（覆写/新增重复卡/查看·在 Anki 中打开），
   /// 命中多张让用户选。透传给 [DictionaryPopupWebView]。null 时回退旧两态行为。
   final Future<MinePopupResult> Function(Map<String, String> fields)?
-      onMinedCardAction;
+  onMinedCardAction;
+
+  /// BUG-3492：卡还在后台写入时的覆盖请求（排队、落地后自动覆盖），透传给
+  /// [DictionaryPopupWebView.onQueueOverwrite]。null = 宿主没有后台写入这条路。
+  final Future<QueuedOverwriteReply> Function(Map<String, String> fields)?
+  onQueueOverwrite;
 
   /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮回调，透传给
   /// [DictionaryPopupWebView]。宿主把 Anki 浏览器过滤到「Anki 认为这个词已有的卡」
   /// （判据与画 ✓ 的查重同源），并回传三态结局供弹窗就地提示。
   final Future<AnkiOpenWordOutcome> Function(String expression, String reading)?
-      onOpenInAnki;
+  onOpenInAnki;
   final Future<bool> Function(Map<String, String> fields)? onFavoriteEntry;
   final Future<bool> Function(String expression, String reading)?
-      onFavoriteCheck;
+  onFavoriteCheck;
 
   /// TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：弹窗「+句」追加当前句到宿主草稿，
   /// 返回累积句数。null 时弹窗不渲染「+句」按钮（纯查词页 / 视频 E 未接入前向后兼容）。
@@ -867,27 +1188,22 @@ class DictionaryPopupLayer extends StatelessWidget {
 
   /// TODO-393：「上 N 句 / 下 N 句」上下文选择回调，透传给 webview。
   final Future<int> Function(int prevCount, int nextCount)?
-      onSetSentenceContext;
+  onSetSentenceContext;
 
   /// TODO-382「+句」可撤销：弹窗点「清空已加句子」清空宿主草稿，返回清空后句数（恒 0）。
   /// 与 [onAppendSentence] 同生命周期：支持草稿的表面非空，纯查词页 null（不渲染清空入口）。
   final Future<int> Function()? onClearSentenceDraft;
 
-  /// Niratan「制卡前调整·选择句子上下文」：弹窗拉取当前草稿真实上下文句 + 词偏移做
-  /// 预览的回调，透传给 webview。null 时弹窗不渲染「调整上下文」按钮（与 [onSetSentenceContext]
-  /// 同生命周期，仅支持草稿的表面非空）。
-  final Future<Map<String, Object?>> Function()? onSentenceContextPreview;
-
-  /// BUG-763/766：弹窗点某词条「调整上下文」→ 宿主弹 app 原生顶层对话框。透传给 webview。
-  final Future<void> Function(int entryIndex, String matched)?
-      onOpenSentenceContextModal;
+  /// 「高级制卡」：弹窗点某词条「高级制卡」→ 宿主弹 app 原生顶层对话框。透传给 webview；
+  /// null 时弹窗不渲染该按钮（宿主只在制卡模块开着时接线）。
+  final OpenAdvancedMiningCallback? onOpenAdvancedMining;
   final VoidCallback? onTapOutside;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onRendered;
 
   /// JS 内容高度与当前 WebView 视口高度。宿主用二者差值自适应外壳总高。
   final void Function(double contentHeight, double viewportHeight)?
-      onContentMetrics;
+  onContentMetrics;
 
   /// TODO-058 fail-safe：弹窗 WebView 主框架加载失败时触发，宿主据此立即翻可见
   /// 挂起的冷层（加载失败也显示，不卡死）。
@@ -903,6 +1219,10 @@ class DictionaryPopupLayer extends StatelessWidget {
   @visibleForTesting
   final bool? debugHostOwnsPointer;
   final Widget? headerWidget;
+
+  /// 顶栏整体缩放（宿主传 [dictionaryPopupTopBarScale]）。按钮、
+  /// 图标与 [headerWidget] 一起等比缩放，跟随正文的 A−/A+。
+  final double topBarScale;
   final Widget? overlayWidget;
   final bool isDark;
   final Color? overrideFillColor;
@@ -935,16 +1255,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 间来回。
   final DictionaryPopupHistoryNav? historyNav;
 
-  /// 顶栏「✨ 按句意挑词条」（见 [DictionaryPopupAiPick]）。null = 不画。
-  final DictionaryPopupAiPick? aiPick;
-
   /// 透传 [DictionaryPopupWebView.restoreScrollTop]：后退 / 前进回到历史页时该页离开
   /// 时的滚动位（[DictionaryPopupEntry.restoreScrollTop]）；常态 null。
   final double? restoreScrollTop;
-
-  /// 透传 [DictionaryPopupWebView.reorderOf]：[result] 只是这一份的重排时非 null
-  /// （[DictionaryPopupEntry.reorderBase]）；常态 null。
-  final DictionarySearchResult? resultReorderOf;
 
   /// TODO-1065：转发给 [DictionaryPopupWebView] —— 本层属「app 外 / 悬浮字幕」独立
   /// 查词窗（popup_main 宿主）时 true，令弹窗 `<html>` 透明消除整窗泛白（默认 false =
@@ -972,8 +1285,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   final VoidCallback? onResizeCancel;
 
   /// 拖拽把手的测试锚点（widget 测试用 `find.byKey` 定位后模拟 pan）。
-  static const Key resizeGripKey =
-      ValueKey<String>('dictionary-popup-resize-grip');
+  static const Key resizeGripKey = ValueKey<String>(
+    'dictionary-popup-resize-grip',
+  );
 
   /// 本层是否是「底部停靠」的整宽面板（`popup_bottom_docked`）。
   ///
@@ -1017,16 +1331,35 @@ class DictionaryPopupLayer extends StatelessWidget {
     );
   }
 
-  static const BoxConstraints _topActionConstraints =
-      BoxConstraints.tightFor(width: 36, height: 36);
+  /// 本层正文是否已滚离顶部（顶栏 scrolled-under 底色的唯一真值）。按 [webViewKey]
+  /// 挂在 [Expando] 上：层是无状态 widget，而 WebView 身份（同一把 GlobalKey）跨重建
+  /// 稳定，键被回收时通知器随之回收。
+  ValueNotifier<bool> get _scrolledUnder =>
+      _popupScrolledUnderOf[webViewKey] ??= ValueNotifier<bool>(false);
+
+  /// 顶栏按钮的命中区（见 [dictionaryPopupTopActionExtent]）。
+  static double get _topActionExtent =>
+      dictionaryPopupTopActionExtent(mobile: isMobilePlatform);
+
+  static BoxConstraints get _topActionConstraints => BoxConstraints.tightFor(
+    width: _topActionExtent,
+    height: _topActionExtent,
+  );
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final fillColor = overrideFillColor ?? colorScheme.surface;
+    // Apple 设计系统：面板是玻璃（[FushiPopupSurface] 把 colorScheme.surface 换成
+    // secondarySystemGroupedBackground 材质色）。搜索中 / 空结果的不透明盖板要与
+    // 玻璃同色系，否则深色下是一块纯黑（systemGroupedBackground）压在 #1C1C1E
+    // 玻璃上，切换时闪一下。MD3 不变。
+    final Color coverColor = overrideFillColor == null && isGlassDesign(context)
+        ? appleColorsOf(context).secondaryGroupedBackground
+        : fillColor;
 
     final Widget? topBar = _buildTopBar(context);
-    final Widget body = _buildContent(context, fillColor);
+    final Widget body = _buildContent(context, coverColor);
 
     final Widget surfaceChild;
     if (topBar != null) {
@@ -1035,21 +1368,17 @@ class DictionaryPopupLayer extends StatelessWidget {
       // 不再冒泡进滑动判定，彻底消除"框选误触滑动关闭"。
       // BUG-2770：鼠标滑关关时仍按触摸开关挂 touchOnly 包装。
       final Widget topRegion = _wrapSwipeDismiss(topBar);
-      // TODO-1187：分隔线从 header widget 内的无条件底边框移到这里，只在「有 header
-      // 星标/音频行」且「有可渲染词条」时才画。无结果（「未找到搜索结果」占位）/ 搜索中
-      // 不画，消除悬在收藏行与占位卡之间的多余横线。app 外覆盖窗 / 嵌套返回层无
-      // [headerWidget]（topBar 只有关闭/返回按钮）—— 从来没有这条线，此处也不画，不受影响。
-      final bool showHeaderDivider =
-          headerWidget != null && _hasRenderableResults;
+      // M3E（2026-10-06，用户：「这条线很丑」）：顶栏与正文之间不再画常驻硬分隔线
+      // （旧 TODO-1187 的 0.5px Divider）。未滚动时两者只靠间距区分；正文一离开顶部，
+      // 顶栏铺上一层 surfaceContainerHigh 底（M3 top app bar 的 scrolled-under），
+      // 回到顶部再淡回透明。判据来自 WebView 的 `popupScrolledUnder` 回报。
       surfaceChild = Column(
         children: <Widget>[
-          topRegion,
-          if (showHeaderDivider)
-            Divider(
-              height: 0.5,
-              thickness: 0.5,
-              color: Theme.of(context).dividerColor,
-            ),
+          _PopupScrolledUnderBar(
+            scrolledUnder: _scrolledUnder,
+            enabled: _hasRenderableResults,
+            child: topRegion,
+          ),
           Expanded(child: body),
         ],
       );
@@ -1106,8 +1435,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       child: surface,
     );
 
-    final Widget shell =
-        topBar != null ? content : _wrapSwipeDismiss(content);
+    final Widget shell = topBar != null ? content : _wrapSwipeDismiss(content);
 
     return _maybeWrapHostKeyInput(
       _maybeWrapHostPointerInput(_maybeWrapResizeGrip(shell)),
@@ -1265,87 +1593,217 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 被夹到剩余宽，绝不抛无界宽异常；同时保住 [ReaderChromeScaler] 需要的有界宽（UI 缩放
   /// 不失效）。header 缺省（app 外覆盖窗）时中段退化成 [Spacer]，行为与旧的「只有 A−/A+ +
   /// 关闭」一致。
+  ///
+  /// BUG-3412：三段排布现由 [_PopupTopBarLayout] 完成（语义同上：两簇钉两端、header 拿
+  /// 两簇之间的有界宽，能相对整条顶栏居中就居中），三组控件共用同一边长与图标尺寸。
   Widget? _buildTopBar(BuildContext context) {
     if (headerWidget == null &&
         onClose == null &&
         onBack == null &&
-        historyNav == null &&
-        aiPick == null) {
+        historyNav == null) {
       return null;
     }
 
-    final String backTooltip =
-        MaterialLocalizations.of(context).backButtonTooltip;
+    // 2026-10 体验优化：窄宽（且有居中 header）时 A−/A+ 收进「⋯」菜单。
+    // LayoutBuilder 只读本层拿到的有界宽度，不改 BUG-822 的 Row 三段结构。
+    //
+    // 用户 10-09「顶栏按钮不随缩放变化」：整条顶栏按 [topBarScale] 等比缩放——在
+    // 「宽 / scale」的逻辑宽度里排好，再用 FittedBox 放回实际宽度，按钮 / 图标 /
+    // header 一起变大变小，命中区与绘制一致（FittedBox 的变换参与命中测试）。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double scale = topBarScale.isFinite && topBarScale > 0
+            ? topBarScale
+            : 1.0;
+        final bool bounded =
+            constraints.hasBoundedWidth && constraints.maxWidth.isFinite;
+        final double? logicalWidth = bounded
+            ? constraints.maxWidth / scale
+            : null;
+        final bool compact =
+            headerWidget != null &&
+            logicalWidth != null &&
+            logicalWidth < kDictionaryPopupTopBarCompactWidth;
+        final Widget row = _buildTopBarRow(context, compact: compact);
+        if (logicalWidth == null || scale == 1.0) return row;
+        // 外层定死实际宽度：顶栏在 Column 里拿到的是宽松约束，FittedBox 自己会缩成
+        // 子尺寸（logicalWidth）而不放大。
+        return SizedBox(
+          width: constraints.maxWidth,
+          child: FittedBox(
+            fit: BoxFit.fitWidth,
+            alignment: Alignment.topCenter,
+            child: SizedBox(width: logicalWidth, child: row),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTopBarRow(BuildContext context, {required bool compact}) {
+    final String backTooltip = MaterialLocalizations.of(
+      context,
+    ).backButtonTooltip;
     final DictionaryPopupHistoryNav? nav = historyNav;
 
     // 左簇：返回（可选）+ 历史 ← →（可选）+ A−/A+ 字号按钮（TODO-1353）。定宽，钉在行首。
+    // M3E：导航与字号各自落进一枚 tonal 胶囊按钮组（[DictionaryPopupToolGroup]），
+    // 组与组之间留 6，不再是一排挤在一起的裸图标。
+    final List<Widget> navButtons = <Widget>[
+      if (onBack != null)
+        FushiIconButton(
+          icon: Icons.arrow_back,
+          size: kDictionaryPopupTopActionIconSize,
+          tooltip: backTooltip,
+          constraints: _topActionConstraints,
+          padding: EdgeInsets.zero,
+          onTap: onBack,
+        ),
+      if (nav != null) ...<Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('popup_history_back'),
+          icon: Icons.arrow_back,
+          size: kDictionaryPopupTopActionIconSize,
+          tooltip: t.popup_history_back,
+          constraints: _topActionConstraints,
+          padding: EdgeInsets.zero,
+          enabled: nav.canGoBack,
+          onTap: nav.onBack,
+        ),
+        FushiIconButton(
+          key: const ValueKey<String>('popup_history_forward'),
+          icon: Icons.arrow_forward,
+          size: kDictionaryPopupTopActionIconSize,
+          tooltip: t.popup_history_forward,
+          constraints: _topActionConstraints,
+          padding: EdgeInsets.zero,
+          enabled: nav.canGoForward,
+          onTap: nav.onForward,
+        ),
+      ],
+    ];
+    final List<Widget> textButtons = <Widget>[
+      if (compact)
+        _buildOverflowMenuButton(context)
+      else ...<Widget>[
+        _buildZoomFontButton(context, zoomIn: false),
+        _buildZoomFontButton(context, zoomIn: true),
+      ],
+      // 用户建议 #fiwDIpFep7：制卡目标（配置 / 牌组）就地切换，紧凑档也保留——
+      // 它是一颗菜单键，本身就是「收起」形态。
+      if (showMiningTargetSwitch)
+        DictionaryPopupMiningTargetButton(constraints: _topActionConstraints),
+    ];
     final Widget leftCluster = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (onBack != null)
-          FushiIconButton(
-            icon: Icons.arrow_back,
-            size: 20,
-            tooltip: backTooltip,
-            constraints: _topActionConstraints,
-            padding: EdgeInsets.zero,
-            onTap: onBack,
-          ),
-        if (nav != null) ...<Widget>[
-          FushiIconButton(
-            key: const ValueKey<String>('popup_history_back'),
-            icon: Icons.arrow_back,
-            size: 20,
-            tooltip: t.popup_history_back,
-            constraints: _topActionConstraints,
-            padding: EdgeInsets.zero,
-            enabled: nav.canGoBack,
-            onTap: nav.onBack,
-          ),
-          FushiIconButton(
-            key: const ValueKey<String>('popup_history_forward'),
-            icon: Icons.arrow_forward,
-            size: 20,
-            tooltip: t.popup_history_forward,
-            constraints: _topActionConstraints,
-            padding: EdgeInsets.zero,
-            enabled: nav.canGoForward,
-            onTap: nav.onForward,
-          ),
+        if (navButtons.isNotEmpty) ...<Widget>[
+          DictionaryPopupToolGroup(children: navButtons),
+          const SizedBox(width: _kTopBarGroupGap),
         ],
-        _buildZoomFontButton(context, zoomIn: false),
-        _buildZoomFontButton(context, zoomIn: true),
-        if (aiPick != null) _buildAiPickButton(context, aiPick!),
+        DictionaryPopupToolGroup(children: textButtons),
       ],
     );
 
     // 右簇：关闭按钮（可选）。定宽，钉在行尾。缺省时用 0 宽占位保持 Row 结构一致。
+    // M3E：关闭是独立的一颗 tonal 圆钮（与按钮组胶囊同色同高），不和动作混在一组。
     final Widget rightCluster = onClose != null
         ? FushiIconButton(
             icon: Icons.close,
-            size: 20,
+            size: kDictionaryPopupTopActionIconSize,
+            backgroundColor: dictionaryPopupToolGroupColor(context),
             tooltip: t.dialog_close,
             constraints: _topActionConstraints,
-            padding: EdgeInsets.zero,
+            // 底色画在 padding 盒上：内边距补到整个命中区，tonal 圆与命中区同大。
+            padding: EdgeInsets.all(
+              (_topActionExtent - kDictionaryPopupTopActionIconSize) / 2,
+            ),
             onTap: onClose,
           )
         : const SizedBox.shrink();
 
-    // 中段：header 在左右簇之间的剩余（有界）宽度里居中，永不压到两侧按钮。收缩交给
-    // 内容侧（reader 音频行内部 FittedBox），本层只负责「夹在中间、给有界宽」。
-    final Widget middle = headerWidget == null
-        ? const Spacer()
-        : Expanded(child: Center(child: headerWidget!));
-
-    final Widget bar = Row(
-      children: <Widget>[leftCluster, middle, rightCluster],
+    // 中段：header 相对**整条顶栏**居中（用户 10-09「中间的收藏句子按钮没居中」），
+    // 放不下时向两簇之间的剩余区滑动，而不是缩小（BUG-3412）。
+    //
+    // 10-09 的实现按「较宽一簇」两侧对称预留，header 只拿到 `宽 − 2×左簇宽`：手机上左簇
+    // 是 A− / A+ / 制卡目标三颗，对称预留把中段压到放不下 4 颗，header 的 FittedBox 只好
+    // 整体 scaleDown 到一半大——同一条顶栏出现三种尺寸（用户 iOS 截图）。现在由
+    // [_PopupTopBarLayout] 给 header 「左簇与右簇之间」的全部剩余宽，能居中就居中，
+    // 不能就夹在剩余区内；只有连剩余区都放不下时才轮到内容侧 FittedBox 收缩。
+    // BUG-822 / BUG-826 的不重叠不变式不变（header 永远落在两簇之间）。
+    final Widget bar = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: _kTopBarInset,
+        vertical: _kTopBarInset / 2,
+      ),
+      child: CustomMultiChildLayout(
+        delegate: _PopupTopBarLayout(gap: _kTopBarGroupGap),
+        children: <Widget>[
+          LayoutId(id: _PopupTopBarSlot.left, child: leftCluster),
+          LayoutId(id: _PopupTopBarSlot.right, child: rightCluster),
+          if (headerWidget != null)
+            LayoutId(id: _PopupTopBarSlot.header, child: headerWidget!),
+        ],
+      ),
     );
 
-    // 无 header 的层（app 外覆盖窗/嵌套返回层）顶栏高度贴住 36×36 的
-    // [_topActionConstraints] 按钮（design-2026-08 讨论区反馈：压缩顶栏与词头间距，命中区零缩水，
-    // 旧值 40 只是给按钮上下各 2px 装饰性余量）；有 header 时高度由 header 自身
-    // （[ReaderChromeScaler] 跟随 UI 缩放）决定。
-    return headerWidget == null ? SizedBox(height: 36, child: bar) : bar;
+    // 顶栏高度 = 按钮边长 + 上下各 [_kTopBarInset]/2 的留白，有无 header 一致：中段
+    // header 的按钮与两簇共用 [dictionaryPopupTopActionConstraints]（同一个边长），
+    // 三组胶囊 / 圆钮同高（BUG-3412）。
+    return SizedBox(height: _topActionExtent + _kTopBarInset, child: bar);
+  }
+
+  /// 溢出菜单项内容：图标 + 文字（菜单项本身已是 MD3 PopupMenuItem）。
+  static Widget _overflowMenuLabel(IconData icon, String label) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: <Widget>[
+      Icon(icon, size: 20),
+      const SizedBox(width: 12),
+      Flexible(child: Text(label)),
+    ],
+  );
+
+  /// 窄宽顶栏的「⋯」溢出菜单：A−/A+（与独立按钮走同一条 zoomFontStep 路径）。
+  Widget _buildOverflowMenuButton(BuildContext context) {
+    return FushiPopupMenuButton<_PopupTopBarOverflowAction>(
+      key: const ValueKey<String>('popup_topbar_overflow'),
+      tooltip: MaterialLocalizations.of(context).showMenuTooltip,
+      padding: EdgeInsets.zero,
+      onSelected: (_PopupTopBarOverflowAction action) {
+        switch (action) {
+          case _PopupTopBarOverflowAction.zoomOut:
+            webViewKey.currentState?.zoomFontStep(zoomIn: false);
+          case _PopupTopBarOverflowAction.zoomIn:
+            webViewKey.currentState?.zoomFontStep(zoomIn: true);
+        }
+      },
+      itemBuilder: (BuildContext context) =>
+          <PopupMenuEntry<_PopupTopBarOverflowAction>>[
+            PopupMenuItem<_PopupTopBarOverflowAction>(
+              value: _PopupTopBarOverflowAction.zoomOut,
+              child: _overflowMenuLabel(
+                Icons.text_decrease,
+                t.popup_font_size_decrease,
+              ),
+            ),
+            PopupMenuItem<_PopupTopBarOverflowAction>(
+              value: _PopupTopBarOverflowAction.zoomIn,
+              child: _overflowMenuLabel(
+                Icons.text_increase,
+                t.popup_font_size_increase,
+              ),
+            ),
+          ],
+      child: ConstrainedBox(
+        constraints: _topActionConstraints,
+        child: const Center(
+          child: Icon(
+            Icons.more_horiz,
+            size: kDictionaryPopupTopActionIconSize,
+          ),
+        ),
+      ),
+    );
   }
 
   /// TODO-1353 复诉：弹窗顶栏可见的 A−/A+ 手动字号按钮。点按经
@@ -1359,40 +1817,17 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 只有标签的单行气泡，TODO-1353 想给的提示等于没给。现在收成一层：把完整 message 直接
   /// 交给 [FushiIconButton.tooltip]，由那唯一一层负责显示（并带
   /// [kIconButtonTooltipHoverDelay] 悬停延迟，避免子弹窗落到光标下就自动冒泡盖住父层正文）。
-  Widget _buildAiPickButton(BuildContext context, DictionaryPopupAiPick pick) {
-    if (pick.busy) {
-      return ConstrainedBox(
-        key: const ValueKey<String>('popup_ai_pick_busy'),
-        constraints: _topActionConstraints,
-        child: const Center(
-          child: SizedBox.square(
-            dimension: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      );
-    }
-    return FushiIconButton(
-      key: const ValueKey<String>('popup_ai_pick'),
-      icon: Icons.auto_awesome_outlined,
-      size: 20,
-      tooltip: t.lookup_ai_pick_tooltip,
-      constraints: _topActionConstraints,
-      padding: EdgeInsets.zero,
-      onTap: pick.onTap,
-    );
-  }
-
   Widget _buildZoomFontButton(BuildContext context, {required bool zoomIn}) {
-    final String label =
-        zoomIn ? t.popup_font_size_increase : t.popup_font_size_decrease;
+    final String label = zoomIn
+        ? t.popup_font_size_increase
+        : t.popup_font_size_decrease;
     // 桌面才提 Ctrl+滚轮：移动端没有滚轮，多这行只会让气泡更长。
     final String message = isDesktopPlatform
         ? '$label\n${t.dictionary_font_size_zoom_hint}'
         : label;
     return FushiIconButton(
       icon: zoomIn ? Icons.text_increase : Icons.text_decrease,
-      size: 20,
+      size: kDictionaryPopupTopActionIconSize,
       tooltip: message,
       constraints: _topActionConstraints,
       padding: EdgeInsets.zero,
@@ -1416,7 +1851,8 @@ class DictionaryPopupLayer extends StatelessWidget {
     // BUG-2784：「查过了」按**不是空闲占位单例**判定，而不是「查询词非空」。点到
     // ♡ / ♪ / ～ 这类纯符号时，查词前的清洗把它剥成空串，查询确实跑完了、只是没
     // 东西可查；旧判据把它当成占位，于是露出一个空 WebView 的白框。
-    final bool isRealEmptyResult = !isSearching &&
+    final bool isRealEmptyResult =
+        !isSearching &&
         !hasRenderableResults &&
         result != null &&
         !identical(result, kPopupSearchingPlaceholderResult);
@@ -1440,41 +1876,53 @@ class DictionaryPopupLayer extends StatelessWidget {
     // 拆后下一次换词退化为冷建 WebView2，BUG-094 的预热白白丢掉。「别露出热槽空白
     // 壳」的诉求改由下面的不透明「未找到」盖板满足，与搜索中盖板同一手法。
     if (hasRenderableResults || isSearching || keepWebViewWarm) {
+      // 页面的 `window.lookupPending`：查询状态（宿主传入的 isSearching = 控制器条目
+      // 状态）× 本层此刻是否在屏上。停驻 / seed / 复位 ⇒ false，页面不起循环加载动画；
+      // 复用热槽激活查词 ⇒ true（占位单例不变也会推，见 DictionaryPopupWebView）。
+      final bool lookupPending = popupLookupPending(
+        layerVisible: _PopupLayerVisibility.of(context),
+        isSearching: isSearching,
+        result: result,
+      );
       return Stack(
         children: [
           popupWebViewOverflow(
-              overflowHeight: webViewOverflowHeight,
-              builder: (double? visibleHeight) => DictionaryPopupWebView(
-            key: webViewKey,
-            visibleViewportHeight: visibleHeight,
-            transparentDocumentBackground: transparentDocumentBackground,
-            result: result ?? kPopupSearchingPlaceholderResult,
-            restoreScrollTop: restoreScrollTop,
-            reorderOf: resultReorderOf,
-            hasChildPopup: hasChildPopup,
-            onTapOutside: onTapOutside,
-            onTextSelected: onTextSelected,
-            onLinkClick: onLinkClick,
-            onMineEntry: onMineEntry,
-            onUpdateEntry: onUpdateEntry,
-            onDuplicateCheck: onDuplicateCheck,
-            onOverwriteTargetNoteId: onOverwriteTargetNoteId,
-            onMinedCardAction: onMinedCardAction,
-            onOpenInAnki: onOpenInAnki,
-            onFavoriteEntry: onFavoriteEntry,
-            onFavoriteCheck: onFavoriteCheck,
-            onAppendSentence: onAppendSentence,
-            onSetSentenceContext: onSetSentenceContext,
-            onOpenSentenceContextModal: onOpenSentenceContextModal,
-            onClearSentenceDraft: onClearSentenceDraft,
-            onSentenceContextPreview: onSentenceContextPreview,
-            onScrolledToBottom: onScrolledToBottom,
-            onRendered: onRendered,
-            onContentMetrics: onContentMetrics,
-            onRenderError: onRenderError,
-            inputSpec: inputSpec,
-            onHostInputToken: onHostInputToken,
-          )),
+            overflowHeight: webViewOverflowHeight,
+            builder: (double? visibleHeight) => DictionaryPopupWebView(
+              key: webViewKey,
+              resourceSource: resourceSource,
+              visibleViewportHeight: visibleHeight,
+              transparentDocumentBackground: transparentDocumentBackground,
+              result: result ?? kPopupSearchingPlaceholderResult,
+              lookupPending: lookupPending,
+              restoreScrollTop: restoreScrollTop,
+              hasChildPopup: hasChildPopup,
+              onTapOutside: onTapOutside,
+              onTextSelected: onTextSelected,
+              onLinkClick: onLinkClick,
+              onMineEntry: onMineEntry,
+              onUpdateEntry: onUpdateEntry,
+              onDuplicateCheck: onDuplicateCheck,
+              onOverwriteTargetNoteId: onOverwriteTargetNoteId,
+              onMinedCardAction: onMinedCardAction,
+              onQueueOverwrite: onQueueOverwrite,
+              onOpenInAnki: onOpenInAnki,
+              onFavoriteEntry: onFavoriteEntry,
+              onFavoriteCheck: onFavoriteCheck,
+              onAppendSentence: onAppendSentence,
+              onSetSentenceContext: onSetSentenceContext,
+              onOpenAdvancedMining: onOpenAdvancedMining,
+              onClearSentenceDraft: onClearSentenceDraft,
+              onScrolledToBottom: onScrolledToBottom,
+              onScrolledUnderChanged: (bool under) =>
+                  _scrolledUnder.value = under,
+              onRendered: onRendered,
+              onContentMetrics: onContentMetrics,
+              onRenderError: onRenderError,
+              inputSpec: inputSpec,
+              onHostInputToken: onHostInputToken,
+            ),
+          ),
           // 搜索期且还没有词条时，用一层不透明主题色盖板（带进度条）盖住 WebView。
           // 视频（mixin reuseWarmSlot）会在结果就绪前就把热槽设为可见，此刻 WebView
           // 是空载——Windows 的 inappwebview fork 不完全尊重 transparentBackground，
@@ -1482,25 +1930,20 @@ class DictionaryPopupLayer extends StatelessWidget {
           // 加载态，待词条到达即撤掉露出已渲染内容。书内查词结果就绪后才可见
           // （那时 hasRenderableResults=true 不触发）、分页 load-more 有词条也不触发，故只对
           // 视频这条「可见+搜索中+无词条」路径生效，四个表面共用同一组件、观感一致。
-          if (isSearching && !hasRenderableResults)
-            Positioned.fill(
-              child: ColoredBox(
-                color: fillColor,
-                child: Column(
-                  children: [
-                    LinearProgressIndicator(
-                      backgroundColor: Colors.transparent,
-                      color: Theme.of(context).colorScheme.primary,
-                      minHeight: 2.75,
-                    ),
-                    const Expanded(child: SizedBox.shrink()),
-                  ],
-                ),
-              ),
-            )
+          //
+          // 盖板常驻在树里（[FushiDeferredLoading] 撤场后是零尺寸空盒）：底色立即铺上
+          // 盖住空载 WebView，加载指示器（MD3 Expressive 变形 / Apple 菊花 / 墨水屏沙漏）
+          // 150ms 后才淡入——快查询不闪；一旦露出至少停 300ms 再整层淡出，结果随之淡入，
+          // 不会一闪而过。查询中**绝不**出「未找到」：那只属于下面的真实空结果。
+          Positioned.fill(
+            child: FushiDeferredLoading(
+              active: isSearching && !hasRenderableResults,
+              background: fillColor,
+            ),
+          ),
           // BUG-2588：热槽真实空结果——盖板而不是拆 WebView（见上）。ColoredBox 命中
           // 行为 opaque，WebView 收不到穿透的指针事件。
-          else if (isRealEmptyResult)
+          if (isRealEmptyResult)
             Positioned.fill(
               child: ColoredBox(
                 color: fillColor,
@@ -1511,6 +1954,12 @@ class DictionaryPopupLayer extends StatelessWidget {
       );
     }
 
+    // 非热槽层：只有查询真的结束且为空（[isRealEmptyResult]）才出「未找到」；还没有
+    // 结果（null / 搜索期占位单例）是加载中，不是空——旧实现在这里一律画「未找到」，
+    // 查词开始到结果落地之间会闪一下假空态。
+    if (!isRealEmptyResult) {
+      return FushiDeferredLoading(active: true, background: fillColor);
+    }
     return _buildNoResultsPlaceholder(context, tokens);
   }
 
@@ -1518,16 +1967,16 @@ class DictionaryPopupLayer extends StatelessWidget {
     BuildContext context,
     FushiDesignTokens tokens,
   ) {
+    // M3E 空态：主题色 tonal 色块里的 search_off + 标题 + 一句建议，整体居中
+    // （[FushiPlaceholderMessage] 同一实现，带弹入动效）。宿主把空结果层收成
+    // `kLookupPopupEmptyHeight`（见 DictionaryPopupEntry.layoutAutoFitHeight），不再
+    // 是一整块最大高度的空面板。
     return Center(
       child: SingleChildScrollView(
-        padding: EdgeInsets.all(tokens.spacing.gap),
         child: FushiPlaceholderMessage(
-          icon: Icons.search_off,
+          icon: FushiIcons.searchOff,
           message: t.no_search_results,
-          iconSize: 20,
-          messageStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+          detail: t.settings_search_empty_hint,
         ),
       ),
     );
@@ -1626,9 +2075,8 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
   /// null=尚未判轴，true=横拖关闭候选，false=纵向/斜向滚动（交还 WebView）。
   bool? _pointerIsHorizontal;
 
-  double get _threshold => swipeDismissThreshold(
-        ReaderFushiSource.instance.dismissSwipeSensitivity,
-      );
+  double get _threshold =>
+      swipeDismissThreshold(ReaderFushiSource.instance.dismissSwipeSensitivity);
 
   /// 用户关掉「弹窗关闭动画」= 整条滑关不画（[popupSwipeDismissIsInstant]）：跟手期
   /// 不重绘、不位移，抬手过阈值当帧关。**用时取值**，理由同 [_applyDismissDuration]。
@@ -1734,8 +2182,9 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
     if (event.pointer != _trackedPointer) return;
     final bool shouldFinish = _pointerIsHorizontal == true;
     // instant 下 [_dragX] 恒 0（跟手期不更新），累计位移只能从起点重算。
-    final double accumulated =
-        _pointerStart == null ? _dragX : event.position.dx - _pointerStart!.dx;
+    final double accumulated = _pointerStart == null
+        ? _dragX
+        : event.position.dx - _pointerStart!.dx;
     _clearTrackedPointer();
     if (!shouldFinish) return;
     if (_instant) {
@@ -1775,7 +2224,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
       _dismissing = true;
       _controller
         ..reset()
-        ..animateTo(1.0, curve: Curves.easeOut);
+        ..animateTo(1.0, curve: FushiSpringCurve.effects);
     } else {
       _springBack();
     }
@@ -1793,7 +2242,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
     _dismissing = false;
     _controller
       ..reset()
-      ..animateTo(1.0, curve: Curves.easeOut);
+      ..animateTo(1.0, curve: FushiSpringCurve.effects);
   }
 
   @override
@@ -1814,15 +2263,14 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
                 // 跟手淡出：位移越大越淡，最低 0.3（与 SwipeDismissWrapper 同手感）；
                 // 滑出补间末段（_dragTargetX = width + margin）自然趋近 0。
                 final double opacity = _dismissing
-                    ? (1 - (_dragX.abs() / (width + _kSlideOutMargin)))
-                        .clamp(0.0, 1.0)
+                    ? (1 - (_dragX.abs() / (width + _kSlideOutMargin))).clamp(
+                        0.0,
+                        1.0,
+                      )
                     : (1 - (_dragX.abs() / width) * 0.7).clamp(0.3, 1.0);
                 return Transform.translate(
                   offset: Offset(_dragX, 0),
-                  child: Opacity(
-                    opacity: opacity,
-                    child: widget.child,
-                  ),
+                  child: Opacity(opacity: opacity, child: widget.child),
                 );
               },
             )
@@ -1857,8 +2305,9 @@ class _PopupResizeGrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color color =
-        Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.55);
+    final Color color = Theme.of(
+      context,
+    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.55);
     return MouseRegion(
       cursor: SystemMouseCursors.resizeUpLeftDownRight,
       child: GestureDetector(

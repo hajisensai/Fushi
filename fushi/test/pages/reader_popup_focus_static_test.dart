@@ -15,7 +15,7 @@ void main() {
   // （`  // ── Helpers`），掩码后那个锚点会消失。只有做符号匹配的 `code` 走掩码。
   final String code = _collapse(maskCommentsAndScriptLines(source));
 
-  test('popup header toolbar uses Hibiki focus-aware icon buttons', () {
+  test('popup header toolbar uses Fushi focus-aware icon buttons', () {
     final String popupHeader = _functionSource(
       source,
       '  Widget? buildPopupAudioControls()',

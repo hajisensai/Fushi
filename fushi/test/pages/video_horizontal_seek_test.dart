@@ -15,7 +15,7 @@ import 'video_fushi_page_source_corpus.dart';
 ///     `seekIndicatorBuilder`，桌面 `_desktopControlsTheme` 不含横滑字段（仅移动端，
 ///     诚实降级），改回旧值即红。
 ///
-/// BUG-1485：像素→时间的换算已从 fork 内建的「按总时长比例」公式换成 Hibiki 侧纯函数
+/// BUG-1485：像素→时间的换算已从 fork 内建的「按总时长比例」公式换成 Fushi 侧纯函数
 /// [VideoHorizontalSeekGesture]（换算本身的数值单测在
 /// `test/media/video/video_horizontal_seek_gesture_test.dart`）。本文件补三层守卫：
 /// 旧常量已删、移动 theme 接上 resolver + 用户档位、fork 的注入点没被 re-vendor 抹掉。
@@ -146,14 +146,29 @@ void main() {
         corpus,
         'MaterialVideoControlsThemeData _mobileControlsTheme(',
       );
-      expect(containsCodeLine(body, 'horizontalSeekResolver:'), isTrue,
-          reason: 'BUG-1485：必须注入 resolver 接管 fork 的比例制换算');
+      // 2026-10-05：resolver 抽成 [_resolveTouchSeekDelta]，移动控制条与桌面触屏
+      // （Surface）共用同一换算，下面对它的方法体做同样的断言。
       expect(
-        containsCodeLine(body, 'VideoHorizontalSeekGesture.resolveDelta('),
+          containsCodeLine(
+              body, 'horizontalSeekResolver: _resolveTouchSeekDelta,'),
+          isTrue,
+          reason: 'BUG-1485：必须注入 resolver 接管 fork 的比例制换算');
+      // 命名参数的 `{` 会骗过 methodBody 的大括号配对；helper 是箭头函数、紧排在
+      // _mobileControlsTheme 之前，按这两个锚点截取。
+      final int resolverStart =
+          corpus.indexOf('Duration _resolveTouchSeekDelta(');
+      expect(resolverStart, greaterThanOrEqualTo(0));
+      final String resolver = corpus.substring(
+          resolverStart,
+          corpus.indexOf('MaterialVideoControlsThemeData _mobileControlsTheme(',
+              resolverStart));
+      expect(
+        containsCodeLine(resolver, 'VideoHorizontalSeekGesture.resolveDelta('),
         isTrue,
         reason: 'BUG-1485：resolver 必须走可单测的纯函数模型',
       );
-      expect(containsCodeLine(body, '_asbConfig.dragSeekSensitivity'), isTrue,
+      expect(
+          containsCodeLine(resolver, '_asbConfig.dragSeekSensitivity'), isTrue,
           reason: 'BUG-1485：灵敏度必须读用户设置档位，不得写死');
       expect(
         containsIdentifier(body, 'horizontalGestureSensitivity'),

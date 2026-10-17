@@ -17,7 +17,7 @@
 //  · **事件不漏给站点**。播放器把点画面当播放/暂停、把空格方向键当播放控制，所以按钮与菜单上的
 //    指针事件与键盘事件一律 stopPropagation（content.js 的弹窗与模态同款）。
 //
-// 站点适配只有两条特例（YouTube / Netflix），其余站点退回「悬停视频时浮在右下角」的通用按钮——
+// 站点适配只有两条特例（YouTube / Netflix），其余站点退回「悬停视频时浮在右上角」的通用按钮——
 // 通用路径不依赖任何站点 DOM，所以不会随站点改版失效。
 //
 // 判定与菜单模型是纯函数（node 可测）；DOM 装配在下半段。
@@ -38,6 +38,8 @@
   var MIN_VIDEO_W = 200; // 通用按钮的视频门（与 study-tracker 同口径：挡掉首页悬停预览/预告片）
   var MIN_VIDEO_H = 120;
   var MIN_VIDEO_SEC = 30;
+  var FLOAT_BTN_SIZE = 48;  // 通用悬浮按钮边长（与 content-css-overlay.css 的 .is-floating 同值；M3E FAB 触控尺寸）
+  var FLOAT_BTN_INSET = 8;  // 通用悬浮按钮离视频画面边缘的留白（px）
 
   function tr(key, params) {
     var g = (typeof window !== 'undefined') ? window : (typeof globalThis !== 'undefined' ? globalThis : null);
@@ -87,32 +89,69 @@
     var s = state || {};
     var overlayOn = s.overlayOn !== false;
     var items = [];
-    items.push({ id: 'overlay', kind: 'switch', on: overlayOn, label: tr('ap_hp_overlay_toggle_label') });
-    items.push({ id: 'replaceNative', kind: 'switch', on: !!s.replaceNative, disabled: !overlayOn, label: tr('opt_subtitleReplaceNative_title') });
-    items.push({ id: 'allTracks', kind: 'switch', on: !!s.allTracks, disabled: !overlayOn, label: tr('opt_subtitleOverlayAllTracks_title') });
-    items.push({ id: 'background', kind: 'switch', on: s.background !== false, disabled: !overlayOn, label: tr('opt_subtitleOverlayBackground_title') });
-    items.push({ id: 'hidden', kind: 'switch', on: !!s.hidden, label: tr('opt_subtitleHidden_title') });
+    items.push({ id: 'overlay', kind: 'switch', on: overlayOn, label: tr('ap_hp_overlay_toggle_label'), icon: 'subtitles' });
+    items.push({ id: 'replaceNative', kind: 'switch', on: !!s.replaceNative, disabled: !overlayOn, label: tr('opt_subtitleReplaceNative_title'), icon: 'closed_caption' });
+    items.push({ id: 'allTracks', kind: 'switch', on: !!s.allTracks, disabled: !overlayOn, label: tr('opt_subtitleOverlayAllTracks_title'), icon: 'layers' });
+    items.push({ id: 'background', kind: 'switch', on: s.background !== false, disabled: !overlayOn, label: tr('opt_subtitleOverlayBackground_title'), icon: 'format_color_fill' });
+    items.push({ id: 'hidden', kind: 'switch', on: !!s.hidden, label: tr('opt_subtitleHidden_title'), icon: 'visibility_off' });
+    // 沉浸统计开关（用户群 10-09：只能去扩展设置里开关很麻烦）。与设置页「网页视频计入学习时长」
+    // 同一个键 studyTrackVideo（缺省开），这里只是就近入口。
+    items.push({ id: 'study', kind: 'switch', on: s.study !== false, label: tr('opt_studyTrackVideo_title'), icon: 'hourglass_empty' });
     // 「开着却什么都不画」是覆盖层最容易让人误判坏掉的状态：站点自带轨默认不叠覆盖层
     // （subtitle-panel.js updateSubtitleOverlay 的显示门），外挂轨才无条件画。这里如实说出来，
     // 并给一键出路，而不是让用户以为开关坏了。
     if (overlayOn && !s.hidden && s.hasTrack && !s.externalTrack && !s.replaceNative && !s.allTracks) {
-      items.push({ id: 'hint', kind: 'hint', label: tr('pc_hint_site_track'), action: 'replaceNative' });
+      items.push({ id: 'hint', kind: 'hint', label: tr('pc_hint_site_track'), action: 'replaceNative', icon: 'info' });
     }
-    items.push({ id: 'list', kind: 'action', label: tr('opt_videoShortcutTogglePanel_title') });
+    // 选字幕轨（就地切换，不必开侧边栏）：子页列出这个视频的全部 Fushi 字幕轨。
+    items.push({
+      id: 'track',
+      kind: 'submenu',
+      label: tr('sp_track_aria_label'),
+      detail: s.trackLabel || tr('pc_track_none'),
+      icon: 'translate',
+    });
+    items.push({ id: 'list', kind: 'action', label: tr('opt_videoShortcutTogglePanel_title'), icon: 'view_sidebar' });
     items.push({
       id: 'offset',
       kind: 'group',
       label: tr('pc_offset_title'),
+      icon: 'timer',
       // 按钮面是数字与符号（与侧边栏 offset-row 同形，不进 i18n）；说明文字走 title。
+      // 中间是可直接输入的秒数（app 视频页同款「手填偏移」：盗版源片头多出几十秒时 ±0.1 按不过来），
+      // 填 0 即复位。
       buttons: [
         { id: 'offset-minus', label: '−0.1', title: tr('opt_videoShortcutOffsetMinus_title') },
-        { id: 'offset-reset', label: '⟲', title: tr('sp_offset_reset_title') },
+        { id: 'offset-value', kind: 'input', value: formatOffsetSeconds(s.offsetMs || 0), title: tr('pc_offset_input_label') },
         { id: 'offset-plus', label: '＋0.1', title: tr('opt_videoShortcutOffsetPlus_title') },
       ],
     });
-    items.push({ id: 'style', kind: 'submenu', label: tr('pc_style_title') });
-    items.push({ id: 'settings', kind: 'action', label: tr('sp_settings_title') });
+    items.push({ id: 'style', kind: 'submenu', label: tr('pc_style_title'), icon: 'style' });
+    items.push({ id: 'settings', kind: 'action', label: tr('sp_settings_title'), icon: 'settings' });
     return items;
+  }
+
+  // 偏移毫秒 → 输入框里的秒数文字：带符号、最多两位小数、去掉多余的 0（0 显示成 '0'）。
+  function formatOffsetSeconds(ms) {
+    var n = Number(ms);
+    if (!isFinite(n) || n === 0) return '0';
+    var sec = Math.round(n / 10) / 100;
+    // |偏移| < 5ms 舍入到 0（含 -0）：显示 '0'，不能落到负号分支变成 '-0'。
+    if (sec === 0) return '0';
+    var text = String(Math.abs(sec));
+    return (sec > 0 ? '+' : '-') + text;
+  }
+
+  // 输入框文字 → 偏移毫秒；不成立返回 null（调用方回显原值，不静默改成别的）。
+  // 接受全角 / 数学减号、逗号小数点、末尾的 s；夹在 ±1 小时内（再大只可能是手滑）。
+  var OFFSET_LIMIT_MS = 3600 * 1000;
+  function parseOffsetSeconds(text) {
+    var t = String(text == null ? '' : text).trim()
+      .replace(/[−－–]/g, '-').replace(/＋/g, '+').replace(/[，,]/g, '.').replace(/\s*(s|秒)$/i, '');
+    if (!/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(t)) return null;
+    var ms = Math.round(parseFloat(t) * 1000);
+    if (!isFinite(ms) || Math.abs(ms) > OFFSET_LIMIT_MS) return null;
+    return ms;
   }
 
   // 字幕外观快捷面板的控件表。字段与取值范围全部取自 fushiSubtitleStyle，本文件不重复定义
@@ -206,6 +245,8 @@
     stylePatchWrite: stylePatchWrite,
     placeMenu: placeMenu,
     videoQualifies: videoQualifies,
+    formatOffsetSeconds: formatOffsetSeconds,
+    parseOffsetSeconds: parseOffsetSeconds,
   };
 
   if (typeof window === 'undefined' || typeof document === 'undefined') return api;
@@ -221,7 +262,11 @@
       subtitleOverlayAllTracks: false,
       subtitleOverlayBackground: true,
       subtitleHidden: false,
+      studyTrackVideo: true,
     },
+    // BUG-3145：字幕能力总门（netflixSubtitlePanel，缺省关）。覆盖层受它门控，「Fushi 字幕」
+    // 显示开必须两者都开，否则是一个拨了也不出字的假「开」。
+    gate: false,
     style: null,
     open: false,
     page: 'main',
@@ -231,15 +276,50 @@
   var menuEl = null;
   var mainPageEl = null;
   var stylePageEl = null;
+  var tracksPageEl = null;
   var styleWriteTimer = null;
   var site = siteOf(location.hostname);
 
   function S() { return window.fushiSubtitleStyle || null; }
 
+  // Material Symbols Rounded 图标（icons.js，manifest 里排在本文件之前）。缺席（纯 vm 测试 / 旧缓存）
+  // 时回 null，调用方照常只有文字——图标是装饰，不承载任何语义（语义在文字与 aria 上）。
+  function iconEl(name, size, cls) {
+    if (!name || typeof window.fushiIcon !== 'function') return null;
+    try { return window.fushiIcon(name, { size: size || 24, className: cls || '' }); } catch (_) { return null; }
+  }
+
+  // 前置图标：插在节点最前（textContent 已写好的按钮也成立——SVG 不带文本节点）。
+  function prependIcon(el, name, size, cls) {
+    var ic = iconEl(name, size, cls);
+    if (ic && el) el.insertBefore(ic, el.firstChild || null);
+    return ic;
+  }
+
+  // 页内宿主的外观风格（M3E / 液态玻璃）：theme.js 盖 data-style，content.css 按它分流。
+  function stamp(el) {
+    try { if (el && window.fushiTheme && typeof window.fushiTheme.stampStyle === 'function') window.fushiTheme.stampStyle(el); } catch (_) { /* no-op */ }
+  }
+
   function videoEl() {
-    // 与全仓库同一条取法（subtitle-panel.js:121 等）：第一条 <video>。站点的画中画/广告位也可能
-    // 是 <video>，但控制栏锚点本身就长在正片播放器上，通用路径另有尺寸门，两边都不会挂错地方。
-    try { return document.querySelector('video'); } catch (_) { return null; }
+    // BUG-3144：正片按 video-target.js 挑（全屏元素 / 可见面积最大、在播优先）。此前取文档里
+    // **第一个** <video>：YouTube 恰好是正片，别的站常是预告片 / 广告位 / 缩略图预览，悬浮按钮就
+    // 贴到那个元素旁边「乱飞」。契约缺席（单测壳）时回落旧取法。
+    try {
+      if (typeof window.fushiMainVideo === 'function') {
+        var v = window.fushiMainVideo();
+        if (v) return v;
+      }
+      return document.querySelector('video');
+    } catch (_) { return null; }
+  }
+
+  // 浮层父级里 position:fixed 的坐标系（站点给 body / 全屏容器加 transform 时不是视口）。
+  function fixedOriginOf(el) {
+    if (el && el.parentNode && typeof window.fushiFixedOrigin === 'function') {
+      try { return window.fushiFixedOrigin(el.parentNode); } catch (_) { /* fallthrough */ }
+    }
+    return { x: 0, y: 0, sx: 1, sy: 1 };
   }
 
   // 站点控制栏锚点。返回 {parent, before} —— before 为 null 表示追加到末尾。
@@ -290,6 +370,8 @@
     b.className = 'fushi-pc-btn';
     b.setAttribute('aria-haspopup', 'true');
     b.setAttribute('aria-expanded', 'false');
+    stamp(b);
+    // 按钮面保留 Fushi 品牌图（站点控制栏里要一眼认出是谁家的按钮）；菜单内才换 Material Symbols。
     var icon = document.createElement('img');
     icon.className = 'fushi-pc-btn-icon';
     icon.alt = '';
@@ -306,7 +388,7 @@
 
   function paintButton() {
     if (!btnEl) return;
-    var on = st.prefs.subtitleOverlayEnabled !== false && !st.prefs.subtitleHidden;
+    var on = overlayEffective() && !st.prefs.subtitleHidden;
     btnEl.dataset.on = on ? '1' : '';
     btnEl.title = tr(on ? 'ap_overlay_toggle_title_on' : 'ap_overlay_toggle_title_off');
     btnEl.setAttribute('aria-label', btnEl.title);
@@ -324,13 +406,10 @@
     if (!btnEl) btnEl = makeButton();
     btnEl.classList.toggle('is-floating', generic);
     if (generic) {
-      var parent = document.fullscreenElement || document.body;
-      // 与 openMenu 同一条护栏：全屏目标是 <video> 时不能往里塞（媒体元素的子节点
-      // 是 fallback 内容，永远不渲染）。很多站点直接 video.requestFullscreen()，
-      // 漏了这条按钮会在全屏下静默消失——而全屏正是最需要它的时候。
-      if (parent && parent.tagName === 'VIDEO') parent = document.body;
+      var parent = floatingHost();
       if (parent && btnEl.parentNode !== parent) parent.appendChild(btnEl);
       placeFloatingButton();
+      watchFloating();
     } else if (
       btnEl.parentNode !== anchor.parent ||
       (anchor.before && anchor.before !== btnEl && btnEl.nextSibling !== anchor.before)
@@ -342,20 +421,73 @@
       // 上的焦点每秒被清一次（Tab 过去就用不了）、hover/transition 每秒重置。
       anchor.parent.insertBefore(btnEl, anchor.before);
     }
+    if (!generic) {
+      unwatchFloating();
+      // 悬浮态写过的内联定位（!important）不能带进站点控制栏，否则按钮在控制栏里还是浮着的。
+      try {
+        btnEl.style.removeProperty('position');
+        btnEl.style.removeProperty('left');
+        btnEl.style.removeProperty('top');
+      } catch (_) { /* no-op */ }
+    }
     paintButton();
   }
 
-  // 通用站点的悬浮按钮：贴视频画面右下角，鼠标不在视频上就淡出（站点控件也是这个作息）。
+  // 悬浮按钮的挂载点：与字幕覆盖层同一处（video-target.js 视频锚定：全屏元素，它本身是
+  // <video> 时退回 <html>；非全屏 <html>）。契约缺席（单测壳）时回落旧取法：全屏元素或 body，
+  // 全屏目标是 <video> 时不能往里塞（媒体元素的子节点是 fallback 内容，永远不渲染）。
+  function floatingHost() {
+    var VA = window.fushiVideoAnchor;
+    if (VA && typeof VA.host === 'function') {
+      var h = VA.host();
+      if (h) return h;
+    }
+    var parent = document.fullscreenElement || document.body;
+    if (parent && parent.tagName === 'VIDEO') parent = document.body;
+    return parent;
+  }
+
+  // BUG-3450：悬浮按钮在位期间订阅视频锚定的帧观察——播放器尺寸 / 位置一变（剧场模式、
+  // SPA 换片、侧栏收起）下一帧就跟上，不再停在旧位置等 1 秒轮询（用户看到的「按钮乱飘」）。
+  var floatingUnwatch = null;
+  function watchFloating() {
+    if (floatingUnwatch) return;
+    var VA = window.fushiVideoAnchor;
+    if (!VA || typeof VA.watch !== 'function') return;
+    floatingUnwatch = VA.watch(function () {
+      if (btnEl && btnEl.parentNode && btnEl.classList.contains('is-floating')) placeFloatingButton();
+    });
+  }
+  function unwatchFloating() {
+    if (!floatingUnwatch) return;
+    try { floatingUnwatch(); } catch (_) { /* no-op */ }
+    floatingUnwatch = null;
+  }
+
+  // 通用站点的悬浮按钮：贴视频画面右上角，鼠标不在视频上就淡出（站点控件也是这个作息）。
+  // 不放右下角：几乎所有站点的进度条 / 音量 / 全屏都排在画面底边，按钮压上去会挡住站点控件
+  // （用户 2026-10-04 报）。顶边通常只有标题，且菜单在上方放不下时 placeMenu 自然翻到按钮下方。
   function placeFloatingButton() {
     var v = videoEl();
     if (!btnEl || !v || typeof v.getBoundingClientRect !== 'function') return;
     var r = v.getBoundingClientRect();
-    btnEl.style.left = Math.round(r.right - 52) + 'px';
-    btnEl.style.top = Math.round(r.bottom - 52) + 'px';
+    var x = r.right - FLOAT_BTN_SIZE - FLOAT_BTN_INSET;
+    var y = r.top + FLOAT_BTN_INSET;
+    var VA = window.fushiVideoAnchor;
+    var placed = false;
+    if (VA && typeof VA.placeAt === 'function') {
+      try { VA.placeAt(btnEl, x, y, v); placed = true; } catch (_) { placed = false; }
+    }
+    if (!placed) {
+      var o = fixedOriginOf(btnEl);
+      btnEl.style.left = Math.round((x - o.x) / o.sx) + 'px';
+      btnEl.style.top = Math.round((y - o.y) / o.sy) + 'px';
+    }
     btnEl.dataset.visible = (st.open || st.hoverVideo) ? '1' : '';
   }
 
   function teardown() {
+    unwatchFloating();
     closeMenu();
     if (btnEl && btnEl.parentNode) btnEl.parentNode.removeChild(btnEl);
     btnEl = null;
@@ -366,6 +498,9 @@
     el.className = 'fushi-pc-row';
     el.dataset.item = item.id;
     if (item.disabled) el.dataset.disabled = '1';
+    // M3E 菜单项：24px 前置图标（on-surface-variant）+ label-large 文案。
+    var lead = iconEl(item.icon, 24, 'fushi-pc-lead');
+    if (lead) el.appendChild(lead);
     var copy = document.createElement('span');
     copy.className = 'fushi-pc-copy';
     var title = document.createElement('strong');
@@ -380,17 +515,26 @@
     return el;
   }
 
+  // 「Fushi 字幕」此刻是否真在出画：覆盖层开关 + 字幕能力总门（与工具栏弹窗
+  // fushiOverlayToggleState 同一判据）。
+  function overlayEffective() {
+    return st.prefs.subtitleOverlayEnabled !== false && st.gate === true;
+  }
+
   function renderMain() {
     if (!mainPageEl) return;
     mainPageEl.textContent = '';
     var items = menuModel({
-      overlayOn: st.prefs.subtitleOverlayEnabled !== false,
+      overlayOn: overlayEffective(),
       replaceNative: !!st.prefs.subtitleReplaceNative,
       allTracks: !!st.prefs.subtitleOverlayAllTracks,
       background: st.prefs.subtitleOverlayBackground !== false,
       hidden: !!st.prefs.subtitleHidden,
       hasTrack: hasTrack(),
       externalTrack: hasExternalTrack(),
+      study: st.prefs.studyTrackVideo !== false,
+      trackLabel: activeTrackLabel(),
+      offsetMs: trackInfo().offsetMs,
     });
     for (var i = 0; i < items.length; i++) mainPageEl.appendChild(renderItem(items[i]));
   }
@@ -402,6 +546,7 @@
       hint.className = 'fushi-pc-hint';
       hint.dataset.item = item.id;
       hint.textContent = item.label;
+      prependIcon(hint, item.icon, 20, 'fushi-pc-hint-icon');
       hint.addEventListener('click', function () { writePrefs({ subtitleReplaceNative: true }); });
       return hint;
     }
@@ -412,15 +557,19 @@
       box.className = 'fushi-pc-seg';
       for (var i = 0; i < item.buttons.length; i++) {
         (function (spec) {
+          if (spec.kind === 'input') { box.appendChild(renderOffsetInput(spec)); return; }
           var b = document.createElement('button');
           b.type = 'button';
           b.dataset.action = spec.id;
-          b.textContent = spec.label;
+          // 有图标的段（复位）只画图标，文字符号是缺图标时的回退；说明一律在 title / aria-label。
+          var ic = iconEl(spec.icon, 18);
+          if (ic) b.appendChild(ic);
+          else b.textContent = spec.label;
           if (spec.title) {
             b.title = spec.title;
             b.setAttribute('aria-label', spec.title);
           }
-          b.addEventListener('click', function () { runShortcut(spec.id); });
+          b.addEventListener('click', function () { runShortcut(spec.id); refreshOffsetValue(); });
           box.appendChild(b);
         })(item.buttons[i]);
       }
@@ -433,9 +582,12 @@
       s.setAttribute('role', 'switch');
       s.setAttribute('tabindex', '0');
       s.setAttribute('aria-checked', item.on ? 'true' : 'false');
+      // M3E 开关：轨道 + 拇指（::after）；开态拇指里一枚 check 图标。
       var sw = document.createElement('span');
       sw.className = 'fushi-pc-switch';
       sw.dataset.on = item.on ? '1' : '';
+      var check = iconEl('check', 16, 'fushi-pc-switch-icon');
+      if (check) sw.appendChild(check);
       s.appendChild(sw);
       if (!item.disabled) {
         s.addEventListener('click', function () { flip(item.id); });
@@ -447,10 +599,15 @@
     }
     var a = row(item);
     a.classList.add(item.kind === 'submenu' ? 'is-submenu' : 'is-action');
+    if (item.kind === 'submenu') {
+      var trail = iconEl('chevron_right', 24, 'fushi-pc-trail');
+      if (trail) { a.classList.add('has-trail'); a.appendChild(trail); }
+    }
     a.setAttribute('role', 'button');
     a.setAttribute('tabindex', '0');
     function go() {
       if (item.id === 'style') showPage('style');
+      else if (item.id === 'track') showPage('tracks');
       else if (item.id === 'list') runShortcut('toggle-panel');
       else if (item.id === 'settings') openOptions();
     }
@@ -461,6 +618,109 @@
     return a;
   }
 
+  // 当前视频的 Fushi 字幕轨（subtitle-panel.js 契约；缺席时当没有轨）。
+  function trackInfo() {
+    try {
+      if (typeof window.fushiSubtitleTrackList === 'function') {
+        var info = window.fushiSubtitleTrackList();
+        if (info && Array.isArray(info.tracks)) return info;
+      }
+    } catch (_) { /* no-op */ }
+    return { tracks: [], active: null, offsetMs: 0 };
+  }
+
+  function activeTrackLabel() {
+    var info = trackInfo();
+    for (var i = 0; i < info.tracks.length; i++) {
+      if (info.tracks[i].lang === info.active) return info.tracks[i].label || info.active;
+    }
+    return null;
+  }
+
+  function renderOffsetInput(spec) {
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'fushi-pc-offset-input';
+    input.dataset.action = spec.id;
+    input.setAttribute('inputmode', 'decimal');
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('spellcheck', 'false');
+    input.value = spec.value;
+    if (spec.title) {
+      input.title = spec.title;
+      input.setAttribute('aria-label', spec.title);
+    }
+    function commit() {
+      var ms = parseOffsetSeconds(input.value);
+      var ok = ms !== null && typeof window.fushiSubtitleSetOffset === 'function' &&
+        window.fushiSubtitleSetOffset(ms) === true;
+      if (!ok && ms !== null && typeof window.fushiToast === 'function') window.fushiToast(tr('pc_track_none'));
+      refreshOffsetValue(true);
+    }
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); if (typeof input.blur === 'function') input.blur(); }
+      else if (e.key === 'Escape') { e.preventDefault(); refreshOffsetValue(true); if (typeof input.blur === 'function') input.blur(); }
+    });
+    input.addEventListener('change', commit);
+    input.addEventListener('focus', function () { try { input.select(); } catch (_) { /* no-op */ } });
+    return input;
+  }
+
+  // 偏移变了（按钮 / 快捷键 / 侧边栏）就把输入框回显成真值；正在输入时不打断，force 除外。
+  function refreshOffsetValue(force) {
+    if (!mainPageEl) return;
+    var input = mainPageEl.querySelector ? mainPageEl.querySelector('.fushi-pc-offset-input') : null;
+    if (!input) return;
+    if (!force && document.activeElement === input) return;
+    input.value = formatOffsetSeconds(trackInfo().offsetMs || 0);
+  }
+
+  function renderTracksPage() {
+    if (!tracksPageEl) return;
+    tracksPageEl.textContent = '';
+    var back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'fushi-pc-back';
+    back.textContent = tr('sp_track_aria_label');
+    prependIcon(back, 'arrow_back', 24);
+    back.addEventListener('click', function () { showPage('main'); });
+    tracksPageEl.appendChild(back);
+    var info = trackInfo();
+    if (!info.tracks.length) {
+      var empty = document.createElement('div');
+      empty.className = 'fushi-pc-empty';
+      empty.textContent = tr('pc_track_none');
+      tracksPageEl.appendChild(empty);
+      return;
+    }
+    for (var i = 0; i < info.tracks.length; i++) {
+      (function (track) {
+        var selected = track.lang === info.active;
+        var r = row({
+          id: 'track-option',
+          // 与侧边栏下拉同形：待加载轨带后缀，已加载轨带（条数）。
+          label: (track.label || track.lang) + (track.pending ? tr('sp_track_pending_suffix') : '（' + track.length + '）'),
+          icon: selected ? 'check' : null,
+        });
+        r.classList.add('is-action', 'is-track');
+        r.dataset.lang = track.lang;
+        r.dataset.selected = selected ? '1' : '';
+        r.setAttribute('role', 'menuitemradio');
+        r.setAttribute('aria-checked', selected ? 'true' : 'false');
+        r.setAttribute('tabindex', '0');
+        function pick() {
+          if (typeof window.fushiSubtitleSelectTrack === 'function') window.fushiSubtitleSelectTrack(track.lang);
+          renderTracksPage();
+        }
+        r.addEventListener('click', pick);
+        r.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); }
+        });
+        tracksPageEl.appendChild(r);
+      })(info.tracks[i]);
+    }
+  }
+
   function renderStylePage() {
     if (!stylePageEl) return;
     var mod = S();
@@ -469,6 +729,7 @@
     back.type = 'button';
     back.className = 'fushi-pc-back';
     back.textContent = tr('pc_style_back');
+    prependIcon(back, 'arrow_back', 24);
     back.addEventListener('click', function () { showPage('main'); });
     stylePageEl.appendChild(back);
     if (!mod) return;
@@ -479,15 +740,29 @@
     foot.className = 'fushi-pc-foot';
     var reset = document.createElement('button');
     reset.type = 'button';
+    reset.className = 'fushi-pc-foot-reset';
     reset.textContent = tr('pc_style_reset');
+    prependIcon(reset, 'restart_alt', 18);
     reset.addEventListener('click', function () { writeStyle(mod.DEFAULTS, true); });
     var more = document.createElement('button');
     more.type = 'button';
+    more.className = 'fushi-pc-foot-more';
     more.textContent = tr('pc_style_more');
+    prependIcon(more, 'settings', 18);
     more.addEventListener('click', openOptions);
     foot.appendChild(reset);
     foot.appendChild(more);
     stylePageEl.appendChild(foot);
+  }
+
+  // M3E 滑杆的已选段（主色轨道）长度：CSS 读 --fushi-pc-fill 画渐变（WebKit 没有 ::-moz-range-progress）。
+  function paintRangeFill(input, spec) {
+    var span = Number(spec.max) - Number(spec.min);
+    var pct = span > 0 ? ((Number(input.value) - Number(spec.min)) / span) * 100 : 0;
+    pct = Math.min(100, Math.max(0, isFinite(pct) ? pct : 0));
+    try {
+      if (input.style && typeof input.style.setProperty === 'function') input.style.setProperty('--fushi-pc-fill', pct.toFixed(1) + '%');
+    } catch (_) { /* no-op */ }
   }
 
   function renderStyleControl(spec, cur) {
@@ -509,8 +784,10 @@
       input.value = String(cur[spec.id]);
       var out = document.createElement('output');
       out.textContent = String(cur[spec.id]);
+      paintRangeFill(input, spec);
       input.addEventListener('input', function () {
         out.textContent = input.value;
+        paintRangeFill(input, spec);
         var patch = {};
         patch[spec.id] = Number(input.value);
         writeStyle(patch, false);
@@ -558,6 +835,8 @@
     auto.className = 'fushi-pc-color-auto';
     auto.dataset.on = cur[spec.id] ? '' : '1';
     auto.textContent = tr('opt_subtitleStyle_follow_theme');
+    // M3E 筛选 chip：选中态带前置 check。
+    if (!cur[spec.id]) prependIcon(auto, 'check', 18);
     auto.addEventListener('click', function () {
       var patch = {};
       patch[spec.id] = '';
@@ -572,8 +851,11 @@
   function showPage(page) {
     st.page = page;
     if (page === 'style') renderStylePage();
+    if (page === 'tracks') renderTracksPage();
+    if (page === 'main') renderMain();
     if (mainPageEl) mainPageEl.hidden = page !== 'main';
     if (stylePageEl) stylePageEl.hidden = page !== 'style';
+    if (tracksPageEl) tracksPageEl.hidden = page !== 'tracks';
     position();
   }
 
@@ -582,19 +864,28 @@
     menuEl = document.createElement('div');
     menuEl.id = MENU_ID;
     menuEl.setAttribute('role', 'menu');
+    stamp(menuEl);
     mainPageEl = document.createElement('div');
     mainPageEl.className = 'fushi-pc-page';
     stylePageEl = document.createElement('div');
     stylePageEl.className = 'fushi-pc-page';
     stylePageEl.hidden = true;
+    tracksPageEl = document.createElement('div');
+    tracksPageEl.className = 'fushi-pc-page';
+    tracksPageEl.hidden = true;
     menuEl.appendChild(mainPageEl);
     menuEl.appendChild(stylePageEl);
+    menuEl.appendChild(tracksPageEl);
     sealEvents(menuEl);
     return menuEl;
   }
 
   function applyMenuTheme() {
+    // 风格随设置变：已挂在页上的宿主 theme.js applyToHostPage 会按 id 重盖，但菜单关着时可能还没
+    // 挂进文档（getElementById 找不到），按钮也可能刚被站点摘下——两者在这里补盖一次。
+    stamp(btnEl);
     if (!menuEl) return;
+    stamp(menuEl);
     var t = themeOf();
     if (t === 'light' || t === 'dark') menuEl.setAttribute('data-theme', t);
     else menuEl.removeAttribute('data-theme');
@@ -613,6 +904,7 @@
     renderMain();
     if (mainPageEl) mainPageEl.hidden = false;
     if (stylePageEl) stylePageEl.hidden = true;
+    if (tracksPageEl) tracksPageEl.hidden = true;
     menuEl.dataset.open = '1';
     if (btnEl) btnEl.setAttribute('aria-expanded', 'true');
     position();
@@ -634,8 +926,9 @@
     var size = { width: menuEl.offsetWidth, height: menuEl.offsetHeight };
     var view = { width: window.innerWidth || 0, height: window.innerHeight || 0 };
     var p = placeMenu(r, size, view);
-    menuEl.style.left = p.left + 'px';
-    menuEl.style.top = p.top + 'px';
+    var o = fixedOriginOf(menuEl);
+    menuEl.style.left = Math.round((p.left - o.x) / o.sx) + 'px';
+    menuEl.style.top = Math.round((p.top - o.y) / o.sy) + 'px';
   }
 
   // ────────────────────────────── 动作 ──────────────────────────────
@@ -677,7 +970,9 @@
 
   function flip(id) {
     if (id === 'overlay') {
-      return writePrefs(overlayToggleWrite(st.prefs.subtitleOverlayEnabled !== false));
+      var write = overlayToggleWrite(overlayEffective());
+      if (write[PANEL_GATE_KEY] === true) st.gate = true;
+      return writePrefs(write);
     }
     if (id === 'hidden') {
       // 隐藏字幕的状态与 style 注入归 content.js 独占（见那里的所有权注释），这里只转发。
@@ -688,6 +983,7 @@
     if (id === 'replaceNative') return writePrefs({ subtitleReplaceNative: !st.prefs.subtitleReplaceNative });
     if (id === 'allTracks') return writePrefs({ subtitleOverlayAllTracks: !st.prefs.subtitleOverlayAllTracks });
     if (id === 'background') return writePrefs({ subtitleOverlayBackground: st.prefs.subtitleOverlayBackground === false });
+    if (id === 'study') return writePrefs({ studyTrackVideo: st.prefs.studyTrackVideo === false });
   }
 
   function runShortcut(action) {
@@ -728,18 +1024,20 @@
   // ────────────────────────────── 装载与同步 ──────────────────────────────
 
   var PREF_KEYS = [
-    SETTING_KEY, 'subtitleOverlayEnabled', 'subtitleReplaceNative', 'subtitleOverlayAllTracks',
-    'subtitleOverlayBackground', 'subtitleHidden', 'subtitleStyle',
+    SETTING_KEY, PANEL_GATE_KEY, 'subtitleOverlayEnabled', 'subtitleReplaceNative', 'subtitleOverlayAllTracks',
+    'subtitleOverlayBackground', 'subtitleHidden', 'subtitleStyle', 'studyTrackVideo',
   ];
 
   function adoptStored(stored) {
     var s = stored || {};
     st.enabled = readBool(s, SETTING_KEY, true);
+    st.gate = s[PANEL_GATE_KEY] === true;
     st.prefs.subtitleOverlayEnabled = readBool(s, 'subtitleOverlayEnabled', true);
     st.prefs.subtitleReplaceNative = readBool(s, 'subtitleReplaceNative', false);
     st.prefs.subtitleOverlayAllTracks = readBool(s, 'subtitleOverlayAllTracks', false);
     st.prefs.subtitleOverlayBackground = readBool(s, 'subtitleOverlayBackground', true);
     st.prefs.subtitleHidden = readBool(s, 'subtitleHidden', false);
+    st.prefs.studyTrackVideo = readBool(s, 'studyTrackVideo', true);
     if (Object.prototype.hasOwnProperty.call(s, 'subtitleStyle')) st.style = s.subtitleStyle || null;
   }
 
@@ -775,11 +1073,13 @@
   function snapshot() {
     var s = {};
     s[SETTING_KEY] = st.enabled;
+    s[PANEL_GATE_KEY] = st.gate;
     s.subtitleOverlayEnabled = st.prefs.subtitleOverlayEnabled;
     s.subtitleReplaceNative = st.prefs.subtitleReplaceNative;
     s.subtitleOverlayAllTracks = st.prefs.subtitleOverlayAllTracks;
     s.subtitleOverlayBackground = st.prefs.subtitleOverlayBackground;
     s.subtitleHidden = st.prefs.subtitleHidden;
+    s.studyTrackVideo = st.prefs.studyTrackVideo;
     s.subtitleStyle = st.style;
     return s;
   }
@@ -803,12 +1103,24 @@
   document.addEventListener('fullscreenchange', function () {
     closeMenu();
     ensureButton();
+    // 站点在 fullscreenchange 之后才按新尺寸重排播放器：两帧后按落定的几何再摆一次。
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(function () { requestAnimationFrame(function () { ensureButton(); }); });
+    }
   });
 
-  window.addEventListener('resize', function () {
-    placeFloatingButton();
-    position();
-  });
+  // BUG-3144：悬浮按钮是 fixed 浮层，视频随页面滚动 / 播放器自己挪位时它不会跟着动——此前只在
+  // resize、悬停和每秒轮询时重摆，滚动一下按钮就停在原处「飞」离视频。滚动（含内部滚动容器，
+  // capture）与尺寸变化都按帧合并重摆。
+  var replaceRaf = 0;
+  function scheduleReplace() {
+    if (replaceRaf) return;
+    var run = function () { replaceRaf = 0; placeFloatingButton(); position(); };
+    if (typeof requestAnimationFrame === 'function') replaceRaf = requestAnimationFrame(run);
+    else run();
+  }
+  window.addEventListener('resize', scheduleReplace);
+  window.addEventListener('scroll', scheduleReplace, { capture: true, passive: true });
 
   // 通用悬浮按钮的显隐跟鼠标：在视频画面上才出现，与站点控件一个作息。
   document.addEventListener('pointerover', function (e) {
@@ -827,7 +1139,11 @@
   // 与其为每个站点各写一套观察器，不如一秒一次确认「按钮还在正确容器里吗」。
   setInterval(function () {
     ensureButton();
-    if (st.open) position();
+    if (st.open) {
+      position();
+      // 偏移可能被快捷键 / 侧边栏改了：菜单开着时回显真值（正在输入时不打断）。
+      if (st.page === 'main') refreshOffsetValue(false);
+    }
   }, 1000);
 
   if (window.fushiTheme && typeof window.fushiTheme.onChange === 'function') {

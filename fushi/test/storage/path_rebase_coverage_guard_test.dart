@@ -198,7 +198,7 @@ void main() {
 
   test('字体 pref key 由 dbSourcePrefKey 编码器生成且已登记', () {
     // BUG-1174：声明表用编码器生成 key（不硬编码 media_source 私有前缀格式，见
-    // db_source_pref_key_test）。这里断言编码器产出的 5 个字体 key 确实都在表里——
+    // db_source_pref_key_test）。这里断言编码器产出的全部字体 key 确实都在表里——
     // 编码格式若变化，两侧会同步变化而不会静默漏登记。
     for (final String body in <String>[
       'font_catalog',
@@ -207,6 +207,7 @@ void main() {
       'dict_fonts',
       'video_sub_fonts',
       'game_lookup_fonts',
+      'floating_lyric_fonts',
     ]) {
       final String expected = dbSourcePrefKey('reader_fushi', body);
       expect(
@@ -234,7 +235,7 @@ void main() {
 
     // ② 复用 backup_service 的字体 JSON 遍历器时**必须**注入 rewritePath —— 它们默认
     //    走裸 rebasePath。这正是 BUG-1174 被幂等测试抓到的那条旁路：新根落在旧根内部
-    //    时字体路径被改写两遍，产出 .../Hibiki/data/Hibiki/data/custom_fonts/...。
+    //    时字体路径被改写两遍，产出 .../Fushi/data/Fushi/data/custom_fonts/...。
     final int fontCalls =
         RegExp(r'rebaseFontCatalogJson\(').allMatches(src).length +
             RegExp(r'rebaseFontListJson\(').allMatches(src).length;

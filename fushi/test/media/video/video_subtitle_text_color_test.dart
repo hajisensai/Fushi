@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
@@ -205,13 +205,15 @@ void main() {
             .replaceAll('\r\n', '\n');
     expect(actionsSrc.contains('video_setting_subtitle_text_color'), isTrue,
         reason: '必须用文字颜色 i18n 标题 key');
+    // PM-iIH9G0b：调色盘改经自适应外壳 FushiDialogColorPicker（内部仍是
+    // flutter_colorpicker 的 ColorPicker，按对话框内容区约束排版，窄屏不裁剪）。
     expect(
         actionsSrc.contains(
-            "import 'package:flutter_colorpicker/flutter_colorpicker.dart';"),
+            "import 'package:fushi/src/utils/components/fushi_dialog_color_picker.dart';"),
         isTrue,
-        reason: '必须引入 flutter_colorpicker 调色盘');
-    expect(actionsSrc.contains('ColorPicker('), isTrue,
-        reason: '必须用 ColorPicker 组件（调色盘取任意色，非固定预设）');
+        reason: '必须引入自适应调色盘外壳');
+    expect(actionsSrc.contains('FushiDialogColorPicker('), isTrue,
+        reason: '必须用调色盘组件（取任意色，非固定预设）');
     expect(actionsSrc.contains('_buildSubtitleColorRow('), isTrue,
         reason: '文字/背景色统一走取色行构建器');
     expect(actionsSrc.contains('s.copyWith(textColor: c)'), isTrue,

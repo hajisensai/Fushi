@@ -267,7 +267,8 @@ function loadWorld(prefs) {
     el.__rectHooked = true;
     el.getBoundingClientRect = () => {
       const w = parseFloat(el.style.width) || AUTO_W;
-      const h = parseFloat(el.style.minHeight) || AUTO_H;
+      // __renderFloor：模拟「实测比 min-height 高」（站点 CSS 撑高 / 自适应缩放压到下限仍放不下）。
+      const h = Math.max(parseFloat(el.style.minHeight) || AUTO_H, el.__renderFloor || 0);
       const cx = parseFloat(el.style.left) || 0;
       const by = parseFloat(el.style.top) || 0;
       return rectOf(cx - w / 2, by - h, w, h);
@@ -482,4 +483,64 @@ test('自适应缩放：底板有高度就按实测内容写 --fushi-sub-fit；�
   w.sandbox.chrome.storage.local.set({ subtitleStyle: { boxWidth: 60, boxHeight: 40, boxAutoFit: false } });
   w.tick();
   assert.strictEqual(el.style.getPropertyValue('--fushi-sub-fit'), '');
+});
+
+// ── BUG-3450：底板实测高 ≠ min-height 时的定位（反馈：anichan 桌面端字幕飞出屏幕；移动端全屏
+// 底板恒与屏幕同高、一缩放就整块上移）。覆盖层是「底边锚定、向上长」的，任何一处拿「设想高」
+// 当真实高去算底边，多出来的那截都会往上长，而位置存档是全站共用的一份。
+
+test('BUG-3450 实测比 min-height 高时，缩放仍钉住左上角，连拖多次不往上爬', () => {
+  const w = show();
+  const el = w.overlayEl();
+  // 长句在自适应缩放下限仍放不下 / 站点 CSS 把底板撑高：实测恒 ≥ 200px。
+  el.__renderFloor = 200;
+  w.tick();
+  const before = topLeftOf(w);
+  for (let i = 0; i < 3; i++) {
+    // 往回收到很小（高落到 5% 下限 = 36px，远小于实测的 200px）。
+    w.resizeDrag({ x: before.left + 300 + i * 10, y: before.top + 30 });
+    const after = topLeftOf(w);
+    assert.ok(Math.abs(after.top - before.top) <= 1,
+      '第 ' + (i + 1) + ' 次缩放后上缘应钉住：实得 ' + after.top + ' vs ' + before.top);
+    assert.ok(Math.abs(after.left - before.left) <= 1, '左缘钉住，实得 ' + after.left);
+  }
+  // 存下的底边 = 钉住的上缘 + 实测高，而不是 + 设想的 36px（那会把 y 算小、下一次再往上爬）。
+  const pos = w.stored.subtitleOverlayPosition;
+  assert.ok(Math.abs(VIDEO.top + VIDEO.height * pos.y - (before.top + 200)) <= 1,
+    '存档底边应 = 上缘 + 实测高，实得 y=' + pos.y);
+});
+
+test('BUG-3450 存档 y≈0（旧版在全屏里算坏的位置）：摆放时不探出视频顶缘，且不改写存档', () => {
+  const w = show({ subtitleOverlayPosition: { x: 0.5, y: 0 } });
+  w.tick(); // 壳的实测矩形在首帧之后才挂上，再摆一次
+  const r = w.overlayEl().getBoundingClientRect();
+  assert.ok(r.top >= VIDEO.top - 0.5, '上缘不得高于视频顶缘，实得 ' + r.top);
+  assert.ok(r.bottom <= VIDEO.top + VIDEO.height + 0.5, '下缘不出视频盒，实得 ' + r.bottom);
+  // 只夹显示：用户没拖，位置存档原样不动。
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(w.stored.subtitleOverlayPosition)), { x: 0.5, y: 0 });
+});
+
+test('BUG-3450 覆盖层把尺寸属性钉回默认：站点的 `.全屏元素>*{height:100%}` 压不进来', () => {
+  // 覆盖层全屏时挂进站点的全屏元素，站点对子元素的通配规则（anichan `.wp-stage.fs>*`）会落到它
+  // 身上；ID 规则只压得过它**写了**的属性。生成产物 vendor/content.css 才是注入宿主页的那份。
+  const css = fs.readFileSync(path.join(__dirname, 'vendor', 'content.css'), 'utf8');
+  const m = css.match(/\n#fushi-subtitle-overlay \{([\s\S]*?)\n\}/);
+  assert.ok(m, 'content.css 应有 #fushi-subtitle-overlay 规则');
+  const decls = Object.create(null);
+  for (const line of m[1].replace(/\/\*[\s\S]*?\*\//g, '').split(';')) {
+    const i = line.indexOf(':');
+    if (i > 0) decls[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  }
+  // JS 要写内联值的 width / min-height 只钉默认（加 !important 会压过内联）；JS 从不写的几何属性
+  // 一律 !important——站点自己的通配规则带 !important 时也压得住（ID 特异性更高）。
+  const want = {
+    width: 'auto', 'min-height': '0',
+    height: 'auto !important', 'min-width': '0 !important', 'max-height': 'none !important',
+    right: 'auto !important', bottom: 'auto !important', margin: '0 !important',
+    'aspect-ratio': 'auto !important', float: 'none !important',
+    transform: 'translate(-50%, -100%) !important',
+  };
+  for (const k of Object.keys(want)) {
+    assert.strictEqual(decls[k], want[k], '#fushi-subtitle-overlay 必须显式写 ' + k + ': ' + want[k]);
+  }
 });

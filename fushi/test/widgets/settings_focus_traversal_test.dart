@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -331,7 +331,7 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('Material settings rows register with Hibiki focus root',
+  testWidgets('Material settings rows register with Fushi focus root',
       (WidgetTester tester) async {
     int taps = 0;
     await tester.pumpWidget(

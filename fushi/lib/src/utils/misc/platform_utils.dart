@@ -1,9 +1,10 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 // Architecture decision: platform branching uses runtime Platform.is* checks
 // centralized in this file, not Dart conditional imports.
@@ -30,33 +31,66 @@ bool get isWindowsPlatform => Platform.isWindows;
 
 bool get isMacOSPlatform => Platform.isMacOS;
 
+/// WebView 本地资源（EPUB / 漫画页 / 字体）走自定义 scheme 投递的平台。
+///
+/// WKWebView（iOS / macOS）与 WPE WebKit（Linux，`flutter_inappwebview_linux`）
+/// 都没有能拦截 `https://` 的 `shouldInterceptRequest`，只能注册自定义 scheme
+/// （`WKURLSchemeHandler` / `webkit_web_context_register_uri_scheme`）；Android 与
+/// Windows 则拦截 `https://fushi.local/...`。资源 URL 的构造与 WebView 的
+/// `resourceCustomSchemes` 必须问同一个判据，否则页面请求的 scheme 没人接。
+bool get webViewUsesCustomSchemeTransport =>
+    Platform.isMacOS || Platform.isIOS || Platform.isLinux;
+
 /// Sets the system-UI mode for the **home/menu shell** (book shelf, video,
 /// dictionary search, settings -- everything that is NOT an open media session).
 ///
-/// Android phones in portrait have a permanently-visible status bar (the OS
-/// clock/battery strip) that sits directly above Hibiki's top-right action
-/// icons. Even though the home page already wraps its body in a [SafeArea]
-/// (so the icons are not literally clipped), the always-on status bar crowds
-/// the top-right controls and makes them awkward to tap (TODO-097). We hide the
-/// status bar on Android while keeping the navigation/gesture bar, so the top
-/// action row reclaims the strip the OS bar was occupying.
+/// Every platform, Android included, shows both the status bar and the
+/// navigation bar (the user reversed TODO-097 on 2026-10-04: the Android home
+/// shell shows the status bar again). Show every overlay first, then
+/// edge-to-edge: Flutter 3.44's edgeToEdge only changes decor fitting and does
+/// not clear the FULLSCREEN / IMMERSIVE_STICKY a video page leaves behind, so
+/// visibility must be restored explicitly through `manual` (BUG-2925).
 ///
-/// Android: [SystemUiMode.manual] with only [SystemUiOverlay.bottom] enabled --
-/// status bar hidden, navigation/gesture bar kept. Other platforms (iOS keeps
-/// the status bar -- it is expected there and handled via SafeArea; desktop has
-/// no system bars) keep the prior edge-to-edge behaviour. An open book/video
-/// still uses `immersiveSticky` (both bars hidden) on open and the reader
-/// restores its own mode on exit via `AppModel.closeMedia`, which calls back here.
+/// Readers restore this mode through AppModel.closeMedia; video pages restore
+/// it when the last display owner exits.
 Future<void> setHomeShellSystemUiMode() async {
-  if (Platform.isAndroid) {
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.manual,
-      overlays: <SystemUiOverlay>[SystemUiOverlay.bottom],
-    );
-    return;
-  }
+  await SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.manual,
+    overlays: SystemUiOverlay.values,
+  );
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 }
+
+/// The system-UI mode the **novel reader body** declares once its content is
+/// ready (BUG-3077).
+///
+/// Android keeps both system bars hidden ([SystemUiMode.immersiveSticky], the
+/// mode `AppModel.openMedia` already entered): the reader draws its own
+/// chrome, and its top / bottom text inset is `viewPadding` plus the reader's
+/// own reserves, so any visible bar pushes the page body away from the edge.
+/// iOS and desktop keep [SystemUiMode.edgeToEdge] (iOS shows the status bar in
+/// the reader, as it always has; desktop has no system bars).
+///
+/// Android must not send edgeToEdge here. Up to Flutter 3.44 the Android
+/// `PlatformPlugin.enableEdgeToEdge()` only changed decor fitting and left the
+/// IMMERSIVE_STICKY flags from `openMedia` in place, so the bars stayed hidden
+/// and `viewPadding.top` stayed at the cutout inset. Flutter 3.47 first calls
+/// `decorView.setSystemUiVisibility(0)`, which clears those flags: the status
+/// and navigation bars came back as soon as a book finished loading, and the
+/// status-bar height went straight into the text's top padding (the "top
+/// margin got bigger" report). Declaring the wanted mode directly does not
+/// depend on that engine detail.
+///
+/// [android] defaults to the running platform; tests pass it explicitly.
+Future<void> setReaderSystemUiMode({bool? android}) async {
+  await SystemChrome.setEnabledSystemUIMode(
+    readerSystemUiMode(android: android ?? Platform.isAndroid),
+  );
+}
+
+/// The mode [setReaderSystemUiMode] sends (see there).
+SystemUiMode readerSystemUiMode({required bool android}) =>
+    android ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge;
 
 /// Windows/Linux 桌面用 MD3 的钳制滚动（去掉 iOS 风格回弹）；macOS（Cupertino
 /// 平台，刻意不动）与移动端保持原有可回弹物理。始终保留 AlwaysScrollable 外层，
@@ -246,12 +280,20 @@ double? desktopContentMaxWidth(
 /// [DesktopContentLayout] 的侧向留白。媒体墙类页面（[DesktopContentKind.readerShelf]：
 /// 书架/视频/游戏/漫画目录/来源页）恒为零——卡片自带内边距，宽屏上再叠 16/24px
 /// 强制侧向留白只是在侧栏与内容间挤出一条空带（用户实报「首页左右强制的间距」）。
-/// 查词/设置是文字流正文，贴边可读性差，宽屏保留 16/24px。
+/// 设置是文字流正文，贴边可读性差，宽屏保留 16/24px。
+///
+/// 查词页（[DesktopContentKind.dictionary]）同样为零（2026-10-06 用户截图「查词
+/// 顶部这块左边还是没对齐」）：页内搜索框、结果卡、历史列表各自已按页边
+/// （[FushiSpacingTokens.page]）内缩，再叠 16/24 会让整块比外壳大标题 / 右上
+/// 按钮组多缩进一截，与库页同一条页边对不齐。
 EdgeInsets desktopContentPadding(
   WindowSizeClass sizeClass,
   DesktopContentKind kind,
 ) {
-  if (kind == DesktopContentKind.readerShelf) return EdgeInsets.zero;
+  if (kind == DesktopContentKind.readerShelf ||
+      kind == DesktopContentKind.dictionary) {
+    return EdgeInsets.zero;
+  }
   return switch (sizeClass) {
     WindowSizeClass.compact => EdgeInsets.zero,
     WindowSizeClass.medium => const EdgeInsets.symmetric(horizontal: 16),
@@ -392,7 +434,7 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
         final Color resolvedDividerColor =
             dividerColor ?? Theme.of(context).dividerColor;
         final Widget? divider = showDivider
-            ? VerticalDivider(
+            ? FushiVerticalDivider(
                 width: 1,
                 thickness: 1,
                 color: resolvedDividerColor,

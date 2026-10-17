@@ -45,7 +45,7 @@ void bloom::build_to_file(const std::vector<uint64_t>& hashes, const std::string
   size_t bits_size = num_bits / 8;
   auto out = memory::map_rw(path, 2 * sizeof(uint64_t) + bits_size);
   if (!out) {
-    throw std::runtime_error("failed to create bloom filter");
+    throw memory::map_error("failed to create bloom filter");
   }
 
   std::memcpy(out.data, &num_bits, sizeof(uint64_t));

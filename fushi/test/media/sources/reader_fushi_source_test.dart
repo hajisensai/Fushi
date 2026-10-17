@@ -7,9 +7,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../../pages/reader_history_source_corpus.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi_audio/fushi_audio.dart' show SrtBook, SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart' show DeleteScope;
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteBookInfo;
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart'
+    show InterconnectMangaCatalog;
 import 'package:fushi_engine/sync/ttu_filename.dart';
 
 void main() {
@@ -58,10 +65,10 @@ void main() {
       );
     });
 
-    test('Apple 平台 EPUB 资源 URL 走 WebKit custom scheme', () {
+    test('WebKit 宿主（Apple / Linux）EPUB 资源 URL 走 custom scheme', () {
       final String url = ReaderFushiSource.epubUrl('OEBPS/ch 2.xhtml');
 
-      if (Platform.isMacOS || Platform.isIOS) {
+      if (webViewUsesCustomSchemeTransport) {
         expect(
           url,
           '${ReaderFushiSource.kResourceScheme}://fushi.local/epub/OEBPS/ch%202.xhtml',
@@ -97,7 +104,7 @@ void main() {
     late Directory tempDir;
 
     setUp(() async {
-      tempDir = await Directory.systemTemp.createTemp('hibiki_font_test_');
+      tempDir = await Directory.systemTemp.createTemp('fushi_font_test_');
     });
 
     tearDown(() async {
@@ -130,7 +137,7 @@ void main() {
       expect(
         result.fontFaces,
         contains(
-          Platform.isMacOS || Platform.isIOS
+          webViewUsesCustomSchemeTransport
               ? '${ReaderFushiSource.kResourceScheme}://fushi.local/fonts/'
               : 'https://fushi.local/fonts/',
         ),
@@ -602,7 +609,7 @@ void main() {
 
     setUp(() {
       // deleteBook resolves on-disk persist/extract dirs via path_provider.
-      ppDir = Directory.systemTemp.createTempSync('hibiki_delete_book_pp');
+      ppDir = Directory.systemTemp.createTempSync('fushi_delete_book_pp');
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => ppDir.path,
@@ -644,6 +651,49 @@ void main() {
       expect(result.deleted, isTrue);
       expect(result.failureReason, isNull);
       expect(await db.getEpubBook('Kokoro'), isNull);
+    });
+
+    test(
+        'BUG-3443 推送方向：从所有设备删除经互联收下的在线漫画，墓碑写对端键 '
+        '（本机 interconnect- 键是单向哈希，对端认不出）', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+      const String peerKey = 'mihon-b97e8fd21348ddb21f658beedf9ca3e7';
+      final String localKey = InterconnectMangaCatalog.localBookKeyFor(peerKey);
+      final String metadata = InterconnectMangaCatalog.entryFor(
+        const RemoteBookInfo(
+          title: '志乃と恋',
+          bookKey: peerKey,
+          hasContent: false,
+          format: 'manga',
+          hasMangaChapters: true,
+        ),
+      ).encode();
+      await db.insertEpubBook(epubBook(localKey).copyWith(
+          sourceMetadata: Value(metadata),
+          format: Value(BookFormat.manga.dbValue)));
+      // 对照：普通书照旧写本机键。
+      await db.insertEpubBook(epubBook('Kokoro'));
+      // 从对端下载、落地键与对端不同的书（别名表记着对端键；deleteEpubBook 会级联
+      // 删别名，所以必须删行前取）。
+      await db.insertEpubBook(epubBook('Neko'));
+      await db.setCollectionBookAlias(
+          (await db.resolveEpubBookUid('Neko'))!, 'Neko(2)');
+
+      for (final String key in <String>[localKey, 'Kokoro', 'Neko']) {
+        final DeleteBookResult result = await ReaderFushiSource.instance
+            .deleteBook(
+                db: db, bookKey: key, scope: DeleteScope.syncEverywhere);
+        expect(result.deleted, isTrue, reason: key);
+      }
+
+      expect(
+        (await db.getSyncDeletionTombstonesOfType('book'))
+            .map((SyncDeletionTombstoneRow r) => r.itemKey)
+            .toSet(),
+        <String>{peerKey, 'Kokoro', 'Neko(2)'},
+      );
     });
 
     test(
@@ -711,6 +761,73 @@ void main() {
       expect(missingKeyResult.deleted, isFalse);
       expect(missingKeyResult.failureReason, contains('no-such-book'));
     });
+
+    // BUG-3101：配对了 EPUB 的字幕书卡删除后弹「删除书籍失败」——deleteBook 已按
+    // bookKey 级联删掉 srt 行，调用方再按 uid 删一次拿到 0 行就判失败。
+    SrtBooksCompanion srtRow(String uid, {String bookKey = ''}) =>
+        SrtBooksCompanion.insert(
+          uid: uid,
+          title: uid,
+          srtPath: '/tmp/$uid.srt',
+          importedAt: 0,
+          bookKey: Value(bookKey),
+        );
+
+    for (final DeleteScope scope in DeleteScope.values) {
+      test('BUG-3101 配对字幕书卡删除如实回报成功（scope=${scope.name}）',
+          () async {
+        final db = FushiDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        MediaSource.setDatabase(db);
+        await db.insertEpubBook(epubBook('Paired'));
+        await db.upsertSrtBook(srtRow('srt/paired', bookKey: 'Paired'));
+        final SrtBook book =
+            (await SrtBookRepository(db).findByUid('srt/paired'))!;
+
+        final DeleteBookResult result = await ReaderFushiSource.instance
+            .deleteSrtShelfBook(db: db, book: book, scope: scope);
+
+        expect(result.deleted, isTrue,
+            reason: 'srt 行随 deleteBook 事务级联删除，不得再判「删除书籍失败」');
+        expect(result.failureReason, isNull);
+        expect(await db.getEpubBook('Paired'), isNull);
+        expect(await SrtBookRepository(db).findByUid('srt/paired'), isNull);
+        final List<SyncDeletionTombstoneRow> bookTombstones =
+            await db.getSyncDeletionTombstonesOfType('book');
+        expect(
+          bookTombstones.map((SyncDeletionTombstoneRow r) => r.itemKey),
+          scope == DeleteScope.syncEverywhere
+              ? contains('Paired')
+              : isNot(contains('Paired')),
+          reason: '删除范围照常落地',
+        );
+      });
+    }
+
+    test('BUG-3101 纯字幕书卡走 repo 删除并如实回报；已不存在则回报失败', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+      await db.upsertSrtBook(srtRow('srt/lonely'));
+      final SrtBook book =
+          (await SrtBookRepository(db).findByUid('srt/lonely'))!;
+
+      final DeleteBookResult first = await ReaderFushiSource.instance
+          .deleteSrtShelfBook(
+              db: db, book: book, scope: DeleteScope.syncEverywhere);
+      expect(first.deleted, isTrue);
+      expect(await SrtBookRepository(db).findByUid('srt/lonely'), isNull);
+      expect(
+        (await db.getSyncDeletionTombstonesOfType('srtbook'))
+            .map((SyncDeletionTombstoneRow r) => r.itemKey),
+        contains('srt/lonely'),
+      );
+
+      final DeleteBookResult again = await ReaderFushiSource.instance
+          .deleteSrtShelfBook(db: db, book: book);
+      expect(again.deleted, isFalse);
+      expect(again.failureReason, contains('srt/lonely'));
+    });
   });
 
   group('ReaderFushiSource.deleteBook TODO-1359 (删不掉 + 无原因)', () {
@@ -718,7 +835,7 @@ void main() {
         TestWidgetsFlutterBinding.ensureInitialized();
     late Directory ppDir;
     setUp(() {
-      ppDir = Directory.systemTemp.createTempSync('hibiki_del1359_pp');
+      ppDir = Directory.systemTemp.createTempSync('fushi_del1359_pp');
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => ppDir.path,
@@ -747,7 +864,7 @@ void main() {
       // on Windows (POSIX allows unlink-while-open, so there the delete just
       // succeeds — either way the committed DB delete must report success).
       final Directory extractDir =
-          Directory.systemTemp.createTempSync('hibiki_del1359_extract');
+          Directory.systemTemp.createTempSync('fushi_del1359_extract');
       final File inner = File(p.join(extractDir.path, 'content.xhtml'))
         ..writeAsStringSync('<html></html>');
       final RandomAccessFile handle = inner.openSync(mode: FileMode.write);
@@ -835,7 +952,7 @@ void main() {
         TestWidgetsFlutterBinding.ensureInitialized();
     late Directory ppDir;
     setUp(() {
-      ppDir = Directory.systemTemp.createTempSync('hibiki_bookkey_rt_pp');
+      ppDir = Directory.systemTemp.createTempSync('fushi_bookkey_rt_pp');
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => ppDir.path,

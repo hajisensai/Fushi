@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:external_path/external_path.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/migration/migration_exporter.dart';
 import 'package:fushi/src/migration/migration_importer.dart';
@@ -11,10 +11,20 @@ import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupImportRestart;
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show fushiDatabaseFileName, PrefCodec;
+    show
+        fushiDatabaseFileName,
+        kLegacySchemaBridgeAppVersion,
+        kLegacySchemaBridgeReleaseUrl,
+        kMinSupportedSchemaVersion,
+        PrefCodec,
+        UnsupportedLegacySchemaException;
 import 'package:path/path.dart' as p;
+import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
 
 /// 「从 Hibiki 导入」页（改名迁移计划 P2-2/P2-3，Fushi 侧）。
 ///
@@ -54,6 +64,10 @@ class _MigrationImportPageState extends State<MigrationImportPage>
   bool _running = false;
   String? _status;
   String? _error;
+
+  /// 本轮导入已被最低 schema 门槛拒绝（清单缺版本号、由 mergeRestoreBackup 按库
+  /// 文件头判出来的情形）。与 [_hasLegacyBatch] 一起决定是否展示 v2.9.1 迁移指引。
+  bool _legacyRejected = false;
 
   /// 扫描进度（校验哪一批 / 已完成几批）。11GB 库的全量 SHA-256 要好几分钟，
   /// 这段时间必须让用户看得见在动，否则和卡死没有区别。
@@ -115,9 +129,13 @@ class _MigrationImportPageState extends State<MigrationImportPage>
 
   /// 逐批问题的弹窗。列表仍留在页面上供反复查看。
   Future<void> _showProblemsDialog(MigrationScanResult scan) async {
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
+        icon: const FushiDialogHeroIcon(
+          icon: FushiIcons.error,
+          tone: FushiHeroTone.destructive,
+        ),
         title: Text(t.migration_import_entry),
         content: SingleChildScrollView(
           child: Column(
@@ -134,7 +152,7 @@ class _MigrationImportPageState extends State<MigrationImportPage>
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(t.dialog_close),
           ),
@@ -161,6 +179,13 @@ class _MigrationImportPageState extends State<MigrationImportPage>
     if (_running) return;
     final MigrationScanResult? scan = _scan;
     if (scan == null || scan.ready.isEmpty) return;
+    // 最低 schema 门槛：清单里记着归档内库的 user_version。低于下限的老包本版本
+    // 已无法升级，在关库 / 上遮罩之前就拒绝（活库零改动）。清单缺版本号时交给
+    // mergeRestoreBackup 自己的文件头判定兜底。
+    if (_hasLegacyBatch(scan)) {
+      setState(() => _legacyRejected = true);
+      return;
+    }
     setState(() {
       _running = true;
       _error = null;
@@ -213,8 +238,9 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       // 合并后聚合校验：逐表行数不得低于各批清单最大值。
       final Map<String, int> expected =
           MigrationImporter.aggregateExpectedCounts(scan.ready);
-      // 合并导入落到的是活库（mergeRestoreBackup 内部开库时 fushi_core 已把
-      // legacy hibiki.db 改名），所以行数校验必须查新文件名。
+      // 合并导入落到的是活库 fushi.db。改名前的 legacy hibiki.db 已不再被改名：
+      // 门槛以下的库（含目录里只有 hibiki.db 的情形）在 mergeRestoreBackup 开库前
+      // 就以 UnsupportedLegacySchemaException 拒绝，走不到这里。
       final String dbPath =
           p.join(appModel.databaseDirectory.path, fushiDatabaseFileName);
       final List<String> countProblems = MigrationImporter.verifyImportedCounts(
@@ -271,8 +297,14 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       // 把 append 挂进 fire-and-forget 串行链，2 秒后的 System.exit 会连同在途写入
       // 一起带走，所以用户机器上导入失败后「错误日志 (0)」。
       await ErrorLogService.instance.flush();
-      appModel.failBackupImport(
-          t.migration_import_verify_failed(batch: '', detail: '$e'));
+      if (e is UnsupportedLegacySchemaException && mounted) {
+        setState(() => _legacyRejected = true);
+      }
+      appModel.failBackupImport(e is UnsupportedLegacySchemaException
+          ? t.backup_legacy_schema(
+              version: kLegacySchemaBridgeAppVersion,
+              url: kLegacySchemaBridgeReleaseUrl)
+          : t.migration_import_verify_failed(batch: '', detail: '$e'));
       // BUG-1505：失败停在遮罩上，重启交给用户点（理由同 verifyCounts 分支）。
     } finally {
       if (mounted) {
@@ -284,92 +316,194 @@ class _MigrationImportPageState extends State<MigrationImportPage>
     }
   }
 
+  /// 清单里记着归档内库的 user_version；任一可导入批低于最低 schema 门槛即为
+  /// 旧 Hibiki 桥包导出——本版本已无迁移阶梯，必须改走桥接版本。
+  static bool _hasLegacyBatch(MigrationScanResult scan) =>
+      scan.ready.any((MigrationImportBatch b) {
+        final int? v = b.manifest.sourceSchemaVersion;
+        return v != null && v > 0 && v < kMinSupportedSchemaVersion;
+      });
+
+  /// 桥接版本迁移指引：卸载当前 Fushi（Android 禁止覆盖装低版本，新装的本来
+  /// 就是空库）→ 装 v2.9.1 → 在其中导入 → 再更新。导入前探测到旧批次与导入时
+  /// 被拒绝共用这一块，按钮直接打开桥接版本的 Release 页。
+  Widget _legacyGuidance() {
+    return FushiInlineNotice(
+      severity: FushiNoticeSeverity.warning,
+      icon: FushiIcons.download,
+      title: t.migration_import_legacy_title(
+          version: kLegacySchemaBridgeAppVersion),
+      message: t.migration_import_legacy_message(
+          version: kLegacySchemaBridgeAppVersion),
+      actions: <Widget>[
+        FushiFilledButton.icon(
+          onPressed: () => launchUrl(
+            Uri.parse(kLegacySchemaBridgeReleaseUrl),
+            mode: LaunchMode.externalApplication,
+          ),
+          icon: const FushiIcon(FushiIcons.openInNew),
+          label: Text(t.db_legacy_schema_release_open(
+              version: kLegacySchemaBridgeAppVersion)),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final MigrationScanResult? scan = _scan;
-    return Scaffold(
-      appBar: AppBar(title: Text(t.migration_import_entry)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          Text(t.migration_import_entry_subtitle),
-          const SizedBox(height: 16),
-          if (scan == null)
-            Column(
-              children: <Widget>[
-                const Center(child: CircularProgressIndicator()),
-                const SizedBox(height: 12),
-                // 只给转圈＝用户无法把「正在校验」和「卡死」区分开。
-                Text(_scanningLabel ?? t.migration_import_verifying_hint,
-                    textAlign: TextAlign.center),
-                if (_scanningLabel != null) ...<Widget>[
-                  const SizedBox(height: 4),
-                  Text(
-                    t.migration_import_verifying_hint,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall,
+    final bool legacyBlocked =
+        scan != null && (_legacyRejected || _hasLegacyBatch(scan));
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    final List<Widget> sections = <Widget>[
+      Text(
+        t.migration_import_entry_subtitle,
+        style: type.bodyLarge.copyWith(color: colors.onSurfaceVariant),
+      ),
+      if (scan == null)
+        Column(
+          children: <Widget>[
+            // 只给转圈＝用户无法把「正在校验」和「卡死」区分开。
+            FushiLoadingView(
+              message: _scanningLabel ?? t.migration_import_verifying_hint,
+            ),
+            if (_scanningLabel != null) ...<Widget>[
+              const SizedBox(height: 4),
+              Text(
+                t.migration_import_verifying_hint,
+                textAlign: TextAlign.center,
+                style: type.bodySmall.copyWith(color: colors.onSurfaceVariant),
+              ),
+            ],
+          ],
+        )
+      else if (!scan.storagePermissionGranted)
+        // 根因面：没权限时该请求权限，不是报「清单损坏」再让用户自己去翻设置。
+        FushiInlineNotice(
+          severity: FushiNoticeSeverity.warning,
+          icon: FushiIcons.folder,
+          title: t.migration_import_permission_title,
+          message: t.migration_import_permission_body,
+          actions: <Widget>[
+            FushiFilledButton(
+              onPressed: _requestPermission,
+              child: Text(t.migration_import_permission_grant),
+            ),
+          ],
+        )
+      else if (!scan.hasAnything)
+        // 空状态：中转目录里什么都没有。
+        FushiPlaceholderMessage(
+          icon: FushiIcons.folderOpen,
+          message: t.migration_import_nothing,
+          action: FushiTextButton(
+            onPressed: _running ? null : _rescan,
+            child: Text(t.retry),
+          ),
+        )
+      else ...<Widget>[
+        // 旧 Hibiki 桥包导出必然低于门槛：导入前就把可执行的迁移路径摆出来，
+        // 而不是让用户点了「开始导入」再吃一句报错。
+        if (legacyBlocked) _legacyGuidance(),
+        // 待导入批次（可导入 = primary 勾、校验未过 = error 色块）一组分段卡片。
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (int i = 0; i < scan.ready.length; i++)
+              FushiGroupedListItem(
+                index: i,
+                count: scan.ready.length + scan.problems.length,
+                child: FushiListItem(
+                  leading: const FushiListLeadingIcon(
+                    FushiIcons.downloadDone,
+                    tone: FushiCardTone.primary,
                   ),
-                ],
-              ],
-            )
-          else if (!scan.storagePermissionGranted)
-            // 根因面：没权限时该请求权限，不是报「清单损坏」再让用户自己去翻设置。
-            FushiCard(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      t.migration_import_permission_title,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(t.migration_import_permission_body),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: _requestPermission,
-                      child: Text(t.migration_import_permission_grant),
-                    ),
-                  ],
+                  title: Text(_batchLabel(scan.ready[i].batch)),
                 ),
               ),
-            )
-          else if (!scan.hasAnything)
-            Text(t.migration_import_nothing)
-          else ...<Widget>[
-            for (final MigrationImportBatch batch in scan.ready)
-              FushiListItem(
-                density: FushiListDensity.compact,
-                leading: const Icon(Icons.inventory_2_outlined),
-                title: Text(_batchLabel(batch.batch)),
+            for (final (int i, MapEntry<String, List<String>> e)
+                in scan.problems.entries.indexed)
+              FushiGroupedListItem(
+                index: scan.ready.length + i,
+                count: scan.ready.length + scan.problems.length,
+                child: FushiListItem(
+                  leading: const FushiListLeadingIcon(
+                    FushiIcons.error,
+                    tone: FushiCardTone.error,
+                  ),
+                  title: Text(
+                    t.migration_import_verify_failed(
+                      batch: e.key,
+                      detail: e.value.join('; '),
+                    ),
+                  ),
+                  titleMaxLines: 3,
+                ),
               ),
-            for (final MapEntry<String, List<String>> e
-                in scan.problems.entries)
-              FushiListItem(
-                density: FushiListDensity.compact,
-                leading: Icon(Icons.error_outline,
-                    color: Theme.of(context).colorScheme.error),
-                title: Text(t.migration_import_verify_failed(
-                    batch: e.key, detail: e.value.join('; '))),
-                titleMaxLines: 3,
-              ),
-            const SizedBox(height: 8),
-            if (_error != null)
-              Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            if (_status != null) Text(_status!),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: _running || scan.ready.isEmpty ? null : _runImport,
-              child: Text(t.migration_import_start),
-            ),
-            TextButton(
+          ],
+        ),
+        // 错误走共享提示块（中性底 + 错误色图标），不再是裸红字。
+        if (_error != null)
+          FushiInlineNotice(
+            severity: FushiNoticeSeverity.error,
+            message: _error!,
+          ),
+        if (_status != null)
+          FushiInlineNotice(
+            severity: FushiNoticeSeverity.info,
+            message: _status!,
+          ),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            FushiTextButton(
               onPressed: _running ? null : _rescan,
               child: Text(t.retry),
             ),
+            FushiFilledButton.icon(
+              size: FushiButtonSize.m,
+              onPressed: _running || scan.ready.isEmpty || legacyBlocked
+                  ? null
+                  : _runImport,
+              icon: const FushiIcon(FushiIcons.importFile),
+              label: Text(t.migration_import_start),
+            ),
           ],
-        ],
+        ),
+      ],
+    ];
+    return FushiPageScaffold(
+      title: t.migration_import_entry,
+      body: FushiEntranceScope(
+        // 扫描结果落地时重开进场窗口，让结果那一屏也错峰进场。
+        replayKey: scan,
+        // Builder：在页头脚手架之内取 MediaQuery 顶部让位，正文滚到浮动页头底下。
+        child: Builder(
+          builder: (BuildContext context) => ListView(
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap + MediaQuery.paddingOf(context).top,
+                tokens.spacing.page,
+                tokens.spacing.section,
+              ),
+            ),
+            children: <Widget>[
+              for (int i = 0; i < sections.length; i++)
+                Padding(
+                  padding: EdgeInsets.only(
+                    bottom: i == sections.length - 1 ? 0 : tokens.spacing.card,
+                  ),
+                  child: FushiStaggeredEntrance(index: i, child: sections[i]),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

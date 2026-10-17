@@ -15,6 +15,7 @@ import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
+import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
@@ -35,7 +36,7 @@ import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi/src/sync/webdav_path_backend_mixin.dart';
 
-/// Probes whether a single Hibiki server URL is reachable with [token].
+/// Probes whether a single Fushi server URL is reachable with [token].
 /// Returns true if reachable, false on connectivity failure/timeout, and
 /// throws [SyncAuthError] if the server rejects the token.
 typedef FushiProbe = Future<bool> Function(String url, String token);
@@ -155,7 +156,7 @@ String interconnectRequestTimeoutMessage(
 ) =>
     'interconnect request timed out after $limit: $method ${uri.path}';
 
-/// Sync backend for connecting to another Hibiki instance's embedded server.
+/// Sync backend for connecting to another Fushi instance's embedded server.
 ///
 /// Uses the WebDAV protocol (same as [WebDavSyncBackend]) but stores
 /// credentials in dedicated keys to avoid collision with the user's
@@ -186,6 +187,7 @@ class InterconnectSyncBackend extends SyncBackend
     implements
         RemoteBookClient,
         RemoteVideoClient,
+        RemoteVideoGraphicSubtitleTrackFetch,
         RemoteVideoPlaybackSync,
         RemoteVideoQualityLimit,
         RemoteCoverFetcher {
@@ -290,6 +292,15 @@ class InterconnectSyncBackend extends SyncBackend
   /// 入口全部自动覆盖，不依赖每个调用点记得手动失效（这正是本 bug 的成因）。
   final ValueNotifier<int> sessionIdentityRevision = ValueNotifier<int>(0);
 
+  /// 本端成功删掉 host 库里的条目（书 / 有声书 / 本地音频 / 视频）后自增。
+  ///
+  /// `remoteLibraryCacheProvider` 订阅它作废互联来源的远端清单缓存：删除之前取的
+  /// 清单还带着那个条目，TTL 内继续用就会把刚删的东西当远端占位卡显示出来；更要紧的是
+  /// 远端占位卡的删除墓碑过滤（`pendingRemoteDeletionKeys`）在墓碑送达后就不再藏这个
+  /// 键，它依赖「送达之后拿到的清单一定是删除之后取的」——同步推送与 UI 直删都走这几个
+  /// 方法，挂在这里一处覆盖。
+  final ValueNotifier<int> remoteLibraryMutationRevision = ValueNotifier<int>(0);
+
   WebDavOps? _ops;
   // TODO-961 M1: 当前选中地址的钉扎指纹（https 走 pinned client；http=null）。
   String? _activeFingerprint;
@@ -310,6 +321,10 @@ class InterconnectSyncBackend extends SyncBackend
   /// Test seam: the base URL the session has settled on.
   @visibleForTesting
   String? get activeBaseUrl => _ops?.baseUrl;
+
+  /// 当前会话已选定的 host 地址（未解析 = null）。书架「彻底删除」二次确认据此
+  /// 对上配对记录里的 host 展示名（反馈 nvlhtczbro）。
+  String? get resolvedHostBaseUrl => _ops?.baseUrl;
 
   /// BUG-891：当前选中 host 的 TOFU 钉扎证书 SHA-256 指纹（`aa:bb:..`），供制卡把它
   /// 下发给 ffmpeg 的 `-tls_pin_sha256` 以按指纹接受自签流。http 主机 / 未解析 = null。
@@ -570,7 +585,7 @@ class InterconnectSyncBackend extends SyncBackend
   // ── Metadata sync ─────────────────────────────────────────────────
 
   // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
-  // 这里只给出 hibiki client 的下载原语（size-capped GET + jsonDecode，见
+  // 这里只给出互联 client 的下载原语（size-capped GET + jsonDecode，见
   // WebDavOps.downloadJson）。读取不经 _ensureResolved（沿用原实现，直接用 _ops!）。
   @override
   Future<Object?> readJsonById(String fileId) => _ops!.downloadJson(fileId);
@@ -618,7 +633,7 @@ class InterconnectSyncBackend extends SyncBackend
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final path = '$folderId${Uri.encodeComponent(fileName)}';
     final length = await file.length();
@@ -628,7 +643,8 @@ class InterconnectSyncBackend extends SyncBackend
     int bytesUploaded = 0;
     await request.addStream(file.openRead().map((chunk) {
       bytesUploaded += chunk.length;
-      onProgress?.call(length > 0 ? bytesUploaded / length : 0);
+      onProgress?.call(
+          length > 0 ? bytesUploaded / length : 0, bytesUploaded);
       return chunk;
     }));
     final response = await request.close();
@@ -640,7 +656,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     // Range 续传（视频 TODO-819 同款范式推广到库包下载：epub/词典/有声书/本地
     // 音频）。旧实现是裸 GET，中断即删截断文件、下次从 0——大词典/有声书包在
@@ -672,7 +688,9 @@ class InterconnectSyncBackend extends SyncBackend
         return _wrapResumableResponse(res);
       },
       onProgress: (int received, int? total) {
-        if (total != null && total > 0) onProgress?.call(received / total);
+        if (total != null && total > 0) {
+          onProgress?.call(received / total, received);
+        }
       },
     );
   }
@@ -852,6 +870,7 @@ class InterconnectSyncBackend extends SyncBackend
               id: e.href,
               name: _stripTrailingSlash(e.displayName),
               isFolder: e.isCollection,
+              modifiedAt: e.modifiedAt,
             ))
         .toList();
   }
@@ -951,6 +970,26 @@ class InterconnectSyncBackend extends SyncBackend
     );
   }
 
+  /// BUG-3147：一次性动作（配置上传/下载）的会话入口——先按 [repo] 里**此刻**的配对
+  /// 配置重载会话，再发请求。
+  ///
+  /// 其余消费点（书架 / 视频页 / 首页 / 同步编排）都先 [restoreAuth] 再用本单例，只有
+  /// 配置传输两条路漏了：它们拿的是进程里上一次 [_loadConfig] 留下的候选与凭据。重新
+  /// 配对只改库、不碰这个单例，所以旧 token 一直被拿去打 host → 401 →「配对凭据被
+  /// 拒」；直到某次词典同步之类走编排的操作顺手 [restoreAuth] 了，才「莫名其妙好了」
+  /// ——这就是 issue #1997 里「词典同步是配置同步的前置条件」的假象。
+  ///
+  /// [restoreAuth] 自带配置签名判据（BUG-1183）：配置没变就保留已探明的会话，不会白
+  /// 白重探。一台对端都没配置时如实抛「未配对」，不再落到 401 的错误归因上。
+  Future<void> _reloadSessionFrom(SyncRepository repo) async {
+    if (!await restoreAuth(repo)) {
+      throw SyncAuthError(
+        'Fushi server credentials not configured',
+        kind: SyncAuthFailureKind.pairingNotConfigured,
+      );
+    }
+  }
+
   /// 拉取 host 当前激活 Profile 的分享 JSON（互联「下载配置」动作）。
   ///
   /// 与 [getRemoteServiceConfig] 同一条安全边界：整份配置只在 pinned HTTPS 会话上传
@@ -960,7 +999,12 @@ class InterconnectSyncBackend extends SyncBackend
   /// 返回 null 的三种情形归一为「对端不提供此能力」：明文会话 / 老 host 404 /
   /// host 未接线该能力 404。host **开关关着**是 403（不是 404）——那不是「不支持」，
   /// 而是对端明确拒绝，必须如实报给用户，故走 checkStatus 抛出。
-  Future<String?> getRemoteProfileJson() async {
+  ///
+  /// BUG-3147：[repo] 必填，进来先 [_reloadSessionFrom]——本类是单例，这个按钮又不经
+  /// 任何同步编排，不重载就会拿进程里那份旧会话（重新配对之前的 token / 地址）去打
+  /// host，host 回 401，用户看到「配对凭据被拒」，再怎么重新配对都没用。
+  Future<String?> getRemoteProfileJson({required SyncRepository repo}) async {
+    await _reloadSessionFrom(repo);
     await _ensureResolved();
     if (Uri.tryParse(_apiBase)?.scheme != 'https') return null;
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -987,7 +1031,13 @@ class InterconnectSyncBackend extends SyncBackend
   /// 返回 host 上新建的 Profile 名；host 不提供该能力（老 host / 未接线）返回 null，
   /// 由调用方翻成「对端不支持」。host 开关关着 / 明文会话 / 未配对一律经 checkStatus
   /// 抛出，携带 host 给的拒绝原因。
-  Future<String?> putRemoteProfileJson(String json) async {
+  ///
+  /// [repo] 的用途同 [getRemoteProfileJson]（BUG-3147）。
+  Future<String?> putRemoteProfileJson(
+    String json, {
+    required SyncRepository repo,
+  }) async {
+    await _reloadSessionFrom(repo);
     await _ensureResolved();
     if (Uri.tryParse(_apiBase)?.scheme != 'https') return null;
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1014,6 +1064,83 @@ class InterconnectSyncBackend extends SyncBackend
     }
     final Object? name = decoded['name'];
     return name is String ? name : '';
+  }
+
+  /// 互联「主机版本」：取 host 的 app 版本、可用更新与更新进度（反馈 Pp8XPyve0N）。
+  ///
+  /// 返回 null = host 不提供远程更新（老 host / 无头服务端 404）。host 明确拒绝
+  /// （未开开关 / 共享 token / 平台不支持）抛 [HostUpdateRejected]，其余错误照
+  /// [WebDavOps.checkStatus] 抛。响应里的 `nonce` 是下一次 [triggerRemoteHostUpdate]
+  /// 要带的一次性票据。[refresh] = 让 host 先（节流地）去更新源查一次。
+  ///
+  /// 与配置搬运不同，这里不要求 https：只读版本号不敏感，触发另有 nonce + 局域网
+  /// 信任区 + host 开关几道门（明文会话上的 token 本就在同一信任级别）。
+  Future<HostUpdateStatus?> getRemoteHostUpdateStatus({
+    required SyncRepository repo,
+    bool refresh = false,
+  }) async {
+    await _reloadSessionFrom(repo);
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase$kHostUpdatePath${refresh ? '?refresh=1' : ''}',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    await _checkHostUpdateResponse(res, 'GET $kHostUpdatePath');
+    return _parseHostUpdateStatus(await _readBodyBounded(res));
+  }
+
+  /// 让 host 开始更新自己（反馈 Pp8XPyve0N）。[nonce] 取自刚拿到的
+  /// [getRemoteHostUpdateStatus] 响应，单次有效。
+  Future<HostUpdateStatus> triggerRemoteHostUpdate({
+    required SyncRepository repo,
+    required String nonce,
+  }) async {
+    await _reloadSessionFrom(repo);
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'POST',
+      '$_apiBase$kHostUpdatePath',
+    );
+    req.headers.contentType =
+        ContentType('application', 'json', charset: 'utf-8');
+    req.add(utf8.encode(jsonEncode(<String, String>{'nonce': nonce})));
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      throw const HostUpdateRejected(HostUpdateDenial.unsupported,
+          statusCode: 404);
+    }
+    await _checkHostUpdateResponse(res, 'POST $kHostUpdatePath');
+    return _parseHostUpdateStatus(await _readBodyBounded(res));
+  }
+
+  /// 错误响应：带 `{"error": code}` 的是 host 的明确拒绝 → [HostUpdateRejected]；
+  /// 其余（401 配对失效等）交给统一的 [WebDavOps.checkStatus]。
+  Future<void> _checkHostUpdateResponse(
+    HttpClientResponse res,
+    String label,
+  ) async {
+    if (res.statusCode < 400) return;
+    final SyncErrorBody? body = await readSyncErrorBody(res);
+    final HostUpdateDenial? denial =
+        parseHostUpdateDenialBody(body?.reason ?? '');
+    if (denial != null) {
+      throw HostUpdateRejected(denial, statusCode: res.statusCode);
+    }
+    _ops!.checkStatus(res.statusCode, label, serverReason: body);
+  }
+
+  HostUpdateStatus _parseHostUpdateStatus(String body) {
+    final Object? decoded = jsonDecode(body);
+    if (decoded is! Map) {
+      throw const FormatException('Invalid host update response');
+    }
+    return HostUpdateStatus.fromJson(decoded.cast<String, Object?>());
   }
 
   /// TODO-1235（TODO-961 回归）：把对端封面拉成字节，复用互联其余流量同一条钉扎
@@ -1090,7 +1217,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> getRemoteDictionary(
     String name,
     File destination, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     await downloadContentFile(
@@ -1104,7 +1231,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> putRemoteDictionary(
     String name,
     File file, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1117,7 +1244,7 @@ class InterconnectSyncBackend extends SyncBackend
     int sent = 0;
     await req.addStream(file.openRead().map((List<int> chunk) {
       sent += chunk.length;
-      onProgress?.call(length > 0 ? sent / length : 0);
+      onProgress?.call(length > 0 ? sent / length : 0, sent);
       return chunk;
     }));
     final HttpClientResponse res = await req.close();
@@ -1161,7 +1288,7 @@ class InterconnectSyncBackend extends SyncBackend
     await downloadContentFile(
       fileId: '$_apiBase/api/library/books/${Uri.encodeComponent(title)}',
       destination: destination,
-      onProgress: onProgress,
+      onProgress: syncTransferFractionOnly(onProgress),
     );
   }
 
@@ -1169,7 +1296,7 @@ class InterconnectSyncBackend extends SyncBackend
   ///
   /// [displayTitle] / [displayTitleAt] 是本机用户给这本书改的名字及其 LWW 毫秒戳
   /// （BUG-1503）。body 是**裸 .epub 字节流**，没有 sidecar 也没有 multipart，所以
-  /// 元数据走自定义 header —— 与本类视频推送的 `X-Hibiki-Video-Title` 同一套先例
+  /// 元数据走自定义 header —— 与本类视频推送的 [kVideoTitleHeader] 同一套先例
   /// （header 只收 ASCII，日文书名必须 [Uri.encodeComponent]）。
   ///
   /// additive：没改过名就一个 header 都不发，旧 host 对未知 header 一律静默忽略
@@ -1180,7 +1307,7 @@ class InterconnectSyncBackend extends SyncBackend
     File file, {
     String? displayTitle,
     int displayTitleAt = 0,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1193,18 +1320,23 @@ class InterconnectSyncBackend extends SyncBackend
     if (displayTitle != null &&
         displayTitle.isNotEmpty &&
         displayTitle != title) {
-      req.headers.set(
+      setInterconnectHeader(
+        req.headers,
         kBookDisplayTitleHeader,
         Uri.encodeComponent(displayTitle),
       );
       if (displayTitleAt > 0) {
-        req.headers.set(kBookDisplayTitleAtHeader, '$displayTitleAt');
+        setInterconnectHeader(
+          req.headers,
+          kBookDisplayTitleAtHeader,
+          '$displayTitleAt',
+        );
       }
     }
     int sent = 0;
     await req.addStream(file.openRead().map((List<int> chunk) {
       sent += chunk.length;
-      onProgress?.call(length > 0 ? sent / length : 0);
+      onProgress?.call(length > 0 ? sent / length : 0, sent);
       return chunk;
     }));
     final HttpClientResponse res = await req.close();
@@ -1309,6 +1441,7 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'DELETE /api/library/books/$title');
+    remoteLibraryMutationRevision.value++;
   }
 
   /// 读 host 端书 [bookKey] 的阅读进度（TODO-767）。host 返回 404（该书无记录）或
@@ -1663,7 +1796,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> getRemoteLocalAudio(
     String displayName,
     File dest, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     await downloadContentFile(
@@ -1678,7 +1811,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> putRemoteLocalAudio(
     String displayName,
     File file, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1691,7 +1824,7 @@ class InterconnectSyncBackend extends SyncBackend
     int sent = 0;
     await req.addStream(file.openRead().map((List<int> chunk) {
       sent += chunk.length;
-      onProgress?.call(length > 0 ? sent / length : 0);
+      onProgress?.call(length > 0 ? sent / length : 0, sent);
       return chunk;
     }));
     final HttpClientResponse res = await req.close();
@@ -1711,6 +1844,7 @@ class InterconnectSyncBackend extends SyncBackend
     await res.drain<void>();
     _ops!.checkStatus(
         res.statusCode, 'DELETE /api/library/localaudio/$displayName');
+    remoteLibraryMutationRevision.value++;
   }
 
   // ── Live audiobooks (interconnect-only) ───────────────────────────
@@ -1721,15 +1855,38 @@ class InterconnectSyncBackend extends SyncBackend
       _listRemote('/api/library/audiobooks', RemoteAudiobookInfo.fromJson);
 
   /// 从对端 host 下载 bookKey 为 [bookKey] 的有声书到 [dest] 文件。
+  ///
+  /// [fresh]：用户显式「重新下载」——让 host 作废它 15 分钟导出缓存里的旧包
+  /// （`?fresh=1`），否则 host 刚重新转录 / 换了字幕，拿到的仍是改之前打的包。
+  /// 旧 host 不认这个参数，照旧回缓存包（最多旧 15 分钟）。
   Future<void> getRemoteAudiobook(
     String bookKey,
     File dest, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
+    bool fresh = false,
   }) async {
     await _ensureResolved();
     await downloadContentFile(
       fileId:
-          '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}',
+          '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}'
+          '${fresh ? '?fresh=1' : ''}',
+      destination: dest,
+      onProgress: onProgress,
+    );
+  }
+
+  /// 只下载有声书 [identity] 的**字幕侧**包（对齐文件 + 字幕 + cue，不含音频）到
+  /// [dest]，供「只更新字幕」。旧 host 没有这条端点 → 404 抛 [SyncBackendError]，
+  /// 调用方提示用户改走整本重下。
+  Future<void> getRemoteAudiobookSubtitles(
+    String identity,
+    File dest, {
+    SyncTransferProgress? onProgress,
+  }) async {
+    await _ensureResolved();
+    await downloadContentFile(
+      fileId: '$_apiBase/api/library/audiobooks/'
+          '${Uri.encodeComponent(identity)}/subtitles',
       destination: dest,
       onProgress: onProgress,
     );
@@ -1739,7 +1896,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> putRemoteAudiobook(
     String bookKey,
     File file, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1752,7 +1909,7 @@ class InterconnectSyncBackend extends SyncBackend
     int sent = 0;
     await req.addStream(file.openRead().map((List<int> chunk) {
       sent += chunk.length;
-      onProgress?.call(length > 0 ? sent / length : 0);
+      onProgress?.call(length > 0 ? sent / length : 0, sent);
       return chunk;
     }));
     final HttpClientResponse res = await req.close();
@@ -1771,6 +1928,7 @@ class InterconnectSyncBackend extends SyncBackend
     await res.drain<void>();
     _ops!
         .checkStatus(res.statusCode, 'DELETE /api/library/audiobooks/$bookKey');
+    remoteLibraryMutationRevision.value++;
   }
 
   /// 读 host 端有声书 [bookKey] 的播放断点（BUG-471）。host 返回 404（有声书不存在）
@@ -1925,7 +2083,7 @@ class InterconnectSyncBackend extends SyncBackend
     String id,
     File file, {
     required String title,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1936,12 +2094,14 @@ class InterconnectSyncBackend extends SyncBackend
     final String baseName = file.path.split(RegExp(r'[/\\]')).last;
     req.headers.set('Content-Type', 'application/octet-stream');
     req.headers.set('Content-Length', '$length');
-    req.headers.set('X-Hibiki-Video-Title', Uri.encodeComponent(title));
-    req.headers.set('X-Hibiki-Video-Filename', Uri.encodeComponent(baseName));
+    setInterconnectHeader(
+        req.headers, kVideoTitleHeader, Uri.encodeComponent(title));
+    setInterconnectHeader(
+        req.headers, kVideoFilenameHeader, Uri.encodeComponent(baseName));
     int sent = 0;
     await req.addStream(file.openRead().map((List<int> chunk) {
       sent += chunk.length;
-      onProgress?.call(length > 0 ? sent / length : 0);
+      onProgress?.call(length > 0 ? sent / length : 0, sent);
       return chunk;
     }));
     final HttpClientResponse res = await req.close();
@@ -1967,6 +2127,7 @@ class InterconnectSyncBackend extends SyncBackend
     await res.drain<void>();
     if (res.statusCode == 404 || res.statusCode == 405) return false;
     _ops!.checkStatus(res.statusCode, 'DELETE /api/library/videos/$id');
+    remoteLibraryMutationRevision.value++;
     return true;
   }
 
@@ -2004,10 +2165,11 @@ class InterconnectSyncBackend extends SyncBackend
   /// BUG-2728：先看 host 的能力位 `liveLibrary.videoSubtitleDefault`
   /// （[hostSupportsVideoSubtitleDefault]），不支持就**不发请求**、返回
   /// [RemoteSubtitleDefaultUpload.hostUnsupported]。老 host 不认
-  /// `X-Hibiki-Subtitle-Default`，会走 live push 旧路径按 [suffix] 落盘，
+  /// [kSubtitleDefaultHeader]，会走 live push 旧路径按 [suffix] 落盘，
   /// `rename` 直接覆盖 host 上同名的旧字幕、不留备份——宁可只留本机。
   ///
-  /// 只有 host 回了实际落盘后缀（响应头 `x-hibiki-subtitle-suffix`，新语义才有）才算
+  /// 只有 host 回了实际落盘后缀（响应头 [kSubtitleSuffixHeader]，新语义才有；
+  /// 改名前的 host 只回旧名，按 [interconnectHeaderNameCandidates] 回退）才算
   /// [RemoteSubtitleDefaultUpload.applied]。网络 / 其余 HTTP 失败照常抛。
   Future<RemoteSubtitleDefaultUpload> putRemoteVideoSubtitleAsDefault(
     String id,
@@ -2023,7 +2185,12 @@ class InterconnectSyncBackend extends SyncBackend
       suffix: suffix,
       asDefault: true,
     );
-    final String? placed = res.headers.value('x-hibiki-subtitle-suffix');
+    String? placed;
+    for (final String name
+        in interconnectHeaderNameCandidates(kSubtitleSuffixHeader)) {
+      placed = res.headers.value(name);
+      if (placed != null && placed.isNotEmpty) break;
+    }
     await res.drain<void>();
     // 404/405：没有上传端点；409：新 host 的库服务不支持默认字幕（server 侧第二道门，
     // 已拒绝、未落盘）。
@@ -2052,8 +2219,11 @@ class InterconnectSyncBackend extends SyncBackend
     final int length = await file.length();
     req.headers.set('Content-Type', 'application/octet-stream');
     req.headers.set('Content-Length', '$length');
-    req.headers.set('X-Hibiki-Subtitle-Suffix', Uri.encodeComponent(suffix));
-    if (asDefault) req.headers.set('X-Hibiki-Subtitle-Default', '1');
+    setInterconnectHeader(
+        req.headers, kSubtitleSuffixHeader, Uri.encodeComponent(suffix));
+    if (asDefault) {
+      setInterconnectHeader(req.headers, kSubtitleDefaultHeader, '1');
+    }
     await req.addStream(file.openRead());
     // 流式上传，不走 _sendBounded（BUG-1567 白名单，见 interconnect_request_timeout_test）。
     return await req.close();
@@ -2256,8 +2426,62 @@ class InterconnectSyncBackend extends SyncBackend
     await downloadContentFile(
       fileId: uri.toString(),
       destination: dest,
-      onProgress: onProgress,
+      onProgress: syncTransferFractionOnly(onProgress),
     );
+  }
+
+  /// 下载 host 抽好的图形字幕整轨（`GET .../graphicsubtitle`）到 [dest]。
+  ///
+  /// host 要先在本机整片读一遍抽轨（之后命中它的缓存），首字节可能要等几十秒——走
+  /// [downloadContentFile] 的打包型首字节余量（[packageFirstByteTimeout]）。老 host 无
+  /// 该端点 → 404、没接入抽取 → 501、编码不支持 → 415，一律抛错由调用方退回边播边记。
+  @override
+  Future<void> getRemoteVideoGraphicSubtitleTrack(
+    String id,
+    File dest, {
+    required int embeddedStreamIndex,
+    int episodeIndex = 0,
+  }) =>
+      _downloadGraphicSubtitlePart(
+        id,
+        dest,
+        embeddedStreamIndex: embeddedStreamIndex,
+        episodeIndex: episodeIndex,
+        header: false,
+      );
+
+  /// 同一条轨的轨头（`?part=header`，VobSub 调色板 / DVB 页号等 extradata）。
+  @override
+  Future<void> getRemoteVideoGraphicSubtitleTrackHeader(
+    String id,
+    File dest, {
+    required int embeddedStreamIndex,
+    int episodeIndex = 0,
+  }) =>
+      _downloadGraphicSubtitlePart(
+        id,
+        dest,
+        embeddedStreamIndex: embeddedStreamIndex,
+        episodeIndex: episodeIndex,
+        header: true,
+      );
+
+  Future<void> _downloadGraphicSubtitlePart(
+    String id,
+    File dest, {
+    required int embeddedStreamIndex,
+    required int episodeIndex,
+    required bool header,
+  }) async {
+    await _ensureResolved();
+    final Uri uri = Uri.parse(
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/graphicsubtitle',
+    ).replace(queryParameters: <String, String>{
+      'embeddedStreamIndex': '$embeddedStreamIndex',
+      if (episodeIndex > 0) 'episode': '$episodeIndex',
+      if (header) 'part': 'header',
+    });
+    await downloadContentFile(fileId: uri.toString(), destination: dest);
   }
 
   /// BUG-1004：请求 host 在其**本地**裁出视频 [id] 的 `[startMs,endMs)` 段音频（mining 句子
@@ -2296,7 +2520,7 @@ class InterconnectSyncBackend extends SyncBackend
     await downloadContentFile(
       fileId: uri.toString(),
       destination: dest,
-      onProgress: onProgress,
+      onProgress: syncTransferFractionOnly(onProgress),
     );
   }
 
@@ -2337,6 +2561,14 @@ class InterconnectSyncBackend extends SyncBackend
       throw SyncBackendError(
         'host returned a transcoded stream for download of $id; '
         'refusing to save it as the original video',
+      );
+    }
+    // 蓝光标题是多段 m2ts 拼起来的播放列表，没有「一个原文件」可存；[streamUrl]
+    // 是 `edl://` 段表。只能远端播放，不能整段下载。
+    if (urls.discTitle != null) {
+      throw SyncBackendError(
+        'remote video $id is a Blu-ray title; it can be streamed but not '
+        'downloaded as a single file',
       );
     }
     if (cancelled) throw const RemoteDownloadCancelled();

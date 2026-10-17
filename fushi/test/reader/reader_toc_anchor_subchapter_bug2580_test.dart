@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,7 +14,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show computeTocAnchorCharOffsets, tocAnchorKey;
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
-import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/reader/reader_navigation_widgets.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/stats/study_char_count.dart';
@@ -280,15 +280,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.check), findsOneWidget, reason: '修复前第七～十话四行全带勾');
-    final Finder currentRow = find.ancestor(
-      of: find.text('第七話'),
-      matching: find.byType(AdaptiveSettingsRow),
-    );
+    // 2026-10 导航重做：当前章 = ReaderTocRow 的 current 态（强调色块 + 形状
+    // 图标），不再是行尾的勾。
+    final List<ReaderTocRow> current = tester
+        .widgetList<ReaderTocRow>(find.byType(ReaderTocRow))
+        .where((ReaderTocRow r) => r.state == ReaderTocRowState.current)
+        .toList();
+    expect(current, hasLength(1), reason: '修复前第七～十话四行全带勾');
+    expect(current.single.title, '第七話', reason: '当前章落在第七話，不是同 xhtml 的第十話');
     expect(
-      find.descendant(of: currentRow, matching: find.byIcon(Icons.check)),
+      find.byKey(const ValueKey<String>('reader_toc_current_fill')),
       findsOneWidget,
-      reason: '勾落在第七話，不是同 xhtml 的第十話',
     );
   });
 }

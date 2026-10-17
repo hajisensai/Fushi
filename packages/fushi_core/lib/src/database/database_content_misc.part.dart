@@ -100,6 +100,7 @@ mixin _FushiDbContentMisc
             epubBooks.title,
             epubBooks.format,
             epubBooks.importedAt,
+            epubBooks.localAddedAt,
             epubBooks.extractDir,
             epubBooks.completedAt,
           ])
@@ -113,6 +114,7 @@ mixin _FushiDbContentMisc
             title: row.read(epubBooks.title)!,
             format: row.read(epubBooks.format)!,
             importedAt: row.read(epubBooks.importedAt)!,
+            localAddedAt: row.read(epubBooks.localAddedAt),
             extractDir: row.read(epubBooks.extractDir)!,
             completedAt: row.read(epubBooks.completedAt),
           ),
@@ -206,11 +208,23 @@ mixin _FushiDbContentMisc
   ///
   /// v81：companion 未携带（或空）本机稳定 uid 时在此**单点自动生成**——
   /// 全部导入方（epub/manga/pdf/远端下载/格式重建）零改动即获得身份列。
+  ///
+  /// v118：`localAddedAt`（本机开始拥有的时刻）同样在此单点补齐——未携带即
+  /// 当时 now。本地导入、互联下载、云同步拉下全经这里落行，所以「本机首次拥有」
+  /// 只有这一个写入口；互联下载随后把 `importedAt` 改写成对端入库时刻（BUG-3452），
+  /// 不碰本列。备份恢复 / 合并导入是整行 SQL 搬运、不经此处，**保留备份内的值**：
+  /// 备份是某一时刻的快照，恢复它是重现当时的拥有事实，而不是用户在知道某次删除
+  /// 之后又主动取回了它——快照之后别处发生的「从所有设备删除」理应照常对它弹确认；
+  /// 写成恢复时刻会让一次整库恢复把快照之后被删掉的所有条目静默留下。
   Future<String> insertEpubBook(EpubBooksCompanion book) async {
+    final EpubBooksCompanion withLocalAddedAt = book.localAddedAt.present
+        ? book
+        : book.copyWith(
+            localAddedAt: Value<int?>(DateTime.now().millisecondsSinceEpoch));
     final EpubBooksCompanion withUid =
-        (book.uid.present && book.uid.value.isNotEmpty)
-            ? book
-            : book.copyWith(uid: Value(generateEpubBookUid()));
+        (withLocalAddedAt.uid.present && withLocalAddedAt.uid.value.isNotEmpty)
+            ? withLocalAddedAt
+            : withLocalAddedAt.copyWith(uid: Value(generateEpubBookUid()));
     // 三条语句一个事务：一次 fsync 而非三次，且 `watchEpubBookKeys` 之类的表级
     // 监听只在提交时收到一次失效，而不是每条语句各触发一次书架重算。
     await transaction(() async {

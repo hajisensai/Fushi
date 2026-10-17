@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -72,7 +72,27 @@ void main() {
           reason: '进度条前景必须走 chrome 固定亮色 helper');
       expect(src, isNot(contains('buttonBarButtonColor: cs.primary')),
           reason: '按钮条前景必须走 chrome 固定亮色 helper');
-      expect(src, contains('buttonBarButtonColor: _videoChromeAccent(cs)'));
+      expect(src, contains('seekBarPositionColor: _videoChromeAccent(cs)'));
+      // 6c30568d815 起按钮字形改走固定近白的中性前景（强调色只留给播放键 / 进度
+      // 已播段 / 开关「开」态），仍不随主题变暗。
+      expect(src,
+          contains('buttonBarButtonColor: _videoChromeButtonForeground(cs)'));
+      final String page = File(
+        'lib/src/pages/implementations/video_fushi_page.dart',
+      ).readAsStringSync();
+      // 2026-10-14 起按钮都在自带底色的悬浮胶囊里，前景跟胶囊走（随 app 日间 /
+      // 深色模式）：Apple 恒白、M3E 走 videoM3eChromeForegroundOf——仍不能回到
+      // 裸 cs.primary / cs.onSurface。
+      expect(
+        page,
+        matches(RegExp(
+          r'Color _videoChromeButtonForeground\(ColorScheme cs\) =>\s*'
+          r'_appleChrome\s*\?\s*videoChromeNeutralForeground\s*'
+          r':\s*videoM3eChromeForegroundOf\(context\);',
+        )),
+        reason: '按钮前景必须走 chrome 前景 helper（Apple 白 / M3E 胶囊前景），'
+            '不能回到 cs.primary / cs.onSurface',
+      );
     });
 
     test('浮层 alpha 收敛两档（无游离字面 alpha）', () {

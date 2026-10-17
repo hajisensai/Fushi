@@ -11,13 +11,15 @@
 ///    同一个整本下载对话框（EPUB 入书架）。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
     show EpubBookRow, MangaOnlineSourceRow;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
+import 'package:fushi/src/media/downloads/download_source_method.dart';
+import 'package:fushi/src/media/downloads/download_start_result.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
@@ -27,6 +29,7 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/manga_global_search_runner.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_enabled_sources.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
@@ -59,6 +62,8 @@ class MediaAcquisitionCandidate {
     required this.payload,
     this.details = const <String>[],
     this.score = 0,
+    this.method = DownloadTransferMethod.extension,
+    this.externalSource = true,
   });
 
   /// 本次运行内唯一（后端前缀 + 来源 + 条目身份）。
@@ -71,6 +76,13 @@ class MediaAcquisitionCandidate {
 
   /// 本地排序分（做种数等）；AI 未指派 / 失败时就按它排。
   final int score;
+
+  /// 下载方式（候选行的方式标签）：发现源按 payload 分 BT / 直链，Mihon /
+  /// LNReader 是扩展源。
+  final DownloadTransferMethod method;
+
+  /// 内容来自第三方站点（候选行多一枚「外部来源」）。
+  final bool externalSource;
 
   AiMediaAcquisitionCandidateFact toFact() => AiMediaAcquisitionCandidateFact(
     id: id,
@@ -85,8 +97,9 @@ abstract class MediaAcquisitionBackend {
   /// 搜一个词。单源失败自己吞掉（记日志），不拖垮其它来源。
   Future<List<MediaAcquisitionCandidate>> search(String query);
 
-  /// 下载 [candidate]；结果自己 toast。返回是否已交给下载 / 入库。
-  Future<bool> acquire(
+  /// 下载 [candidate]。返回是否已交给下载 / 入库与要告诉用户的话；**不自己弹
+  /// toast**——页面用 [showDownloadStartNotices] 显示，CLI 拿同一份原因。
+  Future<DownloadStartResult> acquire(
     BuildContext context,
     MediaAcquisitionCandidate candidate,
   );
@@ -135,6 +148,11 @@ class DiscoveryAcquisitionBackend implements MediaAcquisitionBackend {
               backend: this,
               payload: entry,
               score: entry.seeders ?? 0,
+              method: discoveryTransferMethodOf(entry.payloadKind),
+              externalSource: isExternalDiscoverySource(
+                service,
+                entry.sourceId,
+              ),
               details: <String>[
                 discoveryMediaKindLabel(entry.kind),
                 if (entry.sizeBytes != null)
@@ -153,7 +171,7 @@ class DiscoveryAcquisitionBackend implements MediaAcquisitionBackend {
   }
 
   @override
-  Future<bool> acquire(
+  Future<DownloadStartResult> acquire(
     BuildContext context,
     MediaAcquisitionCandidate candidate,
   ) => startDiscoveryItemDownload(
@@ -187,10 +205,7 @@ class MihonMangaAcquisitionBackend implements MediaAcquisitionBackend {
         MangaSourceSearchRun(MihonGlobalSource(row)),
     ];
     if (runs.isEmpty) return const <MediaAcquisitionCandidate>[];
-    await MangaGlobalSearchRunner(
-      mihonManager: _manager,
-      resolveAidokuRuntime: () => null,
-    ).search(
+    await MangaGlobalSearchRunner(mihonManager: _manager).search(
       runs: runs,
       query: query,
       isCancelled: () => false,
@@ -220,7 +235,7 @@ class MihonMangaAcquisitionBackend implements MediaAcquisitionBackend {
   /// 加入书架 → 拉章节 → 全部未锁章节入队（与作品页「加入书架」+「下载全部」
   /// 同一服务与同一跳过规则）。
   @override
-  Future<bool> acquire(
+  Future<DownloadStartResult> acquire(
     BuildContext context,
     MediaAcquisitionCandidate candidate,
   ) async {
@@ -251,35 +266,52 @@ class MihonMangaAcquisitionBackend implements MediaAcquisitionBackend {
           if (!chapter.locked) chapter,
       ];
       final int locked = entry.chapters.length - pending.length;
-      if (locked > 0) {
-        FushiToast.show(
-          msg: t.manga_series_download_all_locked_skipped(count: locked),
-        );
-      }
+      final List<DownloadStartNotice> notices = <DownloadStartNotice>[
+        if (locked > 0)
+          DownloadStartNotice(
+            t.manga_series_download_all_locked_skipped(count: locked),
+            ToastSeverity.neutral,
+          ),
+      ];
       if (pending.isEmpty) {
-        if (locked == 0) FushiToast.show(msg: t.manga_series_download_all_none);
-        return false;
+        return DownloadStartResult.failed(<DownloadStartNotice>[
+          ...notices,
+          if (locked == 0)
+            DownloadStartNotice(
+              t.manga_series_download_all_none,
+              ToastSeverity.neutral,
+            ),
+        ]);
       }
       await appModel.mangaDownloadService.enqueueChapters(
         entry: entry,
         chapters: pending,
         autoOcr: appModel.mangaDownloadAutoOcr,
       );
-      FushiToast.show(
-        msg: t.manga_series_download_all_queued(count: pending.length),
-        severity: ToastSeverity.success,
-      );
-      return true;
+      return DownloadStartResult.started(<DownloadStartNotice>[
+        ...notices,
+        DownloadStartNotice.success(
+          t.manga_series_download_all_queued(count: pending.length),
+        ),
+      ]);
     } on Object catch (error, stack) {
-      ErrorLogService.instance.log('MediaAcquisition.mihon', error, stack);
-      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
-      return false;
+      return DownloadStartResult.failed(<DownloadStartNotice>[
+        DownloadStartNotice.error(
+          describeOnlineSourceError(
+            error,
+            logTag: 'MediaAcquisition.mihon',
+            stackTrace: stack,
+          ),
+        ),
+      ]);
     }
   }
 }
 
-class _LnReaderHit {
-  const _LnReaderHit(this.plugin, this.item);
+/// LNReader 候选的 payload（插件 + 搜索条目）。公开是为了让桌面控制通道把它交给
+/// 可查进度 / 可取消的整本下载任务，而不是弹 app 内的下载对话框。
+class LnReaderAcquisitionHit {
+  const LnReaderAcquisitionHit(this.plugin, this.item);
 
   final LnReaderInstalledPlugin plugin;
   final LnReaderNovelItem item;
@@ -326,7 +358,7 @@ class LnReaderNovelAcquisitionBackend implements MediaAcquisitionBackend {
                 title: item.name,
                 sourceLabel: plugin.name,
                 backend: this,
-                payload: _LnReaderHit(plugin, item),
+                payload: LnReaderAcquisitionHit(plugin, item),
                 details: <String>[if (plugin.lang.isNotEmpty) plugin.lang],
               ),
           ];
@@ -346,25 +378,38 @@ class LnReaderNovelAcquisitionBackend implements MediaAcquisitionBackend {
 
   /// 拉作品全章 → 作品页同一个整本下载对话框（带进度、可取消），下完入书架。
   @override
-  Future<bool> acquire(
+  Future<DownloadStartResult> acquire(
     BuildContext context,
     MediaAcquisitionCandidate candidate,
   ) async {
-    final _LnReaderHit hit = candidate.payload as _LnReaderHit;
+    final LnReaderAcquisitionHit hit =
+        candidate.payload as LnReaderAcquisitionHit;
     final LnReaderNovel novel;
     try {
       await _manager.load(hit.plugin);
       novel = await _manager.runtime.novel(hit.plugin.id, hit.item.path);
     } on Object catch (error, stack) {
-      ErrorLogService.instance.log('MediaAcquisition.lnreader', error, stack);
-      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
-      return false;
+      return DownloadStartResult.failed(<DownloadStartNotice>[
+        DownloadStartNotice.error(
+          describeOnlineSourceError(
+            error,
+            logTag: 'MediaAcquisition.lnreader',
+            stackTrace: stack,
+          ),
+        ),
+      ]);
     }
     if (novel.chapters.isEmpty) {
-      FushiToast.show(msg: t.manga_series_download_all_none);
-      return false;
+      return DownloadStartResult.failed(<DownloadStartNotice>[
+        DownloadStartNotice(
+          t.manga_series_download_all_none,
+          ToastSeverity.neutral,
+        ),
+      ]);
     }
-    if (!context.mounted) return false;
+    if (!context.mounted) {
+      return const DownloadStartResult.declined('页面已关闭');
+    }
     final LnReaderDownloadOutcome? outcome =
         await showAppDialog<LnReaderDownloadOutcome>(
           context: context,
@@ -390,27 +435,29 @@ class LnReaderNovelAcquisitionBackend implements MediaAcquisitionBackend {
           container.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
           container.invalidate(srtBooksProvider);
         }
-        FushiToast.show(
-          msg: t.novel_download_done(title: novel.name),
-          severity: ToastSeverity.success,
-        );
-        return true;
+        return DownloadStartResult.started(<DownloadStartNotice>[
+          DownloadStartNotice.success(t.novel_download_done(title: novel.name)),
+        ]);
       case LnReaderDownloadFailed(:final Object error):
-        FushiToast.show(
-          msg: error is LnReaderChapterDownloadException
-              ? t.novel_download_failed(
-                  chapter: error.chapter.name,
-                  error: '${error.cause}',
-                )
-              : '$error',
-          severity: ToastSeverity.error,
-        );
-        return false;
+        return DownloadStartResult.failed(<DownloadStartNotice>[
+          DownloadStartNotice.error(
+            error is LnReaderChapterDownloadException
+                ? t.novel_download_failed(
+                    chapter: error.chapter.name,
+                    error: '${error.cause}',
+                  )
+                : '$error',
+          ),
+        ]);
       case LnReaderDownloadAborted():
-        FushiToast.show(msg: t.novel_download_cancelled);
-        return false;
+        return DownloadStartResult.failed(<DownloadStartNotice>[
+          DownloadStartNotice(
+            t.novel_download_cancelled,
+            ToastSeverity.neutral,
+          ),
+        ]);
       case null:
-        return false;
+        return const DownloadStartResult.declined('下载对话框已关闭');
     }
   }
 }

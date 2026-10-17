@@ -352,7 +352,7 @@ $body
     <dc:identifier id="uid">urn:uuid:test-pagination-epub-001</dc:identifier>
     <dc:title>Pagination Test Book</dc:title>
     <dc:language>ja</dc:language>
-    <dc:creator>Hibiki Test Suite</dc:creator>
+    <dc:creator>Fushi Test Suite</dc:creator>
     <meta property="dcterms:modified">2026-01-01T00:00:00Z</meta>
   </metadata>
   <manifest>

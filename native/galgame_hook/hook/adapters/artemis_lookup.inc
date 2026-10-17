@@ -13,6 +13,10 @@
 //                           left press that lands on a mapped glyph: the
 //                           engine key state is masked from press to release so
 //                           the click never advances the script.
+//     plus a WH_GETMESSAGE tap on the same thread: a left press too short
+//     for the per-frame sampler (a touch tap, promoted by Windows to a
+//     sub-frame down/up pair the engine also never sees) is armed at the down
+//     message and submitted at the up message (artemis_lookup::TapLatch).
 //   * HookWorker — ProcessArtemisLookupTick: matches the selected LunaHook line
 //     against the newest drawn glyphs, checks each glyph's world scale against
 //     the engine's root letterbox scale (world units are engine client
@@ -68,6 +72,7 @@ struct ArtemisModel {
 struct ArtemisSubmit {
   uint64_t generation = 0u;
   uint32_t glyph = 0u;
+  bool tap = false;  // finished by the message tap, not the frame sampler
 };
 
 struct ArtemisLookupRuntime {
@@ -101,7 +106,9 @@ struct ArtemisLookupRuntime {
   std::atomic<uint64_t> frame_clock{0u};
   ArtemisFrame building;
   artemis_lookup::ClaimState claim;
-  DWORD game_thread = 0u;
+  artemis_lookup::TapLatch tap;
+  uint64_t sampled_presses = 0u;  // frames the sampler saw the button non-idle
+  std::atomic<DWORD> game_thread{0u};
   ArtemisModel game_model;  // scratch for the press-time model read
 
   // ── shared ──
@@ -117,6 +124,10 @@ struct ArtemisLookupRuntime {
   std::array<ArtemisSubmit, kArtemisSubmitSlots> submits = {};
   std::atomic<uint64_t> submit_count{0u};
   std::atomic<uint64_t> claimed_presses{0u};
+  // WH_GETMESSAGE hook on the game thread (HHOOK); installed and removed by
+  // the HookWorker only.
+  void* tap_hook = nullptr;
+  bool tap_hook_failed = false;
 };
 
 ArtemisLookupRuntime g_artemis_lookup;
@@ -344,11 +355,13 @@ bool ArtemisShieldActive(HWND game) {
              static_cast<uint64_t>(reinterpret_cast<uintptr_t>(game));
 }
 
-// A fresh engine-reported press: may this press become a lookup?  Only a
-// bare left press on exactly one mapped glyph of the current model, in the
-// foreground game window, with the host's native-input admission applied and
-// no lookup card already shielding the game.
-bool ArtemisPressEligible(const uint8_t* input, ArtemisSubmit* submit) {
+// May a left press at `point` (client coordinates of `window`, the game
+// thread's DPI context) become a lookup?  Only a bare left press on exactly
+// one mapped glyph of the current model, in the foreground game window, with
+// the host's native-input admission applied and no lookup card already
+// shielding the game.
+bool ArtemisPointEligible(uintptr_t window, POINT point,
+                          ArtemisSubmit* submit) {
   if (g_header == nullptr || g_stop ||
       !fushi_voice_hook::HasLookupRegion(g_header) ||
       fushi_voice_hook::AtomicLoadShared32(&g_header->lookup_enabled) == 0u) {
@@ -356,13 +369,7 @@ bool ArtemisPressEligible(const uint8_t* input, ArtemisSubmit* submit) {
   }
   ArtemisModel& model = g_artemis_lookup.game_model;
   if (!ReadArtemisModel(&model) || model.generation == 0u ||
-      model.count == 0u) {
-    return false;
-  }
-  uintptr_t window = 0u;
-  artemis_lookup::EngineProjection ignored;
-  if (!ReadArtemisInputProjection(input, &window, &ignored) ||
-      window != model.window) {
+      model.count == 0u || window == 0u || window != model.window) {
     return false;
   }
   const HWND game = reinterpret_cast<HWND>(window);
@@ -375,12 +382,12 @@ bool ArtemisPressEligible(const uint8_t* input, ArtemisSubmit* submit) {
       (GetKeyState(VK_MENU) & 0x8000) != 0) {
     return false;
   }
-  POINT cursor = {};
+  POINT screen = point;
   RECT client = {};
-  if (!GetCursorPos(&cursor)) return false;
-  const HWND under = WindowFromPoint(cursor);
+  if (!ClientToScreen(game, &screen)) return false;
+  const HWND under = WindowFromPoint(screen);
   if ((under != game && !IsChild(game, under)) ||
-      !ScreenToClient(game, &cursor) || !GetClientRect(game, &client) ||
+      !GetClientRect(game, &client) ||
       client.right - client.left != model.engine_w ||
       client.bottom - client.top != model.engine_h) {
     return false;
@@ -388,13 +395,26 @@ bool ArtemisPressEligible(const uint8_t* input, ArtemisSubmit* submit) {
   size_t hit = 0u;
   if (!artemis_lookup::HitTestModel(model.glyphs.data(), model.count,
                                     model.physical_w, model.physical_h,
-                                    model.engine_w, model.engine_h, cursor.x,
-                                    cursor.y, &hit)) {
+                                    model.engine_w, model.engine_h, point.x,
+                                    point.y, &hit)) {
     return false;
   }
   submit->generation = model.generation;
   submit->glyph = static_cast<uint32_t>(hit);
   return true;
+}
+
+// A fresh engine-reported press, at the cursor of the engine's own window.
+bool ArtemisPressEligible(const uint8_t* input, ArtemisSubmit* submit) {
+  uintptr_t window = 0u;
+  artemis_lookup::EngineProjection ignored;
+  POINT cursor = {};
+  if (!ReadArtemisInputProjection(input, &window, &ignored) || window == 0u ||
+      !GetCursorPos(&cursor) ||
+      !ScreenToClient(reinterpret_cast<HWND>(window), &cursor)) {
+    return false;
+  }
+  return ArtemisPointEligible(window, cursor, submit);
 }
 
 void ClaimArtemisLeftButton(void* input) {
@@ -403,6 +423,7 @@ void ClaimArtemisLeftButton(void* input) {
       static_cast<uint8_t*>(input) + artemis_lookup::kInputKeyStateOffset +
       artemis_lookup::kLeftButtonKey * sizeof(uint32_t));
   const uint32_t value = *state;
+  if (value != artemis_lookup::kKeyStateIdle) ++rt.sampled_presses;
   ArtemisSubmit submit;
   const bool eligible =
       !rt.claim.owned && value == artemis_lookup::kKeyStatePressed &&
@@ -421,6 +442,50 @@ void ClaimArtemisLeftButtonGuarded(void* input) {
     ClaimArtemisLeftButton(input);
   } __except (EXCEPTION_EXECUTE_HANDLER) {
   }
+}
+
+// Game thread, from the WH_GETMESSAGE hook: a left press the frame sampler
+// never sees (a touch tap promoted to a sub-frame down/up pair) is armed at
+// the down message and finished at the up message.  The message itself is
+// always forwarded unchanged: the engine ignores such presses (it only reads
+// the sampled key state), and a press the sampler does see stays the claim's.
+void ObserveArtemisTap(const MSG& message) {
+  auto& rt = g_artemis_lookup;
+  const bool down = message.message == WM_LBUTTONDOWN ||
+                    message.message == WM_LBUTTONDBLCLK;
+  if ((!down && message.message != WM_LBUTTONUP) ||
+      !rt.live.load(std::memory_order_acquire) ||
+      GetCurrentThreadId() != rt.game_thread.load(std::memory_order_relaxed)) {
+    return;
+  }
+  const POINT point = {GET_X_LPARAM(message.lParam),
+                       GET_Y_LPARAM(message.lParam)};
+  ArtemisSubmit submit;
+  const bool eligible =
+      !rt.claim.owned &&
+      ArtemisPointEligible(reinterpret_cast<uintptr_t>(message.hwnd), point,
+                           &submit);
+  if (down) {
+    artemis_lookup::ArmTap(&rt.tap, eligible, rt.sampled_presses,
+                           submit.generation, submit.glyph);
+    return;
+  }
+  if (artemis_lookup::ReleaseTap(&rt.tap, rt.sampled_presses, eligible,
+                                 submit.generation, submit.glyph)) {
+    submit.tap = true;
+    QueueArtemisSubmit(submit);
+    rt.claimed_presses.fetch_add(1u, std::memory_order_relaxed);
+  }
+}
+
+LRESULT CALLBACK ArtemisTapHookProc(int code, WPARAM wparam, LPARAM lparam) {
+  if (code == HC_ACTION && wparam == PM_REMOVE && lparam != 0) {
+    __try {
+      ObserveArtemisTap(*reinterpret_cast<const MSG*>(lparam));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+  }
+  return CallNextHookEx(nullptr, code, wparam, lparam);
 }
 
 void PublishArtemisFrameGuarded(void* input) {
@@ -629,6 +694,8 @@ bool InstallArtemisLookup() {
   rt.published_line.clear();
   rt.building = ArtemisFrame();
   rt.claim = artemis_lookup::ClaimState();
+  rt.tap = artemis_lookup::TapLatch();
+  rt.sampled_presses = 0u;
   rt.game_thread = 0u;
   // Detours read `live` before touching any state; publish the state first.
   rt.live.store(true, std::memory_order_release);
@@ -811,11 +878,11 @@ bool PublishArtemisLookupHit(const ArtemisSubmit& submit) {
                                                                 publication);
   ArtemisLookupLog(
       L"artemis-lookup: hit gen=%llu glyph=%u char=%u+%u rect=%d,%d %dx%d "
-      L"view=%dx%d published=%d",
+      L"view=%dx%d via=%s published=%d",
       static_cast<unsigned long long>(model.generation), submit.glyph,
       glyph.source_index, glyph.source_length, glyph.rect.x, glyph.rect.y,
       glyph.rect.w, glyph.rect.h, model.physical_w, model.physical_h,
-      published ? 1 : 0);
+      submit.tap ? L"tap" : L"sampler", published ? 1 : 0);
   return published;
 }
 
@@ -925,6 +992,32 @@ void PublishArtemisRevealedLine(ArtemisFrame& frame) {
   rt.published_line = std::move(text);
 }
 
+// Arms the message tap on the thread that pumps the game window's messages,
+// once the sampler thread is known.  The hook procedure re-checks the thread,
+// so a window owned by another thread simply never arms a tap.
+void EnsureArtemisTapHook(uintptr_t window) {
+  auto& rt = g_artemis_lookup;
+  if (rt.tap_hook != nullptr || rt.tap_hook_failed) return;
+  const DWORD sampler = rt.game_thread.load(std::memory_order_relaxed);
+  const DWORD owner =
+      GetWindowThreadProcessId(reinterpret_cast<HWND>(window), nullptr);
+  if (sampler == 0u || owner == 0u) return;
+  rt.tap_hook =
+      SetWindowsHookExW(WH_GETMESSAGE, &ArtemisTapHookProc, nullptr, owner);
+  rt.tap_hook_failed = rt.tap_hook == nullptr;
+  ArtemisLookupLog(L"artemis-lookup: tap hook owner=%lu sampler=%lu ok=%d",
+                   owner, sampler, rt.tap_hook != nullptr ? 1 : 0);
+}
+
+void ReleaseArtemisTapHook() {
+  auto& rt = g_artemis_lookup;
+  if (rt.tap_hook != nullptr) {
+    UnhookWindowsHookEx(static_cast<HHOOK>(rt.tap_hook));
+  }
+  rt.tap_hook = nullptr;
+  rt.tap_hook_failed = false;
+}
+
 void ProcessArtemisLookupTick() {
   auto& rt = g_artemis_lookup;
   if (!rt.installed) return;
@@ -997,6 +1090,7 @@ void ProcessArtemisLookupTick() {
                        rt.model.count);
     }
     rt.provider_offered = true;
+    EnsureArtemisTapHook(rt.model.window);
     fushi_voice_hook::AtomicOrShared32(
         &g_header->lookup_diag, fushi_voice_hook::kLookupDiagGeometryObserved);
   } else {
@@ -1013,6 +1107,7 @@ void ShutdownArtemisLookup() {
   // The detours stay chained (MinHook owns them for the process lifetime);
   // clearing `live` turns each into a pure forwarder and drops any claim.
   rt.live.store(false, std::memory_order_release);
+  ReleaseArtemisTapHook();
   RetireArtemisLookup();
   rt.installed = false;
 }

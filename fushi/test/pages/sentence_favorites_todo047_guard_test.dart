@@ -7,9 +7,9 @@ import 'video_fushi_page_source_corpus.dart';
 
 /// TODO-047 part2/3/4 守卫：句子收藏扩展接线不得回归。
 /// B=视频端收藏句子按钮（且为句子星标、非 BUG-123 删的单词☆）
-/// C=视频页头收藏夹入口 + 图标顺序统一
+/// C=收藏夹入口收敛到首页 dashboard（库页页头不再挂）
 /// D=收藏夹页展示 video 来源句子
-/// E=两统计页有「收藏语句」卡片
+/// E=两统计页的「所选范围」卡有「收藏语句」行
 void main() {
   String read(String rel) => File(rel).readAsStringSync();
 
@@ -45,7 +45,8 @@ void main() {
       expect(
         src,
         contains('sectionIndex: _favoriteSectionIndex'),
-        reason: '收藏 sectionIndex 走 _favoriteSectionIndex（本地每集独立行=null；'
+        reason:
+            '收藏 sectionIndex 走 _favoriteSectionIndex（本地每集独立行=null；'
             '远端多集=当前集），统一合集 Phase 3',
       );
       expect(
@@ -58,8 +59,10 @@ void main() {
     test('只在顶层(index==0)显示，嵌套递归层不显示', () {
       // 窗口=该覆写方法体（花括号配对），不再是 `idx + 200` 定长窗口：早退语句前
       // 多插一行局部变量、或 header 结构改动，都不该让守卫塌掉。
-      final String body =
-          methodBody(src, 'Widget? buildPopupHeaderFor(int index)');
+      final String body = methodBody(
+        src,
+        'Widget? buildPopupHeaderFor(int index)',
+      );
       expect(
         body.contains('if (index != 0) return null'),
         isTrue,
@@ -83,58 +86,80 @@ void main() {
     });
   });
 
-  group('C 视频页头收藏夹入口 + 图标顺序统一', () {
-    final String src = read(
-      'lib/src/pages/implementations/home_video_page.dart',
+  group('C 收藏夹入口收敛到首页 dashboard（2026-10-14）', () {
+    // 历史：TODO-047 给视频页头补了收藏夹入口、与书架页头对齐。用户 2026-10-14
+    // 定案翻转：收藏夹不按模块隔离，各库页右上角都挂一个打开的都是同一页，反而
+    // 误导成「本模块的收藏夹」；入口与统计中心（2026-09-01）一样收敛到首页。
+    final String dashboard = read(
+      'lib/src/pages/implementations/home_dashboard_page.dart',
     );
-    test('导入 CollectionsPage 并有 _openCollections', () {
+
+    test('首页 dashboard 导入 CollectionsPage 并有 _openCollections 入口', () {
       expect(
-        src,
+        dashboard,
         contains(
           "import 'package:fushi/src/pages/implementations/collections_page.dart';",
         ),
       );
-      expect(src, contains('void _openCollections()'));
-      expect(src, contains('CollectionsPage()'));
+      expect(dashboard, contains('void _openCollections()'));
+      expect(dashboard, contains('CollectionsPage()'));
+      expect(
+        containsCodeLine(dashboard, 'onPressed: _openCollections'),
+        isTrue,
+        reason: '收藏夹入口必须在首页浮动工具栏可达',
+      );
+      expect(containsCodeLine(dashboard, 'label: t.collections'), isTrue);
+      expect(
+        containsCodeLine(dashboard, 'onPressed: _openStatisticsCenter'),
+        isTrue,
+        reason: '统计中心入口必须在首页 dashboard 可达',
+      );
+      expect(containsCodeLine(dashboard, 'icon: FushiIcons.barChart'), isTrue);
     });
 
-    test('页头有收藏夹入口，且与书架页头动作序一致', () {
-      // 旧判据「收藏夹图标下标 < 统计图标下标」有两处烂：
-      //   1) 两个 indexOf 都在整文件上找，collIdx 命中的其实是长按卡片弹窗里的
-      //      「加入合集」DialogQuickAction（行号远小于页头），页头统计图标行号天然
-      //      更大——这条顺序断言在本 PR 之前就已经恒真，一天也没真守住过；
-      //   2) 统计入口收敛到首页 dashboard 后统计图标整个不在了，参照物消失。
-      // 修法不是改数字，是把窗口收进 _buildPageHeader() 方法体，并把「顺序」换成
-      // 「两页头动作集合一致 + 参照物在 dashboard 有落点」的双向约束。
-      final String videoHeader = methodBody(src, 'Widget _buildPageHeader()');
-      final String shelfHeader = methodBody(
-        read('lib/src/pages/implementations/reader_fushi_history_page.dart'),
-        'Widget _buildPageHeader()',
-      );
-      // C 的核心：视频页头收藏夹入口可达。
-      expect(
-          containsCodeLine(videoHeader, 'Icons.collections_bookmark_outlined'),
-          isTrue);
-      expect(containsCodeLine(videoHeader, 'onTap: _openCollections'), isTrue);
-      expect(containsCodeLine(videoHeader, 'tooltip: t.collections'), isTrue);
-      // 「与书架一致」：书架页头同样有收藏夹。
-      expect(
-          containsCodeLine(shelfHeader, 'Icons.collections_bookmark_outlined'),
-          isTrue);
-      expect(containsCodeLine(shelfHeader, 'onTap: _openCollections'), isTrue);
-      // 两页头都不得再各挂一个统计入口。
-      expect(containsCodeLine(videoHeader, 'Icons.bar_chart_outlined'), isFalse,
-          reason: '统计入口已收敛到首页 dashboard，视频页头不再挂');
-      expect(containsCodeLine(shelfHeader, 'Icons.bar_chart_outlined'), isFalse,
-          reason: '统计入口已收敛到首页 dashboard，书架页头不再挂');
-      // 参照物没有凭空消失：统计中心入口必须真的落在首页 dashboard 页头。
-      final String dashboard =
-          read('lib/src/pages/implementations/home_dashboard_page.dart');
-      expect(
-          containsCodeLine(dashboard, 'onTap: _openStatisticsCenter'), isTrue,
-          reason: '统计中心入口必须在首页 dashboard 可达');
-      expect(containsCodeLine(dashboard, 'icon: Icons.bar_chart_outlined'),
-          isTrue);
+    test('库页页头不再挂收藏夹 / 统计入口', () {
+      for (final String path in <String>[
+        'lib/src/pages/implementations/home_video_page.dart',
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+      ]) {
+        final String src = read(path);
+        final String header = methodBody(src, 'Widget _buildPageHeader(');
+        expect(
+          containsCodeLine(header, 'tooltip: t.collections'),
+          isFalse,
+          reason: '$path：收藏夹入口已收敛到首页 dashboard',
+        );
+        expect(
+          containsCodeLine(header, 'Icons.collections_bookmark_outlined'),
+          isFalse,
+          reason: '$path：页头不再有收藏夹图标',
+        );
+        expect(
+          containsCodeLine(header, 'Icons.bar_chart_outlined'),
+          isFalse,
+          reason: '$path：统计入口已收敛到首页 dashboard',
+        );
+      }
+      // 整个库页文件都不再 push 收藏夹页（防止入口换个方法名又长回页头）。
+      for (final String path in <String>[
+        'lib/src/pages/implementations/home_video_page.dart',
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+        'lib/src/pages/implementations/games_library_page.dart',
+        'lib/src/pages/implementations/galgame_home_page.dart',
+        'lib/src/pages/implementations/home_game_page.dart',
+      ]) {
+        final String src = read(path);
+        expect(
+          src.contains('CollectionsPage('),
+          isFalse,
+          reason: '$path：收藏夹唯一入口在首页 dashboard',
+        );
+        expect(
+          src.contains('_openCollections'),
+          isFalse,
+          reason: '$path：库页收藏夹入口处理器应随入口一起删除',
+        );
+      }
     });
   });
 
@@ -188,10 +213,14 @@ void main() {
         'lib/src/pages/implementations/video_fushi_page.dart',
       );
       expect(
-        videoSrc,
-        contains('widget.sourceReview?.startMs ??\n'
-            '          widget.initialCueStartMs ??\n'
-            '          row.lastPositionMs,'),
+        compactCode(methodBody(videoSrc, 'Future<void> _loadSingle(')),
+        contains(
+          compactCode(
+            'initialPositionMs: '
+            'widget.sourceReview?.startMs ?? '
+            'widget.initialCueStartMs ?? row.lastPositionMs,',
+          ),
+        ),
         reason: '收藏 cue 起点 / 续播由 _loadSingle 消费',
       );
     });
@@ -264,8 +293,9 @@ void main() {
       final String src = read(
         'lib/src/pages/implementations/reading_statistics_page.dart',
       );
-      expect(src, contains('_favoritedSentences'));
-      expect(src, contains('t.stat_favorited_sentence'));
+      // 2026-10-09 统计中心精简删了「时段明细」四张卡：收藏语句只剩「所选范围」卡的
+      // 计数行（共享件 [buildStatRangeCounterLines]，标签在那里出）。
+      expect(src, contains('favoritedSentences: _favoritedSentenceEvents'));
       expect(
         src,
         contains('favoriteSentenceEvents(source: StatSourceKind.book)'),
@@ -273,9 +303,20 @@ void main() {
       );
     });
 
+    test('所选范围卡的计数行带「收藏语句」（四个 tab 共用）', () {
+      final String src = read(
+        'lib/src/pages/implementations/stat_range_bar.dart',
+      );
+      expect(src, contains('buildStatRangeCounterLines'));
+      expect(src, contains('label: t.stat_favorited_sentence'));
+      expect(src, contains('sumStatEventsInRange(favoritedSentences, range)'));
+    });
+
     test('收藏语句的来源切分与日期回退判据只在 StatCounterFacts 里', () {
       // stat_facts 已随引擎抽取搬走（cwd 是 fushi/，所以往上一级）。
-      final String src = read('../packages/fushi_engine/lib/stats/stat_facts.dart');
+      final String src = read(
+        '../packages/fushi_engine/lib/stats/stat_facts.dart',
+      );
       expect(
         src,
         contains('s.source != kFavoriteSentenceSourceVideo'),
@@ -289,7 +330,8 @@ void main() {
       expect(
         src,
         contains('s.dateKey ?? FushiDatabase.statDateKeyOf(s.createdAt)'),
-        reason: 'BUG-893：旧收藏无 dateKey 按 createdAt 回退归桶'
+        reason:
+            'BUG-893：旧收藏无 dateKey 按 createdAt 回退归桶'
             '（旧的 `dateKey != null` 过滤把它们滤光 → 统计恒 0，已根治）',
       );
     });
@@ -298,8 +340,7 @@ void main() {
       final String src = read(
         'lib/src/pages/implementations/video_statistics_page.dart',
       );
-      expect(src, contains('_favoritedSentences'));
-      expect(src, contains('t.stat_favorited_sentence'));
+      expect(src, contains('favoritedSentences: _favoritedSentenceEvents'));
       expect(
         src,
         contains('favoriteSentenceEvents(source: StatSourceKind.video)'),
@@ -307,7 +348,8 @@ void main() {
       expect(
         src,
         isNot(contains('s.dateKey != null')),
-        reason: 'BUG-893 的读取端回退此前只修了阅读侧；视频侧也不许再按 '
+        reason:
+            'BUG-893 的读取端回退此前只修了阅读侧；视频侧也不许再按 '
             'dateKey 非空过滤（写入端补 dateKey 之前的视频收藏会被整批漏掉，'
             '且总览的跨域和会不等于两个域 tab 之和）',
       );

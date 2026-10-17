@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/gal_lookup_calibration_capture.dart';
 import 'package:fushi/src/lookup/gal_lookup_calibration_draft.dart';
@@ -10,7 +10,14 @@ import 'package:fushi/src/lookup/gal_lookup_calibration_preview.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/gal_lookup_calibration_canvas.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 bool _sameSourceViewport(WindowCaptureMetadata? a, WindowCaptureMetadata? b) {
   List<double>? normalizedViewport(WindowCaptureMetadata? value) {
@@ -901,25 +908,25 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (!didPop && !_busy) unawaited(_finish());
       },
-      child: Dialog.fullscreen(
+      child: FushiDialog.fullscreen(
         child: Scaffold(
-          appBar: AppBar(
+          appBar: FushiAppBar(
             automaticallyImplyLeading: false,
             title: _canSwitchSlot ? _slotSwitch() : Text(_title),
             actions: [
-              IconButton(
+              FushiIconButtonControl(
                 onPressed: _busy ? null : _capture,
-                icon: const Icon(Icons.add_photo_alternate_outlined),
+                icon: const FushiIcon(Icons.add_photo_alternate_outlined),
                 tooltip: _captureTooltip,
               ),
-              IconButton(
+              FushiIconButtonControl(
                 key: const ValueKey<String>('calibration-remove-sample'),
                 onPressed: _busy || _sample == null ? null : _removeSample,
-                icon: const Icon(Icons.delete_outline),
+                icon: const FushiIcon(Icons.delete_outline),
                 tooltip: t.game_lookup_samples_remove,
               ),
               const SizedBox(width: 8),
-              FilledButton.icon(
+              FushiFilledButton.icon(
                 onPressed:
                     _busy ||
                         !_canPreview ||
@@ -928,7 +935,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                         !_applyPreviewsAccepted
                     ? null
                     : () => _finish(apply: true),
-                icon: const Icon(Icons.sports_esports_outlined),
+                icon: const FushiIcon(Icons.sports_esports_outlined),
                 label: Text(t.game_lookup_samples_apply),
               ),
               const SizedBox(width: 4),
@@ -938,7 +945,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
           ),
           body: Column(
             children: [
-              if (_busy || _previewRunning) const LinearProgressIndicator(),
+              if (_busy || _previewRunning) const FushiLinearProgressIndicator(),
               _statusBanner(),
               Expanded(
                 child: Row(
@@ -973,7 +980,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                                             i < _samples.length;
                                             i++
                                           )
-                                            ChoiceChip(
+                                            FushiChoiceChip(
                                               label: Text('${i + 1}'),
                                               selected: i == _selected,
                                               showCheckmark: false,
@@ -1004,7 +1011,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                             ),
                       ),
                     ),
-                    const VerticalDivider(width: 1),
+                    const FushiVerticalDivider(width: 1),
                     SizedBox(
                       width: 340,
                       child: SingleChildScrollView(
@@ -1023,124 +1030,76 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
   }
 
   Widget _statusBanner() {
-    final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme text = Theme.of(context).textTheme;
-    final Color foreground = _failed
-        ? colors.onErrorContainer
-        : colors.onSurfaceVariant;
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: _failed
-            ? colors.errorContainer
-            : FushiDesignTokens.of(
-                context,
-              ).surfaces.overlay.withValues(alpha: 0.5),
-        borderRadius: FushiBorderRadius.card,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Icon(
-            _failed ? Icons.error_outline : Icons.info_outline,
-            size: 18,
-            color: foreground,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text(
-                  _message ??
-                      (_canPreview
-                          ? t.game_lookup_samples_auto_hint
-                          : t.game_lookup_samples_auto_pending),
-                  style: text.bodyMedium?.copyWith(color: foreground),
-                ),
-                if (_failed && _diagnosticDetail != null) ...<Widget>[
-                  const SizedBox(height: 4),
-                  SelectableText(
-                    t.game_lookup_samples_diagnostic(
-                      reason: _diagnosticDetail!,
-                      detail: '',
-                    ),
-                    style: text.bodySmall?.copyWith(color: foreground),
-                  ),
-                ],
-              ],
+    // M3E 饱和信息卡走共享提示横幅：失败 = error 色块、其余 info 色块，前景
+    // 统一取色块的 on- 色（FushiInlineNotice 负责 Apple / 墨水屏分支）。
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: FushiInlineNotice(
+        severity: _failed
+            ? FushiNoticeSeverity.error
+            : FushiNoticeSeverity.info,
+        icon: _failed ? FushiIcons.error : FushiIcons.info,
+        message: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              _message ??
+                  (_canPreview
+                      ? t.game_lookup_samples_auto_hint
+                      : t.game_lookup_samples_auto_pending),
             ),
+            if (_failed && _diagnosticDetail != null) ...<Widget>[
+              const SizedBox(height: 4),
+              // bodySmall 自带 onSurface 色，要显式取色块的前景（横幅给正文挂的
+              // DefaultTextStyle）。
+              Builder(
+                builder: (BuildContext context) => SelectableText(
+                  t.game_lookup_samples_diagnostic(
+                    reason: _diagnosticDetail!,
+                    detail: '',
+                  ),
+                  style: text.bodySmall?.copyWith(
+                    color: DefaultTextStyle.of(context).style.color,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _emptySamples() {
+    // 空态区：中性信息块底（MD3 / Apple / 墨水屏各自的分层底），里面是工作台
+    // 同一套 M3E 空态（色块图标弹入 + 错峰进场 + 可滚动）。
+    return DecoratedBox(
+      decoration: fushiNeutralBlockDecoration(context),
+      child: GalWorkbenchEmptyState(
+        icon: Icons.add_photo_alternate_outlined,
+        title: t.game_lookup_samples_empty,
+        body: t.game_lookup_samples_hint,
+        actions: <Widget>[
+          FushiFilledButton.icon(
+            key: const ValueKey<String>('calibration-empty-capture'),
+            onPressed: _busy ? null : _capture,
+            icon: const FushiIcon(Icons.add_photo_alternate_outlined),
+            label: Text(t.game_lookup_samples_capture),
           ),
         ],
       ),
     );
   }
 
-  Widget _emptySamples() {
-    final TextTheme text = Theme.of(context).textTheme;
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: colors.outlineVariant),
-        borderRadius: FushiBorderRadius.control,
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(
-                Icons.add_photo_alternate_outlined,
-                size: 48,
-                color: colors.onSurfaceVariant,
-              ),
-              const SizedBox(height: 12),
-              Text(t.game_lookup_samples_empty, style: text.titleMedium),
-              const SizedBox(height: 6),
-              Text(
-                t.game_lookup_samples_hint,
-                textAlign: TextAlign.center,
-                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-              ),
-              const SizedBox(height: 16),
-              FilledButton.tonalIcon(
-                key: const ValueKey<String>('calibration-empty-capture'),
-                onPressed: _busy ? null : _capture,
-                icon: const Icon(Icons.add_photo_alternate_outlined),
-                label: Text(t.game_lookup_samples_capture),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _stepHeader(int step, String title) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
     return Row(
       children: <Widget>[
-        Container(
-          width: 22,
-          height: 22,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: colors.primaryContainer,
-            shape: BoxShape.circle,
-          ),
-          child: Text(
-            '$step',
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(color: colors.onPrimaryContainer),
-          ),
-        ),
+        // 中性步骤圆（无当前步概念）。
+        FushiStepNumberBadge(number: step, size: 22),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+          child: Text(title, style: context.fushiType.titleSmallEmphasized),
         ),
       ],
     );
@@ -1167,12 +1126,12 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
         widget.onOpenDialogueCalibration;
     return Align(
       alignment: Alignment.centerLeft,
-      child: SegmentedButton<GalLookupCalibrationSlotV1>(
+      child: FushiSegmentedButton<GalLookupCalibrationSlotV1>(
         showSelectedIcon: false,
         segments: <ButtonSegment<GalLookupCalibrationSlotV1>>[
           ButtonSegment<GalLookupCalibrationSlotV1>(
             value: GalLookupCalibrationSlotV1.dialogue,
-            icon: const Icon(Icons.format_quote_outlined),
+            icon: const FushiIcon(Icons.format_quote_outlined),
             enabled:
                 slot == GalLookupCalibrationSlotV1.dialogue ||
                 toDialogue != null,
@@ -1183,7 +1142,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
           ),
           ButtonSegment<GalLookupCalibrationSlotV1>(
             value: GalLookupCalibrationSlotV1.narration,
-            icon: const Icon(Icons.subject_outlined),
+            icon: const FushiIcon(Icons.subject_outlined),
             enabled:
                 slot == GalLookupCalibrationSlotV1.narration ||
                 toNarration != null,
@@ -1289,7 +1248,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SwitchListTile.adaptive(
+        FushiSwitchListTile.adaptive(
           key: const ValueKey<String>('calibration-special-character-width'),
           contentPadding: EdgeInsets.zero,
           title: Text(t.game_lookup_samples_special_chars_title),
@@ -1302,7 +1261,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(
-                child: TextField(
+                child: FushiTextFieldControl(
                   key: const ValueKey<String>(
                     'calibration-special-character-input',
                   ),
@@ -1318,13 +1277,13 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                   onSubmitted: (_) => _addSpecialCharacters(),
                 ),
               ),
-              IconButton(
+              FushiIconButtonControl(
                 key: const ValueKey<String>(
                   'calibration-special-character-add',
                 ),
                 tooltip: t.game_lookup_samples_special_chars_add,
                 onPressed: _busy ? null : _addSpecialCharacters,
-                icon: const Icon(Icons.add),
+                icon: const FushiIcon(Icons.add),
               ),
             ],
           ),
@@ -1343,7 +1302,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                   ),
                 ),
                 Expanded(
-                  child: Slider(
+                  child: FushiSlider(
                     min: GalLookupCharacterAdvanceV1.minAdvanceRatio,
                     max: GalLookupCharacterAdvanceV1.maxAdvanceRatio,
                     divisions: 37,
@@ -1361,7 +1320,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                   width: 42,
                   child: Text('${(advance.advanceRatio * 100).round()}%'),
                 ),
-                IconButton(
+                FushiIconButtonControl(
                   key: ValueKey<String>(
                     'calibration-special-character-remove-${advance.codePoint}',
                   ),
@@ -1369,7 +1328,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                   onPressed: _busy
                       ? null
                       : () => _removeSpecialCharacter(advance.codePoint),
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                 ),
               ],
             ),
@@ -1399,29 +1358,29 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
         Row(
           children: <Widget>[
             Expanded(child: Text(t.game_lookup_samples_grid_advance)),
-            IconButton(
+            FushiIconButtonControl(
               key: const ValueKey<String>('calibration-grid-advance-decrease'),
               tooltip: t.game_lookup_samples_grid_advance_decrease,
               onPressed: _busy || value <= range.min
                   ? null
                   : () => _setGridAdvanceRatio(stepped(-1)),
-              icon: const Icon(Icons.remove),
+              icon: const FushiIcon(Icons.remove),
             ),
             SizedBox(
               width: 56,
               child: Text(formattedValue, textAlign: TextAlign.center),
             ),
-            IconButton(
+            FushiIconButtonControl(
               key: const ValueKey<String>('calibration-grid-advance-increase'),
               tooltip: t.game_lookup_samples_grid_advance_increase,
               onPressed: _busy || value >= range.max
                   ? null
                   : () => _setGridAdvanceRatio(stepped(1)),
-              icon: const Icon(Icons.add),
+              icon: const FushiIcon(Icons.add),
             ),
           ],
         ),
-        Slider(
+        FushiSlider(
           key: const ValueKey<String>('calibration-grid-advance-slider'),
           min: range.min,
           max: range.max,
@@ -1466,7 +1425,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
             ),
           ],
         ),
-        Slider(
+        FushiSlider(
           key: ValueKey<String>('calibration-$keyName-slider'),
           min: -1,
           max: maximum,
@@ -1512,7 +1471,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
             key: const ValueKey<String>('calibration-native-fallback'),
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 Icons.info_outline,
                 size: 16,
                 color: Theme.of(context).colorScheme.primary,
@@ -1532,10 +1491,28 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
           _secondaryText(t.game_lookup_samples_narration_hint),
           const SizedBox(height: 20),
         ],
-        _stepHeader(1, t.game_lookup_samples_search_title),
-        const SizedBox(height: 6),
-        _secondaryText(t.game_lookup_samples_search_hint),
-        const SizedBox(height: 20),
+        // 两步各成一张 M3E 卡（分段卡：上下两段一组，第 2 步是主操作所在）。
+        FushiCard(
+          grouped: true,
+          borderRadius: fushiGroupedItemRadius(context, 0, 2),
+          margin: EdgeInsets.only(bottom: fushiGroupedListGap(context)),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _stepHeader(1, t.game_lookup_samples_search_title),
+              const SizedBox(height: 6),
+              _secondaryText(t.game_lookup_samples_search_hint),
+            ],
+          ),
+        ),
+        FushiCard(
+          grouped: true,
+          borderRadius: fushiGroupedItemRadius(context, 1, 2),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
         _stepHeader(2, t.game_lookup_samples_auto_align),
         const SizedBox(height: 6),
         _secondaryText(
@@ -1548,7 +1525,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
           if (_ocrModel?.ready == true)
             Row(
               children: <Widget>[
-                Icon(
+                FushiIcon(
                   Icons.check_circle_outline,
                   size: 16,
                   color: Theme.of(context).colorScheme.primary,
@@ -1564,10 +1541,10 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
               '${t.manga_ocr_engine_local_onnx_desc}',
             ),
             const SizedBox(height: 6),
-            OutlinedButton.icon(
+            FushiOutlinedButton.icon(
               key: const ValueKey<String>('calibration-ocr-download'),
               onPressed: _busy || _ocrDownloadBusy ? null : _downloadOcrModel,
-              icon: const Icon(Icons.download),
+              icon: const FushiIcon(Icons.download),
               label: Text(
                 _ocrDownloadBusy
                     ? t.manga_ocr_downloading_file(file: _ocrDownloadFileName)
@@ -1575,7 +1552,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
               ),
             ),
             if (_ocrDownloadBusy && _ocrDownloadTotal > 0)
-              LinearProgressIndicator(
+              FushiLinearProgressIndicator(
                 value: (_ocrDownloadReceived / _ocrDownloadTotal).clamp(
                   0.0,
                   1.0,
@@ -1584,21 +1561,24 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
           ],
           const SizedBox(height: 8),
         ],
-        FilledButton.icon(
+        FushiFilledButton.icon(
           key: const ValueKey<String>('calibration-auto-align'),
           onPressed: _busy || _ocrDownloadBusy || _samples.isEmpty
               ? null
               : _fitImage,
-          icon: const Icon(Icons.auto_fix_high),
+          icon: const FushiIcon(Icons.auto_fix_high),
           label: Text(
             _fitAllSamples
                 ? t.game_lookup_samples_auto_align_all
                 : t.game_lookup_samples_auto_align_current,
           ),
         ),
+            ],
+          ),
+        ),
         const SizedBox(height: 16),
-        const Divider(height: 1),
-        ExpansionTile(
+        const FushiDividerControl(height: 1),
+        FushiExpansionTile(
           key: const ValueKey<String>('calibration-advanced'),
           initiallyExpanded: _showAdvanced,
           tilePadding: EdgeInsets.zero,
@@ -1606,14 +1586,14 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
           collapsedShape: const Border(),
           title: Text(
             t.game_lookup_samples_advanced,
-            style: Theme.of(context).textTheme.titleSmall,
+            style: context.fushiType.titleSmallEmphasized,
           ),
           subtitle: _secondaryText(t.game_lookup_samples_advanced_hint),
           onExpansionChanged: (bool value) =>
               setState(() => _showAdvanced = value),
           children: [
             if (_samples.length > 1)
-              SwitchListTile.adaptive(
+              FushiSwitchListTile.adaptive(
                 key: const ValueKey<String>('calibration-fit-all'),
                 contentPadding: EdgeInsets.zero,
                 title: Text(t.game_lookup_samples_fit_all),
@@ -1623,7 +1603,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                     ? null
                     : (bool value) => setState(() => _fitAllSamples = value),
               ),
-            const Divider(height: 24),
+            const FushiDividerControl(height: 24),
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -1642,12 +1622,12 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton.icon(
+              child: FushiOutlinedButton.icon(
                 key: const ValueKey<String>('calibration-manual-layout'),
                 onPressed: _busy || grid == null
                     ? null
                     : () => setState(() => _manualGridEdit = !_manualGridEdit),
-                icon: Icon(_manualGridEdit ? Icons.done : Icons.tune),
+                icon: FushiIcon(_manualGridEdit ? Icons.done : Icons.tune),
                 label: Text(t.game_lookup_samples_manual_layout),
               ),
             ),

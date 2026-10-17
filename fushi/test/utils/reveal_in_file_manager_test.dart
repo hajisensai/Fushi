@@ -175,4 +175,95 @@ void main() {
       );
     });
   });
+
+  // BUG-3090：来源根目录可以是符号链接 / 联接点。按 followLinks:false 判类型时它是
+  // link 而不是 directory，Windows 会变成 explorer /select（在父目录里选中它），
+  // 而不是打开这个文件夹。
+  group('openDirectoryInFileManager', () {
+    Future<(bool, List<List<String>>)> open(
+      String path, {
+      required RevealHost? host,
+    }) async {
+      final List<List<String>> calls = <List<String>>[];
+      final bool opened = await openDirectoryInFileManagerOn(
+        path,
+        host: host,
+        typeOf: followingLinkEntityType,
+        run: (String executable, List<String> args) async {
+          calls.add(<String>[executable, ...args]);
+          return ProcessResult(0, executable == 'explorer' ? 1 : 0, '', '');
+        },
+      );
+      return (opened, calls);
+    }
+
+    test('指向目录的符号链接按目录打开，不 /select', () async {
+      final Directory tmp = Directory.systemTemp.createTempSync('fushi_rev_');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final Directory real = Directory('${tmp.path}/real')..createSync();
+      final Link link = Link('${tmp.path}/root')..createSync(real.path);
+
+      // 旧判据（revealInFileManager 用的 followLinks:false）确实把它当 link。
+      expect(
+        await FileSystemEntity.type(link.path, followLinks: false),
+        FileSystemEntityType.link,
+      );
+
+      final (bool winOpened, List<List<String>> winCalls) = await open(
+        link.path,
+        host: RevealHost.windows,
+      );
+      expect(winOpened, isTrue);
+      expect(winCalls.single.first, 'explorer');
+      expect(winCalls.single, isNot(contains('/select,')));
+
+      final (bool linuxOpened, List<List<String>> linuxCalls) = await open(
+        link.path,
+        host: RevealHost.linux,
+      );
+      expect(linuxOpened, isTrue);
+      expect(linuxCalls.single, <String>['xdg-open', link.path]);
+    }, skip: Platform.isWindows ? 'Link.createSync 在 Windows 需要特权' : false);
+
+    test('不存在 / 悬空链接 / 普通文件都返回 false，且不启动文件管理器', () async {
+      final Directory tmp = Directory.systemTemp.createTempSync('fushi_rev_');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final File file = File('${tmp.path}/a.mkv')..writeAsStringSync('x');
+      final List<String> paths = <String>[
+        '${tmp.path}/gone',
+        file.path,
+        if (!Platform.isWindows)
+          (Link(
+            '${tmp.path}/dangling',
+          )..createSync('${tmp.path}/nowhere')).path,
+      ];
+      for (final String path in paths) {
+        final (bool opened, List<List<String>> calls) = await open(
+          path,
+          host: RevealHost.linux,
+        );
+        expect(opened, isFalse, reason: path);
+        expect(calls, isEmpty, reason: path);
+      }
+    });
+
+    test('移动端没有文件管理器契约', () async {
+      final (bool opened, List<List<String>> calls) = await open(
+        Directory.systemTemp.path,
+        host: null,
+      );
+      expect(opened, isFalse);
+      expect(calls, isEmpty);
+    });
+
+    test('xdg-open 失败如实返回 false', () async {
+      final bool opened = await openDirectoryInFileManagerOn(
+        Directory.systemTemp.path,
+        host: RevealHost.linux,
+        typeOf: followingLinkEntityType,
+        run: (String _, List<String> __) async => ProcessResult(0, 4, '', ''),
+      );
+      expect(opened, isFalse);
+    });
+  });
 }

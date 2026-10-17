@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_downloader.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -304,7 +305,10 @@ void main() {
     });
 
     test('真实清单每条都能派生出镜像候选', () {
-      for (final MangaOcrModelFile model in kMangaOcrModelManifest) {
+      for (final MangaOcrModelFile model in <MangaOcrModelFile>[
+        for (final MangaOcrLocalModel local in MangaOcrLocalModel.values)
+          ...local.manifest,
+      ]) {
         expect(mangaOcrModelUrlCandidates(model).length,
             kMangaOcrModelMirrorHosts.length + 1,
             reason: '${model.fileName} 少了镜像候选');

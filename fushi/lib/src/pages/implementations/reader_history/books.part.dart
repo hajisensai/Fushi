@@ -218,6 +218,45 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           await _confirmDeleteSrtBook(book);
         },
       ),
+      // 2026-10 体验优化：「音频文件丢失」此前只在角标 Tooltip 里（触屏看不到），
+      // 菜单里只有一颗不说原因的「重新定位文件」快捷键。改为列表首项，文案把
+      // 原因和动作一起说出来。
+      if (_srtBookHasMissingAudio(book) &&
+          modules.isEnabled(ModuleId.listening))
+        DialogListAction(
+          label: '${t.audiobook_audio_missing} · ${t.audiobook_relocate}',
+          icon: Icons.find_replace_outlined,
+          onPressed: () async {
+            Navigator.pop(dialogContext);
+            await _relocateSrtBookAudio(book);
+          },
+        ),
+      // 纯字幕（standalone）有声书的「从互联对端重新拉取」：host 上重新转录 / 换了
+      // 字幕之后把新字幕（或整本）拉回来。与 EPUB 书卡的同名两项同一语义、同一套
+      // 拉取与导入（只更新字幕不动音频，本机进度 / 断点 / 调轴保留）；配对书
+      // （bookKey 非空）的入口在 EPUB 书卡上，这里不重复给。
+      if (bookKey.isEmpty &&
+          modules.isEnabled(ModuleId.listening) &&
+          _remoteSrtRefetchFor(book.uid) != null) ...<DialogAction>[
+        DialogListAction(
+          label: t.remote_book_subtitles_refresh,
+          icon: FushiIcons.subtitles,
+          onPressed: () async {
+            final RemoteAudiobookInfo remote = _remoteSrtRefetchFor(book.uid)!;
+            Navigator.pop(dialogContext);
+            await _refetchRemoteSrtAudiobook(remote, subtitlesOnly: true);
+          },
+        ),
+        DialogListAction(
+          label: t.remote_book_audiobook_redownload,
+          icon: FushiIcons.cloudSync,
+          onPressed: () async {
+            final RemoteAudiobookInfo remote = _remoteSrtRefetchFor(book.uid)!;
+            Navigator.pop(dialogContext);
+            await _refetchRemoteSrtAudiobook(remote, subtitlesOnly: false);
+          },
+        ),
+      ],
       // 三库页对称：与 EPUB / 视频 / 游戏卡一样，「重命名」排在列表项首位。落的是
       // 显示名覆盖层，SrtBooks.title 不动（同 bookKey 换身份的理由）。
       DialogListAction(
@@ -225,26 +264,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         icon: Icons.drive_file_rename_outline,
         onPressed: () => _renameBook(dialogContext, item),
       ),
-      // 合集详情页成员卡：给可聚焦长按对话框补「移出合集」（键盘/手柄移出入口）。
-      if (removeFromCollection != null)
-        DialogListAction(
-          label: t.collection_remove_member,
-          icon: Icons.remove_circle_outline,
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            removeFromCollection();
-          },
-        ),
-      if (_srtBookHasMissingAudio(book) &&
-          modules.isEnabled(ModuleId.listening))
-        DialogQuickAction(
-          label: t.audiobook_relocate,
-          icon: Icons.find_replace_outlined,
-          onPressed: () async {
-            Navigator.pop(dialogContext);
-            await _relocateSrtBookAudio(book);
-          },
-        ),
+      // 合集详情页成员卡：补「移出合集」（网格右键 / 长按与键盘/手柄长按 A 都走这
+      // 一个菜单，BUG-2969）。
+      ..._removeFromCollectionActions(dialogContext, removeFromCollection),
       // 单卡「加入合集」：与 EPUB 卡菜单对称，纯字幕书（bookKey 为空）也可加入；
       // entryKey 编码与 shelfSelectionToEntry 对 'srt_<uid>' 选择键的解码一致（= uid）。
       // 合集详情页成员卡语境（已注入「移出合集」）不显示——同一条目在详情页语境下
@@ -312,6 +334,14 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
               : Icons.check_circle_outline,
           onPressed: () => _toggleBookCompleted(bookKey),
         ),
+        // 与 EPUB 卡菜单对称：「重置阅读状态」。后台听书时钟对配对字幕书也可能按
+        // SRT uid 记账，所以统计身份带上 uid。
+        DialogListAction(
+          label: t.library_progress_reset_action,
+          icon: Icons.restart_alt_outlined,
+          onPressed: () =>
+              _resetBookReadingState(item, bookKey, srtUid: book.uid),
+        ),
         // TODO-1191：与 EPUB 卡菜单对称补「查看插画」。仅在该 SRT 书有对应
         // EpubBooks 行（[_epubBackedBookKeys] 命中 = extractDir 存在）时展示，
         // 复用 EPUB 侧同一 [_openIllustrations]（自行 Navigator.pop + 打开
@@ -342,11 +372,15 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         // bookKey 非空才可用，_toggleFloatingLyricFromShelf 按 bookKey 解析。
         if ((Platform.isAndroid || Platform.isWindows) &&
             modules.isEnabled(ModuleId.listening))
+          // 2026-10 体验优化：开启态不再拼「悬浮字幕 ✓」（看不出点了是开还是关），
+          // 改成明确的「关闭悬浮字幕」+ 不同图标。
           DialogListAction(
             label: _isBackgroundListeningBook(bookKey)
-                ? '${t.floating_lyric_toggle_action} ✓'
+                ? t.floating_lyric_stop_action
                 : t.floating_lyric_toggle_action,
-            icon: Icons.subtitles_outlined,
+            icon: _isBackgroundListeningBook(bookKey)
+                ? Icons.subtitles_off_outlined
+                : Icons.subtitles_outlined,
             onPressed: () => _toggleFloatingLyricFromShelf(bookKey),
           ),
       ],
@@ -362,6 +396,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       database: appModel.database,
       mediaType: MediaKind.srt,
       entryKey: book.uid,
+      isMemberVisible: _isCollectionMemberVisible,
       // P4：用户看到的默认合集名用改名后的显示名（身份 entryKey 仍是 raw uid）。
       defaultNewName: deriveSeriesDefaultName(
         <String>[_srtDisplayTitle(book)],
@@ -466,7 +501,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       actions: <Widget>[
         FushiIconButton(
           key: const ValueKey<String>('reader_shelf_batch_download'),
-          enabled: remoteKeys.isNotEmpty,
+          // BUG-3337：勾中的合集里有云端成员也可下载（合集一键全部下载）。
+          enabled: remoteKeys.isNotEmpty ||
+              _selectedCollectionRemoteMembers.isNotEmpty,
           onTap: _batchDownloadSelectedRemote,
           icon: Icons.download_outlined,
           tooltip: t.remote_book_download,
@@ -481,11 +518,30 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           tooltip: t.combine_into_series,
         ),
         FushiIconButton(
-          // 打标签只作用于散卡媒体（合集无直接标签），故按本地散卡选中集可用态。
-          enabled: localKeys.isNotEmpty,
+          // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
+          key: const ValueKey<String>('reader_shelf_batch_tag'),
+          enabled: hasLocalSelection,
           onTap: _batchShowTagPicker,
           icon: Icons.sell_outlined,
           tooltip: t.tag_label,
+        ),
+        // BUG-3337：漫画库多选补「识别文字」——与卡菜单同一条排队路径
+        // （[enqueuePendingMangaOcrForBooks]），选中合集时识别合集里的每一本。
+        if (_mangaOnly && _moduleVisibility.isEnabled(ModuleId.manga))
+          FushiIconButton(
+            key: const ValueKey<String>('reader_shelf_batch_ocr'),
+            enabled: hasLocalSelection,
+            onTap: _batchOcrSelectedManga,
+            icon: FushiIcons.ocr,
+            tooltip: t.manga_library_ocr_action,
+          ),
+        FushiIconButton(
+          // 只作用于散卡书（合集不是一本书，没有进度可重置），与打标签同一可用态。
+          key: const ValueKey<String>('reader_shelf_batch_reset_progress'),
+          enabled: localKeys.isNotEmpty,
+          onTap: _batchResetReadingState,
+          icon: Icons.restart_alt_outlined,
+          tooltip: t.library_progress_reset_action,
         ),
         FushiIconButton(
           key: const ValueKey<String>('reader_shelf_batch_delete'),
@@ -496,6 +552,117 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           enabledColor: theme.colorScheme.error,
         ),
       ],
+    );
+  }
+
+  /// 卡菜单 / 多选「识别文字」（BUG-3337）：[bookKeys] 里每本漫画还没识别的部分
+  /// （在线作品 = 已下载未识别的章，本地卷 = 未识别的卷）排进 OCR 队列。
+  /// [dialog] 为真时先收起卡片长按菜单。
+  Future<void> _ocrMangaBooks(Iterable<String> bookKeys,
+      {bool dialog = false}) async {
+    if (dialog) Navigator.pop(context);
+    await enqueuePendingMangaOcrForBooks(
+      context: context,
+      appModel: appModel,
+      registry: ref.read(mangaOcrJobRegistryProvider),
+      bookKeys: bookKeys,
+    );
+  }
+
+  /// 多选「识别文字」：散卡漫画 + 选中合集里的每一本。目标在剪枝后一次定死。
+  Future<void> _batchOcrSelectedManga() async {
+    if (!await _pruneStaleSelection() || !mounted) return;
+    final Set<String> bookKeys = <String>{
+      for (final String key in _selectedLocalKeys)
+        if (_parseBookKey(key) case final String bookKey) bookKey,
+    };
+    // 合集成员行 epub entryKey = uid（v83）；透传 / 旧行仍是 bookKey。剪枝刚刷新过
+    // bookKey→uid 换算表，这里反查回 bookKey。
+    final Map<String, String> bookKeyByUid = <String, String>{
+      for (final MapEntry<String, String> e in _epubUidByKey.entries)
+        e.value: e.key,
+    };
+    for (final int id in _selectedCollectionIds) {
+      final List<MediaCollectionItemRow> items =
+          await appModel.database.getCollectionItems(id);
+      for (final MediaCollectionItemRow item in items) {
+        if (MediaKind.tryParse(item.mediaType) != MediaKind.epub) continue;
+        bookKeys.add(bookKeyByUid[item.entryKey] ?? item.entryKey);
+      }
+    }
+    if (!mounted || bookKeys.isEmpty) return;
+    final int queued = await enqueuePendingMangaOcrForBooks(
+      context: context,
+      appModel: appModel,
+      registry: ref.read(mangaOcrJobRegistryProvider),
+      bookKeys: bookKeys,
+    );
+    if (queued > 0 && mounted) _exitSelectionMode();
+  }
+
+  /// 批量「重置阅读状态」：与单卡同一确认框、同一落地函数 [resetBookReadingState]。
+  /// 目标在弹窗前定死（与 [_batchDeleteConfirm] 同纪律）；纯字幕书（bookKey 空）没有
+  /// 进度 / 读完真值载体，跳过且不计数。
+  Future<void> _batchResetReadingState() async {
+    if (!await _pruneStaleSelection() || !mounted) return;
+    final Set<String> targetKeys = _selectedLocalKeys;
+    final FushiDatabase db = appModel.database;
+    final SrtBookRepository srtRepo = SrtBookRepository(db);
+    final List<({String bookKey, String? srtUid, String title})> targets =
+        <({String bookKey, String? srtUid, String title})>[];
+    for (final String key in targetKeys) {
+      if (key.startsWith('srt_')) {
+        final SrtBook? book = await srtRepo.findByUid(key.substring(4));
+        if (book != null && book.bookKey.isNotEmpty) {
+          targets.add(
+            (bookKey: book.bookKey, srtUid: book.uid, title: book.title),
+          );
+        }
+        continue;
+      }
+      final String? bookKey = _parseBookKey(key);
+      if (bookKey == null) continue;
+      final EpubBookRow? row = await db.getEpubBook(bookKey);
+      if (row == null) continue;
+      targets.add((bookKey: bookKey, srtUid: null, title: row.title));
+    }
+    if (targets.isEmpty || !mounted) return;
+    final StudyRecordResetScope? records = await showLibraryProgressResetDialog(
+      context,
+      title: t.library_progress_reset_action,
+      message: '${t.library_progress_reset_book_message}\n\n'
+          '${t.library_progress_reset_batch_message(n: targets.length)}',
+    );
+    if (records == null || !mounted) return;
+    int done = 0;
+    for (final ({String bookKey, String? srtUid, String title}) target
+        in targets) {
+      try {
+        await resetBookReadingState(
+          db: db,
+          bookKey: target.bookKey,
+          title: target.title,
+          extraStatKeys: <String>{
+            if (target.srtUid != null) target.srtUid!,
+          },
+          records: records,
+        );
+        done++;
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('ReaderHistory.batchResetReadingState', e, stack);
+      }
+    }
+    if (!mounted) return;
+    _exitSelectionMode();
+    _afterReadingStateReset();
+    FushiToast.show(
+      msg: done == targets.length
+          ? t.library_progress_reset_batch_done(n: done)
+          : t.library_progress_reset_failed,
+      severity: done == targets.length
+          ? ToastSeverity.success
+          : ToastSeverity.warning,
     );
   }
 
@@ -569,6 +736,52 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       ),
     );
     if (decision == null || !mounted) return;
+
+    // 2026-10 体验优化：确认后进入忙碌态——阻塞式进度弹窗（不可点遮罩 / 返回
+    // 关闭），批量栏与卡片在删除期间都点不到。此前确认框一关页面毫无反馈，
+    // 几十本书要删好几秒，用户以为没生效又点一次，或在删除途中改选中集。
+    final Set<String> toDelete = targetKeys;
+    final ValueNotifier<int> progress = ValueNotifier<int>(0);
+    final int total = targetCollectionIds.length + toDelete.length;
+    final NavigatorState progressNavigator =
+        Navigator.of(context, rootNavigator: true);
+    unawaited(
+      showAppDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext ctx) => PopScope<Object?>(
+          canPop: false,
+          child: _ShelfBatchDeleteProgressDialog(
+            progress: progress,
+            total: total,
+          ),
+        ),
+      ),
+    );
+    // 等进度弹窗真正挂上再开删：删除若瞬间完成，下面的 pop 不能先于 push。
+    await WidgetsBinding.instance.endOfFrame;
+    try {
+      await _runBatchDelete(
+        targetKeys: toDelete,
+        targetCollectionIds: targetCollectionIds,
+        collectionCount: collectionCount,
+        decision: decision,
+        progress: progress,
+      );
+    } finally {
+      progressNavigator.pop();
+    }
+  }
+
+  /// [_batchDeleteConfirm] 确认后的执行体（2026-10 体验优化拆出，外层负责忙碌态）。
+  /// 每处理完一个目标（合集或散卡）把 [progress] +1。
+  Future<void> _runBatchDelete({
+    required Set<String> targetKeys,
+    required Set<int> targetCollectionIds,
+    required int collectionCount,
+    required DeleteDecision decision,
+    required ValueNotifier<int> progress,
+  }) async {
     final DeleteScope scope = decision.scope;
     final bool deleteLocalFiles = decision.deleteLocalFiles;
     final bool deleteStatistics = decision.deleteStatistics;
@@ -581,6 +794,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       final int removed =
           await deleteMediaCollectionWithAssets(appModel.database, id);
       if (removed > 0) dissolved++;
+      progress.value++;
     }
 
     int deleted = 0;
@@ -607,27 +821,21 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         final SrtBookRepository repo = SrtBookRepository(appModel.database);
         final SrtBook? book = await repo.findByUid(uid);
         if (book != null) {
-          if (book.bookKey.isNotEmpty) {
-            await ReaderFushiSource.instance.deleteBook(
-              db: appModel.database,
-              bookKey: book.bookKey,
-              scope: scope,
-              deleteLocalFiles: deleteLocalFiles,
-              deleteStatistics: deleteStatistics,
-            );
-          }
-          // 纯字幕书（bookKey 空）刻意不删统计：它的统计只能按 title 定位，会连坐
-          // 同名 EPUB（见 [_selectionHasStatisticsTarget]）。
-          // BUG-439：以前无条件 deleted++，即便 repo.delete 实际没删到行也计数，
-          // 末尾照样弹「已删除 N 本」谎报。改为只对真删掉的 srt_books 行计数。
-          // TODO-2470 死角①：纯字幕书（bookKey 空）没有上面那次 deleteBook，
-          // scope 以前到这里就被丢弃、勾了「从所有设备删除」完全无效。propagateDeletion
-          // 由 repo 按 standalone 判据决定写不写墓碑（srt-backed 已由 deleteBook 写过）。
-          final SrtBookDeleteResult removed = await repo.delete(uid,
-              propagateDeletion: scope == DeleteScope.syncEverywhere,
-              deleteLocalFiles: deleteLocalFiles);
+          // BUG-3101：配对了 EPUB 的字幕书由 deleteBook 整本删（srt 行随事务级联
+          // 删除），纯字幕书走 repo（scope 落地为 srtbook 墓碑）——只走一条路径，
+          // 计数按这条路径的真实结果（以前 deleteBook 后再按 uid 删一次，回报 0 行，
+          // 「已删除 N 本」少算）。纯字幕书刻意不删统计：它的统计只能按 title 定位，
+          // 会连坐同名 EPUB（见 [_selectionHasStatisticsTarget]）。
+          final DeleteBookResult removed =
+              await ReaderFushiSource.instance.deleteSrtShelfBook(
+            db: appModel.database,
+            book: book,
+            scope: scope,
+            deleteLocalFiles: deleteLocalFiles,
+            deleteStatistics: deleteStatistics,
+          );
           localFiles = localFiles.merge(removed.localFiles);
-          if (removed.deleted > 0) deleted++;
+          if (removed.deleted) deleted++;
         }
       } else {
         final String? bookKey = _parseBookKey(key);
@@ -644,6 +852,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           if (result.deleted) deleted++;
         }
       }
+      progress.value++;
     }
     if (!mounted) return;
     _refreshSrtBooks();
@@ -785,21 +994,26 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 幽灵键会让 bookTags 外键插入抛异常，弹窗把落库 await 在 loading 态里，
     // 一抛就永远转圈（卡死）。必须在开弹窗前剔干净。
     if (!await _pruneStaleSelection() || !mounted) return;
-    final allTags = ref.read(allTagsProvider).valueOrNull;
-    if (allTags == null || allTags.isEmpty) {
-      FushiToast.show(msg: t.tag_no_tags_hint, severity: ToastSeverity.info);
-      return;
-    }
-    await showAppDialog<void>(
-      context: context,
-      builder: (_) => _BatchTagPickerDialog(
-        allTags: allTags,
-        selectedKeys: _selectedLocalKeys,
-        database: appModel.database,
-        parseBookKey: _parseBookKey,
-      ),
+    // 共享标签选择器（搜索 / 一键新建 / 三态）。散卡按 epub=bookKey、srt=uid 成
+    // MediaRef；选中的合集交给选择器的「合集本身 / 合集内全部条目」二选一（单个格子
+    // 模式下选中合集也能批量打标签，不再只作用于散卡）。
+    final List<MediaRef> media = <MediaRef>[
+      for (final String key in _selectedLocalKeys)
+        if (key.startsWith('srt_'))
+          MediaRef(kind: MediaKind.srt, entryKey: key.substring(4))
+        else if (_parseBookKey(key) case final String bookKey)
+          MediaRef(kind: MediaKind.epub, entryKey: bookKey),
+    ];
+    final TagTargets targets = TagTargets(
+      media: media,
+      collectionIds: _selectedCollectionIds.toList()..sort(),
     );
+    if (targets.isEmpty) return;
+    await showTagPicker(context, targets: targets);
     if (!mounted) return;
+    ref.invalidate(allTagsProvider);
+    ref.invalidate(collectionTagMapProvider);
+    ref.invalidate(filteredCollectionIdsProvider);
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(srtBookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
@@ -1028,7 +1242,6 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     if (decision == null) return;
     final DeleteScope scope = decision.scope;
 
-    LocalFileDeleteReport localFiles = const LocalFileDeleteReport();
     if (decision.deleteLocalFiles) {
       // 先停止引用再销毁实体（会话身份：srt-backed 是 uid，EPUB 是 bookKey）。
       await appModel.audiobookSession.stopIfPlayingAny(<String>[
@@ -1036,29 +1249,38 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         if (book.bookKey.isNotEmpty) book.bookKey,
       ]);
     }
-    if (book.bookKey.isNotEmpty) {
-      final DeleteBookResult result =
-          await ReaderFushiSource.instance.deleteBook(
-        db: appModel.database,
-        bookKey: book.bookKey,
-        scope: scope,
-        deleteLocalFiles: decision.deleteLocalFiles,
-        deleteStatistics: decision.deleteStatistics,
-      );
-      localFiles = localFiles.merge(result.localFiles);
-    }
-    // TODO-2470 死角①：纯字幕书（bookKey 空）不走上面的 deleteBook，删除范围必须在
-    // 这里落地，否则勾了「从所有设备删除」静默无效。
-    final SrtBookDeleteResult srtResult =
-        await SrtBookRepository(appModel.database).delete(book.uid,
-            propagateDeletion: scope == DeleteScope.syncEverywhere,
-            deleteLocalFiles: decision.deleteLocalFiles);
-    localFiles = localFiles.merge(srtResult.localFiles);
+    // BUG-3101：按身份只走一条删除路径（配对了 EPUB 的走 deleteBook 整本删，纯
+    // 字幕书走 SrtBookRepository，删除范围在两条路上都落地）。以前 deleteBook 之后
+    // 又按 uid 删一次 srt 行，行已被级联删掉、回报 0 行，于是每次都弹「删除书籍失败」。
+    final DeleteBookResult result =
+        await ReaderFushiSource.instance.deleteSrtShelfBook(
+      db: appModel.database,
+      book: book,
+      scope: scope,
+      deleteLocalFiles: decision.deleteLocalFiles,
+      deleteStatistics: decision.deleteStatistics,
+    );
     if (mounted) {
       reportLocalFileDeleteFailures(
-        localFiles,
+        result.localFiles,
         source: 'ReaderHistory.deleteSrtBookLocalFiles',
       );
+      // 2026-10 体验优化：单本删除此前成功失败都静默；没删到行（已被别处删掉 /
+      // 写库失败）时卡片原样留着，用户只会以为没点上。
+      if (!result.deleted) {
+        final String reason = result.failureReason ?? '';
+        FushiToast.show(
+          msg: reason.isEmpty
+              ? t.epub_delete_error
+              : '${t.epub_delete_error}: $reason',
+          severity: ToastSeverity.error,
+        );
+      } else {
+        FushiToast.show(
+          msg: t.batch_delete_success(n: 1),
+          severity: ToastSeverity.success,
+        );
+      }
       _refreshSrtBooks();
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
       _rebuild(() {});
@@ -1079,7 +1301,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     Navigator.pop(context);
     if (_isBackgroundListeningBook(bookKey)) {
       await appModel.stopBackgroundListening();
-      if (mounted) _rebuild(() {});
+      if (!mounted) return;
+      // 2026-10 体验优化：停止后台听书此前静默，用户不确定点没点上。
+      FushiToast.show(
+        msg: t.floating_lyric_stop_action,
+        severity: ToastSeverity.info,
+      );
+      _rebuild(() {});
       return;
     }
     final BackgroundListenResult result =
@@ -1148,6 +1376,11 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       );
       return;
     }
+    // 2026-10 体验优化：成功也给反馈（与批量删除同一文案）。
+    FushiToast.show(
+      msg: t.batch_delete_success(n: 1),
+      severity: ToastSeverity.success,
+    );
     _refreshSrtBooks();
     ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     _rebuild(() {});
@@ -1165,6 +1398,59 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         title: item.title,
       ),
     );
+  }
+
+  /// 书卡 / 配对字幕书卡「重置阅读状态」：先收起长按菜单，弹确认框（可选只撤最近
+  /// 一次会话 / 全清学习记录，默认都不动），确认后经 [resetBookReadingState] 落库
+  /// （位置写回开头而不是删行——删行会被同步通道从对端灌回，见该函数文件头），
+  /// 再让书列表 / 最近阅读时刻 / 读完集合三份缓存一起失效。
+  Future<void> _resetBookReadingState(
+    MediaItem item,
+    String bookKey, {
+    String? srtUid,
+  }) async {
+    Navigator.pop(context);
+    if (bookKey.isEmpty) return;
+    final StudyRecordResetScope? records = await showLibraryProgressResetDialog(
+      context,
+      title: t.library_progress_reset_action,
+      message: t.library_progress_reset_book_message,
+      itemTitle: displayTitleForBook(item: item, rawTitle: item.title),
+    );
+    if (records == null || !mounted) return;
+    try {
+      await resetBookReadingState(
+        db: appModel.database,
+        bookKey: bookKey,
+        title: item.title,
+        extraStatKeys: <String>{if (srtUid != null) srtUid},
+        records: records,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHistory.resetReadingState', e, stack);
+      if (!mounted) return;
+      _afterReadingStateReset();
+      FushiToast.show(
+        msg: t.library_progress_reset_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    _afterReadingStateReset();
+    FushiToast.show(
+      msg: t.library_progress_reset_done,
+      severity: ToastSeverity.success,
+    );
+  }
+
+  /// 重置阅读状态之后：书列表（进度）、最近阅读时刻、读完集合与书架映射一起重取。
+  void _afterReadingStateReset() {
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(bookLastReadAtProvider);
+    ref.invalidate(completedEpubBookKeysProvider);
+    _shelfMapsFuture = _loadShelfMaps();
+    _rebuild(() {});
   }
 
   Future<void> _openIllustrations(MediaItem item, String bookKey) async {
@@ -1259,6 +1545,12 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     await _openAudiobookImportForKey(bookKey);
   }
 
+  Future<void> _openAudiobookStudio(String bookKey) async {
+    Navigator.pop(context);
+    await openTtsStudioPage(context, appModel: appModel, bookKey: bookKey);
+    if (mounted) _rebuild(() {});
+  }
+
   /// 打开 [AudiobookImportDialog] 本体（调用方负责先收起自己的菜单）。
   /// 卡菜单入口与字幕书「重新导入」的分流入口共用，避免第二处手抄 extractDir 查询。
   Future<void> _openAudiobookImportForKey(String bookKey) async {
@@ -1267,6 +1559,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     await showAppDialog<bool>(
       context: context,
       builder: (_) => AudiobookImportDialog(
+        prefs: appModel.prefsRepo,
         bookKey: bookKey,
         repo: AudiobookRepository(appModel.database),
         extractDir: row?.extractDir,
@@ -1294,8 +1587,11 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 长在 desktop_drop 回调的同步栈上：拖个大包进来 UI 线程直接卡死。先离线程一次
     // 性判完（[probeDroppedImageArchives]），再把结果当同步谓词喂回去，分类函数保持
     // 纯函数不变。
+    //
+    // 漫画库（[_mangaOnly]）落点偏好漫画：`.epub` 也开包，图片型 EPUB 直接归漫画，
+    // 不再先进书籍导入框、再被告知「这看起来是漫画」；`.pdf` 直接归漫画。
     final Map<String, bool> imageArchives =
-        await probeDroppedImageArchives(paths);
+        await probeDroppedImageArchives(paths, preferManga: _mangaOnly);
     if (!mounted) return;
 
     // 目录（漫画页图文件夹）没有扩展名，纯分类函数分不出来——把真实文件系统判据
@@ -1304,6 +1600,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       paths,
       isDirectory: (String pth) => Directory(pth).existsSync(),
       isImageArchive: (String pth) => imageArchives[pth] ?? false,
+      preferManga: _mangaOnly,
     );
     debugPrint(
       '[fushi-drop] [reader-shelf] classified '
@@ -1331,7 +1628,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(t.module_disabled_hint)));
+      ).showSnackBar(FushiSnackBar(content: Text(t.module_disabled_hint)));
     }
 
     switch (intent) {
@@ -1342,12 +1639,18 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         debugPrint('[fushi-drop] [reader-shelf] intent=addFolderAsSource '
             '(not produced on this surface)');
       case DropIntent.importNewBook:
-        _openBookImportPrefilled(
-          epubPath: files.books.first,
-          subtitlePath:
-              files.subtitles.isNotEmpty ? files.subtitles.first : null,
-          audioPaths: files.audios,
-        );
+        // 一本书：同批的字幕 / 音频一起预填（有声书）。多本：逐本弹导入框，不再只导
+        // 第一本、其余静默丢掉；此时字幕 / 音频没法确定归哪一本，不预填。
+        if (files.books.length == 1) {
+          _openBookImportPrefilled(
+            epubPath: files.books.single,
+            subtitlePath:
+                files.subtitles.isNotEmpty ? files.subtitles.first : null,
+            audioPaths: files.audios,
+          );
+        } else {
+          unawaited(_openBookImportsInSequence(files.books));
+        }
       case DropIntent.importNewManga:
         // 漫画（.mokuro / .cbz / 页图目录 / 图片型 zip）走漫画自己的导入对话框。
         // 决策层本来就把漫画和书分成了两个 intent，此前两个 intent 却落到同一个
@@ -1356,13 +1659,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           showModuleDisabled();
           return;
         }
-        _openMangaImportPrefilled(mangaPath: files.mangas.first);
+        _openMangaImportPrefilled(mangaPaths: files.mangas);
       case DropIntent.unsupportedMangaArchive:
         debugPrint(
           '[fushi-drop] [reader-shelf] intent=unsupportedMangaArchive',
         );
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.drag_drop_manga_archive_unsupported)),
+          FushiSnackBar(content: Text(t.drag_drop_manga_archive_unsupported)),
         );
       case DropIntent.attachToBookCard:
         // 往书卡上拖音频/字幕 = 给这本书挂有声书，属听书模块。
@@ -1379,7 +1682,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       case DropIntent.needCardTarget:
         debugPrint('[fushi-drop] [reader-shelf] intent=needCardTarget');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.drag_drop_need_card_target)),
+          FushiSnackBar(content: Text(t.drag_drop_need_card_target)),
         );
       case DropIntent.importNewVideo:
         // 书架拖入视频 → 自动切到视频导入流程，带上文件（不再只提示让用户手动切，
@@ -1428,7 +1731,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       case DropIntent.unsupportedSurface:
         debugPrint('[fushi-drop] [reader-shelf] intent=unsupportedSurface');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.drag_drop_unsupported_on_books)),
+          FushiSnackBar(content: Text(t.drag_drop_unsupported_on_books)),
         );
       case DropIntent.attachToVideoCard:
       case DropIntent.ignore:
@@ -1438,7 +1741,10 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
 
   /// 拖入书文件 → 打开 [BookImportDialog]，预填 EPUB（及可选字幕）路径。
   /// 复用 [ReaderFushiSource.buildBookImportButton] 的 repo/打开/刷新范式。
-  Future<void> _openBookImportPrefilled({
+  ///
+  /// 返回对话框结果：true 已导入、false 这一本没导（同名取消 / 转交漫画未导）、
+  /// null 用户关掉了对话框（[_openBookImportsInSequence] 据此停止后续）。
+  Future<bool?> _openBookImportPrefilled({
     required String epubPath,
     required String? subtitlePath,
     List<String> audioPaths = const <String>[],
@@ -1446,6 +1752,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     final bool? imported = await showAppDialog<bool>(
       context: context,
       builder: (_) => BookImportDialog(
+        prefs: appModel.prefsRepo,
         repo: SrtBookRepository(appModel.database),
         audiobookRepo: AudiobookRepository(appModel.database),
         db: appModel.database,
@@ -1458,17 +1765,37 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       _refreshSrtBooks();
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     }
+    return imported;
+  }
+
+  /// 多本书同时拖入：逐本打开 [BookImportDialog]（每本都要定标题 / 处理同名）。
+  ///
+  /// 只有用户**关掉对话框**（取消 / 返回键 / 点遮罩，结果 null）才停止后续：那是
+  /// 「剩下的都不要了」。同名询问里选「否」只是这一本不导（对话框回 false），继续下一本
+  /// ——否则一本重名就把后面所有书静默丢掉，正是这里要消灭的行为。
+  Future<void> _openBookImportsInSequence(List<String> bookPaths) async {
+    for (final String bookPath in bookPaths) {
+      if (!mounted) return;
+      final bool? imported = await _openBookImportPrefilled(
+        epubPath: bookPath,
+        subtitlePath: null,
+      );
+      if (imported == null) return;
+    }
   }
 
   /// 拖入漫画 → 打开 [MangaImportDialog]，预填漫画路径（目录 / .cbz / .mokuro /
-  /// 图片型 zip）。刷新范式与 [_openBookImportPrefilled] 一致：漫画与书共用
-  /// `EpubBooks` 表和同一块书架，故失效的 provider 也相同。
-  Future<void> _openMangaImportPrefilled({required String mangaPath}) async {
+  /// 图片型 zip / 漫画库里的图片型 epub 与 pdf）。多个路径时对话框进逐卷批量模式。
+  /// 刷新范式与 [_openBookImportPrefilled] 一致：漫画与书共用 `EpubBooks` 表和同一块
+  /// 书架，故失效的 provider 也相同。
+  Future<void> _openMangaImportPrefilled({
+    required List<String> mangaPaths,
+  }) async {
     final bool? imported = await showAppDialog<bool>(
       context: context,
       builder: (_) => MangaImportDialog(
         db: appModel.database,
-        initialPath: mangaPath,
+        initialPaths: mangaPaths,
       ),
     );
     if (imported == true && mounted) {
@@ -1489,6 +1816,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     await showAppDialog<bool>(
       context: context,
       builder: (_) => AudiobookImportDialog(
+        prefs: appModel.prefsRepo,
         bookKey: bookKey,
         repo: AudiobookRepository(appModel.database),
         extractDir: row?.extractDir,
@@ -1533,7 +1861,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     if (!exists) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.book_css_editor_no_extract_dir)),
+          FushiSnackBar(content: Text(t.book_css_editor_no_extract_dir)),
         );
       }
       return;
@@ -1571,4 +1899,47 @@ class _AudiobookInfo {
   const _AudiobookInfo({required this.hasAudiobook, required this.healthKind});
   final bool hasAudiobook;
   final HealthKind healthKind;
+}
+
+/// 书架批量删除的阻塞式进度弹窗（2026-10 体验优化）。
+class _ShelfBatchDeleteProgressDialog extends StatelessWidget {
+  const _ShelfBatchDeleteProgressDialog({
+    required this.progress,
+    required this.total,
+  });
+
+  final ValueNotifier<int> progress;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
+      maxWidth: 360,
+      scrollable: false,
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.card),
+        child: ValueListenableBuilder<int>(
+          valueListenable: progress,
+          builder: (BuildContext context, int done, Widget? _) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  '${t.delete_in_progress} $done / $total',
+                  style: tokens.type.listTitle,
+                ),
+                SizedBox(height: tokens.spacing.gap),
+                // 设计系统分派版：MD3 走 M3E 波浪轨道，Apple 走细轨。
+                FushiLinearProgressIndicator(
+                  value: total == 0 ? null : done / total,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
 }

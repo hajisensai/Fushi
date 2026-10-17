@@ -27,6 +27,10 @@ const Map<String, String> kAllowedRawHtmlParseFiles = <String, String>{
   '../packages/fushi_engine/lib/media/torrent/nyaa_client.dart':
       'nyaa 种子站返回的是真正的 HTML5 页面（text/html），不是 EPUB 章节 XHTML；'
           '自闭合 raw-text 标签在那里既不合法也不会出现，走归一化只会平添开销。',
+  '../packages/fushi_anki/lib/src/anki_glossary_css.dart':
+      '制卡释义 HTML（popup.js 导出的 `.yomitan-glossary` 片段，BUG-3224）不是 EPUB '
+          '章节 XHTML：只用解析结果做 CSS 选择器命中判断，最终输出仍是原字符串，'
+          '且 fushi_anki 不依赖 fushi_engine（无法调 parseChapterHtml）。',
 };
 
 const String _kSelfPath = 'test/tools/epub_chapter_parse_entry_guard_test.dart';

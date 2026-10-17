@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
@@ -188,6 +188,16 @@ void main() {
           SettingsSearchReveal.pendingItemId,
           isNull,
           reason: 'The body target must consume the reveal request',
+        );
+        // BUG-3029：浮动页头首帧后回报高度会让宿主整树重建；落点包装必须熬过
+        // 重建（否则定位跟不住让位变化、高亮提前消失）。
+        expect(
+          find.ancestor(
+            of: target,
+            matching: find.byType(SettingsRevealTarget),
+          ),
+          findsOneWidget,
+          reason: 'The reveal wrapper must survive the host rebuild',
         );
         final Rect bounds = tester.getRect(target);
         final Size viewport =

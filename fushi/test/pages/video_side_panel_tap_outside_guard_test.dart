@@ -63,7 +63,8 @@ void main() {
   test('② VideoTranslucentSidePanel 不再渲染 Icons.close 关闭按钮', () {
     expect(sidePanel.existsSync(), isTrue);
     final String src = sidePanel.readAsStringSync();
-    expect(src.contains('Icons.close'), isFalse,
+    expect(src.contains('Icons.close') || src.contains('FushiIcons.close'),
+        isFalse,
         reason: 'VideoTranslucentSidePanel header 不应再有 X 关闭按钮');
   });
 
@@ -76,7 +77,7 @@ void main() {
     // the header (the BUG-256 tap-outside barrier was removed because it ate
     // the picture-subtitle lookup gesture, TODO-636). The overlay panel
     // (VideoTranslucentSidePanel) keeps its no-X / tap-outside behaviour above.
-    expect(src.contains('Icons.close'), isTrue,
+    expect(src.contains('FushiIcons.close'), isTrue,
         reason: 'VideoSubtitleJumpPanel header must render the X close button '
             'again (TODO-637)');
     expect(src.contains('onPressed: widget.onClose'), isTrue,

@@ -70,7 +70,9 @@ void main() {
             pipeline,
             'deletePersistedVideoDownloadJob',
           )!,
-          operation: 'deleteVideoBookAndReclaimAssets',
+          // 一个任务的所有入库行一次批量删（BUG-2949：逐行调单条入口 = 每集
+          // 两次全表扫描 + 一个事务）。
+          operation: 'deleteVideoBooksAndReclaimAssets',
         ),
       };
 

@@ -1,14 +1,16 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
@@ -20,6 +22,7 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_source_totals.dart';
 import 'package:fushi/src/pages/implementations/stat_summary.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/stats/stat_window.dart';
@@ -89,6 +92,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   List<FavoriteWordRow> _favoriteRows = <FavoriteWordRow>[];
   List<(String, int)> _lookupEvents = const <(String, int)>[];
   List<(String, int)> _minedEvents = const <(String, int)>[];
+  List<(String, int)> _favoritedEvents = const <(String, int)>[];
+  List<(String, int)> _favoritedSentenceEvents = const <(String, int)>[];
 
   /// bookKey → 书架条目（按书行的封面走书架同一条缩略图链）。
   Map<String, MediaItem> _bookItemsByKey = <String, MediaItem>{};
@@ -126,21 +131,15 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   int _todayChars = 0;
   int _todayMs = 0;
   int _weekChars = 0;
-  int _weekMs = 0;
-  // 学习域目标分子（今日 / 本周，书 + 视频字幕 + 游戏 hook 文本）：目标卡与
+  // 学习域目标分子（今日，书 + 视频字幕 + 游戏 hook 文本）：「分析」折叠里
   // 「今天」环形卡的目标环用它，与首页「今日目标」同函数同口径
   // （[studyGoalCharsForDay]，BUG-1993）。本页其余 KPI / 趋势 / CPH 仍是
   // 阅读域（[_todayChars] 等），两组数并存不混用。
   int _todayStudyChars = 0;
-  int _weekStudyChars = 0;
   // 完整日面（全部来源），学习域目标分子的数据源。
   List<StatFact> _dailyFacts = <StatFact>[];
-  // 上周字数（第 8–14 天窗口）：仅用于顶部 KPI 的本周字数环比，[8,14) 与本周 [0,7) 不重叠。
+  // 上周同期字数（[StatWindow.inPrevWeek]）：仅用于 KPI 条的本周字数环比。
   int _prevWeekChars = 0;
-  int _monthChars = 0;
-  int _monthMs = 0;
-  int _allChars = 0;
-  int _allMs = 0;
 
   // 所选范围内的逐日数据（升序、空日补 0）：趋势 / 速度摘要 / 日均的输入。
   List<StatDayData> _dailyData = [];
@@ -149,13 +148,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   // StatHourlyFormatBand.unattributed，图上单独成带、不归入任何阅读面。
   StatHourlyBreakdown _hourly = StatHourlyBreakdown();
 
-  // 制卡 / 收藏计数（来源 'book'），按今日/本周/本月/全部分桶。
-  StatActivityBuckets _mined = StatActivityBuckets();
+  // 收藏计数（来源 'book'）分桶：「今天」环形卡的收藏迷你块取今日格。
   StatActivityBuckets _favorited = StatActivityBuckets();
-  StatActivityBuckets _favoritedSentences = StatActivityBuckets();
-
-  // 查词计数（来源 'book'）按今日/本周/本月/全部分桶（TODO-1204）。
-  StatActivityBuckets _lookup = StatActivityBuckets();
 
   // per-book 查词/制卡计数（按 title 聚合，对齐字数/时长 tile 的聚合键）。
   Map<String, ({int lookups, int mines})> _bookCounters =
@@ -254,14 +248,15 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       final List<FavoriteWordRow> favs = counterFacts.favoriteWordsFor(
         StatSourceKind.book,
       );
-      _favorited = bucketActivityByDateKey(
-        counterFacts.favoriteWordEvents(source: StatSourceKind.book),
-        now,
-      );
-      _mined = bucketActivityByDateKey(
-        counterFacts.minedEvents(source: StatSourceKind.book),
-        now,
-      );
+      _favoritedEvents = counterFacts
+          .favoriteWordEvents(source: StatSourceKind.book)
+          .toList();
+      // 收藏语句：非视频来源（书内 / 有声书 / 歌词）都归阅读统计；无 dateKey 的
+      // 旧收藏按创建日归桶（BUG-893，判据在 [StatCounterFacts.favoriteSentenceEvents]）。
+      _favoritedSentenceEvents = counterFacts
+          .favoriteSentenceEvents(source: StatSourceKind.book)
+          .toList();
+      _favorited = bucketActivityByDateKey(_favoritedEvents, now);
       // 查词/制卡 per-book 计数：汇总用 lookupCount 分桶，per-book tile 按 title
       // 聚合（无书查词 title='' 跳过，只进汇总）。
       final List<LookupMiningCounterRow> counters = counterFacts
@@ -272,7 +267,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _minedEvents = counterFacts
           .minedEvents(source: StatSourceKind.book)
           .toList();
-      _lookup = bucketActivityByDateKey(_lookupEvents, now);
       _counterRows = counters;
       _favoriteRows = favs;
       // 合集归属（书架同源）：title→bookKey→'epub|bookKey'→合集名，喂 per-book tile。
@@ -289,14 +283,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         for (final EpubBookMeta r in epubRows)
           if (r.uid.isNotEmpty) r.bookKey: r.uid,
       };
-      // 收藏语句按 source 分桶：非视频来源（书内 / 有声书 / 歌词）都归阅读统计。
-      // BUG-893：写入端此前不带 dateKey，旧的 `dateKey != null` 过滤把所有书内收藏
-      // 滤光 → 统计恒为 0。改用 `dateKey ?? statDateKey(createdAt)` 回退——createdAt
-      // 恒非空，已存的无 dateKey 收藏也按创建日归桶（与写入端补 dateKey 双向修复）。
-      _favoritedSentences = bucketActivityByDateKey(
-        counterFacts.favoriteSentenceEvents(source: StatSourceKind.book),
-        now,
-      );
       _loadHourlyData(facts);
       _bookItemsByKey = <String, MediaItem>{
         for (final MediaItem item
@@ -343,14 +329,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     _todayChars = 0;
     _todayMs = 0;
     _weekChars = 0;
-    _weekMs = 0;
     _todayStudyChars = 0;
-    _weekStudyChars = 0;
     _prevWeekChars = 0;
-    _monthChars = 0;
-    _monthMs = 0;
-    _allChars = 0;
-    _allMs = 0;
 
     final dailyMap = <String, StatDayData>{};
 
@@ -364,18 +344,11 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       final Map<String, StatSourceTotals> byDay =
           _sourceDaily[source] ?? const <String, StatSourceTotals>{};
       byDay.forEach((String dateKey, StatSourceTotals totals) {
-        _allChars += totals.chars;
-        _allMs += totals.timeMs;
         if (w.isToday(dateKey)) _todayMs += totals.timeMs;
         if (w.inWeek(dateKey)) {
           _weekChars += totals.chars;
-          _weekMs += totals.timeMs;
         } else if (w.inPrevWeek(dateKey)) {
           _prevWeekChars += totals.chars;
-        }
-        if (w.inMonth(dateKey)) {
-          _monthChars += totals.chars;
-          _monthMs += totals.timeMs;
         }
         final StatDayData day = dailyMap.putIfAbsent(
           dateKey,
@@ -390,9 +363,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     // （完整日面，与首页「今日目标」同源同函数，BUG-1993）。
     _todayChars = studyGoalCharsForDay(_bookFacts, w.todayKey);
     _todayStudyChars = studyGoalCharsForDay(_dailyFacts, w.todayKey);
-    for (final StatFact f in _dailyFacts) {
-      if (w.inWeek(f.dateKey)) _weekStudyChars += f.chars;
-    }
 
     _byDay = dailyMap;
 
@@ -495,168 +465,175 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     }
   }
 
+  /// 统计设置（范围条行尾 / 空数据态顶部）：清空本页这一域（2026-10-09 起目标 /
+  /// 刷新 / 清空 / 重置时刻四颗页头按钮收进这里；目标改由首页每日目标卡进入）。
+  StatTabSettings get _statSettings =>
+      StatTabSettings(onClearAll: _confirmAndClearAll, enabled: !_loading);
+
   @override
   Widget build(BuildContext context) {
-    final List<Widget> actions = <Widget>[
-      // BUG-970：目标设置入口恒驻顶栏——目标卡在两目标皆 0 时整块隐藏
-      // (_buildGoalPanel -> SizedBox.shrink)，卡内 edit 图标随之消失，
-      // 否则从未设过目标的用户没有任何 UI 能首次设置目标。
-      FushiIconButton(
-        icon: Icons.flag_outlined,
-        tooltip: t.stat_goal_set,
-        enabled: !_loading,
-        onTap: _editGoals,
-      ),
-      FushiIconButton(
-        icon: Icons.refresh,
-        tooltip: t.stat_refresh,
-        enabled: !_loading,
-        onTap: _syncAndLoad,
-      ),
-      FushiIconButton(
-        icon: Icons.delete_sweep_outlined,
-        tooltip: t.stat_clear_all,
-        enabled: !_loading,
-        onTap: _confirmAndClearAll,
-      ),
-    ];
     final Widget body = buildStatPageBody(
       loading: _loading,
       error: _error,
-      isEmpty: _bookFacts.isEmpty,
       loadingBuilder: () =>
           buildLoading(size: 25, color: theme.colorScheme.primary),
       errorBuilder: (String error) => buildError(error: error),
-      emptyMessage: t.stat_no_data,
       contentBuilder: _buildContent,
     );
-    if (widget.embedded) return buildEmbeddedStatTab(context, actions, body);
+    if (widget.embedded) return buildEmbeddedStatTab(context, body);
     return FushiPageScaffold(
       title: t.reading_statistics,
-      actions: actions,
       body: body,
     );
   }
 
-  /// 页面骨架与视频 / 游戏 tab 同形（用户 2026-09-08「统计全改成游戏那种」）：
-  /// 时段卡 → 每日时长图 → 最近会话 → 目标卡 → 「分析」折叠 → 按书列表。
-  /// KPI 条 / 趋势 / 今日环 + 速度摘要 / 来源分布 / 小时×格式全部下沉进折叠区，
-  /// 一个都没删。横屏时会话与按书列表拆到右栏（[buildStatAdaptiveScrollView]）。
+  /// 页面骨架与总览 / 观看 / 游戏 tab 同一套（2026-10 统计中心重设计，
+  /// [StatDashboardBody]）：关键指标区（目标面板 + 四张指标卡）→ 趋势栏（时间
+  /// 窗口分段 + 日期翻页 → 范围时长图 → 所选范围卡 → 学习日历 → 「分析」折叠）
+  /// → 明细栏（时段卡 → 最近会话 → 按书列表）。宽屏趋势 / 明细左右两栏，窄屏
+  /// 单栏。KPI 条 / 趋势 / 今日环 + 速度摘要 / 来源分布 / 小时×格式仍在折叠区，
+  /// 一个都没删。收尾留白与底部安全区（BUG-2440）由 [buildStatTailSliver] 补。
   Widget _buildContent() {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double card = tokens.spacing.card;
-    // 统计中心四个 tab 一律**全宽自适应**（用户 2026-09-10「阅读的布局不统一，
-    // 做成自适应统一布局」）：本页此前独有一层 `Center + ConstrainedBox(1040)`，
-    // 总览 / 观看 / 游戏三个 tab 都没有，横过去时阅读 tab 的卡片、图表、会话
-    // 整体缩在中间一条，左右各留一大片空白。宽屏的排布交给各区块自己的
-    // LayoutBuilder（时段卡按实际列宽判两列、[_buildMidSection] 按所在栏宽并排），
-    // 不靠一个页面级硬上限。收尾留白与底部安全区（BUG-2440）由
-    // [buildStatAdaptiveScrollView] 统一补在每条滚动视图末尾。
-    return buildStatAdaptiveScrollView(
-      context,
-      sections: (double columnWidth) => <StatPaneSliver>[
-        StatPaneSliver(
-          StatPane.overview,
-          SliverToBoxAdapter(child: _buildSummaryCards()),
+    // 学习日历（上面一行「过去一周」火苗）占原先目标卡 + 四张指标卡的位置
+    // （2026-10-09 统计中心精简，四个 tab 同形）。
+    final Widget hero = _buildCalendarSection();
+    if (_bookFacts.isEmpty) {
+      return StatDashboardBody(
+        header: buildStatSettingsHeader(_statSettings),
+        hero: hero,
+        emptyState: StatDashboardEmpty(message: t.stat_no_data),
+        tail: buildStatTailSliver(context),
+      );
+    }
+    return StatDashboardBody(
+      hero: hero,
+      tail: buildStatTailSliver(context),
+      trend: <Widget>[
+        ..._buildRangeSection(),
+        _buildAnalysisFold(),
+      ],
+      details: <Widget>[
+        buildStatSessionSection(
+          context,
+          sessions: _sessions,
+          titleOf: _sessionTitle,
+          collectionOf: _sessionCollectionName,
+          coverOf: _sessionCover,
+          onDelete: _deleteSession,
+          onEdit: _editSession,
+          onClearAll: _clearSessions,
         ),
-        StatPaneSliver(
-          StatPane.overview,
-          SliverToBoxAdapter(child: _buildRangeSection()),
-        ),
-        StatPaneSliver(
-          StatPane.detail,
-          SliverToBoxAdapter(
-            child: buildStatSessionSection(
-              context,
-              sessions: _sessions,
-              titleOf: _sessionTitle,
-              collectionOf: _sessionCollectionName,
-              coverOf: _sessionCover,
-              onDelete: _deleteSession,
-              onEdit: _editSession,
-              onClearAll: _clearSessions,
-            ),
+        Padding(
+          padding: EdgeInsets.only(
+            bottom: FushiDesignTokens.of(context).spacing.gap,
           ),
+          child: _buildByBookHeader(),
         ),
-        StatPaneSliver(
-          StatPane.overview,
-          SliverToBoxAdapter(child: _buildGoalPanel()),
-        ),
-        StatPaneSliver(
-          StatPane.overview,
-          SliverToBoxAdapter(
-            child: _buildAnalysisFold(columnWidth >= _kWideBreakpoint),
-          ),
-        ),
-        StatPaneSliver(
-          StatPane.detail,
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                card,
-                card + tokens.spacing.gap,
-                card,
-                tokens.spacing.gap,
-              ),
-              child: _buildByBookHeader(),
-            ),
-          ),
-        ),
-        StatPaneSliver(
-          StatPane.detail,
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => _buildBookTile(_bookData[index]),
-              childCount: _bookData.length,
-            ),
+      ],
+      detailSlivers: <Widget>[
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => _buildBookTile(_bookData[index]),
+            childCount: _bookData.length,
           ),
         ),
       ],
     );
   }
 
-  /// 范围区块（Niratan「Range」）：范围条 → 学习日历 → 范围时长图 → 所选范围卡。
-  /// 范围驱动下方趋势 / 速度摘要 / 来源分布 / 按书列表；顶部时段卡恒为当下。
-  Widget _buildRangeSection() {
-    final StatRange range = _range;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        StatRangeBar(
-          range: range,
-          onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
-        ),
-        buildStatRangeCalendarSection(
-          context,
-          byDay: _byDay,
-          now: _window.now,
-          onDaySelected: (String dateKey) => _rangeSelection.value =
-              StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
-        ),
-        buildStatRangeChartSection(context, range, _byDay),
-        buildStatRangeSummary(
-          context,
-          range,
-          _byDay,
-          extraLines: <StatSummaryLine>[
-            if (statBookCphOf(_bookFacts, range.contains) case final String cph)
-              StatSummaryLine(label: t.stat_reading_speed, value: cph),
-            StatSummaryLine(
-              label: t.stat_lookup,
-              value: '${sumStatEventsInRange(_lookupEvents, range)}',
-            ),
-            StatSummaryLine(
-              label: t.stat_mined,
-              value: '${sumStatEventsInRange(_minedEvents, range)}',
-            ),
-          ],
-        ),
-      ],
+  /// 学习日历（含「过去一周」火苗行）：点某天 = 范围切到那一天。
+  Widget _buildCalendarSection() => buildStatRangeCalendarSection(
+    context,
+    byDay: _byDay,
+    now: _window.now,
+    weekKeys: _window.lastDayKeys(7),
+    onDaySelected: (String dateKey) => _rangeSelection.value =
+        StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
+  );
+
+  /// 范围条「明细」→ 所选范围的时段明细 sheet（本页是阅读统计，明细只吃阅读域
+  /// 切片 [_bookFacts]——域=行集，与 [studyGoalCharsForDay] 同原则）。时段谓词
+  /// 就是范围条的 [StatRange.contains]（周 = 自然周，与所选范围卡同口径）。
+  Future<void> _showRangeDetail(StatRange range) async {
+    final FushiDatabase db = appModelNoUpdate.database;
+    final bool deleted = await showStatPeriodDetailSheet(
+      context,
+      periodLabel: formatStatRange(range),
+      contains: range.contains,
+      facts: _bookFacts,
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: _statFactDisplayTitle,
+        collectionOf: _statFactCollectionName,
+        onEntryDelete: (StatPeriodEntryTarget t) =>
+            deleteStatPeriodEntry(db, t),
+        ambiguousTitlesOf: (String kind) => kind == kActivityMediaBook
+            ? _ambiguousBookTitles
+            : const <String>{},
+      ),
     );
+    if (deleted && mounted) await _loadFromDatabase();
+  }
+
+  /// 事实行 → 显示名（[_bookDisplayTitle] 的事实行版：override 书名上屏生效，
+  /// 合集名走 sheet 组头不拼前缀）。
+  String _statFactDisplayTitle(StatFact f) {
+    final String? bookKey = f.mediaKey.isNotEmpty
+        ? f.mediaKey
+        : _bookKeyByTitle[f.title];
+    if (bookKey == null) return f.title;
+    return ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
+        f.title;
+  }
+
+  /// 事实行 → 所属合集名（[_collectionNameForBook] 的事实行版，同一 v83 键契约）。
+  String? _statFactCollectionName(StatFact f) {
+    final String? bookKey = f.mediaKey.isNotEmpty
+        ? f.mediaKey
+        : _bookKeyByTitle[f.title];
+    if (bookKey == null) return null;
+    return statCollectionName(
+      MediaKind.epub.compositeKey(_epubUidByBookKey[bookKey] ?? bookKey),
+      _primaryCollectionByEntry,
+      _collectionNamesById,
+    );
+  }
+
+  /// 范围区块（Niratan「Range」）：范围条（时间窗口分段 + 日期翻页）→ 范围
+  /// 时长图 → 所选范围卡 → 学习日历，与总览 / 观看 / 游戏 tab 同序。范围驱动
+  /// 下方趋势 / 速度摘要 / 来源分布 / 按书列表；时段卡恒为当下。
+  List<Widget> _buildRangeSection() {
+    final StatRange range = _range;
+    return <Widget>[
+      StatRangeBar(
+        range: range,
+        onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
+        trailing: StatRangeActions(
+          settings: _statSettings,
+          onOpenDetail: () => unawaited(_showRangeDetail(range)),
+        ),
+      ),
+      buildStatRangeChartSection(context, range, _byDay),
+      buildStatRangeSummary(
+        context,
+        range,
+        _byDay,
+        extraLines: <StatSummaryLine>[
+          if (statBookCphOf(_bookFacts, range.contains) case final String cph)
+            StatSummaryLine(label: t.stat_reading_speed, value: cph),
+          ...buildStatRangeCounterLines(
+            range,
+            lookups: _lookupEvents,
+            mined: _minedEvents,
+            favorited: _favoritedEvents,
+            favoritedSentences: _favoritedSentenceEvents,
+          ),
+        ],
+      ),
+    ];
   }
 
   /// 「分析」折叠区：KPI 条 → 趋势 → 今日环 + 速度摘要 → 来源分布 → 小时×格式。
-  Widget _buildAnalysisFold(bool wide) {
+  Widget _buildAnalysisFold() {
     final double card = FushiDesignTokens.of(context).spacing.card;
     return StatAnalysisFold(
       children: <Widget>[
@@ -670,7 +647,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         ),
         Padding(
           padding: EdgeInsets.only(left: card, right: card, bottom: card),
-          child: _buildMidSection(wide),
+          child: _buildMidSection(),
         ),
         _buildSourceBreakdown(),
         buildStatHourlyFormatChartSection(context, _hourly),
@@ -678,29 +655,33 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  /// 「今天」环 + 「速度摘要」：宽屏并排，窄屏堆叠。
-  Widget _buildMidSection(bool wide) {
+  /// 「今天」环 + 「速度摘要」：所在栏够宽（≥ [_kWideBreakpoint]）并排，否则堆叠。
+  Widget _buildMidSection() {
     final double gap = FushiDesignTokens.of(context).spacing.card;
     final Widget today = _buildTodayPanel();
     final Widget summary = _buildSpeedSummaryPanel();
-    if (wide) {
-      return IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth >= _kWideBreakpoint) {
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(child: today),
+                SizedBox(width: gap),
+                Expanded(child: summary),
+              ],
+            ),
+          );
+        }
+        return Column(
           children: <Widget>[
-            Expanded(child: today),
-            SizedBox(width: gap),
-            Expanded(child: summary),
+            today,
+            SizedBox(height: gap),
+            summary,
           ],
-        ),
-      );
-    }
-    return Column(
-      children: <Widget>[
-        today,
-        SizedBox(height: gap),
-        summary,
-      ],
+        );
+      },
     );
   }
 
@@ -728,24 +709,24 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return StatKpiStrip(
       items: <StatKpiItem>[
         StatKpiItem(
-          icon: Icons.local_fire_department_outlined,
+          icon: FushiIcons.streak,
           value: t.stat_format_days(n: _streak),
           label: t.stat_streak,
         ),
         StatKpiItem(
-          icon: Icons.today_outlined,
+          icon: FushiIcons.calendar,
           value: formatStatChars(_todayChars),
           label: t.stat_today,
         ),
         StatKpiItem(
-          icon: Icons.trending_up,
+          icon: FushiIcons.trendingUp,
           value: formatStatChars(_weekChars),
           label: t.stat_this_week,
           delta: weekDelta,
           deltaUp: weekPct == null ? true : weekPct >= 0,
         ),
         StatKpiItem(
-          icon: Icons.show_chart,
+          icon: FushiIcons.lineChart,
           value: formatStatChars(dailyAvgChars),
           label: t.stat_daily_average,
         ),
@@ -753,34 +734,18 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  /// 卡片外壳：标题 + 可选 trailing + 内容。
+  /// 卡片外壳：与图表卡 / 日历卡同一种 [StatSectionCard]（标题 + 可选 trailing
+  /// + 内容）；外边距由调用方给（折叠区内已自带横向留白）。
   Widget _card({
     required String title,
     required Widget child,
     Widget? trailing,
   }) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return FushiCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              if (trailing != null) Flexible(child: trailing),
-            ],
-          ),
-          SizedBox(height: tokens.spacing.card),
-          child,
-        ],
-      ),
+    return StatSectionCard(
+      title: title,
+      trailing: trailing,
+      margin: EdgeInsets.zero,
+      child: child,
     );
   }
 
@@ -829,10 +794,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final (IconData icon, String label) = switch (source) {
-      StatBreakdownSource.book => (Icons.menu_book, t.home_filter_read),
-      StatBreakdownSource.manga => (Icons.photo_library, t.manga_library),
-      StatBreakdownSource.video => (Icons.movie, t.home_filter_watch),
-      StatBreakdownSource.game => (Icons.videogame_asset, t.home_filter_game),
+      StatBreakdownSource.book => (FushiIcons.books, t.home_filter_read),
+      StatBreakdownSource.manga => (FushiIcons.manga, t.manga_library),
+      StatBreakdownSource.video => (FushiIcons.video, t.home_filter_watch),
+      StatBreakdownSource.game => (FushiIcons.game, t.home_filter_game),
     };
     final List<String> metrics = <String>[
       formatStatChars(totals.chars),
@@ -844,7 +809,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: Row(
         children: <Widget>[
-          Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+          FushiIcon(icon, size: 18, color: scheme.onSurfaceVariant),
           SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: Text(
@@ -869,262 +834,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  Widget _buildSummaryCards() {
-    // 时段谓词与聚合同一个窗口（BUG-2219）：跨午夜后由 [_midnightReload] 整页重聚合，
-    // 卡上的数和点开的明细永远出自同一窗口。
-    final StatWindow w = _window;
-    return buildStatPeriodSummaryGrid(context, <StatPeriodSummary>[
-      _periodSummary(
-        t.stat_today,
-        _todayChars,
-        _todayMs,
-        _lookup.today,
-        _mined.today,
-        _favorited.today,
-        _favoritedSentences.today,
-        contains: w.isToday,
-      ),
-      _periodSummary(
-        t.stat_this_week,
-        _weekChars,
-        _weekMs,
-        _lookup.week,
-        _mined.week,
-        _favorited.week,
-        _favoritedSentences.week,
-        contains: w.inWeek,
-      ),
-      _periodSummary(
-        t.stat_this_month,
-        _monthChars,
-        _monthMs,
-        _lookup.month,
-        _mined.month,
-        _favorited.month,
-        _favoritedSentences.month,
-        contains: w.inMonth,
-      ),
-      _periodSummary(
-        t.stat_all_time,
-        _allChars,
-        _allMs,
-        _lookup.all,
-        _mined.all,
-        _favorited.all,
-        _favoritedSentences.all,
-        contains: (String _) => true,
-      ),
-    ]);
-  }
-
-  StatPeriodSummary _periodSummary(
-    String label,
-    int chars,
-    int ms,
-    int lookup,
-    int mined,
-    int favorited,
-    int favoritedSentences, {
-    required bool Function(String dateKey) contains,
-  }) {
-    final String? cph = formatStatCphOf(chars, ms);
-    return StatPeriodSummary(
-      label: label,
-      // 主值 = 学习时长，与观看 / 游戏 / 总览三个 tab 同口径（用户 2026-09-08
-      // 「统计全改成游戏那种」时骨架已统一，主值口径漏了这一处：四张同形卡里只有
-      // 阅读卡以字数打头，横着看四个 tab 时首行数字不可比）。字数降为首条副行。
-      primaryValue: formatStatTime(ms),
-      onTap: () => unawaited(_showPeriodDetail(label, contains)),
-      lines: <StatSummaryLine>[
-        StatSummaryLine(value: formatStatChars(chars)),
-        // 速度（字/时）紧跟字数：用户 2026-09-12 要求顶部方框直接给出每小时字数。
-        if (cph != null)
-          StatSummaryLine(label: t.stat_reading_speed, value: cph),
-        StatSummaryLine(label: t.stat_lookup, value: '$lookup'),
-        StatSummaryLine(label: t.stat_mined, value: '$mined'),
-        StatSummaryLine(label: t.stat_favorited, value: '$favorited'),
-        StatSummaryLine(
-          label: t.stat_favorited_sentence,
-          value: '$favoritedSentences',
-        ),
-      ],
-    );
-  }
-
-  /// 时段卡 → 时段明细 sheet（阶段 1 统一组件；本页是阅读统计，明细只吃阅读域
-  /// 切片 [_bookFacts]——域=行集，与 [studyGoalCharsForDay] 同原则）。
-  Future<void> _showPeriodDetail(
-    String label,
-    bool Function(String dateKey) contains,
-  ) async {
-    final FushiDatabase db = appModelNoUpdate.database;
-    final bool deleted = await showStatPeriodDetailSheet(
-      context,
-      periodLabel: label,
-      contains: contains,
-      facts: _bookFacts,
-      resolvers: StatPeriodDetailResolvers(
-        titleOf: _statFactDisplayTitle,
-        collectionOf: _statFactCollectionName,
-        onEntryDelete: (StatPeriodEntryTarget t) =>
-            deleteStatPeriodEntry(db, t),
-        ambiguousTitlesOf: (String kind) => kind == kActivityMediaBook
-            ? _ambiguousBookTitles
-            : const <String>{},
-      ),
-    );
-    if (deleted && mounted) await _loadFromDatabase();
-  }
-
-  /// 事实行 → 显示名（[_bookDisplayTitle] 的事实行版：override 书名上屏生效，
-  /// 合集名走 sheet 组头不拼前缀）。
-  String _statFactDisplayTitle(StatFact f) {
-    final String? bookKey = f.mediaKey.isNotEmpty
-        ? f.mediaKey
-        : _bookKeyByTitle[f.title];
-    if (bookKey == null) return f.title;
-    return ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
-        f.title;
-  }
-
-  /// 事实行 → 所属合集名（[_collectionNameForBook] 的事实行版，同一 v83 键契约）。
-  String? _statFactCollectionName(StatFact f) {
-    final String? bookKey = f.mediaKey.isNotEmpty
-        ? f.mediaKey
-        : _bookKeyByTitle[f.title];
-    if (bookKey == null) return null;
-    return statCollectionName(
-      MediaKind.epub.compositeKey(_epubUidByBookKey[bookKey] ?? bookKey),
-      _primaryCollectionByEntry,
-      _collectionNamesById,
-    );
-  }
-
-  /// TODO-1046: daily/weekly study goal card. Both goals 0 => no card at all
-  /// (SizedBox.shrink), so an install that never set a goal sees zero visual
-  /// change on the statistics page. Reuses the already-computed
-  /// [_todayStudyChars] / [_weekStudyChars] aggregates (no extra DB query;
-  /// study-domain numerators, BUG-1993).
-  Widget _buildGoalPanel() {
-    final int dailyGoal = appModelNoUpdate.readingGoalDailyChars;
-    final int weeklyGoal = appModelNoUpdate.readingGoalWeeklyChars;
-    if (dailyGoal <= 0 && weeklyGoal <= 0) {
-      return const SizedBox.shrink();
-    }
-
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final List<Widget> rows = <Widget>[];
-    if (dailyGoal > 0) {
-      rows.add(_buildGoalRow(t.stat_goal_daily, _todayStudyChars, dailyGoal));
-    }
-    if (dailyGoal > 0 && weeklyGoal > 0) {
-      rows.add(SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2));
-    }
-    if (weeklyGoal > 0) {
-      rows.add(_buildGoalRow(t.stat_goal_weekly, _weekStudyChars, weeklyGoal));
-    }
-
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      child: FushiCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    t.stat_goal_set,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: colorScheme.onSurface,
-                    ),
-                  ),
-                ),
-                FushiIconButton(
-                  icon: Icons.edit,
-                  tooltip: t.stat_goal_set,
-                  onTap: _editGoals,
-                ),
-              ],
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            ...rows,
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// One goal row: label + progress bar + "read / goal" text. When the goal is
-  /// reached ([goalReached]) the bar switches to the tertiary color as a
-  /// positive accent. A goal of 0 never reaches here (the card gates on it).
-  Widget _buildGoalRow(String label, int read, int goal) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final double? fraction = goalProgressFraction(read, goal);
-    final bool reached = goalReached(read, goal);
-    final Color barColor = reached ? colorScheme.tertiary : colorScheme.primary;
-    final TextStyle? subStyle = Theme.of(
-      context,
-    ).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                label,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-            if (reached)
-              Text(
-                t.stat_goal_reached,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.tertiary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-          ],
-        ),
-        SizedBox(height: tokens.spacing.gap / 2),
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: ClipRRect(
-                borderRadius: tokens.radii.chipRadius,
-                child: LinearProgressIndicator(
-                  value: fraction,
-                  minHeight: 8,
-                  backgroundColor: colorScheme.surfaceContainerHighest,
-                  color: barColor,
-                ),
-              ),
-            ),
-            SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
-            Text(
-              t.stat_goal_progress(read: read, goal: goal),
-              style: subStyle,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// 目标编辑：表单本体是统计页共享件 [showStatGoalEditDialog]（统计中心总览 tab
-  /// 编辑的是同一个持久化目标）。保存后 setState 重跑 sliver build，目标卡立刻
-  /// 出现/更新/消失。
-  Future<void> _editGoals() async {
-    final bool saved = await showStatGoalEditDialog(context, appModelNoUpdate);
-    if (saved && mounted) setState(() {});
-  }
-
   /// 「今天」环形进度卡：字数目标环（复用持久化每日目标，未设则回退默认仅作可视化）
   /// + 时长目标环 + 速度 / 制卡 / 收藏迷你块。
   Widget _buildTodayPanel() {
@@ -1141,6 +850,11 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     // BUG-1107：今日速度同样过最小样本门槛（[computeCph] 内建，不足 1 分钟返回
     // null）——今日只有几十秒的记录时显示占位符，不外推爆表数字。
     final double? todayCph = computeCph(_todayChars, _todayMs);
+    final StatChartColors chartColors = statChartColorsOf(context);
+    // Apple：环的底轨是 systemFill（「健康」活动环的空轨），不是更亮一档的面色。
+    final Color ringTrack = isGlassDesign(context)
+        ? appleColorsOf(context).fill
+        : scheme.surfaceContainerHighest;
 
     return _card(
       title: t.stat_today,
@@ -1158,16 +872,16 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             children: <Widget>[
               StatRing(
                 fraction: charFrac,
-                color: scheme.primary,
-                trackColor: scheme.surfaceContainerHighest,
+                color: chartColors.series,
+                trackColor: ringTrack,
                 value: '${(charFrac * 100).round()}%',
                 detail: '$_todayStudyChars/$charGoal',
                 caption: t.stat_goal,
               ),
               StatRing(
                 fraction: timeFrac,
-                color: scheme.tertiary,
-                trackColor: scheme.surfaceContainerHighest,
+                color: chartColors.compare,
+                trackColor: ringTrack,
                 value: '${(timeFrac * 100).round()}%',
                 detail: formatStatTime(_todayMs),
                 caption: t.stat_metric_time,
@@ -1256,13 +970,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       StatSummaryTile(label: label, value: value, valueColor: valueColor);
 
   Widget _deltaTile(double? delta) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     if (delta == null) {
       return _summaryTile(t.stat_vs_prev, '-');
     }
     final bool up = delta >= 0;
     final String sign = up ? '+' : '';
-    final Color color = up ? scheme.primary : scheme.error;
+    final StatChartColors chartColors = statChartColorsOf(context);
+    final Color color = up ? chartColors.up : chartColors.down;
     return _summaryTile(
       t.stat_vs_prev,
       '$sign${delta.toStringAsFixed(0)}%',
@@ -1306,6 +1020,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       color: scheme.onSurfaceVariant,
     );
     final StatTrendMetric metric = _trendMetric;
+    final StatChartColors chartColors = statChartColorsOf(context);
 
     return _card(
       title: t.stat_range_and_trend,
@@ -1333,14 +1048,18 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 .toList(),
           ),
           SizedBox(height: tokens.spacing.gap),
-          Wrap(
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap,
-            children: <Widget>[
-              _granChip(t.stat_trend_daily, StatTrendGranularity.daily),
-              _granChip(t.stat_trend_weekly, StatTrendGranularity.weekly),
-              _granChip(t.stat_trend_monthly, StatTrendGranularity.monthly),
+          // 日 / 周 / 月是互斥的一组粒度，用分段控件而不是三颗 chip（MD3
+          // 连接按钮组 / Apple 液态玻璃分段，「健康」App 的 D·W·M 同形）。
+          FushiSegmentedButton<StatTrendGranularity>(
+            showSelectedIcon: false,
+            segments: <ButtonSegment<StatTrendGranularity>>[
+              _granSegment(t.stat_trend_daily, StatTrendGranularity.daily),
+              _granSegment(t.stat_trend_weekly, StatTrendGranularity.weekly),
+              _granSegment(t.stat_trend_monthly, StatTrendGranularity.monthly),
             ],
+            selected: <StatTrendGranularity>{_trendGranularity},
+            onSelectionChanged: (Set<StatTrendGranularity> v) =>
+                setState(() => _trendGranularity = v.first),
           ),
           SizedBox(height: tokens.spacing.card),
           SizedBox(
@@ -1349,17 +1068,17 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               size: Size.infinite,
               painter: StatLineChartPainter(
                 series: <StatLineSeries>[
-                  StatLineSeries(values: values, color: scheme.primary),
+                  StatLineSeries(values: values, color: chartColors.series),
                   StatLineSeries(
                     values: avgValues,
-                    color: scheme.tertiary,
+                    color: chartColors.compare,
                     strokeWidth: 1.5,
                     dashed: true,
                   ),
                 ],
                 xLabels: xLabels,
                 anomalies: anomalies,
-                anomalyColor: scheme.error,
+                anomalyColor: chartColors.down,
                 labelColor: scheme.onSurfaceVariant,
                 labelStyle: labelStyle,
                 labelFormatter: (double v) => trendMetricAxisLabel(v, metric),
@@ -1374,16 +1093,14 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  Widget _granChip(String label, StatTrendGranularity g) {
-    return FushiSelectableChip(
-      label: label,
-      selected: _trendGranularity == g,
-      onSelected: (_) => setState(() => _trendGranularity = g),
-    );
-  }
+  ButtonSegment<StatTrendGranularity> _granSegment(
+    String label,
+    StatTrendGranularity g,
+  ) => ButtonSegment<StatTrendGranularity>(value: g, label: Text(label));
 
   Widget _trendLegend() {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final StatChartColors chartColors = statChartColorsOf(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle? style = Theme.of(
       context,
@@ -1392,10 +1109,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       spacing: tokens.spacing.card,
       runSpacing: tokens.spacing.gap / 2,
       children: <Widget>[
-        _legendItem(scheme.primary, _metricLabel(_trendMetric), style),
-        _legendItem(scheme.tertiary, t.stat_speed_avg, style),
+        _legendItem(chartColors.series, _metricLabel(_trendMetric), style),
+        _legendItem(chartColors.compare, t.stat_speed_avg, style),
         if (_trendMetric == StatTrendMetric.speed)
-          _legendItem(scheme.error, t.stat_speed_anomaly, style),
+          _legendItem(chartColors.down, t.stat_speed_anomaly, style),
       ],
     );
   }
@@ -1419,37 +1136,34 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
+  /// 「按书」区块头：与「时段明细」等同一种 [StatSectionHeader]，副标题是
+  /// 所选范围，排序 chip 挂在标题下。
   Widget _buildByBookHeader() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          '${t.stat_bookshelf_compare} · ${formatStatRange(_range)}',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        SizedBox(height: tokens.spacing.gap),
-        Wrap(
-          spacing: tokens.spacing.gap,
-          children: <Widget>[
-            FushiSelectableChip(
-              label: t.stat_sort_by_chars,
-              selected: _bookSort == _BookSort.chars,
-              onSelected: (_) => _changeBookSort(_BookSort.chars),
-            ),
-            FushiSelectableChip(
-              label: t.stat_sort_by_time,
-              selected: _bookSort == _BookSort.time,
-              onSelected: (_) => _changeBookSort(_BookSort.time),
-            ),
-            FushiSelectableChip(
-              label: t.stat_sort_by_speed,
-              selected: _bookSort == _BookSort.speed,
-              onSelected: (_) => _changeBookSort(_BookSort.speed),
-            ),
-          ],
-        ),
-      ],
+    return StatSectionHeader(
+      title: t.stat_bookshelf_compare,
+      subtitle: formatStatRange(_range),
+      below: Wrap(
+        spacing: tokens.spacing.gap,
+        runSpacing: tokens.spacing.gap,
+        children: <Widget>[
+          FushiSelectableChip(
+            label: t.stat_sort_by_chars,
+            selected: _bookSort == _BookSort.chars,
+            onSelected: (_) => _changeBookSort(_BookSort.chars),
+          ),
+          FushiSelectableChip(
+            label: t.stat_sort_by_time,
+            selected: _bookSort == _BookSort.time,
+            onSelected: (_) => _changeBookSort(_BookSort.time),
+          ),
+          FushiSelectableChip(
+            label: t.stat_sort_by_speed,
+            selected: _bookSort == _BookSort.speed,
+            onSelected: (_) => _changeBookSort(_BookSort.speed),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1602,7 +1316,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final MediaItem? item = bookKey == null ? null : _bookItemsByKey[bookKey];
     return buildStatMediaRow(
       context,
-      icon: Icons.menu_book,
+      icon: FushiIcons.books,
       cover: item == null
           ? null
           : resolveMediaCoverImage(
@@ -1658,6 +1372,14 @@ class StatMiniTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // M3E：饱和 tonal 色块（secondaryContainer + onSecondaryContainer）；墨水屏
+    // 回落中性最高层，Apple 保持 tertiaryGrouped 嵌套底。
+    final bool apple = isGlassDesign(context);
+    final bool tonal = !apple && !isEinkTheme(context);
+    final Color valueColor =
+        tonal ? scheme.onSecondaryContainer : scheme.onSurface;
+    final Color labelColor =
+        tonal ? scheme.onSecondaryContainer : scheme.onSurfaceVariant;
     return Container(
       margin: EdgeInsets.only(right: tokens.spacing.gap),
       padding: EdgeInsets.symmetric(
@@ -1665,7 +1387,13 @@ class StatMiniTile extends StatelessWidget {
         vertical: tokens.spacing.gap + tokens.spacing.gap / 2,
       ),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
+        // Apple：卡里再嵌一层用 tertiarySystemGroupedBackground，比卡底高一档
+        // 而不是跳到最亮的面色。
+        color: apple
+            ? appleColorsOf(context).tertiaryGroupedBackground
+            : tonal
+            ? scheme.secondaryContainer
+            : scheme.surfaceContainerHighest,
         borderRadius: tokens.radii.cardRadius,
       ),
       child: Column(
@@ -1676,9 +1404,8 @@ class StatMiniTile extends StatelessWidget {
             maxLines: 2,
             softWrap: true,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: scheme.onSurface,
-              fontWeight: FontWeight.bold,
+            style: context.fushiType.titleMediumEmphasized.tabular.copyWith(
+              color: valueColor,
             ),
           ),
           SizedBox(height: tokens.spacing.gap / 2),
@@ -1689,7 +1416,7 @@ class StatMiniTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ).textTheme.bodySmall?.copyWith(color: labelColor),
           ),
         ],
       ),

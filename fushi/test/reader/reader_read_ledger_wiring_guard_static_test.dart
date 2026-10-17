@@ -51,7 +51,7 @@ void main() {
         'generation != _navigateGeneration',
         'chapter != _currentChapter',
         '!identical(controller, _controller)',
-        '_lyricsMode',
+        // 2026-10-04 歌词覆盖层：正文文档不再被歌词替换，这道闸不再看歌词态。
         'return;',
       ]) {
         expect(guard, contains(rejection));
@@ -96,7 +96,7 @@ void main() {
         'chapter != _currentChapter',
         '!identical(controller, _controller)',
         '_restoreInFlight',
-        '_lyricsMode',
+        // 2026-10-04 歌词覆盖层：正文在歌词层下面照常记账，这道闸不再看歌词态。
         'return;',
       ]) {
         expect(guard, contains(rejection));
@@ -105,7 +105,9 @@ void main() {
         'parseReaderStableProgressDetails(result)',
         '_applyImagePageProgressFallback()',
         '_lastProgressSection =',
-        '_readLedger.arrive(',
+        // BUG-3100：经开始方式门再 arrive（arriveReadUnitThroughStartGate 内部调
+        // ledger.arrive，门与顺序由 reader_study_clock_start_mode_wiring_guard 钉）。
+        'arriveReadUnitThroughStartGate(',
         '_debouncedSavePosition(',
       ]) {
         expect(code.indexOf(consumer), greaterThan(gateEnd));
@@ -126,9 +128,7 @@ void main() {
       final int gate = body.indexOf(
         'if (unitStart >= 0 && unitEnd > unitStart) {',
       );
-      final int arrive = body.indexOf(
-        '_readLedger.arrive(unitStart, unitEnd);',
-      );
+      final int arrive = body.indexOf('arriveReadUnitThroughStartGate(');
       expect(gate, isNonNegative, reason: 'JS 拿不到起 / 止点时不 arrive（宁可不计）');
       expect(arrive, greaterThan(gate));
     });
@@ -138,23 +138,14 @@ void main() {
       expect(containsIdentifier(body, 'addChars'), isFalse);
     });
 
-    test(
-        '全语料只有 _refreshProgress 与歌词模式的 _arriveLyricsCueUnit 调 _readLedger.arrive(',
-        () {
-      // BUG-2597：歌词模式没有滚动回传，「当前句」是它的阅读单元，播放态 cue 推进
-      // 在 _arriveLyricsCueUnit 里 arrive；除此之外仍只有 _refreshProgress。
-      expect('_readLedger.arrive('.allMatches(masked), hasLength(2));
-      final String lyrics = methodBody(
-        corpus,
-        'void _arriveLyricsCueUnit(AudiobookPlayerController controller)',
-      );
-      expect(
-          containsCodeLine(lyrics, '_readLedger.arrive(start, end);'), isTrue);
-      expect(
-        containsCodeLine(lyrics, 'if (!controller.isPlaying) return;'),
-        isTrue,
-        reason: '暂停态被动高亮 / 手动跳句不是「读到」',
-      );
+    test('全语料只有 _refreshProgress 落定入账（歌词覆盖层不入账）', () {
+      // 2026-10-04 歌词覆盖层（对齐 Niratan，取代 BUG-2597 的「歌词单元入账」）：
+      // 歌词模式是盖在正文上的一层，正文在下面照常跟随音频翻页，字数照常由正文的
+      // _refreshProgress 入账；歌词层不写任何统计，全语料只剩这一处 arrive。
+      // BUG-3100 起这唯一一处经 arriveReadUnitThroughStartGate(ledger: _readLedger)。
+      expect('arriveReadUnitThroughStartGate('.allMatches(masked), hasLength(1));
+      expect('_readLedger.arrive('.allMatches(masked), isEmpty);
+      expect(masked.contains('_arriveLyricsCueUnit'), isFalse);
     });
   });
 
@@ -398,16 +389,17 @@ void main() {
     });
 
     test(
-        'leave 恰六处：跳句 + _beginNavigation + 三个同章跳转入口 + 进歌词模式；'
+        'leave 恰五处：跳句 + _beginNavigation + 三个同章跳转入口；'
         '关书三条路（dispose / onSourcePagePop / 进程退出）零账本动作', () {
-      // BUG-2597：进歌词经 loadData 不过 _beginNavigation，得自己 leave() 正文页。
-      expect('_readLedger.leave('.allMatches(masked), hasLength(6));
+      // 2026-10-04 歌词覆盖层：进歌词不再换掉正文文档，正文仍站在当前页并继续跟随，
+      // 所以进歌词**不**结算正文页（旧 BUG-2597 的第六处 leave 随之删除）。
+      expect('_readLedger.leave('.allMatches(masked), hasLength(5));
       expect(
-        containsCodeLine(
+        containsIdentifier(
           methodBody(corpus, 'Future<void> _toggleLyricsMode()'),
-          '_readLedger.leave();',
+          '_readLedger',
         ),
-        isTrue,
+        isFalse,
       );
       // BUG-2264：关书不是翻走。dispose 只 detach() 停表；`settle` 已从账本删除，
       // 任何形式的「关书结算当前页」回潮都会让开关一次涨一次。
@@ -485,8 +477,9 @@ void main() {
       );
       expect(
         '_scheduleReanchorSettleProgressRefresh('.allMatches(masked),
-        hasLength(3),
-        reason: '定义 + 听书 reveal + B-3 丢弃，共用一个单 Timer',
+        hasLength(4),
+        // 2026-10-04：退出歌词覆盖层时把正文 reveal 到当前句，同一个补刷。
+        reason: '定义 + 听书 reveal + B-3 丢弃 + 退出歌词 reveal，共用一个单 Timer',
       );
     });
   });

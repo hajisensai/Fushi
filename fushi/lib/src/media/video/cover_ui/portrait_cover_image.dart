@@ -1,9 +1,8 @@
-import 'dart:ui' show ImageFilter;
-
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_backdrop_color.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 
 /// 槽向自适应封面（Kazumi 式，用户拍板 2026-07-24 统一竖版；BUG-1299 推广为
 /// 横竖槽通用）。
@@ -28,6 +27,7 @@ class PortraitCoverImage extends StatefulWidget {
     this.imageKey,
     this.errorBuilder,
     this.landscapeSlot = false,
+    this.cropMismatch = false,
   });
 
   /// 已解析好的图片源。本地文件请自带解码上限（如 `resizedFileImage`），远端用
@@ -43,6 +43,11 @@ class PortraitCoverImage extends StatefulWidget {
   /// 槽位朝向：false = 竖版槽（默认，主网格 2:3），横图垫底；true = 横版槽
   /// （合集详情 16:9 单集缩略图等），竖图垫底（BUG-1299）。
   final bool landscapeSlot;
+
+  /// true = 朝向不合槽时也直接 `BoxFit.cover` 居中裁切，不走模糊垫底。只给要求
+  /// 「整排同尺寸海报墙」的地方用（首页「继续」行：没有竖版海报的视频把横版
+  /// 截帧裁进 2:3 竖卡）；默认 false 保持 BUG-1299 的不硬裁口径。
+  final bool cropMismatch;
 
   /// 竖图判定阈值：宽高比 ≤ 此值直接 cover（海报 2:3≈0.67，留裕量收到 0.85）。
   static const double portraitAspectThreshold = 0.85;
@@ -65,9 +70,11 @@ class _PortraitCoverImageState extends State<PortraitCoverImage>
   ImageProvider probedImageOf(PortraitCoverImage widget) => widget.image;
 
   /// 朝向是否不合槽 —— build 的渲染分支与主色采样开关共用的唯一判据。
-  bool _mismatch(double aspect) => widget.landscapeSlot
-      ? aspect < PortraitCoverImage.landscapeAspectThreshold
-      : aspect > PortraitCoverImage.portraitAspectThreshold;
+  bool _mismatch(double aspect) =>
+      !widget.cropMismatch &&
+      (widget.landscapeSlot
+          ? aspect < PortraitCoverImage.landscapeAspectThreshold
+          : aspect > PortraitCoverImage.portraitAspectThreshold);
 
   @override
   bool needsBackdropSeed(double aspect) => _mismatch(aspect);
@@ -115,24 +122,16 @@ class _PortraitCoverImageState extends State<PortraitCoverImage>
         DecoratedBox(decoration: decoration),
       // 压暗在内、模糊在外：压暗作用于**原图的 alpha**，透明区因此原样透出下面
       // 的主色底；随后整体模糊，边缘羽化也跟着自然衰减。反过来嵌套（先模糊再压暗）
-      // 视觉几乎等价，但会把 ImageFiltered 从 Stack 的直接子节点上挪走，hero 的
-      // 层序守卫按类型认这一层（collection_hero_cover_orientation_test）。
-      ImageFiltered(
-        imageFilter: ImageFilter.blur(
-          sigmaX: PortraitCoverImage.backdropBlurSigma,
-          sigmaY: PortraitCoverImage.backdropBlurSigma,
-        ),
-        child: ColorFiltered(
-          colorFilter: const ColorFilter.mode(
-            kCoverBackdropDimColor,
-            BlendMode.srcATop,
-          ),
-          child: Image(
-            image: widget.image,
-            fit: BoxFit.cover,
-            // 垫底解码失败不接管整卡（前景/流监听兜底），静默留空。
-            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-          ),
+      // 视觉几乎等价，但会把模糊层从 Stack 的直接子节点上挪走，hero 的层序守卫
+      // 按类型认这一层（collection_hero_cover_orientation_test）。
+      // 模糊预烘焙（[PrebakedBlurImage]）而非渲染期 ImageFiltered：库网格里每张
+      // 比例不符的封面都有这一层，渲染期模糊在滚动时每帧对每张卡重算卷积。
+      PrebakedBlurImage(
+        image: widget.image,
+        sigma: PortraitCoverImage.backdropBlurSigma,
+        colorFilter: const ColorFilter.mode(
+          kCoverBackdropDimColor,
+          BlendMode.srcATop,
         ),
       ),
     ];

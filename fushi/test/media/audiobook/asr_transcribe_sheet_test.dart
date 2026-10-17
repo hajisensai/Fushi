@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
+import 'package:flutter/services.dart' show FontLoader;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_asr_core/asr_core.dart';
@@ -21,8 +24,13 @@ class _NoopSession implements OnnxSession {
 }
 
 class _FakePcm implements AsrPcmSource {
+  _FakePcm({this.probedMs = 4000});
+
+  /// 探测报的时长；实际永远只解出 4 秒。大于 4 秒 = 文件后半段解不出来（损坏 / 没下完）。
+  final int probedMs;
+
   @override
-  Future<int?> probeDurationMs(String audioPath) async => 4000;
+  Future<int?> probeDurationMs(String audioPath) async => probedMs;
 
   @override
   Stream<AsrPcmChunk> decode(
@@ -84,8 +92,8 @@ class _FakeService extends AsrTranscriptionService {
             buildFactory: _unusedOnnxFactory,
           ),
           pcm: _FakePcm(),
-          openStore: (AsrLanguage l) async =>
-              AsrModelStore(jobsDir, asrModelPackFor(l)),
+          openStore: (AsrLanguage l, AsrAudioProfile profile) async =>
+              AsrModelStore(jobsDir, asrModelPackFor(l, profile: profile)),
           jobsRoot: () async => jobsDir,
         );
 
@@ -99,6 +107,9 @@ class _FakeService extends AsrTranscriptionService {
   /// 非 null 时 `start` 抛它。装模型文件读不出图那条路径：引擎在 load 阶段把坏
   /// 档删掉再抛，所以抛之前 `ready` 归 false——与真实时序一致。
   Object? startError;
+
+  /// [start] 建的任务用的 PCM 源探测时长（见 [_FakePcm.probedMs]）。
+  int pcmProbedMs = 4000;
   int downloadCalls = 0;
   int discardCalls = 0;
   final List<AsrLanguage> planLanguages = <AsrLanguage>[];
@@ -201,7 +212,7 @@ class _FakeService extends AsrTranscriptionService {
       jobDir: Directory('${jobsDir.path}/job'),
       audioPaths: audioPaths,
       modelId: asrModelPackFor(language).id,
-      pcm: _FakePcm(),
+      pcm: _FakePcm(probedMs: pcmProbedMs),
       segmenter: _FakeSegmenter(),
       decoder: _FakeDecoder(),
       progressInterval: Duration.zero,
@@ -238,6 +249,9 @@ String _statusText(WidgetTester tester) =>
 OnnxSessionFactory _unusedOnnxFactory() =>
     throw UnimplementedError('本用例不该在 isolate 里建 ONNX 后端');
 
+/// 预览截图的根（MaterialApp.builder 包住导航器，弹层也在里面）。
+final GlobalKey _previewBoundary = GlobalKey();
+
 void main() {
   late Directory tmp;
 
@@ -262,10 +276,16 @@ void main() {
     AsrModelCatalog Function()? catalogGetter,
     Future<void> Function(AsrModelCatalog catalog)? catalogSetter,
     Future<String?> Function()? directoryPicker,
+    ThemeData? theme,
   }) {
     return ProviderScope(
       child: TranslationProvider(
         child: MaterialApp(
+          theme: theme,
+          builder: theme == null
+              ? null
+              : (BuildContext context, Widget? child) =>
+                  RepaintBoundary(key: _previewBoundary, child: child),
           home: Scaffold(
             body: Builder(
               builder: (BuildContext context) => Center(
@@ -533,6 +553,27 @@ void main() {
     );
   });
 
+  test('只有音频没书没字幕：能转录提醒转录生成书籍，否则提醒选字幕', () {
+    AudioOnlyImportHint hint({
+      bool hasBook = false,
+      bool hasSubtitle = false,
+      bool hasAudio = true,
+      bool asrSupported = true,
+    }) =>
+        audioOnlyImportHint(
+          hasBook: hasBook,
+          hasSubtitle: hasSubtitle,
+          hasAudio: hasAudio,
+          asrSupported: asrSupported,
+        );
+
+    expect(hint(), AudioOnlyImportHint.transcribeToBook);
+    expect(hint(asrSupported: false), AudioOnlyImportHint.pickSubtitleToBook);
+    expect(hint(hasBook: true), AudioOnlyImportHint.none);
+    expect(hint(hasSubtitle: true), AudioOnlyImportHint.none);
+    expect(hint(hasAudio: false), AudioOnlyImportHint.none);
+  });
+
   test('导出默认文件名：首个音频同名 .srt；无音频退回 transcript.srt', () {
     expect(
       // 用平台自己的分隔符拼路径：`basenameWithoutExtension` 走平台上下文，写死
@@ -673,6 +714,137 @@ void main() {
     expect(result, isNull);
   });
 
+  // BUG-3138：完成态曾把语言 / 模型 / 加速全锁死，加速分段还传了个空回调——看着
+  // 能点、点了没反应。现在完成态照样能改，改了提示并给「重新转录」。
+  testWidgets('完成态能改加速：提示需要重新转录，「重新转录」放掉旧结果按新选项开跑', (
+    WidgetTester tester,
+  ) async {
+    final File srt = File('${tmp.path}/old.srt')..writeAsStringSync('1\n');
+    final _FakeService service = _FakeService(
+      ready: true,
+      jobsDir: tmp,
+      existingSrt: srt.path,
+    );
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    expect(
+      find.widgetWithText(FilledButton, t.audiobook_transcribe_use_result),
+      findsOneWidget,
+    );
+    expect(_statusText(tester),
+        contains(t.audiobook_transcribe_retranscribe_hint));
+    final FushiSegmentedButton<AsrAccelerationPreference> accel =
+        tester.widget<FushiSegmentedButton<AsrAccelerationPreference>>(
+      find.byType(FushiSegmentedButton<AsrAccelerationPreference>),
+    );
+    expect(accel.onSelectionChanged, isNotNull, reason: '完成态加速分段可用');
+
+    final Finder cpu = find.text(t.audiobook_transcribe_accel_cpu);
+    await tester.ensureVisible(cpu);
+    await tester.pumpAndSettle();
+    await tester.tap(cpu);
+    await tester.pumpAndSettle();
+    expect(service.planPreferences.last, AsrAccelerationPreference.cpuOnly);
+    expect(
+      _statusText(tester),
+      contains(t.audiobook_transcribe_options_changed_hint),
+    );
+    final Finder retranscribe = find.byKey(
+      const ValueKey<String>('asr-transcribe-retranscribe'),
+    );
+    expect(retranscribe, findsOneWidget);
+
+    await tester.ensureVisible(retranscribe);
+    await tester.pumpAndSettle();
+    // 重新转录真的开跑（与「就绪 → 开始 → 完成」同一种等法：任务在真实事件循环里跑）。
+    await tester.runAsync(() async {
+      await tester.tap(retranscribe);
+      for (int i = 0; i < 50; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        if (find
+            .widgetWithText(FilledButton, t.audiobook_transcribe_use_result)
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(service.discardCalls, 1);
+    expect(service.lastStartPreference, AsrAccelerationPreference.cpuOnly);
+    expect(
+      find.byKey(const ValueKey<String>('asr-transcribe-retranscribe')),
+      findsNothing,
+      reason: '按新选项重新生成后，结果与选项又一致了',
+    );
+  });
+
+  // 真实像素预览（只在 FUSHI_PREVIEW=1 时跑，写 PNG 给 PR 当改后截图）：完成态改了
+  // 加速之后的样子。
+  testWidgets('preview: 完成态改选项后的弹层（BUG-3138）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(560, 760) * 1.5;
+    tester.view.devicePixelRatio = 1.5;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() async {
+      for (final String path in <String>[
+        r'C:\Windows\Fonts\NotoSansSC-VF.ttf',
+        r'C:\Windows\Fonts\segoeui.ttf',
+      ]) {
+        final File file = File(path);
+        if (!file.existsSync()) continue;
+        final Uint8List bytes = await file.readAsBytes();
+        await (FontLoader('PreviewCJK')
+              ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes))))
+            .load();
+        return;
+      }
+    });
+    LocaleSettings.setLocale(AppLocale.zhCn);
+    addTearDown(() => LocaleSettings.setLocale(AppLocale.en));
+    final File srt = File('${tmp.path}/old.srt')..writeAsStringSync('1\n');
+    final _FakeService service = _FakeService(
+      ready: true,
+      jobsDir: tmp,
+      existingSrt: srt.path,
+    );
+    await tester.pumpWidget(
+      wrap(
+        service,
+        (String? _) {},
+        theme: ThemeData(
+          useMaterial3: true,
+          colorSchemeSeed: const Color(0xFF6750A4),
+          fontFamily: 'PreviewCJK',
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(t.audiobook_transcribe_accel_cpu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.audiobook_transcribe_accel_cpu));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      final ui.Image image = await (_previewBoundary.currentContext!
+              .findRenderObject()! as RenderRepaintBoundary)
+          .toImage(pixelRatio: 1.5);
+      final ByteData? png = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      final File out = File(
+        Platform.environment['FUSHI_PREVIEW_OUT'] ??
+            '../.claude/preview/video_library_chrome/05_asr_finished_after.png',
+      );
+      out.parent.createSync(recursive: true);
+      out.writeAsBytesSync(png!.buffer.asUint8List());
+    });
+  }, skip: Platform.environment['FUSHI_PREVIEW'] != '1');
+
   // BUG-2375：模型文件被截断/内容不是 onnx 时 ORT 报 `Protobuf parsing failed`，
   // 而整本转录跑在后台 isolate，错误跨边界只剩字符串（`Bad state: ...`），所以
   // 这里的判据只能按文本走。引擎已经把坏档删掉，界面必须退回「需要下载」并说明
@@ -681,7 +853,7 @@ void main() {
     final _FakeService service = _FakeService(ready: true, jobsDir: tmp)
       ..startError = StateError(
         'PlatformException(ORT_ERROR, Load model from '
-        r'D:\hibiki\support\asr_models\reazonspeech-k2-v2\'
+        r'D:\fushi\support\asr_models\reazonspeech-k2-v2\'
         'encoder-epoch-99-avg-1.onnx failed:Protobuf parsing failed., '
         'false, null)',
       );
@@ -721,6 +893,59 @@ void main() {
     expect(find.textContaining('cuda out of memory'), findsOneWidget);
     expect(
       find.textContaining(t.audiobook_transcribe_model_discarded),
+      findsNothing,
+    );
+  });
+
+  // 音频文件只能解出开头一段（未下载完的 m4b 后面是全零）：引擎在收尾对账时整本失败，
+  // 面板先给一句能照着做的话，原文仍附在后面供排查。从前是任务照样「完成」、
+  // 产出只有开头几分钟的字幕。
+  testWidgets('音频解不完：错误态提示文件损坏或没下完', (WidgetTester tester) async {
+    final _FakeService service = _FakeService(ready: true, jobsDir: tmp)
+      ..pcmProbedMs = 22257761;
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+
+    // 真任务有文件 IO：在 runAsync 里让真事件循环跑到失败，再回 fake async 泛帧。
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
+      );
+      for (int i = 0; i < 50; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        if (find
+            .textContaining(t.audiobook_transcribe_audio_incomplete)
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+    });
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining(t.audiobook_transcribe_audio_incomplete),
+      findsOneWidget,
+    );
+    expect(find.textContaining(kAsrIncompleteAudioMarker), findsOneWidget);
+  });
+
+  testWidgets('其他失败不带「文件不完整」提示', (WidgetTester tester) async {
+    final _FakeService service = _FakeService(ready: true, jobsDir: tmp)
+      ..startError = StateError('cuda out of memory');
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining(t.audiobook_transcribe_audio_incomplete),
       findsNothing,
     );
   });
@@ -768,6 +993,15 @@ void main() {
           directoryPicker: directoryPicker,
         );
 
+    /// M3E 分段选项卡让弹层 body 变高，800x600 测试窗下模型行落在 body 可滚
+    /// 视口之外（下面紧挨固定 footer 的「开始转录」）；先滚到控件再点，同用户操作。
+    Future<void> tapScrolledIntoView(WidgetTester tester, String key) async {
+      final Finder target = find.byKey(ValueKey<String>(key));
+      await tester.ensureVisible(target);
+      await tester.pump();
+      await tester.tap(target);
+    }
+
     testWidgets('默认显示该语言的内置模型，并列出可切换的备选', (WidgetTester tester) async {
       final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
       await tester.pumpWidget(wrapWithCatalog(service));
@@ -776,8 +1010,7 @@ void main() {
 
       expect(find.text(kAsrJapanesePack.displayName), findsWidgets);
 
-      await tester
-          .tap(find.byKey(const ValueKey<String>('asr-transcribe-model')));
+      await tapScrolledIntoView(tester, 'asr-transcribe-model');
       await tester.pumpAndSettle();
       expect(find.text(kAsrOmnilingualPack.displayName), findsWidgets);
     });
@@ -789,8 +1022,7 @@ void main() {
       await tester.pumpAndSettle();
       final int plansBefore = service.planLanguages.length;
 
-      await tester
-          .tap(find.byKey(const ValueKey<String>('asr-transcribe-model')));
+      await tapScrolledIntoView(tester, 'asr-transcribe-model');
       await tester.pumpAndSettle();
       final Finder entry = find.text(kAsrOmnilingualPack.displayName).last;
       await tester.ensureVisible(entry);
@@ -823,8 +1055,7 @@ void main() {
         }
       }
 
-      await tester
-          .tap(find.byKey(const ValueKey<String>('asr-transcribe-model-add')));
+      await tapScrolledIntoView(tester, 'asr-transcribe-model-add');
       await settle();
       expect(
         find.byKey(const ValueKey<String>('asr-local-model-pick')),
@@ -841,7 +1072,16 @@ void main() {
       final String id = catalog.customPacks.single.id;
       expect(id, startsWith(kAsrCustomPackIdPrefix));
       expect(catalog.choices[AsrLanguage.japanese.tag], id);
-      expect(asrModelRegistry.packForLanguage(AsrLanguage.japanese)?.id, id);
+      // 这个弹层服务的是有声书（cleanSpeech），选择记在老键上、按它生效。
+      expect(
+        asrModelRegistry
+            .packForLanguage(
+              AsrLanguage.japanese,
+              profile: AsrAudioProfile.cleanSpeech,
+            )
+            ?.id,
+        id,
+      );
     });
   });
 }

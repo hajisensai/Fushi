@@ -69,7 +69,8 @@ void main() {
       final String body = showContextMenu;
       expect(body.contains('_videoControlsContext'), isTrue,
           reason: 'showMenu 须用 controls 子树 context，全屏路由复用同一 builder 才能弹出');
-      expect(body.contains('showMenu<VoidCallback>('), isTrue,
+      // 玻璃重设计：菜单走共享 showFushiMenu（同 showMenu 签名的自绘菜单）。
+      expect(body.contains('showFushiMenu<VoidCallback>('), isTrue,
           reason: '用 showMenu 弹 PopupMenu，自带锚点定位');
       expect(body.contains('RelativeRect.fromLTRB('), isTrue,
           reason: '右键位置须转成 RelativeRect 作菜单锚点');
@@ -197,7 +198,7 @@ void main() {
     // 设置页进入。原「对比仅在启用着色器时出现」用例随之删除，由下面的不变量守住
     // 「右键菜单不再含对比项」。
     test('不再含着色器对比项（BUG-261，改走 C 快捷键 / 设置）', () {
-      expect(items.contains('Icons.compare'), isFalse,
+      expect(items.contains('Icons.compare') || items.contains('FushiIcons.compare'), isFalse,
           reason: '右键菜单已移除「对比原画」项（BUG-261）');
       expect(items.contains('t.video_shader_compare'), isFalse,
           reason: '右键菜单不再引用 video_shader_compare（i18n key 已随项移除）');

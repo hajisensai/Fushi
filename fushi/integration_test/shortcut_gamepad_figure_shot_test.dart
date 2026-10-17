@@ -13,7 +13,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,12 +21,14 @@ import 'package:integration_test/integration_test.dart';
 
 import 'support/test_app_launcher.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/utils.dart' show FushiAdjustableSegmented;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_layout_view.dart';
 import 'package:fushi/src/startup/observe_blank_detector.dart';
 
 import 'helpers/observe_capture.dart';
 import 'test_helpers.dart';
+import '../test/helpers/glass_unwrap.dart';
 
 /// 有界抓帧：pump 固定几帧让布局/绘制稳定（不 pumpAndSettle，避免被主页永久
 /// 动画卡死），再对根 RenderView 的图层 toImage，落盘并判非空白。
@@ -99,10 +101,19 @@ void main() {
 
       // 切到可视化（手柄）视图：直接触发视图切换段控件的 onSelectionChanged
       // 回调切 visualMode（程序化驱动，非坐标 tap）。
+      // 2026-10 单页重设计：键位图按输入设备分开画，先把设备切到手柄（程序化
+      // 调设备分段的 onChanged，非坐标 tap）。
+      final Finder device = find.byKey(const Key('shortcut_device_toggle'));
+      expect(device, findsOneWidget, reason: '输入设备分段应存在');
+      tester
+          .widget<FushiAdjustableSegmented<ShortcutInputDevice>>(device)
+          .onChanged(ShortcutInputDevice.gamepad);
+      await tester.pump(const Duration(milliseconds: 400));
+
       final Finder toggle = find.byKey(const Key('shortcut_view_toggle'));
       expect(toggle, findsOneWidget, reason: '视图切换段控件应存在');
       final SegmentedButton<bool> segmented =
-          tester.widget<SegmentedButton<bool>>(toggle);
+          tester.widget<SegmentedButton<bool>>(glassUnwrap<SegmentedButton<bool>>(toggle));
       segmented.onSelectionChanged!(<bool>{true});
       await tester.pump(const Duration(milliseconds: 600));
 

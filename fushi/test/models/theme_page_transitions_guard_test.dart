@@ -12,10 +12,11 @@
 //    Cupertino 的边缘滑动返回——没有任何报错，只有用户发现「滑不回去了」。
 import 'package:drift/drift.dart' hide isNotNull;
 import 'package:drift/native.dart';
-import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoPageTransitionsBuilder;
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -62,6 +63,55 @@ void main() {
     expect(
       builders[TargetPlatform.macOS],
       isA<CupertinoPageTransitionsBuilder>(),
+    );
+  });
+
+  test('桌面三平台走 Fushi 共享轴转场（2026-10 动效重做，取代 Zoom）', () {
+    final Map<TargetPlatform, PageTransitionsBuilder> builders =
+        notifier.theme.pageTransitionsTheme.builders;
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+      TargetPlatform.fuchsia,
+    ]) {
+      expect(
+        builders[platform],
+        isA<FushiSharedAxisPageTransitionsBuilder>(),
+        reason: '$platform',
+      );
+    }
+  });
+
+  test('Apple 设计系统：六个平台全部 Cupertino 推入转场，墨水屏仍是墨水屏版', () {
+    ThemeData build({required bool eink}) => buildFushiThemeData(
+      scheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1F4959)),
+      textTheme: const TextTheme(),
+      glassDesign: true,
+      eink: eink,
+    );
+    final Map<TargetPlatform, PageTransitionsBuilder> apple = build(
+      eink: false,
+    ).pageTransitionsTheme.builders;
+    for (final TargetPlatform platform in TargetPlatform.values) {
+      // 裸 CupertinoPageTransitionsBuilder 不认系统「减弱动态效果」，开了它的
+      // 用户也要看 500ms 推入视差；行为测试见
+      // test/models/apple_page_transitions_reduce_motion_test.dart。
+      expect(
+        apple[platform],
+        isA<FushiCupertinoPageTransitionsBuilder>(),
+        reason: '$platform',
+      );
+    }
+    final Map<TargetPlatform, PageTransitionsBuilder> eink = build(
+      eink: true,
+    ).pageTransitionsTheme.builders;
+    expect(
+      eink[TargetPlatform.android],
+      isA<EinkNoPageTransitionsBuilder>(),
+    );
+    expect(
+      eink[TargetPlatform.iOS],
+      isA<EinkCupertinoPageTransitionsBuilder>(),
     );
   });
 }

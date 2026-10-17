@@ -38,15 +38,19 @@ void main() {
       isTrue,
       reason: 'dispose 不摘钩 = 用完即崩的悬空监听',
     );
+    // 只钉「条件以 State 字段 _tokenPresent 打头」，不钉整行：其后还可以叠别的 State
+    // 判据（如没有任何对端时不显示「已连接」，`_tokenPresent && _urls.isNotEmpty`）。
     expect(
-      containsCodeLine(client, 'if (_tokenPresent)'),
+      RegExp(r'if \(_tokenPresent\b').hasMatch(maskComments(client)),
       isTrue,
-      reason: '「已连接 ✓」应由 State 字段驱动；直接读 controller.text 的写法'
+      reason:
+          '「已连接 ✓」应由 State 字段驱动；直接读 controller.text 的写法'
           '天生不触发重建',
     );
     expect(
-      RegExp(r'if \(_tokenController\.text\.trim\(\)\.isNotEmpty\)')
-          .hasMatch(maskComments(client)),
+      RegExp(
+        r'if \(_tokenController\.text\.trim\(\)\.isNotEmpty\)',
+      ).hasMatch(maskComments(client)),
       isFalse,
       reason: 'build 里再直接拿 controller 文本做条件就等于把这个 bug 放回来',
     );
@@ -54,11 +58,16 @@ void main() {
 
   test('② 手动配对忙态覆盖全程：入口先自查，探测之前就置忙，finally 清', () {
     final String corpus = readSyncSettingsSchemaSource();
-    final String attempt =
-        methodBody(corpus, '  Future<void> _attemptManualPair(String rawUrl)');
+    final String attempt = methodBody(
+      corpus,
+      '  Future<void> _attemptManualPair(String rawUrl)',
+    );
 
-    expect(containsCodeLine(attempt, 'if (_pairingManual) return;'), isTrue,
-        reason: '没有入口自查就挡不住第二条配对流程（LAN 路径的 _pairingUrl 是现成范式）');
+    expect(
+      containsCodeLine(attempt, 'if (_pairingManual) return;'),
+      isTrue,
+      reason: '没有入口自查就挡不住第二条配对流程（LAN 路径的 _pairingUrl 是现成范式）',
+    );
 
     final String masked = maskComments(attempt);
     final int busyOn = masked.indexOf('_setPairV2Busy(true)');
@@ -74,16 +83,24 @@ void main() {
     expect(busyOn, lessThan(probe), reason: 'TOFU 指纹捕获是秒级网络往返，它之前就得进忙态');
     expect(busyOn, lessThan(ping), reason: '/api/ping 探测同样在窗口内，忙态必须先于它');
     expect(busyOn, lessThan(pair));
-    expect(containsCodeLine(attempt, '_setPairV2Busy(false)'), isTrue,
-        reason: 'finally 不清忙态 = 面板永久卡在「配对中」');
-    expect(masked.contains('} finally {'), isTrue,
-        reason: '任一 early-return / 抛异常都必须还原忙态，只能靠 finally');
+    expect(
+      containsCodeLine(attempt, '_setPairV2Busy(false)'),
+      isTrue,
+      reason: 'finally 不清忙态 = 面板永久卡在「配对中」',
+    );
+    expect(
+      masked.contains('} finally {'),
+      isTrue,
+      reason: '任一 early-return / 抛异常都必须还原忙态，只能靠 finally',
+    );
   });
 
   test('③ 弹窗返回后先查 mounted 再 setState', () {
     final String corpus = readSyncSettingsSchemaSource();
-    final String addOrEdit =
-        methodBody(corpus, '  Future<void> _addOrEditUrl({int? index})');
+    final String addOrEdit = methodBody(
+      corpus,
+      '  Future<void> _addOrEditUrl({int? index})',
+    );
     final String masked = maskComments(addOrEdit);
     final int dialog = masked.indexOf('showAppDialog<String>(');
     final int guard = masked.indexOf('if (!mounted) return;');
@@ -92,21 +109,31 @@ void main() {
     final int mutateAt = masked.indexOf('_mutateUrls(');
     expect(dialog, isNonNegative);
     expect(mutateAt, isNonNegative, reason: '编辑结果必须经 _mutateUrls 落库');
-    expect(guard, isNonNegative,
-        reason: '弹窗是 async gap，宿主 section 可能已被门控隐藏并 dispose');
+    expect(
+      guard,
+      isNonNegative,
+      reason: '弹窗是 async gap，宿主 section 可能已被门控隐藏并 dispose',
+    );
     expect(guard, greaterThan(dialog), reason: 'mounted 守卫必须在弹窗之后');
-    expect(guard, lessThan(mutateAt),
-        reason: '改列表之前没有守卫 = dispose 后照样写库、再 setState 崩溃');
+    expect(
+      guard,
+      lessThan(mutateAt),
+      reason: '改列表之前没有守卫 = dispose 后照样写库、再 setState 崩溃',
+    );
 
     // _mutateUrls 自己 await 了库写入：回来后同样要先查 mounted 再 setState。
-    final String mutate =
-        maskComments(methodBody(corpus, '  Future<void> _mutateUrls('));
+    final String mutate = maskComments(
+      methodBody(corpus, '  Future<void> _mutateUrls('),
+    );
     final int awaitAt = mutate.indexOf('await ');
     final int mutateGuard = mutate.indexOf('if (!mounted) return;');
     final int mutateSetState = mutate.indexOf('setState(');
     expect(awaitAt, isNonNegative);
     expect(mutateGuard, greaterThan(awaitAt));
-    expect(mutateGuard, lessThan(mutateSetState),
-        reason: '库写入是 async gap，回来后 widget 可能已 dispose');
+    expect(
+      mutateGuard,
+      lessThan(mutateSetState),
+      reason: '库写入是 async gap，回来后 widget 可能已 dispose',
+    );
   });
 }

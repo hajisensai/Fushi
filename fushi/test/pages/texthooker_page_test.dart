@@ -1,12 +1,18 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
+
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.dart';
+import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -20,6 +26,20 @@ Widget _wrapPage(Widget home) {
     ],
     child: MaterialApp(home: home),
   );
+}
+
+/// 点选台词列表第一句：点卡片左上角的「时间 · 来源」元信息行（不点正文——正文逐字
+/// 可点，会走查词而不是选句）。
+Future<void> _selectFirstLine(WidgetTester tester) async {
+  final Finder card = find.byWidgetPredicate((Widget widget) {
+    final Key? key = widget.key;
+    return widget is FushiCard &&
+        key is ValueKey<String> &&
+        RegExp(r'^game-line-\d').hasMatch(key.value);
+  });
+  expect(card, findsWidgets, reason: '台词列表里应至少有一句');
+  await tester.tapAt(tester.getTopLeft(card.first) + const Offset(24, 20));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -431,6 +451,9 @@ void main() {
     },
   );
 
+  // 2026-10 工作台重做：「本句音轨」不再常驻占栏——没选中台词时不出现；选中一句后
+  // 宽屏（≥ kGalWorkbenchWideBreakpoint）从右侧展开详情侧板，窄屏在底部升起「本句」
+  // 条，点「本句音轨」开底部 sheet（同一张音轨卡）。
   for (final Size size in <Size>[
     const Size(520, 760),
     const Size(1000, 760),
@@ -447,20 +470,115 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.textContaining('Live lines'), findsOneWidget);
-      // 右栏常驻面板已从「最新台词 + 健康状态」两张只读卡换成逐句音轨面板
-      // （排除 BGM 要按本句时刻判断，见 _LineTracksCard）；健康状态现在是工具栏
-      // 上的图标按钮 + 对话框（tooltip 承载文案，屏幕上没有 Text），不再常驻。
+      expect(
+        find.byKey(const ValueKey<String>('game-session-overview')),
+        findsOneWidget,
+      );
+      // 健康状态是工具组里的图标按钮 + 对话框，不常驻。
       expect(find.text('Health status'), findsNothing);
-      if (size.width >= 840) {
+      // 未选中台词：没有详情侧板，也没有底部本句条。
+      expect(find.text('Tracks for this line'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('game-line-detail-pane')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('game-selected-line-bar')),
+        findsNothing,
+      );
+
+      await _selectFirstLine(tester);
+
+      expect(tester.takeException(), isNull);
+      final bool wide = size.width >= kGalWorkbenchWideBreakpoint;
+      if (wide) {
+        expect(
+          find.byKey(const ValueKey<String>('game-line-detail-pane')),
+          findsOneWidget,
+        );
         expect(find.text('Tracks for this line'), findsOneWidget);
-        expect(find.byType(ExpansionTile), findsNothing);
+        expect(
+          find.byKey(const ValueKey<String>('game-selected-line-bar')),
+          findsNothing,
+        );
+        // 关闭：侧板收起，台词列表拿回全部宽度。
+        await tester.tap(
+          find.byKey(const ValueKey<String>('game-line-tracks-close')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('game-line-detail-pane')),
+          findsNothing,
+        );
       } else {
-        // 窄屏不丢弃面板：折叠为可展开区（默认收起，仅标题可见）。
-        expect(find.byType(ExpansionTile), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey<String>('game-line-detail-pane')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('game-selected-line-bar')),
+          findsOneWidget,
+        );
+        expect(find.text('Tracks for this line'), findsNothing);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('game-selected-line-open-tracks')),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
         expect(find.text('Tracks for this line'), findsOneWidget);
+        expect(find.textContaining('レスポンシブ確認'), findsWidgets);
       }
     });
   }
+
+  testWidgets('empty workbench offers the next step instead of a dead end', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 850));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_wrapPage(const TexthookerPage()));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byKey(const ValueKey<String>('game-lines-empty')),
+      findsOneWidget,
+    );
+    expect(find.text('Tracks for this line'), findsNothing);
+    if (Platform.isWindows) {
+      // 未开始捕获：空状态直接给「启动并捕获 / 附着并捕获」。
+      expect(
+        find.byKey(const ValueKey<String>('game-empty-launch')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('game-empty-attach')),
+        findsOneWidget,
+      );
+    }
+  });
+
+  test('attached lookup status enum is always localized', () {
+    // 此前 `status.name` 原样上屏，界面出现「状态: disabled」。
+    final Set<String> labels = <String>{};
+    for (final GalAttachedTextStatus status in GalAttachedTextStatus.values) {
+      final String label = galAttachedTextStatusLabel(status);
+      expect(label.trim(), isNotEmpty, reason: '$status 缺本地化文案');
+      expect(label, isNot(status.name), reason: '$status 仍把枚举名原样上屏');
+      labels.add(label);
+      galAttachedTextStatusTone(status);
+      galAttachedTextStatusIcon(status);
+    }
+    expect(
+      labels.length,
+      GalAttachedTextStatus.values.length,
+      reason: '每个状态的文案应互不相同',
+    );
+    expect(
+      galAttachedTextStatusLabel(GalAttachedTextStatus.disabled),
+      t.game_lookup_attached_status_disabled,
+    );
+  });
 
   testWidgets('选中线程被行上限淘汰后重建下拉不触发断言（BUG-952）', (WidgetTester tester) async {
     // 把 session 选到一个 service 里并不存在的线程 key —— 等价于该线程被 500 行上限

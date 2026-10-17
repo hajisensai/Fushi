@@ -2,7 +2,7 @@ import 'dart:io' show File, Platform;
 
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
@@ -17,6 +17,23 @@ import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+import '../../helpers/source_guard.dart';
+
+bool _gameSectionsHaveDropGates(String source) {
+  final String build = maskCommentsAndStrings(
+    methodBody(source, 'Widget build(BuildContext context)'),
+  ).replaceAll(RegExp(r'\s+'), '');
+  // 8039dc48e2f / 5f0c0c3a4bd：浮动工具栏让位插在门内，不能因此让门
+  // 与枚举/child 的关系退化成三个互不相干的全文件 contains。
+  return build.contains(
+    'IndexedStack(index:_section.index,children:<Widget>['
+    'for(finalGameSectionsectioninGameSection.values)'
+    'DropSurfaceScope(isActive:()=>_section==section,'
+    'child:SectionPrimaryScrollScope('
+    'child:_chromeInsetFor(section,child:sections[section]!),),),],)',
+  );
+}
 
 /// 拖放「谁接这一次 OS drop」的**端到端**守卫（BUG-1752 复审）。
 ///
@@ -66,10 +83,10 @@ void _pinViewport(WidgetTester tester) {
 }
 
 Widget _leaf(String label, List<String> sink) => FushiFileDropTarget(
-      debugLabel: label,
-      onDrop: (List<String> paths, Offset position) => sink.add(label),
-      child: const SizedBox.expand(),
-    );
+  debugLabel: label,
+  onDrop: (List<String> paths, Offset position) => sink.add(label),
+  child: const SizedBox.expand(),
+);
 
 class _NoopScrapeRunner implements VideoSourceScrapeRunner {
   @override
@@ -92,32 +109,36 @@ void main() {
       _pinViewport(tester);
       final List<String> dropped = <String>[];
       Widget shell({required bool videoVisible}) => MaterialApp(
-            home: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                Offstage(
-                  offstage: !videoVisible,
-                  child: DropSurfaceScope(
-                    isActive: () => videoVisible,
-                    child: _leaf('video', dropped),
-                  ),
-                ),
-                Offstage(
-                  offstage: videoVisible,
-                  child: DropSurfaceScope(
-                    isActive: () => !videoVisible,
-                    child: _leaf('books', dropped),
-                  ),
-                ),
-              ],
+        home: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            Offstage(
+              offstage: !videoVisible,
+              child: DropSurfaceScope(
+                isActive: () => videoVisible,
+                child: _leaf('video', dropped),
+              ),
             ),
-          );
+            Offstage(
+              offstage: videoVisible,
+              child: DropSurfaceScope(
+                isActive: () => !videoVisible,
+                child: _leaf('books', dropped),
+              ),
+            ),
+          ],
+        ),
+      );
 
       await tester.pumpWidget(shell(videoVisible: true));
       await _performOsDrop(tester);
-      expect(dropped, <String>['video'],
-          reason: '隐藏的书架必须一声不吭 —— Offstage 只关 Flutter 的 hitTest，'
-              'desktop_drop 照样全局广播且隐藏子树仍是全屏 paintBounds');
+      expect(
+        dropped,
+        <String>['video'],
+        reason:
+            '隐藏的书架必须一声不吭 —— Offstage 只关 Flutter 的 hitTest，'
+            'desktop_drop 照样全局广播且隐藏子树仍是全屏 paintBounds',
+      );
 
       dropped.clear();
       await tester.pumpWidget(shell(videoVisible: false));
@@ -129,12 +150,14 @@ void main() {
     testWidgets('没有作用域的落点照旧接（对话框 / 播放页行为不变）', (WidgetTester tester) async {
       _pinViewport(tester);
       final List<String> dropped = <String>[];
-      await tester.pumpWidget(MaterialApp(
-        home: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[_leaf('dialog', dropped)],
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[_leaf('dialog', dropped)],
+          ),
         ),
-      ));
+      );
       await _performOsDrop(tester);
       expect(dropped, <String>['dialog']);
     });
@@ -142,20 +165,22 @@ void main() {
     testWidgets('enabled:false 的落点不接', (WidgetTester tester) async {
       _pinViewport(tester);
       final List<String> dropped = <String>[];
-      await tester.pumpWidget(MaterialApp(
-        home: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            FushiFileDropTarget(
-              enabled: false,
-              debugLabel: 'off',
-              onDrop: (List<String> paths, Offset position) =>
-                  dropped.add('off'),
-              child: const SizedBox.expand(),
-            ),
-          ],
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              FushiFileDropTarget(
+                enabled: false,
+                debugLabel: 'off',
+                onDrop: (List<String> paths, Offset position) =>
+                    dropped.add('off'),
+                child: const SizedBox.expand(),
+              ),
+            ],
+          ),
         ),
-      ));
+      );
       await _performOsDrop(tester);
       expect(dropped, isEmpty);
     });
@@ -179,19 +204,21 @@ void main() {
             ),
           );
 
-      await tester.pumpWidget(TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: MediaLibraryShell(
-              focusIdPrefix: 'drop-gate-shell',
-              views: <MediaLibraryViewSpec>[
-                spec(MediaLibraryViewKind.library, 'library'),
-                spec(MediaLibraryViewKind.discover, 'discover'),
-              ],
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: MediaLibraryShell(
+                focusIdPrefix: 'drop-gate-shell',
+                views: <MediaLibraryViewSpec>[
+                  spec(MediaLibraryViewKind.library, 'library'),
+                  spec(MediaLibraryViewKind.discover, 'discover'),
+                ],
+              ),
             ),
           ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);
@@ -206,8 +233,9 @@ void main() {
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);
-      expect(dropped, <String>['discover'],
-          reason: '被保活的书架仍在树里、仍是全屏 paintBounds，只有内层作用域挡得住它');
+      expect(dropped, <String>[
+        'discover',
+      ], reason: '被保活的书架仍在树里、仍是全屏 paintBounds，只有内层作用域挡得住它');
     });
   }, skip: !_desktopHost);
 
@@ -232,35 +260,37 @@ void main() {
     testWidgets('切到媒体服务器分区后拖入文件夹，本地库不得登记扫描根', (WidgetTester tester) async {
       _pinViewport(tester);
       final List<String> dropped = <String>[];
-      await tester.pumpWidget(TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: VideoLibraryShell(
-              repository: VideoBookRepository(database),
-              libraryRefreshSignal: refreshSignal,
-              scrapeTaskController: scrapeController,
-              onScrapeAll: () async {},
-              onClearAllScrapeRecords: () async {},
-              onScrapeSource: (_) async {},
-              onVideoScanCompleted: (_, __) async {},
-              onOpenScrapeTasks: () {},
-              onLibraryChanged: () {},
-              localLibraryPageBuilder: (_, Widget navigation, __) => Column(
-                children: <Widget>[
-                  navigation,
-                  Expanded(child: _leaf('local', dropped)),
-                ],
-              ),
-              mediaServerPageBuilder: (_, Widget navigation) => Column(
-                children: <Widget>[
-                  navigation,
-                  Expanded(child: _leaf('media-servers', dropped)),
-                ],
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: VideoLibraryShell(
+                repository: VideoBookRepository(database),
+                libraryRefreshSignal: refreshSignal,
+                scrapeTaskController: scrapeController,
+                onScrapeAll: () async {},
+                onClearAllScrapeRecords: () async {},
+                onScrapeSource: (_) async {},
+                onVideoScanCompleted: (_, __) async {},
+                onOpenScrapeTasks: () {},
+                onLibraryChanged: () {},
+                localLibraryPageBuilder: (_, Widget navigation, __) => Column(
+                  children: <Widget>[
+                    navigation,
+                    Expanded(child: _leaf('local', dropped)),
+                  ],
+                ),
+                mediaServerPageBuilder: (_, Widget navigation) => Column(
+                  children: <Widget>[
+                    navigation,
+                    Expanded(child: _leaf('media-servers', dropped)),
+                  ],
+                ),
               ),
             ),
           ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);
@@ -269,14 +299,15 @@ void main() {
       dropped.clear();
       tester
           .widget<FushiSectionTabBar<VideoLibrarySection>>(
-            find.byType(FushiSectionTabBar<VideoLibrarySection>),
+            find.byType(FushiSectionTabBar<VideoLibrarySection>).first,
           )
           .onChanged!(VideoLibrarySection.mediaServers);
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);
-      expect(dropped, <String>['media-servers'],
-          reason: '用户停在媒体服务器子页，隐藏的 HomeVideoPage 不许把文件夹登记成常驻扫描根');
+      expect(dropped, <String>[
+        'media-servers',
+      ], reason: '用户停在媒体服务器子页，隐藏的 HomeVideoPage 不许把文件夹登记成常驻扫描根');
     });
   }, skip: !_desktopHost);
 
@@ -285,21 +316,65 @@ void main() {
     // 在 widget 测试里 pump 不出来，故这一条守的是**结构**：子区表按 GameSection
     // 建、按 GameSection.values 展开，包裹只有一处，新增子区不可能漏掉。
     test('子区按 GameSection.values 展开且逐个套上 DropSurfaceScope', () {
-      final String src =
-          File('lib/src/pages/implementations/home_game_page.dart')
-              .readAsStringSync();
+      final String src = File(
+        'lib/src/pages/implementations/home_game_page.dart',
+      ).readAsStringSync();
       // 断言字面量：'for (final GameSection section in GameSection.values)'
       expect(
-          src.contains('for (final GameSection section in GameSection.values)'),
-          isTrue,
-          reason: 'IndexedStack 的 children 必须由枚举展开，'
-              '否则「索引==枚举序」和「每个子区都被包裹」都只是口头约定');
+        src.contains('for (final GameSection section in GameSection.values)'),
+        isTrue,
+        reason:
+            'IndexedStack 的 children 必须由枚举展开，'
+            '否则「索引==枚举序」和「每个子区都被包裹」都只是口头约定',
+      );
       // 断言字面量：'isActive: () => _section == section,'
-      expect(src.contains('isActive: () => _section == section,'), isTrue,
-          reason: '判据必须与 index: _section.index 同源，且在 drop 落地那一刻求值');
-      // 断言字面量：'child: sections[section]!,'
-      expect(src.contains('child: sections[section]!,'), isTrue,
-          reason: '子区内容只能从 GameSection 建的表里取，不许再往 children 里塞裸 widget');
+      expect(
+        src.contains('isActive: () => _section == section,'),
+        isTrue,
+        reason: '判据必须与 index: _section.index 同源，且在 drop 落地那一刻求值',
+      );
+      expect(
+        _gameSectionsHaveDropGates(src),
+        isTrue,
+        reason:
+            '每个枚举子区必须在实时 DropSurfaceScope 门内，'
+            '再经滚动作用域与 chrome 让位取得 sections[section]；'
+            'children 不许插入裸 widget',
+      );
+    });
+
+    test('结构守卫拒绝恒开门、错误子区和绕过门的裸 child', () {
+      final String src = File(
+        'lib/src/pages/implementations/home_game_page.dart',
+      ).readAsStringSync();
+      expect(
+        _gameSectionsHaveDropGates(
+          src.replaceFirst(
+            'isActive: () => _section == section,',
+            'isActive: () => true, /* isActive: () => _section == section, */',
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        _gameSectionsHaveDropGates(
+          src.replaceFirst(
+            'child: sections[section]!',
+            'child: sections[_section]!',
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        _gameSectionsHaveDropGates(
+          src.replaceFirst(
+            'for (final GameSection section in GameSection.values)',
+            'const SizedBox(), '
+                'for (final GameSection section in GameSection.values)',
+          ),
+        ),
+        isFalse,
+      );
     });
   });
 }

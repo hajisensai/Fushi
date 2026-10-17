@@ -1,0 +1,14 @@
+## BUG-3446 · 安卓切后台时临时排版的页首字被落库，进程被回收后重开退一页
+- **报告**：2026-10-15（群反馈：「安卓手机阅读时，有时候返回主菜单把 fushi 放在后台，再切回来书会跳页，通常往前跳一页」；用户补充复现路径「切后台 → 杀进程 → 重开」）
+- **真实性**：✅ 真 bug，真机取证。小米 Pad 5（Android 17）模拟手机形态（`wm size 1080x2400` + `wm density 420`），竖排分页，第 7 章第 4 页、页首 814（另一轮 973）。按 HOME 后系统栏出现，阅读器 chrome inset 从 0/0 变为 34/20（另一轮 40/16），分页步长 936→881.5。BUG-2943 的几何锚正确记下了 814（973），视口回前台时也能复原；但后台期间落库的 `charOffset` 被写成临时排版的页首字（973→920），回前台后直到下一次翻页都一直留在库里。进程在后台被回收后重开，按 920 恢复，落在前一页。
+  - 根因：`fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart` 的 `window.fushiProgressDetails` 恒把「视口首字」当阅读位置上报（第三段 = `getFirstVisibleCharOffset()`）。几何事件（inset / 尺寸）把视口挪到临时排版上时，首字不是用户读到的位置；Dart 侧 `_refreshProgress` / `_syncAndFlushPosition` 原样落库。
+  - 与 BUG-2943 的关系：那次修的是「视口」在多次几何往返中保住锚，没管「落库」读的是谁。
+- **[x] ① 已修复** — 分页 shell 新增 `heldReadingAnchorCharOffset()`（持有几何文字锚时返回锚字，否则 -1）与同口径进度查询 `exploredCharsThroughCharOffset()`（`fushi/lib/src/reader/reader_pagination_scripts.dart`）。`fushiProgressDetails` 在持锚、且视口没从锚起时，字符偏移与进度都报锚，可见终点报 -1：这一页是几何补偿，不算阅读到达，统计不 arrive。明确导航（翻页 / 恢复 / 揭示）照旧清锚，此后恢复正常上报。滚动 / VN shell 没有几何锚，行为不变。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/geometry_reanchor_roundtrip_behavior_test.{dart,js}`：Dart 从生产引擎源码抠出 `fushiProgressDetails` 原样执行，接在真分页 shell 上（理想多列 DOM），新增 3 例：临时几何下落库锚字且进度同口径、不 arrive；回到原几何正常上报；临时几何后翻页上报新页。修复版 36/36 通过；临时换回修复前的两个生产文件，恰好「临时几何落库锚字」一例失败（TEST_EXIT=1）。
+- **真机验证（修复后）**：
+  - 同一手机形态、竖排分页，切后台时临时页首 757，落库仍是 814。
+  - `am force-stop` 杀进程后重开同一本书，落在第 4 页、页首 814，与切后台前一致。
+  - 重新播放有声书 15 秒，视口没有跳走。
+  - 滚动模式：章中段 747，切后台 inset 变化后落库仍为 747。
+  - VN 模式：滑动推进到 291 后切后台，inset 变化前后落库都是 291。VN 没有分页几何锚，本修复不改变它的结果。
+- **备注**：Windows 最小化 / 还原（含注入完整生命周期序列）在离屏 runner 上 0 次跳页，Windows 没有「后台冒出系统栏」；用户在 Windows 上看到的跳动另见 BUG-3430。

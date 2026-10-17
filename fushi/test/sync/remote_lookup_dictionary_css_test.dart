@@ -159,19 +159,19 @@ void main() {
           File('lib/src/models/app_model.dart').readAsStringSync();
       expect(appModel, contains('popupDictionaryCssProvider:'),
           reason:
-              'app_model 没把 popupDictionaryCssProvider 交给 YomitanApiServerManager');
+              'app_model 没把 popupDictionaryCssProvider 交给 FushiApiServerManager');
       expect(appModel, contains('browserExtensionPopupDictionaryCss'),
           reason: 'app_model 缺 CSS 尾段供给器实现');
       final String manager =
-          File('lib/src/sync/yomitan_api_server_manager.dart')
+          File('lib/src/sync/fushi_api_server_manager.dart')
               .readAsStringSync();
       expect(manager, contains('popupDictionaryCssProvider'),
-          reason: 'manager 没把供给器透传给 YomitanApiServer');
+          reason: 'manager 没把供给器透传给 FushiApiServer');
       final String server =
-          File('lib/src/sync/yomitan_api_server.dart').readAsStringSync();
+          File('lib/src/sync/fushi_api_server.dart').readAsStringSync();
       expect(server,
           contains('popupDictionaryCssProvider: _popupDictionaryCssProvider'),
-          reason: 'YomitanApiServer 没把供给器交给共享 handler');
+          reason: 'FushiApiServer 没把供给器交给共享 handler');
     });
 
     test('扩展两镜像都接上了 CSS 尾段与词条资源占位的兑现方', () {

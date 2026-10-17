@@ -38,8 +38,9 @@ void main() {
 
     expect(aggregate.todayMs, 1800 * 1000);
     expect(aggregate.todaySessions, 1);
-    expect(aggregate.weekMs, (1800 + 3600) * 1000);
-    expect(aggregate.weekSessions, 3);
+    // 本周 = 自然周（2026-07-29 周三 → 07-27 起），07-25（上周六）不在本周。
+    expect(aggregate.weekMs, 1800 * 1000);
+    expect(aggregate.weekSessions, 1);
     expect(aggregate.monthMs, (1800 + 3600) * 1000);
     expect(aggregate.allMs, (1800 + 3600 + 7200) * 1000);
     expect(aggregate.allSessions, 6);

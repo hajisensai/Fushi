@@ -63,6 +63,147 @@ void main() {
       );
     });
 
+    // BUG-3292：查词弹窗避让悬浮底部件——悬浮件画在弹层之上，点出来时弹窗必须让开。
+    group('popup bottom reserve (BUG-3292)', () {
+      test('squeeze bar occupying -> reader bottom reserve', () {
+        expect(
+          readerPopupBottomReserve(
+            squeezeReserve: 56,
+            readerBottomReserve: 90,
+            floatingChromePainted: false,
+            floatingChromeExtent: 0,
+            chromeBaseBand: 0,
+          ),
+          90,
+        );
+      });
+
+      test('floating chrome painted -> footer band + floating extent', () {
+        expect(
+          readerPopupBottomReserve(
+            squeezeReserve: 0,
+            readerBottomReserve: 34,
+            floatingChromePainted: true,
+            floatingChromeExtent: 152,
+            chromeBaseBand: 40,
+          ),
+          192,
+        );
+      });
+
+      test('floating chrome hidden or empty -> 0', () {
+        expect(
+          readerPopupBottomReserve(
+            squeezeReserve: 0,
+            readerBottomReserve: 34,
+            floatingChromePainted: false,
+            floatingChromeExtent: 152,
+            chromeBaseBand: 40,
+          ),
+          0,
+        );
+        expect(
+          readerPopupBottomReserve(
+            squeezeReserve: 0,
+            readerBottomReserve: 34,
+            floatingChromePainted: true,
+            floatingChromeExtent: 0,
+            chromeBaseBand: 40,
+          ),
+          0,
+        );
+      });
+
+      // 审查 PR #2083：贴边样式 + 「点空白隐藏控制栏」时底栏同样不占位（预留 0）、
+      // 点出来后同样画在弹层之上——此前门控看的是悬浮工具栏样式，这一形态返回 0。
+      test('edge-attached bar + tap-to-hide, painted -> bar height over its base', () {
+        // 贴边底栏 56（已按 chrome 缩放），读数并进播放条 → 贴屏底，下垫 34 的 inset。
+        expect(
+          readerPopupBottomReserve(
+            squeezeReserve: 0,
+            readerBottomReserve: 34,
+            floatingChromePainted: true,
+            floatingChromeExtent: 56,
+            chromeBaseBand: readerBottomChromeBaseBand(
+              floatingToolbars: false,
+              separatePlaybackStatus: false,
+              paintedFooterBand: 40,
+              bottomInset: 34,
+            ),
+          ),
+          90,
+        );
+        // 读数独立成行 → 底栏坐在状态行画出来的带之上。
+        expect(
+          readerPopupBottomReserve(
+            squeezeReserve: 0,
+            readerBottomReserve: 34,
+            floatingChromePainted: true,
+            floatingChromeExtent: 56,
+            chromeBaseBand: readerBottomChromeBaseBand(
+              floatingToolbars: false,
+              separatePlaybackStatus: true,
+              paintedFooterBand: 40,
+              bottomInset: 34,
+            ),
+          ),
+          96,
+        );
+      });
+
+      test('chrome base band follows the actual bottom chrome placement', () {
+        expect(
+          readerBottomChromeBaseBand(
+            floatingToolbars: true,
+            separatePlaybackStatus: false,
+            paintedFooterBand: 40,
+            bottomInset: 34,
+          ),
+          40,
+        );
+        expect(
+          readerBottomChromeBaseBand(
+            floatingToolbars: false,
+            separatePlaybackStatus: true,
+            paintedFooterBand: 40,
+            bottomInset: 34,
+          ),
+          40,
+        );
+        expect(
+          readerBottomChromeBaseBand(
+            floatingToolbars: false,
+            separatePlaybackStatus: false,
+            paintedFooterBand: 40,
+            bottomInset: 34,
+          ),
+          34,
+        );
+      });
+
+      test('reader page wires popupBottomReserve through the helper', () {
+        final String page = readReaderPageSource();
+        expect(page, contains('double get popupBottomReserve => '
+            'readerPopupBottomReserve('));
+        // 门控看「底栏不占位」（_bottomBarFloating），不看工具栏样式。
+        expect(
+          page,
+          contains(
+            '_bottomBarFloating && !_lyricsMode && _bottomBarShouldPaint',
+          ),
+        );
+        expect(
+          page,
+          isNot(
+            contains(
+              '_floatingToolbars && !_lyricsMode && _bottomBarShouldPaint',
+            ),
+          ),
+        );
+        expect(page, contains('chromeBaseBand: readerBottomChromeBaseBand('));
+      });
+    });
+
     test('bottom reserve: floating -> 0 even when occupying', () {
       expect(
         bottomChromeReserve(
@@ -286,7 +427,7 @@ void main() {
 
     test('reserve-changing chrome prefs go through the re-anchor channel', () {
       expect(
-        src.contains('ReaderFushiSource.onChromeReanchorLive = ()'),
+        src.contains('chromeReanchor: ()'),
         isTrue,
         reason: '改预留高的 chrome 偏好必须注册 onChromeReanchorLive 重锚通道',
       );

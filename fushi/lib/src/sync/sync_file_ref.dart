@@ -2,7 +2,7 @@
 ///
 /// 历史上这些类型带着 `Drive` 前缀住在 `ttu_models.dart`（ッツ wire 契约文件）
 /// 里，但它们从不是ッツ契约的一部分：所有后端（Google Drive / WebDAV / Dropbox /
-/// OneDrive / FTP / SFTP / hibiki 互联）都用它们描述「远端文件的定位符」，枚举也
+/// OneDrive / FTP / SFTP / Fushi 互联）都用它们描述「远端文件的定位符」，枚举也
 /// 只在本 app 内部流转、从不落盘/上 wire。命名统一轮改名迁出（§1-H）。
 
 /// 后端无关的远端文件句柄：定位符 [id] + 文件名 [name]，不含内容。

@@ -58,7 +58,7 @@ void main() {
       };
 
       final Directory tmp =
-          Directory.systemTemp.createTempSync('hibiki_bridge_behavior_');
+          Directory.systemTemp.createTempSync('fushi_bridge_behavior_');
       addTearDown(() {
         if (tmp.existsSync()) tmp.deleteSync(recursive: true);
       });

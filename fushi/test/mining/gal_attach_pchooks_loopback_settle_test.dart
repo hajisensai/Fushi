@@ -15,7 +15,7 @@ import 'package:fushi/src/sync/texthooker_ws_client.dart';
 /// 两条都是「用户中途接管一局已经在跑的游戏」时才暴露的缺陷：
 ///  ① attach（捕获窗口 / 引擎重试）此前把 `lunaPcHooks` 硬编码成 false，因为它没有
 ///     exe 路径可喂给 [shouldUseLunaPcHooksForExecutable]——「判据取不到」被写成了
-///     「判为否」，于是 Unity/Siglus 目标只要不是 Hibiki 亲自拉起就永远抓不到文本。
+///     「判为否」，于是 Unity/Siglus 目标只要不是 Fushi 亲自拉起就永远抓不到文本。
 ///  ② 用户在台词还在播时就查词/制卡：[GalHookSessionController.captureAudioBytes]
 ///     此前按「已等时长」提前收束 loopback 冻结，卡片只拿到这句语音的前半段（BUG-1287
 ///     的到点补全只修正列表里的缓存，卡已经写进 Anki）。现在制卡在队列之外先等冻结
@@ -33,7 +33,7 @@ void main() {
     late Directory tempDir;
 
     setUp(() {
-      tempDir = Directory.systemTemp.createTempSync('hibiki_pchooks_test');
+      tempDir = Directory.systemTemp.createTempSync('fushi_pchooks_test');
     });
 
     tearDown(() {
@@ -370,7 +370,7 @@ void main() {
 }
 
 /// attach 路径用的引擎替身：握手时没有 PCM 格式，于是控制器走「文本 + Loopback」，
-/// 正是用户「LE 启动 → hibiki 捕获窗口」那条链。
+/// 正是用户「LE 启动 → fushi 捕获窗口」那条链。
 class _AttachEngine extends EngineHookGalAudioSource {
   _AttachEngine({List<GalHookedLine> lines = const <GalHookedLine>[]})
       : _pending = List<GalHookedLine>.of(lines),

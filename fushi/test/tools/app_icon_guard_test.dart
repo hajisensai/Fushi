@@ -112,9 +112,13 @@ void main() {
     expect(
         prefs.contains('await appIconImageProvider(resolved).evict()'), isTrue,
         reason: '固定自定义路径覆盖内容后必须清掉旧 ResizeImage cache');
-    expect(page.contains('saveAppIconSelection('), isTrue,
+    // 换图执行体抽进 app_icon_apply.dart（设置页与控制通道共用），页面只调它。
+    final String apply = read('lib/src/utils/misc/app_icon_apply.dart');
+    expect(page.contains('applyPresetAppIcon('), isTrue);
+    expect(page.contains('applyCustomAppIcon('), isTrue);
+    expect(apply.contains('saveAppIconSelection('), isTrue,
         reason: '预设与自定义成功路径必须在持久化后发布运行时选择');
-    expect(page.contains('_persistAppliedIcon('), isTrue,
+    expect('persistAppliedAppIcon('.allMatches(apply).length >= 3, isTrue,
         reason: '原生切换成功后即使偏好写入失败，rail 也必须同步本次运行态');
     expect(page.contains('saveIconPresetKey('), isFalse);
     expect(page.contains('saveCustomIconPath('), isFalse);
@@ -161,10 +165,10 @@ void main() {
         reason: 'Runner.rc 应以 IDI_APP_ICON 引用 resources\\\\app_icon.ico');
   });
 
-  test('Android 12+ 系统 splash 图标用专用 splash wordmark 前景（TODO-886）', () {
-    // TODO-886：splash 前景改用专用 ic_splash_minimal_foreground（内容窄于
-    // 自适应安全区），避免启动器前景 wordmark 太宽被圆遮罩裁切。
-    // 几何断言详见 test/android/splash_icon_guard_test.dart。
+  test('Android 12+ 系统 splash 图标显式指向透明 ic_splash_empty', () {
+    // 系统 splash 不画图标（只铺底色），首帧由 Flutter 自己画；显式给透明
+    // 图标是为了不回退成启动器图标（TODO-886 的圆遮罩裁切）。
+    // 详见 test/android/splash_icon_guard_test.dart。
     for (final String rel in <String>[
       'android/app/src/main/res/values-v31/styles.xml',
       'android/app/src/main/res/values-night-v31/styles.xml',
@@ -172,9 +176,9 @@ void main() {
       final String styles = read(rel);
       expect(
         styles.contains('android:windowSplashScreenAnimatedIcon') &&
-            styles.contains('@drawable/ic_splash_minimal_foreground'),
+            styles.contains('@drawable/ic_splash_empty'),
         isTrue,
-        reason: '$rel 的 Android 12+ splash 应显示专用 splash wordmark 前景',
+        reason: '$rel 的 Android 12+ splash 应显式指向透明 ic_splash_empty',
       );
     }
   });

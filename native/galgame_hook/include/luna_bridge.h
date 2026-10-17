@@ -10,7 +10,7 @@
 
 namespace fushi_voice_hook {
 
-// Hibiki-owned boundary around the vendored LunaTranslator v10.16.1.2 ABI.
+// Fushi-owned boundary around the vendored LunaTranslator v10.16.1.2 ABI.
 // Only this header may describe LunaHost callback layouts or exported functions.
 #pragma pack(push, 8)
 struct LunaThreadParam {

@@ -188,7 +188,7 @@ final Anime4kPreset kAnime4kHqPreset =
 /// 大 pass 绑定 15~16 个纹理 → 需要 `vertex_texcoord0..15` + 顶点位置 = 17 个属性，**越过
 /// `GL_MAX_VERTEX_ATTRIBS`=16**（GL/GLES 通用下限）→ 链接失败（`shader link log status=0:
 /// Too many attributes (vertex_texcoord15)`）→ 该 pass 出不了帧 → **整屏黑**。该上限对 ra_gl
-/// 后端在**所有平台**都成立（非 Windows 独有），故 UL 在 hibiki 里根本无法渲染，全局弃用。
+/// 后端在**所有平台**都成立（非 Windows 独有），故 UL 在 fushi 里根本无法渲染，全局弃用。
 ///
 /// 极高 = 高档 VL 链 + 额外 `Restore_CNN_Soft_VL`：全为 VL 类文件（每 pass 属性数在 ANGLE
 /// 上限内，Windows 实机验证无 `Too many attributes`、正常出帧）；双重修复 → 强于高档。
@@ -468,17 +468,26 @@ bool looksLikeGlslShader(List<int> bytes) {
 ///
 /// 不含重试——重试由 [downloadAnime4kFiles] 在更外层按文件做（瞬态 CDN 抖动换轮再试整组
 /// 镜像）。[onProgress] 透传单文件 0..1 进度（total<=0 时 null）。
+///
+/// [unreachableHosts] 是**整批共享**的「本批连不上的 host」：连接层失败（连接超时 / 连接
+/// 错误）的 host 记进去，后续文件经 [orderAnime4kCandidatesForBatch] 把它挪到末尾，不再让
+/// 每个文件、每轮重试都先吃一次连接超时；某 host 后来成功则移出、恢复原位。
 Future<bool> _downloadFileViaMirrors({
   required Dio client,
   required String repoPath,
   required String destPath,
   required String repo,
   required String ref,
+  required Set<String> unreachableHosts,
   CancelToken? cancelToken,
   void Function(double? progress)? onProgress,
 }) async {
-  final List<String> urls = anime4kMirrorUrls(repoPath, repo: repo, ref: ref);
+  final List<String> urls = orderAnime4kCandidatesForBatch(
+    anime4kMirrorUrls(repoPath, repo: repo, ref: ref),
+    unreachableHosts,
+  );
   for (final String url in urls) {
+    final String host = Uri.parse(url).host;
     try {
       onProgress?.call(null);
       final Response<List<int>> resp = await client.get<List<int>>(
@@ -490,6 +499,8 @@ Future<bool> _downloadFileViaMirrors({
         },
       );
       final List<int> bytes = resp.data ?? const <int>[];
+      // 服务器答复了（哪怕内容不对）就说明连得上。
+      unreachableHosts.remove(host);
       if (!looksLikeGlslShader(bytes)) {
         continue; // 镜像返回了非着色器内容（HTML 错误页等），换下一个。
       }
@@ -497,10 +508,42 @@ Future<bool> _downloadFileViaMirrors({
       return true;
     } on DioError catch (e) {
       if (e.type == DioErrorType.cancel) rethrow;
+      if (isAnime4kHostUnreachable(e)) unreachableHosts.add(host);
       continue; // 该镜像失败，回退下一个。
     }
   }
   return false;
+}
+
+/// **纯函数**：连接层失败（连不上 host）才算「本批连不上」。服务器已答复的错误（404 /
+/// 403）与读超时不算——host 是通的，只是这一个文件出了问题。
+bool isAnime4kHostUnreachable(DioError error) {
+  switch (error.type) {
+    case DioErrorType.connectionTimeout:
+    case DioErrorType.connectionError:
+      return true;
+    case DioErrorType.unknown:
+      return error.error is SocketException;
+    default:
+      return false;
+  }
+}
+
+/// **纯函数**：把 [urls] 中 host 在 [unreachableHosts] 里的候选稳定地挪到末尾（不删——
+/// 其余全挂时仍是兜底），其余保持 [anime4kMirrorUrls] 的原相对顺序。
+List<String> orderAnime4kCandidatesForBatch(
+  List<String> urls,
+  Set<String> unreachableHosts,
+) {
+  if (unreachableHosts.isEmpty) return urls;
+  bool isUnreachable(String url) =>
+      unreachableHosts.contains(Uri.parse(url).host);
+  return <String>[
+    for (final String url in urls)
+      if (!isUnreachable(url)) url,
+    for (final String url in urls)
+      if (isUnreachable(url)) url,
+  ];
 }
 
 /// 把预设 [preset] 的全部着色器逐个下载到 [targetDir]（默认 [mpvShaderDirectory]）。
@@ -545,6 +588,8 @@ Future<Anime4kDownloadResult> downloadAnime4kFiles(
   final List<Anime4kShaderFile> files = preset.shaders;
   final List<String> done = <String>[];
   final List<String> failed = <String>[];
+  // 整批共享：连不上的 host 后续文件不再排前面（见 [_downloadFileViaMirrors]）。
+  final Set<String> unreachableHosts = <String>{};
 
   for (int i = 0; i < files.length; i++) {
     final Anime4kShaderFile f = files[i];
@@ -568,6 +613,7 @@ Future<Anime4kDownloadResult> downloadAnime4kFiles(
         destPath: destPath,
         repo: preset.repo,
         ref: preset.ref,
+        unreachableHosts: unreachableHosts,
         cancelToken: cancelToken,
         onProgress: (double? p) => onFileProgress?.call(i, files.length, p),
       );

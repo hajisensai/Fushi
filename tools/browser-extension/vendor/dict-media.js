@@ -289,13 +289,17 @@ function applyFushiPopupCss(data) {
     window.__fushiDictionaryLanguages =
         (data.dictionaryLanguages && typeof data.dictionaryLanguages === 'object')
             ? data.dictionaryLanguages : {};
+    // 「统一词典样式」：app 内弹窗由 popup_settings_injection 注入同名全局，扩展从查词响应的
+    // dictionaryUnifiedStyle 取 app 的同一个偏好。只认 true：字段缺失（旧 app / 未接线）一律关，
+    // 与 app 默认值一致。不进 stylesRevision 门控——每次查词都随响应下发，改了下次查词即生效。
+    window.__fushiDictUnifiedStyle = data.dictionaryUnifiedStyle === true;
     fushiApplyDictionaryFont(data);
 }
 
 // 用户在 app 里设的「词典字体」（设置 · 字体 · 词典），与 app 内弹窗同一份设置：
 //   - dictionaryFontCss：按内容语言分流的字体链（用户字体接在每条链首），挂进弹窗根
 //     （shadow root / 嵌套层文档），根选择器是 #entries-container；
-//   - dictionaryFontFaces：[{family, src, format}]，src 是 app 端点的相对路径。
+//   - dictionaryFontFaces：[{family, src, format, weight?}]，src 是 app 端点的相对路径。
 // 字体字节与图片同一约定：token 只出现在 fetch 参数里，拿到字节后 new FontFace(family, buffer)
 // 注册进 document.fonts——带 token 的 URL 不进任何网页可读的样式表 / DOM。
 // @font-face 写进 shadow root 本就不生效（Blink 只认文档级），FontFaceSet 是文档级的，正合适。
@@ -332,6 +336,8 @@ function fushiApplyDictionaryFont(data) {
     for (const face of faces) {
         const family = face && typeof face.family === 'string' ? face.family.trim() : '';
         const src = face && typeof face.src === 'string' ? face.src : '';
+        const weight = face && typeof face.weight === 'string' && /^\d{1,4}( \d{1,4})?$/.test(face.weight)
+            ? face.weight : '';
         if (!family || !src.startsWith('/api/extension/fonts/dictionary?')) continue;
         const key = family + '|' + src;
         wanted.add(key);
@@ -342,7 +348,11 @@ function fushiApplyDictionaryFont(data) {
         const url = media.base + src + '&token=' + encodeURIComponent(media.token);
         const pending = fetch(url).then((r) => (r.ok ? r.arrayBuffer() : null)).then((buffer) => {
             if (!buffer || __fushiDictFontFaces.get(key) !== pending) return null;
-            const fontFace = new FontFace(family, buffer, { display: 'swap' });
+            // weight = 文件真实字重（'400' / '100 900'）：同一家族的常规 + 粗体文件各注册
+            // 一个字面，粗体请求才会选中粗体文件而不是把常规字面合成加粗。
+            const descriptors = { display: 'swap' };
+            if (weight) descriptors.weight = weight;
+            const fontFace = new FontFace(family, buffer, descriptors);
             document.fonts.add(fontFace);
             __fushiDictFontFaces.set(key, fontFace);
             return fontFace;

@@ -4,7 +4,7 @@
 //
 // 撤回方案A（把默认色改回 `Theme.of(context).colorScheme.surface`）→ 浅色主题下断言
 // 的期望色（黑×opacity）与实际（近白 surface×opacity）不符 → 红。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';

@@ -32,7 +32,7 @@ https://github.com/hajisensai/Fushi
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-Chọn tệp phù hợp với nền tảng của bạn: **Android** — tệp APK `arm64-v8a` (mọi điện thoại trong vài năm gần đây đều dùng loại này; chỉ các thiết bị cũ hơn mới cần `armeabi-v7a`, còn trình giả lập dùng `x86_64`); **Windows** — `windows-setup.exe`; **macOS** — `macos.zip`; **iOS** — `ios.ipa`. **Linux** chưa có gói dựng sẵn, nên phải build từ mã nguồn.
+Chọn tệp phù hợp với nền tảng của bạn: **Android** — tệp APK `arm64-v8a` (mọi điện thoại trong vài năm gần đây đều dùng loại này; chỉ các thiết bị cũ hơn mới cần `armeabi-v7a`, còn trình giả lập dùng `x86_64`); **Windows** — `windows-setup.exe`; **macOS** — `macos-arm64.zip` (Apple Silicon); **iOS** — `ios.ipa`. **Linux** chưa có gói dựng sẵn, nên phải build từ mã nguồn.
 
 Các tệp APK có tên bắt đầu bằng `bridge-` là cầu nối chuyển đổi dành cho **người dùng Hibiki cũ**; bạn có thể bỏ qua chúng.
 

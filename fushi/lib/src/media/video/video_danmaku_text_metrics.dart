@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 弹幕基准字号（`fontScale = 1.0` 时的 px）。
 ///

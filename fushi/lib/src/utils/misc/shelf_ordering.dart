@@ -15,7 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// bookKey→uid 单向换算（见书架 `_collectionEntryKeyFor`）；srt/video 键本就是
 /// 稳定 uid，可直接喂 [FushiDatabase.addToCollection]。
 ///
-/// 命名统一 Phase 3.3：身份二元组语义收口进 hibiki_core 的 [MediaRef]——
+/// 命名统一 Phase 3.3：身份二元组语义收口进 fushi_core 的 [MediaRef]——
 /// `==` / [hashCode] 委托 [ref] 视图（字段本体仍留在本类：Dart const 构造的
 /// 初始化列表不允许用参数新建 const 对象，存 [MediaRef] 会丢 const 构造）。
 class ShelfEntryRef {

@@ -17,8 +17,15 @@ enum UpdateFeedKind {
   /// 已装漫画扩展有新版本。
   mangaExtension('mangaExtension'),
 
-  /// Hibiki 自身有新发布版本。
-  appRelease('appRelease');
+  /// Fushi 自身有新发布版本。
+  appRelease('appRelease'),
+
+  /// 已装视频（Aniyomi）扩展有新版本。与 [mangaExtension] 分开成域：两个生态的
+  /// 扩展页、开关与「要不要提醒」各自独立，混成一个域就没法只关其中一边。
+  ///
+  /// **追加在末尾**：`updateNotificationId` 的分组 id 用 `index` 占高位，插在
+  /// 中间会让既有域的分组通知 id 跨版本漂移，撤不掉上个进程发的那条。
+  animeExtension('animeExtension');
 
   const UpdateFeedKind(this.dbValue);
 
@@ -31,6 +38,7 @@ enum UpdateFeedKind {
         UpdateFeedKind.videoEpisode => 'updates_notify_video_episode',
         UpdateFeedKind.mangaChapter => 'updates_notify_manga_chapter',
         UpdateFeedKind.mangaExtension => 'updates_notify_manga_extension',
+        UpdateFeedKind.animeExtension => 'updates_notify_anime_extension',
         UpdateFeedKind.appRelease => 'updates_notify_app_release',
       };
 
@@ -75,12 +83,34 @@ String mangaChapterTargetKey({
 }) =>
     '$bookKey|$chapterKey';
 
-/// 扩展新版的域内身份。带 versionCode：同一扩展的下一个版本是另一条事件。
+/// 扩展新版的域内身份（漫画与视频扩展两个域共用）。带 versionCode：同一扩展的
+/// 下一个版本是另一条事件。
 String mangaExtensionTargetKey({
   required String packageName,
   required int versionCode,
 }) =>
     '$packageName|$versionCode';
+
+/// 后台自动更新扩展的结果（[ExtensionAutoUpdateOutcome]）在更新中心的身份：
+/// 在「有新版」那条身份后缀结果名。与「有新版」**不是同一条**事件——那条可能
+/// 早就投递过（自动更新关着时、或上次被推迟），插入是幂等的，复用同一身份结果就
+/// 永远落不进去。
+String extensionAutoUpdateTargetKey({
+  required String packageName,
+  required int versionCode,
+  required ExtensionAutoUpdateOutcome outcome,
+}) =>
+    '${mangaExtensionTargetKey(packageName: packageName, versionCode: versionCode)}'
+    '|${outcome.name}';
+
+/// 后台自动更新一个扩展的结局。
+enum ExtensionAutoUpdateOutcome {
+  /// 已装上新版。
+  installed,
+
+  /// 没装上，需要用户回扩展页手动处理（签名变了、下载失败……原因进 detailJson）。
+  failed,
+}
 
 /// app 新版的域内身份 = 版本串本身。
 String appReleaseTargetKey(String version) => version;

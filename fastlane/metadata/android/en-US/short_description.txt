@@ -1,1 +1,0 @@
-Japanese immersion reader with EPUB, Yomitan dictionaries, Anki and audiobook sync.

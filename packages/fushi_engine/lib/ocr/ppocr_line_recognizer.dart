@@ -19,6 +19,7 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 
 /// 输入高。
@@ -127,11 +128,69 @@ String ctcGreedyDecode(
   int frames,
   int vocabSize,
   List<String> vocab,
-) {
+) => _ctcGreedyDecodeRuns(logits, frames, vocabSize, vocab);
+
+/// [ctcGreedyDecodeScored] 加每个吐字 token 在原行图上的近似横向区间
+/// （[OcrLineToken]，UTF-16 区间对齐返回的 `text`）。
+///
+/// 帧 → 像素的换算与 [PpOcrLineRecognizer.recognizeLineDetailed] 同一口径：帧
+/// 区间按 [inputWidth] 等分，代表中心落在右侧填充里的 token 没有位置。只多记
+/// 每个 run 的起止帧，不多扫词表——热路径成本与 [ctcGreedyDecodeScored] 相同，
+/// 文字逐字相同。
+({String text, double? confidence, List<OcrLineToken> tokens})
+ctcGreedyDecodePositioned(
+  Float32List logits,
+  int frames,
+  int vocabSize,
+  List<String> vocab, {
+  required int lineWidth,
+  required int contentWidth,
+  required int inputWidth,
+}) {
+  final List<OcrLineToken> tokens = <OcrLineToken>[];
+  final ({String text, double? confidence}) decoded = _ctcGreedyDecodeRuns(
+    logits,
+    frames,
+    vocabSize,
+    vocab,
+    onRun: (int start, int end, int frameStart, int frameEnd) {
+      final double inputLeft = frameStart / frames * inputWidth;
+      final double inputRight = frameEnd / frames * inputWidth;
+      final double validRight = math.min(contentWidth.toDouble(), inputRight);
+      final double center = (inputLeft + inputRight) / 2;
+      final bool hasPosition =
+          contentWidth > 0 &&
+          center >= 0 &&
+          center < contentWidth &&
+          validRight > inputLeft;
+      tokens.add(
+        OcrLineToken(
+          start: start,
+          end: end,
+          left: hasPosition ? inputLeft / contentWidth * lineWidth : null,
+          right: hasPosition ? validRight / contentWidth * lineWidth : null,
+        ),
+      );
+    },
+  );
+  return (text: decoded.text, confidence: decoded.confidence, tokens: tokens);
+}
+
+/// 贪心 CTC 的唯一实现：逐帧 argmax、合并相邻重复、去 blank；[onRun] 在每个
+/// 吐字 run 结束时给出它在输出文本里的 UTF-16 区间与起止帧（止帧不含）。
+({String text, double? confidence}) _ctcGreedyDecodeRuns(
+  Float32List logits,
+  int frames,
+  int vocabSize,
+  List<String> vocab, {
+  void Function(int start, int end, int frameStart, int frameEnd)? onRun,
+}) {
   assert(logits.length == frames * vocabSize);
   final StringBuffer out = StringBuffer();
   double? minConfidence;
   int previous = -1;
+  int runFrameStart = 0;
+  int runTextStart = 0;
   for (int t = 0; t < frames; t++) {
     final int base = t * vocabSize;
     int best = 0;
@@ -143,19 +202,27 @@ String ctcGreedyDecode(
         best = v;
       }
     }
-    if (best != previous && best != 0) {
-      out.write(vocab[best]);
-      final double confidence = _ppOcrFrameConfidence(
-        logits,
-        base,
-        vocabSize,
-        best,
-      );
-      if (minConfidence == null || confidence < minConfidence) {
-        minConfidence = confidence;
+    if (best != previous) {
+      if (previous > 0) onRun?.call(runTextStart, out.length, runFrameStart, t);
+      if (best != 0) {
+        runFrameStart = t;
+        runTextStart = out.length;
+        out.write(vocab[best]);
+        final double confidence = _ppOcrFrameConfidence(
+          logits,
+          base,
+          vocabSize,
+          best,
+        );
+        if (minConfidence == null || confidence < minConfidence) {
+          minConfidence = confidence;
+        }
       }
     }
     previous = best;
+  }
+  if (previous > 0) {
+    onRun?.call(runTextStart, out.length, runFrameStart, frames);
   }
   return (text: out.toString(), confidence: minConfidence);
 }
@@ -244,6 +311,26 @@ class PpOcrLineRecognition {
   final int lineHeight;
   final int contentWidth;
   final int inputWidth;
+}
+
+/// [PpOcrLineRecognition] 的 token 换成带 UTF-16 区间的 [OcrLineToken]
+/// （token 按序拼起来就是 `text`）。
+List<OcrLineToken> ocrLineTokensOf(PpOcrLineRecognition recognition) {
+  final List<OcrLineToken> tokens = <OcrLineToken>[];
+  int offset = 0;
+  for (final PpOcrCtcToken token in recognition.tokens) {
+    final int end = offset + token.text.length;
+    tokens.add(
+      OcrLineToken(
+        start: offset,
+        end: end,
+        left: token.left,
+        right: token.right,
+      ),
+    );
+    offset = end;
+  }
+  return tokens;
 }
 
 class _PpOcrDecodedOutput {
@@ -419,6 +506,20 @@ double _ppOcrFrameConfidence(
   return (data: data, frames: frames, vocabSize: vocabSize);
 }
 
+/// [PpOcrLineRecognizer.recognizeLinePositioned] 的结果：文字、置信度（同
+/// [ctcGreedyDecodeScored]）与每个吐字 token 在行图上的近似横向区间。
+class PpOcrPositionedLine {
+  const PpOcrPositionedLine({
+    required this.text,
+    required this.confidence,
+    required this.tokens,
+  });
+
+  final String text;
+  final double? confidence;
+  final List<OcrLineToken> tokens;
+}
+
 /// 行识别器：会话注入。
 class PpOcrLineRecognizer {
   PpOcrLineRecognizer(
@@ -447,8 +548,20 @@ class PpOcrLineRecognizer {
   Future<({String text, double? confidence})> recognizeLineScored(
     img.Image line,
   ) async {
+    final PpOcrPositionedLine read = await recognizeLinePositioned(line);
+    return (text: read.text, confidence: read.confidence);
+  }
+
+  /// [recognizeLineScored] 加每个字在 [line] 上的近似横向位置
+  /// （[ctcGreedyDecodePositioned]）：同一次推理、同一段文字、同样的解码成本。
+  /// 漫画逐行识别用它给覆盖层出逐字命中格（`ocr_glyph_boxes.dart`）。
+  Future<PpOcrPositionedLine> recognizeLinePositioned(img.Image line) async {
     if (line.width <= 0 || line.height <= 0) {
-      return (text: '', confidence: null);
+      return const PpOcrPositionedLine(
+        text: '',
+        confidence: null,
+        tokens: <OcrLineToken>[],
+      );
     }
     final ({Float32List data, int width}) input = ppRecPreprocess(line);
     final Map<String, OcrTensor> outputs = await _session.run(
@@ -474,7 +587,21 @@ class PpOcrLineRecognizer {
         'PP-OCR rec vocab mismatch: model $vocabSize vs dict ${vocab.length}',
       );
     }
-    return ctcGreedyDecodeScored(logits.floatData!, frames, vocabSize, vocab);
+    final ({String text, double? confidence, List<OcrLineToken> tokens})
+    decoded = ctcGreedyDecodePositioned(
+      logits.floatData!,
+      frames,
+      vocabSize,
+      vocab,
+      lineWidth: line.width,
+      contentWidth: _ppRecContentWidth(line, input.width),
+      inputWidth: input.width,
+    );
+    return PpOcrPositionedLine(
+      text: decoded.text,
+      confidence: decoded.confidence,
+      tokens: decoded.tokens,
+    );
   }
 
   /// 识别一张已裁好的横排行图，并保留 CTC 非 blank token 的位置和置信度。

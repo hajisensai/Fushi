@@ -328,24 +328,7 @@ class FavoriteBatchSummary {
 /// 并按有声书的文件排序规则（[compareAudioFilePath]）排好——cue 的 `audioFileIndex`
 /// 就是这个顺序里的下标。
 List<String> selectAudiobookFilesInRoot(Iterable<String> paths) {
-  const Set<String> audioExtensions = <String>{
-    '.mp3',
-    '.m4a',
-    '.m4b',
-    '.ogg',
-    '.aac',
-    '.wav',
-    '.mp4',
-    '.flac',
-    '.opus',
-    '.wma',
-    '.ac3',
-    '.eac3',
-  };
-  final List<String> files = paths.where((String path) {
-    final String lower = path.toLowerCase();
-    final int dot = lower.lastIndexOf('.');
-    return dot >= 0 && audioExtensions.contains(lower.substring(dot));
-  }).toList()..sort(compareAudioFilePath);
+  final List<String> files = paths.where(AudiobookStorage.isAudioFile).toList()
+    ..sort(compareAudioFilePath);
   return files;
 }

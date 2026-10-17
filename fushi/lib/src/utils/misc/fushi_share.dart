@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -66,6 +67,20 @@ class FushiShare {
 
   /// 测试可见：当前是否有分享在途（仅供守卫断言，勿在业务逻辑读取）。
   static bool get debugIsSharing => _sharing;
+
+  /// 宿主没有系统**文件**分享面板时「把文件交给用户」的通道；null = 走系统
+  /// 分享面板。
+  ///
+  /// share_plus 的 Linux 端只会把文本拼成 `mailto:` 链接，文件分享直接抛
+  /// `UnimplementedError`（`share_plus_linux.dart`）——桌面 Linux 没有系统分享
+  /// 面板这个契约。导出类调用方要的只是「让用户拿到这个文件」，所以那里改为在
+  /// 文件管理器里定位它（与书架「打开文件位置」同一条原语）。
+  ///
+  /// 平台判据只在这里读一次；测试据此显式固定走哪条通道，而不是让断言随宿主
+  /// 操作系统漂移（Linux CI 上跑 share 通道断言曾因此整组变红）。
+  @visibleForTesting
+  static Future<bool> Function(String path)? fileHandoffWithoutShareSheet =
+      Platform.isLinux ? revealInFileManager : null;
 
   /// 由 [viewSize] 推出一个**必定合法**的 iOS popover 锚点：位于 view 正中、
   /// 边长 1 逻辑点的矩形。
@@ -174,6 +189,13 @@ class FushiShare {
         // 显式 mime 优先；缺失时用 `*/*`（比 octet-stream 更宽，不会收窄
         // 可分享目标，属 shareXFiles 结果集的超集，无回归）。
         mimeTypes.add(file.mimeType ?? '*/*');
+      }
+      final Future<bool> Function(String path)? handoff =
+          fileHandoffWithoutShareSheet;
+      if (handoff != null) {
+        // 无文件分享面板的宿主（Linux）：在文件管理器里定位产物，返回值语义
+        // 不变——文件管理器拉起来了就是 true。见 [fileHandoffWithoutShareSheet]。
+        return await handoff(paths.first);
       }
       // 非结果变体：从根上绕开 `ShareSuccessManager` 的结果回调状态机
       // （TODO-1318）。本 App 不使用 `ShareResult`，故不再走

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/models/store_compliance.dart';
@@ -19,13 +19,16 @@ enum GameSection {
   library,
   monitor,
   diagnostics,
-  settings,
   importGames,
 
   /// 游戏资源发现（与「浏览 › 发现 › 游戏」同一个生产发现页）。2026-09-27 曾随
   /// 「浏览」模块整体搬走，2026-10-01 用户拍板加回库页子标签；追加在尾部，不移动
   /// 其它子区的 IndexedStack 索引。
   discover,
+
+  /// 把另一台主机上的游戏串流到本机（与其它平台 games 模块同一个
+  /// `GameStreamLibraryPage`）。追加在尾部，理由同上。
+  stream,
 }
 
 /// App 级游戏页子区导航。默认停在游戏首页（[GameSection.dashboard]）；原生 Hook
@@ -132,26 +135,45 @@ String formatGameClockTime(DateTime value) {
 
 /// 游戏页签的**视觉序**（[GameSectionTabs] 与 [HomeGamePage] 的横滑切区共用同
 /// 一份真相；枚举序只管 IndexedStack 索引，显示顺序在这里）：
-/// * 「导入」紧挨「设置」之前——与书 / 漫画 / 视频库页的分段顺序一致
-///   （三者的「导入」视图都在「设置」前一位），肌肉记忆全 app 同构；
+/// * 「导入」排末位——与书 / 漫画 / 视频库页的分段顺序一致（「设置」页签已于
+///   2026-10-09 从各模块库页移除，设置一律从全局「设置 › 游戏」进入）；
+/// * 「串流」紧跟「捕获工作台」：同属「玩」的一侧（本机捕获 / 别的主机串流），
+///   放在「发现 → 导入」这组入库页签之前；
 /// * 「发现」紧挨「导入」之前，与其它库页「发现 / 来源 / 扩展 → 导入」同序。
 ///   与其它库页一样自己过外部发现的合规门，不靠「iOS 当前没有游戏模块」这条
 ///   会变的前提；游戏没有扩展系统，不设来源 / 扩展；
-/// * 诊断不设页签（从「设置」进入），所以不在此序里。
+/// * 诊断不设页签（从捕获工作台或全局「设置 › 游戏」进入），所以不在此序里。
 final List<GameSection> kGameSectionTabOrder = <GameSection>[
   GameSection.dashboard,
   GameSection.library,
   GameSection.monitor,
+  GameSection.stream,
   if (StoreRestrictedCapability.externalDiscovery.isAvailable)
     GameSection.discover,
   GameSection.importGames,
-  GameSection.settings,
 ];
 
-/// 游戏模块共用的胶囊分段导航（首页 / 库 / 捕获工作台 / 设置）。
+/// 标记「游戏模块的分区页签已由外壳画在浮动工具栏里」（[HomeGamePage] 挂）。
 ///
-/// 兼容性诊断仍可从「设置」进入，但不再占据高频顶部页签；诊断详情打开时顶部
-/// 高亮「设置」，明确它属于配置/排障路径。
+/// 游戏的七个子区各自在自己的页头主位放一份 [GameSectionTabs]；外壳改成与视频库
+/// 同构的浮动工具栏（贴合内容宽的页签胶囊 + 右侧动作组）后，子区里那一份就
+/// 不该再画——在本作用域下 [GameSectionTabs] 是空占位，页头只剩把动作登记给外壳
+/// 动作槽的职责。子页被独立使用（不在 [HomeGamePage] 里）时没有本作用域，照常画。
+class GameSectionTabsHostScope extends InheritedWidget {
+  const GameSectionTabsHostScope({required super.child, super.key});
+
+  static bool hostedOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<GameSectionTabsHostScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(GameSectionTabsHostScope oldWidget) => false;
+}
+
+/// 游戏模块共用的胶囊分段导航（首页 / 库 / 捕获工作台 / 串流 / 发现 / 导入）。
+///
+/// 兼容性诊断从捕获工作台或全局「设置 › 游戏」进入，不占顶部页签；诊断详情打开
+/// 时顶部高亮「捕获工作台」，明确它属于 Hook 排障路径。
 ///
 /// 四个选项是一个焦点停靠点：左右方向键在控件内切换，鼠标和触摸仍可直接点某段。
 /// [focusIdPrefix] 决定稳定 focusId `<prefix>-sections`，各页前缀互不冲突。
@@ -161,10 +183,13 @@ class GameSectionTabs extends StatelessWidget {
     required this.focusIdPrefix,
     required this.onSelectLibrary,
     required this.onSelectMonitor,
-    this.onSelectSettings,
     this.onSelectDashboard,
+    this.floating = false,
     super.key,
   });
+
+  /// 见 [LibrarySectionTabs.floating]（外壳浮动工具栏里那一份用）。
+  final bool floating;
 
   /// 当前高亮的子区。
   final GameSection selected;
@@ -179,7 +204,6 @@ class GameSectionTabs extends StatelessWidget {
 
   final VoidCallback onSelectLibrary;
   final VoidCallback onSelectMonitor;
-  final VoidCallback? onSelectSettings;
 
   /// 页签的用户可读标签（顺序真相在 [kGameSectionTabOrder]）。
   static String _labelFor(GameSection section) => switch (section) {
@@ -192,13 +216,18 @@ class GameSectionTabs extends StatelessWidget {
         // 入库入口统一定案）：游戏的单件入口（选 exe）收敛在这里，不再用 FAB。
         GameSection.importGames => t.library_view_import,
         GameSection.discover => t.library_view_discover,
-        GameSection.settings => t.settings,
-        // 不设页签（从「设置」进入）；防御性给全称，正常不会上屏。
-        GameSection.diagnostics => t.settings,
+        GameSection.stream => t.game_stream_tab,
+        // 不设页签；防御性给全称，正常不会上屏。
+        GameSection.diagnostics => t.game_diagnostics,
       };
 
   @override
   Widget build(BuildContext context) {
+    // 外壳已在浮动工具栏里画了页签（[GameSectionTabsHostScope]）：子区页头里
+    // 这一份留空。
+    if (!floating && GameSectionTabsHostScope.hostedOf(context)) {
+      return const SizedBox.shrink();
+    }
     void select(GameSection section) {
       switch (section) {
         case GameSection.dashboard:
@@ -214,15 +243,14 @@ class GameSectionTabs extends StatelessWidget {
         case GameSection.discover:
           gameSectionNotifier.value = GameSection.discover;
           return;
+        case GameSection.stream:
+          gameSectionNotifier.value = GameSection.stream;
+          return;
         case GameSection.monitor:
           onSelectMonitor();
           return;
         case GameSection.diagnostics:
           gameSectionNotifier.value = GameSection.diagnostics;
-          return;
-        case GameSection.settings:
-          (onSelectSettings ??
-              () => gameSectionNotifier.value = GameSection.settings)();
           return;
       }
     }
@@ -235,9 +263,13 @@ class GameSectionTabs extends StatelessWidget {
             label: _labelFor(section),
           ),
       ],
-      selected: selected,
+      // 诊断不设页签（从捕获工作台 / 全局设置进入），停在诊断时高亮「捕获工作台」。
+      selected: selected == GameSection.diagnostics
+          ? GameSection.monitor
+          : selected,
       onChanged: select,
       focusIdPrefix: focusIdPrefix,
+      floating: floating,
     );
   }
 }

@@ -391,7 +391,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_test');
+          Directory.systemTemp.createTempSync('fushi_clip_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.m4a';
       final String output = '${dir.path}/out.aac';
@@ -439,7 +439,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_tempo_test');
+          Directory.systemTemp.createTempSync('fushi_clip_tempo_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.m4a';
       final String normal = '${dir.path}/normal.aac';
@@ -504,7 +504,7 @@ void main() {
     test('reports invalid-image diagnostics when audio clipping fails',
         () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_fail_test');
+          Directory.systemTemp.createTempSync('fushi_clip_fail_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.mkv';
       final String output = '${dir.path}/out.aac';
@@ -549,7 +549,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_fallback_test');
+          Directory.systemTemp.createTempSync('fushi_clip_fallback_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.m4a';
       final String output = '${dir.path}/sentence.aac';
@@ -603,7 +603,7 @@ void main() {
 
     test('reports invalid-image diagnostics when GIF clipping fails', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_gif_fail_test');
+          Directory.systemTemp.createTempSync('fushi_gif_fail_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.mkv';
       final String output = '${dir.path}/out.gif';
@@ -646,7 +646,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_gif_fallback_test');
+          Directory.systemTemp.createTempSync('fushi_gif_fallback_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.mp4';
       final String output = '${dir.path}/clip.gif';
@@ -783,7 +783,7 @@ void main() {
       // 旧 extractVideoFrameViaFfmpeg 只往 ErrorLogService 记日志、不回调 onFailure，
       // 调用方无从向用户解释「为什么降级成静态图」。本守卫钉住失败摘要经 onFailure 回传。
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_frame_fail_test');
+          Directory.systemTemp.createTempSync('fushi_frame_fail_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String input = '${dir.path}/in.mkv';
       final String output = '${dir.path}/frame.jpg';
@@ -833,7 +833,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_frame_test');
+          Directory.systemTemp.createTempSync('fushi_frame_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String video = '${dir.path}/clip.mp4';
       final String out = '${dir.path}/thumb.jpg';
@@ -917,7 +917,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_sub_test');
+          Directory.systemTemp.createTempSync('fushi_sub_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String srt = '${dir.path}/src.srt';
       final String video = '${dir.path}/withsub.mkv';
@@ -1036,7 +1036,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_multisub_test');
+          Directory.systemTemp.createTempSync('fushi_multisub_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String srtA = '${dir.path}/a.srt';
       final String srtB = '${dir.path}/b.srt';
@@ -1095,7 +1095,7 @@ void main() {
 
     test('单遍被一条 output-open 毒轨整批击穿时，逐轨回退保住其余好轨', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_poison_test');
+          Directory.systemTemp.createTempSync('fushi_poison_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String video = '${dir.path}/in.mkv';
       // 只需存在（extractEmbeddedSubtitlesViaFfmpeg 用 existsSync 门控输入）。
@@ -1131,7 +1131,7 @@ void main() {
 
     test('单遍全部成功时不触发逐轨回退（common path 零开销）', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clean_test');
+          Directory.systemTemp.createTempSync('fushi_clean_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String video = '${dir.path}/in.mkv';
       File(video).writeAsStringSync('fake-container');
@@ -1156,7 +1156,7 @@ void main() {
     late String video;
 
     setUp(() {
-      dir = Directory.systemTemp.createTempSync('hibiki_bug818');
+      dir = Directory.systemTemp.createTempSync('fushi_bug818');
       video = '${dir.path}/in.mkv';
       File(video).writeAsStringSync('fake container');
     });
@@ -1258,7 +1258,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_cover_test');
+          Directory.systemTemp.createTempSync('fushi_cover_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String cover = '${dir.path}/cover.png';
       final String audio = '${dir.path}/withcover.m4a';
@@ -1455,6 +1455,14 @@ void main() {
 }
 
 class _FakeFfmpegBackend implements ffmpeg.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   const _FakeFfmpegBackend(this.result);
 
   final ffmpeg.FfmpegRunResult result;
@@ -1474,7 +1482,7 @@ class _FakeFfmpegBackend implements ffmpeg.FfmpegBackend {
       result;
 }
 
-/// Simulates Hibiki's bundled `--disable-everything` min-ffmpeg for BUG-863.
+/// Simulates Fushi's bundled `--disable-everything` min-ffmpeg for BUG-863.
 ///
 /// Any `-map 0:s:N out` whose subtitle index N is not in [decodableIndices]
 /// makes the WHOLE command abort with AVERROR(EINVAL) and write NOTHING —
@@ -1483,6 +1491,14 @@ class _FakeFfmpegBackend implements ffmpeg.FfmpegBackend {
 /// Invalid argument", exit -22) sinks the entire batch. A command whose every
 /// mapped index is decodable writes each output file and exits 0.
 class _MinBuildFakeFfmpegBackend implements ffmpeg.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   _MinBuildFakeFfmpegBackend({required this.decodableIndices});
 
   final Set<int> decodableIndices;
@@ -1523,6 +1539,14 @@ class _MinBuildFakeFfmpegBackend implements ffmpeg.FfmpegBackend {
 }
 
 class _InvalidBundledThenPathFfmpegBackend implements ffmpeg.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   _InvalidBundledThenPathFfmpegBackend({required this.pathExecutable});
 
   static const String bundledPath = r'C:\App\Hibiki\ffmpeg.exe';
@@ -1574,6 +1598,14 @@ class _InvalidBundledThenPathFfmpegBackend implements ffmpeg.FfmpegBackend {
 /// map of each invocation so a test can assert the single pass ran first, then
 /// per-track fallback for the still-missing tracks.
 class _FakePoisonFfmpegBackend implements ffmpeg.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   _FakePoisonFfmpegBackend({required this.poisonIndex});
 
   final int poisonIndex;

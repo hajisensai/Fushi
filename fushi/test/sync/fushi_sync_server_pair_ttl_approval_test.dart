@@ -23,7 +23,7 @@ void main() {
     required bool lanRequiresPin,
     Duration approvalDelay = Duration.zero,
   }) async {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_pair_ttl_test');
+    tempDir = Directory.systemTemp.createTempSync('fushi_pair_ttl_test');
     server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,

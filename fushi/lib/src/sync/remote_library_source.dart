@@ -28,7 +28,7 @@ abstract class RemoteLibrarySource {
   String get remoteLibrarySourceId;
 }
 
-/// 互联对端（局域网 hibiki host live 库）的来源身份。
+/// 互联对端（局域网 Fushi host live 库）的来源身份。
 ///
 /// 全局只有一台「当前对端」（`InterconnectSyncBackend` 是单例），换对端由
 /// `sessionIdentityRevision` → `invalidateAll()` 兜底，故不按对端地址细分。

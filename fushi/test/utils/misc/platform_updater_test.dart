@@ -328,54 +328,59 @@ void main() {
       expect(script, contains('OpenMutexW'));
       expect(script, contains('@kernel32.dll stdcall'));
       expect(script, contains('FushiSingleInstanceMutex'));
-      // Terminates fushi.exe / hibiki.exe / WebView2 **by image name** before
-      // the check (BUG-2203: never by process tree — see the /T guard below).
-      expect(script, contains('taskkill'));
-      expect(script, contains('hibiki.exe'));
-      expect(script, contains('msedgewebview2.exe'));
+      // Closes, then terminates, fushi.exe / hibiki.exe (+ their WebView2
+      // children) natively before the check (BUG-2203: never the whole
+      // process tree — see the guard below; no taskkill child process).
+      expect(script, contains('#include "process_control.iss"'));
+      expect(script, contains('FushiCloseAppWindows();'));
+      expect(script, contains('FushiTerminateAppProcessTree();'));
+      final String control = File(
+        'windows/installer/process_control.iss',
+      ).readAsStringSync();
+      expect(control, contains("(Names[I] = 'hibiki.exe')"));
+      expect(control, contains("(Names[I] = 'msedgewebview2.exe')"));
       // Bounded poll until the mutex is actually released (no infinite wait).
       expect(script, contains('MutexReleasePollAttempts'));
       expect(script, contains('Sleep(MutexReleasePollIntervalMs)'));
     });
 
     test(
-        'BUG-2203: taskkill 绝不带 /T —— 安装器自己就在 fushi.exe 的后代进程树里',
+        'BUG-2203: 强杀只沿 msedgewebview2.exe 往下扩 —— 安装器自己就在 fushi.exe 的后代进程树里',
         () {
       // 应用内静默更新时进程链是
       //   fushi.exe → fushi_update_launcher.exe → <本 setup.exe>
-      // 而 taskkill 的 /T 递归杀整条后代树（实测：/F /IM <parent> /T 连孙进程
-      // 一起终止）。于是 InitializeSetup 的自我防卫会把 launcher 和安装器自己
-      // 一并杀掉：安装器自杀、日志停在启动段、磁盘留在旧版，且 BUG-1708 的
-      // 「安装失败把 app 拉回来」兜底也随 launcher 一起没了。
+      // 旧实现的 `taskkill /T` 递归杀整条后代树，把 launcher 和安装器自己一并杀掉：
+      // 安装器自杀、日志停在启动段、磁盘留在旧版，且 BUG-1708 的「安装失败把 app
+      // 拉回来」兜底也随 launcher 一起没了。
       //
-      // 断言落在**整个实参列表**上，而不是整份文件、也不是第一个字符串字面量：
-      // - 整份文件会假红：注释里就写着 /T（在解释为什么禁用）。
-      // - 只看第一个字面量会假绿：`'/F /IM ' + ExeName + ' /T'` 这种拼接能绕过去
-      //   （这条守卫第一版就是这么写的，变异实测当场放行）。
-      final String script = File(
-        'windows/installer/fushi.iss',
+      // 现在的 FushiTerminateAppProcessTree 自己沿父 PID 往下扩目标集。不变式：扩展
+      // 条件里**必须**同时要求镜像名是 msedgewebview2.exe —— 只看「父进程在目标集里」
+      // 就等于重新发明了 /T（2026-10-16 探针实测：launcher 子进程存活）。
+      final String control = File(
+        'windows/installer/process_control.iss',
       ).readAsStringSync();
+      final int at =
+          control.indexOf('procedure FushiTerminateAppProcessTree();');
+      expect(at, greaterThan(0));
+      final int end = control.indexOf('\nend;', at);
+      expect(end, greaterThan(at));
+      final String body = control.substring(at, end);
 
-      final List<RegExpMatch> calls = RegExp(
-        r"Exec\(ExpandConstant\('\{sys\}\\taskkill\.exe'\)([\s\S]*?)\);",
-      ).allMatches(script).toList(growable: false);
-
+      final List<RegExpMatch> expansions = RegExp(
+        r'if\s+([\s\S]*?)\s+then\s+begin\s+FushiAppendPid\(Targets, Pids\[I\]\);\s+Grew := True;',
+      ).allMatches(body).toList(growable: false);
       expect(
-        calls,
-        isNotEmpty,
-        reason: '没找到任何 taskkill 调用 —— 要么调用形状变了、要么这条守卫失效了，'
-            '两种都必须有人看一眼，不能静默放行。',
+        expansions,
+        hasLength(1),
+        reason: '没找到唯一的「往下扩目标集」分支 —— 形状变了就必须有人重新审一遍 BUG-2203',
       );
-      for (final RegExpMatch call in calls) {
-        final String args = call.group(1)!;
-        expect(
-          args.contains('/T'),
-          isFalse,
-          reason: 'taskkill 实参 "${args.trim()}" 里出现了 /T：它会连同安装器'
-              '所在的祖先进程树一起杀掉（BUG-2203）。按 image 名杀就够了 —— '
-              'WebView2 的每个子进程都叫 msedgewebview2.exe，已被单独一行覆盖。',
-        );
-      }
+      final String condition = expansions.single.group(1)!;
+      expect(
+        condition,
+        contains("(Names[I] = 'msedgewebview2.exe') and"),
+        reason: '往下扩必须限定 WebView2 镜像名，否则 launcher / 安装器会被一并杀掉（BUG-2203）',
+      );
+      expect(condition, contains('FushiPidInList(ParentPids[I], Targets)'));
     });
 
     test('update launcher is not the Flutter runner and does not take mutex',
@@ -487,7 +492,7 @@ void main() {
       // download must surface an error (caught upstream -> SnackBar) rather
       // than being fed to Process.start (and then exit(0) vanishing the app).
       final Directory tmp =
-          await Directory.systemTemp.createTemp('hibiki-update-test');
+          await Directory.systemTemp.createTemp('fushi-update-test');
       addTearDown(() async {
         if (tmp.existsSync()) await tmp.delete(recursive: true);
       });
@@ -520,7 +525,7 @@ void main() {
       // the two tests above race the 30s default test timeout on a busy box.
       // Validation must come first, so diagnostics are never collected at all.
       final Directory tmp =
-          await Directory.systemTemp.createTemp('hibiki-update-nodiag');
+          await Directory.systemTemp.createTemp('fushi-update-nodiag');
       addTearDown(() async {
         if (tmp.existsSync()) await tmp.delete(recursive: true);
       });
@@ -588,15 +593,39 @@ void main() {
   });
 
   group('MacUpdater.selectAsset', () {
-    test('picks the -macos.zip asset (stable)', () async {
+    test('picks the -macos-arm64.zip asset (stable)', () async {
       final MacUpdater u = MacUpdater();
       final String? url = await _urlOf(u.selectAsset(_assets(<String>[
         'fushi-0.4.2-arm64-v8a.apk',
         'fushi-0.4.2-windows-setup.exe',
-        'fushi-0.4.2-macos.zip',
+        'fushi-0.4.2-macos-arm64.zip',
         'fushi-0.4.2-ios.ipa',
       ])));
+      expect(url, 'https://example.com/fushi-0.4.2-macos-arm64.zip');
+    });
+
+    // 改名前（universal 时代）的 `-macos.zip` 在 arm64 上照常能跑，仍然认。
+    test('still accepts the legacy -macos.zip asset', () async {
+      final MacUpdater u = MacUpdater();
+      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
+        'fushi-0.4.2-windows-setup.exe',
+        'fushi-0.4.2-macos.zip',
+      ])));
       expect(url, 'https://example.com/fushi-0.4.2-macos.zip');
+    });
+
+    // 清单里与 zip 并列的 `-macos-arm64.dmg` 只给官网首装下载用：自替换流程按
+    // zip 解包，dmg 排在前面也绝不能被选中；只有 dmg 时宁可不更新。
+    test('never selects the -macos-arm64.dmg first-install download', () async {
+      final MacUpdater u = MacUpdater();
+      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
+        'fushi-0.4.2-macos-arm64.dmg',
+        'fushi-0.4.2-macos-arm64.zip',
+      ])));
+      expect(url, 'https://example.com/fushi-0.4.2-macos-arm64.zip');
+      final UpdateAsset? dmgOnly = await u
+          .selectAsset(_assets(<String>['fushi-0.4.2-macos-arm64.dmg']));
+      expect(dmgOnly, isNull);
     });
 
     test('returns null when no macOS asset present', () async {
@@ -612,23 +641,23 @@ void main() {
       final MacUpdater u = MacUpdater();
       final String? url = await _urlOf(u.selectAsset(
         _assets(<String>[
-          'fushi-0.5.1-macos.zip',
-          'fushi-0.5.1-debug.412-macos.zip',
+          'fushi-0.5.1-macos-arm64.zip',
+          'fushi-0.5.1-debug.412-macos-arm64.zip',
         ]),
         channel: UpdateChannel.debug,
       ));
-      expect(url, 'https://example.com/fushi-0.5.1-debug.412-macos.zip');
+      expect(url, 'https://example.com/fushi-0.5.1-debug.412-macos-arm64.zip');
     });
 
     test('stable channel ignores the debug macOS zip', () async {
       final MacUpdater u = MacUpdater();
       final String? url = await _urlOf(u.selectAsset(
         _assets(<String>[
-          'fushi-0.5.1-debug.412-macos.zip',
-          'fushi-0.5.1-macos.zip',
+          'fushi-0.5.1-debug.412-macos-arm64.zip',
+          'fushi-0.5.1-macos-arm64.zip',
         ]),
       ));
-      expect(url, 'https://example.com/fushi-0.5.1-macos.zip');
+      expect(url, 'https://example.com/fushi-0.5.1-macos-arm64.zip');
     });
 
     test('macOS updater advertises in-app install support', () {
@@ -664,7 +693,9 @@ void main() {
     test('synthesizeStableAssetNames lists the macOS zip', () {
       final List<String> names = synthesizeStableAssetNames('0.4.2');
       // macOS/Windows 均已切 fushi（Windows 更新桥已落，Phase 5）；Android APK 保持旧名。
-      expect(names, contains('fushi-0.4.2-macos.zip'));
+      expect(names, contains('fushi-0.4.2-macos-arm64.zip'));
+      // 旧名不再合成：从这一版起 release 里只有 arm64 名的包。
+      expect(names, isNot(contains('fushi-0.4.2-macos.zip')));
       expect(names, contains('fushi-0.4.2-windows-setup.exe'));
     });
   });

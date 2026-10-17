@@ -47,7 +47,7 @@ void linear::build_to_file(const std::vector<std::pair<uint64_t, uint64_t>>& has
 
   auto out = memory::map_rw(path, file_size);
   if (!out) {
-    throw std::runtime_error("failed to create hash table");
+    throw memory::map_error("failed to create hash table");
   }
  
   std::memcpy(out.data, &ptr_->capacity, sizeof(uint32_t));

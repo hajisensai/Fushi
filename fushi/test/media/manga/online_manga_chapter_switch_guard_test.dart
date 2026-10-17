@@ -23,9 +23,11 @@ void main() {
     // （`initialPage == null` 分支）会去读整本**唯一那行** `reader_positions`
     // —— 装的是上一章读到哪。读完第 3 话第 20 页自动换到第 4 话，第 4 话就从
     // 第 20 页开始，整章整章跳过内容。
+    // BUG-3222 起往回翻进上一章的起始页是 kMangaLandOnLastPage（越界即末页），
+    // 其余仍从 0 起；两种都是非空 int。
     expect(
       code,
-      contains('int initialPage = 0;'),
+      contains('int initialPage = landOnLastPage ? kMangaLandOnLastPage : 0;'),
       reason: '每章进度的真相源是 manga_chapter_states，不是书级那一行',
     );
     expect(

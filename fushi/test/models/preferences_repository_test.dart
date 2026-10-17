@@ -3,6 +3,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
+import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 
@@ -57,16 +59,19 @@ void main() {
       expect(repo.onboardingCompleted, true);
     });
 
-    test('module toggles default to true and round-trip', () async {
-      // 「功能模块」显隐默认全开——升级用户底栏不变（Never break userspace）。
+    test('module toggles default per module and round-trip', () async {
+      // 「功能模块」显隐默认开——升级用户底栏不变（Never break userspace）。复习
+      // （ModuleId.srs）出厂默认同样开（所有者 2026-10-16），但本安装的老 / 新用户
+      // 判定（settleSrsMiningTargetInstallDefault）还没跑过时按关读（老用户不提醒）。
       // 按 [ModuleId.values] 遍历而非手抄七个模块：加模块时本用例自动覆盖到它，
       // 也钉住「一个模块一个键」（同键复用会在写全 false 后被读回暴露）。
       for (final ModuleId module in ModuleId.values) {
         expect(
           repo.moduleEnabled(module),
-          true,
-          reason: '${module.name} 默认应为开',
+          module != ModuleId.srs,
+          reason: '${module.name} 的出厂默认不对',
         );
+        expect(module.defaultEnabled, isTrue);
       }
       for (final ModuleId module in ModuleId.values) {
         await repo.setModuleEnabled(module, false);
@@ -88,6 +93,47 @@ void main() {
           false,
           reason: '${module.name} 不该跟着 books 一起被打开',
         );
+      }
+    });
+
+    test(
+        'AI module off: every AiFeature resolves to no provider, '
+        'stored assignments survive and come back when turned on', () async {
+      final AiProviderConfig provider = AiProviderConfig(
+        id: 'p1',
+        presetId: 'openai',
+        name: 'OpenAI',
+        baseUrl: Uri.parse('https://api.openai.com/v1'),
+        apiKey: 'sk-secret',
+        model: 'gpt-4o-mini',
+      );
+      await repo.setAiProviders(<AiProviderConfig>[provider]);
+      await repo.setAiFeatureAssignments(
+        const AiFeatureAssignments(defaultProviderId: 'p1'),
+      );
+      for (final AiFeature feature in AiFeature.values) {
+        expect(repo.resolveAiFeatureProvider(feature)?.id, 'p1');
+      }
+
+      await repo.setModuleEnabled(ModuleId.ai, false);
+      for (final AiFeature feature in AiFeature.values) {
+        expect(
+          repo.resolveAiFeatureProvider(feature),
+          isNull,
+          reason: '$feature 在 AI 模块关闭时不该解析出提供商（缓存不得放水）',
+        );
+        expect(
+          repo.aiFeatureAssignments.resolve(feature, repo.aiProviders),
+          isNull,
+          reason: '$feature 经 AiSettingsSource 契约也不该解析出提供商',
+        );
+      }
+      // 用户真实存的指派原样保留：设置页编辑读它，关模块不能清空用户配置。
+      expect(repo.storedAiFeatureAssignments.defaultProviderId, 'p1');
+
+      await repo.setModuleEnabled(ModuleId.ai, true);
+      for (final AiFeature feature in AiFeature.values) {
+        expect(repo.resolveAiFeatureProvider(feature)?.id, 'p1');
       }
     });
 
@@ -290,8 +336,8 @@ void main() {
       expect(repo.reverseNavigationBar, false);
     });
 
-    test('startupDefaultDictionaryTab defaults to false', () {
-      expect(repo.startupDefaultDictionaryTab, false);
+    test('startupModule defaults to null (first visible page)', () {
+      expect(repo.startupModule, isNull);
     });
 
     test('videoSubtitleListAutoScroll defaults to true (TODO-613)', () {
@@ -534,33 +580,67 @@ void main() {
       expect(repo.reverseNavigationBar, false);
     });
 
-    test('setStartupDefaultDictionaryTab persists bool', () async {
-      await repo.setStartupDefaultDictionaryTab(true);
+    test('setStartupModule persists module and default', () async {
+      await repo.setStartupModule(ModuleId.video);
 
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
-      expect(repo2.startupDefaultDictionaryTab, true);
+      expect(repo2.startupModule, ModuleId.video);
       repo2.dispose();
+
+      await repo.setStartupModule(null);
+      final repo3 = PreferencesRepository(db);
+      await repo3.loadFromDb();
+      expect(repo3.startupModule, isNull);
+      repo3.dispose();
+    });
+
+    test('startupModule migrates legacy "open lookup on startup" switch',
+        () async {
+      // 升级前开了「启动时打开查词」、从没写过新键：启动页 = 查词。
+      await repo.setPref(
+        PreferencesRepository.legacyStartupDictionaryTabKey,
+        true,
+      );
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.startupModule, ModuleId.lookup);
+      repo2.dispose();
+
+      // 新键一旦写过（哪怕写回默认），旧开关不再生效。
+      await repo.setStartupModule(null);
+      final repo3 = PreferencesRepository(db);
+      await repo3.loadFromDb();
+      expect(repo3.startupModule, isNull);
+      repo3.dispose();
+    });
+
+    test('startupModule ignores legacy switch when it is off', () async {
+      await repo.setPref(
+        PreferencesRepository.legacyStartupDictionaryTabKey,
+        false,
+      );
+      expect(repo.startupModule, isNull);
     });
 
     test('yomitan api server prefs round-trip', () async {
-      expect(repo.yomitanApiServerEnabled, false);
-      expect(repo.yomitanApiPort, 19633);
-      expect(repo.yomitanApiKey, '');
+      expect(repo.fushiApiServerEnabled, false);
+      expect(repo.fushiApiPort, 19633);
+      expect(repo.fushiApiKey, '');
 
-      await repo.setYomitanApiServerEnabled(true);
-      await repo.setYomitanApiPort(19999);
-      await repo.setYomitanApiKey('k');
+      await repo.setFushiApiServerEnabled(true);
+      await repo.setFushiApiPort(19999);
+      await repo.setFushiApiKey('k');
 
-      expect(repo.yomitanApiServerEnabled, true);
-      expect(repo.yomitanApiPort, 19999);
-      expect(repo.yomitanApiKey, 'k');
+      expect(repo.fushiApiServerEnabled, true);
+      expect(repo.fushiApiPort, 19999);
+      expect(repo.fushiApiKey, 'k');
 
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
-      expect(repo2.yomitanApiServerEnabled, true);
-      expect(repo2.yomitanApiPort, 19999);
-      expect(repo2.yomitanApiKey, 'k');
+      expect(repo2.fushiApiServerEnabled, true);
+      expect(repo2.fushiApiPort, 19999);
+      expect(repo2.fushiApiKey, 'k');
       repo2.dispose();
     });
 
@@ -972,9 +1052,8 @@ void main() {
 
   // ── reading goals (TODO-1046) ─────────────────────────────────────────
   group('reading goals (TODO-1046)', () {
-    test('daily/weekly goals default to 0 (unset/off)', () {
+    test('daily goal defaults to 0 (unset/off)', () {
       expect(repo.readingGoalDailyChars, 0);
-      expect(repo.readingGoalWeeklyChars, 0);
     });
 
     test('setReadingGoalDailyChars round-trips through DB', () async {
@@ -987,28 +1066,11 @@ void main() {
       expect(repo2.readingGoalDailyChars, 5000);
     });
 
-    test('setReadingGoalWeeklyChars round-trips through DB', () async {
-      await repo.setReadingGoalWeeklyChars(35000);
-      expect(repo.readingGoalWeeklyChars, 35000);
-
-      final PreferencesRepository repo2 = PreferencesRepository(db);
-      await repo2.loadFromDb();
-      addTearDown(repo2.dispose);
-      expect(repo2.readingGoalWeeklyChars, 35000);
-    });
-
     test('daily goal clamps out-of-range writes into 0..1000000', () async {
       await repo.setReadingGoalDailyChars(-5);
       expect(repo.readingGoalDailyChars, 0);
       await repo.setReadingGoalDailyChars(9999999);
       expect(repo.readingGoalDailyChars, 1000000);
-    });
-
-    test('weekly goal clamps out-of-range writes into 0..10000000', () async {
-      await repo.setReadingGoalWeeklyChars(-100);
-      expect(repo.readingGoalWeeklyChars, 0);
-      await repo.setReadingGoalWeeklyChars(999999999);
-      expect(repo.readingGoalWeeklyChars, 10000000);
     });
   });
 

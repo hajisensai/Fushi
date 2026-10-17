@@ -1,18 +1,18 @@
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 CupertinoThemeData fushiCupertinoTheme(ColorScheme scheme,
     {String? fontFamily}) {
   final brightness = scheme.brightness;
-  // Cupertino (iOS) chrome text follows the app's editorial type scale
-  // ([FushiTypeScale]) instead of hardcoded iOS point sizes (was 17/17/34,
-  // weights w400/w600/w700), so iOS matches the Material surfaces. Sizes/weights
-  // come from the scale; letterSpacing comes from it too (0 for CJK safety),
-  // dropping the old iOS Latin tracking (-0.41/0.41) that spaced CJK glyphs out.
-  // navLargeTitle keeps a stronger weight (w600) for large-title presence.
+  // Cupertino (iOS) chrome text follows the Apple design system's type scale
+  // ([FushiAppleTypeScale], Apple HIG text styles mapped onto the 15 Material
+  // roles): body = Body 17, nav title = Headline 17 semibold, large title =
+  // Large Title 34 bold. Tracking follows the scale (SF tracking on Apple
+  // platforms for Latin, 0 elsewhere / for CJK).
   final TextStyle base =
       TextStyle(color: scheme.onSurface, fontFamily: fontFamily);
+  final TextTheme apple = FushiAppleTypeScale.buildTextTheme(base);
   return CupertinoThemeData(
     brightness: brightness,
     primaryColor: scheme.primary,
@@ -21,11 +21,9 @@ CupertinoThemeData fushiCupertinoTheme(ColorScheme scheme,
     scaffoldBackgroundColor: scheme.surface,
     textTheme: CupertinoTextThemeData(
       primaryColor: scheme.primary,
-      textStyle: FushiTypeScale.bodyLarge.applyTo(base),
-      navTitleTextStyle: FushiTypeScale.titleLarge.applyTo(base),
-      navLargeTitleTextStyle: FushiTypeScale.displaySmall
-          .applyTo(base)
-          .copyWith(fontWeight: FontWeight.w600),
+      textStyle: apple.bodyLarge,
+      navTitleTextStyle: apple.titleLarge,
+      navLargeTitleTextStyle: apple.displaySmall,
     ),
   );
 }

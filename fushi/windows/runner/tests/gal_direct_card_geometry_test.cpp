@@ -157,5 +157,71 @@ int main() {
     assert(y + card_h == static_cast<int>(glyph_top));
   }
 
+  // ── BUG-2921：嵌套子卡出现时根卡必须原地不动 ────────────────────────────
+  //
+  // 用户视频（CLANNAD，客户区约 2000x1500）：根卡 800x900 贴在台词字形正上方，
+  // 在根卡里点词，子卡级联到被点词上方，union 向上长出。
+  {
+    using fushi::gal_direct_card_geometry::PlaceDirectUnionAroundRoot;
+    const int client_w = 2000;
+    const int client_h = 1500;
+    const double glyph_left = 700.0;
+    const double glyph_top = 1250.0;
+    const double glyph_w = 40.0;
+    const double glyph_h = 40.0;
+    const int root_w = 800;
+    const int root_h = 900;
+
+    // 首次上屏：union == 根卡，根卡在 window-local (0,0)。
+    const auto first = PlaceDirectUnionAroundRoot(
+        glyph_left, glyph_top, glyph_w, glyph_h, root_w, root_h, 0, 0, 0, 0,
+        root_w, root_h, client_w, client_h);
+    assert(first.root_y == 350);  // 1250 - 900，底边贴字形
+    assert(first.root_x == 320);  // 720 - 400，水平居中于字形
+    assert(first.union_x == first.root_x && first.union_y == first.root_y);
+
+    // 子卡在上方长出 300、在左侧长出 150：union 原点 window-local (-150,-300)，
+    // 尺寸 950x1200。根卡位置必须与首次上屏逐像素相同。
+    const auto nested = PlaceDirectUnionAroundRoot(
+        glyph_left, glyph_top, glyph_w, glyph_h, root_w, root_h, 0, 0, -150,
+        -300, 950, 1200, client_w, client_h);
+    assert(nested.root_x == first.root_x && nested.root_y == first.root_y);
+    assert(nested.union_x + 150 == first.root_x);
+    assert(nested.union_y + 300 == first.root_y);
+    assert(nested.union_y == 50);  // 子卡整块留在客户区内，标题栏不被裁
+
+    // 旧实现拿 union 尺寸贴字形：子卡再高一点（union 1300，原点 -400 → 顶边仍在
+    // 客户区 -50 处被夹到 0）时 1250 - 1300 < 0，整个 union 翻到字形下方再夹回
+    // 1500 - 1300 = 200，根卡从 350 跳到 600——视频里根卡先跳位的形态。
+    const auto old_way = GlyphAnchoredCardOrigin(glyph_left, glyph_top, glyph_w,
+                                                 glyph_h, 950, 1300);
+    assert(ClampDirectCardOrigin(old_way.top, 1300, client_h) + 400 !=
+           first.root_y);
+
+    // 根卡本身不在 window-local 原点时，用它自己的偏移抵消。
+    const auto offset_root = PlaceDirectUnionAroundRoot(
+        glyph_left, glyph_top, glyph_w, glyph_h, root_w, root_h, 30, 20, 30,
+        20, root_w, root_h, client_w, client_h);
+    assert(offset_root.union_x == first.root_x);
+    assert(offset_root.union_y == first.root_y);
+
+    // 根卡因尾批词典长高（900 → 1000）：底边仍贴字形，不会盖住台词。
+    const auto grown = PlaceDirectUnionAroundRoot(
+        glyph_left, glyph_top, glyph_w, glyph_h, root_w, 1000, 0, 0, 0, 0,
+        root_w, 1000, client_w, client_h);
+    assert(grown.root_y + 1000 == static_cast<int>(glyph_top));
+
+    // 字形贴近左边：根卡先被夹进客户区，嵌套后仍用同一个被夹过的根卡位置。
+    const auto edge_first = PlaceDirectUnionAroundRoot(
+        100.0, glyph_top, glyph_w, glyph_h, root_w, root_h, 0, 0, 0, 0, root_w,
+        root_h, client_w, client_h);
+    assert(edge_first.root_x == 0);
+    const auto edge_nested = PlaceDirectUnionAroundRoot(
+        100.0, glyph_top, glyph_w, glyph_h, root_w, root_h, 0, 0, 0, -300,
+        root_w, 1200, client_w, client_h);
+    assert(edge_nested.root_x == 0 && edge_nested.union_x == 0);
+    assert(edge_nested.union_y + 300 == edge_first.root_y);
+  }
+
   return 0;
 }

@@ -12,7 +12,7 @@ Future<FushiDatabase> _openDb() async {
 }
 
 Future<FushiDatabase> _openRealDb() async {
-  final dir = await Directory.systemTemp.createTemp('hibiki_tags_test_');
+  final dir = await Directory.systemTemp.createTemp('fushi_tags_test_');
   addTearDown(() async {
     await dir.delete(recursive: true);
   });

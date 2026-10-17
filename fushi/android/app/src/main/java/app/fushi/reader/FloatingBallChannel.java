@@ -310,6 +310,11 @@ final class FloatingBallChannel {
                 result.success(started);
                 return;
             }
+            case "captureScreen":
+                // 截本 App 窗口（含 WebView），反馈截图用；与 iOS 同名同契约（PNG 字节）。
+                // maxSide：输出长边上限，原生侧合成时直接缩好，不传全分辨率 PNG 过通道。
+                AppWindowSnapshot.capture(context, call.argument("maxSide"), result);
+                return;
             default:
                 result.notImplemented();
         }

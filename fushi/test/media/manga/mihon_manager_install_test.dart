@@ -19,7 +19,7 @@ void main() {
   late MihonManager manager;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-mihon-manager-');
+    root = await Directory.systemTemp.createTemp('fushi-mihon-manager-');
     database = FushiDatabase.forTesting(NativeDatabase.memory());
     runtime = _InstallRuntime();
     manager = MihonManager(
@@ -701,6 +701,73 @@ void main() {
           );
       expect(updated.versionCode, 9);
     });
+
+    test(
+      '后台自动更新口径（upgrade + trustSigner:false）：同签名装上，换签名进 failed 且带 SIGNATURE_CHANGED 码',
+      () async {
+        await useBulkRepository(count: 2);
+        // bulk0 已装旧版、签名与仓库一致 → 该装上；bulk1 已装旧版但当初的签名是
+        // ccdd，仓库新版换成了 aabb → 必须失败，旧版原样保留。
+        for (final (int index, String signer) in <(int, String)>[
+          (0, 'aabb'),
+          (1, 'ccdd'),
+        ]) {
+          await database.upsertMangaExtension(
+            MangaExtensionsCompanion.insert(
+              packageName: 'org.example.bulk$index',
+              name: 'Bulk $index',
+              versionCode: 1,
+              versionName: '1.6.1',
+              libVersion: '1.6',
+              language: 'ja',
+              apkPath: 'extensions/org.example.bulk$index.apk',
+              apkSha256: 'old$index',
+              signerSha256: signer,
+              installedAt: 1,
+            ),
+          );
+        }
+        for (final String fingerprint in <String>['aabb', 'ccdd']) {
+          await database.trustMangaSigner(
+            MangaTrustedSignersCompanion.insert(
+              fingerprint: fingerprint,
+              label: 'Bulk',
+              origin: 'https://repo.example/index.json',
+              trustedAt: 1,
+            ),
+          );
+        }
+        await manager.reload();
+        runtime.invalidatedBatches.clear();
+
+        final MihonBulkInstallReport report = await manager.installMany(
+          <MihonAvailableExtension>[_bulkSnapshot(0), _bulkSnapshot(1)],
+          trustSigner: false,
+          upgrade: true,
+        );
+
+        expect(report.installed, <String>['org.example.bulk0']);
+        expect(report.failed.keys, <String>['org.example.bulk1']);
+        expect(report.failureCodes, <String, String>{
+          'org.example.bulk1': 'SIGNATURE_CHANGED',
+        });
+        expect(runtime.invalidatedBatches.single, <String>[
+          'org.example.bulk0',
+        ]);
+        final Map<String, MangaExtensionRow> rows = <String, MangaExtensionRow>{
+          for (final MangaExtensionRow row
+              in await database.getMangaExtensions())
+            row.packageName: row,
+        };
+        expect(rows['org.example.bulk0']!.versionCode, 9);
+        expect(
+          rows['org.example.bulk1']!.versionCode,
+          1,
+          reason: '换了签名的那条不能被后台装上',
+        );
+        expect(rows['org.example.bulk1']!.signerSha256, 'ccdd');
+      },
+    );
 
     test('单条失败不中断整批，失败原因逐条留在报告里', () async {
       await useBulkRepository(count: 3, brokenApks: <String>{'/apk/bulk1.apk'});

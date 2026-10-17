@@ -261,7 +261,7 @@ class LocalUpdateNotifier implements UpdateNotifier {
           // 出现在平台实现缺席时——那就交给查询侧，两边同一口径。
           final bool? granted = await android.requestNotificationsPermission();
           if (granted != null) return granted;
-          return hasPermission();
+          return await hasPermission();
         case TargetPlatform.iOS:
           final bool? granted = await _plugin
               .resolvePlatformSpecificImplementation<
@@ -414,7 +414,7 @@ class LocalUpdateNotifier implements UpdateNotifier {
 
   WindowsNotificationDetails _windowsDetails(UpdateNotification notification) {
     final String? image = _existingImage(notification);
-    final String? groupTitle = this.groupTitle;
+    final String? groupTitle = notification.grouped ? this.groupTitle : null;
     final String? appLogo = _windowsIconFile;
     return WindowsNotificationDetails(
       audio: WindowsNotificationAudio.silent(),

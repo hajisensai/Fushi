@@ -12,6 +12,14 @@ const Map<String, String> kVideoConstructionSites = <String, String>{
   'lib/src/pages/implementations/video_fushi/fullscreen.part.dart': '全屏路由',
 };
 
+/// 没有页面级生命周期接管、直接用 media_kit 自带那套的 [Video] 构造点：必须显式写成
+/// **对称**的 `pause…: true` + `resume…: true`（进后台暂停、回前台续播被它停的），
+/// 不能停在「暂停了不恢复」的默认值上（BUG-2544 同一个坑）。
+const Map<String, String> kSelfManagedVideoConstructionSites = <String, String>{
+  'lib/src/pages/implementations/feedback/feedback_dev_video_page.dart':
+      '反馈处理台视频预览',
+};
+
 /// media_kit vendored fork 里 `Video` 的定义（默认值就长在这儿）。
 const String kMediaKitVideoPath =
     '../third_party/media_kit_video/lib/src/video/video_texture.dart';
@@ -230,9 +238,15 @@ void main() {
       expect(missing, isEmpty,
           reason: '这些 Video 构造点没显式声明 pauseUponEnteringBackgroundMode，'
               '会退回 media_kit「后台暂停、回前台不恢复」的默认值（BUG-2544）：$missing');
-      expect(sites.toSet(), kVideoConstructionSites.keys.toSet(),
-          reason: 'Video 构造点集合变了。新增的那处要先确认生命周期策略与这里一致，'
-              '再把它登记进 kVideoConstructionSites（BUG-2544）');
+      expect(
+          sites.toSet(),
+          <String>{
+            ...kVideoConstructionSites.keys,
+            ...kSelfManagedVideoConstructionSites.keys,
+          },
+          reason: 'Video 构造点集合变了。新增的那处要先确认生命周期策略：由页面接管的登记进 '
+              'kVideoConstructionSites，用 media_kit 对称策略的登记进 '
+              'kSelfManagedVideoConstructionSites（BUG-2544）');
     });
 
     for (final MapEntry<String, String> site
@@ -243,6 +257,19 @@ void main() {
         );
         expect(text.contains('pauseUponEnteringBackgroundMode: false'), isTrue,
             reason: '生命周期暂停/续播由页面接管，自带的那套要整个关掉（BUG-2544）');
+      });
+    }
+
+    for (final MapEntry<String, String> site
+        in kSelfManagedVideoConstructionSites.entries) {
+      test('${site.value}的 Video 用 media_kit 对称的后台暂停 / 回前台续播', () {
+        final String text = maskCommentsAndScriptLines(
+          File(site.key).readAsStringSync().replaceAll('\r\n', '\n'),
+        );
+        expect(text.contains('pauseUponEnteringBackgroundMode: true'), isTrue,
+            reason: '没有页面级接管时进后台要由 media_kit 暂停（BUG-2544）');
+        expect(text.contains('resumeUponEnteringForegroundMode: true'), isTrue,
+            reason: '暂停了就要在回前台时续上，否则就是「切屏暂停、切回来没续上」（BUG-2544）');
       });
     }
 

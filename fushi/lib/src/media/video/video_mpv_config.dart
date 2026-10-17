@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/media/video/windows_hwdec_capability.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show decodeEdlSources;
 import 'package:media_kit/media_kit.dart';
 
 /// 视频播放的 mpv 配置（全局偏好），成体系覆盖解码/画质/画面几何/色彩均衡/音频/播放，
@@ -40,6 +43,7 @@ class VideoMpvConfig {
     required this.audioPitchCorrection,
     required this.audioChannels,
     required this.normalizeDownmix,
+    required this.audioPassthrough,
     required this.loopFile,
     required this.hdrToneMapping,
     required this.hdrComputePeak,
@@ -69,6 +73,7 @@ class VideoMpvConfig {
     audioPitchCorrection: true,
     audioChannels: 'auto-safe',
     normalizeDownmix: false,
+    audioPassthrough: false,
     loopFile: false,
     hdrToneMapping: 'auto',
     hdrComputePeak: 'auto',
@@ -132,6 +137,14 @@ class VideoMpvConfig {
   /// 下混时做响度归一化（mpv 默认 no）。
   final bool normalizeDownmix;
 
+  /// 杜比 / DTS 码流直通（mpv `audio-spdif`，见 [kAudioPassthroughCodecs]）。
+  ///
+  /// **默认关，且不做「自动」**：mpv 无从得知 HDMI / 光纤另一头的功放能不能解这些
+  /// 码流——系统音频端点照样报「支持多声道」，猜错的代价是无声或满屏噪音。关着时
+  /// mpv 自己解码成多声道 PCM，任何设备都出声，5.1 / 7.1 照样环绕（见
+  /// [resolveAudioChannels]）；只有想让功放亮 Atmos / DTS:X 灯的用户才需要打开。
+  final bool audioPassthrough;
+
   /// 单文件循环。
   final bool loopFile;
 
@@ -184,6 +197,7 @@ class VideoMpvConfig {
     bool? audioPitchCorrection,
     String? audioChannels,
     bool? normalizeDownmix,
+    bool? audioPassthrough,
     bool? loopFile,
     String? hdrToneMapping,
     String? hdrComputePeak,
@@ -211,6 +225,7 @@ class VideoMpvConfig {
         audioPitchCorrection: audioPitchCorrection ?? this.audioPitchCorrection,
         audioChannels: audioChannels ?? this.audioChannels,
         normalizeDownmix: normalizeDownmix ?? this.normalizeDownmix,
+        audioPassthrough: audioPassthrough ?? this.audioPassthrough,
         loopFile: loopFile ?? this.loopFile,
         hdrToneMapping: hdrToneMapping ?? this.hdrToneMapping,
         hdrComputePeak: hdrComputePeak ?? this.hdrComputePeak,
@@ -240,6 +255,7 @@ class VideoMpvConfig {
         'audioPitchCorrection': c.audioPitchCorrection,
         'audioChannels': c.audioChannels,
         'normalizeDownmix': c.normalizeDownmix,
+        'audioPassthrough': c.audioPassthrough,
         'loopFile': c.loopFile,
         'hdrToneMapping': c.hdrToneMapping,
         'hdrComputePeak': c.hdrComputePeak,
@@ -305,6 +321,7 @@ class VideoMpvConfig {
         audioPitchCorrection: d['audioPitchCorrection'] != false, // 默认 true
         audioChannels: channels.contains(ch) ? ch : 'auto-safe',
         normalizeDownmix: d['normalizeDownmix'] == true,
+        audioPassthrough: d['audioPassthrough'] == true, // 默认 false
         loopFile: d['loopFile'] == true,
         hdrToneMapping: kHdrToneMappingValues.contains(tone)
             ? tone
@@ -392,21 +409,21 @@ Map<String, String> parseMpvConf(String text) {
 /// **根治 Windows + NVIDIA 起播整进程闪退（BUG-1639；BUG-1545 的未尽根因）。**
 /// 同一条「渲染模型 ↔ 硬解后端必须匹配」的推理在 Windows 桌面端同样成立，只是失配的
 /// 那一端换成了 CUDA：media_kit 的 `NativeVideoController` 在 Windows 也走**纹理渲染**
-/// （libmpv render API + ANGLE/OpenGL），libmpv 拿不到宿主的 D3D11 device，于是
-/// `d3d11va`（需 D3D11 interop）在 hwdec 探测里必然 `Could not create device` 失败。
-/// 而 mpv 的 `auto-safe` 白名单里**紧跟其后的就是 `nvdec`——它是 CUDA API 的封装**，
-/// 于是 NVIDIA 机器上必然回退到它：`Loading hwdec driver 'cuda'` →
-/// `cuInit()` / `cuCtxCreate_v2()` → `nvcuda64.dll` 内部空指针解引用 → 整个进程
-/// `0xC0000005` 闪退（本机 minidump 四份栈完全一致，详见 `docs/bugs/BUG-1639-*.md`）。
+/// （libmpv render API + ANGLE/OpenGL）。BUG-1639 当时 ANGLE 用的是自己建的隐藏 D3D11
+/// device，`d3d11va`（需 D3D11 interop）在 hwdec 探测里失败；而 mpv 的 `auto-safe` 白名单
+/// 里**紧跟其后的就是 `nvdec`——它是 CUDA API 的封装**，于是 NVIDIA 机器上必然回退到它：
+/// `Loading hwdec driver 'cuda'` → `cuInit()` / `cuCtxCreate_v2()` → `nvcuda64.dll` 内部
+/// 空指针解引用 → 整个进程 `0xC0000005` 闪退（本机 minidump 四份栈完全一致，详见
+/// `docs/bugs/BUG-1639-*.md`）。
 ///
 /// BUG-1545 当时只把 media_kit 抢跑下发的裸 `auto` 换成了用户策略 `auto-safe`，**但
 /// `auto-safe` 通往的是同一个 CUDA 后端**，故崩溃复发。真正的修复是让 Windows 下发的
-/// hwdec **值域里根本不含 CUDA 系后端**（`nvdec` / `cuda` 及其 copy 变体），而不是继续
-/// 在「哪个 auto」之间挑：
-/// - `auto-safe` → `d3d11va,d3d11va-copy`：先试 interop 直渲（将来 media_kit 若能共享
-///   D3D11 device 就直接受益），失败静默回落 copy-back；
-/// - `auto-copy` → `d3d11va-copy`：用户显式要 copy-back，只给 copy 变体（保留两档语义
-///   差异，且不像裸 `auto-copy` 那样在无 d3d11va 的机器上落到 `cuda-copy`）；
+/// hwdec 由 app 显式给出候选表，而不是继续在「哪个 auto」之间挑：
+/// - `auto-safe` → [kWindowsAutoHwdec]（`d3d11va,d3d11va-copy`）：先走零拷贝 interop，失败
+///   静默回落 copy-back；显卡确认能硬解 H.264 High 10 时末尾再加 `nvdec-copy`（见下）；
+/// - `auto-copy` → [kWindowsCopyHwdec]（`d3d11va-copy`）：用户显式要 copy-back，只给 copy
+///   变体；它同时是 BUG-1639 文档写给用户的「不碰 CUDA」缓解档，**任何显卡上都不含 CUDA 系
+///   后端**（也不像裸 `auto-copy` 那样在无 d3d11va 的机器上落到 `cuda-copy`）；
 /// - `no`（软解）原样透传。
 ///
 /// `d3d11va` 是 Windows 8+ 的通用硬解（Intel / AMD / NVIDIA 全支持），两档都失败时
@@ -414,24 +431,46 @@ Map<String, String> parseMpvConf(String text) {
 /// GL 上下文 + 本次崩溃的 10-bit HEVC 片源）：`Using hardware decoding (d3d11va-copy)`，
 /// 全程不加载 `nvcuda64.dll`。
 ///
-/// **这不是「为了避崩而牺牲硬解」——终点本来就是同一个。** 在 media_kit 真实用的 ANGLE
-/// 上下文下实测：`nvdec` 的零拷贝 CUDA interop 会被 **mpv 自己拒绝**
-/// （`cuGLGetDevices` 失败 → `CUDA hwdec only works with OpenGL or Vulkan backends`），
-/// 因为 ANGLE 是 GLES-over-D3D11、不是 NVIDIA 的真 OpenGL；mpv 随后照样回落到
-/// `d3d11va-copy`。也就是说 CUDA 分支**从来没能真正用上零拷贝**，它只是在回落之前先跑
-/// 一趟 `cuInit()` / `cuCtxCreate_v2()`——而那趟在本机 app 进程里会栽进驱动空指针。
-/// 本修复只是把同一个终点提前，不再路过雷区；解码依然是 GPU 硬解（NVIDIA 上 D3D11VA
-/// 底层调的就是同一块 NVDEC 硬件）。
+/// **零拷贝 `nvdec` 永不下发。** 在 media_kit 真实用的 ANGLE 上下文下实测：`nvdec` 的零拷贝
+/// CUDA interop 会被 **mpv 自己拒绝**（`cuGLGetDevices` 失败 → `CUDA hwdec only works with
+/// OpenGL or Vulkan backends`），因为 ANGLE 是 GLES-over-D3D11、不是 NVIDIA 的真 OpenGL。
+/// 也就是说它只会在回落之前先跑一趟 `cuInit()` / `cuCtxCreate_v2()`——而那趟在本机 app
+/// 进程里会栽进驱动空指针。
 ///
-/// 反过来说，真要拿到零拷贝就得让 `d3d11va`（非 copy）的 interop 在这条路径上成立
-/// ——那是 media_kit 建 ANGLE context 时把底层 D3D11 device 经 EGL 扩展暴露给 mpv 的活，
-/// 属于性能优化，与本崩溃无关（详见 `docs/bugs/BUG-1639-*.md` 末节）。
+/// 零拷贝走的是 `d3d11va` 的 `d3d11-egl` interop：BUG-1644 让 ANGLE 绑定 media_kit 自建的
+/// D3D11 device、并升级了 libmpv 后已打通（`video_output.cc` 打印
+/// `libmpv d3d11-egl zero-copy interop: available`，BUG-3296 的真 app 探针在这条路径上取证），
+/// 所以 `d3d11va` 排第一是默认首选，`d3d11va-copy` 只在 interop 不成立时兜底。
+///
+/// **D3D11VA 解不了的格式，只在显卡确认支持时交给 NVDEC copy-back（BUG-3315）。** D3D11VA
+/// 的解码配置表里没有 H.264 High 10（Hi10P，番剧压制常见），`d3d11va` / `d3d11va-copy` 对它
+/// 一律失败、回落 CPU 软解——画质无差别，但 1080p 的 10-bit H.264 整条解码压在 CPU 上，忙时
+/// 就掉帧。NVDEC 从 Blackwell（RTX 50）起才支持 H.264 High 10，libmpv 能把它接进来的唯一
+/// 路径是 CUDA 的 copy 变体 `nvdec-copy`。但 CUDA 初始化就是 BUG-1639 的崩溃现场（根因未
+/// 追清），RTX 20/30/40 上它对 Hi10P 只会「初始化 CUDA → profile 不支持 → 回落软解」，
+/// 白走一趟雷区、毫无收益。所以：
+/// - 只有 [nvdecHigh10Capable]（默认取 [windowsNvdecHigh10Capable]，由
+///   [installWindowsHwdecCapability] 在启动时按 DXGI 显卡身份判定）为真时，`auto-safe` 才用
+///   [kWindowsAutoHwdecWithNvdec]；判定失败 / 未判定 / 非 Blackwell 一律不下发（保守）；
+/// - `nvdec-copy` 排在全部 D3D11 候选**之后**：D3D11 能解的格式（H.264 8-bit、HEVC
+///   Main/Main 10、VP9、AV1……）在前两档就成功，`nvcuda64.dll` 连加载都不会发生——BUG-1639
+///   的 HEVC Main 10 片源在新列表下实测仍是 `d3d11va-copy`；
+/// - `auto-copy` 恒不含 CUDA 系后端（见上）。
+/// 本机 libmpv 实测（RTX 5090 / 驱动 596.49 / H.264 High 10 1080p）：列表
+/// `d3d11va,d3d11va-copy,nvdec-copy` → `Using hardware decoding (nvdec-copy)`，输出 p010；
+/// 14 个实例并发起播 ×5 轮无异常（BUG-1639 崩溃 dump 里并存 14 个 libmpv 实例）。只有这一台
+/// 机器实测过，其它 Blackwell 型号与驱动版本是验证缺口（见 `docs/bugs/BUG-3315-*.md`）。
 ///
 /// 非 Android / 非 Windows（macOS / Linux / iOS）原样透传，零行为变化。
 ///
 /// [isAndroid] / [isWindows] 默认取 `Platform.isAndroid` / `Platform.isWindows`，
-/// 注入仅为单测。
-String resolvePlatformHwdec(String hwdec, {bool? isAndroid, bool? isWindows}) {
+/// [nvdecHigh10Capable] 默认取启动时装配的 [windowsNvdecHigh10Capable]；注入仅为单测。
+String resolvePlatformHwdec(
+  String hwdec, {
+  bool? isAndroid,
+  bool? isWindows,
+  bool? nvdecHigh10Capable,
+}) {
   final bool android = isAndroid ?? Platform.isAndroid;
   if (android) {
     // Android 纹理渲染下，surface-直渲的 auto-safe/auto 会 surface-null，统一改 copy 变体。
@@ -440,25 +479,36 @@ String resolvePlatformHwdec(String hwdec, {bool? isAndroid, bool? isWindows}) {
   }
   final bool windows = isWindows ?? Platform.isWindows;
   if (windows) {
-    // Windows GL 纹理渲染下，任何 auto* 都会经 d3d11va 失败回退到 nvdec(CUDA) → 驱动崩。
-    // 显式给不含 CUDA 的候选列表，让 CUDA 后端从值域里消失（BUG-1639）。
+    // Windows GL 纹理渲染下，裸 auto* 会在 d3d11va 之后直接选零拷贝 nvdec(CUDA)（BUG-1639）。
+    // 显式给候选列表：D3D11 在前；CUDA 只以 copy 变体、只在显卡确认能硬解 H.264 High 10
+    // 时排在最后兜底（BUG-3315）。auto-copy 是不碰 CUDA 的缓解档。
     if (hwdec == 'no') return 'no';
     if (hwdec == 'auto-copy') return kWindowsCopyHwdec;
-    return kWindowsAutoHwdec; // auto-safe / auto / 其它 auto 变体。
+    final bool nvdec = nvdecHigh10Capable ?? windowsNvdecHigh10Capable;
+    // auto-safe / auto / 其它 auto 变体。
+    return nvdec ? kWindowsAutoHwdecWithNvdec : kWindowsAutoHwdec;
   }
   return hwdec;
 }
 
-/// Windows 下 `auto-safe`（默认档）实际下发的 hwdec 候选列表——**不含任何 CUDA 系后端**。
+/// Windows 下 `auto-safe`（默认档）实际下发的 hwdec 候选列表（显卡未确认支持 NVDEC
+/// H.264 High 10 时）。
 ///
-/// 先 `d3d11va`（interop 直渲，media_kit 当前拿不到 D3D11 device 故会失败）再
-/// `d3d11va-copy`（copy-back，实测可用）。见 [resolvePlatformHwdec] 的 BUG-1639 说明。
+/// 先 `d3d11va`（零拷贝 `d3d11-egl` interop，BUG-1644 打通后是默认首选）再
+/// `d3d11va-copy`（copy-back，interop 不成立时兜底）。不含任何 CUDA 系后端。
+/// 见 [resolvePlatformHwdec] 的 BUG-1639 / BUG-3315 说明。
 const String kWindowsAutoHwdec = 'd3d11va,d3d11va-copy';
+
+/// Windows 下 `auto-safe` 在显卡确认能用 NVDEC 硬解 H.264 High 10 时下发的候选列表：
+/// [kWindowsAutoHwdec] 末尾加 `nvdec-copy`，只兜底 D3D11 没有解码配置的格式（H.264
+/// High 10）。见 [resolvePlatformHwdec] 的 BUG-3315 说明。
+const String kWindowsAutoHwdecWithNvdec = '$kWindowsAutoHwdec,nvdec-copy';
 
 /// Windows 下 `auto-copy`（用户显式要 copy-back）实际下发的 hwdec 值。
 ///
-/// 只给 copy 变体，且不含 CUDA 系后端（裸 `auto-copy` 在无 d3d11va 的机器上会落到
-/// `cuda-copy`，同样调 `cuInit()`）。见 [resolvePlatformHwdec] 的 BUG-1639 说明。
+/// 只给 copy 变体。它是 BUG-1639 文档写给用户的「不碰 CUDA」缓解档：**不得加入任何
+/// CUDA 系后端**（`nvdec` / `cuda` 及其 copy 变体），无论显卡是否支持——加了就让用户手里
+/// 唯一能绕开 `nvcuda64.dll` 初始化的档位失效。见 [resolvePlatformHwdec]。
 const String kWindowsCopyHwdec = 'd3d11va-copy';
 
 /// 把 [highQuality] 偏好按平台解析成「实际下发给 libmpv 的 scale 缩放链」属性 map。纯函数。
@@ -534,6 +584,37 @@ String resolveAudioChannels(String audioChannels) {
   return audioChannels; // stereo / mono（用户显式强制）原样透传。
 }
 
+/// [VideoMpvConfig.audioPassthrough] 打开时交给 mpv `audio-spdif` 的码流清单。
+///
+/// `dts-hd` 已包含 `dts`（mpv 手册：两者同写等价于只写 `dts-hd`）。关闭时下发空串
+/// ＝ mpv 默认（全部本地解码），而不是不下发——运行时关掉开关必须真的撤回直通。
+const String kAudioPassthroughCodecs = 'ac3,eac3,truehd,dts-hd';
+
+/// 本次实际下发给 mpv `audio-spdif` 的值。纯函数。
+///
+/// 直通（spdif）时 mpv 手里是压缩码流，**不是 PCM**，凡要改写采样的环节都碰不到它：
+/// - 音量 / 静音：mpv 的软件音量在 AO 侧按采样乘增益（`audio/out/ao.c`
+///   `process_plane`），只处理 U8/S16/S32/FLOAT/DOUBLE，spdif 格式落进 `default`
+///   分支什么也不做——调音量、按静音都**静默失效**（本仓静音就是把音量压 0）；
+/// - 倍速：mpv 的自动变速滤镜对非 PCM 只能插 `drop`（`filters/f_auto_filters.c`
+///   `aspeed_process`），它按整帧丢弃 / 重复压缩帧来凑速度（af 手册原话「extremely
+///   low quality」），听感断续卡顿，保音高也无从谈起。
+///
+/// 所以直通只在「1 倍速、满音量、未静音」时生效；任一项不满足就下发空串让 mpv 本地
+/// 解码成 PCM，倍速 / 音量 / 静音照常工作，回到条件内再恢复直通（运行时改
+/// `audio-spdif` 会让 mpv 重建音频输出）。[outputVolume] 是**实际可听音量**（静音
+/// 时传 0），取值 0..100（本仓不做放大）。
+String resolveAudioSpdif({
+  required bool passthrough,
+  double playbackSpeed = 1.0,
+  double outputVolume = 100.0,
+}) {
+  if (!passthrough) return '';
+  if (playbackSpeed != 1.0) return '';
+  if (outputVolume < 100.0) return '';
+  return kAudioPassthroughCodecs;
+}
+
 /// mpv `audio-channels` 标准布局白名单：高→低有序，末位 `stereo` 永远兜底（不会无声）。
 /// 见 [resolveAudioChannels]（BUG-798）。
 const String _standardChannelLayouts = '7.1,5.1,stereo';
@@ -602,12 +683,21 @@ Map<String, String> resolveTextureColorTargetProperties({bool? isApple}) {
 }
 
 Map<String, String> buildMpvProperties(VideoMpvConfig config,
-    {bool? isAndroid, bool? isMobile, bool? isWindows, bool? isApple}) {
+    {bool? isAndroid,
+    bool? isMobile,
+    bool? isWindows,
+    bool? isApple,
+    bool? nvdecHigh10Capable,
+    double playbackSpeed = 1.0,
+    double outputVolume = 100.0}) {
   final Map<String, String> out = <String, String>{};
   // 解码：Android 纹理渲染下把 surface-直渲的 auto-safe 改写成 copy 变体（BUG-465）；
-  // Windows GL 纹理渲染下把 auto* 改写成不含 CUDA 的 d3d11va 列表（BUG-1639）。
+  // Windows GL 纹理渲染下把 auto* 改写成 D3D11 在前的显式列表（BUG-1639），显卡确认
+  // 能硬解 H.264 High 10 时 auto-safe 末尾加 nvdec-copy（BUG-3315）。
   out['hwdec'] = resolvePlatformHwdec(config.hwdec,
-      isAndroid: isAndroid, isWindows: isWindows);
+      isAndroid: isAndroid,
+      isWindows: isWindows,
+      nvdecHigh10Capable: nvdecHigh10Capable);
   // Android 10-bit → 8-bit 降位：VO 前 vf=format=yuv420p 绕开 Mali GL 16-bit 纹理 OOM
   // （TODO-1196 / BUG-465 根因）；桌面/iOS 不下发。见 [resolveAndroidPixelFormatProperties]。
   out.addAll(resolveAndroidPixelFormatProperties(isAndroid: isAndroid));
@@ -646,6 +736,12 @@ Map<String, String> buildMpvProperties(VideoMpvConfig config,
   // [resolveAudioChannels]；stereo/mono（用户显式强制）原样透传。
   out['audio-channels'] = resolveAudioChannels(config.audioChannels);
   out['audio-normalize-downmix'] = config.normalizeDownmix ? 'yes' : 'no';
+  // 直通只在 1 倍速、满音量、未静音时生效，否则本地解码（见 [resolveAudioSpdif]）。
+  out['audio-spdif'] = resolveAudioSpdif(
+    passthrough: config.audioPassthrough,
+    playbackSpeed: playbackSpeed,
+    outputVolume: outputVolume,
+  );
   // HDR→SDR 色调映射。两条都**只在真的需要色调映射时**起作用，SDR 片源不受影响，
   // 所以无条件下发即可，不必按片源门控。见 [VideoMpvConfig.hdrToneMapping] 对
   // 「为什么是映射质量而不是 HDR 直通」的说明。
@@ -665,11 +761,15 @@ Map<String, String> buildMpvProperties(VideoMpvConfig config,
 ///
 /// best-effort：`player.platform` 非 libmpv（无 setProperty）或某属性不被接受时
 /// 单条静默吞掉，不影响其余属性与播放。与 [applyShadersToPlayer] 同范式。
-Future<void> applyMpvConfigToPlayer(
-    Player player, VideoMpvConfig config) async {
+///
+/// [playbackSpeed] / [outputVolume] 是当前倍速与实际可听音量，只用来判定直通是否
+/// 生效（[resolveAudioSpdif]）。
+Future<void> applyMpvConfigToPlayer(Player player, VideoMpvConfig config,
+    {double playbackSpeed = 1.0, double outputVolume = 100.0}) async {
   final dynamic native = player.platform;
   if (native == null) return;
-  final Map<String, String> props = buildMpvProperties(config);
+  final Map<String, String> props = buildMpvProperties(config,
+      playbackSpeed: playbackSpeed, outputVolume: outputVolume);
   for (final MapEntry<String, String> e in props.entries) {
     try {
       await native.setProperty(e.key, e.value);
@@ -684,7 +784,13 @@ Future<void> applyMpvConfigToPlayer(
 /// 远端视频经 host 直传，URI 是 [FushiSyncServer] 签发的 `http://…/stream?token=…`；
 /// 本地播放是 `File(path).uri`（`file://…`）。仅网络流才需要网络缓存调优，本地文件
 /// 注入这些属性既无收益又可能浪费内存（见 [buildNetworkCacheProperties]）。纯函数。
+///
+/// `edl://` 拼接流按**各段**判：任何一段是 http(s) 就是网络流（互联 host 的蓝光
+/// 标题、本地加密盘的解密回环），scheme 本身说明不了什么。
 bool isNetworkStreamUri(String uri) {
+  if (uri.startsWith('edl://')) {
+    return decodeEdlSources(uri).any(isNetworkStreamUri);
+  }
   final Uri? parsed = Uri.tryParse(uri);
   if (parsed == null) return false;
   final String scheme = parsed.scheme.toLowerCase();
@@ -768,10 +874,10 @@ Future<void> applyNetworkCachePropertiesToPlayer(
 /// `setSubtitleTrack(SubtitleTrack.no())` 不够——libmpv 字幕轨列表是 `player.open` 后
 /// **异步**解析就绪的，而 mpv 默认 `sub-auto=exact` 会在轨就绪后**自动重新选中**内嵌
 /// 字幕轨，覆盖掉先前的 `no()`。被重选的轨经 `sub-visibility=yes` 渲染成画面像素字幕，
-/// 与 media_kit 的内置 `SubtitleView`（也监听 `player.state.subtitle`）一起叠在 Hibiki
+/// 与 media_kit 的内置 `SubtitleView`（也监听 `player.state.subtitle`）一起叠在 Fushi
 /// 可点 [VideoSubtitleOverlay] 之上 → 字幕透明随机、点字幕穿透落空、横竖屏残留黑底。
 ///
-/// 字幕在 Hibiki 一律走可点 overlay（外挂 sidecar 解析成 cue、内嵌文本轨经
+/// 字幕在 Fushi 一律走可点 overlay（外挂 sidecar 解析成 cue、内嵌文本轨经
 /// `_loadEmbeddedSubtitleIfNeeded` 抽取成 cue），libmpv 不该自己渲染任何字幕：
 /// - `sub-auto=no`：禁止 libmpv 自动加载/选择字幕轨——根治「轨就绪后被自动重选」竞态。
 /// - `sub-visibility=no`：即便某轨仍被选中（含图形 PGS 轨的画面渲染），也不渲染画面字幕。
@@ -796,6 +902,55 @@ Map<String, String> buildGraphicSubtitleVisibilityProperties() {
   return <String, String>{
     'sub-visibility': 'yes',
   };
+}
+
+/// 图形字幕 seek 后让「正在显示的那一句」立刻出现的预读属性（BUG-3104）。纯函数。
+///
+/// 图形字幕（PGS / VobSub）由 libmpv 画面渲染，一句字幕只有一个「开始显示」的包。
+/// 往回跳到某句**中间**时，demuxer 从目标附近的关键帧开始读，那句的开始包在更早的
+/// 位置，于是这句不显示、要等下一句开头才出字幕。文本字幕不受影响：Dart overlay 每拍
+/// 按当前时间从全部 cue 里重新求当前句。
+///
+/// - Matroska：`demuxer-mkv-subtitle-preroll=yes` + 10 s 预读窗口。mpv 默认 `index`
+///   只在文件带 CueDuration / CueRelativePosition 索引时预读、窗口仅 1 s（无索引）；
+///   这里只多读数据、不解码，代价小。
+/// - 其它容器（BD 的 m2ts / ts 等）mpv 没有字幕预读，只能用 `hr-seek-demuxer-offset`
+///   让精确 seek 从目标前 [kGraphicSubtitleSeekOffsetSeconds] 秒开始解复用（要多解码
+///   这段音视频，seek 稍慢）。实测 libmpv（本仓随包）：m2ts 里往回跳到一句开始后
+///   1.8 s 处，默认不显示，设 offset 后与该句正常显示的画面逐像素一致。
+///
+/// [matroska] 由当前文件的 `file-format` 决定；拿不到时传 false（两条都下发，宁可 seek
+/// 慢一点也要显示对）。
+Map<String, String> buildGraphicSubtitleSeekPrerollProperties({
+  required bool matroska,
+}) {
+  return <String, String>{
+    'demuxer-mkv-subtitle-preroll': 'yes',
+    'demuxer-mkv-subtitle-preroll-secs': '10',
+    'hr-seek-demuxer-offset': matroska
+        ? '0'
+        : kGraphicSubtitleSeekOffsetSeconds.toString(),
+  };
+}
+
+/// 非 Matroska 容器里图形字幕的 seek 解复用提前量（秒），覆盖常见的一句字幕时长。
+const int kGraphicSubtitleSeekOffsetSeconds = 6;
+
+/// 离开图形字幕渲染时把 [buildGraphicSubtitleSeekPrerollProperties] 改过的属性还原成
+/// mpv 默认值（文本字幕走 overlay，不需要预读，也不该为它多付 seek 代价）。纯函数。
+Map<String, String> buildDefaultSubtitleSeekPrerollProperties() {
+  return <String, String>{
+    'demuxer-mkv-subtitle-preroll': 'index',
+    'demuxer-mkv-subtitle-preroll-secs': '1',
+    'hr-seek-demuxer-offset': '0',
+  };
+}
+
+/// mpv `file-format`（逗号分隔的 demuxer 名）是否 Matroska / WebM。
+bool isMatroskaFileFormat(String? fileFormat) {
+  if (fileFormat == null) return false;
+  final String f = fileFormat.toLowerCase();
+  return f.contains('mkv') || f.contains('matroska') || f.contains('webm');
 }
 
 /// 副字幕交给 libmpv「只解码不画」的属性 map（远端直出容器、服务器抽不出的内嵌

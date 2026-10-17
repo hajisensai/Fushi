@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -315,6 +317,76 @@ void main() {
         ),
         isEmpty,
       );
+    });
+  });
+
+  // BUG-3291 审查（PR #2081）：烧录 / 截图合成是「后画的在上」的叠画链，必须按
+  // ASS Layer 升序（同层原序）排，与 libass / 屏幕 overlay 的 z 序一致；否则多层
+  // 叠字的底层（黑字 + 白描边）排在上层之后时会盖住上层，导出烧出一行黑字。
+  group('orderClipCuesForBurn', () {
+    ClipSubtitleCue layered(String text, int? layer) => ClipSubtitleCue(
+      startMs: 0,
+      endMs: 1000,
+      text: text,
+      markup: layer == null
+          ? null
+          : SubtitleMarkup(
+              plainText: text,
+              spans: const <SubtitleSpan>[],
+              layer: layer,
+            ),
+    );
+
+    test('lower layers are drawn first, higher layers end up on top', () {
+      // 源文件里上层（彩色字，Layer 1）写在底层（黑字白描边，Layer 0）前面。
+      final List<ClipSubtitleCue> ordered = orderClipCuesForBurn(
+        <ClipSubtitleCue>[layered('top', 1), layered('base', 0)],
+      );
+      expect(
+        ordered.map((ClipSubtitleCue c) => c.text).toList(),
+        <String>['base', 'top'],
+      );
+    });
+
+    test('same layer keeps source order; missing markup counts as layer 0', () {
+      final List<ClipSubtitleCue> input = <ClipSubtitleCue>[
+        layered('a2', 2),
+        layered('p0', null),
+        layered('b0', 0),
+        layered('c2', 2),
+        layered('d1', 1),
+        layered('e0', 0),
+      ];
+      expect(
+        orderClipCuesForBurn(
+          input,
+        ).map((ClipSubtitleCue c) => c.text).toList(),
+        <String>['p0', 'b0', 'e0', 'd1', 'a2', 'c2'],
+      );
+      // 不改入参（buildClipSubtitleCues 的结果是不可变列表，SRT 序号依赖原序）。
+      expect(input.first.text, 'a2');
+    });
+
+    test('a single-layer list is returned in its original order', () {
+      final List<ClipSubtitleCue> input = <ClipSubtitleCue>[
+        layered('x', 0),
+        layered('y', 0),
+        layered('z', 0),
+      ];
+      expect(orderClipCuesForBurn(input), orderedEquals(input));
+      expect(orderClipCuesForBurn(const <ClipSubtitleCue>[]), isEmpty);
+    });
+
+    test('burn and screenshot compositing both go through the ordering', () {
+      // 两条叠画链都在页面 / 引擎里按列表顺序画，漏接一处就退回「按文件序叠」。
+      final String exporter = File(
+        '../packages/fushi_engine/lib/media/video/video_clip_exporter.dart',
+      ).readAsStringSync();
+      expect(exporter, contains('cues: orderClipCuesForBurn(subtitleCues)'));
+      final String page = File(
+        'lib/src/pages/implementations/video_fushi/clip_export.part.dart',
+      ).readAsStringSync();
+      expect(page, contains('in orderClipCuesForBurn(cues)'));
     });
   });
 

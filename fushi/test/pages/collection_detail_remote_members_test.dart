@@ -3,8 +3,10 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_download_progress.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -180,6 +182,49 @@ void main() {
         findsOneWidget);
   });
 
+  testWidgets('只在对端的集仍给「下载本集」，不给「打开文件位置」', (WidgetTester tester) async {
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('video/e2'),
+      title: const Value('Show 02'),
+      videoPath: const Value('/v/Show 02.mkv'),
+    ));
+    for (final String uid in <String>['video/e1', 'video/e2']) {
+      await db.addToCollection(collectionId, MediaKind.video, uid);
+    }
+
+    useTallSurface(tester);
+    await tester.pumpWidget(detailPage(remoteVideos: <RemoteVideoInfo>[
+      remoteEpisode('video/e1', 'Show 01', 0),
+    ]));
+    await tester.pumpAndSettle();
+
+    Future<void> openMenu(String uid) async {
+      final TestGesture gesture = await tester.startGesture(
+        tester.getCenter(
+          find.byKey(ValueKey<String>('collection-episode-row-$uid')),
+        ),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryButton,
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    await openMenu('video/e1');
+    expect(find.text(t.collection_episode_download), findsOneWidget,
+        reason: '本机没有文件的集才需要下载');
+    expect(find.text(t.media_file_location_open), findsNothing);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+
+    await openMenu('video/e2');
+    expect(find.text(t.collection_episode_download), findsNothing);
+    expect(find.text(t.media_file_location_open), findsOneWidget);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+  });
+
   // 用户报告 2026-09-22：互联下载远端合集时，合集详情页里每一集都没有进度。
   // 各集任务本来就在 app 级 InterconnectDownloadManager 里（键 = 远端集 id =
   // entryKey），集卡此前根本没去查。注入管理器后：进行中 → 进度环盖住云角标，
@@ -231,9 +276,9 @@ void main() {
     await tester.pump();
     expect(
       tester
-          .widget<CircularProgressIndicator>(find.descendant(
+          .widget<FushiDownloadProgressRing>(find.descendant(
             of: badge,
-            matching: find.byType(CircularProgressIndicator),
+            matching: find.byType(FushiDownloadProgressRing),
           ))
           .value,
       0.5,

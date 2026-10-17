@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -9,7 +9,7 @@ import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
 import 'test_helpers.dart';
 
-/// Integration tests for the highest-risk Hibiki user paths:
+/// Integration tests for the highest-risk Fushi user paths:
 /// EPUB import → Hoshi reader → dictionary lookup.
 ///
 /// Requires:

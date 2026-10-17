@@ -88,30 +88,24 @@ enum OcrPlatform { windows, macos, ios, linux, android }
 /// - Windows 识别：也不要 DirectML —— 实测 DirectML 对自回归逐步解码是负优化
 ///   （每步 GPU 往返开销远大于小 batch 计算本身）。
 ///
-/// - **Windows 结论：一个加速 EP 都不要**。DirectML 由上面两条排除；CUDA 则是
-///   **我们出的包里根本没有**——`third_party/flutter_onnxruntime/windows/CMakeLists.txt`
-///   按 SHA-256 钉死下载 NuGet `microsoft.ml.onnxruntime.directml 1.22.0`
-///   （`29F9872D…E732E60`），随包只有 `onnxruntime.dll` /
-///   `onnxruntime_providers_shared.dll` / `DirectML.dll` 三个（`:88-89`），
-///   `runtimes/win-x64/native/` 里也没有 `onnxruntime_providers_cuda.dll`。
-///   逐字节扫那份 `onnxruntime.dll` 复核：`OrtSessionOptionsAppendExecutionProvider_CUDA`
-///   / `cudart64` / `cudnn64` / `CUDA_PATH` 全部 0 命中，`DmlExecutionProvider`
-///   109 命中；仅有的两处 `onnxruntime_providers_cuda.dll` 是
-///   `provider_bridge_ort.cc` 里那张「共享 provider 懒加载文件名」表（任何 ORT
-///   构建都有，与是否编进 CUDA EP 无关）。
-///   `Ort::GetAvailableProviders()` 回报的是**编译进来**的 EP，所以
-///   `availableAcceleratedProviders()` 在 Windows 上永远拿不到 CUDA。
+/// - **Windows 结论：一个加速 EP 都不要**。DirectML 由上面两条排除。CUDA 也不
+///   要：随包的只有 ORT CPU core（`third_party/flutter_onnxruntime/windows/CMakeLists.txt`），
+///   DirectML core 与 CUDA plugin EP 都是 app 为**语音转录**按需下载的 GPU 环境
+///   （`fushi/lib/src/asr_host/gpu_runtime_pack.dart`）——OCR 不触发它的下载，也
+///   不该假设它在。即使本进程因为转录换上了 DirectML core 或注册了 CUDA，
+///   `availableAcceleratedProviders()` 回报了它们，这里的空表也让 OCR 照旧走 CPU：
+///   OCR 的加速与否只由本函数决定，与 GPU 环境装没装无关。
 ///
-///   偏好表里留一个恒不可满足的 CUDA 不是「留个位置」，是**制造一条用户消不掉
-///   的假告警**：`MangaOcrServiceImpl` 的 `recordUnavailable` 会对每个整卷任务
-///   产出两条 `cuda not built into this ONNX Runtime -> cpu` 并弹黄条，而实际
-///   能力与写空表时逐字相同（都是纯 CPU）。所以这里写空表——`wanted.isEmpty`
-///   正是「这个平台本来就该走 CPU」的静默判据。
+///   偏好表里留一个多数机器不可满足的 CUDA 不是「留个位置」，是**制造一条用户
+///   消不掉的假告警**：`MangaOcrServiceImpl` 的 `recordUnavailable` 会对每个整卷
+///   任务产出两条 `cuda not built into this ONNX Runtime -> cpu` 并弹黄条。所以
+///   这里写空表——`wanted.isEmpty` 正是「这个平台本来就该走 CPU」的静默判据。
 ///
-///   要把 CUDA 加回来，前提是**换掉出包的 ORT NuGet**（换成带 CUDA EP 的包并随
-///   包发 `onnxruntime_providers_cuda.dll` + CUDA/cuDNN 运行库），而不是改这里的
-///   常量。[kind] 这个轴保留：检测与识别排除加速 EP 的理由完全不同（检测是 int8
-///   模型建不出会话，识别是架构性负优化），任一条前提变了它们就会重新分叉。
+///   要给 OCR 加 GPU，前提是先在真机上拿到 int8 检测 / 自回归识别在该 EP 上确有
+///   收益的数据，再同时把 OCR 模型下载入口接上 GPU 环境下载、把老用户补下判据
+///   扩到 OCR 模型——而不是只改这里的常量。[kind] 这个轴保留：检测与识别排除加速
+///   EP 的理由完全不同（检测是 int8 模型建不出会话，识别是架构性负优化），任一条
+///   前提变了它们就会重新分叉。
 /// - **macOS / iOS：不要任何加速 EP**（BUG-1613）。这里曾经按 Windows 的
 ///   类比给检测选 CoreML，但那段分支写下时 Apple 的 ORT native 整个被 gate 掉，
 ///   从未被执行过。2026-08-14 打开 Apple 本地 OCR 后真机对拍（同一页、1 次预热
@@ -182,7 +176,7 @@ List<OcrExecutionProvider> selectOcrExecutionProviders({
 // ── 从 app 的 ocr_inference_ort.dart 下沉的纯 Dart 助手（OCR 输入名对齐、日志名、
 //    provider 回退），app 与无头服务端两边的会话工厂共用。 ──
 
-const String kOcrLogName = 'hibiki.ocr';
+const String kOcrLogName = 'fushi.ocr';
 
 /// 本平台是否内置 ONNX Runtime native 库（本地 OCR 推理是否可用）。
 ///
@@ -248,7 +242,7 @@ Map<String, OcrTensor> resolveOcrSessionInputs({
 /// [resolveOcrSessionInputs] 适配到共享工厂钩子的位置参数形态。
 
 /// OCR 用的 flutter_onnxruntime 会话工厂：共享 [OrtOnnxSessionFactory] +
-/// manga-ocr 输入名对齐钩子 + `hibiki.ocr` 日志通道。
+/// manga-ocr 输入名对齐钩子 + `fushi.ocr` 日志通道。
 ///
 /// `availableAcceleratedProviders()`（BUG-2050 的探测语义边界）与带
 /// `onProviderResolved` 的 `createSession` 均由父类提供，注释见那里。

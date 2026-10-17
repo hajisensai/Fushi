@@ -11,3 +11,5 @@ tags:
     description: Tests that spawn a real ffmpeg from PATH or the bundled ffmpeg-min; self-skip when absent.
   chrome:
     description: Tests that launch a real headless Chrome via node (tool/reader_pitch_headless/cdp_client.mjs); self-skip when node/Chrome is absent.
+  design-preview:
+    description: Renders the UI redesign preview images; self-skips unless FUSHI_DESIGN_PREVIEW_OUT is set (tool/design_preview/render_previews.sh).

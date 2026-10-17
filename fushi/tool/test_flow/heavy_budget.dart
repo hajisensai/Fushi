@@ -101,6 +101,41 @@ HeavyNeed classifyHeavyCommand(List<String> argv) {
   return _other;
 }
 
+/// Test-runner processes a `flutter test` gets when the caller did not pick
+/// a number: the default (cores - 2) starts a dozen flutter_testers that each
+/// load the whole app kernel, which is where a run's memory peak comes from.
+const int kDefaultTestConcurrency = 4;
+
+/// [argv] with `--concurrency=$kDefaultTestConcurrency` inserted after the
+/// `test` verb of a `flutter test` (also via fvm) that sets no `--concurrency`
+/// / `-j` of its own; every other command comes back unchanged.
+List<String> withDefaultTestConcurrency(List<String> argv) {
+  if (argv.isEmpty) return argv;
+  final String exe = _base(argv.first);
+  if (exe == 'fvm') {
+    return <String>[
+      argv.first,
+      ...withDefaultTestConcurrency(argv.sublist(1)),
+    ];
+  }
+  if (exe != 'flutter') return argv;
+  final int verb = argv.indexWhere((String a) => !a.startsWith('-'), 1);
+  if (verb < 0 || argv[verb].toLowerCase() != 'test') return argv;
+  final bool explicit = argv.any(
+    (String a) =>
+        a == '-j' ||
+        a.startsWith('-j') ||
+        a == '--concurrency' ||
+        a.startsWith('--concurrency='),
+  );
+  if (explicit) return argv;
+  return <String>[
+    ...argv.sublist(0, verb + 1),
+    '--concurrency=$kDefaultTestConcurrency',
+    ...argv.sublist(verb + 1),
+  ];
+}
+
 /// Concurrent heavy runs this machine allows: one per 20 GB of RAM, 1..4.
 /// (64 GB -> 3: three runs of 4 testers each next to a desktop in use.)
 int defaultHeavySlots(int totalPhysMb) =>

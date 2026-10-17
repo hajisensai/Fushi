@@ -4,6 +4,31 @@
 function fushiShimT(key, params) {
   return (typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
 }
+
+// Fushi 复习（SRS）词状态：经 background.js 转发到 server /api/srs/term-status。
+// app 的复习模块关着时服务端回 404 → 记住一段时间不再转发（每次查词不白跑一趟 HTTP）；
+// 任何失败都 fail-soft 成 null（弹窗不显示复习标记），绝不阻断查词。
+var FUSHI_SRS_DISABLED_BACKOFF_MS = 60000;
+var fushiSrsDisabledUntil = 0;
+async function fushiSrsTermStatus(arg) {
+  if (Date.now() < fushiSrsDisabledUntil) return null;
+  try {
+    var a = arg || {};
+    var resp = await chrome.runtime.sendMessage({
+      type: 'srsTermStatus',
+      expression: a.expression || '',
+      reading: a.reading || '',
+    });
+    if (resp && resp.status === 404) {
+      fushiSrsDisabledUntil = Date.now() + FUSHI_SRS_DISABLED_BACKOFF_MS;
+      return null;
+    }
+    var status = resp && resp.ok && resp.data ? resp.data.status : null;
+    return status && typeof status === 'object' ? status : null;
+  } catch (_) {
+    return null;
+  }
+}
 window.flutter_inappwebview = {
   callHandler: function (name, ...args) {
     switch (name) {
@@ -128,6 +153,65 @@ window.flutter_inappwebview = {
             return false;
           }
         })();
+      case 'srsTermStatus':
+        return fushiSrsTermStatus(args[0]);
+      case 'srsOpenCard':
+        // 点复习标记：让 app 打开那张卡（POST /api/srs/open）。失败只回 false，不打扰查词。
+        return (async function () {
+          try {
+            var o = args[0] || {};
+            var resp = await chrome.runtime.sendMessage({
+              type: 'srsOpenCard',
+              cardId: o.cardId || '',
+              noteId: o.noteId || '',
+            });
+            return !!(resp && resp.ok && resp.data && resp.data.opened === true);
+          } catch (_) {
+            return false;
+          }
+        })();
+      case 'favoriteEntry':
+      case 'favoriteCheck':
+        // BUG-3141：☆/★ 收藏。此前这两个桥落到 default 回 null——popup.js 拿 null 当「没收藏」，
+        // 点了图标不变、Fushi 收藏夹也没有新行。经 background.js 转发到 server
+        // /api/extension/favorite（与 app 外浮窗同一份收藏读写），回**切换后**的布尔态。
+        // favoriteCheck 只读不写；失败一律 fail-soft 成 false（☆），绝不阻断查词。
+        // favoriteEntry 失败时如实 toast：用户点了收藏，没收藏上必须看得见。
+        return (async function () {
+          var toggle = name === 'favoriteEntry';
+          try {
+            var a = args[0] || {};
+            var sentence = '';
+            if (toggle && typeof window.fushiMineContext === 'function') {
+              try {
+                var fctx = window.fushiMineContext();
+                sentence = (fctx && (fctx.contextSentence || (fctx.window && fctx.window.text) ||
+                  fctx.pageSentence)) || '';
+              } catch (_) { sentence = ''; }
+            }
+            var resp = await chrome.runtime.sendMessage({
+              type: 'favorite',
+              toggle: toggle,
+              expression: a.expression || '',
+              reading: a.reading || '',
+              glossary: toggle ? (a.glossary || '') : '',
+              sentence: sentence,
+            });
+            if (resp && resp.ok && resp.data && typeof resp.data.favorite === 'boolean') {
+              return resp.data.favorite;
+            }
+            if (toggle && typeof window.fushiToast === 'function') {
+              window.fushiToast('✗ ' + fushiShimT(resp && resp.status === 404
+                ? 'favorite_failed_old_app' : 'favorite_failed'));
+            }
+            return false;
+          } catch (_) {
+            if (toggle && typeof window.fushiToast === 'function') {
+              window.fushiToast('✗ ' + fushiShimT('favorite_failed'));
+            }
+            return false;
+          }
+        })();
       case 'openInAnki':
         // Issue #1409：↗「在 Anki 中打开这个词的卡」。经 background.js 转发到 server
         // /api/anki/open（与 app 内 openInAnki 桥同一 repo.openWordInAnki）。回三态名
@@ -192,6 +276,23 @@ window.flutter_inappwebview = {
             return (resp && resp.ok && resp.url) ? resp.url : null;
           } catch (_) {
             return null;
+          }
+        })();
+      case 'listWordAudioSources':
+        // 「选择音频源」菜单（♪ 长按 / 右键）：经 background 向 server POST
+        // /api/lookup/audio/list，拿回每个启用源各自的短命取字节 URL
+        // [{name, variant, url}]。旧 app 无该端点（404）/ 失败 → 空列表，popup.js 显示「暂无发音」。
+        return (async function () {
+          try {
+            var l = args[0] || {};
+            var resp = await chrome.runtime.sendMessage({
+              type: 'lookupAudioList',
+              expression: l.expression || '',
+              reading: l.reading || '',
+            });
+            return (resp && resp.ok && Array.isArray(resp.audioSources)) ? resp.audioSources : [];
+          } catch (_) {
+            return [];
           }
         })();
       // 单词音频播放已统一到 popup.js 自身（playWordAudio 直接 new Audio(url).play()），

@@ -1,0 +1,11 @@
+## BUG-3088 · Linux 制卡 TTS 子进程卡住无上界、stdin EPIPE 跳过 espeak-ng 兜底
+- **报告**：2026-10-09（审查 `1be1a2b7^..f84a2186` Linux 补缺提交时发现）
+- **真实性**：✅ 真 bug。`_runLinuxTtsProcess`（`fushi/lib/src/utils/misc/desktop_tts.dart`，修前）：
+  - `await process.exitCode`（`:221`）没有上界，open_jtalk / espeak-ng 卡住（辞书损坏、等不到 EOF 等）时制卡永久挂起；
+  - `process.stdin.close()`（`:218`）在引擎提前退出时抛 `SocketException`（EPIPE），异常一路冒到 `ttsToFileDesktop` 的总 catch，`_ttsLinux` 里 open_jtalk 之后的 espeak-ng 假名兜底被整段跳过；
+  - 且 stderr 的消费者挂在写 stdin 之后，引擎写满输出管道时两边互等。
+- **[x] ① 已修复**（见本分支提交）— 抽出可注入内核 `runLinuxTtsProcess` / `synthesizeLinuxTts`（`LinuxTtsProcessStarter` 注入进程启动）：先挂 stdout/stderr 消费者再写 stdin；「写入 → 关 stdin → 读完 stdout → 退出」整段受 `kLinuxTtsProcessTimeout`（15s，对外部进程的上界）约束，超时 SIGKILL；超时与 `IOException`（EPIPE）都按该引擎失败处理（记日志、删半截产物、返回 null），由 `synthesizeLinuxTts` 继续落到下一个引擎。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/desktop_tts_linux_test.dart`：
+  - 假进程：正常 / 卡死（SIGKILL、删半截产物、不挂起）/ stdin EPIPE / 未安装；open_jtalk 卡死或 EPIPE 时假名文本落到 espeak-ng，带汉字时不交给 espeak-ng；
+  - 真实子进程（POSIX `sh`）：不读 stdin 就退出（真 EPIPE，1 MiB 输入）返回 null 不抛；`sleep 30` 到上界被杀。
+- **备注**：本机装了 open-jtalk + naist-jdic + nitech 声音，真引擎用例实跑通过。

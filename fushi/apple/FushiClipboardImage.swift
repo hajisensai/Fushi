@@ -42,6 +42,10 @@ enum FushiClipboardImage {
   }
 
   static func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if call.method == "readImage" {
+      readImage(result: result)
+      return
+    }
     guard call.method == "copyImageFile" else {
       result(FlutterMethodNotImplemented)
       return
@@ -99,6 +103,54 @@ enum FushiClipboardImage {
             message: "NSPasteboard rejected the image data",
             details: nil))
       }
+    #endif
+  }
+
+  /// 读剪贴板里的图片（`readImage`，反馈提交页「粘贴截图」用）：
+  /// `{"bytes": <PNG/JPEG 字节>}`，或 macOS 访达里复制的文件 `{"paths": [...]}`（是不是
+  /// 图片由 Dart 侧按扩展名过滤；macOS 版不开沙盒，路径直接可读）。没有图片回 nil。
+  static func readImage(result: @escaping FlutterResult) {
+    #if os(iOS)
+      let board = UIPasteboard.general
+      // hasImages 只看类型、不触发 iOS 16+ 的「允许粘贴」询问；真去取数据才问用户
+      // ——而这里只在用户点「粘贴图片」/ 长按菜单时才会走到。
+      guard board.hasImages else {
+        result(nil)
+        return
+      }
+      for type in [UTType.png, UTType.jpeg] {
+        if let data = board.data(forPasteboardType: type.identifier), !data.isEmpty {
+          result(["bytes": FlutterStandardTypedData(bytes: data)])
+          return
+        }
+      }
+      if let png = board.image?.pngData() {
+        result(["bytes": FlutterStandardTypedData(bytes: png)])
+        return
+      }
+      result(nil)
+    #else
+      let board = NSPasteboard.general
+      if let urls = board.readObjects(
+        forClasses: [NSURL.self],
+        options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty
+      {
+        result(["paths": urls.map { $0.path }])
+        return
+      }
+      if let png = board.data(forType: .png), !png.isEmpty {
+        result(["bytes": FlutterStandardTypedData(bytes: png)])
+        return
+      }
+      // 系统截图 / 预览等常只放 TIFF：转成 PNG 再交出去。
+      if let tiff = board.data(forType: .tiff),
+        let rep = NSBitmapImageRep(data: tiff),
+        let png = rep.representation(using: .png, properties: [:])
+      {
+        result(["bytes": FlutterStandardTypedData(bytes: png)])
+        return
+      }
+      result(nil)
     #endif
   }
 }

@@ -32,7 +32,7 @@ Em desenvolvimento ativo — seu feedback será tratado prontamente. Relatórios
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-Escolha o arquivo correspondente à sua plataforma: **Android** — o APK `arm64-v8a` (todos os celulares dos últimos anos usam esse; apenas aparelhos mais antigos precisam do `armeabi-v7a`, e emuladores usam `x86_64`); **Windows** — `windows-setup.exe`; **macOS** — `macos.zip`; **iOS** — `ios.ipa`. O **Linux** ainda não tem pacote pronto, então precisa ser compilado a partir do código-fonte.
+Escolha o arquivo correspondente à sua plataforma: **Android** — o APK `arm64-v8a` (todos os celulares dos últimos anos usam esse; apenas aparelhos mais antigos precisam do `armeabi-v7a`, e emuladores usam `x86_64`); **Windows** — `windows-setup.exe`; **macOS** — `macos-arm64.zip` (Apple Silicon); **iOS** — `ios.ipa`. O **Linux** ainda não tem pacote pronto, então precisa ser compilado a partir do código-fonte.
 
 Os APKs cujos nomes começam com `bridge-` são pontes de migração para **usuários do antigo Hibiki**; você pode ignorá-los.
 

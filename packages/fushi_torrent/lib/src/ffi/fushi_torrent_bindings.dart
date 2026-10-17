@@ -711,6 +711,38 @@ class FushiTorrentBindings {
     }
   }
 
+  /// BUG-2950：运行期向 DHT 补节点（换行分隔的 "host:port"）。返回成功添加的
+  /// 条数，-1 失败。调用前必须先看 [hasAddDhtNodes]——比本文件旧的预编译库
+  /// 里没有这个符号。
+  int ht_add_dht_nodes(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> nodes,
+  ) {
+    return _ht_add_dht_nodes(session, nodes);
+  }
+
+  late final _ht_add_dht_nodesPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_add_dht_nodes');
+  late final _ht_add_dht_nodes = _ht_add_dht_nodesPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
+  /// 已加载的库里是否有 [ht_add_dht_nodes]（理由同 [hasApplyProxy]）。
+  late final bool hasAddDhtNodes = _probeAddDhtNodes();
+
+  bool _probeAddDhtNodes() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(ffi.Pointer<ffi.Void>,
+                  ffi.Pointer<ffi.Char>)>>('ht_add_dht_nodes');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
   /// TODO-2482：每个文件的下载优先级（0~7，0=不下载，下标=文件 index）；
   /// 返回 malloc JSON（ht_free_string 释放）。调用前先看 [hasDetailInfo]。
   ffi.Pointer<ffi.Char> ht_get_file_priorities(

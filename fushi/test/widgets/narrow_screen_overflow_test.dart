@@ -1,11 +1,13 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 import 'widget_test_helpers.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// BUG-1184 回归守卫：窄屏 / 小窗口下内容被「显示不全」的几条根因。
 ///
@@ -207,7 +209,7 @@ void main() {
       );
       await tester.pump();
 
-      final Dialog dialog = tester.widget<Dialog>(find.byType(Dialog));
+      final Dialog dialog = tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog)));
       expect(
         dialog.insetPadding!.horizontal,
         32,
@@ -227,7 +229,7 @@ void main() {
       );
       await tester.pump();
 
-      final Dialog dialog = tester.widget<Dialog>(find.byType(Dialog));
+      final Dialog dialog = tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog)));
       expect(dialog.insetPadding!.horizontal, 80);
     });
 
@@ -245,31 +247,22 @@ void main() {
       );
       await tester.pump();
 
-      final Dialog dialog = tester.widget<Dialog>(find.byType(Dialog));
+      final Dialog dialog = tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog)));
       expect(dialog.insetPadding!.horizontal, 8);
     });
   });
 
   group('AppBar 动作折叠', () {
-    List<FushiAppBarAction> actions() => <FushiAppBarAction>[
-          FushiAppBarAction(
-            icon: Icons.drive_file_rename_outline,
-            label: '重命名',
-            onPressed: _noop2,
-          ),
-          FushiAppBarAction(
-            icon: Icons.sell_outlined,
-            label: '标签',
-            onPressed: _noop2,
-          ),
-          FushiAppBarAction(
-            icon: Icons.delete_outline,
-            label: '删除',
-            onPressed: _noop2,
-          ),
-        ];
+    const List<IconData> icons = <IconData>[
+      Icons.drive_file_rename_outline,
+      Icons.sell_outlined,
+      Icons.download_outlined,
+      Icons.share_outlined,
+      Icons.delete_outline,
+    ];
+    const List<String> labels = <String>['重命名', '标签', '保存顺序', '分享', '删除'];
 
-    /// 照两个合集详情页的真实写法搭台：整窗宽 [windowWidth]，但这条 AppBar 只拿到
+    /// 照合集详情页的真实写法搭台：整窗宽 [windowWidth]，但这条 AppBar 只拿到
     /// [rowWidth] 的约束（分栏 / 受限宽容器）。返回 [LayoutBuilder] 实际观测到的
     /// 约束宽，供用例断言「喂进折叠判据的确实是局部宽而不是整窗宽」。
     Future<double> pumpAppBar(
@@ -294,10 +287,21 @@ void main() {
                         observedWidth = c.maxWidth;
                         return AppBar(
                           title: const Text('合集名'),
-                          actions: narrowAwareAppBarActions(
-                            availableWidth: c.maxWidth,
-                            collapsible: actions(),
-                          ),
+                          actions: fushiResolveHeaderActions(
+                            context,
+                            actions: <Widget>[
+                              for (int i = 0; i < icons.length; i++)
+                                FushiIconButton(
+                                  icon: icons[i],
+                                  tooltip: labels[i],
+                                  onTap: _noop2,
+                                ),
+                            ],
+                            budget: fushiAppBarActionsBudget(
+                              context,
+                              c.maxWidth,
+                            ),
+                          ).items,
                         );
                       },
                     ),
@@ -313,7 +317,7 @@ void main() {
       return observedWidth;
     }
 
-    testWidgets('窄屏折成单个溢出菜单，给标题让出宽度', (WidgetTester tester) async {
+    testWidgets('窄屏把放不下的动作收进溢出菜单，给标题让出宽度', (WidgetTester tester) async {
       final double observed = await pumpAppBar(
         tester,
         windowWidth: 320,
@@ -321,18 +325,20 @@ void main() {
       );
 
       expect(observed, 320);
-      expect(find.byType(PopupMenuButton<int>), findsOneWidget,
-          reason: '三个动作必须折成一个溢出菜单（BUG-1184）');
-      expect(find.byIcon(Icons.drive_file_rename_outline), findsNothing);
-      // 折叠后动作一个都不能少：菜单里必须仍能找到全部三条。
-      await tester.tap(find.byType(PopupMenuButton<int>));
+      expect(find.byKey(kFushiHeaderOverflowMenuKey), findsOneWidget,
+          reason: '320 宽放不下五个动作 + 标题保底，必须出现溢出菜单（BUG-1184）');
+      expect(find.byIcon(icons.first), findsOneWidget,
+          reason: '最靠前（默认优先级最高）的动作最后才收');
+      expect(find.byIcon(icons.last), findsNothing);
+      // 收纳后动作一个都不能少：菜单里必须能找到所有被收的动作。
+      await tester.tap(find.byKey(kFushiHeaderOverflowMenuKey));
       await tester.pumpAndSettle();
-      expect(find.text('重命名'), findsOneWidget);
-      expect(find.text('标签'), findsOneWidget);
-      expect(find.text('删除'), findsOneWidget);
+      for (int i = 1; i < labels.length; i++) {
+        expect(find.text(labels[i]), findsOneWidget);
+      }
     });
 
-    testWidgets('窗口很宽但这条 AppBar 只有 360 时，仍按窄屏折叠', (WidgetTester tester) async {
+    testWidgets('窗口很宽但这条 AppBar 只有 360 时，仍按局部宽收纳', (WidgetTester tester) async {
       final double observed = await pumpAppBar(
         tester,
         windowWidth: 1200,
@@ -341,13 +347,13 @@ void main() {
 
       expect(observed, 360, reason: '判据必须取 AppBar 的局部约束宽');
       expect(
-        find.byType(PopupMenuButton<int>),
+        find.byKey(kFushiHeaderOverflowMenuKey),
         findsOneWidget,
         reason: 'BUG-1186：折叠判据曾读 MediaQuery 的整窗宽（1200，不算窄），'
-            '于是分栏 / 受限宽容器里三个动作照样平铺，把合集名挤没。'
+            '于是分栏 / 受限宽容器里动作照样平铺，把合集名挤没。'
             '真正决定塞不塞得下的是这条 AppBar 自己拿到的 360',
       );
-      expect(find.byIcon(Icons.drive_file_rename_outline), findsNothing);
+      expect(find.byIcon(icons.last), findsNothing);
     });
 
     testWidgets('宽屏保持逐个平铺（零行为变化）', (WidgetTester tester) async {
@@ -358,11 +364,11 @@ void main() {
       );
 
       expect(observed, 700);
-      expect(find.byType(PopupMenuButton<int>), findsNothing);
-      expect(find.byIcon(Icons.drive_file_rename_outline), findsOneWidget,
-          reason: '宽屏必须零行为变化：三个动作逐个平铺');
-      expect(find.byIcon(Icons.sell_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+      expect(find.byKey(kFushiHeaderOverflowMenuKey), findsNothing);
+      for (final IconData icon in icons) {
+        expect(find.byIcon(icon), findsOneWidget,
+            reason: '宽屏必须零行为变化：动作逐个平铺');
+      }
     });
   });
 

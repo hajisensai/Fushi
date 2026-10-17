@@ -17,15 +17,41 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_deck_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 
-/// 自动重排失败时报给用户的通道，入参是**出问题的牌组名**（生产实现是 toast）。
+/// 自动重排失败时报给用户的通道（生产实现是 toast + 错误日志）。
 ///
-/// 传牌组名而不是现成的句子：本类要保持无 Flutter 依赖、可纯 Dart 单测，够不到
-/// `t.*`；文案在注入点（`anki_view_model.dart`）用 i18n 渲染，否则 17 种语言的
-/// 用户都会看到一句英文字面量。
+/// 入参是**出问题的牌组名**与**真实失败原因**（error / stack）。传牌组名而不是
+/// 现成的句子：本类要保持无 Flutter 依赖、可纯 Dart 单测，够不到 `t.*`；文案在
+/// 注入点（`anki_view_model.dart`）用 i18n 渲染。
+///
+/// 原因必须一路带出去（BUG-3272）：这条路径无人值守，用户唯一能交给开发者的
+/// 证据是上传的错误日志。只给牌组名 = 日志里一行都没有，「一直自动重排失败」
+/// 无从查起。
 ///
 /// 只在**失败**时调用：成功是静默的——用户没点任何按钮，不该为此收到通知。
-/// 「部分卡没移动」与「整轮抛异常」共用这一条通道，因为用户能做的动作一样。
-typedef AnkiAutoRepositionFailureReporter = void Function(String deckName);
+/// 「部分卡没移动」（error 是 [AnkiAutoRepositionWriteFailures]）与「整轮抛
+/// 异常」共用这一条通道，因为用户能做的动作一样。
+typedef AnkiAutoRepositionFailureReporter =
+    void Function(String deckName, Object error, StackTrace? stack);
+
+/// 写回时有卡被 AnkiConnect 拒绝（`setSpecificValueOfCard` 把失败写在
+/// `result` 里而不是抛异常），带上失败数与第一条原因供错误日志使用。
+@immutable
+class AnkiAutoRepositionWriteFailures implements Exception {
+  const AnkiAutoRepositionWriteFailures({
+    required this.failed,
+    required this.attempted,
+    required this.firstReason,
+  });
+
+  final int failed;
+  final int attempted;
+  final String firstReason;
+
+  @override
+  String toString() =>
+      'AnkiConnect rejected $failed of $attempted position writes; '
+      'first reason: $firstReason';
+}
 
 /// 一次自动重排跑完的结果，仅供测试与诊断断言（生产路径不消费）。
 @immutable
@@ -184,14 +210,24 @@ class AnkiAutoRepositionScheduler {
           failed: outcome.failures.length,
         ),
       );
-      if (outcome.failures.isNotEmpty) _onFailure?.call(deckName);
+      if (outcome.failures.isNotEmpty) {
+        _onFailure?.call(
+          deckName,
+          AnkiAutoRepositionWriteFailures(
+            failed: outcome.failures.length,
+            attempted: outcome.written + outcome.failures.length,
+            firstReason: outcome.failures.values.first,
+          ),
+          null,
+        );
+      }
       await _runner.pruneSnapshots(keep: _keepSnapshots);
     } on AnkiRepositionCancelled {
       // 自动路径没有取消按钮，走到这里只可能是 runner 内部的兜底；不打扰用户。
       return;
     } catch (e, stack) {
       debugPrint('AnkiAutoRepositionScheduler: $deckName failed: $e\n$stack');
-      _onFailure?.call(deckName);
+      _onFailure?.call(deckName, e, stack);
     }
   }
 

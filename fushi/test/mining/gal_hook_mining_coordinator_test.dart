@@ -95,6 +95,21 @@ class _RecordingRepo extends BaseAnkiRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// 落卡那一刻把封面字节读走（job 临时目录在制卡结束后就删了）。
+class _CoverBytesRepo extends _RecordingRepo {
+  final List<Uint8List> covers = <Uint8List>[];
+
+  @override
+  Future<MineOutcome> mineEntry({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) {
+    final String? path = context.coverPath;
+    if (path != null) covers.add(File(path).readAsBytesSync());
+    return super.mineEntry(rawPayloadJson: rawPayloadJson, context: context);
+  }
+}
+
 void main() {
   late TexthookerService service;
   late Directory testRoot;
@@ -1057,4 +1072,165 @@ void main() {
       expect(directories.every((Directory dir) => !dir.existsSync()), isTrue);
     },
   );
+  group('高级制卡打码', () {
+    // 64×32 竖条纹（偶数列亮、奇数列暗）：打码区域内条纹被抹成灰，区域外原样。
+    Uint8List stripes() {
+      final img.Image image = img.Image(width: 64, height: 32);
+      for (int y = 0; y < 32; y++) {
+        for (int x = 0; x < 64; x++) {
+          image.setPixelRgb(x, y, x.isEven ? 255 : 0, 0, 0);
+        }
+      }
+      return Uint8List.fromList(img.encodePng(image));
+    }
+
+    const List<MiningMosaicRegion> leftHalf = <MiningMosaicRegion>[
+      MiningMosaicRegion(left: 0, top: 0, right: 0.5, bottom: 1),
+    ];
+
+    test('用对话框冻结的那一帧出静图并打码；动图模式不录动图、不现抓', () async {
+      final TexthookerLineEntry entry = service.appendLine('見せられない場面')!;
+      final _CoverBytesRepo repo = _CoverBytesRepo();
+      final GalHookMiningResult result =
+          await coordinator(
+            validator: (_) => true,
+            still: (_) => throw StateError('预览帧已在手，不得现抓'),
+            gif:
+                ({
+                  required int hwnd,
+                  MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+                }) => throw StateError('打了码不得录动图'),
+          ).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '場面'},
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+            imageMode: VideoMiningImageMode.gif,
+            stillFormat: MiningStillFormat.png,
+            mosaic: leftHalf,
+            previewStill: GalHookLineScreenshot(
+              lineId: entry.id,
+              pngBytes: stripes(),
+            ),
+          );
+      expect(result.success, isTrue);
+      expect(result.degradedToStill, isFalse);
+      final img.Image cover = img.decodePng(repo.covers.single)!;
+      expect(cover.width, 64);
+      // 左半（打码区）：相邻两列同为灰。
+      expect(cover.getPixel(4, 4).r, closeTo(128, 1));
+      expect(cover.getPixel(5, 4).r, closeTo(128, 1));
+      // 右半原样条纹。
+      expect(cover.getPixel(40, 4).r, 255);
+      expect(cover.getPixel(41, 4).r, 0);
+    });
+
+    test('没有预览帧：现抓一帧再打码（不走动图阶梯）', () async {
+      final TexthookerLineEntry entry = service.appendLine('もう一枚')!;
+      final _CoverBytesRepo repo = _CoverBytesRepo();
+      int stillCalls = 0;
+      final GalHookMiningResult result =
+          await coordinator(
+            validator: (_) => true,
+            still: (int hwnd) async {
+              stillCalls++;
+              return WindowCaptureResult(pngBytes: stripes());
+            },
+            gif:
+                ({
+                  required int hwnd,
+                  MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+                }) => throw StateError('打了码不得录动图'),
+          ).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '一枚'},
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+            stillFormat: MiningStillFormat.png,
+            mosaic: leftHalf,
+          );
+      expect(result.success, isTrue);
+      expect(stillCalls, 1);
+      expect(
+        img.decodePng(repo.covers.single)!.getPixel(4, 4).r,
+        closeTo(128, 1),
+      );
+    });
+
+    test('预览帧属于别的台词：拒绝制卡，不把码打到别的画面上', () async {
+      service.foldProgressiveLines = false;
+      final TexthookerLineEntry a = service.appendLine('甲')!;
+      final TexthookerLineEntry b = service.appendLine('乙')!;
+      final _CoverBytesRepo repo = _CoverBytesRepo();
+      final GalHookMiningResult result =
+          await coordinator(
+            validator: (_) => true,
+            still: (_) => throw StateError('拒绝路径不得现抓'),
+          ).mineLine(
+            lineId: a.id,
+            fields: const <String, String>{'expression': '甲'},
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+            mosaic: leftHalf,
+            previewStill: GalHookLineScreenshot(
+              lineId: b.id,
+              pngBytes: stripes(),
+            ),
+          );
+      expect(result.success, isFalse);
+      expect(result.failureReason, 'screenshot does not match captured line');
+      expect(repo.contexts, isEmpty);
+    });
+
+    test('解不开的源图：这张卡不带图（绝不退回没打码的原图）', () async {
+      final TexthookerLineEntry entry = service.appendLine('壊れた画像')!;
+      final _CoverBytesRepo repo = _CoverBytesRepo();
+      final GalHookMiningResult result =
+          await coordinator(validator: (_) => true).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '壊れ'},
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+            mosaic: leftHalf,
+            previewStill: GalHookLineScreenshot(
+              lineId: entry.id,
+              pngBytes: Uint8List.fromList(<int>[80, 78, 71]),
+            ),
+          );
+      expect(result.success, isTrue, reason: '有句子音频，照常成卡');
+      expect(repo.contexts.single.coverPath, isNull);
+    });
+
+    test('没打码时预览帧不参与：照旧走动图', () async {
+      final TexthookerLineEntry entry = service.appendLine('普通の台詞')!;
+      final _RecordingRepo repo = _RecordingRepo();
+      int gifCalls = 0;
+      final GalHookMiningResult result =
+          await coordinator(
+            validator: (_) => true,
+            gif:
+                ({
+                  required int hwnd,
+                  MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+                }) async {
+                  gifCalls++;
+                  return (
+                    bytes: Uint8List.fromList(<int>[71, 73, 70]),
+                    format: format,
+                  );
+                },
+          ).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '普通'},
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+            previewStill: GalHookLineScreenshot(
+              lineId: entry.id,
+              pngBytes: stripes(),
+            ),
+          );
+      expect(result.success, isTrue);
+      expect(gifCalls, 1);
+    });
+  });
 }

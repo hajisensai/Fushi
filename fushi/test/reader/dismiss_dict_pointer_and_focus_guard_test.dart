@@ -26,8 +26,10 @@ void main() {
     setUpAll(() {
       final int h = corpus.indexOf("handlerName: 'onPointerSeek'");
       expect(h, greaterThanOrEqualTo(0), reason: 'onPointerSeek handler 必须存在');
-      // 取该 handler 回调体（到下一个 addJavaScriptHandler 前的一段），足够覆盖判定链。
-      final int next = corpus.indexOf('addJavaScriptHandler', h + 1);
+      // 取该 handler 的注册语句（到它自己的 `);` 收尾）。2026-10-04 起它是正文
+      // onWebViewCreated 里最后一个 handler，「到下一个 addJavaScriptHandler」会一路
+      // 吞进后面别的 part（歌词覆盖层的 WebView），故按注册语句收尾截取。
+      final int next = corpus.indexOf('\n        );\n', h);
       seekBody = corpus.substring(h, next > h ? next : corpus.length);
 
       // 「位置型动作」分支体（花括号配对取整块），用于结构性断言：controller 门控必须

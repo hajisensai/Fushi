@@ -988,6 +988,11 @@ mixin _FushiDbStatistics
             // reader_positions 后，首页「继续」不刷新、要重启 app 才生效——
             // 同步回灌与本机关书是同一张表的写入，理应同一条失效通道。
             readerPositions,
+            // BUG-2918：读完标记 `completedAt` 的真相源。「继续」区按它剔除读完
+            // 的书（末页位置永远 < duration，不能只看进度），手动标记 / 阅读器
+            // 自动置完成 / 同步回灌都写这张表，必须同一条失效通道。写入都是低频
+            // 的元数据编辑（导入、改名、完成标记），不随翻页触发。
+            epubBooks,
           ]),
         ).listen((_) {
           if (!controller.isClosed) controller.add(null);

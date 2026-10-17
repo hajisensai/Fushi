@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -73,6 +73,18 @@ abstract final class MangaModule {
       importMangaBatchFolder(
         db: db,
         path: path,
+        onVolumeProgress: onVolumeProgress,
+      );
+
+  /// 一组同时选中 / 拖入的漫画载体逐卷导入（见 [importMangaBatchPaths]）。
+  static Future<MangaBatchImportReport> importBatchPaths({
+    required FushiDatabase db,
+    required List<String> paths,
+    void Function(int done, int total)? onVolumeProgress,
+  }) =>
+      importMangaBatchPaths(
+        db: db,
+        paths: paths,
         onVolumeProgress: onVolumeProgress,
       );
 

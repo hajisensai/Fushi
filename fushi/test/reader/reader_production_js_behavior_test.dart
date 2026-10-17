@@ -33,7 +33,8 @@ void main() {
     expect(
       result.exitCode,
       0,
-      reason: 'production JS behavior runner failed:\n'
+      reason:
+          'production JS behavior runner failed:\n'
           'stdout=${result.stdout}\nstderr=${result.stderr}',
     );
     expect(result.stdout.toString().trim(), 'OK');
@@ -143,12 +144,38 @@ vn.reader.mergeSentenceAudioCrossScreenScreens = screens => {
 vn.reader.fitScreensToViewport = screens => screens;
 vn.reader.assignScreenProgressAnchors = () => {};
 vn.reader.buildScreens();
-assert(mergeInput.length === 3, 'zero-width media was not attached');
-assert(mergeInput[1] === mixed, 'non-zero-width mixed media was rearranged');
-assert(mergeInput[0].mediaStop === true && mergeInput[0].endCharCount === 10,
-  'leading media did not attach to following text');
-assert(mergeInput[2].mediaStop === true && mergeInput[2].endCharCount === 30,
-  'middle/tail media did not remain visible with adjacent text');
+// BUG-3395：零宽纯图片屏独占一屏（并进相邻文字屏会让整屏插图把同屏句子挤出屏外）。
+assert(mergeInput.length === 6, 'zero-width media must stay on screens of their own');
+assert([lead, first, mixed, middle, second, tail].every((s, i) => mergeInput[i] === s),
+  'screens must keep source order without rearranging media');
+
+// 跟随跨过图片屏：开图片暂停先停在图上并通知 Dart，关图片暂停 / 向后跟随不停。
+const rendered = [];
+const detected = [];
+vn.window.flutter_inappwebview = {
+  callHandler: (name) => detected.push(name)
+};
+vn.reader.screens = [first, middle, second, tail];
+vn.reader.renderScreen = (index) => {
+  rendered.push(index);
+  vn.reader.currentScreenIndex = index;
+};
+vn.reader.currentScreenIndex = 0;
+assert(vn.reader.pauseAtCrossedMediaScreen(2, false, false) === false && !rendered.length,
+  'image pause off must not stop on the image screen');
+assert(vn.reader.pauseAtCrossedMediaScreen(2, true, false) === true &&
+  rendered.join() === '1' && detected.join() === 'onImageDetected',
+  'forward follow must stop on the crossed image screen and notify Dart');
+assert(vn.reader.pauseAtCrossedMediaScreen(2, true, false) === false,
+  'resuming from the image screen must go on to the sentence screen');
+vn.reader.currentScreenIndex = 2;
+assert(vn.reader.pauseAtCrossedMediaScreen(0, true, false) === false,
+  'backward follow must not stop on images');
+vn.reader.screens = [lead, first];
+vn.reader.currentScreenIndex = 1;
+rendered.length = 0;
+assert(vn.reader.pauseAtCrossedMediaScreen(1, true, true) === true && rendered.join() === '0',
+  'audio arriving from the previous chapter must stop on the chapter-start image');
 
 const progressStart = data.engine.indexOf('window.fushiProgressDetails = function()');
 const progressEnd = data.engine.indexOf('\n  };', progressStart);

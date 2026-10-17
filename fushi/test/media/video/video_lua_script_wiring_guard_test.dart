@@ -87,13 +87,153 @@ void main() {
         reason: 'load-script 晚于 open 会错过首个文件的 start-file/file-loaded',
       );
     });
+
+    test('load()：ytdl 基线不看有没有用户脚本、且在 open 之前下发', () {
+      // 编了 Lua 的 libmpv 自带 ytdl_hook（ytdl 默认 yes），钩子挂在 loadfile 上，
+      // open 之后再关已经太迟；放进 applyLuaScripts 又会在没装脚本时被跳过。
+      final int probe = src.indexOf('await _probeLuaCapability();');
+      final int baseline = src.indexOf(
+        'await _setMpvProperties(buildLuaHostBaselineProperties());',
+      );
+      final int open = src.indexOf('await player.open(', probe);
+      expect(baseline, greaterThan(probe));
+      expect(open, greaterThan(baseline));
+      final int fn = src.indexOf('Future<void> applyLuaScripts(');
+      final String applyBody = src.substring(fn, src.indexOf('\n  }\n', fn));
+      expect(applyBody, isNot(contains('buildLuaHostBaselineProperties')));
+    });
+
+    // #2014：字幕由 overlay 画、libmpv sid 恒为 no，sub-text 类脚本（字幕结束暂停）
+    // 永远收不到字幕。镜像轨的接线点任何一处断掉都是静默失效。
+    group('Lua 字幕镜像', () {
+      String body(String signature) {
+        final int fn = src.indexOf(signature);
+        expect(fn, greaterThan(0), reason: '找不到 $signature');
+        return src.substring(fn, src.indexOf('\n  }\n', fn));
+      }
+
+      test('换主字幕（setCues）即重挂镜像', () {
+        expect(
+          body('void setCues(List<AudioCue> cues) {'),
+          contains('_scheduleLuaSubtitleMirrorSync();'),
+        );
+      });
+
+      test('中途装脚本立刻镜像当前字幕', () {
+        final String fn = body('Future<void> applyLuaScripts(');
+        expect(
+          fn.indexOf('_scheduleLuaSubtitleMirrorSync();'),
+          greaterThan(fn.indexOf('applyLuaScriptsToPlayer(player, fresh)')),
+        );
+      });
+
+      test('关字幕 no() 会把镜像一起取消选中，之后要重挂', () {
+        expect(
+          body('Future<void> selectSubtitleTrack(SubtitleTrack track)'),
+          contains("if (track.id == 'no') _scheduleLuaSubtitleMirrorSync();"),
+        );
+      });
+
+      test('load()：镜像在 open 后的 setSubtitleTrack(no()) 之后才放行', () {
+        final int noTrack = src.indexOf(
+          'await player.setSubtitleTrack(SubtitleTrack.no());',
+          src.indexOf('await player.open('),
+        );
+        final int ready = src.indexOf('_luaSubtitleMirrorFileReady = true;');
+        expect(noTrack, greaterThan(0));
+        expect(ready, greaterThan(noTrack), reason: '早于 no() 选中的镜像会被它立刻取消选中');
+      });
+
+      test('选轨 / 数轨不把镜像轨当成用户的字幕源', () {
+        expect(
+          RegExp(
+            r"\.where\(\(SubtitleTrack t\) => t\.id != 'auto' && t\.id != 'no'\)",
+          ).hasMatch(src),
+          isFalse,
+          reason: '裸 auto/no 过滤会把镜像轨数进真实轨，改用 _isRealSubtitleTrack',
+        );
+        expect(
+          body('static bool _isRealSubtitleTrack(SubtitleTrack t) =>'),
+          contains('isLuaSubtitleMirrorTrack(t)'),
+        );
+      });
+
+      test('调轴烘进镜像 SRT，并随调轴重挂（mpv 的 sub-end 不含 sub-delay）', () {
+        expect(
+          body('Future<void> _syncLuaSubtitleMirror() async {'),
+          contains('buildLuaSubtitleMirrorSrt(_cues, delayMs: _delayMs)'),
+        );
+        expect(
+          body('void setDelayMs(int delayMs) {'),
+          contains('_scheduleLuaSubtitleMirrorSync();'),
+        );
+        expect(
+          src,
+          contains(
+            'int get _subtitleDelayMpvMs => _graphicSubtitleActive ? _delayMs : 0;',
+          ),
+          reason: '镜像轨若再叠 sub-delay，脚本看到的句尾会偏两倍',
+        );
+      });
+
+      // BUG-3325 审查①：TS / 网络流中途动态加流时 track-list 末尾未必是刚挂的镜像，
+      // 认不回 id 就摘不掉它，每次同步再挂一条，孤儿轨越积越多。
+      test('sub-add select 后从当前选中轨认回镜像 id，不按 track-list 末尾认', () {
+        final String fn = body('Future<void> _syncLuaSubtitleMirror() async {');
+        final int add = fn.indexOf("'sub-add',");
+        final int read = fn.indexOf("_getMpvProperty('current-tracks/sub/id')");
+        expect(add, greaterThan(0));
+        expect(read, greaterThan(add));
+        expect(
+          fn.indexOf('resolveLuaSubtitleMirrorTrackId('),
+          greaterThan(read),
+        );
+        expect(fn, isNot(contains('track-list/count')));
+        expect(fn, isNot(contains(r'track-list/$')));
+      });
+
+      // BUG-3325 审查②：写盘中途 dispose / 换 Player，写出的 SRT 不能再挂回控制器
+      // （那时已没人删它），换 Player 时旧镜像 SRT 也要删。
+      test('写盘后 load 已失效就当场删掉，不挂回 _luaSubtitleMirrorFile', () {
+        final String fn = body('Future<File?> _writeLuaSubtitleMirrorFile(');
+        final int write = fn.indexOf('await file.writeAsString(');
+        final int check = fn.indexOf(
+          'if (!_isCurrentLoad(player, loadToken)) {',
+          write,
+        );
+        final int adopt = fn.indexOf('_luaSubtitleMirrorFile = file;');
+        expect(write, greaterThan(0));
+        expect(check, greaterThan(write));
+        expect(adopt, greaterThan(check));
+        expect(
+          fn.substring(check, adopt),
+          contains('discardLuaSubtitleMirrorFile(file)'),
+        );
+      });
+
+      test('dispose 与 _releaseMediaHandles 都删旧镜像 SRT（等 Player 释放后）', () {
+        expect(
+          body('  void dispose() {'),
+          contains('_deleteLuaSubtitleMirrorFile(after: nativeDisposal);'),
+        );
+        final String release = body('Future<void> _releaseMediaHandles()');
+        final int take = release.indexOf('_takeLuaSubtitleMirrorFile();');
+        final int dispose = release.indexOf('await player.dispose();');
+        final int discard = release.indexOf(
+          'discardLuaSubtitleMirrorFile(staleMirror)',
+        );
+        expect(take, greaterThan(0), reason: '换 Player 不删旧镜像 SRT 会留在临时目录');
+        expect(dispose, greaterThan(take), reason: '先摘所有权，免得误删新 Player 的镜像');
+        expect(discard, greaterThan(dispose), reason: 'libmpv 放掉句柄前删不掉');
+      });
+    });
   });
 
   group('settings schema', () {
     late String src;
     setUpAll(() => src = code(schemaPath));
 
-    test('导入按钮走与开关同一条写穿并置 true（导入即启用）', () {
+    test('导入后把目录即时装进活播放器（导入即生效）', () {
       final int importIdx = src.indexOf(
         "id: 'video.player.mpv_lua_scripts_import'",
       );
@@ -103,23 +243,19 @@ void main() {
       final String between = src.substring(importIdx, dirIdx);
       expect(
         between,
-        contains('_setVideoLuaScriptsEnabled(settingsContext, true)'),
-        reason: '导入后不启用 = 用户播视频什么都不发生（BUG-2032 根因②）',
+        contains('?.onLuaScriptsChanged?.call()'),
+        reason: '导入后不装载 = 用户播视频什么都不发生（BUG-2032 根因②）',
       );
-    });
-
-    test('开关行 onChanged 也走同一条写穿（不允许两份实现分叉）', () {
-      final int switchIdx = src.indexOf("id: 'video.player.mpv_lua_scripts'");
-      final int importIdx = src.indexOf(
-        "id: 'video.player.mpv_lua_scripts_import'",
-      );
-      final String between = src.substring(switchIdx, importIdx);
-      expect(between, contains('onChanged: _setVideoLuaScriptsEnabled'));
       expect(
         between,
         contains('MpvLuaCapability.unavailable'),
         reason: '能力不可用要在副标题如实说明',
       );
+    });
+
+    test('没有单独的 Lua 启用开关：脚本目录即开关', () {
+      expect(src, isNot(contains("id: 'video.player.mpv_lua_scripts',")));
+      expect(src, isNot(contains('LuaScriptsEnabled')));
     });
 
     test('脚本状态列表项挂在 mpv 高级分区', () {
@@ -134,6 +270,21 @@ void main() {
 
     test('把 controller 的脚本状态表交给设置面板 host', () {
       expect(src, contains('luaScriptStates: _controller?.luaScriptStates'));
+    });
+
+    test('脚本目录即开关：每次进入都按目录装载，导入后即时补装', () {
+      expect(
+        src,
+        contains(
+          'final List<String> luaScriptPaths = await listLuaScriptPaths();',
+        ),
+      );
+      final int hook = src.indexOf('onLuaScriptsChanged: () async {');
+      expect(hook, greaterThan(0));
+      expect(
+        src.substring(hook, src.indexOf('},', hook)),
+        contains('_controller?.applyLuaScripts(await listLuaScriptPaths())'),
+      );
     });
 
     test('load 完成后把探到的 Lua 能力落 pref', () {

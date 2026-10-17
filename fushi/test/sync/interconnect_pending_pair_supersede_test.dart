@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -52,7 +52,7 @@ void main() {
     await tester.pump();
     expect(find.text('Phone A · 192.168.1.50'), findsOneWidget,
         reason: '第一次申请框应弹出、处于审批未决');
-    expect(find.text(t.sync_pair_allow), findsOneWidget);
+    expect(find.text(t.sync_pair_allow_interconnect_only), findsOneWidget);
 
     // 第二次同源重试（同 remoteAddress，展示名不同以便区分是新框）：修复前会命中
     // `if (_pairDialogOpen) return false` 被静默拒绝、界面仍是旧框；修复后应收起旧框、弹新框。
@@ -73,8 +73,8 @@ void main() {
         reason: '旧未决框应已收起');
 
     // 新框可正常允许（而非被挡成拒绝）。
-    expect(find.text(t.sync_pair_allow), findsOneWidget);
-    await tester.tap(find.text(t.sync_pair_allow));
+    expect(find.text(t.sync_pair_allow_interconnect_only), findsOneWidget);
+    await tester.tap(find.text(t.sync_pair_allow_interconnect_only));
     await tester.pump();
     expect(await second, isTrue, reason: '同源重试的审批应能正常允许');
   });
@@ -110,7 +110,7 @@ void main() {
         reason: '原未决框应仍在');
 
     // 原框仍可正常允许。
-    await tester.tap(find.text(t.sync_pair_allow));
+    await tester.tap(find.text(t.sync_pair_allow_interconnect_only));
     await tester.pump();
     expect(await first, isTrue);
   });

@@ -125,7 +125,8 @@ function ipaTags(section) {
       'all five source labels must survive (BUG-2122)');
     const counts = collectByClass(section, 'pitch-dict-label pitch-dict-count');
     assert.strictEqual(counts.length, 1, 'a merged row carries a single count pill');
-    assert.strictEqual(counts[0].title, 'd1, d2, d3, d4, d5');
+    // 10-09 起来源名单走 data-sources（文档内提示），不用原生 title。
+    assert.strictEqual(counts[0].getAttribute('data-sources'), 'd1, d2, d3, d4, d5');
   }
 
   console.log('all assertions passed');

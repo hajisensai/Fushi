@@ -24,7 +24,7 @@ class RemoteAudioToken {
   DateTime createdAt;
 }
 
-/// 音频 token 的签发 / 取用 / 过期 / 上限，[FushiSyncServer] 与 [YomitanApiServer]
+/// 音频 token 的签发 / 取用 / 过期 / 上限，[FushiSyncServer] 与 [FushiApiServer]
 /// 共用一份（原本两边各一份「同款模型」，且只有前者修了 BUG-908(a) 的上限）。
 ///
 /// * TTL prune：[ttl] 内无访问的 token 被清掉；签发与取用前都先 prune。
@@ -130,7 +130,7 @@ shelf.Response jsonRawResponse(
 
 shelf.Response jsonResponse(Object body) => jsonRawResponse(jsonEncode(body));
 
-/// 两台 HTTP 服务器（互联 host [FushiSyncServer]、浏览器扩展 [YomitanApiServer]）
+/// 两台 HTTP 服务器（互联 host [FushiSyncServer]、浏览器扩展 [FushiApiServer]）
 /// 共同服务的查词/制卡端点的 handler 正文。payload 契约本就共享在
 /// `fushi_remote_api_handlers.dart`（BUG-530 单一真相源）；这里再把「读体 → 404/400
 /// 门 → 调 builder → JSON 信封」这层壳也收成一份。
@@ -177,6 +177,53 @@ class RemoteLookupRoutes {
       'type': 'audioResult',
       'url': url.toString(),
       'contentType': found.contentType,
+    });
+  }
+
+  /// 单词音频「选择音频源」菜单：`POST /api/lookup/audio/list {expression, reading}`
+  /// → `{type:'audioSourceList', audioSources:[{name, variant, url}]}`，每项与
+  /// [handleAudioLookup] 一样签发免鉴权的短命取字节 URL。service 没实现
+  /// [FushiRemoteAudioListService] 时回落成默认源单项（名字留空，弹窗按「默认」显示）。
+  Future<shelf.Response> handleAudioList(shelf.Request request) async {
+    final FushiRemoteLookupService? service = lookup;
+    if (service == null) return shelf.Response.notFound('Remote lookup off');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+
+    final String expression = body['expression']?.toString() ?? '';
+    final String reading = body['reading']?.toString() ?? '';
+    final List<RemoteAudioChoice> choices;
+    if (expression.trim().isEmpty) {
+      choices = const <RemoteAudioChoice>[];
+    } else if (service is FushiRemoteAudioListService) {
+      choices = await (service as FushiRemoteAudioListService)
+          .listAudio(expression: expression, reading: reading);
+    } else {
+      final RemoteAudioLookup? found =
+          await service.lookupAudio(expression: expression, reading: reading);
+      choices = found == null
+          ? const <RemoteAudioChoice>[]
+          : <RemoteAudioChoice>[
+              RemoteAudioChoice(name: '', variant: '', audio: found),
+            ];
+    }
+
+    return jsonResponse(<String, dynamic>{
+      'type': 'audioSourceList',
+      'audioSources': <Map<String, String>>[
+        for (final RemoteAudioChoice choice in choices)
+          <String, String>{
+            'name': choice.name,
+            'variant': choice.variant,
+            'url': request.requestedUri.replace(
+              path: '/api/lookup/audio/file',
+              queryParameters: <String, String>{
+                'id': audioTokens.mint(
+                    choice.audio.bytes, choice.audio.contentType),
+              },
+            ).toString(),
+          },
+      ],
     });
   }
 

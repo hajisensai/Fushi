@@ -17,12 +17,29 @@
 | 偏好 | 默认 | 含义 | 平台 |
 |---|---|---|---|
 | `floating_ball.in_app`（bool） | 开 | Flutter 悬浮球挂在根 builder 上（`AppFloatingBallHost`），任何页面都在 | 全部 |
-| `floating_ball.system`（bool） | 关 | Android 原生悬浮窗服务 `FloatingBallService`，在别的 app 上面也在；Fushi 自己在前台时原生球隐藏（应用内球开着就由它接管，场景按钮仍然可用） | 仅 Android |
+| `floating_ball.system`（bool） | 关 | Android 原生悬浮窗服务 `FloatingBallService`，在别的 app 上面也在；Fushi 在前台**且「应用内」开着**时原生球让位隐藏（由应用内球接管，场景按钮仍然可用）；「应用内」关着时前台也保留原生球；画中画算后台、分屏算前台（2026-10-09 群反馈两颗球并排，判据 `floatingBallSystemBallYieldsToInApp`） | 仅 Android |
 
 非 Android 平台读到 `floating_ball.system = true`（例如备份从 Android 恢复）不起球。
 
 旧版三态 `floating_ball.mode`（`off` / `in_app` / `system`）只作迁移读取：新开关从没写过时，
 显式选过 `off` 的保持应用内关，选过 `system` 的两个都开。
+
+### 展开按钮文字（2026-10-06）
+
+设置 → 悬浮球 →「显示按钮文字」，偏好 `floating_ball.show_labels`（bool），默认开启。
+关闭时只隐藏展开菜单的文字胶囊和对应点击区域，圆图标按钮保留 tooltip、无障碍名称与
+原有点击操作；重新开启即时恢复。偏好存入设置数据库，重启后沿用，不改按钮勾选或球的位置。
+
+- Flutter 应用内球：全部支持平台生效；保持原有多列 / 极窄视口下只显示图标的布局规则。
+- Windows / macOS 应用外球：随 `startSystemBall.showLabels` 更新；旧调用未传时默认开启。
+- Android 原生应用外球：现有设计只有图标按钮，没有可见文字胶囊；此开关不改变它，
+  tooltip / contentDescription 继续保留。Android 应用内球与其它 Flutter 平台一样响应开关。
+- iOS / Linux 没有原生应用外球，此设置只影响应用内球。
+
+验证：`floating_ball_labels_test.dart`（文件 DB 重开 / 三平台 widget）、
+`round8_system_ball_motion_test.dart`（实际宿主偏好刷新与原生桥接）、Windows
+`floating_ball_hit_region_test.cpp`（实际 DirectWrite 标签、渲染像素与命中范围）；macOS
+原生分支在 Windows 上仅能做静态契约核对，AppKit 实机显示仍需 macOS 验证。
 
 ### 关闭后自动恢复（2026-10-03 用户拍板）
 
@@ -49,7 +66,10 @@
 | `general` 其它页面 | —（没有登记场景的页面） | — |
 | `system` 应用外 | —（原生侧拿不到页面按钮） | — |
 
-每个场景都还能勾选下面的全局按钮（出厂除 `sync` 外全勾）。勾选存在 `floating_ball.buttons.<场景>`
+每个场景都还能勾选下面的全局按钮，出厂勾选按场景分（`FloatingBallGlobalAction.onByDefaultIn`，2026-10-14
+用户截图反馈「漫画里一长列应用外按钮」后改）：`sync` 处处不勾；`system` 其余全勾；`reader` / `manga` / `video`
+只勾 `lookup` 与 `feedback`（球上已有专属按钮，应用外查词 / 剪贴板 / 截屏识字 / 拍照与当前媒体无关）；`general`
+除 `popup_lookup` 外全勾（应用内另开独立查词窗与 `lookup` 重复）。勾选存在 `floating_ball.buttons.<场景>`
 （逗号分隔 id，按目录顺序；空串 = 出厂，`-` = 全关）。旧版单份全局勾选
 `floating_ball.actions` 只作迁移读取：没单独设过的场景沿用它对全局按钮的取舍。
 
@@ -126,7 +146,7 @@ Dart → 原生：
 | `startSystemBall` | `{actions: List<String>, labels: Map<String,String>, ocrLanguage: String}` | bool（无权限 false） | Android |
 | `stopSystemBall` | — | null | Android |
 | `isSystemBallRunning` | — | bool | Android |
-| `setAppForeground` | `{foreground: bool}` | null | Android |
+| `setAppForeground` | `{foreground: bool}` | null | Android / Windows / macOS。值是「让位」（true = 藏原生球）而非裸前台，宿主已折入「应用内」开关与画中画；起球前先发一次，原生跨起停保留 |
 | `startScreenOcr` | `{language: String, labels: Map<String,String>}` | bool（流程是否已启动；无悬浮窗权限或已有一次在进行时 false） | Android |
 | `openPopupLookup` | — | null（弹出独立查词窗） | Android |
 | `takePendingOpenLookupPage` | — | bool（系统球「查词」时主引擎不在而排队的请求；取即清） | Android |

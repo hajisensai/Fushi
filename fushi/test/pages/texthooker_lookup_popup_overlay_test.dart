@@ -28,13 +28,13 @@ void main() {
     expect(popupStack, greaterThan(neutralizer));
 
     final int monitorBody = source.indexOf('Widget _buildMonitorBody(');
-    final int selectedOrLatest = source.indexOf(
-      'TexthookerLineEntry? _selectedOrLatestLine(',
+    final int selectedLine = source.indexOf(
+      'TexthookerLineEntry? _selectedLine(',
       monitorBody,
     );
     final String monitorBodySource = source.substring(
       monitorBody,
-      selectedOrLatest,
+      selectedLine,
     );
     expect(
       monitorBodySource,

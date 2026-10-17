@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
@@ -106,7 +106,7 @@ void main() {
     late Directory pathProviderDir;
     setUpAll(() {
       pathProviderDir =
-          Directory.systemTemp.createTempSync('hibiki_path_provider');
+          Directory.systemTemp.createTempSync('fushi_path_provider');
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => pathProviderDir.path,

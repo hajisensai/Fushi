@@ -92,6 +92,7 @@ class _RecordingRunner implements VideoSourceScrapeRunner {
 
 class _BlockingRunner implements VideoSourceScrapeRunner {
   final Completer<void> release = Completer<void>();
+  final List<List<String>> plannedTitles = <List<String>>[];
 
   @override
   Future<SourceScrapeReport> scrapeSource(
@@ -103,6 +104,11 @@ class _BlockingRunner implements VideoSourceScrapeRunner {
     List<VideoSourceScrapeWork>? plannedWorks,
     String runScope = 'source',
   }) async {
+    plannedTitles.add(<String>[
+      for (final VideoSourceScrapeWork work
+          in plannedWorks ?? const <VideoSourceScrapeWork>[])
+        work.title,
+    ]);
     await release.future;
     return SourceScrapeReport(sourceIds: <int>[source.id]);
   }
@@ -441,20 +447,31 @@ void main() {
     });
 
     test('sweep 的接线读新偏好，且设置页真画了这个开关', () {
+      // sweep 的装配随刮削运行时从 HomePage 搬到了 video_scrape_runtime.dart。
       final String homePage = File(
         'lib/src/pages/implementations/home_page.dart',
       ).readAsStringSync();
+      final String runtime = File(
+        'lib/src/media/video/metadata/video_scrape_runtime.dart',
+      ).readAsStringSync();
       expect(
-        homePage,
-        contains(
-            'isEnabled: () => appModelNoUpdate.videoLibraryAutoBackfillScrape'),
+        runtime,
+        contains('isAutoBackfillEnabled: () => '
+            'appModel.videoLibraryAutoBackfillScrape'),
         reason: 'sweep 必须挂在自己的总闸上',
       );
       expect(
-        homePage,
-        isNot(contains('videoAutoScrape')),
-        reason: '不得回退到契约写着「不联网」且用户改不了的 video_auto_scrape',
+        runtime,
+        contains('isEnabled: _isAutoBackfillEnabled'),
+        reason: '总闸要真的传进 VideoLibraryScrapeSweep',
       );
+      for (final String source in <String>[homePage, runtime]) {
+        expect(
+          source,
+          isNot(contains('videoAutoScrape')),
+          reason: '不得回退到契约写着「不联网」且用户改不了的 video_auto_scrape',
+        );
+      }
 
       final String videoSettings = File(
         'lib/src/settings/settings_schema_video.dart',
@@ -486,19 +503,177 @@ void main() {
     expect(runner.plannedTitles.single, <String>['Unscraped Movie']);
   });
 
-  test('只因资料源临时不可用（504）失败的作品不记「已尝试」，下次触发就重试（BUG-2796）',
-      () async {
+  test(
+      '临时失败（504 / 握手失败）按短间隔退避：间隔内不重认领，过了就重试，'
+      '不挡 7 天（BUG-2796 / BUG-3072）', () async {
     final int sourceId = await addSource('D:/A');
     await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
         title: 'Unscraped Movie');
     runner.transientFailure = true;
+    DateTime current = DateTime(2026, 10, 9, 12);
+    final VideoScrapeSweepLedger ledger = VideoScrapeSweepLedger();
 
-    final VideoLibraryScrapeSweep service = sweep();
+    final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+      database: db,
+      controller: controller,
+      now: () => current,
+      ledger: ledger,
+    );
     await service.sweepOnce();
-    await service.sweepOnce();
+    expect(runner.sourceIds, hasLength(1));
 
+    // 用户库实测：资料源连不上时同一作品 42 秒、甚至 2 秒就被重刮一轮——
+    // 临时失败被直接撤账，任何一次触发都会重新认领它。
+    current = current.add(const Duration(seconds: 42));
+    await service.sweepOnce();
+    current = current.add(const Duration(minutes: 30));
+    await service.sweepOnce();
+    expect(runner.sourceIds, hasLength(1),
+        reason: '临时失败也是一次尝试，退避间隔内不能被下一次触发重新认领');
+
+    // 过了临时退避间隔就重试：一次资料源宕机不能把作品挡 7 天（BUG-2796）。
+    current = current.add(ledger.transientRetryAfter);
+    await service.sweepOnce();
     expect(runner.sourceIds, hasLength(2),
         reason: '临时故障不是「查无」，不能被记账挡 7 天');
+  });
+
+  test('临时失败的退避跨进程：重启后间隔内不重刮（BUG-3072）', () async {
+    final Directory temp =
+        await Directory.systemTemp.createTemp('sweep_ledger_transient_');
+    addTearDown(() => temp.delete(recursive: true));
+    final File file = File('${temp.path}/ledger.json');
+    final int sourceId = await addSource('D:/A');
+    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+        title: 'Unscraped Movie');
+    runner.transientFailure = true;
+    final DateTime t0 = DateTime(2026, 10, 9, 12);
+
+    VideoLibraryScrapeSweep relaunch(DateTime now) => VideoLibraryScrapeSweep(
+          database: db,
+          controller: controller,
+          now: () => now,
+          ledger: VideoScrapeSweepLedger(file: file),
+        );
+
+    await relaunch(t0).sweepOnce();
+    await relaunch(t0.add(const Duration(minutes: 5))).sweepOnce();
+    expect(runner.sourceIds, hasLength(1));
+    await relaunch(t0.add(const Duration(hours: 2))).sweepOnce();
+    expect(runner.sourceIds, hasLength(2));
+  });
+
+  test('刮削结果变化只重算清单，不发起补刮：补刮批次自己的写入不会启动下一轮（BUG-3072）',
+      () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+        title: 'Unscraped Movie');
+    final VideoLibraryScrapeSweep service = sweep();
+
+    // 结果落库 / 批次结束时视频页调的是它：作品还没自动试过也不在这里认领。
+    expect(await service.refreshPendingAfterScrapeResults(), hasLength(1));
+    expect(runner.sourceIds, isEmpty,
+        reason: '展示层变更通知（含补刮批次自己写的运行记录）不是补刮请求');
+
+    await service.sweepOnce();
+    expect(runner.sourceIds, hasLength(1));
+    // 批次写完运行记录 → 展示层通知 → 视频页重算待确认数：不得再起一轮。
+    await service.refreshPendingAfterScrapeResults();
+    await service.refreshPendingAfterScrapeResults();
+    expect(runner.sourceIds, hasLength(1));
+  });
+
+  test(
+      '批次期间被挡下的条目变化请求不丢：批次结束时调度器自己兑现，不依赖视频页'
+      '（BUG-2199 / BUG-3072 / BUG-3085）', () async {
+    final int sourceId = await addSource('D:/A');
+    final _BlockingRunner blocking = _BlockingRunner();
+    final VideoSourceScrapeTaskController busyController =
+        VideoSourceScrapeTaskController(blocking);
+    addTearDown(busyController.dispose);
+    final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+      database: db,
+      controller: busyController,
+    );
+    addTearDown(service.dispose);
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final Future<SourceScrapeReport> batch =
+        busyController.scrapeSource(source);
+    expect(busyController.isBusy, isTrue);
+
+    // 下载入库落在别的批次期间：这次补刮请求只能先记下。
+    await addVideo('movie-b', 'D:/A/Fresh Download (2023).mkv', sourceId,
+        title: 'Fresh Download');
+    await service.sweepAndListPending();
+    expect(blocking.plannedTitles, hasLength(1), reason: '批次期间不发第二批');
+    // 批次期间的结果变化通知只读：既不兑现也不发批次。
+    await service.refreshPendingAfterScrapeResults();
+    expect(blocking.plannedTitles, hasLength(1));
+
+    // 视频页没挂载：没有任何人调 refreshPendingAfterScrapeResults。
+    blocking.release.complete();
+    await batch;
+    await service.whenDeferredSettled();
+    expect(blocking.plannedTitles.last, <String>['Fresh Download'],
+        reason: '被挡下的是真实的条目变化，批次结束必须由调度器自己兑现');
+
+    // 兑现过一次就清掉：之后的结果变化回到只读，补刮批次自己的写入也不再起新一轮。
+    await service.refreshPendingAfterScrapeResults();
+    await service.refreshPendingAfterScrapeResults();
+    await service.whenDeferredSettled();
+    expect(blocking.plannedTitles, hasLength(2));
+  });
+
+  test('结果变化通知不再兑现被挡下的请求：与调度器自己的兑现叠在一起也只跑一轮',
+      () async {
+    final int sourceId = await addSource('D:/A');
+    final _BlockingRunner blocking = _BlockingRunner();
+    final VideoSourceScrapeTaskController busyController =
+        VideoSourceScrapeTaskController(blocking);
+    addTearDown(busyController.dispose);
+    final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+      database: db,
+      controller: busyController,
+    );
+    addTearDown(service.dispose);
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final Future<SourceScrapeReport> batch =
+        busyController.scrapeSource(source);
+    await addVideo('movie-b', 'D:/A/Fresh Download (2023).mkv', sourceId,
+        title: 'Fresh Download');
+    await service.sweepAndListPending();
+
+    blocking.release.complete();
+    await batch;
+    // 视频页挂着时批次忙→闲照旧调只读端口。
+    await service.refreshPendingAfterScrapeResults();
+    await service.whenDeferredSettled();
+    expect(blocking.plannedTitles, hasLength(2));
+  });
+
+  test('dispose 后在途批次结束不再由这一代调度器发起补刮（controller 换代 / 关停）',
+      () async {
+    final int sourceId = await addSource('D:/A');
+    final _BlockingRunner blocking = _BlockingRunner();
+    final VideoSourceScrapeTaskController busyController =
+        VideoSourceScrapeTaskController(blocking);
+    addTearDown(busyController.dispose);
+    final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+      database: db,
+      controller: busyController,
+    );
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final Future<SourceScrapeReport> batch =
+        busyController.scrapeSource(source);
+    await addVideo('movie-b', 'D:/A/Fresh Download (2023).mkv', sourceId,
+        title: 'Fresh Download');
+    await service.sweepAndListPending();
+    service.dispose();
+
+    blocking.release.complete();
+    await batch;
+    await service.whenDeferredSettled();
+    expect(blocking.plannedTitles, hasLength(1));
   });
 
   group('AI 能力进账本指纹（2026-10-01）', () {
@@ -534,18 +709,28 @@ void main() {
       expect(runner.sourceIds, hasLength(4), reason: '撤掉 AI 也是换了一套配置');
     });
 
-    test('warnings 里标了临时不可用的 AI 失败不进退避，下一轮再试', () async {
+    test('warnings 里标了临时不可用的 AI 失败只进短退避，过了间隔再试', () async {
       final int sourceId = await addSource('D:/A');
       await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
           title: 'Unscraped Movie');
       runner.aiWarning = 'ai:failed reason=timeout';
+      DateTime current = DateTime(2026, 10, 9, 12);
+      final VideoScrapeSweepLedger ledger = VideoScrapeSweepLedger();
 
-      final VideoLibraryScrapeSweep service =
-          sweep(aiCapabilityKey: () => 'p1|m');
+      final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+        database: db,
+        controller: controller,
+        now: () => current,
+        ledger: ledger,
+        aiCapabilityKey: () => 'p1|m',
+      );
       await service.sweepOnce();
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(1), reason: '间隔内不重认领（BUG-3072）');
+      current = current.add(ledger.transientRetryAfter);
       await service.sweepOnce();
       expect(runner.sourceIds, hasLength(2),
-          reason: 'AI 请求失败记在 warnings（作品是待确认），仍是临时失败');
+          reason: 'AI 请求失败记在 warnings（作品是待确认），仍是临时失败，不挡 7 天');
     });
 
     test('warnings 里没标临时不可用的作品照常进退避（对照组）', () async {
@@ -742,6 +927,8 @@ void main() {
 
     blocking.release.complete();
     await batch;
+    // 批次期间那次触发被记下，批次结束时调度器自己兑现（BUG-3085）；等它跑完。
+    await service.whenDeferredSettled();
     expect(await service.sweepAndListPending(), hasLength(2));
   });
 

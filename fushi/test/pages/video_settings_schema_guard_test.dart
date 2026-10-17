@@ -52,7 +52,6 @@ void main() {
       'video.playback.lock_window_aspect',
       'video.playback.long_press_speed',
       'video.playback.seek_seconds',
-      'video.playback.pause_at_subtitle_end',
       // Image quality (mpv pure-pref subset)
       'video.quality.enhancement',
       'video.quality.sigmoid',
@@ -78,6 +77,7 @@ void main() {
       'video.audio.pitch',
       'video.audio.channels',
       'video.audio.normalize_downmix',
+      'video.audio.passthrough',
       // Subtitle appearance
       'video.subtitle.obscure',
       'video.subtitle.respect_ass_style',
@@ -131,9 +131,7 @@ void main() {
       'video.player.audio_track',
       'video.player.subtitle_track',
       'video.player.subtitle_sync',
-      'video.player.subtitle_text_color',
       'video.subtitle.no_background',
-      'video.player.subtitle_bg_color',
       'video.player.subtitle_style_reset',
       'video.player.shaders',
       'video.player.mpv_raw',
@@ -161,6 +159,34 @@ void main() {
         expect(item.searchTitle, isNull,
             reason: '$id 是播放中专属行，不应声明 searchTitle 进入全局搜索');
       }
+    }
+  });
+
+  test(
+      'PM-iIH9G0b: subtitle color rows are reachable from global settings '
+      'and still project into the player panel', () {
+    // 字幕文字 / 阴影 / 描边 / 背景四个颜色行的 builder 无 host 也能写穿 pref，
+    // 不再是播放中专属：必须不带 host 门控、放在全局可见的字幕分区、能被搜到。
+    const Set<String> colorIds = <String>{
+      'video.player.subtitle_text_color',
+      'video.player.subtitle_shadow_color',
+      'video.player.subtitle_outline_color',
+      'video.player.subtitle_bg_color',
+    };
+    final SettingsSection subtitles = buildVideoDestination()
+        .sections
+        .singleWhere((SettingsSection s) => s.id == 'video.section.subtitles');
+    final Map<String, SettingsItem> byId = <String, SettingsItem>{
+      for (final SettingsItem item in subtitles.items) item.id: item,
+    };
+    for (final String id in colorIds) {
+      final SettingsItem? item = byId[id];
+      expect(item, isNotNull, reason: '$id 必须在全局可见的字幕分区');
+      expect(item!.visible, isNull, reason: '$id 不能再 host 门控');
+      expect(item.video?.group, VideoGroup.subtitle,
+          reason: '$id 仍须投影进播放页字幕面板');
+      expect((item as SettingsCustomItem).searchTitle, isNotNull,
+          reason: '$id 全局可见，应进全局搜索');
     }
   });
 

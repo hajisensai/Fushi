@@ -14,6 +14,15 @@ import 'package:image/image.dart' as img;
 ///
 /// 不认识的格式 / 损坏文件返回 null，调用方回退整张解码（行为与从前一致）。
 ({int width, int height})? probeOrientedImageSize(Uint8List bytes) {
+  // BUG-3041：JPEG / PNG 自己读头。image 4.x 的 `JpegDecoder.startDecode` 名为
+  // 「只读头」，实测却把整条扫描数据也解析一遍（2400×3400 的页 200~600 ms，且是
+  // 在调用方 isolate 上同步跑——阅读器每个页图请求都经这里，主 isolate 直接卡住）；
+  // `findDecoderForData` 也会挨个格式试探。漫画页九成以上是这两种格式，直接按
+  // 规范读 SOF / IHDR，其余格式照旧交给 image 的解码器。
+  final ({int width, int height})? jpeg = _jpegOrientedSize(bytes);
+  if (jpeg != null) return jpeg;
+  final ({int width, int height})? png = _pngSize(bytes);
+  if (png != null) return png;
   final img.Decoder? decoder;
   final img.DecodeInfo? info;
   try {
@@ -162,4 +171,75 @@ int _orientationFromTiff(Uint8List bytes, int tiff, int end) {
     return (value >= 1 && value <= 8) ? value : 1;
   }
   return 1;
+}
+
+/// JPEG：顺着 marker 链走到第一个 SOFn（跳过 DHT/JPG/DAC 这些占用 C4/C8/CC
+/// 的非帧头），读帧高宽，再按 [jpegExifOrientation] 换轴——与 `decodeImage` +
+/// `bakeOrientation` 同口径。不是 JPEG / 在 SOS 前没找到 SOF / 截断 → null，
+/// 交回通用路径。只看段头，不碰扫描数据。
+({int width, int height})? _jpegOrientedSize(Uint8List bytes) {
+  if (bytes.length < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8) return null;
+  int i = 2;
+  while (i + 3 < bytes.length) {
+    if (bytes[i] != 0xFF) return null;
+    final int marker = bytes[i + 1];
+    if (marker == 0xFF) {
+      i += 1;
+      continue;
+    }
+    if (marker == 0xD8 ||
+        marker == 0x01 ||
+        (marker >= 0xD0 && marker <= 0xD7)) {
+      i += 2;
+      continue;
+    }
+    if (marker == 0xDA || marker == 0xD9) return null;
+    final int segmentLength = (bytes[i + 2] << 8) | bytes[i + 3];
+    if (segmentLength < 2) return null;
+    final bool isFrameHeader = marker >= 0xC0 &&
+        marker <= 0xCF &&
+        marker != 0xC4 &&
+        marker != 0xC8 &&
+        marker != 0xCC;
+    if (isFrameHeader) {
+      // SOFn 段：长度(2) 精度(1) 高(2) 宽(2)。
+      if (segmentLength < 7 || i + 9 > bytes.length) return null;
+      int height = (bytes[i + 5] << 8) | bytes[i + 6];
+      int width = (bytes[i + 7] << 8) | bytes[i + 8];
+      if (width <= 0 || height <= 0) return null;
+      final int orientation = jpegExifOrientation(bytes);
+      if (orientation >= 5 && orientation <= 8) {
+        final int swap = width;
+        width = height;
+        height = swap;
+      }
+      return (width: width, height: height);
+    }
+    i = i + 2 + segmentLength;
+  }
+  return null;
+}
+
+/// PNG：签名后第一个 chunk 必须是 IHDR，宽高是其头两个大端 u32。PNG 的 EXIF
+/// 方向 image 4.x 本就不应用（见 [probeOrientedImageSize] 注释），无需换轴。
+({int width, int height})? _pngSize(Uint8List bytes) {
+  const List<int> signature = <int>[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+  ];
+  if (bytes.length < 24) return null;
+  for (int k = 0; k < signature.length; k++) {
+    if (bytes[k] != signature[k]) return null;
+  }
+  // IHDR
+  if (bytes[12] != 0x49 ||
+      bytes[13] != 0x48 ||
+      bytes[14] != 0x44 ||
+      bytes[15] != 0x52) {
+    return null;
+  }
+  final ByteData data = ByteData.sublistView(bytes, 16, 24);
+  final int width = data.getUint32(0);
+  final int height = data.getUint32(4);
+  if (width <= 0 || height <= 0) return null;
+  return (width: width, height: height);
 }

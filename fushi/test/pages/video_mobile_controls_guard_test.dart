@@ -65,10 +65,18 @@ void main() {
         reason: 'top-bar groups must not scroll/clip buttons when squeezed');
     final List<VideoControlItem> topRightItems =
         VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
-    expect(topRightItems.contains(VideoControlItem.subtitleTrack), isTrue,
-        reason: 'subtitle source must default into the real top-right slot');
-    expect(topRightItems.contains(VideoControlItem.audioTrack), isTrue,
-        reason: 'audio track must default into the real top-right slot');
+    // 2026-10-05 M3E 重排：字幕轨默认挪到底栏右（高频），仍在真实控制条里。
+    expect(
+        VideoControlLayout.currentChrome
+            .itemsIn(VideoControlSlot.bottomRight)
+            .contains(VideoControlItem.subtitleTrack),
+        isTrue,
+        reason: 'subtitle source must default into the real bottom-right slot');
+    // 2026-10-06 遮挡最小化：音轨默认移出播放器，常驻右上「⋯」。
+    expect(topRightItems.contains(VideoControlItem.audioTrack), isFalse,
+        reason: 'audio track folds into the top-right ⋯ by default');
+    expect(VideoControlLayout.currentChrome.removedItems,
+        contains(VideoControlItem.audioTrack));
     expect(topRightItems.contains(VideoControlItem.screenshot), isTrue,
         reason: 'screenshot action must default into the real top-right slot');
     expect(src.contains('_showSubtitleSourceMenu(controller)'), isTrue);
@@ -132,7 +140,7 @@ void main() {
     expect(src.contains('_buildVolumeButton(controller'), isTrue,
         reason: 'bottom bar should expose a volume adjustment entry');
     expect(src.contains('_buildFullscreenButton('), isTrue,
-        reason: 'bottom bar should use Hibiki neutralized fullscreen');
+        reason: 'bottom bar should use Fushi neutralized fullscreen');
     // TODO-067: ±10s 按钮用左右对称的 fast_rewind/forward（取代显歪的 replay_10/forward_10），
     // 守卫意图仍是「宽屏保留 ±N 秒 seek 按钮」。BUG-257 合并后各只出现一次。
     expect(src.contains('Icons.fast_rewind_rounded'), isTrue,

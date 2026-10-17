@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -27,6 +27,12 @@ class _PopupTestAppModel extends AppModel {
 
   @override
   double get popupMaxWidth => 400;
+
+  @override
+  double get dictionaryFontSize => 16;
+
+  @override
+  double get appUiScale => 1.0;
 
   @override
   List<String> get enabledAudioSources => const <String>[];

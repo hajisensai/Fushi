@@ -1,7 +1,6 @@
 // 查词浮层顶栏「重播本句」的一次性句尾暂停（[VideoPlayerController.replayCue]）。
 //
-// 核心不变量：一次性 hold 与全局偏好「字幕结束暂停」（[setPauseAtSubtitleEnd]）**正交**
-// ——重播不改写偏好，偏好也不改写重播；两者共用同一套句尾判定与落点。
+// 核心不变量：只停被重播的那一句，停下即消耗，不会升级成「每句都停」。
 //
 // 另一条易回归的线是**生命周期**：一次性 hold 绝不能挂进 `_clearSeekTargetSnap`（自然
 // 播放越过目标句时播放器自己会调它，那正是最需要 hold 存活的一刻），只在用户主动改变
@@ -23,15 +22,13 @@ AudioCue _cue(int i, int s, int e) => AudioCue()
 
 void main() {
   group('VideoPlayerController.replayCue 一次性句尾暂停', () {
-    test('全局偏好关着时，重播那一句仍在句尾停一次（直接进下一句路径）', () async {
+    test('重播那一句在句尾停一次（直接进下一句路径）', () async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
 
       final List<String> actions = <String>[];
-      c.debugSetPauseAtSubtitleEndForTesting(
-        // 关键：全局偏好**关着**。停下来只能是一次性 hold 的功劳。
-        enabled: false,
+      c.debugSetSubtitleEndHoldHooksForTesting(
         isPlaying: () => true,
         onPause: () async => actions.add('pause'),
         onSeek: (int positionMs) async => actions.add('seek:$positionMs'),
@@ -52,15 +49,14 @@ void main() {
       expect(c.debugOneShotHoldCueIndex, isNull, reason: '停下即消耗');
     });
 
-    test('全局偏好关着时，句尾落进 gap 也停（gap 路径）', () async {
+    test('句尾落进 gap 也停（gap 路径）', () async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       // cue0 与 cue1 之间是静音 gap，句尾后下一拍无 cue。
       c.setCues(<AudioCue>[_cue(0, 0, 1000), _cue(1, 2000, 3000)]);
 
       int pauses = 0;
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: false,
+      c.debugSetSubtitleEndHoldHooksForTesting(
         isPlaying: () => true,
         onPause: () async => pauses++,
       );
@@ -73,13 +69,13 @@ void main() {
       expect(pauses, 1, reason: 'gap 路径同样要停');
       expect(c.debugOneShotHoldCueIndex, isNull);
 
-      // 消耗后继续播，后面的句子不受影响（偏好仍是关着的）。
+      // 消耗后继续播，后面的句子不受影响。
       c.debugUpdateCueForPosition(2500);
       c.debugUpdateCueForPosition(3500);
       expect(pauses, 1, reason: '一次性 hold 不得升级成全局「每句都停」');
     });
 
-    test('重播不写全局偏好：别的句子照常播过去', () async {
+    test('只停被重播的那句：别的句子照常播过去', () async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[
@@ -89,8 +85,7 @@ void main() {
       ]);
 
       int pauses = 0;
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: false,
+      c.debugSetSubtitleEndHoldHooksForTesting(
         isPlaying: () => true,
         onPause: () async => pauses++,
       );
@@ -117,8 +112,7 @@ void main() {
       c.setCues(<AudioCue>[_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
 
       int pauses = 0;
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: false,
+      c.debugSetSubtitleEndHoldHooksForTesting(
         isPlaying: () => true,
         onPause: () async => pauses++,
       );
@@ -142,8 +136,7 @@ void main() {
       c.setCues(<AudioCue>[_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
 
       int pauses = 0;
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: false,
+      c.debugSetSubtitleEndHoldHooksForTesting(
         isPlaying: () => true,
         onPause: () async => pauses++,
       );
@@ -167,8 +160,7 @@ void main() {
       c.setCues(<AudioCue>[_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
 
       int pauses = 0;
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: false,
+      c.debugSetSubtitleEndHoldHooksForTesting(
         isPlaying: () => true,
         onPause: () async => pauses++,
       );
@@ -189,8 +181,7 @@ void main() {
       c.setCues(<AudioCue>[_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
 
       int pauses = 0;
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: false,
+      c.debugSetSubtitleEndHoldHooksForTesting(
         isPlaying: () => true,
         onPause: () async => pauses++,
       );
@@ -207,25 +198,24 @@ void main() {
       expect(pauses, 0, reason: '新片的句子不得被上一片的 hold 停住');
     });
 
-    test('全局偏好开着时重播同一句仍能停（防重复停记号被重播复位）', () async {
+    test('连续重播同一句两次都停（防重复停记号被重播复位）', () async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
 
       int pauses = 0;
-      c.debugSetPauseAtSubtitleEndForTesting(
-        // 偏好开着：cue0 已经被句尾暂停过一次，记号停在 cue0 上。
-        enabled: true,
+      c.debugSetSubtitleEndHoldHooksForTesting(
         isPlaying: () => true,
         onPause: () async => pauses++,
       );
 
+      await c.replayCue(c.cues[0]);
       c.debugUpdateCueForPosition(900);
       c.debugUpdateCueForPosition(1125);
       await Future<void>.delayed(Duration.zero);
       expect(pauses, 1);
 
-      // 用户在查词浮层里点「重播本句」：必须再停一次，而不是被「这句停过了」挡掉。
+      // 停在句尾后用户再点一次「重播本句」：必须再停一次，而不是被「这句停过了」挡掉。
       await c.replayCue(c.cues[0]);
       c.debugUpdateCueForPosition(900);
       c.debugUpdateCueForPosition(1125);
@@ -239,8 +229,7 @@ void main() {
       c.setCues(<AudioCue>[_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
 
       int pauses = 0;
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: false,
+      c.debugSetSubtitleEndHoldHooksForTesting(
         // 用户重播后立刻手动按了暂停：位置不再前进，任何越界都是别的原因造成的。
         isPlaying: () => false,
         onPause: () async => pauses++,
@@ -253,14 +242,48 @@ void main() {
       expect(pauses, 0);
     });
 
+    test('until：从首句播到末句句尾才停，中间各句不停（调整上下文试听）', () async {
+      final VideoPlayerController c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues(<AudioCue>[
+        _cue(0, 0, 1000),
+        _cue(1, 1001, 2000),
+        _cue(2, 2001, 3000),
+        _cue(3, 3001, 4000),
+      ]);
+
+      final List<String> actions = <String>[];
+      c.debugSetSubtitleEndHoldHooksForTesting(
+        isPlaying: () => true,
+        onPause: () async => actions.add('pause'),
+        onSeek: (int positionMs) async => actions.add('seek:$positionMs'),
+        onPlay: () async => actions.add('play'),
+      );
+
+      await c.replayCue(c.cues[0], until: c.cues[2]);
+      expect(actions, <String>['play']);
+      expect(c.debugOneShotHoldCueIndex, 2, reason: 'hold 挂在末句上');
+
+      c.debugUpdateCueForPosition(900);
+      c.debugUpdateCueForPosition(1125);
+      c.debugUpdateCueForPosition(2125);
+      await Future<void>.delayed(Duration.zero);
+      expect(actions, <String>['play'], reason: '首句、中间句句尾都不停');
+
+      c.debugUpdateCueForPosition(3125);
+      await Future<void>.delayed(Duration.zero);
+      expect(actions, <String>['play', 'pause', 'seek:3000'],
+          reason: '末句句尾停并回到它的精确结尾');
+      expect(c.debugOneShotHoldCueIndex, isNull);
+    });
+
     test('cue 不在当前列表时退化为「跳过去接着播」，不假装能停', () async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
 
       final List<String> actions = <String>[];
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: false,
+      c.debugSetSubtitleEndHoldHooksForTesting(
         isPlaying: () => true,
         onPause: () async => actions.add('pause'),
         onPlay: () async => actions.add('play'),

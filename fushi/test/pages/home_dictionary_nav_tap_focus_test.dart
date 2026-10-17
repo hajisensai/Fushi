@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,11 +37,11 @@ class _NavTapAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => PackageInfo(
-        appName: 'Fushi',
-        packageName: 'app.hibiki.reader',
-        version: '1.0.0',
-        buildNumber: '1',
-      );
+    appName: 'Fushi',
+    packageName: 'app.hibiki.reader',
+    version: '1.0.0',
+    buildNumber: '1',
+  );
 
   @override
   Directory get appDirectory => _dir;
@@ -67,8 +67,8 @@ class _NavTapAppModel extends AppModel {
 
   @override
   List<Dictionary> get dictionaries => <Dictionary>[
-        Dictionary(name: 'Test', formatKey: 'test', order: 0),
-      ];
+    Dictionary(name: 'Test', formatKey: 'test', order: 0),
+  ];
 
   @override
   int get maximumTerms => 10;
@@ -89,20 +89,21 @@ class _NavTapAppModel extends AppModel {
     int? overrideMaximumTerms,
     bool useCache = true,
     bool allowRemoteLookup = true,
-  }) async =>
-      DictionarySearchResult(searchTerm: searchTerm);
+  }) async => DictionarySearchResult(searchTerm: searchTerm);
 }
 
-const ValueKey<String> _searchFieldKey =
-    ValueKey<String>('home_dictionary_search_field');
+const ValueKey<String> _searchFieldKey = ValueKey<String>(
+  'home_dictionary_search_field',
+);
 
 Future<void> _pumpHome(WidgetTester tester) async {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
-  final Directory tmpDir =
-      Directory.systemTemp.createTempSync('fushi_dict_nav_tap_');
+  final Directory tmpDir = Directory.systemTemp.createTempSync(
+    'fushi_dict_nav_tap_',
+  );
   addTearDown(() {
     try {
       tmpDir.deleteSync(recursive: true);
@@ -153,14 +154,64 @@ Future<void> _unmount(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 10));
 }
 
-/// 点底栏上的一个 destination（按可见 label 定位）。
+/// 点底栏上的一个 destination（按可见 label 定位）。MD3 悬浮底栏里「查词」
+/// 是胶囊右侧的 FAB（只有 tooltip），放不下的目的地在「更多」菜单里。
 Future<void> _tapNav(WidgetTester tester, String label) async {
-  final Finder target = find.descendant(
-    of: find.byKey(fushiMaterialNavKey),
-    matching: find.text(label),
-  );
-  expect(target, findsOneWidget, reason: '底栏上应有「$label」这个 destination');
-  await tester.tap(target);
+  final Finder nav = find.byKey(fushiMaterialNavKey);
+  // hitTestable：悬浮底栏常驻一枚透明 + IgnorePointer 的「最小化小胶囊」，里面是
+  // 当前项的标签与 tooltip（当前是查词时就是「查词」），点它会穿透到下面的目的地；
+  // 下面 tooltip 分支同理。
+  final Finder text = find
+      .descendant(of: nav, matching: find.text(label))
+      .hitTestable();
+  if (text.evaluate().isNotEmpty) {
+    expect(text, findsOneWidget, reason: '底栏上应有「$label」这个 destination');
+    await tester.tap(text);
+    await _settle(tester);
+    return;
+  }
+  final Finder tip = find
+      .descendant(of: nav, matching: find.byTooltip(label))
+      .hitTestable();
+  if (tip.evaluate().isNotEmpty) {
+    await tester.tap(tip.first);
+    await _settle(tester);
+    return;
+  }
+  // 分页滑动底栏（2026-10-16 起出厂默认）：查词并进胶囊、可能在别的页，
+  // 像用户一样在底栏上左滑翻页直到它露出来（别页的格不接指针）。
+  final Finder more = find.descendant(of: nav, matching: find.text('More'));
+  if (more.evaluate().isEmpty) {
+    // 按本仓 Tooltip（material_ui）的 message 认格：flutter_test 的 byTooltip
+    // 只认 SDK 旧 Material 的 Tooltip 类型，在这里恒为空。
+    final Finder cellTip = find
+        .descendant(
+          of: nav,
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is Tooltip && w.message == label,
+          ),
+        )
+        .hitTestable();
+    for (int page = 0; page < 4 && cellTip.evaluate().isEmpty; page++) {
+      // 从底栏一格的高度横滑（nav 的几何中心不一定落在格子行上）。
+      final Finder cell = find
+          .descendant(of: nav, matching: find.byType(Tooltip))
+          .hitTestable()
+          .first;
+      final double y = tester.getCenter(cell).dy;
+      final double x = tester.getCenter(nav).dx;
+      await tester.dragFrom(Offset(x + 100, y), const Offset(-200, 0));
+      await _settle(tester);
+    }
+    expect(cellTip, findsWidgets, reason: '分页底栏翻页后应能看到「$label」');
+    await tester.tap(cellTip.first);
+    await _settle(tester);
+    return;
+  }
+  expect(more, findsOneWidget, reason: '底栏上应有「$label」或「更多」');
+  await tester.tap(more);
+  await _settle(tester);
+  await tester.tap(find.text(label).last);
   await _settle(tester);
 }
 
@@ -215,8 +266,11 @@ void main() {
     addTearDown(tester.view.reset);
 
     await _pumpHome(tester);
-    expect(find.byType(HomeDictionaryPage), findsNothing,
-        reason: '起点是首页，查词页尚未挂载。');
+    expect(
+      find.byType(HomeDictionaryPage),
+      findsNothing,
+      reason: '起点是首页，查词页尚未挂载。',
+    );
 
     await _tapNav(tester, t.nav_lookup);
 
@@ -246,11 +300,7 @@ void main() {
     // 查词 tab 已是当前 tab，再点一次底栏的「查词」。
     await _tapNav(tester, t.nav_lookup);
 
-    expect(
-      _searchText(tester),
-      isEmpty,
-      reason: '再点一次 = 重新开始查；残留的查询必须被清掉。',
-    );
+    expect(_searchText(tester), isEmpty, reason: '再点一次 = 重新开始查；残留的查询必须被清掉。');
     expect(
       _searchFocusNode(tester).hasFocus,
       isTrue,
@@ -259,8 +309,9 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('BUG-2687 已在查词 tab、键盘已收起：再点「查词」重新弹起键盘',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2687 已在查词 tab、键盘已收起：再点「查词」重新弹起键盘', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);

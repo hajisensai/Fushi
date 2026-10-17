@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -42,7 +42,7 @@ void main() {
     final String? env = Platform.environment['FUSHI_LEAK_EVIDENCE_DIR'];
     final String base = (env != null && env.trim().isNotEmpty)
         ? env.trim()
-        : '${Directory.systemTemp.path}/hibiki-leak-evidence';
+        : '${Directory.systemTemp.path}/fushi-leak-evidence';
     final Directory d = Directory(base);
     if (!d.existsSync()) d.createSync(recursive: true);
     return d.path;

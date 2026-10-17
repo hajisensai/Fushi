@@ -1,0 +1,6 @@
+## BUG-2917 · 视觉小说模式有声书逐句高亮在注音字处断开
+- **报告**：2026-10-03（用户：iOS 竖排 EPUB 深色主题截图，「縦（じゅう）」处整句高亮断成三截）
+- **真实性**：✅ 真 bug。VN shell 的 `wrapSentenceAudioCueRanges`（`fushi/lib/src/reader/reader_visual_novel_scripts.dart:3004`，修复前）按片段逐个包 `<span>`，`applyInlineSentenceAudioCue`（同文件 `:3058`）只切 class、从不补缝；分页 / 连续 shell 早在 BUG-2806 就有「同父片段合并包裹 + ruby 缝 box-shadow 补色」，VN 是那套逻辑的第三份调用方却从没接上。注音比基字长时 WebKit 把 ruby 撑开，基字前后留下没有背景的空隙，高亮在注音字处断开。
+- **[x] ① 已修复** — c26c85c1d3：BUG-2806 那组方法搬进唯一的共享片段 `fushi/lib/src/reader/reader_sentence_audio_ruby_gap_script.dart`（`kSentenceAudioRubyGapJs`），分页 / 连续 / VN 三个 shell 原样嵌入；VN 改为分组包裹并在 `applyInlineSentenceAudioCue` 调 `fillSentenceAudioRubyGaps`，清除路径调 `clearSentenceAudioRubyGaps`。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/sentence_audio_ruby_wrap_behavior_test.js` 第 10 例（VN fixture：分组包裹、缝被 box-shadow 补上、清除路径擦干净）+ `sentence_audio_ruby_wrap_behavior_test.dart` 源码守卫（三 shell 各含共享方法恰好一份、VN 调用 fill）；变异实测：撤掉 VN 的 fill 调用 / 退回逐段包裹均使测试变红。
+- **备注**：无 iOS 设备、远程 Mac 不可达，验证用 Playwright WebKit（Windows 版 rt 默认允许外溢，缝不出现，加 `rt{font-size:0.9em}` 复现 iOS 的撑开）。三种 view mode 均验过：VN 修复前 縦 前后断开（段尾 132 / 縦 140.8–162.8 / 下段 171.6，无 shadow），修复后 ±8.8px 补色连续；分页与连续 shell 换用共享片段后 word / longRt / multi 三例结果与重构前一致。缝 > 3×字号的极端注音维持 BUG-2806 的阈值不补。

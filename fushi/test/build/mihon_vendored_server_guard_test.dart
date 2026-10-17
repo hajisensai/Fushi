@@ -53,7 +53,7 @@ const List<String> _overlayOverridesUpstream = <String>[
   'server/src/main/kotlin/eu/kanade/tachiyomi/network/interceptor/SpecificHostRateLimitInterceptor.kt',
 ];
 
-/// overlay 里 Hibiki 新增、上游没有的文件。
+/// overlay 里 Fushi 新增、上游没有的文件。
 const List<String> _overlayNewFiles = <String>[
   'server/src/main/kotlin/mextensionserver/controller/InspectHandler.kt',
   'server/src/main/kotlin/mextensionserver/controller/SourceImageHandler.kt',
@@ -189,11 +189,11 @@ void main() {
         final RegExp overlayCopy = RegExp(r'overlay(/\.|")');
         final Iterable<RegExpMatch> copies = overlayCopy.allMatches(code);
         expect(copies, isNotEmpty,
-            reason: '$name 里找不到把 Hibiki 安全 overlay 覆盖上去的那一步');
+            reason: '$name 里找不到把 Fushi 安全 overlay 覆盖上去的那一步');
         expect(
           copies.first.start,
           greaterThan(patchAt),
-          reason: '$name 必须先打补丁再拷 overlay；顺序反了，Hibiki 的安全'
+          reason: '$name 必须先打补丁再拷 overlay；顺序反了，Fushi 的安全'
               ' overlay 会被上游文件盖回去',
         );
       });
@@ -410,7 +410,7 @@ void main() {
         File('$_upstreamSource/$relative').existsSync(),
         isTrue,
         reason: 'upstream_src/$relative 不存在，overlay 的同名覆盖打空了：'
-            '上游文件被改名/移动时编译照样过，但 Hibiki 的安全边界会无声消失',
+            '上游文件被改名/移动时编译照样过，但 Fushi 的安全边界会无声消失',
       );
     }
     for (final String relative in _overlayNewFiles) {
@@ -466,7 +466,7 @@ void main() {
   // /inspect 必须是「只读元数据」路径
   //
   // 时序才是要害：宿主在 _prepareInstallBytes 里就调 /inspect，弹「第三方扩展会以
-  // Hibiki 权限执行代码」信任对话框在那之后。所以 /inspect 一旦经过
+  // Fushi 权限执行代码」信任对话框在那之后。所以 /inspect 一旦经过
   // MExtensionServerLoader（Class.forName + newInstance + createSources），用户
   // 点“取消”时代码早就跑完了——警告变成过去式。加载是 /dalvik 的职责。
   //

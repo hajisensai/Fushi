@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/leaderboard/cover_compare.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
@@ -18,6 +19,7 @@ LocalShelfEntry _e(
   int? finishedAt,
   int? lastActiveAt,
   String? cover,
+  String? coverUrl,
   bool nsfw = false,
 }) => LocalShelfEntry(
   localKey: key,
@@ -27,6 +29,7 @@ LocalShelfEntry _e(
     kind: LeaderboardKind.book,
     refs: <String>['t:${title ?? key}|'],
     title: title ?? key,
+    coverUrl: coverUrl,
     nsfw: nsfw,
     finished: finishedAt != null,
     finishedAt: finishedAt,
@@ -394,14 +397,17 @@ void main() {
   });
 
   group('LeaderboardSyncState JSON', () {
-    test('往返（含待补封面）', () {
+    test('往返（含封面投票记录）；旧版的 covers 字段忽略', () {
       const LeaderboardSyncState s = LeaderboardSyncState(
         entries: <String, SyncedEntry>{
           'book:a': SyncedEntry(hash: 'h1', workId: 'W1'),
         },
         daily: <String, int>{'2026-09-01': 3},
         shelfCount: 1,
-        pendingCovers: <String>{'book:a'},
+        coverVotes: <String, CoverVoteRecord>{
+          'W1': CoverVoteRecord(source: 'f:/c/a.jpg', hash: '00ff00ff00ff00ff'),
+          'W2': CoverVoteRecord(source: '-', rejectedUrl: 'https://x/y.jpg'),
+        },
       );
       final LeaderboardSyncState back = LeaderboardSyncState.fromJson(
         (jsonDecode(jsonEncode(s.toJson())) as Map<Object?, Object?>)
@@ -410,11 +416,13 @@ void main() {
       expect(back.entries, s.entries);
       expect(back.daily, s.daily);
       expect(back.shelfCount, 1);
-      expect(back.pendingCovers, <String>{'book:a'});
+      expect(back.coverVotes, s.coverVotes);
       expect(back.neverSynced, isFalse);
       expect(LeaderboardSyncState.empty.neverSynced, isTrue);
       expect(
-        LeaderboardSyncState.fromJson(<String, dynamic>{}).pendingCovers,
+        LeaderboardSyncState.fromJson(<String, dynamic>{
+          'covers': <String>['book:a'],
+        }).coverVotes,
         isEmpty,
       );
     });
@@ -433,7 +441,10 @@ void main() {
     );
 
     late List<Map<String, dynamic>> shelfBodies;
-    late List<String> coverUploads;
+    late List<String> coverRequests;
+    late Set<String> knownHashes;
+    late Set<String> badUrls;
+    late String? Function(Map<Object?, Object?> entry) putCoverVote;
     late int serverShelfCount;
     late int failOnShelfCall;
     late Map<String, String> workIdByTitle;
@@ -442,20 +453,43 @@ void main() {
     late int shelfCalls;
     late bool Function(Map<String, dynamic> body)? shelfFullWhen;
     late bool Function(int i)? needsCover;
-    late List<int> coverStatuses;
+    late List<(int, String)> coverStatuses;
+    // 确认票协议的服务端桩（services/leaderboard/src/media.js）：哈希 → 候选 id；候选 id → 缩略图字节；
+    // 本账户标过不符的候选；本账户在各作品上的确认票。legacyCoverServer = 旧服务端（不认 check）。
+    late Map<String, int> candidateIds;
+    late Map<int, Uint8List> candidateBytes;
+    late Set<int> mismatched;
+    late Map<String, int> confirmedVote;
+    late bool legacyCoverServer;
+    late List<(int, String)> imageStatuses;
+    late int compareCalls;
 
     setUp(() {
       uploadDevice = null;
       shelfErrors = <(int, String)>[];
       shelfCalls = 0;
       shelfBodies = <Map<String, dynamic>>[];
-      coverUploads = <String>[];
+      coverRequests = <String>[];
+      knownHashes = <String>{};
+      badUrls = <String>{};
+      // 与服务端一致：条目带（白名单）coverUrl 时上报即投了 URL 票。
+      putCoverVote = (Map<Object?, Object?> e) =>
+          e['coverUrl'] != null && !badUrls.contains(e['coverUrl'])
+          ? 'url'
+          : null;
       serverShelfCount = 0;
       failOnShelfCall = -1;
       workIdByTitle = <String, String>{};
       shelfFullWhen = null;
       needsCover = null;
-      coverStatuses = <int>[];
+      coverStatuses = <(int, String)>[];
+      candidateIds = <String, int>{};
+      candidateBytes = <int, Uint8List>{};
+      mismatched = <int>{};
+      confirmedVote = <String, int>{};
+      legacyCoverServer = false;
+      imageStatuses = <(int, String)>[];
+      compareCalls = 0;
     });
 
     String workIdFor(String title) =>
@@ -467,9 +501,21 @@ void main() {
       headers: <String, String>{'content-type': 'application/json'},
     );
 
+    List<Map<Object?, Object?>> putEntries(Map<String, dynamic> body) =>
+        <Map<Object?, Object?>>[
+          for (final Object? p in body['put'] as List<Object?>)
+            p as Map<Object?, Object?>,
+        ];
+
     List<String> putTitles(Map<String, dynamic> body) => <String>[
       for (final Object? p in body['put'] as List<Object?>)
         (p as Map<Object?, Object?>)['title'] as String,
+    ];
+
+    const List<String> hashes = <String>[
+      '0000000000000000',
+      'ffffffffffffffff',
+      '0000000000000007', // 与 hashes[0] 差 3 位：同一张图的另一次压缩
     ];
 
     LeaderboardClient client() => LeaderboardClient(
@@ -507,6 +553,7 @@ void main() {
           }
           shelfBodies.add(body);
           final List<String> titles = putTitles(body);
+          final List<Map<Object?, Object?>> put = putEntries(body);
           return json(<String, dynamic>{
             'works': <Map<String, dynamic>>[
               for (int i = 0; i < titles.length; i++)
@@ -514,69 +561,542 @@ void main() {
                   'i': i,
                   'workId': workIdFor(titles[i]),
                   'needsCover': needsCover?.call(i) ?? i == 0,
+                  'coverVote': putCoverVote(put[i]),
                 },
             ],
             'shelfCount': serverShelfCount,
           });
         }
-        if (r.url.path.endsWith('/cover')) {
-          coverUploads.add(r.url.pathSegments[2]);
-          final int status = coverStatuses.isEmpty
-              ? 200
-              : coverStatuses.removeAt(0);
-          if (status != 200) {
-            return json(<String, dynamic>{'error': 'e$status'}, status);
+        if (r.url.path.startsWith('/img/c')) {
+          final int cid = int.parse(r.url.path.substring('/img/c'.length));
+          coverRequests.add('img $cid');
+          if (imageStatuses.isNotEmpty) {
+            final (int status, String code) = imageStatuses.removeAt(0);
+            return json(<String, dynamic>{'error': code}, status);
           }
-          return json(<String, dynamic>{'cover': '/img/x'});
+          return http.Response.bytes(candidateBytes[cid]!, 200);
+        }
+        if (r.url.path.contains('/cover')) {
+          final String workId = r.url.pathSegments[2];
+          final bool isVote = r.url.path.endsWith('/vote');
+          final Map<String, dynamic> body = isVote
+              ? (jsonDecode(utf8.decode(r.bodyBytes)) as Map<Object?, Object?>)
+                    .cast<String, dynamic>()
+              : <String, dynamic>{};
+          final String? hash = isVote
+              ? body['hash'] as String?
+              : r.url.queryParameters['h'];
+          coverRequests.add(
+            !isVote
+                ? 'put $workId h=$hash'
+                : body['url'] != null
+                ? 'vote $workId url=${body['url']}'
+                : body['check'] == true && !legacyCoverServer
+                ? 'check $workId hash=$hash'
+                : body['confirm'] != null
+                ? 'confirm $workId cid=${body['confirm']}'
+                : body['mismatch'] != null
+                ? 'mismatch $workId cid=${body['mismatch']}'
+                : 'vote $workId hash=$hash',
+          );
+          if (coverStatuses.isNotEmpty) {
+            final (int status, String code) = coverStatuses.removeAt(0);
+            if (status != 200) {
+              return json(<String, dynamic>{'error': code}, status);
+            }
+          }
+          if (isVote && body['url'] != null && badUrls.contains(body['url'])) {
+            return json(<String, dynamic>{'error': 'bad_cover_url'}, 400);
+          }
+          if (legacyCoverServer) {
+            // 旧服务端：check / confirm 都被当成普通哈希投票，响应只有 cover。
+            if (isVote && hash != null && !knownHashes.contains(hash)) {
+              return json(<String, dynamic>{
+                'error': 'cover_bytes_required',
+              }, 409);
+            }
+            if (!isVote) knownHashes.add(hash!);
+            return json(<String, dynamic>{'cover': '/img/x'});
+          }
+          int? candidateFor(String h) {
+            if (!knownHashes.contains(h)) return null;
+            final int cid = candidateIds.putIfAbsent(
+              h,
+              () => candidateIds.length + 1,
+            );
+            candidateBytes.putIfAbsent(
+              cid,
+              () => Uint8List.fromList(<int>[hashes.indexOf(h)]),
+            );
+            return mismatched.contains(cid) ? null : cid;
+          }
+
+          Map<String, dynamic> ref(int cid) => <String, dynamic>{
+            'id': cid,
+            'image': '/img/c$cid',
+          };
+          if (isVote && body['url'] != null) {
+            return json(<String, dynamic>{
+              'voted': true,
+              'cover': '/img/x',
+              'confirmed': true,
+            });
+          }
+          if (isVote && body['confirm'] != null) {
+            confirmedVote[workId] = body['confirm'] as int;
+            return json(<String, dynamic>{
+              'voted': true,
+              'cover': '/img/x',
+              'confirmed': true,
+            });
+          }
+          if (isVote && body['mismatch'] != null) {
+            mismatched.add(body['mismatch'] as int);
+          }
+          final int? cid = candidateFor(hash!);
+          if (isVote && (body['check'] == true || body['mismatch'] != null)) {
+            if (cid == null) {
+              return json(<String, dynamic>{
+                'error': 'cover_bytes_required',
+              }, 409);
+            }
+            return json(<String, dynamic>{
+              'voted': false,
+              'candidate': ref(cid),
+              'confirmed': confirmedVote[workId] == cid,
+            });
+          }
+          if (isVote) {
+            if (cid == null) {
+              return json(<String, dynamic>{
+                'error': 'cover_bytes_required',
+              }, 409);
+            }
+            return json(<String, dynamic>{
+              'voted': true,
+              'cover': '/img/x',
+              'confirmed': false,
+            });
+          }
+          // PUT：命中已有候选只投未确认票；否则建候选（上传者的票就是确认票）。
+          if (cid != null) {
+            return json(<String, dynamic>{
+              'cover': '/img/x',
+              'confirmed': false,
+              'candidate': ref(cid),
+            });
+          }
+          knownHashes.add(hash);
+          final int created = candidateIds.length + 1;
+          candidateIds[hash] = created;
+          candidateBytes[created] = r.bodyBytes;
+          confirmedVote[workId] = created;
+          return json(<String, dynamic>{'cover': '/img/x', 'confirmed': true});
         }
         return json(<String, dynamic>{'error': 'not_found'}, 404);
       }),
     );
 
+    // 缩略图桩：字节 = 本地封面版本号；哈希桩按字节查表（真 dHash 见 cover_hash_test）。
+    final Map<String, int> coverVersion = <String, int>{};
     Future<Uint8List?> thumb(LocalShelfEntry e) async =>
-        Uint8List.fromList(<int>[1, 2, 3]);
+        Uint8List.fromList(<int>[coverVersion[e.localKey] ?? 0]);
+    Future<String?> fingerprint(LocalShelfEntry e) async =>
+        e.localCoverPath == null
+        ? null
+        : '${e.localCoverPath}#${coverVersion[e.localKey] ?? 0}';
+    Future<String?> hashOf(Uint8List b) async => hashes[b.first];
+    // 强比对桩：字节首位相同 = 同一张图（真比对见 cover_compare_test）。
+    Future<CoverSimilarity?> compareStub(
+      Uint8List local,
+      Uint8List remote,
+    ) async {
+      compareCalls++;
+      return local.first == remote.first
+          ? const CoverSimilarity(ncc: 1, detailNcc: 1)
+          : const CoverSimilarity(ncc: 0, detailNcc: 0);
+    }
 
-    test('首次：不查 me，reset 全量；needsCover 补传封面', () async {
+    Future<ShelfSyncOutcome> syncCovers(
+      List<LocalShelfEntry> entries,
+      LeaderboardSyncState state, {
+      Future<Uint8List?> Function(LocalShelfEntry e)? coverThumb,
+    }) => syncShelf(
+      client(),
+      _shelf(entries),
+      state,
+      coverThumb: coverThumb ?? thumb,
+      coverFingerprint: fingerprint,
+      coverHash: hashOf,
+      coverCompare: compareStub,
+    );
+
+    test('首次：reset 全量；本地封面按哈希投票，没命中再带字节上传', () async {
       final ShelfSyncOutcome out = await syncShelf(
         client(),
         _shelf(
-          <LocalShelfEntry>[_e('book:a'), _e('book:b')],
+          <LocalShelfEntry>[_e('book:a', cover: '/c/a.jpg'), _e('book:b')],
           <DailyCharsUpload>[_d('2026-09-01', 4)],
         ),
         LeaderboardSyncState.empty,
         coverThumb: thumb,
+        coverFingerprint: fingerprint,
+        coverHash: hashOf,
+        coverCompare: compareStub,
       );
       final LeaderboardSyncState s = out.state;
       expect(shelfBodies.single['reset'], isTrue);
-      // 桩只对每批第 0 条回 needsCover。
-      expect(coverUploads, <String>['W_book_a']);
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'put W_book_a h=${hashes[0]}',
+      ]);
       expect(s.entries['book:a']!.workId, 'W_book_a');
       expect(s.entries['book:b']!.workId, 'W_book_b');
       expect(s.daily, <String, int>{'2026-09-01': 4});
-      expect(s.pendingCovers, isEmpty);
+      expect(s.coverVotes, <String, CoverVoteRecord>{
+        'W_book_a': CoverVoteRecord(
+          source: 'f:/c/a.jpg#0',
+          hash: hashes[0],
+          confirmed: true,
+        ),
+      });
       expect(s.neverSynced, isFalse);
       expect(out.coverError, isNull);
       expect(out.droppedForShelfLimit, 0);
     });
 
-    test('nsfw 条目从不补传本地封面：直接移出 pendingCovers，其余照常补', () async {
-      needsCover = (int i) => true;
-      final List<String> thumbed = <String>[];
+    test('别人已传过相近的图：下载候选缩略图本机比对，同一张图 → 确认票，不传字节', () async {
+      knownHashes.add(hashes[0]);
+      final ShelfSyncOutcome out = await syncCovers(<LocalShelfEntry>[
+        _e('book:a', cover: '/c/a.jpg'),
+      ], LeaderboardSyncState.empty);
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'img 1',
+        'confirm W_book_a cid=1',
+      ]);
+      expect(
+        out.state.coverVotes['W_book_a'],
+        CoverVoteRecord(
+          source: 'f:/c/a.jpg#0',
+          hash: hashes[0],
+          confirmed: true,
+        ),
+      );
+      expect(out.state.coverChecks, isEmpty, reason: '投票落地后清掉比对缓存');
+    });
+
+    test('候选与本地封面不是同一张图：报不符，再上传自己的图另立候选', () async {
+      knownHashes.add(hashes[0]);
+      candidateIds[hashes[0]] = 1;
+      candidateBytes[1] = Uint8List.fromList(<int>[9]); // 哈希对得上、内容是另一张图（伪造）
+      final ShelfSyncOutcome out = await syncCovers(<LocalShelfEntry>[
+        _e('book:a', cover: '/c/a.jpg'),
+      ], LeaderboardSyncState.empty);
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'img 1',
+        'mismatch W_book_a cid=1',
+        'put W_book_a h=${hashes[0]}',
+      ]);
+      expect(out.state.coverVotes['W_book_a']!.confirmed, isTrue);
+      expect(confirmedVote['W_book_a'], isNot(1));
+    });
+
+    test('比对结论缓存：确认请求失败不记账；下次同步直接用结论、不再下载比对', () async {
+      knownHashes.add(hashes[0]);
+      coverStatuses = <(int, String)>[(200, ''), (503, 'boom')];
+      final List<LocalShelfEntry> entries = <LocalShelfEntry>[
+        _e('book:a', cover: '/c/a.jpg'),
+      ];
+      final ShelfSyncOutcome out = await syncCovers(
+        entries,
+        LeaderboardSyncState.empty,
+      );
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'img 1',
+        'confirm W_book_a cid=1',
+      ]);
+      expect(out.state.coverVotes, isEmpty);
+      expect(out.state.coverChecks, <String, bool>{
+        'W_book_a|1|f:/c/a.jpg#0': true,
+      });
+      // 状态 JSON 往返后照样可用。
+      final LeaderboardSyncState restored = LeaderboardSyncState.fromJson(
+        out.state.toJson(),
+      );
+      serverShelfCount = 1;
+      coverRequests.clear();
+      final ShelfSyncOutcome next = await syncCovers(entries, restored);
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'confirm W_book_a cid=1',
+      ]);
+      expect(compareCalls, 1);
+      expect(next.state.coverVotes['W_book_a']!.confirmed, isTrue);
+      expect(next.state.coverChecks, isEmpty);
+    });
+
+    test('下载候选缩略图失败（网络 / 5xx）：不投票、不记账，下次重试', () async {
+      knownHashes.add(hashes[0]);
+      imageStatuses = <(int, String)>[(503, 'boom')];
+      final List<LocalShelfEntry> entries = <LocalShelfEntry>[
+        _e('book:a', cover: '/c/a.jpg'),
+      ];
+      final ShelfSyncOutcome out = await syncCovers(
+        entries,
+        LeaderboardSyncState.empty,
+      );
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'img 1',
+      ]);
+      expect(out.coverError, isA<LeaderboardApiException>());
+      expect(out.state.coverVotes, isEmpty);
+      expect(out.state.coverChecks, isEmpty);
+      serverShelfCount = 1;
+      coverRequests.clear();
+      final ShelfSyncOutcome next = await syncCovers(entries, out.state);
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'img 1',
+        'confirm W_book_a cid=1',
+      ]);
+      expect(next.state.coverVotes['W_book_a']!.confirmed, isTrue);
+    });
+
+    test('候选缩略图 404（check 之后被清理）：跳过这部、不停本轮、不记账，下次重新 check', () async {
+      knownHashes.add(hashes[0]);
+      imageStatuses = <(int, String)>[(404, 'not_found')];
+      final List<LocalShelfEntry> entries = <LocalShelfEntry>[
+        _e('book:a', cover: '/c/a.jpg'),
+        _e('book:b', cover: '/c/b.jpg'),
+      ];
+      final ShelfSyncOutcome out = await syncCovers(
+        entries,
+        LeaderboardSyncState.empty,
+      );
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'img 1',
+        'check W_book_b hash=${hashes[0]}',
+        'img 1',
+        'confirm W_book_b cid=1',
+      ]);
+      expect(out.state.coverVotes.keys.toSet(), <String>{'W_book_b'});
+      serverShelfCount = 2;
+      coverRequests.clear();
+      final ShelfSyncOutcome next = await syncCovers(entries, out.state);
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'img 1',
+        'confirm W_book_a cid=1',
+      ]);
+      expect(next.state.coverVotes.keys.toSet(), <String>{
+        'W_book_a',
+        'W_book_b',
+      });
+    });
+
+    test('升级：旧版本记下的未确认缩略图票补一次本机比对；已确认的不再动', () async {
+      knownHashes.add(hashes[0]);
+      final LocalShelfEntry a = _e('book:a', cover: '/c/a.jpg');
+      final LocalShelfEntry b = _e('book:b', cover: '/c/b.jpg');
+      serverShelfCount = 2;
+      final LeaderboardSyncState old =
+          _synced(
+            <LocalShelfEntry>[a, b],
+            <String, String>{'book:a': 'WA', 'book:b': 'WB'},
+          ).copyWith(
+            coverVotes: <String, CoverVoteRecord>{
+              'WA': CoverVoteRecord(source: 'f:/c/a.jpg#0', hash: hashes[0]),
+              'WB': CoverVoteRecord(
+                source: 'f:/c/b.jpg#0',
+                hash: hashes[0],
+                confirmed: true,
+              ),
+            },
+          );
+      final ShelfSyncOutcome out = await syncCovers(<LocalShelfEntry>[
+        a,
+        b,
+      ], old);
+      expect(coverRequests, <String>[
+        'check WA hash=${hashes[0]}',
+        'img 1',
+        'confirm WA cid=1',
+      ]);
+      expect(out.state.coverVotes['WA']!.confirmed, isTrue);
+    });
+
+    test('服务端还是旧版本（不认确认票）：退化为按哈希投票，一轮里只为补确认试一次', () async {
+      legacyCoverServer = true;
+      knownHashes.add(hashes[0]);
+      final LocalShelfEntry a = _e('book:a', cover: '/c/a.jpg');
+      final LocalShelfEntry b = _e('book:b', cover: '/c/b.jpg');
+      final ShelfSyncOutcome out = await syncCovers(<LocalShelfEntry>[
+        a,
+        b,
+      ], LeaderboardSyncState.empty);
+      expect(coverRequests, <String>[
+        'vote W_book_a hash=${hashes[0]}',
+        'vote W_book_b hash=${hashes[0]}',
+      ]);
+      expect(out.state.coverVotes['W_book_a']!.confirmed, isFalse);
+      serverShelfCount = 2;
+      coverRequests.clear();
+      await syncCovers(<LocalShelfEntry>[a, b], out.state);
+      expect(coverRequests, <String>['vote W_book_a hash=${hashes[0]}']);
+    });
+
+    test('本地缩略图解不开（比对返回 null）：按本地缩略图失败记账，不报不符', () async {
+      knownHashes.add(hashes[0]);
       final ShelfSyncOutcome out = await syncShelf(
         client(),
-        _shelf(<LocalShelfEntry>[
+        _shelf(<LocalShelfEntry>[_e('book:a', cover: '/c/a.jpg')]),
+        LeaderboardSyncState.empty,
+        coverThumb: thumb,
+        coverFingerprint: fingerprint,
+        coverHash: hashOf,
+        coverCompare: (Uint8List l, Uint8List r) async => null,
+      );
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'img 1',
+      ]);
+      expect(out.coverError, isA<FormatException>());
+      expect(out.state.coverVotes['W_book_a']!.hash, isNull);
+    });
+
+    test('条目带白名单 coverUrl：上报时服务端已投 URL 票，记账后不再发投票', () async {
+      final ShelfSyncOutcome out = await syncCovers(<LocalShelfEntry>[
+        _e(
+          'book:a',
+          cover: '/c/a.jpg',
+          coverUrl: 'https://image.tmdb.org/a.jpg',
+        ),
+      ], LeaderboardSyncState.empty);
+      expect(coverRequests, isEmpty);
+      expect(
+        out.state.coverVotes['W_book_a'],
+        const CoverVoteRecord(source: 'u:https://image.tmdb.org/a.jpg'),
+      );
+    });
+
+    test('升级后的补投：已同步、没记录的作品各投一次 URL 票', () async {
+      final LocalShelfEntry a = _e(
+        'book:a',
+        coverUrl: 'https://image.tmdb.org/a.jpg',
+      );
+      serverShelfCount = 1;
+      final ShelfSyncOutcome out = await syncCovers(<LocalShelfEntry>[
+        a,
+      ], _synced(<LocalShelfEntry>[a], <String, String>{'book:a': 'WA'}));
+      expect(shelfBodies, isEmpty, reason: '书架没变不重 put');
+      expect(coverRequests, <String>[
+        'vote WA url=https://image.tmdb.org/a.jpg',
+      ]);
+      expect(
+        out.state.coverVotes['WA']!.source,
+        'u:https://image.tmdb.org/a.jpg',
+      );
+    });
+
+    test('封面没变不再投；本地更正刮削换了封面 → 重新投票（服务端移票）', () async {
+      final List<LocalShelfEntry> entries = <LocalShelfEntry>[
+        _e('book:a', cover: '/c/a.jpg'),
+      ];
+      final ShelfSyncOutcome first = await syncCovers(
+        entries,
+        LeaderboardSyncState.empty,
+      );
+      serverShelfCount = 1;
+      shelfBodies.clear();
+      coverRequests.clear();
+      final ShelfSyncOutcome same = await syncCovers(entries, first.state);
+      expect(shelfBodies, isEmpty);
+      expect(coverRequests, isEmpty);
+
+      addTearDown(coverVersion.clear);
+      coverVersion['book:a'] = 1; // 封面文件换成另一张图
+      final ShelfSyncOutcome moved = await syncCovers(entries, same.state);
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[1]}',
+        'put W_book_a h=${hashes[1]}',
+      ]);
+      expect(
+        moved.state.coverVotes['W_book_a'],
+        CoverVoteRecord(
+          source: 'f:/c/a.jpg#1',
+          hash: hashes[1],
+          confirmed: true,
+        ),
+      );
+    });
+
+    test('封面文件被改动但还是同一张图（哈希距离在阈值内）：只更新指纹，不发请求', () async {
+      final List<LocalShelfEntry> entries = <LocalShelfEntry>[
+        _e('book:a', cover: '/c/a.jpg'),
+      ];
+      final ShelfSyncOutcome first = await syncCovers(
+        entries,
+        LeaderboardSyncState.empty,
+      );
+      serverShelfCount = 1;
+      coverRequests.clear();
+      addTearDown(coverVersion.clear);
+      coverVersion['book:a'] = 2; // 重新压缩的同一张图
+      final ShelfSyncOutcome next = await syncCovers(entries, first.state);
+      expect(coverRequests, isEmpty);
+      expect(
+        next.state.coverVotes['W_book_a'],
+        CoverVoteRecord(
+          source: 'f:/c/a.jpg#2',
+          hash: hashes[0],
+          confirmed: true,
+        ),
+      );
+    });
+
+    test('coverUrl 不在白名单（400 bad_cover_url）：退回本地封面，之后不再重试该 URL', () async {
+      const String bad = 'https://evil.example/a.jpg';
+      badUrls.add(bad);
+      final LocalShelfEntry a = _e('book:a', cover: '/c/a.jpg', coverUrl: bad);
+      final ShelfSyncOutcome out = await syncCovers(<LocalShelfEntry>[
+        a,
+      ], LeaderboardSyncState.empty);
+      expect(coverRequests, <String>[
+        'vote W_book_a url=$bad',
+        'check W_book_a hash=${hashes[0]}',
+        'put W_book_a h=${hashes[0]}',
+      ]);
+      expect(out.state.coverVotes['W_book_a']!.rejectedUrl, bad);
+      serverShelfCount = 1;
+      coverRequests.clear();
+      await syncCovers(<LocalShelfEntry>[a], out.state);
+      expect(coverRequests, isEmpty);
+    });
+
+    test('nsfw 条目从不提交本地封面，其余照常投', () async {
+      final List<String> thumbed = <String>[];
+      final ShelfSyncOutcome out = await syncCovers(
+        <LocalShelfEntry>[
           _e('book:a', cover: '/c/a.jpg', nsfw: true),
           _e('book:b', cover: '/c/b.jpg'),
-        ]),
+        ],
         LeaderboardSyncState.empty,
         coverThumb: (LocalShelfEntry e) async {
           thumbed.add(e.localKey);
-          return Uint8List.fromList(<int>[1, 2, 3]);
+          return Uint8List.fromList(<int>[0]);
         },
       );
-      expect(coverUploads, <String>['W_book_b']);
+      expect(coverRequests, <String>[
+        'check W_book_b hash=${hashes[0]}',
+        'put W_book_b h=${hashes[0]}',
+      ]);
       expect(thumbed, <String>['book:b'], reason: 'nsfw 的本地封面连缩略图都不生成');
-      expect(out.state.pendingCovers, isEmpty);
+      expect(out.state.coverVotes.keys, <String>['W_book_b']);
       expect(out.coverError, isNull);
     });
 
@@ -716,64 +1236,116 @@ void main() {
       );
     });
 
-    test('封面：第一个 429 立即停下，剩余留待补；hash 不清空，下次只补封面不重 put', () async {
-      needsCover = (int i) => true;
-      coverStatuses = <int>[429];
+    test('封面：第一个 429 立即停下且不记账；书架 hash 不清空，下次只投封面不重 put', () async {
+      coverStatuses = <(int, String)>[(429, 'rate_limited')];
       final List<LocalShelfEntry> entries = <LocalShelfEntry>[
-        _e('book:a'),
-        _e('book:b'),
-        _e('book:c'),
+        _e('book:a', cover: '/c/a.jpg'),
+        _e('book:b', cover: '/c/b.jpg'),
+        _e('book:c', cover: '/c/c.jpg'),
       ];
-      final ShelfSyncOutcome out = await syncShelf(
-        client(),
-        _shelf(entries),
+      knownHashes.add(hashes[0]);
+      final ShelfSyncOutcome out = await syncCovers(
+        entries,
         LeaderboardSyncState.empty,
-        coverThumb: thumb,
       );
-      expect(coverUploads, <String>['W_book_a'], reason: '429 后不再补');
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+      ], reason: '429 后不再投');
       expect(out.coverError, isA<LeaderboardApiException>());
-      expect(out.state.pendingCovers, <String>{'book:a', 'book:b', 'book:c'});
+      expect(out.state.coverVotes, isEmpty);
       for (final LocalShelfEntry e in entries) {
         expect(out.state.entries[e.localKey]!.hash, e.upload.contentHash());
       }
 
-      // 下次：书架没变 → 不 put；只补封面。
+      // 下次：书架没变 → 不 put；只投封面。
       serverShelfCount = 3;
       shelfBodies.clear();
-      coverUploads.clear();
-      final ShelfSyncOutcome next = await syncShelf(
-        client(),
-        _shelf(entries),
-        out.state,
-        coverThumb: thumb,
-      );
+      coverRequests.clear();
+      final ShelfSyncOutcome next = await syncCovers(entries, out.state);
       expect(shelfBodies, isEmpty);
-      expect(coverUploads, <String>['W_book_a', 'W_book_b', 'W_book_c']);
-      expect(next.state.pendingCovers, isEmpty);
+      expect(coverRequests, <String>[
+        for (final String w in <String>[
+          'W_book_a',
+          'W_book_b',
+          'W_book_c',
+        ]) ...<String>[
+          'check $w hash=${hashes[0]}',
+          'img 1',
+          'confirm $w cid=1',
+        ],
+      ]);
+      expect(next.state.coverVotes.keys.toSet(), <String>{
+        'W_book_a',
+        'W_book_b',
+        'W_book_c',
+      });
       expect(next.coverError, isNull);
     });
 
-    test('封面：5xx 同样停下；4xx 与本地缩略图失败只放弃该作品、继续后面的', () async {
-      needsCover = (int i) => true;
-      coverStatuses = <int>[400, 503];
-      final ShelfSyncOutcome out = await syncShelf(
-        client(),
-        _shelf(<LocalShelfEntry>[
-          _e('book:a'),
-          _e('book:b'),
-          _e('book:c'),
-          _e('book:d'),
-        ]),
+    test('封面：5xx 同样停下；4xx 与本地缩略图失败记下来源、继续后面的', () async {
+      knownHashes.add(hashes[0]);
+      coverStatuses = <(int, String)>[(403, 'not_on_shelf'), (503, 'boom')];
+      final ShelfSyncOutcome out = await syncCovers(
+        <LocalShelfEntry>[
+          _e('book:a', cover: '/c/a.jpg'),
+          _e('book:b', cover: '/c/b.jpg'),
+          _e('book:c', cover: '/c/c.jpg'),
+          _e('book:d', cover: '/c/d.jpg'),
+        ],
         LeaderboardSyncState.empty,
         coverThumb: (LocalShelfEntry e) async {
           if (e.localKey == 'book:a') throw StateError('disk');
-          return Uint8List.fromList(<int>[1]);
+          return Uint8List.fromList(<int>[0]);
         },
       );
-      // a 本地失败放弃；b 400 放弃；c 503 停下；d 没轮到。
-      expect(coverUploads, <String>['W_book_b', 'W_book_c']);
+      // a 本地失败记账；b 403 记账；c 503 停下；d 没轮到。
+      expect(coverRequests, <String>[
+        'check W_book_b hash=${hashes[0]}',
+        'check W_book_c hash=${hashes[0]}',
+      ]);
       expect(out.coverError, isA<StateError>());
-      expect(out.state.pendingCovers, <String>{'book:c', 'book:d'});
+      expect(out.state.coverVotes.keys.toSet(), <String>{
+        'W_book_a',
+        'W_book_b',
+      });
+      expect(out.state.coverVotes['W_book_a']!.hash, isNull);
+    });
+
+    test('封面：409 conflict（并发回滚）不记账、继续后面的，下次同步重投', () async {
+      knownHashes.add(hashes[0]);
+      coverStatuses = <(int, String)>[(409, 'conflict')];
+      final List<LocalShelfEntry> entries = <LocalShelfEntry>[
+        _e('book:a', cover: '/c/a.jpg'),
+        _e('book:b', cover: '/c/b.jpg'),
+      ];
+      final ShelfSyncOutcome out = await syncCovers(
+        entries,
+        LeaderboardSyncState.empty,
+      );
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'check W_book_b hash=${hashes[0]}',
+        'img 1',
+        'confirm W_book_b cid=1',
+      ]);
+      expect(out.coverError, isA<LeaderboardApiException>());
+      expect(out.state.coverVotes.keys.toSet(), <String>{
+        'W_book_b',
+      }, reason: 'a 撞上回滚，没投上，不能记成已投');
+
+      serverShelfCount = 2;
+      coverRequests.clear();
+      final ShelfSyncOutcome next = await syncCovers(entries, out.state);
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'img 1',
+        'confirm W_book_a cid=1',
+      ]);
+      expect(next.state.coverVotes.keys.toSet(), <String>{
+        'W_book_a',
+        'W_book_b',
+      });
+      expect(next.coverError, isNull);
     });
 
     test('409 conflict：原样重发该批（最多 3 次），成功即继续', () async {

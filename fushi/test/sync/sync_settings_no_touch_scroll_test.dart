@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,7 +21,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-// Regression (sync/backup page jumps down on open with the Hibiki interconnect
+// Regression (sync/backup page jumps down on open with the Fushi interconnect
 // backend): the page first renders the googleDrive default while
 // `_syncSettings.load()` reads the persisted backend asynchronously, then
 // reflows TALLER to the real fushiServer layout (server config + LAN + host
@@ -42,7 +42,7 @@ Future<double> _settledOffset(
   final FushiDatabase db = _testDb();
   final PreferencesRepository prefs = PreferencesRepository(db);
   await prefs.loadFromDb();
-  final Directory storeDir = Directory.systemTemp.createTempSync('hibiki_sync');
+  final Directory storeDir = Directory.systemTemp.createTempSync('fushi_sync');
   final SyncRepository repo = SyncRepository(db);
   await repo.setBackendType(SyncBackendType.fushiServer);
   await repo.setFushiClientUrls(<FushiClientUrl>[
@@ -120,7 +120,7 @@ void main() {
 
   late Directory ppDir;
   setUpAll(() {
-    ppDir = Directory.systemTemp.createTempSync('hibiki_pp');
+    ppDir = Directory.systemTemp.createTempSync('fushi_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => ppDir.path,

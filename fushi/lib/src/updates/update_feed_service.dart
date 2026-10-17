@@ -126,8 +126,12 @@ class UpdateFeedService implements UpdateFeedPublisher {
   ///
   /// **不申请权限，只查询**：这里跑在 HomePage 就绪那一帧，用户没做任何动作。
   /// 权限申请只在 [enableSystemNotifications]（BUG-2498）。
-  Future<void> warmUpNotifier() async {
-    if (!systemNotificationsEnabled) return;
+  ///
+  /// [otherConsumers]：同一个通知后端还有别的消费方开着系统通知（反馈回复提醒）。
+  /// 那时即便更新提醒的总开关关着也要初始化——点击回调只有这一个，不挂上，点反馈
+  /// 通知冷启动的那次点击就丢了。
+  Future<void> warmUpNotifier({bool otherConsumers = false}) async {
+    if (!systemNotificationsEnabled && !otherConsumers) return;
     _notifierReady ??= await _notifier.ensureReady();
     if (_notifierReady != true) return;
     // 冷启动点击只在这里回放：别的 ensureReady 入口（发通知、打开开关）都可能
@@ -280,6 +284,10 @@ class UpdateFeedService implements UpdateFeedPublisher {
         limit: limit,
       );
 
+  /// 按主键取一条（不存在 = null）。
+  Future<UpdateFeedEntryRow?> entry(String entryId) =>
+      _db.getUpdateFeedEntry(entryId);
+
   Future<void> markSeen(Iterable<String> entryIds) => _db
       .markUpdateFeedEntriesSeen(entryIds, seenAt: _now().millisecondsSinceEpoch);
 
@@ -336,6 +344,7 @@ const Map<UpdateFeedKind, int> kUpdateNotificationBaseIds =
   UpdateFeedKind.mangaChapter: 9102,
   UpdateFeedKind.mangaExtension: 9103,
   UpdateFeedKind.appRelease: 9104,
+  UpdateFeedKind.animeExtension: 9105,
 };
 
 /// 通知 id：无组 = 域固定 id；有组 = 域序号占高 4 位 + 组名 FNV-1a 哈希占低

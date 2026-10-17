@@ -14,18 +14,18 @@ const String _previewBackMain = '''    <main>
           <div class="vocab" data-fushi-lapis-targets="expression"><ruby>食<rt>た</rt></ruby>べる</div>
           <div class="info">
             <div class="pitch" data-fushi-lapis-targets="reading">たべる【2】</div>
-            <div class="audio-buttons"><span class="hibiki-preview-audio">▶ AUDIO</span></div>
+            <div class="audio-buttons"><span class="fushi-preview-audio">▶ AUDIO</span></div>
           </div>
         </div>
         <div class="dh-image">
-          <div class="image"><div class="hibiki-preview-picture">IMAGE</div></div>
+          <div class="image"><div class="fushi-preview-picture">IMAGE</div></div>
         </div>
       </div>
       <br>
       <div class="sentence" data-fushi-lapis-targets="sentence">
-        <div class="image-alt"><div class="hibiki-preview-picture">IMAGE</div></div>
+        <div class="image-alt"><div class="fushi-preview-picture">IMAGE</div></div>
         私は毎朝パンを<b>食べる</b>。
-        <div class="audio-buttons-alt"><span class="hibiki-preview-audio">▶ AUDIO</span></div>
+        <div class="audio-buttons-alt"><span class="fushi-preview-audio">▶ AUDIO</span></div>
       </div>
       <div class="def-info" data-fushi-lapis-targets="definition-info">
         First Definition 1/3
@@ -34,7 +34,7 @@ const String _previewBackMain = '''    <main>
         <div class="definition">
           <div id="selection"
                data-fushi-lapis-targets="selected-definition definition-content">
-            <span class="hibiki-preview-definition-label">Text Selection</span>
+            <span class="fushi-preview-definition-label">Text Selection</span>
             生命を維持するために食物を取る。
           </div>
           <div id="primary"
@@ -77,9 +77,9 @@ const String _previewBackMain = '''    <main>
         </div>
       </div>
       <div class="sentence-alt" data-fushi-lapis-targets="sentence">
-        <div class="image-alt"><div class="hibiki-preview-picture">IMAGE</div></div>
+        <div class="image-alt"><div class="fushi-preview-picture">IMAGE</div></div>
         私は毎朝パンを<b>食べる</b>。
-        <div class="audio-buttons-alt"><span class="hibiki-preview-audio">▶ AUDIO</span></div>
+        <div class="audio-buttons-alt"><span class="fushi-preview-audio">▶ AUDIO</span></div>
       </div>
     </main>''';
 
@@ -118,7 +118,7 @@ String _previewBlockHtml(LapisCustomBlock block) {
   // 空区域在真卡上被 `:empty` 隐藏，但预览里必须看得见——否则「新建区域」之后
   // 屏幕上什么都没有，用户既选不中它也不知道它在哪。
   final String body = block.fields.isEmpty
-      ? '<span class="hibiki-preview-block-empty">EMPTY BLOCK</span>'
+      ? '<span class="fushi-preview-block-empty">EMPTY BLOCK</span>'
       : parts.join();
   return '<div class="hibiki-block" data-hibiki-block="${block.id}" '
       'data-fushi-lapis-targets="$target">$body</div>';
@@ -155,25 +155,25 @@ String buildLapisStylePreviewHtml({
 <style>
   html, body { min-height: 100%; margin: 0; }
   body { box-sizing: border-box; padding: 24px; overflow: auto; }
-  .hibiki-preview-side[hidden] { display: none !important; }
+  .fushi-preview-side[hidden] { display: none !important; }
   [data-fushi-lapis-targets] {
     cursor: pointer;
     transition: outline-color 120ms ease;
   }
-  [data-fushi-lapis-targets].hibiki-selected-field {
+  [data-fushi-lapis-targets].fushi-selected-field {
     outline: 3px solid #4f8f80 !important;
     outline-offset: 4px;
   }
-  .hibiki-preview-definition-label {
+  .fushi-preview-definition-label {
     display: inline-block;
     margin-inline-end: 0.4em;
     color: var(--fg-subtle);
     font-size: 0.8em;
   }
-  .hibiki-preview-side .def-info {
+  .fushi-preview-side .def-info {
     visibility: visible;
   }
-  .hibiki-preview-picture {
+  .fushi-preview-picture {
     min-height: 120px;
     display: grid;
     place-items: center;
@@ -183,7 +183,7 @@ String buildLapisStylePreviewHtml({
   }
   /* `.audio-buttons-alt` 出厂带 font-size: 0（真卡里放的是 svg 回放按钮），
      预览用文字占位，必须自己把字号写回来才看得见。 */
-  .hibiki-preview-block-empty {
+  .fushi-preview-block-empty {
     display: inline-block;
     padding: 0.3em 0.8em;
     border: 1px dashed var(--fg-subtle);
@@ -191,7 +191,7 @@ String buildLapisStylePreviewHtml({
     color: var(--fg-subtle);
     font-size: 0.8rem;
   }
-  .hibiki-preview-audio {
+  .fushi-preview-audio {
     display: inline-block;
     font-size: 1rem;
     line-height: 1.6;
@@ -203,7 +203,7 @@ String buildLapisStylePreviewHtml({
 </style>
 </head>
 <body class="card card1$bodyModeClass">
-<section class="hibiki-preview-side" data-side="front">
+<section class="fushi-preview-side" data-side="front">
   <div id="lapis">
     <header style="visibility:hidden"></header>
     <main lang="ja">
@@ -212,7 +212,7 @@ String buildLapisStylePreviewHtml({
     </main>
   </div>
 </section>
-<section class="hibiki-preview-side" data-side="back">
+<section class="fushi-preview-side" data-side="back">
   <div id="lapis" lang="ja">
     <header><div class="top-container">1320</div></header>
 ${backMain}
@@ -257,7 +257,7 @@ window.fushiLapisEditor = {
     document.querySelectorAll('[data-fushi-lapis-targets]').forEach(function(element) {
       var targets = (element.dataset.fushiLapisTargets || '').split(/\\s+/);
       element.classList.toggle(
-        'hibiki-selected-field',
+        'fushi-selected-field',
         targets.indexOf(field) >= 0
       );
     });

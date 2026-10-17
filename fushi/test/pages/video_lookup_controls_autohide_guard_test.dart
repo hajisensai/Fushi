@@ -10,7 +10,7 @@ import '../helpers/source_guard.dart';
 /// dismiss barrier 是全屏 **opaque** 命中层。浮层一开，① `_pokeControlsVisible` 若仍去唤起
 /// 控制条，只会在 barrier 背后与浮层打架（barrier 盖在控制条之上，唤起纯无效），还会经
 /// `_handleSubtitleHover` 形成自激环；② 控制条照常 2s 自动淡出，而查词浮层此前不在
-/// `_hasVideoOverlay` 里，Hibiki 侧 `_buildCursorOverlay` 与 fork 侧
+/// `_hasVideoOverlay` 里，Fushi 侧 `_buildCursorOverlay` 与 fork 侧
 /// `hideMouseOnControlsRemoval` **两层独立的** `cursor: none` 同时生效，鼠标悬在弹窗上时
 /// OS 光标消失。
 ///
@@ -187,14 +187,24 @@ void main() {
       expr.contains('_lookupOverlayActive.value'),
       isTrue,
       reason:
-          'Hibiki 侧 _buildCursorOverlay 与 fork 侧 hideMouseOnControlsRemoval 是'
+          'Fushi 侧 _buildCursorOverlay 与 fork 侧 hideMouseOnControlsRemoval 是'
           '**两层独立的** cursor:none，只修一层，另一层照样把光标吃掉。',
     );
 
     // 防哑火：theme 由 layout 的 ListenableBuilder.merge 构造，判据里的 notifier
     // 必须全在 merge 列表内，否则翻转时 theme 不重建 = 改了值也白改（r5 教训）。
     final String layoutSrc = code(layoutRelPath);
-    final int mergeAt = layoutSrc.indexOf('Listenable.merge');
+    // 锚到「包着 theme 构造的那个」merge，而不是文件里第一个 merge——同文件还有
+    // 别的 ListenableBuilder（如 HDR 字幕亮度层），排在前面就会抢走锚点。
+    final int themeBuildAt = layoutSrc.indexOf(
+      'controlsTheme = _currentVideoControlsTheme(controller, layout)',
+    );
+    expect(
+      themeBuildAt,
+      greaterThanOrEqualTo(0),
+      reason: 'ListenableBuilder 内重建 controlsTheme 的语句已变，守卫需同步更新',
+    );
+    final int mergeAt = layoutSrc.lastIndexOf('Listenable.merge', themeBuildAt);
     expect(mergeAt, greaterThanOrEqualTo(0));
     final int mergeEnd = layoutSrc.indexOf('],', mergeAt);
     expect(mergeEnd, greaterThan(mergeAt));

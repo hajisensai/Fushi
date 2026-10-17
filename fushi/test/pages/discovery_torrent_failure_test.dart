@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
@@ -9,6 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
+import 'package:fushi/src/media/downloads/download_start_result.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -122,20 +123,25 @@ void main() {
       final BuildContext context = await pumpHost(tester);
       final int before = ErrorLogService.instance.entries.length;
 
-      final bool started = await startDiscoveryItemDownload(
+      final DownloadStartResult result = await startDiscoveryItemDownload(
         context: context,
         appModel: appModel,
         item: _torrentItem(payload: null),
       );
       await tester.pump();
 
-      expect(started, isFalse);
+      expect(result.started, isFalse);
       final List<ErrorLogEntry> logged =
           ErrorLogService.instance.entries.sublist(before);
       expect(logged, hasLength(1));
       expect(logged.single.source, 'DiscoveryTorrent.resolve.stage-src');
       expect(logged.single.error, original.toString());
       expect(logged.single.stackTrace, isNotEmpty);
+      // 下载入口只产出结果、不自己 toast；页面按结果显示。
+      expect(find.text(t.download_torrent_invalid), findsNothing);
+      expect(result.failureReason, t.download_torrent_invalid);
+      showDownloadStartNotices(result);
+      await tester.pump();
       expect(find.text(t.download_torrent_invalid), findsOneWidget);
       expect(find.text(t.download_request_failed), findsNothing);
 
@@ -154,7 +160,7 @@ void main() {
       final BuildContext context = await pumpHost(tester);
       final int before = ErrorLogService.instance.entries.length;
 
-      final bool started = await startDiscoveryItemDownload(
+      final DownloadStartResult result = await startDiscoveryItemDownload(
         context: context,
         appModel: appModel,
         item: _torrentItem(
@@ -166,13 +172,17 @@ void main() {
       );
       await tester.pump();
 
-      expect(started, isFalse);
+      expect(result.started, isFalse);
       final List<ErrorLogEntry> logged =
           ErrorLogService.instance.entries.sublist(before);
       expect(logged, hasLength(1));
       expect(logged.single.source, 'DiscoveryTorrent.enqueue.stage-src');
       expect(logged.single.error, original.toString());
       expect(logged.single.stackTrace, isNotEmpty);
+      expect(find.text(t.download_request_failed), findsNothing);
+      expect(result.failureReason, t.download_request_failed);
+      showDownloadStartNotices(result);
+      await tester.pump();
       expect(find.text(t.download_request_failed), findsOneWidget);
       expect(find.text(t.download_resource_resolve_failed), findsNothing);
 

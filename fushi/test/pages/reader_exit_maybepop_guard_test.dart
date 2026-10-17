@@ -51,10 +51,27 @@ void main() {
     return source.substring(startIdx, endIdx);
   }
 
+  /// 退出回调直接写 `maybePop(`，或经 `_exitReaderBook(`（显式退书：在 maybePop
+  /// 在途期间挂 `_exitBookRequested`，让歌词层在场时 PopScope 不把它截成「关歌词
+  /// 层」）。后者本身必须走 maybePop，由下一条断言钉住。
+  bool routesThroughMaybePop(String slice) {
+    return slice.contains('maybePop(') || slice.contains('_exitReaderBook(');
+  }
+
+  test('_exitReaderBook 本身走 maybePop（不绕过 PopScope）', () {
+    final String source = readSource();
+    final int start = source.indexOf('Future<void> _exitReaderBook()');
+    expect(start, greaterThanOrEqualTo(0), reason: '_exitReaderBook 应存在');
+    final int end = source.indexOf('\n  }\n', start);
+    final String body = source.substring(start, end);
+    expect(body.contains('maybePop('), isTrue);
+    expect(body.contains('Navigator.of(context).pop('), isFalse);
+  });
+
   test('onExitReader 回调必须走 maybePop（触发 PopScope→onWillPop 链）', () {
     final String slice = readExitCallbackSlice(readSource());
     expect(
-      slice.contains('maybePop('),
+      routesThroughMaybePop(slice),
       isTrue,
       reason: '退出必须经 maybePop() 触发 PopScope 的 onWillPop 闸门，'
           '否则 flush / closeMedia(invalidate) / 自动同步全跳过（BUG-782）',
@@ -94,7 +111,7 @@ void main() {
           (cursor + 200) > source.length ? source.length : cursor + 200;
       final String window = source.substring(cursor, windowEnd);
       expect(
-        window.contains('maybePop('),
+        routesThroughMaybePop(window),
         isTrue,
         reason: '第 $occurrences 处 onExitReader 附近必须出现 maybePop()',
       );

@@ -61,7 +61,8 @@ void main() {
         r'if \[ "\$CREDS" = true \] && \[ "\$GITHUB_EVENT_NAME" = push \] \\\n\s+&& \[ "\$RELEASE_CHANNEL" = debug \] \\\n\s+&& \[ \$\(\(RELEASE_SEQUENCE % 3\)\) -eq 0 \]; then\n\s+TESTFLIGHT=true',
       ).hasMatch(content),
       isTrue,
-      reason: 'push 门必须是 CREDS && push && debug && RELEASE_SEQUENCE % 3 == 0 四件套',
+      reason:
+          'push 门必须是 CREDS && push && debug && RELEASE_SEQUENCE % 3 == 0 四件套',
     );
     expect(
       content.contains(
@@ -189,20 +190,23 @@ void main() {
     );
   });
 
-  test('App Store Connect JWT 只有一份实现', () {
-    expect(File('${root.path}/tool/asc_api_jwt.rb').existsSync(), isTrue);
-    final String kazumi = File(
-      '${root.path}/tool/sign_kazumi_adhoc.sh',
-    ).readAsStringSync();
+  test('一次性 Kazumi Ad Hoc 签名通道已删除', () {
     expect(
-      kazumi,
-      contains('asc_api_jwt.rb'),
-      reason: 'kazumi 脚本必须复用共享 JWT 实现',
+      File('${root.path}/tool/sign_kazumi_adhoc.sh').existsSync(),
+      isFalse,
+      reason: '给上游 Kazumi IPA 签名的一次性脚本已随通道删除',
     );
     expect(
-      kazumi.contains('alg: "ES256"'),
+      File('${root.path}/tool/asc_api_jwt.rb').existsSync(),
       isFalse,
-      reason: 'JWT 生成不得在 kazumi 脚本里再内联一份',
+      reason: 'JWT 生成器只剩 Kazumi 脚本一个消费方，随之删除',
+    );
+    expect(
+      File(
+        '${root.path}/.github/workflows/release-desktop.yml',
+      ).readAsStringSync().toLowerCase().contains('kazumi'),
+      isFalse,
+      reason: '桌面发布 workflow 不再带 kazumi 输入与 job',
     );
   });
 
@@ -219,10 +223,38 @@ void main() {
       isTrue,
       reason: 'Release 资产必须来自 release-artifacts/（未签名打包路径）',
     );
+    // 2026-10-17 起签名 IPA 经 run artifact 交给独立的 `testflight` job（审批门），
+    // 所以 `fushi/build/ios/ipa` 会出现在 artifact 上传 / 下载里。守住的不变式不变：
+    // 签名 IPA 只能进 `ios-testflight-signed-ipa` 这一个 artifact，它不带
+    // publish job 收 Release 资产的 `desktop-artifacts-` 前缀，且 publish 只按该前缀收。
+    final List<RegExpMatch> signedUploads = RegExp(
+      r'\n(\s+)name: ([^\n]+)\n\s+path: fushi/build/ios/ipa/\*\.ipa\n',
+    ).allMatches(content).toList();
     expect(
-      content.contains('path: fushi/build/ios/ipa'),
+      signedUploads.map((RegExpMatch m) => m.group(2)).toList(),
+      <String>['ios-testflight-signed-ipa'],
+      reason: '签名 IPA 只能上传成 ios-testflight-signed-ipa 这一个 artifact',
+    );
+    expect(
+      'ios-testflight-signed-ipa'.startsWith('desktop-artifacts-'),
       isFalse,
-      reason: 'App Store 签名 IPA 不得作为 Release 资产上传',
+    );
+    expect(
+      RegExp(r'pattern: desktop-artifacts-\*\n').allMatches(content).length,
+      1,
+      reason: 'publish job 必须只按 desktop-artifacts-* 收 Release 资产',
+    );
+    expect(
+      RegExp(r'pattern: ios-testflight|pattern: \*\n').hasMatch(content),
+      isFalse,
+      reason: '不得有按通配收走签名 IPA 的下载',
+    );
+    final int publishAt = content.indexOf('\n  publish:\n');
+    expect(publishAt, greaterThan(-1));
+    expect(
+      content.substring(publishAt).contains('ios-testflight-signed-ipa'),
+      isFalse,
+      reason: 'App Store 签名 IPA 不得作为 Release 资产上传（publish job 不得下载它）',
     );
   });
 
@@ -235,9 +267,40 @@ void main() {
       reason: 'Developer ID 重签必须带 --timestamp --options runtime',
     );
     expect(
+      'bash ../tool/notarize_submit.sh'.allMatches(content).length,
+      2,
+      reason: '签了不公证仍会被 Gatekeeper 拦：.app 与 dmg 两次公证都必须走 notarize_submit.sh',
+    );
+    expect(
       content.contains('xcrun notarytool submit'),
+      isFalse,
+      reason: 'workflow 里不得再直接调 notarytool submit：它被拒时也退出 0，必须经脚本判 status',
+    );
+    expect(
+      content.contains(
+            r'find '
+            r'"$MIHON_PREFIX"'
+            r" -type f -name '*.jar' -print0",
+          ) &&
+          content.contains(r'unzip -Z1 "$jar_abs"') &&
+          content.contains(r'zip -q "$jar_abs" "${signed_entries[@]}"'),
       isTrue,
-      reason: '签了不公证仍会被 Gatekeeper 拦',
+      reason:
+          '公证会解开 jar 检查里面的 Mach-O：mihon_bridge 下 jar 内的原生库必须先'
+          '用 Developer ID 签名并写回 jar（2026-10-10 公证 12 条拒绝全在 m-extension-server.jar 内）',
+    );
+    final notarize = File('${root.path}/tool/notarize_submit.sh');
+    expect(notarize.existsSync(), isTrue, reason: '缺 ${notarize.path}');
+    final script = notarize.readAsStringSync();
+    expect(
+      script.contains('xcrun notarytool submit') &&
+          script.contains('--output-format json') &&
+          script.contains('"\$status" != "Accepted"') &&
+          script.contains('xcrun notarytool log'),
+      isTrue,
+      reason:
+          '公证成败必须以 JSON status == Accepted 为准，被拒时打印 notarytool log'
+          '（2026-10-10：被拒 status: Invalid 时 notarytool 退出 0，失败被推迟到 stapler）',
     );
     expect(
       content.contains('xcrun stapler staple'),

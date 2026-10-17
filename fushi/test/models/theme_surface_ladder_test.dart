@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
@@ -8,7 +8,7 @@ import 'package:material_color_utilities/material_color_utilities.dart';
 /// 表面层级阶梯（[applyFushiSurfaceLadder]）的不变式。
 ///
 /// 背景：M3 baseline 的六级容器色相邻只差 2 tone（对比度 ≈ 1.05），本意是让
-/// elevation 阴影与 surfaceTint 叠层承担层次。Hibiki 是「扁平 + 描边」的语言，
+/// elevation 阴影与 surfaceTint 叠层承担层次。Fushi 是「扁平 + 描边」的语言，
 /// 全局 `elevation: 0` 且 surfaceTint 一律透明，于是层次只剩这 1.05 的色差；
 /// 而 token 映射（page=surface / group=surfaceContainerLow / card=
 /// surfaceContainer）恰好落在阶梯最挤的一段，三层总跨度只有 1.11——设置页、
@@ -244,17 +244,22 @@ void main() {
     ).readAsStringSync();
     // system-theme 分支：Android 壁纸调色板与桌面 accent seed 推出的阶梯间距
     // 本来就不同，不收口这里两端观感不一致。
+    // 4c32e76e6e4 起 system-theme 也吃「纯黑深色背景」开关：系统方案先落到局部
+    // 变量，再按开关走纯黑阶梯或统一阶梯——两条出口都必须过阶梯。
     expect(
       RegExp(
-        r'applyFushiSurfaceLadder\(\s*buildSystemThemeColorScheme\(',
+        r'final ColorScheme (\w+) = buildSystemThemeColorScheme\([^;]*\);\s*'
+        r'return pureBlackDark\s*\?\s*'
+        r'applyFushiPureBlackSurfaceLadder\(\1\)\s*:\s*'
+        r'applyFushiSurfaceLadder\(\1\);',
       ).hasMatch(src),
       isTrue,
-      reason: 'system-theme 分支必须过 applyFushiSurfaceLadder',
+      reason: 'system-theme 分支必须过 applyFushiSurfaceLadder（纯黑时过纯黑阶梯）',
     );
     // 预设 / 自定义分支：未钉死 surface 时的出口。
     expect(
       RegExp(
-        r'_hibikiSchemeCache\[key\] = pureBlack\s*\?\s*'
+        r'_fushiSchemeCache\[key\] = pureBlack\s*\?\s*'
         r'applyFushiPureBlackSurfaceLadder\(withRoles\)\s*:\s*'
         r'applyFushiSurfaceLadder\(withRoles\)',
       ).hasMatch(src),

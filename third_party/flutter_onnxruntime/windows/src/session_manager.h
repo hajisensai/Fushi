@@ -8,6 +8,7 @@
 #define FLUTTER_ONNXRUNTIME_SESSION_MANAGER_H_
 
 #include "pch.h"
+#include "cuda_provider.h"
 #include <map>
 #include <memory>
 #include <mutex>
@@ -22,7 +23,7 @@ class TensorManager;
 
 // Session information structure
 struct SessionInfo {
-  // shared_ptr (Hibiki fork): a run in flight on a worker thread keeps the
+  // shared_ptr (Fushi fork): a run in flight on a worker thread keeps the
   // session alive even if closeSession() erases the map entry meanwhile.
   std::shared_ptr<Ort::Session> session;
   std::vector<std::string> input_names;
@@ -87,6 +88,14 @@ public:
                                        const std::vector<std::string> &input_names,
                                        Ort::RunOptions *run_options = nullptr);
 
+  // Fushi fork: CUDA plugin execution provider on this manager's env (see
+  // cuda_provider.h). Registration is process-wide state of env_.
+  CudaRegistrationResult registerCudaPlugin(const std::wstring &dir);
+  bool isCudaRegistered();
+  std::vector<std::string> registeredEpNames();
+  // Throws Ort::Exception when the plugin is not registered.
+  void appendCudaProvider(Ort::SessionOptions &session_options, int device_index);
+
   // Helper method to get element type string
   static const char *getElementTypeString(ONNXTensorElementDataType element_type);
 
@@ -105,6 +114,10 @@ private:
 
   // ONNX Runtime environment
   Ort::Env env_;
+
+  // Fushi fork: CUDA plugin EP registered on env_. Torn down in the
+  // destructor after every session and before env_ goes away.
+  CudaPluginRegistry cuda_;
 };
 
 } // namespace flutter_onnxruntime

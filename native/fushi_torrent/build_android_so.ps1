@@ -72,7 +72,9 @@ foreach ($abi in $Abis) {
     Write-Host "==> CMake configure ($abi / $triplet)"
     # vcpkg 工具链在前（find_package 解析到 triplet 的静态归档），chainload NDK
     # 工具链拿交叉编译器。ANDROID_PLATFORM 对齐 app minSdkVersion 24。
-    # ANDROID_STL=c++_shared 与 app 内 fushidicts 一致（libc++_shared.so 已随包）。
+    # ANDROID_STL=c++_static（BUG-3284）：libc++ 私有链进本 .so，不依赖 APK 里那份由
+    # Gradle pickFirst 任意挑中的 libc++_shared.so（NDK 版本不受本库控制，新 NDK 编出的
+    # 本库会引用老 libc++_shared 里没有的符号 → dlopen 失败）。详见 build_android_so.sh。
     # VCPKG_OVERLAY_TRIPLETS 必须给 cmake：manifest 模式下是工具链在装依赖，overlay
     # 不参与就会静默退回 vcpkg 自带 arm64-android（API 28），即 vcpkg-triplets/ 注释
     # 里那个 aligned_alloc undefined symbol。
@@ -88,7 +90,7 @@ foreach ($abi in $Abis) {
         "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$androidToolchain" `
         "-DANDROID_ABI=$abi" `
         "-DANDROID_PLATFORM=android-24" `
-        "-DANDROID_STL=c++_shared" `
+        "-DANDROID_STL=c++_static" `
         "-DCMAKE_BUILD_TYPE=$Config"
     if ($LASTEXITCODE -ne 0) { throw "cmake configure failed ($abi)" }
 

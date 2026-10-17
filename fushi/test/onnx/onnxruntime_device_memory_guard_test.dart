@@ -55,7 +55,7 @@ Directory _findRepositoryRoot() {
     }
     final Directory parent = current.parent;
     if (parent.path == current.path) {
-      throw StateError('找不到 Hibiki 仓库根目录');
+      throw StateError('找不到 Fushi 仓库根目录');
     }
     current = parent;
   }

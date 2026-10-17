@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "engine_id": "kogado_hy",
+  "status": "implemented_unverified",
+  "config": {
+    "selected_thread": "kogado:2a",
+    "pair_tolerance_ms": 500,
+    "resource_late_wait_ms": 500
+  },
+  "events": [
+    {
+      "kind": "text",
+      "id": "synthetic-luna-generic-line",
+      "timestamp_ms": 900,
+      "thread": "hook:2a",
+      "text": "synthetic generic hook text"
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-voiced-page",
+      "timestamp_ms": 1000,
+      "thread": "kogado:2a",
+      "text": "synthetic voiced click unit"
+    },
+    {
+      "kind": "pcm",
+      "id": "synthetic-directsound-pcm",
+      "timestamp_ms": 1020,
+      "format": "s16le",
+      "sample_rate_hz": 22050,
+      "channels": 1,
+      "bits_per_sample": 16
+    },
+    {
+      "kind": "loopback",
+      "id": "synthetic-loopback",
+      "timestamp_ms": 1030,
+      "format": "s16le",
+      "sample_rate_hz": 48000,
+      "channels": 2
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-voiced-page-republished",
+      "timestamp_ms": 1300,
+      "thread": "kogado:2a",
+      "text": "synthetic voiced click unit"
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-narration-page",
+      "timestamp_ms": 4000,
+      "thread": "kogado:2a",
+      "text": "synthetic unvoiced click unit"
+    },
+    {
+      "kind": "session_end",
+      "id": "synthetic-session-end",
+      "timestamp_ms": 6000
+    }
+  ],
+  "expected": {
+    "cards": [
+      {
+        "text_id": "synthetic-voiced-page",
+        "audio_backend": "pcm",
+        "audio_id": "synthetic-directsound-pcm"
+      },
+      {
+        "text_id": "synthetic-narration-page",
+        "audio_backend": null,
+        "audio_id": null
+      }
+    ],
+    "duplicate_text_events": 1,
+    "thread_filtered_events": 1,
+    "session_clean": true
+  }
+}

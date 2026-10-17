@@ -3,7 +3,7 @@ project(fushi_voice_hook LANGUAGES C CXX)
 
 # galgame 一键制卡 C 阶段 —— 引擎级 voice hook 的隔离 helper 组件。
 #
-# 部署边界（docs/specs/galgame-mining）：injector + hook DLL 不链接进 hibiki.exe，保持独立
+# 部署边界（docs/specs/galgame-mining）：injector + hook DLL 不链接进 fushi.exe，保持独立
 # 子进程/DLL。`tools/build_distribution.ps1` 单独 configure/build；校验 zip 随 Windows 主包
 # 交付以支持离线首装，并同步发布到固定 release 供旧包/后台更新。
 #
@@ -94,12 +94,26 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/bgi_ethornell_profile.h"
   "hook/adapters/bgi_lookup.inc"
   "hook/adapters/bgi_lookup_core.h"
+  "hook/luca_pak.h"
+  "hook/adapters/luca_adapter.inc"
+  "hook/adapters/luca_lookup.inc"
+  "hook/adapters/luca_lookup_core.h"
+  "hook/adapters/luca_profile.h"
+  "hook/adapters/luca_text_core.h"
+  "hook/adapters/luca_x64_text_core.h"
+  "hook/adapters/luca_x64_lookup_core.h"
+  "hook/adapters/luca_x64_lookup.inc"
   "hook/adapters/yuris_adapter.inc"
   "hook/adapters/yuris_lookup.inc"
   "hook/adapters/yuris_lookup_core.h"
   "hook/adapters/yuris_profile.h"
   "hook/adapters/yuris_voice.inc"
   "hook/adapters/yuris_voice_core.h"
+  "hook/adapters/kogado_hy_adapter.inc"
+  "hook/adapters/kogado_hy_core.h"
+  "hook/adapters/kogado_hy_lookup.inc"
+  "hook/adapters/kogado_hy_profile.h"
+  "hook/adapters/kogado_hy_text.inc"
   "hook/adapters/fvp_adapter.inc"
   "hook/adapters/fvp_profile.h"
   "hook/adapters/fvp_lookup.inc"
@@ -115,6 +129,8 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/catsystem2_voice_core.h"
   "hook/adapters/catsystem2_adapter.inc"
   "hook/adapters/catsystem2_profile.h"
+  "hook/adapters/cmvs_voice.inc"
+  "hook/adapters/cmvs_voice_core.h"
   "hook/adapters/malie_adapter.inc"
   "hook/adapters/malie_engine_io_core.h"
   "hook/adapters/malie_lookup.inc"
@@ -822,7 +838,7 @@ target_include_directories(fushi_directsound_format_registry_test PRIVATE hook)
 add_test(NAME fushi_directsound_format_registry_test
   COMMAND fushi_directsound_format_registry_test)
 
-# 注入器（Hibiki 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch；通常
+# 注入器（Fushi 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch；通常
 # CREATE_SUSPENDED 早注入，Siglus/Enigma 自动延迟附着）两种模式，各 arch 一份。
 add_executable(fushi_voice_injector
   "injector/injector_main.cpp"
@@ -984,7 +1000,8 @@ add_test(NAME fushi_unity_mono_lookup_test
 
 add_executable(fushi_engine_identity_layout_test
   "tests/engine_identity_layout_test.cpp")
-target_include_directories(fushi_engine_identity_layout_test PRIVATE "hook")
+target_include_directories(fushi_engine_identity_layout_test PRIVATE
+  "hook" "include" "injector")
 add_test(NAME fushi_engine_identity_layout_test
   COMMAND fushi_engine_identity_layout_test)
 
@@ -1110,6 +1127,19 @@ target_compile_definitions(fushi_catsystem2_voice_test PRIVATE
 add_test(NAME fushi_catsystem2_voice_test
   COMMAND fushi_catsystem2_voice_test)
 
+# CMVS per-line voice: group-loader site proof from the x64 exception
+# directory (both toolchain shapes, chained fragments, overflow) and the
+# voice-group / member-name classification.
+add_executable(fushi_cmvs_voice_test
+  "tests/cmvs_voice_test.cpp"
+)
+target_include_directories(fushi_cmvs_voice_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_cmvs_voice_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_cmvs_voice_test
+  COMMAND fushi_cmvs_voice_test)
+
 # Malie engine structure: the "CFI" I/O scheme table that is the engine
 # identity (name literal -> unique copy -> table hand-off -> six frame-function
 # slots, tell shape, getc->read, shared registrar) and the Ogg decoder input
@@ -1141,11 +1171,11 @@ target_compile_definitions(fushi_malie_lookup_test PRIVATE
 add_test(NAME fushi_malie_lookup_test
   COMMAND fushi_malie_lookup_test)
 
-add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
-target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")
-target_compile_definitions(fushi_siglus_text_owner_test PRIVATE
+add_executable(fushi_native_text_owner_test "tests/native_text_owner_test.cpp")
+target_include_directories(fushi_native_text_owner_test PRIVATE "include")
+target_compile_definitions(fushi_native_text_owner_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-add_test(NAME fushi_siglus_text_owner_test COMMAND fushi_siglus_text_owner_test)
+add_test(NAME fushi_native_text_owner_test COMMAND fushi_native_text_owner_test)
 
 # Locale Emulator is an x86-only runtime. Keep its actual loader-list ABI
 # regression in the standard Windows test gate, without implying x64 support.
@@ -1180,3 +1210,18 @@ include(tests/siglus_legacy_owner_publication_test.cmake)
 add_executable(fushi_yuris_adapter_test "tests/yuris_adapter_test.cpp")
 target_include_directories(fushi_yuris_adapter_test PRIVATE "hook")
 add_test(NAME fushi_yuris_adapter_test COMMAND fushi_yuris_adapter_test)
+add_executable(fushi_kogado_hy_adapter_test "tests/kogado_hy_adapter_test.cpp")
+target_include_directories(fushi_kogado_hy_adapter_test PRIVATE "hook")
+add_test(NAME fushi_kogado_hy_adapter_test COMMAND fushi_kogado_hy_adapter_test)
+add_executable(fushi_luca_adapter_test "tests/luca_adapter_test.cpp")
+target_include_directories(fushi_luca_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_luca_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_luca_adapter_test COMMAND fushi_luca_adapter_test)
+add_executable(fushi_luca_x64_text_test "tests/luca_x64_text_test.cpp")
+target_include_directories(fushi_luca_x64_text_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_luca_x64_text_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_luca_x64_text_test COMMAND fushi_luca_x64_text_test)
+add_executable(fushi_luca_x64_lookup_test "tests/luca_x64_lookup_test.cpp")
+target_include_directories(fushi_luca_x64_lookup_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_luca_x64_lookup_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_luca_x64_lookup_test COMMAND fushi_luca_x64_lookup_test)

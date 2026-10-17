@@ -9,7 +9,7 @@
 ///
 /// 三条硬约束（都来自阶段一读上游源码的实测结论，违反任何一条都会坏）：
 ///
-/// 1. **绝不给 Hibiki 自己建 autoScale profile**。Magpie 每 50ms 轮询前台窗口，命中任何
+/// 1. **绝不给 Fushi 自己建 autoScale profile**。Magpie 每 50ms 轮询前台窗口，命中任何
 ///    `autoScale != Disabled` 的 profile 就 `force=true` 重启缩放
 ///    （`ScalingService.cpp:42-45`、`:250-273`）。守卫在 `magpieProfileTargetAllowed`。
 /// 2. **便携标记必须是 0 字节文件**。写 `{}` 会让 scalingModes 为空 → scalingMode 钳到 -1
@@ -290,8 +290,8 @@ class MagpieUpscalingService extends ChangeNotifier {
   /// **启动期对账**：把上一次进程留下的超分孤儿关回去。
   ///
   /// 为什么必须有：退出清理只在「最好情况」下跑得完 —— 崩溃、断电、任务管理器结束
-  /// 进程都不会跑。孤儿有两样：① 配置里 `autoScale=Fullscreen` 的 `Hibiki: ` profile
-  /// （留着就等于「用户下次不经 Hibiki 双击游戏也被自动全屏超分」，那是我们没被授权
+  /// 进程都不会跑。孤儿有两样：① 配置里 `autoScale=Fullscreen` 的 `Fushi: ` profile
+  /// （留着就等于「用户下次不经 Fushi 双击游戏也被自动全屏超分」，那是我们没被授权
   /// 做的事）；② 我们 detached 起的 Magpie 进程本体。
   ///
   /// 顺序不能反：Magpie 退出时会把内存里的配置整份回存（`AppSettings::SaveAsync`），
@@ -505,7 +505,7 @@ class MagpieUpscalingService extends ChangeNotifier {
     }
   }
 
-  /// 只从 Hibiki 随包归档安装；缺包或损坏是交付错误，绝不触发网络。
+  /// 只从 Fushi 随包归档安装；缺包或损坏是交付错误，绝不触发网络。
   Future<bool> _ensureBundledInstalled() async {
     _report = const MagpieUpscalingReport(
       status: MagpieUpscalingStatus.preparing,
@@ -632,7 +632,7 @@ class MagpieUpscalingService extends ChangeNotifier {
     }
   }
 
-  /// profile 显示名。带 `Hibiki` 前缀是为了让用户在 Magpie 的 UI 里一眼认出「这条是谁加的」。
+  /// profile 显示名。带 `Fushi` 前缀是为了让用户在 Magpie 的 UI 里一眼认出「这条是谁加的」。
   String _profileNameFor(MagpieWindowIdentity identity) {
     final String base = identity.executablePath.split(RegExp(r'[\\/]')).last;
     return '$kMagpieFushiProfilePrefix'
@@ -703,7 +703,7 @@ class MagpieUpscalingService extends ChangeNotifier {
     }
   }
 
-  /// 把本次会话加的 autoScale 关回去。**必须做**：留着的话，用户下次不经 Hibiki 直接双击
+  /// 把本次会话加的 autoScale 关回去。**必须做**：留着的话，用户下次不经 Fushi 直接双击
   /// 游戏也会被 Magpie 自动拉起缩放 —— 那是我们没被授权做的事。
   Future<void> _restoreProfile() async {
     final MagpieWindowIdentity? identity = _appliedIdentity;

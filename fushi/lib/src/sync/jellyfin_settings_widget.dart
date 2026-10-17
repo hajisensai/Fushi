@@ -22,14 +22,400 @@
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/settings/settings_kit.dart' show SettingsEmptyState;
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
+
+/// 连接阶段失败（探测不通）：页面按 [cause] 给出「无法连接 / 被服务器拒绝」文案。
+class JellyfinConnectFailure implements Exception {
+  const JellyfinConnectFailure(this.url, this.cause);
+
+  final String url;
+  final Object cause;
+
+  @override
+  String toString() => '无法连接 $url: $cause';
+}
+
+/// 备用线路已存在。
+class JellyfinRouteExistsException implements Exception {
+  const JellyfinRouteExistsException(this.url);
+
+  final String url;
+
+  @override
+  String toString() => '线路已存在: $url';
+}
+
+/// 备用线路可达但现有令牌在新地址上验证失败（别家服务器 / 令牌过期）。
+class JellyfinRouteVerifyFailure implements Exception {
+  const JellyfinRouteVerifyFailure(this.url, this.cause);
+
+  final String url;
+  final Object cause;
+
+  @override
+  String toString() => '线路 $url 验证失败: $cause';
+}
+
+JellyfinApi _settingsJellyfinApi({
+  required String serverUrl,
+  String? accessToken,
+  String deviceId = JellyfinApi.kLegacyDeviceId,
+  http.Client Function()? httpClientFactory,
+}) => JellyfinApi(
+  serverUrl: serverUrl,
+  accessToken: accessToken,
+  deviceId: deviceId,
+  client: httpClientFactory?.call(),
+);
+
+/// 地址 + 用户名 + 密码登录一台 Jellyfin / Emby 服务器并落库（配置页「登录」与
+/// CLI `config items ... add` 共用）。同账号重复登录只换令牌、保留库选择与线路。
+///
+/// 探测不通抛 [JellyfinConnectFailure]；认证失败原样抛 [JellyfinApi] 的异常；
+/// 地址 / 用户名为空抛 [ArgumentError]。
+Future<JellyfinServerConfig> signInJellyfinServer(
+  SyncRepository syncRepo, {
+  required String url,
+  required String username,
+  required String password,
+  http.Client Function()? httpClientFactory,
+}) async {
+  final String typedUrl = JellyfinApi.normalizeServerUrl(url);
+  final String user = username.trim();
+  if (typedUrl.isEmpty || user.isEmpty) {
+    throw ArgumentError('地址与用户名不能为空');
+  }
+  // 设备身份：本机 per-install id（见 JellyfinApi.deviceId），令牌与它绑定、随
+  // 配置一起持久化。
+  final String deviceId = await syncRepo.getOrCreateDeviceId();
+  JellyfinApi api = _settingsJellyfinApi(
+    serverUrl: typedUrl,
+    deviceId: deviceId,
+    httpClientFactory: httpClientFactory,
+  );
+  try {
+    // 先探连通性再登录：连不上与账号错是两种完全不同的处置。探测会按 Emby 官方
+    // 客户端的顺序在 `/emby` 前缀与 `/System/Ping` 之间回落（BUG-3137），探出来的
+    // 根地址才是之后登录与存盘用的地址。
+    final JellyfinServerProbe probe;
+    try {
+      probe = await api.probeServer();
+    } catch (e) {
+      throw JellyfinConnectFailure(typedUrl, e);
+    }
+    final String serverUrl = probe.baseUrl;
+    if (serverUrl != api.serverUrl) {
+      api.close();
+      api = _settingsJellyfinApi(
+        serverUrl: serverUrl,
+        deviceId: deviceId,
+        httpClientFactory: httpClientFactory,
+      );
+    }
+    final JellyfinAuthResult auth = await api.authenticateByName(
+      user,
+      password,
+    );
+    if (auth.accessToken.isEmpty || auth.userId.isEmpty) {
+      throw JellyfinApiException(0, '/Users/AuthenticateByName');
+    }
+    final JellyfinServerConfig fresh = JellyfinServerConfig(
+      serverUrl: serverUrl,
+      username: user,
+      userId: auth.userId,
+      accessToken: auth.accessToken,
+      serverName: auth.serverName,
+      deviceId: deviceId,
+    );
+    // 同一账号重复登录只是换令牌：保留用户在这台服务器上已点名的媒体库，
+    // 否则「令牌过期重登一次」就把库选择静默清回「全部」（BUG-1891 止血阀失效）。
+    // 「同一台」按线路认（登录地址或任一备用线路命中），不然从公网线路重登会多出
+    // 一条 serverUrl=公网 的记录：两个 sourceId、两套封面 namespace、两张卡。
+    final List<JellyfinServerConfig> existing = await syncRepo
+        .getJellyfinServers();
+    JellyfinServerConfig? previous;
+    for (final JellyfinServerConfig s in existing) {
+      if (s.userId == auth.userId && s.ownsRoute(serverUrl)) {
+        previous = s;
+        break;
+      }
+    }
+    final JellyfinServerConfig saved = previous == null
+        ? fresh
+        : previous.withRefreshedSession(
+            username: user,
+            accessToken: auth.accessToken,
+            deviceId: deviceId,
+            signedInUrl: serverUrl,
+            serverName: auth.serverName,
+          );
+    await syncRepo.upsertJellyfinServer(saved);
+    return saved;
+  } finally {
+    api.close();
+  }
+}
+
+/// 给一台服务器添加一条备用线路（配置页「添加线路」与 CLI 共用）。
+///
+/// 不登录、不要密码：先探 `/System/Info/Public`（可达性，与登录同款分诊），再拿
+/// **现有令牌**经新地址读 `/Users/{uid}/Views`——令牌是这台服务器签的，别台服务器
+/// 回 401，所以这一步同时证明「同一台服务器」；令牌过期同样是 401。只追加不切换。
+///
+/// 抛 [ArgumentError]（地址为空）、[JellyfinRouteExistsException]、
+/// [JellyfinConnectFailure]、[JellyfinRouteVerifyFailure]。
+Future<JellyfinServerConfig> addJellyfinRoute(
+  SyncRepository syncRepo,
+  JellyfinServerConfig config,
+  String rawUrl, {
+  http.Client Function()? httpClientFactory,
+}) async {
+  final String url = JellyfinApi.normalizeServerUrl(rawUrl);
+  if (url.isEmpty) throw ArgumentError('线路地址不能为空');
+  if (config.routeUrls.contains(url)) throw JellyfinRouteExistsException(url);
+  JellyfinApi api = _settingsJellyfinApi(
+    serverUrl: url,
+    accessToken: config.accessToken,
+    deviceId: config.deviceId,
+    httpClientFactory: httpClientFactory,
+  );
+  try {
+    final JellyfinServerProbe probe;
+    try {
+      probe = await api.probeServer();
+    } catch (e) {
+      throw JellyfinConnectFailure(url, e);
+    }
+    // 探测可能补上 / 去掉 `/emby` 前缀（BUG-3137）：存的是探出来的根地址。
+    if (probe.baseUrl != url) {
+      api.close();
+      api = _settingsJellyfinApi(
+        serverUrl: probe.baseUrl,
+        accessToken: config.accessToken,
+        deviceId: config.deviceId,
+        httpClientFactory: httpClientFactory,
+      );
+    }
+    final String routeUrl = probe.baseUrl;
+    if (routeUrl != url && config.routeUrls.contains(routeUrl)) {
+      throw JellyfinRouteExistsException(routeUrl);
+    }
+    try {
+      await api.views(config.userId);
+    } catch (e) {
+      throw JellyfinRouteVerifyFailure(routeUrl, e);
+    }
+    final JellyfinServerConfig next = config.copyWithRoutes(
+      alternateUrls: <String>[...config.alternateUrls, routeUrl],
+    );
+    await syncRepo.upsertJellyfinServer(next);
+    return next;
+  } finally {
+    api.close();
+  }
+}
+
+/// 一台服务器上的视频域媒体库清单（`/Users/{uid}/Views`，滤掉音乐 / 图书 / 照片）。
+Future<List<JellyfinLibraryView>> loadJellyfinVideoViews(
+  JellyfinServerConfig config, {
+  http.Client Function()? httpClientFactory,
+}) async {
+  final JellyfinApi api = _settingsJellyfinApi(
+    serverUrl: config.effectiveServerUrl,
+    accessToken: config.accessToken,
+    deviceId: config.deviceId,
+    httpClientFactory: httpClientFactory,
+  );
+  try {
+    final List<JellyfinLibraryView> views = await api.views(config.userId);
+    return <JellyfinLibraryView>[
+      for (final JellyfinLibraryView v in views)
+        if (v.isVideoish && v.id.isNotEmpty) v,
+    ];
+  } finally {
+    api.close();
+  }
+}
+
+/// Jellyfin 服务器列表记录（**不含** token）。
+Map<String, Object?> jellyfinServerCliRecord(JellyfinServerConfig c) =>
+    <String, Object?>{
+      'id': c.sourceId,
+      'kind': c.kind.wireName,
+      'serverName': c.serverName,
+      'username': c.username,
+      'serverUrl': c.serverUrl,
+      'activeServerUrl': c.effectiveServerUrl,
+      'alternateUrls': c.alternateUrls,
+      'connections': c.routeUrls,
+      'libraryIds': c.libraryIds,
+    };
+
+/// 控制通道上 `id → 已登录服务器` 的查找；找不到抛 [ArgumentError]。
+Future<T> findMediaServerById<T extends MediaServerConfig>(
+  SyncRepository repo,
+  String id,
+) async {
+  for (final MediaServerConfig s in await repo.getMediaServers()) {
+    if (s is T && s.sourceId == id) return s;
+  }
+  throw ArgumentError('没有这台服务器: $id');
+}
+
+/// CLI 的 `config items services.media_server.jellyfin ls|add|set|rm`。
+///
+/// add 登录（密码走 secret）；set 只改给出的字段：`library_ids`（逗号分隔，按服务器
+/// 真实库列表校验，空串 = 全部视频库）、`add_route` / `switch_route` /
+/// `remove_route`；rm = 登出（与页面「登出」同一方法）。
+SettingsCliList buildJellyfinCliList() {
+  SyncRepository repoOf(SettingsContext c) =>
+      SyncRepository(c.appModel.database);
+  void invalidate(SettingsContext c, String sourceId) =>
+      c.ref.read(remoteLibraryCacheProvider).invalidateSource(sourceId);
+  return SettingsCliList(
+    fields: const <SettingsCliParam>[
+      SettingsCliParam('url', help: '服务器地址（add 必填）', required: false),
+      SettingsCliParam('username', help: '用户名（add 必填）', required: false),
+      SettingsCliParam(
+        'password',
+        help: '密码（add 必填，只走 stdin / 环境变量）',
+        required: false,
+        secret: true,
+      ),
+      SettingsCliParam(
+        'library_ids',
+        help: 'set：媒体库 id，逗号分隔；空串 = 全部视频库',
+        required: false,
+      ),
+      SettingsCliParam('add_route', help: 'set：添加备用线路地址', required: false),
+      SettingsCliParam(
+        'switch_route',
+        help: 'set：切换当前线路（已存在的线路地址）',
+        required: false,
+      ),
+      SettingsCliParam('remove_route', help: 'set：删除备用线路', required: false),
+    ],
+    list: (SettingsContext c) async => <Map<String, Object?>>[
+      for (final JellyfinServerConfig s in await repoOf(c).getJellyfinServers())
+        jellyfinServerCliRecord(s),
+    ],
+    add: (SettingsContext c, Map<String, String> fields) async {
+      final String url = (fields['url'] ?? '').trim();
+      final String username = (fields['username'] ?? '').trim();
+      final String password = fields['password'] ?? '';
+      if (url.isEmpty || username.isEmpty || password.isEmpty) {
+        throw ArgumentError('add 需要 url、username、password');
+      }
+      final JellyfinServerConfig saved;
+      try {
+        saved = await signInJellyfinServer(
+          repoOf(c),
+          url: url,
+          username: username,
+          password: password,
+        );
+      } on JellyfinConnectFailure catch (e) {
+        throw ArgumentError(e.toString());
+      }
+      invalidate(c, saved.sourceId);
+      return jellyfinServerCliRecord(saved);
+    },
+    update: (SettingsContext c, String id, Map<String, String> fields) async {
+      final SyncRepository repo = repoOf(c);
+      JellyfinServerConfig config =
+          await findMediaServerById<JellyfinServerConfig>(repo, id);
+      if (fields.containsKey('library_ids')) {
+        final Set<String> ids = <String>{
+          for (final String raw in fields['library_ids']!.split(','))
+            if (raw.trim().isNotEmpty) raw.trim(),
+        };
+        if (ids.isNotEmpty) {
+          final Set<String> known = <String>{
+            for (final JellyfinLibraryView v in await loadJellyfinVideoViews(
+              config,
+            ))
+              v.id,
+          };
+          final List<String> unknown = <String>[
+            for (final String i in ids)
+              if (!known.contains(i)) i,
+          ];
+          if (unknown.isNotEmpty) {
+            throw ArgumentError(
+              '服务器上没有这些媒体库: ${unknown.join(',')}（可选: ${known.join(',')}）',
+            );
+          }
+        }
+        config = config.copyWithLibraryIds(ids.toList()..sort());
+        await repo.upsertJellyfinServer(config);
+      }
+      final String addRoute = (fields['add_route'] ?? '').trim();
+      if (addRoute.isNotEmpty) {
+        try {
+          config = await addJellyfinRoute(repo, config, addRoute);
+        } on JellyfinRouteExistsException catch (e) {
+          throw ArgumentError(e.toString());
+        } on JellyfinConnectFailure catch (e) {
+          throw ArgumentError(e.toString());
+        } on JellyfinRouteVerifyFailure catch (e) {
+          throw ArgumentError(e.toString());
+        }
+      }
+      final String switchRoute = (fields['switch_route'] ?? '').trim();
+      if (switchRoute.isNotEmpty) {
+        final String url = JellyfinApi.normalizeServerUrl(switchRoute);
+        if (!config.routeUrls.contains(url)) {
+          throw ArgumentError('不是这台服务器的线路: $url');
+        }
+        config = config.copyWithRoutes(activeServerUrl: url);
+        await repo.upsertJellyfinServer(config);
+      }
+      final String removeRoute = (fields['remove_route'] ?? '').trim();
+      if (removeRoute.isNotEmpty) {
+        final String url = JellyfinApi.normalizeServerUrl(removeRoute);
+        if (url == config.serverUrl) {
+          throw ArgumentError('登录地址是服务器身份锚，不能删除');
+        }
+        if (!config.alternateUrls.contains(url)) {
+          throw ArgumentError('不是备用线路: $url');
+        }
+        config = config.copyWithRoutes(
+          alternateUrls: <String>[
+            for (final String u in config.alternateUrls)
+              if (u != url) u,
+          ],
+        );
+        await repo.upsertJellyfinServer(config);
+      }
+      // 库选择 / 线路变化后，旧清单槽里的条目与烤进去的 host 都过期了。
+      invalidate(c, config.sourceId);
+      return jellyfinServerCliRecord(config);
+    },
+    remove: (SettingsContext c, String id) async {
+      final SyncRepository repo = repoOf(c);
+      final JellyfinServerConfig config =
+          await findMediaServerById<JellyfinServerConfig>(repo, id);
+      await repo.removeJellyfinServer(
+        serverUrl: config.serverUrl,
+        userId: config.userId,
+      );
+      invalidate(c, config.sourceId);
+    },
+  );
+}
 
 /// Jellyfin 服务器配置块。
 class JellyfinConfigWidget extends StatefulWidget {
@@ -101,18 +487,6 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         userId: config.userId,
       );
 
-  JellyfinApi _api({
-    required String serverUrl,
-    String? accessToken,
-    String deviceId = JellyfinApi.kLegacyDeviceId,
-  }) =>
-      JellyfinApi(
-        serverUrl: serverUrl,
-        accessToken: accessToken,
-        deviceId: deviceId,
-        client: widget.httpClientFactory?.call(),
-      );
-
   /// 登录 / 连接失败的呈现：对话框 + 可选中文本。此前走 [FushiToast]，手机上是
   /// 2 秒、两行截断的原生 toast——`SocketException: Connection refused (OS Error …),
   /// address = …, port = …` 这种真正有用的原因根本看不全，用户只能报「直接连不上」。
@@ -121,13 +495,18 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
 
   Future<void> _showErrorDialog(String title, String message) async {
     if (!mounted) return;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
+        // M3E：错误对话框领头一枚 errorContainer 饼干底图标。
+        icon: const FushiDialogHeroIcon(
+          icon: FushiIcons.cloudOff,
+          tone: FushiHeroTone.destructive,
+        ),
         title: Text(title),
         content: SingleChildScrollView(child: SelectableText(message)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text(t.dialog_close),
           ),
@@ -163,8 +542,8 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
     final String rawUrl = _urlController.text;
     final String username = _userController.text.trim();
     final String password = _passwordController.text;
-    final String serverUrl = JellyfinApi.normalizeServerUrl(rawUrl);
-    if (serverUrl.isEmpty || username.isEmpty) {
+    final String typedUrl = JellyfinApi.normalizeServerUrl(rawUrl);
+    if (typedUrl.isEmpty || username.isEmpty) {
       FushiToast.show(
         msg: t.jellyfin_sign_in_failed,
         severity: ToastSeverity.error,
@@ -172,54 +551,13 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       return;
     }
     setState(() => _busy = true);
-    // 设备身份：本机 per-install id（见 JellyfinApi.deviceId），令牌与它绑定、随
-    // 配置一起持久化。
-    final String deviceId = await _syncRepo.getOrCreateDeviceId();
-    final JellyfinApi api = _api(serverUrl: serverUrl, deviceId: deviceId);
     try {
-      // 先探连通性再登录：连不上与账号错是两种完全不同的处置。
-      try {
-        await api.publicSystemInfo();
-      } catch (e) {
-        await _showSignInError(_describeConnectFailure(serverUrl, e));
-        return;
-      }
-      final JellyfinAuthResult auth =
-          await api.authenticateByName(username, password);
-      if (auth.accessToken.isEmpty || auth.userId.isEmpty) {
-        throw JellyfinApiException(0, '/Users/AuthenticateByName');
-      }
-      final JellyfinServerConfig fresh = JellyfinServerConfig(
-        serverUrl: serverUrl,
+      await signInJellyfinServer(
+        _syncRepo,
+        url: rawUrl,
         username: username,
-        userId: auth.userId,
-        accessToken: auth.accessToken,
-        serverName: auth.serverName,
-        deviceId: deviceId,
-      );
-      // 同一账号重复登录只是换令牌：保留用户在这台服务器上已点名的媒体库，
-      // 否则「令牌过期重登一次」就把库选择静默清回「全部」（BUG-1891 止血阀失效）。
-      // 「同一台」按线路认（登录地址或任一备用线路命中），不然从公网线路重登会多出
-      // 一条 serverUrl=公网 的记录：两个 sourceId、两套封面 namespace、两张卡。
-      final List<JellyfinServerConfig> existing =
-          await _syncRepo.getJellyfinServers();
-      JellyfinServerConfig? previous;
-      for (final JellyfinServerConfig s in existing) {
-        if (s.userId == auth.userId && s.ownsRoute(serverUrl)) {
-          previous = s;
-          break;
-        }
-      }
-      await _syncRepo.upsertJellyfinServer(
-        previous == null
-            ? fresh
-            : previous.withRefreshedSession(
-                username: username,
-                accessToken: auth.accessToken,
-                deviceId: deviceId,
-                signedInUrl: serverUrl,
-                serverName: auth.serverName,
-              ),
+        password: password,
+        httpClientFactory: widget.httpClientFactory,
       );
       if (!mounted) return;
       _urlController.clear();
@@ -230,10 +568,11 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         msg: t.sync_connection_success,
         severity: ToastSeverity.success,
       );
+    } on JellyfinConnectFailure catch (e) {
+      await _showSignInError(_describeConnectFailure(e.url, e.cause));
     } catch (e) {
       await _showSignInError('$e');
     } finally {
-      api.close();
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -327,40 +666,32 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       return;
     }
     setState(() => _busy = true);
-    final JellyfinApi api = _api(
-      serverUrl: url,
-      accessToken: config.accessToken,
-      deviceId: config.deviceId,
-    );
     try {
-      try {
-        await api.publicSystemInfo();
-      } catch (e) {
-        await _showErrorDialog(
-          t.jellyfin_route_add_failed,
-          _describeConnectFailure(url, e),
-        );
-        return;
-      }
-      try {
-        await api.views(config.userId);
-      } catch (e) {
-        await _showErrorDialog(
-          t.jellyfin_route_add_failed,
-          t.jellyfin_route_verify_failed(url: url, reason: '$e'),
-        );
-        return;
-      }
-      await _syncRepo.upsertJellyfinServer(
-        config.copyWithRoutes(
-          alternateUrls: <String>[...config.alternateUrls, url],
-        ),
+      await addJellyfinRoute(
+        _syncRepo,
+        config,
+        url,
+        httpClientFactory: widget.httpClientFactory,
       );
       if (!mounted) return;
       _routeControllerFor(id).clear();
       _reload();
+    } on JellyfinConnectFailure catch (e) {
+      await _showErrorDialog(
+        t.jellyfin_route_add_failed,
+        _describeConnectFailure(e.url, e.cause),
+      );
+    } on JellyfinRouteExistsException {
+      FushiToast.show(
+        msg: t.jellyfin_route_exists,
+        severity: ToastSeverity.error,
+      );
+    } on JellyfinRouteVerifyFailure catch (e) {
+      await _showErrorDialog(
+        t.jellyfin_route_add_failed,
+        t.jellyfin_route_verify_failed(url: e.url, reason: '${e.cause}'),
+      );
     } finally {
-      api.close();
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -427,7 +758,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Padding(
             padding: EdgeInsets.all(16),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: FushiLoadingView(compact: true)),
           );
         }
         final List<JellyfinServerConfig> servers =
@@ -466,20 +797,38 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
               const SizedBox(height: 8),
               Text(
                 t.jellyfin_servers_signed_in_title,
-                style: textTheme.titleSmall,
+                style: FushiSectionTitle.styleOf(
+                  context, FushiSectionTitleLevel.group),
               ),
+              const SizedBox(height: 8),
               if (servers.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                    t.jellyfin_servers_empty_hint,
-                    style: textTheme.bodySmall,
+                SettingsEmptyState(
+                  icon: FushiIcons.server,
+                  title: t.jellyfin_servers_empty_hint,
+                )
+              else
+                // M3E：已登录服务器是一组分段卡片（首尾大圆角、行间 2），错峰进场。
+                FushiEntranceScope(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      for (int i = 0; i < servers.length; i++)
+                        FushiStaggeredEntrance(
+                          index: i,
+                          child: FushiGroupedListItem(
+                            index: i,
+                            count: servers.length,
+                            child: _buildServerRow(servers[i]),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-              for (final JellyfinServerConfig config in servers)
-                _buildServerRow(config),
-              const SizedBox(height: 12),
-              Text(t.jellyfin_servers_add_title, style: textTheme.titleSmall),
+              const SizedBox(height: 16),
+              Text(t.jellyfin_servers_add_title,
+                  style: FushiSectionTitle.styleOf(
+                      context, FushiSectionTitleLevel.group)),
               const SizedBox(height: 8),
               _buildSignInForm(),
             ],
@@ -516,16 +865,24 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         const SizedBox(height: 12),
         Align(
           alignment: Alignment.centerRight,
-          child: _busy
-              ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : FilledButton.tonal(
-                  onPressed: _signIn,
-                  child: Text(t.jellyfin_sign_in),
-                ),
+          // 忙 ↔ 按钮之间走 effects 弹簧淡入淡出，不跳形。
+          child: AnimatedSwitcher(
+            duration: context.fushiMotion.effectsFast.duration,
+            switchInCurve: context.fushiMotion.effectsFast.curve,
+            switchOutCurve: context.fushiMotion.effectsFast.curve,
+            child: _busy
+                ? const SizedBox(
+                    key: ValueKey<String>('jellyfin-sign-in-busy'),
+                    width: 24,
+                    height: 24,
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
+                  )
+                : FushiFilledButton(
+                    key: const ValueKey<String>('jellyfin-sign-in-button'),
+                    onPressed: _signIn,
+                    child: Text(t.jellyfin_sign_in),
+                  ),
+          ),
         ),
       ],
     );
@@ -541,64 +898,110 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
     final String serverLabel = (config.serverName?.isNotEmpty ?? false)
         ? '${config.serverName} · $activeUrl'
         : activeUrl;
+    final FushiMotionScheme motion = context.fushiMotion;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         FushiListItem(
-          leading: const Icon(Icons.dns_outlined),
+          leading: const FushiListLeadingIcon(
+            FushiIcons.server,
+            shape: FushiLeadingShape.cookie,
+          ),
           title: Text(serverLabel),
           subtitle: Text(config.username),
-          trailing: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+          // 展开箭头弹簧转 180°（不换图标，减弱动态效果下瞬时）。
+          trailing: AnimatedRotation(
+            turns: expanded ? 0.5 : 0,
+            duration: motion.spatialFast.duration,
+            curve: motion.spatialFast.curve,
+            child: const FushiIcon(FushiIcons.expandMore),
+          ),
           onTap: () => setState(() {
             if (!_expanded.remove(id)) _expanded.add(id);
           }),
         ),
-        if (expanded)
-          Padding(
-            padding: const EdgeInsets.only(left: 16, bottom: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                // BUG-1891 止血阀 ②：把枚举收窄到点名的媒体库（默认不选 = 全部
-                // 视频库）。每台服务器各自一份。
-                Text(
-                  t.jellyfin_libraries_title,
-                  style: Theme.of(context).textTheme.titleSmall,
+        AnimatedSize(
+          duration: motion.spatialDefault.duration,
+          curve: motion.spatialDefault.curve,
+          alignment: Alignment.topCenter,
+          child: !expanded
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      // BUG-1891 止血阀 ②：把枚举收窄到点名的媒体库（默认不选 =
+                      // 全部视频库）。每台服务器各自一份。
+                      _panelHeader(
+                        FushiIcons.collection,
+                        t.jellyfin_libraries_title,
+                        t.jellyfin_libraries_hint,
+                      ),
+                      _buildLibraryPicker(config),
+                      const SizedBox(height: 12),
+                      _panelHeader(
+                        FushiIcons.hub,
+                        t.jellyfin_routes_title,
+                        t.jellyfin_routes_hint,
+                      ),
+                      _buildRoutesPanel(config),
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: _busy
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: FushiCircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : FushiTextButton(
+                                onPressed: () => _signOut(config),
+                                destructive: true,
+                                child: Text(t.jellyfin_sign_out),
+                              ),
+                      ),
+                    ],
+                  ),
                 ),
-                Text(
-                  t.jellyfin_libraries_hint,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                _buildLibraryPicker(config),
-                const SizedBox(height: 8),
-                Text(
-                  t.jellyfin_routes_title,
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                Text(
-                  t.jellyfin_routes_hint,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                _buildRoutesPanel(config),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: _busy
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : TextButton(
-                          onPressed: () => _signOut(config),
-                          child: Text(t.jellyfin_sign_out),
-                        ),
-                ),
-              ],
-            ),
-          ),
+        ),
       ],
+    );
+  }
+
+  /// 展开面板里的小节头：小号图标 + 强调标题 + 一行说明。
+  Widget _panelHeader(IconData icon, String title, String hint) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              FushiIcon(icon, size: 18, color: cs.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: type.titleSmallEmphasized.copyWith(color: cs.primary),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            hint,
+            style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
+          ),
+        ],
+      ),
     );
   }
 
@@ -611,10 +1014,46 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        for (final String url in config.routeUrls)
-          FushiListItem(
+        for (int i = 0; i < config.routeUrls.length; i++)
+          _routeRow(config, id, activeUrl, i),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            Expanded(
+              child: FushiTextField(
+                controller: _routeControllerFor(id),
+                labelText: t.jellyfin_route_url,
+                hintText: 'https://emby.example.com',
+                keyboardType: TextInputType.url,
+              ),
+            ),
+            const SizedBox(width: 8),
+            FushiFilledButton.tonal(
+              onPressed: _busy ? null : () => _addRoute(config),
+              child: Text(t.jellyfin_route_add),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 一条线路：分段卡片里的一行（单选 = 当前线路；登录地址不可删）。
+  Widget _routeRow(
+    JellyfinServerConfig config,
+    String id,
+    String activeUrl,
+    int index,
+  ) {
+    final String url = config.routeUrls[index];
+    return FushiGroupedListItem(
+      index: index,
+      count: config.routeUrls.length,
+      selected: url == activeUrl,
+      child: FushiListItem(
             key: ValueKey<String>('jellyfin-route-$id-$url'),
-            leading: Radio<String>(
+            leading: FushiRadio<String>(
               value: url,
               groupValue: activeUrl,
               onChanged: _busy
@@ -632,31 +1071,12 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
             trailing: url == config.serverUrl
                 ? null
                 : FushiIconButton(
-                    icon: Icons.delete_outline,
+                    icon: FushiIcons.delete,
                     tooltip: t.jellyfin_route_remove,
                     onTap: _busy ? null : () => _removeRoute(config, url),
                   ),
             onTap: _busy ? null : () => _switchRoute(config, url),
           ),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            Expanded(
-              child: FushiTextField(
-                controller: _routeControllerFor(id),
-                labelText: t.jellyfin_route_url,
-                hintText: 'https://emby.example.com',
-                keyboardType: TextInputType.url,
-              ),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.tonal(
-              onPressed: _busy ? null : () => _addRoute(config),
-              child: Text(t.jellyfin_route_add),
-            ),
-          ],
-        ),
-      ],
     );
   }
 
@@ -675,15 +1095,42 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Padding(
             padding: EdgeInsets.all(12),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: FushiLoadingView(compact: true)),
           );
         }
         if (snapshot.hasError) {
+          // 错误态：errorContainer 小色块（墨水屏只留描边）。
+          final ColorScheme cs = Theme.of(context).colorScheme;
+          final bool eink = isEinkTheme(context);
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              t.jellyfin_libraries_load_failed,
-              style: Theme.of(context).textTheme.bodySmall,
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: eink ? cs.surface : cs.errorContainer,
+                borderRadius: FushiM3eShape.smallRadius,
+                border: eink ? Border.all(color: cs.outline) : null,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: <Widget>[
+                    FushiIcon(
+                      FushiIcons.error,
+                      size: 18,
+                      color: eink ? cs.onSurface : cs.onErrorContainer,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        t.jellyfin_libraries_load_failed,
+                        style: context.fushiType.bodySmall.copyWith(
+                          color: eink ? cs.onSurface : cs.onErrorContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           );
         }
@@ -695,10 +1142,28 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            for (final JellyfinLibraryView view in views)
-              FushiListItem(
+            for (int i = 0; i < views.length; i++)
+              _libraryRow(config, views, i, selected),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 一个媒体库：分段卡片里的一行勾选。
+  Widget _libraryRow(
+    JellyfinServerConfig config,
+    List<JellyfinLibraryView> views,
+    int index,
+    Set<String> selected,
+  ) {
+    final JellyfinLibraryView view = views[index];
+    return FushiGroupedListItem(
+      index: index,
+      count: views.length,
+      child: FushiListItem(
                 title: Text(view.name),
-                trailing: Checkbox(
+                trailing: FushiCheckbox(
                   value: selected.contains(view.id),
                   onChanged: _busy
                       ? null
@@ -706,29 +1171,16 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
                 ),
                 onTap: _busy ? null : () => _toggleLibrary(config, view.id),
               ),
-          ],
-        );
-      },
     );
   }
 
   Future<List<JellyfinLibraryView>> _loadViews(
     JellyfinServerConfig config,
   ) async {
-    final JellyfinApi api = _api(
-      serverUrl: config.effectiveServerUrl,
-      accessToken: config.accessToken,
-      deviceId: config.deviceId,
+    return loadJellyfinVideoViews(
+      config,
+      httpClientFactory: widget.httpClientFactory,
     );
-    try {
-      final List<JellyfinLibraryView> views = await api.views(config.userId);
-      return <JellyfinLibraryView>[
-        for (final JellyfinLibraryView v in views)
-          if (v.isVideoish && v.id.isNotEmpty) v,
-      ];
-    } finally {
-      api.close();
-    }
   }
 
   void _toggleLibrary(JellyfinServerConfig config, String id) {

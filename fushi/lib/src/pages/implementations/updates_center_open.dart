@@ -7,7 +7,7 @@
 /// 走应用内检查 + 下载安装。这里没有 `launchUrl`——「更新」不该把人送出 app。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, UpdateFeedEntryRow;
@@ -15,6 +15,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
+import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/updates_center_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -69,6 +70,23 @@ Future<void> openUpdateFeedEntry(
         adaptivePageRoute<void>(
           context: context,
           builder: (_) => const MihonExtensionsPage(),
+        ),
+      );
+    case UpdateFeedKind.animeExtension:
+      if (!context.mounted) return;
+      // 视频扩展页 = 同一个扩展页挂视频（Aniyomi）manager。条目只会在有视频
+      // 在线源的平台投递（探针自己过门），这里再问一次门：旧库搬到 iOS 上点开
+      // 也不能起在线源宿主。
+      if (!isVideoOnlineSourcesAvailable) return;
+      final AppModel animeAppModel = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appProvider);
+      await Navigator.of(context).push(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (_) =>
+              MihonExtensionsPage(manager: animeAppModel.animeMihonManager),
         ),
       );
     case UpdateFeedKind.appRelease:

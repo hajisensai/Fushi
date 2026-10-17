@@ -249,3 +249,40 @@ test('⑤ 外挂字幕按视频矩形叠到画面上，站点轨不重复叠字'
   assert.strictEqual(overlayText(overlay), '画面上的外挂字幕');
   assert.strictEqual(overlay.style.left, '500px');
 });
+
+// BUG-3145：Chrome 自己的侧边栏入口 / 「查字幕」装轨不经拖放，字幕能力总门（netflixSubtitlePanel，
+// 缺省关）没人去开——tick() 直接返回，覆盖层一个字都不画；用户要把「Fushi 字幕」拨关再拨开
+// （那一下顺带写开总门）字幕才「导进去」。装外挂轨本身就是开门的用户意图。
+test('⑥ 总门关着时经侧边栏装外挂轨：开门并立刻叠字（不必再拨一次开关）', () => {
+  const h = loadPanel({
+    hostname: 'example.com', pathname: '/video/1',
+    stored: { subtitleOverlayEnabled: true },
+    response: OK([{ text: '侧边栏导入的字幕', startMs: 1000, endMs: 3000 }]),
+  });
+  h.video.currentTime = 2;
+  h.loadFile('panel.srt', 'dummy');
+  h.tick();
+  const overlay = findByIdDeep(h.html, 'fushi-subtitle-overlay');
+  assert.ok(overlay, '装轨后下一拍就该出字，而不是等用户拨开关');
+  assert.strictEqual(overlayText(overlay), '侧边栏导入的字幕');
+  const state = h.message({ type: 'fushiSubtitleSidePanelState', includeCues: false });
+  assert.strictEqual(state.activeLang, '外挂:panel.srt');
+});
+
+// BUG-3143：全屏容器 / body 被站点 transform 时，fixed 覆盖层的视口坐标要折算进父级包含块，
+// 否则整体偏移、切全屏后飞出屏幕。
+test('⑦ 覆盖层坐标按父级包含块折算（video-target.js fushiFixedOrigin）', () => {
+  const h = loadPanel({
+    hostname: 'example.com', pathname: '/video/1',
+    stored: { netflixSubtitlePanel: true, subtitleOverlayEnabled: true },
+    response: OK([{ text: '折算坐标', startMs: 1000, endMs: 3000 }]),
+  });
+  h.windowObj.fushiFixedOrigin = () => ({ x: 100, y: -40, sx: 1, sy: 1 });
+  h.loadFile('o.srt', 'dummy');
+  h.video.currentTime = 2;
+  h.tick();
+  const overlay = findByIdDeep(h.html, 'fushi-subtitle-overlay');
+  assert.strictEqual(overlay.style.left, '400px', '视口 x=500 → 包含块里 400');
+  // 视频 top 50 + 450×0.88 = 446 → 包含块里 486。
+  assert.strictEqual(overlay.style.top, (50 + 450 * 0.88 + 40) + 'px');
+});

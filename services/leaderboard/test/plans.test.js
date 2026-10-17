@@ -97,4 +97,100 @@ describe('查询计划：读接口不全表扫描', () => {
     }
     expect(bad).toEqual([]);
   });
+
+  it('反馈 CI：pending 只走修复索引，released 按主键回填', async () => {
+    const env = makeEnv({ autoSnapshot: false, FEEDBACK_CI_TOKEN: 't0ken' });
+    const ci = { Authorization: 'Bearer t0ken' };
+    const f = await call(env, 'POST', '/v1/feedback', { body: { category: 'bug', title: 't', body: 'b' }, headers: { 'CF-Connecting-IP': '198.51.100.8' }, now: NOW });
+    expect((await call(env, 'POST', '/v1/ci/feedback/fixed', { body: { sha: 'a'.repeat(40), ids: [f.data.id] }, headers: ci, now: NOW })).status).toBe(200);
+    const stamps = () => env.DB.raw.prepare('SELECT dev_reply_at, updated_at FROM feedback WHERE id = ?').get(f.data.id);
+    const before = stamps();
+    const seen = recordSql(env);
+    expect((await call(env, 'GET', '/v1/ci/feedback/pending?channel=debug&platform=android', { headers: ci, now: NOW })).status).toBe(200);
+    const released = { channel: 'debug', platform: 'android', version: '1.0.0', ids: [{ id: f.data.id, sha: 'a'.repeat(40) }] };
+    expect((await call(env, 'POST', '/v1/ci/feedback/released', { body: released, headers: ci, now: NOW + 1 })).status).toBe(200);
+    // 回填只写 fixed_in（不在任何索引里）：不碰 updated_at 所在的两条索引，也不冒充开发者回复。
+    expect(stamps()).toEqual(before);
+    const bad = [];
+    let checked = 0;
+    for (const { sql, args } of seen) {
+      if (args.length === 0) continue;
+      // UPDATE 也要过同一道门：EXPLAIN QUERY PLAN 对 UPDATE 同样给出扫描方式。
+      if (/^\s*UPDATE feedback SET fixed_in/i.test(sql)) {
+        const plan = env.DB.raw.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...args).map((r) => r.detail);
+        checked += 1;
+        for (const d of plan) if (/^SCAN feedback/.test(d) || /TEMP B-TREE/.test(d)) bad.push(`${d}\n    in: ${sql.replace(/\s+/g, ' ').slice(0, 160)}`);
+        continue;
+      }
+      if (/fix_sha IS NOT NULL AND fix_scope = 'app'/.test(sql)) checked += 1;
+      for (const line of badPlanLines(env.DB.raw, sql, args)) bad.push(`${line}\n    in: ${sql.replace(/\s+/g, ' ').slice(0, 160)}`);
+    }
+    expect(bad).toEqual([]);
+    expect(checked).toBe(2);
+    for (const { sql } of seen) {
+      if (/^\s*UPDATE feedback SET fixed_in/i.test(sql)) expect(sql).not.toMatch(/dev_reply_at|updated_at/);
+    }
+  });
+
+  it('反馈：回执读取 / 批量进度 / 处理台按状态列表走索引', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const ip = { 'CF-Connecting-IP': '198.51.100.7' };
+    const f = await call(env, 'POST', '/v1/feedback', { body: { category: 'bug', title: 't', body: 'b' }, headers: ip, now: NOW });
+    const dev = await registerUser(env, 'dev', { now: NOW });
+    env.DB.raw.prepare("UPDATE accounts SET role = 'dev' WHERE id = ?").run(dev.id);
+    const seen = recordSql(env);
+    const t = { 'X-Fushi-Ticket': f.data.ticket };
+    expect((await call(env, 'GET', `/v1/feedback/${f.data.id}`, { headers: t, now: NOW })).status).toBe(200);
+    expect((await call(env, 'POST', '/v1/feedback/status', { body: { items: [f.data] }, now: NOW })).status).toBe(200);
+    expect((await call(env, 'GET', '/v1/dev/feedback?status=open', { key: dev.key, account: dev.id, now: NOW })).status).toBe(200);
+    expect((await call(env, 'GET', `/v1/dev/feedback/${f.data.id}`, { key: dev.key, account: dev.id, now: NOW })).status).toBe(200);
+    const bad = [];
+    for (const { sql, args } of seen) {
+      for (const line of badPlanLines(env.DB.raw, sql, args)) bad.push(`${line}\n    in: ${sql.replace(/\s+/g, ' ').slice(0, 160)}`);
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('反馈：「我的反馈」（首页 / 游标）与同账户签名读详情走索引，不建临时 B 树', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const u = await registerUser(env, 'me', { now: NOW });
+    const ids = [];
+    for (let i = 0; i < 3; i++) {
+      const r = await call(env, 'POST', '/v1/feedback', {
+        key: u.key, account: u.id, body: { category: 'bug', title: `t${i}`, body: 'b' },
+        headers: { 'CF-Connecting-IP': `198.51.100.${i + 1}` }, now: NOW + i,
+      });
+      ids.push(r.data.id);
+    }
+    const seen = recordSql(env);
+    const first = await call(env, 'GET', '/v1/feedback/mine?limit=1', { key: u.key, account: u.id, now: NOW });
+    expect(first.status).toBe(200);
+    expect((await call(env, 'GET', `/v1/feedback/mine?limit=1&cursor=${encodeURIComponent(first.data.next)}`,
+      { key: u.key, account: u.id, now: NOW })).status).toBe(200);
+    expect((await call(env, 'GET', `/v1/feedback/${ids[0]}`, { key: u.key, account: u.id, now: NOW })).status).toBe(200);
+    const bad = [];
+    const mine = [];
+    for (const { sql, args } of seen) {
+      for (const line of badPlanLines(env.DB.raw, sql, args)) bad.push(`${line}\n    in: ${sql.replace(/\s+/g, ' ').slice(0, 160)}`);
+      if (/FROM feedback WHERE account_id = \?1/.test(sql) && args.length) {
+        mine.push(...env.DB.raw.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...args).map((r) => r.detail));
+      }
+    }
+    expect(bad).toEqual([]);
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((d) => /idx_feedback_account_created/.test(d))).toBe(true);
+  });
+
+  it('反馈：视频到期清理只读带视频的行（idx_feedback_video 部分索引），不扫整张反馈表', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const seen = recordSql(env);
+    const { purgeFeedbackVideos } = await import('../src/feedback.js');
+    await purgeFeedbackVideos(env, NOW);
+    const sel = seen.filter(({ sql, args }) => /has_video = 1/.test(sql) && /^\s*SELECT/i.test(sql) && args.length);
+    expect(sel.length).toBe(1);
+    const plan = env.DB.raw.prepare(`EXPLAIN QUERY PLAN ${sel[0].sql}`).all(...sel[0].args).map((r) => r.detail);
+    // 部分索引只含 has_video = 1 的行（视频 30 天内必被清掉，行数有界）；不许回落成整表扫描 / 临时 B 树。
+    expect(plan.join('\n')).toMatch(/idx_feedback_video/);
+    expect(plan.filter((d) => /^SCAN feedback$/.test(d) || /TEMP B-TREE/.test(d))).toEqual([]);
+  });
 });

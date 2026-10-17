@@ -42,18 +42,40 @@ int? metadataYear(String? date) {
   return int.tryParse(date.substring(0, 4));
 }
 
+/// 来源简介（AniList `description`、Jikan `synopsis`）里的 HTML 转成纯文本：
+/// `<br>` / 段落尾 → 换行、其余标签剥掉、常见命名实体与数字实体（`&#039;` /
+/// `&#x27;` / `&nbsp;` …）还原、连续空行压成一个。`&amp;` 最后还原，
+/// `&amp;lt;` 才不会被二次解码成 `<`。
 String? metadataStripHtml(String? value) {
   if (value == null) return null;
   final String result = value
+      .replaceAll('\r\n', '\n')
       .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'</p\s*>', caseSensitive: false), '\n\n')
       .replaceAll(RegExp(r'<[^>]+>'), '')
+      .replaceAllMapped(RegExp(r'&#([xX][0-9a-fA-F]+|[0-9]+);'), _numericEntity)
       .replaceAll('&quot;', '"')
-      .replaceAll('&#039;', "'")
-      .replaceAll('&amp;', '&')
+      .replaceAll('&apos;', "'")
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&mdash;', '—')
+      .replaceAll('&ndash;', '–')
+      .replaceAll('&hellip;', '…')
       .replaceAll('&lt;', '<')
       .replaceAll('&gt;', '>')
+      .replaceAll('&amp;', '&')
+      .replaceAll(RegExp(r'[ \t]+\n'), '\n')
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
       .trim();
   return result.isEmpty ? null : result;
+}
+
+String _numericEntity(Match match) {
+  final String code = match.group(1)!;
+  final int? point = code.startsWith('x') || code.startsWith('X')
+      ? int.tryParse(code.substring(1), radix: 16)
+      : int.tryParse(code);
+  if (point == null || point <= 0 || point > 0x10ffff) return match.group(0)!;
+  return String.fromCharCode(point);
 }
 
 List<String> metadataUniqueStrings(Iterable<String?> values) {

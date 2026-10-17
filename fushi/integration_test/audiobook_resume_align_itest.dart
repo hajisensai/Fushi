@@ -1,12 +1,14 @@
 import 'dart:async' show unawaited;
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'support/test_app_launcher.dart';
 import 'package:fushi/i18n/strings.g.dart' show t;
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
+    show AudiobookPlayerController;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show ReaderFushiPage, charCountsFromChaptersJson;
@@ -35,9 +37,10 @@ import 'test_helpers.dart';
 /// 导致阅读速度和阅读量异常」；「阅读速度单位是每小时多少字，顶部方框和每个会话」）
 /// 真 app 两段：
 ///
-///   A. 正文存档停在 5%，音频位置写到第 90 句（≈ 90%）→ 重开书，**不按播放**，
-///      起点就已在音频处（BUG-2390「带有声书时音频位置为主」）：落库的阅读位置收敛到
-///      > 50%，统计诊断流水记 `open resume point … source=audio cue`。
+///   A. 正文存档停在 5%，音频位置写到第 90 句（≈ 90%）→ 重开书，起点落在阅读存档
+///      （BUG-3430 对齐 Hoshi，取代 BUG-2390「开书时音频位置为主」），诊断流水记
+///      `open resume point … source=saved position`；**首次按播放**后跟读把正文
+///      带到音频处，落库的阅读位置收敛到 > 50%。
 ///   C. 播种一段 30 分钟 / 6000 字的会话 → 统计中心总览顶部卡与会话行都显示
 ///      `12000 字/时`（i18n `stat_speed_cph`）。
 ///
@@ -233,30 +236,48 @@ void main() {
               bookKey,
               positions,
               uid,
-              (ReaderPosition p) => p.normCharOffset > 5000,
+              (ReaderPosition p) => p.normCharOffset < 2000,
               'A',
             );
             expect(posA, isNotNull);
             expect(
               posA!.normCharOffset,
-              greaterThan(5000),
-              reason: '正文起点必须已在音频处（≈ 90%），不是停在旧的 5%',
+              lessThan(2000),
+              reason: 'BUG-3430：开书落在阅读存档（5%），不被音频位置盖掉',
             );
             expect(
               appModel.audiobookSession.controller?.isPlaying ?? false,
               isFalse,
               reason: '起点解析不触发播放',
             );
-            final List<String> traceA =
-                StudyDiagLog.instance.lines.skip(traceBefore).toList();
+            final List<String> traceA = StudyDiagLog.instance.lines
+                .skip(traceBefore)
+                .toList();
             expect(
               traceA.any(
                 (String l) =>
                     l.contains('open resume point chapter=0') &&
-                    l.contains('source=audio cue'),
+                    l.contains('source=saved position'),
               ),
               isTrue,
               reason: '诊断流水必须记下起点来源\n${traceA.join('\n')}',
+            );
+            // 首次按播放：跟读把正文带到音频那句（≈ 90%），对齐 Hoshi。
+            final AudiobookPlayerController playing =
+                appModel.audiobookSession.controller!;
+            await playing.setVolume(0);
+            await playing.play();
+            ReaderPosition? afterPlay;
+            for (int i = 0; i < 40; i++) {
+              await tester.pump(const Duration(milliseconds: 500));
+              afterPlay = await positions.findByBookUid(uid);
+              if (afterPlay != null && afterPlay.normCharOffset > 5000) break;
+            }
+            await playing.pause();
+            expect(
+              afterPlay?.normCharOffset ?? 0,
+              greaterThan(5000),
+              reason: '按播放后正文必须跟到音频处（≈ 90%）',
             );
             // 像素证据：重开后正文已在音频处（WebView 截图）+ Flutter 帧。
             final ObserveShot webA = await captureReaderWebView(
@@ -331,11 +352,7 @@ void main() {
                   data.contains(cph) &&
                   !data.contains(t.stat_reading_speed);
             });
-            expect(
-              sessionRow,
-              findsWidgets,
-              reason: '会话行末尾必须带 12000 字/时',
-            );
+            expect(sessionRow, findsWidgets, reason: '会话行末尾必须带 12000 字/时');
             final ObserveShot statsShot = await captureFlutterFrame(
               tester,
               'stats-center-cph',

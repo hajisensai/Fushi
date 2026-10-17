@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -46,6 +47,44 @@ void main() {
               'error': 'The session is no longer active',
             }),
             code: 'session_conflict',
+          ),
+          // A current host names why it refused before any session logic, so
+          // the receiver can say what to change instead of "update the host".
+          (
+            status: 403,
+            body: jsonEncode(<String, Object?>{
+              'version': 1,
+              'code': 'https_required',
+              'error': 'HTTPS required for game stream',
+            }),
+            code: 'https_required',
+          ),
+          (
+            status: 404,
+            body: jsonEncode(<String, Object?>{
+              'version': 1,
+              'code': 'library_off',
+              'error': 'Game library off',
+            }),
+            code: 'library_off',
+          ),
+          (
+            status: 404,
+            body: jsonEncode(<String, Object?>{
+              'version': 1,
+              'code': 'game_stream_off',
+              'error': 'Game stream off',
+            }),
+            code: 'game_stream_off',
+          ),
+          (
+            status: 403,
+            body: jsonEncode(<String, Object?>{
+              'version': 1,
+              'code': 'unauthorized_peer',
+              'error': 'Not a paired device',
+            }),
+            code: 'unauthorized_peer',
           ),
           (
             status: 500,
@@ -376,6 +415,9 @@ Future<GameStreamPostResult> _postStream(
 );
 
 class _DeferredLookup implements GameStreamDictionaryLookup {
+  @override
+  DictionaryPopupResourceSource? get popupResources => null;
+
   final List<String> terms = <String>[];
   final Completer<DictionarySearchResult?> pending =
       Completer<DictionarySearchResult?>();

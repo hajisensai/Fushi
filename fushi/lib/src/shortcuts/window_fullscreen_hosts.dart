@@ -54,6 +54,39 @@ class WindowFullscreenHosts {
   static void debugReset() => _hosts.clear();
 }
 
+/// 「整条路由就是窗口全屏宿主」的 [PageRouteBuilder]：**push 的那一刻**（[install]）
+/// 就把路由登记进 [WindowFullscreenHosts]，[dispose] 时注销。
+///
+/// 只靠子树里的 [WindowFullscreenHost] 不够（BUG-3223）：widget 要等路由内容**首次
+/// build** 才登记，而 push 与首次 build 之间隔着一帧。视频换集接管时，新集页就绪后在
+/// post-frame 回调里压上自己的全屏路由，被 `removeRoute` 摘掉的旧集页恰好在同一批
+/// post-frame 里做「最后一个宿主离场」判定——此刻新全屏路由已是 current、内容却还没
+/// build，注册表里只有被它盖住的新集页（不 current），判定为「无可见宿主」，把用户
+/// 正在看的原生全屏退掉。路由级登记让「栈顶是全屏路由」与「注册表里有可见宿主」在
+/// push 的同一刻同时成立，不再依赖帧序。
+///
+/// 归还全屏仍由子树里的 [WindowFullscreenHost] 在卸载时做（路由 dispose 时它的内容
+/// 一并卸载），这里只负责登记，不重复归还。
+class WindowFullscreenHostPageRoute<T> extends PageRouteBuilder<T> {
+  WindowFullscreenHostPageRoute({
+    required super.pageBuilder,
+    super.transitionDuration,
+    super.reverseTransitionDuration,
+  });
+
+  @override
+  void install() {
+    super.install();
+    WindowFullscreenHosts.register(this, this);
+  }
+
+  @override
+  void dispose() {
+    WindowFullscreenHosts.unregister(this);
+    super.dispose();
+  }
+}
+
 /// 声明「本子树是窗口全屏的合法宿主」。
 ///
 /// 包在内容页（小说 / 漫画 / 视频）的页面子树外层即可；除登记外零行为、零布局影响，

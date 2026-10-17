@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show GeneratedColumn, Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
@@ -268,9 +268,18 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(t.collection_sort_by_season).last);
+    // 管理动作默认平铺、放不下才收进「⋯」（FushiAdaptiveActionStrip）；1280 宽
+    // 页头放得下时它是带 tooltip 的平铺图标钮，否则在「⋯」菜单里。两种形态都要能触发。
+    final Finder inlineSort = find.byTooltip(t.collection_sort_by_season);
+    if (inlineSort.evaluate().isEmpty) {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('collection-detail-manage-more')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.collection_sort_by_season).last);
+    } else {
+      await tester.tap(inlineSort);
+    }
     await tester.pumpAndSettle();
 
     expect(

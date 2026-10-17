@@ -47,20 +47,16 @@ void main() {
       expect(plan.exePaths, <String>[r'D:\games\atri.exe']);
     });
 
-    test('有声书:单文件永远不够料,但缺的那一样要报准', () {
-      // 孤立音频（TMW 单卷 m4b 的真实形状）缺的是字幕,不是音频。
-      expect(
-        (classifyDiscoveryFile(DiscoveryMediaKind.audiobook, 'x.mp3')
-                as UnsupportedPlan)
-            .blocker,
-        DiscoveryImportBlocker.audiobookMissingSubtitle,
-      );
-      expect(
-        (classifyDiscoveryFile(DiscoveryMediaKind.audiobook, r'D:\a\vol1.m4b')
-                as UnsupportedPlan)
-            .blocker,
-        DiscoveryImportBlocker.audiobookMissingSubtitle,
-      );
+    test('有声书:孤立音频交转录,孤立字幕/正文缺的是音频', () {
+      // 孤立音频（TMW 单卷 m4b 的真实形状）缺的是字幕 → 转录计划,不再直接挡下;
+      // 不自动转录的宿主在执行时以 audiobookMissingSubtitle 挡下。
+      for (final String path in <String>['x.mp3', r'D:\a\vol1.m4b']) {
+        final TranscribeAudiobookPlan plan =
+            classifyDiscoveryFile(DiscoveryMediaKind.audiobook, path)
+                as TranscribeAudiobookPlan;
+        expect(plan.audioPaths, <String>[path]);
+        expect(plan.contentPath, isNull);
+      }
       // 孤立字幕/正文则确实缺音频。
       expect(
         (classifyDiscoveryFile(DiscoveryMediaKind.audiobook, 'x.srt')
@@ -114,7 +110,7 @@ void main() {
       expect(plan.contentPath, '/d/book.txt');
     });
 
-    test('有声书三缺一时给出稳定原因码', () {
+    test('有声书三缺一:缺音频挡下,缺字幕转录,缺正文成字幕书', () {
       expect(
         (classifyDiscoveryDirectory(
           DiscoveryMediaKind.audiobook,
@@ -123,22 +119,30 @@ void main() {
             .blocker,
         DiscoveryImportBlocker.audiobookMissingAudio,
       );
-      expect(
-        (classifyDiscoveryDirectory(
-          DiscoveryMediaKind.audiobook,
-          <String>['/d/book.epub', '/d/a.mp3'],
-        ) as UnsupportedPlan)
-            .blocker,
-        DiscoveryImportBlocker.audiobookMissingSubtitle,
-      );
-      expect(
-        (classifyDiscoveryDirectory(
-          DiscoveryMediaKind.audiobook,
-          <String>['/d/book.srt', '/d/a.mp3'],
-        ) as UnsupportedPlan)
-            .blocker,
-        DiscoveryImportBlocker.audiobookMissingText,
-      );
+      final TranscribeAudiobookPlan transcribe = classifyDiscoveryDirectory(
+        DiscoveryMediaKind.audiobook,
+        <String>['/d/book.epub', '/d/a.mp3'],
+      ) as TranscribeAudiobookPlan;
+      expect(transcribe.contentPath, '/d/book.epub');
+      expect(transcribe.audioPaths, <String>['/d/a.mp3']);
+      final SubtitleAudiobookPlan subtitleBook = classifyDiscoveryDirectory(
+        DiscoveryMediaKind.audiobook,
+        <String>['/d/book.srt', '/d/a.mp3'],
+      ) as SubtitleAudiobookPlan;
+      expect(subtitleBook.subtitlePath, '/d/book.srt');
+      expect(subtitleBook.audioPaths, <String>['/d/a.mp3']);
+    });
+
+    test('有声书音频按自然序:Part 2 在 Part 10 前(含全角数字)', () {
+      final TranscribeAudiobookPlan plan = classifyDiscoveryDirectory(
+        DiscoveryMediaKind.audiobook,
+        <String>['/d/Part 10.mp3', '/d/Part 2.mp3', '/d/Part １.mp3'],
+      ) as TranscribeAudiobookPlan;
+      expect(plan.audioPaths, <String>[
+        '/d/Part １.mp3',
+        '/d/Part 2.mp3',
+        '/d/Part 10.mp3',
+      ]);
     });
 
     test('游戏:无 exe → gameNoExecutable', () {

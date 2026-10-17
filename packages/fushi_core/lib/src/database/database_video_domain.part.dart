@@ -25,6 +25,31 @@ mixin _FushiDbVideoDomain
             ..where(($VideoScrapeMetaTable t) => t.bookUid.equals(bookUid)))
           .getSingleOrNull();
 
+  /// 批量取多本的刮削资料（bookUid → 行；未刮过的不在表里）。详情页一次取完一部
+  /// 作品所有成员，替代逐本 [getVideoScrapeMeta] 的 N+1（打开系列详情页时一集一次
+  /// 往返）。按 SQLite 参数上限分块。
+  Future<Map<String, VideoScrapeMetaRow>> getVideoScrapeMetaForBooks(
+    Iterable<String> bookUids,
+  ) async {
+    final List<String> uids = bookUids.toSet().toList(growable: false);
+    final Map<String, VideoScrapeMetaRow> result =
+        <String, VideoScrapeMetaRow>{};
+    const int chunk = 500;
+    for (int i = 0; i < uids.length; i += chunk) {
+      final List<String> part = uids.sublist(
+        i,
+        i + chunk > uids.length ? uids.length : i + chunk,
+      );
+      final List<VideoScrapeMetaRow> rows = await (select(videoScrapeMeta)
+            ..where(($VideoScrapeMetaTable t) => t.bookUid.isIn(part)))
+          .get();
+      for (final VideoScrapeMetaRow row in rows) {
+        result[row.bookUid] = row;
+      }
+    }
+    return result;
+  }
+
   /// 已刮削过的 bookUid 集合。自动刮削扫描用它一次性排除已刮的，避免逐本查询
   /// （N+1）。返回 Set 供 O(1) 判断。
   Future<Set<String>> scrapedVideoBookUids() async {
@@ -2266,6 +2291,105 @@ mixin _FushiDbVideoDomain
             ..where(($VideoDownloadSubscriptionsTable t) =>
                 t.subscriptionId.equals(subscriptionId)))
           .go();
+
+  /// 一次删掉一批订阅（items 随 FK cascade 一起清）。返回删除行数。
+  Future<int> deleteVideoDownloadSubscriptions(
+    Iterable<String> subscriptionIds,
+  ) {
+    final List<String> ids = subscriptionIds.toSet().toList();
+    if (ids.isEmpty) return Future<int>.value(0);
+    return (delete(videoDownloadSubscriptions)
+          ..where(($VideoDownloadSubscriptionsTable t) =>
+              t.subscriptionId.isIn(ids)))
+        .go();
+  }
+
+  /// 归属 [collectionIds] 这些合集的下载订阅，供「删合集时连订阅一起删」用。
+  ///
+  /// **必须在删合集之前调用**：三条归属线里有两条随删合集消失——
+  /// `video_metadata_works` 行 FK cascade 删掉、`video_download_jobs.collection_id`
+  /// FK 置 NULL。删完再查恒为空，订阅照旧启用、继续轮询往一个已不存在的合集里下。
+  ///
+  /// 三条线任一命中即算（订阅自己的 `collection_id` 实际几乎不被写入，只靠它
+  /// 会漏掉绝大多数订阅）：
+  /// 1. 订阅行的 `collection_id`；
+  /// 2. 订阅派生的任务（`subscription_items.job_id`）整理进了这个合集；
+  /// 3. 订阅的作品身份（provider + externalId）就是这个合集刮削到的作品——
+  ///    仅当该身份不同时挂在别的合集下、且订阅没有任务落进别的合集时才算，
+  ///    否则删 A 会把给 B 追更的订阅一起删掉。
+  Future<List<VideoDownloadSubscriptionRow>>
+      getVideoDownloadSubscriptionsOwnedByCollections(
+    Iterable<int> collectionIds,
+  ) async {
+    final List<int> ids = collectionIds.toSet().toList();
+    if (ids.isEmpty) return const <VideoDownloadSubscriptionRow>[];
+    final List<TypedResult> jobRows = await (select(
+      videoDownloadSubscriptionItems,
+    ).join(<Join>[
+      innerJoin(
+        videoDownloadJobs,
+        videoDownloadJobs.jobId.equalsExp(videoDownloadSubscriptionItems.jobId),
+      ),
+    ])
+          ..where(videoDownloadJobs.collectionId.isNotNull()))
+        .get();
+    // 订阅派生任务落进的合集：落进被删合集的算归属（线 2）；落进别的合集的
+    // 订阅不再凭作品身份认领（线 3）——它在给另一个合集追更。
+    final Set<String> viaJobs = <String>{};
+    final Set<String> feedsOthers = <String>{};
+    for (final TypedResult row in jobRows) {
+      final String id =
+          row.readTable(videoDownloadSubscriptionItems).subscriptionId;
+      final int? target = row.readTable(videoDownloadJobs).collectionId;
+      (ids.contains(target) ? viaJobs : feedsOthers).add(id);
+    }
+    final List<TypedResult> identityRows = await (select(
+      videoMetadataProviderIdentities,
+    ).join(<Join>[
+      innerJoin(
+        videoMetadataWorks,
+        videoMetadataWorks.id.equalsExp(videoMetadataProviderIdentities.workId),
+      ),
+    ])
+          ..where(videoMetadataWorks.collectionId.isNotNull()))
+        .get();
+    // 同一作品身份也挂在别的合集下时，身份分不清订阅属于谁，不认领。
+    final Set<String> identities = <String>{};
+    final Set<String> sharedIdentities = <String>{};
+    for (final TypedResult row in identityRows) {
+      final VideoMetadataProviderIdentityRow identity =
+          row.readTable(videoMetadataProviderIdentities);
+      final String key =
+          _subscriptionIdentityKey(identity.provider, identity.externalId);
+      final int? owner = row.readTable(videoMetadataWorks).collectionId;
+      (ids.contains(owner) ? identities : sharedIdentities).add(key);
+    }
+    identities
+      ..removeAll(sharedIdentities)
+      ..remove('');
+    return <VideoDownloadSubscriptionRow>[
+      for (final VideoDownloadSubscriptionRow sub
+          in await select(videoDownloadSubscriptions).get())
+        if (ids.contains(sub.collectionId) ||
+            viaJobs.contains(sub.subscriptionId) ||
+            (!feedsOthers.contains(sub.subscriptionId) &&
+                identities.contains(
+                  _subscriptionIdentityKey(
+                    sub.metadataProvider,
+                    sub.externalId,
+                  ),
+                )))
+          sub,
+    ];
+  }
+
+  /// 作品身份归一键（provider 小写去空白、externalId 去空白，与
+  /// `resolveVideoLibraryPresence` 同口径）；任一缺失返回 `''`，不与任何身份相等。
+  String _subscriptionIdentityKey(String? provider, String? externalId) {
+    final String p = provider?.trim().toLowerCase() ?? '';
+    final String e = externalId?.trim() ?? '';
+    return p.isEmpty || e.isEmpty ? '' : '$p\u0000$e';
+  }
 
   /// 改订阅并把它派生、尚未进整理的任务一起改到新目标来源（BUG-2755）。
   ///

@@ -2,7 +2,7 @@
 // 填充之上，斜体 / 紧排时黑描边啃进前字的白填充，笔画看着变粗；重叠量随字号 / 亚像素
 // 位置变，于是「字重随窗口大小变」。libass 先合成整行描边位图再叠整行填充位图。
 // 另：缩放后描边宽曾夹 [0.5, 24]，小窗口里细描边被下限截断、相对字身越缩越粗。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';

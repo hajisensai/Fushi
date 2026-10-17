@@ -124,6 +124,7 @@ class LeaderboardSelf {
     this.shelfCount,
     this.emailVerified = false,
     this.uploadDevice,
+    this.role = 'user',
   });
 
   factory LeaderboardSelf.fromJson(JsonMap j) => LeaderboardSelf(
@@ -133,6 +134,7 @@ class LeaderboardSelf {
     shelfCount: _intOrNull(j['shelfCount']),
     emailVerified: j['emailVerified'] == true,
     uploadDevice: j['uploadDevice'] as bool?,
+    role: j['role'] as String? ?? 'user',
   );
 
   final LeaderboardAccount account;
@@ -146,6 +148,11 @@ class LeaderboardSelf {
   /// 本机钥匙是否为本账户的「上传设备」（每账户只有一台能上传书架）；旧服务端不给 = null。
   final bool? uploadDevice;
 
+  /// `user` | `dev`（开发者：可在 App 内处理反馈；权限以服务端为准）。旧服务端不给 = `user`。
+  final String role;
+
+  bool get isDeveloper => role == 'dev';
+
   JsonMap toJson() => <String, dynamic>{
     ...account.toJson(),
     'visibility': visibility,
@@ -153,6 +160,7 @@ class LeaderboardSelf {
     if (shelfCount != null) 'shelfCount': shelfCount,
     'emailVerified': emailVerified,
     if (uploadDevice != null) 'uploadDevice': uploadDevice,
+    if (role != 'user') 'role': role,
   };
 }
 
@@ -581,28 +589,36 @@ class FriendList {
   };
 }
 
-/// 上报响应里一条 put 条目（下标 [i]）落到的作品，以及它是否缺封面（缺则可补传缩略图）。
+/// 上报响应里一条 put 条目（下标 [i]）落到的作品。
+///
+/// [needsCover] = 作品还没有任何封面（旧协议语义）。[coverVote] = 处理完这批后本账户对该作品的
+/// 封面票型：`'url'`（投给了条目带的白名单 coverUrl）/ `'hash'`（投给了上传的缩略图）/ null
+/// （没投票，或服务端是不认封面投票的旧版本）。
 class UploadedWork {
   const UploadedWork({
     required this.i,
     required this.workId,
     required this.needsCover,
+    this.coverVote,
   });
 
   factory UploadedWork.fromJson(JsonMap j) => UploadedWork(
     i: _int(j['i']),
     workId: j['workId'] as String,
     needsCover: j['needsCover'] == true,
+    coverVote: j['coverVote'] as String?,
   );
 
   final int i;
   final String workId;
   final bool needsCover;
+  final String? coverVote;
 
   JsonMap toJson() => <String, dynamic>{
     'i': i,
     'workId': workId,
     'needsCover': needsCover,
+    if (coverVote != null) 'coverVote': coverVote,
   };
 }
 

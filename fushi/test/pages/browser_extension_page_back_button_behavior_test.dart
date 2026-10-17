@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 
@@ -16,14 +17,17 @@ class _FakeAppModel extends AppModel {
   _FakeAppModel() : super(testPlatformServices());
 
   @override
-  bool get yomitanApiServerEnabled => false;
+  bool get fushiApiServerEnabled => false;
 
   @override
-  int get yomitanApiPort => 19323;
+  int get fushiApiPort => 19323;
 
   @override
-  String get yomitanApiKey => '';
+  String get fushiApiKey => '';
 }
+
+/// 不在测试里真起 `reg` / `defaults` 探测默认浏览器。
+Future<BrowserKind?> _noDefaultBrowser() async => null;
 
 void main() {
   setUp(() {
@@ -48,7 +52,8 @@ void main() {
 
     navKey.currentState!.push(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => const BrowserExtensionPage(),
+        builder: (BuildContext context) =>
+            const BrowserExtensionPage(detectBrowser: _noDefaultBrowser),
       ),
     );
     await tester.pump();

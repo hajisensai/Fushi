@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/browse_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
@@ -37,12 +38,12 @@ SettingsDestination _torrentPage(
 ) => SettingsDestination(
   id: SettingsDestinationId.downloads,
   title: title,
-  icon: Icons.download_outlined,
+  icon: FushiIcons.download,
   sections: const <SettingsSection>[],
   bodySearchEntries: entries,
-  body: (_) => AdaptiveSettingsSection(
-    children: <Widget>[TorrentSettingsSection(scope: scope)],
-  ),
+  // 组件自己产出多个真正的设置分组（MD3 分段卡 / Apple inset grouped），
+  // 不再整块塞进一个外层分组。
+  body: (_) => TorrentSettingsSection(scope: scope),
 );
 
 /// Common download controls stay visible; detailed backend configuration has
@@ -55,7 +56,7 @@ SettingsDestination buildDownloadsDestination() => SettingsDestination(
   ),
   title: t.nav_downloads,
   summary: t.download_settings,
-  icon: Icons.download_outlined,
+  icon: FushiIcons.download,
   bodySearchEntries: <SettingsBodySearchEntry>[
     _entry(
       'backend',
@@ -95,24 +96,20 @@ SettingsDestination buildDownloadsDestination() => SettingsDestination(
       visible: (SettingsContext c) => _embedded(c) && _config(c).uploadEnabled,
     ),
   ],
+  // 常用控件（执行设备 / 后端 / 下载目录 / 限速 / 上传做种）是多个独立分组，
+  // 经 body 逃生口排在导航分组之前——塞进一个 SettingsCustomItem 会让这些分组
+  // 整块嵌进外层分组的一张卡里（卡中卡 + 自绘小节标题）。
+  body: (_) =>
+      const TorrentSettingsSection(scope: TorrentSettingsScope.common),
+  bodyBeforeSections: true,
   sections: <SettingsSection>[
-    SettingsSection(
-      id: 'downloads.common',
-      items: <SettingsItem>[
-        SettingsCustomItem(
-          id: 'downloads.common_controls',
-          builder: (_) =>
-              const TorrentSettingsSection(scope: TorrentSettingsScope.common),
-        ),
-      ],
-    ),
     SettingsSection(
       id: 'downloads.configuration',
       items: <SettingsItem>[
         SettingsNavigationItem(
           id: 'downloads.connection',
           title: t.video_setting_torrent_backend_qb,
-          icon: Icons.link,
+          icon: FushiIcons.link,
           visible: (SettingsContext c) => !_embedded(c),
           subtitleBuilder: (SettingsContext c) => _config(c).baseUrl.isEmpty
               ? t.video_setting_qb_url
@@ -143,7 +140,7 @@ SettingsDestination buildDownloadsDestination() => SettingsDestination(
           id: 'downloads.trackers',
           title: t.download_tracker_section,
           subtitle: t.download_tracker_auto_add_hint,
-          icon: Icons.hub_outlined,
+          icon: FushiIcons.hub,
           child: () => _torrentPage(
             TorrentSettingsScope.trackers,
             t.download_tracker_section,
@@ -259,22 +256,19 @@ SettingsDestination buildDownloadsDestination() => SettingsDestination(
           id: 'downloads.routing',
           title: t.settings_downloads_routing_title,
           subtitle: t.settings_downloads_routing_hint,
-          icon: Icons.drive_file_move_outline,
+          icon: FushiIcons.moveFile,
           child: () => SettingsDestination(
             id: SettingsDestinationId.downloads,
             title: t.settings_downloads_routing_title,
-            icon: Icons.drive_file_move_outline,
+            icon: FushiIcons.moveFile,
             sections: const <SettingsSection>[],
             bodySearchEntries: <SettingsBodySearchEntry>[
               _entry('path_mappings', t.video_download_path_mappings_title),
               _entry('target_source', t.video_download_target_source_title),
             ],
-            body: (_) => const AdaptiveSettingsSection(
-              children: <Widget>[
-                VideoExternalProviderSettingsSection(
-                  scope: VideoExternalProviderScope.downloadRouting,
-                ),
-              ],
+            // 组件自己产出路径映射 / 目标来源两组设置分组。
+            body: (_) => const VideoExternalProviderSettingsSection(
+              scope: VideoExternalProviderScope.downloadRouting,
             ),
           ),
         ),
@@ -287,7 +281,7 @@ SettingsDestination buildDownloadsDestination() => SettingsDestination(
           id: 'downloads.open_page',
           title: t.nav_downloads,
           subtitle: t.settings_downloads_open_page_hint,
-          icon: Icons.download_outlined,
+          icon: FushiIcons.download,
           showIcon: true,
           onTap: (SettingsContext context) => pushSettingsPage(
             context,

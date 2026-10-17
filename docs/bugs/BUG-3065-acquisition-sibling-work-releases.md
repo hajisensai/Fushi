@@ -1,0 +1,23 @@
+## BUG-3065 · AI video download picks remake or sequel releases as the target work
+- **报告**：2026-10-08（用户：「一口气下载全部哆啦A梦剧场版」，TMDB 合集 47 部，每部带日文标题 + 年份）。实测错选（作品 → 选中的发布）：
+  - 《のび太の恐竜》1980 → `[BYG-RAWS][哆啦A梦：大雄的新恐龙/Doraemon Nobita's New Dinosaur][WEB-4k][MP4][国语中字]`（2020 重制）
+  - 《のび太の大魔境》1982 → `[DMG][映画 ドラえもん 新・のび太の大魔境 ~ペコと5人の探検隊~][BDrip][簡繁外掛][1080P]`（2014 重制）
+  - 《のび太の海底鬼岩城》1983 → `[YYQ字幕组][… 新·大雄的海底鬼岩城 / … / 映画ドラえもん 新・のび太の海底鬼岩城][BDRIP][1080P][AVC_AAC][简日内嵌][MP4]`（2026 重制）
+  - 《のび太の日本誕生》1989 → `[VCB-Studio] Eiga Doraemon: Shin Nobita no Nippon Tanjou/映画ドラえもん 新・のび太の日本誕生 …`（2016 重制）
+  - 《STAND BY ME ドラえもん》2014 → `[MLSUB&VCB-Studio] Stand By Me Doraemon 2 / STAND BY ME ドラえもん 2 …`（2020 续作）
+  - 《のび太の宇宙小戦争》1985 的搜索结果里混着 `… Little Star Wars 2021 …`。
+- **真实性**：✅ 真 bug。根因在「选哪条发布」只问了年份，没问作品身份：
+  - `packages/fushi_engine/lib/media/video/acquisition/video_acquisition_resource_picker.dart:471`（修前）`cleanResourceCandidates` 唯一的身份判据是 `movieYear` → `releaseYearConflicts`（`:483`）。重制版 / 续作的发布名**大多不写年份**，于是全部放行。
+  - `packages/fushi_engine/lib/media/torrent/video_resource_relevance.dart:102` `rankVideoResourcesByRelevance` 按设计「只重排、不丢弃」，标题贴合度是模糊相似度：`Shin Nobita no Nippon Tanjou` 与 `Nobita no Nippon Tanjou` 相似度极高，同档内按做种排，重制版（做种多）压过原作。
+  - 整套下载（`video_acquisition_reducer.dart:2284` 修前 `planFranchiseEntry`）每部取「第一张给得出计划的卡」，兄弟作品共用标题词，这一层没有任何否定判据。
+- **[x] ① 已修复** — `2bd1f28e16`（+ 本 PR 后续提交）。新增 `packages/fushi_engine/lib/media/torrent/video_resource_work_match.dart`：`VideoResourceWorkTarget`（目标作品全部标题 + 年份）+ `videoResourceWorkMismatch` 三条**否定**判据，只认确定的矛盾，其余放行：
+  - `year`：标题写了年份且无一落在 ±1 内（原 `releaseYearConflicts` 搬来，picker 仍 re-export）；
+  - `remake`：标题带 `新・`/`新·`，或在目标某个标题里**插入**「新」（CJK）/ `Shin`/`New`（拉丁词）后被发布名包含；目标自己任何标题带「新」/ shin / new 时不判（重制版本身是目标）；
+  - `collection`：标题写了跨 ≥2 年的年份区间（`Doraemon Movies 01-25 (1980-2004)`）——多部合集包不当成任何一部（修前它对区间端点 1980 / 2004 那两部年份不冲突，会被整包下进一部的目录）；
+  - `sequel`：目标标题在发布名里出现时，紧跟的 1–2 位序号与目标不同（目标无序号而发布写 ` 2`，或目标是 ` 2` 而发布只写基础标题），且没有一处相符；`10-bit` / `1080p` / 声道 `5.1` 不算序号。
+  `cleanResourceCandidates` 改收 `VideoResourceWorkTarget? work`：电影（单部 `_onResourcesLoaded` 与整套 `planFranchiseEntry`，后者用补了详情拉丁标题的身份）走完整身份；同名剧集仍只按年份（`VideoResourceWorkTarget.yearOnly`），剧集的季标题（`Dr. Stone: New World`）不受重制判据影响。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/acquisition/video_acquisition_doraemon_franchise_picks_test.dart`（「作品身份」组 + 两条 reducer 端到端：整套四部各落到自己的版本、单部 1989 只剩编号版），用户实测发布名原样作 fixture。变异实测：去掉重制判据 / 续作判据 / 整套或单部路径的身份接线，各自变红。
+- **备注 / 已知剩余缺口**：
+  - 合集包内选文件（d）**未做**，留作后续：`VideoDownloadManualEnqueueRequest.selectedFileIndexes` 管线已支持只下 torrent 的部分文件，但 ① 搜索结果不带文件清单（Nyaa 列表页没有，需按候选逐个拉 .torrent metainfo）；② AI 下视频提交走 `VideoDownloadEnqueueRequest`（按资源整颗下），不是 manual request；③ 还缺「包内文件 → 合集里哪一部」的匹配器（`Doraemon Movie NN` 编号 / 年份 / 标题）。三件都做齐才能把 `[Fabre-RAW] Doraemon Movies 01-25 (1980-2004) [WEB-DL 1080p]` 这类包拆给每一部；半做（整包给某一部）比不做更糟，所以本修复先用 `collection` 判据把这类包挡在所有单部之外。
+  - 召回：`Doraemon Movie NN` 编号写法的单部发布（`[Ommex] Doraemon Movie 08 … 1080p`）用作品罗马字 / 日文名搜不到，这是检索词问题（`preferredNyaaSearchQueries`），不在本 bug 范围。
+  - 反向重制（目标是重制版、候选是没写年份的原作）只能靠年份 / 续作序号判，没有独立判据。

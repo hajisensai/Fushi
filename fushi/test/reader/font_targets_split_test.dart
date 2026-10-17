@@ -94,6 +94,27 @@ void main() {
       'game_lookup_fonts',
     );
     expect(ReaderSettings.fontKeyGameLookup, 'game_lookup_fonts');
+    expect(ReaderSettings.fontKeyForTarget(FontTarget.floatingLyric),
+        'floating_lyric_fonts');
+    expect(ReaderSettings.fontKeyFloatingLyric, 'floating_lyric_fonts');
+  });
+
+  test('floating lyric target reads and writes independently', () async {
+    final ReaderSettings settings = ReaderSettings(db);
+    await settings.refreshFromDb();
+    await settings.setFontsForTarget(FontTarget.floatingLyric,
+        _fonts(_font('LyricFont', path: '/fonts/lyric.ttf')));
+
+    final ReaderSettings restored = ReaderSettings(db);
+    await restored.refreshFromDb();
+
+    expect(restored.floatingLyricFonts.single['name'], 'LyricFont');
+    expect(restored.floatingLyricFonts.single['path'], '/fonts/lyric.ttf');
+    expect(restored.fontsForTarget(FontTarget.floatingLyric).single['name'],
+        'LyricFont');
+    expect(restored.gameLookupFonts, isEmpty);
+    expect(restored.videoSubtitleFonts, isEmpty);
+    expect(restored.customFonts, isEmpty);
   });
 
   test('game lookup target reads and writes independently', () async {
@@ -158,6 +179,7 @@ void main() {
     // ...but video subtitle does not.
     expect(restored.videoSubtitleFonts, isEmpty);
     expect(restored.gameLookupFonts, isEmpty);
+    expect(restored.floatingLyricFonts, isEmpty);
   });
 
   test('setting body fonts first still seeds untouched targets from body',
@@ -189,6 +211,7 @@ void main() {
     expect(restored.dictionaryFonts.single['path'], '/fonts/body-seed.ttf');
     expect(restored.videoSubtitleFonts, isEmpty);
     expect(restored.gameLookupFonts, isEmpty);
+    expect(restored.floatingLyricFonts, isEmpty);
   });
 
   test('explicit empty targets do not re-seed after body changes', () async {

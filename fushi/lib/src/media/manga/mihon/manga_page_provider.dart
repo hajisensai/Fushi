@@ -7,6 +7,8 @@ import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi_engine/media/manga/import/image_size_probe.dart'
+    show probeOrientedImageSize;
 
 abstract interface class MangaPageProvider {
   Future<MangaReaderSession> open();
@@ -142,10 +144,21 @@ class LocalMangaReaderSession implements MangaReaderSession {
   }
 }
 
+/// 页图（按 EXIF 方向摆正后的）宽高。
+///
+/// BUG-3041：阅读器每个页图请求（WebView 拦截 `/img/`、面板检测、在线直读首页）
+/// 都经 [MangaReaderSession.page] 走到这里。以前一律 `img.decodeImage` 整张纯
+/// Dart 解码——2400×3400 的页在桌面要 0.5~0.7 s、几十 MB 堆，iOS 自定义 scheme
+/// 又没有 HTTP 缓存，大图卷每次装窗口 / 翻页都要重付，阅读与查词一起被拖慢。
+/// 宽高只需文件头：先走与导入同一口径的 [probeOrientedImageSize]（JPEG 读到
+/// SOF + EXIF 方向、PNG 读 IHDR、WebP 读 VP8 头，零像素解码），认不出的格式
+/// （GIF / 损坏头）才回退后台 isolate 整张解码，结果与从前一致。
 Future<({int width, int height})?> mangaImageDimensions(
   Uint8List bytes,
 ) async {
   if (bytes.isEmpty) return null;
+  final ({int width, int height})? probed = probeOrientedImageSize(bytes);
+  if (probed != null) return probed;
   return Isolate.run<({int width, int height})?>(() {
     try {
       final img.Image? decoded = img.decodeImage(bytes);

@@ -119,7 +119,9 @@ void main() {
 
     test('uses TtsChannel.extractAudioMetadata bridge (all-platform ffprobe)',
         () {
-      expect(source, contains('TtsChannel.instance.extractAudioMetadata('),
+      // 允许 dart format 在 `.extractAudioMetadata` 前折行。
+      expect(source,
+          matches(RegExp(r'TtsChannel\.instance\s*\.extractAudioMetadata\(')),
           reason: 'must go through the platform bridge so mobile ffmpeg-kit '
               'ffprobe path is used too, not a desktop-only call.');
     });

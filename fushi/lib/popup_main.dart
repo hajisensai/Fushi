@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
@@ -17,30 +18,33 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 
 @pragma('vm:entry-point')
 void popupMain() {
-  runZonedGuarded<Future<void>>(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  runZonedGuarded<Future<void>>(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-    final platformServices = PlatformServices.forCurrentPlatform();
-    final container = ProviderContainer(
-      overrides: [
-        platformServicesProvider.overrideWithValue(platformServices),
-      ],
-    );
+      final platformServices = PlatformServices.forCurrentPlatform();
+      final container = ProviderContainer(
+        overrides: [
+          platformServicesProvider.overrideWithValue(platformServices),
+        ],
+      );
 
-    runApp(
-      UncontrolledProviderScope(
-        container: container,
-        child: const PopupDictApp(),
-      ),
-    );
+      runApp(
+        UncontrolledProviderScope(
+          container: container,
+          child: const PopupDictApp(),
+        ),
+      );
 
-    await FushiDicts.preloadTransforms();
-    final appModel = container.read(appProvider);
-    unawaited(appModel.initialiseForDictionaryPopup());
-  }, (exception, stack) {
-    debugPrint('[Fushi-popup] uncaught: $exception\n$stack');
-  });
+      await FushiDicts.preloadTransforms();
+      final appModel = container.read(appProvider);
+      unawaited(appModel.initialiseForDictionaryPopup());
+    },
+    (exception, stack) {
+      debugPrint('[Fushi-popup] uncaught: $exception\n$stack');
+    },
+  );
 }
 
 class PopupDictApp extends ConsumerStatefulWidget {
@@ -59,6 +63,10 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   /// 源文本条上做扫描查词，不再在这里切成单词把整行丢掉。
   int _sourceCharIndex = -1;
 
+  /// BUG-3487：截屏识字带来的被点字所在 OCR text block（全文 + 本行起点），制卡句子
+  /// 据此截整句；其它入口为 null。
+  PopupSourceBlock? _sourceBlock;
+
   /// TODO-872：浮动字幕条点字传来的「被查字屏幕矩形」（**物理像素**，原点=物理屏幕顶
   /// 含状态栏）。为 null 即非浮动字幕入口（系统 PROCESS_TEXT / fushi://lookup）→ 弹窗走
   /// 默认 topCenter。物理→逻辑换算 + 状态栏平移在 [build] 内完成（那里 MediaQuery 才有
@@ -75,35 +83,45 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
 
     PopupChannel.instance.init(
       onNewProcessText:
-          (String text, int charIndex, Rect? anchor, Rect? subtitle) async {
-        final appModel = ref.read(appProvider);
-        // TODO-855: warm-reuse hot path. Don't unconditionally re-scan the whole
-        // preferences table on every external ProcessText (the v0.4.1 path was a
-        // pure setState). refreshPrefCacheIfChanged does one cheap indexed DB
-        // version read and only does the full reload when the main app actually
-        // mutated a preference / switched profile since the last lookup, so the
-        // warm-reuse popup still sees a new profile's prefs without paying the
-        // reload cost on every word.
-        if (appModel.isInitialised) {
-          // TODO-1336：warm-reuse 热路径。偏好版本读取 / 重载（DB 访问）失败绝不能吞掉
-          // 紧随其后投递新词的 setState——否则常驻热页收不到新词、didUpdateWidget 不触发，
-          // 弹窗卡在旧词甚至配合 _isClosing 残留一并关不掉。记日志后带旧偏好缓存继续。
-          try {
-            await appModel.refreshPrefCacheIfChanged();
-          } on Object catch (e, stack) {
-            ErrorLogService.instance
-                .log('popupMain.refreshPrefCacheIfChanged', e, stack);
-          }
-        }
-        if (!mounted) return;
-        setState(() {
-          _searchTerm = text;
-          _sourceCharIndex = charIndex;
-          _anchorPhysical = anchor;
-          _subtitlePhysical = subtitle;
-          _searchGeneration++;
-        });
-      },
+          (
+            String text,
+            int charIndex,
+            Rect? anchor,
+            Rect? subtitle,
+            PopupSourceBlock? sourceBlock,
+          ) async {
+            final appModel = ref.read(appProvider);
+            // TODO-855: warm-reuse hot path. Don't unconditionally re-scan the whole
+            // preferences table on every external ProcessText (the v0.4.1 path was a
+            // pure setState). refreshPrefCacheIfChanged does one cheap indexed DB
+            // version read and only does the full reload when the main app actually
+            // mutated a preference / switched profile since the last lookup, so the
+            // warm-reuse popup still sees a new profile's prefs without paying the
+            // reload cost on every word.
+            if (appModel.isInitialised) {
+              // TODO-1336：warm-reuse 热路径。偏好版本读取 / 重载（DB 访问）失败绝不能吞掉
+              // 紧随其后投递新词的 setState——否则常驻热页收不到新词、didUpdateWidget 不触发，
+              // 弹窗卡在旧词甚至配合 _isClosing 残留一并关不掉。记日志后带旧偏好缓存继续。
+              try {
+                await appModel.refreshPrefCacheIfChanged();
+              } on Object catch (e, stack) {
+                ErrorLogService.instance.log(
+                  'popupMain.refreshPrefCacheIfChanged',
+                  e,
+                  stack,
+                );
+              }
+            }
+            if (!mounted) return;
+            setState(() {
+              _searchTerm = text;
+              _sourceCharIndex = charIndex;
+              _sourceBlock = sourceBlock;
+              _anchorPhysical = anchor;
+              _subtitlePhysical = subtitle;
+              _searchGeneration++;
+            });
+          },
     );
   }
 
@@ -123,8 +141,9 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     final double ratio = dpr <= 0 ? 1.0 : dpr;
     // 状态栏物理高度（逻辑像素）。glyph/subtitle 屏幕矩形含状态栏，本查词窗内容原点在
     // 状态栏下沿，故平移掉这段，弹窗锚点才与用户看到的字对齐。
-    final double statusBarPhysical =
-        views.isNotEmpty ? views.first.viewPadding.top : 0.0;
+    final double statusBarPhysical = views.isNotEmpty
+        ? views.first.viewPadding.top
+        : 0.0;
     final double top = (physical.top - statusBarPhysical) / ratio;
     final double bottom = (physical.bottom - statusBarPhysical) / ratio;
     return Rect.fromLTRB(
@@ -140,14 +159,22 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     final appModel = ref.watch(appProvider);
 
     if (appModel.initError != null) {
+      // 初始化失败同样没有用户主题可用：走与冷启动占位同一份兜底主题，错误态
+      // 是贴顶的 M3E 面板（错误色块图标 + 原因 + 关闭），点外面也能关窗。
+      final brightness =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
+          theme: fallbackTheme,
           builder: _buildWithSpacing,
           home: Scaffold(
             backgroundColor: Colors.transparent,
-            body: Center(
-              child: Text(t.init_error_message(error: appModel.initError!)),
+            body: PopupDictionaryErrorView(
+              colorScheme: fallbackTheme.colorScheme,
+              message: t.init_error_message(error: appModel.initError!),
+              onDismiss: () => unawaited(PopupChannel.instance.finishPopup()),
             ),
           ),
         ),
@@ -200,6 +227,8 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           searchTerm: _searchTerm,
           searchGeneration: _searchGeneration,
           sourceCharIndex: _sourceCharIndex,
+          sourceBlock: _sourceBlock?.text,
+          sourceBlockOffset: _sourceBlock?.offset ?? -1,
           // TODO-872：浮动字幕条点字带屏幕锚点 → 弹窗贴被查字旁；其它入口 null → topCenter。
           // TODO-708 P1 ⑤：物理→逻辑换算含状态栏平移在此处（build，视图 metrics 稳定）完成。
           anchorRect: _toLogicalRect(_anchorPhysical),
@@ -220,7 +249,17 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       scale: appModel.isInitialised
           ? appModel.appUiScale
           : FushiAppUiScale.defaultScale,
-      child: SmoothWheelScrollScope(child: child ?? const SizedBox.shrink()),
+      // 查词窗是独立 entry point，不经主 app 的根作用域：玻璃设计系统的组件
+      // 配色 / 渲染档位（GlassTheme）要在这里自己挂一层，否则弹窗里的玻璃
+      // 按钮 / 浮层吃库默认参数，与主 app 不一致。结构恒定（MD3 下也挂，见
+      // [FushiGlassScope] 类注释）。
+      child: LegacyDesignCompatibility(
+        child: FushiGlassScope(
+          child: SmoothWheelScrollScope(
+            child: child ?? const SizedBox.shrink(),
+          ),
+        ),
+      ),
     );
   }
 }

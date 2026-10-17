@@ -10,7 +10,7 @@ void main() {
   late Directory subs;
 
   setUp(() async {
-    tmp = await Directory.systemTemp.createTemp('hibiki_video_storage_');
+    tmp = await Directory.systemTemp.createTemp('fushi_video_storage_');
     covers = Directory(p.join(tmp.path, 'video_covers'))
       ..createSync(recursive: true);
     subs = Directory(p.join(tmp.path, 'video_subtitles'))

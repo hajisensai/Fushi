@@ -11,3 +11,5 @@
     unity_mono_.install();
     smash_fzmedia_.install();
     yuris_.install();
+    kogado_hy_.install();
+    luca_.install();

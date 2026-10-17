@@ -610,6 +610,126 @@ void main() {
     });
   });
 
+  // 停驻的热槽页里循环加载动画：宿主曾按「结果是占位单例」推 lookupPending=true，而
+  // seed / 复位 / 停驻 realm 挂的都是那个单例——Windows WebView2 停驻仍可见，空闲持续
+  // 出帧。pending 只由「层可见 && 查询进行中 && 还没有内容」派生。
+  group('lookupPending：占位 / 空闲 与 查询进行中 分开', () {
+    final DictionarySearchResult hit = DictionarySearchResult(
+      searchTerm: 'あ',
+      entries: <DictionaryEntry>[
+        DictionaryEntry(word: '亜', reading: 'あ', meaning: 'sub'),
+      ],
+    );
+
+    test('seed 热槽（停驻空闲）pending=false', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final DictionaryPopupEntry slot = c.entries.first;
+      expect(identical(slot.result, kPopupSearchingPlaceholderResult), true);
+      expect(slot.lookupPending, false, reason: '预热种子是空闲，不是查询中');
+    });
+
+    test('复用热槽激活查词 pending=true（占位单例不变）→ 结果到达 false → 复位 false',
+        () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final e = c.beginTop(
+        term: 'あ',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true,
+        initialResult: kPopupSearchingPlaceholderResult,
+      );
+      expect(identical(e.result, kPopupSearchingPlaceholderResult), true,
+          reason: '前置：结果对象身份没变，只能靠查询状态区分');
+      expect(e.lookupPending, true);
+
+      c.fillResult(e, result: hit, allLoaded: true);
+      expect(e.lookupPending, false, reason: '结果到达即不再 pending');
+
+      c.dismissAt(0);
+      final DictionaryPopupEntry slot = c.entries.first;
+      expect(identical(slot.result, kPopupSearchingPlaceholderResult), true);
+      expect(slot.lookupPending, false, reason: '关栈复位回停驻空闲');
+    });
+
+    test('结果到达前就关掉：复位后 pending=false', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final e = c.beginTop(
+        term: 'あ',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true,
+        initialResult: kPopupSearchingPlaceholderResult,
+      );
+      expect(e.lookupPending, true);
+      c.pruneToWarmSlot();
+      expect(c.entries.first.lookupPending, false);
+    });
+
+    test('搜索期隐藏（书内「就绪才显示」）pending=false', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final e = c.beginTop(
+        term: 'あ',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: false,
+      );
+      expect(e.isSearching, true);
+      expect(e.lookupPending, false, reason: '层不在屏上，页面不该起加载动画');
+    });
+
+    test('已有词条的分页 load-more 不算 pending（否则全量重渲染滚回顶）', () {
+      final c = DictionaryPopupController(lowMemory: false);
+      final e = c.beginTop(
+        term: 'あ',
+        rect: Rect.zero,
+        reuseWarmSlot: false,
+        replaceStack: true,
+        visible: true,
+      );
+      c.fillResult(e, result: hit, allLoaded: false);
+      e.isSearching = true;
+      expect(e.lookupPending, false);
+    });
+
+    test('popupLookupPending 真值表', () {
+      expect(
+        popupLookupPending(
+          layerVisible: false,
+          isSearching: true,
+          result: kPopupSearchingPlaceholderResult,
+        ),
+        false,
+      );
+      expect(
+        popupLookupPending(
+          layerVisible: true,
+          isSearching: false,
+          result: kPopupSearchingPlaceholderResult,
+        ),
+        false,
+      );
+      expect(
+        popupLookupPending(layerVisible: true, isSearching: true, result: null),
+        true,
+      );
+      expect(
+        popupLookupPending(
+          layerVisible: true,
+          isSearching: true,
+          result: kPopupSearchingPlaceholderResult,
+        ),
+        true,
+      );
+      expect(
+        popupLookupPending(layerVisible: true, isSearching: true, result: hit),
+        false,
+      );
+    });
+  });
+
   group('entries 是零拷贝的不可变 live 视图', () {
     test('同一视图实例、实时反映内部变更、外部不可写', () {
       final c = DictionaryPopupController(lowMemory: false);

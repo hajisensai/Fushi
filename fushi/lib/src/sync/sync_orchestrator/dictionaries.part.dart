@@ -35,11 +35,12 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
       try {
         tmp = _tmpFile(_dictionaryAssetSuffix);
         await backend.getRemoteDictionary(name, tmp,
-            onProgress: (double f) => _emit(SyncPhase.dictionaries,
+            onProgress: (double f, [int? b]) => _emit(SyncPhase.dictionaries,
                 itemIndex: index,
                 itemTotal: total,
                 title: name,
-                fileFraction: f));
+                fileFraction: f,
+                fileBytes: b));
         await _packages.importDictionaryPackage(
           packageFile: tmp,
           dictionaryResourceRoot: _dictionaryResourceRoot,
@@ -65,11 +66,12 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
           outputFile: tmp,
         );
         await backend.putRemoteDictionary(name, tmp,
-            onProgress: (double f) => _emit(SyncPhase.dictionaries,
+            onProgress: (double f, [int? b]) => _emit(SyncPhase.dictionaries,
                 itemIndex: index,
                 itemTotal: total,
                 title: name,
-                fileFraction: f));
+                fileFraction: f,
+                fileBytes: b));
         report.dictionariesExported++;
       } catch (e) {
         report.noteError('push dictionary "$name"', e);
@@ -129,11 +131,12 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
           outputFile: tmp,
         );
         await _backend.putAsset(ns, '${d.name}$_dictionaryAssetSuffix', tmp,
-            onProgress: (double f) => _emit(SyncPhase.dictionaries,
+            onProgress: (double f, [int? b]) => _emit(SyncPhase.dictionaries,
                 itemIndex: index,
                 itemTotal: total,
                 title: d.name,
-                fileFraction: f));
+                fileFraction: f,
+                fileBytes: b));
         report.dictionariesExported++;
       } catch (e) {
         report.noteError('export dictionary "${d.name}"', e);
@@ -156,11 +159,12 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
       try {
         tmp = _tmpFile(_dictionaryAssetSuffix);
         await _backend.getAsset(e.id, tmp,
-            onProgress: (double f) => _emit(SyncPhase.dictionaries,
+            onProgress: (double f, [int? b]) => _emit(SyncPhase.dictionaries,
                 itemIndex: index,
                 itemTotal: total,
                 title: displayName,
-                fileFraction: f));
+                fileFraction: f,
+                fileBytes: b));
         await _packages.importDictionaryPackage(
           packageFile: tmp,
           dictionaryResourceRoot: _dictionaryResourceRoot,

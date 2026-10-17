@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +10,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -35,7 +36,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_shelf_batch_ops_pp');
+        Directory.systemTemp.createTempSync('fushi_shelf_batch_ops_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -66,7 +67,7 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    storeDir = Directory.systemTemp.createTempSync('hibiki_shelf_batch_ops');
+    storeDir = Directory.systemTemp.createTempSync('fushi_shelf_batch_ops');
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
@@ -158,7 +159,7 @@ void main() {
   }
 
   Future<void> enterSelectionMode(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.tap(find.byIcon(FushiIcons.checklist));
     await tester.pumpAndSettle();
   }
 
@@ -230,22 +231,23 @@ void main() {
   });
 
   testWidgets('档2：1 合集 + 散卡 → 并入该合集（不弹命名，真写穿 DB）', (WidgetTester tester) async {
-    // 合集含一个 EPUB 成员（折进合集横排行），另有一张散 EPUB 卡待并入。
+    // 合集含一个 EPUB 成员（折进合集格子），另有一张散 EPUB 卡待并入。
     await seedEpub('memberKey', '成员书');
     await seedEpub('looseKey', '散书');
     final int cid = await db.createMediaCollection('合集乙');
     // v83：成员行 entryKey = uid（书架页按 uid 折叠合集行，bookKey 行折不进去）。
     final String memberUid = (await db.resolveEpubBookUid('memberKey'))!;
     await db.addToCollection(cid, MediaKind.epub, memberUid);
+    // 书架合集是单个格子；本用例验点格子整选合集。
 
     await pumpPage(tester);
     final Finder row =
-        find.byKey(ValueKey<String>('reader_shelf_collection_row_$cid'));
-    expect(row, findsOneWidget, reason: '合集横排行必须渲染');
+        find.byKey(ValueKey<String>('reader_shelf_collection_card_$cid'));
+    expect(row, findsOneWidget, reason: '合集格子必须渲染');
     expect(epubCard('looseKey'), findsOneWidget, reason: '散卡必须渲染');
 
     await enterSelectionMode(tester);
-    await tester.tap(find.text('合集乙')); // 行头整选合集
+    await tester.tap(find.text('合集乙')); // 点合集格子整选合集
     await tester.pumpAndSettle();
     await tester.tap(epubCard('looseKey'));
     await tester.pump();
@@ -271,14 +273,15 @@ void main() {
       (WidgetTester tester) async {
     await seedEpub('bodyKey', '正文书');
     final int cid = await db.createMediaCollection('待解散');
-    // v83：成员行 entryKey = uid（同上，bookKey 行折不进合集横排行）。
+    // v83：成员行 entryKey = uid（同上，bookKey 行折不进合集格子）。
     await db.addToCollection(
         cid, MediaKind.epub, (await db.resolveEpubBookUid('bodyKey'))!);
+    // 书架合集是单个格子；本用例验点格子整选合集。
 
     await pumpPage(tester);
     final Finder row =
-        find.byKey(ValueKey<String>('reader_shelf_collection_row_$cid'));
-    expect(row, findsOneWidget, reason: '合集横排行必须渲染');
+        find.byKey(ValueKey<String>('reader_shelf_collection_card_$cid'));
+    expect(row, findsOneWidget, reason: '合集格子必须渲染');
 
     await enterSelectionMode(tester);
     await tester.tap(find.text('待解散'));

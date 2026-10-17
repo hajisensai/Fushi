@@ -1,6 +1,10 @@
+import 'dart:io';
+
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 
 void main() {
   group('LyricsModeHtml', () {
@@ -224,9 +228,13 @@ void main() {
       expect(rootRule, contains('overflow-y: hidden;'));
       expect(html, contains('var __lyricsVertical = true;'));
 
-      // The container main axis flips to a row so cues lay out as columns.
+      // The flex main axis follows writing-mode: under vertical-rl `column` is
+      // the block axis (right-to-left), so each cue is its own column. `row`
+      // would be the inline axis (top-to-bottom) and squash every cue into one
+      // screen height — the original TODO-907 layout that never rendered.
       final String containerRule = _cssBlock(html, '.lyrics-container {');
-      expect(containerRule, contains('flex-direction: row;'));
+      expect(containerRule, contains('flex-direction: column;'));
+      expect(containerRule, isNot(contains('flex-direction: row;')));
 
       // Scrolling is delta/incremental to dodge vertical-rl's negative scrollX
       // coordinate, not absolute scrollTo. BUG-784: the delta is applied to the
@@ -234,6 +242,152 @@ void main() {
       // not window.scrollBy (which no-ops because body, not html, is the scroller).
       expect(html, contains('s.scrollLeft += d'));
       expect(html, contains('_lyricsScrollByAxis'));
+    });
+
+    // 竖排专属 .cue 几何：宽度上限换行内方向（长句折列而不是被裁）、句间距走
+    // 左右、放大原点 / 收藏星标按竖排挪；横排文档一个字节都不带。
+    group('vertical cue geometry', () {
+      String build({required bool vertical, LyricsHtmlTheme? theme}) {
+        return LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0), _cue(1)],
+          currentIndex: 0,
+          backgroundColor: 'rgba(255,255,255,1.00)',
+          textColor: 'rgba(0,0,0,1.00)',
+          accentColor: 'rgba(255,220,0,1.00)',
+          fontSize: 20,
+          vertical: vertical,
+          theme: theme,
+        );
+      }
+
+      LyricsHtmlTheme theme(bool alignStart) => LyricsHtmlTheme(
+            textColor: const Color(0xFFFFFFFF),
+            currentColor: const Color(0xFFFFFFFF),
+            accentColor: const Color(0x4DFFFFFF),
+            selectionTextColor: const Color(0xFFFFFFFF),
+            contextOpacities: const <double>[0.46, 0.36, 0.3, 0.26],
+            browsingOpacity: 0.6,
+            deselectedScale: 0.96,
+            anchorY: 0.46,
+            edgeFade: 0.08,
+            alignStart: alignStart,
+            contextBlurPx: 0,
+            rowRadius: 16,
+            hoverFill: const Color(0x14FFFFFF),
+          );
+
+      test('vertical page caps the inline size and swaps cue spacing', () {
+        final String html = build(vertical: true);
+        final String cueRule = _cssBlock(html, '.lyrics-container > .cue {');
+        expect(cueRule, contains('max-width: none;'));
+        expect(cueRule,
+            contains('max-inline-size: calc(100% / var(--cue-scale) - 1%);'));
+        expect(cueRule, contains('padding: 8px 12px;'));
+        expect(
+            cueRule, contains('transform-origin: var(--ly-origin-v, center);'));
+        final String themedRule =
+            _cssBlock(html, 'body.ly-themed .lyrics-container > .cue {');
+        expect(themedRule, contains('margin: 0 2px;'));
+        final String starRule =
+            _cssBlock(html, '.lyrics-container > .cue.favorited::before {');
+        expect(starRule, contains('bottom: -2px;'));
+        expect(starRule, contains('left: 50%;'));
+      });
+
+      test('vertical overrides never use a bare .cue selector', () {
+        // __lyricsUpdateStyle rewrites rules by selectorText; a second bare
+        // `.cue` rule would be rewritten as if it were the base rule.
+        final String html = build(vertical: true);
+        expect(
+            RegExp(r'^\.cue \{', multiLine: true).allMatches(html).length, 1);
+      });
+
+      test('horizontal page carries none of the vertical geometry', () {
+        final String html = build(vertical: false);
+        expect(html, isNot(contains('.lyrics-container > .cue')));
+        expect(html, isNot(contains('max-inline-size')));
+        final String containerRule = _cssBlock(html, '.lyrics-container {');
+        expect(containerRule, contains('flex-direction: column;'));
+      });
+
+      test('theme exposes a vertical transform origin (top when start-aligned)',
+          () {
+        expect(LyricsModeHtml.themeVars(theme(true)).vars['--ly-origin-v'],
+            'center top');
+        expect(LyricsModeHtml.themeVars(theme(false)).vars['--ly-origin-v'],
+            'center');
+        final String html = build(vertical: true, theme: theme(true));
+        expect(html, contains('--ly-origin-v: center top;'));
+        expect(html, contains('ly-vertical'));
+      });
+
+      test('vertical wheel is projected onto horizontal scroll', () {
+        final String html = build(vertical: true);
+        // 竖排：纵向滚轮取反投影到横轴（往下滚 = 往后读 = scrollLeft 变小）。
+        expect(html, contains('raw = -e.deltaY;'));
+        expect(html, contains('if (__lyricsVertical) s.scrollLeft = v;'));
+        // BUG-3282：投影量累加进目标位置、按帧平滑逼近（不再一格瞬移）。
+        expect(html, contains('_lyWheelTarget += px;'));
+      });
+
+      // BUG-3282：滚轮平滑的逐帧函数在真 JS 引擎里跑：单调逼近、有限帧内精确
+      // 落到目标，两个方向都成立。无 node 时 skip。
+      test('wheel easing step converges monotonically onto the target',
+          () async {
+        final String? node = _resolveNode();
+        if (node == null) {
+          markTestSkipped('node not found on PATH');
+          return;
+        }
+        const String sig = 'function __lyricsWheelStep(';
+        final String fn = '$sig${_fnSource(build(vertical: true), sig)}';
+        final Directory dir =
+            Directory.systemTemp.createTempSync('lyrics_wheel_step');
+        final File js = File('${dir.path}${Platform.pathSeparator}harness.js')
+          ..writeAsStringSync('$fn\n$_wheelHarness');
+        try {
+          final ProcessResult r = await Process.run(node, <String>[js.path]);
+          expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+          expect('${r.stdout}', contains('WHEEL_OK 2'));
+        } finally {
+          dir.deleteSync(recursive: true);
+        }
+      });
+    });
+
+    // 滚动居中纯函数在真 JS 引擎里跑：只产生增量、从不写绝对 scrollLeft，所以
+    // vertical-rl 的两种 scrollLeft 约定（Chromium 85+ / WKWebView 的「起点 0、往左
+    // 为负」，老 Chromium WebView 的「起点 max、往左变小」）下都把当前句居中，滚轮
+    // 往下读也都往左走。无 node 时 skip。
+    test('center delta centers the cue under both RTL scrollLeft conventions',
+        () async {
+      final String? node = _resolveNode();
+      if (node == null) {
+        markTestSkipped('node not found on PATH');
+        return;
+      }
+      final String html = LyricsModeHtml.generate(
+        cues: <AudioCue>[_cue(0)],
+        currentIndex: 0,
+        backgroundColor: 'rgba(255,255,255,1.00)',
+        textColor: 'rgba(0,0,0,1.00)',
+        accentColor: 'rgba(255,220,0,1.00)',
+        fontSize: 20,
+        vertical: true,
+      );
+      const String sig = 'function __lyricsCenterDeltaFor(';
+      final String fn = '$sig${_fnSource(html, sig)}';
+      final Directory dir =
+          Directory.systemTemp.createTempSync('lyrics_center_delta');
+      final File js = File('${dir.path}${Platform.pathSeparator}harness.js')
+        ..writeAsStringSync('$fn\n$_centerHarness');
+      try {
+        final ProcessResult r = await Process.run(node, <String>[js.path]);
+        expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+        expect('${r.stdout}', contains('CENTER_OK 4'));
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
     });
 
     // TODO-1080: an over-long sentence can be taller (vertical-rl) or wider than
@@ -313,6 +467,38 @@ void main() {
         final String html = buildHtml();
         expect(html, contains("window.addEventListener('resize'"));
         expect(html, contains('__lyricsFitCues()'));
+      });
+
+      // BUG-3416：iOS 一进歌词模式就是竖排时不显示。歌词 WKWebView 在就绪前被
+      // Flutter 设为透明，视口是 0×0；旧的逐句「清空→测量」让每句都强制一次整页
+      // 布局，竖排零视口下每字一列，600 句卡死 WebContent 主线程十几秒（真机更久），
+      // 就绪握手 / resize / 切横排的 loadData 全排在它后面。真 JS 里跑：零视口不量
+      // 不写不定位；有视口时常数次强制布局；初始居中等到真实视口才做且只做一次。
+      test('fit pass skips a zero viewport and batches reads (BUG-3416)',
+          () async {
+        final String? node = _resolveNode();
+        if (node == null) {
+          markTestSkipped('node not found on PATH');
+          return;
+        }
+        final String html = buildHtml(vertical: true);
+        final String fns = <String>[
+          'function __lyricsHasViewport(',
+          'function _lyricsFitCue(',
+          'function __lyricsFitCues(',
+          'function _lyInitialPosition(',
+        ].map((String sig) => '$sig${_fnSource(html, sig)}').join('\n');
+        final Directory dir =
+            Directory.systemTemp.createTempSync('lyrics_fit_viewport');
+        final File js = File('${dir.path}${Platform.pathSeparator}harness.js')
+          ..writeAsStringSync('$_fitHarnessPrelude\n$fns\n$_fitHarness');
+        try {
+          final ProcessResult r = await Process.run(node, <String>[js.path]);
+          expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+          expect('${r.stdout}', contains('FIT_OK'));
+        } finally {
+          dir.deleteSync(recursive: true);
+        }
       });
     });
 
@@ -459,6 +645,160 @@ String _fnBody(String src, String signature) {
   }
   fail('unterminated fn: $signature');
 }
+
+/// `(args) { body }` of a JS function declaration starting at [signature].
+String _fnSource(String src, String signature) {
+  final int start = src.indexOf(signature);
+  expect(start, isNonNegative, reason: 'missing fn: $signature');
+  final int open = src.indexOf('{', start);
+  final String args = src.substring(start + signature.length, open);
+  return '$args{${_fnBody(src.substring(start), signature)}}';
+}
+
+String? _resolveNode() {
+  final String exe = Platform.isWindows ? 'node.exe' : 'node';
+  final List<String> dirs = <String>[
+    ...(Platform.environment['PATH'] ?? '').split(
+      Platform.isWindows ? ';' : ':',
+    ),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+  ];
+  for (final String d in dirs) {
+    if (d.isEmpty) continue;
+    final File f = File('$d${Platform.pathSeparator}$exe');
+    if (f.existsSync()) return f.path;
+  }
+  return null;
+}
+
+/// 从 0 起分别逼近 -300 / +300（60Hz 帧）：每帧都更靠近、从不越过，1 秒内精确
+/// 落位，第一帧就有明显位移（不是迟滞）；同一时刻 120Hz 与 60Hz 走过的距离几乎
+/// 相同（缓动按真实时间、与刷新率无关）；一格（100px）在 80ms 后仍未停稳——
+/// 相邻两格的间隔里不会停顿，连续滚动是一段不停的滑行（「无极」）。
+const String _wheelHarness = r"""
+var TAU = 90;
+var ok = 0;
+[-300, 300].forEach(function(target) {
+  var cur = 0, frames = 0, prevGap = Math.abs(target);
+  while (cur !== target) {
+    var next = __lyricsWheelStep(cur, target, 1000 / 60, TAU);
+    var gap = Math.abs(target - next);
+    if (gap >= prevGap) throw new Error('not converging ' + next);
+    if ((target - next) * target < 0) throw new Error('overshoot ' + next);
+    if (frames === 0 && Math.abs(next) < 20) throw new Error('sluggish ' + next);
+    prevGap = gap; cur = next;
+    if (++frames > 60) throw new Error('too slow ' + cur);
+  }
+  ok++;
+});
+function after(ms, hz, target) {
+  var cur = 0, t = 0;
+  while (t + 1e-9 < ms) {
+    cur = __lyricsWheelStep(cur, target, 1000 / hz, TAU);
+    t += 1000 / hz;
+  }
+  return cur;
+}
+if (Math.abs(after(100, 60, 300) - after(100, 120, 300)) > 3) {
+  throw new Error('rate dependent');
+}
+var notch = after(80, 60, 100);
+if (notch >= 99) throw new Error('settles between notches ' + notch);
+console.log('WHEEL_OK ' + ok);
+""";
+
+/// Simulated vertical-rl scroller: `moved` = how far the viewport has travelled
+/// left from the start (the first cue sits at the right edge). Each convention
+/// maps `moved` <-> scrollLeft differently; the page only ever does
+/// `scrollLeft += delta`, so both must land the cue on the viewport centre.
+const String _centerHarness = r"""
+var viewW = 1000, viewH = 700, max = 6000;
+var conventions = {
+  specNegative: { toS: function(m) { return -m; }, toM: function(s) { return -s; } },
+  legacyPositive: { toS: function(m) { return max - m; }, toM: function(s) { return max - s; } },
+};
+var ok = 0;
+for (var name in conventions) {
+  var c = conventions[name];
+  // A cue 40px wide whose right edge is 2300px left of the content's right edge.
+  var elRight = 2300, elW = 40;
+  [0, 1500].forEach(function(startMoved) {
+    var s = c.toS(startMoved);
+    function rect() {
+      var left = viewW - elRight - elW + c.toM(s);
+      return { left: left, width: elW, top: 0, height: 300 };
+    }
+    s += __lyricsCenterDeltaFor(rect(), viewW, viewH, true, 0.46);
+    var r = rect();
+    var off = r.left + r.width / 2 - viewW / 2;
+    if (Math.abs(off) > 0.5) throw new Error(name + ' off by ' + off);
+    // Wheel down (deltaY > 0) => scrollLeft -= px => viewport moves on (left).
+    var before = c.toM(s);
+    s -= 120;
+    if (!(c.toM(s) > before)) throw new Error(name + ' wheel went backwards');
+    ok++;
+  });
+}
+// Horizontal pages still anchor on the theme's anchorY.
+var d = __lyricsCenterDeltaFor({ left: 0, width: 10, top: 500, height: 100 }, viewW, viewH, false, 0.5);
+if (d !== 200) throw new Error('horizontal anchor ' + d);
+console.log('CENTER_OK ' + ok);
+""";
+
+/// 假 DOM：写 style 置脏，脏状态下读 offset* 记一次强制同步布局（与浏览器同义）。
+const String _fitHarnessPrelude = r"""
+var window = { innerWidth: 0, innerHeight: 0 };
+var layouts = 0, dirty = true, writes = 0, scrolls = 0;
+function makeCue(extent) {
+  var style = {}, fs = '';
+  Object.defineProperty(style, 'fontSize', {
+    get: function() { return fs; },
+    set: function(v) { fs = v; dirty = true; writes++; },
+  });
+  function read() { if (dirty) { layouts++; dirty = false; } return extent; }
+  return {
+    style: style,
+    get offsetHeight() { return read(); },
+    get offsetWidth() { return read(); },
+  };
+}
+var _cues = [];
+for (var k = 0; k < 600; k++) _cues.push(makeCue(k % 3 === 0 ? 900 : 300));
+var __lyricsVertical = true;
+var __LYRICS_MIN_FONT_PX = 12;
+var _currentIdx = 5;
+var document = { getElementById: function() { return {}; } };
+function _lyricsBaseFontPx() { return 24; }
+function _lyricsAvailExtent() { return Math.max(1, window.innerHeight - 40); }
+function _lyricsCenterDelta(el) { return 10; }
+function _lyricsScrollByAxis(d) { scrolls++; }
+// 竖排逐列扫过（BUG-3366）在 fit 末尾为当前句重铺一次；这里只计数，不计入 fit
+// 自身的强制布局次数。
+var sweeps = 0;
+function _lyLayoutSweepColumns(el) { sweeps++; }
+var _lyInitPending = true;
+""";
+
+const String _fitHarness = r"""
+// 零视口：不量、不写、不定位。
+__lyricsFitCues();
+_lyInitialPosition();
+if (layouts !== 0 || writes !== 0) throw new Error('zero viewport measured: layouts=' + layouts + ' writes=' + writes);
+if (scrolls !== 0) throw new Error('zero viewport positioned');
+// 真实视口到达（resize）：600 句只允许常数次强制布局。
+window.innerWidth = 402; window.innerHeight = 471;
+__lyricsFitCues();
+_lyInitialPosition();
+if (layouts > 2) throw new Error('per-cue forced layouts: ' + layouts);
+// 900 > avail(431) 的句子被缩小，300 的保持基准。
+if (_cues[0].style.fontSize === '' || _cues[1].style.fontSize !== '') throw new Error('fit result wrong');
+if (scrolls !== 1) throw new Error('initial position count ' + scrolls);
+// 之后的 resize 不再重复初始定位。
+_lyInitialPosition();
+if (scrolls !== 1) throw new Error('initial position repeated');
+console.log('FIT_OK layouts=' + layouts);
+""";
 
 AudioCue _cue(int index) {
   return AudioCue()

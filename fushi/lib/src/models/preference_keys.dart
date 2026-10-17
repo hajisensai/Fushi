@@ -17,12 +17,21 @@
 ///    MediaSources.configJson / FushiPairedPeers.token 同源）。
 library;
 
+/// 「绑定切换前」用户自己选的 Profile id（int，缺失 = 无）。与
+/// `active_profile_id` 同族，不进 Profile 快照；值是**本库**自增 id，换库即失效，
+/// 所以合并导入接管源库偏好时不带它（见 `BackupMergeEngine`）。
+const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
   // 「哪个功能用哪家 AI」的映射。不含凭据，但跟着 ai_providers 一起设备本地：
   // providers 不跨设备，映射跨过去只会指向一个不存在的 id。
   'ai_feature_providers',
+  // String（JSON map）：AI 多 key 轮换的冷却记录 `{指纹: {until, failures,
+  // reason}}`。指纹是 sha256(providerId + key) 的前 16 位，不含 key 本身，非凭据；
+  // 但描述的是本机配的 key 的健康，跟着 ai_providers 设备本地（deviceLocalPrefKeys）。
+  'ai_key_health',
   // 用户自配的 AI 提供商清单，每条里带 base64 的 apiKeyB64 →
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys
   // 与 deviceLocalPrefKeys。
@@ -54,7 +63,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'asr_transcribe_language',
   'audio_source_configs',
   'audio_sources',
+  // bool：只有音频（没有字幕）的有声书下载完成后，自动用设备端语音模型转录
+  // 并入库（有正文对齐、没有成独立字幕书）。默认开；关掉 = 改前行为（任务
+  // 停在「缺字幕」，用户手动配对）。见 media/audiobook/audiobook_auto_transcribe.dart。
+  'audiobook_auto_transcribe',
   'audiobook_background_play',
+  // bool：有声书导入时音频「引用原文件」而不是复制进应用目录（两个导入对话框
+  // 共用）。默认 false。见 PreferencesRepository.audiobookImportReferenceOriginal。
+  'audiobook_import_reference_original',
   // String（JSON 数组）：有声书素材库目录（绝对路径）。库里放按作品身份命名的
   // 字幕/正文文件，下载完成后据此自动配齐「正文 + 字幕 + 音频」。见
   // media/audiobook/audiobook_material_library.dart。
@@ -69,7 +85,6 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool：「下载」改名「浏览」的一次性搬迁提示已处理（弹过，或判定本安装不需要
   // 弹）。描述本安装的状态，与 first_time_setup 同族、不随 Profile 走。
   'browse_moved_notice_handled',
-  'builtInTagsSeeded',
   'clipboard_panel_block_capture',
   'collapse_dictionaries',
   'collapsed_collection_ids',
@@ -87,6 +102,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // username/passwordB64/enabled/allowInsecureHttp）。String，读写见
   // PreferencesRepository。与 discovery_opds_servers 同形、同隔离纪律。
   'discovery_alist_sites',
+  // 用户自配的 Audiobookshelf 服务器清单（JSON 数组：id/name/url/username/
+  // accessTokenB64/refreshTokenB64/enabled/allowInsecureHttp）。String，读写见
+  // PreferencesRepository。不存密码，只存令牌；refresh token 轮换后由
+  // AppModel.persistAudiobookshelfTokens 写回。与 discovery_opds_servers 同隔离纪律。
+  'discovery_audiobookshelf_servers',
   // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
   // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
   'discovery_disabled_sources',
@@ -110,6 +130,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'extension_popup_independent_size',
   'extension_popup_max_height',
   'extension_popup_max_width',
+  // bool，默认 true：「反馈有新回复时通知我」。开 = 移动端排后台检查（WorkManager /
+  // BGTaskScheduler）、桌面运行中定时检查，新回复发系统通知；关 = 撤掉后台任务、
+  // 不发系统通知（应用内提示照常）。见 feedback_reply_alerts.dart。
+  'feedback_reply_notifications',
   'first_time_setup',
   // 悬浮球（docs/specs/2026-09-28-floating-ball.md）。`.actions` / `.mode` 是
   // 旧版单份全局按钮 / 三态模式，只作迁移读取；新值是 `.in_app` / `.system`
@@ -125,6 +149,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_ball.dock',
   'floating_ball.in_app',
   'floating_ball.mode',
+  // bool：展开按钮旁显示文字，默认 true；保留 tooltip / 无障碍名称。
+  'floating_ball.show_labels',
   'floating_ball.system',
   // 桌面应用外悬浮球的停靠边（String）与纵向比例（double），与应用内球的
   // `.dock` / `.y` 分开存：两颗球可以同时在。
@@ -132,13 +158,36 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_ball.system_y',
   'floating_ball.y',
   'floating_lyric_bg_opacity',
+  // bool：悬浮字幕粗体（默认 true）。
+  'floating_lyric_bold',
   'floating_lyric_button_bg_opacity',
   'floating_lyric_click_lookup',
+  // int ARGB，0 = 跟随主题：底 / 非当前句字 / 当前句字 / 描边。
+  'floating_lyric_color_background',
+  'floating_lyric_color_current',
+  'floating_lyric_color_outline',
+  'floating_lyric_color_text',
+  // 旧「上下文行数 N」，只作 floating_lyric_visible_lines 未写时的迁移来源。
   'floating_lyric_context_lines',
+  // int 0..100：多行时非当前句不透明度。
+  'floating_lyric_context_opacity',
   'floating_lyric_corner_radius',
   'floating_lyric_font_size',
+  // double：字距 / 行高 / 描边宽。
+  'floating_lyric_letter_spacing',
+  'floating_lyric_line_height',
+  'floating_lyric_outline_width',
+  // int：水平对齐（0 居中 / 1 左）、文字内边距。
+  'floating_lyric_text_alignment',
   'floating_lyric_text_opacity',
+  'floating_lyric_text_padding',
+  // bool：竖排（Windows 原生窗）。
+  'floating_lyric_vertical',
+  // int 0..15：同时显示句数（0 = 按窗口高度自动）。
+  'floating_lyric_visible_lines',
   'floating_lyric_width',
+  // String JSON：Windows 悬浮字幕窗口矩形（物理 px）。
+  'floating_lyric_window_rect',
   'gal_card_lookup_independent_size',
   'gal_card_lookup_max_height',
   'gal_card_lookup_max_width',
@@ -161,15 +210,29 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_hook_text_vertical_alignment',
   'gal_hook_text_window_bg_opacity',
   'gal_hook_toolbar_auto_hide',
+  'gal_hook_toolbar_labels',
   'gal_mining_animated_format',
   'gal_mining_clip_format',
   'gal_mining_image_mode',
   'gal_mining_still_format',
   'galgame_library',
   'galgame_library_view',
+  // bool：第三方游戏资源站下载前的风险说明勾了「不再提示」（download_notice.dart）。
+  'game_resource_notice_dismissed',
   'games_collapsed_collection_ids',
+  // String（默认 'grid'）：游戏库主体布局，'grid' 海报网格 / 'list' 分段卡列表。
+  // 页头切换钮写入，跨会话记住。
+  'games_library_layout',
   'global_dict_css',
   'harmonic_frequency',
+  // String（JSON 数组，默认空）：书架上「仅从本机移除」的远端书（反馈 nvlhtczbro），
+  // 元素是 `HiddenRemoteBook` 的 JSON（来源身份 / 互联对端身份 / 远端身份键 / 书名）。设备本地（见
+  // SyncRepository 的设备本地清单）：别的设备恢复备份不该把这台的隐藏带过去。
+  'hidden_remote_books',
+  // String（JSON map，默认空）：首页 dashboard 各面板的显示档 `{面板 id: auto /
+  // shown / hidden}`，缺省 = auto（按面板自己的默认判据）。见
+  // models/home_dashboard_panel.dart 的 [HomeDashboardPanel]。随 Profile 走。
+  'home_dashboard_panels',
   // bool（默认 true，BUG-1891）：进视频页时是否自动向 Jellyfin/Emby 服务器枚举
   // 条目。几十万条目的公共 Emby 服上自动枚举会被当成爬虫，关掉后改由下拉刷新手动触发。
   'jellyfin_auto_list_videos',
@@ -193,8 +256,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'local_audio_dbs',
   'lookup.global_context_capture',
   'lookup.ime_language',
-  // bool（默认 false）：查词后自动让 AI 按句意把符合用法的词头挪到最前
-  // （「设置 › AI」指派了查词用的提供商才生效；悬停查词与嵌套查词不触发）。
+  // bool（默认 false）：已删除的「查词时让 AI 按句意挑词条」开关（2026-10-09
+  // 所有者拍板移除）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'lookup_ai_context_auto',
   // bool（默认 false，桌面端）：查词页按「返回上一级」直接最小化主窗（一键收窗
   // 回到之前的程序），不走关弹窗 → 清查询的阶梯。
@@ -202,6 +265,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
   'manga_background',
+  // bool（默认 true）：漫画章节列表新→旧（源顺序）；false = 第 1 话在前。作品页与
+  // 阅读器章节抽屉共用。
+  'manga_chapter_list_newest_first',
   // bool（默认 true）：漫画阅读器顶栏悬浮（不占布局、点页面中央/顶边悬停唤出）
   // 还是常驻钉在页图上方。
   'manga_chrome_floating',
@@ -212,6 +278,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `manga_download_jobs.auto_ocr`，下载完成钩子据此起整卷 OCR（设计稿 2026-09-12 §5）。
   'manga_download_auto_ocr',
   'manga_external_mokuro_path',
+  // bool（默认 false）：一键制卡的卡图默认裁到查词那句话所在的分镜（需分镜模型，
+  // 非条漫；否则整页）。与「分镜导航」开关无关。
+  'manga_mining_crop_to_panel',
   'manga_ocr_ai_mode',
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',
@@ -221,12 +290,19 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_online_catalog_base_url',
   'manga_online_catalog_enabled',
   'manga_page_animation',
+  // String（`PageTurnAnimationSpeed.key`，默认 `normal`）：漫画翻页动画速度。
+  'manga_page_animation_speed',
+  // bool（默认 true）：单 / 双页模式滑动翻页逐帧跟手。
+  'manga_page_turn_follow_drag',
   // bool（默认 false）：启用本地 AI 分镜检测与逐分镜导航。
   'manga_panel_navigation',
   // String（JSON）：漫画阅读器的全局默认偏好（布局/缩放/裁边/点击区等，
   // MangaReaderPreferences 序列化）。每作品覆盖落 manga_reader_overrides 表。
   'manga_reader_preferences',
   'manga_reading_direction',
+  // String（`MangaResumeTarget.key`，默认 `furthest`）：在线漫画重新打开时回到
+  // 进度（读完过的章跳过）还是最后停下的那一页（`last`）。
+  'manga_resume_target',
   // int（默认 1）：跨页配对的整体偏移，用来把「封面独占一页」这类错位掰回来。
   'manga_spread_offset',
   'manga_spread_preference',
@@ -239,6 +315,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_zoom_percent',
   'manga_zoom_sensitivity',
   'maximum_terms',
+  // bool（默认 false）：启动时在后台把签名未变的 Mihon 漫画 / 视频扩展更新到
+  // 仓库新版（`kMihonExtensionAutoUpdatePref`，update_probes.dart）。
+  'mihon_extension_auto_update',
   'mine_to_server',
   // 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
   'mining_audio_follow_playback_speed',
@@ -250,13 +329,27 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // PreferencesRepository.settleMiningImageModeInstallDefault。
   'mining_image_mode_install_default',
   'mining_image_quality',
+  // String（MiningTtsFallbackVoice.wire：'system' 默认 / 'none' / 'preset:<id>'）：
+  // 制卡单词音频的 TTS 兜底声音。值可能指向本机声音预设，与 tts_active_preset_id
+  // 同族：设备本地（deviceLocalPrefKeys），不进 Profile 快照 / 备份 / 同步。
+  'mining_tts_fallback_voice',
   'module_books_enabled',
   'module_browser_extension_enabled',
   'module_dictionaries_enabled',
   'module_downloads_enabled',
   'module_games_enabled',
+  // bool（默认 true）：「功能模块」里的首页 dashboard 开关（2026-10-09 起可关）。
+  'module_home_enabled',
   'module_manga_enabled',
   'module_video_enabled',
+  // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
+  'nav_bar_labels_visible',
+  // String（默认 '' = AdaptiveNavBarStyle.defaultStyle，2026-10-16 起 pager）：
+  // 手机底栏形态 flat / pager（AdaptiveNavBarStyle.prefValue）。
+  'nav_bar_style',
+  // String：宽屏主导航 rail 手动展开 / 收起（'' 跟随窗口尺寸 / expanded /
+  // collapsed）。描述本机窗口布局，不进 Profile 快照。
+  'nav_rail_expanded',
   // String：全局公网出口模式 auto / direct / manual（BUG-1980）。
   'network_proxy_mode',
   // bool：P2P（torrent）传输是否也走全局代理（旧键，冻结；三态 mode 键未写过
@@ -270,6 +363,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'overlay_lookup_independent_size',
   'overlay_lookup_max_height',
   'overlay_lookup_max_width',
+  // bool：BT / 磁力下载前的 P2P 说明勾了「不再提示」（p2p_download_notice.dart）。
+  'p2p_download_notice_dismissed',
   'player_hardware_acceleration',
   'popup_auto_expand_dictionaries',
   'popup_bottom_docked',
@@ -282,6 +377,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // "Compact Glossaries"）。默认 false。
   'popup_compact_glossaries',
   'popup_dictionary_columns',
+  // bool：词典样式统一（导入词典颜色按语义映射到当前 ColorScheme）。默认 true。
+  'popup_dictionary_unified_style',
   'popup_instant_scroll',
   // double：瞬时滚动步长（占被滚表面视口高度的比例，0.1–1.0）。触摸 = 手指滑满
   // 这么多才跳一步，默认 0.25；滚轮 = 一格跳这么多（再乘滚轮速度），默认 0.5。
@@ -290,12 +387,22 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'popup_max_height',
   'popup_max_width',
   'popup_wheel_speed',
+  // int：绑定临时切换前用户自己选的 Profile id（缺失 = 无）。非 Profile 键。
+  'profile_fallback_id',
   'qb_connection_config',
   // 阅读器顶栏 / 底栏按钮布局 JSON（ReaderControlLayout，v1 槽位表）。
   'reader_control_layout',
+  // 窄窗（手机竖屏）按钮布局 JSON（同 reader_control_layout 形；空 = 沿用宽窗那份）。
+  'reader_control_layout_compact',
   // String 'left' | 'right'：小说 / 漫画阅读设置侧边弹窗停靠在哪一侧（与翻页方向无关）。
   'reader_settings_panel_side',
+  // String 'floating' | 'docked'：阅读器工具栏样式（M3E 悬浮工具栏 / 贴边实体条）。
+  'reader_toolbar_style',
+  // bool：「工具栏样式强制悬浮」一次性迁移已跑（2026-10-06，非 Profile 键）。
+  'reader_toolbar_style_floating_migrated',
   'reading_goal_daily_chars',
+  // int：每周字数目标（2026-10-10 用户拍板删除——#2029 删了统计中心目标卡后它
+  // 只能设、不显示进度）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'reading_goal_weekly_chars',
   'remote_lookup_enabled',
   'reverse_navigation_bar',
@@ -306,12 +413,56 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'sandbox_last_support_root',
   'saved_tags',
   'scan_non_japanese_text',
+  // String：已废弃（2026-10-13 起合集一律是网格里的单个格子，「整行展开」rows
+  // 模式已移除；旧值 rows / cards 都无人读取）。key 冻结保留，备份 / 旧数据兼容。
+  'shelf_collection_layout',
+  // String：书架「阅读状态」筛选（ShelfReadStatus.name，'' = 全部）。
+  'shelf_read_status_filter',
   'shelf_sort_mode',
   'show_expression_tags',
   'show_floating_lyric',
   'show_media_notification',
   'show_remote_entries',
+  // bool（默认 true）：复习自动备份（有变动后最多每 N 分钟一份、离开复习页时一份）。
+  // 设备本地（SyncRepository._deviceLocalFixedKeys）：备份文件本来就只存在本机。
+  'srs_backup_auto',
+  // String（JSON，SrsBackupLimits：daily / weekly / monthly / intervalMinutes）：复习自动备份的
+  // 间隔与保留份数；缺省 = Anki 默认（30 分钟；日 12 / 周 10 / 月 9）。设备本地，同上。
+  'srs_backup_limits',
+  // String（JSON，SrsAnkiImportOptions.toJson）：上次「导入 Anki 包」选的五个选项，
+  // 下次作对话框初值；缺省 = Anki 默认值。非凭据、跨设备（随 Profile / 备份）。
+  // String（JSON，SrsCardAppearance.toJson）：复习卡面（Fushi 卡片模板）的外观：
+  // 字体 / 字号 / 行距 / 配色 / 区块显隐 / 统一词典样式 / 密度。缺省 = 模板默认外观。
+  // 非凭据、跨设备（随 Profile / 备份；字体文件路径在别的设备上不存在时回落默认字体）。
+  'srs_card_appearance',
+  'srs_import_anki_options',
+  // String（SRS 牌组 id，'' = 默认牌组）：挖词目标 = Fushi 复习时卡落进的牌组。
+  // 被删时制卡回落默认牌组。非凭据、跨设备（id 自带 profileUid）。
+  'srs_mining_deck_id',
+  // String（JSON `{noteTypeId: {fieldId: 模板}}`）：非 Lapis 笔记类型的制卡字段
+  // 映射，模板与 Anki 字段映射同一套 handlebar。非凭据、跨设备。
+  'srs_mining_field_mappings',
+  // String（SRS 笔记类型 id，'' = 从没选过 = 内置 Fushi 卡片）：挖词目标 = Fushi
+  // 复习时用的笔记类型。被删时回落 Lapis。非凭据、跨设备。
+  'srs_mining_note_type_id',
+  // String（SrsMiningTarget.wire）：复习模块开着时制卡发往 Anki 还是 Fushi 复习（二选一；
+  // 存量 'both' 读成 'anki'）。没设过取下面的安装默认。模块关着时不读。非凭据、跨设备。
+  'srs_mining_target',
+  // bool：旧开关「启动时打开查词」，已由 startup_module 取代；只读不写，
+  // startup_module 从未写过时据此迁移（PreferencesRepository.startupModule）。
+  // String 'anki' | 'srs'：本安装「挖词目标」的出厂默认，兼一次性判定标记（2026-10-16：
+  // 新装 srs、老用户 anki）。设备本地（SyncRepository.installScopedPrefKeys）：不进
+  // Profile 快照 / 分享、不随备份 / 推荐包出境；导入设置的恢复会清掉它，下次启动重判。
+  'srs_mining_target_install_default',
+  // bool（默认 false）：复习页底部评分栏只留「重来 / 良好」两个按钮（对齐 AnkiDroid
+  // 的 hideHardAndEasy）；键盘 2/4 仍可评「困难 / 简单」。非凭据、跨设备。
+  'srs_review_hide_hard_easy',
+  // double（默认 1.0，0.6–2.0）：复习页卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）。
+  'srs_review_zoom',
   'startup_default_dictionary_tab',
+  // String：启动页模块（ModuleId.prefKey，'' = 底栏第一个页面）。设备本地，
+  // 与 module_nav_order 同族（ModuleId.devicePrefKeys）。
+  'startup_module',
   // int（profiles.id）：v105 统计按 Profile 隔离——legacy 统计家族（v92 前的四张
   // 投影表 + activity_events 学习行）归属哪个 Profile。由 v105 迁移一次性写下
   // （升级那一刻激活的 Profile），fushi_core 侧常量 `kStatLegacyProfileIdPrefKey`。
@@ -324,22 +475,46 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'texthooker_enabled',
   'texthooker_urls',
   'torrent_upload_intro_shown',
+  // String：当前朗读声音预设 id（TtsPresetStore）。指向本机预设，设备本地。
+  'tts_active_preset_id',
+  // JSON：本机一键部署的 GPT-SoVITS（GptSovitsLocalEngine）：整合包目录 / 端口 /
+  // 下载源 / 是否 app 所装。路径与端口只对这台电脑成立，设备本地。
+  'tts_gpt_sovits_local',
+  // JSON：本机一键部署的官方 Irodori-TTS-Server（IrodoriLocalEngine）：专属目录 / 端口 /
+  // 下载源 / 后端 / 模型 / 是否 app 所装。只对这台电脑成立，设备本地。
+  'tts_irodori_local',
+  // JSON：TTS 发音词典（写法 → 读法，TtsPronunciationStore），只改合成文本。
+  'tts_pronunciation_rules',
+  // double：TTS 朗读倍速（播放器本地倍速，服务端恒 1.0）。
+  'tts_read_aloud_speed',
+  // JSON：朗读声音预设清单，每条的凭据参数以 base64 存在 secretsB64；同时登记在
+  // kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
+  // deviceLocalPrefKeys（地址多是本机 / 局域网的 GPT-SoVITS 服务）。
+  'tts_voice_presets',
   'update_auto_install',
   'update_beta_channel',
   'update_custom_proxy',
   'update_debug_channel',
   'update_download_source',
   'update_never_remind',
-  // bool ×5（v101 统一更新提醒）：四个域各一个「要不要提醒」开关 + 系统通知总
+  // bool ×6（v101 统一更新提醒）：各域一个「要不要提醒」开关 + 系统通知总
   // 开关。默认全 true（装了订阅功能就是想被告知）。域开关关掉 = 该域整批不投递
   // （不进更新页、不出红点、不发通知）；总开关只掐系统通知，红点照常。
   // 调用点走 `UpdateFeedKind.enabledPrefKey` / [kUpdateSystemNotificationsPref]
   // 常量，不是裸字面量——守卫扫不到，但纪律要求登记。
+  'updates_notify_anime_extension',
   'updates_notify_app_release',
   'updates_notify_manga_chapter',
   'updates_notify_manga_extension',
   'updates_notify_video_episode',
   'updates_system_notifications',
+  // 安装统计（updates/usage_heartbeat.dart），全是设备本地：开关（bool，默认 true）、
+  // 回退随机种子（UUID v4；机器标识取不到时才用，见 updates/install_attestation.dart）、
+  // 安装证明的工作量证明缓存（String `<installId>:<nonce>`）、上次心跳成功时刻（int 毫秒）。
+  'usage_stats_enabled',
+  'usage_stats_install_id',
+  'usage_stats_install_pow',
+  'usage_stats_last_ping_at',
   // String（`VideoSeriesFilter.name`，默认 `standalone`）：「全部视频」系列归属
   // 筛选的上次选择（BUG-2835，用户拍板默认只看散片、并记住选择）。
   'video_all_series_filter',
@@ -356,6 +531,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_danmaku_max_active',
   'video_danmaku_online_enabled',
   'video_danmaku_style',
+  // bool（默认 false）：系列详情页宽屏版式——true = 海报横幅（与竖屏同形），
+  // false = 两栏。详情页右上角切换，跨作品记住。
+  'video_detail_poster_layout',
   'video_download_backend_path_mappings',
   'video_download_embedded_installation_id',
   // bool：下载进受管视频来源时跳过特典（PV / CM / NCOP / NCED / 菜单…）——管线
@@ -374,6 +552,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // JellyfinVideoClient.kQualityPresets 里的下标；选档 = 向服务器声明码率 / 宽度上限，
   // 超限由服务器转码。
   'video_media_server_quality_preset',
+  // String（JSON 对象）：媒体服务器多版本条目「选哪个版本」的记忆
+  // （`MediaServerVersionMemory`）。键 `<serverId>|item|<itemId>` → MediaSource id、
+  // `<serverId>|series|<seriesId>` → 规格签名 + 版本名；按写入先后保留最近
+  // 500 条。非凭据、跨设备（服务器条目 id 在哪台设备上都一样）。
+  'video_media_server_version_choices',
   'video_mining_animated_format',
   'video_mining_clip_format',
   'video_mining_image_mode',
@@ -384,11 +567,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 靠这份缓存如实说明脚本开关在本平台是否可用。默认 unknown = 从未播过视频。
   // 见 media/video/video_lua_capability.dart（BUG-2032）。
   'video_mpv_lua_capability',
-  'video_mpv_lua_scripts_enabled',
   'video_mpv_shader_dir',
   // String（[VideoOnlineMiningMode] 的 wireName）：在线视频点制卡后弹窗等不等——
   // `background` 后台（默认）/ `deferred` 看完再制卡 / `wait` 等整张卡落地。
   'video_online_mining_mode',
+  // String（[VideoPauseOcrScope] 的 wireName）：暂停时识别画面文字（OCR 点字查词）
+  // 的范围——`all` 所有视频（默认）/ `graphic_subtitles` 只在图形字幕时 / `off`。
+  'video_pause_ocr_scope',
+  // 手机字幕遥控器控制卡按钮布局 JSON（VideoRemoteControlLayout，v1 槽位表）。
+  'video_remote_control_layout',
   'video_remote_subtitle',
   // 用户停用的内置视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
   // 与 discovery_disabled_sources 同形；自配 Torznab 各自带 enabled，不进这里。
@@ -416,6 +603,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_blur',
   'video_subtitle_list_auto_scroll',
   'video_subtitle_list_font_scale_index',
+  // bool（默认 true）：字幕列表里点字幕文字是否查词；关掉后点哪里都只跳到该句
+  // （手机上列表旁的查词弹窗太扁，多数人只拿列表跳转，群反馈 GbN9MoKDCQ）。
+  'video_subtitle_list_tap_lookup',
   'video_subtitle_list_width',
   'video_subtitle_obscure_hide',
   // bool（默认 true）：遮蔽（模糊 / 隐藏）态是否允许悬停 / 点击临时显形。关掉后
@@ -428,6 +618,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：SubDL 是否参与字幕搜索。与 api key 组成 `enabled && key`
   // 双门控（形状对齐 Jimaku）；key 为空即不装配，所以默认开不会产生任何请求。
   'video_subtitle_subdl_enabled',
+  // bool（默认 false）：播放器底栏时间显示「剩余时长」而不是「已播时长」。
+  // 点按底栏时间切换（MD3 Expressive chrome），跨设备。
+  'video_time_display_remaining',
   'video_youtube_quality_height',
   'yomitan_api_key',
   'yomitan_api_port',
@@ -464,6 +657,9 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次
   // 后台检查完成的时刻。到期判据只读它，失败也照记（否则断网时每个 tick 都重试）。
   'updates_last_check_',
+  // JSON：`tts_resume_<bookKey>` TTS 朗读断点（章 + 句首匹配偏移 + 句内毫秒 +
+  // 音频缓存键，TtsResumePoint）。
+  'tts_resume_',
   'video_danmaku_episode/',
   // 视频远端断点/播放偏好三件套族（PositionPrefKeys，fushi_library_host_service.dart）：
   // `<前缀><bookUid>` 值键 + `<前缀>at_<bookUid>` 时间戳键，逐字段 LWW 跨设备同步
@@ -487,11 +683,15 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'ai_providers',
   // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。
   'discovery_alist_sites',
+  // 每条 Audiobookshelf 服务器记录里带 base64 的 access / refresh token。
+  'discovery_audiobookshelf_servers',
   // 每条 OPDS 服务器记录里带 base64 的 passwordB64。
   'discovery_opds_servers',
   'jimaku_api_key',
   'network_proxy_password',
   'network_proxy_username',
+  // 每份朗读声音预设里 base64 的 secretsB64（API key / Bearer）。
+  'tts_voice_presets',
   'video_subtitle_subdl_api_key',
   'yomitan_api_key',
 };

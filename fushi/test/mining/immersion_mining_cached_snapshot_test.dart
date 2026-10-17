@@ -53,9 +53,11 @@ void main() {
     List<_Call> gif,
     List<_Call> audio,
     List<double> frameAt,
+    List<_Call> verified,
     ImmersionMiningEngine engine,
   })
-  harness({String? failOn}) {
+  harness({String? failOn, bool snapshotAudioComplete = true}) {
+    final List<_Call> verified = <_Call>[];
     final List<_Call> gif = <_Call>[];
     final List<_Call> audio = <_Call>[];
     final List<double> frameAt = <double>[];
@@ -111,8 +113,25 @@ void main() {
             frameAt.add(atSeconds);
             return null;
           },
+      snapshotAudioVerifier:
+          ({
+            required String snapshotPath,
+            required int startMs,
+            required int endMs,
+          }) async {
+            verified.add(
+              _Call(snapshotPath, startMs, endMs, const <String, String>{}),
+            );
+            return snapshotAudioComplete;
+          },
     );
-    return (gif: gif, audio: audio, frameAt: frameAt, engine: engine);
+    return (
+      gif: gif,
+      audio: audio,
+      frameAt: frameAt,
+      verified: verified,
+      engine: engine,
+    );
   }
 
   File snapshotFile() {
@@ -237,6 +256,36 @@ void main() {
       remote,
     ]);
     expect(h.audio.last.startMs, 61200);
+    expect(repo.mineCalls, 1);
+    expect(snap.existsSync(), isFalse);
+  });
+
+  test('副本音轨不完整（libmpv 写副本丢了音频包）→ 不用副本，远端抽取', () async {
+    // mkvmerge 封装的 Opus 经 dump-cache 落盘时，每个 lacing 块只剩第一帧，mpv 仍报
+    // 成功；对这样的副本抽取不会失败，只会抽出 0.2 秒的碎音频，所以要先看内容。
+    final h = harness(snapshotAudioComplete: false);
+    final _FakeRepo repo = _FakeRepo();
+    final File snap = snapshotFile();
+    final ImmersionMiningResult res = await h.engine.mine(
+      request(
+        snapshot: Future<CachedMediaSnapshot?>.value(
+          CachedMediaSnapshot(path: snap.path, zeroMs: 55000),
+        ),
+      ),
+      compression: compression,
+      tempDir: tmp.path,
+      repo: repo,
+    );
+    expect(res.aborted, isFalse);
+    // 校验的是副本时间轴上的这句。
+    expect(h.verified.single.input, snap.path);
+    expect(h.verified.single.startMs, 6200);
+    expect(h.verified.single.endMs, 8900);
+    // 两路抽取都没碰副本。
+    expect(h.audio.single.input, remote);
+    expect(h.audio.single.startMs, 61200);
+    expect(h.audio.single.headers, <String, String>{'Referer': 'x'});
+    expect(h.gif.single.input, remote);
     expect(repo.mineCalls, 1);
     expect(snap.existsSync(), isFalse);
   });

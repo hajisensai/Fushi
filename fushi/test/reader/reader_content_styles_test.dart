@@ -116,49 +116,60 @@ void main() {
     // 的 key）此前落 _themeColors 的 default 分支，正文 <body> 背景恒白底 #fff，无视
     // 调用方按真实 ColorScheme 派生传入的 customBg → 「书籍正文背景没吃背景色」。
     // 现在：传了 customBg/customFg 时正文用它们；preset/custom 行为不变。
-    test('system-theme with derived customBg uses it as body background',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(
-        settings: settings,
-        themeOverride: 'system-theme',
-        customBg: '#1E2A38',
-        customFg: '#ECEFF4',
-      );
-      // 断言精确到正文 <body> 背景 selector（`background: <bg> !important;`），而不是
-      // 宽泛 contains('#fff')——CSS 里另有无关的 `--fushi-system-text-color: #fff`
-      // dark 媒体查询变量，与正文背景无关，不能误伤。
-      expect(css, contains('background: #1E2A38 !important'),
-          reason: 'system-theme 正文背景应吃派生的 ColorScheme 背景色');
-      expect(css, contains('#ECEFF4'));
-      expect(css, isNot(contains('background: #fff')),
-          reason: '传了派生背景后正文背景不应再落硬编码白底');
-    });
-
-    test('unknown theme key with derived customBg follows it (not white)',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(
-        settings: settings,
-        themeOverride: 'future-unmapped-theme',
-        customBg: '#0A0A0A',
-        customFg: '#F0F0F0',
-      );
-      expect(css, contains('background: #0A0A0A !important'));
-      expect(css, isNot(contains('background: #fff')));
-    });
+    test(
+      'system-theme with derived customBg uses it as body background',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(
+          settings: settings,
+          themeOverride: 'system-theme',
+          customBg: '#1E2A38',
+          customFg: '#ECEFF4',
+        );
+        // 断言精确到正文 <body> 背景 selector（`background: <bg> !important;`），而不是
+        // 宽泛 contains('#fff')——CSS 里另有无关的 `--fushi-system-text-color: #fff`
+        // dark 媒体查询变量，与正文背景无关，不能误伤。
+        expect(
+          css,
+          contains('background: #1E2A38 !important'),
+          reason: 'system-theme 正文背景应吃派生的 ColorScheme 背景色',
+        );
+        expect(css, contains('#ECEFF4'));
+        expect(
+          css,
+          isNot(contains('background: #fff')),
+          reason: '传了派生背景后正文背景不应再落硬编码白底',
+        );
+      },
+    );
 
     test(
-        'system-theme without customBg still falls back to white body (compat)',
-        () async {
-      // 调用方未提供派生色时（无主题信息），正文背景保持旧的浅色默认 #fff，向后兼容。
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(
-        settings: settings,
-        themeOverride: 'system-theme',
-      );
-      expect(css, contains('background: #fff !important'));
-    });
+      'unknown theme key with derived customBg follows it (not white)',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(
+          settings: settings,
+          themeOverride: 'future-unmapped-theme',
+          customBg: '#0A0A0A',
+          customFg: '#F0F0F0',
+        );
+        expect(css, contains('background: #0A0A0A !important'));
+        expect(css, isNot(contains('background: #fff')));
+      },
+    );
+
+    test(
+      'system-theme without customBg still falls back to white body (compat)',
+      () async {
+        // 调用方未提供派生色时（无主题信息），正文背景保持旧的浅色默认 #fff，向后兼容。
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(
+          settings: settings,
+          themeOverride: 'system-theme',
+        );
+        expect(css, contains('background: #fff !important'));
+      },
+    );
   });
 
   group('ReaderContentStyles.css with custom settings', () {
@@ -205,7 +216,7 @@ void main() {
         debugDefaultTargetPlatformOverride = null;
       });
       final Directory tempDir =
-          await Directory.systemTemp.createTemp('hibiki_reader_css_font_');
+          await Directory.systemTemp.createTemp('fushi_reader_css_font_');
       addTearDown(() async {
         await tempDir.delete(recursive: true);
       });
@@ -371,13 +382,18 @@ void main() {
       final String css = ReaderContentStyles.css(settings: settings);
       // 显示态：rt 仍强制 ruby-text（TODO-1308），rtc 接管照旧 —— dimmed 只是淡，
       // 不是隐藏，注音结构与 off 完全一致。
-      expect(css,
-          contains('rt { display: ruby-text !important; font-size: 0.45em; }'));
       expect(
-          css,
-          contains('rtc {\n'
-              '  display: ruby-text !important;\n'
-              '  font-size: 0.45em;\n}'));
+        css,
+        contains('rt { display: ruby-text !important; font-size: 0.45em; }'),
+      );
+      expect(
+        css,
+        contains(
+          'rtc {\n'
+          '  display: ruby-text !important;\n'
+          '  font-size: 0.45em;\n}',
+        ),
+      );
       expect(css, isNot(contains('rt, rtc { display: none !important; }')));
       expect(css, isNot(contains('furigana-revealed')),
           reason: 'dimmed 不走 toggle 的逐个揭示机制');
@@ -425,34 +441,45 @@ void main() {
     });
 
     test(
-        'sentenceAudioHighlight ruby highlight fills the base box with full background-color',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      await settings.setWritingMode('vertical-rl');
+      'sentenceAudioHighlight ruby class paints no box of its own; the lane layer colours it',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        await settings.setWritingMode('vertical-rl');
 
       final String css = ReaderContentStyles.css(settings: settings);
 
-      final int sentenceAudioStart =
-          css.indexOf('ruby.fushi-sentence-audio-ruby-active {');
-      expect(sentenceAudioStart, isNonNegative);
-      final String sentenceAudioBlock = css.substring(
-        sentenceAudioStart,
-        css.indexOf('}', sentenceAudioStart),
-      );
-      expect(
-        sentenceAudioBlock,
-        contains(
-            'background-color: var(--fushi-sentence-audio-background-color) !important'),
-        reason: 'BUG-716：ruby 有声书高亮整句填充；注音轨在 ruby 背景盒外，'
-            '有无振假名宽度一致',
-      );
-    });
+        final int sentenceAudioStart = css.indexOf(
+          'ruby.fushi-sentence-audio-ruby-active {',
+        );
+        expect(sentenceAudioStart, isNonNegative);
+        final String sentenceAudioBlock = css.substring(
+          sentenceAudioStart,
+          css.indexOf('}', sentenceAudioStart),
+        );
+        expect(
+          sentenceAudioBlock,
+          contains('background-color: transparent !important'),
+          reason:
+              '用户 2026-10-15：高亮一律一个字高。元素背景按文字盒（ascent + descent）铺，'
+              '随字体变粗；底色改由窄条层（__fushiLanes）画',
+        );
+        final int laneStart = css.indexOf(
+          'fushi-hl-lane[data-hl="fushi-sentence-audio"] {',
+        );
+        expect(laneStart, isNonNegative);
+        expect(
+          css.substring(laneStart, css.indexOf('}', laneStart)),
+          contains('var(--fushi-sentence-audio-background-color)'),
+          reason: '当前句窄条读同一个高亮色变量（样式组的底色开关 / 自定义色照常生效）',
+        );
+      },
+    );
 
     test(
-        'sentenceAudioHighlight text span highlight fills with full background-color, no box model',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      await settings.setWritingMode('vertical-rl');
+      'sentenceAudioHighlight text span paints no box of its own, no box model',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        await settings.setWritingMode('vertical-rl');
 
       final String css = ReaderContentStyles.css(settings: settings);
 
@@ -462,27 +489,29 @@ void main() {
         reason: '普通正文 cue 也必须有 active span 样式，不能只靠 CSS Highlight',
       );
 
-      final int activeStart = css
-          .indexOf('.fushi-sentence-audio-cue.fushi-sentence-audio-active {');
-      expect(activeStart, isNonNegative);
-      final String activeBlock = css.substring(
-        activeStart,
-        css.indexOf('}', activeStart),
-      );
-      expect(
-        activeBlock,
-        contains(
-            'background-color: var(--fushi-sentence-audio-background-color) !important'),
-        reason: 'BUG-716：普通正文 sentenceAudioHighlight 整句 background-color 填充',
-      );
-      expect(
-        activeBlock,
-        isNot(contains('line-height')),
-        reason: 'active 态禁止改写盒模型。line-height:1 !important 会在书籍 CSS '
-            'strut < 1em 时逐句增厚激活行盒，竖排下行盒厚度=列厚，其后所有列随播放'
-            '逐句平移（TODO-1371/BUG-690）',
-      );
-    });
+        final int activeStart = css.indexOf(
+          '.fushi-sentence-audio-cue.fushi-sentence-audio-active {',
+        );
+        expect(activeStart, isNonNegative);
+        final String activeBlock = css.substring(
+          activeStart,
+          css.indexOf('}', activeStart),
+        );
+        expect(
+          activeBlock,
+          contains('background-color: transparent !important'),
+          reason: '用户 2026-10-15：当前句底色由窄条层画（一行一条 1em 窄条），wrapper 自己不铺底',
+        );
+        expect(
+          activeBlock,
+          isNot(contains('line-height')),
+          reason:
+              'active 态禁止改写盒模型。line-height:1 !important 会在书籍 CSS '
+              'strut < 1em 时逐句增厚激活行盒，竖排下行盒厚度=列厚，其后所有列随播放'
+              '逐句平移（TODO-1371/BUG-690）',
+        );
+      },
+    );
 
     test(
         'selection (lookup) ruby highlight also fills with full background-color',
@@ -503,33 +532,34 @@ void main() {
     });
 
     test(
-        'audio wrapper inside a lookup ruby yields to the lookup highlight (BUG-2806)',
-        () async {
-      // BUG-2806 起基字 wrapper 挪进 <ruby> 里面：子元素背景画在 ruby 的查词背景
-      // 之上，不让位就把 BUG-125 的「查词优先」反过来了（连同内联补缝阴影）。
-      const String selector = 'ruby.fushi-selection-ruby-active '
-          '.fushi-sentence-audio-cue.fushi-sentence-audio-active {';
-      // 墨水屏在普通规则之后再追加一条同选择器覆盖，按出现顺序取全部块。
-      List<String> blocksOf(String css) {
-        final List<String> blocks = <String>[];
-        int start = css.indexOf(selector);
-        while (start >= 0) {
-          blocks.add(css.substring(start, css.indexOf('}', start)));
-          start = css.indexOf(selector, start + selector.length);
+      'audio wrapper inside a lookup ruby yields to the lookup highlight (BUG-2806)',
+      () async {
+        // BUG-2806 起基字 wrapper 挪进 <ruby> 里面：子元素背景画在 ruby 的查词背景
+        // 之上，不让位就把 BUG-125 的「查词优先」反过来了（连同内联补缝阴影）。
+        const String selector =
+            'ruby.fushi-selection-ruby-active '
+            '.fushi-sentence-audio-cue.fushi-sentence-audio-active {';
+        // 墨水屏在普通规则之后再追加一条同选择器覆盖，按出现顺序取全部块。
+        List<String> blocksOf(String css) {
+          final List<String> blocks = <String>[];
+          int start = css.indexOf(selector);
+          while (start >= 0) {
+            blocks.add(css.substring(start, css.indexOf('}', start)));
+            start = css.indexOf(selector, start + selector.length);
+          }
+          expect(blocks, isNotEmpty, reason: '缺少查词 ruby 内 wrapper 的让位规则');
+          return blocks;
         }
-        expect(blocks, isNotEmpty, reason: '缺少查词 ruby 内 wrapper 的让位规则');
-        return blocks;
-      }
 
       final ReaderSettings settings = await _defaultSettings();
       await settings.setWritingMode('vertical-rl');
 
-      final String normal =
-          blocksOf(ReaderContentStyles.css(settings: settings)).first;
-      expect(normal, contains('background-color: transparent !important'));
-      expect(normal, contains('color: inherit !important'));
-      expect(normal, contains('box-shadow: none !important'),
-          reason: '内联补缝 box-shadow 没有 !important，只有这里能压住它');
+        // 底色的「查词优先」由窄条层的叠放顺序保证（查词组在最上，见
+        // highlight_lanes_test）；wrapper 自己不铺底，这里只让出字色。
+        final String normal = blocksOf(
+          ReaderContentStyles.css(settings: settings),
+        ).first;
+        expect(normal, contains('color: inherit !important'));
 
       final String eink =
           blocksOf(ReaderContentStyles.css(settings: settings, einkMode: true))
@@ -559,65 +589,77 @@ void main() {
         '-webkit-box-decoration-break',
         // BUG-2806：box-shadow 不占盒、不改排版；补缝就是靠它做到「只画不排」。
         'box-shadow',
+        // 用户 10-09（#2019）：高亮条圆角。border-radius 只裁背景的绘制形状，不改盒
+        // 尺寸与排版（这些规则不带 padding / border）。
+        'border-radius',
       };
       final RegExp blockPattern = RegExp(r'([^{}]+)\{([^{}]*)\}');
       final RegExp declPattern = RegExp(r'^\s*([a-zA-Z-]+)\s*:');
 
-      for (final String mode in <String>['vertical-rl', 'horizontal-tb']) {
-        final ReaderSettings settings = await _defaultSettings();
-        await settings.setWritingMode(mode);
-        // TODO-2477：先做共享 CSS 词法掩码，块注释（含跨行、含花括号的）不再
-        // 参与 blockPattern 配对，也不必在逐行处手判 `/*` 开头。
-        final String css =
-            maskCssComments(ReaderContentStyles.css(settings: settings));
+        for (final String mode in <String>['vertical-rl', 'horizontal-tb']) {
+          final ReaderSettings settings = await _defaultSettings();
+          await settings.setWritingMode(mode);
+          // TODO-2477：先做共享 CSS 词法掩码，块注释（含跨行、含花括号的）不再
+          // 参与 blockPattern 配对，也不必在逐行处手判 `/*` 开头。
+          final String css = maskCssComments(
+            ReaderContentStyles.css(settings: settings),
+          );
 
-        int enforcedBlocks = 0;
-        for (final RegExpMatch block in blockPattern.allMatches(css)) {
-          final String selector = block.group(1)!;
-          final bool isToggleHighlight = selector.contains('-active') ||
-              selector.contains('::highlight(') ||
-              selector.contains('.fushi-dict-highlight');
-          if (!isToggleHighlight) continue;
-          enforcedBlocks++;
-          for (final String line in block.group(2)!.split('\n')) {
-            final String trimmed = line.trim();
-            if (trimmed.isEmpty) continue;
-            if (trimmed.startsWith('--')) continue; // 自定义变量本身不参与布局。
-            final RegExpMatch? decl = declPattern.firstMatch(trimmed);
-            if (decl == null) continue;
-            final String property = decl.group(1)!.toLowerCase();
-            expect(
-              paintOnlyAllowlist.contains(property),
-              isTrue,
-              reason: '[$mode] 高亮 toggle 规则出现非绘制层属性 `$property`（选择器：'
-                  '${selector.trim()}）。active 态改盒模型会让文字位置随高亮移动'
-                  '（TODO-1371/BUG-690）；确属纯绘制属性再显式加进 allowlist',
-            );
+          int enforcedBlocks = 0;
+          for (final RegExpMatch block in blockPattern.allMatches(css)) {
+            final String selector = block.group(1)!;
+            final bool isToggleHighlight =
+                selector.contains('-active') ||
+                selector.contains('::highlight(') ||
+                selector.contains('.fushi-dict-highlight');
+            if (!isToggleHighlight) continue;
+            enforcedBlocks++;
+            for (final String line in block.group(2)!.split('\n')) {
+              final String trimmed = line.trim();
+              if (trimmed.isEmpty) continue;
+              if (trimmed.startsWith('--')) continue; // 自定义变量本身不参与布局。
+              final RegExpMatch? decl = declPattern.firstMatch(trimmed);
+              if (decl == null) continue;
+              final String property = decl.group(1)!.toLowerCase();
+              expect(
+                paintOnlyAllowlist.contains(property),
+                isTrue,
+                reason:
+                    '[$mode] 高亮 toggle 规则出现非绘制层属性 `$property`（选择器：'
+                    '${selector.trim()}）。active 态改盒模型会让文字位置随高亮移动'
+                    '（TODO-1371/BUG-690）；确属纯绘制属性再显式加进 allowlist',
+              );
+            }
           }
+          expect(
+            enforcedBlocks,
+            greaterThan(5),
+            reason: '[$mode] 守卫必须真扫到高亮 toggle 规则块，不能空转',
+          );
         }
-        expect(enforcedBlocks, greaterThan(5),
-            reason: '[$mode] 守卫必须真扫到高亮 toggle 规则块，不能空转');
-      }
-    });
+      },
+    );
 
-    test('horizontal ruby highlight also fills with full background-color',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      await settings.setWritingMode('horizontal-tb');
+    test(
+      'horizontal ruby highlight also leaves the colour to the lane layer',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        await settings.setWritingMode('horizontal-tb');
 
-      final String css = ReaderContentStyles.css(settings: settings);
+        final String css = ReaderContentStyles.css(settings: settings);
 
-      final int start = css.indexOf('ruby.fushi-sentence-audio-ruby-active {');
-      expect(start, isNonNegative);
-      final String block = css.substring(start, css.indexOf('}', start));
-      expect(
-        block,
-        contains(
-            'background-color: var(--fushi-sentence-audio-background-color) !important'),
-        reason: 'BUG-716：横排 ruby 有声书高亮同样整句填充，rt 注音轨在上方、'
-            '在 ruby 元素背景盒外',
-      );
-    });
+        final int start = css.indexOf(
+          'ruby.fushi-sentence-audio-ruby-active {',
+        );
+        expect(start, isNonNegative);
+        final String block = css.substring(start, css.indexOf('}', start));
+        expect(
+          block,
+          contains('background-color: transparent !important'),
+          reason: '横排同样由窄条层画一个字高的当前句窄条，ruby 元素自己不铺底',
+        );
+      },
+    );
   });
 
   group('ReaderLayoutDefaults', () {
@@ -638,42 +680,55 @@ void main() {
       await settings.setMarginLeft(3.1);
       await settings.setMarginRight(4.2);
 
-      for (final String mode in <String>['paginated', 'continuous', 'vn']) {
-        await settings.setViewMode(mode);
+        for (final String mode in <String>['paginated', 'continuous', 'vn']) {
+          await settings.setViewMode(mode);
+          final String css = ReaderContentStyles.css(settings: settings);
+          expect(
+            css,
+            contains('var(--reader-margin-top, 1.3vh)'),
+            reason: '$mode top margin must have a pre-init fallback',
+          );
+          expect(css, contains('var(--reader-margin-bottom, 2.7vh)'));
+          expect(css, contains('var(--reader-margin-left, 3.1vw)'));
+          expect(css, contains('var(--reader-margin-right, 4.2vw)'));
+          expect(
+            css,
+            isNot(contains('padding-top: calc(1.3vh')),
+            reason:
+                '$mode must consume the Dart-sized variable on iOS where '
+                'window.innerHeight is 0',
+          );
+        }
+      },
+    );
+
+    test(
+      'paginated layout contains --chrome-top-inset in padding-top',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        // Default is paginated mode
         final String css = ReaderContentStyles.css(settings: settings);
-        expect(css, contains('var(--reader-margin-top, 1.3vh)'),
-            reason: '$mode top margin must have a pre-init fallback');
-        expect(css, contains('var(--reader-margin-bottom, 2.7vh)'));
-        expect(css, contains('var(--reader-margin-left, 3.1vw)'));
-        expect(css, contains('var(--reader-margin-right, 4.2vw)'));
-        expect(css, isNot(contains('padding-top: calc(1.3vh')),
-            reason: '$mode must consume the Dart-sized variable on iOS where '
-                'window.innerHeight is 0');
-      }
-    });
+        expect(css, contains('--chrome-top-inset'));
+        expect(css, contains('padding-top:'));
+      },
+    );
 
-    test('paginated layout contains --chrome-top-inset in padding-top',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      // Default is paginated mode
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('--chrome-top-inset'));
-      expect(css, contains('padding-top:'));
-    });
+    test(
+      'paginated layout contains --chrome-bottom-inset in padding-bottom',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(css, contains('--chrome-bottom-inset'));
+        expect(css, contains('padding-bottom:'));
+      },
+    );
 
-    test('paginated layout contains --chrome-bottom-inset in padding-bottom',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('--chrome-bottom-inset'));
-      expect(css, contains('padding-bottom:'));
-    });
-
-    test('paginated layout padding-top uses calc with vh and var fallback 0px',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(settings: settings);
-      expect(
+    test(
+      'paginated layout padding-top uses calc with vh and var fallback 0px',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(settings: settings);
+        expect(
           css,
           contains(
               'padding-top: calc(var(--reader-margin-top, ${settings.marginTop}vh) + var(--chrome-top-inset, 0px))'));
@@ -940,7 +995,8 @@ void main() {
       expect(css, contains('position: fixed !important;'));
       expect(css, contains('pointer-events: none !important;'),
           reason: '覆盖条不得拦截选词/点按');
-      // 四边 border 宽必须与 body padding 逐项一致（== 泄露带宽度）。
+      // 四边 border 宽必须与 body padding 逐项一致（== 泄露带宽度）；BUG-3518：行尾一侧（横排右）
+      // 让出一个列间距给悬挂标点，与 body clip-path 同一表达式。
       expect(
           css,
           contains(
@@ -948,7 +1004,7 @@ void main() {
       expect(
           css,
           contains(
-              'border-right-width: var(--reader-margin-right, ${settings.marginRight}vw) !important;'));
+              'border-right-width: max(0px, calc(var(--reader-margin-right, ${settings.marginRight}vw) - ${ReaderLayoutDefaults.columnGapPx}px)) !important;'));
       expect(
           css,
           contains(
@@ -959,6 +1015,37 @@ void main() {
       expect(css, contains('html::before {'));
       // z-index 必须低于 caret（2147483646）以免遮住焦点/查词 caret。
       expect(css, contains('z-index: 2147483000 !important;'));
+    });
+
+    // BUG-3518：悬挂标点（两端对齐关时注入 hanging-punctuation）挂在栏尾之外，落在被裁的页边距带里。
+    // 行尾一侧（竖排下、横排右）的裁边与遮罩条都让出一个列间距；两端对齐开（不悬挂）时照旧裁满。
+    test('BUG-3518 行尾一侧让出一个列间距给悬挂标点', () async {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('vertical-rl');
+      const String gap = '${ReaderLayoutDefaults.columnGapPx}px';
+      final String bottom =
+          'calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))';
+      final String revealed = 'max(0px, calc($bottom - $gap))';
+      String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('hanging-punctuation: allow-end'));
+      expect(css, contains('border-bottom-width: $revealed !important;'));
+      expect(css, contains('$revealed var(--reader-margin-left'),
+          reason: 'body clip-path 的下边与遮罩条一致');
+      expect(
+          css,
+          contains(
+              'border-right-width: var(--reader-margin-right, ${settings.marginRight}vw) !important;'),
+          reason: '竖排右侧不是行尾，照旧裁满');
+
+      await settings.setEnableTextJustification(true);
+      css = ReaderContentStyles.css(settings: settings);
+      expect(css, isNot(contains('hanging-punctuation: allow-end')));
+      expect(css, contains('border-bottom-width: $bottom !important;'),
+          reason: '不悬挂时行尾一侧照旧裁满');
     });
 
     // 覆盖条只属分页：连续模式不发 html::before（避免连续滚动被 padding 条错遮）。
@@ -1038,7 +1125,7 @@ void main() {
       for (final String theme in <String>[
         'gray-theme',
         'dark-theme',
-        'black-theme'
+        'black-theme',
       ]) {
         final String css = ReaderContentStyles.css(
           settings: settings,

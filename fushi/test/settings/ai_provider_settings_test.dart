@@ -15,23 +15,29 @@ import 'dart:io';
 // drift 也导出 isNull/isNotNull（SQL 表达式），与 matcher 撞名，故只取所需。
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
+import 'package:fushi/src/settings/settings_destination.dart'
+    show debugSettingsForceExpandAllSections;
+import 'package:fushi/src/settings/settings_kit.dart' show SettingsModifiedRow;
 import 'package:fushi/utils.dart' show t;
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 AiProviderConfig _config({
   String id = 'p1',
@@ -272,7 +278,7 @@ void main() {
 
     late Directory pathProviderDir;
     setUpAll(() {
-      pathProviderDir = Directory.systemTemp.createTempSync('hibiki_ai_pp');
+      pathProviderDir = Directory.systemTemp.createTempSync('fushi_ai_pp');
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => pathProviderDir.path,
@@ -294,12 +300,16 @@ void main() {
     late AppModel appModel;
 
     setUp(() async {
+      // 功能指派行收在默认折叠的分组里（2026-10-08 所有者：外层只放总配置）。
+      // 写穿契约测试要直接够到那些行，强制展开；折叠本身另有测试覆盖。
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      debugSettingsForceExpandAllSections = true;
       db = FushiDatabase.forTesting(
         DatabaseConnection(NativeDatabase.memory()),
       );
       prefs = PreferencesRepository(db);
       await prefs.loadFromDb();
-      storeDir = Directory.systemTemp.createTempSync('hibiki_ai_settings');
+      storeDir = Directory.systemTemp.createTempSync('fushi_ai_settings');
       appModel = AppModel(testPlatformServices())
         ..wireLocalAudioForTesting(
           prefsRepo: prefs,
@@ -308,6 +318,7 @@ void main() {
     });
 
     tearDown(() async {
+      debugSettingsForceExpandAllSections = false;
       await db.close();
       if (storeDir.existsSync()) storeDir.deleteSync(recursive: true);
     });
@@ -315,7 +326,7 @@ void main() {
     /// 区块从树上摘掉时 **ProviderScope 原位保留**：整棵树换掉会连 AppModel 与
     /// PreferencesRepository 一起 dispose，dispose-flush 的异步写就会撞上一个已
     /// 释放的 repo——那是 harness 假象，不是生产行为。
-    Widget harness() => ProviderScope(
+    Widget harness({AiChatClientFactory? clientFactory}) => ProviderScope(
       overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
       child: MaterialApp(
         theme: ThemeData(useMaterial3: true),
@@ -323,18 +334,21 @@ void main() {
           body: SizedBox(
             width: 640,
             child: SingleChildScrollView(
-              child: const AiProviderSettingsSection(),
+              child: AiProviderSettingsSection(clientFactory: clientFactory),
             ),
           ),
         ),
       ),
     );
 
-    Future<void> pumpSection(WidgetTester tester) async {
+    Future<void> pumpSection(
+      WidgetTester tester, {
+      AiChatClientFactory? clientFactory,
+    }) async {
       tester.view.physicalSize = const Size(900, 4000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(harness());
+      await tester.pumpWidget(harness(clientFactory: clientFactory));
       await tester.pumpAndSettle();
     }
 
@@ -351,6 +365,15 @@ void main() {
       await tester.ensureVisible(target);
       await tester.pumpAndSettle();
       await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    /// 提供商列表是「每家一行 → 点进编辑页」：编辑字段 / 自检 / 删除都在编辑页上。
+    Future<void> openEditor(WidgetTester tester, String providerId) =>
+        tapKey(tester, 'ai-provider-$providerId');
+
+    Future<void> closeEditor(WidgetTester tester) async {
+      tester.state<NavigatorState>(find.byType(Navigator).first).pop();
       await tester.pumpAndSettle();
     }
 
@@ -385,6 +408,147 @@ void main() {
       expect(saved.isUsable, isTrue);
     });
 
+    testWidgets('多 key：添加 / 停用 / 删除写穿偏好，冷却状态显示在框下', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', apiKey: 'sk-first-1111'),
+      ]);
+      // 冷却记录走的是生产装配点（loadFromDb 装的偏好表实现），不是测试替身。
+      aiKeyHealthStore.update(
+        aiKeyFingerprint('p1', 'sk-first-1111'),
+        (_) => AiKeyHealth(
+          cooldownUntil: DateTime.now().toUtc().add(const Duration(hours: 1)),
+          failures: 1,
+          reason: 'rate_limited',
+        ),
+      );
+      expect(prefs.aiKeyHealth, hasLength(1));
+      await pumpSection(tester);
+      await openEditor(tester, 'p1');
+
+      expect(find.textContaining(t.ai_error_rate_limited), findsOneWidget);
+
+      await tapKey(tester, 'ai-provider-0-api-key-add');
+      await enter(tester, 'ai-provider-0-api-key-1', 'sk-second-2222');
+      await tapKey(tester, 'ai-provider-0-api-key-0-toggle');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(prefs.aiProviders.single.apiKeys, const <AiApiKey>[
+        AiApiKey('sk-first-1111', enabled: false),
+        AiApiKey('sk-second-2222'),
+      ]);
+      expect(prefs.aiProviders.single.apiKey, 'sk-second-2222');
+      expect(
+        find.text(t.ai_provider_api_key_disabled(tail: '1111')),
+        findsOneWidget,
+      );
+
+      // 删掉第一把：第二把顶到第一位，输入框里显示的必须是它自己的值（不沿用
+      // 被删那把的 initialValue）。
+      await tapKey(tester, 'ai-provider-0-api-key-0-remove');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(prefs.aiProviders.single.apiKeys, const <AiApiKey>[
+        AiApiKey('sk-second-2222'),
+      ]);
+      final EditableText first = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('ai-provider-0-api-key')),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(first.controller.text, 'sk-second-2222');
+      expect(
+        find.byKey(const ValueKey<String>('ai-provider-0-api-key-1')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('测试连接逐把真打：冷却中的 key 充值后通过即清冷却，框下状态随之恢复', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        AiProviderConfig(
+          id: 'p1',
+          presetId: 'openai',
+          name: 'OpenAI',
+          baseUrl: Uri.parse('https://api.openai.com/v1'),
+          apiKeys: const <AiApiKey>[
+            AiApiKey('sk-first-1111'),
+            AiApiKey('sk-second-2222'),
+          ],
+          model: 'gpt-4o-mini',
+        ),
+      ]);
+      // 第一把余额不足，已退避到几小时后；轮换顺序里它排不上号。
+      aiKeyHealthStore.update(
+        aiKeyFingerprint('p1', 'sk-first-1111'),
+        (_) => AiKeyHealth(
+          cooldownUntil: DateTime.now().toUtc().add(const Duration(hours: 6)),
+          failures: 9,
+          reason: 'quota_exhausted',
+        ),
+      );
+      final List<String> sent = <String>[];
+      await pumpSection(
+        tester,
+        clientFactory: () => AiChatClient(
+          client: MockClient((http.Request request) async {
+            sent.add(
+              (request.headers['authorization'] ?? '').replaceFirst(
+                'Bearer ',
+                '',
+              ),
+            );
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'choices': <Object?>[
+                  <String, Object?>{
+                    'message': <String, Object?>{'content': 'pong'},
+                  },
+                ],
+              }),
+              200,
+            );
+          }),
+        ),
+      );
+      await openEditor(tester, 'p1');
+      expect(find.textContaining(t.ai_error_quota_exhausted), findsOneWidget);
+
+      // 用户充值后点「测试连接」：冷却中的那把也要真打一次。
+      await tapKey(tester, 'ai-provider-0-test');
+      await tester.pumpAndSettle();
+
+      expect(sent, <String>['sk-first-1111', 'sk-second-2222']);
+      expect(prefs.aiKeyHealth, isEmpty);
+      expect(
+        find.text(t.ai_provider_api_key_ok(tail: '1111')),
+        findsOneWidget,
+      );
+      expect(find.textContaining(t.ai_error_quota_exhausted), findsNothing);
+    });
+
+    testWidgets('每分钟请求上限：填数字写穿配置，清空即不限', (WidgetTester tester) async {
+      await pumpSection(tester);
+      await tapKey(tester, 'ai-provider-add');
+      await tapKey(tester, 'ai-provider-preset-deepseek');
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      expect(prefs.aiProviders.single.requestsPerMinute, 0, reason: '默认不限');
+
+      await enter(tester, 'ai-provider-0-rate-limit', '20');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(prefs.aiProviders.single.requestsPerMinute, 20);
+
+      await enter(tester, 'ai-provider-0-rate-limit', '');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(prefs.aiProviders.single.requestsPerMinute, 0);
+    });
+
     testWidgets('一条草稿打字到中间态：磁盘保留它上一次的有效版本，不连累其它提供商', (
       WidgetTester tester,
     ) async {
@@ -399,6 +563,7 @@ void main() {
         ),
       );
       await pumpSection(tester);
+      await openEditor(tester, 'p1');
 
       // `htt` 不是合法地址：这条草稿本轮无效（它仍留在界面上，不报错也不弹窗——
       // 用户只是还没打完）。回归点（S1）：此前无效草稿直接被跳过、整份覆盖落盘，
@@ -454,6 +619,139 @@ void main() {
         'p1',
         reason: '草稿重新有效即按草稿自己的启用状态写回，指派照常生效',
       );
+    });
+
+    testWidgets('页面开着时别处（fushi_cli）改了清单：没改过的草稿跟着刷新，保存只写本页改过的那家', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+        _config(id: 'p2', name: 'Beta', baseUrl: 'https://api.deepseek.com/v1'),
+      ]);
+      await pumpSection(tester);
+
+      // 别处：改 p2 的模型、新增 p3、指派默认。
+      await prefs.setAiProviders(<AiProviderConfig>[
+        prefs.aiProviders.first,
+        _config(
+          id: 'p2',
+          name: 'Beta',
+          baseUrl: 'https://api.deepseek.com/v1',
+          model: 'deepseek-chat',
+        ),
+        _config(id: 'p3', name: 'Gamma', model: 'gpt-5'),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments().withDefault('p3'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey<String>('ai-provider-p3')), findsOneWidget);
+
+      // 本页：只改 p1 的模型。
+      await openEditor(tester, 'p1');
+      await enter(tester, 'ai-provider-0-model', 'gpt-4.1');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      final Map<String, AiProviderConfig> saved = <String, AiProviderConfig>{
+        for (final AiProviderConfig c in prefs.aiProviders) c.id: c,
+      };
+      expect(saved.keys, <String>['p1', 'p2', 'p3']);
+      expect(saved['p1']!.model, 'gpt-4.1');
+      expect(saved['p2']!.model, 'deepseek-chat', reason: '陈旧草稿不能覆盖别处的改动');
+      expect(saved['p3']!.model, 'gpt-5', reason: '别处新增的保留');
+      expect(prefs.storedAiFeatureAssignments.defaultProviderId, 'p3');
+    });
+
+    testWidgets('外层只放总配置：功能指派默认折叠，摘要报单独指定了几项', (
+      WidgetTester tester,
+    ) async {
+      debugSettingsForceExpandAllSections = false;
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+      ]);
+      await pumpSection(tester);
+
+      final Finder providerList = find.byKey(
+        const ValueKey<String>('ai-provider-list'),
+      );
+      expect(
+        find.descendant(
+          of: providerList,
+          matching: find.byKey(const ValueKey<String>('ai-feature-default')),
+        ),
+        findsOneWidget,
+        reason: '默认提供商属于总配置，跟提供商清单一起常显',
+      );
+      final Finder featureRow = find.byKey(
+        ValueKey<String>(
+          'ai-feature-${AiFeature.galgameTextProcess.storageKey}',
+        ),
+      );
+      expect(featureRow, findsNothing, reason: '各功能的单独指派默认收起');
+      expect(find.text(t.ai_feature_overrides_none), findsOneWidget);
+
+      await tester.tap(find.text(t.ai_features_section));
+      await tester.pumpAndSettle();
+      expect(featureRow, findsOneWidget, reason: '点分组头展开后功能行出现');
+    });
+
+    testWidgets('折叠头摘要：单独指定（含「不使用 AI」）几项就报几项', (
+      WidgetTester tester,
+    ) async {
+      debugSettingsForceExpandAllSections = false;
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(defaultProviderId: 'p1')
+            .withAssignment(AiFeature.galgameTextProcess, 'p1')
+            .withAssignment(AiFeature.dictStyle, kAiFeatureDisabled),
+      );
+      await pumpSection(tester);
+      expect(find.text(t.ai_feature_overrides_count(n: 2)), findsOneWidget);
+    });
+
+    testWidgets('单独指定过的功能行带「改过默认值」标记，恢复默认即跟随默认', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(
+          defaultProviderId: 'p1',
+        ).withAssignment(AiFeature.galgameTextProcess, kAiFeatureDisabled),
+      );
+      await pumpSection(tester);
+
+      SettingsModifiedRow marker(AiFeature feature) =>
+          tester.widget<SettingsModifiedRow>(
+            find.byKey(
+              ValueKey<String>('ai-feature-${feature.storageKey}-modified'),
+            ),
+          );
+      expect(marker(AiFeature.galgameTextProcess).modified, isTrue);
+      expect(marker(AiFeature.dictStyle).modified, isFalse);
+
+      final Finder reset = find.descendant(
+        of: find.byKey(
+          ValueKey<String>(
+            'ai-feature-${AiFeature.galgameTextProcess.storageKey}-modified',
+          ),
+        ),
+        matching: find.byKey(const ValueKey<String>('settings-reset-default')),
+      );
+      await tester.ensureVisible(reset);
+      await tester.pumpAndSettle();
+      await tester.tap(reset);
+      await tester.pumpAndSettle();
+
+      expect(
+        prefs.aiFeatureAssignments.providerIdFor(AiFeature.galgameTextProcess),
+        isNull,
+      );
+      expect(marker(AiFeature.galgameTextProcess).modified, isFalse);
     });
 
     testWidgets('功能下拉选中一家 → 立刻写穿映射偏好', (WidgetTester tester) async {
@@ -577,6 +875,7 @@ void main() {
         ),
       );
       await pumpSection(tester);
+      await openEditor(tester, 'p1');
 
       await tapKey(tester, 'ai-provider-0-delete');
       await tester.pump(const Duration(seconds: 1));
@@ -605,6 +904,7 @@ void main() {
         const AiFeatureAssignments(defaultProviderId: 'p1'),
       );
       await pumpSection(tester);
+      await openEditor(tester, 'p1');
 
       await tapKey(tester, 'ai-provider-0-allow-http');
       await tester.pump(const Duration(seconds: 1));
@@ -638,6 +938,9 @@ void main() {
       ]);
 
       // 上一次有效版本的回落只覆盖「还在草稿列表里」的 id：删掉就是删掉。
+      // （新增后自动进了新草稿的编辑页：退回列表再进 p1。）
+      await closeEditor(tester);
+      await openEditor(tester, 'p1');
       await enter(tester, 'ai-provider-0-base-url', 'htt');
       await tapKey(tester, 'ai-provider-0-delete');
       await tester.pump(const Duration(seconds: 1));
@@ -747,6 +1050,7 @@ void main() {
         }, status: 404);
       });
 
+      await openEditor(tester, 'p1');
       await tapKey(tester, 'ai-provider-0-test');
 
       // 回归点（S4）：此前只跑 listModels，模型名拼错照样「连接正常」。
@@ -781,6 +1085,7 @@ void main() {
         }),
       );
 
+      await openEditor(tester, 'p1');
       await tapKey(tester, 'ai-provider-0-test');
       expect(find.text(t.ai_provider_test_ok), findsOneWidget);
     });
@@ -795,6 +1100,7 @@ void main() {
         return jsonResponse(<String, Object?>{'data': <Object?>[]});
       });
 
+      await openEditor(tester, 'p1');
       await tapKey(tester, 'ai-provider-0-test');
       expect(seen.single.method, 'GET');
       expect(seen.single.url.path, '/v1/models');
@@ -844,17 +1150,16 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await openEditor(tester, 'p1');
 
       // 迁移面：老用户落盘的模型名必须原样回显在字段里（字段仍是自由文本，
       // 候选只是辅助输入；写不进去就等于升级后把人家的自定义模型名吞了）。
       expect(
         tester
-            .widget<TextField>(
-              find.descendant(
+            .widget<TextField>(glassUnwrap<TextField>(find.descendant(
                 of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
                 matching: find.byType(TextField),
-              ),
-            )
+              )),)
             .controller!
             .text,
         'gpt-4o-mini',
@@ -884,12 +1189,10 @@ void main() {
       // 显示着不同的模型名，而落盘的偏偏是用户没在看的那一个。
       expect(
         tester
-            .widget<TextField>(
-              find.descendant(
+            .widget<TextField>(glassUnwrap<TextField>(find.descendant(
                 of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
                 matching: find.byType(TextField),
-              ),
-            )
+              )),)
             .controller!
             .text,
         'o4-mini',

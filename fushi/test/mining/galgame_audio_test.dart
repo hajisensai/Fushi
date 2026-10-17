@@ -451,7 +451,7 @@ void main() {
 
     test('capability 不精确匹配时 fail closed，绝不启动注入命令', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki_helper_capability_gate_test_',
+        'fushi_helper_capability_gate_test_',
       );
       final File injector = File(
         '${temp.path}${Platform.pathSeparator}fake.exe',
@@ -488,7 +488,7 @@ void main() {
       // 挂住的进程。旧实现用一个 bool + `on Object` 把任意错误都翻成
       // protocolMismatch（「组件太老」），把用户引向一个做了也没用的动作。
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki_helper_capability_probe_failed_test_',
+        'fushi_helper_capability_probe_failed_test_',
       );
       final File injector = File(
         '${temp.path}${Platform.pathSeparator}fake.exe',
@@ -524,7 +524,7 @@ void main() {
 
     test('capability 探测抛异常也归类成探测失败，且不毒化调用方', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki_helper_capability_probe_throw_test_',
+        'fushi_helper_capability_probe_throw_test_',
       );
       final File injector = File(
         '${temp.path}${Platform.pathSeparator}fake.exe',
@@ -585,7 +585,7 @@ void main() {
 
     test('launch PID 就绪后仍持续排空 helper stdout 和 stderr', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki_helper_output_test_',
+        'fushi_helper_output_test_',
       );
       final File injector = File(
         '${temp.path}${Platform.pathSeparator}fake.exe',
@@ -719,7 +719,7 @@ void main() {
     ]) {
       test('转区事实只认 injector 回报：$localeField ⇒ applied=$applied', () async {
         final Directory temp = await Directory.systemTemp.createTemp(
-          'hibiki_locale_fact_test_',
+          'fushi_locale_fact_test_',
         );
         final File injector = File(
           '${temp.path}${Platform.pathSeparator}fake.exe',
@@ -789,7 +789,7 @@ void main() {
 
     test('attach 等 helper OK 后才打开共享内存', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki_helper_attach_ready_test_',
+        'fushi_helper_attach_ready_test_',
       );
       final File injector = File(
         '${temp.path}${Platform.pathSeparator}fake.exe',
@@ -865,7 +865,7 @@ void main() {
 
     test('运行期策略只控制采集，stop 先 deny/ack 再 close/kill', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki_helper_native_policy_test_',
+        'fushi_helper_native_policy_test_',
       );
       final File injector = File(
         '${temp.path}${Platform.pathSeparator}fake.exe',
@@ -1085,11 +1085,14 @@ void main() {
 
     test('engine exact text sources map to their own thread namespace', () {
       // native voice_hook_ipc.h: kTextSourceYuris = 9, kTextSourceFvp = 10,
-      // kTextSourceMalie = 15. An unmapped kind falls back to 'hook:' /
-      // 'Text hook', which hides the engine lane from thread selection.
+      // kTextSourceKogadoHy = 11, kTextSourceLuca = 12, kTextSourceMalie = 15.
+      // An unmapped kind falls back to 'hook:' / 'Text hook', which hides the
+      // engine lane from thread selection.
       const Map<int, (String, String)> expected = <int, (String, String)>{
         9: ('yuris', 'YU-RIS exact'),
         10: ('fvp', 'FVP exact'),
+        11: ('kogado', 'Kogado Hy exact'),
+        12: ('luca', 'LucaSystem exact'),
         15: ('malie', 'Malie exact'),
       };
       for (final MapEntry<int, (String, String)> entry in expected.entries) {
@@ -1104,8 +1107,8 @@ void main() {
         expect(line.textThreadKey, '${entry.value.$1}:2a');
         expect(line.textThreadLabel, '${entry.value.$2} · 0x1000');
       }
-      // 11–14 are registered in voice_hook_ipc.h as reserved / unassigned.
-      for (int kind = 11; kind <= 14; kind++) {
+      // 13–14 are registered in voice_hook_ipc.h as reserved / unassigned.
+      for (int kind = 13; kind <= 14; kind++) {
         final GalHookedLine line = GalHookedLine(
           seq: 1,
           timestampMs: 2,

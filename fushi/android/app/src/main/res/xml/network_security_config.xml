@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Hibiki 网络安全配置（BUG-377）。
+  Fushi 网络安全配置（BUG-377）。
 
-  配对设备同步（Hibiki sync server / 用户自配 WebDAV/FTP）走局域网明文 HTTP +
+  配对设备同步（Fushi sync server / 用户自配 WebDAV/FTP）走局域网明文 HTTP +
   Basic auth：对端地址是 mDNS 发现或手动输入的 http://192.168.x.x:port（见
   lan_discovery_service.dart:22 / interconnect.part.dart:148）。host 文件头已声明
   这套明文协议仅在可信局域网可接受，且 server 仅在用户开启 hosting 时绑 0.0.0.0。

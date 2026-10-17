@@ -18,6 +18,19 @@ import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 
+/// Graph `driveItem` → [AssetEntry]。
+///
+/// 修改时间取**顶层** `lastModifiedDateTime`（服务端写入时刻，UTC `Z`），不取
+/// `fileSystemInfo.lastModifiedDateTime`——后者是客户端可自报的文件系统时间，不是服务器时间。
+AssetEntry oneDriveItemToAssetEntry(Map<String, dynamic> item) => AssetEntry(
+      id: item['id'] as String,
+      name: item['name'] as String,
+      isFolder: item.containsKey('folder'),
+      sizeBytes: (item['size'] as num?)?.toInt(),
+      modifiedAt: syncIsoTimestampMs(item['lastModifiedDateTime']),
+      revision: OneDriveSyncBackend._contentRevisionOf(item),
+    );
+
 /// OneDrive sync backend via Microsoft Graph API.
 ///
 /// Auth: OAuth 2.0 PKCE flow（外壳在 [PkceOAuthBackendMixin]）.
@@ -354,7 +367,7 @@ class OneDriveSyncBackend extends SyncBackend
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final fileLength = await file.length();
     final request = http.StreamedRequest(
@@ -374,7 +387,7 @@ class OneDriveSyncBackend extends SyncBackend
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     // Get the download URL from item metadata.
     final metaResp = await _graphGet('/me/drive/items/$fileId');
@@ -426,14 +439,28 @@ class OneDriveSyncBackend extends SyncBackend
   @override
   Future<List<AssetEntry>> listChildren(String namespaceId) async {
     final items = await _listChildren('/me/drive/items/$namespaceId/children');
-    return items
-        .map((item) => AssetEntry(
-              id: item['id'] as String,
-              name: item['name'] as String,
-              isFolder: item.containsKey('folder'),
-              sizeBytes: (item['size'] as num?)?.toInt(),
-            ))
-        .toList();
+    return items.map(oneDriveItemToAssetEntry).toList();
+  }
+
+  /// driveItem 的内容版本标记：优先内容哈希（个人版给 quickXorHash / sha1Hash，
+  /// 商业版给 quickXorHash），都没有时退到 `cTag`——Graph 规定内容一变 cTag 就变
+  /// （元数据改动只动 eTag）。文件夹没有内容，返回 null。
+  static String? _contentRevisionOf(Map<String, dynamic> item) {
+    final Object? file = item['file'];
+    if (file is! Map<String, dynamic>) return null;
+    final Object? hashes = file['hashes'];
+    if (hashes is Map<String, dynamic>) {
+      for (final String key in const <String>[
+        'quickXorHash',
+        'sha256Hash',
+        'sha1Hash',
+      ]) {
+        final Object? value = hashes[key];
+        if (value is String && value.isNotEmpty) return '$key:$value';
+      }
+    }
+    final Object? cTag = item['cTag'];
+    return cTag is String && cTag.isNotEmpty ? 'cTag:$cTag' : null;
   }
 
   @override

@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/video/bluray/bluray_ffmpeg_input.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
+import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -249,7 +250,8 @@ ProcessException _withFfmpegLaunchContext(
 
 /// ffmpeg 执行底座抽象：所有 ffmpeg 调用经它，与「系统 CLI / 捆绑库」实现解耦。
 ///
-/// 只有一个原语 [run]——跑一次 ffmpeg，返回退出码 + stderr 文本：
+/// 工作原语 [run]——跑一次 ffmpeg，返回退出码 + stderr 文本（查询表在 stdout 的
+/// `-filters` 等命令走 [runQuery]，ffprobe 走 [runProbe]）：
 /// - 5 个 extract 函数（音/视频封面、视频帧、字幕抽取、音频裁剪）只看
 ///   [FfmpegRunResult.returnCode] 与产出文件。
 /// - 内嵌字幕「列举」用 `run(['-hide_banner','-i',path])` 拿 [FfmpegRunResult.output]
@@ -265,6 +267,19 @@ abstract class FfmpegBackend {
   /// 移动端 [KitFfmpegBackend] 走 `FFprobeKit.executeWithArguments`。与 [run] 分开
   /// （不同可执行、不同输出流），不污染既有 ffmpeg 调用路径。
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout);
+
+  /// 跑一次**只读查询类** ffmpeg 命令（`-filters` / `-encoders` / `-codecs` /
+  /// `-hwaccels` / `-h …` 等），返回退出码 + **stdout 与 stderr 的合并文本**。
+  ///
+  /// 为什么要单独一个原语（BUG-2938）：ffmpeg 的查询表写在 **stdout**，而 [run]
+  /// 为了防 `pipe:1` 二进制输出撑爆内存 / 污染错误摘要，只收 stderr、把 stdout 丢掉
+  /// ——经 [run] 探 `-filters` 在桌面 CLI 上恒为空表。[run] 的契约不改，查询一律走这里：
+  /// - 桌面 [CliFfmpegBackend]：同一条「覆盖 > 捆绑 > PATH」解析与回退，收 stdout+stderr；
+  /// - 移动端 `KitFfmpegBackend`：ffmpeg-kit 把 fftools 的 printf 改成了
+  ///   `av_log(AV_LOG_STDERR)`，查询表本就在会话日志里，与 [run] 同一条会话路径。
+  ///
+  /// 只用于输出有界的查询命令；**不要**用它跑会往 stdout 写媒体数据的命令。
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout);
 }
 
 /// 解析 ffmpeg 可执行文件（桌面 [CliFfmpegBackend] 用）。优先级：
@@ -348,8 +363,8 @@ String resolveFfmpegExecutableFrom({
 /// app 可执行文件同目录下的捆绑 ffmpeg 路径（存在才返回，否则 null）。
 ///
 /// Windows 找 `ffmpeg.exe`，其余找 `ffmpeg`。`Platform.resolvedExecutable` 是
-/// 本进程的可执行文件：Windows `…\Hibiki\hibiki.exe` → 找 `…\Hibiki\ffmpeg.exe`；
-/// macOS `Hibiki.app/Contents/MacOS/Hibiki` → 找同目录 `ffmpeg`；Linux 同理。
+/// 本进程的可执行文件：Windows `…\Fushi\fushi.exe` → 找 `…\Fushi\ffmpeg.exe`；
+/// macOS `Fushi.app/Contents/MacOS/Fushi` → 找同目录 `ffmpeg`；Linux 同理。
 /// 任何异常（沙箱/只读/解析失败）静默返回 null，回退 PATH。
 String? _bundledFfmpegPath() => _bundledExecutablePath('ffmpeg');
 
@@ -389,34 +404,55 @@ String? _bundledExecutablePath(String name) {
   return null;
 }
 
-/// 共享：跑一次指定可执行文件的 ffmpeg，返回退出码 + stderr 文本。两后端（CLI/FFI
-/// 回退）共用，杜绝重复 drain/超时逻辑。
-///
-/// 语义复刻原 `_runFfmpeg`：drain stdout 防管道死锁、收集 stderr 作 output、
-/// `exitCode.timeout` 超时则 SIGKILL 返回 `returnCode:null`。可执行文件不存在时
-/// `Process.start` 抛 [ProcessException]，**向上传播**（各调用方自行 catch，沿用旧契约）。
-/// stderr 用宽容 UTF-8 解码（`allowMalformed`），绝不因个别非法字节抛错。
-Future<FfmpegRunResult> runFfmpegProcess(
+/// 一次工具进程要把哪条管道收进 [FfmpegRunResult.output]（没收的那条照样 drain，
+/// 防 OS 管道缓冲写满把进程卡死在退出前）。
+enum _ToolOutputStreams {
+  /// ffmpeg 工作命令：日志 / 进度 / 流信息写 stderr；stdout 可能是 `pipe:1` 二进制。
+  stderrOnly,
+
+  /// ffprobe：`-print_format json` 报告写 stdout。
+  stdoutOnly,
+
+  /// ffmpeg 查询类命令（`-filters` 等）：表写 stdout，错误写 stderr（BUG-2938）。
+  stdoutThenStderr,
+}
+
+/// 三个顶层 runner 的唯一实现：起进程、按 [streams] 收集 / drain 两条管道、
+/// `exitCode.timeout` 超时则 SIGKILL 并等进程退出后返回 `returnCode:null`。
+/// 可执行文件不存在时 `Process.start` 抛 [ProcessException]，**向上传播**。
+/// 收集的管道一律宽容 UTF-8 解码（`allowMalformed`），绝不因个别非法字节抛错。
+Future<FfmpegRunResult> _runToolProcess(
   String executable,
   List<String> args,
   Duration timeout,
+  _ToolOutputStreams streams,
 ) async {
   final Process process = await HelperProcessRegistry.instance.start(
     executable,
     args,
   );
-  // Drain both pipes: a full OS pipe buffer (ffmpeg writes progress to stderr)
-  // would otherwise deadlock the process before it can exit.
-  unawaited(process.stdout.drain<void>());
-  final Future<String> stderrText = process.stderr
-      .transform(const Utf8Decoder(allowMalformed: true))
-      .join();
+  Future<String> collect(Stream<List<int>> stream) =>
+      stream.transform(const Utf8Decoder(allowMalformed: true)).join();
+  Future<String> drain(Stream<List<int>> stream) =>
+      stream.drain<void>().then((_) => '');
+  final Future<String> stdoutText = streams == _ToolOutputStreams.stderrOnly
+      ? drain(process.stdout)
+      : collect(process.stdout);
+  final Future<String> stderrText = streams == _ToolOutputStreams.stdoutOnly
+      ? drain(process.stderr)
+      : collect(process.stderr);
   try {
     final int code = await process.exitCode.timeout(timeout);
-    final String output = await stderrText;
+    final String out = await stdoutText;
+    final String err = await stderrText;
     return FfmpegRunResult(
       returnCode: code,
-      output: output,
+      output: switch (streams) {
+        _ToolOutputStreams.stderrOnly => err,
+        _ToolOutputStreams.stdoutOnly => out,
+        _ToolOutputStreams.stdoutThenStderr =>
+          out.isEmpty || err.isEmpty ? '$out$err' : '$out\n$err',
+      },
       executable: executable,
       attemptedExecutables: <String>[executable],
     );
@@ -425,6 +461,7 @@ Future<FfmpegRunResult> runFfmpegProcess(
     // Reap the killed process before its caller removes command-scoped inputs.
     // On Windows an open concat manifest cannot be deleted while FFmpeg lives.
     await process.exitCode;
+    await stdoutText;
     await stderrText;
     return FfmpegRunResult(
       returnCode: null,
@@ -435,47 +472,57 @@ Future<FfmpegRunResult> runFfmpegProcess(
   }
 }
 
+/// 共享：跑一次指定可执行文件的 ffmpeg，返回退出码 + stderr 文本。两后端（CLI/FFI
+/// 回退）共用，杜绝重复 drain/超时逻辑。
+///
+/// 语义复刻原 `_runFfmpeg`：drain stdout 防管道死锁（也防 `pipe:1` 二进制输出撑爆
+/// 内存）、收集 stderr 作 output、超时 SIGKILL 返回 `returnCode:null`。可执行文件
+/// 不存在时 `Process.start` 抛 [ProcessException]，**向上传播**（各调用方自行 catch，
+/// 沿用旧契约）。查询表写 stdout 的命令不要走这里，走 [runFfmpegQueryProcess]。
+Future<FfmpegRunResult> runFfmpegProcess(
+  String executable,
+  List<String> args,
+  Duration timeout,
+) => _runToolProcess(
+  executable,
+  args,
+  timeout,
+  _ToolOutputStreams.stderrOnly,
+);
+
+/// 共享：跑一次指定可执行文件的 ffmpeg **查询类**命令（[FfmpegBackend.runQuery]），
+/// 返回退出码 + stdout 与 stderr 的合并文本（stdout 在前）。
+///
+/// 与 [runFfmpegProcess] 的区别只在 stdout：`-filters` / `-encoders` 等查询表写
+/// stdout，那边把它 drain 掉了（BUG-2938）。超时 / 可执行不存在的语义完全一致。
+Future<FfmpegRunResult> runFfmpegQueryProcess(
+  String executable,
+  List<String> args,
+  Duration timeout,
+) => _runToolProcess(
+  executable,
+  args,
+  timeout,
+  _ToolOutputStreams.stdoutThenStderr,
+);
+
 /// 共享：跑一次指定可执行文件的 **ffprobe**，返回退出码 + **stdout** 文本。
 ///
 /// 与 [runFfmpegProcess] 的关键区别：ffprobe 的 `-print_format json` 报告写到
 /// **stdout**（ffmpeg 把工作输出写 stderr），故这里收集 stdout 作 [FfmpegRunResult.output]、
 /// drain stderr 防管道死锁——正好与 ffmpeg 反过来。超时 SIGKILL 返回 `returnCode:null`；
 /// 可执行文件不存在时 `Process.start` 抛 [ProcessException] **向上传播**（调用方 catch
-/// 后回退文件名兜底）。stdout 用宽容 UTF-8 解码，绝不因个别非法字节抛错。
+/// 后回退文件名兜底）。
 Future<FfmpegRunResult> runFfprobeProcess(
   String executable,
   List<String> args,
   Duration timeout,
-) async {
-  final Process process = await HelperProcessRegistry.instance.start(
-    executable,
-    args,
-  );
-  final Future<String> stdoutText = process.stdout
-      .transform(const Utf8Decoder(allowMalformed: true))
-      .join();
-  unawaited(process.stderr.drain<void>());
-  try {
-    final int code = await process.exitCode.timeout(timeout);
-    final String output = await stdoutText;
-    return FfmpegRunResult(
-      returnCode: code,
-      output: output,
-      executable: executable,
-      attemptedExecutables: <String>[executable],
-    );
-  } on TimeoutException {
-    process.kill(ProcessSignal.sigkill);
-    await process.exitCode;
-    await stdoutText;
-    return FfmpegRunResult(
-      returnCode: null,
-      output: '',
-      executable: executable,
-      attemptedExecutables: <String>[executable],
-    );
-  }
-}
+) => _runToolProcess(
+  executable,
+  args,
+  timeout,
+  _ToolOutputStreams.stdoutOnly,
+);
 
 bool _isWindowsInvalidImageFormatExitCode(
   int? returnCode, {
@@ -697,8 +744,22 @@ Future<FfmpegRunResult> runCliFfprobeForTesting({
 
 /// 系统 ffmpeg（`Process.start`）后端：桌面三端（Windows/macOS/Linux）。
 /// 委托 [runFfmpegProcess]，可执行文件经 [resolveFfmpegExecutable] 解析（覆盖>捆绑>PATH）。
-class CliFfmpegBackend implements FfmpegBackend {
+class CliFfmpegBackend implements FfmpegBackend, FfmpegWatchedRunner {
   const CliFfmpegBackend();
+
+  /// 观察式运行（BUG-3102）：同一条「覆盖 > 捆绑 > PATH」解析与捆绑损坏回退，只是
+  /// 进程按进度判活（[runFfmpegWatchedProcess]），不吃固定总超时。
+  @override
+  Future<FfmpegRunResult> runWatched(List<String> args, FfmpegWatch watch) =>
+      _runCliFfmpeg(
+        override: ffmpegExplicitOverride(),
+        bundledPath: _bundledFfmpegPath(),
+        isWindows: Platform.isWindows,
+        args: args,
+        timeout: watch.stallTimeout,
+        runner: (String executable, List<String> a, Duration _) =>
+            runFfmpegWatchedProcess(executable, a, watch),
+      );
 
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
@@ -709,6 +770,17 @@ class CliFfmpegBackend implements FfmpegBackend {
         args: args,
         timeout: timeout,
         runner: runFfmpegProcess,
+      );
+
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      _runCliFfmpeg(
+        override: ffmpegExplicitOverride(),
+        bundledPath: _bundledFfmpegPath(),
+        isWindows: Platform.isWindows,
+        args: args,
+        timeout: timeout,
+        runner: runFfmpegQueryProcess,
       );
 
   @override
@@ -735,56 +807,82 @@ FfmpegBackend resolveFfmpegBackend() =>
     _cachedBackend ??= BlurayFfmpegBackend(_selectBackend());
 
 /// Adapts the shared input contract for desktop and platform FFmpeg backends.
-class BlurayFfmpegBackend implements FfmpegBackend {
+class BlurayFfmpegBackend implements FfmpegBackend, FfmpegWatchedRunner {
   const BlurayFfmpegBackend(this.delegate);
 
   final FfmpegBackend delegate;
 
+  /// 观察式运行：与 [run] 同一条蓝光输入改写；底层后端不支持观察式运行时退回它的
+  /// [FfmpegBackend.run]，用 [FfmpegWatch.stallTimeout] 当总预算（测试替身 / 未知后端）。
   @override
-  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
-    final AacsMediaSession session = AacsMediaSession();
-    BlurayFfmpegInput? input;
-    try {
-      input = await prepareBlurayFfmpegArgs(
+  Future<FfmpegRunResult> runWatched(List<String> args, FfmpegWatch watch) =>
+      runWithBlurayFfmpegInput(
         args,
-        resolveStream: session.resolve,
+        (List<String> resolved, AacsMediaSession session) async =>
+            _redactResult(switch (delegate) {
+              final FfmpegWatchedRunner watched =>
+                await watched.runWatched(resolved, watch),
+              final FfmpegBackend other =>
+                await other.run(resolved, watch.stallTimeout),
+            }, session),
       );
-      final FfmpegRunResult result = await delegate.run(
-        await session.ffmpegInputs(input.args),
-        timeout,
-      );
-      return _redactResult(result, session);
-    } finally {
-      await input?.dispose();
-      await session.close();
-    }
-  }
 
   @override
-  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
-    final AacsMediaSession session = AacsMediaSession();
-    BlurayFfmpegInput? input;
-    try {
-      input = await prepareBlurayFfmpegArgs(
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
+      runWithBlurayFfmpegInput(
+        args,
+        (List<String> resolved, AacsMediaSession session) async =>
+            _redactResult(await delegate.run(resolved, timeout), session),
+      );
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
+      runWithBlurayFfmpegInput(
         args,
         probe: true,
-        resolveStream: session.resolve,
+        (List<String> resolved, AacsMediaSession session) async =>
+            _redactResult(await delegate.runProbe(resolved, timeout), session),
       );
-      final FfmpegRunResult result = await delegate.runProbe(
-        await session.ffmpegInputs(input.args, probe: true),
-        timeout,
-      );
-      return _redactResult(result, session);
-    } finally {
-      await input?.dispose();
-      await session.close();
-    }
-  }
+
+  /// 查询类命令没有媒体输入，不经蓝光输入改写，直接交给底层后端。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      delegate.runQuery(args, timeout);
+
   FfmpegRunResult _redactResult(FfmpegRunResult result, AacsMediaSession session) =>
       FfmpegRunResult(returnCode: result.returnCode,
           output: session.redact(result.output), executable: result.executable,
           attemptedExecutables: result.attemptedExecutables,
           fallbackReason: result.fallbackReason);
+}
+
+/// 一条 ffmpeg 命令的蓝光输入改写生命周期：MPLS 输入改写成 concat 清单、加密段换成
+/// 本命令专属的解密回环 URL，[body] 跑完（无论成败）再删清单、关解密会话。
+///
+/// 所有吃媒体输入的 ffmpeg 命令都必须经过这里：[BlurayFfmpegBackend] 包住进程单例，
+/// 自己起进程的路径（互联转码分段，见 `live_transcode.dart`）直接调它。绕开它的命令
+/// 会把几 KB 的 `.mpls` 当成视频交给 ffmpeg。
+Future<T> runWithBlurayFfmpegInput<T>(
+  List<String> args,
+  Future<T> Function(List<String> resolved, AacsMediaSession session) body, {
+  bool probe = false,
+}) async {
+  final AacsMediaSession session = AacsMediaSession();
+  BlurayFfmpegInput? input;
+  try {
+    input = await prepareBlurayFfmpegArgs(
+      args,
+      probe: probe,
+      resolveStream: session.resolve,
+    );
+    return await body(
+      await session.ffmpegInputs(input.args, probe: probe),
+      session,
+    );
+  } finally {
+    await input?.dispose();
+    await session.close();
+  }
 }
 
 @visibleForTesting

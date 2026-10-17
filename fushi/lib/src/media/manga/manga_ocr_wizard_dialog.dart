@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -358,6 +360,10 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       }
     }
     if (!mounted) return;
+    // 用户在场：档位没选过时在开跑前问一次「默认交给 LLM」，任务的跟随步骤随后
+    // 按新档位装配（见 MangaOcrWizardEngines.decideAiDefault）。
+    await _engines.decideAiDefault?.call();
+    if (!mounted) return;
     if (widget.launchInBackground) {
       final String? bookKey = _createdBookKey;
       if (bookKey == null) {
@@ -531,7 +537,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
           });
         }
       },
-      onError: (Object e) => _onOcrError(e),
+      onError: (Object e) => _onOcrError(_mokuroErrorMessage(e)),
     );
   }
 
@@ -562,6 +568,22 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       },
       onError: (Object e) => _onOcrError(_remoteErrorMessage(e)),
     );
+  }
+
+  /// 外部 mokuro 失败 → 本地化文案；原始异常（含启动失败的底层原因）进日志。
+  ///
+  /// 2026-10 体验优化：runner 原先抛写死的中文句子。
+  String _mokuroErrorMessage(Object e) {
+    ErrorLogService.instance.log('MangaOcrWizard.externalMokuro', e);
+    if (e is! MokuroRunnerException) return '$e';
+    return switch (e.code) {
+      MokuroRunnerErrorCode.notFound => t.manga_ocr_mokuro_not_found,
+      MokuroRunnerErrorCode.timeout => t.manga_ocr_mokuro_timeout,
+      MokuroRunnerErrorCode.launchFailed => t.manga_ocr_mokuro_launch_failed,
+      MokuroRunnerErrorCode.nonZeroExit =>
+        t.manga_ocr_mokuro_exit_code(code: e.exitCode ?? '?'),
+      MokuroRunnerErrorCode.noOutput => t.manga_ocr_mokuro_no_output,
+    };
   }
 
   /// 远程失败 → 本地化可读文案（机器可读 code 映射；未知归入通用失败 + 详情）。
@@ -723,7 +745,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     // 外框走统一 ImportDialogFrame（审计 §1-K：与书/有声书/视频导入同一 chrome）；
     // 向导内容与阶段化动作按钮不变。
     return ImportDialogFrame(
-      leadingIcon: Icons.document_scanner_outlined,
+      leadingIcon: FushiIcons.ocr,
       // 已入库的书是「识别」不是「导入」：阅读器的「重新识别本卷」和作品页的
       // 识别入口都走这里，标题再叫「OCR 导入漫画」就是在说另一件事。
       title: widget.existingBook != null
@@ -739,11 +761,19 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
             if (_folderStatus == MangaOcrFolderStatus.noImages)
               _errorText(theme, t.manga_ocr_wizard_no_images),
             if (_folderStatus == MangaOcrFolderStatus.hasMokuro)
-              _errorText(theme, t.manga_ocr_wizard_has_mokuro),
+              _errorText(
+                theme,
+                t.manga_ocr_wizard_has_mokuro,
+                severity: FushiNoticeSeverity.info,
+              ),
             // 已入库且每页都有 OCR（mokuro.moe 下载的卷天生如此）：说清「不需要」，
             // 而不是让用户对着一个禁用的按钮猜。
             if (_folderStatus == MangaOcrFolderStatus.alreadyOcred)
-              _errorText(theme, t.manga_ocr_wizard_already_ocred),
+              _errorText(
+                theme,
+                t.manga_ocr_wizard_already_ocred,
+                severity: FushiNoticeSeverity.info,
+              ),
             if (_folderStatus == MangaOcrFolderStatus.valid) ...<Widget>[
               const SizedBox(height: 12),
               _engineSelector(busy),
@@ -760,20 +790,19 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
                 _lensLanguageSelector(busy),
               ],
               const SizedBox(height: 12),
-              TextField(
+              FushiTextFieldControl(
                 controller: _titleCtrl,
                 enabled: !busy && widget.existingBook == null,
                 decoration: InputDecoration(
                   labelText: t.manga_ocr_wizard_title_label,
                   isDense: true,
-                  border: const OutlineInputBorder(),
                 ),
               ),
             ],
             if (_error != null) _errorText(theme, _error!),
             if (busy) ...<Widget>[
               const SizedBox(height: 16),
-              LinearProgressIndicator(
+              FushiLinearProgressIndicator(
                 value: _indeterminate || _pagesTotal <= 0
                     ? null
                     : (_pagesDone / _pagesTotal).clamp(0.0, 1.0),
@@ -795,14 +824,18 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     if (widget.existingBook != null) {
       return FushiListItem(
         padding: EdgeInsets.zero,
-        leading: const Icon(Icons.menu_book_outlined),
+        leading: const FushiListLeadingIcon(
+          FushiIcons.books,
+          shape: FushiLeadingShape.square,
+          tone: FushiCardTone.primary,
+        ),
         title: Text(widget.existingBook!.title),
         subtitle: Text(p.basename(widget.existingBook!.extractDir)),
       );
     }
-    return OutlinedButton.icon(
+    return FushiOutlinedButton.icon(
       onPressed: busy ? null : _pickFolder,
-      icon: const Icon(Icons.folder_open_outlined),
+      icon: const FushiIcon(FushiIcons.folderOpen),
       label: Text(
         _imageDir == null
             ? t.manga_ocr_wizard_pick_folder
@@ -816,7 +849,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     if (_checkingEngines) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 8),
-        child: LinearProgressIndicator(),
+        child: FushiLinearProgressIndicator(),
       );
     }
     final ThemeData theme = Theme.of(context);
@@ -878,7 +911,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     if (segments.length < 2) return remoteReason ?? const SizedBox.shrink();
     final Widget selector = Align(
       alignment: Alignment.centerLeft,
-      child: SegmentedButton<MangaOcrEngineId>(
+      child: FushiSegmentedButton<MangaOcrEngineId>(
         showSelectedIcon: false,
         segments: segments,
         selected: <MangaOcrEngineId>{_engine},
@@ -902,43 +935,46 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   ///
   /// 换模型写回全局模型偏好（与设置页引擎下拉同一份）；逐页缓存按模型签名分
   /// 目录，换模型重跑一定真正重算。
+  ///
+  /// 本平台只列得出一个模型时（目前五端都只有逐列 CTC）不画下拉：只有一个
+  /// 选项的选择器是噪音；下面的下载入口照常保留。
   Widget _localModelSelector(ThemeData theme, bool busy) {
     final MangaOcrLocalModel selected = _engines.localModel!;
     final MangaOcrModelDownloadProgress? progress =
         _downloads?.progressOf(selected);
+    final List<MangaOcrLocalModel> models = platformMangaOcrLocalModels();
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        DropdownButtonFormField<MangaOcrLocalModel>(
-          key: const ValueKey<String>('manga_ocr_wizard_local_model'),
-          initialValue: selected,
-          isExpanded: true,
-          decoration: InputDecoration(
-            labelText: t.manga_ocr_local_model,
-            isDense: true,
-            border: const OutlineInputBorder(),
-          ),
-          items: <DropdownMenuItem<MangaOcrLocalModel>>[
-            for (final MangaOcrLocalModel model
-                in platformMangaOcrLocalModels())
-              DropdownMenuItem<MangaOcrLocalModel>(
-                value: model,
-                child: Text(
-                  localModelLabel(model),
-                  overflow: TextOverflow.ellipsis,
+        if (models.length > 1)
+          FushiDropdownButtonFormField<MangaOcrLocalModel>(
+            key: const ValueKey<String>('manga_ocr_wizard_local_model'),
+            initialValue: selected,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: t.manga_ocr_local_model,
+              isDense: true,
+            ),
+            items: <DropdownMenuItem<MangaOcrLocalModel>>[
+              for (final MangaOcrLocalModel model in models)
+                DropdownMenuItem<MangaOcrLocalModel>(
+                  value: model,
+                  child: Text(
+                    localModelLabel(model),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-          ],
-          onChanged: busy
-              ? null
-              : (MangaOcrLocalModel? model) {
-                  if (model != null) unawaited(_selectLocalModel(model));
-                },
-        ),
+            ],
+            onChanged: busy
+                ? null
+                : (MangaOcrLocalModel? model) {
+                    if (model != null) unawaited(_selectLocalModel(model));
+                  },
+          ),
         if (progress != null) ...<Widget>[
           const SizedBox(height: 8),
-          LinearProgressIndicator(
+          FushiLinearProgressIndicator(
             key: const ValueKey<String>('manga_ocr_wizard_model_progress'),
           ),
           const SizedBox(height: 4),
@@ -956,10 +992,10 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
                   style: theme.textTheme.bodySmall,
                 ),
               ),
-              FilledButton.tonalIcon(
+              FushiFilledButton.tonalIcon(
                 key: const ValueKey<String>('manga_ocr_wizard_model_download'),
                 onPressed: busy ? null : _downloadLocalModel,
-                icon: const Icon(Icons.download_outlined, size: 18),
+                icon: const FushiIcon(FushiIcons.download, size: 18),
                 label: Text(t.manga_ocr_download),
               ),
             ],
@@ -982,7 +1018,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
           child: Text(_lensLanguage),
         ),
     ];
-    return DropdownButtonFormField<String>(
+    return FushiDropdownButtonFormField<String>(
       initialValue: _lensLanguage,
       items: items,
       onChanged: busy
@@ -995,18 +1031,20 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       decoration: InputDecoration(
         labelText: t.manga_ocr_lens_language_label,
         isDense: true,
-        border: const OutlineInputBorder(),
       ),
     );
   }
 
-  Widget _errorText(ThemeData theme, String message) {
+  /// 阶段说明 / 错误：M3E 内嵌提示条（[FushiInlineNotice]，tonal 底 + 语义图标），
+  /// 「已有 mokuro / 已识别」这类说明式提示用 info，其余是 error。
+  Widget _errorText(
+    ThemeData theme,
+    String message, {
+    FushiNoticeSeverity severity = FushiNoticeSeverity.error,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Text(
-        message,
-        style: TextStyle(color: theme.colorScheme.error),
-      ),
+      child: FushiInlineNotice(severity: severity, message: message),
     );
   }
 
@@ -1022,7 +1060,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   List<Widget> _buildActions(bool busy) {
     if (_stage == _WizardStage.running) {
       return <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: _cancelRun,
           child: Text(t.dialog_cancel),
         ),
@@ -1031,24 +1069,24 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     return <Widget>[
       // 引擎不可用 / 想换引擎：直达「漫画 OCR」设置，返回后重探——刚下完的模型、
       // 刚配好的 mokuro 路径立刻能选，不必关掉向导重开。
-      TextButton.icon(
+      FushiTextButton.icon(
         key: const ValueKey<String>('manga_ocr_wizard_settings'),
         onPressed: busy ? null : () => unawaited(_openOcrSettings()),
-        icon: const Icon(Icons.tune_outlined, size: 18),
+        icon: const FushiIcon(FushiIcons.settings, size: 18),
         label: Text(t.manga_ocr_settings_open),
       ),
-      TextButton(
+      FushiTextButton(
         onPressed: busy ? null : () => Navigator.pop(context),
         child: Text(t.dialog_cancel),
       ),
       if (widget.existingBook == null)
-        OutlinedButton(
+        FushiOutlinedButton(
           onPressed: _folderStatus == MangaOcrFolderStatus.valid && !busy
               ? () => unawaited(_importWithoutOcr())
               : null,
           child: Text(t.manga_import_direct),
         ),
-      FilledButton(
+      FushiFilledButton(
         onPressed: _canRun && !busy ? () => unawaited(_run()) : null,
         child: Text(t.manga_ocr_wizard_run),
       ),

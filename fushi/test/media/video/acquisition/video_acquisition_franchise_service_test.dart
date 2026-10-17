@@ -265,4 +265,143 @@ void main() {
     expect(service.state.stage, VideoAcquisitionStage.cancelled);
     expect(resourceSearches, 0);
   });
+
+  // BUG-2937：系列分批查完——服务执行续查效果，直到最后一批才出清单。
+  group('分批续查', () {
+    final VideoDiscoveryItem show = _work(
+      'tv',
+      'Doraemon',
+      VideoMetadataMediaKind.tv,
+      year: 2005,
+      status: 'Ended',
+    );
+    final VideoDiscoveryItem movieA = _work(
+      'a',
+      'Movie A',
+      VideoMetadataMediaKind.movie,
+      year: 1980,
+    );
+    final VideoDiscoveryItem movieB = _work(
+      'b',
+      'Movie B',
+      VideoMetadataMediaKind.movie,
+      year: 2018,
+    );
+
+    VideoAcquisitionService build(
+      Future<VideoFranchise?> Function(VideoFranchiseQuery query) loadFranchise,
+    ) {
+      final VideoAcquisitionService service = VideoAcquisitionService(
+        defaults: const VideoAcquisitionDefaults(
+          qualityPref: '1080p',
+          subtitleLanguagePref: 'ja',
+          sources: <VideoAcquisitionSource>[
+            VideoAcquisitionSource(id: 7, label: 'Anime'),
+          ],
+        ),
+        ports: VideoAcquisitionPorts(
+          searchWorks: (_) async =>
+              ProviderBatchResult<VideoDiscoveryPage>.success(
+                <VideoDiscoveryPage>[
+                  VideoDiscoveryPage(
+                    items: <VideoDiscoveryItem>[show],
+                    page: 1,
+                    hasMore: false,
+                  ),
+                ],
+              ),
+          loadDetails: (VideoDiscoveryItem item) async => item.metadataWork,
+          loadFranchise: loadFranchise,
+          queryPresence: (_) async => VideoLibraryPresence.none,
+          isSubscribed: (_) async => false,
+          searchResources: (_) async =>
+              ProviderBatchResult<VideoResourceCandidate>.success(
+                const <VideoResourceCandidate>[],
+              ),
+          parseIntent: (_) async => const VideoAcquisitionIntent(
+            VideoAcquisitionIntentKind.provide,
+            VideoAcquisitionIntentPatch(
+              workQueries: <String>['Doraemon'],
+              scope: VideoAcquisitionScope.franchiseMovies,
+            ),
+          ),
+          decideIdentity: (_) async => null,
+          persistPreference: (_, _) async {},
+          setSeriesSubtitleLanguage: (_, _) async {},
+          submitDownload: (_) async => 0,
+          submitSubscription: (_) async {},
+        ),
+      );
+      addTearDown(service.dispose);
+      return service;
+    }
+
+    List<VideoAcquisitionSayKind> said(
+      VideoAcquisitionService service,
+    ) => <VideoAcquisitionSayKind>[
+      for (final VideoAcquisitionMessage message in service.state.transcript)
+        if (message is VideoAcquisitionAssistantMessage) message.say.kind,
+    ];
+
+    test('第一批带续查入口 → 服务接着查，最后一批才出清单', () async {
+      int continued = 0;
+      final VideoAcquisitionService service = build(
+        (_) async => VideoFranchise(
+          name: 'Doraemon',
+          series: <VideoDiscoveryItem>[show],
+          movies: <VideoDiscoveryItem>[movieA],
+          more: () async {
+            continued++;
+            return VideoFranchise(
+              name: 'Doraemon',
+              series: <VideoDiscoveryItem>[show],
+              movies: <VideoDiscoveryItem>[movieA, movieB],
+            );
+          },
+        ),
+      );
+      await service.submitText('全部哆啦A梦剧场版');
+      expect(continued, 1);
+      expect(
+        service.state.stage,
+        VideoAcquisitionStage.awaitingFranchiseConfirm,
+      );
+      expect(
+        service.state.franchiseEntries.map(
+          (VideoAcquisitionFranchiseEntry e) => e.item.reference.mediaId,
+        ),
+        <String>['a', 'b'],
+      );
+      final List<VideoAcquisitionSayKind> kinds = said(service);
+      expect(
+        kinds.indexOf(VideoAcquisitionSayKind.franchiseProgress),
+        lessThan(kinds.indexOf(VideoAcquisitionSayKind.franchiseFound)),
+      );
+      expect(
+        kinds,
+        isNot(contains(VideoAcquisitionSayKind.franchiseTruncated)),
+      );
+    });
+
+    test('续查抛异常 → 交出已收到的，说清单不全，会话不卡在找系列', () async {
+      final VideoAcquisitionService service = build(
+        (_) async => VideoFranchise(
+          name: 'Doraemon',
+          series: <VideoDiscoveryItem>[show],
+          movies: <VideoDiscoveryItem>[movieA],
+          more: () async => throw StateError('jikan 503'),
+        ),
+      );
+      await service.submitText('全部哆啦A梦剧场版');
+      expect(
+        service.state.stage,
+        VideoAcquisitionStage.awaitingFranchiseConfirm,
+      );
+      expect(service.state.franchiseEntries, hasLength(1));
+      expect(
+        said(service),
+        contains(VideoAcquisitionSayKind.franchiseTruncated),
+      );
+    });
+  });
 }

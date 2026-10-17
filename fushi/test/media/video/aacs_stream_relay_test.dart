@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -5,6 +6,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
+import 'package:fushi_engine/media/video/bluray/aacs_content_decoder.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_stream_relay.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart';
@@ -268,6 +270,77 @@ void main() {
       throwsStateError,
     );
   });
+
+  test(
+    'decrypted range is pulled on demand and cancelling it closes the file',
+    () async {
+      // Players abandon range requests on every probe and seek. A reader that
+      // keeps going after its consumer left reads the rest of the title for
+      // nobody, and on an optical drive starves the live request: playback
+      // stalls once the first buffer runs out.
+      final output = await file.open(mode: FileMode.writeOnlyAppend);
+      final unit = _encryptedUnit(key, 0);
+      for (var i = 0; i < 256; i++) {
+        await output.writeFrom(unit);
+      }
+      await output.close();
+      final decoder = AacsContentDecoder.fromVolumeUniqueKey(
+        unitKeyFile: _keyFile(key, vuk),
+        volumeUniqueKey: vuk,
+      );
+      final length = await file.length();
+      final chunks = <Uint8List>[];
+      late final StreamSubscription<Uint8List> subscription;
+      final firstChunk = Completer<void>();
+      subscription =
+          AacsStreamRelay.decryptedRange(
+            file,
+            decoder,
+            6137,
+            length - 1,
+          ).listen((chunk) {
+            chunks.add(chunk);
+            subscription.pause();
+            if (!firstChunk.isCompleted) firstChunk.complete();
+          });
+      await firstChunk.future;
+      // Paused consumer: the generator must not read past the pending yield.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(chunks, hasLength(1));
+      expect(chunks.single.sublist(0, 7), expected.sublist(6137, 6144));
+      await subscription.cancel();
+      if (Platform.isWindows) {
+        // Windows refuses deleting a file while any handle is still open.
+        await file.delete();
+        await file.writeAsBytes(const <int>[]);
+      }
+    },
+  );
+
+  test(
+    'decrypted range fails before emitting a unit it cannot decrypt',
+    () async {
+      final output = await file.open(mode: FileMode.writeOnlyAppend);
+      await output.setPosition(6144);
+      await output.writeFrom(Uint8List(6144));
+      await output.close();
+      final decoder = AacsContentDecoder.fromVolumeUniqueKey(
+        unitKeyFile: _keyFile(key, vuk),
+        volumeUniqueKey: vuk,
+      );
+      final emitted = <int>[];
+      await expectLater(
+        AacsStreamRelay.decryptedRange(
+          file,
+          decoder,
+          0,
+          expected.length - 1,
+        ).forEach(emitted.addAll),
+        throwsFormatException,
+      );
+      expect(emitted, isEmpty);
+    },
+  );
 
   test(
     'disconnect and shutdown release files and stop the listening socket',

@@ -2,11 +2,16 @@
 ///
 /// ```
 /// GET    /api/downloads                  {jobs: [...]}
-/// POST   /api/downloads                  {magnet, title, mediaKind?, discoveryKind?} → {jobId}
+/// POST   /api/downloads                  {magnet | torrent, title, mediaKind?, discoveryKind?,
+///                                         files?, year?, metadataProvider?, externalId?,
+///                                         subtitlePolicy?} → {jobId}（字段见 HostDownloadAddRequest）
+/// GET    /api/downloads/<id>/subtitles   {subtitles: [...]}
 /// POST   /api/downloads/<id>/cancel
 /// POST   /api/downloads/<id>/retry
-/// DELETE /api/downloads/<id>
+/// DELETE /api/downloads/<id>[?deleteFiles=true|false]
 /// ```
+///
+/// `deleteFiles` 缺省 = 旧客户端，host 按各自的历史缺省处理（BUG-3437）。
 library;
 
 import 'dart:convert';
@@ -45,28 +50,11 @@ Future<shelf.Response> handleHostDownloadRequest(
       }
       if (method == 'POST') {
         final Object? decoded = jsonDecode(await request.readAsString());
-        if (decoded is! Map) return shelf.Response(400, body: 'JSON object body required');
-        final String magnet = (decoded['magnet'] ?? '').toString().trim();
-        final String title = (decoded['title'] ?? '').toString().trim();
-        if (magnet.isEmpty) return shelf.Response(400, body: 'Missing magnet');
-        if (title.isEmpty) return shelf.Response(400, body: 'Missing title');
-        final String mediaKind = (decoded['mediaKind'] ?? 'movie').toString();
-        if (mediaKind != 'movie' && mediaKind != 'tv') {
-          return shelf.Response(400, body: 'mediaKind must be movie or tv');
+        if (decoded is! Map) {
+          return shelf.Response(400, body: 'JSON object body required');
         }
-        final String discoveryKind = (decoded['discoveryKind'] ?? '').toString().trim();
-        if (discoveryKind.isNotEmpty && !kHostDownloadDiscoveryKinds.contains(discoveryKind)) {
-          return shelf.Response(
-            400,
-            body: 'discoveryKind must be one of ${kHostDownloadDiscoveryKinds.join(', ')}',
-          );
-        }
-        final String jobId = await host.addMagnet(
-          magnetUri: magnet,
-          title: title,
-          mediaKind: mediaKind,
-          discoveryKind: discoveryKind.isEmpty ? null : discoveryKind,
-        );
+        final String jobId =
+            await host.add(HostDownloadAddRequest.fromJson(decoded));
         return _json(<String, Object?>{'jobId': jobId});
       }
       return shelf.Response(405);
@@ -75,8 +63,28 @@ Future<shelf.Response> handleHostDownloadRequest(
     if (id.contains('..') || id.contains('/')) return shelf.Response(400);
     if (seg.length == 1) {
       if (method != 'DELETE') return shelf.Response(405);
-      await host.deleteJob(id);
+      final String? rawDeleteFiles =
+          request.url.queryParameters['deleteFiles'];
+      final bool? deleteFiles = switch (rawDeleteFiles) {
+        null => null,
+        'true' || '1' => true,
+        'false' || '0' => false,
+        _ => throw const FormatException(
+            'deleteFiles must be true or false',
+          ),
+      };
+      await host.deleteJob(id, deleteFiles: deleteFiles);
       return _json(const <String, Object?>{'ok': true});
+    }
+    if (seg.length == 2 && seg[1] == 'subtitles') {
+      if (method != 'GET') return shelf.Response(405);
+      final List<VideoDownloadJobSubtitleRow>? rows =
+          await host.listJobSubtitles(id);
+      if (rows == null) return shelf.Response.notFound('Unknown job');
+      return _json(<String, Object?>{
+        'subtitles':
+            rows.map(videoDownloadJobSubtitleToWire).toList(growable: false),
+      });
     }
     if (method != 'POST') return shelf.Response(405);
     switch (seg[1]) {

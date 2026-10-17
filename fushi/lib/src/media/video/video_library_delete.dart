@@ -27,6 +27,11 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
         VideoDownloadPipelineService,
         prepareVideoDownloadJobsForLocalDelete,
         reconcileVideoDownloadJobsAfterLocalDelete;
+import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart'
+    show
+        BlurayExtraDeletionTombstone,
+        planBlurayExtraDeletionTombstones,
+        writeBlurayExtraDeletionTombstones;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show LocalVideoFileDeleteHooks;
@@ -62,6 +67,18 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
       database: database,
       bookUids: bookUids,
     );
+  }
+  // 蓝光盘特典不在盘合集里，删掉它不留任何成员墓碑，下一次重扫会原样建回来
+  // （PR #2058 审查）。删前认出特典（删后合集成员关系就没了），删成后在盘合集
+  // 自然键下记墓碑，扫描器据此跳过。best-effort：墓碑记不上不拦删除。
+  List<BlurayExtraDeletionTombstone> extraTombstones =
+      const <BlurayExtraDeletionTombstone>[];
+  try {
+    extraTombstones =
+        await planBlurayExtraDeletionTombstones(database, bookUids);
+  } catch (e, stack) {
+    ErrorLogService.instance
+        .log('VideoLibraryDelete.planBlurayExtraTombstones', e, stack);
   }
   int deleted;
   List<VideoBookDeleteFailure> failed = const <VideoBookDeleteFailure>[];
@@ -107,6 +124,24 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
         failure.error,
         failure.stackTrace,
       );
+    }
+  }
+  if (extraTombstones.isNotEmpty) {
+    final Set<String> failedUids = <String>{
+      for (final VideoBookDeleteFailure f in failed) f.bookUid,
+    };
+    try {
+      await writeBlurayExtraDeletionTombstones(
+        database,
+        extraTombstones,
+        deletedUids: <String>{
+          for (final String uid in bookUids)
+            if (!failedUids.contains(uid)) uid,
+        },
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('VideoLibraryDelete.writeBlurayExtraTombstones', e, stack);
     }
   }
   return (deleted: deleted, failed: failed, localFiles: report);

@@ -124,7 +124,7 @@ void main() {
     );
     final String refreshBody = methodBody(
       src,
-      'Future<void> _refreshSectionHighlights(int section)',
+      'Future<void> _refreshSectionHighlights(int section, {String? freshId})',
     );
     expect(
       containsCodeLine(

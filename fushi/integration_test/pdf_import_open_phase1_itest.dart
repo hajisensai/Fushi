@@ -2,7 +2,7 @@
 // 书架列书按 format 路由到 ReaderPdfSource → ReaderPdfPage 用 pdfrx 渲染出非空白页。
 //
 // 运行（Windows 离屏）：
-//   cd hibiki
+//   cd fushi
 //   .\tool\run_windows_itest.ps1 integration_test\pdf_import_open_phase1_itest.dart
 // 或裸跑（需已连接设备/桌面）：
 //   flutter test integration_test\pdf_import_open_phase1_itest.dart -d windows \
@@ -17,7 +17,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
@@ -43,7 +43,7 @@ void main() {
 
     // 隔离 DB + 存储根，避免碰真实用户库（用内存库 + 临时 fushi_books 根）。
     final Directory tmpRoot =
-        Directory.systemTemp.createTempSync('hibiki_pdf_phase1_');
+        Directory.systemTemp.createTempSync('fushi_pdf_phase1_');
     addTearDown(() {
       try {
         if (tmpRoot.existsSync()) tmpRoot.deleteSync(recursive: true);

@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -222,7 +222,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_compare_download_pp');
+        Directory.systemTemp.createTempSync('fushi_compare_download_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -251,7 +251,7 @@ void main() {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final Directory tempDir =
-        Directory.systemTemp.createTempSync('hibiki_compare_download_tmp');
+        Directory.systemTemp.createTempSync('fushi_compare_download_tmp');
     addTearDown(() {
       try {
         if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
@@ -283,7 +283,7 @@ void main() {
     expect(find.text('RemoteOnlyBook'), findsOneWidget);
     expect(find.text(t.sync_compare_download), findsOneWidget);
     expect(find.byType(Checkbox), findsNothing,
-        reason: '远端独有书应像 Hibiki 互联列表一样点行内动作下载，不再用勾选框');
+        reason: '远端独有书应像 Fushi 互联列表一样点行内动作下载，不再用勾选框');
 
     // Apply 按钮计数为 0（remote-only 下载是行内瞬时动作）。
     expect(find.text(t.sync_compare_apply(count: 0)), findsOneWidget);

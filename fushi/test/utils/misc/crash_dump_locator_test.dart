@@ -44,7 +44,7 @@ void main() {
     late Directory tmp;
 
     setUp(() {
-      tmp = Directory.systemTemp.createTempSync('hibiki_crashdump_test');
+      tmp = Directory.systemTemp.createTempSync('fushi_crashdump_test');
     });
 
     tearDown(() {

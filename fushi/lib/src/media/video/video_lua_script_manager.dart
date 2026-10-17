@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as p;
 
@@ -18,8 +19,11 @@ export 'package:fushi/src/media/video/video_lua_capability.dart';
 /// `scripts` 选项是 init-only，media_kit 建 handle 后经 setProperty 写它是静默
 /// no-op。与 [applyShadersToPlayer]（video_shader_manager.dart）同一条
 /// `NativePlayer.command` 边界。**命令可达 ≠ 脚本能跑**：随包 libmpv 有没有编
-/// Lua 是按平台固定的二进制事实（[MpvLuaCapability]，Windows 有、Android 实测
-/// `-Dlua=disabled` 没有），没编时 `load-script` 照样返回成功、然后什么都不发生。
+/// Lua 是按平台固定的二进制事实（[MpvLuaCapability]；Android 随包 jar 自 BUG-3325
+/// 起编入 Lua 5.2；Windows 随包 libmpv 自 `fushi-discnav1-hwcrop1-lua1` 起由
+/// `tool/bluray/build_libmpv.ps1` 以 `-Dlua=luajit` 构建、有（BUG-3325），此前的
+/// `fushi-discnav1` 系是 `-Dlua=disabled`），没编时 `load-script` 可能照样返回成功、
+/// 然后什么都不发生。
 /// 能力由 [VideoPlayerController] 建 Player 后读 `mpv-configuration` 探测并落
 /// pref，设置页据此如实说明；不按平台名硬编码。
 ///
@@ -32,13 +36,23 @@ export 'package:fushi/src/media/video/video_lua_capability.dart';
 /// real.dart:2421），mpv 在 `set_osd_msg_va` 里 `level > osd_level` 直接丢弃
 /// （player/osd.c），脚本最常用的 `mp.osd_message` 一个字都画不出来。装载脚本时
 /// 同批下发 [buildLuaOsdProperties] 把文字 OSD 层打开，并用 `osd-on-seek=no` 防止
-/// Hibiki 自己的 seek 顺带弹出原生进度条。没装脚本的播放器保持 media_kit 默认。
+/// Fushi 自己的 seek 顺带弹出原生进度条。没装脚本的播放器保持 media_kit 默认。
 ///
 /// **诊断**：mpv 对 `load-script` 成功不打任何日志，失败只打 error/fatal 日志
 /// （`Could not load lua script <path>` / `<脚本名>: Lua error: ...`），
 /// media_kit 默认 `logLevel=error` 恰好收得到。[matchLuaLogToScripts] 把日志行
 /// 归到脚本路径，[VideoPlayerController.luaScriptStates] 据此给设置页每脚本一行
 /// 状态——"貌似用不了"必须变成"哪个脚本、哪一行报了什么"。
+///
+/// **字幕镜像**（#2014）：Fushi 的字幕全部由 Flutter overlay 自己画，libmpv 侧
+/// `sid` 平时恒为 `no`——依赖 `sub-text` / `sub-start` / `sub-end` 的脚本（字幕结束
+/// 自动暂停、`sub-seek` 逐句跳转这类最常见的脚本）因此永远收不到任何一句字幕。装了
+/// 脚本且主字幕是 Dart 侧文本 cue 时，[VideoPlayerController] 把同一份 cue 写成 SRT
+/// （[buildLuaSubtitleMirrorSrt]）经 `sub-add` 挂成一条隐藏轨（标题
+/// [kLuaSubtitleMirrorTrackTitle]）：`sub-visibility=no` 不画，Dart 侧调轴直接烘进 SRT
+/// 时间戳，脚本读到的就是 overlay 正显示的那句。这条轨不是用户的字幕源，按序号选轨
+/// / 数轨的地方都要用 [isLuaSubtitleMirrorTrack] 滤掉它（它是 `sub-add` 追加的外挂
+/// 轨，排在全部内嵌轨之后，不会挤占内嵌轨序号）。
 ///
 /// 能力边界（用户可感，设置页列表底部原样说明）：键盘/鼠标事件由 Flutter 层消费、
 /// 到不了 libmpv，依赖按键绑定或 OSC 交互的脚本无处触发；监听属性/事件、自动改
@@ -100,10 +114,22 @@ List<List<String>> buildLoadScriptCommands(List<String> absolutePaths) {
 ///
 /// `osd-level=1`：文字 OSD 只在有人主动 `show-text` / `mp.osd_message` 时出现
 /// （不常驻时间/状态行）。`osd-on-seek=no`：seek 命令不再顺带画原生进度条——
-/// Hibiki 的进度条是 Flutter 层自己的，两条叠着就是 bug。
+/// Fushi 的进度条是 Flutter 层自己的，两条叠着就是 bug。
 Map<String, String> buildLuaOsdProperties() => const <String, String>{
       'osd-level': '1',
       'osd-on-seek': 'no',
+    };
+
+/// 每次 `open` 之前都下发的 Lua 宿主基线属性，与有没有装用户脚本无关。纯函数。
+///
+/// libmpv 一旦编了 Lua，mpv 内置的 `ytdl_hook.lua` 也随之生效（`ytdl` 默认
+/// `yes`）：网络流加载失败时它会去拉起 `yt-dlp` / `youtube-dl` 子进程重新解析
+/// URL。Fushi 的在线流一律由 Dart 侧解析、经应用内中继（`http-proxy`）取字节，
+/// 不需要也不允许 mpv 绕开这条链路自己解析——移动端更没有那个可执行文件，只会
+/// 白白多一轮失败重试、把真实的加载错误盖掉。必须在 `open` 之前设：钩子挂在
+/// loadfile 的 `on_load` / `on_load_fail` 上。
+Map<String, String> buildLuaHostBaselineProperties() => const <String, String>{
+      'ytdl': 'no',
     };
 
 final RegExp _nonIdentifierChar = RegExp(r'[^A-Za-z0-9]');
@@ -179,4 +205,113 @@ Future<void> applyLuaScriptsToPlayer(
       // mpv 日志经 [matchLuaLogToScripts] 归因到脚本，不在这里吞成"没事"。
     }
   }
+}
+
+/// 字幕镜像轨在 mpv `track-list` 里的标题（`sub-add` 第三参数），据此把它与用户的
+/// 真实字幕轨区分开（见文件头"字幕镜像"段）。
+const String kLuaSubtitleMirrorTrackTitle = 'fushi-lua-subtitle-mirror';
+
+/// [track] 是否是 Fushi 给 Lua 脚本挂的字幕镜像轨（不是用户的字幕源）。纯函数。
+bool isLuaSubtitleMirrorTrack(SubtitleTrack track) =>
+    track.title == kLuaSubtitleMirrorTrackTitle;
+
+/// `sub-add <srt> select <标题>` 之后，从 libmpv 当前主字幕轨
+/// （`current-tracks/sub/id` / `current-tracks/sub/title`）认回镜像轨 id。纯函数。
+///
+/// 只认当前选中轨、不按 `track-list` 末尾认：TS / 网络流会在播放中途动态追加轨，
+/// 末尾那条未必是刚挂的镜像。标题对不上（选中被别处改掉）或属性不可用（读到空串）
+/// 时返回 null——宁可不记，也不能把用户的真实轨记成镜像拿去 `sub-remove`。
+String? resolveLuaSubtitleMirrorTrackId({
+  required String selectedId,
+  required String selectedTitle,
+}) {
+  final String id = selectedId.trim();
+  if (selectedTitle != kLuaSubtitleMirrorTrackTitle) return null;
+  if (id.isEmpty || id == 'no' || id == 'auto') return null;
+  return id;
+}
+
+/// 删除一份字幕镜像 SRT（`systemTemp/fushi_lua_subtitle_mirror` 下的临时文件）。
+///
+/// [after] 非 null 时先等它完成再删——典型是 libmpv Player 的释放：Windows 上仍被
+/// mpv 打开的文件删不掉。[after] 自身失败不影响删除（释放失败由它自己的调用方报告）。
+/// 文件已不存在 / 删不掉不算错误：临时目录里的残留无害，调用方也做不了更多。
+Future<void> discardLuaSubtitleMirrorFile(
+  File file, {
+  Future<void>? after,
+}) async {
+  if (after != null) {
+    try {
+      await after;
+    } catch (_) {
+      // 释放失败照样删文件。
+    }
+  }
+  try {
+    await file.delete();
+  } on FileSystemException {
+    // 已被清理 / 仍被占用：临时目录里的残留无害。
+  }
+}
+
+/// 字幕镜像该不该挂：装了脚本、主字幕是 Dart 侧文本 cue（非图形轨 / 非 libmpv
+/// 解码回流——后两者 libmpv 已有真实 `sid`，脚本本就读得到）、且不在蓝光导航会话
+/// （那里的轨归碟片菜单所有）。纯函数，供控制器与单测共用同一判据。
+bool shouldMirrorSubtitlesForLua({
+  required bool hasLoadedScripts,
+  required bool hasTextCues,
+  required bool graphicSubtitleActive,
+  required bool playerDecodedSubtitleActive,
+  required bool blurayNavigationSession,
+}) =>
+    hasLoadedScripts &&
+    hasTextCues &&
+    !graphicSubtitleActive &&
+    !playerDecodedSubtitleActive &&
+    !blurayNavigationSession;
+
+/// 把 [cues]（Dart 侧主字幕）连同调轴 [delayMs] 写成 SRT。纯函数。
+///
+/// 调轴**烘进时间戳**，不走 mpv `sub-delay`：实测（mpv 0.41）`sub-start` /
+/// `sub-end` 报的是未叠 `sub-delay` 的原始时间，而 `sub-text` 按叠过的时间出现——
+/// 拿 `sub-end` 对 `time-pos` 判句尾的脚本会在句中就停。烘进去后三者同口径，与
+/// overlay（`posMs - delayMs` 落在 cue 内即显示）同一句、同一刻。负偏移把时间推到
+/// 0 之前的部分截到 0。
+///
+/// 只保留 `endMs > startMs` 且有正文的 cue，按 startMs 排序后连续编号。SRT 以空行
+/// 分隔条目，正文里的空行会把一条拆成两条，故压掉空行、换行统一成 `\n`。返回空串
+/// 表示没有可镜像的 cue（调用方据此不挂轨）。
+String buildLuaSubtitleMirrorSrt(List<AudioCue> cues, {int delayMs = 0}) {
+  final List<AudioCue> usable = <AudioCue>[
+    for (final AudioCue cue in cues)
+      if (cue.endMs > cue.startMs && cue.text.trim().isNotEmpty) cue,
+  ]..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
+  final StringBuffer out = StringBuffer();
+  int index = 0;
+  for (final AudioCue cue in usable) {
+    final int startMs = cue.startMs + delayMs;
+    final int endMs = cue.endMs + delayMs;
+    if (endMs <= 0) continue; // 整句被负偏移推到片头之前：不可能再显示。
+    index++;
+    final String text = cue.text
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .split('\n')
+        .map((String line) => line.trimRight())
+        .where((String line) => line.isNotEmpty)
+        .join('\n');
+    out
+      ..write('$index\n')
+      ..write('${_srtTimestamp(startMs)} --> ${_srtTimestamp(endMs)}\n')
+      ..write('$text\n\n');
+  }
+  return out.toString();
+}
+
+/// 毫秒 → SRT 时间戳 `HH:MM:SS,mmm`（负值按 0）。
+String _srtTimestamp(int ms) {
+  final int t = ms < 0 ? 0 : ms;
+  String pad(int value, int width) => value.toString().padLeft(width, '0');
+  return '${pad(t ~/ 3600000, 2)}:${pad(t ~/ 60000 % 60, 2)}:'
+      '${pad(t ~/ 1000 % 60, 2)},${pad(t % 1000, 3)}';
 }

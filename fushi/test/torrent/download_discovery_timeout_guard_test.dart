@@ -43,6 +43,8 @@ void main() {
         // （nyaa_discovery_source / nyaa_resource_provider）的调用点没有外层
         // 超时，所以时限必须落在 client 上；同样不许在这里重新长出裸 20s。
         '../packages/fushi_engine/lib/media/torrent/nyaa_client.dart',
+        // apibay / Knaben（BUG-2933）：原先没有总时限，挂住整轮资源搜索。
+        '../packages/fushi_engine/lib/media/torrent/public_video_index_client.dart',
       ];
       // `.timeout(` 后面直接跟 Duration(...) 的写法即为漏网魔法数字。
       // `const` 可省，故设为可选——只匹配 `const Duration` 的正则会被
@@ -94,7 +96,8 @@ void main() {
           'createDownloadHttpClient()async=>createAppHttpIoClient('
           'connectionTimeout:kDownloadConnectionTimeout)',
         ),
-        reason: 'AppModel.createDownloadHttpClient 必须把 '
+        reason:
+            'AppModel.createDownloadHttpClient 必须把 '
             'kDownloadConnectionTimeout 传给 createAppHttpIoClient',
       );
     });

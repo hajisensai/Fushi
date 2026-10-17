@@ -352,7 +352,11 @@ async function waitForRenderSettled(sb, timeoutMs = 5000) {
     const card = sb.window.__test.build(
       entry(['JMdict'], { frequencies: [{ dictionary: 'JPDBv2', frequencies: [{ value: '15199' }] }] }), 0);
     assert.notStrictEqual(card, null, 'an entry with a visible glossary must render');
-    const hasFreq = card.children.some(c => hasClass(c, 'frequency-section'));
+    // 10-09 起频率 / 音调挪进词头右侧的 .entry-header-meta 列，不再是卡片直接子节点；
+    // 按子树找。
+    const hasFreqDeep = (node) => !!node && (hasClass(node, 'frequency-section') ||
+      (node.children || []).some(hasFreqDeep));
+    const hasFreq = hasFreqDeep(card);
     assert.ok(hasFreq, 'a visible entry with frequencies must keep its frequency section');
   }
 

@@ -18,7 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// their byte-identity is enforced separately by
 /// browser_extension_dict_media_mirror_guard_test.dart.
 ///
-/// flutter test cwd is the hibiki package root.
+/// flutter test cwd is the fushi package root.
 void main() {
   const Map<String, String> mirrors = <String, String>{
     'assets': 'assets/browser_extension',

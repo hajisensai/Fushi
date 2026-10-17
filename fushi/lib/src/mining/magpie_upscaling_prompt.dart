@@ -9,7 +9,7 @@
 /// 不引 i18n、不碰 DB），这样它才能被单测直接构造。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/mining/magpie_upscaling.dart';
 import 'package:fushi/utils.dart';
 
@@ -69,7 +69,7 @@ class MagpieUpscalingModeDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.game_upscaling_pick_title(name: gameName)),
       content: SizedBox(
         width: 460,
@@ -86,7 +86,7 @@ class MagpieUpscalingModeDialog extends StatelessWidget {
                 ),
               ),
               for (final MagpieUpscalingMode mode in MagpieUpscalingMode.values)
-                RadioListTile<MagpieUpscalingMode>(
+                FushiRadioListTile<MagpieUpscalingMode>(
                   key: ValueKey<String>(
                     'magpie-upscaling-mode-${magpieUpscalingModeToKey(mode)}',
                   ),

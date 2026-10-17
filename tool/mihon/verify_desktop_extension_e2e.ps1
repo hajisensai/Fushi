@@ -29,7 +29,7 @@ $port = Get-MihonFreeLoopbackPort
 $token = New-MihonAuthToken
 $dataRoot = Join-Path (
     [IO.Path]::GetTempPath()
-) ("hibiki-mihon-extension-e2e-" + [Guid]::NewGuid().ToString("N"))
+) ("fushi-mihon-extension-e2e-" + [Guid]::NewGuid().ToString("N"))
 [IO.Directory]::CreateDirectory($dataRoot) | Out-Null
 
 $startInfo = [Diagnostics.ProcessStartInfo]::new()

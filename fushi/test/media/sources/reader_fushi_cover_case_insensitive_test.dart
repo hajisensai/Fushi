@@ -84,7 +84,7 @@ void main() {
 
     setUp(() {
       ReaderFushiSource.debugResetCoverCache();
-      tempDir = Directory.systemTemp.createTempSync('hibiki_cover_ci_');
+      tempDir = Directory.systemTemp.createTempSync('fushi_cover_ci_');
     });
     tearDown(() {
       ReaderFushiSource.debugResetCoverCache();
@@ -148,7 +148,7 @@ void main() {
     late Directory tempDir;
 
     setUp(() {
-      tempDir = Directory.systemTemp.createTempSync('hibiki_mine_cover_');
+      tempDir = Directory.systemTemp.createTempSync('fushi_mine_cover_');
     });
     tearDown(() {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);

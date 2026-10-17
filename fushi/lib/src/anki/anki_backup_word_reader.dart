@@ -2,7 +2,9 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
+import 'package:fushi_engine/srs/apkg/anki_collection_db.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 /// 读 Anki 备份（`.colpkg` / `.apkg`）里每条笔记的**第一个字段**。
@@ -60,7 +62,7 @@ Set<String> readAnkiBackupFirstFieldsSync({
     final String extracted = '${scratch.path}/${entry.name}';
     final OutputFileStream out = OutputFileStream(extracted);
     try {
-      entry.writeContent(out);
+      writeZipEntryStreaming(entry, out);
     } finally {
       out.closeSync();
     }
@@ -100,7 +102,7 @@ ArchiveFile? _pickCollectionEntry(Archive archive) {
 Set<String> _readFirstFields(String dbPath) {
   final Database db;
   try {
-    db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
+    db = openAnkiCollectionDb(dbPath);
   } on SqliteException catch (e) {
     throw AnkiBackupFormatException('cannot open collection: $e');
   }

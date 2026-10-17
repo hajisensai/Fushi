@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,7 +9,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/log_upload_config.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 上传结果状态。
 enum LogUploadStatus {
@@ -62,25 +64,68 @@ Future<LogUploadOutcome> performLogUpload({
   required String device,
   required String tsIso,
   http.Client? client,
+  List<Duration> retryBackoff = kLogUploadRetryBackoff,
 }) async {
   final http.Client c = client ?? createAppHttpIoClient();
+  final String body = jsonEncode(<String, dynamic>{
+    'kind': kind,
+    'app_version': appVersion,
+    'platform': platform,
+    'device': device,
+    'ts': tsIso,
+    'log': _capLogBytes(log),
+  });
   try {
-    final String body = jsonEncode(<String, dynamic>{
-      'kind': kind,
-      'app_version': appVersion,
-      'platform': platform,
-      'device': device,
-      'ts': tsIso,
-      'log': _capLogBytes(log),
-    });
+    for (int attempt = 0; ; attempt++) {
+      final LogUploadOutcome out = await _postLogOnce(
+        c,
+        Uri.parse(endpoint),
+        token,
+        body,
+      );
+      if (!_isTransient(out.kind) || attempt >= retryBackoff.length) {
+        return out;
+      }
+      await Future<void>.delayed(retryBackoff[attempt]);
+    }
+  } finally {
+    if (client == null) c.close();
+  }
+}
+
+/// 每次重发前的等待（共 1 + length 次尝试）。上传是用户手点的一次性动作：直连链路
+/// 间歇性建连超时（实测 fake-ip / TUN 环境下约一半请求卡在 TCP 握手、走代理全部
+/// 成功）时重发一次就能过，不该把瞬时故障直接甩给用户。
+const List<Duration> kLogUploadRetryBackoff = <Duration>[
+  Duration(seconds: 1),
+  Duration(seconds: 3),
+];
+
+/// 网络层失败、限流、5xx 是瞬时的，值得重发；鉴权失败与超限重发结果不变。
+bool _isTransient(LogUploadStatus kind) =>
+    kind == LogUploadStatus.networkError ||
+    kind == LogUploadStatus.rateLimited ||
+    kind == LogUploadStatus.serverError;
+
+/// 发一次请求并映射成 [LogUploadOutcome]；失败原因记进错误日志而不是吞掉。
+Future<LogUploadOutcome> _postLogOnce(
+  http.Client c,
+  Uri endpoint,
+  String token,
+  String body,
+) async {
+  try {
     final http.Response resp = await c.post(
-      Uri.parse(endpoint),
+      endpoint,
       headers: <String, String>{
         'Content-Type': 'application/json; charset=utf-8',
         'X-Upload-Token': token,
       },
       body: body,
     );
+    if (resp.statusCode != 200) {
+      engineLog.logDiagnostic('log_upload', 'HTTP ${resp.statusCode}');
+    }
     switch (resp.statusCode) {
       case 200:
         String? id;
@@ -101,16 +146,15 @@ Future<LogUploadOutcome> performLogUpload({
       default:
         return const LogUploadOutcome(LogUploadStatus.serverError);
     }
-  } catch (_) {
+  } catch (e, st) {
+    engineLog.log('log_upload', e, st);
     return const LogUploadOutcome(LogUploadStatus.networkError);
-  } finally {
-    if (client == null) c.close();
   }
 }
 
 /// 收集设备/版本元信息（平台 + OS 版本字符串，无需额外插件）。
 Future<({String appVersion, String platform, String device})>
-    _collectMeta() async {
+_collectMeta() async {
   // 编译期常量拿不到才是真 unknown：`PackageInfo` 抛异常时它照样可用。
   String appVersion = fushiRunningCodeVersion ?? 'unknown';
   try {
@@ -139,15 +183,15 @@ Future<bool> ensureLogUploadConsent(BuildContext context) async {
   if (!context.mounted) return false;
   final bool? agreed = await showAdaptiveDialog<bool>(
     context: context,
-    builder: (BuildContext ctx) => AlertDialog.adaptive(
+    builder: (BuildContext ctx) => FushiAlertDialog.adaptive(
       title: Text(t.log_upload_consent_title),
       content: Text(t.log_upload_consent_body),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
           child: Text(t.cancel),
         ),
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(ctx).pop(true),
           child: Text(t.log_upload_consent_agree),
         ),
@@ -169,8 +213,9 @@ Future<void> uploadLogToServer({
 }) async {
   void notify(String message) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   // 首次上传前征得隐私同意（记住选择）；取消则不上传。
@@ -191,9 +236,11 @@ Future<void> uploadLogToServer({
 
   switch (out.kind) {
     case LogUploadStatus.success:
-      notify(out.id == null
-          ? t.log_upload_success
-          : '${t.log_upload_success} (${out.id})');
+      notify(
+        out.id == null
+            ? t.log_upload_success
+            : '${t.log_upload_success} (${out.id})',
+      );
     case LogUploadStatus.tooLarge:
       notify(t.log_upload_too_large);
     default:

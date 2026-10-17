@@ -15,16 +15,15 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/media/discovery/discovery_server_probes.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
-import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
-import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
-// createAppHttpIoClient 经 fushi/utils.dart 转出，无需再单独 import app_http.dart。
 import 'package:fushi/utils.dart';
 
 /// 输入停止多久后落盘（与 Torznab 段同值）。
@@ -90,12 +89,12 @@ class _OpdsServerSettingsSectionState
           SourceSectionHeading(
             title: t.discovery_opds_settings_title,
             hint: t.discovery_opds_settings_hint,
-            icon: Icons.menu_book_outlined,
+            icon: FushiIcons.books,
           ),
           for (int index = 0; index < _drafts.length; index++) _card(index),
           Align(
             alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
+            child: FushiOutlinedButton.icon(
               key: const ValueKey<String>('opds-server-add'),
               onPressed: () => setState(
                 () => _drafts.add(
@@ -104,7 +103,7 @@ class _OpdsServerSettingsSectionState
                   ),
                 ),
               ),
-              icon: const Icon(Icons.add),
+              icon: const FushiIcon(FushiIcons.add),
               label: Text(t.discovery_opds_add),
             ),
           ),
@@ -126,7 +125,7 @@ class _OpdsServerSettingsSectionState
           Row(
             children: <Widget>[
               Expanded(
-                child: SwitchListTile.adaptive(
+                child: FushiSwitchListTile.adaptive(
                   key: ValueKey<String>('opds-server-$index-enabled'),
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -136,7 +135,7 @@ class _OpdsServerSettingsSectionState
                       _update(index, draft.copyWith(enabled: value)),
                 ),
               ),
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('opds-server-$index-remove'),
                 tooltip: t.discovery_opds_remove,
                 onPressed: () {
@@ -146,7 +145,7 @@ class _OpdsServerSettingsSectionState
                   });
                   unawaited(_saveValidDrafts());
                 },
-                icon: const Icon(Icons.remove_circle_outline),
+                icon: const FushiIcon(FushiIcons.delete),
               ),
             ],
           ),
@@ -184,7 +183,7 @@ class _OpdsServerSettingsSectionState
             onChanged: (String value) =>
                 _update(index, draft.copyWith(password: value)),
           ),
-          SwitchListTile.adaptive(
+          FushiSwitchListTile.adaptive(
             key: ValueKey<String>('opds-server-$index-allow-http'),
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -196,7 +195,7 @@ class _OpdsServerSettingsSectionState
           ),
           Row(
             children: <Widget>[
-              OutlinedButton.icon(
+              FushiOutlinedButton.icon(
                 key: ValueKey<String>('opds-server-$index-test'),
                 // 配置无效时按钮直接不可用，而不是点了再报一个通用错误。
                 onPressed: draft.toConfig() == null || probe?.running == true
@@ -206,22 +205,21 @@ class _OpdsServerSettingsSectionState
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.network_check_outlined),
+                    : const FushiIcon(FushiIcons.wifi),
                 label: Text(t.discovery_opds_test),
               ),
               if (probe != null && !probe.running) ...<Widget>[
                 const SizedBox(width: 12),
+                // 探测结论走 M3E tonal 提示条（成功 / 失败语义图标）。
                 Expanded(
-                  child: Text(
-                    probe.message,
+                  child: FushiInlineNotice(
                     key: ValueKey<String>('opds-server-$index-probe-result'),
-                    style: TextStyle(
-                      color: probe.ok
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.error,
-                    ),
+                    severity: probe.ok
+                        ? FushiNoticeSeverity.success
+                        : FushiNoticeSeverity.error,
+                    message: probe.message,
                   ),
                 ),
               ],
@@ -267,38 +265,17 @@ class _OpdsServerSettingsSectionState
     final OpdsServerConfig? config = draft.toConfig();
     if (config == null) return;
     setState(() => _probes[draft.id] = const _ProbeState.running());
-    // 必须走统一出站装配点：裸 `http.Client()` 既绕过应用代理与连接超时
-    // （用户在代理环境下会遇到「浏览正常、点测试连接却失败」这种自相矛盾的
-    // 结果），也会被 `test/tools/outbound_http_discipline_guard_test.dart`
-    // 的登记制守卫判红——那条守卫扫 lib/ 全树，定向测试挑不到它。
-    final OpdsDiscoverySource source = OpdsDiscoverySource(
-      config: config,
-      client: createAppHttpIoClient(),
-    );
+    // 请求与结论文案在 [probeOpdsServer]（控制通道共用同一份）。
     _ProbeState result;
     try {
-      final ProviderBatchResult<DiscoveryResultPage> page = await source.browse(
-        const DiscoveryRequest(kind: DiscoveryMediaKind.novel),
-      );
-      final int count =
-          page.items.isEmpty ? 0 : page.items.single.entries.length;
-      result = _ProbeState.done(
-        ok: true,
-        message: t.discovery_opds_test_ok(count: count),
-      );
-    } on ExternalProviderFailure catch (failure) {
-      // failure.message 已经是脱敏文案（不含地址/凭据），直接透出。
-      result = _ProbeState.done(
-        ok: false,
-        message: t.discovery_opds_test_failed(reason: failure.message),
-      );
-    } catch (_) {
+      final DiscoveryProbeOutcome outcome = await probeOpdsServer(config);
+      result = _ProbeState.done(ok: outcome.ok, message: outcome.message);
+    } catch (error, stack) {
+      ErrorLogService.instance.log('OpdsServerSettings.probe', error, stack);
       result = _ProbeState.done(
         ok: false,
         message: t.discovery_opds_test_failed(reason: ''),
       );
-    } finally {
-      source.close();
     }
     if (!mounted) return;
     setState(() => _probes[draft.id] = result);

@@ -73,6 +73,20 @@ struct Zip {
 
   std::optional<MediaResult> read_media(int index) const;
 
+  // Decompress entry [index] straight into the file at [out_path] without ever
+  // holding the entry on the heap (BUG-3234). read() materialises the whole
+  // entry in a std::string, which is fine for a JSON bank but not for an MDict
+  // .mdx/.mdd riding inside a zip: those run to hundreds of MB, and on Android
+  // a heap spike that size gets the process killed by lmkd with nothing for any
+  // catch to see. Stored entries are copied out of the input mapping; deflate
+  // entries are inflated into a writable mapping of the output file, whose
+  // pages are file-backed and can be written back instead of counting as
+  // anonymous memory. Returns false (and leaves no file behind) for an entry
+  // that is out of range, truncated, oversized, uses an unsupported method, or
+  // fails to decompress. A full disk or unwritable path throws
+  // memory::map_error / std::ios_base::failure, like every other import write.
+  bool extract_to(int index, const std::string& out_path) const;
+
  private:
   bool parse_central_directory();
 };

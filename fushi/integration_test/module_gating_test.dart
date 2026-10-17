@@ -14,7 +14,7 @@
 // 三端可跑（模拟器 / Mac 跨机 都在真库上）：进场先快照 11 个模块的原值，finally 里
 // 逐个还原，绝不留副作用。
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -171,7 +171,8 @@ void main() {
 
         // ── 只留书架 ───────────────────────────────────────────────────────
         for (final ModuleId module in ModuleId.values) {
-          if (module == ModuleId.books) continue;
+          // 首页 2026-10-09 起也是可关模块；本用例下面还要看首页筛选条，留着它。
+          if (module == ModuleId.books || module == ModuleId.home) continue;
           await appModel.setModuleEnabled(module, false);
         }
         await tester.pump(const Duration(seconds: 2));

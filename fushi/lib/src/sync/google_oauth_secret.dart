@@ -1,10 +1,14 @@
-// 入库默认值（占位，非 GOCSPX-，保证任何 clone/worktree 都能直接编译）。
-// 桌面端真值按 Google 设计属「非机密」（会编译进二进制），但不入库以免被
-// 密钥扫描器反复告警。移动端(Android/iOS)走 google-services.json，不读这里。
+// GITIGNORED — 不入库（见 .gitignore）。本机/CI 本地存在，git 永不追踪。
 //
-// 本机要用桌面 Google Drive 登录时：把真值填到本文件，再执行一次——
-//   git update-index --skip-worktree fushi/lib/src/sync/google_oauth_secret.dart
-// 真值便只留本地、不显示 dirty、永不提交（守卫 no_hardcoded_google_secret_test
-// 按文件名跳过本文件）。也可改用 --dart-define=GOOGLE_OAUTH_CLIENT_SECRET=... 覆盖。
-const String kGoogleOAuthClientSecret =
-    'YOUR_GOOGLE_DESKTOP_OAUTH_CLIENT_SECRET';
+// 这里放 Google「桌面应用」OAuth 客户端（Hibiki Desktop）的 client secret。
+// Google 设计上把桌面 client secret 视为「非机密」：它必然随二进制分发，token
+// 交换时还强制要求带上（即便已用 PKCE）。我们仍把真值移出入库源码，只为：
+//   ① 不再被 GitGuardian 等扫描器反复告警；
+//   ② 在 Console 轮换旧 secret 后，新值不会随每次 commit 重新公开。
+//
+// 轮换流程：Google Cloud Console → 凭据 → 「Hibiki Desktop」→ 重置 client
+// secret → 把新值填到下面这一行（只改这一行，别动其它文件）。
+//
+// 新机器/CI 首次构建：把 google_oauth_secret.example.dart 拷成本文件并填真值，
+// 否则 google_drive_auth.dart 的 import 会编译失败。
+const String kGoogleOAuthClientSecret = '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';

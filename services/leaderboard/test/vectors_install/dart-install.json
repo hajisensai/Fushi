@@ -1,0 +1,12 @@
+{
+  "producer": "dart-fushi_engine",
+  "machineId": "fushi-test-machine-0001",
+  "installId": "b58544b8-3ee3-4b4e-a374-f00a5dab3150",
+  "pubkey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAECXijy4nBXuj4h4E-1cqbXZcgZbrRngotNQUGuOHbCPVLY8LI7iMCkoQuB45oUxA14Vv2vDiaNXFLCAI6RuBHtA",
+  "powNonce": "111100",
+  "method": "POST",
+  "path": "/v1/ping",
+  "time": 1792238400000,
+  "body": "{\"installId\":\"b58544b8-3ee3-4b4e-a374-f00a5dab3150\",\"version\":\"2.10.0\",\"platform\":\"windows\",\"channel\":\"stable\"}",
+  "signature": "CAggZ1Es8AW46_nVN9XdYY2EOcChOx4utR80WJaiR7cc7OP_Vi7ZW3Wh6z2SmNFACFrpKo0uw4KdtmvI39kYUA"
+}

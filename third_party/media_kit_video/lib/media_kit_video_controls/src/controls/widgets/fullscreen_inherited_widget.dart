@@ -62,7 +62,13 @@ class _FullscreenInheritedWidgetPopScopeState
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      onPopInvokedWithResult: (_, __) {
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        // Fushi BUG-3449: a sibling PopScope may veto the pop (canPop: false) to
+        // close an in-route panel first; the framework still notifies every
+        // PopScope with didPop == false. Only a pop that really happened may
+        // exit native fullscreen, or the window leaves fullscreen while the
+        // fullscreen route stays on the stack.
+        if (!didPop) return;
         // Make sure to exit native fullscreen when this route is popped from the navigator.
         onExitFullscreen(context)?.call();
       },

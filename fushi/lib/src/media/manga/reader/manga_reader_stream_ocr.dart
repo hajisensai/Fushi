@@ -41,6 +41,24 @@ abstract interface class MangaStreamPageRecognizer {
   Future<void> close();
 }
 
+/// 识别器的可选能力：直接识别一张已裁好的文字图（字幕位图），不走漫画整页管线
+/// （检测器 / 补检 / PNG 落盘 / 逐页缓存）。可同时在途 [parallelism] 个请求。
+abstract interface class MangaStreamTextImageRecognizer {
+  int get parallelism;
+
+  /// [rgba] 为 [width]×[height]×4 字节的不透明 RGBA 像素。
+  Future<OcrRecognition> recognizeTextImage(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+  });
+}
+
+/// 文字图识别并行开几个会话：每个会话一个 isolate、每会话 ORT 2 线程
+/// （`planOcrAcceleration`），按核数留出播放与界面的余量，最多 3 个。
+int defaultMangaStreamTextImageParallelism([int? processors]) =>
+    ((processors ?? Platform.numberOfProcessors) ~/ 4).clamp(1, 3);
+
 /// [prepareMangaStreamOcr] 的结局。
 sealed class MangaStreamOcrSetup {
   const MangaStreamOcrSetup();
@@ -83,6 +101,7 @@ Future<MangaStreamOcrSetup> prepareMangaStreamOcr({
   required MangaOcrEnginePreference preference,
   required String lensLanguage,
   required Future<bool> Function() confirmLensUpload,
+  MangaAiOcrContext? aiContext,
 }) async {
   final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
     engines,
@@ -103,8 +122,21 @@ Future<MangaStreamOcrSetup> prepareMangaStreamOcr({
     confirmLensUpload: confirmLensUpload,
   );
   if (setup is! MangaStreamOcrReady) return setup;
+  // 用户在场：档位还没选过时在这里问一次「默认交给 LLM」（见
+  // MangaOcrWizardEngines.decideAiDefault），工厂随后按新档位建实例。
+  await engines.decideAiDefault?.call();
   final MangaAiOcrRefiner? refiner = engines.aiRefinerFactory?.call();
   if (refiner == null) return setup;
+  // 期望语言：字幕由调用方给（轨语言 + 视频标题）。漫画只有引擎是 Lens 时才用
+  // Lens 的识别语言——它是 Lens 自己的设置，对系统 OCR / 配对主机说明不了这本书
+  // 是什么语言；拿错语言会让「低置信度」按书写系统不符把整章都送出去。
+  refiner.context =
+      aiContext ??
+      MangaAiOcrContext(
+        language: setup.engine == MangaOcrEngineId.googleLens
+            ? lensLanguage
+            : null,
+      );
   return MangaStreamOcrReady(
     setup.engine,
     setup.recognizer,
@@ -170,16 +202,66 @@ Future<MangaStreamOcrSetup> _prepareEngine(
 
 /// 本地 ONNX：首次识别时开一个常驻页会话（几百 MB 模型只加载一次），之后逐页
 /// 复用；结果从会话写好的逐页缓存读回。
-class LocalMangaStreamPageRecognizer implements MangaStreamPageRecognizer {
+class LocalMangaStreamPageRecognizer
+    implements MangaStreamPageRecognizer, MangaStreamTextImageRecognizer {
   LocalMangaStreamPageRecognizer({
     required MangaOcrPageService service,
     required this.imageDirPath,
-  }) : _service = service;
+    int? textImageParallelism,
+  }) : _service = service,
+       parallelism =
+           textImageParallelism ?? defaultMangaStreamTextImageParallelism();
 
   final MangaOcrPageService _service;
   final String imageDirPath;
   Future<MangaOcrPageSession>? _session;
   bool _closed = false;
+
+  /// 文字图会话池（只建文字识别会话：不加载漫画检测器）。首次识别时一次开满，
+  /// 请求派给在途最少的会话。
+  @override
+  final int parallelism;
+  final List<Future<MangaOcrPageSession>> _textSessions =
+      <Future<MangaOcrPageSession>>[];
+  final List<int> _textLoad = <int>[];
+
+  @override
+  Future<OcrRecognition> recognizeTextImage(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+  }) async {
+    if (_closed) throw StateError('stream OCR recognizer is closed');
+    if (_textSessions.isEmpty) {
+      for (int i = 0; i < parallelism; i++) {
+        _textSessions.add(
+          _service.openPageSession(
+            imageDirPath: imageDirPath,
+            textImagesOnly: true,
+          ),
+        );
+        _textLoad.add(0);
+      }
+    }
+    int slot = 0;
+    for (int i = 1; i < _textLoad.length; i++) {
+      if (_textLoad[i] < _textLoad[slot]) slot = i;
+    }
+    _textLoad[slot]++;
+    try {
+      final MangaOcrPageSession session = await _textSessions[slot];
+      if (session is! MangaOcrTextImageSession) {
+        throw StateError('page session cannot recognize text images');
+      }
+      return await (session as MangaOcrTextImageSession).recognizeTextImage(
+        rgba,
+        width: width,
+        height: height,
+      );
+    } finally {
+      _textLoad[slot]--;
+    }
+  }
 
   @override
   Future<MokuroImage> recognize(File pageFile) async {
@@ -210,14 +292,21 @@ class LocalMangaStreamPageRecognizer implements MangaStreamPageRecognizer {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    final Future<MangaOcrPageSession>? session = _session;
+    final List<Future<MangaOcrPageSession>> sessions =
+        <Future<MangaOcrPageSession>>[?_session, ..._textSessions];
     _session = null;
-    if (session == null) return;
-    try {
-      await (await session).close();
-    } on Object {
-      // 会话根本没建起来（模型缺失等）：没有资源要放。
-    }
+    _textSessions.clear();
+    _textLoad.clear();
+    await Future.wait(<Future<void>>[
+      for (final Future<MangaOcrPageSession> session in sessions)
+        () async {
+          try {
+            await (await session).close();
+          } on Object {
+            // 会话根本没建起来（模型缺失等）：没有资源要放。
+          }
+        }(),
+    ]);
   }
 }
 
@@ -244,8 +333,26 @@ class MangaStreamAiRefinement {
     return result.stats.replaced == 0 ? null : result.page;
   }
 
-  /// 中止在途请求，此后不再发请求。
-  void cancel() => _refiner.cancel();
+  /// 这个块要不要送大模型（按用户选的档位）。
+  bool wants(MokuroBlock block) => _refiner.wants(block);
+
+  /// 跨页批量重读一批已裁好的文字图（字幕整轨用）：与 [refine] 同一缓存、同一
+  /// 校验；返回与 [items] 等长的新文字（null = 不换）。可并发调用。
+  /// [nearby]：附近已读文字（前几条台词），只作消歧提示。
+  Future<List<String?>> refineCrops(
+    List<MangaAiOcrCropRequest> items, {
+    List<String> nearby = const <String>[],
+  }) => _refiner.refineCrops(items, cache: _cache, nearby: nearby);
+
+  /// 中止在途请求、释放常驻 HTTP 客户端，此后不再发请求。
+  void cancel() => _refiner.dispose();
+
+  /// 给用户看的重读来源：供应商名 · 模型（模型空则只有供应商名）。
+  String get providerLabel {
+    final String model = _refiner.provider.model.trim();
+    final String name = _refiner.provider.name.trim();
+    return model.isEmpty ? name : '$name · $model';
+  }
 }
 
 /// Lens / 系统 OCR：读出页图字节直接识别，没有常驻资源。

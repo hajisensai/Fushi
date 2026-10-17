@@ -1,10 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart'
+    show homeNavItemFor;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
@@ -70,17 +72,13 @@ void main() {
     }
   });
 
-  testWidgets('游戏设置分类只属于本机游戏库形态：串流接收端模块开着也不出现', (
-    WidgetTester tester,
-  ) async {
-    // Android 的 games 模块是串流接收端（PR #1616）；游戏分类里的 hook / 捕获工作台 /
-    // 兼容性诊断全是本机 galgame 库的东西，一条都用不上。
+  testWidgets('游戏设置分类只属于本机游戏库形态：串流接收端模块开着也不出现', (WidgetTester tester) async {
+    // 非 Windows 的 games 模块是串流接收端（PR #1616）；游戏分类里的 hook / 捕获
+    // 工作台 / 兼容性诊断全是本机 galgame 库的东西，一条都用不上。
     await pumpContext(tester);
     appModel.enabled = ModuleId.values.toSet();
     expect(visibleIds(), contains(SettingsDestinationId.game));
     appModel.gamesForm = GamesModuleForm.streamClient;
-    expect(visibleIds(), isNot(contains(SettingsDestinationId.game)));
-    appModel.gamesForm = null;
     expect(visibleIds(), isNot(contains(SettingsDestinationId.game)));
   });
 
@@ -141,6 +139,57 @@ void main() {
     }
   });
 
+  testWidgets('导航模块合进拖拽排序列表后，按模块名仍能搜到（直达那块列表）', (WidgetTester tester) async {
+    await pumpContext(tester);
+    appModel.enabled = ModuleId.values.toSet();
+    // 只展平「功能模块」这一个分区：桩 AppModel 没有 prefsRepo，外观里别的行
+    // （读偏好的标题闭包）在这里会抛 null check，与本条要咬的东西无关。
+    final SettingsDestination appearance = buildSettingsSchema(sctx).firstWhere(
+      (SettingsDestination d) => d.id == SettingsDestinationId.appearance,
+    );
+    final List<SettingsSearchEntry> entries = flattenVisibleSettings(
+      <SettingsDestination>[
+        SettingsDestination(
+          id: appearance.id,
+          title: appearance.title,
+          icon: appearance.icon,
+          sections: <SettingsSection>[
+            appearance.sections.firstWhere(
+              (SettingsSection s) => s.id == 'appearance.section.modules',
+            ),
+          ],
+        ),
+      ],
+      sctx,
+    );
+    for (final ModuleId module in <ModuleId>[
+      ModuleId.home,
+      ModuleId.books,
+      ModuleId.manga,
+      ModuleId.video,
+      ModuleId.lookup,
+    ]) {
+      final String label = homeNavItemFor(homeTabOfModule(module)!).label;
+      final List<SettingsSearchEntry> hits = filterSettingsEntries(
+        entries,
+        label,
+      );
+      expect(
+        hits.map((SettingsSearchEntry e) => e.item.id),
+        contains('appearance.nav_module_order'),
+        reason: '搜「$label」找不到功能模块里的那一行开关了',
+      );
+      final SettingsSearchEntry hit = hits.firstWhere(
+        (SettingsSearchEntry e) => e.item.id == 'appearance.nav_module_order',
+      );
+      expect(
+        hit.matchedDetail(label),
+        label,
+        reason: '结果行要露出命中的模块名，用户才知道这块列表里有「$label」',
+      );
+    }
+  });
+
   testWidgets('三个横切模块各自真的名下有分类（否则上面三条在空集上恒绿）', (WidgetTester tester) async {
     // 制卡/在线服务/同步没有底栏 tab，设置分类是它们唯一的可断言落地面。
     // 归属表一旦被改成 null，上面的循环会在空集上静默通过——先在这里挡住。
@@ -168,9 +217,43 @@ void main() {
     }
   });
 
-  testWidgets('听书模块的落地面是「阅读」里的两个分区（分区级门控，非分类级）', (
+  testWidgets('AI 模块的落地面是「模型」里的 LLM 子页入口（行级门控，非分类级）', (
     WidgetTester tester,
   ) async {
+    // 2026-10-13 起原「AI」一级分类降为「模型」分类里的 LLM 子页：AI 模块没有自己的
+    // 可见 destination，上面按 destination 归属的循环对它恒为空集。不变式不变——
+    // 「关掉模块 ⇒ 它的设置看不见也搜不到」——收口点是 models.llm 这一行：它不可见时
+    // 子页（buildAiDestination）不会被展开进搜索索引。
+    await pumpContext(tester);
+
+    bool llmEntryVisible() {
+      final List<SettingsDestination> models = buildSettingsSchema(sctx)
+          .where(
+            (SettingsDestination d) => d.id == SettingsDestinationId.models,
+          )
+          .toList();
+      expect(models, hasLength(1), reason: '模型分类不见了，下面的断言会在空集上恒绿');
+      final List<SettingsItem> llm = <SettingsItem>[
+        for (final SettingsSection section in models.single.sections)
+          for (final SettingsItem item in section.items)
+            if (item.id == 'models.llm') item,
+      ];
+      expect(llm, hasLength(1), reason: 'models.llm 入口不见了');
+      return llm.single.isVisible(sctx);
+    }
+
+    appModel.enabled = ModuleId.values.toSet();
+    expect(llmEntryVisible(), isTrue, reason: 'AI 模块开着却看不到 LLM 子页入口');
+
+    appModel.enabled = ModuleId.values.toSet()..remove(ModuleId.ai);
+    expect(
+      llmEntryVisible(),
+      isFalse,
+      reason: '关掉 AI 模块后「模型」里仍能进 LLM 子页——降级成子页时把模块门丢了',
+    );
+  });
+
+  testWidgets('听书模块的落地面是「阅读」里的两个分区（分区级门控，非分类级）', (WidgetTester tester) async {
     // 并类之后听书没有自己的 destination，上面按 destination 归属做的三条循环
     // 对它恒为空集。不变式本身没变——「关掉模块 ⇒ 它的设置行看不见也搜不到」——
     // 只是粒度降到了分区，所以这里直接按 item id 前缀断言那条不变式。
@@ -199,8 +282,11 @@ void main() {
     appModel.enabled = ModuleId.values.toSet();
     expect(
       visibleListeningSectionIds(),
-      hasLength(2),
-      reason: '听书模块开着却看不到那两个分区——并入阅读时把分区门写反了，'
+      // 播放 / 悬浮字幕 / 悬浮字幕外观三个分区（外观分区的项全不可见时由
+      // visibleSections 另行过滤，分区门本身只看模块）。
+      hasLength(3),
+      reason:
+          '听书模块开着却看不到那三个分区——并入阅读时把分区门写反了，'
           '或者分区根本没被展开进 buildReadingDestination',
     );
 
@@ -208,7 +294,8 @@ void main() {
     expect(
       visibleListeningSectionIds(),
       isEmpty,
-      reason: '关掉听书模块后 listening.* 分区还在阅读里。并类时模块门原本挂在'
+      reason:
+          '关掉听书模块后 listening.* 分区还在阅读里。并类时模块门原本挂在'
           'destination 上，下放到分区时漏了哪一个，这条就会红。',
     );
   });
@@ -223,11 +310,11 @@ class _ModuleGatingAppModel extends AppModel {
 
   /// 与上面「绕开平台判据」同一前提：games 模块按本机游戏库形态参与门控。不覆写就
   /// 取宿主平台（CI 的 Linux 上是 null），游戏设置分类在「全部模块开着」时也不可见。
-  GamesModuleForm? gamesForm = GamesModuleForm.localLibrary;
+  GamesModuleForm gamesForm = GamesModuleForm.localLibrary;
 
   @override
   ModuleVisibility get moduleVisibility => ModuleVisibility(enabled);
 
   @override
-  GamesModuleForm? get gamesModuleForm => gamesForm;
+  GamesModuleForm get gamesModuleForm => gamesForm;
 }

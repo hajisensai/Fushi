@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -312,6 +312,68 @@ void main() {
       processor.reset();
       frame(GamepadFrameBits.a, nowMs: 60); // would be "held" without reset
       expect(buttons, <GamepadButton>[GamepadButton.a, GamepadButton.a]);
+    });
+  });
+
+  // BUG-3330：按住类动作（视频按住临时倍速）需要松开沿。此前轮询只发按下沿，
+  // 手柄只能退化成点按翻转（用户报「长按也只被当成一次点按」）。
+  group('release edges (onButtonRelease)', () {
+    late List<String> events;
+    late GamepadFrameProcessor rp;
+
+    setUp(() {
+      events = <String>[];
+      rp = GamepadFrameProcessor(
+        onButton: (GamepadButton b) => events.add('down:${b.name}'),
+        onButtonRelease: (GamepadButton b) => events.add('up:${b.name}'),
+      );
+    });
+
+    void f(int mask, {int nowMs = 0, int lt = 0}) => rp.processFrame(
+          buttons: mask,
+          leftTrigger: lt,
+          rightTrigger: 0,
+          stickX: 0,
+          stickY: 0,
+          nowMs: nowMs,
+        );
+
+    test('a held face button reports one press and one release', () {
+      f(GamepadFrameBits.x, nowMs: 0);
+      f(GamepadFrameBits.x, nowMs: 60);
+      f(GamepadFrameBits.x, nowMs: 900);
+      f(0, nowMs: 960);
+      expect(events, <String>['down:x', 'up:x']);
+    });
+
+    test('triggers report their release edge', () {
+      f(0, lt: 255, nowMs: 0);
+      f(0, lt: 255, nowMs: 60);
+      f(0, nowMs: 120);
+      expect(events, <String>['down:lt', 'up:lt']);
+    });
+
+    test('a held D-pad direction releases once, after its auto-repeats', () {
+      f(GamepadFrameBits.dpadUp, nowMs: 0);
+      f(GamepadFrameBits.dpadUp, nowMs: 500); // past repeatDelayMs → repeat
+      f(0, nowMs: 560);
+      expect(events, <String>['down:dpadUp', 'down:dpadUp', 'up:dpadUp']);
+    });
+
+    test('switching D-pad direction releases the old one before the new press',
+        () {
+      f(GamepadFrameBits.dpadUp, nowMs: 0);
+      f(GamepadFrameBits.dpadDown, nowMs: 60);
+      expect(events, <String>['down:dpadUp', 'up:dpadUp', 'down:dpadDown']);
+    });
+
+    test('reset releases whatever was held (no stuck hold on disconnect)', () {
+      f(GamepadFrameBits.x | GamepadFrameBits.dpadLeft, nowMs: 0);
+      rp.reset();
+      expect(events, containsAll(<String>['up:x', 'up:dpadLeft']));
+      events.clear();
+      rp.reset();
+      expect(events, isEmpty, reason: 'nothing held → nothing released');
     });
   });
 }

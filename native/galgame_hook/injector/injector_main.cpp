@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "voice_hook_ipc.h"
-#include "siglus_text_owner.h"
+#include "native_text_owner.h"
 #include "voice_hook_session.h"
 #include "hook_module_identity.h"
 #include "child_process_policy.h"
@@ -30,6 +30,7 @@
 #include "kirikiri_launch_profile.h"
 #include "kirikiri_launch_signature.h"
 #include "loader_init_gate.h"
+#include "launch_engine_signature.h"
 #include "launcher_layout.h"
 #include "launcher_wait.h"
 #include "siglus_launch_win32.h"
@@ -43,8 +44,8 @@
 #include "unity_voice_bundles.h"
 
 // galgame 一键制卡 C 阶段注入器（C.1）。把 hook DLL 注入目标游戏进程，建立共享内存 + 就绪
-// 事件，确认注入成功后读回语音格式。Hibiki 主进程把它当子进程拉起（部署红线：注入代码只在
-// 这个隔离组件里，不进 hibiki.exe）。
+// 事件，确认注入成功后读回语音格式。Fushi 主进程把它当子进程拉起（部署红线：注入代码只在
+// 这个隔离组件里，不进 fushi.exe）。
 //
 // 两种进入方式（二选一）：
 //   attach（--pid）：注入已运行进程。适合引擎在游戏运行中才建声音设备的情形。
@@ -54,8 +55,8 @@
 //     正常启动，等保护壳退出且游戏主窗口出现后再附着。
 //
 // 用法：
-//   hibiki_voice_injector.exe --pid <PID> [--dll <hook.dll>] [--wait-ms N] [--hold]
-//   hibiki_voice_injector.exe --launch <exe> [--workdir <dir>] [--arg <a>]...
+//   fushi_voice_injector.exe --pid <PID> [--dll <hook.dll>] [--wait-ms N] [--hold]
+//   fushi_voice_injector.exe --launch <exe> [--workdir <dir>] [--arg <a>]...
 //                             [--japanese-locale]
 //                             [--dll <hook.dll>] [--wait-ms N] [--hold]
 //     --pid     目标进程 ID（attach 模式；与 --launch 二选一）
@@ -63,7 +64,7 @@
 //     --workdir 子进程工作目录（launch 缺省=exe 所在目录）
 //     --arg     追加一个传给子进程的命令行参数（可重复；launch 专用）
 //     --japanese-locale  用 injector 同目录的 Locale Emulator 运行库建立日语 CP932
-//               环境，再在同一个挂起进程里完成 Hibiki 早注入。运行库不可用时告警并安全
+//               环境，再在同一个挂起进程里完成 Fushi 早注入。运行库不可用时告警并安全
 //               回退普通启动（launch 专用；Steam 协议启动会明确告警且不伪装已转区）。
 //     --dll     hook DLL 路径（默认取同目录 arch 匹配的 fushi_voice_hook.dll）
 //     --unity-runtime  Unity 资源提取运行时目录（含 fushi_unity_audio_extract.exe /
@@ -128,27 +129,21 @@ bool BitnessMatches(HANDLE target, bool* target_is_wow64) {
   return (self_wow != FALSE) == (tgt_wow != FALSE);
 }
 
-// 默认 DLL 路径：跟随注入器 basename。旧 Hibiki host 启动
-// hibiki_voice_injector.exe 时必须继续加载 hibiki_voice_hook.dll，使两侧共同选择旧 IPC 名；
-// 正常 Fushi 分发保持 fushi_voice_hook.dll。
+// 默认 DLL 路径：注入器同目录的 fushi_voice_hook.dll（两者同一次构建产出、同目录落地）。
 std::wstring DefaultDllPath() {
   wchar_t exe[MAX_PATH] = {0};
   const DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
   if (n == 0 || n >= MAX_PATH) {
     return L"fushi_voice_hook.dll";
   }
-  const std::wstring executable_path(exe, n);
-  const bool legacy_hibiki =
-      fushi_voice_hook::ComponentUsesLegacyHibikiIpc(executable_path);
-  std::wstring path = executable_path;
+  std::wstring path(exe, n);
   const size_t slash = path.find_last_of(L"\\/");
   if (slash != std::wstring::npos) {
     path.resize(slash + 1);
   } else {
     path.clear();
   }
-  return path +
-         (legacy_hibiki ? L"hibiki_voice_hook.dll" : L"fushi_voice_hook.dll");
+  return path + L"fushi_voice_hook.dll";
 }
 
 // 目标进程里某个模块的加载基址；找不到（含模块尚未映射）返回 nullptr。
@@ -258,7 +253,7 @@ int Fail(const char* msg) {
 }
 
 // 把结构化失败原因打成 host 可解析的一行。人类可读诊断保持原样（诊断包/日志仍要它），
-// 这一行只是让 Hibiki 不必去猜中文串，从而能对「需要管理员 / 位数不符 / 被杀软拦下 /
+// 这一行只是让 Fushi 不必去猜中文串，从而能对「需要管理员 / 位数不符 / 被杀软拦下 /
 // DLL 加载慢」给出各自不同的处置与重试策略。
 void ReportFailureReason(fushi_voice_hook::LaunchFailureReason reason,
                          int exit_code) {
@@ -2000,9 +1995,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                               text_region_bytes + clip_region_bytes +
                               loopback_capacity + loopback_marker_bytes +
                               thread_preview_bytes + lookup_region_bytes;
-  const bool legacy_hibiki_ipc =
-      fushi_voice_hook::ComponentUsesLegacyHibikiIpc(dll_path);
-  const std::wstring shm = SharedMemoryName(pid, legacy_hibiki_ipc);
+  const std::wstring shm = SharedMemoryName(pid);
   SetLastError(ERROR_SUCCESS);
   HANDLE mapping = CreateFileMappingW(
       INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
@@ -2197,7 +2190,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
             "[unity-audio] resource extractor runtime missing; Unity audio will use normal fallback\n");
   }
   // 就绪事件（auto-reset，初始未触发）；hook DLL 装好后 SetEvent。
-  const std::wstring evt = ReadyEventName(pid, legacy_hibiki_ipc);
+  const std::wstring evt = ReadyEventName(pid);
   HANDLE ready = CreateEventW(nullptr, FALSE, FALSE, evt.c_str());
   if (ready == nullptr) {
     revoke_loopback_before_failure();
@@ -2280,14 +2273,14 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   // CREATE_SUSPENDED launch 必须等游戏内 DLL 完成首次 XAudio2/DirectSound 导出 hook，
   // 再恢复主线程。否则 Unity 可能先创建全部 source voice，之后晚 attach 只能拿到混音。
   bool luna_initialized = false;
-  fushi_voice_hook::SiglusLunaStartupGate luna_startup_gate;
-  uint32_t last_siglus_text_owner = UINT32_MAX;
+  fushi_voice_hook::NativeTextLunaStartupGate luna_startup_gate;
+  uint32_t last_native_text_owner = UINT32_MAX;
   auto maybe_start_luna = [&]() {
     if (!hold || !luna.enabled || luna_initialized) return;
-    const auto text_owner = fushi_voice_hook::ReadSiglusTextOwner(header);
-    if (last_siglus_text_owner != static_cast<uint32_t>(text_owner)) {
-      last_siglus_text_owner = static_cast<uint32_t>(text_owner);
-      fprintf(stderr, "[siglus] text_owner=%u\n", last_siglus_text_owner);
+    const auto text_owner = fushi_voice_hook::ReadNativeTextOwner(header);
+    if (last_native_text_owner != static_cast<uint32_t>(text_owner)) {
+      last_native_text_owner = static_cast<uint32_t>(text_owner);
+      fprintf(stderr, "[native-text] owner=%u\n", last_native_text_owner);
     }
     if (!luna_startup_gate.ShouldAttempt(text_owner)) return;
     luna_initialized =
@@ -2299,8 +2292,8 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   auto init_guarded_luna = [&]() -> bool {
     // Native ownership inserts no Luna hooks, so there is nothing to remove.
     // An undecided Siglus cannot bypass its ownership gate via a guarded call.
-    if (fushi_voice_hook::ReadSiglusTextOwner(header) ==
-        fushi_voice_hook::SiglusTextOwner::kNativeOwned) return true;
+    if (fushi_voice_hook::ReadNativeTextOwner(header) ==
+        fushi_voice_hook::NativeTextOwner::kNativeOwned) return true;
     if (luna.blocked_hook_names.size() != luna.blocked_hook_codes.size()) {
       fprintf(stderr,
               "[luna] blocked-hook profile is missing removal confirmation "
@@ -2453,7 +2446,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   maybe_start_luna();
 
   if (hold) {
-    // host 模式：常驻维持共享内存存活，供 Hibiki 消费（C.2 起真正读 PCM）。
+    // host 模式：常驻维持共享内存存活，供 Fushi 消费（C.2 起真正读 PCM）。
     // 同时消费 Unity Streaming AudioClip 资源事件；重解析/解码在 injector 子进程完成，
     // 游戏内 hook 回调始终只写固定大小共享内存事件。
     uint64_t next_unity_event = 0;
@@ -2525,7 +2518,7 @@ using LeCreateProcessFunction = LONG(WINAPI*)(
     LPSECURITY_ATTRIBUTES, PVOID, HANDLE);
 
 // Locale Emulator 的 LoaderDll 负责在 kernel32 初始化前装入 LocaleEmulator.dll。这里始终
-// 把调用结果保持在 CREATE_SUSPENDED；普通引擎交回 RunInjection 完成 Hibiki 早注入后恢复，
+// 把调用结果保持在 CREATE_SUSPENDED；普通引擎交回 RunInjection 完成 Fushi 早注入后恢复，
 // 需要发现窗口/子进程的策略则由 RunLaunch 先恢复再等待，避免挂起启动器与发现逻辑死锁。
 bool CreateJapaneseLocaleProcess(
     const std::wstring& executable,
@@ -2625,14 +2618,6 @@ bool LooksLikeRenpyRuntime(const std::wstring& exe) {
          FileExists(JoinPath(dir, L"pythonw.exe"));
 }
 
-// 目录是否带引擎数据签名。Siglus（Gameexe[语言].dat + Scene[语言].pck）与 UE IoStore
-// （Content\Paks\*.utoc 的 16 字节 TOC 魔数）各出一条；再加引擎时在这里多写一个 ||
-// 即可，判据本身不用动。两条都要求数据文件真实存在/魔数成立，不认裸目录名。
-bool DirectoryHasEngineSignature(const std::wstring& dir) {
-  return fushi_voice_hook::DirectoryLooksLikeSiglusOnDisk(dir) ||
-         fushi_voice_hook::DirectoryLooksLikeUnrealIostore(dir);
-}
-
 // 直接子目录全路径。不跟 reparse point：符号链接/联接点能把搜索绕成环。
 std::vector<std::wstring> ListSubdirectories(const std::wstring& dir) {
   std::vector<std::wstring> result;
@@ -2657,7 +2642,7 @@ std::vector<std::wstring> ListSubdirectories(const std::wstring& dir) {
 bool LooksLikeLauncherForEngine(const std::wstring& exe) {
   return fushi_voice_hook::LooksLikeLauncherLayout(
       ExecutableDirectory(exe), fushi_voice_hook::kLauncherLayoutMaxDepth,
-      DirectoryHasEngineSignature, ListSubdirectories);
+      fushi_voice_hook::DirectoryHasEngineSignature, ListSubdirectories);
 }
 
 // 子进程镜像所在目录带引擎签名 -> 它就是真游戏。启动器链里的游戏进程一个 ffmpeg 模块
@@ -2671,7 +2656,7 @@ void InspectEngineSignature(DWORD pid,
   CloseHandle(process);
   if (image.empty()) return;
   candidate->has_engine_signature =
-      DirectoryHasEngineSignature(ExecutableDirectory(image));
+      fushi_voice_hook::DirectoryHasEngineSignature(ExecutableDirectory(image));
 }
 
 void InspectFfmpegModules(DWORD pid,
@@ -3416,7 +3401,7 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     const DWORD create_error = GetLastError();
     fprintf(stderr, "CreateProcessW failed: %lu\n", create_error);
     // 740 = ERROR_ELEVATION_REQUIRED：游戏 manifest 要求管理员，非提权 injector 拉不起来。
-    // host 据此提示「以管理员身份启动 Hibiki」，而不是笼统的启动失败。
+    // host 据此提示「以管理员身份启动 Fushi」，而不是笼统的启动失败。
     if (create_error == ERROR_ELEVATION_REQUIRED) {
       fprintf(stderr, "ERR reason=elevationRequired exit=1\n");
     } else {
@@ -3797,7 +3782,7 @@ int main() {
     fprintf(stderr, "OpenProcess(%lu) failed: %lu (需管理员/相同完整性级别?)\n",
             pid, GetLastError());
     // 附着失败最常见的真实原因：游戏以更高完整性级别（管理员）运行。host 据此提示
-    // 「以管理员身份启动 Hibiki」，并且不做无意义的重试。
+    // 「以管理员身份启动 Fushi」，并且不做无意义的重试。
     fprintf(stderr, "ERR reason=accessDenied exit=1\n");
     return 1;
   }

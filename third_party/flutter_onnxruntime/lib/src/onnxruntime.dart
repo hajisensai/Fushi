@@ -101,7 +101,7 @@ class OnnxRuntime {
   /// Get the available providers
   ///
   /// Returns a list of the available providers
-  /// Hibiki fork: DXGI video-memory budget of the adapter (Windows only; null
+  /// Fushi fork: DXGI video-memory budget of the adapter (Windows only; null
   /// elsewhere or when DXGI cannot answer).
   Future<OrtDeviceMemoryInfo?> getDeviceMemoryInfo({int deviceId = 0}) async {
     final map = await FlutterOnnxruntimePlatform.instance.getDeviceMemoryInfo(deviceId: deviceId);
@@ -115,6 +115,27 @@ class OnnxRuntime {
     );
   }
 
+  /// Fushi fork: CUDA driver probe (Windows only; null elsewhere). See
+  /// [FlutterOnnxruntimePlatform.probeCuda] for the map shape.
+  Future<Map<String, dynamic>?> probeCuda() => FlutterOnnxruntimePlatform.instance.probeCuda();
+
+  /// Fushi fork: register the CUDA plugin execution provider from [dir]
+  /// (Windows only; null elsewhere). After `ok: true`, [getAvailableProviders]
+  /// includes [OrtProvider.CUDA] and sessions may request it. Idempotent for
+  /// the same [dir]. See [FlutterOnnxruntimePlatform.registerCudaRuntime].
+  Future<Map<String, dynamic>?> registerCudaRuntime(String dir) =>
+      FlutterOnnxruntimePlatform.instance.registerCudaRuntime(dir);
+
+  /// Fushi fork: use the onnxruntime.dll at [path] (downloaded DirectML core)
+  /// instead of the bundled one. Must run before anything else touches ONNX
+  /// Runtime. See [FlutterOnnxruntimePlatform.selectRuntime].
+  Future<Map<String, dynamic>?> selectRuntime(String path) =>
+      FlutterOnnxruntimePlatform.instance.selectRuntime(path);
+
+  /// Fushi fork: the core this process uses. See
+  /// [FlutterOnnxruntimePlatform.getRuntimeInfo].
+  Future<Map<String, dynamic>?> getRuntimeInfo() => FlutterOnnxruntimePlatform.instance.getRuntimeInfo();
+
   Future<List<OrtProvider>> getAvailableProviders() async {
     final providers = await FlutterOnnxruntimePlatform.instance.getAvailableProviders();
     return providers.map((p) {
@@ -127,7 +148,7 @@ class OnnxRuntime {
   }
 }
 
-/// Hibiki fork: see [OnnxRuntime.getDeviceMemoryInfo].
+/// Fushi fork: see [OnnxRuntime.getDeviceMemoryInfo].
 class OrtDeviceMemoryInfo {
   const OrtDeviceMemoryInfo({
     required this.dedicatedVideoMemory,

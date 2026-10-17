@@ -1,0 +1,13 @@
+## BUG-3518 · iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶
+- **报告**：2026-10-17（用户：iOS 竖排翻页，句子没读完时翻到下一页，页顶对应位置露出上一页高亮的一小截；同日追加：窄条两端不贴字、句末标点后像多出一截）
+- **真实性**：✅ 真 bug。Apple 正文开了 `hanging-punctuation: allow-end`（`fushi/lib/src/reader/reader_content_styles.dart:584`），行尾「、」「。」挂到分栏外；窄条层（`fushi/lib/src/reader/reader_selection_scripts.dart` 的 `lanes()`）按字形盒画，条越出栏尾。翻页模式各页是 body 多列的一栏，竖排各页同一横坐标、横排同一纵坐标，越出量大于列间距（22px）时那截落进下一页页顶。iOS 26.5 模拟器 Safari + 生产 CSS/引擎复现：字号 44px 时整列窄条 0–748（栏高 714），下一页页顶露出 12px 带圆角的残条；Blink 不支持 hanging-punctuation，所以只在 Apple 端出现。
+- **[x] ① 已修复** — `lanes()` 在翻页多列时按 body 的 column-width / column-gap 求每段所在栏，窄条沿行方向收进本栏、并条不跨栏（`columnFrame`，`reader_selection_scripts.dart:965`）；滚动 / VN 没有分栏不受影响。同时按用户追加反馈，片段首尾的全角标点按墨迹收边（收尾标点取字格前 0.6、起头标点取后 0.6，已被 vpal/palt 压窄的不收，`punctInk`，`reader_selection_scripts.dart:884`）。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/highlight_lanes_harness.mjs`（经 `highlight_lanes_test.dart` 跑）：翻页四种页面里用 nowrap 文字溢出栏尾，断言窄条不越栏（修前四页全红，越栏 410 / 619px）；句末「。」窄条止于墨迹。
+- **追加修复（用户：「没修的都要修好」）**：
+  - **句子被「顶开」**：根因是 WebKit 只在同一个文本节点内做字距调整（Hiragino 等字体在「、机」「。表」这类字对上收 1–2px），文本节点一旦被切开（包进 span、拆成两个相邻文本节点，连 `display:contents` 包裹也一样）切口处就不再调整，切口之后整行后移；`font-feature-settings:'kern' 0` 关不掉。有声书原先每句包 `.fushi-sentence-audio-cue`：分页 / 滚动在开章时整章包裹（句界一律变松），VN 在播放到那句时才包裹（排版恰好在高亮出现那一刻变动）。Blink 整段排版、不受影响。修法：WebKit 上不再包裹，每句登记成 live Range，当前句交给 `CSS.highlights('fushi-sentence-audio')`——字色走 `::highlight()`，底色照旧由窄条层画（`window.__fushiCueRanges`，`reader_selection_scripts.dart`；分页 / 滚动 `applySentenceAudioCues` / `highlightSentenceAudioCue` / `revealRange`，VN `wrapSentenceAudioCueRangesInBatch` / `applyInlineSentenceAudioCue`）。Range 登记进 `__fushiLiveRanges.ranges()`，其它 DOM 手术写回不塌缩。Blink 与不支持 CSS Highlight 的旧 WebView 仍走包裹。
+  - **悬挂标点被裁**：翻页模式 body 的 `clip-path` 与 `html::before` 遮罩条精确裁到内容框，挂出栏尾的「、」「。」落在被裁区里看不见。栏尾之外紧接着只有一道列间距，行尾一侧（竖排下、横排右）的裁边往外放一个列间距（`reader_content_styles.dart` 的 `revealInlineEnd`），露出悬挂标点、相邻页仍被裁。
+  - **窄条压到振假名**（`highlight_lanes_test` 竖排 6 页既有红）：竖排注音墨迹原按「国」的墨迹厚居中估计，带浊点的假名（ぶ）更宽，低估 1–1.5px；改为逐字 measureText 取真实墨迹（`annotationInk`）。
+  - 验证（iOS 26.5 模拟器 Safari，当前分支脚本 + iOS CSS 拼的探针页）：Range 模式下分页 / 滚动 / 横排翻页正文 1399 字与去掉有声书标记的原始排版逐字一致（包裹模式 12 / 12 / 30 字位移）；VN 高亮正常、排版零变动；加页边距后悬挂「、」修前被裁、修后可见，相邻页不露。
+  - 测试：`highlight_lanes_harness.mjs` 增加 12 个 range-mode 页（Chrome 里 `window.__fushiSentenceAudioRangeMode = true` 强制走 Range）：不加包裹 / class、正文 DOM 不变、高亮已登记、窄条盖住正文、按点反查 cue、清除后撤掉。
+- **备注**：
+  - 验证：iOS 26.5 模拟器 Safari 跑生产引擎页（非 app 内）——竖排翻页修前 / 修后截图对比、滚动模式窄条与修前逐像素一致（仅标点收边处不同）、横排翻页只差悬挂「、。」那几条的栏尾。VN 在模拟器探针页里没有活动 cue，由 Chrome harness 的 VN 页覆盖。

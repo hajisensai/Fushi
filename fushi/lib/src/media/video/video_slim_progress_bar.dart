@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:media_kit_video/media_kit_video.dart'
+    show VideoControlsChromeRegion;
 
 /// 播放位置 / 总时长 → `0..1` 的进度比例。纯函数，组件与测试同源。
 ///
@@ -227,8 +229,8 @@ class _VideoSlimProgressBarState extends State<VideoSlimProgressBar> {
     // 可交互形态：可见线贴底、上方补一段透明命中带。命中带用 `opaque` 吃掉这次
     // 指针，media_kit 控制条那层的「点画面暂停」因此收不到——正是想要的：点这条
     // 线只跳转，不顺手把播放态也翻了。页面最外层那条 translucent Listener 仍会
-    // 收到 pointer-up，但它的 [_isVideoChromePointer] 早把底部整条带判为 chrome、
-    // 不会触发双击全屏。
+    // 收到 pointer-up，但命中带套着 [VideoControlsChromeRegion]，被判为控件
+    // （`videoPointerHitsChrome`），不会触发双击全屏。
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double width = constraints.maxWidth;
@@ -239,19 +241,21 @@ class _VideoSlimProgressBarState extends State<VideoSlimProgressBar> {
             children: <Widget>[
               Positioned(left: 0, right: 0, bottom: 0, child: line),
               Positioned.fill(
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTapDown: (TapDownDetails d) =>
-                        _seekAt(d.localPosition.dx, width),
-                    onHorizontalDragStart: (DragStartDetails d) =>
-                        _seekAt(d.localPosition.dx, width, throttled: true),
-                    onHorizontalDragUpdate: (DragUpdateDetails d) =>
-                        _seekAt(d.localPosition.dx, width, throttled: true),
-                    onHorizontalDragEnd: (DragEndDetails _) =>
-                        _commitDragSeek(),
-                    onHorizontalDragCancel: _commitDragSeek,
+                child: VideoControlsChromeRegion(
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: (TapDownDetails d) =>
+                          _seekAt(d.localPosition.dx, width),
+                      onHorizontalDragStart: (DragStartDetails d) =>
+                          _seekAt(d.localPosition.dx, width, throttled: true),
+                      onHorizontalDragUpdate: (DragUpdateDetails d) =>
+                          _seekAt(d.localPosition.dx, width, throttled: true),
+                      onHorizontalDragEnd: (DragEndDetails _) =>
+                          _commitDragSeek(),
+                      onHorizontalDragCancel: _commitDragSeek,
+                    ),
                   ),
                 ),
               ),

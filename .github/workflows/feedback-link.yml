@@ -1,0 +1,48 @@
+# 反馈修复标记：推进 develop / main 的修复，把 commit message 或所合并 PR 描述里的
+# `Feedback: <id>` / `Feedback-NoApp: <id>` 行登记到反馈服务（services/leaderboard 的
+# POST /v1/ci/feedback/fixed），反馈人随即看到「已修复」；之后两条发布 workflow 的
+# 回填步骤（tool/feedback_mark_released.sh）按 git 祖先关系记下哪个通道 / 平台 / 版本
+# 已包含修复。
+#
+# 为什么只挂 push、不用 pull_request_target：pull_request_target 取默认分支 main 上的
+# workflow 定义，main 只在正式版后才同步 develop，新加的 workflow 要等一整个发布周期才
+# 生效（见 merged-pr-cleanup.yml 头注释）；而且它在有 secret 的上下文里处理外部 PR。
+# 合并本身就是一次 push：脚本对每个 commit 用 GITHUB_TOKEN 查关联 PR
+# （GET /repos/{repo}/commits/{sha}/pulls，只认已合并、base 是本分支的），读 PR 描述。
+# merge / squash / rebase 三种合并都认，直推的 commit message 也认。
+#
+# 安全：
+# * commit message 与 PR 描述是外部可控文本：只经 $GITHUB_EVENT_PATH / API 响应由
+#   tool/feedback_link.mjs 读取，**绝不**以 `${{ github.event.* }}` 内联进 run。
+# * 只稀疏检出 tool/feedback_link.mjs 这一个文件；不写仓库。
+# * 权限最小：contents: read（检出脚本）+ pull-requests: read（查关联 PR）。
+# * 没配 secret FEEDBACK_CI_TOKEN → ::notice 退出；任何接口失败只记 ::warning，不变红。
+#
+# 守卫：fushi/test/build/feedback_workflow_guard_test.dart；
+# 解析：fushi/test/tools/feedback_link_script_test.dart。
+name: Feedback fix link
+
+on:
+  push:
+    branches: ['develop', 'main']
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: tool/feedback_link.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Mark linked feedback as fixed
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FEEDBACK_CI_TOKEN: ${{ secrets.FEEDBACK_CI_TOKEN }}
+          FEEDBACK_API_BASE: ${{ vars.FEEDBACK_API_BASE }}
+        run: node tool/feedback_link.mjs

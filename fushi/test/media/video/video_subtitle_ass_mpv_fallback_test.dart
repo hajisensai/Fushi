@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
@@ -7,7 +7,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-929 guard: the reported ASS requests a font that is not installed on
 /// Windows. mpv/libass (DirectWrite) resolves its Japanese glyphs through
-/// Microsoft YaHei UI, so Hibiki must use the same first fallback for both
+/// Microsoft YaHei UI, so Fushi must use the same first fallback for both
 /// Flutter glyph rendering and ASS cell/em size conversion.
 const String _reportedAss = r'''
 [Script Info]

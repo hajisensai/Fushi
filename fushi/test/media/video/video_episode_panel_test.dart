@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:transparent_image/transparent_image.dart';
 
 import 'package:fushi/src/media/video/video_episode_panel.dart';
@@ -60,14 +61,16 @@ void main() {
         find.byKey(const ValueKey<String>('video-episode-card-1'));
     expect(
       find.descendant(
-          of: currentCard, matching: find.byIcon(Icons.play_arrow_rounded)),
+          of: currentCard,
+          matching: find.byIcon(FushiIcons.filled(FushiIcons.play))),
       findsOneWidget,
     );
     final Finder otherCard =
         find.byKey(const ValueKey<String>('video-episode-card-0'));
     expect(
       find.descendant(
-          of: otherCard, matching: find.byIcon(Icons.play_arrow_rounded)),
+          of: otherCard,
+          matching: find.byIcon(FushiIcons.filled(FushiIcons.play))),
       findsNothing,
     );
     expect(find.text('01'), findsOneWidget);
@@ -90,7 +93,7 @@ void main() {
     ));
 
     expect(find.text('Episodes'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byIcon(FushiIcons.close));
     expect(closed, 1);
   });
 

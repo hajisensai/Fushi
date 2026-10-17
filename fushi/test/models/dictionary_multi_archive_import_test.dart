@@ -108,9 +108,10 @@ void main() {
       );
       expect(src.contains('_importArchivedDictionaries('), isTrue);
       expect(
-        src.contains('if (archived.length > 1) {'),
+        src.contains('if (isDictionaryBundle(archived)) {'),
         isTrue,
-        reason: '只有真的多于一本才拆；单本必须走原路径，行为不变',
+        reason: '只有真的多于一本（或含内层 zip 的整合包，BUG-2952）才拆；'
+            '单本必须走原路径，行为不变',
       );
     });
 

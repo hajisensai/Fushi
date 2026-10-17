@@ -12,16 +12,16 @@
 
 // galgame 一键制卡 C 阶段（docs/specs/galgame-mining）—— 引擎级 voice hook 的**进程间契约**。
 //
-// 部署红线：这套 injector + hook DLL 是**独立可选 helper 组件**，和 `hibiki.exe` 物理隔离、
+// 部署红线：这套 injector + hook DLL 是**独立可选 helper 组件**，和 `fushi.exe` 物理隔离、
 // 分离分发（`CreateRemoteThread`/`WriteProcessMemory` 注入必被杀软启发式报毒，编进本体会污
-// 染整个 app 的分发口碑）。Hibiki 主进程把 injector 当子进程拉起、通过下面这块共享内存消费
+// 染整个 app 的分发口碑）。Fushi 主进程把 injector 当子进程拉起、通过下面这块共享内存消费
 // 干净语音 PCM——被标记的注入代码只待在这个隔离组件里。
 //
 // 数据流（混音前的干净语音轨）：
 //   game.exe 内的 hook DLL：在 XAudio2/DirectSound 把语音送进混音**之前** memcpy 进环形缓冲
 //     → 只在音频回调里 memcpy + 更新 write_pos（零阻塞：写盘/编码/IPC 全部移出回调，爆音红线）
 //   共享内存：header + 紧随其后的 PCM 环形缓冲
-//   Hibiki host（经 injector）：读环形缓冲最近 N 毫秒 → 波形选区 → 制卡出口（复用 A 阶段流水线）
+//   Fushi host（经 injector）：读环形缓冲最近 N 毫秒 → 波形选区 → 制卡出口（复用 A 阶段流水线）
 namespace fushi_voice_hook {
 
 // 共享内存魔数 'HVH1'（小端）与当前契约版本。跨进程读到不匹配即拒绝，防旧/坏映射。
@@ -65,7 +65,7 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     lookup_frame_applied_seq。host 只有看到该确认才能抓游戏窗口；发布成功不等于游戏渲染树
 //     已经干净，拿普通 dismiss 的 MethodChannel 返回值当屏障会稳定把 popup 拍进卡片图片。
 // v16：在头部最尾追加 injected WASAPI loopback 的 fail-closed 控制/确认。旧实现只门控
-//     Hibiki 宿主进程里的 loopback，却让游戏内 DLL 一加载就无条件创建另一个系统混音捕获线程；
+//     Fushi 宿主进程里的 loopback，却让游戏内 DLL 一加载就无条件创建另一个系统混音捕获线程；
 //     cleanOnly/resourceOnly 因而仍会录音。request_seq 最后发布请求，applied_seq 最后确认
 //     Stop/Release/线程退出；版本不匹配时 DLL 拒绝映射，旧 helper 不能绕过默认 deny。
 // v17：在头部最尾追加**本次注入所用 hook DLL 的 SHA-256**（`hook_module_sha256`）。
@@ -142,7 +142,7 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 // game itself, not the lookup popup suppression contract.
 constexpr uint32_t kSharedVersion = 25;
 
-enum class SiglusTextOwner : uint32_t {
+enum class NativeTextOwner : uint32_t {
   kPending = 0,
   kNotApplicable = 1,
   kNativeOwned = 2,
@@ -360,9 +360,15 @@ constexpr uint32_t kTextSourceArtemis = 8;
 // YU-RIS exact text: the message line the engine's per-character text step
 // draws, read from its message state at the line's first character.
 constexpr uint32_t kTextSourceYuris = 9;
-// Text source ids 11-14: reserved, unassigned. The Malie adapter took 15 while
+// Kogado "Hy" exact text: the script page the message window's row renderer
+// shows, rows joined, speaker row removed.
+constexpr uint32_t kTextSourceKogadoHy = 11;
+// LucaSystem exact text: the Japanese record of the scenario VM's MESSAGE
+// opcode, role prefix and glossary markers removed.
+constexpr uint32_t kTextSourceLuca = 12;
+// Text source ids 13-14: reserved, unassigned. The Malie adapter took 15 while
 // other engine adapters were in flight; no branch in this repository uses
-// 11-14 (checked 2026-10-03 across all local refs). The host maps unknown kinds
+// 13-14 (checked 2026-10-03 across all local refs). The host maps unknown kinds
 // to the generic 'hook:' lane, so a new kind must be registered here AND in
 // GalHookedLine.textThreadKey/textThreadLabel (fushi/lib/src/mining/
 // galgame_audio_source.dart) in the same change; register the number here
@@ -597,7 +603,7 @@ constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapFired = 0x01000000u;     /
 constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapFaulted = 0x02000000u;   // TVPExecuteScript 抛了（SEH 拦下）
 // bootstrap 脚本跑完之后，TJS 侧那个 System.addContinuousHandler 回调每帧都在前置条件
 // `typeof global.kag == "Object" && typeof global.kag.addHook == "Object"` 上静默 return，
-// 症状与「脚本没跑」完全同形（都是 fushiLookupNotify 不存在、控制台无 [HibikiLookup] 行）。
+// 症状与「脚本没跑」完全同形（都是 fushiLookupNotify 不存在、控制台无 [FushiLookup] 行）。
 // 这三位把前置条件拆开量：脚本活着吗 / kag 出来了吗 / 这个 KAG 分支有 addHook 吗。
 constexpr uint32_t kXAudioDiag2KirikiriLookupTjsBootstrapFnAlive = 0x04000000u;  // global.fushiLookupBootstrap 仍在
 constexpr uint32_t kXAudioDiag2KirikiriLookupKagObjectReady = 0x08000000u;       // global.kag 是对象
@@ -760,7 +766,7 @@ struct LoopbackMarker {
 
 // ══ v14 游戏内查词区 ════════════════════════════════════════════════════
 // KiriKiri/KAGEX 在**游戏渲染树内部**显示词典卡片。注入侧只做几何传感、
-// 位图落地和输入转发；分词、查词、排版、卡片像素全部由 host（Hibiki 既有
+// 位图落地和输入转发；分词、查词、排版、卡片像素全部由 host（Fushi 既有
 // popup.html + WebView2 离屏合成）负责。跨进程边界上因此只有一块位图和一串整数。
 //
 // 三条通道各自单写单读，无锁：
@@ -916,14 +922,20 @@ constexpr uint32_t kLookupGeometryProviderIdUnityMono = 20u;
 constexpr uint32_t kLookupGeometryProviderIdBgi = 21u;
 // YU-RIS message-layer exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdYuris = 22u;
-// Provider ids 24-27: reserved, unassigned. The Malie adapter took 28 while
+// Kogado "Hy" message-window row layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdKogadoHy = 24u;
+// LucaSystem message-window (cText glyph record) exact layout provider
+// (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdLuca = 25u;
+// Provider ids 26-27: reserved, unassigned. The Malie adapter took 28 while
 // other engine adapters were in flight; no branch in this repository uses
-// 24-27 (checked 2026-10-03 across all local refs). Every production pair is
-// whitelisted in three places that must change together: IsProductionProviderPair
+// 26-27 (checked 2026-10-04 across all local refs and upstream/develop).
+// Every production pair is whitelisted in three places that must change
+// together: IsProductionProviderPair
 // (fushi/windows/runner/lookup_hit_validation.h),
 // isGalLookupProductionProviderPair (fushi/lib/src/platform/
 // gal_hook_text_overlay_channel.dart) and its contract test
-// (fushi/test/lookup/gal_ingame_lookup_contract_test.dart, which pins 24-27 as
+// (fushi/test/lookup/gal_ingame_lookup_contract_test.dart, which pins 26-27 as
 // rejected). Register a new id here first.
 // Malie RICHTEXT3D message exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdMalie = 28u;
@@ -1255,7 +1267,7 @@ struct SharedHeader {
   uint32_t clip_region_offset;      // clip 索引起始
   volatile uint64_t text_write_count;  // 单调：已写文本事件数（host 取 last..count 的新事件）
   volatile uint64_t clip_write_count;  // 单调：已写语音 clip 数
-  // 0=尚未选定（v12 起文本环恒空）；非 0=用户在 Hibiki 选择的 TextSlot::thread_id。
+  // 0=尚未选定（v12 起文本环恒空）；非 0=用户在 Fushi 选择的 TextSlot::thread_id。
   // injector 无条件过滤重复伪影，再仅写该线程/同一 hook face。
   volatile uint64_t selected_text_thread_id;
   // LunaHook（引擎精确）出干净行后 injector 置 1；置 1 后游戏内 GDI 文本 hook 让位不再写文本，
@@ -1416,7 +1428,7 @@ struct SharedHeader {
   volatile uint32_t adapter_report_seq;    // 单调；0 = 从未上报过（≠"没有 adapter"）
   // v24, hook worker -> injector, single writer. Initialize before Ready;
   // Pending may become one terminal value and never return to Pending.
-  volatile uint32_t siglus_text_owner;
+  volatile uint32_t native_text_owner;
   // ── v25 game-stream native input（host→hook request；hook→host ack）───────
   // request_seq 的最高位是写令牌。payload 只描述目标 HWND 和当前 held button mask，
   // 不携带屏幕坐标，也不允许注入侧改变桌面全局输入状态。deadline_tick_ms 使用
@@ -2794,8 +2806,8 @@ inline bool IsLookupFrameSane(const SharedHeader* header,
 }
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
-static_assert(offsetof(SharedHeader, siglus_text_owner) % 4 == 0,
-              "Siglus ownership must support aligned Interlocked access");
+static_assert(offsetof(SharedHeader, native_text_owner) % 4 == 0,
+              "Native text ownership must support aligned Interlocked access");
 static_assert(offsetof(SharedHeader, game_stream_input_request_seq) % 4 == 0,
               "Game-stream input seq must support aligned Interlocked access");
 static_assert(sizeof(LookupHitSlot) % 8 == 0, "LookupHitSlot must stay 8-aligned");
@@ -2821,28 +2833,14 @@ static_assert(sizeof(LoopbackMarker) % 8 == 0, "LoopbackMarker must stay 8-align
 // injector 创建、hook DLL 打开：共享内存 + 「就绪」事件（DLL 装好后 SetEvent，injector 据此
 // 确认注入成功并读回格式）。
 //
-// Fushi 改名后的 host 使用 FushiVoiceHook；旧 Hibiki host 仍只会打开 HibikiVoiceHook。
-// helper/DLL 可能被部署到旧安装中做兼容修复，因此两侧都按实际组件文件名选同一命名空间，
-// 而不是让新版默认名静默破坏旧 host。严格只认完整 basename，避免任意路径子串误判。
-inline bool ComponentUsesLegacyHibikiIpc(const std::wstring& component_path) {
-  const size_t slash = component_path.find_last_of(L"\\/");
-  const wchar_t* basename = slash == std::wstring::npos
-                                ? component_path.c_str()
-                                : component_path.c_str() + slash + 1;
-  return _wcsicmp(basename, L"hibiki_voice_injector.exe") == 0 ||
-         _wcsicmp(basename, L"hibiki_voice_hook.dll") == 0;
+// injector 与 hook DLL 同一次构建产出、同目录随 fushi.exe 落地（BUG-1449，运行期不下载
+// helper），两侧永远同版本，所以只有一套名字。改名前 Hibiki 的 `HibikiVoiceHook*` 命名空间
+// 只在旧 Hibiki 安装自带的 hibiki_voice_* 组件里存在，本源码不再产出那组文件。
+inline std::wstring SharedMemoryName(DWORD target_pid) {
+  return std::wstring(L"Local\\FushiVoiceHook_") + std::to_wstring(target_pid);
 }
-
-inline std::wstring SharedMemoryName(DWORD target_pid,
-                                     bool legacy_hibiki = false) {
-  return std::wstring(legacy_hibiki ? L"Local\\HibikiVoiceHook_"
-                                    : L"Local\\FushiVoiceHook_") +
-         std::to_wstring(target_pid);
-}
-inline std::wstring ReadyEventName(DWORD target_pid,
-                                   bool legacy_hibiki = false) {
-  return std::wstring(legacy_hibiki ? L"Local\\HibikiVoiceHookReady_"
-                                    : L"Local\\FushiVoiceHookReady_") +
+inline std::wstring ReadyEventName(DWORD target_pid) {
+  return std::wstring(L"Local\\FushiVoiceHookReady_") +
          std::to_wstring(target_pid);
 }
 

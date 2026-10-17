@@ -1,0 +1,24 @@
+## BUG-2952 · 词典导入导致 native 崩溃（磁盘写满 SIGBUS / 汉字词典 / 整合包）
+- **报告**：2026-10-05（用户 Android 真机日志，经上游所有者转来：「不应该崩溃，你修一下」）。两条 `DictImport.crashRecovered`：① 在线下载的 `[Kanji] mozc Kanji Variants.zip`，native 最后步骤=`yomitan: kanji_bank #0 / kanji_bank_1.json`；② 从整合包「英语词典整理.zip」里解出来逐个导入的 `牛津英语习语词典.zip`（MDX 词典，没有 native 步进面包屑——MDX 路径本来不写）。用户另述：直接导整合包只报「导入失败」不崩；解开后逐个导，**部分**内层 zip 会崩。
+- **真实性**：✅ 真 bug，但触发条件不是词典内容，而是**导入时存储卷写满**。
+  - 两个文件本身完全正常：用 clang 编的引擎驱动在 Windows x64、Android x86_64 模拟器（CLI + 真 app 2.9.0 界面导入）、Android arm64 真机（CLI，`/data/local/tmp`，不碰已装 app）、macOS arm64（含 ASan/UBSan）上逐个导入，mozc（1317 字，`stats` 全是 `{}`、`meanings` 里含 `""`、4 字节字 𠮟）与 牛津习语（MDX 5.3 MB + MDD 8.8 MB）全部成功；整合包里另外 9 本也全部成功；结构化 fuzz（深嵌套 1e6 层 structured-content / kanji stats / meta / index / tag；随机变异 term/kanji/meta/tag bank JSON 与 zip 字节，约 2 万例）零崩溃。
+  - 在 root 模拟器上把输出目录挂到小 tmpfs 逐档复现：mozc 在 110k–150k 档、牛津习语在 24m 档**进程被 SIGBUS 杀死**（`Bus error`，rc=135）；另有 5m/10m/25m–32m 档异常逃出 `dictionary_importer::import`。
+  - 根因 ①（崩溃本体，SIGBUS）：`native/fushidicts/fushidicts_src/memory/memory.cpp:119` 的 `map_rw` 只 `ftruncate` 出**稀疏文件**再 `mmap(MAP_SHARED)`（:124）；`hash/hash.cpp:61` / `hash/bloom.cpp` 往映射里写时才在缺页里分配块，卷满时内核以 SIGBUS 回应——任何 try/catch 都拦不住。blobs.bin 走 `ofstream`（失败可捕获），所以「blobs 刚好写进去、hash/bloom 写不下」这一段空间就是崩溃窗口；这正是 kanji 词典崩在 `kanji_bank #0` 之后（hash 构建阶段不更新面包屑）的形态。用户逐个导入整合包里的大词典（LDOCE 63 MB、新英和 94 MB… 解压后数倍）把空间吃光后，后面的导入就会落进这个窗口——「部分崩、部分不崩」由此而来。
+  - 根因 ②（异常逃出导入器）：`importer.cpp:1593/1612` MDX 解压 lambda 在任何 try 之外；`importer.cpp:1566` 成功后的 MDD 媒体写盘不在 try 内（注释说「媒体失败不影响词典」却会抛出）；`importer.cpp:1978` 等失败清理用会抛的 `remove_all`，Windows 上标题不是合法 UTF-8 时连构造路径都抛 `locale not supported`（fuzz 发现）。生产链路里 FFI 线程函数兜住了 `std::exception`，所以这条在 app 内表现为「含糊的失败 + 残留临时目录」而不是崩溃，但非 `std::exception` 异常会直接 `std::terminate`。
+  - 次要：满盘失败的报错是 `ios_base::clear: unspecified iostream_category error`，用户无从下手；`parse_kanji_bank`（`importer.cpp:579` 调用处）整 bank 一次性解析，一条坏记录会让整个 bank 静默丢光。
+- **[x] ① 已修复** —
+  - `memory.cpp` `map_rw`：POSIX 先 `posix_fallocate` 预留真实块（文件系统不支持时退回写零预留；macOS 直接写零），失败返回空映射并删掉文件；Windows 保持 `SetEndOfFile`（NTFS 非稀疏文件即分配簇）。新增线程局部 `memory::last_error()`（Windows 错误码折成 errno）与 `memory::map_error : std::system_error`，hash/bloom 失败改抛它，带 `No space left on device`。
+  - `importer.cpp`：`dictionary_importer::import` 成为唯一异常边界（原实现改名 `import_dispatch`，外层 `catch (std::system_error / std::exception / ...)` 一律转 `ImportResult`）；失败时若见到 ENOSPC 或输出卷剩余空间 < max(64 MiB, 包大小)，在 errors 首行放稳定标记 `kStorageFullMarker = "FUSHI_ERR_STORAGE_FULL"`（`importer.hpp`）；失败清理统一走不抛的 `remove_tree_quietly`；MDX 解压失败清掉 `_mdx_temp` 并返回错误；MDD 媒体写盘失败删掉半截 `media.bin/.idx`、词典本身保留（`media skipped: …` 记入 errors）；`sanitize_title` 把非法 UTF-8 修成 U+FFFD。
+  - `yomitan_parser.cpp` `parse_kanji_bank`：先解析成 `raw_json_view` 数组再逐条解析，坏记录跳过并计数（`FUSHI_LOGW`），整 bank 不再陪葬。
+  - `fushidicts_ffi.cpp` 导入线程函数补 `catch (...)`。
+  - Dart（`fushi/lib/src/models/dictionary_import_manager.dart`）：`nativeImportErrorMessage` 把带标记的错误换成 i18n `dict_import_storage_full`（两个 native 导入入口同用）；整合包判据扩到「内层 `.zip`」与「多份 `index.json`」（`archivedDictionaryEntries` / `isDictionaryBundle`），逐本导入时同时认内层 zip 与 Yomitan 目录（打临时 zip 走同一条 `importFromFile`），进度显示 `dict_import_bundle_detected`；内层 zip 自己是整合包时递归层用外层工作目录里的独立目录，不再删掉外层正在用的解压结果。
+  - 提交：未提交（worktree 只读约定，交由 integration owner）。
+- **[x] ② 已加自动化测试** —
+  - C++ `native/fushidicts/tests/import_failure_boundary_test.cpp`（已登记进 tests/CMakeLists.txt）：map_rw 产出的文件**不是稀疏的**（POSIX `st_blocks`，旧实现必红——这就是 SIGBUS 的前提）；map_rw 失败带 errno、hash 构建抛 `system_error`；MDX 临时目录被占位时 import 返回失败结果而非抛出；非法 UTF-8 标题导入成功且标题合法；kanji bank 混入错类型记录时只跳坏的（mozc 形态 + 4 字节字照常可查）；POSIX `RLIMIT_FSIZE` 模拟写满时导入返回失败且不留半截目录。Windows clang ctest 36/36 绿，macOS arm64 本用例绿。
+  - Dart `fushi/test/models/dictionary_import_bundle_storage_test.dart`（整合包判据 / 单本不拆 / 存储满文案 / Dart 与 native 标记逐字一致 / 两个入口都接线）；`dictionary_multi_archive_import_test.dart` 接线断言随判据改名更新。25/25 绿。
+  - 真链路：Android x86_64 模拟器 tmpfs 写满矩阵（mozc 40k–180k、牛津习语 5m–34m 共 23 档）修复后 0 崩溃，全部返回结构化结果；Windows `fushidicts_ffi.dll` 挂 PATH 经 `FushiDicts.importDictionary` 导入 mozc / 牛津习语 / 整合包 / fuzz 样本均正常返回；Android arm64 真机 CLI 新代码导入两本正常。
+- **备注**：
+  - 没有拿到用户设备当时的剩余空间，「写满」是由崩溃形态 + 可复现窗口推断的唯一已知崩溃路径；若用户确认当时空间充裕，需要用户那台设备的 tombstone（`adb bugreport`）再查。
+  - `hash.table` 4 字节头后的 16 字节槽位是非对齐访问（UBSan 报 `hash.cpp:60`），arm64/x86 上不崩，磁盘格式冻结，未改。
+  - term/meta bank 仍是整 bank 一次解析（数据量大，逐条两遍解析有成本），只改了 kanji。
+  - Android 端验证：本机 Gradle 只能编 debug（`:app:compileDebugKotlin` / `assembleDebug` 会经 externalNativeBuild 编 `libfushidicts_ffi.so`）；本轮已用 NDK 28 直接编 arm64 / x86_64 的 `libfushidicts_ffi.so` 与引擎驱动确认可编译可运行。

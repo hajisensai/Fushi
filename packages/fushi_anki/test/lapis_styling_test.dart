@@ -483,7 +483,7 @@ void main() {
       }
     });
 
-    test('selector 里不出现 Hibiki 自产卡从不产出的结构', () {
+    test('selector 里不出现 Fushi 自产卡从不产出的结构', () {
       // 这些锚点只存在于 vendored Lapis CSS（服务 JPMN 导入卡）与旧预览 mock：
       // popup.js 的 constructGlossaryHtml 永远产出
       // `div.yomitan-glossary > ol > li[data-dictionary] > (i + span)`。

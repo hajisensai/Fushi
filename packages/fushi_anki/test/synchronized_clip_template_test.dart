@@ -98,6 +98,73 @@ void main() {
     expect(_renders('<!-- {{Picture}} -->'), isFalse);
   });
 
+  test('Kiku v2.1.0 发布模板的 SSR 图片引用不是最终渲染能力', () {
+    expect(
+      _renders(
+        File('test/fixtures/kiku/release-back.html').readAsStringSync(),
+        front: File('test/fixtures/kiku/release-front.html').readAsStringSync(),
+      ),
+      isFalse,
+    );
+  });
+
+  test('Kiku v1.10.2 隐藏 div 数据源不能证明图片原样渲染', () {
+    expect(
+      _renders(File('test/fixtures/kiku/v1-back.html').readAsStringSync()),
+      isFalse,
+    );
+  });
+
+  test('字段数据源判据跟随映射，不依赖模板名称或 Picture 字段名', () {
+    expect(
+      _renders(
+        '<div>{{Photo}}</div>'
+        '<template><template data-field="Photo">{{Photo}}</template></template>'
+        '<script>hydrate();</script>',
+        mappings: const <String, String>{'Photo': '{card-image}'},
+      ),
+      isFalse,
+    );
+  });
+
+  test('脚本字段源支持不同属性引号和大小写', () {
+    for (final String attribute in <String>[
+      'data-field="Picture"',
+      "DATA-FIELD = 'Picture'",
+      'data-field=Picture',
+    ]) {
+      expect(
+        _renders(
+          '<div>{{Picture}}</div><div hidden>'
+          '<span $attribute>{{ Picture }}</span></div>'
+          '<script src="renderer.js"></script>',
+        ),
+        isFalse,
+        reason: attribute,
+      );
+    }
+  });
+
+  test('静态字段标记、其它字段的数据源和脚本文字不阻止直接渲染', () {
+    expect(_renders('<div data-field="Picture">{{Picture}}</div>'), isTrue);
+    expect(
+      _renders(
+        '<div>{{Picture}}</div>'
+        '<template data-field="Expression">{{Expression}}</template>'
+        '<script>renderExpression();</script>',
+      ),
+      isTrue,
+    );
+    expect(
+      _renders(
+        '<div>{{Picture}}</div>'
+        '<!-- <template data-field="Picture">{{Picture}}</template> -->'
+        '<script>const sample = \'<div data-field="Picture">{{Picture}}</div>\';</script>',
+      ),
+      isTrue,
+    );
+  });
+
   test('正面或背面任一处裸引用即可；容忍空白', () {
     expect(_renders('<div>{{ Picture }}</div>'), isTrue);
     expect(_renders('{{Expression}}', front: '<div>{{Picture}}</div>'), isTrue);

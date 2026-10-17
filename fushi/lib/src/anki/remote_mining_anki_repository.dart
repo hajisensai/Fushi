@@ -77,7 +77,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     );
     try {
       final Map<String, dynamic>? json = await _client.mineForward(payload);
-      return _withLocalDeckNameFallback(_outcomeFromResponse(json));
+      return await _withLocalDeckNameFallback(_outcomeFromResponse(json));
     } on SyncAuthError {
       return MineOutcome.failure(
         tokenRejectedMessage,

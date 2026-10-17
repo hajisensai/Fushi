@@ -163,6 +163,26 @@ void main() {
         isTrue,
       );
     });
+
+    test('默认过滤串不连带压掉我们自己的 mpv/stats 每秒采样（掉帧证据）', () {
+      final Map<String, VideoDiagLevel> levels = VideoDiagLog.parseMsgLevel(
+        VideoDiagLog.defaultMsgLevel,
+      );
+      expect(
+        VideoDiagLog.passesFilter(
+          VideoDiagCategory.mpvStats,
+          VideoDiagLevel.v,
+          levels,
+        ),
+        isTrue,
+        reason: 'mpv/stats 不是 libmpv 转写，被 mpv=info 前缀压掉就没有掉帧统计了',
+      );
+      expect(
+        VideoDiagLog.passesFilter('mpv/vo', VideoDiagLevel.v, levels),
+        isFalse,
+        reason: '放回 mpv/stats 不能把 libmpv 转写也一起放开',
+      );
+    });
   });
 
   group('redactVideoDiagSecrets（导出前脱敏）', () {

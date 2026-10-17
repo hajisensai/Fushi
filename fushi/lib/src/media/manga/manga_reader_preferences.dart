@@ -1,4 +1,6 @@
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/manga_view_prefs.dart'
+    show kMangaSpreadOffsetDefault;
 
 /// Mihon-compatible page scaling choices.
 enum MangaScaleType { fitScreen, stretch, fitWidth, fitHeight, original, smart }
@@ -115,6 +117,7 @@ class MangaReaderPreferences {
     this.colorFilterColor = '#F4ECD8',
     this.colorFilterOpacity = 20,
     this.ocrTrigger = 'automatic',
+    this.spreadOffset = kMangaSpreadOffsetDefault,
   });
 
   final MangaReadingMode mode;
@@ -184,6 +187,9 @@ class MangaReaderPreferences {
   final int colorFilterOpacity;
   final String ocrTrigger;
 
+  /// 双页模式的跨页偏移：1 = 封面独占后再两两配对，0 = 从第一页起配对。
+  final int spreadOffset;
+
   Map<String, Object> toJson() => <String, Object>{
     'mode': mode.storageKey,
     'scaleType': scaleType.key,
@@ -239,6 +245,7 @@ class MangaReaderPreferences {
     'colorFilterColor': colorFilterColor,
     'colorFilterOpacity': colorFilterOpacity,
     'ocrTrigger': ocrTrigger,
+    'spreadOffset': spreadOffset,
   };
 
   factory MangaReaderPreferences.fromJson(Map<String, Object?> json) {
@@ -346,6 +353,7 @@ class MangaReaderPreferences {
         'automatic',
         'manual',
       }),
+      spreadOffset: number('spreadOffset', kMangaSpreadOffsetDefault, 0, 1),
     );
   }
 

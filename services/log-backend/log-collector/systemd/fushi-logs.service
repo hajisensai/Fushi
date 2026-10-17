@@ -1,0 +1,27 @@
+[Unit]
+Description=Fushi log collector
+After=network.target
+
+[Service]
+Type=simple
+# 运行用户 / 密钥文件 / 二进制 / 数据目录沿用改名前的 hibiki-logs 系列：它们是已部署
+# 服务器上的持久状态（含已收日志），单元文件改名不搬家。新部署照 README 建同名即可。
+User=hibiki-logs
+Group=hibiki-logs
+# 真实密钥放 /etc/hibiki-logs.env（chmod 600，不入库）
+EnvironmentFile=/etc/hibiki-logs.env
+ExecStart=/usr/local/bin/hibiki-log-collector
+Restart=on-failure
+RestartSec=2
+
+# 最小权限加固：只能写数据目录，碰不到系统其它地方
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/hibiki-logs
+RestrictAddressFamilies=AF_INET AF_INET6
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

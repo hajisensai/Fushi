@@ -1,0 +1,138 @@
+# 排行榜 + 反馈 Cloudflare Worker（services/leaderboard，线上 `fushi-leaderboard` /
+# https://rank.fushi.moe）的手动部署。
+#
+# 只认 workflow_dispatch：push / PR 永远不会部署。测试门是同目录的
+# leaderboard-worker.yml；这里在部署前再跑一遍同一套测试，测试不过就不部署。
+#
+# 凭据：优先读 CLOUDFLARE_WORKERS_API_TOKEN，没配再回退到 CLOUDFLARE_API_TOKEN
+# （后者原本给 mirror-releases.yml 的 R2 镜像用）。token 至少要有
+# 「Account → Workers Scripts: Edit」；勾了 apply_migrations 还要「Account → D1: Edit」；
+# wrangler.toml 的 routes 把自定义域名 rank.fushi.moe 绑在 zone fushi.moe 上，部署时会一并
+# 同步；若 deploy 报 zone / route 相关的权限错误，再给 token 加限定 fushi.moe 的
+# 「Zone → Workers Routes: Edit」。只有 R2 权限的 token 会在 whoami / deploy 步骤报鉴权错误。
+#
+# 部署命令一律 `--config services/leaderboard/wrangler.toml`：在没有 wrangler 配置的目录
+# 裸跑 wrangler deploy 曾误建过 Worker、把 docs/ 当静态资源上传（见 services/leaderboard/README.md）。
+name: leaderboard-worker-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: '要部署的分支 / tag / 提交'
+        required: true
+        default: develop
+        type: string
+      apply_migrations:
+        description: '部署前先执行 D1 远程迁移（d1 migrations apply fushi-leaderboard --remote）'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# 同一时刻只允许一次部署；后来者排队，不取消正在跑的部署（半截部署 / 半截迁移更糟）。
+concurrency:
+  group: leaderboard-worker-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # 维护者可在 Settings → Environments 给它配审批人；没配也能直接跑。
+    environment:
+      name: leaderboard-production
+      url: https://rank.fushi.moe
+    defaults:
+      run:
+        shell: bash
+    env:
+      WRANGLER: node services/leaderboard/node_modules/wrangler/bin/wrangler.js
+      WRANGLER_CONFIG: services/leaderboard/wrangler.toml
+      WRANGLER_SEND_METRICS: 'false'
+      SMOKE_URL: https://rank.fushi.moe/v1/health
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        working-directory: services/leaderboard
+        run: npm ci --no-audit --no-fund --ignore-scripts
+
+      - name: Test
+        working-directory: services/leaderboard
+        run: npm test
+
+      - name: Check Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          HAS_WORKERS_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::未配置 CLOUDFLARE_WORKERS_API_TOKEN / CLOUDFLARE_API_TOKEN 或 CLOUDFLARE_ACCOUNT_ID，无法部署。"
+            exit 1
+          fi
+          if [ "$HAS_WORKERS_TOKEN" = 'true' ]; then
+            echo "使用 secret CLOUDFLARE_WORKERS_API_TOKEN"
+          else
+            echo "使用 secret CLOUDFLARE_API_TOKEN（未配置 CLOUDFLARE_WORKERS_API_TOKEN）"
+          fi
+
+      - name: Show deploy target
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          INPUT_REF: ${{ inputs.ref }}
+          APPLY_MIGRATIONS: ${{ inputs.apply_migrations }}
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          echo "ref: $INPUT_REF"
+          echo "commit: $sha"
+          git log -1 --format='%h %s (%an, %ad)' --date=iso
+          $WRANGLER whoami
+          {
+            echo "### leaderboard-worker-deploy"
+            echo "- ref: \`$INPUT_REF\`"
+            echo "- commit: \`$sha\`"
+            echo "- apply_migrations: \`$APPLY_MIGRATIONS\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply D1 migrations
+        if: ${{ inputs.apply_migrations }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          $WRANGLER d1 migrations apply fushi-leaderboard --remote --config "$WRANGLER_CONFIG"
+
+      - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          $WRANGLER deploy --config "$WRANGLER_CONFIG"
+
+      # 公开健康端点（src/worker.js：GET /v1/health → {"ok":true}），只看状态码。
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SMOKE_URL")"
+          echo "GET $SMOKE_URL -> $status"
+          echo "- smoke: \`GET $SMOKE_URL\` → $status" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" != '200' ]; then
+            echo "::error::部署后健康检查失败：$SMOKE_URL 返回 $status"
+            exit 1
+          fi

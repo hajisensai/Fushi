@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		APNs 远程推送（「开发者回复了你的反馈」，lib/src/feedback/feedback_push.dart）。
+
+		本文件**默认不接入构建**：工程里没有设 CODE_SIGN_ENTITLEMENTS。只有描述文件本身
+		带 aps-environment（App ID 已勾 Push Notifications 并重新生成过描述文件）时，
+		.github/workflows/release-desktop.yml 才往 Release.xcconfig 追加
+		CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements，并把 FUSHI_APS_ENVIRONMENT
+		设成描述文件里的值（App Store / TestFlight 描述文件 = production）。
+		反过来：描述文件没开 Push 却签了带 aps-environment 的 entitlement，codesign 直接
+		失败——所以不能无条件接入，否则在用户配好 Push 之前 TestFlight 构建会整条断掉。
+
+		未签名的 GitHub 侧载 ipa 不带这项 entitlement：系统注册远程推送失败，Dart 拿不到
+		令牌就不登记，照旧走本机后台检查。本地真机调试推送：在 Debug.xcconfig 之外（别提交）
+		加 CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements，FUSHI_APS_ENVIRONMENT 默认
+		development（Debug.xcconfig）。见 docs/agent/apple-signing.md「APNs 推送密钥」。
+	-->
+	<key>aps-environment</key>
+	<string>$(FUSHI_APS_ENVIRONMENT)</string>
+</dict>
+</plist>

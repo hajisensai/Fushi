@@ -1,0 +1,498 @@
+// 用户反馈的 JSON 线格式（真相源：services/leaderboard/src/feedback.js）。
+//
+// 只做 fromJson/toJson 的忠实映射。提交侧的上限与服务端 FEEDBACK_LIMITS 一致，
+// 在本机先拦住服务端必然 400 / 413 的形状。
+
+typedef FeedbackJson = Map<String, dynamic>;
+
+int _int(Object? v) => (v as num).toInt();
+int? _intOrNull(Object? v) => v == null ? null : (v as num).toInt();
+String _str(Object? v) => v as String? ?? '';
+
+/// 空串与缺字段同义（服务端「清除」就是写空串）。
+String? _nonEmpty(Object? v) => v is String && v.isNotEmpty ? v : null;
+FeedbackJson _map(Object? v) =>
+    (v as Map<Object?, Object?>).cast<String, dynamic>();
+List<T> _list<T>(Object? v, T Function(FeedbackJson) f) => List<T>.unmodifiable(
+  ((v as List<Object?>?) ?? const <Object?>[]).map((Object? e) => f(_map(e))),
+);
+
+/// 与服务端 FEEDBACK_LIMITS 对齐。
+abstract final class FeedbackLimits {
+  static const int titleMax = 120;
+  static const int bodyMax = 8000;
+  static const int contactMax = 200;
+  static const int replyMax = 4000;
+  static const int devNoteMax = 8000;
+  static const int screenshots = 3;
+  static const int screenshotMaxBytes = 1536 * 1024;
+
+  /// 截图单边像素上限（服务端 feedback_guard.js IMAGE_MAX_SIDE）。超了回 415
+  /// `bad_image_dimensions`，永远传不上去。
+  static const int screenshotMaxSide = 8192;
+
+  /// 截图总像素上限（服务端 IMAGE_MAX_PIXELS）。
+  static const int screenshotMaxPixels = 40000000;
+  static const int logMaxBytes = 2 * 1024 * 1024;
+  static const int statusBatch = 50;
+
+  /// 提交后还能补传附件的时长（服务端 attachWindowMs）。
+  static const Duration attachWindow = Duration(hours: 24);
+
+  /// 视频附件（槽位 [videoSlot]，每条反馈最多一个）的上限：服务端 videoMaxBytes。
+  static const int videoMaxBytes = 50 * 1024 * 1024;
+
+  /// 视频附件的槽位名。
+  static const String videoSlot = 'v0';
+
+  /// 「我的反馈」账户列表每页条数上限（服务端 GET /v1/feedback/mine）。
+  static const int minePage = 50;
+}
+
+enum FeedbackCategory {
+  bug('bug'),
+  suggestion('suggestion'),
+  other('other');
+
+  const FeedbackCategory(this.wire);
+  final String wire;
+
+  static FeedbackCategory fromWire(Object? raw) => FeedbackCategory.values
+      .firstWhere((FeedbackCategory c) => c.wire == raw, orElse: () => other);
+}
+
+enum FeedbackStatus {
+  open('open'),
+  inProgress('in_progress'),
+  resolved('resolved'),
+  wontFix('wont_fix'),
+  duplicate('duplicate'),
+  closed('closed');
+
+  const FeedbackStatus(this.wire);
+  final String wire;
+
+  /// 已结案（反馈人可以「问题没解决，重新提交」）。
+  bool get isClosed => this != open && this != inProgress;
+
+  static FeedbackStatus fromWire(Object? raw) => FeedbackStatus.values
+      .firstWhere((FeedbackStatus s) => s.wire == raw, orElse: () => open);
+}
+
+/// 列表 / 批量进度用的摘要。
+class FeedbackSummary {
+  const FeedbackSummary({
+    required this.id,
+    required this.category,
+    required this.title,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+    this.devReplyAt,
+    this.userReplyAt,
+    this.hasAccount = false,
+    this.attachmentCount = 0,
+    this.awaitingDev = false,
+    this.flags = const <String>[],
+    this.parentId,
+    this.aiSummary,
+    this.hasDevNote = false,
+    this.fix,
+  });
+
+  factory FeedbackSummary.fromJson(FeedbackJson j) => FeedbackSummary(
+    id: j['id'] as String,
+    category: FeedbackCategory.fromWire(j['category']),
+    title: _str(j['title']),
+    status: FeedbackStatus.fromWire(j['status']),
+    createdAt: _int(j['createdAt']),
+    updatedAt: _int(j['updatedAt']),
+    devReplyAt: _intOrNull(j['devReplyAt']),
+    userReplyAt: _intOrNull(j['userReplyAt']),
+    hasAccount: j['hasAccount'] == true,
+    attachmentCount: j['attachments'] is num ? _int(j['attachments']) : 0,
+    awaitingDev: j['awaitingDev'] == true,
+    flags: List<String>.unmodifiable(
+      ((j['flags'] as List<Object?>?) ?? const <Object?>[]).whereType<String>(),
+    ),
+    parentId: j['parentId'] as String?,
+    aiSummary: _nonEmpty(j['aiSummary']),
+    hasDevNote: j['hasDevNote'] == true || _nonEmpty(j['devNote']) != null,
+    fix: FeedbackFix.tryParse(j['fix']),
+  );
+
+  final String id;
+  final FeedbackCategory category;
+  final String title;
+  final FeedbackStatus status;
+  final int createdAt;
+  final int updatedAt;
+
+  /// 开发者最近一次回复 / 改状态（反馈人侧「有新进展」）。
+  final int? devReplyAt;
+  final int? userReplyAt;
+
+  // 以下只有开发者列表给。
+  final bool hasAccount;
+  final int attachmentCount;
+
+  /// 反馈人在开发者上次处理后又说话了。
+  final bool awaitingDev;
+
+  /// 服务端打的风险标记（只有开发者接口给）：`injection` 疑似提示注入、`hidden_chars`
+  /// 含已剥除的隐藏字符、`links` 链接较多、`duplicate:<id>` 与另一条内容相同。
+  final List<String> flags;
+
+  /// 「问题没解决，重新提交」的新反馈指向的原反馈 id；普通反馈为 null。
+  final String? parentId;
+
+  /// AI 根据（未核实的）反馈内容生成的总结；只有开发者接口给，没生成过为 null。
+  final String? aiSummary;
+
+  /// 有开发者批改（只有开发者接口给；反馈人接口恒 false）。
+  final bool hasDevNote;
+
+  /// 修复 commit 与各通道 / 平台的发布进度（两种接口都给）；未标记修复为 null。
+  final FeedbackFix? fix;
+}
+
+/// 修复要不要新 App 才生效。
+enum FeedbackFixScope {
+  /// 要装上包含修复 commit 的新 App。
+  app('app'),
+
+  /// 不需要更新 App（例如只改了服务端），标记即生效。
+  none('none');
+
+  const FeedbackFixScope(this.wire);
+  final String wire;
+
+  /// 不认识的值按 [app] 处理：宁可让用户去更新，也不谎称「无需更新」。
+  static FeedbackFixScope fromWire(Object? raw) =>
+      raw == none.wire ? none : app;
+}
+
+/// 某个通道 / 平台第一个包含修复的构建。
+class FeedbackRelease {
+  const FeedbackRelease({required this.version, required this.at});
+
+  /// 版本串缺失 / 不是字符串的条目返回 null（没有版本号就没法和本机比较）。
+  static FeedbackRelease? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final String? version = _nonEmpty(raw['version']);
+    if (version == null) return null;
+    final Object? at = raw['at'];
+    return FeedbackRelease(
+      version: version.trim(),
+      at: at is num ? at.toInt() : 0,
+    );
+  }
+
+  /// 构建的 build-name（`2.3.0-debug.12345` / `2.3.0-beta.12001` / `2.3.0`）。
+  final String version;
+
+  /// CI 回填的时刻（毫秒）；缺字段为 0。
+  final int at;
+
+  FeedbackJson toJson() => <String, dynamic>{'version': version, 'at': at};
+}
+
+/// 反馈挂着的修复（线格式见契约：`{sha, scope, at, releases}`）。
+class FeedbackFix {
+  const FeedbackFix({
+    required this.sha,
+    required this.scope,
+    required this.at,
+    this.releases = const <String, Map<String, FeedbackRelease>>{},
+  });
+
+  /// 不是对象 → null。其余字段缺失 / 类型不对一律取缺省，不认识的通道 / 平台原样保留
+  /// （由使用方按需忽略），坏的发布条目丢掉。
+  static FeedbackFix? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? at = raw['at'];
+    final Object? rawReleases = raw['releases'];
+    final Map<String, Map<String, FeedbackRelease>> releases =
+        <String, Map<String, FeedbackRelease>>{};
+    if (rawReleases is Map) {
+      for (final MapEntry<Object?, Object?> ch in rawReleases.entries) {
+        final Object? channel = ch.key;
+        final Object? platforms = ch.value;
+        if (channel is! String || platforms is! Map) continue;
+        final Map<String, FeedbackRelease> byPlatform =
+            <String, FeedbackRelease>{
+              for (final MapEntry<Object?, Object?> pl in platforms.entries)
+                if (pl.key is String)
+                  if (FeedbackRelease.tryParse(pl.value)
+                      case final FeedbackRelease r)
+                    pl.key! as String: r,
+            };
+        if (byPlatform.isNotEmpty) {
+          releases[channel] = Map<String, FeedbackRelease>.unmodifiable(
+            byPlatform,
+          );
+        }
+      }
+    }
+    return FeedbackFix(
+      sha: raw['sha'] is String ? raw['sha'] as String : '',
+      scope: FeedbackFixScope.fromWire(raw['scope']),
+      at: at is num ? at.toInt() : 0,
+      releases: Map<String, Map<String, FeedbackRelease>>.unmodifiable(
+        releases,
+      ),
+    );
+  }
+
+  /// 修复 commit（40 位小写 hex）。
+  final String sha;
+  final FeedbackFixScope scope;
+
+  /// 标记修复的时刻（毫秒）；缺字段为 0。
+  final int at;
+
+  /// channel（`debug` / `beta` / `stable`）→ platform → 第一个包含修复的构建。
+  final Map<String, Map<String, FeedbackRelease>> releases;
+
+  /// 短 sha（显示用）。
+  String get shortSha => sha.length > 7 ? sha.substring(0, 7) : sha;
+
+  FeedbackRelease? release(String channel, String platform) =>
+      releases[channel]?[platform];
+
+  FeedbackJson toJson() => <String, dynamic>{
+    'sha': sha,
+    'scope': scope.wire,
+    'at': at,
+    'releases': <String, dynamic>{
+      for (final MapEntry<String, Map<String, FeedbackRelease>> ch
+          in releases.entries)
+        ch.key: <String, dynamic>{
+          for (final MapEntry<String, FeedbackRelease> pl in ch.value.entries)
+            pl.key: pl.value.toJson(),
+        },
+    },
+  };
+}
+
+/// 风险标记的种类（[FeedbackSummary.flags] 的解析结果）。
+sealed class FeedbackFlag {
+  const FeedbackFlag();
+
+  /// 不认识的标记返回 null（旧客户端遇到新服务端时忽略即可）。
+  static FeedbackFlag? parse(String raw) {
+    if (raw.startsWith('duplicate:')) {
+      return FeedbackDuplicateFlag(raw.substring(10));
+    }
+    return switch (raw) {
+      'injection' => const FeedbackInjectionFlag(),
+      'hidden_chars' => const FeedbackHiddenCharsFlag(),
+      'links' => const FeedbackLinksFlag(),
+      _ => null,
+    };
+  }
+}
+
+class FeedbackInjectionFlag extends FeedbackFlag {
+  const FeedbackInjectionFlag();
+}
+
+class FeedbackHiddenCharsFlag extends FeedbackFlag {
+  const FeedbackHiddenCharsFlag();
+}
+
+class FeedbackLinksFlag extends FeedbackFlag {
+  const FeedbackLinksFlag();
+}
+
+class FeedbackDuplicateFlag extends FeedbackFlag {
+  const FeedbackDuplicateFlag(this.ofId);
+
+  /// 先到的那条反馈 id。
+  final String ofId;
+}
+
+class FeedbackAttachmentInfo {
+  const FeedbackAttachmentInfo({
+    required this.slot,
+    required this.kind,
+    required this.bytes,
+    required this.type,
+  });
+
+  factory FeedbackAttachmentInfo.fromJson(FeedbackJson j) =>
+      FeedbackAttachmentInfo(
+        slot: _str(j['slot']),
+        kind: _str(j['kind']),
+        bytes: j['bytes'] is num ? _int(j['bytes']) : 0,
+        type: _str(j['type']),
+      );
+
+  /// `log` | `s0`..`s2` | `v0`。
+  final String slot;
+
+  /// `log` | `screenshot` | `video`。
+  final String kind;
+  final int bytes;
+  final String type;
+
+  bool get isLog => kind == 'log';
+  bool get isScreenshot => kind == 'screenshot';
+  bool get isVideo => kind == 'video';
+}
+
+class FeedbackMessage {
+  const FeedbackMessage({
+    required this.id,
+    required this.fromDeveloper,
+    required this.body,
+    required this.createdAt,
+    this.status,
+    this.nickname,
+  });
+
+  factory FeedbackMessage.fromJson(FeedbackJson j) => FeedbackMessage(
+    id: _int(j['id']),
+    fromDeveloper: j['author'] == 'dev',
+    body: _str(j['body']),
+    createdAt: _int(j['createdAt']),
+    status: j['status'] == null ? null : FeedbackStatus.fromWire(j['status']),
+    nickname: j['nickname'] as String?,
+  );
+
+  final int id;
+  final bool fromDeveloper;
+  final String body;
+  final int createdAt;
+
+  /// 这条记录把状态改成了什么（纯回复为 null）。
+  final FeedbackStatus? status;
+
+  /// 开发者昵称（反馈人自己的消息为 null）。
+  final String? nickname;
+}
+
+class FeedbackReporter {
+  const FeedbackReporter({
+    required this.id,
+    required this.nickname,
+    required this.discriminator,
+  });
+
+  factory FeedbackReporter.fromJson(FeedbackJson j) => FeedbackReporter(
+    id: j['id'] as String,
+    nickname: _str(j['nickname']),
+    discriminator: _int(j['discriminator']),
+  );
+
+  final String id;
+  final String nickname;
+  final int discriminator;
+
+  String get handle => '$nickname#${discriminator.toString().padLeft(4, '0')}';
+}
+
+/// 详情。反馈人视角没有 [contact] / [meta] / [reporter]。
+class FeedbackDetail {
+  const FeedbackDetail({
+    required this.summary,
+    required this.body,
+    required this.attachments,
+    required this.messages,
+    this.reopenedAs = const <String>[],
+    this.contact = '',
+    this.meta = const <String, Object?>{},
+    this.origin = const <String, Object?>{},
+    this.reporter,
+    this.aiSummaryAt,
+    this.devNote,
+    this.devNoteAt,
+  });
+
+  factory FeedbackDetail.fromJson(FeedbackJson j) => FeedbackDetail(
+    summary: FeedbackSummary.fromJson(j),
+    body: _str(j['body']),
+    attachments: _list(j['attachments'], FeedbackAttachmentInfo.fromJson),
+    messages: _list(j['messages'], FeedbackMessage.fromJson),
+    reopenedAs: List<String>.unmodifiable(
+      ((j['reopenedAs'] as List<Object?>?) ?? const <Object?>[])
+          .whereType<String>(),
+    ),
+    contact: _str(j['contact']),
+    meta: j['meta'] is Map
+        ? Map<String, Object?>.unmodifiable(_map(j['meta']))
+        : const <String, Object?>{},
+    origin: j['origin'] is Map
+        ? Map<String, Object?>.unmodifiable(_map(j['origin']))
+        : const <String, Object?>{},
+    reporter: j['reporter'] == null
+        ? null
+        : FeedbackReporter.fromJson(_map(j['reporter'])),
+    aiSummaryAt: _intOrNull(j['aiSummaryAt']),
+    devNote: _nonEmpty(j['devNote']),
+    devNoteAt: _intOrNull(j['devNoteAt']),
+  );
+
+  final FeedbackSummary summary;
+  final String body;
+  final List<FeedbackAttachmentInfo> attachments;
+  final List<FeedbackMessage> messages;
+
+  /// 这条被重新提交成了哪几条（新的在后）。
+  final List<String> reopenedAs;
+  final String contact;
+
+  /// 客户端自报的设备 / 版本信息（可伪造）。
+  final Map<String, Object?> meta;
+
+  /// 服务端自己记录的来源（国家 / ASN / User-Agent / 是否签名），开发者接口才给。
+  final Map<String, Object?> origin;
+  final FeedbackReporter? reporter;
+
+  // 以下只有开发者接口给（反馈人接口从不返回，缺字段即 null）。
+  final int? aiSummaryAt;
+
+  /// 开发者批改：只给开发者看，反馈人看不到。
+  final String? devNote;
+  final int? devNoteAt;
+
+  /// AI 总结（解析在 [FeedbackSummary.aiSummary]，详情与列表同一份）。
+  String? get aiSummary => summary.aiSummary;
+
+  String get id => summary.id;
+  FeedbackStatus get status => summary.status;
+
+  /// 修复与发布进度（解析在 [FeedbackSummary.fix]，详情与列表同一份）。
+  FeedbackFix? get fix => summary.fix;
+}
+
+/// 提交成功的回执：[ticket] 只在这一次返回，必须存下来才能再看进度。
+class FeedbackReceipt {
+  const FeedbackReceipt({
+    required this.id,
+    required this.ticket,
+    required this.createdAt,
+  });
+
+  factory FeedbackReceipt.fromJson(FeedbackJson j) => FeedbackReceipt(
+    id: j['id'] as String,
+    ticket: j['ticket'] as String,
+    createdAt: _int(j['createdAt']),
+  );
+
+  final String id;
+  final String ticket;
+  final int createdAt;
+}
+
+class FeedbackInboxPage {
+  const FeedbackInboxPage({required this.items, this.next});
+
+  factory FeedbackInboxPage.fromJson(FeedbackJson j) => FeedbackInboxPage(
+    items: _list(j['items'], FeedbackSummary.fromJson),
+    next: j['next'] as String?,
+  );
+
+  final List<FeedbackSummary> items;
+  final String? next;
+}

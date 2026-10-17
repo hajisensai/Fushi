@@ -282,6 +282,32 @@ int main(int argc, char** argv) {
     return 8;
   }
 
+  // BUG-2897：CatSystem2 2016 版真机里有声台词「…………」【少女】被旧判据（相邻相等
+  // ≥30%）当逐字双写丢弃，三句语音因此配不到文本。停顿 / 延长符号本就成串书写，
+  // 不能算双写证据；但同一行真被逐字双写时仍须拦下。
+  const std::wstring ellipsis_line = L"「\x2026\x2026\x2026\x2026」【少女】";
+  const std::wstring dash_line = L"あーーーっ！\x2015\x2015\x2015\x2015";
+  const std::wstring pause_only = L"\x2026\x2026\x2026\x2026";
+  for (const std::wstring* clean : {&ellipsis_line, &dash_line, &pause_only}) {
+    if (fushi_voice_hook::LunaTextIsArtifact(
+            clean->c_str(), static_cast<int>(clean->size()))) {
+      return 91;
+    }
+  }
+  std::wstring ellipsis_doubled;
+  for (wchar_t c : ellipsis_line) ellipsis_doubled.append(2, c);
+  if (!fushi_voice_hook::LunaTextIsArtifact(
+          ellipsis_doubled.c_str(),
+          static_cast<int>(ellipsis_doubled.size()))) {
+    return 92;
+  }
+  const std::wstring ellipsis_whole_double = ellipsis_line + ellipsis_line;
+  if (!fushi_voice_hook::LunaTextIsArtifact(
+          ellipsis_whole_double.c_str(),
+          static_cast<int>(ellipsis_whole_double.size()))) {
+    return 93;
+  }
+
   // BUG-1175：带 ruby 的台词被 KiriKiriZ 分别以 base（汉字）和 ruby（假名）两种形式
   // 送进同一 hook 面，叠上完整行双写后收到的是 `A A B B A A`。整串既不是二倍重复
   // （前半 AAB != 后半 BAA），也不是等长游程伪影，旧实现整串放行 → 一句话出现六遍。

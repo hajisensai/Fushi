@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/media_search_text.dart';
 
 /// Presentation metadata only. The source service remains the owner of actions.
 enum DownloadTaskKind { video, novel, audiobook, game, manga }
@@ -34,6 +35,7 @@ class DownloadTaskActions {
     this.clear,
     this.delete,
     this.deletesFiles = false,
+    this.deleteFilesRemovesLibraryEntries = false,
     this.setPriority,
   });
 
@@ -73,8 +75,80 @@ class DownloadTaskActions {
   /// 以为盘清干净了，而几十 GB 还在，且再没有第二次机会发现。
   final bool deletesFiles;
 
+  /// `delete(deleteFiles: true)` 会不会顺带把对应的媒体库条目（与封面）一起删掉。
+  ///
+  /// video job 的删文件走 `deletePersistedVideoDownloadJob`：文件删掉后它登记的
+  /// 视频库行随之移除。确认框据此在勾选「同时删除文件」时多说一句，不让用户以为
+  /// 只是腾了磁盘、库里的条目还在。
+  final bool deleteFilesRemovesLibraryEntries;
+
   /// 设置任务级调度优先级（1 高 / 0 普通 / -1 低）。
   final Future<void> Function(int priority)? setPriority;
+}
+
+/// 一条任务所属作品的元数据身份（provider + externalId），只有来源本身记着
+/// 作品身份时才有（video job 的 `metadataProvider` / `externalId`、旧番剧计划的
+/// AniList id）。供 [DownloadTaskWorkFocus] 精确定位，不参与展示。
+class DownloadTaskWorkIdentity {
+  const DownloadTaskWorkIdentity({
+    required this.provider,
+    required this.externalId,
+  });
+
+  final String provider;
+  final String externalId;
+
+  /// 两段都非空才成立；任一为空返回 null（没有身份就只能按标题兜底）。
+  static DownloadTaskWorkIdentity? maybe(String? provider, String? externalId) {
+    final String p = provider?.trim() ?? '';
+    final String id = externalId?.trim() ?? '';
+    if (p.isEmpty || id.isEmpty) return null;
+    return DownloadTaskWorkIdentity(provider: p, externalId: id);
+  }
+}
+
+/// 「只看某部作品的下载任务」（发现详情页「任务」入口带过来的定位）。
+///
+/// 匹配口径：任务带 [DownloadTaskEntry.workIdentity] 时**只**按身份精确判定
+/// （同名不同季 / 不同作品不会被标题误吸进来）；没有身份的来源（直链、扩展源、
+/// 远端任务…）按标题兜底，与搜索框同一归一化口径。
+///
+/// 构造器刻意不是 const：每次跳转都是新对象，下载页按 identity 识别「新的一次
+/// 定位」并据此重置自己的筛选。
+class DownloadTaskWorkFocus {
+  DownloadTaskWorkFocus({
+    required this.title,
+    required this.matchesIdentity,
+    Iterable<String> titles = const <String>[],
+  }) : titles = List<String>.unmodifiable(<String>{
+         for (final String value in <String>[title, ...titles])
+           if (value.trim().isNotEmpty) value.trim(),
+       });
+
+  /// 界面上提示「正在只看哪部」的名字。
+  final String title;
+
+  /// 标题兜底的全部候选（含 [title]、原名、别名）。
+  final List<String> titles;
+
+  /// 一个作品身份是不是这部作品（跨站 id 的对照由调用方决定）。
+  final bool Function(DownloadTaskWorkIdentity identity) matchesIdentity;
+
+  bool matches(DownloadTaskEntry task) {
+    final DownloadTaskWorkIdentity? identity = task.workIdentity;
+    if (identity != null) return matchesIdentity(identity);
+    final List<String> haystack = <String>[
+      task.title,
+      if (task.collectionTitle != null) task.collectionTitle!,
+      ...task.searchTerms,
+    ];
+    return titles.any(
+      (String candidate) =>
+          // 归一化后不足两个字符的别名（单字母简称等）会把半个列表都吸进来。
+          normalizeMediaSearchText(candidate).length >= 2 &&
+          matchesMediaSearch(query: candidate, titles: haystack),
+    );
+  }
 }
 
 class DownloadTaskEntry {
@@ -90,7 +164,14 @@ class DownloadTaskEntry {
     this.collectionKey,
     this.collectionTitle,
     this.searchTerms = const <String>[],
+    this.seeding = false,
+    this.downRateBps,
+    this.upRateBps,
+    this.workIdentity,
   });
+
+  /// 所属作品的元数据身份；来源不记身份时为 null（见 [DownloadTaskWorkIdentity]）。
+  final DownloadTaskWorkIdentity? workIdentity;
 
   /// 本条任务支持的动作，由产生它的来源填充。
   final DownloadTaskActions actions;
@@ -104,8 +185,16 @@ class DownloadTaskEntry {
   final String? collectionKey;
   final String? collectionTitle;
   final List<String> searchTerms;
+
+  /// 已下完、正在做种（只有 torrent 来源报得出来）。[status] 仍是生命周期口径
+  /// （完成 / 进行中），这一位只喂「做种」筛选与汇总，不改排序与批量语义。
+  final bool seeding;
+
+  /// 实时下载 / 上传速率（字节每秒）；来源报不出实时指标时为 null，汇总时不计。
+  final int? downRateBps;
+  final int? upRateBps;
   final WidgetBuilder builder;
 }
 
-typedef DownloadTasksBuilder = Widget Function(
-    BuildContext context, List<DownloadTaskEntry> tasks);
+typedef DownloadTasksBuilder =
+    Widget Function(BuildContext context, List<DownloadTaskEntry> tasks);

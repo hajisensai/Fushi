@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
@@ -9,7 +9,7 @@ import '../widgets/widget_test_helpers.dart';
 // BUG-016 regression. 同步设置里「立即同步 / 导出备份 / 导入备份」的动作落在行内的
 // 尾部按钮上，而这些行（AdaptiveSettingsRow）当时没有 onTap —— 于是整行不会注册成
 // FushiFocusTarget（只有带 onTap 的行才注册，见 settings_shared.dart），裸 Material
-// 按钮也不是 Hibiki 焦点目标。方向导航只走已注册目标，结果：① 「立即同步」根本到不了；
+// 按钮也不是 Fushi 焦点目标。方向导航只走已注册目标，结果：① 「立即同步」根本到不了；
 // ② 焦点在「Compare Data」按下，因为同面板下方没有可达目标，落到了左侧导航面板。
 //
 // 这个测试用真实的 AdaptiveSettingsRow 重建该布局（左导航面板 + 右详情面板），驱动

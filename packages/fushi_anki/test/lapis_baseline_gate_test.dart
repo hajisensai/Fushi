@@ -1,8 +1,8 @@
 // PR#457 审查 §10-3（用户拍板方案甲）守卫：启动自动迁移的**基线闸门**。
 //
-// 修复前：只要期望 styling 与 Anki 端不同且 Anki 端是 Hibiki 自有产物，下次
+// 修复前：只要期望 styling 与 Anki 端不同且 Anki 端是 Fushi 自有产物，下次
 // 启动就静默把用户改过但**没点「应用样式到 Anki」**的客制化推进 Anki。
-// 「迁移」应当只在 Hibiki 出厂基线变了时发生，Apply 才是用户内容写进 Anki 的
+// 「迁移」应当只在 Fushi 出厂基线变了时发生，Apply 才是用户内容写进 Anki 的
 // 唯一闸门。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';

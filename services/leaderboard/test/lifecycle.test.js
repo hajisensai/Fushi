@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { JPEG, call, entry, makeEnv, registerUser } from './harness.js';
+import { JPEG, call, coverJpeg, entry, makeEnv, registerUser } from './harness.js';
 
 const NOW = Date.UTC(2026, 8, 30, 12);
 const done = { finishedAt: NOW - 1000, finishedDate: '2026-09-30' };
@@ -36,7 +36,8 @@ describe('头像与封面', () => {
     expect(w.needsCover).toBe(true);
     const path = `/v1/works/${w.workId}/cover`;
     expect((await call(env, 'PUT', path, { key: outsider.key, account: outsider.id, body: JPEG, now: NOW })).status).toBe(403);
-    expect((await call(env, 'PUT', path, { key: a.key, account: a.id, body: JPEG, now: NOW })).status).toBe(200);
+    // 封面要解码算哈希（cover_hash.js），必须是真 JPEG。
+    expect((await call(env, 'PUT', path, { key: a.key, account: a.id, body: coverJpeg('0123456789abcdef'), now: NOW })).status).toBe(200);
     const late = await call(env, 'PUT', path, { key: b.key, account: b.id, body: JPEG, now: NOW });
     expect(late.status).toBe(409);
     expect(env.MEDIA.store.size).toBe(1); // 输家的对象已删

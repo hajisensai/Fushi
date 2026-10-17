@@ -83,7 +83,7 @@ FushiToast.show(
       for (final String src in <String>[
         '// FushiToast.show(msg: t.failed, severity: ToastSeverity.error);',
         'final ok = true; // FushiToast.show(msg: t.failed,',
-        '/*\nHibikiToast.show(msg: t.failed, severity: x);\n*/',
+        '/*\nFushiToast.show(msg: t.failed, severity: x);\n*/',
       ]) {
         expect(compactCode(src), isNot(contains(compactCode(needle))),
             reason: src);

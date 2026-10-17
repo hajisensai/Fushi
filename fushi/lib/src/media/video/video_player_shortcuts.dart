@@ -17,7 +17,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 /// Coalesces a controller button and the synthetic secondary mouse click that
 /// some desktop controller mappers emit for the same physical press.
 ///
-/// Steam Input's desktop layout is a common source: Hibiki receives the real
+/// Steam Input's desktop layout is a common source: Fushi receives the real
 /// controller button through GameInput, while Windows also receives a right
 /// click through the pointer channel. Neither Flutter event carries a shared
 /// source identifier, so the only reliable app-side boundary is their tightly
@@ -45,6 +45,23 @@ class VideoGamepadSecondaryTapDeduper {
     return delta.abs() <= coincidenceWindow;
   }
 }
+
+/// 一次视频动作是从哪类输入来的。同一张动作表（[videoActionCallbacks]）服务所有输入
+/// 通道，但「上一句字幕」在两类输入上的语义是用户分别拍板过的，不同：
+///
+/// - [keyboard]：Ctrl+← 是**方向键**心智（TODO-085）——上一句起点离得太远时退化成回退
+///   seekSeconds 秒。字幕对轴弹窗那张 activator 表也是键盘。
+/// - [button]：手柄 / 鼠标侧键 / 屏幕自定义按钮——**按钮**心智（BUG-942），恒跳到相邻
+///   上一句，与底栏按钮、屏幕双击同一语义。
+///
+/// BUG-3339：手柄通道曾直接复用键盘那份执行体，于是手柄「上一句」在上一句离得远时只退
+/// 3 秒（用户：「连跳一两下才到句首」），而屏幕双击一直正常。输入种类必须作为构造动作表
+/// 的参数显式给出，不能由「谁先写了这份闭包」隐式决定。
+enum VideoActionInput { keyboard, button }
+
+/// 「上一句字幕」在 [input] 下是否把太远的上一句退化成时间回退（见 [VideoActionInput]）。
+bool videoPrevSubtitleDegradesFarCue(VideoActionInput input) =>
+    input == VideoActionInput.keyboard;
 
 class VideoPlayerShortcutActions {
   const VideoPlayerShortcutActions({
@@ -107,11 +124,11 @@ class VideoPlayerShortcutActions {
   final VoidCallback speedDown;
   final VoidCallback resetSpeed;
 
-  /// 按住临时倍速（对齐手机长按画面，默认裸 E）。**键盘通道不经本表**：按住语义
-  /// 需要 keyup 边沿，SingleActivator 表达不了，键盘按下/松开由视频页最外层
-  /// Focus.onKeyEvent 直接判定（见 _handleHoldSpeedKey）。本回调只服务手柄通道
-  /// （videoActionCallbacks → resolveGamepad 派发），退化成翻转语义：按一下切到
-  /// 长按倍速、再按恢复原速。
+  /// 按住临时倍速（对齐手机长按画面，默认裸 E）。**键盘与手柄都不经本表**：按住
+  /// 语义需要松开沿，键盘由视频页最外层 Focus.onKeyEvent 判定（_handleHoldSpeedKey），
+  /// 手柄由页面按下 / 松开两个入口判定（_handleHoldSpeedGamepadEdge，BUG-3330）。本回调
+  /// 只服务**没有松开沿**的入口——鼠标侧键绑定、屏幕自定义按钮——退化成翻转语义：
+  /// 按一下切到长按倍速、再按恢复原速。
   final VoidCallback toggleHoldSpeed;
   final VoidCallback previousFrame;
   final VoidCallback nextFrame;
@@ -353,6 +370,12 @@ const Set<ShortcutAction> kVideoPressEdgeOnlyActions = <ShortcutAction>{
   // chrome 显隐是翻转型动作：按住让它以 key-repeat 的频率来回翻，小窗里就是一片
   // 疯狂闪烁的按钮。
   ShortcutAction.videoToggleMiniChrome,
+  // 暂停句「整句扫词」：与进选词光标 / 制卡同属查词动作，一按 = 换一个词重查一次
+  // （WebView 查词 + OSD）。按住让 OS key-repeat 以重复率连发，就是一串来不及看清的
+  // 查词把游标甩过整句、绕圈循环，最后停在哪个词全凭松手时机。本集合只管键盘重复沿；
+  // 手柄 D-pad 的按住自动重复是方向通道自己的语义（不带重复标记），不在这里翻译。
+  ShortcutAction.videoLookupNextWord,
+  ShortcutAction.videoLookupPrevWord,
 };
 
 /// 把注册表里的视频键盘绑定冻结成一张 `Map<ShortcutActivator, VoidCallback>`
@@ -501,27 +524,60 @@ HoldSpeedKeyTransition resolveHoldSpeedKeyTransition({
   required LogicalKeyboardKey? activeTriggerKey,
   required bool matchesHoldSpeedBinding,
 }) {
+  final HoldSpeedEdge edge;
   if (event is KeyUpEvent) {
-    return activeTriggerKey == event.logicalKey
-        ? HoldSpeedKeyTransition.release
-        : HoldSpeedKeyTransition.none;
+    edge = HoldSpeedEdge.release;
+  } else if (event is KeyRepeatEvent) {
+    edge = HoldSpeedEdge.repeat;
+  } else if (event is KeyDownEvent) {
+    edge = HoldSpeedEdge.press;
+  } else {
+    return HoldSpeedKeyTransition.none;
   }
-  if (event is KeyRepeatEvent) {
-    return activeTriggerKey == event.logicalKey
-        ? HoldSpeedKeyTransition.swallow
-        : HoldSpeedKeyTransition.none;
+  return resolveHoldSpeedTransition<LogicalKeyboardKey>(
+    edge: edge,
+    trigger: event.logicalKey,
+    activeTrigger: activeTriggerKey,
+    matchesHoldSpeedBinding: matchesHoldSpeedBinding,
+  );
+}
+
+/// 一次输入在「按住临时倍速」状态机里的边沿。
+enum HoldSpeedEdge { press, repeat, release }
+
+/// 按住临时倍速的状态机本体，与输入设备无关：键盘的触发物是逻辑键，手柄的是
+/// [GamepadButton]（BUG-3330：手柄此前没有松开沿，只能退化成点按翻转，用户报「长按也
+/// 只被当成一次点按」）。两条通道共用这一份判据，按下 / 重复 / 松开的语义逐字一致。
+///
+/// [activeTrigger] 非空 = 正在按住中。重复 / 松开只认**触发物本身**；按住期间同一触发物
+/// 的再次按下（个别平台把重复报成按下、桌面手柄 D-pad 的自动重复也是按下）照旧消费；
+/// 其它触发物不接管。[matchesHoldSpeedBinding] 只在空闲态的按下沿有意义。
+HoldSpeedKeyTransition resolveHoldSpeedTransition<T extends Object>({
+  required HoldSpeedEdge edge,
+  required T trigger,
+  required T? activeTrigger,
+  required bool matchesHoldSpeedBinding,
+}) {
+  final bool isActiveTrigger = activeTrigger == trigger;
+  switch (edge) {
+    case HoldSpeedEdge.release:
+      return isActiveTrigger
+          ? HoldSpeedKeyTransition.release
+          : HoldSpeedKeyTransition.none;
+    case HoldSpeedEdge.repeat:
+      return isActiveTrigger
+          ? HoldSpeedKeyTransition.swallow
+          : HoldSpeedKeyTransition.none;
+    case HoldSpeedEdge.press:
+      if (activeTrigger != null) {
+        return isActiveTrigger
+            ? HoldSpeedKeyTransition.swallow
+            : HoldSpeedKeyTransition.none;
+      }
+      return matchesHoldSpeedBinding
+          ? HoldSpeedKeyTransition.engage
+          : HoldSpeedKeyTransition.none;
   }
-  if (event is! KeyDownEvent) return HoldSpeedKeyTransition.none;
-  if (activeTriggerKey != null) {
-    // 已在按住态：同键的再次 down（个别平台把 repeat 报成 down）照旧消费，
-    // 其它键不接管。
-    return activeTriggerKey == event.logicalKey
-        ? HoldSpeedKeyTransition.swallow
-        : HoldSpeedKeyTransition.none;
-  }
-  return matchesHoldSpeedBinding
-      ? HoldSpeedKeyTransition.engage
-      : HoldSpeedKeyTransition.none;
 }
 
 /// keydown 是否命中注册表里 [ShortcutAction.videoHoldSpeed] 的键盘绑定。
@@ -865,6 +921,14 @@ VideoKeyboardResolution resolveVideoKeyboardShortcut(
       VideoKeyboardDispatch.run,
       ShortcutAction.popupMineEntry,
     );
+  }
+
+  // 暂停句「整句扫词」：与制卡同族必须绕开下面的「浮层可见 → 先关浮层」。扫词每停
+  // 一词都会弹/换同一张浮层，被守卫吃掉就永远只能关浮层、推不动下一词。浮层不可见
+  // 时照旧消费（执行体自带「无字幕则早退」，不会误吞）。
+  if (action == ShortcutAction.videoLookupNextWord ||
+      action == ShortcutAction.videoLookupPrevWord) {
+    return VideoKeyboardResolution(VideoKeyboardDispatch.run, action);
   }
 
   // 进入字级选词光标：命中绑定键（默认 Enter）但**画面不精确持焦**时必须放行，让

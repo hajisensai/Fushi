@@ -19,7 +19,7 @@ void main() {
     late Directory updatesDir;
 
     setUp(() async {
-      updatesDir = await Directory.systemTemp.createTemp('hibiki-update-ff');
+      updatesDir = await Directory.systemTemp.createTemp('fushi-update-ff');
     });
 
     tearDown(() async {
@@ -134,7 +134,7 @@ void main() {
 
     setUp(() async {
       updatesDir =
-          await Directory.systemTemp.createTemp('hibiki-update-cancel');
+          await Directory.systemTemp.createTemp('fushi-update-cancel');
     });
 
     tearDown(() async {

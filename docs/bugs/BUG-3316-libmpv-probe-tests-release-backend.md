@@ -1,0 +1,8 @@
+## BUG-3316 · media_kit 热重启探针预编译后实际测的是 release 后端
+- **报告**：2026-10-13（用户：`media_kit_hot_restart_test` 里的 BUG-3003 原生探针平时因为缺 DLL 一直跳过，现在红了）
+- **真实性**：✅ 真 bug（测试侧，两个独立缺陷叠在一起）。
+  1. **测错后端**：`fushi/test/third_party/media_kit_hot_restart_test.dart` 的 `_compileProbe` 自 `10c5566022`（2026-10-06）起改用 `dart compile kernel` 预编译探针，而该命令默认定义 `dart.vm.product=true`（实测：kernel 产物里 `bool.fromEnvironment('dart.vm.product')` 为 true，`dart run` 下为 false）。media_kit `lib/src/values.dart` 的 `kDebugMode` 因此为 false，BUG-3003 补丁 `initializer.dart:44` 的 `Platform.isWindows && kDebugMode` 不成立，探针走的是 release 的 `InitializerNativeCallable`——即修复前的路径。kill 模式实测：`EVENTS DRAINED / WAKEUP START` 后 `Callback invoked after it has been deleted`，退出 `-1073740791`，与 BUG-3003 修前特征一致。`95bdd33832` 原版用 `dart <源文件>` JIT 直跑，没有这个问题；改动后本机一直缺 Debug DLL、测试一直 skip，所以没人发现。
+  2. **动态链接 libmpv 加载失败**：10-08 蓝光分支（`fbeb260d78`）起 Windows Debug 的 `libmpv-2.dll` 是动态链接版，旁边挂 `fbd*.dll` 依赖。探针宿主是 SDK 的 `dart.exe`，默认 DLL 搜索顺序不含 libmpv 所在目录 → `DynamicLibrary.open` 报 error 126。且 owner isolate 抛异常后主 isolate 空等 `ready`，错误被 25 秒超时掩盖。
+- **[x] ① 已修复** — 本 BUG 同一提交：编译探针加 `--define=dart.vm.product=false`，恢复与原 JIT 直跑相同的 debug 后端选择；探针在 Windows 上先用 `LoadLibraryExW(LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)` 按规范反斜杠绝对路径预载 libmpv（正斜杠路径下该标志仍报 126，已实测），与 app「依赖与 libmpv 同目录」的布局一致；owner isolate 挂 `onError`，出错立即带原因退出。
+- **[x] ② 已加自动化测试** — 同一测试文件：探针启动打印 `debug=$kDebugMode`，测试断言 `PROBE START <mode> debug=true`，编译语义再被翻转会当场红而不是悄悄测错后端。变异实测：去掉 `--define` 后 kill/dispose 两条均在该断言上红。修后用动态链接 DLL（`FUSHI_TEST_LIBMPV`）3/3 通过、无 skip。
+- **备注**：探针仍只在本机有 Windows Debug 构建或设了 `FUSHI_TEST_LIBMPV` 时运行；CI 无 DLL 时照旧 skip，这条回归只有本地能抓到。

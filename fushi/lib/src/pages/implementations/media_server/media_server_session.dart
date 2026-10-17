@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
@@ -6,8 +8,14 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 /// 播放出口的回调形态：浏览页只产出「播什么、带哪些同伴、从第几个起播」，
 /// **不**自己 push 播放页——生产由 [MediaServerBrowsePage] 缺省接到
 /// `VideoFushiPage.neutralizedRemote`，测试注入回调直接断言参数。
+///
+/// 返回的 Future 在**播放页退回来**时完成（生产 = 那次 push 的 Future）：详情页据此
+/// 重拉集清单，看完一集返回立刻看到服务器上的新进度 / 已看标记（BUG-3491）。
 typedef MediaServerPlayHandler =
-    void Function(BuildContext context, MediaServerPlayRequest request);
+    FutureOr<void> Function(
+      BuildContext context,
+      MediaServerPlayRequest request,
+    );
 
 /// 一次播放请求。[members] 长度 > 1 时播放页才建剧集列表 + 上下集连播
 /// （与 `home_video_page._openRemote` 的 `remoteCollectionMembers` 口径一致）。
@@ -28,24 +36,38 @@ class MediaServerPlayRequest {
   bool get hasCollection => members.length > 1;
 }
 
+/// 下载出口的回调形态（与 [MediaServerPlayHandler] 同一份请求：下什么、同季
+/// 还有哪些）。
+typedef MediaServerDownloadHandler =
+    void Function(BuildContext context, MediaServerPlayRequest request);
+
 /// 一台服务器的浏览会话：浏览器 + 播放出口。首页 / 网格 / 详情三层视图共用同一份，
 /// 切服务器就是换一份会话，所以 PageStorage / 焦点 id 都用 [serverId] 做前缀，
 /// 两台服务器的滚动位置与搜索词不会串。
 class MediaServerSession {
-  const MediaServerSession({required this.browser, required this.play});
+  const MediaServerSession({
+    required this.browser,
+    required this.play,
+    this.download,
+  });
 
   final MediaServerBrowser browser;
   final MediaServerPlayHandler play;
 
+  /// 下载出口。null = 这台服务器的条目没有接下载管线，详情页不出「下载」次按钮
+  /// （UI 只留位置，不假装能下）。
+  final MediaServerDownloadHandler? download;
+
   String get serverId => browser.serverId;
 
   /// 播一个可播放叶子。[siblings] 是同一季（或同一容器）里**已加载**的全部叶子，
-  /// 用来给播放页建剧集列表；[item] 不在其中时退化成单播。
-  void playItem(
+  /// 用来给播放页建剧集列表；[item] 不在其中时退化成单播。返回的 Future 在播放页
+  /// 退回来时完成（见 [MediaServerPlayHandler]）。
+  Future<void> playItem(
     BuildContext context,
     MediaServerItem item, {
     List<MediaServerItem> siblings = const <MediaServerItem>[],
-  }) {
+  }) async {
     final List<MediaServerItem> playable = <MediaServerItem>[
       for (final MediaServerItem sibling in siblings)
         if (sibling.isPlayable) sibling,
@@ -54,7 +76,7 @@ class MediaServerSession {
       (MediaServerItem m) => m.id == item.id,
     );
     if (index < 0) {
-      play(
+      await play(
         context,
         MediaServerPlayRequest(
           browser: browser,
@@ -63,7 +85,7 @@ class MediaServerSession {
       );
       return;
     }
-    play(
+    await play(
       context,
       MediaServerPlayRequest(
         browser: browser,

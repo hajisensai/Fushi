@@ -71,7 +71,7 @@ $token = $null
 $deadline = (Get-Date).AddSeconds(120)
 while ((Get-Date) -lt $deadline) {
     if (Test-Path $outFile) {
-        $hit = Select-String -Path $outFile -Pattern 'HIBIKI_P2P_READY port=(\d+) token=(\S+)' -ErrorAction SilentlyContinue | Select-Object -First 1
+        $hit = Select-String -Path $outFile -Pattern 'FUSHI_P2P_READY port=(\d+) token=(\S+)' -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($hit) { $g = $hit.Matches[0].Groups; $Port = [int]$g[1].Value; $token = $g[2].Value; break }
     }
     if ($proc.HasExited) {

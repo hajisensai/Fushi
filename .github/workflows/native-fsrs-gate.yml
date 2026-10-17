@@ -1,0 +1,100 @@
+# SRS 排程内核原生库（native/fushi_fsrs，Rust + fsrs-rs）的 **PR 阶段门**。
+#
+# ── 补的是哪个缺口（与 native-p2p-gate.yml 同一形态）──────────────────────────────
+#   build_windows_dll.ps1 / build_linux_so.sh / build_macos_dylib.sh / iOS 伞形库
+#       -> build-multiplatform.yml 的 windows / linux-server / macos / ios job（路径门把
+#          `native/fushi_fsrs/**` 与 `packages/fushi_srs/**` 路由给这四个 job），Windows /
+#          Linux 还跑 packages/fushi_srs 的真 FFI 测试。⇒ 这四端 PR 上本来就有真编译门。
+#   build_android_so.sh
+#       -> 没有任何 `pull_request` 触发的 workflow 编它。本 workflow 的 android job 补这一条：
+#          cargo-ndk 三个 ABI + ELF 架构 + ffsrs_* 符号核对。
+#   lib.rs 自己的单元测试（defaults 个数、next_states 单调、参数个数校验、zstd 往返……）
+#       -> 本 workflow 的 rust-tests job（ubuntu 上 `cargo test --release`）。
+#
+# ── 它**不**负责什么 ──────────────────────────────────────────────────────────────
+#   * 不重复跑上面四端；不碰发布路径（全程只读，不上传产物、不建 tag）。
+#
+# ── 退出码纪律 ────────────────────────────────────────────────────────────────────
+# `shell: bash` + `set -euo pipefail`，无 `continue-on-error`；缓存未命中只会变慢。
+name: native-fsrs-gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'native/fushi_fsrs/**'
+      - 'packages/fushi_srs/lib/src/ffi/**'
+      - '.github/workflows/native-fsrs-gate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      # 工具链钉法与 native-p2p-gate.yml 一致（Rust 1.95.0、cargo-ndk 4.1.2）。
+      - name: Set up Rust (fushi_fsrs, Android targets)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - name: Cache Rust build (fushi_fsrs)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_fsrs -> target
+          key: fushi-fsrs-android
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@4.1.2
+      - name: Build fushi_fsrs Android .so (arm64-v8a, armeabi-v7a, x86_64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_fsrs/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+      - name: Verify .so architecture and exported C ABI surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+          for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
+            abi="${pair%%:*}"; want="${pair#*:}"
+            so="native/fushi_fsrs/prebuilt/android/$abi/libfushi_fsrs.so"
+            machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+            echo "$abi: ELF machine = $machine"
+            case "$machine" in
+              *"$want"*) : ;;
+              *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
+            esac
+            bash native/fushi_fsrs/verify_abi.sh "$so" "$nm_bin"
+          done
+
+  rust-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Rust (fushi_fsrs)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+      - name: Cache Rust build (fushi_fsrs tests)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_fsrs -> target
+          key: fushi-fsrs-tests
+      - name: cargo test --release (fushi_fsrs)
+        shell: bash
+        working-directory: native/fushi_fsrs
+        run: |
+          set -euo pipefail
+          cargo test --release --locked

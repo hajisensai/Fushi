@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -12,7 +13,8 @@ class HighlightBridge {
 (function() {
   if (window.__fushiHighlightsInstalled) return;
   window.__fushiHighlightsInstalled = true;
-  window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+  // BUG-3343：逐字副本，唯一出处 kReaderCssHighlightsSupportedJs（旧 Blink 竖排 ::highlight 画错位置）。
+  window.__fushiCssHighlightsSupported = (!!(window.CSS && CSS.highlights && window.Highlight) && !(function(){var ua=typeof navigator!=="undefined"&&navigator.userAgent||"";var m=/Chrome\\/(\\d+)\\./.exec(ua);return !!m && +m[1] < 120;})());
 
   var BASE_COLORS = {
     yellow: [255,220,0],
@@ -239,6 +241,33 @@ class HighlightBridge {
     return groups;
   }
 
+  // BUG-3343: removing a favourite on an engine without CSS Custom Highlights
+  // (iOS / macOS Safari before 17.2) unwraps its spans and merges the text nodes
+  // back. Both steps go through the reader's shared __fushiLiveRanges: the move
+  // keeps live Ranges and the native selection, and the merge lets the lookup
+  // selection's owner (fushiSelection.trackTextPoints) carry its "text node +
+  // offset" points onto the merged node. A bare parent.normalize() detached the
+  // nodes those points referred to, so deleting a highlight lost the lookup.
+  function _unwrapFallbackHighlights(selector) {
+    var guard = window.__fushiLiveRanges;
+    var parents = [];
+    guard.batch(function() {
+      document.querySelectorAll(selector).forEach(function(el) {
+        var parent = guard.unwrap(el);
+        if (parent && parents.indexOf(parent) < 0) parents.push(parent);
+      });
+    });
+    parents.forEach(function(parent) { guard.normalize(parent); });
+  }
+
+  // BUG-3432: a whole chapter's favourites move text nodes once per highlight
+  // (fallback wrapping, WebKit anonymous-block moves); read the native
+  // selection once for the batch instead of forcing a full layout per move.
+  function _liveRangeBatch(fn) {
+    var guard = window.__fushiLiveRanges;
+    return guard && typeof guard.batch === 'function' ? guard.batch(fn) : fn();
+  }
+
   var ALL_COLORS = ['yellow','green','blue','pink','purple'];
   var _rebuildPending = false;
 
@@ -290,8 +319,24 @@ class HighlightBridge {
       : null;
   };
 
+  // 刚收藏的句子（freshIds，Dart 侧收藏动作给出）：在写入 CSS.highlights / 包裹 span 之后、窄条层
+  // 微任务重画之前，把它的行片段登记给窄条层，笔触样式下这几行放一次落笔动画。章节打开、重排
+  // 后的重新应用不带 freshIds，永远不重放。
+  function _markFreshFavorites(freshIds, rangesFor) {
+    var lanes = window.__fushiLanes;
+    if (!freshIds || !freshIds.length || !lanes || typeof lanes.markFresh !== 'function') return;
+    for (var i = 0; i < freshIds.length; i++) {
+      var hit = rangesFor(freshIds[i]);
+      if (hit) lanes.markFresh(hit.ranges, hit.elements);
+    }
+  }
+
   // ── 应用高亮 ──
-  window.__fushiApplyHighlights = function(highlightsJson) {
+  window.__fushiApplyHighlights = function(highlightsJson, freshIds) {
+    _liveRangeBatch(function() { _applyHighlightsInBatch(highlightsJson, freshIds); });
+  };
+
+  function _applyHighlightsInBatch(highlightsJson, freshIds) {
     _syncHighlightVars();
     if (window.__fushiCssHighlightsSupported) {
       window.__fushiHighlightRangeMap = {};
@@ -317,6 +362,12 @@ class HighlightBridge {
             continue;
           }
           try {
+            // BUG-3323: see __fushiEnsureHighlightPaintable (reader selection
+            // script). Must run before createRange: moving the node later would
+            // collapse this live Range.
+            if (typeof window.__fushiEnsureHighlightPaintable === 'function') {
+              window.__fushiEnsureHighlightPaintable(groups[g].node);
+            }
             var r = document.createRange();
             r.setStart(groups[g].node, groups[g].start);
             r.setEnd(groups[g].node, groups[g].end);
@@ -331,16 +382,14 @@ class HighlightBridge {
           };
         }
       }
+      _markFreshFavorites(freshIds, function(id) {
+        var entry = window.__fushiHighlightRangeMap[id];
+        return entry ? { ranges: entry.ranges, elements: entry.rubyElements } : null;
+      });
       _rebuildCssHighlightsNow();
     } else {
       _clearFallbackRubyHighlights();
-      document.querySelectorAll('[data-highlight-id]').forEach(function(el) {
-        var parent = el.parentNode;
-        while (el.firstChild) parent.insertBefore(el.firstChild, el);
-        parent.removeChild(el);
-      });
-      var root = _root();
-      root.normalize();
+      _unwrapFallbackHighlights('[data-highlight-id]');
       if (!highlightsJson || highlightsJson.length === 0) return;
       var map = _buildOffsetMap();
       var sorted = _resolveHighlights(map, highlightsJson).sort(function(a, b) {
@@ -351,7 +400,6 @@ class HighlightBridge {
         var groups = _buildGroups(map, hl.offset, hl.length);
         if (groups.length === 0) continue;
         var color = hl.color || 'yellow';
-        var highlightColor = _hlColor(color);
         var markColor = _hlMarkColor(color);
         var rubyElements = [];
         for (var g = groups.length - 1; g >= 0; g--) {
@@ -361,19 +409,22 @@ class HighlightBridge {
             continue;
           }
           try {
-            var r = document.createRange();
-            r.setStart(groups[g].node, groups[g].start);
-            r.setEnd(groups[g].node, groups[g].end);
             var span = document.createElement('span');
             span.setAttribute('data-highlight-id', hl.id);
             span.className = 'fushi-hl fushi-hl-' + color;
-            span.style.backgroundColor = highlightColor;
-            span.style.borderRadius = '2px';
+            // 底色不写在 span 上：阅读器的窄条层（__fushiLanes）按 .fushi-hl-<色> 画一个字高的
+            // 窄条（用户 2026-10-15）；span 背景会铺满整个文字盒，随字体变粗。
             span.style.textDecorationLine = 'underline';
             span.style.textDecorationColor = markColor;
             span.style.textDecorationThickness = '0.12em';
             span.style.textUnderlineOffset = '0.18em';
-            r.surroundContents(span);
+            // BUG-3343: split + move (node identity kept), never surroundContents --
+            // it copies the text into a new node and truncates the original, so the
+            // lookup selection's "node + offset" would point at other characters.
+            // Groups run in reverse document order, so a split only affects text
+            // after the groups still to be wrapped.
+            window.__fushiLiveRanges.wrapText(
+                groups[g].node, groups[g].start, groups[g].end, span);
           } catch (e) { console.warn('[fushi-hl] wrap error:', e); }
         }
         if (rubyElements.length) {
@@ -383,9 +434,17 @@ class HighlightBridge {
           };
         }
       }
+      _markFreshFavorites(freshIds, function(id) {
+        var spans = [];
+        document.querySelectorAll('[data-highlight-id]').forEach(function(el) {
+          if (el.getAttribute('data-highlight-id') === id) spans.push(el);
+        });
+        var rubyEntry = window.__fushiFallbackHighlightRubyMap[id];
+        return { ranges: [], elements: spans.concat(rubyEntry ? rubyEntry.elements : []) };
+      });
       _reapplyFallbackRubyHighlights();
     }
-  };
+  }
 
   // ── 文本搜索回退：为没有偏移量的收藏查找位置 ──
   window.__fushiFindTextNormRange = function(text, studyHint) {
@@ -407,17 +466,15 @@ class HighlightBridge {
         delete window.__fushiFallbackHighlightRubyMap[id];
         _reapplyFallbackRubyHighlights();
       }
-      var els = document.querySelectorAll('[data-highlight-id="' + id + '"]');
-      els.forEach(function(el) {
-        var parent = el.parentNode;
-        while (el.firstChild) parent.insertBefore(el.firstChild, el);
-        parent.removeChild(el);
-        parent.normalize();
-      });
+      _unwrapFallbackHighlights('[data-highlight-id="' + id + '"]');
     }
   };
 })();
 ''';
+
+  /// 注入脚本原文，只给源码契约测试读（BUG-3323 守卫）。
+  @visibleForTesting
+  static String get debugScriptSource => _js;
 
   static Future<void> inject(InAppWebViewController controller) async {
     await controller.evaluateJavascript(source: _js);
@@ -427,7 +484,8 @@ class HighlightBridge {
     InAppWebViewController controller,
   ) async {
     final Object? raw = await controller.evaluateJavascript(
-      source: '(function(){try{var r=window.__fushiGetSelectionNormRange();'
+      source:
+          '(function(){try{var r=window.__fushiGetSelectionNormRange();'
           'return r?JSON.stringify(r):"null";}catch(e){return "null";}})();',
     );
     if (raw is! String || raw.isEmpty || raw == 'null') return null;
@@ -443,6 +501,9 @@ class HighlightBridge {
     InAppWebViewController controller,
     List<FavoriteSentence> highlights, {
     String backgroundHex = '#ffffff',
+    // 刚收藏的那条（收藏动作给出）：笔触样式下给它放一次落笔动画。章节打开 / 重排后的
+    // 重新应用不传，保证翻页与重排永远不重放动画。
+    List<String> freshIds = const <String>[],
   }) async {
     // Stored offsets are navigation hints, not highlight character indexes.
     // Always send the text, including for old favorites with a non-null offset.
@@ -462,9 +523,13 @@ class HighlightBridge {
     final bool backgroundIsDark = ReaderContentStyles.isDarkBackground(
       backgroundHex,
     );
+    final String args = freshIds.isEmpty
+        ? json
+        : '$json, ${jsonEncode(freshIds)}';
     await controller.evaluateJavascript(
-      source: 'window.__fushiHighlightBgDark=$backgroundIsDark;'
-          'window.__fushiApplyHighlights && window.__fushiApplyHighlights($json);',
+      source:
+          'window.__fushiHighlightBgDark=$backgroundIsDark;'
+          'window.__fushiApplyHighlights && window.__fushiApplyHighlights($args);',
     );
   }
 

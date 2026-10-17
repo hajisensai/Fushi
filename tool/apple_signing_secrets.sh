@@ -53,7 +53,16 @@ ok() {
 read_password_file() {
   # 口令走文件而不是命令行参数：命令行参数在 ps / shell history 里对同机其它进程可见。
   [ -f "$1" ] || die "password file not found: $1"
-  cat "$1"
+  # 去掉结尾的 \r / \n，与 `gh secret set` 读 stdin 的 TrimRight("\r\n") 同口径：
+  # 校验 p12 用的口令必须就是 CI 最终拿到的口令。Windows 上写出的口令文件常带裸 \r，
+  # 以前这里原样保留，本地校验带 \r 通过、secret 里却被 gh 去掉 \r，CI 的
+  # `security import` 报 passphrase not correct（2026-10-09 macOS 发布连续失败）。
+  local password
+  password="$(cat "$1")"
+  while [[ "$password" == *[$'\r\n'] ]]; do
+    password="${password%?}"
+  done
+  printf '%s' "$password"
 }
 
 while [ $# -gt 0 ]; do

@@ -43,13 +43,26 @@ void main() {
           reason: '内容树/词典资源必须流式落盘，不得整条目读进堆');
       // 流式 + 后台 isolate 基础设施必须在**恢复侧**在场。
       expect(restoreSrc.contains('_extractEntriesStreaming'), isTrue);
-      expect(restoreSrc.contains('OutputFileStream'), isTrue,
-          reason: '必须用 OutputFileStream 分块落盘');
       expect(restoreSrc.contains('Isolate.spawn('), isTrue,
           reason: '重解压/落盘必须在后台 isolate，避免冻结 UI isolate（进度卡死）');
-      expect(restoreSrc.contains('file.rawContent'), isTrue,
-          reason:
-              '走 rawContent 分块流式（archive 3.6.1 writeContent 会 materialize）');
+      // 条目落盘交给引擎的原生 zlib 通道：它消费 rawContent 分块（archive 3.6.1
+      // 的 writeContent 会 materialize、Inflate.stream 写文件每个回溯引用都 seek）。
+      // 字节一致 / 跨块 / 进度逐块推进由 native_zip_test 与
+      // backup_restore_deflate_entry_test 按行为钉住。
+      expect(
+          restoreSrc.contains(
+              'extractZipEntryToFile(file, destPath, onBytes: port.send)'),
+          isTrue,
+          reason: '恢复必须走 extractZipEntryToFile 分块流式并逐块回报进度');
+      final String nativeZip =
+          read('../packages/fushi_engine/lib/utils/archive/native_zip.dart');
+      expect(nativeZip.contains('file.rawContent'), isTrue,
+          reason: '走 rawContent 分块流式，不得整条目 materialize');
+      expect(
+          RegExp(r'ZLibCodec\(\s*raw:\s*true,\s*\)\s*\.decoder')
+              .hasMatch(nativeZip),
+          isTrue,
+          reason: 'DEFLATE 条目必须用原生 zlib 解压');
     });
 
     test('backup_service：restoreBackup/mergeRestoreBackup 暴露 onProgress', () {
@@ -93,10 +106,11 @@ void main() {
           isTrue);
     });
 
-    test('overlay：failed 态画 error_outline（cs.error），done 态画 check_circle', () {
+    test('overlay：failed 态画 error（errorContainer hero / cs.error），done 态画 success', () {
       final String src = read('lib/src/sync/backup_import_overlay_view.dart');
-      expect(src.contains('Icons.error_outline'), isTrue);
-      expect(src.contains('Icons.check_circle'), isTrue);
+      expect(src.contains('FushiIcons.error'), isTrue);
+      expect(src.contains('FushiIcons.success'), isTrue);
+      expect(src.contains('FushiHeroTone.destructive'), isTrue);
       expect(src.contains('cs.error'), isTrue, reason: '失败图标用主题 error 色（红）');
     });
   });

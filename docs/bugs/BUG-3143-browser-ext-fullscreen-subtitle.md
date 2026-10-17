@@ -1,0 +1,6 @@
+## BUG-3143 · 浏览器扩展全屏下字幕拖动贴底、把手点不着、切全屏后飞出屏幕
+- **报告**：2026-10-09（用户群：「全屏下拖动字幕会直接贴底，右下角的调整手柄也点不着；非全屏切到全屏后，字幕可能飞出屏幕。非全屏下一切正常」；且全屏字幕只在 YouTube 上适配过）
+- **真实性**：✅ 真 bug（站点相关）。覆盖层的定位全部基于 `tools/browser-extension/subtitle-panel.js:127` 的 `videoEl()` = 文档里**第一个** `<video>`：YouTube 恰好是正片；别的站常把页头预告片、广告位、进度条缩略图预览排在前面，覆盖层就以那个元素的矩形为坐标系——全屏后那个元素不在画面里，字幕被摆到它的位置（飞出屏幕），拖动时又被夹在它的小盒子里（看起来「贴」住不动）。此外 position:fixed 的覆盖层挂进全屏元素 / body，站点给它们加 transform / will-change 时包含块不再是视口，视口坐标整体偏移；`fullscreenchange` 那一刻站点往往还没按新尺寸重排完。真机复现（Chrome for Testing + 页头带预告片 `<video>` 的测试页）：改前全屏字幕停在 (4,-8)、出屏，向上拖 260px 纹丝不动。
+- **[x] ① 已修复** — 新增 `tools/browser-extension/video-target.js`：`fushiMainVideo()` 全屏时取全屏元素本身或其内部、否则取视口内可见面积最大（在播优先）的 `<video>`；`fushiFixedOrigin(parent)` 用零干扰的 fixed 探针量出父级包含块原点 / 缩放。`subtitle-panel.js` 的 `videoEl` 改用它，`placeOverlay` 按包含块折算 left/top/max-width；`fullscreenchange` 时中止进行中的拖动 / 缩放会话，两帧后（布局落定）按新几何重摆并把覆盖层挪到父级最后（同 z-index 时 DOM 靠后者在上，缩放把手不被站点控件层盖住）。真机复测：全屏字幕在画面内 (574,734)，把手命中自身，向上拖 260px 落到 474。提交见 PR。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/video-target.test.js`（挑正片 / 全屏元素 / 包含块探针）、`external-subtitle.test.js` ⑦（覆盖层按包含块折算）。
+- **备注**：用户报告里的具体站点没拿到；测试页按「第一个 `<video>` 不是正片 + 容器带 transform」构造，改前改后截图见 PR。站点用 `<video>` 本身全屏时，媒体元素的子节点不渲染，覆盖层仍挂不进去（那种页面只能退回 `<html>`，全屏画面上看不到字幕），本次未改。

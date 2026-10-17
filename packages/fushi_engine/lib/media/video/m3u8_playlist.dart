@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/external_video.dart'
     show decodedSourceBasename;
 import 'package:fushi_engine/media/video/strm_file.dart'
-    show isNetworkStreamUrl;
+    show isNetworkStreamUrl, isSourceLibrarySftpVideoPath;
 
 /// **纯函数**：从 `VideoBooks.playlistJson` 解析出集数；空 / 非播放列表 / 解析失败
 /// 返回 0。供视频库卡片角标与「单视频 vs 播放列表」区分用——返回 ≥2 即播放列表。
@@ -172,7 +172,12 @@ String resolveM3uEntryPath(
   // 段按需百分号编码（清单里通常写明文文件名；已编码段不二次编码）、`..`
   // 钳制在 `scheme://host` 之下。不能走 p.Context：它会把 `https://` 的
   // 双斜杠折叠掉。
-  if (_isHttpUrl(playlistDir)) {
+  //
+  // 来源库 SFTP 清单（[isSourceLibrarySftpVideoPath]）同一套正斜杠解析，只是段
+  // **不编码**：SFTP 行存的是解码态远端路径（起播时由来源的解析器按原样取文件），
+  // 编码后反而对不上真实文件名。
+  final bool sftpList = isSourceLibrarySftpVideoPath(playlistDir);
+  if (_isHttpUrl(playlistDir) || sftpList) {
     final List<String> base = playlistDir.split('/');
     while (base.isNotEmpty && base.last.isEmpty) {
       base.removeLast();
@@ -184,7 +189,7 @@ String resolveM3uEntryPath(
         if (base.length > 3) base.removeLast();
         continue;
       }
-      base.add(_encodeUrlSegmentIfNeeded(seg));
+      base.add(sftpList ? seg : _encodeUrlSegmentIfNeeded(seg));
     }
     return base.join('/');
   }

@@ -229,13 +229,14 @@ abstract interface class VideoAcquisitionSession {
   void dispose();
 }
 
-/// 版本标签：`组 · 分辨率 · 片源 · 每集体积`（全是字面量事实，不翻译）。
+/// 版本标签：`组 · 分辨率 · 片源 · 编码 · 每集体积`（全是字面量事实，不翻译）。
 String videoAcquisitionVersionLabel(VideoResourceVersionGroup group) {
   final int? bytes = estimatedBytesPerEpisode(group);
   return <String>[
     if (group.releaseGroup != null) group.releaseGroup!,
     if (group.resolution != null) group.resolution!,
     if (videoResourceSourceTag(group) case final String source) source,
+    if (videoResourceTraitsTag(group) case final String traits) traits,
     if (bytes != null) formatDiscoveryBytes(bytes),
   ].join(' · ');
 }
@@ -376,6 +377,7 @@ Map<String, Object?> _questionToJson(VideoAcquisitionQuestion q) =>
             'id': o.id,
             if (o.label != null) 'label': o.label,
             if (o.hint != null) 'hint': o.hint,
+            if (o.args.isNotEmpty) 'args': _args(o.args),
           },
       ],
       'rememberToggle': q.rememberToggle,
@@ -400,6 +402,7 @@ VideoAcquisitionQuestion? _questionFromJson(Object? raw) {
             id: '${o['id'] ?? ''}',
             label: o['label'] as String?,
             hint: o['hint'] as String?,
+            args: _argsFromJson(o['args']),
           ),
     ],
     rememberToggle: raw['rememberToggle'] == true,

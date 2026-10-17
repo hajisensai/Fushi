@@ -33,16 +33,12 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:image/image.dart' as img;
 
-import 'package:fushi_engine/ocr/baberu_ocr_recognizer.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
-import 'package:fushi_engine/ocr/ocr_inference.dart';
-import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi/src/ocr/ocr_inference_ort.dart';
 
 /// 合成页上的气泡：位置、尺寸与竖排文本（= ground truth）。
@@ -187,88 +183,6 @@ void main() {
     }
   });
 
-  // Optional private fixture benchmark through the real Flutter plugin. No
-  // manga images or generated OCR are bundled with the test/repository.
-  const String cropManifest = String.fromEnvironment('OCR_CROP_MANIFEST');
-  if (cropManifest.isNotEmpty &&
-      const String.fromEnvironment('OCR_LOCAL_MODEL', defaultValue: 'baberu') ==
-          'baberu') {
-    test(
-      'Baberu native bridge real crop benchmark',
-      () async {
-        const String seed = String.fromEnvironment('OCR_MODEL_SEED');
-        const String cropRoot = String.fromEnvironment('OCR_CROP_ROOT');
-        final List<dynamic> entries =
-            jsonDecode(File(cropManifest).readAsStringSync()) as List<dynamic>;
-        final Map<String, img.Image> decoded = <String, img.Image>{};
-        for (final dynamic entry in entries) {
-          final String file = p.join(cropRoot, entry['page'] as String);
-          decoded.putIfAbsent(
-            file,
-            () => img.decodeImage(File(file).readAsBytesSync())!,
-          );
-        }
-        for (final bool gpu in <bool>[false, true]) {
-          final OcrSessionFactory factory = buildOrtOcrFactory();
-          final List<OcrSession> sessions = <OcrSession>[];
-          try {
-            final Stopwatch load = Stopwatch()..start();
-            Future<OcrSession> open(String file, bool accelerated) async {
-              final OcrSession session = await factory.createSession(
-                p.join(seed, file),
-                providers: <OcrExecutionProvider>[
-                  if (accelerated) OcrExecutionProvider.directml,
-                  OcrExecutionProvider.cpu,
-                ],
-                intraOpNumThreads: 2,
-                onProviderResolved: (OcrProviderResolution resolution) {
-                  if (accelerated) {
-                    expect(resolution.effective, OcrExecutionProvider.directml);
-                  }
-                },
-              );
-              sessions.add(session);
-              return session;
-            }
-
-            final BaberuOcrRecognizer recognizer = BaberuOcrRecognizer(
-              visionSession: await open('vision_fp16.onnx', gpu),
-              prefillSession: await open('decoder_prefill_int8.onnx', false),
-              stepSession: await open('decoder_step_int8.onnx', false),
-              vocabJson: File(p.join(seed, 'vocab.json')).readAsStringSync(),
-            );
-            load.stop();
-            for (int round = 0; round < 2; round++) {
-              final List<Map<String, Object>> rows = <Map<String, Object>>[];
-              final Stopwatch total = Stopwatch()..start();
-              for (final dynamic entry in entries) {
-                final Stopwatch timer = Stopwatch()..start();
-                final String text = await recognizer.recognize(
-                  decoded[p.join(cropRoot, entry['page'] as String)]!,
-                  OcrRect.fromJson(entry['box'] as Map<String, dynamic>),
-                );
-                rows.add(<String, Object>{
-                  'id': entry['id'] as String,
-                  'text': text,
-                  'ms': timer.elapsedMilliseconds,
-                });
-              }
-              // ignore: avoid_print
-              print(
-                '[baberu-native] ${jsonEncode(<String, Object>{'gpu': gpu, 'round': round, 'load_ms': load.elapsedMilliseconds, 'total_ms': total.elapsedMilliseconds, 'crops': rows})}',
-              );
-            }
-          } finally {
-            for (final OcrSession session in sessions) {
-              await session.close();
-            }
-          }
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 10)),
-    );
-  }
-
   const String realPageSeed = String.fromEnvironment('OCR_REAL_PAGE_DIR');
   if (realPageSeed.isNotEmpty) {
     test(
@@ -278,7 +192,7 @@ void main() {
         final MangaOcrLocalModel selected = MangaOcrLocalModel.fromKey(
           const String.fromEnvironment(
             'OCR_LOCAL_MODEL',
-            defaultValue: 'baberu',
+            defaultValue: 'manga_ctc',
           ),
         );
         const bool preparedSeed = bool.fromEnvironment(
@@ -388,7 +302,7 @@ void main() {
           ];
           // ignore: avoid_print
           print(
-            '[baberu-page] ${jsonEncode(<String, Object?>{'file': name, 'width': page['width'], 'height': page['height'], 'blocks': blocks})}',
+            '[ocr-page] ${jsonEncode(<String, Object?>{'file': name, 'width': page['width'], 'height': page['height'], 'blocks': blocks})}',
           );
           expect(
             blocks.length,
@@ -441,7 +355,7 @@ void main() {
         }
         // ignore: avoid_print
         print(
-          '[baberu-page-summary] ${jsonEncode(<String, Object?>{'pages': actualPages.length, 'total_ms': timer.elapsedMilliseconds, 'report': reportPath})}',
+          '[ocr-page-summary] ${jsonEncode(<String, Object?>{'pages': actualPages.length, 'total_ms': timer.elapsedMilliseconds, 'report': reportPath})}',
         );
       },
       timeout: const Timeout(Duration(minutes: 15)),
@@ -457,7 +371,7 @@ void main() {
     final MangaOcrLocalModel localModel = MangaOcrLocalModel.fromKey(
       const String.fromEnvironment(
         'OCR_LOCAL_MODEL',
-        defaultValue: 'manga_ocr',
+        defaultValue: 'manga_ctc',
       ),
     );
     final List<MangaOcrModelFile>? manifest = baseUrl.isEmpty
@@ -585,7 +499,7 @@ void main() {
       print('[e2e]   "${b.text}" -> 最佳重合 ${(best * 100).toStringAsFixed(0)}%');
     }
 
-    // 竖排合成页上 manga-ocr 应当基本逐字命中；阈值留出一个字的余量，
+    // 竖排合成页上本地模型应当基本逐字命中；阈值留出一个字的余量，
     // 既能抓住「模型没跑/跑错」这种真回归，又不会因为单字混淆变 flaky。
     for (int i = 0; i < _kBubbles.length; i++) {
       expect(

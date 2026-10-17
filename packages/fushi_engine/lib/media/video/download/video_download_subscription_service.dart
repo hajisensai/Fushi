@@ -920,6 +920,8 @@ class _SubscriptionFilter {
     required this.categories,
     required this.trusted,
     required this.trustedOnly,
+    this.titleIncludes = const <String>[],
+    this.titleExcludes = const <String>[],
   });
 
   factory _SubscriptionFilter.parse(
@@ -962,6 +964,12 @@ class _SubscriptionFilter {
     }.toList();
     final bool? trusted = _optionalBool(decoded, 'trusted');
     final bool? trustedOnly = _optionalBool(decoded, 'trustedOnly');
+    // 用户在「编辑订阅」里填的标题关键词（包含全部 / 一个都不含），不算版本证据：
+    // 下面「Nyaa / Torznab 至少要有一条版本规则」的门不认它们。
+    final List<String> titleIncludes =
+        _filterValues(decoded, kVideoSubscriptionTitleIncludeKey);
+    final List<String> titleExcludes =
+        _filterValues(decoded, kVideoSubscriptionTitleExcludeKey);
     if (providerBase == 'nyaa' &&
         (releaseGroups.isEmpty ||
             (resolutions.isEmpty && qualities.isEmpty) ||
@@ -991,6 +999,8 @@ class _SubscriptionFilter {
       categories: categories,
       trusted: trusted,
       trustedOnly: trustedOnly ?? false,
+      titleIncludes: titleIncludes,
+      titleExcludes: titleExcludes,
     );
   }
 
@@ -1003,8 +1013,19 @@ class _SubscriptionFilter {
   final List<String> categories;
   final bool? trusted;
   final bool trustedOnly;
+  final List<String> titleIncludes;
+  final List<String> titleExcludes;
 
   bool matches(VideoResourceCandidate candidate) {
+    if (titleIncludes.isNotEmpty || titleExcludes.isNotEmpty) {
+      final String title = _foldExact(candidate.title);
+      for (final String word in titleIncludes) {
+        if (!title.contains(_foldExact(word))) return false;
+      }
+      for (final String word in titleExcludes) {
+        if (title.contains(_foldExact(word))) return false;
+      }
+    }
     if (releaseGroups.isNotEmpty &&
         !_matchesExact(releaseGroups, candidate.releaseGroup)) {
       return false;
@@ -1277,6 +1298,13 @@ List<String> _filterValues(Map<String, dynamic> raw, String key) {
   }
   return List<String>.unmodifiable(result);
 }
+
+/// 订阅版本规则（`filterJson`）里「标题必须包含」的关键词列表键（全部都要出现，
+/// 不区分大小写）。由「编辑订阅」写入。
+const String kVideoSubscriptionTitleIncludeKey = 'titleInclude';
+
+/// 订阅版本规则里「标题不得包含」的关键词列表键（出现任意一个即排除）。
+const String kVideoSubscriptionTitleExcludeKey = 'titleExclude';
 
 bool? _optionalBool(Map<String, dynamic> raw, String key) {
   if (!raw.containsKey(key) || raw[key] == null) return null;

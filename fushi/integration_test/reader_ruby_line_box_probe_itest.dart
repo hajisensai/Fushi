@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -173,7 +173,7 @@ $body</body>
     <dc:identifier id="uid">urn:uuid:ruby-line-box-probe-itest-001</dc:identifier>
     <dc:title>Ruby Line Box Probe Book</dc:title>
     <dc:language>ja</dc:language>
-    <dc:creator>Hibiki Test Suite</dc:creator>
+    <dc:creator>Fushi Test Suite</dc:creator>
     <meta property="dcterms:modified">2026-01-01T00:00:00Z</meta>
   </metadata>
   <manifest>

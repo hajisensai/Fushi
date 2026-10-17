@@ -126,3 +126,15 @@
 - 视频库「发现」与浏览页签共用 HomePage 的同一个生产发现端口实例。
 - 游戏「发现」访问过才构建（`IndexedStack` 会急切构建全部子区，不能一开游戏 tab 就联网）。
 - 未动：`browse_moved_notice.dart`（升级前关着「下载」的用户的一次性提示）。库页入口回来后它说的「搬到了浏览」只剩一半成立，是否删掉待所有者定。
+
+## 2026-10-09 追加：下载方式 / 外部来源标注 + 下载前说明
+
+起因：海外用户分不清浏览页里的下载是内置 BT 还是直链、要不要挂 VPN；所有者要求每个下载项醒目标出「外部来源」，用户追加游戏资源站的风险提示。
+
+- **标签**（`fushi/lib/src/media/downloads/download_source_method.dart`）：`DownloadTransferMethod` = BT / 磁力 · P2P、直链 · HTTP、扩展源；`DownloadSourceTags` = 方式标签 +（可选）「外部来源」，点按弹一句技术说明。外部来源判据 `isExternalDiscoverySource`：内置发现源是第三方站点；用户自配的 OPDS / Audiobookshelf 不标。
+- **挂在哪**：发现页结果行（四域）、AI 下载候选行、视频资源搜索结果区顶部（全是 BT，只放一条）、`DownloadTaskCard`（视频管线 / 旧番剧计划 / host 代下载 = BT；发现直链队列 = 直链；漫画 Mihon / Aidoku = 扩展源，mokuro.moe = 直链，互联对端 = 直链不标外部；扩展视频剧集 = 扩展源，互联 / 媒体服务器 = 直链不标外部）、三域在线作品页头部 chip（漫画互联对端除外）、游戏库在途下载占位卡。
+- **说明框**（`fushi/lib/src/pages/implementations/download_notice.dart`，同一组件按 `DownloadNoticeKind` 换文案，各自记「不再提示」，勾选框默认不勾，取消 = 不下载）：
+  - `p2p`：所有 BT 入口（发现页 torrent、旧番剧对话框推送与通用磁力、手动添加任务、视频资源搜索的下载 / 交给 host / 建订阅）。文案按事实写：IP 对同种子的人可见、开启上传才会上传（内置引擎默认关上传，外接 qBittorrent 按它自己的设置）。
+  - `gameResource`：从第三方游戏资源站下载前（`startDiscoveryItemDownload` 一处，覆盖游戏库「发现」、浏览 › 发现 › 游戏、游戏域 AI 下载、`fushi_cli discover get`）。
+- 偏好 `p2p_download_notice_dismissed` / `game_resource_notice_dismissed` 是本安装级，排除出 Profile 快照。
+- iOS 没有这些入口（合规门不变）。

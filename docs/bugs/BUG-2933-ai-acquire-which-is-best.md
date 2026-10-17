@@ -1,0 +1,8 @@
+## BUG-2933 · AI下视频问「哪个最好」被判没听懂（意图缺候选上下文）
+- **报告**：2026-10-04（用户：Windows「AI 下视频」输入「fx战士」后半天不动、「太慢了好像」；在挑版本时问「哪个最好」得到「没听懂，请点选或换个说法。」；「我觉得这个ai应该能获取到部分上下文才对」）
+- **真实性**：✅ 真 bug，两处根因：
+  1. **意图解析拿不到上下文**：`packages/fushi_engine/lib/ai/ai_video_acquisition_assistant.dart` 的 `VideoAcquisitionIntentQuery`（修前 :48-96）只带槽位与历史，不带当前列出的候选版本；`video_acquisition_service.dart` 的 `_recentHistory`（修前 :503-516）把助手轮次压成 `say.kind.name` 一个词，模型不知道「当前这个版本」是谁。意图种类里也没有「推荐」，问「哪个最好」只能落到 unknown → 「没听懂」。
+  2. **资源搜索可无限挂住**：`packages/fushi_engine/lib/media/torrent/public_video_index_client.dart` 的 `ApibayClient.search` / `KnabenClient.search`（修前 :109 / :190）只有建连超时、没有总时限；`video_resource_registry.dart:60` 把各家 provider `Future.wait` 在一起、外层无超时，一家服务端不回包整轮就停在「正在找资源」。
+- **[x] ① 已修复** — `1b1782328c`：意图查询带 `videoAcquisitionCandidateContext(state)` 候选清单 + 结构化助手历史 `{kind,args,question}`；新增 `recommend` 意图 → reducer `_recommend` 按用户已说条件 / 已存偏好给出推荐（`recommendation` 回答，4 条 i18n）；AI 仍只在已取回的候选里选编号。apibay / Knaben 加 `requestTimeout`（默认 `kDownloadDiscoveryTimeout`，与 Nyaa 同契约）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/acquisition/video_acquisition_reducer_test.dart`（group「推荐（哪个最好）」）、`fushi/test/ai/ai_video_acquisition_assistant_test.dart`（候选/历史进提示词、recommend 解析）、`fushi/test/media/torrent/public_video_index_client_test.dart`（group「总时限」：挂住的 client 抛 TimeoutException）、`fushi/test/torrent/download_discovery_timeout_guard_test.dart`（守卫 B 纳入 public_video_index_client.dart）。
+- **备注**：剩余慢因未改——MAL 请求闸门 429 冷却 `retryAfter ?? 60s` 且最多重试 2 次、全局 FIFO 串行（`mal_video_metadata_provider.dart:589-594`），交互式搜作品时可能多等 1~3 分钟；这是 BUG-2595 后台刮削有意的「等完再试」，直接改成快速失败会让刮削回归，需单独给交互路径加可选上限，另立任务。

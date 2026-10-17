@@ -41,11 +41,13 @@ on:
       - 'tool/release_sequence.sh'
       - 'tool/publish_update_manifest.sh'
       - 'tool/merge_update_manifest.py'
+      - 'tool/feedback_mark_released.sh'
+      - 'tool/notarize_submit.sh'
       - 'tool/mihon/**'
       - 'tool/ffmpeg-min/**'
       - 'tool/sign_windows_release.ps1'
       - 'tool/simplysign_connect.ps1'
-      - 'tool/sign_kazumi_adhoc.sh'
+      - 'tool/engine_overlay.ps1'
       - 'third_party/**'
       - 'tools/build_magpie_slim.ps1'
       - 'tools/bundle_7za.ps1'
@@ -56,6 +58,7 @@ on:
       - '.github/actions/native-artifact-store/**'
       - '.github/actions/native-store-names/**'
       - '.github/actions/pdfium-hook-cache/**'
+      - '.github/actions/flutter-engine-overlay/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       # 无头服务端不进桌面/Apple 包（它有自己的 release-server.yml 与 server-gate.yml）。
@@ -105,23 +108,6 @@ on:
         required: false
         default: false
         type: boolean
-      kazumi_adhoc:
-        description: 'One-off: sign the upstream Kazumi 2.3.0 IPA for two registered devices.'
-        required: false
-        default: false
-        type: boolean
-      kazumi_device_1_name:
-        description: 'Kazumi Ad Hoc device 1 name.'
-        required: false
-      kazumi_device_1_udid:
-        description: 'Kazumi Ad Hoc device 1 UDID.'
-        required: false
-      kazumi_device_2_name:
-        description: 'Kazumi Ad Hoc device 2 name.'
-        required: false
-      kazumi_device_2_udid:
-        description: 'Kazumi Ad Hoc device 2 UDID.'
-        required: false
 
 concurrency:
   # 组名带 workflow 名（2026-09-08，用户要求正式版并行发包）：Android（release.yml）与
@@ -159,7 +145,7 @@ jobs:
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: windows-2022
     timeout-minutes: 150
     permissions:
@@ -176,7 +162,7 @@ jobs:
       # 只缓存 pub、不缓存 SDK：理由与实测见 build-multiplatform.yml windows job 同处注释。
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: false
           pub-cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
@@ -184,6 +170,8 @@ jobs:
       - uses: ./.github/actions/pdfium-hook-cache
         with:
           purpose: windows
+      # 合成器内 HDR 需要打过补丁的 flutter_windows.dll（ci/patches/flutter-engine/）。
+      - uses: ./.github/actions/flutter-engine-overlay
       - name: Resolve desktop release channel
         id: channel
         shell: bash
@@ -403,7 +391,7 @@ jobs:
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
       # 内置 libtorrent 引擎 DLL：vcpkg 编 libtorrent + bridge，产物随发布包（下面
-      # flutter build 的 copy-if-present 拷到 hibiki.exe 旁）。发布版必须带上，故此步
+      # flutter build 的 copy-if-present 拷到 fushi.exe 旁）。发布版必须带上，故此步
       # 失败即让发布失败（不静默出无内置引擎的包）。
       #
       # TODO-2668｜缓存 key 必须带 runner 镜像版本，否则这条链路每次都在冷编 + 拉网。
@@ -553,6 +541,26 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.p2p }}
           path: native\fushi_p2p\prebuilt\windows-x64
+      # SRS 排程内核（fsrs-rs）DLL：产物落 native/fushi_fsrs/prebuilt/windows-x64/，由
+      # fushi/windows/CMakeLists.txt 的 copy-if-present 随包。失败口径同 fushi_p2p：**构建失败
+      # 即 job 失败**；出包后下面还会核对 bundle 里确有这个 DLL。不进原生产物持久库（与
+      # build-multiplatform.yml windows job 的 fushi_fsrs 同一口径），只靠 rust-cache；工具链
+      # 版本与 fushi_p2p 同源。fushi_p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
+      - name: Set up Rust (fushi_fsrs)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
+          targets: x86_64-pc-windows-msvc
+      - name: Cache Rust build (fushi_fsrs)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_fsrs -> target
+          key: fushi-fsrs-windows-x64
+      - name: Build fushi_fsrs DLL
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_fsrs/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_fsrs) failed" }
       # BUG-1589 根因（run 31700342531 的 -v 日志确证）：`aot_elf_release` 阶段
       # gen_snapshot.exe 以 -1073741571 = 0xC00000FD（栈溢出）退出——本仓 AOT 规模
       # 超出其默认栈保留。本机 SDK 早已用 `editbin /STACK:128M` 打过同款补丁
@@ -609,6 +617,15 @@ jobs:
             throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_p2p/prebuilt/windows-x64"
           }
           Get-Item -LiteralPath $dll | Select-Object FullName, Length
+      # 同上：fushi_fsrs 也是 CMake copy-if-present，发布前钉成硬检查。
+      - name: Verify fushi_fsrs is in the Windows bundle
+        shell: pwsh
+        run: |
+          $dll = "fushi\build\windows\x64\runner\Release\fushi_fsrs.dll"
+          if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
+            throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_fsrs/prebuilt/windows-x64"
+          }
+          Get-Item -LiteralPath $dll | Select-Object FullName, Length
       # 持久库理由与名字契约见 build-multiplatform.yml windows job 同名步骤（名字逐字一致）。
       # 下面 Sign Windows bundle binaries 签的是拷进 bundle 的副本，库里保持未签原样。
       - name: Restore pinned Mihon desktop runtime
@@ -625,7 +642,7 @@ jobs:
           if ('${{ steps.mihon_runtime_store.outputs.hit }}' -ne 'true') {
             .\tool\mihon\build_desktop_runtime.ps1 `
               -OutputDirectory $built `
-              -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
+              -DownloadCache "$env:RUNNER_TEMP\fushi-mihon-downloads"
             if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
           }
           $runtime = "fushi\build\windows\x64\runner\Release\mihon_bridge"
@@ -710,7 +727,7 @@ jobs:
           # （LGPL，官方 GitHub 镜像 + SHA-256 钉死，fail-closed）。
           pwsh -NoProfile -ExecutionPolicy Bypass -File tools/bundle_7za.ps1 `
             -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Release" `
-            -DownloadCache "$env:RUNNER_TEMP\hibiki-7za-cache"
+            -DownloadCache "$env:RUNNER_TEMP\fushi-7za-cache"
           if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
       # fushi-anki-sync（native/fushi_anki_sync）：链接 Anki 官方 rslib 的独立 helper 进程，
       # Dart 侧在 fushi.exe 同级找 fushi-anki-sync.exe。它是 AGPL-3.0-or-later，所以旁边
@@ -747,6 +764,29 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.anki_sync_release }}
           path: native\fushi_anki_sync\target\release\fushi-anki-sync.exe
+      # fushi_cli（packages/fushi_cli）：桌面客户端命令行。fushi.exe 是 GUI 子系统，拿不到
+      # stdout、退出码也不可靠，所以 CLI 是单独的控制台 exe，经本机控制通道驱动 app。
+      # 纯 Dart、无原生资产，dart compile exe 直出；放 fushi.exe 同级（CLI 按同级目录
+      # 找 app 自动拉起），安装包的 `{#SourceDir}\*` 整目录收录，不用改 .iss。
+      - name: Build and bundle fushi_cli
+        shell: pwsh
+        run: |
+          $targetDir = Join-Path $PWD 'fushi\build\windows\x64\runner\Release'
+          if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
+            throw "Missing Windows release bundle directory: $targetDir"
+          }
+          $exe = Join-Path $targetDir 'fushi_cli.exe'
+          dart compile exe packages/fushi_cli/bin/fushi_cli.dart -o $exe
+          if ($LASTEXITCODE -ne 0) { throw "dart compile exe fushi_cli failed ($LASTEXITCODE)" }
+          # 冒烟：能起、能出帮助。app 不在跑时 status 应返回 69（EX_UNAVAILABLE），不是崩溃。
+          & $exe --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "fushi_cli --help failed ($LASTEXITCODE)" }
+          & $exe status | Out-Null
+          if ($LASTEXITCODE -ne 69) { throw "fushi_cli status expected exit 69 (not running), got $LASTEXITCODE" }
+          # 预期内的 69 已核对完。Actions 的 pwsh 包装会在脚本末尾追加
+          # `exit $LASTEXITCODE`，且以 `pwsh -command ". '{0}'"` 点源执行——点源脚本里
+          # `exit 69` 让 pwsh 进程以 1 退出、不打任何报错，整步无声变红。显式成功收尾。
+          exit 0
       # ffmpeg.exe and its MinGW runtime DLLs are vendored at
       # third_party/ffmpeg-min/windows/
       # (TODO-416). It used to be fetched from another workflow's build artifact,
@@ -789,16 +829,16 @@ jobs:
           }
           Get-Item -LiteralPath ($runtimeFiles | ForEach-Object { Join-Path $targetDir $_ }) |
             Select-Object FullName, Length
-      # TODO-1242 (P0): hibiki's C++ modules link the MSVC CRT dynamically (/MD)
+      # TODO-1242 (P0): fushi's C++ modules link the MSVC CRT dynamically (/MD)
       # and reference newer STL/EH symbols (VCRUNTIME140_1!__CxxFrameHandler4).
       # The installer did NOT ship the CRT, so machines whose system VC++
       # Redistributable is stale (stuck at 2019 14.24) lack those exports and
-      # hibiki.exe dies at launch with a faulting MSVCP140.dll / c0000005 access
+      # fushi.exe dies at launch with a faulting MSVCP140.dll / c0000005 access
       # violation. Standard Flutter Windows distribution practice: copy the CRT
       # DLLs next to the exe (app-directory DLL search precedes System32, needs
       # no elevation) so the payload is self-contained regardless of the target
       # machine's system redist. The DLLs land in the same Release dir that
-      # hibiki.iss packages via `Source: {#SourceDir}\*`, so they ride into the
+      # fushi.iss packages via `Source: {#SourceDir}\*`, so they ride into the
       # installer automatically. Sourced from the VS2022 redist on windows-2022.
       - name: Bundle VC++ CRT runtime into Windows bundle
         shell: pwsh
@@ -874,7 +914,7 @@ jobs:
           # NOTE: keep the FULL literal bundle paths below (no $releaseDir
           # indirection). release_workflow_diagnostics_guard_test asserts on
           # these literals to prove the release smokes the exact binaries copied
-          # beside hibiki.exe -- splitting them into a variable silently blinds
+          # beside fushi.exe -- splitting them into a variable silently blinds
           # that guard.
           $target = Join-Path $PWD 'fushi\build\windows\x64\runner\Release\ffmpeg.exe'
           if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
@@ -953,6 +993,8 @@ jobs:
           $required = @(
             'fushi.exe',
             'fushidicts_ffi.dll',
+            'libaacs.dll',
+            'bluray\bdj\bdj_runtime.ps1',
             'flutter_windows.dll'
           )
           $missing = @()
@@ -1226,16 +1268,18 @@ jobs:
           path: |
             fushi/build/release-artifacts/fushi-*-windows-setup.exe
           if-no-files-found: ignore
-          retention-days: 14
+          # 正式 / 测试版 dispatch 的 publish job 要等人工审批（环境 release-publish，待审批
+          # job 最长挂 30 天）才下载这些 artifact：三个平台的保留期都要盖住审批窗口。
+          retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
 
   macos:
     # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
-    # 120：内置 torrent 引擎 bridge 冷编（两个架构的 boost + openssl + libtorrent）要几十分钟，
+    # 120：内置 torrent 引擎 bridge 冷编（boost + openssl + libtorrent）要几十分钟，
     # 只在 native/fushi_torrent 改动或 runner 镜像更新后的首跑发生，其余命中持久库。
     timeout-minutes: 120
     permissions:
@@ -1247,7 +1291,7 @@ jobs:
         with:
           fetch-depth: 0
       # 原生产物持久库名字（唯一算法 .github/actions/native-store-names/names.sh）。p2p
-      # universal dylib 与 build-multiplatform.yml macos job 同名：这里（develop push）存的件
+      # arm64 dylib 与 build-multiplatform.yml macos job 同名：这里（develop push）存的件
       # 就是 PR 门首跑命中的那一份。
       - name: Resolve native artifact store names
         id: native_store
@@ -1256,7 +1300,7 @@ jobs:
           platform: macos
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
       # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -1487,8 +1531,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
-      # 互联 P2P 隧道（iroh）universal dylib（arm64 + x86_64，与 Flutter 的 universal
-      # release 对齐）：Runner 的「Bundle fushi_p2p dylib」构建阶段 copy-if-present 进
+      # 互联 P2P 隧道（iroh）dylib（只出 arm64：macOS 版不再支持 Intel Mac，Runner 工程
+      # 的 EXCLUDED_ARCHS = x86_64 让 app 本体也只有 arm64）：Runner 的「Bundle fushi_p2p
+      # dylib」构建阶段 copy-if-present 进
       # Contents/Frameworks，之后由下面的 Developer ID 签名循环随其它 Mach-O 一起签。
       # 失败口径同 Windows：构建失败即 job 失败；出包后再核对 Frameworks 里确有此库。
       # 持久库命中只跳 Rust 工具链与 cargo（2~3 min）；ABI 校验与出包核对照跑在还原的件上。
@@ -1504,14 +1549,14 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-macos
-      - name: Build fushi_p2p (macOS universal dylib)
+      - name: Build fushi_p2p (macOS arm64 dylib)
         shell: bash
         env:
           STORE_HIT: ${{ steps.p2p_store.outputs.hit }}
@@ -1521,12 +1566,33 @@ jobs:
             bash native/fushi_p2p/build_macos_dylib.sh
           fi
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/macos/libfushi_p2p.dylib nm
-      # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）universal dylib：Runner 的
+      # SRS 排程内核（fsrs-rs）arm64 dylib：Runner 的「Bundle fushi_fsrs dylib」构建阶段
+      # （fushi/macos/bundle_fushi_fsrs.sh）copy-if-present 进 Contents/Frameworks，之后由下面
+      # 的 Developer ID 签名循环随其它 Mach-O 一起签。失败口径同 p2p：构建失败即 job 失败；
+      # 出包后再核对。不进原生产物持久库（与 build-multiplatform.yml macos job 同一口径），
+      # 工具链版本与 fushi_p2p 同源；p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
+      - name: Set up Rust (fushi_fsrs, macOS targets)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
+          targets: aarch64-apple-darwin
+      - name: Cache Rust build (fushi_fsrs)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_fsrs -> target
+          key: fushi-fsrs-macos
+      - name: Build fushi_fsrs (macOS arm64 dylib)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_fsrs/build_macos_dylib.sh
+          bash native/fushi_fsrs/verify_abi.sh native/fushi_fsrs/prebuilt/macos/libfushi_fsrs.dylib nm
+      # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）arm64 dylib：Runner 的
       # 「Bundle fushi_torrent dylib」构建阶段 copy-if-present 进 Contents/Frameworks，之后由
       # 下面的 Developer ID 签名循环随其它 Mach-O 一起签。此前 macOS 包从没带过它，内置引擎
       # 在 macOS 上恒不可用（BUG-2865）。失败口径同 p2p：构建失败即 job 失败；出包后再核对。
       # 持久库与 build-multiplatform.yml macos job 同名：这里（develop push）存的件就是 PR 门
-      # 首跑命中的那一份；命中时跳过两个架构的 vcpkg 冷编。
+      # 首跑命中的那一份；命中时跳过 vcpkg 冷编。
       - name: Restore torrent bridge dylib from native artifact store
         id: torrent_store
         uses: ./.github/actions/native-artifact-store
@@ -1562,7 +1628,7 @@ jobs:
           key: ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
           restore-keys: |
             ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}
-      - name: Build embedded torrent bridge (macOS universal dylib, static)
+      - name: Build embedded torrent bridge (macOS arm64 dylib, static)
         shell: bash
         env:
           VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
@@ -1587,20 +1653,51 @@ jobs:
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+      # macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac。`flutter build macos
+      # --release` 默认出 universal，靠 Runner 工程的 EXCLUDED_ARCHS = x86_64（Flutter
+      # 会把它透传给 xcodebuild）收成 arm64；这一步钉住它真的生效了，后面各 helper 的
+      # 架构核对都以 app 本体为准。
+      - name: Verify macOS app is arm64-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_bin="fushi/build/macos/Build/Products/Release/fushi.app/Contents/MacOS/fushi"
+          app_archs="$(lipo -archs "$app_bin")"
+          echo "app archs: $app_archs"
+          if [ "$app_archs" != "arm64" ]; then
+            echo "::error title=macOS app not arm64-only::$app_bin 架构是「$app_archs」，期望只有 arm64（检查 fushi/macos/Runner.xcodeproj 的 EXCLUDED_ARCHS）。"
+            exit 1
+          fi
+          # 只记录、不设门：Frameworks 里第三方预编译件（如 media_kit 的 libmpv
+          # xcframework）可能仍带 x86_64 切片，那只是死重、不影响 arm64 运行。
+          app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
+          while IFS= read -r candidate; do
+            if file "$candidate" | grep -q 'Mach-O'; then
+              echo "$(lipo -archs "$candidate")  ${candidate#"$app_dir"/}"
+            fi
+          done < <(find "$app_dir/Contents/Frameworks" -type f)
       - name: Verify fushi_p2p is in the macOS bundle
         shell: bash
         run: |
           set -euo pipefail
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_p2p.dylib"
           test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_p2p dylib' phase did not copy it"; exit 1; }
-          # universal dylib：otool -D 按架构各打一段「path (architecture x):」+ id，逐段核对。
+          # otool -D 首行是「path:」表头，其余是 id。
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_p2p.dylib"
-          # 发布包是 universal，两个切片都得在，否则另一种 Mac 上 P2P 静默不可用。
-          archs=" $(lipo -archs "$dylib") "
-          for arch in arm64 x86_64; do
-            case "$archs" in *" $arch "*) ;; *) echo "::error::$dylib lacks $arch (has:$archs)"; exit 1 ;; esac
-          done
+          # 发布包只出 arm64：dylib 恰好是 arm64（多出 x86_64 = 还原了旧 universal 件或脚本回退）。
+          archs="$(lipo -archs "$dylib")"
+          if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
           bash native/fushi_p2p/verify_abi.sh "$dylib" nm
+      - name: Verify fushi_fsrs is in the macOS bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_fsrs.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_fsrs dylib' phase did not copy it"; exit 1; }
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_fsrs.dylib"
+          archs="$(lipo -archs "$dylib")"
+          if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
+          bash native/fushi_fsrs/verify_abi.sh "$dylib" nm
       - name: Save fushi_p2p dylib to native artifact store
         if: steps.p2p_store.outputs.hit != 'true'
         continue-on-error: true
@@ -1616,11 +1713,9 @@ jobs:
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_torrent_ffi.dylib"
           test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_torrent dylib' phase did not copy it"; exit 1; }
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_torrent_ffi.dylib"
-          # 发布包是 universal，两个切片都得在，否则另一种 Mac 上内置引擎静默不可用。
-          archs=" $(lipo -archs "$dylib") "
-          for arch in arm64 x86_64; do
-            case "$archs" in *" $arch "*) ;; *) echo "::error::$dylib lacks $arch (has:$archs)"; exit 1 ;; esac
-          done
+          # 发布包只出 arm64：dylib 恰好是 arm64（多出 x86_64 = 还原了旧 universal 件或脚本回退）。
+          archs="$(lipo -archs "$dylib")"
+          if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
           # 依赖只许是系统库（静态链真生效）。
           otool -L "$dylib" | grep -E '^[[:space:]]' | awk '{ print $1 }' > "$RUNNER_TEMP/torrent_otool.txt"
           if grep -v -e '^@rpath/libfushi_torrent_ffi\.dylib$' -e '^/usr/lib/' -e '^/System/' "$RUNNER_TEMP/torrent_otool.txt"; then
@@ -1628,6 +1723,17 @@ jobs:
             exit 1
           fi
           bash .github/scripts/verify_torrent_abi.sh "$dylib" nm
+      - name: Verify macOS fushi_aacs dylib bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          # libbluray finds the libaacs ABI module at @rpath/libaacs.dylib; without it
+          # an AACS disc menu cannot open at all (native/fushi_aacs).
+          dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libaacs.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_aacs dylib' phase did not copy it"; exit 1; }
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libaacs.dylib"
+          lipo -info "$dylib"
+          DYLIB_PATH="$dylib" python3 -c 'import ctypes, os; lib = ctypes.CDLL(os.environ["DYLIB_PATH"]); assert lib.fushi_aacs_abi_version() == 1; assert lib.aacs_open2 and lib.aacs_decrypt_unit; print("fushi_aacs dylib smoke ok")'
       - name: Save torrent bridge dylib to native artifact store
         if: steps.torrent_store.outputs.hit != 'true'
         continue-on-error: true
@@ -1651,7 +1757,7 @@ jobs:
           built="$RUNNER_TEMP/mihon-runtime"
           if [[ "${{ steps.mihon_runtime_cache.outputs.cache-hit }}" != "true" ]]; then
             chmod +x tool/mihon/build_desktop_runtime.sh
-            tool/mihon/build_desktop_runtime.sh "$built" "$RUNNER_TEMP/hibiki-mihon-downloads"
+            tool/mihon/build_desktop_runtime.sh "$built" "$RUNNER_TEMP/fushi-mihon-downloads"
           fi
           app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
@@ -1711,15 +1817,13 @@ jobs:
           "$target_dir/ffmpeg" -hide_banner -version | head -n 1
           "$target_dir/ffprobe" -hide_banner -version | head -n 1
           ls -lh "$target_dir/ffmpeg" "$target_dir/ffprobe"
-          # BUG-1668：`-version` 跑得通只证明**这台 runner 的架构**能跑它。runner 是
-          # Apple Silicon，所以一份 arm64-only 的 ffmpeg 能让上面两行全绿，却在每台
-          # Intel Mac 上被内核以 Bad CPU type (EBADARCH) 拒掉——app 本体是 universal
-          # 照常启动，于是表现为「app 好好的，就是制卡/封面/内封字幕全失效」，而且
-          # 因为抽取层各自吞掉异常，用户只看到一句泛化失败。2.1.1 就是这么发出去的。
+          # BUG-1668：`-version` 跑得通只证明**这台 runner 的架构**能跑它。当年 app 是
+          # universal、ffmpeg 却是 arm64-only，Intel Mac 上 app 照常启动、helper 被内核以
+          # Bad CPU type (EBADARCH) 拒掉，制卡/封面/内封字幕全失效（2.1.1）。
           #
-          # 真正的不变式不是「能跑」，而是**helper 的架构必须覆盖 app 本体的架构**：
-          # app 支持哪些架构，就得在哪些架构上有可用的 ffmpeg。这里直接按 app 本体
-          # 的 lipo 结果逐个核对，app 将来改成单架构也无需改这段。
+          # 真正的不变式不是「能跑」，而是**helper 的架构必须覆盖 app 本体的架构**。
+          # macOS 版现在只出 arm64（不再支持 Intel Mac），这里仍按 app 本体的 lipo 结果
+          # 逐个核对，不写死架构。
           app_archs="$(lipo -archs "$target_dir/fushi")"
           echo "app archs: $app_archs"
           for tool in ffmpeg ffprobe; do
@@ -1729,22 +1833,22 @@ jobs:
               case " $tool_archs " in
                 *" $want "*) ;;
                 *)
-                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。Intel Mac 上该 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-min 工作流出 universal 产物并重新 vendor 到 third_party/ffmpeg-min/macos/。"
+                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。该架构的 Mac 上 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-min 工作流出 arm64 产物并重新 vendor 到 third_party/ffmpeg-min/macos/。"
                   exit 1
                   ;;
               esac
             done
           done
       # fushi-anki-sync：与 Windows 同一个 helper，放 Contents/MacOS/（Platform.resolvedExecutable
-      # 所在目录，Dart 按它找）。app 是 universal，helper 也必须是 —— build.sh --universal
-      # 分别编 arm64 / x86_64 再 lipo，下面按 app 本体的架构逐个核对（BUG-1668 同一不变式）。
+      # 所在目录，Dart 按它找）。app 只出 arm64，helper 在 arm64 runner 上按本机架构编，
+      # 下面按 app 本体的架构逐个核对（BUG-1668 同一不变式）。
       # AGPL 源码说明放 Contents/Resources/ 而不是 MacOS/：Apple 的 bundle 规则是
       # Contents/MacOS 只放代码，那里的非 Mach-O 文件会被 codesign 当代码签（签名写进
       # 扩展属性），打 zip 丢了扩展属性就验不过。
       # 必须排在 Developer ID 签名之前（那一步按 `file` 找出 Contents 下全部 Mach-O 重签）。
-      # 持久库命中 = 同一棵 native/fushi_anki_sync 树已在可信 run 里编过 universal release：
-      # 只跳工具链与两遍 cargo（~6 min）；安装、SOURCE.txt（指向本次 commit）、version 冒烟、
-      # 签名与架构核对照跑。存进库的是未签名的原始 lipo 输出，签名只作用于 .app 里的副本。
+      # 持久库命中 = 同一棵 native/fushi_anki_sync 树已在可信 run 里编过 arm64 release：
+      # 只跳工具链与 cargo；安装、SOURCE.txt（指向本次 commit）、version 冒烟、
+      # 签名与架构核对照跑。存进库的是未签名的原始 cargo 输出，签名只作用于 .app 里的副本。
       - name: Restore fushi-anki-sync from native artifact store
         id: anki_sync_store
         uses: ./.github/actions/native-artifact-store
@@ -1755,7 +1859,7 @@ jobs:
       - name: Set up fushi-anki-sync toolchain
         if: steps.anki_sync_store.outputs.hit != 'true'
         uses: ./.github/actions/setup-fushi-anki-sync
-      - name: Build and bundle fushi-anki-sync (universal)
+      - name: Build and bundle fushi-anki-sync (arm64)
         shell: bash
         env:
           STORE_HIT: ${{ steps.anki_sync_store.outputs.hit }}
@@ -1767,7 +1871,7 @@ jobs:
           if [ "$STORE_HIT" = "true" ]; then
             prebuilt=(--prebuilt-binary "$RUNNER_TEMP/fushi-anki-sync-prebuilt/fushi-anki-sync")
           fi
-          bash native/fushi_anki_sync/build.sh --universal --install-dir "$target_dir" ${prebuilt[@]+"${prebuilt[@]}"}
+          bash native/fushi_anki_sync/build.sh --install-dir "$target_dir" ${prebuilt[@]+"${prebuilt[@]}"}
           mv "$target_dir/fushi-anki-sync.SOURCE.txt" "$app_dir/Contents/Resources/fushi-anki-sync.SOURCE.txt"
           codesign --force --sign - --timestamp=none "$target_dir/fushi-anki-sync"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
@@ -1791,7 +1895,7 @@ jobs:
         with:
           mode: save
           name: ${{ steps.native_store.outputs.anki_sync_release }}
-          path: native/fushi_anki_sync/target/universal/release/fushi-anki-sync
+          path: native/fushi_anki_sync/target/release/fushi-anki-sync
       # ---- Developer ID 签名 + 公证（Gatekeeper）-------------------------
       # **必须排在上面 Mihon / ffmpeg / fushi-anki-sync 三步之后**：这几步往 bundle 里塞可执行文件
       # 并用 `codesign --force --deep --sign -` 重签整个 app，签在前面的
@@ -1869,7 +1973,7 @@ jobs:
           MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
         run: |
           set -euo pipefail
-          KEYCHAIN_PATH="$RUNNER_TEMP/hibiki-macos-signing.keychain-db"
+          KEYCHAIN_PATH="$RUNNER_TEMP/fushi-macos-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           P12_PATH="$RUNNER_TEMP/developer-id.p12"
           printf '%s' "$MACOS_DEVELOPER_ID_P12_BASE64" | base64 --decode > "$P12_PATH"
@@ -1947,6 +2051,34 @@ jobs:
           # 立刻失效）。-type f 同时排除了符号链接，jlink 镜像和 framework 里的
           # 符号链接不能签。
           MIHON_PREFIX="$APP/Contents/Resources/mihon_bridge/"
+          # 公证服务会解开 jar 检查里面的 Mach-O（2026-10-10 首次 Developer ID 公证被拒，
+          # 12 条错误全在 m-extension-server.jar 内：libwebp-imageio / libzstd-kmp /
+          # JNA libjnidispatch，未签名或无安全时间戳）。下面的 find 只看得到 jar 本身，
+          # 所以先把 jar 里的 Mach-O 解出来逐个签名、写回 jar，并回读校验。
+          # 运行时不校验 jar 哈希（checksums.json 只在构建期检查是否存在）。
+          while IFS= read -r -d '' jar; do
+            jar_abs="$(cd "$(dirname "$jar")" && pwd)/$(basename "$jar")"
+            work="$(mktemp -d "$RUNNER_TEMP/jar-natives.XXXXXX")"
+            unzip -q "$jar_abs" -d "$work"
+            signed_entries=()
+            while IFS= read -r entry; do
+              case "$entry" in */) continue ;; esac
+              if file "$work/$entry" | grep -q 'Mach-O'; then
+                echo "signing (in $(basename "$jar")): $entry"
+                sign_one "$work/$entry"
+                signed_entries+=("$entry")
+              fi
+            done < <(unzip -Z1 "$jar_abs")
+            # macOS 自带 bash 3.2：空数组在 set -u 下展开会报 unbound，先判长度。
+            if [ "${#signed_entries[@]}" -gt 0 ]; then
+              (cd "$work" && zip -q "$jar_abs" "${signed_entries[@]}")
+              for entry in "${signed_entries[@]}"; do
+                unzip -p "$jar_abs" "$entry" > "$work/.verify"
+                codesign --verify --strict --verbose=2 "$work/.verify"
+              done
+            fi
+            rm -rf "$work"
+          done < <(find "$MIHON_PREFIX" -type f -name '*.jar' -print0)
           while IFS= read -r item; do
             if ! file "$item" | grep -q 'Mach-O'; then
               continue
@@ -1987,22 +2119,13 @@ jobs:
           APP="build/macos/Build/Products/Release/fushi.app"
           KEY_PATH="$RUNNER_TEMP/AuthKey_${APPSTORE_API_KEY_ID}.p8"
           printf '%s\n' "$APPSTORE_API_PRIVATE_KEY" > "$KEY_PATH"
-          NOTARIZE_ZIP="$RUNNER_TEMP/hibiki-notarize.zip"
+          NOTARIZE_ZIP="$RUNNER_TEMP/fushi-notarize.zip"
           # 公证服务只吃 zip/dmg/pkg，且必须 ditto 保留 .app 的符号链接与扩展属性。
           ditto -c -k --keepParent "$APP" "$NOTARIZE_ZIP"
-          set +e
-          xcrun notarytool submit "$NOTARIZE_ZIP" \
-            --key "$KEY_PATH" \
-            --key-id "$APPSTORE_API_KEY_ID" \
-            --issuer "$APPSTORE_API_ISSUER_ID" \
-            --wait --timeout 45m
-          NOTARY_STATUS=$?
-          set -e
+          # 成败以公证服务的 status 为准（被拒时 notarytool 照样退出 0），被拒会打印拒绝日志。
+          bash ../tool/notarize_submit.sh "$NOTARIZE_ZIP" "$KEY_PATH" \
+            "$APPSTORE_API_KEY_ID" "$APPSTORE_API_ISSUER_ID"
           rm -f "$KEY_PATH" "$NOTARIZE_ZIP"
-          if [ "$NOTARY_STATUS" -ne 0 ]; then
-            echo "::error title=Notarization failed::notarytool exited $NOTARY_STATUS. Run 'xcrun notarytool log <submission-id>' with the same key to see the rejected binaries."
-            exit "$NOTARY_STATUS"
-          fi
           # 装订票据：装订后用户离线也能通过 Gatekeeper（不装订则每次首启都要联网）。
           xcrun stapler staple "$APP"
           xcrun stapler validate "$APP"
@@ -2012,6 +2135,7 @@ jobs:
         shell: bash
         env:
           BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
+          MACOS_SIGNED: ${{ steps.signing.outputs.macos_signed }}
         run: |
           set -euo pipefail
           app_dir="build/macos/Build/Products/Release/fushi.app"
@@ -2021,8 +2145,79 @@ jobs:
             exit 1
           fi
           mkdir -p "$out_dir"
-          rm -f "$out_dir"/fushi-*-macos.zip
-          ditto -c -k --keepParent "$app_dir" "$out_dir/fushi-${BUILD_VERSION_NAME}-macos.zip"
+          # 2026-10 起只出 arm64，资产名带 `-arm64`：旧版（universal、可能跑在 Intel
+          # Mac 上）的更新器只认 `-macos.zip`，改名让它们选不中这个 Intel 上启动不了的包。
+          rm -f "$out_dir"/fushi-*-macos.zip "$out_dir"/fushi-*-macos-arm64.zip "$out_dir"/fushi-*-macos-arm64.dmg
+          ditto -c -k --keepParent "$app_dir" "$out_dir/fushi-${BUILD_VERSION_NAME}-macos-arm64.zip"
+          # dmg 只给「网页上手动下载、首次安装」用：拖进 Applications 的标准形态。
+          # 应用内自动更新**只认 zip**（platform_updater.dart 的 -macos-arm64.zip 判据，
+          # 老客户端也只认它），所以 dmg 不进更新清单；两者装的是同一个已装订的 .app。
+          dmg_root="$RUNNER_TEMP/fushi-dmg-root"
+          rm -rf "$dmg_root"
+          mkdir -p "$dmg_root"
+          ditto "$app_dir" "$dmg_root/fushi.app"
+          ln -s /Applications "$dmg_root/Applications"
+          if [ "${MACOS_SIGNED:-false}" != "true" ]; then
+            # 仓库没配 Developer ID 证书时 app 只有 ad-hoc 签名、没公证，Gatekeeper 首次
+            # 打开会拦「Apple 无法验证 fushi.app」。这不是包坏了，把放行步骤随包写清楚。
+            cat > "$dmg_root/打开说明 How to open.txt" <<'TXT'
+          本安装包没有经过 Apple 公证（ad-hoc 签名），首次打开会被 Gatekeeper 拦下，
+          提示「Apple 无法验证 fushi.app 是否包含可能危害 Mac 安全或泄漏隐私的恶意软件」。
+
+          放行方法（任选其一）：
+          1. 先把 fushi.app 拖进「应用程序」，双击打开一次（会被拦），然后打开
+             「系统设置 → 隐私与安全性」，在页面下方找到 fushi，点「仍要打开」。
+          2. 或在「终端」执行：
+             xattr -dr com.apple.quarantine /Applications/fushi.app
+             之后正常双击即可。
+
+          放行一次即可，之后的应用内更新不需要重复。
+
+          ---
+
+          This build is not notarized by Apple (ad-hoc signed), so Gatekeeper blocks
+          the first launch with "Apple could not verify fushi.app is free of malware".
+
+          To allow it (either way):
+          1. Drag fushi.app into Applications and double-click it once (it is blocked),
+             then open System Settings > Privacy & Security, scroll down and click
+             "Open Anyway" next to fushi.
+          2. Or run in Terminal:
+             xattr -dr com.apple.quarantine /Applications/fushi.app
+
+          You only need to do this once; in-app updates do not require it again.
+          TXT
+          fi
+          hdiutil create -volname "Fushi" -srcfolder "$dmg_root" -fs HFS+ \
+            -format UDZO -ov "$out_dir/fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg"
+          rm -rf "$dmg_root"
+          hdiutil verify "$out_dir/fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg"
+      # 新版 macOS 对「签了名但没公证」的 dmg 一样拦，所以 dmg 自身也要签名 + 公证 +
+      # 装订（里面的 .app 上面已单独装订，zip 那条路不受影响）。没有 Developer ID 时
+      # dmg 与 zip 一样是 ad-hoc 内容，照常发布。
+      - name: Sign and notarize macOS dmg
+        if: steps.signing.outputs.macos_signed == 'true'
+        working-directory: fushi
+        shell: bash
+        env:
+          BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          DMG="build/release-artifacts/fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg"
+          codesign --force --timestamp --keychain "$MACOS_KEYCHAIN_PATH" \
+            --sign "$MACOS_SIGN_IDENTITY" "$DMG"
+          codesign --verify --strict --verbose=2 "$DMG"
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPSTORE_API_KEY_ID}.p8"
+          printf '%s\n' "$APPSTORE_API_PRIVATE_KEY" > "$KEY_PATH"
+          bash ../tool/notarize_submit.sh "$DMG" "$KEY_PATH" \
+            "$APPSTORE_API_KEY_ID" "$APPSTORE_API_ISSUER_ID"
+          rm -f "$KEY_PATH"
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
       # The single non-blocking `publish` job downloads this artifact and does
       # all Release publishing, so macOS builds in parallel with Windows/iOS and
       # never blocks (or is blocked by) the other platforms.
@@ -2031,22 +2226,27 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-artifacts-macos
-          path: fushi/build/release-artifacts/fushi-*-macos.zip
+          path: |
+            fushi/build/release-artifacts/fushi-*-macos-arm64.zip
+            fushi/build/release-artifacts/fushi-*-macos-arm64.dmg
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
 
   ios:
     # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
     timeout-minutes: 90
     permissions:
       contents: write
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
       actions: read
+    # 签名 IPA 在本 job 里构建好，上传 TestFlight 在下面的 `testflight` job（审批门）。
+    outputs:
+      testflight: ${{ steps.signing.outputs.testflight }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -2060,7 +2260,7 @@ jobs:
           platform: ios
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
       - name: Resolve desktop release channel
         id: channel
@@ -2292,39 +2492,41 @@ jobs:
       # Flutter 3.44's experimental SPM integration here too. (TODO-1129)
       - name: Disable experimental Swift Package Manager (CocoaPods-managed iOS)
         run: flutter config --no-enable-swift-package-manager
-      # 互联 P2P 隧道（iroh）iOS 静态库（device 切片）：iOS 不能加载自带 dylib，以 staticlib
-      # 经 -force_load 链进 Runner。build_ios_staticlib.sh 顺带生成 xcconfig 片段，由
-      # fushi/ios/Flutter/Release.xcconfig 可选 include，给 OTHER_LDFLAGS 的 $(FUSHI_P2P_LDFLAGS)。
+      # iOS 伞形 Rust 静态库（device 切片）：互联 P2P 隧道（fushi_p2p，fp2p_*）+ SRS 排程内核
+      # （fushi_fsrs，ffsrs_*）合成一个 staticlib、Rust std 只有一份——两份单独的 .a 同时
+      # -force_load 会撞重复 std 符号。iOS 不能加载自带 dylib，以 staticlib 经 -force_load 链进
+      # Runner；build_ios_staticlib.sh 顺带生成 xcconfig 片段，由 fushi/ios/Flutter/Release.xcconfig
+      # 可选 include，给 OTHER_LDFLAGS 的 $(FUSHI_IOS_NATIVE_LDFLAGS)。
       # 不挂 testflight_only 条件：未签名 IPA 与 TestFlight 签名 IPA 两条出包路径都要它。
-      # P2P 互联不属于 store_compliance.dart 的三类受限能力，App Store 包照带。
-      # 失败口径同其它平台：构建失败即 job 失败；出包后逐个核对 Runner 导出了 fp2p_* 符号。
-      # 持久库存整个 prebuilt/ios（.a + 系统库清单 + 生成的 xcconfig）；命中只跳 Rust，
-      # 两条出包路径上的 Runner 符号核对照跑。
-      - name: Restore fushi_p2p staticlib from native artifact store
-        id: p2p_store
+      # P2P 互联与 SRS 复习都不属于 store_compliance.dart 的三类受限能力，App Store 包照带。
+      # 失败口径同其它平台：构建失败即 job 失败；出包后逐个核对 Runner 导出了 fp2p_* 与 ffsrs_*
+      # 符号（缺 ffsrs_* 的包装到手机上，复习页报「排程内核不可用」）。持久库存整个 prebuilt/ios
+      # （.a + 系统库清单 + 生成的 xcconfig）；命中只跳 Rust，两条出包路径上的 Runner 符号核对照跑。
+      - name: Restore iOS umbrella staticlib from native artifact store
+        id: ios_native_store
         uses: ./.github/actions/native-artifact-store
         with:
           mode: restore
-          name: ${{ steps.native_store.outputs.p2p }}
-          path: native/fushi_p2p/prebuilt/ios
-      - name: Set up Rust (fushi_p2p, iOS device target)
-        if: steps.p2p_store.outputs.hit != 'true'
+          name: ${{ steps.native_store.outputs.ios_native }}
+          path: native/fushi_ios_umbrella/prebuilt/ios
+      - name: Set up Rust (fushi_ios_umbrella, iOS device target)
+        if: steps.ios_native_store.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-ios
-      - name: Cache Rust build (fushi_p2p)
-        if: steps.p2p_store.outputs.hit != 'true'
+      - name: Cache Rust build (fushi_ios_umbrella)
+        if: steps.ios_native_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: native/fushi_p2p -> target
-          key: fushi-p2p-ios
-      - name: Build fushi_p2p (iOS device staticlib)
-        if: steps.p2p_store.outputs.hit != 'true'
+          workspaces: native/fushi_ios_umbrella -> target
+          key: fushi-ios-umbrella
+      - name: Build iOS umbrella staticlib (fushi_p2p + fushi_fsrs, device)
+        if: steps.ios_native_store.outputs.hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          bash native/fushi_p2p/build_ios_staticlib.sh device
+          bash native/fushi_ios_umbrella/build_ios_staticlib.sh device
       - name: Build iOS release app (no codesign)
         if: github.event.inputs.testflight_only != 'true'
         working-directory: fushi
@@ -2335,21 +2537,22 @@ jobs:
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       # 静态库 + -force_load 的失败形态是「链接成功、符号被 dead-strip / strip 掉」，
       # Release 配置下 dead-strip 与 strip 都开着，所以查的是真正要发出去的 Runner。
-      - name: Verify fushi_p2p symbols are linked into Runner (iOS release)
+      - name: Verify fushi_p2p + fushi_fsrs symbols are linked into Runner (iOS release)
         if: github.event.inputs.testflight_only != 'true'
         shell: bash
         run: |
           set -euo pipefail
           bash native/fushi_p2p/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
+          bash native/fushi_fsrs/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
       # 只在上面那道 Release Runner 符号核对真跑过之后才存（testflight_only 的 run 不走它）。
-      - name: Save fushi_p2p staticlib to native artifact store
-        if: steps.p2p_store.outputs.hit != 'true' && github.event.inputs.testflight_only != 'true'
+      - name: Save iOS umbrella staticlib to native artifact store
+        if: steps.ios_native_store.outputs.hit != 'true' && github.event.inputs.testflight_only != 'true'
         continue-on-error: true
         uses: ./.github/actions/native-artifact-store
         with:
           mode: save
-          name: ${{ steps.native_store.outputs.p2p }}
-          path: native/fushi_p2p/prebuilt/ios
+          name: ${{ steps.native_store.outputs.ios_native }}
+          path: native/fushi_ios_umbrella/prebuilt/ios
       - name: Prepare unsigned iOS IPA release asset
         if: github.event.inputs.testflight_only != 'true'
         working-directory: fushi
@@ -2360,7 +2563,7 @@ jobs:
           set -euo pipefail
           app_dir="build/ios/iphoneos/Runner.app"
           out_dir="build/release-artifacts"
-          payload_dir="$RUNNER_TEMP/hibiki-ios-payload"
+          payload_dir="$RUNNER_TEMP/fushi-ios-payload"
           if [ ! -d "$app_dir" ]; then
             echo "::error title=iOS app missing::Expected $app_dir"
             exit 1
@@ -2383,7 +2586,7 @@ jobs:
           name: desktop-artifacts-ios
           path: fushi/build/release-artifacts/fushi-*-ios.ipa
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
 
       # ---- App Store 签名 + TestFlight ---------------------------------
       # 上面的未签名 IPA 是 GitHub Release 资产，**保持不变**：老用户用自签工具
@@ -2489,7 +2692,7 @@ jobs:
           IOS_DIST_CERT_P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
         run: |
           set -euo pipefail
-          KEYCHAIN_PATH="$RUNNER_TEMP/hibiki-ios-signing.keychain-db"
+          KEYCHAIN_PATH="$RUNNER_TEMP/fushi-ios-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           P12_PATH="$RUNNER_TEMP/ios-distribution.p12"
           printf '%s' "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > "$P12_PATH"
@@ -2531,8 +2734,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          PROFILE_PATH="$RUNNER_TEMP/hibiki.mobileprovision"
-          PROFILE_PLIST="$RUNNER_TEMP/hibiki-profile.plist"
+          PROFILE_PATH="$RUNNER_TEMP/fushi.mobileprovision"
+          PROFILE_PLIST="$RUNNER_TEMP/fushi-profile.plist"
           printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
           # .mobileprovision 是 CMS 签名信封，先解出里面的 plist 才能读字段。
           security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
@@ -2567,6 +2770,20 @@ jobs:
             echo "CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution"
             echo "OTHER_CODE_SIGN_FLAGS = \$(inherited) --keychain $IOS_KEYCHAIN_PATH"
           } >> fushi/ios/Flutter/Release.xcconfig
+          # APNs 推送（反馈回复，fushi/ios/Runner/Runner.entitlements）：只有描述文件本身带
+          # aps-environment（App ID 已勾 Push Notifications 并重新生成描述文件）才接入那份
+          # entitlements——描述文件没有这项却签进去，codesign 会直接失败。值取描述文件里的
+          # （App Store 描述文件 = production），不在仓库里写死。
+          APS_ENV="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$PROFILE_PLIST" 2>/dev/null || true)"
+          if [ -n "$APS_ENV" ]; then
+            {
+              echo "CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements"
+              echo "FUSHI_APS_ENVIRONMENT = $APS_ENV"
+            } >> fushi/ios/Flutter/Release.xcconfig
+            echo "APNs push entitlement enabled (aps-environment=$APS_ENV)"
+          else
+            echo "Provisioning profile has no aps-environment: building without push (feedback replies fall back to background checks)"
+          fi
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -2600,15 +2817,48 @@ jobs:
           --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
-      - name: Verify fushi_p2p symbols are linked into Runner (App Store archive)
+      - name: Verify fushi_p2p + fushi_fsrs symbols are linked into Runner (App Store archive)
         if: steps.signing.outputs.testflight == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          bash native/fushi_p2p/verify_abi.sh \
-            fushi/build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app/Runner nm
-      - name: Upload to TestFlight
+          runner=fushi/build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app/Runner
+          bash native/fushi_p2p/verify_abi.sh "$runner" nm
+          bash native/fushi_fsrs/verify_abi.sh "$runner" nm
+      # TestFlight 上传是不可回收的外发，搬到下面的 `testflight` job：正式 / 测试版
+      # dispatch 在那里等审批，这里只把签名 IPA 交给它。artifact 名刻意不叫
+      # desktop-artifacts-*：publish job 按那个前缀收 Release 资产，App Store 签名包
+      # 绝不能混进 Release（侧载用户只吃未签名 IPA）。非审批 run 当天就传完，保留 1 天。
+      - name: Upload signed TestFlight IPA artifact
         if: steps.signing.outputs.testflight == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-testflight-signed-ipa
+          path: fushi/build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 1 }}
+
+  # TestFlight 上传（2026-10-17 从 ios job 拆出）：与 publish 同一个审批门。正式 / 测试版
+  # dispatch 走环境 `release-publish`，ios job 签好的 IPA 停在这里等批准；push 的
+  # 「每第三次」debug 与 testflight_only 补传走无保护规则的 `release-auto`，照旧直传。
+  # 门本身（传不传）仍是 ios job「Resolve Apple signing mode」那一处判定，这里只认它的输出。
+  testflight:
+    needs: ios
+    if: ${{ needs.ios.outputs.testflight == 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    environment: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}
+    runs-on: macos-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Download signed TestFlight IPA
+        uses: actions/download-artifact@v7
+        with:
+          name: ios-testflight-signed-ipa
+          path: fushi/build/ios/ipa
+      # 步骤 if 与 job 级 if 同一判据，留在步骤上是纵深防御：缺 Apple 凭据时绝不进上传。
+      - name: Upload to TestFlight
+        if: needs.ios.outputs.testflight == 'true'
         working-directory: fushi
         shell: bash
         env:
@@ -2644,43 +2894,17 @@ jobs:
             --apiKey "$APPSTORE_API_KEY_ID" --apiIssuer "$APPSTORE_API_ISSUER_ID"
           echo "已上传 TestFlight；App Store Connect 处理完成（通常 5-30 分钟）后才会出现在测试员列表里。"
 
-  kazumi-adhoc:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.kazumi_adhoc == 'true' }}
-    runs-on: macos-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-      - name: Sign Kazumi for registered devices
-        shell: bash
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
-          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
-          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
-          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
-          IOS_DIST_CERT_P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
-          KAZUMI_DEVICE_1_NAME: ${{ github.event.inputs.kazumi_device_1_name }}
-          KAZUMI_DEVICE_1_UDID: ${{ github.event.inputs.kazumi_device_1_udid }}
-          KAZUMI_DEVICE_2_NAME: ${{ github.event.inputs.kazumi_device_2_name }}
-          KAZUMI_DEVICE_2_UDID: ${{ github.event.inputs.kazumi_device_2_udid }}
-          KAZUMI_OUTPUT_DIR: ${{ runner.temp }}/kazumi-output
-        run: bash tool/sign_kazumi_adhoc.sh
-      - name: Upload signed Kazumi IPA
-        uses: actions/upload-artifact@v7
-        with:
-          name: kazumi-2.3.0-internal-adhoc
-          path: ${{ runner.temp }}/kazumi-output/*
-          if-no-files-found: error
-          retention-days: 14
-
   publish:
     needs: [windows, macos, ios]
     # testflight_only 下三个平台 job 要么 skipped 要么只传了 TestFlight，没有任何
     # Release 资产可发；整个 publish 跳过，rolling debug / 清单一根手指都不碰。
     # BUG-2817：always() 会无视上游 job 被跳过，这里必须自己再挡一次非应用 tag。
-    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    # 审批门（2026-10-17）：正式 / 测试版 dispatch 走环境 `release-publish`（必需审批人
+    # hajisensai），三个平台构建完后停在这里等「发版」批准；push / `release` 事件走无
+    # 保护规则的 `release-auto`。build_only 什么都不发，整个 job 跳过、不弹审批。理由与
+    # 流程见 release.yml publish-android job 头注释与 docs/agent/build.md「正式版预构建与审批发布」。
+    if: ${{ always() && github.event.inputs.testflight_only != 'true' && github.event.inputs.build_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    environment: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -2902,7 +3126,8 @@ jobs:
           tag_name: ${{ steps.channel.outputs.tag }}
           files: |
             fushi/build/release-artifacts/fushi-*-windows-setup.exe
-            fushi/build/release-artifacts/fushi-*-macos.zip
+            fushi/build/release-artifacts/fushi-*-macos-arm64.zip
+            fushi/build/release-artifacts/fushi-*-macos-arm64.dmg
             fushi/build/release-artifacts/fushi-*-ios.ipa
       # TODO-1049 / TODO-1123 / TODO-1129: same rolling-release asset GC as
       # release.yml. softprops upserts same-named assets but never removes a
@@ -2951,12 +3176,13 @@ jobs:
           # KEEP_SEQS by the OTHER platforms' newer seqs -- so another platform's
           # prune deletes it and the rolling release "loses" that device. Scope
           # the candidate set to THIS workflow's filename shapes (Windows:
-          # *-windows-setup.exe / macOS: *-macos.zip / iOS: *-ios.ipa) so it keeps
+          # *-windows-setup.exe / macOS: *-macos-arm64.zip + .dmg (+ legacy *-macos.zip) /
+          # iOS: *-ios.ipa) so it keeps
           # its own top KEEP_SEQS and never touches Android's assets.
           PLATFORM_ASSETS=()
           for name in "${ASSET_NAMES[@]}"; do
             case "$name" in
-              *-windows-setup.exe|*-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
+              *-windows-setup.exe|*-macos-arm64.zip|*-macos-arm64.dmg|*-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
             esac
           done
           # Check length BEFORE re-expanding the (possibly empty) array: on macOS
@@ -2969,7 +3195,7 @@ jobs:
           fi
           ASSET_NAMES=("${PLATFORM_ASSETS[@]}")
           # Asset names embed the versionName token `-<base>-debug.<seq>-` (e.g.
-          # hibiki-0.11.1-debug.5633-3cf5905-windows-setup.exe). Parse the current
+          # fushi-0.11.1-debug.5633-3cf5905-windows-setup.exe). Parse the current
           # build's seq from BUILD_VERSION_NAME (0.11.1-debug.5633), extract every
           # asset's seq the same way, keep the top KEEP_SEQS distinct seqs (numeric
           # desc), and delete only assets whose seq is NOT in that set. Assets with
@@ -3034,7 +3260,8 @@ jobs:
           make_latest: ${{ steps.channel.outputs.make_latest }}
           files: |
             fushi/build/release-artifacts/fushi-*-windows-setup.exe
-            fushi/build/release-artifacts/fushi-*-macos.zip
+            fushi/build/release-artifacts/fushi-*-macos-arm64.zip
+            fushi/build/release-artifacts/fushi-*-macos-arm64.dmg
             fushi/build/release-artifacts/fushi-*-ios.ipa
       # TODO-705: publish a mirror update manifest so beta/debug in-China update
       # checks succeed (raw.githubusercontent.com is proxiable; api.github.com
@@ -3083,6 +3310,63 @@ jobs:
           VERSION: ${{ steps.channel.outputs.build_version_name }}
           RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
           ARTIFACTS_DIR: fushi/build/release-artifacts
-          ASSET_GLOB: fushi-*-macos.zip fushi-*-ios.ipa
+          ASSET_GLOB: fushi-*-macos-arm64.zip fushi-*-macos-arm64.dmg fushi-*-ios.ipa
           PLATFORM_LABEL: apple
         run: bash tool/publish_update_manifest.sh
+      # 反馈发布回填：三个平台并行构建、失败的平台不出产物（上面 download-artifact 的
+      # 注释），所以按产物是否真的在本次发布里逐平台回填，不能一刀切记三个平台。
+      # 判据用 shell 的 compgen 而不是 hashFiles()：路径过滤守卫要求 hashFiles 模式
+      # 在仓库磁盘上真实存在，构建产物不满足。绝不能让发布变红：步骤 continue-on-error，
+      # 脚本内部失败也只打 ::warning。守卫：fushi/test/build/feedback_workflow_guard_test.dart。
+      - name: Backfill feedback fix releases (Windows)
+        if: steps.channel.outputs.publish_manifest == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          FEEDBACK_CI_TOKEN: ${{ secrets.FEEDBACK_CI_TOKEN }}
+          FEEDBACK_API_BASE: ${{ vars.FEEDBACK_API_BASE }}
+          CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
+          PLATFORM: windows
+          VERSION: ${{ steps.channel.outputs.build_version_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if compgen -G 'fushi/build/release-artifacts/fushi-*-windows-setup.exe' >/dev/null; then
+            bash tool/feedback_mark_released.sh
+          else
+            echo "No Windows installer in this publish; skipping feedback backfill."
+          fi
+      - name: Backfill feedback fix releases (macOS)
+        if: steps.channel.outputs.publish_manifest == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          FEEDBACK_CI_TOKEN: ${{ secrets.FEEDBACK_CI_TOKEN }}
+          FEEDBACK_API_BASE: ${{ vars.FEEDBACK_API_BASE }}
+          CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
+          PLATFORM: macos
+          VERSION: ${{ steps.channel.outputs.build_version_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if compgen -G 'fushi/build/release-artifacts/fushi-*-macos-arm64.zip' >/dev/null ||
+            compgen -G 'fushi/build/release-artifacts/fushi-*-macos-arm64.dmg' >/dev/null; then
+            bash tool/feedback_mark_released.sh
+          else
+            echo "No macOS package in this publish; skipping feedback backfill."
+          fi
+      - name: Backfill feedback fix releases (iOS)
+        if: steps.channel.outputs.publish_manifest == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          FEEDBACK_CI_TOKEN: ${{ secrets.FEEDBACK_CI_TOKEN }}
+          FEEDBACK_API_BASE: ${{ vars.FEEDBACK_API_BASE }}
+          CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
+          PLATFORM: ios
+          VERSION: ${{ steps.channel.outputs.build_version_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if compgen -G 'fushi/build/release-artifacts/fushi-*-ios.ipa' >/dev/null; then
+            bash tool/feedback_mark_released.sh
+          else
+            echo "No iOS package in this publish; skipping feedback backfill."
+          fi

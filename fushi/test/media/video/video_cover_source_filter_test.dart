@@ -77,7 +77,7 @@ void main() {
       // 早退发生在 AppPaths / ffmpeg 之前：本测试无 path_provider mock、无 ffmpeg，
       // 若有人删掉抽取器层的清单拒收，这里会因 MissingPluginException 立即红。
       final Directory tmp =
-          Directory.systemTemp.createTempSync('hibiki_cover_filter_');
+          Directory.systemTemp.createTempSync('fushi_cover_filter_');
       addTearDown(() {
         try {
           tmp.deleteSync(recursive: true);
@@ -306,7 +306,9 @@ void main() {
       // 34 条候选照样刷满用户可见错误日志——BUG-1867 只修了一半。
       final int embedded =
           source.indexOf('await extractEmbeddedVideoCoverViaFfmpeg(');
-      final int frame = source.indexOf('return extractVideoFrameViaFfmpeg(');
+      // BUG-3044：抽帧改经 grabFirstNonBlackCoverFrame 按候选时刻跳黑帧，开关在
+      // 这一层透传（首个候选沿用调用方的开关，补救候选恒为诊断级）。
+      final int frame = source.indexOf('return grabFirstNonBlackCoverFrame(');
       expect(embedded, greaterThanOrEqualTo(0));
       expect(frame, greaterThan(embedded));
       final int embeddedFlag =

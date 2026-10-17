@@ -10,7 +10,8 @@ library;
 
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart';
 
@@ -50,9 +51,7 @@ void main() {
   group('WindowFullscreenHost widget', () {
     testWidgets('挂载即登记、卸载即注销', (WidgetTester tester) async {
       await tester.pumpWidget(
-        const MaterialApp(
-          home: WindowFullscreenHost(child: SizedBox.shrink()),
-        ),
+        const MaterialApp(home: WindowFullscreenHost(child: SizedBox.shrink())),
       );
       expect(WindowFullscreenHosts.hasVisibleHost, isTrue);
 
@@ -86,6 +85,193 @@ void main() {
         WindowFullscreenHosts.hasVisibleHost,
         isTrue,
         reason: '盖在上面的页面退掉后，宿主重新成为栈顶，全屏键该恢复',
+      );
+    });
+  });
+
+  group('BUG-2913：剧集列表换集接管全屏', () {
+    // 视频页换集不 pop：push 新集页 → removeRoute 旧集页。被摘掉的旧集页要等上面
+    // 那层的入场过渡结束才 dispose，而此时新集页往往已经压上了自己的全屏路由。
+    // 这一刻栈上可见的只有全屏路由——它必须自己是宿主，否则旧页 dispose 的帧末
+    // 判「无宿主」，把用户正在看的原生全屏退掉。
+    late List<bool> setFullscreenCalls;
+
+    setUp(() {
+      setFullscreenCalls = <bool>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_windowChannel, (MethodCall call) async {
+            switch (call.method) {
+              case 'isFullscreen':
+                return true;
+              case 'setFullscreen':
+                setFullscreenCalls.add(
+                  (call.arguments as Map<Object?, Object?>)['fullscreen']!
+                      as bool,
+                );
+                return null;
+            }
+            return null;
+          });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_windowChannel, null);
+    });
+
+    Future<void> runTakeover(
+      WidgetTester tester, {
+      required bool fullscreenRouteIsHost,
+    }) async {
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(navigatorKey: navKey, home: const SizedBox()),
+      );
+      final MaterialPageRoute<void> oldEpisode = MaterialPageRoute<void>(
+        builder: (BuildContext _) =>
+            const WindowFullscreenHost(child: SizedBox()),
+      );
+      navKey.currentState!.push(oldEpisode);
+      await tester.pumpAndSettle();
+
+      // 新集页的全屏路由（与 _pushNeutralizedVideoFullscreen 同为零时长过渡）。
+      const Widget content = SizedBox();
+      navKey.currentState!.push(
+        PageRouteBuilder<void>(
+          pageBuilder: (_, __, ___) => fullscreenRouteIsHost
+              ? const WindowFullscreenHost(child: content)
+              : content,
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      navKey.currentState!.removeRoute(oldEpisode);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('全屏路由是宿主：旧集页离场不退全屏', (WidgetTester tester) async {
+      await runTakeover(tester, fullscreenRouteIsHost: true);
+      expect(WindowFullscreenHosts.hasVisibleHost, isTrue);
+      expect(
+        setFullscreenCalls,
+        isEmpty,
+        reason: '全屏路由在栈顶且登记了宿主，旧集页 dispose 不该归还窗口全屏',
+      );
+    });
+
+    testWidgets(
+      '对照：全屏路由不登记宿主时旧集页离场会退全屏（证明本组能咬住回归）',
+      (WidgetTester tester) async {
+        await runTakeover(tester, fullscreenRouteIsHost: false);
+        expect(WindowFullscreenHosts.hasVisibleHost, isFalse);
+        expect(setFullscreenCalls, <bool>[false]);
+      },
+      // 归还走 runner 的 app.fushi/window channel，只有 Windows 宿主会打到它。
+      skip: !Platform.isWindows,
+    );
+  });
+
+  group('BUG-3223：全屏路由在 post-frame 里压栈、同帧旧宿主离场', () {
+    // BUG-2913 的修法只在全屏路由的 pageBuilder 里包 [WindowFullscreenHost]，登记要等
+    // 路由内容首次 build。真实换集里新集页就绪后在 post-frame 回调里压全屏路由，被
+    // removeRoute 摘掉的旧集页恰好在同一批 post-frame 里做离场判定——此刻全屏路由
+    // 已是 current、内容还没 build，注册表里只剩被它盖住的新集页，于是误退全屏
+    // （Windows itest 复现：换集后约 1.3 s 原生全屏掉线）。
+    late List<bool> setFullscreenCalls;
+
+    setUp(() {
+      setFullscreenCalls = <bool>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_windowChannel, (MethodCall call) async {
+            switch (call.method) {
+              case 'isFullscreen':
+                return true;
+              case 'setFullscreen':
+                setFullscreenCalls.add(
+                  (call.arguments as Map<Object?, Object?>)['fullscreen']!
+                      as bool,
+                );
+                return null;
+            }
+            return null;
+          });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_windowChannel, null);
+    });
+
+    Future<void> runSameFrameTakeover(
+      WidgetTester tester, {
+      required bool hostRoute,
+    }) async {
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(navigatorKey: navKey, home: const SizedBox()),
+      );
+      Route<void> page() => MaterialPageRoute<void>(
+        builder: (BuildContext _) =>
+            const WindowFullscreenHost(child: SizedBox()),
+      );
+      final Route<void> oldEpisode = page();
+      navKey.currentState!.push(oldEpisode);
+      await tester.pumpAndSettle();
+      // 接管：新集页压在上面（旧全屏路由已被 removeRoute，这里省略）。
+      navKey.currentState!.push(page());
+      await tester.pumpAndSettle();
+
+      // 同一帧：先登记「新集页就绪 → 压全屏路由」的 post-frame 回调，再摘掉旧集页
+      // （它的离场判定在这一帧 build 时登记，排在压栈回调之后）。
+      Widget content(
+        BuildContext _,
+        Animation<double> __,
+        Animation<double> ___,
+      ) => const WindowFullscreenHost(child: SizedBox());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        navKey.currentState!.push(
+          hostRoute
+              ? WindowFullscreenHostPageRoute<void>(
+                  pageBuilder: content,
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                )
+              : PageRouteBuilder<void>(
+                  pageBuilder: content,
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                ),
+        );
+      });
+      navKey.currentState!.removeRoute(oldEpisode);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('路由级登记：同帧离场判定看得见刚压上的全屏路由，不退全屏', (WidgetTester tester) async {
+      await runSameFrameTakeover(tester, hostRoute: true);
+      expect(WindowFullscreenHosts.hasVisibleHost, isTrue);
+      expect(setFullscreenCalls, isEmpty, reason: '全屏路由 push 即登记，不该归还窗口全屏');
+    });
+
+    testWidgets('对照：只靠 widget 登记时同帧离场判定会退全屏（证明本组能咬住回归）', (
+      WidgetTester tester,
+    ) async {
+      await runSameFrameTakeover(tester, hostRoute: false);
+      expect(setFullscreenCalls, <bool>[false]);
+    }, skip: !Platform.isWindows);
+
+    test('视频全屏路由用的是路由级宿主', () {
+      final String src = maskComments(
+        File(
+          'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
+        ).readAsStringSync(),
+      );
+      expect(
+        src,
+        contains('WindowFullscreenHostPageRoute<void>('),
+        reason: '视频全屏路由必须 push 即登记宿主，否则换集同帧离场判定会误退全屏',
       );
     });
   });
@@ -151,8 +337,9 @@ void main() {
     test('宿主离场时的归还判定推到帧末', () {
       // 当场判 = 每次 pushReplacement 换集都把全屏闪掉一次（BUG-839 场景）。
       final String hostSrc = maskComments(
-        File('lib/src/shortcuts/window_fullscreen_hosts.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/shortcuts/window_fullscreen_hosts.dart',
+        ).readAsStringSync(),
       );
       final String release = methodBody(
         hostSrc,
@@ -168,8 +355,9 @@ void main() {
 
     test('小说页底栏有全屏按钮，Esc 先退全屏再退书', () {
       final String chrome = maskComments(
-        File('lib/src/pages/implementations/reader_fushi/chrome.part.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+        ).readAsStringSync(),
       );
       expect(
         chrome,
@@ -178,8 +366,9 @@ void main() {
       );
 
       final String caret = maskComments(
-        File('lib/src/pages/implementations/reader_fushi/caret.part.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/pages/implementations/reader_fushi/caret.part.dart',
+        ).readAsStringSync(),
       );
       expect(
         caret,
@@ -196,8 +385,9 @@ void main() {
       //   ② 底栏按钮 —— 自己那条路；
       //   ③ Esc 阶梯 —— 退的是同一个全屏，不复位图标就撒谎。
       final String chrome = maskComments(
-        File('lib/src/pages/implementations/reader_fushi/chrome.part.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+        ).readAsStringSync(),
       );
 
       final String initial = methodBody(
@@ -236,15 +426,18 @@ void main() {
       // 上一条只证明 helper 写对了；这条证明它**被调用**——helper 存在但没人调，
       // 是同一个 bug 的另一种活法。
       final String page = maskComments(
-        File('lib/src/pages/implementations/reader_fushi_page.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/pages/implementations/reader_fushi_page.dart',
+        ).readAsStringSync(),
       );
       final int idxInit = page.indexOf('void initState() {');
       expect(idxInit, isNonNegative, reason: 'initState 锚点没了，守卫失去判据');
       final int idxDispose = page.indexOf('void dispose() {', idxInit);
       expect(idxDispose, greaterThan(idxInit));
-      final int idxCall =
-          page.indexOf('_readInitialWindowFullscreenState()', idxInit);
+      final int idxCall = page.indexOf(
+        '_readInitialWindowFullscreenState()',
+        idxInit,
+      );
       expect(
         idxCall,
         inInclusiveRange(idxInit, idxDispose),
@@ -261,8 +454,9 @@ void main() {
       // 用户用 F11 进的全屏不会置所有权标志，但在他眼里那和按钮进的是同一个全屏，
       // Esc 都该先退它，而不是连人带全屏一起退出漫画。
       final String manga = maskComments(
-        File('lib/src/media/manga/reader/manga_fushi_page.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/media/manga/reader/manga_fushi_page.dart',
+        ).readAsStringSync(),
       );
       final String exitBeforePop = methodBody(
         manga,
@@ -272,6 +466,8 @@ void main() {
     });
   });
 }
+
+const MethodChannel _windowChannel = MethodChannel('app.fushi/window');
 
 /// 往栈上推一个**整页**路由（不是弹层）：模拟「从内容页进设置页」。
 void unawaitedPush(GlobalKey<NavigatorState> navKey) {

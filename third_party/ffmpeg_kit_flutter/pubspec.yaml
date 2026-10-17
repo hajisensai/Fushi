@@ -17,7 +17,7 @@ flutter:
         pluginClass: FFmpegKitFlutterPlugin
       ios:
         pluginClass: FFmpegKitFlutterPlugin
-      # Hibiki: macOS（及其它桌面）走 CliFfmpegBackend（系统/捆绑 ffmpeg CLI），不需要
+      # Fushi: macOS（及其它桌面）走 CliFfmpegBackend（系统/捆绑 ffmpeg CLI），不需要
       # ffmpeg-kit 原生库；移除 macos 平台声明，避免 macOS 构建去拉已停服的 cocoapods。
 
 dependencies:

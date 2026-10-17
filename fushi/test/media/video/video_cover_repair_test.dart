@@ -25,7 +25,7 @@ void main() {
 
   setUp(() {
     AppPaths.debugResetDocumentsLayoutCache();
-    tmp = Directory.systemTemp.createTempSync('hibiki_cover_repair_');
+    tmp = Directory.systemTemp.createTempSync('fushi_cover_repair_');
     docs = Directory(p.join(tmp.path, 'documents'))
       ..createSync(recursive: true);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

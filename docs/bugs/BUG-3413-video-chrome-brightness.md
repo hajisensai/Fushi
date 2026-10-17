@@ -1,0 +1,17 @@
+## BUG-3413 · 视频播放器 chrome 与面板不跟随日间/深色模式
+- **报告**：2026-10-14（用户：视频播放器「不吃深色模式和日间模式配色」——日间模式下设置面板是固定的中性深色，面板旁边的面板切换竖条（字幕 / 音频 / 画质 / 设置）却是浅色淡紫，一深一浅；「视频其他地方也是不吃深色模式和日间模式」，指 OSD：顶 / 底栏胶囊、音量 / 倍速 / 亮度浮层、控制按钮）
+- **真实性**：✅ 真 bug。M3E 播放器 chrome 的配色工厂把亮度写死成深色，切换竖条却没进面板主题：
+  - `fushi/lib/src/media/video/video_m3e_chrome.dart:56-59`（修前）`videoM3eChromeScheme` 恒 `ColorScheme.fromSeed(brightness: Brightness.dark)`，缓存 key 只有主色（`:56`、中性方案 `:101` 同理），切亮度也命中旧方案；
+  - 同文件 `:67` / `:73` / `:76`（修前）`kVideoM3eNeutralSurface = #2D2D2D`、次要前景白 70%、tonal 容器白 12% 写死，胶囊里按钮前景恒 `Colors.white`；
+  - `fushi/lib/src/media/video/video_m3e_panel_theme.dart:32`（修前）面板方案按主色缓存、恒深色；
+  - `fushi/lib/src/media/video/video_side_panel.dart:513`（修前）`ReaderPanelSwitcherRail` 挂在 `VideoFloatingPanelSurface` 外面、读的是 app 主题（日间=浅色），于是与深色面板一深一浅；
+  - `fushi/lib/src/pages/implementations/video_fushi_page.dart:1417` / `:1459`（修前）按钮前景恒 `videoChromeNeutralForeground`（白）、OSD 取 `inverseSurface`（日间深、深色反而浅，与胶囊正好反着来）。
+- **[x] ① 已修复** — `d5b528d044`。配色判断集中在两只工厂文件，消费点只拿结果：
+  - `videoM3eChromeScheme` / `videoM3eNeutralChromeScheme` 按 `cs.brightness` 生成同亮度方案，缓存 key 改为 `(主色, 亮度)`；新增 `videoM3eNeutralSurface` / `videoM3eSurfaceAlpha`（深色 #2D2D2D@0.86，日间 #EDEDED@0.92）/ `videoM3eForeground` / `videoM3eSecondaryForeground` / `videoM3eChromeForegroundOf`（墨水屏恒白）/ `videoM3eTonalContainer(cs)`（日间=前景 8%）/ `videoM3eTranslucentSurface`（画面中央大播放键 / ±N 秒键的圆底，日间至少 0.8 不透明）。日间中性方案：浅灰表面族 + 近黑 #1B1B1B / 黑 70% 前景。深色模式取值与旧实现一致。
+  - `videoM3ePanelScheme` 直接复用 `videoM3eChromeScheme`（同一缓存），面板表面 alpha 随亮度；新增 `videoM3ePanelBackdrop`（网页视频页加载 / 失败态页底：深色黑底、日间面板方案 surface）。
+  - 切换竖条外包 `VideoM3ePanelTheme`，与面板读同一份主题（底部抽屉形态的横向切换条本就在面板表面内）。
+  - 胶囊内的按钮 / 标题 / 副标题前景、OSD 卡片（音量 / 亮度 / 通知 / 横滑跳转 / 小窗圆钮）底色与前景、网页视频页顶栏前景改走上述工厂。
+  - **不跟随**的（有意）：直接压在画面上、没有自有表面的东西——暂停提示、双击快进波纹、底部暗角、进度细轨 / 章节刻度、侧浮单钮（`layout.part.dart`）——保持白色前景，日间变黑会在暗画面上看不见。字幕样式不动。
+  - Apple（`isGlassDesign`）分支与墨水屏分支未改：Apple 走 `video_apple_chrome.dart` 玻璃 + 白字体系，墨水屏胶囊恒纯黑 + 白描边、面板走主题实色 + 描边。
+- **[x] ② 已加自动化测试** — `d5b528d044`。`fushi/test/media/video/video_side_panel_test.dart`（日间 / 深色 app 主题下面板与切换竖条的方案亮度分别 light / dark 且二者同一份方案；同主色不同亮度不串缓存；日间浅底深字、深色深底白字）、`fushi/test/media/video/video_m3e_chrome_test.dart`（胶囊底色与按钮字形随亮度）；既有守卫 `video_theme_color_static_test.dart` / `test/widgets/video_chrome_colors_test.dart` 只把「按钮前景恒白」一条改为「Apple 白 / M3E 走胶囊前景 helper」，仍禁止退回裸 `cs.primary` / `cs.onSurface`；`test/widgets/design_widgets_migration_test.dart` 的面板取色对话框用例把「面板恒深色」改为「面板主题亮度 = app 亮度」，对比度 ≥ 4.5 的约束保留（日间实测 14.0）。定向 10 个文件 81 通过 / 1 跳过（预览渲染器默认 skip），全量 `flutter analyze` 零 issue。
+- **备注**：真实像素预览（widget 测试离屏光栅，不入库）：`D:\codehibiki\.claude\video-brightness-preview\video_chrome_light.png` / `video_chrome_dark.png`（Mac 上离屏光栅，日间面板 / 竖条 / 胶囊同为浅底深字，深色同为深底白字）。未在真 app 上复测。

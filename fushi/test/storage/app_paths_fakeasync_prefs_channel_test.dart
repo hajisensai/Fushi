@@ -48,7 +48,7 @@ void main() {
 
   setUpAll(() {
     documentsDir =
-        Directory.systemTemp.createTempSync('hibiki_app_paths_fakeasync');
+        Directory.systemTemp.createTempSync('fushi_app_paths_fakeasync');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => documentsDir.path,
@@ -114,7 +114,7 @@ void main() {
       isTrue,
       reason: '找不到 test/flutter_test_config.dart —— 套件级 harness 没了，'
           'BUG-1400 的 prefs 钉死会对全部 widget 测试原地复活。'
-          '（flutter test 的 cwd 是 hibiki 包根；扫描路径失效也走这一条，'
+          '（flutter test 的 cwd 是 fushi 包根；扫描路径失效也走这一条，'
           '不许静默变成永远绿的摆设。）',
     );
 

@@ -5,7 +5,7 @@
 ///
 /// 历史：这套实现最初以 `Ocr*` 前缀住在 `lib/src/ocr/ocr_inference_ort.dart`，
 /// 有声书 ASR 接入后抬到本文件成为唯一实现；OCR 层只剩薄封装
-/// （manga-ocr 导出名兼容的输入名对齐 + `hibiki.ocr` 日志通道）。
+/// （manga-ocr 导出名兼容的输入名对齐 + `fushi.ocr` 日志通道）。
 library;
 
 import 'dart:developer' as developer;
@@ -14,18 +14,19 @@ import 'dart:typed_data';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:flutter/services.dart';
 
-// `kOnnxLogName` 两边都有：本仓这份是 'hibiki.onnx' 日志通道，明确 hide 掉
+// `kOnnxLogName` 两边都有：本仓这份是 'fushi.onnx' 日志通道，明确 hide 掉
 // 包里那份，别靠「本地声明遮蔽 import」这条隐式规则。
 import 'package:fushi_asr_core/asr_core.dart' hide kOnnxLogName;
 import 'package:fushi_engine/ocr/ocr_tensor_handles.dart'
     show OcrHandleRunResult, OcrHandleSession, OcrTensorHandle;
+
 /// 共享层默认的 `dart:developer` 日志通道名。子系统可经 [logName] 参数换成自己
-/// 的通道（OCR 用 `hibiki.ocr`），日志读者按通道过滤即可分清是谁在建会话。
+/// 的通道（OCR 用 `fushi.ocr`），日志读者按通道过滤即可分清是谁在建会话。
 ///
 /// 用 `dart:developer` 而不是 `debugPrint`：整卷 OCR / 整本转录跑在
 /// `Isolate.spawn` 出来的后台 isolate 里，那里没有 Flutter binding，`debugPrint`
 /// 的节流实现依赖 binding 的 Timer 调度；`developer.log` 在任何 isolate 都可直接用。
-const String kOnnxLogName = 'hibiki.onnx';
+const String kOnnxLogName = 'fushi.onnx';
 
 OrtProvider _toOrtProvider(OnnxExecutionProvider provider) {
   switch (provider) {
@@ -46,10 +47,10 @@ OrtProvider _toOrtProvider(OnnxExecutionProvider provider) {
 /// 运行时回报的其他 EP（TensorRT、XNNPACK…）两个子系统都不选，落 null 被滤掉。
 const Map<OrtProvider, OnnxExecutionProvider> _acceleratedProviders =
     <OrtProvider, OnnxExecutionProvider>{
-  OrtProvider.CUDA: OnnxExecutionProvider.cuda,
-  OrtProvider.DIRECT_ML: OnnxExecutionProvider.directml,
-  OrtProvider.CORE_ML: OnnxExecutionProvider.coreml,
-};
+      OrtProvider.CUDA: OnnxExecutionProvider.cuda,
+      OrtProvider.DIRECT_ML: OnnxExecutionProvider.directml,
+      OrtProvider.CORE_ML: OnnxExecutionProvider.coreml,
+    };
 
 /// 把算法层的语义输入名对齐到会话元数据里真实输入名的钩子。
 ///
@@ -57,10 +58,11 @@ const Map<OrtProvider, OnnxExecutionProvider> _acceleratedProviders =
 /// `asr_types.dart` 集中核实，不需要也不该猜）。OCR 传
 /// `resolveOcrSessionInputs`：manga-ocr 下载源不同导出版本用过 `pixel_values` /
 /// `images` 等名字，单输入模型按元数据对齐——那是 OCR 特有的兼容层，不进共享层。
-typedef OnnxSessionInputResolver = Map<String, OnnxTensor> Function(
-  Map<String, OnnxTensor> inputs,
-  List<String> sessionInputNames,
-);
+typedef OnnxSessionInputResolver =
+    Map<String, OnnxTensor> Function(
+      Map<String, OnnxTensor> inputs,
+      List<String> sessionInputNames,
+    );
 
 /// 把插件后端的 `PlatformException` 拆成 `code: message` 装进
 /// [OnnxProviderResolution.fallbackReason]。
@@ -90,8 +92,8 @@ class OrtOnnxSessionFactory implements OnnxSessionFactory {
     OnnxRuntime? runtime,
     OnnxSessionInputResolver? resolveInputs,
     this.logName = kOnnxLogName,
-  })  : _runtime = runtime ?? OnnxRuntime(),
-        _resolveInputs = resolveInputs {
+  }) : _runtime = runtime ?? OnnxRuntime(),
+       _resolveInputs = resolveInputs {
     _installFushiProviderFailureDescriber();
   }
 
@@ -135,6 +137,17 @@ class OrtOnnxSessionFactory implements OnnxSessionFactory {
     }
   }
 
+  /// 问 NVIDIA 驱动有没有能跑 CUDA 的卡（只加载 `nvcuda.dll`，不需要 CUDA 运行库
+  /// 已下载）。见 [probeCuda]。
+  Future<CudaProbe> probeCuda() => probeCudaWith(_runtime);
+
+  /// 把 [dir] 下的 CUDA 插件 EP 注册进本进程。见 [registerCudaRuntime]。
+  Future<CudaRegistration> registerCudaRuntime(String dir) =>
+      registerCudaRuntimeWith(_runtime, dir);
+
+  /// 本进程用哪份 onnxruntime。见 [ortRuntimeInfo]。
+  Future<OrtRuntimeInfo> runtimeInfo() => ortRuntimeInfoWith(_runtime);
+
   @override
   Future<Set<OnnxExecutionProvider>> availableAcceleratedProviders() async {
     final List<OrtProvider> providers = await _runtime.getAvailableProviders();
@@ -154,19 +167,19 @@ class OrtOnnxSessionFactory implements OnnxSessionFactory {
   }) async {
     final OrtSession session =
         await createOnnxSessionWithProviderFallback<OrtSession>(
-      providers: providers,
-      onResolved: onProviderResolved,
-      logName: logName,
-      create: (List<OnnxExecutionProvider> effectiveProviders) =>
-          _runtime.createSession(
-        modelPath,
-        options: OrtSessionOptions(
-          providers: effectiveProviders.map(_toOrtProvider).toList(),
-          intraOpNumThreads: intraOpNumThreads,
-          freeDimensionOverrides: freeDimensionOverrides,
-        ),
-      ),
-    );
+          providers: providers,
+          onResolved: onProviderResolved,
+          logName: logName,
+          create: (List<OnnxExecutionProvider> effectiveProviders) =>
+              _runtime.createSession(
+                modelPath,
+                options: OrtSessionOptions(
+                  providers: effectiveProviders.map(_toOrtProvider).toList(),
+                  intraOpNumThreads: intraOpNumThreads,
+                  freeDimensionOverrides: freeDimensionOverrides,
+                ),
+              ),
+        );
     return _OrtOnnxSession(session, _resolveInputs);
   }
 }
@@ -199,8 +212,9 @@ class _OrtOnnxSession implements OnnxSession, OcrHandleSession {
     int elems = 0;
     try {
       final OnnxSessionInputResolver? resolve = _resolveInputs;
-      final Map<String, OnnxTensor> resolvedInputs =
-          resolve == null ? inputs : resolve(inputs, _session.inputNames);
+      final Map<String, OnnxTensor> resolvedInputs = resolve == null
+          ? inputs
+          : resolve(inputs, _session.inputNames);
       for (final MapEntry<String, OnnxTensor> entry in resolvedInputs.entries) {
         ortInputs[entry.key] = await _toOrtValue(entry.value);
       }
@@ -266,8 +280,8 @@ class _OrtOnnxSession implements OnnxSession, OcrHandleSession {
       final OnnxSessionInputResolver? resolve = _resolveInputs;
       final Map<String, OnnxTensor> resolvedTensors =
           resolve == null || tensors.isEmpty || handles.isNotEmpty
-              ? tensors
-              : resolve(tensors, _session.inputNames);
+          ? tensors
+          : resolve(tensors, _session.inputNames);
       for (final MapEntry<String, OnnxTensor> entry
           in resolvedTensors.entries) {
         uploaded[entry.key] = await _toOrtValue(entry.value);
@@ -369,4 +383,229 @@ class _OrtTensorHandle implements OcrTensorHandle {
     _disposed = true;
     await value.dispose();
   }
+}
+
+/// 一张 CUDA 设备（`nvcuda.dll` 驱动 API 回报，与 ORT 无关）。
+class CudaDevice {
+  const CudaDevice({
+    required this.index,
+    required this.name,
+    required this.computeMajor,
+    required this.computeMinor,
+    required this.totalMemBytes,
+  });
+
+  /// CUDA 设备序号（`cuDeviceGet` 的 ordinal）。注意：与 DXGI 适配器序号不一定
+  /// 一致（多卡 / 笔记本 Optimus）。
+  final int index;
+  final String name;
+  final int computeMajor;
+  final int computeMinor;
+  final int totalMemBytes;
+
+  /// 计算能力合成一个整数便于比较，如 sm_89 -> 89、sm_120 -> 120。
+  int get smVersion => computeMajor * 10 + computeMinor;
+
+  @override
+  String toString() =>
+      'CudaDevice($index, $name, sm_$computeMajor$computeMinor, '
+      '${totalMemBytes ~/ (1024 * 1024)} MiB)';
+}
+
+/// [probeCuda] 的结果。
+class CudaProbe {
+  const CudaProbe({
+    required this.driverVersion,
+    required this.devices,
+    this.error,
+  });
+
+  /// 平台没有这项查询（非 Windows）时的结果。
+  const CudaProbe.unsupported()
+    : driverVersion = null,
+      devices = const <CudaDevice>[],
+      error = 'CUDA probe is not supported on this platform';
+
+  /// `cuDriverGetVersion`（如 13000 = CUDA 13.0）；没有 NVIDIA 驱动时 null。
+  final int? driverVersion;
+  final List<CudaDevice> devices;
+
+  /// 第一处失败（没装驱动、`cuInit` 失败……）；null 表示驱动完整作答。
+  final String? error;
+
+  @override
+  String toString() =>
+      'CudaProbe(driver=$driverVersion, devices=$devices, error=$error)';
+}
+
+/// [registerCudaRuntime] 的结果。
+class CudaRegistration {
+  const CudaRegistration({
+    required this.ok,
+    required this.deviceCount,
+    this.error,
+  });
+
+  /// 平台没有插件 EP 这条路（非 Windows）时的结果。
+  const CudaRegistration.unsupported()
+    : ok = false,
+      deviceCount = 0,
+      error =
+          'CUDA plugin execution provider is not supported on this '
+          'platform';
+
+  final bool ok;
+
+  /// ORT 认到的 CUDA 设备数（`GetEpDevices` 里 CUDAExecutionProvider 的条目数）。
+  final int deviceCount;
+  final String? error;
+
+  @override
+  String toString() =>
+      'CudaRegistration(ok=$ok, devices=$deviceCount, error=$error)';
+}
+
+int _asInt(Object? value) => value is num ? value.toInt() : 0;
+
+/// 问 NVIDIA 驱动（只加载 `nvcuda.dll` + `cuInit` / `cuDeviceGet*`）有哪些 CUDA
+/// 设备、驱动支持到哪个 CUDA 版本。**不需要** CUDA 运行库已下载，用来在提供下载
+/// 之前判断值不值得：CUDA 13 要求驱动 ≥ 13000（R580+）且 sm_75+。
+///
+/// 非 Windows 回 [CudaProbe.unsupported]；插件调用本身失败照常抛（不吞）。
+Future<CudaProbe> probeCuda() => probeCudaWith(OnnxRuntime());
+
+/// [probeCuda] 的可注入 runtime 版本。
+Future<CudaProbe> probeCudaWith(OnnxRuntime runtime) async {
+  final Map<String, dynamic>? map = await runtime.probeCuda();
+  if (map == null) return const CudaProbe.unsupported();
+  final Object? rawDevices = map['devices'];
+  final List<CudaDevice> devices = <CudaDevice>[
+    if (rawDevices is List)
+      for (final Object? raw in rawDevices)
+        if (raw is Map)
+          CudaDevice(
+            index: _asInt(raw['index']),
+            name: '${raw['name'] ?? ''}',
+            computeMajor: _asInt(raw['computeMajor']),
+            computeMinor: _asInt(raw['computeMinor']),
+            totalMemBytes: _asInt(raw['totalMemBytes']),
+          ),
+  ];
+  final Object? driver = map['driverVersion'];
+  final Object? error = map['error'];
+  return CudaProbe(
+    driverVersion: driver is num ? driver.toInt() : null,
+    devices: devices,
+    error: error is String ? error : null,
+  );
+}
+
+/// 把 [dir] 下的 ORT CUDA 插件 EP（`onnxruntime_providers_cuda.dll` 及同目录的
+/// cuBLAS / cuDNN）注册进**本进程**（进程级状态，任何 isolate 调都一样）。
+///
+/// 成功后 [OrtOnnxSessionFactory.availableAcceleratedProviders] 会回报
+/// [OnnxExecutionProvider.cuda]，建会话可以请求它；没注册就请求 CUDA，建会话
+/// 那一步报 `PROVIDER_ERROR`，按 [createOnnxSessionWithProviderFallback] 的约定
+/// 可观测地降级。同一 [dir] 重复调用直接返回上次的成功结果；失败不留半注册状态，
+/// 可以（比如下载补齐后）重试；已从别的目录注册成功时拒绝换目录（需重启 app）。
+///
+/// 注意：cuDNN 缺失 / 版本不对在建会话时**不报错**，第一次 Run 走到 Conv 才失败
+/// ——调用方要拿首个 Run 当健康检查。
+Future<CudaRegistration> registerCudaRuntime(String dir) =>
+    registerCudaRuntimeWith(OnnxRuntime(), dir);
+
+/// [registerCudaRuntime] 的可注入 runtime 版本。
+Future<CudaRegistration> registerCudaRuntimeWith(
+  OnnxRuntime runtime,
+  String dir,
+) async {
+  final Map<String, dynamic>? map = await runtime.registerCudaRuntime(dir);
+  if (map == null) return const CudaRegistration.unsupported();
+  final Object? error = map['error'];
+  return CudaRegistration(
+    ok: map['ok'] == true,
+    deviceCount: _asInt(map['deviceCount']),
+    error: error is String ? error : null,
+  );
+}
+
+/// 本进程实际绑定的 onnxruntime（Windows：随包的最新 CPU core，或下载的 DirectML
+/// core）。
+class OrtRuntimeInfo {
+  const OrtRuntimeInfo({
+    required this.loaded,
+    required this.version,
+    required this.selectedPath,
+  });
+
+  /// 平台没有 core 选择（非 Windows）时的结果。
+  const OrtRuntimeInfo.unsupported()
+    : loaded = false,
+      version = '',
+      selectedPath = '';
+
+  /// ORT 是否已经在本进程绑定（绑定后换 core 只能重启）。
+  final bool loaded;
+
+  /// 已绑定 core 的版本串（如 `1.31.0`）；未绑定时空串。
+  final String version;
+
+  /// 经 [selectOrtRuntime] 选中的 core 路径；空串 = 随包那份。
+  final String selectedPath;
+
+  @override
+  String toString() =>
+      'OrtRuntimeInfo(loaded=$loaded, version=$version, '
+      'selectedPath=$selectedPath)';
+}
+
+/// [selectOrtRuntime] 的结果。
+class OrtRuntimeSelection {
+  const OrtRuntimeSelection({required this.ok, this.error});
+
+  /// 平台没有 core 选择（非 Windows）时的结果。
+  const OrtRuntimeSelection.unsupported()
+    : ok = false,
+      error = 'ONNX Runtime core selection is not supported on this platform';
+
+  final bool ok;
+  final String? error;
+
+  @override
+  String toString() => 'OrtRuntimeSelection(ok=$ok, error=$error)';
+}
+
+/// 让本进程改用 [path] 处的 onnxruntime.dll（下载的 DirectML core）而不是随包的
+/// CPU core。**必须在本进程任何 ORT 调用之前**（建会话、查 provider……）调；ORT
+/// 已绑定后只有同一路径回 ok，换 core 要重启 app。`probeCuda` /
+/// [ortRuntimeInfo] 不绑定 ORT，可以先调。
+Future<OrtRuntimeSelection> selectOrtRuntime(String path) =>
+    selectOrtRuntimeWith(OnnxRuntime(), path);
+
+/// [selectOrtRuntime] 的可注入 runtime 版本。
+Future<OrtRuntimeSelection> selectOrtRuntimeWith(
+  OnnxRuntime runtime,
+  String path,
+) async {
+  final Map<String, dynamic>? map = await runtime.selectRuntime(path);
+  if (map == null) return const OrtRuntimeSelection.unsupported();
+  final Object? error = map['error'];
+  return OrtRuntimeSelection(
+    ok: map['ok'] == true,
+    error: error is String && error.isNotEmpty ? error : null,
+  );
+}
+
+/// 本进程用哪份 onnxruntime（不触发绑定）。
+Future<OrtRuntimeInfo> ortRuntimeInfo() => ortRuntimeInfoWith(OnnxRuntime());
+
+/// [ortRuntimeInfo] 的可注入 runtime 版本。
+Future<OrtRuntimeInfo> ortRuntimeInfoWith(OnnxRuntime runtime) async {
+  final Map<String, dynamic>? map = await runtime.getRuntimeInfo();
+  if (map == null) return const OrtRuntimeInfo.unsupported();
+  return OrtRuntimeInfo(
+    loaded: map['loaded'] == true,
+    version: '${map['version'] ?? ''}',
+    selectedPath: '${map['selectedPath'] ?? ''}',
+  );
 }

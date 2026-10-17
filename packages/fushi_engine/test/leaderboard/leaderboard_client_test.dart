@@ -4,6 +4,8 @@ import 'dart:io' show HttpDate;
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/feedback/feedback_models.dart';
+import 'package:fushi_engine/leaderboard/install_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
@@ -394,6 +396,144 @@ void main() {
       );
     });
 
+    test('uploadCover 带 hash：放进签名的查询串 h', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async => _json(<String, dynamic>{'cover': '/img/c'}),
+        identity: _id,
+      );
+      expect(
+        await h.client.uploadCover(
+          'w1',
+          Uint8List(3),
+          hash: '00ff00ff00ff00ff',
+        ),
+        '/img/c',
+      );
+      final http.Request r = h.requests.single;
+      expect(r.url.path, '/v1/works/w1/cover');
+      expect(r.url.queryParameters['h'], '00ff00ff00ff00ff');
+      expect(_verifySigned(r, _id), isTrue);
+    });
+
+    test('voteCover：hash / url 二选一；409 cover_bytes_required 可判别', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async =>
+            _json(<String, dynamic>{'error': 'cover_bytes_required'}, 409),
+        identity: _id,
+      );
+      Object? err;
+      try {
+        await h.client.voteCover('w1', hash: '00ff00ff00ff00ff');
+      } on Object catch (e) {
+        err = e;
+      }
+      expect(isCoverBytesRequired(err!), isTrue);
+      final http.Request r = h.requests.single;
+      expect(r.method, 'POST');
+      expect(r.url.path, '/v1/works/w1/cover/vote');
+      expect(jsonDecode(r.body), <String, dynamic>{'hash': '00ff00ff00ff00ff'});
+      expect(_verifySigned(r, _id), isTrue);
+      await expectLater(h.client.voteCover('w1'), throwsArgumentError);
+      await expectLater(
+        h.client.voteCover('w1', hash: 'a', url: 'b'),
+        throwsArgumentError,
+      );
+    });
+
+    test('确认票：check / confirm / mismatch 的请求体与结果解析', () async {
+      final List<Map<String, dynamic>> replies = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'voted': false,
+          'candidate': <String, dynamic>{'id': 7, 'image': '/img/c/x-1.jpg'},
+          'confirmed': false,
+        },
+        <String, dynamic>{
+          'voted': true,
+          'cover': '/img/c/x-1.jpg',
+          'confirmed': true,
+        },
+        <String, dynamic>{
+          'voted': false,
+          'candidate': <String, dynamic>{'id': 8, 'image': '/img/c/y-2.jpg'},
+          'confirmed': false,
+        },
+      ];
+      final _Harness h = _Harness(
+        (http.Request r) async => _json(replies.removeAt(0)),
+        identity: _id,
+      );
+      const String hash = '00ff00ff00ff00ff';
+      final CoverVoteResult check = await h.client.checkCover('w1', hash);
+      expect(check.voted, isFalse);
+      expect(
+        check.candidate,
+        const CoverCandidateRef(id: 7, image: '/img/c/x-1.jpg'),
+      );
+      expect(check.legacyServer, isFalse);
+      final CoverVoteResult ok = await h.client.confirmCover('w1', hash, 7);
+      expect(
+        [ok.voted, ok.confirmed, ok.cover],
+        <Object?>[true, true, '/img/c/x-1.jpg'],
+      );
+      final CoverVoteResult next = await h.client.rejectCover('w1', hash, 7);
+      expect(next.candidate!.id, 8);
+      expect(
+        <Object?>[for (final http.Request r in h.requests) jsonDecode(r.body)],
+        <Object?>[
+          <String, dynamic>{'hash': hash, 'check': true},
+          <String, dynamic>{'hash': hash, 'confirm': 7},
+          <String, dynamic>{'hash': hash, 'mismatch': 7},
+        ],
+      );
+      for (final http.Request r in h.requests) {
+        expect(r.url.path, '/v1/works/w1/cover/vote');
+        expect(_verifySigned(r, _id), isTrue);
+      }
+    });
+
+    test('旧服务端（响应里没有 confirmed）可判别', () {
+      expect(
+        CoverVoteResult.fromJson(<String, dynamic>{
+          'cover': '/img/x',
+        }).legacyServer,
+        isTrue,
+      );
+      expect(
+        CoverVoteResult.fromJson(<String, dynamic>{
+          'cover': '/img/x',
+          'confirmed': false,
+        }).legacyServer,
+        isFalse,
+      );
+    });
+
+    test('fetchCoverImage：不签名的 GET /img/…；超过上限抛错；只收 /img/ 路径', () async {
+      int size = 10;
+      final _Harness h = _Harness(
+        (http.Request r) async => http.Response.bytes(Uint8List(size), 200),
+        identity: _id,
+      );
+      expect(await h.client.fetchCoverImage('/img/c/x-1.jpg'), hasLength(10));
+      final http.Request r = h.requests.single;
+      expect(r.method, 'GET');
+      expect(r.url.path, '/img/c/x-1.jpg');
+      expect(
+        r.headers.keys.where(
+          (String k) => k.toLowerCase().startsWith('x-fushi'),
+        ),
+        isEmpty,
+      );
+      size = kCoverCandidateImageMaxBytes + 1;
+      await expectLater(
+        h.client.fetchCoverImage('/img/c/x-1.jpg'),
+        throwsA(isA<LeaderboardApiException>()),
+      );
+      await expectLater(
+        h.client.fetchCoverImage('/v1/me'),
+        throwsArgumentError,
+      );
+    });
+
     test('非法 id 不拼进路径', () async {
       final _Harness h = _Harness(
         (http.Request r) async => _json(<String, dynamic>{}),
@@ -663,6 +803,143 @@ void main() {
         }
       },
     );
+  });
+
+  group('安装统计心跳', () {
+    final InstallAttestation install = InstallAttestation(
+      InstallIdentity.fromMachineId('client-test-machine-id'),
+      '7',
+    );
+
+    bool verifyInstall(http.Request r) {
+      final String pq = r.url.hasQuery
+          ? '${r.url.path}?${r.url.query}'
+          : r.url.path;
+      return r.headers[kInstallKeyHeader] == install.identity.pubkeyBase64Url &&
+          r.headers[kInstallPowHeader] == '7' &&
+          LeaderboardIdentity.verify(
+            install.identity.spki,
+            InstallIdentity.signingString(
+              r.method,
+              pq,
+              int.parse(r.headers[kInstallTimeHeader]!),
+              r.bodyBytes,
+            ),
+            r.headers[kInstallSigHeader]!,
+          );
+    }
+
+    test('ping：POST /v1/ping，不带账户签名，带安装证明，字段齐全', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async => http.Response('', 204),
+        identity: _id,
+      );
+      await h.client.ping(
+        install: install,
+        version: '2.10.0-debug.8',
+        platform: 'windows',
+        channel: 'debug',
+      );
+      final http.Request r = h.requests.single;
+      expect(r.method, 'POST');
+      expect(r.url.path, '/v1/ping');
+      expect(r.headers.containsKey('X-Fushi-Account'), isFalse);
+      expect(r.headers.containsKey('X-Fushi-Sig'), isFalse);
+      expect(verifyInstall(r), isTrue);
+      expect(jsonDecode(utf8.decode(r.bodyBytes)), <String, String>{
+        'installId': install.installId,
+        'version': '2.10.0-debug.8',
+        'platform': 'windows',
+        'channel': 'debug',
+      });
+    });
+
+    test('ping 失败按状态码抛错', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async =>
+            _json(<String, dynamic>{'error': 'daily_budget'}, 503),
+      );
+      await expectLater(
+        h.client.ping(
+          install: install,
+          version: '2.10.0',
+          platform: 'android',
+          channel: 'stable',
+        ),
+        throwsA(
+          isA<LeaderboardApiException>().having((e) => e.status, 'status', 503),
+        ),
+      );
+    });
+
+    test('ping 遇 401 stale_install_time 按服务器时钟重签重发一次', () async {
+      int calls = 0;
+      final DateTime server = DateTime.utc(2026, 10, 17, 12);
+      final _Harness h = _Harness((http.Request r) async {
+        calls++;
+        if (calls == 1) {
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<String, String>{'error': 'stale_install_time'}),
+            ),
+            401,
+            headers: <String, String>{
+              'content-type': 'application/json',
+              'date': HttpDate.format(server),
+            },
+          );
+        }
+        return http.Response('', 204);
+      }, clock: () => 0);
+      await h.client.ping(
+        install: install,
+        version: '2.10.0',
+        platform: 'windows',
+        channel: 'stable',
+      );
+      expect(h.requests, hasLength(2));
+      expect(
+        int.parse(h.requests[1].headers[kInstallTimeHeader]!),
+        greaterThanOrEqualTo(server.millisecondsSinceEpoch),
+      );
+      expect(verifyInstall(h.requests[1]), isTrue);
+    });
+
+    test('submitFeedback 带安装证明时上报 installId 并签名，null 时都不带', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async => _json(<String, dynamic>{
+          'id': 'f1',
+          'ticket': 't1',
+          'status': 'open',
+          'createdAt': 1,
+          'updatedAt': 1,
+        }, 201),
+        identity: _id,
+      );
+      for (final InstallAttestation? att in <InstallAttestation?>[
+        install,
+        null,
+      ]) {
+        await h.client.submitFeedback(
+          category: FeedbackCategory.bug,
+          title: 't',
+          body: 'b',
+          install: att,
+        );
+      }
+      final List<Map<String, dynamic>> bodies = h.requests
+          .map(
+            (http.Request r) => (jsonDecode(utf8.decode(r.bodyBytes)) as Map)
+                .cast<String, dynamic>(),
+          )
+          .toList();
+      expect(bodies[0]['installId'], install.installId);
+      expect(verifyInstall(h.requests[0]), isTrue);
+      // 账户签名与安装签名并存、各自成立。
+      expect(_verifySigned(h.requests[0], _id), isTrue);
+      expect(bodies[1].containsKey('installId'), isFalse);
+      expect(h.requests[1].headers.containsKey(kInstallSigHeader), isFalse);
+    });
   });
 
   group('URL', () {

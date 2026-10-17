@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
@@ -25,18 +26,70 @@ import 'package:path/path.dart' as p;
 //
 // `PUT /api/library/books/<title>` 的 body 是**裸 .epub 字节流**（无 multipart、
 // 无 sidecar、无 query），所以随行元数据只能走自定义 header——沿用视频推送
-// `X-Hibiki-Video-Title` 的既有先例。两侧共用这两个常量，避免字面量各写一份漂开。
+// [kVideoTitleHeader] 的既有先例。两侧共用这两个常量，避免字面量各写一份漂开。
 //
 // ⚠️ header 值只收 ASCII：写侧必须 `Uri.encodeComponent`，读侧 `Uri.decodeComponent`
 // （日文书名直接塞进 header 会抛）。additive：没改过名就不发，旧 host 对未知 header
 // 静默忽略，旧 client 不发 → 新 host 读到 null，两个方向都零破坏。
 
 /// 本机用户给这本书改的显示名（`Uri.encodeComponent` 编码）。
-const String kBookDisplayTitleHeader = 'X-Hibiki-Book-Display-Title';
+const String kBookDisplayTitleHeader = 'X-Fushi-Book-Display-Title';
 
 /// [kBookDisplayTitleHeader] 的 LWW 毫秒戳（十进制 ASCII）。缺失 = 0 =「时刻未知」，
 /// 收下的一方按 LWW 平局处理（保留本机），见 `FushiDatabase.setPrefIfNewer`。
-const String kBookDisplayTitleAtHeader = 'X-Hibiki-Book-Display-Title-At';
+const String kBookDisplayTitleAtHeader = 'X-Fushi-Book-Display-Title-At';
+
+// ── 视频 / 字幕 push 的元数据 header ─────────────────────────────────────────
+
+/// `PUT /api/library/videos/<id>` 的视频标题（`Uri.encodeComponent` 编码）。
+const String kVideoTitleHeader = 'X-Fushi-Video-Title';
+
+/// `PUT /api/library/videos/<id>` 的原始文件名（`Uri.encodeComponent` 编码）。
+const String kVideoFilenameHeader = 'X-Fushi-Video-Filename';
+
+/// `PUT /api/library/videos/<id>/subtitle` 的字幕后缀（`.srt` / `.ja.srt` …）。
+/// 同名也用作「设为默认字幕」上传的**响应头**：host 回报实际落盘后缀（BUG-2728）。
+const String kSubtitleSuffixHeader = 'X-Fushi-Subtitle-Suffix';
+
+/// `PUT /api/library/videos/<id>/subtitle` 带 `1` = 设为这一集的默认字幕（BUG-2728）。
+const String kSubtitleDefaultHeader = 'X-Fushi-Subtitle-Default';
+
+// ── 改名前的旧 header 名（Hibiki → Fushi，2026-10）─────────────────────────────
+//
+// 互联两端可能跑不同版本：改名前的 client / host 只认 `X-Hibiki-*`。旧名照样**发**
+// 也照样**读**：
+// * **发送**新旧两个名字都发（[setInterconnectHeader]）：改名前的 host 只读旧名，
+//   只发新名会让字幕后缀读成空串、上传直接 400，视频标题 / 书名也静默丢失。
+//   host 的「设为默认字幕」响应头同理新旧都回（见 video.part）。
+// * **接收**先读新名、读不到再读旧名（[interconnectHeaderNameCandidates]）。
+//
+// 清理条件：确认不再有改名前（2026-10 之前）的 app / fushi_server 在用后，删掉
+// 本表、[setInterconnectHeader] 的旧名双发、[interconnectHeaderNameCandidates] 的
+// 旧名回退与那条双发响应头。
+
+/// 新 header 名 → 改名前的旧名。
+const Map<String, String> kLegacyInterconnectHeaderNames = <String, String>{
+  kBookDisplayTitleHeader: 'X-Hibiki-Book-Display-Title',
+  kBookDisplayTitleAtHeader: 'X-Hibiki-Book-Display-Title-At',
+  kVideoTitleHeader: 'X-Hibiki-Video-Title',
+  kVideoFilenameHeader: 'X-Hibiki-Video-Filename',
+  kSubtitleSuffixHeader: 'X-Hibiki-Subtitle-Suffix',
+  kSubtitleDefaultHeader: 'X-Hibiki-Subtitle-Default',
+};
+
+/// 发送一个互联自定义 header：新名与改名前的旧名（若有）各写一份同值。
+/// 所有请求头发送点都必须走这里，不得直接 `headers.set(kXxxHeader, …)`。
+void setInterconnectHeader(HttpHeaders headers, String name, String value) {
+  headers.set(name, value);
+  final String? legacy = kLegacyInterconnectHeaderNames[name];
+  if (legacy != null) headers.set(legacy, value);
+}
+
+/// 接收 [name] 时按顺序尝试的 header 名：新名在前，改名前的旧名（若有）在后。
+List<String> interconnectHeaderNameCandidates(String name) {
+  final String? legacy = kLegacyInterconnectHeaderNames[name];
+  return legacy == null ? <String>[name] : <String>[name, legacy];
+}
 
 // ── 键集 union diff（本地音频 / 有声书 / 词典共享）──────────────────────────
 
@@ -214,10 +267,21 @@ abstract interface class AudiobookDelayHost {
   Future<void> putAudiobookDelay(String identity, int delayMs, int updatedAtMs);
 }
 
+/// host 端「只导出有声书字幕侧」的**可选**能力（`GET /api/library/audiobooks/
+/// <identity>/subtitles`）：对齐文件 + 字幕 + token sidecar + cue，不含音频
+/// （`SyncAssetPackageService.exportAudioSubtitlePackage`）。client 的「只更新字幕」
+/// 靠它免于把整本音频重下一遍。与 [AudiobookDelayHost] 同范式：不并进主接口；
+/// host 不实现 → 404，client 提示用户改走「重新下载有声书」。
+abstract interface class AudiobookSubtitleHost {
+  /// 把身份键为 [identity] 的有声书字幕侧打成临时包，返回该文件（调用方负责删除
+  /// 它及其父临时目录）。查无此书抛 [StateError]，含路径穿越字符抛 [ArgumentError]。
+  Future<File> exportAudiobookSubtitles(String identity);
+}
+
 /// host 端「client 导入的字幕设为该视频默认字幕」的**可选**能力（远端视频导入 /
 /// 重定时字幕自动上传）。与 [AudiobookDelayHost] 同范式：不并进主接口，免得十余个
 /// 测试 fake 全量补桩；server 用 `is` 探测，实现了才在 `/api/capabilities` 声明
-/// `liveLibrary.videoSubtitleDefault`；不实现时带 `X-Hibiki-Subtitle-Default` 的 PUT
+/// `liveLibrary.videoSubtitleDefault`；不实现时带 [kSubtitleDefaultHeader] 的 PUT
 /// 回 409、不落盘——**不能**退回 [FushiLibraryHostService.importVideoSubtitle]，那条
 /// 按 client 报的后缀覆盖同名旧字幕且不留备份（BUG-2728）。
 ///
@@ -236,6 +300,129 @@ abstract interface class VideoSubtitleDefaultHost {
     required String format,
   });
 }
+
+/// `DELETE /api/library/videos/<id>/subtitle?which=` 清哪一路字幕。
+enum VideoSubtitleClearScope {
+  primary,
+  secondary,
+  all;
+
+  bool get clearsPrimary => this != secondary;
+  bool get clearsSecondary => this != primary;
+}
+
+/// [VideoSubtitleClearHost.clearVideoSubtitle] 做了什么。
+class VideoSubtitleClearResult {
+  const VideoSubtitleClearResult({
+    required this.clearedSources,
+    required this.backedUpFiles,
+    required this.remainingSidecars,
+  });
+
+  /// 被清掉的 DB 字幕源：`primary` / `secondary` → 清之前的值（null = 本来就空）。
+  final Map<String, String?> clearedSources;
+
+  /// 被挪走的 sidecar：原路径 → 改名后的备份路径（`<原名>.fushi-bak`）。
+  final Map<String, String> backedUpFiles;
+
+  /// 视频旁仍在的 sidecar 字幕（文件名）。非空时播放页仍会发现它们，
+  /// 自动补字幕也会当「已有字幕」跳过。
+  final List<String> remainingSidecars;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'clearedSources': clearedSources,
+        'backedUpFiles': backedUpFiles,
+        'remainingSidecars': remainingSidecars,
+      };
+}
+
+/// 清字幕时某个 sidecar 改名备份失败（Windows 上被播放器 / 编辑器占用、无权限…）。
+///
+/// 抛出时**什么都没变**：已挪走的文件已改回原名、DB 字幕源未动（[notRestored]
+/// 非空是回滚本身也失败的极端情况，列出仍停在备份名上的原路径）。端点映射成
+/// 409 `{error: subtitle_sidecar_busy, path, reason}`，客户端可提示用户关掉占用
+/// 再试，而不是一个说不清的 500。
+class VideoSubtitleSidecarBusy implements Exception {
+  const VideoSubtitleSidecarBusy({
+    required this.path,
+    required this.reason,
+    this.notRestored = const <String>[],
+  });
+
+  /// wire 错误码。
+  static const String errorCode = 'subtitle_sidecar_busy';
+
+  /// 改名失败的 sidecar（原路径）。
+  final String path;
+
+  /// 操作系统给的原因。
+  final String reason;
+  final List<String> notRestored;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'error': errorCode,
+        'path': path,
+        'reason': reason,
+        if (notRestored.isNotEmpty) 'notRestored': notRestored,
+      };
+
+  @override
+  String toString() =>
+      'VideoSubtitleSidecarBusy: cannot back up $path ($reason)';
+}
+
+/// host 端「清掉某个视频的字幕」的**可选**能力（与 [VideoSubtitleDefaultHost] 同范式，
+/// 不扩大主接口）。不实现时 `DELETE /api/library/videos/<id>/subtitle` 落 404。
+abstract interface class VideoSubtitleClearHost {
+  /// 清 [id] 的字幕源（[which]），连同主字幕解析出的 cue。
+  ///
+  /// 文件侧只碰**这个视频自己的 sidecar**：与视频同目录、名为
+  /// `<视频 stem><字幕后缀>` 的文件，而且是**改名备份**（`<原名>.fushi-bak`）
+  /// 而不是删除——字幕可能是用户手放的，误清了还能改回来。指向别处的路径、
+  /// `embedded:<n>` 之类的非文件源只清 DB。视频本体永远不碰。
+  ///
+  /// [allSidecars] = true 时把视频旁全部 sidecar 字幕都备份挪走（不只 DB 指向的
+  /// 那份），让自动补字幕不再把它们当「已有字幕」。
+  ///
+  /// 未知视频抛 [StateError]；id 含路径穿越字符抛 [ArgumentError]；sidecar 改名
+  /// 失败抛 [VideoSubtitleSidecarBusy]（此时文件与 DB 都保持原样）。
+  Future<VideoSubtitleClearResult> clearVideoSubtitle(
+    String id, {
+    VideoSubtitleClearScope which = VideoSubtitleClearScope.primary,
+    bool allSidecars = false,
+  });
+}
+
+/// `POST /api/library/videos/<id>/subtitle/backfill` 的结果。
+class VideoSubtitleBackfillReport {
+  const VideoSubtitleBackfillReport({
+    required this.outcome,
+    this.installedPath,
+    this.language,
+    this.detail,
+  });
+
+  /// `installed` / `alreadyHasSubtitle` / `noCandidate` / `allCandidatesRejected` /
+  /// `failed` / `noIdentity` / `unavailable`。
+  final String outcome;
+  final String? installedPath;
+  final String? language;
+  final String? detail;
+
+  bool get installed => outcome == 'installed';
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'outcome': outcome,
+        'installed': installed,
+        if (installedPath != null) 'installedPath': installedPath,
+        if (language != null) 'language': language,
+        if (detail != null) 'detail': detail,
+      };
+}
+
+/// host 的「立即给这一个视频补字幕」：[videoId] 未知返回 null（路由 404）。
+typedef VideoSubtitleBackfillRunner = Future<VideoSubtitleBackfillReport?>
+    Function(String videoId, {String? language});
 
 /// 旧名兼容：有声书 diff 已并入 [SyncKeyDiff]。
 @Deprecated('已并入 SyncKeyDiff（computeKeyUnionDiff），请改用新名')
@@ -1162,15 +1349,144 @@ BookProgressSyncAction resolveBookProgressThreeWay({
 /// 纯函数。远端书的去重键 = `sanitizeTtuFilename(title)`（与 `EpubBooks.bookKey`
 /// 派生一致，由调用方算好后传入 [keyOf]）。本端已有同 key 的书就不再在「配对设备」
 /// 区重复展示（TODO-033 #6：远端与本地重复同一本书）。
+///
+/// host 显式下发的 bookKey（[RemoteBookInfo.bookKey]）也算命中（BUG-3452）：
+/// 从对端下载、本机落地键与对端键不同的书（对端书名带 `(2)` 后缀、EPUB 无
+/// dc:title…）只在别名表里记着对端键——调用方把别名并进 [localBookKeys]，但只按
+/// 书名派生键比对的话，host bookKey 与书名不同源时永远对不上，下载完那张「未下载」
+/// 占位卡就一直留在书架上。没带 bookKey（旧 host / 云盘）时不拿原始书名当键比：
+/// 书名与 bookKey 不是同一个值域（BUG-2274）。
 List<RemoteBookInfo> dedupeRemoteBooks({
   required List<RemoteBookInfo> remote,
   required Set<String> localBookKeys,
   required String Function(String title) keyOf,
 }) {
+  bool hostKeyIsLocal(RemoteBookInfo book) {
+    final String? hostKey = book.bookKey;
+    return hostKey != null &&
+        hostKey.isNotEmpty &&
+        localBookKeys.contains(hostKey);
+  }
+
   return <RemoteBookInfo>[
     for (final RemoteBookInfo book in remote)
-      if (!localBookKeys.contains(keyOf(book.title))) book,
+      if (!localBookKeys.contains(keyOf(book.title)) && !hostKeyIsLocal(book))
+        book,
   ];
+}
+
+/// 本端删除墓碑里，对某个远端来源**仍然有效**的键（纯函数）。
+///
+/// 判据只比**同一台设备的时钟**，不拿对端时间戳和本端时间戳比（两台设备的墙钟可以
+/// 差任意多，「host importedAt 晚于本端 deletedAt 就当新书」在 host 时钟超前时会让
+/// 刚删的书立刻复活，落后时会把真正重新导入的书永久藏掉）：
+///
+/// - [sourceAppliesDeletions] = false（云盘书库 / 媒体服务器）：这些来源从不执行
+///   Fushi 的删除墓碑（云通道只写 `__tombstones__` 标记，书文件夹原样留着），清单里
+///   那份只可能是被删的那本的残留——墓碑在就一直藏，本机重新导入时墓碑随之清除。
+/// - [sourceAppliesDeletions] = true（互联 host）：墓碑推给 host 后 host 会真删并写
+///   它自己的墓碑，host 之后重新导入同一本时会清掉它的墓碑。所以只藏**还没送达**的
+///   墓碑：`deletedAt > deliveredThroughMs`，[deliveredThroughMs] = 本端互联推送基线
+///   （`SyncRepository.getDeletionTombstonesPushBaselineMs`，本端时钟、整批推送成功
+///   才推进）。送达之后 host 清单里还有这个键，就是 host 删后又重新导入的新书。
+///
+///   送达瞬间之前取的清单可能还带着它：调用方必须**先**读推送基线、**再**取清单，
+///   并且 host 删除成功时要作废远端清单缓存（`InterconnectSyncBackend
+///   .remoteLibraryMutationRevision` → `remoteLibraryCacheProvider`），这样「基线已
+///   推进」时拿到的清单一定是删除之后取的。
+Set<String> pendingRemoteDeletionKeys({
+  required Map<String, int> deletedAtByKey,
+  required bool sourceAppliesDeletions,
+  required int deliveredThroughMs,
+}) {
+  if (!sourceAppliesDeletions) return deletedAtByKey.keys.toSet();
+  return <String>{
+    for (final MapEntry<String, int> e in deletedAtByKey.entries)
+      if (e.value > deliveredThroughMs) e.key,
+  };
+}
+
+/// 从远端书清单 [remote] 里剔除本端已「从所有设备删除」且对该来源仍有效的书。
+///
+/// 纯函数。[deletedKeys] 由 [pendingRemoteDeletionKeys] 给出。墓碑键是本机 bookKey
+/// 或别名表里的对端键（`syncDeletionBookKeyOf`），所以 host bookKey 与标题派生键都要
+/// 比（同 [dedupeRemoteBooks] 的两路）。
+List<RemoteBookInfo> filterOutLocallyDeletedRemoteBooks({
+  required List<RemoteBookInfo> remote,
+  required Set<String> deletedKeys,
+  required String Function(String title) keyOf,
+}) {
+  if (deletedKeys.isEmpty) return remote;
+  bool deletedLocally(RemoteBookInfo book) {
+    final String? hostKey = book.bookKey;
+    if (hostKey != null && hostKey.isNotEmpty && deletedKeys.contains(hostKey)) {
+      return true;
+    }
+    return deletedKeys.contains(keyOf(book.title));
+  }
+
+  return <RemoteBookInfo>[
+    for (final RemoteBookInfo book in remote)
+      if (!deletedLocally(book)) book,
+  ];
+}
+
+/// [filterOutLocallyDeletedRemoteBooks] 的视频版：视频墓碑键 = bookUid，远端视频的
+/// 稳定身份 [RemoteVideoInfo.id] 就是落地后的 bookUid（与 [dedupeRemoteVideos] 同键）。
+List<RemoteVideoInfo> filterOutLocallyDeletedRemoteVideos({
+  required List<RemoteVideoInfo> remote,
+  required Set<String> deletedKeys,
+}) {
+  if (deletedKeys.isEmpty) return remote;
+  return <RemoteVideoInfo>[
+    for (final RemoteVideoInfo video in remote)
+      if (!deletedKeys.contains(video.id)) video,
+  ];
+}
+
+/// 从远端书清单 [remote] 里挑出「本端已有这本书**和它的有声书**，对端也有配套有声书」
+/// 的条目，按本端 bookKey 索引——书卡菜单「从对端更新字幕 / 重新下载有声书」的候选。
+///
+/// 纯函数，与 [remoteAudiobookOnlyCandidates] 互补（同一本书只会落进两者之一）：
+/// 那边是本端缺有声书、要补拉；这边是本端已有、host 那份可能更新了（重新转录 /
+/// 重新对齐 / 换字幕）要重拉。同 key 多条远端书只取首条（与去重同口径）。
+Map<String, RemoteBookInfo> remoteAudiobookRefetchCandidates({
+  required List<RemoteBookInfo> remote,
+  required Set<String> localBookKeys,
+  required Set<String> localAudiobookKeys,
+  required String Function(String title) keyOf,
+}) {
+  final Map<String, RemoteBookInfo> out = <String, RemoteBookInfo>{};
+  for (final RemoteBookInfo book in remote) {
+    if (!book.hasAudiobook) continue;
+    final String key = keyOf(book.title);
+    if (!localBookKeys.contains(key)) continue;
+    if (!localAudiobookKeys.contains(key)) continue;
+    out.putIfAbsent(key, () => book);
+  }
+  return out;
+}
+
+/// 纯 SRT（standalone，无 EPUB 配对）有声书的「从对端更新字幕 / 重新下载」候选：
+/// 对端有声书清单 [remote] 里 standalone 且本端已有同 uid SrtBook 的条目，按 uid 索引。
+///
+/// 纯函数，与 [remoteAudiobookRefetchCandidates] 同义、只是身份换成 uid（standalone
+/// 书没有 bookKey）。[excludeUids] 是已经以「下载占位卡」重新挂出的 uid（BUG-2551：
+/// 本地音频断链、对端有音频）——那边整本重下即可，这里不再重复给入口，与书卡的
+/// 补拉 / 重拉互斥同口径。同 uid 多条只取首条。
+Map<String, RemoteAudiobookInfo> remoteStandaloneSrtRefetchCandidates({
+  required List<RemoteAudiobookInfo> remote,
+  required Set<String> localSrtUids,
+  Set<String> excludeUids = const <String>{},
+}) {
+  final Map<String, RemoteAudiobookInfo> out = <String, RemoteAudiobookInfo>{};
+  for (final RemoteAudiobookInfo book in remote) {
+    if (!book.isStandaloneSrt || book.identity.isEmpty) continue;
+    if (!localSrtUids.contains(book.identity)) continue;
+    if (excludeUids.contains(book.identity)) continue;
+    out.putIfAbsent(book.identity, () => book);
+  }
+  return out;
 }
 
 /// 从远端书清单 [remote] 里挑出「本端已有这本书、却还没有它的有声书，而对端有配套
@@ -1543,6 +1859,78 @@ class VideoPlaybackSyncState {
       remotePositionMs: remotePositionMs,
       remoteUpdatedAtMs: remoteUpdatedAtMs,
     );
+
+/// host 接收对端时间戳时允许的「未来」余量：超过 host 当前时刻 + 本值的时间戳视为
+/// 设备时钟错误。不截断的话，一台时钟走快的设备写下的戳会在所有 LWW 比较里永远
+/// 胜出，之后任何端的正常写入都盖不过它（BUG-3367）。
+const int kSyncFutureStampToleranceMs = 5 * 60 * 1000;
+
+/// 把对端上报的时间戳 [atMs] 截到 `nowMs + kSyncFutureStampToleranceMs`。纯函数。
+int capFutureSyncStamp(int atMs, {required int nowMs}) {
+  final int cap = nowMs + kSyncFutureStampToleranceMs;
+  return atMs > cap ? cap : atMs;
+}
+
+/// host 已存时间戳 [storedAtMs] 在比较时的有效值：超出未来余量的旧毒戳（截断规则
+/// 上线前写入的）不可信，按 0（「无时间戳」）参与比较，让下一次正常上报直接覆盖、
+/// 自愈；正常戳原样返回。纯函数。
+int trustedStoredSyncStamp(int storedAtMs, {required int nowMs}) =>
+    storedAtMs > nowMs + kSyncFutureStampToleranceMs ? 0 : storedAtMs;
+
+/// 互联播放位置（视频 / 有声书）的三方判定（BUG-3367）。纯函数。
+///
+/// 与书籍进度 [resolveBookProgressThreeWay]（BUG-2506）同口径，只是位置是单维
+/// 毫秒：此前这里是纯「取较新时间戳」（[resolvePositionLww]），两台设备在两次同步
+/// 之间各自看 / 听过同一条目时，后同步的一端会被静默盖掉，用户毫无察觉。判定看的
+/// 是**位置基线**（上次两端达成一致的位置，`sync_baselines` 一行），不看时间戳：
+/// - 一端「无记录」（updatedAtMs<=0，含没带时间戳的旧数据）→ 另一端直接胜出；
+/// - 两端位置相同 → [BookProgressSyncAction.synced]（调用方只对齐时间戳）；
+/// - 没有基线且两端位置不同 → 退回旧口径 LWW（较新时间戳胜，平局取较远位置）一次，
+///   胜出端落地时调用方顺带记下基线，此后才走三方判定。升级前从没记过基线，若这里
+///   直接判冲突，升级后首轮会把每条「只有一端动过」的条目全弹出来；
+
+/// - 有基线：只一端偏离 → 那端胜；两端都偏离 → [BookProgressSyncAction.conflict]，
+///   谁都不覆盖。
+///
+/// 结论枚举复用 [BookProgressSyncAction]：四个结论的含义与书籍完全相同。
+BookProgressSyncAction resolvePlaybackPositionThreeWay({
+  required ({int positionMs, int updatedAtMs}) local,
+  required ({int positionMs, int updatedAtMs}) remote,
+  required int? basePositionMs,
+}) {
+  final bool localEmpty = local.updatedAtMs <= 0;
+  final bool remoteEmpty = remote.updatedAtMs <= 0;
+  if (localEmpty && remoteEmpty) {
+    // 两端都没有时间戳（旧数据）：沿用 LWW 的平局规则「取较远位置」。
+    if (local.positionMs == remote.positionMs) {
+      return BookProgressSyncAction.synced;
+    }
+    return local.positionMs > remote.positionMs
+        ? BookProgressSyncAction.pushLocal
+        : BookProgressSyncAction.applyRemote;
+  }
+  if (remoteEmpty) return BookProgressSyncAction.pushLocal;
+  if (localEmpty) return BookProgressSyncAction.applyRemote;
+  if (local.positionMs == remote.positionMs) {
+    return BookProgressSyncAction.synced;
+  }
+  if (basePositionMs == null) {
+    if (local.updatedAtMs > remote.updatedAtMs) {
+      return BookProgressSyncAction.pushLocal;
+    }
+    if (remote.updatedAtMs > local.updatedAtMs) {
+      return BookProgressSyncAction.applyRemote;
+    }
+    return local.positionMs > remote.positionMs
+        ? BookProgressSyncAction.pushLocal
+        : BookProgressSyncAction.applyRemote;
+  }
+  final bool localMoved = local.positionMs != basePositionMs;
+  final bool remoteMoved = remote.positionMs != basePositionMs;
+  if (localMoved && remoteMoved) return BookProgressSyncAction.conflict;
+  if (localMoved) return BookProgressSyncAction.pushLocal;
+  return BookProgressSyncAction.applyRemote;
+}
 
 // ── 有声书进度（BUG-471）──────────────────────────────────────────────────────
 
@@ -2078,9 +2466,15 @@ class RemoteVideoStreamUrls {
     this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
     this.streamIsOriginalContainer = true,
     this.sourceRequiresDolbyVisionReshape = false,
+    this.discTitle,
   });
 
   final String streamUrl;
+
+  /// 非 null = 这是一条蓝光标题，播放器要用它的段表拼 `edl://`（每段 URL 先过本地
+  /// TLS 中继改写），而不是直接打开 [streamUrl]。只有互联 host 会发；老 host 不发 →
+  /// null，行为与从前一致。
+  final BlurayRemoteTitle? discTitle;
   final String? subtitleUrl;
   final String? subtitleFileName;
 
@@ -2132,6 +2526,7 @@ class RemoteVideoStreamUrls {
       miningVideoHasAudio: miningVideoHasAudio,
       embeddedSubtitleTracks: embeddedSubtitleTracks,
       streamIsOriginalContainer: streamIsOriginalContainer,
+      discTitle: BlurayRemoteTitle.fromJson(json['discTitle']),
     );
   }
 }

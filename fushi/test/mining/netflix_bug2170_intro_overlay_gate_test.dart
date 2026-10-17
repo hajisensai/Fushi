@@ -17,7 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 但 node 测试不在 CI 的真单测门内，所以这里再用源码扫描守住**接线**——接线错了行为测试
 /// 照样全绿（helper 存在、只是没人调用）。
 ///
-/// flutter test 的 cwd 是 hibiki 包根。两份扩展镜像（随 app 打包的 assets/ 与真源 tools/）都守。
+/// flutter test 的 cwd 是 fushi 包根。两份扩展镜像（随 app 打包的 assets/ 与真源 tools/）都守。
 void main() {
   const Map<String, String> mirrors = <String, String>{
     'assets': 'assets/browser_extension',

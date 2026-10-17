@@ -195,7 +195,7 @@ void main() {
       // When -c copy into .mp4 fails (codec not mp4-compatible), the exporter
       // must retry with libx264 + aac rather than surfacing exit -22.
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_export_fallback');
+          Directory.systemTemp.createTempSync('fushi_clip_export_fallback');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -235,7 +235,7 @@ void main() {
     test('reports ffmpegFailed only when BOTH copy and re-encode fail',
         () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_export_bothfail');
+          Directory.systemTemp.createTempSync('fushi_clip_export_bothfail');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -261,7 +261,7 @@ void main() {
     test('rejects invalid ranges without running ffmpeg and removes leftovers',
         () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_export_invalid');
+          Directory.systemTemp.createTempSync('fushi_clip_export_invalid');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mp4')
         ..writeAsBytesSync(<int>[1]);
@@ -285,7 +285,7 @@ void main() {
 
     test('runs ffmpeg and returns the output path on success', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_export_success');
+          Directory.systemTemp.createTempSync('fushi_clip_export_success');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -327,7 +327,7 @@ void main() {
 
     test('cleans partial output after ffmpeg failure', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_export_fail');
+          Directory.systemTemp.createTempSync('fushi_clip_export_fail');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -361,7 +361,7 @@ void main() {
       final int before = ErrorLogService.instance.entries.length;
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_export_log');
+          Directory.systemTemp.createTempSync('fushi_clip_export_log');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -568,7 +568,7 @@ void main() {
     test('writes cues to a temp SRT, feeds ffmpeg, then cleans it up',
         () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_sub_ok');
+          Directory.systemTemp.createTempSync('fushi_clip_sub_ok');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -619,7 +619,7 @@ void main() {
 
     test('UTF-8 subtitle content survives the round trip to disk', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_sub_utf8');
+          Directory.systemTemp.createTempSync('fushi_clip_sub_utf8');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -656,7 +656,7 @@ void main() {
       // 根因场景：旧的桌面精简 ffmpeg 没编入 movtext 编码器 → 'Unknown encoder'。
       // 加字幕这个增强绝不能把原本能成功的导出变成失败。
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_sub_degrade');
+          Directory.systemTemp.createTempSync('fushi_clip_sub_degrade');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -701,7 +701,7 @@ void main() {
       // 内封 tx3g 会让整个片段在 QQ 这类 IM 里判为不可播（用户在真 QQ 上二分过：
       // 只差字幕轨的两个变体，带轨打不开、去轨能放），所以一条软字幕轨都不能有。
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_sub_mp4');
+          Directory.systemTemp.createTempSync('fushi_clip_sub_mp4');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -742,7 +742,7 @@ void main() {
     test('skips subtitles entirely for containers that cannot carry them',
         () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_sub_avi');
+          Directory.systemTemp.createTempSync('fushi_clip_sub_avi');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -773,7 +773,7 @@ void main() {
 
     test('blank subtitle content is ignored', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_sub_blank');
+          Directory.systemTemp.createTempSync('fushi_clip_sub_blank');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -894,7 +894,7 @@ Filters:
 
     test('burns the cues when the ffmpeg at hand has overlay', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_burn_ok');
+          Directory.systemTemp.createTempSync('fushi_clip_burn_ok');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -935,7 +935,7 @@ Filters:
       // 这是**当前发行版**的状态：随包 ffmpeg-min 还没重编，没有 overlay。
       // 此时必须安静地退回无字幕导出，而不是拼一条注定失败的命令。
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_burn_none');
+          Directory.systemTemp.createTempSync('fushi_clip_burn_none');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -966,7 +966,7 @@ Filters:
       // 与既有的字幕降级同一条纪律：「加字幕」这个增强绝不能把原本能成功的导出
       // 变成失败。
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_burn_fail');
+          Directory.systemTemp.createTempSync('fushi_clip_burn_fail');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -1014,7 +1014,7 @@ Filters:
     test('no renderer means no burn attempt and no -filters probe', () async {
       // 没有渲染回调时连能力探测都不该跑——白起一个进程。
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_burn_norender');
+          Directory.systemTemp.createTempSync('fushi_clip_burn_norender');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -1178,7 +1178,7 @@ Input #0, matroska,webm, from 'a.mkv':
     test('exportVideoClipViaFfmpeg detail carries the tail error, not banner',
         () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_export_tail');
+          Directory.systemTemp.createTempSync('fushi_clip_export_tail');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
@@ -1380,7 +1380,7 @@ At least one output file must be specified''';
 
     test('the probe runs before the clip and does not carry -ss', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_probe');
+          Directory.systemTemp.createTempSync('fushi_clip_probe');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mp4')
         ..writeAsBytesSync(<int>[1]);
@@ -1577,7 +1577,7 @@ At least one output file must be specified
     test('end to end: a portable source is re-encoded at the chosen bitrate',
         () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_clip_bitrate');
+          Directory.systemTemp.createTempSync('fushi_clip_bitrate');
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mp4')
         ..writeAsBytesSync(<int>[1]);
@@ -1647,6 +1647,11 @@ At least one output file must be specified
 typedef _RunHandler = FutureOr<FfmpegRunResult> Function(List<String> args);
 
 class _FakeFfmpegBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
       const FfmpegRunResult(returnCode: 0, output: '{"format":{}}');

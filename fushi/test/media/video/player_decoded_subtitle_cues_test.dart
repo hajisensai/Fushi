@@ -204,7 +204,7 @@ void main() {
         start,
         src.indexOf('\n  }\n', start),
       );
-      // 作废这些 = 「重播本句」播进下一句、首尾相接的「字幕结束暂停」不停。
+      // 作废这些 = 「重播本句」播进下一句、句尾防重复停记号错位。
       for (final String cleared in <String>[
         '_oneShotHoldCueIndex = null;',
         '_lastSubtitleEndPauseCueIndex = null;',
@@ -347,9 +347,12 @@ void main() {
       }
       final int load = src.indexOf('// notify 已反映清空后的副字幕状态。');
       expect(load, greaterThanOrEqualTo(0));
+      // 原盘入口传空主轨 cues；普通入口仍传原 cues。两条路径都必须先停止副轨回流。
+      final int setCues = src.indexOf('setCues(', load);
+      expect(setCues, greaterThan(load));
       expect(
         src
-            .substring(load, src.indexOf('setCues(cues);', load))
+            .substring(load, setCues)
             .contains('_stopSecondaryPlayerDecodedText();'),
         isTrue,
       );

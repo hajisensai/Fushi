@@ -1,0 +1,14 @@
+{
+  "mpv_commit": "36abaa32d00a7229ee206aae12dc0e97e7962dca",
+  "patch_sha256": "c01c1daddec8523ab2c9944f6ed8cf986e8eb3ae79fe1c6060d0bc9479280a87",
+  "render_patches": {
+    "gpu-dumb-mode-hwdec-crop.patch": "8428056320adff93087dd284fa9ef254839a28c7632a13b0bb4624a6b224e482"
+  },
+  "demux_patches": {
+    "mkv-laced-audio-timestamps.patch": "fc9f987887d18892e0cc2cbf08a20a787e02fd15900c2853a7bb6bb97ab45bad",
+    "recorder-video-dts.patch": "353b1c4371db0955eb21ed5917a06438c30c60082a58e14de4dbc3dc451e7f83"
+  },
+  "native_menu_schema": 1,
+  "runtime_manifest": "runtime-manifest.json",
+  "dependency_packages": "msys2-packages.json"
+}

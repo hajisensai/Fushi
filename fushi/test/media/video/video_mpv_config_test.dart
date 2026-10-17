@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show BlurayEdlSegment, buildBlurayEdlUri;
 
 void main() {
   group('parseMpvConf', () {
@@ -64,6 +66,10 @@ keep-open=yes
       // 布局做输出目标时 libswresample 无法初始化 → 无声。末位 stereo 永远兜底。
       expect(m['audio-channels'], '7.1,5.1,stereo');
       expect(m['audio-normalize-downmix'], 'no');
+      // 杜比 / DTS 直通默认关，且关着也要显式下发空串（= mpv 默认，全部本地解码），
+      // 运行时关掉开关才能真的撤回直通。
+      expect(VideoMpvConfig.defaults.audioPassthrough, isFalse);
+      expect(m['audio-spdif'], '');
     });
 
     test('audio group passes through', () {
@@ -73,11 +79,101 @@ keep-open=yes
         audioPitchCorrection: false,
         audioChannels: 'stereo',
         normalizeDownmix: true,
+        audioPassthrough: true,
       ));
       expect(m['audio-delay'], '0.25'); // 250ms = 0.25s
+      expect(m['audio-spdif'], 'ac3,eac3,truehd,dts-hd');
       expect(m['audio-pitch-correction'], 'no');
       expect(m['audio-channels'], 'stereo');
       expect(m['audio-normalize-downmix'], 'yes');
+    });
+
+    // 直通时 mpv 手里是压缩码流：软件音量 / 静音不作用（ao.c process_plane 不认 spdif
+    // 格式），倍速只能插 drop 整帧丢弃 / 重复。所以倍速 ≠ 1、音量未满、静音时必须改回
+    // 本地解码，而不是让这些操作静默失效或断续。
+    group('resolveAudioSpdif (passthrough vs. speed / volume)', () {
+      test('off stays off regardless of speed / volume', () {
+        expect(resolveAudioSpdif(passthrough: false), '');
+        expect(
+          resolveAudioSpdif(
+              passthrough: false, playbackSpeed: 1.0, outputVolume: 100),
+          '',
+        );
+      });
+
+      test('on at 1x and full volume passes through', () {
+        expect(resolveAudioSpdif(passthrough: true), kAudioPassthroughCodecs);
+        expect(
+          resolveAudioSpdif(
+              passthrough: true, playbackSpeed: 1.0, outputVolume: 100),
+          kAudioPassthroughCodecs,
+        );
+      });
+
+      test('speed other than 1x falls back to local decode', () {
+        for (final double speed in <double>[0.5, 0.75, 1.25, 1.5, 2.0, 3.0]) {
+          expect(
+            resolveAudioSpdif(passthrough: true, playbackSpeed: speed),
+            '',
+            reason: 'speed $speed',
+          );
+        }
+      });
+
+      test('volume below 100 or muted (0) falls back to local decode', () {
+        expect(resolveAudioSpdif(passthrough: true, outputVolume: 99.0), '');
+        expect(resolveAudioSpdif(passthrough: true, outputVolume: 50.0), '');
+        expect(resolveAudioSpdif(passthrough: true, outputVolume: 0.0), '');
+      });
+
+      test('buildMpvProperties applies the same rule', () {
+        final VideoMpvConfig on =
+            VideoMpvConfig.defaults.copyWith(audioPassthrough: true);
+        expect(buildMpvProperties(on)['audio-spdif'], kAudioPassthroughCodecs);
+        expect(
+          buildMpvProperties(on, playbackSpeed: 1.5)['audio-spdif'],
+          '',
+        );
+        expect(
+          buildMpvProperties(on, outputVolume: 0)['audio-spdif'],
+          '',
+        );
+        expect(
+          buildMpvProperties(on, playbackSpeed: 1.0, outputVolume: 100)[
+              'audio-spdif'],
+          kAudioPassthroughCodecs,
+        );
+      });
+
+      // 接线守卫：倍速 / 音量 / 静音三个入口都要重新判定直通，开片与运行时改配置
+      // 都要把当前倍速与可听音量带进去，否则上面的规则只在设置页生效。
+      test('VideoPlayerController re-evaluates spdif on speed / volume / mute',
+          () {
+        final String src = File(
+          'lib/src/media/video/video_player_controller.dart',
+        ).readAsStringSync();
+        String body(String signature) {
+          final int start = src.indexOf(signature);
+          expect(start, isNonNegative, reason: signature);
+          final int end = src.indexOf('\n  }\n', start);
+          return src.substring(start, end);
+        }
+
+        expect(body('Future<void> setSpeed(double rate)'),
+            contains('_syncAudioSpdif()'));
+        expect(body('Future<void> setVolume(double value)'),
+            contains('_syncAudioSpdif()'));
+        expect(body('Future<double> toggleMute()'),
+            contains('_syncAudioSpdif()'));
+        expect(body('Future<void> applyMpvConfig(VideoMpvConfig config)'),
+            contains('outputVolume: _outputVolume'));
+        expect(
+          RegExp(r'applyMpvConfigToPlayer\(\s*player,\s*effectiveMpvConfig,\s*'
+                  r'playbackSpeed: initialSpeed,')
+              .hasMatch(src),
+          isTrue,
+        );
+      });
     });
 
     // BUG-798：特殊多声道布局（6.1 FL+FR+FC+LFE+BL+BR+FLC）无声——auto-safe 透传源布局
@@ -372,6 +468,7 @@ keep-open=yes
         audioPitchCorrection: false,
         audioChannels: 'mono',
         normalizeDownmix: true,
+        audioPassthrough: true,
         loopFile: true,
         rawConf: 'vo=gpu-next',
       );
@@ -392,6 +489,7 @@ keep-open=yes
       expect(back.audioPitchCorrection, isFalse);
       expect(back.audioChannels, 'mono');
       expect(back.normalizeDownmix, isTrue);
+      expect(back.audioPassthrough, isTrue);
       expect(back.loopFile, isTrue);
       expect(back.rawConf, 'vo=gpu-next');
     });
@@ -479,6 +577,35 @@ keep-open=yes
       expect(isNetworkStreamUri('content://media/external/video/1'), isFalse);
       expect(isNetworkStreamUri(''), isFalse);
     });
+
+    test('edl:// is judged by its segments (BUG-3236)', () {
+      // 互联 host 的蓝光标题：段是 host 的 http 流 → 要网络缓存 / 超时调优。
+      expect(
+        isNetworkStreamUri(
+          buildBlurayEdlUri(<BlurayEdlSegment>[
+            (
+              source: 'http://h:1/api/library/videos/d/bdclip.m2ts?token=t&n=0',
+              inTimeTicks: 468000,
+              durationTicks: 54000,
+            ),
+          ]),
+        ),
+        isTrue,
+      );
+      // 本地未加密盘：段是本地路径。
+      expect(
+        isNetworkStreamUri(
+          buildBlurayEdlUri(<BlurayEdlSegment>[
+            (
+              source: r'D:\Disc\BDMV\STREAM\00001.m2ts',
+              inTimeTicks: 0,
+              durationTicks: 45000,
+            ),
+          ]),
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('buildSubtitleSuppressionProperties (TODO-080/092, BUG-190)', () {
@@ -503,6 +630,75 @@ keep-open=yes
       expect(m.containsKey('sub-auto'), isFalse);
       // 只发 sub-visibility 这一个 key。
       expect(m.keys.toSet(), <String>{'sub-visibility'});
+    });
+  });
+
+  group('图形字幕 seek 预读（BUG-3104）', () {
+    test('Matroska：开字幕预读、不加解码提前量（只多读数据不多解码）', () {
+      final Map<String, String> m =
+          buildGraphicSubtitleSeekPrerollProperties(matroska: true);
+      expect(m['demuxer-mkv-subtitle-preroll'], 'yes');
+      expect(m['demuxer-mkv-subtitle-preroll-secs'], '10');
+      expect(m['hr-seek-demuxer-offset'], '0');
+    });
+
+    test('m2ts / ts 等：mpv 没有字幕预读，只能让精确 seek 提前解复用', () {
+      final Map<String, String> m =
+          buildGraphicSubtitleSeekPrerollProperties(matroska: false);
+      expect(
+        m['hr-seek-demuxer-offset'],
+        '$kGraphicSubtitleSeekOffsetSeconds',
+      );
+      expect(kGraphicSubtitleSeekOffsetSeconds, greaterThanOrEqualTo(5));
+    });
+
+    test('离开图形字幕：还原成 mpv 默认值，键集合与开启时一致', () {
+      final Map<String, String> reset =
+          buildDefaultSubtitleSeekPrerollProperties();
+      expect(reset, <String, String>{
+        'demuxer-mkv-subtitle-preroll': 'index',
+        'demuxer-mkv-subtitle-preroll-secs': '1',
+        'hr-seek-demuxer-offset': '0',
+      });
+      expect(
+        reset.keys.toSet(),
+        buildGraphicSubtitleSeekPrerollProperties(matroska: false).keys.toSet(),
+      );
+    });
+
+    test('file-format 判 Matroska', () {
+      expect(isMatroskaFileFormat('mkv'), isTrue);
+      expect(isMatroskaFileFormat('matroska,webm'), isTrue);
+      expect(isMatroskaFileFormat('mpegts'), isFalse);
+      expect(isMatroskaFileFormat(null), isFalse);
+    });
+
+    test('控制器接线：选图形轨开预读、关字幕 / 换片还原', () {
+      final String src = File(
+        'lib/src/media/video/video_player_controller.dart',
+      ).readAsStringSync();
+      final int select = src.indexOf(
+        // BUG-3276 起签名多了命名参数 timingInput，只锚方法名。
+        'Future<bool> selectEmbeddedGraphicTrack(',
+      );
+      final String selectBody = src.substring(
+        select,
+        src.indexOf('\n  }\n', select),
+      );
+      expect(
+        selectBody.contains('buildGraphicSubtitleSeekPrerollProperties('),
+        isTrue,
+      );
+      final int off = src.indexOf(
+        'Future<void> selectSubtitleTrack(SubtitleTrack track)',
+      );
+      final String offBody = src.substring(off, src.indexOf('\n  }\n', off));
+      expect(offBody.contains('buildDefaultSubtitleSeekPrerollProperties()'), isTrue);
+      expect(
+        'buildDefaultSubtitleSeekPrerollProperties()'.allMatches(src).length,
+        greaterThanOrEqualTo(2),
+        reason: 'load 换片也要还原，不把上一段图形字幕的预读带到新片',
+      );
     });
   });
 

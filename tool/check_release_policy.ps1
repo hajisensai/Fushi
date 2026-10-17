@@ -194,7 +194,8 @@ Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'flutter b
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'flutter build macos --release' 'desktop workflow must publish macOS app zips'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'flutter build ios --release --no-codesign' 'desktop workflow must publish unsigned iOS IPA artifacts without requiring Apple signing'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-windows-setup.exe' 'desktop workflow must upload Windows installer assets'
-Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-macos.zip' 'desktop workflow must upload macOS zip assets'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-macos-arm64.zip' 'desktop workflow must upload macOS (Apple Silicon) zip assets'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-macos-arm64.dmg' 'desktop workflow must upload macOS (Apple Silicon) dmg assets for manual install'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
 # Apple 签名链路：细粒度不变式由 fushi/test/tools/apple_signing_workflow_guard_test.dart
@@ -225,7 +226,7 @@ Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 
 # BUG-1292: Magpie has no download path left, so the bundled slim archive is the
 # ONLY way window upscaling can ever install. If a Windows workflow stops
 # building or copying it, the build still goes green and every user gets
-# "Hibiki installation is incomplete" at runtime -- exactly the class of silent
+# "Fushi installation is incomplete" at runtime -- exactly the class of silent
 # packaging regression this guard exists for. Same shape as the helper rules
 # above: build step + payload directory, in BOTH Windows workflows.
 $magpieBundleWorkflows = @{

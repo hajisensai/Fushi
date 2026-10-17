@@ -38,7 +38,7 @@ class FushiGameStreamLibraryHost implements GameStreamLibraryHost {
   FushiGameStreamLibraryHost({
     required Future<List<GalgameEntry>> Function() loadGames,
     required bool Function() isLaunchEnabled,
-    required FushiRemoteGameStreamService service,
+    required FushiRemoteGameStreamService Function() service,
     required GameStreamSessionStarter startStream,
     GameStreamGameLauncher? launchGame,
     GalHookSessionState Function()? readHookState,
@@ -55,7 +55,11 @@ class FushiGameStreamLibraryHost implements GameStreamLibraryHost {
 
   final Future<List<GalgameEntry>> Function() _loadGames;
   final bool Function() _isLaunchEnabled;
-  final FushiRemoteGameStreamService _service;
+
+  /// The service this library is attached to *now*. The host controller
+  /// replaces the service on every server restart; holding one instance would
+  /// publish launch progress into a disposed registry the receiver never reads.
+  final FushiRemoteGameStreamService Function() _service;
   final GameStreamSessionStarter _startStream;
   final GalHookSessionState Function() _readHookState;
   final Listenable _hookChanges;
@@ -110,14 +114,14 @@ class FushiGameStreamLibraryHost implements GameStreamLibraryHost {
     if (game == null) {
       throw const GameStreamLaunchRejected(GameStreamLaunchFailure.unknownGame);
     }
-    final GameStreamSession? live = _service.session;
+    final GameStreamSession? live = _service().session;
     if (live != null &&
         !live.state.isTerminal &&
         live.gameId == game.id &&
         live.state == GameStreamSessionState.waiting) {
       // A stream for this game is already waiting (e.g. the host started it
       // locally); joining it is the whole job.
-      _service.updateLaunch(
+      _service().updateLaunch(
         launchId,
         state: GameStreamLaunchState.streaming,
         sessionId: live.sessionId,
@@ -133,7 +137,10 @@ class FushiGameStreamLibraryHost implements GameStreamLibraryHost {
     if (!_isRunning(game) || _readHookState().boundWindow == null) {
       await (_launchGameOverride ?? launchGalgameForStream)(game);
     }
-    _service.updateLaunch(launchId, state: GameStreamLaunchState.waitingWindow);
+    _service().updateLaunch(
+      launchId,
+      state: GameStreamLaunchState.waitingWindow,
+    );
     final int hwnd = await _waitForWindow(game);
     try {
       final GameStreamSession session = await _startStream(
@@ -143,7 +150,7 @@ class FushiGameStreamLibraryHost implements GameStreamLibraryHost {
         gameTitle: game.displayName,
         launchId: launchId,
       );
-      _service.updateLaunch(
+      _service().updateLaunch(
         launchId,
         state: GameStreamLaunchState.streaming,
         sessionId: session.sessionId,

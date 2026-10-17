@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:collection/collection.dart';
+import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:meta/meta.dart';
 
 import 'anki_compact_glossaries.dart';
+import 'anki_glossary_css.dart';
 import 'anki_models.dart';
 import 'lapis_note_type.dart';
 import 'lapis_preset.dart';
@@ -130,6 +132,9 @@ const String _inlineVideoPlayVisibleJs =
 /// `data-fushi-started`，其余一律直接返回。`canplay` 在媒体载入后才来，此时整张卡
 /// 已插入 DOM、CSS 已生效，可见性判得准。`play()` 被拒（卡组关了自动播放 → Anki 恢复
 /// 「播放需要用户手势」）时静默吞掉，留播放条给用户手动点。
+///
+/// BUG-3442：卡上有内嵌单词音频（[inlineVideoWordAudioHtml]）时先播单词、`ended`
+/// 之后再播片段——两者都在页内，顺序由这里串起来，不再和 Anki 原生队列抢着出声。
 String inlineVideoCoverHtml(String mediaName) =>
     '<video class="fushi-inline-video" '
     'src="${const HtmlEscape().convert(mediaName)}" '
@@ -138,8 +143,72 @@ String inlineVideoCoverHtml(String mediaName) =>
     "if(this.getAttribute('data-fushi-started'))return;"
     "Array.prototype.forEach.call(document.querySelectorAll('video.fushi-inline-video'),"
     "function(e){e.setAttribute('data-fushi-started','1');});"
-    '$_inlineVideoPlayVisibleJs'
+    '${_inlineWordAudioThenJs(_inlineVideoPlayVisibleJs)}'
     '"></video>';
+
+/// 页面上所有内嵌单词音频副本里取第一个、其余暂停（单行、无反斜杠 / 反引号 / `${`）。
+/// Lapis 把 `{{ExpressionAudio}}` 复制进 header / alt 两个按钮容器，音频没有可见性
+/// 之分，只要保证同时只有一份在响。
+const String _inlineWordAudioPickJs =
+    "var ws=Array.prototype.slice.call(document.querySelectorAll('audio.fushi-word-audio'));"
+    'var w=ws[0];ws.forEach(function(e){if(e!==w){e.onended=null;e.pause();}});';
+
+/// 先播内嵌单词音频，`ended` 后执行 [next]；页面上没有单词音频时直接执行 [next]。
+///
+/// `play()` 被拒分两种：`NotAllowedError`（卡组关了自动播放、需要用户手势）时 [next]
+/// 一样会被拒，什么都不做；其余（文件缺失 / 解码失败）跳过单词、照常执行 [next]，
+/// 不让坏掉的单词音频把句子也吞掉。
+String _inlineWordAudioThenJs(String next) =>
+    _inlineWordAudioPickJs +
+    'if(w){w.currentTime=0;w.onended=function(){w.onended=null;$next};'
+        'var wp=w.play();if(wp&&wp.catch){wp.catch(function(err){'
+        "if(err&&err.name==='NotAllowedError')return;"
+        'w.onended=null;$next});}}'
+        'else{$next}';
+
+/// 手动重播句子时停掉单词音频并撤销「播完接句子」，否则单词稍后播完会把句子再
+/// 从头拉一遍（单行、无反斜杠 / 反引号 / `${`）。
+const String _inlineWordAudioStopJs =
+    "Array.prototype.forEach.call(document.querySelectorAll('audio.fushi-word-audio'),"
+    'function(e){e.onended=null;e.pause();});';
+
+/// 同步片段卡的单词音频字段：重播按钮 + 一个隐藏 `<audio>`，取代原来的 `[sound:]`。
+///
+/// BUG-3442：`[sound:]` 由 Anki 原生队列在翻面时自动播放，而内嵌片段由页内
+/// `oncanplay` 自己播放；原生播放结束不会通知卡片 JS，两路没法排先后，于是单词和
+/// 句子同时出声。把单词音频也放进页内，由 [inlineVideoCoverHtml] 的脚本先播单词、
+/// 再播片段。代价：Anki 的「重播音频」快捷键（R）不再重播单词，改用卡上的按钮。
+///
+/// - 按钮：只重播单词，并撤销「播完接句子」。带 `replay-button` 类，沿用 Lapis 按钮样式。
+/// - `<audio>` 的 `oncanplay`：页面上**没有**内嵌片段时由它开头——播一次单词，
+///   `ended` 后接句子音频字段里的隐藏 `<audio>`（句子那边见到单词音频就让出）；
+///   有片段时什么都不做（画面那边的脚本负责整条顺序）。
+/// - `onerror`：单词文件坏掉、又没有片段时直接放句子，不让整张卡静音。
+///
+/// 与句子音频字段一样会被 Lapis 插进 JS 模板字面量（`addAudioButtons`），所以同样
+/// 不能有反斜杠 / 反引号 / `${` / `<script>`。守卫见 `inline_video_cover_test.dart`。
+String inlineVideoWordAudioHtml(String mediaName) =>
+    '<button type="button" class="replay-button fushi-word-audio-replay" '
+    'aria-label="Replay word audio" '
+    'onclick="event.stopPropagation();$_inlineWordAudioPickJs'
+    'if(w){w.onended=null;w.currentTime=0;var p=w.play();'
+    'if(p&&p.catch){p.catch(function(){});}}'
+    'return false;">&#9654;</button>'
+    '<audio class="fushi-word-audio" '
+    'src="${const HtmlEscape().convert(mediaName)}" preload="auto" '
+    'oncanplay="'
+    "if(document.querySelector('video.fushi-inline-video')||"
+    "document.querySelector('audio.fushi-word-audio[data-fushi-started]'))"
+    'return;'
+    "this.setAttribute('data-fushi-started','1');"
+    '${_inlineWordAudioThenJs(_inlineAudioPlayJs)}" '
+    'onerror="'
+    "if(document.querySelector('video.fushi-inline-video')||"
+    "document.querySelector('audio.fushi-word-audio[data-fushi-started]'))"
+    'return;'
+    "this.setAttribute('data-fushi-started','1');"
+    '$_inlineAudioPlayJs'
+    '"></audio>';
 
 /// 页面上**没有**内嵌片段时，改用句子音频字段里的隐藏 `<audio>` 播放同一个片段文件的
 /// 声音（单行、无反斜杠 / 反引号 / `${`）。
@@ -152,7 +221,9 @@ const String _inlineAudioPlayJs =
 /// - 按钮：页面上有内嵌片段 → 片段回到开头音画一起重播；没有（Lapis「音频卡」正面只
 ///   渲染 `{{SentenceAudio}}`、自定义模板把 Picture 放在另一面）→ 播隐藏 `<audio>`。
 /// - `<audio>` 的 `oncanplay`：页面上**没有**内嵌片段时自动播放一次（音频卡正面照旧
-///   自动出声）；有片段时什么都不做（画面那边的脚本负责播，不能叠音）。
+///   自动出声）；有片段时什么都不做（画面那边的脚本负责播，不能叠音）；有内嵌单词
+///   音频时也让出（[inlineVideoWordAudioHtml] 播完单词再接它，BUG-3442）。
+/// - 按钮先停掉单词音频并撤销它的「播完接句子」，免得句子被拉两遍。
 ///
 /// 为什么用内联事件属性而不是 `<script>`：Lapis 背面把 `{{SentenceAudio}}` 插进一个
 /// `<script>` 块里的 JS 模板字面量，字段里出现 `</script>` 会让 HTML 解析器提前结束那个
@@ -164,7 +235,7 @@ const String _inlineAudioPlayJs =
 String inlineVideoSentenceAudioHtml(String mediaName) =>
     '<button type="button" class="replay-button fushi-synced-video-replay '
     'fushi-inline-video-replay" aria-label="Replay video" '
-    'onclick="event.stopPropagation();'
+    'onclick="event.stopPropagation();$_inlineWordAudioStopJs'
     "if(document.querySelector('video.fushi-inline-video')){"
     '$_inlineVideoPlayVisibleJs}else{$_inlineAudioPlayJs}'
     'return false;">&#9654;</button>'
@@ -172,6 +243,7 @@ String inlineVideoSentenceAudioHtml(String mediaName) =>
     'src="${const HtmlEscape().convert(mediaName)}" preload="auto" '
     'oncanplay="'
     "if(document.querySelector('video.fushi-inline-video')||"
+    "document.querySelector('audio.fushi-word-audio')||"
     "document.querySelector('audio.fushi-inline-audio[data-fushi-started]'))"
     'return;'
     "this.setAttribute('data-fushi-started','1');"
@@ -210,6 +282,36 @@ mixin AnkiNoteComposer {
               (AnkiDeck d) => d.name == settings.selectedDeckName,
             )
           : null);
+
+  /// 本次制卡**实际**写进的卡组：「高级制卡」的卡组覆盖（[AnkiMiningPayload.overrides]
+  /// 的 `deckName`）在 [AnkiSettings.availableDecks] 里按名精确命中就用它，否则退回
+  /// [resolveSelectedDeck]。
+  ///
+  /// 覆盖是单次请求的裁决，不改设置里的卡组；按名而不是按 id，因为请求可能来自另一台
+  /// 设备（互联转发），两边 Anki 的卡组 id 不同，但卡组名全库唯一。找不到时**不新建**
+  /// 卡组——那是用户没有确认过的副作用（多半是对端的卡组列表比本机新，或拼写改过），
+  /// 只留诊断说明请求了什么、实际落到哪，卡照常进设置卡组而不是整张失败。
+  @protected
+  AnkiDeck? resolveTargetDeck(
+    AnkiSettings settings,
+    AnkiMiningPayload payload,
+  ) {
+    final String? requested = payload.overrides?.deckName;
+    if (requested == null || requested.isEmpty) {
+      return resolveSelectedDeck(settings);
+    }
+    final AnkiDeck? hit = settings.availableDecks.firstWhereOrNull(
+      (AnkiDeck d) => d.name == requested,
+    );
+    if (hit != null) return hit;
+    final AnkiDeck? fallback = resolveSelectedDeck(settings);
+    fushiDebugPrint(
+      'resolveTargetDeck: requested deck "$requested" not in '
+      '${settings.availableDecks.length} available decks; '
+      'falling back to "${fallback?.name}"',
+    );
+    return fallback;
+  }
 
   @protected
   AnkiDeck selectDeckAfterFetch(List<AnkiDeck> decks, AnkiSettings current) =>
@@ -379,7 +481,7 @@ mixin AnkiNoteComposer {
   /// 去标签、折叠空白、截断到 [maxLen]。供 note viewer / 多张命中选择列表区分卡片用。
   /// 纯函数、可单测。
   static String previewFromFieldValue(String value, {int maxLen = 60}) {
-    // 标签替换成**空格**（随后统一折叠），与 hibiki_audio 字幕解析的
+    // 标签替换成**空格**（随后统一折叠），与 fushi_audio 字幕解析的
     // `stripHtmlTags`（替换成空串）**故意不同**：Anki 字段 HTML 里 `<br>` /
     // 块级标签承担换行分词，直接删空会把相邻词粘连成一个词；字幕行内标签则
     // 紧贴正文、删空才不会在日文句中引入假空格。两份实现不强并（G11）。
@@ -489,6 +591,7 @@ mixin AnkiNoteComposer {
       for (final mediaEntry in dictionaryMediaTags.entries) {
         value = value.replaceAll(mediaEntry.key, mediaEntry.value);
       }
+      value = degradeUnresolvedDictionaryMedia(value);
       // 旧格式（仍带 gloss-* class）释义的外字中和兜底；新导出不命中门控，原样通过。
       value = normalizeAnkiDictionaryHtml(value);
       // 判空与写入用同一个 trim 口径。此前判空 trim、写入却是原值，于是一个字段里
@@ -502,6 +605,40 @@ mixin AnkiNoteComposer {
       }
     }
     return fields;
+  }
+
+  /// BUG-3270：popup.js 的占位符形如 `fushi_dict_<序号>.<ext>`；缓存文件名中段恒为
+  /// 40 位 sha1（[ankiDictionaryMediaCacheFilename]），序号上限 9 位即与之不相交。
+  /// 属性段按「引号内整段 | 引号外非 `>`」匹配：旧 WebView 序列化属性时不转义 `>`，
+  /// 裸 `[^>]*` 会在 alt 里的 `>` 处截断，整张图漏网。
+  static final RegExp _unresolvedMediaImg = RegExp(
+    r'<img\b(?:"[^"]*"|[^>"])*?\ssrc="fushi_dict_\d{1,9}\.[A-Za-z0-9]+"'
+    r'(?:"[^"]*"|[^>"])*>',
+  );
+  static final RegExp _unresolvedMediaHref = RegExp(
+    r'\s+href="fushi_dict_\d{1,9}\.[A-Za-z0-9]+"',
+  );
+  static final RegExp _imgAlt = RegExp(r'\salt="([^"]*)"');
+
+  /// BUG-3270：把替换后**仍残留**的词典媒体占位符降级成 alt 文本。
+  ///
+  /// 某条外字没存进 Anki（词典取不到字节 / 媒体存储失败）时它不进
+  /// [buildDictionaryMediaTags] 的映射，占位符原样留在字段里——卡片就永久引用一个
+  /// 媒体库里不存在的 `fushi_dict_N.svg`，AnkiDroid 每次渲染都报「卡片内容错误：
+  /// 加载…失败」。降级必须真的落到卡面：`<img>` 换成它的 alt 文本（与 popup.js 没
+  /// 媒体可嵌时的退化同义），外层 `<a>` 去掉指向占位符的 `href`。
+  ///
+  /// alt 来自 outerHTML 序列化：`&` / `"` 已转义，但属性值里的 `<` / `>` 不会被转义，
+  /// 挪进文本节点前必须补上，否则 alt 里的尖括号会被当成标签。
+  @visibleForTesting
+  static String degradeUnresolvedDictionaryMedia(String html) {
+    if (!html.contains('fushi_dict_')) return html;
+    return html
+        .replaceAllMapped(_unresolvedMediaImg, (Match m) {
+          final String alt = _imgAlt.firstMatch(m.group(0)!)?.group(1) ?? '';
+          return alt.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+        })
+        .replaceAll(_unresolvedMediaHref, '');
   }
 
   /// BUG-2606：覆盖 = 这张卡变成「此刻新制会得到的那张」——note 现有的每个字段都要
@@ -636,23 +773,55 @@ mixin AnkiNoteComposer {
     // 内嵌片段（WebM）反过来：画面本身就在 Picture 的 `<video>` 里播，句子音频字段只放
     // 重播按钮 + 隐藏 <audio>（[inlineVideoSentenceAudioHtml]），不再有任何 `[sound:]`——否则 Anki 原生
     // 队列会把同一段声音再放一遍。
+    final bool managedVideo = settings.fieldMappings.values.any(
+      (String value) => value.contains('{card-video}'),
+    );
+    if (context.synchronizedVideo && managedVideo) {
+      final String? audioField = AnkiHandlebarOptions.singleSentenceAudioField(
+        settings.fieldMappings,
+      );
+      if (audioField == null ||
+          settings.fieldMappings[audioField]!.contains('{card-video}')) {
+        throw StateError(
+          'Video adaptation requires exactly one sentence-audio token in one separate field. Check the Anki field mappings.',
+        );
+      }
+    }
     final String? inlineVideoName = _inlineVideoMediaName(coverRef);
     if (context.synchronizedVideo &&
         inlineVideoName != null &&
         isAnkiInlineVideoCover(context.coverPath)) {
-      sentenceAudioRef =
-          AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
-            settings.fieldMappings,
-          )
-          ? inlineVideoSentenceAudioHtml(inlineVideoName)
-          : null;
+      if (managedVideo) {
+        coverRef =
+            '<video class="fushi-video-source" '
+            'src="${const HtmlEscape().convert(inlineVideoName)}" '
+            'hidden preload="none" playsinline></video>';
+        sentenceAudioRef = null;
+      } else {
+        sentenceAudioRef =
+            AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
+              settings.fieldMappings,
+            )
+            ? inlineVideoSentenceAudioHtml(inlineVideoName)
+            : null;
+        // BUG-3442：单词音频若留成 `[sound:]`，Anki 原生队列翻面就放，和片段的
+        // oncanplay 同时出声。改成页内 <audio>，由片段脚本先播单词再播片段。
+        final RegExpMatch? wordAudio = RegExp(
+          r'^\[sound:([^\]]+)\]$',
+        ).firstMatch(processedAudio);
+        if (wordAudio != null) {
+          processedAudio = inlineVideoWordAudioHtml(wordAudio.group(1)!);
+        }
+      }
     } else if (context.synchronizedVideo && coverRef != null) {
       if (AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
         settings.fieldMappings,
       )) {
         sentenceAudioRef =
             '<span class="fushi-synced-sentence-media">$coverRef</span>';
-        coverRef = synchronizedVideoReplayHtml;
+        coverRef = managedVideo
+            ? '<span data-fushi-native-video="1"></span>'
+            : synchronizedVideoReplayHtml;
       } else {
         // Custom templates without sentence audio retain a playable Picture.
         sentenceAudioRef = null;
@@ -666,6 +835,9 @@ mixin AnkiNoteComposer {
     // issue #1432：「紧凑释义」开关只在这里落地——payload 进 handlebar 渲染前给
     // 释义 HTML 注入紧凑样式；关闭时三份释义原样透传，输出逐字节不变。
     final bool compactGlossaries = settings.compactGlossaries;
+    // BUG-3224：词典 CSS 先按本条释义内容裁剪（见 anki_glossary_css.dart），再注入紧凑样式。
+    // 整份词典 CSS 逐字段内联会把笔记撑到 AnkiDroid 预览过不了 Binder 的大小。
+    final AnkiGlossaryCssSlimmer cssSlimmer = AnkiGlossaryCssSlimmer();
     final mediaPayload = AnkiMiningPayload(
       expression: payload.expression,
       reading: payload.reading,
@@ -674,15 +846,15 @@ mixin AnkiNoteComposer {
       frequenciesHtml: payload.frequenciesHtml,
       freqHarmonicRank: payload.freqHarmonicRank,
       glossary: compactAnkiGlossaryHtml(
-        payload.glossary,
+        cssSlimmer.slim(payload.glossary),
         enabled: compactGlossaries,
       ),
       glossaryFirst: compactAnkiGlossaryHtml(
-        payload.glossaryFirst,
+        cssSlimmer.slim(payload.glossaryFirst),
         enabled: compactGlossaries,
       ),
       singleGlossaries: compactAnkiGlossaryMap(
-        payload.singleGlossaries,
+        cssSlimmer.slimMap(payload.singleGlossaries),
         enabled: compactGlossaries,
       ),
       pitchPositions: payload.pitchPositions,

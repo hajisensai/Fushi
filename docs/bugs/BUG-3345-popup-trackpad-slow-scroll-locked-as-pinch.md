@@ -1,0 +1,6 @@
+## BUG-3345 · 查词弹窗触控板慢滑被锁成捏合滑不动
+- **报告**：2026-10-14（应用内反馈 SUsLYAlCJF，Windows 11 精密触控板，dpr 1.25：「小说、视频内的查词弹窗用触控板上下滑动几乎滑不动，快甩能动一点点，慢慢滑完全不动；鼠标滚轮正常」）
+- **真实性**：✅ 真 bug（代码路径推断，未在真机触控板上复现）。Windows 引擎 `direct_manipulation.cc` 的 `OnContentUpdated` 报的 `scale` 是**自手势开始的累计值**，`packages/flutter_inappwebview_windows/lib/src/in_app_webview/trackpad_gesture_router.dart` 的 `update()`（BUG-2758 引入）在手势的**任何时刻** `|scale-1| >= 0.03` 就锁成捏合，此后到手势结束平移全部丢弃、只发 Ctrl+滚轮——而弹窗 `popup.js` 的 wheel 监听对 `ctrlKey` 直接 return。两指慢慢滑一段长距离时两指间距缓慢漂移，累计 3% 只要零点几毫米，于是一次滚动中途被改判成捏合：快甩时锁定前几帧已发出（「能动一点点」），慢滑很快锁定（「完全不动」）；鼠标走 `onPointerSignal` 不经 router，所以正常。附带症状：被锁成捏合后的 Ctrl+滚轮还会经 `_zoomWheelJs` 把弹窗字号 ±1。
+- **[x] ① 已修复** — router 改成手势开头一次定死的三态（未判 / 滚动 / 捏合）：缩放先越过阈值 = 捏合（BUG-2758 起手不丢）；平移先走过 `scrollLockPanDistance`(8 逻辑像素) 而缩放仍在阈值内 = 滚动，之后缩放怎么漂都不改判。
+- **[x] ② 已加自动化测试** — `packages/flutter_inappwebview_windows/test/trackpad_gesture_router_test.dart`（慢滑 + scale 漂移到 1.06 全程仍转发平移 / 锁定前缩放先越阈仍判捏合 / 滚动锁只管本次手势）；`fushi/integration_test/webview_wheel_units_itest.dart` 新增真 WebView2 用例：PanZoom 慢滑 60 帧、scale 漂移到 1.06，DOM 不得出现 Ctrl 滚轮且 deltaY 总量与平移一致。
+- **备注**：引擎在惯性阶段（`during_inertia_`）不发 PanZoomUpdate，WebView 的 Listener 也没有自己续惯性，所以触控板「甩」只滚手指实际走过的距离——这是另一处缺口（快甩手感），本次未处理。真机触控板未验证（本机无精密触控板）；2026-10-14 `run_windows_itest.ps1` 真 WebView2 实跑通过：慢滑 60 帧 scale 漂到 1.06，DOM 收到 4 个非 Ctrl 滚轮、deltaY 合计 135 = 90 逻辑像素 × dpr 1.5。

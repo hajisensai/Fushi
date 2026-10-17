@@ -135,9 +135,11 @@ class _CredentialConfigWidgetState extends State<_CredentialConfigWidget> {
   }
 
   Future<void> _testConnection() async {
-    await _saveCredentials();
+    if (_isTesting || !mounted) return;
     setState(() => _isTesting = true);
     try {
+      await _saveCredentials();
+      if (!mounted) return;
       final String message = await widget.runTest(_texts, _switchValue);
       if (mounted) _showSnackBar(context, message);
     } finally {
@@ -180,17 +182,32 @@ class _CredentialConfigWidgetState extends State<_CredentialConfigWidget> {
             const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerRight,
-            child: _isTesting
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: adaptiveIndicator(context: context, strokeWidth: 2),
-                  )
-                : FilledButton.tonal(
-                    onPressed: _testConnection,
-                    child:
-                        widget.testButtonChild ?? Text(t.sync_test_connection),
-                  ),
+            // 测试中 ↔ 按钮之间走 effects 弹簧交叉淡入（减弱动态效果下瞬切）。
+            child: AnimatedSwitcher(
+              duration: context.fushiMotion.effectsFast.duration,
+              switchInCurve: context.fushiMotion.effectsFast.curve,
+              switchOutCurve: context.fushiMotion.effectsFast.curve,
+              child: _isTesting
+                  ? SizedBox(
+                      key: const ValueKey<String>('testing'),
+                      width: 24,
+                      height: 24,
+                      child:
+                          adaptiveIndicator(context: context, strokeWidth: 2),
+                    )
+                  : widget.testButtonChild != null
+                      ? FushiFilledButton.tonal(
+                          key: const ValueKey<String>('test'),
+                          onPressed: _testConnection,
+                          child: widget.testButtonChild!,
+                        )
+                      : FushiFilledButton.tonalIcon(
+                          key: const ValueKey<String>('test'),
+                          onPressed: _testConnection,
+                          icon: const FushiIcon(FushiIcons.wifi),
+                          label: Text(t.sync_test_connection),
+                        ),
+            ),
           ),
         ],
       ),
@@ -272,7 +289,7 @@ class _WebDavConfigWidget extends StatelessWidget {
       testButtonChild: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          const Icon(Icons.wifi_find, size: 18),
+          const FushiIcon(FushiIcons.wifi, size: 18),
           const SizedBox(width: 8),
           Text(t.sync_test_connection),
         ],
@@ -294,7 +311,7 @@ bool _isBackendSelectable(SyncBackendType type) {
     // BUG-1088：互联回到「同步方式」选择器。解耦（独立分类 + 独立开关，可与云备份
     // 并存）保留，但把备份后端指向互联必须能从这里直接选——曾经唯一的入口是互联页
     // 的「设为备份后端」按钮，而它又被 host 门控藏掉，host 设备上入口彻底消失。
-    // 选中后连接配置仍在「Hibiki 互联」分类（选择器下方有指引行）。
+    // 选中后连接配置仍在「Fushi 互联」分类（选择器下方有指引行）。
     case SyncBackendType.fushiServer:
       return true;
     case SyncBackendType.googleDrive:
@@ -313,6 +330,9 @@ List<SyncBackendType> _selectableBackends(SyncBackendType current) {
   if (!list.contains(current)) list.insert(0, current);
   return list;
 }
+
+/// 同步后端的展示名（书架「已从本机移除的远端书」按来源分组时也用它）。
+String syncBackendLabel(SyncBackendType type) => _backendLabel(type);
 
 String _backendLabel(SyncBackendType type) {
   switch (type) {
@@ -357,7 +377,7 @@ class _BackendSelectorWidgetState extends State<_BackendSelectorWidget> {
     final state = _syncSettings(widget.settingsContext);
     return AdaptiveSettingsPickerRow<SyncBackendType>(
       title: t.sync_backend,
-      icon: Icons.cloud_outlined,
+      icon: FushiIcons.cloud,
       selected: state.backendType,
       options: _selectableBackends(state.backendType)
           .map(

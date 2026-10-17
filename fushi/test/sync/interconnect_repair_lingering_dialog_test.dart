@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -48,9 +48,9 @@ void main() {
         controller.debugPromptPairApproval(wanReq, seedPin: '482913');
     await tester.pump();
     expect(find.text('482913'), findsOneWidget, reason: '第一次审批弹窗应显示 PIN');
-    expect(find.text(t.sync_pair_allow), findsOneWidget);
+    expect(find.text(t.sync_pair_allow_interconnect_only), findsOneWidget);
 
-    await tester.tap(find.text(t.sync_pair_allow));
+    await tester.tap(find.text(t.sync_pair_allow_interconnect_only));
     await tester.pump();
     expect(await first, isTrue, reason: 'host 允许 → 审批返回 true');
     // 常驻阶段：仍显示同一 PIN + 「等对方输入」文案（client 尚未 confirm）。
@@ -66,7 +66,7 @@ void main() {
         reason: '重新配对必须弹出新审批弹窗并显示新 PIN（修复前会被静默拒绝）');
     expect(find.text('482913'), findsNothing, reason: '旧常驻弹窗应已收起');
 
-    await tester.tap(find.text(t.sync_pair_allow));
+    await tester.tap(find.text(t.sync_pair_allow_interconnect_only));
     await tester.pump();
     expect(await second, isTrue, reason: '重新配对的审批应能正常允许，而非被挡成拒绝');
 

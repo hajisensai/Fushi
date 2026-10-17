@@ -7,6 +7,9 @@ import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/models/local_audio_db_entry.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart'
+    show LocalAudioPackageContents;
 
 /// BUG-1604 守卫：双通道的**循环结构**不变式——「一条通道抛异常，其余通道照跑」。
 ///
@@ -155,6 +158,80 @@ void main() {
         p.interconnect.restoreAuthCalled,
         isTrue,
         reason: '修复前：云通道的异常终止整个 for，互联通道的书进度整轮被跳过',
+      );
+    });
+  });
+
+  group('runManualFullSync onlyChannels（控制通道 sync run <通道>）', () {
+    Future<ManualSyncResult> run(
+      FushiDatabase db,
+      Set<SyncAssetChannelScope>? only,
+    ) {
+      final Directory tmp = Directory.systemTemp;
+      return runManualFullSync(
+        db: db,
+        dictionaryResourceRoot: tmp,
+        audioDatabaseRoot: tmp,
+        tempDir: tmp,
+        localAudioEntries: const <LocalAudioDbEntry>[],
+        onLocalAudioImported: (LocalAudioPackageContents _) async {},
+        onlyChannels: only,
+      );
+    }
+
+    test('缺省 null：全部通道照跑（既有行为不变）', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final ({_ProbeBackend cloud, _ProbeBackend interconnect}) p =
+          _probePair();
+      debugSyncChannelsOverride = (SyncRepository _) async => _channels(p);
+
+      // 云通道抛、互联通道未认证 → 一条都没跑成，第一个异常原样抛回。
+      await expectLater(run(db, null), throwsA(isA<SocketException>()));
+      expect(p.cloud.restoreAuthCalled, isTrue);
+      expect(p.interconnect.restoreAuthCalled, isTrue);
+    });
+
+    test('只跑互联：云通道既不认证也不抛', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final ({_ProbeBackend cloud, _ProbeBackend interconnect}) p =
+          _probePair();
+      debugSyncChannelsOverride = (SyncRepository _) async => _channels(p);
+
+      final ManualSyncResult result = await run(
+        db,
+        <SyncAssetChannelScope>{SyncAssetChannelScope.interconnect},
+      );
+      expect(result.outcome, ManualSyncOutcome.notConfigured);
+      expect(p.cloud.restoreAuthCalled, isFalse);
+      expect(p.interconnect.restoreAuthCalled, isTrue);
+    });
+
+    test('只跑云：互联通道不被碰', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final ({_ProbeBackend cloud, _ProbeBackend interconnect}) p =
+          _probePair();
+      debugSyncChannelsOverride = (SyncRepository _) async => _channels(p);
+
+      await expectLater(
+        run(db, <SyncAssetChannelScope>{SyncAssetChannelScope.cloud}),
+        throwsA(isA<SocketException>()),
+      );
+      expect(p.cloud.restoreAuthCalled, isTrue);
+      expect(p.interconnect.restoreAuthCalled, isFalse);
+    });
+
+    test('syncAssetChannelScopeOf 按后端身份分类', () {
+      final ({_ProbeBackend cloud, _ProbeBackend interconnect}) p =
+          _probePair();
+      expect(
+        _channels(p).map(syncAssetChannelScopeOf).toList(),
+        <SyncAssetChannelScope>[
+          SyncAssetChannelScope.cloud,
+          SyncAssetChannelScope.interconnect,
+        ],
       );
     });
   });

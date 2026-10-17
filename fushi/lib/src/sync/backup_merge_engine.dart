@@ -3,12 +3,19 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
-    show isNetworkOnlyVideoPath, kNetworkStreamSchemes;
+    show
+        isNetworkOnlyVideoPath,
+        kNetworkStreamSchemes,
+        kSourceLibrarySftpScheme;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kProfileFallbackIdPrefKey;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
+import 'package:fushi_engine/srs/srs_backup_merge.dart'
+    show SrsBackupSource, mergeSrsFromBackup;
 
 /// ATTACH-then-upsert merge engine for backup "merge" import (TODO-888).
 ///
@@ -120,10 +127,12 @@ class BackupMergeEngine {
   /// 不需要随包文件；本地 `.strm` 是磁盘上的真实文件，照常走「随包文件」分支。
   /// SQLite 的 LIKE 对 ASCII 大小写不敏感，与 Dart 侧的小写化比较一致。协议集是
   /// 编译期常量、只含小写字母，直接拼进 SQL 不涉及转义（`_` / `%` 都不出现）。
-  /// 在线视频源入库集（`anime-source://`，起播时向扩展取流）同属网络行。
+  /// 在线视频源入库集（`anime-source://`，起播时向扩展取流）与来源库 SFTP 条目
+  /// （`sftp://`，起播时经回环中继取字节）同属网络行。
   static final String _networkOnlyVideoPathSql = <String>[
     ...kNetworkStreamSchemes,
     kAnimeSourceVideoPathScheme,
+    kSourceLibrarySftpScheme,
   ].map((String scheme) => "s.video_path LIKE '$scheme://%'").join(' OR ');
 
   /// Positional args matching the `?` placeholders in [_reachableVideoPredicate]
@@ -185,6 +194,10 @@ class BackupMergeEngine {
       // v105：Profile 先于统计并入——段 / 游玩会话按 Profile **名字**落到本机
       // 同名 Profile，src 独有的 Profile 得先按名建出来，统计才有归属可落。
       await _mergeProfilesAndChildren();
+      // v117 SRS（铁律 E）：必须在 Profile 并入之后——备份独有的 Profile 刚按名建出、
+      // 还没有 SRS 数据也没发布过，正好走「同名 → 采用备份 uid」而不是再建一个「（备份）」。
+      // 对话框开关是「复习」类别（备份里有 SRS 数据时才出现）；null = 全部合并。
+      if (_wants('srs')) await _mergeSrs();
       if (_wants('statistics')) {
         await _mergeReadingStatistics();
         await _mergeVideoWatchStatistics();
@@ -398,12 +411,21 @@ class BackupMergeEngine {
   /// `active_profile_id`、各种 `*_migrated`）。这些描述的是「本库处于什么状态」，
   /// 拿老包的值去盖会让新库自称成另一个 schema 状态，是真正会毁库的一步。
   /// `NOT EXISTS` 守卫天然把它们挡在外面，同时放行老包独有的用户设置。
+  ///
+  /// 但「本库还没有」挡不住**值是源库自增 id** 的键：profiles 按名字合并、id 重新
+  /// 分配，源库的 id 原样落进本库只会指向另一份（或不存在的）配置。这类键见
+  /// [mergeSkippedLocalIdPrefKeys]，一律不接管。
   Future<void> _adoptMissingPreferences() async {
+    final List<String> skipped = mergeSkippedLocalIdPrefKeys();
+    final String placeholders =
+        List<String>.filled(skipped.length, '?').join(', ');
     await _db.customStatement(
       'INSERT INTO preferences ("key", "value") '
       'SELECT s."key", s."value" FROM $_srcAlias.preferences AS s '
-      'WHERE NOT EXISTS '
+      'WHERE s."key" NOT IN ($placeholders) '
+      'AND NOT EXISTS '
       '(SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
+      skipped,
     );
   }
 
@@ -1437,6 +1459,13 @@ class BackupMergeEngine {
     );
   }
 
+  /// SRS 专用合并（srs_* 表在通用路径登记为跳过，见 [mergeSkippedDeviceLocalTableNames]）：
+  /// 按 `profiles.uid` 归位后经本机 SRS 副本合并，规则与幂等性见 [mergeSrsFromBackup]。
+  Future<void> _mergeSrs() async {
+    if (!await _srcTableExists('srs_entities')) return;
+    await mergeSrsFromAttachedBackup(_db, _srcAlias);
+  }
+
   /// Bookmarks dedupe-union by {book_uid, section_index, norm_char_offset,
   /// created_at}, existence-guarded on epub_books(uid) so a bookmark for a book
   /// the backup omitted is skipped（v82 换键后 guard 语义不变）.
@@ -1654,6 +1683,12 @@ class BackupMergeEngine {
 List<String> mergeSkippedDeviceLocalPrefKeys() =>
     List<String>.unmodifiable(SyncRepository.deviceLocalPrefKeys);
 
+/// 值是**本库**自增 id 的偏好键：接管源库偏好（同机换包名迁移）时不能照搬——
+/// profiles 按名字合并、id 重新分配，源库的 id 在本库指向的是别的配置。
+/// 整份恢复不受影响（那时 profiles 表与这些键来自同一个库，彼此一致）。
+List<String> mergeSkippedLocalIdPrefKeys() =>
+    List<String>.unmodifiable(const <String>[kProfileFallbackIdPrefKey]);
+
 /// Tables that a merge import must never copy from its attached backup DB.
 ///
 /// [BackupMergeEngine.merge] is an explicit allowlist of content operations;
@@ -1686,7 +1721,50 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       // v116：设备端待发制卡队列。载荷文件只在本机 <support>/pending_mine_queue/，
       // 补发目标也是本机配置的后端——合并进来只会造出没有载荷、发不出去的空行。
       'pending_mine_queue',
+      // v117 SRS 本机状态与可重建缓存：发件箱 / 写入者身份 / 已应用上下文只描述本机，
+      // 缓存由事件推导——合并进来只会让本机状态与事件集合对不上。
+      'srs_event_local',
+      'srs_local_state',
+      'srs_notes_cache',
+      'srs_cards_cache',
+      // v117 SRS 数据本体（**不是**设备本地，会随备份走）：合并导入的规则是计划
+      // 铁律 E——按 profileUid 归属、事件取并集、不做 id 重映射（事件 ID 全局唯一、
+      // 不可变），由 SRS 专用合并步骤（BackupMergeEngine._mergeSrs →
+      // fushi_engine 的 mergeSrsFromBackup）处理，缓存随之刷新。通用
+      // 路径绝不能按行 upsert / 重映射它们，所以在这里登记为「通用合并跳过」。
+      'srs_entities',
+      'srs_field_edits',
+      'srs_review_logs',
+      'srs_unknown_events',
     ]);
+
+/// 把 ATTACH 在 [db] 连接上、别名 [srcAlias] 的备份库里的 SRS 数据按 `profiles.uid`
+/// 归位并入本机（铁律 E，规则见 [mergeSrsFromBackup]）。合并导入
+/// （[BackupMergeEngine]）与覆盖恢复里「复习勾了、配置档案没来自备份」的那条路径共用
+/// 这一个入口。新建的「（备份）」Profile 与通用路径一样直接插 profiles 行。
+/// 源库须已迁到当前 schema；在事务里调用时写入随之提交 / 回滚。
+Future<void> mergeSrsFromAttachedBackup(
+  FushiDatabase db,
+  String srcAlias,
+) async {
+  final String deviceId = await SyncRepository(db).getOrCreateDeviceId();
+  await mergeSrsFromBackup(
+    source: SrsBackupSource.attached(db, srcAlias),
+    local: db,
+    deviceId: deviceId,
+    createProfile: (String name) async {
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      await db.customStatement(
+        'INSERT INTO main.profiles (name, created_at, updated_at) '
+        'VALUES (?, ?, ?)',
+        <Object>[name, now, now],
+      );
+      final QueryRow row =
+          await db.customSelect('SELECT last_insert_rowid() AS id').getSingle();
+      return row.read<int>('id');
+    },
+  );
+}
 
 /// Read-only summary of what a backup MERGE import would change on this device
 /// (TODO-1195 part B), shown in the import confirm dialog. Produced by

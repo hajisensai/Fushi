@@ -229,11 +229,14 @@ void main() {
       expect(containsCodeLine(wheel, '_wheelBoundaryArmed'), isFalse);
     });
 
-    test('onWheelPaginate Dart handler 不读 invertSwipeDirection，传 throttleMs',
+    test('onWheelPaginate Dart handler 方向只经 readerWheelTickIsForward，传 throttleMs',
         () {
-      // 行为变更：onWheelPaginate handler 直送 _paginate，**不读 invertSwipeDirection**
-      // （脱钩根因），并传 wheelPageTurnInterval 作 throttleMs。Dart handler 在合并语料
-      // 的 webview.part.dart 段，setupScript 切片不含它，故读整源 [source]。
+      // 行为变更：onWheelPaginate handler 直送 _paginate，并传 wheelPageTurnInterval
+      // 作 throttleMs。方向由纯谓词 readerWheelTickIsForward 一处决定——鼠标滚轮
+      // 不读 invertSwipeDirection（TODO-737 脱钩根因），只有触控板两指滑（滑动翻页
+      // 手势，BUG-3358，横纵两轴）经它折算；象限表由
+      // test/reader/reader_wheel_page_turn_direction_test.dart 锁定。Dart handler 在合并
+      // 语料的 webview.part.dart 段，setupScript 切片不含它，故读整源 [source]。
       //
       // 窗口由 `controller.addJavaScriptHandler(...)` 的**圆括号配对**给出。旧写法是
       // `substring(handlerName 处, 下一个 addJavaScriptHandler 处)`：既依赖「下一个
@@ -244,8 +247,15 @@ void main() {
       expect(handler.name, endsWith('addJavaScriptHandler'),
           reason: 'onWheelPaginate 必须仍以 addJavaScriptHandler 的具名实参注册');
       final String body = handler.text;
-      expect(containsCodeLine(body, 'invertSwipeDirection'), isFalse,
-          reason: 'TODO-737：滚轮翻页 handler 不得读 invertSwipeDirection（只归触摸/拖动管）');
+      expect(containsCodeLine(body, 'readerWheelTickIsForward('), isTrue,
+          reason: '滚轮翻页方向必须只经纯谓词决定，不得在 handler 里散写符号映射');
+      expect(
+          RegExp(r'invertSwipe:\s*ReaderFushiSource\.instance\.invertSwipeDirection')
+              .hasMatch(body),
+          isTrue,
+          reason: 'invertSwipeDirection 只能作为纯谓词的实参出现（谓词保证鼠标滚轮不受它影响）');
+      expect('invertSwipeDirection'.allMatches(body).length, 1,
+          reason: 'TODO-737：handler 不得在谓词之外另读 invertSwipeDirection');
       expect(containsCodeLine(body, 'throttleMs:'), isTrue,
           reason: '滚轮翻页经 _paginate 入口节流闸门（throttleMs: wheelPageTurnInterval）');
       expect(containsCodeLine(body, 'wheelPageTurnInterval'), isTrue,

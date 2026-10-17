@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -34,7 +34,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_cover_badge_pp');
+        Directory.systemTemp.createTempSync('fushi_cover_badge_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -64,7 +64,7 @@ void main() {
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir =
-        Directory.systemTemp.createTempSync('hibiki_cover_badge_store');
+        Directory.systemTemp.createTempSync('fushi_cover_badge_store');
     platformServices = testPlatformServices();
     ankiRepository = FakeAnkiRepository();
     appModel = AppModel(platformServices)
@@ -178,7 +178,7 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
 
   File _writeTinyCover() {
     final File file = File(
-      '${Directory.systemTemp.path}/hibiki_cover_badge_cover.png',
+      '${Directory.systemTemp.path}/fushi_cover_badge_cover.png',
     );
     if (!file.existsSync()) file.writeAsBytesSync(_tinyPngBytes);
     return file;

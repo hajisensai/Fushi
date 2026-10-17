@@ -74,12 +74,19 @@
       var foldBtn = document.createElement('button');
       foldBtn.type = 'button';
       foldBtn.className = 'hdr-fold';
-      foldBtn.textContent = '▾';
       foldBtn.title = tr('sp_fold_title');
       foldBtn.setAttribute('aria-label', tr('sp_fold_aria_label'));
+      // 折叠钮字形：Material Symbols Rounded（icons.js 先于本文件装入）；拿不到时退回文字三角。
+      var setFoldGlyph = function (folded) {
+        var glyph = typeof window.fushiIcon === 'function'
+          ? window.fushiIcon(folded ? 'chevron_right' : 'expand_more', { size: 18 }) : null;
+        foldBtn.textContent = glyph ? '' : (folded ? '▸' : '▾');
+        if (glyph) foldBtn.appendChild(glyph);
+      };
+      setFoldGlyph(false);
       var applyFold = function (folded) {
         document.body.classList.toggle('hdr-folded', folded);
-        foldBtn.textContent = folded ? '▸' : '▾';
+        setFoldGlyph(folded);
       };
       foldBtn.addEventListener('click', function () {
         var folded = !document.body.classList.contains('hdr-folded');
@@ -180,6 +187,8 @@
   // 超时竞速保证 Promise 一定 settle（值取 > app 冷查询 P99；超时按失败处理，UI 显示可重试的
   // 失败文案而不是无限转圈）。
   var RUNTIME_MESSAGE_TIMEOUT_MS = 8000;
+  // 复习模块关着（/api/srs/term-status 404）后的退避截止时刻。
+  var srsDisabledUntil = 0;
   function sendRuntime(message) {
     return new Promise(function (resolve) {
       var settled = false;
@@ -346,6 +355,10 @@
     if (window.fushiTheme && typeof window.fushiTheme.applyPopupPalette === 'function') {
       window.fushiTheme.applyPopupPalette(lookupContainer, scheme);
     }
+    // M3E 视觉层（与页面弹窗同一开关，见 theme.js applyPopupStyle）。
+    if (window.fushiTheme && typeof window.fushiTheme.applyPopupStyle === 'function') {
+      window.fushiTheme.applyPopupStyle(lookupContainer, theme['--fushi-glass'] === '0');
+    }
     var columns = theme['--dict-columns'];
     if (typeof columns === 'string' && columns) {
       document.documentElement.style.setProperty('--dict-columns', columns);
@@ -373,6 +386,10 @@
   // fushiResolvePopupBox 把上限折回基准尺度；压到最窄可读宽度仍放不下时改压 zoom，
   // 让整窗等比缩小而不是切内容。
   var lookupThemeForBox = null;
+  // 扩展字号覆盖（popup-size.js）变化：已打开的侧边栏弹窗就地按新 zoom 重算尺寸盒。
+  if (typeof fushiOnPopupFontSizeChange === 'function') {
+    fushiOnPopupFontSizeChange(function () { if (lookupThemeForBox) applyLookupBox(); });
+  }
   function applyLookupBox() {
     var box = fushiResolvePopupBox(
       lookupThemeForBox, { width: window.innerWidth, height: window.innerHeight });
@@ -723,6 +740,30 @@
           return !!(response && response.ok && response.data && response.data.duplicate === true);
         });
       }
+      if (name === 'srsTermStatus') {
+        // Fushi 复习词状态（与 bridge-shim 同契约）：回 null 或状态对象；app 的复习模块关着
+        // 时服务端 404 → 记住一段时间不再问。
+        if (Date.now() < srsDisabledUntil) return Promise.resolve(null);
+        var srsReq = args[0] || {};
+        return sendRuntime({
+          type: 'srsTermStatus', expression: srsReq.expression || '', reading: srsReq.reading || '',
+        }).then(function (response) {
+          if (response && response.status === 404) {
+            srsDisabledUntil = Date.now() + 60000;
+            return null;
+          }
+          var status = response && response.ok && response.data ? response.data.status : null;
+          return status && typeof status === 'object' ? status : null;
+        });
+      }
+      if (name === 'srsOpenCard') {
+        var srsOpen = args[0] || {};
+        return sendRuntime({
+          type: 'srsOpenCard', cardId: srsOpen.cardId || '', noteId: srsOpen.noteId || '',
+        }).then(function (response) {
+          return !!(response && response.ok && response.data && response.data.opened === true);
+        });
+      }
       if (name === 'openInAnki') {
         // Issue #1409：与 bridge-shim 同契约——回 'opened' / 'noMatch' / 'failed'，绝不回 null
         // （null = 宿主没接这根桥）；background 超时/失败/旧 app 无端点 → 'failed'。
@@ -734,11 +775,41 @@
           return (outcome === 'opened' || outcome === 'noMatch') ? outcome : 'failed';
         });
       }
+      if (name === 'favoriteEntry' || name === 'favoriteCheck') {
+        // BUG-3141：与 bridge-shim 同契约——回处理后的收藏态；失败 fail-soft 成 false（☆），
+        // 切换失败时 toast，用户点了收藏没收藏上必须看得见。
+        var favToggle = name === 'favoriteEntry';
+        var favReq = args[0] || {};
+        return sendRuntime({
+          type: 'favorite',
+          toggle: favToggle,
+          expression: favReq.expression || '',
+          reading: favReq.reading || '',
+          glossary: favToggle ? (favReq.glossary || '') : '',
+          sentence: favToggle && currentLookupCue && currentLookupCue.text ? String(currentLookupCue.text) : '',
+        }).then(function (response) {
+          if (response && response.ok && response.data && typeof response.data.favorite === 'boolean') {
+            return response.data.favorite;
+          }
+          if (favToggle) {
+            toast('✗ ' + tr(response && response.status === 404 ? 'favorite_failed_old_app' : 'favorite_failed'));
+          }
+          return false;
+        });
+      }
       if (name === 'resolveWordAudio') {
         var audio = args[0] || {};
         return sendRuntime({
           type: 'lookupAudio', expression: audio.expression || '', reading: audio.reading || '',
         }).then(function (response) { return response && response.ok ? response.url || null : null; });
+      }
+      if (name === 'listWordAudioSources') {
+        var listReq = args[0] || {};
+        return sendRuntime({
+          type: 'lookupAudioList', expression: listReq.expression || '', reading: listReq.reading || '',
+        }).then(function (response) {
+          return response && response.ok && Array.isArray(response.audioSources) ? response.audioSources : [];
+        });
       }
       if (name === 'mineEntry') {
         return sendToTab({
@@ -847,8 +918,8 @@
       trackEl.value = state.activeLang || '';
       offsetEl.hidden = tracks.length === 0;
     }
-    offsetValueEl.textContent = ((Number(state.offsetMs) || 0) >= 0 ? '+' : '') +
-      ((Number(state.offsetMs) || 0) / 1000).toFixed(1) + 's';
+    // 正在手填时不打断（state 每秒刷新一次）。
+    if (document.activeElement !== offsetValueEl) offsetValueEl.value = formatOffsetSeconds(state.offsetMs);
   }
 
   function renderCues() {
@@ -1039,6 +1110,45 @@
     if (state && state.ok) { stateSignature = metadataSignature(state); applyState(state, true); }
   });
 
+  // 手填偏移（用户群 10-09）：输入秒数回车 = 绝对偏移，0 = 复位；解析规则与播放器菜单
+  // （player-controls.js parseOffsetSeconds）一致，守卫 side-panel-offset-input.test.js 交叉比对。
+  function formatOffsetSeconds(ms) {
+    var n = Number(ms);
+    if (!isFinite(n) || n === 0) return '0';
+    var sec = Math.round(n / 10) / 100;
+    // |偏移| < 5ms 舍入到 0（含 -0）：显示 '0'，不能落到负号分支变成 '-0'。
+    if (sec === 0) return '0';
+    return (sec > 0 ? '+' : '-') + String(Math.abs(sec));
+  }
+  function parseOffsetSeconds(text) {
+    var t = String(text == null ? '' : text).trim()
+      .replace(/[−－–]/g, '-').replace(/＋/g, '+').replace(/[，,]/g, '.').replace(/\s*(s|秒)$/i, '');
+    if (!/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(t)) return null;
+    var ms = Math.round(parseFloat(t) * 1000);
+    if (!isFinite(ms) || Math.abs(ms) > 3600 * 1000) return null;
+    return ms;
+  }
+  async function commitOffsetInput() {
+    var ms = parseOffsetSeconds(offsetValueEl.value);
+    if (ms === null) {
+      offsetValueEl.value = formatOffsetSeconds(currentState ? currentState.offsetMs : 0);
+      return;
+    }
+    var state = await sendToTab({ type: 'fushiSubtitleSidePanelOffset', absoluteMs: ms });
+    if (state && state.ok) { stateSignature = metadataSignature(state); applyState(state, true); }
+    offsetValueEl.value = formatOffsetSeconds(state && state.ok ? state.offsetMs : ms);
+  }
+  // 回车 = 失焦提交（失焦触发 change）；文本框不在 <form> 里，回车 / Esc 本就没有默认动作。
+  offsetValueEl.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') offsetValueEl.blur();
+    else if (event.key === 'Escape') {
+      offsetValueEl.value = formatOffsetSeconds(currentState ? currentState.offsetMs : 0);
+      offsetValueEl.blur();
+    }
+  });
+  offsetValueEl.addEventListener('change', commitOffsetInput);
+  offsetValueEl.addEventListener('focus', function () { try { offsetValueEl.select(); } catch (_) {} });
+
   document.getElementById('offset-reset').addEventListener('click', async function () {
     var state = await sendToTab({ type: 'fushiSubtitleSidePanelOffset', reset: true });
     if (state && state.ok) { stateSignature = metadataSignature(state); applyState(state, true); }
@@ -1147,13 +1257,30 @@
       toast(tr('subs_loaded', { provider: providerName ? providerName + ' ' : '', n: data.cues.length }));
     }
   }
+  // 查字幕的结果提示（无结果 / 只列了前 N 条）：语义 info 色块 + 左侧图标，与工具栏菜单 / 设置页的
+  // 提示条同一套 .fushi-notice（material.css「语义 tonal 色块」）。
+  function subsNotice(text) {
+    var notice = document.createElement('div');
+    notice.className = 'subs-empty fushi-notice';
+    notice.setAttribute('data-tone', 'info');
+    notice.setAttribute('role', 'status');
+    var glyph = typeof window.fushiIcon === 'function' ? window.fushiIcon('info', { size: 20 }) : null;
+    if (glyph) {
+      var slot = document.createElement('span');
+      slot.className = 'msr-slot';
+      slot.setAttribute('aria-hidden', 'true');
+      slot.appendChild(glyph);
+      notice.appendChild(slot);
+    }
+    var copy = document.createElement('span');
+    copy.textContent = text;
+    notice.appendChild(copy);
+    return notice;
+  }
   function renderSubsResults(candidates, truncated) {
     subsResultsEl.textContent = '';
     if (!candidates.length) {
-      var empty = document.createElement('div');
-      empty.className = 'subs-empty';
-      empty.textContent = tr('subs_no_results');
-      subsResultsEl.appendChild(empty);
+      subsResultsEl.appendChild(subsNotice(tr('subs_no_results')));
       subsResultsEl.hidden = false;
       return;
     }
@@ -1180,12 +1307,7 @@
       row.addEventListener('click', function () { subsInstall(candidate); });
       subsResultsEl.appendChild(row);
     });
-    if (truncated) {
-      var more = document.createElement('div');
-      more.className = 'subs-empty';
-      more.textContent = tr('subs_truncated');
-      subsResultsEl.appendChild(more);
-    }
+    if (truncated) subsResultsEl.appendChild(subsNotice(tr('subs_truncated')));
     subsResultsEl.hidden = false;
   }
   var subsSearching = false;
@@ -1246,6 +1368,7 @@
   autoButton.addEventListener('click', function () {
     autoScroll = !autoScroll;
     autoButton.classList.toggle('is-on', autoScroll);
+    autoButton.setAttribute('aria-pressed', autoScroll ? 'true' : 'false');
     if (autoScroll) { scrollIndex = -1; updateCurrent(currentState && currentState.currentTimeMs); }
   });
   document.getElementById('settings').addEventListener('click', function () {
@@ -1296,6 +1419,7 @@
   function stopAutoScroll() {
     autoScroll = false;
     autoButton.classList.toggle('is-on', false);
+    autoButton.setAttribute('aria-pressed', 'false');
   }
   listEl.addEventListener('wheel', stopAutoScroll, { passive: true });
   listEl.addEventListener('touchmove', stopAutoScroll, { passive: true });

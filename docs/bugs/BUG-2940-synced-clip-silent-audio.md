@@ -1,0 +1,10 @@
+## BUG-2940 · 同步片段导出放过 0 音频包的 webm（#1951）
+- **报告**：2026-10-04（用户：GitHub issue #1951，Android 16 / fushi 2.9.1，自建 NAS 局域网 HTTP 流，「带声音的视频片段」制卡）
+- **真实性**：✅ 真 bug，在 FFmpeg 6.0 上 100% 复现。两层问题：
+  - **根因（丢音频）**：`packages/fushi_engine/lib/utils/misc/synchronized_video_exporter.dart` 的 `buildSynchronizedVideoClipArgs` 无条件加了 `-shortest`。移动端 ffmpeg-kit 是 FFmpeg **6.0**（AAR 版本串 `n6.0` / `Lavc60.3.100`；iOS 的 `FFMPEG_REF=n6.0`）。6.0 新引入的 `-shortest` 同步队列遇到裸 ADTS 输入时，会把这一路解码出的帧全部吞在编码器之前（`-v debug`：`283 frames decoded` / `Output stream #0:1 (audio): 0 frames encoded; 0 packets muxed`），ffmpeg 仍退出 0。Android 的句子音频恰好是先裁好的 ADTS `.aac`（`immersionMiningAudioExtensionFor`），所以 webm 和 mp4 回退两种格式都出无声片段。
+    - 和网络、远端 seek、Opus、webm 都无关：视频换成本地文件 / lavfi 仍是 0；音频换成 m4a / mka / wav / ogg 正常；去掉 `-shortest` 正常；6.1.1 / master 正常。桌面 ffmpeg-min 是 7.1.5，不受影响。
+  - **判据（放行坏产物）**：同文件原第 318 行只判「退出码 0 + 文件非空」。webm 容器头就有几十 KB，声明了音轨但没有音频包的文件照样放行；导出成功后引擎把这个片段当作卡片唯一的声音（`immersion_mining_engine.dart`，`audioPath = coverPath`），整张卡没声音。
+  - **相邻受害者**：有声书片段合成（`fushi/lib/src/media/audiobook/audiobook_clip_export.dart`）的两条路径也是「ADTS `.aac` + `-shortest`」。在 6.0 上实测：序列帧版 0 个音频包；静图版音频保住了，但 `-shortest` 截不住 `-loop 1` 的无限图，视频固定多出约 12.5 秒（2.5 秒的句子导出成 15 秒）。
+- **[x] ① 已修复** — `32d605bd2c`：同步片段导出去掉 `-shortest`（两路输入各自有 `-t`，输出也有 `-t`，它本来就多余）。`68c7ac1101` + `dd65c4898f`：成功判据改为按这次 ffmpeg 自己的收尾统计行（6.x 是 `video:..kB audio:..kB`，7.x 起是 `KiB`）核对画面、声音两路都写进了数据；没有统计行也判失败（`missingMuxedVideoAndAudio`），失败时引擎降级到「动图 + 单独句子音频」。`dd65c4898f`：有声书两个合成函数改为必填 `durationMs`（就是调用方裁音频用的同一对毫秒值，不从 ADTS 文件反推，因为裸 ADTS 的时长是按码率估的），去掉 `-shortest` 改用输出 `-t`，并加上同一个两路判据。改法在 FFmpeg 6.0 与 master 上用同一套素材都验证过：音频包大于 0，视频包数不变，音频首包 pts 的负值是编码器固有延迟，音画同步。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/synchronized_video_exporter_test.dart`：参数里不含 `-shortest`、恰好 3 个 `-t`；收尾统计行解析（6.0 无前缀 kB / 7.x 前缀 KiB / 流信息行不误命中）；「有视频无音频」「无视频」「无统计行」判失败并删掉半成品；用真 ffmpeg 导出 ADTS 句子音频的 webm 与 mp4 并数音频包（本机无 ffmpeg 时跳过）。`fushi/test/media/audiobook/audiobook_clip_synth_test.dart`：两条构造函数都不含 `-shortest`，并且输出前有 `-t 2.500`。
+- **备注**：本机 ffmpeg 是 master 版，6.0 的复现用 gyan 6.0 essentials（libav 版本号和 AAR 完全一致）离线完成，没有上真机（本机没接 Android 设备）。同一事件里另一半「缓冲副本在移动端恒失败」见 BUG-2939（#1953）。

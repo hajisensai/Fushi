@@ -187,6 +187,10 @@ android {
         // 产出 prebuilt/android/<abi>/libfushi_p2p.so 则随包；缺失时 P2P 能力判
         // 不可用，其余互联照常。
         main.jniLibs.srcDirs += '../../../native/fushi_p2p/prebuilt/android'
+        // SRS 排程内核（fsrs-rs，copy-if-present）：native/fushi_fsrs/build_android_so.*
+        // 产出 prebuilt/android/<abi>/libfushi_fsrs.so 则随包；缺失时 SRS 原生内核
+        // 判不可用，构建照常。
+        main.jniLibs.srcDirs += '../../../native/fushi_fsrs/prebuilt/android'
     }
 
     defaultConfig {

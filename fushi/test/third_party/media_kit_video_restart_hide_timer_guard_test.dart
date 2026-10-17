@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// kongzhitiao yincang Timer zhi zai zheng ping onTap yu seek shi chongzhi;
 /// dibu anniu onPressed bu chongzhi, qie yidong _pokeControlsVisible zaotui no-op.
 /// Xiufu: fork jia restartHideTimerSignal, State dingyue zai kejian tai chongpai
-/// yincang Timer; Hibiki _RestartHideTimerSignal you anniu jing _pokeControlsVisible
+/// yincang Timer; Fushi _RestartHideTimerSignal you anniu jing _pokeControlsVisible
 /// yidong fenzhi poke(), chuanru _mobileControlsTheme. Zhenshi fork xu libmpv
 /// (headless pao bu liao), gu fen liang ceng: fake_async xingwei + yuanma shouwei.
 void main() {
@@ -110,7 +110,7 @@ void main() {
     });
   });
 
-  group('TODO-1059 s2 source guard: Hibiki signal / poke / pass to fork theme',
+  group('TODO-1059 s2 source guard: Fushi signal / poke / pass to fork theme',
       () {
     late String shellSrc;
     late String visibilitySrc;

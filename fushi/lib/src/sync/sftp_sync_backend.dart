@@ -15,6 +15,11 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
+/// SFTP v3 `ATTRS.mtime`（uint32，Unix 纪元**秒**，与时区无关）→ UTC 毫秒。
+/// 服务器没带 ACMODTIME 标志时为 null。上传不 setstat，mtime 就是服务器写入时刻。
+int? sftpMtimeToMs(int? mtimeSeconds) =>
+    mtimeSeconds == null ? null : mtimeSeconds * 1000;
+
 class SftpSyncBackend extends SyncBackend
     with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
   SftpSyncBackend._();
@@ -263,7 +268,7 @@ class SftpSyncBackend extends SyncBackend
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) =>
       _guarded(() async {
         final sftp = await _ensureConnected();
@@ -282,7 +287,7 @@ class SftpSyncBackend extends SyncBackend
             final bytes = Uint8List.fromList(chunk);
             await handle.writeBytes(bytes, offset: offset);
             offset += bytes.length;
-            if (length > 0) onProgress?.call(offset / length);
+            if (length > 0) onProgress?.call(offset / length, offset);
           }
         } finally {
           await handle.close();
@@ -293,7 +298,7 @@ class SftpSyncBackend extends SyncBackend
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) =>
       _guarded(() async {
         final sftp = await _ensureConnected();
@@ -364,6 +369,7 @@ class SftpSyncBackend extends SyncBackend
                   name: e.filename,
                   isFolder: e.attr.isDirectory,
                   sizeBytes: e.attr.size,
+                  modifiedAt: sftpMtimeToMs(e.attr.modifyTime),
                 ))
             .toList();
       });

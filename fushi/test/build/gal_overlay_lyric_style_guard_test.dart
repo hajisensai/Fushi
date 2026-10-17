@@ -96,12 +96,23 @@ void main() {
   });
 
   test('③ 最终填充遍仍是原点那次绘制（滚动守卫的锚点）', () {
+    // 竖排改造后原点统一取 (text_origin_x, text_origin_y)；横排时 TextOriginX()
+    // 恒为 text_rect_.left，所以锚点语义不变——两处一起钉。
     expect(
-      RegExp(r'D2D1::Point2F\(text_rect_\.left, text_origin_y\), '
-              r'text_layout_\.Get\(\),\s*brush\.Get\(\)')
-          .hasMatch(window),
+      RegExp(
+        r'D2D1::Point2F\(text_origin_x, text_origin_y\),\s*'
+        r'text_layout_\.Get\(\),\s*brush\.Get\(\)',
+      ).hasMatch(window),
       isTrue,
-      reason: '填充遍必须保持在 (text_rect_.left, text_origin_y) 原点、用正文画刷',
+      reason: '填充遍必须保持在 (text_origin_x, text_origin_y) 原点、用正文画刷',
+    );
+    expect(
+      RegExp(
+        r'float FloatingLyricWindow::TextOriginX\(\) const \{[\s\S]{0,400}?'
+        r':\s*text_rect_\.left;',
+      ).hasMatch(window),
+      isTrue,
+      reason: '横排原点 x 必须就是 text_rect_.left（逐像素不变）',
     );
   });
 

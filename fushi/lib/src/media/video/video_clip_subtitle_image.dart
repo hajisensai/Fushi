@@ -14,7 +14,12 @@ library;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:characters/characters.dart';
 import 'package:flutter/painting.dart';
+import 'package:fushi_audio/fushi_audio_core.dart'
+    show SubtitleCueStyle, SubtitleMarkup, SubtitleSpan;
+import 'package:fushi_engine/media/video/video_clip_subtitle.dart'
+    show ClipSubtitleCue;
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 
@@ -68,7 +73,8 @@ class ClipSubtitleLayout {
       Object.hash(scale, fontSize, bottomPadding, maxWidth, shadowThickness);
 
   @override
-  String toString() => 'ClipSubtitleLayout(scale: $scale, font: $fontSize, '
+  String toString() =>
+      'ClipSubtitleLayout(scale: $scale, font: $fontSize, '
       'bottom: $bottomPadding, maxWidth: $maxWidth)';
 }
 
@@ -123,6 +129,7 @@ Future<Uint8List?> renderClipSubtitlePng({
   bool anchorTop = false,
   double? overridePadding,
   String? fontFamily,
+  SubtitleMarkup? markup,
 }) async {
   if (text.trim().isEmpty) return null;
   final ClipSubtitleLayout layout = computeClipSubtitleLayout(
@@ -133,28 +140,50 @@ Future<Uint8List?> renderClipSubtitlePng({
   );
 
   try {
-    final TextPainter painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          fontSize: layout.fontSize,
-          fontFamily: fontFamily,
-          color: style.textColor ?? const Color(0xFFFFFFFF),
-          fontWeight: _weightOf(
-            style.fontWeight ?? VideoSubtitleStyle.defaultFontWeight,
-          ),
-          // 与屏幕上同一套柔和投影（[VideoSubtitleStyle.defaults] 的 Niratan 观感），
-          // 粗细已按 scale 换算到画面像素。
-          shadows: buildSubtitleSoftShadow(
-            style.shadowColor ?? const Color(0xE6000000),
-            layout.shadowThickness,
-          ),
-        ),
+    final TextStyle fillStyle = TextStyle(
+      fontSize: layout.fontSize,
+      fontFamily: fontFamily,
+      color: style.textColor ?? const Color(0xFFFFFFFF),
+      fontWeight: _weightOf(
+        style.fontWeight ?? VideoSubtitleStyle.defaultFontWeight,
       ),
+      // 与屏幕上同一套柔和投影（[VideoSubtitleStyle.defaults] 的 Niratan 观感），
+      // 粗细已按 scale 换算到画面像素。
+      shadows: buildSubtitleSoftShadow(
+        style.shadowColor ?? const Color(0xE6000000),
+        layout.shadowThickness,
+      ),
+    );
+    // 用户描边（#xif6-gtSz7）：与屏幕同一支画笔，粗细按 scale 换算；有描边时投影挂在
+    // 描边层、填充层不带投影（阴影 < 描边 < 填充）。带 ASS 样式的 cue（BUG-3291）
+    // 与屏幕 overlay「尊重字幕自带样式」同口径：描边由 ASS 自己的描边色决定（富文本
+    // 里作投影色），不叠用户描边。
+    final Paint? outline = markup != null
+        ? null
+        : buildSubtitleStrokePaint(
+            style.resolveOutlineColor(),
+            subtitleOutlineStrokeWidth(style.outlineThickness * layout.scale),
+          );
+    TextPainter painterFor(TextStyle s) => TextPainter(
+      text: markup == null
+          ? TextSpan(text: text, style: s)
+          : buildClipSubtitleStyledSpan(
+              markup: markup,
+              base: s,
+              shadowThickness: layout.shadowThickness,
+            ),
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
       maxLines: null,
     )..layout(maxWidth: layout.maxWidth);
+    final TextPainter? strokePainter = outline == null
+        ? null
+        : painterFor(fillStyle.copyWith(color: null, foreground: outline));
+    final TextPainter painter = painterFor(
+      outline == null
+          ? fillStyle
+          : fillStyle.copyWith(shadows: const <Shadow>[]),
+    );
 
     final ui.PictureRecorder recorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(recorder);
@@ -164,22 +193,147 @@ Future<Uint8List?> renderClipSubtitlePng({
         ? layout.bottomPadding
         : frame.height - layout.bottomPadding - painter.height;
     final double dx = (frame.width - painter.width) / 2;
+    strokePainter?.paint(canvas, Offset(dx, dy));
     painter.paint(canvas, Offset(dx, dy));
 
     final ui.Picture picture = recorder.endRecording();
     final ui.Image image = await picture.toImage(frame.width, frame.height);
     try {
-      final ByteData? png =
-          await image.toByteData(format: ui.ImageByteFormat.png);
+      final ByteData? png = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
       return png?.buffer.asUint8List();
     } finally {
       image.dispose();
       picture.dispose();
       painter.dispose();
+      strokePainter?.dispose();
     }
   } catch (_) {
     return null;
   }
+}
+
+/// 一条导出 cue 是否值得按富文本渲染：只有源 cue 真带样式（样式表或任一行内样式段）
+/// 时才返回它的 [SubtitleMarkup]，否则 null——纯文本 cue 继续走清洗过的
+/// [ClipSubtitleCue.text]，导出结果与改动前逐字节一致。
+SubtitleMarkup? clipCueStyledMarkup(ClipSubtitleCue cue) {
+  final SubtitleMarkup? markup = cue.markup;
+  if (markup == null || markup.plainText.trim().isEmpty) return null;
+  final bool styled =
+      markup.cueStyle != null ||
+      markup.spans.any((SubtitleSpan s) => s.hasStyle);
+  return styled ? markup : null;
+}
+
+/// 纯函数：把一条带样式的 cue（[SubtitleMarkup]）排成导出用的富文本（BUG-3291）。
+///
+/// 与屏幕 overlay「尊重字幕自带样式」开着时的取值同源（`video_subtitle_overlay.dart`
+/// 的 base / span 合并）：
+/// - 基线：样式表主色 `PrimaryColour` 覆盖用户字色；有样式表时字重以 ASS `Bold` 为准
+///   （`Bold=0` 渲染常规字重，不吃用户统一字重——BUG-819 的同一条理由）；斜体 / 下划线 /
+///   删除线取样式表；
+/// - 行内 span：主色、填充透明度、粗体 / 斜体 / 下划线 / 删除线覆盖基线；
+/// - 描边色（行内优先，否则样式表 `OutlineColour`）作为柔和投影的颜色——导出只有这
+///   一层「描边」，ASS 给了描边色时用户的投影色让位。
+///
+/// 字号、字体、位置、旋转、动画**不**跟随 ASS：导出件的排版仍按用户的统一外观换算
+/// （见 [computeClipSubtitleLayout]），字幕在导出画面里的大小与位置可预期。
+/// 硬换行（[SubtitleMarkup.lineBreakGraphemes]，plainText 里是空格）还原成换行。
+TextSpan buildClipSubtitleStyledSpan({
+  required SubtitleMarkup markup,
+  required TextStyle base,
+  required double shadowThickness,
+}) {
+  final SubtitleCueStyle? cue = markup.cueStyle;
+  final TextStyle cueBase = base.copyWith(
+    color: cue?.primaryColorArgb != null ? Color(cue!.primaryColorArgb!) : null,
+    fontWeight: cue == null
+        ? null
+        : ((cue.bold ?? false) ? FontWeight.bold : FontWeight.normal),
+    fontStyle: (cue?.italic ?? false) ? FontStyle.italic : null,
+    decoration: _decorationOf(
+      underline: cue?.underline ?? false,
+      strike: cue?.strikeOut ?? false,
+    ),
+    shadows: cue?.outlineColorArgb != null
+        ? buildSubtitleSoftShadow(
+            Color(cue!.outlineColorArgb!),
+            shadowThickness,
+          )
+        : null,
+  );
+
+  final List<String> graphemes = markup.plainText.characters.toList();
+  final Set<int> breaks = markup.lineBreakGraphemes.toSet();
+  String slice(int from, int to) {
+    final StringBuffer out = StringBuffer();
+    for (int i = from; i < to; i++) {
+      out.write(breaks.contains(i) ? '\n' : graphemes[i]);
+    }
+    return out.toString();
+  }
+
+  final List<SubtitleSpan> spans = markup.spans.toList()
+    ..sort(
+      (SubtitleSpan a, SubtitleSpan b) =>
+          a.startGrapheme.compareTo(b.startGrapheme),
+    );
+  final List<InlineSpan> children = <InlineSpan>[];
+  int cursor = 0;
+  for (final SubtitleSpan span in spans) {
+    final int start = span.startGrapheme.clamp(cursor, graphemes.length);
+    final int end = span.endGrapheme.clamp(start, graphemes.length);
+    if (start > cursor) children.add(TextSpan(text: slice(cursor, start)));
+    if (end > start) {
+      children.add(
+        TextSpan(
+          text: slice(start, end),
+          style: _clipSpanStyle(span, cueBase, shadowThickness),
+        ),
+      );
+    }
+    cursor = end;
+  }
+  if (cursor < graphemes.length) {
+    children.add(TextSpan(text: slice(cursor, graphemes.length)));
+  }
+  return TextSpan(style: cueBase, children: children);
+}
+
+/// 行内 span 对基线的覆盖：只给出 span 真正设置过的维度，其余继承父 [TextSpan]。
+TextStyle _clipSpanStyle(
+  SubtitleSpan span,
+  TextStyle cueBase,
+  double shadowThickness,
+) {
+  Color? color = span.colorArgb != null ? Color(span.colorArgb!) : null;
+  final double? fillOpacity = span.fillOpacity;
+  if (fillOpacity != null) {
+    color = (color ?? cueBase.color ?? const Color(0xFFFFFFFF)).withValues(
+      alpha: fillOpacity.clamp(0.0, 1.0),
+    );
+  }
+  return TextStyle(
+    color: color,
+    fontWeight: span.bold ? FontWeight.bold : null,
+    fontStyle: span.italic ? FontStyle.italic : null,
+    decoration: _decorationOf(underline: span.underline, strike: span.strike),
+    shadows: span.outlineColorArgb != null
+        ? buildSubtitleSoftShadow(
+            Color(span.outlineColorArgb!),
+            shadowThickness,
+          )
+        : null,
+  );
+}
+
+TextDecoration? _decorationOf({required bool underline, required bool strike}) {
+  final List<TextDecoration> decos = <TextDecoration>[
+    if (underline) TextDecoration.underline,
+    if (strike) TextDecoration.lineThrough,
+  ];
+  return decos.isEmpty ? null : TextDecoration.combine(decos);
 }
 
 /// CSS 数字字重 → Flutter [FontWeight]。越界夹到两端（`FontWeight.values` 是

@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:ui';
 
+import 'package:fushi/src/reader/reader_settings.dart';
+
 /// TODO-393：阅读器 DOM 里「当前查词句」前后一条上下文句的解析结果。
 /// [normOffset]/[normLength] 是整书归一化偏移（有 [window.fushiReader] 时才有值），
 /// 供有声书把这句映射到音频区间；纯阅读时为 null（只合文本）。
@@ -62,16 +64,22 @@ class ReaderSelectionScripts {
   /// 单独一个 IIFE、只挂 document 上的 touch 监听，与图片长按（`onImageLongPress`，
   /// 550ms，仅命中图片才 arm）按命中元素天然互斥；多指触摸（缩放）直接不 arm。
   ///
-  /// BUG-长按选择不灵敏：[delayMs] 原为 400、[slop] 原为 10，两个都偏严。
-  /// * 400ms：同一个 app 的查词弹窗长按已因「等待时间太长」从 500 调到 250
-  ///   （BUG-536），阅读器这条却一直没跟。280ms 仍远高于轻点（轻点松手 timer 还没
-  ///   fire 就被 touchend 清掉），也仍早于 WebView 自己的原生长按（~500ms）。
-  /// * 10px：是全仓最紧的触摸容差——tap 判据 [ReaderSettings.tapSlopPx] 是 10 但只
-  ///   需维持到松手，连续模式边界手势是 12px，翻页是 24px，而这里要求手指在整整
-  ///   一个长按时限内**始终**停在 10px 半径内，实际上比单击还难触发。放宽到 16px，
-  ///   仍小于翻页距离阈值（24px），所以「想滑动翻页」的手势照样能在 arm 阶段被
-  ///   slop 取消，两者不会互抢。
-  static String longPressDragGestureScript({int delayMs = 280, int slop = 16}) {
+  /// BUG-2919（长按抢走翻页滑动）：长按与滑动翻页是两个并行识别器，同一次触摸
+  /// 两者都可能接受——长按判据是「[delayMs] 内位移不超过 [slop]」，翻页判据是
+  /// 「松手时位移 ≥ 24px」（**不限时**，慢滑也翻页）。重叠区 = 手指在 [delayMs]
+  /// 内走不出 [slop]：先按住停顿一下再滑、或滑得慢于 slop/delay，计时器先 fire，
+  /// 置 `__fushiTextSelectDragActive` 后翻页让路，于是「翻页变成选中」。BUG-2563
+  /// 把参数从 400/10 放宽到 280/16，重叠速度从 25px/s 抬到 57px/s、停顿窗口缩到
+  /// 280ms（比 Android 平台长按时限 `ViewConfiguration` 400ms 还短），用户翻页
+  /// 时的自然停顿就落进去了。所以：
+  /// * [delayMs] 取 Android 平台长按时限 400ms——用户对「长按」的肌肉记忆就是它。
+  /// * [slop] 取单击判据同一个真值 [ReaderSettings.tapSlopPx]：「没动」只有一个
+  ///   定义，长按不该比单击更宽容地吞掉位移。
+  /// BUG-2563「长按不灵敏」的真根因是命中判定（已另行修复，不受此处影响）。
+  static String longPressDragGestureScript({
+    int delayMs = 400,
+    int slop = ReaderSettings.tapSlopPx,
+  }) {
     final int slopSq = slop * slop;
     return '''
 (function() {
@@ -156,7 +164,10 @@ class ReaderSelectionScripts {
     lpsClearTimer();
     lpsActive = false;
   }, {passive: false});
-  document.addEventListener('touchcancel', function() { lpsReset(); }, {passive: true});
+  document.addEventListener('touchcancel', function() {
+    lpsReset();
+    if (window.fushiSelection) window.fushiSelection.dragAnchor = null;
+  }, {passive: true});
 })();''';
   }
 
@@ -367,10 +378,1322 @@ const JAPANESE_RANGES = [
   [0x3000, 0x303f],
   ...FULLWIDTH_CHARACTER_RANGES,
 ];
-window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+// BUG-3343：判据唯一出处是 Dart 的 kReaderCssHighlightsSupportedJs（reader_css_highlight_capability.dart，
+// 旧 Blink 竖排 ::highlight 画错位置 → 退回包裹兜底）。本源码是原始字符串、被多份 node 行为测试按
+// 文本切出来直接跑，所以这里放逐字副本；与常量逐字相等由 reader_css_highlight_capability_bug3328_test 钉住。
+window.__fushiCssHighlightsSupported = (!!(window.CSS && CSS.highlights && window.Highlight) && !(function(){var ua=typeof navigator!=="undefined"&&navigator.userAgent||"";var m=/Chrome\/(\d+)\./.exec(ua);return !!m && +m[1] < 120;})());
+// BUG-3326 审查（#2115 / #2119 同类）：阅读器里所有「切开 / 搬移正文节点」的 DOM 手术共用这一处
+// 保护，各写入点不各写一份。会被弄坏的状态有两类：
+// 1. 查词选区（fushiSelection.selection / dragAnchor）存的是「文本节点 + 数字偏移」普通对象。文本
+//    节点被切开时切点之后的偏移越界（RangeError、高亮画不出、拖动柄消失、制卡句子指错）——切开一律
+//    走 splitText()，由选区的拥有者（noteTextNodeSplit）按 DOM splitText 的同一语义换算。
+// 2. live Range（ranges() 列出的）与原生选区。节点被移出父节点时，端点落在它里面的边界按 DOM 规范
+//    塌到 (parent, index)——搬移一律走 moveNodes()：搬前钉住落在被搬节点里的端点（节点身份不变，
+//    偏移原样可用）与 remap 换算的端点，搬完写回；原生选区用 setBaseAndExtent 还原，保留拖选方向
+//    （macOS 先拖出原生选区再收藏 / 搜索，复制、导出不再少一段）。
+// 不要再用 Range.extractContents / surroundContents 切正文：它们把切点两侧的文字复制成新文本节点、
+// 原节点就地截短，两类状态都救不回。新增「存起来的 live Range」要在 ranges() 里登记。
+if (!window.__fushiLiveRanges) {
+  window.__fushiLiveRanges = {
+    // 要保住的 live Range：CSS.highlights 里登记的（查词选区、收藏 / 标注、搜索）、高亮桥已建好但
+    // 还没合批登记进 CSS.highlights 的收藏 Range 表，以及不进 CSS.highlights 的迟到图片重锚目标
+    // （搜索命中 Range 的 cloneRange，见 registerImageLateAnchor）。原生选区由 moveNodes 单独处理。
+    ranges: function() {
+      var out = [];
+      var add = function(r) {
+        if (r && typeof r.setStart === 'function' && out.indexOf(r) < 0) out.push(r);
+      };
+      if (typeof CSS !== 'undefined' && CSS.highlights) {
+        CSS.highlights.forEach(function(hl) { hl.forEach(add); });
+      }
+      var pending = window.__fushiHighlightRangeMap;
+      if (pending) {
+        for (var id in pending) (pending[id].ranges || []).forEach(add);
+      }
+      if (window.fushiReader) add(window.fushiReader.__imgReanchorTarget);
+      if (window.__fushiCueRanges) window.__fushiCueRanges.tracked().forEach(add);
+      return out;
+    },
+    // 在 offset 处切开文本节点，返回切点之后的新节点。live Range（含原生选区）由 DOM splitText 自己
+    // 换算；查词选区的「节点 + 偏移」由它的拥有者换算。
+    splitText: function(node, offset) {
+      var tail = node.splitText(offset);
+      var selection = window.fushiSelection;
+      if (selection && typeof selection.noteTextNodeSplit === 'function') {
+        selection.noteTextNodeSplit(node, offset, tail);
+      }
+      return tail;
+    },
+    // BUG-3432：批量手术（开章逐句包裹 / 拆包裹、套收藏）期间为真 = 进批时确认过没有原生选区。
+    // DOM 刚改过时读 getSelection().rangeCount / anchorNode 会让 Blink 对整章同步排版一次
+    // （长章约 5ms），moveNodes 每次都读：一章 2700 句的有声书逐句包裹就是 2700 次整章排版，
+    // WebView 主线程卡几十秒、开书超时白屏。批内是同步执行、不会有用户输入新建选区，读一次就够。
+    noNativeSelection: false,
+    batch: function(fn) {
+      if (this.noNativeSelection) return fn();
+      var sel = window.getSelection ? window.getSelection() : null;
+      this.noNativeSelection = !sel || !sel.rangeCount;
+      try {
+        return fn();
+      } finally {
+        this.noNativeSelection = false;
+      }
+    },
+    // mutate() 把 moved 里的节点（连同子孙）移走再插回文档，节点身份不变；返回前必须已插回文档
+    // （落在游离子树上的边界会被 setEnd 跨树塌缩）。remap(container, offset) 换算不在 moved 里、
+    // 却被这次搬移改了含义的端点（如原父节点里切点之后的子节点序号），返回 [node, offset] 或 null。
+    // 其余端点由 DOM 规范自己调整，写回时取搬移之后的值。
+    moveNodes: function(moved, mutate, remap) {
+      var inMoved = function(c) {
+        for (var m = 0; m < moved.length; m++) {
+          if (moved[m] === c || moved[m].contains(c)) return true;
+        }
+        return false;
+      };
+      var pin = function(c, o) {
+        if (inMoved(c)) return [c, o];
+        return remap ? remap(c, o) : null;
+      };
+      var fixes = [];
+      this.ranges().forEach(function(r) {
+        var s = pin(r.startContainer, r.startOffset);
+        var e = pin(r.endContainer, r.endOffset);
+        if (s || e) fixes.push({ r: r, s: s, e: e });
+      });
+      // 原生选区没被钉住的那一端交给一个折叠的 live Range 跟踪：DOM 规范对它的调整就是对那一端的调整
+      // （搬移之后再读 anchor / focus 不可靠：被塌缩的一端可能让选区方向翻转）。
+      var hold = function(pinned, c, o) {
+        if (pinned) return { pinned: pinned };
+        var probe = document.createRange();
+        probe.setStart(c, o);
+        return { probe: probe };
+      };
+      var read = function(h) {
+        return h.pinned || [h.probe.startContainer, h.probe.startOffset];
+      };
+      var sel = !this.noNativeSelection && window.getSelection ? window.getSelection() : null;
+      var native = null;
+      if (sel && sel.rangeCount && sel.anchorNode && sel.focusNode) {
+        var a = pin(sel.anchorNode, sel.anchorOffset);
+        var f = pin(sel.focusNode, sel.focusOffset);
+        if (a || f) {
+          native = {
+            a: hold(a, sel.anchorNode, sel.anchorOffset),
+            f: hold(f, sel.focusNode, sel.focusOffset)
+          };
+        }
+      }
+      mutate();
+      fixes.forEach(function(x) {
+        var s = x.s || [x.r.startContainer, x.r.startOffset];
+        var e = x.e || [x.r.endContainer, x.r.endOffset];
+        x.r.setStart(s[0], s[1]);
+        x.r.setEnd(e[0], e[1]);
+      });
+      if (native) {
+        var na = read(native.a);
+        var nf = read(native.f);
+        sel.setBaseAndExtent(na[0], na[1], nf[0], nf[1]);
+      }
+    },
+    // 把 node 里 [start, end) 这段文字原地包进 wrapper：先在首尾切开，再把中间那个文本节点原样搬进
+    // wrapper（不用 surroundContents / extractContents，理由见上）。返回 wrapper。
+    wrapText: function(node, start, end, wrapper) {
+      if (end < node.data.length) this.splitText(node, end);
+      var mid = start > 0 ? this.splitText(node, start) : node;
+      var parent = mid.parentNode;
+      this.moveNodes([mid], function() {
+        parent.insertBefore(wrapper, mid);
+        wrapper.appendChild(mid);
+      });
+      return wrapper;
+    },
+    // 拆掉 wrapper、子节点原样留在原位，返回原父节点（没挂在文档里返回 null）。不合并文本节点，
+    // 调用方拆完一批后对父节点调 normalize()。
+    unwrap: function(wrapper) {
+      var parent = wrapper.parentNode;
+      if (!parent) return null;
+      var moved = Array.prototype.slice.call(wrapper.childNodes);
+      this.moveNodes(moved, function() {
+        moved.forEach(function(m) { parent.insertBefore(m, wrapper); });
+        parent.removeChild(wrapper);
+      });
+      return parent;
+    },
+    // BUG-3343：Node.normalize() 把相邻文本节点并进第一个、其余移出文档。live Range 与原生选区由
+    // DOM 规范自己换算到合并后的节点；查词选区与拖选锚点是「节点 + 偏移」普通对象，指向被并掉
+    // 节点的点会失效（删除收藏 / 标注时高亮桥拆包裹并 normalize，查词选区随之丢失）。合并一律走
+    // 这里，由选区的拥有者（trackTextPoints）在合并期间跟踪这些点、合并完写回。
+    normalize: function(node) {
+      if (!node) return;
+      var selection = window.fushiSelection;
+      var restore = selection && typeof selection.trackTextPoints === 'function'
+        ? selection.trackTextPoints() : null;
+      node.normalize();
+      if (restore) restore();
+    }
+  };
+}
+// BUG-3518（「句子被高亮顶开」）：WebKit 只在同一个文本节点内做字距调整（kerning，Hiragino 等日文字体
+// 在「、机」「。表」这类字对上收 1–2px）；文本节点一旦被切开——包进 span、拆成两个相邻文本节点、
+// 哪怕包裹是 display:contents——切口两侧的字对就不再调整，切口之后整行的字往后挪（iOS 26.5 模拟器
+// 实测；font-feature-settings:'kern' 0 关不掉，只有 font-kerning:none 能关）。有声书原先把每句
+// 包进 .fushi-sentence-audio-cue：分页 / 滚动在开章时整章包裹，句界处的字距一律变松；VN 在播放到
+// 那句时才包裹，排版恰好在高亮出现那一刻变动。Blink 把整段行内文字一起排版，切开不影响字距。
+// 所以 WebKit 上有声书句子不再改 DOM：每句登记成 live Range，当前句交给 CSS.highlights 的
+// 'fushi-sentence-audio'——字色走 ::highlight()，底色照旧由窄条层画（窄条层本来就读这一组）。
+// Range 登记在 tracked() 里，正文其它 DOM 手术（__fushiLiveRanges.moveNodes）会把它们写回而不塌缩。
+// Blink 与不支持 CSS Highlight 的旧 WebView 继续走包裹。window.__fushiSentenceAudioRangeMode
+// （布尔）可强制开关，供测试在 Chrome 里跑这条路径。
+if (!window.__fushiCueRanges) {
+  window.__fushiCueRanges = (function() {
+    var HIGHLIGHT = 'fushi-sentence-audio';
+    var owners = [];
+    var isWebKit = function() {
+      var ua = typeof navigator !== 'undefined' && navigator.userAgent || '';
+      return /AppleWebKit\//.test(ua) && !/(Chrome|Chromium)\//.test(ua);
+    };
+    return {
+      enabled: function() {
+        if (!window.__fushiCssHighlightsSupported || typeof Highlight !== 'function') return false;
+        var forced = window.__fushiSentenceAudioRangeMode;
+        return typeof forced === 'boolean' ? forced : isWebKit();
+      },
+      // 分段 {node, start, end} → Range（建 Range 前让文本可被 ::highlight 绘制，见 BUG-3323）。
+      build: function(segments) {
+        var out = [];
+        for (var i = 0; i < segments.length; i++) {
+          var seg = segments[i];
+          if (!seg.node || !seg.node.parentNode || seg.end <= seg.start) continue;
+          if (typeof window.__fushiEnsureHighlightPaintable === 'function') {
+            window.__fushiEnsureHighlightPaintable(seg.node);
+          }
+          var r = document.createRange();
+          r.setStart(seg.node, seg.start);
+          r.setEnd(seg.node, seg.end);
+          out.push(r);
+        }
+        return out;
+      },
+      // owner：一个 Map(cueId → Range[])，由各引擎持有；登记后其中的 Range 随 DOM 手术写回。
+      track: function(owner) {
+        if (owners.indexOf(owner) < 0) owners.push(owner);
+      },
+      untrack: function(owner) {
+        var k = owners.indexOf(owner);
+        if (k >= 0) owners.splice(k, 1);
+      },
+      tracked: function() {
+        var out = [];
+        owners.forEach(function(owner) {
+          owner.forEach(function(ranges) { for (var i = 0; i < ranges.length; i++) out.push(ranges[i]); });
+        });
+        return out;
+      },
+      show: function(ranges) {
+        var h = new Highlight();
+        for (var i = 0; i < ranges.length; i++) h.add(ranges[i]);
+        // 查词（priority 1）压过当前句（BUG-125）。
+        h.priority = 0;
+        CSS.highlights.set(HIGHLIGHT, h);
+        if (window.__fushiLanes) window.__fushiLanes.repaint(HIGHLIGHT);
+      },
+      hide: function() {
+        if (!window.__fushiCssHighlightsSupported || !CSS.highlights.has(HIGHLIGHT)) return;
+        CSS.highlights.delete(HIGHLIGHT);
+        if (window.__fushiLanes) window.__fushiLanes.repaint(HIGHLIGHT);
+      }
+    };
+  })();
+}
+// BUG-3323: WebKit never paints ::highlight() on a text node whose layout parent is
+// an *anonymous* block -- i.e. text sitting directly in a block container that also
+// has an in-flow block-level child box (a real child element, or a ::before/::after
+// with display:block). Every selector form fails (p::highlight, *::highlight, ...);
+// an inline element parent paints fine; Blink is unaffected. The WebKit paginated
+// page-top ruby reserve (BUG-2761: block `p::after`) puts the text of *every* <p>
+// into such an anonymous block, so on iOS / macOS the drag-select, lookup,
+// favourite and search highlights all went invisible while their grips still
+// showed. Call this on each text node before building a Range for a CSS Highlight:
+// when the node is in that position it is moved, unchanged, into an unstyled inline
+// wrapper. Node identity and offsets are preserved; the move goes through
+// __fushiLiveRanges.moveNodes, so existing live Ranges and the native selection with
+// an endpoint in the node are written back instead of collapsing onto the parent.
+// The wrapper adds no box, so layout and text walkers are unaffected. Idempotent; a
+// no-op wherever the engine already lays the text out under a real element.
+// Blink (Android WebView / WebView2) paints these highlights fine, so there the
+// helper is a no-op: the move would be pure DOM churn (per drag frame computed-style
+// probes, structural-selector flips below) with nothing to fix.
+// The move must also never change which reader rule a sibling matches: the reader
+// centres a lone illustration with `p > img:only-child { display:block }`; wrapping
+// the text beside it would end :only-child, turn the image inline and reflow the
+// paragraph on lookup. Such text stays where it is (unpainted on WebKit, as before).
+if (typeof window.__fushiEnsureHighlightPaintable !== 'function') {
+  window.__fushiEnsureHighlightPaintable = (function() {
+    var WRAPPER_TAG = 'fushi-hl-text';
+    var ua = (window.navigator && window.navigator.userAgent) || '';
+    if (/\b(?:Chrome|Chromium|HeadlessChrome)\//.test(ua)) return function() {};
+    function siblingReliesOnOnlyChild(parent) {
+      var first = parent.firstElementChild;
+      return !!first && !first.nextElementSibling && first.localName === 'img';
+    }
+    function inlineLevelDisplay(display) {
+      return !display || display === 'none' || display === 'contents' ||
+        display.indexOf('inline') === 0 || display.indexOf('ruby') === 0;
+    }
+    function inFlowBlockLevel(cs) {
+      if (!cs || inlineLevelDisplay(cs.display)) return false;
+      if (cs.position === 'absolute' || cs.position === 'fixed') return false;
+      return !cs.cssFloat || cs.cssFloat === 'none';
+    }
+    function generatedBlockBox(el, pseudo) {
+      var cs = window.getComputedStyle(el, pseudo);
+      var content = cs && cs.content;
+      if (!content || content === 'none' || content === 'normal') return false;
+      return inFlowBlockLevel(cs);
+    }
+    function textLaidOutAnonymously(parent) {
+      var display = window.getComputedStyle(parent).display || '';
+      if (inlineLevelDisplay(display)) return false;
+      // Text directly in a flex / grid container becomes an anonymous item.
+      if (display.indexOf('flex') >= 0 || display.indexOf('grid') >= 0) return true;
+      if (generatedBlockBox(parent, '::before') || generatedBlockBox(parent, '::after')) {
+        return true;
+      }
+      for (var child = parent.firstElementChild; child; child = child.nextElementSibling) {
+        if (inFlowBlockLevel(window.getComputedStyle(child))) return true;
+      }
+      return false;
+    }
+    // The verdict depends only on computed styles (the parent, its ::before / ::after
+    // and its element children), so it holds until the styles change. Where the
+    // helper never wraps (scrolling mode, parents that are not anonymous blocks) every
+    // drag frame would otherwise re-probe the parent of every segment: on ruby-dense
+    // paragraphs that is O(segments x element children) getComputedStyle calls per
+    // frame on iOS. Cache per parent; any change of the <head> styles (both reader CSS
+    // swap paths rewrite #fushi-reader-style, book stylesheets) or of the class / style
+    // of <html> / <body> drops the whole cache.
+    var anonymousByParent = new WeakMap();
+    if (window.MutationObserver && document.head) {
+      var styleObserver = new window.MutationObserver(function() { anonymousByParent = new WeakMap(); });
+      styleObserver.observe(document.head,
+          { childList: true, characterData: true, attributes: true, subtree: true });
+      [document.documentElement, document.body].forEach(function(root) {
+        if (root) styleObserver.observe(root, { attributes: true, attributeFilter: ['class', 'style'] });
+      });
+    }
+    function laidOutAnonymously(parent) {
+      var known = anonymousByParent.get(parent);
+      if (known === undefined) {
+        known = textLaidOutAnonymously(parent);
+        anonymousByParent.set(parent, known);
+      }
+      return known;
+    }
+    return function(node) {
+      // Numeric node types: this runs in node test harnesses that have no `Node`.
+      if (!node || node.nodeType !== 3) return;
+      var parent = node.parentNode;
+      if (!parent || parent.nodeType !== 1) return;
+      if (parent.localName === WRAPPER_TAG) return;
+      if (!laidOutAnonymously(parent)) return;
+      if (siblingReliesOnOnlyChild(parent)) return;
+      var wrapper = document.createElement(WRAPPER_TAG);
+      window.__fushiLiveRanges.moveNodes([node], function() {
+        parent.insertBefore(wrapper, node);
+        wrapper.appendChild(node);
+      });
+    };
+  })();
+}
+// 高亮条一律一个字高（用户 2026-10-15：「所有字体都要一个字高」）。阅读器里的高亮原本各画各的底色：
+// ::highlight()（查词 / 收藏 / 搜索）只能设 background-color，铺满整个文字盒；元素背景（有声书当前句
+// wrapper、ruby 分流 class、旧 WebView 的包裹 span）同样按文字盒铺。盒厚 = 字体 ascent + descent，随字体变
+// （Hiragino 1.14em、Noto Sans JP 约 1.45em），收不窄。现在所有高亮的底色都由这里统一画：
+// - 来源：CSS.highlights 里登记的 Range，加上带高亮 class 的元素（见 GROUPS），逐文本节点（跳过 rt / rp
+//   注音与 VN 未显现的字）取行片段。各路径自己的底色一律透明（reader_content_styles.dart），字色、收藏
+//   下划线、墨水屏线式标记仍由原来的 ::highlight / class 规则负责。
+// - 形状：CJK 沿块方向居中、厚 1em；西文按字体真实度量盖住上伸 / 下延（BUG-3435）；有注音时收到振假名
+//   墨迹之外（见 blockExtent / lanes）；同一行里同一层的片段并成一条（有声书整句被振假名拆成多个
+//   wrapper 时也不留缝、不叠色，取代逐缝补 box-shadow 的旧做法）。
+// - 位置：body 里一个 z-index:-1 的绝对定位层，在正文之下、body 背景之上（body 是层叠上下文与包含块），
+//   跟正文一起滚动 / 翻页；不切文本节点，拖选每帧重画也不碰正文 DOM。
+// - 书自带底色（BUG-3421）：同一层叠上下文里，块级元素的背景画在 z-index:-1 层之后，书里 `p { background }`
+//   之类的段落 / 块底色会把 body 层的窄条整片盖掉。落在这种元素里的字，窄条改画进该元素自己的一层：
+//   元素标 data-fushi-hl-backdrop（CSS 给 isolation:isolate，自成层叠上下文，不改包含块与几何），层是它的
+//   末尾子元素、同样 z-index:-1——于是画在它的底色之上、它的字之下。底色元素不能挂子层（ruby 内部、表格
+//   行 / 行组等）时挂到它下面最近的可挂元素（同样在底色之后画）；用完即撤，书的底色本身一律不动。
+// - 叠放自下而上：有声书当前句 → 收藏 → 搜索 → 查词（BUG-125：查词压过当前句）。颜色由 CSS 按 data-hl
+//   给（fushi-hl-lane[data-hl=...]）。
+// 重画时机：CSS.highlights 增删、高亮 class 增删（MutationObserver），同一任务内合批到微任务，赶在本帧
+// 绘制前；窗口尺寸变化、字体加载完、正文样式表被换、图片加载完（重排）、阅读器重锚落定、VN 换屏。
+if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
+  window.__fushiLanes = (function() {
+    var HOST = 'fushi-hl-lanes';
+    var LANE = 'fushi-hl-lane';
+    var LANE_EM = 1;
+    var GROUPS = [
+      { name: 'fushi-sentence-audio', join: 2,
+        selector: '.fushi-sentence-audio-cue.fushi-sentence-audio-active, ruby.fushi-sentence-audio-ruby-active, .fushi-active' }
+    ].concat(['yellow', 'green', 'blue', 'pink', 'purple'].map(function(c) {
+      return { name: 'fushi-hl-' + c, join: 0.5, selector: '.fushi-hl-' + c + ', ruby.fushi-hl-' + c + '-ruby-active' };
+    })).concat([
+      { name: 'fushi-search', join: 0.5, selector: null },
+      { name: 'fushi-selection', join: 0.5, selector: 'ruby.fushi-selection-ruby-active, .fushi-dict-highlight' }
+    ]);
+    var BACKDROP = 'data-fushi-hl-backdrop';
+    // 不能挂窄条层的元素：ruby 内部（插子元素会打乱注音排版）、表格结构（行 / 行组 / 列不是普通盒）、
+    // 自己没有盒的（contents / none），以及阅读器自己的包裹元素（会被拆掉）。
+    var NO_LAYER_TAG = /^(ruby|rb|rt|rp|rtc|table|thead|tbody|tfoot|tr|colgroup|col|br|wbr|img|svg|math|video|audio|canvas|iframe|object)$/;
+    var NO_LAYER_DISPLAY = /^(contents|none|table|inline-table|table-row|table-row-group|table-header-group|table-footer-group|table-column|table-column-group|ruby|ruby-base|ruby-text|ruby-base-container|ruby-text-container)$/;
+    var CLASS = /(^|\s)fushi-(sentence-audio-active|sentence-audio-ruby-active|active|hl-[a-z-]+|selection-ruby-active|dict-highlight)(\s|$)/;
+    var host = null;
+    // 书底色元素 → 它里面的窄条层（见文件头「书自带底色」）。
+    var backdrops = new Map();
+    // 单次重画内的计算样式缓存：元素 → 是否自带底色 / 能否挂层。
+    var paintsMemo = null;
+    var dirty = {};
+    var queued = false;
+    var registry = function() {
+      return typeof CSS !== 'undefined' && CSS.highlights && window.__fushiCssHighlightsSupported ? CSS.highlights : null;
+    };
+    var groupOf = function(name) {
+      for (var i = 0; i < GROUPS.length; i++) if (GROUPS[i].name === name) return GROUPS[i];
+      return null;
+    };
+    var hostEl = function() {
+      var body = document.body;
+      if (!body) return null;
+      if (!host || host.parentNode !== body) {
+        var stale = body.querySelectorAll(':scope > ' + HOST);
+        for (var i = 0; i < stale.length; i++) stale[i].remove();
+        host = makeLayer();
+        body.appendChild(host);
+      }
+      return host;
+    };
+    var makeLayer = function() {
+      var layer = document.createElement(HOST);
+      layer.setAttribute('aria-hidden', 'true');
+      GROUPS.forEach(function(g) {
+        var el = document.createElement(HOST + '-group');
+        el.setAttribute('data-hl-group', g.name);
+        layer.appendChild(el);
+      });
+      return layer;
+    };
+    var styleOf = function(el) {
+      var known = paintsMemo && paintsMemo.get(el);
+      if (known) return known;
+      var cs = getComputedStyle(el);
+      var bg = cs.backgroundColor || '';
+      var clear = bg === '' || bg === 'transparent' || /^rgba\(.*,\s*0(\.0+)?\)$/.test(bg);
+      // 行内盒（display:inline）的底色随行内内容一起画，自成层叠上下文也压不住它（Chromium 实测：
+      // isolation / position+z-index / opacity 都一样），给它挂层没用，按没有底色处理、也不在它里面挂层。
+      var inline = cs.display === 'inline';
+      var info = {
+        paints: !inline && (!clear || (!!cs.backgroundImage && cs.backgroundImage !== 'none')),
+        layerable: !inline && !NO_LAYER_TAG.test(el.localName) && !NO_LAYER_DISPLAY.test(cs.display) &&
+            el.localName.indexOf('fushi-') !== 0 && !(el.classList && el.classList.contains('fushi-sentence-audio-cue'))
+      };
+      if (paintsMemo) paintsMemo.set(el, info);
+      return info;
+    };
+    // 文本所在的、自带底色的最近祖先（到 body 为止）里挂窄条层的元素；没有底色 = null（画在 body 层）。
+    var backdropOf = function(parent) {
+      var below = [];
+      for (var el = parent; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+        var info = styleOf(el);
+        if (info.paints) {
+          if (info.layerable) return el;
+          for (var i = below.length - 1; i >= 0; i--) if (styleOf(below[i]).layerable) return below[i];
+          return null;
+        }
+        below.push(el);
+      }
+      return null;
+    };
+    var layerFor = function(owner) {
+      if (!owner) return hostEl();
+      var layer = backdrops.get(owner);
+      if (!layer || layer.parentNode !== owner) {
+        if (layer) layer.remove();
+        layer = makeLayer();
+        owner.setAttribute(BACKDROP, '');
+        owner.appendChild(layer);
+        backdrops.set(owner, layer);
+      }
+      return layer;
+    };
+    // 空了的 / 主人已离开文档的书底色层撤掉，标记一并撤。
+    var pruneBackdrops = function() {
+      backdrops.forEach(function(layer, owner) {
+        var live = owner.isConnected && layer.parentNode === owner;
+        var used = live && Array.prototype.some.call(layer.children, function(g) { return !!g.firstChild; });
+        if (used) return;
+        layer.remove();
+        if (owner.isConnected) owner.removeAttribute(BACKDROP);
+        backdrops.delete(owner);
+      });
+    };
+    // 条的块方向范围按这款字体的真实度量算（canvas measureText，按字体缓存，字体加载完清空）：
+    // - CJK（与 CJK 标点）：沿块方向 1em、按墨迹中线居中。横排时盒中线不是汉字的中线——盒 = 字体
+    //   ascent + descent，多数日文字体 ascent 偏大，盒中线比汉字墨迹中线高 0.01–0.08em（Mac WebKit 逐字体
+    //   实测，Noto Serif TC 墨迹下沿出条 0.05em），所以按「国」的墨迹中线居中；竖排（中心基线）按盒中线。
+    // - 西文等其它文字（BUG-3435）：西文字形不在 1em 中心带里，上伸（b d f h k l t）顶到基线上 ~0.75em、
+    //   下延（g j p q y）落到基线下 ~0.25em，1em 居中条会削掉 p/g/y 的尾巴和 f/l/t 的头。改为从盒推出
+    //   基线（盒顶 + 字体 ascent），条盖住「上伸 + 下延参考字形」与这一段自己（带重音符等）的墨迹，各留
+    //   LATIN_PAD。同一字体的西文行厚度一致，不随这一行有没有 p/g/y 忽粗忽细。竖排横躺的西文同理
+    //   （顺时针转 90°，ascent 一侧朝右）；竖排直立（计算样式 textOrientation 为 upright / 纵中横）仍按 CJK 算。
+    // 无论哪种都不出文字盒；有注音时再由 lanes() 收到振假名墨迹之外（F-JNEJVkuC：贴字、不碰振假名）。
+    var CJK = /[぀-ヿ㐀-鿿豈-﫿가-힯]/;
+    // 不是空白、CJK、CJK 标点（U+3000–303F）或全角形（U+FF00–FFEF）的字。
+    var NON_CJK = /[^\s　-〿぀-ヿ㐀-鿿豈-﫿가-힯＀-￯]/;
+    var LATIN_REF = 'bdfhkltgjpqy';
+    var LATIN_PAD = 0.04;
+    var measureCtx = null;
+    var metricCache = {};
+    var fontKey = function(cs) {
+      return cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+    };
+    var measureText = function(font, text) {
+      try {
+        if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+        measureCtx.font = font;
+        return measureCtx.measureText(text);
+      } catch (e) {
+        return null;
+      }
+    };
+    // 字体级度量：fa/fd 字体 ascent/descent，shift 盒中线 → 汉字墨迹中线（向下为正），cjkInk 汉字墨迹厚，
+    // la/ld 西文参考字形的墨迹上伸/下延（相对基线）。量不到时 ok=false，调用方退回盒几何。
+    var fontMetrics = function(cs) {
+      var font = fontKey(cs);
+      if (Object.prototype.hasOwnProperty.call(metricCache, font)) return metricCache[font];
+      var res = { ok: false, fa: 0, fd: 0, shift: 0, cjkInk: 0, la: 0, ld: 0 };
+      var m = measureText(font, '国');
+      if (m && m.fontBoundingBoxAscent > 0 && m.actualBoundingBoxAscent > 0) {
+        res.ok = true;
+        res.fa = m.fontBoundingBoxAscent;
+        res.fd = m.fontBoundingBoxDescent;
+        res.shift = ((m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) -
+            (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent)) / 2;
+        res.cjkInk = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+        var l = measureText(font, LATIN_REF);
+        if (l) {
+          res.la = l.actualBoundingBoxAscent;
+          res.ld = l.actualBoundingBoxDescent;
+        }
+      }
+      metricCache[font] = res;
+      return res;
+    };
+    // 片段的块方向范围 [lo, hi]（横排是纵坐标，竖排是横坐标）。
+    var blockExtent = function(r, cs, em, vertical, text) {
+      var thick = vertical ? r.width : r.height;
+      var boxStart = vertical ? r.left : r.top;
+      var mt = fontMetrics(cs);
+      var lane = Math.min(thick, em * LANE_EM);
+      var upright = vertical && (cs.textOrientation === 'upright' ||
+          (cs.textCombineUpright && cs.textCombineUpright !== 'none'));
+      var latin = NON_CJK.test(text) && !upright && mt.ok && mt.fa + mt.fd > 0;
+      var lo = Infinity, hi = -Infinity;
+      if (!latin || CJK.test(text)) {
+        var mid = boxStart + thick / 2 + (vertical || !mt.ok ? 0 : mt.shift);
+        lo = mid - lane / 2;
+        hi = mid + lane / 2;
+      }
+      if (latin) {
+        var own = measureText(fontKey(cs), text);
+        var asc = Math.max(mt.la, own ? own.actualBoundingBoxAscent : 0);
+        var desc = Math.max(mt.ld, own ? own.actualBoundingBoxDescent : 0);
+        var pad = em * LATIN_PAD;
+        var ascentPart = thick * mt.fa / (mt.fa + mt.fd);
+        if (vertical) {
+          var baseX = boxStart + thick - ascentPart;
+          lo = Math.min(lo, baseX - desc - pad);
+          hi = Math.max(hi, baseX + asc + pad);
+        } else {
+          var baseY = boxStart + ascentPart;
+          lo = Math.min(lo, baseY - asc - pad);
+          hi = Math.max(hi, baseY + desc + pad);
+        }
+      }
+      return { lo: Math.max(lo, boxStart), hi: Math.min(hi, boxStart + thick) };
+    };
+    // 振假名的墨迹范围：rt 文本盒按注音字体的汉字墨迹厚居中（与 CJK 条同一口径），一个 ruby 只量一次。
+    var annotationInk = function(ruby, cache) {
+      for (var c = 0; c < cache.length; c++) if (cache[c].ruby === ruby) return cache[c].ink;
+      var ink = [];
+      var walker = document.createTreeWalker(ruby, NodeFilter.SHOW_TEXT);
+      for (var n = walker.nextNode(); n; n = walker.nextNode()) {
+        var rt = n.parentElement && n.parentElement.closest('rt');
+        if (!rt || !ruby.contains(rt) || !n.data.trim()) continue;
+        var cs = getComputedStyle(rt);
+        if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+        var vertical = (cs.writingMode || '').indexOf('vertical') === 0;
+        var mt = fontMetrics(cs);
+        var range = document.createRange();
+        range.selectNodeContents(n);
+        // 竖排（直立）注音逐字量真实墨迹：带浊点 / 半浊点的假名（ぶ ぱ）比「国」宽，按汉字墨迹厚居中会
+        // 低估 1–1.5px，窄条就压到振假名上（BUG-3518 顺带）。量不到时退回汉字墨迹厚居中。
+        var glyphs = null;
+        if (vertical && mt.ok) {
+          glyphs = [];
+          for (var g = 0; g < n.data.length; g++) {
+            var gm = n.data.charAt(g).trim() ? measureText(fontKey(cs), n.data.charAt(g)) : null;
+            if (gm && gm.actualBoundingBoxLeft + gm.actualBoundingBoxRight > 0) glyphs.push(gm);
+          }
+        }
+        var rects = range.getClientRects();
+        for (var i = 0; i < rects.length; i++) {
+          var r = rects[i];
+          if (r.width <= 0.5 || r.height <= 0.5) continue;
+          var thick = vertical ? r.width : r.height;
+          if (glyphs && glyphs.length) {
+            var c = r.left + r.width / 2, glo = Infinity, ghi = -Infinity;
+            glyphs.forEach(function(m) {
+              glo = Math.min(glo, c - m.width / 2 - m.actualBoundingBoxLeft);
+              ghi = Math.max(ghi, c - m.width / 2 + m.actualBoundingBoxRight);
+            });
+            ink.push({ lo: glo, hi: ghi, a: r.top, b: r.bottom });
+            continue;
+          }
+          var half = (mt.ok && mt.cjkInk > 0 ? Math.min(thick, mt.cjkInk) : thick) / 2;
+          var mid = (vertical ? r.left : r.top) + thick / 2 + (vertical || !mt.ok ? 0 : mt.shift);
+          ink.push({ lo: mid - half, hi: mid + half, a: vertical ? r.top : r.left, b: vertical ? r.bottom : r.right });
+        }
+      }
+      cache.push({ ruby: ruby, ink: ink });
+      return ink;
+    };
+    // 片段两端的全角标点按墨迹收边：「、。」』）」这类收尾标点的墨迹在字格前半（竖排上半、横排左半），
+    // 「「『（」这类起头标点在后半；全角字格的另一半是空白，窄条铺满整格会伸到字外、像句与句之间多出
+    // 一截。只收片段的首尾字（并条时后续片段照常接上），字格已被 vpal / palt 压窄的不收。
+    var CLOSE_PUNCT = /[、。，．」』）】〉》〕｝］〙〗]/;
+    var OPEN_PUNCT = /[「『（【〈《〔｛［〘〖]/;
+    var PUNCT_INK = 0.6;
+    var punctInk = function(node, start, end, vertical, em, pieces) {
+      var s = start, e = end;
+      while (s < e && /\s/.test(node.data.charAt(s))) s++;
+      while (e > s && /\s/.test(node.data.charAt(e - 1))) e--;
+      if (e <= s) return;
+      var edge = function(i, open) {
+        var r = document.createRange();
+        r.setStart(node, i);
+        r.setEnd(node, i + 1);
+        var cr = r.getClientRects()[0];
+        if (!cr) return;
+        var a = vertical ? cr.top : cr.left, b = vertical ? cr.bottom : cr.right;
+        if (b - a < 0.75 * em) return;
+        var line = vertical ? cr.left + cr.width / 2 : cr.top + cr.height / 2;
+        pieces.forEach(function(p) {
+          var pl = vertical ? p.r.left + p.r.width / 2 : p.r.top + p.r.height / 2;
+          if (Math.abs(pl - line) >= 1) return;
+          if (open) p.inkA = b - PUNCT_INK * (b - a);
+          else p.inkB = a + PUNCT_INK * (b - a);
+        });
+      };
+      if (CLOSE_PUNCT.test(node.data.charAt(e - 1))) edge(e - 1, false);
+      if (OPEN_PUNCT.test(node.data.charAt(s))) edge(s, true);
+    };
+    // 一个文本节点 [start, end) 的行片段。
+    var nodeRects = function(node, start, end, seen, out) {
+      var parent = node.parentElement;
+      if (!parent || end <= start) return;
+      // VN 逐字显现时未显现的字（data-fushi-visual-novel-unrevealed）是 visibility:hidden 的，窄条不能先露出来。
+      if (parent.closest('rt, rp, [data-fushi-visual-novel-unrevealed], ' + HOST)) return;
+      if (seen) {
+        if (seen.indexOf(node) >= 0) return;
+        seen.push(node);
+      }
+      var r = document.createRange();
+      r.setStart(node, start);
+      r.setEnd(node, end);
+      var cs = getComputedStyle(parent);
+      var em = parseFloat(cs.fontSize) || 16;
+      var vertical = (cs.writingMode || '').indexOf('vertical') === 0;
+      var text = node.data.slice(start, end);
+      var ruby = parent.closest('ruby');
+      var owner = backdropOf(parent);
+      var rects = r.getClientRects();
+      var first = out.length;
+      for (var i = 0; i < rects.length; i++) {
+        if (rects[i].width > 0.5 && rects[i].height > 0.5) {
+          out.push({ r: rects[i], em: em, v: vertical, x: blockExtent(rects[i], cs, em, vertical, text), ruby: ruby, o: owner });
+        }
+      }
+      if (out.length > first) punctInk(node, start, end, vertical, em, out.slice(first));
+    };
+    // Range 的可见正文片段。整个元素被包住时 Range.getClientRects 还会带上元素边框盒（含注音的 ruby 盒），
+    // 所以逐文本节点取。
+    var rangeRects = function(range, out) {
+      var root = range.commonAncestorContainer;
+      if (!root || !root.isConnected) return;
+      var visit = function(node) {
+        var start = node === range.startContainer ? range.startOffset : 0;
+        var end = node === range.endContainer ? range.endOffset : node.data.length;
+        nodeRects(node, start, end, null, out);
+      };
+      if (root.nodeType === 3) { visit(root); return; }
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (var n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (range.intersectsNode(n)) visit(n);
+      }
+    };
+    var elementRects = function(el, seen, out) {
+      var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (var n = walker.nextNode(); n; n = walker.nextNode()) nodeRects(n, 0, n.data.length, seen, out);
+    };
+    // 行片段 → 窄条（块方向范围见 blockExtent）。同一行（文字盒中线一致、字号一致）里相隔不超过 join 个字的
+    // 片段并成一条，块方向取并集（一行里 CJK 与西文混排也是一条等厚的条）；最后把条收到这一行振假名的
+    // 墨迹之外，贴字而不碰注音。
+    // 翻页模式的分栏（BUG-3518）：body 是多列容器，每一栏（竖排一页 / 横排一页或子列）沿行方向占
+    // [start + k·step, start + k·step + width)。悬挂标点（Apple 正文 hanging-punctuation: allow-end）
+    // 把行尾「、」「。」挂到栏外，字形盒伸进列间距；窄条照字形盒画就越出栏尾，字号大于列间距时越出
+    // 的那截落进下一页页顶（竖排各页同一横坐标、横排同一纵坐标）。栏外的字本来就被 body 的 clip-path
+    // 裁掉，所以窄条沿行方向收进它所在的栏；并条也不跨栏。滚动 / VN 没有分栏，返回 null 不收。
+    // 横排 RTL 的栏从右往左排，这里不处理（返回 null）。
+    var columnFrame = function() {
+      var body = document.body;
+      if (!body) return null;
+      var cs = getComputedStyle(body);
+      var width = parseFloat(cs.columnWidth);
+      if (!(width > 0)) return null;
+      var vertical = (cs.writingMode || '').indexOf('vertical') === 0;
+      if (!vertical && cs.direction === 'rtl') return null;
+      var box = body.getBoundingClientRect();
+      var start = vertical
+        ? box.top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0) - body.scrollTop
+        : box.left + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.paddingLeft) || 0) - body.scrollLeft;
+      return { v: vertical, start: start, step: width + (parseFloat(cs.columnGap) || 0), width: width };
+    };
+    var lanes = function(pieces, join) {
+      var annCache = [];
+      var frame = columnFrame();
+      var items = pieces.map(function(p) {
+        var r = p.r;
+        var it = {
+          v: p.v, em: p.em,
+          line: p.v ? r.left + r.width / 2 : r.top + r.height / 2,
+          lo: p.x.lo, hi: p.x.hi,
+          a: Math.max(p.v ? r.top : r.left, p.inkA == null ? -Infinity : p.inkA),
+          b: Math.min(p.v ? r.bottom : r.right, p.inkB == null ? Infinity : p.inkB),
+          col: 0,
+          rubies: p.ruby ? [p.ruby] : []
+        };
+        if (frame && frame.v === p.v && frame.step > 0) {
+          // 按片段起点归栏（悬挂字形只会伸出栏尾），再把两端收进这一栏。
+          it.col = Math.floor((it.a + 0.5 - frame.start) / frame.step);
+          var colStart = frame.start + it.col * frame.step;
+          it.a = Math.max(it.a, colStart);
+          it.b = Math.min(it.b, colStart + frame.width);
+        }
+        return it;
+      });
+      items = items.filter(function(it) { return it.b - it.a > 0.5; });
+      items.sort(function(x, y) {
+        if (x.col !== y.col) return x.col - y.col;
+        return Math.abs(x.line - y.line) >= 1 ? x.line - y.line : x.a - y.a;
+      });
+      var out = [];
+      items.forEach(function(it) {
+        var prev = out[out.length - 1];
+        if (prev && prev.v === it.v && prev.col === it.col && Math.abs(prev.line - it.line) < 1 &&
+            Math.abs(prev.em - it.em) < 0.5 && it.a <= prev.b + join * it.em) {
+          prev.b = Math.max(prev.b, it.b);
+          prev.lo = Math.min(prev.lo, it.lo);
+          prev.hi = Math.max(prev.hi, it.hi);
+          it.rubies.forEach(function(rb) { if (prev.rubies.indexOf(rb) < 0) prev.rubies.push(rb); });
+          return;
+        }
+        out.push(it);
+      });
+      out.forEach(function(l) {
+        // mid：这一行墨迹带（blockExtent 的并集）在收到振假名之外**之前**的中线。笔触样式（markBand /
+        // lineGeom / readingOrder / isFresh）以它为跨行中心——笔划自带粗细与「盖住振假名」开关，按收窄后
+        // 的 lo/hi 取中会让有注音的行整条偏离字心；经典窄条照旧只用收窄后的 lo/hi。
+        var mid = l.mid = (l.lo + l.hi) / 2;
+        l.rubies.forEach(function(rb) {
+          annotationInk(rb, annCache).forEach(function(ink) {
+            if (ink.b <= l.a || ink.a >= l.b) return;
+            var inkMid = (ink.lo + ink.hi) / 2;
+            if (inkMid < mid) l.lo = Math.max(l.lo, Math.min(ink.hi, mid));
+            else l.hi = Math.min(l.hi, Math.max(ink.lo, mid));
+          });
+        });
+      });
+      return out.filter(function(l) { return l.hi - l.lo > 0.5; });
+    };
+    // ── 高亮条的笔触样式（用户 2026-10-15「高亮条自定义做成配置，用户自己可自选样式」「全部高亮都要
+    // 能选可以自定义高亮」）──
+    // 四类高亮（收藏 / 查词 / 有声书当前句 / 搜索）各有一套配置。经典样式照旧画 1em 窄条；选了笔触样式
+    // （马克笔 / 荧光笔 / 手绘 / 半截 / 彩铅 / 胶带）时，这一组改画一张 SVG：同样的行片段、同样的坐标系
+    // （所在窄条层的局部坐标——body 层或书底色元素里的层，随正文滚动 / 翻页），只是形状换成斜切、毛边、双笔这些。配置全走正文 CSS 的 :root
+    // 变量（--fushi-mark-<种类>-*，ReaderContentStyles 按设置写），改设置 = 换正文样式表 = head 的
+    // MutationObserver 触发重画，不需要额外的桥调用。颜色仍是各组原来的颜色：用一个探针 lane 读这一组
+    // 的 CSS 底色（与经典窄条同一条规则），只取 RGB，浓度听配置；底色是透明的（如关掉了有声书底色）就
+    // 不画。
+    // 形状在「沿行 u / 跨行 v」局部坐标里算：横排 u=x、v=y；竖排 u=y、v=-x。v 的负方向是振假名所在
+    // 的 over 侧（横排上方、竖排右侧），「盖住振假名」就是往 over 侧加厚。笔划画在正文之下，振假名字
+    // 本身仍压在笔划上面。随机抖动的种子取组名 + 行的局部坐标 + 样式：翻页、重画不变形，重排才换一笔。
+    // Dart 侧设置页预览（highlight_stroke_preview.dart）按同一套参数画示意，两边改形状要一起改。
+    var MARK_KINDS = ['audio', 'lookup', 'favorite', 'search'];
+    var KIND_OF = { 'fushi-sentence-audio': 'audio', 'fushi-selection': 'lookup', 'fushi-search': 'search' };
+    var kindOf = function(name) {
+      return KIND_OF[name] || (/^fushi-hl-[a-z]+$/.test(name) ? 'favorite' : null);
+    };
+    var MARK_STYLES = ['marker', 'fluo', 'rough', 'under', 'crayon', 'tape'];
+    var clampNum = function(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); };
+    var cssNum = function(cs, name, fallback) {
+      var v = parseFloat(cs.getPropertyValue(name));
+      return isFinite(v) ? v : fallback;
+    };
+    // 每类高亮的笔触配置；经典（或没写变量）的种类不在结果里。
+    var markConfigs = function() {
+      var out = {};
+      if (typeof getComputedStyle !== 'function' || !document.documentElement) return out;
+      var cs = getComputedStyle(document.documentElement);
+      var dark = cssNum(cs, '--fushi-mark-dark', 0) > 0;
+      var paper = (cs.getPropertyValue('--fushi-mark-paper') || '').trim() || (dark ? '#000' : '#fff');
+      // 落笔节奏由 Dart 按 FushiMotion 下发（highlightStrokeCssVariables）：单行时长 = base + 行长(em) ×
+      // perEm，行间隔 gap，单位 ms。缺任一项就不放动画——时长与「减弱动态效果 / 墨水屏归零」都只认
+      // Dart 侧的 fushiMotionEnabled，JS 不自定时长、也不自己读系统的减弱动态媒体查询。
+      var sweepBase = cssNum(cs, '--fushi-mark-sweep-base-ms', -1);
+      var sweepPerEm = cssNum(cs, '--fushi-mark-sweep-per-em-ms', -1);
+      var sweepGap = cssNum(cs, '--fushi-mark-sweep-gap-ms', -1);
+      var sweep = sweepBase >= 0 && sweepPerEm >= 0 && sweepGap >= 0 && (sweepBase > 0 || sweepPerEm > 0)
+        ? { base: sweepBase / 1000, perEm: sweepPerEm / 1000, gap: sweepGap / 1000 }
+        : null;
+      MARK_KINDS.forEach(function(kind) {
+        var p = '--fushi-mark-' + kind + '-';
+        var style = (cs.getPropertyValue(p + 'style') || '').trim();
+        if (MARK_STYLES.indexOf(style) < 0) return;
+        out[kind] = {
+          kind: kind,
+          style: style,
+          thickness: clampNum(cssNum(cs, p + 'thickness', 1), 0.4, 2),
+          opacity: clampNum(cssNum(cs, p + 'opacity', 0.35), 0.05, 1),
+          cover: cssNum(cs, p + 'cover-ruby', 0) > 0,
+          rough: clampNum(cssNum(cs, p + 'roughness', 0.5), 0, 1),
+          animate: !!sweep && cssNum(cs, p + 'animate', 0) > 0,
+          sweep: sweep,
+          paper: paper
+        };
+      });
+      return out;
+    };
+    // 这一组的颜色：探针 lane 的计算底色（与经典窄条同一条 CSS 规则，收藏五色、有声书自定义色、
+    // 查词色都在那里）。返回 'rgb(r,g,b)'；底色完全透明返回 null（这一组不画）。
+    var groupColor = function(name) {
+      var probe = document.createElement(LANE);
+      probe.setAttribute('data-hl', name);
+      host.appendChild(probe);
+      var raw = getComputedStyle(probe).backgroundColor || '';
+      probe.remove();
+      var m = /rgba?\(([^)]*)\)/.exec(raw);
+      if (!m) return null;
+      var parts = m[1].split(/[\s,/]+/).filter(function(s) { return s !== ''; }).map(parseFloat);
+      if (parts.length < 3) return null;
+      if (parts.length > 3 && !(parts[3] > 0)) return null;
+      return 'rgb(' + Math.round(parts[0]) + ',' + Math.round(parts[1]) + ',' + Math.round(parts[2]) + ')';
+    };
+    var markRng = function(seed) {
+      var a = seed >>> 0;
+      return function() {
+        a = (a + 0x6D2B79F5) >>> 0;
+        var t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    };
+    var markHash = function(s) {
+      var h = 2166136261;
+      for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return h >>> 0;
+    };
+    var fx = function(n) { return (Math.round(n * 100) / 100).toString(); };
+    var markPoint = function(vertical) {
+      return vertical
+        ? function(u, v) { return fx(-v) + ',' + fx(u); }
+        : function(u, v) { return fx(u) + ',' + fx(v); };
+    };
+    var polyD = function(P, pts) {
+      var d = '';
+      for (var i = 0; i < pts.length; i++) d += (i ? 'L' : 'M') + P(pts[i][0], pts[i][1]);
+      return d + 'Z';
+    };
+    var wobble = function(from, to, v, amp, step, rnd) {
+      var out = [];
+      var n = Math.max(1, Math.round(Math.abs(to - from) / step));
+      for (var i = 1; i < n; i++) out.push([from + (to - from) * i / n, v + (rnd() - 0.5) * 2 * amp]);
+      return out;
+    };
+    // 各笔触的自然粗细（em）。经典窄条守「一个字高」；选了笔触样式就以好看为先，允许超过字高、
+    // 擦到甚至盖到振假名（用户 2026-10-16「使用了这种自定义样式应该可付出一点代价可以超过字高，
+    // 主要是要更美观」），默认取参考图那种几乎填满行距的粗细。与 Dart 的 kHighlightStrokeNaturalEm
+    // 逐项相同（测试钉住）。半截荧光只涂下半截，不在表里。
+    var MARK_NATURAL_EM = { marker: 1.35, fluo: 1.3, rough: 1.25, crayon: 1.38, tape: 1.45 };
+    // 笔划的跨行上下沿：自然粗细 × 用户粗细倍数，居中于墨迹中线；
+    // 盖住振假名时 over 侧多加一个注音高（约 0.6em）。
+    var markBand = function(line, k, cfg, rnd) {
+      var half = line.em * k * cfg.thickness / 2;
+      var j = (rnd() - 0.5) * line.em * 0.05 * cfg.rough;
+      return { top: line.vc - half - (cfg.cover ? line.em * 0.6 : 0) + j, bot: line.vc + half + j };
+    };
+    var pathTag = function(d, attrs) { return '<path d="' + d + '" ' + attrs + '/>'; };
+    var MARKERS = {
+      // 斜切马克笔：逐行一条，两端平行斜切，收笔端微毛并略积墨。
+      marker: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em, b = markBand(l, MARK_NATURAL_EM.marker, cfg, r), h = b.bot - b.top;
+        var s = h * (0.18 + 0.22 * cfg.rough);
+        var a = l.u0 - em * (0.06 + r() * 0.1 * cfg.rough), z = l.u1 + em * (0.04 + r() * 0.16 * cfg.rough);
+        var amp = h * 0.025 * cfg.rough;
+        var pts = [[a + s / 2, b.top]].concat(wobble(a + s / 2, z + s / 2, b.top, amp, em * 1.6, r),
+          [[z + s / 2, b.top], [z + s * 0.1 + (r() - 0.5) * em * 0.12 * cfg.rough, b.top + h * 0.45], [z - s / 2, b.bot]],
+          wobble(z - s / 2, a - s / 2, b.bot, amp, em * 1.6, r), [[a - s / 2, b.bot]]);
+        var p0 = Math.max(a, z - em * 0.7);
+        return pathTag(polyD(c.P, pts), 'fill="' + c.fill + '" fill-opacity="' + fx(cfg.opacity) + '"') +
+          pathTag(polyD(c.P, [[p0 + s / 2, b.top], [z + s / 2, b.top], [z - s / 2, b.bot], [p0 - s / 2, b.bot]]),
+            'fill="' + c.fill + '" fill-opacity="' + fx(cfg.opacity * 0.28) + '"');
+      },
+      // 水性荧光笔：边缘被纸纤维晕开（位移滤镜），起笔收笔更深（渐变），中段几道浅色拖痕。
+      fluo: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em, b = markBand(l, MARK_NATURAL_EM.fluo, cfg, r), h = b.bot - b.top, s = h * 0.18;
+        var a = l.u0 - em * 0.1, z = l.u1 + em * (0.04 + r() * 0.14 * cfg.rough);
+        var gid = c.uid + 'g';
+        c.defs.push('<linearGradient id="' + gid + '" x1="0" y1="0" x2="' + (l.v ? 0 : 1) + '" y2="' + (l.v ? 1 : 0) + '">' +
+          [[0, 1.55], [0.06, 1], [0.5, 0.82], [0.94, 1], [1, 1.7]].map(function(st) {
+            return '<stop offset="' + st[0] + '" stop-color="' + c.fill + '" stop-opacity="' + fx(Math.min(1, cfg.opacity * st[1])) + '"/>';
+          }).join('') + '</linearGradient>');
+        var amp = h * (0.02 + 0.05 * cfg.rough);
+        var pts = [[a + s, b.top]].concat(wobble(a + s, z, b.top, amp, em * 0.7, r),
+          [[z, b.top], [z - s, b.bot]], wobble(z - s, a, b.bot, amp, em * 0.7, r), [[a, b.bot]]);
+        var out = pathTag(polyD(c.P, pts), 'fill="url(#' + gid + ')" filter="url(#' + c.base + 'fray)"');
+        for (var k = 0; k < 2; k++) {
+          var v = b.top + h * (0.3 + r() * 0.45);
+          var u0 = a + (z - a) * r() * 0.3, u1 = Math.min(u0 + (z - a) * (0.35 + r() * 0.4), z - s);
+          out += pathTag('M' + c.P(u0, v) + 'L' + c.P(u1, v + (r() - 0.5) * 1.5),
+            'fill="none" stroke="' + c.paper + '" stroke-opacity="0.22" stroke-width="1.1" stroke-linecap="round"');
+        }
+        return out;
+      },
+      // 手绘双笔：两道略带弧度的粗笔叠画，重叠处更深（rough-notation 的 highlight 画法）。
+      rough: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em, b = markBand(l, MARK_NATURAL_EM.rough, cfg, r), w = b.bot - b.top, vc = (b.top + b.bot) / 2;
+        var out = '';
+        for (var k = 0; k < 2; k++) {
+          var a = l.u0 - em * (0.04 + r() * 0.14 * cfg.rough), z = l.u1 + em * r() * 0.18 * cfg.rough;
+          var j = w * (0.08 + 0.2 * cfg.rough);
+          var v0 = vc + (r() - 0.5) * j, v1 = vc + (r() - 0.5) * j, bow = (r() - 0.5) * j * 1.3;
+          out += pathTag('M' + c.P(a, v0) + 'Q' + c.P((a + z) / 2, (v0 + v1) / 2 + bow) + ' ' + c.P(z, v1),
+            'fill="none" stroke="' + c.fill + '" stroke-opacity="' + fx(cfg.opacity * 0.72) + '" stroke-width="' +
+            fx(w * (0.84 + r() * 0.1)) + '"');
+        }
+        return out;
+      },
+      // 半截荧光：只涂墨迹中线到字下沿（竖排是左侧），振假名永远露在外面，「盖住振假名」对它无效。
+      under: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em;
+        var top = l.vc + em * 0.02, bot = l.vc + em * 0.5 * cfg.thickness, s = (bot - top) * 0.4;
+        var a = l.u0 - em * 0.05, z = l.u1 + em * (0.03 + r() * 0.1 * cfg.rough);
+        var amp = 0.3 + 0.6 * cfg.rough;
+        var pts = [[a + s / 2, top]].concat(wobble(a, z, top, amp, em, r), [[z + s / 2, top], [z - s / 2, bot]],
+          wobble(z, a, bot, amp, em, r), [[a - s / 2, bot]]);
+        return pathTag(polyD(c.P, pts), 'fill="' + c.fill + '" fill-opacity="' + fx(Math.min(0.9, cfg.opacity * 1.35)) + '"');
+      },
+      // 彩铅涂抹：纸面颗粒把颜色打散（颗粒滤镜），边缘不规则。
+      crayon: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em, b = markBand(l, MARK_NATURAL_EM.crayon, cfg, r), h = b.bot - b.top;
+        var a = l.u0 - em * 0.1, z = l.u1 + em * (0.05 + r() * 0.12 * cfg.rough);
+        var amp = h * (0.02 + 0.06 * cfg.rough);
+        var pts = [[a, b.top + h * 0.08]].concat(wobble(a, z, b.top, amp, em * 0.5, r),
+          [[z, b.top + h * 0.1], [z + em * 0.05, b.bot - h * 0.2], [z - em * 0.1, b.bot]],
+          wobble(z, a, b.bot, amp, em * 0.5, r), [[a - em * 0.04, b.bot - h * 0.1]]);
+        return pathTag(polyD(c.P, pts), 'fill="' + c.fill + '" fill-opacity="' + fx(Math.min(1, cfg.opacity * 2)) +
+          '" filter="url(#' + c.base + 'grain)"');
+      },
+      // 和纸胶带：半透明胶带，两端锯齿撕口、略微歪斜，叠一层细斜纹。
+      tape: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em, b = markBand(l, MARK_NATURAL_EM.tape, cfg, r), h = b.bot - b.top;
+        var a = l.u0 - em * 0.16, z = l.u1 + em * 0.16, tilt = (r() - 0.5) * h * 0.2 * cfg.rough;
+        var torn = function(u, top, bot, dir) {
+          var out = [];
+          for (var i = 0; i <= 5; i++) {
+            out.push([u + dir * (i % 2 ? em * 0.08 : 0) + (r() - 0.5) * 1.2 * cfg.rough, top + (bot - top) * i / 5]);
+          }
+          return out;
+        };
+        var pts = torn(z, b.top + tilt, b.bot + tilt, 1).concat(torn(a, b.bot - tilt, b.top - tilt, -1));
+        var d = polyD(c.P, pts);
+        return pathTag(d, 'fill="' + c.fill + '" fill-opacity="' + fx(Math.min(0.85, cfg.opacity * 1.05)) + '"') +
+          pathTag(d, 'fill="url(#' + c.base + 'stripe)"');
+      }
+    };
+    var markDefs = function(base, cfg) {
+      return '<filter id="' + base + 'fray" x="-4%" y="-40%" width="108%" height="180%">' +
+          '<feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3" result="n"/>' +
+          '<feDisplacementMap in="SourceGraphic" in2="n" scale="' + fx(1.6 + 2.4 * cfg.rough) +
+          '" xChannelSelector="R" yChannelSelector="G"/></filter>' +
+        '<filter id="' + base + 'grain" x="-4%" y="-30%" width="108%" height="160%">' +
+          '<feTurbulence type="fractalNoise" baseFrequency="1.15" numOctaves="1" seed="7" result="n"/>' +
+          '<feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.4 1.75" result="m"/>' +
+          '<feComposite in="SourceGraphic" in2="m" operator="in" result="c"/>' +
+          '<feDisplacementMap in="c" in2="n" scale="' + fx(1 + 2 * cfg.rough) + '" xChannelSelector="R" yChannelSelector="G"/></filter>' +
+        '<pattern id="' + base + 'stripe" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">' +
+          '<rect width="2" height="6" fill="' + cfg.paper + '" fill-opacity="0.25"/></pattern>';
+    };
+    // 落笔动画（SMIL，声明式、不需要帧循环；节奏由 Dart 从 FushiMotion 下发、与设置页预览
+    // HighlightStrokePreviewPainter 同一公式，减弱动态效果 / 墨水屏时 Dart 写 animate=0，见 markConfigs）：
+    // - 收藏：刚收藏的句子由 HighlightBridge 在写入 CSS.highlights 之前把行片段登记进来（markFresh），
+    //   下一次画收藏层时这几行沿书写方向展开。只用一次、2 秒过期；章节打开 / 重排后的重新应用不登记，
+    //   所以翻页、重排永远不会重放。
+    // - 有声书当前句：读到新的一句（这一组出现了上次没有的行）时画出新行。这一组第一次画（开章、刚切到
+    //   笔触样式）不算新，避免一打开就扫一遍。
+    // - 查词 / 搜索：出现一处全新的高亮（与上次画的行没有任何重叠：点了另一个词、跳到下一个命中）时
+    //   整处画出来；拖选时每帧的新选区都与上一帧重叠，不重播。
+    var fresh = [];
+    var markFresh = function(ranges, elements) {
+      if (!hostEl()) return;
+      var origin = host.getBoundingClientRect();
+      var pieces = [];
+      (ranges || []).forEach(function(range) { rangeRects(range, pieces); });
+      var seen = [];
+      (elements || []).forEach(function(el) { elementRects(el, seen, pieces); });
+      var until = Date.now() + 2000;
+      pieces.forEach(function(p) {
+        fresh.push({ x0: p.r.left - origin.left, y0: p.r.top - origin.top,
+          x1: p.r.right - origin.left, y1: p.r.bottom - origin.top, until: until });
+      });
+    };
+    var isFresh = function(line) {
+      var now = Date.now();
+      for (var i = 0; i < fresh.length; i++) {
+        var f = fresh[i];
+        if (f.until < now) continue;
+        var midHit = line.v ? (line.x >= f.x0 - 1 && line.x <= f.x1 + 1) : (line.y >= f.y0 - 1 && line.y <= f.y1 + 1);
+        var spanHit = line.v ? (line.b0 < f.y1 && line.b1 > f.y0) : (line.b0 < f.x1 && line.b1 > f.x0);
+        if (midHit && spanHit) return true;
+      }
+      return false;
+    };
+    // 竖排的行是否从左往右排（vertical-lr）；vertical-rl 与未知一律当从右往左。
+    var readsLeftToRight = function() {
+      try { return getComputedStyle(document.body).writingMode.indexOf('vertical-lr') === 0; } catch (e) { return false; }
+    };
+    // 有声书：上一次画过的行（组名 → { 行键: true }）。
+    var paintedLines = {};
+    // 查词 / 搜索：上一次画过的行几何（组名 → [{v, u0, u1, vc, em}]）。
+    var paintedGeom = {};
+    // 有声书：这一组画出过句子没有（空列表的重画不算）。第一次画出句子不放动画。
+    var paintedAny = {};
+    var overlapsAny = function(lines, prev) {
+      for (var i = 0; i < lines.length; i++) {
+        for (var j = 0; j < prev.length; j++) {
+          var a = lines[i], b = prev[j];
+          if (a.v !== b.v || Math.abs(a.vc - b.vc) > Math.max(a.em, b.em) * 0.5) continue;
+          if (a.u0 < b.u1 && a.u1 > b.u0) return true;
+        }
+      }
+      return false;
+    };
+    // 落笔按阅读顺序：lanes() 按中线坐标升序给行，横排即从上到下；竖排 vertical-rl 的行序是
+    // 从右往左（用户 2026-10-16「竖排是从右往左的，横排是上到下的」），中线降序。
+    var readingOrder = function(list) {
+      if (list.length > 1 && list[0].v && !readsLeftToRight()) {
+        return list.slice().sort(function(x, y) {
+          if (x.col !== y.col) return x.col - y.col;
+          return Math.abs(x.mid - y.mid) >= 1 ? y.mid - x.mid : x.a - y.a;
+        });
+      }
+      return list;
+    };
+    // 一行在某个层里的「沿行 u / 跨行 v」局部几何（见文件头笔触说明）。
+    var lineGeom = function(l, o) {
+      return l.v
+        ? { v: true, u0: l.a - o.top, u1: l.b - o.top, vc: -(l.mid - o.left), em: l.em }
+        : { v: false, u0: l.a - o.left, u1: l.b - o.left, vc: l.mid - o.top, em: l.em };
+    };
+    var lineKey = function(g) { return Math.round(g.u0) + ':' + Math.round(g.u1) + ':' + Math.round(g.vc); };
+    // 每个窄条层一个短标签，拼进 SVG 的 id：同一组可能同时画在 body 层与几个书底色层里，id 必须全文档唯一。
+    var layerSeq = 0;
+    var layerTag = function(layer) {
+      if (layer === host) return 'b';
+      if (!layer.__fushiMarkTag) layer.__fushiMarkTag = 'l' + (++layerSeq);
+      return layer.__fushiMarkTag;
+    };
+    // 这一组本次重画的落笔判定（整组一次，跨所有层）：状态一律按 body 层局部坐标记，书底色层里的行
+    // 与 body 层里的行放在同一套「上次画过什么」里比较。
+    var markRun = function(name, cfg, allGeom) {
+      var prevLines = paintedLines[name];
+      var prevGeom = paintedGeom[name] || [];
+      var seenBefore = !!paintedAny[name];
+      var nowLines = {};
+      paintedLines[name] = nowLines;
+      paintedGeom[name] = allGeom;
+      if (allGeom.length) paintedAny[name] = true;
+      var whole = (cfg.kind === 'lookup' || cfg.kind === 'search') && !overlapsAny(allGeom, prevGeom);
+      return {
+        prevLines: prevLines || {},
+        nowLines: nowLines,
+        animate: cfg.animate &&
+          (cfg.kind === 'favorite' ? fresh.length > 0 : cfg.kind === 'audio' ? seenBefore && !!prevLines : whole),
+        delay: 0
+      };
+    };
+    // 返回 { ink, still }：ink 是要写进 DOM 的串（新行带落笔动画），still 是同一张图去掉动画的串。
+    // paintGroup 只按 still 判断「形状变没变」：落笔动画播放中阅读器常会再重画一次（切句后滚到该句、
+    // 重锚落定），那次的 ink 不带动画，若按 ink 比较就会替换 DOM、把正在播的动画截断。
+    // [origin] 是这一层的原点（路径坐标），[hostOrigin] 是 body 层原点（落笔判定的状态坐标），
+    // [run] 是 markRun 给的整组判定（延迟在同组各层之间接力，行与行依次画出）。
+    var markSvg = function(name, tag, list, origin, hostOrigin, cfg, run) {
+      var empty = { ink: '', still: '' };
+      if (!list.length) return empty;
+      var geom = list.map(function(l) { return lineGeom(l, origin); });
+      var fill = groupColor(name);
+      if (!fill) return empty;
+      var base = 'fushi-mark-' + name.replace(/^fushi-/, '') + '-' + tag + '-';
+      var defs = markDefs(base, cfg);
+      var clips = '';
+      var still = '';
+      var animate = run.animate;
+      var out = '';
+      list.forEach(function(l, i) {
+        var line = geom[i];
+        var hline = lineGeom(l, hostOrigin);
+        var key = lineKey(hline);
+        run.nowLines[key] = true;
+        var c = {
+          cfg: cfg, P: markPoint(line.v), fill: fill, paper: cfg.paper, base: base, uid: base + i, defs: [],
+          rnd: markRng(markHash(name + ':' + cfg.style + ':' + Math.round(line.u0) + ':' + Math.round(line.vc)))
+        };
+        var shape = MARKERS[cfg.style](line, c);
+        defs += c.defs.join('');
+        still += shape;
+        var isNew = false;
+        if (animate && cfg.kind === 'favorite') {
+          isNew = isFresh(l.v
+            ? { v: true, x: l.mid - hostOrigin.left, b0: hline.u0, b1: hline.u1 }
+            : { v: false, y: l.mid - hostOrigin.top, b0: hline.u0, b1: hline.u1 });
+        } else if (animate && cfg.kind === 'audio') {
+          isNew = !run.prevLines[key];
+        } else {
+          isNew = animate;
+        }
+        if (!isNew) { out += shape; return; }
+        var em = line.em, len = line.u1 - line.u0 + em * 2, dur = cfg.sweep.base + (len / em) * cfg.sweep.perEm;
+        var delay = run.delay;
+        var cid = base + i + 'c';
+        var rect = line.v
+          ? '<rect x="' + fx(-line.vc - em * 3) + '" y="' + fx(line.u0 - em) + '" width="' + fx(em * 6) + '" height="0">' +
+            '<animate attributeName="height" from="0" to="' + fx(len) + '"'
+          : '<rect x="' + fx(line.u0 - em) + '" y="' + fx(line.vc - em * 3) + '" width="0" height="' + fx(em * 6) + '">' +
+            '<animate attributeName="width" from="0" to="' + fx(len) + '"';
+        clips += '<clipPath id="' + cid + '" clipPathUnits="userSpaceOnUse">' + rect + ' begin="' + fx(delay) + 's" dur="' +
+          fx(dur) + 's" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.3 0.6 0.4 1"/></rect></clipPath>';
+        out += '<g clip-path="url(#' + cid + ')">' + shape + '</g>';
+        run.delay = delay + dur + cfg.sweep.gap;
+      });
+      // svg 的盒子就是这组笔划的包围盒，viewBox 与盒子同位同大，路径坐标仍是所在层的局部坐标。
+      // BUG-3506：曾经是定在层原点的 1×1 svg 靠 overflow:visible 把笔划全画在盒外，WebKit 竖排下
+      // 算不对这块溢出区的重绘范围——DOM 已换成新一句、屏上停在旧笔划（翻页重建才补上），竖排滚动
+      // 更是整张不画。包围盒按 markBand 的上限放宽：沿行 ±2em（笔头斜切、收笔外延），跨行 ±3.5em
+      // （粗细倍数上限 2 × 自然粗细上限 1.45em / 2 + 盖住振假名 0.6em + 抖动、滤镜外扩），与落笔
+      // clip 矩形（沿行 ±1em、跨行 ±3em）同口径且更宽，不会裁到笔划。
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      geom.forEach(function(g) {
+        var a = g.u0 - g.em * 2, b = g.u1 + g.em * 2, lo = g.vc - g.em * 3.5, hi = g.vc + g.em * 3.5;
+        // 横排 (x, y) = (u, v)，竖排 (x, y) = (-v, u)（同 markPoint）。
+        var xs = g.v ? [-hi, -lo] : [a, b], ys = g.v ? [a, b] : [lo, hi];
+        x0 = Math.min(x0, xs[0]); x1 = Math.max(x1, xs[1]); y0 = Math.min(y0, ys[0]); y1 = Math.max(y1, ys[1]);
+      });
+      x0 = Math.floor(x0); y0 = Math.floor(y0); x1 = Math.ceil(x1); y1 = Math.ceil(y1);
+      var box = fx(x0) + ' ' + fx(y0) + ' ' + fx(x1 - x0) + ' ' + fx(y1 - y0);
+      var open = '<svg xmlns="http://www.w3.org/2000/svg" class="fushi-mark-ink" width="' + fx(x1 - x0) + '" height="' +
+        fx(y1 - y0) + '" viewBox="' + box + '" aria-hidden="true" style="left:' + fx(x0) + 'px !important;top:' + fx(y0) +
+        'px !important;width:' + fx(x1 - x0) + 'px !important;height:' + fx(y1 - y0) + 'px !important">';
+      return {
+        ink: open + '<defs>' + defs + clips + '</defs>' + out + '</svg>',
+        still: open + '<defs>' + defs + '</defs>' + still + '</svg>'
+      };
+    };
+    var paintGroup = function(group, reg, mark) {
+      var pieces = [];
+      var highlight = reg ? reg.get(group.name) : null;
+      if (highlight) highlight.forEach(function(range) { rangeRects(range, pieces); });
+      if (group.selector) {
+        var seen = [];
+        var els = document.body.querySelectorAll(group.selector);
+        for (var i = 0; i < els.length; i++) elementRects(els[i], seen, pieces);
+      }
+      // 按所在的层分开并条：书底色元素里的字进它自己的层，其余进 body 层。
+      var byLayer = new Map();
+      byLayer.set(hostEl(), []);
+      backdrops.forEach(function(layer) { byLayer.set(layer, []); });
+      pieces.forEach(function(p) {
+        var layer = layerFor(p.o);
+        if (!byLayer.has(layer)) byLayer.set(layer, []);
+        byLayer.get(layer).push(p);
+      });
+      if (mark) {
+        // 笔触样式：先收齐这一组所有层的行（「是不是新的一处 / 新的一句」按整组判，坐标统一换成 body
+        // 层局部坐标），再逐层画各自的 SVG（路径坐标是该层局部坐标）。
+        var hostOrigin = hostEl().getBoundingClientRect();
+        var jobs = [];
+        var allGeom = [];
+        byLayer.forEach(function(own, layer) {
+          var el = layer.querySelector(':scope > [data-hl-group="' + group.name + '"]');
+          if (!el) return;
+          var list = readingOrder(lanes(own, group.join));
+          list.forEach(function(l) { allGeom.push(lineGeom(l, hostOrigin)); });
+          jobs.push({ layer: layer, el: el, list: list });
+        });
+        var run = markRun(group.name, mark, allGeom);
+        jobs.forEach(function(job) {
+          var origin = job.list.length ? job.layer.getBoundingClientRect() : null;
+          var res = markSvg(group.name, layerTag(job.layer), job.list, origin, hostOrigin, mark, run);
+          // 比上次写入的静态串，不比 innerHTML：SVG 回读的序列化与写入串不逐字相同，比 innerHTML 会每次
+          // 都判成「变了」、重建 DOM 并重放落笔动画；比 ink 则会截断正在播的动画（见 markSvg）。
+          if (job.el.__fushiInk !== res.still) {
+            job.el.innerHTML = res.ink;
+            job.el.__fushiInk = res.still;
+          }
+        });
+        return;
+      }
+      delete paintedLines[group.name];
+      delete paintedGeom[group.name];
+      delete paintedAny[group.name];
+      byLayer.forEach(function(own, layer) {
+        var el = layer.querySelector(':scope > [data-hl-group="' + group.name + '"]');
+        if (!el) return;
+        el.__fushiInk = null;
+        var origin = own.length ? layer.getBoundingClientRect() : null;
+        var html = '';
+        lanes(own, group.join).forEach(function(l) {
+          var x = l.v ? l.lo : l.a;
+          var y = l.v ? l.a : l.lo;
+          var w = l.v ? l.hi - l.lo : l.b - l.a;
+          var h = l.v ? l.b - l.a : l.hi - l.lo;
+          html += '<' + LANE + ' data-hl="' + group.name + '" style="left:' + (x - origin.left).toFixed(2) +
+              'px;top:' + (y - origin.top).toFixed(2) + 'px;width:' + w.toFixed(2) +
+              'px;height:' + h.toFixed(2) + 'px"></' + LANE + '>';
+        });
+        if (el.innerHTML !== html) el.innerHTML = html;
+      });
+    };
+    var flush = function() {
+      queued = false;
+      var names = dirty;
+      dirty = {};
+      if (!hostEl()) return;
+      hookRegistry();
+      var reg = registry();
+      var marks = markConfigs();
+      var favPainted = false;
+      paintsMemo = new Map();
+      try {
+        GROUPS.forEach(function(g) {
+          if (!names[g.name]) return;
+          var kind = kindOf(g.name);
+          paintGroup(g, reg, kind ? marks[kind] || null : null);
+          if (kind === 'favorite') favPainted = true;
+        });
+      } finally {
+        paintsMemo = null;
+      }
+      if (favPainted) fresh = [];
+      pruneBackdrops();
+    };
+    var schedule = function(name) {
+      if (name === undefined) {
+        GROUPS.forEach(function(g) { dirty[g.name] = true; });
+      } else if (groupOf(name)) {
+        dirty[name] = true;
+      } else {
+        return;
+      }
+      if (queued) return;
+      queued = true;
+      Promise.resolve().then(flush);
+    };
+    // 元素 class 变化 → 对应层重画。窄条层自己的变动不算。
+    var touched = function(node) {
+      if (!node || node.nodeType !== 1) return false;
+      if (CLASS.test(node.className && node.className.baseVal === undefined ? node.className : '')) return true;
+      return !!(node.querySelector && node.querySelector(
+          '.fushi-sentence-audio-active, .fushi-sentence-audio-ruby-active, .fushi-active, [class*="fushi-hl-"], ' +
+          '.fushi-selection-ruby-active, .fushi-dict-highlight'));
+    };
+    var onMutations = function(records) {
+      var hit = false;
+      for (var i = 0; i < records.length && !hit; i++) {
+        var rec = records[i];
+        if (rec.target && rec.target.closest && rec.target.closest(HOST)) continue;
+        if (rec.type === 'attributes') {
+          hit = CLASS.test(rec.oldValue || '') || touched(rec.target);
+        } else {
+          for (var a = 0; a < rec.addedNodes.length && !hit; a++) hit = touched(rec.addedNodes[a]);
+          for (var d = 0; d < rec.removedNodes.length && !hit; d++) hit = touched(rec.removedNodes[d]);
+        }
+      }
+      if (hit) schedule();
+    };
+    // 钩子装在注册表对象自己身上，所以这个对象必须一直被强引用：WebKit 的 CSS.highlights 包装对象没人
+    // 引用时会被回收、下次读到的是新对象，挂在旧对象上的钩子随之消失，查词 / 搜索写进注册表后窄条层收不到
+    // 通知、不重画（BUG-3506）。hookedRegistry 由 flush 每次经 hookRegistry 读到，保证它活着；万一引擎
+    // 仍换了对象，hookRegistry 给新对象补装。
+    var hookedRegistry = null;
+    var hookRegistry = function() {
+      var reg = registry();
+      if (!reg || reg === hookedRegistry) return;
+      hookedRegistry = reg;
+      if (reg.__fushiLanesHooked) return;
+      reg.__fushiLanesHooked = true;
+      var set = reg.set, del = reg.delete, clear = reg.clear;
+      reg.set = function(name, value) { var res = set.call(this, name, value); schedule(name); return res; };
+      reg.delete = function(name) { var res = del.call(this, name); schedule(name); return res; };
+      reg.clear = function() { var res = clear.call(this); schedule(); return res; };
+    };
+    hookRegistry();
+    var repaintAll = function() { schedule(); };
+    if (typeof window.addEventListener === 'function') window.addEventListener('resize', repaintAll);
+    if (typeof document !== 'undefined' && document.fonts && document.fonts.addEventListener) {
+      document.fonts.addEventListener('loadingdone', function() { metricCache = {}; repaintAll(); });
+    }
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('load', function(e) {
+        if (e.target && e.target.tagName === 'IMG') repaintAll();
+      }, true);
+    }
+    var observe = function() {
+      if (!window.MutationObserver || !document.body) return;
+      new MutationObserver(onMutations).observe(document.body, {
+        subtree: true, childList: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true
+      });
+      if (document.head) new MutationObserver(repaintAll).observe(document.head, { childList: true, characterData: true, subtree: true });
+      schedule();
+    };
+    if (typeof document !== 'undefined') {
+      if (document.body) observe();
+      else if (typeof document.addEventListener === 'function') document.addEventListener('DOMContentLoaded', observe);
+    }
+    return {
+      repaint: function(name) { schedule(name); },
+      flush: flush,
+      laneEm: LANE_EM,
+      markFresh: markFresh,
+      markStyles: MARK_STYLES,
+      markKinds: MARK_KINDS
+    };
+  })();
+}
 window.fushiSelection = {
   selection: null,
   // TODO-1317: mobile long-press selection anchor.
+  // 本次修复把它扩成**区间**：{node, offset, endNode, endOffset}，空格分词词里长按定下的
+  // 是整词（词首..词末），其它脚本是单字（首尾同一位置）。见 selectionAnchorAtHit。
   dragAnchor: null,
   // TODO-1366: start/end drag handles (touch grips) for the app-drawn selection.
   // Elements are lazily created and parented to <html> (like the caret ring),
@@ -500,6 +1823,50 @@ window.fushiSelection = {
         return NodeFilter.FILTER_ACCEPT;
       }
     });
+  },
+  // BUG-3453：createWalker 跳过的纯空白文本节点在排版上是真实的词间空格。有声书句子
+  // 高亮（sentenceAudioWrapItems / wrapSentenceAudioGroup）把每条 cue 的文字各自包进
+  // wrapper，cue 之间的空格落在两个 wrapper 之间，成了独立的纯空白节点——walker 一跳过
+  // 它，前向取词就把「…greeted us」和下一条 cue 的「belonged」粘成 usbelonged（英文整词
+  // 查不到），句子里也丢掉这个空格。cue 以标点收尾时（hair.）标点先终止扫描，所以只有
+  // 每条 cue 的最后一个词出问题。
+  //
+  // 本谓词回答：对 createWalker 相邻的两个文本节点 a → b（文档序），两者之间是否夹着被
+  // 跳过的纯空白节点（振假名 / 注音不算）。中间只会是被拒的节点，guard 只防异常 DOM。
+  hasSkippedWhitespaceBetween: function(a, b) {
+    if (!a || !b || a === b) return false;
+    var self = this;
+    var raw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(n) {
+        return self.isFurigana(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    raw.currentNode = a;
+    var guard = 0;
+    for (var n = raw.nextNode(); n && n !== b && guard < 256; n = raw.nextNode(), guard++) {
+      var v = n.nodeValue;
+      if (v && /^[\s　]+$/.test(v)) return true;
+    }
+    return false;
+  },
+  // 被跳过的空白缝是否算一个词间空格：缝前（及缝后，若给出）都是非空白、非日文字符。
+  // 日文排版里 HTML 换行缝历来按无缝处理（取词跨过、句子不加空格），此处保持不变。
+  isWordGapBetweenChars: function(beforeText, afterText) {
+    var before = this.lastCodePointOf(beforeText);
+    if (before === null || this.isScanWhitespace(String.fromCodePoint(before)) ||
+        this.isCodePointJapanese(before)) return false;
+    if (afterText === undefined) return true;
+    if (!afterText) return false;
+    var after = afterText.codePointAt(0);
+    return !this.isScanWhitespace(String.fromCodePoint(after)) &&
+      !this.isCodePointJapanese(after);
+  },
+  lastCodePointOf: function(text) {
+    if (!text) return null;
+    var i = text.length - 1;
+    var unit = text.charCodeAt(i);
+    if (unit >= 0xDC00 && unit <= 0xDFFF && i > 0) i--;
+    return text.codePointAt(i);
   },
   // BUG-1797：可见正文盒 = body 的 content box ∩ 视口。
   //
@@ -707,6 +2074,283 @@ window.fushiSelection = {
     }
     return null;
   },
+  // ---- 坐标 -> 文本位置（选区拖动端点解析层） --------------------------------
+  //
+  // 根因（用户报「长按拖选 / 拖手柄到字缝、行尾、段间空白，手柄就卡住、松手再拖也过不
+  // 去」）：拖动路径原来**只**认几何命中 `getSelectableCharacterAtPoint`——它要求手指压
+  // 在某个字符矩形上（先精确、再 ±6px）。字缝、行距、行尾/行首空白（text-indent、两端
+  // 对齐的伸缩空隙、段间 margin）上没有任何字符矩形盖住手指，命中返回 null；于是
+  // `updateRangeSelection` 把端点钉回锚点（整段选区当场塌回锚点字）、`moveSelectionHandle`
+  // 直接 return（手柄视觉冻结）。修法不是把 ±6px 调大——那只是把卡住的位置推迟到下一个
+  // 缝隙。这里补一层真正的「坐标 -> 文本位置」解析，语义与 Android
+  // `TextView.getOffsetForPosition()` / Flutter `TextPainter.getPositionForOffset()` 一致：
+  //
+  //   手指坐标 -> 最近 caret（字符之间的位置）-> 方向修正 -> 端点字符 -> collectRangeBetween
+  //
+  // 三级解析（每级都过 BUG-1797 的可见性收口：分页页边距带里被 clip 掉的相邻页字符永不
+  // 参与竞争，否则手柄会被拉到看不见的另一页文字上）：
+  //   ① 原生 caret API（`caretPositionFromPoint` / `caretRangeFromPoint`）：Chrome WebView
+  //      与 WKWebView 都实现了「最近 caret」语义（落在行距/字缝/行尾会按最近行盒 clamp），
+  //      O(1)，绝大多数帧走这条。只认文本节点结果（BUG-765：手柄 div / documentElement
+  //      的命中不可信），并复核相邻字符可见。
+  //   ② 原生不可用 / 命中被遮挡 / 结果不可见时，在命中元素所在的**文本块**里逐字符几何
+  //      扫描：交叉轴（横排 = y，竖排 = x）先定行，行内轴再按字符矩形中点规则定 caret
+  //      （与 `Layout.getOffsetForHorizontal` 同判据）。扫描有界于块、有字符数上限。
+  //   ③ 都失败 -> null。调用方保持旧端点（不收缩、不清高亮），旧路径零回归。
+  //
+  // 字符 (node, offset) 的 Range（按码点算 1~2 个 UTF-16 单元）。越界 / 非文本节点返回 null。
+  charRangeAt: function(node, offset) {
+    if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+    var text = node.textContent || '';
+    if (offset < 0 || offset >= text.length) return null;
+    var codePoint = text.codePointAt(offset);
+    var length = (codePoint !== undefined && codePoint > 0xffff) ? 2 : 1;
+    var range = document.createRange();
+    range.setStart(node, offset);
+    range.setEnd(node, Math.min(offset + length, text.length));
+    return range;
+  },
+  // 字符矩形的交叉轴 / 行内轴区间（横排：交叉轴 = y、行内轴 = x；竖排 vertical-rl：
+  // 交叉轴 = x、行内轴 = y）。阅读方向（列内从上到下 / 行内从左到右）与偏移增长方向
+  // 一致，故中点规则两个轴向共用一套判据。
+  charAxisBounds: function(rect, vertical) {
+    return {
+      crossLo: vertical ? rect.left : rect.top,
+      crossHi: vertical ? rect.right : rect.bottom,
+      inlineLo: vertical ? rect.top : rect.left,
+      inlineHi: vertical ? rect.bottom : rect.right,
+    };
+  },
+  // 两个文本位置 (node, offset) 的文档序：-1 在前 / 0 同一位置 / 1 在后。判据与
+  // collectRangeBetween 的端点排序同源（compareDocumentPosition）。
+  compareTextPosition: function(nodeA, offsetA, nodeB, offsetB) {
+    if (nodeA === nodeB) return offsetA < offsetB ? -1 : (offsetA > offsetB ? 1 : 0);
+    if (!nodeA || !nodeB) return 0;
+    return (nodeA.compareDocumentPosition(nodeB) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
+  },
+  // 空格分词词的边界 [start, end)（`isSpaceDelimitedLetter` + 词内撇号，与扫描模型同一套
+  // 真值）。`index` 处的字符不属于这样的词（CJK / 标点 / 空白）时返回 null。
+  spaceDelimitedWordBounds: function(text, index) {
+    if (!text || index < 0 || index >= text.length) return null;
+    if (!this.isSpaceDelimitedLetter(text[index])) return null;
+    var start = index;
+    var end = index + 1;
+    while (start > 0 &&
+        (this.isSpaceDelimitedLetter(text[start - 1]) || this.isIntraWordApostrophe(text, start - 1))) {
+      start--;
+    }
+    while (end < text.length &&
+        (this.isSpaceDelimitedLetter(text[end]) || this.isIntraWordApostrophe(text, end))) {
+      end++;
+    }
+    return { start: start, end: end };
+  },
+  // 端点规范化：collectRangeBetween 的游走用 createWalker（REJECT 纯空白节点与振假名），
+  // Endpoints must belong to the walker, not filtered whitespace / ruby nodes.
+  // Prefer the drag direction, then the other side: no previous text at a leading
+  // indent does NOT mean no body text. Only failure on both sides returns null.
+  normalizeEndpoint: function(node, offset, forward) {
+    if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+    var text = node.textContent || '';
+    var walkable = text.length > 0 && !this.isFurigana(node) && !/^[\s　]*$/.test(text);
+    if (walkable) return { node: node, offset: Math.max(0, Math.min(offset, text.length - 1)) };
+    for (var attempt = 0; attempt < 2; attempt++) {
+      var searchForward = attempt === 0 ? forward : !forward;
+      var walker = this.createWalker(document.body);
+      walker.currentNode = node;
+      var adjacent = searchForward ? walker.nextNode() : walker.previousNode();
+      if (adjacent) {
+        return { node: adjacent, offset: searchForward ? 0 : adjacent.textContent.length - 1 };
+      }
+    }
+    return null;
+  },
+  // caret (node, offset) 相邻字符里有没有可见的（BUG-1797 可见性收口）。相邻 = caret 左右
+  // 各一个字；都不在（节点首尾 / 都不可见）时返回 false，交给几何兜底再试。
+  caretHasVisibleNeighbour: function(node, offset, box) {
+    var offsets = [offset - 1, offset];
+    for (var i = 0; i < offsets.length; i++) {
+      var range = this.charRangeAt(node, offsets[i]);
+      if (!range) continue;
+      if (this.charRangeVisible(range, box)) return true;
+    }
+    return false;
+  },
+  // ① 原生 caret 快路。返回 {node, offset}（caret 语义，offset ∈ [0, len]）或 null。
+  nativeCaretAtPoint: function(x, y, box) {
+    // Presence does not imply success: null / element / invisible results must
+    // try the range dialect before resorting to geometric hit-testing.
+    for (var api = 0; api < 2; api++) {
+      var node = null;
+      var offset = 0;
+      try {
+        if (api === 0 && document.caretPositionFromPoint) {
+          var pos = document.caretPositionFromPoint(x, y);
+          if (pos) { node = pos.offsetNode; offset = pos.offset; }
+        } else if (api === 1 && document.caretRangeFromPoint) {
+          var range = document.caretRangeFromPoint(x, y);
+          if (range) { node = range.startContainer; offset = range.startOffset; }
+        }
+      } catch (err) {
+        // A WebView may expose an unsupported native entry point. Try the other.
+        continue;
+      }
+      if (!node || node.nodeType !== Node.TEXT_NODE || this.isFurigana(node)) continue;
+      if (!this.caretHasVisibleNeighbour(node, offset, box)) continue;
+      return { node: node, offset: offset };
+    }
+    return null;
+  },
+  // Fallback for callers outside the shared transparent endpoint window. Skip
+  // grips in the stack when available; a single-point hit on a grip is no text.
+  _hitElementUnderPoint: function(x, y) {
+    var isHandle = function(candidate) {
+      return !!(candidate && candidate.closest &&
+        candidate.closest('[data-fushi-sel-handle]'));
+    };
+    if (document.elementsFromPoint) {
+      var stack = document.elementsFromPoint(x, y) || [];
+      for (var i = 0; i < stack.length; i++) {
+        if (isHandle(stack[i])) continue;
+        if (stack[i]) return stack[i];
+      }
+      return null;
+    }
+    var single = document.elementFromPoint(x, y);
+    if (isHandle(single)) return null;
+    return single;
+  },
+  // ② 几何兜底：在命中元素所在的文本块里逐字符扫描，按「交叉轴最近 -> 行内轴最近」定
+  // caret。交叉轴优先是关键：行距/段距里的点必须先归到最近的**行**，否则拖到行尾右侧时
+  // 下一行的字在内联轴上贴着手指、交叉轴只差一个行距，端点会跳行。行内轴按字符矩形的
+  // 中点规则取前沿/后沿：落在字符前的空隙取前沿、字符后的空隙取后沿 -> 行尾右侧空白
+  // clamp 到行尾（最后一个字被包含）、行首左侧空白 clamp 到行首。
+  // 有界：根 = 命中元素所在的块（绝不落到整个 body），并且有字符数上限。
+  geometricCaretAtPoint: function(x, y, box) {
+    var el = this._hitElementUnderPoint(x, y);
+    if (!el) return null;
+    var container = (el.closest && el.closest('p, div, span, ruby, a')) || document.body;
+    if (!container) return null;
+    var vertical = this._selectionVertical();
+    var inlineCoord = vertical ? y : x;
+    var crossCoord = vertical ? x : y;
+    var walker = this.createWalker(container);
+    var best = null;
+    var scanned = 0;
+    var node;
+    while ((node = walker.nextNode()) && scanned < 4000) {
+      var text = node.textContent || '';
+      for (var i = 0; i < text.length && scanned < 4000;) {
+        var codePoint = text.codePointAt(i);
+        var charLength = (codePoint !== undefined && codePoint > 0xffff) ? 2 : 1;
+        var charRange = this.charRangeAt(node, i);
+        scanned++;
+        if (charRange && this.charRangeVisible(charRange, box)) {
+          var rects = charRange.getClientRects();
+          for (var r = 0; r < rects.length; r++) {
+            var rect = rects[r];
+            if (!rect || !(rect.width > 0) || !(rect.height > 0)) continue;
+            var bounds = this.charAxisBounds(rect, vertical);
+            var crossDist = crossCoord < bounds.crossLo ? bounds.crossLo - crossCoord
+              : (crossCoord > bounds.crossHi ? crossCoord - bounds.crossHi : 0);
+            var inlineDist = inlineCoord < bounds.inlineLo ? bounds.inlineLo - inlineCoord
+              : (inlineCoord > bounds.inlineHi ? inlineCoord - bounds.inlineHi : 0);
+            if (best && (crossDist > best.crossDist ||
+                (crossDist === best.crossDist && inlineDist >= best.inlineDist))) continue;
+            // 中点规则：点越过字符中线（或已在其后沿之外）-> 取后沿（下一个字符的前面 /
+            // 行尾）；否则取前沿。
+            var afterGlyph = inlineCoord > bounds.inlineHi ||
+              (inlineCoord >= bounds.inlineLo &&
+               inlineCoord >= (bounds.inlineLo + bounds.inlineHi) / 2);
+            best = {
+              node: node,
+              offset: afterGlyph ? i + charLength : i,
+              crossDist: crossDist,
+              inlineDist: inlineDist
+            };
+          }
+        }
+        i += charLength;
+      }
+    }
+    return best ? { node: best.node, offset: best.offset } : null;
+  },
+  // 坐标 -> caret：原生快路 -> 几何兜底 -> null。[box] 由调用方复用（一次拖动只在需要时量
+  // 一次几何）；不传时自己算一份。
+  caretPositionAtPoint: function(x, y, box) {
+    if (box === undefined) box = this.visibleContentBox();
+    var native = this.nativeCaretAtPoint(x, y, box);
+    if (native) return native;
+    return this.geometricCaretAtPoint(x, y, box);
+  },
+  // 拖动入口的端点解析（唯一出口）：
+  //   [strictHit] 严格几何命中的字符（getSelectableCharacterAtPoint 的结果，可为 null）；
+  //   (refNode, refOffset) 定锚端，用来判定这次拖动是向锚点之后扩（forward）还是之前缩。
+  // 返回 {node, offset, forward}，或 null（解析失败 -> 调用方保持旧选区，绝不收缩）。
+  // 严格命中优先 = 旧行为零回归（手指压在字符矩形上时端点就是那个字）；只有严格命中落空
+  // （字缝 / 行距 / 行尾 / 行首等没有字符矩形盖住手指的点）才走「坐标 -> 文本位置」解析。
+  resolveSelectionEndpoint: function(x, y, strictHit, refNode, refOffset) {
+    var node = null;
+    var offset = 0;
+    var forward = true;
+    if (strictHit) {
+      node = strictHit.node;
+      offset = strictHit.offset;
+      forward = this.compareTextPosition(node, offset, refNode, refOffset) >= 0;
+    } else {
+      var box = this.visibleContentBox();
+      var caret = this.caretPositionAtPoint(x, y, box);
+      if (!caret) return null;
+      forward = this.compareTextPosition(caret.node, caret.offset, refNode, refOffset) > 0;
+      // caret 是**字符之间**的位置：正向（往锚点之后拖）取 caret 前一个字符，反向取 caret
+      // 所在字符 —— 与 collectRangeBetween「端点字符计入区间」的语义配套。
+      var neighbour = forward
+        ? this.charBefore(caret.node, caret.offset)
+        : this.charAt(caret.node, caret.offset);
+      if (!neighbour || !neighbour.node) return null;
+      node = neighbour.node;
+      offset = neighbour.offset;
+      // BUG-1797：端点必须是**可见**字符。分页页边距带里被 clip 掉的相邻页字符可以被
+      // clamp 命中（布局期几何仍在），但用户看不见它 —— 那种点解析不出端点，保持旧端点，
+      // 绝不把选区拉到看不见的另一页文字上。
+      var endpointRange = this.charRangeAt(node, offset);
+      if (!endpointRange || !this.charRangeVisible(endpointRange, box)) return null;
+    }
+    var endpoint = this.normalizeEndpoint(node, offset, forward);
+    if (!endpoint) return null;
+    var normalizedRange = this.charRangeAt(endpoint.node, endpoint.offset);
+    if (!normalizedRange || !this.charRangeVisible(normalizedRange, this.visibleContentBox())) return null;
+    return { node: endpoint.node, offset: endpoint.offset, forward: forward };
+  },
+  // Strict hit AND caret/geometric resolution share one transparent window.
+  // No visual hiding, no dependence on elementsFromPoint; restore even on throw.
+  selectionEndpointAtPoint: function(x, y, refNode, refOffset) {
+    var handles = this.selectionHandles;
+    var savedStartPe = handles ? handles.start.style.pointerEvents : null;
+    var savedEndPe = handles ? handles.end.style.pointerEvents : null;
+    try {
+      if (handles) {
+        handles.start.style.pointerEvents = 'none';
+        handles.end.style.pointerEvents = 'none';
+      }
+      var hit = this.getSelectableCharacterAtPoint(x, y);
+      return this.resolveSelectionEndpoint(x, y, hit, refNode, refOffset);
+    } finally {
+      if (handles) {
+        handles.start.style.pointerEvents = savedStartPe;
+        handles.end.style.pointerEvents = savedEndPe;
+      }
+    }
+  },
+  // 长按定锚的锚点区间：空格分词词里长按 -> 整词锚点（词首..词末），原地长按即选中整词、
+  // 向两侧拖动都不丢词尾；CJK / 标点 / 空白 -> 单字锚点（与 BUG-609 起的老行为一致）。
+  selectionAnchorAtHit: function(hit) {
+    var bounds = this.spaceDelimitedWordBounds(hit.node.textContent, hit.offset);
+    if (!bounds) {
+      return { node: hit.node, offset: hit.offset, endNode: hit.node, endOffset: hit.offset };
+    }
+    return { node: hit.node, offset: bounds.start, endNode: hit.node, endOffset: bounds.end - 1 };
+  },
   getSentenceContext: function(startNode, startOffset) {
     var container = this.findParagraph(startNode) || document.body;
     var walker = this.createWalker(container);
@@ -732,8 +2376,16 @@ window.fushiSelection = {
       partsBefore.push(text.slice(0, limit));
       sStartNode = node;
       sStartOffset = 0;
+      var laterNode = node;
       node = walker.previousNode();
-      if (node) limit = node.textContent.length;
+      if (node) {
+        limit = node.textContent.length;
+        // BUG-3453：被跳过的空白缝还原成一个空格（partsBefore 最后反转拼接）。
+        if (this.hasSkippedWhitespaceBetween(node, laterNode) &&
+            this.isWordGapBetweenChars(node.textContent, laterNode.textContent)) {
+          partsBefore.push(' ');
+        }
+      }
     }
     walker.currentNode = startNode;
     var partsAfter = [];
@@ -759,8 +2411,14 @@ window.fushiSelection = {
       partsAfter.push(afterText.slice(start));
       sEndNode = node;
       sEndOffset = afterText.length;
+      var earlierNode = node;
       node = walker.nextNode();
       start = 0;
+      // BUG-3453：同上，向后拼接时也把被跳过的空白缝还原成一个空格。
+      if (node && this.hasSkippedWhitespaceBetween(earlierNode, node) &&
+          this.isWordGapBetweenChars(earlierNode.textContent, node.textContent)) {
+        partsAfter.push(' ');
+      }
     }
     var beforeText = partsBefore.reverse().join('');
     // BUG-2196：换行在 HTML 里等价于空格。**等长**替换（1 字符换 1 字符），
@@ -861,7 +2519,13 @@ window.fushiSelection = {
       } else {
         parts.push(text);
       }
+      var prevNode = node;
       node = walker.nextNode();
+      // BUG-3453：与 getSentenceContext 同一规则还原被跳过的词间空白缝。
+      if (node && this.hasSkippedWhitespaceBetween(prevNode, node) &&
+          this.isWordGapBetweenChars(prevNode.textContent, node.textContent)) {
+        parts.push(' ');
+      }
     }
     if (!reachedEnd) return '';
     return parts.join('');
@@ -1281,8 +2945,13 @@ window.fushiSelection = {
       }
       if (scanOffset > start) ranges.push({ node: scanNode, start: start, end: scanOffset });
       if (scanOffset < content.length || text.length >= maxLength) break;
+      var scannedNode = scanNode;
       scanNode = walker.nextNode();
       scanOffset = 0;
+      // BUG-3453：两个节点之间夹着被 createWalker 跳过的空白节点（有声书 cue wrapper 之间
+      // 的空格）= 新节点开头的空白，按 BUG-1773 同一规则终止，不把下一条 cue 的词粘上来。
+      if (scanNode && this.hasSkippedWhitespaceBetween(scannedNode, scanNode) &&
+          this.isWordGapBetweenChars(text)) break;
     }
     if (!text) return null;
     this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
@@ -1327,6 +2996,10 @@ window.fushiSelection = {
       ? Number(mangaPage.getAttribute('data-page')) : null;
     if (!Number.isInteger(mangaPageIndex) || mangaPageIndex < 0) {
       mangaPageIndex = null;
+    }
+    var mangaGroupNumber = mangaGroup !== null ? Number(mangaGroup) : null;
+    if (!Number.isInteger(mangaGroupNumber) || mangaGroupNumber < 0) {
+      mangaGroupNumber = null;
     }
     if (mangaGroup !== null && mangaPage) {
       var groupBoxes = mangaPage.querySelectorAll(
@@ -1396,7 +3069,11 @@ window.fushiSelection = {
       sentenceNormalizedOffset: sentenceNormalizedOffset,
       sentenceNormalizedLength: sentenceNormalizedLength,
       verticalWriting: verticalWriting,
-      mangaPageIndex: mangaPageIndex
+      mangaPageIndex: mangaPageIndex,
+      // Sentence group of the hit OCR block. The host maps it back to the
+      // page's OCR blocks to get the sentence rect in source-image space
+      // (card-image cropping); the viewport rect above cannot provide that.
+      mangaSentenceGroup: mangaGroupNumber
     };
   },
   // Fire onTextSelected for the current this.selection (tap/word lookup path and
@@ -1420,6 +3097,13 @@ window.fushiSelection = {
   fireSelectionMenu: function(x, y) {
     var payload = this.buildSelectionPayload(x, y);
     if (!payload) return null;
+    // Viewport CSS pixels, including BOTH 32px touch targets. Lookup's
+    // single-glyph getSelectionRect remains unchanged.
+    payload.handlesRect = this.selectionHandlesRect();
+    // 两个球**各自**的触控盒：宿主避让操作条要按单个球算 —— 只有并集 bbox 时，两球之间
+    // 的整段正文空白也算成障碍（竖排长选区里 bbox 一路延伸到末字球），宿主在页顶"上方
+    // 放不下"就只能翻到 bbox 底端，操作条于是掉到选区尾部下方。
+    payload.handlesBoxes = this.selectionHandlesBoxes();
     window.flutter_inappwebview.callHandler('onSelectionMenu', JSON.stringify(payload));
     return payload.text;
   },
@@ -1490,28 +3174,78 @@ window.fushiSelection = {
     if (el && el.closest && el.closest('a')) return false;
     var hit = this.getSelectableCharacterAtPoint(x, y);
     if (!hit) return false;
+    // Clearing legacy wrappers unwraps + normalizes text nodes, invalidating
+    // hits obtained before that mutation. Resolve against the resulting DOM.
+    var hadWrappers = this.highlightWrappers.length > 0;
     this.clearSelection();
-    this.dragAnchor = { node: hit.node, offset: hit.offset };
+    if (hadWrappers) hit = this.getSelectableCharacterAtPoint(x, y);
+    if (!hit) return false;
+    // 锚点区间：空格分词词里长按定的是整词（原地长按即选中整词 —— 浏览器 / Android 长按
+    // 的语义），CJK / 标点 / 空白定的是单字（与 BUG-609 起的老行为一致）。
+    var anchor = this.selectionAnchorAtHit(hit);
+    this.dragAnchor = {
+      node: anchor.node, offset: anchor.offset,
+      endNode: anchor.endNode, endOffset: anchor.endOffset,
+      startX: x, startY: y, moved: false
+    };
     // Establish and paint the anchor glyph immediately. This is the feedback the
     // native Android selection path gives at long-press time; the old path only
     // armed an anchor and made selection contingent on a later drag.
-    this.updateRangeSelection(x, y);
-    return true;
+    //
+    // 这里**直接画锚点区间**，不经过端点解析：手指此刻还压在这次长按的锚点上，解析会把
+    // 端点收到手指所在的那一个字、把刚定下的词截成半截。浏览器同理——不拖就不动；拖动
+    // 由 touchmove 的 updateRangeSelection 负责，那边端点逐字跟随手指（不再有词边界吸附），
+    // 所以拉丁文本照样能选到词内的任意字符。
+    var built = this.collectRangeBetween(
+      anchor.node, anchor.offset, anchor.endNode, anchor.endOffset);
+    if (built) {
+      this.selection = {
+        startNode: built.startNode, startOffset: built.startOffset,
+        ranges: built.ranges, text: built.text
+      };
+      this.renderSelectionHighlight();
+      this.showSelectionHandles();
+      this.notifySelectionDragStarted();
+      return true;
+    }
+    this.clearSelection();
+    return false;
+  },
+  notifySelectionDragStarted: function() {
+    if (window.flutter_inappwebview &&
+        typeof window.flutter_inappwebview.callHandler === 'function') {
+      window.flutter_inappwebview.callHandler('onSelectionDragStarted');
+    }
+  },
+  liveDragAnchor: function() {
+    var anchor = this.dragAnchor;
+    return !!(anchor && this.liveSelectionPoint(anchor.node, anchor.offset) &&
+      this.liveSelectionPoint(anchor.endNode, anchor.endOffset) && this.selectionEndpoints());
   },
   updateRangeSelection: function(x, y) {
     if (!this.dragAnchor) return null;
-    var hit = this.getSelectableCharacterAtPoint(x, y);
-    // Over a gap/blank while dragging, keep the anchor as the end (no shrink).
-    var endNode = hit ? hit.node : this.dragAnchor.node;
-    var endOffset = hit ? hit.offset : this.dragAnchor.offset;
-    var built = this.collectRangeBetween(
-      this.dragAnchor.node, this.dragAnchor.offset, endNode, endOffset);
+    if (!this.liveDragAnchor()) { this.clearSelection(); return null; }
+    var anchor = this.dragAnchor;
+    if (x !== anchor.startX || y !== anchor.startY) anchor.moved = true;
+    if (!anchor.moved) return this.selection ? this.selection.text : null;
+    // 端点**始终**跟随手指：压在字符矩形上就用那个字，落在字缝 / 行距 / 行尾 / 行首等没有
+    // 字符矩形的位置就走「坐标 -> 文本位置」解析（Android TextView.getOffsetForPosition 语义），
+    // 端点才能连续跟随手指。锚点区间只是长按那一刻选中的初始范围（浏览器语义：不拖不动），
+    // 拖动可以自由收缩到词内、也可以越过词尾向外扩 —— 这里刻意**不**保留「落在锚点区间内
+    // 就维持锚点」的粘滞判定：那会让拉丁词永远只按整词进退、选不到词内的任意字符（用户
+    // 报「拉丁语言没法随意选择字符」的根因，与网上的实现不一致）。
+    var endpoint = this.selectionEndpointAtPoint(x, y, anchor.node, anchor.offset);
+    if (!endpoint) return null;
+    var built = endpoint.forward
+      ? this.collectRangeBetween(anchor.node, anchor.offset, endpoint.node, endpoint.offset)
+      : this.collectRangeBetween(endpoint.node, endpoint.offset, anchor.endNode, anchor.endOffset);
     if (!built) return null;
     this.selection = {
       startNode: built.startNode, startOffset: built.startOffset,
       ranges: built.ranges, text: built.text
     };
     this.renderSelectionHighlight();
+    this.positionSelectionHandles();
     return built.text;
   },
   // Finalize the long-press selection: extend to the release point, then present
@@ -1521,7 +3255,14 @@ window.fushiSelection = {
   // this.selection (highlight stays up) and hands Dart a menu so a plain-text
   // range selection (copy) and lookup/mining coexist instead of forcing lookup.
   endRangeSelection: function(x, y) {
-    this.updateRangeSelection(x, y);
+    // A late touchend after clear / DOM replacement must not confirm a lookup
+    // selection established by a different action in the meantime.
+    if (!this.dragAnchor) return false;
+    if (!this.liveDragAnchor()) { this.clearSelection(); return false; }
+    // Stationary holds retain the word; an actual drag consumes the release
+    // coordinate, which need not have arrived in the last touchmove event.
+    if (this.dragAnchor && this.dragAnchor.moved) this.updateRangeSelection(x, y);
+    if (!this.dragAnchor) return false;
     this.dragAnchor = null;
     if (!this.selection || !this.selection.text) {
       this.clearSelection();
@@ -1551,13 +3292,22 @@ window.fushiSelection = {
   // Visual endpoints of the current selection as {startNode, startOffset (first
   // glyph), endNode, endOffset (index of the last glyph = one before range end)}.
   // null when there is no live glyph selection.
+  liveSelectionPoint: function(node, offset) {
+    return !!(node && node.nodeType === Node.TEXT_NODE && node.isConnected &&
+      document.body.contains(node) && offset >= 0 && offset < node.textContent.length);
+  },
   selectionEndpoints: function() {
     if (!this.selection || !this.selection.ranges || !this.selection.ranges.length) {
       return null;
     }
+    for (var i = 0; i < this.selection.ranges.length; i++) {
+      var segment = this.selection.ranges[i];
+      if (segment.end <= segment.start ||
+          !this.liveSelectionPoint(segment.node, segment.start) ||
+          !this.liveSelectionPoint(segment.node, segment.end - 1)) return null;
+    }
     var first = this.selection.ranges[0];
     var last = this.selection.ranges[this.selection.ranges.length - 1];
-    if (last.end <= last.start) return null;
     return {
       startNode: first.node, startOffset: first.start,
       endNode: last.node, endOffset: last.end - 1
@@ -1594,8 +3344,13 @@ window.fushiSelection = {
         // 滚动手势并可拖。视觉抓手是内层 18px 实心圆钮，用主题色 var(--fushi-sel-handle)
         // （reader CSS 从 linkColor 下发，随主题变）+ 白描边（任意背景都可见）+ 单柔和阴
         // 影，去掉旧的刺眼橙色 + 双重发光 box-shadow（用户投诉「难看」）。
+        // html itself is a multi-column/overflow container in paged books.
+        // Promote the SAME touch target out of column clipping when supported;
+        // older WebViews keep the fixed-position path.
+        if (typeof el.showPopover === 'function') el.setAttribute('popover', 'manual');
         el.style.cssText = 'position:fixed;z-index:2147483645;width:32px;height:32px;' +
-          'margin-left:-16px;margin-top:-16px;box-sizing:border-box;' +
+          'inset:auto;margin:0;margin-left:-16px;margin-top:-16px;padding:0;' +
+          'overflow:visible;writing-mode:horizontal-tb;box-sizing:border-box;' +
           'background:transparent;border:0;' +
           'pointer-events:auto;touch-action:none;display:none;';
         var ball = document.createElement('div');
@@ -1622,7 +3377,10 @@ window.fushiSelection = {
     el.addEventListener('touchstart', function(e) {
       if (e.cancelable) e.preventDefault();
       e.stopPropagation();
+      if (!e.touches || e.touches.length !== 1 || !self.selectionEndpoints() ||
+          !self.selectionHandles || self.selectionHandles[which] !== el) return;
       self.activeHandle = which;
+      self.notifySelectionDragStarted();
     }, {passive: false});
     el.addEventListener('touchmove', function(e) {
       if (self.activeHandle !== which) return;
@@ -1635,8 +3393,12 @@ window.fushiSelection = {
       if (self.activeHandle !== which) return;
       if (e.cancelable) e.preventDefault();
       e.stopPropagation();
-      self.activeHandle = null;
       var t = (e.changedTouches && e.changedTouches[0]) || null;
+      if (t) self.moveSelectionHandle(which, t.clientX, t.clientY);
+      // move can invalidate the session if its source DOM was replaced.
+      if (self.activeHandle !== which) return;
+      if (!self.selectionEndpoints()) { self.clearSelection(); return; }
+      self.activeHandle = null;
       var x = t ? t.clientX : 0;
       var y = t ? t.clientY : 0;
       self.positionSelectionHandles();
@@ -1656,37 +3418,17 @@ window.fushiSelection = {
   // reposition both grips. No-op over a gap so the range never collapses.
   moveSelectionHandle: function(which, x, y) {
     var eps = this.selectionEndpoints();
-    if (!eps) return;
-    // The grip div sits directly under the finger (pointer-events:auto, top
-    // z-index). A hit-test at the raw finger point resolves elementFromPoint /
-    // caretPositionFromPoint to the grip element (an ELEMENT_NODE, not a text
-    // node) -> getCharacterAtPoint returns null -> the grip appears frozen and
-    // the range never adjusts. Make both grips transparent to hit-testing for
-    // the duration of the point resolution so the finger coordinate falls
-    // through to the glyph underneath, then restore. No native selection is
-    // touched (still app-drawn only).
-    var handles = this.selectionHandles;
-    var savedStartPe = handles ? handles.start.style.pointerEvents : null;
-    var savedEndPe = handles ? handles.end.style.pointerEvents : null;
-    if (handles) {
-      handles.start.style.pointerEvents = 'none';
-      handles.end.style.pointerEvents = 'none';
-    }
-    // 手柄拖动是在调整**选区范围**，不是查词：用选择命中，才能把选区端点停在标点
-    // 或句读上（旧实现走查词命中，拖到句号处 hit 为 null → 手柄卡住不动）。
-    var hit = this.getSelectableCharacterAtPoint(x, y);
-    if (handles) {
-      handles.start.style.pointerEvents = savedStartPe || 'auto';
-      handles.end.style.pointerEvents = savedEndPe || 'auto';
-    }
-    if (!hit) return;
+    if (!eps) { this.clearSelection(); return; }
+    // 定锚端（对侧端点）：拖 end 手柄时锚点是选区起点，拖 start 手柄时锚点是选区终点。
     var anchorNode, anchorOffset;
     if (which === 'end') {
       anchorNode = eps.startNode; anchorOffset = eps.startOffset;
     } else {
       anchorNode = eps.endNode; anchorOffset = eps.endOffset;
     }
-    var built = this.collectRangeBetween(anchorNode, anchorOffset, hit.node, hit.offset);
+    var endpoint = this.selectionEndpointAtPoint(x, y, anchorNode, anchorOffset);
+    if (!endpoint) return;
+    var built = this.collectRangeBetween(anchorNode, anchorOffset, endpoint.node, endpoint.offset);
     if (!built) return;
     this.selection = {
       startNode: built.startNode, startOffset: built.startOffset,
@@ -1702,6 +3444,17 @@ window.fushiSelection = {
     var vertical = this._selectionVertical();
     var sRect = this._glyphRect(eps.startNode, eps.startOffset);
     var eRect = this._glyphRect(eps.endNode, eps.endOffset);
+    // Clamp only the controls, never the text range or its visibility test.
+    var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    var SIZE = 32, half = SIZE / 2; // Same outer touch box as ensureSelectionHandles.
+    var box = this.visibleContentBox() || { left: 0, top: 0, right: vw, bottom: vh };
+    if (vw < SIZE || vh < SIZE ||
+        !this.charRangeVisible(this.charRangeAt(eps.startNode, eps.startOffset), box) ||
+        !this.charRangeVisible(this.charRangeAt(eps.endNode, eps.endOffset), box)) {
+      this.hideSelectionHandles();
+      return;
+    }
     var sx, sy, ex, ey;
     // 圆钮离开文字的间隙（约半个钮），让抓手悬在选区外缘、不压住字。
     var GAP = 8;
@@ -1720,12 +3473,73 @@ window.fushiSelection = {
       ex = eRect.right;
       ey = eRect.bottom + GAP;
     }
+    var clampCenter = function(value, extent) {
+      return Math.max(half, Math.min(extent - half, value));
+    };
+    var edgeClamped = sx < half || sx > vw - half || ex < half || ex > vw - half ||
+      sy < half || sy > vh - half || ey < half || ey > vh - half;
+    sx = clampCenter(sx, vw); ex = clampCenter(ex, vw);
+    sy = clampCenter(sy, vh); ey = clampCenter(ey, vh);
+    // Preserve ordinary interior placement. At an edge a single glyph can put
+    // both balls under one touch box after clamping. Separate those boxes along
+    // the reading axis, moving the pair together when it meets a viewport edge.
+    if (edgeClamped && Math.abs(sx - ex) < SIZE && Math.abs(sy - ey) < SIZE) {
+      var alongY = vertical;
+      if ((alongY ? vh : vw) < SIZE * 2) alongY = !alongY;
+      var extent = alongY ? vh : vw;
+      // No room for two full non-overlapping boxes on either axis: fail closed
+      // rather than shrink targets, overlap them or manufacture more text.
+      if (extent < SIZE * 2) { this.hideSelectionHandles(); return; }
+      var a = alongY ? sy : sx, b = alongY ? ey : ex;
+      var mid = Math.max(SIZE, Math.min(extent - SIZE, (a + b) / 2));
+      var direction = a <= b ? 1 : -1;
+      a = mid - direction * half; b = mid + direction * half;
+      if (alongY) { sy = a; ey = b; }
+      else { sx = a; ex = b; }
+    }
     handles.start.style.left = sx + 'px';
     handles.start.style.top = sy + 'px';
-    handles.start.style.display = 'block';
     handles.end.style.left = ex + 'px';
     handles.end.style.top = ey + 'px';
-    handles.end.style.display = 'block';
+    [handles.start, handles.end].forEach(function(el) {
+      // Never hide/reopen a live target: it owns the whole touch stream.
+      if (el.style.display !== 'block') el.style.display = 'block';
+      if (typeof el.showPopover === 'function' && !el.matches(':popover-open')) {
+        el.showPopover();
+      }
+    });
+  },
+  selectionHandlesRect: function() {
+    var handles = this.selectionHandles;
+    if (!handles || !this.selectionEndpoints()) return null;
+    var bounds = null;
+    for (var i = 0; i < 2; i++) {
+      var el = i === 0 ? handles.start : handles.end;
+      if (!el.isConnected || el.style.display === 'none') return null;
+      var r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return null;
+      if (!bounds) bounds = { x: r.left, y: r.top, right: r.right, bottom: r.bottom };
+      else {
+        bounds.x = Math.min(bounds.x, r.left); bounds.y = Math.min(bounds.y, r.top);
+        bounds.right = Math.max(bounds.right, r.right); bounds.bottom = Math.max(bounds.bottom, r.bottom);
+      }
+    }
+    return { x: bounds.x, y: bounds.y, width: bounds.right - bounds.x, height: bounds.bottom - bounds.y };
+  },
+  // 两个球各自的触控盒（视口 CSS 像素，顺序 = start, end）。宿主避让操作条时按单个盒子
+  // 算：只有并集 bbox 会把两球之间的正文也算成障碍。任一端不可用 -> null（宿主退回并集）。
+  selectionHandlesBoxes: function() {
+    var handles = this.selectionHandles;
+    if (!handles || !this.selectionEndpoints()) return null;
+    var boxes = [];
+    for (var i = 0; i < 2; i++) {
+      var el = i === 0 ? handles.start : handles.end;
+      if (!el.isConnected || el.style.display === 'none') return null;
+      var r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return null;
+      boxes.push({ x: r.left, y: r.top, width: r.width, height: r.height });
+    }
+    return boxes;
   },
   showSelectionHandles: function() {
     this.positionSelectionHandles();
@@ -1733,8 +3547,10 @@ window.fushiSelection = {
   hideSelectionHandles: function() {
     this.activeHandle = null;
     if (this.selectionHandles) {
-      this.selectionHandles.start.style.display = 'none';
-      this.selectionHandles.end.style.display = 'none';
+      [this.selectionHandles.start, this.selectionHandles.end].forEach(function(el) {
+        if (typeof el.hidePopover === 'function' && el.matches(':popover-open')) el.hidePopover();
+        el.style.display = 'none';
+      });
     }
   },
   getSelectionRect: function(x, y) {
@@ -1797,6 +3613,9 @@ window.fushiSelection = {
           }
           continue;
         }
+        if (typeof window.__fushiEnsureHighlightPaintable === 'function') {
+          window.__fushiEnsureHighlightPaintable(seg.node);
+        }
         var range = document.createRange();
         range.setStart(seg.node, seg.start);
         range.setEnd(seg.node, seg.end);
@@ -1808,16 +3627,16 @@ window.fushiSelection = {
       selHl.priority = 1;
       CSS.highlights.set('fushi-selection', selHl);
     } else {
+      // 拆旧包裹时合并文本节点，trimmedRanges（= selection.matchedRanges）的段由 trackTextPoints
+      // 就地换算。包裹走 __fushiLiveRanges.wrapText（BUG-3343）：extractContents 会把选中的字复制进
+      // 新节点、原节点截掉这段，选区的「节点 + 偏移」从此指向别的字。倒序包裹：切开只影响切点之后。
       this.clearHighlightWrappers();
-      var range = document.createRange();
       for (var i = trimmedRanges.length - 1; i >= 0; i--) {
         var seg = trimmedRanges[i];
-        range.setStart(seg.node, seg.start);
-        range.setEnd(seg.node, seg.end);
+        if (seg.end <= seg.start) continue;
         var wrapper = document.createElement('span');
         wrapper.className = 'fushi-dict-highlight';
-        wrapper.appendChild(range.extractContents());
-        range.insertNode(wrapper);
+        window.__fushiLiveRanges.wrapText(seg.node, seg.start, seg.end, wrapper);
         this.highlightWrappers.push(wrapper);
       }
       this.highlightWrappers.reverse();
@@ -1894,19 +3713,88 @@ window.fushiSelection = {
   clearHighlightWrappers: function() {
     if (!this.highlightWrappers.length) return;
     for (var i = 0; i < this.highlightWrappers.length; i++) {
-      var wrapper = this.highlightWrappers[i];
-      var parent = wrapper.parentNode;
-      if (!parent) continue;
-      while (wrapper.firstChild) {
-        parent.insertBefore(wrapper.firstChild, wrapper);
-      }
-      parent.removeChild(wrapper);
-      parent.normalize();
+      // BUG-3343：拆包裹与合并都经 __fushiLiveRanges，查词选区（highlightSelection 重画时仍要用）
+      // 与 live Range 换算到合并后的节点。
+      window.__fushiLiveRanges.normalize(window.__fushiLiveRanges.unwrap(this.highlightWrappers[i]));
     }
     this.highlightWrappers = [];
     if (!window.__fushiCssHighlightsSupported && window.fushiReader && window.fushiReader.buildNodeOffsets) {
       window.fushiReader.buildNodeOffsets();
     }
+  },
+  // BUG-3326 审查：选区与拖选锚点存的是「文本节点 + 数字偏移」，不是 live Range。别的模块在
+  // offset 处 splitText 切开 node（tail 是切点之后的新节点，如有声书整句高亮在折行处切 wrapper）
+  // 后调这里，按 DOM splitText 对 live Range 的同一语义换算：落在切点及之后的点改指 tail、
+  // 偏移减去 offset；跨切点的段拆成前后两段。不换算的话切点之后的偏移越界——查词高亮
+  // （highlightSelection 的 codePointAt 读空）、拖动柄（selectionEndpoints）与制卡句子上下文都会坏。
+  noteTextNodeSplit: function(node, offset, tail) {
+    var point = function(n, o) {
+      return n === node && o >= offset ? { node: tail, offset: o - offset } : { node: n, offset: o };
+    };
+    var copy = function(r, n, start, end) {
+      var c = {};
+      for (var k in r) c[k] = r[k];
+      c.node = n; c.start = start; c.end = end;
+      return c;
+    };
+    var segments = function(list) {
+      var out = [];
+      list.forEach(function(r) {
+        if (r.node !== node || r.end <= offset) out.push(r);
+        else if (r.start >= offset) out.push(copy(r, tail, r.start - offset, r.end - offset));
+        else out.push(copy(r, node, r.start, offset), copy(r, tail, 0, r.end - offset));
+      });
+      return out;
+    };
+    var sel = this.selection;
+    if (sel) {
+      var s = point(sel.startNode, sel.startOffset);
+      sel.startNode = s.node; sel.startOffset = s.offset;
+      if (sel.ranges) sel.ranges = segments(sel.ranges);
+      if (sel.matchedRanges) sel.matchedRanges = segments(sel.matchedRanges);
+    }
+    var anchor = this.dragAnchor;
+    if (anchor) {
+      var a = point(anchor.node, anchor.offset);
+      anchor.node = a.node; anchor.offset = a.offset;
+      var e = point(anchor.endNode, anchor.endOffset);
+      anchor.endNode = e.node; anchor.endOffset = e.offset;
+    }
+  },
+  // BUG-3343：合并相邻文本节点（__fushiLiveRanges.normalize）前调这里。选区与拖选锚点里的每个
+  // 「节点 + 偏移」各由一个折叠的 live Range 跟踪——DOM 规范在 normalize() 里对 live Range 做的
+  // 换算（并进前一个节点、偏移加上前面的长度）正是这些点该有的换算；返回的函数在合并之后把
+  // 换算结果原地写回（ranges / matchedRanges 的段对象就地改，别处持有的同一批段也一起更新）。
+  trackTextPoints: function() {
+    var writes = [];
+    var track = function(node, offset, write) {
+      if (!node) return;
+      var probe = document.createRange();
+      try { probe.setStart(node, offset); } catch (_ignored) { return; }
+      writes.push(function() { write(probe.startContainer, probe.startOffset); });
+    };
+    var trackSegments = function(list) {
+      (list || []).forEach(function(seg) {
+        track(seg.node, seg.start, function(n, o) { seg.node = n; seg.start = o; });
+        track(seg.node, seg.end, function(n, o) { seg.end = o; });
+      });
+    };
+    var sel = this.selection;
+    if (sel) {
+      track(sel.startNode, sel.startOffset, function(n, o) { sel.startNode = n; sel.startOffset = o; });
+      trackSegments(sel.ranges);
+      if (sel.matchedRanges !== sel.ranges) trackSegments(sel.matchedRanges);
+    }
+    var anchor = this.dragAnchor;
+    if (anchor) {
+      track(anchor.node, anchor.offset, function(n, o) { anchor.node = n; anchor.offset = o; });
+      track(anchor.endNode, anchor.endOffset, function(n, o) { anchor.endNode = n; anchor.endOffset = o; });
+    }
+    return function() { writes.forEach(function(write) { write(); }); };
+  },
+  clearSelectionOnViewportChange: function() {
+    if (this.dragAnchor || this.activeHandle) return;
+    this.clearSelection();
   },
   clearSelection: function() {
     window.getSelection()?.removeAllRanges();
@@ -1918,6 +3806,15 @@ window.fushiSelection = {
     }
     this.hideSelectionHandles();
     this.selection = null;
+    // 锚点是「一次长按拖选」的会话状态：选区清掉就复位，下次长按重新建立。
+    this.dragAnchor = null;
+    // Always notify, including already-empty JS state, to clear stale host UI.
+    // The host clears only its own toolbar, never calls back into JS. begin's
+    // clear notification precedes the new selection/menu notification.
+    if (window.flutter_inappwebview &&
+        typeof window.flutter_inappwebview.callHandler === 'function') {
+      window.flutter_inappwebview.callHandler('onSelectionCleared');
+    }
   }
 };
 """;

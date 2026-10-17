@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
@@ -15,8 +16,10 @@ class VideoResourceVersionGroupList extends StatefulWidget {
     required this.groups,
     required this.selectedIdentityKeys,
     required this.onSelect,
+    this.onSetGroupSelected,
     this.multiSelect = false,
     this.compact = false,
+    this.sliver = false,
     super.key,
   });
 
@@ -31,8 +34,17 @@ class VideoResourceVersionGroupList extends StatefulWidget {
 
   final void Function(VideoResourceCandidate candidate)? onSelect;
 
+  /// 多选模式下「整组（合辑）一次选中 / 取消」：成员全部设成 `selected`。
+  /// null 或非多选时不摆「全选本组」行。
+  final void Function(List<VideoResourceCandidate> members, bool selected)?
+      onSetGroupSelected;
+
   /// 对话框态用紧凑密度（与旧平铺列表同参数语义）。
   final bool compact;
+
+  /// true = 产出 sliver（嵌进外层 [CustomScrollView]，与查询头部同滚）；
+  /// false = 自带滚动的 [ListView]。
+  final bool sliver;
 
   @override
   State<VideoResourceVersionGroupList> createState() =>
@@ -103,12 +115,23 @@ class _VideoResourceVersionGroupListState
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    Widget item(BuildContext context, int index) =>
+        _buildCard(theme, widget.groups[index]);
+    Widget separator(BuildContext _, int __) => const SizedBox(height: 8);
+    const Key key = ValueKey<String>('video-resource-version-groups');
+    if (widget.sliver) {
+      return SliverList.separated(
+        key: key,
+        itemCount: widget.groups.length,
+        separatorBuilder: separator,
+        itemBuilder: item,
+      );
+    }
     return ListView.separated(
-      key: const ValueKey<String>('video-resource-version-groups'),
+      key: key,
       itemCount: widget.groups.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (BuildContext context, int index) =>
-          _buildCard(theme, widget.groups[index]),
+      separatorBuilder: separator,
+      itemBuilder: item,
     );
   }
 
@@ -127,7 +150,7 @@ class _VideoResourceVersionGroupListState
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 group.trusted
                     ? Icons.verified_rounded
                     : Icons.cloud_download_outlined,
@@ -186,11 +209,36 @@ class _VideoResourceVersionGroupListState
           ),
           if (expanded) ...<Widget>[
             const SizedBox(height: 4),
+            if (widget.multiSelect &&
+                widget.onSetGroupSelected != null &&
+                group.members.length > 1)
+              _buildSelectAllRow(group),
             for (final VideoResourceCandidate member in group.members)
               _buildMemberRow(theme, member),
           ],
         ],
       ),
+    );
+  }
+
+  /// 「全选本组」：合辑可以整包选中，不必展开后逐条点；
+  /// 部分选中时显示半选，点一下补满，再点清空。
+  Widget _buildSelectAllRow(VideoResourceVersionGroup group) {
+    final int selected = _selectedCountIn(group);
+    final bool all = selected == group.members.length;
+    return FushiListItem(
+      key: ValueKey<String>('resource-select-all-${group.key}'),
+      density:
+          widget.compact ? FushiListDensity.compact : FushiListDensity.standard,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      selected: all,
+      leading: FushiCheckbox(
+        value: all ? true : (selected == 0 ? false : null),
+        tristate: true,
+        onChanged: (_) => widget.onSetGroupSelected!(group.members, !all),
+      ),
+      onTap: () => widget.onSetGroupSelected!(group.members, !all),
+      title: Text(t.resource_version_select_all(n: group.members.length)),
     );
   }
 
@@ -204,13 +252,12 @@ class _VideoResourceVersionGroupListState
     ];
     return FushiListItem(
       key: ValueKey<String>('resource-release-${member.identityKey}'),
-      density: widget.compact
-          ? FushiListDensity.compact
-          : FushiListDensity.standard,
+      density:
+          widget.compact ? FushiListDensity.compact : FushiListDensity.standard,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       selected: widget.selectedIdentityKeys.contains(member.identityKey),
       leading: widget.multiSelect && widget.onSelect != null
-          ? Checkbox(
+          ? FushiCheckbox(
               value: widget.selectedIdentityKeys.contains(member.identityKey),
               onChanged: (_) => widget.onSelect!(member),
             )

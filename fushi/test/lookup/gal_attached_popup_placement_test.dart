@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
@@ -52,6 +52,8 @@ class _LookupAppModel extends AppModel {
 
   @override
   bool get compactGlossaries => false;
+  @override
+  bool get dictionaryUnifiedStyle => true;
 
   @override
   LookupSize get overlayLookupEffectiveSize => const LookupSize(420.0, 600.0);

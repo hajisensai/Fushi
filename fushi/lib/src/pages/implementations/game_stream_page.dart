@@ -1,14 +1,22 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi/src/sync/game_stream_touch.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -16,6 +24,13 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
+    show FushiTitleBarColorScope, fushiTitleBarColorsOn;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// Receiver-side wording for a host mine result. The host only sends stable
 /// detail codes (its raw failure text stays on the host), so every outcome a
@@ -108,6 +123,8 @@ class GameStreamPage extends StatefulWidget {
     this.session,
     this.settings = const GameStreamVideoSettings(),
     this.onSettingsChanged,
+    this.lookupLayout = const GameStreamLookupLayout(),
+    this.onLookupLayoutChanged,
     super.key,
   });
 
@@ -127,6 +144,13 @@ class GameStreamPage extends StatefulWidget {
   /// Persists a settings change made from the in-stream panel.
   final ValueChanged<GameStreamVideoSettings>? onSettingsChanged;
 
+  /// Lookup rail geometry the user last chose on this device (persisted by
+  /// the caller).
+  final GameStreamLookupLayout lookupLayout;
+
+  /// Persists a rail resize once the drag (or key press) that made it ends.
+  final ValueChanged<GameStreamLookupLayout>? onLookupLayoutChanged;
+
   static const Key videoKey = ValueKey<String>('game-stream-video');
   static const Key transcriptKey = ValueKey<String>('game-stream-transcript');
   static const Key transcriptTextKey = ValueKey<String>(
@@ -136,16 +160,34 @@ class GameStreamPage extends StatefulWidget {
   static const Key statsKey = ValueKey<String>('game-stream-stats');
   static const Key cursorKey = ValueKey<String>('game-stream-cursor');
   static const Key keyboardKey = ValueKey<String>('game-stream-keyboard');
+  static const Key lineResizeHandleKey = ValueKey<String>(
+    'game-stream-line-resize-handle',
+  );
+  static const Key railResizeHandleKey = ValueKey<String>(
+    'game-stream-rail-resize-handle',
+  );
+  static const Key compactRailResizeHandleKey = ValueKey<String>(
+    'game-stream-compact-rail-resize-handle',
+  );
 
   @override
   State<GameStreamPage> createState() => _GameStreamPageState();
 }
 
+bool get _isDesktopPlatform => switch (defaultTargetPlatform) {
+  TargetPlatform.windows ||
+  TargetPlatform.macOS ||
+  TargetPlatform.linux => true,
+  _ => false,
+};
+
 class _GameStreamPageState extends State<GameStreamPage>
     with WidgetsBindingObserver {
   final GlobalKey _videoKey = GlobalKey();
   GameStreamLookupController? _lookupController;
-  bool _controlsVisible = true;
+  // The on-screen pad stands in for missing buttons on a touch screen; a
+  // desktop has a keyboard and mouse, so it starts hidden there.
+  bool _controlsVisible = !_isDesktopPlatform;
   bool _lookupVisible = true;
   bool _mineFailed = false;
   final GlobalKey<DictionaryPopupWebViewState> _dictionaryKey =
@@ -155,11 +197,28 @@ class _GameStreamPageState extends State<GameStreamPage>
       <GameStreamVirtualButton, String>{};
   final Set<GameStreamVirtualButton> _heldButtons = <GameStreamVirtualButton>{};
   GameStreamTouchInterpreter? _touch;
+  GameStreamMouseInterpreter? _mouse;
+  ({Rect bounds, Rect content})? _mouseGeometry;
+  bool _mouseMoveInFlight = false;
+
+  /// After a forced release the user's finger may still be on the button. The
+  /// rest of that press is dropped until every button is up; otherwise the
+  /// next drag event would look like a fresh press and click the game.
+  bool _mouseAwaitingRelease = false;
+  Offset? _queuedMouseMove;
   ({Rect bounds, Rect content})? _pointerGeometry;
   GameStreamInputComposer? _pointerComposer;
   GameStreamTouchMode _touchMode = GameStreamTouchMode.direct;
   Offset _trackpadCursor = const Offset(.5, .5);
   late GameStreamVideoSettings _settings = widget.settings;
+  late GameStreamLookupLayout _lookupLayout = widget.lookupLayout;
+  late GameStreamLookupLayout _committedLookupLayout = widget.lookupLayout;
+
+  /// Last laid-out body width / rail height: the bounds a resize drag clamps
+  /// against, so a drag past the limit does not bank invisible distance.
+  double _bodyWidth = 0;
+  double _bodyHeight = 0;
+  double _railHeight = 0;
   bool _statsVisible = false;
   GameStreamStatsSample? _stats;
   Timer? _statsTimer;
@@ -241,6 +300,54 @@ class _GameStreamPageState extends State<GameStreamPage>
     if (mounted) setState(() {});
   }
 
+  /// Widens the rail by [delta] (negative narrows), within this body's limits.
+  void _resizeRail(double delta) {
+    final double current = _lookupLayout.effectiveRailWidth(_bodyWidth);
+    final double next = (current + delta).clamp(
+      GameStreamLookupLayout.minRailWidth,
+      GameStreamLookupLayout.railWidthLimit(_bodyWidth),
+    );
+    if (next == current) return;
+    setState(() => _lookupLayout = _lookupLayout.copyWith(railWidth: next));
+  }
+
+  /// Grows the narrow-layout panel under the video by [delta] (negative
+  /// shrinks), within this body's limits.
+  void _resizeCompactRail(double delta) {
+    // Too short for both minimums (soft keyboard up): the split is fixed, and
+    // a drag here must not overwrite the stored height with the minimum.
+    if (!GameStreamLookupLayout.compactRailResizable(_bodyHeight)) return;
+    final double current = _lookupLayout.effectiveCompactRailHeight(
+      _bodyHeight,
+    );
+    final double next = (current + delta).clamp(
+      GameStreamLookupLayout.minCompactRailHeight,
+      GameStreamLookupLayout.compactRailHeightLimit(_bodyHeight),
+    );
+    if (next == current) return;
+    setState(
+      () => _lookupLayout = _lookupLayout.copyWith(compactRailHeight: next),
+    );
+  }
+
+  /// Grows the line area by [delta] (negative shrinks), within this rail's
+  /// limits. The line text zooms with it.
+  void _resizeLine(double delta) {
+    final double current = _lookupLayout.effectiveLineHeight(_railHeight);
+    final double next = (current + delta).clamp(
+      GameStreamLookupLayout.minLineHeight,
+      GameStreamLookupLayout.lineHeightLimit(_railHeight),
+    );
+    if (next == current) return;
+    setState(() => _lookupLayout = _lookupLayout.copyWith(lineHeight: next));
+  }
+
+  void _commitLookupLayout() {
+    if (_lookupLayout == _committedLookupLayout) return;
+    _committedLookupLayout = _lookupLayout;
+    widget.onLookupLayoutChanged?.call(_lookupLayout);
+  }
+
   void _onReceiverChanged() {
     final FushiGameStreamReceiver? receiver = widget.receiver;
     if (receiver != null &&
@@ -277,14 +384,16 @@ class _GameStreamPageState extends State<GameStreamPage>
   }
 
   void _releasePointerIfLayoutChanged(Duration _) {
-    if (!mounted || _touch == null) return;
-    if (_pointerGeometry != _currentPointerGeometry()) {
+    if (!mounted) return;
+    final ({Rect bounds, Rect content})? geometry = _currentPointerGeometry();
+    if ((_touch != null && _pointerGeometry != geometry) ||
+        (_mouse?.active == true && _mouseGeometry != geometry)) {
       unawaited(_releasePointer());
     }
   }
 
   void _schedulePointerGeometryCheck() {
-    if (_touch != null) {
+    if (_touch != null || _mouse?.active == true) {
       WidgetsBinding.instance.addPostFrameCallback(
         _releasePointerIfLayoutChanged,
       );
@@ -292,15 +401,19 @@ class _GameStreamPageState extends State<GameStreamPage>
   }
 
   Future<void> _releasePointer() async {
-    final GameStreamTouchInterpreter? touch = _touch;
-    final GameStreamInputComposer? composer = _pointerComposer;
-    if (touch == null || composer == null) return;
     // Clear synchronously: cancellation, metrics and disposal can arrive in the
     // same frame and must emit exactly one release to the original session.
+    final GameStreamTouchInterpreter? touch = _touch;
+    final GameStreamInputComposer? composer = _pointerComposer;
     _touch = null;
     _pointerComposer = null;
     _pointerGeometry = null;
-    await _dispatchPointer(touch.cancel(), composer);
+    // _releaseMouse also detaches its state before its first await.
+    final Future<void> mouse = _releaseMouse();
+    if (touch != null && composer != null) {
+      await _dispatchPointer(touch.cancel(), composer);
+    }
+    await mouse;
   }
 
   Future<void> _sendPointer(
@@ -371,6 +484,127 @@ class _GameStreamPageState extends State<GameStreamPage>
       _pointerGeometry = null;
     }
     await _dispatchPointer(commands, composer);
+  }
+
+  static bool _isMouse(PointerEvent event) =>
+      event.kind == PointerDeviceKind.mouse;
+
+  /// Hovering is spontaneous, so it is only sent while input can reach the
+  /// host; otherwise every move would come back as a rejected ack.
+  bool get _canHover {
+    final FushiGameStreamReceiver? receiver = widget.receiver;
+    return receiver != null &&
+        !receiver.backgrounded &&
+        receiver.state == GameStreamReceiverState.connected;
+  }
+
+  Offset? _normalizeMouse(
+    PointerEvent event,
+    ({Rect bounds, Rect content}) geometry,
+  ) {
+    final RenderBox? box =
+        _videoKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return null;
+    return GameStreamPointerMapper(
+      geometry.content.size,
+    ).normalize(box.globalToLocal(event.position) - geometry.content.topLeft);
+  }
+
+  GameStreamMouseInterpreter _mouseFor(({Rect bounds, Rect content}) geometry) {
+    _mouseGeometry = geometry;
+    return _mouse ??= GameStreamMouseInterpreter(
+      extraButtonsSupported: _supports(GameStreamFeature.pointerButtons),
+      wheelSupported: _supports(GameStreamFeature.wheel),
+    );
+  }
+
+  /// Desktop mouse press / release / drag / hover: buttons map to themselves.
+  Future<void> _sendMouse(PointerEvent event) async {
+    if (_mouseAwaitingRelease) {
+      if (event.buttons == 0) _mouseAwaitingRelease = false;
+      return;
+    }
+    final ({Rect bounds, Rect content})? geometry = _currentPointerGeometry();
+    if (geometry == null) return;
+    // A held button whose video moved under it cannot be continued.
+    if (_mouse?.active == true && geometry != _mouseGeometry) {
+      await _releaseMouse();
+      return;
+    }
+    final Offset? normalized = _normalizeMouse(event, geometry);
+    if (normalized == null) return;
+    await _dispatchMouse(_mouseFor(geometry).update(normalized, event.buttons));
+  }
+
+  /// Logical pixels one physical wheel detent arrives as. The desktop
+  /// embedders disagree: Windows reports WHEEL_DELTA as 100 physical pixels,
+  /// macOS one line as 40, Linux 53. Counting detents per platform keeps one
+  /// detent = one host notch (a VN advances or backs up one line), while a
+  /// high-resolution wheel's small deltas still add up instead of each
+  /// becoming a whole notch.
+  double _wheelDetentPixels() => switch (defaultTargetPlatform) {
+    TargetPlatform.windows => 100 / MediaQuery.devicePixelRatioOf(context),
+    TargetPlatform.macOS => 40,
+    _ => 53,
+  };
+
+  Future<void> _scrollMouse(
+    PointerEvent event,
+    Offset delta, {
+    double step = GameStreamMouseInterpreter.scrollStep,
+  }) async {
+    final ({Rect bounds, Rect content})? geometry = _currentPointerGeometry();
+    if (geometry == null) return;
+    final Offset? normalized = _normalizeMouse(event, geometry);
+    if (normalized == null) return;
+    await _dispatchMouse(
+      _mouseFor(geometry).scroll(normalized, delta, step: step),
+    );
+  }
+
+  Future<void> _releaseMouse() async {
+    final GameStreamMouseInterpreter? mouse = _mouse;
+    if (mouse == null) return;
+    if (mouse.active) _mouseAwaitingRelease = true;
+    _mouse = null;
+    _mouseGeometry = null;
+    _queuedMouseMove = null;
+    await _dispatchPointer(mouse.cancel(), widget.inputComposer);
+  }
+
+  /// Moves are positional, so only the newest matters: one is in flight at a
+  /// time and the latest waiting position replaces the rest. Each input waits
+  /// for the host's ack, and a mouse reports motion far faster than that. A
+  /// button event carries its own position, so it drops a waiting move rather
+  /// than letting the older position land after the press.
+  Future<void> _dispatchMouse(List<GameStreamPointerCommand> commands) async {
+    final GameStreamInputComposer composer = widget.inputComposer;
+    final bool moveOnly =
+        commands.length == 1 &&
+        commands.single.action == GameStreamInputAction.move;
+    if (!moveOnly) {
+      _queuedMouseMove = null;
+      await _dispatchPointer(commands, composer);
+      return;
+    }
+    if (_mouseMoveInFlight) {
+      _queuedMouseMove = commands.single.position;
+      return;
+    }
+    _mouseMoveInFlight = true;
+    try {
+      Offset? next = commands.single.position;
+      while (next != null) {
+        _queuedMouseMove = null;
+        await composer.pointer(
+          action: GameStreamInputAction.move,
+          normalized: next,
+        );
+        next = _queuedMouseMove;
+      }
+    } finally {
+      _mouseMoveInFlight = false;
+    }
   }
 
   Future<void> _dispatchPointer(
@@ -461,62 +695,79 @@ class _GameStreamPageState extends State<GameStreamPage>
     GameStreamVirtualButton.menu => 'Menu',
   };
 
+  /// 按键映射行的行首图标：方向键 = 手柄、其余（A/B/L/R）= 键盘按键。
+  static IconData _bindingIcon(GameStreamVirtualButton button) =>
+      switch (button) {
+        GameStreamVirtualButton.up ||
+        GameStreamVirtualButton.down ||
+        GameStreamVirtualButton.left ||
+        GameStreamVirtualButton.right => FushiIcons.games,
+        _ => FushiIcons.keyboard,
+      };
+
   Future<void> _configureKeys() async {
     // A held control must retain its down/up mapping until it is released.
     if (_heldButtons.isNotEmpty) return;
     final bool restoreLookup = _lookupVisible;
     setState(() => _lookupVisible = false);
     try {
-      await showModalBottomSheet<void>(
+      await adaptiveModalSheet<void>(
         context: context,
-        isScrollControlled: true,
         builder: (BuildContext context) => StatefulBuilder(
-          builder: (BuildContext context, StateSetter updateSheet) => SafeArea(
-            child: SizedBox(
-              height: MediaQuery.sizeOf(context).height * 0.7,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: <Widget>[
-                  Text(
-                    t.game_stream_keys,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(t.game_stream_keys_hint),
-                  for (final GameStreamVirtualButton button
-                      in GameStreamVirtualButton.values)
-                    if (button != GameStreamVirtualButton.menu)
-                      FushiListItem(
-                        title: Text(_buttonLabel(button)),
-                        trailing: DropdownButton<String>(
-                          key: ValueKey<String>(
-                            'game-stream-binding-${button.name}',
-                          ),
-                          value: _keyBindings[button] ?? '',
-                          items: <DropdownMenuItem<String>>[
-                            DropdownMenuItem<String>(
-                              value: '',
-                              child: Text(t.game_stream_key_default),
-                            ),
-                            for (final String key in _allowedKeys)
-                              DropdownMenuItem<String>(
-                                value: key,
-                                child: Text(key),
+          builder: (BuildContext context, StateSetter updateSheet) =>
+              // M3E 底部弹层：共享弹层框（标题 + 说明），按键映射是一组分段
+              // 列表行，行尾下拉选主机按键。
+              FushiModalSheetFrame(
+                title: t.game_stream_keys,
+                subtitle: t.game_stream_keys_hint,
+                leadingIcon: FushiIcons.games,
+                maxHeightFactor: 0.7,
+                body: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  children: <Widget>[
+                    FushiGroupedList(
+                      children: <Widget>[
+                        for (final GameStreamVirtualButton button
+                            in GameStreamVirtualButton.values)
+                          if (button != GameStreamVirtualButton.menu)
+                            FushiListItem(
+                              leading: FushiListLeadingIcon(
+                                _bindingIcon(button),
+                                tone: _keyBindings.containsKey(button)
+                                    ? FushiCardTone.primary
+                                    : FushiCardTone.secondary,
                               ),
-                          ],
-                          onChanged: (String? key) => updateSheet(() {
-                            if (key == null || key.isEmpty) {
-                              _keyBindings.remove(button);
-                            } else {
-                              _keyBindings[button] = key;
-                            }
-                          }),
-                        ),
-                      ),
-                ],
+                              title: Text(_buttonLabel(button)),
+                              trailing: FushiDropdownButton<String>(
+                                key: ValueKey<String>(
+                                  'game-stream-binding-${button.name}',
+                                ),
+                                value: _keyBindings[button] ?? '',
+                                items: <DropdownMenuItem<String>>[
+                                  DropdownMenuItem<String>(
+                                    value: '',
+                                    child: Text(t.game_stream_key_default),
+                                  ),
+                                  for (final String key in _allowedKeys)
+                                    DropdownMenuItem<String>(
+                                      value: key,
+                                      child: Text(key),
+                                    ),
+                                ],
+                                onChanged: (String? key) => updateSheet(() {
+                                  if (key == null || key.isEmpty) {
+                                    _keyBindings.remove(button);
+                                  } else {
+                                    _keyBindings[button] = key;
+                                  }
+                                }),
+                              ),
+                            ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
         ),
       );
     } finally {
@@ -649,14 +900,14 @@ class _GameStreamPageState extends State<GameStreamPage>
       // Resolution/fps can only go down from the host's capture ceiling;
       // tell the user when their request was capped.
       if (applied.maxHeight < next.maxHeight || applied.maxFps < next.maxFps) {
-        ScaffoldMessenger.maybeOf(
-          context,
-        )?.showSnackBar(SnackBar(content: Text(t.game_stream_settings_capped)));
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          FushiSnackBar(content: Text(t.game_stream_settings_capped)),
+        );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text('${t.game_stream_settings_apply_failed}: $error'),
           ),
         );
@@ -690,9 +941,14 @@ class _GameStreamPageState extends State<GameStreamPage>
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Focus(onKeyEvent: _onHardwareKey, child: _buildBody(theme)),
+    // 串流页整页黑底：桌面自绘顶栏（挂在 Navigator 外、只认根主题 surface）
+    // 跟着变黑，否则画面顶上压一条浅色带。
+    return FushiTitleBarColorScope(
+      colors: fushiTitleBarColorsOn(Colors.black),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Focus(onKeyEvent: _onHardwareKey, child: _buildBody(theme)),
+      ),
     );
   }
 
@@ -713,18 +969,41 @@ class _GameStreamPageState extends State<GameStreamPage>
                     alignment: Alignment.topCenter,
                     child: Padding(
                       padding: const EdgeInsets.only(top: 52),
-                      child: Material(
-                        color: theme.colorScheme.errorContainer,
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Text(
-                            widget.receiver?.error != null
-                                ? '${t.game_stream_disconnected}: ${widget.receiver!.error}'
-                                : _rejectionMessage(
-                                    widget.inputComposer.lastRejectionReason,
+                      // M3E：浮在画面上的 error 饱和色块（图标 + 文案），
+                      // 不再是贴边色条；Apple 落到系统红淡染。
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 560),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: FushiM3eShape.cardRadius,
+                            // Apple 的淡染提示条贴在画面上，不带 M3 投影。
+                            boxShadow: isGlassDesign(context)
+                                ? null
+                                : fushiM3eCardShadow(context, 1),
+                          ),
+                          child: FushiCard(
+                            tone: FushiCardTone.error,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                const FushiIcon(FushiIcons.warning, size: 20),
+                                const SizedBox(width: 12),
+                                Flexible(
+                                  child: Text(
+                                    widget.receiver?.error != null
+                                        ? '${t.game_stream_disconnected}: ${widget.receiver!.error}'
+                                        : _rejectionMessage(
+                                            widget
+                                                .inputComposer
+                                                .lastRejectionReason,
+                                          ),
                                   ),
-                            style: TextStyle(
-                              color: theme.colorScheme.onErrorContainer,
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -738,9 +1017,21 @@ class _GameStreamPageState extends State<GameStreamPage>
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      BackButton(
-                        color: Colors.white,
-                        onPressed: () => Navigator.of(context).maybePop(),
+                      // 返回钮与右上工具栏同一形态（悬浮工具栏 / Apple 玻璃
+                      // 圆钮），不再是直接压在画面上的裸白色箭头——画面亮时
+                      // 白箭头会消失。
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: FushiToolbar(
+                          floating: true,
+                          children: <Widget>[
+                            FushiIconButtonControl(
+                              tooltip: t.back,
+                              icon: const FushiIcon(FushiIcons.back),
+                              onPressed: () => Navigator.of(context).maybePop(),
+                            ),
+                          ],
+                        ),
                       ),
                       if (_statsVisible) _buildStatsOverlay(theme),
                     ],
@@ -754,7 +1045,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                   height: 1,
                   child: Opacity(
                     opacity: 0,
-                    child: TextField(
+                    child: FushiTextFieldControl(
                       key: GameStreamPage.keyboardKey,
                       focusNode: _keyboardFocus,
                       controller: _keyboardText,
@@ -771,99 +1062,206 @@ class _GameStreamPageState extends State<GameStreamPage>
                 ),
                 Align(
                   alignment: Alignment.topRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      IconButton(
-                        tooltip: t.game_stream_settings_title,
-                        color: Colors.white,
-                        icon: const Icon(Icons.settings_outlined),
-                        onPressed: _openSettings,
-                      ),
-                      FushiOverflowMenu<_StreamMenuAction>(
-                        tooltip: t.game_stream_more,
-                        iconWidget: const Icon(
-                          Icons.more_vert,
-                          color: Colors.white,
-                        ),
-                        onSelected: _onOverflowAction,
-                        items: <PopupMenuEntry<_StreamMenuAction>>[
-                          FushiPopupMenuItem<_StreamMenuAction>(
-                            value: _StreamMenuAction.touchMode,
-                            icon: _touchMode == GameStreamTouchMode.direct
-                                ? Icons.mouse_outlined
-                                : Icons.touch_app_outlined,
-                            label: _touchMode == GameStreamTouchMode.direct
-                                ? t.game_stream_touch_trackpad
-                                : t.game_stream_touch_direct,
+                  // 悬浮工具栏（M3 Expressive floating toolbar / Apple 玻璃胶囊组）：
+                  // 自带底色与阴影，图标不再写死白色去扛串流画面的对比度。
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: FushiToolbar(
+                      floating: true,
+                      groups: <List<Widget>>[
+                        <Widget>[
+                          FushiIconButtonControl(
+                            tooltip: t.game_stream_settings_title,
+                            icon: const FushiIcon(FushiIcons.settingsGear),
+                            onPressed: _openSettings,
                           ),
-                          FushiPopupMenuItem<_StreamMenuAction>(
-                            value: _StreamMenuAction.keyboard,
-                            icon: Icons.keyboard_outlined,
-                            label: t.game_stream_keyboard,
-                          ),
-                          FushiPopupMenuItem<_StreamMenuAction>(
-                            value: _StreamMenuAction.stats,
-                            icon: Icons.speed_outlined,
-                            label: _statsVisible
-                                ? t.game_stream_stats_hide
-                                : t.game_stream_stats_show,
-                          ),
-                          FushiPopupMenuItem<_StreamMenuAction>(
-                            value: _StreamMenuAction.audio,
-                            icon: _settings.audio
-                                ? Icons.volume_off_outlined
-                                : Icons.volume_up_outlined,
-                            label: _settings.audio
-                                ? t.game_stream_audio_mute
-                                : t.game_stream_audio_unmute,
+                          FushiOverflowMenu<_StreamMenuAction>(
+                            tooltip: t.game_stream_more,
+                            iconWidget: const FushiIcon(FushiIcons.more),
+                            onSelected: _onOverflowAction,
+                            items: <PopupMenuEntry<_StreamMenuAction>>[
+                              FushiPopupMenuItem<_StreamMenuAction>(
+                                value: _StreamMenuAction.touchMode,
+                                icon: _touchMode == GameStreamTouchMode.direct
+                                    ? FushiIcons.mouse
+                                    : FushiIcons.touch,
+                                label: _touchMode == GameStreamTouchMode.direct
+                                    ? t.game_stream_touch_trackpad
+                                    : t.game_stream_touch_direct,
+                              ),
+                              FushiPopupMenuItem<_StreamMenuAction>(
+                                value: _StreamMenuAction.keyboard,
+                                icon: FushiIcons.keyboard,
+                                label: t.game_stream_keyboard,
+                              ),
+                              FushiPopupMenuItem<_StreamMenuAction>(
+                                value: _StreamMenuAction.stats,
+                                icon: FushiIcons.speed,
+                                label: _statsVisible
+                                    ? t.game_stream_stats_hide
+                                    : t.game_stream_stats_show,
+                              ),
+                              FushiPopupMenuItem<_StreamMenuAction>(
+                                value: _StreamMenuAction.audio,
+                                icon: _settings.audio
+                                    ? FushiIcons.volumeOff
+                                    : FushiIcons.volumeUp,
+                                label: _settings.audio
+                                    ? t.game_stream_audio_mute
+                                    : t.game_stream_audio_unmute,
+                              ),
+                            ],
                           ),
                         ],
-                      ),
-                      IconButton(
-                        tooltip: t.game_stream_keys,
-                        color: Colors.white,
-                        icon: const Icon(Icons.tune),
-                        onPressed: _configureKeys,
-                      ),
-                      IconButton(
-                        tooltip: t.game_stream_lookup_toggle,
-                        color: Colors.white,
-                        icon: Icon(
-                          _lookupVisible
-                              ? Icons.menu_book
-                              : Icons.menu_book_outlined,
-                        ),
-                        onPressed: () =>
-                            setState(() => _lookupVisible = !_lookupVisible),
-                      ),
-                      IconButton(
-                        tooltip: t.game_stream_controls_toggle,
-                        color: Colors.white,
-                        icon: Icon(
-                          _controlsVisible
-                              ? Icons.gamepad
-                              : Icons.gamepad_outlined,
-                        ),
-                        onPressed: () => setState(
-                          () => _controlsVisible = !_controlsVisible,
-                        ),
-                      ),
-                    ],
+                        <Widget>[
+                          FushiIconButtonControl(
+                            tooltip: t.game_stream_keys,
+                            icon: const FushiIcon(FushiIcons.settings),
+                            onPressed: _configureKeys,
+                          ),
+                          FushiIconButtonControl(
+                            tooltip: t.game_stream_lookup_toggle,
+                            icon: FushiIcon(
+                              FushiIcons.resolve(
+                                FushiIcons.dictionary,
+                                filled: _lookupVisible,
+                              ),
+                            ),
+                            onPressed: () => setState(
+                              () => _lookupVisible = !_lookupVisible,
+                            ),
+                          ),
+                          FushiIconButtonControl(
+                            tooltip: t.game_stream_controls_toggle,
+                            icon: FushiIcon(
+                              FushiIcons.resolve(
+                                FushiIcons.games,
+                                filled: _controlsVisible,
+                              ),
+                            ),
+                            onPressed: () => setState(
+                              () => _controlsVisible = !_controlsVisible,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
           );
-          final Widget lookup = compact
-              ? SizedBox(
-                  height: math.min(360, constraints.maxHeight * 0.5),
-                  child: _buildLookupRail(theme, compact: true),
-                )
-              : _buildLookupRail(theme);
-          return compact
-              ? Column(children: <Widget>[video, if (_lookupVisible) lookup])
-              : Row(children: <Widget>[video, if (_lookupVisible) lookup]);
+          if (compact) {
+            // Video and panel share what the boundary strip leaves.
+            _bodyHeight = constraints.maxHeight - _railEdgeWidth;
+            final double panelHeight = _lookupLayout.effectiveCompactRailHeight(
+              _bodyHeight,
+            );
+            return Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    video,
+                    if (_lookupVisible) ...<Widget>[
+                      // Full-width edge: grab the boundary anywhere with a
+                      // mouse.
+                      SizedBox(
+                        height: _railEdgeWidth,
+                        child: _ResizeHandle(
+                          axis: Axis.vertical,
+                          semanticLabel: t.game_stream_panel_resize,
+                          showGrip: false,
+                          focusable: false,
+                          onDelta: (double delta) => _resizeCompactRail(-delta),
+                          onEnd: _commitLookupLayout,
+                        ),
+                      ),
+                      SizedBox(
+                        height: panelHeight,
+                        child: _buildLookupRail(theme),
+                      ),
+                    ],
+                  ],
+                ),
+                // Visible grip with a 48dp touch target straddling the edge,
+                // as a centred band so the video's bottom strip still reaches
+                // the game beside it.
+                if (_lookupVisible)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom:
+                        panelHeight + _railEdgeWidth / 2 - _resizeHitExtent / 2,
+                    height: _resizeHitExtent,
+                    child: Center(
+                      child: SizedBox(
+                        width: _railGripBand,
+                        child: _ResizeHandle(
+                          key: GameStreamPage.compactRailResizeHandleKey,
+                          axis: Axis.vertical,
+                          semanticLabel: t.game_stream_panel_resize,
+                          onDelta: (double delta) => _resizeCompactRail(-delta),
+                          onEnd: _commitLookupLayout,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          }
+          // Video and rail share what the boundary strip leaves.
+          _bodyWidth = constraints.maxWidth - _railEdgeWidth;
+          final double railWidth = _lookupLayout.effectiveRailWidth(_bodyWidth);
+          return Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  video,
+                  if (_lookupVisible) ...<Widget>[
+                    // Full-height edge: grab the boundary anywhere with a mouse.
+                    SizedBox(
+                      width: _railEdgeWidth,
+                      child: _ResizeHandle(
+                        axis: Axis.horizontal,
+                        semanticLabel: t.game_stream_rail_resize,
+                        showGrip: false,
+                        focusable: false,
+                        onDelta: (double delta) => _resizeRail(-delta),
+                        onEnd: _commitLookupLayout,
+                      ),
+                    ),
+                    SizedBox(width: railWidth, child: _buildLookupRail(theme)),
+                  ],
+                ],
+              ),
+              // Visible grip with a 48dp touch target straddling the edge.
+              // Only a band, not the full height: the strip it overlaps on
+              // the video side would otherwise stop reaching the game.
+              if (_lookupVisible)
+                Positioned(
+                  right: railWidth + _railEdgeWidth / 2 - _resizeHitExtent / 2,
+                  width: _resizeHitExtent,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: SizedBox(
+                      height: _railGripBand,
+                      child: _ResizeHandle(
+                        key: GameStreamPage.railResizeHandleKey,
+                        axis: Axis.horizontal,
+                        semanticLabel: t.game_stream_rail_resize,
+                        onDelta: (double delta) => _resizeRail(-delta),
+                        onEnd: _commitLookupLayout,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
         },
       ),
     );
@@ -898,14 +1296,18 @@ class _GameStreamPageState extends State<GameStreamPage>
       child: IgnorePointer(
         child: DecoratedBox(
           key: GameStreamPage.statsKey,
-          decoration: const BoxDecoration(color: Color(0xAA000000)),
+          // 画面上的 HUD 保持深色半透明（任何画面亮度下白字都可读），
+          // 圆角与浮层统一，不再是直角黑块。
+          decoration: const BoxDecoration(
+            color: Color(0xAA000000),
+            borderRadius: FushiM3eShape.smallRadius,
+          ),
           child: Padding(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Text(
               lines.isEmpty ? t.game_stream_video_waiting : lines.join('\n'),
-              style: theme.textTheme.labelSmall?.copyWith(
+              style: context.fushiType.labelMedium.tabular.copyWith(
                 color: Colors.white,
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -924,12 +1326,42 @@ class _GameStreamPageState extends State<GameStreamPage>
       onPointerDown: (PointerDownEvent event) {
         // Hardware keyboard keys go to the game while the video is focused.
         if (!_keyboardFocus.hasFocus) _videoFocus.requestFocus();
-        unawaited(_sendPointer(event, GameStreamInputAction.down));
+        unawaited(
+          _isMouse(event)
+              ? _sendMouse(event)
+              : _sendPointer(event, GameStreamInputAction.down),
+        );
       },
-      onPointerMove: (PointerMoveEvent event) =>
-          unawaited(_sendPointer(event, GameStreamInputAction.move)),
-      onPointerUp: (PointerUpEvent event) =>
-          unawaited(_sendPointer(event, GameStreamInputAction.up)),
+      onPointerMove: (PointerMoveEvent event) => unawaited(
+        _isMouse(event)
+            ? _sendMouse(event)
+            : _sendPointer(event, GameStreamInputAction.move),
+      ),
+      onPointerUp: (PointerUpEvent event) => unawaited(
+        _isMouse(event)
+            ? _sendMouse(event)
+            : _sendPointer(event, GameStreamInputAction.up),
+      ),
+      onPointerHover: (PointerHoverEvent event) {
+        if (_isMouse(event) && _canHover) unawaited(_sendMouse(event));
+      },
+      onPointerSignal: (PointerSignalEvent event) {
+        if (event is! PointerScrollEvent) return;
+        GestureBinding.instance.pointerSignalResolver.register(
+          event,
+          (PointerSignalEvent event) => unawaited(
+            _scrollMouse(
+              event,
+              (event as PointerScrollEvent).scrollDelta,
+              step: _wheelDetentPixels(),
+            ),
+          ),
+        );
+      },
+      // Trackpad two-finger pan: content follows the fingers (natural
+      // scrolling), the opposite sign of a wheel delta.
+      onPointerPanZoomUpdate: (PointerPanZoomUpdateEvent event) =>
+          unawaited(_scrollMouse(event, -event.panDelta)),
       onPointerCancel: (PointerCancelEvent event) =>
           unawaited(_releasePointer()),
       child: Container(
@@ -937,13 +1369,7 @@ class _GameStreamPageState extends State<GameStreamPage>
         color: Colors.black,
         alignment: Alignment.center,
         child: widget.receiver == null
-            ? (widget.videoPlaceholder ??
-                  Text(
-                    t.game_stream_video_waiting,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: Colors.white70,
-                    ),
-                  ))
+            ? (widget.videoPlaceholder ?? const _VideoWaiting())
             : Stack(
                 fit: StackFit.expand,
                 children: <Widget>[
@@ -964,14 +1390,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                       ),
                     ),
                   if (!widget.receiver!.ready)
-                    Center(
-                      child: Text(
-                        t.game_stream_video_waiting,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ),
+                    const Center(child: _VideoWaiting()),
                 ],
               ),
       ),
@@ -1027,128 +1446,317 @@ class _GameStreamPageState extends State<GameStreamPage>
     );
   }
 
-  Widget _buildLookupRail(ThemeData theme, {bool compact = false}) {
+  Widget _buildLookupRail(ThemeData theme) {
+    return Material(
+      color: theme.colorScheme.surface,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          _railHeight = constraints.maxHeight;
+          final double lineHeight = _lookupLayout.effectiveLineHeight(
+            constraints.maxHeight,
+          );
+          return Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              _buildLookupRailContent(theme, lineHeight),
+              // 48dp touch target centred on the gap under the line area.
+              Positioned(
+                left: 0,
+                right: 0,
+                top: lineHeight + _lineGapHeight / 2 - _resizeHitExtent / 2,
+                height: _resizeHitExtent,
+                child: _ResizeHandle(
+                  key: GameStreamPage.lineResizeHandleKey,
+                  axis: Axis.vertical,
+                  semanticLabel: t.game_stream_line_resize,
+                  onDelta: _resizeLine,
+                  onEnd: _commitLookupLayout,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLookupRailContent(ThemeData theme, double lineHeight) {
     final GameStreamLookupController? controller = _lookupController;
     final GameStreamTextEvent? line = controller?.currentLine;
     final DictionarySearchResult? result = controller?.result;
-    return Material(
-      color: theme.colorScheme.surface,
-      child: SizedBox(
-        width: compact ? double.infinity : 360,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: compact ? 150 : 240),
-              child: SingleChildScrollView(
-                child: Column(
-                  key: GameStreamPage.transcriptKey,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(
-                        t.game_stream_line,
-                        style: theme.textTheme.labelLarge,
-                      ),
-                    ),
-                    if (line == null)
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Text(t.game_stream_line_empty),
-                      )
-                    else
-                      SubtitleTranscriptRow(
-                        colorScheme: theme.colorScheme,
-                        selected: true,
-                        text: SubtitleTranscriptText(
-                          key: ValueKey<String>(
-                            'game-stream-line-${line.lineId}',
-                          ),
-                          textKey: GameStreamPage.transcriptTextKey,
-                          text: line.text,
-                          style: subtitleTranscriptTextStyle(
-                            fontSize: 14,
-                            selected: true,
-                            fontFamily: theme.textTheme.bodyMedium?.fontFamily,
-                            color: theme.colorScheme.onPrimaryContainer,
-                          ),
-                          keyboardLookup: true,
-                          onLookup: (int index, Rect anchor) {
-                            final ({int start, String term}) span =
-                                subtitleTranscriptLookupSpan(line.text, index);
-                            if (span.start < 0 ||
-                                controller?.currentLine?.lineId !=
-                                    line.lineId ||
-                                controller?.currentLine?.text != line.text) {
-                              return;
-                            }
-                            unawaited(
-                              controller?.lookup(
-                                span.term,
-                                displayTerm: line.text.characters.elementAt(
-                                  span.start,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                        trailing: SubtitleTranscriptAction(
-                          icon: Icons.content_copy_outlined,
-                          tooltip: t.copy,
-                          color: theme.colorScheme.onPrimaryContainer,
-                          size: 16,
-                          onPressed: () => unawaited(
-                            Clipboard.setData(ClipboardData(text: line.text)),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SizedBox(
+          height: lineHeight,
+          child: SingleChildScrollView(
+            // The resize handle's touch target reaches this far up into the
+            // area; keep the last line of text clear of it.
+            padding: const EdgeInsets.only(
+              bottom: _resizeHitExtent / 2 - _lineGapHeight / 2,
             ),
-            const Divider(height: 1),
-            Expanded(
-              key: GameStreamPage.dictionaryKey,
-              child: controller == null || result == null
-                  ? Center(
-                      child: controller?.searching == true
-                          ? const CircularProgressIndicator()
-                          : Text(
-                              controller?.error ?? t.game_stream_lookup_hint,
-                            ),
-                    )
-                  : DictionaryPopupLayer(
-                      result: result,
-                      webViewKey: _dictionaryKey,
-                      isSearching: controller.searching,
-                      isDark: theme.brightness == Brightness.dark,
-                      showBorder: false,
-                      swipeDismissible: false,
-                      enableSwipeToClose: false,
-                      onDismiss: () => setState(() => _lookupVisible = false),
-                      onTextSelected: (String text, Rect rect) =>
-                          unawaited(controller.lookup(text)),
-                      onLinkClick: (String text, Rect rect) =>
-                          unawaited(controller.lookup(text)),
-                      onMineEntry: _mine,
-                      onDuplicateCheck: controller.isDuplicate,
-                    ),
-            ),
-            if (_mineMessage != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  _mineMessage!,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: _mineFailed
-                        ? theme.colorScheme.error
-                        : theme.colorScheme.primary,
+            child: Column(
+              key: GameStreamPage.transcriptKey,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    t.game_stream_line,
+                    style: context.fushiType.titleSmallEmphasized,
                   ),
                 ),
-              ),
-          ],
+                if (line == null)
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(t.game_stream_line_empty),
+                  )
+                else
+                  SubtitleTranscriptRow(
+                    colorScheme: theme.colorScheme,
+                    selected: true,
+                    text: SubtitleTranscriptText(
+                      key: ValueKey<String>('game-stream-line-${line.lineId}'),
+                      textKey: GameStreamPage.transcriptTextKey,
+                      text: line.text,
+                      style: subtitleTranscriptTextStyle(
+                        fontSize: GameStreamLookupLayout.fontSizeFor(
+                          lineHeight,
+                        ),
+                        selected: true,
+                        fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                        color: SubtitleTranscriptRow.textColorOf(
+                          context,
+                          theme.colorScheme,
+                          selected: true,
+                        ),
+                      ),
+                      keyboardLookup: true,
+                      onLookup: (int index, Rect anchor) {
+                        final ({int start, String term}) span =
+                            subtitleTranscriptLookupSpan(line.text, index);
+                        if (span.start < 0 ||
+                            controller?.currentLine?.lineId != line.lineId ||
+                            controller?.currentLine?.text != line.text) {
+                          return;
+                        }
+                        unawaited(
+                          controller?.lookup(
+                            span.term,
+                            displayTerm: line.text.characters.elementAt(
+                              span.start,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    trailing: SubtitleTranscriptAction(
+                      icon: FushiIcons.copy,
+                      tooltip: t.copy,
+                      color: SubtitleTranscriptRow.secondaryColorOf(
+                        context,
+                        theme.colorScheme,
+                        selected: true,
+                      ),
+                      size: 16,
+                      onPressed: () => unawaited(
+                        Clipboard.setData(ClipboardData(text: line.text)),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
+        const SizedBox(
+          height: _lineGapHeight,
+          child: Center(child: FushiDividerControl(height: 1)),
+        ),
+        Expanded(
+          key: GameStreamPage.dictionaryKey,
+          child: controller == null || result == null
+              ? Center(
+                  child: controller?.searching == true
+                      ? const FushiCircularProgressIndicator()
+                      : Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            controller?.error ?? t.game_stream_lookup_hint,
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: fushiNeutralSecondaryForeground(context),
+                            ),
+                          ),
+                        ),
+                )
+              : DictionaryPopupLayer(
+                  result: result,
+                  webViewKey: _dictionaryKey,
+                  // BUG-3425：结果来自 host，样式 / 媒体 / 发音也取自 host。
+                  resourceSource: controller.popupResources,
+                  isSearching: controller.searching,
+                  isDark: theme.brightness == Brightness.dark,
+                  showBorder: false,
+                  swipeDismissible: false,
+                  enableSwipeToClose: false,
+                  onDismiss: () => setState(() => _lookupVisible = false),
+                  onTextSelected: (String text, Rect rect) =>
+                      unawaited(controller.lookup(text)),
+                  onLinkClick: (String text, Rect rect) =>
+                      unawaited(controller.lookup(text)),
+                  onMineEntry: _mine,
+                  onDuplicateCheck: controller.isDuplicate,
+                ),
+        ),
+        if (_mineMessage != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              _mineMessage!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _mineFailed
+                    ? fushiStatusColor(context, FushiStatusTone.error)
+                    : fushiAccentForeground(context),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Width of the always-visible boundary strip between video and rail.
+const double _railEdgeWidth = 8;
+
+/// Height of the gap under the line area that carries its resize grip.
+const double _lineGapHeight = 16;
+
+/// Touch target across a resize handle's drag axis (Material minimum).
+const double _resizeHitExtent = 48;
+
+/// Length of the rail grip's 48dp-wide touch band along the edge.
+const double _railGripBand = 160;
+
+/// A drag handle that resizes a pane along [axis]: a pill grip, the matching
+/// resize cursor under a mouse, and arrow keys while focused (Up/Left shrink
+/// the measured coordinate, Down/Right grow it — same sign as a drag).
+///
+/// Reports raw deltas along [axis]; the caller decides which way is "bigger".
+class _ResizeHandle extends StatefulWidget {
+  const _ResizeHandle({
+    required this.axis,
+    required this.semanticLabel,
+    required this.onDelta,
+    required this.onEnd,
+    this.showGrip = true,
+    this.focusable = true,
+    super.key,
+  });
+
+  final Axis axis;
+  final String semanticLabel;
+  final ValueChanged<double> onDelta;
+  final VoidCallback onEnd;
+  final bool showGrip;
+  final bool focusable;
+
+  @override
+  State<_ResizeHandle> createState() => _ResizeHandleState();
+}
+
+class _ResizeHandleState extends State<_ResizeHandle> {
+  bool _hovered = false;
+  bool _dragging = false;
+  bool _focused = false;
+
+  bool get _vertical => widget.axis == Axis.vertical;
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final LogicalKeyboardKey key = event.logicalKey;
+    const double step = GameStreamLookupLayout.keyboardStep;
+    final double? delta = _vertical
+        ? (key == LogicalKeyboardKey.arrowUp
+              ? -step
+              : key == LogicalKeyboardKey.arrowDown
+              ? step
+              : null)
+        : (key == LogicalKeyboardKey.arrowLeft
+              ? -step
+              : key == LogicalKeyboardKey.arrowRight
+              ? step
+              : null);
+    if (delta == null) return KeyEventResult.ignored;
+    widget.onDelta(delta);
+    widget.onEnd();
+    return KeyEventResult.handled;
+  }
+
+  void _start() => setState(() => _dragging = true);
+
+  void _end() {
+    setState(() => _dragging = false);
+    widget.onEnd();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool active = _hovered || _dragging || _focused;
+    final double length = active ? 64 : 48;
+    final double thickness = active ? 6 : 5;
+    Widget child = widget.showGrip
+        ? Center(
+            child: AnimatedContainer(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              width: _vertical ? length : thickness,
+              height: _vertical ? thickness : length,
+              decoration: BoxDecoration(
+                color: active ? scheme.primary : scheme.onSurfaceVariant,
+                borderRadius: BorderRadius.circular(thickness),
+              ),
+            ),
+          )
+        : ColoredBox(
+            color: active
+                ? scheme.primary.withValues(alpha: 0.5)
+                : scheme.outlineVariant,
+          );
+    child = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      dragStartBehavior: DragStartBehavior.down,
+      onVerticalDragStart: _vertical ? (_) => _start() : null,
+      onVerticalDragUpdate: _vertical
+          ? (DragUpdateDetails details) => widget.onDelta(details.delta.dy)
+          : null,
+      onVerticalDragEnd: _vertical ? (_) => _end() : null,
+      onVerticalDragCancel: _vertical ? _end : null,
+      onHorizontalDragStart: _vertical ? null : (_) => _start(),
+      onHorizontalDragUpdate: _vertical
+          ? null
+          : (DragUpdateDetails details) => widget.onDelta(details.delta.dx),
+      onHorizontalDragEnd: _vertical ? null : (_) => _end(),
+      onHorizontalDragCancel: _vertical ? null : _end,
+      child: child,
+    );
+    child = MouseRegion(
+      cursor: _vertical
+          ? SystemMouseCursors.resizeUpDown
+          : SystemMouseCursors.resizeLeftRight,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: child,
+    );
+    if (!widget.focusable) return ExcludeSemantics(child: child);
+    return Semantics(
+      label: widget.semanticLabel,
+      child: Focus(
+        onFocusChange: (bool focused) => setState(() => _focused = focused),
+        onKeyEvent: _onKey,
+        child: child,
       ),
     );
   }
@@ -1229,7 +1837,7 @@ class _IconPadButton extends StatelessWidget {
     return _PadShell(
       onDown: () => onButton(button, GameStreamInputAction.down),
       onUp: () => onButton(button, GameStreamInputAction.up),
-      child: Icon(icon, color: Colors.white),
+      child: FushiIcon(icon, color: Colors.white),
     );
   }
 }
@@ -1285,12 +1893,15 @@ class _PadShellState extends State<_PadShell> {
   final Set<LogicalKeyboardKey> _keys = <LogicalKeyboardKey>{};
   bool _pressed = false;
   bool _focused = false;
+  bool _disposing = false;
 
   void _syncPressed() {
     final bool pressed = _pointers.isNotEmpty || _keys.isNotEmpty;
     if (pressed == _pressed) return;
     _pressed = pressed;
     unawaited(pressed ? widget.onDown() : widget.onUp());
+    // 视觉反馈（按下收缩 + 形变）只在活着的时候重建；dispose 里的释放只发 up。
+    if (!_disposing && mounted) setState(() {});
   }
 
   void _release() {
@@ -1318,12 +1929,14 @@ class _PadShellState extends State<_PadShell> {
 
   @override
   void dispose() {
+    _disposing = true;
     _release();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final FushiMotionScheme motion = context.fushiMotion;
     return Focus(
       onKeyEvent: _onKey,
       onFocusChange: (bool focused) {
@@ -1346,18 +1959,29 @@ class _PadShellState extends State<_PadShell> {
             _pointers.remove(event.pointer);
             _syncPressed();
           },
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.45),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: _focused ? Colors.white : Colors.white54,
-                width: _focused ? 2 : 1,
-              ),
-            ),
-            child: SizedBox(
+          // M3E 按压：spring 收缩 + 圆 → 方圆角形变，底色提亮；画面上的
+          // 按钮保持深色半透明底（任何画面亮度下都看得清）。
+          child: AnimatedScale(
+            scale: _pressed ? 0.9 : 1,
+            duration: motion.spatialFast.duration,
+            curve: motion.spatialFast.curve,
+            child: AnimatedContainer(
               width: 58,
               height: 58,
+              duration: motion.effectsFast.duration,
+              curve: motion.effectsFast.curve,
+              decoration: BoxDecoration(
+                color: _pressed
+                    ? Colors.white.withValues(alpha: 0.32)
+                    : Colors.black.withValues(alpha: 0.45),
+                borderRadius: _pressed
+                    ? FushiM3eShape.cardRadius
+                    : const BorderRadius.all(Radius.circular(29)),
+                border: Border.all(
+                  color: _focused ? Colors.white : Colors.white54,
+                  width: _focused ? 2 : 1,
+                ),
+              ),
               child: Center(child: widget.child),
             ),
           ),
@@ -1368,6 +1992,29 @@ class _PadShellState extends State<_PadShell> {
 }
 
 enum _StreamMenuAction { touchMode, keyboard, stats, audio }
+
+/// 等待首帧：状态文案 + 一条波浪进度（M3E 不定进度），压在黑底画面中央。
+class _VideoWaiting extends StatelessWidget {
+  const _VideoWaiting();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          t.game_stream_video_waiting,
+          textAlign: TextAlign.center,
+          style: context.fushiType.titleMediumEmphasized.copyWith(
+            color: Colors.white70,
+          ),
+        ),
+        const SizedBox(height: 16),
+        const SizedBox(width: 180, child: FushiLinearProgressIndicator()),
+      ],
+    );
+  }
+}
 
 /// Trackpad-mode cursor drawn over the contained video picture.
 class _TrackpadCursorPainter extends CustomPainter {

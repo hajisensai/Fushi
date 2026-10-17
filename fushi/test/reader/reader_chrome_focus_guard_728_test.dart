@@ -26,7 +26,18 @@ void main() {
     // ExcludeFocus 唯一落在 helper 内、两条底栏都经它包装——不变量（两条底栏
     // 都被排出焦点遍历池）不变且更强（与 reader_focus_chrome_excluded 一致）。
     expect(chrome, contains('Widget _wrapBottomChromeBar('));
-    expect('ExcludeFocus('.allMatches(chrome).length, 1);
+    expect(
+      'ExcludeFocus('
+          .allMatches(methodBody(chrome, 'Widget _wrapBottomChromeBar('))
+          .length,
+      1,
+    );
+    expect(
+      'ExcludeFocus('
+          .allMatches(methodBody(chrome, 'Widget _buildFloatingBottomChrome('))
+          .length,
+      1,
+    );
     expect(
       '_wrapBottomChromeBar('.allMatches(chrome).length,
       greaterThanOrEqualTo(3),
@@ -65,24 +76,35 @@ void main() {
     expect(end, greaterThan(start));
     final String body = maskComments(page.substring(start, end));
 
-    final int chromeCase =
-        body.indexOf('case FocusReclaimCause.chromeToggled:');
-    final int overlayCase =
-        body.indexOf('case FocusReclaimCause.overlayClosed:');
+    final int chromeCase = body.indexOf(
+      'case FocusReclaimCause.chromeToggled:',
+    );
+    final int overlayCase = body.indexOf(
+      'case FocusReclaimCause.overlayClosed:',
+    );
     expect(chromeCase, isNonNegative, reason: '切底栏必须有自己的分支，否则又会被并进严格门控组');
     expect(overlayCase, isNonNegative);
-    expect(chromeCase, lessThan(overlayCase),
-        reason: 'chromeToggled 必须在自己的分支里 return，不得 fall-through 到严格组');
+    expect(
+      chromeCase,
+      lessThan(overlayCase),
+      reason: 'chromeToggled 必须在自己的分支里 return，不得 fall-through 到严格组',
+    );
     // chromeToggled 分支体：到下一个 case 为止，必须是无条件 return true。
     final int chromeBodyStart =
         chromeCase + 'case FocusReclaimCause.chromeToggled:'.length;
-    final int nextCase =
-        body.indexOf('case FocusReclaimCause.', chromeBodyStart);
+    final int nextCase = body.indexOf(
+      'case FocusReclaimCause.',
+      chromeBodyStart,
+    );
     expect(nextCase, greaterThan(chromeBodyStart));
     final String branch = body.substring(chromeBodyStart, nextCase).trim();
-    expect(branch, 'return true;',
-        reason: '统一前这里是无条件 requestFocus；加门控等于改用户可感知行为，'
-            '要改必须单独立 bug 号。实际命中：$branch');
+    expect(
+      branch,
+      'return true;',
+      reason:
+          '统一前这里是无条件 requestFocus；加门控等于改用户可感知行为，'
+          '要改必须单独立 bug 号。实际命中：$branch',
+    );
   });
 
   test('top-progress tap GestureDetector has no Focus wrapper', () {

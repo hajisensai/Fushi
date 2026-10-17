@@ -520,7 +520,8 @@ class MalVideoMetadataRequestGate {
       this.cacheTtl = const Duration(hours: 1),
       this.maxRateLimitRetries = 2,
       this.maxTransientRetries = 2,
-      this.transientBackoff = const Duration(seconds: 2)})
+      this.transientBackoff = const Duration(seconds: 2),
+      this.unreachableCooldown = const Duration(minutes: 2)})
       : _now = now ?? DateTime.now,
         _sleep = sleep ?? Future<void>.delayed;
   final VideoMetadataNow _now;
@@ -540,6 +541,14 @@ class MalVideoMetadataRequestGate {
   /// 立刻继续。
   final int maxTransientRetries;
   final Duration transientBackoff;
+
+  /// 一条请求把重试用尽仍是「连不上」（超时 / 连接层失败，没有状态码）时，判上游
+  /// 整个不可达，这段时间内的新请求立刻失败、不再排队空等：此前 Jikan 停摆时每条
+  /// 请求都要吃满 3 次超时（约 2.5 分钟），整套下载逐部核对几十部作品就是一两个
+  /// 小时，全局队列里别的请求也一起被堵住（BUG-2962）。到期或任一请求成功即恢复。
+  /// 与 429 冷却同构：都是闸门对上游状态的共享认识。
+  final Duration unreachableCooldown;
+  DateTime? _unreachableUntil;
   DateTime? _nextStart;
   Future<void> _queue = Future<void>.value();
   final Map<String, ({DateTime expires, String body})> _cache =
@@ -568,12 +577,22 @@ class MalVideoMetadataRequestGate {
       int rateLimitRetries = 0;
       int transientRetries = 0;
       for (;;) {
+        final DateTime? unreachableUntil = _unreachableUntil;
+        if (unreachableUntil != null && unreachableUntil.isAfter(_now())) {
+          result.completeError(
+            VideoMetadataNetworkException(
+              'MAL unreachable; skipped until ${unreachableUntil.toIso8601String()}',
+            ),
+          );
+          return;
+        }
         try {
           final Duration wait = _nextStart?.difference(_now()) ?? Duration.zero;
           if (wait > Duration.zero) await _sleep(wait);
           _nextStart = _now().add(interval);
           final VideoMetadataHttpResponse response = await request();
           response.decodeJsonObject(operation: 'MAL');
+          _unreachableUntil = null;
           _cache.removeWhere(
               (String _, ({DateTime expires, String body}) entry) =>
                   !entry.expires.isAfter(_now()));
@@ -598,6 +617,9 @@ class MalVideoMetadataRequestGate {
             await _sleep(transientBackoff * transientRetries);
             continue;
           }
+          if (_isUnreachable(error)) {
+            _unreachableUntil = _now().add(unreachableCooldown);
+          }
           result.completeError(error, stack);
           return;
         }
@@ -611,4 +633,8 @@ class MalVideoMetadataRequestGate {
   static bool _isTransientFailure(Object error) =>
       error is VideoMetadataNetworkException &&
       (error.statusCode == null || error.statusCode! >= 500);
+
+  /// 连不上（没有任何 HTTP 应答）：5xx 至少说明 Jikan 还活着、会很快作答，不算。
+  static bool _isUnreachable(Object error) =>
+      error is VideoMetadataNetworkException && error.statusCode == null;
 }

@@ -131,7 +131,8 @@ void main() {
     });
   }
 
-  test('Jimaku adapter searches, filters text subtitles, and downloads',
+  test('Jimaku adapter searches, keeps text subtitles and season packs, and '
+      'downloads',
       () async {
     final JimakuVideoSubtitleProvider provider = JimakuVideoSubtitleProvider(
       client: JimakuClient(
@@ -142,7 +143,11 @@ void main() {
             return http.Response('[{"id":7,"name":"Test Show"}]', 200);
           }
           if (request.url.path.endsWith('/entries/7/files')) {
-            expect(request.url.queryParameters['episode'], '2');
+            // 带集号的列表之外，还会再列一次全表补回整季压缩包（BUG-3000）。
+            expect(
+              request.url.queryParameters['episode'],
+              anyOf('2', isNull),
+            );
             return http.Response(
               '[{"name":"Test Show - 02.ja.srt",'
               '"url":"https://jimaku.cc/file/7","size":12},'
@@ -172,10 +177,18 @@ void main() {
     );
 
     expect(result.failures, isEmpty);
-    expect(result.items, hasLength(1));
-    expect(result.items.single.episode, 2);
-    final VideoSubtitleDownload download =
-        await provider.download(result.items.single);
+    // 文本字幕之外的非字幕文件仍滤掉；zip 整季包现在作为整季包候选列出。
+    expect(result.items, hasLength(2));
+    final VideoSubtitleCandidate text = result.items
+        .firstWhere((VideoSubtitleCandidate c) => !c.isArchivePack);
+    expect(text.episode, 2);
+    expect(
+      result.items
+          .singleWhere((VideoSubtitleCandidate c) => c.isArchivePack)
+          .fileName,
+      'archive.zip',
+    );
+    final VideoSubtitleDownload download = await provider.download(text);
     expect(download.fileName, 'Test Show - 02.ja.srt');
     expect(utf8.decode(download.bytes), contains('hello'));
   });

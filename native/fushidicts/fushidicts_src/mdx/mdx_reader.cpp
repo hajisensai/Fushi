@@ -870,17 +870,21 @@ MdxResult mdx_reader::parse(const uint8_t* data, size_t size) {
   return result;
 }
 
-std::vector<MddEntry> mdx_reader::parse_mdd(const uint8_t* data, size_t size) {
+void mdx_reader::parse_mdd_streaming(const uint8_t* data, size_t size, const MddSink& sink) {
   ContainerIndex idx = parse_container_index(data, size);
 
   // Each record slice is a raw binary file (image/audio/css/font); the key is
   // its path. Keep bytes verbatim -- no transcoding, no trailing-NUL stripping
   // (a PNG/JPEG legitimately ends in NUL bytes), no @@@LINK resolution.
-  std::vector<MddEntry> out;
-  out.reserve(idx.keys.size());
   stream_records(data, size, idx, [&](size_t ki, const uint8_t* rec, size_t len) {
-    out.push_back(MddEntry{std::move(idx.keys[ki].headword),
-                           std::string(reinterpret_cast<const char*>(rec), len)});
+    sink(std::move(idx.keys[ki].headword), rec, len);
+  });
+}
+
+std::vector<MddEntry> mdx_reader::parse_mdd(const uint8_t* data, size_t size) {
+  std::vector<MddEntry> out;
+  parse_mdd_streaming(data, size, [&](std::string&& path, const uint8_t* blob, size_t len) {
+    out.push_back(MddEntry{std::move(path), std::string(reinterpret_cast<const char*>(blob), len)});
   });
   return out;
 }

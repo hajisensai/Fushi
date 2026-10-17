@@ -33,40 +33,32 @@ void main() {
   test('both bottom bars wrap content in ReaderChromeScaler', () {
     final String src = readReaderPageSource();
     final int count = 'ReaderChromeScaler('.allMatches(src).length;
-    expect(count, greaterThanOrEqualTo(2),
-        reason: '设置条 + 有声书播放条都必须套 ReaderChromeScaler');
+    // 底栏（设置条与有声书播放条共用同一个 ReaderChromeScaler 包裹，chrome.part）。
+    // 此前计数 ≥2 里另一处其实是查词弹窗 header；10-09 起弹窗顶栏整条改由
+    // DictionaryPopupLayer.topBarScale 统一缩放（见下一条），不再单独套。
+    expect(count, greaterThanOrEqualTo(1),
+        reason: '阅读器底栏必须套 ReaderChromeScaler');
   });
 
   // ─── merged verbatim from reader_popup_header_scale_guard_test.dart ───
-  // 查词弹窗 header 工具栏 buildPopupAudioControls 必须套 ReaderChromeScaler，
-  // 使按钮随 app UI scale 缩放（BUG-039/BUG-054 UI-scale-neutralizer 家族）。
-  test('dictionary popup header toolbar uses the reader chrome scale', () {
+  // 查词弹窗顶栏必须随 app UI scale 缩放（BUG-039/BUG-054 UI-scale-neutralizer 家族）。
+  // 用户 10-09：只给阅读器 header 套 ReaderChromeScaler 会让中间的收藏按钮与左右两簇
+  // 大小不一；现在整条顶栏由 DictionaryPopupLayer.topBarScale 缩放，宿主传入
+  // dictionaryPopupTopBarScale(appUiScale: …, dictionaryFontSize: …)。
+  test('dictionary popup top bar scales with the app UI scale', () {
+    final String host =
+        File('lib/src/pages/base_source_page.dart').readAsStringSync();
+    expect(host, contains('topBarScale: dictionaryPopupTopBarScale('));
+    expect(host, contains('appUiScale: appModel.appUiScale'));
     final String src = reader.readAsStringSync();
     final String toolbar = _functionSource(
       src,
       '  Widget? buildPopupAudioControls()',
     );
-
-    expect(
-      src,
-      contains('static const double _readerPopupHeaderBaseHeight'),
-      reason: 'lookup popup header buttons need a scaled base height',
-    );
-    expect(
-      toolbar,
-      contains('ReaderChromeScaler('),
-      reason: 'lookup popup header buttons must scale under the neutralizer',
-    );
-    expect(
-      toolbar,
-      contains('scale: _readerChromeScale'),
-      reason: 'lookup popup header buttons should use the reader chrome scale',
-    );
-    expect(
-      toolbar,
-      contains('baseHeight: _readerPopupHeaderBaseHeight'),
-      reason: 'lookup popup header height must follow app UI scale',
-    );
+    expect(toolbar, contains('dictionaryPopupTopActionConstraints()'),
+        reason: 'header buttons share the top-bar hit box');
+    expect(toolbar, isNot(contains('ReaderChromeScaler(')),
+        reason: 'scaling the header alone makes it differ from the clusters');
   });
 }
 

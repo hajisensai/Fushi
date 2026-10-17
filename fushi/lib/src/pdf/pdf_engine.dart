@@ -80,14 +80,16 @@ class PdfEngine {
   /// `DynamicLibrary.open` 抛出的异常能正常冒泡，变成一条带原因的错误 toast。
   /// Windows 已加载的模块会被复用，重复 open 的代价可忽略。
   ///
-  /// 只做 Windows：iOS/macOS 走 `DynamicLibrary.process()`（PDFium 由 XCFramework
-  /// 静态链接），Android 由 linker 从 APK 的 native lib 目录解析，都没有这条裸名
-  /// 加载路径。
+  /// 做 Windows 与 Linux：iOS/macOS 走 `DynamicLibrary.process()`（PDFium 由
+  /// XCFramework 静态链接），Android 由 linker 从 APK 的 native lib 目录解析，都没有
+  /// 这条按文件加载的路径。Linux 上 pdfium_dart 加载的是
+  /// `<exe 目录>/lib/libpdfium.so`（bundle 由 native-assets 布置），缺了照样掉进同一个
+  /// worker 永久挂起。
   static void _assertPdfiumLoadable() {
-    if (!Platform.isWindows) return;
+    if (!Platform.isWindows && !Platform.isLinux) return;
     final String? pinned = Pdfrx.pdfiumModulePath;
     try {
-      ffi.DynamicLibrary.open(pinned ?? 'pdfium.dll');
+      ffi.DynamicLibrary.open(pinned ?? _defaultPdfiumModulePath());
     } catch (e) {
       throw PdfiumUnavailableException(
         pinnedPath: pinned,
@@ -95,6 +97,15 @@ class PdfEngine {
         cause: e,
       );
     }
+  }
+
+  /// pdfium_dart 未钉路径时实际加载的文件：Windows 裸名（exe 同目录），Linux 是
+  /// bundle 的 `lib/libpdfium.so`（与 pdfium_dart `_getModuleFileName` 同口径）。
+  static String _defaultPdfiumModulePath() {
+    if (Platform.isLinux) {
+      return '${File(Platform.resolvedExecutable).parent.path}/lib/libpdfium.so';
+    }
+    return 'pdfium.dll';
   }
 
   /// 仅 Windows：在 exe 同目录 / 构建产物 native_assets 目录找 `pdfium.dll`，找到就

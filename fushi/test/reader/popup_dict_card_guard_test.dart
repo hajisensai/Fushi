@@ -88,7 +88,7 @@ void main() {
   test('.dict-label.selected 长按选词典视觉语义保留，不被一并删掉', () {
     final String body = ruleBody(r'\.dict-label\.selected');
     expect(body.contains('var(--primary-color)'), isTrue,
-        reason: '选为制卡首选词典时仍用 primary 色高亮，hibiki 独有交互不能丢');
+        reason: '选为制卡首选词典时仍用 primary 色高亮，fushi 独有交互不能丢');
     expect(RegExp(r'font-weight\s*:\s*bold').hasMatch(body), isTrue,
         reason: '选中态仍加粗');
   });

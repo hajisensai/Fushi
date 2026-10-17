@@ -162,7 +162,6 @@ void main() {
         rootDirectory: pluginRoot,
         runtime: runtime,
         httpClientFactory: HttpClient.new,
-        builtinStoreUrl: 'http://127.0.0.1:1/unused.json',
       );
       await manager.initialise();
       await manager.pluginFile(plugin.id).create(recursive: true);

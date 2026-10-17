@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,8 +18,14 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
+import 'package:fushi/src/feedback/feedback_service.dart';
+import 'package:fushi/src/leaderboard/leaderboard_service.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -80,10 +86,17 @@ void main() {
     if (storeDir.existsSync()) storeDir.deleteSync(recursive: true);
   });
 
-  Future<void> pumpHost(WidgetTester tester, {Widget? home}) async {
+  Future<void> pumpHost(
+    WidgetTester tester, {
+    Widget? home,
+    List<Override> extraOverrides = const <Override>[],
+  }) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+        overrides: <Override>[
+          appProvider.overrideWith((Ref ref) => appModel),
+          ...extraOverrides,
+        ],
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: appModel.navigatorKey,
@@ -124,13 +137,12 @@ void main() {
       byKey('floating_ball_action_camera_ocr'),
       Platform.isAndroid || Platform.isIOS ? findsOneWidget : findsNothing,
     );
-    // 应用外查词（独立查词窗）只有 Android 有。
-    expect(
-      byKey('floating_ball_action_popup_lookup'),
-      Platform.isAndroid ? findsOneWidget : findsNothing,
-    );
+    // 应用外查词（独立查词窗）在应用内出厂不勾：在 Fushi 里它与「查词」重复。
+    expect(byKey('floating_ball_action_popup_lookup'), findsNothing);
     // 立即同步出厂不勾（多数人没配同步），要在设置里自己勾上。
     expect(byKey('floating_ball_action_sync'), findsNothing);
+    // 反馈出厂勾上、各平台都有（打开反馈中心并附当前画面截图）。
+    expect(byKey('floating_ball_action_feedback'), findsOneWidget);
   });
 
   testWidgets('设置里关掉应用内悬浮球：不画球', (WidgetTester tester) async {
@@ -151,6 +163,17 @@ void main() {
     expect(lookup, findsOneWidget);
     // 竖排：列表里越靠前越在上面。
     expect(tester.getCenter(play).dy, lessThan(tester.getCenter(lookup).dy));
+    // 媒体页出厂只带「查词」与「反馈」：与当前视频无关的应用外入口不进来（截图
+    // 反馈：漫画页一长列应用外按钮）。
+    expect(byKey('floating_ball_action_feedback'), findsOneWidget);
+    for (final String id in <String>[
+      'popup_lookup',
+      'clipboard',
+      'screen_ocr',
+      'camera_ocr',
+    ]) {
+      expect(byKey('floating_ball_action_$id'), findsNothing, reason: id);
+    }
   });
 
   testWidgets('只显示为当前场景勾选的按钮', (WidgetTester tester) async {
@@ -168,15 +191,16 @@ void main() {
   });
 
   testWidgets('各场景的勾选互不影响', (WidgetTester tester) async {
-    // 「其它页面」只留查词，视频场景仍按出厂。
+    // 「其它页面」只留剪贴板，视频场景仍按出厂（专属按钮 + 查词）。
     await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
-      'lookup',
+      'clipboard',
     ]);
     await pumpHost(tester, home: _videoScene());
     await tester.pump();
     await expand(tester);
     expect(byKey('scene_play_pause'), findsOneWidget);
-    expect(byKey('floating_ball_action_clipboard'), findsOneWidget);
+    expect(byKey('floating_ball_action_lookup'), findsOneWidget);
+    expect(byKey('floating_ball_action_clipboard'), findsNothing);
   });
 
   testWidgets('勾选了但页面此刻没提供的专属按钮跳过', (WidgetTester tester) async {
@@ -242,6 +266,47 @@ void main() {
     await tester.tap(byKey('floating_ball_action_sync'));
     await tester.pump();
     expect(find.text(t.sync_now_busy), findsOneWidget);
+  });
+
+  testWidgets('反馈按钮打开反馈中心', (WidgetTester tester) async {
+    await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
+      'feedback',
+    ]);
+    // 反馈中心读排行榜账户（开发者入口）与本机回执：换成不联网的测试实例。
+    final LeaderboardService board = LeaderboardService(
+      database: () => throw StateError('no database'),
+      supportRoot: () async => storeDir,
+      profileId: () async => 1,
+      httpClientFactory: () async => MockClient(
+        (http.Request _) async => http.Response('{"items":[]}', 200),
+      ),
+    );
+    await pumpHost(
+      tester,
+      extraOverrides: <Override>[
+        leaderboardServiceProvider.overrideWith((Ref _) => board),
+        feedbackServiceProvider.overrideWith(
+          (Ref _) => FeedbackService(
+            supportRoot: () async => storeDir,
+            client: board.feedbackClient,
+          ),
+        ),
+      ],
+    );
+    await expand(tester);
+    await tester.tap(byKey('floating_ball_action_feedback'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(FeedbackCenterPage), findsOneWidget);
+  });
+
+  testWidgets('场景勾选里去掉反馈：球上没有反馈按钮', (WidgetTester tester) async {
+    await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
+      'lookup',
+    ]);
+    await pumpHost(tester);
+    await expand(tester);
+    expect(byKey('floating_ball_action_feedback'), findsNothing);
   });
 
   testWidgets('球外的空白处点击照常落到底下页面', (WidgetTester tester) async {
@@ -555,16 +620,40 @@ void main() {
     expect(floatingBallNativeLabels()['ball'], isNotEmpty);
   });
 
-  test('原生系统球的配色取当前主题三色', () {
+  test('原生系统球的配色取当前主题的 M3E 角色（墨水屏降级为描边无填色）', () {
     const ColorScheme scheme = ColorScheme.light(
       surface: Color(0xFF101112),
       onSurface: Color(0xFF202122),
       primary: Color(0xFF303132),
+      primaryContainer: Color(0xFF404142),
+      onPrimaryContainer: Color(0xFF505152),
+      secondaryContainer: Color(0xFF606162),
+      onSecondaryContainer: Color(0xFF707172),
+      onPrimary: Color(0xFF808182),
     );
     expect(floatingBallNativeColors(scheme), <String, int>{
       'surface': 0xFF101112,
       'onSurface': 0xFF202122,
       'primary': 0xFF303132,
+      'ballContainer': 0xFF404142,
+      'onBallContainer': 0xFF505152,
+      'buttonContainer': 0xFF606162,
+      'onButtonContainer': 0xFF707172,
+      'outline': 0x00000000,
+      'ballOpen': 0xFF303132,
+      'onBallOpen': 0xFF808182,
+    });
+    expect(floatingBallNativeColors(scheme, eink: true), <String, int>{
+      'surface': 0xFF101112,
+      'onSurface': 0xFF202122,
+      'primary': 0xFF303132,
+      'ballContainer': 0xFF101112,
+      'onBallContainer': 0xFF202122,
+      'buttonContainer': 0xFF101112,
+      'onButtonContainer': 0xFF202122,
+      'outline': 0xFF202122,
+      'ballOpen': 0xFF101112,
+      'onBallOpen': 0xFF202122,
     });
   });
 
@@ -675,11 +764,12 @@ void main() {
       final MethodCall start = starts().last;
       final Map<Object?, Object?> args =
           start.arguments as Map<Object?, Object?>;
-      // 桌面应用外球的按钮：查词 / 应用外查词（查选区）/ 剪贴板。
+      // 桌面应用外球的按钮：查词 / 应用外查词（查选区）/ 剪贴板 / 截屏识字。
       expect(startedActions(start), <String>[
         'lookup',
         'popup_lookup',
         'clipboard',
+        'screen_ocr',
       ]);
       final Map<Object?, Object?> images =
           args['iconImages']! as Map<Object?, Object?>;
@@ -709,7 +799,7 @@ void main() {
       expect(calls.last.method, 'stopSystemBall');
     });
 
-    testWidgets('查词模块关着：应用外球不下发「查词」「应用外查词」，模块打开后重新同步补上', (
+    testWidgets('查词模块关着：应用外球不下发「查词」「应用外查词」「截屏识字」，模块打开后重新同步补上', (
       WidgetTester tester,
     ) async {
       mockNative(tester);
@@ -737,6 +827,7 @@ void main() {
         'lookup',
         'popup_lookup',
         'clipboard',
+        'screen_ocr',
       ]);
     });
 
@@ -860,6 +951,61 @@ void main() {
       });
       await tester.pump();
       expect(starts(), hasLength(1));
+    }
+
+    for (final String actionId in <String>['popup_lookup', 'screen_ocr']) {
+      testWidgets(
+        'system $actionId OFF→ON updates native actions in isolation',
+        (WidgetTester tester) async {
+          mockNative(tester);
+          addTearDown(
+            () => tester.binding.defaultBinaryMessenger
+                .setMockMethodCallHandler(FloatingBallChannel.channel, null),
+          );
+          const List<String> allActions = <String>[
+            'lookup',
+            'popup_lookup',
+            'clipboard',
+            'screen_ocr',
+          ];
+          await startSystemBall(tester);
+          expect(startedActions(starts().single), allActions);
+
+          final List<String> remaining = allActions
+              .where((String id) => id != actionId)
+              .toList();
+          await tester.runAsync(() async {
+            await prefs.setFloatingBallButtons(
+              FloatingBallScope.system,
+              remaining,
+            );
+            await debugLatestSystemBallSync;
+          });
+          await tester.pump();
+          expect(starts(), hasLength(2));
+          expect(
+            startedActions(starts().last),
+            remaining,
+            reason: 'only $actionId disappears from the actual native payload',
+          );
+
+          await tester.runAsync(() async {
+            await prefs.setFloatingBallButtons(
+              FloatingBallScope.system,
+              allActions,
+            );
+            await debugLatestSystemBallSync;
+          });
+          await tester.pump();
+          expect(starts(), hasLength(3));
+          expect(
+            startedActions(starts().last),
+            allActions,
+            reason:
+                '$actionId returns without changing the other native actions',
+          );
+        },
+      );
     }
 
     testWidgets('出厂「仅应用内」：用户在应用外球上点关闭 → 关掉「应用外显示」', (
@@ -1039,6 +1185,121 @@ void main() {
       expect(starts(), hasLength(2));
     });
 
+    group('应用在前台且应用内球开着：应用外球让位', () {
+      /// 下发给原生的让位值序列（`setAppForeground` 的 foreground 参数）。
+      List<bool> yields() => <bool>[
+        for (final MethodCall c in calls)
+          if (c.method == 'setAppForeground')
+            (c.arguments as Map<Object?, Object?>)['foreground']! as bool,
+      ];
+
+      Future<void> lifecycle(
+        WidgetTester tester,
+        List<AppLifecycleState> states,
+      ) async {
+        await tester.runAsync(() async {
+          for (final AppLifecycleState state in states) {
+            tester.binding.handleAppLifecycleStateChanged(state);
+          }
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+      }
+
+      void clearNative(WidgetTester tester) => addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        );
+        // 别把绑定留在后台给后面的用例。
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+      });
+
+      testWidgets('起球前先下发让位：前台起的球首帧就不显示', (WidgetTester tester) async {
+        mockNative(tester);
+        clearNative(tester);
+        await startSystemBall(tester);
+        final int yieldAt = calls.indexWhere(
+          (MethodCall c) => c.method == 'setAppForeground',
+        );
+        final int startAt = calls.indexWhere(
+          (MethodCall c) => c.method == 'startSystemBall',
+        );
+        expect(yieldAt, isNot(-1));
+        expect(yieldAt, lessThan(startAt), reason: '让位值要先于 start 到原生');
+        expect(yields(), <bool>[true]);
+      });
+
+      testWidgets('失焦 / 最小化露面，回到前台再让位', (WidgetTester tester) async {
+        mockNative(tester);
+        clearNative(tester);
+        await startSystemBall(tester);
+        // 桌面主窗失焦只到 inactive：用户在用别的程序，应用外球该露面。
+        await lifecycle(tester, <AppLifecycleState>[
+          AppLifecycleState.inactive,
+        ]);
+        expect(yields(), <bool>[true, false]);
+        await lifecycle(tester, <AppLifecycleState>[AppLifecycleState.resumed]);
+        expect(yields(), <bool>[true, false, true]);
+        // 最小化（inactive → hidden）：露面；重复的显隐值不重复下发。
+        await lifecycle(tester, <AppLifecycleState>[
+          AppLifecycleState.inactive,
+          AppLifecycleState.hidden,
+        ]);
+        expect(yields(), <bool>[true, false, true, false]);
+        expect(starts(), hasLength(1), reason: '只改显隐，不重起球');
+      });
+
+      testWidgets('关掉「应用内显示」：前台也保留应用外球；再打开恢复让位', (WidgetTester tester) async {
+        mockNative(tester);
+        clearNative(tester);
+        await startSystemBall(tester);
+        await tester.runAsync(() async {
+          await prefs.setFloatingBallInApp(false);
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+        expect(yields(), <bool>[true, false]);
+        expect(ball(), findsNothing);
+        await lifecycle(tester, <AppLifecycleState>[
+          AppLifecycleState.inactive,
+          AppLifecycleState.resumed,
+        ]);
+        expect(yields(), <bool>[true, false], reason: '应用内球关着，前后台都露面');
+        await tester.runAsync(() async {
+          await prefs.setFloatingBallInApp(true);
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+        expect(yields(), <bool>[true, false, true]);
+        expect(prefs.floatingBallSystem, isTrue, reason: '两颗球的开关互不影响');
+      });
+
+      testWidgets('用户关掉应用外球：前后台切换不会把它打开', (WidgetTester tester) async {
+        mockNative(tester);
+        clearNative(tester);
+        await startSystemBall(tester);
+        await tester.runAsync(() async {
+          await prefs.setFloatingBallSystem(false);
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+        expect(calls.last.method, 'stopSystemBall');
+        final int before = calls.length;
+        await lifecycle(tester, <AppLifecycleState>[
+          AppLifecycleState.inactive,
+          AppLifecycleState.hidden,
+          AppLifecycleState.inactive,
+          AppLifecycleState.resumed,
+        ]);
+        expect(calls.sublist(before), isEmpty, reason: '没起球就不起、不发显隐');
+        expect(prefs.floatingBallSystem, isFalse);
+        expect(prefs.floatingBallInApp, isTrue);
+      });
+    });
+
     group('动作分发', () {
       setUp(() {
         target.overlayAvailable = true;
@@ -1127,6 +1388,235 @@ void main() {
         await tester.pump();
         expect(pendingSync.value, isFalse);
         expect(find.text(t.sync_now_busy), findsOneWidget);
+      });
+
+      group('截屏识字', () {
+        /// 横排一行「吾輩は猫」：截图像素 (100,200)–(500,250)，每字 100 宽。
+        const SystemOcrTextLine line = SystemOcrTextLine(
+          text: '吾輩は猫',
+          rect: Rect.fromLTRB(100, 200, 500, 250),
+          isVertical: false,
+        );
+        final Uint8List png = Uint8List.fromList(<int>[1, 2, 3]);
+
+        /// 原生桩：`startScreenOcrCapture` 回 [capture]，其余只记录。
+        void mockCapture(WidgetTester tester, Map<String, Object?> capture) {
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            FloatingBallChannel.channel,
+            (MethodCall call) async {
+              calls.add(call);
+              return switch (call.method) {
+                'startScreenOcrCapture' => capture,
+                'startSystemBall' => true,
+                'takeSystemBallClosedByUser' => false,
+                _ => null,
+              };
+            },
+          );
+          addTearDown(
+            () => tester.binding.defaultBinaryMessenger
+                .setMockMethodCallHandler(FloatingBallChannel.channel, null),
+          );
+        }
+
+        MethodCall lastCall(String method) =>
+            calls.lastWhere((MethodCall c) => c.method == method);
+
+        bool called(String method) =>
+            calls.any((MethodCall c) => c.method == method);
+
+        Map<Object?, Object?> argsOf(String method) =>
+            lastCall(method).arguments as Map<Object?, Object?>;
+
+        Future<void> startOcr(WidgetTester tester) async {
+          mockCapture(tester, <String, Object?>{
+            'png': png,
+            // 第二块显示器：左上 (1920, 0)。
+            'screen': <double>[1920, 0, 3840, 1080],
+          });
+          target.onRecognize = (Uint8List bytes) async {
+            expect(bytes, png);
+            return const SystemOcrPageResult(
+              lines: <SystemOcrTextLine>[line],
+              imageWidth: 1920,
+              imageHeight: 1080,
+            );
+          };
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+        }
+
+        testWidgets('先收起查词卡再截屏（带球锚点），识别后把行框交给冻结层', (WidgetTester tester) async {
+          await startOcr(tester);
+          expect(target.log, <String>['dismiss', 'recognize']);
+          final Map<Object?, Object?> start = argsOf('startScreenOcrCapture');
+          expect(start['anchor'], <double>[1800, 900, 1896, 996]);
+          expect(
+            (start['labels']! as Map<Object?, Object?>).keys,
+            containsAll(<String>['recognizing', 'hint', 'close']),
+          );
+          expect(
+            (start['colors']! as Map<Object?, Object?>).keys,
+            contains('primary'),
+          );
+          final Map<Object?, Object?> update = argsOf('updateScreenOcrOverlay');
+          expect(update['lines'], <List<double>>[
+            <double>[100, 200, 500, 250],
+          ]);
+          expect(update['message'], isNull);
+        });
+
+        testWidgets('原生回带取帧诊断（HDR 显示器走 scRGB / 回落 GDI）时记进诊断日志', (
+          WidgetTester tester,
+        ) async {
+          const String note =
+              'hdr capture failed, fell back to gdi: DuplicateOutput1 hr=0x887A0004';
+          mockCapture(tester, <String, Object?>{
+            'png': png,
+            'screen': <double>[0, 0, 1920, 1080],
+            'diagnostic': note,
+          });
+          target.onRecognize = (Uint8List bytes) async =>
+              const SystemOcrPageResult(
+                lines: <SystemOcrTextLine>[line],
+                imageWidth: 1920,
+                imageHeight: 1080,
+              );
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          expect(
+            ErrorLogService.instance.diagnosticEntries.any(
+              (ErrorLogEntry e) =>
+                  e.source == 'floating_ball.screen_ocr_capture' &&
+                  e.error == note,
+            ),
+            isTrue,
+          );
+          // 诊断不影响流程：照常识别并把行框交给冻结层。
+          expect(target.log, <String>['dismiss', 'recognize']);
+        });
+
+        test('DesktopScreenOcrCapture.fromWire 读出成功与失败两侧的 diagnostic', () {
+          final DesktopScreenOcrCapture ok = DesktopScreenOcrCapture.fromWire(
+            <Object?, Object?>{
+              'png': png,
+              'screen': <double>[0, 0, 10, 10],
+              'diagnostic': 'hdr dxgi fp16',
+            },
+          );
+          expect(ok.png, png);
+          expect(ok.diagnostic, 'hdr dxgi fp16');
+          final DesktopScreenOcrCapture failed =
+              DesktopScreenOcrCapture.fromWire(<Object?, Object?>{
+                'error': 'capture_failed',
+                'diagnostic': 'x',
+              });
+          expect(failed.error, DesktopScreenOcrCapture.captureFailed);
+          expect(failed.diagnostic, 'x');
+          expect(
+            DesktopScreenOcrCapture.fromWire(<Object?, Object?>{
+              'png': png,
+              'screen': <double>[0, 0, 10, 10],
+            }).diagnostic,
+            isNull,
+          );
+        });
+
+        testWidgets('点在字上：查从这个字起的后缀、整行作句子，卡锚在该字的屏幕物理像素框', (
+          WidgetTester tester,
+        ) async {
+          await startOcr(tester);
+          // 第三个字「は」：x 300..400。
+          await fromNative(tester, 'screenOcrTap', <String, Object?>{
+            'x': 350.0,
+            'y': 220.0,
+          });
+          final _LookupTextCall call = target.lookups.single;
+          expect(call.text, 'は猫');
+          expect(call.sentence, '吾輩は猫');
+          expect(call.anchorScreenRect, isNull, reason: '逻辑像素通道不得带锚点');
+          // 截图像素 + 显示器左上 (1920, 0)。
+          expect(
+            call.physicalPlacement?.anchorScreenRect,
+            const Rect.fromLTRB(2220, 200, 2320, 250),
+          );
+          expect(called('stopScreenOcr'), isFalse, reason: '查词时冻结层留着');
+        });
+
+        testWidgets('点在字外：关冻结层并收起查词卡；之后的点击不再查词', (WidgetTester tester) async {
+          await startOcr(tester);
+          target.log.clear();
+          await fromNative(tester, 'screenOcrTap', <String, Object?>{
+            'x': 1000.0,
+            'y': 900.0,
+          });
+          expect(called('stopScreenOcr'), isTrue);
+          expect(target.log, <String>['dismiss']);
+          await fromNative(tester, 'screenOcrTap', <String, Object?>{
+            'x': 350.0,
+            'y': 220.0,
+          });
+          expect(target.lookups, isEmpty);
+        });
+
+        testWidgets('原生报冻结层被关掉：收起查词卡，不再回 stop', (WidgetTester tester) async {
+          await startOcr(tester);
+          target.log.clear();
+          await fromNative(
+            tester,
+            'screenOcrDismissed',
+            const <String, Object?>{},
+          );
+          expect(target.log, <String>['dismiss']);
+          expect(called('stopScreenOcr'), isFalse);
+        });
+
+        testWidgets('没装日语识别器：冻结层提示去装语言，点任意处退出', (WidgetTester tester) async {
+          mockCapture(tester, <String, Object?>{
+            'png': png,
+            'screen': <double>[0, 0, 1920, 1080],
+          });
+          target.onRecognize = (Uint8List bytes) async =>
+              throw const SystemOcrUnavailableException(
+                kSystemOcrLanguageUnavailableReason,
+              );
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          final Map<Object?, Object?> update = argsOf('updateScreenOcrOverlay');
+          expect(update['message'], t.floating_ball_ocr_language_missing);
+          expect(update['lines'], isEmpty);
+          await fromNative(tester, 'screenOcrTap', <String, Object?>{
+            'x': 10.0,
+            'y': 10.0,
+          });
+          expect(called('stopScreenOcr'), isTrue);
+        });
+
+        testWidgets('没识别到字：冻结层上直接说', (WidgetTester tester) async {
+          mockCapture(tester, <String, Object?>{
+            'png': png,
+            'screen': <double>[0, 0, 1920, 1080],
+          });
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          expect(
+            argsOf('updateScreenOcrOverlay')['message'],
+            t.floating_ball_ocr_empty,
+          );
+        });
+
+        testWidgets('没有屏幕录制权限：不识别，唤起主窗提示去系统设置授权', (WidgetTester tester) async {
+          mockCapture(tester, <String, Object?>{'error': 'permission_denied'});
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          expect(target.log, <String>['dismiss', 'front']);
+          await tester.pump();
+          expect(
+            find.text(t.floating_ball_ocr_screen_permission),
+            findsOneWidget,
+          );
+          expect(called('updateScreenOcrOverlay'), isFalse);
+        });
       });
 
       testWidgets('打开 Fushi：只唤起主窗', (WidgetTester tester) async {
@@ -1232,9 +1722,15 @@ void main() {
 }
 
 class _LookupTextCall {
-  _LookupTextCall(this.text, this.anchorScreenRect, this.physicalPlacement);
+  _LookupTextCall(
+    this.text,
+    this.anchorScreenRect,
+    this.physicalPlacement, {
+    this.sentence = '',
+  });
 
   final String text;
+  final String sentence;
   final Rect? anchorScreenRect;
   final GlobalLookupPhysicalPlacement? physicalPlacement;
 }
@@ -1254,13 +1750,38 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
   @override
   Future<bool> lookupText(
     String text, {
+    String sentence = '',
     Rect? anchorScreenRect,
     GlobalLookupPhysicalPlacement? physicalPlacement,
   }) async {
     log.add('lookupText');
-    lookups.add(_LookupTextCall(text, anchorScreenRect, physicalPlacement));
+    lookups.add(
+      _LookupTextCall(
+        text,
+        anchorScreenRect,
+        physicalPlacement,
+        sentence: sentence,
+      ),
+    );
     return true;
   }
+
+  /// 截屏识字的识别结果（测试按需替换成抛错 / 空结果）。
+  Future<SystemOcrPageResult> Function(Uint8List png) onRecognize =
+      (Uint8List png) async => const SystemOcrPageResult(
+        lines: <SystemOcrTextLine>[],
+        imageWidth: 1,
+        imageHeight: 1,
+      );
+
+  @override
+  Future<SystemOcrPageResult> recognize(Uint8List png) async {
+    log.add('recognize');
+    return onRecognize(png);
+  }
+
+  @override
+  Future<void> dismissLookup() async => log.add('dismiss');
 
   @override
   Future<void> bringMainWindowToFront() async => log.add('front');

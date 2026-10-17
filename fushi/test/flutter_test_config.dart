@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/fake_inappwebview_platform.dart';
+import 'helpers/fake_video_specs_probe.dart';
 import 'package:fushi/src/engine_bindings.dart';
 
 /// Suite-wide setup for all tests under `test/`.
@@ -21,6 +22,10 @@ import 'package:fushi/src/engine_bindings.dart';
 ///    [installInMemorySharedPreferences].
 /// 3. Installs a tolerance-based golden comparator (BUG-1585). See
 ///    [installToleranceGoldenComparator].
+/// 4. Makes every `VideoSpecsService` built without an explicit `probe:` (the
+///    one `AppModel.videoSpecsService` creates) use a process-free fake probe,
+///    so widget tests that render real video files never spawn ffprobe and race
+///    FakeAsync's 20s timeout timer. See [installFakeVideoSpecsProbe].
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // 引擎（fushi_engine）的日志 / 数据根 / ffmpeg 平台后端装配点：与 main() 同一份，
   // 让测试里的引擎代码拿到与从前逐字节一致的行为（AppPaths 路径、ErrorLogService）。
@@ -28,6 +33,7 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   installFakeInAppWebViewPlatform();
   installInMemorySharedPreferences();
   installToleranceGoldenComparator();
+  installFakeVideoSpecsProbe();
   await testMain();
 }
 

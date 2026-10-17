@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/collections/collection_shelf_row.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -174,7 +174,7 @@ void main() {
       expect(
         desktopContentPadding(
           WindowSizeClass.medium,
-          DesktopContentKind.dictionary,
+          DesktopContentKind.settings,
         ),
         const EdgeInsets.symmetric(horizontal: 16),
       );
@@ -293,8 +293,9 @@ void main() {
       );
 
       // TODO-1352：dictionary 宽屏改为 full-bleed（null 上限），子内容宽度
-      // = 屏幕 1600 - 2×24 侧向留白 = 1552（不再锁 1040→992）。
-      expect(tester.getSize(find.byKey(childKey)).width, 1552);
+      // = 整屏 1600：查词页内各块自带页边内缩，不再叠 2×24 侧向留白
+      // （2026-10-06 与外壳大标题同一条页边）。
+      expect(tester.getSize(find.byKey(childKey)).width, 1600);
     });
 
     testWidgets('reader shelf spans edge-to-edge on wide desktop', (

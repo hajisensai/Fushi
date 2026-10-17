@@ -108,7 +108,14 @@ class SrtBooks extends Table {
   TextColumn get audioPathsJson => text().nullable()();
   TextColumn get srtPath => text()();
   TextColumn get coverPath => text().nullable()();
+
+  /// 原始入库时刻（毫秒，跨设备保留、展示与排序用；同步资产包导入时沿用包内值）。
   IntColumn get importedAt => integer()();
+
+  /// v118：本机开始拥有这条字幕书的时刻（毫秒，设备本地，同 [EpubBooks.localAddedAt]
+  /// 的语义与理由）。写入单点 [FushiDatabase.upsertSrtBook]：插入时未携带 → now；
+  /// 冲突转更新时永不改写。v118 迁移以 importedAt 回填存量行。
+  IntColumn get localAddedAt => integer().nullable()();
   // Standalone SRT books (no backing epub) use the empty-string sentinel.
   TextColumn get bookKey => text().withDefault(const Constant(''))();
 
@@ -456,7 +463,25 @@ class EpubBooks extends Table {
   TextColumn get chaptersJson => text()();
   TextColumn get tocJson => text().nullable()();
   TextColumn get sourceMetadata => text().nullable()();
+
+  /// 条目的**原始入库时刻**（毫秒）：跨设备保留、用户可见——书架「导入时间」排序、
+  /// 「最近阅读」对没读过的书的回落键、合集组内回退序都按它。互联下载的书写对端的
+  /// 入库时刻（BUG-3452），所以它**不是**「本机从什么时候起拥有这本书」，那件事见
+  /// [localAddedAt]。
   IntColumn get importedAt => integer()();
+
+  /// v118：本机**开始拥有**这本书的时刻（毫秒）。与 [importedAt] 是两个事实：
+  /// 互联下载把 importedAt 写成对端入库时刻，而删除墓碑仲裁（「删除发生在本机
+  /// 拥有之后才管得着它」，BUG-2044）与首页「最近添加」要的是本机落地那一刻——
+  /// 共用一列时，对端早已入库、本机刚下载的书会被第三台设备在其间的「从所有设备
+  /// 删除」追着弹确认，也进不了「最近添加」。
+  ///
+  /// 设备本地语义：不进互联 / 云同步 wire。备份按整行随包、恢复时保留备份内的值
+  /// （恢复 = 重现快照时刻的拥有事实，见 `FushiDatabase.insertEpubBook`）。写入
+  /// 单点是 [FushiDatabase.insertEpubBook]（未携带 → 当时 now）；此后不再改写。
+  /// null = 时刻未知（墓碑仲裁按「无从仲裁」处理，宁可多问一次）。v118 迁移以
+  /// importedAt 回填存量行。
+  IntColumn get localAddedAt => integer().nullable()();
 
   /// v87：书的内容语言（BCP-47，如 `ja` / `zh-Hant`），决定正文用哪条字体链。
   ///
@@ -557,6 +582,11 @@ class TagAssignments extends Table {
 class Profiles extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get name => text().unique()();
+
+  /// v117：profile 的全局身份（UUIDv7）。不同设备上的同一个本机自增 id 不代表同一个 profile；
+  /// SRS 的一切行与同步路径都用它（docs/specs/2026-10-14-fushi-srs-design.md 铁律 E）。
+  /// 迁移时为存量行生成；可空只为兼容迁移顺序，读取方经 FushiDatabase.profileUidOf 惰性补齐。
+  TextColumn get uid => text().nullable()();
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
 }
@@ -680,8 +710,15 @@ class VideoBooks extends Table {
 
   /// 导入时间（毫秒戳，同 [EpubBooks].importedAt / [SrtBooks].importedAt int
   /// 范式）；null = 旧数据无导入时间。v57 前是 drift DateTime（Unix 秒存储），
-  /// v57 迁移统一为 int 毫秒。
+  /// v57 迁移统一为 int 毫秒。互联下载登记镜像 host 的值（BUG-2463），所以它是
+  /// 「原始入库时刻」，不是「本机从什么时候起拥有」——后者见 [localAddedAt]。
   IntColumn get importedAt => integer().nullable()();
+
+  /// v118：本机开始拥有这条视频的时刻（毫秒，设备本地，同 [EpubBooks.localAddedAt]
+  /// 的语义与理由）。写入单点 [FushiDatabase.upsertVideoBook]：插入时未携带 → now；
+  /// 冲突转更新时永不改写（重复登记同一 bookUid 不算重新拥有）。v118 迁移以
+  /// importedAt 回填存量行；importedAt 为 null 的旧行仍为 null（时刻未知）。
+  IntColumn get localAddedAt => integer().nullable()();
 
   /// m3u8 多集播放列表 JSON：`[{title,path}]`（绝对路径）。单视频导入时为 null。
   TextColumn get playlistJson => text().nullable()();
@@ -2254,7 +2291,7 @@ class VideoDownloadJobs extends Table {
   TextColumn get identityJson => text().nullable()();
 
   /// 后端连接身份与去重身份。敏感凭据不进数据库；backendProfileId 是下载配置档
-  /// 的字符串身份，不是 Hibiki 用户 Profile，故没有 FK 到 Profiles。
+  /// 的字符串身份，不是 Fushi 用户 Profile，故没有 FK 到 Profiles。
   TextColumn get backendKind => text()();
   TextColumn get backendTaskId => text().nullable()();
   TextColumn get backendProfileId => text().nullable()();
@@ -3065,7 +3102,7 @@ class VideoFileSpecs extends Table {
 
 // ── update_feed_entries ─────────────────────────────────────────────
 /// v101：全应用**统一的更新事件流**。番剧新集、漫画新章、漫画扩展新版本、
-/// Hibiki 自身新版本，四个域投递到同一张表，UI 只消费这一处。
+/// Fushi 自身新版本，四个域投递到同一张表，UI 只消费这一处。
 ///
 /// 为什么必须是一张表而不是四套提醒：在此之前「有更新」这个事实散在四个互不
 /// 知情的地方——番剧靠首页一行现算（`video_subscription_updates.dart`）、扩展靠
@@ -3291,4 +3328,162 @@ class MangaReaderOverrides extends Table {
 
   @override
   Set<Column> get primaryKey => {bookUid};
+}
+
+
+// ── SRS（v117，docs/specs/2026-10-14-fushi-srs-design.md）──────────────
+//
+// 同步的只有三种事件：身份记录（srs_entities）、修改记录（srs_field_edits）、复习日志（srs_review_logs）。
+// 卡片行、笔记缓存都是本机可重建的缓存，不同步。事件创建即不可变：同 ID 内容必须相同。
+
+/// 不可变身份记录（牌组 / 笔记类型 / 笔记）。
+@DataClassName('SrsEntityRow')
+class SrsEntities extends Table {
+  TextColumn get id => text()();
+  TextColumn get profileUid => text()();
+
+  /// deck / notetype / note（SrsEntityKind.wire）。
+  TextColumn get kind => text()();
+
+  /// 规范 JSON（SrsEntityRecord.payload）。
+  TextColumn get payloadJson => text()();
+  IntColumn get createdAt => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// 修改记录（铁律 H）。只保留同一字段键上没被支配的记录。
+@DataClassName('SrsFieldEditRow')
+class SrsFieldEdits extends Table {
+  TextColumn get id => text()();
+  TextColumn get profileUid => text()();
+  TextColumn get entityKind => text()();
+  TextColumn get entityId => text()();
+  TextColumn get fieldKey => text()();
+  TextColumn get writerId => text()();
+  IntColumn get seq => integer()();
+
+  /// 完整事件的规范 JSON（含 ctx / 值 / hlc），读回时整条解析，不靠列拼装。
+  TextColumn get json => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// 复习日志（只追加）。[json] 是完整事件内容（含不认识的字段，原样保留）；其余列只为查询。
+@DataClassName('SrsReviewLogRow')
+class SrsReviewLogs extends Table {
+  TextColumn get id => text()();
+  TextColumn get profileUid => text()();
+  TextColumn get cardId => text()();
+  TextColumn get kind => text()();
+  IntColumn get rating => integer().nullable()();
+  IntColumn get occurredAt => integer()();
+  TextColumn get reviewType => text()();
+  TextColumn get origin => text()();
+  IntColumn get durationMs => integer().withDefault(const Constant(0))();
+  TextColumn get json => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// 本机不认识的同步事件（更新版本写来的）：原样保留、原样转写。
+@DataClassName('SrsUnknownEventRow')
+class SrsUnknownEvents extends Table {
+  TextColumn get id => text()();
+  TextColumn get profileUid => text()();
+  TextColumn get json => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// 事件的本机发布元信息（与事件内容分离，不同步）。
+@DataClassName('SrsEventLocalRow')
+class SrsEventLocal extends Table {
+  TextColumn get eventId => text()();
+  TextColumn get profileUid => text()();
+
+  /// 本机产生的事件在发件箱里的顺序；null = 对端来的或已发布。
+  IntColumn get outboxSeq => integer().nullable()();
+
+  /// S(e)：所有已见到的、包含该事件的批次的 S 的最小值。
+  IntColumn get serverTime => integer().nullable()();
+  IntColumn get receivedAt => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {eventId};
+}
+
+/// 每个 profile 的本机同步 / 写入者状态（SrsSyncLocalState、写入者 seq、已应用上下文、HLC、时间锚点），JSON。
+@DataClassName('SrsLocalStateRow')
+class SrsLocalState extends Table {
+  TextColumn get profileUid => text()();
+  TextColumn get json => text()();
+
+  @override
+  Set<Column> get primaryKey => {profileUid};
+}
+
+/// 笔记缓存（本机可重建，不同步）。
+@DataClassName('SrsNoteCacheRow')
+class SrsNotesCache extends Table {
+  TextColumn get id => text()();
+  TextColumn get profileUid => text()();
+  TextColumn get noteTypeId => text()();
+  TextColumn get guid => text()();
+  IntColumn get createdAt => integer()();
+  TextColumn get deckId => text().nullable()();
+  IntColumn get deletedAt => integer().nullable()();
+
+  /// 词状态索引：词形 / 读音归一化（第六轮审查第 20 条）。
+  TextColumn get termKey => text().withDefault(const Constant(''))();
+  TextColumn get readingKey => text().withDefault(const Constant(''))();
+
+  /// 排序 / 列表显示用的第一个字段（去 HTML）。
+  TextColumn get sortField => text().withDefault(const Constant(''))();
+  TextColumn get tagsJson => text().withDefault(const Constant('[]'))();
+  BoolColumn get pendingDecision =>
+      boolean().withDefault(const Constant(false))();
+  IntColumn get updatedAt => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// 卡片缓存（本机可重建，不同步）：可编辑字段的生效值 + 最后一条有效日志的排程结果。
+@DataClassName('SrsCardCacheRow')
+class SrsCardsCache extends Table {
+  TextColumn get id => text()();
+  TextColumn get profileUid => text()();
+  TextColumn get noteId => text()();
+  TextColumn get templateId => text()();
+  IntColumn get clozeOrd => integer().withDefault(const Constant(0))();
+  TextColumn get deckId => text()();
+  BoolColumn get suspended => boolean().withDefault(const Constant(false))();
+  IntColumn get buriedUntilDay => integer().nullable()();
+  IntColumn get flag => integer().withDefault(const Constant(0))();
+
+  /// 生成门（铁律 D，第六轮审查第 13 条）：笔记已删 / 模板已删 / 条件模板为空 / cN 已删时为真，
+  /// 查询层据此不显示、不进队列，不写任何同步行。
+  BoolColumn get hidden => boolean().withDefault(const Constant(false))();
+  TextColumn get queue => text().withDefault(const Constant('new'))();
+  IntColumn get dueDay => integer().nullable()();
+  IntColumn get dueAt => integer().nullable()();
+  IntColumn get scheduledDays => integer().withDefault(const Constant(0))();
+  IntColumn get reps => integer().withDefault(const Constant(0))();
+  IntColumn get lapses => integer().withDefault(const Constant(0))();
+  RealColumn get stability => real().nullable()();
+  RealColumn get difficulty => real().nullable()();
+  IntColumn get lastReviewedAt => integer().nullable()();
+  TextColumn get lastLogId => text().nullable()();
+  TextColumn get scheduler => text().withDefault(const Constant('fushi'))();
+
+  /// 新卡出卡顺序（笔记 createdAt, cardId）。
+  IntColumn get noteCreatedAt => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
 }

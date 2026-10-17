@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,8 +25,10 @@ import '../helpers/test_platform_services.dart';
 /// 同步/互联设置页排版的 golden 基线（C 系列重组的改前/改后对照）。
 ///
 /// 两页各出宽窄两档：900 宽 ≈ 桌面主从布局的详情 pane，400 宽 ≈ 手机单列。
-/// 高度给足 2400，让整页内容一次落在图里（详情容器是非懒加载的
-/// SingleChildScrollView，见 BUG-037），改前/改后的总长度一眼可比。
+/// 高度按档给足（宽 2400、窄 3400），让整页内容一次落在图里（详情容器是非懒
+/// 加载的 SingleChildScrollView，见 BUG-037），改前/改后的总长度一眼可比。
+/// 页面长高到装不下时 [_expectWholePageVisible] 直接报红，而不是让 golden
+/// 悄悄只截到上半页（BUG-3494：窄档曾被截掉约 650px 无人察觉）。
 ///
 /// 数据：同步页选 WebDAV（把凭据表单显示出来）；互联页开总开关 + 5 个对端地址
 /// （把最高的对端列表撑出来）。字体是测试字体（Ahem），只比排版不比字形。
@@ -37,10 +39,11 @@ Future<void> _pumpDetail(
   WidgetTester tester, {
   required SettingsDestination Function() destination,
   required double width,
+  required double height,
   required Future<void> Function(SyncRepository repo) seed,
 }) async {
   FocusManager.instance.highlightStrategy = FocusHighlightStrategy.alwaysTouch;
-  tester.view.physicalSize = Size(width, 2400);
+  tester.view.physicalSize = Size(width, height);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -48,8 +51,9 @@ Future<void> _pumpDetail(
   final FushiDatabase db = _testDb();
   final PreferencesRepository prefs = PreferencesRepository(db);
   await prefs.loadFromDb();
-  final Directory storeDir =
-      Directory.systemTemp.createTempSync('fushi_sync_golden');
+  final Directory storeDir = Directory.systemTemp.createTempSync(
+    'fushi_sync_golden',
+  );
   await seed(SyncRepository(db));
 
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
@@ -69,44 +73,46 @@ Future<void> _pumpDetail(
     if (storeDir.existsSync()) storeDir.deleteSync(recursive: true);
   });
 
-  await tester.pumpWidget(ProviderScope(
-    overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
-    child: MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        platform: TargetPlatform.android,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-        extensions: <ThemeExtension<dynamic>>[
-          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-        ],
-      ),
-      home: Scaffold(
-        body: FushiFocusRoot(
-          // refresh 必须真的重建：同步设置内存态异步 load 完成后靠它重算各节的
-          // 可见性谓词（互联页整页都门控在「互联已启用」上）。
-          child: StatefulBuilder(
-            builder: (BuildContext context, StateSetter setState) => Consumer(
-              builder: (BuildContext context, WidgetRef ref, _) {
-                final SettingsContext sc = SettingsContext(
-                  context: context,
-                  appModel: ref.read(appProvider),
-                  ref: ref,
-                  readerSource: ReaderFushiSource.instance,
-                  refresh: () => setState(() {}),
-                );
-                return const MaterialSettingsRenderer().buildDetailContent(
-                  settingsContext: sc,
-                  destination: destination(),
-                  scrollController: ScrollController(),
-                );
-              },
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          platform: TargetPlatform.android,
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
+          extensions: <ThemeExtension<dynamic>>[
+            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
+          ],
+        ),
+        home: Scaffold(
+          body: FushiFocusRoot(
+            // refresh 必须真的重建：同步设置内存态异步 load 完成后靠它重算各节的
+            // 可见性谓词（互联页整页都门控在「互联已启用」上）。
+            child: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) => Consumer(
+                builder: (BuildContext context, WidgetRef ref, _) {
+                  final SettingsContext sc = SettingsContext(
+                    context: context,
+                    appModel: ref.read(appProvider),
+                    ref: ref,
+                    readerSource: ReaderFushiSource.instance,
+                    refresh: () => setState(() {}),
+                  );
+                  return const MaterialSettingsRenderer().buildDetailContent(
+                    settingsContext: sc,
+                    destination: destination(),
+                    scrollController: ScrollController(),
+                  );
+                },
+              ),
             ),
           ),
         ),
       ),
     ),
-  ));
+  );
   // 不用 pumpAndSettle：互联页有常驻动画（LAN 发现的进度指示），永远 settle 不了。
   // 有界地多推几帧，让异步 load（偏好、凭据、对端列表）都落地即可。
   for (int i = 0; i < 12; i++) {
@@ -117,6 +123,20 @@ Future<void> _pumpDetail(
   Object? e;
   while ((e = tester.takeException()) != null) {
     debugPrint('[sync-golden] drained: $e');
+  }
+}
+
+/// 断言竖向滚动区都没有可滚余量：整页确实落在截图里。
+void _expectWholePageVisible(WidgetTester tester) {
+  for (final ScrollableState scrollable in tester.stateList<ScrollableState>(
+    find.byType(Scrollable),
+  )) {
+    if (scrollable.position.axis != Axis.vertical) continue;
+    expect(
+      scrollable.position.maxScrollExtent,
+      0,
+      reason: 'page no longer fits the golden viewport; raise its height',
+    );
   }
 }
 
@@ -163,38 +183,46 @@ void main() {
     FocusManager.instance.highlightStrategy = FocusHighlightStrategy.automatic;
   });
 
-  for (final ({String name, double width}) size
-      in <({String name, double width})>[
-    (name: 'wide', width: 900),
-    (name: 'narrow', width: 400),
-  ]) {
-    testWidgets('sync & backup page · ${size.name}',
-        (WidgetTester tester) async {
+  for (final ({String name, double width, double height}) size
+      in <({String name, double width, double height})>[
+        (name: 'wide', width: 900, height: 2400),
+        (name: 'narrow', width: 400, height: 3400),
+      ]) {
+    testWidgets('sync & backup page · ${size.name}', (
+      WidgetTester tester,
+    ) async {
       await _pumpDetail(
         tester,
         destination: buildSyncBackupDestination,
         width: size.width,
+        height: size.height,
         seed: _seedSyncPage,
       );
+      _expectWholePageVisible(tester);
       await expectLater(
         find.byType(MaterialApp),
         matchesGoldenFile(
-            'golden_files/sync_settings_sync_backup_${size.name}.png'),
+          'golden_files/sync_settings_sync_backup_${size.name}.png',
+        ),
       );
     }, tags: <String>['golden']);
 
-    testWidgets('interconnect page · ${size.name}',
-        (WidgetTester tester) async {
+    testWidgets('interconnect page · ${size.name}', (
+      WidgetTester tester,
+    ) async {
       await _pumpDetail(
         tester,
         destination: buildInterconnectDestination,
         width: size.width,
+        height: size.height,
         seed: _seedInterconnectPage,
       );
+      _expectWholePageVisible(tester);
       await expectLater(
         find.byType(MaterialApp),
         matchesGoldenFile(
-            'golden_files/sync_settings_interconnect_${size.name}.png'),
+          'golden_files/sync_settings_interconnect_${size.name}.png',
+        ),
       );
     }, tags: <String>['golden']);
   }

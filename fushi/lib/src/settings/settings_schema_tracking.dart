@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/tracking/media_tracking_settings_body.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -16,7 +16,7 @@ SettingsDestination buildMediaTrackingDestination() {
     ),
     title: t.settings_destination_tracking,
     summary: t.media_tracking_summary,
-    icon: Icons.auto_awesome_motion_outlined,
+    icon: FushiIcons.tracking,
     sections: const <SettingsSection>[],
     body: (SettingsContext settingsContext) => MediaTrackingSettingsBody(
       appModel: settingsContext.appModel,

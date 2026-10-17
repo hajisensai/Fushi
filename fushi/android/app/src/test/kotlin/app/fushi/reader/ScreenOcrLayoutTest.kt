@@ -94,4 +94,18 @@ class ScreenOcrLayoutTest {
         assertNull(ScreenOcrLayout.glyphAt(l, 5, 5))
         assertEquals(-1, ScreenOcrLayout.charIndexAt(l, 5, 5))
     }
+
+    @Test
+    fun blockLineOffsetsIndexIntoNewlineJoinedBlock() {
+        val lines = listOf("吾輩は猫で", "ある。名前は", "まだ無い。")
+        val block = lines.joinToString("\n")
+        val offsets = ScreenOcrLayout.blockLineOffsets(lines)
+        for (i in lines.indices) {
+            assertEquals(lines[i], block.substring(offsets[i], offsets[i] + lines[i].length))
+        }
+        // 不传块信息时，行就是自己的块（旧行为）。
+        val l = line("あいう", 0, 0, 30, 10, emptyList(), false)
+        assertEquals("あいう", l.blockText)
+        assertEquals(0, l.blockOffset)
+    }
 }

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
@@ -24,6 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 final Provider<ProfileDraftCoordinator> _testProfileDraftCoordinatorProvider =
     Provider<ProfileDraftCoordinator>(
@@ -80,6 +81,8 @@ class _FakeCssAppModel extends AppModel {
   @override
   Future<void> saveDictStyleRules(List<DictStyleRule> rules) async {
     savedStyleRules = rules;
+    // 与真 AppModel.saveDictStyleRules 同样通知监听者（编辑器靠它跟随刷新）。
+    notifyListeners();
   }
 
   @override
@@ -945,6 +948,114 @@ void main() {
     expect(appModel.savedStyleRules.single.props.bold, isTrue);
   });
 
+  testWidgets('对话框开着时别处（CLI）写入的规则：未改动的跟随刷新，保存按条合并不覆盖', (
+    WidgetTester tester,
+  ) async {
+    final _FakeCssAppModel appModel = _FakeCssAppModel();
+    appModel.savedStyleRules = <DictStyleRule>[
+      const DictStyleRule(
+        part: DictStylePart.expression,
+        props: DictStyleProps(bold: true),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: appModel,
+        home: const DictCssEditorDialog(previewBuilder: _stubPreview),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 本地：给默认选中的「释义正文」开粗体（只进草稿）。
+    await tester.ensureVisible(find.text(t.dict_style_prop_on).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.dict_style_prop_on).first);
+    await tester.pumpAndSettle();
+
+    // 别处：改了词头（本地没碰过）并新增音调规则。
+    await appModel.saveDictStyleRules(<DictStyleRule>[
+      const DictStyleRule(
+        part: DictStylePart.expression,
+        props: DictStyleProps(italic: true),
+      ),
+      const DictStyleRule(
+        part: DictStylePart.pitch,
+        props: DictStyleProps(underline: true),
+      ),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('.pitch-section'),
+      findsOneWidget,
+      reason: '未改动的草稿要跟随磁盘刷新，预览立刻吃到别处的新规则',
+    );
+
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pumpAndSettle();
+
+    final Map<DictStylePart, DictStyleProps> saved =
+        <DictStylePart, DictStyleProps>{
+      for (final DictStyleRule rule in appModel.savedStyleRules)
+        rule.part: rule.props,
+    };
+    expect(
+      saved.keys,
+      unorderedEquals(<DictStylePart>[
+        DictStylePart.expression,
+        DictStylePart.pitch,
+        DictStylePart.glossaryContent,
+      ]),
+    );
+    expect(
+      saved[DictStylePart.expression]!.italic,
+      isTrue,
+      reason: '本地没碰过的词头不能被陈旧草稿（bold）覆盖回去',
+    );
+    expect(saved[DictStylePart.expression]!.bold, isNull);
+    expect(saved[DictStylePart.pitch]!.underline, isTrue);
+    expect(saved[DictStylePart.glossaryContent]!.bold, isTrue);
+  });
+
+  test('overlayDirtyDictStyleRules：本地改 / 增 / 删按条生效，没碰过的取磁盘', () {
+    const DictStyleRule a = DictStyleRule(
+      part: DictStylePart.expression,
+      props: DictStyleProps(bold: true),
+    );
+    const DictStyleRule b = DictStyleRule(
+      part: DictStylePart.pitch,
+      props: DictStyleProps(italic: true),
+    );
+    const DictStyleRule c = DictStyleRule(
+      part: DictStylePart.glossaryContent,
+      dictionaryName: 'D',
+      props: DictStyleProps(underline: true),
+    );
+    final Map<String, String> baseline =
+        dictStyleRulesSnapshot(<DictStyleRule>[a, b]);
+    // 本地：删 b、加 c；磁盘：a 被别处改成 italic，b 被别处改成 bold。
+    const DictStyleRule aRemote = DictStyleRule(
+      part: DictStylePart.expression,
+      props: DictStyleProps(italic: true),
+    );
+    const DictStyleRule bRemote = DictStyleRule(
+      part: DictStylePart.pitch,
+      props: DictStyleProps(bold: true),
+    );
+    final List<DictStyleRule> out = overlayDirtyDictStyleRules(
+      draft: <DictStyleRule>[a, c],
+      baseline: baseline,
+      persisted: <DictStyleRule>[aRemote, bRemote],
+    );
+    expect(
+      out.map(dictStyleRuleKey),
+      <String>['expression@', 'glossaryContent@D'],
+      reason: '本地删掉的 b 按本地删；没碰过的 a 取磁盘版',
+    );
+    expect(out.first.props.italic, isTrue);
+  });
+
   testWidgets('只改手写 CSS 保存时不会清空已存的可视化规则', (
     WidgetTester tester,
   ) async {
@@ -1150,7 +1261,7 @@ void main() {
 
     // 手写框：原有 CSS 之后空一行追加，body{} 被白名单丢掉。
     await _switchToCodeTab(tester);
-    final TextField field = tester.widget<TextField>(_cssEditorField());
+    final TextField field = tester.widget<TextField>(glassUnwrap<TextField>(_cssEditorField()));
     expect(field.controller!.text, startsWith(savedGlobalCss));
     expect(field.controller!.text, contains('\n\n.glossary-content {'));
     expect(field.controller!.text, contains('line-height: 1.6;'));

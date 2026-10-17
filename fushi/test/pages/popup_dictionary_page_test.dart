@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +23,12 @@ class PopupTestAppModel extends AppModel {
 
   @override
   double get popupMaxWidth => 400;
+
+  @override
+  double get dictionaryFontSize => 16;
+
+  @override
+  double get appUiScale => 1.0;
 
   @override
   List<String> get enabledAudioSources => const <String>[];
@@ -124,7 +130,7 @@ void main() {
     expect(closed, isTrue);
   });
 
-  testWidgets('desktop lookup opens in-app instead of launching hibiki url', (
+  testWidgets('desktop lookup opens in-app instead of launching fushi url', (
     WidgetTester tester,
   ) async {
     final AppModel appModel = AppModel(testPlatformServices());

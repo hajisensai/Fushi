@@ -46,6 +46,7 @@ class _SelectedModelService implements MangaOcrService, MangaOcrPageService {
   Future<MangaOcrPageSession> openPageSession({
     required String imageDirPath,
     void Function(MangaOcrAcceleration)? onAcceleration,
+    bool textImagesOnly = false,
   }) async => throw StateError('not used by volume cache recovery');
 }
 

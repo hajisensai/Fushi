@@ -19,6 +19,22 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
+/// Dropbox `list_folder` 条目（FileMetadata / FolderMetadata）→ [AssetEntry]。
+///
+/// 修改时间取 `server_modified`（Dropbox 服务端时刻，`Z` 结尾的 ISO 8601），不取
+/// `client_modified`（上传方自报）。文件夹条目没有修改时间，为 null。
+AssetEntry dropboxEntryToAssetEntry(Map<String, dynamic> e) {
+  final bool isFolder = e['.tag'] == 'folder';
+  return AssetEntry(
+    id: e['path_lower'] as String? ?? e['path_display'] as String,
+    name: e['name'] as String,
+    isFolder: isFolder,
+    sizeBytes: isFolder ? null : (e['size'] as num?)?.toInt(),
+    modifiedAt: isFolder ? null : syncIsoTimestampMs(e['server_modified']),
+    revision: DropboxSyncBackend._contentRevisionOf(e),
+  );
+}
+
 /// Dropbox sync backend via Dropbox API v2.
 ///
 /// Auth: OAuth 2.0 PKCE flow（外壳在 [PkceOAuthBackendMixin]）.
@@ -328,7 +344,7 @@ class DropboxSyncBackend extends SyncBackend
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final fileLength = await file.length();
     final apiArg = jsonEncode({
@@ -357,7 +373,7 @@ class DropboxSyncBackend extends SyncBackend
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final apiArg = jsonEncode({'path': fileId});
     final request = http.Request(
@@ -472,13 +488,16 @@ class DropboxSyncBackend extends SyncBackend
   @override
   Future<List<AssetEntry>> listChildren(String namespaceId) async {
     final entries = await _listFolder(namespaceId);
-    return entries
-        .map((e) => AssetEntry(
-              id: e['path_lower'] as String? ?? e['path_display'] as String,
-              name: e['name'] as String,
-              isFolder: e['.tag'] == 'folder',
-            ))
-        .toList();
+    return entries.map(dropboxEntryToAssetEntry).toList();
+  }
+
+  /// 文件条目的内容版本标记：`content_hash`（内容哈希）优先，没有时退到 `rev`
+  /// （每次写入都换新）。文件夹两者都没有，返回 null。
+  static String? _contentRevisionOf(Map<String, dynamic> entry) {
+    final Object? hash = entry['content_hash'];
+    if (hash is String && hash.isNotEmpty) return 'content_hash:$hash';
+    final Object? rev = entry['rev'];
+    return rev is String && rev.isNotEmpty ? 'rev:$rev' : null;
   }
 
   @override

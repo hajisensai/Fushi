@@ -77,7 +77,7 @@ function __fushiEventInsidePopup(e){
     }
 }
 /* BUG-688: the extension floating popup scrolls on the SHADOW HOST
-   (#hibiki-popup-host has overflow-y:auto + max-height; #entries-container is
+   (#fushi-popup-host has overflow-y:auto + max-height; #entries-container is
    neutralized to overflow:visible inside the shadow), while the in-app popup
    scrolls the document itself. These two resolve the wheel-scroll surface:
    - __fushiShadowHost(): the shadow host element, or null in-app / pre-shadow.
@@ -142,7 +142,7 @@ window.__fushiReportJsError = function(source, message, stack) {
 
 //
 //  popup.js
-//  Hibiki (adapted from Hoshi Reader for Android InAppWebView)
+//  Fushi (adapted from Hoshi Reader for Android InAppWebView)
 //
 //  Copyright © 2026 Manhhao.
 //  Copyright © 2023-2025 Yomitan Authors.
@@ -259,6 +259,86 @@ async function refreshRenderedMineStates(target) {
     return pending.length;
 }
 window.fushiRefreshMineStates = refreshRenderedMineStates;
+
+// Fushi 复习（SRS）词状态小标记（「复习中 · 3天后」/「新卡」/「已暂停」）。
+//
+// 与「已制卡 ✓ / 可制卡 +」是两件独立的事：✓ 问的是 Anki（duplicateCheck，bool
+// 契约不变），这里问的是 Fushi 自己的复习库（srsTermStatus，回 null 或
+// {queue, dueLabel, suspended, cardId, noteId, cardCount, tooltip}）。两边都有这个
+// 词时两个标记同时出现。
+//
+// 开关：app 内宿主注入 window.__fushiSrsEnabled（复习模块开 = true / 关 = false）。
+// **false 时既不渲染也不发任何桥调用**（模块关着 = 零开销）。浏览器扩展没有注入
+// 通道 → undefined → 照常问桥；扩展 shim 在服务端回 404（模块关）后会记住一段时间
+// 不再转发。文案（dueLabel / tooltip）由宿主本地化好再下发，本文件不带任何语言串。
+function applySrsStatusBadge(badge, status) {
+    const ok = status && typeof status === 'object' &&
+        typeof status.cardId === 'string' && status.cardId !== '';
+    badge.__fushiSrsStatus = ok ? status : null;
+    badge.classList.toggle('srs-status-hidden', !ok);
+    for (const kind of ['new', 'learning', 'review', 'suspended']) {
+        badge.classList.remove(`srs-status-${kind}`);
+    }
+    if (!ok) {
+        badge.textContent = '';
+        setInlineButtonTip(badge, '');
+        return;
+    }
+    const kind = status.suspended === true
+        ? 'suspended'
+        : status.queue === 'new'
+            ? 'new'
+            : status.queue === 'review' ? 'review' : 'learning';
+    badge.classList.add(`srs-status-${kind}`);
+    badge.textContent = String(status.dueLabel || '');
+    // 不用原生 title（离屏 WebView2 上会飞，BUG-842），走 DOM 自绘提示。
+    setInlineButtonTip(badge, String(status.tooltip || status.dueLabel || ''));
+}
+
+function createSrsStatusBadge(expression, reading) {
+    if (window.__fushiSrsEnabled === false) return null;
+    const bridge = window.flutter_inappwebview;
+    if (!bridge || typeof bridge.callHandler !== 'function') return null;
+    const badge = el('button', {
+        className: 'inline-action-button srs-status-badge srs-status-hidden',
+        type: 'button',
+        onclick: async (event) => {
+            event.stopPropagation();
+            const status = badge.__fushiSrsStatus;
+            if (!status || !status.cardId) return;
+            if (badge.dataset.busy === '1') return;
+            badge.dataset.busy = '1';
+            try {
+                await bridge.callHandler('srsOpenCard', {
+                    cardId: status.cardId,
+                    noteId: typeof status.noteId === 'string' ? status.noteId : '',
+                });
+            } catch (e) {
+                console.error('srsOpenCard failed', e);
+            } finally {
+                badge.dataset.busy = '';
+            }
+        },
+    });
+    const fetchStatus = () => bridge.callHandler(
+        'srsTermStatus', { expression: expression || '', reading: reading || '' });
+    badge.__fushiRefreshSrsStatus = async () => {
+        try {
+            invalidateEntryStateCheck(badge);
+            applySrsStatusBadge(badge, await fetchStatus());
+        } catch (e) {
+            // 纯装饰：失败保持现状。
+            console.error('refreshSrsStatus failed', e);
+        }
+    };
+    scheduleEntryStateCheck(
+        badge,
+        `srs\u0000${mineEntryKey(expression, reading)}`,
+        fetchStatus,
+        (status) => applySrsStatusBadge(badge, status),
+    );
+    return badge;
+}
 
 // BUG-1833 follow-up: favorite/Anki state is decoration for each result header,
 // not a prerequisite for revealing the dictionary card. A large lookup can
@@ -597,11 +677,11 @@ function buildSentenceContextPicker() {
     return picker;
 }
 
-// BUG-763/766：「制卡·选择句子上下文」模态已改为 app 原生顶层 Flutter 对话框
-// （SentenceContextDialog，宿主经 openSentenceContextModal 桥接弹出），不再画在查词
-// 弹窗 WebView 内（那受弹窗表面尺寸/半透明限制，句子框重叠、显示不全）。
-// 这里只保留词条上「调整上下文」按钮 → callHandler('openSentenceContextModal',
-// {entryIndex, matched})，与确认制卡回点用的 fushiPopupMineEntryByIndex（见文件末尾）。
+// BUG-763/766：「制卡前调整」对话框是 app 原生顶层 Flutter 对话框（现为「高级制卡」，
+// 宿主经 openAdvancedMining 桥接弹出），不画在查词弹窗 WebView 内（那受弹窗表面
+// 尺寸/半透明限制，句子框重叠、显示不全）。这里只保留词条上的入口按钮 →
+// callHandler('openAdvancedMining', {entryIndex, matched, expression})，与确认制卡回点用的
+// fushiPopupMineEntryByIndex（见文件末尾）。
 
 
 function el(tag, props = {}, children = []) {
@@ -648,6 +728,8 @@ const ICON_PATHS = {
     // open_in_new（TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮，直接跳去
     // Anki 定位该词的已存在卡；仅 data-mined 时显示）
     openInAnki: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
+    // search_off（查完为空的 M3E 空态色块图标；取代旧的彩色 emoji 放大镜）
+    searchOff: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3 6.08 3 3.28 5.64 3.03 9h2.02C5.3 6.75 7.18 5 9.5 5 11.99 5 14 7.01 14 9.5S11.99 14 9.5 14c-.17 0-.33-.03-.5-.05v2.02c.17.02.33.03.5.03 1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zM6.47 10.82L4 13.29 1.53 10.82l-.71.71L3.29 14 .82 16.47l.71.71L4 14.71l2.47 2.47.71-.71L4.71 14l2.47-2.47z',
 };
 
 function iconSvg(name) {
@@ -1217,6 +1299,17 @@ function isFlowEscapingStructuredContentStyle(property, value) {
     return false;
 }
 
+// 词典给行内节点加 white-space:nowrap，本意是「这组词别拆开」（日本語シソーラス 的
+// `肝所　0412.05 ≪勘所（意味）≫` 一整组就是一个 nowrap span）。但 nowrap 让
+// `.glossary-group` 的 overflow-wrap:anywhere（BUG-1827）失效，组宽超过卡片时整组
+// 画到卡外。改写成原子 inline-block + max-width:100%：放得下的整组换到下一行（与
+// nowrap 同效），比一整行还宽时才在组内按父级的 white-space 折行。只动行内节点；
+// 词典显式给了 display 的、块级标签的 nowrap 照原样。
+function isInlineStructuredContentElement(element) {
+    const tag = element.tagName;
+    return tag === 'SPAN' || tag === 'A';
+}
+
 function setStructuredContentElementStyle(element, style) {
     for (const [property, value] of Object.entries(style)) {
         if (isFlowEscapingStructuredContentStyle(property, value)) {
@@ -1227,6 +1320,11 @@ function setStructuredContentElementStyle(element, style) {
         } else {
             element.style[property] = value;
         }
+    }
+    if (style.whiteSpace === 'nowrap' && style.display === undefined && isInlineStructuredContentElement(element)) {
+        element.style.whiteSpace = '';
+        element.style.display = 'inline-block';
+        element.style.maxWidth = '100%';
     }
 }
 
@@ -1333,9 +1431,11 @@ function rewriteExportedGlossaryAnchors(root) {
         if (/^https?:\/\//i.test(href) || href.startsWith('#')) {
             return;
         }
+        // 词头只取基字：textContent 会把 <rt> 振假名拼进去（「歯が立たない」→
+        // 「歯はが立たたない」），与 handleGlossaryAnchorClick 同一口径（BUG-2456）。
         const word = /^(?:sound|image|dictmedia):/i.test(href)
             ? ''
-            : (anchor.textContent || '').trim();
+            : linkVisibleBaseText(anchor);
         if (!word) {
             anchor.removeAttribute('href');
             return;
@@ -1383,6 +1483,11 @@ let lastSelectionSpans = [];
 function snapshotSelection() {
     lastSelection = __fushiSel()?.toString() || '';
     lastSelectionSpans = lastSelection ? collectGlossarySelectionSpans() : [];
+}
+
+function clearSelectionSnapshot() {
+    lastSelection = '';
+    lastSelectionSpans = [];
 }
 
 // 屏幕侧释义容器的坐标锚点。两侧共享 entry.glossaries 原始下标。
@@ -2118,6 +2223,16 @@ function createDefinitionImage(data, dictionary, exporting = false) {
         if (imageUrl === null) return node;
         enableDefinitionImagePreview(node, imageUrl, nodeData?.alt || title || '');
         const inlineSvg = !hasDimensions && isSvg;
+        // 用户 10-09：词典里的 SVG 小图标（◆ / ✓ / 「例」这类外字与记号）也按统一样式着色。
+        // <img> 里的 SVG 改不了 fill，只能把它当遮罩：.gloss-image-background 以同一张图为
+        // mask、底色取 currentColor（统一层里链接色 = primary），img 本身透明但保留占位。
+        // 只认「图标尺寸」的 SVG（无尺寸外字 1.2em，或 ≤3em 的 em 单位小图）：插图级 SVG
+        // 涂成单色剪影就毁了，不碰。真正生效与否由 popup.css 的 .fushi-dict-unified 作用域决定，
+        // 关掉统一样式时这个标记无任何效果。
+        if (isSvg && (inlineSvg || (useEmUnits && usedWidth <= 3 && usedWidth * invAspectRatio <= 3))) {
+            node.dataset.fushiSvgIcon = 'true';
+            imageBackground.style.setProperty('--fushi-svg-image', `url("${imageUrl.replace(/"/g, '%22')}")`);
+        }
         if (!inlineSvg && shouldRenderDefinitionImageToCanvas(path, appearance, usedWidth, invAspectRatio)) {
             imageContainer.appendChild(createDefinitionImageCanvas(imageUrl, nodeData?.alt || title || '', (canvas, sourceImage) => {
                 renderDefinitionImageToCanvas(canvas, sourceImage, usedWidth, invAspectRatio, appearance);
@@ -2440,6 +2555,14 @@ async function minedCardAction(expression, reading, frequencies, pitches, rules,
     const fields = await buildMinePayload(
         expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
     return await window.flutter_inappwebview.callHandler('minedCardAction', fields);
+}
+
+// BUG-3492：卡还在后台写入 Anki（按钮显示「已加入」）时的覆盖请求。宿主收下后排到那次
+// 写入之后、落地自动覆盖，回 {accepted, message}；没接这根桥的宿主回 null / accepted:false。
+async function queueOverwrite(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+    const fields = await buildMinePayload(
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+    return await window.flutter_inappwebview.callHandler('queueOverwrite', fields);
 }
 
 // BUG-1064 —— app 外表面的「卡片已在 Anki 中」操作面板（IN-PAGE 版）。
@@ -3192,15 +3315,21 @@ function createPitchGroup(pitchData, reading) {
     const container = el('div', { className: 'pitch-group', 'data-details': dictionaries.join(', ') });
     const sourcePills = dictionaries.map((dictionary) => el('span', { className: 'pitch-dict-label', textContent: __fushiDictDisplayName(dictionary) }));
     if (sourcePills.length > 1) {
-        // 合并行默认只挂**一枚**「N 本辞典」药丸：五本音调词典同标 [3] 时一排五枚来源
+        // 合并行默认只挂**一枚**「音调 · N」药丸：五本音调词典同标 [3] 时一排五枚来源
         // 药丸把读音挤到下一行，读起来仍像重复。来源名单不丢——悬停看 title，点击
         // （触屏没有悬停）就地展开 / 收起各来源药丸。
+        // 来源名单走文档内的 CSS 悬停提示（data-sources → ::after），**不用原生 title**：
+        // Windows WebView2 的 title 提示是一个独立的 Win32 顶层弹窗，视频页查词浮层关闭 /
+        // 热槽 WebView 被藏起时它不随文档消失，残留在画面上关不掉（用户 10-09 反馈）。
+        const sourceNames = sourcePills.map((pill) => pill.textContent).join(', ');
         const countPill = el('span', {
             className: 'pitch-dict-label pitch-dict-count',
-            textContent: (window.i18nPitchSourceCount || '{count} 本辞典')
+            // 用户 10-09：「N 本辞典」看不出这是音调，改成「音调 · N」（标出是什么 + 保留来源数）。
+            textContent: (window.i18nPitchSourceCount || '音调 · {count}')
                 .replace('{count}', String(sourcePills.length)),
-            title: sourcePills.map((pill) => pill.textContent).join(', '),
+            'data-sources': sourceNames,
         });
+        countPill.setAttribute('aria-label', sourceNames);
         countPill.setAttribute('role', 'button');
         countPill.setAttribute('aria-expanded', 'false');
         sourcePills.forEach((pill) => { pill.style.display = 'none'; });
@@ -3452,13 +3581,13 @@ function isRedirectGlossary(glossary) {
 
 function createGlossarySectionWrapper(entry) {
     // TODO-804: a term dictionary disabled in 词典管理 (its show/hide switch off)
-    // is added to hiddenDictionaryNames by the host. Term dictionaries are still
-    // registered in the native engine (see AppModel.bucketDictPaths — hidden term
-    // dicts stay in the bucket because filtering happens at render time), so the
-    // FFI lookup still returns their glossaries. Drop them here, the single
-    // grouping point shared by every term-glossary render path, so a disabled
-    // dictionary's definitions never surface in the lookup popup. Mirrors how
-    // collapsedDictionaryNames is consumed in createGlossarySection.
+    // is added to hiddenDictionaryNames by the host. Since BUG-3454 hidden
+    // dictionaries are no longer loaded into the native engine at all
+    // (AppModel.bucketDictPaths); this filter stays as a second line of defence
+    // for the window between a toggle and the scheduled engine reload. Drop them
+    // here, the single grouping point shared by every term-glossary render path,
+    // so a disabled dictionary's definitions never surface in the lookup popup.
+    // Mirrors how collapsedDictionaryNames is consumed in createGlossarySection.
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     const grouped = {};
     // glossaryIndex 是**原始** entry.glossaries 下标，不是分组后的序号：它是屏幕 DOM 与
@@ -3508,6 +3637,14 @@ async function fetchAudioUrl(expression, reading) {
 // 返回值仍是 boolean（`if (!await playWordAudio(url))` 与宿主的 `r === true` 契约一字
 // 未动），原因另存到 realm 上的 [__fushiWordAudioLastError]，由注入的 report 包装读走
 // 并随 `wordAudioPlayed` 回传。成功时清空，避免下一次失败读到上一次的陈旧原因。
+//
+// BUG-3311：Android app 内宿主注入 `window.__fushiWordAudioViaHost = true`，单词音频改交
+// 宿主原生播放器（不申请音频焦点）。WebView 的 <audio> 一出声，Chromium 的
+// AudioFocusDelegate 就以 GAIN_TRANSIENT_MAY_DUCK 申请系统音频焦点——宿主无法关掉；
+// 部分 ROM（联想 ZUI 实测）据此把 app 自己正在播的视频一起压低数秒。宿主播放失败
+// （返回非 true / 桥异常）才回落 <audio>，保证不哑。宿主的 true 只在原生播放器真的
+// start 之后才回：远端源 404 / 断网 / 编码不支持时原生回 false，这里回落 <audio>，
+// 仍失败就照旧记 __fushiWordAudioLastError 并由调用方 showAudioError。
 function playWordAudio(audioUrl) {
     const noteError = (e) => {
         window.__fushiWordAudioLastError =
@@ -3521,6 +3658,29 @@ function playWordAudio(audioUrl) {
         if (window.__fushiWordAudio) {
             try { window.__fushiWordAudio.pause(); } catch (_) { /* no-op */ }
         }
+        if (window.__fushiWordAudioViaHost === true && window.flutter_inappwebview) {
+            return Promise.resolve(window.flutter_inappwebview.callHandler(
+                'playWordAudioNative', audioUrl)).then((r) => {
+                if (r === true) {
+                    window.__fushiWordAudioLastError = '';
+                    return true;
+                }
+                return playWordAudioInWebView(audioUrl);
+            }, () => playWordAudioInWebView(audioUrl));
+        }
+        return playWordAudioInWebView(audioUrl);
+    } catch (e) {
+        noteError(e);
+        return Promise.resolve(false);
+    }
+}
+
+function playWordAudioInWebView(audioUrl) {
+    const noteError = (e) => {
+        window.__fushiWordAudioLastError =
+            (e && (e.name || e.message)) || 'UnknownError';
+    };
+    try {
         const audio = new Audio(audioUrl);
         const v = window.lookupAudioVolume;
         if (typeof v === 'number' && isFinite(v)) {
@@ -3552,7 +3712,7 @@ function showAudioError(button) {
 }
 
 // BUG-842：Windows 桌面查词弹窗是 WebView2 离屏合成（CompositionController→DirectComposition
-// visual→WGC 捕获→Flutter texture，再经 HibikiAppUiScale 的 FittedBox 拉伸）。HTML `title`
+// visual→WGC 捕获→Flutter texture，再经 FushiAppUiScale 的 FittedBox 拉伸）。HTML `title`
 // 的原生工具提示是 WebView2 生成的独立 top-level OS 窗口，按「父 HWND 原点 + WebView 内部未
 // 拉伸的逻辑坐标」定位，与纹理真正合成的位置（弹窗卡片）错位，于是提示「飞」到窗口角落。
 // 同型的原生右键菜单错位已由 dictionary_popup_webview.dart 换 Flutter showMenu 规避，但 title
@@ -3663,6 +3823,11 @@ function createAudioButton(expression, reading, entryIndex) {
     const button = el('button', {
         className: 'inline-action-button audio-button',
         onclick: async () => {
+            // 长按刚弹出音频源菜单：这次抬起带来的 click 不能再播默认源。
+            if (button.dataset.fushiSuppressClick === '1') {
+                delete button.dataset.fushiSuppressClick;
+                return;
+            }
             const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex);
             if (!audioUrl) {
                 // TODO-1251: 无音频源 → 明确「暂无发音」提示，区别于播放失败。
@@ -3675,7 +3840,464 @@ function createAudioButton(expression, reading, entryIndex) {
         }
     });
     setButtonIcon(button, 'audio');
+    bindAudioSourceMenuTriggers(button, expression, reading || expression);
     return button;
+}
+
+// ── 「选择音频源」菜单 ────────────────────────────────────────────────────────────
+// 单击 ♪ 播默认源（首个解析出的源，与原行为一致）；触屏长按 ~450ms / 桌面右键 /
+// 按钮聚焦时 Shift+F10 或 ContextMenu 键 → 在按钮旁弹出菜单，列出当前词每个启用
+// 音频源各自解析出的候选（源名 + 变体），点项即播并关菜单。列表经宿主桥
+// `listWordAudioSources({expression, reading})` → `[{name, variant, url}]` 取得：
+// app 内 / app 外由 Dart 逐源解析（listWordAudioWebViewChoices），扩展经 background
+// 打 /api/lookup/audio/list。旧宿主没有这根桥（抛错 / 回 null）时菜单退化为只列
+// 默认源一项，绝不报错。选中项只用于本次播放：制卡仍按 TODO-766 现解析默认源
+// （没有「制卡用指定音频」的既有桥，不在这里发明）。
+// 菜单挂在 __fushiOverlayParent() 顶层（与 .audio-hint 同一套 fixed 定位），开着时
+// 记一层 __fushiPopupModalDepth，让宿主键桥（BUG-1347）把方向键 / Esc 让给菜单。
+const AUDIO_MENU_LONG_PRESS_MS = 450;
+const AUDIO_MENU_MOVE_TOLERANCE_PX = 10;
+let __fushiAudioMenu = null; // { menu, button, modal, onDocPointerDown, generation }
+let __fushiAudioMenuGeneration = 0;
+
+function bindAudioSourceMenuTriggers(button, expression, reading) {
+    let pressTimer = 0;
+    let pressStart = null;
+    const cancelPress = () => {
+        if (pressTimer) clearTimeout(pressTimer);
+        pressTimer = 0;
+        pressStart = null;
+    };
+    button.setAttribute('aria-haspopup', 'menu');
+    button.setAttribute('aria-expanded', 'false');
+    button.addEventListener('pointerdown', (e) => {
+        // 长按后有的内核不再派发 click：残留的吞点击标记在下一次按下时作废。
+        delete button.dataset.fushiSuppressClick;
+        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+        cancelPress();
+        pressStart = { x: e.clientX, y: e.clientY };
+        pressTimer = setTimeout(() => {
+            pressTimer = 0;
+            pressStart = null;
+            button.dataset.fushiSuppressClick = '1';
+            openAudioSourceMenu(button, expression, reading, { focusFirst: false });
+        }, AUDIO_MENU_LONG_PRESS_MS);
+    });
+    button.addEventListener('pointermove', (e) => {
+        if (!pressStart) return;
+        if (Math.abs(e.clientX - pressStart.x) > AUDIO_MENU_MOVE_TOLERANCE_PX ||
+            Math.abs(e.clientY - pressStart.y) > AUDIO_MENU_MOVE_TOLERANCE_PX) {
+            cancelPress();
+        }
+    });
+    button.addEventListener('pointerup', cancelPress);
+    button.addEventListener('pointercancel', cancelPress);
+    button.addEventListener('pointerleave', cancelPress);
+    // 桌面右键（Android 长按同样会派发 contextmenu：菜单已由长按打开时只吞掉原生菜单）。
+    button.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (__fushiAudioMenu && __fushiAudioMenu.button === button) return;
+        cancelPress();
+        if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+            button.dataset.fushiSuppressClick = '1';
+        }
+        openAudioSourceMenu(button, expression, reading, { focusFirst: false });
+    });
+    button.addEventListener('keydown', (e) => {
+        const isMenuKey = e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
+        if (!isMenuKey) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openAudioSourceMenu(button, expression, reading, { focusFirst: true });
+    });
+}
+
+async function fetchAudioSourceChoices(expression, reading) {
+    let list = null;
+    try {
+        list = await window.flutter_inappwebview.callHandler(
+            'listWordAudioSources', { expression, reading });
+    } catch (_) {
+        list = null;
+    }
+    if (Array.isArray(list)) {
+        return list.filter((item) => item && typeof item.url === 'string' && item.url);
+    }
+    // 旧宿主没有列表桥：退化成只列默认源。
+    const url = await fetchAudioUrl(expression, reading);
+    return url ? [{ name: '', variant: '', url }] : [];
+}
+
+function closeAudioSourceMenu(restoreFocus) {
+    const state = __fushiAudioMenu;
+    if (!state) return;
+    __fushiAudioMenu = null;
+    window.__fushiAudioMenuOpen = false;
+    document.removeEventListener('pointerdown', state.onDocPointerDown, true);
+    if (state.onViewportChange) {
+        window.removeEventListener('scroll', state.onViewportChange, true);
+        window.removeEventListener('resize', state.onViewportChange);
+    }
+    if (state.modal) {
+        window.__fushiPopupModalDepth = Math.max(0, (window.__fushiPopupModalDepth || 1) - 1);
+    }
+    state.button.setAttribute('aria-expanded', 'false');
+    const menu = state.menu;
+    menu.classList.remove('visible');
+    setTimeout(() => menu.remove(), 160);
+    if (restoreFocus && state.button.isConnected) {
+        try { state.button.focus({ preventScroll: true }); } catch (_) { /* no-op */ }
+    }
+}
+window.fushiCloseAudioSourceMenu = closeAudioSourceMenu;
+
+// 扩展里菜单挂在 shadow root 顶层，是 #entries-container 的兄弟：容器上 setProperty 的
+// 主题变量（--md-* 等）继承不到，材质 / 墨水屏 class 也不在祖先链上。这里把这几样从
+// 容器（in-app 是 <html>）抄到菜单自身。in-app 菜单挂 body，变量本就继承，抄一遍无害。
+const AUDIO_MENU_THEME_VARS = [
+    '--text-color', '--background-color', '--md-primary', '--md-on-primary',
+    '--md-surface-container-high', '--md-outline-variant', '--primary-color',
+    '--surface-container-high', '--outline-variant', '--fushi-card-bg-rgb',
+];
+function applyAudioMenuTheme(menu) {
+    const container = __fushiContainer();
+    const themeEl = (window.__fushiRoot && container) ? container : document.documentElement;
+    const html = document.documentElement;
+    try {
+        const cs = getComputedStyle(themeEl);
+        for (const name of AUDIO_MENU_THEME_VARS) {
+            const v = cs.getPropertyValue(name);
+            if (v && v.trim()) menu.style.setProperty(name, v.trim());
+        }
+        // 独立 shadow 宿主里没有弹窗的字体链，沿用弹窗容器的。
+        if (cs.fontFamily) menu.style.fontFamily = cs.fontFamily;
+    } catch (_) { /* 无样式信息：走 CSS 兜底色 */ }
+    const has = (cls) => html.classList.contains(cls) ||
+        !!(container && container.classList && container.classList.contains(cls));
+    if (has('fushi-glass-host') || has('fushi-glass')) menu.classList.add('is-glass');
+    if (has('eink')) menu.classList.add('is-eink');
+    // 宿主声明背后采不到模糊（iOS / macOS）：菜单用实底，不赌 backdrop-filter。
+    if (has('fushi-solid-backdrop')) menu.classList.add('is-solid');
+    // 明暗：菜单可能挂在独立 shadow 宿主里，祖先链上没有 data-theme，从容器 / <html> 抄。
+    const theme = (container && container.getAttribute && container.getAttribute('data-theme')) ||
+        html.getAttribute('data-theme');
+    if (theme) menu.setAttribute('data-theme', theme);
+}
+
+// 菜单落点（纯函数，供测试）：所有坐标都在 getBoundingClientRect 同一空间。
+// 默认在按钮下方、右缘对齐按钮右缘（popover 口径），间距 [gap]；下方放不下且上方更宽裕
+// 时翻到上方；横向夹进 [bounds]（弹窗可见区，已扣滚动条）内、两侧留 [margin]。
+// 返回 { left, top, placement: 'below'|'above', maxHeight, originX }，originX 是按钮
+// 右缘在菜单内的横坐标（展开动画的 transform-origin 落在贴按钮的那个角）。
+function computeAudioMenuPlacement(btn, menuW, menuH, bounds, gap, margin) {
+    const availBelow = bounds.bottom - btn.bottom - gap - margin;
+    const availAbove = btn.top - bounds.top - gap - margin;
+    const below = availBelow >= menuH || availBelow >= availAbove;
+    const maxHeight = Math.max(60, below ? availBelow : availAbove);
+    const height = Math.min(menuH, maxHeight);
+    const minLeft = bounds.left + margin;
+    const maxLeft = bounds.right - margin - menuW;
+    let left = btn.right - menuW;
+    left = maxLeft < minLeft ? minLeft : Math.max(minLeft, Math.min(left, maxLeft));
+    const top = below ? btn.bottom + gap : btn.top - gap - height;
+    const originX = Math.max(0, Math.min(menuW, btn.right - left));
+    return { left, top, placement: below ? 'below' : 'above', maxHeight, originX };
+}
+
+// 弹窗的可见区（getBoundingClientRect 空间）：视口（fixed right/bottom:0 量出，天然扣掉
+// 经典滚动条；底边按宿主注入的可见高度 BUG-2734 收缩），再与扩展弹窗宿主（shadow host，
+// 固定尺寸、内部滚动的那只卡）的内侧求交——菜单挂在宿主外面，但仍只在弹窗范围里展开。
+function audioMenuBounds(menu, origin) {
+    const s = menu.style;
+    s.left = 'auto';
+    s.top = 'auto';
+    s.right = '0px';
+    s.bottom = '0px';
+    const edge = menu.getBoundingClientRect();
+    s.right = 'auto';
+    s.bottom = 'auto';
+    s.left = '0px';
+    s.top = '0px';
+    const bounds = { left: origin.left, top: origin.top, right: edge.right, bottom: edge.bottom };
+    const ih = window.innerHeight || 0;
+    const vh = __fushiVisibleViewportHeight();
+    if (ih > 0 && vh > 0 && vh < ih) {
+        bounds.bottom = bounds.top + (bounds.bottom - bounds.top) * (vh / ih);
+    }
+    const host = window.__fushiRoot && window.__fushiRoot.host;
+    if (host && typeof host.getBoundingClientRect === 'function') {
+        const r = host.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+            const ow = host.offsetWidth || r.width;
+            const scrollbar = host.clientWidth ? Math.max(0, (ow - host.clientWidth) * (r.width / ow)) : 0;
+            bounds.left = Math.max(bounds.left, r.left);
+            bounds.top = Math.max(bounds.top, r.top);
+            bounds.right = Math.min(bounds.right, r.right - scrollbar);
+            bounds.bottom = Math.min(bounds.bottom, r.bottom);
+        }
+    }
+    return bounds;
+}
+
+function positionAudioSourceMenu(menu, button) {
+    const s = menu.style;
+    // 量的时候摘掉展开动画的 scale（transform 会改变 getBoundingClientRect）。
+    s.transform = 'none';
+    s.maxHeight = '';
+    // fixed 的包含块与缩放都不一定是视口原样（宿主 zoom、带 filter 的祖先）：放到 (0,0)
+    // 与 (100,100) 各量一次，得到包含块原点与「样式 px → 矩形 px」的比例，再换算回去。
+    s.right = 'auto';
+    s.bottom = 'auto';
+    s.left = '0px';
+    s.top = '0px';
+    const origin = menu.getBoundingClientRect();
+    s.left = '100px';
+    s.top = '100px';
+    const probe = menu.getBoundingClientRect();
+    const sx = (probe.left - origin.left) / 100 || 1;
+    const sy = (probe.top - origin.top) / 100 || 1;
+    s.left = '0px';
+    s.top = '0px';
+    const bounds = audioMenuBounds(menu, origin);
+    const margin = 8;
+    s.maxWidth = Math.max(160, Math.min(320 * sx, bounds.right - bounds.left - margin * 2) / sx) + 'px';
+    const size = menu.getBoundingClientRect();
+    const btn = button.getBoundingClientRect();
+    const place = computeAudioMenuPlacement(btn, size.width, size.height, bounds, 6, margin);
+    s.maxHeight = (place.maxHeight / sy) + 'px';
+    s.left = ((place.left - origin.left) / sx) + 'px';
+    s.top = ((place.top - origin.top) / sy) + 'px';
+    s.transformOrigin = (place.originX / sx) + 'px ' + (place.placement === 'below' ? '0' : '100%');
+    s.transform = '';
+    menu.dataset.placement = place.placement;
+}
+
+// 菜单的挂载点。in-app / 嵌套子层（iframe 文档）挂 body：fixed 就是弹窗自己的视口。
+// 扩展第一层的 __fushiRoot 是 shadow root，它的宿主是固定尺寸、overflow 滚动、带
+// backdrop-filter 的卡——backdrop-filter 让宿主成为 fixed 的包含块，菜单会跟着内容滚、
+// 被宿主的 overflow 裁掉右半边（用户截图）。这里给菜单单独建一个挂在 documentElement
+// 上的 shadow 宿主（零尺寸、无 filter / transform，fixed 回到视口），样式表从弹窗
+// shadow root 克隆过来。嵌套子层的 shadow 宿主铺满自己的 iframe，同样适用。
+function __fushiAudioMenuMount() {
+    const root = window.__fushiRoot;
+    if (!root || !root.host || typeof document.createElement !== 'function') return document.body;
+    // 全屏时顶层是 fullscreenElement，挂在它外面的节点画在全屏层下面看不见（菜单却已记了
+    // 模态层、拿走焦点，Esc 关不掉查词窗）——与弹窗本体同一挂载点，已建的宿主随全屏状态迁移。
+    const parent = document.fullscreenElement || document.documentElement || document.body;
+    let host = typeof document.getElementById === 'function'
+        ? document.getElementById('fushi-audio-menu-host') : null;
+    if (host && host.shadowRoot && host.parentNode !== parent) parent.appendChild(host);
+    if (!host || !host.shadowRoot) {
+        host = document.createElement('div');
+        host.id = 'fushi-audio-menu-host';
+        host.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;z-index:2147483647;';
+        const shadow = host.attachShadow({ mode: 'open' });
+        for (const node of Array.from(root.children || [])) {
+            const tag = (node.tagName || '').toLowerCase();
+            if (tag === 'style' || (tag === 'link' && node.rel === 'stylesheet')) {
+                shadow.appendChild(node.cloneNode(true));
+            }
+        }
+        parent.appendChild(host);
+    }
+    return host.shadowRoot;
+}
+
+function audioMenuItems(menu) {
+    return Array.from(menu.querySelectorAll('.fushi-audio-menu-item:not([aria-disabled="true"])'));
+}
+
+function onAudioMenuKeyDown(e) {
+    const state = __fushiAudioMenu;
+    if (!state) return;
+    const items = audioMenuItems(state.menu);
+    const menuRoot = typeof state.menu.getRootNode === 'function' ? state.menu.getRootNode() : null;
+    const active = (menuRoot && menuRoot.activeElement) || document.activeElement;
+    const index = items.indexOf(active && active.closest
+        ? active.closest('.fushi-audio-menu-item') : null);
+    const focusAt = (i) => {
+        if (!items.length) return;
+        const next = items[(i + items.length) % items.length];
+        try { next.focus({ preventScroll: false }); } catch (_) { /* no-op */ }
+    };
+    switch (e.key) {
+        case 'ArrowDown':
+            focusAt(index < 0 ? 0 : index + 1);
+            break;
+        case 'ArrowUp':
+            focusAt(index < 0 ? items.length - 1 : index - 1);
+            break;
+        case 'Home':
+            focusAt(0);
+            break;
+        case 'End':
+            focusAt(items.length - 1);
+            break;
+        case 'Escape':
+        case 'Esc':
+            closeAudioSourceMenu(true);
+            break;
+        case 'Tab':
+            closeAudioSourceMenu(true);
+            break;
+        case 'Enter':
+        case ' ':
+            if (index >= 0) items[index].click();
+            break;
+        default:
+            return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+// 菜单项文案：主标签 = 实际音频源名，副标签 = 来自哪个已配置的源。列表型远端源
+// （Yomitan 本地音频服务器那类，一个 URL 回 NHK16 / SMK8 / Forvo (说话人) / JPod101 多条）
+// 的 `name` 是用户给这条配置起的名字（例如「Anki」），`variant` 才是具体音频源——
+// 旧实现拿 name 当主标签，于是每项都显示成「Anki」、真正的源名挤在第二行被截断。
+function audioMenuItemLabel(choice, reading, showSource) {
+    // 音频源服务器回的名字可能是没填参的格式串（实测「TAAS %s」）：占位符一律剥掉，
+    // 剥完为空就退回配置名 / URL 域名 / 读音，绝不把 %s 摆给用户看。
+    const clean = (v) => String(v || '')
+        .replace(/%(\d+\$)?[sdif@]/g, '')
+        .replace(/\{\s*\w*\s*\}/g, '')
+        .replace(/[(（[【]\s*[)）\]】]/g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/^[\s\-–—:：·•|,，(（]+|[\s\-–—:：·•|,，(（]+$/g, '')
+        .trim();
+    const name = clean(choice && choice.name);
+    const variant = clean(choice && choice.variant);
+    let host = '';
+    try {
+        const u = choice && choice.url;
+        if (typeof u === 'string' && /^https?:/i.test(u)) host = new URL(u).hostname;
+    } catch (_) { /* 非法 URL：不给域名 */ }
+    if (variant) {
+        const secondary = showSource !== false && name && name !== variant ? name : '';
+        return { primary: variant, secondary };
+    }
+    return { primary: name || host || String(reading || ''), secondary: '' };
+}
+
+// 副标签（来自哪个已配置的源）只在有信息量时显示：菜单里出现了不止一个配置源。
+// 全部来自同一个源（常见：只配了一个 Yomitan 本地音频服务器，每项都是「Anki」）时
+// 那一行纯属噪音，各项收成单行。
+function audioMenuShowsSource(choices) {
+    const names = new Set();
+    for (const c of choices || []) {
+        if (c && String(c.variant || '').trim()) names.add(String(c.name || '').trim());
+    }
+    return names.size > 1;
+}
+
+function renderAudioSourceMenuItems(menu, button, choices, reading) {
+    menu.removeAttribute('aria-busy');
+    menu.textContent = '';
+    if (!choices.length) {
+        const empty = el('div', {
+            className: 'fushi-audio-menu-item',
+            role: 'menuitem',
+            tabIndex: -1,
+            textContent: window.i18nNoAudioAvailable || '暂无发音',
+        });
+        empty.setAttribute('aria-disabled', 'true');
+        menu.appendChild(empty);
+        return;
+    }
+    const showSource = audioMenuShowsSource(choices);
+    choices.forEach((choice, i) => {
+        const item = el('button', {
+            className: 'fushi-audio-menu-item',
+            role: 'menuitem',
+            tabIndex: -1,
+            type: 'button',
+        });
+        item.dataset.audioIndex = String(i);
+        const label = audioMenuItemLabel(choice, reading, showSource);
+        item.title = label.secondary ? label.primary + ' — ' + label.secondary : label.primary;
+        item.appendChild(el('span', {
+            className: 'fushi-audio-menu-name',
+            textContent: label.primary,
+        }));
+        if (label.secondary) {
+            item.appendChild(el('span', {
+                className: 'fushi-audio-menu-variant',
+                textContent: label.secondary,
+            }));
+        }
+        item.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closeAudioSourceMenu(true);
+            if (!await playWordAudio(choice.url)) showAudioError(button);
+        });
+        menu.appendChild(item);
+    });
+}
+
+async function openAudioSourceMenu(button, expression, reading, options) {
+    if (!button || !button.isConnected) return;
+    closeAudioSourceMenu(false);
+    __fushiHideButtonTip();
+    const generation = ++__fushiAudioMenuGeneration;
+    const menuId = 'fushi-audio-menu-' + generation;
+    if (!button.id) button.id = 'fushi-audio-button-' + generation;
+    const menu = el('div', {
+        className: 'fushi-audio-menu',
+        role: 'menu',
+        id: menuId,
+        tabIndex: -1,
+    });
+    menu.setAttribute('aria-labelledby', button.id);
+    menu.setAttribute('aria-busy', 'true');
+    const loading = el('div', { className: 'fushi-audio-menu-loading' },
+        [el('span'), el('span'), el('span')]);
+    menu.appendChild(loading);
+    menu.addEventListener('keydown', onAudioMenuKeyDown);
+    // 菜单内的指针事件不外溢：不触发文档 click 的 tapOutside / 选词。
+    menu.addEventListener('click', (e) => e.stopPropagation());
+    menu.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); });
+    applyAudioMenuTheme(menu);
+    try {
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            menu.classList.add('no-motion');
+        }
+    } catch (_) { /* no-op */ }
+    __fushiAudioMenuMount().appendChild(menu);
+    const onDocPointerDown = (e) => {
+        const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+        if (path.includes(menu) || path.includes(button) || menu.contains(e.target)) return;
+        closeAudioSourceMenu(false);
+    };
+    document.addEventListener('pointerdown', onDocPointerDown, true);
+    // 内容滚动 / 窗口变化：按钮已经挪走，菜单不再贴着它——直接关（菜单自身内部滚动除外）。
+    const onViewportChange = (e) => {
+        if (e && e.type === 'scroll' && e.target && (e.target === menu ||
+            (typeof menu.contains === 'function' && menu.contains(e.target)))) return;
+        closeAudioSourceMenu(false);
+    };
+    window.addEventListener('scroll', onViewportChange, true);
+    window.addEventListener('resize', onViewportChange);
+    window.__fushiPopupModalDepth = (window.__fushiPopupModalDepth || 0) + 1;
+    __fushiAudioMenu = { menu, button, modal: true, onDocPointerDown, onViewportChange, generation };
+    window.__fushiAudioMenuOpen = true;
+    button.setAttribute('aria-expanded', 'true');
+    button.setAttribute('aria-controls', menuId);
+    positionAudioSourceMenu(menu, button);
+    requestAnimationFrame(() => menu.classList.add('visible'));
+    try { menu.focus({ preventScroll: true }); } catch (_) { /* no-op */ }
+
+    const choices = await fetchAudioSourceChoices(expression, reading);
+    if (!__fushiAudioMenu || __fushiAudioMenu.generation !== generation) return;
+    renderAudioSourceMenuItems(menu, button, choices, reading);
+    positionAudioSourceMenu(menu, button);
+    const items = audioMenuItems(menu);
+    if (items.length && (options && options.focusFirst)) {
+        try { items[0].focus({ preventScroll: true }); } catch (_) { /* no-op */ }
+    } else {
+        try { menu.focus({ preventScroll: true }); } catch (_) { /* no-op */ }
+    }
 }
 
 // 收藏词的释义快照（纯文本）：按词典分段「【词典名】释义」，跳过隐藏词典与重定向
@@ -3858,6 +4480,9 @@ function createEntryHeader(entry, idx) {
         needsScroll = buildFuriganaEl(expressionSpan, expression, reading);
     } else {
         expressionSpan.textContent = expression;
+        // 没有注音的词头（なんて / すたすた）不需要注音预留带：popup.css 据此收掉
+        // .expression 的 0.66em padding-top（用户 10-09「额头太高」）。
+        header.classList.add('no-ruby');
     }
     expressionSpan.style.cursor = 'pointer';
     expressionSpan.addEventListener('click', (e) => {
@@ -3879,13 +4504,19 @@ function createEntryHeader(entry, idx) {
             height: rect.height
         });
     });
+    // 词头左簇：词头 + 词头右侧的元数据列（频率行 / 音调行，buildEntryElement 填入）。
+    // 用户 10-09：词头右边原本是一大片空白，频率与「音调 · N / 读音」两行却各占一整行
+    // 压在词头下面，顶部留白很多。改成左簇内 flex-wrap：宽度够时元数据列贴在词头右侧，
+    // 不够（窄弹窗 / 长词头）时整列自然换到词头下方——纯布局自适应，不量宽、不分支。
+    const headerMain = el('div', { className: 'entry-header-main' });
     if (needsScroll) {
         const expressionScroll = el('div', { className: 'expression-scroll' });
         expressionScroll.appendChild(expressionSpan);
-        header.appendChild(expressionScroll);
+        headerMain.appendChild(expressionScroll);
     } else {
-        header.appendChild(expressionSpan);
+        headerMain.appendChild(expressionSpan);
     }
+    header.appendChild(headerMain);
     
     const buttonsContainer = el('div', { className: 'header-buttons' });
 
@@ -3905,6 +4536,12 @@ function createEntryHeader(entry, idx) {
     }
 
     buttonsContainer.appendChild(createFavoriteButton(expression, reading, idx));
+
+    // Fushi 复习词状态（复习模块关着时为 null，既不渲染也不发桥调用）。
+    const srsBadge = createSrsStatusBadge(expression, reading);
+    if (srsBadge) {
+        buttonsContainer.appendChild(srsBadge);
+    }
 
     // BUG-185 (TODO-084/087): the mine button's "已制卡 ✓ / 可制卡 +" state is
     // DETECTED AT LOOKUP TIME and reflects Anki's REAL card existence.
@@ -3936,10 +4573,14 @@ function createEntryHeader(entry, idx) {
     //   word, or re-querying, supersedes it back to an ordinary ✓ (only the most
     //   recent card stays editable). AnkiDroid returns no id → never green ✓⤺.
     let queuedLocally = false;
-    const isEntryQueued = () => typeof window.fushiIsEntryQueued === 'function'
+    const hostOwnsQueue = () => typeof window.fushiIsEntryQueued === 'function';
+    const isEntryQueued = () => hostOwnsQueue()
         ? window.fushiIsEntryQueued({ expression, reading }) === true
         : queuedLocally;
     const setMineState = (isMined) => {
+        // BUG-3492：Anki 里已经有这张卡 = 后台那次制卡已经落地，本弹窗记的「已加入」
+        // 标记就此作废（宿主落地后推来的刷新、点击时的回问都经这里）。
+        if (isMined) queuedLocally = false;
         // 本按钮的制卡态至少有过一次真值（lookup-time 探测，或点按钮后的回问）。
         // 「范围未知」的宿主刷新只重问这类按钮，见 refreshRenderedMineStates。
         mineButton.__fushiMineStateKnown = true;
@@ -4002,13 +4643,45 @@ function createEntryHeader(entry, idx) {
             // in finally — it is the ONLY thing that disables the button, never a
             // permanent lock (BUG-077).
             if (mineButton.dataset.mining === '1') return;
-            if (isEntryQueued()) {
+            // 宿主自己持有制卡队列（浏览器扩展）：排队中就是排队中，它的队列会如实回答。
+            if (hostOwnsQueue() && isEntryQueued()) {
                 setMineState(mineButton.dataset.mined === '1');
                 return;
             }
             mineButton.dataset.mining = '1';
             mineButton.disabled = true;
             try {
+                // BUG-3492：app 内（在线视频后台制卡）的「已加入」只是本弹窗记下的一个
+                // 标记，卡落地后没有任何东西会把它撤掉——以前这里一律 return，于是同一个
+                // 弹窗里再点 ✓、或从「高级制卡」回点，都永远没反应，只有关掉弹窗重新查词
+                // （新弹窗没有这个标记）才能走覆盖。现在先问一次 Anki：卡已经在了 →
+                // setMineState(true) 撤掉标记，落到下面已制卡的正常路径（操作单 / 覆盖）；
+                // 还没落地 → 把这次覆盖交给宿主排队（所有者拍板的方案 B：写入落地后自动
+                // 覆盖、同词只留最后一次）；宿主不收（没有后台写入这条路）就就地说明。
+                if (queuedLocally && !hostOwnsQueue()) {
+                    const landed = await window.flutter_inappwebview.callHandler(
+                        'duplicateCheck', { expression, reading });
+                    if (landed !== true) {
+                        const reply = await queueOverwrite(
+                            expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                        const accepted = !!(reply && reply.accepted === true);
+                        const message = reply && typeof reply.message === 'string' ? reply.message : '';
+                        // 宿主说这次后台写入在上面那次回问之后才结束（赛跑窗口）：落地了 →
+                        // 落到下面已制卡的正常路径；失败了 → 撤掉「已加入」，卡不在 Anki 里，
+                        // 不能再说「还在写入」。
+                        const settled = !accepted && reply ? reply.settled : null;
+                        if (settled !== 'landed') {
+                            if (settled === 'failed') queuedLocally = false;
+                            setMineState(false);
+                            const hint = message || (accepted
+                                ? ''
+                                : (window.i18nMineStillQueued || '还在写入 Anki，稍后再试'));
+                            if (hint) showInlineHint(mineButton, hint);
+                            return;
+                        }
+                    }
+                    setMineState(true);
+                }
                 // IntersectionObserver may not have delivered its first callback
                 // yet. Join/start the scheduled duplicateCheck before consulting
                 // data-mined, then invalidate late decoration work for this click.
@@ -4181,6 +4854,10 @@ function createEntryHeader(entry, idx) {
                 // stuck disabled.
                 mineButton.dataset.mining = '';
                 mineButton.disabled = false;
+                // 制卡目标含 Fushi 复习时，这一下可能刚把卡写进复习库：重问一次词状态。
+                if (srsBadge) {
+                    srsBadge.__fushiRefreshSrsStatus();
+                }
             }
         }
     });
@@ -4312,16 +4989,30 @@ function createEntryHeader(entry, idx) {
         buttonsContainer.appendChild(clearButton);
     }
 
-    // Niratan「制卡前调整·选择句子上下文」：独立于上面被砍掉的内联步进器
-    // （kSentenceContextPickerEnabled 恒 false）。支持草稿且宿主接入了预览回调的表面
-    // （reader/有声书/视频，window.sentenceContextPreviewEnabled 为真）渲染一个「调整
-    // 上下文」按钮，点开模态在里面看前/当前/后真实句并增减上下文、确认制卡。一键「+」
-    // 制卡不受影响。
-    if (window.sentenceContextPreviewEnabled) {
+    // 「高级制卡」入口（原「调整上下文」按钮）：点开宿主的**原生**对话框，为这一张卡选
+    // 卡组 / 句子上下文 / 句子音频起止 / 图片方式 / 漫画裁切，确认后宿主经
+    // fushiPopupMineEntryByIndex 回点本词条的「+」并带上覆盖项。一键「+」不受影响。
+    //   · app 内：宿主接了 onOpenAdvancedMining（制卡模块开着）时注入
+    //     window.advancedMiningEnabled = true——所有挂 DictionaryPopupWebView 的表面都有，
+    //     不再只限支持句子草稿的表面（纯查词页的对话框只有卡组分区）。
+    //   · 浏览器扩展：没有「高级制卡」宿主，仍是它自己的「调整上下文」页内模态（content.js
+    //     注入 sentenceContextPreviewEnabled、bridge-shim 接 openSentenceContextModal）。
+    //     同一颗按钮、同一套 entryIndex，只是 handler 名与提示文案按宿主能力分流；app 内
+    //     不再注入 sentenceContextPreviewEnabled，所以 app 里只有一个入口。
+    // 「+」不渲染（制卡模块关）时它也不渲染：确认要回点的正是那颗按钮。
+    const advancedMining = window.advancedMiningEnabled === true;
+    if (miningEnabled && (advancedMining || window.sentenceContextPreviewEnabled)) {
         const adjustBtn = el('button', {
             className: 'inline-action-button ctx-adjust-button',
+            // BUG-3210：确认制卡走 fushiPopupMineEntryByIndex 回点「+」，那条路没有
+            // pointerdown，选区只能在**这里**快照（document click 处理器清选区之前）。
+            onpointerdown: () => {
+                snapshotSelection();
+            },
+            ontouchstart: () => {
+                snapshotSelection();
+            },
             onclick: function() {
-                // BUG-763/766：改弹 app 原生顶层对话框（不再画在查词弹窗 WebView 内）。
                 // entryIndex 用点击时的稳定 DOM 序（:scope > .entry），与确认制卡回点的
                 // fushiPopupMineEntryByIndex 同一套索引。
                 var entryEl = adjustBtn.closest('.entry');
@@ -4332,18 +5023,28 @@ function createEntryHeader(entry, idx) {
                     if (idx < 0) idx = 0;
                 }
                 // BUG-1326：参数必须原样传**对象**（与本文件其余 callHandler 一致）。
-                // 之前这里独一份地 JSON.stringify 了，宿主 handler 只认 Map（args[0] is
+                // 曾经独一份地 JSON.stringify 过，宿主 handler 只认 Map（args[0] is
                 // Map），于是 entryIndex 恒退化成 0、matched 恒为空——「确认制卡」永远去
-                // 点第一个词条的按钮（用户在第 2+ 个词条上点，看到的就是「没反应」），
-                // 当前句里的词也不高亮。
-                window.flutter_inappwebview.callHandler(
-                    'openSentenceContextModal',
-                    { entryIndex: idx, matched: matched });
+                // 点第一个词条的按钮（用户在第 2+ 个词条上点，看到的就是「没反应」）。
+                if (advancedMining) {
+                    window.flutter_inappwebview.callHandler(
+                        'openAdvancedMining',
+                        { entryIndex: idx, matched: matched, expression: expression });
+                } else {
+                    window.flutter_inappwebview.callHandler(
+                        'openSentenceContextModal',
+                        { entryIndex: idx, matched: matched });
+                }
             },
         });
         setButtonIcon(adjustBtn, 'tune');
+        // M3E 按压形状变形 / 缩放：系统「减弱动态效果」或墨水屏下归零（popup.css 不能写
+        // @media，生成扩展 content.css 的脚本不处理嵌套 at-rule；同音频源菜单 .no-motion）。
+        if (__fushiPopupReducedMotion()) adjustBtn.classList.add('no-motion');
         // BUG-842：DOM 提示替代原生 title（离屏 WebView2 上原生 title 会飞到窗口角落）。
-        setInlineButtonTip(adjustBtn, (window.i18nCtx && window.i18nCtx.adjust) || '');
+        const ctxI18n = window.i18nCtx || {};
+        setInlineButtonTip(adjustBtn,
+            (advancedMining ? ctxI18n.advancedMining : ctxI18n.adjust) || '');
         buttonsContainer.appendChild(adjustBtn);
     }
 
@@ -4357,6 +5058,9 @@ window.fushiPopupMineFirstEntry = async function() {
     if (!mineButton || mineButton.disabled) {
         return false;
     }
+    // BUG-3210：快捷键/手柄制卡不经按钮的 pointerdown，选区要在这里按「此刻」快照，
+    // 否则沿用的是上一次点按钮时的旧选区。
+    snapshotSelection();
     mineButton.click();
     return true;
 };
@@ -4444,6 +5148,8 @@ function fushiPopupIsEditableTarget(t) {
 }
 window.__fushiPopupKeyListener = async function(e) {
     if (!e || e.isComposing || e.repeat) return;
+    // 「选择音频源」菜单开着：按键归菜单（方向键 / Enter / Esc），弹窗动作不抢。
+    if (window.__fushiAudioMenuOpen === true) return;
     if (fushiPopupIsEditableTarget(e.target)) return;
     const action = fushiPopupKeyAction(e);
     if (!action) return;
@@ -4874,6 +5580,7 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     }
     
     details.appendChild(dictWrapper);
+    __fushiChunkLongGlossary(dictWrapper, dictName);
 
     // MDX 词典的条目 HTML 自带 <script>（NLT 的頻度条形图、OALDPEX 的配置界面和
     // 中文翻译开关）。经 innerHTML 插入的 script 按规范不会执行，这里补上——作用域
@@ -4914,9 +5621,6 @@ function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
     }
 
     const entryDiv = el('div', { className: 'entry' });
-    // 卡片自带它在 window.lookupEntries 里的下标：「只换顺序」（fushiReorderPopupEntries）
-    // 之后 DOM 序不再等于数组序，DOM 下标映射一律按这个身份重建（rebuildEntryDomIndex）。
-    entryDiv.__fushiLookupIndex = idx;
     entryDiv.appendChild(createEntryHeader(entry, idx));
 
     const exprTags = createExpressionTagsSection(entry);
@@ -4929,14 +5633,15 @@ function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
         entryDiv.appendChild(deinflection);
     }
 
+    // 频率 / 音调进词头右侧的元数据列（见 createEntryHeader 的 .entry-header-main）。
     const freqSection = createFrequencySection(entry.frequencies);
-    if (freqSection) {
-        entryDiv.appendChild(freqSection);
-    }
-
     const pitchSection = createPitchSection(entry.pitches, entry.reading);
-    if (pitchSection) {
-        entryDiv.appendChild(pitchSection);
+    if (freqSection || pitchSection) {
+        const meta = el('div', { className: 'entry-header-meta' });
+        if (freqSection) meta.appendChild(freqSection);
+        if (pitchSection) meta.appendChild(pitchSection);
+        const headerMain = entryDiv.querySelector('.entry-header-main');
+        (headerMain || entryDiv).appendChild(meta);
     }
 
     const { details, body, grouped, dictNames } = glossaryWrapper;
@@ -5114,7 +5819,466 @@ function postProcessRuby(container) {
     // entries, incremental updates) also gets them; both passes are idempotent
     // so the double walk over entry 0 (BUG-1098) stays harmless.
     wrapExpressionInlineKanji(container);
+    // M3E 暗色下词典自带浅色底的对比度修正：同样挂在这条每个渲染路径都会走的后处理上。
+    // 推到下一帧做——首个词条的后处理先于 applyCustomCSS()，此刻词典样式表还没进文档，
+    // 读到的计算色不是最终色。
+    __fushiScheduleM3eDictTone(container);
 }
+
+/* =====================================================================
+ * M3E 暗色：词典自带强制底色的对比度修正。
+ *
+ * 词典样式表 / 结构化内容的内联 style 常为浅色主题写死一块浅底（例句粉块、注释黄块），
+ * 在 M3E 暗色卡面上就是一块刺眼的亮斑，且词典没写字色时整块继承浅色正文，几乎读不出。
+ * CSS 读不到「这个元素被词典涂了什么底色」，只能在渲染后读计算色逐个改写：
+ *   - 浅底（相对亮度 > 0.35、不透明度 ≥ 0.25）→ 保留色相、饱和度封顶 0.5、亮度压到
+ *     0.22（贴近 surfaceContainerHigh 的明度），读起来仍是「那一块粉色例句」；
+ *   - 该块里为浅底写的深色字（亮度 < 0.3）→ 同色相提亮到 0.82；继承来的字照旧继承。
+ * 只改颜色，不动结构 / 字号 / 间距。只在 M3E（html.fushi-m3e 或扩展容器 .fushi-m3e）且
+ * data-theme=dark 时运行；浅色主题、Apple 设计系统、墨水屏零变化。每个元素只处理一次
+ * （postProcessRuby 对首个词条会走两遍）。
+ *
+ * HBK-AUDIT-015：调色是**可逆**的。改写前把元素原本的内联 background-color / color（值 +
+ * 优先级）记在元素上，登记进 __fushiM3eTonedNodes；主题切换（宿主热更新只注入 CSS 变量 /
+ * 改 data-theme / class，不重建词条）时由观察器排一帧 __fushiRetoneDictColors：先全部复原
+ * 成原始内联值，再按**新**明暗重读计算色重新调色。暗→浅不再残留暗块，浅→暗也会调色；
+ * 只改颜色，不重建任何节点，选区 / 焦点 / 展开状态不受影响。
+ * ===================================================================== */
+var __fushiM3eToneRoots = null;
+var __fushiM3eToneRaf = 0;
+var __fushiM3eTonedNodes = null;
+var __fushiM3eObserved = null;
+var __fushiM3eObserver = null;
+
+function __fushiM3eRememberInline(node, prop) {
+    const key = prop === 'color' ? '__fushiM3eOrigColor' : '__fushiM3eOrigBg';
+    if (node[key]) return;
+    node[key] = {
+        value: node.style.getPropertyValue(prop),
+        priority: node.style.getPropertyPriority(prop),
+    };
+    if (!__fushiM3eTonedNodes) __fushiM3eTonedNodes = new Set();
+    __fushiM3eTonedNodes.add(node);
+}
+
+// 把调色写过的内联色全部还原成调色前的原值（原本没有内联值的就移除），清掉一次性标记。
+function __fushiRestoreDictTone() {
+    if (!__fushiM3eTonedNodes) return;
+    __fushiM3eTonedNodes.forEach((node) => {
+        try {
+            for (const [key, prop] of [['__fushiM3eOrigBg', 'background-color'], ['__fushiM3eOrigColor', 'color']]) {
+                const orig = node[key];
+                if (!orig) continue;
+                if (orig.value) node.style.setProperty(prop, orig.value, orig.priority);
+                else if (typeof node.style.removeProperty === 'function') node.style.removeProperty(prop);
+                else node.style.setProperty(prop, '');
+                node[key] = null;
+            }
+        } catch (_) { /* 节点已脱离文档 */ }
+    });
+    __fushiM3eTonedNodes.clear();
+}
+
+// 清掉「已处理」标记（含只读过、没改写的节点），让下一轮按新明暗重新判定。
+function __fushiClearDictToneMarks(root) {
+    if (!root || !root.querySelectorAll) return;
+    const all = [root, ...root.querySelectorAll('.glossary-group > div[data-dictionary], .glossary-group > div[data-dictionary] *')];
+    all.forEach((n) => { n.__fushiM3eToned = false; n.__fushiM3eTextToned = false; });
+}
+
+// 排过调色的根（词条容器 / 首个词条）：主题变化时逐个重做。脱离文档的在重做时剔除。
+var __fushiM3eKnownRoots = null;
+
+// HBK-AUDIT-029：换词会整批替换词条节点；调色登记表与根集合是强引用 Set，不剔除就把每一次
+// 查词的旧词条（及其整棵子树）一直留在内存里。每次排调色时剔除已脱离文档的节点——它们不会再
+// 显示，也无需复原。
+function __fushiPruneDetachedTone() {
+    for (const set of [__fushiM3eTonedNodes, __fushiM3eKnownRoots]) {
+        if (!set) continue;
+        set.forEach((n) => { if (n && n.isConnected === false) set.delete(n); });
+    }
+}
+
+// 主题变化后的可逆重调色：复原 → 按当前明暗重做。宿主热更新主题后也可直接调用。
+function __fushiRetoneDictColors() {
+    __fushiRestoreDictTone();
+    const roots = __fushiM3eKnownRoots ? [...__fushiM3eKnownRoots] : [];
+    const container = __fushiContainer();
+    if (container && !roots.includes(container)) roots.push(container);
+    roots.forEach((root) => {
+        if (root.isConnected === false) {
+            __fushiM3eKnownRoots.delete(root);
+            return;
+        }
+        __fushiClearDictToneMarks(root);
+        __fushiScheduleM3eDictTone(root);
+    });
+}
+if (typeof window !== 'undefined') window.__fushiRetoneDictColors = __fushiRetoneDictColors;
+
+// 观察明暗 / 主题载体（documentElement 与弹窗容器的 data-theme / class / style——宿主热更新只
+// 写 CSS 变量也落在 style 上），变化时排一帧重调色。只观察属性，不观察子树：调色自己写的是
+// 词条节点的内联色，不会自激。
+function __fushiObserveM3eToneHosts() {
+    if (typeof MutationObserver !== 'function') return;
+    if (!__fushiM3eObserver) {
+        __fushiM3eObserved = new WeakSet();
+        let pending = 0;
+        __fushiM3eObserver = new MutationObserver(() => {
+            if (pending || typeof requestAnimationFrame !== 'function') return;
+            pending = requestAnimationFrame(() => {
+                pending = 0;
+                const dark = __fushiM3eDarkSurface();
+                // 明暗没变且当前也没有调过色的节点：无事可做。
+                if (dark === __fushiM3eLastDark && !(dark && __fushiM3eTonedNodes && __fushiM3eTonedNodes.size)) return;
+                __fushiRetoneDictColors();
+            });
+        });
+    }
+    const opts = { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] };
+    for (const target of [document.documentElement, __fushiContainer()]) {
+        if (!target || __fushiM3eObserved.has(target)) continue;
+        __fushiM3eObserved.add(target);
+        try { __fushiM3eObserver.observe(target, opts); } catch (_) { /* 不可观察：只能等宿主显式调用 */ }
+    }
+}
+var __fushiM3eLastDark = null;
+
+function __fushiM3eDarkSurface() {
+    try {
+        const container = __fushiContainer();
+        if (container && container.classList && container.classList.contains('fushi-m3e')) {
+            return container.getAttribute('data-theme') === 'dark';
+        }
+        const root = document.documentElement;
+        return !!(root && root.classList && root.classList.contains('fushi-m3e') &&
+            root.getAttribute('data-theme') === 'dark');
+    } catch (_) {
+        return false;
+    }
+}
+
+function __fushiScheduleM3eDictTone(root) {
+    if (!root || typeof requestAnimationFrame !== 'function' ||
+        typeof getComputedStyle !== 'function') return;
+    if (!__fushiM3eToneRoots) __fushiM3eToneRoots = new Set();
+    __fushiM3eToneRoots.add(root);
+    if (!__fushiM3eKnownRoots) __fushiM3eKnownRoots = new Set();
+    __fushiM3eKnownRoots.add(root);
+    __fushiPruneDetachedTone();
+    __fushiObserveM3eToneHosts();
+    if (__fushiM3eToneRaf) return;
+    __fushiM3eToneRaf = requestAnimationFrame(() => {
+        __fushiM3eToneRaf = 0;
+        const roots = [...__fushiM3eToneRoots];
+        __fushiM3eToneRoots.clear();
+        const dark = __fushiM3eDarkSurface();
+        __fushiM3eLastDark = dark;
+        // 词典样式统一（开着时）：颜色整体交给 popup.css 的令牌规则，暗色调色这层不再
+        // 需要——先复原它写过的内联色，否则统一层量到的是调过色的值而不是词典原色。
+        if (__fushiDictUnifiedEnabled()) {
+            __fushiRestoreDictTone();
+            roots.forEach((r) => {
+                try {
+                    if (r.isConnected !== false) __fushiUnifyDictStyles(r);
+                } catch (e) {
+                    console.error('[popup] dictionary style unify failed', e);
+                }
+            });
+            return;
+        }
+        roots.forEach((r) => __fushiClearDictUnify(r));
+        // 非暗色：上一轮暗色调过的颜色必须复原（不能只是「不再调色」）。
+        if (!dark) { __fushiRestoreDictTone(); return; }
+        roots.forEach((r) => {
+            try {
+                if (r.isConnected !== false) __fushiToneDictColors(r);
+            } catch (e) {
+                console.error('[popup] m3e dictionary tone failed', e);
+            }
+        });
+    });
+}
+
+function __fushiParseRgb(value) {
+    const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+)(%?))?\s*\)$/
+        .exec(String(value || '').trim());
+    if (!m) return null;
+    let a = m[4] === undefined ? 1 : parseFloat(m[4]);
+    if (m[5] === '%') a /= 100;
+    return { r: +m[1], g: +m[2], b: +m[3], a };
+}
+
+function __fushiRelLuminance(c) {
+    const ch = (v) => {
+        v /= 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b);
+}
+
+function __fushiRgbToHsl(c) {
+    const r = c.r / 255, g = c.g / 255, b = c.b / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return { h: 0, s: 0, l };
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h;
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    return { h: h * 60, s, l };
+}
+
+function __fushiHslCss(h, s, l, a) {
+    const hh = Math.round(h), ss = Math.round(s * 100), ll = Math.round(l * 100);
+    return a < 1
+        ? `hsla(${hh}, ${ss}%, ${ll}%, ${Math.round(a * 100) / 100})`
+        : `hsl(${hh}, ${ss}%, ${ll}%)`;
+}
+
+function __fushiToneDictColors(root) {
+    const scope = '.glossary-group > div[data-dictionary]';
+    const nodes = [];
+    if (root.matches && root.matches(scope)) nodes.push(root);
+    root.querySelectorAll(`${scope}, ${scope} *`).forEach((n) => nodes.push(n));
+    // 相 1（读）：一次读完所有计算色，再统一写，避免读写交错反复重算样式。
+    const toned = [];
+    for (const node of nodes) {
+        if (node.__fushiM3eToned || node.tagName === 'IMG' || node.tagName === 'svg') continue;
+        node.__fushiM3eToned = true;
+        const bg = __fushiParseRgb(getComputedStyle(node).backgroundColor);
+        if (!bg || bg.a < 0.25 || __fushiRelLuminance(bg) <= 0.35) continue;
+        toned.push({ node, bg });
+    }
+    const textFixes = [];
+    toned.forEach(({ node }) => {
+        [node, ...node.querySelectorAll('*')].forEach((n) => {
+            if (n.__fushiM3eTextToned) return;
+            n.__fushiM3eTextToned = true;
+            const fg = __fushiParseRgb(getComputedStyle(n).color);
+            if (fg && __fushiRelLuminance(fg) < 0.3) textFixes.push({ n, fg });
+        });
+    });
+    // 相 2（写）。
+    toned.forEach(({ node, bg }) => {
+        const hsl = __fushiRgbToHsl(bg);
+        __fushiM3eRememberInline(node, 'background-color');
+        node.style.setProperty('background-color',
+            __fushiHslCss(hsl.h, Math.min(hsl.s, 0.5), 0.22, bg.a), 'important');
+    });
+    textFixes.forEach(({ n, fg }) => {
+        const hsl = __fushiRgbToHsl(fg);
+        __fushiM3eRememberInline(n, 'color');
+        n.style.setProperty('color',
+            __fushiHslCss(hsl.h, Math.min(hsl.s, 0.6), 0.82, fg.a), 'important');
+    });
+}
+
+/* =====================================================================
+ * 词典样式统一（M3E，按宿主开关）：导入词典的 styles.css / 结构化内容 inline style 各自
+ * 写死颜色（红底词性标签、绿/蓝/红强调字、深红汉字框、彩色边框……），与 app 主题
+ * 毫无关系。统一模式按**语义**把它们重映射到 ColorScheme 令牌：
+ *   - 带底色的短行内元素（标签 / 徽标）→ chip：secondaryContainer / onSecondaryContainer；
+ *   - 带深色底的块（或字号放大的大字框）→ block：primaryContainer / onPrimaryContainer；
+ *   - 带浅色底的块（例句底纹）→ panel：surfaceContainerHighest；
+ *   - 四边都描了框的短行内元素 → chip-outline：outline 描边；
+ *   - 被染彩色的文字 → accent：primary；被染灰的文字 → muted：onSurfaceVariant；
+ *   - 其余颜色 / 底色 / 边框色一律交给 popup.css 的统一层（继承正文色、透明底、
+ *     outlineVariant 边框），字号 / 边距 / ruby / 表格 / 图片一概不动。
+ * CSS 读不到「这个元素被词典涂成了什么」，所以在渲染后量一次计算样式（量的时候作用域
+ * 类必须摘掉，量到的才是词典原色），把语义写成 data-fushi-dt* 属性；配色全在 popup.css
+ * 里按 --md-sys-color-* 取，换强调色 / 明暗只是 CSS 变量变化，不必重新分类。
+ * 不按词典名写任何特例。只有宿主明确打开（window.__fushiDictUnifiedStyle === true）才统一；
+ * 关掉就摘掉作用域类，词典原样式原样回来。宿主没注入 / 浏览器扩展连不上 app = 关，与 app
+ * 默认值一致（app 内由 popup_settings_injection 注入；扩展由查词响应 dictionaryUnifiedStyle
+ * 经 dict-media.js applyFushiPopupCss 落到同一个全局）。
+ * ===================================================================== */
+const FUSHI_DICT_UNIFIED_CLASS = 'fushi-dict-unified';
+// 量原色期间挂的类：popup.css 里会改写词典颜色的旧规则（暗色浅底调灰）见到它就让路，
+// 否则量到的是被那条规则压过的灰色。
+const FUSHI_DICT_UNIFY_MEASURING_CLASS = 'fushi-dict-unify-measuring';
+// 不参与分类的节点：媒体本体与 popup 自己画的组件（它们已经吃主题令牌）。
+const FUSHI_DICT_UNIFIED_SKIP = 'img, svg, svg *, canvas, video, audio, picture, '
+    + '.gloss-image-background, .gloss-image-sizer, .ruby-reserve, .deinflection-tag';
+// 「短」标签的字数上限：再长就是一段被涂了底色的正文，不当 chip 画。
+const FUSHI_DICT_UNIFIED_CHIP_MAX_CHARS = 16;
+
+function __fushiDictUnifiedEnabled() {
+    return typeof window !== 'undefined' && window.__fushiDictUnifiedStyle === true;
+}
+
+function __fushiDictUnifiedScopes(root) {
+    const scopes = [];
+    if (!root) return scopes;
+    if (root.matches && root.matches('.glossary-content')) scopes.push(root);
+    if (root.querySelectorAll) root.querySelectorAll('.glossary-content').forEach((s) => scopes.push(s));
+    return scopes;
+}
+
+// 底色是否「有意义」：近乎透明、或近白无彩（词典给整块写的白底）都不算。
+function __fushiDictUnifiedSolidBg(bg) {
+    if (!bg || bg.a < 0.12) return false;
+    const hsl = __fushiRgbToHsl(bg);
+    if (hsl.s < 0.12 && hsl.l > 0.92) return false;
+    return true;
+}
+
+function __fushiDictUnifiedSameColor(a, b) {
+    if (!a || !b) return false;
+    return Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b) <= 12
+        && Math.abs(a.a - b.a) < 0.1;
+}
+
+// 文字色语义：彩色 → accent；中灰 → muted；近黑 → plain（显式回到正文色）。
+// 近白字（多半是为深色底写的）不打标，跟随所在容器的 on-color。
+function __fushiDictUnifiedTextTone(color) {
+    if (!color || color.a < 0.3) return null;
+    const hsl = __fushiRgbToHsl(color);
+    if (hsl.s >= 0.25 && hsl.l >= 0.12 && hsl.l <= 0.88) return 'accent';
+    if (hsl.l > 0.88) return null;
+    if (hsl.l >= 0.3) return 'muted';
+    return 'plain';
+}
+
+function __fushiDictUnifiedHasFullBorder(cs) {
+    for (const side of ['Top', 'Right', 'Bottom', 'Left']) {
+        if (!(parseFloat(cs[`border${side}Width`]) > 0)) return false;
+        const style = cs[`border${side}Style`];
+        if (!style || style === 'none' || style === 'hidden') return false;
+    }
+    const color = __fushiParseRgb(cs.borderTopColor);
+    return !!(color && color.a > 0.2);
+}
+
+const FUSHI_DICT_UNIFIED_ATTRS = ['data-fushi-dt', 'data-fushi-dt-pad', 'data-fushi-dt-before', 'data-fushi-dt-after'];
+
+// 读相：只读计算样式，产出 [node, attr, value] 写单。调用方保证作用域类已摘掉。
+function __fushiDictUnifiedClassify(scope, writes) {
+    const scopeCs = getComputedStyle(scope);
+    const info = new Map();
+    info.set(scope, {
+        color: __fushiParseRgb(scopeCs.color),
+        fontSize: parseFloat(scopeCs.fontSize) || 0,
+        ctx: null,
+    });
+    const nodes = scope.querySelectorAll('*');
+    for (const node of nodes) {
+        const parentInfo = info.get(node.parentElement) || info.get(scope);
+        for (const attr of FUSHI_DICT_UNIFIED_ATTRS) {
+            if (node.hasAttribute(attr)) writes.push([node, attr, null]);
+        }
+        if (node.matches(FUSHI_DICT_UNIFIED_SKIP)) {
+            info.set(node, parentInfo);
+            continue;
+        }
+        const cs = getComputedStyle(node);
+        const color = __fushiParseRgb(cs.color);
+        const fontSize = parseFloat(cs.fontSize) || parentInfo.fontSize;
+        const bg = __fushiParseRgb(cs.backgroundColor);
+        const gradient = /gradient\(/i.test(cs.backgroundImage || '');
+        const hasBg = gradient || __fushiDictUnifiedSolidBg(bg);
+        const inline = /^(inline|ruby)/.test(cs.display || '');
+        const textLen = (node.textContent || '').trim().length;
+        let tag = null;
+        if (hasBg && parentInfo.ctx !== 'chip') {
+            const big = parentInfo.fontSize > 0 && fontSize >= parentInfo.fontSize * 1.4;
+            if (inline && !big && textLen <= FUSHI_DICT_UNIFIED_CHIP_MAX_CHARS) {
+                tag = 'chip';
+            } else {
+                // 深色 / 饱和的底是「强调块」（大字框），浅色底是「底纹」（例句块）。
+                const hsl = bg ? __fushiRgbToHsl(bg) : { s: 1, l: 0.5 };
+                tag = (!gradient && hsl.l > 0.8) ? 'panel' : 'block';
+            }
+            if (tag === 'chip' && !(parseFloat(cs.paddingLeft) >= 1)) {
+                writes.push([node, 'data-fushi-dt-pad', '']);
+            }
+        } else if (!hasBg && parentInfo.ctx === null && inline && textLen > 0
+            && textLen <= FUSHI_DICT_UNIFIED_CHIP_MAX_CHARS
+            && __fushiDictUnifiedHasFullBorder(cs)) {
+            tag = 'chip-outline';
+        } else if (gradient) {
+            tag = 'flat';
+        }
+        if (tag === null && parentInfo.ctx !== 'chip'
+            && !__fushiDictUnifiedSameColor(color, parentInfo.color)) {
+            const tone = __fushiDictUnifiedTextTone(color);
+            // 容器里的灰 / 黑字跟随容器的 on-color；只有彩色强调保留。
+            if (tone === 'accent' || (tone && parentInfo.ctx === null)) tag = tone;
+        }
+        if (tag) writes.push([node, 'data-fushi-dt', tag]);
+        // 伪元素（词典常用 ::before 画「動」「名」之类的标签）。
+        for (const pseudo of ['before', 'after']) {
+            const ps = getComputedStyle(node, `::${pseudo}`);
+            const content = ps && ps.content;
+            if (!content || content === 'none' || content === 'normal') continue;
+            const pbg = __fushiParseRgb(ps.backgroundColor);
+            let ptag = null;
+            if (/gradient\(/i.test(ps.backgroundImage || '') || __fushiDictUnifiedSolidBg(pbg)) {
+                ptag = 'chip';
+            } else if (!__fushiDictUnifiedSameColor(__fushiParseRgb(ps.color), color)
+                && __fushiDictUnifiedTextTone(__fushiParseRgb(ps.color)) === 'accent') {
+                ptag = 'accent';
+            }
+            if (ptag) writes.push([node, `data-fushi-dt-${pseudo}`, ptag]);
+        }
+        const ctx = (tag === 'chip' || tag === 'block' || tag === 'panel' || tag === 'chip-outline')
+            ? (tag === 'chip-outline' ? 'chip' : tag)
+            : parentInfo.ctx;
+        info.set(node, {
+            // 容器（chip / block / panel）里子孙的「父色」不再是词典原色：容器统一后
+            // 字色是它的 on-color，拿 null 让子孙按自身颜色重新判定。
+            color: ctx !== parentInfo.ctx ? null : color,
+            fontSize,
+            ctx,
+        });
+    }
+}
+
+// 对 root 下尚未统一过的作用域：摘类 → 量 → 写属性 → 挂类。读写分相，整批只重算两次样式。
+function __fushiUnifyDictStyles(root) {
+    const todo = __fushiDictUnifiedScopes(root).filter((s) => !s.__fushiDictUnifiedDone);
+    if (!todo.length) return;
+    todo.forEach((s) => {
+        s.classList.remove(FUSHI_DICT_UNIFIED_CLASS);
+        s.classList.add(FUSHI_DICT_UNIFY_MEASURING_CLASS);
+    });
+    const writes = [];
+    try {
+        todo.forEach((s) => __fushiDictUnifiedClassify(s, writes));
+    } finally {
+        todo.forEach((s) => s.classList.remove(FUSHI_DICT_UNIFY_MEASURING_CLASS));
+    }
+    writes.forEach(([node, attr, value]) => {
+        if (value === null) node.removeAttribute(attr);
+        else node.setAttribute(attr, value);
+    });
+    todo.forEach((s) => {
+        s.__fushiDictUnifiedDone = true;
+        s.classList.add(FUSHI_DICT_UNIFIED_CLASS);
+    });
+}
+
+// 退回词典原样式：摘掉作用域类（属性留着无害——没有作用域类时 popup.css 的规则不生效）。
+function __fushiClearDictUnify(root) {
+    __fushiDictUnifiedScopes(root).forEach((s) => {
+        s.__fushiDictUnifiedDone = false;
+        s.classList.remove(FUSHI_DICT_UNIFIED_CLASS);
+    });
+}
+
+// 宿主改了开关后调用：已渲染的词条就地切换，不必重新查词。
+function __fushiApplyDictUnifiedStyle() {
+    const roots = __fushiM3eKnownRoots ? [...__fushiM3eKnownRoots] : [];
+    const container = __fushiContainer();
+    if (container && !roots.includes(container)) roots.push(container);
+    roots.forEach((root) => {
+        if (root && root.isConnected !== false) __fushiClearDictUnify(root);
+    });
+    __fushiRetoneDictColors();
+}
+if (typeof window !== 'undefined') window.__fushiApplyDictUnifiedStyle = __fushiApplyDictUnifiedStyle;
 
 // BUG-1898: 给「隔壁也带注音」的基字单元打上 .ruby-tight，popup.css 只对它们把
 // .ruby-reserve 放回 in-flow。
@@ -5474,8 +6638,6 @@ function __fushiApplyPendingScrollTop(isFinal) {
 // 不可做增量 diff）。
 function _firePopupRendered(stillRendering) {
     window._renderInProgress = !!stillRendering;
-    // 尾批期间到达的「只换顺序」（fushiReorderPopupEntries）在全部卡片建好后落地。
-    if (!stillRendering) applyPendingPopupEntryOrder();
     const generation = window._renderGeneration;
     const finish = () => {
         // A newer lookup replaced this DOM while the cold font was decoding.
@@ -5505,7 +6667,7 @@ function _firePopupRendered(stillRendering) {
 }
 
 // ===== N 列 masonry 词典方框排列（照抄 Niratan Features/Popup/popup.js layoutMasonry，
-//        一般化到 Hibiki 的 --dict-columns N 列）=====
+//        一般化到 Fushi 的 --dict-columns N 列）=====
 // develop 原本用 CSS grid `.glossary-section > .category-body`(repeat(--dict-columns,1fr))
 // 行对齐排列：同一行的词典卡片被该行最高者顶到同一水平线，矮卡片下方留空隙（Niratan 的
 // 紧密堆则无此空隙）。这里在 grid 之上叠一层运行时 masonry——cols>1 且多卡时用 inline-style
@@ -5568,6 +6730,12 @@ function masonryGap() {
     return 6;
 }
 
+// 收起的卡片下方的纵向间距（用户 10-09「折叠状态紧凑一点」：一屏要能看到更多本词典）。
+// 只作用在「收起卡片之后」的行距，展开的卡片与列间距仍是 masonryGap()。
+function masonryCollapsedRowGap() {
+    return 4;
+}
+
 function masonryBodies() {
     const root = __fushiContainer();
     if (!root || typeof root.querySelectorAll !== 'function') return [];
@@ -5601,14 +6769,26 @@ function setStyleIfChanged(el, prop, value) {
 // offsetHeight」，一次重铺 = 卡片数次强制同步布局；叠加「每追加一块就全量重铺」就是
 // O((词条×词典)²) 次回流：50 块的查词尾巴要 0.8s 才铺完，期间卡片逐帧跳位、弹窗高度反复变。
 // 现在整轮只有两次强制布局（相 1 读 clientWidth、相 3 读 offsetHeight），与卡片数无关。
-// 列分配逻辑（最短列打包 + 粘着列）与单列/空 body 回落逐字不变。
+// 列分配沿用最短列打包；仅尺寸未变时复用列号，单列/空 body 仍回落 CSS。
 // [targetBodies] 缺省 = 全部词典义项容器；scheduleMasonry 只传脏 body。
+// 最近一次真实量到的词典义项容器宽度（相 1），供被跳过渲染的词条预写列宽。
+let __fushiMasonryBodyWidth = 0;
 function layoutMasonry(targetBodies) {
     const configured = dictColumns();
     const gap = masonryGap();
     const plans = [];
+    const presize = [];
     (targetBodies || masonryBodies()).forEach(body => {
         const items = [...body.children].filter(c => c.classList.contains('glossary-group'));
+        // BUG-3274：浏览器跳过渲染的屏外词条不读几何——读一次就把整棵子树强制排版。
+        // 只预写列宽（相 2 的写，不触发排版），它滚进视口时按最终列宽只排一遍，
+        // __fushiOnLazyEntryVisibility 随后只剩量高与摆位。
+        if (__fushiBodyRenderSkipped(body)) {
+            if (configured > 1 && items.length > 0) {
+                presize.push({ body, items, cols: Math.min(configured, items.length) });
+            }
+            return;
+        }
         // 经典单列（设置=1）或该词条无词典卡：不做 masonry，清 inline 回落 CSS
         //（block 纵向堆叠 + CSS margin-top / 空容器）。
         if (configured <= 1 || items.length === 0) {
@@ -5623,13 +6803,34 @@ function layoutMasonry(targetBodies) {
         const cols = Math.min(configured, items.length);
         plans.push({ body, items, cols, columnWidth: 0, itemHeights: null });
     });
-    if (plans.length === 0) return;
+    if (plans.length === 0 && presize.length === 0) return;
 
     // 相 1（读）：所有 body 的可用宽度一次读完。body 从 grid 切到 block 不改变其宽度
     //（都是撑满父容器的块级盒），故可先读后写。
     plans.forEach(plan => {
         plan.columnWidth = (plan.body.clientWidth - (plan.cols - 1) * gap) / plan.cols;
+        __fushiMasonryBodyWidth = plan.body.clientWidth;
     });
+    // 被跳过渲染的 body 与已渲染的 body 同宽（同一容器下的同构词条），用最近一次真实量到
+    // 的宽度；一次都没量过（首屏全被跳过，不会发生）就不预写，留给可见时整铺。
+    if (__fushiMasonryBodyWidth > 0) {
+        presize.forEach(({ body, items, cols }) => {
+            const width = `${(__fushiMasonryBodyWidth - (cols - 1) * gap) / cols}px`;
+            setStyleIfChanged(body, 'position', 'relative');
+            setStyleIfChanged(body, 'display', 'block');
+            items.forEach(item => {
+                // 还没摆过位的卡片先藏起来（同 BUG-1727 增量预藏）：可见时相 4 摆位并恢复，
+                // 绝不露出叠在 (0,0) 的一帧。
+                if (item.dataset.masonryCol === undefined) item.style.visibility = 'hidden';
+                if (item.style.position !== 'absolute') item.style.position = 'absolute';
+                setStyleIfChanged(item, 'left', '0');
+                setStyleIfChanged(item, 'top', '0');
+                setStyleIfChanged(item, 'marginTop', '0');
+                setStyleIfChanged(item, 'width', width);
+            });
+        });
+    }
+    if (plans.length === 0) return;
     // 相 2（写）：定位与列宽。宽度决定高度，必须在量高之前落下；位置（transform）不影响
     // 高度，留到相 4。
     plans.forEach(({ body, items, columnWidth }) => {
@@ -5650,38 +6851,251 @@ function layoutMasonry(targetBodies) {
     });
     // 相 4（写）：分列 + 摆位 + 容器高度。
     plans.forEach(({ body, items, cols, columnWidth, itemHeights }) => {
-        // 粘着列分配（修用户「开关方框时按上下高度左右重排，实际只应上下动」）：只要列数没变、
-        // 且每张卡片都已记录合法列号，就复用既有列分配——展开/收起改高度时只在各自列内重算纵向
-        // 位置，卡片只上下动、绝不换列左右跳。仅列数变（窗口宽/设置）或有新卡片（增量加载，某卡
-        // 无记录）时，才用「最短列」从头打包并记录列号。
+        // BUG-2998：按当前需求恢复原最短列算法的自适应行为。辞典展开/收起、图片或字体
+        // 改变任一卡片实测高度时，旧列分配已不适合当前空间，整组重新打包。只在列数、
+        // 高度和列号都未变时复用；保留同高 RO 通知过滤与批处理，避免无变化时反复移动。
         const prevCols = Number.parseInt(body.dataset.masonryCols, 10);
         const canReuse = prevCols === cols &&
-            items.every(item => {
+            items.every((item, index) => {
                 const c = Number.parseInt(item.dataset.masonryCol, 10);
-                return Number.isFinite(c) && c >= 0 && c < cols;
+                return Number.isFinite(c) && c >= 0 && c < cols &&
+                    item.__fushiMasonryHeight === itemHeights[index];
             });
 
         const heights = new Array(cols).fill(0);
+        const lastGaps = new Array(cols).fill(0);
         items.forEach((item, index) => {
             let c;
             if (canReuse) {
-                c = Number.parseInt(item.dataset.masonryCol, 10); // 复用粘着列，不重新分列
+                c = Number.parseInt(item.dataset.masonryCol, 10); // 尺寸未变，保留当前列
             } else {
                 c = 0;
                 for (let i = 1; i < cols; i++) {
-                    if (heights[i] < heights[c]) c = i; // 首次：最短列打包
+                    if (heights[i] < heights[c]) c = i; // 按当前实测高度选最短列
                 }
-                item.dataset.masonryCol = String(c); // 记住列号，之后开关都粘着此列
+                item.dataset.masonryCol = String(c); // 供尺寸未变的后续测量复用
             }
             const transform = `translate(${c * (columnWidth + gap)}px, ${heights[c]}px)`;
             setStyleIfChanged(item, 'transform', transform);
             item.style.visibility = ''; // BUG-1727：增量预藏的卡片定位完成即恢复可见
             item.__fushiMasonryHeight = itemHeights[index]; // 供 ResizeObserver 判「真变了没」
-            heights[c] += itemHeights[index] + gap;
+            const rowGap = item.open === false ? masonryCollapsedRowGap() : gap;
+            heights[c] += itemHeights[index] + rowGap;
+            lastGaps[c] = rowGap;
         });
         body.dataset.masonryCols = String(cols);
-        setStyleIfChanged(body, 'height', `${Math.max(...heights) - gap}px`);
+        // 容器高 = 各列「末张卡底」的最大值（去掉各列最后一张卡后面那段行距）。
+        for (let i = 0; i < cols; i++) heights[i] -= lastGaps[i];
+        setStyleIfChanged(body, 'height', `${Math.max(...heights)}px`);
     });
+}
+
+// BUG-3274：查词结果的尾批词条交给浏览器按需渲染（`content-visibility: auto`）。
+// 实测 38 本词典查「トランクルーム」：10 个词头 2.1MB 释义建出约 3.9 万个节点、内容高约
+// 4 万 px，而弹窗一屏只露 700px。旧实现每追加一块词典卡就合帧铺一次 masonry，相 1/相 3
+// 的几何读会把**整页**未排版的新内容同步排一遍——4 倍降速（≈平板）下尾批 4.2 秒、单帧
+// 最长 600ms，用户看到的就是「查出来要好几秒、滑动成块卡顿、卡片来回跳」。
+// 屏外词条被浏览器跳过样式 / 布局 / 绘制；masonry 只铺渲染中的词条（几何读不会再强制
+// 排版屏外子树），词条滚进视口（contentvisibilityautostatechange skipped=false）时在
+// 同一个渲染更新里就地铺好，不露一帧行对齐 grid。不支持该事件的引擎（旧 WebKit）不加
+// 这个类，行为与旧版完全一致。首词条永不延迟：它是同步 reveal 路径。
+const __fushiLazyEntriesSupported = (() => {
+    try {
+        return typeof window !== 'undefined'
+            && 'oncontentvisibilityautostatechange' in window
+            && typeof CSS !== 'undefined' && typeof CSS.supports === 'function'
+            && CSS.supports('content-visibility', 'auto');
+    } catch (_) {
+        return false;
+    }
+})();
+
+function __fushiOnLazyEntryVisibility(ev) {
+    const entryEl = ev.currentTarget;
+    if (!entryEl) return;
+    entryEl.__fushiRenderSkipped = !!ev.skipped;
+    if (ev.skipped || !entryEl.isConnected) return;
+    const bodies = [...entryEl.querySelectorAll('.glossary-section > .category-body')];
+    if (bodies.length) layoutMasonry(bodies);
+    // 词条从 contain-intrinsic-size 的预估高度换成了真实高度：结果不满一屏时宿主是按
+    // 内容高度给弹窗定尺的，不复报就会按预估高度留白。尾批在途时由收尾那一发统一报。
+    if (!window._renderInProgress) _reportPopupHeight();
+}
+
+// [entryEl] 交给浏览器按需渲染。初始视为「被跳过」：首次渲染判定前 masonry 不碰它，
+// 否则几何读会强制把它整个排版，延迟就白做了。判定为可见时事件立即把它铺好。
+function __fushiMarkLazyEntry(entryEl) {
+    if (!__fushiLazyEntriesSupported || !entryEl || !entryEl.classList) return;
+    entryEl.classList.add('fushi-lazy-entry');
+    entryEl.__fushiRenderSkipped = true;
+    entryEl.addEventListener('contentvisibilityautostatechange', __fushiOnLazyEntryVisibility);
+}
+
+// BUG-3274：长释义切块按需渲染。『明鏡』とる 一张卡约 1 万字，单卡排版在 4 倍降速下
+// 要 0.3–1 秒、且无法拆分——整张卡只要进视口就一次付清。把卡片正文**已有的块级子元素**
+// 各自标成 content-visibility:auto，滚到哪段才排哪段；尾批建完后空闲时逐段转回普通渲染
+// （__fushiWarmLazyContent）。
+//
+// containment 有副作用（溢出部分被裁、子元素外边距不再穿透、style containment 把计数器
+// 圈成新实例），所以：
+//   · 段一进入浏览器的预渲染区（contentvisibilityautostatechange skipped=false，视口外
+//     还有一段边距）就立刻摘掉类名回到普通渲染——用户看到的始终是原样排版，containment
+//     只作用于从没进过视口的部分。
+//   · 只标已有元素、绝不插包装：插包装会让词典 CSS 的 `>` / `+` / `:first-child` 失配，
+//     包进行内元素还会改变断行。「文字 + <br>」平铺的正文因此不切（整块渲染）。
+//   · `li` 永不标；词典样式 / 用户 CSS / 正文内联样式里出现 counter 或 list-item（隐式
+//     列表计数器）的整张卡不切。
+const LAZY_GLOSSARY_MIN_CHARS = 300;    // 正文不到这个量的卡片不切（切了也省不了什么）
+const LAZY_CHUNK_SPLIT_CHARS = 2400;    // 子树比这大就继续往里切
+const LAZY_CHUNK_MIN_CHARS = 30;        // 比这小的块不值得单独成段
+const LAZY_CHUNK_TAGS = new Set(['DIV', 'P', 'TABLE', 'SECTION', 'ARTICLE', 'UL', 'OL', 'DL', 'BLOCKQUOTE', 'DETAILS']);
+const LAZY_COUNTER_PATTERN = /counter|list-item/;
+
+// 只在 Blink（WebView2 / Android WebView / Chrome 扩展）上切块。WebKit（iOS / macOS
+// WKWebView，Mac 实测 macOS 27.2）在元素摘掉 content-visibility 后不重建渲染对象：containment
+// 期间建立的独立格式化上下文残留下来，子元素外边距从此不再向外合并——释放后的段与从没
+// 切过的排版不同（『明鏡』とる 卡内整体下移 1.125px；偏差量 = 子元素外边距，换词典可达
+// 1em），强制重排也不恢复，只有 display:none 重建渲染对象才恢复。Gecko 未验证，同样不切。
+// 词条级按需渲染（fushi-lazy-entry）在 WebKit 上逐屏像素与修复前一致，照常生效。
+const __fushiLazyChunksSupported = __fushiLazyEntriesSupported && (() => {
+    try {
+        return /(Chrome|Chromium|Edg)\//.test(String(navigator.userAgent || ''));
+    } catch (_) {
+        return false;
+    }
+})();
+
+function __fushiDictCssUsesCounters(dictName) {
+    const custom = window.customDictCSS && typeof window.customDictCSS === 'object'
+        ? window.customDictCSS[dictName] : '';
+    return [window.dictionaryStyles?.[dictName], window.globalDictCSS, custom]
+        .some(css => typeof css === 'string' && LAZY_COUNTER_PATTERN.test(css));
+}
+
+// 段回到普通渲染：摘类名与预估高度、卸监听。浏览器判定它将要可见时（预渲染区）与空闲
+// 预热时各调一次，幂等。
+function __fushiReleaseLazyChunk(chunk) {
+    chunk.removeEventListener('contentvisibilityautostatechange', __fushiOnLazyChunkVisibility);
+    chunk.classList.remove('fushi-lazy-chunk');
+    chunk.style.containIntrinsicSize = '';
+    chunk.__fushiRenderSkipped = false;
+}
+
+function __fushiOnLazyChunkVisibility(ev) {
+    const chunk = ev.currentTarget;
+    if (!chunk) return;
+    if (ev.skipped) {
+        chunk.__fushiRenderSkipped = true;
+        return;
+    }
+    __fushiReleaseLazyChunk(chunk);
+}
+
+function __fushiChunkLongGlossary(root, dictName) {
+    if (!__fushiLazyChunksSupported || !root || typeof root.textContent !== 'string') return;
+    // 历史页回退要按真实高度恢复滚动位，同 lazyTailEntries 的约定：这次渲染全量排版。
+    if (window.__fushiPendingScrollTop > 0) return;
+    if (root.textContent.length < LAZY_GLOSSARY_MIN_CHARS) return;
+    if (__fushiDictCssUsesCounters(dictName)) return;
+    if (typeof root.querySelector === 'function'
+        && root.querySelector('[style*="counter"], [style*="list-item"]')) return;
+    // 预估高度只求量级对：未渲染的段按「字数 / 每行字数 × 行高」占位，渲染过一次后
+    // `auto` 记住真实高度。宽度取最近一次量到的词典容器宽度（不读几何，不强制排版）。
+    const zoom = __fushiDocumentZoom();
+    const bodyWidth = __fushiMasonryBodyWidth > 0
+        ? __fushiMasonryBodyWidth : __fushiViewportWidth() / zoom;
+    const columnWidth = bodyWidth / Math.max(1, dictColumns());
+    const fontPx = 16;
+    const charsPerLine = Math.max(8, Math.floor(columnWidth / fontPx));
+    const walk = (node) => {
+        for (const child of node.children) {
+            const chars = (child.textContent || '').length;
+            if (chars === 0) continue;
+            if (chars > LAZY_CHUNK_SPLIT_CHARS && child.children.length > 0) {
+                walk(child);
+                continue;
+            }
+            if (chars < LAZY_CHUNK_MIN_CHARS || !LAZY_CHUNK_TAGS.has(child.tagName)) continue;
+            const lines = Math.ceil(chars / charsPerLine);
+            child.classList.add('fushi-lazy-chunk');
+            child.style.containIntrinsicSize = `auto ${Math.round(lines * fontPx * 1.8)}px`;
+            child.__fushiRenderSkipped = true;
+            child.addEventListener('contentvisibilityautostatechange', __fushiOnLazyChunkVisibility);
+        }
+    };
+    walk(root);
+}
+
+function __fushiUnlazyEntry(entryEl) {
+    entryEl.removeEventListener('contentvisibilityautostatechange', __fushiOnLazyEntryVisibility);
+    entryEl.classList.remove('fushi-lazy-entry');
+    entryEl.__fushiRenderSkipped = false;
+    entryEl.querySelectorAll('.glossary-section > .category-body').forEach(markMasonryDirty);
+    scheduleMasonry();
+}
+
+// 尾批建完后，空闲时自上而下把仍按需渲染的词条与长释义段转回普通渲染：用户滚到之前
+// 它们大概率已经排好。每个空闲时段按字数预算处理若干项（脚本里只是摘类名，排版成本
+// 落在随后那一帧），单帧成本有上界——与旧版「整个巨型词条一帧付清」不同。用户正在滚动
+// 时暂停：滚动中靠近视口的段浏览器本就会按需渲染，预热再往同一帧里塞排版只会添堵。
+// 查词时视频是暂停的，这段空闲 CPU 不与播放争抢；换词（换代）立即停止。
+const LAZY_WARM_CHARS_PER_STEP = 800;   // 4 倍降速下一步约 50ms
+const LAZY_WARM_SCROLL_QUIET_MS = 200;
+let __fushiLastScrollAt = 0;
+function __fushiNoteScroll() { __fushiLastScrollAt = performance.now(); }
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('scroll', __fushiNoteScroll, { capture: true, passive: true });
+}
+// 浏览器扩展里弹窗挂在 shadow root 上，滚动容器的 scroll 事件不穿出 shadow 边界，window
+// 收不到；在弹窗自己的根上再挂一次（幂等）。
+function __fushiWatchPopupScroll() {
+    const rootNode = __fushiRootNode();
+    if (!rootNode || rootNode === document || rootNode.__fushiScrollWatched) return;
+    if (typeof rootNode.addEventListener !== 'function') return;
+    rootNode.__fushiScrollWatched = true;
+    rootNode.addEventListener('scroll', __fushiNoteScroll, { capture: true, passive: true });
+}
+function __fushiWarmLazyContent(generation) {
+    __fushiWatchPopupScroll();
+    const schedule = (typeof requestIdleCallback === 'function')
+        ? (fn) => requestIdleCallback(fn, { timeout: 500 })
+        : (fn) => setTimeout(fn, 32);
+    const step = () => {
+        if (generation !== window._renderGeneration) return;
+        const root = __fushiContainer();
+        if (!root || typeof root.querySelector !== 'function') return;
+        const sinceScroll = performance.now() - __fushiLastScrollAt;
+        if (__fushiLastScrollAt > 0 && sinceScroll < LAZY_WARM_SCROLL_QUIET_MS) {
+            setTimeout(() => schedule(step), LAZY_WARM_SCROLL_QUIET_MS - sinceScroll);
+            return;
+        }
+        let budget = LAZY_WARM_CHARS_PER_STEP;
+        while (budget > 0) {
+            const entryEl = root.querySelector(':scope > .entry.fushi-lazy-entry');
+            if (entryEl) {
+                // 词条本体的排版成本 = 去掉仍切着的段之后剩下的字数。
+                let chunked = 0;
+                entryEl.querySelectorAll('.fushi-lazy-chunk').forEach(c => {
+                    chunked += (c.textContent || '').length;
+                });
+                budget -= Math.max(1, (entryEl.textContent || '').length - chunked);
+                __fushiUnlazyEntry(entryEl);
+                continue;
+            }
+            // 进过预渲染区的段已在事件里回到普通渲染，剩下的都是从没渲染过的。
+            const chunk = root.querySelector('.fushi-lazy-chunk');
+            if (!chunk) return;
+            budget -= (chunk.textContent || '').length;
+            __fushiReleaseLazyChunk(chunk);
+        }
+        schedule(step);
+    };
+    schedule(step);
+}
+
+function __fushiBodyRenderSkipped(body) {
+    const entryEl = body && typeof body.closest === 'function' ? body.closest('.entry') : null;
+    return !!(entryEl && entryEl.__fushiRenderSkipped === true);
 }
 
 function observeMasonryTargets() {
@@ -5794,11 +7208,13 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 // min(用户设置, 装得下的列数)，写 --dict-columns-effective 供 grid 消费；
 // resize 只改 CSS 变量（grid 自动 reflow，零重渲）。in-app 弹窗同规则受益。
 const DICT_COLUMN_MIN_WIDTH = 170;
-// 触屏设备（主指针 coarse）列宽门槛加倍：每列至少 2×DICT_COLUMN_MIN_WIDTH 才许并排。
-// 手机弹窗本就窄（竖屏 ~400px 宽 → 340 门槛下仍是单列，维持「竖着堆叠才是手机上正确
-// 形态」的原裁决），但不再被无条件锁死——平板横屏、in-app 桌面尺寸大窗这类 coarse 且
-// 宽的场景按视口正常出多列（审计报告 #1295：老版 coarse→1 把 in-app 弹窗静默锁死单列，
-// 没有任何逃生门）。fine 指针（桌面）门槛不变。CSS grid 与 JS masonry 都经本函数取列数。
+// 触屏设备（主指针 coarse）列宽门槛放宽到 1.5 倍：每列至少 1.5×DICT_COLUMN_MIN_WIDTH
+// 才许并排。手机竖屏弹窗 ~360–400px 宽 → 255 门槛下仍是单列，维持「竖着堆叠才是手机上
+// 正确形态」的原裁决；平板横屏、in-app 桌面尺寸大窗这类 coarse 且宽的场景按视口正常出
+// 多列（审计报告 #1295：老版 coarse→1 把 in-app 弹窗静默锁死单列，没有任何逃生门）。
+// BUG-3139：门槛曾是 2 倍（340），手机横屏的视频查词弹窗（384×853@2.81 横过来约 620px
+// 宽）永远只装得下一列，用户设了「最多三列」也从不出现两列。fine 指针（桌面）门槛不变。
+// CSS grid 与 JS masonry 都经本函数取列数。
 function isCoarsePointerType() {
     try {
         return !!(window.matchMedia
@@ -5812,22 +7228,52 @@ function isCoarsePointerType() {
 // 两者都走此函数——绝不再分叉（历史上 masonry 漏了视口收敛，自动调整对方框布局不生效）。
 function effectiveDictColumns() {
     // 报告 #1295：coarse 不再「一律单列」，改为提高单列门槛（见上方注释）。
-    const colFloor = isCoarsePointerType() ? DICT_COLUMN_MIN_WIDTH * 2 : DICT_COLUMN_MIN_WIDTH;
+    const colFloor = isCoarsePointerType() ? DICT_COLUMN_MIN_WIDTH * 1.5 : DICT_COLUMN_MIN_WIDTH;
     let configured = 1;
     try {
-        configured = parseInt(
-            getComputedStyle(document.documentElement)
-                .getPropertyValue('--dict-columns'), 10) || 1;
+        // BUG-3274：宿主把 --dict-columns 写在 documentElement 的内联样式上，先读内联值；
+        // getComputedStyle 会强制整页样式重算，而 masonry 每帧都要问一次列数（尾批期间实测
+        // 占主线程 1/8）。内联没有时才回落计算样式（样式表默认值）。
+        const docStyle = document.documentElement.style;
+        const inline = docStyle && typeof docStyle.getPropertyValue === 'function'
+            ? docStyle.getPropertyValue('--dict-columns') : '';
+        configured = parseInt(inline || getComputedStyle(document.documentElement)
+            .getPropertyValue('--dict-columns'), 10) || 1;
     } catch (e) {
         configured = 1;
     }
     if (!(configured > 0)) configured = 1;
-    const width = __fushiViewportWidth();
+    // 列宽门槛是 CSS px，比较对象必须是**布局**宽度：A−/A+（documentElement.style.zoom）
+    // 改的是 CSS px 与屏幕 px 的比例，视口物理宽不变、可排版的 CSS px 却按 1/zoom 变化。
+    // 拿物理宽比，放大字号后仍按小字号时的列数排，卡片被挤成一字一行（反向缩小时少排列）。
+    const width = __fushiViewportWidth() / __fushiDocumentZoom();
     const fit = width > 0
         ? Math.max(1, Math.floor(width / colFloor))
         : configured;
     return Math.min(configured, fit);
 }
+// documentElement 上的 CSS zoom（A−/A+ 与「词典字号」注入写在这里）；非法值按 1。
+function __fushiDocumentZoom() {
+    let z = 1;
+    try {
+        z = parseFloat(document.documentElement.style.zoom);
+    } catch (e) {
+        z = 1;
+    }
+    return (z > 0 && isFinite(z)) ? z : 1;
+}
+
+// A−/A+ 缩放后的重排入口（宿主的 __fushiApplyPopupViewport 收尾调用）。缩放改了
+// #entries-container 的 CSS 宽度，但 masonry 卡片的 inline 宽是上一次按旧宽度写死的 px：
+// 收起的卡片高度在 CSS px 下不随 zoom 变，ResizeObserver 不报，于是旧列宽一直留着——
+// 放大后两列卡片总宽超过容器，右列被裁出弹窗（PDF 第 2 页「缩放时词典条目溢出」）。
+// 这里按新宽度重算有效列数并整体重铺，不依赖 resize / 卡片高度变化去碰运气。
+function __fushiRelayoutPopupColumns() {
+    updateEffectiveDictColumns();
+    scheduleMasonryAll();
+}
+if (typeof window !== 'undefined') window.__fushiRelayoutPopupColumns = __fushiRelayoutPopupColumns;
+
 function updateEffectiveDictColumns() {
     const doc = document.documentElement;
     if (!doc || !doc.style || typeof doc.style.setProperty !== 'function') {
@@ -5842,13 +7288,149 @@ if (typeof window.addEventListener === 'function'
     window.addEventListener('resize', updateEffectiveDictColumns);
 }
 
+// 查询中的加载态（WebView 内）。宿主在**结果还没到**时推的是搜索期占位（app 内
+// `kPopupSearchingPlaceholderResult`，注入 `window.lookupPending = true`）；旧实现把它
+// 当成「没有词条」直接画「No results」，查词开始到结果落地之间就会闪一下假空态（Flutter
+// 盖板一撤、新结果还没渲染完的那几帧尤其明显）。这里改画加载指示器：
+//   · 150ms 后才露出（快查询根本不闪）；
+//   · 一旦露出至少停 300ms（结果早到就把这次渲染推迟到满 300ms，避免一闪而过）；
+//   · 结果替换掉已露出的指示器时淡入 150ms。
+// 指示器是 MD3 Expressive 加载指示器的 CSS 版（主色圆角形状在几种轮廓间变形旋转）；
+// 墨水屏 / 系统要求减少动态效果时换成静止三点。与 Flutter 侧 FushiDeferredLoading
+// 同一组时长。
+//
+// 指示器的 infinite 动画只能在「查询确实还在进行、且文档可见」时存在：热槽 WebView
+// 初始化 / 关闭复位都会推一次搜索期占位，随后停驻在屏外；Windows 上 WebView2 是纹理
+// 合成，停驻页里只要有一个 infinite 动画就会持续出帧（空闲 CPU / GPU）。所以占位
+// 本身只是一个**空的** `.popup-loading` 盒子，动画元素到 150ms 阈值、确认仍 pending
+// 且文档可见时才插入；任何换 DOM 的渲染、文档转隐藏都会把它摘掉（不是暂停）。
+// 注意：app 内热槽 seed / 复位推的也是 `lookupPending = true`（同一个占位单例），
+// 页面内无法区分「停驻空闲」与「真在查」——停驻期能否不插指示器取决于宿主是否在
+// 停驻时撤掉 pending / 让文档转 hidden。
+const POPUP_LOADING_DELAY_MS = 150;
+const POPUP_LOADING_MIN_VISIBLE_MS = 300;
+const POPUP_RESULTS_FADE_MS = 150;
+let __fushiLoadingTimer = 0;
+let __fushiLoadingShownAt = 0;
+let __fushiLoadingNode = null;
+let __fushiDeferredRenderTimer = 0;
+
+function __fushiPopupReducedMotion() {
+    try {
+        if (document.documentElement.classList.contains('eink')) return true;
+        return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (_) {
+        return false;
+    }
+}
+
+function __fushiPopupDocumentHidden() {
+    try {
+        return document.visibilityState === 'hidden';
+    } catch (_) {
+        return false;
+    }
+}
+
+// 摘掉已插入的指示器元素（动画随元素一起消失），保留空占位盒子；挂起的露出计时作废。
+function __fushiUnmountPopupLoadingIndicator() {
+    if (__fushiLoadingTimer) clearTimeout(__fushiLoadingTimer);
+    __fushiLoadingTimer = 0;
+    __fushiLoadingShownAt = 0;
+    const node = __fushiLoadingNode;
+    if (!node) return;
+    node.innerHTML = '';
+    node.classList.remove('visible');
+    node.classList.remove('is-static');
+}
+
+// 阈值到时才插入指示器：仍是同一个占位、仍挂在文档上、宿主仍声明 pending、文档可见。
+function __fushiArmPopupLoadingIndicator() {
+    if (__fushiLoadingTimer) clearTimeout(__fushiLoadingTimer);
+    __fushiLoadingTimer = 0;
+    const node = __fushiLoadingNode;
+    if (!node || __fushiPopupDocumentHidden()) return;
+    __fushiLoadingTimer = setTimeout(() => {
+        __fushiLoadingTimer = 0;
+        if (node !== __fushiLoadingNode || !node.isConnected) return;
+        if (window.lookupPending !== true || __fushiPopupDocumentHidden()) return;
+        const still = __fushiPopupReducedMotion();
+        // 只插入实际要显示的那一种：静止三点没有动画，变形形状才有。
+        node.innerHTML = still
+            ? '<div class="popup-loading-dots"><span></span><span></span><span></span></div>'
+            : '<div class="popup-loading-shape"></div>';
+        if (still) node.classList.add('is-static');
+        // 先落一次样式再加 .visible，0→1 的淡入过渡才会真的跑。
+        void node.offsetWidth;
+        node.classList.add('visible');
+        __fushiLoadingShownAt = performance.now();
+    }, POPUP_LOADING_DELAY_MS);
+}
+
+function renderPopupLoading(container) {
+    __fushiUnmountPopupLoadingIndicator();
+    container.innerHTML = '<div class="popup-loading" role="status" aria-busy="true"></div>';
+    __fushiLoadingNode = container.querySelector('.popup-loading');
+    __fushiArmPopupLoadingIndicator();
+}
+
+// 文档转隐藏（WebView 被挂起 / 窗口隐藏）：摘掉指示器；重新可见且仍在等结果时按同一
+// 150ms 阈值重新插入。
+function __fushiOnPopupVisibilityChange() {
+    if (__fushiPopupDocumentHidden()) {
+        __fushiUnmountPopupLoadingIndicator();
+        return;
+    }
+    const node = __fushiLoadingNode;
+    if (node && node.isConnected && window.lookupPending === true
+        && !__fushiLoadingShownAt && !__fushiLoadingTimer) {
+        __fushiArmPopupLoadingIndicator();
+    }
+}
+if (typeof document !== 'undefined' && document
+    && typeof document.addEventListener === 'function'
+    && !window.__fushiPopupLoadingVisibilityHooked) {
+    window.__fushiPopupLoadingVisibilityHooked = true;
+    document.addEventListener('visibilitychange', __fushiOnPopupVisibilityChange);
+}
+
+// 本次渲染要替换掉一个已露出的加载指示器、且它露出不足 300ms：返回还要等多久（ms）。
+function popupLoadingHoldRemaining(now, shownAt, minVisible) {
+    if (!shownAt) return 0;
+    return Math.max(0, minVisible - (now - shownAt));
+}
+
 window.renderPopup = function() {
+    // 有结果要替换已露出的加载指示器：先补足最短停留时间，再真正渲染（宿主等的
+    // popupRendered 随之后移，渲染令牌不变）。仍是搜索期占位时不必等。
+    if (__fushiDeferredRenderTimer) {
+        clearTimeout(__fushiDeferredRenderTimer);
+        __fushiDeferredRenderTimer = 0;
+    }
+    if (window.lookupPending !== true) {
+        const hold = popupLoadingHoldRemaining(
+            performance.now(), __fushiLoadingShownAt, POPUP_LOADING_MIN_VISIBLE_MS);
+        if (hold > 0) {
+            __fushiDeferredRenderTimer = setTimeout(() => {
+                __fushiDeferredRenderTimer = 0;
+                window.renderPopup();
+            }, hold);
+            return;
+        }
+    }
+    // 走到这里就要换掉当前 DOM：没露出的指示器计时作废、已插入的指示器摘掉（下面
+    // 换 innerHTML 也会摘，这里先显式断开引用）；露出过的，结果淡入接上。
+    const replacingLoader = __fushiLoadingShownAt > 0;
+    __fushiUnmountPopupLoadingIndicator();
+    __fushiLoadingNode = null;
     const t0 = performance.now();
     // Invalidate every deferred dictionary-block task from the preceding DOM
     // before taking ANY early return. Previously no-results/kanji-only paths
     // returned before advancing this generation, so an old multi-entry timer
     // could append stale cards into the freshly-rendered empty state.
     const gen = ++window._renderGeneration;
+    // 换词重渲染：上一个词的音频源菜单随旧 DOM 作废。
+    if (typeof closeAudioSourceMenu === 'function') closeAudioSourceMenu(false);
     // 上一轮的 masonry ResizeObserver 还观察着即将被 innerHTML='' 摘掉的全部卡片：
     // 观察目标被 observer 强引用，热槽 WebView 跨成百上千次查词不重载，这些
     // 已脱离文档的卡片子树就一直攒在内存里。换代时整体断开，新卡片由收尾的
@@ -5861,6 +7443,10 @@ window.renderPopup = function() {
     // 变形说明属于上一轮查词结果，不能独立于查询会话存活。它挂在 entries-container
     // 外面，单纯重建词条 DOM 不会移除，因此每轮渲染必须显式关闭并清空（含钉住态）。
     hideGrammarTooltip();
+    // BUG-3210：选区快照属于上一轮查词结果。热槽 WebView 跨查词不重载，不清的话
+    // 下一次**不经 pointerdown 的**制卡（「调整上下文」确认回点、快捷键/手柄制卡）会
+    // 把上一个词释义里选中的文字写进这张卡的 SelectionText。
+    clearSelectionSnapshot();
     // Cancel not-yet-visible status probes from the previous DOM before any new
     // entry headers are built. In-flight probes are epoch-gated on completion.
     resetEntryStateChecks();
@@ -5884,10 +7470,34 @@ window.renderPopup = function() {
         kanjiSection = null;
     }
 
+    if ((!entries || !entries.length) && !kanjiSection
+        && (window.lookupPending === true || window.lookupIdle === true)) {
+        // 搜索期占位：查询还没结束，不是「没有结果」。
+        // BUG-3274：宿主推的空闲占位（热槽 seed / 换词复位，lookupIdle=true）同样不是
+        // 「没有结果」——换词时隐藏层先收到它（层未翻可见 ⇒ pending=false），旧实现画成
+        // 「未找到」留在 DOM 里，结果一慢、宿主兜底强制翻可见就露出假空态。空闲时只留
+        // 空占位盒：指示器只在 pending 为真时才会插入（见 __fushiArmPopupLoadingIndicator）。
+        renderPopupLoading(container);
+        window._renderedGlossaryCounts = [];
+        _firePopupRendered();
+        return;
+    }
+    if (replacingLoader && !__fushiPopupReducedMotion() && typeof container.animate === 'function') {
+        try {
+            container.animate([{ opacity: 0 }, { opacity: 1 }],
+                { duration: POPUP_RESULTS_FADE_MS, easing: 'ease-out' });
+        } catch (_) { /* no-op */ }
+    }
+
     if ((!entries || !entries.length) && !kanjiSection) {
+        // M3E 空态：主题色 tonal 色块里的 search_off 矢量图标 + 标题 + 可选建议，
+        // 整块在容器里水平垂直居中（.no-results 跨满所有分栏，见 popup.css）。旧版
+        // 是一枚彩色 emoji 放大镜，各平台字形不同、不随主题变色。
+        const hint = window._noResultsHint;
         container.innerHTML = '<div class="no-results">'
-            + '<div class="no-results-icon">&#x1F50D;</div>'
-            + '<div>' + (window._noResultsMessage || 'No results found.') + '</div>'
+            + '<div class="no-results-icon">' + iconSvg('searchOff') + '</div>'
+            + '<div class="no-results-title">' + (window._noResultsMessage || 'No results found.') + '</div>'
+            + (hint ? '<div class="no-results-hint">' + hint + '</div>' : '')
             + '</div>';
         window._renderedGlossaryCounts = [];
         _firePopupRendered();
@@ -5973,6 +7583,11 @@ window.renderPopup = function() {
     // 每个宏任务最多创建一个词典块。新词条的 header 与它的首块同任务建立；
     // 同词条余块逐任务追加。generation 变化立即取消旧队列。
     let nextEntryIndex = 1;
+    // BUG-3274：尾批词条按需渲染。历史页回退要把滚动位恢复到离开时的像素位置，那个值
+    // 是按真实高度量的；屏外词条若只占预估高度，恢复会落错地方——这种渲染全量排版。
+    const lazyTailEntries = __fushiLazyEntriesSupported &&
+        !(window.__fushiPendingScrollTop > 0);
+    let lazyActive = false;
     let activeEntryElement = firstEntryHasDeferredBlocks ? firstEntry : null;
     let activeEntryIndex = activeEntryElement ? 0 : -1;
     let activeEntrySeparator = null;
@@ -6052,6 +7667,14 @@ window.renderPopup = function() {
                         }
                         fragment.appendChild(element);
                         entryDomIndex[idx] = renderedDomCount++;
+                        if (lazyTailEntries && !lazyActive) {
+                            // 已有内容超过两屏才开始延迟：结果少时宿主按内容高度给弹窗
+                            // 定尺，预估占位会让它先撑大再缩回；超过两屏时弹窗本就是最大
+                            // 高度。一旦成立就不再读几何（读一次即强制排版）。
+                            lazyActive = __fushiScrollHeight() >
+                                2 * (window.innerHeight || 0);
+                        }
+                        if (lazyActive) __fushiMarkLazyEntry(element);
                         container.appendChild(fragment);
                         activeEntryElement = element;
                         activeEntryIndex = idx;
@@ -6083,6 +7706,7 @@ window.renderPopup = function() {
         }
         // Second signal with the same token measures the final all-block height.
         finishRemainingEntries();
+        if (__fushiLazyEntriesSupported) __fushiWarmLazyContent(gen);
     };
     scheduleRenderTail(renderNextDictionaryBlock);
 };
@@ -6195,11 +7819,18 @@ window.updatePopupIncremental = function() {
     }
 
     // TODO-833: rebuild the dom-index map so a subsequent incremental call still
-    // locates nodes correctly (tail entries may have been skipped above). Built from
-    // each card's own lookup index, not by counting: after an order-only update
-    // (fushiReorderPopupEntries) the DOM order is no longer the array order.
+    // locates nodes correctly (tail entries may have been skipped above).
+    const rebuiltDomIndex = new Array(entries.length).fill(-1);
+    const finalEntries = container.querySelectorAll(':scope > .entry');
+    let domCursor = 0;
+    for (let idx = 0; idx < entries.length; idx++) {
+        if (entryGlossaryWrapperOrNull(entries[idx]) !== null) {
+            rebuiltDomIndex[idx] = domCursor < finalEntries.length ? domCursor : -1;
+            domCursor++;
+        }
+    }
     window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
-    window._entryDomIndex = rebuildEntryDomIndex(container, entries.length);
+    window._entryDomIndex = rebuiltDomIndex;
     applyCustomCSS();
 
     // 增量追加了新的词典方框，重排 masonry 并观察新卡片。
@@ -6210,113 +7841,6 @@ window.updatePopupIncremental = function() {
         window.__fushiRenderToken || 0,
         window.innerHeight || document.documentElement.clientHeight || 0);
 };
-
-// lookupEntries 下标 → `.entry` 的 DOM 下标（-1 = 没有卡片）。按卡片自带的身份
-// （buildEntryElement 写的 __fushiLookupIndex）建表，与 DOM 顺序是否等于数组顺序无关。
-function rebuildEntryDomIndex(container, length) {
-    const map = new Array(length).fill(-1);
-    const nodes = container.querySelectorAll(':scope > .entry');
-    for (let d = 0; d < nodes.length; d++) {
-        const idx = nodes[d].__fushiLookupIndex;
-        if (typeof idx === 'number' && idx >= 0 && idx < length) map[idx] = d;
-    }
-    return map;
-}
-
-function popupEntryOrderKey(entry) {
-    return String((entry && entry.expression) || '') + '\u0001' +
-        String((entry && entry.reading) || '');
-}
-
-// 查词「按句意挑词条」（ai_lookup_context_assistant.dart）：宿主只换词条顺序时走这里，
-// 而不是 renderPopup 全量重渲染。[keys] 是新顺序的词头身份（表记 + \u0001 + 读音）。
-//
-// 只挪已渲染的 `.entry` 卡片，别的一概不动：
-//   * window.lookupEntries 保持原数组——词条按钮闭包、selectedDictionaries、音频缓存都按
-//     它的下标记账，重排数组会让它们指向别的词条；DOM 与数组的对应关系本来就由卡片自带
-//     的下标 + _entryDomIndex 承担（TODO-833）。
-//   * 不重置滚动位、已选释义、句子上下文镜像：用户此刻可能已滚动 / 选了释义 / 调过前后句，
-//     而宿主的制卡草稿也没清——全量重渲染会把三者归零，界面与草稿错位（BUG-297 同型）。
-//     已滚动时以视口顶部那张卡为锚，挪完把它放回原来的屏上位置，内容不跳。
-// 尾批还在建时先记下，收尾（_firePopupRendered 终信号）再挪；被新一轮渲染取代就作废。
-window.fushiReorderPopupEntries = function(keys) {
-    if (!Array.isArray(keys)) return false;
-    if (window._renderInProgress) {
-        window.__fushiPendingEntryOrder = {
-            generation: window._renderGeneration,
-            keys: keys,
-        };
-        return true;
-    }
-    window.__fushiPendingEntryOrder = null;
-    return applyPopupEntryOrder(keys);
-};
-
-function applyPendingPopupEntryOrder() {
-    const pending = window.__fushiPendingEntryOrder;
-    if (!pending) return;
-    window.__fushiPendingEntryOrder = null;
-    if (pending.generation !== window._renderGeneration) return;
-    applyPopupEntryOrder(pending.keys);
-}
-
-function applyPopupEntryOrder(keys) {
-    const container = __fushiContainer();
-    const entries = window.lookupEntries;
-    if (!container || !Array.isArray(entries)) return false;
-    const nodes = Array.prototype.slice.call(
-        container.querySelectorAll(':scope > .entry'));
-    if (nodes.length < 2) return false;
-
-    // 新顺序：先按 keys 认领（同一身份按数组序逐个认领），漏掉的按原 DOM 序垫后，绝不丢卡。
-    const nodeOf = new Map();
-    for (const node of nodes) nodeOf.set(node.__fushiLookupIndex, node);
-    const ordered = [];
-    const claimed = new Set();
-    for (const key of keys) {
-        for (let idx = 0; idx < entries.length; idx++) {
-            if (claimed.has(idx) || popupEntryOrderKey(entries[idx]) !== key) continue;
-            claimed.add(idx);
-            if (nodeOf.has(idx)) ordered.push(nodeOf.get(idx));
-            break;
-        }
-    }
-    for (const node of nodes) {
-        if (ordered.indexOf(node) < 0) ordered.push(node);
-    }
-    if (ordered.every((node, i) => node === nodes[i])) return true;
-
-    const scroller = document.scrollingElement || document.documentElement;
-    let anchorNode = null;
-    let anchorTop = 0;
-    if (scroller && scroller.scrollTop > 0) {
-        anchorNode = nodes.find(n => n.getBoundingClientRect().bottom > 0) || null;
-        if (anchorNode) anchorTop = anchorNode.getBoundingClientRect().top;
-    }
-
-    // 卡片之间的分隔线随卡片重排：先摘下，按新顺序重插（数目不变）。首卡前有没有
-    // 分隔线（汉字卡在上方时有）照旧。
-    const isSeparator = (n) => !!n && n.tagName === 'HR';
-    const leadingSeparator = isSeparator(nodes[0].previousSibling);
-    for (const node of nodes) {
-        const prev = node.previousSibling;
-        if (isSeparator(prev)) container.removeChild(prev);
-    }
-    const tail = nodes[nodes.length - 1].nextSibling;
-    ordered.forEach((node, i) => {
-        if (i > 0 || leadingSeparator) {
-            container.insertBefore(document.createElement('hr'), tail);
-        }
-        container.insertBefore(node, tail);
-    });
-    window._entryDomIndex = rebuildEntryDomIndex(container, entries.length);
-
-    if (anchorNode) {
-        const delta = anchorNode.getBoundingClientRect().top - anchorTop;
-        if (delta) scroller.scrollTop += delta;
-    }
-    return true;
-}
 
 
 // BUG-260: finer mouse-wheel scroll granularity for the lookup popup.
@@ -6904,6 +8428,40 @@ function linkVisibleBaseText(root) {
     return out.replace(/\s+/g, ' ').trim();
 }
 
+// 用户反馈（10-09）：拖选复制释义时把振假名一起带出来（「折檻せっかん」），Yomitan /
+// Hoshi 都只复制基字。CSS 已让注音不可选（popup.css .ruby-rt / rt / rp user-select:none），
+// 但各引擎对「选区跨过 user-select:none 节点时序列化要不要带上它」并不一致，所以复制
+// 与宿主取选区文本（右键「复制 / 搜索」走 evaluateJavascript）都改由这里出文本：克隆
+// 选区片段，剔掉 rt / rp / .ruby-rt / .ruby-reserve 再取文本——与 linkVisibleBaseText
+// 同一套过滤集。选区不碰任何注音时与 String(selection) 逐字相同。
+function __fushiSelectionPlainText(selection) {
+    const sel = selection || __fushiSel();
+    if (!sel || !sel.rangeCount) return '';
+    const raw = String(sel);
+    let out = '';
+    let touchedRuby = false;
+    for (let i = 0; i < sel.rangeCount; i++) {
+        const frag = sel.getRangeAt(i).cloneContents();
+        frag.querySelectorAll('rt, rp, .ruby-rt, .ruby-reserve').forEach((n) => {
+            touchedRuby = true;
+            n.remove();
+        });
+        out += frag.textContent || '';
+    }
+    return touchedRuby ? out : raw;
+}
+if (typeof window !== 'undefined') window.__fushiSelectionPlainText = __fushiSelectionPlainText;
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('copy', (event) => {
+        const sel = __fushiSel();
+        if (!sel || !sel.rangeCount || !event.clipboardData) return;
+        const text = __fushiSelectionPlainText(sel);
+        if (text === String(sel)) return; // 没碰注音：交给浏览器原生复制（保留富文本）
+        event.clipboardData.setData('text/plain', text);
+        event.preventDefault();
+    });
+}
+
 function handleGlossaryAnchorClick(event, anchor) {
     event.preventDefault();
     const href = (anchor.getAttribute('href') || '').trim();
@@ -6916,7 +8474,9 @@ function handleGlossaryAnchorClick(event, anchor) {
         // 改走与 <img>/gaiji 完全相同的词典媒体字节通道播放：剥掉 sound: 前缀后交给
         // rewriteDictionaryMediaPath（app 内 → image:// 自定义 scheme，四个宿主表面
         // 均已注册；浏览器扩展 → 带 token 的 /api/media/dictionary HTTP 端点），
-        // 再用 playWordAudio 播（与单词 ♪ 同一 <audio> 路径：音量/interrupt 语义一致）。
+        // 再用 playWordAudio 播（与单词 ♪ 同一入口：音量/interrupt 语义一致；Android 主引擎上
+        // 同样经 playWordAudioNative 交宿主原生播放器，宿主按 image:// 取词典媒体字节，
+        // 不申请音频焦点、与 ♪ 互相打断而不叠播——BUG-3311）。
         // dictName 取最近的 [data-dictionary] 容器（MDX 释义 wrapper 3052 行必设）。
         const dictNode = anchor.closest('[data-dictionary]');
         const soundDict = dictNode ? dictNode.getAttribute('data-dictionary') : '';
@@ -6968,7 +8528,7 @@ function __fushiPopupClick(e) {
     // dismissDescendantsOf(parent), wrongly closing the child sub-popup (app-in).
     // It also hardens the app-OUT global overlay path (host frameIdAtPoint).
     if (target?.closest('.mine-button') || target?.closest('.audio-button') ||
-        target?.closest('.favorite-button')) return;
+        target?.closest('.favorite-button') || target?.closest('.fushi-audio-menu')) return;
     // BUG-2041：语法说明浮层的钉住态是可交互的（选中复制 / 关闭按钮），且它挂在
     // __fushiOverlayParent() 顶层、**不在 .entry 内**——不豁免就会一路落到本函数末尾
     // 的 tapOutside，点说明正文直接关掉整个查词窗。被它取代的旧 `.overlay` 卡片同样

@@ -42,6 +42,8 @@ const settingDefaults = Object.freeze({
   // （与系统长按选词菜单天然打架）。两者都只在真触屏手势上生效，桌面零影响。
   touchLookupTap: true,
   touchLookupHold: false,
+  // 深色下页面底为真黑（与 app「纯黑深色背景」同义）；只作用于预设 / 自定义调色板。
+  extensionPureBlack: false,
   // 安卓没有 chrome.sidePanel：触屏设备视频页边缘的「字幕列表」抽屉（mobile-drawer.js）。
   mobileSubtitleDrawer: true,
   // 播放器控制栏里的 Fushi 字幕按钮（player-controls.js）。关掉后视频页一个节点都不挂。
@@ -77,6 +79,7 @@ const toggleIds = Object.freeze({
   subtitleHidden: 'subtitleHidden',
   touchLookupTap: 'touchLookupTap',
   touchLookupHold: 'touchLookupHold',
+  extensionPureBlack: 'extensionPureBlack',
   mobileSubtitleDrawer: 'mobileSubtitleDrawer',
   playerControls: 'playerControls',
   videoShortcutPrevCue: 'videoShortcutPrevCue',
@@ -169,7 +172,7 @@ async function loadSettings() {
   // 旧 subtitleHoverPause / videoShortcutsEnabled 只作一次向后兼容读取：
   // 新键已有显式值时永远优先；旧键不再由 UI 写入。
   const keys = ['host', 'port', 'token', 'subtitleHoverPause', 'videoShortcutsEnabled',
-    'popupSizeFromApp'].concat(Object.values(toggleIds))
+    'popupSizeFromApp', 'extensionPalette'].concat(Object.values(toggleIds))
     .concat(Object.values(selectSettings).map((s) => s.key));
   const saved = await chrome.storage.local.get(keys);
   if (saved.host != null && saved.host !== '') $('host').value = saved.host;
@@ -185,6 +188,10 @@ async function loadSettings() {
     }
     if (typeof value !== 'boolean' && shortcutKeys.includes(key)) {
       value = saved.videoShortcutsEnabled;
+    }
+    // 纯黑没写过：旧「纯黑」预设用户缺省开（与 theme.js pureBlackFrom 同律，显示与生效一致）。
+    if (typeof value !== 'boolean' && key === 'extensionPureBlack') {
+      value = saved.extensionPalette === 'black-theme';
     }
     input.checked = typeof value === 'boolean' ? value : settingDefaults[key];
     input.addEventListener('change', async () => {
@@ -204,6 +211,8 @@ async function loadSettings() {
     });
   }
   await loadPopupSize(saved);
+  await loadPopupFontSize();
+  await loadShortcutKeys();
 }
 
 // ── 查词框大小 ──
@@ -249,6 +258,148 @@ async function loadPopupSize(saved) {
     // change（失焦/回车）而非 input：边打字边发请求会把「4」当成 4px 提交上去。
     on(id, 'change', submitPopupSize);
   }
+}
+
+// ── 词典字号（只作用于浏览器的可选覆盖，见 popup-size.js FUSHI_POPUP_FONT_SIZE_KEY）──
+// 留空 = 跟随 Fushi（删键，不存等值快照）；越界值夹进范围后回显，让用户当场看到实际生效值。
+// ── 自定义快捷键（用户群 10-09）──
+// 判定 / 规范化 / 显示全在 video-shortcuts.js（页面先于本文件加载，FUSHI_VIDEO_SHORTCUTS），
+// 这里只做录入：点键帽 → 按下新组合 → 查重 → 写 videoShortcutKeys（只存改过的动作，
+// 改回默认即删项，全删则删键）。Esc 取消，Backspace / Delete 恢复该动作的默认键。
+const VS = (typeof self !== 'undefined' && self.FUSHI_VIDEO_SHORTCUTS) || null;
+const SHORTCUT_KEYS_SETTING = VS ? VS.KEYS_SETTING : 'videoShortcutKeys';
+let shortcutCustom = {};
+let shortcutRecording = null; // {button, action, onKey, onBlur}
+
+function shortcutActionName(action) {
+  const btn = document.querySelector ? document.querySelector('[data-shortcut-action="' + action + '"]') : null;
+  const strong = btn && btn.closest ? btn.closest('.shortcut-row').querySelector('strong') : null;
+  return strong ? strong.textContent : action;
+}
+
+function renderShortcutKeys() {
+  if (!VS || !document.querySelectorAll) return;
+  const combos = VS.resolveCombos(shortcutCustom);
+  for (const btn of document.querySelectorAll('[data-shortcut-action]')) {
+    if (shortcutRecording && shortcutRecording.button === btn) continue;
+    const action = btn.dataset.shortcutAction;
+    btn.textContent = VS.formatCombo(combos[action]) || '—';
+    btn.dataset.custom = shortcutCustom[action] ? '1' : '';
+    btn.dataset.recording = '';
+  }
+}
+
+function stopShortcutRecording() {
+  const rec = shortcutRecording;
+  if (!rec) return;
+  shortcutRecording = null;
+  window.removeEventListener('keydown', rec.onKey, true);
+  rec.button.removeEventListener('blur', rec.onBlur);
+  renderShortcutKeys();
+}
+
+async function saveShortcutCustom(next) {
+  shortcutCustom = next;
+  if (Object.keys(next).length) await chrome.storage.local.set({ [SHORTCUT_KEYS_SETTING]: next });
+  else await chrome.storage.local.remove(SHORTCUT_KEYS_SETTING);
+}
+
+function startShortcutRecording(button) {
+  if (!VS) return;
+  if (shortcutRecording) stopShortcutRecording();
+  const action = button.dataset.shortcutAction;
+  const onKey = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (e.key === 'Escape' && !ctrl && !e.shiftKey && !e.altKey) { stopShortcutRecording(); return; }
+    if ((e.key === 'Backspace' || e.key === 'Delete') && !ctrl && !e.shiftKey && !e.altKey) {
+      const next = Object.assign({}, shortcutCustom);
+      delete next[action];
+      stopShortcutRecording();
+      await saveShortcutCustom(next);
+      renderShortcutKeys();
+      toast(tr('opt_toast_shortcut_reset', { name: shortcutActionName(action) }));
+      return;
+    }
+    const combo = VS.comboFromEvent({ key: e.key, code: e.code, ctrl, shift: e.shiftKey, alt: e.altKey });
+    if (!combo) return; // 只按了修饰键：继续等主键
+    const conflict = VS.conflictOf(VS.resolveCombos(shortcutCustom), action, combo);
+    if (conflict) {
+      toast(tr('opt_toast_shortcut_conflict', { combo: VS.formatCombo(combo), name: shortcutActionName(conflict) }));
+      return; // 留在录入态，换一个组合
+    }
+    const next = Object.assign({}, shortcutCustom);
+    if (combo === VS.DEFAULT_COMBOS[action]) delete next[action];
+    else next[action] = combo;
+    stopShortcutRecording();
+    await saveShortcutCustom(next);
+    renderShortcutKeys();
+    toast(tr('opt_toast_shortcut_saved', { name: shortcutActionName(action), combo: VS.formatCombo(combo) }));
+  };
+  const onBlur = () => stopShortcutRecording();
+  shortcutRecording = { button, action, onKey, onBlur };
+  button.dataset.recording = '1';
+  button.textContent = tr('opt_shortcut_recording');
+  window.addEventListener('keydown', onKey, true);
+  button.addEventListener('blur', onBlur);
+}
+
+async function loadShortcutKeys() {
+  if (!VS || !document.querySelectorAll) return;
+  const store = await chrome.storage.local.get([SHORTCUT_KEYS_SETTING]);
+  const raw = store[SHORTCUT_KEYS_SETTING];
+  shortcutCustom = raw && typeof raw === 'object' ? Object.assign({}, raw) : {};
+  for (const btn of document.querySelectorAll('[data-shortcut-action]')) {
+    btn.addEventListener('click', (e) => {
+      // 键帽在 <label for=开关> 里：点它是改键，不是翻开关。
+      e.preventDefault();
+      e.stopPropagation();
+      if (shortcutRecording && shortcutRecording.button === btn) stopShortcutRecording();
+      else startShortcutRecording(btn);
+    });
+  }
+  renderShortcutKeys();
+}
+
+// popup-size.js 在页面里先于本文件加载；node 测试壳只装本文件时按同值回落。
+const POPUP_FONT_KEY = typeof FUSHI_POPUP_FONT_SIZE_KEY === 'string' ? FUSHI_POPUP_FONT_SIZE_KEY : 'popupFontSize';
+const POPUP_FONT_MIN = typeof FUSHI_POPUP_FONT_SIZE_MIN === 'number' ? FUSHI_POPUP_FONT_SIZE_MIN : 10;
+const POPUP_FONT_MAX = typeof FUSHI_POPUP_FONT_SIZE_MAX === 'number' ? FUSHI_POPUP_FONT_SIZE_MAX : 40;
+function normalizePopupFontSize(value) {
+  if (typeof fushiNormalizePopupFontSize === 'function') return fushiNormalizePopupFontSize(value);
+  const n = Math.round(Number(value));
+  return typeof value === 'number' && n >= POPUP_FONT_MIN && n <= POPUP_FONT_MAX ? n : null;
+}
+
+function fillPopupFontSize(value) {
+  const input = $('popupFontSize');
+  if (!input || document.activeElement === input) return;
+  const px = normalizePopupFontSize(value);
+  input.value = px == null ? '' : String(px);
+}
+
+async function submitPopupFontSize() {
+  const input = $('popupFontSize');
+  if (!input) return;
+  const raw = String(input.value || '').trim();
+  if (!raw) {
+    await chrome.storage.local.remove(POPUP_FONT_KEY);
+    toast(tr('opt_toast_popup_font_size_follow'));
+    return;
+  }
+  const n = Number(raw);
+  if (!isFinite(n)) { input.value = ''; return; }
+  const px = Math.min(POPUP_FONT_MAX, Math.max(POPUP_FONT_MIN, Math.round(n)));
+  input.value = String(px);
+  await chrome.storage.local.set({ [POPUP_FONT_KEY]: px });
+  toast(tr('opt_toast_popup_font_size_saved', { size: px }));
+}
+
+async function loadPopupFontSize() {
+  const store = await chrome.storage.local.get([POPUP_FONT_KEY]);
+  fillPopupFontSize(store[POPUP_FONT_KEY]);
+  on('popupFontSize', 'change', submitPopupFontSize);
 }
 
 on('connectionForm', 'submit', async (event) => {
@@ -375,6 +526,9 @@ async function refreshUpdateCard() {
   titleEl.textContent = tr('opt_updTitle_title') + ' · ' + s.title;
   if (detailEl) detailEl.textContent = s.detail;
   if (buildEl) buildEl.textContent = s.build ? 'build ' + s.build : '';
+  // 语义色块（material.css「语义 tonal 色块」）：warn = 自更新失效，其余（ok / neutral）是中性卡。
+  const card = $('updateCard');
+  if (card) card.dataset.tone = s.tone || 'neutral';
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -390,6 +544,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (select) select.value = changes[spec.key].newValue || spec.fallback;
   }
   if (changes.popupSizeFromApp) fillPopupSizeInputs(changes.popupSizeFromApp.newValue);
+  if (changes[POPUP_FONT_KEY]) fillPopupFontSize(changes[POPUP_FONT_KEY].newValue);
+  if (changes[SHORTCUT_KEYS_SETTING]) {
+    const v = changes[SHORTCUT_KEYS_SETTING].newValue;
+    shortcutCustom = v && typeof v === 'object' ? Object.assign({}, v) : {};
+    renderShortcutKeys();
+  }
   if (changes.fushiUpdateStale) refreshUpdateCard();
 });
 
@@ -404,7 +564,7 @@ refreshUpdateCard();
 // 重着色，所见即所得；不设「保存」按钮（与 app 的自定义主题页一致）。
 const PALETTE = self.fushiThemePalette || null;
 const THEME = self.fushiTheme || null;
-let paletteState = { palette: 'fushi', customThemes: [], appMirror: null };
+let paletteState = { palette: (PALETTE && PALETTE.DEFAULT_PALETTE) || 'app', customThemes: [], appMirror: null };
 
 function paletteLabel(id) {
   if (id === 'app') return tr('theme_palette_app');
@@ -416,34 +576,128 @@ function paletteLabel(id) {
   return p ? tr(p.labelKey) : id;
 }
 
-// 一颗色块的两个示意色：主色 + 表面色（当前明暗下）。
+// 一张主题卡的预览色：页面底 / 顶栏 / 文字 / 强调色（当前明暗下）。
 function swatchColors(id) {
   if (!PALETTE || !THEME) return null;
+  // 按当前明暗预览：预设只决定配色家族，不决定明暗（用户 2026-10-06「切换主题时如果我是深色就要
+  // 继续保持深色」），选中哪款页面明暗都不变。
   const scheme = THEME.resolve();
   let tokens = null;
   if (id === 'app') {
-    tokens = PALETTE.tokensFromAppTheme(paletteState.appMirror && paletteState.appMirror[scheme]);
+    tokens = PALETTE.tokensFromAppTheme(paletteState.appMirror && paletteState.appMirror[scheme], scheme);
     if (!tokens) return null;
-  } else if (id === 'fushi') {
-    tokens = null;
   } else {
+    // 预设 / 自定义按当前明暗与「纯黑深色背景」派生（与生效主题同一份算法），所见即所得。
     const spec = PALETTE.specFor(id, paletteState.customThemes);
-    tokens = spec ? PALETTE.derive(spec, scheme) : null;
+    tokens = spec ? PALETTE.derive(spec, scheme, { pureBlack: !!(THEME && THEME.pureBlack) }) : null;
   }
-  if (!tokens) {
-    // 默认绿：theme.css 的值经计算样式取，色块与页面同源。
-    const cs = getComputedStyle(document.documentElement);
-    return { primary: cs.getPropertyValue('--fushi-primary').trim(), surface: cs.getPropertyValue('--fushi-surface').trim() };
+  const pick = (name) => {
+    if (tokens && tokens[name]) return tokens[name];
+    // 派生不可用（material-color.js 缺席）：theme.css 的值经计算样式取，预览与页面同源。
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  };
+  return {
+    primary: pick('--fushi-primary'),
+    surface: pick('--fushi-surface'),
+    bg: pick('--fushi-bg'),
+    bar: pick('--fushi-surface-strong'),
+    text: pick('--fushi-text'),
+  };
+}
+
+// 微缩界面预览（与 app 设置页 FushiSchemeSwatch / _SchemeMiniUiPainter 同一画法）：页面底 +
+// 顶栏（带强调色小圆点）+ 两条文字线 + 强调色胶囊按钮。
+function paletteMiniPreview(colors) {
+  const pv = document.createElement('span');
+  pv.className = 'palette-preview';
+  pv.setAttribute('aria-hidden', 'true');
+  if (!colors) {
+    pv.classList.add('is-pending');
+    return pv;
   }
-  return { primary: tokens['--fushi-primary'], surface: tokens['--fushi-surface'] };
+  pv.style.setProperty('--sw-bg', colors.bg || colors.surface);
+  pv.style.setProperty('--sw-bar', colors.bar || colors.surface);
+  pv.style.setProperty('--sw-text', colors.text);
+  pv.style.setProperty('--sw-primary', colors.primary);
+  for (const part of ['pv-bar', 'pv-line pv-line-1', 'pv-line pv-line-2', 'pv-pill']) {
+    const s = document.createElement('span');
+    s.className = part;
+    pv.appendChild(s);
+  }
+  return pv;
+}
+
+function paletteCheckBadge() {
+  const b = document.createElement('span');
+  b.className = 'palette-check';
+  b.setAttribute('aria-hidden', 'true');
+  appendIcon(b, 'check', 14);
+  return b;
+}
+
+// Material Symbols Rounded 图标（icons.js）；脚本缺席时退回一个文字字形，不崩。
+function appendIcon(parent, name, size, fallbackText) {
+  if (typeof self.fushiIcon === 'function') {
+    const svg = self.fushiIcon(name, { size });
+    if (svg) { parent.appendChild(svg); return; }
+  }
+  if (fallbackText) parent.textContent = fallbackText;
+}
+
+// 主题卡网格的键盘：roving tabindex（Tab 只进出一次，落在选中项上），方向键移动焦点（上下按
+// 实际排版的行列），Home/End 到首尾，Enter / 空格选中（button 原生行为）。
+function paletteGridItems(grid) {
+  return Array.prototype.slice.call(grid.querySelectorAll('.palette-swatch'));
+}
+
+function onPaletteGridKeydown(e) {
+  const grid = e.currentTarget;
+  const items = paletteGridItems(grid);
+  const cur = items.indexOf(document.activeElement);
+  if (cur < 0) return;
+  let next = -1;
+  if (e.key === 'ArrowRight') next = Math.min(items.length - 1, cur + 1);
+  else if (e.key === 'ArrowLeft') next = Math.max(0, cur - 1);
+  else if (e.key === 'Home') next = 0;
+  else if (e.key === 'End') next = items.length - 1;
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const rect = items[cur].getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const down = e.key === 'ArrowDown';
+    let best = -1, bestRow = Infinity, bestDx = Infinity;
+    items.forEach((it, i) => {
+      const r = it.getBoundingClientRect();
+      const dy = down ? r.top - rect.top : rect.top - r.top;
+      if (dy < 4) return; // 同一行或反方向
+      const dx = Math.abs(r.left + r.width / 2 - cx);
+      if (dy < bestRow - 4 || (Math.abs(dy - bestRow) <= 4 && dx < bestDx)) {
+        best = i; bestRow = dy; bestDx = dx;
+      }
+    });
+    next = best >= 0 ? best : cur;
+  } else {
+    return;
+  }
+  e.preventDefault();
+  if (next === cur) return;
+  items.forEach((it, i) => { it.tabIndex = i === next ? 0 : -1; });
+  items[next].focus();
 }
 
 function renderPaletteGrid() {
   const grid = $('paletteGrid');
   if (!grid || !PALETTE) return;
-  const ids = ['app', 'fushi'].concat(PALETTE.PRESETS.filter((p) => p.key !== 'fushi').map((p) => p.key))
+  // 选中会触发 storage → 整格重建；记住焦点所在的卡，重建后还给它（否则键盘焦点掉回 body）。
+  const active = document.activeElement;
+  const refocus = active && grid.contains(active) ? (active.dataset.palette || active.id || '') : '';
+  // 跟随 Fushi + 与 app 同一组 M3 经典预设 + 自定义。
+  const ids = ['app'].concat(PALETTE.PRESETS.map((p) => p.key))
     .concat(paletteState.customThemes.map((t) => 'custom:' + t.id));
   grid.textContent = '';
+  if (!grid.__fushiKeys) {
+    grid.addEventListener('keydown', onPaletteGridKeydown);
+    grid.__fushiKeys = true;
+  }
   for (const id of ids) {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -452,21 +706,15 @@ function renderPaletteGrid() {
     btn.setAttribute('role', 'radio');
     const selected = id === paletteState.palette;
     btn.setAttribute('aria-checked', selected ? 'true' : 'false');
+    btn.tabIndex = selected ? 0 : -1;
     if (selected) btn.classList.add('is-selected');
-    const dot = document.createElement('span');
-    dot.className = 'palette-dot';
     const colors = swatchColors(id);
-    if (colors) {
-      dot.style.setProperty('--swatch-primary', colors.primary);
-      dot.style.setProperty('--swatch-surface', colors.surface);
-    } else {
-      dot.classList.add('is-pending');
-    }
     const name = document.createElement('span');
     name.className = 'palette-name';
     name.textContent = paletteLabel(id);
-    btn.appendChild(dot);
+    btn.appendChild(paletteMiniPreview(colors));
     btn.appendChild(name);
+    btn.appendChild(paletteCheckBadge());
     if (id === 'app' && !colors) btn.title = tr('theme_palette_app_pending');
     btn.addEventListener('click', () => selectPalette(id));
     grid.appendChild(btn);
@@ -475,9 +723,11 @@ function renderPaletteGrid() {
   add.type = 'button';
   add.className = 'palette-swatch palette-add';
   add.id = 'paletteAdd';
+  add.tabIndex = -1;
   const plus = document.createElement('span');
-  plus.className = 'palette-dot';
-  plus.textContent = '+';
+  plus.className = 'palette-preview';
+  plus.setAttribute('aria-hidden', 'true');
+  appendIcon(plus, 'add', 28, '+');
   const label = document.createElement('span');
   label.className = 'palette-name';
   label.textContent = tr('theme_custom_new');
@@ -485,15 +735,24 @@ function renderPaletteGrid() {
   add.appendChild(label);
   add.addEventListener('click', createCustomTheme);
   grid.appendChild(add);
+  // 当前选中项不在列表里（旧存储里的失效 id）时，让第一张卡可 Tab 进入。
+  const items = paletteGridItems(grid);
+  if (!items.some((it) => it.tabIndex === 0) && items.length) items[0].tabIndex = 0;
+  if (refocus) {
+    const back = items.find((it) => (it.dataset.palette || it.id) === refocus);
+    if (back) {
+      items.forEach((it) => { it.tabIndex = it === back ? 0 : -1; });
+      back.focus();
+    }
+  }
   renderCustomThemeEditor();
 }
 
 async function selectPalette(id) {
   if (!PALETTE) return;
+  // 只写调色板，绝不碰明暗设置：明暗由明暗设置单独决定（以前选「深邃 / 纯黑 / 灰暗」会把明暗强改成
+  // 深色、选「米色 / 水色…」强改成浅色）。
   const patch = { extensionPalette: PALETTE.normalizePaletteId(id) };
-  // 自带明暗的预设（app 里选预设时 brightness 回落到预设的出厂明暗）：一并切明暗。
-  const preset = PALETTE.presetFor(id);
-  if (preset && preset.brightness) patch.extensionTheme = preset.brightness;
   await chrome.storage.local.set(patch);
   toast(tr('opt_toast_updated', { name: paletteLabel(patch.extensionPalette) }));
 }
@@ -527,7 +786,7 @@ async function deleteCustomTheme() {
   if (!cur) return;
   if (!confirm(tr('theme_custom_delete_confirm', { name: cur.name || tr('theme_custom_untitled') }))) return;
   const list = paletteState.customThemes.filter((t) => t.id !== cur.id);
-  await chrome.storage.local.set({ extensionCustomThemes: list, extensionPalette: 'fushi' });
+  await chrome.storage.local.set({ extensionCustomThemes: list, extensionPalette: PALETTE.DEFAULT_PALETTE });
   toast(tr('theme_custom_deleted'));
 }
 
@@ -559,7 +818,7 @@ function renderCustomThemePreview(entry) {
   const wrap = $('customThemePreview');
   if (!wrap || !PALETTE) return;
   for (const box of wrap.querySelectorAll('.theme-preview')) {
-    const tokens = PALETTE.derive(entry, box.dataset.scheme);
+    const tokens = PALETTE.derive(entry, box.dataset.scheme, { pureBlack: !!(THEME && THEME.pureBlack) });
     for (const k in tokens) box.style.setProperty(k, tokens[k]);
   }
 }
@@ -656,7 +915,17 @@ const subtitleColorDefaults = SUB ? {
 } : {};
 let subtitleStyleCurrent = SUB ? SUB.normalize(null) : null;
 
+// M3E 滑杆的活动段：--fill = 当前值在 [min, max] 里的百分比（material.css 用它画轨道渐变）。
+function paintRangeFill(el) {
+  if (!el || !el.style || typeof el.style.setProperty !== 'function') return;
+  const min = Number(el.min || 0);
+  const max = Number(el.max || 100);
+  const pct = max > min ? Math.min(100, Math.max(0, ((Number(el.value) - min) / (max - min)) * 100)) : 0;
+  el.style.setProperty('--fill', pct.toFixed(2) + '%');
+}
+
 function formatRangeOutput(id, value) {
+  paintRangeFill($(id));
   const out = document.querySelector('output[for="' + id + '"]');
   if (!out) return;
   const unit = out.dataset.unit || '';
@@ -884,7 +1153,10 @@ async function loadSubtitleStyle() {
       on(id + 'Reset', 'click', () => { el.dataset.auto = '1'; writeSubtitleStyle(true); });
       continue;
     }
-    el.addEventListener('input', () => writeSubtitleStyle(false));
+    el.addEventListener('input', () => {
+      if (spec.kind === 'range') paintRangeFill(el);
+      writeSubtitleStyle(false);
+    });
     el.addEventListener('change', () => {
       writeSubtitleStyle(true);
       // 松手后把滑杆对齐到夹过的值：拖动中 fill 不碰有焦点的控件，底板宽 / 高有「非 0 下限」
@@ -910,3 +1182,76 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 loadPalette();
 loadSubtitleStyle();
+
+// ── 节导航：左侧（窄屏为顶部横条）链接随滚动高亮当前节（aria-current="true"）。
+// 只是锚点 + 视觉提示，键盘 Tab 到链接回车即跳；没有 IntersectionObserver 的环境（vm 测试）跳过。
+function bindSectionNav() {
+  if (typeof IntersectionObserver !== 'function' || typeof document.querySelectorAll !== 'function') return;
+  const links = Array.from(document.querySelectorAll('#sectionNav .section-link'));
+  if (!links.length) return;
+  const byId = new Map(links.map((a) => [a.getAttribute('href').slice(1), a]));
+  const visible = new Map();
+  const mark = (id) => {
+    for (const [key, a] of byId) {
+      if (key === id) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    }
+    // 窄屏横条：把当前项滚进横条可视区（只滚横条自身，不动页面滚动）。
+    const active = byId.get(id);
+    const bar = active && active.parentElement;
+    if (bar && bar.scrollWidth > bar.clientWidth) {
+      bar.scrollLeft = active.offsetLeft - (bar.clientWidth - active.offsetWidth) / 2;
+    }
+  };
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) visible.set(e.target.id, e.isIntersecting ? e.intersectionRatio : 0);
+    for (const id of byId.keys()) {
+      if ((visible.get(id) || 0) > 0) { mark(id); return; }
+    }
+  }, { rootMargin: '-15% 0px -60% 0px', threshold: [0, 0.01] });
+  for (const id of byId.keys()) {
+    const sec = document.getElementById(id);
+    if (sec) io.observe(sec);
+  }
+  mark(links[0].getAttribute('href').slice(1));
+}
+bindSectionNav();
+
+// ── 外观风格（extensionStyle：M3E 缺省 / 液态玻璃；theme.js 读同一把键写根 data-style）──
+// 两张单选卡（原生 radio，键盘方向键切换）；与配色正交，切换只换形状 / 材质 / 动效。
+function bindStyleChoice() {
+  if (typeof document.querySelectorAll !== 'function') return;
+  const radios = Array.from(document.querySelectorAll('input[name="extensionStyle"]'));
+  if (!radios.length) return;
+  const sync = (v) => {
+    const value = v === 'glass' ? 'glass' : 'm3e';
+    for (const r of radios) r.checked = r.value === value;
+  };
+  chrome.storage.local.get(['extensionStyle']).then((s) => sync(s && s.extensionStyle), () => sync(null));
+  for (const r of radios) {
+    r.addEventListener('change', async () => {
+      if (!r.checked) return;
+      await chrome.storage.local.set({ extensionStyle: r.value });
+      const card = r.closest('.style-card');
+      const name = card && card.querySelector('strong');
+      toast(tr('opt_toast_updated', { name: name ? name.textContent : r.value }));
+    });
+  }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.extensionStyle) sync(changes.extensionStyle.newValue);
+  });
+}
+bindStyleChoice();
+
+// ── 「更多选项」折叠：记住每个折叠的展开状态（只是本机浏览器里的阅读便利，读写失败按收起）──
+function bindMoreToggles() {
+  if (typeof document.querySelectorAll !== 'function') return;
+  for (const d of document.querySelectorAll('details.more[id]')) {
+    const key = 'fushiOptMore:' + d.id;
+    try { if (localStorage.getItem(key) === '1') d.open = true; } catch (_) { /* 存储不可用：保持收起 */ }
+    d.addEventListener('toggle', () => {
+      try { localStorage.setItem(key, d.open ? '1' : '0'); } catch (_) { /* 忽略 */ }
+    });
+  }
+}
+bindMoreToggles();

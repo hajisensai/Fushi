@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -10,9 +10,9 @@ import 'package:fushi/src/utils/components/fushi_focus_ring.dart';
 ///
 /// 修复前 [wrapWithGlobalNavigation] 的方向键焦点处理只接管 OS 自动重复
 /// ([KeyRepeatEvent])，**故意把按下边沿 ([KeyDownEvent]) 留给 Flutter
-/// [WidgetsApp] 内建的 [DirectionalFocusAction]**。结果：在一个 Hibiki 受管控件
-/// 上按住方向键，按下走框架朴素几何（无 Hibiki 的 reading-order / 面板 / 滚动
-/// 兜底），重复走 Hibiki 几何——按下与重复分属两套焦点引擎，在边沿处按下卡住、
+/// [WidgetsApp] 内建的 [DirectionalFocusAction]**。结果：在一个 Fushi 受管控件
+/// 上按住方向键，按下走框架朴素几何（无 Fushi 的 reading-order / 面板 / 滚动
+/// 兜底），重复走 Fushi 几何——按下与重复分属两套焦点引擎，在边沿处按下卡住、
 /// 紧接着的重复却能逃逸，即用户报的「焦点抢快捷键、左右总冲突」。
 ///
 /// 根因修复：当 [focusNavigationEnabled] 开 + 焦点落在受管目标时，wrapper
@@ -113,7 +113,7 @@ void main() {
         reason: '按下边沿必须被全局 wrapper 消费，不得上冒到框架 '
             'DirectionalFocusAction（修复前会上冒，哨兵收到）');
     expect(result.controller.activeId, b,
-        reason: '按下经 wrapper 的 Hibiki 焦点引擎移焦一格');
+        reason: '按下经 wrapper 的 Fushi 焦点引擎移焦一格');
 
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
   });

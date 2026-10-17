@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
@@ -195,7 +195,7 @@ Uint8List _buildEpub(Uint8List png, String uid) {
 Future<Directory> _fixturesDir() async {
   const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
   final Directory dir = testRoot.isEmpty
-      ? await Directory.systemTemp.createTemp('hibiki_fixtures_')
+      ? await Directory.systemTemp.createTemp('fushi_fixtures_')
       : Directory('$testRoot${Platform.pathSeparator}fixtures');
   await dir.create(recursive: true);
   return dir;

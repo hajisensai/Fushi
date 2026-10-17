@@ -280,7 +280,7 @@ void main() {
       );
       expect(
         body.contains(
-          "+ ',' + total + ',' + off\n        + (hasEnd ? ',' + end : '')",
+          "return read + ',' + total + ',' + off + (hasEnd ? ',' + end : '');",
         ),
         isTrue,
         reason:

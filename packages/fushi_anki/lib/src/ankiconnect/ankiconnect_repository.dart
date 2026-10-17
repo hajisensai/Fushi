@@ -282,9 +282,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   Future<AnkiConnectService> _getService() async =>
       _serviceForSettings(await loadSettings());
 
-  /// 集合级长任务（媒体去重）用的服务：同一组连接设置，单请求预算换成
-  /// [AnkiConnectService.kLongTaskTimeout]。不改缓存实例——制卡等交互路径
-  /// 仍要 10 秒内失败（BUG-2824）。
+  /// 集合级长任务（媒体去重、卡组新卡重排）用的服务：同一组连接设置，单请求
+  /// 预算换成 [AnkiConnectService.kLongTaskTimeout]。不改缓存实例——制卡等交互
+  /// 路径仍要 10 秒内失败（BUG-2824）。
   Future<AnkiConnectService> _getLongTaskService() async {
     if (_fixedService != null) return _fixedService;
     final AnkiSettings settings = await loadSettings();
@@ -417,7 +417,27 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final settings = await loadSettings();
     final service = _serviceForSettings(settings);
 
-    final AnkiDeck? deck = resolveSelectedDeck(settings);
+    // 「高级制卡」的卡组覆盖在 payload 里，所以目标卡组必须在 payload 解析**之后**
+    // 才能定（见 resolveTargetDeck）。解析失败时沿用旧的判定次序：设置里根本没有
+    // 卡组 → 仍报 notConfigured（旧代码先查卡组），否则报同样的 payload failure。
+    final AnkiMiningPayload payload;
+    try {
+      final json = Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
+      payload = AnkiMiningPayload.fromJson(json);
+    } catch (e, stack) {
+      if (resolveSelectedDeck(settings) == null) {
+        return const MineOutcome.notConfigured();
+      }
+      return MineOutcome.failure(
+        'Invalid card data (payload parse failed): $e',
+        error: e,
+        stackTrace: stack,
+      );
+    }
+
+    // 覆盖卡组命中时即便设置里没选卡组也能落卡：它本就取自 availableDecks，是用户
+    // 这一次明确挑的；没有覆盖 / 没命中 → 退回设置卡组，为空仍是 notConfigured。
+    final AnkiDeck? deck = resolveTargetDeck(settings, payload);
     if (deck == null) return const MineOutcome.notConfigured();
 
     final noteType = settings.availableNoteTypes.firstWhereOrNull(
@@ -429,18 +449,6 @@ class AnkiConnectRepository extends BaseAnkiRepository {
               )
             : null);
     if (noteType == null) return const MineOutcome.notConfigured();
-
-    final AnkiMiningPayload payload;
-    try {
-      final json = Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
-      payload = AnkiMiningPayload.fromJson(json);
-    } catch (e, stack) {
-      return MineOutcome.failure(
-        'Invalid card data (payload parse failed): $e',
-        error: e,
-        stackTrace: stack,
-      );
-    }
 
     final _PreparedMinedFields prepared = await _renderMinedFields(
       service: service,
@@ -456,7 +464,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final String? audioWarning = rendered.audioWarning;
 
     try {
-      // BUG/TODO-062: every Hibiki-mined card gets the `hibiki` tag appended to
+      // BUG/TODO-062: every Fushi-mined card gets the `fushi` tag appended to
       // the user's configured tags (de-duped, order preserved) via the shared
       // base helper, so both backends behave identically.
       final tags = buildNoteTags(
@@ -513,6 +521,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         _noteAnkiConnectReachable();
         // BUG-1549：把实际落卡的牌组名带回成功结果——toast 只认它，不再事后从
         // settings.selectedDeckName 猜（旧存档只有 id 时那是 null → 空引号）。
+        // 「高级制卡」覆盖卡组时这里就是覆盖后的卡组。
         return MineOutcome.success(
           noteId: noteId,
           deckName: deck.name,
@@ -554,7 +563,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   String _addNoteCommitUnknownMessage() =>
       'AnkiConnect may have created the card, but the response was lost. '
-      'Hibiki could not safely confirm the result. Please check Anki before '
+      'Fushi could not safely confirm the result. Please check Anki before '
       'retrying.';
 
   /// 把 [payload] + [context] 按 [settings] 的字段映射渲染成 Anki note 字段。
@@ -690,7 +699,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     await _serviceForSettings(settings).updateNoteFields(noteId, fields);
   }
 
-  /// TODO-270 C1：更新一张**已存在**的 Hibiki 制卡（[noteId]）的字段。
+  /// TODO-270 C1：更新一张**已存在**的 Fushi 制卡（[noteId]）的字段。
   ///
   /// 复用 [_renderMinedFields]（与制卡同一字段渲染 + 媒体上传链路）从
   /// [rawPayloadJson] + [context] 生成 fields，再调 [AnkiConnectService.updateNoteFields]
@@ -1086,7 +1095,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   //
   // 光发 guiBrowse 不够：Anki 若已经在后台开着「浏览」窗口，它内部只是 raise 一个
   // **已存在**的窗口，会被 Windows 前台锁定降级成「闪任务栏」而不真正跳出来。解锁
-  // 权握在此刻的前台进程（用户刚点按钮的 Hibiki）手里，所以在这里前后各夹一步
+  // 权握在此刻的前台进程（用户刚点按钮的 Fushi）手里，所以在这里前后各夹一步
   // 让渡/兜底，机制详见 [AnkiDesktopForeground]。
   //
   // 只对本机 Anki 生效：host 非 loopback 时说的是另一台机器上的 AnkiConnect，
@@ -1248,7 +1257,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   @override
   Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
-    final AnkiConnectService service = await _getService();
+    // 整牌组规模：`cardsInfo` 每张卡都带渲染好的问答 HTML，实测一批 200 张就有
+    // 18 MB；交互用的 10 秒预算在大牌组 / 慢机器上会把重排拦腰截断（BUG-3272）。
+    final AnkiConnectService service = await _getLongTaskService();
     final String query = ankiDeckNewCardsQuery(
       await service.getDeckNamesAndIds(),
       deckName,
@@ -1275,7 +1286,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         failures: <int, String>{},
       );
     }
-    final AnkiConnectService service = await _getService();
+    final AnkiConnectService service = await _getLongTaskService();
     final List<AnkiConnectBatchResult> results =
         await service.setCardsDueMany(updates);
     final Map<int, String> failures = <int, String>{};
@@ -1448,9 +1459,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// styling 被去重改写后，把 Lapis 客制化指纹跟着对齐。
   ///
   /// 根因：`decideLapisStylingAction` 用 `lapisAppliedCssSha` 认「Anki 端这份
-  /// CSS 是 Hibiki 自己推的产物」。去重改写 styling 后 Anki 端内容变了而指纹
+  /// CSS 是 Fushi 自己推的产物」。去重改写 styling 后 Anki 端内容变了而指纹
   /// 没变，判定退化成 `foreignEdit` —— Lapis 的启动自动迁移从此**永久停手**，
-  /// 用户完全无感知（模板再也不自动更新）。改写的确实是 Hibiki 自己的产物，
+  /// 用户完全无感知（模板再也不自动更新）。改写的确实是 Fushi 自己的产物，
   /// 指纹理应跟着走。
   ///
   /// 只在改写前的内容确实等于已记录指纹时才对齐：本来就是用户手改（指纹对

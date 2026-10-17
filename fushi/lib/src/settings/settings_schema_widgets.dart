@@ -1,12 +1,20 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoColors;
+import 'package:flutter/foundation.dart' show listEquals;
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
 import 'package:fushi/src/settings/settings_schema_fields.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_section_container.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 把一个父级 [WidgetBuilder] 包成平台对应的页面路由（Material/Cupertino）。
 /// 两个渲染器各自提供工厂，是它们之间唯一的导航差异。
@@ -44,21 +52,58 @@ class SettingsSchemaSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 分组读外部事件源（日志条数 / hook 准入 / 下载阶段）时自己订阅：事件只重建
+    // 本分组并重算行级可见性，不再由宿主页整页 setState（见
+    // SettingsSection.liveListenable）。
+    final Listenable? live = section.liveListenable?.call(settingsContext);
+    final Widget body = live == null
+        ? _buildSection(section)
+        : ListenableBuilder(
+            listenable: live,
+            builder: (BuildContext context, Widget? _) =>
+                _buildSection(section.visibleCopy(settingsContext)),
+          );
+    // 着色面板：本分组的行首图标同一色调，相邻分组按 id 错开。
+    if (SettingsTonalIconsScope.maybeOf(context) == null) return body;
+    return SettingsTonalIconsScope(
+      tone: SettingsTonalIconsScope.toneForSection(
+        section.id ?? section.title ?? section.items.firstOrNull?.id ?? '',
+      ),
+      child: body,
+    );
+  }
+
+  Widget _buildSection(SettingsSection section) {
     if (section.items.isEmpty) return const SizedBox.shrink();
-    final List<Widget> rows = section.items
-        .map(
+    final List<Widget> rows = <Widget>[
+      for (final SettingsItem item in section.items)
+        if (item case SettingsCustomItem(
+          :final SettingsItemRowsBuilder rowsBuilder,
+        ))
+          // 多行 custom item（可增删的记录列表）：每条记录拆成分组里的独立行，
+          // 与同组声明式行同一分段 / 分隔线规则。首行挂搜索落点；各行靠调用方
+          // 给的 key 锚定 State（记录增删时不按位置错配）。
+          ...rowsBuilder(settingsContext).indexed.map(
+            ((int, Widget) entry) => entry.$1 == 0
+                ? SettingsSearchTarget(
+                    key: ValueKey<String>(item.id),
+                    id: item.id,
+                    child: entry.$2,
+                  )
+                : entry.$2,
+          )
+        else
           // 行级稳定 key：visible 谓词可在运行时增删行（如 qualityOptionCount
           // 变化），无 key 时同类型相邻行会按位置错配旧 State（陈旧文本 / 在途
           // 防抖写错项）；以 item.id 锚定 State 归属。
-          (SettingsItem item) => SettingsSchemaItem(
+          SettingsSchemaItem(
             key: ValueKey<String>(item.id),
             item: item,
             settingsContext: settingsContext,
             showIcons: showIcons,
             routeBuilder: routeBuilder,
           ),
-        )
-        .toList(growable: false);
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -80,7 +125,19 @@ class SettingsSchemaSection extends StatelessWidget {
 }
 
 /// 把一个 schema [SettingsItem] 派发渲染成对应的自适应行控件。
-class SettingsSchemaItem extends StatelessWidget {
+///
+/// 实现 [SettingsRowIconProbe]：分组按「上一行有没有行首图标」决定 Apple 分隔线
+/// 缩进，而 section 的直接子节点是本派发包装、不是行本身。
+///
+/// **按渲染输入记忆化**（[_SettingsSchemaItemState]）：`SettingsContext.refresh`
+/// 恒为宿主整页 setState，切一个开关 / 拖一格滑条都会把整页每一行重新派发一遍
+/// （视频页 43 行，实测单帧 80ms+ debug）。每行的可见输出只由
+/// [_renderSignature] 列出的那几个闭包求值决定（值、标题 / 副标题等），
+/// 签名不变就复用上一次构建的行 widget 实例，框架据此跳过整棵行子树；
+/// 主题等继承依赖变化由 didChangeDependencies 作废缓存。自绘行
+/// （[SettingsCustomItem]）读什么不可知，不做记忆化。
+class SettingsSchemaItem extends StatefulWidget
+    implements SettingsRowIconProbe {
   const SettingsSchemaItem({
     super.key,
     required this.item,
@@ -95,7 +152,70 @@ class SettingsSchemaItem extends StatelessWidget {
   final SettingsRouteBuilder routeBuilder;
 
   @override
-  Widget build(BuildContext context) {
+  bool get settingsRowHasIcon => switch (item) {
+    // 自绘正文不知道画了什么，按无图标处理。
+    SettingsCustomItem() => false,
+    SettingsNavigationItem navigation =>
+      (showIcons || navigation.showIcon) && navigation.icon != null,
+    _ => showIcons && item.icon != null,
+  };
+
+  @override
+  State<SettingsSchemaItem> createState() => _SettingsSchemaItemState();
+
+  /// 本行可见输出依赖的全部渲染期输入（与 [_buildRow] 里求值的闭包一一对应）；
+  /// null = 不可记忆化（自绘行）。改 [_buildRow] 读的东西时必须同步这里。
+  List<Object?>? _renderSignature() {
+    final SettingsContext ctx = settingsContext;
+    final List<Object?> values = switch (item) {
+      SettingsCustomItem() => const <Object?>[],
+      SettingsNavigationItem navigation => <Object?>[
+        navigation.resolveTitle(ctx),
+        navigation.resolveSubtitle(ctx),
+      ],
+      SettingsStatusItem status => <Object?>[
+        status.resolveTitle(ctx),
+        status.resolveSubtitle(ctx),
+        status.resolveAction(ctx) != null,
+      ],
+      SettingsActionItem action => <Object?>[action.resolveSubtitle(ctx)],
+      SettingsSwitchItem toggle => <Object?>[
+        toggle.value(ctx),
+        toggle.resolveSubtitle(ctx),
+        toggle.isEnabled(ctx),
+      ],
+      SettingsSegmentedItem<dynamic> segmented => <Object?>[
+        (segmented as SettingsSegmentedItem<Object>).selected(ctx),
+        segmented.resolveSubtitle(ctx),
+        segmented.isEnabled(ctx),
+      ],
+      SettingsSliderItem slider => <Object?>[
+        slider.value(ctx),
+        slider.label?.call(slider.value(ctx)),
+      ],
+      SettingsStepperItem stepper => <Object?>[stepper.value(ctx)],
+      SettingsTextItem text => <Object?>[
+        text.value(ctx),
+        text.resetValue?.call(ctx),
+      ],
+      SettingsNumberItem number => <Object?>[
+        number.value(ctx),
+        number.resetValue?.call(ctx),
+      ],
+    };
+    if (item is SettingsCustomItem) return null;
+    return <Object?>[
+      item,
+      showIcons,
+      // 行里的回调闭包捕获的是构建那一刻的上下文：宿主 / 能力槽换了就重建。
+      ctx.context,
+      ctx.appModel,
+      ctx.video,
+      ...values,
+    ];
+  }
+
+  Widget _buildRow(BuildContext context) {
     final Widget row = switch (item) {
       SettingsNavigationItem navigation => _routeRow(context, navigation),
       SettingsActionItem action => _action(action),
@@ -107,11 +227,13 @@ class SettingsSchemaItem extends StatelessWidget {
       SettingsStepperItem stepper => _stepper(stepper),
       SettingsTextItem text => _text(text),
       SettingsNumberItem number => _number(number),
-      SettingsStatusItem status => _status(status),
+      SettingsStatusItem status => _status(context, status),
       SettingsCustomItem custom => custom.builder(settingsContext),
     };
     // 设置搜索跳转落点：本项是待定位目标时消费一次性挂点，包上滚动定位 +
     // 闪烁高亮（见 SettingsSearchReveal）。消费即清除，后续 rebuild 不再包装。
+    // 「改过默认值」不在行内标记：行保持标准 M3E 列表项，恢复默认收进详情页
+    // 页头溢出菜单的「恢复本页默认」（settings_page_reset.dart）。
     return SettingsSearchTarget(id: item.id, child: row);
   }
 
@@ -149,8 +271,9 @@ class SettingsSchemaItem extends StatelessWidget {
     );
   }
 
-  Widget _status(SettingsStatusItem status) {
-    final SettingsItemAction? onAction = status.onAction;
+  Widget _status(BuildContext context, SettingsStatusItem status) {
+    // actionVisible 判否时按纯状态行渲染（无按钮、不进焦点）。
+    final SettingsItemAction? onAction = status.resolveAction(settingsContext);
     // 行级 onTap 让本行注册成 FushiFocusTarget，方向导航 / 手柄 A 才到得了
     // （BUG-016）。`AdaptiveSettingsRow` 里 `if (onTap == null) return content;`
     // ——没有 onTap 的行根本不包 _SettingsRowFocusTarget、不进 FushiFocusController
@@ -165,17 +288,28 @@ class SettingsSchemaItem extends StatelessWidget {
       settingsContext.refresh();
     }
 
+    final bool glassDesktop =
+        isGlassDesign(context) &&
+        !isCupertinoPlatform(context) &&
+        FushiAppleMetrics.of(context).desktop;
+
     return AdaptiveSettingsRow(
       // resolveTitle / resolveSubtitle：状态文本在渲染时求值（schema 树是缓存的常量树）。
       title: status.resolveTitle(settingsContext),
       subtitle: status.resolveSubtitle(settingsContext),
       icon: status.icon,
       showIcon: showIcons,
-      controlBelow: onAction != null,
+      // 「Apple」桌面（macOS 系统设置）与 MD3（Android 16 设置）：动作按钮是
+      // 行右侧的胶囊，不换到标题下方；窄到放不下时行自己会堆叠。Cupertino 与
+      // Apple 触屏维持按钮在下。
+      controlBelow:
+          onAction != null &&
+          (isCupertinoPlatform(context) ||
+              (isGlassDesign(context) && !glassDesktop)),
       onTap: onAction == null ? null : runAction,
       trailing: onAction == null
           ? null
-          : FilledButton.tonal(
+          : FushiFilledButton.tonal(
               onPressed: runAction,
               child: Text(status.actionLabel!),
             ),
@@ -183,13 +317,10 @@ class SettingsSchemaItem extends StatelessWidget {
   }
 
   Widget _action(SettingsActionItem action) {
-    return AdaptiveSettingsRow(
-      title: action.title,
-      // resolveSubtitle：运行期状态（如游戏 exe 摘要）在这里求值。
-      subtitle: action.resolveSubtitle(settingsContext),
-      icon: action.icon,
-      showIcon: showIcons,
-      onTap: () async => action.onTap(settingsContext),
+    return _SettingsActionRow(
+      action: action,
+      settingsContext: settingsContext,
+      showIcons: showIcons,
     );
   }
 
@@ -204,32 +335,52 @@ class SettingsSchemaItem extends StatelessWidget {
       icon: toggle.icon,
       showIcon: showIcons,
       value: value,
-      onChanged: (bool next) async {
-        await toggle.onChanged(settingsContext, next);
-        settingsContext.refresh();
-      },
+      // enabled=false：该偏好在当前设置组合下不生效，置灰（原因在副标题里）。
+      onChanged: !toggle.isEnabled(settingsContext)
+          ? null
+          : (bool next) async {
+              // 偏好写入在首个 await 之前就把新值放进内存缓存（`setPref`），先刷一次让
+              // 滑块立刻开始动画，不必等 DB 事务落盘 + 全局通知才动（等待期正是手感上的
+              // 「卡一下」，BUG-3353）。处理器若先 await 别的再写，这次刷新读到的仍是
+              // 旧值，无副作用。
+              final FutureOr<void> pending = toggle.onChanged(
+                settingsContext,
+                next,
+              );
+              settingsContext.refresh();
+              await pending;
+              settingsContext.refresh();
+            },
     );
   }
 
   Widget _segmented<T extends Object>(SettingsSegmentedItem<T> segmented) {
+    // enabled=false：该偏好在当前设置组合下不生效——分段整条置灰、点了不写（原因走
+    // resolveSubtitle 的副标题）。
+    final bool enabled = segmented.isEnabled(settingsContext);
+    final String? subtitle = segmented.resolveSubtitle(settingsContext);
+    final List<SettingsSegmentOption<T>> options = segmented.optionsFor(
+      settingsContext,
+    );
     // dropdown 渲染分支（TODO-209）：同一数据模型换下拉单选控件——标签长/选项多的
     // 行在窄 pane 里分段条只能横向滚动裁断，下拉行内只显示当前选中标签、永不被裁。
     if (segmented.dropdown) {
       return AdaptiveSettingsPickerRow<T>(
         title: segmented.title,
-        subtitle: segmented.subtitle,
+        subtitle: subtitle,
         icon: segmented.icon,
         showIcon: showIcons,
         controlBelow: segmented.controlBelow,
         selected: segmented.selected(settingsContext),
         options: <AdaptiveSettingsPickerOption<T>>[
-          for (final SettingsSegmentOption<T> option in segmented.options)
+          for (final SettingsSegmentOption<T> option in options)
             AdaptiveSettingsPickerOption<T>(
               value: option.value,
               label: option.label,
             ),
         ],
         onChanged: (T value) async {
+          if (!enabled) return;
           await segmented.dispatchChange(settingsContext, value);
           settingsContext.refresh();
         },
@@ -237,13 +388,19 @@ class SettingsSchemaItem extends StatelessWidget {
     }
     return AdaptiveSettingsSegmentedRow<T>(
       title: segmented.title,
-      subtitle: segmented.subtitle,
+      subtitle: subtitle,
       icon: segmented.icon,
       showIcon: showIcons,
-      segments: segmented.options.map(_segment).toList(growable: false),
+      segments: options
+          .map(
+            (SettingsSegmentOption<T> option) =>
+                _segment<T>(option, enabled: enabled),
+          )
+          .toList(growable: false),
       selected: segmented.selected(settingsContext),
       controlBelow: segmented.controlBelow,
       onChanged: (T value) async {
+        if (!enabled) return;
         // 类型安全派发：SettingsSegmentedItem.dispatchChange 在实例真实 T 上下文里
         // 把 value 转回 T 再调 onChanged，避免渲染层静态读 onChanged 因泛型逆变
         // 抛 _TypeError（不再 `as dynamic`）。
@@ -254,36 +411,14 @@ class SettingsSchemaItem extends StatelessWidget {
   }
 
   Widget _slider(SettingsSliderItem slider) {
-    if (slider.commitOnRelease) {
-      return _CommitOnReleaseSlider(
-        item: slider,
-        settingsContext: settingsContext,
-        showIcons: showIcons,
-      );
-    }
-    final double value = slider.value(settingsContext);
-    return AdaptiveSettingsSliderRow(
-      title: slider.title,
-      subtitle: slider.subtitle,
-      icon: slider.icon,
-      showIcon: showIcons,
-      value: value.clamp(slider.min, slider.max).toDouble(),
-      min: slider.min,
-      max: slider.max,
-      divisions: slider.divisions,
-      label: slider.label?.call(value),
-      step: slider.step,
-      readout: slider.titleReadout ? slider.label?.call(value) : null,
-      onChanged: (double next) async {
-        await slider.onChanged(settingsContext, next);
-        settingsContext.refresh();
-      },
-      onChangeEnd: slider.onChangeEnd == null
-          ? null
-          : (double next) async {
-              await slider.onChangeEnd!(settingsContext, next);
-              settingsContext.refresh();
-            },
+    // 两种提交语义共用一个有状态载体：拖动中的值放在载体 State 里（滑块跟手、
+    // 读数实时），不依赖 item.value 在拖动中被写回（2026-10-09 用户反馈「拉条
+    // 松手才变」——字幕外观等滑条拖动中只做预览、不落库，item.value 读到的一直
+    // 是旧值）。
+    return _CommitOnReleaseSlider(
+      item: slider,
+      settingsContext: settingsContext,
+      showIcons: showIcons,
     );
   }
 
@@ -375,22 +510,107 @@ class SettingsSchemaItem extends StatelessWidget {
     );
   }
 
-  ButtonSegment<T> _segment<T extends Object>(SettingsSegmentOption<T> option) {
+  ButtonSegment<T> _segment<T extends Object>(
+    SettingsSegmentOption<T> option, {
+    bool enabled = true,
+  }) {
     return ButtonSegment<T>(
       value: option.value,
+      enabled: enabled,
       label: Text(option.label),
-      icon: option.icon != null ? Icon(option.icon, size: 16) : null,
+      icon: option.icon != null ? FushiIcon(option.icon, size: 16) : null,
       tooltip: option.tooltip ?? option.label,
     );
   }
 }
 
-/// [SettingsSliderItem.commitOnRelease] 滑条的渲染载体：拖动中的临时值放在与
+class _SettingsSchemaItemState extends State<SettingsSchemaItem> {
+  Widget? _row;
+  List<Object?>? _signature;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 主题 / 设计系统 / 平台等继承依赖变了：行的外观要按新依赖重算。
+    _row = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Object?>? signature = widget._renderSignature();
+    final Widget? cached = _row;
+    if (cached != null &&
+        signature != null &&
+        listEquals(signature, _signature) &&
+        // 搜索跳转落点在构建时消费（SettingsSearchTarget），待定位的行必须真建。
+        SettingsSearchReveal.pendingItemId != widget.item.id) {
+      return cached;
+    }
+    _signature = signature;
+    return _row = widget._buildRow(context);
+  }
+}
+
+/// 设置滑条的渲染载体（[SettingsSliderItem.commitOnRelease] 与逐 tick 两种语义
+/// 共用）。commitOnRelease：拖动中的临时值放在与
 /// 拖动 UI 同生命周期的本 State（滑块跟手、label/读数实时），不调 item.onChanged、
 /// 不 refresh；松手（onChangeEnd）才把最终值经 item.onChanged 一次性提交。与
 /// 界面大小滑条（settings_actions.dart 的 _AppUiScaleSliderRow）同款拖动解耦——
 /// 逐 tick 写穿在重页面（如 ~6400 行视频页）会触发全页 rebuild 掉帧（BUG-963）。
 /// 键盘/手柄步进经 _KeyboardSlider 同时回调 onChanged+onChangeEnd，每按即提交。
+/// 动作行（2026-10 体验优化）：给 [SettingsActionItem.onTap] 加进行中锁——
+/// 上一次点击的异步动作（确认框、写库、导出……）没结束前，再点 / 再按 Enter
+/// 直接忽略，不会叠出两个确认框或把同一动作跑两遍。行本身保持可聚焦、外观不变。
+class _SettingsActionRow extends StatefulWidget {
+  const _SettingsActionRow({
+    required this.action,
+    required this.settingsContext,
+    required this.showIcons,
+  });
+
+  final SettingsActionItem action;
+  final SettingsContext settingsContext;
+  final bool showIcons;
+
+  @override
+  State<_SettingsActionRow> createState() => _SettingsActionRowState();
+}
+
+class _SettingsActionRowState extends State<_SettingsActionRow> {
+  bool _running = false;
+
+  Future<void> _run() async {
+    if (_running) return;
+    _running = true;
+    try {
+      await widget.action.onTap(widget.settingsContext);
+    } finally {
+      _running = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final SettingsActionItem action = widget.action;
+    if (action.destructive) {
+      return SettingsDangerRow(
+        title: action.title,
+        subtitle: action.resolveSubtitle(widget.settingsContext),
+        icon: widget.showIcons ? action.icon : null,
+        onTap: _run,
+      );
+    }
+    return AdaptiveSettingsRow(
+      title: action.title,
+      // resolveSubtitle：运行期状态（如游戏 exe 摘要）在这里求值。
+      subtitle: action.resolveSubtitle(widget.settingsContext),
+      icon: action.icon,
+      showIcon: widget.showIcons,
+      onTap: _run,
+    );
+  }
+}
+
 class _CommitOnReleaseSlider extends StatefulWidget {
   const _CommitOnReleaseSlider({
     required this.item,
@@ -433,13 +653,21 @@ class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
       label: item.label?.call(value),
       step: item.step,
       readout: item.titleReadout ? item.label?.call(value) : null,
-      onChanged: (double next) {
+      onChanged: (double next) async {
         _dragSession++;
         setState(() => _dragValue = next);
+        if (item.commitOnRelease) return;
+        // 逐 tick 写穿 / 预览的滑条：照旧每 tick 回调并刷新宿主。
+        await item.onChanged(widget.settingsContext, next);
+        widget.settingsContext.refresh();
       },
       onChangeEnd: (double next) async {
         final int session = _dragSession;
-        await item.onChanged(widget.settingsContext, next);
+        if (item.commitOnRelease) {
+          await item.onChanged(widget.settingsContext, next);
+        } else {
+          await item.onChangeEnd?.call(widget.settingsContext, next);
+        }
         if (mounted && _dragSession == session) {
           setState(() => _dragValue = null);
         }
@@ -449,12 +677,30 @@ class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
   }
 }
 
-/// section 底部说明文字。padding 两渲染器一致，文字样式经 [style] 注入。
+/// 设置分组脚注的默认文字样式，按设计系统 / 平台分派：Apple = iOS footnote
+/// （13 号 secondaryLabel）；Cupertino = metadata + secondaryLabel；MD3 =
+/// bodySmall + surfaces.onVariant。分组内外的说明文字都走这一处。
+TextStyle? settingsFootnoteStyle(BuildContext context) {
+  if (isCupertinoPlatform(context)) {
+    return FushiDesignTokens.of(context).type.metadata.copyWith(
+      color: CupertinoColors.secondaryLabel.resolveFrom(context),
+    );
+  }
+  if (isGlassDesign(context)) {
+    return FushiAppleMetrics.of(context).footnoteStyle(context);
+  }
+  return Theme.of(context).textTheme.bodySmall?.copyWith(
+    color: FushiDesignTokens.of(context).surfaces.onVariant,
+  );
+}
+
+/// section 底部说明文字。padding 两渲染器一致；文字样式默认按设计系统取
+/// [settingsFootnoteStyle]，渲染器要别的口径时经 [style] 注入。
 class SettingsSectionFooter extends StatelessWidget {
-  const SettingsSectionFooter(this.text, {super.key, required this.style});
+  const SettingsSectionFooter(this.text, {super.key, this.style});
 
   final String text;
-  final SettingsFooterStyle style;
+  final SettingsFooterStyle? style;
 
   @override
   Widget build(BuildContext context) {
@@ -466,7 +712,7 @@ class SettingsSectionFooter extends StatelessWidget {
         tokens.spacing.gap + tokens.spacing.gap / 2,
         tokens.spacing.gap + tokens.spacing.gap / 2,
       ),
-      child: Text(text, style: style(context)),
+      child: Text(text, style: (style ?? settingsFootnoteStyle)(context)),
     );
   }
 }

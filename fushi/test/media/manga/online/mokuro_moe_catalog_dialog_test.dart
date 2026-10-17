@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -9,8 +9,12 @@ import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiLinearProgressIndicator;
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../../../helpers/glass_unwrap.dart';
 
 /// fake client：内存数据，零网络（封面留空走占位图标路径）。
 class _FakeClient extends MokuroMoeClient {
@@ -275,6 +279,11 @@ void main() {
         find.textContaining(t.manga_online_detail_load_failed), findsOneWidget);
 
     client.seriesError = null;
+    // M3E 外框（居中图标徽标 + 标题）与两行动作按钮在 800×600 下把可滚动正文
+    // 区压到放不下整块错误态：「重试」落在正文滚动区下沿、被 footer 盖住一半
+    // （外框 scrollable: true，正文本就该滚）。先滚到可见再点，点的是真按钮。
+    await tester.ensureVisible(find.text(t.retry));
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.retry));
     await tester.pumpAndSettle();
     expect(find.text('よつばと! 第01巻'), findsOneWidget);
@@ -317,9 +326,7 @@ void main() {
     expect(find.text('よつばと! 第02巻'), findsOneWidget);
 
     // 未选卷时「下载所选」禁用。
-    final TextButton downloadBtn = tester.widget<TextButton>(
-      find.widgetWithText(TextButton, t.manga_online_download_selected),
-    );
+    final TextButton downloadBtn = tester.widget<TextButton>(glassUnwrap<TextButton>(find.widgetWithText(TextButton, t.manga_online_download_selected)),);
     expect(downloadBtn.onPressed, isNull);
 
     // 选第 1 卷 → 入队（下载在持久任务表后台执行，对话框停在 series 阶段可继续选）。
@@ -350,7 +357,15 @@ void main() {
       () => find.textContaining(progressText).evaluate().isNotEmpty,
       reason: '进度文案回到 UI',
     );
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
+    expect(
+      tester
+          .widget<FushiLinearProgressIndicator>(
+            find.byType(FushiLinearProgressIndicator),
+          )
+          .value,
+      0.5,
+    );
     expect(find.textContaining(progressText), findsNWidgets(2));
     expect(find.textContaining(t.download_status_queued), findsNothing);
 
@@ -359,13 +374,13 @@ void main() {
     await s.downloaders[0].ctrl.close();
     await pumpUntil(
       tester,
-      () => find.byIcon(Icons.check_circle).evaluate().isNotEmpty,
+      () => find.byIcon(FushiIcons.filled(FushiIcons.success)).evaluate().isNotEmpty,
       reason: '✓ 标记',
     );
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.success)), findsOneWidget);
     expect(find.text(t.manga_online_downloaded), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
     expect(
       (await db.getMangaDownloadJob(jobId))!.status,
       MangaDownloadJobStatus.done,
@@ -504,9 +519,7 @@ void main() {
     await tester.tap(find.text('よつばと!'));
     await tester.pumpAndSettle();
 
-    final TextButton downloadAll = tester.widget<TextButton>(
-      find.widgetWithText(TextButton, t.manga_online_download_all),
-    );
+    final TextButton downloadAll = tester.widget<TextButton>(glassUnwrap<TextButton>(find.widgetWithText(TextButton, t.manga_online_download_all)),);
     expect(downloadAll.onPressed, isNotNull, reason: '还有可选的卷就可用');
     await tester.tap(find.text(t.manga_online_download_all));
     await pumpUntil(
@@ -530,9 +543,7 @@ void main() {
     await tester.pump();
     expect(
       tester
-          .widget<TextButton>(
-            find.widgetWithText(TextButton, t.manga_online_download_all),
-          )
+          .widget<TextButton>(glassUnwrap<TextButton>(find.widgetWithText(TextButton, t.manga_online_download_all)),)
           .onPressed,
       isNull,
     );
@@ -552,20 +563,18 @@ void main() {
     final Finder selectAll =
         find.byKey(const ValueKey<String>('mokuro_moe_select_all'));
     expect(selectAll, findsOneWidget);
-    expect(tester.widget<Checkbox>(selectAll).value, isFalse);
-    TextButton downloadSelected() => tester.widget<TextButton>(
-          find.widgetWithText(TextButton, t.manga_online_download_selected),
-        );
+    expect(tester.widget<Checkbox>(glassUnwrap<Checkbox>(selectAll)).value, isFalse);
+    TextButton downloadSelected() => tester.widget<TextButton>(glassUnwrap<TextButton>(find.widgetWithText(TextButton, t.manga_online_download_selected)),);
     expect(downloadSelected().onPressed, isNull);
 
     await tester.tap(selectAll);
     await tester.pumpAndSettle();
-    expect(tester.widget<Checkbox>(selectAll).value, isTrue);
+    expect(tester.widget<Checkbox>(glassUnwrap<Checkbox>(selectAll)).value, isTrue);
     expect(downloadSelected().onPressed, isNotNull);
 
     await tester.tap(selectAll);
     await tester.pumpAndSettle();
-    expect(tester.widget<Checkbox>(selectAll).value, isFalse);
+    expect(tester.widget<Checkbox>(glassUnwrap<Checkbox>(selectAll)).value, isFalse);
     expect(downloadSelected().onPressed, isNull);
   });
 }

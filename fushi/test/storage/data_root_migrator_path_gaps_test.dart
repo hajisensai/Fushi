@@ -57,7 +57,7 @@ void main() {
   late Directory oldSupport;
 
   setUp(() {
-    tmp = Directory.systemTemp.createTempSync('hibiki_pathgap_');
+    tmp = Directory.systemTemp.createTempSync('fushi_pathgap_');
     oldDocs = Directory(p.join(tmp.path, 'Documents'))
       ..createSync(recursive: true);
     oldSupport = Directory(p.join(tmp.path, 'support'))

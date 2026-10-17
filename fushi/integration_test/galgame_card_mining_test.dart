@@ -3,7 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -14,7 +14,7 @@ import 'package:fushi/src/mining/window_capture_channel.dart';
 
 /// galgame 一键制卡端到端真机集成测试（docs/specs/galgame-mining）。
 ///
-/// 在真实 hibiki.exe 测试宿主里（能用 native 通道），对每个游戏逐个跑通整条路径：
+/// 在真实 fushi.exe 测试宿主里（能用 native 通道），对每个游戏逐个跑通整条路径：
 ///   拉起游戏（injector --launch CREATE_SUSPENDED 早注入，命中启动即建 DirectSound 的引擎）
 ///   到 引擎-hook 抓混音前干净语音（app.fushi.reader/voice_hook channel），抓不到 / 全静音
 ///   则回退 WASAPI loopback 系统混音（[LoopbackGalAudioSource]），保证每个游戏都有音频

@@ -51,7 +51,8 @@ class UpdateDownloadStatusController {
 /// 一次候选探针的结果（竞速选源用）。[url] = 被探的候选；[total] = 从 Content-Range
 /// 解出的资源总大小（null 表示拿不到 → 该候选不算「胜出资格」）；[elapsed] = 从探针
 /// 发起到拿到 206 首响应的耗时（tie-break 比较用）；[isDirect] = 该候选是否直连
-/// （url == directUrl，tie-break 直连优先用）。
+/// （url == directUrl，tie-break 直连优先用）；[isRelay] = 该候选是否中转镜像
+/// （[isGitHubMirrorUrl]，分档用）。
 @visibleForTesting
 class UpdateProbeOutcome {
   const UpdateProbeOutcome({
@@ -59,12 +60,14 @@ class UpdateProbeOutcome {
     required this.total,
     required this.elapsed,
     required this.isDirect,
+    this.isRelay = false,
   });
 
   final String url;
   final int? total;
   final Duration elapsed;
   final bool isDirect;
+  final bool isRelay;
 
   /// 「胜出资格」：探针返回 206 且能拿到合法总大小（[total] > 0）。拿不到总大小的
   /// 候选无法用于分片，不参与竞速胜出（仍可作为串行回退候选）。
@@ -75,7 +78,10 @@ class UpdateProbeOutcome {
 /// 胜出的候选 url。调用方只把 eligible 的结果传进来。
 ///
 /// 规则（与边界澄清 + PM tie-break ④ 一致）：
-///   1. 取「首字节最快」（[UpdateProbeOutcome.elapsed] 最小）者为基准 winner。
+///   0. **分档（用户 2026-10-18 拍板）**：只要有首选档（官网 Cloudflare / GitHub 直连，
+///      即非 [UpdateProbeOutcome.isRelay]）候选 eligible，就只在首选档里挑——中转镜像
+///      再快也不抢；首选档一个都不可用时才在中转镜像里挑。
+///   1. 在入选档里取「首字节最快」（[UpdateProbeOutcome.elapsed] 最小）者为基准 winner。
 ///   2. **tie-break 直连优先**：若存在一个直连候选，且它的首字节时刻在「最快候选首字节
 ///      + [_kDirectTieBreakWindow]」内（近乎同时到），改选直连（与 net.dart「直连恒
 ///      首位」哲学一致）。
@@ -84,14 +90,22 @@ class UpdateProbeOutcome {
 String? selectRaceWinnerUrl(List<UpdateProbeOutcome> eligibleOutcomes) {
   if (eligibleOutcomes.isEmpty) return null;
 
-  UpdateProbeOutcome fastest = eligibleOutcomes.first;
-  for (final UpdateProbeOutcome o in eligibleOutcomes) {
+  final List<UpdateProbeOutcome> primary = <UpdateProbeOutcome>[
+    for (final UpdateProbeOutcome o in eligibleOutcomes)
+      if (!o.isRelay) o,
+  ];
+  final List<UpdateProbeOutcome> pool = primary.isNotEmpty
+      ? primary
+      : eligibleOutcomes;
+
+  UpdateProbeOutcome fastest = pool.first;
+  for (final UpdateProbeOutcome o in pool) {
     if (o.elapsed < fastest.elapsed) fastest = o;
   }
   if (fastest.isDirect) return fastest.url;
 
   final Duration cutoff = fastest.elapsed + _kDirectTieBreakWindow;
-  for (final UpdateProbeOutcome o in eligibleOutcomes) {
+  for (final UpdateProbeOutcome o in pool) {
     if (o.isDirect && o.elapsed <= cutoff) return o.url;
   }
   return fastest.url;
@@ -182,7 +196,8 @@ Future<bool> _shouldRaceCandidates({
   if (connectionCount <= 1) return false;
   final int? knownSize = asset.sizeBytes ?? metadata?.sizeBytes;
   if (knownSize != null) {
-    final bool permitsSegmentation = planDownloadSegments(
+    final bool permitsSegmentation =
+        planDownloadSegments(
           totalBytes: knownSize,
           connectionCount: connectionCount,
           minSegmentBytes: minSegmentBytes,
@@ -203,8 +218,13 @@ Future<bool> _shouldRaceCandidates({
 
 /// **并发探针竞速选源（TODO-683 核心）**。对 [candidateUrls] 里的**所有**候选并发发
 /// 探针（`Range: bytes=0-0`，单字节，只探不真下载）。语义：
-///   * 第一个返回 206 且拿到合法总大小的候选触发裁决——若它是直连，立即胜出；若它是
-///     镜像，再多等 [_kDirectTieBreakWindow]（或直到某个直连也到）做 tie-break（PM ④）。
+///   * 第一个返回 206 且拿到合法总大小的**首选档**候选（官网 Cloudflare / GitHub 直连）
+///     触发裁决——若它是锚点（[directUrl]），立即胜出；否则再多等
+///     [_kDirectTieBreakWindow]（或直到锚点也到）做 tie-break（PM ④）。
+///   * **中转镜像（[isGitHubMirrorUrl]）不触发裁决**：它们的探针照常并发发出（首选档全挂
+///     后不必再从头建连），但只有首选档探针**全部结束且无一可用**时才放它们胜出——此时
+///     已到的中转立即裁决，还没到的等第一个到达者（用户 2026-10-18 拍板：中转只在连不上
+///     Cloudflare 与 GitHub 时才启用）。
 ///   * 裁决后（`_settled` 置位）所有候选 response 立即 `drain()` 回收（取消语义 R1）。
 ///   * 拿不到任何 eligible 候选（全部探针失败 / 非 206 / 拿不到总大小）→ 返回 null，由
 ///     调用方回退现有串行循环（它填 failures、让 [selectRepresentativeDownloadFailure]
@@ -249,11 +269,25 @@ Future<List<String>?> raceSelectFastestCandidate({
     }
   }
 
-  /// 把一个 eligible 结果纳入竞速并按语义推进裁决：直连 eligible → 立即裁决；首个镜像
-  /// eligible → 启动 tie-break 计时器；窗口内直连补到则提前裁决。
+  // 首选档还没出结果的探针数；归零且首选档无一可用时，中转镜像才有资格胜出。
+  int pendingPrimary = candidateUrls
+      .where((String url) => !isGitHubMirrorUrl(url))
+      .length;
+  var primaryEligible = false;
+
+  bool relayUnlocked() => pendingPrimary == 0 && !primaryEligible;
+
+  /// 把一个 eligible 结果纳入竞速并按语义推进裁决：锚点 eligible → 立即裁决；首个其它
+  /// 首选档 eligible → 启动 tie-break 计时器；窗口内锚点补到则提前裁决。中转 eligible
+  /// 只在首选档已全部落空时立即裁决，否则只记下、等首选档结果。
   void admit(UpdateProbeOutcome outcome) {
     eligible.add(outcome);
     if (decided.isCompleted) return;
+    if (outcome.isRelay) {
+      if (relayUnlocked()) decide();
+      return;
+    }
+    primaryEligible = true;
     if (outcome.isDirect) {
       decide();
       return;
@@ -261,7 +295,15 @@ Future<List<String>?> raceSelectFastestCandidate({
     tieBreakTimer ??= Timer(_kDirectTieBreakWindow, decide);
   }
 
+  /// 一个首选档探针出结果（admit 之后 / 失败）时调用：首选档全部落空且已有中转到达 →
+  /// 立即裁决用中转。
+  void primaryProbeSettled() {
+    pendingPrimary -= 1;
+    if (relayUnlocked() && eligible.isNotEmpty) decide();
+  }
+
   Future<void> probe(String url) async {
+    final bool isRelay = isGitHubMirrorUrl(url);
     final Stopwatch watch = Stopwatch()..start();
     // BUG-534 根因修复：探针只为拿总大小（`Content-Range: bytes 0-0/TOTAL`），单字节
     // `bytes=0-0` 即可——用 `bytes=0-` 会让服务器把**整个安装包**当开放区间返回，随后
@@ -276,10 +318,13 @@ Future<List<String>?> raceSelectFastestCandidate({
     };
     final UpdateDownloadResponse response;
     try {
-      response =
-          await openUrl(Uri.parse(url), headers).timeout(_kFirstByteTimeout);
+      response = await openUrl(
+        Uri.parse(url),
+        headers,
+      ).timeout(_kFirstByteTimeout);
     } catch (_) {
       // 探针失败（连不上 / 超时 / 非 206 前出错）：不参与胜出，留给串行回退处理。
+      if (!isRelay) primaryProbeSettled();
       return;
     }
     watch.stop();
@@ -290,13 +335,17 @@ Future<List<String>?> raceSelectFastestCandidate({
         ? _contentRangeTotal(response.header(HttpHeaders.contentRangeHeader))
         : null;
     if (total != null && total > 0) {
-      admit(UpdateProbeOutcome(
-        url: url,
-        total: total,
-        elapsed: watch.elapsed,
-        isDirect: url == directUrl,
-      ));
+      admit(
+        UpdateProbeOutcome(
+          url: url,
+          total: total,
+          elapsed: watch.elapsed,
+          isDirect: url == directUrl,
+          isRelay: isRelay,
+        ),
+      );
     }
+    if (!isRelay) primaryProbeSettled();
     await drainQuietly(response); // 非 206 / 拿到总大小都要 drain 回收 body。
   }
 
@@ -333,7 +382,7 @@ Future<List<String>?> raceSelectFastestCandidate({
 /// [HttpClient]（见 release part `_downloadAndInstall`），故只需登记一次；回调内的
 /// `client.close(force: true)` 与 finally 的 `client.close()` 关两次幂等、不报错。
 /// 放在 race part：与竞速探针 drain 的取消语义（R1）同家，且让 download part 不越结构守卫。
-@visibleForTesting
+/// 控制通道（`fushi_cli update cancel`，`app_update_cli.dart`）与下载浮层共用同一个令牌。
 class UpdateDownloadCancellation {
   bool _cancelled = false;
   void Function()? _abort;

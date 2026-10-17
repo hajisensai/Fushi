@@ -104,7 +104,7 @@ void main() {
     );
     expect(service.contains('isForegroundOwnedByCurrentProcess()'), isTrue);
     expect(service.contains('isForegroundOwnedByFushiAppFamily()'), isTrue,
-        reason: 'Foreground guard must also treat Hibiki popup/app-family '
+        reason: 'Foreground guard must also treat Fushi popup/app-family '
             'windows as internal copies.');
   });
 
@@ -137,7 +137,7 @@ void main() {
     expect(
       activateCase.contains('ShouldRestoreChildFocus('),
       isTrue,
-      reason: 'The lookup panel drag/resize activates an auxiliary Hibiki '
+      reason: 'The lookup panel drag/resize activates an auxiliary Fushi '
           'window. The main window must ignore its WA_INACTIVE notification '
           'instead of reclaiming focus and jumping to the foreground.',
     );

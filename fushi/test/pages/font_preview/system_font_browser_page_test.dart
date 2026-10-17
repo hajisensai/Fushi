@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/font_preview/font_specimen.dart';
 import 'package:fushi/src/pages/implementations/font_preview/system_font_browser_page.dart';
 import 'package:fushi/src/pages/implementations/font_preview/system_font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import '../../helpers/glass_unwrap.dart';
 
 void main() {
   const List<SystemFontFamily> fonts = <SystemFontFamily>[
@@ -130,9 +131,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester
-          .widget<FilledButton>(
-            find.byKey(const ValueKey<String>('system-font-add')),
-          )
+          .widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('system-font-add'))),)
           .onPressed,
       isNull,
     );

@@ -4,7 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_page_turn_script.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_ruby_gap_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -610,7 +612,7 @@ class ReaderPaginationScripts {
   }
 
   // JS `foldCodePoint` 的 Dart 影子：与 `AudioTextNormalizer.appendNormalized`
-  // 的值转换同口径。改用 hibiki_core 共享码点原语（`jp_codepoint_fold.dart`）后
+  // 的值转换同口径。改用 fushi_core 共享码点原语（`jp_codepoint_fold.dart`）后
   // 与 AudioTextNormalizer 同源；在白名单域（`_jsIsMatchableCodePoint` 为 true
   // 的码点）与 JS 分段平移逐码点等价。运行期 JS 副本（`hwKataToFw` 查表）由
   // `fushi/test/utils/jp_codepoint_fold_test.dart` 的 parity 测试逐项锁定。
@@ -804,6 +806,9 @@ class ReaderPaginationScripts {
 
   static String stableProgressInvocation() =>
       'window.fushiReader && !window.fushiReader._reanchorPending '
+      // 翻页动画回调还没落位 / 拖动跟手中：几何停在旧页或两页之间，返 null 等落定后的
+      // 滚动事件补刷（reader_page_turn_script.dart 的 pageTurnBusy）。
+      '&& !(window.fushiReader.pageTurnBusy && window.fushiReader.pageTurnBusy()) '
       '&& window.fushiProgressDetails ? window.fushiProgressDetails() : null';
 
   static String updatePageSizeInvocation(double width, double height) =>
@@ -1038,8 +1043,9 @@ window.__fushiInstallShell = function(C) {
   _setReanchorPending: function(value) {
     var settled = this._reanchorPending === true && value !== true;
     this._reanchorPending = value === true;
-    // BUG-2806：重锚落定 = 排版已按新几何落定，有声书补缝阴影按新排版重量。
-    if (settled) this.paintSentenceAudioRubyGaps();
+    // 重锚落定 = 排版已按新几何落定：所有高亮的窄条层（__fushiLanes，按文字片段量出的绝对坐标）
+    // 按新排版重画。
+    if (settled && window.__fushiLanes) window.__fushiLanes.repaint();
     if (settled && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       try { window.flutter_inappwebview.callHandler('onReanchorSettled'); } catch (e) {}
     }
@@ -1250,6 +1256,10 @@ window.__fushiInstallShell = function(C) {
     }
   },
   clearImageLateAnchor: function() {
+    // 明确导航替换语义落点；分页的旧几何回调不能再把用户拉回去。
+    if (typeof this._invalidateGeometryReanchor === 'function') {
+      this._invalidateGeometryReanchor();
+    }
     this.__imgReanchorProgress = null;
     this.__imgReanchorCharOffset = null;
     this.__imgReanchorCharOffsetEnd = -1;
@@ -1268,13 +1278,22 @@ window.__fushiInstallShell = function(C) {
     this.__restoreCharOffset = typeof charOffset === 'number' ? charOffset : null;
     this.__restoreCharOffsetEnd = endCharOffset;
   },
-  // BUG-2748：用户亲手挪了视口（连续模式的滚轮 / 触摸原生滚动 / 拖滚动条 / 方向与翻页键
-  // 原生滚动 / 查词弹窗遮罩转发的滚动），与 paginate 同一语义：放弃迟到图片锚与恢复锚。
-  // 否则滚远后前方懒图 load，reapplyImageLateAnchor 把视口拽回最近一次揭示 / 恢复的目标。
-  // 连续 shell 的输入监听见 continuousShellSource 末尾；Dart 转发见 _evaluateScrollForward。
+  // BUG-2748：捕获阶段只认领滚动意图，放弃迟到图片锚与恢复锚。
+  // 输入不代表位移：手柄 touchmove、边界 wheel、滚动条 pointerdown 都可能没滚动。
+  // 选区只在真实滚动坐标变化或成功翻页后清理，不能在 target 手柄监听前清掉它。
   noteUserScroll: function() {
     this.clearImageLateAnchor();
     this._setRestoreCharAnchor(null);
+  },
+  // 连续滚动保留活动拖选；显式翻页 / 分页程序化换页则结束旧拖选会话。
+  // shell 决定失效语义，selection 模块负责完整清理及 Flutter 通知。
+  _clearSelectionOnViewportChange: function(force) {
+    var s = window.fushiSelection;
+    if (force && s && typeof s.clearSelection === 'function') {
+      s.clearSelection();
+    } else if (s && typeof s.clearSelectionOnViewportChange === 'function') {
+      s.clearSelectionOnViewportChange();
+    }
   },
   // 连续 shell 独有 scrollToChapterEnd —— 与既有重锚回调同一条判别（不能用
   // scrollToProgressPaged，那是 _sharedJs 两 shell 都有的，连续会误走分页分支）。
@@ -1282,6 +1301,13 @@ window.__fushiInstallShell = function(C) {
     return typeof this.scrollToChapterEnd === 'function';
   },
   reapplyImageLateAnchor: function() {
+    // 迟到图片按已登记目标重新定位；旧的几何采样锚不再拥有当前位置。
+    if ((this.__imgReanchorTarget || this.__imgReanchorFragment ||
+        (typeof this.__imgReanchorCharOffset === 'number' && this.__imgReanchorCharOffset > 0) ||
+        typeof this.__imgReanchorProgress === 'number') &&
+        typeof this._invalidateGeometryReanchor === 'function') {
+      this._invalidateGeometryReanchor();
+    }
     // BUG-2744：程序化揭示的目标——对齐回这个目标本身（分页落到它起始边所在页；连续按
     // 跟读同一套安全带判据滚回可见），绝不回退到开章落点。
     var target = this.__imgReanchorTarget;
@@ -1372,6 +1398,11 @@ window.__fushiInstallShell = function(C) {
   characterAnchorRect: function(range) {
     var rect = range.getBoundingClientRect();
     if (rect.width > 0 || rect.height > 0) return rect;
+    return this.characterGlyphRect(range);
+  },
+  // BUG-3431：量 range 起点那个字本身的字形盒。塌缩光标落在软换行处时，Chromium 把它
+  // 算到上一列 / 上一行的末尾；拿它对齐视口首边，恢复就整列落在上一列，重开一次退一列。
+  characterGlyphRect: function(range) {
     var node = range.startContainer;
     if (!node || node.nodeType !== 3) return null;
     var text = node.textContent || '';
@@ -1842,182 +1873,90 @@ window.__fushiInstallShell = function(C) {
     // 注音撑出的间距回到行内——iOS 模拟器实测「会釈を」+3.9px、「自嘲気味」注音与「気」
     // 叠的 3px 变成 8px 空隙。包裹在章节加载后异步执行（图片就绪之后），用户看到的就是
     // 翻进新章节后正文「突然岔开」。现在 ruby 永远留在原位：ruby 内的基字文本就地包进
-    // ruby 内部的 wrapper（排版与原书逐像素一致），长注音留下的缝由
-    // fillSentenceAudioRubyGaps 在高亮时用不参与排版的 box-shadow 补上。
-    var range = document.createRange();
-    for (var i = cueSegments.length - 1; i >= 0; i--) {
-      var id = cueSegments[i].id;
-      var segments = cueSegments[i].ranges;
-      if (!segments.length) continue;
-      var items = this.sentenceAudioWrapItems(segments);
-      var wrappers = [];
-      var rubyElements = [];
-      for (var g = items.length - 1; g >= 0; g--) {
-        var first = items[g][0];
-        var last = items[g][items[g].length - 1];
-        try {
-          range.setStart(first.node, first.start);
-          range.setEnd(last.node, last.end);
-          var wrapper = document.createElement('span');
-          wrapper.className = 'fushi-sentence-audio-cue';
-          wrapper.appendChild(range.extractContents());
-          range.insertNode(wrapper);
-          wrappers.push(wrapper);
-        } catch (e) {
-          for (var k = 0; k < items[g].length; k++) {
-            var ruby = this.rubyForNode(items[g][k].node);
-            if (ruby && rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
+    // ruby 内部的 wrapper（排版与原书逐像素一致）。长注音留下的缝不再逐缝补色：底色由窄条层
+    // （__fushiLanes）画，同一行里同一句的片段并成一条。
+    // 包裹走共享的 wrapSentenceAudioGroup（切开 / 搬移经 __fushiLiveRanges，不用 extractContents）：
+    // 收藏 / 搜索高亮等 live Range 不随包裹塌缩。
+    //
+    // BUG-3518：WebKit 上切开文本节点会丢掉切口处的字距调整、整行后移（句界被「顶开」），
+    // 所以那边不包裹：每句登记成 live Range（cueRangesMap），当前句交给 CSS.highlights（见选区脚本
+    // window.__fushiCueRanges）。正文 DOM 不动，排版与原书逐像素一致。
+    var self = this;
+    var cueRanges = window.__fushiCueRanges;
+    if (cueRanges && cueRanges.enabled()) {
+      this.withLiveRangeBatch(function() {
+        for (var c = 0; c < cueSegments.length; c++) {
+          var built = cueRanges.build(cueSegments[c].ranges);
+          if (built.length) self.cueRangesMap.set(cueSegments[c].id, built);
+        }
+      });
+      cueRanges.track(this.cueRangesMap);
+      // 让可绘制包裹（BUG-3323，整节点搬进行内元素、不切开）后的文本索引重建。
+      this.buildNodeOffsets();
+      return;
+    }
+    this.withLiveRangeBatch(function() {
+      for (var i = cueSegments.length - 1; i >= 0; i--) {
+        var id = cueSegments[i].id;
+        var segments = cueSegments[i].ranges;
+        if (!segments.length) continue;
+        var items = self.sentenceAudioWrapItems(segments);
+        var wrappers = [];
+        var rubyElements = [];
+        for (var g = items.length - 1; g >= 0; g--) {
+          try {
+            var wrapper = document.createElement('span');
+            wrapper.className = 'fushi-sentence-audio-cue';
+            wrappers.push(self.wrapSentenceAudioGroup(items[g], wrapper));
+          } catch (e) {
+            for (var k = 0; k < items[g].length; k++) {
+              var ruby = self.rubyForNode(items[g][k].node);
+              if (ruby && rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
+            }
           }
         }
+        wrappers.reverse();
+        rubyElements.reverse();
+        if (wrappers.length) self.cueWrappers.set(id, wrappers);
+        if (rubyElements.length) self.cueRubyElements.set(id, rubyElements);
       }
-      wrappers.reverse();
-      rubyElements.reverse();
-      if (wrappers.length) this.cueWrappers.set(id, wrappers);
-      if (rubyElements.length) this.cueRubyElements.set(id, rubyElements);
-    }
+    });
     this.buildNodeOffsets();
-  },
-  // BUG-2780 / BUG-2806：把一条 cue 的文本片段（文档序）折成「可整体包裹」的分组：相邻两项
-  // 父节点相同就并进同一组，组内首尾之间的兄弟节点全部被完整包含（range 两端落在同一父节点
-  // 的子节点上），extractContents 不会拆开书的元素。ruby 内的基字片段各自单独成组（wrapper
-  // 落在 ruby / rb 里、不跨 rt），ruby 本身永远不被移动（见 applySentenceAudioCues）。
-  sentenceAudioWrapItems: function(segments) {
-    var groups = [];
-    var current = null;
-    for (var j = 0; j < segments.length; j++) {
-      var node = segments[j].node;
-      var item = { node: node, start: segments[j].start, end: segments[j].end, parent: node.parentNode };
-      if (!item.parent) continue;
-      if (this.rubyForNode(node)) {
-        groups.push([item]);
-        current = null;
-        continue;
-      }
-      if (current && current[0].parent === item.parent &&
-          this.sentenceAudioInlineGap(current[current.length - 1], item)) {
-        current.push(item);
-      } else {
-        current = [item];
-        groups.push(current);
-      }
-    }
-    return groups;
-  },
-  // 两项之间的兄弟节点都是行内内容才并组（夹着块级元素就断开，不把块包进 span）；
-  // 夹着 <ruby>（或含 ruby 的行内元素）也断开——ruby 一进 wrapper，WebKit 就取消注音悬挂、
-  // 改排版（BUG-2806）。
-  sentenceAudioInlineGap: function(prev, next) {
-    var a = prev.node;
-    var b = next.node;
-    if (a === b) return true;
-    for (var n = a.nextSibling; n; n = n.nextSibling) {
-      if (n === b) return true;
-      if (n.nodeType !== 1) continue;
-      if (n.tagName === 'RUBY' || (n.querySelector && n.querySelector('ruby'))) return false;
-      var display = getComputedStyle(n).display;
-      if (display.indexOf('inline') !== 0 && display !== 'contents' && display !== 'none') return false;
-    }
-    return false;
-  },
-  // BUG-2806：ruby 留在原位后，注音比基字长、又不能悬挂到邻字上（邻字是汉字、注音超出
-  // 悬挂上限）时，基字 wrapper 与相邻 wrapper 之间会露出 ruby 自己撑出的间距（iOS 模拟器：
-  // 「大喝采」3.9px、6 假名注音单字 13.8px），整句高亮在那里断开（BUG-2780 的原始症状）。
-  // 高亮时量出同一行相邻两个 wrapper 之间的缝，由 ruby 内那个 wrapper 用 box-shadow 伸过去
-  // 补色：外阴影只画在元素边框盒外、不参与排版，量多少补多少，不会与邻 wrapper 叠色。
-  // 只处理当前高亮句，取消高亮时 clearSentenceAudioRubyGaps 撤掉。
-  fillSentenceAudioRubyGaps: function(wrappers) {
-    this.clearSentenceAudioRubyGaps();
-    this.sentenceAudioGapWrappers = wrappers;
-    this.paintSentenceAudioRubyGaps();
-    this.watchSentenceAudioRubyGapLayout();
-  },
-  // 缝的宽度随注音与字号变：暂停时切振假名模式、改字号 / 字体、字体晚到、改页面尺寸都不会
-  // 有下一个 cue 来重量，按旧偏移画的阴影会伸到邻字上叠色或留缺口。在真正的重排信号上
-  // 重量：正文样式表被换（两条换 CSS 路径都写 #fushi-reader-style）、字体加载完成，以及
-  // 一切重锚序列的落定（_setReanchorPending，改页面尺寸 / chrome 边距 / 界面缩放走这条）。
-  // 不用 ResizeObserver：wrapper 是 span、ruby 是 display: ruby，都是非替换行内元素，
-  // 观察它们只在开始时回调一次，之后排版怎么变都不会再回调。
-  // 只装一次；无当前句时 paint 只是空擦除。
-  watchSentenceAudioRubyGapLayout: function() {
-    if (this.sentenceAudioGapLayoutWatched) return;
-    this.sentenceAudioGapLayoutWatched = true;
-    var self = this;
-    var repaint = function() { self.paintSentenceAudioRubyGaps(); };
-    if (window.MutationObserver && document.head) {
-      new MutationObserver(repaint).observe(document.head,
-          { childList: true, characterData: true, subtree: true });
-    }
-    if (document.fonts && document.fonts.addEventListener) {
-      document.fonts.addEventListener('loadingdone', repaint);
-    }
-  },
-  paintSentenceAudioRubyGaps: function() {
-    this.eraseSentenceAudioRubyGaps();
-    var wrappers = this.sentenceAudioGapWrappers || [];
-    var fills = [];
-    for (var i = 1; i < wrappers.length; i++) {
-      var prev = wrappers[i - 1];
-      var next = wrappers[i];
-      var prevInRuby = !!this.rubyForNode(prev);
-      var nextInRuby = !!this.rubyForNode(next);
-      if (!prevInRuby && !nextInRuby) continue;
-      var pr = prev.getClientRects();
-      var nr = next.getClientRects();
-      if (!pr.length || !nr.length) continue;
-      var a = pr[pr.length - 1];
-      var b = nr[0];
-      var vertical = getComputedStyle(next).writingMode.indexOf('vertical') === 0;
-      var sameLine = vertical ? (a.left < b.right && b.left < a.right) : (a.top < b.bottom && b.top < a.bottom);
-      if (!sameLine) continue;
-      var gap = vertical ? b.top - a.bottom : b.left - a.right;
-      if (!(gap > 0.5) || gap > parseFloat(getComputedStyle(next).fontSize) * 3) continue;
-      if (nextInRuby) fills.push({ el: next, dx: vertical ? 0 : -gap, dy: vertical ? -gap : 0 });
-      else fills.push({ el: prev, dx: vertical ? 0 : gap, dy: vertical ? gap : 0 });
-    }
-    var shadows = new Map();
-    fills.forEach(function(f) {
-      var list = shadows.get(f.el) || [];
-      list.push(f.dx + 'px ' + f.dy + 'px 0 0 var(--fushi-sentence-audio-background-color)');
-      shadows.set(f.el, list);
-    });
-    var filled = [];
-    shadows.forEach(function(list, el) {
-      el.style.boxShadow = list.join(', ');
-      filled.push(el);
-    });
-    this.sentenceAudioGapFilled = filled;
-  },
-  eraseSentenceAudioRubyGaps: function() {
-    var filled = this.sentenceAudioGapFilled || [];
-    filled.forEach(function(el) { el.style.boxShadow = ''; });
-    this.sentenceAudioGapFilled = [];
-  },
-  clearSentenceAudioRubyGaps: function() {
-    this.sentenceAudioGapWrappers = [];
-    this.eraseSentenceAudioRubyGaps();
-  },
-  rubyForNode: function(node) {
-    var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    return el && el.closest ? el.closest('ruby') : null;
   },
   highlightSentenceAudioCue: function(cueId, reveal) {
     this.clearSentenceAudioCue();
     if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('fushi-sentence-audio');
     var wrappers = this.cueWrappers.get(cueId) || [];
     var rubyElements = this.cueRubyElements.get(cueId) || [];
+    // BUG-3518：WebKit 上不包裹，当前句是一组 live Range（见 applySentenceAudioCues）。
+    var ranges = this.cueRangesMap.get(cueId) || [];
     // TODO-630/BUG-366 observability：本 cue 拿到几个文本 span/ruby；0+0 → 直接 return null（不高亮）。
-    try { console.log('[sentence-audio-hl] highlightCue ranges=' + wrappers.length + ' ruby=' + rubyElements.length +
-      (!wrappers.length && !rubyElements.length ? ' RETURN_NULL_no_segments' : '')); } catch (e) {}
-    if (!wrappers.length && !rubyElements.length) return null;
+    try { console.log('[sentence-audio-hl] highlightCue ranges=' + (wrappers.length || ranges.length) + ' ruby=' + rubyElements.length +
+      (!wrappers.length && !rubyElements.length && !ranges.length ? ' RETURN_NULL_no_segments' : '')); } catch (e) {}
+    if (!wrappers.length && !rubyElements.length && !ranges.length) return null;
     this.activeCueId = cueId;
+    if (ranges.length) window.__fushiCueRanges.show(ranges);
     wrappers.forEach(function(wrapper) { wrapper.classList.add('fushi-sentence-audio-active'); });
-    // ruby 元素用 class 高亮（背景画在元素上，避免 ::highlight 对 ruby 双绘，BUG-110）
+    // ruby 元素用 class 高亮（避免 ::highlight 对 ruby 双绘，BUG-110）。底色由窄条层（__fushiLanes）
+    // 按这些 class 画一个字高的窄条，同一行的片段并成一条（取代逐缝补 box-shadow）。
     rubyElements.forEach(function(ruby) { ruby.classList.add('fushi-sentence-audio-ruby-active'); });
-    this.fillSentenceAudioRubyGaps(wrappers);
     if (reveal) {
-      var target = wrappers.length ? wrappers[0] : rubyElements[0];
-      if (target && this.revealElement && this.revealElement(target)) {
-        return this.calculateProgress();
+      var target = wrappers.length ? wrappers[0] : (rubyElements.length ? rubyElements[0] : null);
+      var targetRange = !target && ranges.length ? ranges[0] : null;
+      // 分页 shell：跟读落到相邻页时固定淡入（_alignRangeToPage 读这面旗）。翻页动画
+      // 在途时新位置还没写进 DOM，进度按待落定的目标页算（不读几何、不打断动画）。
+      this._audioRevealPageTurn = true;
+      var revealed = false;
+      try {
+        revealed = targetRange
+          ? !!(this.revealRange && this.revealRange(targetRange))
+          : !!(target && this.revealElement && this.revealElement(target));
+      } finally {
+        this._audioRevealPageTurn = false;
+      }
+      if (revealed) {
+        return this.calculateProgress(
+          this.pendingPageTurnTarget ? this.pendingPageTurnTarget() : undefined);
       }
     }
     return null;
@@ -2089,12 +2028,12 @@ window.__fushiInstallShell = function(C) {
   },
   clearSentenceAudioCue: function() {
     if (!this.activeCueId) return;
+    if (window.__fushiCueRanges) window.__fushiCueRanges.hide();
     if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('fushi-sentence-audio');
     var rubyElements = this.cueRubyElements.get(this.activeCueId) || [];
     rubyElements.forEach(function(ruby) { ruby.classList.remove('fushi-sentence-audio-ruby-active'); });
     var wrappers = this.cueWrappers.get(this.activeCueId) || [];
     wrappers.forEach(function(wrapper) { wrapper.classList.remove('fushi-sentence-audio-active'); });
-    this.clearSentenceAudioRubyGaps();
     this.activeCueId = null;
   },
   resetSentenceAudioCues: function() {
@@ -2103,23 +2042,25 @@ window.__fushiInstallShell = function(C) {
     this.cueRubyElements.forEach(function(rubyElements) {
       rubyElements.forEach(function(ruby) { ruby.classList.remove('fushi-sentence-audio-ruby-active'); });
     });
-    this.clearSentenceAudioRubyGaps();
     this.cueRubyElements.clear();
+    if (window.__fushiCueRanges) {
+      window.__fushiCueRanges.hide();
+      window.__fushiCueRanges.untrack(this.cueRangesMap);
+    }
     this.cueRangesMap.clear();
     var self = this;
-    this.cueWrappers.forEach(function(wrappers) { self.unwrap(wrappers); });
+    this.withLiveRangeBatch(function() {
+      self.cueWrappers.forEach(function(wrappers) { self.unwrap(wrappers); });
+    });
     this.cueWrappers.clear();
     this.activeCueId = null;
   },
+  // BUG-3343：拆包裹与合并文本节点都经 __fushiLiveRanges（定义在选区脚本），查词选区的
+  // 「节点 + 偏移」与 live Range 换算到合并后的节点，不随被并掉的节点一起失效。
   unwrap: function(wrappers) {
+    var guard = window.__fushiLiveRanges;
     wrappers.forEach(function(wrapper) {
-      var parent = wrapper.parentNode;
-      if (!parent) return;
-      while (wrapper.firstChild) {
-        parent.insertBefore(wrapper.firstChild, wrapper);
-      }
-      parent.removeChild(wrapper);
-      parent.normalize();
+      guard.normalize(guard.unwrap(wrapper));
     });
   },
   scrollToSearchMatch: function(query, hintOffset) {
@@ -2167,6 +2108,17 @@ window.__fushiInstallShell = function(C) {
       charPos = segEnd;
     }
     if (!startNode || !endNode) return null;
+    // BUG-3323: every text node the match covers must be paintable before the
+    // Range exists (see __fushiEnsureHighlightPaintable in the selection script).
+    if (window.__fushiCssHighlightsSupported &&
+        typeof window.__fushiEnsureHighlightPaintable === 'function') {
+      var paintFrom = false;
+      for (var segIdx = 0; segIdx < segments.length; segIdx++) {
+        if (segments[segIdx].node === startNode) paintFrom = true;
+        if (paintFrom) window.__fushiEnsureHighlightPaintable(segments[segIdx].node);
+        if (segments[segIdx].node === endNode) break;
+      }
+    }
     var range = document.createRange();
     range.setStart(startNode, startOffset);
     range.setEnd(endNode, endOffset);
@@ -2508,7 +2460,8 @@ if (document.readyState === 'complete') {
 
     return '''<script>
 window.__fushiShells.paginated = function(C) {
-window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+// BUG-3343：逐字副本，唯一出处 kReaderCssHighlightsSupportedJs（旧 Blink 竖排 ::highlight 画错位置）。
+window.__fushiCssHighlightsSupported = (!!(window.CSS && CSS.highlights && window.Highlight) && !(function(){var ua=typeof navigator!=="undefined"&&navigator.userAgent||"";var m=/Chrome\\/(\\d+)\\./.exec(ua);return !!m && +m[1] < 120;})());
 window.fushiReader = {
   // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] → C.perfTraceEnabled）。
   // false = 生产路径，perfMark / perfSnapshot 零开销。
@@ -2521,12 +2474,21 @@ window.fushiReader = {
   viewportHeight: 0,
   paginationMetrics: null,
 $_sharedJs
+$kSentenceAudioRubyGapJs
+$kReaderPageTurnJs
   revealElement: function(element) {
     var range = document.createRange();
     range.selectNodeContents(element);
     return this.scrollToRange(range);
   },
+  // BUG-3518：WebKit 上有声书当前句是 Range（不包裹），跟读揭示直接按它定位。
+  revealRange: function(range) {
+    return this.scrollToRange(range.cloneRange());
+  },
   getScrollContext: function() {
+    // 翻页动画：update 回调还没落位（旧页快照未截）时有人读几何，先同步落位并跳过这次
+    // 动画——读方拿到的必须是新页，绝不能是旧位置（见 reader_page_turn_script.dart）。
+    this._flushPendingPageTurn();
     // TODO-729：单一量纲（对齐安卓 reader-paginated.js getScrollContext）。
     // 列周期 = column-width + column-gap。CSS column-width 已等于 content-box
     // （reader_content_styles.dart 按书写轴分支扣 turn 轴 padding），单列正好填满
@@ -2674,10 +2636,22 @@ $_sharedJs
     }
     this.lockRootViewport();
   },
+  // 瞬时定位的唯一入口（恢复 / 跳转 / 重锚 / 搜索 / 有声书跨多页）：先结束正在播的翻页
+  // 动画（落点已写死），再瞬时赋值。只有相邻翻页经 turnPageAnimated 播动画。
   setPagePosition: function(context, position) {
+    this.finishPageTurnAnimation();
+    return this._setPagePositionNow(context, position);
+  },
+  _setPagePositionNow: function(context, position) {
+    var before = this.getPagePosition(context);
     var clamped = Math.min(Math.max(0, position), context.physicalMaxScroll);
     window.lastPageScroll = clamped;
     this.assignPagePosition(context, clamped);
+    // paginate、进度 / 字符 / fragment 恢复、音频定位共用此收口。
+    // 同位置的 settle / rAF 重写不清，避免清掉落点后新建的选区。
+    if (this.getPagePosition(context) !== before) {
+      this._clearSelectionOnViewportChange(true);
+    }
     return clamped;
   },
   registerSnapScroll: function(initialScroll) {
@@ -2692,6 +2666,8 @@ $_sharedJs
     }, { passive: true });
     document.body.addEventListener('scroll', () => {
       this.lockRootViewport();
+      // 拖动跟手 / 松手待翻 / 回弹期间 scroll 本就停在两页之间，不得被吸回旧页。
+      if (this._followDrag || this._followDragRelease || this._followRebound) return;
       var context = this.getScrollContext();
       if (context.pageSize <= 0) return;
       var currentScroll = this.getPagePosition(context);
@@ -2790,8 +2766,22 @@ $_sharedJs
     // 网格相位（见那里的注释）：补上相位后，`targetScroll === currentScroll` 已经精确表达
     // 「句首就在本页」，两个方向的错判同时消失，这条特例短路不再需要，删除。
     if (targetScroll === currentScroll) return false;
-    this.setPagePosition(context, targetScroll);
     var self = this;
+    // 有声书跟读（highlightSentenceAudioCue 揭示期间才置 _audioRevealPageTurn）落到**相邻页**
+    // 时固定淡入；跨多页、搜索命中、插图揭示等其余 reveal 一律瞬时。
+    if (this._audioRevealPageTurn === true && this.pageTurnEffect() !== 'none' &&
+        Math.round(Math.abs(targetScroll - currentScroll) / context.pageSize) === 1) {
+      this.turnPageAnimated(context, targetScroll, targetScroll > currentScroll, 'fade');
+      this.whenPageTurnApplied(function() {
+        requestAnimationFrame(function() {
+          if (self.getPagePosition(context) !== targetScroll) {
+            self._setPagePositionNow(context, targetScroll);
+          }
+        });
+      });
+      return true;
+    }
+    this.setPagePosition(context, targetScroll);
     requestAnimationFrame(function() {
       self.setPagePosition(context, targetScroll);
     });
@@ -2943,6 +2933,17 @@ $_sharedJs
     }
     return exploredChars;
   },
+  // 与 exploredCharsBeforeScroll 同口径（节点粒度、含锚字所在节点全部），但按章内
+  // 字符偏移查而不按滚动位置：几何锚持有期间进度要描述锚，不描述临时排版的页
+  // （BUG-3446）。progressStops 按滚动序排列，exploredChars 单调不减。
+  exploredCharsThroughCharOffset: function(charOffset) {
+    var metrics = this.paginationMetrics || this.buildPaginationMetrics();
+    var stops = metrics.progressStops;
+    for (var i = 0; i < stops.length; i++) {
+      if (stops[i].exploredChars > charOffset) return stops[i].exploredChars;
+    }
+    return metrics.totalChars;
+  },
   // BUG-1241：最后一页的 progress 是「视口首字符 / 全章字符」，只要末页还能显示多行，
   // 它就天然停在 0.99 左右，不能拿来判断用户是否真的到达章末。末页判定必须读分页
   // 几何的 terminal clamp；fushiProgressDetails 会在此为 true 时把持久进度钳到 100%。
@@ -3089,6 +3090,7 @@ $_sharedJs
     }, 16);
   },
   restoreProgress: async function(progress) {
+    this._invalidateGeometryReanchor();
     await document.fonts.ready;
     var context = this.getScrollContext();
     // TODO-1349（续）：往前翻到章末(>=0.99)先强制 load 仍 lazy 的尾图（打破「尾图离屏永不
@@ -3112,6 +3114,7 @@ $_sharedJs
   // restoreProgress/scrollToProgressPaged（alignToPage 取整落相邻页）。charOffset<0
   // （旧存档无精确锚）回退章首；调用方在 initialCharOffset<0 时改走 restoreProgress。
   restoreToCharOffset: async function(charOffset) {
+    this._invalidateGeometryReanchor();
     await document.fonts.ready;
     var context = this.getScrollContext();
     // BUG-492 (TODO-1053 Bug A) 越界兜底：旧脏收藏 charAnchor 属于相邻错章，恢复加载
@@ -3150,6 +3153,7 @@ $_sharedJs
     return true;
   },
   jumpToFragment: async function(fragment) {
+    this._invalidateGeometryReanchor();
     await document.fonts.ready;
     var context = this.getScrollContext();
     if (!this.alignToFragmentTarget(fragment)) {
@@ -3165,6 +3169,8 @@ $_sharedJs
     return true;
   },
   paginate: function(direction) {
+    // 相对翻页先落定自己的几何补偿；reflow 若暂时把 scroll 归零，不能从章首翻。
+    this._settleGeometryReanchor();
     // TODO-1229 案B：用户翻页即放弃图片 late-load 重锚资格——避免把用户已翻走的位置
     // 拽回恢复锚（重锚只在恢复落地后、用户尚未翻页的窗口内有效）。
     this.clearImageLateAnchor();
@@ -3196,19 +3202,21 @@ $_sharedJs
     // 是结构性正确的——不再需要旧的二次 settle 复核（那是双量纲下 maxScroll 低估的
     // 补救，根因消除后即多余）。安卓 reader-paginated.js paginate(814-840) 即直接
     // return "limit"。
+    // 相邻翻页落点经 turnPageAnimated（快照动画，reader_page_turn_script.dart）；不支持 /
+    // 墨水屏 / 效果为无时退化为与原来逐字等价的瞬时 setPagePosition。
     if (direction === "forward") {
       var targetForward = (Math.floor(pageCoordinate) + 1) * pitch;
       if (targetForward > maxAlignedScroll) targetForward = maxAlignedScroll;
       if (targetForward < minAlignedScroll) targetForward = minAlignedScroll;
       if (targetForward <= stepScroll + 1) return "limit";
-      this.setPagePosition(context, targetForward);
+      this.turnPageAnimated(context, targetForward, true);
       return "scrolled";
     } else {
       var targetBack = (Math.ceil(pageCoordinate) - 1) * pitch;
       if (targetBack < minAlignedScroll) targetBack = minAlignedScroll;
       if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
       if (targetBack >= stepScroll - 1) return "limit";
-      this.setPagePosition(context, targetBack);
+      this.turnPageAnimated(context, targetBack, false);
       return "scrolled";
     }
   },
@@ -3337,21 +3345,81 @@ $_sharedJs
     }
     this.setPagePosition(context, aligned);
   },
+  // 几何变化保留“读到哪里”，直到明确导航或样式变更。不能在每个已落定的
+  // inset 事件重新采页首：临时安全区往返会先把锚量化到临时页首，
+  // 再把临时页首量化回原排版，形成每轮退一页。字符锚和原逻辑页必须一起保留；
+  // 只保其中一个仍会被 scrollToCharOffset 的 ±1 页 hint 再次量化。
+  _captureGeometryReanchorAnchor: function() {
+    if (this._geometryReanchorAnchor) return this._geometryReanchorAnchor;
+    var charOffset = this.getFirstVisibleCharOffset();
+    if (charOffset < 0) return null;
+    var context = this.getScrollContext();
+    var scroll = this.getPagePosition(context);
+    // 尾部插图页的扫描锚可能等于全文字数，没有对应文本节点；保留其页面/章尾语义。
+    var hasTextAnchor = charOffset <= 0 || this.charOffsetInRange(charOffset);
+    this._geometryReanchorAnchor = {
+      charOffset: charOffset,
+      hasTextAnchor: hasTextAnchor,
+      atEnd: !hasTextAnchor && this.isAtEnd(),
+      page: context.pageSize > 0 ? Math.round(scroll / context.pageSize) : null,
+      scroll: scroll
+    };
+    return this._geometryReanchorAnchor;
+  },
+  // 持锚期间「读到哪里」的唯一真值（-1 = 没有可用的文字锚）。几何事件把视口挪到
+  // 临时排版上时页首字不是用户读到的位置：安卓切后台时系统栏出现让排版临时缩水，
+  // 此刻落库的若是临时页首字，进程在后台被回收后重开就退到前一页。进度组装
+  // （fushiProgressDetails）据此上报锚而不是临时页首字。
+  heldReadingAnchorCharOffset: function() {
+    var anchor = this._geometryReanchorAnchor;
+    if (!anchor || !anchor.hasTextAnchor || !(anchor.charOffset >= 0)) return -1;
+    return anchor.charOffset;
+  },
+  _invalidateGeometryReanchor: function() {
+    this._geometryReanchorAnchor = null;
+    // token 与长期锚分开：取消旧回调只能清自己拥有的 pending，不能清样式重锚的旗。
+    if (this._geometryReanchorToken) {
+      this._geometryReanchorToken = null;
+      this._setReanchorPending(false);
+    }
+  },
+  _settleGeometryReanchor: function() {
+    var token = this._geometryReanchorToken;
+    if (!token) return;
+    var anchor = token.anchor;
+    try {
+      var context = this.getScrollContext();
+      var hint = anchor.page !== null && context.pageSize > 0
+        ? anchor.page * context.pageSize : anchor.scroll;
+      if (!anchor.hasTextAnchor) {
+        this.setPagePosition(context,
+          anchor.atEnd ? this.contentLastPageScroll(context) : hint);
+      } else {
+        // 保留 BUG-2205 防跳字校验，不能靠强留页号把锚字跳过去。
+        this.scrollToCharOffset(anchor.charOffset, hint);
+      }
+    } finally {
+      if (this._geometryReanchorToken === token) {
+        this._geometryReanchorToken = null;
+        this._setReanchorPending(false);
+      }
+    }
+  },
+  _queueGeometryReanchor: function(anchor) {
+    if (!anchor) return;
+    var token = { anchor: anchor };
+    this._geometryReanchorToken = token;
+    this._setReanchorPending(true);
+    var self = this;
+    this._reanchorFrame(function() {
+      if (self._geometryReanchorToken === token) self._settleGeometryReanchor();
+    });
+  },
   setChromeInsets: function(topPx, bottomPx) {
-    // BUG-2652：inset 与图片盒都没变 = 没有重排可补偿，见 _chromeInsetsUnchanged。
+    // 无几何变化时不采样、不重锚（BUG-2652）。已有回调负责串行重排，期间不读瞬态页首。
     if (this._chromeInsetsUnchanged(topPx, bottomPx)) return;
-    // Re-anchoring (after a chrome-inset OR a page-size change) is serialised
-    // through one shared in-flight flag, _reanchorPending. A layout change
-    // transiently resets scrollTop to 0; if a re-anchor rAF is already pending
-    // (from this handler or updatePageSize), reading a fresh char offset now
-    // would sample that reset as the chapter start and snap there. So when one
-    // is in flight we only apply the new CSS and let the pending rAF restore
-    // position once the layout settles. This serialises without masking via a
-    // delay, and covers both rapid toggles and toggle/resize interleaving.
-    // (HBK-REG-004)
     var inFlight = this._reanchorPending === true;
-    var charOffset = inFlight ? -1 : this.getFirstVisibleCharOffset();
-    var scrollBefore = inFlight ? 0 : this.getPagePosition(this.getScrollContext());
+    var anchor = inFlight ? null : this._captureGeometryReanchorAnchor();
     document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
     document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
     // Chrome insets participate in the paginated column-width/pageStep CSS.
@@ -3369,16 +3437,8 @@ $_sharedJs
     // of the previous page, the middle on its own page, a strip at the top of
     // the next. Re-derive it here, before the re-anchor samples the new layout.
     this._resetImageMaxVars();
-    if (inFlight || charOffset < 0) return;
-    this._setReanchorPending(true);
-    var self = this;
-    this._reanchorFrame(function() {
-      try {
-        self.scrollToCharOffset(charOffset, scrollBefore);
-      } finally {
-        self._setReanchorPending(false);
-      }
-    });
+    if (inFlight) return;
+    this._queueGeometryReanchor(anchor);
   },
   // TODO-736 B-1 续（分页缺席根因修复，BUG-849）：样式变更两阶段重锚在分页 shell 曾整体
   // 缺席，导致 beginStyleReanchorInvocation 恒走 `:-1` 兜底、CSS 从不换 → 分页模式下改
@@ -3392,6 +3452,8 @@ $_sharedJs
     document.documentElement.style.setProperty('--fushi-image-max-height', box.h + 'px');
   },
   beginStyleReanchor: function(styleEl, css) {
+    // 显式样式变化开启新基线；在飞回调仍持有旧锚完成这次补偿，不取消其 token。
+    this._geometryReanchorAnchor = null;
     if (!this.didInitialize) { if (styleEl) styleEl.textContent = css; return -1; }
     if (this._reanchorPending === true) {
       if (styleEl) styleEl.textContent = css;
@@ -3486,12 +3548,9 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   var newHeight = newViewportHeight + $bottomOverlapPx;
   var newWidth = Math.round(cssWidth);
   if (newHeight === this.pageHeight && newWidth === this.pageWidth) return;
-  // Shares the _reanchorPending flag with setChromeInsets (see there). If a
-  // re-anchor rAF is already pending, reading calculateProgress now would read a
-  // transiently reset scrollTop as progress 0 and snap to the chapter start, so
-  // we only update the page metrics and let the pending rAF restore position.
+  // 与 inset 变化共用精确语义锚，不能退回节点粒度 progress（高度往返会再量化）。
   var inFlight = this._reanchorPending === true;
-  var progress = inFlight ? 0 : this.calculateProgress();
+  var anchor = inFlight ? null : this._captureGeometryReanchorAnchor();
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
   document.documentElement.style.setProperty('--reader-viewport-height', newViewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
@@ -3504,15 +3563,7 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   this.pageWidth = newWidth;
   this.paginationMetrics = null;
   if (inFlight) return;
-  this._setReanchorPending(true);
-  var self = this;
-  this._reanchorFrame(function() {
-    try {
-      self.scrollToProgressPaged(self.getScrollContext(), progress);
-    } finally {
-      self._setReanchorPending(false);
-    }
-  });
+  this._queueGeometryReanchor(anchor);
 };
 $_sharedInitBoot
 };
@@ -3535,7 +3586,8 @@ $_sharedInitBoot
 
     return '''<script>
 window.__fushiShells.continuous = function(C) {
-window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+// BUG-3343：逐字副本，唯一出处 kReaderCssHighlightsSupportedJs（旧 Blink 竖排 ::highlight 画错位置）。
+window.__fushiCssHighlightsSupported = (!!(window.CSS && CSS.highlights && window.Highlight) && !(function(){var ua=typeof navigator!=="undefined"&&navigator.userAgent||"";var m=/Chrome\\/(\\d+)\\./.exec(ua);return !!m && +m[1] < 120;})());
 window.fushiReader = {
   // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] → C.perfTraceEnabled）。
   // false = 生产路径，perfMark / perfSnapshot 零开销。
@@ -3600,6 +3652,7 @@ window.fushiReader = {
         '--fushi-continuous-height', this._visibleViewportHeight(fallback) + 'px');
   },
 $_sharedJs
+$kSentenceAudioRubyGapJs
   scrollToChapterStart: function() {
     var root = document.scrollingElement || document.documentElement;
     window.scrollTo(0, 0);
@@ -3643,6 +3696,16 @@ $_sharedJs
   _readContinuousScroll: function() {
     var root = document.scrollingElement || document.documentElement;
     return this.isVertical() ? window.scrollX : root.scrollTop;
+  },
+  // 原生 / 转发 / 程序化滚动都按内容轴实际坐标判定；重复或子元素 scroll 不清选区。
+  // 先更新快照，即使正在拖选也不把这次位移留到松手后再补清。
+  _onContinuousViewportScroll: function() {
+    var position = this._readContinuousScroll();
+    var previous = this.__selectionViewportScroll;
+    this.__selectionViewportScroll = position;
+    if (typeof previous === 'number' && position !== previous) {
+      this._clearSelectionOnViewportChange();
+    }
   },
   _writeContinuousScroll: function(pos) {
     if (this.isVertical()) {
@@ -3700,6 +3763,10 @@ $_sharedJs
   },
   revealElement: function(element) {
     return this.scrollToTarget(element);
+  },
+  // BUG-3518：WebKit 上有声书当前句是 Range（不包裹）；getRect 对 Range 同样成立。
+  revealRange: function(range) {
+    return this.scrollToTarget(range.cloneRange());
   },
   // BUG-2903：章内文本索引——按文档序列出有可匹配字符的文本节点、各自的章内起始字数与
   // 章总字数。滚动中的进度回报每帧都要「视口边之前有多少字」（onReaderScroll →
@@ -3907,8 +3974,7 @@ $_sharedJs
     this.clearImageLateAnchor();
     this._setRestoreCharAnchor(null);
     var vertical = this.isVertical();
-    var root = document.scrollingElement || document.documentElement;
-    var before = vertical ? window.scrollX : root.scrollTop;
+    var before = this._readContinuousScroll();
     var wm = window.getComputedStyle(document.body).writingMode;
     var amount = vertical
       ? Math.max(1, Math.floor(window.innerWidth * 0.9))
@@ -3920,8 +3986,11 @@ $_sharedJs
     } else {
       window.scrollBy({left: 0, top: step, behavior: 'auto'});
     }
-    var after = vertical ? window.scrollX : root.scrollTop;
+    var after = this._readContinuousScroll();
+    // scroll 事件稍后送达时不再重复清理（其间用户可能已经重新选词）。
+    this.__selectionViewportScroll = after;
     var moved = Math.abs(after - before) > 1;
+    if (moved) this._clearSelectionOnViewportChange(true);
     return moved ? "scrolled" : "limit";
   },
   getFirstVisibleCharOffset: function() {
@@ -4029,7 +4098,9 @@ $_sharedJs
     }
     var startRange = this.collapsedRangeAtCharOffset(charOffset);
     if (!startRange) return;
-    var rect = this.characterAnchorRect(startRange);
+    // BUG-3431：对齐的是目标字自己的字形盒，不是塌缩光标（软换行处光标归上一列末）。
+    var rect = this.characterGlyphRect(startRange) ||
+        this.characterAnchorRect(startRange);
     if (!rect) return;
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;
@@ -4395,6 +4466,19 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   // 砍掉 PC 鼠标/触控笔(pointer)的边界手势跨章：连续模式鼠标左键已回归原生选字/划词
   // （见 _fushiReaderMouseDragStartAllowed 连续模式返 false），PC 桌面跨章只走滚轮；
   // 边界手势只保留触摸(touchstart/touchend)给手机。鼠标拖动选词到边界不再误跨章。
+})();
+// 每次安装 shell 都以当前真实滚动位初始化快照；监听按文档装一次、动态读当前 reader。
+// document capture 同时覆盖根文档滚动和元素滚动，后者只有内容轴变化才会清选区。
+(function() {
+  window.fushiReader.__selectionViewportScroll = window.fushiReader._readContinuousScroll();
+  if (window.__fushiContinuousViewportScrollInstalled) return;
+  window.__fushiContinuousViewportScrollInstalled = true;
+  document.addEventListener('scroll', function() {
+    var r = window.fushiReader;
+    if (r && r._isContinuousShell && r._isContinuousShell()) {
+      r._onContinuousViewportScroll();
+    }
+  }, {capture: true, passive: true});
 })();
 // BUG-2748：连续模式用户滚动的输入入口统一在这里认领，调 noteUserScroll（语义见 _sharedJs）。
 // 连续模式的视口由原生滚动驱动，没有分页那种单一 paginate 入口：滚轮（webview 层的 wheel

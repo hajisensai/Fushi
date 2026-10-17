@@ -232,6 +232,37 @@ void main() {
       expect(parseRecommendedPackManifest('[1,2,3]'), isNull);
     });
 
+    test('deflate_pack 子清单合法时取它（本版本用原生 zlib 解压）', () {
+      final RecommendedPackManifest? m = parseRecommendedPackManifest(
+        '{"version":"store","url":"https://a.example/store.fushi.zip",'
+        '"size_bytes":10000,'
+        '"$kRecommendedPackDeflateManifestKey":{"version":"deflate",'
+        '"url":"https://a.example/deflate.fushi.zip","size_bytes":8000}}',
+      );
+      expect(m, isNotNull);
+      expect(m!.url, 'https://a.example/deflate.fushi.zip');
+      expect(m.version, 'deflate');
+      expect(m.sizeBytes, 8000);
+    });
+
+    test('deflate_pack 缺失或不合法时退回顶层 STORE 包，而不是整体失败', () {
+      const String store = '"version":"store",'
+          '"url":"https://a.example/store.fushi.zip"';
+      for (final String extra in <String>[
+        '',
+        ',"$kRecommendedPackDeflateManifestKey":null',
+        ',"$kRecommendedPackDeflateManifestKey":"https://a.example/d.zip"',
+        ',"$kRecommendedPackDeflateManifestKey":{"url":"http://a.example/d"}',
+        ',"$kRecommendedPackDeflateManifestKey":{"url":"https://a.example/d",'
+            '"sha256":"zz"}',
+      ]) {
+        final RecommendedPackManifest? m = parseRecommendedPackManifest(
+          '{$store$extra}',
+        );
+        expect(m?.url, 'https://a.example/store.fushi.zip', reason: extra);
+      }
+    });
+
     test('mirrors / part_base_urls 只收 https，杂项被丢掉', () {
       final RecommendedPackManifest? m = parseRecommendedPackManifest(
         '{"url":"https://dl.wrds.xyz/a.zip",'

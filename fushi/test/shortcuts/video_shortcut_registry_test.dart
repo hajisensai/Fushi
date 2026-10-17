@@ -72,8 +72,13 @@ MapEntry<SingleActivator, VoidCallback>? _findSingleActivator(
 }) {
   for (final MapEntry<ShortcutActivator, VoidCallback> entry
       in activators.entries) {
-    final ShortcutActivator key = entry.key;
-    if (key is! SingleActivator) continue;
+    final ShortcutActivator raw = entry.key;
+    final SingleActivator? key = raw is InputBindingActivator
+        ? raw.exact
+        : raw is SingleActivator
+            ? raw
+            : null;
+    if (key == null) continue;
     if (key.trigger != trigger) continue;
     if (key.control != control || key.shift != shift) continue;
     if (key.alt != alt || key.meta != meta) continue;

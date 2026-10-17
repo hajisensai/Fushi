@@ -2,7 +2,7 @@
 // 「还没有跟踪到任何发布」——「番还没更新」和「规则结构上对不上」是两件完全
 // 不同的事，用这一句话说它们，用户无从分辨。查过之后仍为空必须补一句可操作的
 // 解释（完结作品 / 整包请改用一次性下载）。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 

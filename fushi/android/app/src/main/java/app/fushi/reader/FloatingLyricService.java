@@ -140,7 +140,7 @@ public class FloatingLyricService extends BaseFloatingService {
                 ? new Notification.Builder(this, getNotificationChannelId())
                 : new Notification.Builder(this);
         return builder
-                .setContentTitle("Hibiki")
+                .setContentTitle("Fushi")
                 .setContentText("Floating lyric is active")
                 .setSmallIcon(R.drawable.ic_stat_fushi)
                 .setOngoing(true)

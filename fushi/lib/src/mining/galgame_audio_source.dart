@@ -399,7 +399,7 @@ enum GalHookInjectorFailure {
   /// injector 已宣告 hooked，但共享内存打不开（native 通道不可用）。
   sharedMemoryUnavailable,
 
-  /// 共享内存打开了，但契约版本与本体不一致：捕获组件与 Hibiki 本体漂开。
+  /// 共享内存打开了，但契约版本与本体不一致：捕获组件与 Fushi 本体漂开。
   ///
   /// 与 [sharedMemoryUnavailable] 分开是因为**处置相反**：后者重试/重开游戏有可能好，
   /// 前者重启多少次都不会好（BUG-1216）。
@@ -409,7 +409,7 @@ enum GalHookInjectorFailure {
   /// app 的更新通道**，所以旧文案里的「重新安装捕获组件」是个不存在的动作。真能落到这里
   /// 只剩两种局面：① 本包没随附归档（开发构建 / 早于随包发布的旧包），用的是历史遗留的
   /// 组件目录；② 随附了但仍不匹配 = 本体与组件不同源构建，属发布包缺陷。两者用户能做的
-  /// 都是「换一个新版本的 Hibiki」，具体是哪一种由诊断行里的双方版本号（`shm=11/want 12`）
+  /// 都是「换一个新版本的 Fushi」，具体是哪一种由诊断行里的双方版本号（`shm=11/want 12`）
   /// 和安装器日志分辨。
   protocolMismatch,
 
@@ -660,8 +660,8 @@ String galHookDiagnosticsDetail(GalHookInjectorDiagnostics diagnostics) {
 /// `test/mining/gal_shm_open_error_test.dart` 扫源码守卫。
 ///
 /// 分开归类的理由是**处置完全不同**，而旧实现把它们全压成一句「捕获通道无法打开，请重启
-/// Hibiki」（BUG-1216）：
-///   - `access_denied`：游戏跑在更高完整性级别 → 要以管理员身份运行 Hibiki，重启没用；
+/// Fushi」（BUG-1216）：
+///   - `access_denied`：游戏跑在更高完整性级别 → 要以管理员身份运行 Fushi，重启没用；
 ///   - `protocol_mismatch`：捕获组件与本体版本漂开 → 组件随本体内置更新，只能更新本体，重启更没用；
 ///   - 其余（映射不存在 / MapView 失败 / pid 非法）→ native 只知道「映射不在那儿」，
 ///     **不知道为什么**，此处返回 null。
@@ -1378,10 +1378,10 @@ void _logGalHookProcessOutput(bool isStderr, String chunk) {
 /// C 阶段实现：引擎级 voice hook 的**干净语音**源（混音前抓，无 BGM/SE）。
 ///
 /// 隔离红线（docs/specs/galgame-mining）：注入进游戏、装 XAudio2/DirectSound hook 的代码在
-/// **独立 helper 组件** `hibiki_voice_injector.exe` + `hibiki_voice_hook.dll`（注入必被杀软启发式
-/// 报毒，绝不进 hibiki.exe）。本实现只做两件被视为无害的事：
+/// **独立 helper 组件** `fushi_voice_injector.exe` + `fushi_voice_hook.dll`（注入必被杀软启发式
+/// 报毒，绝不进 fushi.exe）。本实现只做两件被视为无害的事：
 ///   ① 把 injector **当子进程拉起**（`--pid <PID> --hold`）——注入那步的报毒代码只待在子进程；
-///   ② 经 `app.fushi.reader/voice_hook` MethodChannel 让 hibiki.exe 自己的 native **读**注入
+///   ② 经 `app.fushi.reader/voice_hook` MethodChannel 让 fushi.exe 自己的 native **读**注入
 ///      组件建好的共享内存（读共享内存不是注入、不被杀软标记，见 voice_hook_reader.cpp）。
 /// 和 [LoopbackGalAudioSource] **同接口**——波形选区/制卡出口零改动；不可用（无 injector /
 /// 未注入 / 无该引擎 / 超时）时 [start] 返回 null，调用方自动回退 loopback（Never break）。
@@ -1389,7 +1389,7 @@ void _logGalHookProcessOutput(bool isStderr, String chunk) {
 /// **两种模式**（二选一）：
 ///   - **attach**（给 [targetPid]）：附着**已运行**的游戏进程（`injector --pid`）。适合已在跑、
 ///     且引擎在注入时刻**之后**才建音频对象的场景。
-///   - **launch**（给 [launchExe]）：由 Hibiki **拉起游戏** exe（`injector --launch <exe>`）。
+///   - **launch**（给 [launchExe]）：由 Fushi **拉起游戏** exe（`injector --launch <exe>`）。
 ///     通常 CREATE_SUSPENDED 早注入，在游戏 WinMain 前把 hook 装好——**KiriKiriZ 等「启动即建
 ///     DirectSound 设备」的引擎必须走这条**（attach 会漏掉启动时创建的设备）。子进程 PID 由
 ///     injector stdout 的 `OK hooked pid=<N>` 回报（[parseInjectorHookedPid] 解析）。Siglus 的
@@ -1665,7 +1665,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
   int _xaudioDiagnostics2 = 0;
   PcmFormat? _readyFormat;
 
-  /// 查目标进程 [pid] 是否 32 位（WOW64）。hibiki.exe 是 64 位，故 native `IsWow64Process`
+  /// 查目标进程 [pid] 是否 32 位（WOW64）。fushi.exe 是 64 位，故 native `IsWow64Process`
   /// 为 true 即目标为 32 位（多数 KiriKiri galgame），调用方据此选 x86 注入器（DLL 位数必须
   /// 匹配目标进程，否则注入失败）。native 缺失 / 查询失败 / pid<=0 返回 null（调用方降级）。
   static Future<bool?> targetIsWow64(int pid, {MethodChannel? channel}) async {
@@ -2300,7 +2300,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
   }
 
-  /// v7 文本 hook：取序号在 `(fromSeq, count]` 的新台词/线程发现事件，供喂 Hibiki
+  /// v7 文本 hook：取序号在 `(fromSeq, count]` 的新台词/线程发现事件，供喂 Fushi
   /// texthooker 与线程选择器。native 缺失 / 失败返回 null。
   Future<GalTextPoll?> pollText(int fromSeq) async {
     try {
@@ -3010,6 +3010,8 @@ class GalHookedLine {
       8 => 'artemis',
       9 => 'yuris',
       10 => 'fvp',
+      11 => 'kogado',
+      12 => 'luca',
       15 => 'malie',
       _ => 'hook',
     };
@@ -3031,6 +3033,8 @@ class GalHookedLine {
             8 => 'Artemis exact',
             9 => 'YU-RIS exact',
             10 => 'FVP exact',
+            11 => 'Kogado Hy exact',
+            12 => 'LucaSystem exact',
             15 => 'Malie exact',
             _ => 'Text hook',
           };

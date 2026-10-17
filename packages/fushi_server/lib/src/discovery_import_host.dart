@@ -34,6 +34,15 @@ DiscoveryDomainImporters buildServerDiscoveryImporters(FushiDatabase db) => Disc
             audiobookRepo: AudiobookRepository(db),
             plan: plan,
           ),
+      importSubtitleAudiobook: (SubtitleAudiobookPlan plan) => importDiscoverySubtitleAudiobook(
+            db: db,
+            srtBookRepo: SrtBookRepository(db),
+            plan: plan,
+          ),
+      // 服务端不自动转录（模型要显式 `fushi_server models pull`，转录排队也还没
+      // 接）：只有音频的包与改前同一个原因码挡下。
+      transcribeAudiobook: (TranscribeAudiobookPlan plan) async =>
+          throw const DiscoveryImportBlockedException(DiscoveryImportBlocker.audiobookMissingSubtitle),
       importMangaArchive: (String path) => importDiscoveryMangaArchive(db, path),
       registerGameExes: (List<String> exePaths) async =>
           unsupportedDiscoveryImporter('game', exePaths.isEmpty ? '' : exePaths.first),

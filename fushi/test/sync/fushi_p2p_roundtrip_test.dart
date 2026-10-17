@@ -9,7 +9,7 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// End-to-end interop for the Hibiki P2P path (the Windows-host server ↔
+/// End-to-end interop for the Fushi P2P path (the Windows-host server ↔
 /// Android-client scenario): a REAL [FushiSyncServer] and the REAL
 /// [InterconnectSyncBackend] do a full upload → download round-trip over a
 /// loopback socket. Exercises the exact protocol both ends use; the only thing
@@ -18,7 +18,7 @@ void main() {
   test('P2P round-trip: client uploads then re-reads progress via the server',
       () async {
     final Directory tempDir =
-        await Directory.systemTemp.createTemp('hibiki_p2p_');
+        await Directory.systemTemp.createTemp('fushi_p2p_');
     addTearDown(() => tempDir.delete(recursive: true));
     // The server serves <syncDataDir>/sync-data at '/'; it must exist so the
     // client's connection probe (PROPFIND on root) succeeds.
@@ -71,7 +71,7 @@ void main() {
     final List<SyncFileRef> books = await backend.listBooks(root2);
     // sanitizeTtuFilename 不改大小写（只处理尾部空格/点、`*`、非法字符百分号编码），
     // 故文件夹名保持原标题大小写 'TestBook'。服务器对真实读写路径不再 canonicalize
-    // 小写化（见 hibiki_sync_server 的 fsPath），跨平台一致。
+    // 小写化（见 fushi_sync_server 的 fsPath），跨平台一致。
     expect(books.map((SyncFileRef f) => f.name), contains('TestBook'),
         reason: 'the uploaded book folder should be visible to another device');
     final String folder2 = await backend.ensureBookFolder(

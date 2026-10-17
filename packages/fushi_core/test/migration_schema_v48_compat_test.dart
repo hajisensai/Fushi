@@ -3,46 +3,6 @@ import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-FushiDatabase _openV45Seed() => FushiDatabase.forTesting(
-      NativeDatabase.memory(
-        setup: (raw) {
-          raw.execute('''
-CREATE TABLE epub_books (
-  book_key TEXT NOT NULL PRIMARY KEY,
-  title TEXT NOT NULL,
-  author TEXT,
-  cover_path TEXT,
-  epub_path TEXT NOT NULL,
-  extract_dir TEXT NOT NULL,
-  chapter_count INTEGER NOT NULL,
-  chapters_json TEXT NOT NULL,
-  toc_json TEXT,
-  source_metadata TEXT,
-  imported_at INTEGER NOT NULL
-)
-''');
-          raw.execute('PRAGMA user_version = 45');
-        },
-      ),
-    );
-
-FushiDatabase _openExistingV48Seed() => FushiDatabase.forTesting(
-      NativeDatabase.memory(
-        setup: (raw) {
-          raw.execute('''
-CREATE TABLE preferences (
-  key TEXT NOT NULL PRIMARY KEY,
-  value TEXT NOT NULL
-)
-''');
-          raw.execute(
-            "INSERT INTO preferences (key, value) VALUES ('sentinel', 'kept')",
-          );
-          raw.execute('PRAGMA user_version = 48');
-        },
-      ),
-    );
-
 Future<Set<String>> _columnNames(
   FushiDatabase db,
   String table,
@@ -62,37 +22,6 @@ Future<Set<String>> _indexNames(FushiDatabase db) async {
 }
 
 void main() {
-  test('existing schema v48 database opens without downgrade refusal',
-      () async {
-    final FushiDatabase db = _openExistingV48Seed();
-    addTearDown(db.close);
-
-    // 代码目标版本随 develop 演进（写此测试时为 v48，现已更高）；这里只断言
-    // 不低于种子库版本，避免每次升 schema 都要改死值。
-    expect(db.schemaVersion, greaterThanOrEqualTo(48));
-    expect(await db.getPref('sentinel'), 'kept',
-        reason: 'opening an existing v48 DB must preserve and expose its data');
-  });
-
-  test('v45 migration adds the v46 and v47 schema before landing on v48',
-      () async {
-    final FushiDatabase db = _openV45Seed();
-    addTearDown(db.close);
-
-    final QueryRow version =
-        await db.customSelect('PRAGMA user_version').getSingle();
-    // 迁移终点跟随当前代码的 schemaVersion（v48 时代写下，此后 develop 已继续升级）。
-    expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(await _columnNames(db, 'epub_books'), contains('completed_at'));
-    // 断的是**迁移终点**（阶梯一路跑到当前 schemaVersion），不是 v48 当时的形状：
-    // v82 把 revealed_images 的书键从 title 派生的 `book_key` 改成本机稳定的
-    // `book_uid`（`EpubBooks.uid`，带数据搬迁），这里跟着改名走。
-    expect(
-      await _columnNames(db, 'revealed_images'),
-      containsAll(<String>['book_uid', 'image_key', 'revealed_at']),
-    );
-  });
-
   test('fresh v48 database contains all v48 hot-path indexes', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);

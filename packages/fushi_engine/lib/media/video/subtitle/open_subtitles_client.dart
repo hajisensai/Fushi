@@ -14,16 +14,16 @@ import 'package:fushi_engine/utils/net/app_user_agent.dart';
 
 const int kMaximumSubtitleDownloadBytes = 64 * 1024 * 1024;
 
-/// Hibiki 的大类语言码 → OpenSubtitles 认得的 BCP-47 码（BUG-1846）。
+/// Fushi 的大类语言码 → OpenSubtitles 认得的 BCP-47 码（BUG-1846）。
 ///
-/// Hibiki 内部字幕语言只分到大类（`ja`/`zh`/`en`/`ko`，见 `kJimakuLanguageCodes`——
+/// Fushi 内部字幕语言只分到大类（`ja`/`zh`/`en`/`ko`，见 `kJimakuLanguageCodes`——
 /// Jimaku 侧靠文件名启发式识别，本来就分不了地区）。而 OpenSubtitles 的语言表
 /// （`GET /infos/languages`，105 个码）里**没有裸 `zh`**，只有 `zh-cn` / `zh-tw` /
 /// `zh-ca`：把大类码原样发过去，中文字幕恒定搜不到。
 ///
 /// 只有带地区码的语言家族需要展开——实测该表里带地区的仅 `az` / `pt` / `tm` / `zh`
 /// 四族，`ja` `en` `ko` `es` `fr` `de` `it` `ru` `th` `vi` `id` `ar` `nl` `tr` 均有裸码，
-/// 原样透传即可。这里只登记 Hibiki 值域可能产生的那两族，其余交给服务端裁决，不在
+/// 原样透传即可。这里只登记 Fushi 值域可能产生的那两族，其余交给服务端裁决，不在
 /// 客户端擅自丢弃。
 const Map<String, List<String>> kOpenSubtitlesLanguageExpansions =
     <String, List<String>>{
@@ -182,6 +182,7 @@ class OpenSubtitlesSearchRecord {
     this.uploadedAtMs,
     this.aiTranslated = false,
     this.fromTrusted = false,
+    this.work,
   });
 
   final int fileId;
@@ -202,6 +203,39 @@ class OpenSubtitlesSearchRecord {
 
   /// `attributes.from_trusted`：可信上传者。
   final bool fromTrusted;
+
+  /// `attributes.feature_details` 自述的作品身份（BUG-3068）。moviehash 档会撞车：
+  /// 一部电影按哈希搜回过毫不相干的剧集，只有这里的 id / 种类能把它认出来。
+  final SubtitleWorkClaim? work;
+}
+
+/// `feature_details` → 作品身份。剧集类（`Episode` / `Tvshow`）取**父级**（剧本身）
+/// 的标题与 id：目标作品是整部剧，单集 id 与它无从比较。纯函数。
+SubtitleWorkClaim? parseOpenSubtitlesFeatureWork(
+    Map<Object?, Object?> feature) {
+  if (feature.isEmpty) return null;
+  final String type = (_string(feature['feature_type']) ?? '').toLowerCase();
+  final bool series = type == 'episode' || type == 'tvshow';
+  final VideoMetadataMediaKind? kind = type == 'movie'
+      ? VideoMetadataMediaKind.movie
+      : series
+          ? VideoMetadataMediaKind.tv
+          : null;
+  int? positive(Object? raw) {
+    final int? value = _int(raw);
+    return value == null || value <= 0 ? null : value;
+  }
+
+  final int? imdb =
+      positive(series ? feature['parent_imdb_id'] : feature['imdb_id']);
+  return SubtitleWorkClaim(
+    titles: <String?>[_string(feature[series ? 'parent_title' : 'title'])]
+        .nonNulls,
+    year: positive(feature['year']),
+    kind: kind,
+    tmdbId: positive(series ? feature['parent_tmdb_id'] : feature['tmdb_id']),
+    imdbId: imdb == null ? null : 'tt$imdb',
+  );
 }
 
 List<OpenSubtitlesSearchRecord> parseOpenSubtitlesSearchResponse(String body) {
@@ -248,6 +282,7 @@ List<OpenSubtitlesSearchRecord> parseOpenSubtitlesSearchResponse(String body) {
               : null,
           aiTranslated: attributes['ai_translated'] == true,
           fromTrusted: attributes['from_trusted'] == true,
+          work: parseOpenSubtitlesFeatureWork(feature),
         ),
       );
     }
@@ -598,7 +633,7 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
       RegExp(r'^tt', caseSensitive: false),
       '',
     );
-    // 归一后再发：Hibiki 内部是大类码，OpenSubtitles 要 BCP-47（BUG-1846）。
+    // 归一后再发：Fushi 内部是大类码，OpenSubtitles 要 BCP-47（BUG-1846）。
     final List<String> languages =
         normalizeOpenSubtitlesLanguages(request.languages);
     final Map<String, String> common = <String, String>{
@@ -735,6 +770,7 @@ class _OpenSubtitlesCandidate extends VideoSubtitleCandidate {
           episode: record.episode,
           downloadCount: record.downloadCount,
           hearingImpaired: record.hearingImpaired,
+          work: record.work,
           fps: record.fps,
           uploadedAtMs: record.uploadedAtMs,
           aiTranslated: record.aiTranslated,

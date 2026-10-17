@@ -181,10 +181,13 @@ void main() {
     test('sweep 进行中记账（去重），收尾 drain 补跑', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
+      // BUG-3305：自动同步开关先于记账判断（关着的自动同步不登记在飞、也不记账），
+      // 所以本用例要先把开关打开。
+      await SyncRepository(db).setAutoSyncEnabled(true);
 
       expect(debugMarkSweepInProgress(true), isTrue);
       triggerAutoSyncOnBackground(db: db, mediaIdentifier: 'fushi://book/abc');
-      // 同步入队（记账发生在 _runAutoSync 的第一段同步代码里，无 await 之前）。
+      // 记账发生在 _runAutoSync 读完自动同步开关之后。
       await _waitFor(() => pendingBookSyncCountForTest == 1,
           what: 'per-book request to be recorded during sweep');
       triggerAutoSyncOnBackground(db: db, mediaIdentifier: 'fushi://book/abc');

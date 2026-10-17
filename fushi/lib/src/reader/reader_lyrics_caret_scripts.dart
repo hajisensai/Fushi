@@ -275,6 +275,12 @@ window.fushiLyricsCaret = {
       var re = this.refresh();
       if (!re.ok) return { status: 'blocked' };
     }
+    // 竖排歌词（vertical-rl）：句子是右起左排的列、字自上而下——方向键随之转 90°：
+    // ←/→ 换句（左 = 下一句），↑/↓ 在句内逐字。
+    if (window.__lyricsVertical === true) {
+      dir = dir === 'left' ? 'down' : dir === 'right' ? 'up'
+          : dir === 'down' ? 'right' : dir === 'up' ? 'left' : dir;
+    }
     if (dir === 'up') return this._lineMove(false);
     if (dir === 'down') return this._lineMove(true);
     var forward = (dir === 'right' || dir === 'forward');

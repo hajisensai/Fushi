@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -59,6 +60,34 @@ class SyncAssetPackageIncompleteException implements Exception {
     return 'SyncAssetPackageIncompleteException: package carries no resource '
         'for "$sourcePath"$extra';
   }
+}
+
+/// [SyncAssetPackageService.importAudioSubtitlePackage] 拒绝「只更新字幕」的原因。
+enum AudiobookSubtitleRefreshFailure {
+  /// 本机没有这本有声书（没有音频可配）：只更新字幕无从谈起，要走整本下载。
+  notLocal,
+
+  /// 本机音频条数与 host 不同：cue 的 `audioFileIndex` 是位置索引，硬搬会整本
+  /// 错位，要改走「重新下载有声书」把音频一起换掉。
+  audioMismatch,
+}
+
+/// 「只更新字幕」在写盘 / 写库之前被拒绝（见 [AudiobookSubtitleRefreshFailure]）。
+class AudiobookSubtitleRefreshException implements Exception {
+  const AudiobookSubtitleRefreshException(
+    this.reason, {
+    this.localAudioCount,
+    this.remoteAudioCount,
+  });
+
+  final AudiobookSubtitleRefreshFailure reason;
+  final int? localAudioCount;
+  final int? remoteAudioCount;
+
+  @override
+  String toString() => 'AudiobookSubtitleRefreshException(${reason.name}'
+      '${localAudioCount == null ? '' : ', local=$localAudioCount'}'
+      '${remoteAudioCount == null ? '' : ', remote=$remoteAudioCount'})';
 }
 
 class SyncAssetPackageService {
@@ -229,6 +258,19 @@ class SyncAssetPackageService {
       resourceNames[file.path] = name;
       archivePathToSource['resources/$name'] = file.path;
     }
+    // 逐 token 时间 sidecar 跟着字幕走（与 [exportAudioSubtitlePackage] 同口径）：
+    // 只有与字幕**同名不同扩展**才会被读到。此前整包不带它，「重新下载有声书」后
+    // 本机要么丢了逐 token 时间、要么留着上一版的旧 sidecar（BUG-3248）。
+    final String? srtName = resourceNames[srtBook.srtPath];
+    final File tokensSidecar =
+        File(p.setExtension(srtBook.srtPath, '.tokens.jsonl'));
+    if (srtName != null && await tokensSidecar.exists()) {
+      final String name = p.setExtension(srtName, '.tokens.jsonl');
+      if (usedNames.add(name)) {
+        resourceNames[tokensSidecar.path] = name;
+        archivePathToSource['resources/$name'] = tokensSidecar.path;
+      }
+    }
 
     final String manifestJson = jsonEncode(<String, Object?>{
       'schemaVersion': 1,
@@ -360,6 +402,11 @@ class SyncAssetPackageService {
       targetDirPath: targetDir.path,
       prefix: 'resources',
     );
+    await _dropStaleTokenSidecar(srtPath, resources);
+    // 发送端「引用原文件」导入的 AIFF 书会原样进包；Android 播放器不认 AIFF，落库前
+    // 转成 FLAC（与本机复制导入同一条规则，BUG-3312）。
+    final List<String> playableAudioPaths =
+        await AudiobookStorage.transcodePersistedAiff(audioPaths);
 
     // 写库段必须原子（BUG-2551）：这三张表是**一本书**，分三次 await 写下去时，
     // 任何一步抛出（磁盘满、标签表冲突、cue 批量写失败）都会把前面写下的行留在库里。
@@ -373,7 +420,7 @@ class SyncAssetPackageService {
       await _db.upsertAudiobook(AudiobooksCompanion.insert(
         bookKey: bookKey,
         audioRoot: Value(targetDir.path),
-        audioPathsJson: Value(jsonEncode(audioPaths)),
+        audioPathsJson: Value(jsonEncode(playableAudioPaths)),
         alignmentFormat: _stringValue(audiobook, 'alignmentFormat'),
         alignmentPath: alignmentPath,
         healthKindRaw: Value(_nullableString(audiobook, 'healthKindRaw')),
@@ -383,12 +430,20 @@ class SyncAssetPackageService {
         followAudio: Value(_nullableBool(audiobook, 'followAudio')),
       ));
 
+      // BUG-3098：本机已有这本书的 SrtBooks 行（重新下载有声书、坏包补拉）时必须
+      // 带上它的 `id` 做原位更新——`upsertSrtBook` 的冲突目标是主键 `id`，不带
+      // id 的插入撞的是 UNIQUE(uid)，整个事务回滚，「重新下载」永远失败。按 bookKey
+      // 找到的行沿用本机 uid：书架条目 / 标签 / 合集都挂在本机 uid 上，换成 host
+      // uid 会凭空多出一本同 bookKey 的 SRT 书。
+      final SrtBookRow? existingSrt = await _existingSrtBookFor(
+          bookKey: bookKey, uid: _stringValue(srtBook, 'uid'));
       await _db.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: _stringValue(srtBook, 'uid'),
+        id: existingSrt == null ? const Value.absent() : Value(existingSrt.id),
+        uid: existingSrt?.uid ?? _stringValue(srtBook, 'uid'),
         title: _stringValue(srtBook, 'title'),
         author: Value(_nullableString(srtBook, 'author')),
         audioRoot: Value(targetDir.path),
-        audioPathsJson: Value(jsonEncode(audioPaths)),
+        audioPathsJson: Value(jsonEncode(playableAudioPaths)),
         srtPath: srtPath,
         coverPath: Value(coverPath),
         importedAt: _intValue(srtBook, 'importedAt'),
@@ -405,7 +460,8 @@ class SyncAssetPackageService {
             ]
           : const <String>[];
       if (srtTagNames.isNotEmpty) {
-        final String importedSrtUid = _stringValue(srtBook, 'uid');
+        final String importedSrtUid =
+            existingSrt?.uid ?? _stringValue(srtBook, 'uid');
         for (final String name in srtTagNames) {
           if (name.isEmpty) continue;
           final int tagId = await _db.getOrCreateTagByName(name);
@@ -478,16 +534,22 @@ class SyncAssetPackageService {
       targetDirPath: targetDir.path,
       prefix: 'resources',
     );
+    await _dropStaleTokenSidecar(srtPath, resources);
+    final List<String> playableAudioPaths =
+        await AudiobookStorage.transcodePersistedAiff(audioPaths);
 
     // 与 srt-backed 分支同纪律：写库段原子（BUG-2551）。半写下的 SrtBooks 行会让
     // 书架上的 standalone 占位卡永久消失，用户再没有第二次下载的入口。
     await _db.transaction(() async {
+      // BUG-3098：同 uid 已在本机（重新下载）→ 带 id 原位更新，不撞 UNIQUE(uid)。
+      final SrtBookRow? existingSrt = await _db.getSrtBookByUid(uid);
       await _db.upsertSrtBook(SrtBooksCompanion.insert(
+        id: existingSrt == null ? const Value.absent() : Value(existingSrt.id),
         uid: uid,
         title: _stringValue(srtBook, 'title'),
         author: Value(_nullableString(srtBook, 'author')),
         audioRoot: Value(targetDir.path),
-        audioPathsJson: Value(jsonEncode(audioPaths)),
+        audioPathsJson: Value(jsonEncode(playableAudioPaths)),
         srtPath: srtPath,
         coverPath: Value(coverPath),
         importedAt: _intValue(srtBook, 'importedAt'),
@@ -528,6 +590,272 @@ class SyncAssetPackageService {
         }).toList(),
       );
     });
+  }
+
+  /// BUG-3098：本机与包对应的那一行 SrtBooks——先按包里的 [uid]，再按 [bookKey]
+  /// （本机自己导入、uid 与 host 不同的同一本书）。按 bookKey 只取一行：历史上
+  /// 撞过号的库里同 bookKey 可能不止一行，`getSingleOrNull` 会直接抛。
+  Future<SrtBookRow?> _existingSrtBookFor({
+    required String bookKey,
+    required String uid,
+  }) async {
+    final SrtBookRow? byUid = await _db.getSrtBookByUid(uid);
+    if (byUid != null) return byUid;
+    if (bookKey.isEmpty) return null;
+    return (_db.select(_db.srtBooks)
+          ..where(($SrtBooksTable t) => t.bookKey.equals(bookKey))
+          ..orderBy(<OrderClauseGenerator<$SrtBooksTable>>[
+            ($SrtBooksTable t) => OrderingTerm.asc(t.id),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
+  /// 只含**字幕侧**的有声书包（`kind: audioSubtitles`）：对齐文件 + 字幕 + 逐 token
+  /// 时间 sidecar（有则带）+ 全部 cue，**不含音频与封面**。
+  ///
+  /// 用途是 client「只更新字幕」：host 上重新转录 / 重新对齐 / 换了字幕之后，client
+  /// 不必为几十 KB 的字幕把几百 MB 的音频重下一遍。manifest 仍带 `audioPaths`
+  /// （host 侧的音频清单），导入端只拿它的**条数**核对本机音频——cue 的
+  /// `audioFileIndex` 是位置索引，音频条数不同的两份有声书之间搬 cue 会整本错位。
+  ///
+  /// 身份解析与 [exportAudioDatabasePackage] 相同：[bookKey] 非空且有 Audiobooks 行
+  /// 走 srt-backed（cue 在 bookKey 命名空间），否则走纯 SRT（cue 在 uid 命名空间）。
+  Future<File> exportAudioSubtitlePackage({
+    required String srtBookUid,
+    required File outputFile,
+    String? bookKey,
+  }) async {
+    final SrtBookRow srtBook = (await _db.getSrtBookByUid(srtBookUid))!;
+    final String effectiveBookKey =
+        (bookKey != null && bookKey.isNotEmpty) ? bookKey : srtBook.bookKey;
+    final AudiobookRow? audiobook = effectiveBookKey.isNotEmpty
+        ? await _db.getAudiobookByBookKey(effectiveBookKey)
+        : null;
+    final String cueKey = audiobook != null ? effectiveBookKey : srtBookUid;
+    final List<AudioCueRow> cues = await _db.getCuesForBook(cueKey);
+    final _EffectiveAudio audiobookAudio = audiobook == null
+        ? const _EffectiveAudio.empty()
+        : await _resolveEffectiveAudio(
+            audiobook.audioPathsJson, audiobook.audioRoot);
+    final _EffectiveAudio srtAudio =
+        await _resolveEffectiveAudio(srtBook.audioPathsJson, srtBook.audioRoot);
+
+    final List<String> missingResources = <String>[];
+    final Map<String, String> resourceNames = <String, String>{};
+    final Map<String, String> archivePathToSource = <String, String>{};
+    final Set<String> usedNames = <String>{};
+    void addResource(String sourcePath, {String? name}) {
+      if (resourceNames.containsKey(sourcePath)) return;
+      if (!File(sourcePath).existsSync()) {
+        missingResources.add(sourcePath);
+        return;
+      }
+      final String resolved = name != null && usedNames.add(name)
+          ? name
+          : _uniqueFileName(File(sourcePath), usedNames);
+      resourceNames[sourcePath] = resolved;
+      archivePathToSource['resources/$resolved'] = sourcePath;
+    }
+
+    if (audiobook != null) addResource(audiobook.alignmentPath);
+    addResource(srtBook.srtPath);
+    // 逐 token 时间 sidecar 与字幕**同名不同扩展**才会被读到（`<srt>.tokens.jsonl`），
+    // 所以落地名跟着字幕在包里的名字走，不能独立去重成 `1-xxx.tokens.jsonl`。
+    final String? srtName = resourceNames[srtBook.srtPath];
+    final String tokensSidecar =
+        p.setExtension(srtBook.srtPath, '.tokens.jsonl');
+    if (srtName != null && File(tokensSidecar).existsSync()) {
+      addResource(tokensSidecar,
+          name: p.setExtension(srtName, '.tokens.jsonl'));
+    }
+
+    final String manifestJson = jsonEncode(<String, Object?>{
+      'schemaVersion': 1,
+      'kind': 'audioSubtitles',
+      'audiobook': audiobook != null
+          ? _audiobookManifest(audiobook, audiobookAudio.paths)
+          : null,
+      'srtBook': _srtBookManifest(srtBook, srtAudio.paths),
+      'cues': cues.map(_audioCueManifest).toList(),
+      'resources': resourceNames,
+      if (missingResources.isNotEmpty) 'missingResources': missingResources,
+    });
+
+    outputFile.parent.createSync(recursive: true);
+    await _zipPackageInIsolate(
+      outputPath: outputFile.path,
+      manifestJson: manifestJson,
+      archivePathToSource: archivePathToSource,
+      storeResources: false,
+    );
+    return outputFile;
+  }
+
+  /// 导入 [exportAudioSubtitlePackage] 产出的字幕包，**原位**换掉本机这本有声书的
+  /// 字幕 / 对齐文件 / cue，音频、封面、标签、阅读进度、听书断点、调轴一概不动。
+  ///
+  /// [bookKeyOverride] 与 [importAudioDatabasePackage] 同义：把包钉到本机这本书上
+  /// （本机 bookKey 可能与 host 不同，BUG-414）。
+  ///
+  /// 失败一律在写盘 / 写库**之前**抛：
+  /// - 本机没有这本有声书 → [AudiobookSubtitleRefreshException] `notLocal`
+  ///   （只更新字幕的前提是本机已有音频，没有就该走整本下载）；
+  /// - 本机音频条数与 host 不同 → `audioMismatch`（cue 的 `audioFileIndex` 是位置
+  ///   索引，硬搬只会整本错位，要用户改走「重新下载有声书」）；
+  /// - 包里缺字幕 / 对齐文件 → [SyncAssetPackageIncompleteException]。
+  ///
+  /// 写库段原子（与整包导入同纪律）：对齐文件路径、字幕路径、cue 三者要么一起换新，
+  /// 要么一个都不换——cue 换了、字幕路径没换，播放端会拿新 cue 对旧字幕。
+  Future<void> importAudioSubtitlePackage({
+    required File packageFile,
+    required Directory audioDatabaseRoot,
+    String? bookKeyOverride,
+  }) async {
+    final String manifestJson = await _readManifestInIsolate(packageFile.path);
+    final Map<String, Object?> manifest = _typedMap(jsonDecode(manifestJson));
+    if (manifest['kind'] != 'audioSubtitles') {
+      throw FormatException('Unexpected package kind: ${manifest['kind']}');
+    }
+    final Object? rawAudiobook = manifest['audiobook'];
+    final Map<String, Object?>? audiobook =
+        rawAudiobook is Map ? _typedMap(rawAudiobook) : null;
+    final Map<String, Object?> srtBook = _mapValue(manifest, 'srtBook');
+    final Map<String, Object?> resources = _mapValue(manifest, 'resources');
+    final List<String> missingAtExport = _missingAtExport(manifest);
+    List<AudioCuesCompanion> cueRows(String cueKey) =>
+        _listValue(manifest, 'cues').map((Object? raw) {
+          final Map<String, Object?> cue = _typedMap(raw);
+          return AudioCuesCompanion.insert(
+            bookKey: cueKey,
+            chapterHref: _stringValue(cue, 'chapterHref'),
+            sentenceIndex: _intValue(cue, 'sentenceIndex'),
+            textFragmentId: _stringValue(cue, 'textFragmentId'),
+            cueText: _stringValue(cue, 'cueText'),
+            startMs: _intValue(cue, 'startMs'),
+            endMs: _intValue(cue, 'endMs'),
+            audioFileIndex: _intValue(cue, 'audioFileIndex'),
+          );
+        }).toList();
+
+    if (audiobook == null) {
+      // 纯 SRT（standalone）：身份 = uid，cue 在 uid 命名空间。
+      final String uid = _stringValue(srtBook, 'uid');
+      final SrtBookRow? local = await _db.getSrtBookByUid(uid);
+      if (local == null) {
+        throw const AudiobookSubtitleRefreshException(
+            AudiobookSubtitleRefreshFailure.notLocal);
+      }
+      await _checkSubtitleAudioCount(
+        localAudioPathsJson: local.audioPathsJson,
+        localAudioRoot: local.audioRoot,
+        remoteCount: _stringList(srtBook, 'audioPaths').length,
+      );
+      final Directory targetDir =
+          Directory(p.join(audioDatabaseRoot.path, _safeDirName(uid)));
+      final String srtPath = _requiredResourcePath(targetDir, resources,
+          _stringValue(srtBook, 'srtPath'), missingAtExport);
+      await _extractResourcesInIsolate(
+        packagePath: packageFile.path,
+        targetDirPath: targetDir.path,
+        prefix: 'resources',
+      );
+      await _dropStaleTokenSidecar(srtPath, resources);
+      await _db.transaction(() async {
+        await (_db.update(_db.srtBooks)
+              ..where(($SrtBooksTable t) => t.id.equals(local.id)))
+            .write(SrtBooksCompanion(srtPath: Value(srtPath)));
+        await _replaceCuesKeepingPosition(uid, cueRows(uid));
+      });
+      return;
+    }
+
+    final String bookKey =
+        bookKeyOverride ?? _stringValue(audiobook, 'bookKey');
+    final AudiobookRow? localAudiobook =
+        await _db.getAudiobookByBookKey(bookKey);
+    final SrtBookRow? localSrt = await _existingSrtBookFor(
+        bookKey: bookKey, uid: _stringValue(srtBook, 'uid'));
+    if (localAudiobook == null || localSrt == null) {
+      throw const AudiobookSubtitleRefreshException(
+          AudiobookSubtitleRefreshFailure.notLocal);
+    }
+    await _checkSubtitleAudioCount(
+      localAudioPathsJson: localAudiobook.audioPathsJson,
+      localAudioRoot: localAudiobook.audioRoot,
+      remoteCount: _stringList(audiobook, 'audioPaths').length,
+    );
+    // 落点与整包导入同一目录：从对端下载来的书字幕就在这里，原位覆盖；本机自己
+    // 导入的书（字幕在用户目录）不改写用户文件，改为指向这里的新副本。
+    final Directory targetDir =
+        Directory(p.join(audioDatabaseRoot.path, _safeDirName(bookKey)));
+    final String alignmentPath = _requiredResourcePath(targetDir, resources,
+        _stringValue(audiobook, 'alignmentPath'), missingAtExport);
+    final String srtPath = _requiredResourcePath(targetDir, resources,
+        _stringValue(srtBook, 'srtPath'), missingAtExport);
+    await _extractResourcesInIsolate(
+      packagePath: packageFile.path,
+      targetDirPath: targetDir.path,
+      prefix: 'resources',
+    );
+    await _dropStaleTokenSidecar(srtPath, resources);
+    await _db.transaction(() async {
+      // 只写字幕侧的列：audioRoot / audioPathsJson / followAudio（用户的本机设置）
+      // 原样不动。健康度是对齐质量的度量，跟着新对齐一起换。
+      await _db.patchAudiobook(
+        bookKey,
+        AudiobooksCompanion(
+          alignmentFormat: Value(_stringValue(audiobook, 'alignmentFormat')),
+          alignmentPath: Value(alignmentPath),
+          healthKindRaw: Value(_nullableString(audiobook, 'healthKindRaw')),
+          matchRatePct: Value(_nullableInt(audiobook, 'matchRatePct')),
+          healthMeasuredAt: Value(_nullableDate(audiobook, 'healthMeasuredAt')),
+          healthReason: Value(_nullableString(audiobook, 'healthReason')),
+        ),
+      );
+      await (_db.update(_db.srtBooks)
+            ..where(($SrtBooksTable t) => t.id.equals(localSrt.id)))
+          .write(SrtBooksCompanion(srtPath: Value(srtPath)));
+      await _replaceCuesKeepingPosition(bookKey, cueRows(bookKey));
+    });
+  }
+
+  /// 「只更新字幕」整组换 cue，本机听书断点按**真实时间位置**跟着换编码（BUG-3251，
+  /// 与 `AudiobookRepository.saveCues` 同口径，BUG-3197）：全书毫秒按 cue 推出的
+  /// 文件时长编码，换字幕不换算，多文件有声书的断点就落到别的文件 / 偏移。
+  /// 须在调用方的事务里调：会话监听 cue 表提交通知，通知要晚于换算。
+  Future<void> _replaceCuesKeepingPosition(
+    String cueKey,
+    List<AudioCuesCompanion> rows,
+  ) async {
+    final List<AudioCueRow> before = await _db.getCuesForBook(cueKey);
+    await _db.replaceCuesForBook(cueKey, rows);
+    final List<AudioCueRow> after = await _db.getCuesForBook(cueKey);
+    await AudiobookRepository(_db).rebaseStoredPositionForCueChange(
+      positionKey: cueKey,
+      oldDurationsMs:
+          audiobookFileDurationsFromCues(before.map(AudioCue.fromRow)),
+      newDurationsMs:
+          audiobookFileDurationsFromCues(after.map(AudioCue.fromRow)),
+    );
+  }
+
+  Future<void> _checkSubtitleAudioCount({
+    required String? localAudioPathsJson,
+    required String? localAudioRoot,
+    required int remoteCount,
+  }) async {
+    final int localCount =
+        (await _resolveEffectiveAudio(localAudioPathsJson, localAudioRoot))
+            .paths
+            .length;
+    if (localCount != remoteCount) {
+      throw AudiobookSubtitleRefreshException(
+        AudiobookSubtitleRefreshFailure.audioMismatch,
+        localAudioCount: localCount,
+        remoteAudioCount: remoteCount,
+      );
+    }
   }
 
   /// 打包一个本地音频库：单个 .db（STORE 流式）+ manifest（displayName/enabled/子来源）。
@@ -755,6 +1083,24 @@ String? _resourceName(Map<String, Object?> resources, String sourcePath) {
 
 /// 必需资源（音频 / 字幕 / 对齐文件）在 [targetDir] 下的落地路径。
 /// 包里没有登记 → 抛 [SyncAssetPackageIncompleteException]（调用方必须在写 DB 前调用）。
+/// 包里没带 [srtPath] 的逐 token 时间 sidecar（`<字幕>.tokens.jsonl`）时，删掉落地
+/// 目录里同名的**旧** sidecar（BUG-3248）。
+///
+/// 解压是原位覆盖：host 换成了非转录字幕、或重新转录后没有 sidecar，本机目录里上一版
+/// 留下的 sidecar 会原样残留在新字幕旁边。消费端（`attachAsrCueTokenTiming`）只认
+/// 「同名 + 行数等于 cue 数」，行数恰好相等时会把旧的逐 token 时间挂到新 cue 上——
+/// 跳播全偏、却没有任何报错。[srtPath] 恒在包的落地目录里（[_requiredResourcePath]），
+/// 删的只会是上一次导入写下的文件，不碰用户目录。
+Future<void> _dropStaleTokenSidecar(
+  String srtPath,
+  Map<String, Object?> resources,
+) async {
+  final String sidecar = p.setExtension(srtPath, '.tokens.jsonl');
+  if (resources.values.contains(p.basename(sidecar))) return;
+  final File file = File(sidecar);
+  if (await file.exists()) await file.delete();
+}
+
 String _requiredResourcePath(
   Directory targetDir,
   Map<String, Object?> resources,
@@ -916,17 +1262,16 @@ DateTime? _nullableDate(Map<String, Object?> map, String key) {
 //   `ArchiveFile.stream` 真流式（getFileCrc32 分块读 + writeInputStream 直接转发，
 //   不 toUint8List），单个几百 MB 的音频/封面文件不会整入内存；音频/图片本就是
 //   压缩格式，deflate 也只是浪费 CPU。
-// - 词典包用 deflate（[storeResources]=false）：词典 JSON 可压缩省上传体积。注意
-//   archive 3.6.1 的 GZIP/deflate 分支会 `toUint8List()` 把单个文件整入内存再整块
-//   Deflate（addFile 的 InputFileStream 在此被 buffer 化），是 archive 3.6.1 的已知
-//   限制；词典资源文件较小，逐文件入内存可接受（如需进一步降内存可改 STORE 词典）。
-// - 导入用 ArchiveFile.decompress(OutputFileStream)：STORE→writeInputStream、
-//   DEFLATE→Inflate.stream，两者都逐块落盘、无整文件入内存。
+// - 词典包用 deflate（[storeResources]=false）：词典 JSON 可压缩省上传体积。走
+//   [addFileNativeDeflate]：原生 zlib 分块读文件压缩，内存峰值 = 压缩后体积；
+//   不用 archive 的 GZIP 档（纯 Dart `Deflate`，且先整文件 `toUint8List()`）。
+// - 导入走 [writeZipEntryStreaming]：STORE 分块拷贝、DEFLATE 原生 zlib 分块解压，
+//   逐块落盘、无整文件入内存。
 
 /// 把 [archivePathToSource]（zip 内路径 → 磁盘绝对路径）的每个文件写入
 /// [outputPath]，并把 [manifestJson] 作为 `manifest.json` 写入。
-/// [storeResources]=true 用 STORE（流式、不整文件入内存），false 用 deflate
-/// （逐文件压缩、单文件入内存，详见上方说明）。
+/// [storeResources]=true 用 STORE（流式、不整文件入内存），false 用原生 zlib
+/// deflate（详见上方说明）。
 Future<void> _zipPackageInIsolate({
   required String outputPath,
   required String manifestJson,
@@ -939,17 +1284,17 @@ Future<void> _zipPackageInIsolate({
     try {
       final List<int> manifestBytes = utf8.encode(manifestJson);
       encoder.addArchiveFile(
-        ArchiveFile('manifest.json', manifestBytes.length, manifestBytes),
+        nativeDeflatedArchiveFile('manifest.json', manifestBytes),
       );
       for (final MapEntry<String, String> entry
           in archivePathToSource.entries) {
         final File file = File(entry.value);
         if (!file.existsSync()) continue;
-        await encoder.addFile(
-          file,
-          entry.key,
-          storeResources ? ZipFileEncoder.STORE : ZipFileEncoder.GZIP,
-        );
+        if (storeResources) {
+          await encoder.addFile(file, entry.key, ZipFileEncoder.STORE);
+        } else {
+          addFileNativeDeflate(encoder, file, entry.key);
+        }
       }
       encoder.closeSync();
     } catch (_) {
@@ -987,7 +1332,7 @@ Future<String> _readManifestInIsolate(String packagePath) async {
 
 /// 把 [prefix]/ 下的资源解压到 [targetDirPath]。保留 zip-slip 路径安全校验
 /// （与旧 _extractArchivePrefix 等价），每个文件经 [_streamArchiveFileTo] 逐块落盘
-/// （STORE→writeInputStream、DEFLATE→Inflate.stream，均不整文件入内存）。
+/// （STORE 分块拷贝、DEFLATE 原生 zlib 分块解压，均不整文件入内存）。
 Future<void> _extractResourcesInIsolate({
   required String packagePath,
   required String targetDirPath,
@@ -1033,33 +1378,10 @@ Future<void> _extractResourcesInIsolate({
 
 /// 把 `decodeBuffer` 出来的 [file] 流式写入 [out]，不整文件入内存。
 ///
-/// 不能用 `ArchiveFile.decompress(out)`：archive 3.6.1 的 `ZipDecoder.decodeBuffer`
-/// 把每个条目构造成 `ArchiveFile(name, size, ZipFile, compressionMethod)`，`ZipFile`
-/// 是 `FileContent`，于是 `ArchiveFile._content` 被设为该 ZipFile（**非 null**），
-/// `decompress(out)` 的前置 `_content==null && _rawContent!=null` 不成立 → 直接 no-op
-/// 写出 0 字节。`writeContent(out)` 又会先 `_content.content`（`ZipFile.content` getter）
-/// 把整文件解压进内存（STORE→toUint8List、DEFLATE→inflateBuffer）——正是导入侧 OOM 源。
-///
-/// 真正的流式落盘：直接消费条目的原始压缩流 [ArchiveFile.rawContent]（从
-/// `InputFileStream` 解出来时是惰性窗口文件流，不在内存），按压缩类型分流：
-/// - STORE：`out.writeInputStream(raw)` 逐块拷贝（raw 即未压缩字节）；
-/// - DEFLATE：`Inflate.stream(raw, out)` 逐块 inflate 直接写 out。
+/// 不能用 `ArchiveFile.decompress(out)`（对 `ZipDecoder` 解出的条目是 no-op、写出
+/// 0 字节），也不能用 `writeContent(out)`（先把整条目解压进内存，正是导入侧 OOM
+/// 源）。[writeZipEntryStreaming] 直接消费原始压缩窗口：STORE 分块拷贝、DEFLATE
+/// 原生 zlib 分块解压（archive 自带的 `Inflate.stream` 写文件实测 1.13 MB/s）。
 void _streamArchiveFileTo(ArchiveFile file, OutputFileStream out) {
-  final InputStreamBase? raw = file.rawContent;
-  if (raw == null) {
-    // 防御：无原始流时回退到 writeContent（会整文件入内存，但保证正确性）。
-    file.writeContent(out);
-    return;
-  }
-  switch (file.compressionType) {
-    case ArchiveFile.STORE:
-      out.writeInputStream(raw);
-      break;
-    case ArchiveFile.DEFLATE:
-      Inflate.stream(raw, out);
-      break;
-    default:
-      // 其它压缩（bzip2/aes 等）本打包格式不产出；回退到 writeContent 保正确。
-      file.writeContent(out);
-  }
+  writeZipEntryStreaming(file, out);
 }

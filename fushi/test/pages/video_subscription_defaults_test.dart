@@ -7,7 +7,7 @@
 //    注意 ② 与 ③ 的交界——`subscriptionReleaseIsBatch` 的定义就是「解析不出集号
 //    即整包」，所以 ② 只在「这条规则覆盖的发布里还有单集」（组 batchOnly=false）
 //    时才可达：代表条恰好是无集号的那个整包。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -21,6 +21,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
+import '../helpers/glass_unwrap.dart';
 
 class _FakeResource extends VideoResourceCandidate {
   /// 字幕组 + 清晰度必须齐（`deriveStrictVideoSubscriptionFilter` 缺一个就返回
@@ -137,7 +138,7 @@ void main() {
   );
 
   String startAfterText(WidgetTester tester) =>
-      tester.widget<TextField>(startAfterField).controller!.text;
+      tester.widget<TextField>(glassUnwrap<TextField>(startAfterField)).controller!.text;
 
   bool strictConfirmed(WidgetTester tester) => tester
       .widget<AdaptiveSettingsSwitchRow>(
@@ -155,9 +156,7 @@ void main() {
       _FakeResource(title: '[SubsPlease] Show - 05 (1080p)'),
     );
     expect(strictConfirmed(tester), isTrue, reason: '默认打开，不必手动确认一次');
-    final FilledButton submit = tester.widget<FilledButton>(
-      find.byKey(const ValueKey<String>('video-subscription-submit')),
-    );
+    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-subscription-submit'))),);
     expect(
       submit.onPressed,
       isNotNull,

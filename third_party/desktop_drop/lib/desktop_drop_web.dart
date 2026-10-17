@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:web/web.dart' as web;
 import 'dart:js_interop';
 
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 

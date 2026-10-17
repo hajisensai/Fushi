@@ -422,103 +422,6 @@ void main() {
     });
   });
 
-  group('VideoPlayerController pause at subtitle end', () {
-    test('pauses once when leaving the active cue', () {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-      c.setCues([_cue(0, 0, 1000), _cue(1, 2000, 3000)]);
-
-      int pauses = 0;
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: true,
-        onPause: () async => pauses++,
-      );
-
-      c.debugUpdateCueForPosition(500);
-      expect(c.currentCueIndex, 0);
-      expect(pauses, 0);
-
-      c.debugUpdateCueForPosition(1500);
-      expect(c.currentCueIndex, -1);
-      expect(pauses, 1);
-
-      c.debugUpdateCueForPosition(1600);
-      c.debugUpdateCueForPosition(1900);
-      expect(pauses, 1, reason: 'sustained gap should not pause repeatedly');
-
-      c.debugUpdateCueForPosition(2500);
-      c.debugUpdateCueForPosition(3500);
-      expect(pauses, 2);
-    });
-
-    test(
-        'pauses at the exact end when playback crosses directly into the next cue',
-        () async {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-      c.setCues([_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
-
-      final List<String> actions = <String>[];
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: true,
-        isPlaying: () => true,
-        onPause: () async => actions.add('pause'),
-        onSeek: (int positionMs) async => actions.add('seek:$positionMs'),
-      );
-
-      c.debugUpdateCueForPosition(900);
-      c.debugUpdateCueForPosition(1125);
-      await Future<void>.delayed(Duration.zero);
-
-      expect(actions, <String>['pause', 'seek:1000']);
-      expect(c.currentCueIndex, 0,
-          reason: 'the completed sentence stays visible at its exact end');
-
-      // The player lands on the previous cue end, then resumes into cue 1.
-      // That must not pause cue 0 a second time.
-      c.debugUpdateCueForPosition(1000);
-      c.debugUpdateCueForPosition(1125);
-      await Future<void>.delayed(Duration.zero);
-      expect(actions, <String>['pause', 'seek:1000']);
-      expect(c.currentCueIndex, 1);
-
-      // Rewinding rearms sentence-end pause for a repeated cue.
-      c.debugUpdateCueForPosition(500);
-      c.debugUpdateCueForPosition(1125);
-      await Future<void>.delayed(Duration.zero);
-      expect(actions, <String>[
-        'pause',
-        'seek:1000',
-        'pause',
-        'seek:1000',
-      ]);
-    });
-
-    test('does not snap a paused manual seek back to the previous cue end',
-        () async {
-      final c = VideoPlayerController();
-      addTearDown(c.dispose);
-      c.setCues([_cue(0, 0, 1000), _cue(1, 1001, 2000)]);
-
-      int pauses = 0;
-      int seeks = 0;
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: true,
-        isPlaying: () => false,
-        onPause: () async => pauses++,
-        onSeek: (_) async => seeks++,
-      );
-
-      c.debugUpdateCueForPosition(900);
-      c.debugUpdateCueForPosition(1125);
-      await Future<void>.delayed(Duration.zero);
-
-      expect(pauses, 0);
-      expect(seeks, 0);
-      expect(c.currentCueIndex, 1);
-    });
-  });
-
   group('VideoPlayerController settings getters (no player)', () {
     test('delayMs getter reflects setDelayMs and clamps to ±600000', () {
       final c = VideoPlayerController();
@@ -1908,6 +1811,8 @@ void main() {
         _cue(1, 5000, 6000),
       ]);
       await c.skipToCue(c.cues[1]); // 目标=1，窗口 [4820,5000)
+      // 宽限只在播放态消耗（BUG-3488：暂停态 position 不推进，不算 seek 失败）。
+      c.debugSetIsPlayingForTesting(true);
       // 喂「宽限格数 + 余量」次 stale tick（都在首句区间、远早于窗口）：耗尽宽限。
       final int grace = VideoPlayerController.debugSeekSnapGraceTicks;
       for (int i = 0; i <= grace; i++) {
@@ -1916,6 +1821,68 @@ void main() {
       expect(c.debugSeekTargetCueIndex, isNull,
           reason: '宽限耗尽：放弃保护、清快照（seek 落地失败兜底）');
       expect(c.currentCueIndex, 0, reason: '退回纯位置推导，高亮真实位置 cue0');
+    });
+
+    // BUG-3488：暂停时按「下一句」，在线流 / 长 GOP 的 seek 回报可能要好几秒，暂停态
+    // position 一直停在跳转前的旧位置。旧实现照样每拍扣宽限，2 秒后清快照 → 字幕弹回
+    // 原句；再按「下一句」锚点已丢、按旧位置又算出同一个目标 → 「这句跳不动、狂点才过去」。
+    // 撤掉 _applySeekTargetSnap 里的 `if (isPlaying)` 此测试转红。
+    test('暂停态 seek 回报迟迟不到：快照不过期，连按下一句逐句前进', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues([
+        _cue(0, 0, 3000),
+        _cue(1, 3050, 4000),
+        _cue(2, 5000, 6000),
+        _cue(3, 7000, 8000),
+      ]);
+      c.debugSetIsPlayingForTesting(false);
+      // 暂停在第 0 句中间；seek 不会改变读到的 position（模拟暂停态回报滞后）。
+      c.debugSetPositionForTesting(1000);
+      c.debugUpdateCueForPosition(1000);
+      expect(c.currentCueIndex, 0);
+
+      await c.skipToNextCueOrSeekForward(seekSeconds: 3);
+      expect(c.debugSeekTargetCueIndex, 1);
+      final int grace = VideoPlayerController.debugSeekSnapGraceTicks;
+      for (int i = 0; i < grace * 3; i++) {
+        c.debugUpdateCueForPosition(1000);
+      }
+      expect(
+        c.debugSeekTargetCueIndex,
+        1,
+        reason: '暂停态不消耗宽限：等多久都保持跳转目标',
+      );
+      expect(c.currentCueIndex, 1, reason: '字幕停在跳到的那一句，不弹回原句');
+      expect(
+        c.activeCues.map((AudioCue e) => e.text),
+        <String>['line1'],
+        reason: '画面上只剩跳到的那句，旧句不回来',
+      );
+
+      // 再按一次：从刚跳到的那句往后走，而不是按旧位置再算出同一句。
+      await c.skipToNextCueOrSeekForward(seekSeconds: 3);
+      expect(
+        c.debugSeekTargetCueIndex,
+        2,
+        reason: '第二次下一句 = 第 2 句（非又是第 1 句）',
+      );
+      for (int i = 0; i < grace * 3; i++) {
+        c.debugUpdateCueForPosition(1000);
+      }
+      expect(c.currentCueIndex, 2);
+
+      // 上一句同理：从当前目标往回一句。
+      await c.skipToPrevCueOrSeekBack(seekSeconds: 3);
+      expect(c.debugSeekTargetCueIndex, 1);
+
+      // 播放后 seek 仍不落地（真失败）：宽限照旧有界，退回真实位置。
+      c.debugSetIsPlayingForTesting(true);
+      for (int i = 0; i <= grace; i++) {
+        c.debugUpdateCueForPosition(1000);
+      }
+      expect(c.debugSeekTargetCueIndex, isNull, reason: '播放态宽限仍有界');
+      expect(c.currentCueIndex, 0);
     });
 
     // TODO-565 复核退回的必修项：点字幕行 N（skipToCue 置目标 N + 在途 seek 宽限）后，

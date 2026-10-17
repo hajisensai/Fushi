@@ -5,7 +5,7 @@ namespace fushi_voice_hook {
 
 // 启动/注入失败的结构化原因。
 //
-// token 与 Hibiki 消费端 `GalHookInjectorFailure` 的枚举名逐字对应：injector 把
+// token 与 Fushi 消费端 `GalHookInjectorFailure` 的枚举名逐字对应：injector 把
 // `ERR reason=<token>` 打到 stderr，host 直接映射成可执行处置（需要管理员、位数不符、
 // 被杀软拦截……）。旧实现只有人类可读的中文诊断，host 无法据此分流，最终只能给用户
 // 一句没有原因的失败。
@@ -95,9 +95,9 @@ inline bool MustResumeAfterInjection(bool launched_suspended,
 
 // 游戏停在挂起态等待启动期 hook 就绪的时间预算（纯函数）。
 //
-// 为什么不能直接用宿主下发的 --wait-ms：Hibiki 把 `--wait-ms` 与它自己的整体握手超时
+// 为什么不能直接用宿主下发的 --wait-ms：Fushi 把 `--wait-ms` 与它自己的整体握手超时
 // **同源**下发（两边都是 readyTimeout），而 injector 又拿同一个值作为「让游戏挂着等
-// audio hook 就绪」的上限。于是两侧同时到期：Hibiki 一超时就 kill injector，而 injector
+// audio hook 就绪」的上限。于是两侧同时到期：Fushi 一超时就 kill injector，而 injector
 // 可能恰好还停在那个等待里、尚未执行 ResumeThread——CREATE_SUSPENDED 的游戏于是被永久
 // 留在挂起态（进程在、CPU 有、窗口永不出现）。注意 BUG-1066 那套失败处置只在 injector
 // 自己还活着并检测到失败时才生效；被外部杀死时**没有任何代码会跑**，所以不能靠它兜底。

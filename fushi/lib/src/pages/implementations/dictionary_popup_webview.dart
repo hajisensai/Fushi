@@ -4,12 +4,12 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart'
-    show AnkiOpenWordOutcome, MineOutcome, MineResult;
+    show AnkiOpenWordOutcome, MineOutcome, MineResult, MiningRequestOverrides;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -17,7 +17,10 @@ import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/confirm_mine_round_trip.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart'
+    show kPopupSearchingPlaceholderResult;
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
@@ -29,10 +32,12 @@ import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart' show activeModifierKeys;
+import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/shortcuts/reader_space_override.dart'
     show readerShouldHandleDesktopCopy;
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/utils/misc/webview_scroll_notification_bridge.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
 
@@ -145,7 +150,66 @@ class MinePopupResult {
         if (duplicate) 'duplicate': true,
         if (queued) 'queued': true,
       };
+
+  /// 这次制卡被收下了：成功落卡（[MinePopupResult.mined] 恒带 `ankiConnect: true`，
+  /// AnkiDroid 也一样），或进了待发队列（[queued]）。失败 / 重复 / 未知结局都不算。
+  bool get accepted => ankiConnect || queued;
 }
+
+/// BUG-3492：排队覆盖（`queueOverwrite` 桥）的回执。
+///
+/// [accepted] = 宿主收下了这次覆盖，会在后台写入落地后执行；[message] 是给弹窗就地
+/// 提示的文案（收下时说「写入后自动覆盖」，不收时说为什么）。null 时 popup.js 用
+/// 通用的「还没写进 Anki」文案。
+class QueuedOverwriteReply {
+  const QueuedOverwriteReply({
+    this.accepted = false,
+    this.message,
+    this.settled,
+  });
+
+  final bool accepted;
+  final String? message;
+
+  /// 宿主没收下、因为这次后台写入**已经结束**了（弹窗问 Anki 与请求到达宿主之间
+  /// 落地 / 失败）：popup.js 据此走已制卡的正常覆盖路径（[QueuedOverwriteSettled.landed]）
+  /// 或撤掉「已加入」（[QueuedOverwriteSettled.failed]），而不是说「还在写入」。
+  final QueuedOverwriteSettled? settled;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'accepted': accepted,
+    if (message != null) 'message': message,
+    if (settled != null) 'settled': settled!.name,
+  };
+}
+
+/// [QueuedOverwriteReply.settled]：那次后台写入的结局。
+enum QueuedOverwriteSettled {
+  /// 写进了 Anki。
+  landed,
+
+  /// 没写进去。
+  failed,
+}
+
+/// 用户建议 q16Apecgbg：「制卡后关闭查词弹窗」（偏好 `close_popup_after_mining`）。
+///
+/// 包住宿主的制卡回调：制卡**落地之后**（[MinePopupResult.accepted]）且开关打开时关掉
+/// 整个弹窗栈。必须等结果回来再关，不能提前：阅读器车道经制卡串行队列入队，草稿 /
+/// 句子上下文要等排到才被读走，提前关栈会把它们清掉（BUG-2627 第二轮）。包装是 async
+/// 函数，首个 await 之前会同步跑完 [mine] 的同步前缀，BUG-2634 依赖的「宿主在首个
+/// await 前读完 payload」时序不变。[enabled] 每次现读，设置改了立即生效。
+Future<MinePopupResult> Function(Map<String, String> fields)
+    closePopupAfterAcceptedMine(
+  Future<MinePopupResult> Function(Map<String, String> fields) mine, {
+  required bool Function() enabled,
+  required VoidCallback closeAll,
+}) =>
+        (Map<String, String> fields) async {
+          final MinePopupResult result = await mine(fields);
+          if (result.accepted && enabled()) closeAll();
+          return result;
+        };
 
 /// TODO-896 症状②：Windows 桌面右键 Flutter 上下文菜单的动作枚举（替代被禁用的
 /// WebView2 原生菜单）。两项：查词（平移自原 WebView2 自定义项）+ 复制（自补，BUG-402）。
@@ -213,6 +277,15 @@ Set<String> configuredDictionaryFontPaths(AppModel appModel) {
       .toSet();
 }
 
+/// 词条「高级制卡」按钮的宿主回调。
+///
+/// * [entryIndex]：该词条在 `:scope > .entry` 里的稳定 DOM 序，确认时
+///   [DictionaryPopupWebViewState.mineEntryByIndex] 按它精确回点同一颗「+」。
+/// * [matched]：查到的词在句中的表现形（对话框里当前句高亮用）。
+/// * [expression]：词条原形（对话框标题行用；老 popup.js 不传时为空串）。
+typedef OpenAdvancedMiningCallback =
+    Future<void> Function(int entryIndex, String matched, String expression);
+
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
     required this.result,
@@ -228,15 +301,17 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onDuplicateCheck,
     this.onOverwriteTargetNoteId,
     this.onMinedCardAction,
+    this.onQueueOverwrite,
     this.onOpenInAnki,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
     this.onAppendSentence,
     this.onSetSentenceContext,
     this.onClearSentenceDraft,
-    this.onSentenceContextPreview,
-    this.onOpenSentenceContextModal,
+    this.onOpenAdvancedMining,
     this.onScrolledToBottom,
+    this.onScrolledUnderChanged,
+    this.forwardScrollToHost = false,
     this.onTopPullReleased,
     this.onRendered,
     this.onContentMetrics,
@@ -245,10 +320,24 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onHostInputToken,
     this.nudgeSurfaceOnRender = false,
     this.restoreScrollTop,
-    this.reorderOf,
+    this.lookupPending = false,
+    this.resourceSource,
   });
 
   final DictionarySearchResult result;
+
+  /// 结果来自别的设备（手机字幕遥控器查电脑的词典）时，词典样式 / 词典媒体 / ♪ 发音
+  /// 一律取自那台设备（见 [DictionaryPopupResourceSource]）。null = 本机结果，走
+  /// `FushiDicts` 老路径。由宿主按表面注入，不是全局开关。
+  final DictionaryPopupResourceSource? resourceSource;
+
+  /// 注入页面的 `window.lookupPending`：本层可见且确有一次查询在进行中（唯一派生点
+  /// `popupLookupPending`，`DictionaryPopupLayer` 按控制器状态 + 层可见性算好传入）。
+  /// 热槽停驻 / seed / 复位一律 false——页面画静态空占位，绝不起循环加载动画。
+  ///
+  /// 与 [result] **独立**比较：复用热槽查词时结果仍是同一个占位单例（身份不变），
+  /// 只有这个标志在变；不单独比较它，页面就永远收不到「真的在查了」。
+  final bool lookupPending;
 
   /// 弹窗内原地跳转（[DictionaryPopupEntry.restoreScrollTop]）：后退 / 前进回到历史
   /// 页时，[result] 渲染完成后要恢复到的 `scrollTop`（CSS px）。null（新词 / load-more
@@ -257,13 +346,6 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 应用（尾批渲染完兜底应用一次）——Dart 侧渲染后直接 scrollTo 不可靠：内容分批
   /// 进 DOM，首发 popupRendered 时文档往往还不够高，滚不到目标位。
   final double? restoreScrollTop;
-
-  /// 查词「按句意挑词条」：[result] 只是 [reorderOf] 这份已渲染结果的**换序**
-  /// （同一批词头，只是顺序变了）时由宿主传入（[DictionaryPopupEntry.reorderBase]）。
-  /// 此时 [didUpdateWidget] 不走全量重渲染（那会滚回顶、清已选释义、把句子上下文
-  /// 镜像归 0，而宿主制卡草稿没清——BUG-297 型错位），只让 popup.js 的
-  /// `fushiReorderPopupEntries` 挪已渲染的卡片。null = 常态，结果一变就全量推。
-  final DictionarySearchResult? reorderOf;
 
   /// TODO-869：本层弹窗是否有子（后代）弹窗。注入 `window.__hasChildPopup`，让
   /// popup.js 在点卡片本体留白时据此决定是否发 `tapOutside`（有子层才关后代，叶子层
@@ -313,6 +395,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   final Future<MinePopupResult> Function(Map<String, String> fields)?
       onMinedCardAction;
 
+  /// BUG-3492：这个词刚交给后台写入（弹窗显示「已加入」），卡还没进 Anki 时用户又要
+  /// 覆盖它（再点 ✓ / 从「高级制卡」确认）。宿主把覆盖请求排到那次写入之后（见
+  /// [PendingMineOverwrites]），落地后自动覆盖。[fields] 与 onMineEntry 同一份 payload。
+  /// null（宿主没有后台写入这条路）时 popup.js 就地提示「还没写进 Anki」。
+  final Future<QueuedOverwriteReply> Function(Map<String, String> fields)?
+      onQueueOverwrite;
+
   /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮回调。宿主把 Anki
   /// 浏览器过滤到「Anki 认为 [expression] 已有的卡」（判据与画 ✓ 的查重同源，见
   /// [BaseAnkiRepository.openWordInAnki]），并回传三态结局——弹窗按钮据此就地提示
@@ -350,21 +439,24 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 角标归零。非空才在 popup 渲染清空入口（与 [onAppendSentence] 同生命周期）。
   final Future<int> Function()? onClearSentenceDraft;
 
-  /// Niratan「制卡前调整·选择句子上下文」：popup 点「调整上下文」打开模态时经
-  /// `sentenceContextPreview` JS 处理器触发本回调，宿主把当前草稿的真实上下文句
-  /// （前/当前/后）+ 词在当前句的偏移打包成 JSON-safe Map（见 `buildSentenceContextPreview`）
-  /// 回给 popup 渲染三栏预览。非空才在 popup 渲染「调整上下文」按钮（与 [onSetSentenceContext]
-  /// 同生命周期；reader/视频启用）。
-  final Future<Map<String, Object?>> Function()? onSentenceContextPreview;
-
-  /// BUG-763/766：popup 里点某词条的「调整上下文」按钮经 `openSentenceContextModal` JS
-  /// 处理器触发本回调，宿主弹 **app 原生顶层对话框**（`SentenceContextDialog`，不再画在
-  /// 弹窗 WebView 内）。[entryIndex] 是该词条在 `:scope > .entry` 里的稳定 DOM 序（确认
-  /// 制卡时用 [DictionaryPopupWebViewState.mineEntryByIndex] 精确回点），[matched] 是查到
-  /// 的词表现形（对话框里在当前句高亮）。非空才在 popup 渲染「调整上下文」按钮。
-  final Future<void> Function(int entryIndex, String matched)?
-      onOpenSentenceContextModal;
+  /// 「高级制卡」：popup 里点某词条的「高级制卡」按钮经 `openAdvancedMining` JS 处理器
+  /// 触发本回调，宿主弹 **app 原生顶层对话框**（`showAdvancedMiningDialog`，不画在弹窗
+  /// WebView 内——BUG-763/766 的教训）。确认后宿主经
+  /// [DictionaryPopupWebViewState.mineEntryByIndex] 带上覆盖项回点该词条的「+」。
+  /// 非空才在 popup 渲染这颗按钮（经 `window.advancedMiningEnabled`）；宿主只在制卡
+  /// 模块开着时接线。参数语义见 [OpenAdvancedMiningCallback]。
+  final OpenAdvancedMiningCallback? onOpenAdvancedMining;
   final VoidCallback? onScrolledToBottom;
+
+  /// 正文是否已离开顶部（scrollTop > 0）。宿主据此给顶栏铺 M3「scrolled-under」底色，
+  /// 取代顶栏与正文之间那条常驻硬分隔线。只在跨过 0 时回调一次。
+  final ValueChanged<bool>? onScrolledUnderChanged;
+
+  /// BUG-3064：把正文（WebView 文档）的纵向滚动以 Flutter [ScrollNotification]
+  /// 冒泡给宿主树。WebView 原生滚动不产生 Flutter 滚动通知，首页外壳的底栏
+  /// 随下滑收起 / 大标题收起都靠通知驱动；首页查词结果卡打开它，与库页
+  /// ListView 走同一台状态机（[WebViewScrollNotificationBridge]）。
+  final bool forwardScrollToHost;
   final VoidCallback? onTopPullReleased;
 
   /// Fired after the popup content finishes rendering (the `popupRendered` JS
@@ -417,6 +509,10 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
 class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     with WidgetsBindingObserver {
   InAppWebViewController? _controller;
+
+  /// BUG-3064：正文滚动 → Flutter 滚动通知（[DictionaryPopupWebView.forwardScrollToHost]）。
+  final WebViewScrollNotificationBridge _hostScrollBridge =
+      WebViewScrollNotificationBridge();
 
   /// 制卡态失效通知的订阅（见 [MinedStateSignal]）。
   StreamSubscription<MinedStateChange>? _minedStateSubscription;
@@ -479,8 +575,53 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   /// resolution, avoiding a stale last-writer static.
   Future<dynamic> debugEval(String source) async =>
       _controller?.evaluateJavascript(source: source);
+
+  /// Captures native WebView pixels, which Flutter layer screenshots omit.
+  @visibleForTesting
+  Future<List<int>?> debugCaptureWebView() async => _controller?.takeScreenshot();
+
+  /// Replaces the document through the same native API as initial inline data.
+  @visibleForTesting
+  Future<void> debugLoadDocument(String html) async {
+    await _controller?.loadData(data: html);
+  }
+
   bool _ready = false;
   bool _refreshWhenReady = false;
+  int _documentGeneration = 0;
+
+  /// BUG-3002: the result cache belongs to a document, not to this State.
+  /// Navigation and native controller replacement both discard the JS realm.
+  void _invalidatePopupDocument() {
+    _documentGeneration++;
+    _renderToken++;
+    _ready = false;
+    _refreshWhenReady = true;
+    _lastSearchTerm = null;
+    _lastEntryCount = 0;
+    _lastPushedResult = null;
+    _lastRenderedResult = null;
+    _lastPushedPending = false;
+    _lastRenderedPending = false;
+    _lastSentStaticRevision = null;
+    _lastSentRemoteStyles = null;
+    _lastSentInAppExtrasKey = null;
+    _lastThemeVarsJs = null;
+  }
+
+  // The plugin creates separate Dart wrappers for onWebViewCreated and load
+  // callbacks. Their platform controller, rather than the wrapper, is identity.
+  bool _isCurrentPopupController(InAppWebViewController controller) =>
+      identical(_controller?.platform, controller.platform);
+
+  bool _isCurrentPopupDocument(
+    InAppWebViewController controller,
+    int generation,
+  ) =>
+      mounted &&
+      _isCurrentPopupController(controller) &&
+      _documentGeneration == generation;
+
   double? _layoutWidth;
   double? _layoutHeight;
 
@@ -536,6 +677,7 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
       container.style.width = layoutWidth + 'px';
       container.style.maxWidth = layoutWidth + 'px';
     }
+    window.__fushiRelayoutPopupColumns && window.__fushiRelayoutPopupColumns();
   };
   window.__fushiApplyPopupViewport();
 })();''');
@@ -550,18 +692,26 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     }
   }
 
-  Future<void> _completePopupLoad(InAppWebViewController controller) async {
+  Future<void> _completePopupLoad(
+    InAppWebViewController controller,
+    int generation,
+  ) async {
+    if (!_isCurrentPopupDocument(controller, generation)) return;
     try {
       await controller.evaluateJavascript(source: ReaderCaretScripts.source());
-      if (!mounted) return;
+      if (!_isCurrentPopupDocument(controller, generation)) return;
       await _applyPopupViewportSize();
     } catch (e, stack) {
-      if (mounted) {
-        ErrorLogService.instance
-            .log('DictPopupWebview.loadBootstrap', e, stack);
+      if (_isCurrentPopupDocument(controller, generation)) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.loadBootstrap',
+          e,
+          stack,
+        );
       }
     }
-    if (!mounted) return;
+    if (!_isCurrentPopupDocument(controller, generation)) return;
+    _ready = true;
     unawaited(_pushInstantScrollPreference());
     if (_refreshWhenReady || _lastSearchTerm == null) {
       _pushResults();
@@ -583,13 +733,7 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     surface: 'dictionary_popup',
     flushBeforeRebuild: () async {
       _controller = null;
-      _ready = false;
-      _lastPushedResult = null;
-      _lastRenderedResult = null;
-      _lastSentStaticRevision = null;
-      _lastSentInAppExtrasKey = null;
-      // 新 WebView 的 onLoadStop 据此立刻补推当前结果。
-      _refreshWhenReady = true;
+      _invalidatePopupDocument();
     },
     afterRebuild: () {
       if (mounted) setState(() {});
@@ -610,6 +754,17 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   /// 不会再有渲染信号」——等信号的宿主必须立即按已渲染处理。
   DictionarySearchResult? _lastRenderedResult;
 
+  /// 与 [_lastPushedResult] / [_lastRenderedResult] 配对的 `lookupPending`：同一个占位
+  /// 单例在「空闲」与「查询中」两态下渲染结果不同，去重必须连这一位一起比。
+  bool _lastPushedPending = false;
+  bool _lastRenderedPending = false;
+
+  /// 当前这次推送是不是「还没有内容」的占位渲染（搜索期占位单例：空闲空占位或加载
+  /// 指示器）。这种 DOM 的高度不是内容高度，不能拿去自适应外壳——否则复用热槽查词
+  /// 时外壳先缩到加载盒子的高度、结果一到再撑开（跳一下）。
+  bool get _pushedPlaceholder =>
+      identical(_lastPushedResult, kPopupSearchingPlaceholderResult);
+
   /// The theme-derived CSS variable JS last pushed to the WebView. Used to
   /// re-inject (and only re-inject) when the app theme actually changes while
   /// the popup is open — see [didChangeDependencies].
@@ -622,6 +777,11 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   /// 串做全串比较，现在只存 int（builder 侧按输入 memo，同内容 ⇒ 同 revision）。
   /// 页面重载（onLoadStop）时置 null 强制重发（新页面无状态）。
   int? _lastSentStaticRevision;
+
+  /// 最近一次注入的远端词典样式表（[DictionaryPopupResourceSource.dictionaryStyles]
+  /// 的实例身份）。静态段重发会把 `window.dictionaryStyles` 换回本机样式，所以静态段
+  /// 一变远端样式必须跟着重发；样式表身份变了（会话中途拉到新词典）同样重发。
+  Map<String, String>? _lastSentRemoteStyles;
 
   /// 字体 URL 拦截器的目录白名单：只有导入字体落盘的那一个目录。
   ///
@@ -666,10 +826,10 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   }
 
   /// BUG-717 ③：最近一次已注入的 in-app 固定块（`__fushiResetPopupScroll` 钩子 +
-  /// 句子上下文 i18n 文案 + `sentenceContextPreviewEnabled`）的键。该块只随静态段
-  /// 版本（含语言切换——locale 在 builder 的 memo 键里）与 preview 回调的有无变化，
+  /// 句子上下文 i18n 文案 + `advancedMiningEnabled`）的键。该块只随静态段
+  /// 版本（含语言切换——locale 在 builder 的 memo 键里）与「高级制卡」回调的有无变化，
   /// 此前每次查词都重发约 1-2KB。页面重载时同样置 null。
-  ({int revision, bool preview})? _lastSentInAppExtrasKey;
+  ({int revision, bool advancedMining})? _lastSentInAppExtrasKey;
 
   Future<T> _guardJsBridge<T>(
     String logTag,
@@ -803,6 +963,34 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     );
   }
 
+  /// 顶栏 scrolled-under 判据：正文纵向滚动位置是否离开顶部。捕获阶段监听覆盖内层滚动
+  /// 容器（#entries-container 等）；只认纵向主滚动面，横向滚的义项表格不算。状态只在
+  /// 翻转时回报一次，换词重渲染把滚动归零时自然翻回 false。
+  static const String _scrolledUnderJs = '''
+(function(){
+  if(window.__fushiScrolledUnderInstalled) { window.__fushiScrolledUnderCheck && window.__fushiScrolledUnderCheck(); return; }
+  window.__fushiScrolledUnderInstalled=true;
+  var last=null;
+  function top(t){
+    var de=document.documentElement, b=document.body;
+    var st=Math.max(window.scrollY||0, de?de.scrollTop:0, b?b.scrollTop:0);
+    if(t&&t.nodeType===1&&t!==de&&t!==b&&t.scrollHeight>t.clientHeight&&t.id==='entries-container'){
+      st=Math.max(st,t.scrollTop);
+    }
+    return st;
+  }
+  function check(e){
+    var under=top(e&&e.target)>0;
+    if(under===last) return;
+    last=under;
+    try{ window.flutter_inappwebview.callHandler('popupScrolledUnder', under); }catch(_){}
+  }
+  window.__fushiScrolledUnderCheck=function(){ check(null); };
+  window.addEventListener('scroll',check,{capture:true,passive:true});
+  check(null);
+})();
+''';
+
   static const String _scrollCheckJs = '''
 (function(){
   if(!window.__fushiScrollInstalled){
@@ -839,7 +1027,11 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
 JSON.stringify((function(){
   function readSel(win){
     var out = '';
-    try { var s = win.getSelection && win.getSelection(); if (s) out = String(s); } catch (e) {}
+    try {
+      var s = win.getSelection && win.getSelection();
+      // 注音不进复制文本（popup.js __fushiSelectionPlainText，与 Yomitan 同口径）。
+      if (s) out = win.__fushiSelectionPlainText ? win.__fushiSelectionPlainText(s) : String(s);
+    } catch (e) {}
     if (out) return out;
     var frames;
     try { frames = win.document.querySelectorAll('iframe,frame'); } catch (e) { return ''; }
@@ -1136,7 +1328,7 @@ JSON.stringify((function(){
   /// `return false`：容器里一个 `.entry` 都没有 / `entries[idx]` 越界 / 该词条没有
   /// `.mine-button` 或按钮 disabled）与 `_controller == null` 一样被整个丢掉，于是
   /// 「弹窗栈在回点前被关掉」这类竞态长成同一个无声症状——对话框关了、卡没制、
-  /// 零提示零日志。现在如实回传并落一条日志，调用方（`SentenceContextDialog`）据此
+  /// 零提示零日志。现在如实回传并落一条日志，调用方（`AdvancedMiningDialog`）据此
   /// 提示用户。
   /// 「回点前」这一段（下发 JS → 查重 → 取音 → 组 payload）的上限。BUG-2634：这个
   /// 超时**只盖到宿主接手为止**——宿主的 Dart 代码一旦在跑（可能在等用户从「已有卡」
@@ -1151,6 +1343,21 @@ JSON.stringify((function(){
   /// 本次往返的宿主是否保证「在首个 await 之前同步读走草稿 / 制卡上下文」。
   /// 见 [mineEntryByIndex] 的 `releaseWhenPayloadConsumed`。
   bool _confirmMineReleaseWhenConsumed = false;
+
+  /// 本次「高级制卡」往返要并进制卡 fields 的覆盖项（[mineEntryByIndex] 的
+  /// `overrides`）。与 [_confirmMineRoundTrip] 同生命周期：往返开始时设、`finally`
+  /// 里清，所以只有**这一次**回点触发的桥调用才带——用户普通点「+」时为 null。
+  /// 不挂在页面状态上的理由见 [MiningRequestOverrides] 的类注释（串行队列异步启动）。
+  MiningRequestOverrides? _confirmMineOverrides;
+
+  /// 三个制卡桥 handler 解析出 fields 后**同步**调用：本次往返带了覆盖项就并进去。
+  /// 必须在把 fields 交给宿主之前、且不隔 await——否则 finally 清掉之后才到的桥调用
+  /// （或下一次普通「+」）会读错。
+  Map<String, String> _withConfirmMineOverrides(Map<String, String> fields) {
+    final MiningRequestOverrides? overrides = _confirmMineOverrides;
+    if (overrides == null) return fields;
+    return MiningRequestOverrides.attach(fields, overrides);
+  }
 
   /// 宿主已接手 payload：**只解除超时**，不关窗。三个制卡桥 handler 都在把 payload
   /// 交出去的那一刻调。
@@ -1172,17 +1379,22 @@ JSON.stringify((function(){
   /// [releaseWhenPayloadConsumed]：本次往返的宿主是否保证**在首个 `await` 之前**把
   /// 草稿 / 制卡上下文同步读完。
   ///
-  /// * 视频车道（`_openSentenceContextDialogForVideo`）传 true：`_onMineEntryImpl`
+  /// * 视频车道（mixin 的 `_openAdvancedMiningDialog`）传 true：`_onMineEntryImpl`
   ///   在 `await _mineVideoCard(...)` 之前就把草稿、cue、历史快照读完，连当前帧截图
   ///   的 Future 都在点击当下同步启动，所以提前关窗不会截到别的帧。
-  /// * 阅读器车道（`base_source_page` 的 `_openSentenceContextDialog`）传 false：它的
+  /// * 阅读器车道（`base_source_page` 的 `_openAdvancedMiningDialog`）传 false：它的
   ///   `onMineFromPopup` 经制卡串行队列入队（TODO-644 / BUG-357），草稿要等前一次制卡
   ///   整段跑完才被读走；提前关窗会让弹窗关栈把草稿清掉，排到的任务用空草稿合成——
   ///   卡制出来、toast 报成功、用户刚调的上下文全丢（BUG-2627 第二轮正是修的这个）。
   ///   它退回「等落地」这条老路，只是不会再因为宿主慢而误报失败。
+  ///
+  /// [overrides]：「高级制卡」对话框里用户为这张卡做的调整。只并进**本次往返**回点
+  /// 出来的 `mineEntry` / `updateEntry` / `minedCardAction` 桥调用的 fields（见
+  /// [_withConfirmMineOverrides]），往返结束即清。
   Future<bool> mineEntryByIndex(
     int idx, {
     required bool releaseWhenPayloadConsumed,
+    MiningRequestOverrides? overrides,
   }) async {
     final InAppWebViewController? controller = _controller;
     if (controller == null) {
@@ -1197,6 +1409,8 @@ JSON.stringify((function(){
         ConfirmMineRoundTrip(preHostTimeout: _kMineRoundTripTimeout);
     _confirmMineRoundTrip = trip;
     _confirmMineReleaseWhenConsumed = releaseWhenPayloadConsumed;
+    _confirmMineOverrides =
+        overrides == null || overrides.isEmpty ? null : overrides;
     try {
       // popup.js 那头的 promise 在 mine 按钮的 onclick（查重 → 取音 → mineEntry
       // 回执）跑完后才 resolve；三条「没点到」的 return false 是同步的。
@@ -1249,6 +1463,7 @@ JSON.stringify((function(){
       if (identical(_confirmMineRoundTrip, trip)) {
         _confirmMineRoundTrip = null;
         _confirmMineReleaseWhenConsumed = false;
+        _confirmMineOverrides = null;
       }
     }
   }
@@ -1310,8 +1525,22 @@ JSON.stringify((function(){
   /// `<audio>` element (remote `http(s)://` pass-through, local file → base64
   /// `data:` URL). Shared single source of truth with the overlay + auto-read so
   /// every surface plays word audio the same way (see [resolveWordAudioWebViewUrl]).
-  Future<String?> _resolveWordAudio(String expression, String reading) =>
-      resolveWordAudioWebViewUrl(ref.read(appProvider), expression, reading);
+  /// 制卡前要落进本机 Anki 媒体缓存的词典媒体清单（`fields['dictionaryMedia']`）。
+  /// 结果来自别的设备时返回空清单：本机没有那部词典，卡也由那台设备用它自己的
+  /// 词典与 Anki 落地。
+  String _dictionaryMediaForLocalMining(Map<String, String> fields) =>
+      widget.resourceSource == null ? (fields['dictionaryMedia'] ?? '') : '';
+
+  Future<String?> _resolveWordAudio(String expression, String reading) async {
+    final DictionaryPopupResourceSource? resources = widget.resourceSource;
+    if (resources == null) {
+      return resolveWordAudioWebViewUrl(
+          ref.read(appProvider), expression, reading);
+    }
+    // 结果来自别的设备：♪ 也问那台设备（本机音频源未必有、也不是同一份配置）。
+    return audioRefToWebViewUrl(
+        await resources.wordAudioRef(expression, reading));
+  }
 
   /// BUG-1093：等待 JS 真实播放结果的 pending 表。`evaluateJavascript` 不会 await
   /// JS Promise，之前本方法无条件返回 true——WebView2 的 autoplay 策略在 document
@@ -1391,8 +1620,12 @@ JSON.stringify((function(){
   void didUpdateWidget(DictionaryPopupWebView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.result != widget.result) {
-      // 只是同一批词条换了顺序（AI 挑词）就只挪 DOM，否则全量重推。
-      if (!_tryPushReorder(oldWidget.result)) _pushResults();
+      _pushResults();
+    } else if (oldWidget.lookupPending != widget.lookupPending) {
+      // 结果对象没变、查询状态变了：复用热槽查词（占位单例 → 占位单例）激活时翻 true，
+      // 停驻 / 结果前被关掉时翻 false。只比结果身份会漏掉这两次，页面要么收不到
+      // 「真的在查」，要么停驻后加载动画一直转。占位渲染很轻（空盒子），全量推即可。
+      _pushResults();
     }
     // TODO-869：独立比较，不搭 result 便车——子弹窗增减时 result 可能没变（卡片内容
     // 不变），但 hasChildPopup 翻转必须重新注入，否则父窗点卡片关不掉刚 push 的子窗。
@@ -1448,7 +1681,12 @@ JSON.stringify((function(){
     final String themeVarsJs = _buildStaticSettings().themeVarsJs;
     if (themeVarsJs == _lastThemeVarsJs) return;
     _lastThemeVarsJs = themeVarsJs;
-    _controller!.evaluateJavascript(source: themeVarsJs);
+    // HBK-AUDIT-015：M3E 暗色下词典浅底的调色是 JS 写进词条的内联色，CSS 变量换了它不会跟着变；
+    // 注入新变量后让 popup.js 复原再按新明暗重调（不重建词条，选区 / 展开状态不受影响）。
+    _controller!.evaluateJavascript(
+      source: '$themeVarsJs\n'
+          'window.__fushiRetoneDictColors && window.__fushiRetoneDictColors();',
+    );
   }
 
   /// in-app 弹窗的静态段（主题变量 + 字体 + 全部 window.* 设置）。与
@@ -1481,47 +1719,6 @@ JSON.stringify((function(){
     );
   }
 
-  /// [DictionaryPopupWebView.reorderOf] 的只换序路径：新结果是上一份**已推送**结果
-  /// 的换序时，只把新顺序的词头键交给 popup.js 挪卡片，返回 true。任一条件不满足
-  /// （宿主没声明换序 / 上一份不是页面上那份 / 页面未就绪）返回 false，由调用方照常
-  /// 全量推送——宁可多一次全量渲染，也不把不同内容当换序吞掉。
-  bool _tryPushReorder(DictionarySearchResult previous) {
-    final DictionarySearchResult? base = widget.reorderOf;
-    final InAppWebViewController? controller = _controller;
-    if (base == null || !identical(base, previous)) return false;
-    if (!identical(_lastPushedResult, previous)) return false;
-    if (controller == null || !_ready) return false;
-    final List<String>? keys = _entryOrderKeys(widget.result);
-    if (keys == null) return false;
-    _lastPushedResult = widget.result;
-    if (identical(_lastRenderedResult, previous)) {
-      _lastRenderedResult = widget.result;
-    }
-    controller.evaluateJavascript(
-      source: 'window.fushiReorderPopupEntries && '
-          'window.fushiReorderPopupEntries(${jsonEncode(keys)});',
-    );
-    return true;
-  }
-
-  /// 弹窗词头分组的顺序键（与 popup.js `popupEntryOrderKey` 同形：
-  /// `expression + U+0001 + reading`）；解码不了返回 null。
-  static List<String>? _entryOrderKeys(DictionarySearchResult result) {
-    final String json = result.popupJson ?? buildLookupEntriesJson(result);
-    final Object? decoded;
-    try {
-      decoded = jsonDecode(json);
-    } on FormatException {
-      return null;
-    }
-    if (decoded is! List) return null;
-    return <String>[
-      for (final Object? group in decoded)
-        if (group is Map)
-          '${group['expression'] ?? ''}\u0001${group['reading'] ?? ''}',
-    ];
-  }
-
   void _pushResults() {
     if (_controller == null || !_ready) {
       _refreshWhenReady = true;
@@ -1529,6 +1726,7 @@ JSON.stringify((function(){
     }
     _refreshWhenReady = false;
     _lastPushedResult = widget.result;
+    _lastPushedPending = widget.lookupPending;
 
     final int renderToken = ++_renderToken;
     final bool isLoadMore = _lastSearchTerm == widget.result.searchTerm &&
@@ -1557,6 +1755,13 @@ JSON.stringify((function(){
     // 下一次推送重发。BUG-717 ③：比较从 MB 级全串换成 revision 整数（builder 按
     // 输入 memo，同内容 ⇒ 同实例同 revision），combined 只在真要发时才拼一次。
     final PopupStaticSettingsJs staticSettings = _buildStaticSettings();
+    // 结果来自别的设备时整表换成那台设备的词典样式（见 [_lastSentRemoteStyles]）。
+    final Map<String, String>? remoteStyles =
+        widget.resourceSource?.dictionaryStyles;
+    // 从远端来源换回本机：页面里还是远端样式，静态段（含本机样式）必须重发。
+    if (remoteStyles == null && _lastSentRemoteStyles != null) {
+      _lastSentStaticRevision = null;
+    }
     final bool staticChanged =
         staticSettings.revision != _lastSentStaticRevision;
     if (staticChanged) {
@@ -1564,21 +1769,35 @@ JSON.stringify((function(){
     }
     final String staticSettingsJs =
         staticChanged ? staticSettings.combined : '';
+    // 远端样式排在静态段之后，覆盖它写入的本机样式；静态段一重发就得跟着重发。
+    final bool remoteStylesChanged = remoteStyles != null &&
+        (staticChanged || !identical(remoteStyles, _lastSentRemoteStyles));
+    _lastSentRemoteStyles = remoteStyles;
+    final String remoteStylesJs = remoteStylesChanged
+        ? 'window.dictionaryStyles = ${jsonEncode(remoteStyles)};'
+        : '';
     // BUG-717 ③：in-app 固定块（__fushiResetPopupScroll 钩子 + 句子上下文 i18n +
-    // sentenceContextPreviewEnabled）并入静态段的失效节奏：随静态段版本重发
+    // advancedMiningEnabled）并入静态段的失效节奏：随静态段版本重发
     // （语言切换 → builder memo 键含 locale → 新 revision → 必然重发），另跟踪
-    // preview 回调有无（宿主换回调时也要刷新）。原来每次查词都重发这 1-2KB。
-    final bool sentencePreviewEnabled = widget.onSentenceContextPreview != null;
-    final ({int revision, bool preview}) extrasKey =
-        (revision: staticSettings.revision, preview: sentencePreviewEnabled);
+    // 「高级制卡」回调有无（热槽 WebView 换宿主 / 制卡模块开关翻转时，旧的
+    // window.advancedMiningEnabled 会跨渲染残留，必须随之重发）。原来每次查词都重发这 1-2KB。
+    final bool advancedMiningEnabled = widget.onOpenAdvancedMining != null;
+    final ({int revision, bool advancedMining}) extrasKey = (
+      revision: staticSettings.revision,
+      advancedMining: advancedMiningEnabled,
+    );
     final bool extrasChanged = extrasKey != _lastSentInAppExtrasKey;
     if (extrasChanged) {
       _lastSentInAppExtrasKey = extrasKey;
     }
     final String inAppExtrasJs = extrasChanged
-        ? _inAppStaticExtrasJs(sentencePreviewEnabled: sentencePreviewEnabled)
+        ? _inAppStaticExtrasJs(advancedMiningEnabled: advancedMiningEnabled)
         : '';
-    final String entriesJs = buildPopupEntriesJs(widget.result);
+    final String entriesJs = buildPopupEntriesJs(
+      widget.result,
+      pending: widget.lookupPending,
+      idle: identical(widget.result, kPopupSearchingPlaceholderResult),
+    );
     // 主题变量段随静态段一起（或已经）在 WebView 里生效；记下它供
     // didChangeDependencies 的主题热切换去重，不再另拼一份删减版拷贝。
     _lastThemeVarsJs = staticSettings.themeVarsJs;
@@ -1608,12 +1827,16 @@ JSON.stringify((function(){
         ''';
     _controller!.evaluateJavascript(source: '''
       $staticSettingsJs
+      $remoteStylesJs
       $inAppExtrasJs
       $entriesJs
       ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
       window.__fushiRenderToken = $renderToken;
+      ${isLoadMore ? '' : kWebViewHostScrollDisarmJs}
       $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
+      ${widget.onScrolledUnderChanged != null ? _scrolledUnderJs : ""}
+      ${widget.forwardScrollToHost ? kWebViewHostScrollReportJs : ""}
     ''');
     // 诊断（2026-09-22）：注入量是「查词为什么卡」的直接证据。冷建 WebView 时
     // staticChanged 恒为真 ⇒ 数十 KB 的静态设置段要跟着每次查词一起发；命中热槽时它
@@ -1627,11 +1850,11 @@ JSON.stringify((function(){
     );
   }
 
-  /// BUG-717 ③：in-app 专属的固定注入块。内容与拆分前逐字节一致，只是不再每次
-  /// 查词重发——注入时机由 [_lastSentInAppExtrasKey]（静态段 revision + preview
-  /// 回调有无）门控，热槽 WebView 的 window.* 跨渲染持久。语言切换经静态段
-  /// revision 失效（builder memo 键含 locale），文案随之重发。
-  String _inAppStaticExtrasJs({required bool sentencePreviewEnabled}) {
+  /// BUG-717 ③：in-app 专属的固定注入块。不再每次查词重发——注入时机由
+  /// [_lastSentInAppExtrasKey]（静态段 revision + 「高级制卡」回调有无）门控，热槽
+  /// WebView 的 window.* 跨渲染持久。语言切换经静态段 revision 失效（builder memo
+  /// 键含 locale），文案随之重发。
+  String _inAppStaticExtrasJs({required bool advancedMiningEnabled}) {
     return '''
       window.__fushiResetPopupScroll = function() {
         window.scrollTo(0, 0);
@@ -1645,27 +1868,15 @@ JSON.stringify((function(){
       window.i18nClearSentenceDraftTooltip = ${jsonEncode(t.popup_clear_sentence_draft_tooltip)};
       window.i18nContextPrevLabel = ${jsonEncode(t.popup_sentence_context_prev_label)};
       window.i18nContextNextLabel = ${jsonEncode(t.popup_sentence_context_next_label)};
-      // Niratan「制卡前调整·选择句子上下文」：独立于旧内联步进器（kSentenceContextPickerEnabled
-      // 恒 false）的新特性门控——宿主接入了预览回调（reader/有声书/视频，supportsSentenceDraft
-      // 为真）才为真，popup.js 据此渲染「调整上下文」按钮。app 外 / 悬浮独立窗不走本注入块，
+      // 「高级制卡」入口门控：宿主接了 onOpenAdvancedMining（只在制卡模块开着时接）才为真，
+      // popup.js 据此在每个词条头渲染「高级制卡」按钮。所有挂 DictionaryPopupWebView 的
+      // 表面都接（纯查词页的对话框只有卡组分区）。app 外 / 悬浮独立窗不走本注入块，
       // 该 flag undefined → 按钮不渲染。
-      window.sentenceContextPreviewEnabled = $sentencePreviewEnabled;
-      // Niratan「制卡前调整·选择句子上下文」模态文案（popup.js 无自带 i18n，靠宿主注入）。
+      window.advancedMiningEnabled = $advancedMiningEnabled;
+      // 「高级制卡」按钮提示文案（popup.js 无自带 i18n，靠宿主注入）。对话框本体是原生
+      // Flutter 对话框，文案走 slang，不经这里。
       window.i18nCtx = {
-        adjust: ${jsonEncode(t.popup_ctx_adjust_button)},
-        eyebrow: ${jsonEncode(t.popup_ctx_modal_eyebrow)},
-        title: ${jsonEncode(t.popup_ctx_modal_title)},
-        count: ${jsonEncode(t.popup_ctx_modal_count)},
-        boxPrev: ${jsonEncode(t.popup_ctx_box_prev)},
-        boxCurrent: ${jsonEncode(t.popup_ctx_box_current)},
-        boxNext: ${jsonEncode(t.popup_ctx_box_next)},
-        boxEmpty: ${jsonEncode(t.popup_ctx_box_empty)},
-        prevMinus: ${jsonEncode(t.popup_ctx_prev_minus)},
-        prevPlus: ${jsonEncode(t.popup_ctx_prev_plus)},
-        nextMinus: ${jsonEncode(t.popup_ctx_next_minus)},
-        nextPlus: ${jsonEncode(t.popup_ctx_next_plus)},
-        confirm: ${jsonEncode(t.popup_ctx_confirm)},
-        cancel: ${jsonEncode(t.popup_ctx_cancel)},
+        advancedMining: ${jsonEncode(t.popup_advanced_mining_button)},
       };
 ''';
   }
@@ -1685,10 +1896,12 @@ JSON.stringify((function(){
   /// `popupRendered`——等信号撤盖板/翻可见的宿主必须立即按已渲染处理，否则会
   /// 空等到 failsafe 超时。
   bool refreshCurrentResult() {
-    if (identical(_lastRenderedResult, widget.result)) {
+    if (identical(_lastRenderedResult, widget.result) &&
+        _lastRenderedPending == widget.lookupPending) {
       return false;
     }
-    if (identical(_lastPushedResult, widget.result)) {
+    if (identical(_lastPushedResult, widget.result) &&
+        _lastPushedPending == widget.lookupPending) {
       // 已发出注入、渲染在途：popupRendered 会带当前 token 到达，别重推。
       return true;
     }
@@ -1830,10 +2043,6 @@ JSON.stringify((function(){
         '</head>'
         '<body>'
         '<div id="entries-container"></div>'
-        '<div class="overlay">'
-        '<div class="overlay-close" onclick="closeOverlay()">×</div>'
-        '<div class="overlay-content"></div>'
-        '</div>'
         '</body></html>';
     _inlineHtmlCacheKey = cacheKey;
     _inlineHtmlCache = html;
@@ -1946,9 +2155,16 @@ JSON.stringify((function(){
     final appModel = ref.read(appProvider);
     // 初始 HTML 底色与主题注入器同源（popupCardSurface），
     // 避免两路底色不一致造成的一帧闪变。
-    final Color bgColor = popupCardSurface(
-        scheme: Theme.of(context).colorScheme,
-        override: appModel.overrideDictionaryColor);
+    // Apple 设计系统：注入后文档背景透明（html.fushi-glass-host），卡面是 Flutter
+    // 画的材质面板；注入前的首帧先用同色系的面板色（secondarySystemGroupedBackground），
+    // 别让深色下纯黑的 systemGroupedBackground 闪一帧。
+    final Color bgColor = appModel.overrideDictionaryColor == null &&
+            isGlassDesign(context) &&
+            !isEinkTheme(context)
+        ? appleColorsOf(context).secondaryGroupedBackground
+        : popupCardSurface(
+            scheme: Theme.of(context).colorScheme,
+            override: appModel.overrideDictionaryColor);
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final String bgHex = _colorToHex(bgColor);
     final String themeAttr = isDark ? 'dark' : 'light';
@@ -2128,10 +2344,19 @@ JSON.stringify((function(){
             whitelistedPaths: _configuredDictionaryFontPaths(),
           );
         }
+        final DictionaryPopupResourceSource? resources =
+            mounted ? widget.resourceSource : null;
+        if (resources != null) {
+          return remoteDictionaryMediaWebResourceResponse(
+            request.url,
+            resources,
+          );
+        }
         return dictionaryMediaWebResourceResponse(request.url);
       },
       onWebViewCreated: (controller) {
         _controller = controller;
+        _invalidatePopupDocument();
 
         // TODO-1392：查词弹窗 JS 渲染路径（renderPopup / __fushiContainer 等）抛异常，此前
         // 只 console.error → onConsoleMessage → debugPrint（永不进错误日志），uncaught 更彻底
@@ -2153,17 +2378,18 @@ JSON.stringify((function(){
               'DictPopupWebview.getDictAsset',
               null,
               ErrorLogService.instance,
-              () {
+              () async {
                 final Object? raw = args.isNotEmpty ? args.first : null;
                 if (raw is! Map) return null;
                 final String dictionary = raw['dictionary'] as String? ?? '';
                 final String path = raw['path'] as String? ?? '';
                 if (dictionary.isEmpty || path.isEmpty) return null;
                 if (!path.toLowerCase().endsWith('.js')) return null;
-                final Uint8List? bytes = FushiDicts.instance.getMediaFile(
-                  dictionary,
-                  path,
-                );
+                final DictionaryPopupResourceSource? resources =
+                    mounted ? widget.resourceSource : null;
+                final Uint8List? bytes = resources != null
+                    ? (await resources.mediaFile(dictionary, path))?.bytes
+                    : FushiDicts.instance.getMediaFile(dictionary, path);
                 if (bytes == null || bytes.isEmpty) return null;
                 return utf8.decode(bytes, allowMalformed: true);
               },
@@ -2292,6 +2518,42 @@ JSON.stringify((function(){
         );
 
         controller.addJavaScriptHandler(
+          handlerName: 'popupScrolledUnder',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.popupScrolledUnder',
+              null,
+              ErrorLogService.instance,
+              () {
+                widget.onScrolledUnderChanged?.call(
+                  args.isNotEmpty && args.first == true,
+                );
+                return null;
+              },
+            );
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'popupHostScroll',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.popupHostScroll',
+              null,
+              ErrorLogService.instance,
+              () {
+                if (!widget.forwardScrollToHost || !mounted) return null;
+                final WebViewScrollSample? sample = WebViewScrollSample.fromJs(
+                  args.isEmpty ? null : args.first,
+                );
+                if (sample != null) _hostScrollBridge.dispatch(context, sample);
+                return null;
+              },
+            );
+          },
+        );
+
+        controller.addJavaScriptHandler(
           handlerName: 'topPullReleased',
           callback: (_) {
             return _guardJsBridge<Object?>(
@@ -2316,6 +2578,9 @@ JSON.stringify((function(){
               null,
               ErrorLogService.instance,
               () {
+                if (!_ready || !_isCurrentPopupController(controller)) {
+                  return null;
+                }
                 final Object? rawContent = args.isNotEmpty ? args[0] : null;
                 final double? contentHeight = rawContent is num
                     ? rawContent.toDouble()
@@ -2332,7 +2597,9 @@ JSON.stringify((function(){
                       ? renderObject.size.height
                       : null,
                 );
-                if (contentHeight != null && viewportHeight != null) {
+                if (contentHeight != null &&
+                    viewportHeight != null &&
+                    !_pushedPlaceholder) {
                   widget.onContentMetrics?.call(contentHeight, viewportHeight);
                 }
                 return null;
@@ -2349,6 +2616,9 @@ JSON.stringify((function(){
               null,
               ErrorLogService.instance,
               () {
+                if (!_ready || !_isCurrentPopupController(controller)) {
+                  return null;
+                }
                 final Object? rawToken = args.length > 1 ? args[1] : null;
                 final int? token = rawToken is num
                     ? rawToken.toInt()
@@ -2385,12 +2655,15 @@ JSON.stringify((function(){
                       ? renderObject.size.height
                       : null,
                 );
-                if (contentHeight != null && viewportHeight != null) {
+                if (contentHeight != null &&
+                    viewportHeight != null &&
+                    !_pushedPlaceholder) {
                   widget.onContentMetrics?.call(contentHeight, viewportHeight);
                 }
                 // 记录「当前已推结果渲染完成」，供 refreshCurrentResult 去重判定
                 // （识别渲染信号早于宿主盖板架起的竞态）。
                 _lastRenderedResult = _lastPushedResult;
+                _lastRenderedPending = _lastPushedPending;
                 widget.onRendered?.call();
                 // TODO-1152：全高填充宿主（in-app 查词结果区）渲染完成后补一次表面
                 // 重绘 nudge，逼 Windows WebView2/WGC 捕获完整视口，消除下半屏黑。
@@ -2418,14 +2691,19 @@ JSON.stringify((function(){
               if (args.isNotEmpty &&
                   args[0] is Map &&
                   widget.onMineEntry != null) {
-                final fields = Map<String, String>.from(
-                  (args[0] as Map)
-                      .map((k, v) => MapEntry(k.toString(), v.toString())),
+                // 「高级制卡」往返的覆盖项在这里同步并进 fields（解析后、交宿主前，
+                // 不隔 await），普通点「+」时原样不动。
+                final fields = _withConfirmMineOverrides(
+                  Map<String, String>.from(
+                    (args[0] as Map)
+                        .map((k, v) => MapEntry(k.toString(), v.toString())),
+                  ),
                 );
                 // 落盘词典媒体（gaiji）字节供 repo 嵌进卡片；必须在 onMineEntry
                 // （->repo.mineEntry 读缓存）之前完成。空/无媒体时内部直接返回。
+                // 结果来自别的设备时清单留空（本机没有那部词典，卡由那台设备落地）。
                 await writeDictionaryMediaCache(
-                    fields['dictionaryMedia'] ?? '');
+                    _dictionaryMediaForLocalMining(fields));
                 // BUG-2634：Dart 的 async 函数同步执行到首个 await，所以这一行返回
                 // 时宿主已经跑完它的同步前缀。**只有担保「草稿在首个 await 之前读完」
                 // 的宿主**（`releaseWhenPayloadConsumed`）才据此提前关窗；不担保的
@@ -2458,12 +2736,17 @@ JSON.stringify((function(){
               if (args.isNotEmpty &&
                   args[0] is Map &&
                   widget.onMinedCardAction != null) {
-                final fields = Map<String, String>.from(
-                  (args[0] as Map)
-                      .map((k, v) => MapEntry(k.toString(), v.toString())),
+                // 覆盖项并进这份 fields：宿主的 mineNew / overwrite 两条分支都从它
+                // 出发，用户在操作单里选哪条都带着本次的调整。
+                final fields = _withConfirmMineOverrides(
+                  Map<String, String>.from(
+                    (args[0] as Map)
+                        .map((k, v) => MapEntry(k.toString(), v.toString())),
+                  ),
                 );
+                // 结果来自别的设备时清单留空（本机没有那部词典，卡由那台设备落地）。
                 await writeDictionaryMediaCache(
-                    fields['dictionaryMedia'] ?? '');
+                    _dictionaryMediaForLocalMining(fields));
                 // BUG-2634 第二轮：这条路（这个词以前制过卡）会弹「覆写 / 新增重复
                 // / 取消」的模态操作单，**无限等用户做选择**，选完还要等整张卡落地。
                 // 所以这里只解除超时、**不**提前关窗：
@@ -2483,6 +2766,48 @@ JSON.stringify((function(){
                   .log('DictPopupWebview.minedCardAction', e, stack);
             }
             return const MinePopupResult().toJson();
+          },
+        );
+
+        // BUG-3492：卡还在后台写入时的覆盖请求 → 宿主排队，落地后自动覆盖。与
+        // minedCardAction 同样带上「高级制卡」的覆盖项、先落盘词典媒体；永不让异常穿过
+        // 原生桥（BUG-293），也**绝不回 null**（Windows 原生桥对 null 答复曾直接崩，
+        // BUG-1918）——没接线的宿主回 accepted:false。
+        controller.addJavaScriptHandler(
+          handlerName: 'queueOverwrite',
+          callback: (args) async {
+            try {
+              if (args.isNotEmpty &&
+                  args[0] is Map &&
+                  widget.onQueueOverwrite != null) {
+                final fields = _withConfirmMineOverrides(
+                  Map<String, String>.from(
+                    (args[0] as Map).map(
+                      (k, v) => MapEntry(k.toString(), v.toString()),
+                    ),
+                  ),
+                );
+                await writeDictionaryMediaCache(
+                  _dictionaryMediaForLocalMining(fields),
+                );
+                // 宿主在首个 await 之前同步冻结覆盖要用的全部输入（区间 / 覆盖项 /
+                // 锁帧）。只有**收下了**才算读走 payload、允许对话框提前关：没收下时
+                // popup.js 会在同一次点击里接着走 minedCardAction（已落地）等正常
+                // 路径，那条桥还要读本次往返的覆盖项，提前关窗会把它们清掉。
+                _markConfirmMineHostEntered();
+                final QueuedOverwriteReply reply =
+                    await widget.onQueueOverwrite!(fields);
+                if (reply.accepted) _markConfirmMinePayloadConsumed();
+                return reply.toJson();
+              }
+            } catch (e, stack) {
+              ErrorLogService.instance.log(
+                'DictPopupWebview.queueOverwrite',
+                e,
+                stack,
+              );
+            }
+            return const QueuedOverwriteReply().toJson();
           },
         );
 
@@ -2534,12 +2859,18 @@ JSON.stringify((function(){
                 if (noteId == null || fieldsRaw is! Map) {
                   return const MinePopupResult().toJson();
                 }
-                final fields = Map<String, String>.from(
-                  fieldsRaw.map((k, v) => MapEntry(k.toString(), v.toString())),
+                // 覆写同样带上本次「高级制卡」的覆盖项（媒体类调整照样生效；
+                // 卡组覆盖对覆写无效——卡留在原卡组）。
+                final fields = _withConfirmMineOverrides(
+                  Map<String, String>.from(
+                    fieldsRaw
+                        .map((k, v) => MapEntry(k.toString(), v.toString())),
+                  ),
                 );
                 // 与制卡同链路：先落盘词典媒体字节，再覆盖卡片（repo 从缓存读外字）。
+                // 结果来自别的设备时清单留空（本机没有那部词典，卡由那台设备落地）。
                 await writeDictionaryMediaCache(
-                    fields['dictionaryMedia'] ?? '');
+                    _dictionaryMediaForLocalMining(fields));
                 // BUG-2634：与 mineEntry 同一条纪律（覆写路径同样在首个 await 之前
                 // 读走草稿），同样按宿主的担保决定是提前关窗还是只解除超时。
                 final Future<MinePopupResult> pending =
@@ -2577,6 +2908,30 @@ JSON.stringify((function(){
               },
             );
           },
+        );
+
+        // Fushi 复习词状态 / 打开卡片（popup.js createSrsStatusBadge）。不经各宿主的
+        // 回调：所有挂本 WebView 的表面（app 内弹窗、独立查词页、阅读器 / 视频 / 漫画 /
+        // 游戏串流……）都在这里一次接上，入口新增时不会漏。复习模块关着时
+        // SrsAppHost.current 为 null → 恒回 null / false；注入的 __fushiSrsEnabled=false
+        // 已让 JS 根本不发这两根桥。
+        controller.addJavaScriptHandler(
+          handlerName: 'srsTermStatus',
+          callback: (args) => _guardJsBridge<Map<String, Object?>?>(
+            'DictPopupWebview.srsTermStatus',
+            null,
+            ErrorLogService.instance,
+            () => srsHandleTermStatusBridge(args, SrsAppHost.current),
+          ),
+        );
+        controller.addJavaScriptHandler(
+          handlerName: 'srsOpenCard',
+          callback: (args) => _guardJsBridge<bool>(
+            'DictPopupWebview.srsOpenCard',
+            false,
+            ErrorLogService.instance,
+            () => srsHandleOpenCardBridge(args, SrsAppHost.current),
+          ),
         );
 
         // TODO-614：覆写范围=「全部」时，popup.js 在 lookup-time 探测到已制卡且不是
@@ -2718,50 +3073,34 @@ JSON.stringify((function(){
           },
         );
 
-        // Niratan「制卡前调整·选择句子上下文」：popup 打开模态 / 每次调整后拉取当前草稿
-        // 的真实上下文句（前/当前/后）+ 词偏移做预览。只读，不改草稿（调整仍走
-        // setSentenceContext）。宿主未接入 / 出错时回传空 Map，popup 侧兜底不渲染文本。
+        // 「高级制卡」：popup 点某词条的「高级制卡」→ 宿主弹 app 原生顶层对话框
+        // （BUG-763/766：不画在弹窗 WebView 内，那受弹窗尺寸/半透明限制）。
+        // args[0] = {entryIndex, matched, expression}。
         controller.addJavaScriptHandler(
-          handlerName: 'sentenceContextPreview',
-          callback: (_) async {
-            return _guardJsBridge<Object?>(
-              'DictPopupWebview.sentenceContextPreview',
-              const <String, Object?>{},
-              ErrorLogService.instance,
-              () async {
-                if (widget.onSentenceContextPreview == null) {
-                  return const <String, Object?>{};
-                }
-                return widget.onSentenceContextPreview!();
-              },
-            );
-          },
-        );
-
-        // BUG-763/766：popup 点某词条「调整上下文」→ 宿主弹 app 原生顶层对话框
-        // （SentenceContextDialog），不再画在弹窗 WebView 内（那受弹窗尺寸/半透明限制，
-        // 句子框重叠、显示不全）。args[0] = {entryIndex, matched}。
-        controller.addJavaScriptHandler(
-          handlerName: 'openSentenceContextModal',
+          handlerName: 'openAdvancedMining',
           callback: (args) async {
             return _guardJsBridge<Object?>(
-              'DictPopupWebview.openSentenceContextModal',
+              'DictPopupWebview.openAdvancedMining',
               null,
               ErrorLogService.instance,
               () async {
-                if (widget.onOpenSentenceContextModal == null) return null;
+                final OpenAdvancedMiningCallback? open =
+                    widget.onOpenAdvancedMining;
+                if (open == null) return null;
                 int entryIndex = 0;
                 String matched = '';
-                // BUG-1326：popup.js 现在传对象；老的扩展 vendor 副本（用户装在浏览器
-                // 里、与 app 不同步更新）还可能传 JSON 字符串。两种形态都解析，否则
-                // entryIndex 静默退化成 0 → 确认制卡永远点第一个词条。
+                String expression = '';
+                // BUG-1326：popup.js 传对象；也兼容 JSON 字符串（老的扩展 vendor 副本
+                // 曾经 stringify 过），否则 entryIndex 静默退化成 0 → 确认制卡永远点
+                // 第一个词条。
                 final Map<dynamic, dynamic>? data =
                     decodeBridgeMap(args.isEmpty ? null : args[0]);
                 if (data != null) {
                   entryIndex = (data['entryIndex'] as num?)?.toInt() ?? 0;
                   matched = data['matched']?.toString() ?? '';
+                  expression = data['expression']?.toString() ?? '';
                 }
-                await widget.onOpenSentenceContextModal!(entryIndex, matched);
+                await open(entryIndex, matched, expression);
                 return null;
               },
             );
@@ -2883,17 +3222,76 @@ JSON.stringify((function(){
           },
         );
 
-        // Word audio no longer round-trips to a native/libmpv player: popup.js
-        // plays the resolved URL itself with an HTML5 <audio> element (unified
-        // with the browser extension and every desktop surface — see
-        // resolveWordAudioWebViewUrl). The old `playWordAudio` handler is gone.
+        // 「选择音频源」菜单（♪ 长按 / 右键 / Shift+F10）：每个启用源各自解析出的
+        // 全部候选 `[{name, variant, url}]`，url 与 resolveWordAudio 同样可直接播放。
+        controller.addJavaScriptHandler(
+          handlerName: 'listWordAudioSources',
+          callback: (args) async {
+            return _guardJsBridge<List<Map<String, String>>>(
+              'DictPopupWebview.listWordAudioSources',
+              const <Map<String, String>>[],
+              ErrorLogService.instance,
+              () async {
+                if (args.isEmpty || args[0] is! Map) {
+                  return const <Map<String, String>>[];
+                }
+                final data = args[0] as Map;
+                final expression = data['expression']?.toString() ?? '';
+                final reading = data['reading']?.toString() ?? '';
+                if (expression.isEmpty) return const <Map<String, String>>[];
+                if (widget.resourceSource != null) {
+                  // 别的设备的结果：「选择音频源」只剩那台设备给的默认一条。
+                  final String? url =
+                      await _resolveWordAudio(expression, reading);
+                  return <Map<String, String>>[
+                    if (url != null && url.isNotEmpty)
+                      <String, String>{'name': '', 'variant': '', 'url': url},
+                  ];
+                }
+                return listWordAudioWebViewChoices(
+                    ref.read(appProvider), expression, reading);
+              },
+            );
+          },
+        );
+
+        // Word audio normally plays in popup.js itself with an HTML5 <audio>
+        // element (unified with the browser extension and every desktop
+        // surface — see resolveWordAudioWebViewUrl). Exception (BUG-3311): on
+        // the Android main engine the host injects
+        // `window.__fushiWordAudioViaHost` and popup.js hands the URL back here,
+        // because WebView <audio> requests GAIN_TRANSIENT_MAY_DUCK audio focus
+        // and some ROMs duck the app's own video with it. The native
+        // MediaPlayer requests no focus. Returns whether playback started;
+        // popup.js falls back to <audio> on false.
+        controller.addJavaScriptHandler(
+          handlerName: 'playWordAudioNative',
+          callback: (args) async {
+            return _guardJsBridge<bool>(
+              'DictPopupWebview.playWordAudioNative',
+              false,
+              ErrorLogService.instance,
+              () async {
+                if (!lookupWordAudioPlaysNatively) return false;
+                final Object? url = args.isNotEmpty ? args[0] : null;
+                if (url is! String || url.isEmpty) return false;
+                return playWordAudioUrlNatively(url);
+              },
+            );
+          },
+        );
+      },
+      onLoadStart: (controller, url) {
+        if (!mounted || !_isCurrentPopupController(controller)) return;
+        _invalidatePopupDocument();
       },
       onLoadStop: (controller, url) {
-        _ready = true;
-        // BUG-712 ③：页面（重）加载后 window.* 状态清零，静态设置负载与 in-app
-        // 固定块必须随下一次推送整体重发——重置版本比对基线。
-        _lastSentStaticRevision = null;
-        _lastSentInAppExtrasKey = null;
+        if (!mounted || !_isCurrentPopupController(controller)) return;
+        // Also handle platforms that finish a fresh document without a start
+        // callback. Results arriving during bootstrap remain queued; only this
+        // controller/document pair may mark the surface ready afterwards.
+        _invalidatePopupDocument();
+        final int generation = _documentGeneration;
         debugPrint('[popup-perf] webview loadStop $url');
         // 诊断（2026-09-22）：这一段只在**冷建**路径上出现——复用热槽 / 停驻 realm 的
         // 查词根本不会重新 loadStop。它在流水里现身本身就说明这次查词付了整页（约
@@ -2917,7 +3315,7 @@ JSON.stringify((function(){
                 : widget.inputSpec,
           ),
         );
-        unawaited(_completePopupLoad(controller));
+        unawaited(_completePopupLoad(controller, generation));
       },
       onReceivedError: (controller, request, error) {
         // TODO-058 fail-safe：主框架加载失败（弹窗 WebView 进程异常 / 资源拦截
@@ -2972,6 +3370,11 @@ JSON.stringify((function(){
             allowedRoots: roots,
             whitelistedPaths: _configuredDictionaryFontPaths(),
           );
+        }
+        final DictionaryPopupResourceSource? resources =
+            mounted ? widget.resourceSource : null;
+        if (resources != null) {
+          return remoteDictionaryMediaCustomSchemeResponse(url, resources);
         }
         return dictionaryMediaCustomSchemeResponse(url);
       },
@@ -3067,6 +3470,26 @@ JSON.stringify((function(){
   /// WebView2 原生项，禁原生后自补 [Clipboard.setData]）。BUG-802：选区读取从早年的
   /// `getSelectedText`（桌面 fork 未实现 + 只读顶层文档）改为穿透同源 iframe 的
   /// [_selectedTextAcrossFrames]，否则复制/搜索拿到空串永远无效。
+  /// [globalPosition] 处是不是弹窗里的音频按钮 ♪（或已打开的音频源菜单）。WebView
+  /// 视口 CSS px 与本 widget 的本地逻辑坐标一一对应（缩放已由 globalToLocal 吃掉），
+  /// 直接 `elementFromPoint`。WebView 未就绪 / 脚本失败一律按「不是」处理，宿主菜单照旧。
+  Future<bool> _secondaryClickHitsAudioButton(Offset globalPosition) async {
+    final InAppWebViewController? controller = _controller;
+    final RenderObject? box = context.findRenderObject();
+    if (controller == null || box is! RenderBox || !box.hasSize) return false;
+    final Offset p = box.globalToLocal(globalPosition);
+    try {
+      final Object? hit = await controller.evaluateJavascript(
+          source: '(function(){var e=document.elementFromPoint('
+              '${p.dx.toStringAsFixed(1)},${p.dy.toStringAsFixed(1)});'
+              "return !!(e&&e.closest&&e.closest('.audio-button, .fushi-audio-menu'));"
+              '})()');
+      return hit == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _showWindowsContextMenu(
       BuildContext context, Offset globalPosition) async {
     // BUG-1451 根因：选区是**易失状态**，而 [showMenu] 是一个真实 route——打开到用户
@@ -3075,7 +3498,13 @@ JSON.stringify((function(){
     // 是「菜单关闭那一刻」的状态而非「用户右键那一刻」的状态，任一环变动就拿空串，
     // 再被 `if (text.isEmpty) return` 静默吞掉 —— 用户看到的就是「菜单弹了、点复制没反应」。
     // 正确的数据流是在**事件源头**取快照：右键按下即发起读取，菜单只是选择动作的 UI。
+    // 右键落在 ♪ 上：popup.js 收到 DOM contextmenu 会自己弹「选择音频源」菜单，
+    // 宿主的搜索 / 复制菜单让位（否则两张菜单叠在一起）。按下即判，不等 DOM 事件
+    // ——fork 把指针转给 WebView2 是异步的，此刻 DOM 还没见到这次按下。
+    // 选区快照仍在最前发起（BUG-1451），再判让位。
     final Future<String> selectionAtRightClick = _selectedTextAcrossFrames();
+    if (await _secondaryClickHitsAudioButton(globalPosition)) return;
+    if (!mounted || !context.mounted) return;
     final RenderObject? overlayObject =
         Overlay.of(context).context.findRenderObject();
     if (overlayObject is! RenderBox || !overlayObject.hasSize) return;
@@ -3089,7 +3518,7 @@ JSON.stringify((function(){
     );
     final t = Translations.of(context);
     final _PopupContextMenuAction? action =
-        await showMenu<_PopupContextMenuAction>(
+        await showFushiMenu<_PopupContextMenuAction>(
       context: context,
       position: position,
       items: <PopupMenuEntry<_PopupContextMenuAction>>[
@@ -3364,7 +3793,7 @@ JSON.stringify((function(){
 ///
 /// popup.js 的 `callHandler` 一律传**对象**，宿主收到 `Map`。但浏览器扩展的 vendor 副本
 /// 是用户自己装在浏览器里的、与 app 不同步更新，老副本可能仍传 `JSON.stringify(...)` 的
-/// 字符串；只认 `is Map` 会让字段静默退化成默认值（`openSentenceContextModal` 的
+/// 字符串；只认 `is Map` 会让字段静默退化成默认值（`openAdvancedMining` 的
 /// `entryIndex` 退化成 0 → 确认制卡永远点第一个词条，用户只看到「没反应」）。
 ///
 /// 认三种形态：`Map` 原样、JSON 对象字符串解出 Map、其余（含 null / JSON 数组 / 非法串）

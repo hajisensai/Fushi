@@ -58,7 +58,7 @@ void main() {
 
     test('group 1 (sync method) holds selector + scoped account/config', () {
       // BUG-1088：互联回到「同步方式」选择器；选中时显示一行指引（连接配置在
-      // 「Hibiki 互联」分类）。C1：WebDAV/FTP/SFTP 三套凭据表单挪进子页「服务器
+      // 「Fushi 互联」分类）。C1：WebDAV/FTP/SFTP 三套凭据表单挪进子页「服务器
       // 设置」，主页只留一行入口（凭据式后端才显示）。
       expect(idsOf(dest.sections[0]), <String>[
         'sync.mode',
@@ -112,6 +112,8 @@ void main() {
         'sync.video_files',
         // 多端库联合视图（spec §2.1）：「显示远端条目」占位卡混排开关（纯显示偏好）。
         'sync.show_remote_entries',
+        // 「仅从本机移除」的远端书找回列表（反馈 nvlhtczbro）。
+        'sync.hidden_remote_books',
       ]);
       expect(idsOf(dest.sections[2]), <String>[
         'sync.auto_sync',
@@ -125,6 +127,8 @@ void main() {
         // 词典与本地音频源数据库不是开关，而是一类一行的显式动作，方向在行尾菜单选。
         'sync.dictionary_transfer',
         'sync.local_audio_transfer',
+        // 字体文件 + 字体配置的显式传输（同步备份带字体，2026-10-09）。
+        'sync.fonts_transfer',
       ]);
       expect(idsOf(dest.sections[4]), <String>[
         'sync.backup_export',
@@ -163,6 +167,7 @@ void main() {
           'sync.video_files',
           'sync.dictionary_transfer',
           'sync.local_audio_transfer',
+          'sync.fonts_transfer',
         ]) {
           expect(
             byId(id).visible,
@@ -190,6 +195,7 @@ void main() {
         // 内容上传归互联页那组 opt-in），方法选成互联时同样是死按钮。
         'sync.dictionary_transfer',
         'sync.local_audio_transfer',
+        'sync.fonts_transfer',
       ]) {
         final int at = src.indexOf("id: '$id'");
         expect(at, greaterThanOrEqualTo(0));
@@ -226,7 +232,7 @@ void main() {
     });
 
     test('manual-sync actions are gated on server mode (BUG-084)', () {
-      // A pure Hibiki host has no outbound sync, so "sync now" / "compare" must
+      // A pure Fushi host has no outbound sync, so "sync now" / "compare" must
       // be hidden in server mode and an explanatory note shown instead — every
       // one of the three carries a visibility predicate (none is unconditional).
       final SettingsSection actions = dest.sections[2];
@@ -453,8 +459,8 @@ void main() {
           reason: 'the note must say the other device pairs with that server',
         );
         // C2：对端列表 + LAN 发现（整页最高的两个 widget）挪进子页「配对与设备」，
-        // 主页只留一行带已配对数摘要的入口；其后是 Android 接收端的「加入游戏串流」
-        // 入口（PR #1611）——只有 Android 是接收端，所以该行必须自带平台门控。
+        // 主页只留一行带已配对数摘要的入口；其后是「加入游戏串流」入口
+        // （PR #1611）——每个平台都能当接收端，所以该行不带平台门控。
         expect(idsOf(dest.sections[1]), <String>[
           'interconnect.devices',
           'interconnect.game_stream',
@@ -462,8 +468,8 @@ void main() {
         expect(dest.sections[1].visible, isNotNull);
         expect(
           dest.sections[1].items[1].visible,
-          isNotNull,
-          reason: '串流接收端只在 Android，入口不能在其它平台常显',
+          isNull,
+          reason: '串流接收端覆盖全部平台，入口不该再按平台藏起来',
         );
         final SettingsNavigationItem devices =
             dest.sections[1].items.first as SettingsNavigationItem;
@@ -475,7 +481,7 @@ void main() {
           devicesPage.sections.expand(
             (SettingsSection s) => s.items.map((SettingsItem i) => i.id),
           ),
-          <String>['sync.hibiki_server_config', 'sync.lan_devices'],
+          <String>['sync.fushi_server_config', 'sync.lan_devices'],
         );
         // BUG-988：互联专属上传分项开关，与云备份/连接开关解耦，默认全关；仅互联启用时
         // 可见（host 无 outbound 时进一步隐藏）。
@@ -485,6 +491,8 @@ void main() {
         expect(idsOf(dest.sections[2]), <String>[
           'interconnect.upload_content',
           'interconnect.dictionary_transfer',
+          'interconnect.local_audio_transfer',
+          'interconnect.fonts_transfer',
           'interconnect.upload_audiobook_files',
           'interconnect.upload_video_files',
         ]);
@@ -508,8 +516,12 @@ void main() {
           'interconnect.mine_to_server',
           'interconnect.backup_backend',
           'interconnect.service_config_sync',
+          // 跟随已配对设备自动登录 Fushi 账户（client 侧开关，默认开）。
+          'interconnect.leaderboard_follow_login',
           'interconnect.profile_upload',
           'interconnect.profile_download',
+          // 主机版本 / 更新主机（反馈 Pp8XPyve0N）：也是「交给已配对设备」的一次性动作。
+          'interconnect.host_update',
         ]);
         expect(dest.sections[4].visible, isNotNull);
         // 本机作为服务器：host 模式开关 + host 侧「允许对端读写本机配置」许可——C2
@@ -535,6 +547,11 @@ void main() {
             // 必须是主机主人的显式意愿，所以同样是主机服务子页的能力开关。
             'interconnect.game_stream_remote_launch',
             'interconnect.profile_transfer_host',
+            // 允许「我的设备」跟随本机 Fushi 账户自动登录（总闸，默认开）。
+            'interconnect.leaderboard_link_host',
+            // 允许已配对设备远程更新本机（反馈 Pp8XPyve0N）：会在本机下载安装
+            // 可执行文件，同样是主人的显式意愿。
+            'interconnect.remote_update_host',
           ],
         );
       },
@@ -652,6 +669,16 @@ void main() {
         reason: '互联页的传输行必须只跑互联通道',
       );
       expect(block, contains('kind: SyncAssetKind.dictionary'));
+
+      // 反馈 #5mB56tqXHa：本地音频数据库同样要有互联专属的显式上传 / 下载入口。
+      expect(ids, contains('interconnect.local_audio_transfer'));
+      final int audioAt = src.indexOf(
+        "id: 'interconnect.local_audio_transfer'",
+      );
+      expect(audioAt, greaterThanOrEqualTo(0));
+      final String audioBlock = src.substring(audioAt, audioAt + 600);
+      expect(audioBlock, contains('scope: SyncAssetChannelScope.interconnect'));
+      expect(audioBlock, contains('kind: SyncAssetKind.localAudio'));
     });
 
     test('runManualAssetTransfer filters channels by scope instead of '

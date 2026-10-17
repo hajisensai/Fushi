@@ -18,7 +18,7 @@ Future<void> main(List<String> args) async {
   final int port = args.isNotEmpty ? int.parse(args.first) : 38765;
   const String token = 'p2p-interop-test-token-abc123';
 
-  final Directory dir = Directory.systemTemp.createTempSync('hibiki_p2p_host_');
+  final Directory dir = Directory.systemTemp.createTempSync('fushi_p2p_host_');
   // Seed the served root + one book so an authenticated PROPFIND lists content.
   final Directory book =
       Directory('${dir.path}/sync-data/$kSyncRootFolderName/InteropBook');

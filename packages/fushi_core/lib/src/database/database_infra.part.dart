@@ -77,6 +77,22 @@ mixin _FushiDbInfra on _$FushiDatabase {
     return rows.isNotEmpty;
   }
 
+  /// v118 迁移：把 [tableName] 里尚未记录的 `local_added_at` 回填成
+  /// `imported_at`（理由见迁移步注释）。只碰 NULL 行，重跑幂等。没有
+  /// `imported_at` 列的表（阶梯上的合成 / 残缺库，与其它加列步的 `_columnExists`
+  /// 守卫同形）无从回填，保持 NULL = 时刻未知。
+  Future<void> _backfillLocalAddedAt(String tableName) async {
+    if (!_identifierRe.hasMatch(tableName)) {
+      throw ArgumentError.value(
+          tableName, 'tableName', 'not a valid identifier');
+    }
+    if (!await _columnExists(tableName, 'imported_at')) return;
+    await customStatement(
+      'UPDATE $tableName SET local_added_at = imported_at '
+      'WHERE local_added_at IS NULL',
+    );
+  }
+
   /// Creates all secondary indexes idempotently. Called from onCreate (fresh
   /// install) and schema steps that add indexed tables — NOT on every open. Each
   /// index is guarded by a table-existence check because a partially-migrated
@@ -266,135 +282,4 @@ mixin _FushiDbInfra on _$FushiDatabase {
     }
   }
 
-  /// PRE-v16 index creation for the from<14 upgrade step. Mirrors the old
-  /// (book_uid / ttu_book_id / book_id) column names that still exist before
-  /// the v16 book-key migration rebuilds those tables. The v16 step recreates
-  /// these under the new book_key column names via [_ensureIndexes].
-  ///
-  /// Each entry is `[table, sql, requiredColumn?]`. When [requiredColumn] is
-  /// present it is also column-guarded: a DB that arrives at this step with its
-  /// book tables already created fresh under the v16 schema (e.g. a pre-v11 DB
-  /// where the from<11 ladder step ran `createTable` with the current
-  /// generated `book_key` columns) does NOT have the legacy `ttu_book_id` /
-  /// `book_uid` / `book_id` column, so creating the legacy-named index would
-  /// throw "no such column". The v16 step recreates these under `book_key`.
-  Future<void> _ensureLegacyIndexesV14() async {
-    const List<List<String>> indexes = <List<String>>[
-      [
-        'profile_settings',
-        'CREATE INDEX IF NOT EXISTS idx_profile_settings_profile ON profile_settings (profile_id)'
-      ],
-      [
-        'media_type_profiles',
-        'CREATE INDEX IF NOT EXISTS idx_media_type_profiles_profile ON media_type_profiles (profile_id)'
-      ],
-      [
-        'book_profiles',
-        'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)'
-      ],
-      [
-        'bookmarks',
-        'CREATE INDEX IF NOT EXISTS idx_bookmarks_ttu_book_id_created '
-            'ON bookmarks (ttu_book_id, created_at DESC)',
-        'ttu_book_id'
-      ],
-      [
-        'media_items',
-        'CREATE INDEX IF NOT EXISTS idx_media_items_type '
-            'ON media_items (media_type_identifier)'
-      ],
-      [
-        'media_items',
-        'CREATE INDEX IF NOT EXISTS idx_media_items_source '
-            'ON media_items (media_source_identifier)'
-      ],
-      [
-        'audio_cues',
-        'CREATE INDEX IF NOT EXISTS idx_audio_cues_book_uid '
-            'ON audio_cues (book_uid)',
-        'book_uid'
-      ],
-      [
-        'search_history_items',
-        'CREATE INDEX IF NOT EXISTS idx_search_history_key '
-            'ON search_history_items (history_key)'
-      ],
-      [
-        'audiobooks',
-        'CREATE INDEX IF NOT EXISTS idx_audiobooks_book_uid '
-            'ON audiobooks (book_uid)',
-        'book_uid'
-      ],
-      [
-        'srt_books',
-        'CREATE INDEX IF NOT EXISTS idx_srt_books_ttu_book_id '
-            'ON srt_books (ttu_book_id)',
-        'ttu_book_id'
-      ],
-      [
-        'book_tag_mappings',
-        'CREATE INDEX IF NOT EXISTS idx_book_tag_mappings_book_id '
-            'ON book_tag_mappings (book_id)',
-        'book_id'
-      ],
-      // v55 游戏库：会话表按游戏取流水（详情页时间线）与全局按时间取最近游玩
-      // （首页「最近玩过」）是两条热路径，各建一条索引。
-      [
-        'galgame_sessions',
-        'CREATE INDEX IF NOT EXISTS idx_galgame_sessions_game_start '
-            'ON galgame_sessions (game_id, start_ms DESC)',
-        'game_id'
-      ],
-      [
-        'galgame_sessions',
-        'CREATE INDEX IF NOT EXISTS idx_galgame_sessions_start '
-            'ON galgame_sessions (start_ms DESC)',
-        'start_ms'
-      ],
-      // 按天聚合（统计页每日柱状图）走 dateKey。
-      [
-        'galgame_sessions',
-        'CREATE INDEX IF NOT EXISTS idx_galgame_sessions_date '
-            'ON galgame_sessions (date_key)',
-        'date_key'
-      ],
-      // v92 study_segments：按媒体身份（per-media tile / 删除）、按日（窗口聚合 /
-      // 热力图）、按设备+更新时刻（同步 v2 增量水位）。
-      [
-        'study_segments',
-        'CREATE INDEX IF NOT EXISTS idx_study_segments_media '
-            'ON study_segments (media_kind, media_key)',
-      ],
-      [
-        'study_segments',
-        'CREATE INDEX IF NOT EXISTS idx_study_segments_date '
-            'ON study_segments (date_key)',
-      ],
-      [
-        'study_segments',
-        'CREATE INDEX IF NOT EXISTS idx_study_segments_device_updated '
-            'ON study_segments (device_id, updated_at)',
-      ],
-      // v105 统计按 Profile 隔离：读取面全部带 profile_id 谓词，再按日窗口。
-      [
-        'study_segments',
-        'CREATE INDEX IF NOT EXISTS idx_study_segments_profile_date '
-            'ON study_segments (profile_id, date_key)',
-        'profile_id'
-      ],
-      [
-        'galgame_sessions',
-        'CREATE INDEX IF NOT EXISTS idx_galgame_sessions_profile_date '
-            'ON galgame_sessions (profile_id, date_key)',
-        'profile_id'
-      ],
-    ];
-    for (final List<String> entry in indexes) {
-      if (!await _tableExists(entry[0])) continue;
-      if (entry.length > 2 && !await _columnExists(entry[0], entry[2])) {
-        continue;
-      }
-      await customStatement(entry[1]);
-    }
-  }
 }

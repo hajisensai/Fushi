@@ -2,15 +2,20 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/settings/settings_cli_tasks.dart';
+import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/sync/external_reader_import/external_reader_import_service.dart';
 import 'package:fushi/src/sync/external_reader_import/hoshi_backup_archive.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 
 /// 「从 Hoshi Reader 导入」页：选 `.hoshi` 书库备份 → 扫描并预览 → 逐本导入书、
 /// 阅读位置与统计 → 结果报告。落库逻辑全在 [ExternalReaderImportService]，
@@ -28,6 +33,106 @@ class ExternalReaderImportPage extends ConsumerStatefulWidget {
   @override
   ConsumerState<ExternalReaderImportPage> createState() =>
       _ExternalReaderImportPageState();
+}
+
+/// 导入后让书架重读（导入页与控制通道共用）。
+void invalidateLibraryAfterExternalReaderImport(WidgetRef ref) {
+  ref.invalidate(fushiBooksProvider);
+  ref.invalidate(srtBooksProvider);
+  ref.invalidate(bookLastReadAtProvider);
+}
+
+/// 控制通道 Hoshi 导入任务的种类名（[SettingsCliTaskRegistry]）。
+const String kExternalReaderImportTaskKind = 'external-reader-import';
+
+/// 控制通道（`fushi_cli config run sync.hoshi_import --value <备份>`）：扫描 →
+/// 预览（在请求里做完）→ 非 dry_run 时起后台导入任务并立即返回任务快照，与导入页
+/// 同一组服务调用（[ExternalReaderImportService.run]）。进度与取消同导入页：逐本
+/// 报进度，取消在书与书之间生效（已导入的不回滚，当前这本会导完）；结果（含取消时
+/// 已完成的部分）在任务的 result 里，`fushi_cli task get <id> --wait` 查看。
+Future<Map<String, Object?>> runExternalReaderImportFromCli(
+  SettingsContext settingsContext,
+  String path, {
+  required bool dryRun,
+  SettingsCliTaskRegistry? registry,
+}) async {
+  final SettingsCliTaskRegistry tasks =
+      registry ?? SettingsCliTaskRegistry.instance;
+  if (!File(path).existsSync()) throw ArgumentError('文件不存在：$path');
+  if (!dryRun) {
+    final SettingsCliTask? active = tasks.activeOf(kExternalReaderImportTaskKind);
+    if (active != null) {
+      throw StateError('已有 Hoshi 备份导入在进行（任务 ${active.id}）');
+    }
+  }
+  final ExternalReaderBackup backup;
+  try {
+    backup = await scanExternalReaderBackup(path);
+  } on ExternalReaderBackupFormatException catch (e) {
+    throw FormatException('${t.hoshi_import_scan_invalid}：${e.message}');
+  }
+  final ExternalReaderImportService service = ExternalReaderImportService(
+    db: settingsContext.appModel.database,
+  );
+  final ExternalReaderImportPreview preview = await service.preview(backup);
+  final Map<String, Object?> previewJson = <String, Object?>{
+    'newBooks': preview.newBooks,
+    'existingBooks': preview.existingBooks,
+    'statsOnlyBooks': preview.statsOnlyBooks,
+    'statRecords': preview.statRecords,
+  };
+  if (dryRun) return <String, Object?>{'preview': previewJson};
+  final WidgetRef ref = settingsContext.ref;
+  final SettingsCliTask task = tasks.start(
+    kind: kExternalReaderImportTaskKind,
+    run: (SettingsCliTask task) async {
+      bool cancelRequested = false;
+      task
+        ..onCancel = (() => cancelRequested = true)
+        ..detail['file'] = path
+        ..detail['preview'] = previewJson
+        ..report(phase: 'importing', progress: 0);
+      await setScreenWakelock(enable: true, source: 'external reader import');
+      final ExternalReaderImportReport report;
+      try {
+        report = await service.run(
+          backup,
+          onProgress: (int done, int total, String title) {
+            task.report(progress: total == 0 ? null : done / total);
+            if (title.isNotEmpty) task.detail['current'] = title;
+          },
+          isCancelled: () => cancelRequested,
+        );
+      } finally {
+        await setScreenWakelock(
+          enable: false,
+          source: 'external reader import',
+        );
+        invalidateLibraryAfterExternalReaderImport(ref);
+      }
+      final Map<String, Object?> result = <String, Object?>{
+        'preview': previewJson,
+        'booksImported': report.booksImported,
+        'booksMatched': report.booksMatched,
+        'positionsWritten': report.positionsWritten,
+        'positionsKept': report.positionsKept,
+        'sessionsImported': report.sessionsImported,
+        'daysImported': report.daysImported,
+        'segmentsWritten': report.segmentsWritten,
+        'failures': <String>[
+          for (final ExternalReaderImportFailure f in report.failures)
+            '${f.title}: ${f.reason}',
+        ],
+      };
+      if (report.cancelled) {
+        // 取消前已导入的书保留：结果照样交给终端看。
+        task.result = <String, Object?>{...result, 'cancelled': true};
+        throw const SettingsCliTaskCancelled();
+      }
+      return result;
+    },
+  );
+  return task.toJson();
 }
 
 class _ExternalReaderImportPageState
@@ -107,7 +212,7 @@ class _ExternalReaderImportPageState
       _progressValue = 0;
       _progressLabel = null;
     });
-    await WakelockPlus.enable();
+    await setScreenWakelock(enable: true, source: 'external reader import');
     try {
       final ExternalReaderImportReport report = await _service.run(
         backup,
@@ -137,7 +242,7 @@ class _ExternalReaderImportPageState
       if (!mounted) return;
       setState(() => _error = '$e');
     } finally {
-      await WakelockPlus.disable();
+      await setScreenWakelock(enable: false, source: 'external reader import');
       // 移动端系统选择器把整份备份拷进了缓存：用完即清，免得几个 GB 常驻。
       if (Platform.isAndroid || Platform.isIOS) {
         await FilePicker.platform.clearTemporaryFiles();
@@ -157,50 +262,104 @@ class _ExternalReaderImportPageState
   /// 订阅里，导入后显式失效一次。
   void _refreshLibrary() {
     if (!mounted) return;
-    ref.invalidate(fushiBooksProvider);
-    ref.invalidate(srtBooksProvider);
-    ref.invalidate(bookLastReadAtProvider);
+    invalidateLibraryAfterExternalReaderImport(ref);
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<Widget> sections = <Widget>[
+      // 起点卡：怎么拿到 .hoshi 备份 + 选文件（tonal，扫描 / 导入中禁用）。
+      FushiCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const FushiListLeadingIcon(
+                  FushiIcons.importFile,
+                  shape: FushiLeadingShape.cookie,
+                  tone: FushiCardTone.primary,
+                ),
+                SizedBox(width: tokens.spacing.card),
+                Expanded(
+                  child: Text(
+                    t.hoshi_import_how_to,
+                    style: context.fushiType.bodyLarge,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.card),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: FushiFilledButton.tonalIcon(
+                onPressed: _scanning || _running ? null : _pickBackup,
+                icon: const FushiIcon(FushiIcons.folderOpen),
+                label: Text(t.hoshi_import_file_pick),
+              ),
+            ),
+          ],
+        ),
+      ),
+      if (_scanning) FushiLoadingView(message: t.hoshi_import_scan_running),
+      // 错误走共享提示块（中性底 + 错误色图标），不再是裸红字。
+      if (_error != null)
+        FushiInlineNotice(
+          severity: FushiNoticeSeverity.error,
+          message: _error!,
+        ),
+      if (_preview != null) _buildPreview(theme, _preview!),
+      if (_report != null) _buildReport(theme, _report!),
+    ];
     return PopScope(
       canPop: !_running,
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (!didPop && _running) setState(() => _cancelRequested = true);
       },
-      child: Scaffold(
-        appBar: AppBar(title: Text(t.hoshi_import_entry)),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: <Widget>[
-            Text(t.hoshi_import_how_to),
-            const SizedBox(height: 16),
-            FilledButton.tonalIcon(
-              onPressed: _scanning || _running ? null : _pickBackup,
-              icon: const Icon(Icons.folder_open_outlined),
-              label: Text(t.hoshi_import_file_pick),
+      child: FushiPageScaffold(
+        title: t.hoshi_import_entry,
+        body: FushiEntranceScope(
+          // 扫描结果 / 导入报告落地时重开进场窗口。
+          replayKey: Object.hash(_preview, _report),
+          // 页头浮在正文上（脚手架默认 extendBodyBehindHeader）：顶部让位从
+          // body 子树的 context 读（State 的 context 在脚手架之上）。
+          child: Builder(
+            builder: (BuildContext context) => ListView(
+              padding: withBottomSafeInset(
+                context,
+                EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.gap + MediaQuery.paddingOf(context).top,
+                  tokens.spacing.page,
+                  tokens.spacing.section,
+                ),
+              ),
+              children: <Widget>[
+                for (int i = 0; i < sections.length; i++)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      bottom: i == sections.length - 1
+                          ? 0
+                          : tokens.spacing.card,
+                    ),
+                    child: FushiStaggeredEntrance(index: i, child: sections[i]),
+                  ),
+              ],
             ),
-            const SizedBox(height: 16),
-            if (_scanning) ...<Widget>[
-              const Center(child: CircularProgressIndicator()),
-              const SizedBox(height: 12),
-              Text(t.hoshi_import_scan_running, textAlign: TextAlign.center),
-            ],
-            if (_error != null)
-              Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
-            if (_preview != null) _buildPreview(theme, _preview!),
-            if (_report != null) _buildReport(theme, _report!),
-          ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildPreview(ThemeData theme, ExternalReaderImportPreview preview) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiTypography type = context.fushiType;
+    final double? progress = _progressValue;
     return FushiCard(
-      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -210,36 +369,52 @@ class _ExternalReaderImportPageState
               existingBooks: preview.existingBooks,
               statsOnlyBooks: preview.statsOnlyBooks,
             ),
+            style: type.bodyLarge,
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: tokens.spacing.gap / 2),
           Text(
             t.hoshi_import_summary_records(
               records: preview.statRecords,
               positions: preview.positions,
             ),
+            style: type.bodyMedium.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           if (preview.profileName.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 4),
+            SizedBox(height: tokens.spacing.gap / 2),
             Text(
               t.hoshi_import_summary_profile(name: preview.profileName),
-              style: theme.textTheme.bodySmall,
+              style: type.bodySmall.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
-          const SizedBox(height: 16),
+          SizedBox(height: tokens.spacing.card),
           if (_running) ...<Widget>[
-            LinearProgressIndicator(value: _progressValue),
+            // 进度：Display 大数字百分比 + M3E 波浪进度条。
+            if (progress != null)
+              Text(
+                '${(progress * 100).floor()}%',
+                style: type.displaySmallEmphasized.tabular.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            SizedBox(height: tokens.spacing.gap),
+            FushiLinearProgressIndicator(value: progress, minHeight: 8),
             if (_progressLabel != null) ...<Widget>[
-              const SizedBox(height: 8),
+              SizedBox(height: tokens.spacing.gap),
               Text(
                 _progressLabel!,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+                style: type.bodyMedium,
               ),
             ],
-            const SizedBox(height: 8),
+            SizedBox(height: tokens.spacing.gap),
             Align(
               alignment: AlignmentDirectional.centerEnd,
-              child: TextButton(
+              child: FushiTextButton(
                 onPressed: _cancelRequested
                     ? null
                     : () => setState(() => _cancelRequested = true),
@@ -247,9 +422,14 @@ class _ExternalReaderImportPageState
               ),
             ),
           ] else
-            FilledButton(
-              onPressed: _runImport,
-              child: Text(t.hoshi_import_run_start),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: FushiFilledButton.icon(
+                size: FushiButtonSize.m,
+                onPressed: _runImport,
+                icon: const FushiIcon(FushiIcons.download),
+                label: Text(t.hoshi_import_run_start),
+              ),
             ),
         ],
       ),
@@ -257,70 +437,98 @@ class _ExternalReaderImportPageState
   }
 
   Widget _buildReport(ThemeData theme, ExternalReaderImportReport report) {
-    return FushiCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Text(
-            report.cancelled
-                ? t.hoshi_import_result_cancelled
-                : t.hoshi_import_result_done,
-            style: theme.textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            t.hoshi_import_result_books(
-              imported: report.booksImported,
-              matched: report.booksMatched,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            t.hoshi_import_result_stats(
-              sessions: report.sessionsImported,
-              days: report.daysImported,
-              positions: report.positionsWritten,
-            ),
-          ),
-          if (report.legacyRecordsSkipped > 0) ...<Widget>[
-            const SizedBox(height: 4),
-            Text(
-              t.hoshi_import_result_legacy_skipped(
-                count: report.legacyRecordsSkipped,
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiTypography type = context.fushiType;
+    final FushiCardTone tone = report.cancelled
+        ? FushiCardTone.tertiary
+        : FushiCardTone.primary;
+    final Color? onTone = fushiCardToneColors(context, tone)?.onContainer;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        // 结果：完成 = primary 色块，被取消 = tertiary 色块。
+        FushiCard(
+          tone: tone,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  FushiIcon(
+                    report.cancelled ? FushiIcons.info : FushiIcons.success,
+                  ),
+                  SizedBox(width: tokens.spacing.gap),
+                  Expanded(
+                    child: Text(
+                      report.cancelled
+                          ? t.hoshi_import_result_cancelled
+                          : t.hoshi_import_result_done,
+                      style: type.titleLargeEmphasized.copyWith(color: onTone),
+                    ),
+                  ),
+                ],
               ),
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-          if (report.segmentsSuppressedByDeletion > 0) ...<Widget>[
-            const SizedBox(height: 4),
-            Text(
-              t.hoshi_import_result_deleted_skipped(
-                count: report.segmentsSuppressedByDeletion,
-              ),
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-          if (report.failures.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 12),
-            Text(
-              t.hoshi_import_result_failed(count: report.failures.length),
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
-            for (final ExternalReaderImportFailure failure in report.failures)
-              FushiListItem(
-                density: FushiListDensity.compact,
-                leading: Icon(
-                  Icons.error_outline,
-                  color: theme.colorScheme.error,
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.hoshi_import_result_books(
+                  imported: report.booksImported,
+                  matched: report.booksMatched,
                 ),
-                title: Text(failure.title),
-                subtitle: Text(failure.reason),
+                style: type.bodyLarge.copyWith(color: onTone),
+              ),
+              SizedBox(height: tokens.spacing.gap / 2),
+              Text(
+                t.hoshi_import_result_stats(
+                  sessions: report.sessionsImported,
+                  days: report.daysImported,
+                  positions: report.positionsWritten,
+                ),
+                style: type.bodyMedium.copyWith(color: onTone),
+              ),
+              if (report.legacyRecordsSkipped > 0) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  t.hoshi_import_result_legacy_skipped(
+                    count: report.legacyRecordsSkipped,
+                  ),
+                  style: type.bodySmall.copyWith(color: onTone),
+                ),
+              ],
+              if (report.segmentsSuppressedByDeletion > 0) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  t.hoshi_import_result_deleted_skipped(
+                    count: report.segmentsSuppressedByDeletion,
+                  ),
+                  style: type.bodySmall.copyWith(color: onTone),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (report.failures.isNotEmpty) ...<Widget>[
+          SizedBox(height: tokens.spacing.card),
+          FushiSectionTitle.group(
+            t.hoshi_import_result_failed(count: report.failures.length),
+            padding: EdgeInsets.zero,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          for (int i = 0; i < report.failures.length; i++)
+            FushiGroupedListItem(
+              index: i,
+              count: report.failures.length,
+              child: FushiListItem(
+                leading: const FushiListLeadingIcon(
+                  FushiIcons.error,
+                  tone: FushiCardTone.error,
+                ),
+                title: Text(report.failures[i].title),
+                subtitle: Text(report.failures[i].reason),
                 titleMaxLines: 2,
               ),
-          ],
+            ),
         ],
-      ),
+      ],
     );
   }
 }

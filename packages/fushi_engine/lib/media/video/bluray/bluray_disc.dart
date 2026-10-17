@@ -83,6 +83,7 @@ class BlurayDisc {
     required this.name,
     required this.playlists,
     required this.titles,
+    this.extras = const <BlurayTitle>[],
   });
 
   /// 含 `BDMV` 的那一层目录。
@@ -96,6 +97,11 @@ class BlurayDisc {
 
   /// 筛选后的标题，按编号升序。
   final List<BlurayTitle> titles;
+
+  /// 这张盘的特典（制作特辑、PV、菜单里「特典映像」那一类），按编号升序：可独立
+  /// 播放、但没被选成标题的播放列表，已去掉厂标 / 警告、菜单背景循环、标题的重复
+  /// 与章节子集（[selectBlurayExtras]）。它们入库但不进盘合集，挂在正片作品下。
+  final List<BlurayTitle> extras;
 
   /// 最长标题在 [titles] 里的下标；[titles] 为空时为 null。
   int? get mainTitleIndex {
@@ -269,7 +275,89 @@ Future<BlurayDisc?> readBlurayDisc(String rootPath) async {
     name: name,
     playlists: List<BlurayPlaylist>.unmodifiable(playlists),
     titles: List<BlurayTitle>.unmodifiable(titles),
+    extras: List<BlurayTitle>.unmodifiable(
+      selectBlurayExtras(
+        playlists,
+        titles: titles,
+        discRootPath: root,
+        discName: name,
+        presentClipIds: presentClips,
+      ),
+    ),
   );
+}
+
+/// 盘上没被选成标题、但仍是一段可独立观看内容的播放列表在库里的名字：与标题的
+/// `<盘名> - NN` 同形，编号用 MPLS 号以免与标题序号撞名。
+String blurayMenuTitleName(String discName, String playlistId) =>
+    '$discName - $playlistId';
+
+/// 从一盘播放列表里挑出特典。纯函数。
+///
+/// 与 [selectBlurayTitles] 共用逐条判据（可播放类型、[minimumDuration] 绝对下限——
+/// 厂标 / 警告画面都在一分钟内、有视频流、片段都在），再去掉：
+/// - 菜单背景循环：同一段片段在一条播放列表里重复出现（实测菜单背景是同一个
+///   m2ts 连排 7 次）；
+/// - 标题的重复与章节子集：片段全被某条标题包含；
+/// - 特典之间的重复（同签名只留一条）与「全部播放」形状。
+List<BlurayTitle> selectBlurayExtras(
+  List<BlurayPlaylist> playlists, {
+  required List<BlurayTitle> titles,
+  required String discRootPath,
+  required String discName,
+  Set<String>? presentClipIds,
+  Duration minimumDuration = kBlurayMinimumTitleDuration,
+}) {
+  final int minimumTicks =
+      minimumDuration.inMilliseconds * kBlurayTimeScale ~/ 1000;
+  final Set<String> titleIds = <String>{
+    for (final BlurayTitle title in titles) title.playlist.id,
+  };
+  final List<Set<String>> titleClips = <Set<String>>[
+    for (final BlurayTitle title in titles) title.playlist.clipIds.toSet(),
+  ];
+  final Map<String, BlurayPlaylist> bySignature = <String, BlurayPlaylist>{};
+  for (final BlurayPlaylist playlist in playlists) {
+    if (titleIds.contains(playlist.id)) continue;
+    if (playlist.playbackType != 1) continue;
+    if (playlist.durationTicks < minimumTicks) continue;
+    if (playlist.videoStreams.isEmpty) continue;
+    if (presentClipIds != null &&
+        !playlist.clipIds.every(
+          (String id) => presentClipIds.contains(id.toUpperCase()),
+        )) {
+      continue;
+    }
+    final Set<String> clips = playlist.clipIds.toSet();
+    if (clips.length != playlist.clips.length) continue;
+    if (titleClips.any((Set<String> title) => title.containsAll(clips))) {
+      continue;
+    }
+    final String signature = _contentSignature(playlist);
+    final BlurayPlaylist? existing = bySignature[signature];
+    if (existing == null || _prefersOver(playlist, existing)) {
+      bySignature[signature] = playlist;
+    }
+  }
+  final List<BlurayPlaylist> unique = bySignature.values.toList();
+  final List<BlurayPlaylist> pool = <BlurayPlaylist>[
+    for (final BlurayTitle title in titles) title.playlist,
+    ...unique,
+  ];
+  final List<BlurayPlaylist> kept =
+      unique
+          .where((BlurayPlaylist playlist) => !_isPlayAllOf(playlist, pool))
+          .toList()
+        ..sort((BlurayPlaylist a, BlurayPlaylist b) => a.id.compareTo(b.id));
+  return <BlurayTitle>[
+    for (final BlurayPlaylist playlist in kept)
+      BlurayTitle(
+        playlist: playlist,
+        discRootPath: discRootPath,
+        name: blurayMenuTitleName(discName, playlist.id),
+        isMainFeature: false,
+      ),
+  ];
 }
 
 Future<BlurayPlaylist?> _readPlaylistFile(File file) async {

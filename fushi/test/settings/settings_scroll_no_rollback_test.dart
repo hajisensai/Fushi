@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -57,7 +57,7 @@ void main() {
     addTearDown(themeNotifier.dispose);
 
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_settings_scroll_');
+        Directory.systemTemp.createTempSync('fushi_settings_scroll_');
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);

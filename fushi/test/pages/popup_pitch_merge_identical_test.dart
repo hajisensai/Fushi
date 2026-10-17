@@ -186,7 +186,8 @@ void main() {
       for (final String needle in <String>[
         "className: 'pitch-dict-label pitch-dict-count'",
         'window.i18nPitchSourceCount',
-        "title: sourcePills.map((pill) => pill.textContent).join(', ')",
+        // 10-09 起来源名单走文档内提示（data-sources），不用原生 title（BUG-3094）。
+        "'data-sources': sourceNames",
         "countPill.addEventListener('click'",
         "'aria-expanded'",
       ]) {

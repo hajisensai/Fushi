@@ -1,5 +1,5 @@
 // BUG-732 behavior test: the shared lookup popup wheel handler must NOT hijack a
-// normal web page's scrolling when Hibiki's browser extension is installed.
+// normal web page's scrolling when Fushi's browser extension is installed.
 //
 // Root cause it locks: popup.js is injected as a content script on <all_urls>.
 // Its document 'wheel' listener re-implements scrolling for the *dictionary
@@ -88,7 +88,7 @@ function loadWheelHandler(opts) {
     getComputedStyle() { return {}; },
   };
   if (opts.extension) {
-    sandbox.chrome = { runtime: { id: 'hibiki-extension-id' } };
+    sandbox.chrome = { runtime: { id: 'fushi-extension-id' } };
   }
   sandbox.globalThis = sandbox;
 

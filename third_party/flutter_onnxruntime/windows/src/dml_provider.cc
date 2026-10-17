@@ -5,6 +5,7 @@
 // LICENSE file in the root directory of this source tree.
 
 #include "src/dml_provider.h"
+#include "src/ort_runtime_loader.h"
 
 // 本文件**刻意不包含任何 flutter 头**：见 dml_provider.h 的说明——
 // `dml_provider_factory.h` 与 `flutter_windows.h` 各有一个全局 `Default` 枚举量，
@@ -24,7 +25,7 @@ void AppendDirectMLProvider(Ort::SessionOptions &session_options,
 
   const OrtDmlApi *dml_api = nullptr;
   Ort::ThrowOnError(Ort::GetApi().GetExecutionProviderApi(
-      "DML", ORT_API_VERSION, reinterpret_cast<const void **>(&dml_api)));
+      "DML", kOrtApiVersionUsed, reinterpret_cast<const void **>(&dml_api)));
   if (dml_api == nullptr) {
     throw std::runtime_error("ONNX Runtime returned no DirectML provider API");
   }

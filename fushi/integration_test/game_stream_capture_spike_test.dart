@@ -223,11 +223,11 @@ void main() {
                 'remote description set; flushing ${pendingHostCandidates.length} pending host ICE',
               );
               for (final RTCIceCandidate candidate in pendingHostCandidates) {
-                await client.addCandidate(candidate);
+                await client!.addCandidate(candidate);
               }
               pendingHostCandidates.clear();
-              final RTCSessionDescription answer = await client.createAnswer();
-              await client.setLocalDescription(answer);
+              final RTCSessionDescription answer = await client!.createAnswer();
+              await client!.setLocalDescription(answer);
               log('created local answer');
               clientSignals = clientSignals.then(
                 (_) => _sendClientSignal(

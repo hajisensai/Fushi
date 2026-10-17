@@ -1,5 +1,5 @@
 import 'dart:ui' as ui;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 typedef LoadCallback<T> = void Function(ImageInfo image, T obj, Object? key);
 

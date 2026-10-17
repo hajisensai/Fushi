@@ -27,8 +27,8 @@ void main() {
   late Directory tmp;
   late Directory defaultDocs;
 
-  /// BUG-1115：默认 documents 根 = `<平台 Documents>/Hibiki/data`（全新安装；本文件的
-  /// mock support 根下没有 `hibiki.db`，故一律判为新装）。
+  /// BUG-1115：默认 documents 根 = `<平台 Documents>/Fushi/data`（全新安装；本文件的
+  /// mock support 根下没有 `fushi.db`，故一律判为新装）。
   String defaultDocsRoot() => p.joinAll(<String>[
         defaultDocs.path,
         ...AppPaths.defaultDocumentsChildSegments,
@@ -36,7 +36,7 @@ void main() {
 
   setUp(() {
     AppPaths.debugResetDocumentsLayoutCache();
-    tmp = Directory.systemTemp.createTempSync('hibiki_wpaths_');
+    tmp = Directory.systemTemp.createTempSync('fushi_wpaths_');
     defaultDocs = Directory(p.join(tmp.path, 'default_documents'))
       ..createSync(recursive: true);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -89,9 +89,9 @@ void main() {
         isTrue);
   });
 
-  test('未设自定义数据根（全新安装）→ 三个写路径落 <Documents>/Hibiki/data', () async {
+  test('未设自定义数据根（全新安装）→ 三个写路径落 <Documents>/Fushi/data', () async {
     AppPaths.debugDataRootReader = () async => '';
-    // 默认布局判定只在启动期的 resolve() 里做（mock support 根下无 hibiki.db → 新装）。
+    // 默认布局判定只在启动期的 resolve() 里做（mock support 根下无 fushi.db → 新装）。
     await AppPaths.resolve();
 
     expect((await AppPaths.videoSubtitlesDirectory()).path,
@@ -102,7 +102,7 @@ void main() {
         p.equals(await AudiobookStorage.audiobooksRootDir(),
             p.join(defaultDocsRoot(), 'audiobooks')),
         isTrue);
-    // BUG-1115 的核心断言：用户文档根下不再直接出现 Hibiki 的内容目录。
+    // BUG-1115 的核心断言：用户文档根下不再直接出现 Fushi 的内容目录。
     expect((await AppPaths.videoCoversDirectory()).path,
         isNot(equals(p.join(defaultDocs.path, 'video_covers'))));
   });

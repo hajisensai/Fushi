@@ -13,7 +13,7 @@ void main() {
     expect(source, contains('debugToggleLyricsMode'));
     expect(source, contains('debugLyricsModeReady'));
     expect(source, contains("ValueKey<String>('fushi_lyrics_ready')"));
-    expect(source, contains("identifier: 'hibiki.reader.lyrics.ready'"));
+    expect(source, contains("identifier: 'fushi.reader.lyrics.ready'"));
     expect(source, contains('debugOpenQuickSettings = null'));
     expect(source, contains('debugToggleLyricsMode = null'));
     expect(source, contains('debugLyricsModeReady = null'));
@@ -33,7 +33,7 @@ void main() {
     // Semantics(identifier:)；两段合起来才是「真落地」，缺一段都只是字符串。
     expect(
       readerSource,
-      contains("semanticsId: 'hibiki.reader.bottom.settings'"),
+      contains("semanticsId: 'fushi.reader.bottom.settings'"),
       reason: 'XCUITest needs a stable id for the non-audiobook settings gear.',
     );
     expect(
@@ -43,13 +43,13 @@ void main() {
     );
     expect(
       playBarSource,
-      contains("semanticsIdentifier: 'hibiki.reader.audiobook.settings'"),
+      contains("semanticsIdentifier: 'fushi.reader.audiobook.settings'"),
       reason: 'XCUITest needs a stable id for the audiobook settings gear.',
     );
     expect(playBarSource, contains('identifier: semanticsIdentifier'));
     expect(
       quickSettingsSource,
-      contains("identifier: 'hibiki.reader.quick_settings.lyrics_toggle'"),
+      contains("identifier: 'fushi.reader.quick_settings.lyrics_toggle'"),
       reason: 'XCUITest/Appium need a stable id for the lyrics-mode action.',
     );
   });

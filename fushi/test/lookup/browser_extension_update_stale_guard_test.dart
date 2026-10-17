@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 恢复一致清除）+ action-popup 提示 + 图标角标（录制角标优先）+ 状态请求自报
 /// build/version + server 解析回调 + app_model 记录 + 扩展管理页双行版本卡与警示条。
 ///
-/// flutter test cwd is the hibiki package root.
+/// flutter test cwd is the fushi package root.
 void main() {
   const Map<String, String> mirrors = <String, String>{
     'assets': 'assets/browser_extension',
@@ -158,12 +158,12 @@ void main() {
       'server parses the reported build from the status body (tolerant)',
       () {
         final String src = File(
-          'lib/src/sync/yomitan_api_server.dart',
+          'lib/src/sync/fushi_api_server.dart',
         ).readAsStringSync();
         expect(
           src.contains('onExtensionReport'),
           isTrue,
-          reason: 'yomitan_api_server.dart must expose the report callback',
+          reason: 'fushi_api_server.dart must expose the report callback',
         );
         expect(
           src.contains('_handleExtensionStatus'),

@@ -17,7 +17,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// 一个待分组条目的最小身份 + 排序回退键 + 渲染载荷。
 ///
-/// 命名统一 Phase 3.3：身份二元组语义收口进 hibiki_core 的 [MediaRef]——
+/// 命名统一 Phase 3.3：身份二元组语义收口进 fushi_core 的 [MediaRef]——
 /// 复合键经 [ref] 视图生成（字段本体仍留在本类：Dart const 构造的初始化列表
 /// 不允许用参数新建 const 对象，存 [MediaRef] 会丢 const 构造）。
 class CollectionOrderingItem<T> {
@@ -84,6 +84,27 @@ bool keepMemberUnderTagFilter({
   if (memberMatched) return true;
   if (collectionFilter == null || primaryCollectionId == null) return false;
   return collectionFilter.contains(primaryCollectionId);
+}
+
+/// 标签筛选下一个**已折叠出的合集组**是否保留（[keepMemberUnderTagFilter] 的组级
+/// 另一半）。
+///
+/// 根因（BUG-2968）：库页在折叠后又按「合集自身是否命中全部选中标签」整组删除。
+/// 但成员级过滤（[keepMemberUnderTagFilter]）已经放行了「自己命中标签」的成员——
+/// 书打了标签、所在合集没打时，这本书活到了折叠阶段、被折进合集组，随后整组因合集
+/// 没打标签被删掉，书就从库页上消失了（用户实报「按标签选也找不到书」）。
+///
+/// 修法：组保留当且仅当合集自身命中（[collectionFilter] 含 [collectionId]），**或**
+/// 组内至少一个成员自己命中标签（[anyMemberMatched]）。后者保留的组只含命中的成员
+/// （未命中的成员已在成员级过滤阶段剔除），合集卡 / 横排行显示的就是「这个合集里
+/// 带这个标签的书」。[collectionFilter] 为 null（无选中标签）恒保留。
+bool keepCollectionGroupUnderTagFilter({
+  required int collectionId,
+  required Set<int>? collectionFilter,
+  required bool anyMemberMatched,
+}) {
+  if (collectionFilter == null) return true;
+  return anyMemberMatched || collectionFilter.contains(collectionId);
 }
 
 /// 把 [items] 按所属合集折叠，返回 group 列表（散 group 保持输入序、合集 group 在

@@ -1,0 +1,79 @@
+# 合并时收口 BUG 号撞号（2026-10-13）。
+#
+# 取号（`tool/bug.dart new`）不加锁，也不再遍历全部分支 / 工作区——只看本地与
+# origin/develop。并发分支各自取到同一个号是常态；它们先后合进 develop 后，这里在
+# **最新的 develop 尖端**上跑 `bug.dart settle`：每组同号文件里最早进入 develop 首父链
+# （`git log --first-parent --diff-filter=A`）的那份保留原号，其余依次改到下一个空号
+# （文件名 / 正文 H2 / 它进入 develop 那次合并改动里的引用一起改，范围外文件断言一字未变），
+# 再重建 docs/BUGS.md 索引（它在 .gitattributes 里是 merge=union，合并不冲突，但行序可能乱）。
+# 没有改动就什么都不提交。
+#
+# 判据是无状态的，不用 `github.event.before` / `github.sha`：
+#   · concurrency 组只保留一个排队中的 run，挨着来的多次 push 会把中间那次的 run 取消；
+#   · run 之间会乱序，跑着的时候 develop 还会被别人推进。
+# 以前「以 push 前的 sha 为基线、只改这次 push 带进来的那份」在相邻两次 push 下会把一组撞号
+# 永久卡死（两份都已在那个 sha 上，判不出谁是新的）。现在每次都按 develop 自己的历史整轮算，
+# 被取消 / 乱序的 run 留下的撞号由下一次一并收口。
+#
+# 推送用乐观并发：push 被拒（develop 在本轮期间又前进了）就丢掉本轮结果，重新 fetch 尖端、
+# 整轮 settle 重算后再推——不 rebase 旧结果（旧结果的号是按旧尖端算的，rebase 过去就是错号）。
+#
+# 用 GITHUB_TOKEN 推回 develop：本仓刻意不设分支保护（日常直推 develop），所以推得进去；
+# GITHUB_TOKEN 推送不会再触发 workflow，不会自我循环。
+name: Settle BUG numbers
+
+on:
+  push:
+    branches: ['develop']
+    paths:
+      - 'docs/bugs/**'
+      - 'docs/BUGS.md'
+
+permissions:
+  contents: write
+
+# 只是省掉同时跑两份的重复功：正确性不靠它（排队的 run 会被替换掉，见文件头），
+# 靠的是每轮都从最新尖端整轮重算 + 推送被拒就重来。
+concurrency:
+  group: bug-number-settle
+  cancel-in-progress: false
+
+jobs:
+  settle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: develop
+          # 首父链判据要完整历史。
+          fetch-depth: 0
+      # bug.dart 只用 dart:*，不需要 pub get。版本与 Flutter 3.47.6 自带的 Dart 一致。
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: '3.12.0'
+      - name: Settle on the latest develop tip
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch --quiet origin '+refs/heads/develop:refs/remotes/origin/develop'
+            git checkout --quiet -B develop origin/develop
+            git reset --quiet --hard origin/develop
+            git clean --quiet -fd
+            # --scan：新号同时避开其它在飞分支上已占的号，少一轮连环改号。
+            dart tool/bug.dart settle --base origin/develop --scan
+            if [ -z "$(git status --porcelain)" ]; then
+              echo "没有撞号，索引已同步"
+              exit 0
+            fi
+            git add -A
+            git commit --quiet -m "chore(bugs): settle BUG number collisions on $(git rev-parse --short=9 origin/develop)"
+            if git push origin HEAD:refs/heads/develop; then
+              exit 0
+            fi
+            echo "::notice::第 ${attempt} 次推送被拒：develop 在收口期间前进了，丢弃本轮结果，按新尖端整轮重算"
+          done
+          echo "::error::连续 5 次推送都被拒（develop 推进太频繁）；下一次 develop push 触发的 settle 会按同一判据补上"
+          exit 1

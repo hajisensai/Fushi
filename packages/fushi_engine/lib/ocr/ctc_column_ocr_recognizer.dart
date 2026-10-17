@@ -25,6 +25,7 @@ library;
 import 'package:image/image.dart' as img;
 
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_line_layout.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
@@ -59,8 +60,11 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
     required bool vertical,
     List<OcrRect>? lineHints,
   }) async {
-    final List<OcrRect> detected =
-        lineHints ?? await _lineDetector.detectInBlock(page, box);
+    // 调用方给了行框时倾角归调用方（路由层用同一次检测估好再挂回来）。
+    final ({List<OcrRect> lines, double tilt}) layout = lineHints != null
+        ? (lines: lineHints, tilt: 0.0)
+        : await _lineDetector.detectLayoutInBlock(page, box);
+    final List<OcrRect> detected = layout.lines;
     // 方向按检出行长度投票（宽扁的多列竖排常被外形或碎片带偏），没有明确的行时
     // 保持调用方的判断。
     final bool blockVertical = voteOcrLineOrientation(detected) ?? vertical;
@@ -73,7 +77,7 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
     );
     if (lines.isEmpty) {
       // 一行都没检到：整块当一行读（竖排同样先转向），没有行几何可给。
-      final ({String text, double? confidence}) whole = await _readRegion(
+      final _ReadLine whole = await _readRegion(
         page,
         box,
         vertical: blockVertical,
@@ -86,6 +90,8 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
     }
     final List<String> texts = <String>[];
     final List<OcrRect> boxes = <OcrRect>[];
+    final List<List<OcrGlyphBox>?> glyphs = <List<OcrGlyphBox>?>[];
+    int utf16Offset = 0;
     double? confidence;
     for (final OcrRect line in lines) {
       final OcrRect region = line.clamp(
@@ -93,7 +99,7 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
         page.height.toDouble(),
       );
       if (region.width < 1 || region.height < 1) continue;
-      final ({String text, double? confidence}) read = await _readRegion(
+      final _ReadLine read = await _readRegion(
         page,
         region,
         vertical: blockVertical,
@@ -102,6 +108,18 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
       if (read.text.isEmpty) continue;
       texts.add(read.text);
       boxes.add(region);
+      // 行图沿阅读方向的 0 点就是裁图的左边（横行）/ 上边（竖列转向后的左边）。
+      glyphs.add(
+        ocrLineGlyphBoxes(
+          text: read.text,
+          tokens: read.tokens,
+          line: region,
+          vertical: blockVertical,
+          alongOrigin: (blockVertical ? read.cropY : read.cropX).toDouble(),
+          utf16Offset: utf16Offset,
+        ),
+      );
+      utf16Offset += read.text.length;
       confidence = minOcrConfidence(confidence, read.confidence);
     }
     // 检到了行却一个字都没读出：不再整块重读——多列块当一行读只会得到串列的乱码。
@@ -113,22 +131,60 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
       vertical: blockVertical,
       lines: texts,
       lineBoxes: boxes,
+      lineTilt: layout.tilt,
       confidence: confidence,
+      glyphBoxes: joinOcrLineGlyphBoxes(glyphs),
     );
   }
 
   /// 裁出 [region]（页面坐标）交行识别器。竖排先逆时针转 90°：列顶转到左边，
   /// 从上往下读的列变成从左往右读的横行（PaddleOCR 对竖行同样是 `np.rot90`）。
-  Future<({String text, double? confidence})> _readRegion(
+  ///
+  /// 逆时针转 90° 后行图的 x 就是原列图的 y（`copyRotate` 270°：
+  /// `dst(x, y) = src(w - 1 - y, x)`），所以 token 位置加上裁图上边就是页面 y。
+  Future<_ReadLine> _readRegion(
     img.Image page,
     OcrRect region, {
     required bool vertical,
   }) async {
     final OcrBlockCrop? crop = cropOcrBlock(page, region);
-    if (crop == null) return (text: '', confidence: null);
+    if (crop == null) {
+      return const _ReadLine(
+        text: '',
+        confidence: null,
+        tokens: <OcrLineToken>[],
+        cropX: 0,
+        cropY: 0,
+      );
+    }
     // copyRotate 的正角是顺时针，-90 即逆时针 90°。
-    return _lineRecognizer.recognizeLineScored(
-      vertical ? img.copyRotate(crop.image, angle: -90) : crop.image,
+    final PpOcrPositionedLine read = await _lineRecognizer
+        .recognizeLinePositioned(
+          vertical ? img.copyRotate(crop.image, angle: -90) : crop.image,
+        );
+    return _ReadLine(
+      text: read.text,
+      confidence: read.confidence,
+      tokens: read.tokens,
+      cropX: crop.x,
+      cropY: crop.y,
     );
   }
+}
+
+/// 一行的识别结果 + 行裁图左上角的页面坐标（换算 token 位置用）。
+class _ReadLine {
+  const _ReadLine({
+    required this.text,
+    required this.confidence,
+    required this.tokens,
+    required this.cropX,
+    required this.cropY,
+  });
+
+  final String text;
+  final double? confidence;
+  final List<OcrLineToken> tokens;
+  final int cropX;
+  final int cropY;
 }

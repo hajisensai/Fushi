@@ -1,0 +1,12 @@
+## BUG-3322 · Jellyfin 延迟位置心跳覆盖暂停状态
+- **报告**：2026-10-12，在排查离开播放后被提前记为完成的问题时发现。
+- **验证**：已通过生产客户端和 API 复现协议缺陷：未修改的 develop 在 10 个新增回归用例中有 7 个失败；修复后的定向测试批次 133 个用例全部通过。原始设备端事件尚未完成端到端复现。
+- **根因**：`fushi/lib/src/pages/implementations/video_fushi_page.dart:2992` 在进入后台时发起不等待完成的位置刷新，而 `_persistRemotePosition`（`:4334`）需要等待数据库写入。原生播放状态监听器（`:4424`）因此可以先上报 `IsPaused: true`，位置刷新随后才调用 `JellyfinVideoClient.putRemoteVideoPosition`。该心跳（`fushi/lib/src/sync/jellyfin_video_client.dart:3311`）原先没有传入 `isPaused`，导致 `JellyfinApi.reportProgress`（`:1733`）序列化默认值 `false`，覆盖已暂停的状态。只有原有心跳节流允许这次延迟请求时才会发生覆盖。
+- **[x] ① 根因修复**（[提交 608b407](https://github.com/MarvNC/Fushi/commit/608b4075b3b02566873b8fb889a7c46e7a8f783c)）：按条目保留最近一次本地暂停意图，在暂停/继续 HTTP 请求发出前同步更新，位置心跳使用该状态。Start 清除旧状态，包括未协商出会话的兼容路径。Stop 保留暂停意图，避免仍在等待落库的退出刷新错误地上报继续播放。
+- **[x] ② 自动化回归**（[提交 608b407](https://github.com/MarvNC/Fushi/commit/608b4075b3b02566873b8fb889a7c46e7a8f783c)）：`fushi/test/sync/jellyfin_paused_heartbeat_test.dart` 使用生产客户端/API 和 HTTP mock，覆盖延迟、未完成及失败的暂停上报；播放/继续；条目隔离；Start 重置；旧会话 FIFO Stop；最终会话 Stop 后的延迟刷新。
+- **检查结果**：最终格式化后的定向批次 133 个用例通过；全量 Flutter 分析无问题；独立源码与测试审查通过。未进行设备构建或真实账户测试。
+- **范围与限制**：
+  - 未修改生命周期决策、完成阈值、服务器/账户配置，也没有新增 Stop 调用。
+  - 已发出的 HTTP 请求仍可能乱序到达；本修复保证在本地暂停意图更新之后构造的位置心跳使用正确状态。
+  - 若进程在生命周期/暂停事件送达前被强制终止，客户端无法保证最后一次上报。Android 真机及 Jellyfin/Ani-Sync 端到端复测尚未进行。
+  - Jellyfin 另有闲置会话位置推算问题，见上游 [PR #17631](https://github.com/jellyfin/jellyfin/pull/17631)。本记录不认定原始事件已经触发该服务器路径。

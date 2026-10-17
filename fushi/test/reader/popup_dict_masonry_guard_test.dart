@@ -24,15 +24,22 @@ void main() {
   });
 
   test('存在 masonry 布局函数，且列数从 --dict-columns 读取（一般化 Niratan 的写死 2 列）', () {
-    expect(js.contains('function layoutMasonry('), isTrue,
-        reason: 'masonry 主函数 layoutMasonry 必须存在');
-    expect(js.contains('function dictColumns('), isTrue,
-        reason: '列数来源 dictColumns() 必须存在');
     expect(
-        RegExp(r"getPropertyValue\(\s*'--dict-columns'\s*\)").hasMatch(js) ||
-            RegExp(r'getPropertyValue\(\s*"--dict-columns"\s*\)').hasMatch(js),
-        isTrue,
-        reason: '列数必须从宿主注入的 --dict-columns 读取，保留已发布的列数设置');
+      js.contains('function layoutMasonry('),
+      isTrue,
+      reason: 'masonry 主函数 layoutMasonry 必须存在',
+    );
+    expect(
+      js.contains('function dictColumns('),
+      isTrue,
+      reason: '列数来源 dictColumns() 必须存在',
+    );
+    expect(
+      RegExp(r"getPropertyValue\(\s*'--dict-columns'\s*\)").hasMatch(js) ||
+          RegExp(r'getPropertyValue\(\s*"--dict-columns"\s*\)').hasMatch(js),
+      isTrue,
+      reason: '列数必须从宿主注入的 --dict-columns 读取，保留已发布的列数设置',
+    );
   });
 
   test('自动调整生效：masonry 的 dictColumns() 用视口收敛的有效列数（BUG-fix）', () {
@@ -40,11 +47,17 @@ void main() {
     // 视口收敛（--dict-columns-effective = min(用户值, 每列 ≥170px 装得下的列数)），于是窄
     // 面板下「自动调整列数」对词典方框布局不生效——照塞满列、卡片互相挤压。修复：抽出
     // effectiveDictColumns() 作 grid 与 masonry 的单一真值来源，dictColumns() 改用它。
-    expect(js.contains('function effectiveDictColumns('), isTrue,
-        reason: '必须有 effectiveDictColumns() 作视口收敛的单一真值来源');
+    expect(
+      js.contains('function effectiveDictColumns('),
+      isTrue,
+      reason: '必须有 effectiveDictColumns() 作视口收敛的单一真值来源',
+    );
     // effectiveDictColumns 必须按视口宽 / 每列最小宽收敛（与 CSS grid 同一公式）。
-    expect(js.contains('DICT_COLUMN_MIN_WIDTH'), isTrue,
-        reason: '有效列数必须按每列最小宽 DICT_COLUMN_MIN_WIDTH 收敛');
+    expect(
+      js.contains('DICT_COLUMN_MIN_WIDTH'),
+      isTrue,
+      reason: '有效列数必须按每列最小宽 DICT_COLUMN_MIN_WIDTH 收敛',
+    );
     // 这里钉的是不变式「装得下的列数 = floor(视口宽 / 每列最小宽)」，**不是**
     // 某个字面除数。每列最小宽本身允许按设备变（触屏把门槛加倍，
     // 见 popup.js 的 colFloor）——旧写法把 `width / DICT_COLUMN_MIN_WIDTH` 整个写死，
@@ -55,19 +68,21 @@ void main() {
     final int edcEnd = js.indexOf('\n}', edcAt);
     expect(edcEnd, greaterThan(edcAt));
     final String edcBody = js.substring(edcAt, edcEnd);
-    final RegExpMatch? fitMatch =
-        RegExp(r'Math\.floor\(\s*width\s*/\s*([A-Za-z_$][\w$]*)\s*\)')
-            .firstMatch(edcBody);
-    expect(fitMatch, isNotNull,
-        reason: '装得下的列数 = floor(视口宽 / 每列最小宽)');
+    final RegExpMatch? fitMatch = RegExp(
+      r'Math\.floor\(\s*width\s*/\s*([A-Za-z_$][\w$]*)\s*\)',
+    ).firstMatch(edcBody);
+    expect(fitMatch, isNotNull, reason: '装得下的列数 = floor(视口宽 / 每列最小宽)');
     final String divisor = fitMatch!.group(1)!;
     if (divisor != 'DICT_COLUMN_MIN_WIDTH') {
       expect(
-          RegExp('(?:const|let|var)\\s+$divisor\\s*=[^;]*DICT_COLUMN_MIN_WIDTH')
-              .hasMatch(edcBody),
-          isTrue,
-          reason: '除数 $divisor 必须由 DICT_COLUMN_MIN_WIDTH 推出，'
-              '不能是另起炉灶的第二套门槛');
+        RegExp(
+          '(?:const|let|var)\\s+$divisor\\s*=[^;]*DICT_COLUMN_MIN_WIDTH',
+        ).hasMatch(edcBody),
+        isTrue,
+        reason:
+            '除数 $divisor 必须由 DICT_COLUMN_MIN_WIDTH 推出，'
+            '不能是另起炉灶的第二套门槛',
+      );
     }
     // dictColumns()（masonry 列数来源）必须委托给 effectiveDictColumns，而非读原始值。
     final int dcAt = js.indexOf('function dictColumns(');
@@ -75,91 +90,151 @@ void main() {
     final int dcEnd = js.indexOf('\n}', dcAt);
     expect(dcEnd, greaterThan(dcAt));
     final String dcBody = js.substring(dcAt, dcEnd);
-    expect(dcBody.contains('effectiveDictColumns()'), isTrue,
-        reason: 'masonry 的 dictColumns() 必须返回 effectiveDictColumns()（视口收敛），'
-            '否则窄面板下自动调整列数不生效');
+    expect(
+      dcBody.contains('effectiveDictColumns()'),
+      isTrue,
+      reason:
+          'masonry 的 dictColumns() 必须返回 effectiveDictColumns()（视口收敛），'
+          '否则窄面板下自动调整列数不生效',
+    );
   });
 
   test('核心是「最短列打包」：每张卡片放进当前最矮列（无空隙紧密堆）', () {
     // 选列逻辑：遍历列高数组，取更矮的一列。锁住这条 heights[i] < heights[c] 的最短列判据，
     // 防止退回按顺序填列（那会重现行对齐的空隙）。
-    expect(RegExp(r'heights\[i\]\s*<\s*heights\[c\]').hasMatch(js), isTrue,
-        reason: '必须按「当前最矮列」选列，才是 masonry 紧密堆，而非顺序/行对齐');
-    expect(js.contains('offsetHeight'), isTrue,
-        reason: '按卡片实测高度累加列高，才能把下一张压到最矮列底部');
+    expect(
+      RegExp(r'heights\[i\]\s*<\s*heights\[c\]').hasMatch(js),
+      isTrue,
+      reason: '必须按「当前最矮列」选列，才是 masonry 紧密堆，而非顺序/行对齐',
+    );
+    expect(
+      js.contains('offsetHeight'),
+      isTrue,
+      reason: '按卡片实测高度累加列高，才能把下一张压到最矮列底部',
+    );
   });
 
   test('masonry 用绝对定位 + translate 摆放，容器撑到最高列高度', () {
-    expect(RegExp(r"position\s*=\s*'absolute'").hasMatch(js), isTrue,
-        reason: '卡片绝对定位脱离行对齐流');
-    expect(RegExp(r'transform\s*=\s*`translate\(').hasMatch(js), isTrue,
-        reason: '用 transform: translate(x, y) 摆到目标列/行位置');
-    expect(RegExp(r'Math\.max\(\.\.\.heights\)').hasMatch(js), isTrue,
-        reason: '容器高度取最高列，避免绝对定位后容器塌陷');
+    expect(
+      RegExp(r"position\s*=\s*'absolute'").hasMatch(js),
+      isTrue,
+      reason: '卡片绝对定位脱离行对齐流',
+    );
+    expect(
+      RegExp(r'transform\s*=\s*`translate\(').hasMatch(js),
+      isTrue,
+      reason: '用 transform: translate(x, y) 摆到目标列/行位置',
+    );
+    expect(
+      RegExp(r'Math\.max\(\.\.\.heights\)').hasMatch(js),
+      isTrue,
+      reason: '容器高度取最高列，避免绝对定位后容器塌陷',
+    );
   });
 
-  test('粘着列分配：开关方框只上下动，列固定不左右跳 (用户反馈)', () {
+  test('BUG-2998：尺寸未变才复用列，展开收起后按当前高度重新分配', () {
     // 列号记录在卡片 dataset.masonryCol、列数记录在容器 dataset.masonryCols。
-    expect(js.contains('dataset.masonryCol'), isTrue,
-        reason: '每张卡片必须记录粘着列号 dataset.masonryCol');
-    expect(js.contains('dataset.masonryCols'), isTrue,
-        reason: '容器必须记录当时列数 dataset.masonryCols 以判断能否复用');
-    // 复用条件：列数没变(prevCols === cols) 且每张卡片都有合法列号 → 复用既有列，只重算纵向。
-    expect(RegExp(r'prevCols\s*===\s*cols').hasMatch(js), isTrue,
-        reason: '只有列数不变才复用粘着列（列数变才允许重排）');
-    expect(RegExp(r'canReuse').hasMatch(js), isTrue,
-        reason: 'canReuse 分支：复用列号时不得再跑最短列重新分列');
+    expect(
+      js.contains('dataset.masonryCol'),
+      isTrue,
+      reason: '每张卡片记录当前列号，供尺寸未变的测量复用',
+    );
+    expect(
+      js.contains('dataset.masonryCols'),
+      isTrue,
+      reason: '容器必须记录当时列数 dataset.masonryCols 以判断能否复用',
+    );
+    // 7 月的固定列需求已由当前「每次展开/收起重新优化」取代；只保留无变化时的稳定性。
+    expect(
+      RegExp(r'prevCols\s*===\s*cols').hasMatch(js),
+      isTrue,
+      reason: '列数变化仍必须重新分列',
+    );
+    expect(
+      RegExp(r'canReuse').hasMatch(js),
+      isTrue,
+      reason: 'canReuse 分支：复用列号时不得再跑最短列重新分列',
+    );
+    expect(
+      js.contains('item.__fushiMasonryHeight === itemHeights[index]'),
+      isTrue,
+      reason: '卡片高度变化必须使旧分列失效；完整行为由 popup_render_tail_batching_test 覆盖',
+    );
     // 回落时清记录，回到 masonry 会重新打包。
-    expect(js.contains('delete item.dataset.masonryCol'), isTrue,
-        reason: 'resetMasonryBody 必须清粘着列记录，避免陈旧列号跨单列/多列切换复用');
+    expect(
+      js.contains('delete item.dataset.masonryCol'),
+      isTrue,
+      reason: 'resetMasonryBody 必须清粘着列记录，避免陈旧列号跨单列/多列切换复用',
+    );
   });
 
   test('回落条件：设置=1（经典单列）或无卡才清 inline，单卡不再回落半宽 grid', () {
     expect(
-        RegExp(r'configured\s*<=\s*1\s*\|\|\s*items\.length\s*===\s*0')
-            .hasMatch(js),
-        isTrue,
-        reason: '只有设置列数=1 或该词条无词典卡才回落 CSS grid/block；'
-            '单卡改由 masonry cols=1 满宽承载，不再落进 N 列 grid 只占 1/N 宽');
-    expect(js.contains('function resetMasonryBody('), isTrue,
-        reason: '回落时必须清掉 position/width/transform/height 等 inline，让 CSS 接管');
+      RegExp(
+        r'configured\s*<=\s*1\s*\|\|\s*items\.length\s*===\s*0',
+      ).hasMatch(js),
+      isTrue,
+      reason:
+          '只有设置列数=1 或该词条无词典卡才回落 CSS grid/block；'
+          '单卡改由 masonry cols=1 满宽承载，不再落进 N 列 grid 只占 1/N 宽',
+    );
+    expect(
+      js.contains('function resetMasonryBody('),
+      isTrue,
+      reason: '回落时必须清掉 position/width/transform/height 等 inline，让 CSS 接管',
+    );
   });
 
   test('有效列数封顶到词典卡片数：词典数 < 设置列数时现有卡片平分整行（单卡满宽）', () {
     // 核心新契约：cols = min(设置列数, 该词条实际词典卡片数)。上限 2 但只有 1 本 → cols=1
     // → columnWidth 取整宽、单卡满宽；2 卡 3 列 → cols=2 各半，右侧不再空出无卡的列。
     expect(
-        RegExp(r'Math\.min\(\s*configured\s*,\s*items\.length\s*\)')
-            .hasMatch(js),
-        isTrue,
-        reason: '有效列数必须 min(设置列数, 卡片数)，卡片才会平分整行、不留空列');
+      RegExp(r'Math\.min\(\s*configured\s*,\s*items\.length\s*\)').hasMatch(js),
+      isTrue,
+      reason: '有效列数必须 min(设置列数, 卡片数)，卡片才会平分整行、不留空列',
+    );
   });
 
   test('高度变化用 ResizeObserver 兜底（<details> 折叠 / 图片异步 / ruby / 字体）', () {
-    expect(js.contains('new ResizeObserver('), isTrue,
-        reason: '卡片高度变化必须由 ResizeObserver 捕捉重排，不能只靠一次性布局');
+    expect(
+      js.contains('new ResizeObserver('),
+      isTrue,
+      reason: '卡片高度变化必须由 ResizeObserver 捕捉重排，不能只靠一次性布局',
+    );
     // 只观察卡片、不观察容器：容器随 masonry 改 height 会自触发死循环。
-    expect(RegExp(r'function observeMasonryTargets\(').hasMatch(js), isTrue,
-        reason: '观察目标集中在 observeMasonryTargets，只挂卡片避免容器 height 自触发死循环');
+    expect(
+      RegExp(r'function observeMasonryTargets\(').hasMatch(js),
+      isTrue,
+      reason: '观察目标集中在 observeMasonryTargets，只挂卡片避免容器 height 自触发死循环',
+    );
   });
 
   test('只对词典容器排版，不误抓 frequency / pitch 的 category-body', () {
-    expect(js.contains('.glossary-section > .category-body'), isTrue,
-        reason: 'masonry 容器必须限定 .glossary-section > .category-body，'
-            'frequency-section / pitch-section 也用 .category-body、不能被 masonry 抓走');
+    expect(
+      js.contains('.glossary-section > .category-body'),
+      isTrue,
+      reason:
+          'masonry 容器必须限定 .glossary-section > .category-body，'
+          'frequency-section / pitch-section 也用 .category-body、不能被 masonry 抓走',
+    );
   });
 
   test('渲染 + 增量都触发重排，且宿主可外部触发（改列数时）', () {
-    expect(js.contains('window.fushiRelayoutDictionaries'), isTrue,
-        reason: '暴露 fushiRelayoutDictionaries 供宿主改列数后重排 / 外部触发');
+    expect(
+      js.contains('window.fushiRelayoutDictionaries'),
+      isTrue,
+      reason: '暴露 fushiRelayoutDictionaries 供宿主改列数后重排 / 外部触发',
+    );
     // _firePopupRendered 是首条 + 其余条两次都会调的收尾钩子。
     final int fireAt = js.indexOf('function _firePopupRendered(');
     expect(fireAt, isNonNegative);
     final int fireEnd = js.indexOf('\n}', fireAt);
     expect(fireEnd, greaterThan(fireAt));
-    expect(js.substring(fireAt, fireEnd).contains('fushiRelayoutDictionaries'),
-        isTrue,
-        reason: '渲染收尾 _firePopupRendered 必须重排 masonry（覆盖首条 + 其余条）');
+    expect(
+      js.substring(fireAt, fireEnd).contains('fushiRelayoutDictionaries'),
+      isTrue,
+      reason: '渲染收尾 _firePopupRendered 必须重排 masonry（覆盖首条 + 其余条）',
+    );
   });
 
   test('BUG-1727 增量追加词典块不产生重叠中间帧：masonry 态预藏 + 逐块合帧重排', () {
@@ -173,27 +248,44 @@ void main() {
     final int fnEnd = js.indexOf('\n}', fnAt);
     expect(fnEnd, greaterThan(fnAt));
     final String fnBody = js.substring(fnAt, fnEnd);
-    expect(fnBody.contains('state.body.dataset.masonryCols'), isTrue,
-        reason: '必须按 body 的 masonry 态（dataset.masonryCols）门控新卡片预藏，'
-            '静态流新卡会压在绝对定位的旧卡上');
-    expect(RegExp(r"visibility\s*=\s*'hidden'").hasMatch(fnBody), isTrue,
-        reason: 'masonry 态下新 append 的卡片必须先 visibility:hidden 预藏，'
-            '由 layoutMasonry 统一定位后恢复，消灭重叠中间帧');
-    expect(fnBody.contains('scheduleMasonry()'), isTrue,
-        reason: '每追加一块必须合帧重排（masonryRaf 去重），不得等全部建完才排版');
+    expect(
+      fnBody.contains('state.body.dataset.masonryCols'),
+      isTrue,
+      reason:
+          '必须按 body 的 masonry 态（dataset.masonryCols）门控新卡片预藏，'
+          '静态流新卡会压在绝对定位的旧卡上',
+    );
+    expect(
+      RegExp(r"visibility\s*=\s*'hidden'").hasMatch(fnBody),
+      isTrue,
+      reason:
+          'masonry 态下新 append 的卡片必须先 visibility:hidden 预藏，'
+          '由 layoutMasonry 统一定位后恢复，消灭重叠中间帧',
+    );
+    expect(
+      fnBody.contains('scheduleMasonry()'),
+      isTrue,
+      reason: '每追加一块必须合帧重排（masonryRaf 去重），不得等全部建完才排版',
+    );
     // layoutMasonry 摆放时必须恢复可见——否则预藏卡片永久不可见。
     final int lmAt = js.indexOf('function layoutMasonry(');
     expect(lmAt, isNonNegative);
     final int lmEnd = js.indexOf('\n}', lmAt);
     final String lmBody = js.substring(lmAt, lmEnd);
-    expect(RegExp(r"item\.style\.visibility\s*=\s*''").hasMatch(lmBody), isTrue,
-        reason: 'layoutMasonry 定位每张卡片时必须清 visibility 预藏（恢复可见）');
+    expect(
+      RegExp(r"item\.style\.visibility\s*=\s*''").hasMatch(lmBody),
+      isTrue,
+      reason: 'layoutMasonry 定位每张卡片时必须清 visibility 预藏（恢复可见）',
+    );
     // 回落 CSS 流布局（resetMasonryBody）同样要清预藏，不留死藏卡。
     final int rmAt = js.indexOf('function resetMasonryBody(');
     expect(rmAt, isNonNegative);
     final int rmEnd = js.indexOf('\n}', rmAt);
     final String rmBody = js.substring(rmAt, rmEnd);
-    expect(RegExp(r"visibility\s*=\s*''").hasMatch(rmBody), isTrue,
-        reason: 'resetMasonryBody 回落时必须清 visibility 预藏');
+    expect(
+      RegExp(r"visibility\s*=\s*''").hasMatch(rmBody),
+      isTrue,
+      reason: 'resetMasonryBody 回落时必须清 visibility 预藏',
+    );
   });
 }

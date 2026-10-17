@@ -112,18 +112,29 @@ void main() {
   // 任何一处接线退回（漏注册 / 漏 dispose 置 null / onChanged 退回裸 c.refresh()），本组红。
   test('TODO-842: reverse-bottom-bar toggle wired through onChromeReloadLive',
       () {
-    // 1) reader 页注册 + dispose 置 null（防泄漏）。
+    // 1) reader 页把 chromeReload 随整组 hook 登记进持有者栈、dispose 只注销自己
+    //    那组（BUG-3001：无条件置 null 会在切卷时抹掉新页的 hook）。
     expect(
       src,
-      contains('onChromeReloadLive ='),
+      contains('chromeReload: ()'),
       reason:
           'reader initState 必须注册 onChromeReloadLive（纯 setState 重建 chrome 层），'
           '否则反转底栏改完不实时生效须退出重进（TODO-842）。',
     );
     expect(
       src,
-      contains('onChromeReloadLive = null'),
-      reason: 'reader dispose 必须把 onChromeReloadLive 置 null，防止静态 hook 泄漏到已销毁页。',
+      contains('ReaderFushiSource.attachLiveHooks('),
+      reason: 'reader initState 必须经 attachLiveHooks 登记整组实时 hook（BUG-3001）。',
+    );
+    expect(
+      src,
+      contains('ReaderFushiSource.detachLiveHooks('),
+      reason: 'reader dispose 必须注销自己的 hook，防止静态 hook 泄漏到已销毁页。',
+    );
+    expect(
+      src,
+      isNot(contains('onChromeReloadLive = null')),
+      reason: 'BUG-3001：dispose 不得无条件把 hook 置 null（会抹掉后打开的阅读器的 hook）。',
     );
 
     // 2) settings_actions.dart 新增 notifyReaderChromeChanged 且体内 fire hook。

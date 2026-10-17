@@ -2,17 +2,36 @@ import Cocoa
 import FlutterMacOS
 import macos_window_utils
 
+/// Background test mode switch, same contract as the Dart side (lib/main.dart)
+/// and windows/runner/win32_window.cpp: FUSHI_TEST_HIDDEN set to anything
+/// non-empty. The pre-rename HIBIKI_TEST_HIDDEN (presence only) is still
+/// honoured so older local runners keep working.
+func fushiHiddenTestMode() -> Bool {
+  let env = ProcessInfo.processInfo.environment
+  if let value = env["FUSHI_TEST_HIDDEN"], !value.isEmpty { return true }
+  return env["HIBIKI_TEST_HIDDEN"] != nil
+}
+
 class MainFlutterWindow: NSWindow {
-  // Background test mode: when HIBIKI_TEST_HIDDEN is set, the window is parked
+  // Background test mode: when FUSHI_TEST_HIDDEN is set, the window is parked
   // far off-screen and never becomes key/main, and the app runs as an
   // .accessory (no Dock icon / menu bar, never auto-activated). This lets
   // automated integration tests drive the real macOS app — focus moves,
   // settings changes, WebView DOM probes — while the Flutter engine keeps
   // rendering (the window stays ordered-in, just off every screen) without it
   // appearing or stealing keyboard/foreground focus from whatever the user is
-  // doing. Mirrors windows/runner/win32_window.cpp (HIBIKI_TEST_HIDDEN).
+  // doing. Mirrors windows/runner/win32_window.cpp (FUSHI_TEST_HIDDEN).
   private var hiddenTestMode: Bool {
-    return ProcessInfo.processInfo.environment["HIBIKI_TEST_HIDDEN"] != nil
+    return fushiHiddenTestMode()
+  }
+
+  func hideForStartupPresentation() {
+    guard !hiddenTestMode else { return }
+    // Keep the view attached to an ordered window so Flutter can rasterize
+    // its first frame before Dart asks us to reveal it.
+    animationBehavior = .none
+    alphaValue = 0
+    orderFront(nil)
   }
 
   override func awakeFromNib() {

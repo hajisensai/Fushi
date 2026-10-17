@@ -139,9 +139,41 @@ void main() {
     expect(list, contains('adts'),
         reason: 'desktop immersion clip audio writes .aac (adts container); '
             'without the adts muxer the card has no audio (TODO-1217).');
-    expect(list, isNot(contains('ipod')),
-        reason: 'ffmpeg-min still has no ipod muxer — proof the desktop branch '
-            'must NOT use .m4a (TODO-1217).');
+    // The recipe now lists `ipod` for the audiobook studio's .m4b export, but
+    // the desktop immersion branch must stay on .aac regardless: users on a
+    // vendored binary built before that recipe change have no ipod muxer, and
+    // .aac/adts works on every build.
+  });
+
+  test('ffmpeg-min recipe carries the audiobook studio loudness + M4B set', () {
+    // Audiobook studio export: EBU R128 loudness normalisation (loudnorm two
+    // pass, ebur128 measure, volume trim, alimiter true-peak guard, apad /
+    // anullsrc silence) and an .m4b (ipod muxer) with chapters/metadata from an
+    // ;FFMETADATA1 side input (ffmetadata demuxer) plus a jpg/png cover
+    // (image2 demuxer + mjpeg/png parsers, -c:v copy -disposition attached_pic).
+    final String script = workspaceFile('tool/ffmpeg-min/build-ffmpeg-min.sh');
+    Set<String> listOf(String name) =>
+        RegExp('^$name="([^"]*)"', multiLine: true)
+            .firstMatch(script)!
+            .group(1)!
+            .split(',')
+            .toSet();
+    expect(
+      listOf('FILTERS'),
+      containsAll(<String>[
+        'loudnorm',
+        'ebur128',
+        'volume',
+        'alimiter',
+        'apad',
+        'anullsrc',
+        'aresample',
+      ]),
+    );
+    expect(listOf('MUXERS'), containsAll(<String>['ipod', 'mp4']));
+    expect(listOf('DEMUXERS'), containsAll(<String>['ffmetadata', 'image2']));
+    expect(listOf('PARSERS'), containsAll(<String>['mjpeg', 'png']));
+    expect(listOf('ENCODERS'), contains('aac'));
   });
 
   test(

@@ -6,10 +6,17 @@ void main() {
   test('lyrics-mode onLoadStop verifies the loaded document before readying it',
       () {
     final String source = readReaderPageSource();
-    final String onLoadStop = _sectionSource(
+    // 2026-10-04 覆盖层架构：歌词有自己的 WebView（[_buildLyricsWebView]），它的
+    // onLoadStop 只走歌词 finalize；正文 WebView 的 onLoadStop 不再有歌词分支。
+    final String lyricsWebView = _sectionSource(
       source,
-      '      onLoadStop: (controller, url) async {',
-      '      onReceivedError: (controller, request, error) async {',
+      '  Widget _buildLyricsWebView() {',
+      '    // 文档就绪前保持透明',
+    );
+    final String onLoadStop = _sectionSource(
+      lyricsWebView,
+      '      onLoadStop: (InAppWebViewController controller, WebUri? url) async {',
+      '      onReceivedError: (',
     );
 
     expect(
@@ -18,10 +25,8 @@ void main() {
       reason: '歌词模式 load stop 必须用 DOM/JS sentinel 判断当前文档是否真是歌词页。',
     );
 
-    final int lyricsModeBranch = onLoadStop.indexOf('if (_lyricsMode)');
     final int finalizeCall =
         onLoadStop.indexOf('_finalizeLyricsDocumentIfReady(');
-    expect(lyricsModeBranch, isNonNegative);
     expect(finalizeCall, isNonNegative);
 
     final String finalize = _functionSource(
@@ -30,7 +35,7 @@ void main() {
       '  Future<void> _onChapterLoadComplete(',
     );
     final int guardCall = finalize.indexOf('_isLoadedLyricsDocument(');
-    final int completeCall = finalize.indexOf('_onChapterLoadComplete(');
+    final int completeCall = finalize.indexOf('_onLyricsDocumentReady(');
     expect(guardCall, isNonNegative);
     expect(completeCall, isNonNegative);
     expect(
@@ -51,7 +56,7 @@ void main() {
     expect(source, contains('++_lyricsLoadGeneration'));
     expect(source, contains('loadGeneration: loadGeneration'));
     expect(source, contains('generation != _lyricsLoadGeneration'));
-    expect(source, contains('lyricsGeneration: generation'));
+    expect(source, contains('_onLyricsDocumentReady(controller, generation: generation)'));
     expect(source, contains('int? _lyricsDocumentLoadGeneration;'));
     expect(source, contains(r"'generation': '$loadGeneration'"));
     expect(source, contains('_isCurrentLyricsDocumentUrl(url)'));

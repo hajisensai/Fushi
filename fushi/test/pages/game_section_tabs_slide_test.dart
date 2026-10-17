@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
@@ -16,8 +16,10 @@ import '../helpers/test_platform_services.dart';
 ///
 /// 游戏的七个子区在 IndexedStack 里一起常驻，每页各挂一份 `selected` 为常量的页签：
 /// 切到别的子区时那一页的页签早就停在自己的位置上，指示条没有起点可滑。
-/// [HomeGamePage] 用 [LibrarySectionFollowScope] 广播真实所在子区，隐藏页的页签
-/// 跟着它走，被切出来的那一刻才从来源子区滑到自己。
+/// [HomeGamePage] 当时用 [LibrarySectionFollowScope] 广播真实所在子区，隐藏页的
+/// 页签跟着它走。2026-10-06 起外壳浮动工具栏只画一份页签（ad8496b2b86），
+/// `selected` 随子区变化，同一个 State 的指示器从来源子区滑到目标子区——本测试守
+/// 的「切子区时指示条在滑」这个用户可见结果不变。
 Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
 
 Widget _stubLibrary(
@@ -27,8 +29,8 @@ Widget _stubLibrary(
 ) =>
     const SizedBox();
 
-/// 镜像生产 [ModuleSettingsView] 的顶栏形状，但不构建需要 provider 的设置正文。
-Widget _stubSettings(BuildContext _, Widget navigation) => Column(
+/// 发现子区桩：只带页头分段导航主位，不构建需要 provider 的发现正文。
+Widget _stubDiscover(BuildContext _, Widget navigation) => Column(
       children: <Widget>[FushiPageHeader.customTitle(title: navigation)],
     );
 
@@ -45,17 +47,22 @@ void main() {
     LocaleSettings.setLocaleRaw('en');
   });
 
-  TabController controllerIn(WidgetTester tester, Key sectionKey) {
-    final TabBar bar = tester.widget<TabBar>(
-      find.descendant(
-        of: find.byKey(sectionKey, skipOffstage: false),
-        matching: find.byType(TabBar, skipOffstage: false),
-      ),
+  TabController shellController(WidgetTester tester) {
+    // 2026-10-06 起分区页签由外壳浮动工具栏统一画一份（ad8496b2b86，
+    // [GameSectionTabsHostScope]），子区页头里那份留空：全树（含 offstage 子区）
+    // 恰好一份。MD3 下 FushiTabBar 把原 TabBar 渲染在自己下面一层。
+    final Finder bar = find.byType(
+      FushiSectionTabBar<GameSection>,
+      skipOffstage: false,
     );
-    return bar.controller!;
+    expect(bar, findsOneWidget, reason: '游戏外壳应恰好一份分区页签');
+    final TabBar tabBar = tester.widget<TabBar>(
+      find.descendant(of: bar, matching: find.byType(TabBar)),
+    );
+    return tabBar.controller!;
   }
 
-  testWidgets('库 → 设置：设置页的页签从「库」滑到「设置」，而不是原地落位',
+  testWidgets('库 → 发现：外壳页签从「库」滑到「发现」，而不是原地落位',
       (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1440, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -68,7 +75,7 @@ void main() {
           home: HomeGamePage(
             dashboardBuilder: _stubDashboard,
             libraryBuilder: _stubLibrary,
-            settingsBuilder: _stubSettings,
+            discoverBuilder: _stubDiscover,
           ),
         ),
       ),
@@ -78,24 +85,23 @@ void main() {
     final double from =
         kGameSectionTabOrder.indexOf(GameSection.library).toDouble();
     final double to =
-        kGameSectionTabOrder.indexOf(GameSection.settings).toDouble();
-    final TabController settingsTabs =
-        controllerIn(tester, HomeGamePage.settingsKey);
-    expect(settingsTabs.animation!.value, from,
-        reason: '隐藏的设置页页签应跟着用户真正所在的「库」');
+        kGameSectionTabOrder.indexOf(GameSection.discover).toDouble();
+    final TabController shellTabs = shellController(tester);
+    expect(shellTabs.animation!.value, from,
+        reason: '外壳页签应停在用户真正所在的「库」');
 
-    gameSectionNotifier.value = GameSection.settings;
+    gameSectionNotifier.value = GameSection.discover;
     await tester.pump();
     // 投影在帧末 animateTo；Ticker 第一帧只记起点，再推一帧才有中途值。
     await tester.pump(const Duration(milliseconds: 60));
     await tester.pump(const Duration(milliseconds: 60));
 
-    expect(settingsTabs.index, to.toInt());
-    expect(settingsTabs.animation!.value, greaterThan(from));
-    expect(settingsTabs.animation!.value, lessThan(to),
+    expect(shellTabs.index, to.toInt());
+    expect(shellTabs.animation!.value, greaterThan(from));
+    expect(shellTabs.animation!.value, lessThan(to),
         reason: '切出来的那一刻指示条应正在滑动');
 
     await tester.pumpAndSettle();
-    expect(settingsTabs.animation!.value, to);
+    expect(shellTabs.animation!.value, to);
   });
 }

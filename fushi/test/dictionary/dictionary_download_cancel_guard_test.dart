@@ -105,7 +105,7 @@ void main() {
     final String auto = sectionSource(
       code,
       'Future<void> maybeAutoUpdateDictionaries() async {',
-      'Future<void> _autoRedownloadAndReimport(',
+      'Future<void> redownloadAndReimportDictionary(',
     );
     expect(
       auto.contains('dictionaryDownloadController.run('),

@@ -41,7 +41,7 @@ String browserExtensionsPageUrl(BrowserKind kind) {
 
 const String _kBundlePrefix = 'assets/browser_extension/';
 
-/// TODO-1087：扩展要连的 Hibiki yomitan-api server 连接信息（自动配置真值）。
+/// TODO-1087：扩展要连的 Fushi yomitan-api server 连接信息（自动配置真值）。
 /// 由安装助手写进扩展的 `fushi-defaults.js`，扩展默认即用、无需用户手填。
 class BrowserExtensionServerConfig {
   const BrowserExtensionServerConfig({
@@ -53,7 +53,7 @@ class BrowserExtensionServerConfig {
   /// server 监听主机。本机扩展连本机 app，固定环回地址。
   final String host;
 
-  /// server 端口（默认 kYomitanApiDefaultPort=19633，用户可在 app 内改）。
+  /// server 端口（默认 kFushiApiDefaultPort=19633，用户可在 app 内改）。
   final int port;
 
   /// 配对 token（yomitan-api key）。空串表示 app 侧未设 token。

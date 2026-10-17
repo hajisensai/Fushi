@@ -55,7 +55,7 @@ int main() {
              true, false, LaunchFailureReason::kResumeFailed) ==
          LaunchedProcessDisposition::kTerminate);
 
-  // token 是与 Hibiki 消费端共享的契约（Dart `GalHookInjectorFailure` 枚举名）。
+  // token 是与 Fushi 消费端共享的契约（Dart `GalHookInjectorFailure` 枚举名）。
   assert(std::strcmp(LaunchFailureToken(LaunchFailureReason::kReadyTimeout),
                      "readyTimeout") == 0);
   assert(std::strcmp(LaunchFailureToken(LaunchFailureReason::kBitnessMismatch),
@@ -99,7 +99,7 @@ int main() {
 
   // ---- 挂起窗口预算：绝不与宿主的整体超时同时到期 ----
   //
-  // Hibiki 把 --wait-ms 与自己的握手超时同源下发（都是 readyTimeout=30000），并在到期时
+  // Fushi 把 --wait-ms 与自己的握手超时同源下发（都是 readyTimeout=30000），并在到期时
   // kill injector。若 injector 也拿满 30s 让游戏挂着等 hook，被 kill 时可能恰好还没
   // ResumeThread → 游戏永久挂起，且外部杀死时没有任何补偿代码会执行。
   assert(SuspendedStartupWaitBudgetMs(30000) == 5000);   // 上限封顶，留 25s 余量

@@ -14,6 +14,7 @@
 
 static const char kChannelName[] = "app.fushi.reader/clipboard_image";
 static const char kMethodCopyImageFile[] = "copyImageFile";
+static const char kMethodReadImage[] = "readImage";
 
 static void respond_error(FlMethodCall* method_call,
                           const char* code,
@@ -33,6 +34,67 @@ static void respond_success(FlMethodCall* method_call) {
   if (!fl_method_call_respond(method_call, response, &error)) {
     g_warning("Failed to respond to clipboard_image call: %s", error->message);
   }
+}
+
+static void respond_value(FlMethodCall* method_call, FlValue* value) {
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(FlMethodResponse) response =
+      FL_METHOD_RESPONSE(fl_method_success_response_new(value));
+  if (!fl_method_call_respond(method_call, response, &error)) {
+    g_warning("Failed to respond to clipboard_image call: %s", error->message);
+  }
+}
+
+// 反馈提交页「粘贴截图」：文件管理器里复制的文件（text/uri-list → 本地路径，是不是
+// 图片由 Dart 侧按扩展名过滤）优先，其次是截图工具放的位图（编成 PNG）。都没有回
+// null。wait_for_* 会跑一个嵌套主循环等剪贴板主人应答，这是 GTK 同步读剪贴板的标准
+// 做法。
+static void handle_read_image(FlMethodCall* method_call) {
+  GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+  if (clipboard == nullptr) {
+    respond_error(method_call, "CLIPBOARD_FAILED",
+                  "GTK clipboard is unavailable");
+    return;
+  }
+
+  g_auto(GStrv) uris = gtk_clipboard_wait_for_uris(clipboard);
+  if (uris != nullptr) {
+    g_autoptr(FlValue) paths = fl_value_new_list();
+    for (gchar** uri = uris; *uri != nullptr; ++uri) {
+      g_autofree gchar* path = g_filename_from_uri(*uri, nullptr, nullptr);
+      if (path != nullptr && path[0] != '\0') {
+        fl_value_append_take(paths, fl_value_new_string(path));
+      }
+    }
+    if (fl_value_get_length(paths) > 0) {
+      g_autoptr(FlValue) result = fl_value_new_map();
+      fl_value_set_string(result, "paths", paths);
+      respond_value(method_call, result);
+      return;
+    }
+  }
+
+  g_autoptr(GdkPixbuf) pixbuf = gtk_clipboard_wait_for_image(clipboard);
+  if (pixbuf == nullptr) {
+    respond_value(method_call, nullptr);
+    return;
+  }
+  gchar* buffer = nullptr;
+  gsize size = 0;
+  g_autoptr(GError) error = nullptr;
+  if (!gdk_pixbuf_save_to_buffer(pixbuf, &buffer, &size, "png", &error,
+                                 nullptr)) {
+    respond_error(method_call, "READ_FAILED",
+                  error != nullptr ? error->message
+                                   : "Could not encode clipboard image");
+    return;
+  }
+  g_autoptr(FlValue) result = fl_value_new_map();
+  fl_value_set_string_take(
+      result, "bytes",
+      fl_value_new_uint8_list(reinterpret_cast<const uint8_t*>(buffer), size));
+  g_free(buffer);
+  respond_value(method_call, result);
 }
 
 static void handle_copy_image_file(FlMethodCall* method_call) {
@@ -85,6 +147,10 @@ static void method_call_cb(FlMethodChannel* channel,
   if (g_strcmp0(fl_method_call_get_name(method_call), kMethodCopyImageFile) ==
       0) {
     handle_copy_image_file(method_call);
+    return;
+  }
+  if (g_strcmp0(fl_method_call_get_name(method_call), kMethodReadImage) == 0) {
+    handle_read_image(method_call);
     return;
   }
   g_autoptr(GError) error = nullptr;

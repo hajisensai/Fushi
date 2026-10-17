@@ -142,10 +142,24 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     this._profileDraftCoordinator,
   ) : super(const ProfileUiState()) {
     _load();
+    // BUG-3148：别处（互联下载 / 对端上传入站）写进 profiles 表的新配置，列表要跟着
+    // 刷新，不必等重启。只重读列表本身——激活 id 与绑定的切换都经本类，不受影响。
+    _profilesChanged = _repo.watchProfilesChanged().listen((_) {
+      unawaited(_refreshProfileList());
+    });
+  }
+
+  StreamSubscription<void>? _profilesChanged;
+
+  Future<void> _refreshProfileList() async {
+    final List<ProfileRow> profiles = await _repo.getAllProfiles();
+    if (!mounted) return;
+    state = state.copyWith(profiles: profiles);
   }
 
   @override
   void dispose() {
+    _profilesChanged?.cancel();
     _repo.snapshotCurrentSettings(state.activeProfileId).catchError((Object e) {
       debugPrint('[profile] snapshot on dispose failed: $e');
     });
@@ -185,35 +199,106 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   /// `VideoBooks.language` / `Galgames.language` 等列的值），由 repository 归一。
   /// 拿不到就不传——绝不要拿全局默认内容语言来填（理由见 [ProfileRepository.
   /// resolveProfileId] 的文档）。
+  ///
+  /// [restoreFallback]：没有绑定命中时，是否回到「绑定切换前用户自己选的配置」。
+  /// 只有**打开一个具体条目**的入口（阅读器 / 视频 / 漫画开页、从库里启动 gal）
+  /// 传 true——换了条目，上一个条目的绑定配置才该退场。浏览器扩展查词、附着任意
+  /// 外部窗口这类旁路活动传 false：它们与正在看的条目并存，无绑定时绝不能把条目
+  /// 背后的配置换掉、也不能消费回退点（否则阅读器开着时在浏览器查一次词，书的
+  /// 词典 / 阅读器设置 / Anki 就全换成别的配置）。必填，逼每个新入口显式表态。
   Future<void> autoApplyBinding({
     String? bookUid,
     String? languageTag,
     required ProfileMediaKind mediaType,
+    required bool restoreFallback,
   }) async {
     try {
-      final int resolvedId = await _repo.resolveProfileId(
-        bookUid: bookUid,
-        languageTag: languageTag,
-        mediaType: mediaType,
+      // 读回退点 / 读激活 id / 写回退点 / 切换必须是一个原子操作：中间隔着 await，
+      // 并发的另一趟会读到旧状态（例如把刚记下的回退点清掉）。与手动切换 / 草稿
+      // 保存同一把锁；只有真的切换时才作废在飞的草稿。
+      await _profileDraftCoordinator._runProfileMutation(
+        (_ProfileDraftMutation mutation) => _applyBindingLocked(
+          mutation,
+          bookUid: bookUid,
+          languageTag: languageTag,
+          mediaType: mediaType,
+          restoreFallback: restoreFallback,
+        ),
       );
-      final int currentActiveId = await _repo.getActiveProfileId();
-      if (resolvedId != currentActiveId) {
-        await switchProfile(resolvedId);
-      }
     } catch (e, st) {
       debugPrint('[profile] auto-apply "${mediaType.dbValue}" binding failed '
           '(non-fatal): $e\n$st');
     }
   }
 
-  Future<void> switchProfile(int profileId) =>
-      _whileInvalidatingProfileDrafts(() async {
-        await _repo.snapshotCurrentSettings(state.activeProfileId);
-        await _repo.setActiveProfileId(profileId);
-        await _repo.applyProfile(profileId);
-        state = state.copyWith(activeProfileId: profileId);
-        await _onProfileApplied();
+  /// [autoApplyBinding] 的锁内本体；只能在 [ProfileDraftCoordinator] 的配置变更
+  /// 锁里调用。
+  Future<void> _applyBindingLocked(
+    _ProfileDraftMutation mutation, {
+    required String? bookUid,
+    required String? languageTag,
+    required ProfileMediaKind mediaType,
+    required bool restoreFallback,
+  }) async {
+    final int? boundId = await _repo.resolveBoundProfileId(
+      bookUid: bookUid,
+      languageTag: languageTag,
+      mediaType: mediaType,
+    );
+    final int currentActiveId = await _repo.getActiveProfileId();
+    final int? fallbackId = await _repo.getFallbackProfileId();
+    if (boundId != null) {
+      if (boundId == currentActiveId) return;
+      // 绑定只是「这本书临时用」：第一次离开用户自己选的配置时记下它，之后
+      // 无绑定的条目才有地方回去（否则切过去的绑定配置就成了新的默认）。
+      if (fallbackId == null) {
+        await _repo.setFallbackProfileId(currentActiveId);
+      }
+      await _switchLocked(mutation, boundId);
+      return;
+    }
+    if (!restoreFallback || fallbackId == null) return;
+    await _repo.setFallbackProfileId(null);
+    final List<ProfileRow> profiles = await _repo.getAllProfiles();
+    final bool stillExists = profiles.any((ProfileRow p) => p.id == fallbackId);
+    if (stillExists && fallbackId != currentActiveId) {
+      await _switchLocked(mutation, fallbackId);
+    }
+  }
+
+  /// 用户手动切换：这是新的「自己选的配置」，作废绑定留下的回退点。清回退点与
+  /// 切换在同一把锁里，不会被并发的绑定应用夹在中间。
+  Future<void> switchProfile(int profileId) => _profileDraftCoordinator
+          ._runProfileMutation((_ProfileDraftMutation mutation) async {
+        await _repo.setFallbackProfileId(null);
+        await _switchLocked(mutation, profileId);
       });
+
+  /// 切换激活配置的本体；只能在配置变更锁里调用（[mutation] 就是那把锁的凭据）。
+  Future<void> _switchLocked(
+    _ProfileDraftMutation mutation,
+    int profileId,
+  ) async {
+    mutation.invalidateDrafts();
+    await _repo.snapshotCurrentSettings(state.activeProfileId);
+    await _repo.setActiveProfileId(profileId);
+    await _repo.applyProfile(profileId);
+    state = state.copyWith(activeProfileId: profileId);
+    await _onProfileApplied();
+  }
+
+  /// 互联「下载配置」：把收到的配置作为**新**配置落地（不覆盖任何既有配置），再走
+  /// 与配置选择器同一条 [switchProfile] 切过去（issue #1997，所有者 2026-10-09 拍板：
+  /// 下载完直接生效，不再让用户自己去「配置管理」里切）。
+  ///
+  /// 切换前的规矩与手动切换完全一致：当前配置的实时设置先快照回它自己那一份，在飞的
+  /// 设置草稿随配置代次一起作废，切换后 [_onProfileApplied] 刷新偏好缓存 / 词典 /
+  /// 阅读器设置。返回新配置的 id。
+  Future<int> importAndSwitchProfile(String json) async {
+    final int id = await importProfile(json);
+    await switchProfile(id);
+    return id;
+  }
 
   Future<void> createProfile(String name) =>
       _whileInvalidatingProfileDrafts(() async {

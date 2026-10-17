@@ -146,7 +146,7 @@ String renderComprehensiveFailureSummary(ComprehensiveReport report) {
 
 String _renderMarkdown(ComprehensiveReport report) {
   final StringBuffer buffer = StringBuffer()
-    ..writeln('# Hibiki Comprehensive Test Report')
+    ..writeln('# Fushi Comprehensive Test Report')
     ..writeln();
   for (final ScenarioReport entry in report.entries) {
     buffer

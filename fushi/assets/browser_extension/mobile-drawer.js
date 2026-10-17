@@ -465,6 +465,8 @@
     if (rootEl) return;
     rootEl = document.createElement('div');
     rootEl.id = 'fushi-drawer';
+    // 外观风格（M3E / 液态玻璃）：theme.js 盖 data-style，设置变化时 applyToHostPage 按 id 重盖。
+    if (window.fushiTheme && typeof window.fushiTheme.stampStyle === 'function') window.fushiTheme.stampStyle(rootEl);
     // 明暗跟扩展主题（theme.js）：显式值写成 data-theme 走 content.css 里重根的 theme.css 显式块，
     // auto 摘掉属性走 prefers-color-scheme 块（与扩展页面上的 theme.css 语义一致）。
     applyDrawerTheme(rootEl);
@@ -475,7 +477,16 @@
     btn.className = 'fushi-drawer-btn';
     btn.setAttribute('role', 'button');
     btn.setAttribute('aria-label', tr('drawer_button_aria_label'));
-    btn.textContent = '☰'; // 可见开合钮；pointerdown 冒泡进 stripEl，点=开关、按住同样能拖
+    // 可见开合钮；pointerdown 冒泡进 stripEl，点=开关、按住同样能拖。M3E：两枚 Material Symbols
+    // （收起态 menu、展开态 close），显隐交给 CSS 按 #fushi-drawer.is-open 切；没有 icons.js 时回退文字符号。
+    if (typeof window.fushiIcon === 'function') {
+      try {
+        btn.appendChild(window.fushiIcon('menu', { size: 24, className: 'fushi-drawer-ic-open' }));
+        btn.appendChild(window.fushiIcon('close', { size: 24, className: 'fushi-drawer-ic-close' }));
+      } catch (_) { btn.textContent = '☰'; }
+    } else {
+      btn.textContent = '☰';
+    }
     stripEl.appendChild(btn);
     rootEl.appendChild(stripEl);
     stripEl.addEventListener('pointerdown', stripDown);

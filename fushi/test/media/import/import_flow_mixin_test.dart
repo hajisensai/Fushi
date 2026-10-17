@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/utils.dart';
@@ -62,21 +62,29 @@ void main() {
   });
 
   testWidgets(
-      'buildProgressSection renders LinearProgressIndicator + message '
+      'buildProgressSection renders FushiLinearProgressIndicator + message '
       'only while importing', (WidgetTester tester) async {
     await tester.pumpWidget(buildApp(const _ProbeHost()));
     final _ProbeHostState state =
         tester.state<_ProbeHostState>(find.byType(_ProbeHost));
 
     // importing=false（默认）：进度块不渲染。
-    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
 
     // 进入 importing 并写进度文案 → 进度条 + 文案出现。
     state.reportProgress(0.5, 'half way');
     state.setImporting(true);
     await tester.pump();
 
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
+    expect(
+      tester
+          .widget<FushiLinearProgressIndicator>(
+            find.byType(FushiLinearProgressIndicator),
+          )
+          .value,
+      0.5,
+    );
     expect(find.text('half way'), findsOneWidget);
   });
 

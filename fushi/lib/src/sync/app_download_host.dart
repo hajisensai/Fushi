@@ -22,8 +22,6 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart'
     show VideoResourceProvider;
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
-import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
-    show VideoMetadataMediaKind;
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/pipeline_subscription_host.dart';
@@ -90,18 +88,14 @@ class AppDownloadHost implements HostDownloadHost {
       ));
 
   @override
-  Future<String> addMagnet({
-    required String magnetUri,
-    required String title,
-    String mediaKind = 'movie',
-    String? discoveryKind,
-  }) async {
+  Future<String> add(HostDownloadAddRequest request) async {
     final VideoDownloadPipelineService pipeline = _requirePipeline;
     if (_readyBackend() == null) {
       throw const VideoDownloadPipelineActionRequired(
         'no torrent backend configured on this host',
       );
     }
+    final String? discoveryKind = request.discoveryKind;
     DiscoveryMediaKind? kind;
     if (discoveryKind != null) {
       if (!discoveryImportSupported ||
@@ -126,17 +120,21 @@ class AppDownloadHost implements HostDownloadHost {
       throw VideoDownloadPipelineActionRequired(error.message);
     }
     return pipeline.enqueueManual(
-      VideoDownloadManualEnqueueRequest(
-        title: title,
+      request.toEnqueueRequest(
         backendTarget: target,
-        magnetUri: magnetUri,
         discoveryKind: kind,
-        mediaKind: mediaKind == 'tv'
-            ? VideoMetadataMediaKind.tv
-            : VideoMetadataMediaKind.movie,
         targetSourceId: sourceId,
       ),
     );
+  }
+
+  @override
+  Future<List<VideoDownloadJobSubtitleRow>?> listJobSubtitles(
+    String jobId,
+  ) async {
+    final FushiDatabase db = _database();
+    if (await db.getVideoDownloadJob(jobId) == null) return null;
+    return db.getVideoDownloadJobSubtitles(jobId);
   }
 
   @override
@@ -146,13 +144,13 @@ class AppDownloadHost implements HostDownloadHost {
   Future<void> retryJob(String jobId) => _requirePipeline.retryJob(jobId);
 
   @override
-  Future<void> deleteJob(String jobId) =>
-      // **不删磁盘文件**：host 是用户自己的机器，`listJobs` 返回的是本机全表
-      //（含 host 主人自己加的任务），对端在「远端任务」卡片上点一下删除就把
-      // 主人已经下载好的文件删了是不可接受的。无头 `fushi_server` 那边整台机器
-      // 本就是为对端服务的，语义不同。对端要的是「别再占我的列表」，落盘文件的
-      // 去留归 host 主人在本机下载中心决定。
-      _requirePipeline.deleteJob(jobId, deleteFiles: false);
+  Future<void> deleteJob(String jobId, {bool? deleteFiles}) =>
+      // [deleteFiles] 是对端用户在删除确认框里的显式勾选（BUG-3437），按字面执行。
+      // 缺省（旧客户端不带参数）**不删磁盘文件**：host 是用户自己的机器，
+      // `listJobs` 返回的是本机全表（含 host 主人自己加的任务），没问过就把主人
+      // 已经下载好的文件删了是不可接受的。无头 `fushi_server` 那边整台机器本就是
+      // 为对端服务的，缺省语义不同。
+      _requirePipeline.deleteJob(jobId, deleteFiles: deleteFiles ?? false);
 }
 
 /// 每次调用都按当下的 registry / service 重建一份 [PipelineSubscriptionHost]：

@@ -1,34 +1,33 @@
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:flutter/material.dart';
-import 'package:fushi_core/fushi_core.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:kana_kit/kana_kit.dart';
 import 'package:fushi_dictionary/src/language/ruby_text.dart';
 
 import '../../engine/fushidicts.dart';
 import '../../formats/yomichan_dictionary_format.dart';
 import '../../models/dictionary_entry.dart';
-import '../language.dart';
+import '../language_base.dart';
 import '../language_utils.dart';
 import '../../models/fushi_text_selection.dart';
 
 /// Language implementation of the Japanese language.
 class JapaneseLanguage extends Language {
   JapaneseLanguage._privateConstructor()
-      : super(
-          languageName: '日本語',
-          languageCode: 'ja',
-          countryCode: 'JP',
-          threeLetterCode: 'jpn',
-          preferVerticalReading: true,
-          textDirection: TextDirection.ltr,
-          isSpaceDelimited: false,
-          textBaseline: TextBaseline.ideographic,
-          helloWorld: 'こんにちは世界',
-          standardFormat: YomichanFormat.instance,
-          defaultFontFamily: 'NotoSansJP',
-        );
+    : super(
+        languageName: '日本語',
+        languageCode: 'ja',
+        countryCode: 'JP',
+        threeLetterCode: 'jpn',
+        preferVerticalReading: true,
+        textDirection: TextDirection.ltr,
+        isSpaceDelimited: false,
+        textBaseline: TextBaseline.ideographic,
+        helloWorld: 'こんにちは世界',
+        standardFormat: YomichanFormat.instance,
+        defaultFontFamily: 'NotoSansJP',
+      );
 
   /// Get the singleton instance of this language.
   static JapaneseLanguage get instance => _instance;
@@ -49,9 +48,33 @@ class JapaneseLanguage extends Language {
   static final LinkedHashMap<String, int> _matchLengthCache =
       LinkedHashMap<String, int>();
 
+  /// 匹配长度缓存的键：引擎只看查询串的前 [FushiDicts.defaultScanLength] 个
+  /// **码点**——候选前缀都在这个扫描窗口内，BUG-3212 的关西方言保护结构判定也只
+  /// 读窗口内的文本——所以键取的正是这段，结果只依赖键里的文本。
+  ///
+  /// 旧键是前 20 个 UTF-16 单元：全 BMP 文本时恰好盖住 16 个码点，但窗口里每多
+  /// 一个增补平面字（𠮷 这类，占两个单元）就少盖一个码点，两段只在键外不同的
+  /// 文本会共享同一个缓存值。按码点截断后两者对齐。
+  @visibleForTesting
+  static String matchLengthCacheKey(String text) {
+    int units = 0;
+    int codePoints = 0;
+    while (units < text.length && codePoints < FushiDicts.defaultScanLength) {
+      final int unit = text.codeUnitAt(units);
+      final bool surrogatePair =
+          unit >= 0xD800 &&
+          unit <= 0xDBFF &&
+          units + 1 < text.length &&
+          (text.codeUnitAt(units + 1) & 0xFC00) == 0xDC00;
+      units += surrogatePair ? 2 : 1;
+      codePoints++;
+    }
+    return units == text.length ? text : text.substring(0, units);
+  }
+
   static int _lookupMatchedLength(String text) {
     if (!FushiDicts.isInitialized) return 0;
-    final String key = text.length > 20 ? text.substring(0, 20) : text;
+    final String key = matchLengthCacheKey(text);
     final cached = _matchLengthCache.remove(key);
     if (cached != null) {
       _matchLengthCache[key] = cached;
@@ -91,10 +114,7 @@ class JapaneseLanguage extends Language {
   }
 
   @override
-  String wordFromIndex({
-    required String text,
-    required int index,
-  }) {
+  String wordFromIndex({required String text, required int index}) {
     if (index < 0 || index >= text.length) return '';
     final sub = text.substring(index);
     final len = _lookupMatchedLength(sub);
@@ -102,9 +122,7 @@ class JapaneseLanguage extends Language {
   }
 
   @override
-  TextRange getWordRange({
-    required FushiTextSelection selection,
-  }) {
+  TextRange getWordRange({required FushiTextSelection selection}) {
     final index = selection.range.start;
     if (index < 0 || index >= selection.text.length) {
       return TextRange(start: index, end: index + 1);
@@ -116,9 +134,7 @@ class JapaneseLanguage extends Language {
   }
 
   @override
-  int getGuessHighlightLength({
-    required String searchTerm,
-  }) {
+  int getGuessHighlightLength({required String searchTerm}) {
     final len = _lookupMatchedLength(searchTerm);
     return len > 0 ? len : 1;
   }
@@ -150,10 +166,9 @@ class JapaneseLanguage extends Language {
     if (entry.reading.isEmpty) {
       return RubyText(
         [RubyTextData(entry.word)],
-        style: Theme.of(context)
-            .textTheme
-            .titleLarge!
-            .copyWith(fontWeight: FontWeight.bold),
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge!.copyWith(fontWeight: FontWeight.bold),
         rubyStyle: Theme.of(context).textTheme.labelSmall,
         indexAction: indexAction,
         indexStyle: indexStyle,
@@ -162,14 +177,10 @@ class JapaneseLanguage extends Language {
 
     List<RubyTextData>? segments = fetchFurigana(entry: entry);
     return RubyText(
-      segments ??
-          [
-            RubyTextData(entry.word, ruby: entry.reading),
-          ],
-      style: Theme.of(context)
-          .textTheme
-          .titleLarge!
-          .copyWith(fontWeight: FontWeight.bold),
+      segments ?? [RubyTextData(entry.word, ruby: entry.reading)],
+      style: Theme.of(
+        context,
+      ).textTheme.titleLarge!.copyWith(fontWeight: FontWeight.bold),
       rubyStyle: Theme.of(context).textTheme.labelSmall,
       indexAction: indexAction,
       indexStyle: indexStyle,
@@ -182,8 +193,9 @@ class JapaneseLanguage extends Language {
       segmentsCache[entry] = cached;
       return cached;
     }
-    List<RubyTextData> furigana =
-        LanguageUtils.distributeFurigana(entry: entry);
+    List<RubyTextData> furigana = LanguageUtils.distributeFurigana(
+      entry: entry,
+    );
 
     segmentsCache[entry] = furigana;
     while (segmentsCache.length > _maxSegmentsCacheSize) {
@@ -210,16 +222,11 @@ class JapaneseLanguage extends Language {
       return Container(
         padding: const EdgeInsets.only(top: 1),
         decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(color: color),
-          ),
+          border: Border(top: BorderSide(color: color)),
         ),
         child: Text(
           text,
-          style: TextStyle(
-            color: color,
-            fontSize: dictionaryFontSize,
-          ),
+          style: TextStyle(color: color, fontSize: dictionaryFontSize),
         ),
       );
     }
@@ -235,10 +242,7 @@ class JapaneseLanguage extends Language {
         ),
         child: Text(
           text,
-          style: TextStyle(
-            color: color,
-            fontSize: dictionaryFontSize,
-          ),
+          style: TextStyle(color: color, fontSize: dictionaryFontSize),
         ),
       );
     }
@@ -247,16 +251,11 @@ class JapaneseLanguage extends Language {
       return Container(
         padding: const EdgeInsets.only(top: 1),
         decoration: const BoxDecoration(
-          border: Border(
-            top: BorderSide(color: Colors.transparent),
-          ),
+          border: Border(top: BorderSide(color: Colors.transparent)),
         ),
         child: Text(
           text,
-          style: TextStyle(
-            color: color,
-            fontSize: dictionaryFontSize,
-          ),
+          style: TextStyle(color: color, fontSize: dictionaryFontSize),
         ),
       );
     }
@@ -303,10 +302,7 @@ class JapaneseLanguage extends Language {
     listWidgets.add(
       Text(
         ' [$downstep]  ',
-        style: TextStyle(
-          color: color,
-          fontSize: dictionaryFontSize,
-        ),
+        style: TextStyle(color: color, fontSize: dictionaryFontSize),
       ),
     );
 

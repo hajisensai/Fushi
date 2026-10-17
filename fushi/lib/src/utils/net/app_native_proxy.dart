@@ -10,6 +10,8 @@ import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart'
     show redactAacsRelayUrls;
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show mapEdlSources;
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi/src/utils/net/hls_relay_normalizer.dart';
 
@@ -101,6 +103,9 @@ void registerTlsNativeOrigin({required String host, required int port}) {
 /// 端口必须显式：`https://h/x`（隐含 443）降成 `http://h/x` 会变成隐含 80，中继就
 /// 查不到登记项。
 String nativePlaybackUri(String uri) {
+  // `edl://` 拼接流（互联 host 的蓝光标题、本地加密盘的解密回环）：逐段改写，
+  // 整串 EDL 不是 URL。非 EDL 原样返回，走下面的单 URL 规则。
+  if (uri.startsWith('edl://')) return mapEdlSources(uri, nativePlaybackUri);
   final Uri? parsed = Uri.tryParse(uri);
   if (parsed == null) return uri;
   if (parsed.isScheme('http')) {
@@ -522,6 +527,16 @@ class AppNativeProxy {
           final List<int> body = utf8.encode(rewritten);
           _asWholeEntity(out);
           out.headers.removeAll(HttpHeaders.contentEncodingHeader);
+          // 正文已确认是 HLS 播放列表，就按 RFC 8216 的 mime 回给 native，不沿用上游
+          // 的 Content-Type（BUG-3079）。视频源扩展的 CDN 常把播放列表挂在非 .m3u8
+          // 路径上、回 `text/plain` / `application/octet-stream` / 图片类型；ffmpeg
+          // 的 hls_probe 遇到「扩展名与 mime 都不标准」直接拒认 HLS，libmpv 退到自己
+          // 的 demux_playlist，把每个分片当成独立的播放列表条目逐个播——每条只有一个
+          // 分片长（3～4 秒），进度条就被切成一段一段。
+          out.headers.contentType = ContentType(
+            'application',
+            'vnd.apple.mpegurl',
+          );
           out.contentLength = body.length;
           out.add(body);
           return;

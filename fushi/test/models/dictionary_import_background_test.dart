@@ -18,7 +18,7 @@ void main() {
     late Directory tmp;
 
     setUp(() {
-      tmp = Directory.systemTemp.createTempSync('hibiki_pack_test_');
+      tmp = Directory.systemTemp.createTempSync('fushi_pack_test_');
     });
 
     tearDown(() {
@@ -56,6 +56,39 @@ void main() {
       });
       expect(utf8.decode(byName['index.json']!), '{"title":"テスト辞典"}');
       expect(byName['sub/blob.bin'], binary);
+    });
+
+    test('整合包根即词典根：跳过别的词典与输出 zip 自身', () {
+      final Directory src = Directory(path.join(tmp.path, 'bundle'))
+        ..createSync(recursive: true);
+      File(path.join(src.path, 'index.json')).writeAsStringSync('{}');
+      File(path.join(src.path, 'term_bank_1.json')).writeAsStringSync('[]');
+      File(path.join(src.path, 'inner.zip')).writeAsStringSync('zip');
+      File(path.join(src.path, 'other.mdd')).writeAsStringSync('mdd');
+      final Directory nested = Directory(path.join(src.path, 'nested'))
+        ..createSync(recursive: true);
+      File(path.join(nested.path, 'index.json')).writeAsStringSync('{}');
+
+      final String zipPath = path.join(src.path, '_bundle_dict_0.zip');
+      DictionaryImportManager.packDirectoryToZip(
+        src.path,
+        zipPath,
+        skipPaths: <String>{
+          path.join(src.path, 'inner.zip'),
+          path.join(src.path, 'other.mdd'),
+          nested.path,
+        },
+      );
+
+      final Archive archive =
+          ZipDecoder().decodeBytes(File(zipPath).readAsBytesSync());
+      expect(
+        <String>{
+          for (final ArchiveFile f in archive)
+            if (f.isFile) f.name.replaceAll(r'\', '/'),
+        },
+        <String>{'index.json', 'term_bank_1.json'},
+      );
     });
 
     test('空目录打包成有效空 zip（不抛异常）', () {

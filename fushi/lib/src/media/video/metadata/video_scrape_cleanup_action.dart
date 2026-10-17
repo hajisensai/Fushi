@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_service.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -10,6 +11,34 @@ bool _videoScrapeCleanupRunning = false;
 /// 视频来源页是保活页；只刷新触发按钮所在的 widget 会让隐藏的来源页继续显示
 /// 已删除的「上次刮削」摘要。来源页监听此 revision 后从数据库重读。
 final ValueNotifier<int> videoScrapeCleanupRevision = ValueNotifier<int>(0);
+
+Future<VideoScrapeCleanupResult> _clearAllCommitted(
+  FushiDatabase database,
+) async {
+  final VideoScrapeCleanupResult result = await VideoScrapeCleanupService(
+    database: database,
+  ).clearAll();
+  videoScrapeCleanupRevision.value += 1;
+  return result;
+}
+
+/// 无界面版本（控制通道 `fushi_cli config run video.library.scrape_records_clear_all
+/// --yes`）：确认由调用方给出，其余与 [showClearAllVideoScrapeRecordsAction] 同一条
+/// single-flight 与完成广播。已有清理在跑时抛 [StateError]；清理事务本身忙时
+/// 原样抛 [VideoScrapeCleanupBusyException]。
+Future<VideoScrapeCleanupResult> clearAllVideoScrapeRecords(
+  FushiDatabase database,
+) async {
+  if (_videoScrapeCleanupRunning) {
+    throw StateError(t.video_source_scrape_clear_all_in_progress);
+  }
+  _videoScrapeCleanupRunning = true;
+  try {
+    return await _clearAllCommitted(database);
+  } finally {
+    _videoScrapeCleanupRunning = false;
+  }
+}
 
 /// 展示统一确认框并清理全部视频刮削记录。
 ///
@@ -40,15 +69,12 @@ Future<bool> showClearAllVideoScrapeRecordsAction({
                 title: t.video_source_scrape_clear_all_confirm_title,
                 message: t.video_source_scrape_clear_all_confirm_body,
                 confirmLabel: t.video_source_scrape_clear_all_confirm_action,
-                leadingIcon: Icons.delete_sweep_outlined,
+                leadingIcon: FushiIcons.deleteSweep,
               ),
         );
     if (confirmed == null || !context.mounted) return false;
 
-    final VideoScrapeCleanupResult result = await VideoScrapeCleanupService(
-      database: database,
-    ).clearAll();
-    videoScrapeCleanupRevision.value += 1;
+    final VideoScrapeCleanupResult result = await _clearAllCommitted(database);
     if (!context.mounted) return true;
 
     onCompleted?.call();
@@ -79,5 +105,5 @@ Future<bool> showClearAllVideoScrapeRecordsAction({
 
 void _showVideoScrapeCleanupSnackBar(BuildContext context, String message) {
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(content: Text(message)));
 }

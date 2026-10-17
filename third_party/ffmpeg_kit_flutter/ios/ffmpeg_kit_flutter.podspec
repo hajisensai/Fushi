@@ -1,5 +1,5 @@
 #
-# Hibiki: 自编 min ffmpeg-kit（arthenica 源码 Xcode 重编）的 iOS podspec。
+# Fushi: 自编 min ffmpeg-kit（arthenica 源码 Xcode 重编）的 iOS podspec。
 # 用本地 vendored xcframeworks 替代已停服的 cocoapods pod（ffmpeg-kit-ios-min 等），
 # 修复 BUG-122（旧预编译在新系统不可用）。xcframeworks 放在 ios/Frameworks/，含
 # device(arm64/arm64e) + simulator(arm64/x86_64) 两组切片（maccatalyst 切片不随包
@@ -7,7 +7,7 @@
 #
 # TODO-2357：本仓构建启用 `--enable-gpl --enable-x264`（片段导出全平台 H.264），
 # 产物有效许可因此是 **GPLv3** 而非 ffmpeg-kit 默认的 LGPLv3，故 license 指向
-# LICENSE-GPLv3.txt。Hibiki 自身即 GPL-3.0，两者一致。重编流程见 patches/README.md。
+# LICENSE-GPLv3.txt。Fushi 自身即 GPL-3.0，两者一致。重编流程见 patches/README.md。
 #
 # BUG-1373：许可文件名**必须**是 CocoaPods 认得的扩展名。cocoapods-core 的
 # `Linter#_validate_license` 只放行 `''` / `.txt` / `.md` / `.markdown`
@@ -20,8 +20,8 @@
 Pod::Spec.new do |s|
   s.name             = 'ffmpeg_kit_flutter'
   s.version          = '6.0.3'
-  s.summary          = 'FFmpeg Kit for Flutter (Hibiki self-built min)'
-  s.description      = 'Self-built minimal ffmpeg-kit (arthenica source rebuilt) for Hibiki.'
+  s.summary          = 'FFmpeg Kit for Flutter (Fushi self-built min)'
+  s.description      = 'Self-built minimal ffmpeg-kit (arthenica source rebuilt) for Fushi.'
   s.homepage         = 'https://github.com/arthenica/ffmpeg-kit'
   s.license          = { :type => 'GPL-3.0', :file => '../LICENSE-GPLv3.txt' }
   s.author           = { 'ARTHENICA' => 'open-source@arthenica.com' }
@@ -49,6 +49,11 @@ Pod::Spec.new do |s|
     'Frameworks/libswresample.xcframework',
   ]
   # ffmpeg/ffmpeg-kit 链接的系统 framework / 库（otool -L 实测 + 常见项；多声明无害）。
+  # charset：--enable-libxml2（BUG-3503 dash demuxer）后五个 libav* framework 新增
+  # LC_LOAD_DYLIB /usr/lib/libiconv.2.dylib（compat 7.0.0）与 /usr/lib/libcharset.1.dylib。
+  # 两者都是 iOS 系统库；这里显式声明，守卫
+  # fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart 与 patches/verify_mobile_outputs.py
+  # 钉住「framework 链接的每个 /usr/lib 库都在这一行」。
   s.frameworks = 'Foundation', 'CoreFoundation', 'CoreMedia', 'CoreVideo', 'AudioToolbox', 'VideoToolbox'
-  s.libraries  = 'c++', 'z', 'bz2', 'iconv'
+  s.libraries  = 'c++', 'z', 'bz2', 'iconv', 'charset'
 end

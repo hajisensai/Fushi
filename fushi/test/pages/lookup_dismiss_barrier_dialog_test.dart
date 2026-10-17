@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -217,7 +217,8 @@ void main() {
     }
   });
 
-  group('openSentenceContextModal 参数形态三镜像（BUG-1326 守卫）', () {
+  group('openAdvancedMining / openSentenceContextModal 参数形态三镜像（BUG-1326 守卫）',
+      () {
     // popup.js 三镜像：app 内 assets + app 内扩展 vendor + 仓库根扩展 vendor。
     const List<String> mirrors = <String>[
       'assets/popup/popup.js',
@@ -242,7 +243,21 @@ void main() {
                   r'\{ entryIndex: idx, matched: matched \}\)')
               .hasMatch(js),
           isTrue,
-          reason: '$path 的「调整上下文」按钮必须原样传 {entryIndex, matched} 对象',
+          reason: '$path 的扩展「调整上下文」分支必须原样传 {entryIndex, matched} 对象',
+        );
+        // app 内的「高级制卡」入口同一条纪律：对象，不 stringify。
+        expect(
+          RegExp(r"callHandler\(\s*'openAdvancedMining',\s*JSON\.stringify")
+              .hasMatch(js),
+          isFalse,
+          reason: '$path 的「高级制卡」入口把参数 stringify 了（BUG-1326）',
+        );
+        expect(
+          RegExp(r"callHandler\(\s*'openAdvancedMining',\s*"
+                  r'\{ entryIndex: idx, matched: matched, expression: expression \}\)')
+              .hasMatch(js),
+          isTrue,
+          reason: '$path 的「高级制卡」按钮必须原样传 {entryIndex, matched, expression} 对象',
         );
       });
     }

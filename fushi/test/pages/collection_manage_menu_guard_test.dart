@@ -57,15 +57,16 @@ void main() {
       '_CollectionManageAction.sortBySeason',
       '_CollectionManageAction.subtitles',
       '_CollectionManageAction.renameEpisodes',
-      '_CollectionManageAction.fillMissing',
       '_CollectionManageAction.splitBySeason',
       '_CollectionManageAction.rename',
-      '_CollectionManageAction.tags',
       '_CollectionManageAction.delete',
     ]) {
       expect(page, contains(action));
     }
     expect(page, contains('Future<void> _renameEpisodesFromScrape()'));
+    // 「补齐缺集」「标签」挪到 hero 次按钮，菜单里不再重复（BUG-3190）。
     expect(page, contains('void _fillMissingEpisodes()'));
+    expect(page, contains("ValueKey<String>('collection-hero-fill-missing')"));
+    expect(page, contains("ValueKey<String>('collection-hero-tags')"));
   });
 }

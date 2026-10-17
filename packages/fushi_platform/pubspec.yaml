@@ -1,12 +1,12 @@
 name: fushi_platform
 resolution: workspace
-description: Platform service abstractions for Hibiki
+description: Platform service abstractions for Fushi
 publish_to: none
 
 
 environment:
   sdk: ">=3.8.0 <4.0.0"
-  flutter: ">=3.41.6"
+  flutter: ">=3.47.0"
 
 dependencies:
   flutter:

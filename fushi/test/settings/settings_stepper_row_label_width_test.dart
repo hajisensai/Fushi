@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
@@ -9,7 +9,7 @@ import '../widgets/widget_test_helpers.dart';
 //
 // 阅读器设置面板在手机上宽约 300dp。带图标的 stepper 行行内布局要吃掉
 // padding 32 + 图标 42 + 间距 12 + stepper 自身 [kSettingsStepperTrailingWidth]
-// （160），标题只剩几十 dp——「字体大小」「字体粗细」「段落间距」全被 ellipsis
+// ，标题只剩几十 dp——「字体大小」「字体粗细」「段落间距」全被 ellipsis
 // 削成开头一个字。而 [AdaptiveSettingsRow] 的堆叠阈值此前是一个与 trailing 实际
 // 宽度无关的经验值（220 × textScale）：行宽卡在阈值上时标题拿到的是
 // `220 + 42 − 32 − 42 − 12 − 160 ≈ 16dp`，一个汉字都装不下，却仍判「放得下」。
@@ -77,7 +77,20 @@ void main() {
   // 265 是用户那张截图的复现点：旧阈值 `220 + 42 = 262` 刚好放行，标签只剩
   // `265 − 246 = 19dp`，一行一个汉字还多一点——「字体大小」于是只画得出「字」。
   // 坏区间是 262..342（过了阈值、又不够标题读），265 落在最坏的一端。
-  const List<double> widths = <double>[260, 265, 300, 320, 340, 360];
+  const List<double> widths = <double>[
+    260,
+    265,
+    300,
+    320,
+    340,
+    350,
+    357,
+    358,
+    360,
+    378,
+    386,
+    387,
+  ];
 
   // 这几行的真实标题（`settings_schema_reading.dart` 的 typography 组）。
   const List<String> titles = <String>['字体大小', '字体粗细', '段落间距'];
@@ -89,26 +102,24 @@ void main() {
   for (final double textScale in textScales) {
     for (final double width in widths) {
       for (final String title in titles) {
-        testWidgets(
-          'BUG-2550: stepper row title "$title" stays readable '
-          'at ${width}dp / ${textScale}x',
-          (WidgetTester tester) async {
-            await _pumpStepperRow(
-              tester,
-              title: title,
-              width: width,
-              textScale: textScale,
-            );
-            final RenderParagraph paragraph =
-                tester.renderObject<RenderParagraph>(find.text(title));
-            expect(
-              _titleTruncated(paragraph),
-              isFalse,
-              reason: '标题 "$title" 在 ${width}dp / ${textScale}x 的行里只拿到 '
-                  '${paragraph.size.width.toStringAsFixed(1)}dp，被省略号截断',
-            );
-          },
-        );
+        testWidgets('BUG-2550: stepper row title "$title" stays readable '
+            'at ${width}dp / ${textScale}x', (WidgetTester tester) async {
+          await _pumpStepperRow(
+            tester,
+            title: title,
+            width: width,
+            textScale: textScale,
+          );
+          final RenderParagraph paragraph = tester
+              .renderObject<RenderParagraph>(find.text(title));
+          expect(
+            _titleTruncated(paragraph),
+            isFalse,
+            reason:
+                '标题 "$title" 在 ${width}dp / ${textScale}x 的行里只拿到 '
+                '${paragraph.size.width.toStringAsFixed(1)}dp，被省略号截断',
+          );
+        });
       }
     }
   }
@@ -140,7 +151,8 @@ void main() {
           expect(
             labelColumn.size.width,
             greaterThanOrEqualTo(kSettingsRowLabelMinWidth * textScale - 0.5),
-            reason: '标签列在 ${width}dp / ${textScale}x 下只拿到 '
+            reason:
+                '标签列在 ${width}dp / ${textScale}x 下只拿到 '
                 '${labelColumn.size.width.toStringAsFixed(1)}dp，低于最低可读宽度',
           );
         },
@@ -162,6 +174,33 @@ void main() {
     },
   );
 
+  for (final double textScale in textScales) {
+    // Insets 32 + icon 42 + gap 12 + the actual 176dp control. A row
+    // eight pixels below this boundary passed the old 160dp declaration.
+    final double threshold =
+        32 + 42 + 12 + 176 + kSettingsRowLabelMinWidth * textScale;
+    for (final double delta in <double>[-8, 1]) {
+      testWidgets(
+        'stepper stacks at its measured boundary: ${textScale}x / $delta',
+        (WidgetTester tester) async {
+          await _pumpStepperRow(
+            tester,
+            title: '字体大小',
+            width: threshold + delta,
+            textScale: textScale,
+          );
+          final double titleY = tester.getCenter(find.text('字体大小')).dy;
+          final double controlY = tester.getCenter(find.text('35')).dy;
+          expect(
+            controlY - titleY,
+            delta < 0 ? greaterThan(20) : closeTo(0, 1),
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
   testWidgets(
     'BUG-2550: the declared stepper trailing width matches what it renders',
     (WidgetTester tester) async {
@@ -169,15 +208,13 @@ void main() {
       // 量 stepper 的真实固有宽度，钉住 [kSettingsStepperTrailingWidth]。
       await _pumpStepperRow(tester, title: '字体大小', width: 800);
       final RenderBox stepper = tester.renderObject<RenderBox>(
-        find.ancestor(
-          of: find.text('35'),
-          matching: find.byType(Wrap),
-        ),
+        find.ancestor(of: find.text('35'), matching: find.byType(Wrap)),
       );
       expect(
         stepper.size.width,
         closeTo(kSettingsStepperTrailingWidth, 1),
-        reason: 'stepper 实宽 ${stepper.size.width} 与声明的 '
+        reason:
+            'stepper 实宽 ${stepper.size.width} 与声明的 '
             '$kSettingsStepperTrailingWidth 不符，堆叠判据会偏',
       );
     },

@@ -9,8 +9,10 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
@@ -33,14 +35,15 @@ Future<AnkiMediaDedupReport?> runAnkiMediaDedupWithProgress(
   final ValueNotifier<bool> cancelRequested = ValueNotifier<bool>(false);
   BuildContext? dialogContext;
   bool dialogClosed = false;
-  unawaited(showDialog<void>(
+  unawaited(showAppDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext ctx) {
       dialogContext = ctx;
       return PopScope(
         canPop: false,
-        child: AlertDialog(
+        child: FushiAlertDialog(
+          icon: const FushiDialogHeroIcon(icon: FushiIcons.deleteSweep),
           title: Text(t.anki_dedup_progress_title),
           content: SizedBox(
             width: 420,
@@ -57,7 +60,7 @@ Future<AnkiMediaDedupReport?> runAnkiMediaDedupWithProgress(
                 valueListenable: cancelRequested,
                 builder:
                     (BuildContext context, bool requested, Widget? child) =>
-                        TextButton(
+                        FushiTextButton(
                   onPressed:
                       requested ? null : () => cancelRequested.value = true,
                   child: Text(
@@ -71,7 +74,7 @@ Future<AnkiMediaDedupReport?> runAnkiMediaDedupWithProgress(
               // 远端制卡后端（iOS 上的主力，本机无 AnkiDroid）那条请求超时是 30
               // 分钟，主机一休眠/掉线就是半小时全屏死锁，只能杀进程。这颗按钮只把
               // UI 与请求解绑（任务照跑），不谎称能停任务，与上面那条注释不冲突。
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.of(ctx).pop(),
                 child: Text(t.dialog_background_close),
               ),
@@ -135,26 +138,56 @@ class _AnkiMediaDedupProgressBody extends StatelessWidget {
           line = t.anki_dedup_progress_resolving(
               done: '${p.done}', total: '${p.total}');
         }
+        final ColorScheme scheme = Theme.of(context).colorScheme;
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            LinearProgressIndicator(value: value),
+            // M3E 波浪进度条；阶段文案 titleSmall 强调、计数等宽数字。
+            FushiLinearProgressIndicator(value: value),
             const SizedBox(height: 12),
-            Text(line),
+            Text(line, style: context.fushiType.titleSmallEmphasized.tabular),
             if (p?.currentFile != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                p!.currentFile!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
+              const SizedBox(height: 8),
+              // 当前文件：小件 12 圆角的 secondaryContainer 色块，与阶段行分层。
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.secondaryContainer,
+                  borderRadius: FushiM3eShape.smallRadius,
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    children: [
+                      FushiIcon(
+                        FushiIcons.file,
+                        size: 18,
+                        color: scheme.onSecondaryContainer,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          p!.currentFile!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.fushiType.bodySmall
+                              .copyWith(color: scheme.onSecondaryContainer),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
             if (!dryRun && (p?.bytesFreed ?? 0) > 0) ...[
-              const SizedBox(height: 4),
-              Text(t.anki_dedup_progress_freed(
-                  size: formatAnkiMediaDedupBytes(p!.bytesFreed))),
+              const SizedBox(height: 8),
+              Text(
+                t.anki_dedup_progress_freed(
+                    size: formatAnkiMediaDedupBytes(p!.bytesFreed)),
+                style: context.fushiType.bodyMedium
+                    .copyWith(color: scheme.primary),
+              ),
             ],
           ],
         );
@@ -171,13 +204,17 @@ Future<bool> showAnkiMediaDedupPlanDialog(
   required bool offerDelete,
 }) async {
   if (plan.deletions.isEmpty) {
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
+        icon: const FushiDialogHeroIcon(
+          icon: FushiIcons.success,
+          tone: FushiHeroTone.primary,
+        ),
         title: Text(t.anki_dedup_plan_title),
         content: Text(t.anki_dedup_report_clean),
         actions: [
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(t.dialog_ok),
           ),
@@ -186,9 +223,13 @@ Future<bool> showAnkiMediaDedupPlanDialog(
     );
     return false;
   }
-  final bool? ok = await showDialog<bool>(
+  final bool? ok = await showAppDialog<bool>(
     context: context,
-    builder: (BuildContext context) => AlertDialog(
+    builder: (BuildContext context) => FushiAlertDialog(
+      icon: FushiDialogHeroIcon(
+        icon: FushiIcons.deleteSweep,
+        tone: offerDelete ? FushiHeroTone.destructive : FushiHeroTone.neutral,
+      ),
       title: Text(t.anki_dedup_plan_title),
       content: SizedBox(
         width: 420,
@@ -202,15 +243,24 @@ Future<bool> showAnkiMediaDedupPlanDialog(
                 size: formatAnkiMediaDedupBytes(plan.bytesSaved),
               )),
               const SizedBox(height: 12),
-              for (final MediaDedupDeletion d in plan.deletions)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(t.anki_dedup_plan_entry(
-                    file: d.filename,
-                    size: formatAnkiMediaDedupBytes(d.bytes),
-                    canonical: d.canonical,
-                  )),
-                ),
+              // 逐条清单走分段卡片（首尾大圆角、行间 2px），一条一段。
+              FushiGroupedList(
+                children: [
+                  for (final MediaDedupDeletion d in plan.deletions)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      child: Text(
+                        t.anki_dedup_plan_entry(
+                          file: d.filename,
+                          size: formatAnkiMediaDedupBytes(d.bytes),
+                          canonical: d.canonical,
+                        ),
+                        style: context.fushiType.bodySmall,
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 12),
               Text(offerDelete
                   ? t.anki_dedup_plan_journal
@@ -227,18 +277,19 @@ Future<bool> showAnkiMediaDedupPlanDialog(
       ),
       actions: [
         if (!offerDelete)
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text(t.dialog_ok),
           ),
         if (offerDelete) ...[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiDialogAction(
+            kind: FushiDialogActionKind.destructive,
             onPressed: () => Navigator.pop(context, true),
-            child: Text(t.anki_dedup_plan_delete),
+            label: t.anki_dedup_plan_delete,
           ),
         ],
       ],
@@ -265,13 +316,17 @@ Future<void> showAnkiMediaDedupReportDialog(
   final String full = result.cancelled
       ? '${t.anki_dedup_report_cancelled_note}\n\n$body'
       : body;
-  await showDialog<void>(
+  await showAppDialog<void>(
     context: context,
-    builder: (BuildContext context) => AlertDialog(
+    builder: (BuildContext context) => FushiAlertDialog(
+      icon: FushiDialogHeroIcon(
+        icon: result.cancelled ? FushiIcons.warning : FushiIcons.success,
+        tone: result.cancelled ? FushiHeroTone.tertiary : FushiHeroTone.primary,
+      ),
       title: Text(t.anki_dedup_report_title),
       content: Text(full),
       actions: [
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.pop(context),
           child: Text(t.dialog_ok),
         ),

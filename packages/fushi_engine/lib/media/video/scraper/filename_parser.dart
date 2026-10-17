@@ -51,6 +51,23 @@ class _ParseState {
   String? resolution;
   String? secondaryTitle;
   bool isMovieHint = false;
+
+  /// [FilenameParser._takeTrailingYear] 剥掉了标题尾部的裸年份（BUG-3266）。
+  bool bareYearTaken = false;
+
+  /// 为 true 时不剥尾部裸年份（重算「带年份的完整标题」用）。
+  bool keepBareYear = false;
+
+  _ParseState copy() => _ParseState()
+    ..episode = episode
+    ..season = season
+    ..year = year
+    ..releaseGroup = releaseGroup
+    ..resolution = resolution
+    ..secondaryTitle = secondaryTitle
+    ..isMovieHint = isMovieHint
+    ..bareYearTaken = bareYearTaken
+    ..keepBareYear = keepBareYear;
 }
 
 /// anitomy 式文件名解析器：从发布组命名中恢复标题/集数/季度等结构化信息。
@@ -79,13 +96,25 @@ class FilenameParser {
         titleBlocks: titleBlocks,
       );
     }
+    // 记下产出标题的那段文本与解析前的状态：剥了裸年份时要按同样的起点重算一遍
+    // 不剥年份的完整标题（[ParsedMediaName.titleWithTrailingYear]，BUG-3266）。
+    String titleSource = scan.outside;
+    _ParseState beforeTitle = st.copy();
     String title = _parseTitleText(scan.outside, st);
     if (title.isEmpty) {
       // 外部文本为空（全括号命名）：按序取第一个能产出标题的未识别块。
       for (final String tb in titleBlocks) {
+        titleSource = tb;
+        beforeTitle = st.copy();
         title = _parseTitleText(tb, st);
         if (title.isNotEmpty) break;
       }
+    }
+    String? titleWithTrailingYear;
+    if (st.bareYearTaken && !beforeTitle.bareYearTaken) {
+      final String full =
+          _parseTitleText(titleSource, beforeTitle..keepBareYear = true);
+      if (full.isNotEmpty && full != title) titleWithTrailingYear = full;
     }
     return ParsedMediaName(
       title: title,
@@ -93,6 +122,7 @@ class FilenameParser {
       episode: st.episode,
       season: st.season,
       year: st.year,
+      titleWithTrailingYear: titleWithTrailingYear,
       releaseGroup: st.releaseGroup,
       resolution: st.resolution,
       isMovieHint: st.isMovieHint,
@@ -610,6 +640,33 @@ class FilenameParser {
     return out.trim();
   }
 
+  /// 标题尾部的裸年份 token：左边是分隔符（空白 / 点 / 下划线），右边到串尾。
+  static final RegExp _trailingYear =
+      RegExp(r'(?:^|[\s._])((?:19|20)\d{2})\s*$');
+
+  /// 剥离标题尾部的裸年份写入 [st]，返回剩余文本；不认时原样返回。
+  ///
+  /// 三道门防误伤片名里本就带的数字：
+  /// - 左侧必须还有标题文字（`1917` / `2012` 这类纯年份片名不动）；
+  /// - 年份不晚于明年（`Blade Runner 2049` 的 2049 是片名，不是年份）；
+  /// - 已从括号块拿到年份时不再取（括号年份是更明确的证据，first-wins）。
+  ///
+  /// 剩下的误伤（片名本身以合法年份结尾，`Death Race 2000`）语法上无法与
+  /// `Frieren 2023` 区分：剥离后在 [_ParseState.bareYearTaken] 记一笔，[parse] 据此
+  /// 给出不剥年份的 [ParsedMediaName.titleWithTrailingYear] 当后备刮削候选
+  /// （BUG-3266）。
+  static String _takeTrailingYear(String text, _ParseState st) {
+    if (st.year != null || st.keepBareYear) return text;
+    final RegExpMatch? m = _trailingYear.firstMatch(text);
+    if (m == null) return text;
+    if (!_hasTitleChars(text.substring(0, m.start))) return text;
+    final int year = int.parse(m.group(1)!);
+    if (year > DateTime.now().year + 1) return text;
+    st.year = year;
+    st.bareYearTaken = true;
+    return text.substring(0, m.start);
+  }
+
   /// 是否「明显不是标题」：纯数字/日期/时间，或设备录制命名（VID_/IMG_ 等）。
   static bool _looksLikeNonTitle(String text) {
     final String t = text.trim();
@@ -740,6 +797,11 @@ class FilenameParser {
         text = text.replaceRange(bare.start, text.length, ' ');
       }
     }
+    // ⑥' 标题尾部的裸年份（`Frieren.2023.1080p` / `Frieren 2023` / `Frieren.2023`，
+    // BUG-3192）。括号年份早在块分类 ③ 就摘掉了，不带括号的年份此前原样留在
+    // 标题里：`Frieren 2023` 归一化成 `frieren2023`，严格标题门永远对不上，
+    // 整条回落标题匹配查无。放在尾部噪音截断与裸集数之后，年份才露在尾部。
+    text = _takeTrailingYear(text, st);
     // ⑦ `～xxx～` 副标题。
     text = _extractFirst(text, _tildeSecondary, (RegExpMatch m) {
       final String sub = _cleanupTitle(m.group(1)!);

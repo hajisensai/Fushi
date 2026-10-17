@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 
 /// Windows foreground checks that [window_manager.isFocused] cannot always
 /// express. Native child windows such as WebView can temporarily own focus while
-/// the foreground window still belongs to this Hibiki process; in that state
+/// the foreground window still belongs to this Fushi process; in that state
 /// calling show/focus asks Windows to flash the taskbar button.
 abstract final class DesktopForegroundGuard {
   @visibleForTesting

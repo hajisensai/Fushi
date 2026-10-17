@@ -54,6 +54,10 @@ class PopupDbReader {
         val harmonicFrequency: Boolean = true,
         val collapseDictionaries: Boolean = true,
         val showExpressionTags: Boolean = false,
+        // 「统一词典样式」（popup_dictionary_unified_style，Dart 默认 false）。popup.js
+        // 只认宿主显式注入的 window.__fushiDictUnifiedStyle === true，本进程不注入就
+        // 永远是关的——用户在设置里打开了，系统级选词弹窗也不跟。
+        val dictionaryUnifiedStyle: Boolean = false,
         val globalDictCSS: String = "",
         val customDictCSS: String = "{}",
         val targetLanguage: String = "ja",
@@ -221,6 +225,7 @@ class PopupDbReader {
             harmonicFrequency = boolPref(prefs, "harmonic_frequency", true),
             collapseDictionaries = boolPref(prefs, "collapse_dictionaries", true),
             showExpressionTags = boolPref(prefs, "show_expression_tags", false),
+            dictionaryUnifiedStyle = boolPref(prefs, "popup_dictionary_unified_style", false),
             globalDictCSS = mergeCss(
                 compiledStyleCss.first,
                 prefs["global_dict_css"] ?: "",

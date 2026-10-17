@@ -5,7 +5,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,9 +15,13 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/tags/tag_chips.dart';
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
@@ -48,8 +52,39 @@ class _IdleScrapeRunner implements VideoSourceScrapeRunner {
     VideoSourceScrapeBatchContext? batchContext,
     List<VideoSourceScrapeWork>? plannedWorks,
     String runScope = 'source',
-  }) async =>
-      SourceScrapeReport(sourceIds: <int>[source.id]);
+  }) async => SourceScrapeReport(sourceIds: <int>[source.id]);
+}
+
+/// 支持手动候选搜索的 runner（BUG-2999 在线搜索封面）：只记录搜了什么。
+class _CoverSearchScrapeRunner extends _IdleScrapeRunner
+    implements VideoSourceScrapeManualBinding {
+  final List<String> queries = <String>[];
+
+  @override
+  Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
+    SourceLibraryRow? source,
+    required String workTitle,
+    String? workStableKey,
+    required String query,
+  }) async {
+    queries.add(query);
+    return const <VideoSourceScrapeConfirmationCandidate>[];
+  }
+
+  @override
+  Future<VideoMetadataWork?> fetchWorkForLookup(
+    VideoMetadataLookup lookup,
+  ) async => null;
+
+  @override
+  Future<SourceScrapeReport> rescrapeWorkWithLookup({
+    required SourceLibraryRow source,
+    required String workTitle,
+    String? workStableKey,
+    required VideoMetadataLookup lookup,
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+  }) => throw UnimplementedError();
 }
 
 class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
@@ -70,8 +105,10 @@ class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
     Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
   }) async {
-    final List<VideoBookRow> deleted =
-        await super.deleteVideoBooks(bookUids, scope: scope);
+    final List<VideoBookRow> deleted = await super.deleteVideoBooks(
+      bookUids,
+      scope: scope,
+    );
     deleteCalls += deleted.length;
     if (deleteCalls >= pauseAfterDeleteCount && !deletesCommitted.isCompleted) {
       deletesCommitted.complete();
@@ -96,8 +133,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_home_video_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_home_video_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -136,9 +174,10 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    storeDir = Directory.systemTemp.createTempSync('hibiki_home_video_store');
-    externalVideoDir =
-        Directory.systemTemp.createTempSync('hibiki_home_video_external');
+    storeDir = Directory.systemTemp.createTempSync('fushi_home_video_store');
+    externalVideoDir = Directory.systemTemp.createTempSync(
+      'fushi_home_video_external',
+    );
     platformServices = testPlatformServices();
     ankiRepository = FakeAnkiRepository();
     appModel = AppModel(platformServices)
@@ -196,13 +235,14 @@ void main() {
   Directory writeEmbeddedSubtitleCache(File video) {
     final Directory dir = embeddedSubtitleCacheDir(video.path);
     dir.createSync(recursive: true);
-    File(p.join(dir.path, 'sub_0.srt'))
-        .writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhello');
+    File(
+      p.join(dir.path, 'sub_0.srt'),
+    ).writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhello');
     return dir;
   }
 
   Future<({File cover, Directory embeddedCache, File subtitle, File video})>
-      seedVideoWithAssets({
+  seedVideoWithAssets({
     required String bookUid,
     required String title,
     required File cover,
@@ -213,13 +253,15 @@ void main() {
       videoFileName ?? '${bookUid.replaceAll('/', '_')}.mp4',
     );
     final Directory embeddedCache = writeEmbeddedSubtitleCache(video);
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: Value(bookUid),
-      title: Value(title),
-      videoPath: Value(video.path),
-      coverPath: Value(cover.path),
-      subtitleSource: Value(subtitle.path),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: Value(bookUid),
+        title: Value(title),
+        videoPath: Value(video.path),
+        coverPath: Value(cover.path),
+        subtitleSource: Value(subtitle.path),
+      ),
+    );
     return (
       cover: cover,
       embeddedCache: embeddedCache,
@@ -248,21 +290,25 @@ void main() {
   }
 
   Future<void> seedTaggedVideo() async {
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/1'),
-      title: Value('My Episode'),
-      videoPath: Value('/abs/ep1.mp4'),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/1'),
+        title: Value('My Episode'),
+        videoPath: Value('/abs/ep1.mp4'),
+      ),
+    );
     final int tagId = await db.createTag('Anime', 0xFF2196F3);
     await db.addTagToVideoBook('video/1', tagId);
   }
 
   Future<int> seedVideoAndLooseTag() async {
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/1'),
-      title: Value('My Episode'),
-      videoPath: Value('/abs/ep1.mp4'),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/1'),
+        title: Value('My Episode'),
+        videoPath: Value('/abs/ep1.mp4'),
+      ),
+    );
     return db.createTag('Anime', 0xFF2196F3);
   }
 
@@ -281,41 +327,46 @@ void main() {
     bool captureToasts = false,
     VideoBookRepository? repo,
     VideoSourceScrapeTaskController? scrapeTaskController,
-  }) =>
-      ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            navigatorKey: captureToasts ? toastNavigatorKey : null,
-            // HomeVideoPage 不再自带 Scaffold（与书架/词典 tab 统一，运行时挂在
-            // HomePage 的外层 Scaffold 内）；测试照样在 Scaffold 内 pump，
-            // FushiPageHeader 的 FushiIconButton(InkWell) 才有 Material 祖先。
-            // #792 分区化后 home 分区只渲染 dashboard 概览；标签栏/选择入口与
-            // 全量墙卡（tap 直接 _open 开播）都在 allVideos 分区，钉住该分区。
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: repo ?? VideoBookRepository(db),
-                section: VideoLibrarySection.allVideos,
-                scrapeTaskController: scrapeTaskController,
-              ),
-            ),
+  }) => ProviderScope(
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+      // 墙卡清晰度角标的规格服务不会真起 ffprobe：套件级默认探测器已在
+      // test/flutter_test_config.dart 换成不起进程的假探测器
+      // （helpers/fake_video_specs_probe.dart）。
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        navigatorKey: captureToasts ? toastNavigatorKey : null,
+        // HomeVideoPage 不再自带 Scaffold（与书架/词典 tab 统一，运行时挂在
+        // HomePage 的外层 Scaffold 内）；测试照样在 Scaffold 内 pump，
+        // FushiPageHeader 的 FushiIconButton(InkWell) 才有 Material 祖先。
+        // #792 分区化后 home 分区只渲染 dashboard 概览；标签栏/选择入口与
+        // 全量墙卡（tap 直接 _open 开播）都在 allVideos 分区，钉住该分区。
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: repo ?? VideoBookRepository(db),
+            section: VideoLibrarySection.allVideos,
+            scrapeTaskController: scrapeTaskController,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   Future<void> dragTopTagToVideoCard(WidgetTester tester) async {
+    // 顶部筛选条的标签是 M3E 彩色 filter chip [FushiTagToggleChip]（127d7722029
+    // 起；卡片上的标签层仍是 [FushiTagChip]）。
     final Finder tagChip = find
         .descendant(
           of: find.byType(FushiTagFilterBar),
-          matching: find.widgetWithText(FushiTagChip, 'Anime'),
+          matching: find.widgetWithText(FushiTagToggleChip, 'Anime'),
         )
         .first;
-    final Finder card =
-        find.byKey(const ValueKey<String>('home_video_video/1'));
+    final Finder card = find.byKey(
+      const ValueKey<String>('home_video_video/1'),
+    );
 
     final TestGesture gesture = await tester.startGesture(
       tester.getCenter(tagChip),
@@ -358,8 +409,11 @@ void main() {
 
     await openCardMenu(tester, videoCard('video/1'));
 
-    expect(find.text(t.batch_selected_count(n: 1)), findsNothing,
-        reason: '触屏必须先点明确的「选择」入口，长按不能暗中进入多选');
+    expect(
+      find.text(t.batch_selected_count(n: 1)),
+      findsNothing,
+      reason: '触屏必须先点明确的「选择」入口，长按不能暗中进入多选',
+    );
     expect(find.byType(FushiDialogFrame), findsOneWidget);
     expect(find.text(t.tag_label), findsOneWidget);
     expect(find.text(t.video_rename), findsOneWidget);
@@ -415,64 +469,66 @@ void main() {
   });
 
   testWidgets(
-      'first video open prompts for Anime4K recommended shaders (desktop)',
-      (WidgetTester tester) async {
-    // TODO-874：首次提示只在桌面端弹（移动端着色器超分掉帧/发热，纯抑制）。
-    // widget 测试默认平台是 android，需显式 override 到桌面端验证弹窗路径。
-    // override 必须在测试体内 try/finally 复位（绑定的 invariant 检查在
-    // tearDown 之前跑，用 addTearDown 复位会触发 foundation debug var 泄漏断言）。
-    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-    try {
-      await seedTaggedVideo();
-      await tester.pumpWidget(buildApp());
-      await tester.pumpAndSettle();
+    'first video open prompts for Anime4K recommended shaders (desktop)',
+    (WidgetTester tester) async {
+      // TODO-874：首次提示只在桌面端弹（移动端着色器超分掉帧/发热，纯抑制）。
+      // widget 测试默认平台是 android，需显式 override 到桌面端验证弹窗路径。
+      // override 必须在测试体内 try/finally 复位（绑定的 invariant 检查在
+      // tearDown 之前跑，用 addTearDown 复位会触发 foundation debug var 泄漏断言）。
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      try {
+        await seedTaggedVideo();
+        await tester.pumpWidget(buildApp());
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.text('My Episode'));
-      await tester.pumpAndSettle();
+        await tester.tap(find.text('My Episode'));
+        await tester.pumpAndSettle();
 
-      expect(find.text(t.video_shader_first_use_title), findsOneWidget);
-      expect(find.text(t.video_shader_first_use_body), findsOneWidget);
-      expect(
-        await db.getPref(PreferencesRepository.videoAnime4kPromptShownKey),
-        'b:true',
-      );
-      expect(appModel.prefsRepo.videoAnime4kPromptShown, isTrue);
-    } finally {
-      debugDefaultTargetPlatformOverride = null;
-    }
-  });
+        expect(find.text(t.video_shader_first_use_title), findsOneWidget);
+        expect(find.text(t.video_shader_first_use_body), findsOneWidget);
+        expect(
+          await db.getPref(PreferencesRepository.videoAnime4kPromptShownKey),
+          'b:true',
+        );
+        expect(appModel.prefsRepo.videoAnime4kPromptShown, isTrue);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
 
   testWidgets(
-      'TODO-874 mobile first video open suppresses Anime4K prompt (no side effect)',
-      (WidgetTester tester) async {
-    // 移动端首次打开视频不弹 Anime4K 提示，且不置 videoAnime4kPromptShown 标记
-    // （零副作用，保证桌面端跨平台同步后仍能首次弹出）。
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    try {
-      await seedTaggedVideo();
-      await tester.pumpWidget(buildApp());
-      await tester.pumpAndSettle();
+    'TODO-874 mobile first video open suppresses Anime4K prompt (no side effect)',
+    (WidgetTester tester) async {
+      // 移动端首次打开视频不弹 Anime4K 提示，且不置 videoAnime4kPromptShown 标记
+      // （零副作用，保证桌面端跨平台同步后仍能首次弹出）。
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        await seedTaggedVideo();
+        await tester.pumpWidget(buildApp());
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.text('My Episode'));
-      // 不能 pumpAndSettle：移动端 _open 不弹模态提示（desktop 用例靠 modal 暂停
-      // _open 才停在对话框），android 路径会继续 Navigator.push 真正的视频播放页
-      // （VideoFushiPage，media_kit 播放器在无头测试里永不 settle）。本用例只验
-      // 「无提示 + 无副作用」，把同步的 _showAnime4kFirstUsePromptIfNeeded（android
-      // 立即 early-return，无 async 对话框）跑完即可，用有界 pump 取代 pumpAndSettle。
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(find.text('My Episode'));
+        // 不能 pumpAndSettle：移动端 _open 不弹模态提示（desktop 用例靠 modal 暂停
+        // _open 才停在对话框），android 路径会继续 Navigator.push 真正的视频播放页
+        // （VideoFushiPage，media_kit 播放器在无头测试里永不 settle）。本用例只验
+        // 「无提示 + 无副作用」，把同步的 _showAnime4kFirstUsePromptIfNeeded（android
+        // 立即 early-return，无 async 对话框）跑完即可，用有界 pump 取代 pumpAndSettle。
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
 
-      expect(find.text(t.video_shader_first_use_title), findsNothing);
-      expect(find.text(t.video_shader_first_use_body), findsNothing);
-      expect(
-        await db.getPref(PreferencesRepository.videoAnime4kPromptShownKey),
-        isNull,
-      );
-      expect(appModel.prefsRepo.videoAnime4kPromptShown, isFalse);
-    } finally {
-      debugDefaultTargetPlatformOverride = null;
-    }
-  });
+        expect(find.text(t.video_shader_first_use_title), findsNothing);
+        expect(find.text(t.video_shader_first_use_body), findsNothing);
+        expect(
+          await db.getPref(PreferencesRepository.videoAnime4kPromptShownKey),
+          isNull,
+        );
+        expect(appModel.prefsRepo.videoAnime4kPromptShown, isFalse);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
 
   testWidgets('本地视频卡菜单含「打开文件位置」', (WidgetTester tester) async {
     // 书架书卡早有这条动作，视频卡没有（用户实报）。flutter_test 宿主恒为桌面
@@ -491,18 +547,23 @@ void main() {
     // videoPath 是 URL 的行（粘贴 URL 导入 / 远端库）本机根本没有文件可定位，
     // 画出来就是一个点了必然失败的按钮。这条用例是该门控的唯一行为级判据——
     // 上一条只能证明「桌面上会出现」，证明不了「没有本地文件时不出现」。
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/stream'),
-      title: Value('Stream Episode'),
-      videoPath: Value('https://example.com/live/ep1.m3u8'),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/stream'),
+        title: Value('Stream Episode'),
+        videoPath: Value('https://example.com/live/ep1.m3u8'),
+      ),
+    );
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
     await openCardMenu(tester, videoCard('video/stream'));
 
-    expect(find.byType(FushiDialogFrame), findsOneWidget,
-        reason: '菜单本身仍要弹出，缺的只是这一条动作');
+    expect(
+      find.byType(FushiDialogFrame),
+      findsOneWidget,
+      reason: '菜单本身仍要弹出，缺的只是这一条动作',
+    );
     expect(find.text(t.media_file_location_open), findsNothing);
   });
 
@@ -517,15 +578,16 @@ void main() {
     Future<int> seedVideoSource({
       String transport = 'local',
       String groupingMode = 'series',
-    }) =>
-        db.insertMediaSource(MediaSourcesCompanion.insert(
-          label: 'Local videos',
-          mediaKind: 'video',
-          rootPath: externalVideoDir.path,
-          createdAt: 1,
-          transport: Value(transport),
-          videoGroupingMode: Value(groupingMode),
-        ));
+    }) => db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Local videos',
+        mediaKind: 'video',
+        rootPath: externalVideoDir.path,
+        createdAt: 1,
+        transport: Value(transport),
+        videoGroupingMode: Value(groupingMode),
+      ),
+    );
 
     /// 挂在 [sourceId] 下、磁盘上真有文件的视频行。
     Future<void> seedSourcedVideo(
@@ -534,12 +596,14 @@ void main() {
       String fileName = 'Liz (2018).mp4',
     }) async {
       final File video = writeOriginalVideo(fileName);
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value(bookUid),
-        title: const Value('Liz'),
-        videoPath: Value(video.path),
-        sourceId: Value<int?>(sourceId),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value(bookUid),
+          title: const Value('Liz'),
+          videoPath: Value(video.path),
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
     }
 
     testWidgets('本机来源里的视频卡菜单出现重刮入口（列表行，与合集菜单同文案）', (WidgetTester tester) async {
@@ -550,11 +614,20 @@ void main() {
 
       await openCardMenu(tester, videoCard('video/liz'));
 
+      // MD3 管理菜单的列表行现在是分段行（_Md3SegmentRow，取代 FushiListItem）；
+      // 快捷动作是 _QuickActionButton。两者都是私有类，按类型名区分。
+      Finder ancestorNamed(String typeName) => find.ancestor(
+        of: find.text(t.collection_rescrape),
+        matching: find.byWidgetPredicate(
+          (Widget w) => w.runtimeType.toString() == typeName,
+        ),
+      );
       expect(
-        find.widgetWithText(FushiListItem, t.collection_rescrape),
+        ancestorNamed('_Md3SegmentRow'),
         findsOneWidget,
         reason: '做成列表行而不是快捷 chip：最长的标签不该压少整格 chip 的列数',
       );
+      expect(ancestorNamed('_QuickActionButton'), findsNothing);
     });
 
     testWidgets('没有刮削 controller 时不画重刮入口', (WidgetTester tester) async {
@@ -572,45 +645,58 @@ void main() {
     // 这些视频在计划器里拿不到作品单元，画出来点了必然只剩「不在计划里」。
     final Map<String, Future<String> Function()> unplannable =
         <String, Future<String> Function()>{
-      '手动导入（没有 sourceId）': () async {
-        await seedTaggedVideo();
-        return 'video/1';
-      },
-      '流媒体（URL，无来源）': () async {
-        await db.upsertVideoBook(const VideoBooksCompanion(
-          bookUid: Value('video/stream'),
-          title: Value('Stream Episode'),
-          videoPath: Value('https://example.com/live/ep1.m3u8'),
-        ));
-        return 'video/stream';
-      },
-      '目录分组模式的来源': () async {
-        await seedSourcedVideo('video/folder',
-            sourceId: await seedVideoSource(groupingMode: 'folder'));
-        return 'video/folder';
-      },
-      '非本机来源（sftp）': () async {
-        await seedSourcedVideo('video/sftp',
-            sourceId: await seedVideoSource(transport: 'sftp'));
-        return 'video/sftp';
-      },
-      '特典文件（NCOP）': () async {
-        await seedSourcedVideo('video/ncop',
-            sourceId: await seedVideoSource(), fileName: 'Liz NCOP.mp4');
-        return 'video/ncop';
-      },
-    };
+          '手动导入（没有 sourceId）': () async {
+            await seedTaggedVideo();
+            return 'video/1';
+          },
+          '流媒体（URL，无来源）': () async {
+            await db.upsertVideoBook(
+              const VideoBooksCompanion(
+                bookUid: Value('video/stream'),
+                title: Value('Stream Episode'),
+                videoPath: Value('https://example.com/live/ep1.m3u8'),
+              ),
+            );
+            return 'video/stream';
+          },
+          '目录分组模式的来源': () async {
+            await seedSourcedVideo(
+              'video/folder',
+              sourceId: await seedVideoSource(groupingMode: 'folder'),
+            );
+            return 'video/folder';
+          },
+          '非本机来源（sftp）': () async {
+            await seedSourcedVideo(
+              'video/sftp',
+              sourceId: await seedVideoSource(transport: 'sftp'),
+            );
+            return 'video/sftp';
+          },
+          '特典文件（NCOP）': () async {
+            await seedSourcedVideo(
+              'video/ncop',
+              sourceId: await seedVideoSource(),
+              fileName: 'Liz NCOP.mp4',
+            );
+            return 'video/ncop';
+          },
+        };
     unplannable.forEach((String label, Future<String> Function() seed) {
       testWidgets('不在刮削计划里的视频不画重刮入口：$label', (WidgetTester tester) async {
         final String bookUid = await seed();
-        await tester
-            .pumpWidget(buildApp(scrapeTaskController: scrapeController));
+        await tester.pumpWidget(
+          buildApp(scrapeTaskController: scrapeController),
+        );
         await tester.pumpAndSettle();
 
         await openCardMenu(tester, videoCard(bookUid));
 
-        expect(find.byType(FushiDialogFrame), findsOneWidget,
-            reason: '菜单本身仍要弹出，缺的只是这一条动作');
+        expect(
+          find.byType(FushiDialogFrame),
+          findsOneWidget,
+          reason: '菜单本身仍要弹出，缺的只是这一条动作',
+        );
         expect(find.text(t.collection_rescrape), findsNothing);
       });
     });
@@ -621,10 +707,9 @@ void main() {
       final int sourceId = await seedVideoSource();
       await seedSourcedVideo('video/liz', sourceId: sourceId);
       FushiToast.navigatorKey = toastNavigatorKey;
-      await tester.pumpWidget(buildApp(
-        captureToasts: true,
-        scrapeTaskController: scrapeController,
-      ));
+      await tester.pumpWidget(
+        buildApp(captureToasts: true, scrapeTaskController: scrapeController),
+      );
       await tester.pumpAndSettle();
 
       await openCardMenu(tester, videoCard('video/liz'));
@@ -637,6 +722,64 @@ void main() {
 
       expect(find.text(t.video_item_rescrape_not_planned), findsOneWidget);
       await tester.pump(const Duration(seconds: 3));
+    });
+  });
+
+  // BUG-2999：设置封面曾经只剩「选择封面图片」（本地文件）。在线入口与「手动指定
+  // 作品」共用同一条候选搜索，所以只有 controller 支持手动搜索时才画。
+  group('视频卡「在线搜索封面」（BUG-2999）', () {
+    testWidgets('支持手动搜索的 controller 下菜单有在线入口，点开按视频标题搜索', (
+      WidgetTester tester,
+    ) async {
+      await seedTaggedVideo();
+      final _CoverSearchScrapeRunner runner = _CoverSearchScrapeRunner();
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(runner);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(buildApp(scrapeTaskController: controller));
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/1'));
+      expect(
+        find.text(t.srt_import_pick_cover),
+        findsOneWidget,
+        reason: '本地选图入口照旧在场',
+      );
+      expect(
+        find.text(t.video_cover_online_search),
+        findsOneWidget,
+        reason: '设置封面不能只剩本地文件',
+      );
+
+      await tester.tap(find.text(t.video_cover_online_search));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(t.video_cover_online_search),
+        findsOneWidget,
+        reason: '弹出的是在线搜封面的候选搜索框（标题用封面文案，不是「手动指定作品」）',
+      );
+      expect(find.text(t.video_cover_online_hint), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-source-manual-search')),
+      );
+      await tester.pumpAndSettle();
+      expect(runner.queries, <String>[
+        'My Episode',
+      ], reason: '以视频标题作初始搜索词，打到资料源的候选搜索');
+    });
+
+    testWidgets('controller 不支持手动搜索时不画在线入口', (WidgetTester tester) async {
+      await seedTaggedVideo();
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(_IdleScrapeRunner());
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(buildApp(scrapeTaskController: controller));
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/1'));
+      expect(find.text(t.srt_import_pick_cover), findsOneWidget);
+      expect(find.text(t.video_cover_online_search), findsNothing);
     });
   });
 
@@ -672,6 +815,9 @@ void main() {
     expect(find.text(t.video_watch_progress_clear), findsOneWidget);
 
     await tester.tap(find.text(t.video_watch_progress_clear));
+    await tester.pumpAndSettle();
+    // 先过确认框（学习记录两条勾选默认都不勾 = 统计不动）。
+    await tester.tap(find.text(t.library_progress_reset_confirm));
     await tester.pumpAndSettle();
 
     final VideoBookRow row = (await db.getVideoBookByBookUid('video/1'))!;
@@ -733,14 +879,13 @@ void main() {
 
   // ── TODO-063 视频批量选择（标签栏旁的「选择」+ 批量打标签/删除）──────────
 
-  /// 点标签栏旁的「批量选择」按钮进入选择态。该按钮是 [FushiTagFilterBar] 末尾的
-  /// checklist 图标按钮（tooltip = batch_select）。
+  /// 点「批量选择」按钮进入选择态。单行页头（2026-10-14）起它从标签栏末尾并进
+  /// 页头动作，key 沿用 `library_select_toggle`（tooltip = batch_select）。
   Future<void> enterSelectionMode(WidgetTester tester) async {
-    final Finder selectBtn = find.descendant(
-      of: find.byType(FushiTagFilterBar),
-      matching: find.byIcon(Icons.checklist_outlined),
+    final Finder selectBtn = find.byKey(
+      const ValueKey<String>('library_select_toggle'),
     );
-    expect(selectBtn, findsOneWidget, reason: '视频标签栏旁应有「批量选择」按钮（用户报的「视频少了选择」）');
+    expect(selectBtn, findsOneWidget, reason: '视频页头应有「批量选择」按钮（用户报的「视频少了选择」）');
     await tester.tap(selectBtn);
     await tester.pumpAndSettle();
   }
@@ -762,16 +907,20 @@ void main() {
   });
 
   testWidgets('选择态点视频卡勾选 → 批量删除真删视频书', (WidgetTester tester) async {
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/1'),
-      title: Value('Episode One'),
-      videoPath: Value('/abs/ep1.mp4'),
-    ));
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/2'),
-      title: Value('Episode Two'),
-      videoPath: Value('/abs/ep2.mp4'),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/1'),
+        title: Value('Episode One'),
+        videoPath: Value('/abs/ep1.mp4'),
+      ),
+    );
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/2'),
+        title: Value('Episode Two'),
+        videoPath: Value('/abs/ep2.mp4'),
+      ),
+    );
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
@@ -781,7 +930,8 @@ void main() {
 
     // 选择态下点卡片切换勾选（不再打开播放页）。
     await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('home_video_video/1')));
+      find.byKey(const ValueKey<String>('home_video_video/1')),
+    );
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.pumpAndSettle();
     expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget);
@@ -793,14 +943,17 @@ void main() {
     await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
 
-    final List<VideoBookRow> remaining =
-        await VideoBookRepository(db).listAll();
-    expect(remaining.map((VideoBookRow b) => b.bookUid), <String>['video/2'],
-        reason: 'video/1 被批量删除，video/2 保留');
+    final List<VideoBookRow> remaining = await VideoBookRepository(
+      db,
+    ).listAll();
+    expect(remaining.map((VideoBookRow b) => b.bookUid), <String>[
+      'video/2',
+    ], reason: 'video/1 被批量删除，video/2 保留');
   });
 
-  testWidgets('卡片菜单单删会回收本视频 app-owned 封面字幕与内嵌字幕缓存',
-      (WidgetTester tester) async {
+  testWidgets('卡片菜单单删会回收本视频 app-owned 封面字幕与内嵌字幕缓存', (
+    WidgetTester tester,
+  ) async {
     resetAppOwnedVideoAssetDirs();
     final deleted = await seedVideoWithAssets(
       bookUid: 'video/1',
@@ -835,7 +988,12 @@ void main() {
     await tester.pumpAndSettle();
 
     await openCardMenu(
-        tester, find.byKey(const ValueKey<String>('home_video_video/1')));
+      tester,
+      find.byKey(const ValueKey<String>('home_video_video/1')),
+    );
+    // 管理菜单在 800x600 默认视口里可滚动，危险区的「删除」落在折线下，先滚到可见。
+    await tester.ensureVisible(find.text(t.dialog_delete).last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.dialog_delete).last);
@@ -853,8 +1011,11 @@ void main() {
     expect(deleted.cover.existsSync(), isFalse);
     expect(deleted.subtitle.existsSync(), isFalse);
     expect(deleted.embeddedCache.existsSync(), isFalse);
-    expect(deleted.video.existsSync(), isTrue,
-        reason: '删除视频书不得删除用户原始 videoPath');
+    expect(
+      deleted.video.existsSync(),
+      isTrue,
+      reason: '删除视频书不得删除用户原始 videoPath',
+    );
     expect(kept.cover.existsSync(), isTrue);
     expect(kept.subtitle.existsSync(), isTrue);
     expect(kept.embeddedCache.existsSync(), isTrue);
@@ -907,11 +1068,13 @@ void main() {
     await tester.pumpAndSettle();
     await enterSelectionMode(tester);
     await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('home_video_video/1')));
+      find.byKey(const ValueKey<String>('home_video_video/1')),
+    );
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('home_video_video/2')));
+      find.byKey(const ValueKey<String>('home_video_video/2')),
+    );
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/2')));
     await tester.pumpAndSettle();
 
@@ -939,8 +1102,11 @@ void main() {
     expect(selectedTwo.embeddedCache.existsSync(), isFalse);
     expect(selectedOne.video.existsSync(), isTrue);
     expect(selectedTwo.video.existsSync(), isTrue);
-    expect(sharedSubtitle.existsSync(), isTrue,
-        reason: '其他视频仍引用的 app-owned 字幕不能被选中视频删除波及');
+    expect(
+      sharedSubtitle.existsSync(),
+      isTrue,
+      reason: '其他视频仍引用的 app-owned 字幕不能被选中视频删除波及',
+    );
     expect(kept.cover.existsSync(), isTrue);
     expect(kept.embeddedCache.existsSync(), isTrue);
     expect(kept.video.existsSync(), isTrue);
@@ -983,11 +1149,13 @@ void main() {
     await tester.pumpAndSettle();
     await enterSelectionMode(tester);
     await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('home_video_video/1')));
+      find.byKey(const ValueKey<String>('home_video_video/1')),
+    );
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('home_video_video/2')));
+      find.byKey(const ValueKey<String>('home_video_video/2')),
+    );
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/2')));
     await tester.pumpAndSettle();
 
@@ -1037,49 +1205,54 @@ void main() {
   });
 
   testWidgets('选择态批量打标签 → 真写视频标签映射', (WidgetTester tester) async {
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/1'),
-      title: Value('Episode One'),
-      videoPath: Value('/abs/ep1.mp4'),
-    ));
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/2'),
-      title: Value('Episode Two'),
-      videoPath: Value('/abs/ep2.mp4'),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/1'),
+        title: Value('Episode One'),
+        videoPath: Value('/abs/ep1.mp4'),
+      ),
+    );
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/2'),
+        title: Value('Episode Two'),
+        videoPath: Value('/abs/ep2.mp4'),
+      ),
+    );
     final int tagId = await db.createTag('Anime', 0xFF2196F3);
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
     await enterSelectionMode(tester);
     await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('home_video_video/1')));
+      find.byKey(const ValueKey<String>('home_video_video/1')),
+    );
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('home_video_video/2')));
+      find.byKey(const ValueKey<String>('home_video_video/2')),
+    );
     await tester.tap(find.byKey(const ValueKey<String>('home_video_video/2')));
     await tester.pumpAndSettle();
     expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
 
-    // 点批量打标签按钮（批量栏的 sell_outlined）→ 打开三态 picker。dialog 打开前
-    // 页面上只有批量栏一个 sell_outlined（卡片标签层用 FushiTagChip，不是该图标）。
-    await tester.tap(find.byIcon(Icons.sell_outlined).last);
-    await tester.pumpAndSettle();
-    expect(find.text(t.batch_tag_title), findsOneWidget);
-
-    // 把「Anime」设为「添加」（segmented 的 + 段）：在 SegmentedButton 内定位 + 图标，
-    // 避开页头导入按钮（也是 Icons.add，TODO-064 起恒渲染）。
-    final Finder segmentedButton = find.byWidgetPredicate(
-      (Widget w) => w is SegmentedButton,
+    // 点批量栏的打标签按钮 → 打开共享三态标签选择器（1de93012a32 起取代旧的
+    // 批量打标签对话框 + SegmentedButton 三段）。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home_video_batch_tag')),
     );
-    expect(segmentedButton, findsWidgets);
-    await tester.tap(find.descendant(
-      of: segmentedButton.first,
-      matching: find.byIcon(Icons.add),
-    ));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(t.batch_tag_apply));
+    expect(find.byType(TagPickerPanel), findsOneWidget);
+
+    // 两条都还没挂「Anime」：选择器里该标签是「无」，点一下 → 全加；多目标不即时
+    // 落库，按「应用」才写。
+    final Finder chip = find.byKey(ValueKey<String>('tag_picker_chip_$tagId'));
+    expect(tester.widget<FushiTagToggleChip>(chip).state, TagCheckState.none);
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+    expect(tester.widget<FushiTagToggleChip>(chip).state, TagCheckState.all);
+    expect(await db.getTagsForVideoBook('video/1'), isEmpty);
+    await tester.tap(find.byKey(const ValueKey<String>('tag_picker_apply')));
     await tester.pumpAndSettle();
 
     expect(

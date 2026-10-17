@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/dictionary/dict_style_preview_sample.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
@@ -250,21 +250,31 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'favoriteEntry',
   'findMinedMatches',
   'getDictAsset',
+  'listWordAudioSources',
   'mineEntry',
   'minedCardAction',
   'onLinkClick',
+  'openAdvancedMining',
   'openInAnki',
   'openLink',
   'openMinedNote',
   'openSentenceContextModal',
   'overwriteTargetNoteId',
+  // BUG-3311：Android 主引擎上 popup.js 把单词音频交宿主原生播放器。预览不出声，
+  // 回 null（非 true）→ popup.js 回落 <audio>，与预览里其它播音桥同样 no-op。
+  'playWordAudioNative',
   // 裁剪模式（宿主调 __fushiSetVisibleViewportHeight）才会复报内容高度；预览
   // WebView 占满自身区域、不裁剪，也没有外壳高度可重算，与 popupRendered 同样 no-op。
   'popupContentResized',
   'popupRendered',
+  // BUG-3492：卡在后台写入时的排队覆盖；预览不制卡。
+  'queueOverwrite',
   'reportJsError',
   'resolveWordAudio',
   'setSentenceContext',
+  // 复习词状态标记：预览不显示复习状态（回 null = 不渲染标记）、不打开卡片。
+  'srsOpenCard',
+  'srsTermStatus',
   'tapOutside',
   'textSelected',
   'updateEntry',
@@ -314,6 +324,15 @@ final String _kPickerJs = '''
         ? highlightSelector + '{outline:2px dashed rgba(120,160,255,.9);outline-offset:1px;}'
         : '';
       styleEl.textContent = css + '\\n' + marker;
+      // 换了部位就把它滚进视野（应用内反馈 10-09：窄屏预览框只有半屏，选「频率」「词典名」
+      // 还得自己去预览里上下找）。同一部位改属性不滚，免得拖滑块时画面来回跳。
+      if (highlightSelector && highlightSelector !== window.__fushiStylePreviewLastSel) {
+        window.__fushiStylePreviewLastSel = highlightSelector;
+        var target = document.querySelector(highlightSelector);
+        if (target && target.scrollIntoView) {
+          target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      }
     };
 
     document.addEventListener('mousemove', function (e) {

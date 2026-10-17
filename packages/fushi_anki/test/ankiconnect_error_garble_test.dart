@@ -66,7 +66,7 @@ AnkiSettings _settings() => const AnkiSettings(
       availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
       availableNoteTypes: <AnkiNoteType>[
         AnkiNoteType(
-            id: 2, name: 'Hibiki', fields: <String>['Expression', 'Reading']),
+            id: 2, name: 'Fushi', fields: <String>['Expression', 'Reading']),
       ],
       fieldMappings: <String, String>{
         'Expression': 'EXPR',

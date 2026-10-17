@@ -22,7 +22,7 @@ void main() {
       'lib/src/pages/implementations/game_statistics_page.dart',
     ).readAsStringSync();
 
-    expect(source, contains('tooltip: t.stat_clear_all'));
+    expect(source, contains('onClearAll: _confirmAndClearAll'));
     expect(source, contains('t.stat_clear_all_game_message'));
     expect(source, contains('clearAllGalgameStatistics()'));
     expect(source, isNot(contains('clearAllActivityEvents()')));

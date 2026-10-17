@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -254,7 +255,15 @@ void main() {
     ).readAsStringSync();
     final int start = src.indexOf('Future<void> _initRemote() async {');
     expect(start, greaterThan(0));
-    final int end = src.indexOf('\n  }\n', start);
+    final RegExpMatch? methodEnd = RegExp(
+      r'\r?\n  }\r?\n',
+    ).firstMatch(src.substring(start));
+    expect(
+      methodEnd,
+      isNotNull,
+      reason: '_initRemote closing brace must exist',
+    );
+    final int end = start + methodEnd!.start;
     final String body = src.substring(start, end);
     expect(body, contains('_videoHdrOutputMode = appModel.videoHdrOutputMode'));
     expect(body, contains('_videoFitMode = appModel.videoFitMode'));
@@ -321,6 +330,217 @@ void main() {
     });
   });
 
+  group('compositorHdrFallback（合成器 HDR 失败的记忆范围）', () {
+    test('三步都成：不退', () {
+      expect(
+        compositorHdrFallback(engineOn: true, textureReady: true, textureOn: true),
+        isNull,
+      );
+    });
+
+    test('引擎没开成：进程级「不支持」', () {
+      expect(
+        compositorHdrFallback(
+          engineOn: false,
+          textureReady: true,
+          textureOn: false,
+        ),
+        CompositorHdrFallback.engineUnsupported,
+      );
+    });
+
+    test('纹理还没建好：等纹理，不记失败（不得被记成进程级不支持）', () {
+      expect(
+        compositorHdrFallback(
+          engineOn: true,
+          textureReady: false,
+          textureOn: false,
+        ),
+        CompositorHdrFallback.awaitTexture,
+      );
+    });
+
+    test('纹理拒绝：只退当前这一路', () {
+      expect(
+        compositorHdrFallback(
+          engineOn: true,
+          textureReady: true,
+          textureOn: false,
+        ),
+        CompositorHdrFallback.textureRefused,
+      );
+    });
+
+    test('控制器只在 engineUnsupported 分支写进程级缓存', () {
+      final String src = File(
+        'lib/src/media/video/video_player_controller.dart',
+      ).readAsStringSync();
+      expect('_compositorHdrSupported = false'.allMatches(src), hasLength(1));
+      final int write = src.indexOf('_compositorHdrSupported = false');
+      final String before = src.substring(write - 120, write);
+      expect(before, contains('CompositorHdrFallback.engineUnsupported:'));
+    });
+  });
+
+  group('compositorHdrTarget（合成器内 HDR 的唯一亮度换算）', () {
+    test('HDR 显示器：界面白 = SDR 内容亮度，参考白按绝对亮度，峰值 = 面板峰值', () {
+      expect(
+        compositorHdrTarget(
+          const HdrDisplayInfo(
+            colorSpace: kDxgiColorSpaceHdr10,
+            maxLuminance: 1015,
+            bitsPerColor: 10,
+            sdrWhiteNits: 280,
+          ),
+        ),
+        const CompositorHdrTarget(
+          engineSdrWhiteNits: 280,
+          referenceWhiteNits: 280,
+          targetPeakNits: 1015,
+        ),
+      );
+    });
+
+    test('HDR 显示器但 SDR 白未知：按 scRGB 基准 80 尼特', () {
+      final CompositorHdrTarget target = compositorHdrTarget(
+        const HdrDisplayInfo(
+          colorSpace: kDxgiColorSpaceHdr10,
+          maxLuminance: 0,
+          bitsPerColor: 10,
+        ),
+      );
+      expect(target.engineSdrWhiteNits, kScRgbWhiteNits);
+      expect(target.referenceWhiteNits, kScRgbWhiteNits);
+      // 峰值未知交给 mpv 推断（≤0）。
+      expect(target.targetPeakNits, 0);
+    });
+
+    test('SDR 显示器（always 模式）：参考白对齐界面白、峰值压到参考白，'
+        '不随面板峰值 / SDR 滑块变', () {
+      const CompositorHdrTarget sdr = CompositorHdrTarget(
+        engineSdrWhiteNits: kScRgbWhiteNits,
+        referenceWhiteNits: kMpvReferenceWhiteNits,
+        targetPeakNits: kMpvReferenceWhiteNits,
+      );
+      for (final HdrDisplayInfo display in <HdrDisplayInfo>[
+        HdrDisplayInfo.unknown,
+        const HdrDisplayInfo(
+          colorSpace: kDxgiColorSpaceSdr,
+          maxLuminance: 1015,
+          bitsPerColor: 10,
+          sdrWhiteNits: 280,
+        ),
+      ]) {
+        expect(compositorHdrTarget(display), sdr, reason: '$display');
+      }
+    });
+
+    test('值相等即相等（控制器靠它判断要不要重下发）', () {
+      const HdrDisplayInfo display = HdrDisplayInfo(
+        colorSpace: kDxgiColorSpaceHdr10,
+        maxLuminance: 600,
+        bitsPerColor: 10,
+        sdrWhiteNits: 200,
+      );
+      expect(compositorHdrTarget(display), compositorHdrTarget(display));
+      expect(
+        compositorHdrTarget(display).hashCode,
+        compositorHdrTarget(display).hashCode,
+      );
+    });
+  });
+
+  group('HDR 图形白归一（字幕 / 弹幕层）', () {
+    const HdrDisplayInfo hdr280 = HdrDisplayInfo(
+      colorSpace: kDxgiColorSpaceHdr10,
+      maxLuminance: 1000,
+      bitsPerColor: 10,
+      sdrWhiteNits: 280,
+    );
+
+    test('直通 + HDR 显示器：压到 203 / SDR 白（用户机实测 280 尼特）', () {
+      expect(
+        hdrGraphicsWhiteScale(hostActive: true, display: hdr280),
+        closeTo(203 / 280, 1e-9),
+      );
+    });
+
+    test('未直通 / SDR 显示器 / SDR 白未知：恒 1（视频与 Flutter 同在 SDR 基准）', () {
+      expect(hdrGraphicsWhiteScale(hostActive: false, display: hdr280), 1);
+      expect(
+        hdrGraphicsWhiteScale(
+          hostActive: true,
+          display: const HdrDisplayInfo(
+            colorSpace: kDxgiColorSpaceSdr,
+            maxLuminance: 400,
+            bitsPerColor: 8,
+            sdrWhiteNits: 280,
+          ),
+        ),
+        1,
+      );
+      expect(
+        hdrGraphicsWhiteScale(
+          hostActive: true,
+          display: const HdrDisplayInfo(
+            colorSpace: kDxgiColorSpaceHdr10,
+            maxLuminance: 1000,
+            bitsPerColor: 10,
+          ),
+        ),
+        1,
+      );
+    });
+
+    test('SDR 白低于 203：8-bit SDR 窗口无法更亮，取 1', () {
+      expect(
+        hdrGraphicsWhiteScale(
+          hostActive: true,
+          display: const HdrDisplayInfo(
+            colorSpace: kDxgiColorSpaceHdr10,
+            maxLuminance: 1000,
+            bitsPerColor: 10,
+            sdrWhiteNits: 120,
+          ),
+        ),
+        1,
+      );
+    });
+
+    test('编码域乘数 = sRGB OETF(线性系数)：白经 sRGB EOTF 解回恰为该系数', () {
+      double eotf(double v) =>
+          v <= 0.04045 ? v / 12.92 : _pow((v + 0.055) / 1.055, 2.4);
+      for (final double k in <double>[0.725, 0.5, 0.2, 0.002]) {
+        expect(eotf(hdrGraphicsEncodedGain(k)), closeTo(k, 1e-9), reason: '$k');
+      }
+      expect(hdrGraphicsEncodedGain(1), 1);
+      expect(hdrGraphicsEncodedGain(1.4), 1);
+    });
+
+    testWidgets('系数 < 1 才套 ColorFiltered；进出直通子树 State 不重建', (
+      WidgetTester tester,
+    ) async {
+      Widget host(double scale) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: HdrGraphicsWhiteLevel(
+          linearScale: scale,
+          child: const _StatefulProbe(),
+        ),
+      );
+      await tester.pumpWidget(host(1));
+      expect(find.byType(ColorFiltered), findsNothing);
+      final State probe = tester.state(find.byType(_StatefulProbe));
+
+      await tester.pumpWidget(host(203 / 280));
+      expect(find.byType(ColorFiltered), findsOneWidget);
+      expect(tester.state(find.byType(_StatefulProbe)), same(probe));
+
+      await tester.pumpWidget(host(1));
+      expect(find.byType(ColorFiltered), findsNothing);
+      expect(tester.state(find.byType(_StatefulProbe)), same(probe));
+    });
+  });
+
   group('HdrVideoHostChannel', () {
     const MethodChannel channel = MethodChannel('test/hdr_video_host');
     final List<MethodCall> calls = <MethodCall>[];
@@ -333,12 +553,17 @@ void main() {
             switch (call.method) {
               case 'create':
                 return 0xABCD;
+              case 'compositorHdrSupported':
+                return true;
+              case 'setCompositorHdrOutput':
+                return (call.arguments as Map<Object?, Object?>)['enabled'];
               case 'displayInfo':
                 return <String, Object?>{
                   'valid': true,
                   'colorSpace': 12,
                   'maxLuminance': 1015.0,
                   'bitsPerColor': 10,
+                  'sdrWhiteNits': 280.0,
                 };
               default:
                 return null;
@@ -362,6 +587,7 @@ void main() {
       expect(info.isHdr, isTrue);
       expect(info.maxLuminance, 1015.0);
       expect(info.bitsPerColor, 10);
+      expect(info.sdrWhiteNits, 280.0);
       await host.destroy();
       expect(calls.map((MethodCall c) => c.method).toList(), <String>[
         'create',
@@ -377,6 +603,44 @@ void main() {
       });
     });
 
+    test('合成器内 HDR：能力查询与开关透传参数、回传引擎结果', () async {
+      final HdrVideoHostChannel host = HdrVideoHostChannel(
+        channel: channel,
+        isWindows: true,
+      );
+      expect(await host.compositorHdrSupported(), isTrue);
+      expect(
+        await host.setCompositorHdrOutput(enabled: true, sdrWhiteNits: 280),
+        isTrue,
+      );
+      expect(
+        await host.setCompositorHdrOutput(enabled: false, sdrWhiteNits: 80),
+        isFalse,
+      );
+      expect(calls.map((MethodCall c) => c.method).toList(), <String>[
+        'compositorHdrSupported',
+        'setCompositorHdrOutput',
+        'setCompositorHdrOutput',
+      ]);
+      expect(calls[1].arguments, <String, Object>{
+        'enabled': true,
+        'sdrWhiteNits': 280.0,
+      });
+    });
+
+    test('原版引擎 / 旧 runner（无此方法）报不支持，不抛', () async {
+      const MethodChannel bare = MethodChannel('test/hdr_video_host_bare');
+      final HdrVideoHostChannel host = HdrVideoHostChannel(
+        channel: bare,
+        isWindows: true,
+      );
+      expect(await host.compositorHdrSupported(), isFalse);
+      expect(
+        await host.setCompositorHdrOutput(enabled: true, sdrWhiteNits: 280),
+        isFalse,
+      );
+    });
+
     test('非 Windows 全部 no-op：不碰通道，create 返回 0', () async {
       final HdrVideoHostChannel host = HdrVideoHostChannel(
         channel: channel,
@@ -386,6 +650,11 @@ void main() {
       await host.setRect(Rect.zero);
       await host.destroy();
       expect((await host.displayInfo()).isHdr, isFalse);
+      expect(await host.compositorHdrSupported(), isFalse);
+      expect(
+        await host.setCompositorHdrOutput(enabled: true, sdrWhiteNits: 280),
+        isFalse,
+      );
       expect(calls, isEmpty);
     });
 
@@ -444,4 +713,19 @@ void main() {
       expect(reported.length, 2);
     });
   });
+}
+
+double _pow(double base, double exponent) =>
+    math.pow(base, exponent).toDouble();
+
+class _StatefulProbe extends StatefulWidget {
+  const _StatefulProbe();
+
+  @override
+  State<_StatefulProbe> createState() => _StatefulProbeState();
+}
+
+class _StatefulProbeState extends State<_StatefulProbe> {
+  @override
+  Widget build(BuildContext context) => const SizedBox(width: 10, height: 10);
 }

@@ -1,6 +1,8 @@
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 设置子页（push 进去的二级页）顶部的返回页头：左侧返回按钮 + 标题。
@@ -28,8 +30,9 @@ class FushiSettingsSubPageHeader extends StatelessWidget {
     final TextStyle? titleStyle = cupertino
         ? CupertinoTheme.of(context).textTheme.navTitleTextStyle
         : Theme.of(context).textTheme.titleMedium;
-    final IconData icon =
-        cupertino ? CupertinoIcons.chevron_back : Icons.arrow_back;
+    final IconData icon = cupertino
+        ? CupertinoIcons.chevron_back
+        : Icons.arrow_back;
 
     return Row(
       children: <Widget>[
@@ -41,7 +44,7 @@ class FushiSettingsSubPageHeader extends StatelessWidget {
               padding: EdgeInsets.zero,
               minSize: 36,
               onPressed: onBack,
-              child: Icon(icon, size: 22),
+              child: FushiIcon(icon, size: 22),
             ),
           )
         else
@@ -67,7 +70,7 @@ class FushiSettingsSubPageHeader extends StatelessWidget {
 
 /// 「快速设置」类弹窗的 master-detail 外壳骨架：阅读器与视频两张设置 sheet 的
 /// `build` 方法原本是逐字构造相同的外壳（[PopScope] + [FushiModalSheetFrame] +
-/// [LayoutBuilder] 按宽高判定宽/窄 + 窄窗 [SingleChildScrollView] + [AnimatedSize]），
+/// [LayoutBuilder] 按宽高判定宽/窄 + 窄窗 [SingleChildScrollView] + [FushiAnimatedSize]），
 /// 抽到此处共享（TODO-583，零行为变化）。
 ///
 /// **范围收窄**：只抽外壳骨架，宽窗内部布局两边发散（阅读器是左右 master-detail
@@ -114,7 +117,7 @@ class FushiMasterDetailSettingsSheet extends StatelessWidget {
 
   /// 宽窗内容（两边发散）：在有界高度下构造各自的 master-detail / 顶栏+详情。
   final Widget Function(BuildContext context, BoxConstraints constraints)
-      wideBuilder;
+  wideBuilder;
 
   /// 窄窗外层 [SingleChildScrollView] 的 key（阅读器 `ValueKey(_subPage ?? 'main')`、
   /// 视频 `null`），保留各自的主/子页切换 Element 复用语义。
@@ -122,11 +125,11 @@ class FushiMasterDetailSettingsSheet extends StatelessWidget {
 
   /// 窄窗 padding（阅读器 `page + gap/2`、视频 `page + gap`，含底部键盘 inset）。
   final EdgeInsets Function(BuildContext context, BoxConstraints constraints)
-      narrowPadding;
+  narrowPadding;
 
-  /// 窄窗 [AnimatedSize] 的内容（调用方按 [subPageActive] 选 main / sub 页）。
+  /// 窄窗 [FushiAnimatedSize] 的内容（调用方按 [subPageActive] 选 main / sub 页）。
   final Widget Function(BuildContext context, BoxConstraints constraints)
-      narrowChild;
+  narrowChild;
 
   /// 主/子 pane 内边距共享公式（TODO-344，阅读器 / 视频两张 sheet 的 narrow +
   /// wide 共 4 个使用点同款）：水平两侧对称 [horizontal]、顶部 [top]，底部恒为
@@ -171,7 +174,7 @@ class FushiMasterDetailSettingsSheet extends StatelessWidget {
             // 确定性几何判据：宽且高都够才进宽窗 master-detail，否则窄窗 push。
             final bool wide =
                 constraints.maxWidth >= kFushiSettingsWideThreshold &&
-                    constraints.maxHeight >= kFushiSettingsWideMinHeight;
+                constraints.maxHeight >= kFushiSettingsWideMinHeight;
             onWideChanged(wide);
             if (wide) {
               return wideBuilder(context, constraints);
@@ -189,8 +192,10 @@ class FushiMasterDetailSettingsSheet extends StatelessWidget {
               // 整块正文包一层 RepaintBoundary：正文只栅格化一次进缓存层，滚动仅
               // 按偏移合成该层、不再重绘子树。不改布局/滚动语义，纯合成优化。
               child: RepaintBoundary(
-                child: AnimatedSize(
-                  duration: const Duration(milliseconds: 200),
+                child: FushiAnimatedSize(
+                  // 墨水屏 / 系统「减弱动态效果」下归零，直接到位。
+                  duration: fushiMotionDuration(context, FushiMotion.short),
+                  curve: FushiMotion.standard,
                   alignment: Alignment.topCenter,
                   child: narrowChild(context, constraints),
                 ),

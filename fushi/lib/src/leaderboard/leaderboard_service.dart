@@ -6,7 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_isbn_backfill.dart';
+import 'package:fushi_engine/leaderboard/cover_hash.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
+import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_sync.dart';
@@ -40,8 +42,14 @@ class LeaderboardConsentRequired implements Exception {
   String toString() => 'LeaderboardConsentRequired';
 }
 
-/// 头像边长（正方形 JPEG）。
-const int kLeaderboardAvatarSize = 128;
+/// 头像边长（正方形 JPEG）。「超级大西瓜」页的最大球直径 192 逻辑像素，还会被
+/// 「适应屏幕」放大、可双指再放大，128px 的头像在 1.5x 屏上就明显发糊；384 让
+/// 大球在常见缩放下也是原生像素。
+const int kLeaderboardAvatarSize = 384;
+
+/// 头像上传字节上限，与服务端 `AVATAR_MAX_BYTES`（services/leaderboard/src/media.js）
+/// 一致：超了服务端直接 413。
+const int kLeaderboardAvatarMaxBytes = 64 * 1024;
 
 enum LeaderboardStatus {
   /// 本 Profile 没有排行榜账户（默认；此时零网络请求）。
@@ -169,6 +177,10 @@ class LeaderboardService extends ChangeNotifier {
   /// 已开启时的签名客户端（UI 读榜 / 好友等直接用）；未开启为 null。
   LeaderboardClient? get client => _client;
 
+  /// 反馈用的客户端：已开启排行榜账户时是签名客户端（提交可关联账户、开发者可处理
+  /// 反馈），否则是匿名客户端（反馈本身不要求账户）。两者连同一个服务。
+  LeaderboardClient feedbackClient() => _client ?? _anonymousClient();
+
   /// 本机账户（上传开关 / 上次同步时刻等）；未开启为 null。
   LeaderboardLocalAccount? get account => _account;
 
@@ -230,19 +242,21 @@ class LeaderboardService extends ChangeNotifier {
     );
   }
 
-  /// 首次开启：生成本机钥匙 → 邮箱验证码注册 → 存盘（同意时刻 = 现在）。注册页必须
-  /// 勾选同意才能提交，所以这里恒为已同意。
+  /// 首次开启：生成本机钥匙 → 邮箱验证码注册 → 存盘。注册账户与公开上传是两件事
+  /// （服务端注册不要求同意）：[consent] = 用户在注册页勾选了同意公开；没勾选时本机
+  /// 上传默认关闭、不记同意时刻，之后在账户页打开上传时再确认（同 [loginWithEmail]）。
   Future<void> enable({
     required String nickname,
     required String email,
     required String code,
+    bool consent = true,
   }) async {
     await load();
     final LeaderboardIdentity identity = LeaderboardIdentity.generate();
     final LeaderboardSelf self = await _clientFor(
       identity,
     ).register(nickname: nickname, email: email, code: code);
-    await _adopt(identity, self, consent: true);
+    await _adopt(identity, self, consent: consent);
   }
 
   /// 换设备：生成本机新钥匙 → 邮箱验证码登录（服务端把这把钥匙绑到已有账户）→ 存盘。
@@ -276,22 +290,96 @@ class LeaderboardService extends ChangeNotifier {
   /// 导出本机恢复码（含私钥）。未开启抛 [StateError]。
   String exportRecoveryCode() => _requireAccount().recoveryCode;
 
+  // ---- 跟随已配对设备自动登录（设计见 interconnect_leaderboard_link.dart 文件头） ----
+
+  /// 本机可以跟随已配对设备自动登录：没有账户，且这个 Profile 在本机**从没**登录过
+  /// （主动退出过就不再自动登回去，见 [LeaderboardStore.signedInMarker]）。
+  Future<bool> canFollowPairedLogin() async {
+    await load();
+    if (_account != null) return false;
+    return !await _requireStore().hasSignedInBefore();
+  }
+
+  /// 新设备侧：生成本机钥匙 → 只把公钥 + 持有证明交给 [link]（经已认证的互联通道送到
+  /// 已登录的对端，由对端代绑）→ 用对端转回的服务端应答存盘。私钥 / 恢复码从不离开
+  /// 本机。不再向服务端二次确认：对端已经绑定成功，这时再因网络问题丢弃钥匙只会在账户
+  /// 上留下一台永远用不上的设备（占 10 台名额）；万一对端所述不实，本机第一次签名请求就会
+  /// 收到 401 `unknown_account` 自动退出，且之后不再自动登录。没有公开同意（这条路没有任何界面，不能替用户勾选），所以与
+  /// 「邮箱登录没勾同意」一样：本机上传默认关闭，之后在账户页打开时再确认。
+  ///
+  /// 本机已有账户（并发登录过）时返回 null、不调 [link]。
+  Future<LeaderboardSelf?> adoptFromPairedDevice(
+    Future<({Map<String, dynamic> account, String? serverUrl})> Function(
+      LeaderboardDeviceLinkRequest request,
+    )
+    link,
+  ) async {
+    await load();
+    if (_account != null) return null;
+    final LeaderboardIdentity identity = LeaderboardIdentity.generate();
+    final LeaderboardDeviceLinkRequest request =
+        LeaderboardDeviceLinkRequest.sign(
+          identity,
+          _serverClock.serverNow(_clockMs()),
+        );
+    final ({Map<String, dynamic> account, String? serverUrl}) linked =
+        await link(request);
+    final LeaderboardSelf self = LeaderboardSelf.fromJson(linked.account);
+    if (self.account.id.isEmpty) {
+      throw const FormatException('paired device returned no account id');
+    }
+    final String? serverUrl = linked.serverUrl;
+    if (serverUrl != null && !_acceptablePairedServerUrl(serverUrl)) {
+      throw const FormatException('paired device returned a bad server url');
+    }
+    if (_account != null) return null;
+    await _adopt(identity, self, consent: false, serverUrl: serverUrl);
+    return self;
+  }
+
+  /// 已配对 host 交来的账户服务地址能不能落进本机账户：只认 HTTPS（带主机名），或与本机
+  /// 已配置的默认服务地址完全一致（自建 / 开发环境的 http 地址要先在本机配好）。之后本机
+  /// 每个签名请求都发往这个地址——明文或乱填的地址会把账户请求交给不该收的人。
+  bool _acceptablePairedServerUrl(String serverUrl) {
+    final Uri? uri = Uri.tryParse(serverUrl);
+    if (uri == null) return false;
+    if (uri.scheme == 'https' && uri.host.isNotEmpty && uri.userInfo.isEmpty) {
+      return true;
+    }
+    return uri == _defaultBaseUrl;
+  }
+
+  /// 已登录设备侧：代已配对的新设备把 [request] 里的钥匙挂到本账户。本机没有账户返回
+  /// null；服务端错误原样抛 [LeaderboardApiException]，网络异常原样透出。
+  Future<({LeaderboardSelf self, String? serverUrl})?> linkPairedDevice(
+    LeaderboardDeviceLinkRequest request,
+  ) async {
+    await load();
+    final LeaderboardClient? client = _client;
+    final LeaderboardLocalAccount? account = _account;
+    if (client == null || account == null) return null;
+    final LeaderboardSelf self = await client.linkDevice(request);
+    return (self: self, serverUrl: account.serverUrl);
+  }
+
   Future<void> _adopt(
     LeaderboardIdentity identity,
     LeaderboardSelf self, {
     required bool consent,
+    String? serverUrl,
   }) async {
     final LeaderboardLocalAccount account = LeaderboardLocalAccount(
       recoveryCode: identity.toRecoveryCode(),
       accountId: self.account.id,
       consentAt: consent ? _clockMs() : null,
       uploadEnabled: consent,
-      serverUrl: _account?.serverUrl,
+      serverUrl: serverUrl ?? _account?.serverUrl,
     );
     final LeaderboardStore store = _requireStore();
     await _serialWrite(() async {
       if (_disposed) return;
       await store.write(account);
+      await store.markSignedIn();
       _activate(account, identity);
       _self = self;
       _resetSessionState();
@@ -456,11 +544,12 @@ class LeaderboardService extends ChangeNotifier {
         account.syncState,
         claim: claim,
         coverThumb: _coverThumb,
+        coverHash: leaderboardCoverHash,
       );
       if (!sameOwner()) return;
       final Object? coverError = out.coverError;
       if (coverError != null) {
-        // 封面补传失败不算同步失败：没补上的留在 pendingCovers，下次只补封面。
+        // 封面投票失败不算同步失败：没投成的下次同步再投。
         ErrorLogService.instance.log(
           'LeaderboardService.coverUpload',
           coverError,
@@ -579,6 +668,8 @@ class LeaderboardService extends ChangeNotifier {
   Future<void> _clearLocal({bool accountGone = false}) {
     final LeaderboardStore store = _requireStore();
     return _serialWrite(() async {
+      // 退出（含账户在别处被删 / 本机被解绑）后不再跟随已配对设备自动登回去。
+      await store.markSignedIn();
       await store.delete();
       _account = null;
       _client = null;
@@ -709,8 +800,12 @@ Future<Uint8List?> leaderboardCoverThumb(LocalShelfEntry entry) async {
       : null;
 }
 
-/// 读图 → 居中裁成 [kLeaderboardAvatarSize] 正方形 → JPEG（质量 85），解码 / 编码在
-/// 后台 isolate。不是可解码图片抛 [FormatException]。
+/// 缩略图的 dHash（封面投票按它归并相近的图），解码在后台 isolate。
+Future<String?> leaderboardCoverHash(Uint8List thumb) =>
+    Isolate.run<String?>(() => coverDHash(thumb));
+
+/// 读图 → 居中裁成 [kLeaderboardAvatarSize] 正方形 → JPEG，解码 / 编码在后台
+/// isolate。不是可解码图片抛 [FormatException]。
 Future<Uint8List> encodeLeaderboardAvatar(String path) async {
   final Uint8List bytes = await File(path).readAsBytes();
   return Isolate.run<Uint8List>(() => encodeLeaderboardAvatarBytes(bytes));
@@ -727,11 +822,17 @@ Uint8List encodeLeaderboardAvatarBytes(Uint8List bytes) {
     decoded = null;
   }
   if (decoded == null) throw const FormatException('not a decodable image');
-  final img.Image square = img.copyResizeCropSquare(
-    decoded,
-    size: kLeaderboardAvatarSize,
-  );
-  return img.encodeJpg(square, quality: 85);
+  // 先保边长、逐级降质量；仍超 [kLeaderboardAvatarMaxBytes]（极高噪点图）再缩边长。
+  // 最后一档 128px / 质量 60 远低于上限，循环必有结果。
+  Uint8List? out;
+  for (final int size in <int>[kLeaderboardAvatarSize, 256, 128]) {
+    final img.Image square = img.copyResizeCropSquare(decoded, size: size);
+    for (final int quality in <int>[85, 75, 60]) {
+      out = img.encodeJpg(square, quality: quality);
+      if (out.length <= kLeaderboardAvatarMaxBytes) return out;
+    }
+  }
+  return out!;
 }
 
 /// 当前 Profile 的排行榜服务。Profile 切换时重建（旧实例随之 dispose），换到新

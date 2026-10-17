@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:marquee/marquee.dart';
 
 /// Wrapper for a Marquee that only displays the Marquee effect only when there

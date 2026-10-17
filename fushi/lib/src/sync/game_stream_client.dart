@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_library.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
@@ -99,6 +101,9 @@ class InterconnectGameStreamTransport implements GameStreamTransport {
           'session_not_found',
           'session_conflict',
           'stream_error',
+          GameStreamRejection.streamOff,
+          GameStreamRejection.httpsRequired,
+          GameStreamRejection.libraryOff,
           GameStreamLaunchFailure.disabled,
           GameStreamLaunchFailure.busy,
         };
@@ -388,6 +393,10 @@ abstract class GameStreamDictionaryLookup {
     required bool wildcards,
     required int maximumTerms,
   });
+
+  /// 结果来自哪台设备，弹窗的词典样式 / 媒体 / 发音就取自哪台设备（BUG-3425）。
+  /// null = 结果来自本机，弹窗走本机 `FushiDicts`。
+  DictionaryPopupResourceSource? get popupResources;
 }
 
 /// Remote dictionary lookup constrained to the peer that accepted the stream.
@@ -405,21 +414,65 @@ class InterconnectGameStreamDictionaryLookup
          httpClient: httpClient,
          pinnedClientFactory: pinnedClientFactory,
          timeout: timeout,
+         // 串流会话内同一个实例：样式按 host 指纹只下一次。
+         trackDictionaryStyles: true,
        );
 
   final FushiRemoteLookupClient _lookup;
+
+  /// BUG-3425：查词与写卡都由 host 完成，但弹窗在本机渲染、Glossary 也在本机
+  /// 导出——本机（iPad）往往一部词典都没有，`window.dictionaryStyles` 必须是
+  /// host 的那份，否则卡片里一个词典自带 `<style>` 都没有。
+  late final RemoteDictionaryPopupResources _resources =
+      RemoteDictionaryPopupResources(
+        fetchStyles: () => _lookup.dictionaryStyles(),
+        fetchMedia: (String dictionary, String path) async {
+          final RemoteDictionaryMedia? media = await _lookup.dictionaryMedia(
+            dictionary: dictionary,
+            path: path,
+          );
+          return media == null
+              ? null
+              : DictionaryPopupMedia(
+                  bytes: media.bytes,
+                  contentType: media.contentType,
+                );
+        },
+        fetchWordAudio: (String expression, String reading) =>
+            _lookup.lookupAudioUrl(expression: expression, reading: reading),
+      );
+
+  @override
+  DictionaryPopupResourceSource get popupResources => _resources;
 
   @override
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
     required bool wildcards,
     required int maximumTerms,
-  }) {
-    return _lookup.searchDictionary(
+  }) async {
+    final DictionarySearchResult? result = await _lookup.searchDictionary(
       term: term,
       wildcards: wildcards,
       maximumTerms: maximumTerms,
     );
+    final Map<String, String>? hostStyles = _lookup.hostDictionaryStyles;
+    if (hostStyles != null) {
+      _resources.adoptHostStyles(hostStyles);
+    } else if (result != null) {
+      // 老 host 不认 `stylesRevision`：回落样式端点（再老的 host 连端点都没有，
+      // 拿到空表，与从前一样）。样式缺了只是难看，不该挡住查词结果。
+      try {
+        await _resources.prefetchStyles(result);
+      } catch (error, stack) {
+        ErrorLogService.instance.log(
+          'GameStream.dictionaryStyles',
+          error,
+          stack,
+        );
+      }
+    }
+    return result;
   }
 }
 
@@ -620,6 +673,11 @@ class GameStreamLookupController extends ChangeNotifier {
 
   GameStreamTextEvent? get currentLine => _currentLine;
   DictionarySearchResult? get result => _result;
+
+  /// 弹窗渲染 / 导出 [result] 用的词典侧资源（见
+  /// [GameStreamDictionaryLookup.popupResources]）。
+  DictionaryPopupResourceSource? get popupResources =>
+      _lookupClient.popupResources;
   String? get selectedTerm => _selectedTerm;
   bool get searching => _searching;
   String? get error => _error;

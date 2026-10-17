@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,10 +54,10 @@ void main() {
       final String css = ReaderContentStyles.css(settings: settings);
       await controller.evaluateJavascript(source: '''
         (function() {
-          var s = document.getElementById('hibiki-test-style');
+          var s = document.getElementById('fushi-test-style');
           if (!s) {
             s = document.createElement('style');
-            s.id = 'hibiki-test-style';
+            s.id = 'fushi-test-style';
             document.head.appendChild(s);
           }
           s.textContent = ${jsonEncode(css)};

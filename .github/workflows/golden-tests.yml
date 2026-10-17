@@ -1,0 +1,101 @@
+# Golden 图像测试（BUG-3494，2026-10-17 所有者拍板）。
+#
+# 为什么单独一条 workflow：main.yml / release.yml 的单测跑在 ubuntu 上并带
+# `--exclude-tags golden`（fushi/dart_test.yaml 把 golden 门控到参考平台 Windows），
+# 所以此前**没有任何 CI job 跑 golden**；Windows 开发机本地又不跑全量测试。10-04～10-16
+# 的 M3E 改版批次因此把 18 张基准悄悄弄过期，直到有人手动跑才发现（BUG-3494）。
+#
+# 这里在参考平台 Windows 上只跑 `--tags golden`：每个 PR 与 develop push 都跑，不挑路径
+# （golden 覆盖的是共享组件 / 设置页 / 同步对话框，改动面散在 lib/ 各处，路径过滤必漏）。
+# 红了只显示、不拦合并：本仓刻意不设分支保护 / required check（见 CLAUDE.md「合并 PR
+# 要看作者」），这条也不例外。失败时 test/goldens/failures/ 的对比图作为 artifact 上传。
+#
+# 有意改界面导致变红时：本机（Windows）对**确认是有意变化的那几张** 跑
+# `flutter test --update-goldens <文件> --plain-name <用例>`，与改界面的代码同一个 PR 提交。
+name: Golden tests
+
+# paths-ignore：纯文档改动（docs/、任意 *.md）不可能改变渲染结果，不为它烧一次
+# Windows runner。只排除确定不进 widget 树的路径——lib/、test/、assets/、pubspec、
+# 本 workflow 自身都照常触发（golden 覆盖面散在 lib/ 各处，正向 paths 过滤必漏）。
+# 与 `[skip ci]` 互不影响：GitHub 先看提交信息里的 skip 指令，再看路径过滤，任一
+# 命中都不跑；混合提交（文档 + 代码）不被 paths-ignore 跳过。
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  push:
+    branches: ['develop']
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  goldens:
+    runs-on: windows-latest
+    # 本机实测编译 + 跑 43 张约 2 分钟；冷 runner 的 pub get + 首次编译留足余量。
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      # 与发布 workflow 的 Windows job 同法：只缓存 pub、不缓存 SDK
+      # （理由与实测见 build-multiplatform.yml windows job 同处注释）。
+      # 不装 flutter-engine-overlay：它只替换 flutter_windows.dll（桌面 app 的
+      # 合成器 HDR），flutter test 用的 flutter_tester 不受影响。
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.6'
+          cache: false
+          pub-cache: true
+      # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
+      # runner; restore it so a release-asset hiccup cannot fail the build.
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: test
+      - name: Flutter pub get
+        working-directory: fushi
+        run: flutter pub get --enforce-lockfile
+      - name: Apply pub cache patches
+        shell: bash
+        run: bash ci/apply-patches.sh
+      # 只给 test/goldens 目录：裸 `--tags golden` 会让 flutter test 把 test/ 下全部
+      # ~3.5k 个 suite 逐个编译加载来找标签（首轮实测：编译约 27 分钟，43 张 40 秒跑完后进程又空转
+      # 十几分钟，撞 45 分钟超时被取消）。代价是 golden 必须放在 test/goldens 下——
+      # 紧接着的那一步就是这条约定的守卫，放错地方直接红，而不是被静默漏跑。
+      # `grep -z`：整个文件当一条记录，`[^;]*` 才能跨行——`@Tags(<String>[\n  'golden',\n])`
+      # 这种被 dart format 拆成多行的写法按行 grep 抓不到。正则与用例由
+      # fushi/test/build/golden_tests_location_guard_test.dart 钉住（单测分片里跑，含变异用例）。
+      - name: Golden tests live under test/goldens
+        working-directory: fushi
+        shell: bash
+        run: |
+          set -euo pipefail
+          stray="$(grep -rlzE "(@Tags\(|tags:)[^;]*['\"]golden['\"]" test --include='*_test.dart' | grep -v '^test/goldens/' || true)"
+          if [ -n "$stray" ]; then
+            echo "::error title=Golden test outside test/goldens::这些文件带 golden 标签但不在 test/goldens 下，本 workflow 不会跑到它们：$stray"
+            exit 1
+          fi
+      - name: Run golden tests
+        working-directory: fushi
+        run: flutter test --no-pub --tags golden test/goldens
+      # 失败图落点：ToleranceGoldenComparator（test/flutter_test_config.dart）继承
+      # LocalFileComparator，basedir = 测试文件所在目录，generateFailureOutput 写到
+      # `<basedir>/failures/<golden 名>_{masterImage,testImage,isolatedDiff,maskedDiff}.png`。
+      # golden 都在 test/goldens 下（上一步守卫），所以是 test/goldens/failures/；用 `**`
+      # 兜住将来 test/goldens 下再分子目录的情况。
+      - name: Upload golden failure images
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: golden-failures
+          path: fushi/test/goldens/**/failures/
+          if-no-files-found: ignore
+          retention-days: 14

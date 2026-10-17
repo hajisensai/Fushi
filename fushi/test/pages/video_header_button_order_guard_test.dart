@@ -7,7 +7,8 @@ import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 /// 守卫：书架保留自己的导入顺序；视频常规入库与整库刮削统一迁到「来源」后，
-/// HomeVideoPage 页头不得重新长出这两个入口，收藏夹仍须排在统计之前。
+/// HomeVideoPage 页头不得重新长出这两个入口；收藏夹与统计入口都已收敛到首页
+/// dashboard，两个库页页头都不再挂。
 void main() {
   final File videoSrc =
       File('lib/src/pages/implementations/home_video_page.dart');
@@ -70,19 +71,22 @@ void main() {
   /// 在区间内按 tooltip 标识取相对位置；找不到返回 -1。
   int orderOf(String block, String token) => block.indexOf(token);
 
-  test('书架顶栏基准顺序：导入 → 收藏夹（统计入口已收敛到首页）', () {
+  test('书架顶栏：保留兜底导入；收藏夹 / 统计 / 全部刮削都不在页头', () {
     final String block = headerActionsBlock(shelfSrc);
     final int importIdx = orderOf(block, 'buildBookImportButton');
     final int collectionsIdx = orderOf(block, 't.collections');
     final int statsIdx = orderOf(block, 't.reading_statistics');
+    final int scrapeIdx = orderOf(block, 't.scrape_all');
     expect(importIdx, greaterThanOrEqualTo(0), reason: '书架应有导入按钮');
-    expect(collectionsIdx, greaterThanOrEqualTo(0), reason: '书架应有收藏夹按钮');
+    expect(collectionsIdx, -1,
+        reason: '收藏夹入口已收敛到首页 dashboard（2026-10-14），书架顶栏不再挂');
     expect(statsIdx, -1,
         reason: '统计入口已收敛到首页 dashboard（2026-09-01），书架顶栏不再挂');
-    expect(importIdx, lessThan(collectionsIdx), reason: '书架基准：导入应在收藏夹之前');
+    expect(scrapeIdx, -1,
+        reason: '书 / 漫画不需要批量刮削（2026-10-14），全部刮削只留视频与游戏');
   });
 
-  test('视频顶栏移除导入/全部刮削/统计，只剩收藏夹', () {
+  test('视频顶栏移除导入/全部刮削/统计/收藏夹', () {
     final String block = headerActionsBlock(videoSrc);
     final int importIdx = orderOf(block, 't.video_import_action');
     final int scrapeIdx = orderOf(block, 't.scrape_all');
@@ -90,7 +94,8 @@ void main() {
     final int statsIdx = orderOf(block, 't.video_statistics');
     expect(importIdx, -1, reason: '视频常规入库应统一从来源添加文件夹');
     expect(scrapeIdx, -1, reason: '视频全部刮削入口应位于来源页');
-    expect(collectionsIdx, greaterThanOrEqualTo(0), reason: '视频应有收藏夹按钮');
+    expect(collectionsIdx, -1,
+        reason: '收藏夹入口已收敛到首页 dashboard（2026-10-14），视频顶栏不再挂');
     expect(statsIdx, -1,
         reason: '统计入口已收敛到首页 dashboard（2026-09-01），视频顶栏不再挂');
   });
@@ -116,11 +121,11 @@ void main() {
     final List<VideoControlItem> topRightItems =
         VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
     final int screenshot = topRightItems.indexOf(VideoControlItem.screenshot);
-    final int clip = topRightItems.indexOf(VideoControlItem.clipExport);
     expect(screenshot, greaterThanOrEqualTo(0), reason: '顶栏应保留截图按钮');
-    expect(clip, greaterThanOrEqualTo(0), reason: '顶栏应新增片段导出按钮');
-    expect(clip, greaterThan(screenshot), reason: '片段导出必须放在截图按钮后面');
-    expect(clip, screenshot + 1, reason: '片段导出必须紧挨截图按钮，中间不能插入其它按钮');
+    // 2026-10-06 遮挡最小化：片段导出默认移出播放器、常驻右上「⋯」，仍可拖回。
+    expect(topRightItems.contains(VideoControlItem.clipExport), isFalse);
+    expect(VideoControlLayout.currentChrome.removedItems,
+        contains(VideoControlItem.clipExport));
     expect(
       RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight')
           .allMatches(text)
@@ -134,38 +139,38 @@ void main() {
     expect(text.contains('_toggleClipExport()'), isTrue);
   });
 
-  test('默认右上角顶栏精简为 6 个常用入口（TODO-642）', () {
-    // 默认 topRight = episodeList / screenshot / clipExport / subtitleTrack /
-    // audioTrack / chapterList 六个；prev/next 集与 prev/next 章 4 个导航键不再
-    // 默认占顶栏（落 hidden / removed，可从编辑器拖回）。screenshot 与 clipExport
-    // 保持相邻（受上一个守卫钉死）。
+  test('默认右上角顶栏只留选集 / 章节 / 截图 / 设置（2026-10-06 遮挡最小化）', () {
+    // 2026-10-05 播放器 UI 重做按使用频率重排默认布局（见 VideoControlLayout
+    // .currentChrome 的文档）：字幕轨挪到底栏右，设置从右侧栏挪到右上；右上 =
+    // 音轨 / 选集 / 章节 / 截图 / 片段导出 / 设置，窄窗按优先级收进「⋮」。
+    // screenshot 与 clipExport 保持相邻（受上一个守卫钉死）。
     final List<VideoControlItem> topRight =
         VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
     expect(
         topRight,
         <VideoControlItem>[
           VideoControlItem.episodeList,
-          VideoControlItem.screenshot,
-          VideoControlItem.clipExport,
-          VideoControlItem.subtitleTrack,
-          VideoControlItem.audioTrack,
           VideoControlItem.chapterList,
+          VideoControlItem.screenshot,
+          VideoControlItem.settings,
         ],
-        reason: 'TODO-642：默认右上角顶栏精简为 6 个常用入口');
+        reason: '默认右上角只留常用入口，其余进「⋯」');
 
-    // 4 个 prev/next 导航键默认不在任何可见槽，落 removedItems（仍可自定义拖回）。
+    // 上 / 下一集、上 / 下一章、音轨、片段导出默认移出播放器（常驻右上「⋯」），
+    // 可从编辑器拖回。
     const List<VideoControlItem> trimmedNav = <VideoControlItem>[
       VideoControlItem.previousEpisode,
       VideoControlItem.nextEpisode,
       VideoControlItem.previousChapter,
       VideoControlItem.nextChapter,
+      VideoControlItem.audioTrack,
+      VideoControlItem.clipExport,
     ];
     for (final VideoControlItem nav in trimmedNav) {
       expect(VideoControlLayout.currentChrome.isOnPlayer(nav), isFalse,
-          reason: '$nav 默认不应在播放器可见槽（TODO-642）');
+          reason: '$nav 默认不应在播放器可见槽');
       expect(VideoControlLayout.currentChrome.removedItems, contains(nav),
           reason: '$nav 默认落 removedItems，可从编辑器面板拖回（非从模型删除）');
-      // 仍是可自定义项：能被拖回任意可见槽。
       expect(nav.canMoveToSlot(VideoControlSlot.topRight), isTrue,
           reason: '$nav 仍可被用户加回 topRight');
     }

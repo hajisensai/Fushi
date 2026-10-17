@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -9,9 +9,9 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 
 /// galgame 引擎-hook **launch 模式**真机集成测试（docs/specs/galgame-mining）。
 ///
-/// 在真实 hibiki.exe 测试宿主里跑通整条新路径：
+/// 在真实 fushi.exe 测试宿主里跑通整条新路径：
 ///   `EngineHookGalAudioSource(launchExe)` → `injector --launch`(CREATE_SUSPENDED 早注入)
-///   → 游戏 DirectSound `Unlock` hook → 共享内存环形 → **hibiki.exe 自己的 `voice_hook`
+///   → 游戏 DirectSound `Unlock` hook → 共享内存环形 → **fushi.exe 自己的 `voice_hook`
 ///   native channel** `open`/`status`/`grabRecent` → 抓到真实非静音 PCM。
 ///
 /// **不初始化 AppModel/Drift DB**（只 pump 平凡 widget 让 runner 的 native 通道就绪），

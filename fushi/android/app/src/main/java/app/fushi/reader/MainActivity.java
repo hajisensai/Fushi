@@ -118,28 +118,8 @@ public class MainActivity extends AudioServiceActivity {
             new GamepadTriggerKeySynthesizer(this::dispatchKeyEvent);
 
     @Override
-    protected void attachBaseContext(Context newBase) {
-        SharedPreferences prefs = newBase.getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
-        if (prefs.contains(PreferenceKeys.SPLASH_IS_DARK)) {
-            boolean isDark = prefs.getBoolean(PreferenceKeys.SPLASH_IS_DARK, false);
-            int currentNight = newBase.getResources().getConfiguration().uiMode
-                    & Configuration.UI_MODE_NIGHT_MASK;
-            boolean systemDark = currentNight == Configuration.UI_MODE_NIGHT_YES;
-            if (isDark != systemDark) {
-                Configuration config = new Configuration(
-                        newBase.getResources().getConfiguration());
-                config.uiMode = (config.uiMode & ~Configuration.UI_MODE_NIGHT_MASK)
-                        | (isDark ? Configuration.UI_MODE_NIGHT_YES
-                                  : Configuration.UI_MODE_NIGHT_NO);
-                super.attachBaseContext(newBase.createConfigurationContext(config));
-                return;
-            }
-        }
-        super.attachBaseContext(newBase);
-    }
-
-    @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Splash 缓存只设置窗口背景；保留系统 uiMode，让 Flutter 正确跟随系统明暗。
         SharedPreferences splashPrefs = getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
         int bgColor = splashPrefs.getInt(PreferenceKeys.SPLASH_BG_COLOR, 0);
         if (bgColor != 0) {
@@ -176,20 +156,66 @@ public class MainActivity extends AudioServiceActivity {
     // BUG-195: On API 26+ every View defaults to defaultFocusHighlightEnabled=true,
     // so when touch mode is exited the framework draws a system focus rectangle on
     // the currently focused View -- including the FlutterView host that hosts the
-    // whole UI. On some skins (Samsung OneUI 6.5) that system frame overlaps Hibiki's
-    // own keyboard/gamepad focus ring drawn in Flutter (see hibiki_focus_ring.dart),
+    // whole UI. On some skins (Samsung OneUI 6.5) that system frame overlaps Fushi's
+    // own keyboard/gamepad focus ring drawn in Flutter (see fushi_focus_ring.dart),
     // giving a double highlight. We disable only the Android system default highlight
     // here; the Flutter self-drawn focus ring and focus navigation are untouched.
     // Done in code on the decorView (rather than only a theme attribute) because the
     // FlutterSurfaceView host is created programmatically inside super.onCreate, so a
     // direct setDefaultFocusHighlightEnabled(false) on the window's view hierarchy is
     // the deterministic place to kill it.
+    //
+    // BUG-3485: defaultFocusHighlightEnabled is a PER-VIEW flag -- setting it on the
+    // decorView never reached the full-screen FlutterView, which is the view that
+    // actually holds focus. Once a gamepad press left touch mode, the system drew
+    // its frame around the FlutterView (= a faint ring along the screen edges) even
+    // with Fushi's own focus ring turned off. So the suppression now targets the
+    // FlutterView and, through a global focus-change listener, whatever view
+    // (e.g. a WebView platform view) takes focus later.
+    private boolean focusHighlightListenerInstalled = false;
+
     private void disableSystemFocusHighlight() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             android.view.View decorView = getWindow().getDecorView();
             if (decorView != null) {
                 decorView.setDefaultFocusHighlightEnabled(false);
+                if (!focusHighlightListenerInstalled) {
+                    decorView.getViewTreeObserver().addOnGlobalFocusChangeListener(
+                            (oldFocus, newFocus) -> {
+                                if (newFocus != null) {
+                                    newFocus.setDefaultFocusHighlightEnabled(false);
+                                }
+                            });
+                    focusHighlightListenerInstalled = true;
+                }
             }
+            android.view.View flutterView = findViewById(FLUTTER_VIEW_ID);
+            if (flutterView != null) {
+                flutterView.setDefaultFocusHighlightEnabled(false);
+            }
+            android.view.View focused = getCurrentFocus();
+            if (focused != null) {
+                focused.setDefaultFocusHighlightEnabled(false);
+            }
+        }
+    }
+
+    // BUG-3485: key events only reach Flutter through the FOCUSED view chain
+    // (ViewGroup.dispatchKeyEvent forwards to mFocused). Since API 28 a window in
+    // touch mode is not given initial focus, so after launch (or after a focused
+    // platform view went away) no view is focused: a gamepad BUTTON_B never reaches
+    // FlutterView, the app reports it unhandled, and Generic.kcm's `fallback BACK`
+    // pops the page -- bypassing the shortcut registry, so clearing every "back"
+    // binding did nothing. A and Y only "fixed" it because their fallbacks
+    // (DPAD_CENTER / SPACE) are navigation/typing keys that leave touch mode, which
+    // makes ViewRootImpl hand default focus to the FlutterView. Give the
+    // FlutterView (focusable in touch mode) focus before dispatching instead, so
+    // the very first key is decided by Flutter's own key pipeline.
+    private void ensureKeyFocusTarget() {
+        if (getCurrentFocus() != null) return;
+        android.view.View flutterView = findViewById(FLUTTER_VIEW_ID);
+        if (flutterView != null) {
+            flutterView.requestFocus();
         }
     }
 
@@ -323,6 +349,7 @@ public class MainActivity extends AudioServiceActivity {
             adjustSystemVolume(code == KeyEvent.KEYCODE_VOLUME_UP);
             return true;
         }
+        ensureKeyFocusTarget();
         return super.dispatchKeyEvent(event);
     }
 
@@ -472,7 +499,7 @@ public class MainActivity extends AudioServiceActivity {
         // alive (onConfigurationChanged), but onResume is still a belt-and-braces
         // path for skins that re-attach the decorView and reset
         // defaultFocusHighlightEnabled back to true, re-exposing the system focus
-        // rectangle over Hibiki own focus ring. Re-applying here (and in
+        // rectangle over Fushi own focus ring. Re-applying here (and in
         // onConfigurationChanged) keeps it killed.
         disableSystemFocusHighlight();
         // BUG-427/TODO-852: belt-and-braces for OEMs whose settings page does
@@ -506,7 +533,7 @@ public class MainActivity extends AudioServiceActivity {
                 && context.getPackageManager().canRequestPackageInstalls();
         if (!granted) {
             installResult.error("INSTALL_PERMISSION_REQUIRED",
-                "Enable installing unknown apps for Hibiki, then retry", null);
+                "Enable installing unknown apps for Fushi, then retry", null);
             return;
         }
         if (apkPath == null || apkPath.isEmpty()) {
@@ -772,6 +799,16 @@ public class MainActivity extends AudioServiceActivity {
                         launchApkInstaller(apkFile, result);
                     } catch (Exception e) {
                         result.error("INSTALL_ERROR", e.getMessage(), null);
+                    }
+                } else if ("installMachineId".equals(call.method)) {
+                    // 安装统计的机器标识种子（updates/install_attestation.dart）：ANDROID_ID
+                    // 在 Android 8+ 按签名密钥 + 设备 + 用户稳定，重装不变。只在本机做 HMAC 种子，
+                    // Dart 侧不上传、不落盘原值。取不到返回 null，Dart 侧回退随机种子。
+                    try {
+                        result.success(Settings.Secure.getString(
+                            getContentResolver(), Settings.Secure.ANDROID_ID));
+                    } catch (Exception e) {
+                        result.success(null);
                     }
                 } else {
                     result.notImplemented();
@@ -1086,7 +1123,7 @@ public class MainActivity extends AudioServiceActivity {
                                     if (!name.isEmpty()) families.add(name);
                                 }
                             } catch (Exception e) {
-                                android.util.Log.w("hibiki-fonts", "Failed to parse " + path, e);
+                                android.util.Log.w("fushi-fonts", "Failed to parse " + path, e);
                             }
                         }
                         List<Map<String, Object>> entries = new ArrayList<>(families.size());
@@ -1095,7 +1132,7 @@ public class MainActivity extends AudioServiceActivity {
                             entry.put("family", family);
                             entries.add(entry);
                         }
-                        android.util.Log.d("hibiki-fonts", "Found " + entries.size() + " font families");
+                        android.util.Log.d("fushi-fonts", "Found " + entries.size() + " font families");
                         new Handler(Looper.getMainLooper()).post(() -> result.success(entries));
                     });
                 } else {

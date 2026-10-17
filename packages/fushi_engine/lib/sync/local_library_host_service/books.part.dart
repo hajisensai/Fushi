@@ -17,6 +17,18 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
   /// [RemoteBookInfo.hasContent] 为 true 当且仅当该书存在可导出的 EPUB 根目录。
   @override
   Future<List<RemoteBookInfo>> listBooks() async {
+    // BUG-3441：分卷按系列归组以前只在书架页打开时跑——host 没开过书架（或是无头
+    // 服务端）时清单里 3、4 卷的 collection 恒为 null，client 收不到归属、只能摆散卡，
+    // 合集详情页也不会有这两卷。出清单前先归一次（幂等、已归组时近零开销）。用同步
+    // 状态窄锁（与合集清单落库同表同锁）而非 _runExclusive：后者在 app 里罩着整个
+    // 自动同步轮，清单请求会被卡到对端超时。归组失败不挡清单，照旧按已有归属出。
+    try {
+      await _runSyncStateExclusive(() async {
+        await BookSeriesGrouper(_db).groupAll();
+      });
+    } catch (e, stack) {
+      engineLog.log('LocalLibraryHostService.listBooks.groupSeries', e, stack);
+    }
     final List<EpubBookRow> rows = await _db.getAllEpubBooks();
     // 该书是否已配「可经 live-sync 导出」的有声书。判据必须与 [listAudiobooks] /
     // [exportAudiobook] 完全同源——仅 Audiobooks 行还不够，导出格式需 srtBookUid，
@@ -220,7 +232,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 不变，内容即真相）。
     if (format == BookFormat.manga) {
       final Directory tmpDir =
-          Directory.systemTemp.createTempSync('hibiki_book_export');
+          Directory.systemTemp.createTempSync('fushi_book_export');
       final File out = File(p.join(tmpDir.path, '${row.bookKey}.epub'));
       final bool ok = await repackageMangaBook(row.extractDir, out.path);
       if (!ok) {
@@ -236,7 +248,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     }
 
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_book_export');
+        Directory.systemTemp.createTempSync('fushi_book_export');
     // 文件名用 title 但扩展名用 .epub，保证重导入时 fileName 是合法 epub 名。
     final String safeBasename = '${row.bookKey}.epub';
     final File out = File(p.join(tmpDir.path, safeBasename));
@@ -347,7 +359,13 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       // DB 事务：删除 EpubBooks 行及其所有关联行（readerPositions / bookmarks /
       // srtBooks / audioCues / audiobooks）。见 HBK-AUDIT-041。
       // TODO-1195 part B：用户删书记墓碑，避免旧备份合并导入时复活。
-      await _db.deleteEpubBook(row.bookKey, tombstone: true);
+      final int deleted = await _db.deleteEpubBook(row.bookKey, tombstone: true);
+      // BUG-2945：再记同步删除墓碑。上面的 tombstone 只防旧备份复活，其它设备
+      // 拉 /api/tombstones 读的是 sync_deletion_tombstones——host 不写，「从所有
+      // 设备删除」就只删掉了发起端与 host 两份。
+      if (deleted > 0) {
+        await _writeHostSyncTombstone(SyncTombstoneKind.book, row.bookKey);
+      }
 
       // extractDir 磁盘目录：DB 删除后再清理（与 reader_fushi_source 同顺序）。
       if (row.extractDir.isNotEmpty) {

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, immutable, kDebugMode, visibleForTesting;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart'
     show MissingPluginException, PlatformException;
 import 'package:fushi/src/models/app_model.dart';
@@ -68,7 +68,7 @@ Future<String?> pickRealDirectoryPath({
   if (!granted) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.folder_picker_permission_required)),
+        FushiSnackBar(content: Text(t.folder_picker_permission_required)),
       );
     }
     return null;

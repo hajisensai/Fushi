@@ -90,21 +90,21 @@ void main() {
 
     test('resolveFile 仅 Windows + 有 LOCALAPPDATA 才返回', () {
       expect(
-          PresentStallLog.resolveFile('Hibiki\\x.log',
+          PresentStallLog.resolveFile('Fushi\\x.log',
               isWindows: false, localAppData: 'C:\\x'),
           isNull);
       expect(
-          PresentStallLog.resolveFile('Hibiki\\x.log',
+          PresentStallLog.resolveFile('Fushi\\x.log',
               isWindows: true, localAppData: null),
           isNull);
       expect(
-          PresentStallLog.resolveFile('Hibiki\\x.log',
+          PresentStallLog.resolveFile('Fushi\\x.log',
               isWindows: true, localAppData: ''),
           isNull);
-      final File? f = PresentStallLog.resolveFile('Hibiki\\x.log',
+      final File? f = PresentStallLog.resolveFile('Fushi\\x.log',
           isWindows: true, localAppData: 'C:\\ad');
       expect(f, isNotNull);
-      expect(f!.path, 'C:\\ad\\Hibiki\\x.log');
+      expect(f!.path, 'C:\\ad\\Fushi\\x.log');
     });
 
     test('appendStall 写入一行含时间戳/秒数/BUG 号', () {

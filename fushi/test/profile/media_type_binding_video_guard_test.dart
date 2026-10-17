@@ -35,7 +35,7 @@ void main() {
 
     // All five bindable media-type kinds must be present as binding rows.
     // (命名统一 Phase 3.4：绑定行以 ProfileMediaKind 枚举成员传入，落库串由
-    // dbValue 钉死——见 hibiki_core profile_media_kind.dart 的值域守卫。)
+    // dbValue 钉死——见 fushi_core profile_media_kind.dart 的值域守卫。)
     for (final String mediaType in <String>[
       'epub',
       'srtbook',

@@ -141,7 +141,7 @@ class AnkiMediaDedupRunner {
     _autoRanThisSession = true;
     if (!_repository.supportsMediaMaintenance) return null;
     final AnkiSettings settings = await _repository.loadSettings();
-    // 默认关：用户没主动打开，Hibiki 连扫都不扫。
+    // 默认关：用户没主动打开，Fushi 连扫都不扫。
     if (!settings.mediaDedupAutoEnabled) return null;
     final DateTime at = now ?? DateTime.now();
     if (!shouldRunAutoMediaDedupScan(

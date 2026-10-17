@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_player_controller.dart';
@@ -167,6 +167,7 @@ void main() {
         width: 420,
         height: 500,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           // 查词能力启用（barrier 反查只在可查词时登记行）。
@@ -210,6 +211,7 @@ void main() {
         width: 420,
         height: 500,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           onLookupCue: (AudioCue _, int __, Rect ___) {},
@@ -241,6 +243,7 @@ void main() {
         width: 420,
         height: 500,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           // onLookupCue 省略（不可查词）→ 不登记行，句柄命中恒 null。
@@ -277,6 +280,7 @@ void main() {
         width: 420,
         height: 500,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           onLookupCue: (AudioCue _, int __, Rect ___) {},
@@ -327,6 +331,7 @@ void main() {
       final VideoSubtitleListHitTester hitTester = VideoSubtitleListHitTester();
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onLookupCue: (AudioCue _, int __, Rect ___) {},

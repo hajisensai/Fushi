@@ -216,7 +216,7 @@ void main() {
     late _FixtureServer server;
 
     setUp(() async {
-      tmp = await Directory.systemTemp.createTemp('hibiki-anime-dl-');
+      tmp = await Directory.systemTemp.createTemp('fushi-anime-dl-');
       server = await _FixtureServer.start();
     });
 
@@ -961,6 +961,11 @@ class _FixtureServer {
 }
 
 class _FakeFfmpeg implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   _FakeFfmpeg.failing() : _output = null;
   _FakeFfmpeg.succeeding(List<int> output) : _output = output;
 

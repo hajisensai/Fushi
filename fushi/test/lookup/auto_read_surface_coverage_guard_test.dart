@@ -21,7 +21,7 @@ import '../helpers/scan_scale.dart';
 /// 不守的是：同一个文件里**新增调用点**（表按文件粒度；行号粒度会随重构漂移、变成噪音）。
 /// 这个局限是有意的取舍，不是疏漏。
 ///
-/// flutter test 的 cwd 是 hibiki 包根。
+/// flutter test 的 cwd 是 fushi 包根。
 void main() {
   /// 已接自动朗读的查词表面：路径 → 接线位置。
   /// 这里的每一项都会被**正向验证**（文件里真的要有朗读调用），防止名单过期成橡皮图章。
@@ -39,6 +39,10 @@ void main() {
         'app 内词典页 mixin：searchPopup(autoRead:) 决定是否调 autoReadWord。'
             '五个消费方（home_dictionary / popup_dictionary / texthooker / '
             'floating_lyric_lookup_host / video_fushi_page）均传 autoRead: true。',
+    'lib/src/pages/implementations/video_remote_page.dart':
+        '手机字幕遥控器：查的是已配对电脑的词典（searchPopupDictionary 覆写成钉住'
+            '设备的 FushiRemoteLookupClient），弹框仍是 mixin 那一个，openLookup 传 '
+            'autoRead: true；发音经 playPopupWordAudio 问那台电脑要。',
   };
 
   /// 豁免的查词调用点：路径 → **具体**理由。
@@ -65,7 +69,19 @@ void main() {
     '../packages/fushi_engine/lib/sync/fushi_remote_api_handlers.dart':
         '互联对端 / 浏览器扩展经 HTTP 拉词的服务端 handler：结果序列化给**远端**渲染，'
             '本机屏幕上什么都没发生，出声等于对着空气念。',
-    'lib/src/sync/yomitan_api_server.dart':
+    'lib/src/platform/desktop/ctl/ctl_dictionary_routes.dart':
+        '`fushi_cli dict search` 的控制通道 handler：结果以 JSON 回给终端，'
+            '本机屏幕上没有查词呈现；要弹窗查词用内置 `lookup` 命令（走浮窗表面，按偏好朗读）。'
+            'anki mine 补字段时的查词同理只为取回制卡字段。',
+    'lib/src/platform/desktop/ctl/ctl_video_player_routes.dart':
+        '`fushi_cli video mine` 的控制通道 handler：查词只为给当前字幕句制卡补读音 / 释义'
+            '等字段，结果以 JSON 回给终端，本机屏幕上没有查词呈现；而且视频正在播放出声，'
+            '此时朗读会盖在台词语音上（与 game mine 那条豁免同一理由）。',
+    'lib/src/platform/desktop/ctl/ctl_game_routes.dart':
+        '`fushi_cli game mine` 的控制通道 handler：查词只为给游戏台词制卡补读音 / 释义字段，'
+            '结果以 JSON 回给终端，本机屏幕上没有查词呈现；而且游戏正在前台发声，'
+            '此时朗读会直接盖在台词语音上（与串流接收端那条豁免同一理由）。',
+    'lib/src/sync/fushi_api_server.dart':
         'Yomitan 兼容 API 的服务端：同上，结果给外部客户端消费，本机不该出声。',
     'lib/src/sync/fushi_remote_lookup_client.dart':
         '本机作为 client 向 host 查词的传输层封装，返回给上层表面渲染；'
@@ -127,7 +143,7 @@ void main() {
     // 2026-08-28 删桌面剪贴板查词后 clipboard_panel_controller.dart 整文件删除，
     // 真分母从 10 降到 9：这是「真把那棵树删到了下界以下」的情形，下界同步下调。
     expectScanScale(found.length,
-        what: 'searchDictionary 调用点所在文件', atLeast: 9, measured: 9);
+        what: 'searchDictionary 调用点所在文件', atLeast: 9, measured: 10);
     final Set<String> declared = <String>{
       ...wiredSurfaces.keys,
       ...exemptCallSites.keys,

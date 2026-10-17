@@ -1,0 +1,13 @@
+## BUG-3314 · 图片字幕OCR点击位置偏移、振假名混入正文、转录出重复字幕
+- **报告**：2026-10-13（用户，PR #2114：图片字幕点击的位置和实际文字位置不一样；有些假名在文字下面；有些转录出来变成重复的字幕；样片《映画ドラえもん 新・のび太の海底鬼岩城 (2026)》日文 PGS。另问暂停 OCR 能否扩大到所有视频）
+- **真实性**：✅ 真 bug。证据：从样片抽出日文 PGS（1933 条 cue，解析层无重叠 cue），用与 app 相同的本机 ONNX 识别链（`manga_ctc`）对真实位图跑「整轨文字图」与「暂停截帧整页」两条路径（临时探针，未入库）。
+  - **振假名混入正文 / 行序乱**：`packages/fushi_engine/lib/ocr/routing_ocr_recognizer.dart` `_routeBlock` 横排路径只用 `filterThinLines`（比 p75 行厚 0.6 倍细才丢）+ `orderLinesForReading`（按 top 排序）。蓝光字幕注音约为正文行高的 0.6~0.65，整排漏过；双行字幕第二行的注音标在**字下方**，而 `ocr_line_layout.dart` `dropOcrRubyLines` 横排只认上方；一行正文配四段注音时按段数取的 p75 落在注音自身厚度上，两条判据一起失效。实测输出如 `(のび太)キャンプ行くなら山がいい!やま`、`くうきみどりかこ緑に…`、`海だ 海！(スネ夫)…`（说话人标签 top 51 排在台词 top 46 之后）。
+  - **点击位置偏移**：`fushi/lib/src/media/video/graphic_subtitle_ocr.dart` `graphicSubtitleOcrCharsOf` 不看识别器交回的行框 `linesCoords`，把检测块框（含注音区）按行数均分、每行再沿整块宽度均分。实测第 3 条字幕块框 y 812–1003，两行实际在 826–885 / 890–951；第一行「（スタッフA）」横向只占 578–926，却被摊到 548–1377。
+  - **转录出重复字幕**：10/11 那份旧 SRT 里的「同句两遍」来自已被 BUG-3275 换掉的整页路径（当前本地识别不再产生）。当前代码里能造成相邻两条变成同一句的是 BUG-3275 引入的跨条批量大模型重读：一批多图按编号对回，模型把邻条（或提示里的附近台词）答到这条编号上，`manga_ai_ocr_refiner.dart` `_readCrops` 只做长度校验（`isPlausibleMangaAiOcrText`）照收；被注音搞乱的条目置信度偏低（实测 0.52–0.60），恰好都会进低置信度档的批量队列。此项为机制推断，未用真实大模型复现。
+- **[x] ① 已修复** —
+  - 引擎：`dropOcrRubyLines` 横排同时认上方 / 下方注音，典型行厚改为按行长加权的 p75；横排路径改走 `horizontalBlockReadingLines`（去注音 → 同排碎片并成一行）。真实位图复测 58 条（cue 2–60）全部干净：注音全去、说话人标签在台词前、无重复。
+  - app：`graphicSubtitleOcrCharsOf` 复用漫画覆盖层的 `mangaEffectiveTextRegions`（按 `linesCoords` 定行、行内分字），删掉自己那套均分。
+  - 大模型回复归属校验 `mangaAiOcrReplyBelongsToCrop`：回复明显更像同批别条的本地猜测或附近台词（字多重集合 Dice ≥ 0.6 且比本条高 0.2）时不采用，本条保留本地文字。
+  - 暂停 OCR 扩到所有视频：新设置 `video_pause_ocr_scope`（所有视频 / 仅图片字幕 / 关闭，默认所有视频；视频 › 字幕，播放器面板同步），Fushi 自绘文字字幕在屏时让位（`VideoPauseOcrScope.shouldRecognize`）；非图形字幕视频里不报「没有 OCR 引擎」、不提示「这一帧没有字」。
+- **[x] ② 已加自动化测试** — `fushi/test/ocr/ocr_line_layout_test.dart`（下方注音、四段注音、无注音双行，真实行框）、`fushi/test/ocr/routing_ocr_recognizer_test.dart`（横排逐行单元：去上下注音 + 标签并行 + 排序）、`packages/fushi_engine/test/ocr/manga_ai_ocr_refine_crops_test.dart`（串号 / 照抄附近台词拒收、归属判据）、`fushi/test/media/video/graphic_subtitle_pause_ocr_test.dart`（点击框落在行框里、范围判据）。
+- **备注**：未在真机播放器里点按复测；识别结果是 FFI CPU 后端跑的，app 在 Windows 上同为 CPU（BUG-3275 结论），检测与排版逻辑一致。已转出的旧 SRT 需重新「转成文字字幕」。

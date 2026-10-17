@@ -1,13 +1,15 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/sync_client/anki_sync_client_actions.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 「Anki 同步（无需安装 Anki）」设置节：选后端、登录同步服务器、看同步状态。
@@ -34,8 +36,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   /// 已登录时点了「重新登录」（凭据过期 / 改了密码）：显示预填好的登录表单。
   bool _relogin = false;
 
-  AnkiSyncSession? get _session =>
-      ref.read(platformServicesProvider).ankiSyncSession;
+  AnkiSyncSession? get _session => ankiSyncClientSessionOf(ref);
 
   @override
   void initState() {
@@ -94,14 +95,17 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
         ),
         if (enabled) ...<Widget>[
           AdaptiveSettingsRow(
+            // 状态行首图标按阶段换语义：同步中 / 受阻 / 失败 / 已同步 / 未登录。
+            icon: _statusIcon(state),
+            showIcon: true,
             title: _statusTitle(),
             subtitle: _statusDetail(state),
             titleMaxLines: 2,
             subtitleMaxLines: 6,
             trailing: busy
                 ? const SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    dimension: 24,
+                    child: FushiCircularProgressIndicator(strokeWidth: 3),
                   )
                 : null,
           ),
@@ -139,14 +143,14 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     ),
     AdaptiveSettingsRow(
       title: t.anki_sync_client_sign_in,
-      icon: Icons.login,
+      icon: FushiIcons.login,
       showIcon: true,
       onTap: busy ? null : _signIn,
     ),
     if (_account != null)
       AdaptiveSettingsRow(
         title: t.cancel,
-        icon: Icons.close,
+        icon: FushiIcons.close,
         showIcon: true,
         onTap: () => setState(() => _relogin = false),
       ),
@@ -155,23 +159,35 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   List<Widget> _signedInRows(bool busy) => <Widget>[
     AdaptiveSettingsRow(
       title: t.anki_sync_client_sync_now,
-      icon: Icons.sync,
+      icon: FushiIcons.sync,
       showIcon: true,
       onTap: busy ? null : _syncNow,
     ),
     AdaptiveSettingsRow(
       title: t.anki_sync_client_relogin,
-      icon: Icons.key,
+      icon: FushiIcons.key,
       showIcon: true,
       onTap: busy ? null : () => setState(() => _relogin = true),
     ),
     AdaptiveSettingsRow(
       title: t.anki_sync_client_sign_out,
-      icon: Icons.logout,
+      icon: FushiIcons.logout,
       showIcon: true,
       onTap: busy ? null : _signOut,
     ),
   ];
+
+  IconData _statusIcon(AnkiSyncState? state) {
+    if (_account == null) return FushiIcons.cloudOff;
+    return switch (state?.phase) {
+      AnkiSyncPhase.busy => FushiIcons.cloudSync,
+      AnkiSyncPhase.blocked => FushiIcons.warning,
+      AnkiSyncPhase.failed => FushiIcons.error,
+      _ => (state?.unsynced ?? 0) == 0
+          ? FushiIcons.success
+          : FushiIcons.cloudUpload,
+    };
+  }
 
   String _statusTitle() {
     final AnkiSyncAccount? account = _account;
@@ -220,13 +236,9 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   /// 切后端的唯一落地路径：持久化 → 运行时选择 → 重建仓库 provider（与移动端
   /// 「改用 AnkiConnect」同一顺序，三步缺一步就是存储与运行时不一致）。
   Future<void> _setEnabled(bool value) async {
-    final AnkiViewModel vm = ref.read(ankiViewModelProvider.notifier);
-    final PlatformServices platform = ref.read(platformServicesProvider);
     setState(() => _switching = true);
     try {
-      await vm.updateUseAnkiSyncClient(value);
-      platform.setUseAnkiSyncClient(value);
-      ref.invalidate(ankiRepositoryProvider);
+      await setAnkiSyncClientEnabled(ref, value);
     } finally {
       if (mounted) setState(() => _switching = false);
     }
@@ -239,7 +251,9 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     final String? endpoint = server.isEmpty ? null : server;
     if (endpoint == null && !await _confirmAnkiWeb()) return;
     try {
-      await session.signIn(
+      await signInAnkiSyncClient(
+        ref,
+        session,
         endpoint: endpoint,
         username: _username.text.trim(),
         password: _password.text,
@@ -247,8 +261,6 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
       _password.clear();
       if (mounted) setState(() => _relogin = false);
       await _loadAccount();
-      // 登录后库在本地了：顺手刷新牌组 / 笔记类型，设置页的选择器立刻可用。
-      unawaited(ref.read(ankiViewModelProvider.notifier).fetchConfiguration());
     } on AnkiSyncHasUnsyncedNotes catch (e) {
       _toast(t.anki_sync_client_has_unsynced(count: e.count));
     } catch (e) {
@@ -277,49 +289,28 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     await _loadAccount();
   }
 
-  Future<bool> _confirmDiscard(int count) async {
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        content: Text(t.anki_sync_client_discard_confirm(count: count)),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(t.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(t.anki_sync_client_discard_action),
-          ),
-        ],
-      ),
-    );
-    return ok == true;
-  }
+  /// 破坏性确认：M3E 对话框 + errorContainer 图标徽标 + error 色确认键。
+  Future<bool> _confirmDiscard(int count) => showFushiConfirmDialog(
+        context: context,
+        title: t.anki_sync_client_sign_out,
+        message: t.anki_sync_client_discard_confirm(count: count),
+        cancelLabel: t.cancel,
+        confirmLabel: t.anki_sync_client_discard_action,
+        icon: FushiIcons.logout,
+        destructive: true,
+      );
 
-  Future<bool> _confirmAnkiWeb() async {
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.anki_sync_client_ankiweb_title),
-        content: Text(t.anki_sync_client_ankiweb_body),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(t.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(t.anki_sync_client_ankiweb_confirm),
-          ),
-        ],
-      ),
-    );
-    return ok == true;
-  }
+  Future<bool> _confirmAnkiWeb() => showFushiConfirmDialog(
+        context: context,
+        title: t.anki_sync_client_ankiweb_title,
+        message: t.anki_sync_client_ankiweb_body,
+        cancelLabel: t.cancel,
+        confirmLabel: t.anki_sync_client_ankiweb_confirm,
+        icon: FushiIcons.cloud,
+      );
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(content: Text(msg)));
   }
 }

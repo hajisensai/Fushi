@@ -66,7 +66,7 @@ class CuesToEpub {
       EpubBuilder.assemble(
         title: title,
         author: author,
-        uidPrefix: 'hibiki-',
+        uidPrefix: 'fushi-',
         chapterXhtmls: chapterXhtmls,
       ),
       flush: true,

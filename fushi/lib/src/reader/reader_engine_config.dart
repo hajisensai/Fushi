@@ -34,6 +34,10 @@ class ReaderEngineConfig {
     required this.swipeFastDistThreshold,
     required this.swipeFastVelocity,
     required this.wheelGestureQuietMs,
+    this.pageTurnAnimation = 'none',
+    this.pageTurnDurationMs = 0,
+    this.pageTurnFollowDrag = false,
+    this.swipeLeftIsForward,
     required this.furiganaMode,
     required this.caretColor,
     required this.caretInsetTop,
@@ -87,6 +91,23 @@ class ReaderEngineConfig {
   /// [ReaderSettings.swipePageTurnDistThresholds]，随灵敏度一起缩放。
   final int swipeFastVelocity;
   final int wheelGestureQuietMs;
+
+  // ── 翻页动画（只分页 shell 读，见 reader_page_turn_script.dart）──────────
+  /// 实际播放的效果 key（`none` / `slide` / `cover` / `fade`），Dart 侧已按墨水屏与
+  /// 系统「减弱动态效果」降级（`effectivePageTurnAnimation`）。
+  final String pageTurnAnimation;
+
+  /// 一次完整翻页动画的毫秒数（速度档，取自 `PageTurnAnimationSpeed` 的
+  /// FushiMotion token）。缺省 0 = 不播动画（与缺省效果 `none` 一致，不另立兜底时长）。
+  final int pageTurnDurationMs;
+
+  /// 拖动跟手开关（JS 侧再按效果是否有位移判一次）。
+  final bool pageTurnFollowDrag;
+
+  /// 左滑是否前进（与 Dart onSwipe 的 `swipeLeftIsForward` 同一判据）。跟手据此判断
+  /// 手指往哪边拖是「下一页」（章首 / 章末阻尼、松手接力方向）。null = 不下发，JS 按
+  /// 阅读方向推断。
+  final bool? swipeLeftIsForward;
 
   /// `off` / `toggle` / `hidden` / `dimmed`（`ReaderSettings.furiganaMode` 的
   /// 值域）。JS 侧现已不按它分支（隐藏 / 淡显都由 CSS 承担），仍随 config 下发
@@ -148,6 +169,10 @@ class ReaderEngineConfig {
     'swipeFastDistThreshold': swipeFastDistThreshold,
     'swipeFastVelocity': swipeFastVelocity,
     'wheelGestureQuietMs': wheelGestureQuietMs,
+    'pageTurnAnimation': pageTurnAnimation,
+    'pageTurnDurationMs': pageTurnDurationMs,
+    'pageTurnFollowDrag': pageTurnFollowDrag,
+    if (swipeLeftIsForward != null) 'swipeLeftIsForward': swipeLeftIsForward,
     'furiganaMode': furiganaMode,
     'caretColor': caretColor,
     'caretInsetTop': caretInsetTop,
@@ -198,6 +223,10 @@ class ReaderEngineConfig {
     required int swipeFastVelocity,
     required int wheelGestureQuietMs,
     required bool scanNonJapaneseText,
+    String? pageTurnAnimation,
+    int? pageTurnDurationMs,
+    bool? pageTurnFollowDrag,
+    bool? swipeLeftIsForward,
   }) {
     final String patch = jsonEncode(<String, Object?>{
       'marginTop': marginTop,
@@ -209,6 +238,10 @@ class ReaderEngineConfig {
       'swipeFastVelocity': swipeFastVelocity,
       'wheelGestureQuietMs': wheelGestureQuietMs,
       'scanNonJapaneseText': scanNonJapaneseText,
+      if (pageTurnAnimation != null) 'pageTurnAnimation': pageTurnAnimation,
+      if (pageTurnDurationMs != null) 'pageTurnDurationMs': pageTurnDurationMs,
+      if (pageTurnFollowDrag != null) 'pageTurnFollowDrag': pageTurnFollowDrag,
+      if (swipeLeftIsForward != null) 'swipeLeftIsForward': swipeLeftIsForward,
     });
     return '(window.__fushiEngine && window.__fushiEngine.updateLive) '
         '? window.__fushiEngine.updateLive($patch) : false;';

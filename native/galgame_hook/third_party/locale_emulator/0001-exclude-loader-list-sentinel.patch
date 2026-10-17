@@ -6,7 +6,7 @@ index 57abe54..d6b2f61 100644
  ﻿#ifndef _MYLIBRARY_H_9fb91137_38ac_4d5e_8572_b6e12d23cb15_
  #define _MYLIBRARY_H_9fb91137_38ac_4d5e_8572_b6e12d23cb15_
  
-+// Hibiki modification, 2026-09-07: exclude the loader list sentinel.
++// Fushi modification, 2026-09-07: exclude the loader list sentinel.
 +#include "kernel32_module_list.h"
 +
  #if !defined(USE_NT_VER)

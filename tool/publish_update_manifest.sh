@@ -207,7 +207,7 @@ import json, os
 assets = json.loads(os.environ["PLATFORM_ASSETS_JSON"])
 # Desktop only. APKs stay out (Android cannot install across package names) and
 # .ipa stays out (Apple forbids in-app download/execute, so the entry is inert).
-suffixes = ("-windows-setup.exe", "-macos.zip")
+suffixes = ("-windows-setup.exe", "-macos-arm64.zip")
 print(json.dumps([a for a in assets if a["name"].endswith(suffixes)]))
 PY
 )"

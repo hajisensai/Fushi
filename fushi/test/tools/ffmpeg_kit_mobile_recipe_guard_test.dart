@@ -42,12 +42,21 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
 ///   `<video>` 播放（Anki 桌面 Qt WebEngine 无 H.264/AAC）。缺了移动端每张片段卡都先编
 ///   WebM 失败、再降级 MP4。ffmpeg-kit 的开关叫 `--enable-opus`，写进 FFmpeg configure
 ///   串的是 `--enable-libopus`。
+/// - `--enable-libdav1d`：BUG-2947 AV1 软件解码。FFmpeg 原生 `av1` 解码器只是 hwaccel
+///   挂钩壳，而移动端配方 `--disable-mediacodec` / `--disable-videotoolbox` 后一个 hwaccel
+///   都没有——缺它，AV1 视频制卡的截帧 / 动图每帧都是 `Your platform doesn't support
+///   hardware accelerated AV1 decoding`。ffmpeg-kit 的开关叫 `--enable-dav1d`。
+/// - `--enable-libxml2`：BUG-3503 dash demuxer 的前提。在线视频源给 `manifest.mpd` 时
+///   制卡经 ffmpeg-kit 打开清单，缺它 → `Invalid data found when processing input` →
+///   `required audio missing`。
 const List<String> _requiredMobileFlags = <String>[
   '--enable-gpl',
   '--enable-libx264',
   '--enable-openssl',
   '--enable-libvpx',
   '--enable-libopus',
+  '--enable-libdav1d',
+  '--enable-libxml2',
 ];
 
 /// configure 声明了 ≠ 编码器真链进去了：FFmpeg 找不到 libvpx 时会**静默**关掉它的四个
@@ -58,6 +67,28 @@ const Map<String, String> _requiredWebmCodecStrings = <String, String>{
   'WebM Project VP9 Encoder': 'libvpx 自身的 VP9 编码器名（证明真链进了 libvpx）',
   'libopus': 'FFmpeg 的 Opus 编码器封装',
   'request not implemented': 'libopus 自身的错误信息表（FFmpeg 源码里没有这个串）',
+};
+
+/// BUG-2947：AV1 软件解码器同样要「封装名 + 库自身的串」两证。dav1d 的 `dav1d_log` 串
+/// （dav1d 1.2.1 src/obu.c，logging 默认开）在加 dav1d 之前的四个切片里一个都扫不到
+/// （2026-10-05 实测），所以它只可能因真链进 dav1d 而出现。
+///
+/// 不需要断言原生 `av1` 壳**不在**：ffmpeg-kit 不像 ffmpeg-min 那样能逐个挑解码器，壳会一直
+/// 编进来；FFmpeg n6.0 的 allcodecs.c 把它排在所有外部解码器之后（"hwaccel hooks only, so
+/// prefer external decoders"），按 codec id 找解码器时先命中的是 libdav1d。
+const Map<String, String> _requiredAv1DecoderStrings = <String, String>{
+  'libdav1d': 'FFmpeg 的 AV1 软件解码器封装',
+  'Malformed ITU-T T.35 metadata message format':
+      'dav1d 自身的日志串（证明真链进了 dav1d）',
+};
+
+/// BUG-3503：dash demuxer 同样要两证。`--enable-small` 剥掉了 demuxer 长名，所以判
+/// dashdec.c 与 libxml2 自身独有的串：加 libxml2 之前的四个切片一个都扫不到（2026-10-17
+/// 实测），带 dash 的完整 ffmpeg 里两个都在。dash **muxer**（ffmpeg-kit 一直编着）没有
+/// 这两个串，所以它们不会因 dashenc 而假绿。
+const Map<String, String> _requiredDashDemuxerStrings = <String, String>{
+  'missing root node': 'libavformat/dashdec.c 的 MPD 解析日志（dash demuxer 在）',
+  'xmlParseCharRef': 'libxml2 自身的错误串（证明真链进了 libxml2）',
 };
 
 /// 从当前 cwd 向上找含 vendored ffmpeg-kit 的仓库根。
@@ -141,6 +172,22 @@ void main() {
           expect(codec.contains(needle), isTrue,
               reason: '$abi libavcodec.so 里没有「$needle」（$what）');
         });
+        _requiredAv1DecoderStrings.forEach((String needle, String what) {
+          expect(codec.contains(needle), isTrue,
+              reason: '$abi libavcodec.so 里没有「$needle」（$what）——'
+                  'AV1 视频制卡截帧 / 动图会全挂（BUG-2947）');
+        });
+      });
+    }
+
+    for (final String abi in <String>['arm64-v8a', 'armeabi-v7a']) {
+      test('$abi: dash demuxer + libxml2 真链进 libavformat（BUG-3503）', () {
+        final String format = _asSearchableText(soBytes(abi, 'libavformat.so'));
+        _requiredDashDemuxerStrings.forEach((String needle, String what) {
+          expect(format.contains(needle), isTrue,
+              reason: '$abi libavformat.so 里没有「$needle」（$what）——'
+                  '在线源 .mpd 制卡会报 Invalid data（BUG-3503）');
+        });
       });
     }
 
@@ -160,13 +207,17 @@ void main() {
       expect(text.contains('GNU GENERAL PUBLIC LICENSE'), isTrue,
           reason: '加了 --enable-gpl 后产物许可从 LGPLv3 变为 GPLv3，'
               'AAR 内的 license.txt 必须同步（android.sh 会自动写入）。'
-              'Hibiki 自身即 GPL-3.0，两者一致');
+              'Fushi 自身即 GPL-3.0，两者一致');
       expect(aar.findFile('res/raw/license_x264.txt'), isNotNull,
           reason: 'x264 的许可文件必须随产物分发');
       expect(aar.findFile('res/raw/license_libvpx.txt'), isNotNull,
           reason: 'libvpx 的许可文件必须随产物分发');
       expect(aar.findFile('res/raw/license_opus.txt'), isNotNull,
           reason: 'opus 的许可文件必须随产物分发');
+      expect(aar.findFile('res/raw/license_dav1d.txt'), isNotNull,
+          reason: 'dav1d 的许可文件必须随产物分发');
+      expect(aar.findFile('res/raw/license_libxml2.txt'), isNotNull,
+          reason: 'libxml2 的许可文件必须随产物分发');
       expect(aar.findFile('res/raw/source.txt'), isNotNull,
           reason: 'GPL/LGPL 要求的「源码获取途径」声明不得丢失');
     });
@@ -214,7 +265,89 @@ void main() {
           expect(codec.contains(needle), isTrue,
               reason: '$label libavcodec 里没有「$needle」（$what）');
         });
+        _requiredAv1DecoderStrings.forEach((String needle, String what) {
+          expect(codec.contains(needle), isTrue,
+              reason: '$label libavcodec 里没有「$needle」（$what）——'
+                  'AV1 视频制卡截帧 / 动图会全挂（BUG-2947）');
+        });
+
+        final File formatFile = File(
+          '$base/libavformat.xcframework/$dir/libavformat.framework/libavformat',
+        );
+        expect(formatFile.existsSync(), isTrue);
+        final String format = _asSearchableText(formatFile.readAsBytesSync());
+        _requiredDashDemuxerStrings.forEach((String needle, String what) {
+          expect(format.contains(needle), isTrue,
+              reason: '$label libavformat 里没有「$needle」（$what）——'
+                  '在线源 .mpd 制卡会报 Invalid data（BUG-3503）');
+        });
       });
+    });
+  });
+
+  // BUG-3503 审查跟进：加 libxml2 后 iOS 的 libav* 新链了 /usr/lib/libiconv.2.dylib 与
+  // /usr/lib/libcharset.1.dylib。动态 framework 自带 LC_LOAD_DYLIB，漏声明不会链接失败，
+  // 但 podspec 是「这个 pod 依赖哪些系统库」的唯一声明处——下次重编再多出一个系统库时，
+  // 这条让它当场红，而不是等到某个 iOS 版本上 dyld 找不到库才在真机启动时崩。
+  group('iOS podspec 声明了 framework 链接的全部 /usr/lib 系统库', () {
+    // libSystem / libobjc 由工具链隐式链接，podspec 不必（也不该）声明。
+    const Set<String> implicitLibs = <String>{'System', 'objc'};
+    final RegExp dylibRef =
+        RegExp(r'/usr/lib/lib([A-Za-z0-9_+]+)\.(?:[A-Za-z0-9]+\.)*dylib');
+
+    Set<String> podspecLibraries() {
+      final String podspec = File('${root.path}/third_party/ffmpeg_kit_flutter/'
+              'ios/ffmpeg_kit_flutter.podspec')
+          .readAsStringSync();
+      final RegExpMatch? line =
+          RegExp(r'^\s*s\.libraries\s*=\s*(.+)$', multiLine: true)
+              .firstMatch(podspec);
+      expect(line, isNotNull, reason: 'podspec 里找不到 s.libraries');
+      return RegExp(r"'([^']+)'")
+          .allMatches(line!.group(1)!)
+          .map((RegExpMatch m) => m.group(1)!)
+          .toSet();
+    }
+
+    Set<String> linkedSystemLibs() {
+      final Directory frameworks = Directory(
+        '${root.path}/third_party/ffmpeg_kit_flutter/ios/Frameworks',
+      );
+      final Set<String> libs = <String>{};
+      for (final FileSystemEntity xc in frameworks.listSync()) {
+        if (xc is! Directory || !xc.path.endsWith('.xcframework')) continue;
+        final String name = xc.uri.pathSegments
+            .lastWhere((String s) => s.isNotEmpty)
+            .replaceAll('.xcframework', '');
+        for (final FileSystemEntity slice in xc.listSync()) {
+          if (slice is! Directory) continue;
+          final File bin = File('${slice.path}/$name.framework/$name');
+          if (!bin.existsSync()) continue;
+          final String text = _asSearchableText(bin.readAsBytesSync());
+          for (final RegExpMatch m in dylibRef.allMatches(text)) {
+            libs.add(m.group(1)!);
+          }
+        }
+      }
+      return libs;
+    }
+
+    test('linked ⊆ s.libraries ∪ 隐式库', () {
+      final Set<String> declared = podspecLibraries();
+      final Set<String> missing = linkedSystemLibs()
+          .difference(declared)
+          .difference(implicitLibs);
+      expect(missing, isEmpty,
+          reason: 'framework 链接了 /usr/lib/lib{$missing} 但 podspec 的 '
+              's.libraries 没声明（${declared.join(', ')}）');
+    });
+
+    test('负向对照：扫描真读到了 libxml2 带进来的 iconv / charset', () {
+      // 扫描若读错路径会得到空集，上一条就恒绿；这里钉住它确实看见了库。
+      expect(
+        linkedSystemLibs(),
+        containsAll(<String>['c++', 'z', 'iconv', 'charset']),
+      );
     });
   });
 

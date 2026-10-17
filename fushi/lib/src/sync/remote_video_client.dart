@@ -108,6 +108,33 @@ abstract interface class RemoteVideoStreamHeaders {
   Map<String, String> get httpHeaderFields;
 }
 
+/// 「host 能回传图形字幕整轨」的可选能力（互联 host：它有原文件）。
+///
+/// 图形字幕（PGS / VobSub / DVB）由 libmpv 自绘，播放页要每句的起止才能制卡锚句；
+/// host 在本机把那一条字幕轨原样抽出来（几百 KB）回传，client 不为字幕把整片再读一遍。
+/// 媒体服务器 / URL 流没有这种端点，不实现本能力（它们的整轨抽取走流地址）。
+abstract interface class RemoteVideoGraphicSubtitleTrackFetch {
+  /// 把视频 [id] 第 [embeddedStreamIndex] 条字幕轨（host 的
+  /// [RemoteVideoEmbeddedSubtitleTrack.streamIndex]）的整轨载荷下载到 [dest]。host 不支持
+  /// （老 host 404 / 没接入抽取 501 / 编码不支持 415）或抽取失败时抛错。
+  Future<void> getRemoteVideoGraphicSubtitleTrack(
+    String id,
+    File dest, {
+    required int embeddedStreamIndex,
+    int episodeIndex = 0,
+  });
+
+  /// 同一条轨的轨头（JSON：编码 + 载荷里没有的 extradata，如 VobSub 调色板 / DVB
+  /// 页号）下载到 [dest]。这条轨没有轨头（PGS）或 host 不支持时抛错——调用方据此
+  /// 只靠载荷本身解（PGS 段流自带全部信息）。
+  Future<void> getRemoteVideoGraphicSubtitleTrackHeader(
+    String id,
+    File dest, {
+    required int embeddedStreamIndex,
+    int episodeIndex = 0,
+  });
+}
+
 /// 「知道某一集的集号」的可选能力（BUG-2626）。
 ///
 /// [RemoteVideoInfo] 只有 `title` 与合集内的 `sortIndex`：前者是分集标题（在线视频源
@@ -119,6 +146,37 @@ abstract interface class RemoteVideoStreamHeaders {
 abstract interface class RemoteVideoEpisodeNumber {
   /// 远端视频 [id] 的集号；不知道则 null（调用方据此回落，不要返回 0 或序号冒充）。
   int? remoteVideoEpisodeNumber(String id);
+}
+
+/// 远端视频所属作品的**身份**（字幕检索用，BUG-3199）。
+class RemoteVideoTitleIdentity {
+  const RemoteVideoTitleIdentity({
+    this.originalTitle,
+    this.title,
+    this.externalIds = const <String, String>{},
+    this.isMovie = false,
+  });
+
+  /// 作品原名（日文原名等）。
+  final String? originalTitle;
+
+  /// 服务器上的作品显示名（常是用户语言的译名）。
+  final String? title;
+
+  /// `provider → id`，provider 名小写（`anilist` / `tmdb` / `imdb` / `anidb` …），
+  /// 与 `video_metadata_provider_identities.provider` 同口径。
+  final Map<String, String> externalIds;
+
+  final bool isMovie;
+}
+
+/// 「知道远端视频是哪部作品」的可选能力（BUG-3199）：媒体服务器的条目自带
+/// `OriginalTitle` 与 `ProviderIds`，而界面上的标题是服务器的显示名（中文用户的库里
+/// 就是中文译名），拿它去日语字幕站搜必然空手。字幕检索先按 ID / 原名搜，没有时
+/// 才回落显示名。
+abstract interface class RemoteVideoTitleIdentityFetch {
+  /// 远端视频 [id] 所属作品的身份；拿不到返回 null（调用方回落显示名）。
+  Future<RemoteVideoTitleIdentity?> remoteVideoTitleIdentity(String id);
 }
 
 /// 「远端合集就是一部作品」的标记能力（BUG-2626 审查补）。
@@ -159,6 +217,38 @@ abstract interface class RemoteVideoPlaybackSession
     int positionMs, {
     required bool paused,
   });
+}
+
+/// [RemoteVideoPlaybackSession] 实现共用的「按条目的本地暂停意图」。
+///
+/// 周期心跳（[RemoteVideoClient.putRemoteVideoPosition]）不知道播放器此刻是否暂停，
+/// 而播放页的断点落库是异步的：后台先暂停、延迟落库后才发的那条心跳若恒报「播放中」，
+/// 服务器会把刚暂停的条目重新标成播放中（BUG：Jellyfin #2107 / Plex 同根）。心跳的
+/// 播放态因此以这里记的意图为准。
+///
+/// 契约（各实现必须同样遵守，否则时序窗口重新打开）：
+/// - [record] 在暂停 / 继续请求发出**之前**同步调用：请求在途或失败都不改变本地意图，
+///   后一条心跳负责把失败的暂停补上。
+/// - [reset] 在起播的第一个 await **之前**调用：新一次播放从「播放中」开始。
+/// - 停止**不**清除意图：路由销毁时可能在停止上报之后再落一次断点，那不是继续播放。
+/// - 意图属于条目：别的条目不受影响。
+final class RemotePlaybackPauseIntent {
+  final Set<String> _pausedIds = <String>{};
+
+  /// 记录 [id] 的暂停 / 继续意图。
+  void record(String id, {required bool paused}) {
+    if (paused) {
+      _pausedIds.add(id);
+    } else {
+      _pausedIds.remove(id);
+    }
+  }
+
+  /// 新一次播放起播：清除 [id] 的暂停意图。
+  void reset(String id) => _pausedIds.remove(id);
+
+  /// 心跳读：[id] 最近一次本地意图是否为暂停。
+  bool isPaused(String id) => _pausedIds.contains(id);
 }
 
 /// 媒体服务器串流画质档（成熟客户端的「画质」菜单：自动 / 1080p 20 Mbps / …）。

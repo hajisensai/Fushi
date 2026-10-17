@@ -28,9 +28,9 @@ enum StoreRestrictedCapability {
   /// 的下载入库流程，iOS 上那条流程整体不存在。
   externalDiscovery,
 
-  /// 在线漫画源宿主：Aidoku 仓库 / Mihon 扩展 / mokuro.moe 卷下载。
+  /// 在线漫画源宿主：Mihon 扩展 / mokuro.moe 卷下载。
   ///
-  /// 这三者的共同点是**运行时加载第三方仓库提供的内容源**，而不是读用户自己
+  /// 这两者的共同点是**运行时加载第三方仓库提供的内容源**，而不是读用户自己
   /// 导入的本地漫画。iOS 只保留本地导入 + 阅读。
   onlineMangaSource,
 

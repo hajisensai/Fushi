@@ -113,6 +113,14 @@ void main() {
             '#EXTINF:3.84,\nhttps://cdn.invalid/seg1.image?x=1\n'
             '#EXTINF:3.84,\nseg2.ts\n#EXT-X-ENDLIST\n',
           );
+        case '/stream/playlist':
+          // 视频源扩展 CDN 的常见形态：非 .m3u8 路径 + 不标准的 Content-Type。
+          res.headers.contentType = ContentType('text', 'plain');
+          res.write(
+            '#EXTM3U\n#EXT-X-TARGETDURATION:4\n'
+            '#EXTINF:3.84,\nhttps://cdn.invalid/seg1.ts\n'
+            '#EXTINF:3.84,\nhttps://cdn.invalid/seg2.ts\n#EXT-X-ENDLIST\n',
+          );
         case '/gz.m3u8':
           res.headers.contentType = ContentType.parse('application/x-mpegURL');
           res.headers.set(HttpHeaders.contentEncodingHeader, 'gzip');
@@ -257,6 +265,38 @@ void main() {
     expect(isTlsNativeOrigin('key.invalid', 443), isTrue);
     expect(upstreamAcceptEncodings, <String>['identity']);
   });
+
+  test(
+    'BUG-3079: playlist on a non-.m3u8 path with text/plain is served as HLS',
+    () async {
+      // ffmpeg 的 hls_probe 遇到非标准扩展名 + 非标准 mime 拒认 HLS，libmpv 退到
+      // demux_playlist 把每个分片当独立条目播（进度条每 3～4 秒一段）。中继认出
+      // 播放列表后必须以 RFC 8216 mime 回给 native。
+      final result = await get('/stream/playlist', range: 'bytes=0-');
+      expect(result.status, 200);
+      expect(
+        ContentType.parse(result.headers['content-type']!).mimeType,
+        'application/vnd.apple.mpegurl',
+      );
+      expect(
+        utf8.decode(result.body),
+        '#EXTM3U\n#EXT-X-TARGETDURATION:4\n'
+        '#EXTINF:3.84,\nhttp://cdn.invalid:443/seg1.ts\n'
+        '#EXTINF:3.84,\nhttp://cdn.invalid:443/seg2.ts\n#EXT-X-ENDLIST\n',
+      );
+    },
+  );
+
+  test(
+    'playlist mime is normalized even when upstream already sent one',
+    () async {
+      final result = await get('/gz.m3u8');
+      expect(
+        ContentType.parse(result.headers['content-type']!).mimeType,
+        'application/vnd.apple.mpegurl',
+      );
+    },
+  );
 
   test('gzip playlist is decoded, rewritten and served plain', () async {
     final result = await get('/gz.m3u8');

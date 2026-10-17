@@ -70,6 +70,10 @@ class SystemOcrPageResult {
 /// Play 服务取下）。只有这一种该带用户去下载模型（BUG-2906）。
 const String kSystemOcrModelUnavailableReason = 'model_unavailable';
 
+/// [SystemOcrUnavailableException.reason]：系统没装这门语言的识别器（Windows OCR
+/// 按语言随语言包安装，没装日语就识别不了日文）。用户要去系统设置里装语言。
+const String kSystemOcrLanguageUnavailableReason = 'language_unavailable';
+
 /// 系统 OCR 不可用时的原因（直接抛给上层做人话提示）。
 class SystemOcrUnavailableException implements Exception {
   const SystemOcrUnavailableException(this.reason);
@@ -188,6 +192,11 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
       if (error.code == 'MODEL_UNAVAILABLE') {
         throw const SystemOcrUnavailableException(
             kSystemOcrModelUnavailableReason);
+      }
+      // Windows：该语言的识别器没装（随系统语言包安装），同样不是图片的问题。
+      if (error.code == 'LANGUAGE_UNAVAILABLE') {
+        throw const SystemOcrUnavailableException(
+            kSystemOcrLanguageUnavailableReason);
       }
       rethrow;
     }

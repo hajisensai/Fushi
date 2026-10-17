@@ -7,7 +7,7 @@
 // 本组测试钉死：绝对定位盒逐像素等于作者位，控制条可见与否一律不参与。
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';

@@ -5,7 +5,7 @@
 /// （书库浏览 / 游戏页 / 下载中心书域与游戏域）没有一个传 `manga`。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
@@ -76,7 +76,6 @@ void main() {
               child: MangaSourceCatalogSection(
                 catalog: catalog,
                 onOpenMokuro: () {},
-                onOpenAidoku: (_) {},
                 onOpenMihon: (_) {},
                 onOpenOpds: onOpenOpds,
               ),

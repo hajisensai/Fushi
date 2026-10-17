@@ -7,7 +7,7 @@ import 'package:fushi/src/sync/interconnect_download_manager.dart';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,6 +18,8 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier, HomeTab;
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
+import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
@@ -26,6 +28,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   final TestWidgetsFlutterBinding binding =
@@ -34,7 +37,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_book_pp');
+        Directory.systemTemp.createTempSync('fushi_remote_book_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -69,16 +72,17 @@ void main() {
   // 用来观测两阶段下载空窗期本地卡的加载覆盖层）。
   late List<SrtBook> shelfSrtBooks;
   Completer<void>? audiobookDownloadGate;
+  late PreferencesRepository prefs;
 
   setUp(() async {
     useRealImporter = false;
     failNextAudiobook = false;
     LocaleSettings.setLocale(AppLocale.en);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    final PreferencesRepository prefs = PreferencesRepository(db);
+    prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_book_store');
+        Directory.systemTemp.createTempSync('fushi_remote_book_store');
     remoteBookCover = File('${storeDir.path}/remote-book-cover.png')
       ..writeAsBytesSync(_tinyPngBytes);
     appModel = AppModel(testPlatformServices())
@@ -214,20 +218,32 @@ void main() {
         ),
         downloadBytes: _collectionDownloadFixture(manga: manga),
       );
+      // 占位卡归属合集：成员折进合集格子不外露（整行展开已移除），下载入口在合集
+      // 详情页——点格子进详情页，再点占位卡 = 下载入库（详情页卡片手势统一经
+      // onOpenMember）。这条同时钉住「详情页里远端占位书确实能下载」。
       await tester.pumpWidget(buildApp(mangaOnly: manga));
       await tester.pumpAndSettle();
+      await tester.tap(find.byType(SeriesShelfCard));
+      await tester.pumpAndSettle();
+      expect(find.byType(MediaCollectionGridDetailPage), findsOneWidget,
+          reason: '前置：点合集格子进详情页');
       final InterconnectDownloadManager manager = ProviderScope.containerOf(
-        tester.element(find.byType(ReaderFushiHistoryPage)),
+        // 书架在详情页之下（offstage），默认 finder 看不到它。
+        tester.element(
+            find.byType(ReaderFushiHistoryPage, skipOffstage: false)),
       ).read(interconnectDownloadManagerProvider);
-      final VoidCallback retryDownload = tester.widget<IconButton>(find.byKey(
+      final VoidCallback retryDownload = tester.widget<IconButton>(glassUnwrap<IconButton>(find.byKey(
         const ValueKey<String>('remote_book_download_Download_fixture'),
-      )).onPressed!;
+      ))).onPressed!;
+      final Finder remoteMember = find.byKey(
+        const ValueKey<String>('remote_book_card_Download_fixture'),
+      );
+      await tester.ensureVisible(remoteMember);
+      await tester.pumpAndSettle();
       await tester.runAsync(() async {
-        await tester.tap(
-          find.byKey(
-            const ValueKey<String>('remote_book_download_Download_fixture'),
-          ),
-        );
+        // 详情页成员卡包在 IgnorePointer 里，点击由外层格子接管（命中点不在卡本体上，
+        // 属预期，故关掉「未命中」告警）。
+        await tester.tap(remoteMember, warnIfMissed: false);
         final Stopwatch watch = Stopwatch()..start();
         while (watch.elapsed < const Duration(seconds: 15)) {
           await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -270,6 +286,11 @@ void main() {
       expect(importedAudiobooks, hasLength(1), reason: '重试必须继续下载有声书');
       expect((await db.getAllEpubBooks()).map((EpubBookRow row) => row.uid),
           <String>[rows.single.uid], reason: '重试不能生成带后缀的第二本书');
+      // 先退出详情页再整棵换掉（详情页开着换根会在卸载帧里重建它）。
+      Navigator.of(
+        tester.element(find.byType(MediaCollectionGridDetailPage)),
+      ).pop();
+      await tester.pumpAndSettle();
       await tester.pumpWidget(wrapScope(const SizedBox.shrink()));
       await tester.pumpWidget(buildApp(mangaOnly: manga));
       await tester.pumpAndSettle();

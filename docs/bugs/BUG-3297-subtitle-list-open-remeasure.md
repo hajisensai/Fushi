@@ -1,0 +1,11 @@
+## BUG-3297 · 视频字幕列表每次打开都把当前句之前的行重新排版两遍
+- **报告**：2026-10-13（反馈 C9uvk6cMxF，Windows：「字幕栏打开就会很卡，布局不够紧凑」）
+- **真实性**：✅ 真 bug（打开路径上的重复工作；真机卡顿幅度未在设备上测）。基线 `ce8b6306f9`：
+  - `fushi/lib/src/media/video/video_subtitle_jump_panel.dart:846` 在 `initState` 里用 `_initialScrollOffsetForCurrentCue()` 建滚动控制器，此时 `_m3e` 还是字段初值 `false`（`:512`）、排版环境是默认值，于是按**经典行几何**把当前句之前的所有行用 TextPainter 量一遍；
+  - 首帧 `build`（`:1472`）才判出生产上是 M3E 面板，`_m3e` 翻转时整表作废，`itemExtentBuilder` / 帧后滚动定位再按 M3E 几何重量一遍——初始偏移本身也是按错误几何算的；
+  - 行高缓存挂在 State 上（`:596`），而字幕列表是 push-aside 侧栏、收起即销毁 State，所以**每次**打开都重复上面两遍。实测（widget 测试，300 句、停在第 250 句）一次打开 518 次行测量，重开再 518 次。
+- **[x] ① 已修复** — 滚动控制器改到首次 `didChangeDependencies` 里先同步真实排版环境与行形态再估算偏移；行高缓存提成库级 `videoSubtitleRowExtentCache`（签名 = 宽度 / 字号 / textScaler / 字体 / 书写方向，系统字体变化时整体作废，2 万条上限），同一排版环境下重开面板零重量。修复提交 `1c2aa1e0f8`（同提交收紧 M3E 面板几何并把底部安全区让给列表末尾，反馈 Lgp-nUrh6V）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_subtitle_list_compact_layout_test.dart`：停在中段打开后收起再开，行测量次数不增加；换宽度才重量；紧凑几何与底部安全区内边距。
+- **备注**：
+  - 真机（Windows / iOS）未复测卡顿体感；侧栏开合时视频区随 `AnimatedSize` 每帧改宽是另一项可能开销，本次未动。
+  - 截图里那块「设置一大块黑」已由 BUG-3271 处理，不在本条范围。

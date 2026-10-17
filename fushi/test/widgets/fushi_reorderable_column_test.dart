@@ -1,5 +1,5 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
@@ -36,10 +36,8 @@ class _HarnessState extends State<_Harness> {
         });
         widget.onReorder(from, to);
       },
-      itemBuilder: (BuildContext context, int i) => SizedBox(
-        height: 60,
-        child: Center(child: Text(_items[i])),
-      ),
+      itemBuilder: (BuildContext context, int i) =>
+          SizedBox(height: 60, child: Center(child: Text(_items[i]))),
     );
   }
 }
@@ -91,124 +89,184 @@ Future<void> _dragRowToTop(
   await tester.pumpAndSettle();
 }
 
+/// 与标签行同形：行体拥有长按菜单 / 横向手势，只有尾部把手可重排。
+Widget _handleList({
+  required List<String> order,
+  required void Function(int from, int to) onReorder,
+  required VoidCallback onMenu,
+  required VoidCallback onSwipe,
+}) => StatefulBuilder(
+  builder: (BuildContext context, StateSetter setState) =>
+      FushiReorderableColumn(
+        useDragHandles: true,
+        itemCount: order.length,
+        keyForIndex: (int i) => ValueKey<String>(order[i]),
+        onReorder: (int from, int to) {
+          setState(() {
+            final String item = order.removeAt(from);
+            order.insert(to, item);
+          });
+          onReorder(from, to);
+        },
+        itemBuilder: (BuildContext context, int i) => SizedBox(
+          height: 60,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onLongPress: onMenu,
+            onHorizontalDragUpdate: (_) => onSwipe(),
+            child: Row(
+              children: <Widget>[
+                Expanded(child: Center(child: Text('body-${order[i]}'))),
+                FushiReorderableDragHandle(
+                  child: SizedBox(
+                    width: 48,
+                    height: 60,
+                    child: Center(child: Text('handle-${order[i]}')),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+);
+
 void main() {
   testWidgets(
-      'drag the LAST row to the very top lands it at index 0 (BUG: equal-'
-      'height rows could never reach the first slot — strict < midpoint test)',
-      (WidgetTester tester) async {
-    final List<int> calls = <int>[];
-    final List<String> order = <String>['A', 'B', 'C'];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 300,
-              child: _Harness(
-                items: order,
-                onReorder: (int from, int to) {
-                  final String item = order.removeAt(from);
-                  order.insert(to, item);
-                  calls.add(from);
-                },
+    'drag the LAST row to the very top lands it at index 0 (BUG: equal-'
+    'height rows could never reach the first slot — strict < midpoint test)',
+    (WidgetTester tester) async {
+      final List<int> calls = <int>[];
+      final List<String> order = <String>['A', 'B', 'C'];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                child: _Harness(
+                  items: order,
+                  onReorder: (int from, int to) {
+                    final String item = order.removeAt(from);
+                    order.insert(to, item);
+                    calls.add(from);
+                  },
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await _dragRowToTop(tester, label: 'C', firstLabel: 'A');
+      await _dragRowToTop(tester, label: 'C', firstLabel: 'A');
 
-    expect(tester.takeException(), isNull);
-    expect(calls, isNotEmpty, reason: 'a reorder should have fired');
-    // C 被拖到最顶端：必须真正排到第一个，而不是卡在第二位（旧 bug 的表现）。
-    expect(order, <String>['C', 'A', 'B'],
-        reason: 'the dragged row must reach index 0, not stall at index 1');
-  });
+      expect(tester.takeException(), isNull);
+      expect(calls, isNotEmpty, reason: 'a reorder should have fired');
+      // C 被拖到最顶端：必须真正排到第一个，而不是卡在第二位（旧 bug 的表现）。
+      expect(order, <String>[
+        'C',
+        'A',
+        'B',
+      ], reason: 'the dragged row must reach index 0, not stall at index 1');
+    },
+  );
 
   testWidgets(
-      'row spacing lives in the layout, NOT in the drag feedback (BUG-078 '
-      'symptom 2: dragged row painted extra background below it)',
-      (WidgetTester tester) async {
-    const double rowH = 60;
-    const double gap = 24;
-    final List<String> order = <String>['A', 'B', 'C'];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 300,
-              child: _Harness(
-                items: order,
-                spacing: gap,
-                onReorder: (int from, int to) {},
+    'row spacing lives in the layout, NOT in the drag feedback (BUG-078 '
+    'symptom 2: dragged row painted extra background below it)',
+    (WidgetTester tester) async {
+      const double rowH = 60;
+      const double gap = 24;
+      final List<String> order = <String>['A', 'B', 'C'];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                child: _Harness(
+                  items: order,
+                  spacing: gap,
+                  onReorder: (int from, int to) {},
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    // 静止：行间距进入布局 → 列表总高 = N*行高 + (N-1)*间距。
-    expect(tester.getSize(find.byType(FushiReorderableColumn)).height,
-        rowH * 3 + gap * 2);
+      // 静止：行间距进入布局 → 列表总高 = N*行高 + (N-1)*间距。
+      expect(
+        tester.getSize(find.byType(FushiReorderableColumn)).height,
+        rowH * 3 + gap * 2,
+      );
 
-    // 拖拽中：浮层只包住行内容，高度恰为单行高（不含行间距）。若有人把间距折回
-    // 行自带 padding，浮层会变成 rowH+gap 高、底部多出一条背景 → 此断言守住。
-    final Offset start = tester.getCenter(find.text('A'));
-    final TestGesture gesture =
-        await tester.startGesture(start, kind: PointerDeviceKind.mouse);
-    await tester.pump();
-    await gesture.moveBy(const Offset(0, 30));
-    await tester.pump();
+      // 拖拽中：浮层只包住行内容，高度恰为单行高（不含行间距）。若有人把间距折回
+      // 行自带 padding，浮层会变成 rowH+gap 高、底部多出一条背景 → 此断言守住。
+      final Offset start = tester.getCenter(find.text('A'));
+      final TestGesture gesture = await tester.startGesture(
+        start,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, 30));
+      await tester.pump();
 
-    final Finder feedback =
-        find.byWidgetPredicate((Widget w) => w is Material && w.elevation == 6);
-    expect(feedback, findsOneWidget);
-    expect(tester.getSize(feedback).height, rowH,
-        reason: 'feedback must wrap only the row, not the inter-row spacing');
+      final Finder feedback = find.descendant(
+        of: find.byType(FushiReorderDragProxy),
+        matching: find.byType(Material),
+      );
+      expect(feedback, findsOneWidget);
+      expect(
+        tester.getSize(feedback).height,
+        rowH,
+        reason: 'feedback must wrap only the row, not the inter-row spacing',
+      );
 
-    await gesture.up();
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-  });
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
-      'drag the LAST row to the very top still reaches index 0 WITH row '
-      'spacing (geometry stays correct once spacing moved into the column)',
-      (WidgetTester tester) async {
-    final List<int> calls = <int>[];
-    final List<String> order = <String>['A', 'B', 'C'];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 300,
-              child: _Harness(
-                items: order,
-                spacing: 24,
-                onReorder: (int from, int to) {
-                  final String item = order.removeAt(from);
-                  order.insert(to, item);
-                  calls.add(from);
-                },
+    'drag the LAST row to the very top still reaches index 0 WITH row '
+    'spacing (geometry stays correct once spacing moved into the column)',
+    (WidgetTester tester) async {
+      final List<int> calls = <int>[];
+      final List<String> order = <String>['A', 'B', 'C'];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                child: _Harness(
+                  items: order,
+                  spacing: 24,
+                  onReorder: (int from, int to) {
+                    final String item = order.removeAt(from);
+                    order.insert(to, item);
+                    calls.add(from);
+                  },
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await _dragRowToTop(tester, label: 'C', firstLabel: 'A');
+      await _dragRowToTop(tester, label: 'C', firstLabel: 'A');
 
-    expect(tester.takeException(), isNull);
-    expect(calls, isNotEmpty, reason: 'a reorder should have fired');
-    expect(order, <String>['C', 'A', 'B'],
-        reason: 'spacing must not break reaching index 0');
-  });
+      expect(tester.takeException(), isNull);
+      expect(calls, isNotEmpty, reason: 'a reorder should have fired');
+      expect(order, <String>[
+        'C',
+        'A',
+        'B',
+      ], reason: 'spacing must not break reaching index 0');
+    },
+  );
 
   testWidgets('long-press drag reorders at default scale', (
     WidgetTester tester,
@@ -250,18 +308,96 @@ void main() {
   });
 
   testWidgets(
-      'long-press drag reorders under 0.5 UI scale without flying off (the '
-      'whole point — SDK ReorderableListView fails here)', (
-    WidgetTester tester,
-  ) async {
-    final List<int> calls = <int>[];
-    final List<String> order = <String>['A', 'B', 'C'];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: FushiAppUiScale(
-            scale: 0.5,
-            child: Center(
+    'long-press drag reorders under 0.5 UI scale without flying off (the '
+    'whole point — SDK ReorderableListView fails here)',
+    (WidgetTester tester) async {
+      final List<int> calls = <int>[];
+      final List<String> order = <String>['A', 'B', 'C'];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FushiAppUiScale(
+              scale: 0.5,
+              child: Center(
+                child: SizedBox(
+                  width: 300,
+                  child: _Harness(
+                    items: order,
+                    onReorder: (int from, int to) {
+                      final String item = order.removeAt(from);
+                      order.insert(to, item);
+                      calls.add(from);
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await _dragRowDownPastNext(
+        tester,
+        label: 'A',
+        nextLabel: 'B',
+        readOrder: () => const <int>[],
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(
+        calls,
+        isNotEmpty,
+        reason: 'drag must still reorder when the UI is scaled down',
+      );
+      expect(order.indexOf('A'), greaterThan(order.indexOf('B')));
+      expect(order.length, 3);
+    },
+  );
+
+  testWidgets(
+    'a quick move without holding does NOT reorder (long-press gated)',
+    (WidgetTester tester) async {
+      final List<int> calls = <int>[];
+      final List<String> order = <String>['A', 'B', 'C'];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                child: _Harness(
+                  items: order,
+                  onReorder: (int from, int to) => calls.add(from),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final Offset start = tester.getCenter(find.text('A'));
+      final Offset next = tester.getCenter(find.text('B'));
+      // 不按住、立刻拖：不该进入长按拖拽。
+      final TestGesture gesture = await tester.startGesture(start);
+      await gesture.moveTo(next);
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(calls, isEmpty);
+      expect(order, <String>['A', 'B', 'C']);
+    },
+  );
+
+  testWidgets(
+    'mouse press-and-drag reorders immediately WITHOUT a long-press hold '
+    '(the Windows fix — desktop pointers must not wait ~500ms)',
+    (WidgetTester tester) async {
+      final List<int> calls = <int>[];
+      final List<String> order = <String>['A', 'B', 'C'];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
               child: SizedBox(
                 width: 300,
                 child: _Harness(
@@ -276,130 +412,59 @@ void main() {
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await _dragRowDownPastNext(
-      tester,
-      label: 'A',
-      nextLabel: 'B',
-      readOrder: () => const <int>[],
-    );
+      final Offset start = tester.getCenter(find.text('A'));
+      final Offset next = tester.getCenter(find.text('B'));
+      // 鼠标按下后立即移动（不长按、不等待）：ImmediateMultiDragGestureRecognizer
+      // 越过 slop 即接管 → 直接进入拖拽并重排。这正是旧 onLongPress 实现做不到的。
+      final TestGesture gesture = await tester.startGesture(
+        start,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await gesture.moveTo(Offset.lerp(start, next, 0.6)!);
+      await tester.pump();
+      await gesture.moveTo(next);
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
 
-    expect(tester.takeException(), isNull);
-    expect(calls, isNotEmpty,
-        reason: 'drag must still reorder when the UI is scaled down');
-    expect(order.indexOf('A'), greaterThan(order.indexOf('B')));
-    expect(order.length, 3);
-  });
-
-  testWidgets(
-      'a quick move without holding does NOT reorder (long-press gated)',
-      (WidgetTester tester) async {
-    final List<int> calls = <int>[];
-    final List<String> order = <String>['A', 'B', 'C'];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 300,
-              child: _Harness(
-                items: order,
-                onReorder: (int from, int to) => calls.add(from),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    final Offset start = tester.getCenter(find.text('A'));
-    final Offset next = tester.getCenter(find.text('B'));
-    // 不按住、立刻拖：不该进入长按拖拽。
-    final TestGesture gesture = await tester.startGesture(start);
-    await gesture.moveTo(next);
-    await gesture.up();
-    await tester.pumpAndSettle();
-
-    expect(calls, isEmpty);
-    expect(order, <String>['A', 'B', 'C']);
-  });
+      expect(tester.takeException(), isNull);
+      expect(
+        calls,
+        isNotEmpty,
+        reason: 'a mouse drag must reorder without any long-press hold',
+      );
+      expect(order.indexOf('A'), greaterThan(order.indexOf('B')));
+      expect(order.length, 3);
+    },
+  );
 
   testWidgets(
-      'mouse press-and-drag reorders immediately WITHOUT a long-press hold '
-      '(the Windows fix — desktop pointers must not wait ~500ms)', (
-    WidgetTester tester,
-  ) async {
-    final List<int> calls = <int>[];
-    final List<String> order = <String>['A', 'B', 'C'];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 300,
-              child: _Harness(
-                items: order,
-                onReorder: (int from, int to) {
-                  final String item = order.removeAt(from);
-                  order.insert(to, item);
-                  calls.add(from);
-                },
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    final Offset start = tester.getCenter(find.text('A'));
-    final Offset next = tester.getCenter(find.text('B'));
-    // 鼠标按下后立即移动（不长按、不等待）：ImmediateMultiDragGestureRecognizer
-    // 越过 slop 即接管 → 直接进入拖拽并重排。这正是旧 onLongPress 实现做不到的。
-    final TestGesture gesture = await tester.startGesture(
-      start,
-      kind: PointerDeviceKind.mouse,
-    );
-    await tester.pump();
-    await gesture.moveTo(Offset.lerp(start, next, 0.6)!);
-    await tester.pump();
-    await gesture.moveTo(next);
-    await tester.pump();
-    await gesture.up();
-    await tester.pumpAndSettle();
-
-    expect(tester.takeException(), isNull);
-    expect(calls, isNotEmpty,
-        reason: 'a mouse drag must reorder without any long-press hold');
-    expect(order.indexOf('A'), greaterThan(order.indexOf('B')));
-    expect(order.length, 3);
-  });
-
-  testWidgets(
-      'clicking an interactive child in a row fires the child, NOT a reorder '
-      '(immediate drag recognizer must not steal taps)', (
-    WidgetTester tester,
-  ) async {
-    final List<int> reorders = <int>[];
-    final List<String> taps = <String>[];
-    final List<String> order = <String>['A', 'B', 'C'];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 300,
-              child: FushiReorderableColumn(
-                itemCount: order.length,
-                keyForIndex: (int i) => ValueKey<String>(order[i]),
-                onReorder: (int from, int to) => reorders.add(from),
-                itemBuilder: (BuildContext context, int i) => SizedBox(
-                  height: 60,
-                  child: Center(
-                    child: TextButton(
-                      onPressed: () => taps.add(order[i]),
-                      child: Text('btn-${order[i]}'),
+    'clicking an interactive child in a row fires the child, NOT a reorder '
+    '(immediate drag recognizer must not steal taps)',
+    (WidgetTester tester) async {
+      final List<int> reorders = <int>[];
+      final List<String> taps = <String>[];
+      final List<String> order = <String>['A', 'B', 'C'];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                child: FushiReorderableColumn(
+                  itemCount: order.length,
+                  keyForIndex: (int i) => ValueKey<String>(order[i]),
+                  onReorder: (int from, int to) => reorders.add(from),
+                  itemBuilder: (BuildContext context, int i) => SizedBox(
+                    height: 60,
+                    child: Center(
+                      child: TextButton(
+                        onPressed: () => taps.add(order[i]),
+                        child: Text('btn-${order[i]}'),
+                      ),
                     ),
                   ),
                 ),
@@ -407,21 +472,20 @@ void main() {
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    // 鼠标点击行内按钮（按下→原地抬起，无移动）：应触发按钮 onPressed，不触发重排。
-    await tester.tap(find.text('btn-A'), kind: PointerDeviceKind.mouse);
-    await tester.pumpAndSettle();
+      // 鼠标点击行内按钮（按下→原地抬起，无移动）：应触发按钮 onPressed，不触发重排。
+      await tester.tap(find.text('btn-A'), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
 
-    expect(tester.takeException(), isNull);
-    expect(taps, <String>['A'], reason: 'the button tap must go through');
-    expect(reorders, isEmpty, reason: 'a stationary click must not reorder');
-    expect(order, <String>['A', 'B', 'C']);
-  });
+      expect(tester.takeException(), isNull);
+      expect(taps, <String>['A'], reason: 'the button tap must go through');
+      expect(reorders, isEmpty, reason: 'a stationary click must not reorder');
+      expect(order, <String>['A', 'B', 'C']);
+    },
+  );
 
-  testWidgets(
-      '按住在视口底边缘带会自动滚动外层 SingleChildScrollView'
+  testWidgets('按住在视口底边缘带会自动滚动外层 SingleChildScrollView'
       '（长列表里第 1 项才够得到第 N 项）', (WidgetTester tester) async {
     // 此前本组件缺边缘自动滚动（2D 姊妹件 FushiReorderableGrid 早就有）：列表长
     // 于视口时，把某行拖到视口边缘列表不会跟着滚，用户只能在**当前可见范围**内
@@ -430,26 +494,29 @@ void main() {
     addTearDown(controller.dispose);
     // 12 项 × 60 高 = 内容高 720、视口 240 → 必须自动滚动才够得到底部。
     final List<String> order = <String>[for (int i = 0; i < 12; i++) 'i$i'];
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: SizedBox(
-            width: 300,
-            height: 240,
-            child: SingleChildScrollView(
-              controller: controller,
-              child: _Harness(items: order, onReorder: (_, __) {}),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 300,
+              height: 240,
+              child: SingleChildScrollView(
+                controller: controller,
+                child: _Harness(items: order, onReorder: (_, __) {}),
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     expect(controller.offset, 0);
 
     final Rect viewport = tester.getRect(find.byType(SingleChildScrollView));
-    final TestGesture gesture =
-        await tester.startGesture(tester.getCenter(find.text('i0')));
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(find.text('i0')),
+    );
     await tester.pump(const Duration(milliseconds: 600)); // 长按起拖
     // 按住在视口底边缘带内且不再移动，纯靠帧步进推进滚动。
     await gesture.moveTo(Offset(viewport.center.dx, viewport.bottom - 8));
@@ -458,8 +525,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 16));
     }
 
-    expect(controller.offset, greaterThan(0),
-        reason: '指针按在底边缘带应驱动最近的祖先 Scrollable 自动向下滚动');
+    expect(
+      controller.offset,
+      greaterThan(0),
+      reason: '指针按在底边缘带应驱动最近的祖先 Scrollable 自动向下滚动',
+    );
     await gesture.cancel();
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
@@ -467,15 +537,18 @@ void main() {
 
   testWidgets('无祖先 Scrollable 时自动滚动降级为不滚（不得抛异常）', (WidgetTester tester) async {
     final List<String> order = <String>['A', 'B', 'C'];
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: _Harness(items: order, onReorder: (_, __) {}),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: _Harness(items: order, onReorder: (_, __) {}),
+        ),
       ),
-    ));
+    );
     await tester.pump();
 
-    final TestGesture gesture =
-        await tester.startGesture(tester.getCenter(find.text('A')));
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(find.text('A')),
+    );
     await tester.pump(const Duration(milliseconds: 600));
     await tester.dragFrom(const Offset(150, 10), const Offset(0, 0));
     await tester.pump(const Duration(milliseconds: 16));
@@ -484,4 +557,110 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+  for (final double scale in <double>[0.5, 0.8, 1.5]) {
+    testWidgets('handle mouse drag stays local under $scale UI scale', (
+      WidgetTester tester,
+    ) async {
+      final List<String> order = <String>['A', 'B', 'C'];
+      final List<(int, int)> moves = <(int, int)>[];
+      int menus = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FushiAppUiScale(
+              scale: scale,
+              child: Center(
+                child: SizedBox(
+                  width: 300,
+                  child: _handleList(
+                    order: order,
+                    onReorder: (int from, int to) => moves.add((from, to)),
+                    onMenu: () => menus++,
+                    onSwipe: () {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _dragRowToTop(tester, label: 'handle-C', firstLabel: 'handle-A');
+      expect(tester.takeException(), isNull);
+      expect(order, <String>['C', 'A', 'B']);
+      expect(moves, <(int, int)>[(2, 0)]);
+      expect(menus, 0);
+    });
+  }
+
+  testWidgets(
+    'handle touch drag wins over ancestor menu and uses final index',
+    (WidgetTester tester) async {
+      final List<String> order = <String>['A', 'B', 'C'];
+      final List<(int, int)> moves = <(int, int)>[];
+      int menus = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                child: _handleList(
+                  order: order,
+                  onReorder: (int from, int to) => moves.add((from, to)),
+                  onMenu: () => menus++,
+                  onSwipe: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _dragRowDownPastNext(
+        tester,
+        label: 'handle-A',
+        nextLabel: 'handle-B',
+        readOrder: () => <int>[],
+      );
+      expect(tester.takeException(), isNull);
+      expect(order, <String>['B', 'A', 'C']);
+      expect(moves, <(int, int)>[(0, 1)]);
+      expect(menus, 0);
+    },
+  );
+
+  testWidgets(
+    'handle mode leaves row long press and horizontal swipe to content',
+    (WidgetTester tester) async {
+      final List<String> order = <String>['A', 'B', 'C'];
+      int moves = 0;
+      int menus = 0;
+      int swipes = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                child: _handleList(
+                  order: order,
+                  onReorder: (_, __) => moves++,
+                  onMenu: () => menus++,
+                  onSwipe: () => swipes++,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.longPress(find.text('body-A'));
+      await tester.pumpAndSettle();
+      expect(menus, 1);
+      await tester.drag(find.text('body-A'), const Offset(-80, 0));
+      await tester.pumpAndSettle();
+      expect(swipes, greaterThan(0));
+      expect(moves, 0);
+      expect(order, <String>['A', 'B', 'C']);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

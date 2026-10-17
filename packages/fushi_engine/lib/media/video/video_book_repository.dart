@@ -5,7 +5,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/media/collections/collection_season_groups.dart';
+import 'package:fushi_engine/media/video/download/downloaded_collection_order.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
@@ -196,8 +196,8 @@ class VideoBookRepository {
       );
 
   /// 统一合集 Phase 2：把一个多集播放列表拆成 N 条独立 VideoBooks 行 + 一个 playlist
-  /// [MediaCollections]（成员按序）。是「导入时拆集」的单一真相源，与 v38 迁移
-  /// `splitPlaylistVideoBooksV38` 落库形状对齐（每集自带 positionMs 进 lastPositionMs；
+  /// [MediaCollections]（成员按序）。是「导入时拆集」的单一真相源，落库形状沿用已
+  /// 删除的 v38 拆集迁移（每集自带 positionMs 进 lastPositionMs；
   /// 每集 uid = coreUniqueVideoBookUid(coreSingleVideoBookUid(path))；playlistJson 不写、
   /// currentEpisode 恒 0；completed_at 不设）。整批包一个事务：全成或全回滚。
   ///
@@ -293,25 +293,24 @@ class VideoBookRepository {
   Future<void> reorderDownloadedCollectionEpisodes(int collectionId) async {
     final List<MediaCollectionItemRow> items =
         await _db.getCollectionItems(collectionId);
-    final List<VideoBookRow> members = <VideoBookRow>[];
+    if (items.length < 2) return;
+    final Map<String, String> videoPathByUid = <String, String>{};
     for (final MediaCollectionItemRow item in items) {
       if (item.mediaType != MediaKind.video.dbValue) continue;
       final VideoBookRow? book = await _db.getVideoBookByBookUid(item.entryKey);
-      if (book != null) members.add(book);
+      if (book != null) videoPathByUid[book.bookUid] = book.videoPath;
     }
-    if (members.length < 2) return;
-    final CollectionSeasonRegroup<VideoBookRow> regroup =
-        regroupMembersBySeason<VideoBookRow>(
-      members: members,
-      filenameOf: (VideoBookRow row) => row.videoPath,
-      titleOf: (VideoBookRow row) => row.title,
-    );
+    // 与合集同步对 episodeOrdered 条目的合并同一个函数（BUG-2941）：两处口径
+    // 不同，同步就会每轮判「本地与合并结果不一致」来回改写。
     await _db.reorderCollectionItemsAutomatically(
       collectionId,
-      <CollectionMemberKey>[
-        for (final VideoBookRow row in regroup.ordered)
-          (mediaType: MediaKind.video.dbValue, entryKey: row.bookUid),
-      ],
+      orderDownloadedCollectionMembers(
+        <CollectionMemberKey>[
+          for (final MediaCollectionItemRow item in items)
+            (mediaType: item.mediaType, entryKey: item.entryKey),
+        ],
+        videoPathByUid: videoPathByUid,
+      ),
     );
   }
 
@@ -321,7 +320,7 @@ class VideoBookRepository {
   /// 合集成员永不更新）。
   ///
   /// 对齐以**清单为准**、按集的**稳定基身份** [coreSingleVideoBookUid]（取文件名去
-  /// 扩展名、与目录/绝对路径无关，见 hibiki_core `video_book_uid`）匹配，**不是**按
+  /// 扩展名、与目录/绝对路径无关，见 fushi_core `video_book_uid`）匹配，**不是**按
   /// 完整 `videoPath`：同一集换目录（相对路径改绝对 / 移动文件夹）基身份不变 → 判为
   /// 「未变」不增删、不误制孤儿行（对齐首导 uid 派生规则与重扫 relocation 幂等契约）。
   /// - 清单有、成员没有的基身份 → 建独立 VideoBook 行（uid 同 [importSplitPlaylist] 去重）
@@ -447,7 +446,7 @@ class VideoBookRepository {
   Future<List<VideoBookRow>> listAll() => _db.allVideoBooks();
 
   /// 监听视频库行集合（uid）变化，供库页在任意导入路径（页内 / 拖拽 / 外部
-  /// 「用 Hibiki 打开」/ 远端下载）落库后自动刷新（BUG-793）。
+  /// 「用 Fushi 打开」/ 远端下载）落库后自动刷新（BUG-793）。
   Stream<List<String>> watchVideoBookUids() => _db.watchVideoBookUids();
 
   /// 视频库书架展示用列表：在 [listAll] 基础上自愈被数据根迁移遗弃的封面绝对路径
@@ -1106,7 +1105,7 @@ class VideoBookRepository {
   /// Reclaims app-owned video assets for a row that has already been deleted.
   ///
   /// Only the deleted row's own cover/subtitle paths are considered, and each
-  /// candidate must still live under Hibiki's app-owned video asset directory
+  /// candidate must still live under Fushi's app-owned video asset directory
   /// and be unreferenced by all remaining videos. The embedded subtitle cache is
   /// derived from [deletedVideoPath] and is skipped while another video still
   /// points at the same original path.

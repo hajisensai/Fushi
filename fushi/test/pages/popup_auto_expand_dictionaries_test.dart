@@ -264,8 +264,13 @@ void main() {
     expect(item, greaterThanOrEqualTo(0),
         reason: 'the auto-expand slider item must exist');
 
-    // The slider min/max must equal the repository clamp range.
-    final String window = schema.substring(item, item + 400);
+    // The slider min/max must equal the repository clamp range. Scope the
+    // window to this item (up to the next slider item) rather than a fixed
+    // character count, so extra item fields (visible/reader) cannot push
+    // min/max out of view.
+    final int next = schema.indexOf('SettingsSliderItem(', item);
+    final String window =
+        schema.substring(item, next > item ? next : schema.length);
     expect(window.contains('min: 0'), isTrue);
     expect(window.contains('max: 6'), isTrue);
   });

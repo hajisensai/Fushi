@@ -11,7 +11,7 @@ import 'video_fushi_page_source_corpus.dart';
 /// 控制条避让恒加进默认 bottomPadding（字幕恒抬高、进度条隐藏时也留空白）。129 改成
 /// 「控制条出现时把字幕往上顶对应高度、隐藏落回」的动态避让。
 ///
-/// TODO-364 根因：旧实现 Hibiki 侧自建一份**镜像** `_videoControlsVisible` + **独立隐藏
+/// TODO-364 根因：旧实现 Fushi 侧自建一份**镜像** `_videoControlsVisible` + **独立隐藏
 /// Timer** `_videoControlsHideTimer`，与 media_kit 私有 `visible` + 私有 Timer 各自计时、
 /// 各入口（hover/移动 tap/键盘 poke）独立维护 → 与真实控制条相位会反（进度条起落时并发
 /// 操作字幕方向反）。修复：vendored media_kit_video fork 给两套控制主题加 `visibilityNotifier`，
@@ -60,10 +60,10 @@ void main() {
         reason: '派生 notifier 必须在 dispose 释放，避免泄漏');
   });
 
-  test('TODO-364 反退回：不再有 Hibiki 侧独立隐藏 Timer / 移动镜像 toggle', () {
+  test('TODO-364 反退回：不再有 Fushi 侧独立隐藏 Timer / 移动镜像 toggle', () {
     // 旧实现的镜像独立 Timer 与 media_kit 私有 Timer 相位反（根因），修复后删除。
     expect(src, isNot(contains('_videoControlsHideTimer')),
-        reason: '不应残留 Hibiki 侧独立隐藏 Timer（media_kit 自己的 Timer 是唯一计时，TODO-364）');
+        reason: '不应残留 Fushi 侧独立隐藏 Timer（media_kit 自己的 Timer 是唯一计时，TODO-364）');
     expect(src, isNot(contains('_toggleControlsVisibleForTap')),
         reason: '不应残留移动端镜像 toggle（移动 tap 由 media_kit onTap 决定并推送，TODO-364）');
   });
@@ -128,12 +128,20 @@ void main() {
       // 漏掉这项就退回「只让一个按钮行高」、字幕重新压住热区上缘 20px 带。
       '_activeSeekBarButtonBarOverlap',
       '_videoSubtitleSeekBarBreathingGap',
-      '_videoBottomChromeBaseline',
+      // Apple 底栏胶囊抬升后，移动端离底基线经 _videoGeometryBottomBaseline
+      // （= _videoBottomChromeBaseline + 抬升，见下方断言）。
+      '_videoGeometryBottomBaseline',
       '_videoBottomSystemInset()',
     ]) {
       expect(body, contains(getter),
           reason: 'reserve 必须由真实控制条几何项 $getter 加总（随缩放、盖过移动进度条）');
     }
+    expect(
+        RegExp(r'double get _videoGeometryBottomBaseline =>\s*'
+                r'_videoBottomChromeBaseline \+')
+            .hasMatch(src),
+        isTrue,
+        reason: '离底基线必须仍以 _videoBottomChromeBaseline 为底再叠抬升');
     expect(body, contains('_isDesktopVideoControls'),
         reason: 'reserve 应按平台分桌面/移动几何（桌面只让一个按钮行，移动让进度条热区上缘）');
     // BUG-901 防回退：reserve 计算不应再只用**可见轨道高**（那会让字幕落进轨道上方那段
@@ -241,15 +249,15 @@ void main() {
     }
   });
 
-  test('移动端点画面 toggle 交给 media_kit onTap（不再 Hibiki 镜像旁路，TODO-364）', () {
+  test('移动端点画面 toggle 交给 media_kit onTap（不再 Fushi 镜像旁路，TODO-364）', () {
     final int handler = src.indexOf('void _handleVideoPointerUp(');
     expect(handler, greaterThanOrEqualTo(0));
     final int handlerEnd =
-        src.indexOf('\n  bool _isVideoChromePointer(', handler);
+        src.indexOf('\n  void _handleVideoWheelSignal(', handler);
     final String body = src.substring(handler, handlerEnd);
     expect(body, isNot(contains('_toggleControlsVisibleForTap()')),
         reason:
-            '移动端点画面不应再走 Hibiki 镜像 toggle（由 media_kit onTap 决定并推送，TODO-364）');
+            '移动端点画面不应再走 Fushi 镜像 toggle（由 media_kit onTap 决定并推送，TODO-364）');
   });
 
   test('锁定 / 沉浸 / 真 overlay 侧栏门控下派生强制不可见，但字幕列表不门控（BUG-371）', () {

@@ -928,20 +928,16 @@ class GalIngameLookupController {
           '${result.error ?? "malformed_reply"}',
         );
       }
-      // Direct composition is outside the injected game Layer, so the native
-      // lookup-suppress acknowledgement alone cannot hide it from WGC/window
-      // capture. Hide the same routed WebView HWND synchronously before granting
-      // the lease; release keeps the DOM alive and _drainRecapture reveals it at
-      // the latest anchor. Bitmap fallback remains covered by the hook ack above.
-      // The suppress call may have yielded while a newer lookup replaced this
-      // route. Hide the currently-owned physical galCard surface; using the
-      // stale token would be silently dropped at the channel boundary.
-      final GlobalLookupRoute hideRoute = _activeRoute ?? route;
-      await GlobalLookupChannel.runWithRoute(
-        hideRoute,
-        () => GlobalLookupChannel.hide(notify: false),
-      );
-      _directSurfaceActive = false;
+      // BUG-2922 — the direct composition card is NOT hidden here. It is a
+      // separate top-level HWND (owned by the game, never the game's child),
+      // and every game-window capture path is per-window: WGC CreateForWindow
+      // and the PrintWindow fallback render only the target window's own
+      // visual, never another top-level window stacked above it (probed: an
+      // owned topmost popup over the window stays out of the WGC frame while
+      // it is on screen). Hiding it only made the card blink off and back on
+      // for every mining click. The hook ack above still hides what really
+      // lives in the game render tree: the bitmap-fallback card and the term
+      // highlight.
       return _GalIngameCaptureLease(
         () => _releaseMiningCaptureLease(leaseEpoch),
       );
@@ -1450,6 +1446,23 @@ class GalIngameLookupController {
     if (_directSurfaceActive) {
       _recaptureDirty = false;
       glog('gal-ingame: direct WebView surface active seq=${hit.seq}');
+      // BUG-2921 — nested child cards must be laid out in the domain the card
+      // actually lives in: the game client area around the runner-placed root.
+      final int? rootClientX = result.rootClientX;
+      final int? rootClientY = result.rootClientY;
+      if (rootClientX != null && rootClientY != null) {
+        GlobalLookupController.instance.adoptGalDirectLayoutViewport(
+          route: route,
+          clientWidth: result.clientWidth > 0
+              ? result.clientWidth
+              : hit.clientW,
+          clientHeight: result.clientHeight > 0
+              ? result.clientHeight
+              : hit.clientH,
+          rootClientX: rootClientX,
+          rootClientY: rootClientY,
+        );
+      }
       // BUG-2087 — the direct route hands the card to the host-owned surface
       // and only writes a dismiss frame to the hook, so the looked-up term's
       // highlight range never reached the engine side. Send the pixel-free

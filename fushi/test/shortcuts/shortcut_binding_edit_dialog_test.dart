@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -9,6 +9,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 void main() {
   setUp(() {
@@ -235,7 +236,7 @@ void main() {
     expect(pageDownChip, findsOneWidget);
     await tester.tap(find.descendant(
       of: pageDownChip,
-      matching: find.byIcon(Icons.close),
+      matching: find.byIcon(FushiIcons.close),
     ));
     await tester.pumpAndSettle();
     await tester.tap(find.text('OK').last);
@@ -268,7 +269,11 @@ void main() {
     // 手柄实时录键上线后，下拉菜单降级为「从列表选择」兜底入口。
     await tester.tap(find.text(t.shortcut_gamepad_pick_list));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(GamepadButton.dpadRight.label).last);
+    // 自绘菜单锚在触发器下方、超出可用高度时在面板内滚动：先把目标项滚进可见区。
+    final Finder dpadItem = find.text(GamepadButton.dpadRight.label).last;
+    await tester.ensureVisible(dpadItem);
+    await tester.pumpAndSettle();
+    await tester.tap(dpadItem);
     await tester.pumpAndSettle();
     await tester.tap(find.text('OK').last);
     await tester.pumpAndSettle();
@@ -278,7 +283,7 @@ void main() {
     expect(dpadChip, findsOneWidget);
     await tester.tap(find.descendant(
       of: dpadChip,
-      matching: find.byIcon(Icons.close),
+      matching: find.byIcon(FushiIcons.close),
     ));
     await tester.pumpAndSettle();
     await tester.tap(find.text('OK').last);
@@ -305,7 +310,7 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(FushiTagChip, 'Ctrl+KeyB'), findsOneWidget);
+    expect(find.widgetWithText(FushiTagChip, 'Ctrl+B'), findsOneWidget);
   });
 
   testWidgets(
@@ -337,7 +342,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(FushiTagChip, 'KeyQ'), findsOneWidget);
+    expect(find.widgetWithText(FushiTagChip, 'Q'), findsOneWidget);
     expect(find.text(t.shortcut_press_key), findsNothing);
     expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
   });

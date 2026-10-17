@@ -28,8 +28,10 @@ void main() {
     const String marker = 'class _ActionTile';
     final int start = source.indexOf(marker);
     expect(start, isNonNegative, reason: '应能定位到 _ActionTile 类');
-    // 下一个顶层 class 之前都算 _ActionTile 体。
-    final int next = source.indexOf('\nclass ', start + marker.length);
+    // 2026-10 重设计后 _ActionTile 是 StatefulWidget：行体在 _ActionTileState
+    // 里，截到鼠标 chip 类之前（widget + state 两个类）。
+    final int next =
+        source.indexOf('\nclass _MouseChip', start + marker.length);
     return next < 0 ? source.substring(start) : source.substring(start, next);
   }
 
@@ -37,12 +39,14 @@ void main() {
     final String body = actionTileBody();
     expect(
       body,
-      contains('onTap: onEdit'),
+      // 2026-10 重设计：整行 onTap 进入行内录制（onEdit），只读作用域不可点。
+      contains('onTap: w.readOnly ? null : w.onEdit'),
       reason: '整行必须挂 onTap: onEdit，未映射行才可点击/可焦点导航并进入分配流程',
     );
     // FushiListItem 必须收到 onTap（不是只有 trailing 图标按钮可点）。
     expect(
-      RegExp(r'return FushiListItem\(\s*\n\s*onTap: onEdit').hasMatch(body),
+      RegExp(r'child: FushiListItem\(\s*\n\s*onTap: w\.readOnly \? null : w\.onEdit')
+          .hasMatch(body),
       isTrue,
       reason: 'FushiListItem 必须在构造时传入 onTap: onEdit',
     );

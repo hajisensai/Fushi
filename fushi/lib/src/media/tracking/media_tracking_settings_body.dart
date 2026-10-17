@@ -1,5 +1,7 @@
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
     show collectionGroupKeyForFilename, isMultiSeasonGrouped;
 import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
@@ -133,7 +135,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(value)));
+      ..showSnackBar(FushiSnackBar(content: Text(value)));
   }
 
   @override
@@ -151,16 +153,16 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
               title: t.media_tracking_access_token,
               subtitle: t.media_tracking_access_token_hint,
               controlBelow: true,
-              trailing: TextField(
+              trailing: FushiTextFieldControl(
                 controller: _tokenController,
                 obscureText: true,
                 autocorrect: false,
                 enableSuggestions: false,
                 decoration: InputDecoration(
                   border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
+                  suffixIcon: FushiIconButtonControl(
                     tooltip: t.media_tracking_access_token_hint,
-                    icon: const Icon(Icons.open_in_new),
+                    icon: const FushiIcon(FushiIcons.openInNew),
                     onPressed: () => launchUrl(
                       Uri.parse(BangumiApiClient.accessTokenUrl),
                       mode: LaunchMode.externalApplication,
@@ -171,12 +173,12 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
             ),
             AdaptiveSettingsRow(
               title: t.media_tracking_signup,
-              trailing: TextButton.icon(
+              trailing: FushiTextButton.icon(
                 onPressed: () => launchUrl(
                   Uri.parse(BangumiApiClient.signupUrl),
                   mode: LaunchMode.externalApplication,
                 ),
-                icon: const Icon(Icons.person_add_alt),
+                icon: const FushiIcon(FushiIcons.personAdd),
                 label: Text(t.media_tracking_signup),
               ),
             ),
@@ -190,11 +192,11 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
               trailing: _busy
                   ? const SizedBox.square(
                       dimension: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : FilledButton.tonalIcon(
+                  : FushiFilledButton.tonalIcon(
                       onPressed: _connect,
-                      icon: const Icon(Icons.link),
+                      icon: const FushiIcon(FushiIcons.link),
                       label: Text(t.media_tracking_connect),
                     ),
             ),
@@ -221,22 +223,22 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
               AdaptiveSettingsRow(
                 title: t.media_tracking_unauthorized,
                 titleMaxLines: 4,
-                icon: Icons.error_outline,
+                icon: FushiIcons.error,
                 showIcon: true,
               ),
             AdaptiveSettingsRow(
               title: t.media_tracking_sync_now,
-              trailing: FilledButton.tonalIcon(
+              trailing: FushiFilledButton.tonalIcon(
                 onPressed: _busy ? null : _sync,
-                icon: const Icon(Icons.sync),
+                icon: const FushiIcon(FushiIcons.sync),
                 label: Text(t.media_tracking_sync_now),
               ),
             ),
             AdaptiveSettingsRow(
               title: t.media_tracking_add_mapping,
-              trailing: FilledButton.icon(
+              trailing: FushiFilledButton.icon(
                 onPressed: _busy ? null : () => _addMapping(),
-                icon: const Icon(Icons.add_link),
+                icon: const FushiIcon(FushiIcons.link),
                 label: Text(t.media_tracking_add_mapping),
               ),
             ),
@@ -248,7 +250,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                 subtitle: t.media_tracking_manual_required_hint,
                 titleMaxLines: 3,
                 subtitleMaxLines: 4,
-                icon: Icons.link_off,
+                icon: FushiIcons.linkOff,
                 showIcon: true,
               ),
               for (final MediaTrackingUnlinkedItem item in status.unlinked)
@@ -258,9 +260,9 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                       '${t.media_tracking_manual_required}',
                   titleMaxLines: 3,
                   subtitleMaxLines: 2,
-                  trailing: TextButton.icon(
+                  trailing: FushiTextButton.icon(
                     onPressed: _busy ? null : () => _addMapping(initial: item),
-                    icon: const Icon(Icons.add_link),
+                    icon: const FushiIcon(FushiIcons.link),
                     label: Text(t.media_tracking_add_mapping),
                   ),
                 ),
@@ -284,15 +286,15 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                 ].join('\n'),
                 subtitleMaxLines: 4,
                 titleMaxLines: 3,
-                icon: Icons.sync_problem_outlined,
+                icon: FushiIcons.warning,
                 showIcon: failureByMappingId.containsKey(mapping.id),
-                trailing: IconButton(
+                trailing: FushiIconButtonControl(
                   tooltip: t.media_tracking_delete_mapping,
                   onPressed: () async {
                     await _repository.deleteMapping(mapping.id);
                     await _reload();
                   },
-                  icon: const Icon(Icons.link_off),
+                  icon: const FushiIcon(FushiIcons.linkOff),
                 ),
               ),
           ],
@@ -302,8 +304,10 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
   }
 }
 
-class _LocalTrackingTarget {
-  const _LocalTrackingTarget({
+/// 「添加映射」可选的本地条目（视频合集 / 视频 / 书 / 游戏）。设置页对话框与
+/// 控制通道（`ctl_settings_body_tracking.dart`）共用。
+class MediaTrackingLocalTarget {
+  const MediaTrackingLocalTarget({
     required this.type,
     required this.key,
     required this.title,
@@ -316,6 +320,122 @@ class _LocalTrackingTarget {
   bool get isBook => type == TrackingMediaType.book;
 
   bool get isGame => type == TrackingMediaType.game;
+}
+
+/// 本地条目可选的 Bangumi 类别（与对话框下拉框同一口径）。
+List<TrackingKind> allowedTrackingKindsFor(TrackingMediaType type) =>
+    switch (type) {
+      TrackingMediaType.game => const <TrackingKind>[TrackingKind.game],
+      TrackingMediaType.book => const <TrackingKind>[
+          TrackingKind.novel,
+          TrackingKind.manga,
+        ],
+      _ => const <TrackingKind>[TrackingKind.anime],
+    };
+
+/// 本地条目可选的进度模式（与对话框下拉框同一口径）。
+List<TrackingProgressMode> allowedTrackingModesFor(TrackingMediaType type) =>
+    switch (type) {
+      TrackingMediaType.game => const <TrackingProgressMode>[
+          TrackingProgressMode.status,
+        ],
+      TrackingMediaType.book => const <TrackingProgressMode>[
+          TrackingProgressMode.chapter,
+          TrackingProgressMode.volume,
+        ],
+      _ => const <TrackingProgressMode>[TrackingProgressMode.episode],
+    };
+
+/// 选中本地条目时的默认类别。
+TrackingKind defaultTrackingKindFor(TrackingMediaType type) => switch (type) {
+      TrackingMediaType.game => TrackingKind.game,
+      TrackingMediaType.book => TrackingKind.novel,
+      _ => TrackingKind.anime,
+    };
+
+/// 选中本地条目时的默认进度模式。
+TrackingProgressMode defaultTrackingModeFor(TrackingMediaType type) =>
+    switch (type) {
+      TrackingMediaType.game => TrackingProgressMode.status,
+      TrackingMediaType.book => TrackingProgressMode.volume,
+      _ => TrackingProgressMode.episode,
+    };
+
+/// 进度模式的默认偏移：章节 / 收藏状态为 0，其余 1。
+int defaultTrackingOffsetFor(TrackingProgressMode mode) =>
+    mode == TrackingProgressMode.chapter || mode == TrackingProgressMode.status
+        ? 0
+        : 1;
+
+/// 落库前的偏移：status 模式下 outbox.progress 存的是收藏 type 本身，任何非零
+/// offset 都会把它算成另一个状态，必须钉死为 0；其余夹到 [0, 100000]。
+int normalizeTrackingProgressOffset(TrackingProgressMode mode, int? raw) =>
+    mode == TrackingProgressMode.status
+        ? 0
+        : (raw ?? defaultTrackingOffsetFor(mode)).clamp(0, 100000);
+
+/// 「添加映射」可选的本地条目清单。
+///
+/// 多季合集（分组按各集文件名派生）不列为整合集映射目标：Bangumi 一季一条目，
+/// 「整个多季合集 → 单个 subject」结构性错位，建了也会被上报门控绕开——与其让
+/// 用户建一条永远不生效的映射，不如不提供入口。多季合集的上报走自动按集通道
+/// （季度感知刮削 subject + 季内集号），单集也仍可手动映射。
+Future<List<MediaTrackingLocalTarget>> loadMediaTrackingLocalTargets(
+  FushiDatabase database,
+) async {
+  final List<EpubBookRow> books = await database.getAllEpubBooks();
+  final List<VideoBookRow> videos = await database.allVideoBooks();
+  final List<GalgameRow> games = await database.getAllGalgames();
+  final List<MediaCollectionRow> collections =
+      await database.getAllMediaCollections();
+  final List<MediaCollectionItemRow> members =
+      await database.getAllCollectionItems();
+  final Set<int> videoPlaylists = members
+      .where((MediaCollectionItemRow row) => row.mediaType == 'video')
+      .map((MediaCollectionItemRow row) => row.collectionId)
+      .toSet();
+  final Map<String, String> videoPathByUid = <String, String>{
+    for (final VideoBookRow video in videos) video.bookUid: video.videoPath,
+  };
+  final Map<int, List<String>> groupKeysByCollection = <int, List<String>>{};
+  for (final MediaCollectionItemRow row in members) {
+    if (row.mediaType != 'video') continue;
+    final String? path = videoPathByUid[row.entryKey];
+    if (path == null) continue;
+    groupKeysByCollection
+        .putIfAbsent(row.collectionId, () => <String>[])
+        .add(collectionGroupKeyForFilename(path));
+  }
+  return <MediaTrackingLocalTarget>[
+    for (final MediaCollectionRow collection in collections)
+      if (collection.collectionType == 'playlist' &&
+          videoPlaylists.contains(collection.id) &&
+          !isMultiSeasonGrouped(
+              groupKeysByCollection[collection.id] ?? const <String>[]))
+        MediaTrackingLocalTarget(
+          type: TrackingMediaType.videoCollection,
+          key: collection.id.toString(),
+          title: collection.name,
+        ),
+    for (final VideoBookRow video in videos)
+      MediaTrackingLocalTarget(
+        type: TrackingMediaType.video,
+        key: video.bookUid,
+        title: video.title,
+      ),
+    for (final EpubBookRow book in books)
+      MediaTrackingLocalTarget(
+        type: TrackingMediaType.book,
+        key: book.bookKey,
+        title: book.title,
+      ),
+    for (final GalgameRow game in games)
+      MediaTrackingLocalTarget(
+        type: TrackingMediaType.game,
+        key: game.id,
+        title: game.name,
+      ),
+  ];
 }
 
 class _AddMappingDialog extends StatefulWidget {
@@ -340,9 +460,9 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
   final TextEditingController _offsetController =
       TextEditingController(text: '1');
 
-  List<_LocalTrackingTarget> _targets = const <_LocalTrackingTarget>[];
+  List<MediaTrackingLocalTarget> _targets = const <MediaTrackingLocalTarget>[];
   List<BangumiSubject> _results = const <BangumiSubject>[];
-  _LocalTrackingTarget? _target;
+  MediaTrackingLocalTarget? _target;
   TrackingKind _kind = TrackingKind.anime;
   TrackingProgressMode _mode = TrackingProgressMode.episode;
   bool _busy = true;
@@ -362,71 +482,16 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
   }
 
   Future<void> _loadTargets() async {
-    final List<EpubBookRow> books = await widget.database.getAllEpubBooks();
-    final List<VideoBookRow> videos = await widget.database.allVideoBooks();
-    final List<GalgameRow> games = await widget.database.getAllGalgames();
-    final List<MediaCollectionRow> collections =
-        await widget.database.getAllMediaCollections();
-    final List<MediaCollectionItemRow> members =
-        await widget.database.getAllCollectionItems();
-    final Set<int> videoPlaylists = members
-        .where((MediaCollectionItemRow row) => row.mediaType == 'video')
-        .map((MediaCollectionItemRow row) => row.collectionId)
-        .toSet();
-    // 多季合集（分组按各集文件名派生）不再列为整合集映射目标：Bangumi 一季一
-    // 条目，「整个多季合集 → 单个 subject」结构性错位，建了也会被上报门控绕开
-    // ——与其让用户建一条永远不生效的映射，不如不提供入口。多季合集的上报走
-    // 自动按集通道（季度感知刮削 subject + 季内集号），单集也仍可手动映射。
-    final Map<String, String> videoPathByUid = <String, String>{
-      for (final VideoBookRow video in videos) video.bookUid: video.videoPath,
-    };
-    final Map<int, List<String>> groupKeysByCollection = <int, List<String>>{};
-    for (final MediaCollectionItemRow row in members) {
-      if (row.mediaType != 'video') continue;
-      final String? path = videoPathByUid[row.entryKey];
-      if (path == null) continue;
-      groupKeysByCollection
-          .putIfAbsent(row.collectionId, () => <String>[])
-          .add(collectionGroupKeyForFilename(path));
-    }
-    final List<_LocalTrackingTarget> targets = <_LocalTrackingTarget>[
-      for (final MediaCollectionRow collection in collections)
-        if (collection.collectionType == 'playlist' &&
-            videoPlaylists.contains(collection.id) &&
-            !isMultiSeasonGrouped(
-                groupKeysByCollection[collection.id] ?? const <String>[]))
-          _LocalTrackingTarget(
-            type: TrackingMediaType.videoCollection,
-            key: collection.id.toString(),
-            title: collection.name,
-          ),
-      for (final VideoBookRow video in videos)
-        _LocalTrackingTarget(
-          type: TrackingMediaType.video,
-          key: video.bookUid,
-          title: video.title,
-        ),
-      for (final EpubBookRow book in books)
-        _LocalTrackingTarget(
-          type: TrackingMediaType.book,
-          key: book.bookKey,
-          title: book.title,
-        ),
-      for (final GalgameRow game in games)
-        _LocalTrackingTarget(
-          type: TrackingMediaType.game,
-          key: game.id,
-          title: game.name,
-        ),
-    ];
+    final List<MediaTrackingLocalTarget> targets =
+        await loadMediaTrackingLocalTargets(widget.database);
     if (!mounted) return;
     setState(() {
       _targets = targets;
       _busy = false;
     });
     if (targets.isNotEmpty) {
-      final _LocalTrackingTarget initial = targets.firstWhere(
-        (_LocalTrackingTarget target) =>
+      final MediaTrackingLocalTarget initial = targets.firstWhere(
+        (MediaTrackingLocalTarget target) =>
             target.type == widget.initialMediaType &&
             target.key == widget.initialMediaKey,
         orElse: () => targets.first,
@@ -435,19 +500,11 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
     }
   }
 
-  void _selectTarget(_LocalTrackingTarget target) {
+  void _selectTarget(MediaTrackingLocalTarget target) {
     setState(() {
       _target = target;
-      _kind = switch (target.type) {
-        TrackingMediaType.game => TrackingKind.game,
-        TrackingMediaType.book => TrackingKind.novel,
-        _ => TrackingKind.anime,
-      };
-      _mode = switch (target.type) {
-        TrackingMediaType.game => TrackingProgressMode.status,
-        TrackingMediaType.book => TrackingProgressMode.volume,
-        _ => TrackingProgressMode.episode,
-      };
+      _kind = defaultTrackingKindFor(target.type);
+      _mode = defaultTrackingModeFor(target.type);
       _offsetController.text = '1';
       _searchController.text = target.title;
       _results = const <BangumiSubject>[];
@@ -476,14 +533,12 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
   }
 
   Future<void> _save(BangumiSubject subject) async {
-    final _LocalTrackingTarget? target = _target;
+    final MediaTrackingLocalTarget? target = _target;
     if (target == null) return;
-    // status 模式下 outbox.progress 存的是收藏 type 本身，任何非零 offset 都会把
-    // 它算成另一个状态，必须钉死为 0。
-    final int offset = _mode == TrackingProgressMode.status
-        ? 0
-        : (int.tryParse(_offsetController.text) ??
-            (_mode == TrackingProgressMode.chapter ? 0 : 1));
+    final int offset = normalizeTrackingProgressOffset(
+      _mode,
+      int.tryParse(_offsetController.text),
+    );
     final MediaTrackingSyncResult result =
         await widget.service.saveManualMappingAndSync(
       mediaType: target.type,
@@ -493,14 +548,15 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
       subjectId: subject.id,
       subjectName: subject.displayName,
       progressMode: _mode,
-      progressOffset: offset.clamp(0, 100000),
+      progressOffset: offset,
     );
     if (mounted) Navigator.of(context).pop(result.isSuccess);
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
+      icon: const FushiIcon(FushiIcons.tracking),
       title: Text(t.media_tracking_add_mapping),
       content: SizedBox(
         width: 620,
@@ -508,13 +564,13 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              DropdownButtonFormField<_LocalTrackingTarget>(
+              FushiDropdownButtonFormField<MediaTrackingLocalTarget>(
                 initialValue: _target,
                 decoration:
                     InputDecoration(labelText: t.media_tracking_local_item),
-                items: <DropdownMenuItem<_LocalTrackingTarget>>[
-                  for (final _LocalTrackingTarget target in _targets)
-                    DropdownMenuItem<_LocalTrackingTarget>(
+                items: <DropdownMenuItem<MediaTrackingLocalTarget>>[
+                  for (final MediaTrackingLocalTarget target in _targets)
+                    DropdownMenuItem<MediaTrackingLocalTarget>(
                       value: target,
                       child: Text(
                         target.title,
@@ -527,7 +583,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                 },
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<TrackingKind>(
+              FushiDropdownButtonFormField<TrackingKind>(
                 initialValue: _kind,
                 decoration: InputDecoration(labelText: t.media_tracking_kind),
                 items: <DropdownMenuItem<TrackingKind>>[
@@ -559,7 +615,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                 },
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<TrackingProgressMode>(
+              FushiDropdownButtonFormField<TrackingProgressMode>(
                 initialValue: _mode,
                 decoration: InputDecoration(
                   labelText: t.media_tracking_progress_mode,
@@ -604,7 +660,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
               // 保留输入框只会让用户填出一个被忽略的值。
               if (_mode != TrackingProgressMode.status) ...<Widget>[
                 const SizedBox(height: 12),
-                TextField(
+                FushiTextFieldControl(
                   controller: _offsetController,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
@@ -613,30 +669,28 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                 ),
               ],
               const SizedBox(height: 12),
-              TextField(
+              FushiTextFieldControl(
                 controller: _searchController,
                 onSubmitted: (_) => _search(),
                 decoration: InputDecoration(
                   labelText: t.media_tracking_search,
-                  suffixIcon: IconButton(
+                  suffixIcon: FushiIconButtonControl(
                     onPressed: _busy ? null : _search,
-                    icon: const Icon(Icons.search),
+                    icon: const FushiIcon(FushiIcons.search),
                   ),
                 ),
               ),
               if (_busy)
                 const Padding(
                   padding: EdgeInsets.all(24),
-                  child: CircularProgressIndicator(),
+                  child: FushiCircularProgressIndicator(),
                 ),
               if (!_busy && _error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
-                  child: Text(
-                    _error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+                  child: FushiInlineNotice(
+                    severity: FushiNoticeSeverity.error,
+                    message: _error!,
                   ),
                 ),
               if (!_busy && _results.isNotEmpty) ...<Widget>[
@@ -648,37 +702,48 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
-                for (final BangumiSubject subject in _results)
-                  FushiListItem(
-                    density: FushiListDensity.compact,
-                    padding: EdgeInsets.zero,
-                    leading: subject.coverUrl == null
-                        ? const Icon(Icons.auto_stories_outlined)
-                        : Image(
-                          image: AppHttpImage(subject.coverUrl!),
-                            width: 42,
-                            height: 56,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                const Icon(Icons.broken_image_outlined),
-                          ),
-                    title: Text(subject.displayName),
-                    subtitle: Text(
-                      <String>[
-                        if (subject.secondaryName.isNotEmpty)
-                          subject.secondaryName,
-                        '#${subject.id}',
-                      ].join(' · '),
-                    ),
-                    onTap: () => _save(subject),
-                  ),
+                const SizedBox(height: 8),
+                // M3E 分段卡片（首尾大圆角、行间 2）。
+                FushiGroupedList(
+                  children: <Widget>[
+                    for (final BangumiSubject subject in _results)
+                      FushiListItem(
+                        density: FushiListDensity.compact,
+                        leading: subject.coverUrl == null
+                            ? const FushiListLeadingIcon(
+                                FushiIcons.books,
+                                shape: FushiLeadingShape.square,
+                              )
+                            : ClipRRect(
+                                borderRadius: FushiM3eShape.smallRadius,
+                                child: Image(
+                                  image: AppHttpImage(subject.coverUrl!),
+                                  width: 42,
+                                  height: 56,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      const FushiIcon(FushiIcons.brokenImage),
+                                ),
+                              ),
+                        title: Text(subject.displayName),
+                        subtitle: Text(
+                          <String>[
+                            if (subject.secondaryName.isNotEmpty)
+                              subject.secondaryName,
+                            '#${subject.id}',
+                          ].join(' · '),
+                        ),
+                        onTap: () => _save(subject),
+                      ),
+                  ],
+                ),
               ],
             ],
           ),
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(false),
           child: Text(t.cancel),
         ),

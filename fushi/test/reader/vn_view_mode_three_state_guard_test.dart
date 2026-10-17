@@ -243,7 +243,7 @@ void main() {
     });
 
     test(
-      'VN scripts install the three injected dependencies and the Hibiki '
+      'VN scripts install the three injected dependencies and the Fushi '
       'restore bridge',
       () {
         for (final String dep in <String>[

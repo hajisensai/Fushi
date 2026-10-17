@@ -3,7 +3,7 @@
 /// `front` / `back` / `css` are vendored verbatim from donkuri/lapis v1.7.0
 /// (tag `1.7.0`, src/front.html · src/back.html · src/styling.css).
 /// Upstream: https://github.com/donkuri/lapis  — License: GPL-3.0
-/// Authors: Ruri, itokatsu, kuri (donkuri). Hibiki is itself GPL-3.0.
+/// Authors: Ruri, itokatsu, kuri (donkuri). Fushi is itself GPL-3.0.
 /// Do not hand-edit; re-vendor from the pinned tag when bumping versions.
 library;
 
@@ -56,7 +56,7 @@ class LapisNoteType {
     'MiscInfo',
   ];
 
-  /// 字段 → Hibiki 占位符默认映射。未列出的字段（DefinitionPicture /
+  /// 字段 → Fushi 占位符默认映射。未列出的字段（DefinitionPicture /
   /// SentenceFurigana / Hint / IsClickCard / IsSentenceCard / IsAudioCard）
   /// 故意留空：Lapis 官方建议 SentenceFurigana 留空，卡型选择器一次只填一个。
   static const Map<String, String> defaultFieldMappings = <String, String>{
@@ -1942,7 +1942,7 @@ html.mobile .sentence, html:not(.mobile) .sentence-alt,
 }
 ''';
 
-  /// Hibiki-local CSS delta appended *after* the vendored upstream [css].
+  /// Fushi-local CSS delta appended *after* the vendored upstream [css].
   ///
   /// Kept in its own constant so [css] stays byte-identical to donkuri/lapis
   /// 1.7.0 `src/styling.css` and a future re-vendor never clobbers this delta.

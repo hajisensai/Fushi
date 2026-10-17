@@ -374,14 +374,33 @@ void main() {
 
     expect(macosJob, contains('flutter build macos --release'));
     expect(macosJob, contains('ditto -c -k --keepParent'));
-    expect(macosJob, contains(r'fushi-${BUILD_VERSION_NAME}-macos.zip'));
+    expect(macosJob, contains(r'fushi-${BUILD_VERSION_NAME}-macos-arm64.zip'));
+    // 手动下载用的 dmg（用户 2026-10-09：zip 解压麻烦）。zip 仍是更新器吃的那份，
+    // 两个都要出；未签名时 dmg 里随包放 Gatekeeper 放行说明。
+    expect(macosJob, contains('hdiutil create'));
+    expect(macosJob, contains(r'fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg'));
+    expect(macosJob, contains('xattr -dr com.apple.quarantine'));
 
     expect(iosJob, contains('flutter build ios --release --no-codesign'));
     expect(iosJob, contains('Payload'));
     expect(iosJob, contains(r'fushi-${BUILD_VERSION_NAME}-ios.ipa'));
 
-    expect(publishJob, contains('fushi-*-macos.zip'));
+    expect(publishJob, contains('fushi-*-macos-arm64.zip'));
+    expect(publishJob, contains('fushi-*-macos-arm64.dmg'));
     expect(publishJob, contains('fushi-*-ios.ipa'));
+
+    // dmg 是官网手动下载的首装形态：产出、签名公证、发布、进更新清单四处都要在。
+    // 官网 Worker 只从清单挑资产，dmg 不进清单官网就拿不到；应用内自动更新
+    // 仍只认 zip（MacUpdater.selectAsset 的判据，platform_updater_test 钉住）。
+    expect(macosJob, contains(r'fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg'));
+    expect(macosJob, contains('hdiutil create'));
+    expect(macosJob, contains('Sign and notarize macOS dmg'));
+    expect(publishJob, contains('fushi-*-macos-arm64.dmg'));
+    expect(
+        publishJob,
+        contains('ASSET_GLOB: fushi-*-macos-arm64.zip '
+            'fushi-*-macos-arm64.dmg fushi-*-ios.ipa'),
+        reason: '官网 macOS 默认下载 dmg，它必须随 Apple 清单发布。');
     expect(
         publishJob, contains('Publish mirror update manifest (Apple assets)'));
   });
@@ -480,7 +499,7 @@ void main() {
     expect(
       smoke,
       contains(r'fushi\build\windows\x64\runner\Release\ffmpeg.exe'),
-      reason: 'release must test the exact ffmpeg.exe copied beside hibiki.exe',
+      reason: 'release must test the exact ffmpeg.exe copied beside fushi.exe',
     );
     // BUG-1420: ffprobe is a second, independent executable with its own
     // consumers (embedded subtitle fonts, audio container tags). Both consumers
@@ -491,7 +510,7 @@ void main() {
       smoke,
       contains(r'fushi\build\windows\x64\runner\Release\ffprobe.exe'),
       reason:
-          'release must test the exact ffprobe.exe copied beside hibiki.exe '
+          'release must test the exact ffprobe.exe copied beside fushi.exe '
           '(BUG-1420: it was never built nor bundled, and both of its consumers '
           'degrade silently when it is absent)',
     );

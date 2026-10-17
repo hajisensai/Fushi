@@ -10,6 +10,11 @@ import 'package:path/path.dart' as p;
 import 'bluray_fixture.dart';
 
 class _RecordingBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   List<String>? args;
   bool fail = false;
   String? manifest;

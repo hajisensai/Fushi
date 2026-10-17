@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///    失效，用户必须手动刷新才恢复。reload 前置 fushiReinjectPending，reload 后由新 SW
 ///    把 content script 重新注入已打开网页（需 scripting 权限 + 放宽 host_permissions）。
 ///
-/// flutter test cwd is the hibiki package root. background.js / manifest.json 的两镜像
+/// flutter test cwd is the fushi package root. background.js / manifest.json 的两镜像
 /// 字节一致由 browser_extension_dict_media_mirror_guard_test.dart 守卫，这里只锁行为存在性。
 /// 「`fushiHeartbeat` 这条分支里调了 `checkVersionOnStartup()`」——心跳真的会去 ping
 /// 服务器刷 last-seen 的不变式。刻意只锁「命中判断 → 调用」的先后，不锁单行/多行、
@@ -58,12 +58,13 @@ void main() {
     });
 
     test('app-side seen window widened past a single heartbeat period', () {
+      // 时间窗随连接判据抽进 browser_extension_setup.dart（页面与控制通道共用）。
       final String src =
-          File('lib/src/pages/implementations/browser_extension_page.dart')
+          File('lib/src/lookup/browser_extension_setup.dart')
               .readAsStringSync();
       expect(src.contains('Duration(seconds: 150)'), isTrue,
           reason:
-              'browser_extension_page.dart _seenWindow must widen to 150s so a '
+              'kBrowserExtensionSeenWindow must widen to 150s so a '
               'single missed 60s heartbeat does not flip the status to '
               '"未连接" (BUG-1045)');
     });

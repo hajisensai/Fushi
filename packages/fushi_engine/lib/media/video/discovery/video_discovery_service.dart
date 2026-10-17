@@ -1,11 +1,15 @@
 library;
 
+import 'dart:async';
+
 import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_adapters.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/anilist_video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/discovery/anime_tmdb_cross_reference.dart';
+import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_merge.dart';
@@ -29,7 +33,9 @@ class VideoDiscoveryService {
     bool closesProviders = false,
     Set<String>? searchProviderIds,
     String? metadataLocale,
+    AnimeTmdbCrossReference? crossReference,
   })  : _metadataLocale = metadataLocale,
+        _crossReference = crossReference,
         _providers = List<VideoDiscoveryProvider>.unmodifiable(
           providers.toList()
             ..sort(
@@ -106,6 +112,10 @@ class VideoDiscoveryService {
       // preferredLanguage: _locale)` 同一判据）；TMDB provider 也是按这个 locale
       // 请求的，所以「TMDB 文本 = 资料语言」这条约定成立。
       metadataLocale: config.locale,
+      // 动画发现条目（AniList / MAL）的简介恒英文；详情按 MAL id 经 Fribb 交叉
+      // 引用找到 TMDB id，才能拿到资料语言的简介（见 [_tmdbLookupFromIdentityMap]）。
+      // 落盘的紧凑索引，查询只读本地、下载在后台（见 anime_tmdb_cross_reference）。
+      crossReference: AnimeTmdbCrossReferenceStore(),
     );
   }
 
@@ -120,6 +130,15 @@ class VideoDiscoveryService {
       _metadataProviders;
   final bool _closesProviders;
   final Set<String>? _searchProviderIds;
+
+  /// Fribb 交叉索引：动画条目缺 TMDB id 时按 MAL id 补一个（只认唯一明确
+  /// 映射）。`null` = 不补（测试 / 无此能力的装配）。
+  final AnimeTmdbCrossReference? _crossReference;
+
+  /// 本地交叉索引被后台刷新替换后发事件：详情 / Hero 据此重取一次，把英文
+  /// 简介换成资料语言的。没有交叉索引时是空流。
+  Stream<void> get detailsUpdates =>
+      _crossReference?.updates ?? const Stream<void>.empty();
 
   /// 资料语言（BCP-47）。详情合并时决定简介 / 标语 / 类型取哪个来源；`null`
   /// 时退化成「主源优先、空才补」。
@@ -240,6 +259,7 @@ class VideoDiscoveryService {
     final List<VideoDiscoveryItem> mergedWindow = mergeVideoDiscoveryItems(
       interleaved,
       request: request,
+      preferredLanguage: _metadataLocale,
     );
     final int pageOffset = (request.page - 1) * request.pageSize;
     final int pageEnd = pageOffset + request.pageSize;
@@ -285,7 +305,7 @@ class VideoDiscoveryService {
     final List<VideoMetadataWork> works = <VideoMetadataWork>[
       for (final VideoMetadataWork? work
           in await Future.wait(<Future<VideoMetadataWork?>>[
-        for (final VideoMetadataLookup lookup in _detailLookups(item))
+        for (final VideoMetadataLookup lookup in await _detailLookups(item))
           _fetchDetails(lookup),
       ]))
         if (work != null) work,
@@ -320,16 +340,21 @@ class VideoDiscoveryService {
   /// 「整套下载」：[item] 所在系列的全部剧集与剧场版（见 `video_franchise.dart`）。
   ///
   /// TMDB collection（要 key）与 MAL 关联链（不要 key，只对动画走）两份合并；
-  /// 两个来源都不可用返回 null。单个来源失败只记诊断、不拖垮另一个。
+  /// 两个来源都不可用返回 null。单个来源失败只记诊断、不拖垮另一个，但合并结果
+  /// 标 [VideoFranchise.truncated]——少了一个来源的清单不能当成完整系列
+  /// （BUG-2936）。
   Future<VideoFranchise?> loadFranchise(VideoDiscoveryItem item) async {
     if (_closed) return null;
+    bool failed = false;
     VideoFranchise? tmdb;
     for (final VideoDiscoveryProvider provider in _providers) {
       if (provider is VideoFranchiseSource) {
-        tmdb = await _guardFranchise(
+        final _FranchiseAttempt attempt = await _guardFranchise(
           'tmdb',
           () => resolveVideoFranchise(provider as VideoFranchiseSource, item),
         );
+        tmdb = attempt.franchise;
+        failed |= attempt.failed;
         break;
       }
     }
@@ -338,10 +363,12 @@ class VideoDiscoveryService {
         _metadataProviders[VideoMetadataProviderKind.mal];
     if (malProvider is MalVideoMetadataProvider &&
         item.reference.discoveryCategory == VideoDiscoveryCategory.anime) {
-      mal = await _guardFranchise(
+      final _FranchiseAttempt attempt = await _guardFranchise(
         'mal',
         () => resolveMalFranchise(_MalFranchiseSource(malProvider), item),
       );
+      mal = attempt.franchise;
+      failed |= attempt.failed;
     }
     // 动画的剧集以 MAL 为准：TMDB 把一部动画按「整部剧（含全部季）」收，MAL 按
     // 每季一个作品收——两边都进清单，同一批集会被整部剧和分季重复下载。
@@ -350,27 +377,39 @@ class VideoDiscoveryService {
         name: tmdb.name,
         series: const <VideoDiscoveryItem>[],
         movies: tmdb.movies,
+        truncated: tmdb.truncated,
       );
     }
-    return mergeVideoFranchises(<VideoFranchise?>[tmdb, mal]);
+    final VideoFranchise? merged =
+        mergeVideoFranchises(<VideoFranchise?>[tmdb, mal]);
+    if (merged == null || !failed) return merged;
+    return VideoFranchise(
+      name: merged.name,
+      series: merged.series,
+      movies: merged.movies,
+      truncated: true,
+      more: merged.more,
+    );
   }
 
-  Future<VideoFranchise?> _guardFranchise(
+  Future<_FranchiseAttempt> _guardFranchise(
     String source,
     Future<VideoFranchise?> Function() body,
   ) async {
     try {
-      return await body();
+      return (franchise: await body(), failed: false);
     } on Object catch (error, stack) {
       engineLog.logDiagnostic(
         'VideoDiscoveryService.loadFranchise.$source',
         '$error\n$stack',
       );
-      return null;
+      return (franchise: null, failed: true);
     }
   }
 
-  List<VideoMetadataLookup> _detailLookups(VideoDiscoveryItem item) {
+  Future<List<VideoMetadataLookup>> _detailLookups(
+    VideoDiscoveryItem item,
+  ) async {
     final VideoMediaReference reference = item.reference;
     final Map<VideoMetadataProviderKind, VideoMetadataLookup> lookups =
         <VideoMetadataProviderKind, VideoMetadataLookup>{};
@@ -392,7 +431,53 @@ class VideoDiscoveryService {
     add(VideoMetadataProviderKind.mal, reference.externalIds['mal']);
     add(VideoMetadataProviderKind.anilist, reference.anilistId);
     add(VideoMetadataProviderKind.tmdb, reference.tmdbId);
+    if (!lookups.containsKey(VideoMetadataProviderKind.tmdb)) {
+      final VideoMetadataLookup? tmdb = await _tmdbLookupFromIdentityMap(item);
+      if (tmdb != null) lookups[VideoMetadataProviderKind.tmdb] = tmdb;
+    }
     return lookups.values.toList(growable: false);
+  }
+
+  /// 动画发现条目（AniList 季度 / 热门、MAL 搜索）没有 TMDB id，而 MAL /
+  /// AniList 的简介只有英文：资料语言不是英文时，按条目的 MAL id 查 Fribb
+  /// 交叉引用补一个 TMDB lookup，详情合并才有资料语言的简介可选。
+  ///
+  /// 只认**唯一明确**的映射（跨站映射规则）：同形态命名空间里只有一个 TMDB id；
+  /// 剧集还必须落在 TMDB 第 1 季开头——第 2 季以后的作品在 TMDB 是同一部剧的
+  /// 后续季，剧级简介 / 译名会把这一季的标题与介绍换成整部剧的，宁可保留英文。
+  /// 只查**本地**索引、不在详情路径上等下载：索引还没有时先返回 null（详情照常
+  /// 出英文），同时在后台触发刷新，完成后 [detailsUpdates] 通知界面重取。
+  /// 索引不可用（离线 / 下载失败）静默不补：详情补充是加法。
+  Future<VideoMetadataLookup?> _tmdbLookupFromIdentityMap(
+    VideoDiscoveryItem item,
+  ) async {
+    final AnimeTmdbCrossReference? crossReference = _crossReference;
+    if (crossReference == null) return null;
+    if (item.reference.discoveryCategory != VideoDiscoveryCategory.anime) {
+      return null;
+    }
+    final String? language = _metadataLocale;
+    if (language == null || _primarySubtag(language) == 'en') return null;
+    final VideoMetadataProvider? tmdb =
+        _metadataProviders[VideoMetadataProviderKind.tmdb];
+    if (tmdb == null || !tmdb.isAvailable) return null;
+    final int? malId = _parseId(item.reference.externalIds['mal']);
+    if (malId == null || malId <= 0) return null;
+    final List<AnimeIdentityEntry>? entries;
+    try {
+      entries = await crossReference.entriesForMal(malId);
+    } on Object catch (error) {
+      engineLog.logDiagnostic(
+        'VideoDiscoveryService.identityMap',
+        '$error',
+      );
+      return null;
+    }
+    // 缺索引就后台拉、有索引就按周检查；两种都不等。
+    unawaited(crossReference.refreshIfStale());
+    if (entries == null) return null;
+    final VideoMetadataMediaKind kind = item.reference.mediaKind;
+    return tmdbLookupFromIdentityEntries(entries, kind: kind);
   }
 
   Future<VideoMetadataWork?> _fetchDetails(VideoMetadataLookup lookup) async {
@@ -498,6 +583,8 @@ class VideoDiscoveryService {
     for (final VideoMetadataProvider provider in _metadataProviders.values) {
       provider.close();
     }
+    final AnimeTmdbCrossReference? crossReference = _crossReference;
+    if (crossReference is AnimeTmdbCrossReferenceStore) crossReference.close();
   }
 }
 
@@ -506,9 +593,13 @@ class VideoDiscoveryService {
 /// 相交 + 非空年份相同」的弱匹配。AniList 会把部分单集 ONA 标成 TV，而
 /// TMDB 将同一作品标成电影；搜索摘要不保证携带集数，集数缺失时聚合类型判为未知，
 /// 未知与任何类型都不算冲突（见 [_aggregationKind]）。
+///
+/// [preferredLanguage]（资料语言，BCP-47）决定合并卡片的简介取哪个来源：见
+/// [_MergedDiscoveryItem.build]。
 List<VideoDiscoveryItem> mergeVideoDiscoveryItems(
   Iterable<VideoDiscoveryItem> items, {
   required VideoDiscoveryRequest request,
+  String? preferredLanguage,
 }) {
   final List<_MergedDiscoveryItem> groups = <_MergedDiscoveryItem>[];
   for (final VideoDiscoveryItem item in items) {
@@ -526,7 +617,8 @@ List<VideoDiscoveryItem> mergeVideoDiscoveryItems(
     }
   }
   final List<VideoDiscoveryItem> merged = <VideoDiscoveryItem>[
-    for (final _MergedDiscoveryItem group in groups) group.build(),
+    for (final _MergedDiscoveryItem group in groups)
+      group.build(preferredLanguage: preferredLanguage),
   ];
   if (request.sort == VideoDiscoverySort.rating) {
     merged.sort(
@@ -589,7 +681,7 @@ class _MergedDiscoveryItem {
 
   void add(VideoDiscoveryItem item) => _items.add(item);
 
-  VideoDiscoveryItem build() {
+  VideoDiscoveryItem build({String? preferredLanguage}) {
     final bool anime = _items.any(
       (VideoDiscoveryItem item) =>
           item.reference.discoveryCategory == VideoDiscoveryCategory.anime,
@@ -694,10 +786,7 @@ class _MergedDiscoveryItem {
     );
     return VideoDiscoveryItem(
       reference: reference,
-      overview: primary.overview ??
-          _firstNonEmpty(
-            ranked.map((VideoDiscoveryItem item) => item.overview),
-          ),
+      overview: _pickOverview(ranked, preferredLanguage),
       posterUrl: primary.posterUrl ??
           _firstNonEmpty(
             ranked.map((VideoDiscoveryItem item) => item.posterUrl),
@@ -945,6 +1034,80 @@ String? _firstNonEmpty(Iterable<String?> values) {
 
 int? _parseId(String? value) => int.tryParse(value ?? '');
 
+String? _primarySubtag(String? tag) {
+  final String trimmed = tag?.trim().toLowerCase() ?? '';
+  if (trimmed.isEmpty) return null;
+  final String primary = trimmed.split(RegExp(r'[-_]')).first;
+  return primary.isEmpty ? null : primary;
+}
+
+/// 合并卡片的简介：组内按主源顺序找**资料语言**的简介（TMDB 按资料语言请求；
+/// MAL / AniList 恒英文，见 [videoMetadataTextMatchesLanguage]）；都不是资料
+/// 语言时才回到「主源有字用主源、否则第一条非空」。修前一律主源优先，动画卡片
+/// 的主源是 MAL / AniList，于是中文用户在同组 TMDB 有中文简介时仍看到英文。
+String? _pickOverview(
+  List<VideoDiscoveryItem> ranked,
+  String? preferredLanguage,
+) {
+  if (preferredLanguage != null) {
+    for (final VideoDiscoveryItem item in ranked) {
+      final String? overview = item.overview?.trim();
+      if (overview == null || overview.isEmpty) continue;
+      final VideoMetadataProviderKind? provider = _itemProvider(item);
+      if (provider != null &&
+          videoMetadataTextMatchesLanguage(provider, preferredLanguage)) {
+        return overview;
+      }
+    }
+  }
+  return ranked.first.overview ??
+      _firstNonEmpty(ranked.map((VideoDiscoveryItem item) => item.overview));
+}
+
+VideoMetadataProviderKind? _itemProvider(VideoDiscoveryItem item) {
+  final VideoMetadataProviderKind? fromWork = item.metadataWork?.provider;
+  if (fromWork != null) return fromWork;
+  final String id = item.reference.providerId.trim().toLowerCase();
+  for (final VideoMetadataProviderKind kind
+      in VideoMetadataProviderKind.values) {
+    if (kind.name == id) return kind;
+  }
+  return null;
+}
+
+/// Fribb 条目（同一 MAL id 的全部 AniDB 行）→ 唯一明确的 TMDB lookup。
+///
+/// 只在 [kind] 对应的 TMDB 命名空间里取 id（剧场版挂在剧特典季下的 tv id 不能
+/// 当 /movie 用，BUG-2828）；去重后必须恰好一个 id。剧集另外要求至少一行落在
+/// TMDB 第 1 季、集偏移 0——后续季在 TMDB 是同一部剧，剧级简介与译名不属于这
+/// 一季。不满足任一条返回 null（宁可不补，不拿错的作品充数）。
+@visibleForTesting
+VideoMetadataLookup? tmdbLookupFromIdentityEntries(
+  List<AnimeIdentityEntry> entries, {
+  required VideoMetadataMediaKind kind,
+}) {
+  final List<AnimeIdentityEntry> matching = <AnimeIdentityEntry>[
+    for (final AnimeIdentityEntry entry in entries)
+      if (entry.tmdbIdFor(kind) != null) entry,
+  ];
+  final Set<int> ids = <int>{
+    for (final AnimeIdentityEntry entry in matching) entry.tmdbIdFor(kind)!,
+  };
+  if (ids.length != 1) return null;
+  if (kind == VideoMetadataMediaKind.tv &&
+      !matching.any(
+        (AnimeIdentityEntry entry) =>
+            (entry.tmdbSeason ?? 1) == 1 && (entry.tmdbEpisodeOffset ?? 0) == 0,
+      )) {
+    return null;
+  }
+  return VideoMetadataLookup(
+    provider: VideoMetadataProviderKind.tmdb,
+    externalId: '${ids.single}',
+    mediaKind: kind,
+  );
+}
+
 class _ProviderResponse {
   const _ProviderResponse({
     required this.provider,
@@ -973,6 +1136,10 @@ VideoDiscoveryRequest _requestAtPage(VideoDiscoveryRequest request, int page) =>
     );
 
 /// MAL provider → 系列关联来源的薄适配。
+/// 一个系列来源跑一次的结果：`failed` 区分「来源没有这部的数据」（null）与
+/// 「来源出错」——后者让合并清单标没走完。
+typedef _FranchiseAttempt = ({VideoFranchise? franchise, bool failed});
+
 class _MalFranchiseSource implements VideoFranchiseRelationSource {
   _MalFranchiseSource(this._provider);
 

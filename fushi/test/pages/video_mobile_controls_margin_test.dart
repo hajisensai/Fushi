@@ -162,7 +162,7 @@ void main() {
   // ── BUG-217 / TODO-156：进度条抬到按钮条上方 ────────────────────────────
 
   test('进度条 bottom 偏移含按钮条高（抬到按钮条上方，不与按钮重叠）', () {
-    // seekBarBottom = bottomChromeInset + 按钮条高 + 间距，进度条整体落在按钮条上方。
+    // seekBarBottom = 按钮条基线 + 按钮条高 + 间距，进度条整体落在按钮条上方。
     expect(
       mobileThemeBody,
       contains('seekBarBottom'),
@@ -174,10 +174,18 @@ void main() {
     ).firstMatch(mobileThemeBody);
     expect(m, isNotNull, reason: '应定义 seekBarBottom（进度条抬高基线）');
     final String expr = m!.group(1)!;
+    // BUG-3062：改由与章节刻度 / 暗角 / 胶囊共用的纯函数 videoSeekBarContainerBottom
+    // 算（移动端 = 离底基线 + 系统 inset + 浮动抬升 + 按钮行 + 间距），入参仍须带齐
+    // 按钮条基线的三项（BUG-184 抬离系统栏）。
     expect(
-      expr.contains('bottomChromeInset'),
+      expr.contains('videoSeekBarContainerBottom(') &&
+          expr.contains('isDesktop: false') &&
+          expr.contains('_videoBottomChromeBaseline') &&
+          expr.contains('_videoBottomSystemInset()') &&
+          expr.contains('_floatingChromeBottomLift'),
       isTrue,
-      reason: 'seekBarBottom 必须以按钮条基线 bottomChromeInset 打底（保留 BUG-184 抬离系统栏）',
+      reason: 'seekBarBottom 必须以按钮条基线（离底基线 + 系统 inset + 浮动抬升）打底'
+          '（保留 BUG-184 抬离系统栏），且与刻度层共用 videoSeekBarContainerBottom',
     );
     expect(
       expr.contains('_videoButtonBarHeight'),

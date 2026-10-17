@@ -203,10 +203,12 @@ void main() {
     // TODO-1303：中止判据扩到「区间抽取 或 provided-bytes 路径」——
     // `req.requireAudio && audioPath == null && (req.hasRange || viaProvidedBytes)`
     // （Netflix 录制片段无 range 但有 providedCoverBytes 也要中止）。谓词随之改写。
+    // 高级制卡：用户为这张卡明确选了「不要音频」（`omitAudio`）时没有「缺」可言，
+    // 判据多一个 `!req.omitAudio`；其余来源（omitAudio 恒 false）照旧中止。
     expect(
         engineNorm,
-        contains(
-            'req.requireAudio && audioPath == null && (req.hasRange || viaProvidedBytes)'),
+        contains('req.requireAudio && !req.omitAudio && audioPath == null && '
+            '(req.hasRange || viaProvidedBytes)'),
         reason: '抽段失败（有区间应带音频却 audioPath==null）须显式中止，而非静默落空。');
     // BUG-1664：中止仍走 aborted 信号 + 同一症状短语，但 abortReason 现在必须经
     // `_withRootCause` 把抽取层的真实根因（如 `ffmpeg launch failed: ... No such file
@@ -360,5 +362,50 @@ void main() {
       isTrue,
       reason: 'TODO-971：制卡成功须走突出 OSD（prominent: true），不再是易忽略的小角标。',
     );
+  });
+
+  test('BUG-3319：图形字幕暂停 OCR 查词带 mpv 真实时间窗锚点进制卡', () {
+    // 根因：图形轨（PGS）没有 Dart 侧 cue，OCR 层点字以前传 null 锚点 →
+    // `_lastLookupCue = null` → 制卡区间 0..0：无句子音频、无同步片段、封面抽片头黑帧。
+    final String overlay = region(
+      'Widget _buildGraphicSubtitleOcrOverlay(',
+      'Widget _buildGraphicSubtitleOcrProgressOverlay(',
+    );
+    expect(overlay, isNot(contains('globalRect, null)')),
+        reason: 'OCR 查词不能再以 null 锚点进 _handleSubtitleLookupTap。');
+    expect(overlay, contains('_handleGraphicSubtitleOcrLookupTap('));
+    final String tap = methodBody(
+      src,
+      'Future<void> _handleGraphicSubtitleOcrLookupTap(',
+    );
+    expect(tap, isNotEmpty);
+    final int anchorIdx = tap.indexOf('controller.currentGraphicSubtitleCue(');
+    final int lookupIdx = tap.indexOf('_handleSubtitleLookupTap(');
+    expect(anchorIdx, greaterThanOrEqualTo(0),
+        reason: '锚点必须来自 mpv sub-start / sub-end（currentGraphicSubtitleCue）。');
+    expect(lookupIdx, greaterThan(anchorIdx));
+    expect(compactCode(tap.substring(lookupIdx)),
+        contains(compactCode('globalRect, anchor)')),
+        reason: '锚点作为 overrideCue 透传，经 _lastLookupCue 进制卡区间。');
+    expect(tap, contains('identical(_controller, controller)'),
+        reason: '读 mpv 属性期间换集 / 关页不得再查词。');
+
+    // 无区间（mpv 报无在屏字幕）时的封面锚点：当前位置，而不是 0。
+    final String resolve = region(
+      '_resolveVideoMiningRange(VideoPlayerController controller) {',
+      'Future<MinePopupResult> _onMineEntryImpl(',
+    );
+    expect(
+      compactCode(resolve),
+      contains(compactCode(
+          'stillFrameAtMs: mergedRange == null ? (controller.positionMs ?? 0)')),
+    );
+
+    // 引擎：没有时间窗就不去抽「字幕起点」帧（否则在 0.000s 抽出黑帧，且挡住当前帧兜底）。
+    final String startFrame =
+        methodBody(engine, 'Future<String?> tryStartFrame() async');
+    expect(startFrame, isNotEmpty);
+    expect(startFrame,
+        contains('if (src == null || !req.hasClipWindow) return null;'));
   });
 }

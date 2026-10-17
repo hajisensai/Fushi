@@ -32,7 +32,7 @@ const AnkiSettings _settings = AnkiSettings(
   availableNoteTypes: <AnkiNoteType>[
     AnkiNoteType(
       id: 2,
-      name: 'Hibiki',
+      name: 'Fushi',
       fields: <String>['Expression', 'Picture'],
     ),
   ],
@@ -99,7 +99,7 @@ void main() {
         () async {
       // 造一个不在 systemTemp 下的“解压目录”封面（真实 bug：app_flutter 不在配置根内）。
       final Directory outside = Directory(
-          '${Directory.current.path}/.dart_tool/hibiki_bug825_extract');
+          '${Directory.current.path}/.dart_tool/fushi_bug825_extract');
       outside.createSync(recursive: true);
       addTearDown(() {
         if (outside.existsSync()) outside.deleteSync(recursive: true);
@@ -138,7 +138,7 @@ void main() {
 
     test('封面源已在 code_cache(systemTemp) 下 → 原样提交，不多余复制(无回归)', () async {
       final Directory inside =
-          Directory.systemTemp.createTempSync('hibiki_bug825_incache');
+          Directory.systemTemp.createTempSync('fushi_bug825_incache');
       addTearDown(() {
         if (inside.existsSync()) inside.deleteSync(recursive: true);
       });

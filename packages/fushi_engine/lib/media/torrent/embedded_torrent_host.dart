@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/anti_leech.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart';
@@ -31,8 +32,8 @@ typedef _NetworkDiscoveryState = ({
 ///
 /// BUG-1053：绝不能在 app 启动时无条件 [open]。[open] 会创建 libtorrent session ——
 /// 绑 6881（TCP+UDP，全网卡）并**默认开 DHT**，于是一个种子都没有的用户，只要开着
-/// Hibiki 就在持续收发全球 DHT 小包，把家用路由器的 NAT/conntrack 表撑爆，表现为
-/// 「每隔一段时间整机网络高延迟，关掉 Hibiki 就好」。能力探测请用 [probeAvailable]，
+/// Fushi 就在持续收发全球 DHT 小包，把家用路由器的 NAT/conntrack 表撑爆，表现为
+/// 「每隔一段时间整机网络高延迟，关掉 Fushi 就好」。能力探测请用 [probeAvailable]，
 /// 它只加载 DLL、**不建 session、不碰网络**。
 ///
 /// 反吸血：持有全局单例 [AntiLeechEngine]（共享连坐段），`sweepAntiLeech`
@@ -291,17 +292,30 @@ class EmbeddedTorrentHost {
     try {
       EmbeddedTorrentEngine.open(libraryPath: libraryPath);
       ok = true;
-    } on ArgumentError {
-      ok = false; // DLL 缺失/未构建
-    } on Object {
+      _lastProbeFailure = null;
+    } on Object catch (e, s) {
+      // BUG-3284：加载失败的**原因**必须留下。「文件不在」与「文件在但 dlopen 因
+      // 未定义符号失败」在 UI 上是同一句「缺少运行库」，以前这里把错误整个吞掉，
+      // 用户上传的日志里一个字都没有，只能靠真机复现才定位到 libc++ 符号缺失。
       ok = false;
+      _lastProbeFailure = e.toString();
+      engineLog.log('EmbeddedTorrentHost.probeAvailable', e, s);
     }
     _availabilityCache = ok;
     return ok;
   }
 
+  static String? _lastProbeFailure;
+
+  /// 最近一次 [probeAvailable] 失败时原生库加载抛出的错误文本（成功 / 未探测为
+  /// null）。诊断用：区分「库不在」与「库在但链接失败」。
+  static String? get lastProbeFailure => _lastProbeFailure;
+
   /// 仅测试用：清掉 [probeAvailable] 的缓存。
-  static void resetAvailabilityProbeForTesting() => _availabilityCache = null;
+  static void resetAvailabilityProbeForTesting() {
+    _availabilityCache = null;
+    _lastProbeFailure = null;
+  }
 
   /// 见顶层 [pruneResumeFiles]（宿主内唯一的剪枝入口）。
   int _pruneResumeFiles(Set<String>? keepIds) =>
@@ -545,6 +559,53 @@ class EmbeddedTorrentHost {
     return ok;
   }
 
+  /// BUG-2950：宿主级附加 tracker（plain 字符串，通常是 fake-ip DNS 下由 DoH
+  /// 解析出的 `udp://<真实IP>:<port>/announce`）。由 AppModel 经
+  /// [setExtraTrackers] 下发；新任务由 [backendView] 派发的后端在 add 后追加。
+  List<String> _extraTrackers = const <String>[];
+
+  /// 当前宿主级附加 tracker（只读快照）。
+  List<String> get extraTrackers => _extraTrackers;
+
+  /// 设置宿主级附加 tracker（去重、去空白），并立即追加到 session 里现有的
+  /// 每个种子（native 侧对已存在的 URL 去重，重复调用无副作用）。之后经
+  /// [backendView] 新加的种子也会带上它们。传空列表只清空记录——libtorrent
+  /// 没有「撤回已加 tracker」的必要，已追加的保持原样。
+  void setExtraTrackers(List<String> trackers) {
+    final List<String> normalized = trackers
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    _extraTrackers = List<String>.unmodifiable(normalized);
+    if (normalized.isEmpty) return;
+    final List<FtTorrentStatus>? torrents = _session.tryListTorrents();
+    if (torrents == null) return;
+    for (final FtTorrentStatus torrent in torrents) {
+      _session.addTrackers(torrent.id, normalized);
+    }
+  }
+
+  /// BUG-2950：运行期向 DHT 补节点（每项 "host:port"）。返回 native 添加的
+  /// 条数；库不支持 / session 已关 / 列表为空返回 -1。
+  int addDhtNodes(List<String> hostPorts) {
+    if (!_session.supportsAddDhtNodes) {
+      fushiDebugPrint('[torrent] loaded library lacks ht_add_dht_nodes; '
+          'cannot inject ${hostPorts.length} DHT node(s)');
+      return -1;
+    }
+    final int added = _session.addDhtNodes(hostPorts);
+    if (added < 0 && hostPorts.isNotEmpty) {
+      fushiDebugPrint('[torrent] add DHT nodes failed '
+          '(${hostPorts.length} candidate(s))');
+    }
+    return added;
+  }
+
+  /// 会话协议状态（DHT 节点数、监听端口等；见
+  /// [EmbeddedTorrentSession.sessionStatus] 的轮次契约）。库不支持返回 null。
+  FtSessionStatus? sessionStatus() => _session.sessionStatus();
+
   /// 在同步 native add/resume 之前暂时唤醒发现协议。调用方必须用 finally 配对
   /// [endNetworkWake]；begin 到真正 native 操作之间不得插入 await。
   void beginNetworkWake() {
@@ -730,6 +791,7 @@ class EmbeddedTorrentHost {
       trackerSubscriptionService: trackerSubscriptionService,
       autoAddTrackerSubscription: autoAddTrackerSubscription,
       trackerSubscriptionUrl: trackerSubscriptionUrl,
+      extraTrackers: () => _extraTrackers,
     );
   }
 
@@ -1157,7 +1219,7 @@ void writeUserPausedFile(String resumeDir, Set<String> infoHashes) {
 /// [EmbeddedTorrentHost.open] 走系统搜索路径（或由调用方显式传 libraryPath）。
 String? defaultEmbeddedTorrentLibraryPath() {
   if (Platform.isWindows) {
-    // runner 集成后 DLL 与 hibiki.exe 同目录，DynamicLibrary 按名即可命中；
+    // runner 集成后 DLL 与 fushi.exe 同目录，DynamicLibrary 按名即可命中；
     // 此处不硬编码 build 产物路径（那是 standalone 测试的事）。
     return null;
   }

@@ -8,7 +8,7 @@
 // 必须**真的打开看**：空白帧 = 启动失败，不是「跑过了」。
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/models/app_model.dart';

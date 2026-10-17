@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart' show NativeDatabase;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -108,7 +108,7 @@ void main() {
   }
 
   group('封面角标条', () {
-    testWidgets('4K HDR10 渲染成两个胶囊', (WidgetTester tester) async {
+    testWidgets('4K HDR10 5.1 渲染成三个胶囊', (WidgetTester tester) async {
       final String path = writeFile('a.mkv');
       final VideoSpecsService service = await serviceWith(tester, path, hdr4k);
 
@@ -117,6 +117,27 @@ void main() {
 
       expect(find.text('4K'), findsOneWidget);
       expect(find.text('HDR10'), findsOneWidget);
+      expect(find.text('5.1'), findsOneWidget, reason: 'FLAC 5.1 主轨');
+    });
+
+    testWidgets('窄卡放不下三个时往上换行，不溢出', (WidgetTester tester) async {
+      final String path = writeFile('narrow.mkv');
+      final VideoSpecsService service = await serviceWith(tester, path, hdr4k);
+
+      await pumpWith(
+        tester,
+        service,
+        // 测试字体下「4K」「HDR10」两枚约 105px，三枚约 154px（≈ 窄屏卡宽）。
+        SizedBox(
+          width: 110,
+          child: VideoSpecsBadgeStrip(service: service, filePath: path),
+        ),
+      );
+
+      expect(tester.takeException(), isNull, reason: '溢出会抛 RenderFlex 异常');
+      final double rowOf4K = tester.getTopLeft(find.text('4K')).dy;
+      final double rowOf51 = tester.getTopLeft(find.text('5.1')).dy;
+      expect(rowOf51, lessThan(rowOf4K), reason: '排不下的音频角标在上一行');
     });
 
     testWidgets('SDR 只出清晰度', (WidgetTester tester) async {
@@ -182,14 +203,14 @@ void main() {
   });
 
   group('紧凑摘要行', () {
-    testWidgets('清晰度 · 动态范围 · 编码 一行', (WidgetTester tester) async {
+    testWidgets('清晰度 · 动态范围 · 编码 · 环绕声 一行', (WidgetTester tester) async {
       final String path = writeFile('d.mkv');
       final VideoSpecsService service = await serviceWith(tester, path, hdr4k);
 
       await pumpWith(tester, service,
           VideoSpecsInlineLine(service: service, filePath: path));
 
-      expect(find.text('4K · HDR10 · HEVC'), findsOneWidget);
+      expect(find.text('4K · HDR10 · HEVC · 5.1'), findsOneWidget);
     });
 
     testWidgets('未探到时不占位（集卡高度钳死，多一行会顶掉简介）', (WidgetTester tester) async {

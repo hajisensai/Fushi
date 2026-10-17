@@ -1,0 +1,17 @@
+name: fushi_srs
+resolution: workspace
+description: >-
+  Fushi SRS 纯 Dart 内核：确定性 ID、HLC 与排序键、因果上下文与修改记录合并、
+  有效日志选取、排程策略，以及 native/fushi_fsrs（fsrs-rs）的 FFI 绑定。
+  不依赖 Flutter / 插件 / 数据库，app、fushi_engine 与无头服务端共用。
+publish_to: none
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+
+dependencies:
+  crypto: ^3.0.0
+  ffi: ^2.1.3
+
+dev_dependencies:
+  test: ^1.24.0

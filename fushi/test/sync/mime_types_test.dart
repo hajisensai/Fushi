@@ -1,9 +1,9 @@
 // 命名统一轮 G8 + BUG-1122：单一 MIME 映射表守卫。
 //
-// 6 份「扩展名 → MIME」switch 副本收敛到 hibiki_core `kMimeTypeByExtension`：
+// 6 份「扩展名 → MIME」switch 副本收敛到 fushi_core `kMimeTypeByExtension`：
 // sync server `_guessContentType` / 云上传 `guessSyncContentType` / EPUB
 // `fallbackMimeType` / 词典媒体 `dictionaryMediaMimeType` / 桌面查词浮窗
-// `_globalLookupImageMime` 直接查表；hibiki_anki 无 hibiki_core 依赖（独立模块），
+// `_globalLookupImageMime` 直接查表；fushi_anki 无 fushi_core 依赖（独立模块），
 // 其 `mimeTypeForPath` 持逐项镜像 `kAnkiMimeTypeByExtension`。
 //
 // 本文件：
@@ -61,7 +61,7 @@ void main() {
       expect(dictionaryMediaMimeType('gaiji/x.webp'), 'image/webp');
     });
 
-    test('hibiki_anki mimeTypeForPath（镜像表）', () {
+    test('fushi_anki mimeTypeForPath（镜像表）', () {
       expect(mimeTypeForPath('clip.webp'), 'image/webp');
     });
   });
@@ -132,12 +132,12 @@ void main() {
     });
   });
 
-  group('hibiki_anki 镜像守卫', () {
-    test('kAnkiMimeTypeByExtension 与 hibiki_core 表逐项一致', () {
+  group('fushi_anki 镜像守卫', () {
+    test('kAnkiMimeTypeByExtension 与 fushi_core 表逐项一致', () {
       expect(
         kAnkiMimeTypeByExtension,
         kMimeTypeByExtension,
-        reason: 'hibiki_anki 是无 hibiki_core 依赖的独立模块，mimeTypeForPath '
+        reason: 'fushi_anki 是无 fushi_core 依赖的独立模块，mimeTypeForPath '
             '持共享表的镜像副本；改动任一侧必须同步另一侧'
             '（真相源 packages/fushi_core/lib/src/utils/mime_types.dart，'
             '镜像 packages/fushi_anki/lib/src/anki_models.dart）。',
@@ -193,9 +193,9 @@ void main() {
       expect(
         offenders,
         isEmpty,
-        reason: '发现新的扩展名→MIME switch 副本。请改查 hibiki_core 的单一映射表 '
+        reason: '发现新的扩展名→MIME switch 副本。请改查 fushi_core 的单一映射表 '
             'mimeTypeForFilePath（packages/fushi_core/lib/src/utils/'
-            'mime_types.dart）；hibiki_anki 内请查 kAnkiMimeTypeByExtension 镜像。',
+            'mime_types.dart）；fushi_anki 内请查 kAnkiMimeTypeByExtension 镜像。',
       );
     });
   });

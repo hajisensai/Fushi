@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// - 高亮匹配长度用服务端 result.bestLength（缺失回落 term.length）。
 /// - 关窗清理调用 fushiSelection.clearSelection() 撤高亮。
 void main() {
-  // flutter test 的 cwd 是 hibiki 包根。两份镜像分别在 assets/ 与 ../tools/。
+  // flutter test 的 cwd 是 fushi 包根。两份镜像分别在 assets/ 与 ../tools/。
   final File assetsContent = File('assets/browser_extension/content.js');
   final File toolsContent = File('../tools/browser-extension/content.js');
 

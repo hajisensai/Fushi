@@ -277,10 +277,11 @@ void main() {
     // 出现真删调用。
     expect(autoBody.contains('runNow(dryRun: false)'), isFalse);
     expect(autoBody.contains('dryRun: false'), isFalse);
+    // 容忍 dart format 把实参折成多行：钉的是「查看路径先弹计划确认框」这一调用。
     expect(
-      source
-          .substring(reviewStart)
-          .contains('showAnkiMediaDedupPlanDialog(context, plan'),
+      RegExp(
+        r'showAnkiMediaDedupPlanDialog\(\s*context,\s*plan\b',
+      ).hasMatch(source.substring(reviewStart)),
       isTrue,
     );
   });

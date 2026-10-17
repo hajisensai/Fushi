@@ -21,10 +21,15 @@ void main() {
       MethodChannel('dev.fluttercommunity.plus/share');
   final List<MethodCall> calls = <MethodCall>[];
   Completer<void>? gate;
+  final Future<bool> Function(String path)? hostFileHandoff =
+      FushiShare.fileHandoffWithoutShareSheet;
 
   setUp(() {
     calls.clear();
     gate = null;
+    // 默认固定「有系统文件分享面板」的宿主：下面的断言钉的是 share_plus 通道
+    // 契约，不能随跑测试的操作系统漂移（Linux CI 上宿主默认走文件管理器）。
+    FushiShare.fileHandoffWithoutShareSheet = null;
     binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
         (MethodCall call) async {
       calls.add(call);
@@ -35,6 +40,47 @@ void main() {
 
   tearDown(() {
     binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
+    FushiShare.fileHandoffWithoutShareSheet = hostFileHandoff;
+  });
+
+  test('宿主默认通道：仅 Linux 走文件管理器，其余平台走系统分享面板', () {
+    expect(hostFileHandoff != null, Platform.isLinux);
+  });
+
+  group('无文件分享面板的宿主（Linux）', () {
+    test('文件分享改为在文件管理器里定位首个产物，不触发 share 通道', () async {
+      final List<String> revealed = <String>[];
+      FushiShare.fileHandoffWithoutShareSheet = (String path) async {
+        revealed.add(path);
+        return true;
+      };
+      expect(
+        await FushiShare.shareFiles(<XFile>[
+          XFile('/tmp/clip.mp4', mimeType: 'video/mp4'),
+          XFile('/tmp/clip.srt'),
+        ]),
+        isTrue,
+      );
+      expect(revealed, <String>['/tmp/clip.mp4']);
+      expect(calls, isEmpty,
+          reason: 'Linux 的 share_plus 文件分享会抛 UnimplementedError');
+      expect(FushiShare.debugIsSharing, isFalse);
+    });
+
+    test('文件管理器拉不起来时回报 false，且防重入门照常复位', () async {
+      FushiShare.fileHandoffWithoutShareSheet = (String path) async => false;
+      expect(
+        await FushiShare.shareFiles(<XFile>[XFile('/tmp/gone.mp4')]),
+        isFalse,
+      );
+      expect(FushiShare.debugIsSharing, isFalse);
+    });
+
+    test('文本分享不受影响，仍走 share 通道', () async {
+      FushiShare.fileHandoffWithoutShareSheet = (String path) async => true;
+      expect(await FushiShare.shareText('hello'), isTrue);
+      expect(calls.single.method, 'share');
+    });
   });
 
   test('只走非结果通道 shareFiles（绝不走 shareFilesWithResult 结果通道）', () async {

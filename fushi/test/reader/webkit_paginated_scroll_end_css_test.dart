@@ -55,6 +55,7 @@ void main() {
     for (final TargetPlatform platform in <TargetPlatform>[
       TargetPlatform.iOS,
       TargetPlatform.macOS,
+      TargetPlatform.linux, // WPE WebKit
     ]) {
       for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
         test('${platform.name} $wm paginated: body::after 强制另起一栏且块尺寸非零',
@@ -87,7 +88,6 @@ void main() {
     for (final TargetPlatform platform in <TargetPlatform>[
       TargetPlatform.android,
       TargetPlatform.windows,
-      TargetPlatform.linux,
     ]) {
       test('${platform.name} paginated: Blink 滚动范围含末端 padding，不发', () async {
         for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {

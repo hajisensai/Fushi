@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 
 /// media_kit 默认底部控制条的**进度条（seek bar）上缘**距视频底边的清空高度（逻辑像素）。
@@ -17,11 +17,11 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 ///
 /// 旧值的 `42` 是 media_kit 导出常量 [kDefaultMaterialVideoControlsThemeData] 那套含
 /// `bottomButtonBarMargin.bottom: 42` 的整体离底留白——它是控制条离屏幕底边的空白，
-/// 不是遮挡字幕的实体，叠进避让只会凭空多抬一个 margin。Hibiki 实际 new 的桌面主题
+/// 不是遮挡字幕的实体，叠进避让只会凭空多抬一个 margin。Fushi 实际 new 的桌面主题
 /// （`MaterialDesktopVideoControlsThemeData`）走构造器默认（`bottomButtonBarMargin`
-/// 只有左右、vertical=0），本就没有这 42px，故去掉它也更贴合 Hibiki 真实几何。
+/// 只有左右、vertical=0），本就没有这 42px，故去掉它也更贴合 Fushi 真实几何。
 ///
-/// Hibiki 用自绘 `VideoSubtitleOverlay`（非 media_kit 内置字幕视图）。TODO-129 起字幕
+/// Fushi 用自绘 `VideoSubtitleOverlay`（非 media_kit 内置字幕视图）。TODO-129 起字幕
 /// **动态**避让：控制条出现时把字幕在用户位置之上抬到 `max(用户位置, 本值)`、隐藏时
 /// 落回用户位置（由 [VideoSubtitleOverlay] 的 `controlsVisible` 驱动 `AnimatedPadding`，
 /// TODO-161 取下限而非加法），不再像 TODO-089 那样把本值恒加进默认
@@ -128,43 +128,49 @@ double videoSubtitleControlsTopReserve({
   return topSystemInset + buttonBarHeight + subtitleBreathingGap;
 }
 
-/// seek bar 章节刻度层（TODO-432）相对**控制条区域底边**的竖直锚定：返回紧贴轨道的刻度带
-/// `bottom`（带底缘离控制条区底边的距离）与 `height`（带高）。纯函数，页面与测试同源。
+/// 进度条**热区容器底缘**离控制条区域底边的高度（BUG-3062）。纯函数，页面主题、
+/// 章节刻度层、暗角、玻璃胶囊与测试同源——移动端主题的 `seekBarMargin.bottom` 就是
+/// 本函数的返回值，叠在进度条上的兄弟层不得另写一套近似公式。
 ///
-/// 刻度带不取整个 seek bar 容器（会让竖线在桌面凭空高出一截），而是以**轨道中线**为中心、
-/// 取 [tickHeight] 的一小段，让竖线只在轨道上下各探出一点点（既盖住轨道又不喧宾夺主）。
-///
-/// 与 media_kit + [videoSubtitleControlsReserve] 同源的几何（值均已 ×uiScale，本函数不再
-/// 二次缩放，[bottomChromeBaseline] 例外为不随缩放的离底常量）：
-/// - **桌面**：media_kit 把进度条骑在底部按钮行上沿（`Transform.translate(Offset(0,16))`
-///   把进度条下压、与按钮行顶部重叠）。轨道中线大致落在距控制条底边一个按钮行高
-///   （[buttonBarHeight]）处。
-/// - **移动**：进度条容器底缘 = 离底基线 + 系统 inset + 按钮行 + 进度条/按钮间距
-///   （= 页面 `seekBarBottom`），容器高 = [seekBarContainerHeight]，轨道在容器内
-///   bottomCenter（贴容器底缘）→ 轨道中线 ≈ `seekBarBottom + seekBarTrackHeight/2`。
-({double bottom, double height}) videoSeekBarTrackBand({
+/// 入参均为**最终生效值**（已 ×界面缩放 ×密度档缩放；[bottomChromeBaseline] 为不随缩放
+/// 的离底常量）：
+/// - **移动**：media_kit 把进度条与按钮行放进同一个 bottomCenter Stack，进度条靠
+///   `seekBarMargin.bottom` 抬到按钮行上方 → 离底基线 + 系统 inset + 浮动底栏抬升 +
+///   按钮行高 + 进度条/按钮间距。
+/// - **桌面**：按钮行离底 [floatingLift]，进度条骑在按钮行上沿、被 fork 下压
+///   [desktopButtonBarOverlap] → 浮动抬升 + 按钮行高 − 下压量。
+double videoSeekBarContainerBottom({
   required bool isDesktop,
   required double buttonBarHeight,
   required double seekBarButtonGap,
-  required double seekBarContainerHeight,
-  required double seekBarTrackHeight,
+  required double floatingLift,
   required double bottomChromeBaseline,
   required double bottomSystemInset,
+  required double desktopButtonBarOverlap,
+}) {
+  if (isDesktop) {
+    return floatingLift + buttonBarHeight - desktopButtonBarOverlap;
+  }
+  return bottomChromeBaseline +
+      bottomSystemInset +
+      floatingLift +
+      buttonBarHeight +
+      seekBarButtonGap;
+}
+
+/// seek bar 章节刻度层（TODO-432）相对**控制条区域底边**的竖直锚定：以轨道中线
+/// [trackCenter]（离控制条区底边的高度）为中心展开 [tickHeight]，返回刻度带的
+/// `bottom`（带底缘离控制条区底边）与 `height`。纯函数，页面与测试同源。
+///
+/// [trackCenter] 必须来自真实轨道几何：热区容器底缘（[videoSeekBarContainerBottom]）
+/// + 轨道在容器内的中线（M3E 轨道走 `videoM3eSeekTrackCenterFromBottom`）。BUG-3062：
+/// 此处原本自带一套「容器底缘 + 轨道半高」近似，按钮行高 / 间距不乘密度档、轨道中线
+/// 按旧 media_kit 贴底轨道算（M3E 轨道实际在底缘之上 10×缩放），移动端刻度整条落在
+/// 轨道下方、compact 档还会整体偏高。
+({double bottom, double height}) videoSeekBarTrackBand({
+  required double trackCenter,
   required double tickHeight,
 }) {
-  final double trackCenter;
-  if (isDesktop) {
-    // 桌面：轨道骑按钮行上沿，中线 ≈ 一个按钮行高处。
-    trackCenter = buttonBarHeight;
-  } else {
-    // 移动：轨道贴容器底缘（bottomCenter），中线 = seekBarBottom + 轨道半高。
-    final double seekBarBottom = bottomChromeBaseline +
-        bottomSystemInset +
-        buttonBarHeight +
-        seekBarButtonGap;
-    trackCenter = seekBarBottom + seekBarTrackHeight / 2;
-  }
-  // 以轨道中线为中心展开 tickHeight：带底缘 = 中线 − 半高。
   return (bottom: trackCenter - tickHeight / 2, height: tickHeight);
 }
 
@@ -173,7 +179,7 @@ double videoSubtitleControlsTopReserve({
 ///
 /// 真相源是 fork `third_party/media_kit_video/.../controls/material.dart` 的
 /// `_theme(context).padding ?? (isFullscreen(context) ? MediaQuery.padding : EdgeInsets.zero)`。
-/// Hibiki 的移动 / 桌面 theme 都**没有**设 `padding` 字段，故恒走后半段。
+/// Fushi 的移动 / 桌面 theme 都**没有**设 `padding` 字段，故恒走后半段。
 ///
 /// **为什么不能图省事写 `SafeArea`**：`SafeArea` 恒吃 `MediaQuery.padding`，与上式只在
 /// 「真的处于 media_kit 全屏路由」时才等价。而移动端视频**永不进 media_kit 全屏路由**
@@ -288,6 +294,46 @@ SubtitleLayerVAnchor? resolveLayerForcedAnchor({
 /// 纯黑，实际可见透明度由 opacity 决定。
 const Color kDefaultSubtitleBackgroundColor = Color(0xFF000000);
 
+/// 字幕**描边**的默认颜色（用户反馈 #xif6-gtSz7：描边颜色 / 粗细可自定义）。描边默认关
+/// （[VideoSubtitleStyle.outlineThickness] = 0，外观与历史一致）；用户第一次把粗细拉起来时
+/// 若没选过颜色就用纯黑——白字黑边是字幕描边的惯例。
+const Color kDefaultSubtitleOutlineColor = Color(0xFF000000);
+
+/// 描边粗细的上限（逻辑像素），持久化 clamp 与设置滑条 max 同一真相源。
+const double kVideoSubtitleMaxOutline = 8;
+
+/// 用户描边粗细（**向外可见**的宽度，与 ASS `\bord` 同义）→ Flutter 居中 stroke 的
+/// `strokeWidth`。居中描边内半边被上层填充盖住、可见只剩一半，故 ×2（与 ASS 路径的
+/// `assOutlineStrokeWidth` 同一换算）。<=0 返回 0 = 不画描边层。
+double subtitleOutlineStrokeWidth(double visiblePx) =>
+    visiblePx <= 0 ? 0 : visiblePx * 2;
+
+/// 字幕正文行高（`TextStyle.height`）。播放页 [VideoSubtitleOverlay] 与设置页的
+/// 字幕样式预览（`SubtitleStylePreview`）读同一个常量——预览要和真字幕同一套几何，
+/// 不能各写一份字面量后慢慢漂开。
+const double kVideoSubtitleLineHeight = 1.3;
+
+/// 字幕盒（背景底色那一块）的内边距与圆角，overlay 与设置预览同源（理由同上）。
+const EdgeInsets kVideoSubtitleBoxPadding = EdgeInsets.symmetric(
+  horizontal: 12,
+  vertical: 6,
+);
+const double kVideoSubtitleBoxRadius = 6;
+
+/// CSS 数字字重（100..900）→ [FontWeight]，越界夹到两端。overlay 的默认外观与
+/// 设置预览共用这一个换算。
+FontWeight videoSubtitleFontWeight(int value) {
+  final int index = ((value.clamp(100, 900) ~/ 100).clamp(1, 9)) - 1;
+  return FontWeight.values[index];
+}
+
+/// 字幕样式的**未落盘预览态**：设置里拖动字号 / 阴影 / 位置等滑条时，松手前样式
+/// 只经 `previewVideoSubtitleStyle` 发给播放页，不写偏好；设置页的字幕样式预览
+/// 没有播放页可问，就听这里。非 null = 正在拖动中的样式；落盘后清回 null，预览
+/// 回到读偏好（偏好仓库的通知会带它重建）。
+final ValueNotifier<VideoSubtitleStyle?> videoSubtitleStyleDraft =
+    ValueNotifier<VideoSubtitleStyle?>(null);
+
 /// Video subtitle appearance persisted as app preferences.
 ///
 /// The default is a high-contrast caption look: fixed white text with a thick
@@ -313,6 +359,8 @@ class VideoSubtitleStyle {
     this.secondaryBottomPadding,
     this.mainAnchor = SubtitleLayerVAnchor.bottom,
     this.secondaryAnchor,
+    this.outlineColor,
+    this.outlineThickness = 0,
   });
 
   /// 默认字重 400（常规），与 mpv 默认（`--sub-bold=no` → Regular）对齐：同一字体
@@ -404,6 +452,17 @@ class VideoSubtitleStyle {
   /// 锚定解析优先级见 [resolveLayerForcedAnchor]。
   final SubtitleLayerVAnchor? secondaryAnchor;
 
+  /// 统一外观下的**真描边**颜色（沿字形轮廓的硬边，与 [shadowColor] 的柔和投影是两层）。
+  /// null = 用默认 [kDefaultSubtitleOutlineColor]。只在「尊重 .ass 自带样式」关、或 cue
+  /// 不带 ASS 样式时生效——尊重 ASS 时描边由文件的 \bord / \3c 决定。
+  final Color? outlineColor;
+
+  /// 统一外观下的描边粗细（逻辑像素，0..[kVideoSubtitleMaxOutline]）。默认 0 = 不描边，
+  /// 旧数据缺字段也是 0，外观像素级不变。
+  final double outlineThickness;
+
+  Color resolveOutlineColor() => outlineColor ?? kDefaultSubtitleOutlineColor;
+
   VideoSubtitleStyle copyWith({
     double? fontSize,
     Color? textColor,
@@ -421,6 +480,8 @@ class VideoSubtitleStyle {
     // null = 不改（保持当前值，含「仍自动对侧」的 null 态）。仅拖拽副字幕落点写入；
     // 无「改回自动」的入口，与 secondaryBottomPadding 同款单向语义。
     SubtitleLayerVAnchor? secondaryAnchor,
+    Color? outlineColor,
+    double? outlineThickness,
     // [backgroundColor] 与 null 语义冲突：`null` 既是「不改」又是「显式清空跟随默认黑」。
     // 用显式 [resetBackgroundColor] 标志区分——true 时把 [backgroundColor] 强制清成 null
     // （回到 [kDefaultSubtitleBackgroundColor] 固定默认），供设置面板「默认（黑）」选项用。
@@ -441,6 +502,8 @@ class VideoSubtitleStyle {
           secondaryBottomPadding ?? this.secondaryBottomPadding,
       mainAnchor: mainAnchor ?? this.mainAnchor,
       secondaryAnchor: secondaryAnchor ?? this.secondaryAnchor,
+      outlineColor: outlineColor ?? this.outlineColor,
+      outlineThickness: outlineThickness ?? this.outlineThickness,
     );
   }
 
@@ -481,6 +544,8 @@ class VideoSubtitleStyle {
         // 对侧）也照写，decode 侧 null → 继续自动。
         'mainAnchor': s.mainAnchor.name,
         'secondaryAnchor': s.secondaryAnchor?.name,
+        'outlineColor': s.outlineColor?.toARGB32(),
+        'outlineThickness': s.outlineThickness,
       });
 
   static VideoSubtitleStyle decode(String? json) {
@@ -530,6 +595,7 @@ class VideoSubtitleStyle {
       final int? argb = colorArgb(d['textColor']);
       final int? shadowArgb = colorArgb(d['shadowColor']);
       final int? backgroundArgb = colorArgb(d['backgroundColor']);
+      final int? outlineArgb = colorArgb(d['outlineColor']);
       return VideoSubtitleStyle(
         fontSize: num2d(d['fontSize'], defaults.fontSize).clamp(10, 72),
         textColor: argb == null ? null : Color(argb),
@@ -555,6 +621,11 @@ class VideoSubtitleStyle {
         mainAnchor:
             _decodeAnchor(d['mainAnchor']) ?? SubtitleLayerVAnchor.bottom,
         secondaryAnchor: _decodeAnchor(d['secondaryAnchor']),
+        // 描边（#xif6-gtSz7）：缺字段（旧数据）→ 无描边、默认色，外观不变。
+        outlineColor: outlineArgb == null ? null : Color(outlineArgb),
+        outlineThickness: num2d(d['outlineThickness'], 0)
+            .clamp(0, kVideoSubtitleMaxOutline)
+            .toDouble(),
       );
     } catch (_) {
       return defaults;

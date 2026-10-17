@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 
 /// 单个键帽（TODO-612 阶段 1；TODO-942 立体键帽换皮）。
 ///
@@ -50,11 +52,17 @@ class KeyCapWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final BorderRadius radius = tokens.radii.chipRadius;
     final ColorScheme scheme = theme.colorScheme;
+    // Apple：macOS 键盘观感——平顶实色键帽、圆角 6、底部只露 1px 暗边，无渐变
+    // 高光、无描边；已绑键是强调色实底 + onAccent 字（选中态走强调色）。
+    final bool glass = isGlassDesign(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final BorderRadius radius = glass
+        ? const BorderRadius.all(Radius.circular(6))
+        : tokens.radii.chipRadius;
 
     // 立体台阶高度（侧壁露出量）。键面相对侧壁上移 stepHeight。
-    const double stepHeight = 3;
+    final double stepHeight = glass ? 1 : 3;
 
     // 三态配色，全走 scheme 派生：
     // - bound：primaryContainer 顶面 / primary 侧壁 / onPrimaryContainer 字。
@@ -64,7 +72,29 @@ class KeyCapWidget extends StatelessWidget {
     final Color sideColor;
     final Color fg;
     final Color borderColor;
-    if (bound) {
+    if (glass) {
+      final bool dark = scheme.brightness == Brightness.dark;
+      // 浅色白键压在分组灰底上、深色 #2C2C2E 键压在 #1C1C1E 分组上。
+      final Color keyFace =
+          dark ? apple.tertiaryGroupedBackground : apple.groupedBackground;
+      if (bound) {
+        faceColor = apple.accent;
+        sideColor = Color.alphaBlend(
+          Colors.black.withValues(alpha: 0.28),
+          apple.accent,
+        );
+        fg = apple.onAccent;
+      } else if (isModifier) {
+        faceColor = Color.alphaBlend(apple.fill, keyFace);
+        sideColor = apple.opaqueSeparator;
+        fg = apple.secondaryLabel;
+      } else {
+        faceColor = keyFace;
+        sideColor = apple.opaqueSeparator;
+        fg = apple.label;
+      }
+      borderColor = Colors.transparent;
+    } else if (bound) {
       faceColor = scheme.primaryContainer;
       sideColor = scheme.primary;
       fg = scheme.onPrimaryContainer;
@@ -85,33 +115,37 @@ class KeyCapWidget extends StatelessWidget {
     final Color highlightColor = scheme.surface.withValues(alpha: 0.35);
 
     final Widget face = Container(
-      alignment: Alignment.center,
+      // [width] 为 null 时按内容收宽（Wrap / Row 里的独立键帽）：
+      // `Align.widthFactor: 1` 让键面宽 = 文字宽 + 内边距，高度仍撑满。以前
+      // 这里是无因子的 center 对齐、侧壁又全是 Positioned，Stack 只能取父约束
+      // 的最大宽——引导页的 ⌃ ⌥ D 三枚键帽各占满一整行（BUG-3203）。
+      constraints:
+          width == null ? BoxConstraints(minWidth: height - stepHeight) : null,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       decoration: BoxDecoration(
         borderRadius: radius,
-        border: Border.all(
-          color: borderColor,
-          width: bound ? 1.5 : 1,
-        ),
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: <Color>[
-            Color.alphaBlend(highlightColor, faceColor),
-            faceColor,
-          ],
-          stops: const <double>[0.0, 0.5],
-        ),
+        border: glass
+            ? null
+            : Border.all(
+                color: borderColor,
+                width: bound ? 1.5 : 1,
+              ),
+        color: glass ? faceColor : null,
+        gradient: glass
+            ? null
+            : LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[
+                  Color.alphaBlend(highlightColor, faceColor),
+                  faceColor,
+                ],
+                stops: const <double>[0.0, 0.5],
+              ),
       ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.center,
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: fg,
-          fontWeight: bound ? FontWeight.w600 : FontWeight.w500,
-        ),
+      child: Align(
+        widthFactor: width == null ? 1 : null,
+        child: _label(theme, fg),
       ),
     );
 
@@ -130,12 +164,10 @@ class KeyCapWidget extends StatelessWidget {
               ),
             ),
           ),
-          // 键面（顶层）：顶部对齐、底部留 stepHeight 露台阶。
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: stepHeight,
+          // 键面（顶层）：顶部对齐、底部留 stepHeight 露台阶。非定位子节点，
+          // Stack 的尺寸由它决定（宽度见 face 的注释）。
+          Padding(
+            padding: EdgeInsets.only(bottom: stepHeight),
             child: face,
           ),
         ],
@@ -152,5 +184,22 @@ class KeyCapWidget extends StatelessWidget {
         child: cap,
       ),
     );
+  }
+
+  /// 键面文字。Mac 示意图的键印「符号 + 换行 + 名字」（⌘ / command、⌦ / delete），
+  /// 两行在窄键上整体等比缩小而不是截成省略号；其余单行、放不下省略。
+  Widget _label(ThemeData theme, Color fg) {
+    final bool twoLine = label.contains('\n');
+    final Widget text = Text(
+      label,
+      maxLines: twoLine ? 2 : 1,
+      overflow: twoLine ? TextOverflow.visible : TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: theme.textTheme.labelMedium?.copyWith(
+        color: fg,
+        fontWeight: bound ? FontWeight.w600 : FontWeight.w500,
+      ),
+    );
+    return twoLine ? FittedBox(fit: BoxFit.scaleDown, child: text) : text;
   }
 }

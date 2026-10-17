@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/video/video_sidecar.dart'
         defaultSidecarSubtitleSuffix,
         findSidecarSubtitle,
         isSidecarSubtitleSuffix,
+        listSidecarSubtitles,
         pickSidecar,
         sidecarSuffixesDisplacedBy;
 import 'package:fushi_audio/fushi_audio_core.dart'
@@ -69,6 +70,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/sync/override_title_db.dart';
 import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
@@ -125,7 +127,9 @@ abstract class _LocalLibraryHostBase
         VideoDeletionHost,
         VideoPlaybackSyncHost,
         AudiobookDelayHost,
+        AudiobookSubtitleHost,
         VideoSubtitleDefaultHost,
+        VideoSubtitleClearHost,
         InterconnectServiceConfigHost,
         InterconnectProfileHost,
         VideoMetadataHost,
@@ -162,7 +166,7 @@ abstract class _LocalLibraryHostBase
   Future<VideoSourceScrapeTaskController?> Function()? get _scrapeController;
 }
 
-/// 用真实 Hibiki 库（Drift DB + [SyncAssetPackageService]）实现 host 库服务。
+/// 用真实 Fushi 库（Drift DB + [SyncAssetPackageService]）实现 host 库服务。
 ///
 /// 库变动经注入的 [runExclusive] 串行（生产传 `runExclusiveWithSync`），
 /// 并经 [refreshDictionaryCache] 刷新内存词典缓存。
@@ -369,6 +373,24 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
 /// 跨域共享的查询 helper（书 / 视频 / 有声书都用）：主合集归属一趟映射、可导出有声书键集。
 /// 方法逐字搬自 LocalLibraryHostService；各域 mixin 以 `on _LocalLibraryHostBase, _LocalLibraryHostShared` 取用。
 mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
+  /// host 端删除资产后记同步删除墓碑（BUG-2945），让其它已配对设备经
+  /// `/api/tombstones` 拉到并删掉本地副本。best-effort：墓碑写失败不该把已
+  /// 完成的删除变成 HTTP 500。
+  Future<void> _writeHostSyncTombstone(
+    SyncTombstoneKind kind,
+    String itemKey,
+  ) async {
+    try {
+      await _db.writeSyncDeletionTombstone(
+        kind.dbValue,
+        itemKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e, stack) {
+      engineLog.log('LocalLibraryHostService.writeHostSyncTombstone', e, stack);
+    }
+  }
+
   /// `'<mediaType>|<entryKey>'` → 该条目的**主合集归属**（多端库联合视图 §2.3
   /// 任务5.1）的一趟映射。归属跟随 [FushiDatabase.getPrimaryCollectionIdByEntry] 的
   /// 「最小 collectionId」折叠语义：一条目属多合集时只带它折进的那一张，与库网格

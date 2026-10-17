@@ -14,8 +14,12 @@
 namespace fushi_test {
 
 struct ZipFile {
-  std::string name;
+  std::string name;  // raw name bytes, written as-is into both headers
   std::string data;
+  // Raw extra block written into both the local and central header (e.g. an
+  // Info-ZIP 0x7075 Unicode Path record), and the general-purpose flags.
+  std::string extra = {};
+  uint16_t flags = 0;
 };
 
 inline void put16(std::vector<uint8_t>& b, uint16_t v) {
@@ -38,7 +42,7 @@ inline std::vector<uint8_t> build_zip(const std::vector<ZipFile>& files) {
     lfh_offsets.push_back(static_cast<uint32_t>(z.size()));
     put32(z, 0x04034b50);                            // local file header sig
     put16(z, 20);                                    // version needed
-    put16(z, 0);                                     // flags
+    put16(z, f.flags);                               // flags
     put16(z, 0);                                     // method = stored
     put16(z, 0);                                     // mod time
     put16(z, 0);                                     // mod date
@@ -46,8 +50,9 @@ inline std::vector<uint8_t> build_zip(const std::vector<ZipFile>& files) {
     put32(z, static_cast<uint32_t>(f.data.size()));  // comp size
     put32(z, static_cast<uint32_t>(f.data.size()));  // uncomp size
     put16(z, static_cast<uint16_t>(f.name.size()));  // name len
-    put16(z, 0);                                     // extra len
+    put16(z, static_cast<uint16_t>(f.extra.size()));  // extra len
     for (char c : f.name) z.push_back(static_cast<uint8_t>(c));
+    for (char c : f.extra) z.push_back(static_cast<uint8_t>(c));
     for (char c : f.data) z.push_back(static_cast<uint8_t>(c));
   }
 
@@ -57,7 +62,7 @@ inline std::vector<uint8_t> build_zip(const std::vector<ZipFile>& files) {
     put32(z, 0x02014b50);                            // central dir header sig
     put16(z, 20);                                    // version made by
     put16(z, 20);                                    // version needed
-    put16(z, 0);                                     // flags
+    put16(z, f.flags);                               // flags
     put16(z, 0);                                     // method = stored
     put16(z, 0);                                     // mod time
     put16(z, 0);                                     // mod date
@@ -65,13 +70,14 @@ inline std::vector<uint8_t> build_zip(const std::vector<ZipFile>& files) {
     put32(z, static_cast<uint32_t>(f.data.size()));  // comp size
     put32(z, static_cast<uint32_t>(f.data.size()));  // uncomp size
     put16(z, static_cast<uint16_t>(f.name.size()));  // name len
-    put16(z, 0);                                     // extra len
+    put16(z, static_cast<uint16_t>(f.extra.size()));  // extra len
     put16(z, 0);                                     // comment len
     put16(z, 0);                                     // disk start
     put16(z, 0);                                     // internal attrs
     put32(z, 0);                                     // external attrs
     put32(z, lfh_offsets[i]);                        // lfh offset
     for (char c : f.name) z.push_back(static_cast<uint8_t>(c));
+    for (char c : f.extra) z.push_back(static_cast<uint8_t>(c));
   }
   const size_t cd_size = z.size() - cd_off;
 

@@ -30,7 +30,6 @@ import 'package:fushi_engine/media/torrent/torrent_add_coordinator.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
-import 'package:fushi_engine/media/video/discovery/discovery_metadata_identity.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -182,6 +181,7 @@ class VideoDownloadManualEnqueueRequest {
     this.coverUrl,
     this.metadataProvider,
     this.externalId,
+    this.year,
     this.discoveryKind,
     this.importAfterDownload = true,
     this.mediaKind = VideoMetadataMediaKind.movie,
@@ -205,6 +205,9 @@ class VideoDownloadManualEnqueueRequest {
   final String? coverUrl;
   final String? metadataProvider;
   final String? externalId;
+
+  /// 作品年份（电影版本区分 / 合集命名 / 字幕搜索都用它）；null = 不知道。
+  final int? year;
   final DiscoveryMediaKind? discoveryKind;
 
   /// 非视频任务下载后是否交给发现导入器。false 时只完成下载任务。
@@ -541,18 +544,16 @@ Future<void> deletePersistedVideoDownloadJob({
         .map(normalizeVideoPath)
         .toSet();
     final VideoBookRepository repository = VideoBookRepository(database);
-    bool deletedVideoBook = false;
-    for (final VideoBookRow book in await repository.listAll()) {
-      if (removedNormalized.contains(normalizeVideoPath(book.videoPath))) {
-        final bool deleted = await repository.deleteVideoBookAndReclaimAssets(
+    final List<String> deletedBookUids = <String>[
+      for (final VideoBookRow book in await repository.listAll())
+        if (removedNormalized.contains(normalizeVideoPath(book.videoPath)))
           book.bookUid,
-          compactDatabase: false,
-        );
-        deletedVideoBook = deletedVideoBook || deleted;
-      }
-    }
-    if (deletedVideoBook) {
-      await repository.compactAfterVideoDeleteBestEffort();
+    ];
+    // 整个任务的入库行一次批量删（BUG-2949）：逐行调单条入口时，每集都要
+    // 各读一遍 media_images / video_books 全表、各开一个事务、各排一次封面互斥
+    // 锁——一季 24 集的种子就是 48 次全表扫描，删除按「集数 × 库大小」变慢。
+    if (deletedBookUids.isNotEmpty) {
+      await repository.deleteVideoBooksAndReclaimAssets(deletedBookUids);
     }
     database.notifyVideoLibraryChanged();
   }
@@ -897,6 +898,7 @@ class VideoDownloadPipelineService {
     this.defaultContentLanguage,
     this.subtitleLanguageResolver,
     this.discoveryImporter,
+    this.onDownloadOnlyCompleted,
     this.manualTorrentDirectory,
     Iterable<String> preferredSubtitleLanguages = const <String>[],
     String? workerId,
@@ -942,6 +944,16 @@ class VideoDownloadPipelineService {
 
   /// 见 [VideoDownloadDiscoveryImporter]。
   final VideoDownloadDiscoveryImporter? discoveryImporter;
+
+  /// 「只下载」任务（`download-only-<域>` 策略，如 CoreAudio/TMW 合集单卷）完成
+  /// 之后调一次：参数是该任务落盘的已选文件绝对路径。这类任务不能改走
+  /// importAfterDownload（同包多卷的种子槽位接力挂在「只下载」上），宿主要在
+  /// 下完后做的事（有声书：排进转录后入库队列）从这里接。
+  ///
+  /// 此刻任务已经完成并落库，端口抛的异常只记日志、不回滚任务——下载本身是
+  /// 成功的，补救入口（任务面板的「配对」）仍在。
+  final Future<void> Function(DiscoveryMediaKind kind, List<String> paths)?
+      onDownloadOnlyCompleted;
 
   /// 手动任务 .torrent 元数据的落盘目录（`<jobId>.torrent`）。null 时手动
   /// 任务只接受磁力链接。
@@ -1115,7 +1127,7 @@ class VideoDownloadPipelineService {
     if (request.maxAttempts <= 0) {
       throw ArgumentError.value(request.maxAttempts, 'maxAttempts');
     }
-    final Set<int>? selectedFileIndexes = request.selectedFileIndexes;
+    Set<int>? selectedFileIndexes = request.selectedFileIndexes;
     if (selectedFileIndexes != null) {
       if (metainfo == null || selectedFileIndexes.isEmpty) {
         throw ArgumentError(
@@ -1131,6 +1143,11 @@ class VideoDownloadPipelineService {
           'selectedFileIndexes',
           'selection contains an index absent from metainfo',
         );
+      }
+      // 选中了全部文件 = 整颗 torrent：按普通任务建。否则落库的「选择」没有
+      // 一个跳过项，add 阶段 [_applyPersistedFileSelection] 会判它不完整而卡死。
+      if (selectedFileIndexes.containsAll(available)) {
+        selectedFileIndexes = null;
       }
     }
     final DiscoveryMediaKind? discoveryKind = request.discoveryKind;
@@ -1218,7 +1235,7 @@ class VideoDownloadPipelineService {
           ),
           discoveryCategory: const Value<String?>(null),
           title: Value<String>(title),
-          year: const Value<int?>(null),
+          year: Value<int?>(request.year),
           coverUrl: Value<String?>(request.coverUrl),
           backendKind: Value<String>(request.backendTarget.kind),
           backendProfileId: Value<String?>(request.backendTarget.profileId),
@@ -1531,7 +1548,7 @@ class VideoDownloadPipelineService {
     wake();
   }
 
-  /// Cancels Hibiki's durable workflow without deleting downloaded data.
+  /// Cancels Fushi's durable workflow without deleting downloaded data.
   /// When the original backend supports user pause, its exact task is paused
   /// before the lifecycle CAS so cancellation never leaves an actively
   /// downloading task behind merely because the UI stopped tracking it.
@@ -3098,6 +3115,7 @@ class VideoDownloadPipelineService {
           completedAt: DateTime.now().millisecondsSinceEpoch,
         ),
       );
+      await _notifyDownloadOnlyCompleted(job);
       return;
     }
     await _advance(job, VideoDownloadJobStage.import);
@@ -3739,7 +3757,7 @@ class VideoDownloadPipelineService {
   /// Copies old JSON-plan subtitle staging files without consuming them.
   /// This mirrors the pre-v78 workflow: a video that already has any sidecar
   /// is left untouched, because that sidecar may have been placed or edited by
-  /// the user outside Hibiki.
+  /// the user outside Fushi.
   Future<void> _installLegacyStagedSubtitles(VideoDownloadJobRow job) async {
     final VideoDownloadSubtitlePolicy policy =
         VideoDownloadSubtitlePolicy.values.asNameMap()[job.subtitlePolicy] ??
@@ -4245,9 +4263,35 @@ class VideoDownloadPipelineService {
     await _advance(job, VideoDownloadJobStage.scrape, nowAt: now);
   }
 
-  /// 从持久化发现身份恢复 MAL/TMDB lookup，保留旧行读取兼容。
+  /// 从持久化发现身份恢复 MAL/TMDB lookup（手动任务另认显式 AniDB），保留旧行
+  /// 读取兼容。与库内补刮同一判据 [videoDownloadJobConfirmedLookup]。
   VideoMetadataLookup? _confirmedMetadataLookup(VideoDownloadJobRow job) =>
-      videoDiscoveryMetadataLookup(_mediaReference(job));
+      videoDownloadJobConfirmedLookup(job);
+
+  Future<void> _notifyDownloadOnlyCompleted(VideoDownloadJobRow job) async {
+    final Future<void> Function(DiscoveryMediaKind, List<String>)? hook =
+        onDownloadOnlyCompleted;
+    final DiscoveryMediaKind? kind =
+        downloadOnlyKindOfOrganizationPolicy(job.organizationPolicy);
+    if (hook == null || kind == null) return;
+    final List<VideoDownloadJobFileRow> rows = await database
+        .getVideoDownloadJobFiles(job.jobId);
+    final List<String> paths = <String>[
+      for (final VideoDownloadJobFileRow row in rows)
+        if (row.selected && (row.finalAbsolutePath?.trim().isNotEmpty ?? false))
+          row.finalAbsolutePath!,
+    ];
+    if (paths.isEmpty) return;
+    try {
+      await hook(kind, paths);
+    } catch (error, stack) {
+      engineLog.log(
+        'VideoDownloadPipelineService.onDownloadOnlyCompleted(${job.jobId})',
+        error,
+        stack,
+      );
+    }
+  }
 
   /// 手动「按域入库」任务的 import：整包绝对路径交给 [discoveryImporter]
   /// （分类 → 需要时解压 → 各域既有导入原语），成功即完成任务。

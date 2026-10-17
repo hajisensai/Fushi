@@ -7,8 +7,12 @@
 
 ## 重编 ffmpeg-kit（TODO-2357 起：必须带 x264）
 
-当前入库产物的 configure 关键开关：**`--enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus`**
-（后两个 2026-09-28 加入：制卡音画同步片段默认 WebM(VP9 + Opus)，卡片内 `<video>` 播放）。
+当前入库产物的 configure 关键开关：**`--enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --enable-libxml2`**
+（libvpx/opus 2026-09-28 加入：制卡音画同步片段默认 WebM(VP9 + Opus)，卡片内 `<video>` 播放；
+dav1d 2026-10-05 加入，BUG-2947：FFmpeg 原生 `av1` 解码器只是 hwaccel 壳，而移动端配方
+`--disable-mediacodec` / `--disable-videotoolbox` 后一个 hwaccel 都没有，AV1 视频制卡截帧/动图
+每帧都报 `Your platform doesn't support hardware accelerated AV1 decoding`。dav1d 走 meson + ninja，
+构建机需先装好这两个工具）。
 
 **首选重编方式：CI**（`.github/workflows/ffmpeg-kit-mobile.yml`，`workflow_dispatch`，或 push 到
 `ci/ffmpeg-kit-mobile` 分支）。它 clone arthenica ffmpeg-kit v6.0、用 `prepare_ffmpeg_src.sh` 预取
@@ -25,7 +29,7 @@ FFmpeg n6.0 并打本目录的 cert-pin 补丁（ffmpeg-kit 对非空 `src/ffmpe
   形成**静默产出打不开的文件**。硬件编码器不是替代路：iOS 配方 `--disable-videotoolbox`、
   Android `--disable-mediacodec`，且当前 FFmpeg 6.0 **根本没有** `h264_mediacodec`
   编码器（那是 6.1 才加入的）。
-- **许可**：`--enable-gpl` 让产物从 LGPLv3 变为 **GPLv3**。Hibiki 自身即 GPL-3.0，两者
+- **许可**：`--enable-gpl` 让产物从 LGPLv3 变为 **GPLv3**。Fushi 自身即 GPL-3.0，两者
   一致；`android.sh` / `ios.sh` 会自动写入产物内的 `LICENSE.GPLv3` 与 `license_x264.txt`
   （那是 AAR/xcframework **内部**的文件名，由上游脚本决定，别跟着本仓文件名改）。
   桌面 `tool/ffmpeg-min/build-ffmpeg-min.sh` 早已同样处理。
@@ -38,9 +42,9 @@ FFmpeg n6.0 并打本目录的 cert-pin 补丁（ffmpeg-kit 对非空 `src/ffmpe
 现成脚本（构建机 `~/ffmpegkit-build/`，内容与本目录下入库副本一致）：
 
 ```bash
-./build_x264_android.sh   # android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus \
+./build_x264_android.sh   # android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --enable-libxml2 \
                           #   --disable-x86 --disable-x86-64 --api-level=24
-./build_x264_ios.sh       # ios.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --xcframework
+./build_x264_ios.sh       # ios.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --enable-libxml2 --xcframework
 ```
 
 ⚠️ **iOS 需要 `nasm`**：x86_64 模拟器切片的 x264 用 x86 SIMD 汇编，缺 nasm 会在
@@ -115,7 +119,7 @@ ffmpeg（远端视频制卡句子音频 / GIF / 帧封面）时报 `Protocol not
 只加 gnutls 不打补丁也能让 https 通，但那是 ffmpeg 默认的 `tls_verify=0`（**接受任意
 证书**，可被 MITM）。本补丁把它升级成「只认钉扎证书」，逐字对齐 app 现有的 TOFU 钉扎
 （`fushi/lib/src/sync/tls/fushi_tls_identity.dart` 的 `fingerprintOf()` = DER 的
-sha256），因此**不是安全降级，是真钉扎**。Dart 侧只对已 TOFU 钉扎的 Hibiki 自签主机
+sha256），因此**不是安全降级，是真钉扎**。Dart 侧只对已 TOFU 钉扎的 Fushi 自签主机
 传 `-tls_pin_sha256 <fp>`（公网源不传，保持默认）。
 
 ## 覆盖后端

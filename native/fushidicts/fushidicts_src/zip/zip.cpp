@@ -4,9 +4,13 @@
 
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <limits>
+#include <system_error>
 
 #include "../memory/memory.hpp"
+#include "../util/fs_utf8.hpp"
 #include "fushidicts/platform.hpp"  // FUSHI_LOGW
 
 namespace {
@@ -51,6 +55,66 @@ bool has_entry_payload(const memory::mapped_file& file, const ZipEntry& e) {
 // bank (the largest shipped yomitan banks are tens of MB uncompressed) yet still
 // rejects the forged multi-GB ZIP64 sizes the original guard defended against.
 // (kMaxUncompressedEntryBytes is declared in zip.hpp so tests can reach it.)
+
+struct ExtraRecord {
+  const uint8_t* data;
+  size_t size;
+};
+
+// First record with header id [id] in a central-directory extra block, or
+// nullopt. The walk stops at the first record whose declared size runs past the
+// block, so a malformed extra never reads beyond [extra, extra + extra_len).
+// (APPNOTE 4.5.1: records are <id:u16><size:u16><data[size]>, back to back.)
+std::optional<ExtraRecord> find_extra(const uint8_t* extra, size_t extra_len, uint16_t id) {
+  size_t eo = 0;
+  while (eo + 4 <= extra_len) {
+    const uint16_t hid = read_at<uint16_t>(extra, eo);
+    const uint16_t hsz = read_at<uint16_t>(extra, eo + 2);
+    if (eo + 4 + hsz > extra_len) {
+      return std::nullopt;
+    }
+    if (hid == id) {
+      return ExtraRecord{extra + eo + 4, hsz};
+    }
+    eo += 4 + hsz;
+  }
+  return std::nullopt;
+}
+
+// BUG-3277: the entry name to use, honouring the Info-ZIP Unicode Path Extra
+// Field (header id 0x7075, APPNOTE 4.6.9).
+//
+// Archivers that predate (or do not set) general-purpose bit 11 store the raw
+// name in the local code page -- Shift-JIS for a Japanese Windows box -- and
+// put the real UTF-8 name in 0x7075: <version:u8 = 1><crc32 of the raw name
+// bytes:u32><UTF-8 name>. Every consumer here (term-bank `path` lookups, media
+// keys) speaks UTF-8, so the raw bytes left such entries unreachable.
+//
+// Rules, straight from the spec: bit 11 set means the raw name already is
+// UTF-8 and wins; otherwise 0x7075 applies only when its version is 1 and its
+// CRC matches the raw name, since a mismatch means the raw name was rewritten
+// after the field was written and the field is stale. Anything else keeps the
+// raw bytes. A raw name with neither marker is NOT re-decoded: the zip format
+// records no code page for it, and guessing one (CP437 / Shift-JIS / GBK) would
+// corrupt the names of every archive the guess does not fit.
+std::string resolve_entry_name(std::string_view raw_name, uint16_t flags, const uint8_t* extra,
+                               size_t extra_len) {
+  constexpr uint16_t kUtf8NameFlag = 1u << 11;
+  constexpr uint16_t kUnicodePathExtraId = 0x7075;
+  std::string name(raw_name);
+  if (flags & kUtf8NameFlag) {
+    return name;
+  }
+  const auto rec = find_extra(extra, extra_len, kUnicodePathExtraId);
+  if (!rec || rec->size <= 5 || rec->data[0] != 1) {
+    return name;  // absent, empty name, or an unknown version
+  }
+  const uint32_t crc = read_at<uint32_t>(rec->data, 1);
+  if (crc != libdeflate_crc32(0, raw_name.data(), raw_name.size())) {
+    return name;  // stale field: the raw name changed after it was written
+  }
+  return std::string(reinterpret_cast<const char*>(rec->data + 5), rec->size - 5);
+}
 }  // namespace
 
 bool zip_uncompressed_size_in_range(const ZipEntry& e) {
@@ -246,6 +310,47 @@ std::optional<Zip::MediaResult> Zip::read_media(int index) const {
   return out;
 }
 
+bool Zip::extract_to(int index, const std::string& out_path) const {
+  if (index < 0 || static_cast<size_t>(index) >= entries.size()) {
+    return false;
+  }
+  const auto& e = entries[index];
+  if (e.compression_method != 0 && e.compression_method != 8) {
+    return false;
+  }
+  if (!has_entry_payload(file, e) || !zip_uncompressed_size_in_range(e)) {
+    return false;
+  }
+
+  const auto* src = file.data + e.data_offset;
+  // A stored entry is already the output bytes, and an empty entry has none to
+  // inflate: both go out through a plain stream, straight from the input mapping.
+  if (e.compression_method == 0 || e.uncompressed_size == 0) {
+    std::ofstream out(fushi::fs_path(out_path), std::ios::binary);
+    out.exceptions(std::ios::failbit | std::ios::badbit);
+    out.write(reinterpret_cast<const char*>(src), static_cast<std::streamsize>(
+                                                      e.compression_method == 0 ? e.uncompressed_size : 0));
+    return true;
+  }
+
+  thread_local auto* d = libdeflate_alloc_decompressor();
+  if (!d) {
+    return false;  // allocation failed -> do not deref null decompressor
+  }
+  memory::mapped_file out = memory::map_rw(out_path, e.uncompressed_size);
+  if (!out) {
+    throw memory::map_error("failed to create " + out_path);
+  }
+  const bool ok = libdeflate_deflate_decompress(d, src, e.compressed_size, out.data, e.uncompressed_size,
+                                                nullptr) == LIBDEFLATE_SUCCESS;
+  memory::unmap(out);
+  if (!ok) {
+    std::error_code ec;
+    std::filesystem::remove(fushi::fs_path(out_path), ec);
+  }
+  return ok;
+}
+
 // https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
 bool Zip::parse_central_directory() {
   const auto* base = file.data;
@@ -317,45 +422,31 @@ bool Zip::parse_central_directory() {
     constexpr uint32_t kZip64Sentinel = std::numeric_limits<uint32_t>::max();
     if (comp32 == kZip64Sentinel || uncomp32 == kZip64Sentinel ||
         lfh32 == kZip64Sentinel) {
-      const size_t extra_base = pos + 46 + name_len;
-      size_t eo = 0;
-      bool resolved = false;
-      while (eo + 4 <= extra_len) {
-        const uint16_t hid = read_at<uint16_t>(base, extra_base + eo);
-        const uint16_t hsz = read_at<uint16_t>(base, extra_base + eo + 2);
-        if (eo + 4 + hsz > extra_len) {
-          break;
-        }
-        if (hid == 0x0001) {
-          size_t fo = extra_base + eo + 4;
-          size_t remaining = hsz;
-          auto take64 = [&](uint64_t& out) -> bool {
-            if (remaining < 8) return false;
-            out = read_at<uint64_t>(base, fo);
-            fo += 8;
-            remaining -= 8;
-            return true;
-          };
-          if (uncomp32 == kZip64Sentinel && !take64(e.uncompressed_size)) {
-            return false;
-          }
-          if (comp32 == kZip64Sentinel && !take64(e.compressed_size)) {
-            return false;
-          }
-          if (lfh32 == kZip64Sentinel && !take64(lfh_offset)) {
-            return false;
-          }
-          resolved = true;
-          break;
-        }
-        eo += 4 + hsz;
-      }
-      if (!resolved) {
+      const auto rec = find_extra(base + pos + 46 + name_len, extra_len, 0x0001);
+      if (!rec) {
         return false;  // sentinel present but no ZIP64 extra → malformed
+      }
+      size_t fo = 0;
+      auto take64 = [&](uint64_t& out) -> bool {
+        if (rec->size - fo < 8) return false;
+        out = read_at<uint64_t>(rec->data, fo);
+        fo += 8;
+        return true;
+      };
+      if (uncomp32 == kZip64Sentinel && !take64(e.uncompressed_size)) {
+        return false;
+      }
+      if (comp32 == kZip64Sentinel && !take64(e.compressed_size)) {
+        return false;
+      }
+      if (lfh32 == kZip64Sentinel && !take64(lfh_offset)) {
+        return false;
       }
     }
 
-    e.name.assign(reinterpret_cast<const char*>(base + pos + 46), name_len);
+    e.name = resolve_entry_name(
+        std::string_view(reinterpret_cast<const char*>(base + pos + 46), name_len),
+        read_at<uint16_t>(base, pos + 8), base + pos + 46 + name_len, extra_len);
 
     // lfh_offset is 64-bit (it may carry a resolved ZIP64 value). Reject any
     // out-of-range offset here, BEFORE in_bounds() narrows it to size_t -- on a

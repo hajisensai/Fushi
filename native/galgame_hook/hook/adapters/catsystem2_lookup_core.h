@@ -33,12 +33,29 @@
 //     (measured: a swallowed down/up pair does not advance).  lparam carries
 //     client pixels of the DPI-unaware window.
 //
+// A second code layout of the same engine ("targeted render"; measured
+// 2026-10-03 with Frida on a 2016 CatSystem2 build — again the sample only):
+//   * RenderChar(renderer, record, target_image) takes the page image to draw
+//     into (the normal page renderer+4 or the fade page renderer+0x40) and
+//     returns with `ret 8`; the record keeps the same fields (stride 0x58).
+//     GetCharImage is reached through the font object's vtable slot 1
+//     (`call [esi+4]`, esi = [[renderer]]) instead of a direct call, and
+//     ClearPage is no longer adjacent to RenderChar: it is proven by its body
+//     (layout reset, both page images filled through one helper) and by a
+//     caller that loads the renderer from the message window (+0x2ac).
+//   * The scene keeps its draw-ordered std::list at [scene+4] (head = [list],
+//     no +0x14 hop) and every node points to its layer ([node+8]) instead of
+//     embedding it.  The layer itself is unchanged: id +0, visible +4,
+//     sprite +0x10 — in the first layout that is node+8 / +0xc / +0x18.
+//   * Window (+4 layer id, +0x68 screen, +0x2ac renderer), screen (+8 scene,
+//     +0x14..+0x24) and sprite fields are the same as above.
+//
 // Every site, offset and global below is proven by a byte signature plus a
 // structural cross-check (call chain into GetGlyphOutlineA, import slots,
-// adjacent function layout).  Runtime data is re-validated every frame (page
-// size equals sprite size, bounding box consistent, window owned by the
-// process).  No hash, file name or title is consulted; anything missing or
-// ambiguous installs nothing.
+// adjacent function layout or vtable slot).  Runtime data is re-validated
+// every frame (page size equals sprite size, bounding box consistent, window
+// owned by the process).  No hash, file name or title is consulted; anything
+// missing or ambiguous installs nothing.
 
 #include <windows.h>
 
@@ -75,6 +92,10 @@ constexpr std::array<uint8_t, Size> WildcardMask(
 // ── engine layout ──────────────────────────────────────────────────────────
 
 inline constexpr size_t kRendererImageOffset = 0x04u;
+// Targeted-render layout: the renderer's second page image.  With text fade
+// on, the engine copies the page into it, draws the new characters there and
+// then swaps the two pointers, so both are the same on-screen text page.
+inline constexpr size_t kRendererWorkImageOffset = 0x40u;
 inline constexpr size_t kRendererPageWidthOffset = 0x14u;
 inline constexpr size_t kRendererPageHeightOffset = 0x18u;
 
@@ -96,11 +117,20 @@ inline constexpr size_t kScreenHeightOffset = 0x1cu;
 inline constexpr size_t kScreenWidthMirrorOffset = 0x20u;
 inline constexpr size_t kScreenHeightMirrorOffset = 0x24u;
 
-inline constexpr size_t kListHeadOffset = 0x14u;     // [scene] = list
 inline constexpr size_t kNodeNextOffset = 0x00u;
-inline constexpr size_t kNodeIdOffset = 0x08u;
-inline constexpr size_t kNodeVisibleOffset = 0x0cu;
-inline constexpr size_t kNodeSpriteOffset = 0x18u;
+inline constexpr size_t kNodeLayerOffset = 0x08u;    // layer (or its pointer)
+inline constexpr size_t kLayerIdOffset = 0x00u;
+inline constexpr size_t kLayerVisibleOffset = 0x04u;
+inline constexpr size_t kLayerSpriteOffset = 0x10u;
+
+// How the draw-ordered layer list hangs off the scene.
+struct SceneWalk {
+  size_t list_offset = 0u;      // list object = [scene + list_offset]
+  size_t head_offset = 0u;      // sentinel node = [list + head_offset]
+  bool layer_by_pointer = false;  // layer = [node+8] instead of node+8
+};
+inline constexpr SceneWalk kAdjacentPageWalk = {0x00u, 0x14u, false};
+inline constexpr SceneWalk kTargetedRenderWalk = {0x04u, 0x00u, true};
 
 inline constexpr size_t kSpriteXOffset = 0x38u;      // float
 inline constexpr size_t kSpriteYOffset = 0x3cu;
@@ -242,12 +272,172 @@ inline constexpr auto kInputMask =
 // WindowFromPoint are all called from its body.
 inline constexpr size_t kInputScanBytes = 0x900u;
 
+// ── signatures: targeted-render layout ─────────────────────────────────────
+
+// RenderChar(renderer, record, target) prologue.
+inline constexpr uint8_t kRenderTBytes[] = {
+    0x81, 0xec, 0xcc, 0x00, 0x00, 0x00, 0x8d, 0x84, 0x24, 0xac, 0x00, 0x00,
+    0x00, 0x53, 0x55, 0x56, 0x8b, 0x35, 0x00, 0x00, 0x00, 0x00, 0x8b, 0xd9,
+    0x50, 0xff, 0xd6};
+inline constexpr size_t kRenderTWildcards[][2] = {{18u, 22u}};
+inline constexpr auto kRenderTMask =
+    WildcardMask<sizeof(kRenderTBytes)>(kRenderTWildcards);
+// The record argument and its pen position.
+inline constexpr uint8_t kRecordPenTBytes[] = {
+    0x8b, 0xbc, 0x24, 0xe0, 0x00, 0x00, 0x00, 0xc7, 0x44, 0x24,
+    0x2c, 0x00, 0x00, 0x00, 0x00, 0xc7, 0x44, 0x24, 0x30, 0x00,
+    0x00, 0x00, 0x00, 0x8b, 0x47, 0x10, 0x8b, 0x4f, 0x14};
+inline constexpr size_t kRecordPenTOffset = 0x6fu;
+// esi = vtable of the font object [renderer]; code and font size of the
+// record go to `call [esi+4]` (GetCharImage, vtable slot 1).
+inline constexpr uint8_t kRecordCharTBytes[] = {
+    0x8b, 0x03, 0xff, 0x77, 0x54, 0x8b, 0x4b, 0x08, 0xff, 0x77, 0x50, 0x8b,
+    0x30, 0xe8, 0x00, 0x00, 0x00, 0x00, 0x8b, 0x4c, 0x24, 0x2c, 0x50, 0x33,
+    0xc0, 0xff, 0xb1, 0xac, 0x00, 0x00, 0x00, 0x81, 0xb9, 0xa0, 0x00, 0x00,
+    0x00, 0xbc, 0x02, 0x00, 0x00, 0x8b, 0x0b, 0x0f, 0x94, 0xc0, 0x50, 0x8d,
+    0x47, 0x34, 0x50, 0xff, 0x77, 0x1c, 0x0f, 0xb7, 0x47, 0x04, 0x50, 0x8d,
+    0x44, 0x24, 0x58, 0x50, 0xff, 0x56, 0x04};
+inline constexpr size_t kRecordCharTWildcards[][2] = {{14u, 18u}};
+inline constexpr auto kRecordCharTMask =
+    WildcardMask<sizeof(kRecordCharTBytes)>(kRecordCharTWildcards);
+inline constexpr size_t kRecordCharTOffset = 0xfeu;
+// Epilogue: two stack arguments (record, target image).
+inline constexpr uint8_t kRenderTailTBytes[] = {0x81, 0xc4, 0xcc, 0x00, 0x00,
+                                                0x00, 0xc2, 0x08, 0x00, 0xcc};
+inline constexpr size_t kRenderTailTOffset = 0x298u;
+inline constexpr uint32_t kRenderTStackArgs = 2u;
+// The vtable entry GetCharImage must be found through.
+inline constexpr size_t kCharImageVtableSlot = 1u;
+
+// ClearPage(renderer): reset the layout (+0x20..+0x30), then fill the normal
+// (+4) and the fade (+0x40) page image with the page size through one helper.
+inline constexpr uint8_t kClearTBytes[] = {
+    0x56, 0x8b, 0xf1, 0x8b, 0x4e, 0x08, 0x85, 0xc9, 0x74, 0x05, 0xe8, 0x00,
+    0x00, 0x00, 0x00, 0xc7, 0x46, 0x20, 0x00, 0x00, 0x00, 0x00, 0xc7, 0x46,
+    0x24, 0x00, 0x00, 0x00, 0x00, 0xc7, 0x46, 0x28, 0x00, 0x00, 0x00, 0x00,
+    0xc7, 0x46, 0x2c, 0x00, 0x00, 0x00, 0x00, 0xc7, 0x46, 0x30, 0x00, 0x00,
+    0x00, 0x00, 0x8b, 0x4e, 0x04, 0x85, 0xc9, 0x74, 0x11, 0x6a, 0x00, 0xff,
+    0x76, 0x18, 0xff, 0x76, 0x14, 0x6a, 0x00, 0x6a, 0x00, 0xe8, 0x00, 0x00,
+    0x00, 0x00, 0x8b, 0x4e, 0x40, 0x85, 0xc9, 0x74, 0x11, 0x6a, 0x00, 0xff,
+    0x76, 0x18, 0xff, 0x76, 0x14, 0x6a, 0x00, 0x6a, 0x00, 0xe8, 0x00, 0x00,
+    0x00, 0x00, 0x5e, 0xc3};
+inline constexpr size_t kClearTWildcards[][2] = {
+    {11u, 15u}, {70u, 74u}, {94u, 98u}};
+inline constexpr auto kClearTMask =
+    WildcardMask<sizeof(kClearTBytes)>(kClearTWildcards);
+inline constexpr size_t kClearTNormalFillCall = 69u;
+inline constexpr size_t kClearTFadeFillCall = 93u;
+// `mov ecx,[edi+0x2ac] (window renderer); test ecx,ecx; je; call ClearPage`.
+// Other classes keep a different object at +0x2ac, so at least one copy
+// (not every copy) must call ClearPage.
+inline constexpr uint8_t kClearCallTBytes[] = {
+    0x8b, 0x8f, 0xac, 0x02, 0x00, 0x00, 0x85, 0xc9,
+    0x74, 0x00, 0xe8, 0x00, 0x00, 0x00, 0x00};
+inline constexpr size_t kClearCallTWildcards[][2] = {{9u, 10u}, {11u, 15u}};
+inline constexpr auto kClearCallTMask =
+    WildcardMask<sizeof(kClearCallTBytes)>(kClearCallTWildcards);
+inline constexpr size_t kClearCallTCall = 10u;
+
+// Message-window Update(time, flags): renderer +0x2ac, reveal and SyncLayer.
+inline constexpr uint8_t kUpdateTBytes[] = {
+    0x56, 0x57, 0xff, 0x74, 0x24, 0x10, 0x8b, 0x7c, 0x24, 0x10, 0x8b, 0xf1,
+    0x57, 0xe8, 0x00, 0x00, 0x00, 0x00, 0x85, 0xc0, 0x75, 0x05, 0x5f, 0x5e,
+    0xc2, 0x08, 0x00, 0x83, 0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x74, 0x00,
+    0xff, 0xb6, 0x00, 0x00, 0x00, 0x00, 0x8b, 0x8e, 0xac, 0x02, 0x00, 0x00,
+    0xff, 0xb6, 0x00, 0x00, 0x00, 0x00, 0xe8, 0x00, 0x00, 0x00, 0x00, 0xf7,
+    0xd8, 0x8b, 0xce, 0x1b, 0xc0, 0x40, 0x89, 0x86, 0x00, 0x00, 0x00, 0x00,
+    0xe8, 0x00, 0x00, 0x00, 0x00};
+inline constexpr size_t kUpdateTWildcards[][2] = {
+    {14u, 18u}, {29u, 33u}, {35u, 36u}, {38u, 42u},
+    {50u, 54u}, {55u, 59u}, {68u, 72u}, {73u, 77u}};
+inline constexpr auto kUpdateTMask =
+    WildcardMask<sizeof(kUpdateTBytes)>(kUpdateTWildcards);
+inline constexpr size_t kUpdateTRevealCall = 54u;
+inline constexpr size_t kUpdateTSyncCall = 72u;
+// SyncLayer: `mov ecx,[ebx+0x68]; push eax; call Screen::CopyImage`.
+inline constexpr uint8_t kSyncScreenTBytes[] = {0x8b, 0x4b, 0x68, 0x50, 0xe8};
+
+// Part-base layer query: `push [esi+4] (layer id); mov ecx,[esi+0x68]
+// (screen); call Screen::QueryLayer`.
+inline constexpr uint8_t kLayerQueryTBytes[] = {
+    0x83, 0xec, 0x0c, 0x8d, 0x04, 0x24, 0x56, 0x8b, 0xf1, 0x50, 0xff,
+    0x76, 0x04, 0x8b, 0x4e, 0x68, 0xe8, 0x00, 0x00, 0x00, 0x00};
+inline constexpr size_t kLayerQueryTWildcards[][2] = {{17u, 21u}};
+inline constexpr auto kLayerQueryTMask =
+    WildcardMask<sizeof(kLayerQueryTBytes)>(kLayerQueryTWildcards);
+inline constexpr size_t kLayerQueryTCall = 16u;
+// Screen::QueryLayer: the scene is [screen+8]; forwards to Scene::Visible.
+inline constexpr uint8_t kScreenQueryTBytes[] = {
+    0x56, 0x8b, 0xf1, 0x83, 0x3e, 0x00, 0x75, 0x00, 0x83, 0x7e, 0x04, 0x00,
+    0x74, 0x00, 0xff, 0x74, 0x24, 0x08, 0xe8, 0x00, 0x00, 0x00, 0x00, 0x48,
+    0x75, 0x00, 0xff, 0x74, 0x24, 0x0c, 0x8b, 0x4e, 0x08, 0xff, 0x74, 0x24,
+    0x0c, 0xe8, 0x00, 0x00, 0x00, 0x00, 0x5e, 0xc2, 0x08, 0x00};
+inline constexpr size_t kScreenQueryTWildcards[][2] = {
+    {7u, 8u}, {13u, 14u}, {19u, 23u}, {25u, 26u}, {38u, 42u}};
+inline constexpr auto kScreenQueryTMask =
+    WildcardMask<sizeof(kScreenQueryTBytes)>(kScreenQueryTWildcards);
+inline constexpr size_t kScreenQueryTSceneCall = 37u;
+// Scene::Visible(id, out): Find returns the layer; visible = [layer+4].
+inline constexpr uint8_t kSceneVisibleTBytes[] = {
+    0xff, 0x74, 0x24, 0x04, 0xe8, 0x00, 0x00, 0x00, 0x00, 0x85, 0xc0,
+    0x75, 0x03, 0xc2, 0x08, 0x00, 0x8b, 0x48, 0x04, 0x8b, 0x44, 0x24,
+    0x08, 0x89, 0x08, 0xb8, 0x01, 0x00, 0x00, 0x00, 0xc2, 0x08, 0x00};
+inline constexpr size_t kSceneVisibleTWildcards[][2] = {{5u, 9u}};
+inline constexpr auto kSceneVisibleTMask =
+    WildcardMask<sizeof(kSceneVisibleTBytes)>(kSceneVisibleTWildcards);
+inline constexpr size_t kSceneVisibleTFindCall = 4u;
+// Scene::Find(id): the id map at [scene].
+inline constexpr uint8_t kSceneFindTBytes[] = {0x8b, 0x54, 0x24, 0x04, 0x56,
+                                               0x57, 0x8b, 0x39, 0x8b, 0x37};
+// Scene::Draw: list = [scene+4], first = [[list]], layer = [node+8],
+// skipped unless [layer+4] (visible) and [layer+0x10] (sprite).
+inline constexpr uint8_t kSceneDrawTBytes[] = {
+    0x8b, 0x47, 0x04, 0xc7, 0x44, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc7,
+    0x44, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x89, 0x4c, 0x24, 0x00, 0x8b,
+    0x00, 0x8b, 0x30, 0x3b, 0xf0, 0x0f, 0x84, 0x00, 0x00, 0x00, 0x00, 0xeb,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x8b,
+    0x46, 0x08, 0x83, 0x78, 0x04, 0x00, 0x0f, 0x84, 0x00, 0x00, 0x00, 0x00,
+    0x83, 0x78, 0x10, 0x00, 0x0f, 0x84, 0x00, 0x00, 0x00, 0x00};
+inline constexpr size_t kSceneDrawTWildcards[][2] = {
+    {6u, 7u}, {14u, 15u}, {22u, 23u}, {31u, 35u},
+    {36u, 47u}, {56u, 60u}, {66u, 70u}};
+inline constexpr auto kSceneDrawTMask =
+    WildcardMask<sizeof(kSceneDrawTBytes)>(kSceneDrawTWildcards);
+
+// Input::Handle(input, hwnd, msg, wparam, lparam) with an ebp frame.
+inline constexpr uint8_t kInputTBytes[] = {
+    0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf8, 0x81, 0xec, 0x00, 0x00, 0x00, 0x00,
+    0xa1, 0x00, 0x00, 0x00, 0x00, 0x33, 0xc4, 0x89, 0x84, 0x24, 0x00, 0x00,
+    0x00, 0x00, 0x8b, 0x55, 0x10, 0x8b, 0x4d, 0x14, 0x89, 0x4c, 0x24, 0x04,
+    0x53, 0x8b, 0x5d, 0x08, 0x56, 0x8b, 0x75, 0x0c, 0x57, 0x8b, 0x7d, 0x18,
+    0x89, 0x7c, 0x24, 0x14, 0x81, 0xfa, 0x00, 0x02, 0x00, 0x00, 0x0f, 0x87,
+    0x00, 0x00, 0x00, 0x00, 0x0f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x8d, 0x42,
+    0xfa, 0x3d, 0xfc, 0x00, 0x00, 0x00, 0x0f, 0x87, 0x00, 0x00, 0x00, 0x00,
+    0x0f, 0xb6, 0x80, 0x00, 0x00, 0x00, 0x00, 0xff, 0x24, 0x85};
+inline constexpr size_t kInputTWildcards[][2] = {
+    {8u, 12u}, {13u, 17u}, {22u, 26u}, {60u, 64u},
+    {66u, 70u}, {80u, 84u}, {87u, 91u}};
+inline constexpr auto kInputTMask =
+    WildcardMask<sizeof(kInputTBytes)>(kInputTWildcards);
+// It returns with `ret 0x18`: one stack argument more than the first layout's
+// Handle (input, hwnd, msg, wparam, lparam, extra).  The detour must pop the
+// same number of bytes, so the epilogue is part of the proof.
+inline constexpr uint8_t kInputTRetBytes[] = {0xc2, 0x18, 0x00};
+inline constexpr uint32_t kInputStackArgs = 5u;
+inline constexpr uint32_t kInputTStackArgs = 6u;
+
 struct ImportSlots {
   uintptr_t get_glyph_outline = 0u;  // IAT slot RVAs
   uintptr_t set_capture = 0u;
   uintptr_t release_capture = 0u;
   uintptr_t window_from_point = 0u;
   uintptr_t get_foreground_window = 0u;
+};
+
+enum class SiteVariant : uint32_t {
+  kNone = 0u,
+  kAdjacentPage = 1u,    // RenderChar(renderer, record) after ClearPage
+  kTargetedRender = 2u,  // RenderChar(renderer, record, target image)
 };
 
 struct Sites {
@@ -257,6 +447,10 @@ struct Sites {
   uintptr_t input_handler = 0u;
   uintptr_t char_image = 0u;     // proof only
   uintptr_t rasteriser = 0u;
+  SiteVariant variant = SiteVariant::kNone;
+  uint32_t render_stack_args = 0u;  // RenderChar arguments after `this`
+  uint32_t input_stack_args = 0u;   // Input::Handle stdcall arguments
+  SceneWalk walk;
 };
 
 enum class SiteResult : uint32_t {
@@ -273,6 +467,8 @@ enum class SiteResult : uint32_t {
   kSceneInvalid = 10u,
   kInputMissing = 11u,
   kInputImportsInvalid = 12u,
+  kClearInvalid = 13u,
+  kInputFrameInvalid = 14u,
 };
 
 inline bool IsExecutableImageAddress(const exact::LoadedPeImage& image,
@@ -420,22 +616,107 @@ inline bool FindAgreeingCallTarget(const exact::LoadedPeImage& image,
   return true;
 }
 
-// Resolves every site from structure alone.  Any missing or ambiguous proof
-// returns a failure and leaves `sites` zeroed.
-inline SiteResult ResolveSites(const exact::LoadedPeImage& image,
-                               const ImportSlots& imports, Sites* sites) {
-  if (sites == nullptr) return SiteResult::kPageMissing;
-  *sites = {};
-  if (image.machine != IMAGE_FILE_MACHINE_I386 || image.pointer_bits != 32u) {
-    return SiteResult::kNotX86;
+// True when some occurrence of `pattern` in the executable sections carries a
+// rel32 call at `call_offset` to `target`.
+inline bool AnyCallTargets(const exact::LoadedPeImage& image,
+                           const uint8_t* bytes, const uint8_t* mask,
+                           size_t size, size_t call_offset, uintptr_t target) {
+  const exact::MaskedPattern pattern = {bytes, mask, size};
+  for (size_t index = 0u; index < image.section_count; ++index) {
+    const auto* section = &image.sections[index];
+    if (!exact::SectionHasRole(section, IMAGE_SCN_MEM_EXECUTE)) continue;
+    if (section->bytes == nullptr || section->size < size ||
+        !exact::IsReadableSpan(section->bytes, section->size)) {
+      continue;
+    }
+    for (size_t offset = 0u; offset <= section->size - size; ++offset) {
+      if (!exact::MatchesMaskedPattern(section->bytes + offset, pattern)) {
+        continue;
+      }
+      uintptr_t called = 0u;
+      if (exact::DecodeRel32CallTarget(section->bytes + offset + call_offset,
+                                       &called) &&
+          called == target) {
+        return true;
+      }
+    }
   }
-  if (imports.get_glyph_outline == 0u || imports.set_capture == 0u ||
-      imports.release_capture == 0u || imports.window_from_point == 0u ||
-      imports.get_foreground_window == 0u) {
-    return SiteResult::kImportsMissing;
-  }
-  Sites found;
+  return false;
+}
 
+// Mapped address of an absolute (vtable) pointer into an executable section.
+inline bool CodeAddressOf(const exact::LoadedPeImage& image, uint32_t absolute,
+                          uintptr_t* address) {
+  const uintptr_t base = image.absolute_base != 0u
+                             ? image.absolute_base
+                             : reinterpret_cast<uintptr_t>(image.base);
+  if (absolute < base || absolute - base >= image.size) return false;
+  const uintptr_t rva = absolute - base;
+  if (!exact::SectionHasRole(exact::FindSectionForRva(image, rva, 1u),
+                             IMAGE_SCN_MEM_EXECUTE)) {
+    return false;
+  }
+  *address = reinterpret_cast<uintptr_t>(image.base) + rva;
+  return true;
+}
+
+// GetCharImage of the targeted-render layout is only reachable through a
+// vtable.  Scan the read-only data for vtable slot `kCharImageVtableSlot`
+// entries (MSVC layout: the complete-object-locator pointer, which is data,
+// directly before slot 0) whose function starts after int3 padding and
+// passes ProveCharImage.  Exactly one distinct function must qualify.
+inline bool FindVirtualCharImage(const exact::LoadedPeImage& image,
+                                 uintptr_t glyph_slot, uintptr_t* char_image,
+                                 uintptr_t* rasteriser) {
+  static_assert(kCharImageVtableSlot >= 1u, "slot 0 has no code neighbour");
+  constexpr size_t kLead = (kCharImageVtableSlot + 1u) * 4u;
+  uintptr_t found = 0u;
+  uintptr_t found_raster = 0u;
+  for (size_t index = 0u; index < image.section_count; ++index) {
+    const auto* section = &image.sections[index];
+    if (!exact::SectionHasRole(section, IMAGE_SCN_MEM_READ,
+                               IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_WRITE) ||
+        section->bytes == nullptr || section->size < kLead + 4u ||
+        !exact::IsReadableSpan(section->bytes, section->size)) {
+      continue;
+    }
+    for (size_t offset = kLead; offset + 4u <= section->size; offset += 4u) {
+      uint32_t words[kCharImageVtableSlot + 2u] = {};
+      std::memcpy(words, section->bytes + offset - kLead, sizeof(words));
+      uintptr_t target = 0u;
+      uintptr_t ignored = 0u;
+      if (!CodeAddressOf(image, words[kCharImageVtableSlot + 1u], &target) ||
+          CodeAddressOf(image, words[0], &ignored)) {
+        continue;
+      }
+      bool slots_are_code = true;
+      for (size_t slot = 1u; slot <= kCharImageVtableSlot; ++slot) {
+        slots_are_code =
+            slots_are_code && CodeAddressOf(image, words[slot], &ignored);
+      }
+      if (!slots_are_code || target == found) continue;
+      const auto* code = reinterpret_cast<const uint8_t*>(target);
+      uintptr_t raster = 0u;
+      if (!IsExecutableImageAddress(image, target - 1u, 1u) ||
+          code[-1] != 0xccu ||
+          !ProveCharImage(image, target, glyph_slot, &raster)) {
+        continue;
+      }
+      if (found != 0u) return false;  // two candidates: ambiguous
+      found = target;
+      found_raster = raster;
+    }
+  }
+  if (found == 0u) return false;
+  *char_image = found;
+  *rasteriser = found_raster;
+  return true;
+}
+
+// Layout A: ClearPage and RenderChar(renderer, record) back to back.
+inline SiteResult ResolveAdjacentPageSites(const exact::LoadedPeImage& image,
+                                           const ImportSlots& imports,
+                                           Sites* found) {
   // ── ClearPage + RenderChar, record layout, rasteriser chain ──
   const auto page = FindUnique(image, kPageBytes, kPageMask.data(),
                                sizeof(kPageBytes));
@@ -455,10 +736,10 @@ inline SiteResult ResolveSites(const exact::LoadedPeImage& image,
                       &rasteriser)) {
     return SiteResult::kRasteriserInvalid;
   }
-  found.clear_page = reinterpret_cast<uintptr_t>(page.address);
-  found.render_char = reinterpret_cast<uintptr_t>(render);
-  found.char_image = char_image;
-  found.rasteriser = rasteriser;
+  found->clear_page = reinterpret_cast<uintptr_t>(page.address);
+  found->render_char = reinterpret_cast<uintptr_t>(render);
+  found->char_image = char_image;
+  found->rasteriser = rasteriser;
 
   // ── message-window Update → reveal loop → RenderChar; SyncLayer ──
   const auto update = FindUnique(image, kUpdateBytes, kUpdateMask.data(),
@@ -467,7 +748,7 @@ inline SiteResult ResolveSites(const exact::LoadedPeImage& image,
   uintptr_t reveal = 0u;
   if (!exact::DecodeRel32CallTarget(update.address + kUpdateRevealCall,
                                     &reveal) ||
-      !CallsTarget(image, reveal, kRevealScanBytes, found.render_char)) {
+      !CallsTarget(image, reveal, kRevealScanBytes, found->render_char)) {
     return SiteResult::kRevealInvalid;
   }
   uintptr_t sync = 0u;
@@ -478,7 +759,7 @@ inline SiteResult ResolveSites(const exact::LoadedPeImage& image,
                      kSyncScreenBytes, sizeof(kSyncScreenBytes))) {
     return SiteResult::kSyncInvalid;
   }
-  found.window_update = reinterpret_cast<uintptr_t>(update.address);
+  found->window_update = reinterpret_cast<uintptr_t>(update.address);
 
   // ── layer id / screen → scene list layout ──
   uintptr_t screen_query = 0u;
@@ -525,9 +806,160 @@ inline SiteResult ResolveSites(const exact::LoadedPeImage& image,
                    imports.window_from_point)) {
     return SiteResult::kInputImportsInvalid;
   }
-  found.input_handler = handler;
-  *sites = found;
+  found->input_handler = handler;
+  found->variant = SiteVariant::kAdjacentPage;
+  found->render_stack_args = 1u;
+  found->input_stack_args = kInputStackArgs;
+  found->walk = kAdjacentPageWalk;
   return SiteResult::kResolved;
+}
+
+// Layout B: RenderChar(renderer, record, target), GetCharImage via vtable,
+// ClearPage proven by its body and its message-window caller.
+inline SiteResult ResolveTargetedRenderSites(
+    const exact::LoadedPeImage& image, const ImportSlots& imports,
+    Sites* found) {
+  // ── RenderChar, record layout, rasteriser chain ──
+  const auto render = FindUnique(image, kRenderTBytes, kRenderTMask.data(),
+                                 sizeof(kRenderTBytes));
+  if (render.count != 1u) return SiteResult::kPageMissing;
+  const uint8_t* entry = render.address;
+  if (!MatchesAt(entry + kRecordPenTOffset, kRecordPenTBytes, nullptr,
+                 sizeof(kRecordPenTBytes)) ||
+      !MatchesAt(entry + kRecordCharTOffset, kRecordCharTBytes,
+                 kRecordCharTMask.data(), sizeof(kRecordCharTBytes)) ||
+      !MatchesAt(entry + kRenderTailTOffset, kRenderTailTBytes, nullptr,
+                 sizeof(kRenderTailTBytes))) {
+    return SiteResult::kRecordInvalid;
+  }
+  uintptr_t char_image = 0u;
+  uintptr_t rasteriser = 0u;
+  if (!FindVirtualCharImage(image, imports.get_glyph_outline, &char_image,
+                            &rasteriser)) {
+    return SiteResult::kRasteriserInvalid;
+  }
+  found->render_char = reinterpret_cast<uintptr_t>(entry);
+  found->char_image = char_image;
+  found->rasteriser = rasteriser;
+
+  // ── ClearPage: both page images through one fill; called via +0x2ac ──
+  const auto clear = FindUnique(image, kClearTBytes, kClearTMask.data(),
+                                sizeof(kClearTBytes));
+  if (clear.count != 1u) return SiteResult::kClearInvalid;
+  uintptr_t normal_fill = 0u;
+  uintptr_t fade_fill = 0u;
+  const uintptr_t clear_page = reinterpret_cast<uintptr_t>(clear.address);
+  if (!exact::DecodeRel32CallTarget(clear.address + kClearTNormalFillCall,
+                                    &normal_fill) ||
+      !exact::DecodeRel32CallTarget(clear.address + kClearTFadeFillCall,
+                                    &fade_fill) ||
+      normal_fill != fade_fill ||
+      !IsExecutableImageAddress(image, normal_fill, 1u) ||
+      !AnyCallTargets(image, kClearCallTBytes, kClearCallTMask.data(),
+                      sizeof(kClearCallTBytes), kClearCallTCall,
+                      clear_page)) {
+    return SiteResult::kClearInvalid;
+  }
+  found->clear_page = clear_page;
+
+  // ── message-window Update → reveal loop → RenderChar; SyncLayer ──
+  const auto update = FindUnique(image, kUpdateTBytes, kUpdateTMask.data(),
+                                 sizeof(kUpdateTBytes));
+  if (update.count != 1u) return SiteResult::kUpdateMissing;
+  uintptr_t reveal = 0u;
+  if (!exact::DecodeRel32CallTarget(update.address + kUpdateTRevealCall,
+                                    &reveal) ||
+      !CallsTarget(image, reveal, kRevealScanBytes, found->render_char)) {
+    return SiteResult::kRevealInvalid;
+  }
+  uintptr_t sync = 0u;
+  if (!exact::DecodeRel32CallTarget(update.address + kUpdateTSyncCall,
+                                    &sync) ||
+      !IsExecutableImageAddress(image, sync, kSyncScanBytes) ||
+      !ContainsBytes(reinterpret_cast<const uint8_t*>(sync), kSyncScanBytes,
+                     kSyncScreenTBytes, sizeof(kSyncScreenTBytes))) {
+    return SiteResult::kSyncInvalid;
+  }
+  found->window_update = reinterpret_cast<uintptr_t>(update.address);
+
+  // ── layer id / screen → scene (layer by pointer) ──
+  uintptr_t screen_query = 0u;
+  if (!FindAgreeingCallTarget(image, kLayerQueryTBytes,
+                              kLayerQueryTMask.data(),
+                              sizeof(kLayerQueryTBytes), kLayerQueryTCall,
+                              kMaxLayerQueryCopies, &screen_query)) {
+    return SiteResult::kLayerQueryMissing;
+  }
+  uintptr_t scene_visible = 0u;
+  uintptr_t scene_find = 0u;
+  if (!MatchesAt(reinterpret_cast<const uint8_t*>(screen_query),
+                 kScreenQueryTBytes, kScreenQueryTMask.data(),
+                 sizeof(kScreenQueryTBytes)) ||
+      !exact::DecodeRel32CallTarget(
+          reinterpret_cast<const uint8_t*>(screen_query) +
+              kScreenQueryTSceneCall,
+          &scene_visible) ||
+      !MatchesAt(reinterpret_cast<const uint8_t*>(scene_visible),
+                 kSceneVisibleTBytes, kSceneVisibleTMask.data(),
+                 sizeof(kSceneVisibleTBytes)) ||
+      !exact::DecodeRel32CallTarget(
+          reinterpret_cast<const uint8_t*>(scene_visible) +
+              kSceneVisibleTFindCall,
+          &scene_find) ||
+      !MatchesAt(reinterpret_cast<const uint8_t*>(scene_find),
+                 kSceneFindTBytes, nullptr, sizeof(kSceneFindTBytes)) ||
+      FindUnique(image, kSceneDrawTBytes, kSceneDrawTMask.data(),
+                 sizeof(kSceneDrawTBytes))
+              .count != 1u) {
+    return SiteResult::kSceneInvalid;
+  }
+
+  // ── input handler ──
+  const auto input = FindUnique(image, kInputTBytes, kInputTMask.data(),
+                                sizeof(kInputTBytes));
+  if (input.count != 1u) return SiteResult::kInputMissing;
+  const uintptr_t handler = reinterpret_cast<uintptr_t>(input.address);
+  if (!CallsImport(image, handler, kInputScanBytes, imports.set_capture) ||
+      !CallsImport(image, handler, kInputScanBytes, imports.release_capture) ||
+      !CallsImport(image, handler, kInputScanBytes,
+                   imports.window_from_point)) {
+    return SiteResult::kInputImportsInvalid;
+  }
+  if (!ContainsBytes(input.address, kInputScanBytes, kInputTRetBytes,
+                     sizeof(kInputTRetBytes))) {
+    return SiteResult::kInputFrameInvalid;
+  }
+  found->input_handler = handler;
+  found->input_stack_args = kInputTStackArgs;
+  found->variant = SiteVariant::kTargetedRender;
+  found->render_stack_args = kRenderTStackArgs;
+  found->walk = kTargetedRenderWalk;
+  return SiteResult::kResolved;
+}
+
+// Resolves every site from structure alone.  The layout is chosen by which
+// RenderChar signature exists; any missing or ambiguous proof returns a
+// failure and leaves `sites` zeroed.
+inline SiteResult ResolveSites(const exact::LoadedPeImage& image,
+                               const ImportSlots& imports, Sites* sites) {
+  if (sites == nullptr) return SiteResult::kPageMissing;
+  *sites = {};
+  if (image.machine != IMAGE_FILE_MACHINE_I386 || image.pointer_bits != 32u) {
+    return SiteResult::kNotX86;
+  }
+  if (imports.get_glyph_outline == 0u || imports.set_capture == 0u ||
+      imports.release_capture == 0u || imports.window_from_point == 0u ||
+      imports.get_foreground_window == 0u) {
+    return SiteResult::kImportsMissing;
+  }
+  Sites found;
+  SiteResult result = ResolveAdjacentPageSites(image, imports, &found);
+  if (result == SiteResult::kPageMissing) {
+    found = {};
+    result = ResolveTargetedRenderSites(image, imports, &found);
+  }
+  if (result == SiteResult::kResolved) *sites = found;
+  return result;
 }
 
 // ── import slots (x86 import directory) ────────────────────────────────────
@@ -656,9 +1088,21 @@ struct IntRect {
   }
 };
 
+// Targeted-render RenderChar draws into one of the renderer's two page
+// images; any other target is not this renderer's text page.
+inline bool IsRendererPage(uintptr_t target, uintptr_t page,
+                           uintptr_t work_page) {
+  return target != 0u && (target == page || target == work_page);
+}
+
 inline IntRect Intersect(const IntRect& a, const IntRect& b) {
   return {(std::max)(a.x0, b.x0), (std::max)(a.y0, b.y0),
           (std::min)(a.x1, b.x1), (std::min)(a.y1, b.y1)};
+}
+
+inline bool Contains(const IntRect& outer, const IntRect& inner) {
+  return !inner.Empty() && outer.x0 <= inner.x0 && outer.y0 <= inner.y0 &&
+         inner.x1 <= outer.x1 && inner.y1 <= outer.y1;
 }
 
 // ── scene layers ───────────────────────────────────────────────────────────
@@ -969,13 +1413,18 @@ struct LineGlyph {
   int32_t y = 0;
   int32_t w = 0;
   int32_t h = 0;
+  IntRect hit;  // clickable part of the cell (design pixels; may be empty)
   uint16_t source_index = kNoSource;
   uint8_t source_length = 0u;
 };
 
 // Glyphs of one bound, visibly placed surface in render order, each cell
 // trimmed to the pen advance of its right neighbour on the same row.  A
-// glyph under any cover is left out (the covered text is not on screen).
+// glyph entirely under a cover is left out (that text is not on screen).  A
+// partly covered glyph keeps its whole cell clickable: a cover's box is only
+// an upper bound of its opaque pixels (the message window's own menu bar box
+// reaches over the transparent strip above it and the lower text row), while
+// real occluders such as menus and the backlog cover the text completely.
 inline size_t CollectVisibleGlyphs(const SurfaceRecord& slot, LineGlyph* out,
                                    size_t capacity) {
   const Placement& placement = slot.placement;
@@ -996,17 +1445,18 @@ inline size_t CollectVisibleGlyphs(const SurfaceRecord& slot, LineGlyph* out,
     const IntRect cell = {placement.x + glyph.x, placement.y + glyph.y,
                           placement.x + glyph.x + w,
                           placement.y + glyph.y + glyph.h};
-    bool covered = false;
-    for (uint32_t c = 0u; c < placement.cover_count && !covered; ++c) {
-      covered = placement.covers[c].Intersects(cell);
+    bool hidden = false;
+    for (uint32_t c = 0u; c < placement.cover_count && !hidden; ++c) {
+      hidden = Contains(placement.covers[c], cell);
     }
-    if (covered) continue;
+    if (hidden) continue;
     LineGlyph& line = out[count++];
     line.codepoint = glyph.codepoint;
     line.x = cell.x0;
     line.y = cell.y0;
     line.w = w;
     line.h = glyph.h;
+    line.hit = cell;
     line.source_index = kNoSource;
     line.source_length = 0u;
   }
@@ -1059,6 +1509,28 @@ inline size_t MapSelectedSuffix(LineGlyph* glyphs, size_t count,
   }
   if (!any) return fail();
   return glyph;
+}
+
+// The 2016 engine's text thread reports a spoken line as `「body」【speaker】`;
+// the speaker is drawn on the separate name layer, never on the text page.
+// Returns the index where that trailing speaker tag starts (trailing
+// whitespace allowed), or `count` when the line has none: a non-empty name
+// without brackets, after a non-empty body.
+inline size_t SpeakerTagStart(const wchar_t* line, size_t count) {
+  if (line == nullptr) return count;
+  size_t end = count;
+  while (end > 0u && IsLookupLineWhitespace(line[end - 1u])) --end;
+  if (end < 3u || line[end - 1u] != L'】') return count;
+  // The name is [open, end - 1); the tag starts at open - 1.
+  size_t open = end - 1u;
+  while (open > 0u && line[open - 1u] != L'【') {
+    if (line[open - 1u] == L'】') return count;
+    --open;
+  }
+  if (open == 0u || open >= end - 1u) return count;
+  size_t body = open - 1u;
+  while (body > 0u && IsLookupLineWhitespace(line[body - 1u])) --body;
+  return body == 0u ? count : open - 1u;
 }
 
 // ── projection and hit testing ─────────────────────────────────────────────
@@ -1124,8 +1596,8 @@ inline bool ClientToDesign(int32_t x, int32_t y, int32_t client_w,
   return true;
 }
 
-// The single mapped glyph whose design cell contains (x, y); none or more
-// than one is a miss.
+// The single mapped glyph whose clickable rectangle contains (x, y); none or
+// more than one is a miss.
 inline bool HitTestLine(const LineGlyph* glyphs, size_t count, int32_t x,
                         int32_t y, size_t* hit) {
   if (glyphs == nullptr || hit == nullptr) return false;
@@ -1133,8 +1605,8 @@ inline bool HitTestLine(const LineGlyph* glyphs, size_t count, int32_t x,
   for (size_t index = 0u; index < count; ++index) {
     const LineGlyph& glyph = glyphs[index];
     if (glyph.source_index == kNoSource) continue;
-    if (x < glyph.x || y < glyph.y || x >= glyph.x + glyph.w ||
-        y >= glyph.y + glyph.h) {
+    if (glyph.hit.Empty() || x < glyph.hit.x0 || y < glyph.hit.y0 ||
+        x >= glyph.hit.x1 || y >= glyph.hit.y1) {
       continue;
     }
     if (found != count) return false;

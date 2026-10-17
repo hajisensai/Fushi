@@ -16,7 +16,9 @@ import 'package:path/path.dart' as p;
 /// 注意：U+00B7 MIDDLE DOT(·) 和 U+00B1 PLUS-MINUS(±) 是合法符号，
 /// 但它们不是字母/变音符，不落入下列任一区间，无需单独 allowlist。
 bool _isMojibakeChar(int codeUnit) {
-  // Latin-1 Supplement 字母段（À-ÖØ-öø-ÿ）。
+  // Latin-1 Supplement 字母段（À-ÖØ-öø-ÿ）：跳过其中的乘号 × (U+00D7) 与
+  // 除号 ÷ (U+00F7)——它们是合法数学符号（如「$width × $height」），不是字母。
+  if (codeUnit == 0x00D7 || codeUnit == 0x00F7) return false;
   if (codeUnit >= 0x00C0 && codeUnit <= 0x00FF) return true;
   // Latin Extended-A / Latin Extended-B。
   if (codeUnit >= 0x0100 && codeUnit <= 0x024F) return true;

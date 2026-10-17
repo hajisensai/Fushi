@@ -140,6 +140,7 @@ const List<String> _kVideoStreamSuffixes = <String>[
   '/stream',
   '/hls.m3u8',
   '/$kTranscodeSegmentPathSuffix',
+  '/$kBlurayClipPathSuffix',
 ];
 
 bool _isLookupAudioFilePath(String urlPath) =>

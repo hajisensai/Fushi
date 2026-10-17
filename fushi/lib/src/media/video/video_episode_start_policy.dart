@@ -28,14 +28,21 @@ int resolveEpisodeStart(
     case EpisodeStartIntent.initialOpen:
     case EpisodeStartIntent.manualNext:
     case EpisodeStartIntent.listSelect:
-      if (_isNearEnd(savedMs: savedMs, durationMs: durationMs)) {
+      if (isEpisodePositionNearEnd(savedMs: savedMs, durationMs: durationMs)) {
         return 0;
       }
       return savedMs;
   }
 }
 
-bool _isNearEnd({required int savedMs, required int? durationMs}) {
+/// 断点是否已到片尾区（≥ [kEpisodeStartNearEndProgress] 或只剩
+/// [kEpisodeStartNearEndRemainingMs]）：打开时从头放、合集续播视作「这一集已经
+/// 看完了」的同一个判据（BUG-3491：续播三层的「选条目」与「定起点」共用它，
+/// 不能一层说「停在这集」另一层却从头放）。时长未知 / 断点为 0 → false。
+bool isEpisodePositionNearEnd({
+  required int savedMs,
+  required int? durationMs,
+}) {
   if (savedMs <= 0 || durationMs == null || durationMs <= 0) {
     return false;
   }

@@ -1,10 +1,12 @@
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show TableUpdateQuery, Value;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/profile/profile_document.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kProfileFallbackIdPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/language_binding.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
@@ -39,6 +41,16 @@ class ProfileRepository {
 
   Future<List<ProfileRow>> getAllProfiles() => _db.getAllProfiles();
 
+  /// BUG-3148：`profiles` 表的任何写入（新建 / 改名 / 删除 / 导入）都会在这里冒一个
+  /// 事件，不论写入方是谁。
+  ///
+  /// 配置列表的视图模型是常驻的（非 autoDispose），以前只在自己发起的操作之后重读；
+  /// 互联「下载配置」与对端「上传配置」入站这两条写入绕过了它，列表就一直停在旧值，
+  /// 杀后台重进才看得到新配置。表级变更流是 drift 自带的唯一真相，比在每个写入点
+  /// 记得通知一遍可靠。
+  Stream<void> watchProfilesChanged() =>
+      _db.tableUpdates(TableUpdateQuery.onTable(_db.profiles)).map((_) {});
+
   Future<ProfileRow?> getProfileById(int id) => _db.getProfileById(id);
 
   Future<int> getActiveProfileId() async {
@@ -48,6 +60,17 @@ class ProfileRepository {
 
   Future<void> setActiveProfileId(int id) =>
       _db.setPref('active_profile_id', id.toString());
+
+  /// 「绑定切换前」用户自己选的那份配置（见 [kProfileFallbackIdPrefKey]）。
+  /// null = 当前激活配置就是用户自己选的，没有处于「绑定临时生效」状态。
+  Future<int?> getFallbackProfileId() async {
+    final raw = await _db.getPref(kProfileFallbackIdPrefKey);
+    return raw == null ? null : int.tryParse(raw);
+  }
+
+  Future<void> setFallbackProfileId(int? id) => id == null
+      ? _db.deletePref(kProfileFallbackIdPrefKey)
+      : _db.setPref(kProfileFallbackIdPrefKey, id.toString());
 
   Future<int> createProfile(String name) async {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -358,6 +381,21 @@ class ProfileRepository {
     required String? bookUid,
     String? languageTag,
     required ProfileMediaKind? mediaType,
+  }) async =>
+      (await resolveBoundProfileId(
+        bookUid: bookUid,
+        languageTag: languageTag,
+        mediaType: mediaType,
+      )) ??
+      await getActiveProfileId();
+
+  /// [resolveProfileId] 的前三级：只返回**绑定命中**的 Profile，没命中返回 null
+  /// （不回落到激活配置）。调用方需要区分「绑定指定了它」与「没有绑定」——后者应当
+  /// 回到用户自己选的配置，而不是停在上一本书的绑定配置上。
+  Future<int?> resolveBoundProfileId({
+    required String? bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
   }) async {
     if (bookUid != null) {
       final bookProfileId = await getBookProfileId(bookUid);
@@ -375,7 +413,7 @@ class ProfileRepository {
       if (mtRow != null) return mtRow.profileId;
     }
 
-    return getActiveProfileId();
+    return null;
   }
 
   // ── 导出 / 导入（单 Profile JSON 序列化）────────────────────────────
@@ -479,6 +517,8 @@ class ProfileRepository {
     dbSourcePrefKey(kReaderSourcePersistedKey, 'dict_fonts'),
     dbSourcePrefKey(kReaderSourcePersistedKey, 'video_sub_fonts'),
     dbSourcePrefKey(kReaderSourcePersistedKey, 'game_lookup_fonts'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'floating_lyric_fonts'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'srs_card_fonts'),
   ];
 
   /// 解析并校验一个导出 JSON 字符串。坏文件 / 魔数不符 / 版本不兼容 / 结构非法

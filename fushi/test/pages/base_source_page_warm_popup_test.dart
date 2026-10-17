@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -31,6 +31,9 @@ class WarmPopupTestAppModel extends AppModel {
 
   @override
   double get popupMaxWidth => 360;
+
+  @override
+  double get dictionaryFontSize => 16;
 
   @override
   double get popupMaxHeight => 360;
@@ -216,7 +219,9 @@ void main() {
         isTrue,
         reason:
             'keepWebViewWarm must keep the WebView mounted regardless of result');
-    expect(layer.contains('else if (isRealEmptyResult)'), isTrue,
+    // 加载盖板（FushiDeferredLoading）常驻在树里，真实空结果的盖板是它之后的
+    // 独立 if（两者不会同时成立：isRealEmptyResult 要求查询已结束）。
+    expect(layer.contains('if (isRealEmptyResult)'), isTrue,
         reason:
             'a real empty lookup on the warm slot must be covered, not unmounted');
   });

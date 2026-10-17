@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -12,9 +12,11 @@ import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sy
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 全屏字幕工作台：作用域开关只在「本集 + 合集」都有时出现；默认落本集；切换换面板。
 class _Host implements SubtitleWorkbenchHost {
@@ -23,7 +25,7 @@ class _Host implements SubtitleWorkbenchHost {
   @override
   final FushiDatabase database;
   @override
-  VideoSubtitleRegistry? get subtitleRegistry =>
+  Future<VideoSubtitleRegistry?> subtitleRegistry() async =>
       VideoSubtitleRegistry(const <VideoSubtitleProvider>[]);
   @override
   String get jimakuApiKey => '';
@@ -190,12 +192,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(tester.widget<AppBar>(find.byType(AppBar)).bottom, isNull);
+    expect(
+      tester.widget<FushiPageHeader>(find.byType(FushiPageHeader)).bottom,
+      isNull,
+    );
     // 同行判据是**垂直中心重合**：挂在 bottom 上时两者也都在 AppBar 里，但差着
     // 整整一行（56px），标题行右半边全空。
     final Rect title = tester.getRect(
       find.descendant(
-        of: find.byType(AppBar),
+        of: find.byType(FushiPageHeader),
         matching: find.text(t.video_subtitle_workbench_title),
       ),
     );
@@ -244,13 +249,13 @@ void main() {
       expect(tester.takeException(), isNull, reason: '窄屏 AppBar 溢出（$locale）');
 
       // ② 开关和标题都还在同一行里，且开关没吃掉整条 AppBar。
-      final Rect appBar = tester.getRect(find.byType(AppBar));
+      final Rect appBar = tester.getRect(find.byType(FushiPageHeader));
       final Rect scope = tester.getRect(
         find.byKey(const ValueKey<String>('subtitle-workbench-scope')),
       );
       expect(scope.right, lessThanOrEqualTo(appBar.right));
       final Finder titleFinder = find.descendant(
-        of: find.byType(AppBar),
+        of: find.byType(FushiPageHeader),
         matching: find.text(t.video_subtitle_workbench_title),
       );
       final Rect title = tester.getRect(titleFinder);
@@ -308,7 +313,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     // 番名与集数分别落在两个框里：番名不该再是分集标题（`Episode 7`）。
-    expect(tester.widget<TextField>(episodeField()).controller?.text, '7');
+    expect(tester.widget<TextField>(glassUnwrap<TextField>(episodeField())).controller?.text, '7');
     expect(
       find.ancestor(
         of: find.text(t.video_jimaku_query),
@@ -329,6 +334,6 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(episodeField()).controller?.text, '');
+    expect(tester.widget<TextField>(glassUnwrap<TextField>(episodeField())).controller?.text, '');
   });
 }

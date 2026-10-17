@@ -174,7 +174,7 @@ flutter windows 构建也不便注入 vcpkg 工具链文件。故：
    流程各自现产或从 release 拉取）。
 2. **随包**：`fushi/windows/CMakeLists.txt` 在 fushidicts 之后加了
    **copy-if-present** 块——`prebuilt/windows-x64/*.dll` 存在则 `install` 到
-   `hibiki.exe` 旁，不存在则跳过。因此 `flutter build windows` **不依赖
+   `fushi.exe` 旁，不存在则跳过。因此 `flutter build windows` **不依赖
    vcpkg/libtorrent**：没跑过产出脚本的机器照常构建，只是 app 运行期
    `EmbeddedTorrentHost.open` 因 DLL 缺失返回 null → 自动回退外接 qb。
 3. **加载**：`EmbeddedTorrentEngine._openByPlatformDefault` 用
@@ -218,7 +218,7 @@ connections_limit, limit_local_peers)`：`limit_local_peers` 非 0 时把同一�
   global class 里），所以开启后是"局域网这一路也被限到同样的数值"，不是"广域网
   + 局域网合起来不超过这个数值"。
 - **符号可能不存在**：随包 DLL 是 vendored 预编译产物，Dart 侧
-  `HibikiTorrentBindings.hasApplyLimitsEx` 会先探符号，缺失时降级走
+  `FushiTorrentBindings.hasApplyLimitsEx` 会先探符号，缺失时降级走
   `ht_apply_limits` 并让 `applyLimits(limitLocalPeers: true)` 返回 false，
   绝不崩。CI 的 windows job 每次都用 vcpkg 现编 DLL，故发布产物总是有该符号。
 
@@ -248,8 +248,7 @@ android triplet 默认**静态链接**，libtorrent/boost/openssl 全部链进�
    钉 API 28，boost.asio 会引用 API 28 才进 libc 的 `aligned_alloc`，bridge 按
    android-24 链接直接 undefined symbol——依赖与 bridge 必须同一 API level，
    overlay 统一钉 24），cmake 用 vcpkg 工具链 chainload NDK 工具链
-   （`ANDROID_PLATFORM=android-24` 对齐 minSdk，`ANDROID_STL=c++_shared` 对齐
-   app 内 fushidicts，16KB page 对齐见 CMakeLists），产物 strip 后落
+   （`ANDROID_PLATFORM=android-24` 对齐 minSdk，`ANDROID_STL=c++_static` 把 libc++ 私有链入——BUG-3284：不依赖 APK 里由 pickFirst 挑中的那份 libc++_shared，产物须过 `.github/scripts/verify_android_cxx_self_contained.sh`，16KB page 对齐见 CMakeLists），产物 strip 后落
    `prebuilt/android/<abi>/`。已在 Android 模拟器（API 34 x86_64）实测：
    `fushi/integration_test/embedded_torrent_engine_smoke_test.dart` 两用例全过
    （加载 + 版本串 + session + make_torrent）。
@@ -293,16 +292,17 @@ Android 同一决策——**vcpkg manifest 静态链**：
    （所有者 2026-09-30 拍板）。
 3. **缓存**：与 Android job 同款双层 vcpkg 缓存，key 带 runner ImageVersion。
 
-## 阶段7 — macOS universal 静态 dylib 随桌面包（BUG-2865）
+## 阶段7 — macOS 静态 dylib 随桌面包（BUG-2865；2026-10 起只出 arm64）
 
 在此之前 macOS 从没编过这个库：app 早把 macOS 算作支持内置引擎的平台
 （`AppModel._supportsEmbeddedTorrent`），`EmbeddedTorrentEngine.open` 找不到库后内置
 引擎判不可用，用户只能退到外接 qBittorrent。与 Android / Linux 同一决策——**vcpkg
 manifest 静态链**：
 
-1. **产出**：`build_macos_dylib.sh <vcpkg-root> [arm64|x86_64 ...]`，overlay triplet
-   `vcpkg-triplets/{arm64,x64}-osx-fushi.cmake`（= vcpkg 自带 osx triplet + 部署目标钉
-   13.4，与 Runner 的 `MACOSX_DEPLOYMENT_TARGET` 对齐），两片 lipo 成 universal，
+1. **产出**：`build_macos_dylib.sh <vcpkg-root>`，overlay triplet
+   `vcpkg-triplets/arm64-osx-fushi.cmake`（= vcpkg 自带 osx triplet + 部署目标钉
+   13.4，与 Runner 的 `MACOSX_DEPLOYMENT_TARGET` 对齐）。macOS 版只出 Apple Silicon
+   （arm64），不再支持 Intel Mac，x86_64 切片与 `x64-osx-fushi` triplet 已删除。
    install name `@rpath/libfushi_torrent_ffi.dylib`。CMakeLists 的 Apple 分支只导出
    `_ht_*`（`-exported_symbol`）并 `-dead_strip`，静态进来的 libtorrent/boost/openssl
    符号不外露。产物 `prebuilt/macos/libfushi_torrent_ffi.dylib`，脚本自检 `otool -L`
@@ -315,8 +315,8 @@ manifest 静态链**：
 3. **CI**：`build-multiplatform.yml` macos job（PR）与 `release-desktop.yml` macos job
    （develop push / 发布）跑同一脚本，持久库同名
    （`.github/actions/native-store-names/names.sh` 的 `torrent`），出包后核对 Frameworks
-   里确有此库、universal 两片、无非系统依赖、C ABI 符号齐全；PR 门再拿包里那份跑
-   `packages/fushi_torrent` 的真 FFI 测试。冷编两个架构约几十分钟，命中持久库后跳过。
+   里确有此库、架构与 app 本体一致（arm64）、无非系统依赖、C ABI 符号齐全；PR 门再拿包里那份跑
+   `packages/fushi_torrent` 的真 FFI 测试。冷编约几十分钟，命中持久库后跳过。
 
 ## 尚未做（多平台 + 真机）
 - http(s) .torrent URL 下载（内置引擎侧 magnet-only；Nyaa 链路产 magnet）。

@@ -40,16 +40,13 @@ void main() {
     // video_fushi/side_panel.part.dart，改读合并语料才能命中这些 marker；
     // _showPlayerSettings / _buildVideoQuickSettingsSheet 仍在主壳（合并语料含主壳）。
     final String source = readVideoFushiSource();
-    final String showMethod = _member(
-      source,
-      'void _showPlayerSettings(',
-    );
+    final String showMethod = _member(source, 'void _showPlayerSettings(');
     // 阶段B：~60 个 initial*/on* 构造参数收敛为单个 VideoQuickSettingsHost 能力槽；
     // 页面接线断言从 _buildVideoQuickSettingsSheet 移到紧随其后的
     // _buildVideoQuickSettingsHost（回调/getter 都在 host 构造里）。
     final String buildMethod = _between(
       source,
-      'Widget _buildVideoQuickSettingsSheet() {',
+      'Widget _buildVideoQuickSettingsSheet({',
       'VideoQuickSettingsHost _buildVideoQuickSettingsHost() {',
     );
     final String hostMethod = _between(
@@ -69,11 +66,25 @@ void main() {
     expect(source, contains('VideoTranslucentSidePanel('));
     expect(panelChildMethod, contains('case _VideoSidePanelKind.settings:'));
     expect(
-        panelChildMethod, contains('return _buildVideoQuickSettingsSheet()'));
+      panelChildMethod,
+      contains('return _buildVideoQuickSettingsSheet()'),
+    );
     expect(buildMethod, contains('VideoQuickSettingsSheet('));
-    expect(buildMethod, contains('host: _buildVideoQuickSettingsHost()'),
-        reason: '面板经类型化 host 能力槽拿页面回调（阶段B）');
-    expect(buildMethod, contains('initialCategory: _settingsInitialCategory'));
+    expect(
+      buildMethod,
+      contains('host: _buildVideoQuickSettingsHost()'),
+      reason: '面板经类型化 host 能力槽拿页面回调（阶段B）',
+    );
+    // 设置面板按 _settingsInitialCategory 定位；单分组面板（字幕 / 音频）恒开在
+    // 自己的分组（字幕面板挂载即触发字幕源加载）。
+    expect(buildMethod, contains(': _settingsInitialCategory'));
+    expect(buildMethod, contains('groups.single.name'));
+    expect(buildMethod, contains('groups: groups'));
+    // 字幕 / 音频是独立面板：各自只投影一个分组。
+    expect(panelChildMethod, contains('case _VideoSidePanelKind.subtitle:'));
+    expect(panelChildMethod, contains('settings_dest.VideoGroup.subtitle'));
+    expect(panelChildMethod, contains('case _VideoSidePanelKind.audio:'));
+    expect(panelChildMethod, contains('settings_dest.VideoGroup.audio'));
 
     // 着色器/mpv 配置仍面板内嵌（不弹独立对话框）：页面回调经 host 接线，
     // 初值改由 schema/actions 层直接读 pref（initial* 参数已删）。
@@ -87,8 +98,11 @@ void main() {
     expect(hostMethod, contains('delayMs: () => _delayMs'));
 
     // 旧 bespoke 深色单列面板已移除（防回归）。
-    expect(showMethod, isNot(contains('showModalBottomSheet')),
-        reason: '播放设置不再走 bespoke bottom sheet');
+    expect(
+      showMethod,
+      isNot(contains('showModalBottomSheet')),
+      reason: '播放设置不再走 bespoke bottom sheet',
+    );
     for (final String region in <String>[buildMethod, hostMethod]) {
       expect(region, isNot(contains('Colors.black87')));
       expect(region, isNot(contains('StatefulBuilder')));
@@ -96,90 +110,125 @@ void main() {
     }
 
     // 着色器/mpv 不再弹独立对话框（防回归到旧的 pop 面板 + 二级对话框）。
-    expect(source, isNot(contains('_openShaderDialog')),
-        reason: '着色器改为面板内嵌，不再有独立对话框方法');
-    expect(source, isNot(contains('_openMpvConfigDialog')),
-        reason: 'mpv 配置改为面板内嵌，不再有独立对话框方法');
-    expect(source, isNot(contains('VideoShaderDialog(')),
-        reason: '着色器改用内嵌 VideoShaderManagerView');
+    expect(
+      source,
+      isNot(contains('_openShaderDialog')),
+      reason: '着色器改为面板内嵌，不再有独立对话框方法',
+    );
+    expect(
+      source,
+      isNot(contains('_openMpvConfigDialog')),
+      reason: 'mpv 配置改为面板内嵌，不再有独立对话框方法',
+    );
+    expect(
+      source,
+      isNot(contains('VideoShaderDialog(')),
+      reason: '着色器改用内嵌 VideoShaderManagerView',
+    );
   });
 
-  test(
-      'VideoQuickSettingsSheet stacks top category chips over the detail '
-      '(TODO-556 video-only top bar)', () {
-    final String source =
-        File('lib/src/media/video/video_quick_settings_sheet.dart')
-            .readAsStringSync();
+  test('VideoQuickSettingsSheet is shared section tabs over the detail '
+      '(2026-10 redesign aligned with the reader settings panel)', () {
+    final String source = File(
+      'lib/src/media/video/video_quick_settings_sheet.dart',
+    ).readAsStringSync();
 
     expect(source, contains('class VideoQuickSettingsSheet'));
-    // 与阅读器同源的「不套外层滚动 + 宽窗撑满有界高度」范式（BUG-096）：外壳骨架
-    // （PopScope + FushiModalSheetFrame + scrollable:false + 几何判据）已抽到共享
-    // FushiMasterDetailSettingsSheet（TODO-583），由 master_detail_settings_sheet_test
-    // 守它。这里只锁视频走共享外壳，且宽窗撑满有界高度的 height:constraints.maxHeight
-    // 仍在视频自己的 wideBuilder 回调里。
-    expect(source, contains('FushiMasterDetailSettingsSheet('));
-    expect(source, contains('height: constraints.maxHeight'));
-
-    // TODO-427-③：宽窗从左右 master-detail（窄左栏 + 右详情）改成顶部横向分类 chip 行 +
-    // 下方详情上下分栏，根治窄侧栏左右劈半把右详情挤窄、下拉抢宽裁标题。
-    // 旧的左右分栏符号必须删除（防回退）。
-    expect(source, isNot(contains('MaterialSupportingPaneLayout(')),
-        reason:
-            'video settings wide layout must not regress to left master-detail');
-    expect(source, isNot(contains('_videoSupportingPaneWidth')),
-        reason:
-            'video-specific supporting width constants should stay removed');
-    expect(source, isNot(contains('_buildWidePane')),
-        reason: 'old left-pane builder _buildWidePane must be removed');
-    expect(source, isNot(contains('SupportingPaneSide.start')),
-        reason: 'video settings must not use a supporting (left) pane anymore');
-    expect(source, isNot(contains('_videoSettingsSupportingPaneReadableWidth')),
-        reason: 'left supporting-pane width constants must stay removed');
-    expect(source, isNot(contains('_videoSettingsSupportingPaneWidth(')),
-        reason: 'left supporting-pane width helper must stay removed');
-    expect(source, isNot(contains('232,')),
-        reason: 'video settings must not regress to the fixed 232px pane');
-    expect(source, isNot(contains('FushiListItem(')),
-        reason: 'wide categories must not render as a left list anymore');
-    expect(source, contains('_buildTopCategoryBar('),
-        reason: 'wide categories must render in a top horizontal chip bar');
-    expect(source, contains('FushiSelectableChip('),
-        reason: 'each top-bar category is a selectable chip');
-    // TODO-1351（用户复诉）：顶栏 chip 恢复「图标 + 完整文字」，标签按固有宽度完整
-    // 渲染（allowLabelOverflow，无 ellipsis）；TODO-640 的纯图标 + tooltip 方案废弃。
-    expect(source, contains('allowLabelOverflow: true'),
-        reason: 'top-bar category chips render full labels (TODO-1351)');
-    expect(source, isNot(contains('iconOnly: true')),
-        reason:
-            'icon-only top-bar chips were rejected by the user (TODO-1351)');
-    expect(source, isNot(contains('tooltip: cat.label')),
-        reason: 'labels are inline now, not tooltip-only (TODO-1351)');
-    expect(source, contains('_buildWideDetailTitle('),
-        reason: 'the selected category title renders atop the detail pane');
-    // BUG（用户复诉「弹幕 / 控制 分类被截在视口外、点不到」）：顶栏分类条放不下时必须
-    // 换行堆叠（Wrap），不得回退横向 SingleChildScrollView 裁断——横滑会把末位分类推到
-    // 视口外、无滚动条提示。守卫只扫 _buildTopCategoryBar 方法体，与
-    // video_quick_settings_sheet_test 的同款守卫互为镜像。
-    final String topBarSource = source.substring(
-      source.indexOf('Widget _buildTopCategoryBar('),
-      source.indexOf('Widget _buildWideDetailTitle('),
+    // 2026-10 重设计（对齐阅读器「阅读设置」面板）：顶部分类页签复用共享的
+    // LibrarySectionTabs（与阅读器 / 库页同一个分区导航组件），手机与桌面同一结构；
+    // 不再有「宽窗分栏 / 窄窗 push」两套外壳，也不再有带徽标的大标题页头。
+    expect(
+      source,
+      contains('LibrarySectionTabs<String>.controlled('),
+      reason: 'categories must use the shared section tabs',
     );
-    expect(topBarSource, contains('Wrap('),
-        reason: 'the top category bar wraps so no category chip is clipped');
-    expect(topBarSource, isNot(contains('scrollDirection: Axis.horizontal')),
-        reason:
-            'top category bar must wrap, not horizontally scroll (last chip '
-            'was pushed off-screen and unclickable)');
-    expect(source, contains('padding: widePrimaryPadding'));
+    expect(
+      source,
+      isNot(contains('FushiMasterDetailSettingsSheet(')),
+      reason: 'no more wide/narrow dual shell',
+    );
+    expect(
+      source,
+      isNot(contains('_buildWideDetailTitle(')),
+      reason: 'the big badge title above the detail was removed',
+    );
+    expect(
+      source,
+      isNot(contains('_VideoSettingsCategoryTab')),
+      reason: 'hand-rolled category chips were replaced by the shared tabs',
+    );
+    expect(
+      source,
+      isNot(contains('MaterialSupportingPaneLayout(')),
+      reason:
+          'video settings wide layout must not regress to left master-detail',
+    );
+    expect(
+      source,
+      isNot(contains('_buildWidePane')),
+      reason: 'old left-pane builder _buildWidePane must be removed',
+    );
+    expect(
+      source,
+      isNot(contains('SupportingPaneSide.start')),
+      reason: 'video settings must not use a supporting (left) pane anymore',
+    );
+    expect(
+      source,
+      isNot(contains('FushiListItem(')),
+      reason: 'categories must not render as a list anymore',
+    );
+    expect(
+      source.replaceAll(RegExp(r'\s+'), ''),
+      contains("labelKey:ValueKey<String>('video-settings-cat-\${cat.id}',)"),
+      reason: 'category tabs keep their stable id keys',
+    );
     // 详情按选中 id KeyedSubtree，防 Element 复用副作用。
     expect(source, contains('KeyedSubtree('));
-    expect(source, contains("_subPage ?? 'playback'"));
-    // 分类齐全（chip 行 + 窄窗导航行共用 _categories）：审查 Finding 9 后由
-    // VideoGroup 枚举驱动（id == 枚举名），每个分组必有 exhaustive switch 的
-    // icon/label 映射分支——新增分组漏接面板会在编译期报错。
     expect(
-        source, contains('for (final VideoGroup group in VideoGroup.values)'),
-        reason: '_categories 必须由 VideoGroup.values 驱动，禁止手写平行列表');
+      source,
+      contains(': groups.first.name'),
+      reason: '未指定 / 不在本面板的分类回落到本面板第一个分组',
+    );
+    // 页签由本面板的分组列表驱动（id == 枚举名），每个分组必有 exhaustive switch
+    // 的 label / hint 映射分支——新增分组漏接面板会在编译期报错。
+    expect(
+      source,
+      contains('for (final VideoGroup group in widget.groups)'),
+      reason: '_categories 必须由 groups 驱动，禁止手写平行列表',
+    );
+    // 只有一个分组（字幕 / 音频面板）时不画页签（也没有横滑分页）。
+    expect(source, contains('if (widget.groups.length <= 1) return null;'));
+    expect(source, contains('if (tabController != null)'));
+    // 设置面板的分组：字幕 / 音频已拆成独立面板，不在设置里重复（只放一处）。
+    final String settingsGroups = _between(
+      source,
+      'static const List<VideoGroup> settingsGroups',
+      '];',
+    );
+    for (final String id in <String>[
+      'playback',
+      'shaders',
+      'mpv',
+      'danmaku',
+      'controls',
+    ]) {
+      expect(
+        settingsGroups,
+        contains('VideoGroup.$id'),
+        reason: '设置面板缺少分组 $id',
+      );
+    }
+    expect(
+      settingsGroups,
+      isNot(contains('VideoGroup.subtitle')),
+      reason: '字幕是独立面板，设置面板不再有字幕页签',
+    );
+    expect(
+      settingsGroups,
+      isNot(contains('VideoGroup.audio')),
+      reason: '音频是独立面板，设置面板不再有音频页签',
+    );
     for (final String id in <String>[
       'playback',
       'audio',
@@ -189,43 +238,67 @@ void main() {
       'danmaku',
       'controls',
     ]) {
-      expect(source, contains('case VideoGroup.$id:'),
-          reason: 'missing category mapping for $id');
+      expect(
+        source,
+        contains('case VideoGroup.$id:'),
+        reason: 'missing category mapping for $id',
+      );
     }
 
     // 阶段B：配置行不再手写在 sheet 里，sheet 只按分类投影 schema 渲染。
-    expect(source, contains('buildVideoGroupDestination('),
-        reason: '面板详情必须经 schema 投影（阶段B）');
-    expect(source, contains('renderer.buildDetailContent('),
-        reason: '面板详情必须经共享渲染器渲染（阶段B）');
+    expect(
+      source,
+      contains('buildVideoGroupDestination('),
+      reason: '面板详情必须经 schema 投影（阶段B）',
+    );
+    expect(
+      source,
+      contains('renderer.buildDetailContent('),
+      reason: '面板详情必须经共享渲染器渲染（阶段B）',
+    );
 
     // 阶段B：行声明移入 settings_schema_video.dart / 内嵌 builder 移入
     // video_settings_actions.dart，守卫改锁新位置（保护不变：着色器/mpv 详情
     // 内嵌、锁窗口比/双击等行仍存在且双路写穿）。
-    final String schemaSrc =
-        File('lib/src/settings/settings_schema_video.dart').readAsStringSync();
-    final String actionsSrc =
-        File('lib/src/media/video/video_settings_actions.dart')
-            .readAsStringSync();
-    final String widgetsSrc =
-        File('lib/src/settings/settings_schema_widgets.dart')
-            .readAsStringSync();
-    final String hostSrc =
-        File('lib/src/media/video/video_quick_settings_host.dart')
-            .readAsStringSync();
-    expect(actionsSrc, contains('VideoShaderManagerView('),
-        reason: '着色器详情内嵌 VideoShaderManagerView（builder 在 actions 层）');
-    expect(schemaSrc, contains('dropdown: true'),
-        reason: 'hwdec/aspect/channels 等长标签行声明 dropdown 渲染');
-    expect(widgetsSrc, contains('AdaptiveSettingsPickerRow<T>('),
-        reason: 'dropdown 声明经渲染层落成 AdaptiveSettingsPickerRow');
-    expect(widgetsSrc, contains('AdaptiveSettingsStepperRow'),
-        reason: 'stepper 行仍经共享渲染层渲染');
-    expect(schemaSrc, contains('VideoMpvConfig.defaults'),
-        reason: 'mpv 详情含「重置默认」action');
+    final String schemaSrc = File(
+      'lib/src/settings/settings_schema_video.dart',
+    ).readAsStringSync();
+    final String actionsSrc = File(
+      'lib/src/media/video/video_settings_actions.dart',
+    ).readAsStringSync();
+    final String widgetsSrc = File(
+      'lib/src/settings/settings_schema_widgets.dart',
+    ).readAsStringSync();
+    final String hostSrc = File(
+      'lib/src/media/video/video_quick_settings_host.dart',
+    ).readAsStringSync();
+    expect(
+      actionsSrc,
+      contains('VideoShaderManagerView('),
+      reason: '着色器详情内嵌 VideoShaderManagerView（builder 在 actions 层）',
+    );
+    expect(
+      schemaSrc,
+      contains('dropdown: true'),
+      reason: 'hwdec/aspect/channels 等长标签行声明 dropdown 渲染',
+    );
+    expect(
+      widgetsSrc,
+      contains('AdaptiveSettingsPickerRow<T>('),
+      reason: 'dropdown 声明经渲染层落成 AdaptiveSettingsPickerRow',
+    );
+    expect(
+      widgetsSrc,
+      contains('AdaptiveSettingsStepperRow'),
+      reason: 'stepper 行仍经共享渲染层渲染',
+    );
+    expect(
+      schemaSrc,
+      contains('VideoMpvConfig.defaults'),
+      reason: 'mpv 详情含「重置默认」action',
+    );
     expect(schemaSrc, contains('isDesktopPlatform'), reason: '锁窗口比行仍按桌面平台门控');
     expect(schemaSrc, contains('t.video_setting_mpv_aspect'));
-    expect(schemaSrc, contains('pauseAtSubtitleEnd'));
     expect(hostSrc, contains('onLockWindowAspectRatioChanged'));
     expect(hostSrc, contains('onAsbConfigChanged'));
     expect(hostSrc, contains('onSetDelay'));
@@ -234,48 +307,62 @@ void main() {
   });
 
   test('video quick settings groups category and detail section surfaces', () {
-    final String source =
-        File('lib/src/media/video/video_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/video/video_quick_settings_sheet.dart',
+    ).readAsStringSync();
 
-    expect(source, contains('Widget _buildTopCategoryBar('),
-        reason: 'wide categories render in a top horizontal chip bar');
-    expect(source,
-        contains('titlePlacement: SettingsSectionTitlePlacement.inside'),
-        reason:
-            'video detail section headings should be visually part of their group surface');
     expect(
-        source,
-        isNot(contains(
-            'SettingsSectionHeader(t.video_setting_mpv_group_advanced)')),
-        reason:
-            'mpv advanced heading must not float outside its settings group');
+      source,
+      contains('LibrarySectionTabs<String>.controlled('),
+      reason: 'categories render in the shared top section tabs',
+    );
+    expect(
+      source,
+      isNot(
+        contains('SettingsSectionHeader(t.video_setting_mpv_group_advanced)'),
+      ),
+      reason: 'mpv advanced heading must not float outside its settings group',
+    );
   });
 
-  test('embedded shader detail flattens groups inside the video surface', () {
+  test('shader detail groups sit outside cards like every other settings page '
+      '(feedback FxUMLvIqM1)', () {
     // 阶段B：_buildShadersDetail 移出 sheet，改为 video_settings_actions.dart 的
     // buildVideoShaderManager（SettingsCustomItem builder）；守卫改锁新位置。
-    final String actionsSource =
-        File('lib/src/media/video/video_settings_actions.dart')
-            .readAsStringSync();
+    final String actionsSource = File(
+      'lib/src/media/video/video_settings_actions.dart',
+    ).readAsStringSync();
     final String shaderDetail = _between(
       actionsSource,
       'Widget buildVideoShaderManager(',
       'Widget buildVideoMpvRawConfField(',
     );
 
-    expect(shaderDetail, contains('VideoShaderManagerView('),
-        reason: 'video settings should embed the shader manager detail');
     expect(
       shaderDetail,
-      contains('embedded: true'),
-      reason:
-          'embedded shader detail must reuse the schema surface instead of nesting cards',
+      contains('VideoShaderManagerView('),
+      reason: 'video settings should embed the shader manager detail',
+    );
+    // 面板把着色器视图作为「画质增强」页的整页正文承载，不再当 schema 行套进
+    // 一张卡片（那样三个分组标题会落进卡内，反馈 FxUMLvIqM1）。
+    final String sheetSource = File(
+      'lib/src/media/video/video_quick_settings_sheet.dart',
+    ).readAsStringSync();
+    final String shadersCase = _between(
+      sheetSource,
+      'SettingsDestination _panelDestination(',
+      'static const String _shaderManagerItemId',
+    );
+    expect(shadersCase, contains('shaderBody = item.builder'));
+    expect(sheetSource, contains('body: shaderBody,'));
+    expect(
+      sheetSource,
+      contains("_shaderManagerItemId = 'video.player.shaders'"),
     );
 
-    final String shaderSource =
-        File('lib/src/pages/implementations/video_shader_dialog.dart')
-            .readAsStringSync();
+    final String shaderSource = File(
+      'lib/src/pages/implementations/video_shader_dialog.dart',
+    ).readAsStringSync();
     // 锚点不带行尾 `{`：State 类挂 FushiPagePlaceholders mixin 后声明折行。
     final String managerWidget = _between(
       shaderSource,
@@ -287,27 +374,44 @@ void main() {
       '  @override\n  Widget build(BuildContext context) {',
       'class _MpvShaderPickerDialog extends StatefulWidget {',
     );
-    final int titledShaderSections =
-        RegExp(r'_shaderSection\(\s*title:').allMatches(buildMethod).length;
+    final int titledShaderSections = RegExp(
+      r'_shaderSection\(\s*title:',
+    ).allMatches(buildMethod).length;
 
-    expect(managerWidget,
-        contains('this.titlePlacement = SettingsSectionTitlePlacement.outside'),
-        reason:
-            'standalone shader manager callers should keep the current outside-title default');
-    expect(managerWidget,
-        contains('final SettingsSectionTitlePlacement titlePlacement;'));
-    expect(managerWidget, contains('this.embedded = false'));
-    expect(managerWidget, contains('final bool embedded;'));
-    expect(titledShaderSections, 3,
-        reason:
-            'shader detail is expected to expose quality, advanced, and installed sections');
-    expect(buildMethod, contains('if (!widget.embedded)'));
-    expect(buildMethod, contains('_EmbeddedShaderSection('));
-    expect(buildMethod, contains('AdaptiveSettingsSection('),
-        reason: 'standalone shader manager still uses grouped settings cards');
-    expect(buildMethod, contains('titlePlacement: widget.titlePlacement'),
-        reason:
-            'standalone group cards still honor the selected title placement');
+    expect(
+      managerWidget,
+      contains('this.titlePlacement = SettingsSectionTitlePlacement.outside'),
+      reason:
+          'standalone shader manager callers should keep the current outside-title default',
+    );
+    expect(
+      managerWidget,
+      contains('final SettingsSectionTitlePlacement titlePlacement;'),
+    );
+    expect(
+      managerWidget,
+      isNot(contains('embedded')),
+      reason: 'no flattened in-card mode: groups always render as sections',
+    );
+    expect(
+      titledShaderSections,
+      3,
+      reason:
+          'shader detail is expected to expose quality, advanced, and installed sections',
+    );
+    expect(shaderSource, isNot(contains('_EmbeddedShaderSection')));
+    expect(
+      buildMethod,
+      contains('AdaptiveSettingsSection('),
+      reason: 'shader groups use the shared settings section (title outside)',
+    );
+    expect(
+      buildMethod,
+      contains('titlePlacement: widget.titlePlacement'),
+      reason: 'group cards honor the selected title placement',
+    );
+    // 同系列着色器一组一张卡（与音轨列表同为一个整体的列表）。
+    expect(buildMethod, contains('_ShaderFamilyBlock('));
   });
 
   test('video settings side panel owns UI scale and hover lifetime', () {
@@ -333,10 +437,14 @@ void main() {
     // BUG-2453：合成 hover 设备整套删除（`_isSyntheticControlsHover` 不复存在），旧的
     // 「下一个方法签名」文本锚点跟着失效；下面四个方法体改用花括号配对切出，右边界由
     // 结构决定，不再依赖相邻成员的顺序。
-    final String pokeMethod =
-        methodBody(source, 'void _pokeControlsVisible() {');
-    final String hoverExitMethod =
-        methodBody(source, 'void _onVideoControlsHoverExit() {');
+    final String pokeMethod = methodBody(
+      source,
+      'void _pokeControlsVisible() {',
+    );
+    final String hoverExitMethod = methodBody(
+      source,
+      'void _onVideoControlsHoverExit() {',
+    );
     final String hoverHandlerMethod = methodBody(
       source,
       'void _handleVideoControlsHover(PointerEvent event) {',
@@ -351,98 +459,150 @@ void main() {
       '/// [_buildVideoControls] 的实体',
     );
 
+    // 面板切换条成员（字幕 / 音频 / 章节 / 画质 / 设置）重新吃 app UI scale，其余
+    // 浮层（倍速 / 弹幕匹配）不包，避免已经手动缩放的面板二次放大。章节 / 画质
+    // 面板内部不自乘 _videoUiScale，所以包一层不会重复缩放。
     expect(
       panelMethod,
-      contains('kind != _VideoSidePanelKind.settings'),
-      reason: '只有设置侧栏需要重新吃 app UI scale，避免字幕列表等已经手动缩放的面板二次放大',
+      contains('if (!member) return panel;'),
+      reason: '只有切换条成员面板重新吃 app UI scale',
     );
     expect(panelMethod, contains('FushiAppUiScale('));
     expect(panelMethod, contains('scale: _videoUiScale'));
     expect(
-        panelMethod, isNot(contains('valueListenable: _videoControlsVisible')),
-        reason: '设置侧栏必须独立于控制条自动隐藏，不应随 action rail 一起卸载');
+      panelMethod,
+      isNot(contains('valueListenable: _videoControlsVisible')),
+      reason: '设置侧栏必须独立于控制条自动隐藏，不应随 action rail 一起卸载',
+    );
 
-    // TODO-364：poke 驱动的是 media_kit 自己的可见性/Timer（单一真相源），不另翻 Hibiki
+    // TODO-364：poke 驱动的是 media_kit 自己的可见性/Timer（单一真相源），不另翻 Fushi
     // 镜像（相位反根因）。BUG-2453 起「驱动」的形态从派合成 hover 换成 fork 的 wakeSignal
     // （`_restartHideTimerSignal.poke()`，fork 收到即调它自己的 onHover），真相源不变。
     expect(
-        containsCodeLine(pokeMethod, '_restartHideTimerSignal.poke();'), isTrue,
-        reason: 'poke 必须经 wakeSignal 驱动 media_kit 自己的可见性 / Timer（TODO-364）');
-    expect(containsCodeLine(pokeMethod, '_markControlsVisible(true);'), isFalse,
-        reason: 'poke 不应再乐观翻镜像（可见性由 media_kit 收到信号后推送，TODO-364）');
+      containsCodeLine(pokeMethod, '_restartHideTimerSignal.poke();'),
+      isTrue,
+      reason: 'poke 必须经 wakeSignal 驱动 media_kit 自己的可见性 / Timer（TODO-364）',
+    );
+    expect(
+      containsCodeLine(pokeMethod, '_markControlsVisible(true);'),
+      isFalse,
+      reason: 'poke 不应再乐观翻镜像（可见性由 media_kit 收到信号后推送，TODO-364）',
+    );
     // TODO-364：_markControlsVisible 收敛成仅门控收起（assert(!visible)）+ 重派生；
-    // 不再有 Hibiki 侧独立隐藏 Timer 条件。
-    expect(visibilityMethod, contains('_applyControlsVisibilityFromMediaKit()'),
-        reason: '_markControlsVisible 应委托唯一派生函数');
-    expect(visibilityMethod, isNot(contains('_videoControlsHideTimer')),
-        reason: '不应残留 Hibiki 侧独立隐藏 Timer（TODO-364）');
-    // TODO-364：鼠标移出只交还光标，控制条隐藏由 media_kit onExit 推送，不在 Hibiki 侧判可见。
+    // 不再有 Fushi 侧独立隐藏 Timer 条件。
     expect(
-        containsCodeLine(hoverExitMethod, '_setCursorHidden(false);'), isTrue,
-        reason: '鼠标移出应交还光标');
+      visibilityMethod,
+      contains('_applyControlsVisibilityFromMediaKit()'),
+      reason: '_markControlsVisible 应委托唯一派生函数',
+    );
     expect(
-        containsCodeLine(
-            hoverExitMethod, '_videoControlsVisible.value = false'),
-        isFalse,
-        reason: '鼠标移出不应在 Hibiki 侧直接收起可见性（交给 media_kit onExit 推送，TODO-364）');
+      visibilityMethod,
+      isNot(contains('_videoControlsHideTimer')),
+      reason: '不应残留 Fushi 侧独立隐藏 Timer（TODO-364）',
+    );
+    // TODO-364：鼠标移出只交还光标，控制条隐藏由 media_kit onExit 推送，不在 Fushi 侧判可见。
+    expect(
+      containsCodeLine(hoverExitMethod, '_setCursorHidden(false);'),
+      isTrue,
+      reason: '鼠标移出应交还光标',
+    );
+    expect(
+      containsCodeLine(hoverExitMethod, '_videoControlsVisible.value = false'),
+      isFalse,
+      reason: '鼠标移出不应在 Fushi 侧直接收起可见性（交给 media_kit onExit 推送，TODO-364）',
+    );
     // BUG-2453：到 hover 处理器的事件只可能是真实鼠标（页面不再合成指针事件），故
     // 无条件唤回光标；按设备号过滤的 helper 不得回来——它存在的唯一理由是页面自己在造
     // 合成设备，而那正是幽灵悬停的来源。
-    expect(containsCodeLine(hoverHandlerMethod, '_setCursorHidden(false);'),
-        isTrue,
-        reason: '真实鼠标 hover 应无条件唤回光标（TODO-318）');
+    expect(
+      containsCodeLine(hoverHandlerMethod, '_setCursorHidden(false);'),
+      isTrue,
+      reason: '真实鼠标 hover 应无条件唤回光标（TODO-318）',
+    );
     for (final String body in <String>[
       hoverHandlerMethod,
       hoverExitHandlerMethod,
     ]) {
-      expect(containsIdentifier(body, '_isSyntheticControlsHover'), isFalse,
-          reason: '按设备号过滤 hover 不得回来（BUG-2453）');
+      expect(
+        containsIdentifier(body, '_isSyntheticControlsHover'),
+        isFalse,
+        reason: '按设备号过滤 hover 不得回来（BUG-2453）',
+      );
     }
     // TODO-364：真实 hover 不再乐观翻镜像（可见性由 media_kit onHover 推送）。
-    expect(containsCodeLine(hoverHandlerMethod, '_markControlsVisible(true);'),
-        isFalse,
-        reason: 'hover 不应再乐观翻镜像（可见性由 media_kit 真实态推送，TODO-364）');
     expect(
-        containsCodeLine(
-            hoverExitHandlerMethod, '_onVideoControlsHoverExit();'),
-        isTrue);
+      containsCodeLine(hoverHandlerMethod, '_markControlsVisible(true);'),
+      isFalse,
+      reason: 'hover 不应再乐观翻镜像（可见性由 media_kit 真实态推送，TODO-364）',
+    );
+    expect(
+      containsCodeLine(hoverExitHandlerMethod, '_onVideoControlsHoverExit();'),
+      isTrue,
+    );
     expect(hoverWrapMethod, contains('onEnter: _handleVideoControlsHover'));
     expect(hoverWrapMethod, contains('onHover: _handleVideoControlsHover'));
     expect(hoverWrapMethod, contains('onExit: _handleVideoControlsHoverExit'));
   });
 
   test('shader manager is grouped instead of a flat action button pile', () {
-    final String source =
-        File('lib/src/pages/implementations/video_shader_dialog.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/pages/implementations/video_shader_dialog.dart',
+    ).readAsStringSync();
     final String buildMethod = _between(
       source,
       '  @override\n  Widget build(BuildContext context) {',
       '/// 从本机 mpv 发现的着色器多选导入对话框',
     );
 
-    expect(buildMethod, contains('_shaderSection('),
-        reason: '着色器详情应按画质档位 / 进阶 / 列表分组');
+    expect(
+      buildMethod,
+      contains('_shaderSection('),
+      reason: '着色器详情应按画质档位 / 进阶 / 列表分组',
+    );
     // TODO-041 方案甲'：顶部是五档单选器（无/低/中/高/极高），不再一堆陌生动作堆叠。
-    expect(buildMethod, contains('video_shader_quality_tier'),
-        reason: '着色器详情顶部是画质档位 section');
-    expect(buildMethod, contains('VideoShaderTierSelector('),
-        reason: '五档单选器嵌入档位 section');
+    expect(
+      buildMethod,
+      contains('video_shader_quality_tier'),
+      reason: '着色器详情顶部是画质档位 section',
+    );
+    expect(
+      buildMethod,
+      contains('VideoShaderTierSelector('),
+      reason: '五档单选器嵌入档位 section',
+    );
     // TODO-125：进阶 section 仅保留手动导入逃生口，删经典推荐着色器（RAVU/NNEDI3）入口。
     expect(buildMethod, contains('video_shader_section_advanced'));
     expect(buildMethod, contains('video_shader_section_installed'));
-    expect(buildMethod, isNot(contains('video_shader_classic_recommended')),
-        reason: 'TODO-125：删经典推荐着色器入口');
-    expect(buildMethod, isNot(contains('_openRecommended')),
-        reason: 'TODO-125：经典推荐着色器动作已删除');
-    expect(buildMethod, isNot(contains('video_shader_download_anime4k')),
-        reason: '诉求 2：不再单列「下载 Anime4K 推荐着色器」入口');
+    expect(
+      buildMethod,
+      isNot(contains('video_shader_classic_recommended')),
+      reason: 'TODO-125：删经典推荐着色器入口',
+    );
+    expect(
+      buildMethod,
+      isNot(contains('_openRecommended')),
+      reason: 'TODO-125：经典推荐着色器动作已删除',
+    );
+    expect(
+      buildMethod,
+      isNot(contains('video_shader_download_anime4k')),
+      reason: '诉求 2：不再单列「下载 Anime4K 推荐着色器」入口',
+    );
     // TODO-125 诉求 2：五档显卡要求常驻对照表（替换原单行 _tierHint）。
-    expect(buildMethod, contains('VideoShaderTierComparison'),
-        reason: 'TODO-125：五档显卡要求常驻对照表');
-    expect(buildMethod, isNot(contains('_tierHint()')),
-        reason: 'TODO-125：单行 _tierHint 已被五档对照表替换');
-    expect(buildMethod, isNot(contains('Wrap(')),
-        reason: '不能把下载/导入动作作为同级按钮堆在顶部');
+    expect(
+      buildMethod,
+      contains('VideoShaderTierComparison'),
+      reason: 'TODO-125：五档显卡要求常驻对照表',
+    );
+    expect(
+      buildMethod,
+      isNot(contains('_tierHint()')),
+      reason: 'TODO-125：单行 _tierHint 已被五档对照表替换',
+    );
+    expect(
+      buildMethod,
+      isNot(contains('Wrap(')),
+      reason: '不能把下载/导入动作作为同级按钮堆在顶部',
+    );
   });
 }

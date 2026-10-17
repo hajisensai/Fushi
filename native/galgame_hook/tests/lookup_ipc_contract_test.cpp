@@ -1,6 +1,6 @@
 // v19 游戏内查词区的**契约级**测试。
 //
-// 这块区的三条通道（hit / input / frame）是跨进程的，写侧在游戏进程里、读侧在 Hibiki
+// 这块区的三条通道（hit / input / frame）是跨进程的，写侧在游戏进程里、读侧在 Fushi
 // 里，两边只靠 voice_hook_ipc.h 的寻址函数对齐。所以下面钉死的不是"某个 adapter 怎么
 // 写"，而是**任何写侧/读侧都必须成立的结构性质**：
 //
@@ -1023,11 +1023,11 @@ void TestV19AdmissionIsPureAppendOverV17() {
   Check(offsetof(SharedHeader, adapter_report_count) % 4 == 0 &&
             offsetof(SharedHeader, adapter_report_seq) % 4 == 0,
         "count/seq 必须 4 字节对齐（Interlocked 前提）");
-  Check(offsetof(SharedHeader, siglus_text_owner) ==
+  Check(offsetof(SharedHeader, native_text_owner) ==
             offsetof(SharedHeader, adapter_report_seq) + sizeof(uint32_t),
         "v24 owner 只能追加在 v23 adapter 读数之后");
   Check(offsetof(SharedHeader, game_stream_input_request_seq) ==
-            offsetof(SharedHeader, siglus_text_owner) + sizeof(uint32_t),
+            offsetof(SharedHeader, native_text_owner) + sizeof(uint32_t),
         "v25 game-stream input 必须纯追加在 v24 owner 之后");
   Check(offsetof(SharedHeader, game_stream_input_status_seq) ==
             offsetof(SharedHeader, game_stream_input_request_seq) + 4u &&

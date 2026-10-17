@@ -12,6 +12,10 @@
 *.patch -whitespace
 *.diff  -whitespace
 
+# 上游 flutter_inappwebview_linux 源码原样 vendored（含大量行尾空白）。保持与上游
+# 逐字节一致才能在升级时直接 diff 出本仓改动（见该目录 UPSTREAM.md），不做清理。
+packages/flutter_inappwebview_linux/** -whitespace
+
 # 二进制文件不做行尾转换
 *.bmp   binary
 *.png   binary
@@ -45,3 +49,11 @@
 # （守卫 fushi/test/settings/tmdb_attribution_test.dart 按 sha256 校验）。虽然它是
 # 文本(SVG)，但绝不能参与行尾/文本规范化——任何一字节变动都会让哈希证据链断掉。
 fushi/assets/attribution/tmdb/blue_square_1.svg binary
+
+# i18n json 按 key 三方合并（fushi/tool/i18n_merge_driver.dart；驱动命令由
+# tool/setup_worktree.ps1 写进 git config）。只对本地合并生效，GitHub 网页合并不认。
+fushi/lib/i18n/*.i18n.json merge=fushi-i18n-json
+
+# docs/BUGS.md 是生成的索引表：两边各加一行时按行并集合并、永不冲突；
+# 行序 / 去重交给 `tool/bug.dart settle`（或 reindex）重建。
+docs/BUGS.md merge=union

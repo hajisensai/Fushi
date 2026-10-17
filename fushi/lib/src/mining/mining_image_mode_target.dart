@@ -18,23 +18,45 @@ Future<VideoMiningImageMode> resolveTargetMiningImageMode(
   required BaseAnkiRepository repo,
 }) async {
   if (!preferred.isVideoClip) return preferred;
-  final bool? supported = await _targetRendersSynchronizedClip(repo);
+  final bool? supported = await probeSynchronizedClipSupport(repo);
   if (supported != false) return preferred;
   engineLog.logDiagnostic(
     'Anki.synchronizedVideo.templateUnsupported',
     'note type does not render the card image field directly; using gif',
   );
+  await _notifyTemplateFallback(repo);
   return VideoMiningImageMode.gif;
 }
 
-/// null = 无法判定（见 [resolveTargetMiningImageMode]）。只吞后端异常（Anki 没开、
-/// 主机不可达）：这种情况下制卡还可能被待补发队列接住，探测不能替它判死刑；编程错误
-/// 照抛。
-Future<bool?> _targetRendersSynchronizedClip(BaseAnkiRepository repo) async {
+/// [resolveTargetMiningImageMode] 因目标笔记类型不渲染同步片段而改走 gif 时的通知点，
+/// 参数是笔记类型名。app 在 `main()` 装配（每个笔记类型提示一次、引导去一键适配）；
+/// 不装 = 静默降级。
+void Function(String noteTypeName)? onSynchronizedClipTemplateFallback;
+
+/// 制卡与设置页「未适配」提示共用的判据。null = 无法判定（见
+/// [resolveTargetMiningImageMode]）。只吞后端异常（Anki 没开、主机不可达）：这种情况下
+/// 制卡还可能被待补发队列接住，探测不能替它判死刑；编程错误照抛。
+Future<bool?> probeSynchronizedClipSupport(BaseAnkiRepository repo) async {
   try {
     return await repo.rendersSynchronizedClip();
   } on Exception catch (error) {
     engineLog.logDiagnostic('Anki.synchronizedVideo.templateProbe', error);
     return null;
   }
+}
+
+Future<void> _notifyTemplateFallback(BaseAnkiRepository repo) async {
+  final void Function(String noteTypeName)? notify =
+      onSynchronizedClipTemplateFallback;
+  if (notify == null) return;
+  final String? noteTypeName;
+  try {
+    final AnkiSettings settings = await repo.loadSettings();
+    noteTypeName =
+        settings.selectedNoteType?.name ?? settings.selectedNoteTypeName;
+  } on Exception catch (error) {
+    engineLog.logDiagnostic('Anki.synchronizedVideo.templateNotice', error);
+    return;
+  }
+  if (noteTypeName != null) notify(noteTypeName);
 }

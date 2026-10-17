@@ -27,7 +27,7 @@ void main() {
 
   setUp(() {
     AppPaths.debugResetDocumentsLayoutCache();
-    tmp = Directory.systemTemp.createTempSync('hibiki_dataroot_mkdir_');
+    tmp = Directory.systemTemp.createTempSync('fushi_dataroot_mkdir_');
     fakeTemp = Directory(p.join(tmp.path, 'systemp'))..createSync();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(

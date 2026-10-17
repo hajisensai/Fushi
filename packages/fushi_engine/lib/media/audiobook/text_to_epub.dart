@@ -57,7 +57,7 @@ class TextToEpub {
     return EpubBuilder.assemble(
       title: title,
       author: author,
-      uidPrefix: 'hibiki-text-',
+      uidPrefix: 'fushi-text-',
       chapterXhtmls: chapterXhtmls,
     );
   }

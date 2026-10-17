@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// TODO-904 / BUG-437 源码守卫：Windows runner 真单实例。
 ///
 /// 根因放大器：原 `main.cpp` 只 `CreateMutexW(...)` 不查 `ERROR_ALREADY_EXISTS` =
-/// 没有真单实例。第二个 hibiki.exe 与首实例共享同一 WebView2 默认 userDataFolder，
+/// 没有真单实例。第二个 fushi.exe 与首实例共享同一 WebView2 默认 userDataFolder，
 /// 而 WebView2 契约不允许多进程并发同一 userDataFolder → 第二实例 env 创建锁冲突失败
 /// → `Cannot create the InAppWebView instance!`。
 ///
@@ -62,7 +62,7 @@ void main() {
         reason: '命中已有实例必须退出本进程，不再创建第二个共享 userDataFolder 的实例');
   });
 
-  // TODO-904 P0 回归守卫：单实例守卫退出前，必须把「用 Hibiki 打开视频」的文件
+  // TODO-904 P0 回归守卫：单实例守卫退出前，必须把「用 Fushi 打开视频」的文件
   // 路径经 WM_COPYDATA 转交首实例，否则第二实例只前置窗口就退出 = 视频路径整个
   // 丢掉、首实例从不知情 →「点了没反应」。
   test('main.cpp 退出前用 WM_COPYDATA 把视频路径转交首实例', () {
@@ -115,5 +115,22 @@ void main() {
             main.contains('_openExternalVideo('),
         isTrue,
         reason: '收到转交路径必须复用现有 _openExternalVideo 打开链路');
+  });
+
+  test('开发并存开关只在 debug 构建生效，且换掉主窗标题', () {
+    final String src = read('windows/runner/main.cpp');
+    final int start = src.indexOf('bool IsDevSideBySideMode()');
+    expect(start, greaterThanOrEqualTo(0),
+        reason: '热重载与已安装 Fushi 并存要靠 IsDevSideBySideMode');
+    final String body = src.substring(start, src.indexOf('\n}\n', start));
+    // release 包必须恒为 false：否则任何人设个环境变量就能绕过真单实例守卫，
+    // 两个 release 实例共享 WebView2 userDataFolder（BUG-437）。
+    expect(body.contains('#ifdef NDEBUG') && body.contains('return false;'),
+        isTrue,
+        reason: 'FUSHI_DEV_SIDE_BY_SIDE 只能在 debug 构建生效');
+    expect(body.contains('FUSHI_DEV_SIDE_BY_SIDE'), isTrue);
+    // 已安装实例的二次启动按标题 "Fushi" 转交文件，开发实例不能抢走。
+    expect(src.contains('dev_side_by_side ? L"Fushi Dev" : L"Fushi"'), isTrue,
+        reason: '并存模式下主窗标题须与正式实例不同');
   });
 }

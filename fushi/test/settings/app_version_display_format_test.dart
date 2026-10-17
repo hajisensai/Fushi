@@ -12,7 +12,7 @@ void main() {
   group('formatAppVersionDisplay (display layer)', () {
     test('debug build: versionCode shown in parens, not semver-plus', () {
       final PackageInfo info = PackageInfo(
-        appName: 'Hibiki',
+        appName: 'Fushi',
         packageName: 'app.fushi.reader',
         version: '0.11.1-debug.5613',
         buildNumber: '1000561300',
@@ -30,7 +30,7 @@ void main() {
 
     test('stable build: same parenthesized shape', () {
       final PackageInfo info = PackageInfo(
-        appName: 'Hibiki',
+        appName: 'Fushi',
         packageName: 'app.fushi.reader',
         version: '0.11.1',
         buildNumber: '187',

@@ -30,12 +30,15 @@ dependencies:
   # 互联 P2P 隧道（iroh，纯 Dart FFI；原生库缺失时能力判不可用）。
   fushi_p2p:
     path: ../fushi_p2p
+  # Fushi SRS 纯 Dart 内核（含 native/fushi_fsrs 的 FFI，原生库缺失时排程能力判不可用）。
+  fushi_srs:
+    path: ../fushi_srs
   # 与 fushi/pubspec.yaml 钉同一 sha（OCR 与 ASR 共用 OnnxSessionFactory 抽象）。
   fushi_asr_core:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 308e23606ea26c31d3cea4775002fdd3ee5f0fed
+      ref: 0c5878a856be72c7439f166a3144c0c4c6a998a7
   # 外挂字幕按内嵌参考轨对时间轴的算法（subtitle_reference_alignment /
   # subtitle_time_rewriter）住在上游；本包只留 ffmpeg 抽轨与原稿备份的装配层
   # （media/video/subtitle/embedded_reference_subtitle_sync.dart）。同仓同 sha。
@@ -43,7 +46,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: 308e23606ea26c31d3cea4775002fdd3ee5f0fed
+      ref: 0c5878a856be72c7439f166a3144c0c4c6a998a7
   archive: ^3.6.1
   basic_utils: ^5.7.0
   characters: ^1.3.0
@@ -60,6 +63,8 @@ dependencies:
   path: ^1.8.2
   pointycastle: ^3.9.1
   shelf: ^1.4.0
+  # Anki 包导入 / 导出读写来源 SQLite（与 fushi_core 同一约束）。
+  sqlite3: ">=3.4.0 <4.0.0"
   xml: ^6.3.0
   youtube_explode_dart: ^2.3.6
 

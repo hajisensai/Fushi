@@ -61,6 +61,30 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     );
   }
 
+  /// 被下载管线管理的合集 id（任一下载任务或下载订阅指向它）。这类合集的集序
+  /// 不是用户写出来的，而是「按集号」派生的（合集同步平手时据此重算，BUG-2941）。
+  Future<Set<int>> downloadManagedCollectionIds() async {
+    final List<int?> fromJobs =
+        await (selectOnly(videoDownloadJobs, distinct: true)
+              ..addColumns(<Expression<Object>>[videoDownloadJobs.collectionId])
+              ..where(videoDownloadJobs.collectionId.isNotNull()))
+            .map((TypedResult r) => r.read(videoDownloadJobs.collectionId))
+            .get();
+    final List<int?> fromSubscriptions =
+        await (selectOnly(videoDownloadSubscriptions, distinct: true)
+              ..addColumns(<Expression<Object>>[
+                videoDownloadSubscriptions.collectionId
+              ])
+              ..where(videoDownloadSubscriptions.collectionId.isNotNull()))
+            .map((TypedResult r) =>
+                r.read(videoDownloadSubscriptions.collectionId))
+            .get();
+    return <int>{
+      for (final int? id in <int?>[...fromJobs, ...fromSubscriptions])
+        if (id != null) id,
+    };
+  }
+
   Expression<bool> _pendingVideoDownloadJobsOfSource(int sourceId) =>
       videoDownloadJobs.targetSourceId.equals(sourceId) &
       videoDownloadJobs.lifecycle
@@ -557,6 +581,42 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             ]))
           .get();
 
+  /// 「加入合集」候选：只列与条目 ([kind], [entryKey]) **同一库页域**的合集
+  /// （[CollectionShelfDomain]：书架 / 漫画库 / 视频库 / 游戏库），排序同
+  /// [getAllMediaCollections]。
+  ///
+  /// BUG-2974：合集表不带种类列，「加入合集」弹窗此前直接取全部合集，书的列表里
+  /// 混着视频的合集。合集的域由成员推导（任一成员在本域即算本域合集）；epub 成员按
+  /// `epub_books.format` 再分书 / 漫画（成员键是 uid，旧行可能仍是 bookKey，两种
+  /// 都认）。空合集（无成员、无从归属）不列出。
+  Future<List<MediaCollectionRow>> getMediaCollectionsForEntryDomain(
+    MediaKind kind,
+    String entryKey,
+  ) async {
+    final Set<String> mangaKeys = <String>{};
+    for (final EpubBookRow row in await (select(epubBooks)
+          ..where((t) => t.format.equals(BookFormat.manga.dbValue)))
+        .get()) {
+      if (row.uid.isNotEmpty) mangaKeys.add(row.uid);
+      mangaKeys.add(row.bookKey);
+    }
+    CollectionShelfDomain domainOf(MediaKind k, String key) =>
+        collectionShelfDomainOf(k, isManga: mangaKeys.contains(key));
+    final CollectionShelfDomain target = domainOf(kind, entryKey);
+    final Set<int> inDomain = <int>{};
+    for (final MediaCollectionItemRow item in await getAllCollectionItems()) {
+      final MediaKind? memberKind = MediaKind.tryParse(item.mediaType);
+      if (memberKind == null) continue;
+      if (domainOf(memberKind, item.entryKey) == target) {
+        inDomain.add(item.collectionId);
+      }
+    }
+    return <MediaCollectionRow>[
+      for (final MediaCollectionRow c in await getAllMediaCollections())
+        if (inDomain.contains(c.id)) c,
+    ];
+  }
+
   Future<MediaCollectionRow?> getMediaCollectionById(int id) =>
       (select(mediaCollections)..where((t) => t.id.equals(id)))
           .getSingleOrNull();
@@ -794,6 +854,59 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     };
   }
 
+  /// 首页 dashboard 专用：**只为本机库里还存在的条目**（视频 / EPUB / SRT 书 /
+  /// 游戏）一次查出折叠归属主合集（与 [getPrimaryCollectionIdByEntry] 同口径的
+  /// MIN(collection_id)）及其在该主合集里的组内 sortIndex。
+  ///
+  /// 为什么不直接 [getPrimaryCollectionIdByEntry] + [getAllCollectionItems]：两者
+  /// 都是全表物化。成员表可以远大于本机库——在线源 / 播放列表合集会把成百上千个
+  /// 本机并不存在的集数挂进成员表（实测开发库 3160 个合集、84,735 行成员，本机
+  /// 视频只有 216 个），首页为了几十张卡把八万多行跨 isolate 搬进 Dart 再建两张
+  /// Map，单这两步就是 640–950 ms，正是首屏「内容出来得慢」的大头。这里先在
+  /// SQL 侧按本机条目收窄，再按主键 (collection_id, media_type, entry_key) 回查
+  /// sortIndex，结果行数 = 本机已入合集的条目数。
+  ///
+  /// EPUB 成员键 v83 起是 `epub_books.uid`，旧行可能仍是 bookKey，两种都收。
+  /// 键形同 [getPrimaryCollectionIdByEntry]：`'<mediaType>|<entryKey>'`。
+  Future<Map<String, ({int collectionId, int sortIndex})>>
+      getLocalPrimaryCollectionMembership() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT i.media_type, i.entry_key, i.collection_id, i.sort_index '
+      'FROM ('
+      '  SELECT media_type, entry_key, MIN(collection_id) AS cid '
+      '  FROM media_collection_items '
+      "  WHERE (media_type = 'video' "
+      '         AND entry_key IN (SELECT book_uid FROM video_books)) '
+      "     OR (media_type = 'epub' "
+      '         AND (entry_key IN (SELECT uid FROM epub_books) '
+      '              OR entry_key IN (SELECT book_key FROM epub_books))) '
+      "     OR (media_type = 'srt' "
+      '         AND entry_key IN (SELECT uid FROM srt_books)) '
+      "     OR (media_type = 'game' "
+      '         AND entry_key IN (SELECT CAST(id AS TEXT) FROM galgames)) '
+      '  GROUP BY media_type, entry_key'
+      ') p '
+      'JOIN media_collection_items i '
+      '  ON i.collection_id = p.cid '
+      ' AND i.media_type = p.media_type '
+      ' AND i.entry_key = p.entry_key',
+      readsFrom: {
+        mediaCollectionItems,
+        videoBooks,
+        epubBooks,
+        srtBooks,
+        galgames,
+      },
+    ).get();
+    return <String, ({int collectionId, int sortIndex})>{
+      for (final QueryRow r in rows)
+        '${r.read<String>('media_type')}|${r.read<String>('entry_key')}': (
+          collectionId: r.read<int>('collection_id'),
+          sortIndex: r.read<int>('sort_index'),
+        ),
+    };
+  }
+
   Future<int> _nextCollectionSortIndex(int collectionId) async {
     final MediaCollectionItemRow? last = await (select(mediaCollectionItems)
           ..where((t) => t.collectionId.equals(collectionId))
@@ -832,6 +945,36 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     return <String, String>{
       for (final QueryRow row in rows)
         row.read<String>('remote_key'): row.read<String>('local_uid'),
+    };
+  }
+
+  /// 「从所有设备删除」这本书时墓碑该写的键：从对端下载、本机落地键与对端不同的
+  /// 书（[CollectionBookAliases] 记着对端键，见 RemoteCollectionAdoptionService）写
+  /// **对端键**，否则推给 host 认不出、对端消费也对不上（BUG-3443 同类）；其余照旧
+  /// 本机 bookKey。必须在删书行**之前**调（[deleteEpubBook] 会级联删掉别名）。
+  Future<String> syncDeletionBookKeyOf(String bookKey) async {
+    final QueryRow? row = await customSelect(
+      'SELECT a.remote_key FROM collection_book_aliases a '
+      'INNER JOIN epub_books b ON b.uid = a.local_uid '
+      'WHERE b.book_key = ? LIMIT 1',
+      variables: [Variable<String>(bookKey)],
+      readsFrom: {collectionBookAliases, epubBooks},
+    ).getSingleOrNull();
+    final String? remoteKey = row?.read<String>('remote_key');
+    return remoteKey == null || remoteKey.isEmpty ? bookKey : remoteKey;
+  }
+
+  /// 对端书键 → 本机 bookKey（只含父书仍在的别名），供删除墓碑消费端把对端键
+  /// 墓碑换算到本机行上。
+  Future<Map<String, String>> getPeerToLocalBookKeys() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT a.remote_key, b.book_key FROM collection_book_aliases a '
+      'INNER JOIN epub_books b ON b.uid = a.local_uid',
+      readsFrom: {collectionBookAliases, epubBooks},
+    ).get();
+    return <String, String>{
+      for (final QueryRow row in rows)
+        row.read<String>('remote_key'): row.read<String>('book_key'),
     };
   }
 
@@ -1369,8 +1512,18 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       (select(srtBooks)..where((t) => t.bookKey.equals(bookKey)))
           .getSingleOrNull();
 
-  Future<void> upsertSrtBook(SrtBooksCompanion book) =>
-      into(srtBooks).insertOnConflictUpdate(book);
+  /// 冲突解析与 `insertOnConflictUpdate` 相同（按主键 `id`），只多一条 v118 规则：
+  /// `localAddedAt`（本机开始拥有的时刻）插入时未携带 → now，冲突转更新时**永不
+  /// 改写**——整行 save 是编辑，不是重新拥有（语义见 [FushiDatabase.insertEpubBook]）。
+  Future<void> upsertSrtBook(SrtBooksCompanion book) => into(srtBooks).insert(
+        book.localAddedAt.present
+            ? book
+            : book.copyWith(
+                localAddedAt:
+                    Value<int?>(DateTime.now().millisecondsSinceEpoch)),
+        onConflict: DoUpdate(
+            (_) => book.copyWith(localAddedAt: const Value<int?>.absent())),
+      );
 
   /// Deletes the SRT book row + its cues. Returns the number of srt_books rows
   /// actually removed (0 when [uid] matched no row) so batch deletion can count

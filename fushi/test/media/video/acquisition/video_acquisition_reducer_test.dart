@@ -149,17 +149,18 @@ VideoAcquisitionSearchResourcesEffect _reachResources(
 List<VideoResourceCandidate> _episodeResources({
   String resolution = '1080p',
   String group = 'Grp',
+  String tags = '',
 }) => <VideoResourceCandidate>[
   _FakeResource(
     remoteId: 'a1',
-    title: '[$group] Show - 01 ($resolution)',
+    title: '[$group] Show - 01 ($resolution$tags)',
     releaseGroup: group,
     resolution: resolution,
     seeders: 50,
   ),
   _FakeResource(
     remoteId: 'a2',
-    title: '[$group] Show - 02 ($resolution)',
+    title: '[$group] Show - 02 ($resolution$tags)',
     releaseGroup: group,
     resolution: resolution,
     seeders: 40,
@@ -1162,6 +1163,192 @@ void main() {
       );
       expect(s.state.slots.mode, VideoAcquisitionMode.download);
       expect(s.state.stage, VideoAcquisitionStage.awaitingResourceConfirm);
+    });
+  });
+
+  // BUG-2933：「哪个最好」曾被判 unclear——AI 看不到候选版本，也没有 recommend 意图。
+  group('推荐（哪个最好）', () {
+    _Session twoVersions() {
+      final _Session s = _Session(_oneSource);
+      _reachResources(s, _item(status: 'Finished Airing'));
+      s.feed(
+        VideoAcquisitionResourcesLoadedEvent(<VideoResourceCandidate>[
+          ..._episodeResources(group: 'Alpha'),
+          ..._episodeResources(group: 'Beta'),
+        ]),
+      );
+      return s;
+    }
+
+    VideoAcquisitionAiIntentEvent recommend([int? choiceIndex]) =>
+        VideoAcquisitionAiIntentEvent(
+          VideoAcquisitionIntent(
+            VideoAcquisitionIntentKind.recommend,
+            VideoAcquisitionIntentPatch(choiceIndex: choiceIndex),
+          ),
+          utterance: '哪个最好',
+        );
+
+    VideoAcquisitionSay lastRecommendation(_Session s) => s.state.transcript
+        .whereType<VideoAcquisitionAssistantMessage>()
+        .lastWhere(
+          (VideoAcquisitionAssistantMessage m) =>
+              m.say.kind == VideoAcquisitionSayKind.recommendation,
+        )
+        .say;
+
+    test('候选上下文：每个版本选项一条，带比较用的事实；非版本选项不算', () {
+      final _Session s = twoVersions();
+      expect(s.optionIds.take(2), <String>[
+        kVideoAcquisitionOptionConfirm,
+        '${kVideoAcquisitionOptionAltPrefix}1',
+      ]);
+      final List<Map<String, Object?>> candidates =
+          videoAcquisitionCandidateContext(s.state);
+      expect(candidates, hasLength(2));
+      expect(candidates[0]['optionIndex'], 0);
+      expect(candidates[0]['rank'], 1);
+      expect(candidates[0]['current'], isTrue);
+      expect(candidates[1]['optionIndex'], 1);
+      expect(candidates[1]['rank'], 2);
+      expect(candidates[1]['current'], isFalse);
+      expect(
+        <Object?>{candidates[0]['releaseGroup'], candidates[1]['releaseGroup']},
+        <String>{'Alpha', 'Beta'},
+      );
+      for (final Map<String, Object?> c in candidates) {
+        expect(c['resolution'], '1080p');
+        expect(c['provider'], 'nyaa');
+        expect(c['seeders'], 50);
+        expect(c['count'], 2);
+        expect(c['batch'], isFalse);
+      }
+    });
+
+    // BUG-2958：候选版本 chip 只有「组 · 分辨率」，几个版本比不出差别——
+    // alt 选项要带上与当前版本卡（summary）同一份事实。
+    test('BUG-2958 候选版本选项带与当前版本卡同一份事实（含编码）', () {
+      final _Session s = _Session(_oneSource);
+      _reachResources(s, _item(status: 'Finished Airing'));
+      s.feed(
+        VideoAcquisitionResourcesLoadedEvent(<VideoResourceCandidate>[
+          ..._episodeResources(group: 'Alpha', tags: ' WEB-DL HEVC 10bit'),
+          ..._episodeResources(group: 'Beta'),
+        ]),
+      );
+      final VideoAcquisitionOption alt = s.state.question!.options.firstWhere(
+        (VideoAcquisitionOption o) =>
+            o.id.startsWith(kVideoAcquisitionOptionAltPrefix),
+      );
+      final Map<String, Object?> summary = s.state.transcript
+          .whereType<VideoAcquisitionAssistantMessage>()
+          .lastWhere(
+            (VideoAcquisitionAssistantMessage m) =>
+                m.say.kind == VideoAcquisitionSayKind.summary,
+          )
+          .say
+          .args;
+      // 两处同一套键：页面拿同一个函数渲染，chip 与卡片才说得一致。
+      expect(
+        alt.args.keys.toSet(),
+        summary.keys.toSet().difference(<String>{
+          'title',
+          'mode',
+          'index',
+          'total',
+        }),
+      );
+      expect(alt.args['provider'], 'nyaa');
+      expect(alt.args['seeders'], 50);
+      expect(alt.args['count'], 2);
+      expect(alt.args['batch'], isFalse);
+      final Map<String, Object?> alpha = alt.args['releaseGroup'] == 'Alpha'
+          ? alt.args
+          : summary;
+      final Map<String, Object?> beta = alt.args['releaseGroup'] == 'Alpha'
+          ? summary
+          : alt.args;
+      expect(alpha['traits'], 'HEVC 10bit');
+      expect(alpha['source'], 'WEB-DL');
+      expect(beta['traits'], isNull);
+    });
+
+    test('不在挑版本时候选上下文为空', () {
+      final _Session s = _Session(_oneSource);
+      _reachDetails(s, _item(status: 'Currently Airing'));
+      expect(videoAcquisitionCandidateContext(s.state), isEmpty);
+    });
+
+    test('没说条件、当前就是排序第一 → 说推荐并重出同一问题，不提交', () {
+      final _Session s = twoVersions();
+      s.feed(const VideoAcquisitionUserTextEvent('哪个最好'));
+      final List<VideoAcquisitionEffect> effects = s.feed(recommend());
+      expect(effects, isEmpty);
+      expect(lastRecommendation(s).args, <String, Object?>{
+        'index': 1,
+        'current': true,
+        'byCriteria': false,
+      });
+      expect(s.state.groupCursor, 0);
+      expect(s.state.question!.slot, VideoAcquisitionSlot.resource);
+      expect(s.state.stage, VideoAcquisitionStage.awaitingResourceConfirm);
+      expect(s.state.busy, isFalse);
+    });
+
+    test('没说条件、当前不是第一 → 切回排序第一张展示', () {
+      final _Session s = twoVersions();
+      s.feed(
+        const VideoAcquisitionChipChosenEvent(
+          slot: VideoAcquisitionSlot.resource,
+          optionId: kVideoAcquisitionOptionNext,
+        ),
+      );
+      expect(s.state.groupCursor, 1);
+      s.feed(const VideoAcquisitionUserTextEvent('哪个最好'));
+      final List<VideoAcquisitionEffect> effects = s.feed(recommend());
+      expect(effects, isEmpty);
+      expect(s.said, contains(VideoAcquisitionSayKind.recommendation));
+      final VideoAcquisitionSay said = lastRecommendation(s);
+      expect(said.args['index'], 1);
+      expect(said.args['current'], isFalse);
+      expect(s.state.groupCursor, 0);
+      expect(s.state.stage, VideoAcquisitionStage.awaitingResourceConfirm);
+    });
+
+    test('按条件推荐 alt:N → 切到第 N 张，byCriteria=true', () {
+      final _Session s = twoVersions();
+      final String? second = s.state.eligibleGroups[1].releaseGroup;
+      s.feed(const VideoAcquisitionUserTextEvent('做种多的那个'));
+      s.feed(recommend(1));
+      expect(s.state.groupCursor, 1);
+      expect(s.state.plan!.group.releaseGroup, second);
+      final VideoAcquisitionSay said = lastRecommendation(s);
+      expect(said.args, <String, Object?>{
+        'index': 2,
+        'current': false,
+        'byCriteria': true,
+      });
+    });
+
+    test('choiceIndex 指向非版本选项 → 退回排序第一', () {
+      final _Session s = twoVersions();
+      final int cancelIndex = s.optionIds.indexOf(
+        kVideoAcquisitionOptionCancel,
+      );
+      s.feed(const VideoAcquisitionUserTextEvent('哪个最好'));
+      s.feed(recommend(cancelIndex));
+      expect(lastRecommendation(s).args['byCriteria'], isFalse);
+      expect(s.state.stage, VideoAcquisitionStage.awaitingResourceConfirm);
+    });
+
+    test('不在挑版本时 recommend → unclear', () {
+      final _Session s = _Session(_oneSource);
+      _reachDetails(s, _item(status: 'Currently Airing'));
+      s.feed(const VideoAcquisitionUserTextEvent('哪个最好'));
+      s.feed(recommend());
+      expect(s.said, contains(VideoAcquisitionSayKind.unclear));
+      expect(s.said, isNot(contains(VideoAcquisitionSayKind.recommendation)));
+      expect(s.state.question!.slot, VideoAcquisitionSlot.mode);
     });
   });
 

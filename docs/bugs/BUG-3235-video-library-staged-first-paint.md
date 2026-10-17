@@ -1,0 +1,20 @@
+## BUG-3235 · 视频库首屏一块块加载
+- **报告**：2026-10-10（用户：「主页里面的视频模块好像是分块加载的，点开以后别说动画了，里面的视频是一块块加载的」）
+- **真实性**：✅ 真 bug。视频库页 `initState` 同时发出本地列表与分组映射（`_loadLibraryMaps`，十几张全表）两路加载，各自独立 setState，渲染没有「首屏数据齐了再画」的边界：列表先到时拿**空映射**渲染（`fushi/lib/src/pages/implementations/home_video_page.dart` `_buildVideoLibraryBody`：旧代码只判 `loaded == null`）——合集一个都折不出来，全员先铺成散卡、刮削海报全缺；映射一到再收拢成合集、换海报。BUG-2835 只给「全部视频 + 系列筛选」加了一道 `_seriesFilterPending` 特例门，系列页 / 首页照样分段重组。另外首屏进场动画窗口从挂载起计时 600 ms，映射晚于窗口到达时真卡直接蹦出、早于窗口时才错峰，进场与否取决于映射快慢。
+- **[x] ① 已修复** — 根因修复（不是加淡入动画盖住）：
+  - 首屏门推广到所有分区：列表**与**映射都到位才画真卡（`home_video_page.dart` `firstPaintPending`；`_libraryMapsReady` 只从 false 变 true，失败路径也置位，后续刷新用旧映射顶住），期间画与真实墙同几何的骨架（`_buildLibraryMapsPendingSlivers`，直接复用 `_buildVideoWallSliver` / `_buildAllVideoGridSliver`），映射一到整墙一次换成终态、版面不跳；BUG-2835 的 `_seriesFilterPending` 特例随之删除（被通用门覆盖）。原先列表未到时的整页居中加载圈也并进同一道门。
+  - 进场动画按「骨架 / 真墙」分代重播（`FushiEntranceScope.replayKey: (section, firstPaintPending)`），真墙恒有一次完整进场。
+  - 排查过但**未改**的两处：① 远端目录逐条 `adoptVideo` 收养后，页面主动重载一次映射、合集表变更防抖又补一轮——两轮读到同一份数据，第二轮画面不变，只是多算一次。试过「外层事务批量收养」（drift 嵌套事务在保存点释放时就通知根监听器，通知并不合并，反而在收养期间挡住库页读库、并把逐条容错改成整份回滚）和「防抖记代跳过」（变更事件经 `tableUpdates` 的 `Stream.multi` 与页面 controller 两跳异步转发，与写入方 await 后的主动重载谁先到不确定，判据只能偶尔省一轮），收益不确定、都已撤回。② 单张封面卡解码后的宽高比探测 / 主色采样仍会让该卡再变一次（`cover_aspect_probe.dart`），属单卡级别。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_video_first_paint_test.dart`：卡住映射加载（`getAllMediaCollections`），系列 / 全部视频 / 首页三个分区逐帧只画骨架、不出现任何散卡；放行后系列页合集一次折好、全部视频按默认「非系列」档位。变异实测：把门退回 `loaded == null` → 三个分区用例全红。
+- **PR #2063 审查阻塞点修复**（第二轮，提交 `90d7a830c2`）：
+  - **首屏门饿死**：`_loadLibraryMaps` 每轮记代、只认最新一轮落地；扫描 / 导入期间 uid 流约每秒触发 `_refresh`→`_loadLibraryMaps`，大库上一轮查询超过触发间隔时每轮都在落地前被下一轮作废，首屏门永远打不开、整页一直骨架（改动前至少能看到卡）。根因修复：放行判据收进 `_libraryMapsResultApplies`——映射未就位时**任何一轮先完成的都放行**，就位后照旧 latest-request-wins（清理后旧轮晚到不回写的保证不变）；成功路径与失败路径同一判据。不靠节流 / 延迟。
+  - **首页骨架版式**：首页没有墙格（真实版面是横滚行），原先套网格骨架与真实布局不一致。横滚行抽出版式本体 `_buildHorizontalRowFrame`，真实行 `_buildHorizontalCardRow` 与首页骨架 `_buildHomeRowsSkeleton` 共用（同外边距、同行高口径、同错峰进场），骨架标题位由同样式单行文本撑高，与真实行逐像素同位。
+  - **骨架期间多选**：骨架帧 `_visibleVideos` 是拿空映射筛的、且骨架路径跳过了可见序登记（含首页的 `_homeSectionSelectionReset`）。骨架帧改为如实登记空可见序（`_registerNoSelectableCards`，与空态 / 首页同一函数）并清空 `_visibleVideos`，「全选 / 反选」不会落到看不见的条目上。
+  - 测试（同文件新增 3 条）：连续每秒触发刷新、每轮映射查询 1.5 s 时首屏仍会就绪（变异实测：判据退回只认最新 → 该用例红）；首页骨架是横滚行、骨架卡与真卡同位同宽；骨架期间「全选」选中 0 条、映射到位后按真实可见序全选。
+- **PR #2063 CI 红修复**（第三轮，run 38117367064）：第二轮的「首屏未就绪时任何一轮先完成都放行」破坏了清理不变式——源码守卫 `video_delete_reclaim_entry_guard_test.dart`「_loadLibraryMaps is latest-request-wins across scrape cleanup refresh」钉的是「清理前发起的慢快照必须在 setState 前被拒」，而首屏期间清理刷新已请求、旧轮先完成时第二轮会把它落地（新一轮再失败时旧映射就留在页面上）。守卫不窄，是代码错了，守卫未改。重做为两层：
+  - **作废代次**（`_libraryMapsRequestGeneration`）恢复严格 latest-request-wins，不分首屏：作废式重载 `_loadLibraryMaps` 每次 +1，`_loadLibraryMapsInner` 在 setState 前 `if (!mounted || requestGeneration != _libraryMapsRequestGeneration) return;`。默认 `_refresh`、刮削表变更（含批次节流刷新与批次结束补刷）、页面自己的清理 / 删除 / 合并全走它。
+  - **变更信号不作废在途轮次**：uid 集合变化（`_refreshAfterVideoUidsChanged` → `_refreshOnChangeSignal`）与合集表写入（`_onCollectionTablesChanged`）改走 `_loadLibraryMapsKeepingInFlight`，沿用当前代次；同代内按发起序号只进不退（`_libraryMapsRequestSequence` / `_libraryMapsAppliedSequence`），旧轮晚于新轮落地被丢弃。这类信号只说明「需要再读一轮更新的」，在途快照只是更旧、不是被清理作废，所以扫描期间首屏不再饿死，就位后映射也能在扫描中持续更新。
+  - 另两条守卫：`load_paths_perf_guard_test.dart` 要求 `_loadLibraryMapsInner` 里出现 `_libraryMapsRequestGeneration`（代次检查回到 Inner 后满足）；`video_library_series_structure_guard_test.dart` 以 `_visibleVideos = ordered;` 为锚——改为骨架期 `ordered` 本身为空（`if (!firstPaintPending)` 包住筛选），可见集语义不变，守卫未改。
+  - 测试：first_paint 的饿死用例改走真实 uid 流（每秒落库一条、每轮 2.5 s），新增「作废式刷新之后在途旧轮先完成也不落地（首屏期间同样）」。变异实测：uid / 合集表信号改回作废式 → 饿死用例红；Inner 判据改成「首屏期间放行旧代次」→ 不变式用例红。
+  - 残留：刮削批次期间的节流刷新仍是作废式（批次里可能有清理写入，刻意保守）；若首屏恰逢刮削批次、且一轮映射查询慢于 2 s 节流间隔，首屏会等到批次结束的补刷。
+- **备注**：真机未复测（本轮无真机验证）。

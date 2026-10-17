@@ -1,16 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_cover_image.dart';
-import 'package:fushi/src/media/manga/manga_cover_failure.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 
-/// BUG-2450：磁盘缓存图片的文件服务层对 5xx / 连接错误退避重试，Aidoku 封面失败态
-/// 可点重试并真的重发请求。走真实 loopback HttpServer（`HttpOverrides` 置空，与
+/// BUG-2450：磁盘缓存图片的文件服务层对 5xx / 连接错误退避重试。走真实 loopback HttpServer（`HttpOverrides` 置空，与
 /// app_http_image_proxy_test 同款装配）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -109,46 +106,5 @@ void main() {
     final FileServiceResponse response = await service.get(url('missing'));
     expect(response.statusCode, 404);
     expect(requests, 1);
-  });
-
-  testWidgets('Aidoku 封面失败态有重试按钮，点击后重发请求并渲染', (WidgetTester tester) async {
-    await tester.runAsync(() async {
-      statuses.add(404);
-      final String coverUrl = url('aidoku-cover');
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Center(
-            child: SizedBox(
-              width: 100,
-              height: 140,
-              child: AidokuCoverImage(url: coverUrl),
-            ),
-          ),
-        ),
-      );
-      Future<void> pumpUntil(bool Function() condition) async {
-        for (int i = 0; i < 300 && !condition(); i++) {
-          await Future<void>.delayed(const Duration(milliseconds: 10));
-          await tester.pump();
-        }
-        expect(condition(), isTrue, reason: '等待条件在 3s 内没有满足');
-      }
-
-      await pumpUntil(
-        () => find.byKey(kMangaCoverRetryKey).evaluate().isNotEmpty,
-      );
-      expect(requests, 1);
-
-      await tester.tap(find.byKey(kMangaCoverRetryKey));
-      await tester.pump();
-      await pumpUntil(() => requests == 2);
-      await pumpUntil(
-        () =>
-            find.byKey(kMangaCoverRetryKey).evaluate().isEmpty &&
-            find.byType(RawImage).evaluate().isNotEmpty,
-      );
-      expect(find.byType(MangaCoverFailure), findsNothing);
-      await tester.pumpWidget(const SizedBox());
-    });
   });
 }

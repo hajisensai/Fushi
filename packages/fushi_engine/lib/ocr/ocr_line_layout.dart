@@ -65,8 +65,17 @@ bool? voteOcrLineOrientation(List<OcrRect> lines) {
 }
 
 /// 振假名：比块内行厚 p75 的 [thinRatio] 还细的行，或贴在一条至少厚 1.25 倍的行的
-/// 注音侧（竖排右侧 / 横排上方，跨轴间隙不超过那条行厚的 0.35 倍、沿轴有重叠）且
-/// 不到 p75 的 [sideRatio] 倍厚的行。
+/// 注音侧（竖排右侧 / 横排上方或下方，跨轴间隙不超过那条行厚的 0.35 倍、沿轴有
+/// 重叠）且不到 p75 的 [sideRatio] 倍厚的行。
+///
+/// p75 按**行长加权**（[_lengthWeightedP75]）：注音天生切成很多短段，按段数取
+/// 分位数时，一行正文配四段注音的块 p75 就落在注音自己的厚度上，两条判据一起失效。
+///
+/// 横排认下方：双行字幕第二行的注音标在字**下方**（上方被第一行占了）；字幕注音
+/// 约为正文行高的 0.6~0.65，只按 [thinRatio] 会整排漏掉（BUG-3314）。下方注音
+/// 只在「正文行上方已被另一行正文占住」时才认（[_hasTextLineAbove]）——这正是
+/// 注音被挤到下方的原因；否则英文双行字幕第二行全是 x 高度小写字母（「can we
+/// see」）时，行高不到第一行 0.82 倍又紧贴其下，会被误当注音删掉。
 List<OcrRect> dropOcrRubyLines(
   List<OcrRect> lines, {
   required bool vertical,
@@ -74,25 +83,23 @@ List<OcrRect> dropOcrRubyLines(
   double sideRatio = 0.82,
 }) {
   if (lines.length < 2) return lines;
-  final List<double> thickness = <double>[
-    for (final OcrRect line in lines)
-      ocrLineThickness(line, vertical: vertical),
-  ]..sort();
-  final double p75 =
-      thickness[math.min(thickness.length - 1, (3 * thickness.length) ~/ 4)];
+  final double p75 = _lengthWeightedP75(lines, vertical: vertical);
   bool besideThickerLine(OcrRect line) {
     final double own = ocrLineThickness(line, vertical: vertical);
     for (final OcrRect other in lines) {
       if (identical(other, line)) continue;
       final double base = ocrLineThickness(other, vertical: vertical);
       if (base < own * 1.25) continue;
-      final double gap = vertical
-          ? line.left - other.right
-          : other.top - line.bottom;
+      bool hugs(double gap) => gap >= -0.35 * base && gap <= 0.35 * base;
+      final bool onRubySide = vertical
+          ? hugs(line.left - other.right)
+          : hugs(other.top - line.bottom) ||
+                (hugs(line.top - other.bottom) &&
+                    _hasTextLineAbove(other, lines, ruby: line, own: own));
       final double along = vertical
           ? math.min(line.bottom, other.bottom) - math.max(line.top, other.top)
           : math.min(line.right, other.right) - math.max(line.left, other.left);
-      if (gap >= -0.35 * base && gap <= 0.35 * base && along > 0) return true;
+      if (onRubySide && along > 0) return true;
     }
     return false;
   }
@@ -106,6 +113,61 @@ List<OcrRect> dropOcrRubyLines(
   ];
 }
 
+/// 横排行 [base] 的正上方是否紧贴着另一行正文（厚度至少是候选注音 [ruby] 厚
+/// [own] 的 1.25 倍、跨轴间隙不超过 [base] 行厚的 0.35 倍、沿轴有重叠）。
+bool _hasTextLineAbove(
+  OcrRect base,
+  List<OcrRect> lines, {
+  required OcrRect ruby,
+  required double own,
+}) {
+  final double baseThickness = base.height;
+  for (final OcrRect above in lines) {
+    if (identical(above, base) || identical(above, ruby)) continue;
+    if (above.height < own * 1.25) continue;
+    final double gap = base.top - above.bottom;
+    if (gap < -0.35 * baseThickness || gap > 0.35 * baseThickness) continue;
+    final double along =
+        math.min(above.right, base.right) - math.max(above.left, base.left);
+    if (along > 0) return true;
+  }
+  return false;
+}
+
+/// 行厚的 75 分位，每行按它沿阅读方向的长度计权（文字量越多的行越代表正文字号）。
+double _lengthWeightedP75(List<OcrRect> lines, {required bool vertical}) {
+  final List<({double thickness, double length})> rows =
+      <({double thickness, double length})>[
+        for (final OcrRect line in lines)
+          (
+            thickness: ocrLineThickness(line, vertical: vertical),
+            length: math.max(1, vertical ? line.height : line.width),
+          ),
+      ]..sort(
+        (
+          ({double thickness, double length}) a,
+          ({double thickness, double length}) b,
+        ) => a.thickness.compareTo(b.thickness),
+      );
+  final double total = rows.fold<double>(0, (double s, r) => s + r.length);
+  double seen = 0;
+  for (final ({double thickness, double length}) row in rows) {
+    seen += row.length;
+    if (seen >= 0.75 * total) return row.thickness;
+  }
+  return rows.last.thickness;
+}
+
+/// 同一行 / 列的两段碎片沿阅读方向的空隙上限：较厚那段行厚的这么多倍。
+///
+/// 取 3：同一行里被切开的地方是字距、空格、「っ」、句读、破折号，实测最宽的是
+/// 字距大的装饰标题——「モテる女子の」逐字断开处空隙 111 px，两侧行厚 69 / 80 px，
+/// 约为较厚者的 1.4 倍（较薄者的 1.6 倍），日文全角空格也只有 1 倍行厚。左右分栏
+/// （人物资料页两栏、同一高度的两段旁白）之间的空白一般是行厚的 4~5 倍以上。3 给
+/// 标题字距留了一倍多的余量，又低于分栏间距。按较厚者算：被切下来的小段（句读、
+/// 小假名）自己很薄，按它算上限会把同一行的正常字距也当成分栏。
+const double kOcrFragmentMaxGapRatio = 3;
+
 /// 把同一列（竖排）/同一行（横排）被检测器切碎的片段合并成一条。
 ///
 /// PP-OCR 会在一列中间的空隙（「っ」、句读、字距大的地方）把列切断；两段在跨轴
@@ -117,14 +179,52 @@ List<OcrRect> dropOcrRubyLines(
 /// （用户真实页「パステルカラーで / 女子力アップ♡」重叠 54%），按碎片合并会把两列
 /// 并成一条宽列，逐列 CTC 只读出一列、另一列整列丢失。并排的两段只有跨轴也重叠
 /// 到 [duplicateRatio]（同一列被检出两次）时才合并。
+///
+/// 沿阅读方向的空隙超过较厚者行厚的 [maxGapRatio] 倍不合并
+/// （[kOcrFragmentMaxGapRatio]）：只看跨轴重叠时，左右两栏同一高度的两行（竖排是
+/// 上下两段同一 x 的列）会被并成一条横跨两栏的长行，逐行识别读出串栏的句子，覆盖
+/// 层的字格也铺到两栏中间的空白上。
+///
+/// 合并做到不动点（传递闭包）：一趟按跨轴中心排序的贪心合并里，同一行的 A、B、C
+/// 可能按 A、C、B 的顺序到达——C 与 A 隔着整个 B 的长度超过空隙上限而单独成条，B
+/// 并进 C 之后再没有机会与 A 比较，一行被拆成两条。所以每趟合并后只要条数还在减少
+/// 就再来一趟，直到没有任何两条可合并；结果与输入顺序无关。条数每趟严格减少，
+/// 至多 `rects.length` 趟。返回顺序不是阅读序，调用方按 [orderOcrLinesForReading]
+/// 等重排。
 List<OcrRect> mergeOcrLineFragments(
   List<OcrRect> rects, {
   required bool vertical,
   double overlapRatio = 0.5,
   double sideBySideRatio = 0.5,
   double duplicateRatio = 0.8,
+  double maxGapRatio = kOcrFragmentMaxGapRatio,
 }) {
   if (rects.isEmpty) return const <OcrRect>[];
+  List<OcrRect> current = rects;
+  while (true) {
+    final List<OcrRect> next = _mergeOcrLineFragmentsOnce(
+      current,
+      vertical: vertical,
+      overlapRatio: overlapRatio,
+      sideBySideRatio: sideBySideRatio,
+      duplicateRatio: duplicateRatio,
+      maxGapRatio: maxGapRatio,
+    );
+    // 条数没变 = 这一趟一次合并都没发生，已到不动点。
+    if (next.length == current.length) return next;
+    current = next;
+  }
+}
+
+/// [mergeOcrLineFragments] 的一趟贪心合并。
+List<OcrRect> _mergeOcrLineFragmentsOnce(
+  List<OcrRect> rects, {
+  required bool vertical,
+  required double overlapRatio,
+  required double sideBySideRatio,
+  required double duplicateRatio,
+  required double maxGapRatio,
+}) {
   double crossStart(OcrRect r) => vertical ? r.left : r.top;
   double crossEnd(OcrRect r) => vertical ? r.right : r.bottom;
   double alongStart(OcrRect r) => vertical ? r.top : r.left;
@@ -134,9 +234,7 @@ List<OcrRect> mergeOcrLineFragments(
       (OcrRect a, OcrRect b) =>
           (crossStart(a) + crossEnd(a)).compareTo(crossStart(b) + crossEnd(b)),
     );
-  final List<OcrRect> merged = <OcrRect>[sorted.first];
-  for (final OcrRect rect in sorted.skip(1)) {
-    final OcrRect last = merged.last;
+  bool mergeable(OcrRect last, OcrRect rect) {
     final double overlap =
         math.min(crossEnd(last), crossEnd(rect)) -
         math.max(crossStart(last), crossStart(rect));
@@ -144,9 +242,15 @@ List<OcrRect> mergeOcrLineFragments(
       ocrLineThickness(last, vertical: vertical),
       ocrLineThickness(rect, vertical: vertical),
     );
+    final double thicker = math.max(
+      ocrLineThickness(last, vertical: vertical),
+      ocrLineThickness(rect, vertical: vertical),
+    );
     final double alongOverlap =
         math.min(alongEnd(last), alongEnd(rect)) -
         math.max(alongStart(last), alongStart(rect));
+    // 负的重叠就是两段之间的空隙。
+    if (-alongOverlap > maxGapRatio * thicker) return false;
     final double shorter = math.min(
       alongEnd(last) - alongStart(last),
       alongEnd(rect) - alongStart(rect),
@@ -154,16 +258,31 @@ List<OcrRect> mergeOcrLineFragments(
     final bool sideBySide =
         shorter > 0 && alongOverlap > sideBySideRatio * shorter;
     final double required = sideBySide ? duplicateRatio : overlapRatio;
-    if (thinner > 0 && overlap >= required * thinner) {
-      merged[merged.length - 1] = OcrRect(
-        left: math.min(last.left, rect.left),
-        top: math.min(last.top, rect.top),
-        right: math.max(last.right, rect.right),
-        bottom: math.max(last.bottom, rect.bottom),
-      );
-    } else {
-      merged.add(rect);
+    return thinner > 0 && overlap >= required * thinner;
+  }
+
+  final List<OcrRect> merged = <OcrRect>[];
+  for (final OcrRect rect in sorted) {
+    // 从最近合并的往回找：跨轴位置相近的碎片按中心排序后挨在一起，但同一高度
+    // 的另一栏会夹在同一行的两段之间，只看最后一条会把这行拆成两条。
+    int target = -1;
+    for (int i = merged.length - 1; i >= 0; i--) {
+      if (mergeable(merged[i], rect)) {
+        target = i;
+        break;
+      }
     }
+    if (target < 0) {
+      merged.add(rect);
+      continue;
+    }
+    final OcrRect last = merged[target];
+    merged[target] = OcrRect(
+      left: math.min(last.left, rect.left),
+      top: math.min(last.top, rect.top),
+      right: math.max(last.right, rect.right),
+      bottom: math.max(last.bottom, rect.bottom),
+    );
   }
   return merged;
 }

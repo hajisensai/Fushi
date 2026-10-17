@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
@@ -19,14 +19,28 @@ import 'package:fushi_core/fushi_core.dart';
 ReaderHeaderAction _action(String label, {IconData icon = Icons.add}) =>
     ReaderHeaderAction(icon: icon, label: label, onPressed: () {});
 
-/// 出厂勾上的全局按钮（「立即同步」可勾选但出厂不勾）。
-const List<String> _globals = <String>[
+/// 应用外球出厂勾上的全局按钮（「立即同步」可勾选但出厂不勾；反馈虽在目录里，
+/// 但按能力过滤掉（availableIn））。
+const List<String> _systemGlobals = <String>[
   'lookup',
   'popup_lookup',
   'clipboard',
   'screen_ocr',
   'camera_ocr',
+  'feedback',
 ];
+
+/// 其它应用内页面：不带「应用外查词」（在 Fushi 里只是另开一个独立查词窗）。
+const List<String> _generalGlobals = <String>[
+  'lookup',
+  'clipboard',
+  'screen_ocr',
+  'camera_ocr',
+  'feedback',
+];
+
+/// 阅读器 / 漫画 / 视频：只带「查词」与「反馈」，其余全局按钮要用户自己勾。
+const List<String> _mediaGlobals = <String>['lookup', 'feedback'];
 
 void main() {
   group('FloatingBallScope', () {
@@ -45,7 +59,7 @@ void main() {
       );
     });
 
-    test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板 / 同步，没有截屏与拍照', () {
+    test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板 / 截屏识字 / 同步，没有拍照', () {
       Set<FloatingBallGlobalAction> onDesktop(
         FloatingBallScope scope, {
         bool lookupModuleEnabled = true,
@@ -65,10 +79,11 @@ void main() {
         FloatingBallGlobalAction.lookup,
         FloatingBallGlobalAction.popupLookup,
         FloatingBallGlobalAction.clipboard,
+        FloatingBallGlobalAction.screenOcr,
         FloatingBallGlobalAction.sync,
       });
-      // 查词模块关着：打开查词页与全局查词都没有入口，只剩剪贴板（它在覆盖窗
-      // 不可用时退回主窗查词弹窗）与同步（与查词无关）。
+      // 查词模块关着：打开查词页与全局查词（含截屏识字的结果卡）都没有入口，只剩
+      // 剪贴板（它在覆盖窗不可用时退回主窗查词弹窗）与同步（与查词无关）。
       expect(
         onDesktop(FloatingBallScope.system, lookupModuleEnabled: false),
         <FloatingBallGlobalAction>{
@@ -84,6 +99,7 @@ void main() {
             FloatingBallGlobalAction.lookup,
             FloatingBallGlobalAction.clipboard,
             FloatingBallGlobalAction.sync,
+            FloatingBallGlobalAction.feedback,
           },
         );
       }
@@ -100,24 +116,50 @@ void main() {
       );
     });
 
-    test('出厂按钮：阅读器计时开关 + 三颗有声书传输键，漫画 / 视频全部专属按钮，都带全局按钮', () {
+    test('出厂按钮：阅读器计时开关 + 三颗有声书传输键，漫画 / 视频全部专属按钮，媒体页只带「查词」与「反馈」', () {
       expect(FloatingBallScope.reader.defaultButtons, <String>[
         ReaderControlItem.studyTimer.storageValue,
         ReaderControlItem.audiobookPrev.storageValue,
         ReaderControlItem.audiobookPlayPause.storageValue,
         ReaderControlItem.audiobookNext.storageValue,
-        ..._globals,
+        ..._mediaGlobals,
       ]);
       expect(FloatingBallScope.video.defaultButtons, <String>[
         ...kVideoFloatingBallButtons,
-        ..._globals,
+        ..._mediaGlobals,
       ]);
       expect(FloatingBallScope.manga.defaultButtons, <String>[
         ...kMangaFloatingBallButtons,
-        ..._globals,
+        ..._mediaGlobals,
       ]);
-      expect(FloatingBallScope.general.defaultButtons, _globals);
-      expect(FloatingBallScope.system.defaultButtons, _globals);
+      expect(FloatingBallScope.general.defaultButtons, _generalGlobals);
+      expect(FloatingBallScope.system.defaultButtons, _systemGlobals);
+    });
+
+    test('媒体页出厂不带与当前媒体无关的应用外入口（截图反馈：漫画页一长列按钮）', () {
+      const Set<String> appExternal = <String>{
+        'popup_lookup',
+        'clipboard',
+        'screen_ocr',
+        'camera_ocr',
+        'sync',
+      };
+      for (final FloatingBallScope scope in <FloatingBallScope>[
+        FloatingBallScope.reader,
+        FloatingBallScope.manga,
+        FloatingBallScope.video,
+      ]) {
+        expect(scope.isMediaScene, isTrue);
+        expect(
+          scope.defaultButtons.toSet().intersection(appExternal),
+          isEmpty,
+          reason: scope.storageValue,
+        );
+        // 仍在目录里：用户可以自己勾回来。
+        expect(scope.catalog, containsAll(appExternal));
+      }
+      expect(FloatingBallScope.general.isMediaScene, isFalse);
+      expect(FloatingBallScope.system.isMediaScene, isFalse);
     });
 
     test('立即同步：每个场景都能勾选，出厂不勾，勾上后编解码往返不丢', () {
@@ -126,12 +168,18 @@ void main() {
         FloatingBallGlobalAction.fromStorage(sync),
         FloatingBallGlobalAction.sync,
       );
-      expect(FloatingBallGlobalAction.sync.onByDefault, isFalse);
+      for (final FloatingBallScope scope in FloatingBallScope.values) {
+        expect(FloatingBallGlobalAction.sync.onByDefaultIn(scope), isFalse);
+      }
       for (final FloatingBallScope scope in FloatingBallScope.values) {
         expect(scope.catalog, contains(sync), reason: scope.storageValue);
         expect(scope.defaultButtons, isNot(contains(sync)));
         final List<String> withSync = <String>[...scope.defaultButtons, sync];
-        expect(scope.decodeButtons(scope.encodeButtons(withSync)), withSync);
+        // 编解码按目录顺序排（sync 在 feedback 之前）。
+        expect(scope.decodeButtons(scope.encodeButtons(withSync)), <String>[
+          for (final String id in scope.catalog)
+            if (withSync.contains(id)) id,
+        ]);
       }
       // 同步与平台无关：Android / iOS / 桌面都有。
       for (final (bool android, bool ios) in <(bool, bool)>[
@@ -251,8 +299,65 @@ void main() {
       expect(nativeIds, <String>{
         for (final FloatingBallGlobalAction action
             in FloatingBallGlobalAction.values)
-          action.storageValue,
+          if (action.availableIn(
+            FloatingBallScope.system,
+            isAndroid: true,
+            isIOS: false,
+            isDesktop: false,
+            lookupModuleEnabled: true,
+          ))
+            action.storageValue,
       });
+    });
+
+    test('反馈只在应用内球上（各平台都有），应用外球没有', () {
+      const FloatingBallGlobalAction feedback =
+          FloatingBallGlobalAction.feedback;
+      expect(FloatingBallGlobalAction.fromStorage('feedback'), feedback);
+      expect(feedback.onByDefaultIn(FloatingBallScope.general), isTrue);
+      expect(feedback.onByDefaultIn(FloatingBallScope.manga), isTrue);
+      for (final (bool android, bool ios, bool desktop) in <(bool, bool, bool)>[
+        (true, false, false),
+        (false, true, false),
+        (false, false, true),
+      ]) {
+        expect(feedback.availableOn(isAndroid: android, isIOS: ios), isTrue);
+        for (final FloatingBallScope scope in FloatingBallScope.values) {
+          expect(
+            feedback.availableIn(
+              scope,
+              isAndroid: android,
+              isIOS: ios,
+              isDesktop: desktop,
+              lookupModuleEnabled: true,
+            ),
+            scope != FloatingBallScope.system,
+            reason: '$scope android=$android ios=$ios desktop=$desktop',
+          );
+        }
+      }
+    });
+
+    test('漫画球的上一页 / 下一页图标跟文字走，不按右→左翻页镜像（BUG-3365）', () {
+      final String page = File(
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
+      ).readAsStringSync();
+      final int start = page.indexOf('Widget _buildMangaFloatingBallScene()');
+      expect(start, isNonNegative);
+      final String body = page.substring(
+        start,
+        page.indexOf("'ocr_boxes': ReaderHeaderAction(", start),
+      );
+      String iconOf(String key) {
+        final int at = body.indexOf("ValueKey<String>('$key')");
+        expect(at, isNonNegative, reason: key);
+        return RegExp(
+          r'icon:\s*([^,]+),',
+        ).firstMatch(body.substring(at))!.group(1)!.trim();
+      }
+
+      expect(iconOf('manga_floating_ball_previous'), 'Icons.chevron_left');
+      expect(iconOf('manga_floating_ball_next'), 'Icons.chevron_right');
     });
 
     test('应用外查词（独立查词窗）只在 Android 提供', () {
@@ -317,8 +422,16 @@ void main() {
 
     test('旧版全局按钮勾选迁移到没单独设过的场景', () async {
       await prefs.setPref('floating_ball.actions', 'clipboard');
+      // 旧勾选是用户明确选的：即使媒体页出厂不带剪贴板，也照旧勾选保留。
       expect(prefs.floatingBallButtons(FloatingBallScope.video), <String>[
         ...kVideoFloatingBallButtons,
+        'clipboard',
+      ]);
+      expect(prefs.floatingBallButtons(FloatingBallScope.reader), <String>[
+        ReaderControlItem.studyTimer.storageValue,
+        ReaderControlItem.audiobookPrev.storageValue,
+        ReaderControlItem.audiobookPlayPause.storageValue,
+        ReaderControlItem.audiobookNext.storageValue,
         'clipboard',
       ]);
       await prefs.setPref('floating_ball.actions', '-');

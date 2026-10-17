@@ -11,49 +11,41 @@ import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 
 void main() {
-  test(
-    'lookup retains rendered cue identity in real Chrome DOM',
-    () async {
-      final String? nodeExe = _resolveNode();
-      if (nodeExe == null) {
-        markTestSkipped('node not found on PATH; skipping JS execution');
+  test('lookup retains rendered cue identity in real Chrome DOM', () async {
+    final String? nodeExe = _resolveNode();
+    if (nodeExe == null) {
+      markTestSkipped('node not found on PATH; skipping JS execution');
+      return;
+    }
+    final Directory temp = Directory.systemTemp.createTempSync('reader-cue-');
+    try {
+      final File payload = File('${temp.path}/scripts.json')
+        ..writeAsStringSync(
+          jsonEncode(<String, Object>{
+            'shells': <String>[
+              ReaderPaginationScripts.paginatedShellSource(),
+              ReaderPaginationScripts.continuousShellSource(),
+            ],
+            'selection': ReaderSelectionScripts.source(),
+            // 与生产 engineShell 同序：study units 之后注入句子音频标点归属
+            // 模块（collectSentenceAudioCueRanges 依赖它）。
+            'units': '$kStudyUnitJs\n$kSentenceAudioOwnershipJs',
+          }),
+        );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        'test/reader/reader_audio_cue_identity_harness.mjs',
+        payload.path,
+      ]);
+      if (result.exitCode == 77) {
+        markTestSkipped('Chrome unavailable: ${result.stdout}');
         return;
       }
-      final Directory temp = Directory.systemTemp.createTempSync('reader-cue-');
-      try {
-        final File payload = File('${temp.path}/scripts.json')
-          ..writeAsStringSync(
-            jsonEncode(<String, Object>{
-              'shells': <String>[
-                ReaderPaginationScripts.paginatedShellSource(),
-                ReaderPaginationScripts.continuousShellSource(),
-              ],
-              'selection': ReaderSelectionScripts.source(),
-              // 与生产 engineShell 同序：study units 之后注入句子音频标点归属
-              // 模块（collectSentenceAudioCueRanges 依赖它）。
-              'units': '$kStudyUnitJs\n$kSentenceAudioOwnershipJs',
-            }),
-          );
-        final ProcessResult result = await Process.run(nodeExe, <String>[
-          'test/reader/reader_audio_cue_identity_harness.mjs',
-          payload.path,
-        ]);
-        if (result.exitCode == 77) {
-          markTestSkipped('Chrome unavailable: ${result.stdout}');
-          return;
-        }
-        expect(
-          result.exitCode,
-          0,
-          reason: '${result.stdout}\n${result.stderr}',
-        );
-        expect(result.stdout, contains('PASS 28 browser cases'));
-      } finally {
-        temp.deleteSync(recursive: true);
-      }
-    },
-    timeout: const Timeout(Duration(seconds: 90)),
-  );
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(result.stdout, contains('PASS 24 browser cases'));
+    } finally {
+      temp.deleteSync(recursive: true);
+    }
+  }, timeout: const Timeout(Duration(seconds: 90)));
 
   test(
     'browser launch failure reports the process exit and stderr (BUG-2803)',

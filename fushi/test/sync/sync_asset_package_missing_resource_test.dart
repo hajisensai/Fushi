@@ -95,7 +95,7 @@ void main() {
   group('audio package missing resources (BUG-1577)', () {
     test('导出：源音频文件不存在时记进 manifest.missingResources，不静默跳过', () async {
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-pkg-missing-export-');
+          await Directory.systemTemp.createTemp('fushi-pkg-missing-export-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       addTearDown(sourceDb.close);
@@ -126,7 +126,7 @@ void main() {
 
     test('导入：必需资源在包里没有登记时抛 Incomplete 且一行都不写 DB', () async {
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-pkg-missing-import-');
+          await Directory.systemTemp.createTemp('fushi-pkg-missing-import-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -167,7 +167,7 @@ void main() {
 
     test('导入：纯 SRT 包缺字幕资源时同样抛，不落 SrtBooks 行', () async {
       final Directory temp = await Directory.systemTemp
-          .createTemp('hibiki-pkg-missing-standalone-');
+          .createTemp('fushi-pkg-missing-standalone-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -210,7 +210,7 @@ void main() {
 
     test('封面缺失只降级为无封面，不抛也不编造路径', () async {
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-pkg-missing-cover-');
+          await Directory.systemTemp.createTemp('fushi-pkg-missing-cover-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -242,7 +242,7 @@ void main() {
 
     test('向后兼容：旧格式 manifest（无 missingResources 键）导入仍成功', () async {
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-pkg-legacy-ok-');
+          await Directory.systemTemp.createTemp('fushi-pkg-legacy-ok-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -291,7 +291,7 @@ void main() {
 
     test('向后兼容：旧格式坏包（resources 不全、无新键）也必须被拒绝', () async {
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-pkg-legacy-bad-');
+          await Directory.systemTemp.createTemp('fushi-pkg-legacy-bad-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -332,7 +332,7 @@ void main() {
 
     test('folder 模式（audioPaths 空、音频在 audioRoot）导出不再是零个音频文件', () async {
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-pkg-folder-mode-');
+          await Directory.systemTemp.createTemp('fushi-pkg-folder-mode-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -397,7 +397,7 @@ void main() {
 
     test('folder 模式音频目录为空时把 audioRoot 记进 missingResources', () async {
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-pkg-folder-empty-');
+          await Directory.systemTemp.createTemp('fushi-pkg-folder-empty-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       addTearDown(sourceDb.close);

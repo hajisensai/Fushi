@@ -20,6 +20,8 @@ class DiscoveryDomainImporters {
     required this.importText,
     required this.importPdf,
     required this.importAudiobook,
+    required this.importSubtitleAudiobook,
+    required this.transcribeAudiobook,
     required this.importMangaArchive,
     required this.registerGameExes,
   });
@@ -28,6 +30,16 @@ class DiscoveryDomainImporters {
   final Future<String?> Function(String filePath) importText;
   final Future<String?> Function(String filePath) importPdf;
   final Future<String?> Function(AlignAudiobookPlan plan) importAudiobook;
+
+  /// 独立字幕书（字幕 + 音频、无正文）。
+  final Future<String?> Function(SubtitleAudiobookPlan plan)
+      importSubtitleAudiobook;
+
+  /// 只有音频：交给宿主的转录后入库队列。排上队返回
+  /// `DiscoveryImportOutcome(deferred: true)`；本宿主不自动转录时抛
+  /// `DiscoveryImportBlockedException(audiobookMissingSubtitle)`。
+  final Future<DiscoveryImportOutcome> Function(TranscribeAudiobookPlan plan)
+      transcribeAudiobook;
 
   /// 漫画图包整包导入（cbz/cbr/cb7/rar/zip）。解包与 `.mokuro` sidecar 识别
   /// 都在域导入器内部完成，执行层只递一个路径进去。
@@ -73,7 +85,9 @@ class DiscoveryImportExecutor {
     };
     DiscoveryImportPlan plan =
         classifyDiscoveryDirectory(kind, filePaths, fileSizes: sizes);
-    if (plan is UnsupportedPlan) {
+    // 只有音频也算「还没凑齐」：包里的压缩包可能装着字幕/正文，先解开再判，
+    // 免得白跑几个小时转录（这一档以前就是 UnsupportedPlan，走同一条解压路）。
+    if (plan is UnsupportedPlan || plan is TranscribeAudiobookPlan) {
       final List<String> archives = <String>[
         for (final String path in filePaths)
           if (isDiscoveryArchivePath(path)) path,
@@ -138,6 +152,10 @@ class DiscoveryImportExecutor {
         return _single(await _importers.importPdf(plan.filePath));
       case AlignAudiobookPlan():
         return _single(await _importers.importAudiobook(plan));
+      case SubtitleAudiobookPlan():
+        return _single(await _importers.importSubtitleAudiobook(plan));
+      case TranscribeAudiobookPlan():
+        return _importers.transcribeAudiobook(plan);
       case ImportMangaArchivePlan():
         return _single(await _importers.importMangaArchive(plan.archivePath));
       case RegisterGameExesPlan():
@@ -148,16 +166,19 @@ class DiscoveryImportExecutor {
         );
       case MultiPlan():
         int imported = 0;
+        bool deferred = false;
         final List<String> keys = <String>[];
         for (final DiscoveryImportPlan child in plan.children) {
           final DiscoveryImportOutcome outcome = await _execute(child);
           imported += outcome.importedCount;
+          deferred = deferred || outcome.deferred;
           final String? summary = outcome.summary;
           if (summary != null) keys.add(summary);
         }
         return DiscoveryImportOutcome(
           importedCount: imported,
           summary: keys.isEmpty ? null : keys.join(' / '),
+          deferred: deferred,
         );
       case UnsupportedPlan():
         throw DiscoveryImportBlockedException(plan.blocker);

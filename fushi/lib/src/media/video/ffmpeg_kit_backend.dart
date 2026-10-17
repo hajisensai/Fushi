@@ -12,7 +12,9 @@ import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter/return_code.dart';
 import 'package:ffmpeg_kit_flutter/session.dart';
+import 'package:ffmpeg_kit_flutter/statistics.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 
 /// 会话收尾（取消 / 读退出码 / 读日志）各自的独立上限。
 ///
@@ -42,7 +44,7 @@ enum KitSessionPhase {
 
 /// 移动端（Android/iOS）后端：进程内调用「自编」的 ffmpeg-kit（arthenica 源码 +
 /// NDK r25 重编的最小变体；TODO-2357 起带 `--enable-gpl --enable-x264`，产物许可为
-/// GPLv3，与 Hibiki 自身一致），经其 `package:ffmpeg_kit_flutter` API 跑
+/// GPLv3，与 Fushi 自身一致），经其 `package:ffmpeg_kit_flutter` API 跑
 /// 同一套 ffmpeg 命令。替代崩溃的第三方预编译 ffmpeg-kit 变体（其
 /// `libffmpegkit_abidetect.so` 在 Android 16/API36 JNI_OnLoad 返回非法版本，启动即崩，
 /// BUG-122）。自编 AAR vendored 在 third_party/ffmpeg_kit_flutter/android/libs。
@@ -65,8 +67,26 @@ enum KitSessionPhase {
 /// 桌面 CLI 后端不受影响（子进程有独立超时），所以这是移动端专属的挂死面。
 /// 收敛后每一步都有上限，超时一律返回 `returnCode: null` 的失败结果，并在
 /// [FfmpegRunResult.output] 里写明卡在哪个阶段。
-class KitFfmpegBackend implements FfmpegBackend {
+class KitFfmpegBackend implements FfmpegBackend, FfmpegWatchedRunner {
   const KitFfmpegBackend();
+
+  /// 观察式运行（BUG-3102）：进度来自 ffmpeg-kit 的统计回调（[Statistics.getTime] =
+  /// 已处理媒体时间，毫秒），判活规则与桌面 CLI 同一条（[FfmpegWatch.stallTimeout]）。
+  @override
+  Future<FfmpegRunResult> runWatched(List<String> args, FfmpegWatch watch) {
+    return runKitFfmpegWatchedSession(
+      watch: watch,
+      executable: 'ffmpeg-kit',
+      start:
+          (void Function() onComplete, void Function(double timeMs) onTime) =>
+              FFmpegKit.executeWithArgumentsAsync(
+        args,
+        (_) => onComplete(),
+        null,
+        (Statistics statistics) => onTime(statistics.getTime()),
+      ),
+    );
+  }
 
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) {
@@ -77,6 +97,13 @@ class KitFfmpegBackend implements FfmpegBackend {
           FFmpegKit.executeWithArgumentsAsync(args, (_) => onComplete()),
     );
   }
+
+  /// 查询类命令（`-filters` 等，BUG-2938）：与 [run] 同一条会话路径即可——ffmpeg-kit
+  /// 把 fftools 的 printf 改成了 `av_log(NULL, AV_LOG_STDERR, …)`，查询表本就落在
+  /// `session.getOutput()` 的合并日志里，没有桌面 CLI「stdout 被丢」的问题。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
 
   /// 移动端 ffprobe：进程内 `FFprobeKit.executeWithArgumentsAsync`，
   /// `session.getOutput()` 拿 ffprobe 的 JSON 报告（喂
@@ -171,4 +198,93 @@ FfmpegRunResult _kitTimeoutResult(String executable, KitSessionPhase phase) {
     executable: executable,
     attemptedExecutables: <String>[executable],
   );
+}
+
+/// [KitFfmpegBackend.runWatched] 的会话驱动：与 [runKitFfmpegSession] 同样给启动 / 取消 /
+/// 收尾每一次 method channel 往返加上限（BUG-2542），区别只在「跑」这一段——不是固定
+/// 总预算，而是已处理媒体时间连续 [FfmpegWatch.stallTimeout] 不推进才判卡死。
+@visibleForTesting
+Future<FfmpegRunResult> runKitFfmpegWatchedSession({
+  required Future<Session> Function(
+    void Function() onComplete,
+    void Function(double timeMs) onTime,
+  ) start,
+  required FfmpegWatch watch,
+  required String executable,
+  Future<void> Function(int sessionId) cancelSession = FFmpegKit.cancel,
+  Duration epilogueTimeout = _kKitSessionEpilogueTimeout,
+  Duration startTimeout = _kKitSessionStartTimeout,
+  DateTime Function() clock = DateTime.now,
+}) async {
+  final Completer<void> done = Completer<void>();
+  Duration processed = Duration.zero;
+  DateTime lastAdvance = clock();
+  final Session session;
+  try {
+    session = await start(
+      () {
+        if (!done.isCompleted) done.complete();
+      },
+      (double timeMs) {
+        final Duration at = Duration(microseconds: (timeMs * 1000).round());
+        if (at <= processed) return;
+        processed = at;
+        lastAdvance = clock();
+        watch.onProgress?.call(at);
+      },
+    ).timeout(startTimeout);
+  } on TimeoutException {
+    return _kitTimeoutResult(executable, KitSessionPhase.start);
+  }
+
+  final Completer<String> aborted = Completer<String>();
+  final Duration interval = Duration(
+    milliseconds: (watch.stallTimeout.inMilliseconds ~/ 4).clamp(50, 1000),
+  );
+  final Timer watchdog = Timer.periodic(interval, (_) {
+    if (!aborted.isCompleted &&
+        clock().difference(lastAdvance) >= watch.stallTimeout) {
+      aborted.complete(ffmpegStallMarker(watch.stallTimeout));
+    }
+  });
+  unawaited(
+    watch.cancel?.then((_) {
+      if (!aborted.isCompleted) aborted.complete(kFfmpegCancelledMarker);
+    }),
+  );
+  final String? reason = await Future.any(<Future<String?>>[
+    done.future.then((_) => null),
+    aborted.future,
+  ]);
+  watchdog.cancel();
+  if (reason != null) {
+    final int? sessionId = session.getSessionId();
+    if (sessionId != null) {
+      try {
+        await cancelSession(sessionId).timeout(epilogueTimeout);
+      } on TimeoutException {
+        // 取消没回包不改变结论。
+      }
+    }
+    return FfmpegRunResult(
+      returnCode: null,
+      output: reason,
+      executable: executable,
+      attemptedExecutables: <String>[executable],
+    );
+  }
+  try {
+    final ReturnCode? rc =
+        await session.getReturnCode().timeout(epilogueTimeout);
+    final String output =
+        (await session.getOutput().timeout(epilogueTimeout)) ?? '';
+    return FfmpegRunResult(
+      returnCode: rc?.getValue(),
+      output: output,
+      executable: executable,
+      attemptedExecutables: <String>[executable],
+    );
+  } on TimeoutException {
+    return _kitTimeoutResult(executable, KitSessionPhase.epilogue);
+  }
 }

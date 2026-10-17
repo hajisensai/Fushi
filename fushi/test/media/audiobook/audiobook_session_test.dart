@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -77,7 +78,7 @@ void main() {
       audioHandler: () => null,
       showFloatingLyric: () => false,
       showMediaNotification: () => false,
-      floatingLyricContextLines: () => 0,
+      floatingLyricVisibleLines: () => 1,
       floatingLyricStyle: () => const FloatingLyricStyle(
         fontSize: 16,
         textColor: 0,
@@ -90,7 +91,7 @@ void main() {
       floatingLyricClickLookup: () => false,
       onFloatingLyricLookup: (_, __, ___) {},
       controlStreams: AudioControlStreams(
-        playStream: const Stream<void>.empty(),
+        playIntentStream: const Stream<MediaPlayIntent>.empty(),
         seekStream: const Stream<Duration>.empty(),
         skipNextStream: const Stream<void>.empty(),
         skipPreviousStream: const Stream<void>.empty(),
@@ -137,7 +138,7 @@ void main() {
         title: 'Book $key',
         mediaIdentifier: 'fushi://book/$key',
       ),
-      audioFiles: <File>[makeFile('hibiki-session-$key.mp3')],
+      audioFiles: <File>[makeFile('fushi-session-$key.mp3')],
       prefs: SessionPrefs(
         followAudio: true,
         delayMs: 0,
@@ -248,7 +249,7 @@ void main() {
         title: 'Book b',
         mediaIdentifier: 'fushi://book/b',
       ),
-      audioFiles: <File>[makeFile('hibiki-session-b.mp3')],
+      audioFiles: <File>[makeFile('fushi-session-b.mp3')],
       prefs: prefs(),
       persist: persist(),
     );
@@ -417,7 +418,7 @@ void main() {
         title: 'Old',
         mediaIdentifier: 'fushi://book/old',
       ),
-      audioFiles: <File>[makeFile('hibiki-session-old-generation.mp3')],
+      audioFiles: <File>[makeFile('fushi-session-old-generation.mp3')],
       prefs: prefs(),
       persist: persist(),
     );
@@ -433,7 +434,7 @@ void main() {
         title: 'New',
         mediaIdentifier: 'fushi://book/new',
       ),
-      audioFiles: <File>[makeFile('hibiki-session-new-generation.mp3')],
+      audioFiles: <File>[makeFile('fushi-session-new-generation.mp3')],
       prefs: prefs(),
       persist: persist(),
     );
@@ -446,6 +447,151 @@ void main() {
     await startNew;
     expect(session.book?.bookKey, 'new');
     expect(session.controller, isNotNull);
+  });
+
+  test('BUG-3197 stop re-encodes the live position against the replaced cues',
+      () async {
+    // 会话期间字幕被整组替换（阅读器内重新导入字幕 -> forceReload 先 stop 旧会话）：
+    // stop 落库的全书毫秒必须按**库里新 cue** 推出的文件时长编码，否则下次开书按
+    // 新 cue 一拆，听书断点落到别的文件 / 偏移。
+    AudioCue fileCue(int index, int file, int endMs) => AudioCue()
+      ..id = index + 1
+      ..bookKey = 'a'
+      ..chapterHref = 'chapter'
+      ..sentenceIndex = index
+      ..textFragmentId = 'cue-$index'
+      ..text = 'cue $index'
+      ..startMs = 0
+      ..endMs = endMs
+      ..audioFileIndex = file;
+
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    // 库里已经是新字幕：文件 0 的末句结束于 12s（旧字幕是 10s）。
+    await AudiobookRepository(db).saveCues(
+      bookKey: 'a',
+      cues: <AudioCue>[fileCue(0, 0, 12000), fileCue(1, 1, 25000)],
+    );
+
+    installPlatform();
+    final AudiobookSession session = makeSession(db: db);
+    addTearDown(session.dispose);
+    final List<int> writes = <int>[];
+    await session.start(
+      info: SessionBookInfo(
+        bookKey: 'a',
+        audiobook: ab('a'),
+        title: 'Book a',
+        mediaIdentifier: 'fushi://book/a',
+      ),
+      audioFiles: <File>[
+        makeFile('fushi-session-bug3197-0.mp3'),
+        makeFile('fushi-session-bug3197-1.mp3'),
+      ],
+      // 旧字幕编码下的「文件 1 第 3 秒」= 10000 + 3000。
+      prefs: const SessionPrefs(
+        followAudio: true,
+        delayMs: 0,
+        speed: 1.0,
+        positionMs: 13000,
+        imagePauseSec: 0,
+        volume: 1.0,
+      ),
+      persist: SessionPersistCallbacks(
+        onPositionWrite: (_, int ms) async => writes.add(ms),
+        onDelayPersist: (_) async {},
+        onSpeedPersist: (_) async {},
+        onVolumePersist: (_) async {},
+        onImagePausePersist: (_) async {},
+        onFollowAudioPersist: (_) async {},
+      ),
+      cues: <AudioCue>[fileCue(0, 0, 10000), fileCue(1, 1, 20000)],
+    );
+    final AudiobookPlayerController c = session.controller!;
+    expect(c.globalPosition.inMilliseconds, 13000,
+        reason: 'precondition: restored to file 1 at 3s under the old cues');
+
+    writes.clear();
+    await session.stop();
+
+    expect(writes, isNotEmpty);
+    expect(writes.last, 12000 + 3000,
+        reason: 'file 1 at 3s, encoded with the new per-file cue durations');
+  });
+
+  test(
+      'BUG-3251 replacing the cues while playing switches periodic writes '
+      'to the new encoding at once', () async {
+    // 书架 / 互联「只更新字幕」在会话**播放中**换掉库里的 cue：此前要等到 stop 才
+    // 换编码，期间 app 被直接杀掉，库里留下的就是旧编码。
+    AudioCue fileCue(int index, int file, int endMs) => AudioCue()
+      ..id = index + 1
+      ..bookKey = 'a'
+      ..chapterHref = 'chapter'
+      ..sentenceIndex = index
+      ..textFragmentId = 'cue-$index'
+      ..text = 'cue $index'
+      ..startMs = 0
+      ..endMs = endMs
+      ..audioFileIndex = file;
+
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final List<AudioCue> oldCues = <AudioCue>[
+      fileCue(0, 0, 10000),
+      fileCue(1, 1, 20000),
+    ];
+    await AudiobookRepository(db).saveCues(bookKey: 'a', cues: oldCues);
+
+    installPlatform();
+    final AudiobookSession session = makeSession(db: db);
+    addTearDown(session.dispose);
+    await session.start(
+      info: SessionBookInfo(
+        bookKey: 'a',
+        audiobook: ab('a'),
+        title: 'Book a',
+        mediaIdentifier: 'fushi://book/a',
+      ),
+      audioFiles: <File>[
+        makeFile('fushi-session-bug3251-0.mp3'),
+        makeFile('fushi-session-bug3251-1.mp3'),
+      ],
+      prefs: const SessionPrefs(
+        followAudio: true,
+        delayMs: 0,
+        speed: 1.0,
+        positionMs: 13000,
+        imagePauseSec: 0,
+        volume: 1.0,
+      ),
+      persist: SessionPersistCallbacks(
+        onPositionWrite: (_, int ms) async {},
+        onDelayPersist: (_) async {},
+        onSpeedPersist: (_) async {},
+        onVolumePersist: (_) async {},
+        onImagePausePersist: (_) async {},
+        onFollowAudioPersist: (_) async {},
+      ),
+      cues: oldCues,
+    );
+    final AudiobookPlayerController c = session.controller!;
+    expect(c.globalPosition.inMilliseconds, 13000,
+        reason: 'precondition: file 1 at 3s under the old cues');
+
+    // 播放中换字幕：文件 0 的末句改为 12s 结束。
+    await AudiobookRepository(db).saveCues(
+      bookKey: 'a',
+      cues: <AudioCue>[fileCue(0, 0, 12000), fileCue(1, 1, 25000)],
+    );
+    for (int i = 0;
+        i < 50 && c.globalPosition.inMilliseconds != 15000;
+        i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(c.globalPosition.inMilliseconds, 12000 + 3000,
+        reason: 'the live controller adopts the new cues before any stop, so '
+            'periodic writes are encoded with the new per-file durations');
   });
 }
 

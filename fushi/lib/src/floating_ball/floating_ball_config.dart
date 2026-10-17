@@ -7,6 +7,7 @@
 library;
 
 import 'dart:io' show Platform;
+import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/reader/reader_control_layout.dart';
@@ -21,6 +22,38 @@ bool? debugDesktopSystemBallPlatformOverride;
 bool get isDesktopSystemBallPlatform =>
     debugDesktopSystemBallPlatformOverride ??
     (Platform.isWindows || Platform.isMacOS);
+
+/// 应用外（系统级）悬浮球此刻是否该给应用内球让位（隐藏）。两颗球同时出现在
+/// Fushi 里是重复入口（群反馈：歌词页右侧并排两颗球），所以：
+///
+///  - 只在「应用内悬浮球」开关开着时让位（[inAppBallEnabled]）——用户关了应用内
+///    球，前台也保留应用外球，否则 Fushi 里一颗球都没有。页面临时不画球（场景
+///    要求隐藏、本页点了关闭、截屏中）不算关掉，照样让位：那是页面 / 用户此刻
+///    不要球，不是要另一颗球顶上。
+///  - 「在前台」按平台分：
+///    - 桌面（[desktop]）只认 [AppLifecycleState.resumed]：主窗失焦只到
+///      inactive，那时用户在用别的程序，正是应用外球该露面的时候。
+///    - Android 认 [mobileForeground]（宿主按 resumed → true、paused / hidden →
+///      false、inactive / detached 维持原判算出的「在前台」）：下拉通知栏、系统
+///      对话框只到 inactive，不该让球闪一下。分屏多窗口时 Fushi 那一格是
+///      resumed，仍算前台、球照样让位（应用内球就在那一格里）。
+///    - Android 画中画（[inPictureInPicture]）一律不让位：Fushi 只剩一个小窗，
+///      用户在用别的应用。
+///
+/// 只决定显隐，不碰开关与位置：两颗球的「显示」开关与停靠位置各存各的，前后台
+/// 切换不会把用户关掉的应用外球打开（关着时原生球根本没起）。
+bool floatingBallSystemBallYieldsToInApp({
+  required bool inAppBallEnabled,
+  required AppLifecycleState lifecycle,
+  required bool mobileForeground,
+  required bool desktop,
+  required bool inPictureInPicture,
+}) {
+  if (!inAppBallEnabled) return false;
+  if (desktop) return lifecycle == AppLifecycleState.resumed;
+  if (inPictureInPicture) return false;
+  return mobileForeground;
+}
 
 /// 悬浮球所处的场景：应用内按当前页面的语料分，应用外是 Android 系统球。
 enum FloatingBallScope {
@@ -82,8 +115,8 @@ enum FloatingBallScope {
   ];
 
   /// 出厂按钮：阅读器是阅读计时开关 + 有声书的上一句 / 播放暂停 / 下一句（后三颗
-  /// 沿用旧阅读器内置球的出厂槽位），漫画 / 视频是全部专属按钮；各场景都带出厂
-  /// 勾上的全局按钮（[FloatingBallGlobalAction.onByDefault]）。
+  /// 沿用旧阅读器内置球的出厂槽位），漫画 / 视频是全部专属按钮；再加本场景出厂
+  /// 勾上的全局按钮（[FloatingBallGlobalAction.onByDefaultIn]）。
   List<String> get defaultButtons => <String>[
     ...switch (this) {
       reader => <String>[
@@ -96,8 +129,11 @@ enum FloatingBallScope {
     },
     for (final FloatingBallGlobalAction action
         in FloatingBallGlobalAction.values)
-      if (action.onByDefault) action.storageValue,
+      if (action.onByDefaultIn(this)) action.storageValue,
   ];
+
+  /// 阅读器 / 漫画 / 视频：球上已经有一整排本页专属按钮。
+  bool get isMediaScene => this == reader || this == manga || this == video;
 
   /// 逗号分隔的持久化值 → 按钮 id（保持目录顺序、去掉未知值与重复）。
   /// 空串 = 从没设过 → [defaultButtons]；用户全部关掉存的是 `-`。
@@ -162,15 +198,33 @@ enum FloatingBallGlobalAction {
   /// 立即同步：与设置页「立即同步」、媒体页下拉刷新同一个入口
   /// （`runManualSyncWithFeedback`）。应用外球把 Fushi 唤到前台再同步——结果、
   /// 冲突裁决与重新登录提示都在主窗里给。
-  sync('sync');
+  sync('sync'),
+
+  /// 反馈：截下当前画面后打开反馈中心（与首页顶栏的反馈按钮同一个入口
+  /// `openFeedbackCenter`）。只在应用内球上：截图截的是 Fushi 自己的页面，应用外
+  /// 球浮在别的程序上，截不到也没有页面可附。
+  feedback('feedback');
 
   const FloatingBallGlobalAction(this.storageValue);
 
   final String storageValue;
 
-  /// 出厂勾不勾上。同步不勾：多数人没配同步后端，出厂就塞一颗点了只会说「同步
-  /// 不可用」的按钮是噪音；配了同步的人在 设置 → 悬浮球 里自己勾。
-  bool get onByDefault => this != sync;
+  /// 在 [scope] 的球上出厂勾不勾上（都能在 设置 → 悬浮球 里自己勾 / 取消）：
+  ///
+  /// - 同步各场景都不勾：多数人没配同步后端，出厂就塞一颗点了只会说「同步不可用」
+  ///   的按钮是噪音。
+  /// - 应用外球：其余全勾——它本来就是给别的程序用的这些入口。
+  /// - 阅读器 / 漫画 / 视频只勾「查词」与「反馈」：球上已有一整排本页专属按钮，
+  ///   再叠上应用外查词 / 剪贴板 / 截屏识字 / 拍照这些与当前媒体无关的入口，漫画页
+  ///   出厂就是十一颗按钮的长列（用户 2026-10-14 截图反馈；反馈保留）。
+  /// - 其它应用内页面：除「应用外查词」外都勾——在 Fushi 里面它只是另开一个独立
+  ///   查词窗，与「查词」重复。
+  bool onByDefaultIn(FloatingBallScope scope) {
+    if (this == sync) return false;
+    if (scope == FloatingBallScope.system) return true;
+    if (scope.isMediaScene) return this == lookup || this == feedback;
+    return this != popupLookup;
+  }
 
   static FloatingBallGlobalAction? fromStorage(String raw) {
     for (final FloatingBallGlobalAction action in values) {
@@ -193,12 +247,13 @@ enum FloatingBallGlobalAction {
 
   /// 在某个场景的球上有没有这颗按钮。只有桌面的应用外球与众不同：它浮在别的程序
   /// 上面，「应用外查词」在那里就是查前台程序当前选中的文字（与全局查词热键同一条
-  /// 路径），截屏识字 / 拍照查词桌面不提供；其余场景同 [availableOn]。
+  /// 路径），截屏识字是截球所在的显示器、在冻结画面上点字（结果用同一张全局查词
+  /// 卡），拍照查词桌面不提供；其余场景同 [availableOn]。
   ///
   /// [lookupModuleEnabled]：「查词」模块开着没有。桌面应用外球的「查词」（打开
-  /// 查词页）与「应用外查词」（全局查词覆盖窗）都挂在这个模块上——模块关着时查词
-  /// 页没有入口、全局查词也不启动，按钮点了没反应，所以干脆不出现。剪贴板查词在
-  /// 覆盖窗不可用时退回主窗查词弹窗，不受影响。
+  /// 查词页）、「应用外查词」与「截屏识字」（都用全局查词覆盖窗）都挂在这个模块
+  /// 上——模块关着时查词页没有入口、全局查词也不启动，按钮点了没反应，所以干脆
+  /// 不出现。剪贴板查词在覆盖窗不可用时退回主窗查词弹窗，不受影响。
   bool availableIn(
     FloatingBallScope scope, {
     required bool isAndroid,
@@ -206,14 +261,19 @@ enum FloatingBallGlobalAction {
     required bool isDesktop,
     required bool lookupModuleEnabled,
   }) {
+    if (scope == FloatingBallScope.system &&
+        this == FloatingBallGlobalAction.feedback) {
+      return false;
+    }
     if (scope == FloatingBallScope.system && isDesktop) {
       return switch (this) {
         FloatingBallGlobalAction.lookup ||
-        FloatingBallGlobalAction.popupLookup => lookupModuleEnabled,
+        FloatingBallGlobalAction.popupLookup ||
+        FloatingBallGlobalAction.screenOcr => lookupModuleEnabled,
         FloatingBallGlobalAction.clipboard => true,
-        FloatingBallGlobalAction.screenOcr ||
         FloatingBallGlobalAction.cameraOcr => false,
         FloatingBallGlobalAction.sync => true,
+        FloatingBallGlobalAction.feedback => false,
       };
     }
     return availableOn(isAndroid: isAndroid, isIOS: isIOS);

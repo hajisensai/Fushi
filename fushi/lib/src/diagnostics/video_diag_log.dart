@@ -84,7 +84,12 @@ class VideoDiagLog {
   /// 默认过滤串：整体 verbose，但 mpv 转写行压到 info——libmpv 的 verbose 行已经
   /// 单独落进 [mpvLogFileName]，没必要在统一时间轴里再全量重复一遍（只留 warn /
   /// error 这类值得和其它域对齐时刻的）。用户可在设置里改。
-  static const String defaultMsgLevel = 'all=v,mpv=info';
+  ///
+  /// `mpv/stats` 是**我们自己的**每秒属性采样（掉帧 / 延迟帧 / avsync / hwdec），
+  /// 不是 libmpv 日志转写，mpv 原始日志里也没有它——只是类别名落在 `mpv/` 前缀下。
+  /// 不显式给出时它会被 `mpv=info` 一起压掉，排查掉帧最要紧的那一行就消失了，故精确
+  /// 类别单独放回 verbose（精确类别优先于前缀回退，见 [passesFilter]）。
+  static const String defaultMsgLevel = 'all=v,mpv=info,mpv/stats=v';
 
   final List<String> _lines = <String>[];
   final Stopwatch _uptime = Stopwatch()..start();

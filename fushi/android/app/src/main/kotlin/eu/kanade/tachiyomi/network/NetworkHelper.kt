@@ -37,7 +37,7 @@ class NetworkHelper(context: Context) {
             .build()
     }
 
-    @Deprecated("The regular client is used on the Hibiki host")
+    @Deprecated("The regular client is used on the Fushi host")
     val cloudflareClient: OkHttpClient
         get() = client
 
@@ -50,7 +50,7 @@ class NetworkHelper(context: Context) {
         .getOrNull()
         ?.takeIf { it.isNotBlank() }
         ?: System.getProperty("http.agent").orEmpty()
-            .ifBlank { "Hibiki Mihon Extension Host" }
+            .ifBlank { "Fushi Mihon Extension Host" }
 
     fun setUA(value: String) {
         userAgent = value

@@ -1,8 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/settings/settings_schema_ai.dart';
+import 'package:fushi/src/settings/settings_schema_models.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_downloads.dart';
@@ -96,9 +96,9 @@ List<SettingsDestination> _buildDestinations() {
     if (kMediaTrackingEnabled) buildMediaTrackingDestination(),
     buildLookupDestination(),
     buildCardCreationDestination(),
+    buildModelsDestination(),
     buildDownloadsDestination(),
     buildServicesDestination(),
-    buildAiDestination(),
     buildProfilesDestination(),
     buildSyncBackupDestination(),
     buildInterconnectDestination(),
@@ -185,7 +185,7 @@ SettingsDestination buildReaderGroupDestination(
   return SettingsDestination(
     id: SettingsDestinationId.readerQuickSettings,
     title: title,
-    icon: Icons.tune_outlined,
+    icon: FushiIcons.settings,
     sections: <SettingsSection>[SettingsSection(items: items)],
   );
 }
@@ -257,7 +257,7 @@ SettingsDestination buildVideoGroupDestination(
   return SettingsDestination(
     id: SettingsDestinationId.videoQuickSettings,
     title: title,
-    icon: Icons.tune_outlined,
+    icon: FushiIcons.settings,
     sections: sections.isEmpty
         ? <SettingsSection>[const SettingsSection(items: <SettingsItem>[])]
         : sections,
@@ -281,7 +281,7 @@ SettingsDestination buildReaderQuickSettingsDestination(
     id: SettingsDestinationId.readerQuickSettings,
     title: t.reader_settings_section,
     summary: t.source_description_epub,
-    icon: Icons.tune_outlined,
+    icon: FushiIcons.settings,
     sections: <SettingsSection>[
       sectionFor(ReaderGroup.layout, t.section_layout),
       sectionFor(ReaderGroup.behavior, t.settings_destination_reading_controls),

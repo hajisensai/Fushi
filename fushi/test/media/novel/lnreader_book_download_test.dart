@@ -103,7 +103,6 @@ void main() {
         rootDirectory: root,
         runtime: runtime,
         httpClientFactory: HttpClient.new,
-        builtinStoreUrl: 'http://127.0.0.1:1/unused.json',
       );
       await manager.initialise();
       // 装载只需要插件文件存在。

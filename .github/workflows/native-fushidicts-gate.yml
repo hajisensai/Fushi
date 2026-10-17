@@ -3,7 +3,7 @@
 #
 # ctest-gcc：2026-09-30 从 build-multiplatform.yml 的 linux job 搬来。那个 job 原先在
 # `flutter build linux` 之前先跑这套 ctest；Linux app 不再在 CI 构建（所有者拍板）之后，
-# 那个 job 只剩无头服务端的随包原生库（服务端不带 fushidicts），ctest 于是搬到这里。
+# 那个 job 只剩无头服务端的随包原生库（后来它也随包 libfushidicts_ffi.so，但只编库、不跑 ctest），ctest 于是搬到这里。
 # 触发面因此变窄且更准：只在 ctest 真正读到的输入（fushidicts 源码 + 它引用的
 # fushi/assets/transforms/）变化时跑，而不是每条碰 fushi/** 的 PR 都跑。
 #

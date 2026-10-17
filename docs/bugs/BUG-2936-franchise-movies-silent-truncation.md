@@ -1,0 +1,9 @@
+## BUG-2936 · AI下视频「全部哆啦A梦大电影」MAL系列遍历静默截断丢新剧场版·失败时静默降级成下单部TV·短片混进剧场版
+- **报告**：2026-10-04（用户：「还有比如我希望下载全部的哆啦a梦大电影，你试着交互一下」——沿「AI 下视频」整套下载链路走一遍真实交互）
+- **真实性**：✅ 真 bug，三处（第 1 处与并发的 BUG-2935 同根，见备注）：
+  1. **MAL 关联遍历静默截断**：`packages/fushi_engine/lib/media/video/discovery/video_franchise.dart` 的 `resolveMalFranchise` 到 60 次请求就停、不留标记。MAL 实测（myanimelist.net/anime/2471）：1979 版 Side story 一层就 ~50 部（37 部剧场版夹特别篇与短片），广度优先下最新的剧场版恰好落在预算外。→ 由 BUG-2935（PR #1944，`VideoFranchise.truncated` + `franchiseTruncated` + 预算 150）修掉；本条补上它没覆盖的两种「没走完」：`loadFranchise` 的 `_guardFranchise` 把来源异常吞成 null，与「来源没有数据」不可区分，合并后的清单照样当完整的；联网补全在资料源整个缺席时生成的占位清单也当完整的。
+  2. **取不到清单时静默降级**：`video_acquisition_reducer.dart` 的 `_onFranchiseLoaded`（修前 :2020-2034）只要成员为空或只剩锚点，就说「没找到同系列，按这一部继续」并把 scope 改成 `work`。用户要「全部剧场版」而锚点是 TV（1979 版 1700+ 集），或资料源出错 / 不可用（Jikan 连不上时 MAL 第一个请求就失败），都会替用户下错东西，且「没有同系列作品」本身是假话。
+  3. **同映短片混进剧场版**：`_malFranchiseKind`（修前只看 MAL `type`）——MAL 把哆啦A梦剧场版同映的 15–30 分钟短片、The☆Doraemons 短片、天象馆片也标 `Movie`，默认勾选进「全部剧场版」。
+- **[x] ① 已修复** — reducer `_franchiseHasNothingMore`：只有清单走完（`!truncated`）且锚点本身属于用户要的范围（整套 / 要剧场版而锚点是剧场版 / 要剧集而锚点是剧集）才自动按单部继续；否则取不到时说 `franchiseUnavailable`，并问新槽位 `franchiseFallback`（只下这一部 / 取消）。`loadFranchise` 用 `_FranchiseAttempt` 区分来源出错，出错则合并结果标 `truncated`；联网补全的资料源缺席占位标 `truncated`。MAL `Movie` 片长 < 40 分钟（AMPAS / BFI 长片定义，`kVideoFranchiseMinFeatureMinutes`）不算剧场版，片长未知照收。i18n 新增 2 条；`ai_video_acquire_franchise_truncated` 的文案从「系列太大」改成与原因无关的「没能全部查到」（现在来源出错也会触发它）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/discovery/video_franchise_test.dart`（短片判据含 40 分钟边界与片长未知、首请求失败的空清单标 truncated）；`fushi/test/media/video/acquisition/video_acquisition_franchise_test.dart`（null / 要剧场版却只有 TV / truncated 且只剩锚点 → 问 `franchiseFallback` 不静默改单部；继续 / 取消）。原测试「没有系列来源（null）同样退回单部」钉的正是本 bug，已改为新行为。
+- **备注**：与 BUG-2935（另一会话同日并发修同一截断）合流：截断标记沿用它的 `truncated` / `franchiseTruncated`，本条不再重复实现。未改——交互式选作品时 AI 身份判定不知道 scope（整套模式下哆啦A梦多个候选会问用户选哪一部；选哪部作锚点都能串起系列，只是多一问）。

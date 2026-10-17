@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
@@ -221,7 +222,7 @@ class MigrationManifest {
       tmp = await Directory.systemTemp.createTemp('fushi_migration_manifest_');
       final String dbPath = p.join(tmp.path, entry.name);
       final OutputFileStream out = OutputFileStream(dbPath);
-      entry.writeContent(out);
+      writeZipEntryStreaming(entry, out);
       await out.close();
       return (countTablesInDb(dbPath), schemaVersionOfDb(dbPath));
     } finally {

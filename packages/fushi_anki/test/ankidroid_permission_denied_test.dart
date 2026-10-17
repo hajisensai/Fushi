@@ -37,7 +37,7 @@ AnkiSettings _settings() => const AnkiSettings(
       availableNoteTypes: <AnkiNoteType>[
         AnkiNoteType(
           id: 2,
-          name: 'Hibiki',
+          name: 'Fushi',
           fields: <String>['Expression', 'Reading'],
         ),
       ],

@@ -155,7 +155,7 @@ foreach ($file in @(
 # Locale Emulator 2.5.0.1 (LGPL-3.0), pinned by version and SHA-256 for x86.
 $tempBase = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
 $leZip = Join-Path $tempBase 'Locale.Emulator.2.5.0.1.zip'
-$leDir = Join-Path $tempBase 'hibiki-locale-emulator-2.5.0.1'
+$leDir = Join-Path $tempBase 'fushi-locale-emulator-2.5.0.1'
 $leUrl = 'https://github.com/xupefei/Locale-Emulator/releases/download/v2.5.0.1/Locale.Emulator.2.5.0.1.zip'
 $expectedLeSha = '808ff584426d52cc775ad6406da00622f454be95bd4c8fbca42eef4b7235ad5c'
 if (-not (Test-Path -LiteralPath $leZip -PathType Leaf) -or

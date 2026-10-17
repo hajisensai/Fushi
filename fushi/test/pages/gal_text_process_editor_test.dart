@@ -8,7 +8,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -79,7 +79,14 @@ void unawaitedPush(BuildContext context, Widget page) {
 Future<void> _addStep(WidgetTester tester, GalTextProcessKind kind) async {
   await tester.tap(find.byKey(const ValueKey<String>('gtp-add-step')));
   await tester.pumpAndSettle();
-  await tester.tap(find.byKey(ValueKey<String>('gtp-add-${kind.storageKey}')));
+  // 对话框里的种类列表可滚动；列表行变高后靠后的种类会落在视口外，先滚到可见
+  // 再点（真实用户同样要滚）。
+  final Finder item = find.byKey(
+    ValueKey<String>('gtp-add-${kind.storageKey}'),
+  );
+  await tester.ensureVisible(item);
+  await tester.pumpAndSettle();
+  await tester.tap(item);
   await tester.pumpAndSettle();
 }
 

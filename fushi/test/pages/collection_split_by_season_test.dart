@@ -1,7 +1,9 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show FushiIconButtonControl;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
@@ -105,11 +107,9 @@ void main() {
           it.entryKey,
       ];
 
-  // #792 起拆分入口收进 more_horiz 管理菜单，不再是顶栏独立 IconButton。
+  // 管理动作默认平铺成顶栏图标钮（label 在 tooltip，放不下才收进「⋯」）。
   Future<void> openSplitDialog(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.more_horiz));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(t.collection_split_by_season).last);
+    await tester.tap(find.byTooltip(t.collection_split_by_season));
     await tester.pumpAndSettle();
   }
 
@@ -236,16 +236,12 @@ void main() {
     await db.removeFromCollection(collectionId, MediaKind.video, 'video/pv');
     await pumpWide(tester);
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
-    await tester.pumpAndSettle();
-    final PopupMenuItem<Object?> item = tester.widget<PopupMenuItem<Object?>>(
+    final FushiIconButtonControl item = tester.widget<FushiIconButtonControl>(
       find.ancestor(
-        of: find.byIcon(Icons.call_split),
-        matching: find.byWidgetPredicate(
-          (Widget w) => w is PopupMenuItem<Object?>,
-        ),
+        of: find.byTooltip(t.collection_split_by_season),
+        matching: find.byType(FushiIconButtonControl),
       ),
     );
-    expect(item.enabled, isFalse, reason: '单季合集拆分无意义，必须灰显');
+    expect(item.onPressed, isNull, reason: '单季合集拆分无意义，必须灰显');
   });
 }

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -33,8 +33,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_shelf_search_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_shelf_search_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -64,7 +65,7 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    storeDir = Directory.systemTemp.createTempSync('hibiki_shelf_search');
+    storeDir = Directory.systemTemp.createTempSync('fushi_shelf_search');
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
@@ -83,25 +84,29 @@ void main() {
   });
 
   Future<void> seedEpub(String bookKey, String title) async {
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: title,
-      epubPath: '${pathProviderDir.path}/$bookKey.epub',
-      extractDir: pathProviderDir.path,
-      chapterCount: 1,
-      chaptersJson: '["a"]',
-      importedAt: 0,
-    ));
-    epubItems.add(MediaItem(
-      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
-      title: title,
-      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
-      position: 0,
-      duration: 1,
-      canDelete: false,
-      canEdit: true,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: title,
+        epubPath: '${pathProviderDir.path}/$bookKey.epub',
+        extractDir: pathProviderDir.path,
+        chapterCount: 1,
+        chaptersJson: '["a"]',
+        importedAt: 0,
+      ),
+    );
+    epubItems.add(
+      MediaItem(
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
+        title: title,
+        mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+        mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+        position: 0,
+        duration: 1,
+        canDelete: false,
+        canEdit: true,
+      ),
+    );
   }
 
   Future<SrtBook> seedSrt(String uid, String title) async {
@@ -118,27 +123,27 @@ void main() {
   }
 
   Widget buildApp(RemoteBookClient? client) => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-          fushiBooksProvider.overrideWith(
-            (ref, language) => Future<List<MediaItem>>.value(epubItems),
-          ),
-          srtBooksProvider.overrideWith(
-            (ref) => Future<List<SrtBook>>.value(srtItems),
-          ),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            builder: (BuildContext context, Widget? child) =>
-                child ?? const SizedBox.shrink(),
-            home: Scaffold(
-              body: ReaderFushiHistoryPage(
-                remoteBookClientLoader: () async => client,
-              ),
-            ),
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      fushiBooksProvider.overrideWith(
+        (ref, language) => Future<List<MediaItem>>.value(epubItems),
+      ),
+      srtBooksProvider.overrideWith(
+        (ref) => Future<List<SrtBook>>.value(srtItems),
+      ),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        builder: (BuildContext context, Widget? child) =>
+            child ?? const SizedBox.shrink(),
+        home: Scaffold(
+          body: ReaderFushiHistoryPage(
+            remoteBookClientLoader: () async => client,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   Future<void> pumpPage(WidgetTester tester, {RemoteBookClient? client}) async {
     tester.view.physicalSize = const Size(1400, 1200);
@@ -150,6 +155,16 @@ void main() {
   }
 
   Future<void> search(WidgetTester tester, String query) async {
+    // 单行页头（2026-10-14）：搜索平时收成页头里的 🔍，点开才有输入框。
+    final Finder field = find.byKey(
+      const ValueKey<String>('shelf_search_field'),
+    );
+    if (field.evaluate().isEmpty) {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('fushi-header-search-button')),
+      );
+      await tester.pumpAndSettle();
+    }
     await tester.enterText(
       find.byKey(const ValueKey<String>('shelf_search_field')),
       query,
@@ -160,16 +175,20 @@ void main() {
   String safeKey(String title) =>
       sanitizeTtuFilename(title).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
-  Finder epubCard(String bookKey) => find.byKey(ValueKey<String>(
-      'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}'));
+  Finder epubCard(String bookKey) => find.byKey(
+    ValueKey<String>(
+      'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}',
+    ),
+  );
   Finder srtCard(String uid) => find.byKey(ValueKey<String>('srt_entry_$uid'));
   Finder remoteBookCard(String title) =>
       find.byKey(ValueKey<String>('remote_book_card_${safeKey(title)}'));
   Finder remoteSrtCard(String title) =>
       find.byKey(ValueKey<String>('remote_srt_card_${safeKey(title)}'));
 
-  testWidgets('BUG-2327：搜索同口径裁掉不命中的 SRT 有声书卡，EPUB 与 SRT 命中都保留',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2327：搜索同口径裁掉不命中的 SRT 有声书卡，EPUB 与 SRT 命中都保留', (
+    WidgetTester tester,
+  ) async {
     await seedSrt('srtHit', '坂本ですが');
     await seedSrt('srtMiss', '無関係の本');
     await seedEpub('epubHit', '坂本 第二巻');
@@ -193,12 +212,16 @@ void main() {
     await search(tester, 'zzz-no-such-title');
 
     expect(srtCard('srtOnly'), findsNothing);
-    expect(find.byType(RefreshIndicator), findsNothing,
-        reason: '零命中走空态分支，不再渲染网格');
+    expect(
+      find.byType(RefreshIndicator),
+      findsNothing,
+      reason: '零命中走空态分支，不再渲染网格',
+    );
   });
 
-  testWidgets('BUG-2327：远端 EPUB / 纯 SRT 占位卡同样随搜索过滤',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2327：远端 EPUB / 纯 SRT 占位卡同样随搜索过滤', (
+    WidgetTester tester,
+  ) async {
     await pumpPage(
       tester,
       client: _ListFakeRemoteBookClient(
@@ -208,7 +231,10 @@ void main() {
         ],
         const <RemoteAudiobookInfo>[
           RemoteAudiobookInfo(
-              bookKey: '', uid: 'rsHit', title: 'Audio Sakamoto'),
+            bookKey: '',
+            uid: 'rsHit',
+            title: 'Audio Sakamoto',
+          ),
           RemoteAudiobookInfo(bookKey: '', uid: 'rsMiss', title: 'Audio Other'),
         ],
       ),
@@ -220,10 +246,16 @@ void main() {
 
     expect(remoteBookCard('Remote Sakamoto'), findsOneWidget);
     expect(remoteSrtCard('Audio Sakamoto'), findsOneWidget);
-    expect(remoteBookCard('Remote Other'), findsNothing,
-        reason: '不命中的远端 EPUB 占位卡必须被裁掉');
-    expect(remoteSrtCard('Audio Other'), findsNothing,
-        reason: '不命中的远端 SRT 占位卡必须被裁掉');
+    expect(
+      remoteBookCard('Remote Other'),
+      findsNothing,
+      reason: '不命中的远端 EPUB 占位卡必须被裁掉',
+    );
+    expect(
+      remoteSrtCard('Audio Other'),
+      findsNothing,
+      reason: '不命中的远端 SRT 占位卡必须被裁掉',
+    );
   });
 }
 
@@ -231,7 +263,7 @@ void main() {
 /// 普通 [RemoteBookClient] fake 进不了这条路（与 reader_remote_download_failure_badge_test 同源）。
 class _ListFakeRemoteBookClient extends InterconnectSyncBackend {
   _ListFakeRemoteBookClient(this._books, this._audiobooks)
-      : super.withProbe((String url, String token) async => true);
+    : super.withProbe((String url, String token) async => true);
   final List<RemoteBookInfo> _books;
   final List<RemoteAudiobookInfo> _audiobooks;
 

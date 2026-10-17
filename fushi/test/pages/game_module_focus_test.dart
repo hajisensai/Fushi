@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -44,7 +44,7 @@ void main() {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_game_focus_');
+        Directory.systemTemp.createTempSync('fushi_game_focus_');
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);
@@ -122,7 +122,7 @@ void main() {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_recent_focus_');
+        Directory.systemTemp.createTempSync('fushi_recent_focus_');
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);

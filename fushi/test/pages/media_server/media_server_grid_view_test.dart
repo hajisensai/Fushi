@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_grid_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/utils.dart';
@@ -8,7 +9,7 @@ import 'package:fushi/utils.dart';
 import 'fake_media_server_browser.dart';
 
 /// 库网格：首页 60 条、滚到底追加第二页且**只认 nextStartIndex**、排序切换重置
-/// 分页、搜索改走 `search`、电影点卡直接播放（无同伴）。
+/// 分页、搜索改走 `search`、电影点卡进详情（BUG-3329）。
 void main() {
   late FakeMediaServerBrowser browser;
   late List<MediaServerPlayRequest> played;
@@ -226,7 +227,7 @@ void main() {
     expect(find.byType(FushiPlaceholderMessage), findsOneWidget);
   });
 
-  testWidgets('电影点卡直接播放：info 是它自己、不带同伴', (WidgetTester tester) async {
+  testWidgets('BUG-3329：电影点卡进详情（与剧一致），不直接播放', (WidgetTester tester) async {
     browser.children['lib-movies'] = fakeMovies(3);
     await tester.pumpWidget(harness());
     await tester.pumpAndSettle();
@@ -236,10 +237,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(played, hasLength(1));
-    expect(played.single.info.id, 'movie-1');
-    expect(played.single.hasCollection, isFalse, reason: '电影不建剧集面板');
-    expect(identical(played.single.browser, browser), isTrue);
+    expect(played, isEmpty, reason: '电影短按先进详情，播放 / 选版本在详情里');
+    expect(find.byType(MediaServerDetailView), findsOneWidget);
   });
 
   testWidgets('首页失败显示错误 + 重试；重试后正常渲染', (WidgetTester tester) async {
@@ -258,5 +257,35 @@ void main() {
       find.byKey(const ValueKey<String>('media-server-grid-card-movie-0')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('2026-10：窄屏排序收成图标菜单，选项同样重置分页', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    browser.children['lib-movies'] = fakeMovies(5);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('media-server-grid-sort')),
+      findsNothing,
+      reason: '窄屏不再放写死 180 宽的下拉',
+    );
+    final Finder compact = find.byKey(
+      const ValueKey<String>('media-server-grid-sort-compact'),
+    );
+    expect(compact, findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(compact);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.media_server_sort_date_added).last);
+    await tester.pumpAndSettle();
+
+    final FakePageRequest last = childrenRequests().last;
+    expect(last.startIndex, 0);
+    expect(last.sort, MediaServerSort.dateAdded);
   });
 }

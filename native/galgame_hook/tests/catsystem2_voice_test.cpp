@@ -68,7 +68,6 @@ class SyntheticImage {
 
 constexpr size_t kBigRead = 0x1000u;
 constexpr size_t kReadEntry = 0x2000u;
-constexpr size_t kPlainAt = 0x74u;  // measured distance on the real build
 constexpr size_t kSlotSetFilePointer = 0xf000u;
 constexpr size_t kSlotReadFile = 0xf004u;
 
@@ -79,125 +78,273 @@ voice::VoiceImportSlots Imports() {
   return imports;
 }
 
-void PutPlainBlock(SyntheticImage* img, size_t at) {
-  img->Put(at, voice::kPlainBlockBytes, sizeof(voice::kPlainBlockBytes));
-  img->base[at + 26u] = 0x14u;  // mov [esp+0x14],ebp
-  img->base[at + 28u] = 0x58u;  // jne +0x58
-  img->Slot(at + voice::kPlainBlockSetFilePointer, kSlotSetFilePointer);
-  img->base[at + 55u] = 0x1cu;  // lea edx,[esp+0x1c]
-  img->Slot(at + voice::kPlainBlockReadFile, kSlotReadFile);
-  img->base[at + 69u] = 0x1cu;  // jne +0x1c
+// ── the two measured codegens ───────────────────────────────────────────────
+//
+// Instruction bytes of kcBigFile::Read and of ReadEntry's plain path as each
+// build compiles them; rel32 targets, IAT operands and log-string pointers are
+// zero here and filled in by BuildEngine.  Offsets of the parts the proof
+// reads are listed next to each array.
+
+// cs2 2.6.x (グリザイアの有閑).
+constexpr uint8_t kGrisaiaForwarder[] = {
+    0x8b, 0xc1,                    // mov eax,ecx
+    0x8b, 0x48, 0x04,              // mov ecx,[eax+4]   archive
+    0x85, 0xc9, 0x75, 0x13,        // test ecx,ecx; jne
+    0x68, 0x00, 0x00, 0x00, 0x00,  // push <log>
+    0xe8, 0x00, 0x00, 0x00, 0x00,  // call log
+    0x83, 0xc4, 0x04, 0x83, 0xc8, 0xff, 0xc2, 0x08, 0x00,  // error exit
+    0x8b, 0x40, 0x08,              // mov eax,[eax+8]   entry
+    0x85, 0xc0, 0x75, 0x13,        // test eax,eax; jne
+    0x68, 0x00, 0x00, 0x00, 0x00,  // push <log>
+    0xe8, 0x00, 0x00, 0x00, 0x00,  // call log
+    0x83, 0xc4, 0x04, 0x83, 0xc8, 0xff, 0xc2, 0x08, 0x00,  // error exit
+    0x8b, 0x54, 0x24, 0x08, 0x52,  // mov edx,[esp+8]; push edx  (len)
+    0x8b, 0x54, 0x24, 0x08, 0x52,  // mov edx,[esp+8]; push edx  (buf)
+    0x50,                          // push eax  (entry)
+    0xe8, 0x00, 0x00, 0x00, 0x00,  // call ReadEntry
+    0xc2, 0x08, 0x00};             // ret 8
+constexpr uint8_t kGrisaiaPlainBlock[] = {
+    0x8b, 0x4e, 0x10,                          // mov ecx,[esi+0x10]  size
+    0x8b, 0x46, 0x0c,                          // mov eax,[esi+0xc]   offset
+    0x8b, 0xd1, 0x2b, 0xd0, 0x3b, 0xea, 0x76, 0x02, 0x8b, 0xea,  // clamp
+    0x83, 0xbf, 0x1c, 0x01, 0x00, 0x00, 0x00,  // cmp [edi+0x11c],0
+    0x89, 0x6c, 0x24, 0x14, 0x75, 0x58,
+    0x8b, 0x46, 0x08, 0x8b, 0x4f, 0x10, 0x6a, 0x00, 0x6a, 0x00, 0x50, 0x51,
+    0xff, 0x15, 0x00, 0x00, 0x00, 0x00,        // call [SetFilePointer]
+    0x8b, 0x47, 0x10, 0x6a, 0x00, 0x8d, 0x54, 0x24, 0x1c, 0x52, 0x55, 0x53,
+    0x50,
+    0xff, 0x15, 0x00, 0x00, 0x00, 0x00,        // call [ReadFile]
+    0x85, 0xc0, 0x75, 0x1c, 0x8b, 0x4e, 0x10, 0x51,
+    0x8d, 0x56, 0x14,                          // lea edx,[esi+0x14]  name
+    0x52, 0x68};
+
+// 2016-10 MSVC 12 build (初恋サンカイメ).
+constexpr uint8_t kSankaimeForwarder[] = {
+    0x8b, 0x51, 0x04,              // mov edx,[ecx+4]   archive
+    0x85, 0xd2, 0x75, 0x13,        // test edx,edx; jne
+    0x68, 0x00, 0x00, 0x00, 0x00,  // push <log>
+    0xe8, 0x00, 0x00, 0x00, 0x00,  // call log
+    0x83, 0xc4, 0x04, 0x83, 0xc8, 0xff, 0xc2, 0x08, 0x00,  // error exit
+    0x8b, 0x41, 0x08,              // mov eax,[ecx+8]   entry
+    0x85, 0xc0, 0x75, 0x13,        // test eax,eax; jne
+    0x68, 0x00, 0x00, 0x00, 0x00,  // push <log>
+    0xe8, 0x00, 0x00, 0x00, 0x00,  // call log
+    0x83, 0xc4, 0x04, 0x83, 0xc8, 0xff, 0xc2, 0x08, 0x00,  // error exit
+    0xff, 0x74, 0x24, 0x08,        // push [esp+8]  (len)
+    0x8b, 0xca,                    // mov ecx,edx
+    0xff, 0x74, 0x24, 0x08,        // push [esp+8]  (buf)
+    0x50,                          // push eax  (entry)
+    0xe8, 0x00, 0x00, 0x00, 0x00,  // call ReadEntry
+    0xc2, 0x08, 0x00};             // ret 8
+constexpr uint8_t kSankaimePlainBlock[] = {
+    0x8b, 0x56, 0x10,                          // mov edx,[esi+0x10]  size
+    0x8b, 0xc2,
+    0x8b, 0x4e, 0x0c,                          // mov ecx,[esi+0xc]   offset
+    0x2b, 0xc1, 0x3b, 0xd8, 0x0f, 0x47, 0xd8,  // clamp (cmova)
+    0x83, 0xbd, 0x1c, 0x01, 0x00, 0x00, 0x00,  // cmp [ebp+0x11c],0
+    0x89, 0x5c, 0x24, 0x3c, 0x75, 0x50,
+    0x6a, 0x00, 0x6a, 0x00, 0xff, 0x76, 0x08, 0xff, 0x75, 0x10,
+    0xff, 0x15, 0x00, 0x00, 0x00, 0x00,        // call [SetFilePointer]
+    0x6a, 0x00, 0x8d, 0x44, 0x24, 0x1c, 0x50, 0x53, 0x57, 0xff, 0x75, 0x10,
+    0xff, 0x15, 0x00, 0x00, 0x00, 0x00,        // call [ReadFile]
+    0x85, 0xc0, 0x75, 0x1b, 0xff, 0x76, 0x10,
+    0x8d, 0x46, 0x14,                          // lea eax,[esi+0x14]  name
+    0x50, 0x68};
+
+struct Codegen {
+  const char* name;
+  const uint8_t* forwarder;
+  size_t forwarder_bytes;
+  size_t log_calls[2];      // `e8` of the two error logs
+  size_t read_entry_call;   // `e8` of ReadEntry
+  const uint8_t* block;
+  size_t block_bytes;
+  size_t block_at;          // block start inside ReadEntry
+  size_t archive_disp;      // disp8 of the archive load
+  size_t clamp_size_disp;   // disp8 of the size load
+  size_t cmp;               // flag compare inside the block
+  size_t set_file_pointer;  // `ff 15` inside the block
+  size_t read_file;
+  size_t name_disp;         // disp8 of the name lea
+  size_t name_modrm;
+};
+
+constexpr Codegen kGrisaia = {
+    "grisaia", kGrisaiaForwarder, sizeof(kGrisaiaForwarder), {14u, 40u}, 65u,
+    kGrisaiaPlainBlock, sizeof(kGrisaiaPlainBlock), 0x74u, 4u, 2u, 16u, 41u,
+    60u, 76u, 75u};
+constexpr Codegen kSankaime = {
+    "sankaime", kSankaimeForwarder, sizeof(kSankaimeForwarder), {12u, 38u},
+    63u, kSankaimePlainBlock, sizeof(kSankaimePlainBlock), 0x75u, 2u, 2u, 15u,
+    38u, 56u, 71u, 70u};
+constexpr const Codegen* kCodegens[] = {&kGrisaia, &kSankaime};
+
+void PutForwarder(SyntheticImage* img, const Codegen& cg, size_t at,
+                  size_t target) {
+  img->Put(at, cg.forwarder, cg.forwarder_bytes);
+  img->Rel32(at + cg.log_calls[0], 0x3000u);
+  img->Rel32(at + cg.log_calls[1], 0x3000u);
+  img->Rel32(at + cg.read_entry_call, target);
 }
 
-void BuildEngine(SyntheticImage* img) {
-  img->Put(kBigRead, voice::kBigReadBytes, sizeof(voice::kBigReadBytes));
-  img->base[kBigRead + 8u] = 0x13u;
-  img->base[kBigRead + 34u] = 0x13u;
-  img->Rel32(kBigRead + 14u, 0x3000u);  // error log
-  img->Rel32(kBigRead + 40u, 0x3000u);
-  img->Rel32(kBigRead + voice::kBigReadCall, kReadEntry);
-  img->Put(kReadEntry, voice::kReadEntryPrologueBytes,
-           sizeof(voice::kReadEntryPrologueBytes));
-  PutPlainBlock(img, kReadEntry + kPlainAt);
+void PutPlainBlock(SyntheticImage* img, const Codegen& cg, size_t at) {
+  img->Put(at, cg.block, cg.block_bytes);
+  img->Slot(at + cg.set_file_pointer + 2u, kSlotSetFilePointer);
+  img->Slot(at + cg.read_file + 2u, kSlotReadFile);
 }
 
-void TestResolvesFromStructure() {
-  SyntheticImage img;
-  BuildEngine(&img);
-  voice::VoiceSites sites;
-  assert(voice::ResolveVoiceSites(img.image, Imports(), &sites) ==
-         voice::VoiceSiteResult::kResolved);
-  assert(sites.big_read == img.At(kBigRead));
-  assert(sites.read_entry == img.At(kReadEntry));
-  assert(sites.plain_block == img.At(kReadEntry + kPlainAt));
+void BuildEngine(SyntheticImage* img, const Codegen& cg) {
+  PutForwarder(img, cg, kBigRead, kReadEntry);
+  PutPlainBlock(img, cg, kReadEntry + cg.block_at);
 }
 
-void TestFailsClosed() {
+size_t BlockByte(const Codegen& cg, size_t offset) {
+  return kReadEntry + cg.block_at + offset;
+}
+
+void TestResolvesBothCodegens() {
+  for (const Codegen* cg : kCodegens) {
+    SyntheticImage img;
+    BuildEngine(&img, *cg);
+    voice::VoiceSites sites;
+    assert(voice::ResolveVoiceSites(img.image, Imports(), &sites) ==
+           voice::VoiceSiteResult::kResolved);
+    assert(sites.big_read == img.At(kBigRead + cg->read_entry_call));
+    assert(sites.read_entry == img.At(kReadEntry));
+    assert(sites.plain_block == img.At(BlockByte(*cg, cg->cmp)));
+  }
+}
+
+voice::VoiceSiteResult Resolve(const SyntheticImage& img,
+                               voice::VoiceSites* sites) {
+  const auto result = voice::ResolveVoiceSites(img.image, Imports(), sites);
+  if (result != voice::VoiceSiteResult::kResolved) assert(sites->read_entry == 0u);
+  return result;
+}
+
+void TestFailsClosed(const Codegen& cg) {
+  using R = voice::VoiceSiteResult;
   voice::VoiceSites sites;
   {  // x64 image
     SyntheticImage img(IMAGE_FILE_MACHINE_AMD64, 64u);
-    BuildEngine(&img);
-    assert(voice::ResolveVoiceSites(img.image, Imports(), &sites) ==
-           voice::VoiceSiteResult::kNotX86);
-    assert(sites.read_entry == 0u);
+    BuildEngine(&img, cg);
+    assert(Resolve(img, &sites) == R::kNotX86);
   }
   {  // no ReadFile import
     SyntheticImage img;
-    BuildEngine(&img);
+    BuildEngine(&img, cg);
     voice::VoiceImportSlots imports = Imports();
     imports.read_file = 0u;
     assert(voice::ResolveVoiceSites(img.image, imports, &sites) ==
-           voice::VoiceSiteResult::kImportsMissing);
+           R::kImportsMissing);
   }
-  {  // no forwarder (another engine's image)
+  {  // the first null check does not load a field at +4
     SyntheticImage img;
-    BuildEngine(&img);
-    img.base[kBigRead + 3u] = 0x49u;  // mov ecx,[ecx+4]: not [eax+4]
-    assert(voice::ResolveVoiceSites(img.image, Imports(), &sites) ==
-           voice::VoiceSiteResult::kBigReadMissing);
-    assert(sites.read_entry == 0u);
+    BuildEngine(&img, cg);
+    img.base[kBigRead + cg.archive_disp] = 0x05u;
+    assert(Resolve(img, &sites) == R::kBigReadMissing);
+  }
+  {  // the entry is not what ReadEntry gets first (no `push eax`)
+    SyntheticImage img;
+    BuildEngine(&img, cg);
+    img.base[kBigRead + cg.read_entry_call - 1u] = 0x51u;
+    assert(Resolve(img, &sites) == R::kBigReadMissing);
+  }
+  {  // not a tail call returning to Read's caller (`ret 0xc`)
+    SyntheticImage img;
+    BuildEngine(&img, cg);
+    img.base[kBigRead + cg.read_entry_call + 6u] = 0x0cu;
+    assert(Resolve(img, &sites) == R::kBigReadMissing);
+  }
+  {  // the null checks are too far apart to be one function
+    SyntheticImage img;
+    BuildEngine(&img, cg);
+    const size_t second = cg.log_calls[1] + 5u;
+    std::memset(img.base + kBigRead + second, 0xcc, sizeof(voice::kErrorExitBytes));
+    img.Put(kBigRead + cg.read_entry_call + 8u + 0x20u, voice::kErrorExitBytes,
+            sizeof(voice::kErrorExitBytes));
+    assert(Resolve(img, &sites) == R::kBigReadMissing);
   }
   {  // two forwarders: ambiguous
     SyntheticImage img;
-    BuildEngine(&img);
-    img.Put(0x5000u, voice::kBigReadBytes, sizeof(voice::kBigReadBytes));
-    img.Rel32(0x5000u + voice::kBigReadCall, kReadEntry);
-    assert(voice::ResolveVoiceSites(img.image, Imports(), &sites) ==
-           voice::VoiceSiteResult::kBigReadMissing);
+    BuildEngine(&img, cg);
+    PutForwarder(&img, cg, 0x5000u, kReadEntry);
+    assert(Resolve(img, &sites) == R::kBigReadMissing);
   }
-  {  // the forwarder calls something without the ReadEntry prologue
+  {  // an unreadable executable section could hide a second forwarder
     SyntheticImage img;
-    BuildEngine(&img);
-    img.base[kReadEntry + 26u] = 0x8bu;  // mov edi,ecx -> mov edi,ebx
-    img.base[kReadEntry + 27u] = 0xfbu;
-    assert(voice::ResolveVoiceSites(img.image, Imports(), &sites) ==
-           voice::VoiceSiteResult::kReadEntryInvalid);
+    BuildEngine(&img, cg);
+    img.image.section_count = 2u;
+    img.image.sections[1] = {nullptr, 0x1000u, 0x10000u,
+                             IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_EXECUTE};
+    assert(Resolve(img, &sites) == R::kBigReadMissing);
   }
-  {  // argument roles differ (buffer taken from another stack slot)
+  {  // the forwarder calls outside the image
     SyntheticImage img;
-    BuildEngine(&img);
-    img.base[kReadEntry + 18u] = 0x30u;
-    assert(voice::ResolveVoiceSites(img.image, Imports(), &sites) ==
-           voice::VoiceSiteResult::kReadEntryInvalid);
+    BuildEngine(&img, cg);
+    img.Rel32(kBigRead + cg.read_entry_call, SyntheticImage::kSize + 0x1000u);
+    assert(Resolve(img, &sites) == R::kReadEntryInvalid);
   }
-  {  // plain block missing
+  {  // ReadEntry's window runs past the end of the code
     SyntheticImage img;
-    BuildEngine(&img);
-    img.base[kReadEntry + kPlainAt + 18u] = 0x20u;  // cmp [edi+0x120]
-    assert(voice::ResolveVoiceSites(img.image, Imports(), &sites) ==
-           voice::VoiceSiteResult::kPlainBlockMissing);
+    PutForwarder(&img, cg, kBigRead, SyntheticImage::kSize - 0x100u);
+    assert(Resolve(img, &sites) == R::kReadEntryInvalid);
   }
-  {  // entry field layout differs (name not at +0x14)
+  {  // the flag is not the archive's encrypted flag (+0x120)
     SyntheticImage img;
-    BuildEngine(&img);
-    img.base[kReadEntry + kPlainAt + 76u] = 0x18u;
-    assert(voice::ResolveVoiceSites(img.image, Imports(), &sites) ==
-           voice::VoiceSiteResult::kPlainBlockMissing);
+    BuildEngine(&img, cg);
+    img.base[BlockByte(cg, cg.cmp + 2u)] = 0x20u;
+    assert(Resolve(img, &sites) == R::kPlainBlockMissing);
   }
-  {  // plain block outside the scanned head of ReadEntry
+  {  // no clamp by the entry's size before the flag test
     SyntheticImage img;
-    BuildEngine(&img);
-    std::memset(img.base + kReadEntry + kPlainAt, 0xcc,
-                sizeof(voice::kPlainBlockBytes));
-    PutPlainBlock(&img, kReadEntry + 0x200u);
-    assert(voice::ResolveVoiceSites(img.image, Imports(), &sites) ==
-           voice::VoiceSiteResult::kPlainBlockMissing);
+    BuildEngine(&img, cg);
+    img.base[BlockByte(cg, cg.clamp_size_disp)] = 0x18u;
+    assert(Resolve(img, &sites) == R::kPlainBlockMissing);
   }
-  {  // two plain blocks in the head: ambiguous
+  {  // the block lies past the scanned head of ReadEntry
     SyntheticImage img;
-    BuildEngine(&img);
-    PutPlainBlock(&img, kReadEntry + kPlainAt + 0x60u);
-    assert(voice::ResolveVoiceSites(img.image, Imports(), &sites) ==
-           voice::VoiceSiteResult::kPlainBlockMissing);
+    BuildEngine(&img, cg);
+    std::memset(img.base + BlockByte(cg, 0u), 0xcc, cg.block_bytes);
+    PutPlainBlock(&img, cg, kReadEntry + voice::kReadEntryScanBytes);
+    assert(Resolve(img, &sites) == R::kPlainBlockMissing);
   }
-  {  // the block calls other imports than SetFilePointer / ReadFile
+  {  // two blocks in the head: ambiguous
     SyntheticImage img;
-    BuildEngine(&img);
-    img.Slot(kReadEntry + kPlainAt + voice::kPlainBlockReadFile, 0xf008u);
-    assert(voice::ResolveVoiceSites(img.image, Imports(), &sites) ==
-           voice::VoiceSiteResult::kPlainBlockImportsInvalid);
-    assert(sites.read_entry == 0u);
+    BuildEngine(&img, cg);
+    PutPlainBlock(&img, cg, kReadEntry + cg.block_at + 0x80u);
+    assert(Resolve(img, &sites) == R::kPlainBlockMissing);
   }
+  {  // ReadFile goes through another import
+    SyntheticImage img;
+    BuildEngine(&img, cg);
+    img.Slot(BlockByte(cg, cg.read_file + 2u), 0xf008u);
+    assert(Resolve(img, &sites) == R::kPlainBlockCallsInvalid);
+  }
+  {  // SetFilePointer goes through another import
+    SyntheticImage img;
+    BuildEngine(&img, cg);
+    img.Slot(BlockByte(cg, cg.set_file_pointer + 2u), 0xf008u);
+    assert(Resolve(img, &sites) == R::kPlainBlockCallsInvalid);
+  }
+  {  // the logged name is not at +0x14
+    SyntheticImage img;
+    BuildEngine(&img, cg);
+    img.base[BlockByte(cg, cg.name_disp)] = 0x18u;
+    assert(Resolve(img, &sites) == R::kPlainBlockCallsInvalid);
+  }
+  {  // the name comes from another register than the clamped entry
+    SyntheticImage img;
+    BuildEngine(&img, cg);
+    img.base[BlockByte(cg, cg.name_modrm)] =
+        static_cast<uint8_t>((img.base[BlockByte(cg, cg.name_modrm)] & 0xf8u) |
+                             0x03u);  // [ebx+0x14]
+    assert(Resolve(img, &sites) == R::kPlainBlockCallsInvalid);
+  }
+}
+
+void TestFailsClosed() {
+  for (const Codegen* cg : kCodegens) TestFailsClosed(*cg);
 }
 
 void TestEntryPlausibility() {
@@ -417,6 +564,26 @@ void TestSelectedLineOrder() {
   assert(voice::kTextBindingWindowMs == 1500u);
 }
 
+// The measured 2016 sequence (BUG-2896), replayed through the same
+// generation bookkeeping the adapter does: publish bumps, reject records.
+void TestSettledMemberKey() {
+  uint64_t generation = 0;
+  // E_00_01_004 read whole at the line start and published.
+  const uint64_t e004 = ++generation;
+  // Its companion member in the same archive fails verification.
+  const uint64_t companion = generation;
+  assert(!voice::SettledMemberKeyEnded(companion, generation));
+  // 5.06 s later, no click: E_00_01_004 is read again.  Same playback.
+  assert(!voice::SettledMemberKeyEnded(e004, generation));
+  // Still the same playback however long the line stays on screen.
+  assert(!voice::SettledMemberKeyEnded(e004, generation));
+  // The next message's voice is published: both keys end.
+  const uint64_t e005 = ++generation;
+  assert(voice::SettledMemberKeyEnded(e004, generation));
+  assert(voice::SettledMemberKeyEnded(companion, generation));
+  assert(!voice::SettledMemberKeyEnded(e005, generation));
+}
+
 void TestStorageName() {
   assert(voice::BuildVoiceStorageName(L"pcm_e.int", L"SAC_griani_003_001.ogg",
                                       false) ==
@@ -439,7 +606,7 @@ void TestStorageName() {
 }  // namespace
 
 int main() {
-  TestResolvesFromStructure();
+  TestResolvesBothCodegens();
   TestFailsClosed();
   TestEntryPlausibility();
   TestRangeSet();
@@ -447,6 +614,7 @@ int main() {
   TestScanOggPages();
   TestDecideMember();
   TestSelectedLineOrder();
+  TestSettledMemberKey();
   TestStorageName();
   std::puts("catsystem2_voice_test: all passed");
   return 0;

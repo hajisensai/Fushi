@@ -1,10 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel;
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/episode_span_format.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_archive_label.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
@@ -180,7 +182,7 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
                   padding: EdgeInsets.all(8),
                   child: SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
                   ),
                 )
               else
@@ -243,7 +245,9 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
     final bool busyThis = widget.busyIdentityKey == candidate.identityKey;
     final bool highlight = widget.requestedEpisode != null &&
         candidate.episode == widget.requestedEpisode;
+    final String? packLabel = subtitleArchivePackLabel(candidate);
     final List<String> meta = <String>[
+      if (packLabel != null) packLabel,
       if (candidate.episode != null) 'EP${candidate.episode}',
       if (candidate.language.isNotEmpty)
         jimakuLanguageLabel(candidate.language),
@@ -255,7 +259,7 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
       key: ValueKey<String>('subtitle-file-${candidate.identityKey}'),
       leading: widget.onToggleCandidate == null
           ? null
-          : Checkbox(
+          : FushiCheckbox(
               value: widget.selectedIdentityKeys.contains(
                 candidate.identityKey,
               ),
@@ -278,9 +282,9 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
       trailing: busyThis
           ? const SizedBox.square(
               dimension: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.download, size: 18),
+          : const FushiIcon(Icons.download, size: 18),
     );
   }
 }

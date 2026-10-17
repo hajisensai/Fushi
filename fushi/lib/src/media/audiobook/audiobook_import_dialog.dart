@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
+import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
+    show ImportDropZoneCard, ImportMatchOptionsCard, ImportProgressCard;
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show
         attachAsrCueTokenTiming,
@@ -15,8 +19,9 @@ import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:path/path.dart' as p;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
@@ -28,6 +33,8 @@ import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 有声书导入/移除对话框。
@@ -36,6 +43,7 @@ import 'package:fushi/utils.dart';
 /// 用户明确多选音频文件（TODO-1031 删掉了旧的「选目录」整目录吞并入口）。
 class AudiobookImportDialog extends StatefulWidget {
   const AudiobookImportDialog({
+    this.prefs,
     required this.bookKey,
     required this.repo,
     this.extractDir,
@@ -64,6 +72,9 @@ class AudiobookImportDialog extends StatefulWidget {
   /// 拖拽导入预填：对齐用的字幕/对齐文件路径（覆盖既有 alignmentPath）。
   final String? initialAlignmentPath;
 
+  /// 记住「引用原文件（不复制）」上次选择的偏好仓库（[PreferencesRepository.
+  /// audiobookImportReferenceOriginal]）。null = 不读不写（测试 / 无应用上下文）。
+  final PreferencesRepository? prefs;
   @override
   State<AudiobookImportDialog> createState() => _AudiobookImportDialogState();
 }
@@ -80,8 +91,18 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   /// TODO-935 ①A：导入时「引用原文件（不复制）」开关。仅桌面可见/可选；
   /// 移动端 file_picker 返回的是缓存临时副本，引用即指向会被系统清掉的文件，
-  /// 故移动端恒 false（隐藏开关、保持复制行为，零回归）。
+  /// 故移动端恒 false（隐藏开关、保持复制行为，零回归）。桌面端初值取上次的
+  /// 选择（[PreferencesRepository.audiobookImportReferenceOriginal]）。
   bool _referenceOriginal = false;
+
+  /// 切换「引用原文件」并记住这次选择（下次打开任一导入对话框沿用）。
+  void _setReferenceOriginal(bool value) {
+    setState(() => _referenceOriginal = value);
+    final PreferencesRepository? prefs = widget.prefs;
+    if (prefs != null) {
+      unawaited(prefs.setAudiobookImportReferenceOriginal(value: value));
+    }
+  }
 
   /// 已有记录但缺音频源 → 进入"补音频"模式，显示导入表单而非只读视图。
   bool _patchingAudio = false;
@@ -131,6 +152,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   @override
   void initState() {
     super.initState();
+    _referenceOriginal =
+        isDesktopPlatform &&
+        (widget.prefs?.audiobookImportReferenceOriginal ?? false);
     _initExisting();
   }
 
@@ -180,11 +204,14 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    return FushiFileDropTarget(
-      enabled: !importing,
-      debugLabel: 'audiobook-import-dialog',
-      onDrop: _handleDialogDrop,
-      child: _buildContent(context),
+    // 2026-10 体验优化：导入 / 重新匹配进行中禁止关闭（见 buildImportPopGuard）。
+    return buildImportPopGuard(
+      child: FushiFileDropTarget(
+        enabled: !importing,
+        debugLabel: 'audiobook-import-dialog',
+        onDrop: _handleDialogDrop,
+        child: _buildContent(context),
+      ),
     );
   }
 
@@ -233,32 +260,31 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       title: showImportForm
           ? (widget.audioOnly ? t.audio_import : t.audiobook_import)
           : t.audiobook_attached,
-      content:
-          showImportForm ? _buildImportForm() : _buildAttachedView(existing),
+      content: showImportForm
+          ? _buildImportForm()
+          : _buildAttachedView(existing),
       actions: showImportForm
           ? [
-              adaptiveDialogAction(
-                context: context,
-                onPressed: () => Navigator.pop(context),
-                child: Text(t.dialog_cancel),
-              ),
+              buildCancelAction(context),
               buildImportAction(context, onImport: _doImport),
             ]
           : [
               adaptiveDialogAction(
                 context: context,
-                onPressed: () => Navigator.pop(context),
+                onPressed: importing ? null : () => Navigator.pop(context),
                 child: Text(t.dialog_close),
               ),
               adaptiveDialogAction(
                 context: context,
-                onPressed: () => _enterReplaceSubtitleMode(existing),
+                onPressed: importing
+                    ? null
+                    : () => _enterReplaceSubtitleMode(existing),
                 child: Text(t.audio_panel_pick_new_subtitle),
               ),
               adaptiveDialogAction(
                 context: context,
                 isDestructiveAction: true,
-                onPressed: () => _removeAudiobook(existing),
+                onPressed: importing ? null : () => _removeAudiobook(existing),
                 child: Text(t.audiobook_delete),
               ),
             ],
@@ -269,8 +295,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String audioLabel =
         (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
-            ? t.srt_import_files_selected(n: ab.audioPaths!.length)
-            : (ab.audioRoot ?? '');
+        ? t.srt_import_files_selected(n: ab.audioPaths!.length)
+        : (ab.audioRoot ?? '');
     return FutureBuilder<AudiobookHealth>(
       future: _healthFuture,
       builder: (context, snapshot) {
@@ -290,13 +316,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
                       : t.srt_import_pick_audio_dir,
                   subtitle: audioLabel,
                   icon: (ab.audioPaths != null && ab.audioPaths!.isNotEmpty)
-                      ? Icons.audio_file_outlined
-                      : Icons.folder_open_outlined,
+                      ? FushiIcons.audio
+                      : FushiIcons.folderOpen,
                 ),
                 FushiFilePickerRow(
                   title: t.audiobook_pick_alignment,
                   subtitle: ab.alignmentPath,
-                  icon: Icons.align_horizontal_left,
+                  icon: FushiIcons.subtitles,
                 ),
               ],
             ),
@@ -308,9 +334,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
               SizedBox(height: tokens.spacing.rowVertical),
               Align(
                 alignment: Alignment.centerLeft,
-                child: TextButton.icon(
+                child: FushiFilledButton.tonalIcon(
                   onPressed: importing ? null : () => _openReMatchSheet(ab),
-                  icon: const Icon(Icons.tune_outlined, size: 18),
+                  icon: const FushiIcon(FushiIcons.settings, size: 18),
                   label: Text(t.rematch_adjust_window),
                 ),
               ),
@@ -351,85 +377,137 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     final String pctStr = health.ratePct?.toString() ?? '?';
     final String? reason = health.reason;
     final String tail = (reason == null || reason.isEmpty) ? '' : ' · $reason';
-    final cs = Theme.of(context).colorScheme;
+    // 状态色走共享 [fushiStatusColor]（MD3 与主色协调的绿 / 橙 / error；Apple
+    // 系统绿 / 橙 / 红）：旧实现借 tertiary / secondary 表达「成功 / 部分」，
+    // 在 Apple 色板里 tertiary 是橙、secondary 是强调色，语义全错位。
+    final FushiCardTone tone;
     switch (health.kind) {
       case HealthKind.ok:
-        icon = Icons.check_circle;
-        color = cs.tertiary;
+        icon = FushiIcons.success;
+        color = fushiStatusColor(context, FushiStatusTone.success);
+        tone = FushiCardTone.primary;
         label = t.audiobook_rematch_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.partial:
-        icon = Icons.warning_amber;
-        color = cs.secondary;
+        icon = FushiIcons.warning;
+        color = fushiStatusColor(context, FushiStatusTone.warning);
+        tone = FushiCardTone.tertiary;
         label = t.audiobook_rematch_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.failed:
-        icon = Icons.error_outline;
-        color = cs.error;
+        icon = FushiIcons.error;
+        color = fushiStatusColor(context, FushiStatusTone.error);
+        tone = FushiCardTone.error;
         label = t.audiobook_rematch_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.running:
       case HealthKind.unrun:
       case HealthKind.notApplicable:
         return null;
     }
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: color),
-        SizedBox(width: tokens.spacing.gap),
-        Expanded(
-          child: Text(
-            label,
-            style: tokens.type.metadata.copyWith(color: color),
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
+    // M3E tonal 状态色块：底色走饱和 container（成功 primary / 部分 tertiary /
+    // 失败 error），图标保留语义状态色，匹配率用等宽大号数字突出。
+    final FushiTypography type = context.fushiType;
+    // 色块上的字跟卡片配对前景（fushiType 自带页面前景，HBK-AUDIT-022）。
+    final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
+    return FushiCard(
+      tone: tone,
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.card,
+        vertical: tokens.spacing.rowVertical,
+      ),
+      child: Row(
+        children: [
+          FushiIcon(icon, size: 22, color: color),
+          SizedBox(width: tokens.spacing.gap),
+          Text(
+            '$pctStr%',
+            style: type.titleLargeEmphasized.tabular.copyWith(color: onCard),
           ),
-        ),
-      ],
+          SizedBox(width: tokens.spacing.gap),
+          Expanded(
+            child: Text(
+              label,
+              style: type.bodyMedium.copyWith(color: onCard),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildImportForm() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        AdaptiveSettingsSection(
-          children: [
-            _audioSourceRow(),
-            if (!widget.audioOnly) _alignmentRow(),
-          ],
-        ),
-        if (isDesktopPlatform) ...[
-          SizedBox(height: tokens.spacing.gap),
-          AdaptiveSettingsSection(
-            children: [
-              AdaptiveSettingsSwitchRow(
-                title: t.audiobook_reference_original,
-                subtitle: t.audiobook_reference_original_desc,
-                icon: Icons.link_outlined,
-                value: _referenceOriginal,
-                onChanged: importing
-                    ? null
-                    : (bool v) => setState(() => _referenceOriginal = v),
-              ),
-            ],
+    int step = 0;
+    // M3E 分步：拖放区卡（选音频）→ 文件分段卡 → 匹配选项分段卡 → 进度卡；
+    // 首屏错峰进场。
+    Widget stagger(Widget child) =>
+        FushiStaggeredEntrance(index: step++, child: child);
+    return FushiEntranceScope(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          stagger(
+            ImportDropZoneCard(
+              icon: FushiIcons.audiobook,
+              title: _hasAudioSource
+                  ? _audioSourceLabel
+                  : t.srt_import_pick_audio_files,
+              subtitle: _hasAudioSource ? t.srt_import_pick_audio_files : null,
+              selected: _hasAudioSource,
+              onTap: importing ? null : _pickAudioFiles,
+            ),
           ),
-        ],
-        if (!widget.audioOnly && _willRunMatcher) ...[
           SizedBox(height: tokens.spacing.rowVertical),
-          SubtitleRematchWindowSlider(
-            value: _searchWindow,
-            onChanged: (v) => setState(() => _searchWindow = v),
-            onAutoTap: _canAutoProbe ? _handleAutoProbe : null,
-            autoBusy: _autoProbing,
+          stagger(
+            AdaptiveSettingsSection(
+              children: [
+                _audioSourceRow(),
+                if (!widget.audioOnly) _alignmentRow(),
+              ],
+            ),
           ),
-          SizedBox(height: tokens.spacing.gap),
-          SubtitleRematchThresholdSlider(
-            value: _similarityThreshold,
-            onChanged: (v) => setState(() => _similarityThreshold = v),
-          ),
+          if (isDesktopPlatform) ...[
+            SizedBox(height: tokens.spacing.gap),
+            stagger(
+              AdaptiveSettingsSection(
+                children: [
+                  AdaptiveSettingsSwitchRow(
+                    title: t.audiobook_reference_original,
+                    subtitle: t.audiobook_reference_original_desc,
+                    icon: FushiIcons.link,
+                    value: _referenceOriginal,
+                    onChanged: importing ? null : _setReferenceOriginal,
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (!widget.audioOnly && _willRunMatcher) ...[
+            SizedBox(height: tokens.spacing.rowVertical),
+            stagger(
+              ImportMatchOptionsCard(
+                sliders: [
+                  SubtitleRematchWindowSlider(
+                    value: _searchWindow,
+                    onChanged: (v) => setState(() => _searchWindow = v),
+                    onAutoTap: _canAutoProbe ? _handleAutoProbe : null,
+                    autoBusy: _autoProbing,
+                  ),
+                  SubtitleRematchThresholdSlider(
+                    value: _similarityThreshold,
+                    onChanged: (v) => setState(() => _similarityThreshold = v),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (importing) ...[
+            SizedBox(height: tokens.spacing.card),
+            ImportProgressCard(progress: progress, message: progressMsg),
+          ],
         ],
-        if (importing) ...buildProgressSection(context, tokens),
-      ],
+      ),
     );
   }
 
@@ -442,15 +520,17 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   /// 由用户明确挑文件而非盲目吞整个目录 —— 多段有声书语义完好保留。
   Widget _audioSourceRow() {
     return FushiFilePickerRow(
+      enabled: !importing,
       title: t.srt_import_pick_audio_files,
       subtitle: _hasAudioSource ? _audioSourceLabel : null,
-      icon: Icons.audio_file_outlined,
+      icon: FushiIcons.audio,
       onTap: _pickAudioFiles,
       actions: [
         FushiIconButton(
-          icon: Icons.audio_file_outlined,
+          icon: FushiIcons.folderOpen,
           tooltip: t.srt_import_pick_audio_files,
           isWideTapArea: true,
+          enabled: !importing,
           onTap: _pickAudioFiles,
         ),
       ],
@@ -460,25 +540,37 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   /// 对齐文件行：标签 + [选文件] 按钮。
   Widget _alignmentRow() {
     return FushiFilePickerRow(
+      enabled: !importing,
       title: t.audiobook_pick_alignment,
       subtitle: _alignmentPath == null
           ? null
           : _alignmentName ?? p.basename(_alignmentPath!),
-      icon: Icons.align_horizontal_left,
+      icon: FushiIcons.subtitles,
       onTap: _onAlignmentRowTap,
+      below: !isAsrSupported
+          ? null
+          : SubtitleSourceSegments(
+              // 转录回填的显示名固定是结果名（见 _transcribeAlignmentFromAudio）。
+              current: _alignmentPath == null
+                  ? null
+                  : _alignmentName == t.audiobook_transcribe_result_name
+                  ? SubtitleSourceChoice.transcribe
+                  : SubtitleSourceChoice.pickFile,
+              enabled: !importing,
+              onChoose: (SubtitleSourceChoice choice) => unawaited(
+                choice == SubtitleSourceChoice.transcribe
+                    ? _transcribeAlignmentFromAudio()
+                    : _pickAlignment(),
+              ),
+            ),
       actions: [
-        FushiIconButton(
-          icon: Icons.align_horizontal_left,
-          tooltip: t.audiobook_pick_alignment,
-          isWideTapArea: true,
-          onTap: _pickAlignment,
-        ),
-        if (isAsrSupported)
+        if (!isAsrSupported)
           FushiIconButton(
-            icon: Icons.record_voice_over_outlined,
-            tooltip: t.audiobook_transcribe_action,
+            icon: FushiIcons.folderOpen,
+            tooltip: t.audiobook_pick_alignment,
             isWideTapArea: true,
-            onTap: importing ? null : _transcribeAlignmentFromAudio,
+            enabled: !importing,
+            onTap: _pickAlignment,
           ),
       ],
     );
@@ -519,8 +611,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     }
     // 语言初值跟随书本身的语言（导入时从 OPF 回填的 `epub_books.language`）；
     // 认不出（如中文书、没写语言）再退回上次选择。
-    final EpubBookRow? book =
-        await widget.repo.database.getEpubBook(widget.bookKey);
+    final EpubBookRow? book = await widget.repo.database.getEpubBook(
+      widget.bookKey,
+    );
     if (!mounted) return;
     final String? srtPath = await showAsrTranscribeSheet(
       context: context,
@@ -544,8 +637,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     if (_pickerActive) return;
     _pickerActive = true;
     try {
-      final AppModel appModel =
-          ProviderScope.containerOf(context, listen: false).read(appProvider);
+      final AppModel appModel = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appProvider);
       final List<String> paths = await pickRealFilePaths(
         context: context,
         appModel: appModel,
@@ -684,8 +779,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     }
 
     debugPrint(
-        '[fushi-audiobook] doImport bookKey.len=${widget.bookKey.length} '
-        'hash=${widget.bookKey.hashCode} key=${widget.bookKey}');
+      '[fushi-audiobook] doImport bookKey.len=${widget.bookKey.length} '
+      'hash=${widget.bookKey.hashCode} key=${widget.bookKey}',
+    );
     setState(() => importing = true);
     reportProgress(0, '');
 
@@ -766,7 +862,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           grandTotal = totalBytes;
           final double ratio = totalBytes > 0 ? copiedBytes / totalBytes : 0.0;
           reportProgress(
-              0.5 + ratio * 0.3, t.import_step_copying_file(name: copyingName));
+            0.5 + ratio * 0.3,
+            t.import_step_copying_file(name: copyingName),
+          );
         },
       );
 
@@ -796,8 +894,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       }
 
       if (parsed != null) {
-        await widget.repo
-            .writeHealth(bookKey: widget.bookKey, health: parsed.health);
+        await widget.repo.writeHealth(
+          bookKey: widget.bookKey,
+          health: parsed.health,
+        );
       }
       // TODO-1288：EPUB-backed 有声书导入必须补写一条配对 srt_books 行，否则互联
       // host 的 hasAudiobook 判据（local_library_host_service
@@ -811,8 +911,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       // 天然豁免。非 audioOnly 路径在 line 637 已门控 alignment 非空，故
       // persistedAlignment 此处必非 null。
       if (!widget.audioOnly && persistedAlignment != null) {
-        final EpubBookRow? epubRow =
-            await widget.repo.database.getEpubBook(widget.bookKey);
+        final EpubBookRow? epubRow = await widget.repo.database.getEpubBook(
+          widget.bookKey,
+        );
         if (epubRow != null) {
           await writeEpubBackedSrtBook(
             repo: SrtBookRepository(widget.repo.database),
@@ -843,14 +944,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
               fileDurationsMs: durationsMs,
             );
           } else {
-            debugPrint('[AudiobookImport] TODO-811 skip cue reindex: '
-                'duration probe incomplete ($durationsMs).');
+            debugPrint(
+              '[AudiobookImport] TODO-811 skip cue reindex: '
+              'duration probe incomplete ($durationsMs).',
+            );
           }
         }
-        await widget.repo.saveCues(
-          bookKey: widget.bookKey,
-          cues: parsed.cues,
-        );
+        await widget.repo.saveCues(bookKey: widget.bookKey, cues: parsed.cues);
         await widget.repo.updateHealthOverlay(
           bookKey: widget.bookKey,
           health: parsed.health,
@@ -859,8 +959,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       reportProgress(1, t.import_step_done);
 
       if (mounted) {
-        final String? tail =
-            parsed != null ? summarizeAudiobookHealth(parsed.health) : null;
+        final String? tail = parsed != null
+            ? summarizeAudiobookHealth(parsed.health)
+            : null;
         final String msg = tail == null
             ? t.audiobook_import_success
             : '${t.audiobook_import_success} · $tail';
@@ -871,7 +972,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       ErrorLogService.instance.log('AudiobookImport.doImport', e, stack);
       debugPrint('AudiobookImportDialog import error (FS): $e');
       if (mounted) {
-        final bool diskFull = e.osError?.errorCode == 28 ||
+        final bool diskFull =
+            e.osError?.errorCode == 28 ||
             e.message.toLowerCase().contains('no space');
         if (diskFull) {
           FushiToast.show(
@@ -883,9 +985,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           );
         } else {
           FushiToast.show(
-            msg: t.audiobook_import_error_copy_failed(
-              name: e.path ?? '',
-            ),
+            msg: t.audiobook_import_error_copy_failed(name: e.path ?? ''),
             severity: ToastSeverity.error,
           );
         }
@@ -940,7 +1040,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   Future<AudiobookHealth> _matchCuesToTtu(List<AudioCue> cues) async {
     if (!_hasEpub) {
       return AudiobookHealth.notApplicable(
-        reason: 'no book bound — subtitle playback works, but no '
+        reason:
+            'no book bound — subtitle playback works, but no '
             'cross-chapter highlight',
       );
     }
@@ -957,9 +1058,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           ? probed
           : await loadEpubSectionsInBackground(widget.extractDir!);
       if (sections.isEmpty) {
-        return AudiobookHealth.failed(
-          reason: 'EPUB has 0 chapters',
-        );
+        return AudiobookHealth.failed(reason: 'EPUB has 0 chapters');
       }
       reportProgress(0.3, t.import_step_matching);
       // 匹配器放 isolate 跑，主线程不能被大书的 bigram 扫描挤出 ANR。
@@ -976,12 +1075,12 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       // 同一处收尾；就地换掉调用方持有的列表内容。
       final ({List<AudioCue> cues, MatchResult result}) finalized =
           await finalizeAlignedCues(
-        sections: sections,
-        cues: cues,
-        result: result,
-        subtitlePath: alignment ?? '',
-        hasTokenTiming: hasTokenTiming,
-      );
+            sections: sections,
+            cues: cues,
+            result: result,
+            subtitlePath: alignment ?? '',
+            hasTokenTiming: hasTokenTiming,
+          );
       if (!identical(finalized.cues, cues)) {
         cues
           ..clear()
@@ -991,7 +1090,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       final int pct = (result.matchRate * 100).round();
       return AudiobookHealth.fromRatePct(
         ratePct: pct,
-        reason: '${result.matchedCues}/${result.totalCues} cues matched '
+        reason:
+            '${result.matchedCues}/${result.totalCues} cues matched '
             '(window=$_searchWindow threshold=$_similarityThreshold)',
       );
     } catch (e, stack) {
@@ -1033,23 +1133,30 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       cues = await parseCuesForFormat(alignFile, widget.bookKey, 0);
     } else if (format == 'json') {
       cues = await JsonAlignmentParser.parse(
-          jsonFile: alignFile, bookKey: widget.bookKey);
+        jsonFile: alignFile,
+        bookKey: widget.bookKey,
+      );
       useFragmentHealth = true;
     } else {
       final String fileName = p.basename(alignmentFilePath);
       final String chapterHref = fileName.replaceAll(
-          RegExp(r'\.smil$', caseSensitive: false), '.xhtml');
+        RegExp(r'\.smil$', caseSensitive: false),
+        '.xhtml',
+      );
       cues = await SmilParser.parse(
-          smilFile: alignFile,
-          bookKey: widget.bookKey,
-          chapterHref: chapterHref);
+        smilFile: alignFile,
+        bookKey: widget.bookKey,
+        chapterHref: chapterHref,
+      );
       useFragmentHealth = true;
       formatLabel = 'smil';
     }
 
     if (cues.length > _maxCuesPerFile) {
-      debugPrint('[AudiobookImport] cue count ${cues.length} exceeds limit '
-          '$_maxCuesPerFile, truncating');
+      debugPrint(
+        '[AudiobookImport] cue count ${cues.length} exceeds limit '
+        '$_maxCuesPerFile, truncating',
+      );
       cues = cues.sublist(0, _maxCuesPerFile);
     }
 
@@ -1100,15 +1207,20 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   Future<void> _removeAudiobook(Audiobook ab) async {
     debugPrint('AudiobookImportDialog: remove tapped for ${widget.bookKey}');
-    final AppModel appModel =
-        ProviderScope.containerOf(context, listen: false).read(appProvider);
-    final NavigatorState outerNavigator =
-        Navigator.of(context, rootNavigator: true);
+    final AppModel appModel = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appProvider);
+    final NavigatorState outerNavigator = Navigator.of(
+      context,
+      rootNavigator: true,
+    );
 
     // 显式登记、且落在 app 持久目录之外的音频才是用户原件；纯 audioRoot 的旧行
     // 与「导入时复制进来」的副本都没有可安全删除的清单，不摆勾选框。
-    final bool hasLocalFiles =
-        await resolveAudiobookHasLocalFiles(ab.audioPaths);
+    final bool hasLocalFiles = await resolveAudiobookHasLocalFiles(
+      ab.audioPaths,
+    );
     if (!mounted) return;
     final DeleteDecision? decision = await showDeleteScopeConfirm(
       context,
@@ -1118,8 +1230,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         target: DeletionDisclosureTarget.attachedAudiobook,
       ),
       db: widget.repo.database,
-      localFilesSubtitle:
-          hasLocalFiles ? t.delete_local_files_audio_desc : null,
+      localFilesSubtitle: hasLocalFiles
+          ? t.delete_local_files_audio_desc
+          : null,
     );
     debugPrint('AudiobookImportDialog: decision=$decision');
     if (decision == null) return;
@@ -1183,7 +1296,7 @@ class AudiobookImportDialogFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     return ImportDialogFrame(
       title: title,
-      leadingIcon: Icons.headphones_outlined,
+      leadingIcon: FushiIcons.audiobook,
       body: content,
       actions: actions,
     );
@@ -1192,10 +1305,7 @@ class AudiobookImportDialogFrame extends StatelessWidget {
 
 @visibleForTesting
 class AudiobookRemoveConfirmationDialog extends StatelessWidget {
-  const AudiobookRemoveConfirmationDialog({
-    required this.onConfirm,
-    super.key,
-  });
+  const AudiobookRemoveConfirmationDialog({required this.onConfirm, super.key});
 
   final VoidCallback onConfirm;
 
@@ -1208,7 +1318,7 @@ class AudiobookRemoveConfirmationDialog extends StatelessWidget {
       maxHeightFactor: 0.72,
       child: FushiModalSheetFrame(
         title: t.dialog_delete,
-        leadingIcon: Icons.delete_outline,
+        leadingIcon: FushiIcons.delete,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -1221,10 +1331,7 @@ class AudiobookRemoveConfirmationDialog extends StatelessWidget {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: Text(
-          t.audiobook_delete_confirm,
-          style: tokens.type.listSubtitle,
-        ),
+        body: Text(t.audiobook_delete_confirm, style: tokens.type.listSubtitle),
         footer: Wrap(
           alignment: WrapAlignment.end,
           spacing: tokens.spacing.gap,

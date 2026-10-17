@@ -88,15 +88,18 @@ void main() {
   group('断点 B：字数只经 ReadUnitLedger，恢复不播种，显式跳句 leave', () {
     final String masked = maskComments(corpus);
 
-    test('_refreshProgress 只经 _readLedger.arrive( 记字', () {
+    test('_refreshProgress 只经账本记字（经开始方式门交给 _readLedger）', () {
       final String body = _functionSource(
         masked,
         '  Future<void> _refreshProgress() async {',
         '\n  }\n',
       );
+      // BUG-3100：落定经 arriveReadUnitThroughStartGate（先喂门再 arrive），账本
+      // 仍是 _readLedger；门与顺序的细节由
+      // reader_study_clock_start_mode_wiring_guard_static_test 钉。
       expect(
         body,
-        contains('_readLedger.arrive('),
+        contains('ledger: _readLedger,'),
         reason: '当前可见区间必须交给账本，翻走时才结算',
       );
       expect(

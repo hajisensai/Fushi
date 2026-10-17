@@ -1,4 +1,4 @@
-library hibiki_dictionary;
+library fushi_dictionary;
 
 // 零 Flutter 子集（引擎 / 无头服务端只 import 这一层）。
 export 'fushi_dictionary_core.dart';
@@ -24,6 +24,7 @@ export 'src/formats/abbyy_lingvo_format.dart';
 export 'src/formats/migaku_dictionary_format.dart';
 export 'src/formats/mdict_format.dart';
 export 'src/language/language.dart';
+export 'src/language/language_base.dart';
 export 'src/language/language_utils.dart';
 export 'src/language/ruby_text.dart';
 export 'src/language/implementations/japanese_language.dart';

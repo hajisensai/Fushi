@@ -235,6 +235,14 @@ final remoteLibraryCacheProvider = Provider<RemoteLibraryCache>((ref) {
   void onIdentityChanged() => cache.invalidateAll();
   revision.addListener(onIdentityChanged);
   ref.onDispose(() => revision.removeListener(onIdentityChanged));
+  // 本端删掉了 host 上的条目（同步推送删除墓碑 / UI 直删）：互联来源的清单整体作废。
+  // 同步监听——删除返回时缓存已空，之后推进的推送基线不会配上删除前的旧清单。
+  final ValueNotifier<int> mutation =
+      InterconnectSyncBackend.instance.remoteLibraryMutationRevision;
+  void onHostLibraryMutated() =>
+      cache.invalidateSource(kInterconnectRemoteLibrarySourceId);
+  mutation.addListener(onHostLibraryMutated);
+  ref.onDispose(() => mutation.removeListener(onHostLibraryMutated));
   return cache;
 });
 

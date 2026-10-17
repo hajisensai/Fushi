@@ -103,8 +103,8 @@ mixin _LocalLibraryHostAudiobooks
     if (!await audiobookExists(identity)) return;
     final int clamped =
         delayMs.clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs);
-    final int nowCapMs = DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
-    final int cappedAt = updatedAtMs > nowCapMs ? nowCapMs : updatedAtMs;
+    final int cappedAt = capFutureSyncStamp(updatedAtMs,
+        nowMs: DateTime.now().millisecondsSinceEpoch);
     final ({int delayMs, int updatedAtMs}) current =
         await getAudiobookDelay(identity);
     final ({int delayMs, int updatedAtMs}) winner = resolveDelayLww(
@@ -160,6 +160,29 @@ mixin _LocalLibraryHostAudiobooks
     throw StateError('audiobook not found for identity: $identity');
   }
 
+  /// 只打身份键为 [identity] 的有声书**字幕侧**（[AudiobookSubtitleHost]）：身份解析
+  /// 与 [exportAudiobook] 同一套（先 Audiobooks.bookKey，再 SrtBooks.uid）。
+  @override
+  Future<File> exportAudiobookSubtitles(String identity) async {
+    _assertSafeName(identity);
+    final AudiobookRow? ab = await _db.getAudiobookByBookKey(identity);
+    final SrtBookRow? srt = ab != null
+        ? await _db.getSrtBookByBookKey(identity)
+        : await _db.getSrtBookByUid(identity);
+    if (srt == null) {
+      throw StateError('audiobook not found for identity: $identity');
+    }
+    final Directory tmpDir =
+        Directory.systemTemp.createTempSync('fushi_audiobook_subs_export');
+    final File out = File(p.join(tmpDir.path, '$identity.fushisubs'));
+    await _packages.exportAudioSubtitlePackage(
+      srtBookUid: srt.uid,
+      outputFile: out,
+      bookKey: ab != null ? identity : null,
+    );
+    return out;
+  }
+
   /// 打包成 `<identity>.fushiaudio` 临时文件（srt-backed 传 [bookKey]；纯 SRT 传
   /// null，包管线据此省略 audiobook 段、cue 走 uid 命名空间）。
   Future<File> _packAudiobook({
@@ -168,7 +191,7 @@ mixin _LocalLibraryHostAudiobooks
     required String? bookKey,
   }) async {
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_audiobook_export');
+        Directory.systemTemp.createTempSync('fushi_audiobook_export');
     final File out = File(p.join(tmpDir.path, '$identity.fushiaudio'));
     await _packages.exportAudioDatabasePackage(
       srtBookUid: srtBookUid,
@@ -225,11 +248,16 @@ mixin _LocalLibraryHostAudiobooks
         // getSrtBookByBookKey 先拿 uid，再用 deleteSrtBookByUid 级联删 audioCue 行。
         final SrtBookRow? srt = await _db.getSrtBookByBookKey(bookKey);
         if (srt != null) {
+          // 关联 SRT 书（bookKey 非空）的跨设备身份是 bookKey，由下面的 audiobook
+          // 墓碑覆盖；不另写 srtbook 墓碑，否则对端会弹两条重复确认（与
+          // SrtBookRepository.delete 的 standalone 判据同源）。
           await _db.deleteSrtBookByUid(srt.uid);
         }
 
         // 删除 Audiobooks 行（及其 audioCues 级联，via deleteAudiobookByBookKey）。
         await _db.deleteAudiobookByBookKey(bookKey);
+        // BUG-2945：同步删除墓碑，其它设备经 /api/tombstones 跟着删。
+        await _writeHostSyncTombstone(SyncTombstoneKind.audiobook, bookKey);
 
         await _deleteAudioRootIfPersisted(audioRoot);
         return;
@@ -240,7 +268,11 @@ mixin _LocalLibraryHostAudiobooks
       final SrtBookRow? srt = await _db.getSrtBookByUid(bookKey);
       if (srt == null) return; // 幂等：都不存在则静默跳过
       final String? audioRoot = srt.audioRoot;
-      await _db.deleteSrtBookByUid(srt.uid);
+      // srtbook 墓碑只对 standalone 行写（bookKey 为空，身份 = uid），与
+      // SrtBookRepository.delete / _collectPresentDeletionKeys 同一判据。
+      if (await _db.deleteSrtBookByUid(srt.uid) > 0 && srt.bookKey.isEmpty) {
+        await _writeHostSyncTombstone(SyncTombstoneKind.srtbook, srt.uid);
+      }
       await _deleteAudioRootIfPersisted(audioRoot);
     });
   }
@@ -302,11 +334,14 @@ mixin _LocalLibraryHostAudiobooks
     }
     final ({int positionMs, int updatedAtMs}) current =
         await getAudiobookPosition(bookKey);
+    // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
     final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
       localPositionMs: current.positionMs,
-      localUpdatedAtMs: current.updatedAtMs,
+      localUpdatedAtMs:
+          trustedStoredSyncStamp(current.updatedAtMs, nowMs: nowMs),
       remotePositionMs: positionMs < 0 ? 0 : positionMs,
-      remoteUpdatedAtMs: updatedAtMs,
+      remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: nowMs),
     );
     if (winner.updatedAtMs == current.updatedAtMs &&
         winner.positionMs == current.positionMs) {

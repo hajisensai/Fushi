@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -47,9 +48,11 @@ Future<bool> repackageMangaBook(String extractDir, String outputPath) async {
   final ZipFileEncoder encoder = ZipFileEncoder();
   encoder.create(outputPath);
   try {
-    encoder.addDirectory(dir, includeDirName: false);
+    // 原生 zlib：archive 的 addDirectory 默认 GZIP 档是纯 Dart Deflate，且对已是
+    // 压缩格式的图片也照压一遍。
+    addDirectoryNativeDeflate(encoder, dir, includeDirName: false);
   } finally {
-    encoder.close();
+    encoder.closeSync();
   }
   return true;
 }
@@ -109,7 +112,7 @@ Future<String> importMangaPackageFile({
 /// 返回的目录。
 Future<Directory> extractMangaPackage(File zipFile) async {
   final Directory out =
-      await Directory.systemTemp.createTemp('hibiki_manga_pkg');
+      await Directory.systemTemp.createTemp('fushi_manga_pkg');
   InputFileStream? input;
   try {
     input = InputFileStream(zipFile.path);

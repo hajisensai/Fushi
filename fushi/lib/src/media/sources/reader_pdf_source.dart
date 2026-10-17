@@ -1,5 +1,5 @@
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_audio/fushi_audio.dart';
@@ -69,7 +69,11 @@ class ReaderPdfSource extends ReaderMediaSource {
     final String bookKey =
         ReaderFushiSource.parseBookKey(item?.mediaIdentifier ?? '') ?? '';
     return FushiAppUiScaleNeutralizer(
-      child: ReaderPdfPage(item: item, bookKey: bookKey),
+      child: ReaderPdfPage(
+        item: item,
+        bookKey: bookKey,
+        initialPageIndex: initialBookmarkJump?.sectionIndex,
+      ),
     );
   }
 

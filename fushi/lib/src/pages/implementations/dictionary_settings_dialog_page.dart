@@ -1,15 +1,18 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, mapEquals;
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_dict_style_assistant.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
@@ -18,6 +21,7 @@ import 'package:fushi/src/pages/implementations/dict_style_visual_editor.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
+import 'package:fushi/src/models/audio_source_list_edit.dart';
 import 'package:fushi/utils.dart';
 
 @visibleForTesting
@@ -50,16 +54,9 @@ class AudioSourcesDialog extends StatefulWidget {
 
   /// 自定义远端音频 URL 合法性：必须是 http(s) 链接，且至少含一个
   /// `{term}` / `{reading}` 占位符（否则播放时无法代入查词参数）。
+  /// 规则与控制通道共用 [isValidRemoteAudioUrl]。
   @visibleForTesting
-  static bool isValidRemoteUrl(String text) {
-    // 折全角后再判：否则合法模板会被拒，而错误提示只说「地址无效」，
-    // 用户完全看不出问题出在标点上（BUG-1807）。
-    final String value = normalizeUrlInput(text);
-    final Uri? uri = Uri.tryParse(value);
-    if (uri == null || !uri.hasAuthority) return false;
-    if (uri.scheme != 'http' && uri.scheme != 'https') return false;
-    return value.contains('{term}') || value.contains('{reading}');
-  }
+  static bool isValidRemoteUrl(String text) => isValidRemoteAudioUrl(text);
 
   @override
   State<AudioSourcesDialog> createState() => _AudioSourcesDialogState();
@@ -138,7 +135,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.manage_audio_sources,
-        leadingIcon: Icons.graphic_eq_outlined,
+        leadingIcon: FushiIcons.audio,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -169,14 +166,16 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                   SizedBox(height: tokens.spacing.gap),
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
+                    // M3E：「添加本地库」是本弹窗的主要新增动作，用 tonal 按钮
+                    // 而不是扁平文字链接，与上方列表拉开层级。
+                    child: FushiFilledButton.tonalIcon(
                       icon: _importing
                           ? const SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: FushiCircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.library_add_outlined, size: 18),
+                          : const FushiIcon(FushiIcons.libraryAdd, size: 18),
                       label: Text(t.local_audio_add_db),
                       onPressed: _importing ? null : _addLocalDb,
                     ),
@@ -187,7 +186,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                   // 裸 SwitchListTile —— 否则触犯 md3 设计系统守卫且 chrome 不一致。
                   if (_canReferenceOriginal)
                     AdaptiveSettingsSwitchRow(
-                      icon: Icons.link_outlined,
+                      icon: FushiIcons.link,
                       title: t.local_audio_reference_original,
                       subtitle: t.local_audio_reference_original_desc,
                       value: _referenceOriginal,
@@ -238,8 +237,14 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           _sources.insert(to, item);
         });
       },
-      itemBuilder: (BuildContext context, int index) =>
-          _buildSourceRow(tokens, index),
+      // M3E 分段卡：首尾大圆角、行间 2；正在编辑 URL 的那一行用选中形变
+      // （secondaryContainer + 16 圆角）标出「下方输入框改的是它」。
+      itemBuilder: (BuildContext context, int index) => FushiGroupedListItem(
+        index: index,
+        count: _sources.length,
+        selected: _editingSource != null && _editingSource == _sources[index],
+        child: _buildSourceRow(tokens, index),
+      ),
     );
   }
 
@@ -268,16 +273,13 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             _buildSourceRowContent(tokens, index),
-            if (unavailable) ...<Widget>[
-              Text(t.local_audio_file_unavailable,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              if (widget.onReplaceLocalDb != null)
-                TextButton.icon(
-                  onPressed: _importing ? null : () => _replaceLocalDb(dbPath),
-                  icon: const Icon(Icons.file_open_outlined),
-                  label: Text(t.local_audio_file_reselect),
-                ),
-            ],
+            if (unavailable)
+              _UnavailableSourceNotice(
+                onReselect: widget.onReplaceLocalDb == null
+                    ? null
+                    : (_importing ? null : () => _replaceLocalDb(dbPath)),
+                showReselect: widget.onReplaceLocalDb != null,
+              ),
           ],
         );
       },
@@ -286,15 +288,15 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
 
   Widget _buildSourceRowContent(FushiDesignTokens tokens, int index) {
     final AudioSourceConfig source = _sources[index];
-    final bool isHibiki = source.kind == AudioSourceKind.fushiRemote;
+    final bool isFushiRemote = source.kind == AudioSourceKind.fushiRemote;
     final bool isLocal = source.kind == AudioSourceKind.localAudio;
     final bool isRemoteUrl = source.kind == AudioSourceKind.remoteAudio;
     final bool isEditingThis =
         _editingSource != null && _editingSource == source;
     final String title =
-        isHibiki ? t.audio_source_fushi_interconnect : source.displayLabel;
+        isFushiRemote ? t.audio_source_fushi_interconnect : source.displayLabel;
     final bool loopbackWarn = source.pointsAtLoopbackHost;
-    final String baseSubtitle = isHibiki
+    final String baseSubtitle = isFushiRemote
         ? t.remote_audio_source
         : (isLocal ? (source.path ?? '') : (source.url ?? ''));
     // 换机后指向本机回环地址的远端音频源本机通常无服务→静默失败。附一行可见
@@ -306,8 +308,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
       title: title,
       subtitle: subtitle,
       icon: loopbackWarn
-          ? Icons.warning_amber_outlined
-          : (isLocal ? Icons.audiotrack_outlined : null),
+          ? FushiIcons.warning
+          : (isLocal ? FushiIcons.music : null),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
@@ -317,7 +319,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               widget.onEditLocalSources != null &&
               (source.path?.isNotEmpty ?? false))
             FushiIconButton(
-              icon: Icons.tune,
+              icon: FushiIcons.settings,
               size: 18,
               tooltip: t.local_audio_edit_sources,
               padding: EdgeInsets.all(tokens.spacing.gap / 2),
@@ -328,7 +330,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           // 对齐（BUG-027）。fushiRemote 无 URL 可改、本地库路径由选择器决定，都不给。
           if (isRemoteUrl)
             FushiIconButton(
-              icon: isEditingThis ? Icons.edit : Icons.edit_outlined,
+              icon: isEditingThis
+                  ? FushiIcons.filled(FushiIcons.edit)
+                  : FushiIcons.edit,
               size: 18,
               tooltip: t.dialog_edit,
               enabledColor:
@@ -336,7 +340,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               padding: EdgeInsets.all(tokens.spacing.gap / 2),
               onTap: () => _beginEditRemoteUrl(source),
             ),
-          Switch.adaptive(
+          FushiSwitch.adaptive(
             value: source.enabled,
             onChanged: (bool enabled) => setState(() {
               _sources[index] = source.copyWith(enabled: enabled);
@@ -345,7 +349,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           // Gamepad/keyboard reorder equivalent for the drag handle
           // (which a controller cannot grab).
           FushiIconButton(
-            icon: Icons.keyboard_arrow_up,
+            icon: FushiIcons.expandLess,
             size: 18,
             tooltip: t.move_up,
             enabled: index > 0,
@@ -356,7 +360,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
             }),
           ),
           FushiIconButton(
-            icon: Icons.keyboard_arrow_down,
+            icon: FushiIcons.expandMore,
             size: 18,
             tooltip: t.move_down,
             enabled: index < _sources.length - 1,
@@ -367,10 +371,10 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
             }),
           ),
           FushiIconButton(
-            icon: Icons.delete_outline,
+            icon: FushiIcons.delete,
             size: 18,
             tooltip: t.dialog_delete,
-            enabled: !isHibiki,
+            enabled: !isFushiRemote,
             padding: EdgeInsets.all(tokens.spacing.gap / 2),
             onTap: () => setState(() {
               _sources.removeAt(index);
@@ -406,13 +410,11 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           suffixIcon: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              // 编辑态下不再暴露「加入 Hibiki 互联源」——那是新增动作，与当前正在改的
+              // 编辑态下不再暴露「加入 Fushi 互联源」——那是新增动作，与当前正在改的
               // 那一行无关，混在一起只会让 ✓ 的语义变模糊。
-              if (!editing &&
-                  !_sources.any((AudioSourceConfig s) =>
-                      s.kind == AudioSourceKind.fushiRemote))
+              if (!editing && !hasFushiRemoteAudioSource(_sources))
                 FushiIconButton(
-                  icon: Icons.hub_outlined,
+                  icon: FushiIcons.hub,
                   tooltip: t.audio_source_fushi_interconnect,
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   onTap: () => setState(() => _sources.insert(
@@ -422,13 +424,13 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                 ),
               if (editing)
                 FushiIconButton(
-                  icon: Icons.close,
+                  icon: FushiIcons.close,
                   tooltip: t.dialog_cancel,
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   onTap: () => setState(_cancelEdit),
                 ),
               FushiIconButton(
-                icon: editing ? Icons.check : Icons.add,
+                icon: editing ? FushiIcons.check : FushiIcons.add,
                 tooltip: editing ? t.dialog_save : t.dialog_add,
                 enabled: _urlValid,
                 padding: EdgeInsets.all(tokens.spacing.gap / 2),
@@ -581,27 +583,91 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     setState(() {
       // 整表重建 → 编辑目标不再属于新列表，编辑态必须一起清掉。
       _cancelEdit();
-      final bool hadHibiki = _sources
-          .any((AudioSourceConfig s) => s.kind == AudioSourceKind.fushiRemote);
-      final List<AudioSourceConfig> locals = _sources
-          .where((AudioSourceConfig s) => s.kind == AudioSourceKind.localAudio)
-          .toList();
-      _sources = <AudioSourceConfig>[
-        if (hadHibiki) AudioSourceConfig.fushiRemote(),
-        // Anki 本地音频服务器内置预设：重置默认后也在列（默认关闭，与新装一致）。
-        AudioSourceConfig.remoteAudio(
-          url: AppModel.ankiLocalAudioUrl,
-          label: 'Anki',
-          enabled: false,
-        ),
-        ...locals,
-      ];
+      // Anki 本地音频服务器内置预设：重置默认后也在列（默认关闭，与新装一致）。
+      _sources = resetAudioSourcesToDefaults(
+        _sources,
+        ankiLocalAudioUrl: AppModel.ankiLocalAudioUrl,
+      );
     });
   }
 
   void _showSnack(String message) {
     ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(SnackBar(content: Text(message)));
+        ?.showSnackBar(FushiSnackBar(content: Text(message)));
+  }
+}
+
+/// 本地音频库文件丢失：M3E errorContainer 色块（错误图标 + 说明 + 重新选择），
+/// 而不是一行裸红字——用户要一眼看出「这一行坏了、点这里修」。
+class _UnavailableSourceNotice extends StatelessWidget {
+  const _UnavailableSourceNotice({
+    required this.onReselect,
+    required this.showReselect,
+  });
+
+  final VoidCallback? onReselect;
+  final bool showReselect;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool glass = isGlassDesign(context);
+    final Color background = glass
+        ? appleColorsOf(context).destructive.withValues(alpha: 0.12)
+        : colors.errorContainer;
+    final Color foreground =
+        glass ? appleColorsOf(context).destructive : colors.onErrorContainer;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.gap,
+        0,
+        tokens.spacing.gap,
+        tokens.spacing.gap,
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: FushiM3eShape.smallRadius,
+        ),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.gap + 4,
+            vertical: tokens.spacing.gap,
+          ),
+          // BUG-3023：按钮另起一行靠尾对齐，不与说明同处一个 Row——同行时按钮按
+          // 固有宽度先占位，说明（Expanded）在窄弹窗/长译文下只剩十几像素宽、
+          // 逐字换行撑高整行，把「重新选择」推出列表的可滚视口。
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  FushiIcon(FushiIcons.error, size: 20, color: foreground),
+                  SizedBox(width: tokens.spacing.gap),
+                  Expanded(
+                    child: Text(
+                      t.local_audio_file_unavailable,
+                      style:
+                          tokens.type.listSubtitle.copyWith(color: foreground),
+                    ),
+                  ),
+                ],
+              ),
+              if (showReselect)
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: FushiTextButton.icon(
+                    onPressed: onReselect,
+                    icon: const FushiIcon(FushiIcons.folderOpen),
+                    label: Text(t.local_audio_file_reselect),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -622,6 +688,31 @@ class _DictCssDraftSession {
   ///
   /// null = 本次会话还没碰过可视化页，保存时也就不该覆写已存规则。
   List<DictStyleRule>? styleRules;
+
+  /// [styleRules] 上次与磁盘对齐时的规则快照（[dictStyleRulesSnapshot]）。
+  ///
+  /// 规则表也会被对话框之外改（`fushi_cli config items lookup.custom_css.cli.visual_rules`）。
+  /// 以前保存是「按草稿整份覆盖」，对话框开着时别处的改动会被陈旧草稿悄悄抹掉。
+  /// 有了基线才分得清哪几条是本地改过的：没改过的跟随磁盘刷新，保存只写改过的
+  /// （[overlayDirtyDictStyleRules]）。与 [styleRules] 同时为 null / 非 null。
+  Map<String, String>? styleRulesBaseline;
+
+  /// 把磁盘上别处写入的变化并进规则草稿（没碰过可视化页时什么都不做）。
+  /// 返回草稿是否变了。
+  bool rebaseStyleRules(List<DictStyleRule> persisted) {
+    final List<DictStyleRule>? rules = styleRules;
+    final Map<String, String>? baseline = styleRulesBaseline;
+    if (rules == null || baseline == null) return false;
+    final Map<String, String> now = dictStyleRulesSnapshot(persisted);
+    if (mapEquals(now, baseline)) return false;
+    styleRules = overlayDirtyDictStyleRules(
+      draft: rules,
+      baseline: baseline,
+      persisted: persisted,
+    );
+    styleRulesBaseline = now;
+    return true;
+  }
 
   /// 可视化页当前选中的部位，跨 tab 切换保持。
   DictStylePart selectedPart = DictStylePart.glossaryContent;
@@ -737,10 +828,20 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
     }
     _draft.selectedDictionaryName = _selectedDictionaryName;
     _cssController = TextEditingController(text: _currentDraftCss);
+    // 复用的会话草稿在对话框关着期间没人监听：先对齐一次磁盘，再开始监听。
+    _draft.rebaseStyleRules(_appModel.dictStyleRules);
+    _appModel.addListener(_onAppModelChanged);
+  }
+
+  /// 规则表落盘后 `AppModel.saveDictStyleRules` 会通知：没改过的规则跟随刷新。
+  void _onAppModelChanged() {
+    if (!mounted || _draftFinalized) return;
+    if (_draft.rebaseStyleRules(_appModel.dictStyleRules)) setState(() {});
   }
 
   @override
   void dispose() {
+    _appModel.removeListener(_onAppModelChanged);
     if (!_draftFinalized) {
       _stashCurrentScope();
     }
@@ -836,7 +937,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
 
   void _showSnack(String message) {
     ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(SnackBar(content: Text(message)));
+        ?.showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   /// 「让 AI 帮忙」区：一行输入 + 生成按钮，结果状态在下面一行。放在两个 tab 共用
@@ -860,37 +961,99 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
               ),
             ),
             SizedBox(width: tokens.spacing.gap),
-            FilledButton.icon(
+            FushiFilledButton.icon(
               key: const ValueKey<String>('dict-style-ai-generate'),
               onPressed: _aiBusy || _isSaving ? null : () => unawaited(_runAi()),
               icon: _aiBusy
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.auto_awesome_outlined),
+                  : const FushiIcon(FushiIcons.ai),
               label: Text(_aiBusy ? t.ai_assist_working : t.ai_assist_generate),
             ),
           ],
         ),
-        if (_aiMessage != null) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap / 2),
-          Text(
-            _aiMessage!,
-            key: const ValueKey<String>('dict-style-ai-message'),
-            style: tokens.type.listSubtitle,
-          ),
-        ],
-        if (_aiExplanation.isNotEmpty) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap / 2),
-          Text(
-            _aiExplanation,
-            key: const ValueKey<String>('dict-style-ai-explanation'),
-            style: tokens.type.listSubtitle,
-          ),
-        ],
+        // 结果状态进 M3E tonal 色块（已填入 = tertiaryContainer、没配提供商 /
+        // 失败 = errorContainer），出现 / 消失走弹簧尺寸过渡，不再是一行灰字。
+        AnimatedSize(
+          duration: context.fushiMotion.spatialDefault.duration,
+          curve: context.fushiMotion.spatialDefault.curve,
+          alignment: AlignmentDirectional.topStart,
+          child: _aiMessage == null && _aiExplanation.isEmpty
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  padding: EdgeInsets.only(top: tokens.spacing.gap),
+                  child: _buildAiStatus(tokens),
+                ),
+        ),
       ],
+    );
+  }
+
+  Widget _buildAiStatus(FushiDesignTokens tokens) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool ok = _aiMessage == null || _aiMessage == t.dict_style_ai_applied;
+    final bool glass = isGlassDesign(context);
+    final Color background = glass
+        ? fushiNeutralBlockColor(context)
+        : (ok ? colors.tertiaryContainer : colors.errorContainer);
+    final Color foreground = glass
+        ? (ok ? colors.primary : appleColorsOf(context).destructive)
+        : (ok ? colors.onTertiaryContainer : colors.onErrorContainer);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: FushiM3eShape.smallRadius,
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.gap + 4,
+          vertical: tokens.spacing.gap,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            FushiIcon(
+              ok ? FushiIcons.ai : FushiIcons.warning,
+              size: 20,
+              color: foreground,
+            ),
+            SizedBox(width: tokens.spacing.gap),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  if (_aiMessage != null)
+                    Text(
+                      _aiMessage!,
+                      key: const ValueKey<String>('dict-style-ai-message'),
+                      style: context.fushiType.labelLargeEmphasized
+                          .copyWith(color: foreground),
+                    ),
+                  if (_aiExplanation.isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        top: _aiMessage != null ? tokens.spacing.gap / 2 : 0,
+                      ),
+                      child: Text(
+                        _aiExplanation,
+                        key: const ValueKey<String>(
+                          'dict-style-ai-explanation',
+                        ),
+                        style: tokens.type.listSubtitle.copyWith(
+                          color: foreground,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -930,8 +1093,19 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
           // null = 本次没碰过可视化页。不能拿 `?? []` 兜底——那会把用户已存的
           // 规则在「只改了手写 CSS 就保存」时整份清空。
           final List<DictStyleRule>? rules = _draft.styleRules;
-          if (rules != null) {
-            await _appModel.saveDictStyleRules(rules);
+          final Map<String, String>? baseline = _draft.styleRulesBaseline;
+          if (rules != null && baseline != null) {
+            // 按条合并：以磁盘当前表为底，只写本地改过的规则——对话框开着时
+            // 别处（CLI）写入的、本地没碰过的规则不被陈旧草稿覆盖。
+            final List<DictStyleRule> merged = overlayDirtyDictStyleRules(
+              draft: rules,
+              baseline: baseline,
+              persisted: _appModel.dictStyleRules,
+            );
+            // 先推进基线再写：写入会同步通知 [_onAppModelChanged]。
+            _draft.styleRules = merged;
+            _draft.styleRulesBaseline = dictStyleRulesSnapshot(merged);
+            await _appModel.saveDictStyleRules(merged);
           }
         },
       );
@@ -979,8 +1153,13 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   }
 
   /// 规则表草稿。首次读时从 AppModel 惰性取一份副本。
-  List<DictStyleRule> get _currentDraftRules =>
-      _draft.styleRules ??= _appModel.dictStyleRules;
+  List<DictStyleRule> get _currentDraftRules {
+    final List<DictStyleRule>? existing = _draft.styleRules;
+    if (existing != null) return existing;
+    final List<DictStyleRule> persisted = _appModel.dictStyleRules;
+    _draft.styleRulesBaseline = dictStyleRulesSnapshot(persisted);
+    return _draft.styleRules = persisted;
+  }
 
   String get _currentDraftCss {
     return _draft.cssByDictionary.putIfAbsent(
@@ -1011,7 +1190,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
       child: FushiModalSheetFrame(
         // 不再只是「自定义 CSS」——里面现在有可视化和手写两页。
         title: t.dict_style_title,
-        leadingIcon: Icons.palette_outlined,
+        leadingIcon: FushiIcons.appearance,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -1029,17 +1208,17 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SegmentedButton<int>(
+              FushiSegmentedButton<int>(
                 showSelectedIcon: false,
                 segments: <ButtonSegment<int>>[
                   ButtonSegment<int>(
                     value: 0,
-                    icon: const Icon(Icons.palette_outlined, size: 18),
+                    icon: const FushiIcon(FushiIcons.appearance, size: 18),
                     label: Text(t.dict_style_tab_visual),
                   ),
                   ButtonSegment<int>(
                     value: 1,
-                    icon: const Icon(Icons.code_outlined, size: 18),
+                    icon: const FushiIcon(FushiIcons.edit, size: 18),
                     label: Text(t.dict_style_tab_code),
                   ),
                 ],
@@ -1055,8 +1234,11 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
                     ? _buildVisualTab(tokens)
                     : FushiEditorPanel(controller: _cssController),
               ),
-              SizedBox(height: tokens.spacing.gap),
-              _buildAiSection(tokens),
+              // AI 模块（`ModuleId.ai`）关掉时「让 AI 帮忙」整段不渲染。
+              if (isAiModuleEnabled(_appModel.moduleVisibility)) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                _buildAiSection(tokens),
+              ],
             ],
           ),
         ),
@@ -1099,14 +1281,25 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
           _scopeCssToDictionary(buildPerDictionaryStyleCss(rules, name), name),
       ].join('\n'),
     );
+    // 预览框：MD3 = 页面底 + outline 细边框；Apple = 分组圆角 + 物理 1px
+    // separator 细线（Apple 内容层不画 MD3 那种实描边框，只用分隔线色勾边界）。
+    final bool glass = isGlassDesign(context);
+    final BorderRadius previewRadius = glass
+        ? FushiAppleMetrics.of(context).groupBorderRadius
+        : FushiM3eShape.cardRadius;
     final Widget preview = DecoratedBox(
       decoration: BoxDecoration(
         color: tokens.surfaces.page,
-        borderRadius: tokens.radii.cardRadius,
-        border: Border.all(color: tokens.surfaces.outline),
+        borderRadius: previewRadius,
+        border: Border.all(
+          color: glass
+              ? appleColorsOf(context).separator
+              : tokens.surfaces.outline,
+          width: glass ? fushiHairline(context) : 1,
+        ),
       ),
       child: ClipRRect(
-        borderRadius: tokens.radii.cardRadius,
+        borderRadius: previewRadius,
         child: widget.previewBuilder?.call(
               context,
               previewCss,
@@ -1122,9 +1315,21 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
             ),
       ),
     );
-    final Widget hint =
-        Text(t.dict_style_pick_hint, style: tokens.type.listSubtitle);
-    final Widget controls = DictStyleVisualEditor(
+    final Widget hint = Row(
+      children: <Widget>[
+        FushiIcon(
+          FushiIcons.touch,
+          size: 16,
+          color: tokens.surfaces.onVariant,
+        ),
+        SizedBox(width: tokens.spacing.gap / 2),
+        Expanded(
+          child: Text(t.dict_style_pick_hint, style: tokens.type.listSubtitle),
+        ),
+      ],
+    );
+    Widget controls({required bool compact}) => DictStyleVisualEditor(
+      compact: compact,
       rules: rules,
       scopeDictionary: scope,
       selectedPart: _draft.selectedPart,
@@ -1154,17 +1359,21 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
                 ),
               ),
               SizedBox(width: tokens.spacing.card),
-              SizedBox(width: 340, child: controls),
+              SizedBox(width: 340, child: controls(compact: false)),
             ],
           );
         }
+        // 窄屏（应用内反馈 10-09，Android 384×853）：预览钉在上半、控件在下半自己滚，
+        // 改任何属性时预览都在视野里。旧比例 2:3 留给预览的不到 140dp，预览本身还得
+        // 上下滑才看得到正在改的部位；改成对半分，部位选择收成一行横滑（compact），
+        // 预览按所选部位自动滚到它（DictStylePreview）。
         return Column(
           children: <Widget>[
-            Expanded(flex: 2, child: preview),
+            Expanded(child: preview),
             SizedBox(height: tokens.spacing.gap / 2),
             hint,
             SizedBox(height: tokens.spacing.gap / 2),
-            Expanded(flex: 3, child: controls),
+            Expanded(child: controls(compact: true)),
           ],
         );
       },

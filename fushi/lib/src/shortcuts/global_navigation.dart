@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:macos_ui/macos_ui.dart' show WindowManipulator;
 import 'package:window_manager/window_manager.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -86,10 +87,10 @@ bool _topRouteIsPopup(GlobalKey<NavigatorState> navigatorKey) {
 ///    scroll-edge fallback) — the gamepad D-pad and the keyboard arrow reach the
 ///    exact same focus engine. Previously the press edge was deliberately left to
 ///    WidgetsApp's framework [DirectionalFocusAction] (a plain focusInDirection
-///    with none of Hibiki's fallbacks) while only the repeat was taken here, so
+///    with none of Fushi's fallbacks) while only the repeat was taken here, so
 ///    holding an arrow switched focus engines mid-hold: the press could dead-end
 ///    at a row/panel/scroll edge that the very next repeat then escaped, and at a
-///    managed control the framework press and the Hibiki repeat resolved to
+///    managed control the framework press and the Fushi repeat resolved to
 ///    DIFFERENT targets. That split is the "focus steals shortcut / left-right
 ///    always conflicts" the user hit. Claiming the press here consumes the arrow
 ///    before it can reach the framework's [DirectionalFocusAction], so exactly
@@ -153,7 +154,7 @@ KeyEventResult _handleGlobalArrowFocus(
 /// Moves directional focus one step in [dir] from whichever route is on top,
 /// then ALWAYS consumes the arrow: at a scroll/list edge the move is a no-op but
 /// the arrow has still been "spent" (so it never falls back to the caret or to
-/// the framework's fallback that lacks Hibiki's reading-order step).
+/// the framework's fallback that lacks Fushi's reading-order step).
 ///
 /// 到了焦点目标的尽头（该方向再无受管控件、也没触发手柄式边缘接管）时，把这次
 /// 按键交给页面滚动：按注册表解析 [event]（默认 ↑/↓ = 单步滚动），命中就经
@@ -277,11 +278,34 @@ KeyEventResult _handleGlobalBack(
     }
   }
   if (action != ShortcutAction.globalBack) return KeyEventResult.ignored;
+  // BUG-2953：查词浮层自带导航层里开着菜单时，「返回」只关这一层菜单——它在根
+  // Navigator 之外，根 maybePop 会落到页面 PopScope、把浮层连同菜单一起关掉。
+  if (LookupOverlayNavigator.popActiveMenu()) return KeyEventResult.handled;
   final NavigatorState? nav = navigatorKey.currentState;
-  if (nav == null || !nav.canPop()) return KeyEventResult.ignored;
+  if (nav == null) return KeyEventResult.ignored;
+  if (!nav.canPop()) return _backOnRootRoute(nav);
   // Escape 落在弹层上：让给框架（见上方文档的两条既有语义）。
   if (event.logicalKey == LogicalKeyboardKey.escape &&
       _topRouteIsPopup(navigatorKey)) {
+    return KeyEventResult.ignored;
+  }
+  nav.maybePop();
+  return KeyEventResult.handled;
+}
+
+/// 根路由（首页）上按返回：没有可弹出的路由，但页内状态可能用 [PopScope]
+/// 拦截返回——例如书架 / 视频库的批量选择模式（BUG-250），返回应先退出选择。
+/// `canPop()` 为 false 时以前直接忽略，Esc 永远到不了这些 PopScope；这里只在
+/// 根路由当前声明「不弹出」（[RoutePopDisposition.doNotPop]，即有 PopScope
+/// 拦着）时调 [NavigatorState.maybePop] 把返回交给它，其余情况照旧忽略。
+KeyEventResult _backOnRootRoute(NavigatorState nav) {
+  Route<dynamic>? top;
+  nav.popUntil((Route<dynamic> route) {
+    top = route;
+    return true;
+  });
+  final Route<dynamic>? route = top;
+  if (route == null || route.popDisposition != RoutePopDisposition.doNotPop) {
     return KeyEventResult.ignored;
   }
   nav.maybePop();
@@ -300,8 +324,11 @@ KeyEventResult _handleEscapeWithoutRegistry(
   if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.escape) {
     return KeyEventResult.ignored;
   }
+  // BUG-2953：查词浮层菜单先关（同 [_handleGlobalBack]）。
+  if (LookupOverlayNavigator.popActiveMenu()) return KeyEventResult.handled;
   final NavigatorState? nav = navigatorKey.currentState;
-  if (nav == null || !nav.canPop()) return KeyEventResult.ignored;
+  if (nav == null) return KeyEventResult.ignored;
+  if (!nav.canPop()) return _backOnRootRoute(nav);
   if (_topRouteIsPopup(navigatorKey)) return KeyEventResult.ignored;
   nav.maybePop();
   return KeyEventResult.handled;
@@ -312,7 +339,7 @@ KeyEventResult _handleEscapeWithoutRegistry(
 ///
 /// Android 的 `Generic.kcm` 为游戏手柄的 `BUTTON_B` 定义了 `fallback BACK`：当 app
 /// 的 view 层不消费 `KEYCODE_BUTTON_B` 时，系统会**另外合成一个 `KEYCODE_BACK`** 派发
-/// 下来。那条兜底路径完全绕过 Hibiki 的快捷键注册表，于是：
+/// 下来。那条兜底路径完全绕过 Fushi 的快捷键注册表，于是：
 ///   * 用户把「返回」改绑到 RB 后，B 仍然退出页面（改键在 B 上根本是假的）；
 ///   * 页面尚未拿到键盘焦点时（如视频页首帧未就绪），B 连页面自己的绑定都还没轮到，
 ///     就被系统直接判成返回——用户「进视频想回退两句，结果一路退回桌面」正是它。
@@ -518,6 +545,8 @@ bool _executeGlobalMouseAction(
 ) {
   switch (action) {
     case ShortcutAction.globalBack:
+      // BUG-2953：查词浮层菜单先关（同 [_handleGlobalBack]）。
+      if (LookupOverlayNavigator.popActiveMenu()) return true;
       final NavigatorState? nav = navigatorKey.currentState;
       if (nav == null || !nav.canPop()) return false;
       // 键盘那条路对 Escape + 弹层有一条「让给框架」的例外（barrierDismissible

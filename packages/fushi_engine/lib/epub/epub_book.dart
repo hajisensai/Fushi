@@ -361,6 +361,7 @@ class EpubBook {
       int normCharOffset, {
       int charOffset = 0,
       List<String> leadingAnchorIds = const <String>[],
+      bool sharesLineWithText = false,
     }) {
       final String? key = normalizeEpubImageKey(resolvedSrc);
       if (key == null || !seen.add(key)) return;
@@ -372,6 +373,7 @@ class EpubBook {
         normCharOffset: normCharOffset,
         charOffset: charOffset,
         leadingAnchorIds: leadingAnchorIds,
+        sharesLineWithText: sharesLineWithText,
       ));
     }
 
@@ -397,6 +399,7 @@ class EpubBook {
           _normCharOffsetOf(hit.charsBefore, scan.totalChars),
           charOffset: hit.charsBefore,
           leadingAnchorIds: hit.leadingAnchorIds,
+          sharesLineWithText: hit.sharesLineWithText,
         );
       }
     }
@@ -404,6 +407,16 @@ class EpubBook {
     final List<EpubImageRef> result = List<EpubImageRef>.unmodifiable(built);
     _images = result;
     return result;
+  }
+
+  /// Whether [images] has already been built (reading it is then free).
+  bool get hasImages => _images != null;
+
+  /// Adopts an [images] list built off the UI isolate on a copy of this same
+  /// book, so later [images] reads on this instance do not rescan every
+  /// chapter. No-op once [images] is built.
+  void adoptImages(List<EpubImageRef> images) {
+    _images ??= List<EpubImageRef>.unmodifiable(images);
   }
 
   /// Walks one chapter body in document order, counting study characters as it
@@ -446,6 +459,7 @@ class EpubBook {
           src: src,
           charsBefore: chars,
           leadingAnchorIds: idsAtCount,
+          sharesLineWithText: _sharesBlockWithText(node),
         ));
       }
       for (final html_dom.Node child in node.nodes) {
@@ -455,6 +469,71 @@ class EpubBook {
 
     if (body != null) visit(body);
     return _ChapterImageScan(hits: hits, totalChars: chars);
+  }
+
+  /// Block-level tags that end the walk in [_sharesBlockWithText]: an image's
+  /// nearest one of these is the "line box" it is typeset in.
+  static const Set<String> _imageBlockTags = <String>{
+    'address',
+    'article',
+    'aside',
+    'blockquote',
+    'body',
+    'center',
+    'dd',
+    'div',
+    'dl',
+    'dt',
+    'figcaption',
+    'figure',
+    'footer',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'header',
+    'li',
+    'main',
+    'nav',
+    'ol',
+    'p',
+    'pre',
+    'section',
+    'table',
+    'td',
+    'th',
+    'tr',
+    'ul',
+  };
+
+  /// See [EpubImageRef.sharesLineWithText]: walks from [element] up to its
+  /// nearest block-level ancestor and reports whether that block's own inline
+  /// content holds any non-whitespace text outside ruby annotations. Nested
+  /// blocks are not descended into: `<body><img/><p>text</p></body>` puts the
+  /// image in a line of its own, `<p>「<img/>」</p>` does not.
+  static bool _sharesBlockWithText(html_dom.Element element) {
+    html_dom.Element? block = element;
+    while (block != null &&
+        !_imageBlockTags.contains((block.localName ?? '').toLowerCase())) {
+      block = block.parent;
+    }
+    if (block == null) return false;
+    bool hasText(html_dom.Node node) {
+      if (node is html_dom.Text) return node.data.trim().isNotEmpty;
+      if (node is html_dom.Element && !identical(node, block)) {
+        final String tag = (node.localName ?? '').toLowerCase();
+        if (tag == 'rt' || tag == 'rp' || tag == 'rtc') return false;
+        if (_imageBlockTags.contains(tag)) return false;
+      }
+      for (final html_dom.Node child in node.nodes) {
+        if (hasText(child)) return true;
+      }
+      return false;
+    }
+
+    return hasText(block);
   }
 
   /// The image references [element] itself carries (chapter-relative, in
@@ -621,6 +700,7 @@ class EpubImageRef {
     this.normCharOffset = 0,
     this.charOffset = 0,
     this.leadingAnchorIds = const <String>[],
+    this.sharesLineWithText = false,
   });
 
   final int chapterIndex;
@@ -657,10 +737,48 @@ class EpubImageRef {
   /// one at the same offset that is not listed follows it.
   final List<String> leadingAnchorIds;
 
+  /// Whether this image is typeset inside a run of text: its nearest
+  /// block-level ancestor (`<p>`, `<div>`, `<h2>`, `<li>`…) also carries
+  /// readable text (ruby annotations excluded). That is how an EPUB embeds a
+  /// glyph it has no font for (外字 / gaiji), a heading ornament, or an inline
+  /// icon; a full-page plate sits in a block of its own. Layout evidence only
+  /// — callers combine it with the image's pixel size (a large picture with a
+  /// caption in the same `<p>` is still an illustration). Always false for the
+  /// OPF cover entry.
+  final bool sharesLineWithText;
+
   /// The spine chapter to navigate to for this image. Same as [chapterIndex]
   /// except for a cover that no chapter references ([kEpubCoverChapterIndex]),
   /// which has no spine slot of its own and lands on the first chapter.
   int get jumpChapterIndex => chapterIndex < 0 ? 0 : chapterIndex;
+
+  /// On-disk form for the illustration index cache
+  /// (`epub_image_index_cache.dart`). Short keys: a long novel lists hundreds.
+  Map<String, Object> toJson() => <String, Object>{
+        'c': chapterIndex,
+        'o': orderInBook,
+        's': src,
+        'k': revealKey,
+        'n': normCharOffset,
+        'a': charOffset,
+        if (leadingAnchorIds.isNotEmpty) 'l': leadingAnchorIds,
+        if (sharesLineWithText) 't': true,
+      };
+
+  /// Inverse of [toJson]. Throws [FormatException] / [TypeError] on a
+  /// malformed entry; the cache reader treats that as a miss.
+  static EpubImageRef fromJson(Map<String, dynamic> json) => EpubImageRef(
+        chapterIndex: json['c'] as int,
+        orderInBook: json['o'] as int,
+        src: json['s'] as String,
+        revealKey: json['k'] as String,
+        normCharOffset: json['n'] as int,
+        charOffset: json['a'] as int,
+        leadingAnchorIds: List<String>.unmodifiable(
+          (json['l'] as List<dynamic>? ?? const <dynamic>[]).cast<String>(),
+        ),
+        sharesLineWithText: json['t'] == true,
+      );
 }
 
 /// BUG-898: normalizes an epub-root-relative image href to the shared
@@ -693,6 +811,7 @@ class _ChapterImageHit {
     required this.src,
     required this.charsBefore,
     required this.leadingAnchorIds,
+    required this.sharesLineWithText,
   });
 
   /// The raw, chapter-relative reference (not yet resolved).
@@ -703,6 +822,9 @@ class _ChapterImageHit {
 
   /// See [EpubImageRef.leadingAnchorIds].
   final List<String> leadingAnchorIds;
+
+  /// See [EpubImageRef.sharesLineWithText].
+  final bool sharesLineWithText;
 }
 
 class _ChapterImageScan {
@@ -714,13 +836,27 @@ class _ChapterImageScan {
 
 /// [EpubBook.chapterPlainTextWithRuby] 的产物。
 class EpubPlainTextWithRuby {
-  const EpubPlainTextWithRuby({required this.text, required this.rubies});
+  const EpubPlainTextWithRuby({
+    required this.text,
+    required this.rubies,
+    this.blockEnds = const <int>[],
+    this.sceneBreaks = const <int>[],
+  });
 
   /// 与 [EpubBook.chapterPlainText] 逐码元相同的纯文本。
   final String text;
 
   /// 按出现顺序、互不重叠的 ruby 基底区间（[text] 的 UTF-16 码元）与读音。
   final List<EpubRubyAnnotation> rubies;
+
+  /// 块级元素（`p`/`div`/`li`/`h1`–`h6`/`blockquote`…）在 [text] 里的结束偏移
+  /// （升序，可重复——嵌套块在同一处收尾）。纯文本本身不带段落分隔（块之间只剩
+  /// 折叠后的空白），段落边界只能从这里取。
+  final List<int> blockEnds;
+
+  /// 场景分隔在 [text] 里的位置（升序）：`<hr>`、空段落（`<p>` 里没有文字也没有
+  /// 图片）、只由分隔符号组成的块（`◇◇◇` / `＊` / `※` …）。
+  final List<int> sceneBreaks;
 }
 
 /// 一处 ruby：基底在纯文本里的区间 `[start, end)` 与 `<rt>` 读音（多段 `<rt>`
@@ -757,6 +893,32 @@ class _RubyPlainTextWalker {
   int _rubyStart = -2;
   StringBuffer? _reading;
 
+  /// 块级元素（段落边界只认这些；`section`/`body` 之类的大容器不算段落）。
+  static const Set<String> _blockTags = <String>{
+    'p',
+    'div',
+    'li',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'blockquote',
+    'dd',
+    'dt',
+    'pre',
+  };
+
+  /// 场景分隔常用的符号（整块只由它们和空白组成时当场景分隔）。
+  static final RegExp _separatorOnly =
+      RegExp(r'^[\s◇◆♢♦◈＊*※・·〇○●◎□■☆★△▲▽▼─━―－\-=＝#＃~〜～†‡§]+$');
+
+  static const Set<String> _mediaTags = <String>{'img', 'image', 'svg', 'video'};
+
+  final List<int> _blockEnds = <int>[];
+  final List<int> _sceneBreaks = <int>[];
+
   static EpubPlainTextWithRuby walk(html_dom.Element? body) {
     final _RubyPlainTextWalker w = _RubyPlainTextWalker._();
     if (body != null) w._visit(body);
@@ -772,7 +934,42 @@ class _RubyPlainTextWalker {
             reading: r.reading,
           ),
     ];
-    return EpubPlainTextWithRuby(text: text, rubies: rubies);
+    int clamp(int offset) => (offset - shift).clamp(0, text.length);
+    return EpubPlainTextWithRuby(
+      text: text,
+      rubies: rubies,
+      blockEnds: <int>[for (final int e in w._blockEnds) clamp(e)],
+      sceneBreaks: <int>[for (final int s in w._sceneBreaks) clamp(s)],
+    );
+  }
+
+  /// 块收尾：记段落边界；整块是空段落 / 纯分隔符时另记场景分隔。只读 [_out]，
+  /// 不写——纯文本必须与 [EpubBook.chapterPlainText] 逐码元相同。
+  void _closeBlock(html_dom.Element node, String tag, int start) {
+    final int end = _out.length;
+    _blockEnds.add(end);
+    if (end == start) {
+      // 只有 `<p>` 的空段落算分隔（空 `<div>` 多是排版容器）；带插图的不算。
+      if (tag == 'p' && !_hasMedia(node)) _sceneBreaks.add(end);
+    } else if (end - start <= _maxSeparatorBlock &&
+        _separatorOnly.hasMatch(
+          String.fromCharCodes(_units.sublist(start, end)),
+        )) {
+      _sceneBreaks.add(end);
+    }
+  }
+
+  /// 分隔块都很短；更长的块不必判（也省得为每个段落切子串）。
+  static const int _maxSeparatorBlock = 64;
+
+  /// 与 [_out] 同步的码元副本（StringBuffer 不能取子串）。
+  final List<int> _units = <int>[];
+
+  static bool _hasMedia(html_dom.Element node) {
+    for (final html_dom.Element child in node.children) {
+      if (_mediaTags.contains(child.localName) || _hasMedia(child)) return true;
+    }
+    return false;
   }
 
   void _visit(html_dom.Node node) {
@@ -798,14 +995,21 @@ class _RubyPlainTextWalker {
       }
       return;
     }
+    if (tag == 'hr') {
+      _sceneBreaks.add(_out.length);
+      return;
+    }
     final bool isRuby = tag == 'ruby' && _rubyStart == -2;
     if (isRuby) {
       _rubyStart = -1;
       _reading = StringBuffer();
     }
+    final bool isBlock = _blockTags.contains(tag);
+    final int blockStart = _out.length;
     for (final html_dom.Node child in node.nodes) {
       _visit(child);
     }
+    if (isBlock) _closeBlock(node, tag, blockStart);
     if (isRuby) {
       final String reading =
           _reading!.toString().replaceAll(_whitespaceRun, '').trim();
@@ -833,11 +1037,15 @@ class _RubyPlainTextWalker {
         continue;
       }
       if (_pendingSpace) {
-        if (_out.isNotEmpty) _out.write(' ');
+        if (_out.isNotEmpty) {
+          _out.write(' ');
+          _units.add(0x20);
+        }
         _pendingSpace = false;
       }
       if (_rubyStart == -1) _rubyStart = _out.length;
       _out.write(ch);
+      _units.add(ch.codeUnitAt(0));
     }
   }
 }
@@ -897,6 +1105,10 @@ class EpubChapter {
   final String? _eagerHtml;
   final String? _filePath;
   String? _lazyHtml;
+
+  /// The on-disk XHTML backing a lazy chapter; null for an eager one. Derived
+  /// caches (the illustration index) fingerprint these files.
+  String? get filePath => _filePath;
 
   /// Chapter XHTML source. For lazy chapters this reads + decodes [_filePath]
   /// on first access and caches the result; a missing file degrades to `''`
@@ -1104,7 +1316,7 @@ String normalizeHref(String href) => href
 
 /// manifest 未声明 mediaType 时按扩展名兜底的 MIME（阅读器 WebView 拦截器 / 分享用）。
 ///
-/// 命名统一轮 G8：收敛到 hibiki_core 单一映射表 [mimeTypeForFilePath]（旧本地副本
+/// 命名统一轮 G8：收敛到 fushi_core 单一映射表 [mimeTypeForFilePath]（旧本地副本
 /// 缺 `.webp` 等，EPUB 内 webp 插图曾被按 octet-stream 提供）。保留旧名薄 shim。
 String fallbackMimeType(String path) => mimeTypeForFilePath(path);
 

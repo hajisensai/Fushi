@@ -1,0 +1,6 @@
+## BUG-3039 · MD3 大标题顶栏展开态被主题钉成 titleLarge 小字（设置页标题上方大片空白）
+- **报告**：2026-10-05（协作者 shishamo：Android MD3 设置页「设置」上方大片空白）
+- **真实性**：✅ 真 bug，两层根因。① `fushi/lib/src/models/theme_notifier.dart` MD3 的 `appBarTheme.titleTextStyle` 钉成 `titleLarge`，Flutter 大 / 中标题栏展开态取 `titleTextStyle ?? appBarTheme.titleTextStyle ?? headlineMedium`，于是 152 高的展开带底部只剩一行 22 号小字。② `fushi/lib/src/settings/settings_home_page.dart` `_buildMd3NarrowLayout` 对底部导航直达的根设置页也用 `SliverAppBar.large`：大标题栏顶部 64 高的工具栏行只放返回箭头 / 操作，根页两样都没有，标题上方恒有一整行空白 + 展开区余量（约 88dp）。书架等其它根 Tab 都是标题在工具栏行。
+- **[x] ① 已修复** — ① 主题不再钉 `titleTextStyle`（M3 默认本就是 titleLarge / onSurface，`theme_notifier.dart:2054`）；② 根页（无 `onBack` 且路由不可返回）改用钉住的普通 `SliverAppBar`，标题 headlineSmall 进工具栏行（`settings_home_page.dart:846`）；带返回出口的全屏设置仍是大标题栏。真机：修前 `android-shots/04-md3-settings-before.png` / `22-md3-settings-after.png`（只改字号时空白仍在）→ 修后 `31-md3-settings-fixed.png`。
+- **[x] ② 已加自动化测试** — `fushi/test/models/md3_large_app_bar_title_test.dart`（大标题栏展开态 = headlineMedium，普通顶栏仍 titleLarge）；`fushi/test/settings/settings_renderer_test.dart`「MD3 narrow settings home: root tab puts the title in the toolbar row / page with a back exit keeps the large app bar」（真 `SettingsHomePage`，断言标题位置与返回箭头）。
+- **备注**：

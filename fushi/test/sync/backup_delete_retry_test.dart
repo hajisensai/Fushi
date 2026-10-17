@@ -11,7 +11,7 @@ import 'package:fushi/src/sync/backup_service.dart';
 void main() {
   FileSystemException winError(int code) => FileSystemException(
         'Deletion failed',
-        r'C:\Users\wrds\AppData\Local\Temp\hibiki_backup_abc',
+        r'C:\Users\wrds\AppData\Local\Temp\fushi_backup_abc',
         OSError('目录不是空的。', code),
       );
 

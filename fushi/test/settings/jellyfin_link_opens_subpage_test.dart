@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
@@ -90,7 +90,7 @@ Future<AppModel> _appModel(FushiDatabase db) async {
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
   final Directory tempDir = Directory.systemTemp.createTempSync(
-    'hibiki_jellyfin_link_',
+    'fushi_jellyfin_link_',
   );
   addTearDown(() {
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);

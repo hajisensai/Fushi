@@ -1,12 +1,13 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_view.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// mokuro.moe「在线目录」对话框（O1）：薄壳——外框 chrome 与 footer 动作按钮
@@ -79,7 +80,7 @@ class _MokuroMoeCatalogDialogState extends State<MokuroMoeCatalogDialog> {
       builder: (BuildContext context, MokuroMoeCatalogSnapshot snapshot,
           Widget? body) {
         return ImportDialogFrame(
-          leadingIcon: Icons.cloud_download_outlined,
+          leadingIcon: FushiIcons.cloudDownload,
           title: snapshot.seriesName ?? t.manga_online_catalog_title,
           // BUG-1184：正文原先是死的 560×440。宽度会被对话框约束钳住（无害），但**高度**
           // 440 是硬的——矮窗口 / 手机横屏下超出对话框可用高度就直接溢出。改为不超过屏高

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -34,7 +34,7 @@ void main() {
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    tmpDir = Directory.systemTemp.createTempSync('hibiki_game_home_');
+    tmpDir = Directory.systemTemp.createTempSync('fushi_game_home_');
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);

@@ -1,0 +1,18 @@
+name: fushi_cli
+resolution: workspace
+description: >-
+  Fushi 桌面客户端命令行 `fushi_cli`：经本机控制通道（127.0.0.1 + token）驱动
+  正在运行的 Fushi app，app 没开时自动拉起。纯 Dart，不依赖 Flutter / 插件；
+  控制通道的服务端骨架也在这里，app 只实现 [CtlDesktopHandler]。
+publish_to: none
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+
+dependencies:
+  args: ^2.4.0
+  path: ^1.9.0
+  shelf: ^1.4.0
+
+dev_dependencies:
+  test: ^1.24.0

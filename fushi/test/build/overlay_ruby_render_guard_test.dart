@@ -72,7 +72,10 @@ void main() {
 
   test('③ 无注音时不走任何注音分支', () {
     expect(
-      window.contains('const bool has_ruby = !ruby_spans_.empty();'),
+      // 竖排不画注音（几何按横排推导），门多了 `&& !vertical_active_`。
+      RegExp(
+        r'bool has_ruby = !ruby_spans_\.empty\(\)( && !vertical_active_)?;',
+      ).hasMatch(window),
       isTrue,
       reason: '必须有一个统一的 has_ruby 门，空注音时行距与绘制都不动',
     );

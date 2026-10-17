@@ -179,6 +179,11 @@ SHORT WINAPI Detour_GenericGetAsyncKeyState(int virtual_key) {
   SHORT state = original(virtual_key);
   if (virtual_key != VK_LBUTTON)
     return state;
+  // LucaSystem polls VK_LBUTTON here once per frame; a press on a lookup glyph
+  // is claimed (and hidden from the engine) on the raw sample before the
+  // host-shield filter sees it (luca_lookup.inc).
+  FilterLucaLeftButtonSample(reinterpret_cast<int16_t *>(&state),
+                             reinterpret_cast<uintptr_t>(_ReturnAddress()));
   MarkGenericShieldObserved(fushi_voice_hook::kLookupShieldSurfaceKeyState);
   g_generic_key_observed_coverage.fetch_or(kGenericKeyCoverageGetAsyncKeyState,
                                            std::memory_order_relaxed);

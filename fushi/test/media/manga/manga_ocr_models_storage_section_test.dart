@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_ocr_models_storage_section.dart';
@@ -62,8 +62,8 @@ void main() {
 
   setUp(() {
     container = ProviderContainer();
+    // 本机模型目前只有逐列 CTC。
     services = <MangaOcrLocalModel, _FakeService>{
-      MangaOcrLocalModel.mangaOcr: _FakeService(ready: true, diskBytes: 4096),
       MangaOcrLocalModel.mangaCtc: _FakeService(),
     };
   });
@@ -107,11 +107,7 @@ void main() {
       );
       expect(find.text(localModelLabel(model)), findsOneWidget);
     }
-    // 就绪的给删除，未下载的给下载。
-    expect(
-      find.byKey(const ValueKey<String>('ocr-models-delete-manga_ocr')),
-      findsOneWidget,
-    );
+    // 未下载的给下载、不给删除。
     expect(
       find.byKey(const ValueKey<String>('ocr-models-download-manga_ctc')),
       findsOneWidget,
@@ -161,16 +157,22 @@ void main() {
   testWidgets('delete uses the service primitive after confirmation', (
     WidgetTester tester,
   ) async {
+    final _FakeService notReady = services[MangaOcrLocalModel.mangaCtc]!;
+    unawaited(notReady.events.close());
+    services[MangaOcrLocalModel.mangaCtc] = _FakeService(
+      ready: true,
+      diskBytes: 4096,
+    );
     await pumpSection(tester);
     await tester.tap(
-      find.byKey(const ValueKey<String>('ocr-models-delete-manga_ocr')),
+      find.byKey(const ValueKey<String>('ocr-models-delete-manga_ctc')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, t.manga_ocr_delete));
     await tester.pumpAndSettle();
-    expect(services[MangaOcrLocalModel.mangaOcr]!.deleteCalls, 1);
+    expect(services[MangaOcrLocalModel.mangaCtc]!.deleteCalls, 1);
     expect(
-      find.byKey(const ValueKey<String>('ocr-models-download-manga_ocr')),
+      find.byKey(const ValueKey<String>('ocr-models-download-manga_ctc')),
       findsOneWidget,
     );
   });

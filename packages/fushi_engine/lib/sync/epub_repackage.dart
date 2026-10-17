@@ -6,10 +6,11 @@ library;
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:path/path.dart' as p;
 
 /// Re-package an extracted book directory back into a single `.epub` at
-/// [outputPath]. Hibiki stores imported books EXTRACTED (the extract dir is a
+/// [outputPath]. Fushi stores imported books EXTRACTED (the extract dir is a
 /// valid EPUB layout: `mimetype` + `META-INF/` + OPF + content) and keeps no
 /// standalone `.epub` on disk, so content sync must rebuild one to upload
 /// (BUG-088). Entries are rooted at the zip top (`includeDirName: false`) so
@@ -27,9 +28,11 @@ Future<bool> repackageExtractedEpub(
   final ZipFileEncoder encoder = ZipFileEncoder();
   encoder.create(outputPath);
   try {
-    encoder.addDirectory(dir, includeDirName: false);
+    // 原生 zlib：archive 的 addDirectory 默认 GZIP 档是纯 Dart Deflate，且对已是
+    // 压缩格式的图片也照压一遍。
+    addDirectoryNativeDeflate(encoder, dir, includeDirName: false);
   } finally {
-    encoder.close();
+    encoder.closeSync();
   }
   return true;
 }

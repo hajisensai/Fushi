@@ -131,6 +131,47 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -i "$MKV_FIXTURE" -map 0:s:0 "$WORK/embedded.ass"
 assert_nonempty "$WORK/embedded.ass"
 
+# Image-subtitle OCR (graphic_subtitle_track_ocr.dart) copies a PGS track out
+# with `-c copy -f sup`. No FFmpeg can *encode* PGS, so the fixture is a tiny
+# hand-built .sup (one 4x2 bitmap cue, fade-in palette update, clear) that the
+# host FFmpeg muxes into Matroska. A build without the sup muxer fails with
+# "Requested output format 'sup' is not known".
+echo "[ffmpeg-min-smoke] extracting a PGS track to .sup"
+printf '%s' 'UEcAAV+QAAAAABYAEweABDgQAACAAAABAAAAAABkAMhQRwABX5AAAAAAFAAHAAAB64CAQFBHAAFfkAAAAAAVABUAAADAAAAOAAQAAgCEAQAAAIQBAABQRwABX5AAAAAAgAAAUEcAAg9YAAAAABYAEweABDgQAAAAAAABAAAAAABkAMhQRwACD1gAAAAAFAAHAAAB64CA/1BHAAIPWAAAAACAAABQRwAEHrAAAAAAFgALB4AEOBAAAAAAAABQRwAEHrAAAAAAgAAA' |
+  base64 --decode >"$WORK/pgs.sup"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -i "$WORK/pgs.sup" -map 0 -c copy "$WORK/pgs.mkv"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -i "$WORK/pgs.mkv" -map 0:s:0 -c copy -f sup "$WORK/pgs-out.sup"
+assert_nonempty "$WORK/pgs-out.sup"
+if [ "$(head -c 2 "$WORK/pgs-out.sup")" != "PG" ]; then
+  echo "[ffmpeg-min-smoke] extracted .sup does not start with a PG segment" >&2
+  exit 1
+fi
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error \
+  -i "$WORK/pgs-out.sup" -map 0 -c copy -f null -
+
+# VobSub / DVB image subtitles are copied out as a single-stream MPEG-TS
+# (`-f sup` rejects them with "Invalid data"); the Dart side demuxes the PES
+# packets itself (bitmap_subtitle/mpegts_subtitle_demuxer.dart). `-muxdelay 0`
+# is mandatory: the TS muxer otherwise shifts every PTS by 1.4 s. The host
+# FFmpeg re-encodes the PGS fixture bitmap-to-bitmap (dvdsub / dvbsub
+# encoders); the minimal build needs no subtitle encoder or decoder for this.
+for codec in dvdsub dvbsub; do
+  echo "[ffmpeg-min-smoke] extracting a $codec track to mpegts"
+  run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+    -i "$WORK/pgs.mkv" -map 0:s:0 -c:s "$codec" "$WORK/$codec.mkv"
+  run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+    -i "$WORK/$codec.mkv" -map 0:s:0 -c copy -muxdelay 0 -muxpreload 0 \
+    -f mpegts "$WORK/$codec-out.ts" \
+    -map '0:v:0?' -map 0:s:0 -c copy -f null -
+  assert_nonempty "$WORK/$codec-out.ts"
+  if [ "$(od -An -tx1 -N1 "$WORK/$codec-out.ts" | tr -d ' \n')" != "47" ]; then
+    echo "[ffmpeg-min-smoke] $codec extraction is not an MPEG-TS stream" >&2
+    exit 1
+  fi
+done
+
 echo "[ffmpeg-min-smoke] exporting cue GIF and frame"
 run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" -an \
@@ -230,6 +271,23 @@ for input in \
   assert_nonempty "$WORK/$stem.aac"
 done
 
+echo "[ffmpeg-min-smoke] ripping audio CD tracks to FLAC"
+# BUG-3312: audio CD import transcodes CDDA (Windows raw-read WAV) and the
+# macOS cddafs mount (`N Audio Track.aiff`, big-endian PCM) to FLAC with
+# exactly these args (audio_cd_ripper.dart). Needs the aiff demuxer, flac
+# encoder and flac muxer; the decode-back proves the output is real FLAC.
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -f lavfi -i "sine=frequency=440:duration=1:sample_rate=44100" -ac 2 \
+  -c:a pcm_s16be "$WORK/track.aiff"
+for input in "$WORK/tone.wav" "$WORK/track.aiff"; do
+  stem="$(basename "$input")"
+  run "$FFMPEG_MIN" -hide_banner -loglevel error -y -i "$input" \
+    -map 0:a:0 -c:a flac -metadata title=t -metadata album=a \
+    -metadata track=1/1 -f flac "$WORK/$stem.flac"
+  assert_nonempty "$WORK/$stem.flac"
+  run "$FFMPEG_MIN" -hide_banner -loglevel error -y -i "$WORK/$stem.flac" -f null -
+done
+
 echo "[ffmpeg-min-smoke] exporting sentence audio from an HLS playlist"
 # BUG-2642: online video sources (Aniyomi extensions) hand mining an `.m3u8`.
 # Without the hls demuxer the bundled ffmpeg rejects the playlist with
@@ -238,6 +296,99 @@ mkdir -p "$WORK/hls"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y -i "$MP4_FIXTURE"   -map 0:v:0 -map 0:a:0 -c:v copy -c:a copy -f hls -hls_time 1   -hls_playlist_type vod -hls_segment_filename "$WORK/hls/seg%03d.ts"   "$WORK/hls/index.m3u8"
 run "$FFMPEG_MIN" -hide_banner -loglevel error -y   -ss 0.100 -t 0.800 -i "$WORK/hls/index.m3u8" -vn -map_chapters -1   -c:a aac -ac 1 -b:a 64k "$WORK/hls.aac"
 assert_nonempty "$WORK/hls.aac"
+
+echo "[ffmpeg-min-smoke] exporting sentence audio from a DASH manifest"
+# BUG-3503: some online video sources (e.g. AnimeOnsen) hand mining a
+# `manifest.mpd`. Without the dash demuxer (+ libxml2) the bundled ffmpeg rejects
+# it with AVERROR_INVALIDDATA and the card aborts with `required audio missing`.
+# Segments are fMP4, read through the already-enabled mov demuxer.
+mkdir -p "$WORK/dash"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y -i "$MP4_FIXTURE"   -map 0:v:0 -map 0:a:0 -c:v copy -c:a copy -f dash -seg_duration 1   "$WORK/dash/manifest.mpd"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y   -ss 0.100 -t 0.800 -i "$WORK/dash/manifest.mpd" -vn -map_chapters -1   -c:a aac -ac 1 -b:a 64k "$WORK/dash.aac"
+assert_nonempty "$WORK/dash.aac"
+
+echo "[ffmpeg-min-smoke] decoding importable containers with non-mainstream codecs (BUG-3504)"
+# Each case: fixture-encode a short clip, then run the two mining shapes on it
+# (sentence audio, and a still frame when the case has video). Every codec here
+# was found missing by running the vendored binary against such a sample.
+mkdir -p "$WORK/codecs"
+SRC_V=(-f lavfi -i "testsrc=size=320x240:rate=24:duration=2")
+SRC_A=(-f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100")
+codec_case() {
+  local name="$1" out="$2" has_video="$3"; shift 3
+  run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y "$@" -t 2 "$WORK/codecs/$name.$out"
+  run "$FFMPEG_MIN" -hide_banner -loglevel error -y -ss 0.2 -t 1 \
+    -i "$WORK/codecs/$name.$out" -vn -map_chapters -1 -c:a aac -ac 1 -b:a 64k \
+    "$WORK/codecs/$name.aac"
+  assert_nonempty "$WORK/codecs/$name.aac"
+  if [ "$has_video" = 1 ]; then
+    run "$FFMPEG_MIN" -hide_banner -loglevel error -y -ss 0.5 \
+      -i "$WORK/codecs/$name.$out" -frames:v 1 "$WORK/codecs/$name.jpg"
+    assert_nonempty "$WORK/codecs/$name.jpg"
+  fi
+}
+codec_case latm ts 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v libx264 -g 12 -c:a aac -mpegts_flags latm
+codec_case adpcm_ms wav 0 "${SRC_A[@]}" -c:a adpcm_ms
+codec_case adpcm_ima_wav wav 0 "${SRC_A[@]}" -c:a adpcm_ima_wav
+codec_case adpcm_ima_qt mov 0 "${SRC_A[@]}" -c:a adpcm_ima_qt
+codec_case flv_swf flv 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v flv -c:a adpcm_swf
+codec_case flv_nelly flv 0 "${SRC_A[@]}" -c:a nellymoser
+codec_case prores mov 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v prores_ks -c:a pcm_s16le
+codec_case qtrle mov 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v qtrle -c:a aac
+codec_case ffv1 mkv 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v ffv1 -c:a flac
+codec_case huffyuv avi 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v huffyuv -c:a pcm_s16le
+
+echo "[ffmpeg-min-smoke] raw PCM muxer for ASR (s16le, BUG-3504)"
+# Same shape as fushi_asr_core's asr_pcm_source.dart: raw PCM muxers take exactly
+# one stream, hence the explicit -map (the fixture also carries a mov_text track).
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y -i "$MP4_FIXTURE" -map 0:a:0 -vn -sn -dn \
+  -ac 1 -ar 16000 -c:a pcm_s16le -f s16le "$WORK/asr.pcm"
+assert_nonempty "$WORK/asr.pcm"
+
+echo "[ffmpeg-min-smoke] TLS certificate pinning option (-tls_pin_sha256, BUG-3504)"
+# Desktop mining from a paired Fushi host passes the TOFU fingerprint of its
+# self-signed cert; an ffmpeg without the pin patch rejects the whole command.
+if ! "$FFMPEG_MIN" -hide_banner -h protocol=tls 2>&1 | grep -q tls_pin_sha256; then
+  echo "MISSING OPTION: tls protocol has no tls_pin_sha256 (patch not applied)" >&2
+  exit 1
+fi
+if command -v openssl >/dev/null 2>&1; then
+  mkdir -p "$WORK/tls"
+  # MSYS rewrites "/CN=..." into a Windows path unless conversion is disabled.
+  (cd "$WORK/tls" &&
+    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
+    openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem \
+      -days 1 -subj "/CN=fushi-pin-test" >/dev/null 2>&1)
+  # Text payload on purpose: Windows `s_server -WWW` reads files in text mode
+  # and truncates binary ones (a .wav came back as 40 bytes).
+  printf '1\n00:00:00,000 --> 00:00:01,000\npinned\n\n' >"$WORK/tls/cue.srt"
+  PIN="$(openssl x509 -in "$WORK/tls/cert.pem" -noout -fingerprint -sha256 | sed 's/.*=//')"
+  PORT=$((20000 + RANDOM % 20000))
+  (cd "$WORK/tls" && exec openssl s_server -quiet -accept "$PORT" \
+    -cert cert.pem -key key.pem -WWW) >/dev/null 2>&1 &
+  TLS_PID=$!
+  sleep 2
+  pin_status=0
+  "$FFMPEG_MIN" -hide_banner -loglevel error -y -tls_pin_sha256 "$PIN" \
+    -i "https://127.0.0.1:$PORT/cue.srt" "$WORK/tls/pinned.srt" \
+    || pin_status=$?
+  wrong_status=0
+  "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+    -tls_pin_sha256 "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff" \
+    -i "https://127.0.0.1:$PORT/cue.srt" "$WORK/tls/wrong.srt" \
+    >/dev/null 2>&1 || wrong_status=$?
+  kill "$TLS_PID" >/dev/null 2>&1 || true
+  if [ "$pin_status" -ne 0 ] || ! grep -q pinned "$WORK/tls/pinned.srt"; then
+    echo "TLS PIN: matching fingerprint was rejected (exit $pin_status)" >&2
+    exit 1
+  fi
+  if [ "$wrong_status" -eq 0 ]; then
+    echo "TLS PIN: mismatching fingerprint was accepted" >&2
+    exit 1
+  fi
+else
+  echo "  (openssl not on PATH: end-to-end pin check skipped, option presence verified)"
+fi
 
 echo "[ffmpeg-min-smoke] exporting sentence audio at playback tempo (atempo)"
 # Audiobook mining at playback speed (buildFfmpegClipArgs tempo=...) cuts the
@@ -442,21 +593,23 @@ if ! grep -qw mpegts "$WORK/muxers2.txt"; then
   exit 1
 fi
 run "$FFMPEG_MIN" -hide_banner -nostdin -loglevel error -y \
-  -ss 0.100 -to 0.700 -i "$MP4_FIXTURE" \
+  -ss 0.100 -t 0.600 -i "$MP4_FIXTURE" \
   -map 0:v:0 -map '0:a:0?' -sn \
   -c:v libx264 -preset veryfast -b:v 400k -maxrate 400k -bufsize 800k \
   -profile:v high -pix_fmt yuv420p -g 600 -keyint_min 600 -sc_threshold 0 -bf 0 \
+  -af aresample=first_pts=0 \
   -c:a aac -b:a 64k -ac 2 -muxdelay 0 -muxpreload 0 -output_ts_offset 6 \
   -f mpegts "$WORK/seg.ts"
 assert_nonempty "$WORK/seg.ts"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/seg.ts" -f null -
 
-# 第二段：只换 -ss/-to 与 -output_ts_offset，与 host 逐段起一个 ffmpeg 同形。
+# 第二段：只换 -ss 与 -output_ts_offset，与 host 逐段起一个 ffmpeg 同形。
 run "$FFMPEG_MIN" -hide_banner -nostdin -loglevel error -y \
-  -ss 0.700 -to 1.300 -i "$MP4_FIXTURE" \
+  -ss 0.700 -t 0.600 -i "$MP4_FIXTURE" \
   -map 0:v:0 -map '0:a:0?' -sn \
   -c:v libx264 -preset veryfast -b:v 400k -maxrate 400k -bufsize 800k \
   -profile:v high -pix_fmt yuv420p -g 600 -keyint_min 600 -sc_threshold 0 -bf 0 \
+  -af aresample=first_pts=0 \
   -c:a aac -b:a 64k -ac 2 -muxdelay 0 -muxpreload 0 -output_ts_offset 7 \
   -f mpegts "$WORK/seg2.ts"
 assert_nonempty "$WORK/seg2.ts"
@@ -523,6 +676,87 @@ assert_nonempty "$WORK/clip-subbed.mp4"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
   -i "$WORK/clip-subbed.mp4" -map 0:s:0 "$WORK/clip-subbed.srt"
 assert_nonempty "$WORK/clip-subbed.srt"
+
+echo "[ffmpeg-min-smoke] verifying audiobook studio loudness + M4B export"
+# Audiobook studio (fushi/lib/src/media/audiobook/tts/studio/). Mirrors the app:
+#   1. per-chapter encode (buildTtsChapterEncodeArgs): ffconcat list of TTS
+#      segments + Dart-written silence WAVs -> aresample async + loudnorm (EBU
+#      R128) + aresample 44.1k -> AAC, `-f mp4` into a chapter .m4a;
+#   2. book export (buildAudiobookExportArgs): concat the chapter files with
+#      `-c copy`, chapters/metadata from an ;FFMETADATA1 side input
+#      (`-f ffmetadata`), jpg/png cover as attached_pic, `-f ipod` -> .m4b.
+# Plus the measurement / trim / limiter / silence filters the studio may use
+# (ebur128, loudnorm print_format=json, volume, alimiter, apad, anullsrc).
+"$FFMPEG_MIN" -hide_banner -nostats -i "$WORK/tone.wav" \
+  -af "loudnorm=I=-19:TP=-3:LRA=11:print_format=json" -f null - \
+  >"$WORK/loudnorm.log" 2>&1 || { cat "$WORK/loudnorm.log" >&2; exit 1; }
+assert_log_contains "$WORK/loudnorm.log" '"input_i"'
+"$FFMPEG_MIN" -hide_banner -nostats -i "$WORK/tone.wav" \
+  -af "ebur128=peak=true" -f null - \
+  >"$WORK/ebur128.log" 2>&1 || { cat "$WORK/ebur128.log" >&2; exit 1; }
+assert_log_contains "$WORK/ebur128.log" "Integrated loudness"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -filter_complex "anullsrc=r=44100:cl=mono:d=0.5[gap];[gap]volume=-1.0dB,alimiter=limit=0.84,apad=pad_dur=0.3[out]" \
+  -map "[out]" -c:a aac -f mp4 "$WORK/gap.m4a"
+assert_nonempty "$WORK/gap.m4a"
+mkdir -p "$WORK/book"
+# Entries are relative to the list file: on Windows the MSYS2 /tmp path in an
+# absolute entry is not a path the native ffmpeg.exe can open.
+cp "$WORK/tone.wav" "$WORK/book/tone.wav"
+{
+  echo "ffconcat version 1.0"
+  echo "file 'tone.wav'"
+  echo "duration 2.000"
+  echo "file 'tone.wav'"
+  echo "duration 2.000"
+} > "$WORK/book/ch.ffconcat"
+for ch in 1 2; do
+  run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+    -f concat -safe 0 -i "$WORK/book/ch.ffconcat" -vn \
+    -af "aresample=async=1:min_hard_comp=0.010:first_pts=0,loudnorm=I=-19:TP=-3:LRA=11,aresample=44100" \
+    -ac 1 -c:a aac -b:a 96k -f mp4 "$WORK/book/ch$ch.m4a"
+  assert_nonempty "$WORK/book/ch$ch.m4a"
+done
+{
+  echo "ffconcat version 1.0"
+  echo "file 'ch1.m4a'"
+  echo "duration 4.000"
+  echo "file 'ch2.m4a'"
+  echo "duration 4.000"
+} > "$WORK/book/book.ffconcat"
+cat >"$WORK/book/book.ffmeta" <<'META'
+;FFMETADATA1
+title=Fushi Smoke Book
+album=Fushi Smoke Book
+artist=Fushi Narrator
+album_artist=Fushi Narrator
+
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=4000
+title=第一章
+
+[CHAPTER]
+TIMEBASE=1/1000
+START=4000
+END=8000
+title=第二章
+META
+for cover in cover.jpg cover.png; do
+  run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+    -f concat -safe 0 -i "$WORK/book/book.ffconcat" \
+    -f ffmetadata -i "$WORK/book/book.ffmeta" -i "$WORK/$cover" \
+    -map 0:a -map 2:v -map_metadata 1 -map_chapters 1 \
+    -c copy -disposition:v:0 attached_pic -f ipod "$WORK/book/book-$cover.m4b"
+  assert_nonempty "$WORK/book/book-$cover.m4b"
+  "$FIXTURE_FFMPEG" -hide_banner -i "$WORK/book/book-$cover.m4b" >"$WORK/book/book-$cover.log" 2>&1 || true
+  assert_log_contains "$WORK/book/book-$cover.log" "major_brand *: *M4[AB]"
+  assert_log_contains "$WORK/book/book-$cover.log" "Chapter #0:1"
+  assert_log_contains "$WORK/book/book-$cover.log" "title *: *Fushi Smoke Book"
+  assert_log_contains "$WORK/book/book-$cover.log" "attached pic"
+  run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/book/book-$cover.m4b" -map 0:a -f null -
+done
 
 echo "[ffmpeg-min-smoke] verifying bundled ffprobe (BUG-1420)"
 # BUG-1420: ffprobe was never built (--disable-ffprobe) even though Dart's

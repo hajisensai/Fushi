@@ -24,14 +24,17 @@ void main() {
     // 已无任何 modal bottom sheet，旧 [_videoSheetOpen] 重入守卫随之删除。音量/倍速走
     // [_videoControlPopover] 单一轻浮层，同时只用 [_pokeControlsVisible] 续命控制条。
     test('菜单入口分别有 side-panel/push-aside/popover 的互斥门控', () {
-      bool opensSidePanel(String kind) =>
-          RegExp('_showVideoSidePanel\\(\\s*_VideoSidePanelKind\\.$kind')
-              .hasMatch(src);
+      bool opensSidePanel(String kind) => RegExp(
+        '_showVideoSidePanel\\(\\s*_VideoSidePanelKind\\.$kind',
+      ).hasMatch(src);
 
       // TODO-638：视频页已无 modal bottom sheet（剧集列表是最后一个，改 push-aside），
       // 旧 [_videoSheetOpen] 重入守卫随之删除——不应再有任何残留。
-      expect(src.contains('_videoSheetOpen'), isFalse,
-          reason: '剧集列表改 push-aside 后 _videoSheetOpen 重入守卫应整体删除');
+      expect(
+        src.contains('_videoSheetOpen'),
+        isFalse,
+        reason: '剧集列表改 push-aside 后 _videoSheetOpen 重入守卫应整体删除',
+      );
       expect(
         src.contains('showModalBottomSheet<') ||
             src.contains('showModalBottomSheet('),
@@ -46,55 +49,112 @@ void main() {
       );
 
       // 音量 / 倍速改为同一套轻浮层：互斥、锚定、无 OverlayEntry 全局漂浮状态。
-      expect(src.contains('_volumeOverlayEntry'), isFalse,
-          reason: '不要恢复旧音量 OverlayEntry 残留状态；TODO-438 用 controls Stack 内锚点层');
       expect(
-          src.contains(
-              'ValueNotifier<_VideoControlPopoverKind?> _videoControlPopover'),
-          isTrue,
-          reason: '音量/倍速轻浮层应由单个 notifier 互斥，避免双开');
+        src.contains('_volumeOverlayEntry'),
+        isFalse,
+        reason: '不要恢复旧音量 OverlayEntry 残留状态；TODO-438 用 controls Stack 内锚点层',
+      );
       expect(
-          RegExp(
-            r'_toggleControlPopover\(\s*_VideoControlPopoverKind\.volume',
-          ).hasMatch(src),
-          isTrue,
-          reason: '音量按钮应打开或固定锚点轻浮层');
+        src.contains(
+          'ValueNotifier<_VideoControlPopoverKind?> _videoControlPopover',
+        ),
+        isTrue,
+        reason: '音量/倍速轻浮层应由单个 notifier 互斥，避免双开',
+      );
       expect(
-          RegExp(r'_toggleControlPopover\(\s*_VideoControlPopoverKind\.speed')
-              .hasMatch(src),
-          isTrue,
-          reason: '倍速按钮应打开或固定锚点轻浮层');
-      expect(src.contains('pinned: true'), isTrue,
-          reason: 'click/tap 入口必须以 pinned=true 打开，hover 已打开时点击会固定浮层');
-      expect(src.contains('final ValueNotifier<double> _volumeDisplay'), isTrue,
-          reason: '音量浮层仍经 _volumeDisplay 同步显示');
+        RegExp(
+          r'_toggleControlPopover\(\s*_VideoControlPopoverKind\.volume',
+        ).hasMatch(src),
+        isTrue,
+        reason: '音量按钮应打开或固定锚点轻浮层',
+      );
+      expect(
+        RegExp(
+          r'_toggleControlPopover\(\s*_VideoControlPopoverKind\.speed',
+        ).hasMatch(src),
+        isTrue,
+        reason: '倍速按钮应打开或固定锚点轻浮层',
+      );
+      expect(
+        src.contains('pinned: true'),
+        isTrue,
+        reason: 'click/tap 入口必须以 pinned=true 打开，hover 已打开时点击会固定浮层',
+      );
+      expect(
+        src.contains('final ValueNotifier<double> _volumeDisplay'),
+        isTrue,
+        reason: '音量浮层仍经 _volumeDisplay 同步显示',
+      );
 
       // 3 个 side panel 菜单经统一调度，靠单 ValueNotifier 互斥（一次只一个）。
       // TODO-560/BUG-325：倍速入口签名扩成 `{LayerLink? popoverLink,
       // VideoControlSlot? sourceSlot}`（浮层跟随触发按钮 slot），守卫只锁方法头前缀
       // 含 popoverLink 触发源形参，对未来追加形参鲁棒。
       expect(
-          src.contains('void _showSpeedMenu({LayerLink? popoverLink'), isTrue,
-          reason: '倍速菜单必须能接收触发源 link');
-      expect(src.contains('if (popoverLink == null)'), isTrue,
-          reason: '右键菜单等无触发源入口不能打开无锚点浮层');
-      expect(opensSidePanel('speed'), isTrue,
-          reason: '无触发源入口应回退到可见 side panel');
+        src.contains('void _showSpeedMenu({LayerLink? popoverLink'),
+        isTrue,
+        reason: '倍速菜单必须能接收触发源 link',
+      );
+      expect(
+        src.contains('if (popoverLink == null)'),
+        isTrue,
+        reason: '右键菜单等无触发源入口不能打开无锚点浮层',
+      );
+      expect(
+        opensSidePanel('speed'),
+        isTrue,
+        reason: '无触发源入口应回退到可见 side panel',
+      );
       // TODO-1351：音轨/字幕轨切换收进设置面板对应 tab（audioTracks / subtitleSources
       // 两个浮动 kind 已删），入口改为把设置面板开在 'audio' / 'subtitle' 分类（仍是
       // side-panel 系统，单 ValueNotifier 互斥）。
-      expect(opensSidePanel('audioTracks'), isFalse,
-          reason: '浮动音轨侧栏已删（音轨收进设置面板「音频」分类）');
-      expect(opensSidePanel('subtitleSources'), isFalse,
-          reason: '浮动字幕源侧栏已删（字幕轨收进设置面板「字幕」分类）');
-      expect(RegExp(r"initialCategory: 'audio'").hasMatch(src), isTrue,
-          reason: '音轨菜单改为把设置面板开在「音频」分类');
-      expect(RegExp(r"initialCategory: 'subtitle'").hasMatch(src), isTrue,
-          reason: '字幕轨菜单改为把设置面板开在「字幕」分类');
-      expect(opensSidePanel('settings'), isTrue,
-          reason: '设置面板走 side panel（master-detail VideoQuickSettingsSheet）');
-      expect(src, contains('VideoQuickSettingsSheet('),
-          reason: '设置面板内容仍是 master-detail VideoQuickSettingsSheet');
+      expect(
+        opensSidePanel('audioTracks'),
+        isFalse,
+        reason: '浮动音轨侧栏已删（音轨收进设置面板「音频」分类）',
+      );
+      expect(
+        opensSidePanel('subtitleSources'),
+        isFalse,
+        reason: '浮动字幕源侧栏已删（字幕轨收进设置面板「字幕」分类）',
+      );
+      expect(
+        RegExp(r"initialCategory: 'audio'").hasMatch(src),
+        isTrue,
+        reason: '音轨菜单改为把设置面板开在「音频」分类',
+      );
+      expect(
+        RegExp(r"initialCategory: 'subtitle'").hasMatch(src),
+        isTrue,
+        reason: '字幕轨菜单改为把设置面板开在「字幕」分类',
+      );
+      // 字幕 / 音频已是独立面板（面板切换条成员）：两个分类各开自己的 kind，其余
+      // 分类开设置面板——同一个 _showVideoSidePanel 入口、同一个 notifier 互斥。
+      expect(
+        src,
+        contains("'subtitle' => _VideoSidePanelKind.subtitle"),
+        reason: '字幕轨入口开独立的字幕面板',
+      );
+      expect(
+        src,
+        contains("'audio' => _VideoSidePanelKind.audio"),
+        reason: '音轨入口开独立的音频面板',
+      );
+      expect(
+        src,
+        contains('_ => _VideoSidePanelKind.settings'),
+        reason: '其余分类走设置面板（side panel）',
+      );
+      expect(
+        src,
+        contains('_showVideoSidePanel(kind, sourceSlot: sourceSlot)'),
+        reason: '三种面板都经统一的 side panel 调度互斥',
+      );
+      expect(
+        src,
+        contains('VideoQuickSettingsSheet('),
+        reason: '设置面板内容仍是 master-detail VideoQuickSettingsSheet',
+      );
     });
 
     test('剧集列表 push-aside 关闭归还焦点（_closeEpisodeList → _focusOwnership）', () {
@@ -106,8 +166,13 @@ void main() {
       final String body = src.substring(start, end);
       expect(body.contains('_episodeListVisible.value = false'), isTrue);
       expect(body.contains('_pokeControlsVisible()'), isTrue);
-      expect(body.contains('_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'), isTrue,
-          reason: '剧集列表关闭后必须归还键盘焦点，否则空格冒泡到全局 DoNothingIntent');
+      expect(
+        body.contains(
+          '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)',
+        ),
+        isTrue,
+        reason: '剧集列表关闭后必须归还键盘焦点，否则空格冒泡到全局 DoNothingIntent',
+      );
     });
   });
 

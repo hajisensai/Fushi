@@ -60,7 +60,7 @@ echo ">>> Installed."
 # --- 4. Push test resources ---
 if [ "$SKIP_PUSH" = false ]; then
   echo ">>> Pushing test resources..."
-  TMPDIR_LOCAL="/d/tmp_hibiki_test"
+  TMPDIR_LOCAL="/d/tmp_fushi_test"
   mkdir -p "$TMPDIR_LOCAL"
 
   # HBK-AUDIT-077: source fixtures from env-overridable paths; defaults point at

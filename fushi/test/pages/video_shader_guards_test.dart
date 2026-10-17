@@ -96,7 +96,7 @@ void main() {
 
     test('控制条不再放着色器对比按钮（TODO-127；改从右键菜单 / 快捷键 / 设置进入）', () {
       final String controls = controlsThemes();
-      expect(controls.contains('Icons.compare'), isFalse,
+      expect(controls.contains('Icons.compare') || controls.contains('FushiIcons.compare'), isFalse,
           reason: '对比按钮应已移出桌面 / 移动控制条');
       expect(controls.contains('onPressed: _toggleShaderCompare'), isFalse,
           reason: '控制条不应再直接挂 _toggleShaderCompare 按钮');
@@ -104,7 +104,7 @@ void main() {
 
     test('右键菜单不再含着色器对比项（BUG-261；改走 C 快捷键 / 设置）', () {
       // 整页源码（含控制条与右键菜单）都不应再出现 compare 图标——对比项已两处皆删。
-      expect(pageSrc.contains('Icons.compare'), isFalse,
+      expect(pageSrc.contains('Icons.compare') || pageSrc.contains('FushiIcons.compare'), isFalse,
           reason: '着色器对比项已从右键菜单移除（BUG-261），控制条早已无（TODO-127）');
       // 右键菜单不再依赖「是否启用着色器」的门控（原 _hasShadersEnabled getter 随该项移除）。
       expect(pageSrc.contains('if (_hasShadersEnabled)'), isFalse,

@@ -4,8 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-const String _downloadsPath =
-    'lib/src/pages/implementations/browse_page.dart';
+const String _downloadsPath = 'lib/src/pages/implementations/browse_page.dart';
 const String _downloadActionsPath =
     'lib/src/pages/implementations/download_actions.dart';
 
@@ -26,9 +25,7 @@ void main() {
 
     expect(
       code,
-      contains(
-        'enum BrowseTab { discover, sources, extensions, downloads }',
-      ),
+      contains('enum BrowseTab { discover, sources, extensions, downloads }'),
       reason: '浏览页顶层只能有且必须有四个目的地，顺序即页头顺序',
     );
     // 2026-09-28 用户拍板：发现排第一（打开浏览默认落在发现）。页头顺序由
@@ -37,13 +34,13 @@ void main() {
       compactCode(methodBody(source, 'List<BrowseTab> _visibleTabs(')),
       contains(
         '[if(discover)BrowseTab.discover,if(online)BrowseTab.sources,'
-        'if(online)BrowseTab.extensions,BrowseTab.downloads,]',
+        'BrowseTab.downloads,]',
       ),
-      reason: '浏览页签顺序：发现 → 来源 → 扩展 → 下载',
+      // 2026-10-14 用户：来源 / 扩展并成一个「在线源」页签（BrowseTab.sources
+      // 那一槽），二级行右侧切来源 / 扩展。
+      reason: '浏览页签顺序：发现 → 在线源 → 下载',
     );
-    final String labels = compactCode(
-      methodBody(source, 'String _tabLabel('),
-    );
+    final String labels = compactCode(methodBody(source, 'String _tabLabel('));
     for (final String label in <String>[
       'BrowseTab.sources=>t.media_import_segment_sources,',
       'BrowseTab.extensions=>t.media_import_segment_extensions,',
@@ -95,7 +92,7 @@ void main() {
     );
     expect(code, contains("'browse-download-settings'"));
     expect(
-      compactCode(methodBody(source, 'void _openDownloadSettings(')),
+      compactCode(methodBody(source, 'Future<void> _openDownloadSettings(')),
       contains('constBrowseDownloadSettingsPage()'),
     );
   });
@@ -109,10 +106,23 @@ void main() {
     expect(
       code,
       contains(
-        'lateBrowseTab?_selectedTab='
-        'widget.navigationRequest?.tab??widget.initialTab;',
+        'lateBrowseTab?_selectedTab=_onlineSlotOf('
+        'widget.navigationRequest?.tab??widget.initialTab,',
       ),
       reason: '外部入口参数不得再降级为 no-op 兼容参数',
+    );
+    // 来源 / 扩展并成「在线源」页签后（2026-10-14），跳到扩展 = 落在在线源那一槽
+    // 并把二级分区切到扩展，不能静默落回来源。
+    expect(
+      code,
+      contains(
+        'lateOnlineSourcesSection_onlineSection=_onlineSectionOf('
+        'widget.navigationRequest?.tab??widget.initialTab,',
+      ),
+    );
+    expect(
+      compactCode(methodBody(source, 'static BrowseTab? _onlineSlotOf(')),
+      contains('tab==BrowseTab.extensions?BrowseTab.sources:tab'),
     );
     final String sync = compactCode(
       methodBody(source, 'TabController _syncTabController('),
@@ -138,7 +148,9 @@ void main() {
       methodBody(source, 'void didUpdateWidget('),
     );
     expect(update, contains('_downloadsSection=request.downloadsSection;'));
-    expect(update, contains('_controllerTabs.indexOf(request.tab)'));
+    expect(update, contains('_selectedTab=_onlineSlotOf(request.tab);'));
+    expect(update, contains('_onlineSection=_onlineSectionOf(request.tab);'));
+    expect(update, contains('_controllerTabs.indexOf(_selectedTab!)'));
   });
 
   test('BUG-1905：返回键只看本页 ModalRoute，不被下拉框 PopupRoute 干扰', () {
@@ -193,8 +205,9 @@ void main() {
     // contains('MangaDiscoveryPage(\n          embedded: true')，加个 const 让
     // dart format 重排一次就恒假——断言的是排版不是行为。
     expect(
-      RegExp(r'MangaDiscoveryPage\(\s*embedded:\s*true')
-          .hasMatch(downloadsStructural),
+      RegExp(
+        r'MangaDiscoveryPage\(\s*embedded:\s*true',
+      ).hasMatch(downloadsStructural),
       isTrue,
       reason: '漫画发现页必须以 embedded: true 打开（否则它会自带一整套页头/导航）',
     );
@@ -214,7 +227,10 @@ void main() {
     // 离屏页关 ticker、排除出焦点遍历。
     expect(code, contains('bool get wantKeepAlive => true;'));
     expect(identifierCall('TickerMode').hasMatch(downloadsStructural), isTrue);
-    expect(identifierCall('ExcludeFocus').hasMatch(downloadsStructural), isTrue);
+    expect(
+      identifierCall('ExcludeFocus').hasMatch(downloadsStructural),
+      isTrue,
+    );
     expect(
       downloads,
       isNot(contains('DownloadsGlobalResourceSearchSurface')),
@@ -228,8 +244,11 @@ void main() {
 
     expect(code, contains('currentVideoDownloadBackendTarget()'));
     expect(code, contains('backendTarget: target'));
-    expect(code, isNot(contains('currentVideoDownloadBackendIdentity()')),
-        reason: '裸后端身份已被 BUG-1879 删除，新任务必须同时快照分类');
+    expect(
+      code,
+      isNot(contains('currentVideoDownloadBackendIdentity()')),
+      reason: '裸后端身份已被 BUG-1879 删除，新任务必须同时快照分类',
+    );
     expect(code, isNot(contains('backendIdentity: identity')));
   });
 }

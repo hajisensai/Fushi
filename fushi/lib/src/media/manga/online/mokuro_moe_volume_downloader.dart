@@ -20,7 +20,6 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
@@ -30,6 +29,7 @@ import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 两次字节进度事件之间至少累积的字节数（避免大 CBZ 每 chunk 一事件淹没 UI）。
@@ -85,7 +85,7 @@ class MokuroMoeVolumeDownloader {
     this.progressByteInterval = kMokuroMoeProgressInterval,
   })  : _createClient = createClient ?? _defaultClient,
         _stagingRoot = stagingRoot ??
-            Directory(p.join(Directory.systemTemp.path, 'hibiki_mokuro_moe'));
+            Directory(p.join(Directory.systemTemp.path, 'fushi_mokuro_moe'));
 
   final MokuroMoeClient client;
   final HttpClient Function() _createClient;
@@ -499,36 +499,9 @@ List<String> _safeEntrySegments(String entryName) {
   return segments;
 }
 
-/// 单 entry 流式落盘：STORE 走 4MB 分块拷贝（逐块回报字节），DEFLATE 流式
-/// inflate（照 backup_service `_streamArchiveFileToDisk`）。
+/// 单 entry 流式落盘：STORE 分块拷贝、DEFLATE 原生 zlib 分块解压（与备份导入
+/// 共用 [extractZipEntryToFile]），逐块回报字节。
 void _streamArchiveFileToDisk(
     ArchiveFile file, String destPath, SendPort port) {
-  File(destPath).parent.createSync(recursive: true);
-  final OutputFileStream output = OutputFileStream(destPath);
-  try {
-    final InputStreamBase? raw = file.rawContent;
-    if (raw != null && !file.isCompressed) {
-      const int chunkSize = 4 * 1024 * 1024; // 每块 4MB 峰值堆
-      final int total = raw.length;
-      int written = 0;
-      while (written < total) {
-        final int want =
-            (total - written) < chunkSize ? (total - written) : chunkSize;
-        final Uint8List bytes = raw.readBytes(want).toUint8List();
-        if (bytes.isEmpty) break;
-        output.writeBytes(bytes);
-        written += bytes.length;
-        port.send(bytes.length);
-      }
-    } else if (raw != null && file.compressionType == ArchiveFile.DEFLATE) {
-      Inflate.stream(raw, output);
-      port.send(file.size);
-    } else {
-      // 兜底（已物化内容）：整块写。
-      output.writeBytes(file.content as List<int>);
-      port.send(file.size);
-    }
-  } finally {
-    output.closeSync();
-  }
+  extractZipEntryToFile(file, destPath, onBytes: port.send);
 }

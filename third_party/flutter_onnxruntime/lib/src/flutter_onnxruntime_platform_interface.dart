@@ -44,9 +44,32 @@ abstract class FlutterOnnxruntimePlatform extends PlatformInterface {
     throw UnimplementedError('getAvailableProviders() has not been implemented.');
   }
 
-  /// Hibiki fork: DXGI video-memory budget of adapter [deviceId] (Windows only).
+  /// Fushi fork: DXGI video-memory budget of adapter [deviceId] (Windows only).
   /// Returns null where the platform has no such query.
   Future<Map<String, dynamic>?> getDeviceMemoryInfo({int deviceId = 0}) async => null;
+
+  /// Fushi fork: ask the NVIDIA driver (nvcuda.dll) for its CUDA version and
+  /// devices, without needing the CUDA runtime libraries (Windows only).
+  /// `{driverVersion: int?, devices: [{index, name, computeMajor, computeMinor,
+  /// totalMemBytes}], error: String?}`; null where the platform has no such query.
+  Future<Map<String, dynamic>?> probeCuda() async => null;
+
+  /// Fushi fork: register the ONNX Runtime CUDA plugin execution provider
+  /// (`<dir>/onnxruntime_providers_cuda.dll` + its cuBLAS / cuDNN DLLs) in this
+  /// process (Windows only). `{ok: bool, error: String?, deviceCount: int}`;
+  /// null where the platform has no plugin-EP path.
+  Future<Map<String, dynamic>?> registerCudaRuntime(String dir) async => null;
+
+  /// Fushi fork: map the onnxruntime.dll at [path] (the downloaded DirectML
+  /// core) before ONNX Runtime is first used in this process (Windows only).
+  /// `{ok: bool, error: String?}`; null where the platform has no core choice.
+  /// Once ORT is bound, only the same path answers ok - switching needs a
+  /// restart.
+  Future<Map<String, dynamic>?> selectRuntime(String path) async => null;
+
+  /// Fushi fork: which core this process uses. `{loaded: bool, version:
+  /// String, selectedPath: String}`; null where not applicable.
+  Future<Map<String, dynamic>?> getRuntimeInfo() async => null;
 
   /// Run inference on a session
   ///

@@ -1,0 +1,45 @@
+## BUG-2932 · CMVS 语音只走通用 PCM：点击音效被配成台词语音、真实语音丢失
+- **报告**：2026-10-04（agent 真机发现：ceshi 体验版适配批次，リアライブ体験版v2 / cmvs64.exe）
+- **真实性**：✅ 真 bug。
+  - 真机现象：旁白行（无语音）配上 185–325 ms 的点击音效或 6 s 的 BGM 片段（`audio=matched/engine_pcm/232ms`），而真正带语音的台词得到的是混着音效的 PCM 窗。
+  - 根因 1：旧 `native/galgame_hook/hook/adapters/cmvs_adapter.inc:34` 的 `capabilities()` 只有 `kText | kPcmAudio`，CMVS 没有资源层，逐句语音只能从引擎 PCM 环里按时间窗抓。
+  - 根因 2：PCM 环的取窗 `fushi/windows/runner/voice_hook_reader.cpp:1683` `GrabUtterance` 没有「语音 / 音效」下限，环里任何一段非静音都会被当成该句语音。
+  - 修 2 只能靠能量 / 时长启发式（就是要避免的补丁），所以修 1：给 CMVS 补上逐句资源层。
+  - 第一次运行时复测又暴露出 1 的下半段：语音层把正确的逐句 Ogg 写出来了（icsn101001 / icsn101002 对上第一、二句有声台词），但从没置 `kXAudioDiagGameResourcePublished`。宿主的 `raw_voice_ready` 只认 `HasReadyGameResourceAudio`（`native/galgame_hook/include/voice_hook_ipc.h:629`）里那组位，会话于是始终停在 `audio=enginePcm`，配对照旧走 PCM。
+- **[x] ① 已修复**
+  - `45e28993d4`：CMVS 语音层 `cmvs_voice_core.h` + `cmvs_voice.inc`。
+    - 只从主映像异常目录按结构特征（slot stride 0x808 / +0x800 归档字段 / 末尾反斜杠判断 / 虚调用 / +0x2020 组缓存）解析引擎的组加载器，不用哈希、文件名或标题。
+    - detour 只做「语音组 + `<id>.ogg` + Ogg 头」判定和有界拷贝，worker 做 Ogg 页校验和 `WriteVoiceOggAt`。
+    - `capabilities()` 在语音层武装后才宣告 `kResourceAudio`。
+    - x86 没有 unwind 表，判不了函数入口，语音层 fail-closed。
+  - `907fdb3127`：worker 写成功后置 `kXAudioDiagGameResourcePublished`，宿主据此切到逐句资源配对（与 FVP / YU-RIS / Smash / HUNEX / SGRE 同一约定）。
+- **[x] ② 已加自动化测试**
+  - `native/galgame_hook/tests/cmvs_voice_test.cpp`（CTest `fushi_cmvs_voice_test`）：
+    - 合成组加载器函数体，两种工具链编码，五个结构片段逐一去掉必须判负。
+    - 合成 PE32+ 异常目录：链式片段、kNoSite、kTooManySites、kNotPe64、kNoExceptionDirectory。
+    - 语音组 / 成员名 / Ogg 头分类。
+    - 可选实测模式：真 exe 实测 リアライブ v2 = `+0x9dbc0`，クロノクロック = `+0x275b0` 与 `+0x827f0`，32 位 cmvs32 = kNotPe64。
+  - `native/galgame_hook/tests/adapter_structure_test.py::test_cmvs_voice_lane_is_structural_and_game_thread_light`：
+    - 源码不含 hash / 文件名 / 游戏名。
+    - 游戏线程无 IO / 日志。
+    - worker 先校验再写，写后才置发布位。
+    - `kResourceAudio` 受武装门控。
+- **备注**：
+  - 运行时证据（リアライブ体験版v2，x64）：
+    - 第一次运行（只有 `45e28993d4`）：
+      - `group loader +0x9dbc0 hooked=1`。
+      - 首句语音 `icsn101001.ogg bytes=44039` 与第一句带引号的台词同刻（相差 0.2 s），第二句 `icsn101002` 相差 3.5 s 同样对上。
+      - 期间没有音效 / BGM 文件被写出。
+      - 但宿主仍是 `audio=enginePcm`，两句都配成 `engine_pcm`，这就暴露出缺发布位。
+    - 第二次运行（加上 `907fdb3127`，pid 142416）：
+      - 首句语音写出后会话切到资源配对。
+      - 第 66–69 行四句有声台词依次配上 `game_resource` 的 `icsn101001`–`icsn101004.ogg`。
+      - 之后的无语音旁白「もとより、そのつもりだ。」停在 `pending`，不再抓点击音效。
+      - 切换前的旁白行（第 61–65 行）仍配上 185–278 ms 的点击音，即根因 2，属于资源层武装前的 PCM 期。
+    - 第二个 CMVS 版本（クロノクロック体験版v2 cmvs64，pid 193856，同一份 DLL）：
+      - `group loader +0x275b0 hooked=1` 与 `+0x827f0 hooked=1`，两处站点都由结构判据解析，与离线实测一致。
+      - 女主有声台词配上 `game_resource` 的 `musnky01002` / `musnky01003.ogg`。
+      - 主角（无语音）台词与旁白停在 `pending`。
+      - `accept4`：text=PASS，audio=PASS（`resource=…musnky01003.ogg`）。lookup / no_advance=FAIL：现有 CMVS 查词只做 Shift、不拦左键（见 engine-support 的 `risky_left_click`），点击查词另立任务。
+    - リアライブ同场 `accept4`：text=PASS、audio=PASS（`backend=game_resource resource=…icsn101002.ogg`）。lookup / no_advance=FAIL：这一版 cmvs64 的游戏内查词还没接（查词另立任务），所以本条只宣称 ①② 两条。
+  - 无资源层的其它引擎仍会碰到根因 2（PCM 取窗无下限），另行处理。

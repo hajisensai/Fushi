@@ -21,6 +21,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -67,6 +68,9 @@ bool maybeHandleOverlayDeferredBridge({
       unawaited(_handleAudioBridge(
           model, handler! as String, message, resolveBridge));
       return true;
+    case 'listWordAudioSources':
+      unawaited(_handleAudioListBridge(model, message, resolveBridge));
+      return true;
     case 'favoriteEntry':
     case 'favoriteCheck':
       unawaited(_handleFavoriteBridge(
@@ -83,6 +87,15 @@ bool maybeHandleOverlayDeferredBridge({
       return true;
     case 'duplicateCheck':
       unawaited(_handleDuplicateBridge(model, message, resolveBridge));
+      return true;
+    // Fushi 复习词状态 / 打开卡片（popup.js createSrsStatusBadge）。复习模块关着时
+    // SrsAppHost.current 为 null：注入的 __fushiSrsEnabled=false 已让 JS 不发这两根桥，
+    // 这里照样秒回 null / false，绝不让按钮挂起。
+    case 'srsTermStatus':
+      unawaited(_handleSrsTermStatusBridge(message, resolveBridge));
+      return true;
+    case 'srsOpenCard':
+      unawaited(_handleSrsOpenCardBridge(message, resolveBridge));
       return true;
     // BUG-1064 —— app 外「卡已存在」操作面板的两根数据桥。面板本身画在 popup.js
     // 自己的 WebView 里（app 外没有 Flutter 层可以呈现对话框，见文件尾注），Dart
@@ -234,6 +247,30 @@ Future<void> _handleAudioBridge(
     glog('audio: $handler -> reply=$reply (id=$id)');
     unawaited(resolveBridge(id, reply));
   }
+}
+
+/// 「选择音频源」菜单（♪ 长按 / 右键）：回每个启用源各自解析出的全部候选
+/// `[{name, variant, url}]`（与 in-app 弹窗的 `listWordAudioSources` 同一实现
+/// [listWordAudioWebViewChoices]）。失败 / 无模型一律回空列表，popup.js 据此显示
+/// 「暂无发音」，绝不让桥悬空。
+Future<void> _handleAudioListBridge(
+  AppModel? model,
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  Object? reply = const <Map<String, String>>[];
+  try {
+    final Map<Object?, Object?> data = _firstMapArg(message);
+    final String expression = data['expression']?.toString() ?? '';
+    final String reading = data['reading']?.toString() ?? '';
+    if (model != null && expression.isNotEmpty) {
+      reply = await listWordAudioWebViewChoices(model, expression, reading);
+    }
+  } catch (e, st) {
+    glog('audio list: EXCEPTION $e $st');
+  }
+  if (id != null) unawaited(resolveBridge(id, reply));
 }
 
 /// TODO-1188 — resolves a DEFERRED favorite bridge call (favoriteEntry toggles
@@ -467,6 +504,50 @@ Future<void> _handleDuplicateBridge(
     glog('duplicate: duplicateCheck -> reply=$reply (id=$id)');
     unawaited(resolveBridge(id, reply));
   }
+}
+
+/// Fushi 复习词状态（deferred）：回 null 或 popup.js 的状态对象。
+Future<void> _handleSrsTermStatusBridge(
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  Map<String, Object?>? reply;
+  try {
+    final SrsAppHost? host = SrsAppHost.current;
+    final Map<Object?, Object?> data = _firstMapArg(message);
+    final String expression = data['expression']?.toString() ?? '';
+    final String reading = data['reading']?.toString() ?? '';
+    if (host != null && expression.isNotEmpty) {
+      reply = await host.termStatus(expression, reading);
+    }
+  } catch (e, st) {
+    ErrorLogService.instance.log('overlay.srsTermStatus', e, st);
+    reply = null;
+  }
+  if (id != null) unawaited(resolveBridge(id, reply));
+}
+
+/// 点复习标记（deferred）：在主窗口打开那张卡的笔记编辑页，回是否打开。
+Future<void> _handleSrsOpenCardBridge(
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  bool reply = false;
+  try {
+    final SrsAppHost? host = SrsAppHost.current;
+    final Map<Object?, Object?> data = _firstMapArg(message);
+    final String cardId = data['cardId']?.toString() ?? '';
+    final String noteId = data['noteId']?.toString() ?? '';
+    if (host != null && cardId.isNotEmpty) {
+      reply = await host.openCard(cardId: cardId, noteId: noteId);
+    }
+  } catch (e, st) {
+    ErrorLogService.instance.log('overlay.srsOpenCard', e, st);
+    reply = false;
+  }
+  if (id != null) unawaited(resolveBridge(id, reply));
 }
 
 /// BUG-1064 — resolves a DEFERRED `findMinedMatches` call: the app-external

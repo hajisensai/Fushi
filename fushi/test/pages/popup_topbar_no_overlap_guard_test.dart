@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -40,6 +40,7 @@ void main() {
     WidgetTester tester,
     double width, {
     Widget? header,
+    double topBarScale = 1.0,
   }) async {
     await tester.pumpWidget(
       buildTestApp(
@@ -54,6 +55,7 @@ void main() {
               isSearching: false,
               webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
               headerWidget: header ?? shrinkableHeader(),
+              topBarScale: topBarScale,
               onClose: () {},
               onDismiss: () {},
               onTextSelected: (text, rect) {},
@@ -82,18 +84,22 @@ void main() {
       return tester.getRect(finder);
     }
 
-    final Rect zoomOut = rectOf(find.byIcon(Icons.text_decrease));
-    final Rect zoomIn = rectOf(find.byIcon(Icons.text_increase));
+    // 2026-10 体验优化：窄宽（< kDictionaryPopupTopBarCompactWidth）下 A−/A+/AI
+    // 收进「⋯」溢出菜单，左簇只剩一颗溢出按钮；原断言「A−/A+ 在 header 左侧」
+    // 改为断言溢出按钮在 header 左侧（不重叠判据不变）。
+    expect(find.byIcon(Icons.text_decrease), findsNothing);
+    expect(find.byIcon(Icons.text_increase), findsNothing);
+    final Rect overflow = rectOf(
+      find.byKey(const ValueKey<String>('popup_topbar_overflow')),
+    );
     final Rect close = rectOf(find.byIcon(Icons.close));
     final Rect header = rectOf(find.byKey(const Key('test-popup-header')));
 
-    // 左簇（A−/A+）整体在 header 左侧、右端关闭在 header 右侧——三者不水平重叠。
-    final double leftClusterRight =
-        zoomOut.right > zoomIn.right ? zoomOut.right : zoomIn.right;
+    // 左簇（溢出按钮）在 header 左侧、右端关闭在 header 右侧——三者不水平重叠。
     expect(
-      leftClusterRight,
+      overflow.right,
       lessThanOrEqualTo(header.left + 0.5),
-      reason: 'A−/A+ 字号按钮不得压到居中 header（BUG-826 重叠）。',
+      reason: '左簇不得压到居中 header（BUG-826 重叠）。',
     );
     expect(
       header.right,
@@ -104,6 +110,50 @@ void main() {
     // header 收缩后仍在弹窗宽度内（未越界）。
     expect(header.left, greaterThanOrEqualTo(-0.5));
     expect(header.right, lessThanOrEqualTo(kLookupPopupMinWidth + 0.5));
+  });
+
+  testWidgets(
+      'wide popup keeps A-/A+ inline; narrow popup menu still zooms '
+      '(2026-10 overflow)', (WidgetTester tester) async {
+    await pumpLayer(tester, kDictionaryPopupTopBarCompactWidth + 40);
+    expect(tester.takeException(), isNull);
+    expect(find.byIcon(Icons.text_decrease), findsOneWidget);
+    expect(find.byIcon(Icons.text_increase), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('popup_topbar_overflow')),
+      findsNothing,
+    );
+
+    // 窄宽：菜单里能找到 A−/A+ 两项（WebView 未挂载时点了安全 no-op）。
+    await pumpLayer(tester, kLookupPopupMinWidth);
+    // result=null 的层现在画的是「加载中」（FushiDeferredLoading 的无限动画，
+    // 不再是假空态「未找到」），pumpAndSettle 永远等不到静止；用有界 pump 走完
+    // 菜单的开/关过渡即可。
+    Future<void> pumpMenuTransition() async {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('popup_topbar_overflow')),
+    );
+    await pumpMenuTransition();
+    expect(find.byIcon(Icons.text_decrease), findsOneWidget);
+    expect(find.byIcon(Icons.text_increase), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.text_increase));
+    await pumpMenuTransition();
+    // 选中后菜单关闭（不是点了没反应）。
+    expect(find.byIcon(Icons.text_increase), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('top action extent: mobile >= 44, desktop 36 (BUG-3412)', () {
+    // BUG-3412：三组按钮统一尺寸靠布局（header 拿两簇之间全部剩余宽）与统一图标
+    // 尺寸解决，移动端命中区仍守 44 触控下限，不能为了「变小」收边长。
+    expect(dictionaryPopupTopActionExtent(mobile: true),
+        greaterThanOrEqualTo(44));
+    // 桌面保持压缩顶栏的 36（design-2026-08）。
+    expect(dictionaryPopupTopActionExtent(mobile: false), 36);
   });
 
   test(
@@ -131,8 +181,11 @@ void main() {
       isTrue,
       reason: 'FittedBox 须 scaleDown：够宽不放大、太窄才缩（BUG-826）。',
     );
+    // M3E（2026-10-06）：音频行落进 [DictionaryPopupToolGroup] 胶囊，其内部 Row 即
+    // mainAxisSize.min（有限内在宽），FittedBox 照样量得到。
     expect(
-      fn.contains('mainAxisSize: MainAxisSize.min'),
+      fn.contains('mainAxisSize: MainAxisSize.min') ||
+          fn.contains('DictionaryPopupToolGroup('),
       isTrue,
       reason: '音频行须 mainAxisSize.min，FittedBox 才能量到有限内在宽（BUG-826）。',
     );
@@ -146,7 +199,12 @@ void main() {
   // 4 颗 = 144，弹窗宽下限 [kLookupPopupMinWidth] = 250 ⇒ 142 < 144。
   //
   // 这里用**真按钮**跑正反两面：不包 FittedBox 必 overflow（负向对照证明本条判据真
-  // 在工作，不是恒绿），包了必不 overflow。生产侧真的走了 FittedBox 这条结构，由
+  // 在工作，不是恒绿），包了必不 overflow。
+  //
+  // 2026-10 体验优化后窄宽左簇收成一颗「⋯」（36），中段可用宽 = 250 − 72 = 178，
+  // 4 颗（144）已放得下、裸 Row 不再溢出——负向对照失去意义。改用 5 颗（180 > 178）
+  // 保持「裸 Row 必溢出、FittedBox 必不溢出」这对判据；生产视频 header 的按钮数
+  // 只会更少，正向断言覆盖面不变。生产侧真的走了 FittedBox 这条结构，由
   // `test/pages/video_popup_cue_actions_guard_test.dart` 的源码扫描钉住。
   Widget realIconButtons() => Row(
         mainAxisSize: MainAxisSize.min,
@@ -157,6 +215,7 @@ void main() {
             Icons.play_arrow,
             Icons.content_copy_outlined,
             Icons.star_border,
+            Icons.skip_next,
           ])
             FushiIconButton(
               icon: icon,
@@ -197,7 +256,96 @@ void main() {
     expect(
       tester.takeException(),
       isNull,
-      reason: 'FittedBox(scaleDown) 必须把 4 颗按钮缩到有界宽内，绝不横向溢出/裁切。',
+      reason: 'FittedBox(scaleDown) 必须把按钮行缩到有界宽内，绝不横向溢出/裁切。',
     );
+  });
+
+  // ── 用户 10-09：顶栏中间的收藏按钮没居中 / 比两侧小 / 不随缩放 ─────────────────
+  //
+  // 旧实现把 header 放进「左簇与右簇之间的剩余宽度」里居中：左簇（A−/A+ 两颗）比右簇
+  // （关闭一颗）宽，header 中心就整体偏右。现在 header 相对整条顶栏居中。
+  testWidgets('header is centred on the whole top bar, not on the leftover gap '
+      '(user 10-09)', (WidgetTester tester) async {
+    const double width = 520;
+    await pumpLayer(tester, width);
+    expect(tester.takeException(), isNull);
+    final Rect header = tester.getRect(
+      find.byKey(const Key('test-popup-header')),
+    );
+    expect(header.center.dx, moreOrLessEquals(width / 2, epsilon: 0.5),
+        reason: 'header 中心必须落在顶栏中线上（旧实现偏右半个按钮）');
+    // 不重叠不变式（BUG-826）仍成立。
+    final Rect zoomIn = tester.getRect(find.byIcon(Icons.text_increase));
+    final Rect close = tester.getRect(find.byIcon(Icons.close));
+    expect(zoomIn.right, lessThanOrEqualTo(header.left + 0.5));
+    expect(header.right, lessThanOrEqualTo(close.left + 0.5));
+  });
+
+  testWidgets('top bar scales with the dictionary zoom (user 10-09)',
+      (WidgetTester tester) async {
+    const double width = 520;
+    await pumpLayer(tester, width);
+    final Size closeAt1 = tester.getRect(find.byIcon(Icons.close)).size;
+    final Rect headerAt1 = tester.getRect(
+      find.byKey(const Key('test-popup-header')),
+    );
+
+    await pumpLayer(tester, width, topBarScale: 1.25);
+    expect(tester.takeException(), isNull);
+    final Size closeAt125 = tester.getRect(find.byIcon(Icons.close)).size;
+    final Rect headerAt125 = tester.getRect(
+      find.byKey(const Key('test-popup-header')),
+    );
+    expect(closeAt125.width, moreOrLessEquals(closeAt1.width * 1.25,
+        epsilon: 0.5));
+    expect(headerAt125.height, moreOrLessEquals(headerAt1.height * 1.25,
+        epsilon: 0.5));
+    // 缩放后仍居中、不越界。
+    expect(headerAt125.center.dx, moreOrLessEquals(width / 2, epsilon: 0.5));
+    final Rect closeRect = tester.getRect(find.byIcon(Icons.close));
+    expect(closeRect.right, lessThanOrEqualTo(width + 0.5));
+  });
+
+  test('top bar scale follows UI scale × dictionary font size, clamped', () {
+    expect(
+      dictionaryPopupTopBarScale(appUiScale: 1, dictionaryFontSize: 16),
+      1.0,
+    );
+    expect(
+      dictionaryPopupTopBarScale(appUiScale: 1, dictionaryFontSize: 20),
+      1.25,
+    );
+    expect(
+      dictionaryPopupTopBarScale(appUiScale: 1, dictionaryFontSize: 8),
+      0.8,
+    );
+    expect(
+      dictionaryPopupTopBarScale(appUiScale: 2, dictionaryFontSize: 40),
+      1.5,
+    );
+    expect(
+      dictionaryPopupTopBarScale(appUiScale: 1, dictionaryFontSize: double.nan),
+      1.0,
+    );
+  });
+
+  test('reader / video popup header buttons share the top-bar hit box '
+      '(user 10-09)', () {
+    // 源码守卫：中段 header 的按钮必须用 dictionaryPopupTopActionConstraints()，
+    // 与左右簇同一个命中盒；reader header 不再自己套 ReaderChromeScaler（只缩中段、
+    // 不缩两侧 = 中间按钮与两侧大小不一）。
+    final String reader = File(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    ).readAsStringSync();
+    final int start = reader.indexOf('Widget? buildPopupAudioControls()');
+    final String fn = reader.substring(start, reader.indexOf('// ── Helpers', start));
+    expect(fn.contains('dictionaryPopupTopActionConstraints()'), isTrue);
+    expect(fn.contains('ReaderChromeScaler('), isFalse);
+    final String video = File(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    ).readAsStringSync();
+    final int vs = video.indexOf('Widget? buildPopupHeaderFor(int index)');
+    final String vfn = video.substring(vs, video.indexOf('/// 关闭查词浮层栈中第', vs));
+    expect(vfn.contains('dictionaryPopupTopActionConstraints()'), isTrue);
   });
 }

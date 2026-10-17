@@ -124,7 +124,7 @@ fushi://pair?v=1&h=<hostId>&n=<展示名>&fp=<证书指纹>&k=<ticketId>.<secret
 - **隧道请求按真实身份限流**：Rust 登记「转发 TCP 连接的本地源端口 → 对端 NodeId」（`fp2p_host_peer`），`FushiSyncServer.p2pPeerResolver` 据连接的对端端口查出 NodeId 挂进请求 context（`fushi.p2p.peer`），配对会话记 `tunnelPeer`。PIN 限流对隧道会话按 `p2p:<NodeId>` 分桶、**不认**自报 deviceId（可冒报成受害者的把人锁外）；查不到身份时共用一个桶（收紧而非放开）。
 - **地址列表所有读改写串行**：设置页增删改排序改成在库里最新列表上按 URL 执行的变换（排序表达为 `moveInterconnectUrlBefore`）；`SyncRepository` 内 TOFU 落指纹、落 per-peer token、清 token、清指纹、登出清表全部走同一把静态锁。守卫测试钉住 `lib/` 不许再直接 `setFushiClientUrls`。
 - **NFC 贴纸可选写后锁定**：写入前问「写入后锁定」，默认关（锁定不可撤销，本机地址或证书一变贴纸就作废）；原生返回 `locked` / `written` / `failed` 三态，要求锁定而芯片不支持只读时如实提示。
-- **CI / 发布接入 Rust 构建**：Android 三 ABI、Windows DLL、macOS universal dylib（进 `Contents/Frameworks`）、iOS 静态库（`-force_load`，出包查符号防 dead-strip）、Linux 桌面与无头服务端 `.so`；构建失败即 job 失败（与内置 libtorrent 同口径），出包后核对库确实进包，真隧道测试额外核日志无 skip 防缺库伪绿。iOS 出口合规维持 `ITSAppUsesNonExemptEncryption=false`：iroh 走标准 TLS 1.3（rustls），与互联既有的自签 TLS 同属标准协议加密。
+- **CI / 发布接入 Rust 构建**：Android 三 ABI、Windows DLL、macOS dylib（进 `Contents/Frameworks`；当时是 universal，2026-10 起 macOS 版只出 arm64）、iOS 静态库（`-force_load`，出包查符号防 dead-strip）、Linux 桌面与无头服务端 `.so`；构建失败即 job 失败（与内置 libtorrent 同口径），出包后核对库确实进包，真隧道测试额外核日志无 skip 防缺库伪绿。iOS 出口合规维持 `ITSAppUsesNonExemptEncryption=false`：iroh 走标准 TLS 1.3（rustls），与互联既有的自签 TLS 同属标准协议加密。
 - **无头服务端 WebUI**：「远程访问」卡片管理公网地址 / P2P 开关 / 自建中继，admin API 同名字段，改完即生效（`HeadlessHost.applyConfig`，配置不再是启动快照）；P2P 起停与换中继串行。
 - **持续走中继提示**：设置页 `p2p://` 地址行显示「P2P 直连 / 经中继 · RTT」；连上后持续 20 秒仍只有中继路径（iroh 先走中继再升级，刚连上不误报）时，说明任一端开着 Clash TUN / 全局 VPN 等改写 UDP 端口的工具会让打洞失败及处理办法。
 

@@ -108,8 +108,9 @@ class ExternalMokuroRunner {
       idle = Timer(idleTimeout, () {
         handle?.kill();
         if (!controller.isClosed) {
-          controller
-              .addError(const MokuroRunnerException('mokuro 长时间无输出，已超时终止'));
+          controller.addError(
+            const MokuroRunnerException(MokuroRunnerErrorCode.timeout),
+          );
         }
       });
     }
@@ -117,7 +118,9 @@ class ExternalMokuroRunner {
     Future<void> startRun() async {
       final String? exe = await resolveExecutable();
       if (exe == null) {
-        controller.addError(const MokuroRunnerException('未找到 mokuro 可执行文件'));
+        controller.addError(
+          const MokuroRunnerException(MokuroRunnerErrorCode.notFound),
+        );
         await controller.close();
         return;
       }
@@ -125,7 +128,12 @@ class ExternalMokuroRunner {
         handle = await _processRunner
             .start(exe, <String>['--disable_confirmation', imageDirPath]);
       } catch (e) {
-        controller.addError(MokuroRunnerException('启动 mokuro 失败：$e'));
+        controller.addError(
+          MokuroRunnerException(
+            MokuroRunnerErrorCode.launchFailed,
+            detail: '$e',
+          ),
+        );
         await controller.close();
         return;
       }
@@ -152,14 +160,20 @@ class ExternalMokuroRunner {
         return;
       }
       if (code != 0) {
-        controller.addError(MokuroRunnerException('mokuro 以非零退出码 $code 结束'));
+        controller.addError(
+          MokuroRunnerException(
+            MokuroRunnerErrorCode.nonZeroExit,
+            exitCode: code,
+          ),
+        );
         await controller.close();
         return;
       }
       final String? mokuroPath = locateMokuroFile(imageDir);
       if (mokuroPath == null) {
         controller.addError(
-            const MokuroRunnerException('mokuro 运行完成但未找到 .mokuro 产物'));
+          const MokuroRunnerException(MokuroRunnerErrorCode.noOutput),
+        );
       } else {
         controller.add(MokuroRunEvent.finished(mokuroPath));
       }
@@ -378,12 +392,47 @@ class _CrLfLineAccumulator {
   }
 }
 
-/// 外部 mokuro CLI 运行失败（可读消息）。
-class MokuroRunnerException implements Exception {
-  const MokuroRunnerException(this.message);
+/// 外部 mokuro CLI 失败的种类。
+///
+/// 2026-10 体验优化：原先异常里直接写死中文句子，英文等界面也弹中文；改成
+/// 错误码，由 UI（`manga_ocr_wizard_dialog.dart`）映射到本地化词条。
+enum MokuroRunnerErrorCode {
+  /// 找不到可执行文件（配置路径无效且 PATH 里也没有）。
+  notFound,
 
-  final String message;
+  /// 长时间无输出，已被杀掉。
+  timeout,
+
+  /// 进程起不来。
+  launchFailed,
+
+  /// 进程以非零退出码结束。
+  nonZeroExit,
+
+  /// 正常结束但目录里没有 `.mokuro` 产物。
+  noOutput,
+}
+
+/// 外部 mokuro CLI 运行失败。[toString] 是给日志的英文细节，界面文案按
+/// [code] 映射。
+class MokuroRunnerException implements Exception {
+  const MokuroRunnerException(this.code, {this.exitCode, this.detail});
+
+  final MokuroRunnerErrorCode code;
+
+  /// [MokuroRunnerErrorCode.nonZeroExit] 时的退出码。
+  final int? exitCode;
+
+  /// 底层异常原文（如启动失败的 ProcessException），只进日志。
+  final String? detail;
 
   @override
-  String toString() => 'MokuroRunnerException: $message';
+  String toString() {
+    final StringBuffer buffer = StringBuffer('MokuroRunnerException(')
+      ..write(code.name);
+    if (exitCode != null) buffer.write(', exitCode: $exitCode');
+    buffer.write(')');
+    if (detail != null && detail!.isNotEmpty) buffer.write(': $detail');
+    return buffer.toString();
+  }
 }

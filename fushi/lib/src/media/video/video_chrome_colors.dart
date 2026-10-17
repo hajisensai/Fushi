@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 播放器 chrome 的固定亮色前景体系 + 浮层表面 alpha 两档（UI 巡检 PR-4）。
 ///

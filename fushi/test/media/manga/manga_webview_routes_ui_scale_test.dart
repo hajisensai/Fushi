@@ -1,9 +1,7 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_challenge.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_gate.dart';
@@ -16,7 +14,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 ///
 /// 根因不在 WebView 本身：`FushiAppUiScale` 用 FittedBox 把整棵子树按 s 缩放，
 /// 子树里的 WebView 纹理按 view/s 的画布栅格化、再被拉伸 s 倍。阅读器 / 漫画 /
-/// 视频页都在**路由层**包了 `FushiAppUiScaleNeutralizer`，这三条推 WebView 的路由
+/// 视频页都在**路由层**包了 `FushiAppUiScaleNeutralizer`，这几条推 WebView 的路由
 /// 漏了。守法：把探针当页面推进去，断言探针拿到的布局尺寸等于**真实视口**
 /// （800×600），而不是被缩放过的画布（800/1.5 × 600/1.5）。
 void main() {
@@ -44,14 +42,8 @@ void main() {
     home: home,
   );
 
-  setUp(() {
-    AidokuCloudflareGate.resolver = null;
-    MihonCloudflareGate.resolver = null;
-  });
-  tearDown(() {
-    AidokuCloudflareGate.resolver = null;
-    MihonCloudflareGate.resolver = null;
-  });
+  setUp(() => MihonCloudflareGate.resolver = null);
+  tearDown(() => MihonCloudflareGate.resolver = null);
 
   testWidgets('对照：不中和的路由在缩放下只拿到 view/s 的画布（确认探针本身有效）', (
     WidgetTester tester,
@@ -93,26 +85,6 @@ void main() {
     navigatorKey.currentState!.pop(true);
     await tester.pumpAndSettle();
     expect(await opened, isTrue);
-  });
-
-  testWidgets('Aidoku Cloudflare 挑战页按真实视口布局', (WidgetTester tester) async {
-    final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(
-      scaledApp(navigatorKey: navigatorKey, home: const SizedBox.shrink()),
-    );
-    installAidokuCloudflareResolver(
-      navigatorKey,
-      pageBuilder: (Uri url, String ua) => probe(),
-    );
-    final Future<bool> solving = AidokuCloudflareGate.resolver!(
-      Uri.parse('https://cf.invalid/'),
-      'ua',
-    );
-    await tester.pumpAndSettle();
-    expect(probeSize(), viewport);
-    navigatorKey.currentState!.pop(true);
-    await tester.pumpAndSettle();
-    expect(await solving, isTrue);
   });
 
   testWidgets('Mihon Cloudflare 挑战页按真实视口布局', (WidgetTester tester) async {

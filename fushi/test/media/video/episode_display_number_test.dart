@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_episode_panel.dart';
@@ -54,7 +54,7 @@ void main() {
                 episodeNumber: parsedEpisodeNumberOf(path),
               ),
           ],
-          // 当前集用 play_arrow 顶掉数字，故把它放在第 0 张，让 1..3 张露出数字。
+          // 当前集放在第 0 张，其余 1..3 张都是普通集卡。
           currentIndex: 0,
           onTapEpisode: (_) {},
           onClose: () {},
@@ -68,6 +68,18 @@ void main() {
 
     expect(find.text('02'), findsOneWidget);
     expect(find.text('05'), findsOneWidget, reason: '第 3 张卡是 E05，不是顺位号 03');
+    // M3E 选集轨道（bb1aaee2010）的集卡更宽，第 4 张落在横向懒加载视口外、
+    // 还没构建——先把轨道滚到它，再断言角标。
+    await tester.scrollUntilVisible(
+      find.text('06'),
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     expect(find.text('06'), findsOneWidget);
     expect(find.text('03'), findsNothing, reason: '顺位号 03 不该出现（没有第 3 集）');
     expect(find.text('04'), findsNothing);

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 
@@ -16,6 +16,7 @@ class FushiFocusable extends StatefulWidget {
     this.autofocus = false,
     this.borderRadius = const BorderRadius.all(Radius.circular(8)),
     this.behavior = HitTestBehavior.opaque,
+    this.ringPosition = DecorationPosition.background,
   });
 
   final Widget child;
@@ -24,6 +25,11 @@ class FushiFocusable extends StatefulWidget {
   final bool autofocus;
   final BorderRadius borderRadius;
   final HitTestBehavior behavior;
+
+  /// 焦点环画在 [child] 下面（默认）还是上面。[child] 自带不透明底色（胶囊、色块）
+  /// 时必须用 [DecorationPosition.foreground] 并让 [borderRadius] 与底色形状一致，
+  /// 否则底色盖住环、只在圆角差处漏出几段残角（BUG-3440）。
+  final DecorationPosition ringPosition;
 
   @override
   State<FushiFocusable> createState() => _FushiFocusableState();
@@ -98,6 +104,7 @@ class _FushiFocusableState extends State<FushiFocusable> {
           behavior: widget.behavior,
           onTap: widget.onTap,
           child: DecoratedBox(
+            position: widget.ringPosition,
             decoration: BoxDecoration(
               borderRadius: widget.borderRadius,
               border: focused

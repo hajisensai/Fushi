@@ -21,8 +21,14 @@ const String kMangaStreamCacheDirName = 'manga_stream_cache';
 /// 同时在飞的取页请求上限（前台 + 预取共用）。
 const int kOnlineMangaPageConcurrency = 3;
 
-/// 每次取页时顺带预取前后各几页。
-const int kOnlineMangaPrefetchRadius = 2;
+/// 每次取页时顺带往阅读方向（页号增大）预取几页。
+///
+/// 顺序阅读几乎只往前翻，预取额度集中在前面（chimahon / Mihon 的 HttpPageLoader
+/// 也只往后预取）；很多源的扩展自带限流，往回多取的页会占掉限流额度。
+const int kOnlineMangaPrefetchAhead = 4;
+
+/// 每次取页时顺带往回预取几页（回翻一页不白屏即可）。
+const int kOnlineMangaPrefetchBehind = 1;
 
 /// 单页字节上限，与旧在线会话 / 下载服务的 100 MiB 口径一致。
 const int kOnlineMangaMaximumPageBytes = 100 * 1024 * 1024;
@@ -31,18 +37,23 @@ const int kOnlineMangaMaximumPageBytes = 100 * 1024 * 1024;
 /// 只接一个闭包，由调用方绑到 `OnlineMangaRuntimeAdapter.fetchChapterPage`。
 typedef OnlineMangaPageFetcher = Future<Uint8List> Function(int index);
 
+/// 取消这些页（0-based）在运行时侧仍在飞的请求。只是尽力而为：取消不了的请求
+/// 回来时会话按已关闭 / 已丢弃处理，不写盘。
+typedef OnlineMangaPageCanceller = Future<void> Function(Iterable<int> indices);
+
 /// 某页第一次解出真实尺寸时的回调（阅读器据此修正占位几何）。
-typedef OnlineMangaPageMeasured = void Function(
-  int index,
-  int width,
-  int height,
-);
+typedef OnlineMangaPageMeasured =
+    void Function(int index, int width, int height);
 
 /// 在线直读的页会话（2026-09-26 用户撤回「必须先下载再读」，设计稿 §1 补记）。
 ///
 /// - 懒取：只在阅读器要某页时才取，同页并发请求合并成一次（[_pending]）。
 /// - 限流：最多 [maxConcurrentRequests] 个请求在飞；前台请求插队到预取前面。
-/// - 预取：每次 [page] 顺带预取前后 [prefetchRadius] 页，失败静默（前台再取会重试）。
+/// - 预取：每次 [page] 顺带往前预取 [prefetchAhead] 页、往回 [prefetchBehind] 页，失败
+///   静默（前台再取会重试）。读者跳走后，还在排队、落在新页预取窗口外的旧预取直接丢弃：很多源的扩展自带限流
+///   拦截器，过期预取会占掉限流额度与取图通道，让真正要看的页排在它们后面。
+/// - 取消：[close] 时把还在飞的请求经 [cancelPages] 交给运行时取消（Android 原生
+///   取图线程有限，快速换章时旧章请求不该继续占着）。
 /// - 缓存：字节落到 [directory]（app 临时目录下的会话私有目录），[localFile] 因而能
 ///   给卡图 / 存页一个真实文件；[close] 删整个目录，上次崩溃留下的残目录在下一次
 ///   [open] 时清掉。
@@ -52,13 +63,15 @@ class OnlineMangaReaderSession implements MangaReaderSession {
     required List<String> pageIdentities,
     required OnlineMangaPageFetcher fetchPage,
     required this.maxConcurrentRequests,
-    required this.prefetchRadius,
+    required this.prefetchAhead,
+    required this.prefetchBehind,
     this.onPageMeasured,
-  })  : _pageIdentities = List<String>.unmodifiable(pageIdentities),
-        _fetchPage = fetchPage,
-        _permits = _PagePermitPool(
-          maxConcurrentRequests < 1 ? 1 : maxConcurrentRequests,
-        );
+    this.cancelPages,
+  }) : _pageIdentities = List<String>.unmodifiable(pageIdentities),
+       _fetchPage = fetchPage,
+       _permits = _PagePermitPool(
+         maxConcurrentRequests < 1 ? 1 : maxConcurrentRequests,
+       );
 
   /// 开一个会话：目录 = `<cacheRoot>/<sha(bookKey)>/<sha(chapterKey)>`。
   ///
@@ -71,8 +84,10 @@ class OnlineMangaReaderSession implements MangaReaderSession {
     required List<String> pageIdentities,
     required OnlineMangaPageFetcher fetchPage,
     int maxConcurrentRequests = kOnlineMangaPageConcurrency,
-    int prefetchRadius = kOnlineMangaPrefetchRadius,
+    int prefetchAhead = kOnlineMangaPrefetchAhead,
+    int prefetchBehind = kOnlineMangaPrefetchBehind,
     OnlineMangaPageMeasured? onPageMeasured,
+    OnlineMangaPageCanceller? cancelPages,
   }) async {
     final Directory directory = Directory(
       p.join(
@@ -94,8 +109,10 @@ class OnlineMangaReaderSession implements MangaReaderSession {
       pageIdentities: pageIdentities,
       fetchPage: fetchPage,
       maxConcurrentRequests: maxConcurrentRequests,
-      prefetchRadius: prefetchRadius,
+      prefetchAhead: prefetchAhead,
+      prefetchBehind: prefetchBehind,
       onPageMeasured: onPageMeasured,
+      cancelPages: cancelPages,
     );
   }
 
@@ -126,14 +143,17 @@ class OnlineMangaReaderSession implements MangaReaderSession {
   /// 本会话的页缓存目录。
   final Directory directory;
   final int maxConcurrentRequests;
-  final int prefetchRadius;
+  final int prefetchAhead;
+  final int prefetchBehind;
   final OnlineMangaPageMeasured? onPageMeasured;
+  final OnlineMangaPageCanceller? cancelPages;
 
   final List<String> _pageIdentities;
   final OnlineMangaPageFetcher _fetchPage;
   final _PagePermitPool _permits;
   final Map<int, Future<File>> _pending = <int, Future<File>>{};
   final Map<int, File> _cached = <int, File>{};
+  final Set<int> _fetching = <int>{};
   final Map<int, ({int width, int height})> _dimensions =
       <int, ({int width, int height})>{};
   final Map<int, Future<({int width, int height})?>> _measuring =
@@ -149,6 +169,7 @@ class OnlineMangaReaderSession implements MangaReaderSession {
   Future<MangaPageBytes> page(int index) async {
     _validateIndex(index);
     final Future<File> fileFuture = _ensureFile(index, priority: true);
+    _dropStalePrefetches(index);
     _prefetchAround(index);
     final File file = await fileFuture;
     final Uint8List bytes = await file.readAsBytes();
@@ -169,8 +190,9 @@ class OnlineMangaReaderSession implements MangaReaderSession {
     }
     return _measuring.putIfAbsent(index, () async {
       try {
-        final ({int width, int height})? size =
-            await mangaImageDimensions(bytes);
+        final ({int width, int height})? size = await mangaImageDimensions(
+          bytes,
+        );
         if (size != null && !_closed) {
           _dimensions[index] = size;
           onPageMeasured?.call(index, size.width, size.height);
@@ -218,8 +240,17 @@ class OnlineMangaReaderSession implements MangaReaderSession {
     _closed = true;
     _permits.cancelWaiters();
     _activeDirectories.remove(p.canonicalize(directory.path));
-    // 在飞的请求没法从适配器侧取消：结果回来时看到 _closed 就丢弃不写盘。删目录
-    // 失败（Windows 上有句柄正在写）不要紧，下一次 open 的 prune 会收尾。
+    // 在飞的请求交给运行时取消；取消不掉的结果回来时看到 _closed 就丢弃不写盘。
+    final List<int> fetching = _fetching.toList(growable: false);
+    final OnlineMangaPageCanceller? cancel = cancelPages;
+    if (cancel != null && fetching.isNotEmpty) {
+      try {
+        await cancel(fetching);
+      } on Object {
+        // 取消只是释放资源；失败不影响关闭。
+      }
+    }
+    // 删目录失败（Windows 上有句柄正在写）不要紧，下一次 open 的 prune 会收尾。
     await _deleteQuietly(directory);
   }
 
@@ -248,6 +279,7 @@ class OnlineMangaReaderSession implements MangaReaderSession {
   }
 
   Future<File> _fetchToDisk(int index) async {
+    _fetching.add(index);
     try {
       _throwIfClosed();
       final Uint8List bytes = await _fetchPage(index);
@@ -277,13 +309,29 @@ class OnlineMangaReaderSession implements MangaReaderSession {
       _cached[index] = target;
       return target;
     } finally {
+      _fetching.remove(index);
       _permits.release();
     }
   }
 
+  /// 丢掉还在排队、落在 [index] 预取窗口外的预取（前台请求不动）。
+  void _dropStalePrefetches(int index) {
+    _permits.dropQueuedPrefetches(
+      (int queued) =>
+          queued > index + prefetchAhead || queued < index - prefetchBehind,
+    );
+  }
+
   void _prefetchAround(int index) {
-    for (int distance = 1; distance <= prefetchRadius; distance++) {
-      for (final int candidate in <int>[index + distance, index - distance]) {
+    // 近的先排：+1、-1、+2、+3……
+    final int reach = prefetchAhead > prefetchBehind
+        ? prefetchAhead
+        : prefetchBehind;
+    for (int distance = 1; distance <= reach; distance++) {
+      for (final int candidate in <int>[
+        if (distance <= prefetchAhead) index + distance,
+        if (distance <= prefetchBehind) index - distance,
+      ]) {
         if (candidate < 0 || candidate >= pageCount) continue;
         if (_cached.containsKey(candidate) || _pending.containsKey(candidate)) {
           continue;
@@ -354,7 +402,7 @@ class _PagePermitPool {
       _inUse++;
       return Future<void>.value();
     }
-    final _PermitWaiter waiter = _PermitWaiter(index);
+    final _PermitWaiter waiter = _PermitWaiter(index, priority: priority);
     if (priority) {
       _waiters.addFirst(waiter);
     } else {
@@ -374,7 +422,25 @@ class _PagePermitPool {
     }
     if (found == null) return;
     _waiters.remove(found);
+    found.priority = true;
     _waiters.addFirst(found);
+  }
+
+  /// 摘掉 [isStale] 为真的排队预取，以 `PREFETCH_STALE` 失败结束它们。
+  void dropQueuedPrefetches(bool Function(int index) isStale) {
+    final List<_PermitWaiter> stale = <_PermitWaiter>[
+      for (final _PermitWaiter waiter in _waiters)
+        if (!waiter.priority && isStale(waiter.index)) waiter,
+    ];
+    for (final _PermitWaiter waiter in stale) {
+      _waiters.remove(waiter);
+      waiter.completer.completeError(
+        const MihonRuntimeException(
+          'PREFETCH_STALE',
+          'The prefetched page is no longer near the reading position',
+        ),
+      );
+    }
   }
 
   void release() {
@@ -388,18 +454,19 @@ class _PagePermitPool {
   void cancelWaiters() {
     while (_waiters.isNotEmpty) {
       _waiters.removeFirst().completer.completeError(
-            const MihonRuntimeException(
-              'SESSION_CLOSED',
-              'The online manga reader session is closed',
-            ),
-          );
+        const MihonRuntimeException(
+          'SESSION_CLOSED',
+          'The online manga reader session is closed',
+        ),
+      );
     }
   }
 }
 
 class _PermitWaiter {
-  _PermitWaiter(this.index);
+  _PermitWaiter(this.index, {required this.priority});
 
   final int index;
+  bool priority;
   final Completer<void> completer = Completer<void>();
 }

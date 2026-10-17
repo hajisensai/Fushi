@@ -77,7 +77,7 @@ void main() {
 
     final String opf = reader['OEBPS/content.opf']!;
     // Identity prefix distinguishes text-generated books; must stay stable.
-    expect(opf, contains('<dc:identifier id="uid">hibiki-text-'));
+    expect(opf, contains('<dc:identifier id="uid">fushi-text-'));
     expect(opf, contains('<dc:title>A &amp; B &lt;C&gt;</dc:title>'));
     expect(opf, contains('<dc:creator>O&apos;Brien</dc:creator>'));
     expect(opf, contains('<itemref idref="chapter-1"/>'));

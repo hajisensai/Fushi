@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 
+import 'package:fushi/src/media/video/audio_energy_probe.dart'
+    show kSubtitleAutoAlignProbeLimitMs;
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -39,6 +41,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.subtitleWaveformCues = const <AudioCue>[],
     this.videoDurationMs = 0,
     this.loadSubtitleWaveform,
+    this.subtitleProbeLimitMs = kSubtitleAutoAlignProbeLimitMs,
     this.onPlaySubtitleCue,
     this.subtitleIsPlaying,
     this.onToggleSubtitlePlayPause,
@@ -55,11 +58,12 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     required this.onSubtitleStylePreview,
     required this.onSubtitleStyleCommit,
     this.onEnterSubtitleDragAdjust,
+    this.onEnterSubtitleDelayBar,
     this.onSubtitleObscureRevealChanged,
     this.onRespectAssStyleChanged,
     required this.onAsbConfigChanged,
     required this.onMpvConfigChanged,
-    this.onLuaScriptsEnabledChanged,
+    this.onLuaScriptsChanged,
     this.luaScriptStates,
     required this.onApplyShaders,
     required this.onSelectShaderTier,
@@ -129,6 +133,9 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   final List<AudioCue> subtitleWaveformCues;
   final int videoDurationMs;
   final Future<List<double>> Function()? loadSubtitleWaveform;
+
+  /// 波形 / 自动对轴探测上界（毫秒），流音源比整集音源短，见 [subtitleAlignProbeLimitMs]。
+  final int subtitleProbeLimitMs;
   final Future<void> Function(int startMs)? onPlaySubtitleCue;
   final bool Function()? subtitleIsPlaying;
   final Future<void> Function()? onToggleSubtitlePlayPause;
@@ -158,6 +165,11 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   /// （全局设置页 / 无播放器场景）。
   final VoidCallback? onEnterSubtitleDragAdjust;
 
+  /// 进入「浮条调轴」模式（反馈 JsICLVdq0i：调延迟时字幕被设置面板挡住、看不到
+  /// 实时效果）：页面关掉设置面板，在画面顶部挂一条只含调轴控件的紧凑浮条，字幕
+  /// 区域整片让出来。null = 面板不显示该入口（全局设置页 / 无播放器场景）。
+  final VoidCallback? onEnterSubtitleDelayBar;
+
   /// 遮蔽态「悬停 / 点击临时显形」总闸的页面通道：写偏好 + 立刻重建 overlay。null =
   /// 无播放器场景（全局设置页），由 schema 直接写 [AppModel]。
   final Future<void> Function(bool value)? onSubtitleObscureRevealChanged;
@@ -169,10 +181,10 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   // ── mpv 配置（页面持久化 + applyMpvConfig 实时应用）──────────────────────
   final Future<void> Function(VideoMpvConfig config) onMpvConfigChanged;
 
-  /// mpv Lua 脚本开关（页面持久化 + 开启时把脚本目录即时装载进活播放器；关闭
-  /// 无法卸载、下次进入视频页生效——见 video_lua_script_manager.dart）。
-  /// null = 无播放器上下文，schema 行退化为直接写 pref。
-  final Future<void> Function(bool enabled)? onLuaScriptsEnabledChanged;
+  /// mpv_scripts 目录有变（导入了脚本）：把目录即时装载进活播放器（幂等，已装载
+  /// 路径跳过；删掉的脚本无法卸载、下次进入视频页生效——见
+  /// video_lua_script_manager.dart）。null = 无播放器上下文，下次进入视频页按目录装载。
+  final Future<void> Function()? onLuaScriptsChanged;
 
   /// BUG-2032：活播放器的每脚本运行态（路径 → null=已装载无报错 / 报错原文；不在
   /// 表里=本次播放未装载），设置页脚本列表据此显示状态。null = 无播放器上下文，

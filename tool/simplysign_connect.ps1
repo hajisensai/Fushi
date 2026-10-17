@@ -134,7 +134,7 @@ Add-Type -Language CSharp -TypeDefinition @"
 using System;
 using System.Security.Cryptography;
 
-public static class HibikiTotp
+public static class FushiTotp
 {
     private const string B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -238,14 +238,14 @@ if ([string]::IsNullOrWhiteSpace($UserId)) {
 # TOTP 码只在当前时间片内有效。如果剩余秒数太少，登录请求到达服务端时码可能
 # 已经翻片 —— 这类失败是间歇性的，在 CI 上会表现成「偶发 login failed」，
 # 极难归因。直接等到下一片开头再算，用几秒钟换掉一整类偶发红。
-[int] $remaining = [HibikiTotp]::SecondsRemaining($seed.Period)
+[int] $remaining = [FushiTotp]::SecondsRemaining($seed.Period)
 if ($remaining -lt 5) {
     Write-Step "当前 TOTP 时间片仅剩 ${remaining}s，等待翻片以避免竞态…"
     Start-Sleep -Seconds ($remaining + 1)
 }
 
-[string] $otp = [HibikiTotp]::Compute($seed.Secret, $seed.Algorithm, $seed.Digits, $seed.Period)
-Write-Step "已生成 TOTP（$($seed.Algorithm)/$($seed.Digits)位/$($seed.Period)s，剩余 $([HibikiTotp]::SecondsRemaining($seed.Period))s）"
+[string] $otp = [FushiTotp]::Compute($seed.Secret, $seed.Algorithm, $seed.Digits, $seed.Period)
+Write-Step "已生成 TOTP（$($seed.Algorithm)/$($seed.Digits)位/$($seed.Period)s，剩余 $([FushiTotp]::SecondsRemaining($seed.Period))s）"
 
 # /autologin 会先向现有 "SimplySign Desktop" 窗口发 WM_CLOSE 再起新实例，
 # 所以这里不需要自己去杀进程。

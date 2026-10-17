@@ -116,7 +116,7 @@ void main() {
   });
 
   group('popup.js mining builders (source scan)', () {
-    // flutter test cwd 是 hibiki 包根。
+    // flutter test cwd 是 fushi 包根。
     final String src = File('assets/popup/popup.js').readAsStringSync();
 
     /// 取顶层函数体：从 `function <name>(` 到下一个列首 `}`。锚定函数体而不是

@@ -23,6 +23,8 @@ import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/stats/galgame_line_study_gate.dart';
+import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
@@ -667,7 +669,7 @@ typedef GalExe32BitProbe = Future<bool?> Function(String path);
 /// attach（捕获窗口 / 引擎重试）路径此前没有这条查询，于是
 /// [shouldUseLunaPcHooksForExecutable] 唯一的输入拿不到，两个调用点就把
 /// `lunaPcHooks` 直接写死成 `false`——**「判据取不到」被实现成了「判为否」**。
-/// 后果是 Unity/IL2CPP 与 Siglus 目标只要不是由 Hibiki 亲自拉起，就永远不补装
+/// 后果是 Unity/IL2CPP 与 Siglus 目标只要不是由 Fushi 亲自拉起，就永远不补装
 /// LunaHook 通用 PC hooks，文本线程一条都抓不到（injector 报 `text=0`）。
 /// exe 路径本来就能从 PID 拿到（`QueryFullProcessImageNameW`），补上这条查询即可
 /// 让两条路径共用同一套判据，而不是各自猜。
@@ -1120,10 +1122,19 @@ class GalHookSessionController extends ChangeNotifier {
   /// 每词 + 超长垃圾行门），见 [GalgameLineCharCounter]。
   final GalgameLineCharCounter _activityCharCounter = GalgameLineCharCounter();
 
+  /// 计数器之后的第二道门：会话内已入账台词不重复计（Backlog 回看）、快于可阅读
+  /// 速度的连续快速流不计（快进 / 跳过），见 [GalgameLineStudyGate]（反馈
+  /// LUgHjyc8By）。与 [_activityCharCounter] 同生命周期复位。
+  final GalgameLineStudyGate _activityStudyGate = GalgameLineStudyGate();
+
+  /// 被 [_activityStudyGate] 判为快进流的停留时长（毫秒），尚未从游玩会话里扣除。
+  /// 游玩会话结算（[_makePlaySessionSink]）时扣掉并清零；新游玩计时器起时清零。
+  int _activitySkippedMs = 0;
+
   /// 本会话是否已有引擎 hook 台词计入统计。置位后外部 WS/剪贴板行不再计数——
   /// 同一游戏同时开着 LunaTranslator 等外部 hook 时，每句台词会从两条通道各到
   /// 一次，一个会话只允许一个计数源。引擎侧一直无文本时（仅用外部工具喂文本、
-  /// hibiki 只管音频的场景）外部行仍照常计数。
+  /// fushi 只管音频的场景）外部行仍照常计数。
   bool _engineTextCounted = false;
 
   /// 本会话的字数时钟：v92 统计域的唯一写入面 [StudyClock]，显式记账模式、只喂
@@ -1705,7 +1716,7 @@ class GalHookSessionController extends ChangeNotifier {
       final GalHookInjectorDiagnostics diagnostics = engine.lastFailure;
       // injector 在 CreateProcess 成功后即回报 `LAUNCH pid=`，这个 PID 与注入是否成功
       // 无关。拿得到它就说明**游戏已经在跑**：此时把整个会话判成「启动失败」是错的——
-      // 用户面前明明有个游戏窗口，Hibiki 却停在终态错误，只能手动去「捕获目标」重绑。
+      // 用户面前明明有个游戏窗口，Fushi 却停在终态错误，只能手动去「捕获目标」重绑。
       // 改为保留会话、降级到 Loopback，并按退避表重试附着。
       // A launcher (or an old/unknown role) is not a game target. In particular,
       // an exited Start with a surviving menu must not seed loopback/recovery.
@@ -1872,7 +1883,7 @@ class GalHookSessionController extends ChangeNotifier {
       );
       // BUG-1049：开场那 10 秒只是「窗口通常多快出现」的经验值，不是硬事实——带启动器 /
       // 壳解包 / 首次着色器编译的游戏常常更慢，而首帧一旦错过，旧实现就永久停在
-      // window_not_found，用户只能自己去点「捕获目标」条手动选窗口（明明是 Hibiki 自己
+      // window_not_found，用户只能自己去点「捕获目标」条手动选窗口（明明是 Fushi 自己
       // 启动的进程）。绑定因此改成会话级监视：只要这条会话还活着且仍没有窗口，就继续
       // 按同一个 pid 找，找到即自动绑上。
     }
@@ -3968,6 +3979,7 @@ class GalHookSessionController extends ChangeNotifier {
     await _stopActivityClock();
     _activityPendingChars = 0;
     _activityCharCounter.reset();
+    _activityStudyGate.reset();
     _textService.removeListener(_onTextBufferChanged);
     _endpointListenable.removeListener(_onEndpointStatusChanged);
     final ExitFlushCallback? exitFlush = _magpieExitFlush;
@@ -4108,6 +4120,7 @@ class GalHookSessionController extends ChangeNotifier {
       ),
     );
     _playTracker = tracker;
+    _activitySkippedMs = 0;
     tracker.start(mainPid: mainPid ?? 0);
     // 桌面点 X 走 `exit(0)` 快杀，[close] 不会被调用；与超分同款，登记退出 flush
     // 把结算写穿再放进程死（登记点就在启动处，换人再启动也不会漏）。
@@ -4141,12 +4154,26 @@ class GalHookSessionController extends ChangeNotifier {
         final String dateKey = FushiTimeFormat.dayKey(
           DateTime.fromMillisecondsSinceEpoch(result.endMs),
         );
+        // 快进 / 跳过流的停留不算游玩（阅读）时长：字数已经撤回，时长也扣掉，阅读
+        // 速度（字 / 时）才不被这两头一起扭曲（反馈 LUgHjyc8By）。
+        final int skippedSeconds = _activitySkippedMs ~/ 1000;
+        _activitySkippedMs = 0;
+        final int durationSeconds = result.durationSeconds > skippedSeconds
+            ? result.durationSeconds - skippedSeconds
+            : 0;
+        if (skippedSeconds > 0) {
+          studyDiag(
+            'galgame',
+            'play session ${result.durationSeconds}s - skipped ${skippedSeconds}s',
+          );
+        }
+        if (durationSeconds <= 0) return;
         await database.insertGalgameSession(
           GalgameSessionsCompanion.insert(
             gameId: result.gameId,
             startMs: result.startMs,
             endMs: result.endMs,
-            durationSeconds: result.durationSeconds,
+            durationSeconds: durationSeconds,
             dateKey: dateKey,
           ),
         );
@@ -4179,6 +4206,7 @@ class GalHookSessionController extends ChangeNotifier {
     // 游戏里做的选择又会被写回**上一个游戏**的 key（`_captureMemoryGameKey` 没换）。
     _resetCaptureMemorySession();
     _activityCharCounter.reset();
+    _activityStudyGate.reset();
     _activityPendingChars = 0;
     _engineTextCounted = false;
     final String trimmed = title.trim();
@@ -4260,34 +4288,74 @@ class GalHookSessionController extends ChangeNotifier {
   ///
   /// 计 0 的行（重发 / 纯标点）仍要调用：单计数源门（[_engineTextCounted]）要靠它
   /// 置位，外部通道的同句才不会补计。
-  void _recordEngineDelta(String delta) => _recordActivity(
+  void _recordEngineDelta(
+    String delta, {
+    required TexthookerLineEntry entry,
+    required int atMs,
+  }) => _recordActivity(
     _activityCharCounter.countDelta(delta),
     fromEngineHook: true,
+    lineId: entry.id,
+    lineText: entry.text,
+    atMs: atMs,
   );
 
   /// WS / 剪贴板路径：整行进来，去重与打字机增量仍由 [GalgameLineCharCounter] 负责
   /// ——那边没有上游折叠，这是唯一一份。
-  void _recordExternalLine(String text) => _recordActivity(
-    _activityCharCounter.countLine(text),
+  void _recordExternalLine(TexthookerLineEntry entry) => _recordActivity(
+    _activityCharCounter.countLine(entry.text),
     fromEngineHook: false,
+    // 外部通道没有上游折叠：同一句的打字机续写由门按前缀判，不认行 id。
+    lineId: null,
+    lineText: entry.text,
+    atMs: entry.receivedAt.millisecondsSinceEpoch,
   );
 
-  void _recordActivity(int chars, {required bool fromEngineHook}) {
+  void _recordActivity(
+    int chars, {
+    required bool fromEngineHook,
+    required String? lineId,
+    required String lineText,
+    required int atMs,
+  }) {
     if (_activityGameTitle == null) return;
     if (fromEngineHook) {
       _engineTextCounted = true;
     } else if (_engineTextCounted) {
       return; // 引擎 hook 是本会话计数源，外部通道的同句不再计（防双计）。
     }
-    if (chars <= 0) return;
+    // 计 0 的行也要过门：行边界与到达时刻是快进判据的输入，重发 / 纯标点行同样
+    // 「离开」了上一行。
+    final GalgameLineStudyDecision decision = _activityStudyGate.admit(
+      lineId: lineId,
+      lineText: lineText,
+      chars: chars,
+      atMs: atMs,
+    );
+    if (decision.isNoop) return;
+    _activitySkippedMs += decision.skippedDwellMs;
+    if (decision.retractedLines > 0 || decision.retract > 0) {
+      studyDiag(
+        'galgame',
+        decision.retractedLines > 0
+            ? 'skip burst: ${decision.retractedLines} lines '
+                  '-${decision.retract}c ${decision.skippedDwellMs}ms'
+            : 'duplicate line -${decision.retract}c',
+      );
+    }
     final StudyClock? clock = _ensureActivityClock();
     if (clock == null) {
       // 有归属但 DB 还没接上：先攒着，时钟建起来时一次补记。无稳定身份（不在游戏
       // 库）的文本流没有可归属的 media_key，不计——统计永不按 title 认身份。
-      if (_activityGameKey != null) _activityPendingChars += chars;
+      if (_activityGameKey != null) {
+        final int next =
+            _activityPendingChars + decision.credit - decision.retract;
+        _activityPendingChars = next > 0 ? next : 0;
+      }
       return;
     }
-    clock.addChars(chars);
+    if (decision.retract > 0) clock.retractChars(decision.retract);
+    if (decision.credit > 0) clock.addChars(decision.credit);
     _scheduleActivityFlush(clock);
   }
 
@@ -5215,7 +5283,13 @@ class GalHookSessionController extends ChangeNotifier {
       // 字数按 appendLine 报出来的**新增量**计，不按 entry.text 计：同一句台词被
       // 引擎分多次重绘时会折成一条，按整条计会让这句话每重绘一次就再算一遍
       // （增量为空 = 这次重绘没带来新字，不算新活动）。
-      _recordEngineDelta(_textService.lastAppendedDelta);
+      _recordEngineDelta(
+        _textService.lastAppendedDelta,
+        entry: entry,
+        // hook 事件自带的 GetTickCount64：到达间隔按游戏推出台词的真实节奏算，
+        // 不受文本轮询把几行攒成一批的影响。
+        atMs: line.timestampMs,
+      );
       _lineTimestampCache[entry.id] = line.timestampMs;
       _trimCache(_lineTimestampCache);
       _lineTextEventIdCache[entry.id] = line.seq;
@@ -5974,7 +6048,7 @@ class GalHookSessionController extends ChangeNotifier {
         } else {
           _state = _state.copyWith(textSignalReceived: true);
         }
-        _recordExternalLine(latest.text);
+        _recordExternalLine(latest);
         _scheduleLoopbackFreeze(latest);
       }
     }
@@ -6373,8 +6447,8 @@ class GalHookSessionController extends ChangeNotifier {
   /// 退出 / 销毁前把超分收干净，并**等它真的收完**。
   ///
   /// 为什么必须显式登记进 [ExitFlushRegistry]：桌面点 X 走 `exit(0)` 快杀，[close] 在
-  /// fushi/lib 里一次都没被调用过。不接这一步，我们 detached 起的 Magpie 会活过 Hibiki
-  /// 的死亡，配置里那条 `autoScale=Fullscreen` 也留着 —— 用户下次**不经 Hibiki**双击
+  /// fushi/lib 里一次都没被调用过。不接这一步，我们 detached 起的 Magpie 会活过 Fushi
+  /// 的死亡，配置里那条 `autoScale=Fullscreen` 也留着 —— 用户下次**不经 Fushi**双击
   /// 游戏就被自动全屏超分，那是我们没被授权做的事。
   Future<void> shutdownMagpieUpscaling() async {
     if (_magpieArmedHwnd != null) {

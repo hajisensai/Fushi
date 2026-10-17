@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
@@ -47,6 +48,40 @@ class TtsChannel {
   /// UI code can use this to show/hide TTS buttons.
   static bool get isSupported => _isSupported;
   static const _channel = FushiChannels.tts;
+
+  /// 原生 `TtsChannelHandler` 只注册在主 Activity 的引擎上（`MainActivity.
+  /// configureFlutterEngine`）；Android 弹窗词典 / 悬浮词典是另外的引擎与 entry
+  /// point，那里调本通道只会 MissingPluginException。由主入口 `main()` 调
+  /// [markHostPlaybackRegistered] 声明「本引擎有原生播放器」，消费端据此决定能否
+  /// 把单词音频交给原生 MediaPlayer（BUG-3311）。
+  static bool _hostPlaybackRegistered = false;
+
+  /// 本引擎是否能用原生 MediaPlayer 播单词音频（Android 主引擎）。
+  static bool get hostPlaybackRegistered =>
+      _isSupported && _hostPlaybackRegistered;
+
+  /// 主入口 `main()` 调一次；见 [_hostPlaybackRegistered]。
+  static void markHostPlaybackRegistered() => _hostPlaybackRegistered = true;
+
+  /// 原生 `TtsChannelHandler` 每挂到本引擎一次就发一次的通知名。
+  static const String nativeHandlerAttachedMethod = 'nativeHandlerAttached';
+
+  /// 原生 `TtsChannelHandler` 挂在 Activity 上（`onCreate` 新建、`onDestroy` 关库），
+  /// 而引擎由 audio_service 缓存、比 Activity 活得久（BUG-2280）：Activity 重建后
+  /// 新 handler 的本地音频库列表是空的，Dart 却只在 `initialise()` 绑过一次；引擎
+  /// 先于 Activity 被后台拉起时，那一次绑定还会撞上 MissingPluginException。两种
+  /// 情况下查词都静默拿不到本地音频，直到重启进程（BUG-3439）。原生 handler 注册后
+  /// 主动发 [nativeHandlerAttachedMethod]，这里收到就调 [rebind] 把配置重新推过去。
+  /// 主入口 `main()` 在 `initialise()` 之前装一次。
+  static void onNativeHandlerAttached(Future<void> Function() rebind) {
+    _channel.setMethodCallHandler((MethodCall call) async {
+      if (call.method != nativeHandlerAttachedMethod) {
+        throw MissingPluginException('TtsChannel: ${call.method}');
+      }
+      await rebind();
+      return null;
+    });
+  }
 
   /// Desktop only: the configured local-audio SQLite DB configs (path +
   /// per-db enabled source order), mirrored here by [setLocalAudioDbs]
@@ -369,7 +404,8 @@ class TtsChannel {
       {String locale = 'ja-JP'}) async {
     if (!_isSupported) {
       // No native TextToSpeech off Android: use the OS speech engine
-      // (macOS `say` / Windows SAPI). Returns null on Linux / failure.
+      // (macOS `say` / Windows SAPI / Linux Open JTalk or espeak-ng). Returns
+      // null when no engine is installed or on failure.
       return ttsToFileDesktop(text: text, outputPath: outputPath);
     }
     try {

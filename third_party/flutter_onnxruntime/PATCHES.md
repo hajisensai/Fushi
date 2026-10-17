@@ -47,14 +47,14 @@ and macOS 13.4–14.0 for free, with no change to the ORT binary or the Dart API
    size).
 5. `environment.sdk` widened `^3.7.0` -> `>=3.5.0 <4.0.0` to match the Hibiki
    workspace floor (per the other `third_party/` vendored packages).
-6. Windows downloads the pinned official
-   `Microsoft.ML.OnnxRuntime.DirectML` 1.22.0 and `Microsoft.AI.DirectML`
-   1.15.4 NuGet artifacts (SHA-256 pinned), bundles `onnxruntime.dll`,
-   `onnxruntime_providers_shared.dll`, and `DirectML.dll`, and handles
-   `DIRECT_ML` through ORT's
+6. Windows handles `DIRECT_ML` through ORT's
    `OrtDmlApi::SessionOptionsAppendExecutionProvider_DML` with the required
-   sequential execution mode. The upstream generic Windows ORT archive is
-   CPU-only, so its Dart enum previously led only to `INVALID_PROVIDER`.
+   sequential execution mode (the upstream generic Windows ORT archive is
+   CPU-only, so its Dart enum led only to `INVALID_PROVIDER`). Until delta #13
+   the DirectML core (`Microsoft.ML.OnnxRuntime.DirectML` 1.22.0 +
+   `Microsoft.AI.DirectML` 1.15.4) was the bundled core; since #13 it is
+   downloaded by the app on demand and only `dml_provider_factory.h` is taken
+   from that NuGet at build time.
 7. Windows error replies are normalised to UTF-8 before they cross the method
    channel (`WindowsUtils::toUtf8Message`, and every `result->Error` in
    `flutter_onnxruntime_plugin.cpp` routed through the single `FailWith` exit).
@@ -150,10 +150,11 @@ and macOS 13.4–14.0 for free, with no change to the ORT binary or the Dart API
     encoder GPU idle ~85% of the time for lack of queued work, which is what
     the Dart-side pipeline rewrite (`AsrBatchPipeline`) addresses.
 
-**The Dart API under `lib/` carries two deltas (#8, the
-`freeDimensionOverrides` option, and #10, `getDeviceMemoryInfo`); everything
+**The Dart API under `lib/` carries three deltas (#8, the
+`freeDimensionOverrides` option, #10, `getDeviceMemoryInfo`, and #13,
+`probeCuda` / `registerCudaRuntime`); everything
 else there is byte-for-byte upstream.** The Apple, Android and Linux native
-trees are untouched; the Windows tree carries deltas 6–11 above — provider
+trees are untouched; the Windows tree carries deltas 6–11 and 13 — provider
 wiring, error-string encoding, free-dimension overrides, worker-thread
 dispatch, the DXGI budget query and per-session CPU workers. No ORT wrapper
 or inference logic changed anywhere.
@@ -185,12 +186,92 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#11.
+Copy the new upstream version over this folder, then re-apply deltas #1–#13.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.
 
-Before bumping the Windows ORT pin, update both NuGet package versions and
-SHA-256 values together, verify the DirectML package's declared
-`Microsoft.AI.DirectML` dependency, and keep all three runtime DLLs in
-`flutter_onnxruntime_bundled_libraries`.
+12. `linux/CMakeLists.txt`: the downloaded ORT library is bundled as its real
+    ELF under the SONAME (`libonnxruntime.so.1`) instead of the unversioned
+    `lib/libonnxruntime.so` path. In the ORT tarball that path is a symlink
+    chain (`.so` -> `.so.1` -> `.so.1.22.0`); `install(FILES)` copied the first
+    link verbatim, so `bundle/lib` held a dangling `libonnxruntime.so` while the
+    runner and the plugin both carry `DT_NEEDED libonnxruntime.so.1`. The build
+    machine never noticed (the plugin's build RUNPATH points back into the
+    build tree), but on any other machine the loader refused to start the whole
+    app. The plugin target also gets `$ORIGIN` in its RUNPATH: its own
+    `DT_NEEDED libonnxruntime.so.1` is resolved through the plugin's RUNPATH
+    (the runner's `$ORIGIN/lib` does not cover transitive dependencies), which
+    upstream left as the absolute build-tree path only. Verified with `ldd` on
+    a bundle copied into a clean container.
+
+13. Windows runtime split: the **latest CPU core is bundled**; CUDA and
+    DirectML are both **downloaded by the app on demand** (`windows/src/
+    ort_runtime_loader.{h,cc}` and `cuda_provider.{h,cc}` new,
+    `session_manager.*`, `dml_provider.cc`, `flutter_onnxruntime_plugin.*`,
+    `CMakeLists.txt`; Dart: `onnxruntime.dart` / platform interface / method
+    channel).
+
+    - Bundled: `Microsoft.ML.OnnxRuntime` **1.31.0** (CPU) —
+      `onnxruntime.dll` + `onnxruntime_providers_shared.dll`. It is the same ORT
+      revision the official CUDA plugin EP v0.3.0 is built against; the plugin
+      release notes warn that a core whose contributed-operator schemas differ
+      from the plugin's "may execute incorrectly ... may not be detected".
+    - DirectML only ships in `Microsoft.ML.OnnxRuntime.DirectML`, whose last
+      release is 1.24.4, so it cannot share a core with the CUDA plugin. One
+      process can map only one `onnxruntime.dll`. Hence:
+      - the plugin links `onnxruntime.dll` with `/DELAYLOAD` and
+        `ORT_API_MANUAL_INIT`; nothing touches ORT at registration (the
+        `SessionManager` / `TensorManager` are created lazily);
+      - `selectRuntime(path)` (`OrtRuntimeLoader::Select`) `LoadLibraryExW`s a
+        downloaded DirectML core with `LOAD_WITH_ALTERED_SEARCH_PATH` (its
+        `DirectML.dll` resolves from the same folder) **before** ORT is first
+        bound; the delay-load helper then binds to the already-mapped module.
+        Once bound, only the same path answers ok — switching needs a restart;
+      - the first method that needs ORT calls `OrtRuntimeLoader::Ensure`:
+        `OrtGetApiBase()` under SEH (a missing DLL is a structured exception
+        with delay-load), `GetApi(kOrtApiVersionUsed)` and `Ort::InitApi`.
+        Failure is sticky and every such method replies `RUNTIME_UNAVAILABLE`
+        instead of crashing the process. `kOrtApiVersionUsed` (22) is the
+        oldest API both cores provide; `GetExecutionProviderApi("DML", ...)`
+        passes it too;
+      - methods that never bind ORT: `getPlatformVersion`, `probeCuda`,
+        `getDeviceMemoryInfo` (DXGI only, used to detect a GPU before choosing
+        the core), `selectRuntime`, `getRuntimeInfo` (`{loaded, version,
+        selectedPath}`).
+    - `probeCuda` loads `nvcuda.dll` from System32 only (`cuDriverGetVersion`,
+      `cuInit`, `cuDeviceGet*`) and replies `{driverVersion, devices[{index,
+      name, computeMajor, computeMinor, totalMemBytes}], error}`. It never
+      needs the CUDA runtime, so the app can gate the ~0.9 GB download on driver
+      >= 13000 and sm_75+.
+    - `registerCudaRuntime(dir)` prepends `dir` to the process `PATH`, then
+      `RegisterExecutionProviderLibrary(env, "CUDAExecutionProvider",
+      dir\onnxruntime_providers_cuda.dll)` and caches the CUDA `OrtEpDevice`s
+      from `GetEpDevices`. PATH is required, not a convenience: cuDNN loads its
+      sub-libraries by bare name at run time, which neither `AddDllDirectory`
+      nor preloading `cudnn64_9.dll` covers (both measured, Conv then fails
+      with `CUDNN_BACKEND_API_FAILED`). Idempotent for the same directory; a
+      failure unregisters again and restores PATH; a second directory while
+      one is registered is refused. Runs on the GPU worker queue.
+    - `provider == "CUDA"` in `createSession` appends the registered device via
+      `SessionOptionsAppendExecutionProvider_V2`. Not registered ->
+      `PROVIDER_ERROR`, which the Dart fallback reports as a visible downgrade.
+      `deviceId` indexes the CUDA EP devices.
+    - `getAvailableProviders` merges the EP names `GetEpDevices` reported at
+      registration (`GetAvailableProviders` never lists plugin EPs).
+    - `SessionManager::~SessionManager` releases every session, then
+      `UnregisterExecutionProviderLibrary`, then the env — the only order ORT
+      allows. Fushi's own close path is Dart `exit(0)`, which skips plugin
+      destructors entirely.
+
+    cuDNN missing or mismatched does not fail session creation — the first
+    `Run` fails at Conv. Callers must treat the first run as the health check.
+    The download manifests (per-member sizes + SHA-256) and the startup core
+    choice live in the app: `fushi/lib/src/asr_host/gpu_runtime_pack.dart` and
+    `gpu_acceleration.dart`.
+
+Before bumping the bundled Windows core, bump the CUDA plugin EP to the release
+built against the same ORT revision (and its manifest in
+`gpu_runtime_pack.dart`), update the nupkg SHA-256, and keep both runtime DLLs
+in `flutter_onnxruntime_bundled_libraries`. `kOrtApiVersionUsed` must stay at
+or below the API version of the downloaded DirectML core.

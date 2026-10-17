@@ -104,7 +104,27 @@ void main() {
         reason: '底栏（有声书条 + 设置条）的 ExcludeFocus 外壳必须收敛在 '
             '_wrapBottomChromeBar 内 —— TODO-700 T8 根因修复（焦点恒在正文）。',
       );
-      expect(RegExp(r'ExcludeFocus\(').allMatches(chrome).length, 1);
+      // M3E 浮动工具栏（772f479e468）：`_floatingToolbars` 时底部换成另一形态的
+      // 浮动底栏 `_buildFloatingBottomChrome`（几何不同，不经 helper），它同样必须
+      // 退出焦点遍历池。不变量因此改为：底栏焦点作用域 `_chromeFocusScope` 的
+      // **每个**挂载点都被 ExcludeFocus 直接包住，且 ExcludeFocus 只出现在这些
+      // 挂载点上（helper + 浮动底栏各一处）。
+      final RegExp scopeMount = RegExp(r'node: _chromeFocusScope,');
+      final RegExp excludedMount = RegExp(
+        r'ExcludeFocus\(\s*child: FocusScope\(\s*node: _chromeFocusScope,',
+      );
+      expect(scopeMount.allMatches(chrome).length, 2);
+      expect(
+        excludedMount.allMatches(chrome).length,
+        scopeMount.allMatches(chrome).length,
+        reason: '每个 _chromeFocusScope 挂载点（helper 底栏 + 浮动底栏）都必须'
+            '直接包在 ExcludeFocus 里，否则那条底栏重新进入焦点遍历池。',
+      );
+      expect(RegExp(r'ExcludeFocus\(').allMatches(chrome).length, 2);
+      expect(
+        chrome,
+        contains('if (_floatingToolbars) return _buildFloatingBottomChrome();'),
+      );
       expect(
         RegExp(r'_wrapBottomChromeBar\(').allMatches(chrome).length,
         greaterThanOrEqualTo(3),

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../torrent/nyaa_html_fixture.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// TODO-2485：AnimeDownloadDialog 初始上下文入参。
 /// ① initialMedia（合集绑 anilistId 时本地合成）→ 直达选种段：Nyaa 查询词与
@@ -84,7 +85,7 @@ void main() {
   }
 
   Iterable<String> fieldTexts(WidgetTester tester) => tester
-      .widgetList<TextField>(find.byType(TextField))
+      .widgetList<TextField>(glassUnwrapAll<TextField>(find.byType(TextField)))
       .map((TextField f) => f.controller?.text ?? '');
 
   testWidgets('initialMedia + initialEpisode → 直达选种段并预填合集名/集号',
@@ -110,6 +111,27 @@ void main() {
     await pumpDialog(tester, initialSearchQuery: 'Some Title');
 
     expect(fieldTexts(tester), contains('Some Title'));
+  });
+
+  testWidgets('initialSearchQuery 带 (年份) 后缀 → 预填剥掉年份（反馈 4Np5-EyJgE）', (
+    WidgetTester tester,
+  ) async {
+    await pumpDialog(tester, initialSearchQuery: 'FX戦士くるみちゃん (2026)');
+
+    expect(fieldTexts(tester), contains('FX戦士くるみちゃん'));
+    expect(fieldTexts(tester), isNot(contains('FX戦士くるみちゃん (2026)')));
+  });
+
+  test('animeSearchSeedQuery 只剥尾部年份括号', () {
+    expect(animeSearchSeedQuery('Title (2026)'), 'Title');
+    expect(animeSearchSeedQuery('Title（2026）'), 'Title');
+    expect(animeSearchSeedQuery('Title [1999]'), 'Title');
+    expect(
+      animeSearchSeedQuery('Re:Zero (2016) Season 2'),
+      'Re:Zero (2016) Season 2',
+    );
+    expect(animeSearchSeedQuery('Title 2026'), 'Title 2026');
+    expect(animeSearchSeedQuery('(2026)'), '(2026)');
   });
 
   testWidgets('全 null → 既有入口行为零变化（搜番段空搜索框）', (WidgetTester tester) async {
@@ -153,6 +175,10 @@ class _FakeAppModel extends AppModel {
 
   @override
   bool get torrentUploadIntroShown => true;
+
+  // BT 前的 P2P 说明不在这些用例的范围里。
+  @override
+  bool get p2pDownloadNoticeDismissed => true;
 
   @override
   AnimeDownloadPlanStore? get animeDownloadPlanStore => store;

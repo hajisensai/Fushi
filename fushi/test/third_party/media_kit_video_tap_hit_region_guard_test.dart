@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 根因（修前）：单一手势层 `Positioned.fill(bottom: 16.0 + subtitleVerticalShiftOffset)`
 /// 把 `onTap`（toggle 控制栏）与拖动识别器揂在同一层。该底部内缩（屏底 80–130+px）
 /// 本只为不劫持边缘竖滑，却把 `onTap` 命中区也从底部缩上去 → 控制栏隐藏时点画面
-/// 底部/右下角落在死区、唤不出控制栏（Hibiki 外层 Listener 移动端不自做 toggle，
+/// 底部/右下角落在死区、唤不出控制栏（Fushi 外层 Listener 移动端不自做 toggle，
 /// 靠 translucent 下探到本 fork，因此死区无人兜底）。
 ///
 /// 修法：拆成两层——① 全画面 tap/long-press/double-tap 层（无 bottom 内缩，承载
@@ -32,9 +32,9 @@ void main() {
   });
 
   test('承载 onTap 的手势层不再对 tap 命中区施 bottom 内缩（全画面命中）', () {
-    final int onTapIdx = src.indexOf('onTap: onTap');
+    final int onTapIdx = src.indexOf('onTap: _handleSurfaceTap');
     expect(onTapIdx, greaterThanOrEqualTo(0),
-        reason: 'toggle 控制栏必须仍走 onTap: onTap');
+        reason: 'toggle 控制栏必须仍走全画面层的 onTap（_handleSurfaceTap）');
 
     // 锚定承载 onTap 的那个 Positioned.fill 的起点（onTap 之前最近的 Positioned.fill）。
     final int tapLayerStart = src.lastIndexOf('Positioned.fill(', onTapIdx);
@@ -74,7 +74,7 @@ void main() {
         reason: 'inset 层必须承载横向拖动识别器');
     expect(dragLayer.contains('onVerticalDragUpdate'), isTrue,
         reason: 'inset 层必须承载竖向拖动识别器');
-    expect(dragLayer.contains('onTap: onTap'), isFalse,
+    expect(dragLayer.contains('onTap: _handleSurfaceTap'), isFalse,
         reason: 'TODO-1073：tap 已迁到全画面层，inset 拖动层不得再承载 onTap');
 
     // inset 拖动层在全画面 tap 层内部；保留 translucent 让它在自身无实绘内容处
@@ -84,9 +84,9 @@ void main() {
   });
 
   test('inset 拖动层必须嵌在全画面 tap 层内部，而不是作为上层 sibling 截断 hit test', () {
-    final int onTapIdx = src.indexOf('onTap: onTap');
+    final int onTapIdx = src.indexOf('onTap: _handleSurfaceTap');
     expect(onTapIdx, greaterThanOrEqualTo(0),
-        reason: 'toggle 控制栏必须仍走 onTap: onTap');
+        reason: 'toggle 控制栏必须仍走全画面层的 onTap（_handleSurfaceTap）');
 
     final int tapGestureStart = src.lastIndexOf('GestureDetector(', onTapIdx);
     expect(tapGestureStart, greaterThanOrEqualTo(0),

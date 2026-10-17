@@ -16,13 +16,18 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
   /// 时刻晚于墓碑 deletedAt，[tombstoneAppliesTo] 据此把它排除在候选之外——否则本机自己
   /// 取消收藏产生、发布到远端后再也不会被 GC 的那条墓碑，会在用户重新收藏同一句之后被读
   /// 回来，弹「其他设备已删除」问用户要不要删掉自己刚收藏的东西。
+  ///
+  /// book / srtbook / video 的时刻取 `localAddedAt`（v118，本机开始拥有的时刻），**不是**
+  /// `importedAt`：互联下载把后者写成对端的入库时刻（BUG-3452 / BUG-2463），第三台设备在
+  /// 「对端入库之后、本机下载之前」做的「从所有设备删除」会因此被当成「删除发生在本机拥有
+  /// 之后」，本机刚下载完就弹删除确认。
   Future<DeletionPresentEntries> _collectPresentDeletionKeys() async {
     return <String, Map<String, int?>>{
       SyncTombstoneKind.book.dbValue: <String, int?>{
         for (final EpubBookRow r in await _db.getAllEpubBooks())
-          r.bookKey: r.importedAt,
+          r.bookKey: r.localAddedAt,
       },
-      // 有声书表没有自己的导入时刻列，且与 epub 共享 bookKey——借 epub 的 importedAt
+      // 有声书表没有自己的拥有时刻列，且与 epub 共享 bookKey——借 epub 的 localAddedAt
       // 会把「书早就在、有声书是后加的」记成前者。宁可 null（多问一次），不编造时刻。
       SyncTombstoneKind.audiobook.dbValue: <String, int?>{
         for (final AudiobookRow r in await _db.getAllAudiobooks())
@@ -33,11 +38,11 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       // 已由上面的 book 键覆盖，重复收进来会让同一资产在对端弹两条确认（TODO-2470）。
       SyncTombstoneKind.srtbook.dbValue: <String, int?>{
         for (final SrtBookRow r in await _db.getAllSrtBooks())
-          if (r.bookKey.isEmpty) r.uid: r.importedAt,
+          if (r.bookKey.isEmpty) r.uid: r.localAddedAt,
       },
       SyncTombstoneKind.video.dbValue: <String, int?>{
         for (final VideoBookRow r in await _db.allVideoBooks())
-          r.bookUid: r.importedAt,
+          r.bookUid: r.localAddedAt,
       },
       // localaudio 条目不记录加入时刻 → null = 无从仲裁，保持「只看在不在库」的旧语义。
       SyncTombstoneKind.localaudio.dbValue: <String, int?>{
@@ -65,7 +70,8 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
   ///
   /// 1. 推送（client→host，[_pushDeletionTombstonesLive]）：把本机「从所有设备删除」
   ///    产生的墓碑真的删到对端 host 上。host 自己的 delete 会写它自己的墓碑，于是
-  ///    第三台设备下轮照常收到确认提示——链路闭合。
+  ///    第三台设备下轮照常收到确认提示——链路闭合（书 / 有声书 / 字幕书的 host
+  ///    删除此前漏写墓碑，链路在 host 断掉，BUG-2945）。
   /// 2. 消费（host→client）：GET host 墓碑（老 host 404 → null 优雅跳过）→ 与本地在库键
   ///    求交 deleteLocal 候选 → 过基线守卫 → 塞 report，UI 弹逐条确认。
   ///
@@ -103,6 +109,9 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       final SyncRepository repo = SyncRepository(_db);
       final DeletionPresentEntries present =
           await _collectPresentDeletionKeys();
+      // 同一本书两端键不同（互联收下的在线漫画 / 落地键不同的下载书），对端墓碑先换算。
+      aliasPeerBookTombstones(remoteTombstones, present,
+          peerToLocalBookKey: await _db.getPeerToLocalBookKeys());
       int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline;
 

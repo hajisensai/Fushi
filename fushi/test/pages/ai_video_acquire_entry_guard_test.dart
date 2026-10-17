@@ -32,7 +32,7 @@ void main() {
     expect(gate, isNot(contains('videoDownloadPipelineService')));
   });
 
-  test('入口仍尊重用户关掉的模块：在线服务（设置 › AI）与下载模块', () {
+  test('入口仍尊重用户关掉的模块：AI 模块与下载模块', () {
     expect(
       home,
       contains('onAiAcquire:_canAiAcquire&&_aiAcquireModulesEnabled?'),
@@ -43,13 +43,33 @@ void main() {
     final String gate = home.substring(start, home.indexOf(';', start));
     expect(
       gate,
-      contains(
-        'isSettingsDestinationVisible(SettingsDestinationId.ai,'
-        'appModel.moduleVisibility,)',
-      ),
-      reason: '关了在线服务 = 隐藏了设置 › AI，入口不得再把这页推出来。',
+      contains('isAiModuleEnabled(appModel.moduleVisibility)'),
+      reason: '关了 AI 模块 = 隐藏了设置 › AI，入口不得再把这页推出来。',
     );
     expect(gate, contains('moduleVisibility.isEnabled(ModuleId.browse)'));
+  });
+
+  test('互联 host 的 AI 助手与首页入口同一模块门：AI 模块关闭回「已关闭」', () {
+    final String assembly = File(
+      'lib/src/media/video/acquisition/app_video_acquisition_assembly.dart',
+    ).readAsStringSync().replaceAll(RegExp(r'\s+'), '');
+    final int start = assembly.indexOf('videoAcquireBlocker:');
+    expect(start, isNot(-1));
+    final int disabled = assembly.indexOf(
+      'returnkHostAssistantReasonDisabled;',
+      start,
+    );
+    final int noProvider = assembly.indexOf(
+      'returnkHostAssistantReasonNoProvider;',
+      start,
+    );
+    expect(disabled, greaterThan(start));
+    expect(noProvider, greaterThan(disabled));
+    expect(
+      assembly.substring(start, disabled),
+      contains('!isAiModuleEnabled(appModel.moduleVisibility)'),
+      reason: '模块关闭必须先于「没配提供商」判出，否则对端被引向已隐藏的设置页。',
+    );
   });
 
   test('BUG-2694 点击时 AI 未指派 → 推 AI 设置页，返回后重判再继续', () {

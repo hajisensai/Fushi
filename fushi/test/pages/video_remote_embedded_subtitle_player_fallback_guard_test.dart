@@ -45,6 +45,8 @@ void main() {
       expect(body.contains('track.isExternalFile'), isTrue,
           reason: '外挂文件轨（在线源字幕链接 / Emby 外挂字幕）不在流里，'
               '按 streamIndex 去选会选中另一条不相干的内嵌轨');
+      expect(body.contains('selectExternalTextSubtitleViaPlayer(url)'), isTrue,
+          reason: 'BUG-3191：外挂文件轨按它自己的地址交给 libmpv 原格式读');
       expect(
         body.contains('track.containerTrackOrdinal ?? track.streamIndex'),
         isTrue,
@@ -54,7 +56,7 @@ void main() {
           reason: 'BUG-2648：文本轨走 libmpv 解码 → sub-text 回流成可点 cue');
       expect(body.contains('selectEmbeddedGraphicTrack('), isFalse,
           reason: 'BUG-2648：文本轨不能再走图形自绘（字画进画面、不可查词）');
-      expect(body.contains('setRemoteSubtitleSource('), isTrue,
+      expect(body.contains('_rememberRemoteSubtitleSource('), isTrue,
           reason: '回落选中也要持久化，重进才能恢复');
       expect(body.contains('video_subtitle_remote_player_decoded'), isTrue,
           reason: '字幕随播放逐句出现（列表不会预先完整）要告诉用户');
@@ -66,13 +68,39 @@ void main() {
       );
       expect(body.contains('playerRenderedTrack = track'), isTrue,
           reason: '恢复路径的下载失败不能再静默落回无字幕');
-      expect(body.contains('!track.isExternalFile'), isTrue,
-          reason: '恢复路径同样不得把外挂文件轨交给 libmpv 自绘');
+      expect(body.contains('? (track.url?.isNotEmpty ?? false)'), isTrue,
+          reason: '恢复路径：外挂文件轨按自己的地址回落（BUG-3191）');
+      expect(body.contains(': urls.streamIsOriginalContainer'), isTrue,
+          reason: '恢复路径：内嵌轨只在原始容器上回落，不能按流号去选容器里不相干的轨');
       expect(body.contains('_showRemoteEmbeddedTrackViaPlayer('), isTrue);
       expect(
           body.contains(
               '_remoteStreamIsOriginalContainer = urls.streamIsOriginalContainer'),
           isTrue);
+    });
+
+    // BUG-3260：外挂轨下到了却解析不出时交给 libmpv 的是**刚下好的本地文件**——
+    // 轨的 url 是 DeliveryUrl，下载可能是它失效后回落到手拼端点才成功的；恢复路径的
+    // 落地名也不能写死 `.srt`（Emby 外挂 ASS 会被按 SRT 解析成空）。
+    test('外挂轨解析为空：libmpv 读本地已下载文件，落地名随原格式', () {
+      final String manual = maskComments(
+        methodBody(readVideoFushiSource(),
+            'Future<void> _applyRemoteEmbeddedSubtitle('),
+      );
+      expect(manual.contains('track.copyWith(url: subtitle.path)'), isTrue,
+          reason: '手选路径 onEmptyCues 要交本地文件：\n$manual');
+      final String restore = maskComments(
+        methodBody(readVideoFushiSource(), 'Future<void> _loadRemoteEpisode('),
+      );
+      expect(
+          restore.contains(
+              'playerRenderedTrack = track.copyWith(url: subtitle.path)'),
+          isTrue,
+          reason: '恢复路径解析为空同样交本地文件');
+      expect(
+          restore.contains("track?.fileName ?? 'embedded_\$streamIndex.srt'"),
+          isTrue,
+          reason: '恢复路径落地名要随轨的原格式扩展名');
     });
 
     // 副字幕同一条回落：此前副字幕只会下载抽取，兼容层 Emby 上主字幕能用、

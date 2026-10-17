@@ -13,6 +13,7 @@ library;
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/subtitle/ajatt_catalog.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
@@ -50,20 +51,23 @@ class AjattVideoSubtitleProvider implements VideoSubtitleProvider {
   ) async {
     try {
       final List<AjattCatalogEntry> catalog = await _client.loadCatalog();
-      List<AjattCatalogEntry> matches = rankAjattEntries(
+      final List<AjattCatalogEntry> ranked = rankAjattEntries(
         catalog,
         queries: _queriesFor(request),
         category: request.media?.discoveryCategory,
         limit: maxEntryMatches,
       );
       final int? anilistId = request.media?.anilistId;
-      if (anilistId != null && matches.isNotEmpty) {
-        matches = await _confirmByAnilistId(matches, anilistId);
-      }
+      final List<_AjattMatch> matches = anilistId != null && ranked.isNotEmpty
+          ? await _confirmByAnilistId(ranked, anilistId)
+          : <_AjattMatch>[
+              for (final AjattCatalogEntry entry in ranked)
+                (entry: entry, anilistId: null),
+            ];
       final List<VideoSubtitleCandidate> candidates =
           <VideoSubtitleCandidate>[];
       final int? episode = request.effectiveEpisode;
-      for (final AjattCatalogEntry entry in matches) {
+      for (final (:AjattCatalogEntry entry, :int? anilistId) in matches) {
         final List<AjattSubtitleFile> files = await _client.listEntryFiles(
           entry,
         );
@@ -89,6 +93,7 @@ class AjattVideoSubtitleProvider implements VideoSubtitleProvider {
               language: language,
               season: request.effectiveSeason,
               providerPriority: priority,
+              anilistId: anilistId,
             ),
           );
         }
@@ -106,19 +111,22 @@ class AjattVideoSubtitleProvider implements VideoSubtitleProvider {
   /// 三档：id 相等 → 确认；id 存在且不等 → 明确排除（「K-ON!」对「K-ON!!」这种
   /// 文本几乎同名但季不同的，正是要靠这一步分开）；目录没标 id / 没有
   /// `.kitsuinfo.json` → 不确认也不排除，只在一部都确认不了时才保留。
-  Future<List<AjattCatalogEntry>> _confirmByAnilistId(
+  ///
+  /// 确认下来的条目带上它的 AniList id：候选的作品身份自述（BUG-3068）据此判
+  /// 「来源已确认是这部作品」。
+  Future<List<_AjattMatch>> _confirmByAnilistId(
     List<AjattCatalogEntry> matches,
     int anilistId,
   ) async {
-    final List<AjattCatalogEntry> confirmed = <AjattCatalogEntry>[];
-    final List<AjattCatalogEntry> unknown = <AjattCatalogEntry>[];
+    final List<_AjattMatch> confirmed = <_AjattMatch>[];
+    final List<_AjattMatch> unknown = <_AjattMatch>[];
     for (final AjattCatalogEntry entry in matches) {
       final AjattEntryInfo? info = await _client.fetchEntryInfo(entry);
       final int? remoteId = info?.anilistId;
       if (remoteId == null) {
-        unknown.add(entry);
+        unknown.add((entry: entry, anilistId: null));
       } else if (remoteId == anilistId) {
-        confirmed.add(entry);
+        confirmed.add((entry: entry, anilistId: remoteId));
       }
     }
     return confirmed.isNotEmpty ? confirmed : unknown;
@@ -238,6 +246,27 @@ bool _categoryAllows(VideoDiscoveryCategory? category, AjattEntryType type) {
   };
 }
 
+/// 文本匹配出的作品 + 经 `.kitsuinfo.json` 确认的 AniList id（没确认为 null）。
+typedef _AjattMatch = ({AjattCatalogEntry entry, int? anilistId});
+
+/// AJATT 条目 → 作品身份自述（BUG-3068）。纯函数。
+///
+/// 种类取目录分类：`*_movie` 是电影、`*_tv` 是剧集，`unsorted` 不表态。
+SubtitleWorkClaim ajattEntryWorkClaim(
+  AjattCatalogEntry entry, {
+  int? anilistId,
+}) => SubtitleWorkClaim(
+  titles: entry.searchTitles,
+  kind: switch (entry.type) {
+    AjattEntryType.animeMovie ||
+    AjattEntryType.dramaMovie => VideoMetadataMediaKind.movie,
+    AjattEntryType.animeTv ||
+    AjattEntryType.dramaTv => VideoMetadataMediaKind.tv,
+    AjattEntryType.unsorted => null,
+  },
+  anilistId: anilistId,
+);
+
 class _AjattSubtitleCandidate extends VideoSubtitleCandidate {
   _AjattSubtitleCandidate({
     required this.entry,
@@ -245,6 +274,7 @@ class _AjattSubtitleCandidate extends VideoSubtitleCandidate {
     required String language,
     required int? season,
     required int providerPriority,
+    required int? anilistId,
   }) : super(
          providerId: kAjattSubtitleProviderId,
          remoteId: '${entry.pagePath}:${file.name}',
@@ -258,6 +288,7 @@ class _AjattSubtitleCandidate extends VideoSubtitleCandidate {
          uploadedAtMs: file.lastModifiedMs,
          collectionId: entry.pagePath,
          collectionLabel: entry.name,
+         work: ajattEntryWorkClaim(entry, anilistId: anilistId),
        );
 
   final AjattCatalogEntry entry;

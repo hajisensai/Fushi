@@ -414,7 +414,7 @@ class LnReaderOnlinePluginMissing implements Exception {
 /// [manager] 是惰性的——普通书不该为了这个判断把 LNReader 运行时（一个
 /// headless WebView）拉起来。
 ///
-/// [onlineSourcesAvailable] 没过（iOS 合规门 / Linux 无 headless WebView）时一律
+/// [onlineSourcesAvailable] 没过（iOS 合规门 / 无 headless WebView 的平台）时一律
 /// null：描述符会随备份恢复到这些平台，开书不得因此拉起在线小说宿主联网，书退化
 /// 成普通书（没取过的章停在占位页）。
 LnReaderOnlineChapterLoader? lnReaderOnlineChapterLoaderFor({

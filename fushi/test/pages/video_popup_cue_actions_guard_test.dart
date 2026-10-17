@@ -117,8 +117,10 @@ void main() {
         isTrue,
         reason: 'FittedBox 必须是 scaleDown（只缩不放，宽裕时保持原尺寸）',
       );
+      // 10-09 起按钮行落进 DictionaryPopupToolGroup（其内部 Row 即 mainAxisSize.min）。
       expect(
-        header.contains('MainAxisSize.min'),
+        header.contains('MainAxisSize.min') ||
+            header.contains('DictionaryPopupToolGroup('),
         isTrue,
         reason: 'Row 必须取有限内在宽，FittedBox 才量得到并等比缩放',
       );

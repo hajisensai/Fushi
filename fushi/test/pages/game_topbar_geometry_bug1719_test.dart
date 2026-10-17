@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -38,9 +38,9 @@ Widget _stubLibrary(
 ) =>
     const Center(child: Icon(Icons.sports_esports_outlined));
 
-/// 镜像生产 [ModuleSettingsView] 的顶栏形状（FushiPageHeader.customTitle 包分段
-/// 导航），但不构建需要 provider 的设置正文。
-Widget _stubSettings(BuildContext _, Widget navigation) => Column(
+/// 发现子区桩：FushiPageHeader.customTitle 包分段导航，不构建需要 provider 的
+/// 发现正文（「设置」子区已于 2026-10-09 移除，几何守卫改由发现子区补位）。
+Widget _stubDiscover(BuildContext _, Widget navigation) => Column(
       children: <Widget>[FushiPageHeader.customTitle(title: navigation)],
     );
 
@@ -65,10 +65,26 @@ void main() {
     gameSectionNotifier.value = section;
     await tester.pump();
     await tester.pump();
-    final Finder f = find.descendant(
-      of: find.byKey(sectionKey),
-      matching: find.byType(FushiSectionTabBar<GameSection>),
+    // 2026-10-06 起分区页签由外壳浮动工具栏统一画一份（ad8496b2b86，
+    // [GameSectionTabsHostScope]）：子区页头里那一份在外壳下留空。全树（含
+    // offstage 子区）必须恰好只有这一份，子区里不许再冒出第二份。
+    expect(
+      find.byType(FushiSectionTabBar<GameSection>, skipOffstage: false),
+      findsOneWidget,
+      reason: '子区 $section 时全树应恰好一份分区导航（外壳那份）',
     );
+    expect(
+      find.descendant(
+        of: find.byKey(sectionKey, skipOffstage: false),
+        matching: find.byType(
+          FushiSectionTabBar<GameSection>,
+          skipOffstage: false,
+        ),
+      ),
+      findsNothing,
+      reason: '子区 $section 的页头不该再画自己的分区导航',
+    );
+    final Finder f = find.byType(FushiSectionTabBar<GameSection>);
     expect(f, findsOneWidget, reason: '子区 $section 应有分区导航');
     // 「工作台」在该子区的分段条里必须单行（高度 = 一行行高）。折行是
     // BUG-1719 的直接症状：段被钳到比最长标签窄。
@@ -103,7 +119,7 @@ void main() {
             home: HomeGamePage(
               dashboardBuilder: _stubDashboard,
               libraryBuilder: _stubLibrary,
-              settingsBuilder: _stubSettings,
+              discoverBuilder: _stubDiscover,
             ),
           ),
         ),
@@ -114,7 +130,7 @@ void main() {
         GameSection.library: HomeGamePage.libraryKey,
         GameSection.monitor: HomeGamePage.monitorKey,
         GameSection.importGames: HomeGamePage.importKey,
-        GameSection.settings: HomeGamePage.settingsKey,
+        GameSection.discover: HomeGamePage.discoverKey,
       };
       final Map<GameSection, Rect> rects = <GameSection, Rect>{
         for (final MapEntry<GameSection, Key> entry in sections.entries)

@@ -69,7 +69,7 @@ void main() {
   late _FixtureAdapter adapter;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-online-manga-');
+    root = await Directory.systemTemp.createTemp('fushi-online-manga-');
     // 2026-09-12 起在线条目直接落 `<fushi_books>/<bookKey>`；测试里把书根钉到临时目录。
     EpubStorage.debugBaseDirectoryOverride = root.path;
     database = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -165,6 +165,37 @@ void main() {
     await service.add(entry);
     expect(
       await database.getCollectionItems(collections.single.id), hasLength(1));
+  });
+
+  test('BUG-3443：重新收下经互联来的漫画撤销此前写的对端键删除墓碑，'
+      '不碰无关墓碑', () async {
+    final OnlineMangaLibraryEntry entry = InterconnectMangaCatalog.entryFor(
+      const RemoteBookInfo(
+        title: 'Remote manga',
+        bookKey: 'host-manga-key',
+        hasContent: false,
+        hasMangaChapters: true,
+        format: 'manga',
+      ),
+    );
+    // 上一次「从所有设备删除」写的是对端键（本机 interconnect- 键对端认不出），
+    // 还没推出去就又收下了：留着它，下一轮会把 host 上的书删掉。
+    await database.writeSyncDeletionTombstone(
+        SyncTombstoneKind.book.dbValue, 'host-manga-key', 100);
+    await database.writeSyncDeletionTombstone(
+        SyncTombstoneKind.book.dbValue, 'unrelated', 100);
+
+    await service.add(entry);
+
+    expect(
+      <String>{
+        for (final SyncDeletionTombstoneRow r
+            in await database.getSyncDeletionTombstonesOfType(
+                SyncTombstoneKind.book.dbValue))
+          r.itemKey,
+      },
+      <String>{'unrelated'},
+    );
   });
 
   test('刷出空章节列表不得覆盖书架：抛失败、库里旧描述符原样保留', () async {
@@ -481,47 +512,26 @@ void main() {
       expect(series.raw.containsKey('url'), isTrue);
     });
 
-    test('Aidoku：scanlators 是复数列表、字段是蛇形、标题可回退到话号', () {
-      final List<OnlineMangaChapter> parsed =
-          AidokuLibraryAdapter.chaptersOf(<String, Object?>{
-        'chapters': <Map<String, Object?>>[
-          <String, Object?>{
-            'key': '/c/10',
-            'title': '',
-            'chapter_number': 10,
-            'date_uploaded': 1234,
-            'scanlators': <String>['Alpha', 'Beta'],
-          },
-        ],
-      });
-      expect(parsed, hasLength(1));
-      expect(parsed.single.key, '/c/10');
-      expect(parsed.single.number, 10);
-      expect(parsed.single.uploadedAt, 1234);
-      expect(
-        parsed.single.scanlator,
-        'Alpha, Beta',
-        reason: 'Aidoku 用复数 scanlators 列表；读成单数 scanlator 会得到 null',
+    test('旧 Aidoku 条目：适配器一律回报本平台不可用，不发任何网络请求', () async {
+      const LegacyAidokuLibraryAdapter adapter = LegacyAidokuLibraryAdapter();
+      expect(adapter.kind, OnlineMangaRuntimeKind.aidoku);
+      expect(adapter.isSupportedOnThisPlatform, isFalse);
+      await expectLater(
+        adapter.fetchChapterPage(
+          const HttpMangaPageRef(
+            index: 0,
+            url: 'https://cdn.example/p.jpg',
+            referer: 'https://cdn.example',
+          ),
+        ),
+        throwsA(
+          isA<OnlineMangaUnavailable>().having(
+            (OnlineMangaUnavailable e) => e.reason,
+            'reason',
+            OnlineMangaUnavailableReason.platformUnsupported,
+          ),
+        ),
       );
-      expect(
-        parsed.single.name,
-        'Ch. 10',
-        reason: '标题为空要回退到话号，否则章节列表是一排空行',
-      );
-    });
-
-    test('Aidoku：作品 raw 剥掉 chapters，避免几百章存两遍', () {
-      final OnlineMangaSeries series =
-          AidokuLibraryAdapter.seriesOf(<String, Object?>{
-        'key': '/s/1',
-        'title': 'S',
-        'authors': <String>['A', 'B'],
-        'tags': <String>['x', 'y'],
-        'chapters': <Object?>[<String, Object?>{'key': '/c/1'}],
-      }, fallbackKey: '/s/1');
-      expect(series.raw.containsKey('chapters'), isFalse);
-      expect(series.author, 'A, B');
-      expect(series.genreLabels, <String>['x', 'y']);
     });
   });
 }

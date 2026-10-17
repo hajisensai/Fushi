@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/focus_geometry.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
 
@@ -9,19 +9,23 @@ class FushiFocusScroll {
   /// 一点（0.3），让当前行下面还能看见后续几行——给个参数，免得调用方为这一个
   /// 旋钮自己去写裸 `Scrollable.ensureVisible`（守卫
   /// focus_architecture_static_test 要求焦点驱动滚动只有这一个实现者）。
-  static void ensureVisible(
+  static Future<void> ensureVisible(
     BuildContext context, {
     Duration duration = const Duration(milliseconds: 120),
     double alignment = 0.5,
-  }) {
+    Curve curve = Curves.easeOutCubic,
+    ScrollPositionAlignmentPolicy alignmentPolicy =
+        ScrollPositionAlignmentPolicy.explicit,
+  }) async {
     if (!context.mounted) return;
     final ScrollableState? scrollable = Scrollable.maybeOf(context);
     if (scrollable == null) return;
-    Scrollable.ensureVisible(
+    await Scrollable.ensureVisible(
       context,
       alignment: alignment,
       duration: duration,
-      curve: Curves.easeOutCubic,
+      curve: curve,
+      alignmentPolicy: alignmentPolicy,
     );
   }
 
@@ -46,7 +50,8 @@ class FushiFocusScroll {
     final Rect widgetRect = globalRectOfBox(renderObject);
     final Rect viewportRect = globalRectOfBox(viewport);
     const double tolerance = 0.5;
-    final bool fullyVisible = widgetRect.top >= viewportRect.top - tolerance &&
+    final bool fullyVisible =
+        widgetRect.top >= viewportRect.top - tolerance &&
         widgetRect.bottom <= viewportRect.bottom + tolerance &&
         widgetRect.left >= viewportRect.left - tolerance &&
         widgetRect.right <= viewportRect.right + tolerance;
@@ -80,8 +85,9 @@ class FushiFocusScroll {
   /// 没有焦点几何目标，只能靠页面主滚动区翻屏。命中且仍能滚返回 true；无
   /// PrimaryScrollController / 无 client / 已到边界返回 false。
   static bool scrollPrimary(BuildContext context, double signedFraction) {
-    final ScrollController? controller =
-        PrimaryScrollController.maybeOf(context);
+    final ScrollController? controller = PrimaryScrollController.maybeOf(
+      context,
+    );
     if (controller == null) return false;
     return scrollController(controller, signedFraction);
   }
@@ -97,7 +103,9 @@ class FushiFocusScroll {
   ) {
     if (controller.positions.length != 1) return false;
     return scrollPositionByViewportFraction(
-        controller.position, signedFraction);
+      controller.position,
+      signedFraction,
+    );
   }
 
   /// 把一个已附着的 [position] 按 viewport 的 [signedFraction] 比例滚动一段。
@@ -110,8 +118,10 @@ class FushiFocusScroll {
   ) {
     if (!position.hasPixels || !position.hasContentDimensions) return false;
     final double target =
-        (position.pixels + position.viewportDimension * signedFraction)
-            .clamp(position.minScrollExtent, position.maxScrollExtent);
+        (position.pixels + position.viewportDimension * signedFraction).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
     if ((target - position.pixels).abs() < 0.5) return false;
     position.animateTo(
       target,
@@ -125,11 +135,14 @@ class FushiFocusScroll {
   ///
   /// 懒构建列表的 `maxScrollExtent` 只是估计值，一次 End 未必真到最底——那是列表
   /// 自身的性质，用户再按一次即可，这里不做「循环追到底」的花活。
-  static bool scrollPositionToEdge(ScrollPosition position,
-      {required bool toEnd}) {
+  static bool scrollPositionToEdge(
+    ScrollPosition position, {
+    required bool toEnd,
+  }) {
     if (!position.hasPixels || !position.hasContentDimensions) return false;
-    final double target =
-        toEnd ? position.maxScrollExtent : position.minScrollExtent;
+    final double target = toEnd
+        ? position.maxScrollExtent
+        : position.minScrollExtent;
     if ((target - position.pixels).abs() < 0.5) return false;
     position.animateTo(
       target,
@@ -140,8 +153,10 @@ class FushiFocusScroll {
   }
 
   /// [position] 还能不能朝 [towardEnd] 指定的方向再滚动一点。
-  static bool canScrollToward(ScrollPosition position,
-      {required bool towardEnd}) {
+  static bool canScrollToward(
+    ScrollPosition position, {
+    required bool towardEnd,
+  }) {
     if (!position.hasPixels || !position.hasContentDimensions) return false;
     return towardEnd
         ? position.pixels < position.maxScrollExtent - 0.5
@@ -162,6 +177,7 @@ class FushiFocusScroll {
     final BuildContext? context = position.context.notificationContext;
     if (context == null || !context.mounted) return false;
     if (!(ModalRoute.of(context)?.isCurrent ?? true)) return false;
+    if (!Visibility.of(context)) return false;
     bool hidden = false;
     context.visitAncestorElements((Element ancestor) {
       if (_hidesSubtree(ancestor.widget)) {
@@ -174,10 +190,13 @@ class FushiFocusScroll {
   }
 
   /// [widget] 是否把整棵子树藏起来了：`Offstage(offstage: true)`，或不可见的
-  /// [Visibility]（它的 maintainSize 形态仍有几何，光看 Offstage 抓不到；而
-  /// [IndexedStack] 的非当前 child 正是用它包的——SDK 里 IndexedStack 只是把每个
-  /// child 裹一层 `Visibility(visible: i == index, maintainState/Size: true)`，
-  /// 所以不需要也不能对 IndexedStack 自己做「按 index 挑子元素」的特例）。
+  /// [Visibility]（它的 maintainSize 形态仍有几何，光看 Offstage 抓不到）。
+  ///
+  /// [IndexedStack] 的非当前 child 从 Flutter 3.47 起**不再**包 `Visibility`
+  /// widget，而是直接包私有的 `_VisibilityScope`（+ `ExcludeFocus`），按 widget
+  /// 类型认不出来；那一路由调用方对 Scrollable 的 context 查 [Visibility.of]
+  /// （SDK 公开的「这里是否可见」判据，`Visibility` 与 IndexedStack 都经它上报），
+  /// 仍不对 IndexedStack 做「按 index 挑子元素」的特例。
   static bool _hidesSubtree(Widget widget) =>
       (widget is Offstage && widget.offstage) ||
       (widget is Visibility && !widget.visible);
@@ -199,7 +218,8 @@ class FushiFocusScroll {
   ///   4. **零登记兜底**：从 [navigator] 当前可见路由的子树里按 element 树顺序找
   ///      第一个纵向 Scrollable。跳过非当前路由（被整页 / 对话框盖住的页面不能被
   ///      滚）、`Offstage`（首页各 tab 靠它隐藏未选中者）、不可见的 `Visibility`
-  ///      （[IndexedStack] 用它包非当前 child），并要求 viewport 真的与 Navigator
+  ///      与 [Visibility.of] 为假的位置（[IndexedStack] 的非当前 child），并要求
+  ///      viewport 真的与 Navigator
   ///      可见区域相交（排除 [PageView] / [TabBarView] 里已布局但滑到屏幕外的
   ///      相邻页）。
   ///
@@ -216,8 +236,10 @@ class FushiFocusScroll {
     NavigatorState? navigator,
   }) {
     if (focusContext != null && focusContext.mounted) {
-      final ScrollableState? nearest =
-          Scrollable.maybeOf(focusContext, axis: Axis.vertical);
+      final ScrollableState? nearest = Scrollable.maybeOf(
+        focusContext,
+        axis: Axis.vertical,
+      );
       if (nearest != null &&
           _eligible(nearest.position, towardEnd: towardEnd)) {
         return nearest.position;
@@ -229,8 +251,9 @@ class FushiFocusScroll {
       return registered.position;
     }
     if (focusContext != null && focusContext.mounted) {
-      final ScrollController? primary =
-          PrimaryScrollController.maybeOf(focusContext);
+      final ScrollController? primary = PrimaryScrollController.maybeOf(
+        focusContext,
+      );
       if (primary != null &&
           primary.positions.length == 1 &&
           _eligible(primary.position, towardEnd: towardEnd)) {
@@ -268,6 +291,7 @@ class FushiFocusScroll {
         final ScrollPosition position = scrollable.position;
         if (position.axis == Axis.vertical &&
             canScrollToward(position, towardEnd: towardEnd) &&
+            Visibility.of(scrollable.context) &&
             _viewportIsOnStage(scrollable.context, stage)) {
           found = position;
           return;
@@ -291,7 +315,9 @@ class FushiFocusScroll {
 
   /// 方向 → viewport 比例正负号：down/right 为正（向后/下滚），up/left 为负。
   static double signedFractionFor(
-      TraversalDirection direction, double fraction) {
+    TraversalDirection direction,
+    double fraction,
+  ) {
     switch (direction) {
       case TraversalDirection.down:
       case TraversalDirection.right:

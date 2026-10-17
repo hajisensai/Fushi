@@ -65,4 +65,9 @@ if(ANDROID)
   # Android 15+ 的 16KB page size 设备要求 ELF segment 按 16KB 对齐；NDK r28
   # 起是默认，r27 及以下需显式给。恒设无害（4KB 设备兼容 16KB 对齐产物）。
   target_link_options(fushi_torrent_ffi PRIVATE "-Wl,-z,max-page-size=16384")
+  # BUG-3284：构建脚本用 ANDROID_STL=c++_static，libc++ / libc++abi 与 libtorrent /
+  # boost / openssl 一起静态链进来。--exclude-libs,ALL 让这些静态归档里的符号一个都
+  # 不进动态符号表：对外只剩 C ABI（ht_*），既不会被进程里别的库（插件自带的
+  # libc++_shared / openssl）插桩，也不会反过来劫持它们。
+  target_link_options(fushi_torrent_ffi PRIVATE "-Wl,--exclude-libs,ALL")
 endif()

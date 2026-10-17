@@ -8,6 +8,10 @@ import 'package:flutter/foundation.dart';
 /// 用户库里的 `sourceMetadata` JSON。
 enum OnlineMangaRuntimeKind {
   mihon('mihon'),
+
+  /// 已移除的 Aidoku 运行时。宿主与源代码已整体删除，枚举值只为旧版本留下的
+  /// 书架条目保留（wire 值已进用户库，冻结）；分派到
+  /// `LegacyAidokuLibraryAdapter`，一律回报不可用。
   aidoku('aidoku'),
 
   /// 已配对的互联对端（把对端漫画库当成一个源，按页在线读）。
@@ -48,7 +52,7 @@ const String kInterconnectMangaSourceId = 'library';
 /// 归一化后的章节。
 ///
 /// [raw] 保留**运行时原生 payload**，因为翻页最终还是要把它交回
-/// `MihonRuntime.getPages` / `AidokuRuntime.getPages`。归一化只覆盖「展示 +
+/// 运行时（如 `MihonRuntime.getPages`）。归一化只覆盖「展示 +
 /// 身份」这几个字段：如果把 raw 丢掉换成完全结构化的模型，每加一个源就要
 /// 在中间层补一次字段映射，而中间层根本不需要理解那些字段。
 @immutable

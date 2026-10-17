@@ -6,14 +6,23 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 void main() {
   test('production character geometry rejects empty WebKit caret origins', () {
     final String shell = ReaderPaginationScripts.paginatedShellSource();
-    final int start = shell.indexOf('characterAnchorRect: function(range) {');
-    final int end = shell.indexOf('\n  },', start);
-    expect(start, isNonNegative);
-    expect(end, greaterThan(start));
-    final String property = shell.substring(start, end + 4);
+    // BUG-3431：characterAnchorRect 在空 caret 盒时委托给 characterGlyphRect（量起点那个字
+    // 自己的字形盒），两者要一起取出来跑；只取前者会在 node 里撞 `not a function`。
+    String property(String name) {
+      final int start = shell.indexOf('$name: function(range) {');
+      final int end = shell.indexOf('\n  },', start);
+      expect(start, isNonNegative, reason: '$name missing from the shell');
+      expect(end, greaterThan(start));
+      return shell.substring(start, end + 4);
+    }
+
+    final String object =
+        '{${property('characterAnchorRect')},\n'
+        '${property('characterGlyphRect')}}';
     final ProcessResult result = Process.runSync('node', <String>[
       '-e',
-      'const measure = ({$property}).characterAnchorRect;\n$_checks',
+      'const shell = ($object);\n'
+          'const measure = shell.characterAnchorRect.bind(shell);\n$_checks',
     ]);
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     expect(result.stdout.toString().trim(), 'OK');
@@ -23,9 +32,14 @@ void main() {
     final String paged = ReaderPaginationScripts.paginatedShellSource();
     final String continuous = ReaderPaginationScripts.continuousShellSource();
     expect(paged, contains('var rect = this.characterAnchorRect(range);'));
+    // BUG-3431：连续模式先对齐目标字自己的字形盒（软换行处塌缩光标归上一列末），量不到
+    // 才退回 caret 几何；两者都是 shell 共享的同一套几何 helper。
     expect(
       continuous,
-      contains('var rect = this.characterAnchorRect(startRange);'),
+      contains(
+        'var rect = this.characterGlyphRect(startRange) ||\n'
+        '        this.characterAnchorRect(startRange);',
+      ),
     );
     expect(
       continuous,

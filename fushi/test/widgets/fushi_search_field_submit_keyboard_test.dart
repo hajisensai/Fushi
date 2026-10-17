@@ -4,7 +4,7 @@
 //
 // 这里钉三件事：移动端提交后软键盘收起、焦点仍在框里（BUG-2620 的不变式不退）、
 // 桌面端提交不去动软键盘。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 

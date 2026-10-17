@@ -127,6 +127,11 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
   // ── API client ────────────────────────────────────────────────────
 
+  /// 测试用：直接装一个（假 HTTP client 驱动的）[drive.DriveApi]，绕过 OAuth。
+  /// 传 null 清掉。[clearCache] / [setSyncSpace] 也会清。
+  @visibleForTesting
+  void debugUseDriveApi(drive.DriveApi? api) => _cachedApi = api;
+
   Future<drive.DriveApi> _api() async {
     if (_cachedApi != null) return _cachedApi!;
     final client = await GoogleDriveAuth.instance.getAuthClient();
@@ -399,7 +404,8 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
         final list = await api.files.list(
           spaces: _space.spaces, // [GoogleDriveSyncSpace]: 当前空间（appdata/drive）。
           q: "'$qParent' in parents and trashed=false",
-          $fields: 'nextPageToken,files(id,name,mimeType,size)',
+          $fields:
+              'nextPageToken,files(id,name,mimeType,size,md5Checksum,modifiedTime)',
           pageSize: 1000,
           pageToken: pageToken,
         );
@@ -410,6 +416,10 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
               name: f.name!,
               isFolder: f.mimeType == _folderMimeType,
               sizeBytes: f.size != null ? int.tryParse(f.size!) : null,
+              // 内容 MD5：只有二进制文件有，文件夹 / Google 文档为 null。
+              revision: f.md5Checksum,
+              // Drive 的 modifiedTime 是 RFC 3339（googleapis 已解析成 DateTime），转 UTC 毫秒。
+              modifiedAt: f.modifiedTime?.toUtc().millisecondsSinceEpoch,
             ));
           }
         }
@@ -449,7 +459,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   /// 便宜。字段只取 id/name/parents/mimeType——不要内容、不要时间戳，因为同步方向本来
   /// 就只看文件名（progress 的时间戳与分数编码在名字里）。
   Future<RemoteListingSnapshot?> snapshotListing(String rootFolder) async {
-    // 只在隐藏的 App Data 空间启用。那个空间按 app 隔离，里面除了 Hibiki 自己的同步
+    // 只在隐藏的 App Data 空间启用。那个空间按 app 隔离，里面除了 Fushi 自己的同步
     // 数据什么都没有，所以「列出空间里的全部文件」等价于「列出同步根下的全部文件」。
     //
     // 「与 Hoshi/ッツ 共享」开关打开时空间是用户**可见的 My Drive**（完整 drive
@@ -671,7 +681,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final length = await file.length();
     final contentType = _guessContentType(fileName);
@@ -682,7 +692,8 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
       int bytesUploaded = 0;
       final stream = file.openRead().map((chunk) {
         bytesUploaded += chunk.length;
-        onProgress?.call(length > 0 ? bytesUploaded / length : 0);
+        onProgress?.call(
+            length > 0 ? bytesUploaded / length : 0, bytesUploaded);
         return chunk;
       });
       final media = drive.Media(stream, length, contentType: contentType);
@@ -724,7 +735,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _call((api) async {
       final metadata = await api.files.get(

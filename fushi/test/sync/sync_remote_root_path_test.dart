@@ -4,7 +4,7 @@ import 'package:fushi/src/sync/sftp_sync_backend.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
 
 /// FTP/SFTP must store sync data under the user's login directory, never at the
-/// server filesystem root. An absolute '/hibiki-data' fails on a normal
+/// server filesystem root. An absolute '/fushi-data' fails on a normal
 /// (non-chrooted) server with permission-denied at '/'.
 void main() {
   test('SFTP sync root is relative to the login home, not absolute', () {
