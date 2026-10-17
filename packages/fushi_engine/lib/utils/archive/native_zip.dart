@@ -58,7 +58,9 @@ void forEachRawZipChunk(
 
 /// 用原生 zlib 解压原始 DEFLATE 流 [raw]，每产出一块解压数据调用一次 [onChunk]。
 ///
-/// 数据损坏 / 截断时由 `dart:io` 抛 [FormatException]（不会静默写出半截）。
+/// 压缩数据损坏时 `dart:io` 抛 [FormatException]；但**截断**的流（缺尾块）
+/// `dart:io` 不报错、只产出前半段（实测），所以条目级的完整性由
+/// [writeZipEntryStreaming] 按中央目录记录的解压后大小核对。
 void inflateRawDeflate(
   InputStreamBase raw,
   void Function(List<int> chunk) onChunk,
@@ -97,14 +99,26 @@ int writeZipEntryStreaming(
 
   if (raw != null && file.compressionType == ArchiveFile.STORE) {
     forEachRawZipChunk(raw, write);
+    _checkEntrySize(file, written);
   } else if (raw != null && file.compressionType == ArchiveFile.DEFLATE) {
     inflateRawDeflate(raw, write);
+    _checkEntrySize(file, written);
   } else {
     file.writeContent(out);
     written = file.size;
     onBytes?.call(file.size);
   }
   return written;
+}
+
+/// 写出字节数必须等于条目头记录的解压后大小：截断的 DEFLATE 流 `dart:io` 不报错，
+/// 不核对就会把半截文件当成功落盘。
+void _checkEntrySize(ArchiveFile file, int written) {
+  if (written != file.size) {
+    throw FormatException(
+      'zip entry ${file.name}: wrote $written bytes, header says ${file.size}',
+    );
+  }
 }
 
 /// 把 [file] 流式解压到磁盘 [destPath]（父目录自动创建）。返回写出的字节数。

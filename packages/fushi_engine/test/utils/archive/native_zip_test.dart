@@ -237,4 +237,19 @@ void main() {
       throwsA(isA<FormatException>()),
     );
   });
+
+  test('DEFLATE 流被截断（dart:io 不报错只产出半截）时按条目大小核对抛错', () {
+    final Uint8List data = payload(256 * 1024);
+    final List<int> compressed = ZLibCodec(raw: true).encode(data);
+    final ArchiveFile entry = ArchiveFile(
+      'x.txt',
+      data.length,
+      InputStream(compressed.sublist(0, compressed.length ~/ 2)),
+      ArchiveFile.DEFLATE,
+    );
+    expect(
+      () => writeZipEntryStreaming(entry, OutputStream()),
+      throwsA(isA<FormatException>()),
+    );
+  });
 }
