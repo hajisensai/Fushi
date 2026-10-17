@@ -110,7 +110,7 @@ void main() {
 
   test('判据自校验：环境行与动作特征串能命中真实写法', () {
     expect(_gated('    runs-on: x\n$_environmentLine\n'), isTrue);
-    expect(_gated("    environment: release-publish\n"), isFalse);
+    expect(_gated('    environment: release-publish\n'), isFalse);
     expect(
       _outwardActions['git push']!.hasMatch(
         'git -C "\$WORK" push -q origin HEAD:refs/heads/main',
@@ -199,7 +199,7 @@ void main() {
     final String desktop = File(
       '${dir.path}/release-desktop.yml',
     ).readAsStringSync();
-    final String gated30 = 'retention-days: \${{ ($_gate) && 30 || ';
+    const String gated30 = 'retention-days: \${{ ($_gate) && 30 || ';
     // Android：build → publish 的 APK artifact。
     expect(
       RegExp(
