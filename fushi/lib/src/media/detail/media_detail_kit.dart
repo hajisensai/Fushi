@@ -1136,39 +1136,52 @@ class MediaDetailSectionHeader extends StatelessWidget {
     final int? count = this.count;
     return Padding(
       padding: padding,
+      // 标题 + 计数胶囊收进一个 Expanded，[trailing] 才真正贴右缘。旧写法是
+      // `Flexible(标题) … Spacer() … trailing`：两个 flex 子项平分剩余宽度，松约束
+      // 的标题用不完自己那一半也不让出来，Spacer 只拿到另一半——trailing 落在行中
+      // 偏右的半空里（用户反馈「剧集」区多选的 ✕ 位置是歪的）。
       child: Row(
         children: <Widget>[
-          Flexible(
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: context.fushiType.titleLargeEmphasized,
+          Expanded(
+            child: Row(
+              children: <Widget>[
+                Flexible(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.fushiType.titleLargeEmphasized,
+                  ),
+                ),
+                if (count != null) ...<Widget>[
+                  const SizedBox(width: 10),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: apple
+                          ? appleColorsOf(context).tertiaryFill
+                          : cs.secondaryContainer,
+                      borderRadius: const BorderRadius.all(
+                        Radius.circular(999),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 2,
+                      ),
+                      child: Text(
+                        '$count',
+                        style: context.fushiType.labelLargeEmphasized.tabular
+                            .copyWith(
+                              color: apple ? null : cs.onSecondaryContainer,
+                            ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          if (count != null) ...<Widget>[
-            const SizedBox(width: 10),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: apple
-                    ? appleColorsOf(context).tertiaryFill
-                    : cs.secondaryContainer,
-                borderRadius: const BorderRadius.all(Radius.circular(999)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 2,
-                ),
-                child: Text(
-                  '$count',
-                  style: context.fushiType.labelLargeEmphasized.tabular
-                      .copyWith(color: apple ? null : cs.onSecondaryContainer),
-                ),
-              ),
-            ),
-          ],
-          const Spacer(),
           ?trailing,
         ],
       ),

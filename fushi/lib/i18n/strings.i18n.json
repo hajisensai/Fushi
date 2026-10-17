@@ -6203,6 +6203,7 @@
   "storage_entry_delete_done": "Deleted",
   "storage_entry_delete_failed": "Delete failed: $reason",
   "storage_entry_delete_files_confirm_body": "This deletes it from disk right away. Nothing in your library references it - it is cached, exported or re-downloadable data.",
+  "storage_entry_delete_video_confirm_body": "Removes this video from the library and deletes its file from this device.",
   "storage_entry_external_audio_hint": "Audio references the original files, using no app storage",
   "storage_entry_more_rest": "$n more items, $size in total",
   "storage_modules_anime4k_delete_done": "Deleted $n shader files",

@@ -6203,6 +6203,7 @@
   "storage_entry_delete_done": "已删除",
   "storage_entry_delete_failed": "删除失败：$reason",
   "storage_entry_delete_files_confirm_body": "将立即从磁盘删除。媒体库里没有条目引用它——这里放的是缓存、导出或可重新获取的数据。",
+  "storage_entry_delete_video_confirm_body": "会把这个视频从媒体库移除，并删除本机上的视频文件。",
   "storage_entry_external_audio_hint": "音频引用原文件，不占用应用空间",
   "storage_entry_more_rest": "其余 $n 项，共 $size",
   "storage_modules_anime4k_delete_done": "已删除 $n 个着色器文件",

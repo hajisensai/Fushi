@@ -6203,6 +6203,7 @@
   "storage_entry_delete_done": "Đã xóa",
   "storage_entry_delete_failed": "Xóa thất bại: $reason",
   "storage_entry_delete_files_confirm_body": "Sẽ bị xóa khỏi ổ đĩa ngay lập tức. Không có mục nào trong thư viện tham chiếu tới nó — đây là dữ liệu bộ nhớ đệm, đã xuất hoặc có thể tải lại.",
+  "storage_entry_delete_video_confirm_body": "Removes this video from the library and deletes its file from this device.",
   "storage_entry_external_audio_hint": "Âm thanh tham chiếu tệp gốc, không chiếm dung lượng của ứng dụng",
   "storage_entry_more_rest": "Còn $n mục, tổng $size",
   "storage_modules_anime4k_delete_done": "Đã xóa $n tệp shader",

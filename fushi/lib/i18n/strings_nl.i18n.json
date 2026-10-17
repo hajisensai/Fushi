@@ -6203,6 +6203,7 @@
   "storage_entry_delete_done": "Verwijderd",
   "storage_entry_delete_failed": "Verwijderen mislukt: $reason",
   "storage_entry_delete_files_confirm_body": "Wordt meteen van de schijf verwijderd. Niets in je bibliotheek verwijst ernaar: het zijn cache-, geëxporteerde of opnieuw te downloaden gegevens.",
+  "storage_entry_delete_video_confirm_body": "Removes this video from the library and deletes its file from this device.",
   "storage_entry_external_audio_hint": "Audio verwijst naar de originele bestanden en gebruikt geen app-opslag",
   "storage_entry_more_rest": "$n meer items, $size in totaal",
   "storage_modules_anime4k_delete_done": "$n shaderbestanden verwijderd",

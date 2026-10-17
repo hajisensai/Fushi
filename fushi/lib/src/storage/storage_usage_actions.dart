@@ -7,6 +7,12 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/video/video_library_delete.dart'
+    show VideoLibraryDeleteResult, deleteVideoBooksWithDecision;
+import 'package:fushi_engine/media/video/video_book_repository.dart'
+    show VideoBookRepository;
+import 'package:fushi_engine/sync/deletion_propagation.dart'
+    show DeleteDecision, DeleteScope;
 import 'package:fushi/src/media/video/video_shader_downloader.dart'
     show anime4kInstalledBytes, deleteAnime4kShaderFiles;
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
@@ -31,6 +37,8 @@ class StorageUsageActions {
     required this.deleteDatabaseSnapshots,
     required this.deleteFiles,
     this.dictionaryDisplayNamesProvider,
+    this.videosProvider,
+    this.deleteVideo,
     this.anime4kBytesProvider = anime4kInstalledBytes,
     this.anime4kDelete = deleteAnime4kShaderFiles,
   });
@@ -70,6 +78,25 @@ class StorageUsageActions {
       return null;
     },
     // BUG-1870：主库快照残留的删除原语在 fushi_core（与扫描侧识别口径同源）。
+    videosProvider: () => loadStorageVideoRefs(c.appModel.database),
+    // 视频库自己的删除链（与视频页单删、下载中心「删除（连同文件）」同一条）：
+    // 放播放器句柄 → 下载任务标 skip → 删行 + app 副本 → 删文件 → 对账下载任务。
+    // 只删本机（不立跨端墓碑）、不动统计——这里是「腾空间」，不是「从库里抹掉」。
+    deleteVideo: (String bookUid) async {
+      final FushiDatabase db = c.appModel.database;
+      final VideoLibraryDeleteResult result =
+          await deleteVideoBooksWithDecision(
+            repo: VideoBookRepository(db),
+            database: db,
+            pipeline: c.appModel.videoDownloadPipelineService,
+            bookUids: <String>[bookUid],
+            decision: const DeleteDecision(
+              scope: DeleteScope.keepLocalOnly,
+              deleteLocalFiles: true,
+            ),
+          );
+      return storageVideoDeleteFailureReason(result);
+    },
     deleteDatabaseSnapshots: () async =>
         deleteDatabaseSnapshotFiles(await AppPaths.supportRootDirectory()),
     deleteFiles: deleteStorageDerivedFiles,
@@ -98,6 +125,13 @@ class StorageUsageActions {
 
   /// 词典真名 -> 显示名（只含改过名的）；null = 按真名显示。
   final Future<Map<String, String>> Function()? dictionaryDisplayNamesProvider;
+
+  /// 视频库行取数（真实现读 `video_books` + 合集成员表）。null = 不列视频明细
+  /// （测试 seam / 旧调用点）。
+  final Future<List<StorageVideoRef>> Function()? videosProvider;
+
+  /// 删一条视频（行 + 文件）。null = 视频明细不可删。
+  final Future<String?> Function(String bookUid)? deleteVideo;
 
   /// 返回 null = 成功，非 null = 失败原因（下同）。
   final Future<String?> Function(String bookKey) deleteBook;
@@ -148,9 +182,28 @@ class StorageEntryDeleteOutcome {
   final bool changed;
 }
 
+/// 一次视频删除的失败摘要：行没删掉 / 文件没删掉都算失败（文件留在盘上，用户
+/// 以为腾了空间其实没有）；全成功 → null。
+String? storageVideoDeleteFailureReason(VideoLibraryDeleteResult result) {
+  if (result.failed.isNotEmpty) {
+    return '${result.failed.first.error}';
+  }
+  if (result.localFiles.failures.isNotEmpty) {
+    final LocalFileDeleteFailure first = result.localFiles.failures.first;
+    return '${p.basename(first.path)}: ${first.error}';
+  }
+  return null;
+}
+
 /// 明细能不能删（只读子项删它就是绕过护栏的裸删）。
-bool isStorageEntryDeletable(StorageEntryUsage entry) =>
-    entry.kind != StorageEntryKind.readOnly;
+bool isStorageEntryDeletable(
+  StorageEntryUsage entry, {
+  bool canDeleteVideos = true,
+}) => switch (entry.kind) {
+  StorageEntryKind.readOnly => false,
+  StorageEntryKind.videoBook => canDeleteVideos,
+  _ => true,
+};
 
 /// 按明细 kind 分流到对应删除原语（页面与控制通道共用，确认由调用方负责）。
 /// 只读明细抛 [StateError]。
@@ -183,6 +236,15 @@ Future<StorageEntryDeleteOutcome> deleteStorageEntry(
       return StorageEntryDeleteOutcome(
         failure: storageSnapshotDeleteFailureReason(result),
         changed: result.deleted.isNotEmpty,
+      );
+    case StorageEntryKind.videoBook:
+      final Future<String?> Function(String bookUid)? deleteVideo =
+          actions.deleteVideo;
+      if (deleteVideo == null) throw StateError('video delete not wired');
+      final String? failure = await deleteVideo(entry.id);
+      return StorageEntryDeleteOutcome(
+        failure: failure,
+        changed: failure == null,
       );
     case StorageEntryKind.backupArchives:
     case StorageEntryKind.derivedFile:
@@ -219,11 +281,14 @@ Future<List<StorageCategoryUsage>> scanAllStorageCategories(
   final Map<String, String> displayNames =
       await actions.dictionaryDisplayNamesProvider?.call() ??
       const <String, String>{};
+  final List<StorageVideoRef> videos =
+      await actions.videosProvider?.call() ?? const <StorageVideoRef>[];
   final List<StorageCategoryUsage> usage = await service
       .scanCategories(
         books: books,
         dictionaryNames: dictNames,
         dictionaryDisplayNames: displayNames,
+        videos: videos,
       )
       .toList();
   usage.sort((StorageCategoryUsage a, StorageCategoryUsage b) {
@@ -288,6 +353,39 @@ Future<List<StorageBookRef>> loadStorageBookRefs(FushiDatabase db) async {
   ];
 }
 
+/// 存储页视频条目的扫描输入：`video_books` 全部行 + 所属作品（视频合集）名。
+///
+/// 一条视频可属于多个合集：取 id 最小的那个（最早建立的，一般就是下载 / 导入时
+/// 自动建的作品合集），保证每条视频只出现在一个组里。
+Future<List<StorageVideoRef>> loadStorageVideoRefs(FushiDatabase db) async {
+  final List<VideoBookRow> rows = await db.allVideoBooks();
+  final Map<int, String> collectionNames = <int, String>{
+    for (final MediaCollectionRow c in await db.getAllMediaCollections())
+      c.id: c.name,
+  };
+  final Map<String, int> collectionOf = <String, int>{};
+  for (final MediaCollectionItemRow item in await db.getAllCollectionItems()) {
+    if (item.mediaType != MediaKind.video.dbValue) continue;
+    if (!collectionNames.containsKey(item.collectionId)) continue;
+    final int? existing = collectionOf[item.entryKey];
+    if (existing == null || item.collectionId < existing) {
+      collectionOf[item.entryKey] = item.collectionId;
+    }
+  }
+  return <StorageVideoRef>[
+    for (final VideoBookRow row in rows)
+      StorageVideoRef(
+        id: row.bookUid,
+        title: row.title,
+        videoPath: row.videoPath,
+        group: switch (collectionOf[row.bookUid]) {
+          final int id => collectionNames[id],
+          null => null,
+        },
+      ),
+  ];
+}
+
 /// DB 里一行有声书/字幕书的音频真实路径：legacy 的 `audioRoot`（目录模式）加
 /// `audioPathsJson`（文件列表模式），两列全取、重叠交给
 /// `resolveBookStoragePaths` 去嵌套。坏 JSON 降级成空列表，不能炸整页扫描。
@@ -334,7 +432,8 @@ String storageCategoryTitle(StorageCategoryId id) => switch (id) {
 String storageEntryTitle(StorageEntryUsage entry) => switch (entry.kind) {
   StorageEntryKind.databaseSnapshots =>
     t.storage_entry_database_snapshots_label(n: entry.paths.length),
-  StorageEntryKind.backupArchives =>
-    t.storage_entry_backups_label(n: entry.paths.length),
+  StorageEntryKind.backupArchives => t.storage_entry_backups_label(
+    n: entry.paths.length,
+  ),
   _ => entry.label,
 };

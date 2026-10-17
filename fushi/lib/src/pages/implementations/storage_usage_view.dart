@@ -45,10 +45,36 @@ class StorageUsageView extends ConsumerStatefulWidget {
     required this.deleteDictionary,
     required this.deleteDatabaseSnapshots,
     required this.deleteFiles,
+    this.videosProvider,
+    this.deleteVideo,
     this.anime4kBytesProvider = anime4kInstalledBytes,
     this.anime4kDelete = deleteAnime4kShaderFiles,
     super.key,
   });
+
+  /// 从 [StorageUsageActions] 一次接线：设置页正文走这里，取数 / 删除原语逐个
+  /// 原样透传。转发只写这一处——设置页手写逐参转发时曾漏掉 `videosProvider` /
+  /// `deleteVideo`，视频明细在正式设置页里静默退回空列表、只有控制通道接上了。
+  StorageUsageView.fromActions({
+    required StorageUsageService service,
+    required StorageUsageActions actions,
+    Key? key,
+  }) : this(
+         service: service,
+         booksProvider: actions.booksProvider,
+         dictionaryNamesProvider: actions.dictionaryNamesProvider,
+         dictionaryDisplayNamesProvider: actions.dictionaryDisplayNamesProvider,
+         deleteBook: actions.deleteBook,
+         deleteSrtBook: actions.deleteSrtBook,
+         deleteDictionary: actions.deleteDictionary,
+         deleteDatabaseSnapshots: actions.deleteDatabaseSnapshots,
+         deleteFiles: actions.deleteFiles,
+         videosProvider: actions.videosProvider,
+         deleteVideo: actions.deleteVideo,
+         anime4kBytesProvider: actions.anime4kBytesProvider,
+         anime4kDelete: actions.anime4kDelete,
+         key: key,
+       );
 
   final StorageUsageService service;
 
@@ -81,7 +107,7 @@ class StorageUsageView extends ConsumerStatefulWidget {
   /// 展示什么就删什么，活库/侧车/待恢复副本结构上删不到）。返回逐文件容错的
   /// 结果——部分文件被占用时其余照删，失败清单原样带给用户。
   final Future<DatabaseSnapshotDeletionResult> Function()
-      deleteDatabaseSnapshots;
+  deleteDatabaseSnapshots;
 
   /// 删除 [StorageEntryKind.derivedFile] 明细指向的路径（文件或目录）。
   ///
@@ -90,6 +116,14 @@ class StorageUsageView extends ConsumerStatefulWidget {
   /// 自身仍不碰磁盘（真实现在 `settings_schema_storage.dart` 接线）。
   /// 返回 null = 成功，非 null = 失败原因。
   final Future<String?> Function(List<String> paths) deleteFiles;
+
+  /// 视频库行取数（真实现 `loadStorageVideoRefs`）。null = 「视频下载」类目只按
+  /// 磁盘子项只读展示（旧行为）。
+  final Future<List<StorageVideoRef>> Function()? videosProvider;
+
+  /// 删一条视频（真实现走视频库删除链 `deleteVideoBooksWithDecision`，行 + 文件
+  /// 一起删）。返回 null = 成功，非 null = 失败原因。null = 视频明细不给删除钮。
+  final Future<String?> Function(String bookUid)? deleteVideo;
 
   /// Anime4K 已下载字节数 / 删除（默认真实现；测试注临时目录版）。
   final Future<int> Function() anime4kBytesProvider;
@@ -146,12 +180,14 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     List<StorageBookRef> books = const <StorageBookRef>[];
     List<String> dictNames = const <String>[];
     Map<String, String> dictDisplayNames = const <String, String>{};
+    List<StorageVideoRef> videos = const <StorageVideoRef>[];
     try {
       books = await widget.booksProvider();
       dictNames = await widget.dictionaryNamesProvider();
       dictDisplayNames =
           await widget.dictionaryDisplayNamesProvider?.call() ??
-              const <String, String>{};
+          const <String, String>{};
+      videos = await widget.videosProvider?.call() ?? const <StorageVideoRef>[];
     } catch (e) {
       debugPrint('[storage] listing failed: $e');
     }
@@ -163,24 +199,25 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
           books: books,
           dictionaryNames: dictNames,
           dictionaryDisplayNames: dictDisplayNames,
+          videos: videos,
         )
         .listen(
-      (StorageCategoryUsage usage) {
-        if (!mounted || epoch != _scanEpoch) return;
-        setState(() => _usage[usage.id] = usage);
-      },
-      onError: (Object e) {
-        debugPrint('[storage] scan failed: $e');
-        if (mounted && epoch == _scanEpoch) {
-          setState(() => _scanning = false);
-        }
-      },
-      onDone: () {
-        if (mounted && epoch == _scanEpoch) {
-          setState(() => _scanning = false);
-        }
-      },
-    );
+          (StorageCategoryUsage usage) {
+            if (!mounted || epoch != _scanEpoch) return;
+            setState(() => _usage[usage.id] = usage);
+          },
+          onError: (Object e) {
+            debugPrint('[storage] scan failed: $e');
+            if (mounted && epoch == _scanEpoch) {
+              setState(() => _scanning = false);
+            }
+          },
+          onDone: () {
+            if (mounted && epoch == _scanEpoch) {
+              setState(() => _scanning = false);
+            }
+          },
+        );
   }
 
   /// 总览之外的附加信息：Anime4K 预设占用（决定着色器类目行给不给删除按钮）
@@ -193,8 +230,8 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       debugPrint('[storage] anime4k size failed: $e');
     }
     try {
-      final List<BundledComponentUsage> bundled =
-          await widget.service.scanBundledComponents();
+      final List<BundledComponentUsage> bundled = await widget.service
+          .scanBundledComponents();
       if (mounted) setState(() => _bundled = bundled);
     } catch (e) {
       debugPrint('[storage] bundled scan failed: $e');
@@ -222,16 +259,15 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     if (_busyEntryId != null) return;
     final String body = switch (entry.kind) {
       StorageEntryKind.book ||
-      StorageEntryKind.srtBook =>
-        t.storage_entry_delete_book_confirm_body,
+      StorageEntryKind.srtBook => t.storage_entry_delete_book_confirm_body,
       StorageEntryKind.dictionary =>
         t.storage_entry_delete_dictionary_confirm_body,
+      StorageEntryKind.videoBook => t.storage_entry_delete_video_confirm_body,
       StorageEntryKind.databaseSnapshots =>
         t.storage_entry_delete_database_snapshots_confirm_body,
       StorageEntryKind.backupArchives =>
         t.storage_entry_delete_backups_confirm_body,
-      StorageEntryKind.derivedFile =>
-        t.storage_entry_delete_files_confirm_body,
+      StorageEntryKind.derivedFile => t.storage_entry_delete_files_confirm_body,
       StorageEntryKind.readOnly => throw StateError('read-only entry'),
     };
     if (!await _confirmDelete(_entryTitle(entry), body)) return;
@@ -242,8 +278,10 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     bool changed = false;
     try {
       // 分流与控制通道共用（storage_usage_actions.dart），页面只负责确认与提示。
-      final StorageEntryDeleteOutcome outcome =
-          await deleteStorageEntry(_actions, entry);
+      final StorageEntryDeleteOutcome outcome = await deleteStorageEntry(
+        _actions,
+        entry,
+      );
       failure = outcome.failure;
       changed = outcome.changed;
     } catch (e) {
@@ -263,17 +301,19 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
 
   /// 本页注入的取数 / 删除原语打包成与控制通道同形的 [StorageUsageActions]。
   StorageUsageActions get _actions => StorageUsageActions(
-        booksProvider: widget.booksProvider,
-        dictionaryNamesProvider: widget.dictionaryNamesProvider,
-        dictionaryDisplayNamesProvider: widget.dictionaryDisplayNamesProvider,
-        deleteBook: widget.deleteBook,
-        deleteSrtBook: widget.deleteSrtBook,
-        deleteDictionary: widget.deleteDictionary,
-        deleteDatabaseSnapshots: widget.deleteDatabaseSnapshots,
-        deleteFiles: widget.deleteFiles,
-        anime4kBytesProvider: widget.anime4kBytesProvider,
-        anime4kDelete: widget.anime4kDelete,
-      );
+    booksProvider: widget.booksProvider,
+    dictionaryNamesProvider: widget.dictionaryNamesProvider,
+    dictionaryDisplayNamesProvider: widget.dictionaryDisplayNamesProvider,
+    deleteBook: widget.deleteBook,
+    deleteSrtBook: widget.deleteSrtBook,
+    deleteDictionary: widget.deleteDictionary,
+    deleteDatabaseSnapshots: widget.deleteDatabaseSnapshots,
+    deleteFiles: widget.deleteFiles,
+    videosProvider: widget.videosProvider,
+    deleteVideo: widget.deleteVideo,
+    anime4kBytesProvider: widget.anime4kBytesProvider,
+    anime4kDelete: widget.anime4kDelete,
+  );
 
   // ── Anime4K 预设删除 ────────────────────────────────────────────────
 
@@ -313,32 +353,31 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
 
   static const Map<StorageCategoryId, IconData> _categoryIcons =
       <StorageCategoryId, IconData>{
-    StorageCategoryId.books: FushiIcons.books,
-    StorageCategoryId.dictionaries: FushiIcons.dictionary,
-    StorageCategoryId.videoDownloads: FushiIcons.video,
-    StorageCategoryId.covers: FushiIcons.image,
-    StorageCategoryId.subtitles: FushiIcons.subtitles,
-    StorageCategoryId.shaders: FushiIcons.ai,
-    StorageCategoryId.customFonts: FushiIcons.font,
-    StorageCategoryId.web: FushiIcons.globe,
-    StorageCategoryId.exports: FushiIcons.upload,
-    StorageCategoryId.backups: FushiIcons.backup,
-    StorageCategoryId.database: FushiIcons.storage,
-    StorageCategoryId.ocrModels: FushiIcons.ocr,
-    StorageCategoryId.cache: FushiIcons.history,
-    StorageCategoryId.other: FushiIcons.moreHoriz,
-  };
+        StorageCategoryId.books: FushiIcons.books,
+        StorageCategoryId.dictionaries: FushiIcons.dictionary,
+        StorageCategoryId.videoDownloads: FushiIcons.video,
+        StorageCategoryId.covers: FushiIcons.image,
+        StorageCategoryId.subtitles: FushiIcons.subtitles,
+        StorageCategoryId.shaders: FushiIcons.ai,
+        StorageCategoryId.customFonts: FushiIcons.font,
+        StorageCategoryId.web: FushiIcons.globe,
+        StorageCategoryId.exports: FushiIcons.upload,
+        StorageCategoryId.backups: FushiIcons.backup,
+        StorageCategoryId.database: FushiIcons.storage,
+        StorageCategoryId.ocrModels: FushiIcons.ocr,
+        StorageCategoryId.cache: FushiIcons.history,
+        StorageCategoryId.other: FushiIcons.moreHoriz,
+      };
 
   String _categoryTitle(StorageCategoryId id) => storageCategoryTitle(id);
 
   /// 非零类目按体积降序——环上的段序、卡内图例的行序都用这一份。
-  List<StorageCategoryUsage> get _rankedUsage => _usage.values
-      .where((StorageCategoryUsage u) => u.bytes > 0)
-      .toList()
-    ..sort((StorageCategoryUsage a, StorageCategoryUsage b) {
-      final int byBytes = b.bytes.compareTo(a.bytes);
-      return byBytes != 0 ? byBytes : a.id.index.compareTo(b.id.index);
-    });
+  List<StorageCategoryUsage> get _rankedUsage =>
+      _usage.values.where((StorageCategoryUsage u) => u.bytes > 0).toList()
+        ..sort((StorageCategoryUsage a, StorageCategoryUsage b) {
+          final int byBytes = b.bytes.compareTo(a.bytes);
+          return byBytes != 0 ? byBytes : a.id.index.compareTo(b.id.index);
+        });
 
   @override
   Widget build(BuildContext context) {
@@ -354,10 +393,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       children: <Widget>[
         FushiStaggeredEntrance(index: 0, child: _buildHero(colors)),
         const SizedBox(height: 12),
-        FushiStaggeredEntrance(
-          index: 1,
-          child: _buildOverviewSection(colors),
-        ),
+        FushiStaggeredEntrance(index: 1, child: _buildOverviewSection(colors)),
         if (_bundled.isNotEmpty) ...<Widget>[
           const SizedBox(height: 12),
           FushiStaggeredEntrance(index: 2, child: _buildBundledSection()),
@@ -366,8 +402,10 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     );
   }
 
-  int get _totalBytes => _usage.values
-      .fold<int>(0, (int sum, StorageCategoryUsage u) => sum + u.bytes);
+  int get _totalBytes => _usage.values.fold<int>(
+    0,
+    (int sum, StorageCategoryUsage u) => sum + u.bytes,
+  );
 
   /// M3E 总览卡：环形占比图 + 图例（类目名 / 大小 / 百分比 / 色点）。
   ///
@@ -416,8 +454,9 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                     ? Text(
                         t.storage_overview_scanning,
                         key: const ValueKey<String>('storage-scanning'),
-                        style: type.bodySmall
-                            .copyWith(color: cs.onSurfaceVariant),
+                        style: type.bodySmall.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
                       )
                     : const SizedBox(
                         key: ValueKey<String>('storage-idle'),
@@ -456,38 +495,40 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
           curve: motion.spatialSlow.curve,
           builder: (BuildContext context, double reveal, _) =>
               TweenAnimationBuilder<List<double>>(
-            // begin 只在首帧生效（= end，首帧不插值，进场交给扫出）；之后
-            // end 变化时 TweenAnimationBuilder 从当前值插到新值。
-            tween: _FractionsTween(begin: fractions, end: fractions),
-            duration: motion.spatialSlow.duration,
-            curve: motion.spatialSlow.curve,
-            builder: (BuildContext context, List<double> value, _) =>
-                CustomPaint(
-              painter: _StorageDonutPainter(
-                fractions: value,
-                order: order,
-                styles: sliceStyles,
-                reveal: reveal,
-                trackColor: eink ? cs.outline : cs.surfaceContainerHighest,
-                strokeWidth: size * 0.12,
-                eink: eink,
-              ),
-              child: Center(
-                child: Padding(
-                  padding: EdgeInsets.all(size * 0.2),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      formatStorageBytes(total),
-                      maxLines: 1,
-                      style: type.displaySmallEmphasized.tabular
-                          .copyWith(color: cs.onSurface),
+                // begin 只在首帧生效（= end，首帧不插值，进场交给扫出）；之后
+                // end 变化时 TweenAnimationBuilder 从当前值插到新值。
+                tween: _FractionsTween(begin: fractions, end: fractions),
+                duration: motion.spatialSlow.duration,
+                curve: motion.spatialSlow.curve,
+                builder: (BuildContext context, List<double> value, _) =>
+                    CustomPaint(
+                      painter: _StorageDonutPainter(
+                        fractions: value,
+                        order: order,
+                        styles: sliceStyles,
+                        reveal: reveal,
+                        trackColor: eink
+                            ? cs.outline
+                            : cs.surfaceContainerHighest,
+                        strokeWidth: size * 0.12,
+                        eink: eink,
+                      ),
+                      child: Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(size * 0.2),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              formatStorageBytes(total),
+                              maxLines: 1,
+                              style: type.displaySmallEmphasized.tabular
+                                  .copyWith(color: cs.onSurface),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
               ),
-            ),
-          ),
         ),
       );
     }
@@ -524,8 +565,9 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                   child: Text(
                     total > 0 ? _percentLabel(u.bytes / total) : '',
                     textAlign: TextAlign.end,
-                    style: type.bodySmall.tabular
-                        .copyWith(color: cs.onSurfaceVariant),
+                    style: type.bodySmall.tabular.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],
@@ -558,8 +600,10 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                   ),
                 );
               }
-              final double size =
-                  math.min(200, math.max(150, constraints.maxWidth * 0.55));
+              final double size = math.min(
+                200,
+                math.max(150, constraints.maxWidth * 0.55),
+              );
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: Column(
@@ -638,8 +682,9 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                     ),
             // 图例色点：与环形图里这一段、总览卡图例同一份样式
             //（[_storageSliceStyles]）；0 字节类目不在环上，也不画点。
-            if (sliceStyle != null && usage != null && usage.bytes > 0)
-              ...<Widget>[
+            if (sliceStyle != null &&
+                usage != null &&
+                usage.bytes > 0) ...<Widget>[
               _SliceSwatch(style: sliceStyle, size: 10),
               const SizedBox(width: 8),
             ],
@@ -664,8 +709,8 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
         ),
         onTap: expandable
             ? () => setState(() {
-                  if (!_expanded.add(id)) _expanded.remove(id);
-                })
+                if (!_expanded.add(id)) _expanded.remove(id);
+              })
             : null,
       ),
       if (expandable && expanded) ..._buildEntryRows(usage),
@@ -682,53 +727,89 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     // 可删性由**条目 kind** 决定（书/词典/数据库快照残留各接自己的删除原语）；
     // readOnly 条目是磁盘子项，删它就是裸 `Directory.delete`——会绕过墓碑/引用
     // 护栏，也可能删掉主库文件，故只读展示。
-    final List<StorageEntryUsage> visible =
-        usage.entries.take(kMaxVisibleEntries).toList(growable: false);
-    final List<StorageEntryUsage> rest =
-        usage.entries.skip(kMaxVisibleEntries).toList(growable: false);
-    final int restBytes =
-        rest.fold<int>(0, (int sum, StorageEntryUsage e) => sum + e.bytes);
+    final List<StorageEntryUsage> visible = usage.entries
+        .take(kMaxVisibleEntries)
+        .toList(growable: false);
+    final List<StorageEntryUsage> rest = usage.entries
+        .skip(kMaxVisibleEntries)
+        .toList(growable: false);
+    final int restBytes = rest.fold<int>(
+      0,
+      (int sum, StorageEntryUsage e) => sum + e.bytes,
+    );
+    // 分组（视频按作品）：服务层已让同组条目连续排列，这里在每组第一条前插组头
+    // （组名 + 组内总量），组内条目再缩进一级。
+    final Map<String, int> groupBytes = <String, int>{};
+    for (final StorageEntryUsage e in usage.entries) {
+      final String? group = e.group;
+      if (group != null) groupBytes[group] = (groupBytes[group] ?? 0) + e.bytes;
+    }
     return <Widget>[
-      for (final StorageEntryUsage entry in visible)
-        FushiListItem(
-          title: Text(_entryTitle(entry)),
-          // BUG-1893：externalPaths 非空 = 桌面「引用原文件」导入，音频留在 app 目录
-          // 外，既不占应用空间也删不掉。不加这句说明的话，条目只显示 EPUB 正文那几百
-          // KB，用户会以为音频丢了——体积统计的口径必须自己说清楚。
-          subtitle: Text(
-            entry.externalPaths.isEmpty
-                ? formatStorageBytes(entry.bytes)
-                : '${formatStorageBytes(entry.bytes)} · '
-                    '${t.storage_entry_external_audio_hint}',
+      for (int i = 0; i < visible.length; i++) ...<Widget>[
+        if (visible[i].group case final String group
+            when i == 0 || visible[i - 1].group != group)
+          FushiListItem(
+            key: ValueKey<String>('storage_entry_group:$group'),
+            leading: const FushiIcon(FushiIcons.collection, size: 18),
+            title: Text(group),
+            subtitle: Text(formatStorageBytes(groupBytes[group] ?? 0)),
+            padding: const EdgeInsetsDirectional.only(start: 32, end: 8),
+            density: FushiListDensity.compact,
           ),
-          padding: const EdgeInsetsDirectional.only(start: 32, end: 8),
-          density: FushiListDensity.compact,
-          trailing: entry.kind == StorageEntryKind.readOnly
-              ? null
-              : (_busyEntryId == entry.id
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: FushiCircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : FushiIconButtonControl(
-                      tooltip: t.dialog_delete,
-                      icon: const FushiIcon(FushiIcons.delete, size: 18),
-                      onPressed: _busyEntryId != null
-                          ? null
-                          : () => _deleteEntry(entry),
-                    )),
-        ),
+        _buildEntryRow(visible[i]),
+      ],
       if (rest.isNotEmpty)
         FushiListItem(
-          title: Text(t.storage_entry_more_rest(
-            n: rest.length,
-            size: formatStorageBytes(restBytes),
-          )),
+          title: Text(
+            t.storage_entry_more_rest(
+              n: rest.length,
+              size: formatStorageBytes(restBytes),
+            ),
+          ),
           padding: const EdgeInsetsDirectional.only(start: 32, end: 8),
           density: FushiListDensity.compact,
         ),
     ];
+  }
+
+  Widget _buildEntryRow(StorageEntryUsage entry) {
+    final bool deletable = isStorageEntryDeletable(
+      entry,
+      canDeleteVideos: widget.deleteVideo != null,
+    );
+    return FushiListItem(
+      key: ValueKey<String>('storage_entry:${entry.id}'),
+      title: Text(_entryTitle(entry)),
+      // BUG-1893：externalPaths 非空 = 桌面「引用原文件」导入，音频留在 app 目录
+      // 外，既不占应用空间也删不掉。不加这句说明的话，条目只显示 EPUB 正文那几百
+      // KB，用户会以为音频丢了——体积统计的口径必须自己说清楚。
+      subtitle: Text(
+        entry.externalPaths.isEmpty
+            ? formatStorageBytes(entry.bytes)
+            : '${formatStorageBytes(entry.bytes)} · '
+                  '${t.storage_entry_external_audio_hint}',
+      ),
+      padding: EdgeInsetsDirectional.only(
+        start: entry.group == null ? 32 : 56,
+        end: 8,
+      ),
+      density: FushiListDensity.compact,
+      trailing: !deletable
+          ? null
+          : (_busyEntryId == entry.id
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
+                  )
+                : FushiIconButtonControl(
+                    tooltip: t.dialog_delete,
+                    icon: const FushiIcon(FushiIcons.delete, size: 18),
+                    onPressed: _busyEntryId != null
+                        ? null
+                        : () => _deleteEntry(entry),
+                  )),
+    );
   }
 
   Widget _buildBundledSection() {
@@ -990,16 +1071,17 @@ class _StorageDonutPainter extends CustomPainter {
         if (i < fractions.length && fractions[i] > 0) i,
     ];
     if (live.isEmpty) return;
-    final double sum =
-        live.fold<double>(0, (double acc, int i) => acc + fractions[i]);
+    final double sum = live.fold<double>(
+      0,
+      (double acc, int i) => acc + fractions[i],
+    );
     if (sum <= 0) return;
     final int n = live.length;
     final double gapA = n > 1 ? _gapPx / radius : 0;
     final double minF = (gapA + _minVisiblePx / radius) / (2 * math.pi);
-    final List<double> visual = _withMinimum(
-      <double>[for (final int i in live) fractions[i] / sum],
-      minF,
-    );
+    final List<double> visual = _withMinimum(<double>[
+      for (final int i in live) fractions[i] / sum,
+    ], minF);
 
     final double limit = reveal.clamp(0.0, 1.0) * 2 * math.pi;
     const double top = -math.pi / 2;
@@ -1057,8 +1139,12 @@ class _StorageDonutPainter extends CustomPainter {
     }
     final Path ring = Path()
       ..fillType = PathFillType.evenOdd
-      ..addOval(Rect.fromCircle(center: center, radius: radius + strokeWidth / 2))
-      ..addOval(Rect.fromCircle(center: center, radius: radius - strokeWidth / 2));
+      ..addOval(
+        Rect.fromCircle(center: center, radius: radius + strokeWidth / 2),
+      )
+      ..addOval(
+        Rect.fromCircle(center: center, radius: radius - strokeWidth / 2),
+      );
     _fillEinkPath(canvas, ring, style);
   }
 
