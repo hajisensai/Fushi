@@ -5,6 +5,7 @@ import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/downloads/download_batch.dart';
+import 'package:fushi/src/media/downloads/download_task_clear_completed_confirm.dart';
 import 'package:fushi/src/media/downloads/download_task_delete_confirm.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
@@ -383,6 +384,46 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     );
   }
 
+  /// 「清除已完成」：只处理**屏幕上真正渲染出来的**已完成任务，弹一次确认框问
+  /// 要不要连已下载文件一起删（默认不勾，只移出列表、行为与旧版一致）。
+  ///
+  /// 目标集在弹框之前定死（理由同 [_confirmDelete]）。不勾时没有「只清记录」
+  /// 能力的来源（video job、扩展源成品）保持不动、计入「未处理」——拿它们的
+  /// delete 冒充清除会联动删库行、摘种子。
+  Future<void> _confirmClearCompleted(List<DownloadTaskEntry> rendered) async {
+    if (_batchRunning) return;
+    final List<DownloadTaskEntry> targets = selectCompletedDownloadTasks(
+      rendered,
+    );
+    if (!canClearCompletedDownloadTasks(targets)) return;
+    final bool? deleteFiles = await showDownloadClearCompletedConfirm(
+      context,
+      tasks: targets,
+    );
+    if (deleteFiles == null || !mounted || _batchRunning) return;
+    setState(() => _batchRunning = true);
+    DownloadClearCompletedOutcome outcome =
+        const DownloadClearCompletedOutcome();
+    try {
+      outcome = await runDownloadClearCompleted(
+        tasks: targets,
+        deleteFiles: deleteFiles,
+        onError: (Object error, StackTrace stackTrace) => debugPrint(
+          '[fushi-downloads] clear completed failed: $error\n$stackTrace',
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _batchRunning = false);
+    }
+    if (!mounted) return;
+    setState(_pruneSelection);
+    final String message = describeDownloadClearCompletedOutcome(outcome);
+    if (message.isEmpty) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
+  }
+
   /// 选择态下的一行：勾选框 + 原卡片。
   ///
   /// 卡片被 [IgnorePointer] 罩住，整行点击一律翻转选中——选择态里卡片自带的
@@ -488,7 +529,9 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
         action(
           id: 'clear',
           icon: Icons.playlist_remove,
-          tooltip: t.download_clear_finished,
+          // 多选里的「清除」作用于用户亲手选中的条目（来源只给终态条目开 clear，
+          // 含失败 / 已取消），不是「清除已完成」：文案按真实范围写。
+          tooltip: t.download_batch_clear,
           batchAction: DownloadBatchAction.clear,
         ),
         action(
@@ -597,7 +640,12 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
         setState(() => _statusFilter = value),
   );
 
-  Widget _buildTools(List<DownloadTaskEntry> visible) => Wrap(
+  /// [rendered] 是屏幕上真正渲染出来的行（折叠分组里的成员不算）：「清除已完成」
+  /// 只对它们动手。
+  Widget _buildTools(
+    List<DownloadTaskEntry> visible,
+    List<DownloadTaskEntry> rendered,
+  ) => Wrap(
     crossAxisAlignment: WrapCrossAlignment.center,
     spacing: 4,
     runSpacing: 4,
@@ -690,16 +738,16 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                 ),
           child: Text(t.retry),
         ),
-      if (visible.any((DownloadTaskEntry task) => task.actions.clear != null))
+      // 「清除已完成」只看状态为已完成的可见行；确认框里再问要不要连文件删。
+      if (canClearCompletedDownloadTasks(
+        selectCompletedDownloadTasks(rendered),
+      ))
         FushiTextButton(
           key: const ValueKey<String>('download-task-clear-visible'),
           onPressed: _batchRunning
               ? null
               : () => unawaited(
-                  _runBatchOn(
-                    List<DownloadTaskEntry>.of(visible),
-                    DownloadBatchAction.clear,
-                  ),
+                  _confirmClearCompleted(List<DownloadTaskEntry>.of(rendered)),
                 ),
           child: Text(t.download_clear_finished),
         ),
@@ -716,7 +764,10 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
   );
 
   /// 汇总 + 筛选（窄屏在列表顶上随列表滚动；宽屏是右侧窗格）。
-  Widget _buildControls(List<DownloadTaskEntry> visible) {
+  Widget _buildControls(
+    List<DownloadTaskEntry> visible,
+    List<DownloadTaskEntry> rendered,
+  ) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -748,7 +799,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
           onClear: () => setState(() {}),
         ),
         SizedBox(height: tokens.spacing.gap / 2),
-        _buildTools(visible),
+        _buildTools(visible, rendered),
       ],
     );
   }
@@ -945,6 +996,11 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
         rows.addAll(group.value);
       }
     }
+    // 屏幕上真正渲染出来的任务行（折叠分组的成员不在内）：批量栏与「清除已完成」
+    // 都只对它们动手。
+    final List<DownloadTaskEntry> rendered = rows
+        .whereType<DownloadTaskEntry>()
+        .toList();
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double page = tokens.spacing.page;
     // Apple 没有 FAB：「添加」挪进工具行首位（iOS / macOS 的添加动作在栏内，
@@ -1016,7 +1072,9 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
           if (withControls)
             SliverPadding(
               padding: EdgeInsets.fromLTRB(page, tokens.spacing.gap, page, 4),
-              sliver: SliverToBoxAdapter(child: _buildControls(visible)),
+              sliver: SliverToBoxAdapter(
+                child: _buildControls(visible, rendered),
+              ),
             ),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
@@ -1072,7 +1130,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                         page,
                         page + listBottomInset,
                       ),
-                      child: _buildControls(visible),
+                      child: _buildControls(visible, rendered),
                     ),
                   ),
                 ],
@@ -1084,9 +1142,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
             if (_selectionMode)
               Padding(
                 padding: EdgeInsets.only(bottom: bottomInset),
-                child: _buildBatchBar(
-                  rows.whereType<DownloadTaskEntry>().toList(),
-                ),
+                child: _buildBatchBar(rendered),
               ),
           ],
         );

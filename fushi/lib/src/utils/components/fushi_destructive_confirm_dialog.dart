@@ -57,15 +57,16 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
     this.localFilesSubtitle,
     this.statisticsSubtitle,
     this.checkedDisclosure,
+    this.checkedNote,
     this.deleteSubscriptionsLabel,
     this.checkboxKey,
     this.confirmKey,
     this.requireCheckboxToConfirm = false,
     super.key,
   }) : assert(
-          !requireCheckboxToConfirm || checkboxLabel != null,
-          '防呆闸没有勾选项就是一颗永远点不动的按钮',
-        );
+         !requireCheckboxToConfirm || checkboxLabel != null,
+         '防呆闸没有勾选项就是一颗永远点不动的按钮',
+       );
 
   final String title;
   final String message;
@@ -111,6 +112,11 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
   /// 其中的书」同屏并存，而代码按勾选递归删了每本书的解压目录和有声书目录。披露挂
   /// 在勾选状态上，正文才不会再和实际行为说反话。
   final DeletionDisclosure? checkedDisclosure;
+
+  /// 勾选框被勾上后才追加在勾选行下方的一句说明（勾选会多带出的后果，如「对应
+  /// 的视频也会从媒体库中移除」）。与 [checkedDisclosure] 同理挂在勾选状态上：
+  /// 不勾时这件事不会发生，就不该出现在正文里。
+  final String? checkedNote;
 
   /// 非 null 时在正文下方渲染独立勾选行「同时删除 N 个下载订阅」（删合集用）。
   ///
@@ -212,10 +218,7 @@ class _FushiDestructiveConfirmDialogState
                 // 焦点遍历（单站点契约，行即唯一停靠点）。
                 leading: ExcludeFocus(
                   child: IgnorePointer(
-                    child: FushiCheckbox(
-                      value: _checked,
-                      onChanged: (_) {},
-                    ),
+                    child: FushiCheckbox(value: _checked, onChanged: (_) {}),
                   ),
                 ),
                 onTap: () => setState(() {
@@ -239,6 +242,17 @@ class _FushiDestructiveConfirmDialogState
                   value: _deleteStatistics,
                   subtitle: widget.statisticsSubtitle!,
                   onChanged: (bool v) => setState(() => _deleteStatistics = v),
+                ),
+              if (_checked && widget.checkedNote != null)
+                Padding(
+                  padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+                  child: Text(
+                    widget.checkedNote!,
+                    key: const ValueKey<String>(
+                      'destructive-confirm-checked-note',
+                    ),
+                    style: tokens.type.listSubtitle,
+                  ),
                 ),
               if (_checked && widget.checkedDisclosure != null) ...<Widget>[
                 SizedBox(height: tokens.spacing.gap),
@@ -302,19 +316,20 @@ class _FushiDestructiveConfirmDialogState
                 onPressed: widget.requireCheckboxToConfirm && !_checked
                     ? null
                     : () => Navigator.pop(
-                          context,
-                          FushiDestructiveConfirmResult(
-                            checked: _checked,
-                            deleteLocalFiles: _checked &&
-                                widget.localFilesSubtitle != null &&
-                                _deleteLocalFiles,
-                            deleteStatistics:
-                                _statisticsOffered && _deleteStatistics,
-                            deleteSubscriptions:
-                                widget.deleteSubscriptionsLabel != null &&
-                                    _deleteSubscriptions,
-                          ),
+                        context,
+                        FushiDestructiveConfirmResult(
+                          checked: _checked,
+                          deleteLocalFiles:
+                              _checked &&
+                              widget.localFilesSubtitle != null &&
+                              _deleteLocalFiles,
+                          deleteStatistics:
+                              _statisticsOffered && _deleteStatistics,
+                          deleteSubscriptions:
+                              widget.deleteSubscriptionsLabel != null &&
+                              _deleteSubscriptions,
                         ),
+                      ),
                 child: Text(widget.confirmLabel ?? t.dialog_delete),
               ),
             ),
