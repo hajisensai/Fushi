@@ -57,8 +57,12 @@ const String kMangaOcrPipelineRevision = 'v7-leaf-blocks-glyph-boxes';
 const String kLocalMangaOcrEngineSignature =
     'local-onnx-$kMangaOcrPipelineRevision';
 
-/// 识别文本与当前版本逐字相同、只缺行几何的旧版本：同一模型指纹下，这些版本的逐页
-/// 缓存只需补算行几何即可升级，不必重新识别。
+/// 整块识别（manga-ocr）文本与当前版本逐字相同、只缺行几何的旧版本：同一模型指纹
+/// 下，这些版本的逐页缓存经 `LineLayoutOcrRecognizer.layoutRecognized` 升级，不必
+/// 整卷重新识别。升级出的页与新识别同口径：整块读的块沿用缓存文本补行几何；横排走
+/// PP 逐行识别的块（v6/v7 改过读哪几行、v7 起带逐字命中格）就地重读这一块；整页
+/// 再走同一套容器块让位 / 包含去重收尾。v4 写在 v6 补检之前，但补检只在逐列 CTC
+/// 模式开（那类模型没有 v4 缓存），整块 manga-ocr 模式的新识别同样不补检。
 const List<String> kMangaOcrRelayoutRevisions = <String>[
   'v4-antialias-text-dedup',
 ];

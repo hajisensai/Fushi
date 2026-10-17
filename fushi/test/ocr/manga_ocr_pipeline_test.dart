@@ -966,6 +966,164 @@ void main() {
       expect(recognizer.recognizeCalls, 1);
     });
 
+    group('旧版缓存升级与新识别同口径', () {
+      // 人物资料页：竖长大框套着两段横排文字。
+      const OcrRect tallParent = OcrRect(
+        left: 0,
+        top: 0,
+        right: 400,
+        bottom: 1000,
+      );
+      const OcrRect upper = OcrRect(
+        left: 20,
+        top: 100,
+        right: 380,
+        bottom: 160,
+      );
+      const OcrRect lower = OcrRect(
+        left: 20,
+        top: 600,
+        right: 380,
+        bottom: 660,
+      );
+
+      /// 旧版（v4）缓存里的块：只有文本，没有行几何 / 字格。
+      OcrBlock legacyBlock(OcrRect box, String text, {double? confidence}) =>
+          OcrBlock(
+            box: box,
+            vertical: false,
+            lines: <String>[text],
+            score: 0.8,
+            insideBubble: false,
+            confidence: confidence,
+          );
+
+      Future<OcrPageResult> relayout(
+        List<OcrBlock> legacyBlocks,
+        _ReplyLayoutRecognizer recognizer,
+      ) async {
+        final MemoryCache legacy = MemoryCache();
+        await legacy.write(
+          'b',
+          OcrPageResult(
+            pageIndex: 0,
+            imageWidth: 500,
+            imageHeight: 1000,
+            blocks: legacyBlocks,
+          ),
+        );
+        final _FixedDetector detector = _FixedDetector(
+          const <DetectedTextRegion>[],
+        );
+        final List<OcrPageResult> results =
+            await MangaOcrPipeline(
+              detector: detector,
+              recognizer: recognizer,
+            ).processBook(
+              bookId: 'b',
+              pageCount: 1,
+              loadPage: (int page) async => pageImage(page),
+              legacyCaches: <OcrPageCache>[legacy],
+            );
+        expect(detector.calls, 0);
+        expect(recognizer.recognizeCalls, 0);
+        return results.single;
+      }
+
+      List<String> blockJson(OcrPageResult page) =>
+          <String>[for (final OcrBlock b in page.blocks) jsonEncode(b.toJson())]
+            ..sort();
+
+      final Map<OcrRect, OcrRecognition> profileReplies =
+          <OcrRect, OcrRecognition>{
+            tallParent: const OcrRecognition(
+              text: 'XY',
+              vertical: false,
+              lines: <String>['X', 'Y'],
+              lineBoxes: <OcrRect>[
+                OcrRect(left: 25, top: 110, right: 370, bottom: 150),
+                OcrRect(left: 25, top: 610, right: 370, bottom: 650),
+              ],
+            ),
+            upper: const OcrRecognition(
+              text: 'X1',
+              vertical: false,
+              lines: <String>['X1'],
+              lineBoxes: <OcrRect>[upper],
+            ),
+            lower: const OcrRecognition(
+              text: 'Y1',
+              vertical: false,
+              lines: <String>['Y1'],
+              lineBoxes: <OcrRect>[lower],
+            ),
+          };
+
+      test('容器块：补上行几何后同样让位给叶子块，结果与新识别逐块相同', () async {
+        final OcrPageResult upgraded = await relayout(<OcrBlock>[
+          legacyBlock(tallParent, 'XY'),
+          legacyBlock(upper, 'X1'),
+          legacyBlock(lower, 'Y1'),
+        ], _ReplyLayoutRecognizer(profileReplies));
+        expect(
+          upgraded.blocks.map((OcrBlock b) => b.text),
+          unorderedEquals(<String>['X1', 'Y1']),
+        );
+        final OcrPageResult fresh = await MangaOcrPipeline(
+          detector: _FixedDetector(<DetectedTextRegion>[
+            _region(tallParent, 0.8),
+            _region(upper, 0.8),
+            _region(lower, 0.8),
+          ]),
+          recognizer: _ReplyLayoutRecognizer(profileReplies),
+        ).processPage(pageIndex: 0, image: pageImage(0));
+        expect(blockJson(upgraded), blockJson(fresh));
+      });
+
+      test('识别器重读出的文本、逐字命中格与置信度落进升级结果；整块沿用缓存文本时保留缓存置信度', () async {
+        final OcrPageResult upgraded = await relayout(
+          <OcrBlock>[
+            legacyBlock(upper, '旧版文字', confidence: 0.3),
+            legacyBlock(lower, 'Y1', confidence: 0.4),
+          ],
+          _ReplyLayoutRecognizer(<OcrRect, OcrRecognition>{
+            upper: const OcrRecognition(
+              text: 'ab',
+              vertical: false,
+              lines: <String>['ab'],
+              lineBoxes: <OcrRect>[upper],
+              confidence: 0.9,
+              glyphBoxes: <OcrGlyphBox>[
+                OcrGlyphBox(
+                  start: 0,
+                  end: 1,
+                  rect: OcrRect(left: 20, top: 100, right: 60, bottom: 160),
+                ),
+                OcrGlyphBox(
+                  start: 1,
+                  end: 2,
+                  rect: OcrRect(left: 60, top: 100, right: 100, bottom: 160),
+                ),
+              ],
+            ),
+            lower: profileReplies[lower]!,
+          }),
+        );
+        final OcrBlock reread = upgraded.blocks.firstWhere(
+          (OcrBlock b) => b.box == upper,
+        );
+        expect(reread.text, 'ab');
+        expect(reread.confidence, 0.9);
+        expect(reread.glyphBoxes!.map((OcrGlyphBox g) => g.end), <int>[1, 2]);
+        final OcrBlock kept = upgraded.blocks.firstWhere(
+          (OcrBlock b) => b.box == lower,
+        );
+        expect(kept.text, 'Y1');
+        expect(kept.confidence, 0.4);
+        expect(kept.glyphBoxes, isNull);
+      });
+    });
+
     test('多行块也参与识别后包含去重（按整块文本判断）', () async {
       final OcrPageResult result = await MangaOcrPipeline(
         detector: _FixedDetector(const <DetectedTextRegion>[
@@ -1383,6 +1541,39 @@ class _ReplyRecognizer implements OrientedOcrRecognizer {
     img.Image page,
     List<OcrRect> boxes,
   ) async => <OcrRecognition>[for (final OcrRect box in boxes) replies[box]!];
+}
+
+/// 按框回固定结果；新识别（[recognizeOriented]）与旧版缓存升级
+/// （[layoutRecognized]）给同一份，模拟两条路同口径的识别器。
+class _ReplyLayoutRecognizer
+    implements OrientedOcrRecognizer, LineLayoutOcrRecognizer {
+  _ReplyLayoutRecognizer(this.replies);
+
+  final Map<OcrRect, OcrRecognition> replies;
+  int recognizeCalls = 0;
+
+  @override
+  Future<String> recognize(img.Image page, OcrRect box) async {
+    recognizeCalls++;
+    return replies[box]!.text;
+  }
+
+  @override
+  Future<List<OcrRecognition>> recognizeOriented(
+    img.Image page,
+    List<OcrRect> boxes,
+  ) async {
+    recognizeCalls += boxes.length;
+    return <OcrRecognition>[for (final OcrRect box in boxes) replies[box]!];
+  }
+
+  @override
+  Future<OcrRecognition> layoutRecognized(
+    img.Image page,
+    OcrRect box,
+    String text, {
+    required bool vertical,
+  }) async => replies[box]!;
 }
 
 class _RecordingSweeper implements OcrPageTextSweeper {
