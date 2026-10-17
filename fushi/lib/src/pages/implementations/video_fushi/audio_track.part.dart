@@ -62,35 +62,40 @@ extension _VideoAudioTrack on _VideoFushiPageState {
     // `updateAudioTrackId(远端uid)` 是静默 0 行 UPDATE，选轨退出即丢）——按稳定
     // 远端 uid（合集连播 = 当前成员 id，与断点键 [_remotePositionKeyForIndex]
     // 同构）落带戳键对 + 上报 host（逐字段 LWW，host 本机与其它设备跟随）。
-    if (_sourceReviewActive) {
-      // BUG-3490：卡片片段回看中切换只在本次生效，不保存、不同步给 host。
-    } else if (_isRemote) {
-      final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
-      final int nowMs = await _stampRemoteStringPref(
-        videoRemoteAudioTrackPrefKey(uid),
-        videoRemoteAudioTrackAtPrefKey(uid),
-        track.id,
-      );
-      _pushRemotePlayback(
-        uid,
-        VideoPlaybackSyncState(audioTrackId: track.id, audioTrackAt: nowMs),
-      );
-    } else {
-      final int? collectionId = widget.playlistCollectionId;
-      if (collectionId != null) {
-        // 系列级写入内聚盖戳：repo 会把值 + now 镜像进全体视频成员的互联键对。
-        await widget.repo.updateCollectionAudioTrackId(collectionId, track.id);
-      } else {
-        await widget.repo.updateAudioTrackId(bookUid, track.id);
-        // 本机镜像盖戳（互联 LWW 载体）：否则对端上报过一次后，本机选轨（row
-        // 无戳恒 0）永远输给旧戳、再也传不出去。
-        await _stampRemoteStringPref(
-          videoRemoteAudioTrackPrefKey(bookUid),
-          videoRemoteAudioTrackAtPrefKey(bookUid),
+    // 卡片片段回看中暂存、继续观看时补存（BUG-3490）：key 在切换当时捕获。
+    final bool remote = _isRemote;
+    final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+    final int? collectionId = widget.playlistCollectionId;
+    await _saveReviewableChoice(_ReviewChoiceKind.audioTrack, () async {
+      if (remote) {
+        final int nowMs = await _stampRemoteStringPref(
+          videoRemoteAudioTrackPrefKey(uid),
+          videoRemoteAudioTrackAtPrefKey(uid),
           track.id,
         );
+        _pushRemotePlayback(
+          uid,
+          VideoPlaybackSyncState(audioTrackId: track.id, audioTrackAt: nowMs),
+        );
+      } else {
+        if (collectionId != null) {
+          // 系列级写入内聚盖戳：repo 会把值 + now 镜像进全体视频成员的互联键对。
+          await widget.repo.updateCollectionAudioTrackId(
+            collectionId,
+            track.id,
+          );
+        } else {
+          await widget.repo.updateAudioTrackId(bookUid, track.id);
+          // 本机镜像盖戳（互联 LWW 载体）：否则对端上报过一次后，本机选轨（row
+          // 无戳恒 0）永远输给旧戳、再也传不出去。
+          await _stampRemoteStringPref(
+            videoRemoteAudioTrackPrefKey(bookUid),
+            videoRemoteAudioTrackAtPrefKey(bookUid),
+            track.id,
+          );
+        }
       }
-    }
+    });
     if (!mounted || generation != _episodeLoadSeq) return;
     _rebuild(() => _currentAudioTrackId = track.id);
     _showOsd(

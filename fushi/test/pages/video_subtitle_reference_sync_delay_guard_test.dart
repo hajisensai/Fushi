@@ -72,12 +72,10 @@ void main() {
       'Future<void> _setDelayMs(int delayMs) async {',
       'Future<void> _setSecondaryDelayMs(',
     );
-    final int guard = body.indexOf(
-      'if (_primarySubtitleAligned || _sourceReviewActive) {',
-    );
+    final int guard = body.indexOf('if (_primarySubtitleAligned) {');
     expect(guard, greaterThan(0));
     expect(body.indexOf('updateCollectionSubtitleDelayMs'), greaterThan(guard));
-    expect(body.indexOf('updateDelayMs(_activeBookUid'), greaterThan(guard));
+    expect(body.indexOf('updateDelayMs(bookUid'), greaterThan(guard));
     expect(body.indexOf('videoRemoteDelayPrefKey'), greaterThan(guard));
   });
 

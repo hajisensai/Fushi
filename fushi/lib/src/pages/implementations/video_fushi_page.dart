@@ -2268,6 +2268,28 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           widget.sourceReviewSession?.isReview ??
           (widget.sourceReview != null && !_reviewContinued));
 
+  /// BUG-3490：卡片片段回看中对音轨 / 主副字幕 / 主副调轴的切换只在本次生效。保存动作
+  /// 按种类暂存（同种只留最后一次，key 与值在切换当时就已捕获），点「从这里继续观看」
+  /// 时按正常逻辑补存（本地偏好 + 同步 host）；回看中退出则整批丢弃。
+  late final SourceReviewDeferredWrites<_ReviewChoiceKind>
+  _reviewDeferredChoiceWrites = SourceReviewDeferredWrites<_ReviewChoiceKind>(
+    isReview: () => _sourceReviewActive,
+  );
+
+  /// 保存一次用户的播放选择：回看中暂存，否则立即写。
+  Future<void> _saveReviewableChoice(
+    _ReviewChoiceKind kind,
+    Future<void> Function() write,
+  ) => _reviewDeferredChoiceWrites.save(kind, write);
+
+  /// 「从这里继续观看」：把回看中暂存的选择按正常逻辑补存。
+  Future<void> _flushReviewDeferredChoiceWrites() =>
+      _reviewDeferredChoiceWrites.flush(
+        onError: (Object e) => debugPrint(
+          '[VideoFushiPage] deferred review choice save failed: $e',
+        ),
+      );
+
   /// 回看期间压住一切远端进度 / 会话上报（BUG-3490）：回看直接串流，「不影响服务器
   /// 进度」由这道闸门保证，不再要求先下载。
   late final SourceReviewRemoteReportGate _remoteReportGate =
@@ -2299,6 +2321,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (!mounted || _sourceReviewActive || _reviewContinued) return;
     _reviewContinued = true;
     _sourceReviewPlayPending = true;
+    unawaited(_flushReviewDeferredChoiceWrites());
     _playAfterSourceReviewIfReady();
     setState(() {});
   }
@@ -4419,29 +4442,29 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     String? value,
   ) async {
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    // BUG-3490：卡片片段回看中的音轨 / 字幕 / 调轴切换只在本次生效，不落偏好。
-    if (_sourceReviewActive) return nowMs;
     await appModel.prefsRepo.setPref(valueKey, value ?? '');
     await appModel.prefsRepo.setPref(atKey, nowMs);
     return nowMs;
   }
 
-  /// 记住用户为远端集选的主字幕（`off:` 哨兵 = 显式关闭）。卡片片段回看中只在本次
-  /// 生效、不落偏好（BUG-3490）。
+  /// 记住用户为远端集选的主字幕（`off:` 哨兵 = 显式关闭）。卡片片段回看中暂存，
+  /// 继续观看时补存（BUG-3490）。
   void _rememberRemoteSubtitleSource(
     String uid,
     int episodeIndex,
     String? source,
   ) {
-    if (_sourceReviewActive) return;
-    unawaited(appModel.setRemoteSubtitleSource(uid, episodeIndex, source));
+    unawaited(
+      _saveReviewableChoice(
+        _ReviewChoiceKind.primarySubtitle,
+        () => appModel.setRemoteSubtitleSource(uid, episodeIndex, source),
+      ),
+    );
   }
 
   /// best-effort 上报播放偏好带戳字段到 host（能力探测 + 吞错；调整哪个字段就
   /// 只带哪个字段，host 逐字段 LWW 合并）。旧 host 无端点 / 离线只记日志。
   void _pushRemotePlayback(String uid, VideoPlaybackSyncState state) {
-    // BUG-3490：回看中的播放偏好切换不同步给 host。
-    if (_sourceReviewActive) return;
     // 经 Object? 中转促成类型提升：RemoteVideoPlaybackSync 是能力接口，不是
     // RemoteVideoClient 的子类型，直接 is 判断不会提升接收者。
     final Object? client = _effectiveRemoteClient;
@@ -9923,7 +9946,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 对齐产物生效期间的微调只在本次会话生效：落盘会写进系列级调轴，把同系列其它
     // 没对齐的集一起推歪；而对齐产物重进时本来就按 0 起算。卡片片段回看中的调轴
     // 同样只在本次生效（BUG-3490）。
-    if (_primarySubtitleAligned || _sourceReviewActive) {
+    if (_primarySubtitleAligned) {
       if (mounted) setState(() {});
       return;
     }
@@ -9939,39 +9962,44 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 时间戳者胜」+ 写穿行值，使 host 本机与其它设备跟随；失败/旧 host 无端点只记
     // 日志——本地 prefs 已写，不阻塞播放）。合集连播键 = 当前成员 id（与断点键
     // [_remotePositionKeyForIndex] 同构，成员天然隔离）。
-    if (_isRemote) {
-      final int nowMs = DateTime.now().millisecondsSinceEpoch;
-      final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
-      await appModel.prefsRepo.setPref(videoRemoteDelayPrefKey(uid), clamped);
-      await appModel.prefsRepo.setPref(videoRemoteDelayAtPrefKey(uid), nowMs);
-      _pushRemotePlayback(
-        uid,
-        VideoPlaybackSyncState(delayMs: clamped, delayAt: nowMs),
-      );
-    } else {
-      final int? collectionId = widget.playlistCollectionId;
-      if (collectionId != null) {
-        // 系列级写入内聚盖戳：repo 会把值 + now 镜像进**全体视频成员**的
-        // `video_remote_delay_` prefs 对（互联 LWW 用，见 repo doc），此处无需重复。
-        await widget.repo.updateCollectionSubtitleDelayMs(
-          collectionId,
-          clamped,
+    // 卡片片段回看中暂存、继续观看时补存（BUG-3490）：key 在切换当时捕获。
+    final bool remote = _isRemote;
+    final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+    final String bookUid = _activeBookUid;
+    final int? collectionId = widget.playlistCollectionId;
+    await _saveReviewableChoice(_ReviewChoiceKind.primaryDelay, () async {
+      if (remote) {
+        final int nowMs = DateTime.now().millisecondsSinceEpoch;
+        await appModel.prefsRepo.setPref(videoRemoteDelayPrefKey(uid), clamped);
+        await appModel.prefsRepo.setPref(videoRemoteDelayAtPrefKey(uid), nowMs);
+        _pushRemotePlayback(
+          uid,
+          VideoPlaybackSyncState(delayMs: clamped, delayAt: nowMs),
         );
       } else {
-        await widget.repo.updateDelayMs(_activeBookUid, clamped);
-        // 本机调轴镜像盖戳（断点 TODO-816 同范式）：调轴 + now 写进与互联同一键
-        // 空间，使 host 侧 getVideoDelay / 清单以带戳值参与 LWW——否则对端上报过
-        // 一次后，本机后续调轴（row 无戳恒 0）永远输给旧戳、再也传不出去。
-        await appModel.prefsRepo.setPref(
-          videoRemoteDelayPrefKey(_activeBookUid),
-          clamped,
-        );
-        await appModel.prefsRepo.setPref(
-          videoRemoteDelayAtPrefKey(_activeBookUid),
-          DateTime.now().millisecondsSinceEpoch,
-        );
+        if (collectionId != null) {
+          // 系列级写入内聚盖戳：repo 会把值 + now 镜像进**全体视频成员**的
+          // `video_remote_delay_` prefs 对（互联 LWW 用，见 repo doc），此处无需重复。
+          await widget.repo.updateCollectionSubtitleDelayMs(
+            collectionId,
+            clamped,
+          );
+        } else {
+          await widget.repo.updateDelayMs(bookUid, clamped);
+          // 本机调轴镜像盖戳（断点 TODO-816 同范式）：调轴 + now 写进与互联同一键
+          // 空间，使 host 侧 getVideoDelay / 清单以带戳值参与 LWW——否则对端上报过
+          // 一次后，本机后续调轴（row 无戳恒 0）永远输给旧戳、再也传不出去。
+          await appModel.prefsRepo.setPref(
+            videoRemoteDelayPrefKey(bookUid),
+            clamped,
+          );
+          await appModel.prefsRepo.setPref(
+            videoRemoteDelayAtPrefKey(bookUid),
+            DateTime.now().millisecondsSinceEpoch,
+          );
+        }
       }
-    }
+    });
     if (mounted) setState(() {});
   }
 
@@ -9999,50 +10027,49 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         icon: Icons.sync_outlined,
       );
     }
-    // BUG-3490：卡片片段回看中切换只在本次生效，不保存、不同步给 host。
-    if (_sourceReviewActive) {
-      if (mounted) setState(() {});
-      return;
-    }
-    // TODO-2837 副字幕调轴入同步通道（播放偏好同步泛化批）：远端按 uid 落带戳
-    // 键对 + 上报 host；null（回跟随）也是一次带戳写，清除同样跨设备收敛。
-    if (_isRemote) {
-      final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
-      final int nowMs = await _stampRemoteStringPref(
-        videoRemoteSecondaryDelayPrefKey(uid),
-        videoRemoteSecondaryDelayAtPrefKey(uid),
+    // 卡片片段回看中暂存、继续观看时补存（BUG-3490）：key 在切换当时捕获。
+    final bool remote = _isRemote;
+    final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+    final String bookUid = _activeBookUid;
+    final int? collectionId = widget.playlistCollectionId;
+    await _saveReviewableChoice(_ReviewChoiceKind.secondaryDelay, () async {
+      // TODO-2837 副字幕调轴入同步通道（播放偏好同步泛化批）：远端按 uid 落带戳
+      // 键对 + 上报 host；null（回跟随）也是一次带戳写，清除同样跨设备收敛。
+      if (remote) {
+        final int nowMs = await _stampRemoteStringPref(
+          videoRemoteSecondaryDelayPrefKey(uid),
+          videoRemoteSecondaryDelayAtPrefKey(uid),
+          clamped?.toString(),
+        );
+        _pushRemotePlayback(
+          uid,
+          VideoPlaybackSyncState(
+            secondaryDelayMs: clamped,
+            secondaryDelayAt: nowMs,
+          ),
+        );
+        return;
+      }
+      if (collectionId != null) {
+        await widget.repo.updateCollectionSecondarySubtitleDelayMs(
+          collectionId,
+          clamped,
+        );
+        if (clamped == null) {
+          // 重置为跟随：连本集 per-book 旧值一起清（见 doc，消除回退复活特例）。
+          await widget.repo.updateSecondaryDelayMs(bookUid, null);
+        }
+      } else {
+        await widget.repo.updateSecondaryDelayMs(bookUid, clamped);
+      }
+      // 本机镜像盖戳（互联 LWW 载体；断点 TODO-816 同范式）：使 host 侧
+      // getVideoPlayback / 清单以带戳值参与逐字段 LWW。
+      await _stampRemoteStringPref(
+        videoRemoteSecondaryDelayPrefKey(bookUid),
+        videoRemoteSecondaryDelayAtPrefKey(bookUid),
         clamped?.toString(),
       );
-      _pushRemotePlayback(
-        uid,
-        VideoPlaybackSyncState(
-          secondaryDelayMs: clamped,
-          secondaryDelayAt: nowMs,
-        ),
-      );
-      if (mounted) setState(() {});
-      return;
-    }
-    final int? collectionId = widget.playlistCollectionId;
-    if (collectionId != null) {
-      await widget.repo.updateCollectionSecondarySubtitleDelayMs(
-        collectionId,
-        clamped,
-      );
-      if (clamped == null) {
-        // 重置为跟随：连本集 per-book 旧值一起清（见 doc，消除回退复活特例）。
-        await widget.repo.updateSecondaryDelayMs(_activeBookUid, null);
-      }
-    } else {
-      await widget.repo.updateSecondaryDelayMs(_activeBookUid, clamped);
-    }
-    // 本机镜像盖戳（互联 LWW 载体；断点 TODO-816 同范式）：使 host 侧
-    // getVideoPlayback / 清单以带戳值参与逐字段 LWW。
-    await _stampRemoteStringPref(
-      videoRemoteSecondaryDelayPrefKey(_activeBookUid),
-      videoRemoteSecondaryDelayAtPrefKey(_activeBookUid),
-      clamped?.toString(),
-    );
+    });
     if (mounted) setState(() {});
   }
 
@@ -11859,4 +11886,13 @@ class _VideoRepeatGestureButtonState extends State<_VideoRepeatGestureButton> {
       child: widget.child,
     );
   }
+}
+
+/// 卡片片段回看中暂存、继续观看时补存的播放选择种类（BUG-3490）。
+enum _ReviewChoiceKind {
+  audioTrack,
+  primarySubtitle,
+  secondarySubtitle,
+  primaryDelay,
+  secondaryDelay,
 }

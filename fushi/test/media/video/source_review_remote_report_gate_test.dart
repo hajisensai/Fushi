@@ -120,4 +120,55 @@ void main() {
     expect(await gate.position(client, 'a', 1000, 1), isTrue);
     expect(client.calls, <String>['position a 1000']);
   });
+
+  group('回看中的播放选择：暂存，继续观看时补存', () {
+    test('回看中不写；继续后按正常逻辑补存，同种只留最后一次', () async {
+      bool review = true;
+      final List<String> writes = <String>[];
+      final SourceReviewDeferredWrites<String> deferred =
+          SourceReviewDeferredWrites<String>(isReview: () => review);
+      await deferred.save('audio', () async => writes.add('audio 2'));
+      await deferred.save('subtitle', () async => writes.add('sub ja.srt'));
+      await deferred.save('audio', () async => writes.add('audio 3'));
+      expect(writes, isEmpty);
+      expect(deferred.pendingKinds, <String>['audio', 'subtitle']);
+
+      review = false; // 「从这里继续观看」
+      await deferred.flush();
+      expect(writes, <String>['audio 3', 'sub ja.srt']);
+      expect(deferred.pendingKinds, isEmpty);
+
+      // 继续之后的切换立即保存。
+      await deferred.save('audio', () async => writes.add('audio 4'));
+      expect(writes.last, 'audio 4');
+      await deferred.flush();
+      expect(writes, hasLength(3));
+    });
+
+    test('作废的种类不补存；单条失败不影响其余', () async {
+      bool review = true;
+      final List<String> writes = <String>[];
+      final List<Object> errors = <Object>[];
+      final SourceReviewDeferredWrites<String> deferred =
+          SourceReviewDeferredWrites<String>(isReview: () => review);
+      await deferred.save('subtitle', () async => writes.add('deleted.srt'));
+      await deferred.save('audio', () async => throw StateError('offline'));
+      await deferred.save('delay', () async => writes.add('delay +200'));
+      // 字幕文件被删：清理照常执行，暂存的那次选择作废。
+      deferred.discard('subtitle');
+
+      review = false;
+      await deferred.flush(onError: errors.add);
+      expect(writes, <String>['delay +200']);
+      expect(errors, hasLength(1));
+    });
+
+    test('回看中退出（不 flush）即整批丢弃', () async {
+      final List<String> writes = <String>[];
+      final SourceReviewDeferredWrites<String> deferred =
+          SourceReviewDeferredWrites<String>(isReview: () => true);
+      await deferred.save('audio', () async => writes.add('audio 2'));
+      expect(writes, isEmpty);
+    });
+  });
 }

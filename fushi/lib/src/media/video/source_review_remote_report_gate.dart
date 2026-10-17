@@ -81,3 +81,46 @@ class SourceReviewRemoteReportGate {
 
   static int _clamp(int positionMs) => positionMs < 0 ? 0 : positionMs;
 }
+
+/// 卡片片段回看中暂存的「保存用户播放选择」动作（BUG-3490）。
+///
+/// 回看中切换音轨 / 字幕 / 调轴只在本次生效；对应的保存动作按种类 [K] 暂存（同种
+/// 只留最后一次，key 与值由调用方在切换当时捕获进闭包），点「从这里继续观看」时
+/// [flush] 按正常逻辑补存。回看中退出则不 flush、整批丢弃。
+class SourceReviewDeferredWrites<K> {
+  /// [isReview] 每次保存前现读（与 [SourceReviewRemoteReportGate] 同一判据）。
+  SourceReviewDeferredWrites({required bool Function() isReview})
+    : _isReview = isReview;
+
+  final bool Function() _isReview;
+  final Map<K, Future<void> Function()> _pending =
+      <K, Future<void> Function()>{};
+
+  /// 暂存中的种类（按首次暂存先后）。
+  Iterable<K> get pendingKinds => _pending.keys;
+
+  /// 保存一次选择：回看中暂存（覆盖同种旧值），否则立即写。
+  Future<void> save(K kind, Future<void> Function() write) async {
+    if (_isReview()) {
+      _pending[kind] = write;
+      return;
+    }
+    await write();
+  }
+
+  /// 作废某一种暂存（例如它指向的字幕文件已被删除）。
+  void discard(K kind) => _pending.remove(kind);
+
+  /// 补存全部暂存；单条失败交给 [onError]，不影响其余各条。
+  Future<void> flush({void Function(Object error)? onError}) async {
+    final List<Future<void> Function()> writes = _pending.values.toList();
+    _pending.clear();
+    for (final Future<void> Function() write in writes) {
+      try {
+        await write();
+      } catch (e) {
+        onError?.call(e);
+      }
+    }
+  }
+}

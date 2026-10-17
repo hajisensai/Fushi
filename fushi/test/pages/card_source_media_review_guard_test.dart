@@ -248,7 +248,7 @@ void main() {
   );
 
   test(
-    'BUG-3490 review keeps audio / subtitle / delay choices session-only',
+    'BUG-3490 review defers audio / subtitle / delay saves until continue',
     () {
       final String audio = File(
         'lib/src/pages/implementations/video_fushi/audio_track.part.dart',
@@ -256,72 +256,126 @@ void main() {
       final String subtitle = File(
         'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
-      // 两个底层出口（本地带戳偏好、同步给 host）回看中一律不写。
-      final int stamp = video.indexOf('Future<int> _stampRemoteStringPref(');
-      final int stampWrite = video.indexOf('prefsRepo.setPref(valueKey', stamp);
-      expect(
-        video.substring(stamp, stampWrite),
-        contains('if (_sourceReviewActive) return nowMs;'),
-      );
-      final int push = video.indexOf('void _pushRemotePlayback(');
-      final int pushSend = video.indexOf('putRemoteVideoPlayback(', push);
-      expect(
-        video.substring(push, pushSend),
-        contains('if (_sourceReviewActive) return;'),
-      );
-      // 远端主字幕选择只经一个出口，页面不得直调 AppModel 落库。
-      expect(subtitle, isNot(contains('appModel.setRemoteSubtitleSource(')));
-      final int remember = video.indexOf('void _rememberRemoteSubtitleSource(');
-      expect(
-        video.substring(
-          remember,
-          video.indexOf('setRemoteSubtitleSource', remember + 40),
-        ),
-        contains('if (_sourceReviewActive) return;'),
-      );
-      // 本地库条目的选择写库：音轨 / 主字幕（选源 + 关闭）/ 副字幕（选源 + 关闭）。
-      final int selectAudio = audio.indexOf('Future<void> _selectAudioTrack(');
-      expect(
-        audio.substring(
-          selectAudio,
-          audio.indexOf('await widget.repo.', selectAudio),
-        ),
-        contains('if (_sourceReviewActive) {'),
-      );
-      for (final String method in <String>[
-        'Future<bool> _selectSecondarySubtitleSource(',
-        'Future<void> _selectSecondarySubtitleOff(',
-        'Future<void> _selectSubtitleOff(',
-      ]) {
-        final int at = subtitle.indexOf(method);
-        final int write = subtitle.indexOf('await widget.repo.', at);
-        expect(at, greaterThan(0), reason: method);
-        expect(
-          subtitle.substring(at, write),
-          contains('_sourceReviewActive'),
-          reason: method,
-        );
-      }
-      expect(
-        RegExp(r'_sourceReviewActive').allMatches(subtitle).length,
-        greaterThanOrEqualTo(5),
-        reason: 'graphic + text primary selection are gated as well',
-      );
-      // 调轴：主字幕与「对齐产物」同走只在本次生效的分支；副字幕回看中提前返回。
+      final String all = '$video\n$audio\n$subtitle';
+
+      // 暂存出口：回看中只记下保存动作，不写；继续观看时补存。
       expect(
         video,
-        contains('if (_primarySubtitleAligned || _sourceReviewActive) {'),
+        contains(') => _reviewDeferredChoiceWrites.save(kind, write);'),
       );
-      final int secondary = video.indexOf('Future<void> _setSecondaryDelayMs(');
+      expect(video, contains('isReview: () => _sourceReviewActive,'));
+      final int changed = video.indexOf('void _onSourceReviewChanged()');
+      final int resume = video.indexOf('void _playAfterSourceReviewIfReady()');
       expect(
-        video.substring(
-          secondary,
-          video.indexOf('_remotePositionKeyForIndex', secondary),
-        ),
-        contains('if (_sourceReviewActive) {'),
+        video.substring(changed, resume),
+        contains('unawaited(_flushReviewDeferredChoiceWrites());'),
+      );
+
+      // 写偏好 / 同步 host 的底层调用只能出现在暂存闭包里：每个写点所在方法都
+      // 必须经 _saveReviewableChoice（_forgetDeletedSubtitleSelection 是清理，例外）。
+      for (final ({String source, String method, String kind}) site
+          in <({String source, String method, String kind})>[
+            (
+              source: audio,
+              method: 'Future<void> _selectAudioTrack(',
+              kind: 'audioTrack',
+            ),
+            (
+              source: video,
+              method: 'Future<void> _setDelayMs(',
+              kind: 'primaryDelay',
+            ),
+            (
+              source: video,
+              method: 'Future<void> _setSecondaryDelayMs(',
+              kind: 'secondaryDelay',
+            ),
+            (
+              source: video,
+              method: 'void _rememberRemoteSubtitleSource(',
+              kind: 'primarySubtitle',
+            ),
+            (
+              source: subtitle,
+              method: 'Future<bool> _selectSubtitleSource(',
+              kind: 'primarySubtitle',
+            ),
+            (
+              source: subtitle,
+              method: 'Future<void> _selectSubtitleOff(',
+              kind: 'primarySubtitle',
+            ),
+            (
+              source: subtitle,
+              method: 'Future<bool> _selectSecondarySubtitleSource(',
+              kind: 'secondarySubtitle',
+            ),
+            (
+              source: subtitle,
+              method: 'Future<void> _selectSecondarySubtitleOff(',
+              kind: 'secondarySubtitle',
+            ),
+            (
+              source: subtitle,
+              method: 'Future<void> _clearRemoteSecondarySubtitle(',
+              kind: 'secondarySubtitle',
+            ),
+          ]) {
+        final int at = site.source.indexOf(site.method);
+        expect(at, greaterThan(0), reason: site.method);
+        final int end = site.source.indexOf('\n  }\n', at);
+        final String body = site.source.substring(at, end);
+        expect(body, contains('_saveReviewableChoice('), reason: site.method);
+        expect(
+          body,
+          contains('_ReviewChoiceKind.${site.kind}'),
+          reason: site.method,
+        );
+      }
+      // 远端主字幕只经 _rememberRemoteSubtitleSource；直调 AppModel 的只剩清理。
+      expect(
+        RegExp(
+          r'appModel\.setRemoteSubtitleSource\(',
+        ).allMatches(subtitle).length,
+        1,
+      );
+      expect(
+        RegExp(
+          r'\(\) async \{\n\s*final int nowMs = await _stampRemoteStringPref\(',
+        ).allMatches(all).length,
+        greaterThanOrEqualTo(3),
+        reason: 'remote secondary subtitle writes are deferred closures too',
+      );
+      expect(
+        all,
+        isNot(contains('unawaited(() async {\n      final int nowMs')),
       );
     },
   );
+
+  test('BUG-3490 deleted-subtitle cleanup still runs during review', () {
+    final String subtitle = File(
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    final int at = subtitle.indexOf(
+      'Future<void> _forgetDeletedSubtitleSelection(',
+    );
+    final String body = subtitle.substring(at, subtitle.indexOf('\n  }\n', at));
+    // 清理不经暂存出口、直接落库，并作废回看中暂存的同种选择。
+    expect(body, isNot(contains('_saveReviewableChoice(')));
+    expect(body, isNot(contains('_sourceReviewActive')));
+    expect(
+      body,
+      contains(
+        '_reviewDeferredChoiceWrites.discard(_ReviewChoiceKind.primarySubtitle);',
+      ),
+    );
+    expect(
+      body,
+      contains('unawaited(appModel.setRemoteSubtitleSource(uid, ep, null));'),
+    );
+    expect(body, contains('await widget.repo.saveSubtitleSelection('));
+  });
 
   test('BUG-3490 library online items mint fingerprint-less links', () {
     final String mining = File(
