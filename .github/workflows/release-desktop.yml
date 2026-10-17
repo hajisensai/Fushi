@@ -44,7 +44,7 @@ on:
       - 'tool/feedback_mark_released.sh'
       - 'tool/notarize_submit.sh'
       - 'tool/mihon/**'
-      - 'tool/ffmpeg-min/**'
+      - 'tool/ffmpeg-unified/**'
       - 'tool/sign_windows_release.ps1'
       - 'tool/simplysign_connect.ps1'
       - 'tool/engine_overlay.ps1'
@@ -787,48 +787,11 @@ jobs:
           # `exit $LASTEXITCODE`，且以 `pwsh -command ". '{0}'"` 点源执行——点源脚本里
           # `exit 69` 让 pwsh 进程以 1 退出、不打任何报错，整步无声变红。显式成功收尾。
           exit 0
-      # ffmpeg.exe and its MinGW runtime DLLs are vendored at
-      # third_party/ffmpeg-min/windows/
-      # (TODO-416). It used to be fetched from another workflow's build artifact,
-      # which silently broke whenever that artifact expired (90 days) or that
-      # workflow had not run on this branch, shipping a Windows bundle with NO
-      # ffmpeg -> missing video covers/subtitles. Copying the committed binary
-      # plus its runtime DLLs makes every release self-contained and removes the
-      # cross-workflow supply dependency.
-      - name: Install vendored ffmpeg-min runtime into Windows bundle
-        shell: pwsh
-        run: |
-          $sourceDir = Join-Path $PWD 'third_party\ffmpeg-min\windows'
-          $targetDir = Join-Path $PWD 'fushi\build\windows\x64\runner\Release'
-          if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
-            throw "Missing Windows release bundle directory: $targetDir"
-          }
-          # BUG-1420: ffprobe rides along with ffmpeg. resolveFfprobeExecutable()
-          # (ffmpeg_backend.dart) has always looked for it next to the app exe,
-          # but the recipe used to pass --disable-ffprobe so it never existed and
-          # the lookup silently fell through to PATH. Two features degrade
-          # silently without it on a machine with no system ffmpeg: embedded
-          # subtitle fonts (subtitle_embedded_fonts.dart) and audio container
-          # tags (desktop_audio_clipper.dart).
-          # TODO-2701 ②: no MinGW runtime DLLs here. The recipe builds Windows with
-          # `--extra-ldflags=-static --pkg-config-flags=--static`, so zlib/pthread
-          # are folded into the exe; ffmpeg.exe/ffprobe.exe import only system DLLs
-          # (kernel32/msvcrt/ws2_32/secur32/bcrypt). libwinpthread-1.dll and
-          # zlib1.dll were leftovers from the pre-static, dynamically-linked MSYS2
-          # generation and shipped ~194 KB of dead weight to every user.
-          $runtimeFiles = @(
-            'ffmpeg.exe',
-            'ffprobe.exe'
-          )
-          foreach ($file in $runtimeFiles) {
-            $source = Join-Path $sourceDir $file
-            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-              throw "Missing vendored ffmpeg-min runtime file: $source"
-            }
-            Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir $file) -Force
-          }
-          Get-Item -LiteralPath ($runtimeFiles | ForEach-Object { Join-Path $targetDir $_ }) |
-            Select-Object FullName, Length
+      # Unified FFmpeg (docs/specs/2026-10-17-unified-ffmpeg.md): ffmpeg.exe and
+      # ffprobe.exe are part of the libmpv runtime (they import the same renamed
+      # fbd*.dll FFmpeg the player uses) and land beside fushi.exe through
+      # third_party/media_kit_libs_windows_video's runtime-files.cmake, so
+      # `flutter build windows` already bundles them; no separate copy step.
       # TODO-1242 (P0): fushi's C++ modules link the MSVC CRT dynamically (/MD)
       # and reference newer STL/EH symbols (VCRUNTIME140_1!__CxxFrameHandler4).
       # The installer did NOT ship the CRT, so machines whose system VC++
@@ -893,21 +856,11 @@ jobs:
           Get-ChildItem -LiteralPath $targetDir -Filter '*140*.dll' |
             Select-Object FullName, Length
       # The bundled ffmpeg -version check below is the hard gate: it proves the
-      # exact binary we ship in the installer payload executes. The fuller
-      # smoke-test.sh comparison additionally needs a *fixture* full ffmpeg to
-      # author representative MP4/MKV inputs (the minimal bundled binary
-      # deliberately lacks lavfi/muxers - see windows_vendored_ffmpeg_guard).
-      # GitHub windows runners do not preinstall ffmpeg, so the fixture comes
-      # from `choco install ffmpeg`, whose source community.chocolatey.org
-      # intermittently returns 504 Gateway Timeout (runs +130/+132). That is an
-      # external-service flake on a *reference* generator, not a defect in the
-      # shipped artifact, yet it was failing the whole Desktop release workflow
-      # and blocking the installer. Fix (mirrors the TODO-624 emulator
-      # non-blocking precedent): retry the choco install a few times to absorb
-      # transient 504s, and if the fixture still cannot be obtained, emit a loud
-      # ::warning:: and skip only the comparison smoke (the bundled -version gate
-      # already ran). External-platform limitation: re-evaluate once a more
-      # reliable fixture ffmpeg source is vendored/cached (TODO-652).
+      # exact binary we ship in the installer payload executes on the fbd*.dll
+      # beside it. The unified FFmpeg is a full build, so the capability check
+      # and smoke-test.sh author their own fixtures with the shipped binary (the
+      # chocolatey fixture ffmpeg the minimal build needed - and its 504 flakes,
+      # TODO-652 - are gone).
       - name: Smoke test bundled ffmpeg in Windows bundle
         shell: pwsh
         run: |
@@ -937,34 +890,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Bundled ffprobe failed -version with exit code $LASTEXITCODE"
           }
-          $fixtureCommand = Get-Command ffmpeg -ErrorAction SilentlyContinue
-          if ($null -eq $fixtureCommand) {
-            # External dependency: tolerate transient chocolatey 504s with a
-            # bounded retry instead of failing on the first flake.
-            for ($attempt = 1; $attempt -le 3; $attempt++) {
-              Write-Host "Installing fixture ffmpeg from chocolatey (attempt $attempt/3)"
-              choco install ffmpeg -y --no-progress
-              $fixtureCommand = Get-Command ffmpeg -ErrorAction SilentlyContinue
-              if ($null -ne $fixtureCommand) { break }
-              if ($attempt -lt 3) {
-                Write-Host "Fixture ffmpeg not available yet; retrying in 30s..."
-                Start-Sleep -Seconds 30
-              }
-            }
-          }
-          if ($null -eq $fixtureCommand) {
-            Write-Host "::warning title=Fixture ffmpeg unavailable::Could not obtain a full fixture ffmpeg (chocolatey likely flaking, e.g. 504). The bundled ffmpeg -version gate already passed; skipping the fixture comparison smoke test. This is an external-service flake on a reference generator, not a defect in the shipped binary (TODO-652)."
-            exit 0
-          }
-          $fixtureFfmpeg = $fixtureCommand.Source
-          & $fixtureFfmpeg -version
+          python tool/ffmpeg-unified/verify_ffmpeg_capabilities.py --ffmpeg $target --ffprobe $probeTarget
           if ($LASTEXITCODE -ne 0) {
-            throw "Fixture ffmpeg failed -version with exit code $LASTEXITCODE"
+            throw "Bundled unified FFmpeg failed the capability check (tool/ffmpeg-unified/capabilities.json)"
           }
           $bash = (Get-Command bash -ErrorAction Stop).Source
-          $env:FFMPEG_MIN = ($target -replace '\\', '/')
-          $env:FIXTURE_FFMPEG = ($fixtureFfmpeg -replace '\\', '/')
-          & $bash -c 'bash tool/ffmpeg-min/smoke-test.sh'
+          $env:FFMPEG = ($target -replace '\\', '/')
+          $env:FFPROBE = ($probeTarget -replace '\\', '/')
+          & $bash -c 'bash tool/ffmpeg-unified/smoke-test.sh'
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bundled unified FFmpeg failed tool/ffmpeg-unified/smoke-test.sh"
+          }
       # BUG-1883：打包前校验「app 起不来就靠它」的那批文件真在 bundle 里。
       #
       # 为什么非有不可：magpie 资源、ffmpeg、ffprobe、VC++ CRT 四样都各自有硬门禁，
@@ -1785,24 +1721,31 @@ jobs:
       # so shipping helper executables there needs no Helpers/ dir or
       # entitlements change -- they just have to be signed, and the app
       # re-signed afterwards. Mirrors the Mihon runtime step above.
-      - name: Install vendored ffmpeg-min runtime into macOS bundle
+      #
+      # Unified FFmpeg (docs/specs/2026-10-17-unified-ffmpeg.md): the programs
+      # come from the same build as the FFmpeg frameworks the player links
+      # (media_kit_libs_macos_video vendors them into Contents/Frameworks); they
+      # carry an rpath of @executable_path/../Frameworks, so mining runs on the
+      # player's FFmpeg.
+      - name: Install unified FFmpeg programs into macOS bundle
         shell: bash
         run: |
           set -euo pipefail
-          source_dir="third_party/ffmpeg-min/macos"
+          layout="third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz"
           app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
           target_dir="$app_dir/Contents/MacOS"
           if [ ! -d "$target_dir" ]; then
             echo "::error title=macOS bundle missing::Expected $target_dir"
             exit 1
           fi
+          if [ ! -f "$app_dir/Contents/Frameworks/libavcodec.framework/libavcodec" ]; then
+            echo "::error title=Unified FFmpeg frameworks missing::media_kit_libs_macos_video did not embed libavcodec.framework into Contents/Frameworks"
+            exit 1
+          fi
+          tmp="$(mktemp -d)"
+          tar -xzf "$layout" -C "$tmp" MacOS/ffmpeg MacOS/ffprobe
           for tool in ffmpeg ffprobe; do
-            src="$source_dir/$tool"
-            if [ ! -f "$src" ]; then
-              echo "::error title=Missing vendored binary::$src"
-              exit 1
-            fi
-            cp "$src" "$target_dir/$tool"
+            cp "$tmp/MacOS/$tool" "$target_dir/$tool"
             chmod +x "$target_dir/$tool"
             codesign --force --sign - --timestamp=none "$target_dir/$tool"
           done
@@ -1815,6 +1758,11 @@ jobs:
           "$target_dir/ffmpeg" -hide_banner -version | head -n 1
           "$target_dir/ffprobe" -hide_banner -version | head -n 1
           ls -lh "$target_dir/ffmpeg" "$target_dir/ffprobe"
+          # The programs must load the player's frameworks from the bundle itself.
+          python3 tool/ffmpeg-unified/verify_ffmpeg_capabilities.py \
+            --ffmpeg "$target_dir/ffmpeg" --ffprobe "$target_dir/ffprobe"
+          FFMPEG="$target_dir/ffmpeg" FFPROBE="$target_dir/ffprobe" \
+            bash tool/ffmpeg-unified/smoke-test.sh
           # BUG-1668：`-version` 跑得通只证明**这台 runner 的架构**能跑它。当年 app 是
           # universal、ffmpeg 却是 arm64-only，Intel Mac 上 app 照常启动、helper 被内核以
           # Bad CPU type (EBADARCH) 拒掉，制卡/封面/内封字幕全失效（2.1.1）。
@@ -1831,7 +1779,7 @@ jobs:
               case " $tool_archs " in
                 *" $want "*) ;;
                 *)
-                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。该架构的 Mac 上 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-min 工作流出 arm64 产物并重新 vendor 到 third_party/ffmpeg-min/macos/。"
+                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。该架构的 Mac 上 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-unified-mobile 工作流的 macos job 并重新 vendor third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz。"
                   exit 1
                   ;;
               esac

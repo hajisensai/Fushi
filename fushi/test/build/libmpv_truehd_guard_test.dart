@@ -23,7 +23,6 @@ void main() {
     'arm64-v8a',
     'armeabi-v7a',
     'x86_64',
-    'x86',
   };
 
   bool isAtLeast(List<int> actual, List<int> minimum) {
@@ -126,32 +125,44 @@ void main() {
     );
   });
 
+  /// The unified FFmpeg version every platform ships (tool/ffmpeg-unified).
+  List<int> recipeVersion() => File('../tool/ffmpeg-unified/recipe.env')
+      .readAsLinesSync()
+      .firstWhere((String l) => l.startsWith('FFMPEG_VERSION='))
+      .split('=')
+      .last
+      .trim()
+      .split('.')
+      .map(int.parse)
+      .toList();
+
+  test('the unified FFmpeg recipe keeps the security baseline', () {
+    expect(isAtLeast(recipeVersion(), minFfmpeg), isTrue,
+        reason: 'tool/ffmpeg-unified/recipe.env cannot downgrade FFmpeg below '
+            '${minFfmpeg.join('.')} (TODO-1137)');
+  });
+
   test(
-    'Darwin archives retain patched FFmpeg and TrueHD in every CPU slice',
+    'Darwin libmpv links the unified FFmpeg and it decodes TrueHD in every CPU slice',
     () {
+      final String version = recipeVersion().join('.');
       for (final String platform in <String>['macos', 'ios']) {
         for (final DarwinLibmpvSlice slice in verifiedDarwinLibmpv(platform)) {
           final String what = '$platform/${slice.identity}';
+          // slice.codec is the unified FFmpeg's libavcodec (libmpv has none).
+          expect(slice.codec, contains(version),
+              reason: '$what must be the unified FFmpeg $version build');
           final Iterable<RegExpMatch> configurations = RegExp(
             r'--disable-autodetect[^\x00]+',
           ).allMatches(slice.codec);
           expect(configurations, isNotEmpty, reason: what);
           for (final RegExpMatch configuration in configurations) {
             final String flags = configuration.group(0)!;
-            final RegExpMatch? version = RegExp(
-              r'--prefix=\S*ffmpeg-\S*-([0-9]+\.[0-9]+\.[0-9]+)(?:\s|$)',
-            ).firstMatch(flags);
-            expect(version, isNotNull, reason: '$what FFmpeg build version');
-            expect(
-              isAtLeast(
-                version!.group(1)!.split('.').map(int.parse).toList(),
-                minFfmpeg,
-              ),
-              isTrue,
-              reason: '$what cannot downgrade the FFmpeg security baseline',
-            );
             for (final String decoder in <String>['truehd', 'mlp']) {
-              bool enabled = false;
+              // FFmpeg enables every built-in component unless the configure
+              // line turns them off (--disable-everything / --disable-decoders
+              // / --disable-decoder=x), so start from "enabled".
+              bool enabled = true;
               for (final String flag in flags.split(' ')) {
                 if (<String>[
                   '--disable-all',
@@ -189,25 +200,30 @@ void main() {
     },
   );
 
-  test('Android vendors full jars with patched FFmpeg and disc navigation', () {
+  test('Android libmpv links the unified FFmpeg, which decodes TrueHD', () {
     final String gradle = maskComments(
       fork('media_kit_libs_android_video/android/build.gradle'),
     );
     expect(gradle, contains("file('native/bluray-menu-v1').absolutePath"));
     expect(gradle, isNot(contains('new URL(')));
+    final String version = recipeVersion().join('.');
     final Set<String> checked = <String>{};
-    for (final ({String abi, String contents}) artifact
+    for (final ({String abi, String contents, String codec}) artifact
         in verifiedAndroidLibmpv()) {
       checked.add(artifact.abi);
       for (final String marker in <String>[
-        'ff_truehd_decoder',
-        'ff_mlp_decoder',
-        'n6.1.6',
         'disc-navigation-state-json',
         'menu-call-allowed',
         'mpv_lavc_set_java_vm',
+        // DT_NEEDED: libmpv decodes with the AAR's FFmpeg.
+        'libavcodec.so',
       ]) {
         expect(artifact.contents, contains(marker), reason: artifact.abi);
+      }
+      // The codec lives in the unified FFmpeg (FFmpegKitNext AAR) now.
+      for (final String marker in <String>['truehd', 'mlp', version]) {
+        expect(artifact.codec, contains(marker),
+            reason: '${artifact.abi} unified FFmpeg libavcodec.so');
       }
     }
     expect(checked, androidAbis);

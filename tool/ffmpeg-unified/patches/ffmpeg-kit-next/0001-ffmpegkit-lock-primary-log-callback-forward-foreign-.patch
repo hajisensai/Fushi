@@ -1,0 +1,105 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: fushi <fushi@localhost>
+Date: Sat, 17 Oct 2026 19:40:40 +0800
+Subject: [PATCH 1/2] ffmpegkit: lock primary log callback, forward foreign
+ messages to libmpv
+
+---
+ .../src/main/cpp/ffmpegkit.c                      | 15 +++++++++++++--
+ apple/src/FFmpegKitConfig.m                       | 15 +++++++++++++--
+ 2 files changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpegkit.c b/android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpegkit.c
+index 01bc01f..670435c 100644
+--- a/android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpegkit.c
++++ b/android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpegkit.c
+@@ -662,6 +662,14 @@ void ffmpegkit_log_callback_function(void *ptr, int level, const char *format,
+         level &= 0xff;
+     }
+ 
++    // Fushi: the FFmpeg build is shared in-process with libmpv. Messages from
++    // threads that run no FFmpegKit session belong to the other client: hand
++    // them to its (secondary) callback instead of swallowing them.
++    if (globalSessionId == 0) {
++        av_log_fushi_forward_secondary(ptr, level, format, vargs);
++        return;
++    }
++
+     // Run -report / -show_log capture for every line, independent of the console
+     // log-level filter below (the report keeps its own report_file_level threshold).
+     run_duties(ptr, level, format, vargs);
+@@ -704,6 +712,9 @@ int ffmpegkit_redirection_enabled(void) { return redirectionEnabled; }
+  * Reproduces stock ffmpeg logging (stderr) while still running the per-session
+  * duties, so -report / -show_log keep working even with redirection off.
+  */
++/* Fushi: no longer installed (redirection off hands the slot back to libmpv via
++ * av_log_fushi_set_primary_callback(NULL)); kept for parity with upstream. */
++__attribute__((unused))
+ static void ffmpegkit_log_callback_default(void *ptr, int level,
+                                            const char *format, va_list vargs) {
+     va_list copy;
+@@ -1447,7 +1458,7 @@ static void enableNativeRedirection() {
+         return;
+     }
+ 
+-    av_log_set_callback(ffmpegkit_log_callback_function);
++    av_log_fushi_set_primary_callback(ffmpegkit_log_callback_function);
+     set_report_callback(ffmpegkit_statistics_callback_function);
+ }
+ 
+@@ -1614,7 +1625,7 @@ Java_com_arthenica_ffmpegkit_FFmpegKitConfig_disableNativeRedirection(
+ 
+     mutexUnlock();
+ 
+-    av_log_set_callback(ffmpegkit_log_callback_default);
++    av_log_fushi_set_primary_callback(NULL);
+     set_report_callback(NULL);
+ 
+     monitorNotify();
+diff --git a/apple/src/FFmpegKitConfig.m b/apple/src/FFmpegKitConfig.m
+index 6275018..c6864b7 100644
+--- a/apple/src/FFmpegKitConfig.m
++++ b/apple/src/FFmpegKitConfig.m
+@@ -1166,6 +1166,14 @@ void ffmpegkit_log_callback_function(void *ptr, int level, const char *format,
+         level &= 0xff;
+     }
+ 
++    // Fushi: the FFmpeg build is shared in-process with libmpv. Messages from
++    // threads that run no FFmpegKit session belong to the other client: hand
++    // them to its (secondary) callback instead of swallowing them.
++    if (globalSessionId == 0) {
++        av_log_fushi_forward_secondary(ptr, level, format, vargs);
++        return;
++    }
++
+     // Run -report / -show_log capture for every line, independent of the console
+     // log-level filter below (the report keeps its own report_file_level threshold).
+     run_duties(ptr, level, format, vargs);
+@@ -1208,6 +1216,9 @@ int ffmpegkit_redirection_enabled(void) { return redirectionEnabled; }
+  * Reproduces stock ffmpeg logging (stderr) while still running the per-session
+  * duties, so -report / -show_log keep working even with redirection off.
+  */
++/* Fushi: no longer installed (redirection off hands the slot back to libmpv via
++ * av_log_fushi_set_primary_callback(NULL)); kept for parity with upstream. */
++__attribute__((unused))
+ static void ffmpegkit_log_callback_default(void *ptr, int level,
+                                            const char *format, va_list vargs) {
+     va_list copy;
+@@ -1969,7 +1980,7 @@ int executeFFprobe(long sessionId, NSArray *arguments) {
+           callbackBlockFunction();
+         });
+ 
+-    av_log_set_callback(ffmpegkit_log_callback_function);
++    av_log_fushi_set_primary_callback(ffmpegkit_log_callback_function);
+     set_report_callback(ffmpegkit_statistics_callback_function);
+ }
+ 
+@@ -1984,7 +1995,7 @@ int executeFFprobe(long sessionId, NSArray *arguments) {
+ 
+     [lock unlock];
+ 
+-    av_log_set_callback(ffmpegkit_log_callback_default);
++    av_log_fushi_set_primary_callback(NULL);
+     set_report_callback(nil);
+ 
+     callbackNotify();

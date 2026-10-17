@@ -64,7 +64,9 @@ task downloadDependencies {
         }
         def checksums = new JsonSlurper().parse(manifestFile)
         def verifiedJars = []
-        ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'].each { abi ->
+        // Fushi unified FFmpeg: arm64-v8a / armeabi-v7a / x86_64 (Flutter has no 32-bit
+        // x86 target; libmpv.so links the FFmpegKitNext AAR's libav*.so).
+        ['arm64-v8a', 'armeabi-v7a', 'x86_64'].each { abi ->
             def filename = "full-${abi}.jar"
             def jarFile = new File(sourceDir, filename)
             def expected = checksums[filename]

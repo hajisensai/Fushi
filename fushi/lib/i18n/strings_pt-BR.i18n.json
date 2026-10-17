@@ -4658,7 +4658,7 @@
   "mining_audio_tail_pad_hint": "Áudio extra mantido depois do fim da legenda, para que os sons finais não sejam cortados. Nunca invade a próxima linha.",
   "mining_clip_format_hint": "O WebM reproduz dentro do cartão, mas o AnkiMobile no iPhone não consegue reproduzi-lo — escolha MP4 se você revisa no iPhone. Se o WebM não puder ser codificado neste dispositivo, o Fushi volta para MP4.",
   "mining_clip_format_mp4_h264": "MP4 · H.264 (player do próprio Anki; use para o AnkiMobile)",
-  "mining_clip_format_webm_av1": "WebM · AV1 (reproduz dentro do cartão; menor arquivo, cerca de 2× o tempo de codificação do VP9; somente desktop)",
+  "mining_clip_format_webm_av1": "WebM · AV1 (reproduz dentro do cartão; menor arquivo, cerca de 2× o tempo de codificação do VP9)",
   "mining_clip_format_webm_vp9": "WebM · VP9 (reproduz dentro do cartão, recomendado)",
   "mining_image_quality": "Qualidade de imagem / GIF",
   "mining_image_quality_hd": "HD",

@@ -112,27 +112,48 @@ void main() {
     });
   });
 
-  group('ffmpeg 源码 tls pin 补丁存在且完整（BUG-891）', () {
-    // 相对仓库根：fushi/ 是 CWD，补丁在上一级 third_party/。
-    final File patch = File(
-        '../third_party/ffmpeg_kit_flutter/patches/ffmpeg-tls-pin-sha256.patch');
+  group('统一 FFmpeg 的 tls pin 补丁存在且完整（BUG-891）', () {
+    // 相对仓库根：fushi/ 是 CWD，补丁在上一级 tool/ffmpeg-unified/patches/ffmpeg/。
+    // 全平台（桌面 ffmpeg 程序、移动端 FFmpegKitNext、播放器 libmpv）共用这一份 FFmpeg。
+    File patchFile() {
+      final Directory dir = Directory('../tool/ffmpeg-unified/patches/ffmpeg');
+      final List<File> hits = dir
+          .listSync()
+          .whereType<File>()
+          .where((File f) => f.path.contains('tls_pin_sha256'))
+          .toList();
+      expect(hits, hasLength(1),
+          reason: '统一 FFmpeg 必须恰有一个 tls_pin_sha256 补丁，实测 $hits');
+      return hits.single;
+    }
 
     test('补丁文件存在', () {
-      expect(patch.existsSync(), isTrue,
-          reason: '重编 ffmpeg-kit 需要此补丁加 tls_pin_sha256；不得删除');
+      expect(patchFile().existsSync(), isTrue,
+          reason: '统一 FFmpeg 需要此补丁加 tls_pin_sha256；不得删除');
     });
 
-    test('补丁定义 AVOption + 共享助手 + 覆盖四后端', () {
-      final String src = patch.readAsStringSync();
+    test('补丁定义 AVOption + 共享助手 + 覆盖五后端 + FFmpeg 8+ 默认校验被 pin 接管', () {
+      final String src = patchFile().readAsStringSync();
       expect(src.contains('tls_pin_sha256'), isTrue,
           reason: '必须定义 -tls_pin_sha256 AVOption');
       expect(src.contains('ff_tls_check_cert_pin'), isTrue, reason: '共享指纹比对助手');
-      // openssl=移动端(Android/iOS 自编 --enable-openssl)，gnutls=Linux 桌面，
-      // securetransport=macOS，schannel=Windows 各有钉扎分支。
+      // openssl=Android/iOS（FFmpegKitNext --enable-lib-openssl），gnutls=Windows
+      // （MSYS2 同款配置）/ Linux，securetransport=macOS，schannel / mbedtls 也补齐。
       expect(src.contains('libavformat/tls_openssl.c'), isTrue);
       expect(src.contains('libavformat/tls_gnutls.c'), isTrue);
       expect(src.contains('libavformat/tls_securetransport.c'), isTrue);
       expect(src.contains('libavformat/tls_schannel.c'), isTrue);
+      expect(src.contains('libavformat/tls_mbedtls.c'), isTrue);
+      // FFmpeg >= 8 默认 tls_verify=1：不在共享 open 路径里把它让给 pin，自签主机
+      // 会在握手阶段就被 CA 校验拒掉，根本走不到指纹比对。
+      expect(
+          RegExp(r'if \(ff_tls_has_cert_pin\(c\)\)\r?\n\+\s+c->verify = 0;')
+              .hasMatch(src),
+          isTrue,
+          reason: '设了 pin 必须在 ff_tls_open_underlying 里关掉 CA/主机名校验');
+      // Android 的 OpenSSL 没有可用 CA 包，默认校验开启后公网 HTTPS 全挂。
+      expect(src.contains('openssl_load_android_system_cas'), isTrue,
+          reason: 'Android 必须显式加载系统 CA 目录');
     });
   });
 }

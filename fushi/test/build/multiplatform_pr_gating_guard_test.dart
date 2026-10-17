@@ -218,9 +218,8 @@ void main() {
       },
       'third_party/media_kit_libs_windows_video/windows/CMakeLists.txt':
           <String>{'windows'},
-      'third_party/ffmpeg_kit_flutter/ios/ffmpeg_kit_flutter.podspec': <String>{
-        'ios',
-      },
+      'third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter.podspec':
+          <String>{'ios'},
       'third_party/media_kit_video/pubspec.yaml': apps,
       'third_party/media_kit_video/lib/media_kit_video.dart': <String>{},
       'third_party/media_kit_libs_android_video/android/build.gradle':

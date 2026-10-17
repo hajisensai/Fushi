@@ -1,0 +1,13 @@
+The source code of "FFmpegKitNext", "FFmpeg" and external source packages
+downloaded by "FFmpegKitNext" build scripts for this release is listed on
+the following page:
+
+https://github.com/arthenica/ffmpeg-kit-next/wiki/Source
+
+"FFmpegKitNext" does not distribute ready-to-use binary packages. Build
+outputs are produced locally by users from the published source code and the
+source packages pinned by the build scripts.
+
+If you distribute binaries built from "FFmpegKitNext", you are responsible
+for complying with the licenses that apply to your distribution, including
+any corresponding source obligations.

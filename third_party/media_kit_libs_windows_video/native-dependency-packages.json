@@ -1,5 +1,27 @@
 [
   {
+    "name": "fushi-unified-ffmpeg",
+    "version": "9.0.1",
+    "upstream_commit": "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa",
+    "patched_commit": "840e2cc6320f87481f51b56480767e8280d611bb",
+    "patches": {
+      "0001-avformat-tls-add-tls_pin_sha256-certificate-pinning-.patch": "a3caf1c60ed2850dac6292f27d4982ee5e33b1db23a803e4cb7ab34b562161a3",
+      "0002-avutil-log-primary-secondary-log-callback-for-in-pro.patch": "475ff899a336f659f2bcba38e415dcec0009b9cda193da23d621c23850533d77",
+      "0003-avcodec-videotoolbox-decode-10-bit-to-BGRA-on-iOS-fo.patch": "e86a681087a3eff29354eb43a5d79985ae155ff25f5fa745387a18345e7b2362"
+    },
+    "files": [
+      "avcodec-63.dll",
+      "avdevice-63.dll",
+      "avfilter-12.dll",
+      "avformat-63.dll",
+      "avutil-61.dll",
+      "ffmpeg.exe",
+      "ffprobe.exe",
+      "swresample-7.dll",
+      "swscale-10.dll"
+    ]
+  },
+  {
     "name": "mingw-w64-x86_64-aom",
     "version": "3.15.0-1",
     "upstream": "https://aomedia.org/",
@@ -26,15 +48,6 @@
     ]
   },
   {
-    "name": "mingw-w64-x86_64-cairo",
-    "version": "1.18.4-4",
-    "upstream": "https://cairographics.org/",
-    "dlls": [
-      "libcairo-2.dll",
-      "libcairo-gobject-2.dll"
-    ]
-  },
-  {
     "name": "mingw-w64-x86_64-curl",
     "version": "8.21.0-2",
     "upstream": "https://curl.se/",
@@ -56,20 +69,6 @@
     "upstream": "https://libexpat.github.io/",
     "dlls": [
       "libexpat-1.dll"
-    ]
-  },
-  {
-    "name": "mingw-w64-x86_64-ffmpeg",
-    "version": "9.0.1-3",
-    "upstream": "https://ffmpeg.org/",
-    "dlls": [
-      "avcodec-63.dll",
-      "avdevice-63.dll",
-      "avfilter-12.dll",
-      "avformat-63.dll",
-      "avutil-61.dll",
-      "swresample-7.dll",
-      "swscale-10.dll"
     ]
   },
   {
@@ -107,14 +106,6 @@
     ]
   },
   {
-    "name": "mingw-w64-x86_64-gdk-pixbuf2",
-    "version": "2.44.7-1",
-    "upstream": "https://gitlab.gnome.org/GNOME/gdk-pixbuf",
-    "dlls": [
-      "libgdk_pixbuf-2.0-0.dll"
-    ]
-  },
-  {
     "name": "mingw-w64-x86_64-gettext-runtime",
     "version": "1.0-1",
     "upstream": "https://www.gnu.org/software/gettext/",
@@ -123,23 +114,11 @@
     ]
   },
   {
-    "name": "mingw-w64-x86_64-ggml",
-    "version": "0.22.0-1",
-    "upstream": "https://github.com/ggml-org/ggml",
-    "dlls": [
-      "ggml-0.dll",
-      "ggml-base-0.dll"
-    ]
-  },
-  {
     "name": "mingw-w64-x86_64-glib2",
     "version": "2.88.3-1",
     "upstream": "https://gitlab.gnome.org/GNOME/glib",
     "dlls": [
-      "libgio-2.0-0.dll",
-      "libglib-2.0-0.dll",
-      "libgmodule-2.0-0.dll",
-      "libgobject-2.0-0.dll"
+      "libglib-2.0-0.dll"
     ]
   },
   {
@@ -191,14 +170,6 @@
     ]
   },
   {
-    "name": "mingw-w64-x86_64-jbigkit",
-    "version": "2.1-6",
-    "upstream": "https://www.cl.cam.ac.uk/~mgk25/jbigkit/",
-    "dlls": [
-      "libjbig-0.dll"
-    ]
-  },
-  {
     "name": "mingw-w64-x86_64-lame",
     "version": "3.100-3",
     "upstream": "https://lame.sourceforge.io/",
@@ -212,14 +183,6 @@
     "upstream": "https://www.littlecms.com/color-engine/",
     "dlls": [
       "liblcms2-2.dll"
-    ]
-  },
-  {
-    "name": "mingw-w64-x86_64-lerc",
-    "version": "4.1.1-1",
-    "upstream": "https://github.com/Esri/lerc",
-    "dlls": [
-      "libLerc.dll"
     ]
   },
   {
@@ -244,22 +207,6 @@
     "upstream": "https://github.com/cacalabs/libcaca",
     "dlls": [
       "libcaca-0.dll"
-    ]
-  },
-  {
-    "name": "mingw-w64-x86_64-libdatrie",
-    "version": "0.2.14-1",
-    "upstream": "https://linux.thai.net/projects/datrie",
-    "dlls": [
-      "libdatrie-1.dll"
-    ]
-  },
-  {
-    "name": "mingw-w64-x86_64-libdeflate",
-    "version": "1.26-1",
-    "upstream": "https://github.com/ebiggers/libdeflate",
-    "dlls": [
-      "libdeflate.dll"
     ]
   },
   {
@@ -369,14 +316,6 @@
     ]
   },
   {
-    "name": "mingw-w64-x86_64-librsvg",
-    "version": "2.62.3-1",
-    "upstream": "https://wiki.gnome.org/Projects/LibRsvg",
-    "dlls": [
-      "librsvg-2-2.dll"
-    ]
-  },
-  {
     "name": "mingw-w64-x86_64-libsoxr",
     "version": "0.1.3-5",
     "upstream": "https://sourceforge.net/p/soxr/wiki/Home/",
@@ -409,28 +348,12 @@
     ]
   },
   {
-    "name": "mingw-w64-x86_64-libthai",
-    "version": "0.1.30-1",
-    "upstream": "https://linux.thai.net/projects/libthai",
-    "dlls": [
-      "libthai-0.dll"
-    ]
-  },
-  {
     "name": "mingw-w64-x86_64-libtheora",
     "version": "1.2.0-1",
     "upstream": "https://www.theora.org",
     "dlls": [
       "libtheoradec-2.dll",
       "libtheoraenc-2.dll"
-    ]
-  },
-  {
-    "name": "mingw-w64-x86_64-libtiff",
-    "version": "4.7.2-1",
-    "upstream": "https://libtiff.gitlab.io/libtiff/",
-    "dlls": [
-      "libtiff-6.dll"
     ]
   },
   {
@@ -560,14 +483,6 @@
     ]
   },
   {
-    "name": "mingw-w64-x86_64-openal",
-    "version": "1.25.2-1",
-    "upstream": "https://github.com/kcat/openal-soft",
-    "dlls": [
-      "libopenal-1.dll"
-    ]
-  },
-  {
     "name": "mingw-w64-x86_64-opencore-amr",
     "version": "0.1.6-1",
     "upstream": "https://opencore-amr.sourceforge.io/",
@@ -610,30 +525,11 @@
     ]
   },
   {
-    "name": "mingw-w64-x86_64-pango",
-    "version": "1.58.2-1",
-    "upstream": "https://www.pango.org/",
-    "dlls": [
-      "libpango-1.0-0.dll",
-      "libpangocairo-1.0-0.dll",
-      "libpangoft2-1.0-0.dll",
-      "libpangowin32-1.0-0.dll"
-    ]
-  },
-  {
     "name": "mingw-w64-x86_64-pcre2",
     "version": "10.47-1",
     "upstream": "https://pcre.org/",
     "dlls": [
       "libpcre2-8-0.dll"
-    ]
-  },
-  {
-    "name": "mingw-w64-x86_64-pixman",
-    "version": "0.46.4-3",
-    "upstream": "https://gitlab.freedesktop.org/pixman/pixman",
-    "dlls": [
-      "libpixman-1-0.dll"
     ]
   },
   {
@@ -706,14 +602,6 @@
     "upstream": "https://www.khronos.org/vulkan/",
     "dlls": [
       "vulkan-1.dll"
-    ]
-  },
-  {
-    "name": "mingw-w64-x86_64-whisper.cpp",
-    "version": "1~1.9.3.r75.g978113305-1",
-    "upstream": "https://github.com/ggml-org/whisper.cpp",
-    "dlls": [
-      "libwhisper-1.dll"
     ]
   },
   {

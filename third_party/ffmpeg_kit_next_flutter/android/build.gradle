@@ -1,0 +1,68 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.4'
+    }
+}
+
+// Fushi: freeze this plugin's own libs directory. Inside the allprojects
+// closure, project.projectDir evaluates per consuming project (including :app),
+// which would point at the wrong libs directory.
+def ffmpegKitVendorLibs = "${projectDir}/libs"
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        // Fushi: the unified FFmpeg AAR (FFmpegKitNext v9.0.0 + FFmpeg 9.0.1 with
+        // the tool/ffmpeg-unified patches), built by
+        // .github/workflows/ffmpeg-unified-mobile.yml and vendored as
+        // libs/ffmpeg-kit-next.aar. The libmpv player links the same FFmpeg .so
+        // files from this AAR. Guard:
+        // fushi/test/tools/ffmpeg_unified_mobile_guard_test.dart
+        flatDir { dirs ffmpegKitVendorLibs }
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    // Conditional for compatibility with AGP <4.2.
+    if (project.android.hasProperty("namespace")) {
+        namespace 'com.arthenica.ffmpegkit.flutter'
+    }
+
+    compileSdkVersion 34
+
+    defaultConfig {
+        minSdkVersion 24
+        versionCode 900
+        versionName "9.0.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    lintOptions {
+        disable 'GradleCompatible'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.activity:activity:1.8.1'
+    implementation 'androidx.annotation:annotation:1.5.0'
+    // Fushi: the vendored AAR via flatDir instead of a local Maven repository.
+    implementation(name: 'ffmpeg-kit-next', ext: 'aar')
+    // flatDir resolves no POM, so the AAR's own api dependency is declared here.
+    implementation 'com.arthenica:smart-exception-java:0.2.1'
+}

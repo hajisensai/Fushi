@@ -161,10 +161,10 @@ void main() {
         'docs/bugs/BUG-9999-x.md': <String>[
           'fushi/test/tools/bugs_per_file_guard_test.dart',
         ],
-        'third_party/ffmpeg-min/recipe.md': <String>[
-          'fushi/test/tools/ffmpeg_min_vendored_self_contained_guard_test.dart',
+        'tool/ffmpeg-unified/capabilities.json': <String>[
+          'fushi/test/settings/mining_audio_follow_playback_speed_guard_test.dart',
         ],
-        'third_party/ffmpeg_kit_flutter/ios/x.podspec': <String>[
+        'third_party/ffmpeg_kit_next_flutter/ios/x.podspec': <String>[
           'fushi/test/tools/ffmpeg_kit_podspec_license_guard_test.dart',
         ],
         'fushi/windows/runner/flutter_window.cpp': <String>[

@@ -34,7 +34,7 @@ void main() {
   });
 
   test('Android jar 全部是带 DV 重整补丁的产物', () {
-    for (final ({String abi, String contents}) artifact
+    for (final ({String abi, String contents, String codec}) artifact
         in verifiedAndroidLibmpv()) {
       // These uniforms belong to the gl_video P5 patch, not libplacebo's
       // independently compiled gpu-next implementation.

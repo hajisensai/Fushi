@@ -4658,7 +4658,7 @@
   "mining_audio_tail_pad_hint": "字幕結束後多保留這麼多音頻，避免句尾被切短；不會越過下一句。",
   "mining_clip_format_hint": "WebM 在卡片內播放，但 iPhone 上的 AnkiMobile 放不了——在 iPhone 複習請選 MP4。WebM 在本機編不出來時自動退回 MP4。",
   "mining_clip_format_mp4_h264": "MP4 · H.264（Anki 自帶播放器；AnkiMobile 用這個）",
-  "mining_clip_format_webm_av1": "WebM · AV1（卡片內播放；體積最小，編碼耗時約為 VP9 的 2 倍；僅桌面端）",
+  "mining_clip_format_webm_av1": "WebM · AV1（卡片內播放；體積最小，編碼耗時約為 VP9 的 2 倍）",
   "mining_clip_format_webm_vp9": "WebM · VP9（卡片內播放，推薦）",
   "mining_image_quality": "圖片 / GIF 清晰度",
   "mining_image_quality_hd": "高清",

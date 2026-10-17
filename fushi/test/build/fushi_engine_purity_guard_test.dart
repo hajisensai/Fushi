@@ -26,7 +26,7 @@ void main() {
     'package:path_provider/',
     'package:shared_preferences/',
     'package:flutter_onnxruntime/',
-    'package:ffmpeg_kit_flutter',
+    'package:ffmpeg_kit_next_flutter',
     'package:bonsoir/',
     'package:file_picker/',
     'package:share_plus/',

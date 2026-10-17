@@ -11,16 +11,21 @@ import 'package:path/path.dart' as p;
 /// muxer 全关了，Android / iOS / macOS 每次都报 `Output format not found`，失败又被
 /// 静默吞掉回到远端抽取——缺了它不会有任何红，只是优化永远不生效。
 ///
-/// 蓝光原盘菜单（PR #2012）起三端 libmpv 都是入库的自编产物，不再靠产物名里的
-/// `mkvmux` 标签背书：这里直接打开构建实际使用的那份二进制，要求每个 ABI / slice
-/// 的 libavformat 都编进了 `matroskaenc.c`（它的源文件名与专有选项字符串只在
-/// muxer 编入时出现，demuxer 不带）。谁换回不带 muxer 的产物，这里先红。Windows
-/// 的 `libmpv-2.dll` 是完整构建，本来就带。
+/// 统一 FFmpeg（tool/ffmpeg-unified）后，libmpv 不再自带 FFmpeg：它动态链接 app
+/// 里那一份统一 FFmpeg 的 libavformat。所以「dump-cache 有 matroska muxer」= 两件事
+/// 同时成立：
+///   1. 入库的 libmpv 真的链接统一 FFmpeg 的 libavformat（Apple：Mpv 的
+///      `@rpath/libavformat.framework/libavformat`；Android：libmpv.so 的
+///      `DT_NEEDED libavformat.so`），而不是又塞了一份私有 FFmpeg；
+///   2. 统一 FFmpeg 的每份 libavformat 都编进了 `matroskaenc.c`（源文件名只在 muxer
+///      编入时出现）——这一条由 ffmpeg_unified_mobile_guard_test 逐 ABI / 切片钉住，
+///      这里再对 libmpv 实际会加载的那一份复核。
+/// Windows 的 ffu 运行时由 ffmpeg_unified_windows_runtime_guard_test 钉住。
 void main() {
   const String thirdParty = '../third_party';
   final Uint8List marker = Uint8List.fromList(latin1.encode('matroskaenc'));
 
-  bool containsBytes(List<int> haystack, Uint8List needle) {
+  bool containsBytes(List<int> haystack, List<int> needle) {
     final int last = haystack.length - needle.length;
     for (int i = 0; i <= last; i++) {
       if (haystack[i] != needle[0]) continue;
@@ -45,35 +50,57 @@ void main() {
   }
 
   for (final String plat in <String>['macos', 'ios']) {
-    test('$plat xcframework 的每个 Avformat slice 都带 matroska muxer', () {
-      final String archivePath = vendoredDarwinArchive(plat);
+    test('$plat：Mpv 链接统一 FFmpeg 的 libavformat，且那份带 matroska muxer', () {
       final Archive tar = TarDecoder().decodeBytes(
-        gzip.decode(File(archivePath).readAsBytesSync()),
+        gzip.decode(File(vendoredDarwinArchive(plat)).readAsBytesSync()),
       );
-      final List<ArchiveFile> slices = tar.files
-          .where(
-            (ArchiveFile f) =>
-                f.isFile &&
-                // macOS 的 `Avformat.framework/Avformat` 是指向 Versions/A 的符号链接。
-                !f.isSymbolicLink &&
-                f.name.contains('Avformat.framework/') &&
-                p.posix.basename(f.name) == 'Avformat',
-          )
+      final List<ArchiveFile> mpv = tar.files
+          .where((ArchiveFile f) =>
+              f.isFile && !f.isSymbolicLink && p.posix.basename(f.name) == 'Mpv')
           .toList();
-      expect(slices, isNotEmpty, reason: '$archivePath 里找不到 Avformat');
-      for (final ArchiveFile slice in slices) {
+      expect(mpv, isNotEmpty);
+      for (final ArchiveFile slice in mpv) {
         expect(
-          containsBytes(slice.content as List<int>, marker),
+          containsBytes(slice.content as List<int>,
+              latin1.encode('@rpath/libavformat.framework/libavformat')),
           isTrue,
-          reason:
-              '${slice.name} 没有 matroskaenc：换回了没有 matroska muxer 的 '
-              'libmpv，dump-cache 会恒失败',
+          reason: '${slice.name} 不链接统一 FFmpeg 的 libavformat',
         );
+      }
+      expect(
+        tar.files.any((ArchiveFile f) => f.name.contains('Avformat.framework/')),
+        isFalse,
+        reason: 'libmpv 归档又带了私有 FFmpeg（Avformat.framework）',
+      );
+
+      final List<List<int>> formats = <List<int>>[];
+      if (plat == 'ios') {
+        for (final String slice in <String>[
+          'ios-arm64',
+          'ios-arm64_x86_64-simulator',
+        ]) {
+          formats.add(File('$thirdParty/ffmpeg_kit_next_flutter/ios/'
+                  'ffmpeg_kit_next_flutter/Frameworks/libavformat.xcframework/'
+                  '$slice/libavformat.framework/libavformat')
+              .readAsBytesSync());
+        }
+      } else {
+        final Archive layout = TarDecoder().decodeBytes(gzip.decode(
+            File('$thirdParty/media_kit_libs_macos_video/native/'
+                    'ffmpeg-unified-macos.tar.gz')
+                .readAsBytesSync()));
+        formats.add(layout
+            .findFile('Frameworks/libavformat.framework/Versions/A/libavformat')!
+            .content as List<int>);
+      }
+      for (final List<int> format in formats) {
+        expect(containsBytes(format, marker), isTrue,
+            reason: '$plat 统一 FFmpeg 的 libavformat 没有 matroskaenc，dump-cache 会恒失败');
       }
     }, timeout: const Timeout(Duration(minutes: 3)));
   }
 
-  test('Android 四个 ABI 的 libmpv.so 都带 matroska muxer', () {
+  test('Android：libmpv.so 链接 AAR 里的 libavformat.so，且那份带 matroska muxer', () {
     const String gradleDir = '$thirdParty/media_kit_libs_android_video/android';
     final String gradle = File('$gradleDir/build.gradle').readAsStringSync();
     final RegExpMatch? m = RegExp(
@@ -81,22 +108,29 @@ void main() {
     ).firstMatch(gradle);
     expect(m, isNotNull, reason: 'build.gradle 没有默认的入库 jar 目录');
     final String jarDir = p.join(gradleDir, m!.group(1)!);
-    for (final String abi in <String>[
-      'arm64-v8a',
-      'armeabi-v7a',
-      'x86_64',
-      'x86',
-    ]) {
+    final Archive aar = ZipDecoder().decodeBytes(File(
+            '$thirdParty/ffmpeg_kit_next_flutter/android/libs/ffmpeg-kit-next.aar')
+        .readAsBytesSync());
+    for (final String abi in <String>['arm64-v8a', 'armeabi-v7a', 'x86_64']) {
       final Archive jar = ZipDecoder().decodeBytes(
         File(p.join(jarDir, 'full-$abi.jar')).readAsBytesSync(),
       );
       final ArchiveFile? so = jar.findFile('lib/$abi/libmpv.so');
       expect(so, isNotNull, reason: '$abi：jar 里没有 libmpv.so');
       expect(
-        containsBytes(so!.content as List<int>, marker),
+        containsBytes(so!.content as List<int>, latin1.encode('libavformat.so')),
         isTrue,
-        reason: '$abi 的 libmpv.so 没有 matroskaenc，dump-cache 会恒失败',
+        reason: '$abi 的 libmpv.so 不依赖 libavformat.so（统一 FFmpeg）',
       );
+      expect(
+        containsBytes(so.content as List<int>, marker),
+        isFalse,
+        reason: '$abi 的 libmpv.so 自己带了 matroskaenc：又静态塞了一份私有 FFmpeg',
+      );
+      final ArchiveFile? format = aar.findFile('jni/$abi/libavformat.so');
+      expect(format, isNotNull, reason: '$abi：AAR 里没有 libavformat.so');
+      expect(containsBytes(format!.content as List<int>, marker), isTrue,
+          reason: '$abi 统一 FFmpeg 的 libavformat.so 没有 matroskaenc');
     }
   }, timeout: const Timeout(Duration(minutes: 3)));
 }

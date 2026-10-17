@@ -273,7 +273,7 @@ ImmersionMiningRequest buildImmersionRequest(
 /// [format] 是用户的动图格式偏好（`video_mining_animated_format`）。这条链路过去把输出
 /// 硬写成 `clip.gif` 且不传 format，导致扩展制卡恒出 GIF、完全不吃偏好；现在与 app 内
 /// 视频、YouTube 共用 [extractAnimatedClipWithFallback]，格式与编码参数成对下发，编码器
-/// 缺失（移动端 ffmpeg-kit 无 libsvtav1/libwebp）时自动降级 GIF 并**同时换回 GIF 的封顶
+/// 缺失（统一 FFmpeg 五端都带 libsvtav1/libwebp，只有用户自带的外部 ffmpeg 可能缺）时自动降级 GIF 并**同时换回 GIF 的封顶
 /// 参数**，产出格式经 [ImmersionCaptureResult.animatedFormat] 带回给文件名。
 ///
 /// BUG-1416：[stillTarget] 非 null（用户选了静态帧）时**不编动图**，改在片段内

@@ -1,0 +1,92 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: fushi <fushi@localhost>
+Date: Sat, 17 Oct 2026 19:40:12 +0800
+Subject: [PATCH 2/2] avutil/log: primary/secondary log callback for in-process
+ FFmpeg sharing
+
+---
+ libavutil/log.c | 40 ++++++++++++++++++++++++++++++++++++++++
+ libavutil/log.h | 14 ++++++++++++++
+ 2 files changed, 54 insertions(+)
+
+diff --git a/libavutil/log.c b/libavutil/log.c
+index b5d3e46..4b712df 100644
+--- a/libavutil/log.c
++++ b/libavutil/log.c
+@@ -489,11 +489,51 @@ int av_log_get_flags(void)
+     return atomic_load_explicit(&av_log_flags, memory_order_relaxed);
+ }
+ 
++/* Fushi: one FFmpeg build is shared in-process by the libmpv player and the
++ * FFmpegKit command runner (Android/iOS). Both install a process-global log
++ * callback, and the last writer would silently steal the other's messages
++ * (FFmpegKit sessions read their output from it). The owner of the primary
++ * callback (FFmpegKit) locks it; once locked, av_log_set_callback() calls from
++ * other clients (libmpv) set the secondary callback instead, which the primary
++ * forwards messages to that do not belong to it. Unlocked = upstream
++ * behaviour. */
++static atomic_uintptr_t av_log_secondary_callback = (uintptr_t)av_log_default_callback;
++static atomic_int av_log_primary_locked = 0;
++
+ void av_log_set_callback(void (*callback)(void*, int, const char*, va_list))
+ {
++    if (atomic_load_explicit(&av_log_primary_locked, memory_order_acquire)) {
++        atomic_store_explicit(&av_log_secondary_callback,
++                              (uintptr_t)(callback ? callback : av_log_default_callback),
++                              memory_order_release);
++        return;
++    }
+     atomic_store_explicit(&av_log_callback, (uintptr_t)callback, memory_order_relaxed);
+ }
+ 
++void av_log_fushi_set_primary_callback(void (*callback)(void*, int, const char*, va_list))
++{
++    if (callback) {
++        atomic_store_explicit(&av_log_callback, (uintptr_t)callback, memory_order_relaxed);
++        atomic_store_explicit(&av_log_primary_locked, 1, memory_order_release);
++    } else {
++        /* Unlock: hand the process-global slot back to the secondary client. */
++        atomic_store_explicit(&av_log_primary_locked, 0, memory_order_release);
++        atomic_store_explicit(&av_log_callback,
++                              atomic_load_explicit(&av_log_secondary_callback,
++                                                   memory_order_acquire),
++                              memory_order_relaxed);
++    }
++}
++
++void av_log_fushi_forward_secondary(void *avcl, int level, const char *fmt, va_list vl)
++{
++    void (*cb)(void*, int, const char*, va_list) =
++        (void *)atomic_load_explicit(&av_log_secondary_callback, memory_order_acquire);
++    if (cb)
++        cb(avcl, level, fmt, vl);
++}
++
+ static void missing_feature_sample(int sample, void *avc, const char *msg,
+                                    va_list argument_list)
+ {
+diff --git a/libavutil/log.h b/libavutil/log.h
+index 4a111ca..a019839 100644
+--- a/libavutil/log.h
++++ b/libavutil/log.h
+@@ -336,6 +336,20 @@ void av_log_set_level(int level);
+  */
+ void av_log_set_callback(void (*callback)(void*, int, const char*, va_list));
+ 
++/**
++ * Fushi: lock the process-global log callback to [callback] (NULL unlocks).
++ * While locked, av_log_set_callback() sets a secondary callback instead of
++ * replacing the primary one; the primary forwards foreign messages to it via
++ * av_log_fushi_forward_secondary(). Lets two in-process clients (libmpv and
++ * FFmpegKit) share one FFmpeg build without stealing each other's logs.
++ */
++void av_log_fushi_set_primary_callback(void (*callback)(void*, int, const char*, va_list));
++
++/**
++ * Fushi: deliver a message to the secondary callback (default: stderr).
++ */
++void av_log_fushi_forward_secondary(void *avcl, int level, const char *fmt, va_list vl);
++
+ /**
+  * Default logging callback
+  *

@@ -147,7 +147,9 @@ void main() {
       );
     }
     final String cmake = File('$pkg/windows/CMakeLists.txt').readAsStringSync();
-    expect(cmake, contains('-mkvdts1.7z"'));
+    // `-mkvdts1` must stay in the pinned archive name; `-ffu1` (unified
+    // FFmpeg rebuild) may follow it.
+    expect(cmake, matches(RegExp(r'-mkvdts1(-ffu\d+)?\.7z"')));
   });
 
   // 补丁的 trace / debug 字符串只在它编进去时出现在二进制里：直接打开构建实际
@@ -233,7 +235,7 @@ void main() {
       );
     }
     int abis = 0;
-    for (final ({String abi, String contents}) lib in verifiedAndroidLibmpv()) {
+    for (final ({String abi, String contents, String codec}) lib in verifiedAndroidLibmpv()) {
       abis++;
       expect(
         lib.contents,
@@ -242,6 +244,7 @@ void main() {
       );
       expect(lib.contents, contains('Deriving missing DTS'), reason: lib.abi);
     }
-    expect(abis, 4);
+    // arm64-v8a / armeabi-v7a / x86_64 (Flutter has no 32-bit x86 target).
+    expect(abis, 3);
   }, timeout: const Timeout(Duration(minutes: 3)));
 }

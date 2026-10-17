@@ -62,9 +62,21 @@ def macho_slices(data, required_markers=()):
              "dependencies": dependencies}]
 
 
+# Fushi unified FFmpeg (tool/ffmpeg-unified): libmpv links the app's shared
+# FFmpeg frameworks, shipped once by the FFmpeg side (FFmpegKitNext plugin on
+# iOS, media_kit_libs_macos_video's unified layout on macOS). These are the only
+# @rpath dependencies allowed to resolve outside this archive, and no FFmpeg
+# framework may be packaged inside it (that would be a second FFmpeg again).
+UNIFIED_FFMPEG = {"libavcodec", "libavdevice", "libavfilter", "libavformat",
+                  "libavutil", "libswresample", "libswscale"}
+PRIVATE_FFMPEG = {"Avcodec", "Avdevice", "Avfilter", "Avformat", "Avutil",
+                  "Swresample", "Swscale"}
+
+
 def verify_archive(path, platform):
-    required = {"Mpv", "Bluray", "Placebo", "Avcodec"}
-    expected = {"macos": {"": {"arm64", "x86_64"}},
+    required = {"Mpv", "Bluray", "Placebo"}
+    # Fushi ships Apple Silicon only on macOS.
+    expected = {"macos": {"": {"arm64"}},
                 "ios": {"": {"arm64"}, "simulator": {"arm64", "x86_64"}}}[platform]
     frameworks = {}
     with tarfile.open(path, "r:gz") as archive:
@@ -109,6 +121,10 @@ def verify_archive(path, platform):
             frameworks[framework] = variants
     if not required <= frameworks.keys():
         raise ValueError(f"Missing required frameworks: {required - frameworks.keys()}")
+    if packaged := (PRIVATE_FFMPEG | UNIFIED_FFMPEG) & frameworks.keys():
+        raise ValueError(f"FFmpeg packaged inside libmpv ({sorted(packaged)}); "
+                         "libmpv must link the unified FFmpeg frameworks")
+    unified_used = False
     for framework, variants in frameworks.items():
         for slices in variants.values():
             for item in slices:
@@ -122,7 +138,12 @@ def verify_archive(path, platform):
                                        f"@rpath/{target}.framework/Versions/Current/{target}"}
                         if target in frameworks and dependency in valid_paths:
                             continue
+                        if target in UNIFIED_FFMPEG and dependency in valid_paths:
+                            unified_used = True
+                            continue
                     raise ValueError(f"{framework}: unbundled dependency {dependency}")
+    if not unified_used:
+        raise ValueError("Mpv does not link the unified FFmpeg (@rpath/libavcodec.framework)")
     checksum = hashlib.sha256()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):

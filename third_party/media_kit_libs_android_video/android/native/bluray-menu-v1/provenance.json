@@ -1,6 +1,15 @@
 {
-  "build_commit": "3166982f43fac31c86dc4c66acd8ac3280600eac",
+  "build_commit": "452510d169c847cbc5bd59ed72602ecc2eb163ce",
+  "build_branch": "fushi/unified-ffmpeg",
+  "build_repository": "hajisensai/libmpv-android-build-fushi (mirror of hajisensai/libmpv-android-video-build)",
+  "workflow_run": "https://github.com/hajisensai/libmpv-android-build-fushi/actions/runs/39037350491",
   "mpv_commit": "36abaa32d00a7229ee206aae12dc0e97e7962dca",
+  "android_api_level": 24,
+  "unified_ffmpeg": {
+    "recipe": "hajisensai/fushi tool/ffmpeg-unified (FFmpeg 9.0.1 + Fushi patches)",
+    "note": "libmpv.so DT_NEEDs libav*.so from the app's FFmpegKitNext AAR (third_party/ffmpeg_kit_next_flutter)",
+    "lock": "# Fushi unified FFmpeg (hajisensai/fushi tool/ffmpeg-unified, FFmpeg 9.0.1):\n# per-ABI development prefixes of the FFmpegKitNext build whose lib*.so ship in\n# the app's AAR. bundle_unified.sh links libmpv against them dynamically.\n# Source run: hajisensai/fushi ffmpeg-unified-mobile.yml 39034160156.\nUNIFIED_FFMPEG_RELEASE_URL=https://github.com/hajisensai/libmpv-android-video-build/releases/download/unified-ffmpeg-9.0.1-r1\nUNIFIED_FFMPEG_SHA256_arm64_v8a=1feff002f97d575de0694ef13c0f8e46ef7d2ce43f6daa260ecd8a20e582e0ae\nUNIFIED_FFMPEG_SHA256_armeabi_v7a=39ae536b14de4a520829dd1b142cbcbdc13c037ac94bf1e1595a08187c550990\nUNIFIED_FFMPEG_SHA256_x86_64=f39626bd1aabbeb53b1cbf7982d483cf8c362fb44507194070ce35e85939f5fd\n"
+  },
   "patches": {
     "patches/mpv/mpv_gl_dovi_p5.patch": "bff4b4bc5cafecf7cf622a85d5c5ebb5ba76739f64189e87e450f7086000b08b",
     "patches/mpv/mpv_lavc_set_java_vm.patch": "87401381750e7885194444f3c409d9beabd0eaf4d1e9c7004e99ec087b713ba5",

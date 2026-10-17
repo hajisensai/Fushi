@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: fushi <fushi@localhost>
+Date: Sat, 17 Oct 2026 19:57:24 +0800
+Subject: [PATCH 3/3] avcodec/videotoolbox: decode 10-bit to BGRA on iOS for GLES
+ interop (from media-kit)
+
+---
+ libavcodec/videotoolbox.c          | 6 ++++++
+ libavutil/hwcontext_videotoolbox.c | 5 ++++-
+ 2 files changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/libavcodec/videotoolbox.c b/libavcodec/videotoolbox.c
+index 8df8a32..4ae5b23 100644
+--- a/libavcodec/videotoolbox.c
++++ b/libavcodec/videotoolbox.c
+@@ -1261,7 +1261,13 @@ static enum AVPixelFormat videotoolbox_best_pixel_format(AVCodecContext *avctx)
+ #endif
+ #if HAVE_KCVPIXELFORMATTYPE_420YPCBCR10BIPLANARVIDEORANGE
+     if (depth > 8) {
++#if TARGET_OS_IPHONE
++        /* Fushi (from media-kit libmpv-darwin-build): iOS GLES has no 10-bit
++         * textures, so libmpv's GL interop cannot sample P010; decode to BGRA. */
++        return AV_PIX_FMT_BGRA;
++#else
+         return AV_PIX_FMT_P010;
++#endif
+     }
+ #endif
+ 
+diff --git a/libavutil/hwcontext_videotoolbox.c b/libavutil/hwcontext_videotoolbox.c
+index 5add409..6d4b77c 100644
+--- a/libavutil/hwcontext_videotoolbox.c
++++ b/libavutil/hwcontext_videotoolbox.c
+@@ -50,7 +50,10 @@ static const struct {
+     { kCVPixelFormatType_420YpCbCr8Planar,              false, AV_PIX_FMT_YUV420P },
+     { kCVPixelFormatType_420YpCbCr8PlanarFullRange,     true,  AV_PIX_FMT_YUV420P },
+     { kCVPixelFormatType_422YpCbCr8,                    false, AV_PIX_FMT_UYVY422 },
+-    { kCVPixelFormatType_32BGRA,                        true,  AV_PIX_FMT_BGRA },
++    /* Fushi (from media-kit libmpv-darwin-build): BGRA must map without full
++     * range, or av_map_videotoolbox_format_from_pixfmt2() cannot resolve the
++     * iOS 10-bit -> BGRA fallback in videotoolbox_best_pixel_format(). */
++    { kCVPixelFormatType_32BGRA,                        false, AV_PIX_FMT_BGRA },
+ #ifdef kCFCoreFoundationVersionNumber10_7
+     { kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,  false, AV_PIX_FMT_NV12 },
+     { kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,   true,  AV_PIX_FMT_NV12 },

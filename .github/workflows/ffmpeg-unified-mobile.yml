@@ -1,0 +1,207 @@
+# Unified FFmpeg for Android + iOS (docs/specs/2026-10-17-unified-ffmpeg.md).
+#
+# Builds FFmpeg ${FFMPEG_VERSION} (tool/ffmpeg-unified/recipe.env + patches) with
+# FFmpegKitNext. The SAME FFmpeg shared libraries serve:
+#   - card mining / export: FFmpegKitNext's in-process ffmpeg/ffprobe runner
+#     (third_party/ffmpeg_kit_flutter),
+#   - playback: libmpv, built against the ffmpeg-dev-* prefixes uploaded here
+#     (Android: hajisensai/libmpv-android-video-build; iOS/macOS: libmpv-darwin-build).
+#
+# Artifacts are NOT written back automatically. Vendor them, then run the
+# fushi/test/tools/ffmpeg_unified_*_guard_test.dart guards.
+name: ffmpeg-unified-mobile
+
+on:
+  # workflow_dispatch 404s until the file exists on the default branch; a push
+  # to this branch triggers a build from any commit that carries the workflow.
+  push:
+    branches: ["ci/ffmpeg-unified-mobile"]
+  workflow_dispatch:
+    inputs:
+      build_android:
+        description: "Build Android"
+        type: boolean
+        default: true
+      build_ios:
+        description: "Build iOS"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_android }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    env:
+      # FFmpegKitNext's android-r27d profile.
+      NDK_VERSION: 27.3.13750724
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install host tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake libtool pkg-config nasm yasm gperf texinfo autopoint gettext \
+            build-essential perl python3 unzip zip curl git meson ninja-build rsync bison flex \
+            groff
+          # groff (full, not the runner's groff-base): libiconv (pulled in by
+          # libxml2) renders its man pages with -Thtml.
+
+      - name: Private Android SDK (NDK r27d + cmake 3.22.1)
+        # A private SDK root with ONE cmake: the kit resolves cmake by globbing
+        # $ANDROID_SDK_ROOT/cmake, and the runner SDK carries several versions.
+        run: |
+          set -euo pipefail
+          SDK="$RUNNER_TEMP/android-sdk"
+          mkdir -p "$SDK"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --sdk_root="$SDK" --licenses > /dev/null || true
+          "$SDKMANAGER" --sdk_root="$SDK" --install \
+            "ndk;${NDK_VERSION}" "cmake;3.22.1" "platforms;android-34" "build-tools;35.0.0" "platform-tools"
+          got="$(grep -E '^Pkg.Revision' "$SDK/ndk/${NDK_VERSION}/source.properties" | sed 's/.*= *//')"
+          test "$got" = "${NDK_VERSION}"
+          {
+            echo "ANDROID_SDK_ROOT=$SDK"
+            echo "ANDROID_HOME=$SDK"
+            echo "ANDROID_NDK_ROOT=$SDK/ndk/${NDK_VERSION}"
+          } >> "$GITHUB_ENV"
+
+      - name: Build unified FFmpeg (FFmpegKitNext android.sh)
+        run: bash tool/ffmpeg-unified/mobile/build_android.sh "$RUNNER_TEMP/work" "$RUNNER_TEMP/out"
+
+      - name: Verify outputs
+        run: python3 tool/ffmpeg-unified/mobile/verify_mobile_outputs.py android "$RUNNER_TEMP/out"
+
+      - name: build.log tail on failure
+        if: failure()
+        run: tail -n 400 "$RUNNER_TEMP/work/ffmpeg-kit-next/build.log" || true
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-unified-android
+          path: ${{ runner.temp }}/out/*
+          if-no-files-found: error
+
+      - name: Upload build.log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-unified-android-build-log
+          path: ${{ runner.temp }}/work/ffmpeg-kit-next/build.log
+          if-no-files-found: ignore
+
+  macos:
+    # Desktop macOS (Apple Silicon): the player's FFmpeg frameworks + the
+    # ffmpeg/ffprobe programs linked against them, verified by running them.
+    # A pushed commit message containing [skip-apple] rebuilds Android only.
+    if: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_ios) && !contains(github.event.head_commit.message, '[skip-apple]') }}
+    runs-on: macos-26
+    timeout-minutes: 330
+    env:
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Select Xcode 26
+        run: |
+          set -euo pipefail
+          XCODE_APP="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$XCODE_APP" ]; then
+            echo "::error::no Xcode 26 on this runner image"; ls -d /Applications/Xcode*.app; exit 1
+          fi
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install host tools
+        run: |
+          set -euo pipefail
+          brew install autoconf automake libtool pkg-config nasm yasm meson ninja gperf texinfo cmake gnu-sed
+          echo "$(brew --prefix libtool)/libexec/gnubin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix gnu-sed)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Build unified FFmpeg (FFmpegKitNext macos.sh + programs)
+        run: bash tool/ffmpeg-unified/mobile/build_macos.sh "$RUNNER_TEMP/work" "$RUNNER_TEMP/out"
+
+      - name: build.log tail on failure
+        if: failure()
+        run: tail -n 400 "$RUNNER_TEMP/work/ffmpeg-kit-next/build.log" || true
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-unified-macos
+          path: ${{ runner.temp }}/out/*
+          if-no-files-found: error
+
+      - name: Upload build.log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-unified-macos-build-log
+          path: ${{ runner.temp }}/work/ffmpeg-kit-next/build.log
+          if-no-files-found: ignore
+
+  ios:
+    if: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_ios) && !contains(github.event.head_commit.message, '[skip-apple]') }}
+    runs-on: macos-26
+    timeout-minutes: 330
+    env:
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Select Xcode 26
+        # FFmpegKitNext's xcode26 profile requires Xcode 26 or newer.
+        run: |
+          set -euo pipefail
+          XCODE_APP="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$XCODE_APP" ]; then
+            echo "::error::no Xcode 26 on this runner image"; ls -d /Applications/Xcode*.app; exit 1
+          fi
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Install host tools
+        run: |
+          set -euo pipefail
+          brew install autoconf automake libtool pkg-config nasm yasm meson ninja gperf texinfo cmake gnu-sed
+          echo "$(brew --prefix libtool)/libexec/gnubin" >> "$GITHUB_PATH"
+          # FFmpegKitNext refuses BSD sed (scripts/function.sh).
+          echo "$(brew --prefix gnu-sed)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Build unified FFmpeg (FFmpegKitNext ios.sh)
+        run: bash tool/ffmpeg-unified/mobile/build_ios.sh "$RUNNER_TEMP/work" "$RUNNER_TEMP/out"
+
+      - name: Verify outputs
+        run: python3 tool/ffmpeg-unified/mobile/verify_mobile_outputs.py ios "$RUNNER_TEMP/out"
+
+      - name: build.log tail on failure
+        if: failure()
+        run: tail -n 400 "$RUNNER_TEMP/work/ffmpeg-kit-next/build.log" || true
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-unified-ios
+          path: ${{ runner.temp }}/out/*
+          if-no-files-found: error
+
+      - name: Upload build.log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-unified-ios-build-log
+          path: ${{ runner.temp }}/work/ffmpeg-kit-next/build.log
+          if-no-files-found: ignore

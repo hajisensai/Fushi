@@ -32,7 +32,7 @@ void main() {
 
   test('用自编 ffmpeg-kit：KitFfmpegBackend + ffmpeg_kit_flutter API（app 侧）', () {
     expect(
-        kit, contains('import \'package:ffmpeg_kit_flutter/ffmpeg_kit.dart\''));
+        kit, contains('import \'package:ffmpeg_kit_next_flutter/ffmpeg_kit.dart\''));
     expect(kit, contains('class KitFfmpegBackend implements FfmpegBackend'));
     expect(kit, contains('FFmpegKit.executeWithArguments'));
     // 引擎不得反向碰插件（纯度守卫另钉，这里顺手钉住后端文件本身）。

@@ -19,7 +19,9 @@ Pod::Spec.new do |s|
   s.source_files     = 'Classes/**/*'
   s.dependency 'FlutterMacOS'
 
-  s.vendored_frameworks = 'Frameworks/*.xcframework'
+  # libmpv's own frameworks (no FFmpeg inside) + the unified FFmpeg frameworks
+  # Mpv.framework links via @rpath (see Makefile, tool/ffmpeg-unified).
+  s.vendored_frameworks = ['Frameworks/*.xcframework', 'Frameworks/lib*.framework']
 
   s.platform = :osx, '10.9'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }

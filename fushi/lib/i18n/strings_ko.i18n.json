@@ -4658,7 +4658,7 @@
   "mining_audio_tail_pad_hint": "자막이 끝난 뒤의 오디오를 추가로 남겨 끝소리가 잘리지 않게 합니다. 다음 줄과는 겹치지 않습니다.",
   "mining_clip_format_hint": "WebM은 카드 안에서 재생되지만 iPhone의 AnkiMobile에서는 재생할 수 없습니다. iPhone에서 복습한다면 MP4를 선택하세요. 이 기기에서 WebM을 인코딩할 수 없으면 Fushi는 MP4로 대체합니다.",
   "mining_clip_format_mp4_h264": "MP4 · H.264 (Anki 자체 플레이어, AnkiMobile용)",
-  "mining_clip_format_webm_av1": "WebM · AV1 (카드 안에서 재생. 파일이 가장 작고 인코딩 시간은 VP9의 약 2배, 데스크톱 전용)",
+  "mining_clip_format_webm_av1": "WebM · AV1 (카드 안에서 재생. 파일이 가장 작고 인코딩 시간은 VP9의 약 2배)",
   "mining_clip_format_webm_vp9": "WebM · VP9 (카드 안에서 재생, 권장)",
   "mining_image_quality": "이미지 / GIF 품질",
   "mining_image_quality_hd": "HD",

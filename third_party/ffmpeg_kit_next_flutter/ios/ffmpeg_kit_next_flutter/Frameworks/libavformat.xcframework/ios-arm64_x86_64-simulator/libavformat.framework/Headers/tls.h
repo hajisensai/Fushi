@@ -1,0 +1,156 @@
+/*
+ * TLS/DTLS/SSL Protocol
+ * Copyright (c) 2011 Martin Storsjo
+ * Copyright (c) 2025 Jack Lau
+ *
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * FFmpeg is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with FFmpeg; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+#ifndef AVFORMAT_TLS_H
+#define AVFORMAT_TLS_H
+
+#include "libavutil/bprint.h"
+#include "libavutil/opt.h"
+
+#include "url.h"
+
+/**
+ * Maximum size limit of a certificate and private key size.
+ */
+#define MAX_CERTIFICATE_SIZE 8192
+
+/**
+ * The DTLS content type.
+ * See https://tools.ietf.org/html/rfc2246#section-6.2.1
+ * change_cipher_spec(20), alert(21), handshake(22), application_data(23)
+ */
+#define DTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC 20
+/**
+ * The DTLS record layer header has a total size of 13 bytes, consisting of
+ * ContentType (1 byte), ProtocolVersion (2 bytes), Epoch (2 bytes),
+ * SequenceNumber (6 bytes), and Length (2 bytes).
+ * See https://datatracker.ietf.org/doc/html/rfc9147#section-4
+ */
+#define DTLS_RECORD_LAYER_HEADER_LEN 13
+/**
+ * The DTLS version number, which is 0xfeff for DTLS 1.0, or 0xfefd for DTLS 1.2.
+ * See https://datatracker.ietf.org/doc/html/rfc9147#name-the-dtls-record-layer
+ */
+#define DTLS_VERSION_10 0xfeff
+#define DTLS_VERSION_12 0xfefd
+
+typedef struct TLSShared {
+    const AVClass *class;
+    char *ca_file;
+    int verify;
+    char *cert_file;
+    char *key_file;
+    int listen;
+
+    char *host;
+    char *http_proxy;
+
+    /* Fushi: SHA-256 fingerprint (hex, colons optional) the peer leaf
+     * certificate must match. When set, it authoritatively replaces the
+     * CA/hostname checks (accepts exactly this cert, e.g. a self-signed LAN
+     * host pinned via TOFU). Empty/NULL = unchanged upstream behaviour. */
+    char *pin_sha256;
+
+    char underlying_host[200];
+    int numerichost;
+
+    int external_sock;
+    URLContext *udp;
+    URLContext *tcp;
+
+    int is_dtls;
+    int use_srtp;
+
+    /* The certificate and private key content used for DTLS handshake */
+    char* cert_buf;
+    char* key_buf;
+
+    /**
+     * The size of RTP packet, should generally be set to MTU.
+     * Note that pion requires a smaller value, for example, 1200.
+     */
+    int mtu;
+} TLSShared;
+
+#define TLS_OPTFL (AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_ENCODING_PARAM)
+
+#define FF_TLS_CLIENT_OPTIONS(pstruct, options_field) \
+    {"ca_file",    "Certificate Authority database file", offsetof(pstruct, options_field . ca_file),   AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    {"cafile",     "Certificate Authority database file", offsetof(pstruct, options_field . ca_file),   AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    {"tls_verify", "Verify the peer certificate",         offsetof(pstruct, options_field . verify),    AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, .flags = TLS_OPTFL }, \
+    {"verify",     "Verify the peer certificate",         offsetof(pstruct, options_field . verify),    AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, .flags = TLS_OPTFL }, \
+    {"cert_file",  "Certificate file",                    offsetof(pstruct, options_field . cert_file), AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    {"cert",       "Certificate file",                    offsetof(pstruct, options_field . cert_file), AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    {"key_file",   "Private key file",                    offsetof(pstruct, options_field . key_file),  AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    {"key",        "Private key file",                    offsetof(pstruct, options_field . key_file),  AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    {"verifyhost", "Verify against a specific hostname",  offsetof(pstruct, options_field . host),      AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }
+
+#define TLS_COMMON_OPTIONS(pstruct, options_field) \
+    {"listen",     "Listen for incoming connections",     offsetof(pstruct, options_field . listen),    AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, .flags = TLS_OPTFL }, \
+    {"http_proxy", "Set proxy to tunnel through",         offsetof(pstruct, options_field . http_proxy), AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    {"external_sock", "Use external socket",              offsetof(pstruct, options_field . external_sock), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, .flags = TLS_OPTFL }, \
+    {"use_srtp",   "Enable use_srtp DTLS extension",      offsetof(pstruct, options_field . use_srtp),  AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, .flags = TLS_OPTFL }, \
+    {"mtu", "Maximum Transmission Unit", offsetof(pstruct, options_field . mtu), AV_OPT_TYPE_INT,  { .i64 = 0 }, 0, INT_MAX, .flags = TLS_OPTFL}, \
+    {"cert_pem",   "Certificate PEM string",              offsetof(pstruct, options_field . cert_buf),  AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    {"key_pem",    "Private key PEM string",              offsetof(pstruct, options_field . key_buf),   AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    /* Fushi: TLSShared-only (FF_TLS_CLIENT_OPTIONS is also used by RTSP's own struct). */ \
+    {"tls_pin_sha256", "Pin the peer certificate to this SHA-256 fingerprint (hex)", offsetof(pstruct, options_field . pin_sha256), AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    FF_TLS_CLIENT_OPTIONS(pstruct, options_field)
+
+int ff_tls_parse_host(TLSShared *s, char *hostname, int hostname_size, int *port_ptr, const char *uri);
+
+int ff_tls_open_underlying(TLSShared *c, URLContext *parent, const char *uri, AVDictionary **options);
+
+/* Fushi: return 0 when the DER-encoded [der_cert] SHA-256 fingerprint matches
+ * [pin] (hex, colons/whitespace ignored, case-insensitive); a negative AVERROR
+ * on mismatch or malformed input. [pin] NULL/empty returns 0 (no-op). Shared by
+ * every TLS backend so pinning behaves identically across gnutls/openssl/etc. */
+int ff_tls_check_cert_pin(void *logctx, const uint8_t *der_cert, int der_len, const char *pin);
+
+/* Fushi: non-zero when a certificate pin is configured on [c]. */
+static inline int ff_tls_has_cert_pin(const TLSShared *c)
+{
+    return c->pin_sha256 && *c->pin_sha256;
+}
+
+int ff_url_read_all(const char *url, AVBPrint *bp);
+
+int ff_tls_set_external_socket(URLContext *h, URLContext *sock);
+
+int ff_dtls_export_materials(URLContext *h, char *dtls_srtp_materials, size_t materials_sz);
+
+int ff_ssl_read_key_cert(char *key_url, char *cert_url, char *key_buf, size_t key_sz, char *cert_buf, size_t cert_sz, char **fingerprint);
+
+int ff_ssl_gen_key_cert(char *key_buf, size_t key_sz, char *cert_buf, size_t cert_sz, char **fingerprint);
+
+void ff_gnutls_init(void);
+void ff_gnutls_deinit(void);
+
+int ff_openssl_init(void);
+void ff_openssl_deinit(void);
+
+/**
+ * Whether the packet is a DTLS packet, as defined by RFC 5764 Section 5.1.2.
+ */
+int ff_is_dtls_packet(const uint8_t *buf, int size);
+
+#endif /* AVFORMAT_TLS_H */

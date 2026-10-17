@@ -7,6 +7,8 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:path/path.dart' as p;
 
+import '../../helpers/unified_ffmpeg.dart';
+
 void main() {
   // B（浏览器扩展加载外挂字幕文件）：server 端点把用户上传的 srt/ass/vtt 文本解析成扩展
   // 面板可消费的 cue JSON。纯函数（parseSubtitleContent 无 IO），复用 app 内已测的 parser。
@@ -1866,7 +1868,7 @@ hello mov
 Future<String?> _workingFfmpegExecutable() async {
   for (final String executable in <String>[
     'ffmpeg',
-    p.normalize('../third_party/ffmpeg-min/windows/ffmpeg.exe'),
+    ?resolveBundledUnifiedFfmpegForTests()?.ffmpeg,
   ]) {
     try {
       final ProcessResult result = await Process.run(

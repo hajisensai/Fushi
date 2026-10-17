@@ -4658,7 +4658,7 @@
   "mining_audio_tail_pad_hint": "Extra audio kept after the subtitle ends, so trailing sounds are not cut short. Never runs into the next line.",
   "mining_clip_format_hint": "WebM plays inside the card, but AnkiMobile on iPhone cannot play it — choose MP4 if you review on iPhone. If WebM cannot be encoded on this device, Fushi falls back to MP4.",
   "mining_clip_format_mp4_h264": "MP4 · H.264 (Anki's own player; use for AnkiMobile)",
-  "mining_clip_format_webm_av1": "WebM · AV1 (plays inside the card; smallest file, about 2× the encode time of VP9; desktop only)",
+  "mining_clip_format_webm_av1": "WebM · AV1 (plays inside the card; smallest file, about 2× the encode time of VP9)",
   "mining_clip_format_webm_vp9": "WebM · VP9 (plays inside the card, recommended)",
   "mining_image_quality": "Image / GIF quality",
   "mining_image_quality_hd": "HD",

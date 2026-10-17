@@ -6,12 +6,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/audio_energy_probe.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 
+import '../../helpers/unified_ffmpeg.dart';
+
 /// 字幕波形对轴全平台化：逐帧 RMS 走 `ametadata` 的 `file=` 文件通道，不再依赖 ffmpeg
 /// 日志回传。移动端 ffmpeg-kit 的 `getOutput` 要把逐帧日志跨平台通道异步搬回来，拿到的
 /// 输出不全或为空——波形对轴因此只在桌面可用。这里钉三件事：
 /// 1. 转义函数经 ffmpeg 两层 `av_get_token` 解析后原样还原任意路径；
 /// 2. 后端**不回任何日志**（ffmpeg-kit 的失败形态）时包络照样从文件拿到；
-/// 3. 真 ffmpeg（随包 ffmpeg-min / FUSHI_FFMPEG / PATH）在含逗号、分号、方括号、单引号、
+/// 3. 真 ffmpeg（随包统一 FFmpeg / FUSHI_FFMPEG / PATH）在含逗号、分号、方括号、单引号、
 ///    空格、中文的临时目录下真能把逐帧行写进文件（无 ffmpeg 时跳过）。
 
 /// 复刻 libavutil `av_get_token` 的反转义语义（不带终止符集，整串一个 token）：
@@ -120,22 +122,8 @@ Uint8List _wav(List<(double, double)> segments) {
   return b.buffer.asUint8List();
 }
 
-/// 找一个真 ffmpeg：FUSHI_FFMPEG > 仓库随包 ffmpeg-min（Windows / macOS）> PATH。
-String? _realFfmpeg() {
-  final String? override = Platform.environment['FUSHI_FFMPEG'];
-  if (override != null && override.isNotEmpty) return override;
-  final String? bundled = Platform.isWindows
-      ? '../third_party/ffmpeg-min/windows/ffmpeg.exe'
-      : (Platform.isMacOS ? '../third_party/ffmpeg-min/macos/ffmpeg' : null);
-  if (bundled != null && File(bundled).existsSync()) {
-    return File(bundled).absolute.path;
-  }
-  try {
-    final ProcessResult r = Process.runSync('ffmpeg', <String>['-version']);
-    if (r.exitCode == 0) return 'ffmpeg';
-  } catch (_) {}
-  return null;
-}
+/// 找一个真 ffmpeg：FUSHI_FFMPEG > 随包统一 FFmpeg（Windows / macOS）> PATH。
+String? _realFfmpeg() => resolveUnifiedFfmpegForTests()?.ffmpeg;
 
 /// 按固定可执行文件跑的桌面 CLI 后端（不走进程级单例解析，免得依赖测试进程旁有无捆绑）。
 class _FixedCliBackend implements FfmpegBackend {

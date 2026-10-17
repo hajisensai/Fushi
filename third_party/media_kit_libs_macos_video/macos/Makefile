@@ -1,9 +1,27 @@
-all: Frameworks/*.xcframework Frameworks/.symlinks
+all: Frameworks/*.xcframework Frameworks/.symlinks Frameworks/.unified-ffmpeg
+
+# Fushi unified FFmpeg (tool/ffmpeg-unified): the FFmpeg frameworks Mpv.framework
+# links through @rpath/lib*.framework, from the same build whose ffmpeg/ffprobe
+# programs release-desktop.yml installs into Contents/MacOS. One FFmpeg for
+# playback and card mining. ../native/ffmpeg-unified-macos.tar.gz is the
+# fushi.app/Contents layout (Frameworks/ + MacOS/) built and verified by
+# .github/workflows/ffmpeg-unified-mobile.yml (tool/ffmpeg-unified/mobile/build_macos.sh).
+UNIFIED_FFMPEG_ARCHIVE=$(abspath ../native/ffmpeg-unified-macos.tar.gz)
+UNIFIED_FFMPEG_SHA256SUM=3442c8ecaa48203fb794bd0809d050b46c74673208096406c456b8b04573657d
+
+Frameworks/.unified-ffmpeg: $(UNIFIED_FFMPEG_ARCHIVE)
+	shasum -a 256 -c <<< '${UNIFIED_FFMPEG_SHA256SUM}  $(UNIFIED_FFMPEG_ARCHIVE)'
+	mkdir -p Frameworks
+	rm -rf Frameworks/lib*.framework .cache/unified-ffmpeg
+	mkdir -p .cache/unified-ffmpeg
+	tar -xf $(UNIFIED_FFMPEG_ARCHIVE) -C .cache/unified-ffmpeg Frameworks
+	cp -R .cache/unified-ffmpeg/Frameworks/lib*.framework Frameworks/
+	touch Frameworks/.unified-ffmpeg
 
 # Verified original-menu libmpv bundle. Source and actual slice/closure checks:
 # ../native/provenance.json. Keep full TrueHD decoding and the DOVI GL patch.
-MPV_XCFRAMEWORKS_VERSION=bluray-d186a42d6202
-MPV_XCFRAMEWORKS_SHA256SUM=ab829358e2bfa4d8eb43bc3ee976e82dd22b332fabf04880320ce3d5b05d8017
+MPV_XCFRAMEWORKS_VERSION=unified-0f29c43057bb
+MPV_XCFRAMEWORKS_SHA256SUM=4cb73ff047d8ba1e6def51059570f26a897a815ba5b2d906357fc0cf064ecc49
 MPV_XCFRAMEWORKS_VENDOR_ARCHIVE=$(abspath ../native/libmpv-xcframeworks-bluray.tar.gz)
 
 # Explicit local build verification, without publishing or changing production pins.
@@ -54,4 +72,4 @@ Frameworks/.symlinks: Frameworks/*.xcframework
 clean:
 	rm -rf .cache
 	rm -f ./Headers/mpv/*.h
-	rm -rf ./Frameworks/*.xcframework
+	rm -rf ./Frameworks/*.xcframework ./Frameworks/lib*.framework ./Frameworks/.unified-ffmpeg

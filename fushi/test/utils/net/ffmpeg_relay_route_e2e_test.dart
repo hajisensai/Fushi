@@ -8,7 +8,9 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:path/path.dart' as p;
 
-/// BUG-2642 残留的端到端证据：真捆绑 ffmpeg-min + 真本机中继 + 伪装分片的 HLS。
+import '../../helpers/unified_ffmpeg.dart';
+
+/// BUG-2642 残留的端到端证据：真随包统一 FFmpeg + 真本机中继 + 伪装分片的 HLS。
 ///
 /// 上游形状照抄在线 hoster：播放列表里的分片叫 `seg0.jpg`，响应 `image/png`，正文先是
 /// 一张 PNG（垫到 252 字节，AnimeKai / MegaPlay 的实测长度）再接 MPEG-TS。
@@ -20,7 +22,7 @@ import 'package:path/path.dart' as p;
 ///  - 改道但不放开扩展名：FFmpeg 7.1 按白名单拒掉 `.jpg` 分片（`Invalid data`）；
 ///  - 改道 + 放开：抽出句子音频，本地服务先后收到播放列表与分片。
 ///
-/// 只在带捆绑 ffmpeg-min 的平台跑（Windows / macOS）；它是 BUG-2642 那条配方产物。
+/// 只在带随包统一 FFmpeg 的平台跑（Windows / macOS）；它是 BUG-2642 那条配方产物。
 void main() {
   final String? bundled = _bundledFfmpeg();
 
@@ -166,7 +168,7 @@ void main() {
       expect(File(out!).lengthSync(), greaterThan(0));
       expect(seen, containsAllInOrder(<String>['/hls/index', '/hls/seg0.jpg']));
     },
-    skip: bundled == null ? '只在带捆绑 ffmpeg-min 的平台跑（Windows / macOS）' : false,
+    skip: bundled == null ? '只在带随包统一 FFmpeg 的平台跑（Windows / macOS）' : false,
     timeout: const Timeout(Duration(seconds: 90)),
   );
 
@@ -326,18 +328,10 @@ void main() {
         containsAll(<String>['/m/lo/index', '/m/mid/index', '/m/hi/index']),
       );
     },
-    skip: bundled == null ? '只在带捆绑 ffmpeg-min 的平台跑（Windows / macOS）' : false,
+    skip: bundled == null ? '只在带随包统一 FFmpeg 的平台跑（Windows / macOS）' : false,
     timeout: const Timeout(Duration(seconds: 90)),
   );
 }
 
-String? _bundledFfmpeg() {
-  final String? rel = Platform.isWindows
-      ? p.join('..', 'third_party', 'ffmpeg-min', 'windows', 'ffmpeg.exe')
-      : Platform.isMacOS
-      ? p.join('..', 'third_party', 'ffmpeg-min', 'macos', 'ffmpeg')
-      : null;
-  if (rel == null) return null;
-  final File file = File(p.normalize(p.absolute(rel)));
-  return file.existsSync() ? file.path : null;
-}
+String? _bundledFfmpeg() =>
+    resolveBundledUnifiedFfmpegForTests()?.ffmpeg;

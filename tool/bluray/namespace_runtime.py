@@ -2,7 +2,10 @@
 
 Same-length names preserve all PE RVAs. Normal/delay imports, export forwarders,
 export module names and literal ANSI/UTF-16 LoadLibrary names are rewritten.
-The public libmpv-2.dll client/render ABI remains unchanged. Requires pefile.
+The public libmpv-2.dll client/render ABI remains unchanged. Executables in the
+runtime (the unified FFmpeg's ffmpeg.exe / ffprobe.exe, which share libmpv's
+FFmpeg DLLs) keep their names; only their DLL references are rewritten.
+Requires pefile.
 """
 import hashlib
 import json
@@ -79,11 +82,12 @@ def rewrite_names(data, mapping):
 
 
 def namespace_runtime(directory):
-    paths = sorted(directory.glob("*.dll"), key=lambda path: path.name.lower())
-    mapping = private_names(path.name for path in paths)
+    dlls = sorted(directory.glob("*.dll"), key=lambda path: path.name.lower())
+    executables = sorted(directory.glob("*.exe"), key=lambda path: path.name.lower())
+    mapping = private_names(path.name for path in dlls)
     records, dynamic = [], []
     all_names = {name.lower() for name in mapping.values()} | {PUBLIC_DLL}
-    for source in paths:
+    for source in dlls + executables:
         original = source.read_bytes()
         rewritten, changes = rewrite_names(original, mapping)
         pe = pefile.PE(data=rewritten, fast_load=True)

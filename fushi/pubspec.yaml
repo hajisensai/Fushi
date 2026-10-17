@@ -191,11 +191,10 @@ dependencies:
   media_kit: ^1.2.6
   media_kit_video: ^2.0.1
   media_kit_libs_video: ^1.0.7
-  # 移动端 ffmpeg：用「自编」的 ffmpeg-kit（arthenica 源码 + NDK r25 重编最小变体），
-  # 替代崩溃的第三方预编译 ffmpeg-kit 变体（其 libffmpegkit_abidetect.so 在
-  # Android 16/API 36 上 JNI_OnLoad 返回非法版本，启动即崩，BUG-122）。vendored 包见
-  # dependency_overrides 的 ffmpeg_kit_flutter（android 用 third_party 自编 AAR）。
-  ffmpeg_kit_flutter: ^6.0.3
+  # 移动端 ffmpeg：统一 FFmpeg（tool/ffmpeg-unified，FFmpeg 9.0.1）的进程内命令
+  # 运行器 FFmpegKitNext。播放器 libmpv 链接同一份 FFmpeg 库，制卡与播放能力一致。
+  # vendored 包见根 pubspec 的 dependency_overrides（third_party/ffmpeg_kit_next_flutter）。
+  ffmpeg_kit_next_flutter: ^9.0.0
   web_socket_channel: ^3.0.0
   # 漫画内置 OCR：ONNX Runtime 五平台绑定（检测 RT-DETR + 识别 manga-ocr）。
   # 选型见 lib/src/ocr/；EP 策略（CUDA/DirectML/CoreML/CPU）在 ocr_inference.dart。

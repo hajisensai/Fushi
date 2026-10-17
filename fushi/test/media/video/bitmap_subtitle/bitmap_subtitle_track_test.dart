@@ -22,6 +22,7 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:path/path.dart' as p;
 
+import '../../../helpers/unified_ffmpeg.dart';
 import 'bitmap_subtitle_fixtures.dart';
 
 /// ffprobe `-show_streams -show_data -of json` 对手工 VobSub mkv 的真实输出（节选）。
@@ -74,16 +75,17 @@ class _ScriptedBackend implements FfmpegBackend, FfmpegWatchedRunner {
       throw UnimplementedError();
 }
 
-/// 直接起入库的精简 ffmpeg / ffprobe。
+/// 直接起随包统一 FFmpeg（ffmpeg / ffprobe）。
 class _BinaryBackend implements FfmpegBackend {
-  _BinaryBackend(this.dir);
+  _BinaryBackend(this.ffmpeg, this.ffprobe);
 
-  final String dir;
+  final String ffmpeg;
+  final String ffprobe;
 
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
     final ProcessResult r = await Process.run(
-      p.join(dir, 'ffmpeg.exe'),
+      ffmpeg,
       <String>['-hide_banner', '-loglevel', 'error', ...args],
     ).timeout(timeout);
     return FfmpegRunResult(returnCode: r.exitCode, output: '${r.stderr}');
@@ -92,7 +94,7 @@ class _BinaryBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
     final ProcessResult r = await Process.run(
-      p.join(dir, 'ffprobe.exe'),
+      ffprobe,
       args,
     ).timeout(timeout);
     return FfmpegRunResult(returnCode: r.exitCode, output: '${r.stdout}');
@@ -438,12 +440,12 @@ void main() {
     });
   });
 
-  group('入库的精简 ffmpeg / ffprobe × 真编码器样本', () {
-    final String binDir = p.normalize('../third_party/ffmpeg-min/windows');
-    final Object skip =
-        Platform.isWindows && File(p.join(binDir, 'ffprobe.exe')).existsSync()
+  group('随包统一 FFmpeg（ffmpeg / ffprobe） × 真编码器样本', () {
+    final UnifiedFfmpegForTests? unified =
+        resolveBundledUnifiedFfmpegForTests();
+    final Object skip = unified != null
         ? false
-        : '只有 Windows 能跑入库的 ffmpeg-min/windows/ffmpeg.exe + ffprobe.exe';
+        : '找不到随包统一 FFmpeg（ffmpeg + ffprobe）';
     late Directory dir;
 
     setUp(() => dir = Directory.systemTemp.createTempSync('fushi_bitmap_bin_'));
@@ -457,7 +459,7 @@ void main() {
         streamIndex: 0,
         outputPath: out,
         onFailure: failures.add,
-        backend: _BinaryBackend(binDir),
+        backend: _BinaryBackend(unified!.ffmpeg, unified.ffprobe),
       );
       expect(ok, isTrue, reason: failures.join('\n'));
       return readGraphicSubtitleTrackInBackground(out, complete: true);
@@ -498,7 +500,7 @@ void main() {
       final FfmpegGraphicSubtitleRegionLoader loader =
           FfmpegGraphicSubtitleRegionLoader(
             cacheDir: Directory(p.join(dir.path, 'cache')),
-            backend: _BinaryBackend(binDir),
+            backend: _BinaryBackend(unified!.ffmpeg, unified.ffprobe),
           );
       final GraphicSubtitleRegionTrack? track = await loader.load(
         graphicSubtitleRegionRequestFor(
