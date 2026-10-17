@@ -216,6 +216,7 @@ export async function deleteAccount(env, account) {
       'DELETE FROM used_sigs WHERE account_id IN (SELECT key_id FROM device_keys WHERE account_id = ?1)',
     ).bind(id),
     env.DB.prepare('DELETE FROM device_keys WHERE account_id = ?1').bind(id),
+    env.DB.prepare('DELETE FROM cover_mismatches WHERE account_id = ?1').bind(id),
     ...voteStatements(env.DB, id, voteOps, Date.now(), !acc.hidden),
     env.DB.prepare('DELETE FROM accounts WHERE id = ?1').bind(id),
     // 只有他一个人读过的作品随之消失；别人也在架的作品（及其封面）保留。

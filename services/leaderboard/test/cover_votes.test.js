@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { JPEG, call, coverJpeg, entry, makeEnv, pngHeader, registerUser } from './harness.js';
-import { COVER_HASH_MAX_DISTANCE, hammingHex, nearestCandidate, normalizeCoverHash } from '../src/cover_votes.js';
+import {
+  COVER_HASH_MAX_DISTANCE,
+  COVER_REPLACE_COOLDOWN_MS,
+  hammingHex,
+  nearestCandidate,
+  normalizeCoverHash,
+  settlePendingCovers,
+} from '../src/cover_votes.js';
 
 const NOW = Date.UTC(2026, 9, 16, 12);
 const basic = { Authorization: `Basic ${btoa('admin:pw')}` };
@@ -15,6 +22,8 @@ const B = 'ffffffffffffffff';
 const C = '00000000ffffffff';
 
 const COVER_HASH_RE_TEST = /^[0-9a-f]{16}$/;
+
+const DAY = COVER_REPLACE_COOLDOWN_MS;
 
 const TMDB = 'https://image.tmdb.org/t/p/w300/a.jpg';
 const TMDB2 = 'https://image.tmdb.org/t/p/w300/b.jpg';
@@ -36,6 +45,15 @@ const work = (env, id) => env.DB.raw.prepare('SELECT cover_key, cover_url FROM w
 const candidates = (env, id) => env.DB.raw
   .prepare('SELECT id, phash, cover_key, cover_url, votes FROM cover_candidates WHERE work_id = ?1 ORDER BY id').all(id);
 const usage = (env) => env.DB.raw.prepare('SELECT bytes FROM media_usage WHERE id = 1').get().bytes;
+const cidOf = (env, workId, phash) => candidates(env, workId).find((c) => c.phash === phash).id;
+// 新客户端本机比对通过后的确认票（cover_votes.js 文件头「确认票」）。
+const confirm = (env, u, workId, h, now = NOW) =>
+  vote(env, u, workId, { hash: h, confirm: cidOf(env, workId, h) }, now);
+/** 定时任务那一步（worker.scheduled 里的 settlePendingCovers），连同删 R2。 */
+async function cron(env, now) {
+  const { released } = await settlePendingCovers(env.DB, now);
+  for (const k of released) await env.MEDIA.delete(k);
+}
 
 async function users(env, n) {
   const out = [];
@@ -92,28 +110,28 @@ describe('封面按人数投票', () => {
     expect(env.MEDIA.store.size).toBe(2);
   });
 
-  it('改投即移票：B 超过 A 后封面换成 B；零票候选连同 R2 对象清理并归还配额', async () => {
+  it('改投即移票：B 凑够确认票、过了冷却后换成 B；零票候选连同 R2 对象清理并归还配额', async () => {
     const env = makeEnv();
-    const [u0, u1, u2] = await users(env, 3);
+    const [u0, u1, u2, u3] = await users(env, 4);
+    for (const u of [u0, u1, u2, u3]) await shelf(env, u);
     const w = await shelf(env, u0);
-    await shelf(env, u1);
-    await shelf(env, u2);
     const aBytes = coverJpeg(A);
     const bBytes = coverJpeg(B, { tint: [40, 0, -40] });
     const a = await putCover(env, u0, w.workId, A, NOW, aBytes);
     const b = await putCover(env, u1, w.workId, B, NOW + 1, bBytes);
     expect(usage(env)).toBe(aBytes.length + bBytes.length);
-    // u2 投 B → B 2 票胜出。
-    await vote(env, u2, w.workId, { hash: B }, NOW + 2);
-    expect(work(env, w.workId).cover_key).toBe(b.data.cover.slice(5));
-    // u0 本地更正后也换成 B：A 零票、不是当前封面 → 删除，配额归还。
-    const moved = await vote(env, u0, w.workId, { hash: B }, NOW + 3);
+    // u2、u3 本机比对通过 → B 三张确认票、3 票 > A 1 票，但 B 才建了几毫秒：冷却期内不换。
+    await confirm(env, u2, w.workId, B, NOW + 2);
+    await confirm(env, u3, w.workId, B, NOW + 3);
+    expect(work(env, w.workId).cover_key).toBe(a.data.cover.slice(5));
+    // 冷却满后 u0 本地更正也换成 B（这一票的事务重新物化）：B 取代 A；A 零票、不是当前封面 → 删除，配额归还。
+    const moved = await confirm(env, u0, w.workId, B, NOW + 1 + DAY);
     expect(moved.data.cover).toBe(b.data.cover);
-    expect(candidates(env, w.workId).map((c) => [c.phash, c.votes])).toEqual([[B, 3]]);
+    expect(work(env, w.workId).cover_key).toBe(b.data.cover.slice(5));
+    expect(candidates(env, w.workId).map((c) => [c.phash, c.votes])).toEqual([[B, 4]]);
     expect(env.MEDIA.store.has(a.data.cover.slice(5))).toBe(false);
     expect(usage(env)).toBe(bBytes.length);
   });
-
   it('投票接口：哈希没命中 → 409 cover_bytes_required；URL 不在白名单 → 400；不在架 → 403', async () => {
     const env = makeEnv();
     const [u0, outsider] = await users(env, 2);
@@ -127,7 +145,7 @@ describe('封面按人数投票', () => {
     expect((await putCover(env, u0, w.workId, 'zz')).status).toBe(400);
   });
 
-  it('白名单 URL：书架上报带 coverUrl 即投票；不带了撤票；不覆盖已投的缩略图票', async () => {
+  it('白名单 URL：书架上报带 coverUrl 即投票（确认票）；不带了撤票；不覆盖已投的缩略图票', async () => {
     const env = makeEnv();
     const [u0, u1, u2] = await users(env, 3);
     const w0 = await shelf(env, u0, { coverUrl: TMDB });
@@ -135,22 +153,22 @@ describe('封面按人数投票', () => {
     expect(work(env, w0.workId).cover_url).toBe(TMDB);
     await shelf(env, u1, { coverUrl: TMDB2 }, NOW + 1);
     await shelf(env, u2, { coverUrl: TMDB2 }, NOW + 2);
-    // TMDB2 两票胜出。
-    expect(work(env, w0.workId)).toEqual({ cover_key: null, cover_url: TMDB2 });
+    // TMDB2 两票多于 TMDB 一票，但不到替换门槛（3 张确认票）：TMDB 留任。
+    expect(work(env, w0.workId)).toEqual({ cover_key: null, cover_url: TMDB });
+    expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM cover_votes WHERE confirmed = 1').get().n).toBe(3);
 
     // u1 改投本地缩略图：上报再带 TMDB2 也不会把缩略图票冲掉。
     await putCover(env, u1, w0.workId, A, NOW + 3);
     const w1 = await shelf(env, u1, { coverUrl: TMDB2 }, NOW + 4);
     expect(w1.coverVote).toBe('hash');
-    // 现在 TMDB 1、TMDB2 1（u2）、A 1：平票取最早达到 1 票的 → TMDB（u0 最早）。
-    expect(work(env, w0.workId).cover_url).toBe(TMDB);
 
-    // u0 的条目不再带 coverUrl：URL 票撤掉；TMDB 零票、不再是封面 → 候选删除。
+    // u0 的条目不再带 coverUrl：URL 票撤掉。TMDB 零票，但仍是现封面（挑战者都没过门槛），不删。
     const w2 = await shelf(env, u0, {}, NOW + 5);
     expect(w2.coverVote).toBeNull();
-    expect(candidates(env, w0.workId).map((c) => c.cover_url || c.phash).sort()).toEqual([A, TMDB2].sort());
+    expect(work(env, w0.workId).cover_url).toBe(TMDB);
+    expect(candidates(env, w0.workId).map((c) => [c.cover_url || c.phash, c.votes]).sort())
+      .toEqual([[A, 1], [TMDB, 0], [TMDB2, 1]].sort());
   });
-
   it('旧客户端（不带哈希）：作品没封面时照收并记一票；已有封面 409 cover_exists', async () => {
     const env = makeEnv();
     const [u0, u1] = await users(env, 2);
@@ -166,10 +184,12 @@ describe('封面按人数投票', () => {
     expect(env.MEDIA.store.size).toBe(1);
   });
 
-  it('迁移回填：存量封面成为零票候选；有人投票后被替换并清理', async () => {
+  it('迁移回填：存量封面成为零票候选，视为已有封面；挑战者过门槛后替换并清理', async () => {
     const env = makeEnv();
-    const [u0] = await users(env, 1);
+    const [u0, u1, u2] = await users(env, 3);
     const w = await shelf(env, u0);
+    await shelf(env, u1);
+    await shelf(env, u2);
     // 模拟迁移前的先到先得封面。
     const legacy = `c/${w.workId}-old-1.jpg`;
     env.DB.raw.prepare('UPDATE works SET cover_key = ?1 WHERE id = ?2').run(legacy, w.workId);
@@ -180,30 +200,39 @@ describe('封面按人数投票', () => {
     expect(candidates(env, w.workId)).toEqual([
       expect.objectContaining({ cover_key: legacy, votes: 0, phash: null }),
     ]);
+    // 一个人传了别的图：存量封面算已有封面，一票换不掉。
     const r = await putCover(env, u0, w.workId, A);
+    expect(work(env, w.workId).cover_key).toBe(legacy);
+    // 再两人确认、过了冷却 → 定时任务替换，零票的存量候选与对象一并清理。
+    await confirm(env, u1, w.workId, A, NOW + 1);
+    await confirm(env, u2, w.workId, A, NOW + 2);
+    expect(work(env, w.workId).cover_key).toBe(legacy);
+    await cron(env, NOW + DAY);
     expect(work(env, w.workId).cover_key).toBe(r.data.cover.slice(5));
     expect(env.MEDIA.store.has(legacy)).toBe(false);
     expect(candidates(env, w.workId).map((c) => c.phash)).toEqual([A]);
   });
-
-  it('删除账户：撤票后作品按剩余票数重新物化', async () => {
+  it('删除账户：撤票后作品按剩余票数重新物化（仍受替换门槛约束）', async () => {
     const env = makeEnv();
-    const [u0, u1, u2] = await users(env, 3);
+    const us = await users(env, 5);
+    const [u0, u1, u2, u3, u4] = us;
+    for (const u of us) await shelf(env, u);
     const w = await shelf(env, u0);
-    await shelf(env, u1);
-    await shelf(env, u2);
     await putCover(env, u0, w.workId, A, NOW);
     await vote(env, u1, w.workId, { hash: A }, NOW + 1);
     const b = await putCover(env, u2, w.workId, B, NOW + 2);
+    await confirm(env, u3, w.workId, B, NOW + 3);
+    await confirm(env, u4, w.workId, B, NOW + 4);
+    // B 3 票 > A 2 票、3 张确认票，但冷却未满：A 留任。
     expect(work(env, w.workId).cover_key).not.toBe(b.data.cover.slice(5));
     for (const u of [u0, u1]) {
-      expect((await call(env, 'DELETE', '/v1/me', { key: u.key, account: u.id, now: NOW + 3 })).status).toBe(204);
+      expect((await call(env, 'DELETE', '/v1/me', { key: u.key, account: u.id, now: NOW + 2 + DAY })).status).toBe(204);
     }
+    // 删号事务重新物化：B 已过冷却 → 取代 A；A 零票、不再是封面 → 清理。
     expect(work(env, w.workId).cover_key).toBe(b.data.cover.slice(5));
     expect(env.MEDIA.store.size).toBe(1);
-    expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM cover_votes').get().n).toBe(1);
+    expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM cover_votes').get().n).toBe(3);
   });
-
   it('下架到无人在架：作品、候选、票与 R2 对象一起清理', async () => {
     const env = makeEnv();
     const [u0] = await users(env, 1);
@@ -217,43 +246,46 @@ describe('封面按人数投票', () => {
     expect(usage(env)).toBe(0);
   });
 
-  it('隐藏账户的票不计数；恢复后重新计入', async () => {
+  it('隐藏账户的票不计数（含确认票）；恢复后重新计入', async () => {
     const env = makeEnv();
-    const [u0, u1, u2] = await users(env, 3);
+    const us = await users(env, 4);
+    const [u0, u1, u2, u3] = us;
+    for (const u of us) await shelf(env, u);
     const w = await shelf(env, u0);
-    await shelf(env, u1);
-    await shelf(env, u2);
     const a = await putCover(env, u0, w.workId, A, NOW);
     const b = await putCover(env, u1, w.workId, B, NOW + 1);
-    await vote(env, u2, w.workId, { hash: B }, NOW + 2);
-    expect(work(env, w.workId).cover_key).toBe(b.data.cover.slice(5));
-    const hide = (u, hidden) => call(env, 'POST', `/admin/api/accounts/${u.id}`, { headers: basic, body: { hidden }, now: NOW + 3 });
-    await hide(u1, true);
-    await hide(u2, true);
+    await confirm(env, u2, w.workId, B, NOW + 2);
+    await confirm(env, u3, w.workId, B, NOW + 3);
+    const hide = (u, hidden, now) => call(env, 'POST', `/admin/api/accounts/${u.id}`, { headers: basic, body: { hidden }, now });
+    // 冷却期内隐藏 u3：B 只剩两张有效确认票。
+    await hide(u3, true, NOW + 4);
+    await cron(env, NOW + 1 + DAY);
     expect(work(env, w.workId).cover_key).toBe(a.data.cover.slice(5));
-    await hide(u2, false);
-    // B 1 票（u2）、A 1 票：B 恢复时才重新涨到 1，A 更早达到 1 票。
-    expect(work(env, w.workId).cover_key).toBe(a.data.cover.slice(5));
-    await hide(u1, false);
+    // 恢复 u3（重算 + 物化）：B 三张确认票、已过冷却 → 取代 A。
+    await hide(u3, false, NOW + 2 + DAY);
     expect(work(env, w.workId).cover_key).toBe(b.data.cover.slice(5));
   });
-
-  it('管理端清除封面：撤掉当前候选与其票，次多票的候选顶上', async () => {
+  it('管理端清除封面：撤掉当前候选与其票；保护期内顶上的也要过替换门槛', async () => {
     const env = makeEnv();
-    const [u0, u1, u2] = await users(env, 3);
+    const us = await users(env, 5);
+    const [u0, u1, u2, u3, u4] = us;
+    for (const u of us) await shelf(env, u);
     const w = await shelf(env, u0);
-    await shelf(env, u1);
-    await shelf(env, u2);
     const a = await putCover(env, u0, w.workId, A, NOW);
     await vote(env, u1, w.workId, { hash: A }, NOW + 1);
     const b = await putCover(env, u2, w.workId, B, NOW + 2);
     const r = await call(env, 'POST', `/admin/api/works/${w.workId}`, { headers: basic, body: { clearCover: true }, now: NOW + 3 });
     expect(r.status).toBe(200);
-    expect(work(env, w.workId).cover_key).toBe(b.data.cover.slice(5));
+    // 以前：B（1 票）立即顶上。现在：刚清过封面的作品首张也要过门槛（攻击者不能在清掉的瞬间抢回首张）。
+    expect(work(env, w.workId)).toEqual({ cover_key: null, cover_url: null });
     expect(env.MEDIA.store.has(a.data.cover.slice(5))).toBe(false);
     expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM cover_votes').get().n).toBe(1);
+    await confirm(env, u3, w.workId, B, NOW + 4);
+    await confirm(env, u4, w.workId, B, NOW + 5);
+    expect(work(env, w.workId).cover_key).toBeNull();
+    await cron(env, NOW + 2 + DAY);
+    expect(work(env, w.workId).cover_key).toBe(b.data.cover.slice(5));
   });
-
   it('管理端合并：两边的候选与票并到目标作品，同 URL 候选合一，两边都投过的账户只留一票', async () => {
     const env = makeEnv();
     const [u0, u1, u2] = await users(env, 3);
@@ -267,10 +299,11 @@ describe('封面按人数投票', () => {
       key: u2.key, account: u2.id, now: NOW + 2,
       body: { reset: true, put: [entry('book', ['t:from|'], 'from', { coverUrl: TMDB2 })] },
     });
-    // from：TMDB2 两票；into：TMDB 一票。
+    // from：TMDB2 两票；into：TMDB 一票（现封面）。
     const r = await call(env, 'POST', '/admin/api/works/merge', { headers: basic, body: { from, into }, now: NOW + 3 });
     expect(r.status).toBe(200);
-    expect(work(env, into).cover_url).toBe(TMDB2);
+    // 合并后 TMDB2 两票多于 TMDB，但不到替换门槛：目标作品的现封面留任。
+    expect(work(env, into).cover_url).toBe(TMDB);
     expect(candidates(env, into).map((c) => [c.cover_url, c.votes]).sort()).toEqual([[TMDB, 1], [TMDB2, 2]].sort());
     expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM cover_candidates WHERE work_id = ?1').get(from).n).toBe(0);
   });
