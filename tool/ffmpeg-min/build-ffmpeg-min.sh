@@ -46,6 +46,10 @@
 # 会静态比对本脚本与入库 exe 内嵌的 configure 串，漏 vendor 直接单测红。
 set -euo pipefail
 
+# 脚本自身目录（绝对路径）。必须在任何 cd 之前算：CI 用相对路径调用本脚本，
+# cd "$SRC" 之后再解析 BASH_SOURCE 就找不到 patches/ 了。
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 FFMPEG_REF="${FFMPEG_REF:-n7.1.5}"
 OUT="${OUT:-$PWD/ffmpeg-min-out}"
 SRC="${SRC:-$PWD/ffmpeg-src}"
@@ -294,7 +298,7 @@ cd "$SRC"
 # 这份是对 n7.1 上下文的移植（逻辑与 third_party/ffmpeg_kit_flutter/patches/ 那份一致）。
 # 已打过（重复跑本脚本复用 $SRC）就跳过，打不上就当场失败——静默跳过会产出不认该
 # 选项的二进制，正是本条要堵的洞。
-TLS_PIN_PATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patches/ffmpeg-n7.1-tls-pin-sha256.patch"
+TLS_PIN_PATCH="$SCRIPT_DIR/patches/ffmpeg-n7.1-tls-pin-sha256.patch"
 if git apply --reverse --check "$TLS_PIN_PATCH" 2>/dev/null; then
   echo "[ffmpeg-min] tls pin patch already applied"
 else
