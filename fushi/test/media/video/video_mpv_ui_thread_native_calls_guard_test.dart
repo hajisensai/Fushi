@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// BUG-3501 守卫：app 代码不得在 UI 线程上同步碰 mpv 内核锁。
 ///
 /// media_kit 的 `getProperty`（`mpv_get_property_string`）和直接 FFI 的
@@ -15,11 +17,6 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final RegExp forbidden = RegExp(r'\.getProperty\(|\.mpv\.mpv_[a-z_]+\(');
 
-  String stripLineComment(String line) {
-    final int index = line.indexOf('//');
-    return index < 0 ? line : line.substring(0, index);
-  }
-
   test('fushi/lib never calls libmpv synchronously', () {
     final List<String> offenders = <String>[];
     for (final FileSystemEntity entity in Directory(
@@ -27,9 +24,12 @@ void main() {
     ).listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       if (entity.path.endsWith('.g.dart')) continue;
-      final List<String> lines = entity.readAsLinesSync();
+      final String source = entity.readAsStringSync();
+      // 掩码串与原串逐字节等长、换行同位，可按行对照回原文。
+      final List<String> masked = maskComments(source).split('\n');
+      final List<String> lines = source.split('\n');
       for (int i = 0; i < lines.length; i++) {
-        if (forbidden.hasMatch(stripLineComment(lines[i]))) {
+        if (forbidden.hasMatch(masked[i])) {
           offenders.add('${entity.path}:${i + 1}: ${lines[i].trim()}');
         }
       }
