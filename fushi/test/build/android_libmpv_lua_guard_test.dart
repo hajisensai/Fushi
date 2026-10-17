@@ -10,7 +10,7 @@ import '../helpers/android_vendored_libmpv.dart';
 /// 串——两样都在才算编进去了，换回 `-Dlua=disabled` 的旧 jar 这里就红。
 void main() {
   test('Android jar 的 libmpv 全部编了 Lua 5.2', () {
-    for (final ({String abi, String contents}) artifact
+    for (final ({String abi, String contents, String codec}) artifact
         in verifiedAndroidLibmpv()) {
       expect(artifact.contents, contains('-Dlua=lua '), reason: artifact.abi);
       expect(
