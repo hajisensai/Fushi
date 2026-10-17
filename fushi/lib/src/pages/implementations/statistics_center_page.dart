@@ -19,6 +19,8 @@ import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
+import 'package:fushi/src/pages/implementations/srs_statistics_page.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/cover_image.dart';
@@ -29,7 +31,17 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// 统计中心的 tab（阶段 2：三个独立统计页收进一个入口）。排行榜 2026-09-28 曾是第 5 个
 /// tab，2026-10-01 抽成首页统计中心入口旁的独立页（[LeaderboardPage]）。
-enum StatsCenterTab { overview, reading, video, game }
+///
+/// [srs]（复习）只在复习模块（`ModuleId.srs`，默认关）开着时出现，见
+/// [statsCenterVisibleTabs]。
+enum StatsCenterTab { overview, reading, video, game, srs }
+
+/// 此刻可见的 tab（复习模块关着时没有「复习」）。
+List<StatsCenterTab> statsCenterVisibleTabs({required bool srsEnabled}) =>
+    <StatsCenterTab>[
+      for (final StatsCenterTab tab in StatsCenterTab.values)
+        if (tab != StatsCenterTab.srs || srsEnabled) tab,
+    ];
 
 /// 统计中心（阶段 2，统计中心大改造）：总览 + 阅读/观看/游戏三域 tab。
 ///
@@ -64,11 +76,33 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
   }
 
   String _tabLabel(StatsCenterTab tab) => switch (tab) {
-        StatsCenterTab.overview => t.stat_center_tab_overview,
-        StatsCenterTab.reading => t.home_filter_read,
-        StatsCenterTab.video => t.home_filter_watch,
-        StatsCenterTab.game => t.home_filter_game,
-      };
+    StatsCenterTab.overview => t.stat_center_tab_overview,
+    StatsCenterTab.reading => t.home_filter_read,
+    StatsCenterTab.video => t.home_filter_watch,
+    StatsCenterTab.game => t.home_filter_game,
+    StatsCenterTab.srs => t.nav_srs,
+  };
+
+  Widget _tabBody(StatsCenterTab tab) => switch (tab) {
+    StatsCenterTab.overview => _StatsOverviewTab(
+      rangeSelection: _rangeSelection,
+    ),
+    StatsCenterTab.reading => ReadingStatisticsPage(
+      embedded: true,
+      rangeSelection: _rangeSelection,
+    ),
+    StatsCenterTab.video => VideoStatisticsPage(
+      embedded: true,
+      rangeSelection: _rangeSelection,
+    ),
+    StatsCenterTab.game => GameStatisticsPage(
+      embedded: true,
+      rangeSelection: _rangeSelection,
+    ),
+    // 复习统计有自己的时间范围（1 个月 / 3 个月 / 1 年 / 全部，Anki 口径）与 SRS
+    // 翻日，不吃学习统计域的 [StatRangeSelection]。
+    StatsCenterTab.srs => const SrsStatisticsTab(),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -76,15 +110,21 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
     // 中间那枚放不下就被截成「统...」的标题胶囊删掉；四颗动作按钮收成一颗「统计
     // 设置」（重置时刻 + 清空统计，挂在各 tab 范围条行尾；目标改由首页每日目标卡
     // 进入，刷新砍掉）。
+    final List<StatsCenterTab> tabsShown = statsCenterVisibleTabs(
+      srsEnabled: ref.watch(srsModuleEnabledProvider),
+    );
+    final int initial = tabsShown.indexOf(widget.initialTab);
     return DefaultTabController(
-      length: StatsCenterTab.values.length,
-      initialIndex: widget.initialTab.index,
+      // 模块开关变了 tab 数随之变：换 key 重建控制器（否则长度对不上）。
+      key: ValueKey<int>(tabsShown.length),
+      length: tabsShown.length,
+      initialIndex: initial < 0 ? 0 : initial,
       child: Builder(
         builder: (BuildContext context) {
           final TabController tabs = DefaultTabController.of(context);
           final Widget tabBar = LibrarySectionTabs<StatsCenterTab>.controlled(
             tabs: <LibrarySectionTab<StatsCenterTab>>[
-              for (final StatsCenterTab tab in StatsCenterTab.values)
+              for (final StatsCenterTab tab in tabsShown)
                 LibrarySectionTab<StatsCenterTab>(
                   value: tab,
                   label: _tabLabel(tab),
@@ -96,27 +136,8 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
           );
           final Widget body = TabBarView(
             children: <Widget>[
-              StatCenterTabScope(
-                child: _StatsOverviewTab(rangeSelection: _rangeSelection),
-              ),
-              StatCenterTabScope(
-                child: ReadingStatisticsPage(
-                  embedded: true,
-                  rangeSelection: _rangeSelection,
-                ),
-              ),
-              StatCenterTabScope(
-                child: VideoStatisticsPage(
-                  embedded: true,
-                  rangeSelection: _rangeSelection,
-                ),
-              ),
-              StatCenterTabScope(
-                child: GameStatisticsPage(
-                  embedded: true,
-                  rangeSelection: _rangeSelection,
-                ),
-              ),
+              for (final StatsCenterTab tab in tabsShown)
+                StatCenterTabScope(child: _tabBody(tab)),
             ],
           );
           return FushiPageScaffold(

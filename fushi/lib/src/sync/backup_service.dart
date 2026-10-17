@@ -587,6 +587,7 @@ const List<String> _legacyFontPrefKeys = <String>[
   'src:reader_fushi:video_sub_fonts',
   'src:reader_fushi:game_lookup_fonts',
   'src:reader_fushi:floating_lyric_fonts',
+  'src:reader_fushi:srs_card_fonts',
 ];
 
 /// Preference key holding the favorite-sentence JSON list (mirrors

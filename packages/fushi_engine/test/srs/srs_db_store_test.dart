@@ -173,9 +173,18 @@ void main() {
     expect(decks, hasLength(1));
     expect(decks.single.deck.id, b.defaultDeckId);
     final List<SrsNoteTypeView> types = await a.noteTypes();
-    expect(types.single.name, 'Lapis');
-    expect(types.single.fields.first.name, 'Expression');
-    expect(types.single.templates.single.front, contains('{{fld:'));
+    // 两种内置类型：Lapis 与 Fushi 卡片。
+    expect(types, hasLength(2));
+    final SrsNoteTypeView lapis = types.singleWhere(
+      (SrsNoteTypeView v) => v.id == a.lapisNoteTypeId,
+    );
+    expect(lapis.name, 'Lapis');
+    expect(lapis.fields.first.name, 'Expression');
+    expect(lapis.templates.single.front, contains('{{fld:'));
+    expect(
+      (await b.noteTypes()).map((SrsNoteTypeView v) => v.id).toSet(),
+      types.map((SrsNoteTypeView v) => v.id).toSet(),
+    );
   });
 
   test('加笔记生成卡片；复习 → 同步 → 另一台设备状态一致', () async {
@@ -403,12 +412,35 @@ void main() {
     expect(da, db);
     await syncAll(<SrsDbStore>[a, b]);
     final List<SrsDeckSummary> decks = await b.deckSummaries();
-    expect(
-      decks.map((SrsDeckSummary d) => d.fullName),
-      <String>['Default', '日本語', '日本語::N2'],
-    );
+    expect(decks.map((SrsDeckSummary d) => d.fullName), <String>[
+      'Default',
+      '日本語',
+      '日本語::N2',
+    ]);
     await a.deleteDeck(da);
     expect(await a.ensureDeckPath('日本語::N2'), da, reason: '删除后按同名再建 = 复活同一行');
     expect((await a.deckTree())[da], isNotNull);
+  });
+
+  test('牌组折叠随同步到另一台设备；并发开合按最后修改生效、不进冲突记录', () async {
+    final SrsDbStore a = await device('a');
+    final SrsDbStore b = await device('b');
+    final String child = await a.ensureDeckPath('日本語::N1');
+    final String parent = (await a.deckTree()).parentOf(child)!;
+    await syncAll(<SrsDbStore>[a, b]);
+    expect((await b.deckTree())[parent]!.collapsed, isFalse, reason: '缺省展开');
+    await a.setDeckCollapsed(parent, true);
+    await syncAll(<SrsDbStore>[a, b]);
+    expect((await b.deckTree())[parent]!.collapsed, isTrue);
+    // 并发：a 展开、b 稍后又收起。
+    await a.setDeckCollapsed(parent, false);
+    t += 1000;
+    await b.setDeckCollapsed(parent, false);
+    await b.setDeckCollapsed(parent, true);
+    await syncAll(<SrsDbStore>[a, b]);
+    expect((await a.deckTree())[parent]!.collapsed, isTrue);
+    expect((await b.deckTree())[parent]!.collapsed, isTrue);
+    expect(await a.syncConflicts(), isEmpty);
+    expect(await b.syncConflicts(), isEmpty);
   });
 }

@@ -44,7 +44,42 @@ bool matchesAnkiSearch(SrsSearchNode node, SrsSearchSubject subject) {
         SrsSearchCardState.review => subject.isReview,
         SrsSearchCardState.due => subject.isDue,
         SrsSearchCardState.suspended => subject.isSuspended,
+        SrsSearchCardState.buried => subject.isBuried,
       };
+    case SrsSearchRegex(:final RegExp pattern):
+      return pattern.hasMatch(subject.fields.values.join(''));
+    case SrsSearchFieldRegex(:final RegExp fieldPattern, :final RegExp pattern):
+      for (final MapEntry<String, String> e in subject.fields.entries) {
+        if (fieldPattern.hasMatch(e.key) && pattern.hasMatch(e.value)) {
+          return true;
+        }
+      }
+      return false;
+    case SrsSearchFlag(:final int flag):
+      return subject.flag == flag;
+    case SrsSearchCardTemplate(:final int? ordinal, :final RegExp? pattern):
+      return ordinal != null
+          ? subject.cardOrdinal == ordinal
+          : pattern!.hasMatch(subject.templateName);
+    case SrsSearchEditedInDays(:final int days):
+      return subject.editedDayIndex > subject.todayDayIndex - days;
+    case SrsSearchProp(
+      :final SrsSearchProperty property,
+      :final compare,
+      :final value,
+    ):
+      final num? actual = switch (property) {
+        SrsSearchProperty.interval => subject.intervalDays,
+        SrsSearchProperty.due => subject.dueInDays,
+        SrsSearchProperty.reps => subject.reps,
+        SrsSearchProperty.lapses => subject.lapses,
+        SrsSearchProperty.stability => subject.stability,
+        // Anki 把难度显示成 0–100%：prop:d 比的是 (d - 1) / 9。
+        SrsSearchProperty.difficulty =>
+          subject.difficulty == null ? null : (subject.difficulty! - 1) / 9,
+      };
+      if (actual == null) return false;
+      return srsSearchCompare(actual, compare, value);
     case SrsSearchNoteIds(:final Set<int> ids):
       return ids.contains(subject.noteId);
     case SrsSearchCardIds(:final Set<int> ids):
@@ -53,4 +88,19 @@ bool matchesAnkiSearch(SrsSearchNode node, SrsSearchSubject subject) {
       // rslib：c.id > 「今天日界 - days 天」⇔ 加入日 > 今天 - days。
       return subject.addedDayIndex > subject.todayDayIndex - days;
   }
+}
+
+/// `prop:` 的比较（小数属性用 1e-9 容差判等，避免 0.1 + 0.2 之类的浮点误差）。
+bool srsSearchCompare(num actual, SrsSearchCompare compare, num value) {
+  final bool eq = actual is int && value is int
+      ? actual == value
+      : (actual - value).abs() < 1e-9;
+  return switch (compare) {
+    SrsSearchCompare.eq => eq,
+    SrsSearchCompare.ne => !eq,
+    SrsSearchCompare.lt => !eq && actual < value,
+    SrsSearchCompare.le => eq || actual < value,
+    SrsSearchCompare.gt => !eq && actual > value,
+    SrsSearchCompare.ge => eq || actual > value,
+  };
 }

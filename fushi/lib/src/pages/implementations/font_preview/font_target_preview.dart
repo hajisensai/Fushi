@@ -58,7 +58,8 @@ bool fontTargetIsNativeOverlay(FontTarget target) => switch (target) {
   FontTarget.appUi ||
   FontTarget.body ||
   FontTarget.dictionary ||
-  FontTarget.videoSubtitle => false,
+  FontTarget.videoSubtitle ||
+  FontTarget.srsCard => false,
 };
 
 /// 这个用途是否只取链上第一款字体（其余条目对它无效）。
@@ -66,7 +67,10 @@ bool fontTargetUsesFirstFontOnly(FontTarget target) => switch (target) {
   FontTarget.videoSubtitle ||
   FontTarget.gameLookup ||
   FontTarget.floatingLyric => true,
-  FontTarget.appUi || FontTarget.body || FontTarget.dictionary => false,
+  FontTarget.appUi ||
+  FontTarget.body ||
+  FontTarget.dictionary ||
+  FontTarget.srsCard => false,
 };
 
 /// 各用途的实时样张：照着真实表面的形态画一块缩样，用该用途**实际生效**的字体链
@@ -121,7 +125,8 @@ class FontTargetPreview extends StatelessWidget {
                 families: families,
                 sampleText: sampleText,
               ),
-              FontTarget.dictionary => _DictionaryPreview(families: families),
+              FontTarget.dictionary ||
+              FontTarget.srsCard => _DictionaryPreview(families: families),
               FontTarget.videoSubtitle => _SubtitlePreview(
                 families: families,
                 style: subtitleStyle,

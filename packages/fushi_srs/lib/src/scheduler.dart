@@ -353,19 +353,54 @@ SrsScheduleResult srsHandOff(SrsScheduleResult current) =>
 SrsScheduleResult srsReclaim(SrsScheduleResult current) =>
     current.copyWith(scheduler: SrsScheduler.fushi);
 
-/// 人类可读的间隔（评分按钮预览用）：<1 天显示分钟 / 小时，否则天 / 月 / 年。
-String srsFormatInterval(
+/// 评分按钮间隔的单位（与 Anki 答题按钮同一套：分钟 / 小时 / 天 / 月 / 年）。
+enum SrsIntervalUnit { minutes, hours, days, months, years }
+
+/// 评分按钮预览的间隔：数值（已按 Anki 的精度格式化）+ 单位。单位文案由界面层按
+/// 语言给（本包不依赖 i18n）。<1 天显示分钟 / 小时，否则天 / 月 / 年。
+({String amount, SrsIntervalUnit unit}) srsIntervalParts(
   SrsScheduleResult s, {
   required int nowMs,
   required int today,
 }) {
   if (s.queue == SrsQueue.learning || s.queue == SrsQueue.relearning) {
     final int mins = (((s.dueAt ?? nowMs) - nowMs) / _minuteMs).round();
-    if (mins < 60) return '${mins < 1 ? 1 : mins}m';
-    return '${(mins / 60).toStringAsFixed(mins < 600 ? 1 : 0)}h';
+    if (mins < 60) {
+      return (amount: '${mins < 1 ? 1 : mins}', unit: SrsIntervalUnit.minutes);
+    }
+    return (
+      amount: (mins / 60).toStringAsFixed(mins < 600 ? 1 : 0),
+      unit: SrsIntervalUnit.hours,
+    );
   }
   final int days = (s.dueDay ?? today) - today;
-  if (days < 30) return '${days}d';
-  if (days < 365) return '${(days / 30).toStringAsFixed(1)}mo';
-  return '${(days / 365).toStringAsFixed(1)}y';
+  if (days < 30) return (amount: '$days', unit: SrsIntervalUnit.days);
+  if (days < 365) {
+    return (
+      amount: (days / 30).toStringAsFixed(1),
+      unit: SrsIntervalUnit.months,
+    );
+  }
+  return (amount: (days / 365).toStringAsFixed(1), unit: SrsIntervalUnit.years);
+}
+
+/// [srsIntervalParts] 的英文缩写形态（Anki 英文答题按钮同款：m / h / d / mo / y），
+/// 供日志与测试；界面一律按语言格式化。
+String srsFormatInterval(
+  SrsScheduleResult s, {
+  required int nowMs,
+  required int today,
+}) {
+  final ({String amount, SrsIntervalUnit unit}) p = srsIntervalParts(
+    s,
+    nowMs: nowMs,
+    today: today,
+  );
+  return '${p.amount}${switch (p.unit) {
+    SrsIntervalUnit.minutes => 'm',
+    SrsIntervalUnit.hours => 'h',
+    SrsIntervalUnit.days => 'd',
+    SrsIntervalUnit.months => 'mo',
+    SrsIntervalUnit.years => 'y',
+  }}';
 }

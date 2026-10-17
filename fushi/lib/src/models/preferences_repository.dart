@@ -1421,7 +1421,7 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 「功能模块」显隐：用户意愿的**唯一存储**，一个 [ModuleId] 一个键。
   ///
-  /// 默认开（与旧版行为一致；复习 [ModuleId.srs] 例外，默认关）；新手引导的功能选择与 设置 → 外观 → 功能模块
+  /// 默认开（与旧版行为一致；复习 [ModuleId.srs] 老用户由一次性迁移写成关）；新手引导的功能选择与 设置 → 外观 → 功能模块
   /// 写同一真值。games（Windows）与浏览器扩展（桌面）的平台门控**不在这里**——
   /// 这里只存用户意愿，平台判据统一在 [ModuleId.availableOn] 判一次，合成见
   /// [ModuleVisibility.resolve]。首页/设置恒在，是全部关闭后的安全回退面，
@@ -1431,9 +1431,21 @@ class PreferencesRepository extends ChangeNotifier
   /// AppModel / 设置 schema / 引导 / 底栏 / macOS 侧栏各抄一遍，少抄一处就静默
   /// 漏一处门控。现在读写都走枚举，加模块只加一个 enum 值。
   ///
-  /// 缺省值按模块取 [ModuleId.defaultEnabled]（复习默认关，其余默认开）。
-  bool moduleEnabled(ModuleId module) =>
-      getPref(module.prefKey, defaultValue: module.defaultEnabled) as bool;
+  /// 缺省值按模块取 [ModuleId.defaultEnabled]（全部默认开）。
+  ///
+  /// 复习例外：本安装的老 / 新用户判定（[settleSrsMiningTargetInstallDefault]）还没跑过
+  /// 时按关读——与 [srsMiningTarget] 判定前按 'anki' 同一方向，老用户升级后在主进程
+  /// 首启之前（:popup 进程、整层恢复老备份后）不会冒出复习入口。
+  bool moduleEnabled(ModuleId module) {
+    if (module == ModuleId.srs &&
+        getPref(module.prefKey, defaultValue: null) == null &&
+        getPref(srsMiningTargetInstallDefaultKey, defaultValue: null) ==
+            null) {
+      return false;
+    }
+    return getPref(module.prefKey, defaultValue: module.defaultEnabled)
+        as bool;
+  }
 
   Future<void> setModuleEnabled(ModuleId module, bool value) async {
     await setPref(module.prefKey, value);
@@ -2941,13 +2953,203 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  // 复习模块（SRS）的「挖词目标」：'anki'（默认）/ 'srs' / 'both'（见 SrsMiningTarget）。
-  // 只有复习模块开着时才被读取；模块关着时制卡链路不看它。
-  String get srsMiningTarget =>
-      getPref('srs_mining_target', defaultValue: 'anki') as String;
+  // 复习模块（SRS）的「挖词目标」：'anki' / 'srs'（见 SrsMiningTarget；存量 'both'
+  // 读成 'anki'）。只有复习模块开着时才被读取；模块关着时制卡链路不看它。
+  //
+  // 没设过时取本安装的出厂默认 [srsMiningTargetInstallDefaultKey]（所有者 2026-10-16：
+  // 新装默认 Fushi 复习、老用户继续发 Anki，由 [settleSrsMiningTargetInstallDefault]
+  // 一次性判定）。判定还没跑过（标记缺失：升级后主进程尚未启动过的 :popup 进程、
+  // 刚整层恢复了一份老备份）一律按 'anki'——宁可照旧发 Anki，也不把老用户的卡误送进
+  // 复习。
+  String get srsMiningTarget {
+    final Object? stored = getPref(srsMiningTargetKey, defaultValue: null);
+    if (stored is String) return stored;
+    final Object? installDefault = getPref(
+      srsMiningTargetInstallDefaultKey,
+      defaultValue: null,
+    );
+    return installDefault is String ? installDefault : 'anki';
+  }
 
   Future<void> setSrsMiningTarget(String wire) async {
-    await setPref('srs_mining_target', wire);
+    await setPref(srsMiningTargetKey, wire);
+    notifyListeners();
+  }
+
+  // 复习页评分栏只留「重来 / 良好」（对齐 AnkiDroid hideHardAndEasy）。默认 false。
+  bool get srsReviewHideHardEasy =>
+      getPref('srs_review_hide_hard_easy', defaultValue: false) as bool;
+
+  Future<void> setSrsReviewHideHardEasy(bool value) async {
+    await setPref('srs_review_hide_hard_easy', value);
+    notifyListeners();
+  }
+
+  // 复习页卡面缩放倍率。默认 1.0。
+  double get srsReviewZoom =>
+      (getPref('srs_review_zoom', defaultValue: 1.0) as num).toDouble();
+
+  Future<void> setSrsReviewZoom(double value) async {
+    await setPref('srs_review_zoom', value);
+    notifyListeners();
+  }
+
+  static const String srsMiningTargetKey = 'srs_mining_target';
+
+  /// 本安装「挖词目标」的出厂默认（'anki' / 'srs'），兼一次性判定的已跑标记。
+  ///
+  /// 设备本地（`SyncRepository.installScopedPrefKeys`）：它描述的是**本安装**属于老用户
+  /// 还是新用户，不进 Profile 快照 / 分享。
+  /// 用它而不是把判定结果写进 `srs_mining_target` 本身，是因为 Profile 快照里**没有**
+  /// 某键时，切 Profile 会把 live 键删掉（`ProfileRepository.applyProfile` 的 prune）——
+  /// 老用户切到一份 SRS 之前建的快照、或导入一份旧的 Profile 分享，键一删就回落默认；
+  /// 回落值取这里，老用户落回 'anki'，新用户落回 'srs'，不会被新默认误切。
+  ///
+  /// 也不随备份 / 推荐包走：导出时剔除（维护者用装了新版的机器打推荐包会带上 'anki'，
+  /// 新用户一导入就会被误判成老 Anki 用户）。导入设置的恢复会把它清掉（外来值、本机
+  /// 旧值都不留），下次启动按恢复后的数据重判——新装后恢复老 Anki 用户的完整备份会
+  /// 判回 'anki'，引导里导入推荐包仍只认制卡数据信号；显式设过的 [srsMiningTargetKey]
+  /// 随设置恢复、不受影响。判定前读取按 'anki'（见 [srsMiningTarget]）。
+  static const String srsMiningTargetInstallDefaultKey =
+      'srs_mining_target_install_default';
+
+  /// 启动时（`AppModel.initialise()`）跑一次：判定本安装是老用户还是新用户，定下
+  /// 「挖词目标」与复习模块的出厂默认（所有者 2026-10-16「默认就是 fushi srs」+
+  /// 「老用户继续发 Anki、不提醒」）。
+  ///
+  /// 老用户信号（任一即是）：
+  /// - `first_time_setup` / `onboarding_completed` 已落过盘——首页首帧会写前者，向导
+  ///   结束会写后者；全新安装第一次走到这里时两者都不存在（本方法先于首页跑）。
+  /// - `last_selected_deck` / `last_selected_model` 已落过盘（选过 Anki 牌组 / 笔记类型）。
+  /// - 有制卡历史（`mined_sentences`）或待发 Anki 的卡（`pending_mine_queue`）。
+  ///
+  /// [freshOnboardingPackImport]：本安装是在新手引导里导入了推荐包后重启上来的（推荐包
+  /// 是一份含设置类目的备份，导入会把 `preferences` 整层换成包里那份，前两类信号随包
+  /// 而来、并不代表这台设备的用户用过 Anki）。此时只认制卡数据这一类信号。
+  ///
+  /// 老用户：出厂默认记 'anki'；复习模块的开关若从没设过，显式写成关——升级上来**完全
+  /// 静默**，不出新 tab、不弹任何提示，只有自己去设置里打开才看得到 Fushi 复习。
+  /// 新用户：出厂默认记 'srs'，模块按 [ModuleId.defaultEnabled]（开）。
+  ///
+  /// 例外：`srs_mining_target` 显式为 'srs' 时按「在用 Fushi 复习」处理，模块从没设过就
+  /// 写成开（老用户也一样）。
+  ///
+  /// 已显式选过的 `srs_mining_target` 与模块开关一概不改。标记已在则直接返回（幂等）；
+  /// 标记与模块开关同一次 [setPrefs] 落盘。
+  Future<void> settleSrsMiningTargetInstallDefault({
+    bool freshOnboardingPackImport = false,
+  }) async {
+    if (getPref(srsMiningTargetInstallDefaultKey, defaultValue: null) != null) {
+      return;
+    }
+    bool stored(String key) => getPref(key, defaultValue: null) != null;
+    final bool prefSignal = stored('first_time_setup') ||
+        stored('onboarding_completed') ||
+        stored('last_selected_deck') ||
+        stored('last_selected_model');
+    final bool existingUser = (!freshOnboardingPackImport && prefSignal) ||
+        await _hasAnkiMiningData();
+    // 模块开关经与 [setModuleEnabled] 同一组按 [ModuleId] 的存储原语写入：这里是存储层
+    // 的一次性落盘，只问「落没落过盘」、不读用户意愿；门控一律问模块可见性。
+    final bool moduleUnset = !_moduleStored(ModuleId.srs);
+    // 显式选过「发往 Fushi 复习」= 在用复习（常见于恢复一份老用户备份：挖词目标随设置
+    // 恢复，而模块开关是设备本地键、新设备上没设过）。此时不论判成老用户与否都不能关
+    // 模块——关着就不读挖词目标，卡实际仍发 Anki；模块没设过就显式写成开。
+    final bool explicitSrs =
+        getPref(srsMiningTargetKey, defaultValue: null) == 'srs';
+    await setPrefs(<String, dynamic>{
+      srsMiningTargetInstallDefaultKey: existingUser ? 'anki' : 'srs',
+      if (moduleUnset && explicitSrs)
+        ..._moduleEntry(ModuleId.srs, true)
+      else if (moduleUnset && existingUser)
+        ..._moduleEntry(ModuleId.srs, false),
+    });
+  }
+
+  /// 模块开关是否显式落过盘（没落过 = 读出厂默认 / 判定规则）。
+  bool _moduleStored(ModuleId module) =>
+      getPref(module.prefKey, defaultValue: null) != null;
+
+  /// 模块开关的一条待写记录（与 [setModuleEnabled] 同一个键），供批量 [setPrefs]。
+  Map<String, dynamic> _moduleEntry(ModuleId module, bool value) =>
+      <String, dynamic>{module.prefKey: value};
+
+  Future<bool> _hasAnkiMiningData() async {
+    return (await _db
+            .customSelect(
+              'SELECT EXISTS(SELECT 1 FROM mined_sentences) '
+              'OR EXISTS(SELECT 1 FROM pending_mine_queue) AS used',
+            )
+            .getSingle())
+        .read<bool>('used');
+  }
+
+
+  // 首页 dashboard 面板显示档（JSON map，见 models/home_dashboard_panel.dart）。
+  // 空串 = 全部面板按各自的默认判据（auto）。
+  String get homeDashboardPanels =>
+      getPref('home_dashboard_panels', defaultValue: '') as String;
+
+  Future<void> setHomeDashboardPanels(String json) async {
+    await setPref('home_dashboard_panels', json);
+    notifyListeners();
+  }
+
+  // 复习卡面外观（JSON，见 SrsCardAppearance）。空串 = 模板默认外观。
+  String get srsCardAppearance =>
+      getPref('srs_card_appearance', defaultValue: '') as String;
+
+  Future<void> setSrsCardAppearance(String json) async {
+    await setPref('srs_card_appearance', json);
+    notifyListeners();
+  }
+
+  // 挖词目标 = Fushi 复习时，卡落进哪个 SRS 牌组 / 用哪个笔记类型（SRS 实体 id；
+  // 空串 = 默认牌组 / 内置 Fushi 卡片）。id 自带 profileUid，随 Profile 快照走。
+  String get srsMiningDeckId =>
+      getPref('srs_mining_deck_id', defaultValue: '') as String;
+
+  Future<void> setSrsMiningDeckId(String id) async {
+    await setPref('srs_mining_deck_id', id);
+    notifyListeners();
+  }
+
+  String get srsMiningNoteTypeId =>
+      getPref('srs_mining_note_type_id', defaultValue: '') as String;
+
+  Future<void> setSrsMiningNoteTypeId(String id) async {
+    await setPref('srs_mining_note_type_id', id);
+    notifyListeners();
+  }
+
+  // 非 Lapis 笔记类型的字段映射：JSON `{noteTypeId: {fieldId: 模板}}`（模板与 Anki
+  // 字段映射同一套 handlebar）。坏 JSON / 形状不对的项当没映射过。
+  Map<String, Map<String, String>> get srsMiningFieldMappings {
+    final String raw =
+        getPref('srs_mining_field_mappings', defaultValue: '') as String;
+    if (raw.isEmpty) return const <String, Map<String, String>>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map) return const <String, Map<String, String>>{};
+      return <String, Map<String, String>>{
+        for (final MapEntry<Object?, Object?> e in decoded.entries)
+          if (e.key is String && e.value is Map)
+            e.key! as String: <String, String>{
+              for (final MapEntry<Object?, Object?> f
+                  in (e.value! as Map).entries)
+                if (f.key is String && f.value is String)
+                  f.key! as String: f.value! as String,
+            },
+      };
+    } on FormatException {
+      return const <String, Map<String, String>>{};
+    }
+  }
+
+  Future<void> setSrsMiningFieldMappings(
+    Map<String, Map<String, String>> mappings,
+  ) async {
+    await setPref('srs_mining_field_mappings', jsonEncode(mappings));
     notifyListeners();
   }
 

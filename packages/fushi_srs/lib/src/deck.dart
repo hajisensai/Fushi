@@ -71,6 +71,7 @@ class SrsDeckView {
     required this.builtinKey,
     required this.createdAt,
     required this.edits,
+    this.collapsed = false,
   });
 
   static const List<double> defaultLearnSteps = <double>[1, 10];
@@ -95,6 +96,9 @@ class SrsDeckView {
   final SrsParamSet? fsrs7;
   final bool autoOptimize;
   final int maxIntervalDays;
+
+  /// 牌组列表里收起了子牌组（缺省 = 展开，与 Anki 一致）。
+  final bool collapsed;
 
   /// 复习时自动播放卡面音频（Anki「自动播放音频」）。只看 own 祖先上的值
   /// （[SrsDeckTree.paramsOwner]）。
@@ -160,6 +164,7 @@ class SrsDeckView {
       autoOptimize: edits.value(SrsFieldKeys.deckAutoOptimize) != false,
       maxIntervalDays:
           (edits.value(SrsFieldKeys.deckMaxInterval) as int?) ?? 36500,
+      collapsed: edits.value(SrsFieldKeys.deckCollapsed) == true,
       autoplayAudio: edits.value(SrsFieldKeys.deckAutoplay) != false,
       replayQuestionAudio:
           edits.value(SrsFieldKeys.deckReplayQuestion) != false,

@@ -60,7 +60,11 @@ class SrsCardHistory {
         if (imp.origin == SrsLogOrigin.anki &&
             imp.isRatingReview &&
             imp.ankiRevlogId != null &&
-            nativeRatings.any((SrsReviewLog n) => srsImportEquivalent(imp, n)))
+            nativeRatings.any(
+              // 一份历史就是一张逻辑卡（含「更改笔记类型」继承来的前身卡的日志），
+              // 前身卡的原生日志与新卡的导入日志照样判等价。
+              (SrsReviewLog n) => srsImportEquivalent(imp, n, sameCard: true),
+            ))
           imp.id,
     };
     effective = <SrsReviewLog>[
@@ -112,8 +116,15 @@ class SrsCardHistory {
 }
 
 /// 导入日志 [imported] 与原生日志 [native] 是否是同一次复习（铁律 B）。只看两条日志自身。
-bool srsImportEquivalent(SrsReviewLog imported, SrsReviewLog native) {
-  if (imported.cardId != native.cardId) return false;
+///
+/// [sameCard] = 调用方已知两条日志属于同一张逻辑卡（同一份卡片历史：新卡与它经「更改笔记类型」
+/// 继承的前身卡），此时不再比 cardId。
+bool srsImportEquivalent(
+  SrsReviewLog imported,
+  SrsReviewLog native, {
+  bool sameCard = false,
+}) {
+  if (!sameCard && imported.cardId != native.cardId) return false;
   if (imported.rating != native.rating) return false;
   if (!imported.isRatingReview || !native.isRatingReview) return false;
   final int? ankiMs = imported.ankiRevlogId;
