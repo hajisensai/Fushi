@@ -1,6 +1,7 @@
 // 管理端 JSON API（HTTP Basic Auth，缺 ADMIN_USER/ADMIN_PASS 则 fail-closed）。
 //
 //   GET  /admin/api/reports                     未处理举报
+//   GET  /admin/api/email-conflicts             邮箱别名归一时没能升级的账户对（只有账户 id）
 //   POST /admin/api/reports/:id/resolve
 //   POST /admin/api/accounts/:id  {hidden}      隐藏/恢复账户（不删数据）
 //   POST /admin/api/works/:id     {title?, author?, nsfw?, clearCover?}  改标题/作者即锁定
@@ -224,6 +225,16 @@ export async function handleAdmin(env, request, path, body, now) {
   if (request.method === 'GET' && path === '/admin/api/reports') {
     const rows = await env.DB.prepare('SELECT * FROM reports WHERE resolved = 0 ORDER BY id DESC LIMIT 200').all();
     return json({ rows: rows.results });
+  }
+  if (request.method === 'GET' && path === '/admin/api/email-conflicts') {
+    // 同一个收件箱在旧规则下注册出的多个账户（见 migrations/0015）。不返回邮箱或哈希。
+    const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM email_hash_conflicts').first('n');
+    const rows = await env.DB.prepare(
+      `SELECT account_id AS accountId, holder_id AS holderId, first_seen_at AS firstSeenAt,
+              last_seen_at AS lastSeenAt, seen_count AS seenCount
+       FROM email_hash_conflicts ORDER BY last_seen_at DESC LIMIT 200`,
+    ).all();
+    return json({ count, rows: rows.results });
   }
   if (request.method !== 'POST') throw new HttpError(405, 'method');
   if ((r = m(/^\/admin\/api\/reports\/(\d+)\/resolve$/))) {
