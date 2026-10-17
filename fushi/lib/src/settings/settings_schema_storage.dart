@@ -28,22 +28,12 @@ SettingsDestination buildStorageDestination() {
     summary: t.settings_destination_storage_summary,
     icon: FushiIcons.sdStorage,
     sections: <SettingsSection>[buildDataStorageLocationSection()],
-    body: (SettingsContext c) {
-      final StorageUsageActions a = StorageUsageActions.of(c);
-      return StorageUsageView(
-        service: StorageUsageService(),
-        booksProvider: a.booksProvider,
-        dictionaryNamesProvider: a.dictionaryNamesProvider,
-        dictionaryDisplayNamesProvider: a.dictionaryDisplayNamesProvider,
-        deleteBook: a.deleteBook,
-        deleteSrtBook: a.deleteSrtBook,
-        deleteDictionary: a.deleteDictionary,
-        deleteDatabaseSnapshots: a.deleteDatabaseSnapshots,
-        deleteFiles: a.deleteFiles,
-        anime4kBytesProvider: a.anime4kBytesProvider,
-        anime4kDelete: a.anime4kDelete,
-      );
-    },
+    // 原语逐个透传收口在 [StorageUsageView.fromActions]，这里不再手写逐参转发
+    // （曾漏传 videosProvider / deleteVideo，视频明细在设置页里退回空列表）。
+    body: (SettingsContext c) => StorageUsageView.fromActions(
+      service: StorageUsageService(),
+      actions: StorageUsageActions.of(c),
+    ),
     bodySearchEntries: <SettingsBodySearchEntry>[
       SettingsBodySearchEntry(
         id: 'storage.overview',

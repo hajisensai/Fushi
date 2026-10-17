@@ -52,6 +52,30 @@ class StorageUsageView extends ConsumerStatefulWidget {
     super.key,
   });
 
+  /// 从 [StorageUsageActions] 一次接线：设置页正文走这里，取数 / 删除原语逐个
+  /// 原样透传。转发只写这一处——设置页手写逐参转发时曾漏掉 `videosProvider` /
+  /// `deleteVideo`，视频明细在正式设置页里静默退回空列表、只有控制通道接上了。
+  StorageUsageView.fromActions({
+    required StorageUsageService service,
+    required StorageUsageActions actions,
+    Key? key,
+  }) : this(
+         service: service,
+         booksProvider: actions.booksProvider,
+         dictionaryNamesProvider: actions.dictionaryNamesProvider,
+         dictionaryDisplayNamesProvider: actions.dictionaryDisplayNamesProvider,
+         deleteBook: actions.deleteBook,
+         deleteSrtBook: actions.deleteSrtBook,
+         deleteDictionary: actions.deleteDictionary,
+         deleteDatabaseSnapshots: actions.deleteDatabaseSnapshots,
+         deleteFiles: actions.deleteFiles,
+         videosProvider: actions.videosProvider,
+         deleteVideo: actions.deleteVideo,
+         anime4kBytesProvider: actions.anime4kBytesProvider,
+         anime4kDelete: actions.anime4kDelete,
+         key: key,
+       );
+
   final StorageUsageService service;
 
   /// 书籍清单取数（真实现读 `epub_books` 表）。
