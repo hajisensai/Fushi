@@ -356,6 +356,10 @@ class _MineHarness {
         lastReply = await handlers['queueOverwrite']!(<dynamic>[entryFields]);
       case _ClickMode.queueOverwriteThenMinedCardAction:
         lastReply = await handlers['queueOverwrite']!(<dynamic>[entryFields]);
+        // 真实 popup.js 两次桥调用之间隔着一次 JS ↔ 原生往返（回执过桥、onclick 继续、
+        // 再发下一根桥）：让出真实事件循环，[mineEntryByIndex] 若已收到「payload 已读走」
+        // 就会在这期间结束往返、清掉覆盖项——这正是要钉住的赛跑。
+        await Future<void>.delayed(const Duration(milliseconds: 20));
         await handlers['minedCardAction']!(<dynamic>[entryFields]);
     }
     return CallAsyncJavaScriptResult(value: true, error: null);
