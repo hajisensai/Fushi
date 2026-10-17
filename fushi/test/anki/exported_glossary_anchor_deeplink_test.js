@@ -7,7 +7,9 @@
 // 可见词头重查；卡片上没有拦截器，只能把同一语义烤进导出字节。
 //
 // 判据（rewriteExportedGlossaryAnchors，popup.js）：
-//   - entry:// 与相对路径 → fushi://lookup?word=<encodeURIComponent(textContent)>
+//   - entry:// 与相对路径 → fushi://lookup?word=<encodeURIComponent(基字文本)>
+//     基字文本 = linkVisibleBaseText(anchor)：剔掉 rt / rp / .ruby-rt / .ruby-reserve，
+//     否则带振假名的「歯が立たない」会被深链成「歯はが立たたない」（用户 10-17 报）
 //   - http(s):// 外链保留
 //   - # 片段保留（不离开卡片，无 127 危害）
 //   - sound:/image:/dictmedia:（字节未导出）→ 去掉 href
@@ -32,9 +34,15 @@ const fnMatch = popupSrc.match(
 );
 assert.ok(fnMatch, 'popup.js must define rewriteExportedGlossaryAnchors(root)');
 
-const context = { console };
+const baseTextMatch = popupSrc.match(/function linkVisibleBaseText\(root\) \{[\s\S]*?\n\}/);
+assert.ok(baseTextMatch, 'popup.js must define linkVisibleBaseText(root)');
+
+const context = { console, Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 } };
 vm.createContext(context);
-vm.runInContext(`${fnMatch[0]}; this.__fn = rewriteExportedGlossaryAnchors;`, context);
+vm.runInContext(
+  `${baseTextMatch[0]}\n${fnMatch[0]}; this.__fn = rewriteExportedGlossaryAnchors;`,
+  context,
+);
 const rewriteExportedGlossaryAnchors = context.__fn;
 
 // ---- 两个导出构建器都必须在序列化前调用它（调用点源级判据） ----------------
@@ -45,11 +53,32 @@ assert.ok(
   `rewriteExportedGlossaryAnchors(tempDiv); found ${callSites.length} call site(s)`,
 );
 
-// ---- 最小 fake DOM：只需 querySelectorAll('a[href]') + 锚点三方法 ----------
+// ---- 最小 fake DOM：querySelectorAll('a[href]') + 锚点三方法 + childNodes ------
+function textNode(text) {
+  return { nodeType: 3, textContent: text };
+}
+
+function elementNode(tagName, children, className = '') {
+  const classes = new Set(className.split(/\s+/).filter(Boolean));
+  return {
+    nodeType: 1,
+    tagName,
+    childNodes: children,
+    classList: { contains: (c) => classes.has(c) },
+    get textContent() { return children.map((c) => c.textContent).join(''); },
+  };
+}
+
+// text 为字符串时是单个文本子节点；为数组时是现成的子节点列表。
 function makeAnchor(href, text) {
   const attrs = { href };
+  const children = typeof text === 'string' ? [textNode(text)] : text;
   return {
-    textContent: text,
+    nodeType: 1,
+    tagName: 'A',
+    childNodes: children,
+    classList: { contains: () => false },
+    get textContent() { return children.map((c) => c.textContent).join(''); },
     getAttribute: (name) => (name in attrs ? attrs[name] : null),
     setAttribute: (name, value) => { attrs[name] = value; },
     removeAttribute: (name) => { delete attrs[name]; },
@@ -118,6 +147,31 @@ function makeRoot(anchors) {
   const a = makeAnchor('entry://belong', '  ');
   rewriteExportedGlossaryAnchors(makeRoot([a]));
   assert.strictEqual(a.hasHref(), false, 'internal anchors without visible text must lose their href');
+}
+
+// 场景 H：带振假名的交叉引用（结构化内容 <ruby>基字<rt>读音</rt></ruby>，postProcessRuby
+// 还会给每个 rt 克隆 .ruby-reserve 孪生体）→ 深链只带基字。
+{
+  const ruby = (base, reading) => elementNode('RUBY', [
+    textNode(base),
+    elementNode('RP', [textNode('(')]),
+    elementNode('RT', [textNode(reading)]),
+    elementNode('RP', [textNode(')')]),
+    elementNode('SPAN', [textNode(reading)], 'ruby-reserve'),
+  ]);
+  const a = makeAnchor('?query=歯が立たない&wildcards=off', [
+    ruby('歯', 'は'),
+    textNode('が'),
+    ruby('立', 'た'),
+    textNode('たない'),
+  ]);
+  assert.match(a.textContent, /歯\(は\)は/, 'fixture must actually carry furigana in textContent');
+  rewriteExportedGlossaryAnchors(makeRoot([a]));
+  assert.strictEqual(
+    a.href,
+    `fushi://lookup?word=${encodeURIComponent('歯が立たない')}`,
+    'furigana (rt / rp / .ruby-reserve) must not leak into the deep-link word',
+  );
 }
 
 console.log('all assertions passed');
