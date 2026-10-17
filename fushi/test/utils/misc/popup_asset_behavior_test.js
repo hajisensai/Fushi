@@ -3131,9 +3131,9 @@ Promise.all([
 // 以前它一旦置上就永不撤销：同一个弹窗里再点 ✓、或从「高级制卡」回点（同一个 onclick）
 // 一律直接 return——没反应、不覆盖、不提示，只有关掉弹窗重新查词才能覆盖。
 function appQueuedHarness(context) {
-  const state = { inAnki: false, mines: 0, actions: 0 };
+  const state = { inAnki: false, mines: 0, actions: 0, queueCalls: [], queueReply: null };
   context.window.__fushiMinedCardActionNative = true;
-  context.window.flutter_inappwebview.callHandler = (name) => {
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
     if (name === 'duplicateCheck') return Promise.resolve(state.inAnki);
     if (name === 'mineEntry') {
       state.mines++;
@@ -3142,6 +3142,10 @@ function appQueuedHarness(context) {
     if (name === 'minedCardAction') {
       state.actions++;
       return Promise.resolve({ ankiConnect: true, noteId: null, message: '' });
+    }
+    if (name === 'queueOverwrite') {
+      state.queueCalls.push(payload);
+      return Promise.resolve(state.queueReply);
     }
     return Promise.resolve(null);
   };
@@ -3166,6 +3170,8 @@ async function testAppQueuedMarkAnswersClicksAndYieldsToOverwriteOnceLanded() {
   assert.equal(state.actions, 0);
   assert.equal(inlineHintText(context), 'STILL_QUEUED', '没落地也必须有可见反馈');
   assert.equal(button.disabled, false, 'BUG-077：永不卡死');
+  assert.equal(state.queueCalls.length, 1, '没落地时把覆盖交给宿主排队');
+  assert.equal(state.queueCalls[0].expression, '離婚', '排队请求带着完整制卡 payload');
 
   // 落地了：同一个弹窗里点 ✓ 必须走已制卡的正常路径（覆盖 / 新增的操作单）。
   state.inAnki = true;
@@ -3200,7 +3206,80 @@ async function testHostRefreshAfterBackgroundLandingClearsAppQueuedMark() {
   assert.equal(state.actions, 1, '刷新之后点 ✓ 直接走覆盖');
 }
 
+// 所有者拍板的方案 B：宿主收下排队（视频页在线视频）→ 说宿主给的那句，不说「还没写进」。
+async function testAcceptedQueuedOverwriteShowsHostMessage() {
+  const context = loadPopup();
+  context.window.i18nMineStillQueued = 'STILL_QUEUED';
+  const state = appQueuedHarness(context);
+  state.queueReply = { accepted: true, message: 'QUEUED_OK' };
+  const button = buildMineHeaderFor(context, '離別');
+  await flush();
+  await button.onclick();
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(state.queueCalls.length, 1);
+  assert.equal(inlineHintText(context), 'QUEUED_OK');
+  assert.equal(state.mines, 1, '排队覆盖不得另制一张新卡');
+  assert.equal(button.dataset.queued, '1', '还没落地：仍显示「已加入」');
+}
+
+// 赛跑窗口：弹窗回问 Anki 时卡还没落地，覆盖请求到宿主前那次后台写入落地了。宿主回
+// settled:'landed' → 同一次点击直接落到已制卡的正常覆盖路径，不能说「还在写入」、
+// 也不能让用户再点一次。
+async function testSettledLandedReplyFallsThroughToOverwrite() {
+  const context = loadPopup();
+  context.window.i18nMineStillQueued = 'STILL_QUEUED';
+  const state = appQueuedHarness(context);
+  state.queueReply = { accepted: false, settled: 'landed' };
+  // 落地就发生在弹窗回问之后、宿主收到请求之前：此后 Anki 里确实有这张卡。
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'queueOverwrite') state.inAnki = true;
+    return base(name, payload);
+  };
+  const button = buildMineHeaderFor(context, '離散');
+  await flush();
+  await button.onclick();
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(state.queueCalls.length, 1);
+  assert.equal(state.actions, 1, '已落地：同一次点击交给宿主覆盖');
+  assert.equal(state.mines, 1, '不得另制一张');
+  assert.notEqual(inlineHintText(context), 'STILL_QUEUED', '已落地不能说还在写入');
+  assert.equal(button.dataset.queued, '', '「已加入」标记已撤');
+  assert.equal(button.dataset.mined, '1');
+}
+
+// 赛跑窗口：那次后台写入失败了。宿主回 settled:'failed' + 原因 → 撤掉「已加入」、按钮回
+// 「+」、说宿主给的原因；下一次点击按新卡制作，不再走排队。
+async function testSettledFailedReplyClearsQueuedMark() {
+  const context = loadPopup();
+  context.window.i18nMineStillQueued = 'STILL_QUEUED';
+  const state = appQueuedHarness(context);
+  state.queueReply = { accepted: false, settled: 'failed', message: 'NOT_SAVED' };
+  const button = buildMineHeaderFor(context, '離島');
+  await flush();
+  await button.onclick();
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(inlineHintText(context), 'NOT_SAVED');
+  assert.equal(button.dataset.queued, '', '写入失败：「已加入」必须撤掉');
+  assert.equal(button.textContent, '+');
+  assert.equal(state.actions, 0);
+  assert.equal(state.mines, 1);
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 2, '失败后再点按新卡制作');
+  assert.equal(state.queueCalls.length, 1, '不再走排队');
+}
+
 Promise.all([
+  testAcceptedQueuedOverwriteShowsHostMessage(),
+  testSettledLandedReplyFallsThroughToOverwrite(),
+  testSettledFailedReplyClearsQueuedMark(),
   testAppQueuedMarkAnswersClicksAndYieldsToOverwriteOnceLanded(),
   testHostRefreshAfterBackgroundLandingClearsAppQueuedMark(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });

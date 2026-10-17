@@ -226,10 +226,60 @@ void main() {
       requests.map((http.Request r) => r.url.path),
       contains('/v1/feedback/abcdefghij/attachments/v0'),
     );
+    // 压缩产物已挪进待传区并传完；工作目录归调用方，discard 后清干净。
+    expect(staged.video.file.existsSync(), isFalse);
+    await staged.discard();
     expect(
       Directory(p.join(root.path, 'feedback', 'video_work')).listSync(),
       isEmpty,
     );
+  });
+
+  test('BUG-3489 正文没发出去：压好的视频留着，原样再提交不用重压', () async {
+    int posts = 0;
+    handler = (http.Request r) async {
+      if (r.url.path == '/v1/feedback') {
+        if (posts++ == 0) return _json(<String, dynamic>{'error': 'x'}, 503);
+        return receipt(r);
+      }
+      return _json(<String, dynamic>{'slot': 'x'}, 201);
+    };
+    int prepared = 0;
+    final FeedbackService s = service(
+      prepare:
+          (
+            File src,
+            Directory work,
+            void Function(double) onProgress,
+            FeedbackVideoPrepareOptions options,
+          ) async {
+            prepared++;
+            final File out = await src.copy(p.join(work.path, 'out.mp4'));
+            return PreparedFeedbackVideo(
+              file: out,
+              contentType: 'video/mp4',
+              bytes: await out.length(),
+              transcoded: true,
+            );
+          },
+    );
+    final FeedbackStagedVideo staged = await s.stageVideo(source);
+    final FeedbackDraft draft = FeedbackDraft(
+      category: FeedbackCategory.bug,
+      title: 't',
+      body: 'b',
+      includeLogs: false,
+      video: source,
+    );
+    await expectLater(s.submit(draft, stagedVideo: staged), throwsA(anything));
+    expect(staged.video.file.existsSync(), isTrue);
+    final FeedbackSubmitResult result = await s.submit(
+      draft,
+      stagedVideo: staged,
+    );
+    expect(result.failedAttachments, 0);
+    expect(prepared, 1);
+    await staged.discard();
   });
 
   test('BUG-3489 stageVideo 被取消：抛取消、工作目录清掉、什么也没发', () async {

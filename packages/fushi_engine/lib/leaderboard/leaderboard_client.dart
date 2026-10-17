@@ -695,6 +695,7 @@ class LeaderboardClient {
     bool linkAccount = true,
     ({String id, String ticket})? reopenOf,
     InstallAttestation? install,
+    String? submissionKey,
   }) async {
     final bool signs = linkAccount && _identity != null;
     final JsonMap j = await _sendJson(
@@ -712,6 +713,8 @@ class LeaderboardClient {
             'ticket': reopenOf.ticket,
           },
         if (install != null) 'installId': install.installId,
+        // 提交幂等键：同一次提交的重试带同一个键，服务端原样回同一张回执、不新建反馈。
+        if (submissionKey != null) 'submissionKey': submissionKey,
       },
       signed: signs,
       install: install,

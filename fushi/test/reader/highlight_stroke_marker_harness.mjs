@@ -57,11 +57,31 @@ const CHECK = String.raw`(async () => {
   };
   const cs = getComputedStyle(document.documentElement);
   const styleOf = (kind) => cs.getPropertyValue('--fushi-mark-' + kind + '-style').trim();
+  // BUG-3504: every stroke lies inside its own svg box. WebKit (vertical writing) gets the repaint
+  // area of overflow:visible content wrong — strokes painted outside a 1x1 svg stopped updating on
+  // screen (and never showed in vertical continuous mode) even though the DOM was right.
+  const contained = (name, label) => {
+    const svgs = Array.from(group(name).querySelectorAll('svg.fushi-mark-ink'));
+    for (const s of svgs) {
+      const box = s.getBoundingClientRect();
+      ok(box.width > 1 && box.height > 1, label + ': the stroke svg box is the stroke bounds (' +
+        box.width.toFixed(1) + 'x' + box.height.toFixed(1) + ')');
+      for (const p of s.querySelectorAll('path')) {
+        const b = p.getBoundingClientRect();
+        if (b.width <= 0.5 || b.height <= 0.5) continue;
+        const half = (parseFloat(p.getAttribute('stroke-width')) || 0) / 2;
+        ok(b.left - half >= box.left - 0.5 && b.right + half <= box.right + 0.5 &&
+          b.top - half >= box.top - 0.5 && b.bottom + half <= box.bottom + 0.5,
+          label + ': a stroke stays inside its svg box, not in the overflow area');
+      }
+    }
+  };
   // Every text box of the range sits under a stroke about one character high.
   const covers = (name, rects, label) => {
     const bb = strokes(name);
     ok(bb.length > 0, label + ': strokes painted');
     ok(classicLanes(name) === 0, label + ': no classic lane');
+    contained(name, label);
     for (const r of rects.filter((x) => x.width > 0.5 && x.height > 0.5)) {
       const hit = bb.find((b) => Math.abs(mid(b) - mid(r)) <= 0.25 * em &&
         span(b)[0] <= span(r)[0] + 1 && span(b)[1] >= span(r)[1] - 1);
@@ -85,7 +105,7 @@ const CHECK = String.raw`(async () => {
   ruby.classList.add('fushi-hl-pink-ruby-active');
   await frames();
   covers('fushi-hl-yellow', Array.from(fav.getClientRects()), 'favourite');
-  // Path boxes ignore clipping: the 1x1 svg must not clip its strokes (UA default overflow:hidden).
+  // Path boxes ignore clipping: the svg must not clip its strokes (UA default overflow:hidden).
   const svg = ink('fushi-hl-yellow');
   ok(!!svg && getComputedStyle(svg).overflow === 'visible' && getComputedStyle(svg).position === 'absolute',
     'the stroke svg does not clip its strokes');
@@ -117,6 +137,13 @@ const CHECK = String.raw`(async () => {
     const bb = strokes('fushi-hl-yellow');
     ok(bb.length > 0 && bb.some((b) => b.width > 2 && b.height > 2), s + ': paints a visible stroke');
     ok(classicLanes('fushi-hl-yellow') === 0, s + ': no classic lane');
+    // Widest stroke settings: thickness x2 + covering the furigana.
+    await setVar('--fushi-mark-favorite-thickness', '2');
+    await setVar('--fushi-mark-favorite-cover-ruby', '1');
+    contained('fushi-hl-yellow', s + ' (thickest, covering furigana)');
+    contained('fushi-hl-pink', s + ' ruby (thickest, covering furigana)');
+    document.documentElement.style.removeProperty('--fushi-mark-favorite-thickness');
+    await setVar('--fushi-mark-favorite-cover-ruby', '0');
   }
   await setVar('--fushi-mark-favorite-style', 'marker');
 

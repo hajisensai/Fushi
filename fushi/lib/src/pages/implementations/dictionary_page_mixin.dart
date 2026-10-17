@@ -27,6 +27,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show
         MinePopupResult,
         DictionaryPopupWebViewState,
+        QueuedOverwriteReply,
         closePopupAfterAcceptedMine;
 import 'package:fushi/src/anki/advanced_mining_deck_section.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
@@ -649,6 +650,13 @@ mixin DictionaryPageMixin {
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 
+  /// BUG-3492：卡还在后台写入 Anki 时的覆盖请求（弹窗显示「已加入」时再点 ✓ / 从
+  /// 「高级制卡」确认）。默认不收——只有会回「已加入」并在后台落卡的宿主（视频页的在线
+  /// 视频）覆写它，把请求排到那次写入之后。
+  Future<QueuedOverwriteReply> onQueueOverwrite(
+    Map<String, String> fields,
+  ) async => const QueuedOverwriteReply();
+
   /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮的车道入口
   /// （视频/首页/独立查词，与 reader 车道 [BaseSourcePageState.onOpenInAnkiFromPopup]
   /// 对称）。判据与画 ✓ 的查重同源，见 [BaseAnkiRepository.openWordInAnki]：直接把
@@ -1105,6 +1113,7 @@ mixin DictionaryPageMixin {
             onDuplicateCheck: checkDuplicate,
             onOverwriteTargetNoteId: findOverwriteTargetNoteId,
             onMinedCardAction: onMinedCardAction,
+            onQueueOverwrite: onQueueOverwrite,
             onOpenInAnki: onOpenInAnki,
             onFavoriteEntry: onFavoriteEntry,
             onFavoriteCheck: onFavoriteCheck,

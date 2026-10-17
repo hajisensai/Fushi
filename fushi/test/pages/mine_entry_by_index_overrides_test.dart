@@ -41,6 +41,11 @@ void main() {
     required List<Map<String, String>> mined,
     required List<Map<String, String>> actions,
     required List<(int, Map<String, String>)> updated,
+    List<Map<String, String>>? queued,
+    QueuedOverwriteReply queueReply = const QueuedOverwriteReply(
+      accepted: true,
+      message: 'queued',
+    ),
   }) async {
     await tester.pumpWidget(
       wrapPopup(
@@ -59,6 +64,12 @@ void main() {
             updated.add((noteId, fields));
             return MinePopupResult(ankiConnect: true, noteId: noteId);
           },
+          onQueueOverwrite: queued == null
+              ? null
+              : (Map<String, String> fields) async {
+                  queued.add(fields);
+                  return queueReply;
+                },
         ),
       ),
     );
@@ -199,14 +210,118 @@ void main() {
       -250,
     );
   });
+
+  // BUG-3492：卡还在后台写入时从「高级制卡」确认 → 回点落到 queueOverwrite 桥。覆盖项
+  // 必须跟着这次排队的请求走（落地后执行的覆盖用的就是它），回执原样给 popup.js。
+  testWidgets('queueOverwrite（后台写入中排队覆盖）：覆盖项并进 fields，回执带 accepted', (
+    WidgetTester tester,
+  ) async {
+    final List<Map<String, String>> queued = <Map<String, String>>[];
+    final DictionaryPopupWebViewState state = await pumpPopup(
+      tester,
+      mined: <Map<String, String>>[],
+      actions: <Map<String, String>>[],
+      updated: <(int, Map<String, String>)>[],
+      queued: queued,
+    );
+    harness.mode = _ClickMode.queueOverwrite;
+    final bool clicked =
+        await tester.runAsync(
+              () => state.mineEntryByIndex(
+                0,
+                releaseWhenPayloadConsumed: true,
+                overrides: overrides,
+              ),
+            )
+            as bool;
+    expect(clicked, isTrue);
+    expect(queued, hasLength(1));
+    expect(
+      MiningRequestOverrides.readFrom(queued.single)?.deckName,
+      'Mining::Novel',
+    );
+    expect(harness.lastReply, <String, Object?>{
+      'accepted': true,
+      'message': 'queued',
+    });
+  });
+
+  // 赛跑窗口：宿主拒收（那次后台写入刚落地，settled:'landed'）时 payload 没被读走——
+  // 不能提前关对话框、清掉本次往返的覆盖项，否则同一次点击接着走的 minedCardAction
+  // 会丢掉用户在「高级制卡」里的调整。
+  testWidgets('queueOverwrite 被拒收（settled）：覆盖项留给同一次点击的 minedCardAction', (
+    WidgetTester tester,
+  ) async {
+    final List<Map<String, String>> queued = <Map<String, String>>[];
+    final List<Map<String, String>> actions = <Map<String, String>>[];
+    final DictionaryPopupWebViewState state = await pumpPopup(
+      tester,
+      mined: <Map<String, String>>[],
+      actions: actions,
+      updated: <(int, Map<String, String>)>[],
+      queued: queued,
+      queueReply: const QueuedOverwriteReply(
+        settled: QueuedOverwriteSettled.landed,
+      ),
+    );
+    harness.mode = _ClickMode.queueOverwriteThenMinedCardAction;
+    final bool clicked =
+        await tester.runAsync(
+              () => state.mineEntryByIndex(
+                0,
+                releaseWhenPayloadConsumed: true,
+                overrides: overrides,
+              ),
+            )
+            as bool;
+    expect(clicked, isTrue);
+    expect(queued, hasLength(1));
+    expect(harness.lastReply, <String, Object?>{
+      'accepted': false,
+      'settled': 'landed',
+    });
+    expect(actions, hasLength(1));
+    expect(
+      MiningRequestOverrides.readFrom(actions.single)?.deckName,
+      'Mining::Novel',
+      reason: '拒收不算读走 payload：覆盖项必须还在',
+    );
+  });
+
+  testWidgets('queueOverwrite：宿主没接线时回 accepted:false 而不是 null（BUG-1918）', (
+    WidgetTester tester,
+  ) async {
+    await pumpPopup(
+      tester,
+      mined: <Map<String, String>>[],
+      actions: <Map<String, String>>[],
+      updated: <(int, Map<String, String>)>[],
+    );
+    final Object? reply = await tester.runAsync(
+      () => harness.handlers['queueOverwrite']!(<dynamic>[harness.entryFields]),
+    );
+    expect(reply, <String, Object?>{'accepted': false});
+  });
 }
 
-enum _ClickMode { mineEntry, minedCardAction, updateEntry }
+enum _ClickMode {
+  mineEntry,
+  minedCardAction,
+  updateEntry,
+  queueOverwrite,
+
+  /// popup.js 的赛跑窗口：queueOverwrite 被宿主以 settled:'landed' 拒收后，同一次
+  /// 点击接着走 minedCardAction（已制卡的正常覆盖路径）。
+  queueOverwriteThenMinedCardAction,
+}
 
 class _MineHarness {
   final Map<String, JavaScriptHandlerCallback> handlers =
       <String, JavaScriptHandlerCallback>{};
   _ClickMode mode = _ClickMode.mineEntry;
+
+  /// 最近一次 queueOverwrite 桥的回执（popup.js 拿到的那份）。
+  Object? lastReply;
   late PlatformInAppWebViewWidgetCreationParams params;
   dynamic controller;
 
@@ -237,6 +352,15 @@ class _MineHarness {
         await handlers['updateEntry']!(<dynamic>[
           <String, Object?>{'noteId': 42, 'fields': entryFields},
         ]);
+      case _ClickMode.queueOverwrite:
+        lastReply = await handlers['queueOverwrite']!(<dynamic>[entryFields]);
+      case _ClickMode.queueOverwriteThenMinedCardAction:
+        lastReply = await handlers['queueOverwrite']!(<dynamic>[entryFields]);
+        // 真实 popup.js 两次桥调用之间隔着一次 JS ↔ 原生往返（回执过桥、onclick 继续、
+        // 再发下一根桥）：让出真实事件循环，[mineEntryByIndex] 若已收到「payload 已读走」
+        // 就会在这期间结束往返、清掉覆盖项——这正是要钉住的赛跑。
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await handlers['minedCardAction']!(<dynamic>[entryFields]);
     }
     return CallAsyncJavaScriptResult(value: true, error: null);
   }

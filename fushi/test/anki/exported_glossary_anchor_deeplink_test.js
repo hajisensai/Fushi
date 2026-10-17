@@ -7,7 +7,9 @@
 // 可见词头重查；卡片上没有拦截器，只能把同一语义烤进导出字节。
 //
 // 判据（rewriteExportedGlossaryAnchors，popup.js）：
-//   - entry:// 与相对路径 → fushi://lookup?word=<encodeURIComponent(textContent)>
+//   - entry:// 与相对路径 → fushi://lookup?word=<encodeURIComponent(基字文本)>
+//     基字文本 = linkVisibleBaseText(anchor)：剔掉 rt / rp / .ruby-rt / .ruby-reserve，
+//     否则带振假名的「歯が立たない」会被深链成「歯はが立たたない」（用户 10-17 报）
 //   - http(s):// 外链保留
 //   - # 片段保留（不离开卡片，无 127 危害）
 //   - sound:/image:/dictmedia:（字节未导出）→ 去掉 href
@@ -32,9 +34,15 @@ const fnMatch = popupSrc.match(
 );
 assert.ok(fnMatch, 'popup.js must define rewriteExportedGlossaryAnchors(root)');
 
-const context = { console };
+const baseTextMatch = popupSrc.match(/function linkVisibleBaseText\(root\) \{[\s\S]*?\n\}/);
+assert.ok(baseTextMatch, 'popup.js must define linkVisibleBaseText(root)');
+
+const context = { console, Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 } };
 vm.createContext(context);
-vm.runInContext(`${fnMatch[0]}; this.__fn = rewriteExportedGlossaryAnchors;`, context);
+vm.runInContext(
+  `${baseTextMatch[0]}\n${fnMatch[0]}; this.__fn = rewriteExportedGlossaryAnchors;`,
+  context,
+);
 const rewriteExportedGlossaryAnchors = context.__fn;
 
 // ---- 两个导出构建器都必须在序列化前调用它（调用点源级判据） ----------------
@@ -45,11 +53,32 @@ assert.ok(
   `rewriteExportedGlossaryAnchors(tempDiv); found ${callSites.length} call site(s)`,
 );
 
-// ---- 最小 fake DOM：只需 querySelectorAll('a[href]') + 锚点三方法 ----------
+// ---- 最小 fake DOM：querySelectorAll('a[href]') + 锚点三方法 + childNodes ------
+function textNode(text) {
+  return { nodeType: 3, textContent: text };
+}
+
+function elementNode(tagName, children, className = '') {
+  const classes = new Set(className.split(/\s+/).filter(Boolean));
+  return {
+    nodeType: 1,
+    tagName,
+    childNodes: children,
+    classList: { contains: (c) => classes.has(c) },
+    get textContent() { return children.map((c) => c.textContent).join(''); },
+  };
+}
+
+// text 为字符串时是单个文本子节点；为数组时是现成的子节点列表。
 function makeAnchor(href, text) {
   const attrs = { href };
+  const children = typeof text === 'string' ? [textNode(text)] : text;
   return {
-    textContent: text,
+    nodeType: 1,
+    tagName: 'A',
+    childNodes: children,
+    classList: { contains: () => false },
+    get textContent() { return children.map((c) => c.textContent).join(''); },
     getAttribute: (name) => (name in attrs ? attrs[name] : null),
     setAttribute: (name, value) => { attrs[name] = value; },
     removeAttribute: (name) => { delete attrs[name]; },
@@ -118,6 +147,61 @@ function makeRoot(anchors) {
   const a = makeAnchor('entry://belong', '  ');
   rewriteExportedGlossaryAnchors(makeRoot([a]));
   assert.strictEqual(a.hasHref(), false, 'internal anchors without visible text must lose their href');
+}
+
+// 场景 H：带振假名的交叉引用（结构化内容 <ruby>基字<rt>读音</rt></ruby>，postProcessRuby
+// 还会给每个 rt 克隆 .ruby-reserve 孪生体）→ 深链只带基字。
+{
+  const ruby = (base, reading) => elementNode('RUBY', [
+    textNode(base),
+    elementNode('RP', [textNode('(')]),
+    elementNode('RT', [textNode(reading)]),
+    elementNode('RP', [textNode(')')]),
+    elementNode('SPAN', [textNode(reading)], 'ruby-reserve'),
+  ]);
+  const a = makeAnchor('?query=歯が立たない&wildcards=off', [
+    ruby('歯', 'は'),
+    textNode('が'),
+    ruby('立', 'た'),
+    textNode('たない'),
+  ]);
+  assert.match(a.textContent, /歯\(は\)は/, 'fixture must actually carry furigana in textContent');
+  rewriteExportedGlossaryAnchors(makeRoot([a]));
+  assert.strictEqual(
+    a.href,
+    `fushi://lookup?word=${encodeURIComponent('歯が立たない')}`,
+    'furigana (rt / rp / .ruby-reserve) must not leak into the deep-link word',
+  );
+}
+
+// 场景 I：词典弹窗（definition.html，独立页面，没有 popup.js）点结构化内容里的交叉引用，
+// href 没带 ?query= 时退回可见文本——同样只取基字。definition.js 的 linkBaseText 是
+// popup.js linkVisibleBaseText 的同口径副本（两个页面互不加载对方的脚本），钉住两者输出一致。
+{
+  const defSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'popup', 'definition.js'), 'utf8');
+  const defMatch = defSrc.match(/function linkBaseText\(root\) \{[\s\S]*?\n\}/);
+  assert.ok(defMatch, 'definition.js must define linkBaseText(root)');
+  const defContext = { Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 } };
+  vm.createContext(defContext);
+  vm.runInContext(`${defMatch[0]}; this.__base = linkBaseText;`, defContext);
+  const popupContext = { Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 } };
+  vm.createContext(popupContext);
+  vm.runInContext(`${baseTextMatch[0]}; this.__base = linkVisibleBaseText;`, popupContext);
+
+  const ruby = (base, reading) => elementNode('RUBY', [
+    textNode(base),
+    elementNode('RP', [textNode('(')]),
+    elementNode('RT', [textNode(reading)]),
+    elementNode('RP', [textNode(')')]),
+    elementNode('SPAN', [textNode(reading)], 'ruby-reserve'),
+    elementNode('SPAN', [textNode(reading)], 'ruby-rt'),
+  ]);
+  const link = elementNode('A', [ruby('歯', 'は'), textNode(' が \n'), ruby('立', 'た'), textNode('たない ')]);
+  assert.strictEqual(defContext.__base(link), '歯 が 立たない', 'definition.js fallback query must be base text only');
+  assert.strictEqual(defContext.__base(link), popupContext.__base(link), 'definition.js and popup.js must agree');
+  // 点击路径：无 ?query= 时用的就是 linkBaseText，而不是带振假名的 textContent。
+  assert.ok(/const baseText = linkBaseText\(element\);/.test(defSrc), 'definition.js click must use linkBaseText');
+  assert.ok(!/get\('query'\) \|\| element\.textContent/.test(defSrc), 'definition.js must not fall back to raw textContent');
 }
 
 console.log('all assertions passed');

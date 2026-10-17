@@ -1334,10 +1334,24 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
         out += '<g clip-path="url(#' + cid + ')">' + shape + '</g>';
         run.delay = delay + dur + cfg.sweep.gap;
       });
-      // 1×1 的 svg 靠 overflow:visible 把笔划画出来（UA 默认给非根 svg overflow:hidden，会整张裁掉）；
-      // 定位在所在层的原点，路径坐标就是该层局部坐标。
-      var open = '<svg xmlns="http://www.w3.org/2000/svg" class="fushi-mark-ink" width="1" height="1" aria-hidden="true"' +
-        ' style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none">';
+      // svg 的盒子就是这组笔划的包围盒，viewBox 与盒子同位同大，路径坐标仍是所在层的局部坐标。
+      // BUG-3504：曾经是定在层原点的 1×1 svg 靠 overflow:visible 把笔划全画在盒外，WebKit 竖排下
+      // 算不对这块溢出区的重绘范围——DOM 已换成新一句、屏上停在旧笔划（翻页重建才补上），竖排滚动
+      // 更是整张不画。包围盒按 markBand 的上限放宽：沿行 ±2em（笔头斜切、收笔外延），跨行 ±3.5em
+      // （粗细倍数上限 2 × 自然粗细上限 1.45em / 2 + 盖住振假名 0.6em + 抖动、滤镜外扩），与落笔
+      // clip 矩形（沿行 ±1em、跨行 ±3em）同口径且更宽，不会裁到笔划。
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      geom.forEach(function(g) {
+        var a = g.u0 - g.em * 2, b = g.u1 + g.em * 2, lo = g.vc - g.em * 3.5, hi = g.vc + g.em * 3.5;
+        // 横排 (x, y) = (u, v)，竖排 (x, y) = (-v, u)（同 markPoint）。
+        var xs = g.v ? [-hi, -lo] : [a, b], ys = g.v ? [a, b] : [lo, hi];
+        x0 = Math.min(x0, xs[0]); x1 = Math.max(x1, xs[1]); y0 = Math.min(y0, ys[0]); y1 = Math.max(y1, ys[1]);
+      });
+      x0 = Math.floor(x0); y0 = Math.floor(y0); x1 = Math.ceil(x1); y1 = Math.ceil(y1);
+      var box = fx(x0) + ' ' + fx(y0) + ' ' + fx(x1 - x0) + ' ' + fx(y1 - y0);
+      var open = '<svg xmlns="http://www.w3.org/2000/svg" class="fushi-mark-ink" width="' + fx(x1 - x0) + '" height="' +
+        fx(y1 - y0) + '" viewBox="' + box + '" aria-hidden="true" style="left:' + fx(x0) + 'px !important;top:' + fx(y0) +
+        'px !important;width:' + fx(x1 - x0) + 'px !important;height:' + fx(y1 - y0) + 'px !important">';
       return {
         ink: open + '<defs>' + defs + clips + '</defs>' + out + '</svg>',
         still: open + '<defs>' + defs + '</defs>' + still + '</svg>'
@@ -1413,6 +1427,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       var names = dirty;
       dirty = {};
       if (!hostEl()) return;
+      hookRegistry();
       var reg = registry();
       var marks = markConfigs();
       var favPainted = false;
@@ -1464,14 +1479,23 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       }
       if (hit) schedule();
     };
-    var reg = registry();
-    if (reg && !reg.__fushiLanesHooked) {
+    // 钩子装在注册表对象自己身上，所以这个对象必须一直被强引用：WebKit 的 CSS.highlights 包装对象没人
+    // 引用时会被回收、下次读到的是新对象，挂在旧对象上的钩子随之消失，查词 / 搜索写进注册表后窄条层收不到
+    // 通知、不重画（BUG-3504）。hookedRegistry 由 flush 每次经 hookRegistry 读到，保证它活着；万一引擎
+    // 仍换了对象，hookRegistry 给新对象补装。
+    var hookedRegistry = null;
+    var hookRegistry = function() {
+      var reg = registry();
+      if (!reg || reg === hookedRegistry) return;
+      hookedRegistry = reg;
+      if (reg.__fushiLanesHooked) return;
       reg.__fushiLanesHooked = true;
       var set = reg.set, del = reg.delete, clear = reg.clear;
       reg.set = function(name, value) { var res = set.call(this, name, value); schedule(name); return res; };
       reg.delete = function(name) { var res = del.call(this, name); schedule(name); return res; };
       reg.clear = function() { var res = clear.call(this); schedule(); return res; };
-    }
+    };
+    hookRegistry();
     var repaintAll = function() { schedule(); };
     if (typeof window.addEventListener === 'function') window.addEventListener('resize', repaintAll);
     if (typeof document !== 'undefined' && document.fonts && document.fonts.addEventListener) {

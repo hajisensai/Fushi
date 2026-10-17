@@ -43,6 +43,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/video_advanced_mining.dart';
+import 'package:fushi/src/mining/pending_mine_overwrites.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart'
     show probeSynchronizedClipSupport;
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -276,7 +277,11 @@ import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show safeDictionaryMediaPath;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult, DictionaryPopupWebViewState;
+    show
+        MinePopupResult,
+        DictionaryPopupWebViewState,
+        QueuedOverwriteReply,
+        QueuedOverwriteSettled;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/interconnect_adaptive_quality.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -2458,6 +2463,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 正开着的「高级制卡」对话框会话（锁住的查词画面、在线流缓冲副本、缩略图缓存）。
   /// [buildAdvancedMiningSections] 建，对话框 onClosed 释放；制卡在同步前缀里读它。
   _VideoAdvancedMiningSession? _advancedMiningSession;
+
+  /// BUG-3492：后台写入还没落地时排队的覆盖请求（每个词只留最后一次），落地后执行。
+  final PendingMineOverwrites<_QueuedVideoOverwrite> _pendingOverwrites =
+      PendingMineOverwrites<_QueuedVideoOverwrite>();
 
   /// 最近一次字幕查词命中的词在字幕上的范围（BUG-2091），由 [_lookupAt] 按引擎回报的
   /// 匹配长度写入；查无结果写 null。**不**在关栈路径复位——overlay 拿到的是
@@ -7081,6 +7090,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) =>
       _onMineEntryImpl(fields);
+
+  @override
+  Future<QueuedOverwriteReply> onQueueOverwrite(Map<String, String> fields) =>
+      _onQueueOverwriteImpl(fields);
 
   @override
   Future<MinePopupResult> onMinedCardAction(Map<String, String> fields) =>
