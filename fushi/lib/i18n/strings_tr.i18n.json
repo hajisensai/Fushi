@@ -5234,6 +5234,8 @@
   "reader_orient_mixed": "Karışık",
   "reader_orient_upright": "Dik",
   "reader_page_columns_auto": "Otomatik",
+  "reader_page_crease": "Page crease",
+  "reader_page_crease_subtitle": "Shade the gutter between two pages, like an open book (two columns per page)",
   "reader_paginated": "Sayfalı",
   "reader_panel_lyrics_exit_hint": "Return to the book page at the current sentence",
   "reader_panel_lyrics_section_layout": "Layout & margins",

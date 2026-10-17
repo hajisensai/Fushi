@@ -42,6 +42,7 @@ import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/epub/epub_image_index_cache.dart';
 import 'package:fushi/src/epub/epub_spread_analyzer.dart';
 import 'package:fushi/src/epub/epub_spread_map.dart';
+import 'package:fushi/src/utils/adaptive/fushi_fold_posture.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -1909,6 +1910,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   /// 上次写进正文 CSS 的 `fushiMotionEnabled`（didChangeDependencies 维护）。
   bool _readerMotionEnabled = true;
+
+  /// 折叠屏书本姿态（竖向折痕半开 / 双屏铰链，见 [FushiFoldState]）。横排翻页且每页
+  /// 列数为「自动」时据此排成两栏（[ReaderContentStyles.foldPageColumnsOverride]），
+  /// 折痕落在两栏之间；只影响本次排版，不写回偏好。
+  bool _foldBookPosture = false;
   double _stableBottomInset = 0;
 
   /// 底栏内容行的自然（未缩放）高度。
@@ -3822,6 +3828,32 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         unawaited(_applyStylesLive());
       }
     }
+    // 折叠屏姿态变化（半开成书本 / 展平）：只有实际生效的列数变了才重排——列数是结构性
+    // 布局键（与改「每页列数」同走 _reloadWithCurrentSettings，保留阅读位置）。
+    final bool bookPosture = FushiFoldState.of(context).isBook;
+    if (bookPosture != _foldBookPosture) {
+      final ReaderSettings? settings = _settings;
+      final int? before = settings == null
+          ? null
+          : ReaderContentStyles.foldPageColumnsOverride(
+              bookPosture: _foldBookPosture,
+              settings: settings,
+            );
+      _foldBookPosture = bookPosture;
+      final int? after = settings == null
+          ? null
+          : ReaderContentStyles.foldPageColumnsOverride(
+              bookPosture: bookPosture,
+              settings: settings,
+            );
+      if (settings != null && before != after && _controller != null) {
+        unawaited(
+          _reloadWithCurrentSettings().catchError((Object e, StackTrace s) {
+            ErrorLogService.instance.log('ReaderFushi.foldPostureReload', e, s);
+          }),
+        );
+      }
+    }
     // 系统「减弱动态效果」/ 墨水屏主题切换：翻页效果按 [effectivePageTurnAnimation]
     // 降级成「无」或恢复，必须立即热下发——否则已加载的正文仍按旧效果播动画。
     // 首次（null）只记录，install 时的完整配置已带当前值。
@@ -4266,6 +4298,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 高亮笔触的落笔动画开关与节奏只认 Dart 侧 fushiMotionEnabled（减弱动态效果 / 墨水屏
       // 归零）；切换时 didChangeDependencies 重下发样式表。
       motionEnabled: _readerMotionEnabled,
+      pageColumnsOverride: ReaderContentStyles.foldPageColumnsOverride(
+        bookPosture: _foldBookPosture,
+        settings: _settings!,
+      ),
     );
   }
 

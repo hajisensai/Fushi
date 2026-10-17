@@ -51,6 +51,7 @@ import 'package:fushi_engine/media/manga/panel_model_manifest.dart'
     show kMangaPanelModelManifest;
 import 'package:fushi/src/media/manga/manga_panel_navigation.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
+import 'package:fushi/src/utils/adaptive/fushi_fold_posture.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/library/manga_adjacent_chapter.dart';
 import 'package:fushi/src/media/manga/mihon/online_manga_reader_session.dart';
@@ -2537,6 +2538,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     return resolveMangaPageLayout(
       preference: _spreadPreference,
       isLandscape: _viewportIsLandscape,
+      // 折叠姿态变化与窗口尺寸变化同走 didChangeMetrics → _applySpreadLayoutIfChanged。
+      bookPosture: FushiFoldState.of(context).isBook,
     );
   }
 

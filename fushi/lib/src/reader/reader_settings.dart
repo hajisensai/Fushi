@@ -482,6 +482,11 @@ class ReaderSettings {
   int get pageColumns => _get<int>('page_columns', 0);
   Future<void> setPageColumns(int v) => _set<int>('page_columns', v);
 
+  /// 「中缝折痕」显示风格：翻页模式一屏两栏时在两页之间画书脊阴影（见
+  /// [ReaderContentStyles.pageCreaseCss]）。默认关：不改变既有书面观感。
+  bool get pageCrease => _get<bool>('page_crease', false);
+  Future<void> setPageCrease(bool v) => _set<bool>('page_crease', v);
+
   /// `off`, `on`, or `auto`.
   ///
   /// BUG-1280：默认从 `auto` 改为 `off`。`auto` 会在打开书时按 OPF 元数据 /

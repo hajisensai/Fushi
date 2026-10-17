@@ -2387,6 +2387,16 @@ class ReaderFushiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  // 默认与 [ReaderSettings.pageCrease] 同为 false。纯 CSS 键，只触发样式热下发。
+  bool get readerPageCrease =>
+      readerSettings?.pageCrease ??
+      getPreference<bool>(key: 'page_crease', defaultValue: false);
+  Future<void> setReaderPageCrease(bool v) async {
+    await (readerSettings?.setPageCrease(v) ??
+        setPreference<bool>(key: 'page_crease', value: v));
+    onSettingsChangedLive?.call();
+  }
+
   // BUG-1280：默认与 [ReaderSettings.spreadMode] 同为 'off'（两处必须一致，否则
   // readerSettings 未就绪时读到的默认与阅读器实际用的默认相反）。
   String get readerSpreadMode =>

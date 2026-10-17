@@ -5234,6 +5234,8 @@
   "reader_orient_mixed": "混合",
   "reader_orient_upright": "豎直",
   "reader_page_columns_auto": "自動",
+  "reader_page_crease": "中縫摺痕",
+  "reader_page_crease_subtitle": "兩欄一屏時在兩頁之間畫出書脊陰影，像攤開的實體書",
   "reader_paginated": "翻頁",
   "reader_panel_lyrics_exit_hint": "回到書頁，停在當前句",
   "reader_panel_lyrics_section_layout": "版式與邊距",

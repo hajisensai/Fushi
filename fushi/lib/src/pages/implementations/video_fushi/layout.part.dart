@@ -1111,6 +1111,22 @@ extension _VideoLayout on _VideoFushiPageState {
   /// 可见性走 [_subtitleListVisible]（[ValueNotifier]，全屏路由也响应，BUG-120 同源）。
   /// 面板列宽按界面宽取 ~28%（横屏右侧栏，clamp 240..420），参照 asbplayer / YouTube
   /// transcript 侧栏占比。
+  /// 桌面姿态下半屏的播放面板（见 [VideoTabletopPanel]）。
+  Widget _videoTabletopPanel(VideoPlayerController controller) {
+    return VideoTabletopPanel(
+      key: const ValueKey<String>('video_tabletop_panel'),
+      listenable: Listenable.merge(<Listenable>[controller, _titleNotifier]),
+      title: () => _titleNotifier.value,
+      isPlaying: () => controller.isPlaying,
+      position: () => Duration(milliseconds: controller.positionMs ?? 0),
+      duration: () => Duration(milliseconds: controller.durationMs ?? 0),
+      onPlayPause: () => unawaited(controller.playOrPause()),
+      onSeek: (Duration d) => unawaited(controller.seekMs(d.inMilliseconds)),
+      onSeekRelative: (int seconds) =>
+          unawaited(controller.seekRelative(seconds * 1000)),
+    );
+  }
+
   Widget _videoWithSubtitlePanel(
     VideoPlayerController controller,
     Widget video,
@@ -1142,7 +1158,21 @@ extension _VideoLayout on _VideoFushiPageState {
             Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Expanded(child: video),
+                // 折叠屏桌面姿态（半开平放、横向折痕）：画面连同控件 / 字幕留在折痕
+                // 上方，下半屏常驻播放面板。窗口与全屏两处 Video 都经这里，一处接线。
+                // 小窗 / 画中画不切分（系统或小窗 chrome 接管）。
+                Expanded(
+                  child: ValueListenableBuilder<VideoMiniSurface>(
+                    valueListenable: _miniSurface,
+                    builder: (BuildContext _, VideoMiniSurface surface, __) =>
+                        FushiTabletopSplit(
+                          enabled: surface == VideoMiniSurface.none,
+                          top: video,
+                          bottomBuilder: (BuildContext _) =>
+                              _videoTabletopPanel(controller),
+                        ),
+                  ),
+                ),
                 _subtitleJumpSidePanel(controller, visible),
               ],
             ),
