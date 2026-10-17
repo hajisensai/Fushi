@@ -445,9 +445,9 @@ class FeedbackService extends ChangeNotifier {
   /// 0..1；太大 / 不是视频直接抛，反馈不提交），正文与其它附件交完后最后传视频
   /// （[FeedbackSubmitStage.video]）；视频传失败留在待传区，详情页可重试。
   ///
-  /// [stagedVideo] 非空 = 调用方已用 [stageVideo] 压好（提交页压缩期间表单仍可编辑、可取消，
-  /// 压完才读表单提交）：直接用它、不再转码，[FeedbackDraft.video] 不再看；提交结束（成功或
-  /// 失败）都清掉它的工作目录。
+  /// [stagedVideo] 非空 = 调用方已用 [stageVideo] 压好（提交页选完视频就在后台压）：直接用它、
+  /// 不再转码，[FeedbackDraft.video] 不再看。它的工作目录仍归调用方：正文没发出去时留着可以
+  /// 原样再提交，提交成功后由调用方 [FeedbackStagedVideo.discard]（视频已挪进待传区）。
   Future<FeedbackSubmitResult> submit(
     FeedbackDraft draft, {
     void Function(FeedbackSubmitStage stage)? onStage,
@@ -455,17 +455,8 @@ class FeedbackService extends ChangeNotifier {
     FeedbackStagedVideo? stagedVideo,
   }) async {
     if (stagedVideo != null) {
-      try {
-        await load();
-        return await _submit(
-          draft,
-          onStage,
-          stagedVideo.video,
-          onVideoProgress,
-        );
-      } finally {
-        await stagedVideo.discard();
-      }
+      await load();
+      return _submit(draft, onStage, stagedVideo.video, onVideoProgress);
     }
     await load();
     final File? source = draft.video;
@@ -486,8 +477,8 @@ class FeedbackService extends ChangeNotifier {
     }
   }
 
-  /// 提交页「提交」的第一步：在本机把视频压好（[onProgress] 回报 0..1）。压缩期间表单
-  /// 仍可编辑；[FeedbackVideoPrepareOptions.cancel] 完成即中止并清掉工作目录，抛
+  /// 提交页选完视频就调：在本机把视频压好（[onProgress] 回报 0..1），用户同时写反馈；
+  /// [FeedbackVideoPrepareOptions.cancel] 完成即中止并清掉工作目录，抛
   /// [FeedbackVideoCancelledException]。太大 / 不是视频照常抛（工作目录同样清掉）。
   /// 返回值交给 [submit] 的 `stagedVideo`，不提交时调用方负责 [FeedbackStagedVideo.discard]。
   Future<FeedbackStagedVideo> stageVideo(
