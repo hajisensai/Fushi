@@ -1,7 +1,5 @@
 import 'dart:convert';
-import 'dart:ffi';
 
-import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
 import 'package:media_kit/media_kit.dart';
@@ -24,26 +22,22 @@ String snapshot([Map<String, Object> changes = const <String, Object>{}]) =>
       ...changes,
     });
 
+/// Stands in for media_kit's patched `NativePlayer.commandWithResult`
+/// (BUG-3453: async `mpv_command_async`, returns libmpv's result code).
 class _Native {
   _Native(this.mpv);
   final _Mpv mpv;
-  Pointer<Void> get ctx => nullptr;
+
+  Future<int> commandWithResult(List<String> args) async {
+    mpv.received = List<String>.of(args);
+    return mpv.result;
+  }
 }
 
 class _Mpv {
   _Mpv(this.result);
   final int result;
   List<String> received = <String>[];
-
-  // Match libmpv's generated FFI member, including its spelling.
-  // ignore: non_constant_identifier_names
-  int mpv_command(Pointer<Void> context, Pointer<Pointer<Char>> arguments) {
-    received = <String>[];
-    for (int i = 0; arguments[i] != nullptr; i++) {
-      received.add(arguments[i].cast<Utf8>().toDartString());
-    }
-    return result;
-  }
 }
 
 void main() {
@@ -177,15 +171,15 @@ void main() {
   });
 
   group('disc input commands', () {
-    test('checked FFI preserves command args and reports native rejection', () {
+    test('checked command preserves args and reports native rejection', () async {
       final _Mpv success = _Mpv(0);
-      runCheckedVideoDiscCommand(_Native(success), <String>[
+      await runCheckedVideoDiscCommand(_Native(success), <String>[
         'discnav',
         'popup',
       ]);
       expect(success.received, <String>['discnav', 'popup']);
-      expect(
-        () => runCheckedVideoDiscCommand(_Native(_Mpv(-12)), <String>[
+      await expectLater(
+        runCheckedVideoDiscCommand(_Native(_Mpv(-12)), <String>[
           'discnav',
           'select',
         ]),
@@ -201,7 +195,7 @@ void main() {
     // BUG-3290: libbluray answers an unconsumed key/click with -1 (popup closed,
     // click outside enabled buttons, BD-J listener returned false); the shipped
     // patch surfaces that as MPV_ERROR_COMMAND. It is a no-op, not an error.
-    test('unconsumed remote input is a false result, never an exception', () {
+    test('unconsumed remote input is a false result, never an exception', () async {
       for (final String action in <String>[
         'up',
         'down',
@@ -213,8 +207,8 @@ void main() {
       ]) {
         final List<String> command = videoDiscNavigationCommand(action);
         expect(isVideoDiscInputCommand(command), isTrue, reason: action);
-        expect(runVideoDiscInputCommand(_Native(_Mpv(-12)), command), isFalse);
-        expect(runVideoDiscInputCommand(_Native(_Mpv(0)), command), isTrue);
+        expect(await runVideoDiscInputCommand(_Native(_Mpv(-12)), command), isFalse);
+        expect(await runVideoDiscInputCommand(_Native(_Mpv(0)), command), isTrue);
       }
       final List<String> click = videoDiscNavigationCommand(
         'mouse-click',
@@ -223,11 +217,11 @@ void main() {
       );
       expect(isVideoDiscInputCommand(click), isTrue);
       final _Mpv mpv = _Mpv(-12);
-      expect(runVideoDiscInputCommand(_Native(mpv), click), isFalse);
+      expect(await runVideoDiscInputCommand(_Native(mpv), click), isFalse);
       expect(mpv.received, click);
     });
 
-    test('menu calls stay checked: a refused top menu is still an error', () {
+    test('menu calls stay checked: a refused top menu is still an error', () async {
       for (final String action in <String>['menu', 'title-menu']) {
         final List<String> command = videoDiscNavigationCommand(action);
         expect(isVideoDiscInputCommand(command), isFalse);
@@ -235,8 +229,8 @@ void main() {
           () => runVideoDiscInputCommand(_Native(_Mpv(0)), command),
           throwsArgumentError,
         );
-        expect(
-          () => runCheckedVideoDiscCommand(_Native(_Mpv(-12)), command),
+        await expectLater(
+          runCheckedVideoDiscCommand(_Native(_Mpv(-12)), command),
           throwsA(isA<VideoDiscMenuException>()),
         );
       }

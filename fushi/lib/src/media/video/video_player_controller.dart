@@ -807,6 +807,7 @@ class VideoPlayerController extends ChangeNotifier
   String? _discResolvedSubtitleCodec;
   int? _discResolvedTracksGeneration;
   Player? _discObservedPlayer;
+
   /// Serializes disc navigation snapshot reads without dropping a request that
   /// arrives mid-read (see `_sampleDiscMenu` in video_disc_menu.part.dart).
   final CoalescedRereader _discSampler = CoalescedRereader();
@@ -1853,7 +1854,7 @@ class VideoPlayerController extends ChangeNotifier
     final dynamic native = player.platform;
     if (native == null) return null;
     try {
-      final Object? value = await native.getProperty(
+      final Object? value = await native.getPropertyAsync(
         'file-format',
         waitForInitialization: false,
       );
@@ -2405,8 +2406,7 @@ class VideoPlayerController extends ChangeNotifier
   /// [miningCues]（BUG-1592 有效 cue 流）对应的生效调轴：主流非空用主轨
   /// [_delayMs]，主流为空落副字幕流时用 [effectiveSecondaryDelayMs]。制卡按位置
   /// 解析锚点 / 裁剪逆变换必须与该流的 cue 命中同一根时间轴（TODO-2837）。
-  int get miningDelayMs =>
-      _cues.isNotEmpty || _miningStreamIsGraphicTimings
+  int get miningDelayMs => _cues.isNotEmpty || _miningStreamIsGraphicTimings
       ? _delayMs
       : effectiveSecondaryDelayMs;
 
@@ -3666,7 +3666,7 @@ class VideoPlayerController extends ChangeNotifier
       // + 可关闭提示兜底）。
       if (wantFlicker && _flickerHwdecActive == null) {
         try {
-          final String hwdec = (await native.getProperty(
+          final String hwdec = (await native.getPropertyAsync(
             'hwdec-current',
           )).toString();
           if (!_isCurrentLoad(player, loadToken)) return;
@@ -3684,16 +3684,17 @@ class VideoPlayerController extends ChangeNotifier
       final List<String> wanted = wantDiag
           ? VideoMpvStatsSnapshot.properties
           : const <String>['vo-delayed-frame-count', 'frame-drop-count'];
+      // BUG-3453：一次全部发出、经 `getPropertyAsync` 等回包。同步 `getProperty`
+      // 在 UI 线程上排 mpv 内核锁，内核一忙一轮 17 个属性就把事件循环堵 0.4–0.6 s，
+      // 视频纹理新帧排不上合成 = 画面冻住（音频在 mpv 自己的线程上照常）。
+      final List<Object?> values = await Future.wait<Object?>(
+        wanted.map((String name) => _readMpvPropertyAsync(native, name)),
+      );
+      if (!_isCurrentLoad(player, loadToken)) return;
       final Map<String, Object?> raw = <String, Object?>{};
-      for (final String name in wanted) {
-        Object? value;
-        try {
-          value = await native.getProperty(name);
-        } catch (_) {
-          value = null; // 该属性不可读（mpv 版本 / 当前状态），按缺失。
-        }
-        if (!_isCurrentLoad(player, loadToken)) return;
-        if (value != null) raw[name] = value;
+      for (int i = 0; i < wanted.length; i++) {
+        final Object? value = values[i];
+        if (value != null) raw[wanted[i]] = value;
       }
       final VideoMpvStatsSnapshot snapshot =
           VideoMpvStatsSnapshot.fromProperties(raw);
@@ -5124,11 +5125,20 @@ class VideoPlayerController extends ChangeNotifier
   Future<String> _getMpvProperty(String property) async {
     final dynamic native = _player?.platform;
     if (native == null) return '';
+    final Object? value = await _readMpvPropertyAsync(native, property);
+    return value is String ? value : (value?.toString() ?? '');
+  }
+
+  /// 不阻塞 UI 线程地读一条 libmpv 属性（BUG-3453）：走 media_kit 补丁的
+  /// `getPropertyAsync`（`mpv_get_property_async`，回包经事件循环到达），而不是同步
+  /// `getProperty`——后者在 UI 线程上排 mpv 内核锁。周期采样一律走这里。读不到 /
+  /// 播放器已销毁 / 非 libmpv 后端返回 null。
+  Future<Object?> _readMpvPropertyAsync(dynamic native, String property) async {
     try {
-      final dynamic value = await native.getProperty(property);
-      return value is String ? value : (value?.toString() ?? '');
+      final Object? value = await native.getPropertyAsync(property);
+      return value;
     } catch (_) {
-      return '';
+      return null;
     }
   }
 

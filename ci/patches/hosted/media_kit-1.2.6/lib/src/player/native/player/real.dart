@@ -99,6 +99,7 @@ class NativePlayer extends PlatformPlayer {
       await stop(notify: false, synchronized: false);
 
       disposed = true;
+      _completePendingAsyncRequests();
 
       await super.dispose();
 
@@ -1240,13 +1241,40 @@ class NativePlayer extends PlatformPlayer {
 
     final name = property.toNativeUtf8();
     final data = value.toNativeUtf8();
-    mpv.mpv_set_property_string(
+    if (!configuration.async) {
+      mpv.mpv_set_property_string(
+        ctx,
+        name.cast(),
+        data.cast(),
+      );
+      calloc.free(name);
+      calloc.free(data);
+      return;
+    }
+    // Fushi patch (BUG-3453): `mpv_set_property_string` waits for the mpv core
+    // lock on the calling (UI) thread, see [getPropertyAsync]. Queue the write
+    // instead; mpv runs a client's async requests in order, so awaiting callers
+    // keep their ordering against later reads, writes and commands. libmpv copies
+    // the name and the value, so both are freed right away. Errors stay silent,
+    // as with the synchronous call.
+    final ptr = calloc<Pointer<Utf8>>(1)..value = data;
+    final requestNumber = _asyncRequestNumber++;
+    final completer = _setPropertyRequests[requestNumber] = Completer<int>();
+    final immediate = mpv.mpv_set_property_async(
       ctx,
+      requestNumber,
       name.cast(),
-      data.cast(),
+      generated.mpv_format.MPV_FORMAT_STRING,
+      ptr.cast(),
     );
+    calloc.free(ptr);
     calloc.free(name);
     calloc.free(data);
+    if (immediate < 0) {
+      _setPropertyRequests.remove(requestNumber);
+      return;
+    }
+    await completer.future;
   }
 
   /// Retrieves the value of a property from the internal libmpv instance of this [Player].
@@ -1280,6 +1308,113 @@ class NativePlayer extends PlatformPlayer {
     }
 
     return "";
+  }
+
+  /// Fushi patch (BUG-3453): same contract as [getProperty] (`''` when the
+  /// property is unavailable, throws once disposed), but never blocks the
+  /// calling thread.
+  ///
+  /// [getProperty] is a synchronous `mpv_get_property_string`, which waits for
+  /// the mpv core lock on the caller's thread — the Flutter UI thread. While the
+  /// core is busy each read stalls the event loop; a batch of reads froze the
+  /// video for 0.4–0.6 s at a time because new texture frames could not be
+  /// composited (audio, on mpv's own thread, kept playing).
+  ///
+  /// This queues `mpv_get_property_async` (`MPV_FORMAT_STRING`) instead; the
+  /// value arrives with `MPV_EVENT_GET_PROPERTY_REPLY` on the event loop. Pending
+  /// requests complete with `''` on [dispose].
+  Future<String> getPropertyAsync(
+    String property, {
+    bool waitForInitialization = true,
+  }) async {
+    if (disposed) {
+      throw AssertionError('[Player] has been disposed');
+    }
+
+    if (waitForInitialization) {
+      await waitForPlayerInitialization;
+      await waitForVideoControllerInitializationIfAttached;
+    }
+    if (disposed) {
+      return '';
+    }
+
+    final requestNumber = _asyncRequestNumber++;
+    final completer = _getPropertyRequests[requestNumber] = Completer<String>();
+    final name = property.toNativeUtf8();
+    // libmpv copies the name into the request; it can be freed right away.
+    final immediate = mpv.mpv_get_property_async(
+      ctx,
+      requestNumber,
+      name.cast(),
+      generated.mpv_format.MPV_FORMAT_STRING,
+    );
+    calloc.free(name);
+    if (immediate < 0) {
+      _getPropertyRequests.remove(requestNumber);
+      return '';
+    }
+    return completer.future;
+  }
+
+  /// Fushi patch (BUG-3453): runs an mpv command without blocking the calling
+  /// thread and returns libmpv's result code (`>= 0` success). Unlike the
+  /// internal `_command`, a negative result is returned, not logged, so callers
+  /// that must tell a rejected command from a successful one can (Blu-ray menu
+  /// navigation). `mpv_command` would wait for the core lock on the UI thread.
+  /// Resolves to `MPV_ERROR_UNINITIALIZED` when the player is (or gets) disposed.
+  Future<int> commandWithResult(List<String> args) async {
+    if (disposed) {
+      return generated.mpv_error.MPV_ERROR_UNINITIALIZED;
+    }
+    final pointers = args.map<Pointer<Utf8>>((e) => e.toNativeUtf8()).toList();
+    final arr = calloc<Pointer<Utf8>>(args.length + 1);
+    for (int i = 0; i < args.length; i++) {
+      arr[i] = pointers[i];
+    }
+    final requestNumber = _asyncRequestNumber++;
+    final completer =
+        _commandResultRequests[requestNumber] = Completer<int>();
+    // libmpv copies the arguments into the request before returning.
+    final immediate = mpv.mpv_command_async(ctx, requestNumber, arr.cast());
+    calloc.free(arr);
+    pointers.forEach(calloc.free);
+    if (immediate < 0) {
+      _commandResultRequests.remove(requestNumber);
+      return immediate;
+    }
+    return completer.future;
+  }
+
+  /// Completes every pending async request once the player is disposed: reads
+  /// with `''`, writes and commands with success. Without this a caller awaiting
+  /// a reply that libmpv will never send (the handle is torn down) hangs forever.
+  void _completePendingAsyncRequests() {
+    final gets = _getPropertyRequests.values.toList();
+    final others = <Completer<int>>[
+      ..._setPropertyRequests.values,
+      ..._commandRequests.values,
+    ];
+    final results = _commandResultRequests.values.toList();
+    _getPropertyRequests.clear();
+    _setPropertyRequests.clear();
+    _commandRequests.clear();
+    _commandResultRequests.clear();
+    for (final completer in gets) {
+      if (!completer.isCompleted) {
+        completer.complete('');
+      }
+    }
+    for (final completer in others) {
+      if (!completer.isCompleted) {
+        completer.complete(0);
+      }
+    }
+    for (final completer in results) {
+      if (!completer.isCompleted) {
+        completer.complete(generated.mpv_error.MPV_ERROR_UNINITIALIZED);
+      }
+    }
   }
 
   /// Observes property for the internal libmpv instance of this [Player].
@@ -1495,9 +1630,42 @@ class NativePlayer extends PlatformPlayer {
         completer.complete(event.ref.error);
       }
     }
+    if (event.ref.event_id ==
+        generated.mpv_event_id.MPV_EVENT_GET_PROPERTY_REPLY) {
+      // Fushi patch (BUG-3453): reply to [getPropertyAsync]. The event (and the
+      // string it points to) stays valid until the event loop fetches the next
+      // one, which happens only after this handler returns. A missing ID means
+      // the request was already completed by [dispose].
+      final completer = _getPropertyRequests.remove(event.ref.reply_userdata);
+      if (completer != null && !completer.isCompleted) {
+        String value = '';
+        final prop = event.ref.data.cast<generated.mpv_event_property>();
+        if (event.ref.error >= 0 &&
+            prop != nullptr &&
+            prop.ref.format == generated.mpv_format.MPV_FORMAT_STRING) {
+          final data = prop.ref.data.cast<Pointer<Utf8>>();
+          if (data != nullptr && data.value != nullptr) {
+            value = data.value.toDartString();
+          }
+        }
+        completer.complete(value);
+      }
+    }
     if (event.ref.event_id == generated.mpv_event_id.MPV_EVENT_COMMAND_REPLY) {
-      final completer = _commandRequests.remove(event.ref.reply_userdata);
+      // Fushi patch (BUG-3453): [commandWithResult] shares the request counter,
+      // so its IDs never collide with `_command`'s.
+      final resultCompleter =
+          _commandResultRequests.remove(event.ref.reply_userdata);
+      if (resultCompleter != null && !resultCompleter.isCompleted) {
+        resultCompleter.complete(event.ref.error);
+      }
+      final completer = resultCompleter != null
+          ? null
+          : _commandRequests.remove(event.ref.reply_userdata);
       if (completer == null) {
+        if (resultCompleter != null) {
+          return;
+        }
         print(
             'Warning: Received MPV_EVENT_COMMAND_REPLY with unregistered ID ${event.ref.reply_userdata}');
       } else {
@@ -2613,6 +2781,8 @@ class NativePlayer extends PlatformPlayer {
   int _asyncRequestNumber = 0;
   final Map<int, Completer<int>> _setPropertyRequests = {};
   final Map<int, Completer<int>> _commandRequests = {};
+  final Map<int, Completer<String>> _getPropertyRequests = {};
+  final Map<int, Completer<int>> _commandResultRequests = {};
 
   Future<void> _setProperty(String name, int format, Pointer<Void> data) async {
     final requestNumber = _asyncRequestNumber++;
