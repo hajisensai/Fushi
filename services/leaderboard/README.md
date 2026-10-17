@@ -5,6 +5,10 @@ Cloudflare Worker + D1 + R2。设计与分期见
 
 - 账户：**邮箱验证码注册**（`src/email.js`），签名凭据是设备上生成的 ECDSA P-256 钥匙（`src/auth.js`）；
   一个账户可绑多台设备（新设备用邮箱验证码登录）。**服务端不存邮箱明文**，只存 HMAC。
+  身份按规范化邮箱判定（`canonicalEmail`：Gmail / googlemail 去点与 `+tag`；Outlook / Hotmail / Live / MSN、
+  iCloud / me / mac、Proton、Fastmail 去 `+tag`；其余域名只做 NFKC + 去空白 + 小写 + IDN 转 punycode），
+  同一收件箱的别名注册不出第二个账户；验证码仍发到用户输入的原地址。2026-10-17 前注册的账户在下次
+  登录时惰性升级哈希，升级冲突见 `GET /admin/api/email-conflicts`。
 - 书架**增量上报**（每批 ≤ 500）；跨用户作品靠匹配键（bgm / isbn / vndb / anidb / mal / tmdb / src / 标题+作者）汇合，见 `src/shelf.js` 文件头。
 - 与日志服务（`services/log-backend/`）完全隔离，不共用任何凭据。
 
@@ -185,6 +189,7 @@ HTTP Basic Auth（`ADMIN_USER` / `ADMIN_PASS`，未配置时 503 fail-closed）�
 |---|---|---|
 | GET | `/admin/api/reports` | 未处理举报 |
 | POST | `/admin/api/reports/:id/resolve` | 标记已处理 |
+| GET | `/admin/api/email-conflicts` | 邮箱别名归一时没能惰性升级的账户对 `{count, rows: [{accountId, holderId, firstSeenAt, lastSeenAt, seenCount}]}`（同一收件箱在旧规则下注册过多个账户；不含邮箱） |
 | POST | `/admin/api/accounts/:id` `{hidden}` | 隐藏 / 恢复账户 |
 | POST | `/admin/api/works/:id` `{title?, author?, nsfw?, clearCover?}` | 改作品（改标题/作者即锁定） |
 | POST | `/admin/api/snapshots/refresh` | 立刻重算榜单快照（部署后第一次、或不想等定时任务时） |
