@@ -11,7 +11,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
-    show isGlassDesign;
+    show isEinkTheme, isGlassDesign;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
     show FushiAppleSlider;
@@ -133,7 +133,7 @@ class VideoRemoteControlCard extends StatelessWidget {
                   barHeight: 28,
                 ),
               const SizedBox(height: 6),
-              Center(child: _primaryGroup(rows.primary, playSize: 64)),
+              Center(child: _primaryGroup(context, rows.primary, playSize: 64)),
               if (rows.secondary.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 6),
                 _SecondaryIconRow(
@@ -181,7 +181,10 @@ class VideoRemoteControlCard extends StatelessWidget {
     );
   }
 
+  /// 主控制组：播放键是最强调的填充形变键，其余（上一句 / 下一句与用户拖进
+  /// 这一行的任意按钮）统一 M size tonal 容器，同尺寸同形状成一组。
   Widget _primaryGroup(
+    BuildContext context,
     List<VideoRemoteControlItem> items, {
     required double playSize,
   }) {
@@ -204,6 +207,10 @@ class VideoRemoteControlCard extends StatelessWidget {
               size: FushiIconButtonSize.m,
               tooltip: _tooltip(item),
               isSelected: _toggleState(item),
+              style: videoRemotePrimaryToggleStyle(
+                context,
+                isToggle: _toggleState(item) != null,
+              ),
               onPressed: _handler(item),
               icon: FushiIcon(
                 videoRemoteControlIcon(
@@ -314,7 +321,11 @@ class VideoRemoteControlCard extends StatelessWidget {
               const SizedBox(height: 12),
               FittedBox(
                 fit: BoxFit.scaleDown,
-                child: _primaryGroup(layout.primaryItems, playSize: 80),
+                child: _primaryGroup(
+                  context,
+                  layout.primaryItems,
+                  playSize: 80,
+                ),
               ),
               if (layout.secondaryItems.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 16),
@@ -350,6 +361,51 @@ class VideoRemoteControlCard extends StatelessWidget {
       },
     );
   }
+}
+
+/// 主控制组里开关类按钮（收藏 / 字幕显隐）的 MD3 着色。
+///
+/// M3E tonal 图标按钮的 toggle 未选态退成 surfaceContainer——正好是遥控卡
+/// 自身的底色（[fushiFloatingToolbarPalette] 的 container），于是开关键放进
+/// 主控制行、关着时只剩一个裸图标，和旁边上一句 / 下一句的 tonal 容器不成组
+/// （BUG-3495）。这里让它无论开关都铺与前后句同一个 secondaryContainer：开 /
+/// 关由图标（实心 / 空心）与 M3E 选中形状（圆 → 方圆角）区分，选中语义仍走
+/// `isSelected`。
+///
+/// 非开关按钮、Apple 设计系统（tonal = 中性 bordered 灰底圆钮，未选与前后句
+/// 本就同色）、墨水屏（不套 Expressive 配色）返回 null，沿用组件默认。
+@visibleForTesting
+ButtonStyle? videoRemotePrimaryToggleStyle(
+  BuildContext context, {
+  required bool isToggle,
+}) {
+  if (!isToggle || isGlassDesign(context) || isEinkTheme(context)) return null;
+  final ColorScheme cs = Theme.of(context).colorScheme;
+  Color foreground(Set<WidgetState> states) =>
+      states.contains(WidgetState.disabled)
+      ? cs.onSurface.withValues(alpha: 0.38)
+      : cs.onSecondaryContainer;
+  return ButtonStyle(
+    backgroundColor: WidgetStateProperty.resolveWith<Color?>(
+      (Set<WidgetState> states) => states.contains(WidgetState.disabled)
+          ? cs.onSurface.withValues(alpha: 0.12)
+          : cs.secondaryContainer,
+    ),
+    foregroundColor: WidgetStateProperty.resolveWith<Color?>(foreground),
+    overlayColor: WidgetStateProperty.resolveWith<Color?>((
+      Set<WidgetState> states,
+    ) {
+      final Color fg = foreground(states);
+      if (states.contains(WidgetState.pressed) ||
+          states.contains(WidgetState.focused)) {
+        return fg.withValues(alpha: 0.1);
+      }
+      if (states.contains(WidgetState.hovered)) {
+        return fg.withValues(alpha: 0.08);
+      }
+      return null;
+    }),
+  );
 }
 
 /// 竖屏次组：一排纯图标按钮（每颗 48 命中区，不画分隔线），放不下的按钮收进
