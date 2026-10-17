@@ -5055,6 +5055,7 @@
   "popup_instant_scroll_wheel_step_hint": "How far one mouse-wheel notch jumps the popup, as a share of its height (also scaled by popup scroll speed).",
   "popup_max_height": "Popup max height",
   "popup_max_width": "Popup max width",
+  "popup_mine_still_queued": "Added for mining, but not confirmed in Anki yet, so it can't be overwritten yet.",
   "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first.",
   "popup_mining_target_switch": "Switch profile or deck",
   "popup_mining_target_switch_failed": "Could not switch the mining target: $error",

@@ -5055,6 +5055,7 @@
   "popup_instant_scroll_wheel_step_hint": "滾輪每格讓彈窗跳動的距離，佔彈窗高度的比例（再乘以彈窗滾動速度）。",
   "popup_max_height": "查詞視窗最大高度",
   "popup_max_width": "查詞視窗最大寬度",
+  "popup_mine_still_queued": "已加入製卡，尚未確認寫入 Anki，暫時不能覆蓋。",
   "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first.",
   "popup_mining_target_switch": "Switch profile or deck",
   "popup_mining_target_switch_failed": "Could not switch the mining target: $error",

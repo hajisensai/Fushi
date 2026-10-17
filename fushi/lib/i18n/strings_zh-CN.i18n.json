@@ -5055,6 +5055,7 @@
   "popup_instant_scroll_wheel_step_hint": "滚轮每格让弹窗跳动的距离，占弹窗高度的比例（再乘以弹窗滚动速度）。",
   "popup_max_height": "查词窗口最大高度",
   "popup_max_width": "查词窗口最大宽度",
+  "popup_mine_still_queued": "已加入制卡，还没确认写进 Anki，暂时不能覆盖。",
   "popup_mining_target_empty": "还没有可选的配置或牌组，请先在设置里连接 Anki。",
   "popup_mining_target_switch": "切换配置或牌组",
   "popup_mining_target_switch_failed": "切换制卡目标失败：$error",

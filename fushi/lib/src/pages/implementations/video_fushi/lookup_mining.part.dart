@@ -831,6 +831,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
     _trackBackgroundMine(
       job.then((ImmersionMiningResult res) {
         final MinePopupResult landed = land(res);
+        // BUG-3492：弹窗早就拿到了「已加入」，卡真正进 Anki 是现在。通知正在显示这个
+        // 词的弹窗重问一次 Anki，把「已加入」换成真 ✓——之后同一个弹窗里点 ✓ / 从高级
+        // 制卡回点，才能走覆盖，而不是要关掉弹窗重新查词。
+        if (landed.ankiConnect) {
+          MinedStateSignal.instance.notifyWord(fields['expression'] ?? '');
+        }
         onBackgroundLanded?.call(landed);
       }),
     );

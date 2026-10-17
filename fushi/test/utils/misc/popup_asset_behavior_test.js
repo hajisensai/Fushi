@@ -3127,6 +3127,84 @@ Promise.all([
   testQueueFailureKeepsPlusAndAllowsRetry(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
+// BUG-3492：app 内（在线视频后台制卡）没有宿主队列，「已加入」只是本弹窗的一个标记。
+// 以前它一旦置上就永不撤销：同一个弹窗里再点 ✓、或从「高级制卡」回点（同一个 onclick）
+// 一律直接 return——没反应、不覆盖、不提示，只有关掉弹窗重新查词才能覆盖。
+function appQueuedHarness(context) {
+  const state = { inAnki: false, mines: 0, actions: 0 };
+  context.window.__fushiMinedCardActionNative = true;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(state.inAnki);
+    if (name === 'mineEntry') {
+      state.mines++;
+      return Promise.resolve({ queued: true, ankiConnect: false });
+    }
+    if (name === 'minedCardAction') {
+      state.actions++;
+      return Promise.resolve({ ankiConnect: true, noteId: null, message: '' });
+    }
+    return Promise.resolve(null);
+  };
+  return state;
+}
+
+async function testAppQueuedMarkAnswersClicksAndYieldsToOverwriteOnceLanded() {
+  const context = loadPopup();
+  context.window.i18nMineStillQueued = 'STILL_QUEUED';
+  const state = appQueuedHarness(context);
+  const button = buildMineHeaderFor(context, '離婚');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1', '后台制卡回 queued → 标「已加入」');
+  assert.equal(state.mines, 1);
+
+  // 还没落地：不重复入队、不弹操作单，但要就地说一声（以前是静默 return）。
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 1, '没落地时再点不得再制一张');
+  assert.equal(state.actions, 0);
+  assert.equal(inlineHintText(context), 'STILL_QUEUED', '没落地也必须有可见反馈');
+  assert.equal(button.disabled, false, 'BUG-077：永不卡死');
+
+  // 落地了：同一个弹窗里点 ✓ 必须走已制卡的正常路径（覆盖 / 新增的操作单）。
+  state.inAnki = true;
+  await button.onclick();
+  await flush();
+  assert.equal(state.actions, 1, '落地后同一弹窗点 ✓ 必须交给宿主覆盖');
+  assert.equal(state.mines, 1, '不得绕过操作单直接再制一张');
+  assert.notEqual(button.dataset.queued, '1', '卡已在 Anki → 「已加入」标记作废');
+  assert.equal(button.dataset.mined, '1');
+}
+
+async function testHostRefreshAfterBackgroundLandingClearsAppQueuedMark() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '離縁');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1');
+
+  // 宿主（视频页后台落卡）落地后经 MinedStateSignal 回头刷这个词。
+  state.inAnki = true;
+  const refreshed = await context.window.fushiRefreshMineStates({
+    expression: '離縁',
+  });
+  await flush();
+  assert.equal(refreshed, 1);
+  assert.notEqual(button.dataset.queued, '1', '刷新拿到真 ✓ 后「已加入」必须撤掉');
+  assert.equal(button.dataset.mined, '1');
+  await button.onclick();
+  await flush();
+  assert.equal(state.actions, 1, '刷新之后点 ✓ 直接走覆盖');
+}
+
+Promise.all([
+  testAppQueuedMarkAnswersClicksAndYieldsToOverwriteOnceLanded(),
+  testHostRefreshAfterBackgroundLandingClearsAppQueuedMark(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
 // 宿主主动刷新已渲染的「已制卡 ✓ / 可制卡 +」（window.fushiRefreshMineStates）。
 //
 // 为什么需要这条入口：查词时探测出的 ✓ 画完就不再动。AnkiMobile 后端上「卡真的进库
