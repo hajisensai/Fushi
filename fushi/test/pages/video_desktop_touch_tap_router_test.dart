@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -71,9 +73,7 @@ void main() {
     );
   }
 
-  testWidgets('touch 单击：控制条隐藏时唤出、可见时收起，不改播放态', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('touch 单击：控制条隐藏时唤出、可见时收起，不改播放态', (WidgetTester tester) async {
     final List<DesktopControlsTapAction> actions = <DesktopControlsTapAction>[];
     await tester.pumpWidget(harness(actions: actions));
 
@@ -104,9 +104,7 @@ void main() {
     ]);
   });
 
-  testWidgets('touch 双击（页面层的左/右快退快进手势）不会顺带暂停再恢复', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('touch 双击（页面层的左/右快退快进手势）不会顺带暂停再恢复', (WidgetTester tester) async {
     // 页面外层 Listener（_handleVideoPointerUp）按 400ms / 48px 认双击并分左右区
     // seek；此前桌面点击层把两次 tap 都当 playOrPause，双击 seek 时画面先停后放。
     final List<DesktopControlsTapAction> actions = <DesktopControlsTapAction>[];
@@ -120,9 +118,7 @@ void main() {
     expect(actions, isNot(contains(DesktopControlsTapAction.playOrPause)));
   });
 
-  testWidgets('touch 点底栏带（按钮间隙 / 进度条旁）只续命，不收起', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('touch 点底栏带（按钮间隙 / 进度条旁）只续命，不收起', (WidgetTester tester) async {
     final List<DesktopControlsTapAction> actions = <DesktopControlsTapAction>[];
     await tester.pumpWidget(harness(actions: actions, initiallyVisible: true));
     await tester.tapAt(bottomStrip, kind: PointerDeviceKind.touch);
@@ -132,9 +128,7 @@ void main() {
     ]);
   });
 
-  testWidgets('鼠标单击行为不变：画面区播放/暂停，底栏带不动作', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('鼠标单击行为不变：画面区播放/暂停，底栏带不动作', (WidgetTester tester) async {
     final List<DesktopControlsTapAction> actions = <DesktopControlsTapAction>[];
     await tester.pumpWidget(harness(actions: actions));
     await tester.tapAt(center, kind: PointerDeviceKind.mouse);
@@ -180,9 +174,7 @@ void main() {
     ]);
   });
 
-  testWidgets('BUG-374：点到控制条按钮时按钮赢竞技场，点击层不动作', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('BUG-374：点到控制条按钮时按钮赢竞技场，点击层不动作', (WidgetTester tester) async {
     final List<DesktopControlsTapAction> actions = <DesktopControlsTapAction>[];
     int buttonTaps = 0;
     await tester.pumpWidget(
@@ -215,14 +207,13 @@ void main() {
       bool visible = false,
       bool playPause = true,
       bool touchToggles = true,
-    }) =>
-        resolveDesktopControlsTap(
-          kind: kind,
-          inPlayPauseRegion: inRegion,
-          controlsVisible: visible,
-          playAndPauseOnTap: playPause,
-          touchTapTogglesControls: touchToggles,
-        );
+    }) => resolveDesktopControlsTap(
+      kind: kind,
+      inPlayPauseRegion: inRegion,
+      controlsVisible: visible,
+      playAndPauseOnTap: playPause,
+      touchTapTogglesControls: touchToggles,
+    );
 
     test('触控类指针', () {
       expect(isTouchLikePointerKind(PointerDeviceKind.touch), isTrue);
@@ -241,7 +232,9 @@ void main() {
       ]) {
         expect(resolve(kind), DesktopControlsTapAction.playOrPause);
         expect(
-            resolve(kind, visible: true), DesktopControlsTapAction.playOrPause);
+          resolve(kind, visible: true),
+          DesktopControlsTapAction.playOrPause,
+        );
         expect(resolve(kind, inRegion: false), DesktopControlsTapAction.none);
         expect(resolve(kind, playPause: false), DesktopControlsTapAction.none);
       }
@@ -251,13 +244,125 @@ void main() {
       const PointerDeviceKind touch = PointerDeviceKind.touch;
       expect(resolve(touch), DesktopControlsTapAction.showControls);
       expect(
-          resolve(touch, visible: true), DesktopControlsTapAction.hideControls);
-      expect(resolve(touch, visible: true, inRegion: false),
-          DesktopControlsTapAction.keepControlsAlive);
-      expect(resolve(touch, playPause: false),
-          DesktopControlsTapAction.showControls);
-      expect(resolve(touch, touchToggles: false),
-          DesktopControlsTapAction.playOrPause);
+        resolve(touch, visible: true),
+        DesktopControlsTapAction.hideControls,
+      );
+      expect(
+        resolve(touch, visible: true, inRegion: false),
+        DesktopControlsTapAction.keepControlsAlive,
+      );
+      expect(
+        resolve(touch, playPause: false),
+        DesktopControlsTapAction.showControls,
+      );
+      expect(
+        resolve(touch, touchToggles: false),
+        DesktopControlsTapAction.playOrPause,
+      );
+    });
+  });
+
+  group('desktopControlsBottomStripHeight：点进度条上半截不再顺带暂停', () {
+    // 桌面默认几何：底栏顶边距底 = 56（按钮行）+ 16（底边距）= 72；进度条热区 36 高、
+    // 下压 16 → 上缘距底 72 + 20 = 92。旧口径只排除到 72 + 10 = 82，于是 82..92 这
+    // 10px 带里鼠标单击既 seek（Listener）又被点击层判成 playOrPause。
+    const double barOffset = 72;
+
+    double strip({
+      bool displaySeekBar = true,
+      bool hasBottomButtonBar = true,
+      double containerHeight = 36,
+      double overlap = 16,
+    }) => desktopControlsBottomStripHeight(
+      bottomBarOffset: barOffset,
+      displaySeekBar: displaySeekBar,
+      hasBottomButtonBar: hasBottomButtonBar,
+      seekBarContainerHeight: containerHeight,
+      seekBarBottomButtonBarOverlap: overlap,
+    );
+
+    test('排除带覆盖进度条整个热区（上缘 = 底栏顶边 + 热区高 − 下压）', () {
+      expect(strip(), 92);
+    });
+
+    test('进度条热区不高出底栏 10px 时保持原先的 10px 余量', () {
+      // 小窗 / 紧凑档等比缩小：36×0.5 − 16×0.5 = 10 → 与余量持平。
+      expect(strip(containerHeight: 18, overlap: 8), 82);
+      expect(strip(containerHeight: 20, overlap: 16), 82);
+    });
+
+    test('无进度条（mini 档）只留底栏 + 余量', () {
+      expect(strip(displaySeekBar: false), 82);
+    });
+
+    test('无底栏按钮行时进度条不下压，整条热区都排除', () {
+      expect(strip(hasBottomButtonBar: false), barOffset + 36);
+    });
+
+    testWidgets('真实点击层：鼠标点进度条热区最上缘不再 playOrPause', (WidgetTester tester) async {
+      final List<DesktopControlsTapAction> actions =
+          <DesktopControlsTapAction>[];
+      final GlobalKey surfaceKey = GlobalKey();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox.fromSize(
+              key: surfaceKey,
+              size: surfaceSize,
+              child: MaterialDesktopTapRouter(
+                playAndPauseOnTap: true,
+                touchTapTogglesControls: true,
+                controlsVisible: true,
+                // 与 material_desktop.dart 的 isInPlayPauseRegion 同式。
+                isInPlayPauseRegion: (Offset global) {
+                  final RenderBox box =
+                      surfaceKey.currentContext!.findRenderObject()!
+                          as RenderBox;
+                  return box.globalToLocal(global).dy <
+                      box.size.height - strip();
+                },
+                onAction: actions.add,
+                child: const ColoredBox(color: Color(0xFF000000)),
+              ),
+            ),
+          ),
+        ),
+      );
+      final Offset topLeft = tester.getTopLeft(find.byKey(surfaceKey));
+      // 热区上缘往下 2px（旧口径下落在「播放区」里）。
+      await tester.tapAt(
+        topLeft + Offset(400, surfaceSize.height - 92 + 2),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(const Duration(seconds: 1));
+      expect(actions, isEmpty);
+      // 热区之上仍是画面：照常播放/暂停。
+      await tester.tapAt(
+        topLeft + Offset(400, surfaceSize.height - 92 - 4),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      expect(actions, <DesktopControlsTapAction>[
+        DesktopControlsTapAction.playOrPause,
+      ]);
+    });
+
+    test('material_desktop 的播放区判据走 desktopControlsBottomStripHeight', () {
+      final String source = File(
+        '../third_party/media_kit_video/lib/media_kit_video_controls/'
+        'src/controls/material_desktop.dart',
+      ).readAsStringSync();
+      final int start = source.indexOf('isInPlayPauseRegion: (Offset');
+      expect(start, greaterThanOrEqualTo(0));
+      final int end = source.indexOf('onAction:', start);
+      final String body = source.substring(start, end);
+      expect(
+        body.contains('desktopControlsBottomStripHeight('),
+        isTrue,
+        reason: '点击层排除带必须按进度条真实热区算，固定 10px 会让点进度条上缘暂停',
+      );
+      expect(body.contains('seekBarContainerHeight'), isTrue);
+      expect(body.contains('seekBarBottomButtonBarOverlap'), isTrue);
     });
   });
 
@@ -266,8 +371,11 @@ void main() {
 
     test('桌面控制条主题开启触屏分流', () {
       final String flat = corpus.replaceAll(RegExp(r'\s+'), '');
-      expect(flat.contains('touchTapTogglesControls:true,'), isTrue,
-          reason: '_desktopControlsTheme 必须开启 touchTapTogglesControls');
+      expect(
+        flat.contains('touchTapTogglesControls:true,'),
+        isTrue,
+        reason: '_desktopControlsTheme 必须开启 touchTapTogglesControls',
+      );
     });
 
     test('双击左/右 seek 不看指针类型；指针类型只决定落空双击（中带）的动作', () {
@@ -281,11 +389,17 @@ void main() {
       final int seekIdx = body.indexOf('_handleDoubleTapSeek(');
       final int kindIdx = body.indexOf('event.kind');
       expect(seekIdx, greaterThanOrEqualTo(0));
-      expect(kindIdx, greaterThan(seekIdx),
-          reason: '双击左/右 seek 必须对 touch 与 mouse 同样生效（先于指针类型判定）');
+      expect(
+        kindIdx,
+        greaterThan(seekIdx),
+        reason: '双击左/右 seek 必须对 touch 与 mouse 同样生效（先于指针类型判定）',
+      );
       expect('event.kind'.allMatches(body).length, 1);
-      expect(body.contains('isTouchLikePointerKind(event.kind)'), isTrue,
-          reason: '指针类型只经 isTouchLikePointerKind 喂给中带判据');
+      expect(
+        body.contains('isTouchLikePointerKind(event.kind)'),
+        isTrue,
+        reason: '指针类型只经 isTouchLikePointerKind 喂给中带判据',
+      );
     });
   });
 }
