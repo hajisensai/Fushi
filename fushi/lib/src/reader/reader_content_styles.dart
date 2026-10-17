@@ -123,8 +123,8 @@ class ReaderContentStyles {
   ///
   /// 只在「翻页 + 横排 + 每页列数 = 自动(0)」时把一屏排成 2 栏，让竖向折痕正好落在
   /// 两栏之间（content-box 居中、两栏对称，栏间隙中线 = 窗口中线；页边距左右不等时
-  /// 中线偏移半个差值）。用户显式选了列数就尊重用户；竖排的 multicol 是上下分栏，
-  /// 竖向折痕本来就落在两行字之间，不需要覆盖；滚动 / VN 不经多列。
+  /// 中线偏移半个差值）。用户显式选了列数就尊重用户；竖排不处理（已知局限：有宽度的
+  /// 物理铰链仍可能遮住竖排单栏的一行字）；滚动 / VN 不经多列。
   static int? foldPageColumnsOverride({
     required bool bookPosture,
     required ReaderSettings settings,
@@ -215,15 +215,14 @@ html::after {
     required double marginBottomPx,
     required double chromeTopInsetPx,
     required double chromeBottomInsetPx,
-  }) =>
-      math.max(
-        fontSizePx,
-        viewportHeightPx -
-            marginTopPx -
-            marginBottomPx -
-            chromeTopInsetPx -
-            chromeBottomInsetPx,
-      );
+  }) => math.max(
+    fontSizePx,
+    viewportHeightPx -
+        marginTopPx -
+        marginBottomPx -
+        chromeTopInsetPx -
+        chromeBottomInsetPx,
+  );
 
   static String styleTag({
     required ReaderSettings settings,
@@ -245,26 +244,7 @@ html::after {
     int? pageColumnsOverride,
     int? columnGapOverridePx,
   }) {
-    return '<style>\n${css(
-      settings: settings,
-      contentLanguage: contentLanguage,
-      fontFaces: fontFaces,
-      fontFamily: fontFamily,
-      customBg: customBg,
-      customFg: customFg,
-      selectionColor: selectionColor,
-      sentenceAudioHighlightColor: sentenceAudioHighlightColor,
-      sentenceAudioTextColor: sentenceAudioTextColor,
-      linkColor: linkColor,
-      rubyColor: rubyColor,
-      nativeSelectionColor: nativeSelectionColor,
-      themeOverride: themeOverride,
-      einkMode: einkMode,
-      einkDark: einkDark,
-      motionEnabled: motionEnabled,
-      pageColumnsOverride: pageColumnsOverride,
-      columnGapOverridePx: columnGapOverridePx,
-    )}\n</style>';
+    return '<style>\n${css(settings: settings, contentLanguage: contentLanguage, fontFaces: fontFaces, fontFamily: fontFamily, customBg: customBg, customFg: customFg, selectionColor: selectionColor, sentenceAudioHighlightColor: sentenceAudioHighlightColor, sentenceAudioTextColor: sentenceAudioTextColor, linkColor: linkColor, rubyColor: rubyColor, nativeSelectionColor: nativeSelectionColor, themeOverride: themeOverride, einkMode: einkMode, einkDark: einkDark, motionEnabled: motionEnabled, pageColumnsOverride: pageColumnsOverride, columnGapOverridePx: columnGapOverridePx)}\n</style>';
   }
 
   /// 正文 `font-family` 的值：用户字体 -> 内容语言的明朝体/宋体链 -> `serif`。
@@ -324,10 +304,8 @@ html::after {
   /// 变量缺省 0.1 即旧值，脚本没跑到之前行为不变。`--fushi-ruby-snap` 是给脚本的开关，
   /// 只在这里（Apple 端）打出。
   static String _webKitRubyAnnotationCss() => switch (defaultTargetPlatform) {
-        TargetPlatform.iOS ||
-        TargetPlatform.macOS ||
-        TargetPlatform.linux =>
-          '''
+    TargetPlatform.iOS || TargetPlatform.macOS || TargetPlatform.linux =>
+      '''
 /* BUG-2472 / BUG-2482 / BUG-2724 / BUG-2779: WebKit only — see _webKitRubyAnnotationCss. */
 :root {
   --fushi-ruby-snap: 1;
@@ -337,8 +315,8 @@ ruby > rt, ruby > rtc {
   margin-block-end: calc(-1em * var(--fushi-ruby-pull, 0.1) - 0.1em) !important;
 }
 ''',
-        _ => '',
-      };
+    _ => '',
+  };
 
   /// BUG-2761：Mac / iOS 分页翻页时，**每页首行的振假名**被画到上一页底部，本页首行
   /// 只剩注音的下半截。根因是上面 BUG-2472 的负 `margin-block-start` 让注音不占行盒
@@ -459,14 +437,16 @@ body::after {
   /// 这里 iOS 只留 `-webkit-touch-callout: none`（链接/图片长按气泡，探针证明无害）。
   /// macOS 主指针是 fine，本块不生效，桌面原生选区/Ctrl+C/右键导出不受影响。
   static String _touchNativeSelectionCss() => switch (defaultTargetPlatform) {
-        TargetPlatform.iOS => '''
+    TargetPlatform.iOS =>
+      '''
 @media (pointer: coarse) {
   html, body, body * {
     -webkit-touch-callout: none !important;
   }
 }
 ''',
-        _ => '''
+    _ =>
+      '''
 @media (pointer: coarse) {
   html, body, body * {
     -webkit-user-select: none !important;
@@ -475,7 +455,7 @@ body::after {
   }
 }
 ''',
-      };
+  };
 
   static String _bodyFontFamily(String? customCssFamilies, String? language) {
     final String chain = contentFontFamilyCss(
@@ -533,11 +513,13 @@ body::after {
     int? columnGapOverridePx,
   }) {
     final int pageColumns = pageColumnsOverride ?? settings.pageColumns;
-    final int columnGapPx = columnGapOverridePx ?? ReaderLayoutDefaults.columnGapPx;
+    final int columnGapPx =
+        columnGapOverridePx ?? ReaderLayoutDefaults.columnGapPx;
     final _ThemeColors themedColors = _themeColors(
-        themeOverride ?? settings.theme,
-        customBg: customBg,
-        customFg: customFg);
+      themeOverride ?? settings.theme,
+      customBg: customBg,
+      customFg: customFg,
+    );
     // E-ink 覆盖发生在配色解析之后：正文/滚动条/UA color-scheme 全部吃纯黑白，
     // 高亮的「线式化」由末尾的 _einkOverrideCss 用级联覆盖（同选择器后出现者胜）。
     final _ThemeColors colors = einkMode
@@ -556,8 +538,10 @@ body::after {
     // (BUG-125)。同时去掉旧的 <rt> 不透明遮罩(原 BUG-123)，那个遮罩会连基字右缘一起
     // 抹掉(竖排 jukugo ruby 的振假名盒压在基字右缘上)。
     final String selectionBase = selectionColor ?? colors.selectionColor;
-    final String selectionOpaque =
-        composeOpaqueColor(selectionBase, colors.backgroundColor);
+    final String selectionOpaque = composeOpaqueColor(
+      selectionBase,
+      colors.backgroundColor,
+    );
     final String themedRubyCss = !einkMode && rubyColor != null
         ? 'ruby > rt, ruby > rtc { color: $rubyColor; }\n'
         : '';
@@ -571,8 +555,8 @@ body::after {
       resolvedFontFaces = fontFaces;
       resolvedFontFamily = _bodyFontFamily(fontFamily, contentLanguage);
     } else {
-      final ({String fontFamily, String fontFaces}) custom =
-          settings.buildCustomFontCss();
+      final ({String fontFamily, String fontFaces}) custom = settings
+          .buildCustomFontCss();
       resolvedFontFaces = custom.fontFaces;
       resolvedFontFamily = _bodyFontFamily(
         custom.fontFamily.isNotEmpty ? custom.fontFamily : null,
@@ -658,8 +642,9 @@ body::after {
     // 与本功能引入前的渲染完全一致（零回归），与 `textIndentCss`/`gridCss` 的
     // 「默认值产出空串」同构。
     final int fontWeight = settings.fontWeight;
-    final String fontWeightCss =
-        fontWeight == 400 ? '' : 'font-weight: $fontWeight !important;';
+    final String fontWeightCss = fontWeight == 400
+        ? ''
+        : 'font-weight: $fontWeight !important;';
 
     // 行首禁则用 `normal` 而不是 `strict`（BUG-2929）：二者唯一的差别是 CJ 类（小假名 っゃゅょ…
     // 与长音 ー）在 `strict` 下也不许出现在行首，于是「たった」「コート」恰好落在列尾时，
@@ -686,12 +671,12 @@ p {
     final double paragraphSpacing = math.max(0, settings.paragraphSpacing);
     final String paragraphSpacingCss = paragraphSpacing > 0
         ? (isVertical
-            ? '''
+              ? '''
 p {
   margin-right: ${paragraphSpacing}em !important;
   margin-left: ${paragraphSpacing}em !important;
 }'''
-            : '''
+              : '''
 p {
   margin-top: ${paragraphSpacing}em !important;
   margin-bottom: ${paragraphSpacing}em !important;
@@ -719,8 +704,8 @@ svg.block-img.blurred {
 
     final String vertKerningCss =
         settings.enableVerticalFontKerning && isVertical
-            ? 'font-kerning: normal !important;'
-            : '';
+        ? 'font-kerning: normal !important;'
+        : '';
 
     final String vpalCss = settings.enableFontVPAL && isVertical
         ? "font-feature-settings: 'vpal' 1 !important;"
@@ -765,29 +750,31 @@ svg.block-img.blurred {
     final String layoutCss = settings.isVnMode
         ? _vnLayoutCss(layoutArgs)
         : settings.isContinuousMode
-            ? _continuousLayoutCss(layoutArgs)
-            : _paginatedLayoutCss(
-                layoutArgs,
-                columnGapCss: columnGapCss,
-                columnWidthCss: columnWidthCss,
-                columnsCss: columnsCss,
-                contentClipCss: contentClipCss,
-              );
+        ? _continuousLayoutCss(layoutArgs)
+        : _paginatedLayoutCss(
+            layoutArgs,
+            columnGapCss: columnGapCss,
+            columnWidthCss: columnWidthCss,
+            columnsCss: columnsCss,
+            contentClipCss: contentClipCss,
+          );
 
-    final String readerStylePriority =
-        settings.prioritizeReaderStyles ? '' : ' !important';
+    final String readerStylePriority = settings.prioritizeReaderStyles
+        ? ''
+        : ' !important';
     // BUG-2761：只有多列分页有跨列问题，连续滚动与 VN 不发。
     final String rubyPageTopReserveCss =
         settings.isVnMode || settings.isContinuousMode
-            ? ''
-            : _webKitPaginatedRubyReserveCss(settings.lineHeight);
+        ? ''
+        : _webKitPaginatedRubyReserveCss(settings.lineHeight);
     // BUG-2819：末页够不着也只发生在多列分页。
     final String paginatedScrollEndCss =
         settings.isVnMode || settings.isContinuousMode
-            ? ''
-            : _webKitPaginatedScrollEndCss();
+        ? ''
+        : _webKitPaginatedScrollEndCss();
     // 中缝折痕：只有翻页模式恰好两栏（= 一屏两页）时才有「两页之间」。
-    final String pageCreaseCss = settings.pageCrease &&
+    final String pageCreaseCss =
+        settings.pageCrease &&
             !settings.isVnMode &&
             !settings.isContinuousMode &&
             pageColumns == 2
@@ -1739,8 +1726,11 @@ rtc > rt {
   font-size: 1em;
 }''';
 
-  static _ThemeColors _themeColors(String theme,
-      {String? customBg, String? customFg}) {
+  static _ThemeColors _themeColors(
+    String theme, {
+    String? customBg,
+    String? customFg,
+  }) {
     switch (theme) {
       case 'ecru-theme':
         return const _ThemeColors(
@@ -1839,9 +1829,9 @@ rtc > rt {
     if (s.startsWith('#')) {
       final String h = s.substring(1);
       int? hx(int start, int len) => int.tryParse(
-            len == 1 ? '${h[start]}${h[start]}' : h.substring(start, start + 2),
-            radix: 16,
-          );
+        len == 1 ? '${h[start]}${h[start]}' : h.substring(start, start + 2),
+        radix: 16,
+      );
       if (h.length == 3 || h.length == 4) {
         final int? r = hx(0, 1), g = hx(1, 1), b = hx(2, 1);
         if (r == null || g == null || b == null) return null;
@@ -1858,15 +1848,19 @@ rtc > rt {
     }
     final RegExpMatch? m = RegExp(r'^rgba?\(([^)]*)\)$').firstMatch(s);
     if (m == null) return null;
-    final List<String> parts =
-        m.group(1)!.split(',').map((String e) => e.trim()).toList();
+    final List<String> parts = m
+        .group(1)!
+        .split(',')
+        .map((String e) => e.trim())
+        .toList();
     if (parts.length < 3) return null;
     final int? r = int.tryParse(parts[0]);
     final int? g = int.tryParse(parts[1]);
     final int? b = int.tryParse(parts[2]);
     if (r == null || g == null || b == null) return null;
-    final double a =
-        parts.length >= 4 ? (double.tryParse(parts[3]) ?? 1.0) : 1.0;
+    final double a = parts.length >= 4
+        ? (double.tryParse(parts[3]) ?? 1.0)
+        : 1.0;
     return _Rgba(r, g, b, a);
   }
 

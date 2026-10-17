@@ -1096,21 +1096,6 @@ extension _VideoLayout on _VideoFushiPageState {
     );
   }
 
-  /// 把 [video]（media_kit `Video` 控件）与字幕跳转列表面板组成「真 push-aside」横向
-  /// 布局（TODO-121，asbplayer 同款）。面板可见时返回 `Row[Expanded(video), 面板列]`：
-  /// `Expanded` 收窄 `Video` 的 `Container` 宽度 → libmpv 纹理的 `FittedBox` 真正缩窄
-  /// （画面整体左移、不被遮），而面板作为同级兄弟列占右侧固定宽度（不再 overlay 盖画面）。
-  /// 隐藏时面板列宽收成 0、`Video` 占满整行（像素级等价于无面板的旧布局）。
-  ///
-  /// 窗口与全屏两条路径都各自调本函数包裹自己那棵 `Video`（窗口在 [_buildVideoBody]，
-  /// 全屏在 [_pushNeutralizedVideoFullscreen] 自建的全屏路由里）——media_kit 全屏推独立
-  /// root 路由、复用同一 controls builder，但 `Video` 控件由我们两处分别构建，故两路径
-  /// 都能真挤窄、且字幕 overlay（在 `Video` controls 内 `Positioned.fill`）随收窄后的
-  /// `Video` 区自动受限，不会画到被挤走的右侧或飘上面板。
-  ///
-  /// 可见性走 [_subtitleListVisible]（[ValueNotifier]，全屏路由也响应，BUG-120 同源）。
-  /// 面板列宽按界面宽取 ~28%（横屏右侧栏，clamp 240..420），参照 asbplayer / YouTube
-  /// transcript 侧栏占比。
   /// 桌面姿态下半屏的播放面板（见 [VideoTabletopPanel]）。
   Widget _videoTabletopPanel(VideoPlayerController controller) {
     return VideoTabletopPanel(
@@ -1127,6 +1112,21 @@ extension _VideoLayout on _VideoFushiPageState {
     );
   }
 
+  /// 把 [video]（media_kit `Video` 控件）与字幕跳转列表面板组成「真 push-aside」横向
+  /// 布局（TODO-121，asbplayer 同款）。面板可见时返回 `Row[Expanded(video), 面板列]`：
+  /// `Expanded` 收窄 `Video` 的 `Container` 宽度 → libmpv 纹理的 `FittedBox` 真正缩窄
+  /// （画面整体左移、不被遮），而面板作为同级兄弟列占右侧固定宽度（不再 overlay 盖画面）。
+  /// 隐藏时面板列宽收成 0、`Video` 占满整行（像素级等价于无面板的旧布局）。
+  ///
+  /// 窗口与全屏两条路径都各自调本函数包裹自己那棵 `Video`（窗口在 [_buildVideoBody]，
+  /// 全屏在 [_pushNeutralizedVideoFullscreen] 自建的全屏路由里）——media_kit 全屏推独立
+  /// root 路由、复用同一 controls builder，但 `Video` 控件由我们两处分别构建，故两路径
+  /// 都能真挤窄、且字幕 overlay（在 `Video` controls 内 `Positioned.fill`）随收窄后的
+  /// `Video` 区自动受限，不会画到被挤走的右侧或飘上面板。
+  ///
+  /// 可见性走 [_subtitleListVisible]（[ValueNotifier]，全屏路由也响应，BUG-120 同源）。
+  /// 面板列宽按界面宽取 ~28%（横屏右侧栏，clamp 240..420），参照 asbplayer / YouTube
+  /// transcript 侧栏占比。
   Widget _videoWithSubtitlePanel(
     VideoPlayerController controller,
     Widget video,

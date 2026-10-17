@@ -74,7 +74,7 @@ FushiFoldState resolveFushiFoldState({
     };
     if (!separating) continue;
     final Rect bounds = feature.bounds;
-    // 折痕宽高都 > 0 无法判方向（不是条带），跳过。
+    // 按条带长边判方向：宽 < 高 = 竖向折痕，否则按横向处理。
     final bool vertical = bounds.width < bounds.height;
     const double slack = 1;
     if (vertical) {
