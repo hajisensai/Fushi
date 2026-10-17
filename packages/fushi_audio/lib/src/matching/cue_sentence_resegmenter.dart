@@ -29,9 +29,10 @@ import 'epub_srt_matcher.dart';
 /// kagami 实测 32 条词中边界里 24 条是这么来的）。规则只有一条：**缝归缝隙期间
 /// 正在发声的 cue**——中间有未命中 cue 就按发声时长比例切给它们（0 字的缝 =
 /// ASR 幻觉，也认领，token 折进前一片后幻觉 cue 自然消失）；没有就在缝内第一个
-/// 标点/空白边界处切开分给两侧。判据是朗读速度：认领后该 cue 的「正文字数 /
-/// 时长」不得超过本次结果命中 cue 密度中位数的 [maxDensityRatio] 倍，旁白真跳过
-/// 一段时缝仍留着（行为与合缝前相同）。中位数是自适应的，日语（3–4 字/s）与英语
+/// 标点/空白边界处切开分给两侧（那一刀有一侧认领不下时，改试缝内其它边界，
+/// 按两侧「没出字的发声时长」与引号挑切点，见 `_fallbackCut`）。判据是朗读
+/// 速度：认领后该 cue 的「正文字数 / 时长」不得超过本次结果命中 cue 密度中位数
+/// 的 [maxDensityRatio] 倍，旁白真跳过一段时缝仍留着（行为与合缝前相同）。中位数是自适应的，日语（3–4 字/s）与英语
 /// （空格已剥、~12 字母/s）都不用配常量。
 ///
 /// 未命中 / 没有 token 时间 / 区间不相接的 cue 原样透传（对象复用）。产出的
@@ -250,21 +251,47 @@ class CueSentenceResegmenter {
 
       if (interior.isEmpty) {
         if (gapLen == 0) continue;
-        final int cut = _firstBoundary(
-          gapsFor(mi.sectionIndex),
-          gapStart,
-          gapEnd,
-        );
-        final int left = cut - gapStart;
-        final int right = gapEnd - cut;
-        if (left > 0 &&
-            affordable(cues[i], mi.normCharEnd - mi.normCharStart + left)) {
-          out[i] = _withRange(mi, mi.normCharStart, cut);
+        final _SectionGaps gaps = gapsFor(mi.sectionIndex);
+        final int lenI = mi.normCharEnd - mi.normCharStart;
+        final int lenJ = mj.normCharEnd - mj.normCharStart;
+        // 切在 [cut] 处、两侧都认领得起（某侧分到 0 字视为认领得起）。
+        bool fits(int cut) =>
+            (cut == gapStart || affordable(cues[i], lenI + cut - gapStart)) &&
+            (cut == gapEnd || affordable(cues[j], lenJ + gapEnd - cut));
+        final int first = _firstBoundary(gaps, gapStart, gapEnd);
+        // 第一个切点两侧都认领得起：照旧（原有行为不变）。否则改试缝内其它
+        // 边界（含整段给前一条 / 整段给后一条），见 [_fallbackCut]。
+        final int? cut = fits(first)
+            ? first
+            : _fallbackCut(
+                gaps: gaps,
+                prev: cues[i],
+                next: cues[j],
+                gapStart: gapStart,
+                gapEnd: gapEnd,
+                fits: fits,
+              );
+        if (cut != null) {
+          if (cut > gapStart) {
+            out[i] = _withRange(mi, mi.normCharStart, cut);
+            closedCount++;
+          }
+          if (cut < gapEnd) {
+            out[j] = _withRange(mj, cut, mj.normCharEnd);
+            closedCount++;
+          }
+          continue;
+        }
+        // 没有任何切点能整段认领：各侧按第一个切点能认领多少认领多少（旧行为），
+        // 剩下的缝留着——歌词模式把它灰显成「未朗读的原文」。
+        final int left = first - gapStart;
+        final int right = gapEnd - first;
+        if (left > 0 && affordable(cues[i], lenI + left)) {
+          out[i] = _withRange(mi, mi.normCharStart, first);
           closedCount++;
         }
-        if (right > 0 &&
-            affordable(cues[j], mj.normCharEnd - mj.normCharStart + right)) {
-          out[j] = _withRange(mj, cut, mj.normCharEnd);
+        if (right > 0 && affordable(cues[j], lenJ + right)) {
+          out[j] = _withRange(mj, first, mj.normCharEnd);
           closedCount++;
         }
         continue;
@@ -319,6 +346,97 @@ class CueSentenceResegmenter {
     return densities[densities.length ~/ 2];
   }
 
+  /// 第一个切点认领不下时，在缝 `[gapStart, gapEnd)` 的所有非词中边界里（含
+  /// `gapStart` = 整段给后一条、`gapEnd` = 整段给前一条）挑一个两侧都认领得起的
+  /// 切点；都认领不起返回 null（旁白真跳读，缝留着）。
+  ///
+  /// 典型形态（2026-10-17 用户报）：书「…いいんだ！　それで、ぎょっとしたやつが
+  /// 犯人！」」，ASR 漏转后半句，缝起点就是句界——第一个切点让前一条分 0 字、14 字
+  /// 全推给后一条 0.79 s 的「そして」，超读速上限被拒，缝原样留下；而前一条 5.5 s
+  /// 里末 token 之后还有 3 s 没出字，后半句正是在那里念的。
+  ///
+  /// 前一条应得的份额 `f`（0–1）按证据强弱依次取：
+  /// 1. **没出 token 的剩余时长**：前一条末 token 之后到它收声（漏听在它尾部）与
+  ///    后一条起点到首 token 之前（漏听在它开头），两者相差达 [forwardPauseMs]
+  ///    时整段归多的一侧；
+  /// 2. **引号**：缝与前一条末字同在一对引号里、后一条已在引号外（台词的后半截）
+  ///    → 归前一条；反之（或缝以开引号起头）→ 归后一条；
+  /// 3. 都不明确时按两侧剩余时长的比例分，没有剩余时长就对半。
+  ///
+  /// 候选里取左侧字数最接近 `f × 缝长` 的；并列时偏向 `f` 所指的一侧。
+  int? _fallbackCut({
+    required _SectionGaps gaps,
+    required AudioCue prev,
+    required AudioCue next,
+    required int gapStart,
+    required int gapEnd,
+    required bool Function(int) fits,
+  }) {
+    final List<int> candidates = <int>[
+      for (int p = gapStart; p <= gapEnd; p++)
+        if (p == gapStart || p == gapEnd || gaps.kindAt(p) != _GapKind.none) p,
+    ].where(fits).toList();
+    if (candidates.isEmpty) return null;
+    final int gapLen = gapEnd - gapStart;
+    final int tail = _unheardTailMs(prev);
+    final int head = _unheardHeadMs(next);
+    final int prevQuote = gaps.quoteIdAt(gapStart - 1);
+    final int nextQuote = gaps.quoteIdAt(gapEnd);
+    final bool inPrevQuote =
+        prevQuote != 0 &&
+        gaps.quoteIdAt(gapStart) == prevQuote &&
+        gaps.quoteIdAt(gapEnd - 1) == prevQuote;
+    final bool inNextQuote =
+        nextQuote != 0 &&
+        gaps.quoteIdAt(gapStart) == nextQuote &&
+        gaps.quoteIdAt(gapEnd - 1) == nextQuote;
+    final double f;
+    if (tail - head >= forwardPauseMs) {
+      f = 1;
+    } else if (head - tail >= forwardPauseMs) {
+      f = 0;
+    } else if (inPrevQuote && !inNextQuote) {
+      f = 1;
+    } else if ((inNextQuote && !inPrevQuote) || gaps.opensAt(gapStart)) {
+      f = 0;
+    } else if (tail + head > 0) {
+      f = tail / (tail + head);
+    } else {
+      f = 0.5;
+    }
+    final double target = f * gapLen;
+    int best = candidates.first;
+    double bestCost = double.infinity;
+    for (final int p in candidates) {
+      final double cost = ((p - gapStart) - target).abs();
+      final bool better =
+          cost < bestCost ||
+          (cost == bestCost && (f >= 0.5 ? p > best : false));
+      if (better) {
+        best = p;
+        bestCost = cost;
+      }
+    }
+    return best;
+  }
+
+  /// cue 末 token 之后到收声还有多久（扣掉 [densitySlackMs] 的发声容差）：
+  /// 这段时间里有语音、ASR 没吐字。
+  int _unheardTailMs(AudioCue cue) {
+    final CueTokenTiming? t = cue.tokenTiming;
+    if (t == null || t.isEmpty) return 0;
+    final int last = t.offsetsMs.reduce(math.max);
+    return math.max(0, cue.endMs - cue.startMs - last - densitySlackMs);
+  }
+
+  /// cue 起点到首 token 之前有多久（同样扣掉发声容差）。
+  int _unheardHeadMs(AudioCue cue) {
+    final CueTokenTiming? t = cue.tokenTiming;
+    if (t == null || t.isEmpty) return 0;
+    final int first = t.offsetsMs.reduce(math.min);
+    return math.max(0, first - densitySlackMs);
+  }
+
   /// `[from, to]` 内第一个不在词中的位置（标点/空白间隙），没有就 [to]。
   static int _firstBoundary(_SectionGaps gaps, int from, int to) {
     for (int p = from; p <= to; p++) {
@@ -364,7 +482,7 @@ class CueSentenceResegmenter {
     // 1. token 流：每个 token 的发射时间与正文归一化偏移。
     final List<_Token> tokens = <_Token>[];
     for (int c = from; c <= to; c++) {
-      _appendTokens(tokens, cues[c], matches[c], gaps.norm.text);
+      _appendTokens(tokens, c, cues[c], matches[c], gaps.norm.text);
     }
     if (tokens.isEmpty) return _RunOutput.unchanged(cues, matches, from, to);
 
@@ -433,8 +551,21 @@ class CueSentenceResegmenter {
         // 句中续接（前面是逗号或无标点：「お前、｜喋んなければ…」、「…階』｜だ。」）
         // 与引号内的后半截台词（「…やばっ！｜めっちゃ似合ってる…」」）永远留在
         // 前一片；只有新台词或引号外「句末 + 停顿」后的新句才往后并。
+        //
+        // 但前后两片的 token 分属两条原 cue、且前一条在末 token 之后还有远多于后一条
+        // 开头的「没出字的发声时长」时，这段正文就是在前一条的尾巴里念的（ASR 漏转
+        // 了后半句），留在前一片——与合缝 [_fallbackCut] 同一判据，否则合缝刚归给
+        // 前一条的缝又在这里被甩到后一条，挤进它不到 1 s 的时长里。
+        final bool unheardInPrevTail =
+            next < pieceTokens.length &&
+            pieceTokens[next].first.cue != pieces.last.tokens.last.cue &&
+            pieces.last.unheardTailMs -
+                    (pieceTokens[next].first.timeMs -
+                        pieceTokens[next].first.cueStartMs) >=
+                forwardPauseMs;
         final bool forward =
             next < pieceTokens.length &&
+            !unheardInPrevTail &&
             (gaps.opensAt(edges[k]) ||
                 (gaps.kindAt(edges[k]) == _GapKind.sentence &&
                     gaps.quoteDepthAt(edges[k]) == 0 &&
@@ -551,6 +682,7 @@ class CueSentenceResegmenter {
   /// 被甩到下一句。
   void _appendTokens(
     List<_Token> out,
+    int cueIndex,
     AudioCue cue,
     CueMatch m,
     String bookNorm,
@@ -579,6 +711,7 @@ class CueSentenceResegmenter {
       }
       out.add(
         _Token(
+          cue: cueIndex,
           text: timing.tokens[k],
           timeMs: timeMs,
           bookPos: bookPos,
@@ -715,7 +848,13 @@ enum _GapKind { none, soft, sentence }
 /// （标点/空白/引号）→ [_GapKind.soft]；夹着的字符里有句末标点 →
 /// [_GapKind.sentence]。
 class _SectionGaps {
-  _SectionGaps._(this.norm, this._kinds, this._opens, this._depth);
+  _SectionGaps._(
+    this.norm,
+    this._kinds,
+    this._opens,
+    this._depth,
+    this._quoteIds,
+  );
 
   factory _SectionGaps.build(String original) {
     final NormalizedTextWithOffsets norm =
@@ -725,15 +864,27 @@ class _SectionGaps {
     final List<bool> opens = List<bool>.filled(n + 1, false);
     // 每个保留字符处的引号嵌套深度（「』等配对符号，不平衡时夹到 0）。
     final List<int> depth = List<int>.filled(n + 1, 0);
+    // 每个保留字符所在最内层引号对的编号（0 = 不在引号里）：区分「同一对引号」
+    // 与「深度相同、却是后一对引号」（「…」「…」）。
+    final List<int> quoteIds = List<int>.filled(n + 1, 0);
+    final List<int> stack = <int>[];
+    int nextQuoteId = 0;
     int d = 0;
     int scanned = 0;
     for (int p = 0; p < n; p++) {
       for (; scanned < norm.starts[p]; scanned++) {
         final String c = original[scanned];
-        if (_openingQuotes.contains(c)) d++;
-        if (_closingQuotes.contains(c) && d > 0) d--;
+        if (_openingQuotes.contains(c)) {
+          d++;
+          stack.add(++nextQuoteId);
+        }
+        if (_closingQuotes.contains(c) && d > 0) {
+          d--;
+          stack.removeLast();
+        }
       }
       depth[p] = d;
+      quoteIds[p] = stack.isEmpty ? 0 : stack.last;
     }
     for (int p = 1; p < n; p++) {
       final int from = norm.ends[p - 1];
@@ -751,7 +902,7 @@ class _SectionGaps {
         opens[p] = _openingMarks.contains(between[k]);
       }
     }
-    return _SectionGaps._(norm, kinds, opens, depth);
+    return _SectionGaps._(norm, kinds, opens, depth, quoteIds);
   }
 
   final NormalizedTextWithOffsets norm;
@@ -765,6 +916,11 @@ class _SectionGaps {
 
   final List<int> _depth;
 
+  final List<int> _quoteIds;
+
+  /// 位置 [p] 的保留字符所在最内层引号对的编号（0 = 地の文 / 越界）。
+  int quoteIdAt(int p) => p >= 0 && p < _quoteIds.length ? _quoteIds[p] : 0;
+
   /// 位置 [p] 的保留字符处于几层引号之内（0 = 地の文）。
   int quoteDepthAt(int p) => p >= 0 && p < _depth.length ? _depth[p] : 0;
 
@@ -777,6 +933,7 @@ class _SectionGaps {
 
 class _Token {
   const _Token({
+    required this.cue,
     required this.text,
     required this.timeMs,
     required this.bookPos,
@@ -784,6 +941,8 @@ class _Token {
     required this.cueEndMs,
   });
 
+  /// 该 token 所属原 cue 的下标。
+  final int cue;
   final String text;
   final int timeMs;
   final int bookPos;
@@ -818,6 +977,9 @@ class _Piece {
 
   /// 片内最后一个 token 所属原 cue 的终点。
   int get lastCueEndMs => tokens.last.cueEndMs;
+
+  /// 片内最后一个 token 之后、它所属原 cue 收声之前的时长（那段语音没被听写出来）。
+  int get unheardTailMs => math.max(0, lastCueEndMs - lastTokenMs);
 
   /// 片首 token 离它所属原 cue 起点多远：远了说明那条原 cue 开头有一段语音没被
   /// 听写出来（RNN-T 整段漏字）。

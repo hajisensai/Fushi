@@ -416,6 +416,111 @@ void main() {
     });
   });
 
+  group('CueSentenceResegmenter 合缝：第一个切点认领不下时改试其它切点', () {
+    List<EpubSection> book(String text) => <EpubSection>[
+      EpubSection(index: 0, href: 'ch0.xhtml', text: text),
+    ];
+    List<int> range(CueMatch m) => <int>[m.normCharStart, m.normCharEnd];
+
+    // 归一化：あなたが犯人だっていってまわればいいんだ(0-20) それで(20-23)
+    // ぎょっとしたやつが犯人(23-34) そして(34-37) 彼は笑った(37-42)。
+    List<AudioCue> reportedCues() => <AudioCue>[
+      // 5.53 s，ASR 只吐了前半句 20 字（末 token 在 2.1 s），后 3.4 s 没出字。
+      _cue(0, 'あなたが犯人だっていってまわればいいんだ', start: 0, end: 5530),
+      // 0.79 s 的「そして」，开头没有空白。
+      _cue(1, 'そして', start: 5600, end: 6390, times: <int>[60, 160, 260]),
+      _cue(2, '彼は笑った', start: 6400, end: 7400),
+    ];
+    List<CueMatch> reportedMatches() => <CueMatch>[
+      _hit(0, 0, 20),
+      _hit(1, 34, 37),
+      _hit(2, 37, 42),
+    ];
+
+    test('用户报的形态：缝起点就是句界、后一条认领不下 → 整段归末尾有没出字时长的前一条', () {
+      final CueResegmentResult out = _r.resegment(
+        sections: book(
+          '「あなたが犯人だ、っていってまわればいいんだ！　'
+          'それで、ぎょっとしたやつが犯人！」そして、彼は笑った。',
+        ),
+        cues: reportedCues(),
+        result: _result(reportedMatches()),
+      );
+      expect(out.stats.gapsClosed, 1);
+      expect(out.cues, hasLength(3));
+      expect(range(out.result.matches[0]), <int>[0, 34]);
+      expect(range(out.result.matches[1]), <int>[34, 37]);
+      // 时间不动：前一条仍收在原收声点，后一条仍是原来那 0.79 s。
+      expect(out.cues[0].startMs, 0);
+      expect(out.cues[0].endMs, 5530);
+      expect(out.cues[1].startMs, 5600);
+      expect(out.cues[1].endMs, 6390);
+    });
+
+    test('地の文同形：句末 + 停顿也不把前一条尾巴里漏转的句子甩给后一条', () {
+      final CueResegmentResult out = _r.resegment(
+        sections: book(
+          'あなたが犯人だっていってまわればいいんだ。'
+          'それで、ぎょっとしたやつが犯人。そして、彼は笑った。',
+        ),
+        cues: reportedCues(),
+        result: _result(reportedMatches()),
+      );
+      expect(out.stats.gapsClosed, 1);
+      expect(out.cues, hasLength(3));
+      expect(range(out.result.matches[0]), <int>[0, 34]);
+      expect(range(out.result.matches[1]), <int>[34, 37]);
+      expect(out.cues[0].endMs, 5530);
+      expect(out.cues[1].startMs, 5600);
+    });
+
+    test('没出字时长不明确时按引号挑：台词后半截与前一条同在一对引号里 → 归前一条', () {
+      // 归一化：あいうえおかきくけこ(0-10) さしす(10-13) たちつてと(13-18)
+      // なにぬねの(18-23) まみむめもやゆよ(23-31)。前一条的 token 铺满整条 cue、
+      // 后一条首 token 紧贴起点：两侧都没有多余时长。候选 13（前 +3 / 后 +5）与
+      // 18（整段给前一条）都认领得起；对半分会挑 13，引号让它挑 18。
+      final CueResegmentResult out = _r.resegment(
+        sections: book('「あいうえお、かきくけこ！　さしす、たちつてと」なにぬねの。まみむめもやゆよ。'),
+        cues: <AudioCue>[
+          _cue(
+            0,
+            'あいうえおかきくけこ',
+            start: 0,
+            end: 3000,
+            times: List<int>.generate(10, (int i) => 200 + i * 290),
+          ),
+          _cue(1, 'なにぬねの', start: 3000, end: 4600),
+          _cue(2, 'まみむめもやゆよ', start: 4600, end: 7100),
+        ],
+        result: _result(<CueMatch>[
+          _hit(0, 0, 10),
+          _hit(1, 18, 23),
+          _hit(2, 23, 31),
+        ]),
+      );
+      expect(out.stats.gapsClosed, 1);
+      expect(range(out.result.matches[0]), <int>[0, 18]);
+      expect(range(out.result.matches[1]), <int>[18, 23]);
+    });
+
+    test('旁白真跳读（缝里有标点、前一条也有没出字时长）：哪个切点都超读速，仍拒收', () {
+      const String skipped = 'あいうえお、かきくけこ、さしすせそ、たちつてと、なにぬねの、はひふへほ、まみむめも、やゆよわを。';
+      final AudioCue a = _cue(0, '夢見る時がある', start: 0, end: 3000);
+      final AudioCue b = _cue(1, '転入生がやってくる', start: 3000, end: 6500);
+      final CueResegmentResult out = _r.resegment(
+        sections: book('夢見る時がある。$skipped転入生がやってくる。'),
+        cues: <AudioCue>[a, b],
+        result: _result(<CueMatch>[_hit(0, 0, 7), _hit(1, 47, 56)]),
+      );
+      expect(out.stats.gapsClosed, 0);
+      expect(out.stats.changed, isFalse);
+      expect(identical(out.cues[0], a), isTrue);
+      expect(identical(out.cues[1], b), isTrue);
+      expect(range(out.result.matches[0]), <int>[0, 7]);
+      expect(range(out.result.matches[1]), <int>[47, 56]);
+    });
+  });
+
   group('CueSentenceResegmenter 无 token 正文片的归属', () {
     List<EpubSection> sec(String text) => <EpubSection>[
       EpubSection(index: 0, href: 'ch0.xhtml', text: text),

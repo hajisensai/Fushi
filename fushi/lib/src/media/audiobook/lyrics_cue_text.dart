@@ -13,6 +13,10 @@ class LyricsCueText {
   final List<EpubRubyAnnotation> rubies;
 }
 
+/// 两条 cue 之间的未认领正文至少这么多个有读音的字才在歌词页灰显
+/// （[LyricsCueTextResolver.skippedTextBetween]）。
+const int kLyricsSkippedTextMinChars = 2;
+
 /// Resolves display text without changing transcript cues or their token timing.
 /// Uses the same ruby-free chapter text and UTF-16 normalization as the matcher.
 ///
@@ -89,6 +93,66 @@ class LyricsCueTextResolver {
     return LyricsCueText.plain(cue.text);
   }
 
+  /// 两条相邻 cue 之间**没有任何 cue 认领**的正文（朗读者跳读，或合缝也认领不下
+  /// 的 ASR 漏转），按歌词行同一取法带回 ruby；没有这样的正文返回 null。
+  ///
+  /// 只在同章、区间都合法、[prev] 止于 [next] 起点之前时产生——跨章、开头结尾、
+  /// 区间重叠或乱序一律不算。缝的归一化字数（有读音的字）不足
+  /// [kLyricsSkippedTextMinChars] 不算（只剩标点 / 空白，或模糊命中漏掉的一个
+  /// 词尾字）。文本区间与两侧歌词行首尾相接：从 [prev] 补完收尾标点之后起，到
+  /// [next] 往回补的开括号之前止，再去掉两端空白。
+  ///
+  /// 纯显示：不改 cue、不改匹配区间，统计 / 制卡 / 高亮仍只认 cue 区间，所以
+  /// 已落库的书不用重新对齐就能看到。
+  LyricsCueText? skippedTextBetween(AudioCue prev, AudioCue next) {
+    final SubtitleRematchFragment? a = SubtitleRematchCodec.tryDecode(
+      prev.textFragmentId,
+    );
+    final SubtitleRematchFragment? b = SubtitleRematchCodec.tryDecode(
+      next.textFragmentId,
+    );
+    if (a == null ||
+        b == null ||
+        a.sectionIndex != b.sectionIndex ||
+        a.sectionIndex < 0 ||
+        a.sectionIndex >= book.chapters.length ||
+        a.normCharStart < 0 ||
+        a.normCharEnd <= a.normCharStart ||
+        b.normCharEnd <= b.normCharStart ||
+        b.normCharStart - a.normCharEnd < kLyricsSkippedTextMinChars) {
+      return null;
+    }
+    final _Chapter chapter = _chapter(a.sectionIndex);
+    final String normalized = chapter.norm.text;
+    final int gapStart = a.normCharEnd;
+    final int gapEnd = b.normCharStart;
+    if (gapEnd >= normalized.length ||
+        !_isBoundary(normalized, gapStart) ||
+        !_isBoundary(normalized, gapEnd)) {
+      return null;
+    }
+    final String text = chapter.text;
+    int from = _extendClosing(
+      text,
+      chapter.norm.ends[gapStart - 1],
+      chapter.norm.starts[gapStart],
+    );
+    int to = _extendOpening(text, chapter.norm.starts[gapEnd]);
+    while (from < to && _isBlank(text.codeUnitAt(from))) {
+      from++;
+    }
+    while (to > from && _isBlank(text.codeUnitAt(to - 1))) {
+      to--;
+    }
+    if (from >= to) return null;
+    final List<EpubRubyAnnotation> rubies = <EpubRubyAnnotation>[];
+    _collectRubies(rubies, chapter, from, to, 0);
+    return LyricsCueText(text.substring(from, to), rubies);
+  }
+
+  static bool _isBlank(int c) =>
+      c == 0x20 || c == 0x09 || c == 0x0a || c == 0x0d || c == 0x3000;
+
   /// 把章内 `[from, to)` 里的 ruby 平移到输出坐标（输出已有 [offset] 码元）。
   /// 被 cue 边界切开的 ruby 丢弃：半个基底配整个读音比没有更糟。
   static void _collectRubies(
@@ -143,8 +207,9 @@ class LyricsCueTextResolver {
 
   static final Set<int> _kOpening = '「『（(［[｛{【〔〈《〖〘〚“‘'.codeUnits.toSet();
 
-  static final Set<int> _kClosing =
-      '。．｡.、，､,！!？?…‥」』）)］]｝}】〕〉》〗〙〛”’～〜：:；;♪'.codeUnits.toSet();
+  static final Set<int> _kClosing = '。．｡.、，､,！!？?…‥」』）)］]｝}】〕〉》〗〙〛”’～〜：:；;♪'
+      .codeUnits
+      .toSet();
 
   static bool _isBoundary(String text, int offset) =>
       offset == text.length ||

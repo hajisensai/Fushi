@@ -3886,6 +3886,8 @@
   "lyrics_mode_hint_body": "Lyrics mode has its own font size setting. You can adjust it in ⚙ Settings → Typography.",
   "lyrics_mode_hint_title": "Lyrics mode",
   "lyrics_sentence_replay": "Replay current sentence",
+  "lyrics_skipped_text_show": "Show unread book text",
+  "lyrics_skipped_text_show_hint": "Book text the narrator skipped, or the transcript could not match, appears between lines in small grey text",
   "lyrics_sweep": "Word-by-word sweep",
   "lyrics_sweep_hint": "Light up the current line as it is read. Turn off to show the whole line in one solid color",
   "lyrics_text_color": "Lyrics text color",

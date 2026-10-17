@@ -1,0 +1,10 @@
+## BUG-3481 · 有声书 ASR 漏转后半句时合缝切点落空、整句无人认领
+- **报告**：2026-10-17（用户：群反馈；书原文「あなたが犯人だ、っていってまわればいいんだ！　それで、ぎょっとしたやつが犯人！」」，cue #1879（5.53 s）只到「いいんだ！」，后半句在歌词模式 / 阅读器高亮 / 制卡里整句消失）
+- **真实性**：✅ 真 bug。设备端转录漏转了后半句（ASR 本体在外部仓库 fushi-subtitles，不在本仓改），匹配后它成了两条命中 cue 之间无人认领的缝。合缝 `CueSentenceResegmenter._closeGaps`（`packages/fushi_audio/lib/src/matching/cue_sentence_resegmenter.dart`，基线 e71088388a 的 `:251-270`）在没有中间 cue 时只试**缝内第一个**标点 / 空白边界（`_firstBoundary`）：本例缝起点就是句界（「！　」），前一条分 0 字、14 字全推给后一条 0.79 s 的「そして」，超读速上限（中位数 2 倍）被拒，缝原样留下。而前一条 5.53 s 里末 token 之后还有 3 s 多没出字，后半句正是在那里念的。歌词模式 / 高亮 / 制卡 / 统计都按 `fushi-cue://` 区间取正文，于是这 14 字在所有地方都不出现。
+- **[x] ① 已修复** —
+  - 合缝：第一个切点两侧认领得起时行为不变；认领不下时改试缝内其它边界（含整段给前一条 / 整段给后一条），仍受密度上限约束，挑法依次看「两侧没出字的发声时长」（前一条末 token 之后 vs 后一条首 token 之前，相差 ≥ `forwardPauseMs`）、「缝是否与前一条 / 后一条同在一对引号里」、两侧剩余时长比例（`cue_sentence_resegmenter.dart:252` 起的无中间 cue 分支、`_fallbackCut` `:367`、`_unheardTailMs` / `_unheardHeadMs` `:425`；`_SectionGaps.quoteIdAt` `:922` 区分同一对引号与相邻另一对）。都认领不起（旁白真跳读）时退回旧的部分认领，缝留着。
+  - 建串时无 token 正文片的归属（`:559` `unheardInPrevTail`）同一判据：前后两片分属两条原 cue、前一条尾巴的没出字时长远多于后一条开头时留在前一片，否则合缝刚归给前一条的句子又会被「句末 + 停顿」规则甩回后一条。
+  - 跳读灰显（显示层）：对齐后仍无人认领的正文在歌词模式里作为两行之间的一行灰色小字（`lyrics_cue_text.dart:107` `skippedTextBetween`；`lyrics_mode_html.dart:162` 生成 `.ly-gap` 行、`:407` 样式、`:858` `_lyMarkGaps` 随 setCue 同步透明度阶梯、`:1330` 灰显行不查词、`:1438` 开关热更）。不是 `.cue`：不进当前句高亮 / 逐字扫过、不计时、点按不跳播放、不计字数、不进收藏 / caret。只在同章相邻两条已匹配 cue 之间产生；跨章、章首章尾、区间重叠 / 乱序、缝内有读音的字少于 2 个（`kLyricsSkippedTextMinChars`）都不显示。设置「显示未朗读的原文」（`lyrics_show_skipped_text`，默认开，歌词模式「文字与颜色」组）。
+  - 已落库的书：合缝修复只在重新导入、或从 ASR 任务目录重新「使用字幕」时生效（不做迁移入口）；灰显是显示层，按现有 cue 区间计算，已落库的书直接可见。
+- **[x] ② 已加自动化测试** — `packages/fushi_audio/test/matching/cue_sentence_resegmenter_test.dart`「合缝：第一个切点认领不下时改试其它切点」组 4 条（本例形态、地の文同形、引号续接、旁白真跳读仍拒收；前三条在基线上红）；原「模糊命中的词尾…第一个标点边界处切开」用例不变作为原切点不变的回归。`fushi/test/media/audiobook/lyrics_cue_text_test.dart`「skipped book text between cues」组 8 条（取文范围、边界规则、ruby、HTML 行结构 / 非 cue 身份 / 开关 body class、透明度阶梯、不查词）。
+- **备注**：真排版证据用 headless Chrome 跑真生成的歌词页（横 / 竖、明 / 暗），见 PR。

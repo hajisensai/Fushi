@@ -268,6 +268,13 @@ class ReaderSettings {
   bool get lyricsSweep => _get<bool>('lyrics_sweep', true);
   Future<void> setLyricsSweep(bool v) => _set<bool>('lyrics_sweep', v);
 
+  /// 歌词模式在两句之间灰显没被任何字幕认领的原文（朗读者跳读 / 转录没对上）。
+  /// 默认 `true`；纯显示，不影响高亮、计时、统计。
+  bool get lyricsShowSkippedText =>
+      _get<bool>('lyrics_show_skipped_text', true);
+  Future<void> setLyricsShowSkippedText(bool v) =>
+      _set<bool>('lyrics_show_skipped_text', v);
+
   /// 歌词模式宽屏双栏左右互换（默认 `false` = 封面与播放卡在左、歌词在右）。
   bool get lyricsPanelMirrored => _get<bool>('lyrics_panel_mirrored', false);
   Future<void> setLyricsPanelMirrored(bool v) =>
