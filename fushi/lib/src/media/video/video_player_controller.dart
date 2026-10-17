@@ -2252,6 +2252,19 @@ class VideoPlayerController extends ChangeNotifier
     required Stream<Object?> changes,
     required int minTrackCount,
     Duration timeout = const Duration(seconds: 5),
+  }) => _waitForTrackCount(
+    currentRealCount: currentRealCount,
+    changes: changes,
+    minTrackCount: minTrackCount,
+    timeout: timeout,
+  );
+
+  /// [waitForSubtitleTrackCount] 的实现，音轨就绪等待（[waitForRealAudioTracks]）共用。
+  static Future<bool> _waitForTrackCount({
+    required int Function() currentRealCount,
+    required Stream<Object?> changes,
+    required int minTrackCount,
+    Duration timeout = const Duration(seconds: 5),
   }) async {
     if (currentRealCount() >= minTrackCount) return true;
     final Completer<bool> ready = Completer<bool>();
@@ -2281,7 +2294,84 @@ class VideoPlayerController extends ChangeNotifier
   /// 切换音轨。未 [load] 时 no-op 安全。
   Future<void> selectAudioTrack(AudioTrack track) async {
     claimDiscTrackOwnership();
+    _audioSelectionSeq++;
     await _player?.setAudioTrack(track);
+  }
+
+  /// 每次显式选轨（[selectAudioTrack]）+1。[adoptNativeAudioSelection] 读 mpv 实际
+  /// 选轨要跨一个 await，期间若有显式选轨（续播恢复 / 用户点选）就放弃对齐，不能拿
+  /// 读到的旧 `aid` 把刚选的轨盖回去。
+  int _audioSelectionSeq = 0;
+
+  /// 把 media_kit 的选轨状态对齐到 libmpv **实际在放**的音轨（BUG：视频卡句子音频
+  /// 是英语配音，用户听的是日语轨）。
+  ///
+  /// media_kit 的 `state.track.audio` 只在调用 `setAudioTrack` 时更新、不跟 mpv 的
+  /// `aid`；而 `open()` 会把它重置成 `auto`。mpv 这边，`aid` 一旦被设过就会沿用到之后
+  /// 加载的文件（实测：选日语 → stop + loadfile 重开 → `aid` 仍是日语轨）。于是「以前
+  /// 选过一次日语」的用户再打开默认轨是英语的片子：耳朵里是日语，[currentAudioStreamIndex]
+  /// 却是 null，制卡 ffmpeg 不加 `-map` 选了容器默认的英语轨。
+  ///
+  /// 只在 media_kit 仍是 `auto` 时对齐（app 已显式选过轨就以它为准）；写回的是 mpv
+  /// 当前同一个 `aid`，播放不会切轨。
+  @visibleForTesting
+  static Future<bool> adoptNativeAudioSelection(
+    Player player, {
+    required bool Function() isCurrent,
+    required int Function() selectionSeq,
+  }) async {
+    final int seqAtStart = selectionSeq();
+    try {
+      final bool ready = await waitForRealAudioTracks(player);
+      if (!ready || !isCurrent()) return false;
+      final dynamic native = player.platform;
+      if (native == null) return false;
+      final Object? aid = await native.getPropertyAsync('aid');
+      if (!isCurrent() || selectionSeq() != seqAtStart) return false;
+      final AudioTrack? track = adoptableNativeAudioTrack(
+        selectedId: player.state.track.audio.id,
+        nativeAid: aid?.toString(),
+        tracks: player.state.tracks.audio,
+      );
+      if (track == null) return false;
+      await player.setAudioTrack(track);
+      return true;
+    } catch (_) {
+      // 换片 / 销毁中途读写失败：保持原状，制卡按旧的「跟随默认」处理。
+      return false;
+    }
+  }
+
+  /// [adoptNativeAudioSelection] 的判定（纯函数）：media_kit 记的是 `auto`、mpv 实际
+  /// `aid` 是列表里一条真实轨时返回那条轨，否则 null（不动）。
+  @visibleForTesting
+  static AudioTrack? adoptableNativeAudioTrack({
+    required String selectedId,
+    required String? nativeAid,
+    required List<AudioTrack> tracks,
+  }) {
+    if (selectedId != 'auto') return null;
+    final String? aid = nativeAid?.trim();
+    if (aid == null || aid.isEmpty || aid == 'auto' || aid == 'no') {
+      return null;
+    }
+    for (final AudioTrack track in tracks) {
+      if (track.id == aid) return track;
+    }
+    return null;
+  }
+
+  /// 等 [player] 解析出至少两条真实音轨（单轨片子 ffmpeg 默认就选它，无需对齐）。
+  /// 最多 5 秒，事件驱动，与字幕轨就绪等待同一内核。
+  static Future<bool> waitForRealAudioTracks(Player player) {
+    int realCount() => player.state.tracks.audio
+        .where((AudioTrack t) => t.id != 'auto' && t.id != 'no')
+        .length;
+    return _waitForTrackCount(
+      currentRealCount: realCount,
+      changes: player.stream.tracks,
+      minTrackCount: 2,
+    );
   }
 
   /// 当前选中音轨在「真实音轨列表」中的 0-based 序号（ffmpeg `-map 0:a:<idx>`
@@ -3367,6 +3457,17 @@ class VideoPlayerController extends ChangeNotifier
         AudioTrack.uri(nativePlaybackUri(externalAudioTrackUrl)),
       );
       if (!_isCurrentLoad(player, loadToken)) return; // 外挂音轨后换片/销毁。
+    }
+    // mpv 沿用上一个文件选过的 `aid`，media_kit 却在 open 时把选轨重置成 auto：对齐
+    // 回实际在放的轨，制卡 / 音轨面板才和耳朵里的一致（见 [adoptNativeAudioSelection]）。
+    if (!openBlurayMenu) {
+      unawaited(
+        adoptNativeAudioSelection(
+          player,
+          isCurrent: () => _isCurrentLoad(player, loadToken),
+          selectionSeq: () => _audioSelectionSeq,
+        ),
+      );
     }
 
     // 关闭 libmpv 画面字幕渲染——字幕统一走可点击 overlay（cue 同步 + 逐字查词）。
