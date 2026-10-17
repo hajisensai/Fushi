@@ -3571,13 +3571,13 @@ function isRedirectGlossary(glossary) {
 
 function createGlossarySectionWrapper(entry) {
     // TODO-804: a term dictionary disabled in 词典管理 (its show/hide switch off)
-    // is added to hiddenDictionaryNames by the host. Term dictionaries are still
-    // registered in the native engine (see AppModel.bucketDictPaths — hidden term
-    // dicts stay in the bucket because filtering happens at render time), so the
-    // FFI lookup still returns their glossaries. Drop them here, the single
-    // grouping point shared by every term-glossary render path, so a disabled
-    // dictionary's definitions never surface in the lookup popup. Mirrors how
-    // collapsedDictionaryNames is consumed in createGlossarySection.
+    // is added to hiddenDictionaryNames by the host. Since BUG-3454 hidden
+    // dictionaries are no longer loaded into the native engine at all
+    // (AppModel.bucketDictPaths); this filter stays as a second line of defence
+    // for the window between a toggle and the scheduled engine reload. Drop them
+    // here, the single grouping point shared by every term-glossary render path,
+    // so a disabled dictionary's definitions never surface in the lookup popup.
+    // Mirrors how collapsedDictionaryNames is consumed in createGlossarySection.
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     const grouped = {};
     // glossaryIndex 是**原始** entry.glossaries 下标，不是分组后的序号：它是屏幕 DOM 与

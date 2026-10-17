@@ -4,8 +4,8 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// [bucketDictPaths] 是 FFI 引擎词典分桶的单一真相（同步 _rebuildDictPathsCache 与
 /// 异步 _rebuildDictPathsCacheAsync 共用）。此前分桶 switch 在两处逐字复制、无法单测
-/// （依赖真词典 + 真目录 + FFI）。本测试钉死分桶规则：term 隐藏仍进桶（渲染期再过滤）；
-/// freq/pitch/kanji 隐藏不进桶（BUG-177/TODO-094）；不存在的目录跳过。
+/// （依赖真词典 + 真目录 + FFI）。本测试钉死分桶规则：隐藏的词典四种类型一律不进桶
+/// （BUG-177/TODO-094/BUG-3454）；不存在的目录跳过。
 void main() {
   DictPathEntry e(DictionaryType type, String path,
           {bool exists = true, bool hidden = false, bool hasKanji = false}) =>
@@ -32,11 +32,14 @@ void main() {
       expect(b.kanji, <String>['/k1']);
     });
 
-    test('term 隐藏仍进桶（渲染期再过滤）', () {
+    test('term 隐藏不进桶（BUG-3454）', () {
       final b = bucketDictPaths(<DictPathEntry>[
-        e(DictionaryType.term, '/t', hidden: true),
+        e(DictionaryType.term, '/hidden', hidden: true),
+        e(DictionaryType.term, '/visible'),
       ]);
-      expect(b.term, <String>['/t'], reason: 'term 隐藏仍要进引擎,渲染期才过滤');
+      expect(b.term, <String>['/visible'],
+          reason: '引擎在 Dart 过滤之前就按最长匹配截断到 maxResults：关掉的词典的'
+              '长匹配会把可见词典的结果挤出 top-N，高亮也按它的长度画');
     });
 
     test('freq/pitch/kanji 隐藏不进桶（BUG-177/TODO-094）', () {
@@ -91,7 +94,7 @@ void main() {
       final b = bucketDictPaths(<DictPathEntry>[
         e(DictionaryType.term, '/mixed', hidden: true, hasKanji: true),
       ]);
-      expect(b.term, <String>['/mixed'], reason: 'term 隐藏仍进 term 桶,渲染期过滤');
+      expect(b.term, isEmpty, reason: '隐藏的 term 不进 term 桶(BUG-3454)');
       expect(b.kanji, isEmpty, reason: '隐藏的混合词典 kanji 部分不得冒出(kanji 桶无渲染期过滤)');
     });
 
