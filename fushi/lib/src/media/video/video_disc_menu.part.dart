@@ -432,7 +432,8 @@ extension VideoDiscMenuController on VideoPlayerController {
     if (hadSecondaryTrack && _player != null) {
       // Queued, not awaited (BUG-3453): this reset is synchronous and must run to
       // the end; a rejected cleanup is evidence, not a reason to leave the title
-      // half-invalidated. Later native requests still run after it (FIFO).
+      // half-invalidated. Current mpv dispatches one client's requests FIFO, so
+      // later requests run after it; libmpv does not promise that ordering.
       unawaited(
         runCheckedVideoDiscCommand(_player!.platform, <String>[
           'set', 'secondary-sid', 'no',
@@ -488,16 +489,17 @@ extension VideoDiscMenuController on VideoPlayerController {
   ) async {
     final int generation = _discTitleGeneration;
     final dynamic native = player.platform;
-    // All four requests are queued in this order in one synchronous step and mpv
-    // answers them in order (initialization is already finished). The disc epoch
-    // is read last so a track switch from a new title cannot attach to the
-    // previous MPLS.
-    final List<String> values = await Future.wait<String>(<Future<String>>[
-      native.getPropertyAsync('current-tracks/audio/id', waitForInitialization: false) as Future<String>,
-      native.getPropertyAsync('current-tracks/sub/id', waitForInitialization: false) as Future<String>,
-      native.getPropertyAsync('current-tracks/sub/codec', waitForInitialization: false) as Future<String>,
-      native.getPropertyAsync('disc-navigation-state-json', waitForInitialization: false) as Future<String>,
-    ]);
+    // libmpv may reorder async calls, so the disc epoch is read only after the
+    // three track reads completed: a track switch from a new title then cannot
+    // attach to the previous MPLS.
+    final List<String> values = <String>[
+      ...await Future.wait<String>(<Future<String>>[
+        native.getPropertyAsync('current-tracks/audio/id', waitForInitialization: false) as Future<String>,
+        native.getPropertyAsync('current-tracks/sub/id', waitForInitialization: false) as Future<String>,
+        native.getPropertyAsync('current-tracks/sub/codec', waitForInitialization: false) as Future<String>,
+      ]),
+      await (native.getPropertyAsync('disc-navigation-state-json', waitForInitialization: false) as Future<String>),
+    ];
     if (!_isCurrentLoad(player, loadToken) || generation != _discTitleGeneration) {
       return false;
     }

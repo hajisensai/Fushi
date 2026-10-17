@@ -1238,6 +1238,12 @@ class NativePlayer extends PlatformPlayer {
       await waitForPlayerInitialization;
       await waitForVideoControllerInitializationIfAttached;
     }
+    // Fushi patch (BUG-3453): [dispose] may have run during the awaits above and
+    // already completed every pending request; a request queued now could wait
+    // forever for a reply that never reaches Dart.
+    if (disposed) {
+      return;
+    }
 
     final name = property.toNativeUtf8();
     final data = value.toNativeUtf8();
@@ -1253,8 +1259,9 @@ class NativePlayer extends PlatformPlayer {
     }
     // Fushi patch (BUG-3453): `mpv_set_property_string` waits for the mpv core
     // lock on the calling (UI) thread, see [getPropertyAsync]. Queue the write
-    // instead; mpv runs a client's async requests in order, so awaiting callers
-    // keep their ordering against later reads, writes and commands. libmpv copies
+    // instead. libmpv's contract does not order async calls against each other
+    // (client.h: "Asynchronous calls may be reordered"), so a caller that needs
+    // ordering must await this before its next request. libmpv copies
     // the name and the value, so both are freed right away. Errors stay silent,
     // as with the synchronous call.
     final ptr = calloc<Pointer<Utf8>>(1)..value = data;
@@ -1624,8 +1631,12 @@ class NativePlayer extends PlatformPlayer {
         generated.mpv_event_id.MPV_EVENT_SET_PROPERTY_REPLY) {
       final completer = _setPropertyRequests.remove(event.ref.reply_userdata);
       if (completer == null) {
-        print(
-            'Warning: Received MPV_EVENT_SET_PROPERTY_REPLY with unregistered ID ${event.ref.reply_userdata}');
+        // After [dispose] the pending table is already drained; a late reply is
+        // expected, not a protocol error.
+        if (!disposed) {
+          print(
+              'Warning: Received MPV_EVENT_SET_PROPERTY_REPLY with unregistered ID ${event.ref.reply_userdata}');
+        }
       } else {
         completer.complete(event.ref.error);
       }
@@ -1666,8 +1677,10 @@ class NativePlayer extends PlatformPlayer {
         if (resultCompleter != null) {
           return;
         }
-        print(
-            'Warning: Received MPV_EVENT_COMMAND_REPLY with unregistered ID ${event.ref.reply_userdata}');
+        if (!disposed) {
+          print(
+              'Warning: Received MPV_EVENT_COMMAND_REPLY with unregistered ID ${event.ref.reply_userdata}');
+        }
       } else {
         completer.complete(event.ref.error);
       }

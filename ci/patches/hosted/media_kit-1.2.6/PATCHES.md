@@ -86,8 +86,11 @@ texture frames, so the picture froze while audio kept playing.
 
 The async variants queue `mpv_*_async`; replies arrive as
 `MPV_EVENT_GET_PROPERTY_REPLY` / `MPV_EVENT_SET_PROPERTY_REPLY` /
-`MPV_EVENT_COMMAND_REPLY` on the event loop. mpv runs one client's async requests
-in order, so awaiting callers keep their ordering. `dispose` completes every
+`MPV_EVENT_COMMAND_REPLY` on the event loop. libmpv's contract lets async calls
+be reordered against each other (current mpv happens to dispatch them FIFO), so
+callers that need ordering await each request before the next. `setProperty`
+re-checks `disposed` after its initialization await, and late replies after
+`dispose` are not reported as unregistered IDs. `dispose` completes every
 pending async request (reads with `''`, writes and `_command` with success,
 `commandWithResult` with `MPV_ERROR_UNINITIALIZED`) so no caller waits for a
 reply that will never come.

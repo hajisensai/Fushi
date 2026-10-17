@@ -94,7 +94,8 @@ void main() {
         double.parse(await native.getPropertyAsync('volume') as String),
         37,
       );
-      // 不 await 写、紧接着读：mpv 对同一 client 的异步请求按序执行。
+      // 不 await 写、紧接着读：当前 mpv 对同一 client 的异步请求按 FIFO 派发
+      // （实现细节，libmpv 契约不保证；生产代码需要顺序时一律先 await）。
       unawaited(native.setProperty('volume', '58') as Future<void>);
       expect(
         double.parse(await native.getPropertyAsync('volume') as String),
