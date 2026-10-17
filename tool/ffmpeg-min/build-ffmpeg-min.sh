@@ -413,9 +413,10 @@ ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,li
 # ⚠️ 入库二进制重编之前桌面上仍没有 ipod：BUG-460 / TODO-1217 那几条「桌面句子音频
 # 写 .aac 不写 .m4a」的约束继续成立，别因为配方里有了 ipod 就把它们改回 .m4a。
 # matroska：字幕 copy 分支按 .mkv/.mka 输出时选它（video_clip_subtitle.dart；与 webm 同一个
-# matroskaenc，体积增量近零）。s16le：上游 fushi_asr_core 抽 ASR 用的裸 PCM（`-f s16le`），
+# matroskaenc，体积增量近零）。pcm_s16le：上游 fushi_asr_core 抽 ASR 用的裸 PCM（`-f s16le`；格式名是
+# s16le，configure 的组件名却是 pcm_s16le，写成 s16le 会被静默忽略——实测踩过），
 # 缺它时每次转录都先白跑一遍失败再回退 mov（BUG-3504）。
-MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts,sup,flac,ipod,matroska,s16le"
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts,sup,flac,ipod,matroska,pcm_s16le"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +
