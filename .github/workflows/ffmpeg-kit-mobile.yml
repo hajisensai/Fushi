@@ -61,12 +61,15 @@ jobs:
       - name: Install host tools
         # 覆盖本配方用到的库：x264/openssl/opus（autotools）、libvpx（自带 configure + perl）、
         # cpu-features（cmake，走下面私有 SDK 里的 cmake 3.22.1）、dav1d（meson + ninja，BUG-2947）。
+        # groff：libxml2（dash demuxer，BUG-3503）在 Android 上连带编 libiconv，它的
+        # Makefile.devel 用 `groff -Thtml` 生成手册页；runner 自带的 groff-base 没有 html
+        # 设备 → "invalid device 'html'"，libiconv 整个失败。
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             autoconf automake libtool pkg-config nasm yasm gperf texinfo autopoint \
-            build-essential perl python3 unzip curl git meson ninja-build
+            build-essential perl python3 unzip curl git meson ninja-build groff
 
       - name: Private Android SDK (NDK r25c + cmake 3.22.1 only)
         # 为什么用私有 SDK 根：ffmpeg-kit 的 android_ndk_cmake 取
