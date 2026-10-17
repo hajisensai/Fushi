@@ -513,6 +513,12 @@ void main() {
   });
 
   group('复习页卡面音频', () {
+    test('自动播放默认开、重播含问题音频默认开（同 Anki 默认；所有者 2026-10-17 拍板）', () {
+      final AppModel app = AppModel(testPlatformServices());
+      expect(app.srsReviewAutoplayAudio, isTrue);
+      expect(app.srsReviewReplayQuestionAudio, isTrue);
+    });
+
     Future<String> addWithAudio(WidgetTester tester, SrsDbStore store) async =>
         (await tester.runAsync(
           () => store.createNote(

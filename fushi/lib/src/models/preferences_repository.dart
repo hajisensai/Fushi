@@ -2924,9 +2924,10 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  // 复习页：显示一面卡时自动播放卡上的音频（对齐 Anki「自动播放音频」）。默认关。
+  // 复习页：显示一面卡时自动播放卡上的音频（对齐 Anki「自动播放音频」）。默认开
+  // （所有者 2026-10-17 拍板，同 Anki 默认）。
   bool get srsReviewAutoplayAudio =>
-      getPref('srs_review_autoplay_audio', defaultValue: false) as bool;
+      getPref('srs_review_autoplay_audio', defaultValue: true) as bool;
 
   Future<void> setSrsReviewAutoplayAudio(bool value) async {
     await setPref('srs_review_autoplay_audio', value);

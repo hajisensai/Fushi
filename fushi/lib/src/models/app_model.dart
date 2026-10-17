@@ -8286,9 +8286,9 @@ class AppModel with ChangeNotifier {
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
 
   // 复习页卡面音频：自动播放 / 答案面重播时含问题音频（透传 prefsRepo）。可空读：
-  // prefs 未装配 = 默认值（不自动播、重播含问题音频，后者同 Anki 默认）。
+  // prefs 未装配 = 默认值（自动播、重播含问题音频，两者都同 Anki 默认）。
   bool get srsReviewAutoplayAudio =>
-      _prefsRepo?.srsReviewAutoplayAudio ?? false;
+      _prefsRepo?.srsReviewAutoplayAudio ?? true;
   Future<void> setSrsReviewAutoplayAudio(bool value) =>
       prefsRepo.setSrsReviewAutoplayAudio(value);
   bool get srsReviewReplayQuestionAudio =>
