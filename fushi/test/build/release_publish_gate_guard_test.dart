@@ -227,27 +227,65 @@ void main() {
     }
   });
 
-  test('Android 构建 job 把发布需要的通道结果全部经 job outputs 交给 publish-android', () {
+  test('Android 通道结果经 artifact 交给 publish-android，job outputs 只留开关', () {
     final Map<String, String> jobs = workflows['release.yml']!;
     final String build = jobs['build']!;
     final String publish = jobs['publish-android']!;
     final Set<String> used = RegExp(
       r'steps\.channel\.outputs\.([a-z_]+)',
     ).allMatches(publish).map((RegExpMatch m) => m.group(1)!).toSet();
-    expect(used, isNotEmpty);
+    expect(used, containsAll(<String>['tag', 'publish_tag', 'files', 'body']));
+
+    // GitHub 静默丢弃「可能含 secret 值」的 job output（2026-10-17 publish_tag / files
+    // 被丢，publish 拿空 tag 去 prune）。带用户数据的值一律不许再走 job outputs。
+    final RegExp outputLine = RegExp(
+      r'^      ([a-z_]+): \$\{\{ steps\.channel\.outputs\.',
+      multiLine: true,
+    );
+    final int outputsAt = build.indexOf('\n    outputs:\n');
+    expect(outputsAt, isNonNegative, reason: 'build job 缺 outputs 块');
+    final String outputsBlock = build.substring(
+      outputsAt,
+      build.indexOf('\n    steps:', outputsAt),
+    );
+    final Set<String> exported = outputLine
+        .allMatches(outputsBlock)
+        .map((RegExpMatch m) => m.group(1)!)
+        .toSet();
+    expect(exported, <String>{
+      'channel',
+      'publish_managed_release',
+      'publish_manifest',
+    }, reason: 'build job outputs 只许留 publish-android 的 job 级 if 要用的开关');
+    expect(publish, isNot(contains('needs.build.outputs.publish_tag')));
+
+    final String save = build.substring(
+      build.indexOf('- name: Save Android release channel for publish job'),
+    );
+    final String load = publish.substring(
+      publish.indexOf('- name: Load Android release channel from build job'),
+    );
     for (final String key in used) {
       expect(
-        build.contains('      $key: \${{ steps.channel.outputs.$key }}'),
+        save.contains(
+          'CH_${key.toUpperCase()}: \${{ steps.channel.outputs.$key }}',
+        ),
         isTrue,
         reason:
-            'publish 读 steps.channel.outputs.$key，但 build job 没把它导出成 job output',
+            'publish 读 steps.channel.outputs.$key，build 的 Save 步骤必须把它写进 artifact',
       );
       expect(
-        publish.contains('needs.build.outputs.$key'),
+        RegExp('for key in [^\\n]*\\b$key\\b').hasMatch(load),
         isTrue,
-        reason:
-            'publish 的 Load 步骤必须把 needs.build.outputs.$key 还原成 steps.channel',
+        reason: 'publish 的 Load 步骤必须从 artifact 还原 $key',
       );
     }
+    expect(build, contains('name: fushi-release-channel-\${{ github.sha }}'));
+    expect(publish, contains('name: fushi-release-channel-\${{ github.sha }}'));
+    expect(
+      load,
+      contains('refusing to publish'),
+      reason: '空 tag 必须在 Load 步骤就拒绝，不能让 prune / 上传落到 Latest release',
+    );
   });
 }
