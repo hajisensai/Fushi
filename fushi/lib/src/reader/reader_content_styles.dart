@@ -504,9 +504,22 @@ body::after {
     // html/body 背景（同色）= 页边距照常空白。四边都裁：竖排消上下露、横排消左右露。padding 四边
     // 与 body 的 padding-top/right/bottom/left 逐项一致（上=mt vh+chromeTop，下=mb vh+chromeBottom，
     // 左右=ml/mr vw），裁边恰在列边缘、不切正文。
+    // BUG-3503：开了悬挂标点（下面 gridCss，两端对齐关时）的行尾「、」「。」挂在栏尾之外，正好落在
+    // 被裁掉的页边距带里、看不见。栏尾之外紧接着只有一道列间距（下一栏要再隔一个 column-gap 才
+    // 开始），所以行尾那一侧（竖排下、横排右）的裁边往外放一个列间距：露出悬挂标点，相邻页仍被裁。
+    final bool hangingPunctuation = !settings.enableTextJustification;
+    String revealInlineEnd(String inset) => hangingPunctuation
+        ? 'max(0px, calc($inset - ${ReaderLayoutDefaults.columnGapPx}px))'
+        : inset;
+    final String bottomInsetCss =
+        'calc($marginBottomCss + var(--chrome-bottom-inset, 0px))';
+    final String clipBottomCss =
+        isVertical ? revealInlineEnd(bottomInsetCss) : bottomInsetCss;
+    final String clipRightCss =
+        isVertical ? marginRightCss : revealInlineEnd(marginRightCss);
     final String contentClipCss =
-        'inset(calc($marginTopCss + var(--chrome-top-inset, 0px)) $marginRightCss '
-        'calc($marginBottomCss + var(--chrome-bottom-inset, 0px)) $marginLeftCss)';
+        'inset(calc($marginTopCss + var(--chrome-top-inset, 0px)) $clipRightCss '
+        '$clipBottomCss $marginLeftCss)';
     // TODO-729：column-gap 固定为常量（= 安卓 calc(0vh + 22px)）。它只是相邻列之间
     // 的恒定空隙，**不再**承载 margin / fontSize / chrome inset —— 那些 inset 全部由
     // padding 承载（横排在 padding 左右 + perpendicular 的 padding-top/bottom；竖排在
@@ -684,6 +697,8 @@ svg.block-img.blurred {
                 columnWidthCss: columnWidthCss,
                 columnsCss: columnsCss,
                 contentClipCss: contentClipCss,
+                clipBottomCss: clipBottomCss,
+                clipRightCss: clipRightCss,
               );
 
     final String readerStylePriority =
@@ -1238,6 +1253,8 @@ a {
     required String columnWidthCss,
     required String columnsCss,
     required String contentClipCss,
+    required String clipBottomCss,
+    required String clipRightCss,
   }) {
     // 公共参数解构自 _LayoutCssArgs（局部名 / 值与旧命名参数一致）；isVertical 本生成器不用，
     // 故不解构（避免未使用局部告警）。下方 CSS 原始串一字未改。
@@ -1255,7 +1272,6 @@ a {
     final String marginTopCss = a.marginTopCss;
     final String marginBottomCss = a.marginBottomCss;
     final String marginLeftCss = a.marginLeftCss;
-    final String marginRightCss = a.marginRightCss;
     return '''
 html, body {
   overflow: hidden !important;
@@ -1346,8 +1362,9 @@ html::before {
   border-style: solid !important;
   border-color: ${colors.backgroundColor} !important;
   border-top-width: calc($marginTopCss + var(--chrome-top-inset, 0px)) !important;
-  border-right-width: $marginRightCss !important;
-  border-bottom-width: calc($marginBottomCss + var(--chrome-bottom-inset, 0px)) !important;
+  /* BUG-3503：行尾一侧（竖排下、横排右）让出一个列间距给悬挂标点，与 contentClipCss 一致。 */
+  border-right-width: $clipRightCss !important;
+  border-bottom-width: $clipBottomCss !important;
   border-left-width: $marginLeftCss !important;
 }''';
   }

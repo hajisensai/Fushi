@@ -411,6 +411,7 @@ if (!window.__fushiLiveRanges) {
         for (var id in pending) (pending[id].ranges || []).forEach(add);
       }
       if (window.fushiReader) add(window.fushiReader.__imgReanchorTarget);
+      if (window.__fushiCueRanges) window.__fushiCueRanges.tracked().forEach(add);
       return out;
     },
     // 在 offset 处切开文本节点，返回切点之后的新节点。live Range（含原生选区）由 DOM splitText 自己
@@ -532,6 +533,78 @@ if (!window.__fushiLiveRanges) {
       if (restore) restore();
     }
   };
+}
+// BUG-3503（「句子被高亮顶开」）：WebKit 只在同一个文本节点内做字距调整（kerning，Hiragino 等日文字体
+// 在「、机」「。表」这类字对上收 1–2px）；文本节点一旦被切开——包进 span、拆成两个相邻文本节点、
+// 哪怕包裹是 display:contents——切口两侧的字对就不再调整，切口之后整行的字往后挪（iOS 26.5 模拟器
+// 实测；font-feature-settings:'kern' 0 关不掉，只有 font-kerning:none 能关）。有声书原先把每句
+// 包进 .fushi-sentence-audio-cue：分页 / 滚动在开章时整章包裹，句界处的字距一律变松；VN 在播放到
+// 那句时才包裹，排版恰好在高亮出现那一刻变动。Blink 把整段行内文字一起排版，切开不影响字距。
+// 所以 WebKit 上有声书句子不再改 DOM：每句登记成 live Range，当前句交给 CSS.highlights 的
+// 'fushi-sentence-audio'——字色走 ::highlight()，底色照旧由窄条层画（窄条层本来就读这一组）。
+// Range 登记在 tracked() 里，正文其它 DOM 手术（__fushiLiveRanges.moveNodes）会把它们写回而不塌缩。
+// Blink 与不支持 CSS Highlight 的旧 WebView 继续走包裹。window.__fushiSentenceAudioRangeMode
+// （布尔）可强制开关，供测试在 Chrome 里跑这条路径。
+if (!window.__fushiCueRanges) {
+  window.__fushiCueRanges = (function() {
+    var HIGHLIGHT = 'fushi-sentence-audio';
+    var owners = [];
+    var isWebKit = function() {
+      var ua = typeof navigator !== 'undefined' && navigator.userAgent || '';
+      return /AppleWebKit\//.test(ua) && !/(Chrome|Chromium)\//.test(ua);
+    };
+    return {
+      enabled: function() {
+        if (!window.__fushiCssHighlightsSupported || typeof Highlight !== 'function') return false;
+        var forced = window.__fushiSentenceAudioRangeMode;
+        return typeof forced === 'boolean' ? forced : isWebKit();
+      },
+      // 分段 {node, start, end} → Range（建 Range 前让文本可被 ::highlight 绘制，见 BUG-3323）。
+      build: function(segments) {
+        var out = [];
+        for (var i = 0; i < segments.length; i++) {
+          var seg = segments[i];
+          if (!seg.node || !seg.node.parentNode || seg.end <= seg.start) continue;
+          if (typeof window.__fushiEnsureHighlightPaintable === 'function') {
+            window.__fushiEnsureHighlightPaintable(seg.node);
+          }
+          var r = document.createRange();
+          r.setStart(seg.node, seg.start);
+          r.setEnd(seg.node, seg.end);
+          out.push(r);
+        }
+        return out;
+      },
+      // owner：一个 Map(cueId → Range[])，由各引擎持有；登记后其中的 Range 随 DOM 手术写回。
+      track: function(owner) {
+        if (owners.indexOf(owner) < 0) owners.push(owner);
+      },
+      untrack: function(owner) {
+        var k = owners.indexOf(owner);
+        if (k >= 0) owners.splice(k, 1);
+      },
+      tracked: function() {
+        var out = [];
+        owners.forEach(function(owner) {
+          owner.forEach(function(ranges) { for (var i = 0; i < ranges.length; i++) out.push(ranges[i]); });
+        });
+        return out;
+      },
+      show: function(ranges) {
+        var h = new Highlight();
+        for (var i = 0; i < ranges.length; i++) h.add(ranges[i]);
+        // 查词（priority 1）压过当前句（BUG-125）。
+        h.priority = 0;
+        CSS.highlights.set(HIGHLIGHT, h);
+        if (window.__fushiLanes) window.__fushiLanes.repaint(HIGHLIGHT);
+      },
+      hide: function() {
+        if (!window.__fushiCssHighlightsSupported || !CSS.highlights.has(HIGHLIGHT)) return;
+        CSS.highlights.delete(HIGHLIGHT);
+        if (window.__fushiLanes) window.__fushiLanes.repaint(HIGHLIGHT);
+      }
+    };
+  })();
 }
 // BUG-3323: WebKit never paints ::highlight() on a text node whose layout parent is
 // an *anonymous* block -- i.e. text sitting directly in a block container that also
@@ -862,11 +935,30 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
         var mt = fontMetrics(cs);
         var range = document.createRange();
         range.selectNodeContents(n);
+        // 竖排（直立）注音逐字量真实墨迹：带浊点 / 半浊点的假名（ぶ ぱ）比「国」宽，按汉字墨迹厚居中会
+        // 低估 1–1.5px，窄条就压到振假名上（BUG-3503 顺带）。量不到时退回汉字墨迹厚居中。
+        var glyphs = null;
+        if (vertical && mt.ok) {
+          glyphs = [];
+          for (var g = 0; g < n.data.length; g++) {
+            var gm = n.data.charAt(g).trim() ? measureText(fontKey(cs), n.data.charAt(g)) : null;
+            if (gm && gm.actualBoundingBoxLeft + gm.actualBoundingBoxRight > 0) glyphs.push(gm);
+          }
+        }
         var rects = range.getClientRects();
         for (var i = 0; i < rects.length; i++) {
           var r = rects[i];
           if (r.width <= 0.5 || r.height <= 0.5) continue;
           var thick = vertical ? r.width : r.height;
+          if (glyphs && glyphs.length) {
+            var c = r.left + r.width / 2, glo = Infinity, ghi = -Infinity;
+            glyphs.forEach(function(m) {
+              glo = Math.min(glo, c - m.width / 2 - m.actualBoundingBoxLeft);
+              ghi = Math.max(ghi, c - m.width / 2 + m.actualBoundingBoxRight);
+            });
+            ink.push({ lo: glo, hi: ghi, a: r.top, b: r.bottom });
+            continue;
+          }
           var half = (mt.ok && mt.cjkInk > 0 ? Math.min(thick, mt.cjkInk) : thick) / 2;
           var mid = (vertical ? r.left : r.top) + thick / 2 + (vertical || !mt.ok ? 0 : mt.shift);
           ink.push({ lo: mid - half, hi: mid + half, a: vertical ? r.top : r.left, b: vertical ? r.bottom : r.right });

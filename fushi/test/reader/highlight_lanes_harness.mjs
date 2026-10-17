@@ -71,7 +71,9 @@ const CHECK = String.raw`(async () => {
       // thinner than 1em and off-centre, but still at least half a character inside the box.
       if (hit && pulled) ok(thick(hit) <= Math.min(em, thick(r)) + 0.5 && thick(hit) >= 0.5 * em,
         name + ': lane gives way to pulled furigana but keeps >= 0.5em (' + thick(hit).toFixed(1) + ' vs ' + em + ')');
-      else if (hit) ok(Math.abs(thick(hit) - Math.min(em, thick(r))) <= 0.5,
+      // Furigana whose real ink reaches into the 1em band (wide kana such as ぶ) shaves the lane by
+      // up to a pixel or two: not touching the furigana wins (checked below).
+      else if (hit) ok(thick(hit) <= Math.min(em, thick(r)) + 0.5 && thick(hit) >= Math.min(em, thick(r)) - 0.1 * em,
         name + ': lane is 1em thick (' + thick(hit).toFixed(1) + ' vs ' + em + ')');
     }
   };
@@ -380,6 +382,64 @@ const BACKDROP = String.raw`(async () => {
   return { errors, checks, samples };
 })()`;
 
+// BUG-3503: on WebKit the current sentence is a set of live Ranges in CSS.highlights instead
+// of <span> wrappers (splitting a text node drops WebKit's kerning at the cut and shifts the
+// rest of the line). Chrome runs that path here with window.__fushiSentenceAudioRangeMode.
+const RANGE = String.raw`(async () => {
+  const errors = []; let checks = 0;
+  const ok = (cond, msg) => { checks++; if (!cond) errors.push(msg); };
+  const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await new Promise((r) => setTimeout(r, 700));
+  const root = () => document.querySelector('.fushi-vn-content') || document.body;
+  const vertical = getComputedStyle(document.body).writingMode.indexOf('vertical') === 0;
+  const em = parseFloat(getComputedStyle(root().querySelector('p')).fontSize);
+  const mid = (r) => vertical ? r.left + r.width / 2 : r.top + r.height / 2;
+  const span = (r) => vertical ? [r.top, r.bottom] : [r.left, r.right];
+  const lanes = () => Array.from(document.querySelectorAll('fushi-hl-lane[data-hl="fushi-sentence-audio"]'))
+    .map((l) => l.getBoundingClientRect());
+  const wrappers = () => document.querySelectorAll('.fushi-sentence-audio-cue, .fushi-sentence-audio-active, .fushi-sentence-audio-ruby-active').length;
+  const html = () => Array.from(root().querySelectorAll('p')).map((p) => p.innerHTML).join('|');
+  ok(window.__fushiCueRanges && window.__fushiCueRanges.enabled(), 'range mode is on');
+  const R = window.fushiReader;
+  const clear = () => (R.clearSentenceAudioCue || R.clearSentenceAudioCuePresentation).call(R);
+  ok(wrappers() === 0, 'no cue wrappers in the text after the cues are applied');
+  // VN renders the screen holding the cue on the first call; take the baseline on that screen.
+  R.highlightSentenceAudioCue('c2', true);
+  await frames();
+  clear();
+  await frames();
+  const before = html();
+  R.highlightSentenceAudioCue('c2', true);
+  await frames();
+  const hl = CSS.highlights.get('fushi-sentence-audio');
+  ok(!!hl && hl.size > 0, 'current sentence is registered as a CSS highlight');
+  ok(wrappers() === 0, 'highlighting adds no wrappers or classes to the text');
+  ok(html() === before, 'highlighting leaves the text DOM unchanged');
+  const ls = lanes();
+  ok(ls.length > 0, 'current sentence has lanes');
+  if (hl) {
+    for (const range of hl) {
+      for (const r of range.getClientRects()) {
+        if (r.width <= 0.5 || r.height <= 0.5) continue;
+        const hit = ls.find((l) => Math.abs(mid(l) - mid(r)) <= 0.5 * em &&
+          span(l)[0] <= span(r)[0] + 1 && span(l)[1] >= span(r)[1] - 1 - 0.45 * em);
+        ok(!!hit, 'text box at ' + Math.round(mid(r)) + ' has a covering lane');
+      }
+    }
+    const first = hl.values().next().value;
+    if (first && typeof R.cueIdAtDomPoint === 'function') {
+      const hit = R.cueIdAtDomPoint(first.startContainer, first.startOffset);
+      ok(!!hit && JSON.parse(hit).id === 'c2', 'a point in the sentence resolves to its cue (' + hit + ')');
+    }
+  }
+  clear();
+  await frames();
+  ok(!CSS.highlights.has('fushi-sentence-audio'), 'clearing the cue removes the highlight');
+  ok(lanes().length === 0, 'clearing the cue removes its lanes');
+  ok(html() === before, 'text DOM still unchanged after clearing');
+  return { errors, checks };
+})()`;
+
 const CLEAR = String.raw`(async () => {
   const errors = []; let checks = 0;
   const ok = (cond, msg) => { checks++; if (!cond) errors.push(msg); };
@@ -444,6 +504,11 @@ try {
     total += res.checks;
     for (const e of res.errors) failures.push(page.name + ': ' + e);
   }
+  for (const page of payload.rangePages || []) {
+    const res = await driver.evalOnPage(page.html, RANGE);
+    total += res.checks;
+    for (const e of res.errors) failures.push(page.name + ': ' + e);
+  }
   for (const page of payload.backdropPages || []) {
     const res = await driver.evalOnPage(page.html, BACKDROP);
     total += res.checks;
@@ -478,5 +543,6 @@ if (failures.length) {
   console.log(failures.join('\n'));
   process.exit(1);
 }
-console.log('PASS ' + payload.pages.length + ' lane pages, ' + (payload.backdropPages || []).length +
+console.log('PASS ' + payload.pages.length + ' lane pages, ' + (payload.rangePages || []).length +
+  ' range-mode pages, ' + (payload.backdropPages || []).length +
   ' book-background pages, ' + pixelSamples + ' pixel samples, ' + total + ' checks');
