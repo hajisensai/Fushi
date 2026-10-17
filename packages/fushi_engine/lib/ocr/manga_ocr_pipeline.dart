@@ -101,8 +101,11 @@ typedef OcrPageLoader = Future<img.Image> Function(int pageIndex);
 
 /// 能给「已经识别好的文本」补行几何的识别器（旧版缓存升级用，BUG-2813）。
 ///
-/// 识别文本原样保留，只按块内检出的列/行把它切开并带回行框；做不到（没检到行）
-/// 时返回不带行几何的结果。
+/// 结果必须与新识别这一块的结果一致：新识别里整块读文本的块，[text] 原样保留，
+/// 只按块内检出的列/行把它切开并带回行框；做不到（没检到行）时返回不带行几何的
+/// 结果。新识别里逐行读、带逐字命中格（[OcrRecognition.glyphBoxes]）的块，缓存
+/// 文本给不出字格，实现应按新识别重读这一块并返回新文本（pipeline 以结果的
+/// `text` 为准）。
 abstract interface class LineLayoutOcrRecognizer implements OcrRecognizer {
   Future<OcrRecognition> layoutRecognized(
     img.Image page,
@@ -265,6 +268,42 @@ bool _glyphsFit(OcrRecognition recognition, String text) {
   return glyphs != null && ocrGlyphBoxesFitText(glyphs, text);
 }
 
+/// 一块的识别结果落成 [OcrBlock]：新识别与旧版缓存升级共用，两条路落出的块
+/// 同一口径。
+///
+/// 行几何只在「拼回去就是原文」时采用：识别器给错了宁可退回整块单行，也不让
+/// 覆盖层的字与句子文本错位；字格另须区间落在文本里。
+OcrBlock _blockFromRecognition(
+  OcrRecognition recognition, {
+  required OcrRect box,
+  required double score,
+  required bool insideBubble,
+  required double? confidence,
+}) {
+  final String text = recognition.text;
+  final List<String>? lines = recognition.lines;
+  final bool hasLayout =
+      lines != null && lines.isNotEmpty && lines.join() == text;
+  return OcrBlock(
+    box: box,
+    vertical: recognition.vertical,
+    lines: hasLayout ? lines : <String>[text],
+    lineBoxes: hasLayout ? recognition.lineBoxes : null,
+    lineTilt: hasLayout ? recognition.lineTilt : 0,
+    score: score,
+    insideBubble: insideBubble,
+    confidence: confidence,
+    glyphBoxes: hasLayout && _glyphsFit(recognition, text)
+        ? recognition.glyphBoxes
+        : null,
+  );
+}
+
+/// 整页识别完的收尾：容器块让位给叶子块，再删文本确认的横排包含重复。
+/// 新识别与旧版缓存升级共用。
+List<OcrBlock> _finishRecognizedBlocks(List<OcrBlock> blocks) =>
+    _suppressRecognizedContainedBlocks(_dropContainerBlocks(blocks));
+
 /// 整卷编排器。检测器/识别器经窄接口注入（模型路径、EP 选择在其构造侧）。
 class MangaOcrPipeline {
   MangaOcrPipeline({
@@ -384,20 +423,18 @@ class MangaOcrPipeline {
           text,
           vertical: block.vertical,
         );
-        final List<String>? lines = laidOut.lines;
-        final bool hasLayout =
-            lines != null && lines.isNotEmpty && lines.join() == text;
+        // 识别器重读了这一块却读空：退回缓存文本（不丢字），只是没有行几何。
+        final OcrRecognition recognition = laidOut.text.isEmpty
+            ? OcrRecognition(text: text, vertical: block.vertical)
+            : laidOut;
         blocks.add(
-          OcrBlock(
+          _blockFromRecognition(
+            recognition,
             box: block.box,
-            // 排版按检出行重新定了方向时以它为准（与新识别的块同口径）。
-            vertical: hasLayout ? laidOut.vertical : block.vertical,
-            lines: hasLayout ? lines : block.lines,
-            lineBoxes: hasLayout ? laidOut.lineBoxes : null,
-            lineTilt: hasLayout ? laidOut.lineTilt : 0,
             score: block.score,
             insideBubble: block.insideBubble,
-            confidence: block.confidence,
+            // 整块文本沿用缓存时识别器不出分，沿用缓存里的置信度。
+            confidence: recognition.confidence ?? block.confidence,
           ),
         );
       }
@@ -405,7 +442,9 @@ class MangaOcrPipeline {
         pageIndex: pageIndex,
         imageWidth: legacy.imageWidth,
         imageHeight: legacy.imageHeight,
-        blocks: blocks,
+        // 与新识别同一套整页收尾：旧版缓存写在容器块让位（v7）之前，块补上行几何
+        // 后才判得出容器块（[_leafCoverage] 按行几何算）。
+        blocks: _finishRecognizedBlocks(blocks),
       );
     }
     return null;
@@ -459,24 +498,13 @@ class MangaOcrPipeline {
           continue;
         }
         final DetectedTextRegion region = regions[i];
-        // 行几何只在「拼回去就是原文」时采用：识别器给错了宁可退回整块单行，
-        // 也不让覆盖层的字与句子文本错位。
-        final List<String>? lines = recognition.lines;
-        final bool hasLayout =
-            lines != null && lines.isNotEmpty && lines.join() == text;
         blocks.add(
-          OcrBlock(
+          _blockFromRecognition(
+            recognition,
             box: region.rect,
-            vertical: recognition.vertical,
-            lines: hasLayout ? lines : <String>[text],
-            lineBoxes: hasLayout ? recognition.lineBoxes : null,
-            lineTilt: hasLayout ? recognition.lineTilt : 0,
             score: region.score,
             insideBubble: region.insideBubble,
             confidence: recognition.confidence,
-            glyphBoxes: hasLayout && _glyphsFit(recognition, text)
-                ? recognition.glyphBoxes
-                : null,
           ),
         );
       }
@@ -487,7 +515,7 @@ class MangaOcrPipeline {
       imageHeight: image.height,
       blocks: await _withSweptBlocks(
         image,
-        _suppressRecognizedContainedBlocks(_dropContainerBlocks(blocks)),
+        _finishRecognizedBlocks(blocks),
         candidates: detections.weakTextRegions,
         // 识别为空的检测框也算覆盖：检测器认过、识别器读不出的地方，补检再读一遍
         // 多半也是同一团笔触。
