@@ -103,15 +103,18 @@ extension VideoDiscMenuController on VideoPlayerController {
     if (!isBlurayNavigationSession && !_discMenuConfigured) return;
     final dynamic native = player.platform;
     // load() already awaited native initialization through its pre-open setup.
-    // Read synchronously inside media_kit so disposal cannot slip between an
-    // internal initialization await and access to the native handle.
+    // `waitForInitialization: false` keeps the native request in the same
+    // synchronous step as media_kit's disposed check, so disposal cannot slip
+    // between an internal initialization await and access to the native handle;
+    // the value then arrives asynchronously without holding the UI thread on the
+    // mpv core lock (BUG-3453).
     _setDiscLoadStage('disc-capability');
     final String option =
-        await native.getProperty('option-info/disc-menu/name', waitForInitialization: false) as String;
+        await native.getPropertyAsync('option-info/disc-menu/name', waitForInitialization: false) as String;
     if (!_isCurrentLoad(player, loadToken)) return;
     if (!isBlurayNavigationSession) {
       if (option.isNotEmpty) {
-        runCheckedVideoDiscCommand(native, <String>['set', 'disc-menu', 'no']);
+        await runCheckedVideoDiscCommand(native, <String>['set', 'disc-menu', 'no']);
       }
       _discMenuConfigured = false;
       return;
@@ -119,7 +122,7 @@ extension VideoDiscMenuController on VideoPlayerController {
     // Reused Players can still hold the previous disc's demuxer. Dispose that
     // stream before setting a new device, without replacing Player or texture.
     _setDiscLoadStage('disc-stop');
-    runCheckedVideoDiscCommand(native, <String>['stop']);
+    await runCheckedVideoDiscCommand(native, <String>['stop']);
     _setDiscLoadStage('disc-index');
     final BlurayMenuInfo? info = await readBlurayMenuInfo(_discRootPath!);
     if (!_isCurrentLoad(player, loadToken)) return;
@@ -134,7 +137,7 @@ extension VideoDiscMenuController on VideoPlayerController {
     // Our versioned snapshot separates IG menu focus from PGS subtitles and
     // correlates title, playlist, generation and timestamp in one native read.
     final String properties =
-        await native.getProperty('property-list', waitForInitialization: false) as String;
+        await native.getPropertyAsync('property-list', waitForInitialization: false) as String;
     if (!_isCurrentLoad(player, loadToken)) return;
     if (!properties.contains('disc-navigation-state-json')) {
       throw const VideoDiscMenuException('navigation-state-not-supported');
@@ -164,26 +167,26 @@ extension VideoDiscMenuController on VideoPlayerController {
     // An empty per-player override lets libbluray use its documented system
     // runtime discovery. Clear a previous disc's private override on reuse.
     _setDiscLoadStage('disc-properties');
-    runCheckedVideoDiscCommand(native, <String>[
+    await runCheckedVideoDiscCommand(native, <String>[
       'set',
       'bluray-java-home',
       javaHome ?? '',
     ]);
-    runCheckedVideoDiscCommand(native, <String>[
+    await runCheckedVideoDiscCommand(native, <String>[
       'set',
       'bluray-device',
       _discRootPath!,
     ]);
-    runCheckedVideoDiscCommand(native, <String>['set', 'disc-menu', 'yes']);
+    await runCheckedVideoDiscCommand(native, <String>['set', 'disc-menu', 'yes']);
     // Earlier regular-video loads suppress native subtitles for Flutter cues.
     // A disc VM owns its PGS selection; restore visibility before opening it.
-    runCheckedVideoDiscCommand(native, <String>['set', 'sid', 'auto']);
-    runCheckedVideoDiscCommand(native, <String>['set', 'aid', 'auto']);
-    runCheckedVideoDiscCommand(native, <String>['set', 'secondary-sid', 'no']);
-    runCheckedVideoDiscCommand(native, <String>['set', 'sub-delay', '0']);
+    await runCheckedVideoDiscCommand(native, <String>['set', 'sid', 'auto']);
+    await runCheckedVideoDiscCommand(native, <String>['set', 'aid', 'auto']);
+    await runCheckedVideoDiscCommand(native, <String>['set', 'secondary-sid', 'no']);
+    await runCheckedVideoDiscCommand(native, <String>['set', 'sub-delay', '0']);
     _delayMs = 0;
     _secondaryDelayMs = null;
-    runCheckedVideoDiscCommand(native, <String>[
+    await runCheckedVideoDiscCommand(native, <String>[
       'set',
       'sub-visibility',
       'yes',
@@ -205,8 +208,12 @@ extension VideoDiscMenuController on VideoPlayerController {
       await native.observePropertyChanges('disc-navigation-state-json', (
         String _,
       ) async {
+        // Never await here (BUG-3453): media_kit awaits this listener before it
+        // fetches the next mpv event, and the sample's async reads complete via
+        // later events — awaiting would deadlock the event loop. The sampler
+        // coalesces overlapping requests itself.
         if (identical(_player, player) && isBlurayNavigationSession) {
-          await _sampleDiscMenu(player, _loadToken);
+          unawaited(_sampleDiscMenu(player, _loadToken));
         }
       }, waitForInitialization: false);
     }
@@ -240,7 +247,7 @@ extension VideoDiscMenuController on VideoPlayerController {
       throw const VideoDiscMenuException('navigation-initializing');
     }
     final dynamic native = player.platform;
-    await native.getProperty('mpv-version', waitForInitialization: false);
+    await native.getPropertyAsync('mpv-version', waitForInitialization: false);
     if (!_isCurrentLoad(player, token)) return;
     if (isVideoDiscInputCommand(command)) {
       // An unconsumed key/click is the disc's own no-op (see
@@ -250,14 +257,14 @@ extension VideoDiscMenuController on VideoPlayerController {
       // diagnostic log, and let the post-command sample below decide the menu
       // state — an inactive navigation is surfaced there as
       // 'navigation-open-failed', never inferred from this result.
-      if (!runVideoDiscInputCommand(native, command)) {
+      if (!await runVideoDiscInputCommand(native, command)) {
         ErrorLogService.instance.logDiagnostic(
           'VideoDiscMenu.input',
           'input not consumed by disc: ${command.join(' ')}',
         );
       }
     } else {
-      runCheckedVideoDiscCommand(native, command);
+      await runCheckedVideoDiscCommand(native, command);
     }
     // A sampler already in flight may have read the pre-command title; the
     // sampler then reads once more, so completion means a post-command snapshot.
@@ -284,7 +291,7 @@ extension VideoDiscMenuController on VideoPlayerController {
     try {
       final dynamic native = player.platform;
       final String raw =
-          await native.getProperty('disc-navigation-state-json', waitForInitialization: false) as String;
+          await native.getPropertyAsync('disc-navigation-state-json', waitForInitialization: false) as String;
       if (!_isCurrentLoad(player, loadToken)) return;
       final VideoDiscNavigationState? next = VideoDiscNavigationState.parse(
         raw,
@@ -311,7 +318,7 @@ extension VideoDiscMenuController on VideoPlayerController {
       if (shouldReturnDiscTrackOwnership(
         owner: _discTrackOwner, previous: previous, next: next,
       )) {
-        _returnDiscTrackOwnership(player);
+        await _returnDiscTrackOwnership(player);
       }
       if (_discInitialMenuPending) {
         final VideoDiscMenuEntryAction action = videoDiscMenuEntryAction(
@@ -325,7 +332,7 @@ extension VideoDiscMenuController on VideoPlayerController {
             // Mark before dispatch: a rejected command is visible and never
             // retried by the sampling loop or allowed to bind a movie instead.
             _discInitialMenuRequested = true;
-            runCheckedVideoDiscCommand(native, <String>['discnav', 'menu']);
+            await runCheckedVideoDiscCommand(native, <String>['discnav', 'menu']);
           }
           if (previous?.generation != next.generation ||
               previous?.menuActive != next.menuActive ||
@@ -423,9 +430,20 @@ extension VideoDiscMenuController on VideoPlayerController {
     final bool hadSecondaryTrack = _secondaryPlayerDecodedTextSub != null;
     _stopSecondaryPlayerDecodedText(resetPlayerTrack: false);
     if (hadSecondaryTrack && _player != null) {
-      runCheckedVideoDiscCommand(_player!.platform, <String>[
-        'set', 'secondary-sid', 'no',
-      ]);
+      // Queued, not awaited (BUG-3453): this reset is synchronous and must run to
+      // the end; a rejected cleanup is evidence, not a reason to leave the title
+      // half-invalidated. Current mpv dispatches one client's requests FIFO, so
+      // later requests run after it; libmpv does not promise that ordering.
+      unawaited(
+        runCheckedVideoDiscCommand(_player!.platform, <String>[
+          'set', 'secondary-sid', 'no',
+        ]).catchError((Object error) {
+          ErrorLogService.instance.logDiagnostic(
+            'VideoDiscMenu.invalidate',
+            'secondary-sid reset failed: $error',
+          );
+        }),
+      );
     }
     _graphicSubtitleActive = false;
     _secondaryCues = <AudioCue>[];
@@ -439,7 +457,7 @@ extension VideoDiscMenuController on VideoPlayerController {
     setCues(const <AudioCue>[]);
   }
 
-  void _returnDiscTrackOwnership(Player player) {
+  Future<void> _returnDiscTrackOwnership(Player player) async {
     _invalidateDiscTitle();
     final dynamic native = player.platform;
     for (final List<String> command in <List<String>>[
@@ -449,7 +467,7 @@ extension VideoDiscMenuController on VideoPlayerController {
       <String>['set', 'sub-visibility', 'yes'],
       <String>['set', 'sub-delay', '0'],
     ]) {
-      runCheckedVideoDiscCommand(native, command);
+      await runCheckedVideoDiscCommand(native, command);
     }
     _delayMs = 0;
     _secondaryDelayMs = null;
@@ -471,15 +489,17 @@ extension VideoDiscMenuController on VideoPlayerController {
   ) async {
     final int generation = _discTitleGeneration;
     final dynamic native = player.platform;
-    // All calls execute their native read before the returned Future completes
-    // (initialization is already finished). Re-read the disc epoch afterward so
-    // a track switch from a new title cannot attach to the previous MPLS.
-    final List<String> values = await Future.wait<String>(<Future<String>>[
-      native.getProperty('current-tracks/audio/id', waitForInitialization: false) as Future<String>,
-      native.getProperty('current-tracks/sub/id', waitForInitialization: false) as Future<String>,
-      native.getProperty('current-tracks/sub/codec', waitForInitialization: false) as Future<String>,
-      native.getProperty('disc-navigation-state-json', waitForInitialization: false) as Future<String>,
-    ]);
+    // libmpv may reorder async calls, so the disc epoch is read only after the
+    // three track reads completed: a track switch from a new title then cannot
+    // attach to the previous MPLS.
+    final List<String> values = <String>[
+      ...await Future.wait<String>(<Future<String>>[
+        native.getPropertyAsync('current-tracks/audio/id', waitForInitialization: false) as Future<String>,
+        native.getPropertyAsync('current-tracks/sub/id', waitForInitialization: false) as Future<String>,
+        native.getPropertyAsync('current-tracks/sub/codec', waitForInitialization: false) as Future<String>,
+      ]),
+      await (native.getPropertyAsync('disc-navigation-state-json', waitForInitialization: false) as Future<String>),
+    ];
     if (!_isCurrentLoad(player, loadToken) || generation != _discTitleGeneration) {
       return false;
     }

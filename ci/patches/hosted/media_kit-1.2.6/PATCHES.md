@@ -66,3 +66,42 @@ properties (`ytdl=no` is set per open by `buildLuaHostBaselineProperties`).
 Builds without Lua reject the option names; `Initializer.create` ignores
 `mpv_set_option_string` results, so this is a no-op there. Remove only together
 with a decision to ship mpv's built-in scripts.
+
+## BUG-3453: property access and commands never block the calling thread
+
+`lib/src/player/native/player/real.dart` adds
+`NativePlayer.getPropertyAsync(property)` (same contract as `getProperty`: `''`
+when unavailable, throws once disposed) and `NativePlayer.commandWithResult(args)`
+(returns libmpv's result code instead of logging it), and routes the public
+`setProperty` through `mpv_set_property_async` when `configuration.async` is on
+(the default).
+
+Upstream `getProperty` / `setProperty` call `mpv_get_property_string` /
+`mpv_set_property_string` synchronously. Both wait for the mpv core lock on the
+caller's thread, which in a Flutter app is the UI thread; the `await`s in front
+of them are completed futures, so a batch of reads never yields to the event
+loop. A user's diagnostic log showed the event loop held for 0.4–0.6 s per
+sampling round while the core was busy: Windows could not composite new video
+texture frames, so the picture froze while audio kept playing.
+
+The async variants queue `mpv_*_async`; replies arrive as
+`MPV_EVENT_GET_PROPERTY_REPLY` / `MPV_EVENT_SET_PROPERTY_REPLY` /
+`MPV_EVENT_COMMAND_REPLY` on the event loop. libmpv's contract lets async calls
+be reordered against each other (current mpv happens to dispatch them FIFO), so
+callers that need ordering await each request before the next. `setProperty`
+re-checks `disposed` after its initialization await, and late replies after
+`dispose` are not reported as unregistered IDs. `dispose` completes every
+pending async request (reads with `''`, writes and `_command` with success,
+`commandWithResult` with `MPV_ERROR_UNINITIALIZED`) so no caller waits for a
+reply that will never come.
+
+The event loop is serial: it awaits `_handler` (and therefore observer and hook
+callbacks) before fetching the next event. Code running inside those callbacks
+must not await an async read, write or command, or it waits for a reply queued
+behind itself. Fushi's observers schedule their work with `unawaited`.
+
+Regression tests: `fushi/test/third_party/media_kit_async_property_test.dart`
+(real libmpv; `FUSHI_TEST_LIBMPV`) and the source guard
+`fushi/test/media/video/video_mpv_ui_thread_native_calls_guard_test.dart`.
+Remove when upstream stops reading and writing properties synchronously on the
+caller's thread.
