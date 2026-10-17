@@ -1,4 +1,4 @@
-## BUG-3504 · manga-local-ocr-boxes-misaligned
+## BUG-3510 · manga-local-ocr-boxes-misaligned
 - **报告**：2026-10-17（用户：Android 漫画阅读器 OCR 点击框和实际文字不贴合——横排人物资料页上块框大片重叠、一个从页顶到页底的巨框盖住多块、有的块框只框第一行；单行标题「第13話 — クリスマス」字格轻微偏移）
 - **真实性**：✅ 真 bug（读代码定性；屏幕映射层核查无坐标系问题，问题在本地 ONNX OCR 产出的几何）。三个独立根因：
   1. `packages/fushi_engine/lib/ocr/manga_ocr_pipeline.dart` `_suppressRecognizedContainedBlocks`：包含判重只在父框宽≥高且父文本逐字包含子文本时删子块，竖长大父框永不处理，检测器给出的大框与其内小块全部落进 manga.json（NMS `text_detector.dart` 只删 IoU≥0.7）。
