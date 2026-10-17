@@ -165,6 +165,12 @@ describe('coverDHashOfJpeg', () => {
     expect(jpegExifOrientation(base)).toBe(0);
     for (let o = 1; o <= 8; o++) expect(jpegExifOrientation(withExifOrientation(base, o))).toBe(o);
     expect(coverDHashOfJpeg(withExifOrientation(base, 1))).toBe('0123456789abcdef');
+    // Orientation 写成 LONG（类型 4）的少数写入器：值照读（Dart image 也认）。
+    const long = withExifOrientation(base, 6);
+    const tag = long.findIndex((v, i) => v === 0x12 && long[i + 1] === 0x01 && long[i + 2] === 0x03);
+    long[tag + 2] = 0x04;
+    expect(jpegExifOrientation(long)).toBe(6);
+    expect(coverDHashOfJpeg(long)).toBe(coverDHashOfJpeg(withExifOrientation(base, 6)));
     // 水平镜像（2）：每行左右颠倒，与原图不同。
     expect(coverDHashOfJpeg(withExifOrientation(base, 2))).not.toBe('0123456789abcdef');
     for (let o = 2; o <= 8; o++) {
@@ -308,6 +314,51 @@ describe('畸形 / 不支持的输入：拒绝且不超时', () => {
     console.log('densest-symbol worst case:', ms.toFixed(1), 'ms');
     expect(h).toBeNull();
     expect(ms).toBeLessThan(500);
+  });
+});
+
+describe('构造的 CPU 炸弹（test/cover_vectors/adversarial/，对抗审查产出）', () => {
+  const advDir = new URL('./cover_vectors/adversarial/', import.meta.url);
+  const adv = (name) => new Uint8Array(readFileSync(new URL(name, advDir)));
+  // 格式本身合法、只是结构夸张的（几千个 Exif 段 / RST 段 / 全 16 位码字）：照算，只要求有界。
+  const ACCEPTED = new Set(['adv_exif_storm.jpg', 'adv_rst_storm.jpg', 'adv_slow_huff_16bit.jpg']);
+  const timed = (b) => {
+    const t0 = performance.now();
+    let r;
+    try {
+      r = verifiedCoverHash(b, null);
+    } catch (e) {
+      r = e;
+    }
+    return { r, ms: performance.now() - t0 };
+  };
+
+  it('扫描风暴 / 表风暴 / 细长图 / 填充风暴 / fuzz 最坏样本：400 bad_cover_image，单次 < 20 ms', () => {
+    const names = readdirSync(advDir).filter((f) => f.endsWith('.jpg') && !ACCEPTED.has(f)).sort();
+    expect(names).toEqual(expect.arrayContaining([
+      'adv_baseline_scan_storm.jpg', 'adv_prog_dc_refine_storm.jpg', 'adv_prog_dc_first_storm.jpg',
+      'adv_prog_ac_skip_storm.jpg', 'adv_dht_storm.jpg', 'adv_dqt_storm.jpg', 'adv_tall_1x250000.jpg',
+      'adv_tall_full_coeffs.jpg', 'adv_fuzz_worst.jpg',
+    ]));
+    for (const name of names) {
+      const { r, ms } = timed(adv(name));
+      expect([name, r.status, r.code]).toEqual([name, 400, 'bad_cover_image']);
+      expect([name, ms < 20]).toEqual([name, true]);
+    }
+  });
+
+  it('结构夸张但合法的（Exif 段风暴 / RST 风暴 / 全 16 位码字）：算出哈希，单次 < 20 ms', () => {
+    for (const name of ACCEPTED) {
+      const { r, ms } = timed(adv(name));
+      expect([name, typeof r === 'string' && /^[0-9a-f]{16}$/.test(r)]).toEqual([name, true]);
+      expect([name, ms < 20]).toEqual([name, true]);
+    }
+  });
+
+  it('上限不误伤：正常 progressive（10 个扫描）与 500×500（约 1050 个被切开的块）照算', () => {
+    expect(coverDHashOfJpeg(new Uint8Array(readFileSync(new URL('progressive_444_dri.jpg', dcDir))))).toMatch(/^[0-9a-f]{16}$/);
+    const big = new Uint8Array(encodeJpeg(rgba(500, 500, (x, y) => [x % 256, y % 256, 90]), 50).data);
+    for (let o = 1; o <= 8; o++) expect(coverDHashOfJpeg(withExifOrientation(big, o))).toMatch(/^[0-9a-f]{16}$/);
   });
 });
 

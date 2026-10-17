@@ -244,6 +244,7 @@ Apple 侧怎么建 Auth Key、App ID 勾 Push、sandbox / production 怎么选�
   ≈300px 缩略图冷调用 ≈ 3–5 ms、热态 ≈ 0.2–0.5 ms（**未在 workerd 上实测**）。支持 baseline / progressive
   （progressive 只解 DC 扫描）、4:4:4 / 4:2:2 / 4:2:0 / 灰度、DRI；算术编码 / 12 位 / CMYK 等拒绝（400
   `bad_cover_image`）。像素上限 0.25 MP（`COVER_DECODE_MAX_MP`），帧头声称超大尺寸在分配前就被拒；所有循环受
-  输入字节数约束（每次 Huffman 解码至少消耗 1 个真实比特，截断即拒）。先鉴权、先查「旧客户端且已有封面」再算哈希，
+  输入字节数约束（每次 Huffman 解码至少消耗 1 个真实比特，截断即拒），另限表定义 ≤ 32 张、扫描 ≤ 64 个、被切开的块 ≤ 2048 个
+  （防构造的扫描风暴 / 表风暴 / 细长图，样本在 `test/cover_vectors/adversarial/`）。先鉴权、先查「旧客户端且已有封面」再算哈希，
   架外的人和必然 409 的请求不耗 CPU。与 Dart 的对拍样本（`test/cover_vectors/`，两边测试读同一份）距离全为 0；
   与 jpeg-js 逐像素参照不同时只在两格亮度差 < 1 个灰度级的近似平局位上。`jpeg-js` 只剩测试里当参照（devDependency）。

@@ -49,6 +49,13 @@ const ROWS = 8;
  */
 export const COVER_DECODE_MAX_MP = 0.25;
 
+/** 一个文件里 DQT + DHT 表定义的总数上限（正常 2–6 张）。 */
+const MAX_TABLES = 32;
+/** 扫描数上限（baseline 1–3 个，libjpeg 默认 progressive 脚本 10 个）。 */
+const MAX_SCANS = 64;
+/** 被格子边界 / 图像边缘切开、需要存 AC 的亮度块数上限。 */
+const MAX_CUT_BLOCKS = 2048;
+
 function isJpeg(bytes) {
   return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
 }
@@ -97,7 +104,8 @@ function readTiffOrientation(b, start, end) {
   for (let i = 0; i < n; i++) {
     const e = ifd + 2 + i * 12;
     if (e + 12 > end) break;
-    if (u16(e) === 0x0112) return u16(e + 8);
+    // 值按类型读：SHORT（3，规范写法）取低 16 位，LONG（4，少数写入器）取 32 位（Dart image 两种都认）。
+    if (u16(e) === 0x0112) return u16(e + 2) === 4 ? u32(e + 8) : u16(e + 8);
   }
   return 0;
 }
@@ -176,13 +184,12 @@ function slowHuff(t, buf, cnt) {
 // 偏移；找 0xFF 用原生 indexOf、拷贝用 set，几乎不花解释器时间），解码时每次补 16 位、不再判 0xFF。
 
 /**
- * 从 pos（SOS 段之后）起去填充本扫描的熵数据。返回 { data, length, rstAt, rstNum, end }：data 末尾
- * 至少 8 个 0 字节供预读；rstAt / rstNum = 每个 RSTn 在 data 里的偏移与序号；end = 结束本扫描的
+ * 从 pos（SOS 段之后）起把本扫描的熵数据去填充写进 data（调用方每次解析只分配一块 len + 8 的缓冲，
+ * 各扫描复用）。返回 { data, length, rstAt, rstNum, end }：有效数据之后补 8 个 0 字节供预读；rstAt / rstNum = 每个 RSTn 在 data 里的偏移与序号；end = 结束本扫描的
  * 标记位置。找不到结束标记 = 截断。
  */
-function unstuffScan(bytes, pos) {
+function unstuffScan(bytes, pos, data) {
   const len = bytes.length;
-  const data = new Uint8Array(len - pos + 8);
   const rstAt = [];
   const rstNum = [];
   let o = 0;
@@ -203,6 +210,7 @@ function unstuffScan(bytes, pos) {
       rstNum.push(nx & 7);
       i = f + 2;
     } else {
+      data.fill(0, o, o + 8);
       return { data, length: o, rstAt, rstNum, end: f };
     }
   }
@@ -437,6 +445,11 @@ function parseJpeg(bytes, orientation) {
   let qY = null; // 亮度量化表（首个含亮度的扫描开始时锁定）
   let yDecoded = false;
   let sawSos = false;
+  // 构造输入的「风暴」上限：正常 JPEG 只有几张表、baseline 1–3 个扫描、progressive 约 10 个扫描。
+  // 不设上限时 96KB 能塞几千个 11 字节的扫描 / 几千张表，每个都要走一遍全帧或建表（实测 64–230 ms）。
+  let scratch = null; // 熵数据去填充缓冲（各扫描复用）
+  let scans = 0;
+  let tables = 0;
 
   function readFrame(s, e, marker) {
     if (frame) bad(); // 只允许一个帧头
@@ -476,6 +489,12 @@ function parseJpeg(bytes, orientation) {
     const bh = Math.ceil(height / 8);
     const nBlocks = stride * mcusY * y.v;
     const flip = orientation >= 5;
+    // 被切开的块要存 64 个系数、哈希时逐片算：细长图（如 1×250000）每块都被切开，限住数量。
+    // 正常封面远低于上限（500×500 约 1050 个，≈300px 缩略图约 400 个）。在建切片表（每片要算基函数和）
+    // 之前用整块计数先判，构造的细长图不必走完整条轴。
+    const wx = wholeBlockCount(bw, width, REVERSE_X[orientation], flip ? ROWS : COLS);
+    const wy = wholeBlockCount(bh, height, REVERSE_Y[orientation], flip ? COLS : ROWS);
+    if (bw * bh - wx * wy > MAX_CUT_BLOCKS) bad();
     const xs = axisSpans(bw, width, REVERSE_X[orientation], flip ? ROWS : COLS);
     const ys = axisSpans(bh, height, REVERSE_Y[orientation], flip ? COLS : ROWS);
     // 被切开的块分配 AC 槽（MCU 对齐多出来的填充块不参与哈希，不分配）。
@@ -487,6 +506,7 @@ function parseJpeg(bytes, orientation) {
         if (yCut || !spanIsWhole(xs, bx)) slot[by * stride + bx] = slots++;
       }
     }
+    if (slots !== bw * bh - wx * wy) throw new Error('cut-block count mismatch'); // 两套判据必须一致
     frame = {
       width, height, comps, hmax, vmax, mcusX, mcusY, stride, bw, bh, xs, ys, slot,
       dcs: new Int16Array(nBlocks),
@@ -507,6 +527,7 @@ function parseJpeg(bytes, orientation) {
       if (q + 1 + size > e) bad();
       const t = new Uint16Array(64);
       for (let i = 0; i < 64; i++) t[i] = pq ? (bytes[q + 1 + 2 * i] << 8) | bytes[q + 2 + 2 * i] : bytes[q + 1 + i];
+      if (++tables > MAX_TABLES) bad();
       qts[tq] = t;
       q += 1 + size;
     }
@@ -527,6 +548,7 @@ function parseJpeg(bytes, orientation) {
       } else {
         for (let i = 0; i < total; i++) if ((bytes[q + 17 + i] & 15) > 10) bad(); // AC 幅值 ≤ 10 位
       }
+      if (++tables > MAX_TABLES) bad();
       const t = buildHuffman(bytes, q + 1, q + 17, total);
       if (tc === 0) dcTables[th] = t;
       else acTables[th] = t;
@@ -537,6 +559,7 @@ function parseJpeg(bytes, orientation) {
   /** 解析 SOS 段 [s, e) 并解 / 跳过其后的熵数据，返回下一个标记的位置。 */
   function readScan(s, e) {
     if (!frame) bad();
+    if (++scans > MAX_SCANS) bad();
     const ns = bytes[s];
     if (ns < 1 || ns > frame.comps.length || e - s !== 4 + 2 * ns) bad();
     const y = frame.comps[0];
@@ -589,7 +612,8 @@ function parseJpeg(bytes, orientation) {
       for (const x of comps) perMcu += x.c.h * x.c.v;
       if (perMcu > 10) bad();
     }
-    const sd = unstuffScan(bytes, e);
+    if (scratch === null) scratch = new Uint8Array(len + 8);
+    const sd = unstuffScan(bytes, e, scratch);
     decodeScan(sd, { units: unitsX * unitsY, unitsX, interleaved: ns > 1, comps }, frame, restartInterval, mode, al);
     if (mode !== 2) yDecoded = true;
     return sd.end;
@@ -736,6 +760,18 @@ function axisSpans(nBlocks, total, reversed, nCells) {
   }
   start[nBlocks] = cell.length;
   return { start, cell, full, basis };
+}
+
+/** 一条轴上没被切开的块数（与 axisSpans + spanIsWhole 的判据一致，但不建切片表）。 */
+function wholeBlockCount(nBlocks, total, reversed, nCells) {
+  let n = 0;
+  for (let b = 0; b < nBlocks; b++) {
+    const s0 = b * 8;
+    if (s0 + 8 > total) continue; // 末块不满 8 像素
+    const a = reversed ? total - s0 - 8 : s0; // 目标轴上的区间 [a, a+8)
+    if (Math.floor((a * nCells) / total) === Math.floor(((a + 7) * nCells) / total)) n++;
+  }
+  return n;
 }
 
 /** 块 b 在这条轴上整块落在一个格子里（没被格子边界或图像边缘切开）。 */
