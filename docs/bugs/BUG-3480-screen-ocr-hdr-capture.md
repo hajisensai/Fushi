@@ -1,0 +1,14 @@
+## BUG-3480 · Windows 截屏识字在系统开 HDR 时截图发白过曝
+- **报告**：2026-10-16（用户：应用内反馈 QR44j9TGPc，Windows 10 Pro 19045，DPI 1.5，附冻结层截图整屏发白）
+- **真实性**：✅ 真 bug（用户路径 Win10 19045）。根因 `fushi/windows/runner/screen_ocr_overlay.cpp:91`（基线 74ea3425fb）：悬浮球「截屏识字」用 GDI `BitBlt(CAPTUREBLT)` 取整块显示器。系统开 HDR 时 DWM 在 scRGB（FP16 线性，1.0 = 80 nit）里合成，SDR 窗口按「SDR 内容亮度」抬亮；Win10 上 GDI 读回这张合成帧时没有按 SDR 白电平还原，SDR 内容整体被抬亮 → 冻结层与喂给 OCR 的 PNG 都发白（同一份 `capture().bgra`）。
+  本机（Windows 11 build 29683，LG ULTRAGEAR+，HDR 下 SDR 白 240 nit）实测 **BitBlt 在 HDR 下读回的 16 级灰阶与 SDR 下逐级相同**——新版 Windows 已在 GDI 读回时做了还原，所以本机复现不了「发白」，只能复现 HDR 取帧链路本身；Win10 19045 的发白以用户截图为证。
+- **[x] ① 已修复**（debe0c7d08）— 只在被截显示器开着 HDR（DXGI 输出色彩空间 `G2084_NONE_P2020`，与 `QueryHdrDisplayInfo` 同款判据）时改走新路径，SDR 显示器原样 BitBlt（零回归）：
+  - `fushi/windows/runner/hdr_desktop_capture.{h,cpp}`：`HdrMonitorDuplication`，`IDXGIOutput5::DuplicateOutput1` + `R16G16B16A16_FLOAT` 取 scRGB 原帧，拷暂存纹理后色调映射。
+  - `fushi/windows/runner/hdr_tone_map.h`（纯函数）：参考白 = 该显示器 `DISPLAYCONFIG_SDR_WHITE_LEVEL`（查不到按 80 nit 兜底，与 `hdr_video_host_window` 同口径）；整帧峰值 ≤ 参考白时恒等（SDR 内容逐级还原）；有 HDR 高光时按 max(R,G,B) 等比缩放，knee 0.75 以下恒等、以上扩展 Reinhard 把 [knee, 峰值] 压到 [knee, 1]（C1 连续、单调）；负值钳 0；half→float 与 half→8bit 查表，4K 一帧 30~60 ms。
+  - **两段式（关键）**：本机实测刚建好的 duplication 第一帧 `LastPresentTime == 0`、整帧全黑，只有建好之后该输出上发生过合成的帧才带桌面图像。所以 `flutter_window.cpp:2438` 在藏悬浮球 / 关旧冻结层**之前** `Open`，藏窗口那次合成就是要取的帧；`Capture` 跳过只有鼠标更新的帧，300 ms 预算内等不到就失败。
+  - 任何一步失败（建设备、`DuplicateOutput1`、取帧超时、尺寸/格式不符、旋转屏）都回落 BitBlt，原因经通道 `diagnostic` 字段回给 Dart，`ErrorLogService.logDiagnostic('floating_ball.screen_ocr_capture', …)` 记进诊断日志（随日志上传）；成功时也记一行参数摘要（白电平、峰值、各阶段耗时）。
+  - 选 Desktop Duplication 而不是 WGC `CreateForMonitor`：同步取帧（不用帧池 + 事件回调），不画黄色捕获框（Win10 19045 没有 `IGraphicsCaptureSession3`，WGC 黄框关不掉，每截一次整屏闪一次黄框，不可接受），FP16 格式由 `DuplicateOutput1` 直接给。因此没有再做 WGC 兜底，DXGI 失败直接回落 BitBlt。
+- **[x] ② 已加自动化测试**（debe0c7d08）— `fushi/windows/runner/tests/hdr_tone_map_test.cpp`（CMake gate `fushi_windows_hdr_tone_map_gate`，随 runner 构建跑）：80/120/200/240/480 nit 白电平下 256 级 SDR 灰阶与彩色像素还原（≤1 级、黑白精确）、不做白电平归一必发白的反证、白电平缺失兜底、压缩曲线端点/连续/单调、高光层次与色相保留、RowPitch 跨度、NaN/Inf。Dart 侧 `fushi/test/floating_ball/app_floating_ball_host_test.dart` 两条：原生回带 `diagnostic` 时进诊断日志且不影响识别流程；`DesktopScreenOcrCapture.fromWire` 两侧解析。
+- **真机验证（本机，HDR 由测试临时打开、测完关回原来的关闭状态）**：独立探针直接链接 `hdr_desktop_capture.cpp`，在屏上画 16 级灰阶 + 5 个色块 + 日文，HDR 开启时 DXGI 路径输出与 SDR 下 BitBlt **逐像素一致**（灰阶 0,17,…,255、`#6750A4` 等色块全部精确）；耗时 Open 170~800 ms（首次建 D3D 设备最慢）、取帧 0~15 ms、拷贝 15~30 ms、色调映射 30~60 ms。
+- **备注**：平台线程上新增的阻塞主要是 `D3D11CreateDevice` + `DuplicateOutput1`（每次截屏新建，避免持有设备跨越 HDR 开关 / 显卡重置）；只在 HDR 显示器上发生。
+- **所有者拍板（2026-10-17）**：① DXGI HDR 取帧**只在 Windows 10（build < 22000）上启用**——Windows 11 上 BitBlt 读回本来就正确，继续走 BitBlt、零额外耗时。判据是纯函数 `fushi/windows/runner/hdr_capture_policy.h`（`Decide(monitor_hdr, build)`，单测在 `tests/hdr_tone_map_test.cpp`），build 号用 `RtlGetVersion` 取（不受 manifest 兼容性声明影响，取不到时保持 BitBlt）；诊断日志写明走了 `gdi path` / `dxgi path` 与原因（含 build 号）。② D3D 设备不缓存，每次截屏新建。

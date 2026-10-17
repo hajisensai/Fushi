@@ -25,6 +25,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -1463,6 +1464,62 @@ void main() {
             <double>[100, 200, 500, 250],
           ]);
           expect(update['message'], isNull);
+        });
+
+        testWidgets('原生回带取帧诊断（HDR 显示器走 scRGB / 回落 GDI）时记进诊断日志', (
+          WidgetTester tester,
+        ) async {
+          const String note =
+              'hdr capture failed, fell back to gdi: DuplicateOutput1 hr=0x887A0004';
+          mockCapture(tester, <String, Object?>{
+            'png': png,
+            'screen': <double>[0, 0, 1920, 1080],
+            'diagnostic': note,
+          });
+          target.onRecognize = (Uint8List bytes) async =>
+              const SystemOcrPageResult(
+                lines: <SystemOcrTextLine>[line],
+                imageWidth: 1920,
+                imageHeight: 1080,
+              );
+          await pumpHost(tester);
+          await tapAction(tester, 'screen_ocr');
+          expect(
+            ErrorLogService.instance.diagnosticEntries.any(
+              (ErrorLogEntry e) =>
+                  e.source == 'floating_ball.screen_ocr_capture' &&
+                  e.error == note,
+            ),
+            isTrue,
+          );
+          // 诊断不影响流程：照常识别并把行框交给冻结层。
+          expect(target.log, <String>['dismiss', 'recognize']);
+        });
+
+        test('DesktopScreenOcrCapture.fromWire 读出成功与失败两侧的 diagnostic', () {
+          final DesktopScreenOcrCapture ok = DesktopScreenOcrCapture.fromWire(
+            <Object?, Object?>{
+              'png': png,
+              'screen': <double>[0, 0, 10, 10],
+              'diagnostic': 'hdr dxgi fp16',
+            },
+          );
+          expect(ok.png, png);
+          expect(ok.diagnostic, 'hdr dxgi fp16');
+          final DesktopScreenOcrCapture failed =
+              DesktopScreenOcrCapture.fromWire(<Object?, Object?>{
+                'error': 'capture_failed',
+                'diagnostic': 'x',
+              });
+          expect(failed.error, DesktopScreenOcrCapture.captureFailed);
+          expect(failed.diagnostic, 'x');
+          expect(
+            DesktopScreenOcrCapture.fromWire(<Object?, Object?>{
+              'png': png,
+              'screen': <double>[0, 0, 10, 10],
+            }).diagnostic,
+            isNull,
+          );
         });
 
         testWidgets('点在字上：查从这个字起的后缀、整行作句子，卡锚在该字的屏幕物理像素框', (

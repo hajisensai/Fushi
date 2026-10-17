@@ -158,11 +158,6 @@ void HdrVideoHostWindow::Destroy() {
   SetMainTransparency(false);
 }
 
-namespace {
-
-// SDR white level of the display whose GDI source name is |gdi_device_name|
-// (\\.\DISPLAYn, what DXGI_OUTPUT_DESC1::DeviceName reports). The value is in
-// units of 80 nits / 1000. Returns 0 when no active path matches.
 float QuerySdrWhiteNits(const wchar_t* gdi_device_name) {
   UINT32 path_count = 0;
   UINT32 mode_count = 0;
@@ -200,8 +195,6 @@ float QuerySdrWhiteNits(const wchar_t* gdi_device_name) {
   }
   return 0.0f;
 }
-
-}  // namespace
 
 HdrDisplayInfo QueryHdrDisplayInfo(HWND main) {
   using Microsoft::WRL::ComPtr;

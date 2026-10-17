@@ -83,6 +83,12 @@ struct HdrDisplayInfo {
 };
 HdrDisplayInfo QueryHdrDisplayInfo(HWND main);
 
+// SDR white level (nits) of the display whose GDI source name is
+// |gdi_device_name| (\\.\DISPLAYn, what DXGI_OUTPUT_DESC1::DeviceName reports).
+// DISPLAYCONFIG_SDR_WHITE_LEVEL is in units of 80 nits / 1000. Returns 0 when
+// no active path matches. Shared with hdr_desktop_capture.cpp (screen OCR).
+float QuerySdrWhiteNits(const wchar_t* gdi_device_name);
+
 }  // namespace fushi
 
 #endif  // RUNNER_HDR_VIDEO_HOST_WINDOW_H_
