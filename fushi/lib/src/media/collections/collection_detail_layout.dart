@@ -1012,13 +1012,31 @@ class CollectionEpisodeNumberPill extends StatelessWidget {
   }
 }
 
+/// 集卡状态行的观看文案：「看到 19:35」，知道片长时接百分比「看到 19:35 · 81%」
+/// （BUG-3491：反馈希望在时间进度旁看到看了多少）。[progress] 为 0..1；null = 不知道
+/// 片长，只给时间。
+String collectionEpisodeWatchedLabel({
+  required int positionMs,
+  double? progress,
+}) {
+  final String time = t.collection_episode_watched_at(
+    position: formatVideoPosition(positionMs),
+  );
+  if (progress == null) return time;
+  final int percent = (progress.clamp(0.0, 1.0) * 100).floor();
+  return '$time · $percent%';
+}
+
 /// 单张集卡（M3E）：左 16:9 缩略图（集号胶囊 + 云 / 下载角标）+ 右集名 / AniDB
 /// 编号 / 播出日 · 时长 / 集简介 / 观看状态，底部观看进度条。
 ///
 /// - 续播那一集整卡 primaryContainer 高亮（Apple 抬一阶 raised 底）；
-/// - 已看完：tertiary 实心对勾、集名降为 onSurfaceVariant；
-/// - 看了一半：知道总时长（[progress]）→ 底部 primary 进度条；算不出百分比时
-///   不造假条，改在状态行给「看到 mm:ss」。
+/// - 手动标记看完：tertiary 实心对勾、集名降为 onSurfaceVariant；有断点时对勾旁
+///   照样给「看到 mm:ss」；
+/// - 有断点（BUG-3491，所有者 2026-10-17 拍板：播放不再自动打勾，一律保留时间
+///   进度）：状态行「看到 mm:ss」，知道总时长（[progress]）时再接观看百分比
+///   「· 81%」并在底部画 primary 进度条（看完的集也画）；算不出百分比时不造假条、
+///   不写百分比。
 ///
 /// 纯视觉（手势归外层网格 / 焦点目标），整卡 [IgnorePointer]，调用方自己包
 /// [FushiFocusTarget] / [Actions]。
@@ -1054,10 +1072,10 @@ class CollectionEpisodeCard extends StatelessWidget {
   /// 原生编号与 TMDB 季集，这里作为集名下的小字并存，不改 [number]。
   final String? identityLabel;
 
-  /// 看到的位置（ms）；>0 且未看完时显示进度条或「看到 mm:ss」。
+  /// 看到的位置（ms）；>0 时状态行显示「看到 mm:ss」（已看完的集也显示）。
   final int positionMs;
 
-  /// 观看进度 0..1（总时长已知时）；null = 算不出，不画进度条。
+  /// 观看进度 0..1（总时长已知时）；null = 算不出，不写百分比、不画进度条。
   final double? progress;
 
   /// 元信息（播出日 / 时长），逐项存在才出。
@@ -1084,7 +1102,6 @@ class CollectionEpisodeCard extends StatelessWidget {
     final FushiTypography type = context.fushiType;
     final bool apple = isGlassDesign(context);
     final bool eink = isEinkTheme(context);
-    final bool started = positionMs > 0 && !completed;
     final bool highlight = isContinue && !eink;
     // Apple：primaryContainer 在单色强调色下就是灰填充，续播集认不出来；改用
     // 高一阶的实色 raised 底（iOS 选中行同款）。M3E：续播集 = primaryContainer
@@ -1097,9 +1114,10 @@ class CollectionEpisodeCard extends StatelessWidget {
         ? cs.onPrimaryContainer.withValues(alpha: 0.78)
         : cs.onSurfaceVariant;
     final double? progress = this.progress;
-    final double? fraction = started && progress != null && progress > 0
+    final double? percent = positionMs > 0 && progress != null && progress > 0
         ? progress.clamp(0.0, 1.0)
         : null;
+    final double? fraction = percent;
     final List<String> meta = <String>[
       for (final String part in this.meta)
         if (part.trim().isNotEmpty) part.trim(),
@@ -1109,24 +1127,27 @@ class CollectionEpisodeCard extends StatelessWidget {
     // 观看进度压成省略号。状态行改成 Wrap：两者放得下就同一行（观看在起始侧、规格
     // 在末端），放不下规格才折到下一行。规格未探到时 [VideoSpecsInlineLine] 是零尺寸，
     // 观看进度照旧独占状态行——卡片布局不需要预先知道规格有没有内容（它是异步探的）。
-    final Widget? statusLead = completed
-        ? FushiIcon(
-            FushiIcons.filled(FushiIcons.success),
-            key: const ValueKey<String>('collection-episode-completed'),
-            color: apple ? cs.primary : cs.tertiary,
-            size: 18,
-          )
-        : started && fraction == null
+    final Widget completedIcon = FushiIcon(
+      FushiIcons.filled(FushiIcons.success),
+      key: const ValueKey<String>('collection-episode-completed'),
+      color: apple ? cs.primary : cs.tertiary,
+      size: 18,
+    );
+    final Widget? statusLead = positionMs > 0
         ? Row(
             key: const ValueKey<String>('collection-episode-watched'),
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              FushiIcon(FushiIcons.playCircle, color: fgVariant, size: 16),
+              if (completed)
+                completedIcon
+              else
+                FushiIcon(FushiIcons.playCircle, color: fgVariant, size: 16),
               const SizedBox(width: 4),
               Flexible(
                 child: Text(
-                  t.collection_episode_watched_at(
-                    position: formatVideoPosition(positionMs),
+                  collectionEpisodeWatchedLabel(
+                    positionMs: positionMs,
+                    progress: percent,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1135,6 +1156,8 @@ class CollectionEpisodeCard extends StatelessWidget {
               ),
             ],
           )
+        : completed
+        ? completedIcon
         : null;
     final Widget statusRow = SizedBox(
       width: double.infinity,

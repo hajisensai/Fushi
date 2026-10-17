@@ -140,7 +140,6 @@ class _Session {
     final VideoWatchTracker tracker = VideoWatchTracker(
       bookUid: 'u1',
       clock: _clock(sink, now: () => _fakeNow),
-      markCompleted: (_) async {},
       loadCoverage: cov.load,
       saveCoverage: cov.save,
     )..debugNowForTesting = () => _fakeNow;
@@ -215,7 +214,6 @@ void main() {
       tracker = VideoWatchTracker(
         bookUid: 'u1',
         clock: clock,
-        markCompleted: (_) async {},
       )..attach(src);
       _fakeNow = DateTime(2026, 1, 1, 12);
       tracker.debugNowForTesting = () => _fakeNow;
@@ -382,7 +380,6 @@ void main() {
       final VideoWatchTracker tracker = VideoWatchTracker(
         bookUid: 'u1',
         clock: _clock(sink, now: () => _fakeNow),
-        markCompleted: (_) async {},
       )..debugNowForTesting = () => _fakeNow;
       tracker.attach(src);
       await tracker.debugCoverageLoaded;
@@ -412,7 +409,6 @@ void main() {
       final VideoWatchTracker tracker = VideoWatchTracker(
         bookUid: 'u1',
         clock: _clock(_Sink()),
-        markCompleted: (_) async {},
         onEpisodeCompleted: () => completed++,
       )..attach(src);
 
@@ -637,6 +633,67 @@ void main() {
       s.tick(wallMs: 30000);
       await s.tracker.stop();
       expect(s.sink.writes, isEmpty, reason: '没有位置推进就没有首次覆盖，不开段不写');
+    });
+  });
+
+  // BUG-3491：播放不再给库条目打勾，只剩「单集看完」外部上报；判定时机照样要一致。
+  group('单集看完上报的时机（BUG-3491）', () {
+    ({_FakeSource src, VideoWatchTracker tracker, List<String> marked})
+    build() {
+      final List<String> marked = <String>[];
+      final _FakeSource src = _FakeSource()
+        ..positionMs = 0
+        ..durationMs = 100000;
+      final VideoWatchTracker tracker = VideoWatchTracker(
+        bookUid: 'u1',
+        clock: _clock(_Sink()),
+        onEpisodeCompleted: () => marked.add('u1'),
+      )..attach(src);
+      return (src: src, tracker: tracker, marked: marked);
+    }
+
+    test('跳到 ED 后立刻离开（dispose，不经 60 秒 tick）也上报', () async {
+      final b = build();
+      b.tracker.start();
+      // 暂停态拖到 ED（95%），随即点下一集 → 页面销毁走 dispose。
+      b.src
+        ..isPlaying = false
+        ..positionMs = 95000
+        ..emit();
+      expect(b.marked, isEmpty, reason: '暂停态拖条预览不判');
+      b.tracker.dispose();
+      await pumpEventQueue();
+      expect(b.marked, <String>[
+        'u1',
+      ], reason: 'dispose 先摘播放源，离开时的完成判定必须用离开那一刻的位置');
+    });
+
+    test('播放中越过 90% 立即上报，不等 tick', () async {
+      final b = build();
+      b.tracker.start();
+      b.src
+        ..isPlaying = true
+        ..positionMs = 90500
+        ..emit();
+      await pumpEventQueue();
+      expect(b.marked, <String>['u1']);
+      await b.tracker.stop();
+      expect(b.marked, hasLength(1), reason: '一次会话只报一次');
+    });
+
+    test('暂停态拖过 90% 又拖回来再离开：不上报', () async {
+      final b = build();
+      b.tracker.start();
+      b.src
+        ..isPlaying = false
+        ..positionMs = 96000
+        ..emit();
+      b.src
+        ..positionMs = 40000
+        ..emit();
+      await b.tracker.stop();
+      expect(b.marked, isEmpty);
+      b.tracker.dispose();
     });
   });
 }

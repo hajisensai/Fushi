@@ -232,6 +232,7 @@ import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
+import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
@@ -5428,8 +5429,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _watchTracker = null;
     }
     final FushiDatabase db = appModel.database;
-    // 完成标记只对书架书：远端无行可标「看完」、也无库条目可报单集完成（与浏览器
-    // 网页视频 BrowserVideoStudyBridge 同律）；剧集面板的看完角标仍以 host 下发为准。
+    // 单集看完上报只对书架书：远端无库条目可报（与浏览器网页视频
+    // BrowserVideoStudyBridge 同律）；剧集面板的看完角标仍以 host 下发为准。
     final bool hasLibraryRow = _bookRow != null;
     _watchTrackerCoverageKey = coverageKey;
     _watchTracker =
@@ -5453,10 +5454,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             // 已看过的片内区间并集按视频身份持久化：次日重看同样不计（BUG-2108）。
             loadCoverage: () => db.getPref(coverageKey),
             saveCoverage: (String json) => db.setPref(coverageKey, json),
-            markCompleted: hasLibraryRow
-                ? (String bookUid) =>
-                      db.markVideoCompleted(bookUid, DateTime.now())
-                : (_) async {},
+            // BUG-3491（所有者 2026-10-17 拍板）：播放不再给库条目自动打「已看」勾；
+            // 列表显示时间进度 + 百分比，续播 / 已看计数认「手动标记或进度到片尾区」。
+            // 只保留单集看完的媒体追踪上报。
             onEpisodeCompleted: hasLibraryRow
                 ? () async {
                     if (!kMediaTrackingEnabled) return;
@@ -5670,6 +5670,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       videoRemotePositionEpisodeAtPrefKey(uid, 0),
       nowMs,
     );
+    await _persistKnownDuration(uid);
+  }
+
+  /// 上次为哪一集记下了多长的片长（只在变化时重写，见 [_persistKnownDuration]）。
+  (String uid, int durationMs)? _persistedDuration;
+
+  /// BUG-3491：把本集**真实片长**记进 `video_duration_ms_<uid>`。库里没有片长列，
+  /// 合集续播要靠它分清「已打勾的集重看到一半」与「看完了」，集卡要靠它算观看
+  /// 百分比（见 video_duration_pref.dart）。片长是文件事实，同一集只写一次。
+  Future<void> _persistKnownDuration(String uid) async {
+    final int? durationMs = _controller?.durationMs;
+    if (durationMs == null || durationMs <= 0) return;
+    final (String uid, int durationMs)? last = _persistedDuration;
+    if (last != null && last.$1 == uid && last.$2 == durationMs) return;
+    final int? stored = videoDurationMsFromPref(
+      appModel.prefsRepo.getPref(videoDurationPrefKey(uid)),
+    );
+    _persistedDuration = (uid, durationMs);
+    if (stored == durationMs) return;
+    await appModel.prefsRepo.setPref(videoDurationPrefKey(uid), durationMs);
   }
 
   void _prewarmNextEpisodeSubtitleCache() {

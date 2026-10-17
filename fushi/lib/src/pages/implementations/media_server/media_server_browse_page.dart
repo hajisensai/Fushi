@@ -99,13 +99,16 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
     return false;
   }
 
-  void _play(BuildContext context, MediaServerPlayRequest request) {
+  Future<void> _play(
+    BuildContext context,
+    MediaServerPlayRequest request,
+  ) async {
     final MediaServerPlayHandler? injected = widget.onPlay;
     if (injected != null) {
-      injected(context, request);
+      await injected(context, request);
       return;
     }
-    Navigator.of(context, rootNavigator: true).push<void>(
+    await Navigator.of(context, rootNavigator: true).push<void>(
       adaptivePageRoute<void>(
         context: context,
         builder: (_) => VideoFushiPage.neutralizedRemote(
