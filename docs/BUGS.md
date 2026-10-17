@@ -39,6 +39,7 @@
 |---|:--:|:--:|---|
 | [BUG-3488](bugs/BUG-3488-video-paused-sentence-skip-stuck.md) | ✅ | ✅ | 视频暂停时上/下一句跳不动，字幕约 2 秒后弹回原句 |
 | [BUG-3485](bugs/BUG-3485-android-gamepad-b-focus-ring.md) | ✅ | ✅ | Android 手柄 B 在触摸模式下变系统返回 + 屏幕外缘系统焦点框 |
+| [BUG-3484](bugs/BUG-3484-reader-text-justify.md) | ✅ | ✅ | 两端对齐开关开启时正文不对齐（Standard Ebooks EPUB） |
 | [BUG-3452](bugs/BUG-3452-peer-book-download-followups.md) | ✅ | ✅ | 对端书下载后多出未下载卡、合集册数翻倍、跳回顶部、最近阅读排序错位 |
 | [BUG-3451](bugs/BUG-3451-video-bar-menu-hides-controls.md) | ✅ | ✅ | 视频控制条「⋯」只有一项仍弹菜单、点开菜单时控制条消失 |
 | [BUG-3450](bugs/BUG-3450-browser-ext-subtitle-positioning.md) | ✅ | ✅ | 浏览器扩展字幕底板在全屏下与屏幕同高、缩放后整块上移飞出屏幕 |
