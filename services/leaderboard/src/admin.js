@@ -139,6 +139,12 @@ export async function mergeWorks(env, from, into, now) {
          nsfw = MAX(nsfw, (SELECT nsfw FROM works WHERE id = ?1))
        WHERE id = ?2`,
     ).bind(from, into),
+    // 清封面保护期随合并带到目标作品（取两边较晚的清除时刻），免得把被清过的作品并进去就绕开保护期。
+    env.DB.prepare(
+      `UPDATE works SET cover_cleared_at = NULLIF(MAX(COALESCE(cover_cleared_at, 0),
+         COALESCE((SELECT cover_cleared_at FROM works WHERE id = ?1), 0)), 0)
+       WHERE id = ?2`,
+    ).bind(from, into),
     env.DB.prepare('DELETE FROM works WHERE id = ?1').bind(from),
     ...coverResettleStatements(env.DB, [into], now),
     ...recountStatements(env.DB, [from, into], dup.results.map((r) => r.account_id)),

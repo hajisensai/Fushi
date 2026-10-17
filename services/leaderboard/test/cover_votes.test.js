@@ -57,7 +57,7 @@ async function cron(env, now) {
 
 async function users(env, n) {
   const out = [];
-  for (let i = 0; i < n; i++) out.push(await registerUser(env, `u${i}`, { now: NOW }));
+  for (let i = 0; i < n; i++) out.push(await registerUser(env, `u${i}`, { now: NOW - 60_000 }));
   return out;
 }
 
@@ -306,6 +306,22 @@ describe('封面按人数投票', () => {
     expect(work(env, into).cover_url).toBe(TMDB);
     expect(candidates(env, into).map((c) => [c.cover_url, c.votes]).sort()).toEqual([[TMDB, 1], [TMDB2, 2]].sort());
     expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM cover_candidates WHERE work_id = ?1').get(from).n).toBe(0);
+  });
+
+  it('管理端合并：清封面保护期随合并带到目标作品（取较晚的清除时刻）', async () => {
+    const env = makeEnv();
+    const [u0, u1] = await users(env, 2);
+    const up = (u, title, now) => call(env, 'POST', '/v1/shelf', {
+      key: u.key, account: u.id, now, body: { reset: true, put: [entry('book', [`t:${title}|`], title)] },
+    });
+    const into = (await up(u0, 'into', NOW)).data.works[0].workId;
+    const from = (await up(u1, 'from', NOW + 1)).data.works[0].workId;
+    const cleared = (id) => env.DB.raw.prepare('SELECT cover_cleared_at c FROM works WHERE id = ?1').get(id).c;
+    await call(env, 'POST', `/admin/api/works/${from}`, { headers: basic, body: { clearCover: true }, now: NOW + 5 });
+    expect(cleared(into)).toBeNull();
+    const r = await call(env, 'POST', '/admin/api/works/merge', { headers: basic, body: { from, into }, now: NOW + 6 });
+    expect(r.status).toBe(200);
+    expect(cleared(into)).toBe(NOW + 5);
   });
 });
 

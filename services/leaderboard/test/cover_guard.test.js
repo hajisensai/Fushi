@@ -23,7 +23,7 @@ const C = '00000000ffffffff';
 async function setup(n) {
   const env = makeEnv();
   const us = [];
-  for (let i = 0; i < n; i++) us.push(await registerUser(env, `u${i}`, { now: NOW }));
+  for (let i = 0; i < n; i++) us.push(await registerUser(env, `u${i}`, { now: NOW - 60_000 }));
   let workId;
   for (const u of us) {
     const r = await call(env, 'POST', '/v1/shelf', {
@@ -136,6 +136,60 @@ describe('替换门槛：确认票 ≥ N', () => {
     await confirm(env, us[5], workId, B, NOW + 5);
     await cron(env, NOW + 3 + DAY);
     expect(coverKey(env, workId)).toBe(keyOf(a));
+  });
+});
+
+describe('确认票账户与入场票收割', () => {
+  it('候选创建之后才注册的账户，确认票不计入门槛', async () => {
+    const { env, us, workId } = await setup(2);
+    const a = await putCover(env, us[0], workId, A);
+    await putCover(env, us[1], workId, B, NOW + 10);
+    // 候选 B 建好之后现注册两个小号来确认。
+    const late = [];
+    for (const n of ['late0', 'late1']) {
+      const u = await registerUser(env, n, { now: NOW + 20 });
+      await call(env, 'POST', '/v1/shelf', {
+        key: u.key, account: u.id, now: NOW + 21, body: { reset: true, put: [entry('book', ['t:x|'], 'x')] },
+      });
+      late.push(u);
+    }
+    for (const u of late) expect((await confirm(env, u, workId, B, NOW + 30)).status).toBe(200);
+    expect(cand(env, workId, B).votes).toBe(3);
+    await cron(env, NOW + 10 + DAY);
+    await vote(env, us[0], workId, { hash: A }, NOW + 10 + DAY);
+    expect(coverKey(env, workId)).toBe(keyOf(a));
+    const res = await call(env, 'GET', `/admin/api/works/${workId}/covers`, { headers: basic, now: NOW + 11 + DAY });
+    expect(res.data.candidates.find((c) => c.phash === B)).toMatchObject({ votes: 3, confirmed: 1, status: 'needs_votes' });
+  });
+
+  it('入场票收割：伪造图抢到首张、旧客户端的未确认票把它撑高；正版凭确认票仍能替换', async () => {
+    const { env, us, workId } = await setup(8);
+    // 攻击者 us[0] 抢先传伪造图 A 成为首张；四个旧客户端按哈希投给它（未确认）→ A 5 票、1 张确认票。
+    await putCover(env, us[0], workId, A);
+    for (const u of us.slice(1, 5)) await vote(env, u, workId, { hash: A }, NOW + 1);
+    expect(cand(env, workId, A).votes).toBe(5);
+    // 正版 B：三张确认票、总票数 3 < 5。
+    const b = await putCover(env, us[5], workId, B, NOW + 10);
+    await confirm(env, us[6], workId, B, NOW + 11);
+    await confirm(env, us[7], workId, B, NOW + 12);
+    await cron(env, NOW + 10 + DAY);
+    expect(coverKey(env, workId)).toBe(keyOf(b));
+  });
+
+  it('现封面自己确认票已过门槛时仍比总票数：平票留任，多一票才换', async () => {
+    const { env, us, workId } = await setup(8);
+    const a = await putCover(env, us[0], workId, A);
+    await confirm(env, us[1], workId, A, NOW + 1);
+    await confirm(env, us[2], workId, A, NOW + 2);
+    await vote(env, us[3], workId, { hash: A }, NOW + 3); // A：4 票（3 确认）
+    await putCover(env, us[4], workId, B, NOW + 10);
+    await confirm(env, us[5], workId, B, NOW + 11);
+    await confirm(env, us[6], workId, B, NOW + 12);
+    await vote(env, us[7], workId, { hash: B }, NOW + 13); // B：4 票（3 确认），确认票不比 A 少也不换
+    await cron(env, NOW + 10 + DAY);
+    expect(coverKey(env, workId)).toBe(keyOf(a));
+    await confirm(env, us[3], workId, B, NOW + 11 + DAY); // us[3] 改投 B：B 5 > A 3
+    expect(coverKey(env, workId)).not.toBe(keyOf(a));
   });
 });
 

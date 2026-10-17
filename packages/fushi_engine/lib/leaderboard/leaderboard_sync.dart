@@ -1098,7 +1098,17 @@ class _ShelfSyncRun {
       final String key = '$workId|${candidate.id}|$source';
       bool? same = _checks[key];
       if (same == null) {
-        final Uint8List remote = await client.fetchCoverImage(candidate.image);
+        final Uint8List remote;
+        try {
+          remote = await client.fetchCoverImage(candidate.image);
+        } on LeaderboardApiException catch (err) {
+          // 缩略图 404 = 候选在 check 之后被清理了（不是服务端不认接口）：按临时失败跳过这部，
+          // 不停本轮、不记账，下次同步重新 check。
+          if (err.status == 404) {
+            throw const LeaderboardApiException(409, 'cover_candidate_gone');
+          }
+          rethrow;
+        }
         final CoverSimilarity? sim = await coverCompare(bytes, remote);
         if (sim == null) {
           throw _CoverThumbFailure(

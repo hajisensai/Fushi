@@ -866,6 +866,39 @@ void main() {
       expect(next.state.coverVotes['W_book_a']!.confirmed, isTrue);
     });
 
+    test('候选缩略图 404（check 之后被清理）：跳过这部、不停本轮、不记账，下次重新 check', () async {
+      knownHashes.add(hashes[0]);
+      imageStatuses = <(int, String)>[(404, 'not_found')];
+      final List<LocalShelfEntry> entries = <LocalShelfEntry>[
+        _e('book:a', cover: '/c/a.jpg'),
+        _e('book:b', cover: '/c/b.jpg'),
+      ];
+      final ShelfSyncOutcome out = await syncCovers(
+        entries,
+        LeaderboardSyncState.empty,
+      );
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'img 1',
+        'check W_book_b hash=${hashes[0]}',
+        'img 1',
+        'confirm W_book_b cid=1',
+      ]);
+      expect(out.state.coverVotes.keys.toSet(), <String>{'W_book_b'});
+      serverShelfCount = 2;
+      coverRequests.clear();
+      final ShelfSyncOutcome next = await syncCovers(entries, out.state);
+      expect(coverRequests, <String>[
+        'check W_book_a hash=${hashes[0]}',
+        'img 1',
+        'confirm W_book_a cid=1',
+      ]);
+      expect(next.state.coverVotes.keys.toSet(), <String>{
+        'W_book_a',
+        'W_book_b',
+      });
+    });
+
     test('升级：旧版本记下的未确认缩略图票补一次本机比对；已确认的不再动', () async {
       knownHashes.add(hashes[0]);
       final LocalShelfEntry a = _e('book:a', cover: '/c/a.jpg');

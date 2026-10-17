@@ -6,9 +6,13 @@
 //     「最早达到该票数」；掉票不改 reached_at），再平取 id 小的（先提交的）。
 //     没有任何候选有票时作品封面保持原样（存量封面、旧客户端的先到先得结果都不动）。
 //   - **替换门槛**：作品已有封面（含迁移 0012 回填的存量封面）时，挑战者候选要取代它必须同时满足：
-//     ① 确认票 ≥ COVER_REPLACE_MIN_CONFIRMED 个不同（未隐藏）账户；② 候选创建满
-//     COVER_REPLACE_COOLDOWN_MS；③ 总票数严格多于现封面候选（平票现封面留任）。
-//     为什么：dHash 只是感知哈希，知道公开的正版封面就能「老实地」造出完整解码后哈希距离 ≤ 5、显示却是
+//     ① 确认票 ≥ COVER_REPLACE_MIN_CONFIRMED 个不同（未隐藏、且**注册早于该候选创建**）账户；
+//     ② 候选创建满 COVER_REPLACE_COOLDOWN_MS；③ 比现封面强：现封面自己的确认票也 ≥ 门槛时比总票数
+//     （严格多于，平票现封面留任）；现封面确认票不足门槛时比确认票（挑战者确认票严格多于现封面确认票）。
+//     为什么比确认票：现封面若是伪造图抢到的首张，旧客户端按哈希投的未确认票会被它收割、把总票数
+//     撑高（「入场票收割」），正版靠确认票永远追不上；只有现封面本身已有足够确认票时，总票数才可信。
+//     为什么注册时间要早于候选：否则攻击者可以先建候选、再现注册小号来凑确认票。
+//     为什么：dHash 只是感知哈希，知道公开的正版封面就能「老实地」造出服务端哈希距离很近、显示却是
 //     另一张图的 JPEG（审查实测），服务端解码只挡得住低级伪造。一个人拿伪造图抢先建候选，之后持正版
 //     封面的用户按哈希投票都会投到他的图上——票是被「收割」来的。门槛只数确认票，收割不到；冷却期给
 //     管理员 / 正版持有者留出发现和反制（投回正版、清封面、隐藏账户）的时间。
@@ -17,6 +21,9 @@
 //       新客户端按哈希命中后**在本机**下载候选缩略图、与本地封面做强比对（32×32 灰度的 NCC +
 //       去掉 9×8 粗格后的细节 NCC，fushi_engine leaderboard/cover_compare.dart）通过后提交的
 //       {hash, confirm: cid}。比对放在投票者设备上：CPU 在用户端，而且只有他有正版原图。
+//     **防护边界**：confirm 是客户端自报的，服务端验证不了比对真的发生过。所以门槛的实质是
+//     「3 个注册早于候选的账户 + 24 小时公示期 + 管理员可见的不符计数」；本机强比对防的是诚实客户端被
+//     收割去给伪造图投票，不防一人多号（多号各自 confirm 即可）。
 //     比对不通过 → {hash, mismatch: cid}：记进 cover_mismatches（管理端信号，见 GET
 //     /admin/api/works/:id/covers），撤掉他投给该候选的票，之后按哈希查找时对他跳过这个候选
 //     （于是他会命中下一个候选或上传自己的图，另立候选）。不符记录不影响排名、不阻止替换——
@@ -244,20 +251,44 @@ export function recountStatement(db, worksJson, now) {
 const CURRENT_VOTES = `COALESCE((SELECT MAX(cc.votes) FROM cover_candidates cc WHERE cc.work_id = w.id
   AND (cc.cover_key = w.cover_key OR cc.cover_url = w.cover_url)), 0)`;
 
-/** 候选 c 的确认票数（只数未隐藏账户；走 idx_cover_votes_candidate，读量 = 该候选的票数）。 */
-export const CONFIRMED_VOTES = `(SELECT COUNT(*) FROM cover_votes cv JOIN accounts ca ON ca.id = cv.account_id AND ca.hidden = 0
-  WHERE cv.candidate_id = c.id AND cv.confirmed = 1)`;
+/**
+ * 候选 alias 的确认票数：未隐藏、注册早于该候选创建的账户投的确认票（走 idx_cover_votes_candidate，
+ * 读量 = 该候选的票数）。accounts.created_at 与 cover_candidates.created_at 都是毫秒时刻。
+ */
+export function confirmedVotesOf(alias) {
+  return `(SELECT COUNT(*) FROM cover_votes cv JOIN accounts ca ON ca.id = cv.account_id AND ca.hidden = 0
+  WHERE cv.candidate_id = ${alias}.id AND cv.confirmed = 1 AND ca.created_at < ${alias}.created_at)`;
+}
+
+/** 候选 c 的确认票数。 */
+export const CONFIRMED_VOTES = confirmedVotesOf('c');
+
+/** 现封面候选的确认票数（没有现封面 / 现封面没有候选时为 0）。 */
+const CURRENT_CONFIRMED = `COALESCE((SELECT MAX(${confirmedVotesOf('cc')}) FROM cover_candidates cc WHERE cc.work_id = w.id
+  AND (cc.cover_key = w.cover_key OR cc.cover_url = w.cover_url)), 0)`;
+
+/** c 是作品 w 的现封面候选。 */
+const IS_CURRENT = '(c.cover_key = w.cover_key OR c.cover_url = w.cover_url)';
+/**
+ * 同一判据的排序键（现封面 1、其余 0）。SQLite 的关联标量子查询里 ORDER BY 引用不到外层的 w
+ * （报 no such column），所以按 c.work_id 回查 works，不碰外层别名。
+ */
+const IS_CURRENT_SORT = `CASE WHEN EXISTS (SELECT 1 FROM works ww WHERE ww.id = c.work_id
+  AND (ww.cover_key = c.cover_key OR ww.cover_url = c.cover_url)) THEN 1 ELSE 0 END`;
 
 /**
- * 挑战者 c 是否有资格替换作品 w 的封面（门槛 + 冷却 + 多于现封面）。?2 = now − 冷却。
+ * 挑战者 c 是否有资格替换作品 w 的封面（文件头「替换门槛」①②③）。?2 = now − 冷却。
  * votes >= 门槛 是确认票 >= 门槛的必要条件，写在前面让多数候选不必去数确认票。
  */
 const REPLACE_ELIGIBLE = `c.votes >= ${COVER_REPLACE_MIN_CONFIRMED} AND c.created_at <= ?2
-  AND c.votes > ${CURRENT_VOTES} AND ${CONFIRMED_VOTES} >= ${COVER_REPLACE_MIN_CONFIRMED}`;
+  AND ${CONFIRMED_VOTES} >= ${COVER_REPLACE_MIN_CONFIRMED}
+  AND CASE WHEN ${CURRENT_CONFIRMED} >= ${COVER_REPLACE_MIN_CONFIRMED} THEN c.votes > ${CURRENT_VOTES}
+           ELSE ${CONFIRMED_VOTES} > ${CURRENT_CONFIRMED} END`;
 
 /**
  * 物化：把胜出候选写回 works.cover_key / cover_url（规则见文件头）。每部作品在
- * 「现封面候选 ∪ 有资格的挑战者」里按 票数↓、reached_at↑、id↑ 取第一个；取到现封面即不变。
+ * 「现封面候选 ∪ 有资格的挑战者」里取第一个：有资格的挑战者排在现封面前面（比确认票时挑战者的总票数
+ * 可能少于被收割撑高的现封面），挑战者之间按 票数↓、reached_at↑、id↑；只剩现封面即不变。
  * 有资格 = 有票且（作品无封面且不在清除保护期，或 REPLACE_ELIGIBLE）。没有任何候选有资格时作品不动。
  */
 export function materializeStatement(db, worksJson, now) {
@@ -266,12 +297,13 @@ export function materializeStatement(db, worksJson, now) {
      FROM (SELECT w.id AS work_id, (
              SELECT c.id FROM cover_candidates c
              WHERE c.work_id = w.id AND (
-               c.cover_key = w.cover_key OR c.cover_url = w.cover_url
+               ${IS_CURRENT}
                OR (c.votes > 0 AND (
                  (w.cover_key IS NULL AND w.cover_url IS NULL
                    AND (w.cover_cleared_at IS NULL OR w.cover_cleared_at <= ?3))
                  OR (${REPLACE_ELIGIBLE}))))
-             ORDER BY c.votes DESC, c.reached_at ASC, c.id ASC LIMIT 1) AS cid
+             ORDER BY ${IS_CURRENT_SORT}, c.votes DESC, c.reached_at ASC, c.id ASC
+             LIMIT 1) AS cid
            FROM works w WHERE w.id IN (SELECT value FROM json_each(?1))) AS pick
      JOIN cover_candidates win ON win.id = pick.cid
      WHERE works.id = pick.work_id
@@ -314,7 +346,7 @@ export async function pendingCoverWorks(db, now, limit = COVER_PENDING_BATCH) {
     `SELECT DISTINCT c.work_id AS work_id FROM cover_candidates c JOIN works w ON w.id = c.work_id
      WHERE c.votes >= ${COVER_REPLACE_MIN_CONFIRMED} AND c.created_at > ?1 AND c.created_at <= ?2
        AND COALESCE(c.cover_key = w.cover_key, 0) = 0 AND COALESCE(c.cover_url = w.cover_url, 0) = 0
-       AND c.votes > ${CURRENT_VOTES} AND ${CONFIRMED_VOTES} >= ${COVER_REPLACE_MIN_CONFIRMED}
+       AND ${REPLACE_ELIGIBLE}
      LIMIT ?3`,
   ).bind(now - COVER_REPLACE_COOLDOWN_MS - COVER_PENDING_LOOKBACK_MS, now - COVER_REPLACE_COOLDOWN_MS, limit).all();
   return rows.results.map((r) => r.work_id);
@@ -351,13 +383,16 @@ export async function workCoverCandidates(db, workId, now) {
     || (c.cover_url !== null && c.cover_url === work.cover_url);
   const current = rows.results.find(isCurrent);
   const currentVotes = current ? current.votes : 0;
+  const currentConfirmed = current ? current.confirmed : 0;
+  const beatsCurrent = (c) => (currentConfirmed >= COVER_REPLACE_MIN_CONFIRMED
+    ? c.votes > currentVotes : c.confirmed > currentConfirmed);
   const empty = work.cover_key === null && work.cover_url === null;
   const guarded = work.cover_cleared_at !== null && work.cover_cleared_at > now - COVER_CLEAR_GUARD_MS;
   const candidates = rows.results.map((c) => {
     let status;
     if (isCurrent(c)) status = 'current';
     else if (empty && !guarded) status = 'first';
-    else if (c.confirmed < COVER_REPLACE_MIN_CONFIRMED || c.votes <= currentVotes) status = 'needs_votes';
+    else if (c.confirmed < COVER_REPLACE_MIN_CONFIRMED || !beatsCurrent(c)) status = 'needs_votes';
     else if (c.created_at > now - COVER_REPLACE_COOLDOWN_MS) status = 'cooldown';
     else status = 'eligible';
     return {
