@@ -89,11 +89,11 @@ const String kSrsCardDictStyleScript =
     return !!(c && c.a > 0.2);
   }
 
-  /* 读相：同 popup.js __fushiDictUnifiedClassify。 */
+  /* 读相：同 popup.js __fushiDictUnifiedClassify（px = 量到的计算字号，只用于分类，不写回）。 */
   function classify(scope, writes){
     var scs = getComputedStyle(scope);
     var info = new Map();
-    info.set(scope, { color: parseRgb(scs.color), fontSize: parseFloat(scs.fontSize) || 0, ctx: null });
+    info.set(scope, { color: parseRgb(scs.color), px: parseFloat(scs.fontSize) || 0, ctx: null });
     var nodes = scope.querySelectorAll('*');
     for (var n = 0; n < nodes.length; n++) {
       var node = nodes[n];
@@ -104,7 +104,7 @@ const String kSrsCardDictStyleScript =
       if (node.matches(SKIP)) { info.set(node, pi); continue; }
       var cs = getComputedStyle(node);
       var color = parseRgb(cs.color);
-      var fontSize = parseFloat(cs.fontSize) || pi.fontSize;
+      var px = parseFloat(cs.fontSize) || pi.px;
       var bg = parseRgb(cs.backgroundColor);
       var gradient = /gradient\\(/i.test(cs.backgroundImage || '');
       var hasBg = gradient || solidBg(bg);
@@ -112,7 +112,7 @@ const String kSrsCardDictStyleScript =
       var textLen = (node.textContent || '').trim().length;
       var tag = null;
       if (hasBg && pi.ctx !== 'chip') {
-        var big = pi.fontSize > 0 && fontSize >= pi.fontSize * 1.4;
+        var big = pi.px > 0 && px >= pi.px * 1.4;
         if (inline && !big && textLen <= CHIP_MAX) {
           tag = 'chip';
         } else {
@@ -141,7 +141,7 @@ const String kSrsCardDictStyleScript =
       });
       var ctx = (tag === 'chip' || tag === 'block' || tag === 'panel' || tag === 'chip-outline')
         ? (tag === 'chip-outline' ? 'chip' : tag) : pi.ctx;
-      info.set(node, { color: ctx !== pi.ctx ? null : color, fontSize: fontSize, ctx: ctx });
+      info.set(node, { color: ctx !== pi.ctx ? null : color, px: px, ctx: ctx });
     }
   }
 

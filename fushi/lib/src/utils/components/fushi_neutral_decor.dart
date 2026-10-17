@@ -29,8 +29,12 @@ Color fushiNeutralBlockColor(BuildContext context) {
 }
 
 /// 信息块圆角：MD3 12、Apple 10（macOS / iOS 内嵌块的圆角）。
-BorderRadius fushiNeutralBlockRadius(BuildContext context) =>
-    BorderRadius.all(Radius.circular(isGlassDesign(context) ? 10 : 12));
+BorderRadius fushiNeutralBlockRadius(BuildContext context) => BorderRadius.all(
+  Radius.circular(fushiNeutralBlockRadiusValue(apple: isGlassDesign(context))),
+);
+
+/// [fushiNeutralBlockRadius] 的半径值（没有 BuildContext 的装配点用）。
+double fushiNeutralBlockRadiusValue({required bool apple}) => apple ? 10 : 12;
 
 /// 信息块完整装饰（底色 + 圆角；墨水屏补描边）。
 BoxDecoration fushiNeutralBlockDecoration(BuildContext context) {

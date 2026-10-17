@@ -30,6 +30,7 @@ import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_dict_style.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
+import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
@@ -1087,6 +1088,7 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
         ? srsCardAppearanceCss(
             appearance: appearance,
             appScheme: theme.colorScheme,
+            tokens: SrsCardTokens.fromTheme(theme),
             dark: dark,
             labels: labels,
             fontUrl: fontUrl,

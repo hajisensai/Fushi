@@ -28,6 +28,7 @@ import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -36,6 +37,9 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+
+/// 注音字号 / 基字字号（与模板 `rt` 的 0.36em 同一比例）。
+const double _kSrsRubyRatio = 0.36;
 
 /// 宽版式断点（与模板 `(min-width: 720px)` 一致）。
 const double kSrsFushiCardWideBreakpoint = 720;
@@ -192,6 +196,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final _SrsCardStyle style = _SrsCardStyle(
       appearance: a,
       scheme: scheme,
+      tokens: SrsCardTokens.of(context),
       dark: base.brightness == Brightness.dark,
       fontFamilies: families,
       languageCode: widget.face.languageCode,
@@ -270,7 +275,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           child: Text(
             srsPlainText(f['Hint']!),
             textAlign: TextAlign.center,
-            style: s.body(color: s.scheme.onSurfaceVariant, size: 15),
+            style: s.text(
+              s.tokens.bodySecondary,
+              color: s.scheme.onSurfaceVariant,
+            ),
           ),
         ),
     ];
@@ -293,10 +301,14 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
   }
 
-  double _heroSize(BoxConstraints c) =>
-      (c.maxWidth * 0.21).clamp(60.0, 112.0) * _termScale;
-
-  double get _termScale => ref.read(srsCardAppearanceProvider).termScale;
+  /// 正面大字词条相对 [SrsCardTokens.hero] 的倍率：随卡面宽度在字阶下限与其两倍之间取，
+  /// 再乘用户的词条倍率。
+  double _heroScale(_SrsCardStyle s, BoxConstraints c) {
+    final double min = s.sizeOf(s.tokens.hero);
+    return (c.maxWidth * 0.21).clamp(min, min * 2) /
+        min *
+        s.appearance.termScale;
+  }
 
   Widget _frontTerm(_SrsCardStyle s, BoxConstraints c) {
     final Map<String, String> f = widget.fields;
@@ -311,8 +323,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       children: <Widget>[
         SrsRubyText(
           segments: segs,
-          style: s.term(size: _heroSize(c)),
-          rubyStyle: s.body(size: _heroSize(c) * 0.36, color: s.muted),
+          style: s.term(s.tokens.hero, scale: _heroScale(s, c)),
+          rubyStyle: s.text(
+            s.tokens.hero,
+            scale: _heroScale(s, c) * _kSrsRubyRatio,
+            color: s.muted,
+          ),
           textAlign: TextAlign.center,
           lookup: true,
         ),
@@ -327,8 +343,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     bool context = false,
     bool masked = false,
   }) {
-    final double size =
-        (c.maxWidth * 0.064).clamp(24.0, 36.0) *
+    final double min = s.sizeOf(s.tokens.frontSentenceMin);
+    final double scale =
+        (c.maxWidth * 0.064).clamp(min, s.sizeOf(s.tokens.frontSentenceMax)) /
+        min *
         s.appearance.textScale *
         (context ? 0.74 : 1);
     final String plain = srsKanaFree(widget.fields['Sentence'] ?? '');
@@ -338,8 +356,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         masked ? 'srs-fushi-front-masked' : 'srs-fushi-front-sentence',
       ),
       textAlign: TextAlign.center,
-      style: s.body(
-        size: size,
+      style: s.text(
+        s.tokens.frontSentenceMin,
+        scale: scale,
         height: (context ? 1.8 : 1.75) * s.appearance.lineSpacing,
         color: context ? s.muted : null,
       ),
@@ -359,7 +378,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       firstChild: Text(
         srsPlainText(widget.fields['Expression'] ?? ''),
         textAlign: TextAlign.center,
-        style: s.term(size: _heroSize(c)),
+        style: s.term(s.tokens.hero, scale: _heroScale(s, c)),
       ),
       secondChild: _frontSentence(s, c),
     );
@@ -407,7 +426,11 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         kana: kana,
         position: positions.firstOrNull,
         categories: f['PitchCategories'] ?? '',
-        style: s.body(size: 19 * s.appearance.textScale, height: 1.3),
+        style: s.text(
+          s.tokens.emphasisLine,
+          scale: s.appearance.textScale,
+          height: 1.3,
+        ),
         dark: s.dark,
         fallbackColor: s.scheme.onSurface,
       ),
@@ -456,13 +479,20 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final List<SrsInline> segs = srsFieldFilled(f['ExpressionFurigana'])
         ? srsParseInline(f['ExpressionFurigana']!)
         : srsParseInline(f['Expression'] ?? '', ankiFurigana: false);
-    final double size =
-        (c.maxWidth * 0.10).clamp(34.0, 52.0) * s.appearance.termScale;
+    final double min = s.sizeOf(s.tokens.termMin);
+    final double scale =
+        (c.maxWidth * 0.10).clamp(min, s.sizeOf(s.tokens.termMax)) /
+        min *
+        s.appearance.termScale;
     return SrsRubyText(
       key: const ValueKey<String>('srs-fushi-term'),
       segments: segs,
-      style: s.term(size: size),
-      rubyStyle: s.body(size: size * 0.36, color: s.muted),
+      style: s.term(s.tokens.termMin, scale: scale),
+      rubyStyle: s.text(
+        s.tokens.termMin,
+        scale: scale * _kSrsRubyRatio,
+        color: s.muted,
+      ),
       lookup: true,
     );
   }
@@ -483,7 +513,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       size: wide ? null : s.thumb,
       // 与模板同：左栏图最高 220，矮视口（手机横屏）120。
       maxHeight: wide ? (_viewport <= 520 ? 120 : 220) : null,
-      radius: s.radius * 0.6,
+      radius: s.tokens.radiusSmall,
     );
   }
 
@@ -508,11 +538,16 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       segments: showRuby
           ? segs
           : <SrsInline>[for (final SrsInline x in segs) x.withoutRuby()],
-      style: s.body(
-        size: 20 * s.appearance.textScale,
+      style: s.text(
+        s.tokens.emphasisLine,
+        scale: s.appearance.textScale,
         height: 1.9 * s.appearance.lineSpacing,
       ),
-      rubyStyle: s.body(size: 10 * s.appearance.textScale, color: s.muted),
+      rubyStyle: s.text(
+        s.tokens.ruby,
+        scale: s.appearance.textScale,
+        color: s.muted,
+      ),
       emphasis: s.scheme.primary,
       lookup: !rubyToggle || _sentenceRuby,
     );
@@ -520,7 +555,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       key: const ValueKey<String>('srs-fushi-sentence-block'),
       padding: EdgeInsets.all(s.pad),
       pressScale: false,
-      color: s.scheme.surfaceContainer,
+      color: s.tokens.surface1(s.scheme),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -558,8 +593,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
                       child: Text(
                         srsPlainText(f['SentenceTranslation']!),
                         key: const ValueKey<String>('srs-fushi-translation'),
-                        style: s.body(
-                          size: 15 * s.appearance.textScale,
+                        style: s.text(
+                          s.tokens.bodySecondary,
+                          scale: s.appearance.textScale,
                           height: 1.55,
                           color: s.muted,
                           ui: true,
@@ -616,12 +652,15 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final CardSourceLink? link = CardSourceLink.fromHtml(html).firstOrNull;
     final String text = srsPlainText(html);
     if (link == null) {
-      return Text(text, style: s.body(size: 13, color: s.muted, ui: true));
+      return Text(
+        text,
+        style: s.text(s.tokens.caption, color: s.muted, ui: true),
+      );
     }
     return FushiPressScale(
       child: InkWell(
         key: const ValueKey<String>('srs-fushi-source-link'),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.all(Radius.circular(s.tokens.radiusInner)),
         onTap: () => srsRunLogged(
           'SrsFushiCardView.openSource',
           () => openCardSource(ref: ref, link: link),
@@ -633,7 +672,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
               child: Text(
                 text,
                 style: s
-                    .body(size: 13, color: s.scheme.primary, ui: true)
+                    .text(s.tokens.caption, color: s.scheme.primary, ui: true)
                     .copyWith(decoration: TextDecoration.underline),
               ),
             ),
@@ -850,6 +889,7 @@ class _SrsCardStyle {
   _SrsCardStyle({
     required this.appearance,
     required this.scheme,
+    required this.tokens,
     required this.dark,
     required this.fontFamilies,
     required this.languageCode,
@@ -857,27 +897,23 @@ class _SrsCardStyle {
 
   final SrsCardAppearance appearance;
   final ColorScheme scheme;
+
+  /// 当前设计系统的卡面令牌（与注入卡面 WebView 的变量同一份）。
+  final SrsCardTokens tokens;
   final bool dark;
   final List<String> fontFamilies;
   final String? languageCode;
 
   Color get muted => scheme.onSurfaceVariant;
 
-  double get gap => switch (appearance.density) {
-    SrsCardDensity.compact => 10,
-    SrsCardDensity.standard => 16,
-    SrsCardDensity.comfortable => 22,
-  };
+  double get gap => tokens.gap(appearance.density);
 
-  double get pad => switch (appearance.density) {
-    SrsCardDensity.compact => 12,
-    SrsCardDensity.standard => 16,
-    SrsCardDensity.comfortable => 20,
-  };
+  double get pad => tokens.pad(appearance.density);
 
   double get thumb => 84;
 
-  double get radius => FushiRadii.groupValue;
+  /// 字阶角色的字号。
+  double sizeOf(TextStyle role) => fushiContentTypeSize(role).fontSize!;
 
   Locale? get _locale => languageCode == null || languageCode!.isEmpty
       ? null
@@ -904,15 +940,16 @@ class _SrsCardStyle {
       fontFamilies.isEmpty &&
       (_contentFamilies.firstOrNull?.startsWith('Yu Gothic') ?? false);
 
-  TextStyle body({
-    double size = 16,
+  /// 卡面文字：字号取字阶角色 [role]（当前设计系统）× 内容倍率 [scale]，字族走卡面字体链。
+  TextStyle text(
+    TextStyle role, {
+    double scale = 1,
     double? height,
     Color? color,
     bool ui = false,
   }) {
     final List<String> families = ui ? fontFamilies : _contentFamilies;
-    return TextStyle(
-      fontSize: size,
+    return fushiContentTypeSize(role, scale: scale).copyWith(
       height: height ?? 1.6 * appearance.lineSpacing,
       color: color ?? scheme.onSurface,
       fontFamily: families.firstOrNull,
@@ -922,8 +959,11 @@ class _SrsCardStyle {
     );
   }
 
-  TextStyle term({required double size}) =>
-      body(size: size, height: 1.25).copyWith(fontWeight: FontWeight.w600);
+  TextStyle term(TextStyle role, {double scale = 1}) => text(
+    role,
+    scale: scale,
+    height: 1.25,
+  ).copyWith(fontWeight: FontWeight.w600);
 }
 
 // ---------------------------------------------------------------- 组件
@@ -1137,22 +1177,16 @@ class _Chip extends StatelessWidget {
   final _SrsCardStyle style;
   final Color? color;
 
+  /// 设计系统标签：MD3 = M3E 小标签（圆角小件、语义色淡底）；Apple = 空心胶囊、语义色
+  /// 落在圆点上（[FushiTag]）。
   @override
-  Widget build(BuildContext context) {
-    final Color fg = color ?? style.scheme.onSecondaryContainer;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color:
-            color?.withValues(alpha: 0.14) ?? style.scheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        text,
-        style: style.body(size: 12, height: 1.2, color: fg, ui: true),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => FushiTag(
+    text: text,
+    dense: true,
+    backgroundColor:
+        color?.withValues(alpha: 0.14) ?? style.scheme.secondaryContainer,
+    foregroundColor: color ?? style.scheme.onSecondaryContainer,
+  );
 }
 
 class _MetaRow extends StatelessWidget {
@@ -1174,7 +1208,7 @@ class _MetaRow extends StatelessWidget {
       Text(
         label,
         style: style
-            .body(size: 12, color: style.muted, ui: true)
+            .text(style.tokens.label, color: style.muted, ui: true)
             .copyWith(fontWeight: FontWeight.w600),
       ),
       const SizedBox(height: 6),
@@ -1242,7 +1276,7 @@ class _MediaImage extends ConsumerWidget {
             errorBuilder: (_, _, _) => const SizedBox.shrink(),
           );
     final Widget box = ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
+      borderRadius: BorderRadius.all(Radius.circular(radius)),
       child: size != null
           ? SizedBox.square(dimension: size, child: image)
           : ConstrainedBox(

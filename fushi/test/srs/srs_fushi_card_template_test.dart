@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:material_ui/material_ui.dart';
@@ -62,6 +63,7 @@ void main() {
       fonts: const <Map<String, dynamic>>[
         <String, dynamic>{'name': 'A'},
       ],
+      tokens: SrsCardTokens.fromTheme(ThemeData()),
       appScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
       dark: false,
       labels: const SrsCardLabels(
@@ -251,6 +253,7 @@ void main() {
               themedScrollbar: true,
               appearanceCss: srsCardAppearanceCss(
                 appearance: appearance,
+                tokens: SrsCardTokens.fromTheme(ThemeData()),
                 appScheme: scheme,
                 dark: dark,
                 labels: zh,
@@ -304,6 +307,7 @@ void main() {
         themedScrollbar: true,
         appearanceCss: srsCardAppearanceCss(
           appearance: appearance,
+          tokens: SrsCardTokens.fromTheme(ThemeData()),
           appScheme: light,
           dark: false,
           labels: zh,

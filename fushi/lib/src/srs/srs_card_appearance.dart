@@ -17,6 +17,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
+import 'package:fushi/src/srs/srs_card_tokens.dart';
 
 /// 卡面配色来源。
 enum SrsCardColorSource {
@@ -262,26 +263,31 @@ class SrsCardLabels {
 
 // ---------------------------------------------------------------- 注入形式
 
-/// 卡面配色：由 ColorScheme 角色一一映射到 `--fushi-srs-*`（命名对齐模板的令牌表）。
+/// 卡面配色：由 ColorScheme 角色一一映射到 `--fushi-srs-*`（命名对齐模板的令牌表）；
+/// 表面三档取当前设计系统的表面色阶（[SrsCardTokens.surface1] 等：MD3 = M3 表面容器、
+/// Apple = 分组背景）。
 @visibleForTesting
-Map<String, Color> srsCardPaletteVars(ColorScheme s, {required bool dark}) =>
-    <String, Color>{
-      '--fushi-srs-bg': s.surface,
-      '--fushi-srs-fg': s.onSurface,
-      '--fushi-srs-fg-muted': s.onSurfaceVariant,
-      '--fushi-srs-accent': s.primary,
-      '--fushi-srs-on-accent': s.onPrimary,
-      '--fushi-srs-accent-container': s.primaryContainer,
-      '--fushi-srs-on-accent-container': s.onPrimaryContainer,
-      '--fushi-srs-secondary-container': s.secondaryContainer,
-      '--fushi-srs-on-secondary-container': s.onSecondaryContainer,
-      '--fushi-srs-surface-container': s.surfaceContainer,
-      '--fushi-srs-surface-container-high': s.surfaceContainerHigh,
-      '--fushi-srs-surface-container-highest': s.surfaceContainerHighest,
-      '--fushi-srs-outline': s.outline,
-      '--fushi-srs-outline-variant': s.outlineVariant,
-      '--fushi-srs-highlight': s.primary.withValues(alpha: dark ? 0.34 : 0.26),
-    };
+Map<String, Color> srsCardPaletteVars(
+  ColorScheme s,
+  SrsCardTokens tokens, {
+  required bool dark,
+}) => <String, Color>{
+  '--fushi-srs-bg': s.surface,
+  '--fushi-srs-fg': s.onSurface,
+  '--fushi-srs-fg-muted': s.onSurfaceVariant,
+  '--fushi-srs-accent': s.primary,
+  '--fushi-srs-on-accent': s.onPrimary,
+  '--fushi-srs-accent-container': s.primaryContainer,
+  '--fushi-srs-on-accent-container': s.onPrimaryContainer,
+  '--fushi-srs-secondary-container': s.secondaryContainer,
+  '--fushi-srs-on-secondary-container': s.onSecondaryContainer,
+  '--fushi-srs-surface-container': tokens.surface1(s),
+  '--fushi-srs-surface-container-high': tokens.surface2(s),
+  '--fushi-srs-surface-container-highest': tokens.surface3(s),
+  '--fushi-srs-outline': s.outline,
+  '--fushi-srs-outline-variant': s.outlineVariant,
+  '--fushi-srs-highlight': s.primary.withValues(alpha: dark ? 0.34 : 0.26),
+};
 
 /// 外观实际用的 ColorScheme：跟随 app 时就是 [appScheme]，自定义强调色时以它为种子生成。
 ColorScheme srsCardColorScheme(SrsCardAppearance a, ColorScheme appScheme) =>
@@ -366,9 +372,13 @@ Set<String> srsCardFontWhitelist(
 /// （`[{name, path, enabled}]`，与阅读器正文同一机制）：整链排在模板默认的日文 /
 /// 中文 / 界面字体链之前，浏览器按字形逐个回落（西文字体放在前面就只作用于拉丁字母）。
 /// [fontUrl] 把字体文件路径换成卡面虚拟域 URL；[fontRoot] 之外的文件不出 @font-face。
+///
+/// [tokens] 是当前设计系统的卡面令牌（[SrsCardTokens]）：表面色阶、圆角、字阶倍率与
+/// 间距都从它生成，切换设计系统时卡面跟着变。
 String srsCardAppearanceCss({
   required SrsCardAppearance appearance,
   required ColorScheme appScheme,
+  required SrsCardTokens tokens,
   required bool dark,
   required SrsCardLabels labels,
   required String Function(String path) fontUrl,
@@ -389,9 +399,16 @@ String srsCardAppearanceCss({
       chain.fontFamily.isEmpty ? defaults : '${chain.fontFamily}, $defaults';
 
   final StringBuffer vars = StringBuffer(':root{');
-  srsCardPaletteVars(srsCardColorScheme(a, appScheme), dark: dark).forEach(
+  srsCardPaletteVars(
+    srsCardColorScheme(a, appScheme),
+    tokens,
+    dark: dark,
+  ).forEach(
     (String name, Color c) => vars.write('$name:${_cssColorValue(c)};'),
   );
+  srsCardShapeVars(
+    tokens,
+  ).forEach((String name, double px) => vars.write('$name:${_fmt(px)}px;'));
   if (chain.fontFamily.isNotEmpty) {
     final String zh = withChain(kSrsCardDefaultFontZh);
     vars
@@ -401,16 +418,36 @@ String srsCardAppearanceCss({
       ..write('--fushi-srs-font-ui:${withChain(kSrsCardDefaultFontUi)};');
   }
   vars
-    ..write('--fushi-srs-text-scale:${_fmt(a.textScale)};')
-    ..write('--fushi-srs-term-scale:${_fmt(a.termScale)};')
+    ..write(
+      '--fushi-srs-text-scale:'
+      '${_fmt(a.textScale * tokens.templateTextRatio)};',
+    )
+    ..write(
+      '--fushi-srs-term-scale:'
+      '${_fmt(a.termScale * tokens.templateTermRatio)};',
+    )
     ..write('--fushi-srs-line-scale:${_fmt(a.lineSpacing)};')
     ..write('--fushi-srs-label-more:${srsCssString(labels.allDefinitions)};')
     ..write('--fushi-srs-label-frequency:${srsCssString(labels.frequency)};')
     ..write('--fushi-srs-label-source:${srsCssString(labels.source)};')
     ..write('--fushi-srs-label-show-more:${srsCssString(labels.showMore)};')
     ..write('}');
-  return '${chain.fontFaces}$vars';
+  // 区块间距 / 内边距按设计系统间距令牌与密度档生成。模板把它们写在 `.card` 与
+  // `.card.fushi-srs-density-*` 上（不读宿主变量），这里用更高优先级的选择器覆盖。
+  final String spacing =
+      ':root .card.card{--fc-gap:${_fmt(tokens.gap(a.density))}px;'
+      '--fc-pad:${_fmt(tokens.pad(a.density))}px;}';
+  return '${chain.fontFaces}$vars$spacing';
 }
+
+/// 卡面圆角：模板 `--fc-radius` / `--fc-radius-small` / `--fc-radius-inner` 由当前设计系统的
+/// 形状令牌生成（MD3 = M3E 卡 / 小件档，Apple = inset grouped / 内嵌块）。
+@visibleForTesting
+Map<String, double> srsCardShapeVars(SrsCardTokens tokens) => <String, double>{
+  '--fushi-srs-radius': tokens.radius,
+  '--fushi-srs-radius-small': tokens.radiusSmall,
+  '--fushi-srs-radius-inner': tokens.radiusInner,
+};
 
 /// 外观 → `.card` 上的宿主类名（空格分隔，不含 `card` 本身与夜间类名）。
 String srsCardAppearanceClasses(SrsCardAppearance a) => <String>[

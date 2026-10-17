@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dar
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -40,6 +41,7 @@ String _css(
   List<Map<String, dynamic>> fonts = const <Map<String, dynamic>>[],
 }) => srsCardAppearanceCss(
   appearance: a,
+  tokens: SrsCardTokens.fromTheme(ThemeData()),
   appScheme:
       scheme ??
       ColorScheme.fromSeed(

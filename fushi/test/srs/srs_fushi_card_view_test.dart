@@ -13,10 +13,15 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
+import 'package:fushi/src/srs/srs_card_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiCard;
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:material_ui/material_ui.dart';
@@ -207,6 +212,42 @@ void main() {
         expect(y, greaterThanOrEqualTo(previous), reason: b.name);
         previous = y;
       }
+    });
+
+    testWidgets('[$ds] 卡面原生样式取自当前设计系统的卡面令牌', (WidgetTester tester) async {
+      await pump(tester, answer: true, apple: apple);
+      final Finder block = find.byKey(
+        const ValueKey<String>('srs-fushi-sentence-block'),
+      );
+      final BuildContext ctx = tester.element(block);
+      final SrsCardTokens tokens = SrsCardTokens.of(ctx);
+      expect(tokens.apple, apple);
+      // 例句卡底 = 设计系统表面一档（MD3 surfaceContainer / Apple 分组背景）。
+      expect(
+        tester.widget<FushiCard>(block).color,
+        tokens.surface1(Theme.of(ctx).colorScheme),
+      );
+      // 例句字号 = 字阶角色（倍率 1）；词条不小于 display-small 角色。
+      expect(
+        tester
+            .widget<SrsRubyText>(
+              find.byKey(const ValueKey<String>('srs-fushi-sentence')),
+            )
+            .style
+            .fontSize,
+        tokens.emphasisLine.fontSize,
+      );
+      expect(
+        tester
+            .widget<SrsRubyText>(
+              find.byKey(const ValueKey<String>('srs-fushi-term')),
+            )
+            .style
+            .fontSize,
+        greaterThanOrEqualTo(tokens.termMin.fontSize!),
+      );
+      // 内层块圆角 / 间距同一份令牌。
+      expect(tokens.radiusSmall, apple ? 10 : FushiM3eShape.small);
     });
 
     testWidgets('[$ds] 宽屏背面：左栏原生、右栏释义（宽版式）', (WidgetTester tester) async {
