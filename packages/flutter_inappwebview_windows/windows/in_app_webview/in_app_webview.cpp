@@ -211,7 +211,7 @@ namespace flutter_inappwebview_plugin
       // data folder must use identical options (mismatch fails with
       // 0x8007139F) — this is the plugin's single default-environment site.
       //
-      // BUG-3453: `fushi.local` is a virtual host served entirely by the
+      // BUG-3497: `fushi.local` is a virtual host served entirely by the
       // WebResourceRequested interceptor, yet Chromium still resolves it on
       // every main-frame navigation. `.local` goes to Windows multicast name
       // resolution (mDNS/LLMNR), which only fails after ~2.7 s and is not

@@ -6,7 +6,7 @@ import 'package:fushi_engine/epub/reader_resource_host.dart'
 
 String _read(String path) => File(path).readAsStringSync();
 
-/// BUG-3453 源码接线守卫：WebView2 默认环境必须把阅读器虚拟域名的主机解析
+/// BUG-3497 源码接线守卫：WebView2 默认环境必须把阅读器虚拟域名的主机解析
 /// 短路成「立即找不到」。
 ///
 /// 根因：`fushi.local` 只存在于资源拦截器里，但 WebView2 每次主框架导航仍会照常
@@ -32,7 +32,7 @@ void main() {
         reason:
             'without this rule every main-frame navigation to '
             '$kReaderResourceHost waits ~2.7 s for a multicast name lookup '
-            'to fail on Windows (BUG-3453); the rule host must follow '
+            'to fail on Windows (BUG-3497); the rule host must follow '
             'kReaderResourceHost',
       );
       // 同一处 AdditionalBrowserArguments 里仍保留 autoplay（BUG-1093），两条参数

@@ -1,4 +1,4 @@
-## BUG-3453 · Windows 开书/跨章白屏约 2 秒：WebView2 每次导航解析 fushi.local 走组播名称解析
+## BUG-3497 · Windows 开书/跨章白屏约 2 秒：WebView2 每次导航解析 fushi.local 走组播名称解析
 - **报告**：2026-10-17（用户：「现在打开书还是很慢」「白屏比较久」，书「やはり俺の青春ラブコメはまちがっている。６」，安装版 develop @271b782，跨章翻页也白约 2 秒）
 - **真实性**：✅ 真 bug（Windows）。根因：阅读器资源全挂在虚拟域名 `https://fushi.local/...`（`packages/fushi_engine/lib/epub/reader_resource_host.dart:9`），内容全由 `WebResourceRequested` 拦截器供给，但 Chromium 对每次主框架导航仍照常解析主机名；`.local` 在 Windows 上走组播名称解析（mDNS / LLMNR），本机实测 `[System.Net.Dns]::GetHostAddresses('fushi.local')` 每次 2692–2752 ms 才「不知道这样的主机」（失败不缓存），对照 `fushi.invalid` 41 ms。fork 早就知道这次解析必然失败——`packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview.cpp` NavigationCompleted 里用 `consumeMainFrameInjectedOk` 把 DNS 假失败纠正为成功——但等待本身一直在付。
   - 真书真 app 证据（Windows 离屏 runner，用户库只读拷贝 + 同款 Klee One 8.7 MB 字体，`.codex-test/windows-itest/openslow3`）：Dart 侧阶段合计 <0.8 s；资源拦截每个 ≤50 ms（字体 9 ms）；空等落在导航本身：HTML 已交出 → 首个 CSS 请求 1440 ms、字体下发完 → 下一请求 1435 ms、→ onLoadStop 1432 ms；跨章 31→33 docLoad 2.6 s 中「HTML 交出 → CSS 请求」空等 2.0 s。空等与章节大小无关（53 KB 的第 9 章与 163 KB 的第 31 章同量级）。
