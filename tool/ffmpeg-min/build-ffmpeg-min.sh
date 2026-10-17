@@ -286,6 +286,22 @@ if [ ! -d "$SRC/.git" ]; then
 fi
 cd "$SRC"
 
+# BUG-3504：互联 host 的自签 https 流按 TOFU 指纹放行，制卡给 ffmpeg 传
+# `-tls_pin_sha256 <指纹>`（desktop_audio_clipper.dart ffmpegRemoteInputArgs）。这个选项
+# 来自本仓补丁，移动端 ffmpeg-kit 早已打上（BUG-891），桌面 ffmpeg-min 却从没打过 →
+# 桌面作为客户端从互联 host 制卡时 ffmpeg 直接 "Unrecognized option 'tls_pin_sha256'"，
+# 截图 / 动图 / 片段全挂。补丁覆盖 schannel / securetransport / gnutls / openssl 四个后端；
+# 这份是对 n7.1 上下文的移植（逻辑与 third_party/ffmpeg_kit_flutter/patches/ 那份一致）。
+# 已打过（重复跑本脚本复用 $SRC）就跳过，打不上就当场失败——静默跳过会产出不认该
+# 选项的二进制，正是本条要堵的洞。
+TLS_PIN_PATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patches/ffmpeg-n7.1-tls-pin-sha256.patch"
+if git apply --reverse --check "$TLS_PIN_PATCH" 2>/dev/null; then
+  echo "[ffmpeg-min] tls pin patch already applied"
+else
+  git apply "$TLS_PIN_PATCH"
+  echo "[ffmpeg-min] applied $(basename "$TLS_PIN_PATCH")"
+fi
+
 # 组件白名单（覆盖 Fushi 四类命令；按需在调优清单里增删）。
 # image2/image2pipe：有声书片段导出（TODO-945 M4 / TODO-1096）用 `-loop 1 -i clip.png`
 # 把单张 PNG 当循环视频流喂进合成命令。`-loop` 是 image2 demuxer 的输入选项，读命名 PNG
@@ -330,7 +346,19 @@ DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac
 # 之后 `av1` 那个壳就没有存在意义，从清单里去掉，避免再有人以为 AV1 已经覆盖。
 # ⚠️ CI 构建环境需装 dav1d 开发包（MSYS2: mingw-w64-x86_64-dav1d；Ubuntu: libdav1d-dev；
 # macOS 在 build_darwin_static_deps 里从源码静态编，需要 meson + ninja + nasm）。
-DECODERS="h264,hevc,libdav1d,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_bluray,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text"
+# BUG-3504 补全（用完整 ffmpeg 生成样本、拿入库 ffmpeg-min 照制卡命令实跑出来的缺口，
+# 对应容器都在导入白名单 kVideoExtensions / audioExtensions 或 galgame 语音资源里；
+# 全是 FFmpeg 原生解码器，零外部依赖、LGPL）：
+#   aac_latm：日本 ISDB / 欧洲 DVB 电视录制的 .ts/.m2ts 常把 AAC 封成 LATM（parser 早在
+#     PARSERS，解码器一直没开）→ 句子音频 "no decoder found for: aac_latm"。
+#   adpcm_ms / adpcm_ima_wav / adpcm_yamaha / adpcm_g726(le) / gsm(_ms)：.wav 里的压缩
+#     PCM；galgame 语音资源（.wav）大量用 MS/IMA ADPCM。adpcm_ima_qt：.mov 的 IMA4 音轨。
+#   adpcm_swf / nellymoser / vp6 / vp6a / vp6f：老 .flv（Flash 时代）的音视频轨。
+#   prores / dnxhd / qtrle / cinepak / svq1 / svq3：剪辑软件导出 / 录屏 / 老 QuickTime 的 .mov。
+#   ffv1 / utvideo / huffyuv / ffvhuff / msrle / msvideo1 / rawvideo：录屏与无损存档常用的
+#     .mkv / .avi 视频轨（缺了截帧 / 动图 / 片段全挂，句子音频照常）。
+#   h263：.3gp / 老 .flv / .avi 的 H.263 轨（此前靠别的解码器连带编入，显式声明免得漂）。
+DECODERS="h264,hevc,libdav1d,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_bluray,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text,aac_latm,nellymoser,adpcm_ms,adpcm_ima_wav,adpcm_ima_qt,adpcm_swf,adpcm_yamaha,adpcm_g726,adpcm_g726le,gsm,gsm_ms,prores,dnxhd,qtrle,cinepak,ffv1,utvideo,huffyuv,ffvhuff,vp6,vp6a,vp6f,svq1,svq3,msrle,msvideo1,rawvideo,h263"
 # movtext：视频片段导出把「用户正在看的字幕」封成软字幕流（`-c:s mov_text`）。片段
 # 输出恒 .mp4（BUG-917），而 ISO-BMFF 只认 3GPP Timed Text = movtext 编码器；缺它
 # ffmpeg 直接 "Unknown encoder 'mov_text'"，字幕封装在桌面全挂（导出会自动降级成
@@ -380,7 +408,10 @@ ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,li
 # iOS 播放器认的是这条章节轨，mp4 模式只写 Nero `chpl`。
 # ⚠️ 入库二进制重编之前桌面上仍没有 ipod：BUG-460 / TODO-1217 那几条「桌面句子音频
 # 写 .aac 不写 .m4a」的约束继续成立，别因为配方里有了 ipod 就把它们改回 .m4a。
-MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts,sup,flac,ipod"
+# matroska：字幕 copy 分支按 .mkv/.mka 输出时选它（video_clip_subtitle.dart；与 webm 同一个
+# matroskaenc，体积增量近零）。s16le：上游 fushi_asr_core 抽 ASR 用的裸 PCM（`-f s16le`），
+# 缺它时每次转录都先白跑一遍失败再回退 mov（BUG-3504）。
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts,sup,flac,ipod,matroska,s16le"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +
@@ -435,9 +466,11 @@ case "$(uname -s)" in
   # Windows：静态链接，把 libwinpthread/zlib/libgcc/x264 等折进 exe → 发布单文件，
   # 不依赖 MSYS2 mingw64 运行时 DLL（用户机没有 MSYS2）。schannel 是系统 secur32，无外链。
   MINGW*|MSYS*)
+    # -lcrypt32：证书钉扎补丁在 schannel 里取对端证书后要 CertFreeCertificateContext
+    # （crypt32），FFmpeg configure 只给 schannel 链 -lsecur32。
     # Windows-only galgame 卡可能捕获 RIFF/XWMA。它需要专用 xwma demuxer；只有 wav
     # demuxer + WMA decoder 不足以打开该容器。输出仍走现有 AAC/ADTS 链。
-    EXTRA_CONFIG=(--target-os=mingw32 --arch=x86_64 --extra-ldflags=-static --pkg-config-flags=--static --enable-schannel --enable-demuxer=xwma)
+    EXTRA_CONFIG=(--target-os=mingw32 --arch=x86_64 --extra-ldflags=-static --pkg-config-flags=--static --enable-schannel --enable-demuxer=xwma --extra-libs=-lcrypt32)
     ;;
   # macOS（BUG-1443）：本分支曾只传 --enable-securetransport，于是 Homebrew 装的
   # x264 / svt-av1 / webp 全部以**动态依赖**留在产物里：

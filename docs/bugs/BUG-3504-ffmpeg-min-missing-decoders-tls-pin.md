@@ -1,0 +1,41 @@
+## BUG-3504 · 桌面捆绑 ffmpeg-min 缺一批可导入格式的解码器 / muxer，且没打证书钉扎补丁（-tls_pin_sha256 不认）
+- **报告**：2026-10-17（用户在 BUG-3503 之后要求：「还有类似缺少的吗，都补上」）
+- **真实性**：✅ 真 bug，**只在桌面**（`tool/ffmpeg-min/build-ffmpeg-min.sh` 是 `--disable-everything` + 白名单）。移动端 ffmpeg-kit 不做组件裁剪，下列原生解码器在入库 AAR 里全都有（逐个扫过名字），钉扎补丁也早已打上（BUG-891）。排查方法：用完整版 ffmpeg 生成约 80 种容器 / 编码的样本，拿入库 `third_party/ffmpeg-min/windows/ffmpeg.exe` 照制卡命令（`-ss … -t … -vn -c:a aac` 抽句子音频、`-frames:v 1` 截一帧）实跑，再用完整版 ffmpeg 跑同一矩阵做对照，排除样本本身的问题。另派两个只读子代理盘点导入扩展名白名单与代码里拼的全部 ffmpeg 命令。确认的缺口：
+  - **解码器**（容器在导入白名单 `kVideoExtensions` / `audioExtensions` 里，或是 galgame 语音资源 `.wav`）：
+    - `aac_latm`：日本 ISDB / 欧洲 DVB 电视录制的 `.ts` / `.m2ts`。parser 在表里，解码器没开。
+    - `adpcm_ms` / `adpcm_ima_wav` / `adpcm_yamaha` / `adpcm_g726`：`.wav` 里的压缩 PCM，galgame 语音大量使用。
+    - `adpcm_ima_qt`：`.mov` 的音轨。
+    - `adpcm_swf` / `nellymoser`：老 `.flv` 的音轨。
+    - `prores` / `dnxhd` / `qtrle` / `cinepak` / `ffv1` / `utvideo` / `huffyuv`：剪辑导出、录屏与无损存档的视频轨。
+    - 报错形态都是 `Decoding requested, but no decoder found for: <codec>`。
+    - 同族一起补上：`vp6*`、`svq1/3`、`msrle`、`msvideo1`、`rawvideo`、`gsm(_ms)`、`adpcm_g726le`、`ffvhuff`、`h263`（显式声明）。
+  - **muxer**：
+    - `s16le`：上游 `fushi_asr_core` 用 `-f s16le` 抽 ASR 音频，缺它报 `Requested output format 's16le' is not known`，每次转录先白跑一遍失败、再回退 mov。
+    - `matroska`：`video_clip_subtitle.dart` 字幕 copy 分支输出 `.mkv/.mka` 时要用，目前恒出 `.mp4`，属潜伏缺口。
+  - **证书钉扎**：
+    - 桌面作为客户端从互联 host（自签 https）制卡时，`lookup_mining.part.dart:692` 把 `activeFingerprintSha256` 交给引擎，`desktop_audio_clipper.dart:303` 拼出 `-tls_pin_sha256 <指纹>`。
+    - 入库 ffmpeg-min 从没打过 `third_party/ffmpeg_kit_flutter/patches/ffmpeg-tls-pin-sha256.patch`，于是报 `Unrecognized option 'tls_pin_sha256'`，整条命令失败。
+    - 句子音频先走 host 端裁剪（BUG-1004），所以主要暴露在截图、动图、片段上。
+  - 排除项（实测不是缺口）：
+    - `crop` 滤镜：被其它组件连带编入，可用。
+    - `vp9_superframe` / `extract_extradata` bsf：VP9→MP4、HLS/TS→MP4 的 `-c copy` 均成功。
+    - 长 GOP 的 TS 在 seek 点之后没有关键帧时截帧失败：完整版 ffmpeg 同样一帧不出，只是退出码为 0。
+    - nut / mxf / caf / wv / tta 等容器：不在任何导入入口。
+- **[ ] ① 未修复** — 配方已改，待 CI 重编并替换入库二进制：
+  - `DECODERS` 补上述解码器；`MUXERS` 补 `matroska`、`s16le`。
+  - 证书钉扎补丁移植到 n7.1：`tool/ffmpeg-min/patches/ffmpeg-n7.1-tls-pin-sha256.patch`。它与移动端补丁逻辑一致，只有 `tls.c` 的 include 上下文不同；已对全新 n7.1.5 源码验证能干净打上。
+  - 构建脚本在 configure 之前打这份补丁，已打过就跳过，打不上就直接失败。
+  - Windows 加 `--extra-libs=-lcrypt32`：补丁的 schannel 段调用 `CertFreeCertificateContext`，而 FFmpeg configure 只给 schannel 链 `-lsecur32`。
+- **[ ] ② 未加自动化测试** — 已加，待二进制替换后转绿：
+  - `tool/ffmpeg-min/smoke-test.sh`：
+    - 新增 10 个编码样本，各跑「抽音频 + 截帧」。
+    - 新增 `matroska`、`s16le` 两个 muxer 用例。
+    - 钉扎检查：先断言 `-h protocol=tls` 列出 `tls_pin_sha256`；有 openssl 时再做端到端：自签证书加 `s_server -WWW`，指纹匹配必须读到内容，指纹不匹配必须失败。
+    - 用完整版 ffmpeg 冒充被测对象整体跑过：钉扎之前的所有段都通过。脚手架在本机 Git Bash 下单独验证过：用 srt 载荷，因为 Windows 的 `s_server -WWW` 会把二进制文件截断；并关掉 MSYS 对 `-subj` 的路径改写。
+  - `fushi/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart`：
+    - 新加的组件由已有的「8 组组件清单逐项一致」自动覆盖。
+    - Windows 必需开关加 `--extra-libs=-lcrypt32`。
+    - 新增「二进制里有 `tls_pin_sha256`」：对现有入库产物会红，判据有效。
+    - 新增「配方在 FFmpeg configure 之前打补丁且补丁文件存在」：已绿。
+- **备注**：
+  - 未做：ARIB 字幕（日本电视 TS 的内嵌字幕）需要 libaribcaption，属于新的 C++ 外部依赖，FFmpeg 6.0 的移动端也没有对应配方。服务端 `--burn-subs` 的 `subtitles` 滤镜需要 libass，只在服务端用。两者都另开。
