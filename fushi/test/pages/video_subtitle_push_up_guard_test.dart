@@ -253,7 +253,7 @@ void main() {
     final int handler = src.indexOf('void _handleVideoPointerUp(');
     expect(handler, greaterThanOrEqualTo(0));
     final int handlerEnd =
-        src.indexOf('\n  bool _isVideoChromePointer(', handler);
+        src.indexOf('\n  void _handleVideoWheelSignal(', handler);
     final String body = src.substring(handler, handlerEnd);
     expect(body, isNot(contains('_toggleControlsVisibleForTap()')),
         reason:

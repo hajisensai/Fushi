@@ -46,7 +46,7 @@ extension _VideoSubtitleLanguage on _VideoFushiPageState {
 /// `build(BuildContext)` (the @override entry point) stays in the main shell — it
 /// only delegates to [_buildScaffold]. [_buildScaffold] / [_pageDropTarget] and
 /// the pointer/gesture handlers ([_handleVideoPointerUp] / [_handleDoubleTapSeek]
-/// / [_isVideoChromePointer] / [_handleSecondaryTap] / [_buildVideoContextMenuItems])
+/// / [_handleSecondaryTap] / [_buildVideoContextMenuItems])
 /// also stay in the main shell: they sit between `build` and [_buildVideoBody] and
 /// are not part of this contiguous render-tree run (cutting them would require
 /// splitting a non-contiguous subset).

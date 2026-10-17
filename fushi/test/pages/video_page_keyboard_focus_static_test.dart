@@ -199,7 +199,7 @@ void main() {
     final int handler = src.indexOf('void _handleVideoPointerUp(');
     expect(handler, greaterThanOrEqualTo(0));
     final String body = src.substring(
-        handler, src.indexOf('bool _isVideoChromePointer(', handler));
+        handler, src.indexOf('void _handleVideoWheelSignal(', handler));
     expect(body, contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)'),
         reason: '点视频画面必须收回键盘（与原生播放器一致）');
     // 「查词浮层期间除外」现在由 _canOwnVideoFocus 的统一门控保证，不再由调用点手写。

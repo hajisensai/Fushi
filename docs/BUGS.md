@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3511](bugs/BUG-3511-video-mining-audio-follows-stale-track.md) | ✅ | ✅ | video-mining-audio-follows-stale-track |
+| [BUG-3511](bugs/BUG-3511-video-chrome-double-click-fullscreen.md) | ✅ | ✅ | video-chrome-double-click-fullscreen |
 | [BUG-3510](bugs/BUG-3510-manga-local-ocr-boxes-misaligned.md) | ✅ | ✅ | manga-local-ocr-boxes-misaligned |
 | [BUG-3509](bugs/BUG-3509-manga-volume-opens-other-volume-cached-pages.md) | ✅ | ✅ | manga-volume-opens-other-volume-cached-pages |
 | [BUG-3508](bugs/BUG-3508-deleted-book-returns-as-remote-placeholder.md) | ✅ | ✅ | deleted-book-returns-as-remote-placeholder |

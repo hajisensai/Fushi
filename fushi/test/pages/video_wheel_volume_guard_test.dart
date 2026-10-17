@@ -14,7 +14,7 @@ import 'video_fushi_page_source_corpus.dart';
 ///   - respects the immersive lock (`_immersiveAllowsFullControls`, same gate as
 ///     the keyboard volume keys);
 ///   - does NOT fire when a side panel is open, or when the pointer is over the
-///     control-bar chrome (`_isVideoChromePointer`) — the bottom volume chip has
+///     control-bar chrome (`videoPointerHitsChrome`) — the bottom volume chip has
 ///     its own wheel Listener and lists/seek-bar own their scroll, so the
 ///     picture-level handler only serves the bare picture (no double-fire / no
 ///     stolen chrome scroll);
@@ -66,8 +66,7 @@ void main() {
         reason: 'respect the immersive lock like the keyboard volume keys');
     expect(h.contains('if (_videoSidePanel.value != null) return;'), isTrue,
         reason: 'do not steal the wheel while a side panel is open');
-    expect(h.contains('_isVideoChromePointer(controlsContext, event.position)'),
-        isTrue,
+    expect(h.contains('videoPointerHitsChrome('), isTrue,
         reason: 'wheel over control-bar chrome is left to the chrome '
             '(the bottom volume chip owns its own wheel Listener)');
     expect(
