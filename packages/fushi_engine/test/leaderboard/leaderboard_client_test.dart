@@ -440,6 +440,100 @@ void main() {
       );
     });
 
+    test('确认票：check / confirm / mismatch 的请求体与结果解析', () async {
+      final List<Map<String, dynamic>> replies = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'voted': false,
+          'candidate': <String, dynamic>{'id': 7, 'image': '/img/c/x-1.jpg'},
+          'confirmed': false,
+        },
+        <String, dynamic>{
+          'voted': true,
+          'cover': '/img/c/x-1.jpg',
+          'confirmed': true,
+        },
+        <String, dynamic>{
+          'voted': false,
+          'candidate': <String, dynamic>{'id': 8, 'image': '/img/c/y-2.jpg'},
+          'confirmed': false,
+        },
+      ];
+      final _Harness h = _Harness(
+        (http.Request r) async => _json(replies.removeAt(0)),
+        identity: _id,
+      );
+      const String hash = '00ff00ff00ff00ff';
+      final CoverVoteResult check = await h.client.checkCover('w1', hash);
+      expect(check.voted, isFalse);
+      expect(
+        check.candidate,
+        const CoverCandidateRef(id: 7, image: '/img/c/x-1.jpg'),
+      );
+      expect(check.legacyServer, isFalse);
+      final CoverVoteResult ok = await h.client.confirmCover('w1', hash, 7);
+      expect(
+        [ok.voted, ok.confirmed, ok.cover],
+        <Object?>[true, true, '/img/c/x-1.jpg'],
+      );
+      final CoverVoteResult next = await h.client.rejectCover('w1', hash, 7);
+      expect(next.candidate!.id, 8);
+      expect(
+        <Object?>[for (final http.Request r in h.requests) jsonDecode(r.body)],
+        <Object?>[
+          <String, dynamic>{'hash': hash, 'check': true},
+          <String, dynamic>{'hash': hash, 'confirm': 7},
+          <String, dynamic>{'hash': hash, 'mismatch': 7},
+        ],
+      );
+      for (final http.Request r in h.requests) {
+        expect(r.url.path, '/v1/works/w1/cover/vote');
+        expect(_verifySigned(r, _id), isTrue);
+      }
+    });
+
+    test('旧服务端（响应里没有 confirmed）可判别', () {
+      expect(
+        CoverVoteResult.fromJson(<String, dynamic>{
+          'cover': '/img/x',
+        }).legacyServer,
+        isTrue,
+      );
+      expect(
+        CoverVoteResult.fromJson(<String, dynamic>{
+          'cover': '/img/x',
+          'confirmed': false,
+        }).legacyServer,
+        isFalse,
+      );
+    });
+
+    test('fetchCoverImage：不签名的 GET /img/…；超过上限抛错；只收 /img/ 路径', () async {
+      int size = 10;
+      final _Harness h = _Harness(
+        (http.Request r) async => http.Response.bytes(Uint8List(size), 200),
+        identity: _id,
+      );
+      expect(await h.client.fetchCoverImage('/img/c/x-1.jpg'), hasLength(10));
+      final http.Request r = h.requests.single;
+      expect(r.method, 'GET');
+      expect(r.url.path, '/img/c/x-1.jpg');
+      expect(
+        r.headers.keys.where(
+          (String k) => k.toLowerCase().startsWith('x-fushi'),
+        ),
+        isEmpty,
+      );
+      size = kCoverCandidateImageMaxBytes + 1;
+      await expectLater(
+        h.client.fetchCoverImage('/img/c/x-1.jpg'),
+        throwsA(isA<LeaderboardApiException>()),
+      );
+      await expectLater(
+        h.client.fetchCoverImage('/v1/me'),
+        throwsArgumentError,
+      );
+    });
+
     test('非法 id 不拼进路径', () async {
       final _Harness h = _Harness(
         (http.Request r) async => _json(<String, dynamic>{}),

@@ -62,6 +62,8 @@ void main() {
       browserExtensionAvailable: false,
       globalLookupAvailable: false,
       ankiReady: true,
+      // 「第一张 Anki 卡」只在复习方式选了 Anki 时进序列（默认是 Fushi 复习）。
+      reviewMethod: OnboardingReviewMethod.anki,
     );
     final OnboardingTutorialProgress progress = OnboardingTutorialProgress();
     progress.completeStep(OnboardingStepId.features);

@@ -34,8 +34,11 @@ export 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 class FushiAppleMetrics {
   const FushiAppleMetrics._({required this.desktop});
 
-  factory FushiAppleMetrics.of(BuildContext context) {
-    final TargetPlatform platform = Theme.of(context).platform;
+  factory FushiAppleMetrics.of(BuildContext context) =>
+      FushiAppleMetrics.forPlatform(Theme.of(context).platform);
+
+  /// 按主题平台取档（没有 BuildContext 的装配点用；与 [FushiAppleMetrics.of] 同一判据）。
+  factory FushiAppleMetrics.forPlatform(TargetPlatform platform) {
     return FushiAppleMetrics._(
       desktop:
           platform != TargetPlatform.iOS &&

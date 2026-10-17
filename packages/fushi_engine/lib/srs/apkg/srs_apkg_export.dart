@@ -21,6 +21,7 @@ import 'package:fushi_engine/srs/apkg/srs_anki_package.dart'
     show srsFushiExtEntry;
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 
 /// 导出范围内的媒体文件读取（没有返回 null，不进包）。
 typedef SrsMediaLoad = Future<Uint8List?> Function(String name);
@@ -182,6 +183,7 @@ class _Exporter {
       );
       final List<Map<String, Object?>> extLogs = <Map<String, Object?>>[];
       final Map<String, int> revlogIds = <String, int>{};
+      final Map<String, int> extLogCards = <String, int>{};
       final Map<String, Object?> extNotes = <String, Object?>{};
       final List<(SrsReviewLog, int)> revlogQueue = <(SrsReviewLog, int)>[];
       int newPos = 0;
@@ -190,8 +192,11 @@ class _Exporter {
         for (final SrsNoteView n in notes) {
           final SrsNoteTypeView? t = types[n.noteTypeId];
           if (t == null) continue;
+          // 释义样式去重的引用行展开回内联 `<style>`：导出包自包含，AnkiDroid / AnkiMobile
+          // 不必认识 `<link>`、也不必带共享样式文件（Fushi 回导时会重新去重）。
           final List<String> values = <String>[
-            for (final SrsFieldDef f in t.fields) n.field(f.id),
+            for (final SrsFieldDef f in t.fields)
+              await store.expandStyles(n.field(f.id)),
           ];
           for (final String v in values) {
             mediaRefs.addAll(srsMediaRefsIn(v));
@@ -253,6 +258,8 @@ class _Exporter {
             ]);
             for (final SrsReviewLog l in ec.history.all) {
               extLogs.add(l.toJson());
+              // 「更改笔记类型」继承来的前身卡日志：记下它在包里归哪张卡，回导时跟到这张卡上。
+              if (l.cardId != c.id) extLogCards[l.id] = cid;
             }
             for (final SrsReviewLog l in ec.history.effective) {
               if (_revlogKinds.contains(l.kind)) revlogQueue.add((l, cid));
@@ -338,6 +345,7 @@ class _Exporter {
 
       ext['logs'] = extLogs;
       ext['revlogIds'] = revlogIds;
+      if (extLogCards.isNotEmpty) ext['logCards'] = extLogCards;
       ext['notes'] = extNotes;
       ext['decks'] = <Map<String, Object?>>[
         for (final String d in usedDecks)
@@ -361,22 +369,24 @@ class _Exporter {
     } on FileSystemException {
       // 句柄晚释放：留给系统清理临时目录。
     }
-    archive.addFile(ArchiveFile('collection.anki21', col.length, col));
+    archive.addFile(nativeDeflatedArchiveFile('collection.anki21', col));
     final Map<String, String> mediaJson = <String, String>{};
     if (loadMedia != null) {
       int i = 0;
       for (final String name in mediaRefs.toList()..sort()) {
         final Uint8List? b = await loadMedia(name);
         if (b == null) continue;
-        archive.addFile(ArchiveFile('$i', b.length, b));
+        archive.addFile(nativeDeflatedArchiveFile('$i', b));
         mediaJson['$i'] = name;
         i++;
       }
     }
     final List<int> media = utf8.encode(jsonEncode(mediaJson));
-    archive.addFile(ArchiveFile('media', media.length, media));
+    archive.addFile(nativeDeflatedArchiveFile('media', media));
     final List<int> extBytes = utf8.encode(jsonEncode(ext));
-    archive.addFile(ArchiveFile(srsFushiExtEntry, extBytes.length, extBytes));
+    archive.addFile(nativeDeflatedArchiveFile(srsFushiExtEntry, extBytes));
+    // 条目已用原生 zlib 压好（nativeDeflatedArchiveFile），ZipEncoder 原样透传，
+    // 不再跑纯 Dart Deflate。
     return Uint8List.fromList(ZipEncoder().encode(archive)!);
   }
 
@@ -525,7 +535,7 @@ class _Exporter {
         'revToday': <int>[0, 0],
         'newToday': <int>[0, 0],
         'timeToday': <int>[0, 0],
-        'collapsed': false,
+        'collapsed': d?.collapsed ?? false,
         'browserCollapsed': false,
         'desc': '',
         'dyn': 0,

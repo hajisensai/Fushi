@@ -32,6 +32,11 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
+import 'package:fushi/src/pages/implementations/home_srs_panel.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
+import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
 import 'package:fushi/src/pages/implementations/home_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/pages/implementations/updates_center_open.dart';
@@ -1294,6 +1299,12 @@ class _HomeDashboardPageState
             appModel.moduleVisibility.isEnabled(ModuleId.services)
         ? _buildTrackingCard(tokens, appModel, DateTime.now())
         : null;
+    // 可选面板（[HomeDashboardPanel] 注册表，按注册顺序）：各自判定是否出现，
+    // 紧跟「今日」之后。
+    final List<Widget> optionalPanels = <Widget>[
+      for (final HomeDashboardPanel panel in HomeDashboardPanel.values)
+        if (_buildOptionalPanel(panel) case final Widget w) w,
+    ];
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1347,6 +1358,7 @@ class _HomeDashboardPageState
           final Widget main = entering(continueCard);
           final List<Widget> side = <Widget>[
             entering(studyCard),
+            for (final Widget panel in optionalPanels) entering(panel),
             if (recentCard != null) entering(recentCard),
             if (trackingCard != null) entering(trackingCard),
           ];
@@ -1377,6 +1389,10 @@ class _HomeDashboardPageState
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               entering(studyCard),
+              for (final Widget panel in optionalPanels) ...<Widget>[
+                SizedBox(height: tokens.spacing.card),
+                entering(panel),
+              ],
               SizedBox(height: tokens.spacing.card),
               entering(continueCard),
               if (trackingCard != null) ...<Widget>[
@@ -1767,6 +1783,32 @@ class _HomeDashboardPageState
     _resumeEntry = visible.isEmpty ? null : visible.first;
     _continueVisible = visible;
     return visible;
+  }
+
+  /// [HomeDashboardPanel] 注册表里一个面板此刻的 widget；不该出现时为 null。
+  /// 在 build 里（LayoutBuilder 之外）调用：各面板的显隐判据经 ref.watch 订阅。
+  Widget? _buildOptionalPanel(HomeDashboardPanel panel) => switch (panel) {
+        HomeDashboardPanel.srsReview => ref.watch(homeSrsPanelVisibleProvider)
+            ? HomeSrsPanel(
+                key: const ValueKey<String>('home-srs-card'),
+                onOpenDecks: () => _goToTab(HomeTab.srs),
+                onStartReview: _startSrsReview,
+              )
+            : null,
+      };
+
+  /// 复习条「开始复习」：直接进该牌组的复习页；回来后递增刷新信号重读计数。
+  void _startSrsReview(SrsDeckSummary deck) {
+    srsRunLogged('HomeDashboard.srsReview', () async {
+      await Navigator.of(context).push<void>(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (BuildContext context) =>
+              SrsReviewPage(deckId: deck.deck.id, deckName: deck.fullName),
+        ),
+      );
+      if (mounted) bumpSrsRevision(ref);
+    });
   }
 
   /// 「今日」分区：学习头部行（[HomeStudyHeader]），首载未结束时挂同轮廓骨架。

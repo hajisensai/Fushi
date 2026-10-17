@@ -56,7 +56,12 @@ enum FontTarget {
   /// 语义、平台可用性（只 Windows）与导入格式限制都与 [gameLookup] 相同：
   /// native 只吃**第一条可用**的 family/file，且只认 `.ttf/.otf/.ttc`；
   /// 缺字回退靠 native 追加的系统字体集。
-  floatingLyric
+  floatingLyric,
+
+  /// 复习（SRS）「Fushi 卡片」卡面的字体：卡面是 WebView 渲染，整条字体链按
+  /// 字形回落，语义与 [body]（阅读器正文）相同——不是 native 单字体表面。
+  /// 五平台通用。
+  srsCard
 }
 
 /// 这个用途在当前平台**是否真有消费端**。
@@ -70,7 +75,8 @@ bool isFontTargetAvailableOnPlatform(FontTarget target) => switch (target) {
       FontTarget.appUi ||
       FontTarget.body ||
       FontTarget.dictionary ||
-      FontTarget.videoSubtitle =>
+      FontTarget.videoSubtitle ||
+      FontTarget.srsCard =>
         true,
     };
 
@@ -850,6 +856,10 @@ class ReaderSettings {
   /// Backs [FontTarget.floatingLyric].
   static const String fontKeyFloatingLyric = 'floating_lyric_fonts';
 
+  /// Persistence key for the SRS "Fushi Card" card-face font chain.
+  /// Backs [FontTarget.srsCard].
+  static const String fontKeySrsCard = 'srs_card_fonts';
+
   /// Persistence key for the shared font catalog.
   static const String fontCatalogKey = 'font_catalog';
 
@@ -862,7 +872,8 @@ class ReaderSettings {
     fontKeyDictionary,
     fontKeyVideoSubtitle,
     fontKeyGameLookup,
-    fontKeyFloatingLyric
+    fontKeyFloatingLyric,
+    fontKeySrsCard
   ];
 
   bool get _hasAnyFontPrefs =>
@@ -899,7 +910,9 @@ class ReaderSettings {
       if (_cache.containsKey(fontKeyGameLookup))
         fontKeyGameLookup: _legacyFontListForKey(fontKeyGameLookup),
       if (_cache.containsKey(fontKeyFloatingLyric))
-        fontKeyFloatingLyric: _legacyFontListForKey(fontKeyFloatingLyric)
+        fontKeyFloatingLyric: _legacyFontListForKey(fontKeyFloatingLyric),
+      if (_cache.containsKey(fontKeySrsCard))
+        fontKeySrsCard: _legacyFontListForKey(fontKeySrsCard)
     };
   }
 
@@ -1072,6 +1085,10 @@ class ReaderSettings {
   List<Map<String, dynamic>> get floatingLyricFonts =>
       _fontListForTargetKey(fontKeyFloatingLyric);
 
+  /// SRS "Fushi Card" card-face font chain (WebView, glyph-fallback order).
+  List<Map<String, dynamic>> get srsCardFonts =>
+      _fontListForTargetKey(fontKeySrsCard);
+
   /// Resolves the persisted font list for a [FontTarget].
   List<Map<String, dynamic>> fontsForTarget(FontTarget target) =>
       switch (target) {
@@ -1080,7 +1097,8 @@ class ReaderSettings {
         FontTarget.dictionary => dictionaryFonts,
         FontTarget.videoSubtitle => videoSubtitleFonts,
         FontTarget.gameLookup => gameLookupFonts,
-        FontTarget.floatingLyric => floatingLyricFonts
+        FontTarget.floatingLyric => floatingLyricFonts,
+        FontTarget.srsCard => srsCardFonts
       };
 
   /// CSS font-family string and @font-face declarations for the BODY fonts.
@@ -1126,7 +1144,8 @@ class ReaderSettings {
         FontTarget.dictionary => fontKeyDictionary,
         FontTarget.videoSubtitle => fontKeyVideoSubtitle,
         FontTarget.gameLookup => fontKeyGameLookup,
-        FontTarget.floatingLyric => fontKeyFloatingLyric
+        FontTarget.floatingLyric => fontKeyFloatingLyric,
+        FontTarget.srsCard => fontKeySrsCard
       };
 
   /// Persists the whole list for [target]. The body convenience overload

@@ -5,6 +5,12 @@ Cloudflare Worker + D1 + R2。设计与分期见
 
 - 账户：**邮箱验证码注册**（`src/email.js`），签名凭据是设备上生成的 ECDSA P-256 钥匙（`src/auth.js`）；
   一个账户可绑多台设备（新设备用邮箱验证码登录）。**服务端不存邮箱明文**，只存 HMAC。
+  身份按规范化邮箱判定（`canonicalEmail`：Gmail / googlemail 去点与 `+tag`；Outlook / Hotmail / Live / MSN、
+  iCloud / me / mac、Proton、Fastmail 去 `+tag`；其余域名只做 NFKC + 去空白 + 小写 + IDN 转 punycode）；
+  验证码仍发到用户输入的地址（保留别名，域名同样转 punycode）。**只对 2026-10-17 之后的注册彼此之间成立**：
+  之前以别名存下哈希的历史账户，在它自己登录一次、哈希惰性升级之前，别人用规范形式或其它别名仍能新注册——
+  服务端只存 HMAC、没有明文，这是结构性限制。升级冲突见 `GET /admin/api/email-conflicts`；旧规则存下、
+  而 NFKC / punycode 会改写成另一个地址的老账户不回退旧哈希（码会发去另一个收件箱），只能联系管理员。
 - 书架**增量上报**（每批 ≤ 500）；跨用户作品靠匹配键（bgm / isbn / vndb / anidb / mal / tmdb / src / 标题+作者）汇合，见 `src/shelf.js` 文件头。
 - 与日志服务（`services/log-backend/`）完全隔离，不共用任何凭据。
 
@@ -72,6 +78,7 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > `0008_media_video_pool.sql`（`media_usage.video_bytes`，反馈视频配额池）：没迁移就部署时视频补传与视频到期清理会 500。
 > 例如 `0006_feedback_dev_notes.sql`：新代码的处理台列表显式选 `ai_summary` 列，没迁移就部署时 `/v1/dev/feedback` 与网页 `/dev` 会整页 500（反馈人接口不受影响）。迁移只加列，先迁移、旧代码照跑不受影响。
 > `0011_install_stats.sql`（`installs` / `install_days` 两张表 + `feedback.install_id`）：没迁移就部署时 `POST /v1/ping`、反馈提交、处理台详情与定时清理都会 500——**这条迁移碰了反馈提交，务必先迁移**。
+> `0014_cover_replace_guard.sql`（`cover_votes.confirmed` / `works.cover_cleared_at` 两列 + `cover_mismatches` 表 + 一个部分索引）：纯增量，旧 Worker 在线时先迁移不受影响；没迁移就部署时封面投票 / 上传 / 物化、删号与定时任务都会 500——**务必先迁移**（Actions 勾 `apply_migrations`）。
 > `0013_install_verified.sql`（`installs.verified` / `install_days.verified` / `feedback.install_verified`，安装证明）：没迁移就部署时心跳、反馈提交、`/dev/stats` 与反馈详情都会 500——**同样碰了反馈提交，务必先迁移**。只加带默认值的列，旧 Worker 在线时先迁移不受影响。
 > `0009_feedback_release.sql`（修复 / 发布追踪列）同理：处理台列表显式选 `fix_*` 列，`/v1/ci/feedback/**` 也读写这些列，没迁移就部署时都会 500（反馈人接口 `SELECT *` 不受影响，`fix` 恒为 null）。
 
@@ -185,6 +192,7 @@ HTTP Basic Auth（`ADMIN_USER` / `ADMIN_PASS`，未配置时 503 fail-closed）�
 |---|---|---|
 | GET | `/admin/api/reports` | 未处理举报 |
 | POST | `/admin/api/reports/:id/resolve` | 标记已处理 |
+| GET | `/admin/api/email-conflicts` | 邮箱别名归一时没能惰性升级的账户对 `{count, rows: [{accountId, holderId, firstSeenAt, lastSeenAt, seenCount}]}`（同一收件箱在旧规则下注册过多个账户；不含邮箱） |
 | POST | `/admin/api/accounts/:id` `{hidden}` | 隐藏 / 恢复账户 |
 | POST | `/admin/api/works/:id` `{title?, author?, nsfw?, clearCover?}` | 改作品（改标题/作者即锁定） |
 | POST | `/admin/api/snapshots/refresh` | 立刻重算榜单快照（部署后第一次、或不想等定时任务时） |
@@ -222,23 +230,70 @@ Apple 侧怎么建 Auth Key、App ID 勾 Push、sandbox / production 怎么选�
 反馈系统（回执、附件、开发者处理、防投毒、清理策略）设计见
 [`docs/specs/2026-10-08-feedback.md`](../../docs/specs/2026-10-08-feedback.md)。
 
-## 作品封面按人数投票（迁移 0012，`src/cover_votes.js`）
+## 作品封面按人数投票（迁移 0012 / 0014，`src/cover_votes.js`）
 
 同一作品不同账户提交的封面是「候选」，一账户对一作品一票、改投即移票；作品封面 = 票数最多的候选
 （平票取最早达到该票数的，再平取先提交的），`works.cover_key / cover_url` 是物化结果，读路径不变。
 缩略图按 64 位 dHash 归并（汉明距离 ≤ 10 视为同一张图，只存一份）；**哈希由服务端从上传字节算**（`src/cover_hash.js`，
-纯 JS 解码 JPEG，算法与引擎 `cover_hash.dart` 一致），客户端带的 `?h=` 只用来核对，差太多 400 `cover_hash_mismatch`，
+只做 JPEG 熵解码、按 DCT 系数直接算 9×8 格的亮度和，结果与引擎 `cover_hash.dart` 一致），客户端带的 `?h=` 只用来核对，差太多 400 `cover_hash_mismatch`，
 封面只收 JPEG（否则 415 `cover_not_jpeg`）；白名单图床 URL 按 URL
 相等归并，书架上报带 `coverUrl` 即投该 URL（不会冲掉已投的缩略图票）。零票且不是当前封面的候选
 立即删除并归还 R2 配额。隐藏账户的票照记、不计数。
 
 - **先迁移再部署**：`0012_cover_votes.sql` 建两张表并把存量封面回填成零票候选（不知道当初是谁传的）。
-  有人投票之前作品封面不变；第一个投票的人会让他的封面取代零票的存量封面。
+  回填的存量封面算「已有封面」，只有过了下面的替换门槛的候选才能取代它。
 - 旧客户端：书架上报里的 `coverUrl` 照样计票；不带哈希的缩略图上传维持先到先得（已有封面 409），存下的候选同样带服务端哈希。
   新客户端（引擎 `leaderboard_sync.dart` 第 7 步）升级后会给每部作品补投一次（多数命中已有候选、不传字节）。
 - 限流：投票接口每账户每小时 600 次（`coverVotePerHour`），带字节的上传仍按 `mediaUploadPerHour`。
-- 服务端算哈希的代价：每次封面上传解码一次 JPEG（依赖 `jpeg-js`，纯 JS，Workers 无 `Buffer` 故用 `useTArray`）。
-  缩略图长边 ≤ 300，Node 本机实测 212×300 解码 + 哈希约 4 ms CPU（**未在 workerd 上实测**，Free 计划每请求 10 ms CPU）；
-  解码上限 0.25 MP / 16 MB，帧头声称超大尺寸的「解压炸弹」在分配像素前就被拒（400 `bad_cover_image`）。先鉴权、
-  先查「旧客户端且已有封面」再解码，架外的人和必然 409 的请求不耗解码 CPU。两边解码器舍入不同：jpeg-js 编码的样本与
-  Dart 逐位一致，Dart `encodeJpg` 出的缩略图实测差 1 位（对拍样本 `test/cover_vectors/`，两边测试读同一份）。
+- 服务端算哈希的代价：Workers Free 计划每请求 10 ms CPU，完整解码（旧实现用 `jpeg-js`）一张 ≈300px 缩略图
+  在新起的 isolate 上首次调用约 14 ms，会报 1102。现在不做完整解码：只解 Huffman 熵编码，只记亮度分量；
+  整块落在一个格子里的 8×8 块只用 DC（块像素和 = 64·128 + 8·F(0,0)），被格子边界 / 图像边缘切开的块按
+  DCT 系数线性算每一片的像素和（不做 IDCT、不做色彩转换），色度块与其余 AC 系数只跳过。Node 本机实测
+  ≈300px 缩略图冷调用 ≈ 3–5 ms、热态 ≈ 0.2–0.5 ms（**未在 workerd 上实测**）。支持 baseline / progressive
+  （progressive 只解 DC 扫描）、4:4:4 / 4:2:2 / 4:2:0 / 灰度、DRI；算术编码 / 12 位 / CMYK 等拒绝（400
+  `bad_cover_image`）。尺寸上限长边 320（`COVER_MAX_EDGE`）、0.1 MP（`COVER_DECODE_MAX_MP`），依据是两条生产上传路径都把封面缩到长边 ≤ 300
+  （App `downsampleCardScreenshotAsync(maxLongEdge: 300)`、无头服务端 `encodeLeaderboardCoverThumb`），帧头声称超大尺寸在分配前就被拒；所有循环受
+  输入字节数约束（每次 Huffman 解码至少消耗 1 个真实比特，截断即拒），另限表定义 ≤ 32 张、扫描 ≤ 64 个、被切开的块 ≤ 1600 个
+  （防构造的扫描风暴 / 表风暴 / 细长图，样本在 `test/cover_vectors/adversarial/`）。先鉴权、先查「旧客户端且已有封面」再算哈希，
+  架外的人和必然 409 的请求不耗 CPU。与 Dart 的对拍样本（`test/cover_vectors/`，两边测试读同一份）距离全为 0；
+  与 jpeg-js 逐像素参照不同时只在两格亮度差 < 1 个灰度级的近似平局位上。`jpeg-js` 只剩测试里当参照（devDependency）。
+
+### 替换门槛、冷却期与确认票（迁移 0014）
+
+动机：dHash 只是感知哈希，审查实测知道公开的正版封面就能「老实地」造出服务端哈希距离很近、显示却是
+另一张图的 JPEG，服务端解码挡不住。攻击方式是**收割票**：抢先用伪造图建候选，之后持正版封面的用户按哈希投票
+全会投到他的图上。所以在投票侧加固：
+
+- **替换门槛**：作品已有封面（含回填的存量封面）时，挑战者要取代它必须 ① 确认票 ≥ `COVER_REPLACE_MIN_CONFIRMED`
+  （3）个不同的未隐藏账户，且这些账户**注册早于该候选创建**（不能建完候选再现注册小号凑票）；② 候选创建满
+  `COVER_REPLACE_COOLDOWN_MS`（24 小时）；③ 比现封面强：现封面自己的确认票也 ≥ 门槛时比总票数（严格多于，平票留任），
+  否则比确认票（挑战者确认票严格多于现封面确认票）。后一种是防「入场票收割」：伪造图若抢到首张封面，旧客户端按哈希
+  投的未确认票会被它收割、把总票数撑高，正版靠确认票永远追不上总票数。
+- **防护边界（如实）**：confirm 是客户端自报的，服务端验证不了比对真的做过。所以门槛的实质是「3 个注册早于候选的账户
+  + 24 小时公示期 + 管理员可见的不符计数」；本机强比对防的是**诚实客户端被收割**去给伪造图投票，**不防一人多号**
+  （几个号各自 confirm 就够）。剩下的靠冷却期里管理员看 `/covers` 的不符计数、清封面 / 隐藏账户反制。
+- **确认票**：投票者手里确实有这张图——上传字节建出该候选的人、URL 票（URL 相等）、以及新客户端按哈希命中后
+  **在本机**下载候选缩略图与本地封面强比对通过（`fushi_engine` `leaderboard/cover_compare.dart`：32×32 灰度 NCC +
+  去掉 9×8 粗格均值后的细节 NCC）。比对放在投票者设备上：CPU 在用户端，而且只有他有正版原图。比对不通过记一条
+  「不符」（`cover_mismatches`）：撤掉他投给该候选的票，之后对他跳过这个候选（于是他命中下一个候选或上传自己的图）。
+  不符只是管理员信号，不影响排名、不阻止替换（否则几个小号刷「不符」就能把正版钉死）。
+- **旧客户端**（只会按哈希投票、不比对）的票是未确认票：照常决定首张封面、现封面留任与候选排序，但**不计入替换门槛**。
+  存量 URL 票迁移时直接记为确认票；存量缩略图票分不清来源，一律未确认（新客户端会对已投的作品补一次本机比对）。
+- **没有封面的作品**首张不受门槛约束、立即生效（否则冷门作品永远没封面）。例外：**管理员清过封面**的作品
+  （`works.cover_cleared_at`）在 `COVER_CLEAR_GUARD_MS`（30 天）内按「已有封面、现封面 0 票」处理——清封面多半是因为
+  有人在抢，不能让攻击者在清掉的瞬间再抢回首张。保护期过后，该作品下一次投票时恢复「有票即生效」。
+- **冷却到期的生效路径**：期间有任何投票，投票事务本身就会重新物化；没有新票时由定时任务（`*/30`）的
+  `settlePendingCovers` 处理：按部分索引 `idx_cover_candidates_pending`（`created_at WHERE votes >= 3`）只读窗口内
+  总票数达标的候选，每轮最多 50 部作品，回看 7 天（容忍定时任务停摆；更久的靠下一次投票）。
+- 投票接口：`POST /v1/works/:id/cover/vote` 的 `{hash}` 可再带 `check: true`（只返回命中的候选 `{id, image}`、不投票）、
+  `confirm: <cid>`（确认票）或 `mismatch: <cid>`（记不符并返回下一个候选 / 409 `cover_bytes_required`）；
+  `PUT /v1/works/:id/cover` 命中已有候选时响应带 `candidate` 供客户端比对。缩略图走公开的 `/img/<key>`（边缘缓存）。
+  `check` 只按 4 行扣全局写入预算（防重放 + 限流记录），其余投票仍按 16 行；新客户端每部作品多一次 `check` 请求，
+  同受 `coverVotePerHour` 限流（超了 429，客户端本轮停下、下次续）。
+- 客户端比对的阈值标定（`packages/fushi_engine/test/leaderboard/cover_compare_test.dart`，样本含审查给的伪造图）：
+  同图各种重编码 / 缩放 / 调色 / 小裁切 NCC ≥ 0.991、细节 NCC ≥ 0.862；老实伪造 NCC 最高 0.930、细节 ≤ 0.221；
+  夹断藏质量的伪造 Dart 解码器直接解不开（按不符处理）。阈值取 NCC ≥ 0.95 且细节 ≥ 0.70。
+- 上线顺序：先 `apply_migrations`（0014）再部署 Worker，再发新客户端。新客户端遇到旧 Worker（响应里没有 `confirmed`）
+  会退化为旧的按哈希投票，每轮同步只为补确认试一次。
+- 处理台：`GET /admin/api/works/:id/covers` 列出候选的票数、确认票、不符数与状态（`current` / `eligible` /
+  `cooldown`（带 `eligibleAt`）/ `needs_votes` / `first`）。

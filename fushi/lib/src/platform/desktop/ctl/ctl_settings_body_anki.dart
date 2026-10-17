@@ -129,10 +129,6 @@ CtlBodyPage _overviewPage() => CtlBodyPage(
           value: SrsMiningTarget.srs,
           label: t.srs_mining_target_srs,
         ),
-        SettingsSegmentOption<SrsMiningTarget>(
-          value: SrsMiningTarget.both,
-          label: t.srs_mining_target_both,
-        ),
       ],
       selected: (SettingsContext c) => c.appModel.srsMiningTarget,
       onChanged: (SettingsContext c, SrsMiningTarget v) =>
@@ -1116,7 +1112,9 @@ LapisVisualEditorResult parseCtlLapisVisualEditorJson(
     throw FormatException('不是 JSON：${e.message}');
   }
   if (decoded is! Map<String, Object?>) {
-    throw const FormatException('需要 JSON 对象 {customCss, blocks, fieldMappings}');
+    throw const FormatException(
+      '需要 JSON 对象 {customCss, blocks, fieldMappings}',
+    );
   }
   const Set<String> known = <String>{'customCss', 'blocks', 'fieldMappings'};
   for (final String key in decoded.keys) {

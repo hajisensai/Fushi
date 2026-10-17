@@ -151,7 +151,7 @@ void main() {
     expect(compact, lessThan(regular));
   });
 
-  testWidgets('regular (no scope) keeps the full-width labelled dropdown', (
+  testWidgets('regular (no scope) keeps the full-width dropdown, title once', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(_host(_picker(), compact: false));
@@ -160,7 +160,9 @@ void main() {
         .widget<GamepadMenuDropdown<int>>(
           find.byType(GamepadMenuDropdown<int>),
         );
-    expect(dropdown.label, 'YouTube 画质');
+    // 行标题已由 AdaptiveSettingsRow 画出；下拉不再带同名浮动标签（标题重复两次）。
+    expect(dropdown.label, isNull);
+    expect(find.text('YouTube 画质'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('settings-row-info')),
       findsNothing,

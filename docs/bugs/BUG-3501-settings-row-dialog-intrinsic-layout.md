@@ -1,0 +1,9 @@
+## BUG-3501 · settings-row-dialog-intrinsic-layout
+- **报告**：2026-10-16（用户：Windows 桌面，复习页 ⋯ → 导入 → 选完文件后的选项弹窗被画成约 350px 宽、几乎撑满窗口高的窄长条：图标 + 标题在顶、开关行孤零零在正中、按钮在最底，开关标题被挤成两行）
+- **真实性**：✅ 真 bug。弹窗（`fushi/lib/src/srs/srs_import_entry.dart` 旧 `_askImportOptions`）把 `AdaptiveSettingsSwitchRow` 直接当 `FushiAlertDialog` 的 `content`，撞上 `AdaptiveSettingsRow` 的两处缺陷：
+  1. 宽：Material `AlertDialog` 把正文包在 `IntrinsicWidth` 里，intrinsic 查询一路问到行里的 `LayoutBuilder`（旧 `fushi/lib/src/utils/components/settings_shared.dart:1069`）——`_RenderLayoutBuilder` 的 intrinsic 在 release 恒答 0、debug 直接抛「LayoutBuilder does not support returning intrinsic dimensions」，于是对话框只按标题 / 按钮量宽（≈350px），标题折成两行。
+  2. 高：行内 trailing 包在 `Align(widthFactor: 1)` 里（旧 `settings_shared.dart:1192`），没给 `heightFactor`；标题列 `_SettingsLabel` / `_CompactSettingsLabel` 与堆叠布局的 `Column` 都是缺省的 `mainAxisSize.max`。`Align` 与 max 的 `Column` 在有界高度下都撑满最大高度；设置页里行高无界所以从没露出来，而对话框正文是 `Flexible`（有界），trailing 把整行撑到窗口那么高，`Row` 居中后标题孤零零在正中。
+  其它 `FushiAlertDialog` 里放设置行的地方（`anki_deck_reposition_dialogs.dart`、`video_metadata_lock_dialog.dart`、`media_sources_view.dart` 两处、`stat_day_reset_hour_dialog.dart`）都套了 `SizedBox(width: …)` 且行在 `Column` 里（高度无界），未受影响；只有这一处中招。
+- **[x] ① 已修复** — 在组件根部修：`AdaptiveSettingsRow` 的 `LayoutBuilder` 外包一层 `_SettingsRowIntrinsics`（只回答 intrinsic 查询：宽按「标题舒展宽 `kSettingsRowIntrinsicLabelWidth` + trailing」，最小宽按堆叠布局，高给单行估值；布局 / 绘制 / 命中原样交给子树）；`_buildInlineTrailing` 的 `Align` 补 `heightFactor: 1`，标题列与堆叠布局的 `Column` 改 `mainAxisSize.min`（竖直居中仍由外层 `Row` 负责，无界高度下行为不变）。导入选项对话框同时重做（`fushi/lib/src/srs/srs_import_options_dialog.dart`，与其它表单对话框同样给正文定宽）。
+- **[x] ② 已加自动化测试** — `fushi/test/settings/settings_row_in_alert_dialog_test.dart`（开关行直接当对话框正文：不抛错、宽 ≥400、高 <320；有界高度里行不撑满；IntrinsicWidth/Height 包裹不抛错）、`fushi/test/srs/srs_import_options_dialog_test.dart`（桌面 1280×800 对话框按内容收高、宽在 480–560；360 宽手机不溢出）。
+- **备注**：intrinsic 高度是估值（单行行高），只给父级算交叉轴用；真正高度仍由布局决定。普通设置页不做 intrinsic 测量，不受影响。

@@ -2044,7 +2044,16 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
                 // （「结果中的词头数量上限 99」压在状态栏与胶囊之间）。遮罩
                 // 实色盖满整段让位（状态栏 + 页头 + 跳转条），再往下柔和渐隐；
                 // 与库页外壳顶部遮罩同一口径（BUG-3132 的修法）。
-                child: FushiTopFadeScrim(solidHeight: inset(), topOpacity: 1),
+                //
+                // shoulderOpacity 必须同为 1：FushiTopFadeScrim 的「肩段」缺省从
+                // topOpacity 缓降到 0.82 倍，跳转条正好落在肩段下半，背后的正文
+                // 以 ~15% 透出（截图巡检：胶囊之间透出「覆写范围」）。让位区要的
+                // 是真实色，渐隐只发生在让位区以下。
+                child: FushiTopFadeScrim(
+                  solidHeight: inset(),
+                  topOpacity: 1,
+                  shoulderOpacity: 1,
+                ),
               ),
             ),
           ),

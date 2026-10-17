@@ -14,7 +14,7 @@
 // 业务一律复用 feedback.js 的函数，与 App 端开发者接口同一份逻辑。
 
 import { HttpError, hex, sha256 } from './util.js';
-import { consumeCode, requestCode } from './email.js';
+import { consumeCode, requestCode, resolveEmailAccount } from './email.js';
 import { esc } from './pages.js';
 import {
   STATUSES,
@@ -493,14 +493,14 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   if (method === 'POST' && path === '/dev/login') {
     const form = await readForm(request);
     const email = form.get('email') || '';
-    let hash;
+    let ids;
     try {
-      hash = await consumeCode(env, email, 'login', form.get('code') || '', now);
+      ids = await consumeCode(env, email, 'login', form.get('code') || '', now);
     } catch (e) {
       if (e instanceof HttpError) return loginPage({ email, step: 'code', error: `验证失败：${e.code}` });
       throw e;
     }
-    const acc = await env.DB.prepare('SELECT id, role FROM accounts WHERE email_hash = ?1').bind(hash).first();
+    const acc = await resolveEmailAccount(env, ids, now);
     if (!acc || acc.role !== 'dev') return loginPage({ email, error: '该账户不是开发者账户。' });
     const token = newSessionToken();
     await env.DB.prepare('INSERT INTO dev_sessions (token_hash, account_id, expires_at) VALUES (?1, ?2, ?3)')

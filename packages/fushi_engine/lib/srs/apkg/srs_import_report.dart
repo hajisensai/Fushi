@@ -1,6 +1,8 @@
 /// Anki 导入报告（可序列化给 UI 显示）。
 library;
 
+import 'package:fushi_engine/srs/apkg/srs_import_options.dart';
+
 /// 一条不导入 / 有冲突的笔记。
 class SrsImportNoteIssue {
   const SrsImportNoteIssue({
@@ -81,8 +83,26 @@ class SrsImportReport {
   int notesAdded = 0;
   int notesUpdated = 0;
 
-  /// 已存在且未开 updateExisting：本地字段不动。
+  /// 已存在、按「更新笔记」选项没更新（或来源内容与本机相同）：本地字段不动。
   int notesSkipped = 0;
+
+  /// 本次用的选项。
+  SrsAnkiImportOptions options = const SrsAnkiImportOptions();
+
+  /// 有修改写入的已有笔记类型数（「更新笔记模板」放行、或合并时来源新增字段 / 模板）。
+  int noteTypesUpdated = 0;
+
+  /// 「不合并笔记模板」时因结构不同另建的笔记类型（来源名字）。
+  final List<String> noteTypesDuplicated = <String>[];
+
+  /// 不含排程：来源里学过 / 暂停过、本次作为新卡导入的卡片数。
+  int cardsResetToNew = 0;
+
+  /// 不含排程：包里没导入的 revlog 条数。
+  int reviewLogsSkipped = 0;
+
+  /// 不含牌组预设：新建牌组没用上的来源预设个数。
+  int deckPresetsSkipped = 0;
 
   /// 新增笔记带来的卡片数。
   int cardsAdded = 0;
@@ -127,6 +147,12 @@ class SrsImportReport {
     'notesAdded': notesAdded,
     'notesUpdated': notesUpdated,
     'notesSkipped': notesSkipped,
+    'options': options.toJson(),
+    'noteTypesUpdated': noteTypesUpdated,
+    'noteTypesDuplicated': noteTypesDuplicated,
+    'cardsResetToNew': cardsResetToNew,
+    'reviewLogsSkipped': reviewLogsSkipped,
+    'deckPresetsSkipped': deckPresetsSkipped,
     'cardsAdded': cardsAdded,
     'reviewLogsImported': reviewLogsImported,
     'anchorsWritten': anchorsWritten,

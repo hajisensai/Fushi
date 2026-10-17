@@ -30,6 +30,7 @@ String fontTargetLabel(FontTarget target) => switch (target) {
   FontTarget.videoSubtitle => t.font_target_video_subtitle,
   FontTarget.gameLookup => t.font_target_game_lookup,
   FontTarget.floatingLyric => t.font_target_floating_lyric,
+  FontTarget.srsCard => t.font_target_srs_card,
 };
 
 /// 样张卡上用途徽标的短名。
@@ -40,6 +41,7 @@ String fontTargetShortLabel(FontTarget target) => switch (target) {
   FontTarget.videoSubtitle => t.font_target_video_subtitle_short,
   FontTarget.gameLookup => t.font_target_game_lookup_short,
   FontTarget.floatingLyric => t.font_target_floating_lyric_short,
+  FontTarget.srsCard => t.font_target_srs_card_short,
 };
 
 /// 用途图标（徽标与详情页按钮共用）。
@@ -50,6 +52,7 @@ IconData fontTargetIcon(FontTarget target) => switch (target) {
   FontTarget.videoSubtitle => FushiIcons.subtitles,
   FontTarget.gameLookup => FushiIcons.games,
   FontTarget.floatingLyric => FushiIcons.subtitles,
+  FontTarget.srsCard => FushiIcons.ankiCard,
 };
 
 /// 本平台真有消费端的用途（gameLookup / floatingLyric 只有 Windows 的 native

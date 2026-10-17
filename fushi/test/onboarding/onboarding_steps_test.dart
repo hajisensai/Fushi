@@ -1,19 +1,24 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 
+/// 默认按「复习方式选 Anki」取序列：本文件的既有用例钉的是原 Anki 流程；Fushi 复习
+/// 路径见下面的 `review method` 组。
 List<OnboardingStepId> _steps(
   Set<OnboardingFeature> selected, {
   bool browserExtensionAvailable = false,
   bool globalLookupAvailable = false,
   bool ankiReady = false,
   bool srsEnabled = false,
+  OnboardingReviewMethod reviewMethod = OnboardingReviewMethod.anki,
 }) => onboardingStepSequence(
   selected: selected,
   browserExtensionAvailable: browserExtensionAvailable,
   globalLookupAvailable: globalLookupAvailable,
   ankiReady: ankiReady,
   srsEnabled: srsEnabled,
+  reviewMethod: reviewMethod,
 );
 
 void main() {
@@ -226,6 +231,7 @@ void main() {
           OnboardingStepId.features,
           OnboardingStepId.recommendedPack,
           OnboardingStepId.manualResources,
+          OnboardingStepId.reviewMethod,
           OnboardingStepId.anki,
           OnboardingStepId.onlineServices,
           OnboardingStepId.backup,
@@ -301,7 +307,12 @@ void main() {
             if (module != null) module,
           });
           expect(result, contains(step), reason: '$feature 应产生 $step');
-          expect(result, hasLength(4), reason: '$feature 应只追加一个配置步骤');
+          // 制卡能力多一步「复习方式」打头。
+          expect(
+            result,
+            hasLength(feature == OnboardingFeature.anki ? 5 : 4),
+            reason: '$feature 应只追加它自己的配置步骤',
+          );
 
           if (module == null) return;
           // 所属模块未勾：能力勾了也不出步骤，只剩骨架三步。
@@ -315,43 +326,159 @@ void main() {
     );
   });
 
-  // 复习（Fushi 内置 SRS）模块默认关、向导不提供它的方格：介绍步骤只在用户已经
-  // 自己打开模块时出现，而且不受任何勾选影响。
-  group('srs intro step', () {
-    test('module off (default): the step never appears', () {
-      for (final Set<OnboardingFeature> selected in <Set<OnboardingFeature>>[
-        <OnboardingFeature>{},
-        OnboardingFeature.values.toSet(),
-      ]) {
-        expect(_steps(selected), isNot(contains(OnboardingStepId.srs)));
-        expect(
-          _steps(selected, ankiReady: true, globalLookupAvailable: true),
-          isNot(contains(OnboardingStepId.srs)),
-        );
-      }
-    });
+  // 「复习方式」（所有者 2026-10-16）：制卡相关步骤以它打头。选 Fushi 复习跳过全部
+  // Anki 专属步骤、改出复习介绍；选 Anki 与原流程逐步一致。
+  group('review method', () {
+    final Set<OnboardingFeature> all = OnboardingFeature.values.toSet();
 
-    test('module on: the step appears once, right before finish', () {
-      for (final Set<OnboardingFeature> selected in <Set<OnboardingFeature>>[
-        <OnboardingFeature>{},
-        OnboardingFeature.values.toSet(),
-      ]) {
-        final List<OnboardingStepId> steps = _steps(
-          selected,
-          srsEnabled: true,
-          ankiReady: true,
+    test('the default is Fushi review', () {
+      expect(
+        onboardingStepSequence(
+          selected: all,
+          browserExtensionAvailable: true,
           globalLookupAvailable: true,
-        );
+          ankiReady: true,
+        ),
+        _steps(
+          all,
+          browserExtensionAvailable: true,
+          globalLookupAvailable: true,
+          ankiReady: true,
+          reviewMethod: OnboardingReviewMethod.fushi,
+        ),
+      );
+    });
+
+    test('Fushi review skips every Anki-only step', () {
+      final List<OnboardingStepId> fushi = _steps(
+        all,
+        browserExtensionAvailable: true,
+        globalLookupAvailable: true,
+        // 即便 Anki 恰好已就绪，Fushi 路径也不出「第一张 Anki 卡」。
+        ankiReady: true,
+        reviewMethod: OnboardingReviewMethod.fushi,
+      );
+      expect(fushi, <OnboardingStepId>[
+        OnboardingStepId.welcome,
+        OnboardingStepId.features,
+        OnboardingStepId.recommendedPack,
+        OnboardingStepId.manualResources,
+        OnboardingStepId.reviewMethod,
+        OnboardingStepId.onlineServices,
+        OnboardingStepId.backup,
+        OnboardingStepId.interconnect,
+        OnboardingStepId.browserExtension,
+        OnboardingStepId.fonts,
+        OnboardingStepId.clickLookup,
+        OnboardingStepId.globalLookup,
+        OnboardingStepId.srs,
+        OnboardingStepId.finish,
+      ]);
+      expect(fushi, isNot(contains(OnboardingStepId.anki)));
+      expect(fushi, isNot(contains(OnboardingStepId.firstAnkiCard)));
+    });
+
+    test('Anki keeps the original flow (plus the choice up front)', () {
+      final List<OnboardingStepId> anki = _steps(
+        all,
+        browserExtensionAvailable: true,
+        globalLookupAvailable: true,
+        ankiReady: true,
+      );
+      expect(
+        anki.where((OnboardingStepId s) => s != OnboardingStepId.reviewMethod),
+        <OnboardingStepId>[
+          OnboardingStepId.welcome,
+          OnboardingStepId.features,
+          OnboardingStepId.recommendedPack,
+          OnboardingStepId.manualResources,
+          OnboardingStepId.anki,
+          OnboardingStepId.onlineServices,
+          OnboardingStepId.backup,
+          OnboardingStepId.interconnect,
+          OnboardingStepId.browserExtension,
+          OnboardingStepId.fonts,
+          OnboardingStepId.clickLookup,
+          OnboardingStepId.globalLookup,
+          OnboardingStepId.firstAnkiCard,
+          OnboardingStepId.finish,
+        ],
+      );
+      expect(anki, isNot(contains(OnboardingStepId.srs)));
+      expect(
+        anki.indexOf(OnboardingStepId.reviewMethod),
+        anki.indexOf(OnboardingStepId.anki) - 1,
+      );
+    });
+
+    test(
+      'card creation unchecked: no choice, SRS intro follows the module',
+      () {
+        final Set<OnboardingFeature> noCards = OnboardingFeature.values.toSet()
+          ..remove(OnboardingFeature.cardCreation);
+        for (final OnboardingReviewMethod m in OnboardingReviewMethod.values) {
+          final List<OnboardingStepId> off = _steps(noCards, reviewMethod: m);
+          expect(off, isNot(contains(OnboardingStepId.reviewMethod)));
+          expect(off, isNot(contains(OnboardingStepId.anki)));
+          expect(off, isNot(contains(OnboardingStepId.srs)));
+          final List<OnboardingStepId> on = _steps(
+            noCards,
+            reviewMethod: m,
+            srsEnabled: true,
+          );
+          expect(on[on.length - 2], OnboardingStepId.srs);
+        }
+      },
+    );
+
+    test('initial choice mirrors the live state', () {
+      expect(
+        onboardingReviewMethodOf(
+          srsModuleEnabled: true,
+          miningTarget: SrsMiningTarget.srs,
+        ),
+        OnboardingReviewMethod.fushi,
+      );
+      for (final (bool module, SrsMiningTarget target)
+          in <(bool, SrsMiningTarget)>[
+            (false, SrsMiningTarget.srs),
+            (true, SrsMiningTarget.anki),
+            (false, SrsMiningTarget.anki),
+          ]) {
         expect(
-          steps.where((OnboardingStepId s) => s == OnboardingStepId.srs),
-          hasLength(1),
+          onboardingReviewMethodOf(
+            srsModuleEnabled: module,
+            miningTarget: target,
+          ),
+          OnboardingReviewMethod.anki,
         );
-        expect(steps[steps.length - 2], OnboardingStepId.srs);
-        expect(steps.last, OnboardingStepId.finish);
       }
     });
 
-    test('the wizard offers no SRS checkbox and never writes the module', () {
+    test('choosing writes module + mining target', () async {
+      final Map<ModuleId, bool> modules = <ModuleId, bool>{};
+      final List<SrsMiningTarget> targets = <SrsMiningTarget>[];
+      Future<void> setModule(ModuleId m, bool v) async => modules[m] = v;
+      Future<void> setTarget(SrsMiningTarget t) async => targets.add(t);
+
+      await applyOnboardingReviewMethod(
+        OnboardingReviewMethod.fushi,
+        setModuleEnabled: setModule,
+        setMiningTarget: setTarget,
+      );
+      expect(modules, <ModuleId, bool>{ModuleId.srs: true});
+      expect(targets.last, SrsMiningTarget.srs);
+
+      await applyOnboardingReviewMethod(
+        OnboardingReviewMethod.anki,
+        setModuleEnabled: setModule,
+        setMiningTarget: setTarget,
+      );
+      expect(modules, <ModuleId, bool>{ModuleId.srs: false});
+      expect(targets.last, SrsMiningTarget.anki);
+    });
+
+    test('the wizard offers no SRS checkbox (the choice step writes it)', () {
       expect(onboardingFeatureOfModule(ModuleId.srs), isNull);
       expect(
         OnboardingFeature.values.map(moduleOfOnboardingFeature),

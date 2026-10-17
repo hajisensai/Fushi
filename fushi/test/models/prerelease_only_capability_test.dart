@@ -122,7 +122,9 @@ void main() {
     });
 
     test('正式版里复习的出厂默认与持久化键不变（只是不可用，用户数据不动）', () {
-      expect(ModuleId.srs.defaultEnabled, isFalse);
+      // 出厂默认自 2026-10-16 起为开（ModuleId.srs 文档：「默认就是 fushi srs」，老用户
+      // 由一次性判定显式写关）；正式版屏蔽只经 availableOn，不改这里。
+      expect(ModuleId.srs.defaultEnabled, isTrue);
       expect(ModuleId.srs.prefKey, 'module_srs_enabled');
     });
   });

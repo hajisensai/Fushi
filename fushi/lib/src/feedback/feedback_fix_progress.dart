@@ -61,7 +61,7 @@ class FeedbackFixFasterChannelOnly extends FeedbackFixProgress {
   final String version;
 }
 
-/// 本机平台不在官方发布回填范围内（[kFeedbackReleasePlatforms] 之外，例如社区维护的
+/// 本机平台不在官方发布回填范围内（[kFeedbackReleasePlatforms] 之外，例如只能源码构建的
 /// Linux）：没有任何构建会回填它，说「等待下个版本」会让反馈人永远等下去。
 class FeedbackFixPlatformNotTracked extends FeedbackFixProgress {
   const FeedbackFixPlatformNotTracked();
@@ -79,7 +79,7 @@ class FeedbackFixPending extends FeedbackFixProgress {
 }
 
 /// 官方发布 workflow 会回填的平台（`release.yml`：android；`release-desktop.yml`：
-/// windows / macos / ios，各自的 `PLATFORM:`）。Linux App 是社区维护平台，CI 不出包，
+/// windows / macos / ios，各自的 `PLATFORM:`）。Linux App 只能从源码构建，CI 不出包，
 /// 没有任何回填——不在这里。键与 `Platform.operatingSystem` 同形；与 workflow 的一致性
 /// 由 `test/feedback/feedback_fix_progress_test.dart` 钉死。
 const Set<String> kFeedbackReleasePlatforms = <String>{

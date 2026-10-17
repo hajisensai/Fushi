@@ -424,14 +424,28 @@ class SettingsStatusItem extends SettingsItem {
     super.video,
     this.actionLabel,
     this.onAction,
+    this.actionVisible,
   }) : assert(
          (actionLabel == null) == (onAction == null),
          'actionLabel 与 onAction 必须同时给或同时不给',
+       ),
+       assert(
+         actionVisible == null || onAction != null,
+         'actionVisible 只对带动作的状态行有意义',
        );
 
   /// 行尾动作按钮文案；null = 无按钮。
   final String? actionLabel;
   final SettingsItemAction? onAction;
+
+  /// 渲染时求值的动作可见性；返回 false 时本行按纯状态行渲染（无按钮、不进焦点）。
+  /// null = 有动作就恒显示。用于「只在某状态下才有意义」的动作（如空 key 才给
+  /// 「生成密钥」）。
+  final SettingsVisibility? actionVisible;
+
+  /// 当前上下文下实际生效的动作；[actionVisible] 判否时为 null。
+  SettingsItemAction? resolveAction(SettingsContext context) =>
+      (actionVisible?.call(context) ?? true) ? onAction : null;
 }
 
 class SettingsActionItem extends SettingsItem {

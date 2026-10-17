@@ -28,6 +28,7 @@ class _Conflict {
     required this.entityId,
     required this.register,
     required this.entityLabel,
+    this.valueLabels = const <String, String>{},
   });
 
   final SrsEntityKind kind;
@@ -36,6 +37,12 @@ class _Conflict {
 
   /// 牌组名 / 卡片所属笔记的排序字段。
   final String entityLabel;
+
+  /// 值是 ID 时的人读名（笔记的「笔记类型」冲突：类型 ID → 类型名）。
+  final Map<String, String> valueLabels;
+
+  String formatValue(Object? v) =>
+      (v is String ? valueLabels[v] : null) ?? srsFormatValue(v);
 
   SrsFieldEdit get winner => register.winner!;
   SrsFieldEdit get loser => register.visibleLosers.first;
@@ -64,6 +71,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     if (store == null) return;
     final SrsDeckTree tree = await store.deckTree();
     final List<_Conflict> conflicts = <_Conflict>[];
+    Map<String, String>? typeNames;
     for (final (SrsEntityKind kind, String id, SrsRegister reg)
         in await store.syncConflicts()) {
       String label = id;
@@ -86,10 +94,36 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
         case SrsEntityKind.noteType:
           label = (await store.noteType(id))?.name ?? id;
         case SrsEntityKind.note:
-          break;
+          // 笔记按它的第一个字段认；「笔记类型」冲突的值显示类型名。
+          final SrsNoteView? n = await store.note(id);
+          final SrsNoteTypeView? nt = n == null
+              ? null
+              : await store.noteType(n.noteTypeId);
+          final SrsFieldDef? first = nt?.fields.firstOrNull;
+          if (n != null && first != null) {
+            final String text = n
+                .field(first.id)
+                .replaceAll(RegExp(r'<[^>]+>'), '')
+                .trim();
+            if (text.isNotEmpty) label = text;
+          }
+          if (reg.key == SrsFieldKeys.noteType) {
+            typeNames ??= <String, String>{
+              for (final SrsNoteTypeView v in await store.noteTypes())
+                v.id: v.name,
+            };
+          }
       }
       conflicts.add(
-        _Conflict(kind: kind, entityId: id, register: reg, entityLabel: label),
+        _Conflict(
+          kind: kind,
+          entityId: id,
+          register: reg,
+          entityLabel: label,
+          valueLabels: reg.key == SrsFieldKeys.noteType
+              ? typeNames ?? const <String, String>{}
+              : const <String, String>{},
+        ),
       );
     }
     final List<SrsNoteCacheRow> pending = await store.notesPendingDecision();
@@ -311,7 +345,7 @@ class _ConflictCard extends StatelessWidget {
       children: <Widget>[
         Text(label, style: tokens.type.sectionLabel),
         Text(
-          srsFormatValue(e.value),
+          conflict.formatValue(e.value),
           style: context.fushiType.bodyLarge,
           maxLines: 3,
           overflow: TextOverflow.ellipsis,

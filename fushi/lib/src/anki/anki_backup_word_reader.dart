@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
 import 'package:fushi_engine/srs/apkg/anki_collection_db.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -61,7 +62,7 @@ Set<String> readAnkiBackupFirstFieldsSync({
     final String extracted = '${scratch.path}/${entry.name}';
     final OutputFileStream out = OutputFileStream(extracted);
     try {
-      entry.writeContent(out);
+      writeZipEntryStreaming(entry, out);
     } finally {
       out.closeSync();
     }

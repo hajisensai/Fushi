@@ -23,6 +23,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
@@ -466,7 +467,8 @@ List<_ZipEntry> _scanZipEntries(
 
 /// isolate 侧：把一个 entry 流式解到 [destPath]。
 ///
-/// 流式而非 `file.content`：encoder 单档 343MB，整块物化会直接把移动端打爆。
+/// 流式而非 `file.content` / `writeContent`（后者也会先把整条目解压进内存）：
+/// encoder 单档 343MB，整块物化会直接把移动端打爆。
 void _extractZipEntry(String zipPath, String entryName, String destPath) {
   final InputFileStream input = InputFileStream(zipPath);
   try {
@@ -478,7 +480,7 @@ void _extractZipEntry(String zipPath, String entryName, String destPath) {
     File(destPath).parent.createSync(recursive: true);
     final OutputFileStream output = OutputFileStream(destPath);
     try {
-      file.writeContent(output);
+      writeZipEntryStreaming(file, output);
     } finally {
       output.closeSync();
     }

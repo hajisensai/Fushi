@@ -4,13 +4,13 @@
 
 ## 平台与 SDK
 
-5 平台均出包：Android / iOS / macOS / Windows / Linux（`auto` 下五个平台统一走 Material 3；Cupertino / macOS renderer 仅保留为隐藏内部能力；桌面 EPUB 渲染：Windows 靠 fork 的 `flutter_inappwebview_windows`，Linux 靠 vendored 的 `packages/flutter_inappwebview_linux`（WPE WebKit，见下「Linux 桌面（社区维护）」）。Android：`compileSdk 36` / `minSdkVersion 24` / `targetSdk 35`。
+5 平台均出包：Android / iOS / macOS / Windows / Linux（`auto` 下五个平台统一走 Material 3；Cupertino / macOS renderer 仅保留为隐藏内部能力；桌面 EPUB 渲染：Windows 靠 fork 的 `flutter_inappwebview_windows`，Linux 靠 vendored 的 `packages/flutter_inappwebview_linux`（WPE WebKit，见下「Linux 桌面（源码构建）」）。Android：`compileSdk 36` / `minSdkVersion 24` / `targetSdk 35`。
 
 **macOS 只出 Apple Silicon（arm64），不再支持 Intel Mac（2026-10 起）。** `flutter build macos --release` 默认出 universal，靠 `fushi/macos/Runner.xcodeproj` 工程级 `EXCLUDED_ARCHS = x86_64`（Flutter 把它透传给 xcodebuild；`fushi/macos/Podfile` 的 `post_install` 给 Pods 钉同一份）收成 arm64；`release-desktop.yml` 的「Verify macOS app is arm64-only」门钉住 app 本体恰好是 arm64，随包原生件（`libfushi_p2p.dylib` / `libfushi_fsrs.dylib` / `libfushi_torrent_ffi.dylib` / `fushi-anki-sync` / ffmpeg-min / Mihon `runtime-macos-arm64`）一律只出 arm64，并按 app 本体的 `lipo -archs` 核对。发布资产名随之从 `fushi-<v>-macos.zip` 改为 `fushi-<v>-macos-arm64.zip`：已发出去的旧版（universal，可能跑在 Intel Mac 上）的更新器只认 `-macos.zip`，改名让它们选不中 Intel 上启动不了的 arm64 包，代价是旧版在 Apple Silicon 上也跨不过这一版的应用内自动更新（判「无更新」），需要手动下载一次新版。iOS 模拟器的 x86_64 切片、Windows / Linux / Android 的 x64 不在此列。Intel Mac 上的开发构建同样不再支持（`build_desktop_runtime.sh` / `script/build_and_run.sh` 在 Intel 宿主上直接报错）。
 
-## Linux 桌面（社区维护）
+## Linux 桌面（源码构建）
 
-**定位**：Linux App 由社区维护——CI 不构建 Linux App（`build-multiplatform.yml` 只有 `linux-server`，所有者 2026-09-30 决定），也没有 Linux 发布产物。下面是让社区能自己编、自己验的全部前提；改动 Linux 相关代码时按「验证」一节在 Docker 里自证。
+**定位**：Linux App 只能从源码构建——CI 不构建 Linux App（`build-multiplatform.yml` 只有 `linux-server`，所有者 2026-09-30 决定），也没有 Linux 发布产物。下面是自己编、自己验的全部前提；改动 Linux 相关代码时按「验证」一节在 Docker 里自证。
 
 bundle 布局：`build/linux/x64/<mode>/bundle/{fushi, lib/, data/, mihon_bridge/}`。runner 的 RUNPATH 是 `$ORIGIN/lib`，但它**只管 exe 的直接依赖**——插件 `.so` 的 `DT_NEEDED` 走插件自己的 RUNPATH，Dart VM 发起的 `DynamicLibrary.open` 也不吃 exe 的 RUNPATH。所以：
 

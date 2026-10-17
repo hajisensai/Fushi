@@ -12,6 +12,7 @@ import 'causal_context.dart';
 import 'hlc.dart';
 import 'ids.dart';
 import 'ordering.dart';
+import 'style_dedup.dart';
 
 /// 被修改的实体种类。持久化名冻结。
 enum SrsEntityKind {
@@ -43,6 +44,10 @@ enum SrsFieldClass {
 
   /// 牌组设置、算法、参数组、profile 设置：同 [flag]。
   setting,
+
+  /// 界面状态（牌组列表的折叠）：同样随同步、最后修改生效，但被覆盖的候选不进
+  /// 「同步冲突记录」——两台设备各自开合同一棵牌组树是常态，不是需要用户裁决的冲突。
+  viewState,
 }
 
 /// 字段键约定（冻结）。
@@ -58,6 +63,10 @@ abstract final class SrsFieldKeys {
   /// 笔记的「首选牌组」：按需生成的卡片的初始 deckId 由它确定（第六轮审查第 14 条）。
   static const String noteDeck = 'deck';
 
+  /// 笔记的当前笔记类型（「更改笔记类型」写它；没有记录时取身份记录里的创建类型）。
+  /// 身份记录不可变，所以换类型是一条修改记录，不是改身份记录。
+  static const String noteType = 'noteType';
+
   // notetype
   static const String name = 'name';
   static String fieldDef(String fieldId) => 'fieldDef/$fieldId';
@@ -70,6 +79,12 @@ abstract final class SrsFieldKeys {
   static const String buriedUntilDay = 'buried';
   static const String flag = 'flag';
   static const String cardDeck = 'deck';
+
+  /// 卡片的「前身」：更改笔记类型时新卡继承旧卡的复习历史与标志（值恒为 true）。
+  /// 每个前身一个键（集合语义）：两台设备各自加同一个前身是同值，不冲突。
+  static String cardHistoryFrom(String predecessorCardId) =>
+      '$cardHistoryFromPrefix$predecessorCardId';
+  static const String cardHistoryFromPrefix = 'historyFrom/';
 
   // deck
   static const String deckParent = 'parent';
@@ -85,6 +100,9 @@ abstract final class SrsFieldKeys {
   static const String deckAutoOptimize = 'autoOptimize';
   static const String deckOptimizeBaseline = 'optimizeBaseline';
   static const String deckMaxInterval = 'maxInterval';
+
+  /// 牌组列表里是否收起子牌组（对应 Anki deck 的 `collapsed` / Deck.Common.study_collapsed）。
+  static const String deckCollapsed = 'collapsed';
 
   /// 复习时自动播放卡面音频（bool，缺省 = true；对应 Anki 预设的 autoplay /
   /// disable_autoplay）。随参数继承走 own 祖先。
@@ -104,6 +122,8 @@ SrsFieldClass srsFieldClassOf(SrsEntityKind kind, String fieldKey) {
   switch (kind) {
     case SrsEntityKind.note:
       if (fieldKey == SrsFieldKeys.noteDeck) return SrsFieldClass.setting;
+      // 换类型：最后修改生效，被覆盖的进同步冲突记录、可一键改回（字段值另按内容类处理）。
+      if (fieldKey == SrsFieldKeys.noteType) return SrsFieldClass.setting;
       if (fieldKey == SrsFieldKeys.deleted) return SrsFieldClass.content;
       return SrsFieldClass.content;
     case SrsEntityKind.noteType:
@@ -114,6 +134,10 @@ SrsFieldClass srsFieldClassOf(SrsEntityKind kind, String fieldKey) {
     case SrsEntityKind.card:
       return SrsFieldClass.flag;
     case SrsEntityKind.deck:
+      if (fieldKey == SrsFieldKeys.deckCollapsed) {
+        return SrsFieldClass.viewState;
+      }
+      return SrsFieldClass.setting;
     case SrsEntityKind.profile:
       return SrsFieldClass.setting;
   }
@@ -218,8 +242,13 @@ Object? _canonicalize(Object? value) {
   return value;
 }
 
-bool _sameValue(Object? a, Object? b) =>
-    srsCanonicalJson(a) == srsCanonicalJson(b);
+/// 「值相同」的唯一口径（冲突判定、no-op 判定都用它）。字段文本按去重规范形比较：
+/// 内联 `<style>` 与它的共享样式引用行是同一内容（见 style_dedup.dart），所以同一份内容
+/// 无论哪台设备、去没去重写下，都不会被判成并发冲突。
+bool _sameValue(Object? a, Object? b) {
+  if (a is String && b is String) return srsSameFieldText(a, b);
+  return srsCanonicalJson(a) == srsCanonicalJson(b);
+}
 
 /// 一个字段键的合并结果。
 class SrsRegister {
