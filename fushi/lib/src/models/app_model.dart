@@ -8285,17 +8285,6 @@ class AppModel with ChangeNotifier {
   bool get mineToServerEnabled => _prefsRepo?.mineToServer ?? false;
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
 
-  // 复习页卡面音频：自动播放 / 答案面重播时含问题音频（透传 prefsRepo）。可空读：
-  // prefs 未装配 = 默认值（自动播、重播含问题音频，两者都同 Anki 默认）。
-  bool get srsReviewAutoplayAudio =>
-      _prefsRepo?.srsReviewAutoplayAudio ?? true;
-  Future<void> setSrsReviewAutoplayAudio(bool value) =>
-      prefsRepo.setSrsReviewAutoplayAudio(value);
-  bool get srsReviewReplayQuestionAudio =>
-      _prefsRepo?.srsReviewReplayQuestionAudio ?? true;
-  Future<void> setSrsReviewReplayQuestionAudio(bool value) =>
-      prefsRepo.setSrsReviewReplayQuestionAudio(value);
-
   // 复习模块的「挖词目标」（透传 prefsRepo）。与 [mineToServerEnabled] 同理用可空读：
   // `ankiRepositoryProvider` 构建期就会读它，prefs 未装配时等于从没选过 = Anki。
   SrsMiningTarget get srsMiningTarget =>

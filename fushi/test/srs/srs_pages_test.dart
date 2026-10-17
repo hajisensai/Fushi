@@ -16,6 +16,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
@@ -513,40 +514,57 @@ void main() {
   });
 
   group('复习页卡面音频', () {
-    test('自动播放默认开、重播含问题音频默认开（同 Anki 默认；所有者 2026-10-17 拍板）', () {
-      final AppModel app = AppModel(testPlatformServices());
-      expect(app.srsReviewAutoplayAudio, isTrue);
-      expect(app.srsReviewReplayQuestionAudio, isTrue);
-    });
+    Future<String> addWithAudio(
+      WidgetTester tester,
+      SrsDbStore store, {
+      String? deckId,
+    }) async => (await tester.runAsync(
+      () => store.createNote(
+        noteTypeId: store.lapisNoteTypeId,
+        deckId: deckId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(_kProfile, 'Expression'): '食べる',
+          srsLapisFieldId(_kProfile, 'MainDefinition'): 'to eat',
+          srsLapisFieldId(_kProfile, 'ExpressionAudio'): '[sound:word.mp3]',
+          srsLapisFieldId(_kProfile, 'SentenceAudio'): '[sound:sent.mp3]',
+        },
+      ),
+    ))!;
 
-    Future<String> addWithAudio(WidgetTester tester, SrsDbStore store) async =>
-        (await tester.runAsync(
-          () => store.createNote(
-            noteTypeId: store.lapisNoteTypeId,
-            fieldsById: <String, String>{
-              srsLapisFieldId(_kProfile, 'Expression'): '食べる',
-              srsLapisFieldId(_kProfile, 'MainDefinition'): 'to eat',
-              srsLapisFieldId(_kProfile, 'ExpressionAudio'): '[sound:word.mp3]',
-              srsLapisFieldId(_kProfile, 'SentenceAudio'): '[sound:sent.mp3]',
-            },
-          ),
-        ))!;
-
-    testWidgets('开了自动播放：翻到答案面按顺序播单词 / 句子音频；关着不播；重播都能用', (
+    testWidgets('按牌组：没设过 = 自动播（同 Anki）；关掉的牌组及继承它的子牌组不播；重播都能用', (
       WidgetTester tester,
     ) async {
-      for (final bool autoplay in <bool>[true, false]) {
+      for (final String mode in <String>['default', 'off', 'inherited-off']) {
         final SrsDbStore store = await _openStore(tester);
-        await addWithAudio(tester, store);
+        String deckId = store.defaultDeckId;
+        if (mode == 'off') {
+          await tester.runAsync(
+            () => store.editFields(
+              SrsEntityKind.deck,
+              deckId,
+              <String, Object?>{SrsFieldKeys.deckAutoplay: false},
+            ),
+          );
+        } else if (mode == 'inherited-off') {
+          deckId = (await tester.runAsync(() async {
+            final String parent = await store.createDeck('Parent');
+            await store.editFields(
+              SrsEntityKind.deck,
+              parent,
+              <String, Object?>{SrsFieldKeys.deckAutoplay: false},
+            );
+            return store.createDeck('Kid', parentId: parent);
+          }))!;
+        }
+        await addWithAudio(tester, store, deckId: deckId);
         final _RecordingAudio audio = _RecordingAudio();
         await _pumpPage(
           tester,
           store: store,
           apple: false,
-          page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+          page: SrsReviewPage(deckId: deckId, deckName: 'D'),
           overrides: <Override>[
             srsCardAudioOutputProvider.overrideWithValue(audio),
-            srsReviewAutoplayAudioProvider.overrideWithValue(autoplay),
           ],
         );
         expect(audio.played, isEmpty, reason: 'Lapis 问题面没有音频');
@@ -554,8 +572,8 @@ void main() {
         await _settle(tester);
         expect(
           audio.played,
-          autoplay ? <String>['word.mp3', 'sent.mp3'] : isEmpty,
-          reason: 'autoplay=$autoplay',
+          mode == 'default' ? <String>['word.mp3', 'sent.mp3'] : isEmpty,
+          reason: mode,
         );
         // 「重播音频」：答案面上不管开关都能手动播。
         audio.played.clear();
@@ -563,7 +581,7 @@ void main() {
           find.byKey(const ValueKey<String>('srs_review_replay_audio')).first,
         );
         await _settle(tester);
-        expect(audio.played, <String>['word.mp3', 'sent.mp3']);
+        expect(audio.played, <String>['word.mp3', 'sent.mp3'], reason: mode);
         await _unmount(tester);
       }
     });
@@ -579,7 +597,6 @@ void main() {
         page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
         overrides: <Override>[
           srsCardAudioOutputProvider.overrideWithValue(audio),
-          srsReviewAutoplayAudioProvider.overrideWithValue(true),
         ],
       );
       await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
@@ -589,6 +606,53 @@ void main() {
       await _settle(tester);
       expect(audio.stops, greaterThanOrEqualTo(1));
       expect(audio.played, <String>['word.mp3'], reason: '被打断后不再播第二段');
+      await _unmount(tester);
+    });
+
+    testWidgets('牌组设置页：两个音频开关写进牌组；继承参数的子牌组只显示「继承自」', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String kid = (await tester.runAsync(
+        () => store.createDeck('Kid', parentId: store.defaultDeckId),
+      ))!;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      final Finder autoplay = find.byKey(
+        const ValueKey<String>('srs-settings-autoplay-audio'),
+      );
+      final Finder replay = find.byKey(
+        const ValueKey<String>('srs-settings-replay-question-audio'),
+      );
+      expect(autoplay, findsOneWidget);
+      expect(replay, findsOneWidget);
+      await tester.ensureVisible(autoplay);
+      await tester.tap(autoplay);
+      await tester.pump();
+      await tester.ensureVisible(replay);
+      await tester.tap(replay);
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      );
+      await _settle(tester);
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[store.defaultDeckId]!.autoplayAudio, isFalse);
+      expect(tree[store.defaultDeckId]!.replayQuestionAudio, isFalse);
+      expect(tree.paramsOwner(kid).autoplayAudio, isFalse, reason: '子牌组随继承');
+      await _unmount(tester);
+
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: kid),
+      );
+      expect(autoplay, findsNothing);
       await _unmount(tester);
     });
   });

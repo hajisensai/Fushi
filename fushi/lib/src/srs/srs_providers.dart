@@ -98,20 +98,6 @@ final FutureProvider<SrsMediaStore?> srsMediaStoreProvider =
 /// 进入复习页时取消在跑的优化（见 srs_optimization_scheduler.dart）。
 final ValueNotifier<int> srsActiveReviewSessions = ValueNotifier<int>(0);
 
-/// 复习页是否自动播放卡面音频（按 profile 的偏好，默认开，同 Anki）。
-final Provider<bool> srsReviewAutoplayAudioProvider = Provider<bool>(
-  (Ref ref) => ref.watch(
-    appProvider.select((AppModel app) => app.srsReviewAutoplayAudio),
-  ),
-);
-
-/// 答案面上手动重播时是否先播问题面音频（默认开，同 Anki）。
-final Provider<bool> srsReviewReplayQuestionAudioProvider = Provider<bool>(
-  (Ref ref) => ref.watch(
-    appProvider.select((AppModel app) => app.srsReviewReplayQuestionAudio),
-  ),
-);
-
 /// 本机写操作后的刷新信号（单调递增）。
 final StateProvider<int> srsRevisionProvider = StateProvider<int>(
   (Ref ref) => 0,
