@@ -62,8 +62,10 @@ const CHECK = String.raw`(async () => {
     const ls = lanes(name);
     ok(ls.length > 0, name + ': has lanes');
     for (const r of rects) {
+      // A box ending on full-width closing punctuation (、。) may stop at that glyph's ink
+      // (BUG-3503: checked exactly further down), 0.4em short of the box end.
       const hit = ls.find((l) => Math.abs(mid(l) - mid(r)) <= tol &&
-        span(l)[0] <= span(r)[0] + 1 && span(l)[1] >= span(r)[1] - 1);
+        span(l)[0] <= span(r)[0] + 1 && span(l)[1] >= span(r)[1] - 1 - 0.45 * em);
       ok(!!hit, name + ': text box at ' + Math.round(mid(r)) + ' has a covering lane');
       // Pulled furigana: the lane gives way to the furigana ink (checked below), so it is
       // thinner than 1em and off-centre, but still at least half a character inside the box.
@@ -228,6 +230,64 @@ const CHECK = String.raw`(async () => {
   ok(lanes('fushi-selection').length === 0, 'lookup lanes go away with the lookup');
   ok(lanes('fushi-sentence-audio').length === 0, 'current-sentence lanes go away when the cue clears');
   ok(lanes('fushi-hl-yellow').length > 0, 'favourite lanes stay');
+
+  // BUG-3503: a lane ending on full-width closing punctuation stops at the punctuation ink
+  // (first ~0.6 of its cell), not at the blank second half of the cell.
+  const stopNode = textNodes(root()).find((n) => n.data.indexOf('。') >= 2);
+  ok(!!stopNode, 'a text run with 。 exists');
+  if (stopNode) {
+    const k = stopNode.data.indexOf('。');
+    const sr = document.createRange(); sr.setStart(stopNode, k - 2); sr.setEnd(stopNode, k + 1);
+    const pr = document.createRange(); pr.setStart(stopNode, k); pr.setEnd(stopNode, k + 1);
+    const cell = pr.getClientRects()[0];
+    CSS.highlights.set('fushi-search', new Highlight(sr));
+    await frames();
+    const sl = lanes('fushi-search').filter((l) => Math.abs(mid(l) - mid(cell)) <= 0.5 * em &&
+      span(l)[1] >= span(cell)[0] - 1);
+    ok(sl.length === 1, 'one lane on the 。 line');
+    const len = span(cell)[1] - span(cell)[0];
+    if (sl.length === 1 && len >= 0.75 * em) {
+      const end = span(sl[0])[1] - span(cell)[0];
+      ok(end <= 0.6 * len + 0.5 && end >= 0.4 * len, 'lane ends at the 。 ink (' + end.toFixed(1) + ' of a ' +
+        len.toFixed(1) + 'px cell)');
+    }
+    CSS.highlights.delete('fushi-search');
+    await frames();
+  }
+
+  // BUG-3503: paginated pages are columns of the body multicol. Text that runs past the
+  // column end (WebKit hanging punctuation; here a nowrap run, which Chrome overflows the
+  // same way) must not drag its lane through the column gap into the next page.
+  const bcs = getComputedStyle(document.body);
+  const colW = parseFloat(bcs.columnWidth);
+  if (colW > 0 && !document.querySelector('.fushi-vn-content')) {
+    const step = colW + (parseFloat(bcs.columnGap) || 0);
+    const box = document.body.getBoundingClientRect();
+    const start = vertical
+      ? box.top + parseFloat(bcs.paddingTop) - document.body.scrollTop
+      : box.left + parseFloat(bcs.paddingLeft) - document.body.scrollLeft;
+    const over = document.createElement('span');
+    over.style.whiteSpace = 'nowrap';
+    over.textContent = 'あ'.repeat(Math.ceil(1.5 * colW / em));
+    root().querySelector('p').appendChild(over);
+    const or = document.createRange(); or.selectNodeContents(over.firstChild);
+    CSS.highlights.set('fushi-search', new Highlight(or));
+    await frames();
+    const runEnd = Math.max(...Array.from(or.getClientRects()).map((r) => span(r)[1]));
+    const runStart = Math.min(...Array.from(or.getClientRects()).map((r) => span(r)[0]));
+    const k = Math.floor((runStart + 0.5 - start) / step);
+    ok(runEnd > start + k * step + colW + 1, 'overflowing run reaches past its column end');
+    const sl = lanes('fushi-search').filter((l) => Math.abs(mid(l) - mid(or.getClientRects()[0])) <= em);
+    ok(sl.length > 0, 'overflowing run has a lane');
+    for (const l of sl) {
+      const lk = Math.floor((span(l)[0] + 0.5 - start) / step);
+      ok(span(l)[1] <= start + lk * step + colW + 0.5, 'lane stays inside its column (ends ' +
+        (span(l)[1] - (start + lk * step + colW)).toFixed(1) + 'px past the column end)');
+    }
+    CSS.highlights.delete('fushi-search');
+    over.remove();
+    await frames();
+  }
   return { errors, checks };
 })()`;
 

@@ -875,6 +875,36 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       cache.push({ ruby: ruby, ink: ink });
       return ink;
     };
+    // 片段两端的全角标点按墨迹收边：「、。」』）」这类收尾标点的墨迹在字格前半（竖排上半、横排左半），
+    // 「「『（」这类起头标点在后半；全角字格的另一半是空白，窄条铺满整格会伸到字外、像句与句之间多出
+    // 一截。只收片段的首尾字（并条时后续片段照常接上），字格已被 vpal / palt 压窄的不收。
+    var CLOSE_PUNCT = /[、。，．」』）】〉》〕｝］〙〗]/;
+    var OPEN_PUNCT = /[「『（【〈《〔｛［〘〖]/;
+    var PUNCT_INK = 0.6;
+    var punctInk = function(node, start, end, vertical, em, pieces) {
+      var s = start, e = end;
+      while (s < e && /\s/.test(node.data.charAt(s))) s++;
+      while (e > s && /\s/.test(node.data.charAt(e - 1))) e--;
+      if (e <= s) return;
+      var edge = function(i, open) {
+        var r = document.createRange();
+        r.setStart(node, i);
+        r.setEnd(node, i + 1);
+        var cr = r.getClientRects()[0];
+        if (!cr) return;
+        var a = vertical ? cr.top : cr.left, b = vertical ? cr.bottom : cr.right;
+        if (b - a < 0.75 * em) return;
+        var line = vertical ? cr.left + cr.width / 2 : cr.top + cr.height / 2;
+        pieces.forEach(function(p) {
+          var pl = vertical ? p.r.left + p.r.width / 2 : p.r.top + p.r.height / 2;
+          if (Math.abs(pl - line) >= 1) return;
+          if (open) p.inkA = b - PUNCT_INK * (b - a);
+          else p.inkB = a + PUNCT_INK * (b - a);
+        });
+      };
+      if (CLOSE_PUNCT.test(node.data.charAt(e - 1))) edge(e - 1, false);
+      if (OPEN_PUNCT.test(node.data.charAt(s))) edge(s, true);
+    };
     // 一个文本节点 [start, end) 的行片段。
     var nodeRects = function(node, start, end, seen, out) {
       var parent = node.parentElement;
@@ -895,11 +925,13 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       var ruby = parent.closest('ruby');
       var owner = backdropOf(parent);
       var rects = r.getClientRects();
+      var first = out.length;
       for (var i = 0; i < rects.length; i++) {
         if (rects[i].width > 0.5 && rects[i].height > 0.5) {
           out.push({ r: rects[i], em: em, v: vertical, x: blockExtent(rects[i], cs, em, vertical, text), ruby: ruby, o: owner });
         }
       }
+      if (out.length > first) punctInk(node, start, end, vertical, em, out.slice(first));
     };
     // Range 的可见正文片段。整个元素被包住时 Range.getClientRects 还会带上元素边框盒（含注音的 ruby 盒），
     // 所以逐文本节点取。
@@ -924,25 +956,59 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // 行片段 → 窄条（块方向范围见 blockExtent）。同一行（文字盒中线一致、字号一致）里相隔不超过 join 个字的
     // 片段并成一条，块方向取并集（一行里 CJK 与西文混排也是一条等厚的条）；最后把条收到这一行振假名的
     // 墨迹之外，贴字而不碰注音。
+    // 翻页模式的分栏（BUG-3503）：body 是多列容器，每一栏（竖排一页 / 横排一页或子列）沿行方向占
+    // [start + k·step, start + k·step + width)。悬挂标点（Apple 正文 hanging-punctuation: allow-end）
+    // 把行尾「、」「。」挂到栏外，字形盒伸进列间距；窄条照字形盒画就越出栏尾，字号大于列间距时越出
+    // 的那截落进下一页页顶（竖排各页同一横坐标、横排同一纵坐标）。栏外的字本来就被 body 的 clip-path
+    // 裁掉，所以窄条沿行方向收进它所在的栏；并条也不跨栏。滚动 / VN 没有分栏，返回 null 不收。
+    // 横排 RTL 的栏从右往左排，这里不处理（返回 null）。
+    var columnFrame = function() {
+      var body = document.body;
+      if (!body) return null;
+      var cs = getComputedStyle(body);
+      var width = parseFloat(cs.columnWidth);
+      if (!(width > 0)) return null;
+      var vertical = (cs.writingMode || '').indexOf('vertical') === 0;
+      if (!vertical && cs.direction === 'rtl') return null;
+      var box = body.getBoundingClientRect();
+      var start = vertical
+        ? box.top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0) - body.scrollTop
+        : box.left + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.paddingLeft) || 0) - body.scrollLeft;
+      return { v: vertical, start: start, step: width + (parseFloat(cs.columnGap) || 0), width: width };
+    };
     var lanes = function(pieces, join) {
       var annCache = [];
+      var frame = columnFrame();
       var items = pieces.map(function(p) {
         var r = p.r;
-        return {
+        var it = {
           v: p.v, em: p.em,
           line: p.v ? r.left + r.width / 2 : r.top + r.height / 2,
           lo: p.x.lo, hi: p.x.hi,
-          a: p.v ? r.top : r.left,
-          b: p.v ? r.bottom : r.right,
+          a: Math.max(p.v ? r.top : r.left, p.inkA == null ? -Infinity : p.inkA),
+          b: Math.min(p.v ? r.bottom : r.right, p.inkB == null ? Infinity : p.inkB),
+          col: 0,
           rubies: p.ruby ? [p.ruby] : []
         };
+        if (frame && frame.v === p.v && frame.step > 0) {
+          // 按片段起点归栏（悬挂字形只会伸出栏尾），再把两端收进这一栏。
+          it.col = Math.floor((it.a + 0.5 - frame.start) / frame.step);
+          var colStart = frame.start + it.col * frame.step;
+          it.a = Math.max(it.a, colStart);
+          it.b = Math.min(it.b, colStart + frame.width);
+        }
+        return it;
       });
-      items.sort(function(x, y) { return Math.abs(x.line - y.line) >= 1 ? x.line - y.line : x.a - y.a; });
+      items = items.filter(function(it) { return it.b - it.a > 0.5; });
+      items.sort(function(x, y) {
+        if (x.col !== y.col) return x.col - y.col;
+        return Math.abs(x.line - y.line) >= 1 ? x.line - y.line : x.a - y.a;
+      });
       var out = [];
       items.forEach(function(it) {
         var prev = out[out.length - 1];
-        if (prev && prev.v === it.v && Math.abs(prev.line - it.line) < 1 && Math.abs(prev.em - it.em) < 0.5 &&
-            it.a <= prev.b + join * it.em) {
+        if (prev && prev.v === it.v && prev.col === it.col && Math.abs(prev.line - it.line) < 1 &&
+            Math.abs(prev.em - it.em) < 0.5 && it.a <= prev.b + join * it.em) {
           prev.b = Math.max(prev.b, it.b);
           prev.lo = Math.min(prev.lo, it.lo);
           prev.hi = Math.max(prev.hi, it.hi);
@@ -1244,7 +1310,10 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // 从右往左（用户 2026-10-16「竖排是从右往左的，横排是上到下的」），中线降序。
     var readingOrder = function(list) {
       if (list.length > 1 && list[0].v && !readsLeftToRight()) {
-        return list.slice().sort(function(x, y) { return Math.abs(x.mid - y.mid) >= 1 ? y.mid - x.mid : x.a - y.a; });
+        return list.slice().sort(function(x, y) {
+          if (x.col !== y.col) return x.col - y.col;
+          return Math.abs(x.mid - y.mid) >= 1 ? y.mid - x.mid : x.a - y.a;
+        });
       }
       return list;
     };
