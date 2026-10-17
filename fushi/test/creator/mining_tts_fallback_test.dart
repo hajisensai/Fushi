@@ -139,7 +139,7 @@ class _FakeDescriptor extends TtsProviderDescriptor {
   @override
   TtsProvider create(TtsVoicePreset preset, TtsHost host) {
     final Object? error = createError;
-    if (error != null) throw error;
+    if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
     return _FakeProvider(this);
   }
 }
