@@ -51,10 +51,13 @@ def configuration(blob: bytes) -> str:
 
 
 def check_lib_blobs(platform: str, label: str, blobs: dict[str, bytes], failures: list[str]) -> None:
-    for lib in LIBS + ("ffmpegkit",):
-        if lib not in blobs:
-            failures.append(f"{label}: missing {lib}")
-    if failures:
+    # Android ships libffmpegkit.so, Apple ffmpegkit.framework/ffmpegkit.
+    if "libffmpegkit" in blobs:
+        blobs = {**blobs, "ffmpegkit": blobs["libffmpegkit"]}
+    missing = [lib for lib in LIBS + ("ffmpegkit",) if lib not in blobs]
+    for lib in missing:
+        failures.append(f"{label}: missing {lib}")
+    if missing:
         return
     conf = configuration(blobs["libavutil"])
     if not conf:

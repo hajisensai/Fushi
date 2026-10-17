@@ -48,7 +48,9 @@ for dir in prebuilt/android-*-24; do
   cp -a "${dir}/ffmpeg/include" "${stage}/include"
   mkdir -p "${stage}/lib/pkgconfig"
   cp -a "${dir}"/ffmpeg/lib/*.so "${stage}/lib/"
-  if [ -d "${dir}/pkgconfig" ]; then cp -a "${dir}"/pkgconfig/lib*.pc "${stage}/lib/pkgconfig/"; fi
+  # FFmpeg's own .pc files (install prefix); libmpv's build rewrites their
+  # prefix and drops the static-link closure (scripts/unified_ffmpeg.sh).
+  cp -a "${dir}"/ffmpeg/lib/pkgconfig/lib*.pc "${stage}/lib/pkgconfig/"
   tar -C "${stage}" -czf "${OUT}/ffmpeg-dev-android-${abi}.tar.gz" .
   echo "build_android: staged ${abi} from ${dir}"
 done

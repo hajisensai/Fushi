@@ -104,7 +104,8 @@ jobs:
   macos:
     # Desktop macOS (Apple Silicon): the player's FFmpeg frameworks + the
     # ffmpeg/ffprobe programs linked against them, verified by running them.
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios }}
+    # A pushed commit message containing [skip-apple] rebuilds Android only.
+    if: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_ios) && !contains(github.event.head_commit.message, '[skip-apple]') }}
     runs-on: macos-26
     timeout-minutes: 330
     env:
@@ -152,7 +153,7 @@ jobs:
           if-no-files-found: ignore
 
   ios:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios }}
+    if: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_ios) && !contains(github.event.head_commit.message, '[skip-apple]') }}
     runs-on: macos-26
     timeout-minutes: 330
     env:
