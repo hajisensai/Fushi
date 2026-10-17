@@ -99,7 +99,8 @@ void main() {
     );
     expect(
       RegExp(
-        r'widget\.sourceReview\?\.episodeIndex \?\?\s*_remoteLastAttemptedEpisode \?\?\s*widget\.initialEpisodeIndex',
+        // BUG-3490：媒体库在线合集回看时链接 episodeIndex 让位于 uid 定位的成员。
+        r'widget\.sourceReview\?\.episodeIndex\s*:\s*null\)\s*\?\?\s*_remoteLastAttemptedEpisode \?\?\s*widget\.initialEpisodeIndex',
       ).hasMatch(page),
       true,
       reason: '_initRemote 起播集应优先取上次尝试的集（重试落点）',

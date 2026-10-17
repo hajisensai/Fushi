@@ -225,7 +225,8 @@ void main() {
         );
         // 且 best-effort 上报到 host（跨设备真相源），失败不抛。
         expect(
-          persist.contains('client.putRemoteVideoPosition('),
+          // BUG-3490：上报经回看闸门（回看中不发），不再直调 client。
+          persist.contains('_remoteReportGate.position('),
           isTrue,
           reason: 'remote position must be uploaded to host (TODO-653)',
         );

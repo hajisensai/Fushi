@@ -515,6 +515,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final String sourceId =
         reviewSession?.link.sourceId ?? CardSourceLink.newSourceId();
     final String? localSourcePath = controller.videoPath;
+    // BUG-3490：媒体库里的在线条目（粘贴链接 / YouTube / 在线视频源剧集）没有本地
+    // 字节可比指纹，但库身份就是内容本身（见 isContentAddressedVideoUid），卡片照样
+    // 带来源链接，回看时直接在线播放。
+    final bool contentAddressedStream =
+        _resolvedStreamInfo != null &&
+        CardSourceLink.isContentAddressedVideoUid(sourceUid);
     // A still-only card has no subtitle range, but its source is the frame
     // being viewed now; it must not accidentally link to the start of the film.
     final int sourceStartMs = clipEndMs > clipStartMs
@@ -522,9 +528,16 @@ extension _VideoLookupMining on _VideoFushiPageState {
         : (controller.positionMs ?? clipStartMs);
     final int sourceEndMs = clipEndMs > clipStartMs ? clipEndMs : sourceStartMs;
     Future<CardSourceLink?> resolveSourceLink() async {
-      if (!VideoSourceFingerprint.isLocalPath(localSourcePath)) return null;
-      final String fingerprint = await VideoSourceFingerprint.instance
-          .fingerprint(localSourcePath!);
+      final String? fingerprint;
+      if (VideoSourceFingerprint.isLocalPath(localSourcePath)) {
+        fingerprint = await VideoSourceFingerprint.instance.fingerprint(
+          localSourcePath!,
+        );
+      } else if (contentAddressedStream) {
+        fingerprint = null;
+      } else {
+        return null;
+      }
       return CardSourceLink(
         kind: CardSourceKind.video,
         uid: sourceUid,
