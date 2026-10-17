@@ -14,6 +14,7 @@ class EpubBookMeta {
     required this.importedAt,
     required this.extractDir,
     this.completedAt,
+    this.localAddedAt,
   });
 
   /// 跨设备书身份（= sanitizeTtuFilename(title)），主键。
@@ -25,7 +26,14 @@ class EpubBookMeta {
 
   /// `'epub'` / `'pdf'` / `'manga'`（见 `BookFormat`）。
   final String format;
+
+  /// 原始入库时刻（毫秒，跨设备保留；互联下载的书 = 对端入库时刻）。展示与
+  /// 「导入时间」排序用。
   final int importedAt;
+
+  /// 本机开始拥有这本书的时刻（毫秒，v118，设备本地）。首页「最近添加」用它；
+  /// null = 时刻未知。语义见 `EpubBooks.localAddedAt`。
+  final int? localAddedAt;
   final String extractDir;
   final DateTime? completedAt;
 }

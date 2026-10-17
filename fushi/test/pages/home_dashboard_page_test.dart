@@ -471,6 +471,7 @@ void main() {
         chapterCount: 1,
         chaptersJson: '[]',
         importedAt: now - b.$2,
+        localAddedAt: Value<int?>(now - b.$2),
       ));
     }
     await db.upsertVideoBook(VideoBooksCompanion(
@@ -478,6 +479,7 @@ void main() {
       title: const Value('刚导入的视频'),
       videoPath: const Value('/abs/fresh.mp4'),
       importedAt: Value(now - 1500),
+      localAddedAt: Value<int?>(now - 1500),
     ));
     await tester.pumpWidget(buildAppWithBooks(
       <MediaItem>[
@@ -531,6 +533,7 @@ void main() {
         chaptersJson: '[]',
         // 新书6 最新。
         importedAt: now - (10 - i) * 1000,
+        localAddedAt: Value<int?>(now - (10 - i) * 1000),
       ));
       books.add(readingBook('新书$i', '新书$i', position: 0));
     }
@@ -544,6 +547,58 @@ void main() {
           .map((HomeRecentTile r) => r.title),
       <String>['新书6', '新书5', '新书4', '新书3'],
     );
+  });
+
+  testWidgets('双栏「最近添加」按本机拥有时刻排：刚从对端下载的旧书 / 旧视频排最前，'
+      '不按它们在对端多年前的入库时刻沉底', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    const int yearsAgo = 1000;
+    final List<MediaItem> books = <MediaItem>[];
+    // 本机最近导入的四本（入库时刻 = 拥有时刻）。
+    for (int i = 1; i <= 4; i++) {
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: '本地$i',
+        title: '本地$i',
+        epubPath: '/abs/local$i.epub',
+        extractDir: '/abs/local$i',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: now - (10 - i) * 1000,
+        localAddedAt: Value<int?>(now - (10 - i) * 1000),
+      ));
+      books.add(readingBook('本地$i', '本地$i', position: 0));
+    }
+    // 刚从互联对端下载：importedAt 沿用对端多年前的入库时刻（BUG-3452 /
+    // BUG-2463），本机拥有时刻是刚才——与生产落地路径一样经写入单点补齐。
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: '对端旧书',
+      title: '对端旧书',
+      epubPath: '/abs/peer.epub',
+      extractDir: '/abs/peer',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: yearsAgo,
+    ));
+    books.add(readingBook('对端旧书', '对端旧书', position: 0));
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('peer-video'),
+      title: Value('对端旧视频'),
+      videoPath: Value('/abs/peer.mp4'),
+      importedAt: Value(yearsAgo),
+    ));
+    await tester.pumpWidget(buildAppWithBooks(books, const <String, int>{}));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final List<String> titles = tester
+        .widgetList<HomeRecentTile>(recentTiles())
+        .map((HomeRecentTile r) => r.title)
+        .toList();
+    expect(titles, hasLength(4));
+    expect(titles.take(2).toSet(), <String>{'对端旧书', '对端旧视频'},
+        reason: '按 importedAt 排它们会沉到最后、被 4 条上限截掉');
+    expect(titles.skip(2), <String>['本地4', '本地3']);
   });
 
   testWidgets('「最近添加」只在双栏：竖屏单栏不出；单栏主角卡封面 150、横滑行封面 132',

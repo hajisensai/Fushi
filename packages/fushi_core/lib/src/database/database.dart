@@ -845,7 +845,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 117;
+  int get schemaVersion => 118;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2266,6 +2266,43 @@ class FushiDatabase extends _$FushiDatabase
               }
             }
             await _ensureSrsIndexes();
+          }
+          if (from < 118) {
+            // v118：epub_books / srt_books / video_books 各加 local_added_at——「本机
+            // 开始拥有该条目的时刻」，从 imported_at（原始入库时刻）里拆出来。此前
+            // 一列两义：BUG-3452 / BUG-2463 让互联下载把 imported_at 写成对端入库
+            // 时刻（展示 / 排序要的），而删除墓碑仲裁与首页「最近添加」要的是本机
+            // 落地时刻，两者在下载行上不再相等。
+            //
+            // 回填 = imported_at：存量行里两者本就同义（本地导入 / 云同步拉下都写
+            // 当时 now）。唯一例外是 BUG-3452（epub）/ BUG-2463（视频）合入后经互联
+            // 下载的少量行——它们的 imported_at 已是对端时刻，库里没有任何列还记得
+            // 本机落地时刻，无从区分，只能同样按 imported_at 回填（效果与升级前一致，
+            // 不会更糟）；此后新落地的行由写入单点记真实的本机时刻。
+            //
+            // `WHERE local_added_at IS NULL` 让本步幂等，也覆盖迁移阶梯上按当前 Dart
+            // 定义 createTable / 重建、列已在但值为空的表。表在阶梯上可能不存在
+            // （合成库），与其它加列步同形跳过。
+            // 三张表逐条写 addColumn（不收进循环）：schema doc 守卫按 `m.addColumn(x,
+            // x.y)` 字面形态认列的落地版本。
+            if (await _tableExists('epub_books')) {
+              if (!await _columnExists('epub_books', 'local_added_at')) {
+                await m.addColumn(epubBooks, epubBooks.localAddedAt);
+              }
+              await _backfillLocalAddedAt('epub_books');
+            }
+            if (await _tableExists('srt_books')) {
+              if (!await _columnExists('srt_books', 'local_added_at')) {
+                await m.addColumn(srtBooks, srtBooks.localAddedAt);
+              }
+              await _backfillLocalAddedAt('srt_books');
+            }
+            if (await _tableExists('video_books')) {
+              if (!await _columnExists('video_books', 'local_added_at')) {
+                await m.addColumn(videoBooks, videoBooks.localAddedAt);
+              }
+              await _backfillLocalAddedAt('video_books');
+            }
           }
         },
         onCreate: (m) async {

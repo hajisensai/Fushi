@@ -108,7 +108,14 @@ class SrtBooks extends Table {
   TextColumn get audioPathsJson => text().nullable()();
   TextColumn get srtPath => text()();
   TextColumn get coverPath => text().nullable()();
+
+  /// 原始入库时刻（毫秒，跨设备保留、展示与排序用；同步资产包导入时沿用包内值）。
   IntColumn get importedAt => integer()();
+
+  /// v118：本机开始拥有这条字幕书的时刻（毫秒，设备本地，同 [EpubBooks.localAddedAt]
+  /// 的语义与理由）。写入单点 [FushiDatabase.upsertSrtBook]：插入时未携带 → now；
+  /// 冲突转更新时永不改写。v118 迁移以 importedAt 回填存量行。
+  IntColumn get localAddedAt => integer().nullable()();
   // Standalone SRT books (no backing epub) use the empty-string sentinel.
   TextColumn get bookKey => text().withDefault(const Constant(''))();
 
@@ -456,7 +463,25 @@ class EpubBooks extends Table {
   TextColumn get chaptersJson => text()();
   TextColumn get tocJson => text().nullable()();
   TextColumn get sourceMetadata => text().nullable()();
+
+  /// 条目的**原始入库时刻**（毫秒）：跨设备保留、用户可见——书架「导入时间」排序、
+  /// 「最近阅读」对没读过的书的回落键、合集组内回退序都按它。互联下载的书写对端的
+  /// 入库时刻（BUG-3452），所以它**不是**「本机从什么时候起拥有这本书」，那件事见
+  /// [localAddedAt]。
   IntColumn get importedAt => integer()();
+
+  /// v118：本机**开始拥有**这本书的时刻（毫秒）。与 [importedAt] 是两个事实：
+  /// 互联下载把 importedAt 写成对端入库时刻，而删除墓碑仲裁（「删除发生在本机
+  /// 拥有之后才管得着它」，BUG-2044）与首页「最近添加」要的是本机落地那一刻——
+  /// 共用一列时，对端早已入库、本机刚下载的书会被第三台设备在其间的「从所有设备
+  /// 删除」追着弹确认，也进不了「最近添加」。
+  ///
+  /// 设备本地语义：不进互联 / 云同步 wire。备份按整行随包、恢复时保留备份内的值
+  /// （恢复 = 重现快照时刻的拥有事实，见 `FushiDatabase.insertEpubBook`）。写入
+  /// 单点是 [FushiDatabase.insertEpubBook]（未携带 → 当时 now）；此后不再改写。
+  /// null = 时刻未知（墓碑仲裁按「无从仲裁」处理，宁可多问一次）。v118 迁移以
+  /// importedAt 回填存量行。
+  IntColumn get localAddedAt => integer().nullable()();
 
   /// v87：书的内容语言（BCP-47，如 `ja` / `zh-Hant`），决定正文用哪条字体链。
   ///
@@ -685,8 +710,15 @@ class VideoBooks extends Table {
 
   /// 导入时间（毫秒戳，同 [EpubBooks].importedAt / [SrtBooks].importedAt int
   /// 范式）；null = 旧数据无导入时间。v57 前是 drift DateTime（Unix 秒存储），
-  /// v57 迁移统一为 int 毫秒。
+  /// v57 迁移统一为 int 毫秒。互联下载登记镜像 host 的值（BUG-2463），所以它是
+  /// 「原始入库时刻」，不是「本机从什么时候起拥有」——后者见 [localAddedAt]。
   IntColumn get importedAt => integer().nullable()();
+
+  /// v118：本机开始拥有这条视频的时刻（毫秒，设备本地，同 [EpubBooks.localAddedAt]
+  /// 的语义与理由）。写入单点 [FushiDatabase.upsertVideoBook]：插入时未携带 → now；
+  /// 冲突转更新时永不改写（重复登记同一 bookUid 不算重新拥有）。v118 迁移以
+  /// importedAt 回填存量行；importedAt 为 null 的旧行仍为 null（时刻未知）。
+  IntColumn get localAddedAt => integer().nullable()();
 
   /// m3u8 多集播放列表 JSON：`[{title,path}]`（绝对路径）。单视频导入时为 null。
   TextColumn get playlistJson => text().nullable()();
