@@ -10,9 +10,11 @@
 退出码 0 = 全部通过；1 = 至少一条失败（逐条打印）。
 """
 import os
+import re
+import struct
 import sys
 import zipfile
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Set, Tuple
 
 REQUIRED_FLAGS: List[str] = [
     '--enable-gpl',
@@ -71,6 +73,16 @@ EXPECTED_FRAMEWORKS = {
     'libavformat', 'libavutil', 'libswresample', 'libswscale',
 }
 
+# iOS 系统库的 Mach-O 兼容版本上限：framework 的 LC_LOAD_DYLIB compat 版本高于设备上的
+# 系统库版本时 dyld 拒绝加载（启动即崩）。libiconv.2 自 iOS 早期起就是 7.0.0（Apple
+# libiconv-64 系列，部署目标 12.1 起不变）；其余 /usr/lib 库一律要求 compat == 1.0.0
+# （ld64 对系统 tbd 的默认值）。超出就当场停，别让一个新 SDK 抬高的版本混进入库产物。
+IOS_SYSTEM_DYLIB_MAX_COMPAT: Dict[str, Tuple[int, int, int]] = {
+    'iconv': (7, 0, 0),
+}
+IOS_IMPLICIT_LIBS = {'System', 'objc'}
+PODSPEC = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'ios', 'ffmpeg_kit_flutter.podspec')
+
 failures: List[str] = []
 
 
@@ -98,6 +110,45 @@ def check_slice(label: str, util: str, codec: str, fmt: str) -> None:
     check('tls_pin_sha256' in fmt, f'{label}: libavformat 含 cert-pin 选项 tls_pin_sha256')
     for marker in FORMAT_MARKERS:
         check(marker in fmt, f'{label}: libavformat 含 {marker!r}（dash demuxer + libxml2）')
+
+
+def macho_system_dylibs(data: bytes) -> List[Tuple[str, Tuple[int, int, int]]]:
+    """返回 (库名, compat 版本) 列表：每个 arch 切片里 /usr/lib/lib<名>*.dylib 的 LC_LOAD_DYLIB。"""
+    def ver(x: int) -> Tuple[int, int, int]:
+        return (x >> 16, (x >> 8) & 0xff, x & 0xff)
+
+    def thin(off: int) -> List[Tuple[str, Tuple[int, int, int]]]:
+        if struct.unpack_from('<I', data, off)[0] != 0xfeedfacf:
+            return []
+        ncmds = struct.unpack_from('<I', data, off + 16)[0]
+        p = off + 32
+        out: List[Tuple[str, Tuple[int, int, int]]] = []
+        for _ in range(ncmds):
+            cmd, size = struct.unpack_from('<II', data, p)
+            # LC_LOAD_DYLIB / LC_LOAD_WEAK_DYLIB / LC_REEXPORT_DYLIB
+            if cmd in (0xc, 0x80000018, 0x8000001f):
+                name_off, _ts, _cur, compat = struct.unpack_from('<IIII', data, p + 8)
+                path = data[p + name_off:p + size].split(b'\0')[0].decode('latin1')
+                m = re.match(r'^/usr/lib/lib([A-Za-z0-9_+]+)\.(?:[A-Za-z0-9]+\.)*dylib$', path)
+                if m:
+                    out.append((m.group(1), ver(compat)))
+            p += size
+        return out
+
+    if struct.unpack_from('>I', data, 0)[0] == 0xcafebabe:
+        n = struct.unpack_from('>I', data, 4)[0]
+        result: List[Tuple[str, Tuple[int, int, int]]] = []
+        for i in range(n):
+            off = struct.unpack_from('>I', data, 8 + 20 * i + 8)[0]
+            result.extend(thin(off))
+        return result
+    return thin(0)
+
+
+def podspec_libraries() -> Set[str]:
+    with open(PODSPEC, encoding='utf-8') as f:
+        m = re.search(r'^\s*s\.libraries\s*=\s*(.+)$', f.read(), re.M)
+    return set(re.findall(r"'([^']+)'", m.group(1))) if m else set()
 
 
 def verify_android(aar_path: str) -> None:
@@ -140,6 +191,28 @@ def verify_ios(root: str) -> None:
 
     for sl in sorted(EXPECTED_IOS_SLICES):
         check_slice(f'ios {sl}', binary('libavutil', sl), binary('libavcodec', sl), binary('libavformat', sl))
+
+    # 系统库依赖：每个 /usr/lib 库都要在 podspec s.libraries 里声明，且 compat 版本不超过
+    # iOS 设备上的系统库版本（BUG-3503：libxml2 带进 libiconv.2 / libcharset.1）。
+    declared = podspec_libraries()
+    check(bool(declared), f'podspec s.libraries 可解析（{PODSPEC}）')
+    linked: Dict[str, Tuple[int, int, int]] = {}
+    for fw in sorted(frameworks):
+        for sl in sorted(EXPECTED_IOS_SLICES):
+            p = os.path.join(root, f'{fw}.xcframework', sl, f'{fw}.framework', fw)
+            if not os.path.isfile(p):
+                continue
+            with open(p, 'rb') as f:
+                for name, compat in macho_system_dylibs(f.read()):
+                    linked[name] = max(linked.get(name, (0, 0, 0)), compat)
+    check('c++' in linked and 'z' in linked, f'Mach-O 解析读到了系统库（实际 {sorted(linked)}）')
+    for name, compat in sorted(linked.items()):
+        if name in IOS_IMPLICIT_LIBS:
+            continue
+        check(name in declared, f'podspec s.libraries 声明了 {name}（framework 链接 /usr/lib/lib{name}）')
+        limit = IOS_SYSTEM_DYLIB_MAX_COMPAT.get(name, (1, 0, 0))
+        check(compat <= limit,
+              f'lib{name} compat {".".join(map(str, compat))} <= iOS 系统版本 {".".join(map(str, limit))}')
 
 
 def main(argv: List[str]) -> int:

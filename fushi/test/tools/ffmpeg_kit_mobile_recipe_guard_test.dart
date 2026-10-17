@@ -285,6 +285,72 @@ void main() {
     });
   });
 
+  // BUG-3503 审查跟进：加 libxml2 后 iOS 的 libav* 新链了 /usr/lib/libiconv.2.dylib 与
+  // /usr/lib/libcharset.1.dylib。动态 framework 自带 LC_LOAD_DYLIB，漏声明不会链接失败，
+  // 但 podspec 是「这个 pod 依赖哪些系统库」的唯一声明处——下次重编再多出一个系统库时，
+  // 这条让它当场红，而不是等到某个 iOS 版本上 dyld 找不到库才在真机启动时崩。
+  group('iOS podspec 声明了 framework 链接的全部 /usr/lib 系统库', () {
+    // libSystem / libobjc 由工具链隐式链接，podspec 不必（也不该）声明。
+    const Set<String> implicitLibs = <String>{'System', 'objc'};
+    final RegExp dylibRef =
+        RegExp(r'/usr/lib/lib([A-Za-z0-9_+]+)\.(?:[A-Za-z0-9]+\.)*dylib');
+
+    Set<String> podspecLibraries() {
+      final String podspec = File('${root.path}/third_party/ffmpeg_kit_flutter/'
+              'ios/ffmpeg_kit_flutter.podspec')
+          .readAsStringSync();
+      final RegExpMatch? line =
+          RegExp(r'^\s*s\.libraries\s*=\s*(.+)$', multiLine: true)
+              .firstMatch(podspec);
+      expect(line, isNotNull, reason: 'podspec 里找不到 s.libraries');
+      return RegExp(r"'([^']+)'")
+          .allMatches(line!.group(1)!)
+          .map((RegExpMatch m) => m.group(1)!)
+          .toSet();
+    }
+
+    Set<String> linkedSystemLibs() {
+      final Directory frameworks = Directory(
+        '${root.path}/third_party/ffmpeg_kit_flutter/ios/Frameworks',
+      );
+      final Set<String> libs = <String>{};
+      for (final FileSystemEntity xc in frameworks.listSync()) {
+        if (xc is! Directory || !xc.path.endsWith('.xcframework')) continue;
+        final String name = xc.uri.pathSegments
+            .lastWhere((String s) => s.isNotEmpty)
+            .replaceAll('.xcframework', '');
+        for (final FileSystemEntity slice in xc.listSync()) {
+          if (slice is! Directory) continue;
+          final File bin = File('${slice.path}/$name.framework/$name');
+          if (!bin.existsSync()) continue;
+          final String text = _asSearchableText(bin.readAsBytesSync());
+          for (final RegExpMatch m in dylibRef.allMatches(text)) {
+            libs.add(m.group(1)!);
+          }
+        }
+      }
+      return libs;
+    }
+
+    test('linked ⊆ s.libraries ∪ 隐式库', () {
+      final Set<String> declared = podspecLibraries();
+      final Set<String> missing = linkedSystemLibs()
+          .difference(declared)
+          .difference(implicitLibs);
+      expect(missing, isEmpty,
+          reason: 'framework 链接了 /usr/lib/lib{$missing} 但 podspec 的 '
+              's.libraries 没声明（${declared.join(', ')}）');
+    });
+
+    test('负向对照：扫描真读到了 libxml2 带进来的 iconv / charset', () {
+      // 扫描若读错路径会得到空集，上一条就恒绿；这里钉住它确实看见了库。
+      expect(
+        linkedSystemLibs(),
+        containsAll(<String>['c++', 'z', 'iconv', 'charset']),
+      );
+    });
+  });
+
   // ── 负向对照 ──────────────────────────────────────────────────────────
   // 上面全是「该有的在不在」。只有正向断言时，一个把所有 contains 都返回 true 的
   // 错误实现（比如路径读错读成了别的文件、或 latin1 解码出一堆巧合）同样会全绿。
