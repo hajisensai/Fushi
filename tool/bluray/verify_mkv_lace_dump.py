@@ -1,17 +1,24 @@
-"""BUG-3453: verify libmpv's dump-cache keeps every frame of laced Matroska audio.
+"""Verify libmpv's dump-cache keeps every frame of mkvmerge Matroska files.
 
-mkvmerge laces Opus eight frames per block and writes no DefaultDuration. mpv's
-Matroska demuxer used to timestamp only the first frame of each lace, so the
-stream recorder behind `dump-cache` (the online-video mining snapshot) had the
-Matroska muxer reject the other seven ("non monotonically increasing dts ...
->= NOPTS" / "Failed writing packet") while still reporting success. The
-snapshot kept about 1/8 of the audio and mined clips got 0.2-0.4 s of choppy
-sound. patches/mkv-laced-audio-timestamps.patch fixes the demuxer.
+dump-cache is the online-video mining snapshot. Its stream recorder had the
+Matroska muxer reject packets ("non monotonically increasing dts" / "Failed
+writing packet") while still reporting success:
 
-This loads tests/laced-opus.mkv (6 s, mkvmerge, 8-frame Opus laces, no
-DefaultDuration) with the given libmpv, dumps the whole cache to a new file and
-fails if the recorder logged a write error. With --ffmpeg it also decodes the
-dump and requires at least 90% of the cached span as real audio samples.
+- BUG-3453: mkvmerge laces Opus eight frames per block and writes no
+  DefaultDuration. mpv's Matroska demuxer timestamped only the first frame of
+  each lace, so the snapshot kept about 1/8 of the audio and mined clips got
+  0.2-0.4 s of choppy sound. patches/mkv-laced-audio-timestamps.patch fixes
+  the demuxer. Fixture: tests/laced-opus.mkv (6 s, 8-frame Opus laces).
+- BUG-3454: Matroska video has no DTS. With B-frames libavformat set DTS = PTS
+  and rejected every reordered frame, so the snapshot of HEVC/H.264 was mostly
+  undecodable (mined clips showed corrupted video). patches/recorder-video-dts.patch
+  makes the recorder derive the DTS. Fixture: tests/open-gop-hevc.mkv (6 s,
+  HEVC 10-bit open GOP with B-frames, AAC).
+
+Each fixture is loaded with the given libmpv, the whole cache is dumped to a new
+file, and the check fails if the recorder logged a write error. With --ffmpeg
+it also decodes the dump and requires at least 90% of the cached span as real
+audio samples / video frames.
 
 No window or audio device is opened.
 
@@ -30,7 +37,10 @@ from pathlib import Path
 
 from probe_libmpv import Event, Log, Mpv
 
-FIXTURE = Path(__file__).resolve().parent / "tests" / "laced-opus.mkv"
+TESTS = Path(__file__).resolve().parent / "tests"
+# (fixture, decoded stream, units per second of the cached span)
+FIXTURES = ((TESTS / "laced-opus.mkv", "audio", None),
+            (TESTS / "open-gop-hevc.mkv", "video", 24000 / 1001))
 WRITE_ERRORS = ("Failed writing packet", "non monotonically increasing dts")
 
 
@@ -73,8 +83,22 @@ def decoded_ms(ffmpeg, path):
     return int(match[-1]) * 1024 / 32
 
 
-def verify(library, ffmpeg=None):
-    os.add_dll_directory(str(Path(library).resolve()))
+def decoded_frames(ffmpeg, path):
+    # Frames the decoder actually produced: pictures whose references were
+    # dropped from the dump fail to decode and are not counted. ffmpeg-min has
+    # no wrapped_avframe encoder, so the frames go through (tiny) MJPEG, in the
+    # Matroska millisecond time base so no two frames round to the same tick.
+    run = subprocess.run([ffmpeg, "-hide_banner", "-i", str(path), "-map", "0:v:0",
+                          "-fps_mode", "passthrough", "-enc_time_base:v", "1/1000",
+                          "-vf", "format=yuvj420p", "-c:v", "mjpeg", "-f", "null", "-"],
+                         capture_output=True, text=True)
+    match = re.findall(r"frame=\s*(\d+)", run.stderr)
+    if run.returncode != 0 or not match:
+        raise RuntimeError(f"ffmpeg could not decode the dump:\n{run.stderr[-2000:]}")
+    return int(match[-1])
+
+
+def verify_fixture(library, fixture, kind, rate, ffmpeg):
     mpv = Mpv(Path(library) / "libmpv-2.dll")
     try:
         for name, value in (("config", "no"), ("vo", "null"), ("ao", "null"),
@@ -85,24 +109,36 @@ def verify(library, ffmpeg=None):
         if mpv.lib.mpv_initialize(mpv.handle) < 0:
             raise RuntimeError("mpv_initialize failed")
         mpv.lib.mpv_request_log_messages(mpv.handle, b"error")
-        mpv.command("loadfile", str(FIXTURE))
+        mpv.command("loadfile", str(fixture))
         start, end, errors = cached_range(mpv, 15)
         with tempfile.TemporaryDirectory() as temp:
             dump = Path(temp) / "dump.mkv"
             result = mpv.command("dump-cache", f"{start:.6f}", f"{end:.6f}", str(dump))
             drain(mpv, errors, 1.0)
-            report = {"cached": [start, end], "dump_result": result,
+            report = {"fixture": fixture.name, "cached": [start, end], "dump_result": result,
                       "dump_bytes": dump.stat().st_size if dump.exists() else 0,
                       "write_errors": len(errors), "first_errors": errors[:3]}
             ok = result >= 0 and report["dump_bytes"] > 0 and not errors
             if ffmpeg and report["dump_bytes"]:
-                report["decoded_ms"] = decoded_ms(ffmpeg, dump)
-                report["cached_ms"] = (end - start) * 1000
-                ok = ok and report["decoded_ms"] >= report["cached_ms"] * 0.9
+                if kind == "audio":
+                    report["decoded_ms"] = decoded_ms(ffmpeg, dump)
+                    report["cached_ms"] = (end - start) * 1000
+                    ok = ok and report["decoded_ms"] >= report["cached_ms"] * 0.9
+                else:
+                    report["decoded_frames"] = decoded_frames(ffmpeg, dump)
+                    report["cached_frames"] = (end - start) * rate
+                    ok = ok and report["decoded_frames"] >= report["cached_frames"] * 0.9
             report["ok"] = ok
             return report
     finally:
         mpv.close()
+
+
+def verify(library, ffmpeg=None):
+    os.add_dll_directory(str(Path(library).resolve()))
+    reports = [verify_fixture(library, fixture, kind, rate, ffmpeg)
+               for fixture, kind, rate in FIXTURES]
+    return {"fixtures": reports, "ok": all(report["ok"] for report in reports)}
 
 
 def main():

@@ -97,12 +97,13 @@ get_filename_component(
 # (BUG-3325: user Lua scripts never ran with -Dlua=disabled), plus
 # patches/mkv-laced-audio-timestamps.patch (BUG-3453: laced Matroska audio
 # without DefaultDuration, e.g. mkvmerge Opus, lost every lace frame after the
-# first in dump-cache). See NATIVE_BUILD.md.
-set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1.7z")
+# first in dump-cache) and patches/recorder-video-dts.patch (BUG-3454: Matroska
+# video has no DTS, so dump-cache lost every B-frame). See NATIVE_BUILD.md.
+set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1.7z")
 
 # Upstream source provenance; the committed patched archive is the build input.
 set(LIBMPV_URL "https://github.com/mpv-player/mpv/tree/36abaa32d00a7229ee206aae12dc0e97e7962dca")
-set(LIBMPV_MD5 "afb8b48585fdf4e0c717a23d31052672")
+set(LIBMPV_MD5 "330152dcb83f00d93a46397d53614f60")
 
 # Vendored archive (committed) + build-dir extraction target (TODO-1172).
 set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")

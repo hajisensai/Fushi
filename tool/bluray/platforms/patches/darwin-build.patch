@@ -709,7 +709,7 @@ new file mode 100644
 index 0000000..bc5bf16
 --- /dev/null
 +++ b/nix/packages/mk-pkg-mpv/video.nix
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,62 @@
 +{
 +  pkgs ? import ../../utils/default/pkgs.nix,
 +  os ? import ../../utils/default/os.nix,
@@ -737,6 +737,7 @@ index 0000000..bc5bf16
 +    patch -p1 <${../../../patches/mpv-gl-dovi-p5-menu.patch}
 +    patch -p1 <${../../../patches/disc-navigation-state.patch}
 +    patch -p1 <${../../../patches/mpv-mkv-laced-audio-timestamps.patch}
++    patch -p1 <${../../../patches/mpv-recorder-video-dts.patch}
 +    cp -r . $out
 +  '';
 +in pkgs.stdenvNoCC.mkDerivation {

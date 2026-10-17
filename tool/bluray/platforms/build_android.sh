@@ -42,6 +42,8 @@ cp "$root/tool/bluray/platforms/patches/mpv-gl-dovi-p5.patch" "$work/source/buil
 cp "$root/third_party/media_kit_libs_windows_video/patches/disc-navigation-state.patch" "$work/source/buildscripts/patches/mpv/disc-navigation-state.patch"
 # BUG-3453: laced Matroska audio without DefaultDuration (mkvmerge Opus).
 cp "$root/third_party/media_kit_libs_windows_video/patches/mkv-laced-audio-timestamps.patch" "$work/source/buildscripts/patches/mpv/mkv-laced-audio-timestamps.patch"
+# BUG-3454: dump-cache derives the DTS of Matroska video (B-frames).
+cp "$root/third_party/media_kit_libs_windows_video/patches/recorder-video-dts.patch" "$work/source/buildscripts/patches/mpv/recorder-video-dts.patch"
 cd "$work/source/buildscripts"
 mkdir -p sdk
 os=linux

@@ -2,8 +2,8 @@ all: Frameworks/*.xcframework Frameworks/.symlinks
 
 # Verified original-menu libmpv bundle. Source and actual slice/closure checks:
 # ../native/provenance.json. Keep full TrueHD decoding and the DOVI GL patch.
-MPV_XCFRAMEWORKS_VERSION=bluray-5ca0ac79a45f
-MPV_XCFRAMEWORKS_SHA256SUM=3fae70a43fbd2dfad6d2365b34cc18bc7f064547f8bbaf0c8dfea070d1bb1947
+MPV_XCFRAMEWORKS_VERSION=bluray-d186a42d6202
+MPV_XCFRAMEWORKS_SHA256SUM=e50a532330c6f89c8e89866cccea44ea558fe4c1f62f2c9e83ec52a9f7bd45b7
 MPV_XCFRAMEWORKS_VENDOR_ARCHIVE=$(abspath ../native/libmpv-xcframeworks-bluray.tar.gz)
 
 # Explicit local build verification, without publishing or changing production pins.

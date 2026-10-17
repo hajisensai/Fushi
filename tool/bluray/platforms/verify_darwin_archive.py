@@ -91,9 +91,12 @@ def verify_archive(path, platform):
                     raise ValueError(f"{framework}: no framework executable")
                 data = archive.extractfile(executable).read()
                 # BUG-3453: "without DefaultDuration" is the trace message of
-                # mkv-laced-audio-timestamps.patch (laced Matroska audio timestamps).
+                # mkv-laced-audio-timestamps.patch (laced Matroska audio timestamps);
+                # BUG-3454: "Deriving missing DTS" is the debug message of
+                # recorder-video-dts.patch (dump-cache of Matroska B-frame video).
                 markers = (b"disc-navigation-state-json", b"disc-menu-active", b"discnav",
-                           b"without DefaultDuration") if framework == "Mpv" else ()
+                           b"without DefaultDuration",
+                           b"Deriving missing DTS") if framework == "Mpv" else ()
                 slices = macho_slices(data, markers)
                 actual = {item["architecture"] for item in slices}
                 if actual != expected[variant] or actual != set(library["SupportedArchitectures"]):
@@ -126,7 +129,7 @@ def verify_archive(path, platform):
             checksum.update(chunk)
     digest = checksum.hexdigest()
     return {"sha256": digest, "platform": platform, "frameworks": frameworks,
-            "validation": "archive structure, Mach-O CPU slices, dylib closure, navigation and lace-timestamp markers",
+            "validation": "archive structure, Mach-O CPU slices, dylib closure, navigation, lace-timestamp and recorder-DTS markers",
             "device_menu_rendering_tested": False}
 
 
