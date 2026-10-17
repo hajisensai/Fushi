@@ -107,6 +107,9 @@ class _FakeDescriptor extends TtsProviderDescriptor {
   final bool mp3;
   final bool requiresEndpoint;
   TtsFailure? failure;
+
+  /// 非空时 [create] 直接抛它（模拟引擎构造期失败）。
+  Object? createError;
   final List<String> texts = <String>[];
   int disposed = 0;
 
@@ -134,8 +137,11 @@ class _FakeDescriptor extends TtsProviderDescriptor {
   ];
 
   @override
-  TtsProvider create(TtsVoicePreset preset, TtsHost host) =>
-      _FakeProvider(this);
+  TtsProvider create(TtsVoicePreset preset, TtsHost host) {
+    final Object? error = createError;
+    if (error != null) throw error;
+    return _FakeProvider(this);
+  }
 }
 
 class _FakeSource implements MiningTtsVoiceSource {
@@ -343,6 +349,52 @@ void main() {
       );
       expect(systemCalls, isEmpty);
       expect(d.disposed, 1);
+    });
+
+    test('引擎构造期抛 TtsFailure：同样归一成带原因的 WordAudioUnavailable', () async {
+      final _FakeDescriptor d = _FakeDescriptor()
+        ..createError = const TtsFailure(TtsFailureCode.network, 'connect');
+      await expectLater(
+        run(const MiningTtsFallbackVoice.preset('p1'), descriptor: d),
+        throwsA(
+          isA<WordAudioUnavailable>()
+              .having(
+                (WordAudioUnavailable e) => e.reason,
+                'reason',
+                t.audiobook_tts_failure_network,
+              )
+              .having(
+                (WordAudioUnavailable e) => e.cause,
+                'cause',
+                isA<TtsFailure>(),
+              ),
+        ),
+      );
+      expect(systemCalls, isEmpty);
+      expect(d.texts, isEmpty);
+      expect(d.disposed, 0, reason: '没构造出来的 provider 不该被 dispose');
+    });
+
+    test('引擎构造期抛任意异常：不漏出裸异常，原因是「响应异常」', () async {
+      final _FakeDescriptor d = _FakeDescriptor()
+        ..createError = StateError('runtime missing');
+      await expectLater(
+        run(const MiningTtsFallbackVoice.preset('p1'), descriptor: d),
+        throwsA(
+          isA<WordAudioUnavailable>()
+              .having(
+                (WordAudioUnavailable e) => e.reason,
+                'reason',
+                t.audiobook_tts_failure_bad_response,
+              )
+              .having(
+                (WordAudioUnavailable e) => e.cause,
+                'cause',
+                isA<StateError>(),
+              ),
+        ),
+      );
+      expect(systemCalls, isEmpty);
     });
 
     test('选中的声音已删除：原因是「已被删除」', () async {

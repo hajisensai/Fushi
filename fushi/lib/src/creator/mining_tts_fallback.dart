@@ -252,8 +252,12 @@ Future<File> _synthesizeWithPreset({
       cause: const TtsFailure(TtsFailureCode.notConfigured),
     );
   }
-  final TtsProvider provider = descriptor.create(preset, source.host);
+  // 构造也在 try 里：引擎构造期就可能抛（参数解析 / 本机运行时缺失），漏在外面就会
+  // 绕过下方的 WordAudioUnavailable 归一化，调用方只拿到一个裸异常。
+  TtsProvider? provider;
   try {
+    final TtsProvider active = descriptor.create(preset, source.host);
+    provider = active;
     final TtsAudioCache cache = await source.cache();
     final String key = TtsAudioCache.keyFor(
       descriptor.audioIdentity(preset),
@@ -262,7 +266,7 @@ Future<File> _synthesizeWithPreset({
     final TtsCachedAudio audio = await cache.obtain(
       key,
       (String out) =>
-          provider.synthesize(text, outputPath: out, cancel: TtsCancelToken()),
+          active.synthesize(text, outputPath: out, cancel: TtsCancelToken()),
     );
     // 缓存文件是 `<key>.audio`（无可用扩展名，且会被淘汰），Anki 按扩展名推断 MIME：
     // 复制一份带真实扩展名的出来。文件名按缓存键取，不同词 / 音色互不覆盖。
@@ -291,6 +295,6 @@ Future<File> _synthesizeWithPreset({
       cause: error,
     );
   } finally {
-    await provider.dispose();
+    await provider?.dispose();
   }
 }
