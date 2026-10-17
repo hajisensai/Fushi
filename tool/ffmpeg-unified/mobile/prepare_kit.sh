@@ -34,4 +34,6 @@ for f in android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpegkit.c apple/src/
   grep -q 'av_log_fushi_set_primary_callback' "${KIT}/${f}" ||
     { echo "PATCH MISSING: primary log callback in ${f}" >&2; exit 4; }
 done
+grep -q 'FUSHI_FFMPEG_PROGRAMS' "${KIT}/scripts/apple/ffmpeg.sh" ||
+  { echo "PATCH MISSING: macOS ffmpeg/ffprobe programs" >&2; exit 4; }
 echo "prepare_kit: FFmpegKitNext ${FFMPEG_KIT_NEXT_TAG} + unified FFmpeg ${FFMPEG_VERSION} -> ${KIT}"

@@ -101,6 +101,56 @@ jobs:
           path: ${{ runner.temp }}/work/ffmpeg-kit-next/build.log
           if-no-files-found: ignore
 
+  macos:
+    # Desktop macOS (Apple Silicon): the player's FFmpeg frameworks + the
+    # ffmpeg/ffprobe programs linked against them, verified by running them.
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios }}
+    runs-on: macos-26
+    timeout-minutes: 330
+    env:
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Select Xcode 26
+        run: |
+          set -euo pipefail
+          XCODE_APP="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$XCODE_APP" ]; then
+            echo "::error::no Xcode 26 on this runner image"; ls -d /Applications/Xcode*.app; exit 1
+          fi
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install host tools
+        run: |
+          set -euo pipefail
+          brew install autoconf automake libtool pkg-config nasm yasm meson ninja gperf texinfo cmake gnu-sed
+          echo "$(brew --prefix libtool)/libexec/gnubin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix gnu-sed)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Build unified FFmpeg (FFmpegKitNext macos.sh + programs)
+        run: bash tool/ffmpeg-unified/mobile/build_macos.sh "$RUNNER_TEMP/work" "$RUNNER_TEMP/out"
+
+      - name: build.log tail on failure
+        if: failure()
+        run: tail -n 400 "$RUNNER_TEMP/work/ffmpeg-kit-next/build.log" || true
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-unified-macos
+          path: ${{ runner.temp }}/out/*
+          if-no-files-found: error
+
+      - name: Upload build.log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-unified-macos-build-log
+          path: ${{ runner.temp }}/work/ffmpeg-kit-next/build.log
+          if-no-files-found: ignore
+
   ios:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios }}
     runs-on: macos-26

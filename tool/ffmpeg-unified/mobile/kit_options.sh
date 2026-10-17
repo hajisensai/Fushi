@@ -33,6 +33,19 @@ KIT_ANDROID_OPTIONS=(
   --disable-arch-x86
 )
 
+# macOS (desktop): no in-process runner is used (CliFfmpegBackend runs the
+# ffmpeg/ffprobe programs), but the libraries are the player's and the
+# programs' FFmpeg. Fushi ships Apple Silicon only.
+# shellcheck disable=SC2034
+KIT_MACOS_OPTIONS=(
+  --xcframework
+  --enable-lib-macos-videotoolbox
+  --enable-lib-macos-audiotoolbox
+  --enable-lib-macos-zlib
+  --enable-lib-macos-bzip2
+  --disable-arch-x86-64
+)
+
 # shellcheck disable=SC2034
 KIT_IOS_OPTIONS=(
   --xcframework

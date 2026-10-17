@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
-# Behavioral contract for Fushi's minimal desktop FFmpeg.
+# Behavioral contract for Fushi's unified desktop FFmpeg (tool/ffmpeg-unified):
+# the ffmpeg/ffprobe programs shipped next to the player, on the player's own
+# FFmpeg libraries.
 #
-# A full host FFmpeg generates tiny representative inputs. The minimal binary
-# must then execute the same argument shapes used by desktop_audio_clipper.dart
-# and video_subtitle_source.dart. This keeps the configure allowlist honest:
-# a successful compile alone is not sufficient.
+# Tiny representative inputs are generated first; the shipped binary must then
+# execute the same argument shapes used by desktop_audio_clipper.dart,
+# video_subtitle_source.dart and friends. A successful compile (or a component
+# listed in -encoders) alone is not sufficient.
 set -euo pipefail
 
-FFMPEG_MIN="${FFMPEG_MIN:?set FFMPEG_MIN to the minimal ffmpeg binary}"
+# FFMPEG_MIN is the pre-unification name, still accepted.
+FFMPEG_MIN="${FFMPEG:-${FFMPEG_MIN:?set FFMPEG to the ffmpeg binary under test}}"
 # BUG-1420: ffprobe ships next to ffmpeg in every desktop bundle and has its own
 # consumers (embedded subtitle fonts, audio container tags). Default to the
-# sibling of FFMPEG_MIN so callers that only set FFMPEG_MIN still exercise it.
-FFPROBE_MIN="${FFPROBE_MIN:-$(dirname "$FFMPEG_MIN")/$(basename "$FFMPEG_MIN" | sed 's/^ffmpeg/ffprobe/')}"
-FIXTURE_FFMPEG="${FIXTURE_FFMPEG:-ffmpeg}"
+# sibling of FFMPEG so callers that only set FFMPEG still exercise it.
+FFPROBE_MIN="${FFPROBE:-${FFPROBE_MIN:-$(dirname "$FFMPEG_MIN")/$(basename "$FFMPEG_MIN" | sed 's/^ffmpeg/ffprobe/')}}"
+# The unified FFmpeg is a full build (lavfi sources, every muxer), so it can
+# author its own fixtures; a separate reference ffmpeg is optional.
+FIXTURE_FFMPEG="${FIXTURE_FFMPEG:-$FFMPEG_MIN}"
 WORK="${WORK:-$(mktemp -d)}"
 KEEP_WORK="${KEEP_WORK:-0}"
 
@@ -743,8 +748,8 @@ assert_self_contained() {
     Darwin) deps="$(otool -L "$binary" | awk '/^[[:space:]]/ {print $1}')" ;;
     Linux) deps="$(objdump -p "$binary" | awk '/NEEDED|RPATH|RUNPATH/ {print $2}')
 $(ldd "$binary" 2>/dev/null | awk '{print $3}')" ;;
-    # Windows/MSYS：产物是 --extra-ldflags=-static 的单文件 PE，没有 Unix 式
-    # 共享库路径可查；入库产物由 Dart 守卫字节扫描兜底。
+    # Windows/MSYS：ffmpeg.exe 依赖同目录改名后的 fbd*.dll（与 libmpv 共用），
+    # 闭包由 package_libmpv.py 构造、build_libmpv.ps1 以纯系统 PATH 实跑验证。
     *) echo "[ffmpeg-min-smoke] self-contained check skipped on $(uname -s)"; return 0 ;;
   esac
   local foreign
@@ -753,7 +758,7 @@ $(ldd "$binary" 2>/dev/null | awk '{print $3}')" ;;
     echo "[ffmpeg-min-smoke] FATAL(BUG-1443): $binary 依赖构建机专有的共享库：" >&2
     printf '%s\n' "$foreign" >&2
     echo "[ffmpeg-min-smoke] 这些路径在用户机上不存在，运行时直接 dyld/ld.so 崩溃。" >&2
-    echo "[ffmpeg-min-smoke] 修法见 build-ffmpeg-min.sh 的 Darwin 分支（静态链第三方库）。" >&2
+    echo "[ffmpeg-min-smoke] 统一 FFmpeg 的依赖只能是系统库或 @rpath 下随包的 framework（tool/ffmpeg-unified/mobile/build_macos.sh）。" >&2
     exit 1
   fi
   echo "[ffmpeg-min-smoke] self-contained OK: $binary"
