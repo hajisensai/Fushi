@@ -120,24 +120,25 @@ void main() {
             latestCreatedAtMs: 0,
             nowMs: 999 * min,
             limits: l,
-            force: force,
+            leavingReview: force,
           ),
           isFalse,
         );
       }
     });
-    test('有变动：定时要满 30 分钟，离开复习页立即', () {
+    test('有变动：定时要满 30 分钟，离开复习页满 5 分钟', () {
       bool run(int ago, {bool force = false}) => srsShouldAutoBackup(
         currentFingerprint: 'b',
         latestFingerprint: 'a',
         latestCreatedAtMs: 100 * min - ago,
         nowMs: 100 * min,
         limits: l,
-        force: force,
+        leavingReview: force,
       );
       expect(run(29 * min), isFalse);
       expect(run(30 * min), isTrue);
-      expect(run(1 * min, force: true), isTrue);
+      expect(run(1 * min, force: true), isFalse);
+      expect(run(5 * min, force: true), isTrue);
     });
     test('从没备份过：有数据就备份', () {
       expect(

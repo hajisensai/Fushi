@@ -31,15 +31,6 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
 
-/// 打开备份页。
-Future<void> openSrsBackupsPage(BuildContext context) =>
-    Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => const SrsBackupsPage(),
-      ),
-    );
-
 enum _BackupAction { restore, export, delete }
 
 /// 自动备份间隔的可选值（分钟）。
@@ -225,6 +216,12 @@ class _SrsBackupsPageState extends ConsumerState<SrsBackupsPage> {
             await ref.read(srsStoreProvider.future);
           },
         );
+      } on SrsRestoreOtherLocalProfile catch (e) {
+        FushiToast.show(
+          msg: t.srs_backup_switch_profile(name: e.profileName),
+          severity: ToastSeverity.error,
+        );
+        return;
       } on SrsRestoreProfileMismatch {
         FushiToast.show(
           msg: t.srs_backup_other_profile(name: manifest.profileName),
@@ -574,7 +571,7 @@ class _BackupRow extends StatelessWidget {
           ]),
           trailing: FushiPopupMenuButton<_BackupAction>(
             key: ValueKey<String>('srs-backup-menu-${info.id}'),
-            tooltip: t.srs_deck_menu,
+            tooltip: t.srs_backup_menu,
             icon: const FushiIcon(FushiIcons.more),
             enabled: enabled,
             onSelected: onAction,

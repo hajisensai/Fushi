@@ -9,7 +9,9 @@
 /// - 复习日志（铁律 A / B）：日志不可变、只追加。备份之后的有效日志用 undo 撤销（[srsPlanRevokeLogs]），
 ///   撤销是永久的、随同步传播，各端都把它们排除出卡片状态、统计与训练集。
 ///   被备份之后某次撤销拿掉的备份内日志不能「撤销撤销」（有效日志的定义里 revoked 只看 revokesId），
-///   这种卡写一条 manual 日志，结果照抄备份时的卡片状态（[srsPlanStateRestore]）。
+///   这种卡写一条 manual 日志，结果照抄备份时的卡片状态（[srsPlanStateRestore]）。它同时是记忆状态
+///   S/D 的起点（铁律 A ③′，见 valid_logs.dart [srsIsRestoreState]）：被撤销的评分已不在有效历史里，
+///   不从它起算，下次评分就会从零重算、与备份时那张卡对不上。
 ///
 /// 这是协议里唯一允许撤销「非最后一条有效日志」的地方：合并语义对任意 revokesId 都有定义
 /// （valid_logs.dart），「只许撤销末条」是交互层的限制，用来避免撤销基于别人后续复习的旧评分；
@@ -20,9 +22,6 @@ import 'card_ops.dart';
 import 'hlc.dart';
 import 'review_log.dart';
 import 'valid_logs.dart';
-
-/// 恢复写出的日志在 `extra` 里带上这个键（值 = 备份 ID），只作追溯，不参与任何判定；旧版本原样保留。
-const String srsRestoreLogExtraKey = 'restoreOf';
 
 /// 一组日志（通常是同一张卡的全部日志）里「当前有效、但不在备份里」的日志，逐条写 undo。
 ///
@@ -77,6 +76,8 @@ SrsReviewLog? srsPlanStateRestore({
     ctx: ctx,
     backupId: backupId,
     result: want,
+    // 结果里的记忆状态是哪种算法算的：下次评分以它为起点时要同算法才直接用（srsCollectMemoryInput）。
+    memAlg: atBackup.lastEffective?.algorithmEnum?.wire,
   );
 }
 
@@ -87,6 +88,7 @@ SrsReviewLog _restoreEvent({
   required String backupId,
   String? revokesId,
   SrsScheduleResult? result,
+  String? memAlg,
 }) {
   final (int nowMs, SrsTimeSource source) = ctx.now();
   final Hlc hlc = ctx.clock.tick(nowMs);
@@ -104,6 +106,9 @@ SrsReviewLog _restoreEvent({
     utcOffsetMin: ctx.day.utcOffsetMin,
     dayRolloverHour: ctx.day.rolloverHour,
     result: result,
-    extra: <String, Object?>{srsRestoreLogExtraKey: backupId},
+    extra: <String, Object?>{
+      srsRestoreLogExtraKey: backupId,
+      if (memAlg != null) 'memAlg': memAlg,
+    },
   );
 }

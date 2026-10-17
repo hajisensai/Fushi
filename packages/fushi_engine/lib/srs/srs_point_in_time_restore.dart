@@ -21,6 +21,7 @@ library;
 
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -76,6 +77,7 @@ Future<SrsRestoreReport> srsRestoreToBackup({
   required List<SrsEvent> backupEvents,
   required Map<String, int> backupServerTimes,
   required String backupId,
+  @visibleForTesting Future<void> Function(String stage)? debugOnStage,
 }) async {
   for (final SrsEvent e in backupEvents) {
     final String p = _profileOf(e);
@@ -84,15 +86,25 @@ Future<SrsRestoreReport> srsRestoreToBackup({
     }
   }
   final SrsRestoreReport report = SrsRestoreReport();
-  await store.db.transaction(() async {
-    report.mergedEvents = await _mergeBackupEvents(
-      store,
-      backupEvents,
-      backupServerTimes,
-    );
-    await _restoreFields(store, backupEvents, report);
-    await _restoreLogs(store, backupEvents, backupId, report);
-  });
+  try {
+    await store.db.transaction(() async {
+      report.mergedEvents = await _mergeBackupEvents(
+        store,
+        backupEvents,
+        backupServerTimes,
+      );
+      await debugOnStage?.call('merged');
+      await _restoreFields(store, backupEvents, report);
+      await debugOnStage?.call('fields');
+      await _restoreLogs(store, backupEvents, backupId, report);
+      await debugOnStage?.call('logs');
+    });
+  } catch (_) {
+    // 事务回滚了库，但写入者的因果上下文 / 时钟 / 发件箱序号已在内存里前进：从库重读，
+    // 否则 applied 里留着回滚掉的 dot（见 SrsDbStore.reloadLocal）。
+    await store.reloadLocal();
+    rethrow;
+  }
   return report;
 }
 
@@ -214,13 +226,26 @@ Future<void> _restoreFields(
     final Set<String> keys = <String>{...want.keys, ...have.keys};
     for (final String field in keys) {
       final SrsRegister? cur = have[field];
-      final Object? target = want[field] != null
-          ? want.value(field)
-          : _absentValue(store, localRecords[id], kind, field, cur);
-      if (cur == null) {
-        if (target == null) continue;
-      } else if (srsEditIsNoop(cur, target)) {
-        continue;
+      final SrsRegister? had = want[field];
+      final Object? target;
+      if (field == SrsFieldKeys.deleted) {
+        // 删除优先：备份时只要有一条没被支配的删除记录，行就是已删，不看排序赢家。
+        target = had == null ? null : srsEffectiveDeletedAt(had);
+        if (cur == null) {
+          if (target == null) continue;
+        } else if (!cur.conflicted &&
+            (srsEffectiveDeletedAt(cur) != null) == (target != null)) {
+          continue;
+        }
+      } else {
+        target = had != null
+            ? want.value(field)
+            : _absentValue(store, localRecords[id], kind, field, cur);
+        if (cur == null) {
+          if (target == null) continue;
+        } else if (srsEditIsNoop(cur, target)) {
+          continue;
+        }
       }
       if (field == SrsFieldKeys.deleted &&
           target == null &&
@@ -287,16 +312,32 @@ Future<void> _restoreLogs(
   int? serverTimeOf(String id) => s[id];
 
   final Map<String, List<SrsReviewLog>> byCard = <String, List<SrsReviewLog>>{};
+  // 卡片的「前身」链接（更改笔记类型）：前身 → 继承它历史的卡。
+  final Map<String, Set<String>> successors = <String, Set<String>>{};
   for (final SrsEvent e in await store.exportAll()) {
     if (e is SrsLogEvent) {
       (byCard[e.log.cardId] ??= <SrsReviewLog>[]).add(e.log);
+    } else if (e is SrsEditEvent &&
+        e.edit.entityKind == SrsEntityKind.card &&
+        e.edit.fieldKey.startsWith(SrsFieldKeys.cardHistoryFromPrefix)) {
+      (successors[e.edit.fieldKey.substring(
+                SrsFieldKeys.cardHistoryFromPrefix.length,
+              )] ??=
+              <String>{})
+          .add(e.edit.entityId);
     }
   }
+  // 受影响的卡：有不在备份里的日志（备份之后的复习、撤销等）的卡。其余卡的日志与备份时完全相同，
+  // 状态必然一致，不用逐卡读历史。
+  final Set<String> affected = <String>{
+    for (final MapEntry<String, List<SrsReviewLog>> e in byCard.entries)
+      if (e.value.any((SrsReviewLog l) => !backupLogIds.contains(l.id))) e.key,
+  };
   final SrsLogContext ctx = await store.logContext();
   final List<SrsReviewLog> undos = <SrsReviewLog>[
-    for (final List<SrsReviewLog> logs in byCard.values)
+    for (final String card in affected)
       ...srsPlanRevokeLogs(
-        logs: logs,
+        logs: byCard[card]!,
         backupLogIds: backupLogIds,
         ctx: ctx,
         backupId: backupId,
@@ -306,11 +347,22 @@ Future<void> _restoreLogs(
   await store.appendLocalLogs(undos);
   report.logsRevoked = undos.length;
 
+  // 状态核对：受影响的卡，加上经「前身」链接继承了它们历史的卡。
+  final Set<String> check = <String>{...affected};
+  final List<String> queue = affected.toList();
+  while (queue.isNotEmpty) {
+    for (final String next in successors[queue.removeLast()] ?? <String>{}) {
+      if (check.add(next)) queue.add(next);
+    }
+  }
+  final Set<String> cached = <String>{
+    for (final SrsCardCacheRow c in await store.cardRows(check)) c.id,
+  };
   final List<SrsReviewLog> fixes = <SrsReviewLog>[];
-  for (final SrsCardCacheRow c in await store.allCardRows()) {
+  for (final String cardId in cached) {
     final SrsReviewLog? fix = srsPlanStateRestore(
-      cardId: c.id,
-      current: await store.history(c.id),
+      cardId: cardId,
+      current: await store.history(cardId),
       backupLogIds: backupLogIds,
       ctx: ctx,
       backupId: backupId,

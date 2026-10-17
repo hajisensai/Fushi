@@ -294,6 +294,10 @@ void main() {
     final String n2 = await addNote(a, '雨');
     await a.updateNote(n1, fieldsById: <String, String>{expr(a): '雪（新）'});
     final String c1Now = await stateOf(a, c1);
+    final Map<String, Object?>? memNow = (await a.preview(
+      c1,
+    )).memoryBefore?.toJson();
+    expect(memNow, isNotNull);
 
     t += 60 * 1000;
     final SrsBackupInfo pre = await bs.create(
@@ -323,6 +327,173 @@ void main() {
       (await bs.list()).map((SrsBackupInfo b) => b.manifest.kind),
       containsAll(<SrsBackupKind>[SrsBackupKind.preRestore]),
     );
+    // 撤回后再评分：记忆状态的起点与备份时那张卡相同（照抄的 manual 日志是 S/D 起点，
+    // 不因被撤销的评分退回「从零算」）。
+    expect((await a.preview(c1)).memoryBefore?.toJson(), memNow);
+    t += 24 * 60 * 60 * 1000;
+    final SrsReviewLog next = await a.answer(c1, 3);
+    expect(next.result!.memory, isNotNull);
+    expect(next.result!.reps, 2);
+  });
+
+  test('恢复到旧时间点后再评分：记忆状态与备份时那张卡直接评分一致', () async {
+    final SrsDbStore a = await device('a');
+    final SrsBackupStore bs = backups('a');
+    final String n1 = await addNote(a, '雪');
+    final String c1 = await cardOf(a, n1);
+    await review(a, c1, 3);
+    await review(a, c1, 3);
+    final SrsBackupInfo info = await bs.create(
+      a,
+      kind: SrsBackupKind.auto,
+      profileName: '日语',
+      nowMs: t,
+    );
+    final Map<String, Object?>? atBackup = (await a.preview(
+      c1,
+    )).memoryBefore?.toJson();
+    await review(a, c1, 1);
+    await review(a, c1, 4);
+    expect((await a.preview(c1)).memoryBefore?.toJson(), isNot(atBackup));
+    t += 60 * 1000;
+    await restore(a, bs, info);
+    expect((await a.preview(c1)).memoryBefore?.toJson(), atBackup);
+  });
+
+  test('恢复用删除优先判定备份时的删除状态（不看排序赢家）', () async {
+    final SrsDbStore a = await device('a');
+    final SrsDbStore b = await device('b');
+    final SrsBackupStore bs = backups('a');
+    final String n1 = await addNote(a, '雪');
+    await syncAll(<SrsDbStore>[a, b]);
+    // b 删除；a 并发地（没看见）写一条「未删除」，排序上 a 的更晚、是赢家，但删除优先 → 已删。
+    t += 1000;
+    await b.deleteNote(n1);
+    t += 5000;
+    await a.editField(SrsEntityKind.note, n1, SrsFieldKeys.deleted, null);
+    await syncAll(<SrsDbStore>[a, b]);
+    expect(await alive(a, n1), isFalse);
+    final SrsBackupInfo info = await bs.create(
+      a,
+      kind: SrsBackupKind.auto,
+      profileName: '日语',
+      nowMs: t,
+    );
+    await a.restoreNote(n1);
+    expect(await alive(a, n1), isTrue);
+    t += 60 * 1000;
+    await restore(a, bs, info);
+    expect(await alive(a, n1), isFalse, reason: '备份时是已删');
+  });
+
+  test('变化指纹：同一字段连改两次也会变；只读不变', () async {
+    final SrsDbStore a = await device('a');
+    final String n1 = await addNote(a, '雪');
+    final String f0 = await a.changeFingerprint();
+    await a.updateNote(n1, fieldsById: <String, String>{expr(a): '雪 1'});
+    final String f1 = await a.changeFingerprint();
+    await a.updateNote(n1, fieldsById: <String, String>{expr(a): '雪 2'});
+    final String f2 = await a.changeFingerprint();
+    expect(<String>{f0, f1, f2}, hasLength(3));
+    await a.note(n1);
+    await a.exportAll();
+    expect(await a.changeFingerprint(), f2);
+  });
+
+  test('备份导出的规范行与 exportAll 逐字节相同', () async {
+    final SrsDbStore a = await device('a');
+    final String n1 = await addNote(a, '雪');
+    await review(a, await cardOf(a, n1), 3);
+    expect(await a.exportCanonicalLines(), <String>[
+      for (final SrsEvent e in await a.exportAll()) e.canonical(),
+    ]);
+  });
+
+  test('恢复中途失败：库与写入者的内存状态都回到恢复前', () async {
+    final SrsDbStore a = await device('a');
+    final SrsBackupStore bs = backups('a');
+    final String n1 = await addNote(a, '雪');
+    final SrsBackupInfo info = await bs.create(
+      a,
+      kind: SrsBackupKind.auto,
+      profileName: '日语',
+      nowMs: t,
+    );
+    await a.updateNote(n1, fieldsById: <String, String>{expr(a): '雪（新）'});
+    await addNote(a, '雨');
+    final List<String> before = <String>[
+      for (final SrsEvent e in await a.exportAll()) e.canonical(),
+    ];
+    final String applied = srsCanonicalJson(a.appliedContext.toJson());
+    final String fp = await a.changeFingerprint();
+    final int outbox = (await a.unpublishedEvents()).length;
+    final SrsBackupArchive arch = await SrsBackupStore.read(info.file);
+    addTearDown(arch.close);
+    await expectLater(
+      srsRestoreToBackup(
+        store: a,
+        backupEvents: arch.events,
+        backupServerTimes: arch.serverTimes,
+        backupId: arch.id,
+        debugOnStage: (String stage) async {
+          if (stage == 'fields') throw StateError('injected');
+        },
+      ),
+      throwsStateError,
+    );
+    expect(<String>[
+      for (final SrsEvent e in await a.exportAll()) e.canonical(),
+    ], before);
+    expect(srsCanonicalJson(a.appliedContext.toJson()), applied);
+    expect(await a.changeFingerprint(), fp);
+    expect((await a.unpublishedEvents()).length, outbox);
+    // 之后照常能写、能恢复。
+    await restore(a, bs, info);
+    expect((await a.note(n1))!.field(expr(a)), '雪');
+  });
+
+  test('媒体回收：有读不懂的备份清单时整轮不回收；媒体名拒绝 Windows 保留名与冒号', () async {
+    final SrsDbStore a = await device('a');
+    final SrsBackupStore bs = backups('a');
+    await bs.mediaDir.create(recursive: true);
+    File(p.join(bs.mediaDir.path, 'img.png')).writeAsBytesSync(<int>[1, 2, 3]);
+    await addNote(a, '雪');
+    final SrsBackupInfo b1 = await bs.create(
+      a,
+      kind: SrsBackupKind.auto,
+      profileName: '日语',
+      nowMs: t,
+    );
+    // 一份读不懂的「备份」（例如来自更新版本、清单损坏）：它可能引用池里的媒体。
+    File(
+      p.join(bs.profileDir.path, 'broken.fushisrs'),
+    ).writeAsBytesSync(utf8.encode('not a zip'));
+    await bs.delete(b1);
+    expect(
+      bs.mediaPool.listSync().whereType<File>().where(
+        (File f) => p.basename(f.path) != 'index.json',
+      ),
+      hasLength(1),
+      reason: '有读不懂的清单时不回收',
+    );
+    for (final String bad in <String>[
+      'CON',
+      'nul.png',
+      'COM1.mp3',
+      'a:b.png',
+      'x.png.',
+      ' x.png',
+    ]) {
+      expect(
+        SrsBackupMediaEntry.fromJson(<String, Object?>{
+          'name': bad,
+          'sha256': 'a' * 64,
+          'size': 1,
+        }),
+        isNull,
+        reason: bad,
+      );
+    }
   });
 
   test('坏文件、非备份文件、新版本备份一律拒绝，库不动', () async {

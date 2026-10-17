@@ -20,6 +20,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
@@ -46,6 +47,12 @@ const String _kManifest = 'manifest.json';
 const String _kEvents = 'events.jsonl';
 const String _kServerTimes = 'server_times.json';
 const String _kEmbeddedMediaPrefix = 'media/';
+
+/// 解压上限（外部文件不可信，防解压炸弹）：清单、服务器时间表、事件正文、单个内嵌媒体。
+const int _kMaxManifestBytes = 64 << 20;
+const int _kMaxServerTimesBytes = 512 << 20;
+const int _kMaxEventsBytes = 1024 << 20;
+const int _kMaxMediaBytes = 2047 << 20;
 
 /// 备份的来由。持久化名冻结。
 enum SrsBackupKind {
@@ -122,12 +129,21 @@ class SrsBackupMediaEntry {
   }
 }
 
-bool _isBareName(String n) =>
-    n.isNotEmpty &&
-    !n.contains('/') &&
-    !n.contains(r'\') &&
-    n != '.' &&
-    n != '..';
+bool _isBareName(String n) {
+  if (n.isEmpty || n == '.' || n == '..') return false;
+  // 路径分隔符、Windows 盘符 / 备用数据流（':'）、首尾空格与结尾的点（Windows 会悄悄去掉）、控制字符。
+  if (n.contains('/') || n.contains(r'\') || n.contains(':')) return false;
+  if (n.trim() != n || n.endsWith('.')) return false;
+  if (n.codeUnits.any((int c) => c < 0x20)) return false;
+  // Windows 保留设备名（不分大小写，带不带扩展名都算）。
+  return !_kWindowsReservedNames.contains(n.split('.').first.toUpperCase());
+}
+
+const Set<String> _kWindowsReservedNames = <String>{
+  'CON', 'PRN', 'AUX', 'NUL', //
+  'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+  'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9',
+};
 
 final RegExp _sha256Re = RegExp(r'^[0-9a-f]{64}$');
 bool _isSha256(String s) => _sha256Re.hasMatch(s);
@@ -173,22 +189,23 @@ class SrsBackupManifest {
   int get mediaBytes =>
       media.fold<int>(0, (int s, SrsBackupMediaEntry m) => s + m.size);
 
-  SrsBackupManifest copyWith({bool? mediaEmbedded}) => SrsBackupManifest(
-    createdAt: createdAt,
-    kind: kind,
-    profileUid: profileUid,
-    profileName: profileName,
-    noteCount: noteCount,
-    cardCount: cardCount,
-    reviewCount: reviewCount,
-    eventCount: eventCount,
-    eventsSha256: eventsSha256,
-    fingerprint: fingerprint,
-    media: media,
-    formatVersion: formatVersion,
-    minReaderVersion: minReaderVersion,
-    mediaEmbedded: mediaEmbedded ?? this.mediaEmbedded,
-  );
+  SrsBackupManifest copyWith({bool? mediaEmbedded, String? eventsSha256}) =>
+      SrsBackupManifest(
+        createdAt: createdAt,
+        kind: kind,
+        profileUid: profileUid,
+        profileName: profileName,
+        noteCount: noteCount,
+        cardCount: cardCount,
+        reviewCount: reviewCount,
+        eventCount: eventCount,
+        eventsSha256: eventsSha256 ?? this.eventsSha256,
+        fingerprint: fingerprint,
+        media: media,
+        formatVersion: formatVersion,
+        minReaderVersion: minReaderVersion,
+        mediaEmbedded: mediaEmbedded ?? this.mediaEmbedded,
+      );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'magic': kSrsBackupMagic,
@@ -385,14 +402,19 @@ class SrsBackupStore {
       throw ArgumentError('store belongs to ${store.profileUid}');
     }
     final int createdAt = nowMs ?? DateTime.now().millisecondsSinceEpoch;
-    final String fingerprint = await store.changeFingerprint();
-    final List<SrsEvent> events = await store.exportAll();
-    final Map<String, int> serverTimes = await store.exportServerTimes();
-    final ({int notes, int cards, int reviews}) counts = await store
-        .backupCounts();
-    final Uint8List eventsBody = _encodeEvents(events);
+    // 指纹、事件、服务器时间、计数在同一个事务里读：中间插不进别的写入，四者是同一个快照。
+    late final String fingerprint;
+    late final List<String> lines;
+    late final Map<String, int> serverTimes;
+    late final ({int notes, int cards, int reviews}) counts;
+    await store.db.transaction(() async {
+      fingerprint = await store.changeFingerprint();
+      lines = await store.exportCanonicalLines();
+      serverTimes = await store.exportServerTimes();
+      counts = await store.backupCounts();
+    });
     final List<SrsBackupMediaEntry> media = await _captureMedia();
-    final SrsBackupManifest manifest = SrsBackupManifest(
+    final SrsBackupManifest template = SrsBackupManifest(
       createdAt: createdAt,
       kind: kind,
       profileUid: profileUid,
@@ -400,8 +422,8 @@ class SrsBackupStore {
       noteCount: counts.notes,
       cardCount: counts.cards,
       reviewCount: counts.reviews,
-      eventCount: events.length,
-      eventsSha256: sha256.convert(eventsBody).toString(),
+      eventCount: lines.length,
+      eventsSha256: '',
       fingerprint: fingerprint,
       media: media,
     );
@@ -411,10 +433,11 @@ class SrsBackupStore {
       id = '$createdAt-${kind.wire}-$i';
     }
     final File out = File(_pathOf(id));
-    await _writeArchive(
-      out: out,
-      manifest: manifest,
-      eventsBody: eventsBody,
+    // 事件编码、摘要、deflate 与写盘在后台 isolate 做，不卡界面。
+    final SrsBackupManifest manifest = await _writeInBackground(
+      outPath: out.path,
+      template: template,
+      lines: lines,
       serverTimes: serverTimes,
     );
     await File(
@@ -466,21 +489,22 @@ class SrsBackupStore {
   }
 
   /// 删掉共享媒体池里没有任何备份清单（全部 profile）引用的文件。
+  ///
+  /// 只要有一份备份的清单读不出媒体列表（损坏、来自更新版本、读文件失败），这一轮就不回收：
+  /// 读不懂不等于没引用，删了它要的媒体就再也恢复不全了。
   Future<void> collectMediaGarbage() async {
     final Directory pool = mediaPool;
     if (!await pool.exists()) return;
     final Set<String> referenced = <String>{};
     await for (final FileSystemEntity d in root.list()) {
       if (d is! Directory || p.basename(d.path) == _kMediaPool) continue;
-      final SrsBackupStore other = SrsBackupStore(
-        root: root,
-        profileUid: p.basename(d.path),
-        mediaDir: mediaDir,
-      );
-      for (final SrsBackupInfo b in await other.list()) {
-        for (final SrsBackupMediaEntry m in b.manifest.media) {
-          referenced.add(m.sha256);
+      await for (final FileSystemEntity f in d.list()) {
+        if (f is! File || p.extension(f.path) != '.$kSrsBackupExtension') {
+          continue;
         }
+        final Set<String>? shas = await _mediaShasOf(f);
+        if (shas == null) return;
+        referenced.addAll(shas);
       }
     }
     await for (final FileSystemEntity f in pool.list()) {
@@ -500,6 +524,42 @@ class SrsBackupStore {
       (String _, Object? v) => v is! Map || !referenced.contains(v['sha256']),
     );
     await _writeMediaIndex(index);
+  }
+
+  /// 宽松地读一份备份引用的媒体哈希（不校验版本，只认 `media[].sha256`）；读不出返回 null。
+  static Future<Set<String>?> _mediaShasOf(File f) async {
+    Object? json;
+    final File side = File(p.setExtension(f.path, '.json'));
+    try {
+      if (await side.exists()) json = jsonDecode(await side.readAsString());
+    } on Object {
+      json = null;
+    }
+    if (json is! Map) {
+      try {
+        final (Archive a, InputFileStream input) = _openZip(f);
+        try {
+          final ArchiveFile? m = _find(a, _kManifest);
+          if (m == null || m.size > _kMaxManifestBytes) return null;
+          json = jsonDecode(utf8.decode(_content(m)));
+        } finally {
+          input.closeSync();
+        }
+      } on Object {
+        return null;
+      }
+    }
+    if (json is! Map) return null;
+    final Object? media = json['media'];
+    if (media == null) return <String>{};
+    if (media is! List) return null;
+    final Set<String> out = <String>{};
+    for (final Object? m in media) {
+      final Object? sha = m is Map ? m['sha256'] : null;
+      if (sha is! String) return null;
+      out.add(sha);
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------- 媒体
@@ -579,17 +639,40 @@ class SrsBackupStore {
 
   // ---------------------------------------------------------------- 文件读写
 
-  static Uint8List _encodeEvents(List<SrsEvent> events) {
+  /// 在后台 isolate 里拼事件正文、算摘要、写 zip。静态方法：闭包只带这几个可发送的参数。
+  static Future<SrsBackupManifest> _writeInBackground({
+    required String outPath,
+    required SrsBackupManifest template,
+    required List<String> lines,
+    required Map<String, int> serverTimes,
+  }) => Isolate.run(() async {
+    final Uint8List body = _joinLines(lines);
+    final SrsBackupManifest m = template.copyWith(
+      eventsSha256: sha256.convert(body).toString(),
+    );
+    await _writeArchive(
+      out: File(outPath),
+      manifest: m,
+      eventsBody: body,
+      serverTimes: serverTimes,
+    );
+    return m;
+  });
+
+  static Uint8List _encodeEvents(List<SrsEvent> events) =>
+      _joinLines(<String>[for (final SrsEvent e in events) e.canonical()]);
+
+  static Uint8List _joinLines(List<String> lines) {
     final StringBuffer sb = StringBuffer();
-    for (final SrsEvent e in events) {
+    for (final String l in lines) {
       sb
-        ..write(e.canonical())
+        ..write(l)
         ..write('\n');
     }
     return Uint8List.fromList(utf8.encode(sb.toString()));
   }
 
-  Future<void> _writeArchive({
+  static Future<void> _writeArchive({
     required File out,
     required SrsBackupManifest manifest,
     required Uint8List eventsBody,
@@ -618,6 +701,13 @@ class SrsBackupStore {
       }
       if (await tmp.exists()) await tmp.delete();
       rethrow;
+    }
+    // 落盘后再改名：断电时不会留下「改名成功、内容还在缓存里」的半个备份。
+    final RandomAccessFile raf = await tmp.open(mode: FileMode.append);
+    try {
+      await raf.flush();
+    } finally {
+      await raf.close();
     }
     if (await out.exists()) await out.delete();
     await tmp.rename(out.path);
@@ -659,7 +749,7 @@ class SrsBackupStore {
 
   static SrsBackupManifest _manifestOf(Archive a) {
     final ArchiveFile? m = _find(a, _kManifest);
-    if (m == null) {
+    if (m == null || m.size > _kMaxManifestBytes) {
       throw const SrsBackupFormatException(SrsBackupInvalidReason.notBackup);
     }
     final Object? json;
@@ -697,6 +787,12 @@ class SrsBackupStore {
         'events missing',
       );
     }
+    if (ev.size > _kMaxEventsBytes) {
+      throw const SrsBackupFormatException(
+        SrsBackupInvalidReason.corrupt,
+        'events too large',
+      );
+    }
     final List<int> body = _content(ev);
     if (sha256.convert(body).toString() != manifest.eventsSha256) {
       throw const SrsBackupFormatException(
@@ -725,6 +821,12 @@ class SrsBackupStore {
     }
     final Map<String, int> serverTimes = <String, int>{};
     final ArchiveFile? st = _find(a, _kServerTimes);
+    if (st != null && st.size > _kMaxServerTimesBytes) {
+      throw const SrsBackupFormatException(
+        SrsBackupInvalidReason.corrupt,
+        'server times too large',
+      );
+    }
     if (st != null) {
       try {
         final Object? j = jsonDecode(utf8.decode(_content(st)));
@@ -821,7 +923,9 @@ class SrsBackupStore {
       if (await pooled.exists()) {
         await pooled.copy(tmp.path);
         ok = true;
-      } else if (embedded != null) {
+      } else if (embedded != null &&
+          embedded.size == m.size &&
+          m.size <= _kMaxMediaBytes) {
         final OutputFileStream os = OutputFileStream(tmp.path);
         try {
           embedded.writeContent(os);

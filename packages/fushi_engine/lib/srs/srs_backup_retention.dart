@@ -161,16 +161,26 @@ List<T> srsObsoleteBackups<T>(
   return obsolete;
 }
 
-/// 自动备份该不该跑：库有变动（指纹与最近一份不同），且（离开复习页触发 [force]，或）距最近一份已满间隔。
+/// 「离开复习页」触发也要隔开的最短间隔（分钟）：频繁进出复习页不堆一串全量备份。
+const int kSrsBackupLeaveMinIntervalMinutes = 5;
+
+/// 自动备份该不该跑：库有变动（指纹与最近一份不同），且距最近一份已满间隔——
+/// 定时触发按设置的间隔（默认 30 分钟），离开复习页（[leavingReview]）按
+/// [kSrsBackupLeaveMinIntervalMinutes]（与设置取小）。
 bool srsShouldAutoBackup({
   required String currentFingerprint,
   required String? latestFingerprint,
   required int? latestCreatedAtMs,
   required int nowMs,
   required SrsBackupLimits limits,
-  bool force = false,
+  bool leavingReview = false,
 }) {
   if (latestFingerprint == currentFingerprint) return false;
-  if (force || latestCreatedAtMs == null) return true;
-  return nowMs - latestCreatedAtMs >= limits.intervalMinutes * 60 * 1000;
+  if (latestCreatedAtMs == null) return true;
+  final int minutes = leavingReview
+      ? (limits.intervalMinutes < kSrsBackupLeaveMinIntervalMinutes
+            ? limits.intervalMinutes
+            : kSrsBackupLeaveMinIntervalMinutes)
+      : limits.intervalMinutes;
+  return nowMs - latestCreatedAtMs >= minutes * 60 * 1000;
 }

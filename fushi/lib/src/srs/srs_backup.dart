@@ -62,6 +62,16 @@ Future<String> _profileNameOf(FushiDatabase db, String uid) async {
   return r?.read<String>('name') ?? '';
 }
 
+/// 备份属于本机另一个 profile：请切到那个 profile 再恢复。
+class SrsRestoreOtherLocalProfile implements Exception {
+  const SrsRestoreOtherLocalProfile(this.profileName);
+
+  final String profileName;
+
+  @override
+  String toString() => 'SrsRestoreOtherLocalProfile($profileName)';
+}
+
 /// 一次恢复的结果。
 class SrsBackupRestoreOutcome {
   const SrsBackupRestoreOutcome({required this.report, this.snapshot});
@@ -97,6 +107,21 @@ class SrsBackupController {
 
   Future<void> _tail = Future<void>.value();
   Timer? _timer;
+
+  /// 每个 profile 最近一份备份的创建时刻（null = 一份都没有）。评分等高频写入触发 [onDataChanged]
+  /// 时只看它，不每次列目录；新建 / 删除 / 恢复后更新或作废。
+  final Map<String, int?> _latestAt = <String, int?>{};
+
+  Future<int?> _latestCreatedAt(SrsBackupStore backups) async {
+    if (_latestAt.containsKey(backups.profileUid)) {
+      return _latestAt[backups.profileUid];
+    }
+    final List<SrsBackupInfo> all = await backups.list();
+    return _latestAt[backups.profileUid] = all.isEmpty
+        ? null
+        : all.first.manifest.createdAt;
+  }
+
   bool _disposed = false;
 
   /// 备份列表变了（新建 / 清理 / 删除 / 恢复）。备份页据此重读。
@@ -136,7 +161,7 @@ class SrsBackupController {
           latestCreatedAtMs: latest?.manifest.createdAt,
           nowMs: _now(),
           limits: limits,
-          force: leavingReview,
+          leavingReview: leavingReview,
         )) {
           return null;
         }
@@ -166,25 +191,25 @@ class SrsBackupController {
       limits: _limits(),
       now: DateTime.fromMillisecondsSinceEpoch(_now()),
     );
+    _latestAt.remove(backups.profileUid);
     _notify();
     return info;
   }
 
   /// 库有变动：满间隔就备份，不满就定时到点再看一次（只留一个定时器）。
+  /// 高频调用（每次评分都会 bump 修订号）：定时器在等就直接返回，不碰磁盘。
   void onDataChanged() {
-    if (_disposed || !_autoEnabled()) return;
+    if (_disposed || !_autoEnabled() || (_timer?.isActive ?? false)) return;
     srsRunLogged('SrsBackup.onDataChanged', () async {
       final SrsBackupStore? backups = await _readBackups();
-      if (backups == null || _disposed) return;
-      final List<SrsBackupInfo> all = await backups.list();
+      if (backups == null || _disposed || (_timer?.isActive ?? false)) return;
+      final int? latest = await _latestCreatedAt(backups);
       final int interval = _limits().intervalMinutes * 60 * 1000;
-      final int due = all.isEmpty ? 0 : all.first.manifest.createdAt + interval;
-      final int wait = due - _now();
+      final int wait = latest == null ? 0 : latest + interval - _now();
       if (wait <= 0) {
         await autoBackup();
         return;
       }
-      if (_timer?.isActive ?? false) return;
       _timer = Timer(Duration(milliseconds: wait), () {
         _timer = null;
         srsRunLogged('SrsBackup.timer', () async {
@@ -194,7 +219,7 @@ class SrsBackupController {
     });
   }
 
-  /// 离开复习页：有变动就立即备份（不等间隔）。
+  /// 离开复习页：有变动、且距最近一份满 5 分钟就备份（不等 30 分钟的定时间隔）。
   void onLeftReview() {
     srsRunLogged('SrsBackup.leftReview', () async {
       await autoBackup(leavingReview: true);
@@ -206,6 +231,7 @@ class SrsBackupController {
     final SrsBackupStore? backups = await _readBackups();
     if (backups == null) return;
     await backups.delete(info);
+    _latestAt.remove(backups.profileUid);
     _notify();
   });
 
@@ -222,9 +248,13 @@ class SrsBackupController {
 
   /// 从外部选来的备份文件恢复。
   ///
-  /// 备份属于另一个 profile 时：当前 profile 还没有用户笔记、也从未同步发布过 → 采用备份的 profile
-  /// 身份（新装设备接上原来的 profile，[reopenStore] 让 app 按新身份重开 store）再恢复；否则抛
-  /// [SrsRestoreProfileMismatch]（不把别人的数据混进有数据的 profile）。
+  /// 备份属于另一个 profile 时：
+  /// - 本机已有那个 profile（同 uid）→ 抛 [SrsRestoreOtherLocalProfile]，让用户切过去再恢复
+  ///   （不能再让当前 profile 采用同一个 uid：`profiles.uid` 唯一）；
+  /// - 当前 profile 没有用户笔记、也从未同步发布过（新装的设备）→ 采用备份的 profile 身份（铁律 E），
+  ///   [reopenStore] 按新身份重开 store、换一个新的写入者化身（不沿用这台设备可能用过的旧 writerId），再恢复；
+  ///   任何一步失败都把 uid 换回去、重开 store（采用与恢复要么都成、要么都不成）；
+  /// - 否则抛 [SrsRestoreProfileMismatch]（不把别人的数据混进有数据的 profile）。
   Future<SrsBackupRestoreOutcome?> restoreFile(
     File file, {
     required FushiDatabase db,
@@ -235,26 +265,51 @@ class SrsBackupController {
     try {
       final SrsDbStore? store = await _readStore();
       if (store == null) return null;
-      if (a.manifest.profileUid != store.profileUid) {
-        final String deviceId = await SyncRepository(db).getOrCreateDeviceId();
-        if (!await srsCanAdoptProfileUid(db, store.profileUid, deviceId)) {
-          throw SrsRestoreProfileMismatch(
-            a.manifest.profileUid,
-            store.profileUid,
-          );
+      final String backupUid = a.manifest.profileUid;
+      if (backupUid == store.profileUid) return await _restoreArchive(a);
+      final QueryRow? owner = await db
+          .customSelect(
+            'SELECT name FROM profiles WHERE uid = ?',
+            variables: <Variable<Object>>[Variable<String>(backupUid)],
+          )
+          .getSingleOrNull();
+      if (owner != null) {
+        throw SrsRestoreOtherLocalProfile(owner.read<String>('name'));
+      }
+      final String deviceId = await SyncRepository(db).getOrCreateDeviceId();
+      if (!await srsCanAdoptProfileUid(db, store.profileUid, deviceId)) {
+        throw SrsRestoreProfileMismatch(backupUid, store.profileUid);
+      }
+      final int profileId = await activeProfileId();
+      final String oldUid = store.profileUid;
+      await srsAdoptProfileUid(
+        db,
+        profileId: profileId,
+        oldUid: oldUid,
+        newUid: backupUid,
+      );
+      try {
+        await reopenStore();
+        final SrsDbStore? adopted = await _readStore();
+        if (adopted == null || adopted.profileUid != backupUid) {
+          throw StateError('store did not reopen under the adopted profile');
         }
+        await adopted.afterRestore(freshIncarnation: true);
+        return await _restoreArchive(a, snapshot: false);
+      } catch (_) {
+        // 回到采用之前：新 uid 下的行全部删掉、uid 换回去（旧 uid 下只有内置行 / 本机状态，重开时重建）。
         await srsAdoptProfileUid(
           db,
-          profileId: await activeProfileId(),
-          oldUid: store.profileUid,
-          newUid: a.manifest.profileUid,
+          profileId: profileId,
+          oldUid: backupUid,
+          newUid: oldUid,
         );
         await reopenStore();
-        return await _restoreArchive(a, snapshot: false);
+        rethrow;
       }
-      return await _restoreArchive(a);
     } finally {
       a.close();
+      _latestAt.clear();
     }
   });
 
@@ -275,6 +330,7 @@ class SrsBackupController {
       );
     }
     final SrsRestoreReport report = await backups.restore(store, a);
+    _latestAt.remove(backups.profileUid);
     _notify();
     return SrsBackupRestoreOutcome(report: report, snapshot: pre);
   }
