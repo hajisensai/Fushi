@@ -21,12 +21,16 @@
     - `vp9_superframe` / `extract_extradata` bsf：VP9→MP4、HLS/TS→MP4 的 `-c copy` 均成功。
     - 长 GOP 的 TS 在 seek 点之后没有关键帧时截帧失败：完整版 ffmpeg 同样一帧不出，只是退出码为 0。
     - nut / mxf / caf / wv / tta 等容器：不在任何导入入口。
-- **[ ] ① 未修复** — 配方已改，待 CI 重编并替换入库二进制：
+- **[x] ① 已修复** — 入库 Windows / macOS 二进制来自 ffmpeg-min run 39026519730（三平台 smoke 全 PASS，钉扎端到端在 schannel / SecureTransport / gnutls 上都实际执行）。另在本机用 CI 的 Windows 产物实测：
+  - 约 80 种样本的矩阵：原先的缺口全部转绿。
+  - 钉扎：指纹正确能读到内容；指纹错误被拒，报 `peer certificate fingerprint … does not match pin`；指纹写成小写、不带冒号也认。
+  
+  配方改动：
   - `DECODERS` 补上述解码器；`MUXERS` 补 `pcm_s16le`。注意格式名是 s16le，但 configure 的组件名是 pcm_s16le；第一次写成 s16le 被 configure 静默忽略，CI 的 smoke 才把它抓出来。
   - 证书钉扎补丁移植到 n7.1：`tool/ffmpeg-min/patches/ffmpeg-n7.1-tls-pin-sha256.patch`。它与移动端补丁逻辑一致，只有 `tls.c` 的 include 上下文不同；已对全新 n7.1.5 源码验证能干净打上。
   - 构建脚本在 configure 之前打这份补丁，已打过就跳过，打不上就直接失败。
   - Windows 加 `--extra-libs=-lcrypt32`：补丁的 schannel 段调用 `CertFreeCertificateContext`，而 FFmpeg configure 只给 schannel 链 `-lsecur32`。
-- **[ ] ② 未加自动化测试** — 已加，待二进制替换后转绿：
+- **[x] ② 已加自动化测试** — 已全部转绿；32 个与 ffmpeg 相关的测试文件共 455 条通过：
   - `tool/ffmpeg-min/smoke-test.sh`：
     - 新增 10 个编码样本，各跑「抽音频 + 截帧」。
     - 新增 ASR 裸 PCM（`-f s16le`）用例，命令形态与上游 `asr_pcm_source.dart` 一致。
@@ -38,4 +42,5 @@
     - 新增「二进制里有 `tls_pin_sha256`」：对现有入库产物会红，判据有效。
     - 新增「配方在 FFmpeg configure 之前打补丁且补丁文件存在」：已绿。
 - **备注**：
+  - 未做：`.ogg` 里的 speex 老语音编码需要外部库 libspeex，不补。
   - 未做：ARIB 字幕（日本电视 TS 的内嵌字幕）需要 libaribcaption，属于新的 C++ 外部依赖，FFmpeg 6.0 的移动端也没有对应配方。服务端 `--burn-subs` 的 `subtitles` 滤镜需要 libass，只在服务端用。两者都另开。
