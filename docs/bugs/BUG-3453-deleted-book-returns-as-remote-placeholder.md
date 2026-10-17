@@ -1,0 +1,6 @@
+## BUG-3453 · deleted-book-returns-as-remote-placeholder
+- **报告**：2026-10-17（用户：书架删除《Do Androids Dream of Electric Sheep?》并勾「从所有设备删除」后，书架上仍有这本书，变成带云角标 + 下载按钮的远端占位卡）
+- **真实性**：✅ 真 bug。删除只删本地行并写 `book` 类同步删除墓碑（`fushi/lib/src/media/sources/reader_fushi_source.dart` `deleteBook` 的 `writeSyncDeletionTombstone`），墓碑要到下一轮同步才由 `_pushDeletionTombstonesLive` 推给 host 执行删除；在那之前（以及推完后远端清单仍停在 `RemoteLibraryCache` TTL 内时）host 清单里还有这本书。书架远端占位卡的过滤（`fushi/lib/src/pages/implementations/reader_history/remote.part.dart` `_loadRemoteBooks`）只看本地同 key、「仅从本机移除」隐藏表与分架，**从不看本端删除墓碑**——本地行一删 `dedupeRemoteBooks` 就命不中，刚删的书以「云端可下载」卡复活。首页「继续」的远端候选（`home_dashboard_page.dart` → `remoteContinueCandidates`）同一缺口。
+- **[x] ① 已修复** — 引擎新增纯函数 `filterOutLocallyDeletedRemoteBooks`（`packages/fushi_engine/lib/sync/fushi_library_host_service.dart`）：按本端 `book` 墓碑剔除远端书，host bookKey 与标题派生键两路都比（墓碑可能写的是别名表里的对端键）；host 那份 `importedAt > deletedAt`（墓碑之后重新导入）视为新书照常显示。DB 便捷读法 `getSyncDeletionDeletedAtByKey`（`fushi_core` `database_tags_sync.part.dart`）。书架占位卡与首页「继续」两处接入。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/remote_cover_dedup_test.dart` 的 `filterOutLocallyDeletedRemoteBooks` 组（标题键命中 / 对端键命中 / 墓碑后重新导入照常显示 / 无墓碑原样返回）。
+- **备注**：视频库远端占位卡（`home_video_page.dart`）同样不看 `video` 墓碑，是同形缺口，未在本次修复。

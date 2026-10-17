@@ -1375,6 +1375,38 @@ List<RemoteBookInfo> dedupeRemoteBooks({
   ];
 }
 
+/// 从远端书清单 [remote] 里剔除本端已「从所有设备删除」的书。
+///
+/// 纯函数。[deletedAtByKey] = 本端 `book` 类同步删除墓碑（itemKey → deletedAt）。
+/// 墓碑要等下一轮同步才推给 host 执行删除，推完远端清单还可能停在共享清单缓存的
+/// TTL 里——这段窗口内本地行已删、[dedupeRemoteBooks] 命不中，刚删的书会以「云端
+/// 可下载」占位卡回到书架上。墓碑键是本机 bookKey 或别名表里的对端键
+/// （`syncDeletionBookKeyOf`），所以 host bookKey 与标题派生键都要比（同
+/// [dedupeRemoteBooks] 的两路）。host 那份若是墓碑之后才（重新）导入的
+/// （`importedAt > deletedAt`），是一本新书，照常显示；旧 host 不带 importedAt 时按已删处理。
+List<RemoteBookInfo> filterOutLocallyDeletedRemoteBooks({
+  required List<RemoteBookInfo> remote,
+  required Map<String, int> deletedAtByKey,
+  required String Function(String title) keyOf,
+}) {
+  if (deletedAtByKey.isEmpty) return remote;
+  bool deletedLocally(RemoteBookInfo book) {
+    final String? hostKey = book.bookKey;
+    final int? deletedAt = (hostKey != null && hostKey.isNotEmpty
+            ? deletedAtByKey[hostKey]
+            : null) ??
+        deletedAtByKey[keyOf(book.title)];
+    if (deletedAt == null) return false;
+    final int? importedAt = book.importedAt;
+    return importedAt == null || importedAt <= deletedAt;
+  }
+
+  return <RemoteBookInfo>[
+    for (final RemoteBookInfo book in remote)
+      if (!deletedLocally(book)) book,
+  ];
+}
+
 /// 从远端书清单 [remote] 里挑出「本端已有这本书**和它的有声书**，对端也有配套有声书」
 /// 的条目，按本端 bookKey 索引——书卡菜单「从对端更新字幕 / 重新下载有声书」的候选。
 ///

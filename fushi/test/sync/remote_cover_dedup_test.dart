@@ -90,6 +90,63 @@ void main() {
     });
   });
 
+  // ── 本端「从所有设备删除」过的书不以远端占位卡复活 ────────────────────────
+  group('filterOutLocallyDeletedRemoteBooks', () {
+    const String title = 'Do Androids Dream of Electric Sheep?';
+    final String titleKey = sanitizeTtuFilename(title);
+
+    List<String> titles(List<RemoteBookInfo> books) =>
+        books.map((RemoteBookInfo b) => b.title).toList();
+
+    test('墓碑命中标题键：host 还没删的那份被剔除，其它书不动', () {
+      final List<RemoteBookInfo> kept = filterOutLocallyDeletedRemoteBooks(
+        remote: const <RemoteBookInfo>[
+          RemoteBookInfo(title: title, hasContent: true, importedAt: 100),
+          RemoteBookInfo(title: '别的书', hasContent: true, importedAt: 100),
+        ],
+        deletedAtByKey: <String, int>{titleKey: 500},
+        keyOf: sanitizeTtuFilename,
+      );
+      expect(titles(kept), <String>['别的书']);
+    });
+
+    test('墓碑写的是对端键（别名表）：按 host bookKey 命中', () {
+      final List<RemoteBookInfo> kept = filterOutLocallyDeletedRemoteBooks(
+        remote: const <RemoteBookInfo>[
+          RemoteBookInfo(title: title, bookKey: 'host-key', hasContent: true),
+        ],
+        deletedAtByKey: <String, int>{'host-key': 500},
+        keyOf: sanitizeTtuFilename,
+      );
+      expect(kept, isEmpty);
+    });
+
+    test('host 在墓碑之后重新导入的同名书是新书，照常显示', () {
+      final List<RemoteBookInfo> kept = filterOutLocallyDeletedRemoteBooks(
+        remote: const <RemoteBookInfo>[
+          RemoteBookInfo(title: title, hasContent: true, importedAt: 900),
+        ],
+        deletedAtByKey: <String, int>{titleKey: 500},
+        keyOf: sanitizeTtuFilename,
+      );
+      expect(titles(kept), <String>[title]);
+    });
+
+    test('没有墓碑时原样返回', () {
+      const List<RemoteBookInfo> remote = <RemoteBookInfo>[
+        RemoteBookInfo(title: title, hasContent: true),
+      ];
+      expect(
+        filterOutLocallyDeletedRemoteBooks(
+          remote: remote,
+          deletedAtByKey: const <String, int>{},
+          keyOf: sanitizeTtuFilename,
+        ),
+        same(remote),
+      );
+    });
+  });
+
   // ── #6 远端/本地去重（同一本书/视频不在两区重复）──────────────────────────
   group('dedupeRemoteBooks', () {
     RemoteBookInfo book(String title) =>
@@ -136,7 +193,7 @@ void main() {
     test('本端为空 → 全部保留', () {
       final List<RemoteBookInfo> remote = <RemoteBookInfo>[
         book('A'),
-        book('B')
+        book('B'),
       ];
       final List<RemoteBookInfo> kept = dedupeRemoteBooks(
         remote: remote,
@@ -149,7 +206,7 @@ void main() {
     test('本端含全部远端书 → 全部剔除', () {
       final List<RemoteBookInfo> remote = <RemoteBookInfo>[
         book('A'),
-        book('B')
+        book('B'),
       ];
       final Set<String> localKeys = <String>{
         sanitizeTtuFilename('A'),
