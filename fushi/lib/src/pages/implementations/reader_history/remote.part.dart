@@ -129,18 +129,26 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       final String? sourceHost = hidden.isEmpty
           ? null
           : await remoteBookSourceHost(appModel.database, client);
+      // 「从所有设备删除」过的书：墓碑推给 host 前 / 远端清单缓存过期前，host 清单里
+      // 还有它，本地行一删去重就命不中，刚删的书会以云端占位卡回到书架上。
+      final Map<String, int> deletedBooks = await appModel.database
+          .getSyncDeletionDeletedAtByKey(SyncTombstoneKind.book.dbValue);
       return _RemoteBookState(
         books: dedupeRemoteBooks(
-          remote: <RemoteBookInfo>[
-            for (final RemoteBookInfo book in notAdopted)
-              if (!isRemoteBookHidden(
-                hidden,
-                sourceId: client.remoteLibrarySourceId,
-                sourceHost: sourceHost,
-                remoteId: book.downloadId,
-              ))
-                book,
-          ],
+          remote: filterOutLocallyDeletedRemoteBooks(
+            remote: <RemoteBookInfo>[
+              for (final RemoteBookInfo book in notAdopted)
+                if (!isRemoteBookHidden(
+                  hidden,
+                  sourceId: client.remoteLibrarySourceId,
+                  sourceHost: sourceHost,
+                  remoteId: book.downloadId,
+                ))
+                  book,
+            ],
+            deletedAtByKey: deletedBooks,
+            keyOf: sanitizeTtuFilename,
+          ),
           localBookKeys: localKeys,
           keyOf: sanitizeTtuFilename,
         ),

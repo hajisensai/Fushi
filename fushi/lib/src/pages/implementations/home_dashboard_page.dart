@@ -59,6 +59,7 @@ import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -1207,6 +1208,10 @@ class _HomeDashboardPageState
       localBookKeys.addAll(
         (await CollectionBookIdentityIndex.load(appModel.database)).uidByKey.keys,
       );
+      // 与书架远端占位卡同一道过滤：本端「从所有设备删除」过的书在 host 真删掉前
+      // 不能以远端「继续」卡复活。
+      final Map<String, int> deletedBooks = await appModel.database
+          .getSyncDeletionDeletedAtByKey(SyncTombstoneKind.book.dbValue);
       if (!mounted) return;
       final Set<String> localVideoUids = <String>{
         for (final VideoBookRow v in _videos) v.bookUid,
@@ -1215,7 +1220,11 @@ class _HomeDashboardPageState
           remoteContinueCandidates(
         localBookKeys: localBookKeys,
         localVideoUids: localVideoUids,
-        remoteBooks: remoteBooks,
+        remoteBooks: filterOutLocallyDeletedRemoteBooks(
+          remote: remoteBooks,
+          deletedAtByKey: deletedBooks,
+          keyOf: sanitizeTtuFilename,
+        ),
         remoteVideos: remoteVideos,
       );
       // 设备来源标注：配对时存下的 host 设备名（多地址时取第一个启用且有名的）。
