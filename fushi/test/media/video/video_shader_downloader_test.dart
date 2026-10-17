@@ -56,27 +56,22 @@ Dio _dioWith(_FakeAdapter adapter) {
 
 void main() {
   group('anime4kMirrorUrls', () {
-    test('raw 官方直连优先、jsDelivr 多 CDN 节点其次、gh 代理前缀兜底（BUG-271 多镜像）', () {
+    test('jsDelivr 多 CDN 节点优先、gh 代理前缀其次、raw 官方兜底（BUG-271 多镜像）', () {
       final List<String> urls =
           anime4kMirrorUrls('glsl/Restore/Anime4K_Clamp_Highlights.glsl');
       // 多镜像：单源抖动靠独立 CDN 节点 / 代理前缀兜底，根治整档偏偏失败一个。
       expect(urls.length, greaterThanOrEqualTo(5),
           reason: 'BUG-271：单一源不可达必须有多镜像可回退');
       expect(urls.first,
-          'https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/Restore/Anime4K_Clamp_Highlights.glsl',
-          reason: 'GitHub 直连首选，中转只在连不上 GitHub 时才启用');
-      expect(urls[1],
           startsWith('https://cdn.jsdelivr.net/gh/bloc97/Anime4K@master/'));
+      expect(
+          urls.first, endsWith('glsl/Restore/Anime4K_Clamp_Highlights.glsl'));
       expect(urls.any((String u) => u.contains('fastly.jsdelivr.net')), isTrue);
       expect(urls.any((String u) => u.contains('gcore.jsdelivr.net')), isTrue);
       expect(urls.any((String u) => u.contains('ghfast.top')), isTrue);
       expect(urls.any((String u) => u.contains('gh-proxy.com')), isTrue);
-      final int lastJsDelivr =
-          urls.lastIndexWhere((String u) => u.contains('jsdelivr.net'));
-      final int firstProxy =
-          urls.indexWhere((String u) => u.startsWith('https://ghfast.top/'));
-      expect(lastJsDelivr, lessThan(firstProxy),
-          reason: 'jsDelivr 节点整体排在 gh 代理前缀之前');
+      expect(urls.last,
+          'https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/Restore/Anime4K_Clamp_Highlights.glsl');
       expect(urls.toSet().length, urls.length);
     });
 
@@ -168,6 +163,53 @@ void main() {
       ],
     );
 
+    test('本批连不上的 host 后续文件挪到末尾：只吃一次连接超时', () async {
+      const Anime4kPreset two = Anime4kPreset(
+        id: 'two',
+        name: 'Two',
+        description: '',
+        shaders: <Anime4kShaderFile>[
+          Anime4kShaderFile('glsl/Restore/Anime4K_Clamp_Highlights.glsl'),
+          Anime4kShaderFile('glsl/Restore/Anime4K_Restore_CNN_M.glsl'),
+        ],
+      );
+      final _FakeAdapter adapter = _FakeAdapter((String url) {
+        if (url.contains('cdn.jsdelivr.net')) {
+          throw DioError(
+            requestOptions: RequestOptions(path: url),
+            type: DioErrorType.connectionTimeout,
+          );
+        }
+        return _glslBody();
+      });
+      final Anime4kDownloadResult result = await downloadAnime4kFiles(
+        two,
+        targetDir: dir,
+        dio: _dioWith(adapter),
+      );
+      expect(result.allOk, isTrue);
+      expect(adapter.requested.length, 3,
+          reason: '第一个文件：cdn 超时 + fastly 成功；第二个文件直接 fastly');
+      expect(adapter.requested[0], contains('cdn.jsdelivr.net'));
+      expect(adapter.requested[1], contains('fastly.jsdelivr.net'));
+      expect(adapter.requested[2], contains('fastly.jsdelivr.net'));
+      expect(adapter.requested[2], contains('Anime4K_Restore_CNN_M.glsl'));
+    });
+
+    test('orderAnime4kCandidatesForBatch：连不上的稳定挪末尾、不删', () {
+      final List<String> urls =
+          anime4kMirrorUrls('glsl/Restore/Anime4K_Clamp_Highlights.glsl');
+      expect(orderAnime4kCandidatesForBatch(urls, <String>{}), urls);
+      final List<String> ordered = orderAnime4kCandidatesForBatch(
+          urls, <String>{'cdn.jsdelivr.net', 'ghfast.top'});
+      expect(ordered.toSet(), urls.toSet());
+      expect(ordered.first, contains('fastly.jsdelivr.net'));
+      expect(ordered.sublist(ordered.length - 2), <String>[
+        urls.firstWhere((String u) => u.contains('cdn.jsdelivr.net')),
+        urls.firstWhere((String u) => u.startsWith('https://ghfast.top/')),
+      ]);
+    });
+
     test('主源成功 → 落盘 + 不试镜像', () async {
       final _FakeAdapter adapter = _FakeAdapter((String url) => _glslBody());
       final Anime4kDownloadResult result = await downloadAnime4kFiles(
@@ -177,19 +219,17 @@ void main() {
       );
       expect(result.allOk, isTrue);
       expect(result.downloaded, <String>['Anime4K_Clamp_Highlights.glsl']);
-      // 只请求了主源（GitHub raw 直连），未回退到中转。
+      // 只请求了主源（jsDelivr），未回退。
       expect(adapter.requested.length, 1);
-      expect(adapter.requested.single,
-          startsWith('https://raw.githubusercontent.com/'));
+      expect(adapter.requested.single, contains('jsdelivr'));
       expect(
           File(p.join(dir.path, 'Anime4K_Clamp_Highlights.glsl')).existsSync(),
           isTrue);
     });
 
-    test('GitHub 直连与第一个 jsDelivr 节点失败 → 回退第二个 jsDelivr 节点成功', () async {
+    test('第一个 jsDelivr 节点失败 → 回退第二个 jsDelivr 节点成功', () async {
       final _FakeAdapter adapter = _FakeAdapter((String url) {
-        if (url.startsWith('https://raw.githubusercontent.com/') ||
-            url.contains('cdn.jsdelivr.net')) {
+        if (url.contains('cdn.jsdelivr.net')) {
           throw DioError(
             requestOptions: RequestOptions(path: url),
             type: DioErrorType.connectionError,
@@ -203,17 +243,14 @@ void main() {
         dio: _dioWith(adapter),
       );
       expect(result.allOk, isTrue);
-      expect(adapter.requested.length, 3);
-      expect(adapter.requested[0],
-          startsWith('https://raw.githubusercontent.com/'));
-      expect(adapter.requested[1], contains('cdn.jsdelivr.net'));
-      expect(adapter.requested[2], contains('fastly.jsdelivr.net'));
+      expect(adapter.requested.length, 2);
+      expect(adapter.requested[0], contains('cdn.jsdelivr.net'));
+      expect(adapter.requested[1], contains('fastly.jsdelivr.net'));
     });
 
-    test('GitHub 直连与 jsDelivr 全挂 → 回退 gh 代理前缀成功', () async {
+    test('jsDelivr 全挂 → 回退 gh 代理前缀成功', () async {
       final _FakeAdapter adapter = _FakeAdapter((String url) {
-        if (url.startsWith('https://raw.githubusercontent.com/') ||
-            url.contains('jsdelivr')) {
+        if (url.contains('jsdelivr')) {
           throw DioError(
             requestOptions: RequestOptions(path: url),
             type: DioErrorType.connectionError,
@@ -272,10 +309,7 @@ void main() {
 
     test('镜像返回 HTML（非着色器）→ 跳过继续回退', () async {
       final _FakeAdapter adapter = _FakeAdapter((String url) {
-        if (url.startsWith('https://raw.githubusercontent.com/') ||
-            url.contains('jsdelivr')) {
-          return _htmlBody();
-        }
+        if (url.contains('jsdelivr')) return _htmlBody();
         return _glslBody();
       });
       final Anime4kDownloadResult result = await downloadAnime4kFiles(
@@ -284,7 +318,7 @@ void main() {
         dio: _dioWith(adapter),
       );
       expect(result.allOk, isTrue);
-      // raw 直连与所有 jsdelivr 节点返回 HTML 被拒，回退到第一个 gh 代理前缀成功。
+      // 所有 jsdelivr 节点返回 HTML 被拒，回退到第一个 gh 代理前缀成功。
       expect(adapter.requested.last, contains('ghfast.top'));
       final String content =
           File(p.join(dir.path, 'Anime4K_Clamp_Highlights.glsl'))

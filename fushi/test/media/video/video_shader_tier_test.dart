@@ -123,9 +123,9 @@ void main() {
         ref: kAnime4kUltraDeblurPreset.ref,
       );
       expect(urls.first,
-          'https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/Restore/Anime4K_Restore_CNN_Soft_VL.glsl');
-      expect(urls[1],
           'https://cdn.jsdelivr.net/gh/bloc97/Anime4K@master/glsl/Restore/Anime4K_Restore_CNN_Soft_VL.glsl');
+      expect(urls.last,
+          'https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/Restore/Anime4K_Restore_CNN_Soft_VL.glsl');
     });
   });
 
@@ -134,8 +134,6 @@ void main() {
       final List<String> urls =
           anime4kMirrorUrls('glsl/Restore/Anime4K_Clamp_Highlights.glsl');
       expect(urls.first,
-          startsWith('https://raw.githubusercontent.com/bloc97/Anime4K/master/'));
-      expect(urls[1],
           startsWith('https://cdn.jsdelivr.net/gh/bloc97/Anime4K@master/'));
     });
   });
