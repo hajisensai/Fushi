@@ -68,6 +68,21 @@ void main() {
       );
       expect(find.text('Episode 1'), findsOneWidget);
 
+      // 位置由推送源驱动：通知后的下一帧（不推进任何时间）就显示新位置——轮询实现
+      // 要等定时器到点，这里会读不到。放在按播放之前：暂停 + 静态波形时进度条不跑
+      // Ticker，只剩推送源这一条路。
+      final String before = formatFushiPlaybackTime(
+        const Duration(seconds: 30),
+      );
+      final String after = formatFushiPlaybackTime(
+        const Duration(minutes: 1, seconds: 30),
+      );
+      expect(find.text(before), findsWidgets);
+      position.value = const Duration(minutes: 1, seconds: 30);
+      await tester.pump();
+      expect(find.text(after), findsWidgets);
+      expect(find.text(before), findsNothing);
+
       await tester.tap(
         find.byKey(const ValueKey<String>('video_tabletop_seek_back_button')),
       );
@@ -92,20 +107,6 @@ void main() {
             : find.byTooltip(t.pause),
         findsOneWidget,
       );
-
-      // 位置由推送源驱动：通知后的下一帧（不推进任何时间）就显示新位置——轮询实现
-      // 要等定时器到点，这里会读不到。
-      final String before = formatFushiPlaybackTime(
-        const Duration(seconds: 30),
-      );
-      final String after = formatFushiPlaybackTime(
-        const Duration(minutes: 1, seconds: 30),
-      );
-      expect(find.text(before), findsWidgets);
-      position.value = const Duration(minutes: 1, seconds: 30);
-      await tester.pump();
-      expect(find.text(after), findsWidgets);
-      expect(find.text(before), findsNothing);
 
       if (apple) {
         // Apple 面板的按钮走语义图标 + FushiIcon 分派：渲染的是 SF 字形。
