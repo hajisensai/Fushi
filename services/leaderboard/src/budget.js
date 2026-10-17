@@ -7,7 +7,7 @@
 //     反馈视频单独一池（media_usage.video_bytes，默认 1 GiB），其余（头像 / 封面 / 反馈截图与日志）
 //     用剩下的（media_usage.bytes）。视频单个 50 MB、能匿名上传，同一池的话几个 IP 就能把总配额
 //     打满、让全站头像封面一起 507 上一个月；分池后视频满了只拒视频。
-// 预算用 env 覆盖：BUDGET_WRITE_ROWS / BUDGET_MEDIA / BUDGET_REGISTER / BUDGET_EMAIL / BUDGET_FEEDBACK /
+// 预算用 env 覆盖：BUDGET_WRITE_ROWS / BUDGET_MEDIA / BUDGET_REGISTER / BUDGET_EMAIL / BUDGET_FEEDBACK / BUDGET_PING /
 // MEDIA_QUOTA_BYTES / VIDEO_QUOTA_BYTES。
 
 import { HttpError, utcDateKey } from './util.js';
@@ -15,7 +15,13 @@ import { HttpError, utcDateKey } from './util.js';
 /** D1 免费额度 10 万行写入/天；留两成余量给限流计数、防重放记录与定时快照。 */
 /** email 默认 90：低于 Resend 免费额度 100 封/天。 */
 /** feedback 默认 300：每天新反馈条数上限（附件另扣 media）。 */
-export const DEFAULT_BUDGETS = { write_rows: 80000, media: 3000, register: 2000, email: 90, feedback: 300 };
+/**
+ * ping 默认 4000：每天记入统计的安装数上限（installs.js；同一安装当天第二次心跳不扣）。每次记入
+ * 连同索引与预算计数约写 5 行，最多约 2 万行；独立于 write_rows，刷量打满只停统计、不停榜单与反馈。
+ * write_rows 已占 8 万，D1 免费额度 10 万行/天，所以默认值压在剩余两成以内；日活逼近上限时
+ * 先升级 Workers 付费计划再用 BUDGET_PING 调高。
+ */
+export const DEFAULT_BUDGETS = { write_rows: 80000, media: 3000, register: 2000, email: 90, feedback: 300, ping: 4000 };
 /** R2 免费额度 10 GB；默认只用 8 GB。 */
 export const DEFAULT_MEDIA_QUOTA_BYTES = 8 * 1024 * 1024 * 1024;
 /** 反馈视频池默认 1 GiB（从总配额里切出来，不另加）。 */

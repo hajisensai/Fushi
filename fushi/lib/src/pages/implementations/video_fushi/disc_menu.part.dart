@@ -496,6 +496,9 @@ extension _VideoDiscMenu on _VideoFushiPageState {
                   clusterStyle: _m3eFloatingBarStyle(verticalAlignment: 0),
                   moreButtonBuilder: (VoidCallback open) =>
                       _videoBarMoreButton(open, desktop: desktop),
+                  singleActionButtonBuilder: (VideoBarMenuAction action) =>
+                      _videoBarSingleActionButton(action, desktop: desktop),
+                  onMenuOpenChanged: _onVideoBarMenuOpenChanged,
                   entries: actions,
                 ),
               ),

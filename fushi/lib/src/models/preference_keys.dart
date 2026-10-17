@@ -333,8 +333,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_video_enabled',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
   'nav_bar_labels_visible',
-  // String（默认 '' = flat）：手机底栏形态 flat / pager
-  // （AdaptiveNavBarStyle.prefValue）。
+  // String（默认 '' = AdaptiveNavBarStyle.defaultStyle，2026-10-16 起 pager）：
+  // 手机底栏形态 flat / pager（AdaptiveNavBarStyle.prefValue）。
   'nav_bar_style',
   // String：宽屏主导航 rail 手动展开 / 收起（'' 跟随窗口尺寸 / expanded /
   // collapsed）。描述本机窗口布局，不进 Profile 快照。
@@ -462,6 +462,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'updates_notify_manga_extension',
   'updates_notify_video_episode',
   'updates_system_notifications',
+  // 安装统计（updates/usage_heartbeat.dart），三个都是设备本地：开关（bool，默认 true）、
+  // 本机安装 id（UUID v4）、上次心跳成功时刻（int 毫秒）。
+  'usage_stats_enabled',
+  'usage_stats_install_id',
+  'usage_stats_last_ping_at',
   // String（`VideoSeriesFilter.name`，默认 `standalone`）：「全部视频」系列归属
   // 筛选的上次选择（BUG-2835，用户拍板默认只看散片、并记住选择）。
   'video_all_series_filter',

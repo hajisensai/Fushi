@@ -504,7 +504,7 @@ SettingsDestination buildAppearanceDestination() {
                     settingsContext.appModel
                         .setNavBarStyle(value)
                         .then((_) => settingsContext.refresh()),
-            defaultValue: AdaptiveNavBarStyle.flat,
+            defaultValue: AdaptiveNavBarStyle.defaultStyle,
           ),
           // 「启动页」(id 'appearance.startup_default_dictionary_tab'，前身是开关
           // 「启动时打开查词」) 在「系统 · 通用」分区（它管的是启动落地页/导航行为，

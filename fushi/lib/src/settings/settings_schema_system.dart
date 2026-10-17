@@ -28,6 +28,7 @@ import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/app_update_cli.dart'
     show checkAppUpdateForCli;
 import 'package:fushi/src/updates/update_feed_service.dart';
+import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
@@ -251,6 +252,20 @@ SettingsDestination buildSystemDestination() {
                 settingsContext.appModel.updateAutoInstall,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setUpdateAutoInstall(value);
+              settingsContext.refresh();
+            },
+          ),
+          // 安装统计心跳（updates/usage_heartbeat.dart）：iOS 不发，开关也不出现。
+          SettingsSwitchItem(
+            id: 'system.usage_stats_enabled',
+            title: t.usage_stats_enabled,
+            subtitle: t.usage_stats_enabled_hint,
+            icon: Icons.query_stats_outlined,
+            visible: (_) => platformSendsUsageHeartbeat(),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.usageStatsEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setUsageStatsEnabled(value);
               settingsContext.refresh();
             },
           ),

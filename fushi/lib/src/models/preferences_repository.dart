@@ -1538,8 +1538,9 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 手机底栏形态（[AdaptiveNavBarStyle]）：平铺 / 分页滑动。默认平铺（放不下
-  /// 才收进「更多」）。
+  /// 手机底栏形态（[AdaptiveNavBarStyle]）：平铺 / 分页滑动。没写过时取
+  /// [AdaptiveNavBarStyle.defaultStyle]（2026-10-16 起为分页滑动）；只在用户
+  /// 显式选择时落库，所以「没选过」与「选了平铺」可区分。
   AdaptiveNavBarStyle get navBarStyle => AdaptiveNavBarStyle.fromPref(
     getPref('nav_bar_style', defaultValue: '') as String,
   );
@@ -2139,6 +2140,38 @@ class PreferencesRepository extends ChangeNotifier
     final String created = generateVideoDownloadInstallationId();
     await setPref('video_download_embedded_installation_id', created);
     return created;
+  }
+
+  /// 安装统计（`updates/usage_heartbeat.dart`）：是否每天发一次心跳。关掉后反馈也不再
+  /// 附带安装 id。设备本地（[SyncRepository.deviceLocalPrefKeys]）：同意只对这台设备成立。
+  bool get usageStatsEnabled =>
+      getPref('usage_stats_enabled', defaultValue: true) as bool;
+
+  Future<void> setUsageStatsEnabled(bool value) async {
+    await setPref('usage_stats_enabled', value);
+    notifyListeners();
+  }
+
+  /// 安装统计的本机安装 id（随机 UUID v4，与下载器安装身份同一个生成器，但各自独立）。
+  /// 第一次读取时生成并持久化。设备本地：不进备份 / 同步 / Profile 快照，恢复备份到另一台
+  /// 设备不会克隆它（两台设备被算成一个安装）。
+  Future<String> ensureUsageStatsInstallId() async {
+    final String existing = getPref(
+      'usage_stats_install_id',
+      defaultValue: '',
+    ) as String;
+    if (existing.trim().isNotEmpty) return existing.trim();
+    final String created = generateVideoDownloadInstallationId();
+    await setPref('usage_stats_install_id', created);
+    return created;
+  }
+
+  /// 上次心跳成功的时刻（毫秒；0 = 从没成功过）。设备本地。
+  int get usageStatsLastPingAt =>
+      getPref('usage_stats_last_ping_at', defaultValue: 0) as int;
+
+  Future<void> setUsageStatsLastPingAt(int at) async {
+    await setPref('usage_stats_last_ping_at', at);
   }
 
   /// 是否已展示过「上传/做种」首用提示（默认 false = 未展示）。首次下载时弹

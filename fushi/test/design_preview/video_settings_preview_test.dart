@@ -15,18 +15,22 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart' show FontLoader;
+import 'package:flutter/services.dart'
+    show FontLoader, MethodCall, MethodChannel;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
+import 'package:fushi/src/media/video/video_shader_manager.dart'
+    show mpvShaderDirectory;
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
 import 'package:fushi/src/media/video/video_side_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_sync_row.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show readerSideSheetWidth;
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/settings/settings_destination.dart' show VideoGroup;
 import 'package:fushi/src/settings/settings_kit.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -77,10 +81,27 @@ void main() {
     LocaleSettings.setLocale(AppLocale.zhCn);
     await _loadFonts();
     await loadFushiIconFonts();
+    // 「画质增强」页读着色器目录、「画面」页读数据根：把 path_provider 指到临时目录，
+    // 并放两份 Anime4K 着色器，让「已安装」分组与反馈截图同形。
+    final Directory docs = Directory.systemTemp.createTempSync(
+      'fushi_video_settings_preview',
+    );
+    TestWidgetsFlutterBinding.ensureInitialized().defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall call) async => docs.path,
+        );
+    final Directory shaders = await mpvShaderDirectory();
+    for (final String name in <String>[
+      'Anime4K_Clamp_Highlights.glsl',
+      'Anime4K_Restore_CNN_S.glsl',
+    ]) {
+      File('${shaders.path}/$name').writeAsStringSync('//!HOOK MAIN');
+    }
   });
 
   for (final _Form form in _forms) {
-    for (final String category in <String>['subtitle', 'playback']) {
+    for (final String category in <String>['subtitle', 'playback', 'shaders']) {
       testWidgets('${form.name} $category', (WidgetTester tester) async {
         final VideoSheetHarness harness =
             await tester.runAsync(VideoSheetHarness.create)
@@ -100,6 +121,48 @@ void main() {
         );
       });
     }
+  }
+
+  // 逐页整页图（反馈 FxUMLvIqM1：各分类页分组标题 / 卡片分隔是否统一）：
+  // 手机横屏宽度、拉高视口让整页内容一次画全，深色（与反馈截图同）。
+  for (final String category in <String>[
+    'playback',
+    'audio',
+    'subtitle',
+    'shaders',
+    'mpv',
+    'danmaku',
+    'controls',
+  ]) {
+    testWidgets('full page $category', (WidgetTester tester) async {
+      final VideoSheetHarness harness =
+          await tester.runAsync(VideoSheetHarness.create) as VideoSheetHarness;
+      addTearDown(() => tester.runAsync(harness.dispose));
+      const _Form form = _Form(
+        'full_page',
+        Size(853, 2600),
+        TargetPlatform.android,
+      );
+      await _capture(
+        tester,
+        File('${out.path}/${_phase}_full_page_$category.png'),
+        form: form,
+        brightness: Brightness.dark,
+        dpr: 1,
+        child: _PlayerScene(
+          form: form,
+          panel: Builder(
+            builder: (BuildContext context) => _settingsPanel(
+              context,
+              harness,
+              form,
+              category,
+              groups: <VideoGroup>[VideoGroup.values.byName(category)],
+            ),
+          ),
+        ),
+      );
+    });
   }
 
   if (_phase != 'before') {
@@ -173,8 +236,9 @@ Widget _settingsPanel(
   BuildContext context,
   VideoSheetHarness harness,
   _Form form,
-  String category,
-) {
+  String category, {
+  List<VideoGroup> groups = VideoQuickSettingsSheet.settingsGroups,
+}) {
   final VideoQuickSettingsHost host = buildTestVideoHost(
     isTouchControls: form.touch,
     onAutoAlign: () async => null,
@@ -189,6 +253,7 @@ Widget _settingsPanel(
             ref: ref,
             host: host,
             initialCategory: category,
+            groups: groups,
           ),
     ),
   );

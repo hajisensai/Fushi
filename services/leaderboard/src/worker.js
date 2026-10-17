@@ -62,9 +62,12 @@ import { listBlocks, listFriends, matchSocialWrite } from './social.js';
 import { isPagePath, renderPage } from './pages.js';
 import { isFeedbackPath, purgeFeedbackAttachments, purgeFeedbackVideos, routeFeedback } from './feedback.js';
 import { isDevConsolePath, purgeDevSessions, routeDevConsole } from './devconsole.js';
+import { purgeInstallStats, recordPing } from './installs.js';
 
 const HOUR = 3600 * 1000;
 const JSON_BODY_MAX = 16 * 1024;
+/** 心跳体很小（installId + 版本 + 平台 + 通道）。 */
+const PING_BODY_MAX = 1024;
 /** 小写操作（资料 / 好友 / 屏蔽 / 举报）按估算行数扣全局写入预算（含索引与防重放、限流记录）。 */
 const SMALL_WRITE_ROWS = 8;
 /** 一次封面投票的估算写入行数（投票行 + 两个候选计数 + 物化 + 索引 + 防重放 / 限流记录）。 */
@@ -169,6 +172,14 @@ async function route(request, env, now, ctx) {
     const bytes = method === 'POST' ? await readBodyBytes(request, JSON_BODY_MAX) : new Uint8Array();
     const body = bytes.length ? parseJsonBytes(bytes) : {};
     return handleAdmin(env, request, path, body, now);
+  }
+
+  // ---- 安装统计心跳（installs.js）：匿名、不签名；按 IP 过 AUTH_LIMITER，全局再由 'ping' 日预算兜底 ----
+  if (method === 'POST' && path === '/v1/ping') {
+    await bindingLimit(env.AUTH_LIMITER, request);
+    const bytes = await readBodyBytes(request, PING_BODY_MAX);
+    await recordPing(env, parseJsonBytes(bytes), now);
+    return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
   }
 
   // ---- 反馈、开发者处理与 CI 回填：凭据各不相同（ticket / 签名 / Bearer），一律不进边缘缓存 ----
@@ -316,6 +327,7 @@ export default {
     await purgeDevSessions(env, now);
     await purgeFeedbackAttachments(env, now);
     await purgeFeedbackVideos(env, now);
+    await purgeInstallStats(env, now);
   },
 };
 
