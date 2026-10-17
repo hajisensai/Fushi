@@ -47,6 +47,14 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     _remoteBookClient = client;
     if (client == null) return null;
     try {
+      // 「从所有设备删除」过的书（BUG-3502）：墓碑送达 host 前 host 清单里还有它，
+      // 本地行一删去重就命不中，刚删的书会以云端占位卡回到书架上。**先于取清单读**
+      // （见 loadPendingRemoteDeletionKeys）。
+      final Set<String> deletedBookKeys = await loadPendingRemoteDeletionKeys(
+        appModel.database,
+        SyncTombstoneKind.book,
+        remoteLibrarySourceId: client.remoteLibrarySourceId,
+      );
       // BUG-1180：经共享缓存取清单——切回书架 tab（[_onShellTabActivated]）不再必然
       // 打一轮网络，TTL 内直接复用；首页 dashboard 刚拉过的同一份列表也在这里命中。
       // 缓存只包住「问对端要清单」这一步，下面的本地库查询与去重仍每次照跑，所以本地
@@ -129,10 +137,6 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       final String? sourceHost = hidden.isEmpty
           ? null
           : await remoteBookSourceHost(appModel.database, client);
-      // 「从所有设备删除」过的书：墓碑推给 host 前 / 远端清单缓存过期前，host 清单里
-      // 还有它，本地行一删去重就命不中，刚删的书会以云端占位卡回到书架上。
-      final Map<String, int> deletedBooks = await appModel.database
-          .getSyncDeletionDeletedAtByKey(SyncTombstoneKind.book.dbValue);
       return _RemoteBookState(
         books: dedupeRemoteBooks(
           remote: filterOutLocallyDeletedRemoteBooks(
@@ -146,7 +150,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
                 ))
                   book,
             ],
-            deletedAtByKey: deletedBooks,
+            deletedKeys: deletedBookKeys,
             keyOf: sanitizeTtuFilename,
           ),
           localBookKeys: localKeys,

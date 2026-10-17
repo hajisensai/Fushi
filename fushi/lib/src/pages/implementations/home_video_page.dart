@@ -126,6 +126,7 @@ import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/interconnect_video_resume_store.dart';
 import 'package:fushi/src/sync/cloud_remote_video_client.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/sync/remote_deletion_filter.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -1607,6 +1608,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 槽 = 来源身份 + 域（BUG-1202）。上面那行 `?? ` 让本方法**故意**不知道拿到的
       // 是互联还是云盘，所以来源身份只能由 source 自己申报；靠调用点分辨来源、或靠
       // 「换后端时记得失效」都治不了串味（换云盘后端根本不经过互联的失效信号）。
+      //
+      // 「从所有设备删除」过的视频（BUG-3502 同形缺口）：墓碑送达 host 前 host 清单里
+      // 还有它，本地行一删去重就命不中，刚删的视频以远端占位卡复活。**先于取清单读**
+      // （见 loadPendingRemoteDeletionKeys）。
+      final Set<String> deletedVideoKeys = await _pendingRemoteVideoDeletions(
+        source,
+      );
       final List<RemoteVideoInfo>? videos = await _readRemoteVideoList(
         source: source,
         forceRefresh: forceRefresh,
@@ -1633,7 +1641,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           .map((VideoBookRow r) => r.bookUid)
           .toSet();
       final List<RemoteVideoInfo> remoteOnly = dedupeRemoteVideos(
-        remote: videos,
+        remote: filterOutLocallyDeletedRemoteVideos(
+          remote: videos,
+          deletedKeys: deletedVideoKeys,
+        ),
         localBookUids: localUids,
       );
       // BUG-2714：清单到手才知道哪些中断的下载还能接（不挡列表渲染）。
@@ -1689,6 +1700,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       fetch: source.listRemoteVideos,
     );
   }
+
+  /// 本端视频删除墓碑里对 [source] 仍有效的键（远端占位卡据此剔除）。
+  Future<Set<String>> _pendingRemoteVideoDeletions(RemoteVideoSource source) =>
+      loadPendingRemoteDeletionKeys(
+        appModelNoUpdate.database,
+        SyncTombstoneKind.video,
+        remoteLibrarySourceId: source.remoteLibrarySourceId,
+      );
 
   /// 远端清单里「本机同一合集已有同一集」的条目 id（BUG-2978）。判据是共享的
   /// [remoteEpisodesMirroredLocally]——合集归属取库页折叠用的同一张主合集表。
@@ -8496,9 +8515,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final RemoteVideoSource? source = _remoteVideoSource;
     if (source == null || !_shouldLoadRemoteVideos) return null;
     return CollectionRemoteContext(
-      loadRemoteVideos: () async =>
-          await _readRemoteVideoList(source: source, forceRefresh: false) ??
-          const <RemoteVideoInfo>[],
+      // 与库页同一道删除墓碑过滤：先读墓碑、再取清单（顺序见
+      // loadPendingRemoteDeletionKeys），详情页不出已「从所有设备删除」的集。
+      loadRemoteVideos: () async {
+        final Set<String> deleted = await _pendingRemoteVideoDeletions(source);
+        return filterOutLocallyDeletedRemoteVideos(
+          remote:
+              await _readRemoteVideoList(source: source, forceRefresh: false) ??
+              const <RemoteVideoInfo>[],
+          deletedKeys: deleted,
+        );
+      },
       openEpisode:
           (RemoteVideoInfo episode, List<RemoteVideoInfo> members, int index) =>
               unawaited(
