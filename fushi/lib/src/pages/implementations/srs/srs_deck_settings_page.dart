@@ -1,4 +1,4 @@
-/// 牌组设置：名称、每日上限、目标记忆率、学习 / 重学步长；「高级」默认收起：排程算法、
+/// 牌组设置：名称、每日上限、目标记忆率、学习 / 重学步长、复习音频（自动播放 / 重播含问题）；「高级」默认收起：排程算法、
 /// 自动优化（上次优化时间与 log loss、「立即优化」「恢复默认参数」）、最大间隔、参数继承与
 /// 「立即重排整组」。
 ///
@@ -91,6 +91,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   SrsAlgorithm _algorithm = srsDefaultAlgorithm;
   bool _autoOptimize = true;
   bool _ownParams = true;
+  bool _autoplayAudio = true;
+  bool _replayQuestionAudio = true;
 
   String? _learnError;
   String? _relearnError;
@@ -145,6 +147,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _algorithm = deck.localAlgorithm;
         _autoOptimize = deck.autoOptimize;
         _ownParams = deck.ownParams;
+        _autoplayAudio = deck.autoplayAudio;
+        _replayQuestionAudio = deck.replayQuestionAudio;
         _loading = false;
       });
     } catch (e, stack) {
@@ -215,6 +219,13 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       }
       if (_autoOptimize != deck.autoOptimize) {
         out[SrsFieldKeys.deckAutoOptimize] = _autoOptimize;
+      }
+      // 音频两项与记忆率同一条继承（Anki 里它们同属一个预设）。
+      if (_autoplayAudio != deck.autoplayAudio) {
+        out[SrsFieldKeys.deckAutoplay] = _autoplayAudio;
+      }
+      if (_replayQuestionAudio != deck.replayQuestionAudio) {
+        out[SrsFieldKeys.deckReplayQuestion] = _replayQuestionAudio;
       }
     }
     return out;
@@ -555,6 +566,34 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
             style: context.fushiType.bodySmall,
           ),
           _conflictNote(context, SrsFieldKeys.deckRetention),
+        ] else
+          Text(
+            t.srs_settings_inherited_from(name: _owner?.name ?? ''),
+            style: context.fushiType.bodyMedium,
+          ),
+      ]),
+      _group(context, <Widget?>[
+        Text(
+          t.srs_settings_audio,
+          style: context.fushiType.titleSmallEmphasized,
+        ),
+        if (ownsParams) ...<Widget?>[
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('srs-settings-autoplay-audio'),
+            title: t.srs_settings_autoplay_audio,
+            subtitle: t.srs_settings_autoplay_audio_hint,
+            value: _autoplayAudio,
+            onChanged: (bool v) => setState(() => _autoplayAudio = v),
+          ),
+          _conflictNote(context, SrsFieldKeys.deckAutoplay),
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('srs-settings-replay-question-audio'),
+            title: t.srs_settings_replay_question_audio,
+            subtitle: t.srs_settings_replay_question_audio_hint,
+            value: _replayQuestionAudio,
+            onChanged: (bool v) => setState(() => _replayQuestionAudio = v),
+          ),
+          _conflictNote(context, SrsFieldKeys.deckReplayQuestion),
         ] else
           Text(
             t.srs_settings_inherited_from(name: _owner?.name ?? ''),

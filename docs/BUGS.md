@@ -54,6 +54,7 @@
 | [BUG-3453](bugs/BUG-3453-reader-cue-gap-glues-last-word.md) | ✅ | ✅ | reader-cue-gap-glues-last-word |
 | [BUG-3453](bugs/BUG-3453-seekbar-click-toggles-pause.md) | ✅ | ✅ | seekbar-click-toggles-pause |
 | [BUG-3454](bugs/BUG-3454-hidden-term-dict-still-in-lookup-engine.md) | ✅ | ✅ | hidden-term-dict-still-in-lookup-engine |
+| [BUG-3493](bugs/BUG-3493-srs-deck-list-names-hidden.md) | ✅ | ✅ | 复习牌组列表：子牌组名字被行首图标与整格缩进挤没、空默认牌组删不掉又常驻 |
 | [BUG-3452](bugs/BUG-3452-peer-book-download-followups.md) | ✅ | ✅ | 对端书下载后多出未下载卡、合集册数翻倍、跳回顶部、最近阅读排序错位 |
 | [BUG-3451](bugs/BUG-3451-video-bar-menu-hides-controls.md) | ✅ | ✅ | 视频控制条「⋯」只有一项仍弹菜单、点开菜单时控制条消失 |
 | [BUG-3450](bugs/BUG-3450-browser-ext-subtitle-positioning.md) | ✅ | ✅ | 浏览器扩展字幕底板在全屏下与屏幕同高、缩放后整块上移飞出屏幕 |

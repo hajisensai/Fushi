@@ -216,6 +216,22 @@ class DesktopAudioPlayback {
   static Future<bool> playFile(String path, {double volume = 1.0}) =>
       _play(() => _player.setFilePath(path), 'playFile', volume);
 
+  /// 播一个本地文件并等它结束（复习卡面按顺序自动播放多段音频用）。
+  ///
+  /// 返回 true = 自然播完；false = 没能开播，或中途被别的播放 / [stop] 打断
+  /// （共用播放器上一换内容就先 stop，状态回到 idle）。调用方据此决定还要不要
+  /// 接着播下一段：被打断说明用户在别处点了播放，不该再抢回来。
+  static Future<bool> playFileToEnd(String path, {double volume = 1.0}) async {
+    if (!await playFile(path, volume: volume)) return false;
+    final PlayerState end = await _player.playerStateStream.firstWhere(
+      (PlayerState s) =>
+          s.processingState == ProcessingState.completed ||
+          s.processingState == ProcessingState.idle ||
+          !s.playing,
+    );
+    return end.processingState == ProcessingState.completed;
+  }
+
   static Future<bool> _play(
     Future<Duration?> Function() load,
     String tag,
