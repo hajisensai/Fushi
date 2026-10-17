@@ -37,5 +37,7 @@ grep -q 'openssl_load_android_system_cas' "${DEST}/libavformat/tls_openssl.c" ||
   { echo "PATCH MISSING: Android system CA loader" >&2; exit 4; }
 grep -q 'av_log_fushi_set_primary_callback' "${DEST}/libavutil/log.c" ||
   { echo "PATCH MISSING: primary/secondary log callback" >&2; exit 4; }
+grep -q 'iOS GLES has no 10-bit' "${DEST}/libavcodec/videotoolbox.c" ||
+  { echo "PATCH MISSING: iOS 10-bit VideoToolbox -> BGRA" >&2; exit 4; }
 
 echo "prepare_ffmpeg_src: ${FFMPEG_TAG} (${FFMPEG_COMMIT}) + $(ls "${HERE}"/patches/ffmpeg/*.patch | wc -l) patches -> ${DEST}"

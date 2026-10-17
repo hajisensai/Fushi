@@ -44,6 +44,18 @@ def collect(roots, prefixes, system):
     return sorted(found.values(), key=lambda p: p.name.lower())
 
 
+def patch_subject(patch):
+    """The commit subject of a `git format-patch` file (RFC 2822 folding undone)."""
+    lines = patch.read_text(encoding="utf-8").splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("Subject: "))
+    subject = lines[start][len("Subject: "):]
+    for line in lines[start + 1:]:
+        if not line.startswith((" ", "\t")):
+            break
+        subject += " " + line.strip()
+    return subject.split("] ", 1)[-1] if subject.startswith("[PATCH") else subject
+
+
 def unified_ffmpeg_provenance(closure, ffmpeg_prefix, ffmpeg_source, output):
     """Record the unified FFmpeg build (not pacman-owned) and ship its license."""
     recipe_dir = Path(__file__).resolve().parents[1] / "ffmpeg-unified"
@@ -51,6 +63,16 @@ def unified_ffmpeg_provenance(closure, ffmpeg_prefix, ffmpeg_source, output):
                   if line and not line.startswith("#") and "=" in line)
     commit = subprocess.check_output(["git", "-C", str(ffmpeg_source), "rev-parse", "HEAD"], text=True).strip()
     patches = sorted((recipe_dir / "patches/ffmpeg").glob("*.patch"))
+    # The build must carry exactly the recipe's patches (prepare_ffmpeg_src.sh
+    # commits one per patch on top of FFMPEG_COMMIT). A tree prepared before a
+    # patch was added would otherwise be shipped under the new recipe's name.
+    applied = subprocess.check_output(
+        ["git", "-C", str(ffmpeg_source), "log", "--reverse", "--format=%s",
+         f"{recipe['FFMPEG_COMMIT']}..HEAD"], text=True).splitlines()
+    expected = [patch_subject(p) for p in patches]
+    if applied != expected:
+        raise RuntimeError(f"Unified FFmpeg source carries {applied}, recipe expects {expected}; "
+                           "rebuild it with tool/ffmpeg-unified/windows/build_ffmpeg_msys2.sh")
     license_dir = output / "licenses" / "ffmpeg-unified"
     license_dir.mkdir(parents=True, exist_ok=True)
     for name in ("COPYING.GPLv3", "COPYING.LGPLv3", "LICENSE.md"):

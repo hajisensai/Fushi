@@ -38,13 +38,16 @@ if [ -e "${WORK}" ]; then
   exit 2
 fi
 mkdir -p "${WORK}"
-# Mixed-style path (C:/...): it is baked into the .pc files, which meson and
-# the native gcc read directly, without MSYS2's POSIX path translation.
-WORK="$(cygpath -m "$(cd "${WORK}" && pwd)")"
+WORK="$(cd "${WORK}" && pwd)"
 SRC="${WORK}/src"
 DEPS="${WORK}/deps"
 PREFIX="${WORK}/prefix"
 BUILD="${WORK}/build"
+# The install prefix is baked into the .pc files, which meson and the native
+# gcc read without MSYS2's POSIX path translation, so it is passed mixed-style
+# (C:/...). Everything else stays POSIX: PKG_CONFIG_PATH is ':'-separated and
+# MSYS2 only converts POSIX path lists.
+PREFIX_NATIVE="$(cygpath -m "${PREFIX}")"
 
 bash "${ROOT}/prepare_ffmpeg_src.sh" "${SRC}"
 
@@ -59,7 +62,7 @@ mkdir -p "${DEPS}/include/AMF"
 cp -r "${WORK}/amf/amf/public/include/." "${DEPS}/include/AMF/"
 
 config=(
-  --prefix="${PREFIX}"
+  --prefix="${PREFIX_NATIVE}"
   --target-os=mingw32
   --arch=x86_64
   --cc=gcc
@@ -125,7 +128,7 @@ config=(
   --enable-ffnvcodec
   --enable-nvdec
   --enable-cuvid
-  --extra-cflags="-I${DEPS}/include"
+  --extra-cflags="-I$(cygpath -m "${DEPS}")/include"
   --logfile=config.log
 )
 
