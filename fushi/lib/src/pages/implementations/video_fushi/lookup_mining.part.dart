@@ -415,6 +415,158 @@ extension _VideoLookupMining on _VideoFushiPageState {
     return result;
   }
 
+  /// BUG-3492：卡还在后台写入时的覆盖请求（[onQueueOverwrite]）。
+  ///
+  /// 覆盖要用的输入（区间 / 句子 / 覆盖项 / 查词画面）在这里**同步冻结**——视频车道的
+  /// 「高级制卡」对话框以 `releaseWhenPayloadConsumed: true` 回点，宿主一返回对话框就
+  /// 关了，锁帧与草稿随之失效。真正的覆盖等那次后台写入落地后再跑
+  /// （[_settleQueuedOverwrite]），同一个词只保留最后一次请求。
+  Future<QueuedOverwriteReply> _onQueueOverwriteImpl(
+    Map<String, String> fields,
+  ) async {
+    final VideoPlayerController? controller = _controller;
+    final String key = mineEntryKeyOf(
+      fields['expression'] ?? '',
+      fields['reading'] ?? '',
+    );
+    if (controller == null ||
+        !_discExtractionAllowed(controller) ||
+        !_pendingOverwrites.isAddPending(key)) {
+      // 不是这条后台写入路径上的卡（看完再制卡的暂存、或已经落地 / 失败）：不收，
+      // 弹窗说「还没写进 Anki」。
+      return const QueuedOverwriteReply();
+    }
+    final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
+      fields,
+    );
+    final VideoMiningRange range = applyVideoMiningOverrides(
+      _resolveVideoMiningRange(controller),
+      overrides,
+    );
+    final bool omitCover = overrides?.omitImage ?? false;
+    final Future<Uint8List?>? frame = omitCover
+        ? null
+        : _advancedMiningSessionFor(controller)?.lookupFrame ??
+              controller.screenshot().then(
+                (Uint8List? bytes) => bytes,
+                onError: (Object error, StackTrace stack) {
+                  ErrorLogService.instance.log(
+                    'queueOverwrite.snapshotCurrentFrame',
+                    error,
+                    stack,
+                  );
+                  return null;
+                },
+              );
+    _pendingOverwrites.queue(
+      key,
+      _QueuedVideoOverwrite(
+        fields: fields,
+        range: range,
+        overrides: overrides,
+        controller: controller,
+        episode: _currentEpisode,
+        frame: frame,
+        repo: ref.read(ankiRepositoryProvider),
+      ),
+    );
+    // 请求已冻结了草稿里的句子：与后台制卡收下时同口径当场清空，下一次查词从空草稿
+    // 重新累积。
+    _miningDraft.clear();
+    return QueuedOverwriteReply(
+      accepted: true,
+      message: t.popup_mine_overwrite_queued,
+    );
+  }
+
+  /// 后台写入落地（成功或失败）：结算这个词排队的覆盖请求。
+  Future<void> _settleQueuedOverwrite(
+    String key,
+    Map<String, String> fields,
+    MinePopupResult landed, {
+    String? failureReason,
+  }) async {
+    try {
+      await _pendingOverwrites.settle(
+        key,
+        landed: landed.ankiConnect,
+        noteId: landed.noteId,
+        findNoteId: (_QueuedVideoOverwrite request) async {
+          // AnkiDroid 不回 note id：按词反查，取最新的那张（note id 即创建时刻）。
+          final List<MinedNoteRef> matches = await request.repo
+              .findMatchingNotes(
+                fields['expression'] ?? '',
+                fields['reading'] ?? '',
+              );
+          int? newest;
+          for (final MinedNoteRef match in matches) {
+            if (newest == null || match.noteId > newest) newest = match.noteId;
+          }
+          return newest;
+        },
+        overwrite: (int noteId, _QueuedVideoOverwrite request) =>
+            _runQueuedOverwrite(noteId, request),
+        onCancelled: (_QueuedVideoOverwrite _, PendingOverwriteCancel reason) {
+          if (!mounted) return;
+          // 写入失败：OSD 只有一条，后来的会顶掉 [_landVideoMine] 刚报的失败原因，
+          // 所以原因并进这一条一起说。
+          final String? why = failureReason;
+          _showOsd(
+            reason == PendingOverwriteCancel.addFailed &&
+                    why != null &&
+                    why.isNotEmpty
+                ? t.video_mine_overwrite_cancelled_reason(reason: why)
+                : t.video_mine_overwrite_cancelled,
+            severity: ToastSeverity.warning,
+          );
+        },
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('settleQueuedOverwrite', e, stack);
+    }
+  }
+
+  /// 后台写入没成时给用户看的原因（与 [_landVideoMine] 报的同一句）。
+  String _videoMineFailureReason(ImmersionMiningResult res) {
+    if (res.aborted) return res.abortReason ?? 'sentence audio export failed';
+    final Object? outcome = res.outcome;
+    if (outcome is! MineOutcome) return '';
+    return describeMineOutcome(outcome).message;
+  }
+
+  /// 执行一次排队的覆盖：用排队时冻结的输入，按 id 覆盖后台刚写下的那张笔记。结局
+  /// （「已覆盖」/ 失败原因）由 [_landVideoMine] 照常报 OSD。
+  Future<void> _runQueuedOverwrite(
+    int noteId,
+    _QueuedVideoOverwrite request,
+  ) async {
+    // 换集 / 换播放器后，排队时的区间对不上现在的媒体：不覆盖，说一声。页面已关时
+    // 没有可抽取的播放器，同样作罢。
+    if (!mounted ||
+        !identical(_controller, request.controller) ||
+        _currentEpisode != request.episode) {
+      if (mounted) {
+        _showOsd(
+          t.video_mine_overwrite_cancelled_episode,
+          severity: ToastSeverity.warning,
+        );
+      }
+      return;
+    }
+    await _mineVideoCard(
+      fields: request.fields,
+      clipStartMs: request.range.clipStartMs,
+      clipEndMs: request.range.clipEndMs,
+      stillFrameAtMs: request.range.stillFrameAtMs,
+      sentence: request.range.sentence,
+      cueSentence: request.range.cueSentence,
+      overrides: request.overrides,
+      updateNoteId: noteId,
+      frozenCurrentFrame: request.frame,
+      detachedFromDialog: true,
+    );
+  }
+
   /// 制卡 `documentTitle`（渲染到 Anki `{document-title}`）。播放列表（[_isPlaylist]）
   /// 且系列名（[_playlistTitle]）非空时拼「系列名 - 剧集名」；单视频 / 远端退化为剧集名
   /// （[_title]）。纯拼接逻辑下沉到顶层 [composeVideoMiningDocumentTitle] 便于单测。
@@ -453,6 +605,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
     bool localOnly = false,
     void Function(String code)? onFailure,
     Future<void> Function()? writeFieldsMedia,
+    Future<Uint8List?>? frozenCurrentFrame,
+    bool detachedFromDialog = false,
   }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null || !_discExtractionAllowed(controller)) {
@@ -561,8 +715,11 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final bool omitAudio = overrides?.omitAudio ?? false;
     // 本页的高级制卡对话框会话（若有）：对话框打开那一刻就锁住了查词时的画面，此刻
     // 播放头可能已被试听挪走——「查词时画面」与各模式的当前帧兜底都用锁住的那一帧。
-    final _VideoAdvancedMiningSession? advancedSession =
-        _advancedMiningSessionFor(controller);
+    // BUG-3492：排队的覆盖（[detachedFromDialog]）执行时，当初那个对话框早关了——
+    // 此刻开着的对话框属于另一次查词，不能借它的锁帧和副本。
+    final _VideoAdvancedMiningSession? advancedSession = detachedFromDialog
+        ? null
+        : _advancedMiningSessionFor(controller);
     final MiningAnimatedFormat animatedFormat =
         appModel.videoMiningAnimatedFormat;
     final MiningStillFormat stillFormat = appModel.videoMiningStillFormat;
@@ -577,7 +734,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final Future<Uint8List?> currentFrameSnapshot =
         forceSubtitleStart || omitCover
         ? Future<Uint8List?>.value(null)
-        : advancedSession?.lookupFrame ??
+        : frozenCurrentFrame ??
+              advancedSession?.lookupFrame ??
               controller.screenshot().catchError((
                 Object error,
                 StackTrace stack,
@@ -843,18 +1001,57 @@ extension _VideoLookupMining on _VideoFushiPageState {
       onFailure: onFailure,
     );
     if (onlineMode == VideoOnlineMiningMode.wait) return land(await job);
+    // BUG-3492：后台**写入 Anki** 的这张卡（不是暂存、不是回看改卡）在落地前可以被排队
+    // 覆盖。登记在途，落地时（成功或失败）结算排队的覆盖请求。
+    final String? overwriteKey =
+        stageNote == null && reviewSession == null && updateNoteId == null
+        ? mineEntryKeyOf(fields['expression'] ?? '', fields['reading'] ?? '')
+        : null;
+    if (overwriteKey != null) _pendingOverwrites.addStarted(overwriteKey);
     // 后台 / 看完再制卡：弹窗不陪着等。结局（成功 / 暂存 / 失败）在落地时由 OSD 报告。
     _trackBackgroundMine(
-      job.then((ImmersionMiningResult res) {
-        final MinePopupResult landed = land(res);
-        // BUG-3492：弹窗早就拿到了「已加入」，卡真正进 Anki 是现在。通知正在显示这个
-        // 词的弹窗重问一次 Anki，把「已加入」换成真 ✓——之后同一个弹窗里点 ✓ / 从高级
-        // 制卡回点，才能走覆盖，而不是要关掉弹窗重新查词。
-        if (landed.ankiConnect) {
-          MinedStateSignal.instance.notifyWord(fields['expression'] ?? '');
-        }
-        onBackgroundLanded?.call(landed);
-      }),
+      job
+          .then<MinePopupResult>(
+            (ImmersionMiningResult res) {
+              final MinePopupResult landed = land(res);
+              if (overwriteKey != null) {
+                unawaited(
+                  _settleQueuedOverwrite(
+                    overwriteKey,
+                    fields,
+                    landed,
+                    failureReason: landed.ankiConnect
+                        ? null
+                        : _videoMineFailureReason(res),
+                  ),
+                );
+              }
+              return landed;
+            },
+            onError: (Object error, StackTrace stack) {
+              // 写入抛错同样要结算：排队的覆盖取消并说明，错误照旧交给后台跟踪报 OSD。
+              if (overwriteKey != null) {
+                unawaited(
+                  _settleQueuedOverwrite(
+                    overwriteKey,
+                    fields,
+                    const MinePopupResult(),
+                    failureReason: '$error',
+                  ),
+                );
+              }
+              Error.throwWithStackTrace(error, stack);
+            },
+          )
+          .then((MinePopupResult landed) {
+            // BUG-3492：弹窗早就拿到了「已加入」，卡真正进 Anki 是现在。通知正在显示这个
+            // 词的弹窗重问一次 Anki，把「已加入」换成真 ✓——之后同一个弹窗里点 ✓ / 从高级
+            // 制卡回点，才能走覆盖，而不是要关掉弹窗重新查词。
+            if (landed.ankiConnect) {
+              MinedStateSignal.instance.notifyWord(fields['expression'] ?? '');
+            }
+            onBackgroundLanded?.call(landed);
+          }),
     );
     return const MinePopupResult.queued();
   }
@@ -1041,4 +1238,34 @@ String? composeVideoMiningDocumentTitle({
     return playlistTitle;
   }
   return '$playlistTitle - $episodeTitle';
+}
+
+/// BUG-3492：一次排队的覆盖请求——排队那一刻冻结的全部输入。
+class _QueuedVideoOverwrite {
+  const _QueuedVideoOverwrite({
+    required this.fields,
+    required this.range,
+    required this.overrides,
+    required this.controller,
+    required this.episode,
+    required this.frame,
+    required this.repo,
+  });
+
+  /// 词典 payload（已并入「高级制卡」覆盖项）。
+  final Map<String, String> fields;
+
+  /// 排队时解析的句子与音频 / 画面区间（含草稿里的上下文句与覆盖项微调）。
+  final VideoMiningRange range;
+  final MiningRequestOverrides? overrides;
+
+  /// 排队时的播放器与集数：落地时变了就不覆盖。
+  final VideoPlayerController controller;
+  final int episode;
+
+  /// 排队时的查词画面（高级制卡锁帧或当时截图）；不要图片时 null。
+  final Future<Uint8List?>? frame;
+
+  /// 排队时的 Anki 仓库：落地时页面可能已经关了，不经 `ref` 读。
+  final BaseAnkiRepository repo;
 }
