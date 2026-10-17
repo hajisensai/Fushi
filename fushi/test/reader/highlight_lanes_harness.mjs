@@ -270,8 +270,12 @@ const CHECK = String.raw`(async () => {
       : box.left + parseFloat(bcs.paddingLeft) - document.body.scrollLeft;
     const over = document.createElement('span');
     over.style.whiteSpace = 'nowrap';
+    // Grow the run by its measured extent, not by an assumed 1em advance: without a CJK font
+    // (Linux CI) あ falls back to a narrower glyph and a 1.5-column count stays inside it.
     over.textContent = 'あ'.repeat(Math.ceil(1.5 * colW / em));
     root().querySelector('p').appendChild(over);
+    const extent = () => { const r = over.getBoundingClientRect(); return vertical ? r.height : r.width; };
+    for (let i = 0; i < 8 && extent() < 1.5 * colW; i++) over.textContent += over.textContent;
     const or = document.createRange(); or.selectNodeContents(over.firstChild);
     CSS.highlights.set('fushi-search', new Highlight(or));
     await frames();
