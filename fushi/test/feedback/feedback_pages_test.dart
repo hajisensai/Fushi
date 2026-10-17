@@ -127,6 +127,9 @@ class _Server {
   /// 非空时，处理台列表这一搜索词的请求回这个状态码。
   final Map<String, int> devListFailures = <String, int>{};
 
+  /// 提交正文前几次回 503（测「重试同一次提交带同一个幂等键」）。
+  int submitFailures = 0;
+
   /// fixfixfix0 挂着的修复：调试版 android 已发布（详情 / 进度 / 处理台同一份）。
   Map<String, dynamic> fix = <String, dynamic>{
     'sha': '0123456789abcdef0123456789abcdef01234567',
@@ -422,6 +425,10 @@ class _Server {
       });
     }
     if (path == '/v1/feedback') {
+      if (submitFailures > 0) {
+        submitFailures--;
+        return _json(<String, dynamic>{'error': 'unavailable'}, 503);
+      }
       final Object? reopenOf =
           (jsonDecode(r.body) as Map<String, dynamic>)['reopenOf'];
       if (reopenOf is Map && reopenOf['id'] == 'closedclo0') {
@@ -856,6 +863,66 @@ void main() {
       isNull,
     );
     expect(Directory('${root.path}/feedback/draft').existsSync(), isFalse);
+  });
+
+  // BUG-3489 审查：提交失败后再点一次是「重试同一次提交」，必须带同一个幂等键——正文其实
+  // 已经到了服务端（回执没收到）时，服务端据此回同一张回执，不会多出一条重复反馈。内容
+  // 改过就是新的一次提交，换新键。
+  testWidgets('提交页：失败后原样重试带同一个幂等键，改了内容换新键', (WidgetTester tester) async {
+    tallView(tester);
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    server.submitFailures = 2;
+    await tester.pumpWidget(wrap(b, f, const FeedbackCenterPage()));
+    await settleIo(tester, () => f.loaded);
+    await tester.tap(find.byKey(const ValueKey<String>('feedback-center-new')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    List<String?> keys() => <String?>[
+      for (final http.Request r in server.requests)
+        if (r.url.path == '/v1/feedback')
+          (jsonDecode(r.body) as Map<String, dynamic>)['submissionKey']
+              as String?,
+    ];
+    Future<void> submitAndWait(int expected) async {
+      await tester.tap(find.byKey(const ValueKey<String>('feedback-submit')));
+      await settleIo(tester, () => keys().length >= expected);
+      await settleIo(
+        tester,
+        () =>
+            find
+                .byKey(const ValueKey<String>('feedback-compose-error'))
+                .evaluate()
+                .isNotEmpty ||
+            f.byId('newnewnew0') != null,
+      );
+    }
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('feedback-title')),
+      '第一版标题',
+    );
+    await submitAndWait(1);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-compose-error')),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('feedback-title')),
+      '改过的标题',
+    );
+    await submitAndWait(2);
+    await submitAndWait(3);
+    expect(f.byId('newnewnew0'), isNotNull);
+
+    final List<String?> k = keys();
+    expect(k, hasLength(3));
+    for (final String? key in k) {
+      expect(key, matches(RegExp(r'^[A-Za-z0-9_-]{32}$')));
+    }
+    expect(k[1], isNot(k[0]), reason: '内容改了：新的一次提交，换新键');
+    expect(k[2], k[1], reason: '原样重试：同一次提交，同一个键');
   });
 
   testWidgets('BUG-3200 反馈人详情：截图凭本机 ticket 取回显示缩略图、可点开大图；日志列条目', (

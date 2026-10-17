@@ -10,6 +10,7 @@
 // 压完按表单此刻的内容自动发出；压缩失败则撤销这次提交，附件行给出原因与「重新压缩」。
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -112,6 +113,27 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
 
   /// 点了提交、视频还没压完：压完自动发出（提交按钮显示压缩进度）；压缩失败或点 × 撤销。
   bool _submitWaiting = false;
+
+  /// 提交幂等键与它对应的表单内容（BUG-3489 审查）：同样的内容再点一次提交 = 重试同一次
+  /// 提交，带同一个键——正文其实已经到了服务端（回执没收到 / 本机落盘失败）时拿回的是
+  /// 同一条反馈，不会多出一条重复反馈。内容改过就是一次新提交，换新键。
+  String? _submissionKey;
+  String? _submissionSignature;
+
+  /// 本次提交要带的幂等键：内容与上一次提交相同就沿用，否则换新。
+  String _submissionKeyFor(String title, String body, String contact) {
+    final String signature = jsonEncode(<Object?>[
+      _category.wire,
+      title,
+      body,
+      contact,
+      widget.reopenOf?.id,
+    ]);
+    final String? key = _submissionKey;
+    if (key != null && signature == _submissionSignature) return key;
+    _submissionSignature = signature;
+    return _submissionKey = newFeedbackSubmissionKey();
+  }
 
   /// 选了 1080p，但这段视频 1080p 装不进上限，本次改按 720p 压。
   bool _videoDowngraded = false;
@@ -624,19 +646,24 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       _submitWaiting = false;
       _stage = FeedbackSubmitStage.sending;
     });
+    final String title = _title.text.trim();
+    final String body = _body.text.trim();
+    final String contact = _contact.text.trim();
+    final String submissionKey = _submissionKeyFor(title, body, contact);
     try {
       final FeedbackSubmitResult result = await _service.submit(
         FeedbackDraft(
           category: _category,
-          title: _title.text.trim(),
-          body: _body.text.trim(),
-          contact: _contact.text.trim(),
+          title: title,
+          body: body,
+          contact: contact,
           includeLogs: _includeLogs,
           includeDeviceInfo: _includeDevice,
           linkAccount: _linkAccount,
           screenshots: List<Uint8List>.of(_shots),
           video: video,
           reopenOf: widget.reopenOf?.id,
+          submissionKey: submissionKey,
         ),
         stagedVideo: staged,
         onStage: (FeedbackSubmitStage s) {
