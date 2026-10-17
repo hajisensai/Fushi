@@ -874,7 +874,7 @@ Fushi injects `_controlsHeldByMenu` into both themes and drives it from
 
 Source-guard test: `fushi/test/pages/video_controls_menu_hold_guard_test.dart`.
 
-## BUG-3453: clicking the seek bar's upper band toggled play / pause
+## BUG-3498: clicking the seek bar's upper band toggled play / pause
 
 `lib/media_kit_video_controls/src/controls/material_desktop.dart`
 (`isInPlayPauseRegion` passed to `MaterialDesktopTapRouter`) and

@@ -1,4 +1,4 @@
-## BUG-3453 · seekbar-click-toggles-pause
+## BUG-3498 · seekbar-click-toggles-pause
 - **报告**：2026-10-16（用户：「点视频右下角进度条跳转的时候有时候会给我暂停，怪怪的」）
 - **真实性**：✅ 真 bug。桌面控制条进度条 `MaterialDesktopSeekBar` 用 `Listener` 收指针（`third_party/media_kit_video/lib/media_kit_video_controls/src/controls/material_desktop.dart` 的 `_buildSeekBarBody`），不进手势竞技场，外层 `MaterialDesktopTapRouter` 的 `GestureDetector` 照样赢下这次单击，只靠 `isInPlayPauseRegion`（同文件 `MaterialDesktopTapRouter(` 的 `isInPlayPauseRegion:` 闭包）的 y 阈值决定要不要 `playOrPause`。阈值是「底栏顶边 − 10px」，而进度条热区 36px 高、只被 `Transform.translate` 下压 16px，上缘在底栏顶边 − 20px：点进度条热区上半截那 10px 带时 Listener 照常 seek，点击层又判成「点画面」→ 切成暂停。点得偏下就没事，所以是「有时候」。
 - **[x] ① 已修复** — 新纯函数 `desktopControlsBottomStripHeight`（`widgets/desktop_tap_router.dart`）按进度条真实热区（`seekBarContainerHeight − seekBarBottomButtonBarOverlap`，无按钮行时不减下压）算排除带，取它与原「底栏 + 10px」的较大者；`material_desktop.dart` 的 `isInPlayPauseRegion` 改用它。补丁记在 `third_party/media_kit_video/PATCHES.md`。
