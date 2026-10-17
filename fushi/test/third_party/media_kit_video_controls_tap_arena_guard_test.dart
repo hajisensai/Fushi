@@ -42,7 +42,7 @@ void main() {
     // 中央手势栈的 GestureDetector 必须有 onTap: onTap。
     expect(src.contains('onTap: _handleSurfaceTap'), isTrue,
         reason: 'TODO-916：控制条 toggle 必须迁到竞技场裁决后的 onTap');
-    // BUG-3511：_handleSurfaceTap 只在按下落在控件区时续命，其余照常委托 onTap()。
+    // BUG-3517：_handleSurfaceTap 只在按下落在控件区时续命，其余照常委托 onTap()。
     final int surfaceTap = src.indexOf('void _handleSurfaceTap()');
     expect(surfaceTap, greaterThanOrEqualTo(0));
     final String surfaceTapBody =

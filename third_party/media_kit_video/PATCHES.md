@@ -893,7 +893,7 @@ bar, so its top 20px stuck out above the bar: a click in the upper 10px seeked
 *and* paused. The strip now covers the seek bar's whole hit area (the larger of
 that and the old `+ 10` padding).
 
-Superseded (BUG-3511): `desktopControlsBottomStripHeight` is gone;
+Superseded (BUG-3517): `desktopControlsBottomStripHeight` is gone;
 `isInPlayPauseRegion` now asks `VideoControlsChromeRegion.hitsRegion`, which
 covers the seek bar's real hit area by construction (see the marker section
 below). Tests: `fushi/test/pages/video_desktop_touch_tap_router_test.dart`

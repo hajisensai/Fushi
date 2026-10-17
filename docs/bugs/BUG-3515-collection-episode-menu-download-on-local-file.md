@@ -1,4 +1,4 @@
-## BUG-3511 · 合集详情集卡菜单对本机已有文件的集仍显示「下载本集」
+## BUG-3515 · 合集详情集卡菜单对本机已有文件的集仍显示「下载本集」
 - **报告**：2026-10-18（用户：本地作品《超かぐや姫!》第 1 集右键菜单出现「下载本集」，原本就在本地；希望改成打开本地文件夹并选中文件）
 - **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/media_collection_detail_page.dart` `_showEpisodeMenu` 的「下载本集」只按 `_downloadsAvailable`（浏览模块开关）门控，没看这一集是否已有本机文件（`episode.local` + `videoBookHasLocalFiles`）。
 - **[x] ① 已修复** — 有本机原始文件的集不再出「下载本集」，改出「打开文件位置」（桌面端，`currentRevealHost() != null`）；定位复用视频库卡同一原语 `revealFirstOf(localVideoFileCandidates(...))`，Windows 走 `explorer /select,` 选中文件。只在对端 / 没有本机文件（流媒体 URL）的集仍给下载。

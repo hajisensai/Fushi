@@ -1,4 +1,4 @@
-## BUG-3511 · video-chrome-double-click-fullscreen
+## BUG-3517 · video-chrome-double-click-fullscreen
 - **报告**：2026-10-18（用户：M3E 浮动底栏连点「+10s / −10s」想连续快进，常被当成双击把视频切成全屏；随后要求同类判据全部根本性修复）
 - **真实性**：✅ 真 bug。根因 `fushi/lib/src/pages/implementations/video_fushi_page.dart` 旧 `_isVideoChromePointer`：只把顶 / 底各一条 `_videoButtonBarHeight`（56）高的几何带当控制条。M3E 底栏实际高度 = 进度条 + 按钮行 + `bottomButtonBarMargin` + 抬升，按钮上半截落在带外 → `_handleVideoPointerUp` 当成「点画面」，400ms 内两次即双击（中带桌面切全屏、左右区双击 seek）。同类「按几何猜控件区」判据共 6 处：
   1. 页面双击（全屏 / seek / 暂停）——本报告；

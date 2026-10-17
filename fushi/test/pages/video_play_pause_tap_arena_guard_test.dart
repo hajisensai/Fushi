@@ -74,7 +74,7 @@ void main() {
     final String onActionBlock = src.substring(onActionIdx, tapUpIdx);
     expect(onActionBlock.contains('player.playOrPause()'), isTrue,
         reason: '鼠标单击播放/暂停行为不得丢失');
-    // 控件区排除（不在进度条 / 底栏附近误暂停）走真实 hit-test（BUG-3511），
+    // 控件区排除（不在进度条 / 底栏附近误暂停）走真实 hit-test（BUG-3517），
     // 不再由 State 按主题几何推底部条带。
     final String routerBlock = src.substring(routerIdx, onActionIdx);
     expect(routerBlock.contains('VideoControlsChromeRegion.hitsRegion('), isTrue,
