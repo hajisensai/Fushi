@@ -33,10 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3140 条。点号进各自文件。
+> 共 3144 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3514](bugs/BUG-3514-manga-ipad-pinch-zoom-broken.md) | ✅ | ✅ | iPad 漫画阅读器双指缩放失灵、大滑动后突然放大到上限并卡死 |
+| [BUG-3513](bugs/BUG-3513-collection-detail-duplicate-tag-button.md) | ✅ | ✅ | 合集详情页顶栏标签按钮与 hero「编辑标签」功能重复 |
+| [BUG-3512](bugs/BUG-3512-collection-overall-progress-and-continue-target.md) | ✅ | ✅ | 合集「整体进度」2/4 读完显示 100%，读完第二卷「继续」回到第一卷 |
+| [BUG-3511](bugs/BUG-3511-collection-member-touch-longpress-no-menu.md) | ✅ | ✅ | 合集详情页触屏长按成员只进多选，拿不到库页同一份卡片菜单 |
 | [BUG-3510](bugs/BUG-3510-manga-local-ocr-boxes-misaligned.md) | ✅ | ✅ | manga-local-ocr-boxes-misaligned |
 | [BUG-3509](bugs/BUG-3509-manga-volume-opens-other-volume-cached-pages.md) | ✅ | ✅ | manga-volume-opens-other-volume-cached-pages |
 | [BUG-3508](bugs/BUG-3508-deleted-book-returns-as-remote-placeholder.md) | ✅ | ✅ | deleted-book-returns-as-remote-placeholder |

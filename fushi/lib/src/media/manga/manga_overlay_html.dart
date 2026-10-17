@@ -2444,6 +2444,18 @@ String _mangaGestureJs({
   }
   document.addEventListener('pointerdown', function(e){
     if (e.pointerType === 'touch') {
+      // 触点表只靠「松手 / 取消」事件删条目，而这两个事件不保证到得了 document：
+      // 手指按在随后被移出 DOM 的节点上（__mangaReplaceOcr 换掉 OCR 层、覆盖翻页
+      // 拆掉克隆层），松手事件派给已脱离文档的节点，传播路径里没有 document。
+      // 漏删的那根「幽灵指」会永久留在表里：下一次单指拖动被当成与它的捏合（大
+      // 滑动 = 指距暴涨 = 放大到上限），pinchGuard 又要等表清空才解除，之后一切点击
+      // 与滑动都被吞（卡死）。浏览器自己的 isPrimary 是权威信号：主触点 = 此刻屏上
+      // 没有任何其它触摸指针，所以这是新一轮手势，表里剩下的全是幽灵，清空重来。
+      if (e.isPrimary) {
+        touchPts = {};
+        pinch = null;
+        pinchGuard = false;
+      }
       touchPts[e.pointerId] = {x: e.clientX, y: e.clientY};
       var g = _pinchGeom();
       if (g && g.dist > 0) {
@@ -2505,6 +2517,16 @@ String _mangaGestureJs({
           var lastPinch = pinch;
           pinch = null;
           _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);
+        } else {
+          // 三指及以上抬起一指：参与几何的那一对换了人，按新的一对重定基准，
+          // 否则新指距 / 旧基准的比值会让倍率瞬间跳变。起点倍率保留，吸附判据
+          // 仍以整次捏合开始时为准。
+          var rg = _pinchGeom();
+          if (rg && rg.dist > 0) {
+            pinch.dist = rg.dist * Math.pow(pinch.zoom / ZOOM, 1 / ZOOM_SENS);
+            pinch.cx = rg.cx;
+            pinch.cy = rg.cy;
+          }
         }
         return;
       }
