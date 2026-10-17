@@ -1,0 +1,6 @@
+## BUG-3511 · video-chrome-double-click-fullscreen
+- **报告**：2026-10-18（用户：M3E 浮动底栏连点「+10s / −10s」想连续快进，常被当成双击把视频切成全屏）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/pages/implementations/video_fushi_page.dart` 旧 `_isVideoChromePointer`：只把顶 / 底各一条 `_videoButtonBarHeight`（56）高的几何带当控制条。M3E 底栏实际高度 = 进度条 + 按钮行 + `bottomButtonBarMargin` + 抬升，按钮上半截落在带外 → `_handleVideoPointerUp` 当成「点画面」，400ms 内两次即双击（中带桌面切全屏、左右区双击 seek）。同类：所有不在两条带内的可点浮层按钮（侧边动作栏、自动连播卡、横幅、小窗三键…）与滚轮调音量判据同病。
+- **[x] ① 已修复** — 判据改为按下时做真实 hit-test（`fushi/lib/src/media/video/video_chrome_hit_test.dart` 的 `videoPointerHitsChrome`）：命中路径含 media_kit 控制条区域标记 `VideoControlsChromeRegion`（fork 新增，套在顶栏 / 中央按钮 / 进度条 / 底栏，translucent 不改下层命中；页面侧细进度条与 `VideoM3eFloatingSurface` 实体胶囊也套上）或带 onTap 语义的 `RenderSemanticsAnnotations`（`InkWell` / 全部 Material 按钮）即算控件。不用 click 光标作判据：`InkWell` 默认 `adaptiveClickable` 在原生平台解析成 basic（测试实测抓到）；按下记账、抬起取走（与 BUG-2403 非主键账同一套），滚轮同判据。旧几何函数删除。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_chrome_hit_test_test.dart`（真实渲染树：画面空白 / 底栏按钮与空隙 / 旧 56px 带外的底栏上半截 / 控制条外浮层按钮）；`integration_test/video_wheel_volume_itest.dart` 的 chrome 反证点改取真实底栏区域中心。
+- **备注**：fork 的单击暂停区 `isInPlayPauseRegion`（`material_desktop.dart`）仍走几何推导 `desktopControlsBottomStripHeight`，但它已把进度条热区 + 按钮行 + 底栏偏移加总，未见同类误判，本次不动；若日后底栏几何再变，可改用 `VideoControlsChromeRegion` 同一判据。

@@ -1354,14 +1354,19 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                             mainAxisAlignment: MainAxisAlignment.start,
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Container(
-                                height: _theme(context).buttonBarHeight,
-                                margin: _theme(context).topButtonBarMargin,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.max,
-                                  mainAxisAlignment: MainAxisAlignment.start,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: _theme(context).topButtonBar,
+                              // Fushi patch: chrome hit-test marker, see
+                              // [VideoControlsChromeRegion].
+                              VideoControlsChromeRegion(
+                                child: Container(
+                                  height: _theme(context).buttonBarHeight,
+                                  margin: _theme(context).topButtonBarMargin,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.max,
+                                    mainAxisAlignment: MainAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: _theme(context).topButtonBar,
+                                  ),
                                 ),
                               ),
                               // Only display [primaryButtonBar] if [buffering] is false.
@@ -1372,19 +1377,22 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                   duration: _theme(context)
                                       .controlsTransitionDuration,
                                   child: Center(
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children:
-                                          _theme(context).primaryButtonBar,
+                                    child: VideoControlsChromeRegion(
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children:
+                                            _theme(context).primaryButtonBar,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                              Stack(
+                              VideoControlsChromeRegion(
+                                  child: Stack(
                                 alignment: Alignment.bottomCenter,
                                 children: [
                                   if (_theme(context).displaySeekBar)
@@ -1428,7 +1436,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                     ),
                                   ),
                                 ],
-                              ),
+                              )),
                             ],
                           ),
                         ),

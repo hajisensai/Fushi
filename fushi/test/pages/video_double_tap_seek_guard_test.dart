@@ -180,7 +180,7 @@ void main() {
       // 0=关：整体跳过分区（向后兼容默认，双击仍走暂停/全屏）。
       expect(body.contains('if (action == 0) return false;'), isTrue,
           reason: '配置 0=关时必须早返回 false（交回平台分流，不分区）');
-      // 用本地坐标拿 dx + 宽度做三等分（复用 _isVideoChromePointer 的 globalToLocal 范式）。
+      // 用本地坐标拿 dx + 宽度做三等分（globalToLocal）。
       expect(body.contains('globalToLocal(globalPosition).dx'), isTrue,
           reason: '必须用 globalToLocal 把双击点换本地 dx');
       expect(

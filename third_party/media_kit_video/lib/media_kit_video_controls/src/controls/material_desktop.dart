@@ -1129,18 +1129,23 @@ class _MaterialDesktopVideoControlsState
                                     mainAxisAlignment: MainAxisAlignment.start,
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
-                                      Container(
-                                        height: _theme(context).buttonBarHeight,
-                                        margin:
-                                            _theme(context).topButtonBarMargin,
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.max,
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.start,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.center,
-                                          children:
-                                              _theme(context).topButtonBar,
+                                      // Fushi patch: chrome hit-test marker,
+                                      // see [VideoControlsChromeRegion].
+                                      VideoControlsChromeRegion(
+                                        child: Container(
+                                          height:
+                                              _theme(context).buttonBarHeight,
+                                          margin: _theme(context)
+                                              .topButtonBarMargin,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.max,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.center,
+                                            children:
+                                                _theme(context).topButtonBar,
+                                          ),
                                         ),
                                       ),
                                       // Only display [primaryButtonBar] if [buffering] is false.
@@ -1151,14 +1156,16 @@ class _MaterialDesktopVideoControlsState
                                           duration: _theme(context)
                                               .controlsTransitionDuration,
                                           child: Center(
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.center,
-                                              children: _theme(context)
-                                                  .primaryButtonBar,
+                                            child: VideoControlsChromeRegion(
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.center,
+                                                children: _theme(context)
+                                                    .primaryButtonBar,
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -1180,7 +1187,8 @@ class _MaterialDesktopVideoControlsState
                                                       .seekBarBottomButtonBarOverlap,
                                                 )
                                               : Offset.zero,
-                                          child: MaterialDesktopSeekBar(
+                                          child: VideoControlsChromeRegion(
+                                              child: MaterialDesktopSeekBar(
                                             // Fushi patch (TODO-669): forward
                                             // the host hover-position callback so
                                             // the seek bar can drive the
@@ -1216,24 +1224,26 @@ class _MaterialDesktopVideoControlsState
                                                 },
                                               );
                                             },
-                                          ),
+                                          )),
                                         ),
                                       if (_theme(context)
                                           .bottomButtonBar
                                           .isNotEmpty)
-                                        Container(
-                                          height:
-                                              _theme(context).buttonBarHeight,
-                                          margin: _theme(context)
-                                              .bottomButtonBarMargin,
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.max,
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.start,
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.center,
-                                            children:
-                                                _theme(context).bottomButtonBar,
+                                        VideoControlsChromeRegion(
+                                          child: Container(
+                                            height:
+                                                _theme(context).buttonBarHeight,
+                                            margin: _theme(context)
+                                                .bottomButtonBarMargin,
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.max,
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.center,
+                                              children: _theme(context)
+                                                  .bottomButtonBar,
+                                            ),
                                           ),
                                         ),
                                     ],

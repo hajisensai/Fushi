@@ -319,15 +319,19 @@ class VideoM3eFloatingSurface extends StatelessWidget {
             context,
             color: videoM3eFloatingColor(Theme.of(context).colorScheme),
           );
-    return GestureDetector(
-      behavior: HitTestBehavior.deferToChild,
-      onTap: enabled ? () {} : null,
-      excludeFromSemantics: true,
-      child: DecoratedBox(
-        decoration: decoration,
-        child: Padding(
-          padding: enabled ? padding : EdgeInsets.zero,
-          child: child,
+    // 实体胶囊同时是控件区域：页面外层的双击 / 滚轮判据（videoPointerHitsChrome）
+    // 据此把点在胶囊留白上的指针算作控件，而不是画面。
+    return VideoControlsChromeRegion(
+      child: GestureDetector(
+        behavior: HitTestBehavior.deferToChild,
+        onTap: enabled ? () {} : null,
+        excludeFromSemantics: true,
+        child: DecoratedBox(
+          decoration: decoration,
+          child: Padding(
+            padding: enabled ? padding : EdgeInsets.zero,
+            child: child,
+          ),
         ),
       ),
     );

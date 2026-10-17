@@ -893,3 +893,25 @@ that and the old `+ 10` padding).
 Tests: `fushi/test/pages/video_desktop_touch_tap_router_test.dart`
 (`desktopControlsBottomStripHeight` group: geometry, real router click, and a
 source check that `isInPlayPauseRegion` uses the helper).
+
+## Controls chrome hit-test marker (`VideoControlsChromeRegion`)
+
+`lib/media_kit_video_controls/src/controls/widgets/video_controls_chrome_region.dart`
+(new, exported from `media_kit_video_controls.dart`), wired in
+`material_desktop.dart` and `material.dart`.
+
+The host (Fushi video page) has to tell whether a tap landed on the controls or
+on the picture: two taps on the picture within 400 ms are a double-tap
+(fullscreen / seek / play-pause), two taps on a button are not. It used to
+guess with a fixed `buttonBarHeight` strip at the top and bottom edges, but the
+real bottom chrome (seek bar + button bar + margins + host padding) is taller,
+so rapidly clicking the upper half of a bottom-bar button (±10 s) toggled
+fullscreen.
+
+The patch wraps the top bar, the primary (center) bar, the seek bar and the
+bottom bar in a `MetaData` marker with `HitTestBehavior.translucent`. The marker
+joins the hit path whenever the pointer is inside the bar's bounds (including
+gaps between buttons and margins) but returns its child's result, so hit
+testing of everything underneath (tap router, touch swipe layer) is unchanged.
+The host runs a real hit test at pointer-down and checks
+`VideoControlsChromeRegion.isRegion(target)` on the path.
