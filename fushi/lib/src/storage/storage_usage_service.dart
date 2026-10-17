@@ -483,7 +483,13 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
         // 导出产物，回写或丢弃即删。
         'card_source_drafts',
       ],
-      StorageCategoryId.database: <String>['onboarding_tutorial'],
+      StorageCategoryId.database: <String>[
+        'onboarding_tutorial',
+        // 复习（Fushi SRS）自动备份：`<profileUid>/*.fushisrs` 与它们共享的内容寻址媒体池
+        // `media/`。归「数据库 / 本地状态」而不是可裸删的 exports：单删 `media/` 会让池里
+        // 每一份备份都恢复不全，清理只能走备份页的保留策略 / 逐份删除（会回收无引用媒体）。
+        'srs_backups',
+      ],
       StorageCategoryId.ocrModels: <String>[],
     };
 

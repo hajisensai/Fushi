@@ -1,6 +1,6 @@
 /// 复习自动备份的 app 侧装配（设计见 docs/specs/2026-10-17-srs-auto-backup-restore.md）。
 ///
-/// - [srsBackupStoreProvider]：当前 profile 的本机备份库（`<支持目录>/srs_backups/<profileUid>/`）。
+/// - [srsBackupStoreProvider]：当前 profile 的本机备份库（`<documents>/srs_backups/<profileUid>/`）。
 /// - [SrsBackupController]：自动备份的触发与串行化、立即备份、恢复（恢复前先存一份当前状态）。
 ///   触发点由 `SrsAppRuntime` 接：库有变动（[srsRevisionProvider]）→ 满间隔就备份，不满就定时到点再看；
 ///   离开复习页 → 有变动就立即备份。没有变动（库指纹与最近一份相同）一律不备份。

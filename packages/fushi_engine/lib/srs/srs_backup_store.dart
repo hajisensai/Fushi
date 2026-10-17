@@ -475,7 +475,7 @@ class SrsBackupStore {
     required this.mediaDir,
   });
 
-  /// `<支持目录>/srs_backups`。
+  /// 备份根（宿主给；app 里是 `<documents>/srs_backups`，旧位置见 [rootFor]）。
   final Directory root;
   final String profileUid;
 
