@@ -9,7 +9,7 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/android_vendored_libmpv.dart';
 
-/// BUG-3453：libmpv 必须带 `patches/mkv-laced-audio-timestamps.patch`。
+/// BUG-3499：libmpv 必须带 `patches/mkv-laced-audio-timestamps.patch`。
 ///
 /// mkvmerge 把 Opus 每 8 帧打成一个 lacing 块、且不写 `DefaultDuration`；上游 mpv
 /// 的 mkv demuxer 只给块里第一帧时间戳，其余帧 PTS/DTS 为空。在线视频制卡的缓冲
@@ -23,7 +23,7 @@ import '../helpers/android_vendored_libmpv.dart';
 /// 补丁却没重编 / 重新 vendor 会在这里红）。真库验证：
 /// `tool/bluray/verify_mkv_lace_dump.py`（夹具 `tool/bluray/tests/laced-opus.mkv`）。
 ///
-/// BUG-3454：同一条 dump-cache 链路上还有 `patches/recorder-video-dts.patch`。
+/// BUG-3500：同一条 dump-cache 链路上还有 `patches/recorder-video-dts.patch`。
 /// Matroska 不存 DTS；recorder 见 demux_mkv 挂了 `lav_codecpar` 就不设
 /// `video_delay`，libavformat 于是令 DTS = PTS，带 B 帧的 HEVC/H.264 每个重排帧都被
 /// 拒收，副本视频只剩少数可解码帧（卡片视频花屏）。补丁让 recorder 自己按重排缓冲

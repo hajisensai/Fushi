@@ -5,9 +5,9 @@ is checked by Gradle before packaging; there is no fallback to an older download
 
 - Build source: [`3166982`](https://github.com/hajisensai/libmpv-android-video-build/commit/3166982f43fac31c86dc4c66acd8ac3280600eac)
   (branch `fushi/mkv-lace`, on top of the Lua build `8a496a2` on `fushi/lua-enabled`).
-  It adds `mkv-laced-audio-timestamps.patch` (BUG-3453: laced Matroska audio
+  It adds `mkv-laced-audio-timestamps.patch` (BUG-3499: laced Matroska audio
   without DefaultDuration lost every lace frame after the first in dump-cache)
-  and `recorder-video-dts.patch` (BUG-3454: dump-cache lost every B-frame of
+  and `recorder-video-dts.patch` (BUG-3500: dump-cache lost every B-frame of
   Matroska video, which has no DTS). The build fails unless every `libmpv.so`
   carries both patches' strings (`without DefaultDuration`,
   `Deriving missing DTS`).

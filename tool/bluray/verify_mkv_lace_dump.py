@@ -4,12 +4,12 @@ dump-cache is the online-video mining snapshot. Its stream recorder had the
 Matroska muxer reject packets ("non monotonically increasing dts" / "Failed
 writing packet") while still reporting success:
 
-- BUG-3453: mkvmerge laces Opus eight frames per block and writes no
+- BUG-3499: mkvmerge laces Opus eight frames per block and writes no
   DefaultDuration. mpv's Matroska demuxer timestamped only the first frame of
   each lace, so the snapshot kept about 1/8 of the audio and mined clips got
   0.2-0.4 s of choppy sound. patches/mkv-laced-audio-timestamps.patch fixes
   the demuxer. Fixture: tests/laced-opus.mkv (6 s, 8-frame Opus laces).
-- BUG-3454: Matroska video has no DTS. With B-frames libavformat set DTS = PTS
+- BUG-3500: Matroska video has no DTS. With B-frames libavformat set DTS = PTS
   and rejected every reordered frame, so the snapshot of HEVC/H.264 was mostly
   undecodable (mined clips showed corrupted video). patches/recorder-video-dts.patch
   makes the recorder derive the DTS. Fixture: tests/open-gop-hevc.mkv (6 s,

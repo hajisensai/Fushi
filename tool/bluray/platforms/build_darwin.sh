@@ -30,10 +30,10 @@ cp "$ROOT/tool/bluray/platforms/patches/mpv-gl-dovi-p5.patch" \
   "$WORK/checkout/patches/mpv-gl-dovi-p5-menu.patch"
 cp "$ROOT/third_party/media_kit_libs_windows_video/patches/disc-navigation-state.patch" \
   "$WORK/checkout/patches/disc-navigation-state.patch"
-# BUG-3453: laced Matroska audio without DefaultDuration (mkvmerge Opus).
+# BUG-3499: laced Matroska audio without DefaultDuration (mkvmerge Opus).
 cp "$ROOT/third_party/media_kit_libs_windows_video/patches/mkv-laced-audio-timestamps.patch" \
   "$WORK/checkout/patches/mpv-mkv-laced-audio-timestamps.patch"
-# BUG-3454: dump-cache derives the DTS of Matroska video (B-frames).
+# BUG-3500: dump-cache derives the DTS of Matroska video (B-frames).
 cp "$ROOT/third_party/media_kit_libs_windows_video/patches/recorder-video-dts.patch" \
   "$WORK/checkout/patches/mpv-recorder-video-dts.patch"
 # Nix flakes deliberately ignore untracked files. Stage only this overlay in

@@ -26,11 +26,11 @@ Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_
 # BUG-3296: vo=gpu dumb mode ignored the hwdec surface padding (1080p H.264 on
 # d3d11va zero-copy rendered the 1088-row surface squashed into 1080 rows).
 Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\patches\gpu-dumb-mode-hwdec-crop.patch'))
-# BUG-3453: laced Matroska audio without DefaultDuration (mkvmerge Opus) left
+# BUG-3499: laced Matroska audio without DefaultDuration (mkvmerge Opus) left
 # every lace frame after the first without a timestamp, so dump-cache dropped
 # them and the mining snapshot kept ~1/8 of the audio.
 Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\patches\mkv-laced-audio-timestamps.patch'))
-# BUG-3454: Matroska video has no DTS; the recorder left it to libavformat,
+# BUG-3500: Matroska video has no DTS; the recorder left it to libavformat,
 # which (without video_delay) set DTS = PTS and rejected every B-frame, so the
 # dump-cache snapshot of HEVC/H.264 with B-frames was mostly undecodable.
 Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\patches\recorder-video-dts.patch'))
@@ -49,7 +49,7 @@ Run $python @((Join-Path $PSScriptRoot 'package_libmpv.py'), '--build', $build,
   '--source', $source, '--prefix', $prefix, '--output', $package)
 Copy-Item (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\bdj\libbluray*.jar') $package
 Run $python @((Join-Path $PSScriptRoot 'probe_libmpv.py'), (Join-Path $package 'libmpv-2.dll'))
-# BUG-3453 / BUG-3454: dump-cache must keep every frame of laced Matroska audio
+# BUG-3499 / BUG-3500: dump-cache must keep every frame of laced Matroska audio
 # and of Matroska B-frame video.
 Run $python @((Join-Path $PSScriptRoot 'verify_mkv_lace_dump.py'), '--library', $package,
   '--ffmpeg', (Join-Path $repoRoot 'third_party\ffmpeg-min\windows\ffmpeg.exe'))

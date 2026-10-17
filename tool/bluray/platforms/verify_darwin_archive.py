@@ -90,9 +90,9 @@ def verify_archive(path, platform):
                 if executable is None:
                     raise ValueError(f"{framework}: no framework executable")
                 data = archive.extractfile(executable).read()
-                # BUG-3453: "without DefaultDuration" is the trace message of
+                # BUG-3499: "without DefaultDuration" is the trace message of
                 # mkv-laced-audio-timestamps.patch (laced Matroska audio timestamps);
-                # BUG-3454: "Deriving missing DTS" is the debug message of
+                # BUG-3500: "Deriving missing DTS" is the debug message of
                 # recorder-video-dts.patch (dump-cache of Matroska B-frame video).
                 markers = (b"disc-navigation-state-json", b"disc-menu-active", b"discnav",
                            b"without DefaultDuration",

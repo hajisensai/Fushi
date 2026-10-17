@@ -12,7 +12,7 @@ The `fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1` suffix identifies this patche
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
 
-`patches/mkv-laced-audio-timestamps.patch` (BUG-3453) fixes upstream
+`patches/mkv-laced-audio-timestamps.patch` (BUG-3499) fixes upstream
 `handle_block()` in `demux/demux_mkv.c`: when an audio track has no
 `DefaultDuration`, only the first frame of a laced block got a timestamp and
 the others were left unset. mkvmerge laces Opus eight frames per block and
@@ -28,7 +28,7 @@ FFmpeg's Matroska demuxer does; otherwise the old behaviour is kept. Block
 first-frame timestamps are unchanged. Upstream master is still unfixed as of
 2026-10-17.
 
-`patches/recorder-video-dts.patch` (BUG-3454) fixes upstream
+`patches/recorder-video-dts.patch` (BUG-3500) fixes upstream
 `common/recorder.c`: Matroska stores no DTS, and the recorder only set
 `video_delay` (so libavformat would guess DTS) when the stream had no
 `lav_codecpar` - but `demux_mkv` now attaches one to every video track. With

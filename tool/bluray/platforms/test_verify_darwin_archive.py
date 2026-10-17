@@ -73,13 +73,13 @@ class DarwinArchiveTest(unittest.TestCase):
             macho_slices(data, (b"discnav",))
 
     def test_requires_lace_timestamp_patch_in_mpv(self):
-        # BUG-3453: an Mpv slice without the laced-audio timestamp patch is rejected.
+        # BUG-3499: an Mpv slice without the laced-audio timestamp patch is rejected.
         data = thin(0x0100000C, markers=b"disc-navigation-state-json\0disc-menu-active\0discnav\0")
         with self.assertRaisesRegex(ValueError, "without DefaultDuration"):
             macho_slices(data, (b"discnav", b"without DefaultDuration"))
 
     def test_requires_recorder_dts_patch_in_mpv(self):
-        # BUG-3454: an Mpv slice without the recorder video-DTS patch is rejected.
+        # BUG-3500: an Mpv slice without the recorder video-DTS patch is rejected.
         data = thin(0x0100000C, markers=b"discnav\0without DefaultDuration\0")
         with self.assertRaisesRegex(ValueError, "Deriving missing DTS"):
             macho_slices(data, (b"discnav", b"without DefaultDuration", b"Deriving missing DTS"))

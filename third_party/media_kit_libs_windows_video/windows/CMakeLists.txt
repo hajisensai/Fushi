@@ -95,9 +95,9 @@ get_filename_component(
 # (BUG-3296: vo=gpu dumb mode squashed the padded d3d11va surface, e.g. 1088
 # coded rows of 1080p H.264, into the picture). Built with -Dlua=luajit
 # (BUG-3325: user Lua scripts never ran with -Dlua=disabled), plus
-# patches/mkv-laced-audio-timestamps.patch (BUG-3453: laced Matroska audio
+# patches/mkv-laced-audio-timestamps.patch (BUG-3499: laced Matroska audio
 # without DefaultDuration, e.g. mkvmerge Opus, lost every lace frame after the
-# first in dump-cache) and patches/recorder-video-dts.patch (BUG-3454: Matroska
+# first in dump-cache) and patches/recorder-video-dts.patch (BUG-3500: Matroska
 # video has no DTS, so dump-cache lost every B-frame). See NATIVE_BUILD.md.
 set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1.7z")
 
