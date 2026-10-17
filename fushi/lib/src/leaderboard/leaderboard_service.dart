@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_isbn_backfill.dart';
+import 'package:fushi_engine/leaderboard/cover_hash.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
@@ -468,11 +469,12 @@ class LeaderboardService extends ChangeNotifier {
         account.syncState,
         claim: claim,
         coverThumb: _coverThumb,
+        coverHash: leaderboardCoverHash,
       );
       if (!sameOwner()) return;
       final Object? coverError = out.coverError;
       if (coverError != null) {
-        // 封面补传失败不算同步失败：没补上的留在 pendingCovers，下次只补封面。
+        // 封面投票失败不算同步失败：没投成的下次同步再投。
         ErrorLogService.instance.log(
           'LeaderboardService.coverUpload',
           coverError,
@@ -720,6 +722,10 @@ Future<Uint8List?> leaderboardCoverThumb(LocalShelfEntry entry) async {
       ? thumb
       : null;
 }
+
+/// 缩略图的 dHash（封面投票按它归并相近的图），解码在后台 isolate。
+Future<String?> leaderboardCoverHash(Uint8List thumb) =>
+    Isolate.run<String?>(() => coverDHash(thumb));
 
 /// 读图 → 居中裁成 [kLeaderboardAvatarSize] 正方形 → JPEG，解码 / 编码在后台
 /// isolate。不是可解码图片抛 [FormatException]。

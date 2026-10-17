@@ -4,7 +4,7 @@
 // - entries：localKey → 上次成功上报时的内容 hash 与服务端落到的 workId；
 // - daily：上次成功上报的每日字数；
 // - shelfCount：上次响应里服务端的书架行数（null = 从没成功同步过）；
-// - pendingCovers：服务端说缺封面、本机还没补上的 localKey（下次只补封面，不重 put）。
+// - coverVotes：workId → 本账户上次给该作品投的封面（来源 + 哈希），见下面第 7 步。
 //
 // 服务端按 (账户, 作品) 覆盖写，同一批里映射到同一作品的多条由服务端合并（读完取最晚、
 // 字数 / 时长相加，shelf.js resolveUpload）。所以客户端**不预合并**，每条带自己的 refs
@@ -21,8 +21,12 @@
 // 5. put 响应回来后若发现某作品的成员分散在不同批里（新条目落到了已有作品上、reset 分批
 //    劈开了同一作品），把这些作品整组补发一轮；仍劈开的记空 hash，下次同步整组重传；
 // 6. 其余孤儿 workId（put 后改落别处的）最后 remove；
-// 7. 缺封面的作品补传缩略图：遇到第一个 429 / 5xx / 网络错误立即停止本轮，剩下的留在
-//    pendingCovers 下次再补。封面问题不算同步失败（[ShelfSyncOutcome.coverError]）。
+// 7. 封面投票（服务端按人数选封面，services/leaderboard/src/cover_votes.js）：每部作品本账户
+//    一票。条目带 coverUrl → 投该 URL（白名单外的 URL 退回本地封面）；否则用本地封面生成缩略图、
+//    算 dHash（cover_hash.dart）投票，服务端命中相近候选就只记票，没命中再带字节上传。
+//    coverVotes 记着上次投的来源（URL / 本地封面文件指纹）：来源没变就不再投；本地更正了刮削、
+//    封面文件变了 → 重新投，服务端随之移票。遇到第一个 429 / 5xx / 网络错误立即停止本轮，
+//    剩下的下次再投。封面问题不算同步失败（[ShelfSyncOutcome.coverError]）。
 // 中途失败抛 [LeaderboardSyncException]，携带已推进的 state：调用方存下它，下次从断点续。
 //
 // 另外两条规则：
@@ -32,6 +36,7 @@
 
 import 'dart:typed_data';
 
+import 'package:fushi_engine/leaderboard/cover_hash.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/local_shelf.dart';
@@ -56,12 +61,45 @@ class SyncedEntry {
   int get hashCode => Object.hash(hash, workId);
 }
 
+/// 本账户给一部作品投过的封面。[source] = `u:<url>`（投的白名单 URL）、`f:<本地封面指纹>`，
+/// 或 `-`（没有可投的封面）；[hash] = 投的缩略图 dHash（URL 票 / 没投成的本地封面为 null）；
+/// [rejectedUrl] = 服务端判为白名单外的 coverUrl（同一个 URL 不再重试，直接用本地封面）。
+class CoverVoteRecord {
+  const CoverVoteRecord({required this.source, this.hash, this.rejectedUrl});
+
+  factory CoverVoteRecord.fromJson(Map<String, dynamic> j) => CoverVoteRecord(
+    source: j['s'] as String,
+    hash: j['h'] as String?,
+    rejectedUrl: j['x'] as String?,
+  );
+
+  final String source;
+  final String? hash;
+  final String? rejectedUrl;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    's': source,
+    if (hash != null) 'h': hash,
+    if (rejectedUrl != null) 'x': rejectedUrl,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is CoverVoteRecord &&
+      other.source == source &&
+      other.hash == hash &&
+      other.rejectedUrl == rejectedUrl;
+
+  @override
+  int get hashCode => Object.hash(source, hash, rejectedUrl);
+}
+
 class LeaderboardSyncState {
   const LeaderboardSyncState({
     this.entries = const <String, SyncedEntry>{},
     this.daily = const <String, int>{},
     this.shelfCount,
-    this.pendingCovers = const <String>{},
+    this.coverVotes = const <String, CoverVoteRecord>{},
   });
 
   static const LeaderboardSyncState empty = LeaderboardSyncState();
@@ -75,8 +113,12 @@ class LeaderboardSyncState {
       final Map<String, dynamic> daily =
           (j['daily'] as Map<Object?, Object?>? ?? const <Object?, Object?>{})
               .cast<String, dynamic>();
-      final List<Object?> covers =
-          j['covers'] as List<Object?>? ?? const <Object?>[];
+      // 旧版本的 `covers`（待补封面的 localKey）不再使用：新版按 coverVotes 判断要不要投票，
+      // 没有记录的作品都会补投一次。
+      final Map<String, dynamic> votes =
+          (j['coverVotes'] as Map<Object?, Object?>? ??
+                  const <Object?, Object?>{})
+              .cast<String, dynamic>();
       return LeaderboardSyncState(
         entries: Map<String, SyncedEntry>.unmodifiable(<String, SyncedEntry>{
           for (final MapEntry<String, dynamic> e in entries.entries)
@@ -89,7 +131,13 @@ class LeaderboardSyncState {
             e.key: (e.value as num).toInt(),
         }),
         shelfCount: (j['shelfCount'] as num?)?.toInt(),
-        pendingCovers: Set<String>.unmodifiable(covers.cast<String>()),
+        coverVotes:
+            Map<String, CoverVoteRecord>.unmodifiable(<String, CoverVoteRecord>{
+              for (final MapEntry<String, dynamic> e in votes.entries)
+                e.key: CoverVoteRecord.fromJson(
+                  (e.value as Map<Object?, Object?>).cast<String, dynamic>(),
+                ),
+            }),
       );
     } on TypeError catch (e) {
       throw FormatException('bad leaderboard sync state: $e');
@@ -100,8 +148,8 @@ class LeaderboardSyncState {
   final Map<String, int> daily;
   final int? shelfCount;
 
-  /// 服务端回过 needsCover、封面还没补上的 localKey。
-  final Set<String> pendingCovers;
+  /// workId → 本账户上次给它投的封面。
+  final Map<String, CoverVoteRecord> coverVotes;
 
   /// 从没成功同步过。
   bool get neverSynced => shelfCount == null;
@@ -114,16 +162,16 @@ class LeaderboardSyncState {
     Map<String, SyncedEntry>? entries,
     Map<String, int>? daily,
     int? shelfCount,
-    Set<String>? pendingCovers,
+    Map<String, CoverVoteRecord>? coverVotes,
   }) => LeaderboardSyncState(
     entries: entries == null
         ? this.entries
         : Map<String, SyncedEntry>.unmodifiable(entries),
     daily: daily == null ? this.daily : Map<String, int>.unmodifiable(daily),
     shelfCount: shelfCount ?? this.shelfCount,
-    pendingCovers: pendingCovers == null
-        ? this.pendingCovers
-        : Set<String>.unmodifiable(pendingCovers),
+    coverVotes: coverVotes == null
+        ? this.coverVotes
+        : Map<String, CoverVoteRecord>.unmodifiable(coverVotes),
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -133,7 +181,11 @@ class LeaderboardSyncState {
     },
     'daily': daily,
     if (shelfCount != null) 'shelfCount': shelfCount,
-    if (pendingCovers.isNotEmpty) 'covers': pendingCovers.toList()..sort(),
+    if (coverVotes.isNotEmpty)
+      'coverVotes': <String, dynamic>{
+        for (final MapEntry<String, CoverVoteRecord> e in coverVotes.entries)
+          e.key: e.value.toJson(),
+      },
   };
 }
 
@@ -460,7 +512,7 @@ class ShelfSyncOutcome {
   /// 超出服务端书架上限、没有上传的本地条目数（本地截断 + 服务端判满放弃的新条目）。
   final int droppedForShelfLimit;
 
-  /// 封面补传遇到的第一个错误（不影响书架同步结果；未补上的留在 pendingCovers）。
+  /// 封面投票遇到的第一个错误（不影响书架同步结果；没投成的下次再投）。
   final Object? coverError;
   final StackTrace? coverStackTrace;
 }
@@ -493,14 +545,24 @@ bool _isConflict(Object e) =>
 bool _isShelfFull(Object e) =>
     e is LeaderboardApiException && e.status == 413 && e.code == 'shelf_full';
 
-/// 封面补传该不该就此停下：429 / 5xx，或没拿到响应（网络错误 / 超时）。
-bool _stopsCoverRound(Object e) =>
-    e is LeaderboardApiException ? e.status == 429 || e.status >= 500 : true;
+/// 封面投票该不该就此停下：429 / 5xx、404（服务端还是不认投票接口的旧版本），或没拿到响应
+/// （网络错误 / 超时）。停下的不记账，下次再投。
+bool _stopsCoverRound(Object e) => e is LeaderboardApiException
+    ? e.status == 429 || e.status >= 500 || e.status == 404
+    : true;
+
+bool _isBadCoverUrl(Object e) =>
+    e is LeaderboardApiException &&
+    e.status == 400 &&
+    e.code == 'bad_cover_url';
 
 /// 把 [local] 同步到服务端（规则见文件头）。
 ///
 /// [claim] = 由本设备接管上传：强制 reset 全量，第一批带 `claim: true`。
-/// [coverThumb]：取条目的缩略图字节（返回 null = 本地没有封面，放弃该作品的补传）。
+/// [coverThumb]：取条目的缩略图字节（返回 null = 本地没有封面）；不给则不处理封面。
+/// [coverFingerprint]：本地封面的指纹（默认 [localCoverFingerprint]：路径 + 大小 + 修改时刻），
+/// 指纹没变就不重新生成缩略图。[coverHash]：缩略图的 dHash（默认在当前 isolate 里跑
+/// [coverDHash]；app 传后台 isolate 版本）。
 ///
 /// 上传设备不是本机时抛 [LeaderboardUploadOwnedElsewhere]；其余失败抛
 /// [LeaderboardSyncException]（带已推进的状态）。
@@ -510,7 +572,19 @@ Future<ShelfSyncOutcome> syncShelf(
   LeaderboardSyncState state, {
   bool claim = false,
   Future<Uint8List?> Function(LocalShelfEntry entry)? coverThumb,
-}) => _ShelfSyncRun(client, local, state, claim, coverThumb).run();
+  Future<String?> Function(LocalShelfEntry entry)? coverFingerprint,
+  Future<String?> Function(Uint8List thumb)? coverHash,
+}) => _ShelfSyncRun(
+  client,
+  local,
+  state,
+  claim,
+  coverThumb,
+  coverFingerprint ?? localCoverFingerprint,
+  coverHash ?? _hashHere,
+).run();
+
+Future<String?> _hashHere(Uint8List thumb) async => coverDHash(thumb);
 
 class _ShelfSyncRun {
   _ShelfSyncRun(
@@ -519,12 +593,16 @@ class _ShelfSyncRun {
     this.current,
     this.claim,
     this.coverThumb,
+    this.coverFingerprint,
+    this.coverHash,
   );
 
   final LeaderboardClient client;
   final LocalShelf local;
   final bool claim;
   final Future<Uint8List?> Function(LocalShelfEntry entry)? coverThumb;
+  final Future<String?> Function(LocalShelfEntry entry) coverFingerprint;
+  final Future<String?> Function(Uint8List thumb) coverHash;
 
   LeaderboardSyncState current;
   bool accepted = false;
@@ -576,7 +654,7 @@ class _ShelfSyncRun {
         droppedForShelfLimit: droppedForShelfLimit,
       );
     }
-    final (Object? coverError, StackTrace? coverStack) = await _uploadCovers();
+    final (Object? coverError, StackTrace? coverStack) = await _voteCovers();
     return ShelfSyncOutcome(
       state: current,
       droppedForShelfLimit: droppedForShelfLimit,
@@ -652,9 +730,13 @@ class _ShelfSyncRun {
     final Map<String, int> daily = batch.reset
         ? <String, int>{}
         : Map<String, int>.of(current.daily);
-    final Set<String> covers = batch.reset
-        ? <String>{}
-        : Set<String>.of(current.pendingCovers);
+    final Map<String, CoverVoteRecord> votes = Map<String, CoverVoteRecord>.of(
+      current.coverVotes,
+    );
+    // 服务端处理这批时顺带按条目的 coverUrl 投了票（coverVote == 'url'）：记成已投，
+    // 省掉一次投票请求。挑的 URL 与服务端合并规则一致——同一作品里第一个带 coverUrl 的条目。
+    final Map<String, String?> putVote = <String, String?>{};
+    final Map<String, String> firstUrl = <String, String>{};
     for (final DailyCharsUpload d in batch.daily) {
       if (d.chars == 0) {
         daily.remove(d.date);
@@ -667,17 +749,25 @@ class _ShelfSyncRun {
       final LocalShelfEntry e = batch.put[w.i];
       entries[e.localKey] = SyncedEntry(hash: _hashOf(e), workId: w.workId);
       sentIn[e.localKey] = seq;
-      if (w.needsCover) {
-        covers.add(e.localKey);
-      } else {
-        covers.remove(e.localKey);
+      putVote[w.workId] = w.coverVote;
+      final String? url = e.upload.coverUrl;
+      if (url != null) firstUrl.putIfAbsent(w.workId, () => url);
+    }
+    for (final MapEntry<String, String?> v in putVote.entries) {
+      final String? url = firstUrl[v.key];
+      if (v.value == 'url' && url != null) {
+        votes[v.key] = CoverVoteRecord(source: 'u:$url');
+      } else if (v.value != 'hash' &&
+          (votes[v.key]?.source.startsWith('u:') ?? false)) {
+        // 服务端说本账户在这部作品上已没有 URL 票：忘掉旧记录，交给投票轮重新判断。
+        votes.remove(v.key);
       }
     }
     current = LeaderboardSyncState(
       entries: Map<String, SyncedEntry>.unmodifiable(entries),
       daily: Map<String, int>.unmodifiable(daily),
       shelfCount: result.shelfCount,
-      pendingCovers: Set<String>.unmodifiable(covers),
+      coverVotes: Map<String, CoverVoteRecord>.unmodifiable(votes),
     );
   }
 
@@ -745,7 +835,6 @@ class _ShelfSyncRun {
       current = current.copyWith(
         entries: entries,
         shelfCount: result.shelfCount,
-        pendingCovers: current.pendingCovers.where(entries.containsKey).toSet(),
       );
     }
   }
@@ -766,10 +855,7 @@ class _ShelfSyncRun {
         after,
       ).where((String w) => !removed.contains(w)).toList(),
     );
-    current = current.copyWith(
-      entries: after,
-      pendingCovers: current.pendingCovers.where(after.containsKey).toSet(),
-    );
+    current = current.copyWith(entries: after);
   }
 
   /// 过了服务端 3650 天窗口的日期：不再发 0（会被 400），直接从 state 里忘掉。
@@ -785,61 +871,139 @@ class _ShelfSyncRun {
     );
   }
 
-  /// 按作品补传 pendingCovers 的封面。遇到第一个 429 / 5xx / 网络错误立即停止，剩下的
-  /// 留待下次；其余失败（本地缩略图出错、4xx）放弃该作品。返回第一个错误。
+  /// 封面投票轮（文件头第 7 步）。遇到第一个 429 / 5xx / 404 / 网络错误立即停止，剩下的留待
+  /// 下次；409 `conflict`（并发回滚）跳过这部、不记账；其余失败（本地缩略图出错、其它 4xx）记下
+  /// 来源，本地封面不变就不再重试。返回第一个错误。
   ///
-  /// nsfw 条目**从不**补传本地封面（服务端虽会模糊 nsfw 封面，但宁可不传）：它们直接从
-  /// pendingCovers 里丢掉。
-  Future<(Object?, StackTrace?)> _uploadCovers() async {
+  /// nsfw 条目**从不**提交本地封面（服务端虽会模糊 nsfw 封面，但宁可不传）；它们带的白名单 URL
+  /// 照常投（上报时本来就带着）。
+  Future<(Object?, StackTrace?)> _voteCovers() async {
     final Future<Uint8List?> Function(LocalShelfEntry entry)? thumb =
         coverThumb;
-    if (thumb == null || current.pendingCovers.isEmpty) return (null, null);
-    final Set<String> pending = <String>{
-      for (final String k in current.pendingCovers)
-        if (current.entries.containsKey(k) && !(byKey[k]?.upload.nsfw ?? true))
-          k,
-    };
+    final Set<String> live = current.workIds;
+    final Map<String, CoverVoteRecord> votes = Map<String, CoverVoteRecord>.of(
+      current.coverVotes,
+    )..removeWhere((String w, CoverVoteRecord _) => !live.contains(w));
+    if (thumb == null) {
+      current = current.copyWith(coverVotes: votes);
+      return (null, null);
+    }
     final Map<String, List<LocalShelfEntry>> byWork =
         <String, List<LocalShelfEntry>>{};
     for (final LocalShelfEntry e in byKey.values) {
-      if (!pending.contains(e.localKey)) continue;
-      (byWork[current.entries[e.localKey]!.workId] ??= <LocalShelfEntry>[]).add(
-        e,
-      );
+      final String? workId = current.entries[e.localKey]?.workId;
+      if (workId != null) (byWork[workId] ??= <LocalShelfEntry>[]).add(e);
     }
     Object? error;
     StackTrace? stack;
     for (final MapEntry<String, List<LocalShelfEntry>> w in byWork.entries) {
+      final _CoverAttempt attempt = _CoverAttempt();
       try {
-        await _uploadCover(w.key, w.value, thumb);
+        final CoverVoteRecord? done = await _voteCover(
+          w.key,
+          w.value,
+          votes[w.key],
+          thumb,
+          attempt,
+        );
+        if (done != null) votes[w.key] = done;
       } on Object catch (e, st) {
         error ??= e;
         stack ??= st;
         if (e is! _CoverThumbFailure && _stopsCoverRound(e)) break;
+        // 409 `conflict`：与本账户的书架上报交错、服务端整批回滚（账户级 CAS），是临时失败——
+        // 不记账，下次同步照常重投这部作品；本轮继续投后面的。
+        if (_isConflict(e)) continue;
+        final String? source = attempt.source;
+        if (source != null) {
+          votes[w.key] = CoverVoteRecord(
+            source: source,
+            rejectedUrl: attempt.rejectedUrl,
+          );
+        }
       }
-      pending.removeAll(w.value.map((LocalShelfEntry e) => e.localKey));
     }
-    current = current.copyWith(pendingCovers: pending);
+    current = current.copyWith(coverVotes: votes);
     return (error is _CoverThumbFailure ? error.error : error, stack);
   }
 
-  Future<void> _uploadCover(
+  /// 给一部作品投票；返回新的投票记录（null = 不用投 / 没有可投的封面）。
+  Future<CoverVoteRecord?> _voteCover(
     String workId,
     List<LocalShelfEntry> members,
+    CoverVoteRecord? previous,
     Future<Uint8List?> Function(LocalShelfEntry entry) thumb,
+    _CoverAttempt attempt,
   ) async {
+    String? url;
     for (final LocalShelfEntry e in members) {
+      url ??= e.upload.coverUrl;
+    }
+    String? rejected = url != null && previous?.rejectedUrl == url ? url : null;
+    if (url != null && rejected == null) {
+      final String source = 'u:$url';
+      if (previous?.source == source) return null;
+      attempt.source = source;
+      try {
+        await client.voteCover(workId, url: url);
+        return CoverVoteRecord(source: source);
+      } on LeaderboardApiException catch (e) {
+        // 白名单外的图床：记下它，退回本地封面。
+        if (!_isBadCoverUrl(e)) rethrow;
+        rejected = url;
+      }
+    }
+    attempt.rejectedUrl = rejected;
+    for (final LocalShelfEntry e in members) {
+      if (e.upload.nsfw) continue;
+      final String? fingerprint = await coverFingerprint(e);
+      if (fingerprint == null) continue;
+      final String source = 'f:$fingerprint';
+      if (previous?.source == source && previous?.rejectedUrl == rejected) {
+        return null;
+      }
+      attempt.source = source;
       final Uint8List? bytes;
+      final String? hash;
       try {
         bytes = await thumb(e);
+        hash = bytes == null || bytes.isEmpty ? null : await coverHash(bytes);
       } on Object catch (err) {
         throw _CoverThumbFailure(err);
       }
-      if (bytes == null || bytes.isEmpty) continue;
-      await client.uploadCover(workId, bytes);
-      return;
+      if (bytes == null || hash == null) {
+        return CoverVoteRecord(source: source, rejectedUrl: rejected);
+      }
+      // 文件被改动过但还是同一张图（距离在阈值内）：服务端那票仍然对，只更新指纹。
+      final String? before = previous?.hash;
+      if (before != null &&
+          coverHashDistance(before, hash) <= kCoverHashMaxDistance) {
+        return CoverVoteRecord(
+          source: source,
+          hash: before,
+          rejectedUrl: rejected,
+        );
+      }
+      try {
+        await client.voteCover(workId, hash: hash);
+      } on LeaderboardApiException catch (err) {
+        if (!isCoverBytesRequired(err)) rethrow;
+        await client.uploadCover(workId, bytes, hash: hash);
+      }
+      return CoverVoteRecord(source: source, hash: hash, rejectedUrl: rejected);
     }
+    // 没有可投的本地封面：URL 被拒时也记下来，免得每次同步都重试同一个 URL。
+    if (rejected != null && previous?.rejectedUrl != rejected) {
+      return CoverVoteRecord(source: '-', rejectedUrl: rejected);
+    }
+    return null;
   }
+}
+
+/// 本次正在尝试的封面来源（出错时据此记账，免得本地封面没变时反复重试）。
+class _CoverAttempt {
+  String? source;
+  String? rejectedUrl;
 }
 
 /// 本地缩略图生成失败（与上传失败区分：它不停止本轮补传）。

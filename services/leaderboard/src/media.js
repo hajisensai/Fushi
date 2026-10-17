@@ -1,8 +1,18 @@
-// 头像 / 作品封面缩略图：客户端先缩好再传（头像 ≤384px、封面 ≤300px），服务端只验魔数与大小。
+// 头像 / 作品封面缩略图：客户端先缩好再传（头像 ≤384px、封面 ≤300px JPEG）。头像只验魔数与大小；
+// 封面还要解码算 dHash（cover_hash.js），候选按服务端哈希归并。
 // R2 key 带时间戳版本号（a/<account>-<ts>.jpg），出图可设 immutable 长缓存，换图即换 key。
 
 import { HttpError, randomId } from './util.js';
 import { deleteMedia, reserveMediaBytes, spend } from './budget.js';
+import { acceptCoverUrl, casBatch, casStatements } from './shelf.js';
+import {
+  accountVotes,
+  nearestCandidate,
+  releasedCoverKeys,
+  requireOneOf,
+  voteStatements,
+} from './cover_votes.js';
+import { verifiedCoverHash } from './cover_hash.js';
 
 /**
  * 对象 key：<前缀>/<属主>-<随机>-<时刻>.<ext>。随机段不能省——同一毫秒两人抢传同一作品
@@ -60,28 +70,116 @@ export async function clearAvatar(env, account) {
   await deleteMedia(env, account.avatar_key);
 }
 
-/**
- * 作品封面：只有书架上有这部作品的人能传，且作品还没有任何封面（先到先得）。
- * 用条件 UPDATE 抢占，竞态下只有一个请求写入 key，输家删掉自己的对象。
- */
-export async function setWorkCover(env, account, workId, bytes, now) {
-  const kind = requireImage(bytes);
+/** 只有书架上有这部作品的人能投票 / 传封面。 */
+async function requireOnShelf(env, account, workId) {
   const owns = await env.DB.prepare('SELECT 1 AS ok FROM shelf WHERE account_id = ?1 AND work_id = ?2')
     .bind(account.id, workId).first();
   if (!owns) throw new HttpError(403, 'not_on_shelf');
-  const taken = await env.DB.prepare('SELECT 1 AS t FROM works WHERE id = ?1 AND (cover_key IS NOT NULL OR cover_url IS NOT NULL)')
-    .bind(workId).first();
-  if (taken) throw new HttpError(409, 'cover_exists'); // 先查一次，免得白扣预算、白写 R2
+}
+
+/**
+ * 把本账户对 workId 的票投给 target（{cid} 已有候选 / {key} 本请求刚建的候选 / {url} URL 候选）。
+ * pre = 同一事务里先执行的语句（新建候选）。账户级 CAS：与本账户的书架上报交错时整批回滚
+ * （409 conflict）。返回清理出的 R2 key（调用方删）。
+ */
+async function castVote(env, account, workId, target, now, pre = []) {
+  const acc = await env.DB.prepare('SELECT shelf_rev, hidden FROM accounts WHERE id = ?1').bind(account.id).first();
+  if (!acc) throw new HttpError(401, 'unknown_account');
+  const cur = (await accountVotes(env.DB, account.id, [workId])).get(workId);
+  if (cur && target.cid !== undefined && cur.candidateId === target.cid) return [];
+  if (cur && target.url !== undefined && cur.url === target.url) return [];
+  const op = { w: workId, from: cur ? cur.candidateId : null, cid: target.cid ?? null, key: target.key ?? null, url: target.url ?? null };
+  const results = await casBatch(env.DB, [
+    ...casStatements(env.DB, account.id, acc.shelf_rev),
+    ...pre,
+    ...voteStatements(env.DB, account.id, [op], now, acc.hidden === 0),
+  ]);
+  return releasedCoverKeys(results);
+}
+
+/** 本账户在 workId 上当前所投候选的展示地址（/img/<key> 或图床 URL）。 */
+async function votedCover(env, account, workId) {
+  const row = await env.DB.prepare(
+    `SELECT c.cover_key, c.cover_url FROM cover_votes v JOIN cover_candidates c ON c.id = v.candidate_id
+     WHERE v.work_id = ?1 AND v.account_id = ?2`,
+  ).bind(workId, account.id).first();
+  if (!row) return null;
+  return row.cover_url || `/img/${row.cover_key}`;
+}
+
+/**
+ * POST /v1/works/:id/cover/vote {hash} | {url}：不带图片字节的投票。
+ * hash 命中（汉明距离 ≤ 阈值）已有候选就投给它；没命中抛 409 cover_bytes_required
+ * （客户端随后 PUT 图片字节）。url 必须是白名单图床，候选按 URL 相等归并。
+ */
+export async function voteWorkCover(env, account, workId, body, now) {
+  const { hash, url } = requireOneOf(body);
+  await requireOnShelf(env, account, workId);
+  let target;
+  if (url !== null) {
+    const accepted = acceptCoverUrl(url);
+    if (!accepted) throw new HttpError(400, 'bad_cover_url');
+    target = { url: accepted };
+  } else {
+    const match = await matchHash(env, workId, hash);
+    if (!match) throw new HttpError(409, 'cover_bytes_required');
+    target = { cid: match.id };
+  }
+  await deleteMedia(env, await castVote(env, account, workId, target, now));
+  return { voted: true, cover: await votedCover(env, account, workId) };
+}
+
+async function matchHash(env, workId, hash) {
+  const rows = await env.DB.prepare(
+    'SELECT id, phash, votes FROM cover_candidates WHERE work_id = ?1 AND phash IS NOT NULL',
+  ).bind(workId).all();
+  return nearestCandidate(rows.results, hash);
+}
+
+/**
+ * PUT /v1/works/:id/cover[?h=<dHash>]：上传封面缩略图（只收 JPEG）。
+ * 候选的哈希一律由服务端从字节算（cover_hash.js；客户端上报的哈希不可信，见那里的文件头）。
+ *   - 带 h（新客户端）：h 只用来核对——与服务端哈希距离超过阈值 → 400 cover_hash_mismatch。
+ *     服务端哈希命中已有候选只投票、不存图；没命中则存 R2、建候选并投票。
+ *   - 不带 h（旧客户端）：作品已有封面 → 409 cover_exists（与旧版先到先得一致，旧客户端照旧丢弃）；
+ *     没有 → 存为候选（同样带服务端哈希，之后的新客户端可以归并到它）并记上传者一票。
+ * 返回本账户所投候选的展示地址。
+ */
+export async function setWorkCover(env, account, workId, bytes, now, rawHash = null) {
+  const kind = requireImage(bytes);
+  await requireOnShelf(env, account, workId); // 先鉴权再解码：不给架外的人白耗 CPU
+  if (rawHash === null) {
+    const taken = await env.DB.prepare(
+      'SELECT 1 AS t FROM works WHERE id = ?1 AND (cover_key IS NOT NULL OR cover_url IS NOT NULL)',
+    ).bind(workId).first();
+    if (taken) throw new HttpError(409, 'cover_exists'); // 先查一次，免得白解码、白扣预算、白写 R2
+  }
+  const hash = verifiedCoverHash(bytes, rawHash);
+  if (rawHash !== null) {
+    const match = await matchHash(env, workId, hash);
+    if (match) {
+      await deleteMedia(env, await castVote(env, account, workId, { cid: match.id }, now));
+      return votedCover(env, account, workId);
+    }
+  }
   const key = objectKey('c', workId, now, kind.ext);
   await putImage(env, key, bytes, kind, now);
-  const res = await env.DB.prepare(
-    'UPDATE works SET cover_key = ?2 WHERE id = ?1 AND cover_key IS NULL AND cover_url IS NULL',
-  ).bind(workId, key).run();
-  if (res.meta.changes !== 1) {
+  let released;
+  try {
+    // 建候选与投票同一个事务：零票的新候选不会在中间被别的请求的清理删掉。
+    released = await castVote(env, account, workId, { key }, now, [
+      env.DB.prepare(
+        `INSERT INTO cover_candidates (work_id, phash, cover_key, votes, reached_at, created_at)
+         VALUES (?1, ?2, ?3, 0, ?4, ?4)`,
+      ).bind(workId, hash, key, now),
+    ]);
+  } catch (e) {
+    // 没投上（并发冲突等）：事务已回滚，候选行不存在，只撤掉对象。
     await deleteMedia(env, key);
-    throw new HttpError(409, 'cover_exists');
+    throw e;
   }
-  return key;
+  await deleteMedia(env, released);
+  return votedCover(env, account, workId);
 }
 
 /**

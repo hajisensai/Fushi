@@ -17,6 +17,8 @@ export const LIMITS = {
    */
   shelfRowsPerAccountDay: 20000,
   mediaUploadPerHour: 60,
+  /** 不带字节的封面投票（多数是升级后的一次性补投，命中已有候选不占 R2）。 */
+  coverVotePerHour: 600,
   socialWritePerHour: 120,
 };
 
