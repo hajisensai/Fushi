@@ -309,7 +309,7 @@ Future<void> runCheckedVideoDiscCommand(
   if (result < 0) throw VideoDiscMenuException('command-failed:$result');
 }
 
-/// BUG-3453: goes through the media_kit patch's `commandWithResult`
+/// BUG-3501: goes through the media_kit patch's `commandWithResult`
 /// (`mpv_command_async`). A synchronous `mpv_command` waits for the mpv core
 /// lock on the UI thread and freezes video composition while the core is busy.
 /// mpv runs a client's async requests in order, so commands issued one after

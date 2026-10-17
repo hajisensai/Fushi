@@ -107,7 +107,7 @@ extension VideoDiscMenuController on VideoPlayerController {
     // synchronous step as media_kit's disposed check, so disposal cannot slip
     // between an internal initialization await and access to the native handle;
     // the value then arrives asynchronously without holding the UI thread on the
-    // mpv core lock (BUG-3453).
+    // mpv core lock (BUG-3501).
     _setDiscLoadStage('disc-capability');
     final String option =
         await native.getPropertyAsync('option-info/disc-menu/name', waitForInitialization: false) as String;
@@ -208,7 +208,7 @@ extension VideoDiscMenuController on VideoPlayerController {
       await native.observePropertyChanges('disc-navigation-state-json', (
         String _,
       ) async {
-        // Never await here (BUG-3453): media_kit awaits this listener before it
+        // Never await here (BUG-3501): media_kit awaits this listener before it
         // fetches the next mpv event, and the sample's async reads complete via
         // later events — awaiting would deadlock the event loop. The sampler
         // coalesces overlapping requests itself.
@@ -430,7 +430,7 @@ extension VideoDiscMenuController on VideoPlayerController {
     final bool hadSecondaryTrack = _secondaryPlayerDecodedTextSub != null;
     _stopSecondaryPlayerDecodedText(resetPlayerTrack: false);
     if (hadSecondaryTrack && _player != null) {
-      // Queued, not awaited (BUG-3453): this reset is synchronous and must run to
+      // Queued, not awaited (BUG-3501): this reset is synchronous and must run to
       // the end; a rejected cleanup is evidence, not a reason to leave the title
       // half-invalidated. Current mpv dispatches one client's requests FIFO, so
       // later requests run after it; libmpv does not promise that ordering.

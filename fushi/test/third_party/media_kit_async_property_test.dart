@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
 
-/// BUG-3453：media_kit 补丁 `getPropertyAsync` / 异步 `setProperty` /
+/// BUG-3501：media_kit 补丁 `getPropertyAsync` / 异步 `setProperty` /
 /// `commandWithResult` 的真 libmpv 行为。
 ///
 /// 同步 `getProperty`（`mpv_get_property_string`）在 Flutter UI 线程上排 mpv 内核锁；
@@ -70,7 +70,7 @@ void main() {
       );
       expect(await pending, sync);
       expect(
-        await native.getPropertyAsync('no-such-property-bug-3453'),
+        await native.getPropertyAsync('no-such-property-bug-3501'),
         '',
         reason: '与 getProperty 同一约定：读不到返回空串',
       );
@@ -119,7 +119,7 @@ void main() {
         21,
       );
       expect(
-        await native.commandWithResult(<String>['no-such-command-bug-3453']),
+        await native.commandWithResult(<String>['no-such-command-bug-3501']),
         lessThan(0),
       );
     },

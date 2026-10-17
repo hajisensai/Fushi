@@ -1,4 +1,4 @@
-## BUG-3453 · Windows 视频播放偶发冻帧：UI 线程同步读写 mpv 排内核锁
+## BUG-3501 · Windows 视频播放偶发冻帧：UI 线程同步读写 mpv 排内核锁
 - **报告**：2026-10-17（用户：「我的视频又掉帧了」「偶尔顿一下，然后会有连续3次左右的多少ms只有一帧。声音正常」）
 - **真实性**：✅ 真 bug。用户正式版（`D:\APP\Hibiki`，RTX 5090，4K 159Hz，网络流 23.976fps）开着视频诊断，`Documents\video_diag_log.txt` 显示：
   - mpv 层几乎零丢帧（810 s 播放里 late=0、dec-drop=0、vo-drop 仅 2 秒），硬解、avsync≈0、缓存 69 s——解码 / mpv 渲染没问题。

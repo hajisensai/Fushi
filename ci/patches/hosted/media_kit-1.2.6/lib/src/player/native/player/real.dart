@@ -1238,7 +1238,7 @@ class NativePlayer extends PlatformPlayer {
       await waitForPlayerInitialization;
       await waitForVideoControllerInitializationIfAttached;
     }
-    // Fushi patch (BUG-3453): [dispose] may have run during the awaits above and
+    // Fushi patch (BUG-3501): [dispose] may have run during the awaits above and
     // already completed every pending request; a request queued now could wait
     // forever for a reply that never reaches Dart.
     if (disposed) {
@@ -1257,7 +1257,7 @@ class NativePlayer extends PlatformPlayer {
       calloc.free(data);
       return;
     }
-    // Fushi patch (BUG-3453): `mpv_set_property_string` waits for the mpv core
+    // Fushi patch (BUG-3501): `mpv_set_property_string` waits for the mpv core
     // lock on the calling (UI) thread, see [getPropertyAsync]. Queue the write
     // instead. libmpv's contract does not order async calls against each other
     // (client.h: "Asynchronous calls may be reordered"), so a caller that needs
@@ -1317,7 +1317,7 @@ class NativePlayer extends PlatformPlayer {
     return "";
   }
 
-  /// Fushi patch (BUG-3453): same contract as [getProperty] (`''` when the
+  /// Fushi patch (BUG-3501): same contract as [getProperty] (`''` when the
   /// property is unavailable, throws once disposed), but never blocks the
   /// calling thread.
   ///
@@ -1364,7 +1364,7 @@ class NativePlayer extends PlatformPlayer {
     return completer.future;
   }
 
-  /// Fushi patch (BUG-3453): runs an mpv command without blocking the calling
+  /// Fushi patch (BUG-3501): runs an mpv command without blocking the calling
   /// thread and returns libmpv's result code (`>= 0` success). Unlike the
   /// internal `_command`, a negative result is returned, not logged, so callers
   /// that must tell a rejected command from a successful one can (Blu-ray menu
@@ -1643,7 +1643,7 @@ class NativePlayer extends PlatformPlayer {
     }
     if (event.ref.event_id ==
         generated.mpv_event_id.MPV_EVENT_GET_PROPERTY_REPLY) {
-      // Fushi patch (BUG-3453): reply to [getPropertyAsync]. The event (and the
+      // Fushi patch (BUG-3501): reply to [getPropertyAsync]. The event (and the
       // string it points to) stays valid until the event loop fetches the next
       // one, which happens only after this handler returns. A missing ID means
       // the request was already completed by [dispose].
@@ -1663,7 +1663,7 @@ class NativePlayer extends PlatformPlayer {
       }
     }
     if (event.ref.event_id == generated.mpv_event_id.MPV_EVENT_COMMAND_REPLY) {
-      // Fushi patch (BUG-3453): [commandWithResult] shares the request counter,
+      // Fushi patch (BUG-3501): [commandWithResult] shares the request counter,
       // so its IDs never collide with `_command`'s.
       final resultCompleter =
           _commandResultRequests.remove(event.ref.reply_userdata);

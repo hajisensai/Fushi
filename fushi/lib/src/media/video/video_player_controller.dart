@@ -3685,7 +3685,7 @@ class VideoPlayerController extends ChangeNotifier
       final List<String> wanted = wantDiag
           ? VideoMpvStatsSnapshot.properties
           : const <String>['vo-delayed-frame-count', 'frame-drop-count'];
-      // BUG-3453：一次全部发出、经 `getPropertyAsync` 等回包。同步 `getProperty`
+      // BUG-3501：一次全部发出、经 `getPropertyAsync` 等回包。同步 `getProperty`
       // 在 UI 线程上排 mpv 内核锁，内核一忙一轮 17 个属性就把事件循环堵 0.4–0.6 s，
       // 视频纹理新帧排不上合成 = 画面冻住（音频在 mpv 自己的线程上照常）。
       final List<Object?> values = await Future.wait<Object?>(
@@ -5138,7 +5138,7 @@ class VideoPlayerController extends ChangeNotifier
     return value is String ? value : (value?.toString() ?? '');
   }
 
-  /// 不阻塞 UI 线程地读一条 libmpv 属性（BUG-3453）：走 media_kit 补丁的
+  /// 不阻塞 UI 线程地读一条 libmpv 属性（BUG-3501）：走 media_kit 补丁的
   /// `getPropertyAsync`（`mpv_get_property_async`，回包经事件循环到达），而不是同步
   /// `getProperty`——后者在 UI 线程上排 mpv 内核锁。周期采样一律走这里。读不到 /
   /// 播放器已销毁 / 非 libmpv 后端返回 null。

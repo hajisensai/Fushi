@@ -67,7 +67,7 @@ Builds without Lua reject the option names; `Initializer.create` ignores
 `mpv_set_option_string` results, so this is a no-op there. Remove only together
 with a decision to ship mpv's built-in scripts.
 
-## BUG-3453: property access and commands never block the calling thread
+## BUG-3501: property access and commands never block the calling thread
 
 `lib/src/player/native/player/real.dart` adds
 `NativePlayer.getPropertyAsync(property)` (same contract as `getProperty`: `''`

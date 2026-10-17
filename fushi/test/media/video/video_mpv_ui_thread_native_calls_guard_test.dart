@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-3453 守卫：app 代码不得在 UI 线程上同步碰 mpv 内核锁。
+/// BUG-3501 守卫：app 代码不得在 UI 线程上同步碰 mpv 内核锁。
 ///
 /// media_kit 的 `getProperty`（`mpv_get_property_string`）和直接 FFI 的
 /// `mpv_command` / `mpv_get_property` / `mpv_set_property*` 都在调用线程上等 mpv
@@ -38,7 +38,7 @@ void main() {
       offenders,
       isEmpty,
       reason:
-          '同步 mpv 调用会在 UI 线程上排内核锁、冻住视频合成（BUG-3453）。'
+          '同步 mpv 调用会在 UI 线程上排内核锁、冻住视频合成（BUG-3501）。'
           '读用 getPropertyAsync，要结果码的命令用 commandWithResult。',
     );
   });

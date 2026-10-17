@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3129 条。点号进各自文件。
+> 共 3131 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3501](bugs/BUG-3501-video-mpv-sync-getproperty-ui-stall.md) | ✅ | ✅ | Windows 视频播放偶发冻帧：UI 线程同步读写 mpv 排内核锁 |
 | [BUG-3500](bugs/BUG-3500-snapshot-mkv-video-missing-dts.md) | ✅ | ✅ | 在线视频同步片段画面花屏（缓冲副本丢掉 Matroska B 帧视频包） |
 | [BUG-3499](bugs/BUG-3499-snapshot-laced-opus-audio-truncated.md) | ✅ | ✅ | 在线视频同步片段的音频只剩 0.2～0.4 秒且断续（缓冲副本丢音频包） |
 | [BUG-3498](bugs/BUG-3498-seekbar-click-toggles-pause.md) | ✅ | ✅ | seekbar-click-toggles-pause |
@@ -59,16 +60,7 @@
 | [BUG-3480](bugs/BUG-3480-screen-ocr-hdr-capture.md) | ✅ | ✅ | Windows 截屏识字在系统开 HDR 时截图发白过曝 |
 | [BUG-3454](bugs/BUG-3454-hidden-term-dict-still-in-lookup-engine.md) | ✅ | ✅ | hidden-term-dict-still-in-lookup-engine |
 | [BUG-3453](bugs/BUG-3453-reader-cue-gap-glues-last-word.md) | ✅ | ✅ | reader-cue-gap-glues-last-word |
-> 共 3108 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-3453](bugs/BUG-3453-deleted-book-returns-as-remote-placeholder.md) | ✅ | ✅ | deleted-book-returns-as-remote-placeholder |
-> 共 3108 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3453](bugs/BUG-3453-video-mpv-sync-getproperty-ui-stall.md) | ✅ | ✅ | Windows 视频播放偶发冻帧：UI 线程同步读写 mpv 排内核锁 |
 | [BUG-3452](bugs/BUG-3452-peer-book-download-followups.md) | ✅ | ✅ | 对端书下载后多出未下载卡、合集册数翻倍、跳回顶部、最近阅读排序错位 |
 | [BUG-3451](bugs/BUG-3451-video-bar-menu-hides-controls.md) | ✅ | ✅ | 视频控制条「⋯」只有一项仍弹菜单、点开菜单时控制条消失 |
 | [BUG-3450](bugs/BUG-3450-browser-ext-subtitle-positioning.md) | ✅ | ✅ | 浏览器扩展字幕底板在全屏下与屏幕同高、缩放后整块上移飞出屏幕 |
