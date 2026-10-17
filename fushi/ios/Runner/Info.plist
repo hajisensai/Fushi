@@ -161,5 +161,10 @@
 		-->
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>
+		<!-- 刻意不开 UIFileSharingEnabled / LSSupportsOpeningDocumentsInPlace：iOS 只能整份共享
+		     Documents（书正文 / 有声书 / 视频 / 词典资源 / 错误日志 / 待回写草稿全在里面），用户在「文件」App
+		     里删改会让库条目指向丢失的文件。复习备份要带走走备份页的「另存为 / 分享」（系统分享面板 →
+		     存储到文件 / AirDrop），恢复走「从文件恢复」（系统文件选择器）。
+		     守卫：test/ios/info_plist_file_sharing_guard_test.dart -->
 </dict>
 </plist>

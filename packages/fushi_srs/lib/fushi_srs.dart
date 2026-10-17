@@ -18,6 +18,7 @@ export 'src/ids.dart';
 export 'src/new_card_budget.dart';
 export 'src/note_type_ops.dart';
 export 'src/ordering.dart';
+export 'src/restore_plan.dart';
 export 'src/review_log.dart';
 export 'src/scheduler.dart';
 export 'src/search/anki_search.dart';

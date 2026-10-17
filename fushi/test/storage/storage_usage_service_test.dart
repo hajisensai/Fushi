@@ -138,6 +138,38 @@ void main() {
         );
       },
     );
+    test('复习自动备份（srs_backups）归本地数据类目且只读：裸删 media/ 会毁掉全部备份', () async {
+      writeFile(
+        p.join(docs.path, 'srs_backups', 'uid-1', 'fushi-review-a.fushisrs'),
+        5,
+      );
+      writeFile(p.join(docs.path, 'srs_backups', 'media', 'a' * 64), 7);
+      final List<StorageCategoryUsage> categories = await service()
+          .scanCategories(
+            books: const <StorageBookRef>[],
+            dictionaryNames: const <String>[],
+          )
+          .toList();
+      final StorageCategoryUsage internal = categories.singleWhere(
+        (StorageCategoryUsage usage) => usage.id == StorageCategoryId.database,
+      );
+      expect(internal.bytes, 12);
+      expect(internal.entries, isNotEmpty);
+      expect(
+        internal.entries.every(
+          (StorageEntryUsage entry) => entry.kind == StorageEntryKind.readOnly,
+        ),
+        isTrue,
+      );
+      // 不进「其它」，也不被重复计入别的类目。
+      expect(
+        categories.fold<int>(
+          0,
+          (int sum, StorageCategoryUsage usage) => sum + usage.bytes,
+        ),
+        12,
+      );
+    });
     test('书籍类目：总量按目录整树，明细含真实原语落盘的配对音频，按字节降序', () async {
       // 两本书 + 一个孤儿目录（不在 DB 里）。
       final String bookA = p.join(docs.path, 'fushi_books', 'keyA');
