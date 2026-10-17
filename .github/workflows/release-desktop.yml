@@ -1268,7 +1268,9 @@ jobs:
           path: |
             fushi/build/release-artifacts/fushi-*-windows-setup.exe
           if-no-files-found: ignore
-          retention-days: 14
+          # 正式 / 测试版 dispatch 的 publish job 要等人工审批（环境 release-publish，待审批
+          # job 最长挂 30 天）才下载这些 artifact：三个平台的保留期都要盖住审批窗口。
+          retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
 
   macos:
     # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
@@ -2228,7 +2230,7 @@ jobs:
             fushi/build/release-artifacts/fushi-*-macos-arm64.zip
             fushi/build/release-artifacts/fushi-*-macos-arm64.dmg
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
 
   ios:
     # BUG-2817：`release` 事件只给应用 release（tag = v<数字>…）构建；模型 / 依赖资产
@@ -2242,6 +2244,9 @@ jobs:
       contents: write
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
       actions: read
+    # 签名 IPA 在本 job 里构建好，上传 TestFlight 在下面的 `testflight` job（审批门）。
+    outputs:
+      testflight: ${{ steps.signing.outputs.testflight }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -2581,7 +2586,7 @@ jobs:
           name: desktop-artifacts-ios
           path: fushi/build/release-artifacts/fushi-*-ios.ipa
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
 
       # ---- App Store 签名 + TestFlight ---------------------------------
       # 上面的未签名 IPA 是 GitHub Release 资产，**保持不变**：老用户用自签工具
@@ -2820,8 +2825,40 @@ jobs:
           runner=fushi/build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app/Runner
           bash native/fushi_p2p/verify_abi.sh "$runner" nm
           bash native/fushi_fsrs/verify_abi.sh "$runner" nm
-      - name: Upload to TestFlight
+      # TestFlight 上传是不可回收的外发，搬到下面的 `testflight` job：正式 / 测试版
+      # dispatch 在那里等审批，这里只把签名 IPA 交给它。artifact 名刻意不叫
+      # desktop-artifacts-*：publish job 按那个前缀收 Release 资产，App Store 签名包
+      # 绝不能混进 Release（侧载用户只吃未签名 IPA）。非审批 run 当天就传完，保留 1 天。
+      - name: Upload signed TestFlight IPA artifact
         if: steps.signing.outputs.testflight == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-testflight-signed-ipa
+          path: fushi/build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 1 }}
+
+  # TestFlight 上传（2026-10-17 从 ios job 拆出）：与 publish 同一个审批门。正式 / 测试版
+  # dispatch 走环境 `release-publish`，ios job 签好的 IPA 停在这里等批准；push 的
+  # 「每第三次」debug 与 testflight_only 补传走无保护规则的 `release-auto`，照旧直传。
+  # 门本身（传不传）仍是 ios job「Resolve Apple signing mode」那一处判定，这里只认它的输出。
+  testflight:
+    needs: ios
+    if: ${{ needs.ios.outputs.testflight == 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    environment: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}
+    runs-on: macos-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Download signed TestFlight IPA
+        uses: actions/download-artifact@v7
+        with:
+          name: ios-testflight-signed-ipa
+          path: fushi/build/ios/ipa
+      # 步骤 if 与 job 级 if 同一判据，留在步骤上是纵深防御：缺 Apple 凭据时绝不进上传。
+      - name: Upload to TestFlight
+        if: needs.ios.outputs.testflight == 'true'
         working-directory: fushi
         shell: bash
         env:
@@ -2862,7 +2899,12 @@ jobs:
     # testflight_only 下三个平台 job 要么 skipped 要么只传了 TestFlight，没有任何
     # Release 资产可发；整个 publish 跳过，rolling debug / 清单一根手指都不碰。
     # BUG-2817：always() 会无视上游 job 被跳过，这里必须自己再挡一次非应用 tag。
-    if: ${{ always() && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    # 审批门（2026-10-17）：正式 / 测试版 dispatch 走环境 `release-publish`（必需审批人
+    # hajisensai），三个平台构建完后停在这里等「发版」批准；push / `release` 事件走无
+    # 保护规则的 `release-auto`。build_only 什么都不发，整个 job 跳过、不弹审批。理由与
+    # 流程见 release.yml publish-android job 头注释与 docs/agent/build.md「正式版预构建与审批发布」。
+    if: ${{ always() && github.event.inputs.testflight_only != 'true' && github.event.inputs.build_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    environment: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
