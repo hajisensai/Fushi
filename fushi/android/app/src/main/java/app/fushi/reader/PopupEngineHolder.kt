@@ -59,6 +59,15 @@ object PopupEngineHolder {
     private var pendingSubtitle: IntArray? = null
 
     /**
+     * 截屏识字（BUG-3487）：被点字所在 text block 的全文与本行在块里的起点。Dart 查词窗
+     * 据此截出整句作制卡 `{sentence}`；null = 入口没给（回落为整行）。
+     */
+    class SourceBlock(val text: String, val offset: Int)
+
+    @Volatile
+    private var pendingSourceBlock: SourceBlock? = null
+
+    /**
      * BUG-1757：关闭回调必须记住**是谁注册的**。
      *
      * 本 holder 是 object 单例，而 [PopupDictFlutterActivity] 会被反复创建/销毁。旧实现
@@ -86,11 +95,13 @@ object PopupEngineHolder {
         charIndex: Int = -1,
         anchor: IntArray? = null,
         subtitle: IntArray? = null,
+        sourceBlock: SourceBlock? = null,
     ) {
         pendingText = text
         pendingCharIndex = charIndex
         pendingAnchor = anchor
         pendingSubtitle = subtitle
+        pendingSourceBlock = sourceBlock
     }
 
     /**
@@ -145,6 +156,7 @@ object PopupEngineHolder {
                     map["charIndex"] = pendingCharIndex
                     putAnchor(map, pendingAnchor)
                     putSubtitle(map, pendingSubtitle)
+                    putSourceBlock(map, pendingSourceBlock)
                     result.success(map)
                 }
                 "finishPopup" -> {
@@ -180,6 +192,7 @@ object PopupEngineHolder {
         charIndex: Int = -1,
         anchor: IntArray? = null,
         subtitle: IntArray? = null,
+        sourceBlock: SourceBlock? = null,
         allowBlank: Boolean = false,
     ) {
         if (text.isBlank() && !allowBlank) return
@@ -187,12 +200,14 @@ object PopupEngineHolder {
         pendingCharIndex = charIndex
         pendingAnchor = anchor
         pendingSubtitle = subtitle
+        pendingSourceBlock = sourceBlock
         val ch = channel ?: return
         val args = HashMap<String, Any>()
         args["text"] = text
         args["charIndex"] = charIndex
         putAnchor(args, anchor)
         putSubtitle(args, subtitle)
+        putSourceBlock(args, sourceBlock)
         Handler(Looper.getMainLooper()).post { ch.invokeMethod("onNewProcessText", args) }
     }
 
@@ -216,5 +231,15 @@ object PopupEngineHolder {
     private fun putSubtitle(map: HashMap<String, Any>, subtitle: IntArray?) {
         if (subtitle == null || subtitle.size != 4) return
         map["subtitle"] = listOf(subtitle[0], subtitle[1], subtitle[2], subtitle[3])
+    }
+
+    /**
+     * BUG-3487：所属块全文与本行起点写进载荷（键 `sourceBlock` / `sourceBlockOffset`），
+     * 没有就整个省略——Dart 侧读不到即回落为整行句子。
+     */
+    private fun putSourceBlock(map: HashMap<String, Any>, sourceBlock: SourceBlock?) {
+        if (sourceBlock == null) return
+        map["sourceBlock"] = sourceBlock.text
+        map["sourceBlockOffset"] = sourceBlock.offset
     }
 }
