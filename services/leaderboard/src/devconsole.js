@@ -7,6 +7,7 @@
 //   GET  /dev/f/:id               详情：正文、设备信息、截图、日志、时间线、修复 commit 与各通道发布版本（只读）、处理表单
 //   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载）
 //   POST /dev/f/:id  {status,reply}
+//   GET  /dev/stats               安装统计：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
 //
 // 安全：页面无脚本（CSP script-src 为 none）；会话 Cookie HttpOnly + Secure + SameSite=Strict，
 // 只发往 /dev；所有 POST 另验 Origin 与本站一致（双保险防 CSRF）。会话 7 天，库里只存 token 哈希。
@@ -26,6 +27,7 @@ import {
   feedbackById,
   newSessionToken,
 } from './feedback.js';
+import { PING_PLATFORMS, installStats, versionIncludes } from './installs.js';
 
 export const SESSION_COOKIE = 'fushi_dev';
 export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
@@ -104,7 +106,8 @@ function fmtBytes(n) {
 
 function layout(title, body, { signedIn = false } = {}) {
   const logout = signedIn
-    ? '<form method="post" action="/dev/logout" class="inline"><button class="link">退出</button></form>'
+    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/stats">统计</a>'
+      + '<form method="post" action="/dev/logout" class="inline"><button class="link">退出</button></form></nav>'
     : '';
   return `<!doctype html>
 <html lang="zh">
@@ -169,6 +172,15 @@ textarea{min-height:110px}
 button{font:inherit;margin-top:10px;padding:8px 16px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
 button.link{background:none;color:var(--muted);padding:0;margin:0;text-decoration:underline}
 .inline{display:inline}
+nav.top{display:flex;gap:14px;align-items:baseline}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.kpi b{display:block;font-size:24px;font-variant-numeric:tabular-nums}
+.grid td{text-align:right;font-variant-numeric:tabular-nums}
+.grid td:first-child{text-align:left}
+.grid th{text-align:right;font-weight:600;color:var(--muted);padding:4px 6px}
+.grid th:first-child{text-align:left}
+.bar{display:inline-block;height:8px;border-radius:4px;background:var(--accent);vertical-align:middle;margin-right:6px}
 .err{color:var(--accent)}
 `;
 
@@ -305,6 +317,72 @@ function fixSection(fix) {
 <div class="card"><p>commit <code>${esc(fix.sha)}</code> · ${esc(scope)} · ${esc(fmtTime(fix.at))}</p>${releases}</div>`;
 }
 
+/** 一组「键 → 安装数」的分布表，带按占比的小条。 */
+function distTable(rows, label = (k) => k) {
+  const total = rows.reduce((a, r) => a + r.n, 0);
+  if (!total) return '<p class="muted">还没有数据。</p>';
+  return `<table class="grid">${rows.map((r) => {
+    const pct = (r.n * 100) / total;
+    return `<tr><td>${esc(label(r.key))}</td><td><span class="bar" style="width:${Math.max(2, Math.round(pct))}px"></span>${r.n}`
+      + ` <span class="muted">${pct.toFixed(1)}%</span></td></tr>`;
+  }).join('')}</table>`;
+}
+
+async function statsPage(env, now) {
+  const st = await installStats(env, now);
+  const kpi = (label, n) => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${n}</b></div>`;
+  const head = `<tr><th>日期（UTC）</th><th>活跃</th><th>新增</th>${PING_PLATFORMS.map((p) => `<th>${esc(p)}</th>`).join('')}</tr>`;
+  const daily = st.daily.map((d) => `<tr><td>${esc(d.day)}</td><td>${d.n}</td><td>${d.fresh}</td>`
+    + `${PING_PLATFORMS.map((p) => `<td>${d.platforms[p]}</td>`).join('')}</tr>`).join('');
+  return html(layout('统计', `<h1>安装统计</h1>
+<p class="muted">来自 App 每天一次的匿名心跳（Android / Windows / macOS / Linux；iOS 看 App Store Connect）。
+按安装 id 去重，关了统计的安装不计；日期按 UTC。分布取近 30 天活跃安装各自最近一次上报的值。</p>
+<div class="kpis">${kpi('今日活跃', st.dau)}${kpi('7 日活跃', st.wau)}${kpi('30 日活跃', st.mau)}${kpi('累计安装（保留期内）', st.total)}</div>
+<h2>近 30 天</h2>
+<div class="card">${daily ? `<table class="grid">${head}${daily}</table>` : '<p class="muted">还没有心跳。</p>'}</div>
+<h2>平台</h2><div class="card">${distTable(st.platforms)}</div>
+<h2>通道</h2><div class="card">${distTable(st.channels, (k) => CHANNEL_LABEL[k] || k)}</div>
+<h2>版本（前 20）</h2><div class="card">${distTable(st.versions)}</div>`, { signedIn: true }));
+}
+
+/** 修复是否已装到报告人那台（按该安装最近一次心跳的通道 / 平台 / 版本）。没有可比的发布 → 空串。 */
+function fixOnInstall(fix, install) {
+  if (!fix || fix.scope === 'none' || !install) return '';
+  const release = (fix.releases[install.channel] || {})[install.platform];
+  if (!release) return `<p class="muted">报告人在${esc(CHANNEL_LABEL[install.channel] || install.channel)} · ${esc(install.platform)}，该通道还没有包含修复的发布。</p>`;
+  const has = versionIncludes(install.version, release.version);
+  const verdict = has === true ? '<span class="badge ok">已装上修复</span>'
+    : has === false ? '<span class="badge warn">还没升级到修复版本</span>'
+      : '<span class="badge">无法判断</span>';
+  return `<p>${verdict} 报告人当前 ${esc(install.version)}，修复版本 ${esc(release.version)}</p>`;
+}
+
+/** 反馈详情的「安装」一节：最近心跳、版本轨迹、同一安装的其它反馈。反馈没带 installId → 空串。 */
+function installSection(trail, fix) {
+  if (!trail) return '';
+  const i = trail.install;
+  const summary = i
+    ? `<table>
+<tr><td>当前版本</td><td>${esc(i.version)}</td></tr>
+<tr><td>平台 / 通道</td><td>${esc(i.platform)} · ${esc(CHANNEL_LABEL[i.channel] || i.channel)}</td></tr>
+<tr><td>首次心跳</td><td>${esc(fmtTime(i.firstSeen))}</td></tr>
+<tr><td>最近心跳</td><td>${esc(fmtTime(i.lastSeen))}</td></tr>
+</table>${fixOnInstall(fix, i)}`
+    : '<p class="muted">这个安装没有心跳记录（关了统计，或已超出保留期）。</p>';
+  const versions = trail.versions.length
+    ? `<h2>版本轨迹</h2><div class="card"><table>${trail.versions.map((v) => `<tr><td>${esc(v.version)}</td>`
+      + `<td>${esc(v.firstDay)}${v.lastDay !== v.firstDay ? ` → ${esc(v.lastDay)}` : ''}</td></tr>`).join('')}</table></div>`
+    : '';
+  const related = trail.related.length
+    ? `<h2>同一安装的其它反馈</h2><div class="card">${trail.related.map((r) => `<a class="row" href="/dev/f/${esc(r.id)}">
+<span class="badge s-${esc(r.status)}">${esc(STATUS_LABEL[r.status] || r.status)}</span>
+<span class="muted">#${esc(r.id)}</span><span class="t">${esc(r.title)}</span>
+<span class="muted">${esc(fmtTime(r.createdAt))}</span></a>`).join('')}</div>`
+    : '';
+  return `<h2>安装 <span class="muted">（安装 id 为客户端自报，可伪造）</span></h2>
+<div class="card"><p class="muted"><code>${esc(trail.installId)}</code></p>${summary}</div>${versions}${related}`;
+}
+
 async function detailPage(env, id) {
   const f = await devView(env, await feedbackById(env, id));
   const meta = Object.entries(f.meta || {})
@@ -368,6 +446,7 @@ ${videoBlock}
 <h2>日志</h2>${logLinks}
 <h2>服务端记录</h2><div class="card"><table>${origin}</table></div>
 ${meta ? `<h2>设备信息（客户端自报）</h2><div class="card"><table>${meta}</table></div>` : ''}
+${installSection(f.install, f.fix)}
 <h2>处理记录</h2>
 <div class="card">${timeline || '<p class="muted">还没有记录。</p>'}</div>
 <h2>处理</h2>
@@ -430,6 +509,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   }
 
   if (method === 'GET' && path === '/dev') return listPage(env, url, dev);
+  if (method === 'GET' && path === '/dev/stats') return statsPage(env, now);
   if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})$/.exec(path))) return detailPage(env, m[1]);
   if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\/a\/(log|s[0-2]|v0)$/.exec(path))) {
     return attachmentResponse(env, await feedbackById(env, m[1]), m[2], url.searchParams.get('view') === 'text', {

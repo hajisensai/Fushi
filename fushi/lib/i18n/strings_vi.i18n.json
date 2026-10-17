@@ -6675,6 +6675,8 @@
   "updates_system_notifications": "Thông báo hệ thống",
   "updates_system_notifications_hint": "Gửi thêm thông báo hệ thống. Tắt mục này vẫn giữ huy hiệu trong ứng dụng.",
   "url": "URL",
+  "usage_stats_enabled": "Chia sẻ thống kê sử dụng",
+  "usage_stats_enabled_hint": "Mỗi ngày một lần, gửi ID cài đặt ngẫu nhiên, phiên bản ứng dụng, nền tảng và kênh cập nhật đến fushi.moe để chúng tôi đếm số người dùng hoạt động. Không bao gồm dữ liệu tài khoản, thư viện hay nội dung đọc, và địa chỉ IP của bạn không được lưu. Khi bạn đính kèm thông tin thiết bị vào phản hồi, ID cài đặt sẽ được gửi kèm.",
   "video_air_season_autumn": "Thu",
   "video_air_season_spring": "Xuân",
   "video_air_season_summer": "Hạ",

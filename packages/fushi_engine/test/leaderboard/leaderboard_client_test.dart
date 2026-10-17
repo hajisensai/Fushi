@@ -4,6 +4,7 @@ import 'dart:io' show HttpDate;
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
@@ -663,6 +664,84 @@ void main() {
         }
       },
     );
+  });
+
+  group('安装统计心跳', () {
+    test('ping：POST /v1/ping，不签名不带账户，字段齐全', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async => http.Response('', 204),
+        identity: _id,
+      );
+      await h.client.ping(
+        installId: '0f8fad5b-d9cb-469f-a165-70867728950e',
+        version: '2.10.0-debug.8',
+        platform: 'windows',
+        channel: 'debug',
+      );
+      final http.Request r = h.requests.single;
+      expect(r.method, 'POST');
+      expect(r.url.path, '/v1/ping');
+      expect(r.headers.containsKey('X-Fushi-Account'), isFalse);
+      expect(r.headers.containsKey('X-Fushi-Sig'), isFalse);
+      expect(jsonDecode(utf8.decode(r.bodyBytes)), <String, String>{
+        'installId': '0f8fad5b-d9cb-469f-a165-70867728950e',
+        'version': '2.10.0-debug.8',
+        'platform': 'windows',
+        'channel': 'debug',
+      });
+    });
+
+    test('ping 失败按状态码抛错', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async =>
+            _json(<String, dynamic>{'error': 'daily_budget'}, 503),
+      );
+      await expectLater(
+        h.client.ping(
+          installId: '0f8fad5b-d9cb-469f-a165-70867728950e',
+          version: '2.10.0',
+          platform: 'android',
+          channel: 'stable',
+        ),
+        throwsA(
+          isA<LeaderboardApiException>().having((e) => e.status, 'status', 503),
+        ),
+      );
+    });
+
+    test('submitFeedback 带 installId 时上报，空 / null 时不带该字段', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async => _json(<String, dynamic>{
+          'id': 'f1',
+          'ticket': 't1',
+          'status': 'open',
+          'createdAt': 1,
+          'updatedAt': 1,
+        }, 201),
+      );
+      for (final String? installId in <String?>[
+        '0f8fad5b-d9cb-469f-a165-70867728950e',
+        '',
+        null,
+      ]) {
+        await h.client.submitFeedback(
+          category: FeedbackCategory.bug,
+          title: 't',
+          body: 'b',
+          linkAccount: false,
+          installId: installId,
+        );
+      }
+      final List<Map<String, dynamic>> bodies = h.requests
+          .map(
+            (http.Request r) => (jsonDecode(utf8.decode(r.bodyBytes)) as Map)
+                .cast<String, dynamic>(),
+          )
+          .toList();
+      expect(bodies[0]['installId'], '0f8fad5b-d9cb-469f-a165-70867728950e');
+      expect(bodies[1].containsKey('installId'), isFalse);
+      expect(bodies[2].containsKey('installId'), isFalse);
+    });
   });
 
   group('URL', () {

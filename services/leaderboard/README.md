@@ -17,7 +17,7 @@ Cloudflare Worker + D1 + R2。设计与分期见
 |---|---|---|
 | Workers 请求 | 10 万次/天 | 匿名读边缘缓存 60 秒（缓存键只含白名单参数）；`READ_LIMITER` 每 IP 每分钟 120 次；未鉴权写入口先过 `AUTH_LIMITER`（每 IP 每分钟 10 次，IPv6 按 /64）；图片走边缘缓存 |
 | D1 读 | 500 万行/天 | 榜单 / 人气 / 名次读定时快照（每 30 分钟一次，只读周期汇总表的当期段）；读者数、行数、周/月计分、周/月作品读者数全部增量维护；书架 / 作品读者用游标分页（每页只读 limit+1 行）；`test/plans.test.js` 在查询计划上断言每个读接口不全表扫描、不建临时 B 树 |
-| D1 写 | 10 万行/天 | 增量上报；**全局日预算 `write_rows` 8 万行**（超了 503，次日恢复）；每账户每天 2 万行 |
+| D1 写 | 10 万行/天 | 增量上报；**全局日预算 `write_rows` 8 万行**（超了 503，次日恢复）；每账户每天 2 万行；安装统计心跳另有日预算 `ping` 4000 个安装（每个约 5 行，同一安装当天第二次心跳只读不写） |
 | R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；反馈截图 ≤ 1.5 MiB、日志 ≤ 2 MiB（结案 90 天清）；**反馈视频 ≤ 50MB，结案 7 天 / 创建 30 天（先到者）到期清理**，流式写入不进 Worker 内存；**总配额 8 GiB**（超了 507，按声明长度预占）；删除即归还。总配额分两池：**反馈视频单独 1 GiB**（`media_usage.video_bytes`，满了 507 `video_quota`，只拒视频），头像 / 封面 / 反馈截图与日志用其余 7 GiB（满了 507 `media_quota`），两池互不挤占；**视频每上传 IP 每天 ≤ 200 MB**（按声明长度计，超了 429） |
 | R2 操作 | A 类 100 万/月、B 类 1000 万/月 | 全局日预算 `media` 3000 次上传；出图先查边缘缓存 |
 | Resend 发信 | 100 封/天、3000 封/月 | 全局日预算 `email` 90 封；每 IP 每小时 5 封、每邮箱每小时 3 封 / 每天 10 封 |
@@ -25,7 +25,7 @@ Cloudflare Worker + D1 + R2。设计与分期见
 代价（如实）：D1 每写一行、每个受影响索引另计一行，所以超大书架（8000 部）首次同步约 4 万行，会被拆到两三天里
 续传；几百部的普通书架一次传完。榜单最多滞后 30 分钟（响应里带 `computedAt`）。
 
-预算可用 vars 覆盖：`BUDGET_WRITE_ROWS` / `BUDGET_MEDIA` / `BUDGET_REGISTER` / `BUDGET_EMAIL` / `BUDGET_FEEDBACK`（每天新反馈条数，默认 300）/ `MEDIA_QUOTA_BYTES` / `VIDEO_QUOTA_BYTES`（反馈视频池，默认 1 GiB，最多切走总配额一半；从总配额里切出，不另加）。反馈截图与日志和头像 / 封面共用普通池与 `media` 预算，反馈视频另占视频池（同样扣 `media` 次数），已结案 90 天的反馈附件由定时任务清掉。
+预算可用 vars 覆盖：`BUDGET_WRITE_ROWS` / `BUDGET_MEDIA` / `BUDGET_REGISTER` / `BUDGET_EMAIL` / `BUDGET_FEEDBACK`（每天新反馈条数，默认 300）/ `BUDGET_PING`（每天记入统计的安装数，默认 4000）/ `MEDIA_QUOTA_BYTES` / `VIDEO_QUOTA_BYTES`（反馈视频池，默认 1 GiB，最多切走总配额一半；从总配额里切出，不另加）。反馈截图与日志和头像 / 封面共用普通池与 `media` 预算，反馈视频另占视频池（同样扣 `media` 次数），已结案 90 天的反馈附件由定时任务清掉。
 
 代价（如实）：视频池按「30 天保留 × 每 IP 每天 200 MB」算，五六个 IP 一天就能把视频池占满，之后到最早的视频过期前新视频一律 507 `video_quota`（App 留在待传区、24 小时补传窗口内可重试）；头像 / 封面 / 截图不受影响。
 
@@ -71,6 +71,7 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > `0007_feedback_video_mine.sql`（`feedback.has_video` + 两个索引）：没迁移就部署时视频补传、`GET /v1/feedback/mine` 与定时清理会 500。
 > `0008_media_video_pool.sql`（`media_usage.video_bytes`，反馈视频配额池）：没迁移就部署时视频补传与视频到期清理会 500。
 > 例如 `0006_feedback_dev_notes.sql`：新代码的处理台列表显式选 `ai_summary` 列，没迁移就部署时 `/v1/dev/feedback` 与网页 `/dev` 会整页 500（反馈人接口不受影响）。迁移只加列，先迁移、旧代码照跑不受影响。
+> `0011_install_stats.sql`（`installs` / `install_days` 两张表 + `feedback.install_id`）：没迁移就部署时 `POST /v1/ping`、反馈提交、处理台详情与定时清理都会 500——**这条迁移碰了反馈提交，务必先迁移**。
 > `0009_feedback_release.sql`（修复 / 发布追踪列）同理：处理台列表显式选 `fix_*` 列，`/v1/ci/feedback/**` 也读写这些列，没迁移就部署时都会 500（反馈人接口 `SELECT *` 不受影响，`fix` 恒为 null）。
 
 部署后还要知道的：
@@ -139,7 +140,8 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | POST | `/v1/reports` `{targetKind, targetId, reason}` | 签名·写 | 举报账户 / 作品（理由 ≤ 500 字符、目标须存在）→ 201 `{id}`；同一目标未处理举报去重 |
 | GET | `/img/<key>` | — | R2 出图 |
 | GET | `/u/:id`、`/w/:id`、`/rank?metric&window` | — | 只读 HTML 落地页（分享链接；匿名渲染、无脚本、边缘缓存） |
-| POST | `/v1/feedback` `{category, title, body, contact?, meta?}` | 可选签名 | 提交反馈 → 201 `{id, ticket}`（ticket 只返回这一次；带签名 = 关联账户）。每 IP 每小时 10 条，日预算 `feedback`；同来源同内容 1 小时内 409 `duplicate_feedback`；伪装字符剥掉、注入 / 链接 / 跨来源重复只打标记（`flags`，仅开发者可见） |
+| POST | `/v1/ping` `{installId, version, platform, channel}` | — | 安装统计心跳 → 204。`installId` 小写 UUID v4，`platform` ∈ android / windows / macos / linux（iOS 不发），`channel` ∈ stable / beta / debug；`AUTH_LIMITER` 限流，日预算 `ping`；服务端不存 IP。开发者处理台 `/dev/stats` 看日活 / 周活 / 月活与分布 |
+| POST | `/v1/feedback` `{category, title, body, contact?, meta?, installId?}` | 可选签名 | 提交反馈 → 201 `{id, ticket}`（`installId` 同心跳，不合法当没带，处理台据此显示该安装的版本轨迹）（ticket 只返回这一次；带签名 = 关联账户）。每 IP 每小时 10 条，日预算 `feedback`；同来源同内容 1 小时内 409 `duplicate_feedback`；伪装字符剥掉、注入 / 链接 / 跨来源重复只打标记（`flags`，仅开发者可见） |
 | PUT | `/v1/feedback/:id/attachments/:slot` | `X-Fushi-Ticket` | 补传附件：`s0`..`s2` 截图（PNG/JPEG/WebP ≤ 1.5 MiB）、`log`（gzip ≤ 2 MiB）、`v0` 视频（mp4 / mov / webm ≤ 50MB，必须带 `Content-Length`，缺 411、超限 413、类型不对 415 `unsupported_video_type` / `not_a_video`、实际长度不符 400 `bad_length`；流式写 R2）；提交后 24 小时内、每槽一次（重复 409 `slot_taken`）。只认 ticket（签名覆盖不了流式请求体） |
 | POST | `/v1/feedback/status` `{items:[{id, ticket}] ≤ 50}` | — | 批量查进度（ticket 不对的条目不返回） |
 | GET | `/v1/feedback/mine?cursor&limit` | 签名 | 本账户提交过的反馈（跨设备找回工单）→ `{items, next}`，摘要同 status，按创建时间倒序游标分页（limit 默认 30、上限 50） |

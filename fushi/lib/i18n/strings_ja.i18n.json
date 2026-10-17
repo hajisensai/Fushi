@@ -6675,6 +6675,8 @@
   "updates_system_notifications": "システム通知",
   "updates_system_notifications_hint": "システム通知も送信します。オフにしてもアプリ内のバッジは残ります。",
   "url": "URL",
+  "usage_stats_enabled": "利用統計を送信",
+  "usage_stats_enabled_hint": "1 日 1 回、ランダムなインストール ID・アプリのバージョン・プラットフォーム・更新チャネルを fushi.moe に送信し、アクティブユーザー数の集計に使います。アカウント・ライブラリ・読書内容は含まれず、IP アドレスも保存しません。フィードバックにデバイス情報を添付すると、インストール ID も一緒に送信されます。",
   "video_air_season_autumn": "秋",
   "video_air_season_spring": "春",
   "video_air_season_summer": "夏",

@@ -484,8 +484,33 @@ class LeaderboardClient {
     return (signed: true, headers: null);
   }
 
+  /// 安装统计心跳（`POST /v1/ping`，服务端 `services/leaderboard/src/installs.js`）：
+  /// 匿名、不签名；同一 [installId] 同一 UTC 日服务端只记一次。成功返回、失败抛
+  /// [LeaderboardApiException] / [LeaderboardTimeoutException]，由调用方决定何时重试。
+  Future<void> ping({
+    required String installId,
+    required String version,
+    required String platform,
+    required String channel,
+  }) async {
+    await _send(
+      'POST',
+      '/v1/ping',
+      bytes: _encodeJson(<String, String>{
+        'installId': installId,
+        'version': version,
+        'platform': platform,
+        'channel': channel,
+      }),
+      contentType: _json,
+      withAccount: false,
+      signed: false,
+    );
+  }
+
   /// 提交反馈。[linkAccount] 且本客户端有账户时带签名提交（开发者能看到反馈人昵称）；
-  /// 否则匿名。返回的 [FeedbackReceipt.ticket] 只给这一次。
+  /// 否则匿名。返回的 [FeedbackReceipt.ticket] 只给这一次。[installId]（安装统计的本机
+  /// 安装 id）非空时一并上报，开发者处理台据此关联该安装的版本轨迹。
   Future<FeedbackReceipt> submitFeedback({
     required FeedbackCategory category,
     required String title,
@@ -494,6 +519,7 @@ class LeaderboardClient {
     Map<String, Object?> meta = const <String, Object?>{},
     bool linkAccount = true,
     ({String id, String ticket})? reopenOf,
+    String? installId,
   }) async {
     final bool signs = linkAccount && _identity != null;
     final JsonMap j = await _sendJson(
@@ -510,6 +536,7 @@ class LeaderboardClient {
             'id': reopenOf.id,
             'ticket': reopenOf.ticket,
           },
+        if (installId != null && installId.isNotEmpty) 'installId': installId,
       },
       signed: signs,
     );

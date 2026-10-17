@@ -6675,6 +6675,8 @@
   "updates_system_notifications": "시스템 알림",
   "updates_system_notifications_hint": "시스템 알림도 함께 보냅니다. 끄면 앱 내 배지는 유지됩니다.",
   "url": "URL",
+  "usage_stats_enabled": "사용 통계 보내기",
+  "usage_stats_enabled_hint": "하루에 한 번 무작위 설치 ID, 앱 버전, 플랫폼, 업데이트 채널을 fushi.moe로 보내 활성 사용자 수를 집계합니다. 계정, 라이브러리, 읽기 데이터는 포함되지 않으며 IP 주소도 저장하지 않습니다. 피드백에 기기 정보를 첨부하면 설치 ID도 함께 전송됩니다.",
   "video_air_season_autumn": "가을",
   "video_air_season_spring": "봄",
   "video_air_season_summer": "여름",

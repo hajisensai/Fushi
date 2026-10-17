@@ -6675,6 +6675,8 @@
   "updates_system_notifications": "Notifikasi sistem",
   "updates_system_notifications_hint": "Juga kirim notifikasi sistem. Mematikan ini mempertahankan lencana dalam aplikasi.",
   "url": "URL",
+  "usage_stats_enabled": "Bagikan statistik penggunaan",
+  "usage_stats_enabled_hint": "Sekali sehari, mengirim ID instalasi acak, versi aplikasi, platform, dan kanal pembaruan ke fushi.moe agar kami dapat menghitung pengguna aktif. Tidak ada data akun, pustaka, atau bacaan yang disertakan, dan alamat IP Anda tidak disimpan. Saat Anda melampirkan info perangkat ke masukan, ID instalasi ikut dikirim.",
   "video_air_season_autumn": "Musim gugur",
   "video_air_season_spring": "Musim semi",
   "video_air_season_summer": "Musim panas",

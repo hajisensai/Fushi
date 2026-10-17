@@ -78,6 +78,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 行为由服务层用例咬住：「开 + 有未结案 → 排；关 → 撤」「关着 → 不发请求」。
   'system/Notify me of feedback replies':
       'test/feedback/feedback_reply_background_test.dart（开关 ↔ 后台排程 / tick）',
+  // 「发送使用统计」：写 prefsRepo（changed=true），生效点是 UsageHeartbeat 每个 tick
+  // 读开关、提交反馈时 usageStatsInstallIdForFeedback 读开关——harness 里没有心跳与
+  // 反馈提交。行为由服务层用例咬住：「关掉开关不发」「关掉后反馈不带安装 id」。
+  'system/Share usage statistics':
+      'test/updates/usage_heartbeat_test.dart（关掉开关不发心跳、反馈不带安装 id）',
   // v92 阅读空闲门（分钟）：写 prefsRepo（changed=true），生效点是阅读器建
   // StudyClock 时读一次 appModel.readingIdleTimeout——harness 里没有阅读器。
   // 空闲门行为由 study_clock_test「阅读空闲门」用例咬住，接线由

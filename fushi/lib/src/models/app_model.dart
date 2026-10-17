@@ -15,6 +15,9 @@ import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
+import 'package:fushi/src/updates/app_update_check.dart';
+import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
@@ -1264,6 +1267,7 @@ class AppModel with ChangeNotifier {
       '${FushiTimeFormat.hourMinute(time)}';
 
   UpdateCheckScheduler? _updateCheckScheduler;
+  UsageHeartbeat? _usageHeartbeat;
 
   /// 启动后台更新检查（漫画新章 + 漫画扩展）。幂等，重复调用不再起第二个定时器。
   ///
@@ -1320,12 +1324,24 @@ class AppModel with ChangeNotifier {
     );
     _updateCheckScheduler = scheduler;
     scheduler.start();
+    // 安装统计心跳（iOS / 关了开关时它自己不发）：与更新检查同生命周期。
+    final UsageHeartbeat heartbeat = UsageHeartbeat(
+      prefs: prefsRepo,
+      send: sendUsageHeartbeatToFushi,
+      version: () => resolveCurrentAppVersion(packageInfo.version),
+      channel: () => appUpdateChannelOf(this).name,
+    );
+    _usageHeartbeat = heartbeat;
+    heartbeat.start();
   }
 
   Future<void> stopUpdateChecks() async {
     final UpdateCheckScheduler? scheduler = _updateCheckScheduler;
+    final UsageHeartbeat? heartbeat = _usageHeartbeat;
     _updateCheckScheduler = null;
+    _usageHeartbeat = null;
     await scheduler?.stop();
+    await heartbeat?.stop();
   }
 
   /// TODO-855: last prefs-version this process has reconciled its cache against.
@@ -9452,6 +9468,11 @@ class AppModel with ChangeNotifier {
   bool get updateAutoInstall => prefsRepo.updateAutoInstall;
   Future<void> setUpdateAutoInstall(bool value) =>
       prefsRepo.setUpdateAutoInstall(value);
+
+  /// 安装统计心跳开关（[UsageHeartbeat]），设备本地。
+  bool get usageStatsEnabled => prefsRepo.usageStatsEnabled;
+  Future<void> setUsageStatsEnabled(bool value) =>
+      prefsRepo.setUsageStatsEnabled(value);
 
   bool get updateBetaChannel => prefsRepo.updateBetaChannel;
   Future<void> setUpdateBetaChannel(bool value) =>
