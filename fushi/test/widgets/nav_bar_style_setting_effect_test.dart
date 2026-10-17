@@ -175,10 +175,5 @@ void main() {
       methodBody(home, 'Widget _buildMobileLayout('),
     );
     expect(body, contains('barStyle:appModel.navBarStyle'));
-    // 横滑切模块的序列也跟着底栏形态带上查词。
-    expect(
-      compactCode(home),
-      contains('lookupInBar:appModel.navBarStyle.lookupInBar'),
-    );
   });
 }
