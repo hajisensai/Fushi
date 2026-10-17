@@ -4658,7 +4658,7 @@
   "mining_audio_tail_pad_hint": "Sondaki sesler kısa kesilmesin diye altyazı bittikten sonra tutulan ek ses. Asla sonraki satıra taşmaz.",
   "mining_clip_format_hint": "WebM kartın içinde oynar, ancak iPhone'daki AnkiMobile onu oynatamaz — iPhone'da tekrar yapıyorsanız MP4'ü seçin. WebM bu cihazda kodlanamazsa Fushi MP4'e geri döner.",
   "mining_clip_format_mp4_h264": "MP4 · H.264 (Anki'nin kendi oynatıcısı; AnkiMobile için kullanın)",
-  "mining_clip_format_webm_av1": "WebM · AV1 (kartın içinde oynar; en küçük dosya, VP9'un yaklaşık 2× kodlama süresi; yalnızca masaüstü)",
+  "mining_clip_format_webm_av1": "WebM · AV1 (kartın içinde oynar; en küçük dosya, VP9'un yaklaşık 2× kodlama süresi)",
   "mining_clip_format_webm_vp9": "WebM · VP9 (kartın içinde oynar, önerilir)",
   "mining_image_quality": "Görsel / GIF kalitesi",
   "mining_image_quality_hd": "HD",

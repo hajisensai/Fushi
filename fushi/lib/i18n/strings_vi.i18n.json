@@ -4658,7 +4658,7 @@
   "mining_audio_tail_pad_hint": "Phần âm thanh thêm giữ lại sau khi phụ đề kết thúc, để âm cuối không bị cắt. Không bao giờ lấn sang dòng sau.",
   "mining_clip_format_hint": "WebM phát ngay trong thẻ, nhưng AnkiMobile trên iPhone không phát được — hãy chọn MP4 nếu bạn ôn trên iPhone. Nếu thiết bị này không mã hóa được WebM, Fushi sẽ quay về MP4.",
   "mining_clip_format_mp4_h264": "MP4 · H.264 (trình phát riêng của Anki; dùng cho AnkiMobile)",
-  "mining_clip_format_webm_av1": "WebM · AV1 (phát trong thẻ; tệp nhỏ nhất, thời gian mã hóa gấp khoảng 2× VP9; chỉ máy tính)",
+  "mining_clip_format_webm_av1": "WebM · AV1 (phát trong thẻ; tệp nhỏ nhất, thời gian mã hóa gấp khoảng 2× VP9)",
   "mining_clip_format_webm_vp9": "WebM · VP9 (phát trong thẻ, khuyến nghị)",
   "mining_image_quality": "Chất lượng hình ảnh / GIF",
   "mining_image_quality_hd": "HD",

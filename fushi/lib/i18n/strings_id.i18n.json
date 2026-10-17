@@ -4658,7 +4658,7 @@
   "mining_audio_tail_pad_hint": "Audio tambahan dipertahankan setelah subtitel berakhir, agar bunyi di akhir tidak terpotong. Tidak pernah masuk ke baris berikutnya.",
   "mining_clip_format_hint": "WebM diputar di dalam kartu, tetapi AnkiMobile di iPhone tidak dapat memutarnya — pilih MP4 jika Anda mengulas di iPhone. Jika WebM tidak dapat dienkode di perangkat ini, Fushi beralih ke MP4.",
   "mining_clip_format_mp4_h264": "MP4 · H.264 (pemutar Anki sendiri; gunakan untuk AnkiMobile)",
-  "mining_clip_format_webm_av1": "WebM · AV1 (diputar di dalam kartu; file terkecil, sekitar 2× waktu enkode VP9; hanya desktop)",
+  "mining_clip_format_webm_av1": "WebM · AV1 (diputar di dalam kartu; file terkecil, sekitar 2× waktu enkode VP9)",
   "mining_clip_format_webm_vp9": "WebM · VP9 (diputar di dalam kartu, direkomendasikan)",
   "mining_image_quality": "Kualitas gambar / GIF",
   "mining_image_quality_hd": "HD",

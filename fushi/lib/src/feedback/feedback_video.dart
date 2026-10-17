@@ -9,8 +9,9 @@
 // 刚好装进上限（下限 250 kbps，再低也装不下就报太大），而不是转完才发现超了。1080p 只在
 // 码率还够 1080p 用时才转（见 [FeedbackVideoQuality.p1080]），否则自动退回 720p 并告诉调用方。
 //
-// 速度：移动端 ffmpeg-kit 配方是 `--disable-mediacodec`（见 ffmpeg_kit_mobile_recipe_guard_test），
-// 没有硬件编码器，只能在 libx264 软编上省——见 [buildFeedbackVideoTranscodeArgs]。
+// 速度：统一 FFmpeg 的硬件加速只用于解码（MediaCodec / VideoToolbox 给播放器），编码一律
+// 软编（画质与跨设备一致性，见 docs/specs/2026-10-17-unified-ffmpeg.md），只能在 libx264
+// 软编上省——见 [buildFeedbackVideoTranscodeArgs]。
 //
 // 取消：[prepareFeedbackVideo] 的 `cancel` 完成即强杀 ffmpeg 会话、删掉半成品，抛
 // [FeedbackVideoCancelledException]（不会退回「原样上传」）。

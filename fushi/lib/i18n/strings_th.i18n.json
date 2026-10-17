@@ -4658,7 +4658,7 @@
   "mining_audio_tail_pad_hint": "เสียงเพิ่มเติมที่เก็บไว้หลังคำบรรยายจบ เพื่อไม่ให้เสียงท้ายถูกตัดสั้น จะไม่ล้ำไปถึงบรรทัดถัดไป",
   "mining_clip_format_hint": "WebM เล่นในการ์ดได้ แต่ AnkiMobile บน iPhone เล่นไม่ได้ — เลือก MP4 หากคุณทบทวนบน iPhone หากเข้ารหัส WebM บนอุปกรณ์นี้ไม่ได้ Fushi จะถอยกลับไปใช้ MP4",
   "mining_clip_format_mp4_h264": "MP4 · H.264 (เครื่องเล่นของ Anki เอง ใช้กับ AnkiMobile)",
-  "mining_clip_format_webm_av1": "WebM · AV1 (เล่นในการ์ด ไฟล์เล็กที่สุด ใช้เวลาเข้ารหัสประมาณ 2 เท่าของ VP9 เฉพาะเดสก์ท็อป)",
+  "mining_clip_format_webm_av1": "WebM · AV1 (เล่นในการ์ด ไฟล์เล็กที่สุด ใช้เวลาเข้ารหัสประมาณ 2 เท่าของ VP9)",
   "mining_clip_format_webm_vp9": "WebM · VP9 (เล่นในการ์ด แนะนำ)",
   "mining_image_quality": "คุณภาพรูปภาพ / GIF",
   "mining_image_quality_hd": "HD",

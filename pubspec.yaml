@@ -62,10 +62,13 @@ dependency_overrides:
   # native delta is tracked source. See third_party/desktop_drop/PATCHES.md.
   desktop_drop:
     path: third_party/desktop_drop
-  # 自编 ffmpeg-kit（arthenica 源码重编，android 用 third_party 内自编 AAR；修 BUG-122
-  # Android16 启动崩溃）。Dart API 与上游 ffmpeg_kit_flutter 6.0.3 一致。
-  ffmpeg_kit_flutter:
-    path: third_party/ffmpeg_kit_flutter
+  # 统一 FFmpeg 的移动端进程内命令运行器（FFmpegKitNext v9.0.0 插件，vendored）：
+  # Android AAR / iOS xcframework 里的 FFmpeg 就是播放器 libmpv 链接的那一份，
+  # 见 tool/ffmpeg-unified 与 docs/specs/2026-10-17-unified-ffmpeg.md。
+  ffmpeg_kit_next_flutter:
+    path: third_party/ffmpeg_kit_next_flutter
+  ffmpeg_kit_next_flutter_platform_interface:
+    path: third_party/ffmpeg_kit_next_flutter_platform_interface
   # flutter_inappwebview_android 1.1.3 has legacy openFileChooser overloads
   # declared protected, which fails against the current Android WebChromeClient
   # API at compileSdk 36. Keep the Android implementation vendored until an
