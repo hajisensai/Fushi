@@ -44,17 +44,21 @@ const COLS = 9;
 const ROWS = 8;
 
 /**
- * 像素上限（SOF 声称的宽×高）。客户端缩略图长边 ≤ 300（≤ 0.09 MP）；这里留余量但防构造的
- * 超大帧头——96KB 的 JPEG 可以在帧头里声称 65535×65535，读到 SOF 就拒绝，不分配块数组。
+ * 尺寸上限（SOF 声称的宽高，读到帧头就判、任何分配之前）。依据是全部两条生产上传路径都把封面缩到
+ * 长边 ≤ 300：App 的 leaderboardCoverThumb → downsampleCardScreenshotAsync(maxLongEdge: 300)（≤ 300
+ * 原样透传、否则缩到 300），无头服务端的 encodeLeaderboardCoverThumb（长边 ≤ 300）。留 20px 余量。
+ * 不设这条时，96KB 的 500×500 高频图冷调用 p90 会超过 Workers Free 的 10 ms。
  */
-export const COVER_DECODE_MAX_MP = 0.25;
+export const COVER_MAX_EDGE = 320;
+/** 像素数上限：320×320 ≈ 0.1 MP。 */
+export const COVER_DECODE_MAX_MP = 0.1024;
 
 /** 一个文件里 DQT + DHT 表定义的总数上限（正常 2–6 张）。 */
 const MAX_TABLES = 32;
 /** 扫描数上限（baseline 1–3 个，libjpeg 默认 progressive 脚本 10 个）。 */
 const MAX_SCANS = 64;
-/** 被格子边界 / 图像边缘切开、需要存 AC 的亮度块数上限。 */
-const MAX_CUT_BLOCKS = 2048;
+/** 被格子边界 / 图像边缘切开、需要存 AC 的亮度块数上限（= 320×320 的全部亮度块数，尺寸上限内不会超）。 */
+const MAX_CUT_BLOCKS = (COVER_MAX_EDGE / 8) * (COVER_MAX_EDGE / 8);
 
 function isJpeg(bytes) {
   return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
@@ -460,6 +464,7 @@ function parseJpeg(bytes, orientation) {
     const nf = bytes[s + 5];
     if (precision !== 8) bad();
     if (width < 1 || height < 1) bad(); // 高 0 = DNL 定义高度，不支持
+    if (width > COVER_MAX_EDGE || height > COVER_MAX_EDGE) bad();
     if (width * height > COVER_DECODE_MAX_MP * 1e6) bad();
     if (nf !== 1 && nf !== 3) bad(); // 灰度或 YCbCr；CMYK / 其它拒绝
     if (e - s !== 6 + 3 * nf) bad();
@@ -490,7 +495,7 @@ function parseJpeg(bytes, orientation) {
     const nBlocks = stride * mcusY * y.v;
     const flip = orientation >= 5;
     // 被切开的块要存 64 个系数、哈希时逐片算：细长图（如 1×250000）每块都被切开，限住数量。
-    // 正常封面远低于上限（500×500 约 1050 个，≈300px 缩略图约 400 个）。在建切片表（每片要算基函数和）
+    // 尺寸上限内不会超（≈300px 缩略图约 400 个）；这条是尺寸上限之外的第二道保险。在建切片表（每片要算基函数和）
     // 之前用整块计数先判，构造的细长图不必走完整条轴。
     const wx = wholeBlockCount(bw, width, REVERSE_X[orientation], flip ? ROWS : COLS);
     const wy = wholeBlockCount(bh, height, REVERSE_Y[orientation], flip ? COLS : ROWS);

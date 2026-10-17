@@ -6,7 +6,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import encodeJpeg from 'jpeg-js/lib/encoder.js';
 import { coverJpeg, withExifOrientation } from './jpeg.js';
 import { flippedBitGaps, referenceDHashOfJpeg } from './jpeg_reference.js';
-import { COVER_DECODE_MAX_MP, coverDHashOfJpeg, jpegExifOrientation, verifiedCoverHash } from '../src/cover_hash.js';
+import { COVER_DECODE_MAX_MP, COVER_MAX_EDGE, coverDHashOfJpeg, jpegExifOrientation, verifiedCoverHash } from '../src/cover_hash.js';
 import { COVER_HASH_MAX_DISTANCE, hammingHex } from '../src/cover_votes.js';
 
 const vectors = JSON.parse(readFileSync(new URL('./cover_vectors/cover_hashes.json', import.meta.url), 'utf8'));
@@ -227,15 +227,19 @@ describe('畸形 / 不支持的输入：拒绝且不超时', () => {
     }
   });
 
-  it('像素数上限：合法编码的 500×500（= 0.25 MP）照算，501×500 拒绝', () => {
-    const flat = (w, h) => new Uint8Array(encodeJpeg(rgba(w, h, (x) => [x % 256, 90, 160]), 50).data);
-    expect(coverDHashOfJpeg(flat(500, 500))).toMatch(/^[0-9a-f]{16}$/);
-    expect(coverDHashOfJpeg(flat(501, 500))).toBeNull();
+  it('尺寸上限：合法编码的 320×320 照算（8 种方向），长边 321 拒绝（400 bad_cover_image）', () => {
+    const img = (w, h) => new Uint8Array(encodeJpeg(rgba(w, h, (x, y) => [x % 256, y % 256, 160]), 50).data);
+    expect(COVER_MAX_EDGE).toBe(320);
+    const ok = img(320, 320);
+    for (let o = 1; o <= 8; o++) expect(coverDHashOfJpeg(withExifOrientation(ok, o))).toMatch(/^[0-9a-f]{16}$/);
+    for (const [w, h] of [[321, 100], [100, 321], [321, 321]]) {
+      expect(() => verifiedCoverHash(img(w, h), null)).toThrow(expect.objectContaining({ status: 400, code: 'bad_cover_image' }));
+    }
   });
 
-  it('超大 SOF（> COVER_DECODE_MAX_MP）/ 宽或高为 0 → null', () => {
+  it('超大 SOF（超过尺寸上限）/ 宽或高为 0 → null', () => {
     for (const [w, h] of [[65535, 65535], [600, 500], [0, 300], [300, 0]]) {
-      expect(w * h > COVER_DECODE_MAX_MP * 1e6 || w * h === 0).toBe(true);
+      expect(w > COVER_MAX_EDGE || h > COVER_MAX_EDGE || w * h > COVER_DECODE_MAX_MP * 1e6 || w * h === 0).toBe(true);
       const b = real.slice();
       const s = sofAt(b);
       b.set([h >> 8, h & 255, w >> 8, w & 255], s + 5);
@@ -277,10 +281,10 @@ describe('畸形 / 不支持的输入：拒绝且不超时', () => {
     expect(coverDHashOfJpeg(b)).toBeNull();
   });
 
-  it('构造的最坏输入（0.25 MP 帧头 + 全 0 熵数据 ≈ 96KB）在毫秒级结束', () => {
+  it('构造的最坏输入（320×320 帧头 + 全 0 熵数据 ≈ 96KB）在毫秒级结束', () => {
     const b = real.slice();
     const s = sofAt(b);
-    b.set([0x01, 0xf4, 0x01, 0xf4], s + 5); // 500×500 = 0.25 MP
+    b.set([0x01, 0x40, 0x01, 0x40], s + 5); // 320×320 = 尺寸上限
     const sos = b.findIndex((v, i) => v === 0xff && b[i + 1] === 0xda);
     const hdr = sos + 2 + ((b[sos + 2] << 8) | b[sos + 3]);
     const evil = new Uint8Array(96 * 1024);
@@ -293,14 +297,15 @@ describe('畸形 / 不支持的输入：拒绝且不超时', () => {
     expect(ms).toBeLessThan(500);
   });
 
-  it('构造的最密符号输入（1 位 Huffman 码 + 0.25 MP 三分量 + 96KB 全 0 熵数据：每个比特都在解系数）被拒且有界', () => {
+  it('构造的最密符号输入（1 位 Huffman 码 + 320×320 三分量 + 96KB 全 0 熵数据：每个比特都在解系数）有界', () => {
     // DC 表：'0' → 差分 0；AC 表：'0' → (游程 0, 幅值 1 位)、'1' → EOB。全 0 数据 = 每块 63 个系数、每个 2 位，
-    // 是每比特解码工作量最大的形态；数据在帧解完前耗尽 → 截断。
+    // 是每比特解码工作量最大的形态。320×320 三分量要 4800 块 × 127 位 ≈ 74KB，96KB 内解得完，算出的是
+    // 一张平图的哈希；要的只是有界。
     const seg = (m, body) => [0xff, m, (body.length + 2) >> 8, (body.length + 2) & 255, ...body];
     const head = [
       0xff, 0xd8,
       ...seg(0xdb, [0x00, ...new Array(64).fill(1)]),
-      ...seg(0xc0, [8, 0x01, 0xf4, 0x01, 0xf4, 3, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0]),
+      ...seg(0xc0, [8, 0x01, 0x40, 0x01, 0x40, 3, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0]),
       ...seg(0xc4, [0x00, 2, ...new Array(15).fill(0), 0x00, 0x01]),
       ...seg(0xc4, [0x10, 2, ...new Array(15).fill(0), 0x01, 0x00]),
       ...seg(0xda, [3, 1, 0x00, 2, 0x00, 3, 0x00, 0, 63, 0]),
@@ -312,7 +317,7 @@ describe('畸形 / 不支持的输入：拒绝且不超时', () => {
     const h = coverDHashOfJpeg(evil);
     const ms = performance.now() - t0;
     console.log('densest-symbol worst case:', ms.toFixed(1), 'ms');
-    expect(h).toBeNull();
+    expect(h === null || /^[0-9a-f]{16}$/.test(h)).toBe(true);
     expect(ms).toBeLessThan(500);
   });
 });
@@ -320,8 +325,9 @@ describe('畸形 / 不支持的输入：拒绝且不超时', () => {
 describe('构造的 CPU 炸弹（test/cover_vectors/adversarial/，对抗审查产出）', () => {
   const advDir = new URL('./cover_vectors/adversarial/', import.meta.url);
   const adv = (name) => new Uint8Array(readFileSync(new URL(name, advDir)));
-  // 格式本身合法、只是结构夸张的（几千个 Exif 段 / RST 段 / 全 16 位码字）：照算，只要求有界。
-  const ACCEPTED = new Set(['adv_exif_storm.jpg', 'adv_rst_storm.jpg', 'adv_slow_huff_16bit.jpg']);
+  // 格式本身合法、只是结构夸张的（几千个 Exif 段 / 每块一个 RST / 全 16 位码字）：照算，只要求有界。
+  // 原样本 adv_rst_storm / adv_slow_huff_16bit 是 500×500，尺寸上限收到 320 后被拒；*_320 是同一构造的 320×320 版。
+  const ACCEPTED = new Set(['adv_exif_storm.jpg', 'adv_rst_storm_320.jpg', 'adv_slow_huff_16bit_320.jpg']);
   const timed = (b) => {
     const t0 = performance.now();
     let r;
@@ -355,10 +361,9 @@ describe('构造的 CPU 炸弹（test/cover_vectors/adversarial/，对抗审查�
     }
   });
 
-  it('上限不误伤：正常 progressive（10 个扫描）与 500×500（约 1050 个被切开的块）照算', () => {
+  it('上限不误伤：正常 progressive（10 个扫描）、300×40 细条（每块都被切开）照算', () => {
     expect(coverDHashOfJpeg(new Uint8Array(readFileSync(new URL('progressive_444_dri.jpg', dcDir))))).toMatch(/^[0-9a-f]{16}$/);
-    const big = new Uint8Array(encodeJpeg(rgba(500, 500, (x, y) => [x % 256, y % 256, 90]), 50).data);
-    for (let o = 1; o <= 8; o++) expect(coverDHashOfJpeg(withExifOrientation(big, o))).toMatch(/^[0-9a-f]{16}$/);
+    expect(coverDHashOfJpeg(new Uint8Array(readFileSync(new URL('small_strip_420.jpg', dcDir))))).toMatch(/^[0-9a-f]{16}$/);
   });
 });
 
