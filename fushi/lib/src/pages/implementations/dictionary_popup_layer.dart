@@ -1058,6 +1058,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onDuplicateCheck,
     this.onOverwriteTargetNoteId,
     this.onMinedCardAction,
+    this.onQueueOverwrite,
     this.onOpenInAnki,
     this.onUpdateEntry,
     this.onFavoriteEntry,
@@ -1166,6 +1167,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 命中多张让用户选。透传给 [DictionaryPopupWebView]。null 时回退旧两态行为。
   final Future<MinePopupResult> Function(Map<String, String> fields)?
   onMinedCardAction;
+
+  /// BUG-3492：卡还在后台写入时的覆盖请求（排队、落地后自动覆盖），透传给
+  /// [DictionaryPopupWebView.onQueueOverwrite]。null = 宿主没有后台写入这条路。
+  final Future<QueuedOverwriteReply> Function(Map<String, String> fields)?
+  onQueueOverwrite;
 
   /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮回调，透传给
   /// [DictionaryPopupWebView]。宿主把 Anki 浏览器过滤到「Anki 认为这个词已有的卡」
@@ -1899,6 +1905,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               onDuplicateCheck: onDuplicateCheck,
               onOverwriteTargetNoteId: onOverwriteTargetNoteId,
               onMinedCardAction: onMinedCardAction,
+              onQueueOverwrite: onQueueOverwrite,
               onOpenInAnki: onOpenInAnki,
               onFavoriteEntry: onFavoriteEntry,
               onFavoriteCheck: onFavoriteCheck,

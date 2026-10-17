@@ -41,6 +41,7 @@ void main() {
     required List<Map<String, String>> mined,
     required List<Map<String, String>> actions,
     required List<(int, Map<String, String>)> updated,
+    List<Map<String, String>>? queued,
   }) async {
     await tester.pumpWidget(
       wrapPopup(
@@ -59,6 +60,15 @@ void main() {
             updated.add((noteId, fields));
             return MinePopupResult(ankiConnect: true, noteId: noteId);
           },
+          onQueueOverwrite: queued == null
+              ? null
+              : (Map<String, String> fields) async {
+                  queued.add(fields);
+                  return const QueuedOverwriteReply(
+                    accepted: true,
+                    message: 'queued',
+                  );
+                },
         ),
       ),
     );
@@ -199,14 +209,67 @@ void main() {
       -250,
     );
   });
+
+  // BUG-3492：卡还在后台写入时从「高级制卡」确认 → 回点落到 queueOverwrite 桥。覆盖项
+  // 必须跟着这次排队的请求走（落地后执行的覆盖用的就是它），回执原样给 popup.js。
+  testWidgets('queueOverwrite（后台写入中排队覆盖）：覆盖项并进 fields，回执带 accepted', (
+    WidgetTester tester,
+  ) async {
+    final List<Map<String, String>> queued = <Map<String, String>>[];
+    final DictionaryPopupWebViewState state = await pumpPopup(
+      tester,
+      mined: <Map<String, String>>[],
+      actions: <Map<String, String>>[],
+      updated: <(int, Map<String, String>)>[],
+      queued: queued,
+    );
+    harness.mode = _ClickMode.queueOverwrite;
+    final bool clicked =
+        await tester.runAsync(
+              () => state.mineEntryByIndex(
+                0,
+                releaseWhenPayloadConsumed: true,
+                overrides: overrides,
+              ),
+            )
+            as bool;
+    expect(clicked, isTrue);
+    expect(queued, hasLength(1));
+    expect(
+      MiningRequestOverrides.readFrom(queued.single)?.deckName,
+      'Mining::Novel',
+    );
+    expect(harness.lastReply, <String, Object?>{
+      'accepted': true,
+      'message': 'queued',
+    });
+  });
+
+  testWidgets('queueOverwrite：宿主没接线时回 accepted:false 而不是 null（BUG-1918）', (
+    WidgetTester tester,
+  ) async {
+    await pumpPopup(
+      tester,
+      mined: <Map<String, String>>[],
+      actions: <Map<String, String>>[],
+      updated: <(int, Map<String, String>)>[],
+    );
+    final Object? reply = await tester.runAsync(
+      () => harness.handlers['queueOverwrite']!(<dynamic>[harness.entryFields]),
+    );
+    expect(reply, <String, Object?>{'accepted': false});
+  });
 }
 
-enum _ClickMode { mineEntry, minedCardAction, updateEntry }
+enum _ClickMode { mineEntry, minedCardAction, updateEntry, queueOverwrite }
 
 class _MineHarness {
   final Map<String, JavaScriptHandlerCallback> handlers =
       <String, JavaScriptHandlerCallback>{};
   _ClickMode mode = _ClickMode.mineEntry;
+
+  /// 最近一次 queueOverwrite 桥的回执（popup.js 拿到的那份）。
+  Object? lastReply;
   late PlatformInAppWebViewWidgetCreationParams params;
   dynamic controller;
 
@@ -237,6 +300,8 @@ class _MineHarness {
         await handlers['updateEntry']!(<dynamic>[
           <String, Object?>{'noteId': 42, 'fields': entryFields},
         ]);
+      case _ClickMode.queueOverwrite:
+        lastReply = await handlers['queueOverwrite']!(<dynamic>[entryFields]);
     }
     return CallAsyncJavaScriptResult(value: true, error: null);
   }

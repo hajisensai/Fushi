@@ -156,6 +156,23 @@ class MinePopupResult {
   bool get accepted => ankiConnect || queued;
 }
 
+/// BUG-3492：排队覆盖（`queueOverwrite` 桥）的回执。
+///
+/// [accepted] = 宿主收下了这次覆盖，会在后台写入落地后执行；[message] 是给弹窗就地
+/// 提示的文案（收下时说「写入后自动覆盖」，不收时说为什么）。null 时 popup.js 用
+/// 通用的「还没写进 Anki」文案。
+class QueuedOverwriteReply {
+  const QueuedOverwriteReply({this.accepted = false, this.message});
+
+  final bool accepted;
+  final String? message;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'accepted': accepted,
+    if (message != null) 'message': message,
+  };
+}
+
 /// 用户建议 q16Apecgbg：「制卡后关闭查词弹窗」（偏好 `close_popup_after_mining`）。
 ///
 /// 包住宿主的制卡回调：制卡**落地之后**（[MinePopupResult.accepted]）且开关打开时关掉
@@ -265,6 +282,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onDuplicateCheck,
     this.onOverwriteTargetNoteId,
     this.onMinedCardAction,
+    this.onQueueOverwrite,
     this.onOpenInAnki,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
@@ -357,6 +375,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 「重验 + 静默」两态行为（Never break userspace）。
   final Future<MinePopupResult> Function(Map<String, String> fields)?
       onMinedCardAction;
+
+  /// BUG-3492：这个词刚交给后台写入（弹窗显示「已加入」），卡还没进 Anki 时用户又要
+  /// 覆盖它（再点 ✓ / 从「高级制卡」确认）。宿主把覆盖请求排到那次写入之后（见
+  /// [PendingMineOverwrites]），落地后自动覆盖。[fields] 与 onMineEntry 同一份 payload。
+  /// null（宿主没有后台写入这条路）时 popup.js 就地提示「还没写进 Anki」。
+  final Future<QueuedOverwriteReply> Function(Map<String, String> fields)?
+      onQueueOverwrite;
 
   /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮回调。宿主把 Anki
   /// 浏览器过滤到「Anki 认为 [expression] 已有的卡」（判据与画 ✓ 的查重同源，见
@@ -2722,6 +2747,45 @@ JSON.stringify((function(){
                   .log('DictPopupWebview.minedCardAction', e, stack);
             }
             return const MinePopupResult().toJson();
+          },
+        );
+
+        // BUG-3492：卡还在后台写入时的覆盖请求 → 宿主排队，落地后自动覆盖。与
+        // minedCardAction 同样带上「高级制卡」的覆盖项、先落盘词典媒体；永不让异常穿过
+        // 原生桥（BUG-293），也**绝不回 null**（Windows 原生桥对 null 答复曾直接崩，
+        // BUG-1918）——没接线的宿主回 accepted:false。
+        controller.addJavaScriptHandler(
+          handlerName: 'queueOverwrite',
+          callback: (args) async {
+            try {
+              if (args.isNotEmpty &&
+                  args[0] is Map &&
+                  widget.onQueueOverwrite != null) {
+                final fields = _withConfirmMineOverrides(
+                  Map<String, String>.from(
+                    (args[0] as Map).map(
+                      (k, v) => MapEntry(k.toString(), v.toString()),
+                    ),
+                  ),
+                );
+                await writeDictionaryMediaCache(
+                  _dictionaryMediaForLocalMining(fields),
+                );
+                // 宿主在首个 await 之前同步冻结覆盖要用的全部输入（区间 / 覆盖项 /
+                // 锁帧），之后对话框就可以关了。
+                final Future<QueuedOverwriteReply> pending =
+                    widget.onQueueOverwrite!(fields);
+                _markConfirmMinePayloadConsumed();
+                return (await pending).toJson();
+              }
+            } catch (e, stack) {
+              ErrorLogService.instance.log(
+                'DictPopupWebview.queueOverwrite',
+                e,
+                stack,
+              );
+            }
+            return const QueuedOverwriteReply().toJson();
           },
         );
 

@@ -2557,6 +2557,14 @@ async function minedCardAction(expression, reading, frequencies, pitches, rules,
     return await window.flutter_inappwebview.callHandler('minedCardAction', fields);
 }
 
+// BUG-3492：卡还在后台写入 Anki（按钮显示「已加入」）时的覆盖请求。宿主收下后排到那次
+// 写入之后、落地自动覆盖，回 {accepted, message}；没接这根桥的宿主回 null / accepted:false。
+async function queueOverwrite(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+    const fields = await buildMinePayload(
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+    return await window.flutter_inappwebview.callHandler('queueOverwrite', fields);
+}
+
 // BUG-1064 —— app 外表面的「卡片已在 Anki 中」操作面板（IN-PAGE 版）。
 //
 // 宿主分两类：
@@ -4648,15 +4656,21 @@ function createEntryHeader(entry, idx) {
                 // 弹窗里再点 ✓、或从「高级制卡」回点，都永远没反应，只有关掉弹窗重新查词
                 // （新弹窗没有这个标记）才能走覆盖。现在先问一次 Anki：卡已经在了 →
                 // setMineState(true) 撤掉标记，落到下面已制卡的正常路径（操作单 / 覆盖）；
-                // 还没落地 → 就地说一声，不装作点了。
+                // 还没落地 → 把这次覆盖交给宿主排队（所有者拍板的方案 B：写入落地后自动
+                // 覆盖、同词只留最后一次）；宿主不收（没有后台写入这条路）就就地说明。
                 if (queuedLocally && !hostOwnsQueue()) {
                     const landed = await window.flutter_inappwebview.callHandler(
                         'duplicateCheck', { expression, reading });
                     if (landed !== true) {
+                        const reply = await queueOverwrite(
+                            expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
                         setMineState(false);
-                        showInlineHint(
-                            mineButton,
-                            window.i18nMineStillQueued || '已加入制卡，还没确认写进 Anki，暂时不能覆盖。');
+                        const accepted = !!(reply && reply.accepted === true);
+                        const message = reply && typeof reply.message === 'string' ? reply.message : '';
+                        const hint = message || (accepted
+                            ? ''
+                            : (window.i18nMineStillQueued || '还在写入 Anki，稍后再试'));
+                        if (hint) showInlineHint(mineButton, hint);
                         return;
                     }
                     setMineState(true);

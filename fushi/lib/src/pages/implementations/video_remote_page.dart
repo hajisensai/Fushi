@@ -28,7 +28,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
     show shouldShowLookupDismissBarrier;
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show DictionaryPopupWebViewState, MinePopupResult;
+    show DictionaryPopupWebViewState, MinePopupResult, QueuedOverwriteReply;
 import 'package:fushi/src/sync/sync_backend.dart' show SyncAuthError;
 import 'package:fushi/src/sync/video_remote_client.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
@@ -1392,6 +1392,13 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   @override
   Future<MinePopupResult> onMinedCardAction(Map<String, String> fields) async =>
       const MinePopupResult();
+
+  /// BUG-3492：卡在电脑那边制，手机既查不了那边的重、也不做远程覆盖（所有者
+  /// 2026-10-17 拍板）——只如实说一声。
+  @override
+  Future<QueuedOverwriteReply> onQueueOverwrite(
+    Map<String, String> fields,
+  ) async => QueuedOverwriteReply(message: t.video_remote_overwrite_pending);
 
   @override
   Future<AnkiOpenWordOutcome> onOpenInAnki(
