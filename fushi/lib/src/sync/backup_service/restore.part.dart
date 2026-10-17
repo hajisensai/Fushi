@@ -2322,11 +2322,10 @@ class BackupRestoreService {
   }
 
   /// Streams one [file]'s uncompressed bytes to [destPath] without buffering the
-  /// whole entry. Fushi backups are written STORE (see
-  /// [_writeBackupZipInIsolate]) so the raw window IS the uncompressed data and is
-  /// copied in bounded 4 MB chunks (each chunk's size reported via [port]); a
-  /// DEFLATE entry (small metadata / test fixtures — never a multi-GB file in
-  /// practice) is inflated streaming.
+  /// whole entry. A STORE entry's raw window IS the uncompressed data and is
+  /// copied in bounded 4 MB chunks; a DEFLATE entry is inflated by the native
+  /// zlib in the same bounded chunks ([_inflateRawDeflateToFile]). Either way
+  /// each written chunk's uncompressed size is reported via [port].
   static void _streamArchiveFileToDisk(
     ArchiveFile file,
     String destPath,
@@ -2337,21 +2336,12 @@ class BackupRestoreService {
     try {
       final InputStreamBase? raw = file.rawContent;
       if (raw != null && !file.isCompressed) {
-        const int chunkSize = 4 * 1024 * 1024; // 4 MB peak heap per chunk
-        final int total = raw.length;
-        int written = 0;
-        while (written < total) {
-          final int want =
-              (total - written) < chunkSize ? (total - written) : chunkSize;
-          final Uint8List bytes = raw.readBytes(want).toUint8List();
-          if (bytes.isEmpty) break;
+        _forEachRawChunk(raw, (Uint8List bytes) {
           output.writeBytes(bytes);
-          written += bytes.length;
           port.send(bytes.length);
-        }
+        });
       } else if (raw != null && file.compressionType == ArchiveFile.DEFLATE) {
-        Inflate.stream(raw, output);
-        port.send(file.size);
+        _inflateRawDeflateToFile(raw, output, port);
       } else {
         // Last resort (already-materialized content): write buffered bytes.
         output.writeBytes(file.content as List<int>);
@@ -2361,6 +2351,69 @@ class BackupRestoreService {
       output.closeSync();
     }
   }
+
+  /// Raw (compressed or stored) bytes of one entry, read in bounded chunks.
+  static const int _extractChunkBytes = 4 * 1024 * 1024; // 4 MB peak per chunk
+
+  /// Feeds [raw] to [onChunk] in [_extractChunkBytes]-sized pieces.
+  static void _forEachRawChunk(
+    InputStreamBase raw,
+    void Function(Uint8List bytes) onChunk,
+  ) {
+    final int total = raw.length;
+    int read = 0;
+    while (read < total) {
+      final int want = (total - read) < _extractChunkBytes
+          ? (total - read)
+          : _extractChunkBytes;
+      final Uint8List bytes = raw.readBytes(want).toUint8List();
+      if (bytes.isEmpty) break;
+      onChunk(bytes);
+      read += bytes.length;
+    }
+  }
+
+  /// Inflates a raw DEFLATE stream ([raw]) into [output] with the native zlib
+  /// (`dart:io` [ZLibCodec], `raw: true` = no zlib/gzip header, exactly the zip
+  /// entry encoding), reporting each inflated chunk's size via [port]. Spelled
+  /// via [ZLibCodec] because `archive_io` exports its own `ZLibDecoder`.
+  ///
+  /// Do NOT go back to archive 3.6.1's `Inflate.stream(raw, OutputFileStream)`:
+  /// it resolves every LZ77 back-reference through `OutputFileStream.subset`,
+  /// which flushes the write buffer and does a seek + read + seek on the file
+  /// per match. Measured 1.13 MB/s on desktop, i.e. hours for the deflated
+  /// recommended pack, with a progress bar that only moved once per entry.
+  static void _inflateRawDeflateToFile(
+    InputStreamBase raw,
+    OutputFileStream output,
+    SendPort port,
+  ) {
+    final ByteConversionSink inflater = ZLibCodec(
+      raw: true,
+    ).decoder.startChunkedConversion(_InflatedChunkSink(output, port));
+    _forEachRawChunk(raw, inflater.add);
+    inflater.close();
+  }
+}
+
+/// Receives native-zlib output chunks for `_inflateRawDeflateToFile`: writes
+/// each to the destination file and reports its (uncompressed) size so the
+/// import progress bar keeps moving.
+class _InflatedChunkSink implements Sink<List<int>> {
+  _InflatedChunkSink(this._output, this._port);
+
+  final OutputFileStream _output;
+  final SendPort _port;
+
+  @override
+  void add(List<int> chunk) {
+    if (chunk.isEmpty) return;
+    _output.writeBytes(chunk);
+    _port.send(chunk.length);
+  }
+
+  @override
+  void close() {}
 }
 
 /// Sendable request for the background extract worker (records with a `List` and

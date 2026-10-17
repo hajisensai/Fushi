@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../tool/make_download_manifest.dart';
@@ -98,6 +101,89 @@ void main() {
           '--out-dir', 'out',
         ]),
         returnsNormally,
+      );
+    });
+  });
+
+  group('--deflate-manifest', () {
+    late Directory tmp;
+
+    setUp(() async {
+      tmp = await Directory.systemTemp.createTemp('deflate_manifest_');
+    });
+
+    tearDown(() => tmp.delete(recursive: true));
+
+    String writeManifest(Map<String, Object?> manifest) {
+      final File file = File('${tmp.path}${Platform.pathSeparator}d.json')
+        ..writeAsStringSync(jsonEncode(manifest));
+      return file.path;
+    }
+
+    List<String> argsWith(String deflatePath) => <String>[
+          '--input', 'not-read.zip',
+          '--whole-url', 'https://dl.wrds.xyz/pack.zip',
+          '--mode', 'range',
+          '--deflate-manifest', deflatePath,
+        ];
+
+    test('嵌套清单的下载地址也过主仓库 release 守卫', () {
+      // 新版 app 会真的从 deflate_pack 里的地址下包，绕开这道门就等于守卫失效。
+      final String path = writeManifest(<String, Object?>{
+        'url': 'https://dl.wrds.xyz/d.zip',
+        'part_base_urls': <String>[
+          'https://github.com/hajisensai/Fushi/releases/download/pack-1',
+        ],
+      });
+      expect(
+        () => parseArgsForTest(argsWith(path)),
+        throwsA(isA<FormatException>().having(
+          (FormatException e) => e.message,
+          'message',
+          contains('mirror-releases.yml'),
+        )),
+      );
+    });
+
+    test('嵌套清单自己不能再带 deflate_pack', () {
+      final String path = writeManifest(<String, Object?>{
+        'url': 'https://dl.wrds.xyz/d.zip',
+        'deflate_pack': <String, Object?>{'url': 'https://dl.wrds.xyz/e.zip'},
+      });
+      expect(
+        () => parseArgsForTest(argsWith(path)),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('合法嵌套清单放行', () {
+      final String path = writeManifest(<String, Object?>{
+        'url': 'https://dl.wrds.xyz/d.zip',
+        'part_base_urls': <String>[
+          'https://github.com/hajisensai/fushi-pack/releases/download/pack-1',
+        ],
+      });
+      expect(() => parseArgsForTest(argsWith(path)), returnsNormally);
+    });
+
+    test('两个包切片同名时拒绝（同一个 release 里会互相覆盖）', () {
+      final Map<String, Object?> sameName = <String, Object?>{
+        'parts': <Object?>[
+          <String, Object?>{'name': 'fushi-recommended.fushi.zip.000'},
+        ],
+      };
+      expect(
+        deflatePartNameCollision('fushi-recommended.fushi.zip', sameName),
+        isNotNull,
+      );
+      final Map<String, Object?> renamed = <String, Object?>{
+        'parts': <Object?>[
+          <String, Object?>{'name': 'fushi-recommended.deflate.fushi.zip.000'},
+        ],
+      };
+      expect(
+        deflatePartNameCollision('fushi-recommended.fushi.zip', renamed),
+        isNull,
       );
     });
   });
