@@ -108,18 +108,26 @@ void main() {
         video.substring(start, startSend),
         contains('if (_lastReportedRemotePlaying != null) return;'),
       );
+      // 媒体库在线条目（粘贴链接 / YouTube / 在线视频源剧集）同样直接在线回看：
+      // 不再提示先下载，回看中也不进网页播放器（站点播放器会记观看记录）。
       final int streamBook = video.indexOf('if (isStreamVideoBook(row))');
-      final int earlyGuard = video.indexOf(
-        'if (_sourceReviewActive)',
-        streamBook,
-      );
       final int webpagePlayer = video.indexOf(
         'WebVideoFushiPage.neutralized(',
         streamBook,
       );
-      expect(earlyGuard, greaterThan(streamBook));
-      expect(earlyGuard, lessThan(webpagePlayer));
-      expect(video.substring(earlyGuard, webpagePlayer), contains('return;'));
+      expect(streamBook, greaterThan(0));
+      expect(webpagePlayer, greaterThan(streamBook));
+      final String streamBranch = video.substring(streamBook, webpagePlayer);
+      expect(
+        streamBranch,
+        isNot(contains('card_source_review_local_required')),
+      );
+      expect(
+        streamBranch,
+        contains(
+          'if (!_sourceReviewActive && shouldOpenInWebVideoPlayer(row.videoPath))',
+        ),
+      );
     },
   );
 
@@ -238,4 +246,104 @@ void main() {
       expect(video, isNot(contains('returnToSource')));
     },
   );
+
+  test(
+    'BUG-3490 review keeps audio / subtitle / delay choices session-only',
+    () {
+      final String audio = File(
+        'lib/src/pages/implementations/video_fushi/audio_track.part.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      final String subtitle = File(
+        'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      // 两个底层出口（本地带戳偏好、同步给 host）回看中一律不写。
+      final int stamp = video.indexOf('Future<int> _stampRemoteStringPref(');
+      final int stampWrite = video.indexOf('prefsRepo.setPref(valueKey', stamp);
+      expect(
+        video.substring(stamp, stampWrite),
+        contains('if (_sourceReviewActive) return nowMs;'),
+      );
+      final int push = video.indexOf('void _pushRemotePlayback(');
+      final int pushSend = video.indexOf('putRemoteVideoPlayback(', push);
+      expect(
+        video.substring(push, pushSend),
+        contains('if (_sourceReviewActive) return;'),
+      );
+      // 远端主字幕选择只经一个出口，页面不得直调 AppModel 落库。
+      expect(subtitle, isNot(contains('appModel.setRemoteSubtitleSource(')));
+      final int remember = video.indexOf('void _rememberRemoteSubtitleSource(');
+      expect(
+        video.substring(
+          remember,
+          video.indexOf('setRemoteSubtitleSource', remember + 40),
+        ),
+        contains('if (_sourceReviewActive) return;'),
+      );
+      // 本地库条目的选择写库：音轨 / 主字幕（选源 + 关闭）/ 副字幕（选源 + 关闭）。
+      final int selectAudio = audio.indexOf('Future<void> _selectAudioTrack(');
+      expect(
+        audio.substring(
+          selectAudio,
+          audio.indexOf('await widget.repo.', selectAudio),
+        ),
+        contains('if (_sourceReviewActive) {'),
+      );
+      for (final String method in <String>[
+        'Future<bool> _selectSecondarySubtitleSource(',
+        'Future<void> _selectSecondarySubtitleOff(',
+        'Future<void> _selectSubtitleOff(',
+      ]) {
+        final int at = subtitle.indexOf(method);
+        final int write = subtitle.indexOf('await widget.repo.', at);
+        expect(at, greaterThan(0), reason: method);
+        expect(
+          subtitle.substring(at, write),
+          contains('_sourceReviewActive'),
+          reason: method,
+        );
+      }
+      expect(
+        RegExp(r'_sourceReviewActive').allMatches(subtitle).length,
+        greaterThanOrEqualTo(5),
+        reason: 'graphic + text primary selection are gated as well',
+      );
+      // 调轴：主字幕与「对齐产物」同走只在本次生效的分支；副字幕回看中提前返回。
+      expect(
+        video,
+        contains('if (_primarySubtitleAligned || _sourceReviewActive) {'),
+      );
+      final int secondary = video.indexOf('Future<void> _setSecondaryDelayMs(');
+      expect(
+        video.substring(
+          secondary,
+          video.indexOf('_remotePositionKeyForIndex', secondary),
+        ),
+        contains('if (_sourceReviewActive) {'),
+      );
+    },
+  );
+
+  test('BUG-3490 library online items mint fingerprint-less links', () {
+    final String mining = File(
+      'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    final String router = File(
+      'lib/src/anki/card_source_router.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    expect(mining, contains('_resolvedStreamInfo != null &&'));
+    expect(
+      mining,
+      contains('CardSourceLink.isContentAddressedVideoUid(sourceUid)'),
+    );
+    expect(
+      router,
+      contains('if (video != null && link.fingerprint != null) {'),
+    );
+    expect(
+      video,
+      contains('if (source != null && source.fingerprint != null) {'),
+    );
+    // 在线合集：链接 uid 已定位成员，链接里的 episodeIndex 不得盖掉它。
+    expect(video, contains('((_resolvedStreamStartIndex == null'));
+  });
 }

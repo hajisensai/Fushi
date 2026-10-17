@@ -172,6 +172,40 @@ void main() {
     }
   });
 
+  test(
+      'BUG-3490 online content identities may omit the fingerprint, '
+      'file-name identities may not', () {
+    CardSourceLink video(String uid, {String? fingerprint}) => CardSourceLink(
+        kind: CardSourceKind.video,
+        uid: uid,
+        sourceId: _sourceId,
+        episodeIndex: 0,
+        startMs: 1000,
+        endMs: 2000,
+        fingerprint: fingerprint);
+    for (final String uid in <String>[
+      'video/stream/yt:dQw4w9WgXcQ',
+      'video/stream/0123456789ab',
+      'anime-source:eu.kanade.tachiyomi.animeextension.en.x:42:/ep/5',
+    ]) {
+      expect(CardSourceLink.isContentAddressedVideoUid(uid), isTrue);
+      final CardSourceLink parsed =
+          CardSourceLink.parse(video(uid).toUri().toString());
+      expect(parsed.uid, uid);
+      expect(parsed.fingerprint, isNull);
+      // Downloaded online episodes still carry their file fingerprint.
+      expect(video(uid, fingerprint: _fingerprint).fingerprint, _fingerprint);
+    }
+    for (final String uid in <String>[
+      'video/作品',
+      'video/playlist/作品',
+      'video/iptv/0123456789ab-0123456789ab',
+    ]) {
+      expect(CardSourceLink.isContentAddressedVideoUid(uid), isFalse);
+      expect(() => video(uid), throwsFormatException, reason: uid);
+    }
+  });
+
   test('real video namespace and Unicode title identities survive round trip',
       () {
     for (final String uid in <String>[

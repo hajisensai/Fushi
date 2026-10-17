@@ -4,7 +4,12 @@
   - 拦截本身也没有必要：协商流地址不改服务器进度（互联 `/streamurl`、`/stream` 只签 token 读文件；Jellyfin / Emby `PlaybackInfo`、`/Videos/{id}/stream` 不写 UserData；Plex 直出 part URL 不 scrobble），会改进度的只有起播 / 心跳 / 暂停 / 停止四类上报，而它们在回看态早已各自 `if (_sourceReviewActive) return;`。
 - **[x] ① 已修复**（`d372873fc9`）— 新增 `fushi/lib/src/media/video/source_review_remote_report_gate.dart`（`SourceReviewRemoteReportGate`）：四类上报（`putRemoteVideoPosition` / `startRemoteVideoPlayback` / `setRemoteVideoPlaybackPaused` / `stopRemoteVideoPlayback`）全部经它发出，每次现读回看态，回看中一条不发；播放页不再直调 client。删掉 `_loadRemoteEpisode` 的回看拦截，回看直接串流。「从这里继续观看」在 `_playAfterSourceReviewIfReady` 补发一次起播上报（此后暂停 / 心跳 / 停止才有会话可挂），`_startRemotePlaybackSession` 按 `_lastReportedRemotePlaying` 去重，加载途中按「继续」时不会发两次 Start。「返回原观看位置」不变（回看期间没写任何进度）。
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/source_review_remote_report_gate_test.dart`（回看中四类上报零调用、继续后恢复且不补发、无会话协议来源只发断点）；`fushi/test/pages/card_source_media_review_guard_test.dart` 改为钉「协商前无回看拦截 + 页面不得直调四类上报 + 继续补发起播且去重」；`fushi/test/pages/video_remote_resume_guard_test.dart` 跟随改为认闸门。
+- **[x] ①b 所有者拍板扩展（2026-10-17，#2279）**：
+  - 媒体库在线条目（粘贴链接 / YouTube / 在线视频源剧集）也直接在线回看：删掉 `_initVideo` 流媒体书分支的回看拦截；回看中不进网页播放器（`!_sourceReviewActive && shouldOpenInWebVideoPlayer`，站点播放器会记观看记录；该入口目前本就由 `kWebVideoPlayerEnabled=false` 全局关闭），YouTube 走 youtube_explode 匿名取流（不带账号 cookie，不进 YouTube 观看记录），在线视频源走扩展 `getVideoList` 取流，宿主没有任何「标记已看」类扩展调用（`AnimeSourceVideoClient.putRemoteVideoPosition` 本就是空实现）。
+  - 这类条目此前根本不生成来源链接（链接要求整文件指纹）。`CardSourceLink.isContentAddressedVideoUid`（`packages/fushi_anki/lib/src/card_source_link.dart`）：`video/stream/<yt:id | url 摘要>` 与 `anime-source:<包>:<源>:<集 url>` 这类按内容本身铸的库身份允许不带指纹；文件名派生的身份仍必须带。制卡（`lookup_mining.part.dart` `resolveSourceLink`）对这类在线条目铸无指纹链接；路由与播放页只在链接带指纹时比对字节。在线合集回看起播成员由链接 uid 定位，不再被链接里恒 0 的 episodeIndex 盖掉。
+  - 回看中切换音轨 / 主副字幕 / 主副字幕调轴只在本次生效：本地带戳偏好出口 `_stampRemoteStringPref`、同步 host 出口 `_pushRemotePlayback`、远端主字幕出口 `_rememberRemoteSubtitleSource` 回看中不写，本地库条目的写库（音轨、主字幕选源/关闭含图形轨、副字幕选源/关闭、调轴）各自跳过；点「从这里继续观看」后的切换按正常逻辑保存（回看期间的选择不回补保存）。
+  - 测试：`packages/fushi_anki/test/card_source_link_test.dart`（在线身份可无指纹 / 文件名身份必须有）；`fushi/test/pages/card_source_media_review_guard_test.dart` 新增两条（偏好只在本次生效、在线条目铸无指纹链接与回看接线）；`video_subtitle_reference_sync_delay_guard_test.dart` 跟随。
 - **备注**：
-  - 保留的回退：书架里的流媒体书（YouTube / 粘贴 URL / 在线视频源入库集，`isStreamVideoBook`）回看仍提示先下载——它们可能被网页播放器替换（会进 YouTube 观看记录），且这类条目本就不生成可回跳的来源链接（来源路由先比字节指纹，非本地路径直接提示），实际到不了这里。
+  - 兼容：无指纹的新链接在未升级的旧版 App 上会被判为无效链接（旧解析器要求视频带指纹），需各设备升级。此前已制的在线条目卡片没有来源链接，不会补。
   - 媒体服务器（Jellyfin / Emby / Plex）条目当前不在卡片回跳路由里（条目 id 与 bookUid 不同键，BUG-3418 备注），闸门对它们同样生效，接入路由后无需另改。
   - 未真机验证（无 host + 手机 + Anki 回跳环境）；Emby docker 实测本轮未跑。

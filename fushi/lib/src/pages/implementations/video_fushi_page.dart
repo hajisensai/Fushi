@@ -3513,17 +3513,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 的远端播放路径（_initRemote）。YouTube 会在 buildStreamVideoLaunch 里重解析（临时流
     // URL 会过期）；重建失败按打开失败处理。放在读 row 后、本地字幕/进度恢复前短路。
     if (isStreamVideoBook(row)) {
-      // Block before the webpage player replacement or stream resolver: both
-      // may establish an external playback session before media_kit opens.
-      if (_sourceReviewActive) {
-        if (mounted) {
-          setState(() {
-            _failed = true;
-            _failReason = t.card_source_review_local_required;
-          });
-        }
-        return;
-      }
+      // BUG-3490：卡片片段回看在线条目直接在线播放，不再要求先下载。取流（URL /
+      // YouTube 经 youtube_explode、在线视频源经扩展 getVideoList）不改任何进度；
+      // 本地进度、观看统计与远端上报在回看态各自被拦下。网页播放器（站点自己的
+      // 播放器，会记进站点观看记录）在回看中不进，见下方分流。
       // 在线视频源（Aniyomi）入库集：按行里的规格重建扩展 client（起播时向扩展
       // 取流），合集里同一作品的在线行作连播成员。
       if (isAnimeSourceVideoPath(row.videoPath)) {
@@ -3582,7 +3575,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 站点自己的播放器播，Fushi 复用字幕面板 / 查词 / 进度登记。在这里分流而非各
       // push 点：书架 / 首页 / 合集 / 作品页 / app 外打开 8 处入口全部自动覆盖。
       // media_kit controller 尚未 load，pushReplacement 代价只是本页一次空 build。
-      if (shouldOpenInWebVideoPlayer(row.videoPath)) {
+      if (!_sourceReviewActive && shouldOpenInWebVideoPlayer(row.videoPath)) {
         final BuildContext pageContext = context;
         if (!pageContext.mounted) return;
         unawaited(
@@ -3830,8 +3823,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // RemoteVideoInfo.episodes（那是旧单行 playlistJson 模型），故由 client 用合集成员列表
     // 建 _episodes，绕开 info.isPlaylist 门控。换集换的是成员 id（见 _loadRemoteEpisode）。
     if (_isRemoteCollection) {
+      // 媒体库在线合集（在线视频源剧集）：来源链接的 uid 就是该集的行，起播成员已由
+      // 它定位（_resolvedStreamStartIndex）；链接里的 episodeIndex 恒 0，不能盖掉
+      // （BUG-3490）。
       final int startIndex =
-          (widget.sourceReview?.episodeIndex ??
+          ((_resolvedStreamStartIndex == null
+                      ? widget.sourceReview?.episodeIndex
+                      : null) ??
                   _remoteLastAttemptedEpisode ??
                   widget.initialEpisodeIndex ??
                   _resolvedStreamStartIndex ??
@@ -4421,14 +4419,29 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     String? value,
   ) async {
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    // BUG-3490：卡片片段回看中的音轨 / 字幕 / 调轴切换只在本次生效，不落偏好。
+    if (_sourceReviewActive) return nowMs;
     await appModel.prefsRepo.setPref(valueKey, value ?? '');
     await appModel.prefsRepo.setPref(atKey, nowMs);
     return nowMs;
   }
 
+  /// 记住用户为远端集选的主字幕（`off:` 哨兵 = 显式关闭）。卡片片段回看中只在本次
+  /// 生效、不落偏好（BUG-3490）。
+  void _rememberRemoteSubtitleSource(
+    String uid,
+    int episodeIndex,
+    String? source,
+  ) {
+    if (_sourceReviewActive) return;
+    unawaited(appModel.setRemoteSubtitleSource(uid, episodeIndex, source));
+  }
+
   /// best-effort 上报播放偏好带戳字段到 host（能力探测 + 吞错；调整哪个字段就
   /// 只带哪个字段，host 逐字段 LWW 合并）。旧 host 无端点 / 离线只记日志。
   void _pushRemotePlayback(String uid, VideoPlaybackSyncState state) {
+    // BUG-3490：回看中的播放偏好切换不同步给 host。
+    if (_sourceReviewActive) return;
     // 经 Object? 中转促成类型提升：RemoteVideoPlaybackSync 是能力接口，不是
     // RemoteVideoClient 的子类型，直接 is 判断不会提升接收者。
     final Object? client = _effectiveRemoteClient;
@@ -5106,7 +5119,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 远端条目（互联 host）的字节在 host 上，本机没有文件可比指纹：身份由 host 的
     // bookUid 担保（见 card_source_router 的远端分支），不在这里按本地指纹判死。
     final CardSourceLink? source = _isRemote ? null : widget.sourceReview;
-    if (source != null) {
+    // 无指纹的链接是在线内容身份（BUG-3490），身份由库 uid 担保。
+    if (source != null && source.fingerprint != null) {
       bool matches = false;
       try {
         matches =
@@ -9907,8 +9921,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final String signed = clamped >= 0 ? '+$clamped' : '$clamped';
     _showOsd(t.video_subtitle_delay_osd(ms: signed), icon: Icons.sync_outlined);
     // 对齐产物生效期间的微调只在本次会话生效：落盘会写进系列级调轴，把同系列其它
-    // 没对齐的集一起推歪；而对齐产物重进时本来就按 0 起算。
-    if (_primarySubtitleAligned) {
+    // 没对齐的集一起推歪；而对齐产物重进时本来就按 0 起算。卡片片段回看中的调轴
+    // 同样只在本次生效（BUG-3490）。
+    if (_primarySubtitleAligned || _sourceReviewActive) {
       if (mounted) setState(() {});
       return;
     }
@@ -9983,6 +9998,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         t.video_subtitle_secondary_delay_osd(ms: signed),
         icon: Icons.sync_outlined,
       );
+    }
+    // BUG-3490：卡片片段回看中切换只在本次生效，不保存、不同步给 host。
+    if (_sourceReviewActive) {
+      if (mounted) setState(() {});
+      return;
     }
     // TODO-2837 副字幕调轴入同步通道（播放偏好同步泛化批）：远端按 uid 落带戳
     // 键对 + 上报 host；null（回跟随）也是一次带戳写，清除同样跨设备收敛。

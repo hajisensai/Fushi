@@ -300,7 +300,7 @@ void main() {
       reason: '内存态 overlay cue 要清空',
     );
     expect(
-      forget.contains('setRemoteSubtitleSource(uid, ep, null)'),
+      forget.contains('_rememberRemoteSubtitleSource(uid, ep, null)'),
       isTrue,
       reason: '远端：清回 null，下次起播恢复 host 默认字幕',
     );
