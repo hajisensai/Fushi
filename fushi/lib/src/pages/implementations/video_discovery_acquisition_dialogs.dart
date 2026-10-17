@@ -24,6 +24,7 @@ import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/header_scroll_split.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
         MediaSourceRow,
@@ -1060,17 +1061,13 @@ class _VideoResourceSearchSurfaceState
             ),
             SizedBox(height: tokens.spacing.card),
           ],
-          // 查询 / 筛选头部与结果列表同属一个滚动视图：头部随结果整体上滑让出
-          // 屏幕，结果区不再被压成头部与底部选项之间的一条窄缝（反馈
-          // XFsZIWYbr8）。底部的落地目录 / 字幕策略 / 提交仍固定在滚动视图外，
-          // 选了什么随时都能提交。
+          // 窄屏头部随结果同滚、宽屏头部固定（见 HeaderScrollSplit）；底部的
+          // 落地目录 / 字幕策略 / 提交两种布局都固定在滚动区外。
           Expanded(
-            child: CustomScrollView(
-              key: const ValueKey<String>('video-resource-scroll'),
-              slivers: <Widget>[
-                SliverToBoxAdapter(child: _buildQueryHeader(tokens, manual)),
-                ..._buildResultSlivers(),
-              ],
+            child: HeaderScrollSplit(
+              scrollKey: const ValueKey<String>('video-resource-scroll'),
+              header: _buildQueryHeader(tokens, manual),
+              resultSlivers: _buildResultSlivers(),
             ),
           ),
           SizedBox(height: tokens.spacing.gap),
