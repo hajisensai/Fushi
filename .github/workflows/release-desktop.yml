@@ -1721,24 +1721,31 @@ jobs:
       # so shipping helper executables there needs no Helpers/ dir or
       # entitlements change -- they just have to be signed, and the app
       # re-signed afterwards. Mirrors the Mihon runtime step above.
-      - name: Install vendored ffmpeg-min runtime into macOS bundle
+      #
+      # Unified FFmpeg (docs/specs/2026-10-17-unified-ffmpeg.md): the programs
+      # come from the same build as the FFmpeg frameworks the player links
+      # (media_kit_libs_macos_video vendors them into Contents/Frameworks); they
+      # carry an rpath of @executable_path/../Frameworks, so mining runs on the
+      # player's FFmpeg.
+      - name: Install unified FFmpeg programs into macOS bundle
         shell: bash
         run: |
           set -euo pipefail
-          source_dir="third_party/ffmpeg-min/macos"
+          layout="third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz"
           app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
           target_dir="$app_dir/Contents/MacOS"
           if [ ! -d "$target_dir" ]; then
             echo "::error title=macOS bundle missing::Expected $target_dir"
             exit 1
           fi
+          if [ ! -f "$app_dir/Contents/Frameworks/libavcodec.framework/libavcodec" ]; then
+            echo "::error title=Unified FFmpeg frameworks missing::media_kit_libs_macos_video did not embed libavcodec.framework into Contents/Frameworks"
+            exit 1
+          fi
+          tmp="$(mktemp -d)"
+          tar -xzf "$layout" -C "$tmp" MacOS/ffmpeg MacOS/ffprobe
           for tool in ffmpeg ffprobe; do
-            src="$source_dir/$tool"
-            if [ ! -f "$src" ]; then
-              echo "::error title=Missing vendored binary::$src"
-              exit 1
-            fi
-            cp "$src" "$target_dir/$tool"
+            cp "$tmp/MacOS/$tool" "$target_dir/$tool"
             chmod +x "$target_dir/$tool"
             codesign --force --sign - --timestamp=none "$target_dir/$tool"
           done
@@ -1751,6 +1758,11 @@ jobs:
           "$target_dir/ffmpeg" -hide_banner -version | head -n 1
           "$target_dir/ffprobe" -hide_banner -version | head -n 1
           ls -lh "$target_dir/ffmpeg" "$target_dir/ffprobe"
+          # The programs must load the player's frameworks from the bundle itself.
+          python3 tool/ffmpeg-unified/verify_ffmpeg_capabilities.py \
+            --ffmpeg "$target_dir/ffmpeg" --ffprobe "$target_dir/ffprobe"
+          FFMPEG="$target_dir/ffmpeg" FFPROBE="$target_dir/ffprobe" \
+            bash tool/ffmpeg-unified/smoke-test.sh
           # BUG-1668：`-version` 跑得通只证明**这台 runner 的架构**能跑它。当年 app 是
           # universal、ffmpeg 却是 arm64-only，Intel Mac 上 app 照常启动、helper 被内核以
           # Bad CPU type (EBADARCH) 拒掉，制卡/封面/内封字幕全失效（2.1.1）。
@@ -1767,7 +1779,7 @@ jobs:
               case " $tool_archs " in
                 *" $want "*) ;;
                 *)
-                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。该架构的 Mac 上 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-min 工作流出 arm64 产物并重新 vendor 到 third_party/ffmpeg-min/macos/。"
+                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。该架构的 Mac 上 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-unified-mobile 工作流的 macos job 并重新 vendor third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz。"
                   exit 1
                   ;;
               esac
