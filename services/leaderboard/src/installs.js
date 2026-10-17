@@ -29,13 +29,18 @@
 // 嫁接到自己名下；旧 id 只在 2.10.0-debug 的心跳里存在过一天量级，按保留期自然过期。
 //
 // 服务端不存 IP：限流靠 Workers Rate Limiting binding（worker.js 里按 IP 过 AUTH_LIMITER），不落 D1。
-// 同一安装同一天的第二次心跳只读一次 install_days 就返回，不写库、不扣预算；当天第一次心跳扣
-// 'ping' 日预算 1 次，再写两行（install_days 插一行、installs upsert 一行）。随机伪造 installId 刷量
-// 受 binding（每 IP 每分钟 10 次）和 'ping' 日预算双重限制，超了 503，不影响榜单与反馈。
+// 心跳的处理顺序（recordPing）：先做证明的**无状态**检查（头齐全、id == fp(公钥)、时效、PoW，纯 CPU、
+// 一次哈希），再读一次 install_days 看当天是否已记过——当天已有已验证记录、或这次本就是未验证的
+// 重复心跳，就直接 204：不验签、不写 used_sigs、不写库、不扣预算。只有当天第一次（或把未验证升级成
+// 已验证）才验签、登记签名串防重放、扣 'ping' 日预算 1 次、写两行。跳过验签不构成探测口：要过 fp
+// 检查就得拿着该安装的公钥，而公钥只在本机与 TLS 内的请求头里，服务端不存、处理台不显示。
+// 随机伪造 installId 刷量受 binding（每 IP 每分钟 10 次）和 'ping' 日预算双重限制，超了 503。
 //
 // 反馈与安装的关联：反馈提交时客户端可带 installId（勾选「附带设备信息」才带），存在 feedback.install_id；
-// 同时出示了安装证明的记 feedback.install_verified = 1。开发者处理台据此展示该安装的版本轨迹、
-// 同一安装的其它反馈，以及修复版本是否已装上（installTrail），并标注是否已验证。
+// 同时出示了安装证明的记 feedback.install_verified = 1。反馈接口对证明**宽松**：证明验不过不拒收反馈
+// （将来调难度 / 格式漂移不该让老客户端的反馈全部 401），而是丢掉这个不可信的 installId 只收反馈本身。
+// 开发者处理台据此展示该安装的版本轨迹、同一安装的其它反馈，以及修复版本是否已装上（installTrail），
+// 并标注是否已验证；已验证安装的轨迹只取已验证的心跳日与反馈，知道 id 的人塞不进未验证数据。
 
 import { HttpError, b64urlDecode, hex, sha256, utcDateKey } from './util.js';
 import { spend } from './budget.js';
@@ -104,13 +109,13 @@ export async function installPowValid(installId, nonce, bits = INSTALL_POW_BITS)
 }
 
 /**
- * 核验请求的安装证明，返回 true（已验证）/ false（没带证明头 = 未验证）。带了头但任何一项不对都抛 401。
- * installId 必须已经过 normalizeInstallId（null = 请求没带合法 installId，此时带证明头也算错）。
+ * 安装证明的无状态部分（不碰 D1、不验签）：没带证明头 → null；带了但格式 / 指纹 / 时效 / PoW 不对 → 抛 401；
+ * 都对 → 返回给 [completeInstallProof] 用的解析结果。installId 必须已经过 normalizeInstallId。
  */
-export async function verifyInstallProof(env, request, installId, bodyBytes, now) {
+export async function parseInstallProof(request, installId, now) {
   const h = (name) => request.headers.get(name);
   const present = Object.values(INSTALL_HEADERS).filter((name) => h(name) !== null);
-  if (present.length === 0) return false;
+  if (present.length === 0) return null;
   if (present.length !== 4 || !installId) throw new HttpError(401, 'bad_install_proof');
   const spki = b64urlDecode(h(INSTALL_HEADERS.key));
   if (!spki || spki.length < 60 || spki.length > 120) throw new HttpError(401, 'bad_install_proof');
@@ -119,6 +124,12 @@ export async function verifyInstallProof(env, request, installId, bodyBytes, now
   if (!Number.isSafeInteger(time)) throw new HttpError(401, 'bad_install_proof');
   if (Math.abs(now - time) > SIG_WINDOW_MS) throw new HttpError(401, 'stale_install_time');
   if (!await installPowValid(installId, h(INSTALL_HEADERS.pow))) throw new HttpError(401, 'install_pow_required');
+  return { installId, spki, time, sig: h(INSTALL_HEADERS.sig) };
+}
+
+/** 证明的有状态部分：验签 + 签名串登记进 used_sigs 防重放。不对抛 401。 */
+export async function completeInstallProof(env, request, proof, bodyBytes) {
+  const { installId, spki, time } = proof;
   let publicKey;
   try {
     publicKey = await importPublicKey(spki);
@@ -127,7 +138,7 @@ export async function verifyInstallProof(env, request, installId, bodyBytes, now
   }
   const u = new URL(request.url);
   const msg = INSTALL_SIG_PREFIX + await signingString(request.method, u.pathname + u.search, time, bodyBytes);
-  if (!await verifySignature(publicKey, h(INSTALL_HEADERS.sig), msg)) {
+  if (!await verifySignature(publicKey, proof.sig, msg)) {
     throw new HttpError(401, 'bad_install_signature');
   }
   // 去重键 = 签名串哈希（ECDSA 签名可延展，不能按签名值去重；同 auth.js）。
@@ -137,6 +148,16 @@ export async function verifyInstallProof(env, request, installId, bodyBytes, now
     .bind(`install:${installId}`, dedup, time)
     .run();
   if (!res.meta || res.meta.changes !== 1) throw new HttpError(401, 'install_replayed');
+}
+
+/**
+ * 完整核验，返回 true（已验证）/ false（没带证明头 = 未验证）。带了头但任何一项不对都抛 401。
+ * installId 必须已经过 normalizeInstallId（null = 请求没带合法 installId，此时带证明头也算错）。
+ */
+export async function verifyInstallProof(env, request, installId, bodyBytes, now) {
+  const proof = await parseInstallProof(request, installId, now);
+  if (!proof) return false;
+  await completeInstallProof(env, request, proof, bodyBytes);
   return true;
 }
 const VERSION_RE = /^[A-Za-z0-9.+-]{1,64}$/;
@@ -157,16 +178,18 @@ export function normalizePing(body) {
 }
 
 /**
- * POST /v1/ping。request / bodyBytes 用来核验安装证明（verifyInstallProof）。
- * 当天已记过、且这次不会把未验证升级成已验证 → 什么都不写。
+ * POST /v1/ping。request / bodyBytes 用来核验安装证明。顺序见文件头：无状态检查 → 查当天是否已记过
+ * （已有已验证记录，或这次是未验证的重复心跳 → 直接返回，不验签、不写库、不扣预算）→ 验签 + 防重放 → 写。
  */
 export async function recordPing(env, request, bodyBytes, body, now) {
   const p = normalizePing(body);
-  const verified = (await verifyInstallProof(env, request, p.installId, bodyBytes, now)) ? 1 : 0;
+  const proof = await parseInstallProof(request, p.installId, now);
   const day = utcDateKey(now);
   const seen = await env.DB.prepare('SELECT verified FROM install_days WHERE day = ?1 AND install_id = ?2')
     .bind(day, p.installId).first();
-  if (seen && seen.verified >= verified) return;
+  if (seen && (seen.verified === 1 || !proof)) return;
+  if (proof) await completeInstallProof(env, request, proof, bodyBytes);
+  const verified = proof ? 1 : 0;
   await spend(env, 'ping', 1, now);
   // 未验证的心跳不改写已验证的行（DO UPDATE 的 WHERE）；已验证的心跳可以把同 id 的未验证行升级。
   await env.DB.batch([
@@ -287,18 +310,28 @@ export function versionIncludes(installed, release) {
 export async function installTrail(env, installId, feedbackId, feedbackVerified = false) {
   if (!installId) return null;
   const install = await env.DB.prepare('SELECT * FROM installs WHERE install_id = ?1').bind(installId).first();
+  const installVerified = install?.verified === 1;
+  // 未验证的反馈声称自己属于一个已验证安装：id 谁都能抄，不把那个安装的轨迹 / 其它反馈挂到它上面。
+  if (installVerified && !feedbackVerified) {
+    return {
+      installId, verified: false, claimsVerifiedInstall: true, install: null, versions: [], related: [],
+    };
+  }
+  // 已验证安装只取已验证的心跳日与反馈：知道 id 的人用自报心跳 / 反馈塞进来的数据不进轨迹。
+  const onlyVerified = installVerified ? 1 : 0;
   const versions = (await env.DB.prepare(
     `SELECT version, MIN(day) AS first_day, MAX(day) AS last_day FROM install_days
-     WHERE install_id = ?1 GROUP BY version ORDER BY first_day`,
-  ).bind(installId).all()).results;
+     WHERE install_id = ?1 AND verified >= ?2 GROUP BY version ORDER BY first_day`,
+  ).bind(installId, onlyVerified).all()).results;
   const related = (await env.DB.prepare(
     `SELECT id, title, status, created_at FROM feedback
-     WHERE install_id = ?1 AND id != ?2 ORDER BY created_at DESC LIMIT ?3`,
-  ).bind(installId, feedbackId, INSTALL_LIMITS.relatedFeedback).all()).results;
+     WHERE install_id = ?1 AND id != ?2 AND install_verified >= ?4 ORDER BY created_at DESC LIMIT ?3`,
+  ).bind(installId, feedbackId, INSTALL_LIMITS.relatedFeedback, onlyVerified).all()).results;
   return {
     installId,
     // 这条反馈提交时是否出示了该安装的证明（签名 + PoW）。
     verified: Boolean(feedbackVerified),
+    claimsVerifiedInstall: false,
     install: install
       ? {
         verified: install.verified === 1,

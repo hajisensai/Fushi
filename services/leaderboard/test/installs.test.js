@@ -224,7 +224,7 @@ describe('安装证明', () => {
     expect(count(env, 'installs')).toBe(0);
   });
 
-  it('同一签名请求重放 → 401 install_replayed', async () => {
+  it('同一签名请求重放：当天已记过时直接 204 无副作用；会写库时 401 install_replayed', async () => {
     const env = makeEnv();
     const inst = await makeInstall();
     const bytes = new TextEncoder().encode(JSON.stringify({
@@ -235,9 +235,34 @@ describe('安装证明', () => {
       body: bytes, headers: { 'CF-Connecting-IP': nextIp(), ...headers }, now: NOW,
     });
     expect((await send()).status).toBe(204);
+    expect((await send()).status).toBe(204);
+    expect(count(env, 'install_days')).toBe(1);
+    // 当天记录不在了（例如被清理）→ 这次重放会走到写库，签名串已登记过 → 拒。
+    env.DB.raw.prepare('DELETE FROM install_days').run();
     const r = await send();
     expect(r.status).toBe(401);
     expect(r.data.error).toBe('install_replayed');
+  });
+
+  it('已验证安装当天第二次心跳（换签名时刻）：不验签不写 used_sigs、不写库、不扣预算', async () => {
+    const env = makeEnv();
+    const inst = await makeInstall();
+    const sigs = () => env.DB.raw.prepare("SELECT COUNT(*) AS n FROM used_sigs WHERE account_id LIKE 'install:%'").get().n;
+    expect((await signedPing(env, inst)).status).toBe(204);
+    expect(sigs()).toBe(1);
+    expect(budgetUsed(env)).toBe(1);
+    for (let i = 1; i <= 3; i += 1) {
+      const r = await signedPing(env, inst, { version: '2.10.1' }, { now: NOW + i * 60 * 1000 });
+      expect(r.status).toBe(204);
+    }
+    expect(sigs()).toBe(1);
+    expect(budgetUsed(env)).toBe(1);
+    expect(installRow(env, inst.installId)).toMatchObject({ version: '2.10.0', last_seen: NOW });
+    // 无状态检查照常先做：拿别人的公钥来「探测」当天是否记过，过不了指纹比对。
+    const other = await makeInstall();
+    const probe = await signedPing(env, inst, {}, { now: NOW + 5000, override: { [INSTALL_HEADERS.key]: other.key.pubkey } });
+    expect(probe.status).toBe(401);
+    expect(probe.data.error).toBe('install_id_mismatch');
   });
 
   it('签名时刻超出 ±5 分钟 → 401 stale_install_time', async () => {
@@ -396,17 +421,63 @@ describe('反馈关联安装', () => {
     expect(installCols(env, (await submit(env, undefined)).data.id)).toEqual({ install_id: null, install_verified: 0 });
   });
 
-  it('带安装证明的反馈记 install_verified = 1；证明不对 → 401 不落库', async () => {
+  it('带安装证明的反馈记 install_verified = 1；证明验不过不拒收反馈，只丢掉不可信的 installId', async () => {
     const env = makeEnv();
     const inst = await makeInstall();
     const ok = await submitSigned(env, inst);
     expect(ok.status).toBe(201);
     expect(installCols(env, ok.data.id)).toEqual({ install_id: inst.installId, install_verified: 1 });
     const other = await makeInstall();
-    const bad = await submitSigned(env, inst, { [INSTALL_HEADERS.key]: other.key.pubkey });
-    expect(bad.status).toBe(401);
-    expect(bad.data.error).toBe('install_id_mismatch');
-    expect(count(env, 'feedback')).toBe(1);
+    let weakPow = 0;
+    while (await installPowValid(inst.installId, String(weakPow))) weakPow += 1;
+    for (const override of [
+      { [INSTALL_HEADERS.key]: other.key.pubkey }, // id ≠ 指纹
+      { [INSTALL_HEADERS.pow]: String(weakPow) }, // 难度调高后老客户端的 nonce 不够
+      { [INSTALL_HEADERS.sig]: b64urlEncode(new Uint8Array(64)) }, // 签名错
+      { [INSTALL_HEADERS.time]: String(NOW - 10 * 60 * 1000) }, // 过期
+    ]) {
+      const r = await submitSigned(env, inst, override);
+      expect(r.status).toBe(201);
+      expect(installCols(env, r.data.id)).toEqual({ install_id: null, install_verified: 0 });
+    }
+    expect(count(env, 'feedback')).toBe(5);
+  });
+
+  it('反馈的签名请求重放：反馈照收，installId 不记', async () => {
+    const env = makeEnv();
+    const inst = await makeInstall();
+    const bytes = new TextEncoder().encode(JSON.stringify({
+      category: 'bug', title: '重放', body: '正文', installId: inst.installId,
+    }));
+    const headers = await proofHeaders(inst, 'POST', '/v1/feedback', bytes, NOW);
+    const send = () => call(env, 'POST', '/v1/feedback', {
+      body: bytes, headers: { 'CF-Connecting-IP': nextIp(), ...headers }, now: NOW,
+    });
+    const first = await send();
+    expect(installCols(env, first.data.id)).toEqual({ install_id: inst.installId, install_verified: 1 });
+    const second = await send();
+    expect(second.status).toBe(201);
+    expect(installCols(env, second.data.id)).toEqual({ install_id: null, install_verified: 0 });
+  });
+
+  it('已验证安装的轨迹只取已验证心跳日与反馈；未验证反馈冒用其 id 看不到轨迹', async () => {
+    const env = makeEnv();
+    const inst = await makeInstall();
+    await signedPing(env, inst, { version: '2.10.0-debug.5', channel: 'debug' }, { now: NOW - 2 * DAY });
+    // 知道 id 的人在别的日子塞未验证心跳、提交未验证反馈。
+    await ping(env, { installId: inst.installId, version: '6.6.6' }, { now: NOW - DAY });
+    const junk = (await submit(env, inst.installId)).data;
+    const real = (await submitSigned(env, inst)).data;
+    const page = await devPage(env, `/dev/f/${real.id}`);
+    expect(page.status).toBe(200);
+    expect(page.data).toContain('2.10.0-debug.5');
+    expect(page.data).not.toContain('6.6.6');
+    expect(page.data).not.toContain(`/dev/f/${junk.id}`);
+    const junkPage = await devPage(env, `/dev/f/${junk.id}`);
+    expect(junkPage.data).toContain('未验证');
+    expect(junkPage.data).toContain('不展示该安装的轨迹');
+    expect(junkPage.data).not.toContain('2.10.0-debug.5');
+    expect(junkPage.data).not.toContain(`/dev/f/${real.id}`);
   });
 
   it('处理台详情显示版本轨迹、同一安装的其它反馈、修复是否装上与验证状态', async () => {

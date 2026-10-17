@@ -4,7 +4,8 @@
 //   POST /v1/feedback                         {category, title, body, contact?, meta?, reopenOf?, installId?} → 201 {id, ticket, ...}
 //                                             installId：客户端安装 id（installs.js，勾选「附带设备信息」才带；不合法当没带）
 //                                             可带安装证明头（X-Fushi-Install-*，installs.js verifyInstallProof）：
-//                                             验过记 install_verified = 1；带了但验不过 401，不静默降级
+//                                             验过记 install_verified = 1；验不过不拒收反馈，丢掉这个不可信的
+//                                             installId（不关联任何安装），反馈照常落库
 //                                             reopenOf = {id, ticket}：「问题没解决，重新提交」，新反馈记 parent_id
 //   PUT  /v1/feedback/:id/attachments/:slot   [X-Fushi-Ticket] 原始字节；slot = log（gzip）/ s0..s2（截图）
 //                                             / v0（视频 mp4 / mov / webm ≤ 50 MB，流式写 R2，见 putVideoAttachment）
@@ -433,9 +434,25 @@ async function reopenCount(env, parentId) {
   return n.n;
 }
 
-export async function createFeedback(env, account, ip, body, now, origin = {}, installVerified = false) {
+/**
+ * 反馈附带的安装：没带证明头 → 自报 id、未验证；证明验过 → 已验证；证明验不过 → 不记 id。
+ * 只吞证明本身的 401（格式漂移 / 难度调整 / 伪造），D1 之类的真错误照常抛出。
+ */
+export async function feedbackInstall(env, request, body, bytes, now) {
+  const installId = body && typeof body === 'object' ? normalizeInstallId(body.installId) : null;
+  try {
+    const verified = await verifyInstallProof(env, request, installId, bytes, now);
+    return { installId, verified };
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 401) return { installId: null, verified: false };
+    throw e;
+  }
+}
+
+export async function createFeedback(env, account, ip, body, now, origin = {}, install = undefined) {
   const sub = normalizeSubmission(body);
-  const installId = normalizeInstallId(body.installId);
+  const installId = install ? install.installId : normalizeInstallId(body.installId);
+  const installVerified = install ? install.verified : false;
   const parent = await reopenParent(env, body.reopenOf);
   const hash = await contentHash(sub);
   const source = account ? `acct:${account.id}` : `ip:${ip}`;
@@ -1224,10 +1241,8 @@ export async function routeFeedback(request, env, url, now, io) {
     const account = request.headers.get('X-Fushi-Account') ? await io.auth(bytes, { mutating: true }) : null;
     const origin = requestOrigin(request, account !== null);
     const body = io.parse(bytes);
-    const installVerified = body && typeof body === 'object'
-      ? await verifyInstallProof(env, request, normalizeInstallId(body.installId), bytes, now)
-      : false;
-    return json(await createFeedback(env, account, io.ip, body, now, origin, installVerified), 201, noStore);
+    const install = await feedbackInstall(env, request, body, bytes, now);
+    return json(await createFeedback(env, account, io.ip, body, now, origin, install), 201, noStore);
   }
   if (method === 'POST' && RE.status.test(path)) {
     const bytes = await io.readBody(16 * 1024);

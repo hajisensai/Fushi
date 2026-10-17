@@ -386,6 +386,11 @@ function installSection(trail, fix) {
   const badge = trail.verified
     ? '<span class="badge ok">已验证</span> <span class="muted">（提交时出示了该安装的签名与工作量证明）</span>'
     : '<span class="badge warn">未验证</span> <span class="muted">（安装 id 为客户端自报，可伪造）</span>';
+  if (trail.claimsVerifiedInstall) {
+    return `<h2>安装</h2>
+<div class="card"><p>${badge}</p><p class="muted"><code>${esc(trail.installId)}</code></p>
+<p class="muted">这个 id 属于一个已验证安装，但这条反馈没有出示它的证明，不展示该安装的轨迹与其它反馈。</p></div>`;
+  }
   return `<h2>安装</h2>
 <div class="card"><p>${badge}</p><p class="muted"><code>${esc(trail.installId)}</code></p>${summary}</div>${versions}${related}`;
 }

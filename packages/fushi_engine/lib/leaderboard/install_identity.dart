@@ -16,8 +16,10 @@
 // leaderboard_signing.dart），服务端核 installId == fp(公钥)、验签、±5 分钟时效、签名串去重。
 // 头名与账户签名（X-Fushi-Account / -Time / -Sig）分开：反馈可以同时带账户签名与安装签名。
 //
-// 工作量证明：sha256("fip1|<installId>|<nonce>") 的前 [kInstallPowBits] 位为 0。输入刻意压在
-// 一个 SHA-256 块（≤ 55 字节）内；installId 已是公钥指纹，不必再把公钥放进去也绑定了钥匙。
+// 工作量证明：sha256("fip1|<installId>|<nonce>") 的前 [kInstallPowBits] 位为 0。前缀 + id + 分隔符
+// 共 42 字节，nonce ≤ 13 位时整条输入 ≤ 55 字节、落在一个 SHA-256 块内（18 位难度下实际 nonce
+// 通常只有 6–7 位；服务端允许到 15 位，那时是两块，只是慢一点）。installId 已是公钥指纹，
+// 不必再把公钥放进去也绑定了钥匙。
 // nonce 只依赖 installId，算一次可永久复用（调用方持久化），服务端校验只需一次哈希。
 // 它只抬高「批量造新安装」的成本，挡不住决心造假的人——服务端无法核验 machineId 真伪，
 // 任何人都能拿随机种子造出新安装；它保证的是**冒充不了已有安装**、且每造一个新 id 都要付出
