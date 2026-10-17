@@ -301,11 +301,16 @@ class _SrsBackupsPageState extends ConsumerState<SrsBackupsPage> {
 
   Future<void> _setAuto(bool value) async {
     await ref.read(appProvider).setSrsBackupAuto(value);
+    // 关掉 → 作废挂起的定时器；打开 → 按当前间隔重新排。
+    await _controller.reschedule();
     if (mounted) setState(() {});
   }
 
   Future<void> _setLimits(SrsBackupLimits value) async {
+    final int before = ref.read(appProvider).srsBackupLimits.intervalMinutes;
     await ref.read(appProvider).setSrsBackupLimits(value);
+    // 间隔变了：挂起的定时器按旧间隔算的，按新间隔重排（只改保留份数不动定时器）。
+    if (value.intervalMinutes != before) await _controller.reschedule();
     if (mounted) setState(() {});
   }
 

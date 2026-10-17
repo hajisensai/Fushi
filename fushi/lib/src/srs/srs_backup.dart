@@ -10,7 +10,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
-import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:flutter/foundation.dart' show ValueNotifier, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart';
@@ -220,24 +220,49 @@ class SrsBackupController {
   /// 高频调用（每次评分都会 bump 修订号）：定时器在等就直接返回，不碰磁盘。
   void onDataChanged() {
     if (_disposed || !_autoEnabled() || (_timer?.isActive ?? false)) return;
-    srsRunLogged('SrsBackup.onDataChanged', () async {
-      final SrsBackupStore? backups = await _readBackups();
-      if (backups == null || _disposed || (_timer?.isActive ?? false)) return;
-      final int? latest = await _latestCreatedAt(backups);
-      final int interval = _limits().intervalMinutes * 60 * 1000;
-      final int wait = latest == null ? 0 : latest + interval - _now();
-      if (wait <= 0) {
+    srsRunLogged('SrsBackup.onDataChanged', scheduleCheck);
+  }
+
+  /// [onDataChanged] 的可等待版本（测试与 [reschedule] 用）：满间隔就备份，否则挂一个到点再看的定时器。
+  /// 每个 await 之后都重新检查 dispose / 开关 / 已有定时器：等待期间控制器可能已被释放，或别的调用已挂好定时器。
+  @visibleForTesting
+  Future<void> scheduleCheck() async {
+    bool stale() => _disposed || !_autoEnabled() || (_timer?.isActive ?? false);
+    if (stale()) return;
+    final SrsBackupStore? backups = await _readBackups();
+    if (backups == null || stale()) return;
+    final int? latest = await _latestCreatedAt(backups);
+    if (stale()) return;
+    final int interval = _limits().intervalMinutes * 60 * 1000;
+    final int wait = latest == null ? 0 : latest + interval - _now();
+    if (wait <= 0) {
+      await autoBackup();
+      return;
+    }
+    _timerDueAtMs = _now() + wait;
+    _timer = Timer(Duration(milliseconds: wait), () {
+      _timer = null;
+      _timerDueAtMs = null;
+      srsRunLogged('SrsBackup.timer', () async {
         await autoBackup();
-        return;
-      }
-      _timer = Timer(Duration(milliseconds: wait), () {
-        _timer = null;
-        srsRunLogged('SrsBackup.timer', () async {
-          await autoBackup();
-        });
       });
     });
   }
+
+  /// 自动备份的开关或间隔变了：已挂起的定时器按旧间隔算的，作废后按新设置重排（关掉则只作废）。
+  Future<void> reschedule() async {
+    _timer?.cancel();
+    _timer = null;
+    _timerDueAtMs = null;
+    await scheduleCheck();
+  }
+
+  /// 已挂起定时器的到点时刻（毫秒，按注入的时钟）；没有挂起为 null。
+  int? _timerDueAtMs;
+
+  @visibleForTesting
+  int? get pendingTimerDueAtMs =>
+      (_timer?.isActive ?? false) ? _timerDueAtMs : null;
 
   /// 离开复习页：有变动、且距最近一份满 5 分钟就备份（不等 30 分钟的定时间隔）。
   void onLeftReview() {
@@ -366,6 +391,7 @@ class SrsBackupController {
     _disposed = true;
     _timer?.cancel();
     _timer = null;
+    _timerDueAtMs = null;
     changes.dispose();
   }
 }
