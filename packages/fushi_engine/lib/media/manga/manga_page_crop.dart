@@ -12,6 +12,8 @@ import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:fushi_anki/fushi_anki_core.dart' show MiningMosaicRegion;
+import 'package:fushi_engine/media/image_mosaic.dart';
 import 'package:image/image.dart' as img;
 
 /// 裁出的卡图编码。
@@ -102,6 +104,9 @@ Future<({int width, int height})?> mangaPageOrientedSizeAsync(
 /// 从原页图 [bytes] 裁出归一化矩形 [left]..[bottom]，长边超过 [maxLongEdge] 时等比缩小
 /// （只缩不放；0 = 不缩，对应质量档「最高」），再编码。
 ///
+/// [mosaic]：打码区域（相对**未裁切**原页图，与 [left]..[bottom] 同一坐标系），在裁切
+/// 之前打到整页上——块大小按整页算，与对话框里整页预览上看到的一致。
+///
 /// 编码：源是 PNG → PNG；其余 → JPEG（[quality]）。
 /// 解码失败（AVIF 等 `package:image` 不认识的格式、损坏字节）返回 null——调用方退回
 /// 整页原图，绝不让裁切把一张能用的卡图变成没有图。
@@ -113,6 +118,7 @@ MangaPageCropResult? cropMangaPage(
   required double bottom,
   required int maxLongEdge,
   required int quality,
+  List<MiningMosaicRegion> mosaic = const <MiningMosaicRegion>[],
 }) {
   if (bytes.isEmpty) return null;
   try {
@@ -122,7 +128,10 @@ MangaPageCropResult? cropMangaPage(
       return null;
     }
     // 分镜检测与 OCR 都在 bake 之后的图上给坐标，这里必须同一坐标系。
-    final img.Image page = img.bakeOrientation(decoded);
+    final img.Image page = applyMosaicToImage(
+      img.bakeOrientation(decoded),
+      mosaic,
+    );
     final ({int x, int y, int width, int height}) rect = mangaCropPixelRect(
       pageWidth: page.width,
       pageHeight: page.height,
@@ -180,14 +189,19 @@ Future<MangaPageCropResult?> cropMangaPageAsync(
   required double bottom,
   required int maxLongEdge,
   required int quality,
-}) => Isolate.run<MangaPageCropResult?>(
-  () => cropMangaPage(
-    bytes,
-    left: left,
-    top: top,
-    right: right,
-    bottom: bottom,
-    maxLongEdge: maxLongEdge,
-    quality: quality,
-  ),
-);
+  List<MiningMosaicRegion> mosaic = const <MiningMosaicRegion>[],
+}) {
+  final List<MiningMosaicRegion> frozen = List<MiningMosaicRegion>.of(mosaic);
+  return Isolate.run<MangaPageCropResult?>(
+    () => cropMangaPage(
+      bytes,
+      left: left,
+      top: top,
+      right: right,
+      bottom: bottom,
+      maxLongEdge: maxLongEdge,
+      quality: quality,
+      mosaic: frozen,
+    ),
+  );
+}

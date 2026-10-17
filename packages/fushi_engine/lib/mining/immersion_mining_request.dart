@@ -2,7 +2,12 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_anki/fushi_anki_core.dart'
-    show AnkiMiningSource, AnkiMiningContext, CardSourceLink, MineOutcome;
+    show
+        AnkiMiningSource,
+        AnkiMiningContext,
+        CardSourceLink,
+        MineOutcome,
+        MiningMosaicRegion;
 
 /// 沉浸制卡片段音频的容器扩展名，按平台分（TODO-1217 / BUG-460）：
 /// - iOS：`m4a`——AnkiMobile 只自动下载它识别为媒体的 localhost URL，`.aac` 裸流会被当成
@@ -406,6 +411,7 @@ class ImmersionMiningRequest {
     this.requireAudio = true,
     this.omitAudio = false,
     this.omitCover = false,
+    this.coverMosaic = const <MiningMosaicRegion>[],
     this.imageMode = VideoMiningImageMode.gif,
     this.animatedFormat = MiningAnimatedFormat.gif,
     this.stillFormat = MiningStillFormat.jpg,
@@ -489,6 +495,12 @@ class ImmersionMiningRequest {
   /// 给好的封面字节一律跳过。与 [omitAudio] 都为真时出纯文本卡（用户要的就是它，
   /// 不再按「无封面也无音频」当空壳卡中止）。
   final bool omitCover;
+
+  /// 用户为这一张卡框的打码区域（高级制卡，相对那一帧画面的 0..1 归一化矩形）。
+  ///
+  /// 非空时引擎只出**静态**封面（动图 / 片段改按「字幕开头」抽单帧——逐帧打码做不到
+  /// 所见即所得），封面落盘后打码；打码失败就不要封面，绝不退回没打码的画面。
+  final List<MiningMosaicRegion> coverMosaic;
 
   /// 视频制卡封面图片模式（见 [VideoMiningImageMode]）。值对象默认
   /// [VideoMiningImageMode.gif]（不读偏好的调用方行为不变；偏好默认是 videoClip）。仅本地/有 range 的封面解析路径读取；providedCoverBytes 路径不受影响。
@@ -623,6 +635,7 @@ class ImmersionMiningRequest {
         requireAudio: requireAudio,
         omitAudio: omitAudio,
         omitCover: omitCover,
+        coverMosaic: coverMosaic,
         imageMode: imageMode,
         animatedFormat: animatedFormat,
         stillFormat: stillFormat,
@@ -688,6 +701,7 @@ class ImmersionMiningRequest {
     requireAudio: requireAudio,
     omitAudio: omitAudio,
     omitCover: omitCover,
+    coverMosaic: List<MiningMosaicRegion>.unmodifiable(coverMosaic),
     imageMode: imageMode,
     animatedFormat: animatedFormat,
     stillFormat: stillFormat,

@@ -10,6 +10,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_engine/utils/misc/synchronized_video_exporter.dart';
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/image_mosaic.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
@@ -499,10 +500,15 @@ class ImmersionMiningEngine {
     // 高级制卡「不要音频」+「视频片段」：片段就是画面 + 句子声音一个文件，没有声音就
     // 没有片段可言。对话框会禁用这个组合，这里兜底按动图出（与模板不支持片段时同一
     // 降级目标），不出一个无声的「同步片段」；先降再判模板，省掉一次无用的模板探测。
+    //
+    // 高级制卡打了码（[ImmersionMiningRequest.coverMosaic]）：只出静态封面——动图 /
+    // 片段改按「字幕开头」抽单帧（对话框打码时看的就是静帧）。
     final VideoMiningImageMode requestedMode =
-        req.omitAudio && req.imageMode.isVideoClip
-            ? VideoMiningImageMode.gif
-            : req.imageMode;
+        req.coverMosaic.isNotEmpty && !req.imageMode.isStill
+            ? VideoMiningImageMode.subtitleStart
+            : req.omitAudio && req.imageMode.isVideoClip
+                ? VideoMiningImageMode.gif
+                : req.imageMode;
     // 不要图片时模式无关紧要，同样不探测模板。
     final VideoMiningImageMode imageMode =
         req.providedCoverBytes == null && !req.omitCover
@@ -813,6 +819,20 @@ class ImmersionMiningEngine {
       }
     }
 
+    // 高级制卡打码：静态封面落盘后在原图上打码。打码失败（解不开）就不要封面——
+    // 用户打码就是不想让那块画面进卡，退回原图比没有图更糟。
+    if (req.coverMosaic.isNotEmpty &&
+        coverPath != null &&
+        !synchronizedVideo) {
+      coverPath = await _applyCoverMosaic(
+        coverPath!,
+        req.coverMosaic,
+        tempDir: tempDir,
+        jpegQuality: compression.screenshotQuality,
+        reportCover: reportCover,
+      );
+    }
+
     // TODO-1303：无音频中止——需要音频却最终没有音轨（不建无音频卡）。音频来自两条路：
     //   ① 区间抽取路径（[hasRange]，YouTube/本地视频）——抽取失败 → audioPath==null。
     //   ② provided 字节路径（Netflix 录制片段/后台软解，无 range 但有 providedCoverBytes）
@@ -983,6 +1003,37 @@ class ImmersionMiningEngine {
       } catch (_) {}
     }
     return audioPath;
+  }
+
+  /// 给已落盘的静态封面 [path] 打码，返回打好码的新文件路径；解不开 / 读写失败返回
+  /// null（调用方据此不要封面）。扩展名跟随实际编码（PNG 源 → PNG，其余 → JPEG）。
+  Future<String?> _applyCoverMosaic(
+    String path,
+    List<MiningMosaicRegion> regions, {
+    required String tempDir,
+    required int jpegQuality,
+    required void Function(String summary) reportCover,
+  }) async {
+    try {
+      final Uint8List source = await File(path).readAsBytes();
+      final MosaicEncodedImage? out = await mosaicEncodedImageAsync(
+        source,
+        regions,
+        jpegQuality: jpegQuality,
+      );
+      if (out == null) {
+        reportCover('cover mosaic failed: image not decodable');
+        return null;
+      }
+      return await _writeBytes(
+        tempDir,
+        'immersion_mosaic.${out.extension}',
+        out.bytes,
+      );
+    } catch (e) {
+      reportCover('cover mosaic failed: $e');
+      return null;
+    }
   }
 
   Future<String> _writeBytes(String dir, String name, Uint8List bytes) async {

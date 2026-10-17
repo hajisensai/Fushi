@@ -12,6 +12,7 @@ import 'package:fushi/src/mining/galgame_window_gif.dart';
 import 'package:fushi/src/mining/galgame_window_video.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart';
+import 'package:fushi_engine/media/image_mosaic.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
@@ -247,6 +248,45 @@ class GalHookMiningCoordinator {
     return (bytes: out, name: 'external_window.${produced.fileExtension}');
   }
 
+  /// 在降采样**之前**给窗口截图打码（块大小按原图算，与对话框预览一致）。产物是
+  /// PNG（截图本就是 PNG，无损），之后照常经 [_downsampleStill] 按质量档缩放编码。
+  /// 解不开返回 null。
+  static Future<Uint8List?> _mosaicStill(
+    Uint8List? pngBytes,
+    List<MiningMosaicRegion> mosaic,
+  ) async {
+    if (pngBytes == null || pngBytes.isEmpty) return null;
+    final MosaicEncodedImage? out = await mosaicEncodedImageAsync(
+      pngBytes,
+      mosaic,
+    );
+    if (out == null) {
+      ErrorLogService.instance.logDiagnostic(
+        'GalHookMiningCoordinator.mosaic',
+        'still not decodable, card image omitted',
+      );
+    }
+    return out?.bytes;
+  }
+
+  /// 高级制卡对话框打开时冻结当前绑定窗口的一帧（对话框里预览 / 打码用）。没有绑定
+  /// 窗口 / 抓图失败返回 null。不进制卡队列：只是一次只读截图。
+  Future<Uint8List?> captureBoundWindowStill() async {
+    final ExternalWindowInfo? window = _stateLoader().boundWindow;
+    if (window == null) return null;
+    try {
+      final WindowCaptureResult still = await _captureStill(window.hwnd);
+      return still.ok ? still.pngBytes : null;
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'GalHookMiningCoordinator.captureBoundWindowStill',
+        error,
+        stack,
+      );
+      return null;
+    }
+  }
+
   Future<GalHookMiningResult> mineLine({
     required String lineId,
     required Map<String, String> fields,
@@ -270,6 +310,12 @@ class GalHookMiningCoordinator {
     // 里的查词层，不需要也不应触发这条屏障。
     GalHookCaptureLeaseFactory? captureLeaseFactory,
     GalHookLineScreenshot? providedLineScreenshot,
+    // 高级制卡「打码」：相对那一帧截图的归一化区域。非空时只出静图，且在降采样前
+    // 打码（见 [_mosaicStill]）；空 = 旧行为逐字等价。
+    List<MiningMosaicRegion> mosaic = const <MiningMosaicRegion>[],
+    // 高级制卡对话框打开时为这一行冻结的截图（对话框里打码看的就是它）。只在
+    // [mosaic] 非空时使用：出卡图与预览必须是同一张图。
+    GalHookLineScreenshot? previewStill,
   }) {
     // 串行化 + 永不毒化（BUG-956）：单次制卡异常（含错误日志自身抛）不得让后续制卡永久挂起。
     return _miningQueue.enqueue<GalHookMiningResult>(
@@ -288,6 +334,8 @@ class GalHookMiningCoordinator {
         clipFormat: clipFormat,
         captureLeaseFactory: captureLeaseFactory,
         providedLineScreenshot: providedLineScreenshot,
+        mosaic: List<MiningMosaicRegion>.unmodifiable(mosaic),
+        previewStill: previewStill,
       ),
       buildFailure: (Object error, StackTrace stack) =>
           GalHookMiningResult(failureReason: error.toString()),
@@ -314,6 +362,8 @@ class GalHookMiningCoordinator {
     required MiningClipFormat clipFormat,
     required GalHookLineScreenshot? providedLineScreenshot,
     required GalHookCaptureLeaseFactory? captureLeaseFactory,
+    required List<MiningMosaicRegion> mosaic,
+    required GalHookLineScreenshot? previewStill,
   }) async {
     final TexthookerLineEntry? entry = _lineLookup(lineId);
     if (entry == null || !_lineValidator(entry)) {
@@ -324,6 +374,14 @@ class GalHookMiningCoordinator {
     if (providedLineScreenshot != null &&
         (providedLineScreenshot.lineId != entry.id ||
             providedLineScreenshot.pngBytes.isEmpty)) {
+      return const GalHookMiningResult(
+        failureReason: 'screenshot does not match captured line',
+      );
+    }
+    if (mosaic.isNotEmpty &&
+        previewStill != null &&
+        (previewStill.lineId != entry.id || previewStill.pngBytes.isEmpty)) {
+      // 打码位置是在那张预览图上框的：换了一行就不是同一张图，不能把码打到别的画面上。
       return const GalHookMiningResult(
         failureReason: 'screenshot does not match captured line',
       );
@@ -428,7 +486,9 @@ class GalHookMiningCoordinator {
 
     // 同步片段只在目标模板原样渲染图片字段时可用（[resolveTargetMiningImageMode]）；
     // 必须在决定录片段还是录动图**之前**求值。主机冻结的台词帧不看模式，不必问。
-    final VideoMiningImageMode imageMode = providedLineScreenshot != null
+    // 打了码只出静图（主机冻结帧 / 对话框预览帧 / 现抓一帧），不问模板、不录动图片段。
+    final VideoMiningImageMode imageMode =
+        providedLineScreenshot != null || mosaic.isNotEmpty
         ? preferredImageMode
         : await resolveTargetMiningImageMode(preferredImageMode, repo: repo);
     Uint8List? coverBytes;
@@ -437,7 +497,32 @@ class GalHookMiningCoordinator {
     bool degradedToAnimated = false;
     // 封面是混进了句子音频的片段 → 引擎按音画同步片段落卡（不另挂句子音频）。
     bool coverIsSynchronizedClip = false;
-    if (providedLineScreenshot != null) {
+    if (mosaic.isNotEmpty) {
+      // 打码：源图优先级 = 主机冻结的台词帧 > 对话框预览时冻结的那一帧 > 现抓。
+      // 前两者保证「对话框里看到并打码的那张」就是进卡的那张。
+      Uint8List? source =
+          providedLineScreenshot?.pngBytes ?? previewStill?.pngBytes;
+      if (source == null) {
+        final WindowCaptureResult still = await captureStillWithDiagnostics();
+        if (!still.ok) {
+          return GalHookMiningResult(
+            failureReason: still.error ?? 'game window capture failed',
+          );
+        }
+        source = still.pngBytes;
+      }
+      final Uint8List? masked = await _mosaicStill(source, mosaic);
+      if (masked != null) {
+        final ({Uint8List? bytes, String name}) shrunk = await _downsampleStill(
+          masked,
+          compression,
+          stillFormat,
+        );
+        coverBytes = shrunk.bytes;
+        coverName = shrunk.name;
+      }
+      // masked == null：打码失败，这张卡不带图（绝不退回没打码的原图）。
+    } else if (providedLineScreenshot != null) {
       // Remote mining must never recapture a later scene, including through
       // the GIF/video fallback ladder. Only the host's frozen line frame enters.
       final ({Uint8List? bytes, String name}) shrunk = await _downsampleStill(
@@ -476,8 +561,8 @@ class GalHookMiningCoordinator {
       }
       // 片段没做出来（录制未启动 / 帧不足 / ffmpeg 失败）：退回既有动图 → 静图阶梯。
     }
-    if (coverBytes != null) {
-      // 视频片段已就位，不再走动图 / 静图。
+    if (coverBytes != null || mosaic.isNotEmpty) {
+      // 视频片段 / 打码静图已就位（或打码失败、有意不带图），不再走动图 / 静图。
     } else if (imageMode.isStill) {
       // 用户主动选静态截图：直接抓单帧，**不**先试 GIF。galgame 一句台词内画面基本
       // 静止，动图多半只是把同一帧存二十遍，白白撑大卡片。这不是降级，故不置
