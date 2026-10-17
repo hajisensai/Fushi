@@ -117,6 +117,13 @@ Yomitan 导出释义时每部词典内联一份 `<style>`，同一部词典的�
   测试：`fushi_srs/test/style_dedup_test.dart`、`fushi_engine/test/srs/srs_style_dedup_test.dart`、
   `fushi/test/srs/srs_style_dedup_app_test.dart`。
 
+## 自动全量备份与按时间点恢复（2026-10-17，分支 `pr/srs-auto-backup`）
+
+对标 Anki 的「备份」：定期全量快照 + 恢复到某个时间点，详见 [2026-10-17-srs-auto-backup-restore.md](2026-10-17-srs-auto-backup-restore.md)。
+要点：恢复**不是**覆盖恢复（那样别的设备一同步，备份之后的事件就全回来了），而是先并入备份事件，再把差异写成新事件——
+字段写一条支配本机已见一切记录的修改记录（新建的软删除、删掉的恢复），备份之后的有效日志写 undo，
+仍不一致的卡写 manual 日志照抄备份时的状态。这些新事件随同步传播，旧数据被支配、回不来。
+
 ## 实现现状（分支 worktree-fushi-srs）
 
 | 计划项 | 位置 | 状态 |

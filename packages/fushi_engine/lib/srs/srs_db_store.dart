@@ -2111,6 +2111,80 @@ class SrsDbStore implements SrsSyncReplica {
     await _emit(<SrsEvent>[SrsEditEvent(e)]);
   }
 
+  // ------------------------------------------------------------------ 按时间点恢复（srs_point_in_time_restore.dart）
+
+  /// 本机写日志用的上下文（恢复写撤销 / manual 日志时用；不需要排程内核）。
+  Future<SrsLogContext> logContext() async => _logContext(await dayContext());
+
+  /// 把本机产生的一组日志落库、进发件箱（恢复计划写出的撤销 / manual 日志）。
+  Future<void> appendLocalLogs(List<SrsReviewLog> logs) async {
+    if (logs.isEmpty) return;
+    await _emit(<SrsEvent>[for (final SrsReviewLog l in logs) SrsLogEvent(l)]);
+  }
+
+  /// 库的变化指纹：四张事件表各自的 (行数, 最大 rowid)。任何事件落库（含对端同步来的）都会改变它；
+  /// 只读查询不会。自动备份据此判断「有没有变动」。
+  Future<String> changeFingerprint() async {
+    final List<String> parts = <String>[];
+    for (final String table in const <String>[
+      'srs_entities',
+      'srs_field_edits',
+      'srs_review_logs',
+      'srs_unknown_events',
+    ]) {
+      final QueryRow r = await db
+          .customSelect(
+            'SELECT COUNT(*) AS c, COALESCE(MAX(rowid), 0) AS m FROM $table '
+            'WHERE profile_uid = ?',
+            variables: <Variable<Object>>[Variable<String>(profileUid)],
+          )
+          .getSingle();
+      parts.add('${r.read<int>('c')}:${r.read<int>('m')}');
+    }
+    return parts.join('|');
+  }
+
+  /// 备份清单里显示的计数：未删除的笔记、可见的卡片、有效的复习（评分且没被撤销）。
+  Future<({int notes, int cards, int reviews})> backupCounts() async {
+    final Variable<String> uid = Variable<String>(profileUid);
+    final int notes =
+        (await db
+                .customSelect(
+                  'SELECT COUNT(*) AS c FROM srs_notes_cache '
+                  'WHERE profile_uid = ? AND deleted_at IS NULL',
+                  variables: <Variable<Object>>[uid],
+                )
+                .getSingle())
+            .read<int>('c');
+    final int cards =
+        (await db
+                .customSelect(
+                  'SELECT COUNT(*) AS c FROM srs_cards_cache '
+                  'WHERE profile_uid = ? AND hidden = 0',
+                  variables: <Variable<Object>>[uid],
+                )
+                .getSingle())
+            .read<int>('c');
+    final List<SrsReviewLogRow> logs = await (db.select(
+      db.srsReviewLogs,
+    )..where((t) => t.profileUid.equals(profileUid))).get();
+    final Set<String> revoked = <String>{};
+    for (final SrsReviewLogRow r in logs) {
+      if (r.kind != SrsLogKind.undo) continue;
+      final Object? target = (jsonDecode(r.json) as Map)['revokes'];
+      if (target is String) revoked.add(target);
+    }
+    int reviews = 0;
+    for (final SrsReviewLogRow r in logs) {
+      if (r.kind == SrsLogKind.review &&
+          r.rating != null &&
+          !revoked.contains(r.id)) {
+        reviews++;
+      }
+    }
+    return (notes: notes, cards: cards, reviews: reviews);
+  }
+
   /// 本 profile 是否有用户笔记（铁律 E：只有内置行不算有数据）。
   Future<bool> hasUserNotes() async {
     final SrsEntityRow? any =
