@@ -98,3 +98,21 @@ FushiFoldState resolveFushiFoldState({
   }
   return FushiFoldState.flat;
 }
+
+/// 书本姿态下，左右两页之间至少要留多宽的缝（逻辑像素），内容才不会落在折痕 /
+/// 铰链下面——对齐指南「内容放在铰链两侧、不放在铰链下」（`occlusionType == FULL`
+/// 的物理铰链会真的遮住像素）。
+///
+/// 两页之间的缝以 [contentCenterX]（窗口坐标）为中线对称展开。缝要盖住整条铰链，
+/// 所以 = 铰链宽 + 2 × |铰链中线 − 内容中线|：铰链不在内容正中（左右页边距不等、
+/// 铰链偏心）时，缝向两边多放出偏差量。非书本姿态返回 0；宽度为 0 的柔性折痕且中线
+/// 已对齐时也是 0（折痕本来就落在缝正中，不必加宽）。
+double fushiHingeGutterPx({
+  required FushiFoldState fold,
+  required double contentCenterX,
+}) {
+  final Rect? hinge = fold.hinge;
+  if (!fold.isBook || hinge == null) return 0;
+  final double offset = (hinge.center.dx - contentCenterX).abs();
+  return hinge.width + 2 * offset;
+}

@@ -1085,6 +1085,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 只在解析结果真变时才重建 spread 序列，避免键盘弹出等无关 metrics 抖动。
   MangaPageLayout _pageLayout = MangaPageLayout.single;
 
+  /// 当前生效的双页铰链缝（逻辑像素，[fushiHingeGutterPx]）；与 [_pageLayout] 同时
+  /// 在 [_buildSpreadsFor] 定下，窗口文档按它给两页之间留缝。
+  double _spreadGutterPx = 0;
+
+  /// 按当前折叠状态与布局解析铰链缝：只有双页才有「两页之间」。WebView 铺满窗口，
+  /// 两页以窗口中线为界居中排列。
+  double _resolveSpreadGutter(MangaPageLayout layout) {
+    if (layout != MangaPageLayout.double) return 0;
+    return fushiHingeGutterPx(
+      fold: FushiFoldState.of(context),
+      contentCenterX: MediaQuery.sizeOf(context).width / 2,
+    );
+  }
+
   int _currentSpread = 0;
   int _currentPage = 0;
   double _currentFraction = 0;
@@ -1691,7 +1705,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _applySpreadLayoutIfChanged() async {
     final MokuroPayload? payload = _payload;
     if (payload == null || _mode != MangaReadingMode.spread) return;
-    if (_resolveLayout(_mode) == _pageLayout) return;
+    final MangaPageLayout layout = _resolveLayout(_mode);
+    // 横屏双页时半开 / 展平不改变单双页，但铰链缝变了也要重挂文档。
+    if (layout == _pageLayout &&
+        _resolveSpreadGutter(layout) == _spreadGutterPx) {
+      return;
+    }
     await _rebuildSpreadsPreservingPage(payload);
   }
 
@@ -2566,6 +2585,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   ) {
     final MangaPageLayout layout = _resolveLayout(mode);
     _pageLayout = layout;
+    _spreadGutterPx = _resolveSpreadGutter(layout);
     return buildMangaSpreads(
       payload.images.length,
       soloPages: _soloPagesFor(payload),
@@ -2760,6 +2780,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         MangaReadingMode.webtoonGaps => t.manga_reading_mode_gaps,
       },
       spreadDirection: _spreadDirection,
+      spreadGutterPx: _spreadGutterPx,
       zoomPercent: _zoomPercent,
       inlineSelectionJs: inlineSelectionJs,
       pageSpreadIndices: pageSpreadIndices,

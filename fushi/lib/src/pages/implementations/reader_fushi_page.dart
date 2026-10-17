@@ -6,6 +6,7 @@ import 'package:fushi/src/anki/source_review_session.dart';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:file_picker/file_picker.dart';
@@ -732,7 +733,12 @@ String buildSpreadPageHtml({
   required int swipeFastDistThreshold,
   required int swipeFastVelocity,
   String keyBridgeScript = '',
+  // 折叠屏书本姿态：两页之间让出的铰链缝（逻辑像素，fushiHingeGutterPx）。0 = 无缝。
+  double gutterPx = 0,
 }) {
+  final String gutterCss = gutterPx > 0
+      ? '.spread{column-gap:${gutterPx.ceil()}px}'
+      : '';
   return '''
 <!DOCTYPE html>
 <html><head>
@@ -744,6 +750,7 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
 .spread{display:flex;width:100vw;height:100vh}
 .spread-half{flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden}
 .spread-half img{max-width:100%;max-height:100vh;object-fit:contain;cursor:pointer}
+$gutterCss
 </style>
 </head><body>
 <div class="spread">
@@ -1915,6 +1922,43 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 列数为「自动」时据此排成两栏（[ReaderContentStyles.foldPageColumnsOverride]），
   /// 折痕落在两栏之间；只影响本次排版，不写回偏好。
   bool _foldBookPosture = false;
+
+  /// 最近一次 [didChangeDependencies] 看到的折叠状态与窗口宽。
+  FushiFoldState _foldState = FushiFoldState.flat;
+  double _foldWindowWidth = 0;
+
+  /// 书本姿态下两页之间要让出的铰链缝（逻辑像素，`fushiHingeGutterPx`）；非书本姿态 0。
+  /// 按正文 content-box 中线现算：WebView 铺满窗口，左右页边距是窗口宽的百分比，改
+  /// 边距（样式热下发）时缝跟着重算。
+  double get _foldHingeGutterPx {
+    final ReaderSettings? settings = _settings;
+    if (settings == null || !_foldState.isBook) return 0;
+    final double width = _foldWindowWidth;
+    final double marginLeftPx = width * math.max(0, settings.marginLeft) / 100;
+    final double marginRightPx = width * math.max(0, settings.marginRight) / 100;
+    return fushiHingeGutterPx(
+      fold: _foldState,
+      contentCenterX: marginLeftPx + (width - marginLeftPx - marginRightPx) / 2,
+    );
+  }
+
+  /// 本次排版实际的每页列数覆盖与栏间隙覆盖（都由折叠状态 + 当前设置推出）。
+  int? get _foldPageColumns => ReaderContentStyles.foldPageColumnsOverride(
+        bookPosture: _foldBookPosture,
+        settings: _settings!,
+      );
+
+  /// 图片跨页文档（[buildSpreadPageHtml]，两半各占半屏、以窗口中线为界）的铰链缝。
+  double get _foldSpreadGutterPx => fushiHingeGutterPx(
+        fold: _foldState,
+        contentCenterX: _foldWindowWidth / 2,
+      );
+
+  int? get _foldColumnGap => ReaderContentStyles.foldColumnGapPx(
+        hingeGutterPx: _foldHingeGutterPx,
+        effectivePageColumns: _foldPageColumns ?? _settings!.pageColumns,
+        settings: _settings!,
+      );
   double _stableBottomInset = 0;
 
   /// 底栏内容行的自然（未缩放）高度。
@@ -3830,23 +3874,25 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     }
     // 折叠屏姿态变化（半开成书本 / 展平）：只有实际生效的列数变了才重排——列数是结构性
     // 布局键（与改「每页列数」同走 _reloadWithCurrentSettings，保留阅读位置）。
-    final bool bookPosture = FushiFoldState.of(context).isBook;
-    if (bookPosture != _foldBookPosture) {
+    final FushiFoldState fold = FushiFoldState.of(context);
+    final double windowWidth = MediaQuery.sizeOf(context).width;
+    if (fold != _foldState || windowWidth != _foldWindowWidth) {
       final ReaderSettings? settings = _settings;
-      final int? before = settings == null
-          ? null
-          : ReaderContentStyles.foldPageColumnsOverride(
-              bookPosture: _foldBookPosture,
-              settings: settings,
-            );
-      _foldBookPosture = bookPosture;
-      final int? after = settings == null
-          ? null
-          : ReaderContentStyles.foldPageColumnsOverride(
-              bookPosture: bookPosture,
-              settings: settings,
-            );
-      if (settings != null && before != after && _controller != null) {
+      final int? beforeColumns = settings == null ? null : _foldPageColumns;
+      final int? beforeGap = settings == null ? null : _foldColumnGap;
+      final double beforeSpreadGutter = _foldSpreadGutterPx;
+      _foldState = fold;
+      _foldWindowWidth = windowWidth;
+      _foldBookPosture = fold.isBook;
+      final int? afterColumns = settings == null ? null : _foldPageColumns;
+      final int? afterGap = settings == null ? null : _foldColumnGap;
+      // 当前是图片跨页文档时，铰链缝变了也要重挂（同走 _reloadWithCurrentSettings）。
+      final bool spreadChanged = _spreadDocumentLoaded &&
+          beforeSpreadGutter != _foldSpreadGutterPx;
+      final bool changed = beforeColumns != afterColumns ||
+          beforeGap != afterGap ||
+          spreadChanged;
+      if (settings != null && changed && _controller != null) {
         unawaited(
           _reloadWithCurrentSettings().catchError((Object e, StackTrace s) {
             ErrorLogService.instance.log('ReaderFushi.foldPostureReload', e, s);
@@ -4298,10 +4344,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 高亮笔触的落笔动画开关与节奏只认 Dart 侧 fushiMotionEnabled（减弱动态效果 / 墨水屏
       // 归零）；切换时 didChangeDependencies 重下发样式表。
       motionEnabled: _readerMotionEnabled,
-      pageColumnsOverride: ReaderContentStyles.foldPageColumnsOverride(
-        bookPosture: _foldBookPosture,
-        settings: _settings!,
-      ),
+      pageColumnsOverride: _foldPageColumns,
+      columnGapOverridePx: _foldColumnGap,
     );
   }
 

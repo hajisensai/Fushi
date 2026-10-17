@@ -128,6 +128,37 @@ void main() {
     });
   });
 
+  group('fushiHingeGutterPx', () {
+    test('非书本姿态 0；柔性折痕居中也是 0', () {
+      expect(
+        fushiHingeGutterPx(fold: FushiFoldState.flat, contentCenterX: 400),
+        0,
+      );
+      expect(
+        fushiHingeGutterPx(
+          fold: const FushiFoldState(
+            posture: FushiFoldPosture.book,
+            hinge: Rect.fromLTWH(400, 0, 0, 600),
+          ),
+          contentCenterX: 400,
+        ),
+        0,
+      );
+    });
+
+    test('物理铰链：缝 = 铰链宽 + 2×中线偏差，整条铰链都落在缝里', () {
+      const FushiFoldState duo = FushiFoldState(
+        posture: FushiFoldPosture.book,
+        hinge: Rect.fromLTWH(388, 0, 24, 600),
+      );
+      expect(fushiHingeGutterPx(fold: duo, contentCenterX: 400), 24);
+      final double gutter = fushiHingeGutterPx(fold: duo, contentCenterX: 390);
+      expect(gutter, 44);
+      // 以内容中线 390 对称展开的缝 [368, 412] 必须盖住铰链 [388, 412]。
+      expect(390 - gutter / 2 <= 388 && 390 + gutter / 2 >= 412, isTrue);
+    });
+  });
+
   group('resolveFushiTabletopSplit', () {
     const FushiFoldState tabletop = FushiFoldState(
       posture: FushiFoldPosture.tabletop,

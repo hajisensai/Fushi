@@ -136,6 +136,23 @@ class ReaderContentStyles {
     return 2;
   }
 
+  /// 折叠屏书本姿态下两栏之间的栏间隙（px）：null = 不覆盖（常量 22px）。
+  ///
+  /// 对齐指南「内容放在铰链两侧、不放在铰链下」：只在横排翻页、一屏恰好两栏时生效，
+  /// 栏间隙 = 常量 22px + [hingeGutterPx]（铰链宽 + 2×铰链与正文中线的偏差，见
+  /// `fushiHingeGutterPx`），两侧各留 11px 余量。[hingeGutterPx] 为 0（柔性折痕且
+  /// 已居中）时不覆盖，与原几何逐字节相同。
+  static int? foldColumnGapPx({
+    required double hingeGutterPx,
+    required int effectivePageColumns,
+    required ReaderSettings settings,
+  }) {
+    if (hingeGutterPx <= 0 || effectivePageColumns != 2) return null;
+    if (settings.isVnMode || settings.isContinuousMode) return null;
+    if (settings.writingMode.startsWith('vertical')) return null;
+    return ReaderLayoutDefaults.columnGapPx + hingeGutterPx.ceil();
+  }
+
   /// 「中缝折痕」显示风格：一屏两页时在两页之间画书脊阴影，像摊开的实体书。
   ///
   /// 画在 `html::after`（html 不受 body 的 clip-path 裁剪），`position: fixed` 贴视口、
@@ -226,6 +243,7 @@ html::after {
     String? contentLanguage,
     bool motionEnabled = true,
     int? pageColumnsOverride,
+    int? columnGapOverridePx,
   }) {
     return '<style>\n${css(
       settings: settings,
@@ -245,6 +263,7 @@ html::after {
       einkDark: einkDark,
       motionEnabled: motionEnabled,
       pageColumnsOverride: pageColumnsOverride,
+      columnGapOverridePx: columnGapOverridePx,
     )}\n</style>';
   }
 
@@ -507,8 +526,14 @@ body::after {
     /// 折叠屏书本姿态下阅读器把「自动」解析成 2 栏（见 [foldPageColumnsOverride]），
     /// 不写回用户偏好——展平后自动回到原值。
     int? pageColumnsOverride,
+
+    /// 本次排版的栏间隙（px）；null = 常量 [ReaderLayoutDefaults.columnGapPx]。折叠屏
+    /// 书本姿态下加宽到盖住铰链（见 [foldColumnGapPx]）。列宽推算与 `column-gap` 同用
+    /// 这一个值，JS 的页步又从计算样式回读 column-gap，三者同源、翻页网格不失配。
+    int? columnGapOverridePx,
   }) {
     final int pageColumns = pageColumnsOverride ?? settings.pageColumns;
+    final int columnGapPx = columnGapOverridePx ?? ReaderLayoutDefaults.columnGapPx;
     final _ThemeColors themedColors = _themeColors(
         themeOverride ?? settings.theme,
         customBg: customBg,
@@ -585,7 +610,7 @@ body::after {
     // 恒等于浏览器真实列周期 column-width + column-gap，maxScroll 与对齐量同源，杜绝
     // 「翻一半跳章」（旧实现把 inset 塞进 gap，使列周期随 inset/字号/竖排 notch 漂移，
     // pageStep 与真实列周期失配 → 倒数第二页越界被 clamp 误判 limit 提前跨章）。
-    const String columnGapCss = '${ReaderLayoutDefaults.columnGapPx}px';
+    final String columnGapCss = '${columnGapPx}px';
 
     // TODO-729 必补(a)：column-width 必须等于 content-box（扣掉 turn 轴方向的 padding），
     // 而非无条件整视口。只有 column-width == content-box 时，浏览器真实列周期
@@ -619,7 +644,7 @@ body::after {
     final String columnWidthCss = ReaderContentStyles.columnWidthForColumns(
       baseContentBoxCss: baseColumnWidthCss,
       pageColumns: pageColumns,
-      columnGapPx: ReaderLayoutDefaults.columnGapPx,
+      columnGapPx: columnGapPx,
     );
 
     final String textSpacingCss =

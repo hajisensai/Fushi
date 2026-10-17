@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show buildSpreadPageHtml;
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -75,6 +77,62 @@ void main() {
         contains('column-count: 2 !important;'),
       );
     });
+  });
+
+  group('foldColumnGapPx（铰链不压字）', () {
+    test('两栏横排翻页：栏间隙 = 22 + 铰链缝；无铰链缝不覆盖', () async {
+      final ReaderSettings s = await _settings();
+      expect(
+        ReaderContentStyles.foldColumnGapPx(
+          hingeGutterPx: 24,
+          effectivePageColumns: 2,
+          settings: s,
+        ),
+        46,
+      );
+      expect(
+        ReaderContentStyles.foldColumnGapPx(
+          hingeGutterPx: 0,
+          effectivePageColumns: 2,
+          settings: s,
+        ),
+        isNull,
+      );
+      expect(
+        ReaderContentStyles.foldColumnGapPx(
+          hingeGutterPx: 24,
+          effectivePageColumns: 1,
+          settings: s,
+        ),
+        isNull,
+        reason: '单栏没有「两页之间」，铰链缝不适用',
+      );
+    });
+
+    test('column-gap 与子列宽推算用同一个间隙（JS 页步回读 column-gap，三者同源）', () async {
+      final ReaderSettings s = await _settings();
+      final String css = ReaderContentStyles.css(
+        settings: s,
+        pageColumnsOverride: 2,
+        columnGapOverridePx: 46,
+      );
+      expect(css, contains('column-gap: 46px !important;'));
+      expect(css, contains(' - 46px) / 2))'));
+      expect(css, isNot(contains('column-gap: 22px')));
+    });
+  });
+
+  test('EPUB 图片跨页：铰链缝进两半之间，无缝时不发', () {
+    String html(double gutter) => buildSpreadPageHtml(
+      leftUrl: 'l.jpg',
+      rightUrl: 'r.jpg',
+      swipeDistThreshold: 44,
+      swipeFastDistThreshold: 22,
+      swipeFastVelocity: 300,
+      gutterPx: gutter,
+    );
+    expect(html(24.4), contains('.spread{column-gap:25px}'));
+    expect(html(0), isNot(contains('column-gap')));
   });
 
   group('中缝折痕 CSS', () {
