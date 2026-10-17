@@ -53,4 +53,25 @@ void main() {
     c.applyExternalPlaybackState(positionMs: 2500, playing: true);
     expect(c.effectivePositionMs, 2500);
   });
+
+  test('positionMsListenable 推送位置变化（外部态 / 测试覆盖），同值不重复通知', () {
+    final VideoPlayerController c = VideoPlayerController();
+    addTearDown(c.dispose);
+    expect(c.positionMsListenable.value, isNull);
+    final List<int?> seen = <int?>[];
+    c.positionMsListenable.addListener(
+      () => seen.add(c.positionMsListenable.value),
+    );
+
+    c.applyExternalPlaybackState(positionMs: 1500, playing: true);
+    c.applyExternalPlaybackState(positionMs: 1500, playing: false);
+    c.applyExternalPlaybackState(positionMs: 2750, playing: false);
+    expect(seen, <int?>[1500, 2750], reason: '位置变化即推送；只改播放态不推送');
+    expect(c.positionMsListenable.value, c.positionMs);
+
+    c.debugSetPositionForTesting(9000);
+    expect(seen.last, 9000, reason: '测试覆盖与 positionMs 同一优先级');
+    c.debugSetPositionForTesting(null);
+    expect(seen.last, 2750, reason: '还原后回到外部态位置');
+  });
 }

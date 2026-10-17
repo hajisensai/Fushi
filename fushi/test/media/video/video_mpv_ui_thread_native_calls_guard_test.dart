@@ -58,8 +58,11 @@ void main() {
     }
 
     final String getAsync = body('Future<String> getPropertyAsync(');
-    expect(getAsync, contains('mpv_get_property_async('));
+    expect(getAsync, contains('_queuePropertyRead('));
     expect(getAsync, isNot(contains('mpv_get_property_string(')));
+    final String queueRead = body('Future<String?> _queuePropertyRead(');
+    expect(queueRead, contains('mpv_get_property_async('));
+    expect(queueRead, isNot(contains('mpv_get_property_string(')));
 
     final String setProperty = body('Future<void> setProperty(');
     expect(
@@ -78,6 +81,84 @@ void main() {
       body('Future<void> dispose('),
       contains('_completePendingAsyncRequests()'),
       reason: 'dispose 必须收掉挂起的异步请求，否则等回包的调用方永远挂着',
+    );
+  });
+
+  // BUG-3501 收尾：事件循环（Flutter UI 线程）上的同步内核锁调用不只在 app 代码里，
+  // 补丁里的事件分发与 on_load / on_unload 钩子体也算。observeProperty 的 FORMAT_NONE
+  // 分支与钩子体改走 mpv_*_async；libmpv 没有异步版的 mpv_hook_add /
+  // mpv_hook_continue（client.c 里 lock_core）只许出现在辅助 isolate 的顶层函数里。
+  test('media_kit patch event loop and hooks take no core lock in-thread', () {
+    final String source = maskComments(
+      File(
+        '../ci/patches/hosted/media_kit-1.2.6/lib/src/player/native/player/real.dart',
+      ).readAsStringSync(),
+    );
+    const List<String> coreLocked = <String>[
+      'mpv.mpv_get_property_string(',
+      'mpv.mpv_get_property(',
+      'mpv.mpv_set_property(',
+      'mpv.mpv_set_property_string(',
+      'mpv.mpv_command(',
+      'mpv.mpv_hook_add(',
+      'mpv.mpv_hook_continue(',
+    ];
+
+    ({int start, int end}) span(String signature, String closing) {
+      final int start = source.indexOf(signature);
+      expect(start, isNonNegative, reason: '补丁里找不到 $signature');
+      return (start: start, end: source.indexOf(closing, start));
+    }
+
+    for (final String method in <String>[
+      'Future<void> _handler(',
+      'Future<void> _runHook(',
+      'Future<void> _runOnLoadHook(',
+      'Future<void> _runOnUnloadHook(',
+    ]) {
+      final ({int start, int end}) s = span(method, '\n  }\n');
+      final String body = source.substring(s.start, s.end);
+      if (method == 'Future<void> _handler(') {
+        // 切片必须盖住整个分发函数（含末尾的钩子分支），否则后面的断言是空壳。
+        expect(body, contains('MPV_EVENT_HOOK'));
+        expect(body, contains('MPV_FORMAT_NONE'));
+      }
+      for (final String call in coreLocked) {
+        expect(
+          body.contains(call),
+          isFalse,
+          reason: '$method 跑在事件循环所在的 UI 线程上，不能同步调 $call',
+        );
+      }
+    }
+
+    // 钩子注册 / 放行只许在辅助 isolate 的顶层函数里。
+    final List<({int start, int end})> offThread = <({int start, int end})>[
+      span('void _hookAddLoadUnload(', '\n}\n'),
+      span('void _hookContinue(', '\n}\n'),
+    ];
+    for (final String call in <String>[
+      'mpv.mpv_hook_add(',
+      'mpv.mpv_hook_continue(',
+    ]) {
+      int at = source.indexOf(call);
+      expect(at, isNonNegative, reason: '补丁里找不到 $call');
+      while (at >= 0) {
+        expect(
+          offThread.any(
+            (({int start, int end}) r) => at > r.start && at < r.end,
+          ),
+          isTrue,
+          reason: '$call 会拿 mpv 内核锁，只能经 compute 在辅助 isolate 里调',
+        );
+        at = source.indexOf(call, at + 1);
+      }
+    }
+    final ({int start, int end}) d = span('Future<void> dispose(', '\n  }\n');
+    expect(
+      source.substring(d.start, d.end),
+      contains('_offThreadNativeCalls'),
+      reason: '销毁句柄前必须等辅助 isolate 上的钩子放行跑完',
     );
   });
 }

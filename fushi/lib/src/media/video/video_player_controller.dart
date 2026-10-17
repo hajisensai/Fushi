@@ -756,6 +756,26 @@ class VideoPlayerController extends ChangeNotifier
   StreamSubscription<bool>? _bufferingIndicatorSub;
   StreamSubscription<bool>? _playingIndicatorSub;
 
+  /// 播放位置的事件源（毫秒，与 [positionMs] 同值）：见 [positionMsListenable]。
+  final ValueNotifier<int?> _positionMsNotifier = ValueNotifier<int?>(null);
+  bool _positionMsNotifierDisposed = false;
+  StreamSubscription<Duration>? _positionSub;
+
+  /// [positionMs] 变化的推送源：真 [Player] 跟 media_kit `stream.position`（libmpv
+  /// `time-pos` 事件），网页播放器跟 [applyExternalPlaybackState] 注入，蓝光导航跟
+  /// 导航态采样，测试覆盖跟 [debugSetPositionForTesting]。值恒等于此刻的
+  /// [positionMs]（同值不重复通知）。
+  ///
+  /// 给要显示连续位置的 UI（折叠屏桌面姿态面板等）订阅，替代各自起定时器轮询
+  /// [positionMs]——[ChangeNotifier] 本身只在 cue / 播放态变化时通知，不管位置。
+  ValueListenable<int?> get positionMsListenable => _positionMsNotifier;
+
+  /// 把此刻的 [positionMs] 发布到 [positionMsListenable]。
+  void _publishPosition() {
+    if (_positionMsNotifierDisposed) return;
+    _positionMsNotifier.value = positionMs;
+  }
+
   /// **纯函数**：缓冲圈显示判据（见 [bufferingIndicatorVisible]）。
   @visibleForTesting
   static bool shouldShowBufferingIndicator({
@@ -1220,6 +1240,7 @@ class VideoPlayerController extends ChangeNotifier
   @visibleForTesting
   void debugSetPositionForTesting(int? positionMs) {
     _debugPositionOverride = positionMs;
+    _publishPosition();
     notifyListeners();
   }
 
@@ -1248,6 +1269,7 @@ class VideoPlayerController extends ChangeNotifier
     _externalPositionMs = positionMs;
     _externalIsPlaying = playing;
     if (durationMs != null) _externalDurationMs = durationMs;
+    _publishPosition();
     updateCueForPosition(positionMs);
     if (playingChanged || durationChanged) notifyListeners();
   }
@@ -3054,6 +3076,8 @@ class VideoPlayerController extends ChangeNotifier
     _bufferingIndicatorSub = null;
     await _playingIndicatorSub?.cancel();
     _playingIndicatorSub = null;
+    await _positionSub?.cancel();
+    _positionSub = null;
     bufferingIndicatorVisible.value = false;
     await _durationReadySub?.cancel();
     _durationReadySub = null;
@@ -3494,6 +3518,11 @@ class VideoPlayerController extends ChangeNotifier
       (_) => _syncBufferingIndicator(player),
     );
     _syncBufferingIndicator(player);
+    // 位置推送源（positionMsListenable）：跟 libmpv time-pos 事件，不另起定时器。
+    _positionSub = player.stream.position.listen((_) {
+      if (_isCurrentLoad(player, loadToken)) _publishPosition();
+    });
+    _publishPosition();
 
     // 125ms 周期读位置，驱动 cue 同步（对齐有声书 createPositionStream 的节奏）。
     _tick = Timer.periodic(const Duration(milliseconds: 125), (_) {
@@ -6040,6 +6069,8 @@ class VideoPlayerController extends ChangeNotifier
     _bufferingIndicatorSub = null;
     unawaited(_playingIndicatorSub?.cancel());
     _playingIndicatorSub = null;
+    unawaited(_positionSub?.cancel());
+    _positionSub = null;
     unawaited(_durationReadySub?.cancel());
     _durationReadySub = null;
     unawaited(_audioDeviceSub?.cancel());
@@ -6079,6 +6110,8 @@ class VideoPlayerController extends ChangeNotifier
     networkReadBytesPerSecond.dispose();
     networkCacheSeconds.dispose();
     bufferingIndicatorVisible.dispose();
+    _positionMsNotifierDisposed = true;
+    _positionMsNotifier.dispose();
     _videoPath = null;
     _chapters = const <VideoChapter>[];
     super.dispose();

@@ -100,8 +100,33 @@ callbacks) before fetching the next event. Code running inside those callbacks
 must not await an async read, write or command, or it waits for a reply queued
 behind itself. Fushi's observers schedule their work with `unawaited`.
 
-Regression tests: `fushi/test/third_party/media_kit_async_property_test.dart`
-(real libmpv; `FUSHI_TEST_LIBMPV`) and the source guard
+The event loop itself no longer takes the core lock either:
+
+- `observeProperty` (`MPV_FORMAT_NONE`) answered every event with a synchronous
+  `mpv_get_property_string`. A value-observed property (`observePropertyChanges`)
+  gets a `FORMAT_NONE` event only when it becomes unavailable, so nothing is read
+  (upstream's read returned NULL and no listener ran). A plain `observeProperty`
+  subscription queues an async read at event time and runs the listener when the
+  reply arrives; a chain keeps listener calls in event order.
+- The `on_load` / `on_unload` hook body (`Media.httpHeaders` →
+  `http-header-fields`, `Media.start` / `end`, `onLoadHooks` / `onUnloadHooks`)
+  read and wrote properties synchronously. It now runs off the event loop
+  (`_runHook`, chained) with `mpv_get_property_async` / `mpv_set_property_async`,
+  awaiting each reply before the next request, so the hook is released only after
+  every write was applied.
+- `mpv_hook_add` and `mpv_hook_continue` take the core lock (`lock_core` in
+  `player/client.c`) and libmpv has no async variant (mpv 0.39 has no `hook-ack`
+  command either), so they run on a helper isolate via `compute`, like upstream's
+  `screenshot` / playlist reads. `dispose` waits for in-flight hook releases
+  before `mpv_terminate_destroy`; once disposed a pending hook is not released
+  (mpv drops a destroyed client's hooks itself).
+- `mpv_observe_property` / `mpv_unobserve_property` stay on the calling thread:
+  they take only the client's own `ctx->lock`, never the core lock.
+
+Regression tests: `fushi/test/third_party/media_kit_async_property_test.dart`,
+`fushi/test/third_party/media_kit_async_hooks_test.dart` (real libmpv;
+`FUSHI_TEST_LIBMPV`; the hook test serves a WAV over local HTTP and checks the
+header and `Media.start` still reach mpv) and the source guard
 `fushi/test/media/video/video_mpv_ui_thread_native_calls_guard_test.dart`.
 Remove when upstream stops reading and writing properties synchronously on the
 caller's thread.

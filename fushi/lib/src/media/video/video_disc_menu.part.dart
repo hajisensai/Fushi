@@ -328,6 +328,7 @@ extension VideoDiscMenuController on VideoPlayerController {
           _discInitialMenuPending = false;
         } else {
           _discState = next;
+          _publishPosition();
           if (action == VideoDiscMenuEntryAction.requestTopMenu) {
             // Mark before dispatch: a rejected command is visible and never
             // retried by the sampling loop or allowed to bind a movie instead.
@@ -352,6 +353,7 @@ extension VideoDiscMenuController on VideoPlayerController {
       if (changed) _invalidateDiscTitle();
       _discState = next;
       _selectedDiscPlaylistPath = path;
+      _publishPosition();
       if (next.isTitle) {
         if (!await _refreshDiscResolvedTracks(player, loadToken, next)) {
           return;

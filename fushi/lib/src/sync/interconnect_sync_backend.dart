@@ -292,6 +292,15 @@ class InterconnectSyncBackend extends SyncBackend
   /// 入口全部自动覆盖，不依赖每个调用点记得手动失效（这正是本 bug 的成因）。
   final ValueNotifier<int> sessionIdentityRevision = ValueNotifier<int>(0);
 
+  /// 本端成功删掉 host 库里的条目（书 / 有声书 / 本地音频 / 视频）后自增。
+  ///
+  /// `remoteLibraryCacheProvider` 订阅它作废互联来源的远端清单缓存：删除之前取的
+  /// 清单还带着那个条目，TTL 内继续用就会把刚删的东西当远端占位卡显示出来；更要紧的是
+  /// 远端占位卡的删除墓碑过滤（`pendingRemoteDeletionKeys`）在墓碑送达后就不再藏这个
+  /// 键，它依赖「送达之后拿到的清单一定是删除之后取的」——同步推送与 UI 直删都走这几个
+  /// 方法，挂在这里一处覆盖。
+  final ValueNotifier<int> remoteLibraryMutationRevision = ValueNotifier<int>(0);
+
   WebDavOps? _ops;
   // TODO-961 M1: 当前选中地址的钉扎指纹（https 走 pinned client；http=null）。
   String? _activeFingerprint;
@@ -1432,6 +1441,7 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'DELETE /api/library/books/$title');
+    remoteLibraryMutationRevision.value++;
   }
 
   /// 读 host 端书 [bookKey] 的阅读进度（TODO-767）。host 返回 404（该书无记录）或
@@ -1834,6 +1844,7 @@ class InterconnectSyncBackend extends SyncBackend
     await res.drain<void>();
     _ops!.checkStatus(
         res.statusCode, 'DELETE /api/library/localaudio/$displayName');
+    remoteLibraryMutationRevision.value++;
   }
 
   // ── Live audiobooks (interconnect-only) ───────────────────────────
@@ -1917,6 +1928,7 @@ class InterconnectSyncBackend extends SyncBackend
     await res.drain<void>();
     _ops!
         .checkStatus(res.statusCode, 'DELETE /api/library/audiobooks/$bookKey');
+    remoteLibraryMutationRevision.value++;
   }
 
   /// 读 host 端有声书 [bookKey] 的播放断点（BUG-471）。host 返回 404（有声书不存在）
@@ -2115,6 +2127,7 @@ class InterconnectSyncBackend extends SyncBackend
     await res.drain<void>();
     if (res.statusCode == 404 || res.statusCode == 405) return false;
     _ops!.checkStatus(res.statusCode, 'DELETE /api/library/videos/$id');
+    remoteLibraryMutationRevision.value++;
     return true;
   }
 

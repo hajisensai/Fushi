@@ -1,6 +1,7 @@
 import 'dart:ui' show DisplayFeature, DisplayFeatureState, DisplayFeatureType;
 
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 
 /// 折叠屏姿态（对齐 Android「Make your app fold aware」指南的三种形态）。
 ///
@@ -11,7 +12,13 @@ import 'package:flutter/widgets.dart';
 ///   画面放上半屏、控件放下半屏。
 enum FushiFoldPosture { flat, book, tabletop }
 
-/// 当前窗口的折叠状态：姿态 + 折痕在本窗口里的逻辑坐标矩形。
+/// 当前窗口的折叠状态：姿态 + 折痕矩形。
+///
+/// **坐标空间**：[hinge] 与读取处 [MediaQuery] 的 `size` 同一坐标空间——界面缩放层
+/// （[FushiAppUiScale] / [FushiAppUiScaleNeutralizer]）换算 MediaQuery 时连
+/// `displayFeatures` 一起等比换算，所以在任意缩放层下 [hinge] 都能直接与
+/// `MediaQuery.sizeOf(context)` 及其推出的宽度 / 中线比较。要落到某个 RenderBox 的
+/// 本地坐标（区域不铺满窗口、上方有标题栏等）用 [fushiFoldRectToLocal]。
 @immutable
 class FushiFoldState {
   const FushiFoldState({required this.posture, this.hinge});
@@ -22,7 +29,7 @@ class FushiFoldState {
 
   final FushiFoldPosture posture;
 
-  /// 折痕矩形（逻辑像素，窗口坐标）。普通折叠屏的折痕宽度为 0（一条线），带物理
+  /// 折痕矩形（MediaQuery 坐标空间的逻辑像素，见类注释）。普通折叠屏的折痕宽度为 0（一条线），带物理
   /// 铰链的双屏设备有实际宽度；[posture] 为 [FushiFoldPosture.flat] 时为 null。
   final Rect? hinge;
 
@@ -115,4 +122,23 @@ double fushiHingeGutterPx({
   if (!fold.isBook || hinge == null) return 0;
   final double offset = (hinge.center.dx - contentCenterX).abs();
   return hinge.width + 2 * offset;
+}
+
+/// 把 [FushiFoldState.of] 给出的 MediaQuery 坐标空间矩形（如 [FushiFoldState.hinge]）
+/// 换算成 [box] 的本地坐标。
+///
+/// 先按 [FushiAppUiScale.mediaQueryToWindowFactorOf] 还原到窗口逻辑坐标（Flutter
+/// global 坐标），再经 `globalToLocal` 走 [box] 到根的完整变换链——区域偏移、界面
+/// 缩放、嵌套缩放层一并算进去，调用方不必知道自己在哪个缩放层下。[context] 必须是
+/// 读 [rect] 时用的那个 context（或同一 MediaQuery 下的后代）；[box] 必须已布局并挂载
+/// （一般在帧后回调里调）。
+Rect fushiFoldRectToLocal({
+  required BuildContext context,
+  required RenderBox box,
+  required Rect rect,
+}) {
+  final double toWindow = FushiAppUiScale.mediaQueryToWindowFactorOf(context);
+  final Offset topLeft = box.globalToLocal(rect.topLeft * toWindow);
+  final Offset bottomRight = box.globalToLocal(rect.bottomRight * toWindow);
+  return Rect.fromPoints(topLeft, bottomRight);
 }

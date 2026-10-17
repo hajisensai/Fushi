@@ -98,13 +98,13 @@ void main() {
     List<String> titles(List<RemoteBookInfo> books) =>
         books.map((RemoteBookInfo b) => b.title).toList();
 
-    test('墓碑命中标题键：host 还没删的那份被剔除，其它书不动', () {
+    test('墓碑命中标题键：被删的那份剔除，其它书不动', () {
       final List<RemoteBookInfo> kept = filterOutLocallyDeletedRemoteBooks(
         remote: const <RemoteBookInfo>[
           RemoteBookInfo(title: title, hasContent: true, importedAt: 100),
           RemoteBookInfo(title: '别的书', hasContent: true, importedAt: 100),
         ],
-        deletedAtByKey: <String, int>{titleKey: 500},
+        deletedKeys: <String>{titleKey},
         keyOf: sanitizeTtuFilename,
       );
       expect(titles(kept), <String>['别的书']);
@@ -115,32 +115,100 @@ void main() {
         remote: const <RemoteBookInfo>[
           RemoteBookInfo(title: title, bookKey: 'host-key', hasContent: true),
         ],
-        deletedAtByKey: <String, int>{'host-key': 500},
+        deletedKeys: <String>{'host-key'},
         keyOf: sanitizeTtuFilename,
       );
       expect(kept, isEmpty);
     });
 
-    test('host 在墓碑之后重新导入的同名书是新书，照常显示', () {
+    test('判据不看 host importedAt：host 时钟超前（importedAt 远晚于墓碑）照样藏', () {
+      // 旧判据 importedAt > deletedAt 视为新书，host 时钟快几分钟就让刚删的书复活。
       final List<RemoteBookInfo> kept = filterOutLocallyDeletedRemoteBooks(
         remote: const <RemoteBookInfo>[
-          RemoteBookInfo(title: title, hasContent: true, importedAt: 900),
+          RemoteBookInfo(title: title, hasContent: true, importedAt: 1 << 50),
         ],
-        deletedAtByKey: <String, int>{titleKey: 500},
+        deletedKeys: <String>{titleKey},
         keyOf: sanitizeTtuFilename,
       );
-      expect(titles(kept), <String>[title]);
+      expect(kept, isEmpty);
     });
 
-    test('没有墓碑时原样返回', () {
+    test('没有有效墓碑时原样返回', () {
       const List<RemoteBookInfo> remote = <RemoteBookInfo>[
         RemoteBookInfo(title: title, hasContent: true),
       ];
       expect(
         filterOutLocallyDeletedRemoteBooks(
           remote: remote,
-          deletedAtByKey: const <String, int>{},
+          deletedKeys: const <String>{},
           keyOf: sanitizeTtuFilename,
+        ),
+        same(remote),
+      );
+    });
+  });
+
+  group('pendingRemoteDeletionKeys（只比本端时钟）', () {
+    const Map<String, int> tombstones = <String, int>{'a': 1000, 'b': 3000};
+
+    test('互联 host：只有还没送达（deletedAt > 推送基线）的墓碑算数', () {
+      expect(
+        pendingRemoteDeletionKeys(
+          deletedAtByKey: tombstones,
+          sourceAppliesDeletions: true,
+          deliveredThroughMs: 2000,
+        ),
+        <String>{'b'},
+        reason: 'a 已送达 host 并被真删：之后清单里再有 a 就是 host 重新导入的新书',
+      );
+      expect(
+        pendingRemoteDeletionKeys(
+          deletedAtByKey: tombstones,
+          sourceAppliesDeletions: true,
+          deliveredThroughMs: 0,
+        ),
+        <String>{'a', 'b'},
+        reason: '一条都没推出去：清单里那份必然是被删的那本',
+      );
+      expect(
+        pendingRemoteDeletionKeys(
+          deletedAtByKey: tombstones,
+          sourceAppliesDeletions: true,
+          deliveredThroughMs: 3000,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('云盘 / 媒体服务器从不执行墓碑：墓碑在就一直算数', () {
+      expect(
+        pendingRemoteDeletionKeys(
+          deletedAtByKey: tombstones,
+          sourceAppliesDeletions: false,
+          deliveredThroughMs: 1 << 50,
+        ),
+        <String>{'a', 'b'},
+      );
+    });
+  });
+
+  group('filterOutLocallyDeletedRemoteVideos', () {
+    RemoteVideoInfo video(String id) => RemoteVideoInfo(id: id, title: id);
+
+    test('按 bookUid（RemoteVideoInfo.id）剔除，其它不动', () {
+      final List<RemoteVideoInfo> kept = filterOutLocallyDeletedRemoteVideos(
+        remote: <RemoteVideoInfo>[video('v1'), video('v2')],
+        deletedKeys: <String>{'v1'},
+      );
+      expect(kept.map((RemoteVideoInfo v) => v.id), <String>['v2']);
+    });
+
+    test('没有有效墓碑时原样返回', () {
+      final List<RemoteVideoInfo> remote = <RemoteVideoInfo>[video('v1')];
+      expect(
+        filterOutLocallyDeletedRemoteVideos(
+          remote: remote,
+          deletedKeys: const <String>{},
         ),
         same(remote),
       );

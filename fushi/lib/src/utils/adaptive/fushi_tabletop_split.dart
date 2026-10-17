@@ -11,8 +11,9 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 /// [top] 用 [GlobalKey] 挂在固定位置，姿态切换只改父级布局不重建它（视频
 /// surface、WebView 等重量级子树不会因为合上 / 打开折叠屏被销毁重建）。
 ///
-/// 折痕矩形是**窗口坐标**，本组件不一定铺满窗口（上方可能有标题栏 / 横幅），所以
-/// 帧后读一次自身的全局原点换算成本地坐标；原点变化时才重建。
+/// 折痕矩形在 MediaQuery 坐标空间，本组件不一定铺满窗口（上方可能有标题栏 / 横幅），
+/// 也可能处在界面缩放层下，所以帧后经 [fushiFoldRectToLocal] 换算成本地坐标（偏移与
+/// 缩放一并处理）；本地折痕变化时才重建。
 class FushiTabletopSplit extends StatefulWidget {
   const FushiTabletopSplit({
     required this.top,
@@ -58,20 +59,20 @@ class FushiTabletopSplitGeometry {
   int get hashCode => Object.hash(topHeight, hingeHeight);
 }
 
-/// 把窗口坐标的折痕换算成区域内的上下切分（纯函数，单测用）。
+/// 把**本地坐标**的折痕换算成区域内的上下切分（纯函数，单测用）。
 ///
-/// [origin] 是区域左上角的窗口坐标，[size] 是区域尺寸。折痕不在区域内、或任一块
-/// 低于最小高度时返回 null（不切分）。
+/// [localHinge] 是已换算到本区域本地坐标的折痕（[fushiFoldRectToLocal]），[size] 是
+/// 区域尺寸。非桌面姿态、折痕尚未换算、或任一块低于最小高度时返回 null（不切分）。
 FushiTabletopSplitGeometry? resolveFushiTabletopSplit({
   required FushiFoldState fold,
-  required Offset origin,
+  required Rect? localHinge,
   required Size size,
   double minTopHeight = 120,
   double minBottomHeight = 96,
 }) {
-  final Rect? hinge = fold.hinge;
+  final Rect? hinge = localHinge;
   if (!fold.isTabletop || hinge == null) return null;
-  final double top = hinge.top - origin.dy;
+  final double top = hinge.top;
   final double hingeHeight = hinge.height;
   final double bottom = size.height - top - hingeHeight;
   if (top < minTopHeight || bottom < minBottomHeight) return null;
@@ -80,15 +81,24 @@ FushiTabletopSplitGeometry? resolveFushiTabletopSplit({
 
 class _FushiTabletopSplitState extends State<FushiTabletopSplit> {
   final GlobalKey _topKey = GlobalKey(debugLabel: 'fushi-tabletop-top');
-  Offset _origin = Offset.zero;
 
-  void _scheduleOriginProbe() {
+  /// 折痕在本组件本地坐标里的矩形；帧后由 [_scheduleHingeProbe] 换算。
+  Rect? _localHinge;
+
+  void _scheduleHingeProbe(FushiFoldState fold) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      final Rect? hinge = fold.hinge;
       final RenderObject? box = context.findRenderObject();
-      if (box is! RenderBox || !box.hasSize || !box.attached) return;
-      final Offset origin = box.localToGlobal(Offset.zero);
-      if (origin != _origin) setState(() => _origin = origin);
+      if (hinge == null || box is! RenderBox || !box.hasSize || !box.attached) {
+        return;
+      }
+      final Rect local = fushiFoldRectToLocal(
+        context: context,
+        box: box,
+        rect: hinge,
+      );
+      if (local != _localHinge) setState(() => _localHinge = local);
     });
   }
 
@@ -97,13 +107,16 @@ class _FushiTabletopSplitState extends State<FushiTabletopSplit> {
     final Widget top = KeyedSubtree(key: _topKey, child: widget.top);
     if (!widget.enabled) return top;
     final FushiFoldState fold = FushiFoldState.of(context);
-    if (!fold.isTabletop) return top;
-    _scheduleOriginProbe();
+    if (!fold.isTabletop) {
+      _localHinge = null;
+      return top;
+    }
+    _scheduleHingeProbe(fold);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final FushiTabletopSplitGeometry? split = resolveFushiTabletopSplit(
           fold: fold,
-          origin: _origin,
+          localHinge: _localHinge,
           size: constraints.biggest,
           minTopHeight: widget.minTopHeight,
           minBottomHeight: widget.minBottomHeight,

@@ -1375,35 +1375,72 @@ List<RemoteBookInfo> dedupeRemoteBooks({
   ];
 }
 
-/// 从远端书清单 [remote] 里剔除本端已「从所有设备删除」的书。
+/// 本端删除墓碑里，对某个远端来源**仍然有效**的键（纯函数）。
 ///
-/// 纯函数。[deletedAtByKey] = 本端 `book` 类同步删除墓碑（itemKey → deletedAt）。
-/// 墓碑要等下一轮同步才推给 host 执行删除，推完远端清单还可能停在共享清单缓存的
-/// TTL 里——这段窗口内本地行已删、[dedupeRemoteBooks] 命不中，刚删的书会以「云端
-/// 可下载」占位卡回到书架上。墓碑键是本机 bookKey 或别名表里的对端键
-/// （`syncDeletionBookKeyOf`），所以 host bookKey 与标题派生键都要比（同
-/// [dedupeRemoteBooks] 的两路）。host 那份若是墓碑之后才（重新）导入的
-/// （`importedAt > deletedAt`），是一本新书，照常显示；旧 host 不带 importedAt 时按已删处理。
+/// 判据只比**同一台设备的时钟**，不拿对端时间戳和本端时间戳比（两台设备的墙钟可以
+/// 差任意多，「host importedAt 晚于本端 deletedAt 就当新书」在 host 时钟超前时会让
+/// 刚删的书立刻复活，落后时会把真正重新导入的书永久藏掉）：
+///
+/// - [sourceAppliesDeletions] = false（云盘书库 / 媒体服务器）：这些来源从不执行
+///   Fushi 的删除墓碑（云通道只写 `__tombstones__` 标记，书文件夹原样留着），清单里
+///   那份只可能是被删的那本的残留——墓碑在就一直藏，本机重新导入时墓碑随之清除。
+/// - [sourceAppliesDeletions] = true（互联 host）：墓碑推给 host 后 host 会真删并写
+///   它自己的墓碑，host 之后重新导入同一本时会清掉它的墓碑。所以只藏**还没送达**的
+///   墓碑：`deletedAt > deliveredThroughMs`，[deliveredThroughMs] = 本端互联推送基线
+///   （`SyncRepository.getDeletionTombstonesPushBaselineMs`，本端时钟、整批推送成功
+///   才推进）。送达之后 host 清单里还有这个键，就是 host 删后又重新导入的新书。
+///
+///   送达瞬间之前取的清单可能还带着它：调用方必须**先**读推送基线、**再**取清单，
+///   并且 host 删除成功时要作废远端清单缓存（`InterconnectSyncBackend
+///   .remoteLibraryMutationRevision` → `remoteLibraryCacheProvider`），这样「基线已
+///   推进」时拿到的清单一定是删除之后取的。
+Set<String> pendingRemoteDeletionKeys({
+  required Map<String, int> deletedAtByKey,
+  required bool sourceAppliesDeletions,
+  required int deliveredThroughMs,
+}) {
+  if (!sourceAppliesDeletions) return deletedAtByKey.keys.toSet();
+  return <String>{
+    for (final MapEntry<String, int> e in deletedAtByKey.entries)
+      if (e.value > deliveredThroughMs) e.key,
+  };
+}
+
+/// 从远端书清单 [remote] 里剔除本端已「从所有设备删除」且对该来源仍有效的书。
+///
+/// 纯函数。[deletedKeys] 由 [pendingRemoteDeletionKeys] 给出。墓碑键是本机 bookKey
+/// 或别名表里的对端键（`syncDeletionBookKeyOf`），所以 host bookKey 与标题派生键都要
+/// 比（同 [dedupeRemoteBooks] 的两路）。
 List<RemoteBookInfo> filterOutLocallyDeletedRemoteBooks({
   required List<RemoteBookInfo> remote,
-  required Map<String, int> deletedAtByKey,
+  required Set<String> deletedKeys,
   required String Function(String title) keyOf,
 }) {
-  if (deletedAtByKey.isEmpty) return remote;
+  if (deletedKeys.isEmpty) return remote;
   bool deletedLocally(RemoteBookInfo book) {
     final String? hostKey = book.bookKey;
-    final int? deletedAt = (hostKey != null && hostKey.isNotEmpty
-            ? deletedAtByKey[hostKey]
-            : null) ??
-        deletedAtByKey[keyOf(book.title)];
-    if (deletedAt == null) return false;
-    final int? importedAt = book.importedAt;
-    return importedAt == null || importedAt <= deletedAt;
+    if (hostKey != null && hostKey.isNotEmpty && deletedKeys.contains(hostKey)) {
+      return true;
+    }
+    return deletedKeys.contains(keyOf(book.title));
   }
 
   return <RemoteBookInfo>[
     for (final RemoteBookInfo book in remote)
       if (!deletedLocally(book)) book,
+  ];
+}
+
+/// [filterOutLocallyDeletedRemoteBooks] 的视频版：视频墓碑键 = bookUid，远端视频的
+/// 稳定身份 [RemoteVideoInfo.id] 就是落地后的 bookUid（与 [dedupeRemoteVideos] 同键）。
+List<RemoteVideoInfo> filterOutLocallyDeletedRemoteVideos({
+  required List<RemoteVideoInfo> remote,
+  required Set<String> deletedKeys,
+}) {
+  if (deletedKeys.isEmpty) return remote;
+  return <RemoteVideoInfo>[
+    for (final RemoteVideoInfo video in remote)
+      if (!deletedKeys.contains(video.id)) video,
   ];
 }
 

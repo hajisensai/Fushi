@@ -18,6 +18,7 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -207,6 +208,69 @@ void main() {
       findsNothing,
       reason: '没有入库时刻就判不出「最近」，不能凭空造一个',
     );
+  });
+
+  // BUG-3502 审查跟进（视频同形缺口）：本端「从所有设备删除」过的视频，墓碑送达 host
+  // 之前不能以远端条目复活；送达之后 host 清单里还有它 = host 删后重新导入的新条目。
+  Future<void> seedDeletedRemote(int nowMs) async {
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('video/local-new'),
+      title: const Value('Local New'),
+      videoPath: const Value('/abs/local-new.mp4'),
+      importedAt: Value(nowMs - 1000),
+    ));
+    await db.writeSyncDeletionTombstone(
+      SyncTombstoneKind.video.dbValue,
+      'video/remote-deleted',
+      nowMs - 500,
+    );
+  }
+
+  _ListFakeRemoteVideoClient deletedRemoteClient(
+          int nowMs, int deletedImportedAt) =>
+      _ListFakeRemoteVideoClient(<RemoteVideoInfo>[
+        RemoteVideoInfo(
+            id: 'video/remote-keep', title: 'Keep', importedAt: nowMs),
+        RemoteVideoInfo(
+            id: 'video/remote-deleted',
+            title: 'Deleted',
+            importedAt: deletedImportedAt),
+      ]);
+
+  const ValueKey<String> deletedKey =
+      ValueKey<String>('home_video_recent_remote_video_remote-deleted');
+
+  testWidgets('未送达 host 的视频删除墓碑藏掉远端条目（不看 host importedAt）',
+      (WidgetTester tester) async {
+    await sizeUp(tester);
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    await seedDeletedRemote(nowMs);
+
+    // host importedAt 晚于本端 deletedAt（host 时钟超前时就会这样）：旧判据
+    // 「importedAt > deletedAt 视为新条目」会把刚删的这条放出来。
+    await tester.pumpWidget(buildApp(deletedRemoteClient(nowMs, nowMs)));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(
+          const ValueKey<String>('home_video_recent_remote_video_remote-keep')),
+      findsOneWidget,
+    );
+    expect(find.byKey(deletedKey), findsNothing,
+        reason: '墓碑还没推给 host：清单里那份就是刚删的那条');
+  });
+
+  testWidgets('墓碑已送达 host 后清单里还有它 = host 重新导入，照常显示',
+      (WidgetTester tester) async {
+    await sizeUp(tester);
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    await seedDeletedRemote(nowMs);
+    await SyncRepository(db).setDeletionTombstonesPushBaselineMs(nowMs);
+
+    // host importedAt 早于本端 deletedAt（host 时钟落后时就会这样）：旧判据会永久藏掉。
+    await tester
+        .pumpWidget(buildApp(deletedRemoteClient(nowMs, nowMs - 5000)));
+    await tester.pumpAndSettle();
+    expect(find.byKey(deletedKey), findsOneWidget);
   });
 }
 

@@ -1101,6 +1101,7 @@ extension _VideoLayout on _VideoFushiPageState {
     return VideoTabletopPanel(
       key: const ValueKey<String>('video_tabletop_panel'),
       listenable: Listenable.merge(<Listenable>[controller, _titleNotifier]),
+      positionListenable: controller.positionMsListenable,
       title: () => _titleNotifier.value,
       isPlaying: () => controller.isPlaying,
       position: () => Duration(milliseconds: controller.positionMs ?? 0),

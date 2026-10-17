@@ -129,11 +129,41 @@ class ReaderContentStyles {
     required bool bookPosture,
     required ReaderSettings settings,
   }) {
+    return foldPageColumnsOverrideFor(
+      bookPosture: bookPosture,
+      viewMode: settings.viewMode,
+      writingMode: settings.writingMode,
+      pageColumns: settings.pageColumns,
+    );
+  }
+
+  /// [foldPageColumnsOverride] 的原始值版本：设置页拿不到 [ReaderSettings]（全局设置
+  /// 不在阅读器里）时直接喂偏好值，判据只此一份。
+  static int? foldPageColumnsOverrideFor({
+    required bool bookPosture,
+    required String viewMode,
+    required String writingMode,
+    required int pageColumns,
+  }) {
     if (!bookPosture) return null;
-    if (settings.isVnMode || settings.isContinuousMode) return null;
-    if (settings.writingMode.startsWith('vertical')) return null;
-    if (settings.pageColumns != 0) return null;
+    if (viewMode == 'vn' || viewMode == 'continuous') return null;
+    if (writingMode.startsWith('vertical')) return null;
+    if (pageColumns != 0) return null;
     return 2;
+  }
+
+  /// 「中缝折痕」此刻能不能画出来：只有翻页模式且本次排版实际恰好两栏（= 一屏两页）
+  /// 才有「两页之间」。[effectivePageColumns] = 折叠覆盖 ?? 用户设置的每页列数。
+  ///
+  /// CSS 生成与设置页的显隐共用这一个判据——设置页据此只在开关真能生效时露出该项，
+  /// 否则用户打开了也看不到效果。
+  static bool pageCreaseApplies({
+    required String viewMode,
+    required int effectivePageColumns,
+  }) {
+    return viewMode != 'vn' &&
+        viewMode != 'continuous' &&
+        effectivePageColumns == 2;
   }
 
   /// 折叠屏书本姿态下两栏之间的栏间隙（px）：null = 不覆盖（常量 22px）。
@@ -796,9 +826,10 @@ svg.block-img.blurred {
             : _webKitPaginatedScrollEndCss();
     // 中缝折痕：只有翻页模式恰好两栏（= 一屏两页）时才有「两页之间」。
     final String pageCreaseCss = settings.pageCrease &&
-            !settings.isVnMode &&
-            !settings.isContinuousMode &&
-            pageColumns == 2
+            ReaderContentStyles.pageCreaseApplies(
+              viewMode: settings.viewMode,
+              effectivePageColumns: pageColumns,
+            )
         ? ReaderContentStyles.pageCreaseCss(
             isVertical: isVertical,
             shadeColor: colors.textColor,
