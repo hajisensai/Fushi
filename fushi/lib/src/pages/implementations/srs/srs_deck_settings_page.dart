@@ -17,9 +17,9 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
-import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -512,7 +512,44 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool ownsParams = _ownParams || !_hasParent;
-    final List<Widget> sections = <Widget>[
+    // 宽窗（手机横屏 / 桌面）：左栏基础项（名字、每日上限、保留率、学习步骤），
+    // 右栏高级项且默认展开——横屏只有 ~400 高，右栏不必再点开一层才看得见。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool wide = srsUsesTwoPane(constraints);
+        return SrsAdaptiveSections(
+          sections: <SrsSection>[
+            for (final Widget w in _basicGroups(context, ownsParams))
+              SrsSection(w),
+            SrsSection(
+              pane: SrsPane.secondary,
+              FushiCard(
+                padding: EdgeInsets.zero,
+                child: FushiExpansionTile(
+                  key: const ValueKey<String>('srs-settings-advanced'),
+                  leading: const FushiIcon(FushiIcons.settingsGear),
+                  title: Text(t.srs_settings_advanced),
+                  initiallyExpanded: wide,
+                  maintainState: true,
+                  childrenPadding: EdgeInsets.fromLTRB(
+                    tokens.spacing.card,
+                    0,
+                    tokens.spacing.card,
+                    tokens.spacing.card,
+                  ),
+                  expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: _buildAdvanced(context, deck, ownsParams),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  List<Widget> _basicGroups(BuildContext context, bool ownsParams) {
+    return <Widget>[
       _group(context, <Widget?>[
         FushiTextField(
           key: const ValueKey<String>('srs-settings-name'),
@@ -578,43 +615,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         ),
         _conflictNote(context, SrsFieldKeys.deckSteps),
       ]),
-      FushiCard(
-        padding: EdgeInsets.zero,
-        child: FushiExpansionTile(
-          key: const ValueKey<String>('srs-settings-advanced'),
-          leading: const FushiIcon(FushiIcons.settingsGear),
-          title: Text(t.srs_settings_advanced),
-          maintainState: true,
-          childrenPadding: EdgeInsets.fromLTRB(
-            tokens.spacing.card,
-            0,
-            tokens.spacing.card,
-            tokens.spacing.card,
-          ),
-          expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-          children: _buildAdvanced(context, deck, ownsParams),
-        ),
-      ),
     ];
-    return FushiEntranceScope(
-      child: ListView.separated(
-        padding: withBottomSafeInset(
-          context,
-          EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            tokens.spacing.gap + MediaQuery.paddingOf(context).top,
-            tokens.spacing.page,
-            tokens.spacing.section,
-          ),
-        ),
-        itemCount: sections.length,
-        separatorBuilder: (BuildContext context, int index) =>
-            SizedBox(height: tokens.spacing.gap * 1.5),
-        itemBuilder: fushiStaggeredItemBuilder(
-          (BuildContext context, int index) => sections[index],
-        ),
-      ),
-    );
   }
 
   List<Widget> _buildAdvanced(

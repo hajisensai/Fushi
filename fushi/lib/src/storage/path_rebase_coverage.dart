@@ -692,6 +692,11 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
       PathValueShape.fontListJson,
       '同上（有声书悬浮字幕字体）。'),
   PathRebasePref(
+      dbSourcePrefKey(kReaderSourcePersistedKey, 'srs_card_fonts'),
+      PathRebaseKind.documentsRooted,
+      PathValueShape.fontListJson,
+      '同上（复习 Fushi 卡片卡面字体）。'),
+  PathRebasePref(
       'local_audio_dbs',
       PathRebaseKind.supportRooted,
       PathValueShape.localAudioDbsJson,

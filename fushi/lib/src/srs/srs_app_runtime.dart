@@ -200,7 +200,7 @@ class SrsAppRuntime {
           }),
         ),
         onGuiBrowse: (String? query, List<String> cardIds) async {
-          await srsPushBrowse(navigator());
+          await srsPushBrowse(navigator(), query: query);
         },
         onGuiEditNote: (String noteId) async {
           await srsPushNoteEditor(navigator(), noteId);

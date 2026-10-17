@@ -11,17 +11,23 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_mining.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -34,6 +40,111 @@ final Provider<bool> srsModuleEnabledProvider = Provider<bool>(
     ),
   ),
 );
+
+/// 制卡此刻是否发往 Fushi 复习（复习模块开着 **且** 挖词目标 = Fushi 复习）。
+///
+/// 制卡装饰链（`ankiRepositoryProvider`）与制卡设置页的 Anki 专属项显隐共用这一个
+/// 判据：为 true 时制卡不经过 Anki，只作用于 Anki 发送链路的设置一律不显示。
+final Provider<bool> srsMiningToReviewProvider = Provider<bool>(
+  (Ref ref) =>
+      ref.watch(srsModuleEnabledProvider) &&
+      ref.watch(appProvider.select((AppModel app) => app.srsMiningTarget)) ==
+          SrsMiningTarget.srs,
+);
+
+/// 制卡设置里「Fushi 复习」分组的数据：可选牌组 / 笔记类型 + 当前偏好解析后的落地
+/// 位置（含被删回落）。
+class SrsMiningChoices {
+  const SrsMiningChoices({
+    required this.decks,
+    required this.noteTypes,
+    required this.resolved,
+    required this.lapisNoteTypeId,
+  });
+
+  /// (牌组 id, 「父::子」全名)，按全名排。
+  final List<(String, String)> decks;
+  final List<SrsNoteTypeView> noteTypes;
+  final SrsResolvedMiningDestination resolved;
+  final String lapisNoteTypeId;
+}
+
+/// 复习卡面外观（按 profile 的偏好；改动即时生效，卡面经 `__fushiSrsSetTheme` 原地换）。
+final Provider<SrsCardAppearance> srsCardAppearanceProvider =
+    Provider<SrsCardAppearance>(
+      (Ref ref) => ref.watch(
+        appProvider.select((AppModel app) => app.srsCardAppearance),
+      ),
+    );
+
+/// 卡面字体链：统一字体库里「复习卡片」用途（`FontTarget.srsCard`）的有序字体列表
+/// （`[{name, path, enabled}]`）。按内容比较，字体库没改动时不触发卡面更新。
+final Provider<List<Map<String, dynamic>>> srsCardFontsProvider =
+    Provider<List<Map<String, dynamic>>>((Ref ref) {
+      final String json = ref.watch(
+        appProvider.select((AppModel app) => jsonEncode(app.srsCardFonts)),
+      );
+      return <Map<String, dynamic>>[
+        for (final Object? e in jsonDecode(json) as List<Object?>)
+          if (e is Map) e.cast<String, dynamic>(),
+      ];
+    });
+
+/// 字体库「复习卡片」链里已注册进引擎的 family 名（原生渲染 Fushi 卡片用）。
+final Provider<List<String>> srsCardFontFamiliesProvider =
+    Provider<List<String>>((Ref ref) {
+      final String joined = ref.watch(
+        appProvider.select(
+          (AppModel app) => jsonEncode(app.srsCardFontFamilies),
+        ),
+      );
+      return (jsonDecode(joined) as List<Object?>).whereType<String>().toList();
+    });
+
+/// 复习页评分栏是否只留「重来 / 良好」（按 profile 的偏好，对齐 AnkiDroid
+/// hideHardAndEasy；键盘 2/4 仍有效）。
+final Provider<bool> srsReviewHideHardEasyProvider = Provider<bool>(
+  (Ref ref) => ref.watch(
+    appProvider.select((AppModel app) => app.srsReviewHideHardEasy),
+  ),
+);
+
+/// 复习页卡面缩放倍率（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0），按 profile 偏好。
+final Provider<double> srsReviewZoomProvider = Provider<double>(
+  (Ref ref) =>
+      ref.watch(appProvider.select((AppModel app) => app.srsReviewZoom)),
+);
+
+/// 卡面可供给的导入字体目录（app 字体库目录；测试覆写）。null = 不供给导入字体。
+final Provider<String?> srsCardFontRootProvider = Provider<String?>((Ref ref) {
+  try {
+    // 与字体库页 customFontsDirectory 同一个目录（`<appDirectory>/custom_fonts`）。
+    return p.join(ref.read(appProvider).appDirectory.path, 'custom_fonts');
+  } catch (_) {
+    return null;
+  }
+});
+
+/// 订阅 [srsRevisionProvider] 与制卡去向偏好；store 不可用时为 null。
+final FutureProvider<SrsMiningChoices?> srsMiningChoicesProvider =
+    FutureProvider<SrsMiningChoices?>((Ref ref) async {
+      ref.watch(srsRevisionProvider);
+      final SrsMiningDestination destination = ref.watch(
+        appProvider.select((AppModel app) => app.srsMiningDestination),
+      );
+      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+      if (store == null) return null;
+      final SrsDeckTree tree = await store.deckTree();
+      final List<(String, String)> decks = <(String, String)>[
+        for (final SrsDeckView d in tree.decks) (d.id, tree.fullName(d.id)),
+      ]..sort(((String, String) a, (String, String) b) => a.$2.compareTo(b.$2));
+      return SrsMiningChoices(
+        decks: decks,
+        noteTypes: await store.noteTypes(),
+        resolved: await resolveSrsMiningDestination(store, destination),
+        lapisNoteTypeId: store.lapisNoteTypeId,
+      );
+    });
 
 /// FSRS 排程内核。原生库不可用时为 null（不抛）。
 final Provider<FsrsEngine?> srsEngineProvider = Provider<FsrsEngine?>((
@@ -66,7 +177,8 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
       final String deviceId = await SyncRepository(
         app.database,
       ).getOrCreateDeviceId();
-      return SrsDbStore.open(
+      final Directory support = await ref.watch(srsSupportRootProvider)();
+      final SrsDbStore store = await SrsDbStore.open(
         db: app.database,
         profileUid: profileUid,
         deviceId: deviceId,
@@ -74,7 +186,16 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
         // 复习的「今天」与统计页共用日界（stats_day_reset_hour）；profile 设置里
         // 有同步来的翻日时刻时以它为准（见 SrsDbStore.dayContext）。
         fallbackRolloverHour: () => app.statDayResetHour,
+        // 释义样式去重：共享样式文件与卡片媒体同目录（随媒体同步 / 备份走）。
+        styles: SrsStyleStore(SrsStyleStore.directoryFor(support, profileUid)),
       );
+      // 存量去重在后台分批跑，不挡打开；store 换掉（切 profile / 关模块）时停下，下次从断点续。
+      bool disposed = false;
+      ref.onDispose(() => disposed = true);
+      srsRunLogged('srsCompactStoredStyles', () async {
+        await store.compactStoredStyles(shouldStop: () => disposed);
+      });
+      return store;
     });
 
 /// SRS 媒体根所在的支持目录（测试覆写成临时目录）。
@@ -122,9 +243,30 @@ class SrsDeckListData {
   /// 同步冲突（标志 / 设置类）+ 待裁决笔记，合计。
   final int conflictCount;
 
-  int get totalCards => decks.fold<int>(
+  int get totalCards => _sumRoots((SrsDeckSummary d) => d.totalCards);
+
+  /// 今日新卡 / 学习中 / 到期：顶层牌组行上的计数之和（顶层行已含全部子牌组，
+  /// 与牌组列表显示的数字同一口径；首页复习条读这三个）。
+  int get todayNew => _sumRoots((SrsDeckSummary d) => d.newCount);
+  int get todayLearn => _sumRoots((SrsDeckSummary d) => d.learnCount);
+  int get todayReview => _sumRoots((SrsDeckSummary d) => d.reviewCount);
+
+  /// 今天还有没有可复习的卡（三种计数任一非零）。
+  bool get hasWorkToday => todayNew + todayLearn + todayReview > 0;
+
+  /// 「开始复习」落到的牌组：按牌组列表顺序第一个还有待复习卡的顶层牌组；没有时为 null。
+  SrsDeckSummary? get firstRootWithWork {
+    for (final SrsDeckSummary d in decks) {
+      if (d.depth == 0 && d.newCount + d.learnCount + d.reviewCount > 0) {
+        return d;
+      }
+    }
+    return null;
+  }
+
+  int _sumRoots(int Function(SrsDeckSummary d) pick) => decks.fold<int>(
     0,
-    (int sum, SrsDeckSummary d) => d.depth == 0 ? sum + d.totalCards : sum,
+    (int sum, SrsDeckSummary d) => d.depth == 0 ? sum + pick(d) : sum,
   );
 }
 

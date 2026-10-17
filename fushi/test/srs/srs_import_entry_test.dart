@@ -122,6 +122,11 @@ void main() {
       store: store,
       media: media,
       file: file,
+      // 默认（= Anki）不含预设与排程；这里要看被截步长，打开牌组预设。
+      options: const SrsAnkiImportOptions(
+        withScheduling: true,
+        withDeckConfigs: true,
+      ),
       onProgress: progress.add,
       zstdDecompress: (Uint8List b) => null,
     );

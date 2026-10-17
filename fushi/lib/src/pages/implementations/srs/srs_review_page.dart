@@ -14,18 +14,29 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart'
+    show GestureBinding, PointerScrollEvent, PointerSignalEvent;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
+import 'package:fushi_anki/fushi_anki_core.dart' show CardSourceLink;
+import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -37,6 +48,17 @@ import 'package:fushi/utils.dart';
 /// 切出去之类的长停顿不该把复习用时统计撑爆。
 const int kSrsMaxAnswerDurationMs = 60000;
 
+/// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
+/// mo / y，中文 分钟 / 小时 / 天 / 个月 / 年），不再让「1m」与「11.1mo」混着读。
+String srsIntervalLabel(({String amount, SrsIntervalUnit unit}) p) =>
+    switch (p.unit) {
+      SrsIntervalUnit.minutes => t.srs_interval_minutes(n: p.amount),
+      SrsIntervalUnit.hours => t.srs_interval_hours(n: p.amount),
+      SrsIntervalUnit.days => t.srs_interval_days(n: p.amount),
+      SrsIntervalUnit.months => t.srs_interval_months(n: p.amount),
+      SrsIntervalUnit.years => t.srs_interval_years(n: p.amount),
+    };
+
 /// 撤销栈的一步。[logId] 非 null = 撤一条评分 / 重置日志；否则执行 [revert] 改回原值。
 class _UndoStep {
   const _UndoStep({required this.cardId, this.logId, this.revert});
@@ -44,6 +66,14 @@ class _UndoStep {
   final String cardId;
   final String? logId;
   final Future<void> Function(SrsDbStore store)? revert;
+}
+
+/// 预取好的下一张（数据层：详情 + 渲染结果）。
+class _PrefetchedCard {
+  const _PrefetchedCard({required this.detail, required this.rendered});
+
+  final SrsCardDetail detail;
+  final SrsRenderedCard? rendered;
 }
 
 /// 卡片菜单动作。
@@ -63,7 +93,30 @@ class SrsReviewPage extends ConsumerStatefulWidget {
   ConsumerState<SrsReviewPage> createState() => _SrsReviewPageState();
 }
 
+/// 卡面缩放：每档 10%，范围 60%–200%。
+const double _kZoomStep = 0.1;
+const double _kZoomMin = 0.6;
+const double _kZoomMax = 2.0;
+
 class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
+  /// 卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）：原生区按倍率放大文字，WebView
+  /// 走页面 `zoom`（随主题样式原地更新，不重放卡片）。持久化为偏好，下次打开沿用。
+  void _setZoom(double value) {
+    final double z =
+        (value.clamp(_kZoomMin, _kZoomMax) * 20).roundToDouble() / 20;
+    if ((z - ref.read(srsReviewZoomProvider)).abs() < 0.001) return;
+    unawaited(ref.read(appProvider).setSrsReviewZoom(z));
+  }
+
+  void _zoomBy(double delta) =>
+      _setZoom(ref.read(srsReviewZoomProvider) + delta);
+
+  /// 滚轮一格放大 / 缩小一档（向上 = 放大，与浏览器一致）。
+  void _zoomWheel(double deltaY) {
+    if (deltaY == 0) return;
+    _zoomBy(deltaY < 0 ? _kZoomStep : -_kZoomStep);
+  }
+
   final FocusNode _focusNode = FocusNode(debugLabel: 'srs-review');
   late final PageFocusOwnership _focusOwnership = PageFocusOwnership(
     node: _focusNode,
@@ -71,6 +124,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     canOwn: (FocusReclaimCause cause) =>
         mounted && (ModalRoute.of(context)?.isCurrent ?? false),
   );
+
+  /// 卡面查词（点词 / 悬停 → 查词弹窗，弹窗里继续嵌套查）。弹窗开着时空格 / Enter /
+  /// 数字键不翻面、不评分（[SrsCardLookupController.guardKey]）。
+  final SrsCardLookupController _lookup = SrsCardLookupController();
 
   SrsDbStore? _store;
   bool _loading = true;
@@ -103,6 +160,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   @override
   void dispose() {
     srsActiveReviewSessions.value--;
+    _lookup.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -121,24 +179,77 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     await _loadNext();
   }
 
-  Future<void> _refreshCounts() async {
-    final SrsDbStore store = _store!;
-    final SrsDeckSummary? sum = (await store.deckSummaries())
-        .where((SrsDeckSummary s) => s.deck.id == widget.deckId)
-        .firstOrNull;
+  Future<SrsDeckSummary?> _deckSummary() async =>
+      (await _store!.deckSummaries())
+          .where((SrsDeckSummary s) => s.deck.id == widget.deckId)
+          .firstOrNull;
+
+  void _applyCounts(SrsDeckSummary? sum) {
     _newCount = sum?.newCount ?? 0;
     _learnCount = sum?.learnCount ?? 0;
     _reviewCount = sum?.reviewCount ?? 0;
   }
 
+  Future<void> _refreshCounts() async => _applyCounts(await _deckSummary());
+
+  /// 显示当前卡时在后台取好的「下一张」候选（只在评分后消费，见 [_loadNext]）。
+  Future<_PrefetchedCard?>? _prefetch;
+
+  /// 每显示一张卡 +1：后台补算（计数 / 预览）只落到它出发时的那张卡上。
+  int _shownGeneration = 0;
+
+  /// 后台预取「当前这张之外的下一张」并渲染好（数据层）。排程不变：真正的下一张
+  /// 仍由评分后的 [SrsDbStore.nextCard] 决定，预取只是它的猜测，不一致就丢。
+  void _startPrefetch(String currentCardId) {
+    final SrsDbStore? store = _store;
+    if (store == null) {
+      _prefetch = null;
+      return;
+    }
+    _prefetch = () async {
+      try {
+        final String? id = await store.nextCard(
+          widget.deckId,
+          exclude: <String>{currentCardId},
+        );
+        if (id == null) return null;
+        final SrsCardDetail? detail = await store.cardDetail(id);
+        if (detail == null) return null;
+        final SrsRenderedCard? rendered = await store.renderCard(id);
+        return _PrefetchedCard(detail: detail, rendered: rendered);
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsReviewPage.prefetch', e, stack);
+        return null;
+      }
+    }();
+  }
+
+  /// 预取的卡还能不能直接用：必须正是排程选出的 [id]，且卡片行没被改过
+  /// （同步 / 别处写入改了它就按常规路径重取）。
+  Future<_PrefetchedCard?> _takePrefetch(
+    Future<_PrefetchedCard?>? pending,
+    String id,
+  ) async {
+    if (pending == null) return null;
+    final _PrefetchedCard? hit = await pending;
+    if (hit == null || hit.detail.card.id != id) return null;
+    final SrsCardCacheRow? row = await _store!.cardRow(id);
+    return row == hit.detail.card ? hit : null;
+  }
+
   /// 取下一张（或 [cardId] 指定的那张，撤销后回到被撤的卡）并显示问题面。
-  Future<void> _loadNext({String? cardId}) async {
+  ///
+  /// [usePrefetch]：评分后的常规前进。排程选出的下一张正是预取的那张时直接显示
+  /// 预取好的内容，计数 / 间隔预览随后在后台补齐（预览只在翻面后才看得到）。
+  Future<void> _loadNext({String? cardId, bool usePrefetch = false}) async {
     final SrsDbStore? store = _store;
     if (store == null) return;
+    final Future<_PrefetchedCard?>? pending = usePrefetch ? _prefetch : null;
+    _prefetch = null;
     try {
       final String? id = cardId ?? await store.nextCard(widget.deckId);
-      await _refreshCounts();
       if (id == null) {
+        await _refreshCounts();
         if (!mounted) return;
         setState(() {
           _loading = false;
@@ -149,6 +260,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         });
         return;
       }
+      final _PrefetchedCard? hit = await _takePrefetch(pending, id);
+      if (hit != null) {
+        if (!mounted) return;
+        _show(hit.detail, hit.rendered, preview: null, day: _day);
+        unawaited(_completeShown(id, _shownGeneration));
+        return;
+      }
+      await _refreshCounts();
       final SrsCardDetail? detail = await store.cardDetail(id);
       final SrsRenderedCard? rendered = await store.renderCard(id);
       final SrsDayContext day = await store.dayContext();
@@ -156,20 +275,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
           ? await store.preview(id)
           : null;
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _finished = false;
-        _error = null;
-        _detail = detail;
-        _rendered = rendered;
-        _preview = preview;
-        _day = day;
-        _showingAnswer = false;
-      });
-      _answerClock
-        ..reset()
-        ..start();
-      _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
+      _show(detail, rendered, preview: preview, day: day);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.loadNext', e, stack);
       if (mounted) {
@@ -178,6 +284,54 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
           _error = e;
         });
       }
+    }
+  }
+
+  /// 显示一张卡的问题面，并开始预取它之后的那张。
+  void _show(
+    SrsCardDetail? detail,
+    SrsRenderedCard? rendered, {
+    required SrsAnswerPreview? preview,
+    required SrsDayContext? day,
+  }) {
+    _shownGeneration++;
+    // 换卡：上一张卡上查的词弹窗收起。
+    _lookup.closeAll();
+    setState(() {
+      _loading = false;
+      _finished = false;
+      _error = null;
+      _detail = detail;
+      _rendered = rendered;
+      _preview = preview;
+      _day = day;
+      _showingAnswer = false;
+    });
+    _answerClock
+      ..reset()
+      ..start();
+    _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
+    if (detail != null) _startPrefetch(detail.card.id);
+  }
+
+  /// 预取命中后补齐计数与间隔预览（只落到仍在显示的那张卡上）。
+  Future<void> _completeShown(String cardId, int generation) async {
+    final SrsDbStore? store = _store;
+    if (store == null) return;
+    try {
+      final SrsDeckSummary? sum = await _deckSummary();
+      final SrsDayContext day = await store.dayContext();
+      final SrsAnswerPreview? preview = store.canSchedule
+          ? await store.preview(cardId)
+          : null;
+      if (!mounted || generation != _shownGeneration) return;
+      setState(() {
+        _applyCounts(sum);
+        _day = day;
+        _preview = preview;
+      });
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsReviewPage.completeShown', e, stack);
     }
   }
 
@@ -221,7 +375,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         );
         _undo.add(_UndoStep(cardId: detail.card.id, logId: log.id));
         _reviewedThisSession++;
-        await _loadNext();
+        await _loadNext(usePrefetch: true);
       }),
     );
   }
@@ -441,11 +595,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       _rendered = rendered;
       _showingAnswer = showing;
     });
+    // 编辑可能改了同一笔记的兄弟卡：预取作废重来。
+    _startPrefetch(detail.card.id);
   }
 
   // ------------------------------------------------------------------ 键盘
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    // 查词弹窗开着：Esc 关一层，翻面 / 评分键吞掉。
+    final KeyEventResult? lookup = _lookup.guardKey(event);
+    if (lookup != null) return lookup;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final LogicalKeyboardKey key = event.logicalKey;
     final bool ctrl =
@@ -453,6 +612,25 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         HardwareKeyboard.instance.isMetaPressed;
     if (ctrl && key == LogicalKeyboardKey.keyZ) {
       _undoLast();
+      return KeyEventResult.handled;
+    }
+    if (ctrl &&
+        (key == LogicalKeyboardKey.equal ||
+            key == LogicalKeyboardKey.add ||
+            key == LogicalKeyboardKey.numpadAdd)) {
+      _zoomBy(_kZoomStep);
+      return KeyEventResult.handled;
+    }
+    if (ctrl &&
+        (key == LogicalKeyboardKey.minus ||
+            key == LogicalKeyboardKey.numpadSubtract)) {
+      _zoomBy(-_kZoomStep);
+      return KeyEventResult.handled;
+    }
+    if (ctrl &&
+        (key == LogicalKeyboardKey.digit0 ||
+            key == LogicalKeyboardKey.numpad0)) {
+      _setZoom(1);
       return KeyEventResult.handled;
     }
     if (ctrl ||
@@ -502,11 +680,18 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
 
   /// WebView 持焦时经键盘桥回传的 token。
   void _onBridgeKey(String token) {
+    if (_lookup.guardBridgeToken(token)) return;
     switch (token) {
       case 'Space' || 'Enter' || 'NumpadEnter':
         _primary();
       case 'Ctrl+KeyZ' || 'Meta+KeyZ':
         _undoLast();
+      case 'Ctrl+Equal' || 'Ctrl+NumpadAdd' || 'Meta+Equal':
+        _zoomBy(_kZoomStep);
+      case 'Ctrl+Minus' || 'Ctrl+NumpadSubtract' || 'Meta+Minus':
+        _zoomBy(-_kZoomStep);
+      case 'Ctrl+Digit0' || 'Meta+Digit0':
+        _setZoom(1);
       default:
         final String digit = token.substring(token.length - 1);
         final int? rating = int.tryParse(digit);
@@ -514,6 +699,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
           _rate(rating);
         }
     }
+  }
+
+  /// 卡面里点了 Fushi 来源链接：跳回书 / 漫画 / 视频的对应位置。
+  void _openSource(CardSourceLink link) {
+    _lookup.closeAll();
+    srsRunLogged(
+      'SrsReview.openSource',
+      () => openCardSource(ref: ref, link: link),
+    );
   }
 
   // ------------------------------------------------------------------ 界面
@@ -553,7 +747,69 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         label: t.srs_note_edit,
         onPressed: () => unawaited(_onCardAction(_CardAction.edit)),
       ),
+    if (_detail != null)
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_browse'),
+        icon: FushiIcons.search,
+        label: t.srs_browse_title,
+        onPressed: () => srsRunLogged('SrsReview.browse', _openBrowse),
+      ),
   ];
+
+  /// 像 Anki 一样从复习跳到浏览、直接落在正在复习的这张卡上（旁边就是预览与编辑）；
+  /// 回来后按库里最新内容重载这张卡（浏览里可能改了它、挂起了它或删了它）。
+  Future<void> _openBrowse() async {
+    final SrsCardDetail? detail = _detail;
+    if (detail == null) return;
+    await Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => SrsBrowsePage(
+          initialCardId: detail.card.id,
+          onChangeNoteType: showSrsChangeNoteTypeFlow,
+          onMigrateToFushiCard: srsMigrateNotesToFushiCard,
+        ),
+      ),
+    );
+    if (mounted) await _reloadCurrent();
+  }
+
+  /// 卡面样式入口，按当前这张卡的笔记类型分流：Fushi 卡片 → 可视化外观页；其它类型 →
+  /// 这张卡所用模板的编辑器（正面 / 背面 / 样式 + 预览，即 Anki 式的渲染规则自定义）。
+  FushiToolbarItem? get _appearanceItem {
+    final SrsCardDetail? detail = _detail;
+    if (detail == null) return null;
+    if (detail.noteType.builtinKey == kSrsBuiltinFushiCardKey) {
+      return FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_appearance'),
+        icon: FushiIcons.appearance,
+        label: t.srs_card_appearance_title,
+        onPressed: () => srsRunLogged(
+          'SrsReview.appearance',
+          () => openSrsCardAppearancePage(context),
+        ),
+      );
+    }
+    final SrsTemplateDef? tpl = detail.template;
+    if (tpl == null) return null;
+    return FushiToolbarItem(
+      key: const ValueKey<String>('srs_review_edit_template'),
+      icon: FushiIcons.appearance,
+      label: t.srs_card_edit_template(name: detail.noteType.name),
+      onPressed: () => srsRunLogged('SrsReview.editTemplate', () async {
+        await Navigator.of(context).push<void>(
+          adaptivePageRoute<void>(
+            context: context,
+            builder: (_) => SrsTemplateEditorPage(
+              noteTypeId: detail.noteType.id,
+              templateId: tpl.id,
+            ),
+          ),
+        );
+        if (mounted) bumpSrsRevision(ref);
+      }),
+    );
+  }
 
   List<FushiToolbarItem> _menuItems() => _detail == null
       ? const <FushiToolbarItem>[]
@@ -588,7 +844,25 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             label: t.srs_note_delete,
             onPressed: () => unawaited(_onCardAction(_CardAction.deleteNote)),
           ),
+          ?_appearanceItem,
+          _hideHardEasyItem,
         ];
+
+  /// 评分栏只留「重来 / 良好」的开关（对齐 AnkiDroid 的 hideHardAndEasy；键盘 2/4
+  /// 照样有效）。勾选态 = 已隐藏；点了立即生效、写进按 profile 的偏好。
+  FushiToolbarItem get _hideHardEasyItem {
+    final bool hidden = ref.watch(srsReviewHideHardEasyProvider);
+    return FushiToolbarItem(
+      key: const ValueKey<String>('srs_review_hide_hard_easy'),
+      icon: FushiIcons.visibilityOff,
+      label: t.srs_review_hide_hard_easy,
+      selected: hidden,
+      onPressed: () => srsRunLogged(
+        'SrsReview.hideHardEasy',
+        () => ref.read(appProvider).setSrsReviewHideHardEasy(!hidden),
+      ),
+    );
+  }
 
   Widget _buildTopBar(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -748,6 +1022,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       srsCardFaceBuilderProvider,
     );
     final String language = ref.read(appProvider).defaultContentLanguage;
+    final double zoom = ref.watch(srsReviewZoomProvider);
     final SrsCardFace face = SrsCardFace(
       cardId: detail.card.id,
       showingAnswer: _showingAnswer,
@@ -759,49 +1034,89 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       css: rendered?.css ?? '',
       languageCode: language.isEmpty ? null : language,
       onBridgeKey: _onBridgeKey,
+      fushiCard: detail.noteType.builtinKey == kSrsBuiltinFushiCardKey,
+      pageZoom: zoom == 1 ? null : zoom,
+      onZoomWheel: _zoomWheel,
+      onSourceLink: _openSource,
     );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Expanded(
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            child: FushiCard(
-              key: const ValueKey<String>('srs-card-surface'),
-              padding: EdgeInsets.zero,
-              pressScale: false,
-              child: faceBuilder(context, face),
+    final MediaQueryData media = MediaQuery.of(context);
+    return SrsCardLookupHost(
+      controller: _lookup,
+      // 弹窗整栈关掉：焦点回复习页（WebView / 弹窗拿走过 OS 焦点）。
+      onClosed: () => _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              // Ctrl / ⌘ + 滚轮落在原生区（WebView 上的由页面脚本截下转来）：缩放卡面，
+              // 并认领这次滚轮，外层不再滚动。
+              child: Listener(
+                onPointerSignal: (PointerSignalEvent event) {
+                  if (event is! PointerScrollEvent) return;
+                  final HardwareKeyboard kb = HardwareKeyboard.instance;
+                  if (!kb.isControlPressed && !kb.isMetaPressed) return;
+                  GestureBinding.instance.pointerSignalResolver.register(
+                    event,
+                    (PointerSignalEvent e) =>
+                        _zoomWheel((e as PointerScrollEvent).scrollDelta.dy),
+                  );
+                },
+                child: FushiCard(
+                  key: const ValueKey<String>('srs-card-surface'),
+                  padding: EdgeInsets.zero,
+                  pressScale: false,
+                  // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
+                  child: rendered?.fushiCardDefinitions != null
+                      ? MediaQuery(
+                          // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
+                          data: media.copyWith(
+                            textScaler: TextScaler.linear(
+                              media.textScaler.scale(1) * zoom,
+                            ),
+                          ),
+                          child: SrsFushiCardView(
+                            key: const ValueKey<String>('srs-fushi-card-view'),
+                            face: face,
+                            fields: rendered!.fields,
+                            definitionsHtml: rendered.fushiCardDefinitions!,
+                          ),
+                        )
+                      : faceBuilder(context, face),
+                ),
+              ),
             ),
           ),
-        ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap * 1.5,
-              tokens.spacing.page,
-              tokens.spacing.gap * 1.5,
-            ),
-            child: AnimatedSwitcher(
-              duration: fushiMotionDuration(context, FushiMotion.short),
-              switchInCurve: FushiMotion.enter,
-              switchOutCurve: FushiMotion.exit,
-              child: _showingAnswer
-                  ? _buildRatingRow(context)
-                  : SizedBox(
-                      key: const ValueKey<String>('srs-show-answer-row'),
-                      width: double.infinity,
-                      child: FushiFilledButton(
-                        key: const ValueKey<String>('srs-show-answer'),
-                        onPressed: _busy ? null : _showAnswer,
-                        child: Text(t.srs_review_show_answer),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap * 1.5,
+                tokens.spacing.page,
+                tokens.spacing.gap * 1.5,
+              ),
+              child: AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                switchInCurve: FushiMotion.enter,
+                switchOutCurve: FushiMotion.exit,
+                child: _showingAnswer
+                    ? _buildRatingRow(context)
+                    : SizedBox(
+                        key: const ValueKey<String>('srs-show-answer-row'),
+                        width: double.infinity,
+                        child: FushiFilledButton(
+                          key: const ValueKey<String>('srs-show-answer'),
+                          onPressed: _busy ? null : _showAnswer,
+                          child: Text(t.srs_review_show_answer),
+                        ),
                       ),
-                    ),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -811,10 +1126,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     final SrsDayContext? day = _day;
     String interval(int rating) {
       if (preview == null || day == null) return '';
-      return srsFormatInterval(
-        preview.plan[rating],
-        nowMs: preview.nowMs,
-        today: day.dayIndexOf(preview.nowMs),
+      return srsIntervalLabel(
+        srsIntervalParts(
+          preview.plan[rating],
+          nowMs: preview.nowMs,
+          today: day.dayIndexOf(preview.nowMs),
+        ),
       );
     }
 
@@ -849,14 +1166,19 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       ),
     );
 
+    // 只留「重来 / 良好」时两颗各占半行（对齐 AnkiDroid：不留空位）；key 随模式变，
+    // 外层 AnimatedSwitcher 借此在两种布局间淡入淡出。
+    final bool twoButtons = ref.watch(srsReviewHideHardEasyProvider);
     return Row(
-      key: const ValueKey<String>('srs-rating-row'),
+      key: ValueKey<String>(
+        twoButtons ? 'srs-rating-row-two' : 'srs-rating-row',
+      ),
       spacing: tokens.spacing.gap,
       children: <Widget>[
         button(1, t.srs_rating_again, FushiCardTone.error),
-        button(2, t.srs_rating_hard, FushiCardTone.neutral),
+        if (!twoButtons) button(2, t.srs_rating_hard, FushiCardTone.neutral),
         button(3, t.srs_rating_good, FushiCardTone.primary),
-        button(4, t.srs_rating_easy, FushiCardTone.tertiary),
+        if (!twoButtons) button(4, t.srs_rating_easy, FushiCardTone.tertiary),
       ],
     );
   }

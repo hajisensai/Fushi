@@ -66,9 +66,11 @@ enum ModuleId {
 
   /// 复习（Fushi 内置 SRS，FSRS-7 排程）：牌组、复习、笔记编辑与浏览。
   ///
-  /// **默认关闭**（[defaultEnabled]，用户 2026-10-14 拍板）：普通用户看不到任何
-  /// 复习入口，自己在 设置 → 外观 → 功能模块 里打开才出现底栏 tab 与引导步骤。
-  /// 新手引导**不**提供它的方格、也不替用户写入（见 `onboardingFeatureOfModule`）。
+  /// **出厂默认开**（[defaultEnabled]，所有者 2026-10-16「默认就是 fushi srs」，取代
+  /// 10-14 的默认关）。升级上来的老用户由 `PreferencesRepository
+  /// .settleSrsMiningTargetInstallDefault` 一次性显式写成关（老用户不提醒：自己去设置
+  /// 打开才看得到）。新手引导不提供它的方格，由「复习方式」一步写入（选 Fushi 复习 =
+  /// 开，见 `onboarding_steps.dart` 的 `OnboardingReviewMethod`）。
   ///
   /// **正式版构建里不存在**（用户 2026-10-16 拍板「正式版屏蔽 SRS」）：只在
   /// debug / beta 预发布与本地构建里提供，判据见 [PrereleaseOnlyCapability.srs]。
@@ -165,12 +167,12 @@ enum ModuleId {
 
   /// 偏好里还没有这个键时的取值（出厂默认）。
   ///
-  /// 只有 [srs] 默认关：它是新加的大块功能，用户明确要求「默认关闭、自己打开」。
-  /// 其余模块默认开，与旧版行为一致（既有安装升级上来不丢任何入口）。读取端
+  /// 全部默认开（[srs] 自 2026-10-16 起也默认开：新装默认就用 Fushi 复习；老用户的
+  /// 「默认关」由一次性迁移显式写入，见 [srs] 的说明）。读取端
   /// （`PreferencesRepository.moduleEnabled`、偏好未就绪时的 `AppModel.moduleEnabled`）
   /// 与设置开关的 `defaultValue` 一律取这里，不各写一份。
   bool get defaultEnabled => switch (this) {
-    ModuleId.srs => false,
+    ModuleId.srs ||
     ModuleId.home ||
     ModuleId.books ||
     ModuleId.manga ||

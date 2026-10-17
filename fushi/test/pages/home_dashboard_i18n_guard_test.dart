@@ -29,6 +29,7 @@ const Map<String, Set<String>> _allowSameAsEnglish = <String, Set<String>>{
 const List<String> _sources = <String>[
   'lib/src/pages/implementations/home_dashboard_page.dart',
   'lib/src/pages/implementations/home_dashboard_widgets.dart',
+  'lib/src/pages/implementations/home_srs_panel.dart',
   'lib/src/pages/implementations/updates_dashboard_banner.dart',
 ];
 

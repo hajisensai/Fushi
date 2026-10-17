@@ -52,8 +52,11 @@ import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
+import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
+import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
@@ -2562,6 +2565,22 @@ class AppModel with ChangeNotifier {
     );
   }
 
+  /// [FontTarget.srsCard] 原始字体列表（`[{name,path,enabled,...}]`），由
+  /// [refreshAppFont] 刷新；卡面 WebView 用它生成 @font-face。
+  List<Map<String, dynamic>> _srsCardFonts = const <Map<String, dynamic>>[];
+
+  /// 复习卡片字体列表的不可变拷贝。
+  List<Map<String, dynamic>> get srsCardFonts =>
+      List<Map<String, dynamic>>.unmodifiable(<Map<String, dynamic>>[
+        for (final Map<String, dynamic> row in _srsCardFonts)
+          Map<String, dynamic>.unmodifiable(row),
+      ]);
+
+  /// [FontTarget.srsCard] 整链解析并注册进引擎后的 family 名（供原生渲染）。
+  List<String> _srsCardFontFamilies = const <String>[];
+  List<String> get srsCardFontFamilies =>
+      List<String>.unmodifiable(_srsCardFontFamilies);
+
   /// Loads **all** enabled entries of the `appUiFonts` target as the app-wide UI
   /// font chain (registering each file with the Flutter engine via
   /// [AppFontLoader]) and rebuilds the theme. Falls back to the display
@@ -2588,14 +2607,26 @@ class AppModel with ChangeNotifier {
     // [_gameLookupFontFamilies]。
     final List<String> gameFamilies =
         await AppFontLoader.resolveAndLoadAll(settings.gameLookupFonts);
+    // 复习「Fushi 卡片」字体链：卡面是 WebView，这里保存原始列表供注入；同时
+    // 整链注册进引擎，供将来原生渲染使用。
+    final List<Map<String, dynamic>> srsCardFonts = <Map<String, dynamic>>[
+      for (final Map<String, dynamic> row in settings.srsCardFonts)
+        Map<String, dynamic>.of(row),
+    ];
+    final List<String> srsCardFamilies =
+        await AppFontLoader.resolveAndLoadAll(srsCardFonts);
     if (listEquals(families, _appFontFamilies) &&
         subtitleFamily == _subtitleFontFamily &&
-        listEquals(gameFamilies, _gameLookupFontFamilies)) {
+        listEquals(gameFamilies, _gameLookupFontFamilies) &&
+        listEquals(srsCardFamilies, _srsCardFontFamilies) &&
+        jsonEncode(srsCardFonts) == jsonEncode(_srsCardFonts)) {
       return;
     }
     _appFontFamilies = families;
     _subtitleFontFamily = subtitleFamily;
     _gameLookupFontFamilies = gameFamilies;
+    _srsCardFonts = srsCardFonts;
+    _srsCardFontFamilies = srsCardFamilies;
     notifyListeners();
   }
 
@@ -3234,6 +3265,20 @@ class AppModel with ChangeNotifier {
       await prefsRepo.settleMiningImageModeInstallDefault();
       // 阅读器工具栏样式一次性强制悬浮（含各 Profile 快照），之后尊重用户选择。
       await prefsRepo.settleReaderToolbarStyleFloating();
+      // 「挖词目标」出厂默认：新装 Fushi 复习、老用户照旧 Anki 且复习模块保持关（不提醒）。
+      // 推荐包回执是设备本地文件、不随备份恢复消失：据它认出「新用户在引导里导入了推荐包」。
+      await prefsRepo.settleSrsMiningTargetInstallDefault(
+        freshOnboardingPackImport: await RecommendedPackTutorialState(
+          appDirectory,
+        ).hasImportReceipt,
+      );
+      // 复习默认开之后，新装用户从不经过 [setModuleEnabled] 打开复习，那里「第一次打开
+      // 复习时把日界设成凌晨 4 点（与 Anki 一致）」的落点就够不着：在这里补同一条规则。
+      // 只在日界从没设过时写（老用户迁移后复习是关的，走不到这里）。
+      if (prefsRepo.moduleEnabled(ModuleId.srs) &&
+          prefsRepo.getPref(kStatDayResetHourPrefKey) == null) {
+        await setStatDayResetHour(SrsDayContext.defaultRolloverHour);
+      }
       // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
       // 开关就只在「本次会话里手动改过」时才生效，重启后静默退回默认值。
       TexthookerService.instance.foldProgressiveLines =
@@ -7943,16 +7988,16 @@ class AppModel with ChangeNotifier {
 
   /// 「功能模块」用户意愿的读写。**平台判据不在这里**——见 [moduleVisibility]。
   ///
-  /// 偏好仓库还没装配好时取出厂默认（[ModuleId.defaultEnabled]：除复习外都开，
-  /// fail-open；复习默认关，未就绪时同样不该露出）。模块门控读得比 `initialise()`
+  /// 偏好仓库还没装配好时取出厂默认（[ModuleId.defaultEnabled]，fail-open）；复习
+  /// 例外按关：此刻还不知道本安装是不是老用户（老用户升级后复习保持关、不提醒，见
+  /// `PreferencesRepository.settleSrsMiningTargetInstallDefault`）。模块门控读得比 `initialise()`
   /// 早：设置 schema 的 `visible` 谓词同时喂渲染与搜索索引，展平索引这条路径在弹窗
   /// 词典入口与纯 widget 测试里都会撞上一个未初始化的 AppModel。裸 `prefsRepo!` 会
   /// 在那里抛 null check——而「读不到用户意愿」的安全方向是全都显示，不是把整个设置
   /// 页藏掉（与 module_registry 里「漏写映射默认恒在」同一个方向）。
-  bool moduleEnabled(ModuleId module) =>
-      isPreferencesReady
+  bool moduleEnabled(ModuleId module) => isPreferencesReady
       ? prefsRepo.moduleEnabled(module)
-      : module.defaultEnabled;
+      : module != ModuleId.srs && module.defaultEnabled;
 
   Future<void> setModuleEnabled(ModuleId module, bool value) async {
     await prefsRepo.setModuleEnabled(module, value);
@@ -8286,11 +8331,78 @@ class AppModel with ChangeNotifier {
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
 
   // 复习模块的「挖词目标」（透传 prefsRepo）。与 [mineToServerEnabled] 同理用可空读：
-  // `ankiRepositoryProvider` 构建期就会读它，prefs 未装配时等于从没选过 = Anki。
-  SrsMiningTarget get srsMiningTarget =>
-      SrsMiningTarget.fromWire(_prefsRepo?.srsMiningTarget);
+  // `ankiRepositoryProvider` 构建期就会读它。prefs 未装配时按 Anki（此刻不会有制卡，
+  // 万一有，宁可照旧发 Anki）；装配后没设过取本安装的出厂默认（新装 srs / 老用户 anki）。
+  SrsMiningTarget get srsMiningTarget => _prefsRepo == null
+      ? SrsMiningTarget.anki
+      : SrsMiningTarget.fromWire(_prefsRepo!.srsMiningTarget);
   Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
       prefsRepo.setSrsMiningTarget(target.wire);
+
+  // 首页 dashboard 面板显示档（透传 prefsRepo）。可空读：prefs 未装配 = 全部 auto。
+  HomeDashboardPanelMode homeDashboardPanelMode(HomeDashboardPanel panel) =>
+      decodeHomeDashboardPanelModes(_prefsRepo?.homeDashboardPanels ?? '')[
+          panel] ??
+      HomeDashboardPanelMode.auto;
+  Future<void> setHomeDashboardPanelMode(
+    HomeDashboardPanel panel,
+    HomeDashboardPanelMode mode,
+  ) =>
+      prefsRepo.setHomeDashboardPanels(
+        encodeHomeDashboardPanelModes(
+          <HomeDashboardPanel, HomeDashboardPanelMode>{
+            ...decodeHomeDashboardPanelModes(prefsRepo.homeDashboardPanels),
+            panel: mode,
+          },
+        ),
+      );
+
+  // 复习卡面外观（透传 prefsRepo）。可空读：prefs 未装配 = 模板默认外观。
+  SrsCardAppearance get srsCardAppearance =>
+      SrsCardAppearance.decode(_prefsRepo?.srsCardAppearance ?? '');
+  Future<void> setSrsCardAppearance(SrsCardAppearance appearance) =>
+      prefsRepo.setSrsCardAppearance(appearance.encode());
+
+  // 复习页评分栏只留「重来 / 良好」（透传 prefsRepo）。可空读：prefs 未装配 = 四按钮。
+  bool get srsReviewHideHardEasy => _prefsRepo?.srsReviewHideHardEasy ?? false;
+  Future<void> setSrsReviewHideHardEasy(bool value) =>
+      prefsRepo.setSrsReviewHideHardEasy(value);
+  double get srsReviewZoom => _prefsRepo?.srsReviewZoom ?? 1.0;
+  Future<void> setSrsReviewZoom(double value) =>
+      prefsRepo.setSrsReviewZoom(value);
+
+  // 挖词目标 = Fushi 复习时的落地位置（牌组 / 笔记类型 / 非内置类型的字段映射）。
+  // 同样可空读：prefs 未装配 = 默认牌组 + Fushi 卡片。
+  SrsMiningDestination get srsMiningDestination {
+    final PreferencesRepository? prefs = _prefsRepo;
+    if (prefs == null) return const SrsMiningDestination();
+    return SrsMiningDestination(
+      deckId: prefs.srsMiningDeckId,
+      noteTypeId: prefs.srsMiningNoteTypeId,
+      fieldMappingsByType: prefs.srsMiningFieldMappings,
+    );
+  }
+
+  Future<void> setSrsMiningDeckId(String id) =>
+      prefsRepo.setSrsMiningDeckId(id);
+  Future<void> setSrsMiningNoteTypeId(String id) =>
+      prefsRepo.setSrsMiningNoteTypeId(id);
+
+  /// 写一个非 Lapis 笔记类型某字段的映射（[template] 为空串 = 明确不填）。
+  Future<void> setSrsMiningFieldMapping(
+    String noteTypeId,
+    String fieldId,
+    String template,
+  ) {
+    final Map<String, Map<String, String>> all =
+        <String, Map<String, String>>{
+          for (final MapEntry<String, Map<String, String>> e
+              in prefsRepo.srsMiningFieldMappings.entries)
+            e.key: Map<String, String>.of(e.value),
+        };
+    (all[noteTypeId] ??= <String, String>{})[fieldId] = template;
+    return prefsRepo.setSrsMiningFieldMappings(all);
+  }
 
   // 视频制卡封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认：全新安装 videoClip、存量升级 gif。
   VideoMiningImageMode get videoMiningImageMode =>
@@ -8478,6 +8590,26 @@ class AppModel with ChangeNotifier {
   String get fushiApiKey => prefsRepo.fushiApiKey;
   Future<void> setFushiApiKey(String value) =>
       prefsRepo.setFushiApiKey(value);
+
+  /// [fushiApiKey] 为空时播种一枚随机 key（与 sync server 同款密码学安全随机源），
+  /// 返回是否真的播种了。**绝不覆盖**非空值：主 Fushi API 一旦有 key，本机回环请求
+  /// 也必须带 key，覆盖会让已配好的客户端（Yomitan / 浏览器扩展 / 另一台设备）401。
+  Future<bool> seedFushiApiKeyIfEmpty() async {
+    if (fushiApiKey.isNotEmpty) return false;
+    await setFushiApiKey(FushiSyncServer.generateToken());
+    return true;
+  }
+
+  /// 用户在设置里拨动「Fushi API 服务器」开关。与 [setFushiApiServerEnabled] 的区别：
+  /// **从关到开**那一刻若 key 为空就先播种一枚（复习模块的 AnkiConnect 兼容端点没
+  /// key 时只收回环请求，别的设备连它必须带 key）。已开着 + 空 key 的存量用户不走
+  /// 这里（启动只读偏好），他们不带 key 的本机客户端不会突然 401。
+  Future<void> setFushiApiServerEnabledByUser(bool value) async {
+    if (value && !fushiApiServerEnabled) {
+      await seedFushiApiKeyIfEmpty();
+    }
+    await setFushiApiServerEnabled(value);
+  }
 
   /// 实验性：整套键盘/手柄焦点导航是否启用（默认 false）。关闭时 main.dart 不安装
   /// FushiFocusRoot/Ring，App 回退到 Flutter 原生焦点遍历。

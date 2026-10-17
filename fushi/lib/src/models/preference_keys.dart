@@ -229,6 +229,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 元素是 `HiddenRemoteBook` 的 JSON（来源身份 / 互联对端身份 / 远端身份键 / 书名）。设备本地（见
   // SyncRepository 的设备本地清单）：别的设备恢复备份不该把这台的隐藏带过去。
   'hidden_remote_books',
+  // String（JSON map，默认空）：首页 dashboard 各面板的显示档 `{面板 id: auto /
+  // shown / hidden}`，缺省 = auto（按面板自己的默认判据）。见
+  // models/home_dashboard_panel.dart 的 [HomeDashboardPanel]。随 Profile 走。
+  'home_dashboard_panels',
   // bool（默认 true，BUG-1891）：进视频页时是否自动向 Jellyfin/Emby 服务器枚举
   // 条目。几十万条目的公共 Emby 服上自动枚举会被当成爬虫，关掉后改由下拉刷新手动触发。
   'jellyfin_auto_list_videos',
@@ -412,11 +416,36 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'show_floating_lyric',
   'show_media_notification',
   'show_remote_entries',
-  // String（SrsMiningTarget.wire，默认 'anki'）：复习模块开着时制卡发往 Anki / Fushi
-  // 复习 / 两者。模块关着时不读。非凭据、跨设备。
+  // String（JSON，SrsAnkiImportOptions.toJson）：上次「导入 Anki 包」选的五个选项，
+  // 下次作对话框初值；缺省 = Anki 默认值。非凭据、跨设备（随 Profile / 备份）。
+  // String（JSON，SrsCardAppearance.toJson）：复习卡面（Fushi 卡片模板）的外观：
+  // 字体 / 字号 / 行距 / 配色 / 区块显隐 / 统一词典样式 / 密度。缺省 = 模板默认外观。
+  // 非凭据、跨设备（随 Profile / 备份；字体文件路径在别的设备上不存在时回落默认字体）。
+  'srs_card_appearance',
+  'srs_import_anki_options',
+  // String（SRS 牌组 id，'' = 默认牌组）：挖词目标 = Fushi 复习时卡落进的牌组。
+  // 被删时制卡回落默认牌组。非凭据、跨设备（id 自带 profileUid）。
+  'srs_mining_deck_id',
+  // String（JSON `{noteTypeId: {fieldId: 模板}}`）：非 Lapis 笔记类型的制卡字段
+  // 映射，模板与 Anki 字段映射同一套 handlebar。非凭据、跨设备。
+  'srs_mining_field_mappings',
+  // String（SRS 笔记类型 id，'' = 从没选过 = 内置 Fushi 卡片）：挖词目标 = Fushi
+  // 复习时用的笔记类型。被删时回落 Lapis。非凭据、跨设备。
+  'srs_mining_note_type_id',
+  // String（SrsMiningTarget.wire）：复习模块开着时制卡发往 Anki 还是 Fushi 复习（二选一；
+  // 存量 'both' 读成 'anki'）。没设过取下面的安装默认。模块关着时不读。非凭据、跨设备。
   'srs_mining_target',
   // bool：旧开关「启动时打开查词」，已由 startup_module 取代；只读不写，
   // startup_module 从未写过时据此迁移（PreferencesRepository.startupModule）。
+  // String 'anki' | 'srs'：本安装「挖词目标」的出厂默认，兼一次性判定标记（2026-10-16：
+  // 新装 srs、老用户 anki）。设备本地（SyncRepository.installScopedPrefKeys）：不进
+  // Profile 快照 / 分享、不随备份 / 推荐包出境；导入设置的恢复会清掉它，下次启动重判。
+  'srs_mining_target_install_default',
+  // bool（默认 false）：复习页底部评分栏只留「重来 / 良好」两个按钮（对齐 AnkiDroid
+  // 的 hideHardAndEasy）；键盘 2/4 仍可评「困难 / 简单」。非凭据、跨设备。
+  'srs_review_hide_hard_easy',
+  // double（默认 1.0，0.6–2.0）：复习页卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）。
+  'srs_review_zoom',
   'startup_default_dictionary_tab',
   // String：启动页模块（ModuleId.prefKey，'' = 底栏第一个页面）。设备本地，
   // 与 module_nav_order 同族（ModuleId.devicePrefKeys）。
