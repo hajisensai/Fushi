@@ -143,7 +143,7 @@ export async function mergeWorks(env, from, into, now) {
     env.DB.prepare('UPDATE accounts SET shelf_count = (SELECT COUNT(*) FROM shelf s WHERE s.account_id = accounts.id) WHERE id IN (SELECT value FROM json_each(?1))')
       .bind(JSON.stringify(dup.results.map((r) => r.account_id))),
   ]);
-  // 来源作品的封面都已是候选（迁移 0011 回填）、随候选迁到目标作品；落选且无票的由清理语句交回。
+  // 来源作品的封面都已是候选（迁移 0012 回填）、随候选迁到目标作品；落选且无票的由清理语句交回。
   await deleteMedia(env, coverKeysOf(results));
   await recomputeMeta(env, into);
   await refreshSnapshots(env, now);

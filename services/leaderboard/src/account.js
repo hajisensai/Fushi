@@ -177,8 +177,8 @@ export async function deleteAccount(env, account) {
     env.DB.prepare('DELETE FROM dev_sessions WHERE account_id = ?1').bind(id),
     env.DB.prepare('DELETE FROM reports WHERE reporter = ?1 OR (target_kind = \'account\' AND target_id = ?1)').bind(id),
     // 精确列出本账户的限流桶（LIKE 的 '_' 是通配符，账户 id 里正好有 '_'）。
-    env.DB.prepare('DELETE FROM rate_limits WHERE bucket IN (?1, ?2, ?3, ?4)')
-      .bind(`shelf:${id}`, `media:${id}`, `social:${id}`, `rows:${id}`),
+    env.DB.prepare('DELETE FROM rate_limits WHERE bucket IN (?1, ?2, ?3, ?4, ?5)')
+      .bind(`shelf:${id}`, `media:${id}`, `social:${id}`, `rows:${id}`, `cover:${id}`),
     env.DB.prepare(
       'DELETE FROM used_sigs WHERE account_id IN (SELECT key_id FROM device_keys WHERE account_id = ?1)',
     ).bind(id),

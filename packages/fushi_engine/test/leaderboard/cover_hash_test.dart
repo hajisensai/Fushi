@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -58,6 +59,25 @@ String _hashOfJpeg(img.Image image, {int? width, int quality = 80}) {
   )!;
 }
 
+/// Worker 侧封面哈希对拍样本目录（services/leaderboard/test/cover_vectors）：从当前目录向上找仓库根。
+Directory _workerCoverVectors() {
+  Directory dir = Directory.current.absolute;
+  while (true) {
+    final Directory candidate = Directory(
+      '${dir.path}/services/leaderboard/test/cover_vectors',
+    );
+    if (candidate.existsSync()) return candidate;
+    final Directory parent = dir.parent;
+    if (parent.path == dir.path) {
+      throw StateError(
+        'services/leaderboard/test/cover_vectors not found above '
+        '${Directory.current.path}',
+      );
+    }
+    dir = parent;
+  }
+}
+
 void main() {
   test('哈希形状：16 位小写 hex；距离对称、自身为 0', () {
     final String h = _hashOfJpeg(_cover(1));
@@ -108,6 +128,30 @@ void main() {
     expect(coverDHashOfImage(tiny), hasLength(16));
     expect(coverDHash(Uint8List.fromList(<int>[1, 2, 3])), isNull);
   });
+
+  test(
+    '与 Worker 对拍：Dart 结果仍等于 cover_hashes.json 记的值（Worker 的 cover_hash.test.js 断言同一份）',
+    () {
+      final Directory dir = _workerCoverVectors();
+      final Map<String, Object?> vectors =
+          (jsonDecode(File('${dir.path}/cover_hashes.json').readAsStringSync())
+                  as Map<Object?, Object?>)
+              .cast<String, Object?>();
+      int checked = 0;
+      for (final String group in <String>['exact', 'dartEncoded']) {
+        final Map<Object?, Object?> entries =
+            vectors[group]! as Map<Object?, Object?>;
+        for (final MapEntry<Object?, Object?> e in entries.entries) {
+          final Uint8List bytes = File(
+            '${dir.path}/${e.key}',
+          ).readAsBytesSync();
+          expect(coverDHash(bytes), e.value, reason: '$group/${e.key}');
+          checked++;
+        }
+      }
+      expect(checked, greaterThanOrEqualTo(5));
+    },
+  );
 
   test('本地封面指纹：随文件内容变化；文件不在 / 没有封面返回 null', () async {
     final Directory dir = await Directory.systemTemp.createTemp('cover_fp');

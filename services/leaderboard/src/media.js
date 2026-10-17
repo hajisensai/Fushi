@@ -1,4 +1,5 @@
-// 头像 / 作品封面缩略图：客户端先缩好再传（头像 ≤384px、封面 ≤300px），服务端只验魔数与大小。
+// 头像 / 作品封面缩略图：客户端先缩好再传（头像 ≤384px、封面 ≤300px JPEG）。头像只验魔数与大小；
+// 封面还要解码算 dHash（cover_hash.js），候选按服务端哈希归并。
 // R2 key 带时间戳版本号（a/<account>-<ts>.jpg），出图可设 immutable 长缓存，换图即换 key。
 
 import { HttpError, randomId } from './util.js';
@@ -7,11 +8,11 @@ import { acceptCoverUrl, casBatch, casStatements } from './shelf.js';
 import {
   accountVotes,
   nearestCandidate,
-  normalizeCoverHash,
   releasedCoverKeys,
   requireOneOf,
   voteStatements,
 } from './cover_votes.js';
+import { verifiedCoverHash } from './cover_hash.js';
 
 /**
  * 对象 key：<前缀>/<属主>-<随机>-<时刻>.<ext>。随机段不能省——同一毫秒两人抢传同一作品
@@ -136,28 +137,30 @@ async function matchHash(env, workId, hash) {
 }
 
 /**
- * PUT /v1/works/:id/cover[?h=<dHash>]：上传封面缩略图。
- *   - 带 h（新客户端）：命中已有候选只投票、不存图；没命中则存 R2、建候选并投票。
- *   - 不带 h（旧客户端）：作品已有封面 → 409 cover_exists（与旧版先到先得一致，免得不带哈希、
- *     无法归并的上传无限占用 R2）；没有 → 存为无哈希候选并记上传者一票。
+ * PUT /v1/works/:id/cover[?h=<dHash>]：上传封面缩略图（只收 JPEG）。
+ * 候选的哈希一律由服务端从字节算（cover_hash.js；客户端上报的哈希不可信，见那里的文件头）。
+ *   - 带 h（新客户端）：h 只用来核对——与服务端哈希距离超过阈值 → 400 cover_hash_mismatch。
+ *     服务端哈希命中已有候选只投票、不存图；没命中则存 R2、建候选并投票。
+ *   - 不带 h（旧客户端）：作品已有封面 → 409 cover_exists（与旧版先到先得一致，旧客户端照旧丢弃）；
+ *     没有 → 存为候选（同样带服务端哈希，之后的新客户端可以归并到它）并记上传者一票。
  * 返回本账户所投候选的展示地址。
  */
 export async function setWorkCover(env, account, workId, bytes, now, rawHash = null) {
   const kind = requireImage(bytes);
-  await requireOnShelf(env, account, workId);
-  const hash = rawHash === null ? null : normalizeCoverHash(rawHash);
-  if (rawHash !== null && !hash) throw new HttpError(400, 'bad_cover_hash');
-  if (hash) {
+  await requireOnShelf(env, account, workId); // 先鉴权再解码：不给架外的人白耗 CPU
+  if (rawHash === null) {
+    const taken = await env.DB.prepare(
+      'SELECT 1 AS t FROM works WHERE id = ?1 AND (cover_key IS NOT NULL OR cover_url IS NOT NULL)',
+    ).bind(workId).first();
+    if (taken) throw new HttpError(409, 'cover_exists'); // 先查一次，免得白解码、白扣预算、白写 R2
+  }
+  const hash = verifiedCoverHash(bytes, rawHash);
+  if (rawHash !== null) {
     const match = await matchHash(env, workId, hash);
     if (match) {
       await deleteMedia(env, await castVote(env, account, workId, { cid: match.id }, now));
       return votedCover(env, account, workId);
     }
-  } else {
-    const taken = await env.DB.prepare(
-      'SELECT 1 AS t FROM works WHERE id = ?1 AND (cover_key IS NOT NULL OR cover_url IS NOT NULL)',
-    ).bind(workId).first();
-    if (taken) throw new HttpError(409, 'cover_exists'); // 先查一次，免得白扣预算、白写 R2
   }
   const key = objectKey('c', workId, now, kind.ext);
   await putImage(env, key, bytes, kind, now);

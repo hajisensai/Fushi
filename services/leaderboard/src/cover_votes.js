@@ -1,4 +1,4 @@
-// 作品封面按人数投票（迁移 0011）。
+// 作品封面按人数投票（迁移 0012）。
 //
 // 规则：
 //   - 候选 = 一部作品的一张封面（R2 缩略图或白名单图床 URL）；一账户对一作品一票，改投即移票。
@@ -6,8 +6,9 @@
 //     「最早达到该票数」；掉票不改 reached_at），再平取 id 小的（先提交的）。
 //     没有任何候选有票时作品封面保持原样（存量封面、旧客户端的先到先得结果都不动）。
 //   - 票数只数未隐藏账户（增量维护；隐藏 / 恢复、管理合并拆分时精确重算）。
-//   - 缩略图候选按客户端算的 64 位 dHash 归并：汉明距离 ≤ COVER_HASH_MAX_DISTANCE 视为同一张图，
-//     后到的只投票、不再存 R2。URL 候选按 URL 相等归并（服务端不下载图床图片，算不了哈希）。
+//   - 缩略图候选按 64 位 dHash 归并：汉明距离 ≤ COVER_HASH_MAX_DISTANCE 视为同一张图，后到的只投票、
+//     不再存 R2。候选的哈希**一律由服务端从上传字节算**（cover_hash.js），客户端上报的哈希只用来核对，
+//     否则谁都能拿任意图片冒充正版封面的哈希、劫持该候选的全部票。URL 候选按 URL 相等归并（服务端不下载图床图片，算不了哈希）。
 //   - 没有任何投票行、且不是作品当前封面的候选立即删除，R2 对象一并删除并归还配额。
 //
 // 账户的票从哪来：
@@ -17,7 +18,7 @@
 //   - POST /v1/works/:id/cover/vote {hash | url}：按哈希命中已有候选就只投票；没命中回
 //     409 cover_bytes_required，客户端再 PUT /v1/works/:id/cover?h=<hash> 带图片字节。
 //   - PUT /v1/works/:id/cover 不带 h（旧客户端）：作品已有封面 → 409 cover_exists（与旧版一致，
-//     旧客户端照旧丢弃）；没有 → 存为无哈希候选并记上传者一票。
+//     旧客户端照旧丢弃）；没有 → 存为候选（带服务端哈希）并记上传者一票。
 
 import { HttpError } from './util.js';
 
@@ -26,7 +27,7 @@ export const COVER_HASH_MAX_DISTANCE = 10;
 
 export const COVER_HASH_RE = /^[0-9a-f]{16}$/;
 
-/** 规范化客户端带来的哈希（大小写不敏感）；不合法返回 null。 */
+/** 规范化客户端带来的哈希（大小写不敏感）；不合法返回 null。客户端哈希只用于查找 / 核对，从不入库。 */
 export function normalizeCoverHash(raw) {
   if (typeof raw !== 'string') return null;
   const h = raw.toLowerCase();

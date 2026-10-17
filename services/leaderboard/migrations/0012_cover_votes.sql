@@ -5,10 +5,11 @@
 -- 一票，作品封面 = 票数最多的候选；works.cover_key / cover_url 仍是物化结果（读路径不变）。
 --
 -- cover_candidates：一部作品的一张候选封面。三种来源：
---   - 新客户端上传的缩略图：phash = 客户端算的 64 位 dHash（16 位小写 hex），cover_key = R2 key；
+--   - 上传的缩略图：phash = 服务端从上传字节算的 64 位 dHash（16 位小写 hex，src/cover_hash.js；
+--     客户端上报的哈希只用来核对、从不入库），cover_key = R2 key；
 --     服务端按汉明距离 ≤ COVER_HASH_MAX_DISTANCE 把相近的图归为同一候选，同一候选只存一份 R2 图；
 --   - 白名单图床 URL（书架上报带的 coverUrl / 投票接口带的 url）：cover_url，无 phash，按 URL 相等归并；
---   - 旧客户端上传（不带哈希）与本迁移回填的存量封面：phash 为 NULL，不参与哈希归并。
+--   - 本迁移回填的存量封面：phash 为 NULL，不参与哈希归并。
 --   votes：未隐藏账户的票数（增量维护；管理操作精确重算）。
 --   reached_at：票数最近一次上涨的时刻。平票时取 reached_at 最早的（「最早达到该票数」），
 --     再平取 id 小的（先提交的）。掉票不改 reached_at。

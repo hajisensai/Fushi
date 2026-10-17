@@ -975,6 +975,37 @@ void main() {
       expect(out.state.coverVotes['W_book_a']!.hash, isNull);
     });
 
+    test('封面：409 conflict（并发回滚）不记账、继续后面的，下次同步重投', () async {
+      knownHashes.add(hashes[0]);
+      coverStatuses = <(int, String)>[(409, 'conflict')];
+      final List<LocalShelfEntry> entries = <LocalShelfEntry>[
+        _e('book:a', cover: '/c/a.jpg'),
+        _e('book:b', cover: '/c/b.jpg'),
+      ];
+      final ShelfSyncOutcome out = await syncCovers(
+        entries,
+        LeaderboardSyncState.empty,
+      );
+      expect(coverRequests, <String>[
+        'vote W_book_a hash=${hashes[0]}',
+        'vote W_book_b hash=${hashes[0]}',
+      ]);
+      expect(out.coverError, isA<LeaderboardApiException>());
+      expect(out.state.coverVotes.keys.toSet(), <String>{
+        'W_book_b',
+      }, reason: 'a 撞上回滚，没投上，不能记成已投');
+
+      serverShelfCount = 2;
+      coverRequests.clear();
+      final ShelfSyncOutcome next = await syncCovers(entries, out.state);
+      expect(coverRequests, <String>['vote W_book_a hash=${hashes[0]}']);
+      expect(next.state.coverVotes.keys.toSet(), <String>{
+        'W_book_a',
+        'W_book_b',
+      });
+      expect(next.coverError, isNull);
+    });
+
     test('409 conflict：原样重发该批（最多 3 次），成功即继续', () async {
       shelfErrors = <(int, String)>[(409, 'conflict'), (409, 'conflict')];
       final LeaderboardSyncState s = (await syncShelf(

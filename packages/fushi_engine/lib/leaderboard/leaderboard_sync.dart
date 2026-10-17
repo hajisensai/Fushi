@@ -872,7 +872,8 @@ class _ShelfSyncRun {
   }
 
   /// 封面投票轮（文件头第 7 步）。遇到第一个 429 / 5xx / 404 / 网络错误立即停止，剩下的留待
-  /// 下次；其余失败（本地缩略图出错、其它 4xx）记下来源，本地封面不变就不再重试。返回第一个错误。
+  /// 下次；409 `conflict`（并发回滚）跳过这部、不记账；其余失败（本地缩略图出错、其它 4xx）记下
+  /// 来源，本地封面不变就不再重试。返回第一个错误。
   ///
   /// nsfw 条目**从不**提交本地封面（服务端虽会模糊 nsfw 封面，但宁可不传）；它们带的白名单 URL
   /// 照常投（上报时本来就带着）。
@@ -910,6 +911,9 @@ class _ShelfSyncRun {
         error ??= e;
         stack ??= st;
         if (e is! _CoverThumbFailure && _stopsCoverRound(e)) break;
+        // 409 `conflict`：与本账户的书架上报交错、服务端整批回滚（账户级 CAS），是临时失败——
+        // 不记账，下次同步照常重投这部作品；本轮继续投后面的。
+        if (_isConflict(e)) continue;
         final String? source = attempt.source;
         if (source != null) {
           votes[w.key] = CoverVoteRecord(

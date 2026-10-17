@@ -1,17 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { JPEG, call, entry, makeEnv, registerUser } from './harness.js';
+import { JPEG, call, coverJpeg, entry, makeEnv, pngHeader, registerUser } from './harness.js';
 import { COVER_HASH_MAX_DISTANCE, hammingHex, nearestCandidate, normalizeCoverHash } from '../src/cover_votes.js';
 
 const NOW = Date.UTC(2026, 9, 16, 12);
 const basic = { Authorization: `Basic ${btoa('admin:pw')}` };
 
 // 64 位 dHash（16 位 hex）。NEAR_A 与 A 差 3 位（同一张图的不同压缩），B 与 A 差 64 位。
+// 上传的字节一律是真 JPEG（coverJpeg(h)：服务端解码后算出的 dHash 恰为 h），因为候选哈希由服务端算。
 const A = '0000000000000000';
 const NEAR_A = '0000000000000007';
 const B = 'ffffffffffffffff';
 const C = '00000000ffffffff';
+
+const COVER_HASH_RE_TEST = /^[0-9a-f]{16}$/;
 
 const TMDB = 'https://image.tmdb.org/t/p/w300/a.jpg';
 const TMDB2 = 'https://image.tmdb.org/t/p/w300/b.jpg';
@@ -25,14 +28,7 @@ async function shelf(env, u, extra = {}, now = NOW) {
   return r.data.works[0];
 }
 
-function img(n) {
-  // 魔数是 JPEG，长度不同便于核对配额。
-  const b = new Uint8Array(10 + n);
-  b.set(JPEG);
-  return b;
-}
-
-const putCover = (env, u, workId, h, now = NOW, bytes = img(1)) =>
+const putCover = (env, u, workId, h, now = NOW, bytes = coverJpeg(h && COVER_HASH_RE_TEST.test(h) ? h : A)) =>
   call(env, 'PUT', `/v1/works/${workId}/cover${h ? `?h=${h}` : ''}`, { key: u.key, account: u.id, body: bytes, now });
 const vote = (env, u, workId, body, now = NOW) =>
   call(env, 'POST', `/v1/works/${workId}/cover/vote`, { key: u.key, account: u.id, body, now });
@@ -102,9 +98,11 @@ describe('封面按人数投票', () => {
     const w = await shelf(env, u0);
     await shelf(env, u1);
     await shelf(env, u2);
-    const a = await putCover(env, u0, w.workId, A, NOW, img(100));
-    const b = await putCover(env, u1, w.workId, B, NOW + 1, img(200));
-    expect(usage(env)).toBe(110 + 210);
+    const aBytes = coverJpeg(A);
+    const bBytes = coverJpeg(B, { tint: [40, 0, -40] });
+    const a = await putCover(env, u0, w.workId, A, NOW, aBytes);
+    const b = await putCover(env, u1, w.workId, B, NOW + 1, bBytes);
+    expect(usage(env)).toBe(aBytes.length + bBytes.length);
     // u2 投 B → B 2 票胜出。
     await vote(env, u2, w.workId, { hash: B }, NOW + 2);
     expect(work(env, w.workId).cover_key).toBe(b.data.cover.slice(5));
@@ -113,7 +111,7 @@ describe('封面按人数投票', () => {
     expect(moved.data.cover).toBe(b.data.cover);
     expect(candidates(env, w.workId).map((c) => [c.phash, c.votes])).toEqual([[B, 3]]);
     expect(env.MEDIA.store.has(a.data.cover.slice(5))).toBe(false);
-    expect(usage(env)).toBe(210);
+    expect(usage(env)).toBe(bBytes.length);
   });
 
   it('投票接口：哈希没命中 → 409 cover_bytes_required；URL 不在白名单 → 400；不在架 → 403', async () => {
@@ -158,10 +156,11 @@ describe('封面按人数投票', () => {
     const [u0, u1] = await users(env, 2);
     const w = await shelf(env, u0);
     await shelf(env, u1);
-    const first = await putCover(env, u0, w.workId, null);
+    const first = await putCover(env, u0, w.workId, null, NOW, coverJpeg(C));
     expect(first.status).toBe(200);
     expect(candidates(env, w.workId)).toHaveLength(1);
-    expect(candidates(env, w.workId)[0]).toMatchObject({ phash: null, votes: 1 });
+    // 不带哈希也存服务端算的哈希：之后的新客户端可以归并到它。
+    expect(candidates(env, w.workId)[0]).toMatchObject({ phash: C, votes: 1 });
     const late = await putCover(env, u1, w.workId, null);
     expect([late.status, late.data.error]).toEqual([409, 'cover_exists']);
     expect(env.MEDIA.store.size).toBe(1);
@@ -174,8 +173,8 @@ describe('封面按人数投票', () => {
     // 模拟迁移前的先到先得封面。
     const legacy = `c/${w.workId}-old-1.jpg`;
     env.DB.raw.prepare('UPDATE works SET cover_key = ?1 WHERE id = ?2').run(legacy, w.workId);
-    await env.MEDIA.put(legacy, img(5));
-    const sql = readFileSync(fileURLToPath(new URL('../migrations/0011_cover_votes.sql', import.meta.url)), 'utf8');
+    await env.MEDIA.put(legacy, coverJpeg(B));
+    const sql = readFileSync(fileURLToPath(new URL('../migrations/0012_cover_votes.sql', import.meta.url)), 'utf8');
     env.DB.raw.exec(sql);
     env.DB.raw.exec(sql); // 重复应用是空操作
     expect(candidates(env, w.workId)).toEqual([
@@ -274,5 +273,92 @@ describe('封面按人数投票', () => {
     expect(work(env, into).cover_url).toBe(TMDB2);
     expect(candidates(env, into).map((c) => [c.cover_url, c.votes]).sort()).toEqual([[TMDB, 1], [TMDB2, 2]].sort());
     expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM cover_candidates WHERE work_id = ?1').get(from).n).toBe(0);
+  });
+});
+
+describe('封面哈希由服务端算（客户端声称的哈希不可信）', () => {
+  it('伪造哈希：任意图片冒充正版封面的哈希 → 400 cover_hash_mismatch，不存图、不建候选', async () => {
+    const env = makeEnv();
+    const [attacker, honest] = await users(env, 2);
+    const w = await shelf(env, attacker);
+    await shelf(env, honest);
+    const forged = await putCover(env, attacker, w.workId, A, NOW, coverJpeg(B));
+    expect([forged.status, forged.data.error]).toEqual([400, 'cover_hash_mismatch']);
+    expect(env.MEDIA.store.size).toBe(0);
+    expect(candidates(env, w.workId)).toEqual([]);
+    expect(usage(env)).toBe(0);
+    // 持正版封面的人照常建自己的候选，票不会被吸走。
+    const real = await putCover(env, honest, w.workId, A, NOW + 1);
+    expect(real.status).toBe(200);
+    expect(candidates(env, w.workId).map((c) => [c.phash, c.votes])).toEqual([[A, 1]]);
+  });
+
+  it('攻击者不声称哈希（旧协议）抢先上传：候选按服务端哈希入库，正版持有者不会命中它', async () => {
+    const env = makeEnv();
+    const [attacker, honest] = await users(env, 2);
+    const w = await shelf(env, attacker);
+    await shelf(env, honest);
+    expect((await putCover(env, attacker, w.workId, null, NOW, coverJpeg(B))).status).toBe(200);
+    const miss = await vote(env, honest, w.workId, { hash: A }, NOW + 1);
+    expect([miss.status, miss.data.error]).toEqual([409, 'cover_bytes_required']);
+    expect((await putCover(env, honest, w.workId, A, NOW + 2)).status).toBe(200);
+    expect(candidates(env, w.workId).map((c) => c.phash)).toEqual([B, A]);
+  });
+
+  it('声称的哈希在阈值内照收，但入库与归并用服务端哈希', async () => {
+    const env = makeEnv();
+    const [u0] = await users(env, 1);
+    const w = await shelf(env, u0);
+    const r = await putCover(env, u0, w.workId, NEAR_A, NOW, coverJpeg(A));
+    expect(r.status).toBe(200);
+    expect(candidates(env, w.workId).map((c) => c.phash)).toEqual([A]);
+  });
+
+  it('不是 JPEG → 415 cover_not_jpeg；JPEG 魔数但解不开 → 400 bad_cover_image', async () => {
+    const env = makeEnv();
+    const [u0] = await users(env, 1);
+    const w = await shelf(env, u0);
+    const png = await putCover(env, u0, w.workId, A, NOW, pngHeader(4, 4));
+    expect([png.status, png.data.error]).toEqual([415, 'cover_not_jpeg']);
+    const junk = await putCover(env, u0, w.workId, A, NOW, JPEG);
+    expect([junk.status, junk.data.error]).toEqual([400, 'bad_cover_image']);
+    const legacyJunk = await putCover(env, u0, w.workId, null, NOW, JPEG);
+    expect([legacyJunk.status, legacyJunk.data.error]).toEqual([400, 'bad_cover_image']);
+    expect(env.MEDIA.store.size).toBe(0);
+  });
+
+  it('解压炸弹：帧头声称超大尺寸的小 JPEG 在分配像素前就被拒（400 bad_cover_image）', async () => {
+    const env = makeEnv();
+    const [u0] = await users(env, 1);
+    const w = await shelf(env, u0);
+    const bomb = coverJpeg(A);
+    // 改 SOF0 帧头里的高 / 宽为 60000×60000（3600 MP）。
+    let sof = -1;
+    for (let i = 2; i + 1 < bomb.length; i++) {
+      if (bomb[i] === 0xff && bomb[i + 1] === 0xc0) { sof = i; break; }
+    }
+    expect(sof).toBeGreaterThan(0);
+    bomb.set([0xea, 0x60, 0xea, 0x60], sof + 5);
+    const r = await putCover(env, u0, w.workId, A, NOW, bomb);
+    expect([r.status, r.data.error]).toEqual([400, 'bad_cover_image']);
+  });
+
+  it('不在架的人上传：先 403，不解码', async () => {
+    const env = makeEnv();
+    const [u0, outsider] = await users(env, 2);
+    const w = await shelf(env, u0);
+    const r = await putCover(env, outsider, w.workId, A, NOW, JPEG);
+    expect([r.status, r.data.error]).toEqual([403, 'not_on_shelf']);
+  });
+
+  it('删除账户时连同封面投票限流桶 cover:<id> 一起清掉', async () => {
+    const env = makeEnv();
+    const [u0] = await users(env, 1);
+    const w = await shelf(env, u0);
+    await vote(env, u0, w.workId, { url: TMDB });
+    const bucket = () => env.DB.raw.prepare('SELECT COUNT(*) n FROM rate_limits WHERE bucket = ?1').get(`cover:${u0.id}`).n;
+    expect(bucket()).toBe(1);
+    expect((await call(env, 'DELETE', '/v1/me', { key: u0.key, account: u0.id, now: NOW + 1 })).status).toBe(204);
+    expect(bucket()).toBe(0);
   });
 });

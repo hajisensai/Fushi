@@ -220,16 +220,23 @@ Apple 侧怎么建 Auth Key、App ID 勾 Push、sandbox / production 怎么选�
 反馈系统（回执、附件、开发者处理、防投毒、清理策略）设计见
 [`docs/specs/2026-10-08-feedback.md`](../../docs/specs/2026-10-08-feedback.md)。
 
-## 作品封面按人数投票（迁移 0011，`src/cover_votes.js`）
+## 作品封面按人数投票（迁移 0012，`src/cover_votes.js`）
 
 同一作品不同账户提交的封面是「候选」，一账户对一作品一票、改投即移票；作品封面 = 票数最多的候选
 （平票取最早达到该票数的，再平取先提交的），`works.cover_key / cover_url` 是物化结果，读路径不变。
-缩略图按客户端算的 64 位 dHash 归并（汉明距离 ≤ 10 视为同一张图，只存一份）；白名单图床 URL 按 URL
+缩略图按 64 位 dHash 归并（汉明距离 ≤ 10 视为同一张图，只存一份）；**哈希由服务端从上传字节算**（`src/cover_hash.js`，
+纯 JS 解码 JPEG，算法与引擎 `cover_hash.dart` 一致），客户端带的 `?h=` 只用来核对，差太多 400 `cover_hash_mismatch`，
+封面只收 JPEG（否则 415 `cover_not_jpeg`）；白名单图床 URL 按 URL
 相等归并，书架上报带 `coverUrl` 即投该 URL（不会冲掉已投的缩略图票）。零票且不是当前封面的候选
 立即删除并归还 R2 配额。隐藏账户的票照记、不计数。
 
-- **先迁移再部署**：`0011_cover_votes.sql` 建两张表并把存量封面回填成零票候选（不知道当初是谁传的）。
+- **先迁移再部署**：`0012_cover_votes.sql` 建两张表并把存量封面回填成零票候选（不知道当初是谁传的）。
   有人投票之前作品封面不变；第一个投票的人会让他的封面取代零票的存量封面。
-- 旧客户端：书架上报里的 `coverUrl` 照样计票；不带哈希的缩略图上传维持先到先得（已有封面 409）。
+- 旧客户端：书架上报里的 `coverUrl` 照样计票；不带哈希的缩略图上传维持先到先得（已有封面 409），存下的候选同样带服务端哈希。
   新客户端（引擎 `leaderboard_sync.dart` 第 7 步）升级后会给每部作品补投一次（多数命中已有候选、不传字节）。
 - 限流：投票接口每账户每小时 600 次（`coverVotePerHour`），带字节的上传仍按 `mediaUploadPerHour`。
+- 服务端算哈希的代价：每次封面上传解码一次 JPEG（依赖 `jpeg-js`，纯 JS，Workers 无 `Buffer` 故用 `useTArray`）。
+  缩略图长边 ≤ 300，Node 本机实测 212×300 解码 + 哈希约 4 ms CPU（**未在 workerd 上实测**，Free 计划每请求 10 ms CPU）；
+  解码上限 0.25 MP / 16 MB，帧头声称超大尺寸的「解压炸弹」在分配像素前就被拒（400 `bad_cover_image`）。先鉴权、
+  先查「旧客户端且已有封面」再解码，架外的人和必然 409 的请求不耗解码 CPU。两边解码器舍入不同：jpeg-js 编码的样本与
+  Dart 逐位一致，Dart `encodeJpg` 出的缩略图实测差 1 位（对拍样本 `test/cover_vectors/`，两边测试读同一份）。
