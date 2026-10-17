@@ -119,6 +119,86 @@ class ReaderContentStyles {
     return 'max(1px, calc(($baseContentBoxCss - ${totalGapPx}px) / $pageColumns))';
   }
 
+  /// 折叠屏书本姿态下的每页列数覆盖：返回 null = 不覆盖（用用户设置）。
+  ///
+  /// 只在「翻页 + 横排 + 每页列数 = 自动(0)」时把一屏排成 2 栏，让竖向折痕正好落在
+  /// 两栏之间（content-box 居中、两栏对称，栏间隙中线 = 窗口中线；页边距左右不等时
+  /// 中线偏移半个差值）。用户显式选了列数就尊重用户；竖排不处理（已知局限：有宽度的
+  /// 物理铰链仍可能遮住竖排单栏的一行字）；滚动 / VN 不经多列。
+  static int? foldPageColumnsOverride({
+    required bool bookPosture,
+    required ReaderSettings settings,
+  }) {
+    if (!bookPosture) return null;
+    if (settings.isVnMode || settings.isContinuousMode) return null;
+    if (settings.writingMode.startsWith('vertical')) return null;
+    if (settings.pageColumns != 0) return null;
+    return 2;
+  }
+
+  /// 折叠屏书本姿态下两栏之间的栏间隙（px）：null = 不覆盖（常量 22px）。
+  ///
+  /// 对齐指南「内容放在铰链两侧、不放在铰链下」：只在横排翻页、一屏恰好两栏时生效，
+  /// 栏间隙 = 常量 22px + [hingeGutterPx]（铰链宽 + 2×铰链与正文中线的偏差，见
+  /// `fushiHingeGutterPx`），两侧各留 11px 余量。[hingeGutterPx] 为 0（柔性折痕且
+  /// 已居中）时不覆盖，与原几何逐字节相同。
+  static int? foldColumnGapPx({
+    required double hingeGutterPx,
+    required int effectivePageColumns,
+    required ReaderSettings settings,
+  }) {
+    if (hingeGutterPx <= 0 || effectivePageColumns != 2) return null;
+    if (settings.isVnMode || settings.isContinuousMode) return null;
+    if (settings.writingMode.startsWith('vertical')) return null;
+    return ReaderLayoutDefaults.columnGapPx + hingeGutterPx.ceil();
+  }
+
+  /// 「中缝折痕」显示风格：一屏两页时在两页之间画书脊阴影，像摊开的实体书。
+  ///
+  /// 画在 `html::after`（html 不受 body 的 clip-path 裁剪），`position: fixed` 贴视口、
+  /// 不随翻页滚动；z-index 压过页边距覆盖条（`html::before`），所以阴影纵贯整页高
+  /// （横排）/ 整页宽（竖排上下分栏），和真书的装订线一样从纸边到纸边。
+  /// `pointer-events: none`，不拦点按 / 选词 / 翻页手势。
+  ///
+  /// 位置 = content-box 的中线（与 [columnWidthForColumns] 两栏几何同源：两栏等宽、
+  /// 中间一个 column-gap，中线正好落在栏间隙中央）。阴影色取正文色按比例混入透明
+  /// （深色主题自然变成浅色光晕），老 WebView 不支持 `color-mix` 时退回固定半透明黑。
+  static String pageCreaseCss({
+    required bool isVertical,
+    required String shadeColor,
+    required String marginTopCss,
+    required String marginBottomCss,
+    required String marginLeftCss,
+    required String marginRightCss,
+  }) {
+    const int creaseWidthPx = 56;
+    final String direction = isVertical ? 'to bottom' : 'to right';
+    final String placement = isVertical
+        ? '''
+  left: 0 !important; right: 0 !important;
+  height: ${creaseWidthPx}px !important;
+  top: calc($marginTopCss + var(--chrome-top-inset, 0px) + (var(--reader-viewport-height, 100vh) - $marginTopCss - $marginBottomCss - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)) / 2 - ${creaseWidthPx ~/ 2}px) !important;'''
+        : '''
+  top: 0 !important; bottom: 0 !important;
+  width: ${creaseWidthPx}px !important;
+  left: calc($marginLeftCss + (var(--page-width, 100vw) - $marginLeftCss - $marginRightCss) / 2 - ${creaseWidthPx ~/ 2}px) !important;''';
+    String gradient(String soft, String deep) =>
+        'linear-gradient($direction, transparent 0%, $soft 30%, $deep 50%, '
+        '$soft 70%, transparent 100%)';
+    return '''
+/* 中缝折痕（page crease）：一屏两页时两页之间的书脊阴影。 */
+html::after {
+  content: "" !important;
+  position: fixed !important;
+  box-sizing: border-box !important;
+  pointer-events: none !important;
+  z-index: 2147483001 !important;$placement
+  background: ${gradient('rgba(0, 0, 0, 0.05)', 'rgba(0, 0, 0, 0.16)')} !important;
+  background: ${gradient('color-mix(in srgb, $shadeColor 6%, transparent)', 'color-mix(in srgb, $shadeColor 18%, transparent)')} !important;
+}
+''';
+  }
+
   /// TODO-734：竖排列高 content-box 的纯代数值（px），与 [verticalColumnWidthCss]
   /// 的 `max(F, calc(...))` 逐项同构。仅供代数守卫核算漏出量用，不参与 CSS 生成。
   /// V=视口高，F=字号（只作坍塌地板，不再从列高里扣，BUG-2469），mt/mb=上下页边距(px)，
@@ -162,6 +242,8 @@ class ReaderContentStyles {
     bool einkDark = false,
     String? contentLanguage,
     bool motionEnabled = true,
+    int? pageColumnsOverride,
+    int? columnGapOverridePx,
   }) {
     return '<style>\n${css(
       settings: settings,
@@ -180,6 +262,8 @@ class ReaderContentStyles {
       einkMode: einkMode,
       einkDark: einkDark,
       motionEnabled: motionEnabled,
+      pageColumnsOverride: pageColumnsOverride,
+      columnGapOverridePx: columnGapOverridePx,
     )}\n</style>';
   }
 
@@ -437,7 +521,19 @@ body::after {
     /// 页面的 `fushiMotionEnabled`（系统「减弱动态效果」/ 墨水屏为 false）：为 false 时
     /// 高亮笔触不放落笔动画（见 [highlightStrokeCssVariables]）。
     bool motionEnabled = true,
+
+    /// 本次排版实际生效的每页列数；null = 用户设置 [ReaderSettings.pageColumns]。
+    /// 折叠屏书本姿态下阅读器把「自动」解析成 2 栏（见 [foldPageColumnsOverride]），
+    /// 不写回用户偏好——展平后自动回到原值。
+    int? pageColumnsOverride,
+
+    /// 本次排版的栏间隙（px）；null = 常量 [ReaderLayoutDefaults.columnGapPx]。折叠屏
+    /// 书本姿态下加宽到盖住铰链（见 [foldColumnGapPx]）。列宽推算与 `column-gap` 同用
+    /// 这一个值，JS 的页步又从计算样式回读 column-gap，三者同源、翻页网格不失配。
+    int? columnGapOverridePx,
   }) {
+    final int pageColumns = pageColumnsOverride ?? settings.pageColumns;
+    final int columnGapPx = columnGapOverridePx ?? ReaderLayoutDefaults.columnGapPx;
     final _ThemeColors themedColors = _themeColors(
         themeOverride ?? settings.theme,
         customBg: customBg,
@@ -514,7 +610,7 @@ body::after {
     // 恒等于浏览器真实列周期 column-width + column-gap，maxScroll 与对齐量同源，杜绝
     // 「翻一半跳章」（旧实现把 inset 塞进 gap，使列周期随 inset/字号/竖排 notch 漂移，
     // pageStep 与真实列周期失配 → 倒数第二页越界被 clamp 误判 limit 提前跨章）。
-    const String columnGapCss = '${ReaderLayoutDefaults.columnGapPx}px';
+    final String columnGapCss = '${columnGapPx}px';
 
     // TODO-729 必补(a)：column-width 必须等于 content-box（扣掉 turn 轴方向的 padding），
     // 而非无条件整视口。只有 column-width == content-box 时，浏览器真实列周期
@@ -547,8 +643,8 @@ body::after {
     // 与旧行为字节等价（零回归，保 TODO-729/753/792 单列几何不变式）。
     final String columnWidthCss = ReaderContentStyles.columnWidthForColumns(
       baseContentBoxCss: baseColumnWidthCss,
-      pageColumns: settings.pageColumns,
-      columnGapPx: ReaderLayoutDefaults.columnGapPx,
+      pageColumns: pageColumns,
+      columnGapPx: columnGapPx,
     );
 
     final String textSpacingCss =
@@ -642,8 +738,8 @@ svg.block-img.blurred {
         ? 'text-orientation: ${settings.verticalTextOrientation};'
         : '';
 
-    final String columnsCss = settings.pageColumns > 0
-        ? 'column-count: ${settings.pageColumns} !important;'
+    final String columnsCss = pageColumns > 0
+        ? 'column-count: $pageColumns !important;'
         : '';
 
     const String imageMaxWidth = ReaderLayoutDefaults.imageMaxWidthFallbackCss;
@@ -698,6 +794,20 @@ svg.block-img.blurred {
         settings.isVnMode || settings.isContinuousMode
             ? ''
             : _webKitPaginatedScrollEndCss();
+    // 中缝折痕：只有翻页模式恰好两栏（= 一屏两页）时才有「两页之间」。
+    final String pageCreaseCss = settings.pageCrease &&
+            !settings.isVnMode &&
+            !settings.isContinuousMode &&
+            pageColumns == 2
+        ? ReaderContentStyles.pageCreaseCss(
+            isVertical: isVertical,
+            shadeColor: colors.textColor,
+            marginTopCss: marginTopCss,
+            marginBottomCss: marginBottomCss,
+            marginLeftCss: marginLeftCss,
+            marginRightCss: marginRightCss,
+          )
+        : '';
 
     return '''
 $resolvedFontFaces
@@ -770,7 +880,7 @@ html {
   background: transparent;
 }
 $layoutCss
-$paginatedScrollEndCss$paragraphSpacingCss
+$paginatedScrollEndCss$pageCreaseCss$paragraphSpacingCss
 img.block-img {
   /* max-width / max-height = 页面容纳约束，恒 !important（见文件内说明）。 */
   max-width: var(--fushi-image-max-width, $imageMaxWidth) !important;

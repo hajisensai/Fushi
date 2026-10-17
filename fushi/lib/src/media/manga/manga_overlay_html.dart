@@ -650,6 +650,7 @@ String mangaPageDivHtml(
   bool cropBorders = false,
   bool splitWidePages = false,
   bool rotateWidePages = false,
+  double spreadGutterPx = 0,
 }) {
   // div 内联声明：
   // - position:relative —— OCR 框绝对定位的包含块。
@@ -666,18 +667,27 @@ String mangaPageDivHtml(
   // 的单位乘法语法（旧 WebView 不完整支持）。
   final int slots = pagesInSpread <= 1 ? 1 : pagesInSpread;
   final double slotVw = 100.0 / slots;
+  // 折叠屏书本姿态的铰链缝（见 mangaWindowDocument 的 spreadGutterPx）：双页时每页
+  // 槽宽让出半条缝，两页之间留出整条缝，铰链下不放页面像素。
+  final double gutter = slots == 2 && spreadGutterPx > 0 ? spreadGutterPx : 0;
+  final String slotWidth = gutter > 0
+      ? 'calc(${_num(slotVw)}vw - ${_num(gutter / 2)}px)'
+      : '${_num(slotVw)}vw';
+  final String slotHeightFromWidth = gutter > 0
+      ? 'calc((${_num(slotVw)}vw - ${_num(gutter / 2)}px) * ${_num(h / w)})'
+      : '${_num(slotVw * h / w)}vw';
   final String sizingCss = isWebtoon
       ? ''
       : switch (scaleType) {
           MangaScaleType.fitWidth =>
-            'width:${_num(slotVw)}vw;height:auto;max-height:100vh;',
+            'width:$slotWidth;height:auto;max-height:100vh;',
           MangaScaleType.fitHeight =>
-            'width:auto;height:100vh;max-width:${_num(slotVw)}vw;',
+            'width:auto;height:100vh;max-width:$slotWidth;',
           MangaScaleType.original => 'width:${_num(w)}px;height:${_num(h)}px;',
-          MangaScaleType.stretch => 'width:${_num(slotVw)}vw;height:100vh;',
+          MangaScaleType.stretch => 'width:$slotWidth;height:100vh;',
           MangaScaleType.fitScreen || MangaScaleType.smart =>
-            'width:min(${_num(slotVw)}vw,${_num(100 * w / h)}vh);'
-                'height:min(100vh,${_num(slotVw * h / w)}vw);',
+            'width:min($slotWidth,${_num(100 * w / h)}vh);'
+                'height:min(100vh,$slotHeightFromWidth);',
         };
   final String loading = eager && !isWebtoon ? 'eager' : 'lazy';
   final String fetchPriority = eager && !isWebtoon ? 'high' : 'auto';
@@ -765,6 +775,8 @@ String mangaWindowDocument(
   String zoomStartPosition = 'automatic',
   MangaReaderPreferences? readerPreferences,
   String? readingModeLabel,
+  // 折叠屏书本姿态：双页之间留出的铰链缝（逻辑像素，见 fushiHingeGutterPx）。0 = 无缝。
+  double spreadGutterPx = 0,
 }) {
   final MangaReaderPreferences preferences =
       readerPreferences ?? const MangaReaderPreferences();
@@ -846,6 +858,7 @@ String mangaWindowDocument(
       cropBorders: cropBorders,
       splitWidePages: splitWidePages,
       rotateWidePages: rotateWidePages,
+      spreadGutterPx: spreadGutterPx,
       // 当前 spread 与前后相邻 spread 立即解码；窗口里更远的页继续 lazy，
       // 兼顾无白屏翻页与超清页图内存。
       eager: !isWebtoon && (spreadIndex - currentSpread).abs() <= 1,
@@ -906,7 +919,8 @@ String mangaWindowDocument(
             'height:100vh;align-items:center;}'
             '.manga-spread{display:flex;flex:0 0 100vw;'
             'width:100vw;height:100vh;align-items:center;'
-            'justify-content:center;$pageDirectionCss}'
+            'justify-content:center;$pageDirectionCss'
+            '${spreadGutterPx > 0 ? 'column-gap:${_num(spreadGutterPx)}px;' : ''}}'
             // 「覆盖」翻页的克隆层：与 strip 同在 #manga-canvas 下（缩放 / 平移一致），
             // 不吃指针，带一圈投影压在下面那一屏上。
             '.manga-cover-layer{position:absolute;left:0;top:0;width:100vw;'

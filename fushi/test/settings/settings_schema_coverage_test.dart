@@ -521,6 +521,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // column-count、连续/VN 态不发）与 paginated-only 可见性由专项测试咬住。
   'reading/Columns per page':
       'test/settings/page_columns_paginated_only_test.dart',
+  // 中缝折痕（reading_display.page_crease）：纯 CSS 键，只在翻页且一屏恰好两栏时发
+  // （harness 默认单栏，渲染输入不变属预期）。发 / 不发的全部组合与书本姿态自动两栏
+  // 由专项纯函数测试咬住。
+  'reading/Page crease': 'test/reader/reader_page_crease_css_test.dart',
   // TODO-1128：合并插图页到正文（reading_display.merge_image_pages）。结构性布局键，
   // 焦点遍历能切到并写穿 DB（changed=true），但生效点在 reader 分页布局（
   // notifyReaderLayoutChanged 需活 reader/WebView 重排），无适用 T4 探针；合并语义/

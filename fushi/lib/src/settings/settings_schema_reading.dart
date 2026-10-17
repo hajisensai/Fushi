@@ -528,6 +528,21 @@ SettingsDestination buildReadingDestination() {
               notifyReaderLayoutChanged(c);
             },
           ),
+          // 中缝折痕：一屏两栏（每页列数 = 2，或折叠屏书本姿态下的自动 2 栏）时在两页
+          // 之间画书脊阴影。纯 CSS，热下发不重排。
+          SettingsSwitchItem(
+            id: 'reading_display.page_crease',
+            title: t.reader_page_crease,
+            subtitle: t.reader_page_crease_subtitle,
+            icon: FushiIcons.books,
+            visible: isPaginated,
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 28),
+            value: (SettingsContext c) => c.readerSource.readerPageCrease,
+            onChanged: (SettingsContext c, bool v) async {
+              await c.readerSource.setReaderPageCrease(v);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
           // TODO-362（PR#3 响应式页边距）：四个边距都是百分比（左右 = vw / 上下 = vh），
           // 默认左右各 2%、上下 0%。范围 0~50%，禁止负值（负值与百分比语义冲突，且
           // CSS padding 不接受负值）。格式带 `%` 提示用户这是百分比。

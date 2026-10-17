@@ -132,6 +132,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'reading_display.writing_mode',
           'reading_display.line_height',
           'reading_display.page_columns',
+          'reading_display.page_crease',
         ],
       ),
       ReaderSettingsSectionSpec(

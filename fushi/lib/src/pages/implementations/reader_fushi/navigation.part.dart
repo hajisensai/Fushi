@@ -1023,6 +1023,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       swipeFastDistThreshold: swipeThresholds.fastDist,
       swipeFastVelocity: swipeThresholds.fastVelocity,
       keyBridgeScript: keyBridgeScript,
+      gutterPx: _foldSpreadGutterPx,
     );
 
     // BUG-1280：置位必须在 loadData 之前——`onLoadStop` 可能在 await 返回前就

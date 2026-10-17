@@ -39,9 +39,14 @@ extension MangaSpreadPreferenceKey on MangaSpreadPreference {
 /// Resolve the effective [MangaPageLayout] for a spread book from the user
 /// [preference] and the current viewport orientation. Pure so the auto rule
 /// (landscape → double, portrait → single) is unit-testable.
+///
+/// [bookPosture]：折叠屏书本姿态（竖向折痕半开 / 双屏铰链，见 `FushiFoldState`）。
+/// 折痕天然就是两页之间的装订线，`auto` 下直接双页——内屏接近正方形时宽 > 高
+/// 不一定成立，只看横竖会把半开的书摊成一页、页面正中压在折痕上。
 MangaPageLayout resolveMangaPageLayout({
   required MangaSpreadPreference preference,
   required bool isLandscape,
+  bool bookPosture = false,
 }) {
   switch (preference) {
     case MangaSpreadPreference.single:
@@ -49,7 +54,9 @@ MangaPageLayout resolveMangaPageLayout({
     case MangaSpreadPreference.double:
       return MangaPageLayout.double;
     case MangaSpreadPreference.auto:
-      return isLandscape ? MangaPageLayout.double : MangaPageLayout.single;
+      return isLandscape || bookPosture
+          ? MangaPageLayout.double
+          : MangaPageLayout.single;
   }
 }
 
