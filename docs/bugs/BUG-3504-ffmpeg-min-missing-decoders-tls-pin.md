@@ -24,7 +24,7 @@
 - **[x] ① 已修复** — 入库 Windows / macOS 二进制来自 ffmpeg-min run 39026519730（三平台 smoke 全 PASS，钉扎端到端在 schannel / SecureTransport / gnutls 上都实际执行）。另在本机用 CI 的 Windows 产物实测：
   - 约 80 种样本的矩阵：原先的缺口全部转绿。
   - 钉扎：指纹正确能读到内容；指纹错误被拒，报 `peer certificate fingerprint … does not match pin`；指纹写成小写、不带冒号也认。
-  
+
   配方改动：
   - `DECODERS` 补上述解码器；`MUXERS` 补 `pcm_s16le`。注意格式名是 s16le，但 configure 的组件名是 pcm_s16le；第一次写成 s16le 被 configure 静默忽略，CI 的 smoke 才把它抓出来。
   - 证书钉扎补丁移植到 n7.1：`tool/ffmpeg-min/patches/ffmpeg-n7.1-tls-pin-sha256.patch`。它与移动端补丁逻辑一致，只有 `tls.c` 的 include 上下文不同；已对全新 n7.1.5 源码验证能干净打上。
