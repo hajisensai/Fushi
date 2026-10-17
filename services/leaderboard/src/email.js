@@ -57,17 +57,35 @@ const PLUS_TAG_DOMAINS = new Set([
   'fastmail.com', 'fastmail.fm',
 ]);
 
-/** 收信地址：NFKC（全角字母 / ＠ / ．→ 半角）+ 去空白 + 小写；别名（+tag、点号）原样保留，发信用它。 */
+/**
+ * 收信地址：NFKC（全角字母 / ＠ / ．→ 半角）+ 去空白 + 小写，非 ASCII 域名转 punycode；
+ * 别名（+tag、点号）原样保留，发信用它。域名在这里就转成 punycode，保证「收信的域」与
+ * 「身份的域」（canonicalEmail）严格是同一个——否则 Unicode 域名交给发信服务，它若按 IDNA 过渡模式
+ * 处理，会把 faß.de 投到 fass.de，而身份按非过渡模式记成 xn--fa-hia.de。
+ */
 export function deliveryEmail(raw) {
   if (typeof raw !== 'string') return null;
   const s = raw.normalize('NFKC').trim().toLowerCase();
   if (s.length > 254 || !EMAIL_RE.test(s)) return null;
-  return s;
+  const at = s.lastIndexOf('@');
+  let domain = s.slice(at + 1);
+  if (/[^\u0000-\u007f]/.test(domain)) {
+    // IDN（WHATWG URL = UTS #46 非过渡处理）：例え.jp → xn--r8jz45g.jp，零宽空格 / 软连字符被删，
+    // ß 保留。只对非 ASCII 域名走 URL 解析——纯 ASCII 的 "1.2.3" 会被 URL 当成 IPv4 改写。
+    try {
+      domain = new URL(`http://${domain}`).hostname;
+    } catch {
+      return null;
+    }
+  }
+  const out = `${s.slice(0, at)}@${domain}`;
+  if (out.length > 254 || !EMAIL_RE.test(out)) return null;
+  return out;
 }
 
 /**
  * 身份规范化（纯函数）：同一个收件箱的不同写法归成同一个字符串，email_hash 由它算。
- * 在 deliveryEmail 之上：非 ASCII 域名转 punycode；Gmail 去点、去 +tag、googlemail→gmail；
+ * 在 deliveryEmail（已 NFKC、小写、域名 punycode）之上：Gmail 去点、去 +tag、googlemail→gmail；
  * PLUS_TAG_DOMAINS 去 +tag；其余域名本地部分原样。去掉别名后本地部分为空（"+tag@gmail.com"）→ null。
  */
 export function canonicalEmail(raw) {
@@ -76,15 +94,6 @@ export function canonicalEmail(raw) {
   const at = s.lastIndexOf('@');
   let local = s.slice(0, at);
   let domain = s.slice(at + 1);
-  if (/[^\u0000-\u007f]/.test(domain)) {
-    // IDN：例え.jp 与 xn--r8jz45g.jp 是同一个域。只对非 ASCII 域名走 URL 解析——
-    // 纯 ASCII 的 "1.2.3" 会被 URL 当成 IPv4 改写。
-    try {
-      domain = new URL(`http://${domain}`).hostname;
-    } catch {
-      return null;
-    }
-  }
   if (GMAIL_DOMAINS.has(domain)) {
     local = local.split('+', 1)[0].replaceAll('.', '');
     domain = 'gmail.com';
@@ -98,15 +107,19 @@ export function canonicalEmail(raw) {
 }
 
 /**
- * 解析一次输入：delivery 发信用；canonical 身份用；legacy 是旧 Worker 会存的形式
- * （与 canonical 相同时为 null——没有需要回退查找的旧哈希）。格式不对返回 null。
+ * 解析一次输入：delivery 发信用；canonical 身份用；legacy 是旧 Worker 会存的形式，只在需要回退查找时给出：
+ * - 与 canonical 相同 → null（没有不同的旧哈希）；
+ * - 与 delivery 不逐字相同 → null。旧哈希对应的账户属于当初在「旧规则地址」收码的人；如果这次的码
+ *   会发到另一个地址（NFKC 改写过，如 U+FB01「ﬁ」→ "fi"；或 IDN 域名转成了 punycode），拿这个码
+ *   登进旧账户就等于让另一个收件箱的主人接管它。这类老账户宁可锁住（不能再用邮箱登录新设备）。
+ * 格式不对返回 null。
  */
 export function parseEmail(raw) {
   const delivery = deliveryEmail(raw);
   const canonical = canonicalEmail(raw);
   if (!delivery || !canonical) return null;
   const legacy = legacyNormalizeEmail(raw);
-  return { delivery, canonical, legacy: legacy && legacy !== canonical ? legacy : null };
+  return { delivery, canonical, legacy: legacy && legacy !== canonical && legacy === delivery ? legacy : null };
 }
 
 function pepper(env) {
@@ -167,9 +180,11 @@ export async function resolveEmailAccount(env, ids, now) {
        WHERE id = ?1 AND email_hash = ?3 AND NOT EXISTS (SELECT 1 FROM accounts WHERE email_hash = ?2)`,
     ).bind(legacy.id, ids.hash, ids.legacyHash),
     // 没升级成（规范化哈希被别的账户占着）才会选出行：记冲突 / 刷新最近一次看到的时刻。
+    // EXISTS：读完旧行到这个 batch 之间本账户被删了（UPDATE 0 行）时不留孤儿冲突记录。
     env.DB.prepare(
       `INSERT INTO email_hash_conflicts (account_id, holder_id, first_seen_at, last_seen_at, seen_count)
-       SELECT ?1, id, ?3, ?3, 1 FROM accounts WHERE email_hash = ?2 AND id <> ?1
+       SELECT ?1, id, ?3, ?3, 1 FROM accounts
+       WHERE email_hash = ?2 AND id <> ?1 AND EXISTS (SELECT 1 FROM accounts WHERE id = ?1)
        ON CONFLICT (account_id, holder_id) DO UPDATE SET
          last_seen_at = excluded.last_seen_at, seen_count = seen_count + 1`,
     ).bind(legacy.id, ids.hash, now),
@@ -179,7 +194,9 @@ export async function resolveEmailAccount(env, ids, now) {
        WHERE account_id = ?1 AND (SELECT email_hash FROM accounts WHERE id = ?1) = ?2`,
     ).bind(legacy.id, ids.hash),
   ]);
-  return res[0].meta.changes === 1 ? { ...legacy, email_hash: ids.hash } : legacy;
+  if (res[0].meta.changes === 1) return { ...legacy, email_hash: ids.hash };
+  // 没升级：冲突（账户仍在）或中途被删（返回 null，不给已删账户绑设备）。只在这条少见的路径上多读一次。
+  return env.DB.prepare('SELECT * FROM accounts WHERE id = ?1').bind(legacy.id).first();
 }
 
 function codeHash(env, hash, purpose, code) {

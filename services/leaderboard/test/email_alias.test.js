@@ -2,7 +2,9 @@
 // 以及 2026-10-17 之前按旧规则（trim + 小写）存哈希的账户的惰性迁移。
 import { describe, expect, it } from 'vitest';
 import { call, lastCode, makeEnv, newKey, nextIp, registerUser } from './harness.js';
-import { canonicalEmail, deliveryEmail, emailHash, legacyNormalizeEmail, parseEmail, EMAIL_LIMITS } from '../src/email.js';
+import {
+  canonicalEmail, deliveryEmail, emailHash, emailHashes, legacyNormalizeEmail, parseEmail, resolveEmailAccount, EMAIL_LIMITS,
+} from '../src/email.js';
 
 const NOW = Date.UTC(2026, 9, 17, 12);
 const basic = { Authorization: `Basic ${btoa('admin:pw')}` };
@@ -58,12 +60,29 @@ describe('canonicalEmail（表驱动）', () => {
     expect(canonicalEmail(raw)).toBe(want);
   });
 
-  it('deliveryEmail 保留别名，只做 NFKC + 去空白 + 小写', () => {
+  it('deliveryEmail 保留别名，只做 NFKC + 去空白 + 小写 + 域名 punycode', () => {
     expect(deliveryEmail(' John.Doe+promo@Gmail.com ')).toBe('john.doe+promo@gmail.com');
     expect(deliveryEmail('ａ＠ｅｘａｍｐｌｅ．ｃｏｍ')).toBe('a@example.com');
   });
 
-  it('parseEmail：legacy 只在与 canonical 不同时给出（旧规则 = trim + 小写，无 NFKC）', () => {
+  // 收信域与身份域必须逐字相同：发信端拿到的永远是 punycode，不会按自己的 IDNA 模式再解释一遍。
+  it.each([
+    ['零宽空格', 'a.b@exa​mple.com', 'a.b@example.com'],
+    ['软连字符', 'a.b@ex­ample.com', 'a.b@example.com'],
+    ['ß（非过渡处理：保留，不变成 ss）', 'a.b@faß.de', 'a.b@xn--fa-hia.de'],
+    ['Unicode 域名', 'User@例え．ＪＰ', 'user@xn--r8jz45g.jp'],
+  ])('IDN %s：delivery 与 canonical 用同一个 punycode 域', (_, raw, want) => {
+    expect(deliveryEmail(raw)).toBe(want);
+    expect(canonicalEmail(raw)).toBe(want);
+    expect(canonicalEmail(raw).split('@')[1]).toBe(deliveryEmail(raw).split('@')[1]);
+  });
+
+  it('parseEmail：legacy 只在与 canonical 不同、且与发信地址逐字相同时给出', () => {
+    // U+FB01「ﬁ」：旧规则原样存，NFKC 后发信去 file@…——不同收件箱，不许回退到旧哈希
+    expect(parseEmail('ﬁle@example.com')).toEqual({ delivery: 'file@example.com', canonical: 'file@example.com', legacy: null });
+    expect(parseEmail('ﬁle+x@gmail.com').legacy).toBeNull();
+    // IDN 老账户按 Unicode 域名存过：发信地址已是 punycode，同样不回退
+    expect(parseEmail('a.b@faß.de').legacy).toBeNull();
     expect(parseEmail('Tom@Example.com')).toEqual({ delivery: 'tom@example.com', canonical: 'tom@example.com', legacy: null });
     expect(parseEmail('J.Doe+x@gmail.com')).toEqual({
       delivery: 'j.doe+x@gmail.com', canonical: 'jdoe@gmail.com', legacy: 'j.doe+x@gmail.com',
@@ -246,6 +265,42 @@ describe('老账户惰性迁移', () => {
     const r = await tryLogin(env, 'j.doe@gmail.com', NOW + 20);
     expect(r.data.id).toBe(old.id);
     expect(hashOf(env, old.id)).toBe(await emailHash(env, 'jdoe@gmail.com'));
+  });
+
+  it('NFKC 改写过的老账户不回退旧哈希：码不会发到别的收件箱、登不进旧账户（宁可锁住）', async () => {
+    const env = makeEnv();
+    // 旧 Worker 按原样存了「ﬁle@example.com」（U+FB01）——那是另一个收件箱
+    const victim = await legacyUser(env, 'victim', 'ﬁle@example.com');
+    const before = env.sent.length;
+    await requestCode(env, 'ﬁle@example.com', 'login');
+    expect(env.sent.length).toBe(before); // 规范化哈希无账户、不回退 → 不发信
+    const key = await newKey();
+    const r = await call(env, 'POST', '/v1/login', {
+      key, body: { pubkey: key.pubkey, email: 'ﬁle@example.com', code: '123456' }, now: NOW,
+    });
+    expect(r.status).toBe(400);
+    expect(r.data.error).toBe('bad_code');
+    expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM device_keys WHERE account_id = ?').get(victim.id).n).toBe(1);
+  });
+
+  it('读完旧账户行到 batch 之间账户被删：不写孤儿冲突记录、不返回已删账户', async () => {
+    const env = makeEnv();
+    await registerUser(env, 'holder', { email: 'jdoe@gmail.com', now: NOW });
+    const old = await legacyUser(env, 'old', 'j.doe@gmail.com');
+    const ids = await emailHashes(env, parseEmail('j.doe@gmail.com'));
+    // 在 batch 执行前插入一次删除，模拟并发删号
+    const db = env.DB;
+    const racing = {
+      ...db,
+      prepare: db.prepare,
+      batch: async (stmts) => {
+        db.raw.prepare('DELETE FROM accounts WHERE id = ?').run(old.id);
+        return db.batch(stmts);
+      },
+    };
+    const acc = await resolveEmailAccount({ ...env, DB: racing }, ids, NOW);
+    expect(acc).toBeNull();
+    expect(db.raw.prepare('SELECT COUNT(*) AS n FROM email_hash_conflicts').get().n).toBe(0);
   });
 
   it('管理接口要鉴权', async () => {
