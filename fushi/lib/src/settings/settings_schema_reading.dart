@@ -9,6 +9,7 @@ import 'package:fushi/src/pages/implementations/highlight_style_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
@@ -17,6 +18,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/fushi_fold_posture.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 SettingsDestination buildReadingDestination() {
@@ -28,6 +30,25 @@ SettingsDestination buildReadingDestination() {
   // _paginatedLayoutCss）。故非翻页模式下把该项隐藏，避免用户改了没反应、误判「功能坏了」。
   bool isPaginated(SettingsContext c) =>
       c.readerSource.readerViewMode == 'paginated';
+  // 「中缝折痕」只在翻页且本次排版实际恰好两栏时有效果（与 CSS 生成同一判据
+  // ReaderContentStyles.pageCreaseApplies）。「自动」列数在折叠屏书本姿态下会被解析
+  // 成两栏，所以要把当前窗口的折叠状态算进去（读 MediaQuery，姿态变化时宿主重建）。
+  bool pageCreaseApplies(SettingsContext c) {
+    final ReaderFushiSource source = c.readerSource;
+    final int effectiveColumns =
+        ReaderContentStyles.foldPageColumnsOverrideFor(
+              bookPosture: FushiFoldState.of(c.context).isBook,
+              viewMode: source.readerViewMode,
+              writingMode: source.readerWritingMode,
+              pageColumns: source.readerPageColumns,
+            ) ??
+            source.readerPageColumns;
+    return ReaderContentStyles.pageCreaseApplies(
+      viewMode: source.readerViewMode,
+      effectivePageColumns: effectiveColumns,
+    );
+  }
+
   bool isContinuous(SettingsContext c) =>
       c.readerSource.readerViewMode == 'continuous';
   bool isVisualNovel(SettingsContext c) =>
@@ -529,13 +550,13 @@ SettingsDestination buildReadingDestination() {
             },
           ),
           // 中缝折痕：一屏两栏（每页列数 = 2，或折叠屏书本姿态下的自动 2 栏）时在两页
-          // 之间画书脊阴影。纯 CSS，热下发不重排。
+          // 之间画书脊阴影。纯 CSS，热下发不重排。只在真能生效时露出（pageCreaseApplies）。
           SettingsSwitchItem(
             id: 'reading_display.page_crease',
             title: t.reader_page_crease,
             subtitle: t.reader_page_crease_subtitle,
             icon: FushiIcons.books,
-            visible: isPaginated,
+            visible: pageCreaseApplies,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 28),
             value: (SettingsContext c) => c.readerSource.readerPageCrease,
             onChanged: (SettingsContext c, bool v) async {
