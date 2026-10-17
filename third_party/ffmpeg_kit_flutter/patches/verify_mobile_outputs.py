@@ -21,6 +21,7 @@ REQUIRED_FLAGS: List[str] = [
     '--enable-libvpx',
     '--enable-libopus',
     '--enable-libdav1d',
+    '--enable-libxml2',
 ]
 
 # libavcodec 里必须同时出现 ffmpeg 封装名与库自身的串：
@@ -47,6 +48,18 @@ CODEC_MARKERS: List[str] = [
     'request not implemented',
     'libdav1d',
     'Malformed ITU-T T.35 metadata message format',
+]
+
+# BUG-3503：在线视频源给 MPEG-DASH 清单（manifest.mpd）时，制卡的句子音频 / 封面经
+# ffmpeg-kit 打开它；dash demuxer 硬依赖 libxml2，缺了清单被当成未知格式 →
+# "Invalid data found when processing input" → required audio missing。--enable-small
+# 会剥掉 demuxer 长名，所以判 dashdec.c 与 libxml2 自身独有的串（旧产物两个都扫不到，
+# 2026-10-17 实测；带 dash 的完整 ffmpeg 里两个都在）。
+# - 'missing root node'：libavformat/dashdec.c 的解析失败日志，dash muxer 里没有。
+# - 'xmlParseCharRef'：libxml2 parser.c 的错误串，证明 libxml2 真链进了 libavformat。
+FORMAT_MARKERS: List[str] = [
+    'missing root node',
+    'xmlParseCharRef',
 ]
 
 ZLIB_SYMBOLS: List[str] = ['deflateInit2_', 'deflateEnd', 'inflateInit_']
@@ -83,6 +96,8 @@ def check_slice(label: str, util: str, codec: str, fmt: str) -> None:
     for sym in ZLIB_SYMBOLS:
         check(sym not in codec, f'{label}: libavcodec 不含 zlib 符号 {sym}')
     check('tls_pin_sha256' in fmt, f'{label}: libavformat 含 cert-pin 选项 tls_pin_sha256')
+    for marker in FORMAT_MARKERS:
+        check(marker in fmt, f'{label}: libavformat 含 {marker!r}（dash demuxer + libxml2）')
 
 
 def verify_android(aar_path: str) -> None:
@@ -103,7 +118,7 @@ def verify_android(aar_path: str) -> None:
     lic = 'res/raw/license.txt'
     check(lic in names and 'GNU GENERAL PUBLIC LICENSE' in text(z.read(lic)), 'license.txt 为 GPLv3')
     for extra in ['license_x264.txt', 'license_openssl.txt', 'license_libvpx.txt', 'license_opus.txt',
-                  'license_dav1d.txt', 'source.txt']:
+                  'license_dav1d.txt', 'license_libxml2.txt', 'source.txt']:
         check(f'res/raw/{extra}' in names, f'AAR 含 res/raw/{extra}')
 
 
