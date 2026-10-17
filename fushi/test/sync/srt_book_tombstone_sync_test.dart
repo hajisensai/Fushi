@@ -59,6 +59,8 @@ void main() {
         title: uid,
         srtPath: '/tmp/$uid.srt',
         importedAt: 0,
+        // 墓碑仲裁读本机拥有时刻（v118）：0 = 一直都在，任何墓碑都管得着它。
+        localAddedAt: const Value<int?>(0),
         bookKey: Value(bookKey),
       ));
 

@@ -174,7 +174,10 @@ void main() {
     return b;
   }
 
-  FeedbackService feedback(LeaderboardService b) => FeedbackService(
+  FeedbackService feedback(
+    LeaderboardService b, {
+    FeedbackVideoPreparer? prepare,
+  }) => FeedbackService(
     supportRoot: () async => root,
     client: b.feedbackClient,
     meta: () async => <String, Object?>{'platform': 'test'},
@@ -183,7 +186,13 @@ void main() {
         Uint8List.fromList(<int>[0x1f, 0x8b, ...utf8.encode(s)]),
     // 测试宿主没有 ffmpeg：假转码 = 原样复制进工作目录。
     prepareVideo:
-        (File source, Directory work, void Function(double) onProgress) async {
+        prepare ??
+        (
+          File source,
+          Directory work,
+          void Function(double) onProgress,
+          FeedbackVideoPrepareOptions _,
+        ) async {
           final File out = await source.copy(p.join(work.path, 'out.mp4'));
           return PreparedFeedbackVideo(
             file: out,
@@ -288,6 +297,182 @@ void main() {
     expect(put.headers['Content-Type'], 'video/mp4');
     expect(put.contentLength, clip.lengthSync());
     expect(put.bodyBytes, clip.readAsBytesSync());
+  });
+
+  /// 打开提交页并选好视频。
+  Future<void> openAndPickVideo(
+    WidgetTester tester,
+    FeedbackService f,
+    LeaderboardService b,
+  ) async {
+    FilePicker.platform = _PickVideo(clip.path);
+    await tester.pumpWidget(wrap(b, f, const FeedbackCenterPage()));
+    await settleIo(tester, () => f.loaded);
+    await tester.tap(find.byKey(const ValueKey<String>('feedback-center-new')));
+    await settleIo(
+      tester,
+      () => find
+          .byKey(const ValueKey<String>('feedback-add-video'))
+          .evaluate()
+          .isNotEmpty,
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('feedback-add-video')));
+    await settleIo(
+      tester,
+      () => find
+          .byKey(const ValueKey<String>('feedback-video'))
+          .evaluate()
+          .isNotEmpty,
+    );
+  }
+
+  bool titleEnabled(WidgetTester tester) =>
+      tester
+          .widget<TextField>(
+            find.descendant(
+              of: find.byKey(const ValueKey<String>('feedback-title')),
+              matching: find.byType(TextField),
+            ),
+          )
+          .enabled ??
+      true;
+
+  testWidgets('BUG-3489 压缩中：文字框可编辑、× 可点并真正取消压缩，什么也不发', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    final List<FeedbackVideoPrepareOptions> calls =
+        <FeedbackVideoPrepareOptions>[];
+    bool cancelled = false;
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(
+      b,
+      prepare:
+          (
+            File source,
+            Directory work,
+            void Function(double) onProgress,
+            FeedbackVideoPrepareOptions options,
+          ) async {
+            calls.add(options);
+            onProgress(0.23);
+            await options.cancel;
+            cancelled = true;
+            throw const FeedbackVideoCancelledException();
+          },
+    );
+    await openAndPickVideo(tester, f, b);
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('feedback-title')),
+      '视频反馈',
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('feedback-submit')));
+    await settleIo(tester, () => calls.isNotEmpty);
+    expect(calls, hasLength(1));
+    expect(calls.single.quality, FeedbackVideoQuality.p720);
+
+    // 压缩进行中：文字框没被锁，能继续写。
+    expect(titleEnabled(tester), isTrue);
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('feedback-body')),
+      '压缩时补充的描述',
+    );
+    await tester.pump();
+    expect(find.text('压缩时补充的描述'), findsOneWidget);
+    // 再点提交不会开第二次压缩（提交按钮保持忙碌）。
+    await tester.tap(find.byKey(const ValueKey<String>('feedback-submit')));
+    await tester.pump();
+    expect(calls, hasLength(1));
+
+    // × 可点：中止压缩、移除视频，表单回到可提交状态。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-remove-video')),
+    );
+    await settleIo(
+      tester,
+      () =>
+          cancelled &&
+          find
+              .byKey(const ValueKey<String>('feedback-add-video'))
+              .evaluate()
+              .isNotEmpty,
+    );
+    expect(cancelled, isTrue);
+    expect(find.byKey(const ValueKey<String>('feedback-video')), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-compose-error')),
+      findsNothing,
+    );
+    expect(find.text('压缩时补充的描述'), findsOneWidget);
+    expect(sent('/v1/feedback', method: 'POST'), isFalse);
+    final Directory work = Directory(
+      p.join(root.path, 'feedback', 'video_work'),
+    );
+    expect(
+      work.existsSync() ? work.listSync() : const <FileSystemEntity>[],
+      isEmpty,
+    );
+  });
+
+  testWidgets('BUG-3489 压缩期间改的文字随提交发出；选 1080p 透传给压缩', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    final List<FeedbackVideoPrepareOptions> calls =
+        <FeedbackVideoPrepareOptions>[];
+    bool release = false;
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(
+      b,
+      prepare:
+          (
+            File source,
+            Directory work,
+            void Function(double) onProgress,
+            FeedbackVideoPrepareOptions options,
+          ) async {
+            calls.add(options);
+            while (!release) {
+              await Future<void>.delayed(const Duration(milliseconds: 5));
+            }
+            final File out = await source.copy(p.join(work.path, 'out.mp4'));
+            return PreparedFeedbackVideo(
+              file: out,
+              contentType: 'video/mp4',
+              bytes: await out.length(),
+              transcoded: true,
+            );
+          },
+    );
+    await openAndPickVideo(tester, f, b);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-video-quality-1080p')),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('feedback-video-1080-hint')),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('feedback-title')),
+      '原标题',
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('feedback-submit')));
+    await settleIo(tester, () => calls.isNotEmpty);
+    expect(calls.single.quality, FeedbackVideoQuality.p1080);
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('feedback-title')),
+      '压缩时改的标题',
+    );
+    release = true;
+    await settleIo(
+      tester,
+      () => sent('/v1/feedback/newnewnew0/attachments/v0'),
+    );
+    final http.Request post = server.requests.firstWhere(
+      (http.Request r) => r.url.path == '/v1/feedback' && r.method == 'POST',
+    );
+    expect((jsonDecode(post.body) as Map<String, dynamic>)['title'], '压缩时改的标题');
   });
 
   testWidgets('详情页：服务端有视频时列条目、不去取视频字节，也不再给「追加视频」', (WidgetTester tester) async {

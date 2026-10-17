@@ -63,6 +63,8 @@ class SrsDeckView {
     required this.fsrs7,
     required this.autoOptimize,
     required this.maxIntervalDays,
+    this.autoplayAudio = true,
+    this.replayQuestionAudio = true,
     required this.optimizeBaselineAt,
     required this.optimizeBaselineCount,
     required this.deletedAt,
@@ -97,6 +99,14 @@ class SrsDeckView {
 
   /// 牌组列表里收起了子牌组（缺省 = 展开，与 Anki 一致）。
   final bool collapsed;
+
+  /// 复习时自动播放卡面音频（Anki「自动播放音频」）。只看 own 祖先上的值
+  /// （[SrsDeckTree.paramsOwner]）。
+  final bool autoplayAudio;
+
+  /// 答案面重播时先播问题音频（Anki 默认；false = 「重播答案时跳过问题」）。
+  /// 只看 own 祖先上的值。
+  final bool replayQuestionAudio;
   final int? optimizeBaselineAt;
   final int? optimizeBaselineCount;
   final int? deletedAt;
@@ -155,6 +165,9 @@ class SrsDeckView {
       maxIntervalDays:
           (edits.value(SrsFieldKeys.deckMaxInterval) as int?) ?? 36500,
       collapsed: edits.value(SrsFieldKeys.deckCollapsed) == true,
+      autoplayAudio: edits.value(SrsFieldKeys.deckAutoplay) != false,
+      replayQuestionAudio:
+          edits.value(SrsFieldKeys.deckReplayQuestion) != false,
       optimizeBaselineAt: baseline is Map ? baseline['at'] as int? : null,
       optimizeBaselineCount: baseline is Map ? baseline['n'] as int? : null,
       deletedAt: edits.deletedAt,

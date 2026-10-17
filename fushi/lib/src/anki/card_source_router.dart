@@ -134,13 +134,14 @@ Future<void> _openCardSource({
       return;
     }
   }
-  if (video != null) {
+  // BUG-3490：无指纹的链接只可能指向在线内容身份（CardSourceLink 校验保证），
+  // 没有本地字节可比，按库身份直接回看在线播放。
+  if (video != null && link.fingerprint != null) {
     try {
-      if (link.fingerprint == null ||
-          !await VideoSourceFingerprint.instance.matches(
-            video.videoPath,
-            link.fingerprint!,
-          )) {
+      if (!await VideoSourceFingerprint.instance.matches(
+        video.videoPath,
+        link.fingerprint!,
+      )) {
         FushiToast.show(msg: t.card_source_review_fingerprint_mismatch);
         return;
       }

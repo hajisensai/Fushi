@@ -6,6 +6,9 @@
 ///   [Focus.onKeyEvent] 更近、先消费，所以空格只在复习页有「翻面 / 良好」的含义。
 /// - WebView 卡面持有键盘焦点时，按键经键盘桥（[srsReviewKeyBridgeScript]）交回本页
 ///   同一个处理入口；焦点回收走 [PageFocusOwnership]（不裸调 requestFocus）。
+/// - 卡面音频：当前卡所在牌组（取参数继承的 own 祖先，[SrsDeckTree.paramsOwner]）开着
+///   「自动播放音频」时，出题 / 翻面自动按顺序播卡上的音频；「重播音频」随时手动再播（规则见
+///   srs_card_autoplay.dart，对齐 Anki 按预设的 autoplay / replayq）。
 /// - 撤销栈是会话级：撤评分调 [SrsDbStore.undo]（别的设备已复习过这张卡时返回
 ///   false，提示后丢掉这一步）；撤暂停 / 埋卡 / 旗标 / 移牌组 / 编辑 = 再写一次
 ///   改回原值。
@@ -32,10 +35,12 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -70,10 +75,17 @@ class _UndoStep {
 
 /// 预取好的下一张（数据层：详情 + 渲染结果）。
 class _PrefetchedCard {
-  const _PrefetchedCard({required this.detail, required this.rendered});
+  const _PrefetchedCard({
+    required this.detail,
+    required this.rendered,
+    required this.audioOwner,
+  });
 
   final SrsCardDetail detail;
   final SrsRenderedCard? rendered;
+
+  /// 这张卡的音频设置所在牌组（own 祖先）。
+  final SrsDeckView? audioOwner;
 }
 
 /// 卡片菜单动作。
@@ -149,6 +161,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
 
   final List<_UndoStep> _undo = <_UndoStep>[];
 
+  /// 卡面音频的自动播放 / 重播序列（换卡、翻面、离开本页都会打断）。
+  late final SrsCardAudioSequencer _audio = SrsCardAudioSequencer(
+    ref.read(srsCardAudioOutputProvider),
+  );
+
+  /// 当前卡的音频设置来自哪个牌组（卡所在牌组的 own 祖先）；随换卡 / 改设置重读。
+  SrsDeckView? _audioOwner;
+
   @override
   void initState() {
     super.initState();
@@ -161,6 +181,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   void dispose() {
     srsActiveReviewSessions.value--;
     _lookup.dispose();
+    srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
     _focusNode.dispose();
     super.dispose();
   }
@@ -216,7 +237,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         final SrsCardDetail? detail = await store.cardDetail(id);
         if (detail == null) return null;
         final SrsRenderedCard? rendered = await store.renderCard(id);
-        return _PrefetchedCard(detail: detail, rendered: rendered);
+        return _PrefetchedCard(
+          detail: detail,
+          rendered: rendered,
+          audioOwner: await _audioOwnerOf(store, detail),
+        );
       } catch (e, stack) {
         ErrorLogService.instance.log('SrsReviewPage.prefetch', e, stack);
         return null;
@@ -258,24 +283,38 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
           _rendered = null;
           _preview = null;
         });
+        srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
         return;
       }
       final _PrefetchedCard? hit = await _takePrefetch(pending, id);
       if (hit != null) {
         if (!mounted) return;
-        _show(hit.detail, hit.rendered, preview: null, day: _day);
+        _show(
+          hit.detail,
+          hit.rendered,
+          preview: null,
+          day: _day,
+          audioOwner: hit.audioOwner,
+        );
         unawaited(_completeShown(id, _shownGeneration));
         return;
       }
       await _refreshCounts();
       final SrsCardDetail? detail = await store.cardDetail(id);
       final SrsRenderedCard? rendered = await store.renderCard(id);
+      final SrsDeckView? audioOwner = await _audioOwnerOf(store, detail);
       final SrsDayContext day = await store.dayContext();
       final SrsAnswerPreview? preview = store.canSchedule
           ? await store.preview(id)
           : null;
       if (!mounted) return;
-      _show(detail, rendered, preview: preview, day: day);
+      _show(
+        detail,
+        rendered,
+        preview: preview,
+        day: day,
+        audioOwner: audioOwner,
+      );
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.loadNext', e, stack);
       if (mounted) {
@@ -293,6 +332,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     SrsRenderedCard? rendered, {
     required SrsAnswerPreview? preview,
     required SrsDayContext? day,
+    required SrsDeckView? audioOwner,
   }) {
     _shownGeneration++;
     // 换卡：上一张卡上查的词弹窗收起。
@@ -305,11 +345,13 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       _rendered = rendered;
       _preview = preview;
       _day = day;
+      _audioOwner = audioOwner;
       _showingAnswer = false;
     });
     _answerClock
       ..reset()
       ..start();
+    _autoplayAudio();
     _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
     if (detail != null) _startPrefetch(detail.card.id);
   }
@@ -353,6 +395,60 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   void _showAnswer() {
     if (_detail == null || _showingAnswer) return;
     setState(() => _showingAnswer = true);
+    _autoplayAudio();
+  }
+
+  // ------------------------------------------------------------------ 卡面音频
+
+  /// 卡的音频设置所在牌组：卡所在牌组的 own 祖先（与算法 / 记忆率同一条继承）。
+  Future<SrsDeckView?> _audioOwnerOf(
+    SrsDbStore store,
+    SrsCardDetail? detail,
+  ) async {
+    if (detail == null) return null;
+    final SrsDeckTree tree = await store.deckTree();
+    final String deckId = tree[detail.card.deckId] != null
+        ? detail.card.deckId
+        : store.defaultDeckId;
+    return tree[deckId] == null ? null : tree.paramsOwner(deckId);
+  }
+
+  /// 牌组没读到时按缺省（开），与 [SrsDeckView] 的缺省一致。
+  bool get _autoplayEnabled => _audioOwner?.autoplayAudio ?? true;
+  bool get _replayIncludesQuestion => _audioOwner?.replayQuestionAudio ?? true;
+
+  /// 当前这一面的音频要不要自动播：开关关着时只打断上一张卡还在播的序列。
+  void _autoplayAudio() {
+    final SrsRenderedCard? rendered = _rendered;
+    if (rendered == null || !_autoplayEnabled) {
+      srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
+      return;
+    }
+    final List<String> names = srsAutoplaySounds(
+      questionHtml: rendered.question,
+      answerHtml: rendered.answer,
+      answerSide: _showingAnswer,
+    );
+    srsRunLogged('SrsReviewPage.autoplay', () => _audio.play(names));
+  }
+
+  /// 手动「重播音频」该播的那几段（这一面没有音频时为空）。
+  List<String> _replayNames({required bool includeQuestion}) {
+    final SrsRenderedCard? rendered = _rendered;
+    if (rendered == null) return const <String>[];
+    return srsReplaySounds(
+      questionHtml: rendered.question,
+      answerHtml: rendered.answer,
+      answerSide: _showingAnswer,
+      includeQuestion: includeQuestion,
+    );
+  }
+
+  void _replayAudio() {
+    final List<String> names = _replayNames(
+      includeQuestion: _replayIncludesQuestion,
+    );
+    srsRunLogged('SrsReviewPage.replay', () => _audio.play(names));
   }
 
   void _rate(int rating) {
@@ -589,10 +685,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     final bool showing = _showingAnswer;
     final SrsCardDetail? fresh = await store.cardDetail(detail.card.id);
     final SrsRenderedCard? rendered = await store.renderCard(detail.card.id);
+    final SrsDeckView? audioOwner = await _audioOwnerOf(store, fresh);
     if (!mounted) return;
     setState(() {
       _detail = fresh;
       _rendered = rendered;
+      _audioOwner = audioOwner;
       _showingAnswer = showing;
     });
     // 编辑可能改了同一笔记的兄弟卡：预取作废重来。
@@ -740,6 +838,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         selected: true,
         onPressed: _openPendingNote,
       ),
+    if (_detail != null &&
+        _replayNames(includeQuestion: _replayIncludesQuestion).isNotEmpty)
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_replay_audio'),
+        icon: FushiIcons.replay,
+        label: t.srs_review_replay_audio,
+        onPressed: _replayAudio,
+      ),
     if (_detail != null)
       FushiToolbarItem(
         key: const ValueKey<String>('srs_review_edit'),
@@ -846,6 +952,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
           ),
           ?_appearanceItem,
           _hideHardEasyItem,
+          ..._audioSettingItems(),
         ];
 
   /// 评分栏只留「重来 / 良好」的开关（对齐 AnkiDroid 的 hideHardAndEasy；键盘 2/4
@@ -862,6 +969,40 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         () => ref.read(appProvider).setSrsReviewHideHardEasy(!hidden),
       ),
     );
+  }
+
+  /// 「牌组设置」：打开当前卡的音频 / 排程设置所在的牌组（own 祖先）。音频两项是
+  /// 按牌组的（Anki 按预设），在这里改；回来后按新设置重读当前卡。
+  List<FushiToolbarItem> _audioSettingItems() {
+    final SrsDeckView? owner = _audioOwner;
+    if (owner == null) return const <FushiToolbarItem>[];
+    return <FushiToolbarItem>[
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_deck_settings'),
+        icon: FushiIcons.settingsGear,
+        label: t.srs_deck_settings,
+        onPressed: () => srsRunLogged(
+          'SrsReview.deckSettings',
+          () => _openDeckSettings(owner.id),
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _openDeckSettings(String deckId) async {
+    await _focusOwnership.guardOverlay(
+      () => Navigator.of(context).push<void>(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (_) => SrsDeckSettingsPage(deckId: deckId),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    final bool wasAutoplay = _autoplayEnabled;
+    await _reloadCurrent();
+    // 刚打开自动播放：当前这一面立刻按新设置播；刚关掉：停掉正在自动播的。
+    if (mounted && wasAutoplay != _autoplayEnabled) _autoplayAudio();
   }
 
   Widget _buildTopBar(BuildContext context) {

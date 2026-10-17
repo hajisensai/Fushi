@@ -8,6 +8,8 @@ import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_package.dart';
+import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
+import 'package:fushi_engine/tts/local/irodori_local_package.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -48,6 +50,8 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 ///     同一份进度，离开 CLI 照跑），删除走 `MangaOcrService.deleteModels`；
 ///   - `gpt-sovits/local`：本机 GPT-SoVITS 整合包（`GptSovitsLocalEngine.install` /
 ///     `remove` / `useExisting`），进度读 installer 的同一组字段。
+///   - `irodori/local`：本机官方 Irodori-TTS-Server（`IrodoriLocalEngine.install` /
+///     `remove` / `start` / `stop`），与部署页同一个引擎对象、同一份进度。
 /// - `/api/admin/voices`：朗读声音预设（`TtsPresetStore`，与朗读声音设置页同一份）。
 ///
 /// ASR / OCR 下载都归全应用登记表（`asrModelDownloads` / `MangaOcrModelDownloads`），
@@ -124,7 +128,8 @@ abstract final class CtlModelKind {
   static const String asr = 'asr';
   static const String ocr = 'ocr';
   static const String gptSovits = 'gpt-sovits';
-  static const List<String> all = <String>[asr, ocr, gptSovits];
+  static const String irodori = 'irodori';
+  static const List<String> all = <String>[asr, ocr, gptSovits, irodori];
 }
 
 class _CtlModelState {
@@ -163,12 +168,16 @@ class _CtlModelState {
       ],
     },
     'gptSovits': _gptSovitsJson(),
+    'irodori': _irodoriJson(),
   };
 
   String _requireKind(String kind) {
     final String lower = kind.trim().toLowerCase();
     if (lower == 'gptsovits' || lower == 'gpt_sovits' || lower == 'tts') {
       return CtlModelKind.gptSovits;
+    }
+    if (lower == 'irodori-tts' || lower == 'irodori_tts') {
+      return CtlModelKind.irodori;
     }
     if (!CtlModelKind.all.contains(lower)) {
       throw CtlFailure.notFound(
@@ -184,6 +193,9 @@ class _CtlModelState {
         return _asrJson(_requireAsrPack(id));
       case CtlModelKind.ocr:
         return _ocrJson(_requireOcrModel(id));
+      case CtlModelKind.irodori:
+        _requireLocalId(CtlModelKind.irodori, id);
+        return _irodoriJson();
       default:
         _requireGptSovitsId(id);
         return _gptSovitsJson();
@@ -196,6 +208,9 @@ class _CtlModelState {
         return _downloadAsr(_requireAsrPack(id));
       case CtlModelKind.ocr:
         return _downloadOcr(_requireOcrModel(id));
+      case CtlModelKind.irodori:
+        _requireLocalId(CtlModelKind.irodori, id);
+        return _installIrodori(call);
       default:
         _requireGptSovitsId(id);
         return _installGptSovits(call);
@@ -219,6 +234,14 @@ class _CtlModelState {
         }
         await _ocrDownloads.cancel(model);
         return _ocrJson(model);
+      case CtlModelKind.irodori:
+        _requireLocalId(CtlModelKind.irodori, id);
+        final IrodoriLocalEngine engine = _requireIrodoriSupported();
+        if (!engine.installer.isBusy) {
+          throw const CtlFailure.conflict('本机 Irodori-TTS 没有进行中的安装');
+        }
+        engine.installer.cancel();
+        return _irodoriJson();
       default:
         _requireGptSovitsId(id);
         final GptSovitsLocalEngine engine = _requireGptSovitsSupported();
@@ -265,6 +288,17 @@ class _CtlModelState {
           localModel: model,
         ).deleteModels();
         return <String, Object?>{...await _ocrJson(model), 'freedBytes': freed};
+      case CtlModelKind.irodori:
+        _requireLocalId(CtlModelKind.irodori, id);
+        final IrodoriLocalEngine engine = _requireIrodoriSupported();
+        final bool deleteFiles = engine.canDeleteFiles;
+        final String? dir = engine.settings.dir;
+        await engine.remove(deleteFiles: deleteFiles);
+        return <String, Object?>{
+          ..._irodoriJson(),
+          'removed': dir,
+          'filesDeleted': deleteFiles,
+        };
       default:
         _requireGptSovitsId(id);
         final GptSovitsLocalEngine engine = _requireGptSovitsSupported();
@@ -469,7 +503,9 @@ class _CtlModelState {
   /// 手动启动本机服务（与部署页「启动」同一个 `engine.start`，同时解除自动拉起的
   /// 失败暂停）。服务起来或失败后才返回。
   Future<Object?> startServer(String kind, String id) async {
-    if (_requireKind(kind) != CtlModelKind.gptSovits) {
+    final String resolved = _requireKind(kind);
+    if (resolved == CtlModelKind.irodori) return _startIrodori(id);
+    if (resolved != CtlModelKind.gptSovits) {
       throw const CtlFailure.badRequest('只有 gpt-sovits 有本机服务可起停');
     }
     _requireGptSovitsId(id);
@@ -495,7 +531,13 @@ class _CtlModelState {
   }
 
   Future<Object?> stopServer(String kind, String id) async {
-    if (_requireKind(kind) != CtlModelKind.gptSovits) {
+    final String resolved = _requireKind(kind);
+    if (resolved == CtlModelKind.irodori) {
+      _requireLocalId(CtlModelKind.irodori, id);
+      await _requireIrodoriSupported().stop();
+      return _irodoriJson();
+    }
+    if (resolved != CtlModelKind.gptSovits) {
       throw const CtlFailure.badRequest('只有 gpt-sovits 有本机服务可起停');
     }
     _requireGptSovitsId(id);
@@ -618,6 +660,187 @@ class _CtlModelState {
       ErrorLogService.instance.log('CtlModels.gptSovitsInstall', error, stack);
       _gptSovitsLastError = '$error';
     }
+  }
+
+  // ── 本机 Irodori-TTS ─────────────────────────────────────────────────────
+
+  /// 本机 Irodori-TTS 最近一次 CLI 发起的安装结果。
+  String? _irodoriLastError;
+
+  void _requireLocalId(String kind, String id) {
+    final String lower = id.trim().toLowerCase();
+    if (lower != 'local' && lower != 'default') {
+      throw CtlFailure.notFound('$kind 只有 local 一个（收到「$id」）');
+    }
+  }
+
+  IrodoriLocalEngine _requireIrodoriSupported() {
+    final IrodoriLocalEngine engine = _tts.localIrodori;
+    if (!engine.isSupported) {
+      throw const CtlFailure.unsupported(
+        '本机 Irodori-TTS 只支持 64 位 Windows / Apple 芯片 Mac / 64 位 Linux',
+      );
+    }
+    return engine;
+  }
+
+  Map<String, Object?> _irodoriJson() {
+    if (!IrodoriLocalEngine.platformSupported) {
+      return <String, Object?>{
+        'kind': CtlModelKind.irodori,
+        'supported': false,
+      };
+    }
+    final IrodoriLocalEngine engine = _tts.localIrodori;
+    final IrodoriLocalSettings settings = engine.settings;
+    final IrodoriInstaller installer = engine.installer;
+    return <String, Object?>{
+      'kind': CtlModelKind.irodori,
+      'id': 'local',
+      'supported': engine.isSupported,
+      'ready': engine.isInstalled,
+      'environmentReady': engine.environmentReady,
+      'dir': settings.dir,
+      'canDeleteFiles': engine.canDeleteFiles,
+      'source': settings.source.name,
+      'model': settings.model.name,
+      'backend': (settings.backend ?? engine.installedBackend)?.name,
+      'port': settings.port,
+      'endpoint': engine.endpoint,
+      'server': engine.server.phase.name,
+      if (engine.server.failure != null)
+        'serverFailure': engine.server.failure!.name,
+      'download': <String, Object?>{
+        'state': installer.step.name,
+        'receivedBytes': installer.receivedBytes,
+        'totalBytes': installer.totalBytes,
+        if (installer.currentItem != null) 'item': installer.currentItem,
+        if (installer.failure != null) 'failure': installer.failure!.name,
+        if (_irodoriLastError != null) 'error': _irodoriLastError,
+        if (installer.logTail.isNotEmpty) 'lastLog': installer.logTail.last,
+      },
+    };
+  }
+
+  Future<Object?> _installIrodori(CtlCall call) async {
+    final IrodoriLocalEngine engine = _requireIrodoriSupported();
+    if (engine.installer.isBusy) {
+      throw const CtlFailure.conflict('已在安装（models status irodori）');
+    }
+    final String? sourceRaw = call.optString('source');
+    if (sourceRaw != null) {
+      await engine.setSource(switch (sourceRaw.toLowerCase()) {
+        'hf' || 'huggingface' => IrodoriDownloadSource.huggingFace,
+        'hf-mirror' || 'mirror' => IrodoriDownloadSource.hfMirror,
+        _ => throw CtlFailure.badRequest(
+          '--source 只能是 hf / hf-mirror，收到「$sourceRaw」',
+        ),
+      });
+    }
+    final String? modelRaw = call.optString('model');
+    if (modelRaw != null) {
+      await engine.setModel(switch (modelRaw.toLowerCase()) {
+        'small' || 'v4.1-small' => IrodoriModelChoice.small,
+        'mf' ||
+        'small-mf' ||
+        'v4.1-small-mf' => IrodoriModelChoice.smallMeanFlow,
+        _ => throw CtlFailure.badRequest(
+          '--model 只能是 small / mf，收到「$modelRaw」',
+        ),
+      });
+    }
+    final String? backendRaw = call.optString('backend');
+    final List<IrodoriTorchBackend> allowed = irodoriBackendsFor(
+      isMacOS: Platform.isMacOS,
+      isLinux: Platform.isLinux,
+    );
+    final IrodoriTorchBackend backend;
+    if (backendRaw != null) {
+      backend = allowed.firstWhere(
+        (IrodoriTorchBackend b) => b.name == backendRaw.toLowerCase(),
+        orElse: () => throw CtlFailure.badRequest(
+          '--backend 只能是 '
+          '${allowed.map((IrodoriTorchBackend b) => b.name).join(' / ')}',
+        ),
+      );
+      await engine.setBackend(backend);
+    } else {
+      // 与部署页同一默认：设置里选过的 → 已装的 → 按显卡推荐。
+      backend =
+          engine.settings.backend ??
+          engine.installedBackend ??
+          irodoriBackendFor(
+            nvidiaGpu: Platform.isMacOS ? null : await detectNvidiaGpuName(),
+            isMacOS: Platform.isMacOS,
+          );
+    }
+    final String? dirRaw = call.optString('dir');
+    if (dirRaw != null && !p.isAbsolute(dirRaw)) {
+      throw CtlFailure.badRequest('dir 必须是绝对路径：$dirRaw');
+    }
+    final String? recorded = engine.settings.dir;
+    if (dirRaw != null && recorded != null) {
+      throw const CtlFailure.conflict('已有安装，换位置先删除（models rm irodori）');
+    }
+    final String installDir =
+        dirRaw ??
+        (recorded != null
+            ? p.dirname(recorded)
+            : IrodoriLocalEngine.defaultInstallDir(
+                await enginePaths.supportRootDirectory(),
+              ));
+    _irodoriLastError = null;
+    // 安装是数 GB 的长任务：后台跑，进度 / 失败原因经 models status 查。
+    unawaited(_runIrodoriInstall(engine, installDir, backend));
+    return <String, Object?>{
+      ..._irodoriJson(),
+      'started': true,
+      'installDir': installDir,
+      'backend': backend.name,
+    };
+  }
+
+  Future<void> _runIrodoriInstall(
+    IrodoriLocalEngine engine,
+    String installDir,
+    IrodoriTorchBackend backend,
+  ) async {
+    try {
+      final bool ok = await engine.install(
+        installDir: installDir,
+        backend: backend,
+      );
+      if (!ok && engine.installer.step == IrodoriInstallStep.failed) {
+        _irodoriLastError =
+            engine.installer.detail ?? engine.installer.failure?.name;
+      }
+    } catch (error, stack) {
+      ErrorLogService.instance.log('CtlModels.irodoriInstall', error, stack);
+      _irodoriLastError = '$error';
+    }
+  }
+
+  Future<Object?> _startIrodori(String id) async {
+    _requireLocalId(CtlModelKind.irodori, id);
+    final IrodoriLocalEngine engine = _requireIrodoriSupported();
+    if (!engine.isInstalled) {
+      throw const CtlFailure.rejected(
+        '本机 Irodori-TTS 还没装好（models download irodori）',
+      );
+    }
+    if (engine.installer.isBusy) {
+      throw const CtlFailure.conflict('正在安装，装完再启动');
+    }
+    final bool ok = await engine.start();
+    if (!ok) {
+      throw CtlFailure(
+        422,
+        'start_failed',
+        '服务没有起来（${engine.server.failure?.name ?? engine.server.phase.name}）；'
+            '日志尾：${engine.server.logTail.reversed.take(20).toList().reversed.join(' | ')}',
+      );
+    }
+    return _irodoriJson();
   }
 
   // ── 朗读声音 ─────────────────────────────────────────────────────────────

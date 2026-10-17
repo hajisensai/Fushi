@@ -12,6 +12,7 @@ library;
 
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -60,6 +61,8 @@ void main() {
         title: uid,
         srtPath: '/tmp/$uid.srt',
         importedAt: 0,
+        // 墓碑仲裁读本机拥有时刻（v118）：0 = 一直都在，任何墓碑都管得着它。
+        localAddedAt: const Value<int?>(0),
       ));
 
   /// 造一条「对端删了这本书」的远端标记，返回它的资产 id。

@@ -284,6 +284,10 @@ class UpdateFeedService implements UpdateFeedPublisher {
         limit: limit,
       );
 
+  /// 按主键取一条（不存在 = null）。
+  Future<UpdateFeedEntryRow?> entry(String entryId) =>
+      _db.getUpdateFeedEntry(entryId);
+
   Future<void> markSeen(Iterable<String> entryIds) => _db
       .markUpdateFeedEntriesSeen(entryIds, seenAt: _now().millisecondsSinceEpoch);
 
@@ -340,6 +344,7 @@ const Map<UpdateFeedKind, int> kUpdateNotificationBaseIds =
   UpdateFeedKind.mangaChapter: 9102,
   UpdateFeedKind.mangaExtension: 9103,
   UpdateFeedKind.appRelease: 9104,
+  UpdateFeedKind.animeExtension: 9105,
 };
 
 /// 通知 id：无组 = 域固定 id；有组 = 域序号占高 4 位 + 组名 FNV-1a 哈希占低

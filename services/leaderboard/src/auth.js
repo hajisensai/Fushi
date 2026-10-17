@@ -110,3 +110,23 @@ export async function verifyRegistration(request, pubkeyB64, bodyBytes, now) {
   await checkSig(request, await importPublicKey(spki), time, bodyBytes);
   return { spki, pubkeyB64, id: await accountIdFromSpki(spki), time };
 }
+
+/**
+ * 「已登录设备代为绑定新设备」的持有证明串（POST /v1/me/devices）。新设备用**自己的**私钥签它，
+ * 证明公钥确实属于发起绑定的那台新设备（而不是代绑方随手塞进来的别人的公钥）；time 同样受 ±5 分钟约束。
+ * 公钥本身在串里：证明只对这把钥匙有效，拿去给别的公钥用验不过。
+ */
+export function deviceLinkProofString(pubkeyB64, time) {
+  return `fushi-device-link\n${pubkeyB64}\n${time}`;
+}
+
+/** 校验新设备的持有证明，返回 {spki, pubkeyB64, id(=key_id)}。 */
+export async function verifyDeviceLinkProof(pubkeyB64, time, proofB64, now) {
+  const spki = b64urlDecode(pubkeyB64);
+  if (!spki || spki.length < 60 || spki.length > 120) throw new HttpError(400, 'bad_pubkey');
+  if (!Number.isSafeInteger(time)) throw new HttpError(400, 'bad_time');
+  if (Math.abs(now - time) > SIG_WINDOW_MS) throw new HttpError(400, 'stale_time');
+  const ok = await verifySignature(await importPublicKey(spki), proofB64 || '', deviceLinkProofString(pubkeyB64, time));
+  if (!ok) throw new HttpError(400, 'bad_proof');
+  return { spki, pubkeyB64, id: await accountIdFromSpki(spki) };
+}

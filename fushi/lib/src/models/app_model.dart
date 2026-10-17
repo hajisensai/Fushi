@@ -9,13 +9,14 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
+import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
-import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
@@ -119,6 +120,7 @@ import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show deleteRemovedMangaOcrModelDirs;
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
@@ -427,9 +429,11 @@ typedef DictPathEntry = ({
 
 /// 把词典分桶成 FFI 引擎要的四组 path（term/freq/pitch/kanji）的单一真相。
 ///
-/// 隐藏的 freq/pitch/kanji 不进引擎——它们无渲染期隐藏过滤、会直接从引擎冒出来
-/// （BUG-177 / TODO-094 S4）；term 在渲染期按 hidden 过滤，故隐藏仍进桶。不存在的
-/// 目录跳过。同步 [AppModel._rebuildDictPathsCache] 与异步 `_rebuildDictPathsCacheAsync`
+/// 隐藏（被用户关掉）的词典**一律**不进引擎，四种类型同一规则。freq/pitch/kanji 没有
+/// 渲染期隐藏过滤，进了就会直接冒出来（BUG-177 / TODO-094 S4）；term 以前故意仍进桶、
+/// 靠渲染期过滤，但引擎在 Dart 过滤**之前**就按最长匹配排序并截断到 maxResults——
+/// 关掉的词典的长匹配会把可见词典的结果挤出 top-N，且每条新输出路径都得记得再滤一遍
+/// （BUG-419 / TODO-865 / BUG-2997 都是漏滤）。BUG-3454：源头不装载。不存在的目录跳过。同步 [AppModel._rebuildDictPathsCache] 与异步 `_rebuildDictPathsCacheAsync`
 /// 只差「怎么判目录存在」，分桶 switch 收口于此（之前两份逐字复制，改一处忘另一处即漂移）。
 @visibleForTesting
 ({List<String> term, List<String> freq, List<String> pitch, List<String> kanji})
@@ -442,7 +446,7 @@ typedef DictPathEntry = ({
     if (!e.exists) continue;
     switch (e.type) {
       case DictionaryType.term:
-        term.add(e.path);
+        if (!e.hidden) term.add(e.path);
       case DictionaryType.kanji:
         if (!e.hidden) kanji.add(e.path);
       case DictionaryType.frequency:
@@ -755,6 +759,22 @@ class AppModel with ChangeNotifier {
     // 已配对设备远程更新本机（反馈 Pp8XPyve0N）。同一个实例跨互联服务重启存活：
     // 在途下载的进度不因用户开关一次互联而丢。
     hostSelfUpdater: () => hostSelfUpdater,
+    // 标记为「我的设备」的已配对设备跟随本机 Fushi 账户自动登录：对端只交来它自己的
+    // 公钥，由本机账户代绑。
+    // 排行榜服务是 Riverpod 单例（随 Profile 重建），经全局 navigatorKey 的容器现取。
+    leaderboardLinkHost: () => AppLeaderboardLinkHost(
+      enabled: () =>
+          SyncRepository(database).isInterconnectLeaderboardLinkHostEnabled(),
+      // 只认配对审批时选了「这是我的设备」/ 之后手动标记的 peer。
+      isOwnerDevicePeer: (String token) =>
+          SyncRepository(database).isOwnerDevicePeerToken(token),
+      service: () {
+        final BuildContext? context = navigatorKey.currentContext;
+        if (context == null) return null;
+        return ProviderScope.containerOf(context, listen: false)
+            .read(leaderboardServiceProvider);
+      },
+    ),
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
@@ -1199,7 +1219,8 @@ class AppModel with ChangeNotifier {
           t.updates_notification_open_video_episode,
         UpdateFeedKind.mangaChapter =>
           t.updates_notification_open_manga_chapter,
-        UpdateFeedKind.mangaExtension =>
+        UpdateFeedKind.mangaExtension ||
+        UpdateFeedKind.animeExtension =>
           t.updates_notification_open_manga_extension,
         UpdateFeedKind.appRelease => t.updates_notification_open_app_release,
       };
@@ -1260,6 +1281,9 @@ class AppModel with ChangeNotifier {
   /// 启动期的 `UpdateChecker.scheduleCheck` 已经在查，那条链路顺手把结果投给更新
   /// 中心即可（见 home_page 的 onUpdateAvailable），再排一个定时器只会重复请求。
   ///
+  /// 扩展两个 probe（漫画 / 视频）在「后台自动更新扩展」开着时，没建 manager 也会
+  /// 为已装扩展建一个（见 [_mihonManagerForAutoUpdate]）；其余情况与下面同理。
+  ///
   /// 漫画两个 probe 都**不主动拉起 Mihon runtime**：`mihonManager` 是懒建的，为了
   /// 后台检查而在启动时拉起一个 sidecar 进程，对没用过在线漫画的用户是纯亏。没起
   /// 来就这一轮跳过，等用户用过一次之后的检查自然会覆盖。
@@ -1295,25 +1319,32 @@ class AppModel with ChangeNotifier {
             ),
           );
         },
-        UpdateFeedKind.mangaExtension: () async {
-          final MihonManager? manager = _mihonManager;
-          if (manager == null) return;
-          await runMangaExtensionUpdateProbe(
-            feed: feed,
-            refreshStores: manager.refreshStores,
-            available: () => manager.available,
-            installed: () => manager.installed,
-          );
-        },
+        UpdateFeedKind.mangaExtension: () => _runMihonExtensionProbe(
+              feed,
+              UpdateFeedKind.mangaExtension,
+              MihonMediaKind.manga,
+            ),
+        UpdateFeedKind.animeExtension: () => _runMihonExtensionProbe(
+              feed,
+              UpdateFeedKind.animeExtension,
+              MihonMediaKind.anime,
+            ),
       },
+      // 自动更新开着时：扩展两个域在启动这一轮无视 24 小时间隔照查——自动安装
+      // 只在「刚启动、还没碰过在线源」时做，被推迟的更新要在下次启动兑现。
+      dueOnStart: mihonExtensionAutoUpdate
+          ? const <UpdateFeedKind>{
+              UpdateFeedKind.mangaExtension,
+              UpdateFeedKind.animeExtension,
+            }
+          : const <UpdateFeedKind>{},
     );
     _updateCheckScheduler = scheduler;
     scheduler.start();
     // 安装统计心跳（iOS / 关了开关时它自己不发）：与更新检查同生命周期。
-    final UsageHeartbeat heartbeat = UsageHeartbeat(
+    final UsageHeartbeat heartbeat = UsageHeartbeat.forFushi(
       prefs: prefsRepo,
-      send: sendUsageHeartbeatToFushi,
-      version: () => resolveCurrentAppVersion(packageInfo.version),
+      executableVersion: packageInfo.version,
       channel: () => appUpdateChannelOf(this).name,
     );
     _usageHeartbeat = heartbeat;
@@ -2089,9 +2120,10 @@ class AppModel with ChangeNotifier {
 
   /// 被用户在词典管理里关掉的词典名集合，查词结果生成与弹窗注入共用这一个真相源。
   ///
-  /// term 词典是故意仍进 FFI 引擎的（见 [bucketDictPaths]：隐藏不影响匹配长度），
-  /// 所以隐藏必须在查询之后生效。收口到这里是为了防漂移：之前这个表达式只在
-  /// `popup_settings_injection` 里有一份，别的消费者（浏览器扩展的 HTTP 路径）拿不到它。
+  /// 隐藏词典已不进 FFI 引擎（[bucketDictPaths]，BUG-3454），这份名单只是查询后
+  /// 过滤的第二道保险：引擎重载是排期的，切换开关到下次装载之间引擎里仍是旧集合。
+  /// 收口到这里是为了防漂移：之前这个表达式只在 `popup_settings_injection` 里有一份，
+  /// 别的消费者（浏览器扩展的 HTTP 路径）拿不到它。
   Set<String> get hiddenDictionaryNames => dictionaries
       .where((Dictionary d) => d.isHidden(JapaneseLanguage.instance))
       .map((Dictionary d) => d.name)
@@ -2281,8 +2313,7 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  // 隐藏的 freq/pitch/kanji 不进引擎（无渲染期隐藏过滤会直接冒出来，BUG-177/TODO-094）；
-  // term 渲染期过滤故隐藏仍进桶。always rebuild 即使全空：删掉最后一本要落进空引擎让
+  // 隐藏的词典（四种类型）一律不进引擎（BUG-177/TODO-094/BUG-3454）。always rebuild 即使全空：删掉最后一本要落进空引擎让
   // 旧 in-memory 索引失效，查询不再命中（BUG-171）。分桶 switch 收口在 [bucketDictPaths]。
   void _rebuildDictPathsCache() {
     _migrateDictionaryTypes();
@@ -4931,15 +4962,108 @@ class AppModel with ChangeNotifier {
   /// 只有进入漫画源/漫画扩展/来源设置才读取扩展数据库；桌面 runtime 又会等到
   /// 第一次真正调用扩展时才启动 M-Extension-Server。
   MihonManager? _mihonManager;
-  MihonManager get mihonManager =>
-      _mihonManager ??= _createMihonManager(MihonMediaKind.manga);
+  MihonManager get mihonManager {
+    _onlineSourcesTouched = true;
+    return _mihonManager ??= _createMihonManager(MihonMediaKind.manga);
+  }
 
   /// 视频（Aniyomi）扩展的 manager：与 [mihonManager] 共用同一个运行时，只是
   /// 三张扩展表按 `media_kind` 分片、默认仓库不同、根目录不同（`mihon_anime/`，
   /// 扩展 APK / 暂存 / 封面缓存各自独立，删一边的缓存不波及另一边）。
   MihonManager? _animeMihonManager;
-  MihonManager get animeMihonManager =>
-      _animeMihonManager ??= _createMihonManager(MihonMediaKind.anime);
+  MihonManager get animeMihonManager {
+    _onlineSourcesTouched = true;
+    return _animeMihonManager ??= _createMihonManager(MihonMediaKind.anime);
+  }
+
+  /// 本进程里有没有任何调用方取过 [mihonManager] / [animeMihonManager]。
+  ///
+  /// 这是扩展后台自动更新的「空闲」判据。两个公开 getter 只在在线源相关的地方被
+  /// 取：漫画 / 视频在线源页、扩展页、在线漫画阅读与章节下载
+  /// （[onlineMangaLibraryService]）、在线视频播放、全局搜索、桌面 ctl 在线路由。
+  /// 运行时没有「此刻正有会话在用」的信号，装完要让运行时失效（桌面 = 重启
+  /// sidecar）——于是取最保守的判据：**一旦碰过就算在用**，本进程不再自动装，
+  /// 推迟到下次启动。自动更新自己建 manager 走 [_mihonManagerForAutoUpdate]，
+  /// 不经公开 getter，不会把自己判成「在用」。
+  bool _onlineSourcesTouched = false;
+
+  /// 「后台自动更新扩展」开关（漫画与视频扩展共用，默认关）。
+  bool get mihonExtensionAutoUpdate =>
+      prefsRepo.getPref(kMihonExtensionAutoUpdatePref, defaultValue: false)
+          as bool;
+
+  Future<void> setMihonExtensionAutoUpdate(bool value) =>
+      prefsRepo.setPref(kMihonExtensionAutoUpdatePref, value);
+
+  /// 后台扩展检查要用的 manager：已建就用；没建时只有自动更新开着、平台与合规
+  /// 门都过、且库里确有这个生态的已装扩展，才为它建一个（建 manager 不起
+  /// sidecar，sidecar 要等真去装时才起）。其余情况返回 null，这一轮跳过——与
+  /// 自动更新关着时「没用过在线源就不查」的既有行为一致。
+  Future<MihonManager?> _mihonManagerForAutoUpdate(MihonMediaKind kind) async {
+    final MihonManager? existing = switch (kind) {
+      MihonMediaKind.manga => _mihonManager,
+      MihonMediaKind.anime => _animeMihonManager,
+    };
+    if (existing != null) return existing;
+    if (!mihonExtensionAutoUpdate || !MihonRuntimeFactory.isSupported) {
+      return null;
+    }
+    final StoreRestrictedCapability capability = switch (kind) {
+      MihonMediaKind.manga => StoreRestrictedCapability.onlineMangaSource,
+      MihonMediaKind.anime => StoreRestrictedCapability.onlineVideoSource,
+    };
+    if (!capability.isAvailable) return null;
+    final List<MangaExtensionRow> installed = await database.getMangaExtensions(
+      mediaKind: kind.dbValue,
+    );
+    if (installed.isEmpty) return null;
+    final MihonManager manager = switch (kind) {
+      MihonMediaKind.manga => _mihonManager ??= _createMihonManager(
+        MihonMediaKind.manga,
+      ),
+      MihonMediaKind.anime => _animeMihonManager ??= _createMihonManager(
+        MihonMediaKind.anime,
+      ),
+    };
+    // 构造时已经起了 initialise（读库 + 拉索引）；等它完成再比版本，否则
+    // installed 还是空表。
+    await manager.initialise();
+    return manager;
+  }
+
+  /// 一个扩展域的后台检查（漫画 / 视频同构）。
+  Future<void> _runMihonExtensionProbe(
+    UpdateFeedService feed,
+    UpdateFeedKind kind,
+    MihonMediaKind mediaKind,
+  ) async {
+    final MihonManager? manager = await _mihonManagerForAutoUpdate(mediaKind);
+    if (manager == null) return;
+    await runMihonExtensionUpdateProbe(
+      feed: feed,
+      kind: kind,
+      refreshStores: manager.refreshStores,
+      available: () => manager.available,
+      installed: () => manager.installed,
+      autoUpdate: mihonExtensionAutoUpdate
+          ? MihonExtensionAutoUpdater(
+              isIdle: () => !_onlineSourcesTouched,
+              install:
+                  (
+                    List<MihonAvailableExtension> targets,
+                    bool Function() isCancelled,
+                  ) => manager.installMany(
+                    targets,
+                    upgrade: true,
+                    // 签名变了的在 SIGNATURE_CHANGED 门就进 failed；这里再保证
+                    // 后台绝不替用户信任任何新签名。
+                    trustSigner: false,
+                    isCancelled: isCancelled,
+                  ),
+            )
+          : null,
+    );
+  }
 
   /// 两个生态共用的扩展宿主：桌面端一个 sidecar JVM（`-Xmx512m`，两个太贵），
   /// Android 原生宿主本来就是进程单例。生命周期归这里管——两个 manager 都以
@@ -6837,7 +6961,7 @@ class AppModel with ChangeNotifier {
         dictionary, JapaneseLanguage.instance.languageCode);
     // toggleDictionaryHidden persists the dict, which fires _onCacheRebuild
     // (_rebuildDictPathsCache) and reloads the engine WITHOUT the now-hidden
-    // freq/pitch dictionary. But a popupJson cached while the dict was still
+    // dictionary (any type, BUG-3454). But a popupJson cached while the dict was still
     // enabled would keep showing its values on the next (cache-hit) lookup, so
     // drop the search caches too — mirrors the delete paths (BUG-171/BUG-177).
     dictRepo.clearDictionaryResultsCache();

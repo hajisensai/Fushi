@@ -19,6 +19,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
 import 'package:fushi/src/media/tracking/media_tracking_labels.dart';
@@ -547,7 +548,7 @@ class _HomeDashboardSnapshot {
     required this.primaryCollectionByEntry,
     required this.collectionCoverById,
     required this.epubUidByBookKey,
-    required this.epubImportedAtByKey,
+    required this.epubLocalAddedAtByKey,
     required this.memberSortIndex,
     required this.videoWatchAtByUid,
     required this.videoDurationMsByPath,
@@ -564,7 +565,7 @@ class _HomeDashboardSnapshot {
   final Map<String, int> primaryCollectionByEntry;
   final Map<int, String> collectionCoverById;
   final Map<String, String> epubUidByBookKey;
-  final Map<String, int> epubImportedAtByKey;
+  final Map<String, int> epubLocalAddedAtByKey;
   final Map<String, int> memberSortIndex;
   final Map<String, int> videoWatchAtByUid;
   final Map<String, int> videoDurationMsByPath;
@@ -776,10 +777,11 @@ class _HomeDashboardPageState
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
   Map<String, String> _epubUidByBookKey = const <String, String>{};
 
-  /// epub bookKey → 导入时刻（epoch 毫秒，`EpubBooks.importedAt`）：宽屏「最近
-  /// 添加」封面行的书侧排序时间源（视频用 [VideoBookRow.importedAt]、游戏用
-  /// [GalgameEntry.addedAt]）。
-  Map<String, int> _epubImportedAtByKey = const <String, int>{};
+  /// epub bookKey → 本机开始拥有的时刻（epoch 毫秒，`EpubBooks.localAddedAt`，
+  /// v118）：宽屏「最近添加」封面行的书侧排序时间源（视频用
+  /// [VideoBookRow.localAddedAt]、游戏用 [GalgameEntry.addedAt]）。**不是**
+  /// `importedAt`——互联下载的书那一列是对端的入库时刻。
+  Map<String, int> _epubLocalAddedAtByKey = const <String, int>{};
 
   /// 本帧「继续」行实际显示的条目（[_buildStudyContinueCard] 写入）：宽屏「最近
   /// 添加」行据此去重，同一部作品不在两行各出一张。
@@ -1053,8 +1055,11 @@ class _HomeDashboardPageState
       for (final EpubBookMeta r in epubRows)
         if (r.uid.isNotEmpty) r.bookKey: r.uid,
     };
-    final Map<String, int> epubImportedAtByKey = <String, int>{
-      for (final EpubBookMeta r in epubRows) r.bookKey: r.importedAt,
+    // 「最近添加」= 本机最近开始拥有的（v118 localAddedAt），不是原始入库时刻：
+    // 刚从互联对端下载的旧书 importedAt 是对端多年前的入库时刻，按它排进不了这一行。
+    final Map<String, int> epubLocalAddedAtByKey = <String, int>{
+      for (final EpubBookMeta r in epubRows)
+        if (r.localAddedAt != null) r.bookKey: r.localAddedAt!,
     };
 
     // 每个视频的最近观看时刻（按 bookUid 取 lastActiveMs 最大值；legacy 无身份行
@@ -1095,7 +1100,7 @@ class _HomeDashboardPageState
       primaryCollectionByEntry: primaryByEntry,
       collectionCoverById: collectionCoverById,
       epubUidByBookKey: epubUidByBookKey,
-      epubImportedAtByKey: epubImportedAtByKey,
+      epubLocalAddedAtByKey: epubLocalAddedAtByKey,
       memberSortIndex: memberSortIndex,
       videoWatchAtByUid: watchAt,
       videoDurationMsByPath: durationByPath,
@@ -1121,7 +1126,7 @@ class _HomeDashboardPageState
     _primaryCollectionByEntry = s.primaryCollectionByEntry;
     _collectionCoverById = s.collectionCoverById;
     _epubUidByBookKey = s.epubUidByBookKey;
-    _epubImportedAtByKey = s.epubImportedAtByKey;
+    _epubLocalAddedAtByKey = s.epubLocalAddedAtByKey;
     _memberSortIndex = s.memberSortIndex;
     _videoWatchAtByUid = s.videoWatchAtByUid;
     _videoDurationMsByPath = s.videoDurationMsByPath;
@@ -1970,9 +1975,12 @@ class _HomeDashboardPageState
   /// 只在双栏版式挂（竖屏单栏不出，免得手机首页信息过多），形态是紧凑列表
   /// （[HomeRecentTile]：小封面 + 标题 + 「类型 · 相对时间」），最多
   /// [_kRecentLimit] 条。数据源是本页快照里已有的书 / 视频 / 游戏行（不新增查询）：
-  /// 书按 `EpubBooks.importedAt`、视频按 `VideoBooks.importedAt`（合集按成员
+  /// 书按 `EpubBooks.localAddedAt`、视频按 `VideoBooks.localAddedAt`（合集按成员
   /// 最大值收成一张，封面取合集海报）、游戏按 `addedAt` 倒序混排；已在「继续」
   /// 出现的作品去重；关掉的模块先出局。没有可显示的条目 → null（不出空卡）。
+  ///
+  /// 书 / 视频取本机开始拥有的时刻（v118），不取原始入库时刻 importedAt：刚从互联
+  /// 对端下载的旧条目 importedAt 是对端的入库时刻，按它排就进不了这一行。
   Widget? _buildRecentlyAddedCard(
     FushiDesignTokens tokens,
     AppModel appModel,
@@ -2001,7 +2009,7 @@ class _HomeDashboardPageState
       final String? bookKey =
           ReaderFushiSource.parseBookKey(item.mediaIdentifier);
       final int addedAt =
-          bookKey == null ? 0 : (_epubImportedAtByKey[bookKey] ?? 0);
+          bookKey == null ? 0 : (_epubLocalAddedAtByKey[bookKey] ?? 0);
       if (addedAt <= 0) continue;
       entries.add(_ContinueEntry(
         kind: _bookMediaKind(item),
@@ -2020,7 +2028,7 @@ class _HomeDashboardPageState
         (videosByCollection[cid] ??= <VideoBookRow>[]).add(v);
         continue;
       }
-      final int addedAt = v.importedAt ?? 0;
+      final int addedAt = v.localAddedAt ?? 0;
       if (addedAt <= 0 || shownVideos.contains(v.bookUid)) continue;
       entries.add(_ContinueEntry(
         kind: MediaKind.video,
@@ -2034,7 +2042,7 @@ class _HomeDashboardPageState
       if (shownVideoCollections.contains(ce.key)) continue;
       int addedAt = 0;
       for (final VideoBookRow m in ce.value) {
-        final int at = m.importedAt ?? 0;
+        final int at = m.localAddedAt ?? 0;
         if (at > addedAt) addedAt = at;
       }
       if (addedAt <= 0) continue;
@@ -2323,16 +2331,22 @@ class _HomeDashboardPageState
       (VideoBookRow m) => m.completedAt != null || m.lastPositionMs > 0,
     );
     if (!anyTrace) return null;
-    final int idx = continueMemberIndex(<CollectionMemberProgress>[
+    final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
+    final List<CollectionMemberProgress> progress = <CollectionMemberProgress>[
       for (final VideoBookRow m in sorted)
         CollectionMemberProgress(
           positionMs: m.lastPositionMs,
           completed: m.completedAt != null,
           lastPlayedAt: m.lastPlayedAt,
+          // BUG-3491：片长用来分辨「已打勾的集正在重看」。
+          durationMs: videoDurationMsFromPref(
+            prefs.getPref(videoDurationPrefKey(m.bookUid)),
+          ),
         ),
-    ]);
+    ];
+    final int idx = continueMemberIndex(progress);
     final VideoBookRow resume = sorted[idx];
-    if (resume.completedAt != null) return null;
+    if (progress[idx].isFinished) return null;
     return (row: resume, index: idx, count: sorted.length);
   }
 

@@ -26,6 +26,7 @@ import { HttpError, clampInt, randomId, utcDateKey } from './util.js';
 import { adjustSpend, spend } from './budget.js';
 import { accountPeriodsStatements, periodContributions, periodsOf, workPeriodsDeltaStatements } from './periods.js';
 import { DAY, LIMITS, hit } from './ratelimit.js';
+import { accountVotes, orphanCoverStatements, releasedCoverKeys, shelfVoteOps, voteStatements } from './cover_votes.js';
 
 export const KINDS = ['book', 'manga', 'video', 'game'];
 export const MAX_PUT = 500;
@@ -290,11 +291,13 @@ function jsonParam(value) {
 const J = (p) => `json_extract(value, '$.${p}')`;
 
 /**
- * 「这些作品若已无人在架就删掉」的两条语句（别名 + 作品，后者 RETURNING cover_key 供删 R2）。
+ * 「这些作品若已无人在架就删掉」的语句（封面投票 / 候选 + 别名 + 作品；候选与作品 RETURNING
+ * cover_key 供删 R2，用 coverKeysOf 收集）。
  * 判据写在删除语句自身里、并与其它写入同处一个事务——先查孤儿再另发删除会误删别人刚上架的作品。
  */
 export function orphanPurgeStatements(db, idsJson) {
   return [
+    ...orphanCoverStatements(db, idsJson),
     db.prepare(
       `DELETE FROM work_aliases
        WHERE work_id IN (SELECT value FROM json_each(?1))
@@ -309,8 +312,9 @@ export function orphanPurgeStatements(db, idsJson) {
   ];
 }
 
-export function coverKeysOf(purgeResult) {
-  return ((purgeResult && purgeResult.results) || []).map((r) => r.cover_key).filter(Boolean);
+/** batch 结果里所有 RETURNING cover_key 的 R2 key（去重：作品与其当前封面候选指向同一对象）。 */
+export function coverKeysOf(results) {
+  return releasedCoverKeys(Array.isArray(results) ? results : [results]);
 }
 
 /**
@@ -462,9 +466,9 @@ export async function casBatch(db, stmts) {
 }
 
 /** D1 每写一行、每个受影响索引另计一行；估算按表的索引数放大（shelf 有 4 个索引 + works 回写）。 */
-export function estimateWriteRows({ newWorks, newAliases, rows, gone, dates, periods, readerDeltas, periodDeltas }) {
+export function estimateWriteRows({ newWorks, newAliases, rows, gone, dates, periods, readerDeltas, periodDeltas, coverVotes = 0 }) {
   return newWorks * 3 + newAliases * 3 + rows * 7 + gone * 7 + dates * 4 + periods * 3 +
-    readerDeltas * 3 + periodDeltas * 4 + 16;
+    readerDeltas * 3 + periodDeltas * 4 + coverVotes * 8 + 16;
 }
 
 /**
@@ -524,12 +528,19 @@ export async function applyShelfDelta(env, account, keyId, upload, now) {
   // 被隐藏的账户不计入任何作品的读者数，也不参与众数（hidden 取本次读到的最新值）。
   const readerDeltas = acc.hidden ? [] : diff.readerDeltas;
   const periodDeltas = acc.hidden ? [] : diff.periodDeltas;
+  // 封面投票（cover_votes.js）：带白名单 coverUrl 的条目投给该 URL，下架的作品撤票。
+  // 现票在 CAS 保护下读：与本账户其它写入交错时整批回滚，from 一定是现票。
+  const touched = upload.reset ? null : [...new Set([...putIds, ...diff.gone])];
+  const votesBefore = touched !== null && touched.length === 0
+    ? new Map()
+    : await accountVotes(db, accountId, touched);
+  const coverVotes = shelfVoteOps(res.rows, diff.gone, votesBefore);
 
   // 4. 预算：按估算写入行数扣本账户日上限与全局日预算（都在写入之前）。
   const estRows = estimateWriteRows({
     newWorks: res.newWorks.length, newAliases: res.newAliases.length, rows: res.rows.length,
     gone: diff.gone.length, dates: diff.dates.size, periods: periods.length,
-    readerDeltas: readerDeltas.length, periodDeltas: periodDeltas.length,
+    readerDeltas: readerDeltas.length, periodDeltas: periodDeltas.length, coverVotes: coverVotes.ops.length,
   });
   await hit(env, `rows:${accountId}`, DAY, LIMITS.shelfRowsPerAccountDay, now, estRows);
   await spend(env, 'write_rows', estRows, now);
@@ -593,9 +604,10 @@ export async function applyShelfDelta(env, account, keyId, upload, now) {
       .bind(accountId, upload.reset ? newCount - acc.shelf_count : diff.countDelta),
   );
   if (!acc.hidden) stmts.push(metaIfChangedStatement(db, rowsJson));
+  stmts.push(...voteStatements(db, accountId, coverVotes.ops, now, !acc.hidden));
   stmts.push(...orphanPurgeStatements(db, jsonParam(diff.gone)));
   const results = await casBatch(db, stmts);
-  const coverKeys = coverKeysOf(results[results.length - 1]);
+  const coverKeys = coverKeysOf(results);
   const written = results.reduce((n, r) => n + ((r && r.meta && r.meta.rows_written) || 0), 0);
   // 用 D1 回报的真实写入行数校正预算（本地 SQLite 没有该字段时跳过）。
   if (written > 0) await adjustSpend(env, 'write_rows', written - estRows, now);
@@ -607,7 +619,14 @@ export async function applyShelfDelta(env, account, keyId, upload, now) {
   const needs = new Map(covers.results.map((r) => [r.id, r.needs_cover === 1]));
   return {
     coverKeys,
-    works: res.entryWork.map((workId, i) => ({ i, workId, needsCover: needs.get(workId) === true })),
+    // needsCover：作品还没有任何封面（旧语义，旧客户端据此补传）。coverVote：本账户对该作品的
+    // 票型（'url' | 'hash' | null），新客户端据此判断要不要再投票（见 cover_votes.js）。
+    works: res.entryWork.map((workId, i) => ({
+      i,
+      workId,
+      needsCover: needs.get(workId) === true,
+      coverVote: coverVotes.finalVote.get(workId) ?? null,
+    })),
     shelfCount: newCount,
   };
 }

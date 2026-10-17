@@ -802,6 +802,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     controller.claimDiscTrackOwnership();
     controller.setCues(const <AudioCue>[]);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
+    // BUG-3490：这是清理不是偏好——卡片片段回看中照样立即执行；回看中暂存的主字幕
+    // 选择正指向这份已删文件，一并作废，继续观看时不能再把它补存回去。
+    _reviewDeferredChoiceWrites.discard(_ReviewChoiceKind.primarySubtitle);
     if (_isRemote) {
       final (String uid, int ep) = _remotePositionKeyForIndex(_currentEpisode);
       unawaited(appModel.setRemoteSubtitleSource(uid, ep, null));
@@ -1043,14 +1046,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
     controller.claimDiscTrackOwnership();
     controller.setSecondaryCues(cues);
     final String persisted = source.toPersistedValue();
-    await widget.repo.updateSecondarySubtitleSource(bookUid, persisted);
-    // 本机镜像盖戳（互联 LWW 载体，播放偏好同步泛化批）：使 host 侧
-    // getVideoPlayback / 清单以带戳值参与逐字段 LWW，对端能跟随本机选择。
-    await _stampRemoteStringPref(
-      videoRemoteSecondarySubtitlePrefKey(bookUid),
-      videoRemoteSecondarySubtitleAtPrefKey(bookUid),
-      persisted,
-    );
+    // 卡片片段回看中暂存、继续观看时补存（BUG-3490）。
+    await _saveReviewableChoice(_ReviewChoiceKind.secondarySubtitle, () async {
+      await widget.repo.updateSecondarySubtitleSource(bookUid, persisted);
+      // 本机镜像盖戳（互联 LWW 载体，播放偏好同步泛化批）：使 host 侧
+      // getVideoPlayback / 清单以带戳值参与逐字段 LWW，对端能跟随本机选择。
+      await _stampRemoteStringPref(
+        videoRemoteSecondarySubtitlePrefKey(bookUid),
+        videoRemoteSecondarySubtitleAtPrefKey(bookUid),
+        persisted,
+      );
+    });
     if (!current()) return false;
     _rebuild(() => _currentSecondarySubtitleSource = persisted);
     _showOsd(t.video_subtitle_switched(label: source.label));
@@ -1073,16 +1079,19 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
     controller.claimDiscTrackOwnership();
     controller.clearSecondaryCues();
-    await widget.repo.updateSecondarySubtitleSource(
-      bookUid,
-      SubtitleSource.offSentinel,
-    );
-    // 本机镜像盖戳（互联 LWW 载体）：显式关闭同样跨设备传播（off 哨兵原样入通道）。
-    await _stampRemoteStringPref(
-      videoRemoteSecondarySubtitlePrefKey(bookUid),
-      videoRemoteSecondarySubtitleAtPrefKey(bookUid),
-      SubtitleSource.offSentinel,
-    );
+    // 卡片片段回看中暂存、继续观看时补存（BUG-3490）。
+    await _saveReviewableChoice(_ReviewChoiceKind.secondarySubtitle, () async {
+      await widget.repo.updateSecondarySubtitleSource(
+        bookUid,
+        SubtitleSource.offSentinel,
+      );
+      // 本机镜像盖戳（互联 LWW 载体）：显式关闭同样跨设备传播（off 哨兵原样入通道）。
+      await _stampRemoteStringPref(
+        videoRemoteSecondarySubtitlePrefKey(bookUid),
+        videoRemoteSecondarySubtitleAtPrefKey(bookUid),
+        SubtitleSource.offSentinel,
+      );
+    });
     if (!current()) return;
     _rebuild(
       () => _currentSecondarySubtitleSource = SubtitleSource.offSentinel,
@@ -1612,7 +1621,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final (String subUid, int subEp) = _remotePositionKeyForIndex(
       _currentEpisode,
     );
-    unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
+    _rememberRemoteSubtitleSource(subUid, subEp, source);
     _showOsd(t.video_subtitle_switched(label: displayLabel));
     return true;
   }
@@ -1787,7 +1796,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final (String subUid, int subEp) = _remotePositionKeyForIndex(
       _currentEpisode,
     );
-    unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
+    _rememberRemoteSubtitleSource(subUid, subEp, source);
     _showOsd(t.video_subtitle_remote_player_decoded(label: label));
     return true;
   }
@@ -1829,7 +1838,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
     _rebuild(() => _currentSubtitleSource = source);
-    unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
+    _rememberRemoteSubtitleSource(subUid, subEp, source);
     // 图形轨只能当画面渲染、逐字查词要暂停 OCR——是降级而非成功，配色与本地一致。
     _showOsd(
       t.video_subtitle_graphic_shown(label: label),
@@ -1852,13 +1861,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final (String subUid, int subEp) = _remotePositionKeyForIndex(
       _currentEpisode,
     );
-    unawaited(
-      appModel.setRemoteSubtitleSource(
-        subUid,
-        subEp,
-        SubtitleSource.offSentinel,
-      ),
-    );
+    _rememberRemoteSubtitleSource(subUid, subEp, SubtitleSource.offSentinel);
   }
 
   // ── TODO-2837 远端副字幕（互联完整支持批次）────────────────────────────────
@@ -1897,20 +1900,22 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 带戳键对 + 上报 host（播放偏好同步泛化批）：`embedded:<n>` 对端可直接重放；
     // 本地文件路径对端文件不存在时恢复侧自然跳过。
     final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
-    unawaited(() async {
-      final int nowMs = await _stampRemoteStringPref(
-        videoRemoteSecondarySubtitlePrefKey(uid),
-        videoRemoteSecondarySubtitleAtPrefKey(uid),
-        source,
-      );
-      _pushRemotePlayback(
-        uid,
-        VideoPlaybackSyncState(
-          secondarySubtitleSource: source,
-          secondarySubtitleAt: nowMs,
-        ),
-      );
-    }());
+    unawaited(
+      _saveReviewableChoice(_ReviewChoiceKind.secondarySubtitle, () async {
+        final int nowMs = await _stampRemoteStringPref(
+          videoRemoteSecondarySubtitlePrefKey(uid),
+          videoRemoteSecondarySubtitleAtPrefKey(uid),
+          source,
+        );
+        _pushRemotePlayback(
+          uid,
+          VideoPlaybackSyncState(
+            secondarySubtitleSource: source,
+            secondarySubtitleAt: nowMs,
+          ),
+        );
+      }),
+    );
     _showOsd(t.video_subtitle_switched(label: displayLabel));
   }
 
@@ -1997,20 +2002,22 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final String source = _remoteEmbeddedSubtitleSource(track);
     _rebuild(() => _currentSecondarySubtitleSource = source);
     final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
-    unawaited(() async {
-      final int nowMs = await _stampRemoteStringPref(
-        videoRemoteSecondarySubtitlePrefKey(uid),
-        videoRemoteSecondarySubtitleAtPrefKey(uid),
-        source,
-      );
-      _pushRemotePlayback(
-        uid,
-        VideoPlaybackSyncState(
-          secondarySubtitleSource: source,
-          secondarySubtitleAt: nowMs,
-        ),
-      );
-    }());
+    unawaited(
+      _saveReviewableChoice(_ReviewChoiceKind.secondarySubtitle, () async {
+        final int nowMs = await _stampRemoteStringPref(
+          videoRemoteSecondarySubtitlePrefKey(uid),
+          videoRemoteSecondarySubtitleAtPrefKey(uid),
+          source,
+        );
+        _pushRemotePlayback(
+          uid,
+          VideoPlaybackSyncState(
+            secondarySubtitleSource: source,
+            secondarySubtitleAt: nowMs,
+          ),
+        );
+      }),
+    );
     _showOsd(t.video_subtitle_remote_player_decoded(label: label));
     return true;
   }
@@ -2068,17 +2075,19 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (!mounted) return;
     _rebuild(() => _currentSecondarySubtitleSource = null);
     final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
-    unawaited(() async {
-      final int nowMs = await _stampRemoteStringPref(
-        videoRemoteSecondarySubtitlePrefKey(uid),
-        videoRemoteSecondarySubtitleAtPrefKey(uid),
-        null,
-      );
-      _pushRemotePlayback(
-        uid,
-        VideoPlaybackSyncState(secondarySubtitleAt: nowMs),
-      );
-    }());
+    unawaited(
+      _saveReviewableChoice(_ReviewChoiceKind.secondarySubtitle, () async {
+        final int nowMs = await _stampRemoteStringPref(
+          videoRemoteSecondarySubtitlePrefKey(uid),
+          videoRemoteSecondarySubtitleAtPrefKey(uid),
+          null,
+        );
+        _pushRemotePlayback(
+          uid,
+          VideoPlaybackSyncState(secondarySubtitleAt: nowMs),
+        );
+      }),
+    );
   }
 
   /// 远端模式：恢复远端副字幕来源（[_restoreSecondarySubtitle] 远端分支）。
@@ -3278,10 +3287,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // 图形轨没有 cue：源指针与「清空库里的 cue」原子写入。播放列表里的一集也要清——
       // 那份 cue 是之前选过的文本字幕 / OCR 转出的字幕留下的，留着它重开时会盖掉图形
       // 字幕、看起来像「图形字幕被自动取消选中」（BUG-3103）。
-      await widget.repo.saveSubtitleSelection(
-        bookUid: bookUid,
-        subtitleSource: persisted,
-        cues: const <AudioCue>[],
+      // 卡片片段回看中暂存、继续观看时补存（BUG-3490）。
+      await _saveReviewableChoice(
+        _ReviewChoiceKind.primarySubtitle,
+        () => widget.repo.saveSubtitleSelection(
+          bookUid: bookUid,
+          subtitleSource: persisted,
+          cues: const <AudioCue>[],
+        ),
       );
       if (!isCurrent()) return false;
       _rebuild(() => _currentSubtitleSource = persisted);
@@ -3330,15 +3343,19 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 半落库导致下次恢复内容与源标签不一致。播放列表各集有意不存 cue（每集外部
     // 文件按磁盘动态解析，避免跨集 bookUid 错配，见 `_loadEpisode` 注释），故只
     // 写源指针。
-    if (_episodes.isEmpty) {
-      await widget.repo.saveSubtitleSelection(
-        bookUid: bookUid,
-        subtitleSource: persisted,
-        cues: cues,
-      );
-    } else {
-      await widget.repo.updateSubtitleSource(bookUid, persisted);
-    }
+    final bool singleVideo = _episodes.isEmpty;
+    // 卡片片段回看中暂存、继续观看时补存（BUG-3490）。
+    await _saveReviewableChoice(_ReviewChoiceKind.primarySubtitle, () async {
+      if (singleVideo) {
+        await widget.repo.saveSubtitleSelection(
+          bookUid: bookUid,
+          subtitleSource: persisted,
+          cues: cues,
+        );
+      } else {
+        await widget.repo.updateSubtitleSource(bookUid, persisted);
+      }
+    });
     if (!isCurrent()) return false;
     _rebuild(() => _currentSubtitleSource = persisted);
     _showOsd(t.video_subtitle_switched(label: source.label));
@@ -3368,18 +3385,22 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // BUG-081: 关字幕也要清掉单视频已落库的 cue，否则重进时 `loadCues` 命中旧
     // cue 又把字幕显示回来。cue 与源指针原子写入（事务）。播放列表不入 cue，只
     // 写源指针。
-    if (_episodes.isEmpty) {
-      await widget.repo.saveSubtitleSelection(
-        bookUid: bookUid,
-        subtitleSource: SubtitleSource.offSentinel,
-        cues: const <AudioCue>[],
-      );
-    } else {
-      await widget.repo.updateSubtitleSource(
-        bookUid,
-        SubtitleSource.offSentinel,
-      );
-    }
+    final bool singleVideo = _episodes.isEmpty;
+    // 卡片片段回看中暂存、继续观看时补存（BUG-3490）。
+    await _saveReviewableChoice(_ReviewChoiceKind.primarySubtitle, () async {
+      if (singleVideo) {
+        await widget.repo.saveSubtitleSelection(
+          bookUid: bookUid,
+          subtitleSource: SubtitleSource.offSentinel,
+          cues: const <AudioCue>[],
+        );
+      } else {
+        await widget.repo.updateSubtitleSource(
+          bookUid,
+          SubtitleSource.offSentinel,
+        );
+      }
+    });
     if (!current()) return;
     _rebuild(() => _currentSubtitleSource = SubtitleSource.offSentinel);
   }
@@ -3710,9 +3731,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 本次波形 / 自动对轴的探测上界：整集音源（本地文件 / 互联 host）读
   /// [kSubtitleAutoAlignProbeLimitMs]；只能读流时只拉前 [kStreamSubtitleAlignProbeLimitMs]，
   /// 抽音、`-t`、cue 栅格化上界与波形时间窗都取它（见 [subtitleAlignProbeLimitMs]）。
-  int get _subtitleAlignProbeLimitMs => subtitleAlignProbeLimitMs(
-    fromStream: !_canResolveSubtitleTimingAudio,
-  );
+  int get _subtitleAlignProbeLimitMs =>
+      subtitleAlignProbeLimitMs(fromStream: !_canResolveSubtitleTimingAudio);
 
   /// 波形 / 自动对轴的音频输入。整集音源优先；否则从流里只裁出这两者实际会看的
   /// 前 [_subtitleAlignProbeLimitMs]（时间轴与本地视频完全同源），不必拉整集。按「流 + 音轨」缓存，失败不缓存。

@@ -59,8 +59,18 @@ class CardSourceLink {
   final String? chapterId;
 
   /// SHA-256 of the complete source file; mandatory for video identities,
-  /// whose existing library UID can otherwise collide across devices.
+  /// whose existing library UID can otherwise collide across devices — except
+  /// [isContentAddressedVideoUid] ones, which name the online content itself.
   final String? fingerprint;
+
+  /// BUG-3490: library identities minted from the online content they play
+  /// rather than from a local file name — URL / YouTube stream rows
+  /// (`video/stream/<yt:id | url digest>`) and online-video-source episodes
+  /// (`anime-source:<package>:<source>:<episode url>`). There are no local
+  /// bytes to fingerprint, and the UID itself cannot collide with a different
+  /// work, so a video link with such a UID may omit [fingerprint].
+  static bool isContentAddressedVideoUid(String uid) =>
+      uid.startsWith('video/stream/') || uid.startsWith('anime-source:');
 
   /// Cross-device library identity of a book/manga (the title-derived key
   /// shared by sync, backup and interconnect). Resolvers try [uid] first and
@@ -234,7 +244,7 @@ class CardSourceLink {
           throw const FormatException('Manga requires a page anchor');
         }
       case CardSourceKind.video:
-        if (fingerprint == null ||
+        if ((fingerprint == null && !isContentAddressedVideoUid(uid)) ||
             episodeIndex == null ||
             startMs == null ||
             chapterIndex != null ||

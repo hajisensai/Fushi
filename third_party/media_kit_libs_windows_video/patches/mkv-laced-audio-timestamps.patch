@@ -1,0 +1,84 @@
+--- a/demux/demux_mkv.c
++++ b/demux/demux_mkv.c
+@@ -3107,6 +3107,51 @@
+     return res;
+ }
+ 
++// Samples (at 48 kHz) carried by one Opus packet, from its TOC byte
++// (RFC 6716 section 3.1). 0 if the packet is malformed.
++static int mkv_opus_packet_samples(const uint8_t *data, size_t len)
++{
++    static const int silk[4] = {480, 960, 1920, 2880};
++    static const int celt[4] = {120, 240, 480, 960};
++    if (len < 1)
++        return 0;
++    int config = data[0] >> 3;
++    int frame = config < 12 ? silk[config & 3]
++              : config < 16 ? ((config & 1) ? 960 : 480)
++              : celt[config & 3];
++    int count;
++    switch (data[0] & 3) {
++    case 0:  count = 1; break;
++    case 3:
++        if (len < 2)
++            return 0;
++        count = data[1] & 0x3F;
++        break;
++    default: count = 2; break;
++    }
++    int samples = frame * count;
++    return samples > 0 && samples <= 5760 ? samples : 0;
++}
++
++// Duration of one lace frame of an audio track that has no DefaultDuration,
++// or 0 if it cannot be known. Opus packets describe their own length; for
++// other codecs a known block duration is split evenly over the laces, which
++// is what FFmpeg's Matroska demuxer does too.
++static double mkv_lace_frame_duration(mkv_track_t *track,
++                                      struct block_info *block_info,
++                                      struct demux_packet *dp)
++{
++    if (track->type != MATROSKA_TRACK_AUDIO)
++        return 0;
++    if (track->codec_id && !strcmp(track->codec_id, "A_OPUS")) {
++        int samples = mkv_opus_packet_samples(dp->buffer, dp->len);
++        return samples / 48000.0;
++    }
++    if (block_info->duration_known && block_info->num_laces > 0)
++        return block_info->duration / 1e9 / block_info->num_laces;
++    return 0;
++}
++
+ static int handle_block(demuxer_t *demuxer, struct block_info *block_info)
+ {
+     mkv_demuxer_t *mkv_d = (mkv_demuxer_t *) demuxer->priv;
+@@ -3170,6 +3215,12 @@
+ 
+     if (use_this_block) {
+         uint64_t filepos = block_info->filepos;
++        // Without DefaultDuration only the first lace frame has a known
++        // timestamp. Derive the others from the frames' own durations where
++        // possible: frames left without any timestamp are dropped by the
++        // stream recorder (dump-cache / stream-record), because muxers
++        // reject them ("non monotonically increasing dts ... >= NOPTS").
++        double lace_pts = current_pts;
+ 
+         for (int i = 0; i < block_info->num_laces; i++) {
+             AVBufferRef *data = block_info->laces[i];
+@@ -3197,6 +3248,16 @@
+             if (i == 0 || track->default_duration) {
+                 dp->pts = current_pts + i * track->default_duration;
+                 dp->keyframe = keyframe;
++            } else if (lace_pts != MP_NOPTS_VALUE) {
++                dp->pts = lace_pts;
++                MP_TRACE(demuxer, "Derived timestamp %f of lace frame %d "
++                         "without DefaultDuration.\n", lace_pts, i);
++            }
++            if (!track->default_duration && lace_pts != MP_NOPTS_VALUE) {
++                double frame_duration =
++                    mkv_lace_frame_duration(track, block_info, dp);
++                lace_pts = frame_duration > 0 ? lace_pts + frame_duration
++                                              : MP_NOPTS_VALUE;
+             }
+             if (track->block_dts)
+                 MPSWAP(double, dp->pts, dp->dts);

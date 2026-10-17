@@ -71,6 +71,7 @@ VideoMiningImageMode? parseVideoMiningImageModeOverride(String? wireName) {
 /// 这张卡实际交给引擎的图片方式。
 ///
 /// * 覆盖项给了就用它，否则用设置 [preferred]。
+/// * 打了码（`mosaic` 非空）：动图 / 片段改成「字幕开头」静帧——打码只对静图所见即所得。
 /// * 「查词时画面」且用户逐帧挪过封面帧（`coverFrameAtMs`）：挪过的帧不是当前解码帧，
 ///   改成按时刻抽帧（引擎的 [VideoMiningImageMode.subtitleStart] 就是「在静帧时刻抽
 ///   一帧」，时刻已由 [applyVideoMiningOverrides] 换成用户挪到的那一刻）。
@@ -84,8 +85,13 @@ VideoMiningImageMode resolveVideoMiningImageMode({
   MiningRequestOverrides? overrides,
   bool forceSubtitleStart = false,
 }) {
-  final VideoMiningImageMode mode =
+  final VideoMiningImageMode requested =
       parseVideoMiningImageModeOverride(overrides?.videoImageMode) ?? preferred;
+  // 打了码只能出静图（引擎同一判据兜底）：动图 / 片段改按时刻抽「字幕开头」那一帧。
+  final VideoMiningImageMode mode =
+      (overrides?.hasMosaic ?? false) && !requested.isStill
+      ? VideoMiningImageMode.subtitleStart
+      : requested;
   if (mode != VideoMiningImageMode.currentFrame) return mode;
   if (forceSubtitleStart || overrides?.coverFrameAtMs != null) {
     return VideoMiningImageMode.subtitleStart;

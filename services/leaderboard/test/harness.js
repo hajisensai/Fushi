@@ -283,6 +283,9 @@ export function entry(kind, refs, title, extra = {}) {
 
 export const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]);
 
+// 真 JPEG 构造器（封面哈希测试用）：独立模块，免得 node 直接跑的生成脚本把 worker.js 一起拉进来。
+export { coverJpeg, withExifOrientation } from './jpeg.js';
+
 /** PNG 头 + IHDR（宽高 w×h；服务端只读文件头，不解码像素）。 */
 export function pngHeader(w = 1, h = 1) {
   const b = new Uint8Array(33);

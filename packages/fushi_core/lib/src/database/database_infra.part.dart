@@ -77,6 +77,22 @@ mixin _FushiDbInfra on _$FushiDatabase {
     return rows.isNotEmpty;
   }
 
+  /// v118 迁移：把 [tableName] 里尚未记录的 `local_added_at` 回填成
+  /// `imported_at`（理由见迁移步注释）。只碰 NULL 行，重跑幂等。没有
+  /// `imported_at` 列的表（阶梯上的合成 / 残缺库，与其它加列步的 `_columnExists`
+  /// 守卫同形）无从回填，保持 NULL = 时刻未知。
+  Future<void> _backfillLocalAddedAt(String tableName) async {
+    if (!_identifierRe.hasMatch(tableName)) {
+      throw ArgumentError.value(
+          tableName, 'tableName', 'not a valid identifier');
+    }
+    if (!await _columnExists(tableName, 'imported_at')) return;
+    await customStatement(
+      'UPDATE $tableName SET local_added_at = imported_at '
+      'WHERE local_added_at IS NULL',
+    );
+  }
+
   /// Creates all secondary indexes idempotently. Called from onCreate (fresh
   /// install) and schema steps that add indexed tables — NOT on every open. Each
   /// index is guarded by a table-existence check because a partially-migrated

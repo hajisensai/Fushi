@@ -71,8 +71,7 @@ void main() {
         ],
         action: DownloadBatchAction.pause,
       );
-      expect(maxConcurrent, 1,
-          reason: '并发会把一批操作变成一批竞态（同后端暂停/同表生命周期 CAS）');
+      expect(maxConcurrent, 1, reason: '并发会把一批操作变成一批竞态（同后端暂停/同表生命周期 CAS）');
     });
 
     test('deleteFiles 透传到每一条的 delete', () async {
@@ -127,19 +126,100 @@ void main() {
         _task('b', DownloadTaskActions(clear: () async {})),
         _task('c', DownloadTaskActions(retry: () async {})),
       ];
-      expect(
-        countDownloadTasksSupporting(tasks, DownloadBatchAction.retry),
-        2,
-      );
-      expect(
-        countDownloadTasksSupporting(tasks, DownloadBatchAction.clear),
-        1,
-      );
+      expect(countDownloadTasksSupporting(tasks, DownloadBatchAction.retry), 2);
+      expect(countDownloadTasksSupporting(tasks, DownloadBatchAction.clear), 1);
       expect(
         countDownloadTasksSupporting(tasks, DownloadBatchAction.pause),
         0,
         reason: '一条都不支持时按钮必须禁用，否则点下去只会弹「0 条已处理」',
       );
+    });
+  });
+
+  group('downloadClearCompletedDisposition', () {
+    Future<void> noop() async {}
+    Future<void> noopDelete({required bool deleteFiles}) async {}
+
+    final DownloadTaskEntry clearOnly = _task(
+      'clear-only',
+      DownloadTaskActions(clear: noop),
+    );
+    final DownloadTaskEntry deleteWithFiles = _task(
+      'delete-with-files',
+      DownloadTaskActions(delete: noopDelete, deletesFiles: true),
+    );
+    final DownloadTaskEntry deleteNoFiles = _task(
+      'delete-no-files',
+      DownloadTaskActions(delete: noopDelete),
+    );
+    final DownloadTaskEntry both = _task(
+      'both',
+      DownloadTaskActions(clear: noop, delete: noopDelete, deletesFiles: true),
+    );
+
+    test('不勾删除文件：有 clear 才清记录，否则不动（绝不调 delete）', () {
+      expect(
+        downloadClearCompletedDisposition(clearOnly, deleteFiles: false),
+        DownloadClearCompletedDisposition.clearRecord,
+      );
+      expect(
+        downloadClearCompletedDisposition(deleteWithFiles, deleteFiles: false),
+        DownloadClearCompletedDisposition.untouched,
+      );
+      expect(
+        downloadClearCompletedDisposition(deleteNoFiles, deleteFiles: false),
+        DownloadClearCompletedDisposition.untouched,
+      );
+      expect(
+        downloadClearCompletedDisposition(both, deleteFiles: false),
+        DownloadClearCompletedDisposition.clearRecord,
+      );
+    });
+
+    test('勾删除文件：兑现得了就删文件，否则退回清记录或不动', () {
+      expect(
+        downloadClearCompletedDisposition(clearOnly, deleteFiles: true),
+        DownloadClearCompletedDisposition.clearRecordKeepFiles,
+      );
+      expect(
+        downloadClearCompletedDisposition(deleteWithFiles, deleteFiles: true),
+        DownloadClearCompletedDisposition.deleteFiles,
+      );
+      expect(
+        downloadClearCompletedDisposition(deleteNoFiles, deleteFiles: true),
+        DownloadClearCompletedDisposition.untouched,
+        reason: 'deletesFiles=false 的 delete 删不删数据由来源决定，不碰',
+      );
+      expect(
+        downloadClearCompletedDisposition(both, deleteFiles: true),
+        DownloadClearCompletedDisposition.deleteFiles,
+      );
+    });
+
+    test('runDownloadClearCompleted 分段计数，单条抛错计入 failed 不中断', () async {
+      final DownloadClearCompletedOutcome outcome =
+          await runDownloadClearCompleted(
+            tasks: <DownloadTaskEntry>[
+              clearOnly,
+              deleteWithFiles,
+              deleteNoFiles,
+              _task(
+                'throws',
+                DownloadTaskActions(
+                  delete: ({required bool deleteFiles}) async =>
+                      throw StateError('boom'),
+                  deletesFiles: true,
+                ),
+              ),
+            ],
+            deleteFiles: true,
+          );
+      expect(outcome.filesDeleted, 1);
+      expect(outcome.clearedKeptFiles, 1);
+      expect(outcome.untouched, 1);
+      expect(outcome.failed, 1);
+      expect(outcome.cleared, 0);
+      expect(outcome.total, 4);
     });
   });
 }

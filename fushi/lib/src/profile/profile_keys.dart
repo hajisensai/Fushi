@@ -93,6 +93,9 @@ class ProfileKeys {
     'last_selected_model',
     'update_never_remind',
     'update_auto_install',
+    // 扩展后台自动更新与 update_auto_install 同族：扩展装在本机、不分 Profile，
+    // 切 Profile 把安装策略翻掉没有意义。
+    'mihon_extension_auto_update',
     'update_beta_channel',
     // HBK-AUDIT-045: keep ALL update-channel/policy keys app-global so the
     // debug channel isn't asymmetrically profile-scoped vs the others.

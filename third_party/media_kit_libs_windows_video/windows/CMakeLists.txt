@@ -94,12 +94,16 @@ get_filename_component(
 # patches/disc-navigation-state.patch, plus patches/gpu-dumb-mode-hwdec-crop.patch
 # (BUG-3296: vo=gpu dumb mode squashed the padded d3d11va surface, e.g. 1088
 # coded rows of 1080p H.264, into the picture). Built with -Dlua=luajit
-# (BUG-3325: user Lua scripts never ran with -Dlua=disabled). See NATIVE_BUILD.md.
-set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1.7z")
+# (BUG-3325: user Lua scripts never ran with -Dlua=disabled), plus
+# patches/mkv-laced-audio-timestamps.patch (BUG-3499: laced Matroska audio
+# without DefaultDuration, e.g. mkvmerge Opus, lost every lace frame after the
+# first in dump-cache) and patches/recorder-video-dts.patch (BUG-3500: Matroska
+# video has no DTS, so dump-cache lost every B-frame). See NATIVE_BUILD.md.
+set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1.7z")
 
 # Upstream source provenance; the committed patched archive is the build input.
 set(LIBMPV_URL "https://github.com/mpv-player/mpv/tree/36abaa32d00a7229ee206aae12dc0e97e7962dca")
-set(LIBMPV_MD5 "675d342ff8e34b0e4b9e23ba837552ee")
+set(LIBMPV_MD5 "330152dcb83f00d93a46397d53614f60")
 
 # Vendored archive (committed) + build-dir extraction target (TODO-1172).
 set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")

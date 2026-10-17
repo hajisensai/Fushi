@@ -44,6 +44,7 @@ import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
     show ankiRepositoryProvider;
 import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -51,12 +52,14 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/sync/interconnect_assistant_client.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dart';
 import 'package:fushi/src/media/downloads/download_execution_target.dart';
+import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/media/torrent/magnet_utils.dart'
     show magnetUriFromInfoHash;
@@ -685,6 +688,33 @@ class _HomePageState extends BasePageState<HomePage>
         ErrorLogService.instance.log('HomePage.leaderboardSync', e, s);
       }),
     );
+    _maybeFollowPairedLogin();
+  }
+
+  /// 本机没有 Fushi 账户时跟随已配对设备自动登录（条件、退避、失败静默都在
+  /// [LeaderboardPairedLogin] 里；未满足条件时只读本地配置，不发请求）。成功给一次轻提示。
+  void _maybeFollowPairedLogin() {
+    unawaited(() async {
+      final LeaderboardPairedLoginSuccess? done = await ref
+          .read(leaderboardPairedLoginProvider)
+          .maybeRun();
+      if (done == null || !mounted) return;
+      final String? peer = done.peerName;
+      ScaffoldMessenger.of(context).showSnackBar(
+        FushiSnackBar(
+          content: Text(
+            peer == null || peer.isEmpty
+                ? t.leaderboard_paired_login_done_generic(
+                    name: done.self.account.tag,
+                  )
+                : t.leaderboard_paired_login_done(
+                    device: peer,
+                    name: done.self.account.tag,
+                  ),
+          ),
+        ),
+      );
+    }());
   }
 
   /// 启动期自动处理一轮 Anki 媒体去重的 UI 侧收尾：报结果，或提示 + 等确认。
@@ -2183,6 +2213,13 @@ class _HomePageState extends BasePageState<HomePage>
       onOpenDownloads: browseReachable
           ? () => _popToBrowseTab(BrowseTab.downloads)
           : null,
+      // 详情页的「任务」：落到下载任务并只看这部作品（同一可达性门）。
+      onOpenWorkDownloads: browseReachable
+          ? (VideoMediaReference reference) => _popToBrowseTab(
+              BrowseTab.downloads,
+              downloadsWorkFocus: videoDiscoveryDownloadTaskFocus(reference),
+            )
+          : null,
       onOpenSubscriptions: browseReachable
           ? _openVideoDiscoverySubscriptionsPanel
           : null,
@@ -2263,11 +2300,16 @@ class _HomePageState extends BasePageState<HomePage>
   bool _popToBrowseTab(
     BrowseTab tab, {
     BrowseDownloadsSection downloadsSection = BrowseDownloadsSection.tasks,
+    DownloadTaskWorkFocus? downloadsWorkFocus,
   }) {
     if (!_browseReachable) return false;
     Navigator.of(context).popUntil((Route<Object?> route) => route.isFirst);
     if (!mounted) return false;
-    _openBrowseTab(tab, downloadsSection: downloadsSection);
+    _openBrowseTab(
+      tab,
+      downloadsSection: downloadsSection,
+      downloadsWorkFocus: downloadsWorkFocus,
+    );
     return true;
   }
 
@@ -2914,6 +2956,7 @@ class _HomePageState extends BasePageState<HomePage>
   void _openBrowseTab(
     BrowseTab tab, {
     BrowseDownloadsSection downloadsSection = BrowseDownloadsSection.tasks,
+    DownloadTaskWorkFocus? downloadsWorkFocus,
   }) {
     // 浏览页是保活 tab：跳转是一条送给已挂载页面的请求（它原地切页签），不再换
     // key 整页重建——那会丢掉来源 / 发现 / 下载各页签的搜索词、结果与滚动。
@@ -2921,6 +2964,7 @@ class _HomePageState extends BasePageState<HomePage>
       _browseRequest = BrowseNavigationRequest(
         tab,
         downloadsSection: downloadsSection,
+        downloadsWorkFocus: downloadsWorkFocus,
       );
     });
     _selectTab(HomeTab.browse);
@@ -3174,6 +3218,12 @@ class _HomePageState extends BasePageState<HomePage>
               positionMs: book.lastPositionMs,
               completed: book.completedAt != null,
               lastPlayedAt: book.lastPlayedAt,
+              // BUG-3491：片长用来分辨「已打勾的集正在重看」。
+              durationMs: videoDurationMsFromPref(
+                appModelNoUpdate.prefsRepo.getPref(
+                  videoDurationPrefKey(book.bookUid),
+                ),
+              ),
             ),
           )
           .toList(growable: false),

@@ -842,8 +842,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             db.getPref(videoWatchCoveragePrefKey(widget.bookUid)),
         saveCoverage: (String json) =>
             db.setPref(videoWatchCoveragePrefKey(widget.bookUid), json),
-        markCompleted: (String uid) =>
-            db.markVideoCompleted(uid, DateTime.now()),
       )..attach(_controller);
       _watchTracker = tracker;
     }

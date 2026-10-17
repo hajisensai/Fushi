@@ -102,21 +102,22 @@ void main() {
     });
   });
 
-  // v92：观看时长的 DB 写挪进 StudyClock（`_flush` 已删），VideoWatchTracker 剩下的
-  // 唯一 DB 写路径是完成标记 `_checkCompletion`（每 tick + stop 各查一次）。
-  group('video_watch_tracker._checkCompletion fire-and-forget 补 log', () {
-    test('_checkCompletion 的 DB 写包 try/catch 并补 ErrorLogService.log', () {
+  // v92：观看时长的 DB 写挪进 StudyClock（`_flush` 已删）。BUG-3491 起播放不再写
+  // 「已看」标记，`_checkCompletionAt` 只剩单集看完的外部上报（媒体追踪，会写库），
+  // 判定点 = 播放中每个采样点 + 离开时一次。
+  group('video_watch_tracker._checkCompletionAt fire-and-forget 补 log', () {
+    test('_checkCompletionAt 的上报包 try/catch 并补 ErrorLogService.log', () {
       final String src =
           libFile('lib/src/media/video/video_watch_tracker.dart');
-      final String body = fnBody(src, 'Future<void> _checkCompletion(');
+      final String body = fnBody(src, 'Future<void> _checkCompletionAt(');
       expect(body, contains('VideoWatchTracker.checkCompletion'),
           reason:
-              '_checkCompletion 的 DB 写异常必须补 ErrorLogService.log（source tag）。');
+              '_checkCompletionAt 的上报异常必须补 ErrorLogService.log（source tag）。');
       expect(logRe.hasMatch(body), isTrue,
-          reason: '_checkCompletion 方法体内必须有 ErrorLogService.instance.log 调用。');
-      // fail-open 未变：周期 tick 仍是 unawaited fire-and-forget（异常不冒泡阻塞播放）。
-      expect(src, contains('unawaited(_checkCompletion())'),
-          reason: 'fail-open 未变：周期 tick 仍 fire-and-forget。');
+          reason: '_checkCompletionAt 方法体内必须有 ErrorLogService.instance.log 调用。');
+      // fail-open：采样点上的判定是 unawaited fire-and-forget（异常不冒泡阻塞播放）。
+      expect(src, contains('unawaited(_checkCompletionAt('),
+          reason: 'fail-open：采样点判定 fire-and-forget。');
     });
   });
 

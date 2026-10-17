@@ -2,9 +2,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_mosaic.dart';
 import 'package:fushi/src/mining/advanced_mining/manga_crop_geometry.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi_anki/fushi_anki_core.dart' show MiningMosaicRegion;
 
 /// 选中框这一次变化是怎么来的。父组件据此决定是否把选项切到「自定义」：
 /// 画框 / 平移 / 缩放 / 键盘微调都算用户自己框的，[panel]（Tab 切分镜）不算。
@@ -32,6 +34,7 @@ class MangaCropSelector extends StatefulWidget {
     required this.onChanged,
     this.panels = const <Rect>[],
     this.textRect,
+    this.mosaic = const <MiningMosaicRegion>[],
     this.enabled = true,
     this.onSubmit,
     this.focusNode,
@@ -56,6 +59,9 @@ class MangaCropSelector extends StatefulWidget {
 
   /// 这句话的 OCR 文本位置（归一化）。
   final Rect? textRect;
+
+  /// 打码区域（归一化，相对整页）：页图按卡上的样子画出马赛克。
+  final List<MiningMosaicRegion> mosaic;
 
   /// false：整图压暗、不响应手势与键盘（「不要图片」时仍展示原页作参考）。
   final bool enabled;
@@ -435,6 +441,13 @@ class _MangaCropSelectorState extends State<MangaCropSelector>
     final Uint8List? bytes = widget.pageBytes;
     if (bytes == null) {
       return ColoredBox(color: FushiDesignTokens.of(context).surfaces.overlay);
+    }
+    if (widget.mosaic.isNotEmpty) {
+      return MiningMosaicImage(
+        bytes: bytes,
+        regions: widget.mosaic,
+        fit: BoxFit.fill,
+      );
     }
     return Image.memory(
       bytes,

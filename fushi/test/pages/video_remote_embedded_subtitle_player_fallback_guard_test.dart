@@ -56,7 +56,7 @@ void main() {
           reason: 'BUG-2648：文本轨走 libmpv 解码 → sub-text 回流成可点 cue');
       expect(body.contains('selectEmbeddedGraphicTrack('), isFalse,
           reason: 'BUG-2648：文本轨不能再走图形自绘（字画进画面、不可查词）');
-      expect(body.contains('setRemoteSubtitleSource('), isTrue,
+      expect(body.contains('_rememberRemoteSubtitleSource('), isTrue,
           reason: '回落选中也要持久化，重进才能恢复');
       expect(body.contains('video_subtitle_remote_player_decoded'), isTrue,
           reason: '字幕随播放逐句出现（列表不会预先完整）要告诉用户');

@@ -1,0 +1,40 @@
+name: WebKitPanProbe
+options:
+  bundleIdPrefix: app.fushi.test
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  WebProbe:
+    type: application
+    platform: iOS
+    sources: [App]
+    info:
+      path: App/Info.plist
+      properties:
+        UILaunchScreen: {}
+        CFBundleDisplayName: WebProbe
+    settings:
+      base:
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        PRODUCT_BUNDLE_IDENTIFIER: app.fushi.test.webprobe
+  WebKitPanProbeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: WebProbe
+    settings:
+      base:
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        PRODUCT_BUNDLE_IDENTIFIER: app.fushi.test.webkitpanprobe
+        TEST_TARGET_NAME: WebProbe
+schemes:
+  WebKitPanProbe:
+    build:
+      targets:
+        WebProbe: all
+        WebKitPanProbeUITests: [test]
+    test:
+      targets: [WebKitPanProbeUITests]

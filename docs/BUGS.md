@@ -40,6 +40,32 @@
 | [BUG-3455](bugs/BUG-3455-srs-apkg-proto3-zero-defaults.md) | ✅ | ✅ | srs-apkg-proto3-zero-defaults |
 | [BUG-3454](bugs/BUG-3454-srs-deck-count-rollup.md) | ✅ | ✅ | 复习牌组列表：父牌组新卡/到期数没按子牌组截断后自底向上汇总 |
 | [BUG-3453](bugs/BUG-3453-settings-row-dialog-intrinsic-layout.md) | ✅ | ✅ | settings-row-dialog-intrinsic-layout |
+> 共 3129 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3500](bugs/BUG-3500-snapshot-mkv-video-missing-dts.md) | ✅ | ✅ | 在线视频同步片段画面花屏（缓冲副本丢掉 Matroska B 帧视频包） |
+| [BUG-3499](bugs/BUG-3499-snapshot-laced-opus-audio-truncated.md) | ✅ | ✅ | 在线视频同步片段的音频只剩 0.2～0.4 秒且断续（缓冲副本丢音频包） |
+| [BUG-3498](bugs/BUG-3498-seekbar-click-toggles-pause.md) | ✅ | ✅ | seekbar-click-toggles-pause |
+| [BUG-3497](bugs/BUG-3497-reader-open-fushi-local-dns.md) | ✅ | ✅ | Windows 开书/跨章白屏约 2 秒：WebView2 每次导航解析 fushi.local 走组播名称解析 |
+| [BUG-3496](bugs/BUG-3496-audio-first-play-jumps-book-start.md) | ✅ | ✅ | 有声书首次播放载入窗口位置为 0 致正文跳回书首 |
+| [BUG-3495](bugs/BUG-3495-video-remote-row-toggle-tint.md) | ✅ | ✅ | 视频遥控：开关类按钮放进主控制行时没有着色 |
+| [BUG-3494](bugs/BUG-3494-goldens-windows-red-triage.md) | ✅ | ✅ | Windows 本机 test/goldens 18 张基准图过期（CI 排除 golden，M3E 改版后无人重生成） |
+| [BUG-3493](bugs/BUG-3493-srs-deck-list-names-hidden.md) | ✅ | ✅ | 复习牌组列表：子牌组名字被行首图标与整格缩进挤没、空默认牌组删不掉又常驻 |
+| [BUG-3492](bugs/BUG-3492-mining-overwrite-same-popup.md) | ✅ | ✅ | 在线视频后台制卡后，同一查词弹窗里点 ✓ / 高级制卡确认没反应、不覆盖 |
+| [BUG-3491](bugs/BUG-3491-video-episode-progress-refresh.md) | ✅ | ✅ | 视频剧集进度返回不刷新、重看已看集续播跳下一集、自动标记看完判定不一致 |
+| [BUG-3490](bugs/BUG-3490-card-clip-review-stream.md) | ✅ | ✅ | 卡片片段回看远端视频被要求先下载 |
+| [BUG-3489](bugs/BUG-3489-feedback-video-compress-locks-form.md) | ✅ | ✅ | 反馈视频压缩中附件 × 与文字框都点不动 |
+| [BUG-3488](bugs/BUG-3488-video-paused-sentence-skip-stuck.md) | ✅ | ✅ | 视频暂停时上/下一句跳不动，字幕约 2 秒后弹回原句 |
+| [BUG-3487](bugs/BUG-3487-screen-ocr-mine-full-sentence.md) | ✅ | ✅ | 截屏识字制卡句子只有被点字所在一行，竖排/折行长句只剩半句 |
+| [BUG-3485](bugs/BUG-3485-android-gamepad-b-focus-ring.md) | ✅ | ✅ | Android 手柄 B 在触摸模式下变系统返回 + 屏幕外缘系统焦点框 |
+| [BUG-3484](bugs/BUG-3484-reader-text-justify.md) | ✅ | ✅ | 两端对齐开关开启时正文不对齐（Standard Ebooks EPUB） |
+| [BUG-3483](bugs/BUG-3483-detail-section-header-trailing-misaligned.md) | ✅ | ✅ | 详情页分区头 trailing 按钮不贴右缘（剧集多选 ✕ 位置歪） |
+| [BUG-3482](bugs/BUG-3482-ios-continuous-cross-axis-drag.md) | ✅ | ✅ | iOS 滚动模式交叉轴能被拖动（竖排上下 / 横排左右） |
+| [BUG-3481](bugs/BUG-3481-audiobook-gap-fill-skipped-text.md) | ✅ | ✅ | 有声书 ASR 漏转后半句时合缝切点落空、整句无人认领 |
+| [BUG-3480](bugs/BUG-3480-screen-ocr-hdr-capture.md) | ✅ | ✅ | Windows 截屏识字在系统开 HDR 时截图发白过曝 |
+| [BUG-3454](bugs/BUG-3454-hidden-term-dict-still-in-lookup-engine.md) | ✅ | ✅ | hidden-term-dict-still-in-lookup-engine |
+| [BUG-3453](bugs/BUG-3453-reader-cue-gap-glues-last-word.md) | ✅ | ✅ | reader-cue-gap-glues-last-word |
 | [BUG-3452](bugs/BUG-3452-peer-book-download-followups.md) | ✅ | ✅ | 对端书下载后多出未下载卡、合集册数翻倍、跳回顶部、最近阅读排序错位 |
 | [BUG-3451](bugs/BUG-3451-video-bar-menu-hides-controls.md) | ✅ | ✅ | 视频控制条「⋯」只有一项仍弹菜单、点开菜单时控制条消失 |
 | [BUG-3450](bugs/BUG-3450-browser-ext-subtitle-positioning.md) | ✅ | ✅ | 浏览器扩展字幕底板在全屏下与屏幕同高、缩放后整块上移飞出屏幕 |

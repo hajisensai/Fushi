@@ -24,12 +24,19 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/feedback/feedback_models.dart';
+import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_signing.dart';
 
 /// 服务端返回的非 2xx。[code] 取响应 JSON 的 `error`（如 `bad_signature` / `rate_limited`），
 /// 响应不是约定形状时为 `http_<status>`。
+/// 封面投票的哈希没命中已有候选（服务端 409 `cover_bytes_required`），需要带图片字节重传。
+bool isCoverBytesRequired(Object e) =>
+    e is LeaderboardApiException &&
+    e.status == 409 &&
+    e.code == 'cover_bytes_required';
+
 class LeaderboardApiException implements Exception {
   const LeaderboardApiException(this.status, this.code, [this.detail]);
 
@@ -264,6 +271,25 @@ class LeaderboardClient {
     );
   }
 
+  /// 代另一台（已互联配对的）新设备把它的钥匙绑到本账户（`POST /v1/me/devices`）。
+  /// [proof] 由新设备用**它自己的**私钥签 [leaderboardDeviceLinkProofString] 得到——新设备
+  /// 只交出公钥与持有证明，私钥 / 恢复码从不离开新设备。返回**新设备视角**的账户
+  /// （`uploadDevice` 按新钥匙算），原样转交给新设备落档。
+  ///
+  /// 409 `too_many_devices`（满 10 台）/ `key_taken`（该钥匙已属于别的账户）；旧版服务端
+  /// 没有这个接口时 404。
+  Future<LeaderboardSelf> linkDevice(
+    LeaderboardDeviceLinkRequest request,
+  ) async {
+    _requireIdentity();
+    final JsonMap j = await _sendJson(
+      'POST',
+      '/v1/me/devices',
+      body: request.toJson(),
+    );
+    return LeaderboardSelf.fromJson(j);
+  }
+
   /// 解绑一台设备（204）。不能解绑本机（400 `cannot_remove_current`）；解绑的若是上传
   /// 设备，服务端清空上传设备。
   Future<void> removeDevice(String keyId) async {
@@ -326,17 +352,23 @@ class LeaderboardClient {
     return ShelfUploadResult.fromJson(j);
   }
 
-  /// 给缺封面的作品补传缩略图，返回封面路径；别人已抢先传过（409 cover_exists）返回 null。
+  /// 提交作品封面缩略图（服务端按人数投票选封面，见 services/leaderboard/src/cover_votes.js），
+  /// 返回本账户所投封面的路径。
+  ///
+  /// [hash] = 缩略图的 dHash（`coverDHash`）：服务端按它归并相近的图，命中已有候选只投票、
+  /// 不再存图。不带 [hash] 是旧协议：作品已有封面时服务端回 409 `cover_exists`，此时返回 null。
   Future<String?> uploadCover(
     String workId,
     Uint8List bytes, {
     String contentType = 'image/jpeg',
+    String? hash,
   }) async {
     _requireIdentity();
     try {
       final JsonMap j = await _sendJson(
         'PUT',
         '/v1/works/${_segment(workId)}/cover',
+        query: hash == null ? null : <String, String>{'h': hash},
         bytes: bytes,
         contentType: contentType,
         timeout: _uploadTimeout,
@@ -346,6 +378,26 @@ class LeaderboardClient {
       if (e.status == 409 && e.code == 'cover_exists') return null;
       rethrow;
     }
+  }
+
+  /// 不带图片字节的封面投票：[hash]（缩略图 dHash）与 [url]（白名单图床地址）二选一。
+  /// 返回本账户所投封面的路径。哈希没命中已有候选时抛 409 `cover_bytes_required`
+  /// （[isCoverBytesRequired]），随后用 [uploadCover] 带上字节；URL 不在白名单抛 400
+  /// `bad_cover_url`。
+  Future<String?> voteCover(String workId, {String? hash, String? url}) async {
+    _requireIdentity();
+    if ((hash == null) == (url == null)) {
+      throw ArgumentError('exactly one of hash / url');
+    }
+    final JsonMap j = await _sendJson(
+      'POST',
+      '/v1/works/${_segment(workId)}/cover/vote',
+      body: <String, dynamic>{
+        if (hash != null) 'hash': hash,
+        if (url != null) 'url': url,
+      },
+    );
+    return j['cover'] as String?;
   }
 
   // ---- 读 ----

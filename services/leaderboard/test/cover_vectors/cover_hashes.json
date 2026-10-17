@@ -1,0 +1,12 @@
+{
+  "_comment": "封面 dHash 跨语言对拍：键 = test/cover_vectors 下的样本文件，值 = Dart coverDHash（packages/fushi_engine/lib/leaderboard/cover_hash.dart，image 4.3.0）的结果。cover_hash.test.js 断言 Worker 结果与之一致；fushi_engine 的 cover_hash_test.dart 断言 Dart 结果仍等于这里记的值。jpeg-js 编码的样本由 test/gen_cover_fixtures.mjs 生成；cover_dart_q80.jpg 由 Dart image 的 copyResize + encodeJpg(quality: 80) 生成（与 App 缩略图同一路径）。",
+  "exact": {
+    "cover_portrait.jpg": "0703014000266000",
+    "cover_portrait_exif6.jpg": "ffffdfdeb8b0f9fb",
+    "cover_landscape_q50.jpg": "0f0f03030b80c0c0",
+    "cover_tiny.jpg": "800080008000a000"
+  },
+  "dartEncoded": {
+    "cover_dart_q80.jpg": "0f0f03030b80c0c0"
+  }
+}

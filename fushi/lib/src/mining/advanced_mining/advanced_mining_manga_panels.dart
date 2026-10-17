@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_mosaic.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart';
 import 'package:fushi/src/mining/advanced_mining/manga_crop_geometry.dart';
 import 'package:fushi/src/mining/advanced_mining/manga_crop_selector.dart';
@@ -15,6 +16,7 @@ import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_anki/fushi_anki_core.dart' show MiningMosaicRegion;
 
 /// 没拿到建议（页尺寸未知）时的占位纵横比：B5 漫画单页。
 const Size kMangaFallbackPageSize = Size(1000, 1414);
@@ -135,6 +137,9 @@ class MangaCropWorkspace extends StatelessWidget {
             selection: c.cropRect,
             panels: s?.panels ?? const <Rect>[],
             textRect: s?.textRect,
+            mosaic: c.mosaicApplicable
+                ? c.mosaicRegions
+                : const <MiningMosaicRegion>[],
             enabled: !c.locked && c.cropChoice != MangaCropChoice.none,
             autofocus: autofocusSelector,
             touch: touch,
@@ -163,6 +168,18 @@ class MangaCropWorkspace extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
+        // 打码对着**整页原图**框（与取景框同一坐标系，先打码再裁）；编辑页里把取景框
+        // 外压暗，框外的码会被裁掉。选了「不要」时没有图可打。
+        if (!c.mangaLoading &&
+            c.pageBytes != null &&
+            c.mosaicApplicable) ...<Widget>[
+          AdvancedMiningMosaicBar(
+            controller: c,
+            loadBytes: () async => c.pageBytes,
+            focusRect: c.cropRect,
+          ),
+          const SizedBox(height: 8),
+        ],
         _MangaCropLegend(touch: touch),
       ],
     );
@@ -276,7 +293,12 @@ class MangaCropPreviewPanel extends StatelessWidget {
       body = Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          MangaCropThumbnail(bytes: c.pageBytes, pageSize: page, rect: rect),
+          MangaCropThumbnail(
+            bytes: c.pageBytes,
+            pageSize: page,
+            rect: rect,
+            mosaic: c.mosaicRegions,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -307,12 +329,16 @@ class MangaCropThumbnail extends StatelessWidget {
     required this.pageSize,
     required this.rect,
     this.maxSize = const Size(112, 140),
+    this.mosaic = const <MiningMosaicRegion>[],
   });
 
   final Uint8List? bytes;
   final Size pageSize;
   final Rect rect;
   final Size maxSize;
+
+  /// 打码区域（相对整页）：缩略图画成卡上的样子。
+  final List<MiningMosaicRegion> mosaic;
 
   @override
   Widget build(BuildContext context) => TweenAnimationBuilder<Rect?>(
@@ -350,14 +376,20 @@ class MangaCropThumbnail extends StatelessWidget {
                       child: SizedBox(
                         width: pageSize.width * scale,
                         height: pageSize.height * scale,
-                        child: Image.memory(
-                          bytes!,
-                          fit: BoxFit.fill,
-                          gaplessPlayback: true,
-                          errorBuilder:
-                              (BuildContext _, Object _, StackTrace? _) =>
-                                  const SizedBox.shrink(),
-                        ),
+                        child: mosaic.isNotEmpty
+                            ? MiningMosaicImage(
+                                bytes: bytes,
+                                regions: mosaic,
+                                fit: BoxFit.fill,
+                              )
+                            : Image.memory(
+                                bytes!,
+                                fit: BoxFit.fill,
+                                gaplessPlayback: true,
+                                errorBuilder:
+                                    (BuildContext _, Object _, StackTrace? _) =>
+                                        const SizedBox.shrink(),
+                              ),
                       ),
                     ),
                   ),

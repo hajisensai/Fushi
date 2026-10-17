@@ -1,0 +1,26 @@
+## BUG-3496 · 有声书首次播放载入窗口位置为 0 致正文跳回书首
+- **报告**：2026-10-17（用户：「播放到后面了还是会有跳开头小学馆那的」。Windows，竖排翻页双页；正文停在第 1 章 p-0001.xhtml「小学館ｅＢｏｏｋｓ／やはり俺の青春ラブコメはまちがっている。６…」并高亮「小学館eBooks」，底部迷你播放器当前句却是「千葉県民お決まりコースだなほかにねえのか」（sentence 4712，进度约 70%）。装的是 upstream develop @ 271b782，已含 BUG-3430 的修复。）
+- **真实性**：✅ 真 bug。沿真实代码路径确认，用户诊断流水对得上：`study_diag_log.txt` 12:04:35 `open resume point chapter=31 … source=saved position` → 12:04:39.7 `navigate → chapter=1` → 12:04:42 `navigate → chapter=31`；12:08:00 `open resume point chapter=33` → 12:08:03.9 `navigate → chapter=1`，之后 90 秒一直停在第 1 章（即截图那一幕）。两次都是开书后约 1 秒、首次播放时。
+  - 链路（行号为 271b782）：
+    1. `fushi/lib/src/media/audiobook/audiobook_controller.dart:881` `load()` 以 `preload: false` 设源；`:918` 「恢复上次播放位置」的 `_player.seek(savedMs)` 落在 just_audio 的**空闲**播放器上（`just_audio-0.9.42/lib/just_audio.dart` `seek()` 默认分支只改 `_playbackEvent.updatePosition` 并交给 `_IdleAudioPlayer`），平台根本没载入。BUG-3430 让 `play()` 等的 `_loadReady` 门（`:1164`）等的就是这次「假 seek」，所以挡不住下面的窗口。
+    2. 第一次 `play()`：`:1139` 先置 `_hasPlayedOnce = true`；`:1166` `_player.play()` → just_audio `_setPlatformActive(true)`：先 `_sendPlayRequest`，再 `_load(initialPosition: 恢复点)`。
+    3. Windows / Linux 后端 `just_audio_media_kit-2.1.0/lib/mediakit_player.dart`：`load()` 先 `_position = Duration.zero` 并上报 `loading` 事件，按已挂起的播放请求 `_player.open(playable, play: true)` 从 0 起播；直到 `stream.duration` 报出时长才 `seek(_setPosition)`。这段时间 positionStream 一路报 0。
+    4. `audiobook_controller.dart:1676` `_updateCurrentCue(0)` 解析成全书第一句（sentence 0，`fushi-cue://s=1&ns=0&ne=9`，即「小学館eBooks」）→ `:1706` `_maybeEmitCrossChapter` → 跟随开 + `_hasPlayedOnce` → `:1792` `onCrossChapter(1)`。
+    5. 阅读器 `fushi/lib/src/pages/implementations/reader_fushi/audiobook.part.dart:857` `_handleCueCrossChapter(1)` → `:915` `_navigateToChapter(1)`：正文换到 p-0001.xhtml、高亮 sentence 0。
+    6. 平台随后落到恢复点。若那一句是匹配句（12:04 那次），跟读再跨回第 31 章；若是**未匹配句**（4705–4718 一带 `text_fragment_id` 为空，12:08 那次的 4712），`unmatchedCueCrossChapterTargetForTesting` 的邻居判定要求「上一条匹配句属于当前章」——当前章已是 1，于是保位，正文就一直停在第 1 章，迷你播放器却显示真实句子。
+  - 只有首次激活平台（开书后第一次按播放、或 `stop` 之后再播）会进这个窗口；已载入的平台上暂停 / 继续不经载入。ExoPlayer / AVPlayer 后端按 `initialPosition` 直接起播、不先报 0，所以 Android / iOS 不表现（BUG-3430 记录里 Windows 探针没复现，是因为探针的音频文件小、mpv 打开快，窗口里一个 125ms tick 都没落进去）。
+- **[x] ① 已修复**（`fushi/lib/src/media/audiobook/audiobook_controller.dart`；首版 `ae3856aaf2`，审查返修见下）：`_activateMainPlayer` 在 `_player.play()` 前调 `_armActivationRestoreGuard()`：播放器仍是 `ProcessingState.idle`、挂着非零位置时，记下这个落点（`_activationRestoreTarget`，文件下标 + 文件内位置）。落定前 `_updateCurrentCue` 不推进 cue、不跨章、不周期落库，当前句保持载入时按恢复点解析的那一句。`_beginExplicitSeek` 会取代这个落点，`load()` 会复位它。
+  - 审查返修（PR #2285）：
+    1. 落定判据不能只看位置：just_audio_media_kit `load()` 在 `open()` 返回、mpv 真 seek 之前先 `_setPosition = _position = initialPosition` 并上报（状态仍 loading，`mediakit_player.dart:257-261`），首版会被这一帧回显骗过。现改为 `classifyActivationTickForTesting`：平台已离开 loading、已报出时长（media_kit 正是在时长到达时才下发 seek）、位置 ≥ 落点−300ms（或已在更后面的文件）才算 landed。满足的 tick 照常处理，但守卫不在这一刻解除：时长那一帧事件里的位置可能仍是回显值，mpv seek 生效前还会再报一帧旧的 0。所以低于落点−容差的回退一直挡到平台从落点往后真的播出 1 秒（或进到后面的文件）。这是按播放进度判的，不是计时。（曾试过「另一个平台事件的 updateTime 不同即解除」，just_audio 在 play 状态翻转时会自己改写 updateTime，假平台的第 5 步旧 0 照样漏过，弃用。）
+    2. `seekMs` 只在 seek 真会下发时（平台不在 loading；loading 期 just_audio 的 `seek()` 直接 return）才把落点改成用户位置。
+    3. `currentFileIndex > targetFileIndex` 视为 landed：多文件书恢复点贴近文件末尾、平台很快切到下一文件时，守卫也能解除。
+    4. 播放位置统一走 `_effectiveFilePosition`：窗口内 `position` / `globalPosition` / `cueAtCurrentPositionInBook`（歌词入场锚定 `allBookCueIdxAtPosition`）/ `displayCueForFloatingLyric` / 跳句起点 / `playCueOnce` 回跳点 / 三条落库路径都报落点本身，不再各读 `_player.position`。
+- **[x] ② 已加自动化测试**：`fushi/test/media/audiobook/audiobook_first_activation_restore_guard_test.dart`。假平台按 just_audio_media_kit 2.1.0 的载入契约行事，依次是：载入先报 0、`open()` 后回显 initialPosition（loading）、从 0 起播若干 tick（先 loading 后 ready）、时长到达那一帧仍带回显值、seek 生效前再报旧 0、最后 seek 生效。断言首次播放的窗口里：当前句不变成全书第一句、不请求跨章、不把低于恢复点的位置落库；对外的 `position` / 书内 cue / 悬浮字幕 cue 也不出现 0 或第 0 句；落定后正常跟读。另有 `classifyActivationTickForTesting` 的纯函数用例（回显 / 无时长 / 后续文件 / 越界）。
+- **验证记录**：
+  - 单测（首版）：修复后 `audiobook_first_activation_restore_guard_test.dart` + `audiobook_play_waits_for_restore_seek_test.dart` 共 4 条全绿（exit 0）。去掉 `_armActivationRestoreGuard()` 调用的对照：2 条红——跨章请求 `Actual: [1]`、窗口内落库 `Actual: [0]`，与用户现象同形。
+  - Windows 离屏真 app（`run_windows_itest.ps1`，隔离测试根，用户这本书 + m4b + SRT 对齐的**拷贝**，存档 p-0031 / 音频 20812048ms，开书后首次播放；临时探针 `integration_test/reader_audio_first_play_realbook_probe_itest.dart` 未入库）：
+    - **修复前**：翻页 / 滚动 / VN 三模式全部复现，当前句序列 `[0, 4687, …]`，诊断流水先 `navigate → chapter=1`、再 `→ chapter=31`。
+    - **首版修复后**（协调者跑，证据 `fushi/.codex-test/windows-itest/win-itest-20261017-125625-2b4c88c1/command.log`）：三模式 `navs=[]`、`cues=[4687, 4688, 4689, 4690, 4691]`，`All tests passed`。
+    - **审查返修后**（证据 `fushi/.codex-test/windows-itest/aj-rework/command.log`）：翻页 `navs=[]` `cues=[4687, 4688, 4689, 4690, 4691]`、滚动 `navs=[]` `cues=[4687, 4688, 4689, 4690]`、VN `navs=[]` `cues=[4687, 4688, 4689, 4690]`，`All tests passed`（exit 0）。
+  - 返修后定向单测：`audiobook_first_activation_restore_guard_test.dart` 连同 controller seek / 手动 seek 抑制 / 多文件全书位置 / 落库 flush / 暂停重载 / session / 悬浮字幕 cue / 开书起点 共 10 个文件 72 条，全绿（exit 0）；`flutter analyze --no-pub` No issues found。
+- **备注**：同一份流水里还有 12:05:04 / 12:05:51 / 12:06:03 的「→ 33 → 31 → 33」来回跳，是第 31 章末 4705–4718 一带未匹配句（6375/6499 匹配）触发的「章尾未匹配 → 下一章」与随后匹配句跨回，属对齐数据 / 未匹配邻居判定问题，不是本条根因，未在本条修。

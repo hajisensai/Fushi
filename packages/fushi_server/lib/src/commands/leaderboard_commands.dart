@@ -37,6 +37,7 @@ import 'dart:typed_data';
 import 'package:args/args.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_isbn_backfill.dart';
+import 'package:fushi_engine/leaderboard/cover_hash.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
@@ -138,6 +139,9 @@ Future<Uint8List?> serverLeaderboardCoverThumb(LocalShelfEntry entry) async {
   final Uint8List bytes = await file.readAsBytes();
   return Isolate.run<Uint8List?>(() => encodeLeaderboardCoverThumb(bytes));
 }
+
+/// 缩略图的 dHash（封面投票按它归并相近的图），解码在后台 isolate。
+Future<String?> serverLeaderboardCoverHash(Uint8List thumb) => Isolate.run<String?>(() => coverDHash(thumb));
 
 /// 纯函数：任意图片字节 → 长边 ≤300 的 JPEG（quality 80）；解不开返回 null。
 Uint8List? encodeLeaderboardCoverThumb(Uint8List bytes) {
@@ -426,7 +430,7 @@ class _Session {
       'uploadBlockedByOtherDevice': account.uploadBlockedByOtherDevice,
       'syncedEntries': account.syncState.entries.length,
       'syncedWorks': account.syncState.workIds.length,
-      'pendingCovers': account.syncState.pendingCovers.length,
+      'coverVotes': account.syncState.coverVotes.length,
       'localShelf': <String, Object?>{
         'entries': shelf.entries.length,
         'finished': shelf.entries.where((LocalShelfEntry e) => e.upload.finished).length,
@@ -505,12 +509,13 @@ class _Session {
         account.syncState,
         claim: claim,
         coverThumb: module.coverThumb,
+        coverHash: serverLeaderboardCoverHash,
       );
       await store.write(
         account.copyWith(syncState: outcome.state, lastSyncAt: module._now(), uploadBlockedByOtherDevice: false),
       );
       final Object? coverError = outcome.coverError;
-      if (coverError != null) io.err.writeln('封面补传中断（下次同步再补）: $coverError');
+      if (coverError != null) io.err.writeln('封面投票中断（下次同步再投）: $coverError');
       if (io.json) {
         io.writeJson(<String, Object?>{
           'ok': true,
@@ -520,14 +525,14 @@ class _Session {
           'syncedWorks': outcome.state.workIds.length,
           'serverShelfCount': outcome.state.shelfCount,
           'droppedForShelfLimit': outcome.droppedForShelfLimit,
-          'pendingCovers': outcome.state.pendingCovers.length,
+          'coverVotes': outcome.state.coverVotes.length,
           if (coverError != null) 'coverError': '$coverError',
         });
       } else {
         io.out.writeln(
           '已同步：服务端书架 ${outcome.state.shelfCount ?? 0} 部'
           '${outcome.droppedForShelfLimit > 0 ? '，超出上限未上传 ${outcome.droppedForShelfLimit} 部' : ''}'
-          '${outcome.state.pendingCovers.isEmpty ? '' : '，待补封面 ${outcome.state.pendingCovers.length}'}',
+          '${outcome.state.coverVotes.isEmpty ? '' : '，已投封面 ${outcome.state.coverVotes.length} 部'}',
         );
       }
       return kExitOk;

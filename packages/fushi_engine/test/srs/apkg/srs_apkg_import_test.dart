@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
+import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/apkg/srs_protobuf.dart';
@@ -1404,5 +1405,130 @@ void main() {
     expect(deck('Zero').maxIntervalDays, 36500); // 0 = 无效，不写，走默认。
     expect(deck('NoConf').newPerDay, 25);
     expect(deck('NoConf').reviewsPerDay, 250);
+  });
+
+  group('牌组音频设置（Anki autoplay / replayq）', () {
+    test('旧格式 JSON：预设的 autoplay / replayq 写到 own 牌组，子牌组随继承', () async {
+      final Map<String, Object?> dconf = legacyDconf();
+      (dconf['2']! as Map<String, Object?>)
+        ..['autoplay'] = false
+        ..['replayq'] = false;
+      final Uint8List pkg = zipOf(<String, List<int>>{
+        'collection.anki21': buildLegacyCollection(
+          crtSecs: crtSecs,
+          conf: <String, Object?>{'rollover': 4, 'localOffset': 0},
+          models: legacyModels(),
+          decks: legacyDecks(),
+          dconf: dconf,
+          notes: fixtureNotes(t),
+        ),
+        'media': utf8.encode('{}'),
+      });
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      await importInto(s, pkg);
+      final SrsDeckTree tree = await s.deckTree();
+      final String lang = srsImportedDeckId(kProfile, 'Lang');
+      final String jp = srsImportedDeckId(kProfile, 'Lang::JP');
+      expect(tree[lang]!.autoplayAudio, isFalse);
+      expect(tree[lang]!.replayQuestionAudio, isFalse);
+      expect(tree[jp]!.ownParams, isFalse, reason: '同一预设 → 继承');
+      expect(tree.paramsOwner(jp).autoplayAudio, isFalse);
+      // 预设 1（没写这两项）= Anki 缺省：开。
+      expect(tree[s.defaultDeckId]!.autoplayAudio, isTrue);
+      expect(tree[s.defaultDeckId]!.replayQuestionAudio, isTrue);
+    });
+
+    test(
+      '新格式 protobuf：disable_autoplay = 23、skip_question_when_replaying_answer = 26',
+      () async {
+        final Uint8List bytes = buildSqlite((Database db) {
+          db.execute(legacySchema);
+          db.execute(schema18Extra);
+          db.execute(
+            "INSERT INTO col VALUES (1,?,0,0,18,0,0,0,'','','','','')",
+            <Object?>[crtSecs],
+          );
+          db.execute(
+            "INSERT INTO deck_config VALUES (1,'Default',0,0,?)",
+            <Object?>[
+              (PbWriter()..packedFloats(1, <double>[1, 10])).toBytes(),
+            ],
+          );
+          db.execute(
+            "INSERT INTO deck_config VALUES (3,'Quiet',0,0,?)",
+            <Object?>[
+              (PbWriter()
+                    ..varint(23, 1)
+                    ..varint(26, 1))
+                  .toBytes(),
+            ],
+          );
+        });
+        final SrsAnkiCollection col = await SrsAnkiCollection.open(bytes);
+        try {
+          expect(col.presets[1]!.autoplay, isTrue);
+          expect(col.presets[1]!.replayQuestion, isTrue);
+          expect(col.presets[3]!.autoplay, isFalse);
+          expect(col.presets[3]!.replayQuestion, isFalse);
+        } finally {
+          await col.close();
+        }
+      },
+    );
+
+    test('往返：导出写真实值（dconf autoplay / replayq），回导到另一 profile 还原', () async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final String deck = await s.createDeck('Listening');
+      await s.editFields(SrsEntityKind.deck, deck, <String, Object?>{
+        SrsFieldKeys.deckAutoplay: false,
+        SrsFieldKeys.deckReplayQuestion: false,
+      });
+      await s.createNote(
+        noteTypeId: s.lapisNoteTypeId,
+        deckId: deck,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kProfile, 'Expression'): '聞く',
+        },
+      );
+      final Uint8List pkg = await exportAnkiPackage(store: s);
+      final SrsAnkiPackage p = SrsAnkiPackage.open(
+        pkg,
+        zstd: (Uint8List b) => null,
+      );
+      final SrsAnkiCollection col = await SrsAnkiCollection.open(
+        p.collectionBytes,
+      );
+      try {
+        final SrsAnkiDeck exported = col.decks.values.singleWhere(
+          (SrsAnkiDeck d) => d.name == 'Listening',
+        );
+        final SrsAnkiPreset preset = col.presets[exported.configId]!;
+        expect(preset.autoplay, isFalse);
+        expect(preset.replayQuestion, isFalse);
+        final SrsAnkiPreset def = col.presets[1]!;
+        expect(def.autoplay, isTrue, reason: '没改过的牌组照 Anki 缺省写 true');
+      } finally {
+        await col.close();
+      }
+
+      final SrsDbStore other = await openTestStore(
+        profileUid: kProfile2,
+        deviceId: 'b',
+        now: () => t,
+      );
+      await importInto(other, pkg);
+      final SrsDeckView back = (await other
+          .deckTree())[srsImportedDeckId(kProfile2, 'Listening')]!;
+      expect(back.autoplayAudio, isFalse);
+      expect(back.replayQuestionAudio, isFalse);
+    });
   });
 }

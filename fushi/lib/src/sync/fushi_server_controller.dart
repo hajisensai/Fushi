@@ -26,6 +26,7 @@ import 'package:fushi_engine/sync/video_remote_service.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
+import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
 import 'package:fushi/src/sync/interconnect_p2p_app.dart';
@@ -94,6 +95,7 @@ class FushiSyncServerController extends ChangeNotifier {
     VideoSubtitleBackfillRunner? videoSubtitleBackfill,
     GraphicSubtitleTrackExporter? graphicSubtitleTrackExporter,
     HostSelfUpdater Function()? hostSelfUpdater,
+    InterconnectLeaderboardLinkHost Function()? leaderboardLinkHost,
     PrefStore Function()? prefsStore,
     PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
@@ -115,6 +117,7 @@ class FushiSyncServerController extends ChangeNotifier {
         _graphicSubtitleTrackExporter = graphicSubtitleTrackExporter ??
             exportGraphicSubtitleTrackForInterconnect,
         _hostSelfUpdater = hostSelfUpdater,
+        _leaderboardLinkHost = leaderboardLinkHost,
         _prefsStore = prefsStore,
         // Headless/test construction without an injected service falls back to
         // the desktop (machine-hostname) source; production wires the real
@@ -164,6 +167,10 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 远程更新本机 app 的实现（反馈 Pp8XPyve0N）。null（headless/单测）= 不接线，
   /// `/api/host/update` 404、能力位 `hostUpdate=false`。
   final HostSelfUpdater Function()? _hostSelfUpdater;
+
+  /// 「跟随已配对设备自动登录 Fushi 账户」的 host 侧实现。null（headless/单测）=
+  /// 不接线，`/api/interconnect/leaderboard-link` 404、能力位不声明。
+  final InterconnectLeaderboardLinkHost Function()? _leaderboardLinkHost;
 
   /// host 偏好读侧（`PreferencesRepository`）。null（单测 / 老调用方）= 引擎按默认值
   /// 走，行为与接线前一致。
@@ -723,7 +730,9 @@ class FushiSyncServerController extends ChangeNotifier {
       ..videoSubtitleBackfill = _videoSubtitleBackfill
       ..graphicSubtitleTrackExporter = _graphicSubtitleTrackExporter
       // 远程更新本机（反馈 Pp8XPyve0N）：开关 / 平台门在实现里按请求实时判。
-      ..hostSelfUpdater = _hostSelfUpdater?.call();
+      ..hostSelfUpdater = _hostSelfUpdater?.call()
+      // 已配对设备跟随本机账户自动登录（开关在实现里按请求实时读）。
+      ..leaderboardLinkHost = _leaderboardLinkHost?.call();
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着
@@ -945,6 +954,18 @@ class FushiSyncServerController extends ChangeNotifier {
         lastSeenIp: Value<String?>(registration.remoteAddress),
       ),
     );
+    // 设备钥匙指纹与「我的设备」标记都按**本次配对会话**的结果显式重写：先记指纹（没
+    // 证明设备钥匙 = 清掉），再写标记——标记只认 server 在本会话里核实过的结论
+    // （本会话审批选了「这是我的设备」且设备钥匙验签通过），扫码票据 / 选「仅互联」/
+    // 旧 client 一律不是。不沿用这台 peerId 以前的任何标记（PR #2258 审查问题 1）。
+    await _repo.setPeerDeviceKeyFingerprint(
+      registration.peerId,
+      registration.deviceKeyFingerprint,
+    );
+    await _repo.setOwnerDevicePeer(
+      registration.peerId,
+      registration.ownerDevice,
+    );
     // BUG-1558：已配对设备表变了就得告诉视图。新设备的审批发生在 server 线程上，
     // 设置页只在 initState / 吊销后重拉列表；不通知就是「刚配对成功、host 屏上
     // 已配对设备列表里压根没这台」，用户以为没配上又配一遍。
@@ -958,6 +979,21 @@ class FushiSyncServerController extends ChangeNotifier {
     return peers.map((FushiPairedPeerRow p) => p.token).toSet();
   }
 
+  /// 被标记为「我的设备」的已配对 peer（peerId）。只有它们能跟随本机账户自动登录。
+  Future<Set<String>> ownerDevicePeerIds() => _repo.getOwnerDevicePeerIds();
+
+  /// 配对时证明过设备钥匙的 peer（peerId）——只有它们能被标成「我的设备」。
+  Future<Set<String>> deviceKeyVerifiedPeerIds() async =>
+      (await _repo.getPeerDeviceKeyFingerprints()).keys.toSet();
+
+  /// 在已配对设备列表里标记 / 取消「我的设备」。没证明过设备钥匙的 peer 标不上，
+  /// 返回最终是否为「我的设备」。
+  Future<bool> setOwnerDevicePeer(String peerId, bool owner) async {
+    final bool result = await _repo.setOwnerDevicePeer(peerId, owner);
+    notifyListeners();
+    return result;
+  }
+
   /// 全部已配对设备（供「移除已配对设备」UI 列表）。按配对先后升序。
   Future<List<FushiPairedPeerRow>> pairedPeers() =>
       _database().getPairedPeers();
@@ -966,6 +1002,8 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 删后清 server 端 token 缓存 → 该设备下一次请求即被 401（吊销即时生效）。
   Future<bool> revokePeer(String peerId) async {
     final int deleted = await _database().revokePairedPeer(peerId);
+    await _repo.setOwnerDevicePeer(peerId, false);
+    await _repo.setPeerDeviceKeyFingerprint(peerId, null);
     if (deleted > 0) {
       _server?.invalidatePeerTokenCache();
       // 与 [_persistPairedPeer] 同一契约：配对表的**任何**变动都从这里广播，
@@ -1103,7 +1141,18 @@ class FushiSyncServerController extends ChangeNotifier {
       popDialog();
     }
 
-    void onAllow() {
+    // 本会话能否授予「我的设备」：client 上报了设备钥匙才有这个选项（server 给的
+    // [FushiPairRequest.ownerDeviceGrant]）。旧 client / 没有设备钥匙 = 只有「允许」。
+    final FushiPairOwnerDeviceGrant? ownerDeviceGrant = request.ownerDeviceGrant;
+
+    void onAllow({required bool ownerDevice}) {
+      // 「允许 · 这是我的设备」与「仅互联」都放行配对；前者在**本会话**的 grant 上记下
+      // 选择，server 在 confirm 时只有设备钥匙验签通过才落成「我的设备」（见
+      // [_persistPairedPeer]）。不按 deviceId 记全局账：PIN 错 / 过期 / 被拒时 grant
+      // 随会话一起丢弃，碰不到同一 deviceId 的下一次（例如扫码票据）配对。
+      if (!approval.isCompleted && ownerDeviceGrant != null) {
+        ownerDeviceGrant.granted = ownerDevice;
+      }
       // 先把结果交回 server（免得 client 一直等），再决定是否关窗。
       if (!approval.isCompleted) approval.complete(true);
       if (lingerAfterApprove) {
@@ -1218,11 +1267,20 @@ class FushiSyncServerController extends ChangeNotifier {
                               onPressed: onDeny,
                               child: Text(t.sync_pair_deny),
                             ),
+                            // 「我的设备」会让这台设备能跟随本机账户自动登录（满权限），
+                            // 所以默认动作（回车 / 手柄 A）落在更保守的「仅互联」上。
+                            // 只在本会话可授予（client 带设备钥匙）时出现。
+                            if (ownerDeviceGrant != null)
+                              adaptiveDialogAction(
+                                context: c,
+                                onPressed: () => onAllow(ownerDevice: true),
+                                child: Text(t.sync_pair_allow_owner_device),
+                              ),
                             adaptiveDialogAction(
                               context: c,
                               isDefaultAction: true,
-                              onPressed: onAllow,
-                              child: Text(t.sync_pair_allow),
+                              onPressed: () => onAllow(ownerDevice: false),
+                              child: Text(t.sync_pair_allow_interconnect_only),
                             ),
                           ],
                   ),

@@ -1094,6 +1094,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // galgame 浮窗是独立 native WebView2 窗口，宿主的 Flutter toast 画在主 app 窗口上，
     // 游戏全屏时用户看不见——失败必须就地说出来。
     window.i18nMineFailed = ${jsonEncode(t.card_export_failed)};
+    // BUG-3492：后台制卡（在线视频）还没落地时再点 ✓ 的就地提示。
+    window.i18nMineStillQueued = ${jsonEncode(t.popup_mine_still_queued)};
     // BUG-1064：点已制卡 ✓ 的「卡片已在 Anki 中」操作面板归属。
     // true  = 宿主自己接了 `minedCardAction` JS handler，会弹 Flutter 居中对话框
     //         （dictionary_popup_webview 的三个 in-app 表面：app 内弹窗 / Android

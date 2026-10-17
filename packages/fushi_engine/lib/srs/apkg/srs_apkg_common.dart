@@ -17,6 +17,8 @@ const List<String> srsFushiExtDeckKeys = <String>[
   SrsFieldKeys.deckSteps,
   SrsFieldKeys.deckLimits,
   SrsFieldKeys.deckMaxInterval,
+  SrsFieldKeys.deckAutoplay,
+  SrsFieldKeys.deckReplayQuestion,
 ];
 
 /// 从 Anki 导入时按全名新建的牌组 ID：与 Fushi 里新建牌组同一条规则（[SrsIds.deck]），

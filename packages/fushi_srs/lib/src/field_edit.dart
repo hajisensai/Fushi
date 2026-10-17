@@ -104,6 +104,14 @@ abstract final class SrsFieldKeys {
   /// 牌组列表里是否收起子牌组（对应 Anki deck 的 `collapsed` / Deck.Common.study_collapsed）。
   static const String deckCollapsed = 'collapsed';
 
+  /// 复习时自动播放卡面音频（bool，缺省 = true；对应 Anki 预设的 autoplay /
+  /// disable_autoplay）。随参数继承走 own 祖先。
+  static const String deckAutoplay = 'autoplay';
+
+  /// 答案面重播时先播问题音频（bool，缺省 = true；对应 Anki 的 replayq /
+  /// skip_question_when_replaying_answer 取反）。随参数继承走 own 祖先。
+  static const String deckReplayQuestion = 'replayQuestion';
+
   // profile
   static const String dayRolloverHour = 'dayRolloverHour';
   static const String utcOffsetMin = 'utcOffsetMin';

@@ -315,6 +315,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_zoom_percent',
   'manga_zoom_sensitivity',
   'maximum_terms',
+  // bool（默认 false）：启动时在后台把签名未变的 Mihon 漫画 / 视频扩展更新到
+  // 仓库新版（`kMihonExtensionAutoUpdatePref`，update_probes.dart）。
+  'mihon_extension_auto_update',
   'mine_to_server',
   // 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
   'mining_audio_follow_playback_speed',
@@ -326,6 +329,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // PreferencesRepository.settleMiningImageModeInstallDefault。
   'mining_image_mode_install_default',
   'mining_image_quality',
+  // String（MiningTtsFallbackVoice.wire：'system' 默认 / 'none' / 'preset:<id>'）：
+  // 制卡单词音频的 TTS 兜底声音。值可能指向本机声音预设，与 tts_active_preset_id
+  // 同族：设备本地（deviceLocalPrefKeys），不进 Profile 快照 / 备份 / 同步。
+  'mining_tts_fallback_voice',
   'module_books_enabled',
   'module_browser_extension_enabled',
   'module_dictionaries_enabled',
@@ -467,6 +474,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // JSON：本机一键部署的 GPT-SoVITS（GptSovitsLocalEngine）：整合包目录 / 端口 /
   // 下载源 / 是否 app 所装。路径与端口只对这台电脑成立，设备本地。
   'tts_gpt_sovits_local',
+  // JSON：本机一键部署的官方 Irodori-TTS-Server（IrodoriLocalEngine）：专属目录 / 端口 /
+  // 下载源 / 后端 / 模型 / 是否 app 所装。只对这台电脑成立，设备本地。
+  'tts_irodori_local',
   // JSON：TTS 发音词典（写法 → 读法，TtsPronunciationStore），只改合成文本。
   'tts_pronunciation_rules',
   // double：TTS 朗读倍速（播放器本地倍速，服务端恒 1.0）。
@@ -481,11 +491,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'update_debug_channel',
   'update_download_source',
   'update_never_remind',
-  // bool ×5（v101 统一更新提醒）：四个域各一个「要不要提醒」开关 + 系统通知总
+  // bool ×6（v101 统一更新提醒）：各域一个「要不要提醒」开关 + 系统通知总
   // 开关。默认全 true（装了订阅功能就是想被告知）。域开关关掉 = 该域整批不投递
   // （不进更新页、不出红点、不发通知）；总开关只掐系统通知，红点照常。
   // 调用点走 `UpdateFeedKind.enabledPrefKey` / [kUpdateSystemNotificationsPref]
   // 常量，不是裸字面量——守卫扫不到，但纪律要求登记。
+  'updates_notify_anime_extension',
   'updates_notify_app_release',
   'updates_notify_manga_chapter',
   'updates_notify_manga_extension',

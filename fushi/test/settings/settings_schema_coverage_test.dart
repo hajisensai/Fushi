@@ -69,6 +69,20 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
   'system/Notify about manga extension updates':
       'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
+  // 视频扩展域与上面四个域同一条机制：开关经 UpdateFeedKind.enabledPrefKey 落
+  // prefsRepo，publishBatch 按 kind 整批丢弃，与具体域无关；该域的投递归属另由
+  // mihon_extension_update_probe_test「视频扩展域：投递落 animeExtension」咬住。
+  'system/Notify about video extension updates':
+      'test/updates/update_feed_service_test.dart（关掉的域整批丢弃） + '
+      'test/updates/mihon_extension_update_probe_test.dart（视频扩展域投递落 animeExtension）',
+  // 扩展后台自动更新（mihon_extension_auto_update）：写 prefsRepo（changed=true），
+  // 生效点是启动期的扩展更新探针——AppModel 按开关决定给不给
+  // MihonExtensionAutoUpdater、以及 dueOnStart 是否含两个扩展域。harness 里没有
+  // Mihon sidecar 与扩展仓库索引，观测不到。行为由探针层用例咬住：「关着（autoUpdate
+  // = null）不装只投递」「开着且空闲装同签名的」「不空闲一个都不装」「dueOnStart
+  // 启动轮照查」。
+  'system/Auto-update extensions in the background':
+      'test/updates/mihon_extension_update_probe_test.dart（关着不装 / 开着且空闲才装 / dueOnStart）',
   'system/Notify about app releases':
       'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
   'system/System notifications':
@@ -110,6 +124,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 信任区 / nonce）由专项测试咬住，开关实时读由 host_self_update_service_test 咬住。
   'interconnect/Allow paired devices to update this device':
       'test/sync/fushi_sync_server_host_update_test.dart',
+  // 「跟随已配对设备自动登录」（client 侧）与「允许已配对设备自动登录我的账户」
+  // （host 侧总闸）：生效点分别在首页后台 tick 的 LeaderboardPairedLogin（开关关 =
+  // 一个请求都不发）与 HTTP 端点 /api/interconnect/leaderboard-link（关着回 403
+  // disabled）。harness 里没有起 TLS server 与已配对 peer，探不到；由专项测试咬住。
+  "interconnect/Sign in with a paired device's account":
+      'test/leaderboard/leaderboard_paired_login_test.dart',
+  'interconnect/Let paired devices sign in with my account':
+      'test/leaderboard/leaderboard_paired_login_test.dart',
   // 互联「为对端转码视频」（host 侧许可，默认开）。写 prefsRepo（changed=true），
   // 生效点同样在 **HTTP 端点**里：host 每次处理 /streamurl 与 /api/capabilities 时
   // 实时读它，关着就退回原文件直传、能力位报 false。harness 里没有起 server，探不到。

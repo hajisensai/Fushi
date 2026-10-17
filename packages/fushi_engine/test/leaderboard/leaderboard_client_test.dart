@@ -395,6 +395,50 @@ void main() {
       );
     });
 
+    test('uploadCover 带 hash：放进签名的查询串 h', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async => _json(<String, dynamic>{'cover': '/img/c'}),
+        identity: _id,
+      );
+      expect(
+        await h.client.uploadCover(
+          'w1',
+          Uint8List(3),
+          hash: '00ff00ff00ff00ff',
+        ),
+        '/img/c',
+      );
+      final http.Request r = h.requests.single;
+      expect(r.url.path, '/v1/works/w1/cover');
+      expect(r.url.queryParameters['h'], '00ff00ff00ff00ff');
+      expect(_verifySigned(r, _id), isTrue);
+    });
+
+    test('voteCover：hash / url 二选一；409 cover_bytes_required 可判别', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async =>
+            _json(<String, dynamic>{'error': 'cover_bytes_required'}, 409),
+        identity: _id,
+      );
+      Object? err;
+      try {
+        await h.client.voteCover('w1', hash: '00ff00ff00ff00ff');
+      } on Object catch (e) {
+        err = e;
+      }
+      expect(isCoverBytesRequired(err!), isTrue);
+      final http.Request r = h.requests.single;
+      expect(r.method, 'POST');
+      expect(r.url.path, '/v1/works/w1/cover/vote');
+      expect(jsonDecode(r.body), <String, dynamic>{'hash': '00ff00ff00ff00ff'});
+      expect(_verifySigned(r, _id), isTrue);
+      await expectLater(h.client.voteCover('w1'), throwsArgumentError);
+      await expectLater(
+        h.client.voteCover('w1', hash: 'a', url: 'b'),
+        throwsArgumentError,
+      );
+    });
+
     test('非法 id 不拼进路径', () async {
       final _Harness h = _Harness(
         (http.Request r) async => _json(<String, dynamic>{}),

@@ -2,7 +2,8 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/advanced_mining/video_advanced_mining.dart';
-import 'package:fushi_anki/fushi_anki_core.dart' show MiningRequestOverrides;
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show MiningMosaicRegion, MiningRequestOverrides;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
 
@@ -114,6 +115,37 @@ void main() {
         ),
         VideoMiningImageMode.currentFrame,
         reason: '没挪帧时仍是当前（锁住的）画面',
+      );
+    });
+
+    test('打了码：动图 / 片段改成「字幕开头」静帧，静态方式不变', () {
+      const List<MiningMosaicRegion> mosaic = <MiningMosaicRegion>[
+        MiningMosaicRegion(left: 0.1, top: 0.1, right: 0.3, bottom: 0.3),
+      ];
+      expect(
+        resolveVideoMiningImageMode(
+          preferred: VideoMiningImageMode.gif,
+          overrides: const MiningRequestOverrides(mosaic: mosaic),
+        ),
+        VideoMiningImageMode.subtitleStart,
+      );
+      expect(
+        resolveVideoMiningImageMode(
+          preferred: VideoMiningImageMode.gif,
+          overrides: const MiningRequestOverrides(
+            videoImageMode: 'video_clip',
+            mosaic: mosaic,
+          ),
+        ),
+        VideoMiningImageMode.subtitleStart,
+      );
+      expect(
+        resolveVideoMiningImageMode(
+          preferred: VideoMiningImageMode.currentFrame,
+          overrides: const MiningRequestOverrides(mosaic: mosaic),
+        ),
+        VideoMiningImageMode.currentFrame,
+        reason: '查词时画面本就是静图（锁住的那一帧）',
       );
     });
 

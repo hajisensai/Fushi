@@ -568,9 +568,9 @@ class _Exporter {
       'name': name,
       'usn': -1,
       'maxTaken': 60,
-      'autoplay': true,
+      'autoplay': o?.autoplayAudio ?? true,
       'timer': 0,
-      'replayq': true,
+      'replayq': o?.replayQuestionAudio ?? true,
       'new': <String, Object?>{
         'bury': false,
         'delays': o?.learnSteps ?? SrsDeckView.defaultLearnSteps,

@@ -515,6 +515,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final String sourceId =
         reviewSession?.link.sourceId ?? CardSourceLink.newSourceId();
     final String? localSourcePath = controller.videoPath;
+    // BUG-3490：媒体库里的在线条目（粘贴链接 / YouTube / 在线视频源剧集）没有本地
+    // 字节可比指纹，但库身份就是内容本身（见 isContentAddressedVideoUid），卡片照样
+    // 带来源链接，回看时直接在线播放。
+    final bool contentAddressedStream =
+        _resolvedStreamInfo != null &&
+        CardSourceLink.isContentAddressedVideoUid(sourceUid);
     // A still-only card has no subtitle range, but its source is the frame
     // being viewed now; it must not accidentally link to the start of the film.
     final int sourceStartMs = clipEndMs > clipStartMs
@@ -522,9 +528,16 @@ extension _VideoLookupMining on _VideoFushiPageState {
         : (controller.positionMs ?? clipStartMs);
     final int sourceEndMs = clipEndMs > clipStartMs ? clipEndMs : sourceStartMs;
     Future<CardSourceLink?> resolveSourceLink() async {
-      if (!VideoSourceFingerprint.isLocalPath(localSourcePath)) return null;
-      final String fingerprint = await VideoSourceFingerprint.instance
-          .fingerprint(localSourcePath!);
+      final String? fingerprint;
+      if (VideoSourceFingerprint.isLocalPath(localSourcePath)) {
+        fingerprint = await VideoSourceFingerprint.instance.fingerprint(
+          localSourcePath!,
+        );
+      } else if (contentAddressedStream) {
+        fingerprint = null;
+      } else {
+        return null;
+      }
       return CardSourceLink(
         kind: CardSourceKind.video,
         uid: sourceUid,
@@ -791,6 +804,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
         // 省略时出纯文本卡。
         omitAudio: omitAudio,
         omitCover: omitCover,
+        coverMosaic: omitCover
+            ? const <MiningMosaicRegion>[]
+            : overrides?.mosaic ?? const <MiningMosaicRegion>[],
         // 用户在 Anki 设置里选的封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧）；
         // 默认 videoClip。静态模式引擎不置 degradedToStill，故不弹「降级为静态」OSD。
         imageMode: imageMode,
@@ -831,6 +847,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
     _trackBackgroundMine(
       job.then((ImmersionMiningResult res) {
         final MinePopupResult landed = land(res);
+        // BUG-3492：弹窗早就拿到了「已加入」，卡真正进 Anki 是现在。通知正在显示这个
+        // 词的弹窗重问一次 Anki，把「已加入」换成真 ✓——之后同一个弹窗里点 ✓ / 从高级
+        // 制卡回点，才能走覆盖，而不是要关掉弹窗重新查词。
+        if (landed.ankiConnect) {
+          MinedStateSignal.instance.notifyWord(fields['expression'] ?? '');
+        }
         onBackgroundLanded?.call(landed);
       }),
     );

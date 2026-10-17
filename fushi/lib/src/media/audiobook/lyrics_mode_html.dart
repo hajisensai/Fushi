@@ -136,6 +136,7 @@ class LyricsModeHtml {
     String? contentLanguage,
     String verticalTextOrientation = 'mixed',
     TargetPlatform? platform,
+    bool showSkippedText = true,
   }) {
     // 覆盖层主题：内联进 :root 与 body class，首帧即是最终观感（不等热更）。
     // 无主题（旧调用 / 单测）时变量全部缺省，CSS 的 var() 回落值与改动前逐值相同。
@@ -158,6 +159,23 @@ class LyricsModeHtml {
         ? null
         : LyricsCueTextResolver(book);
     for (int i = 0; i < cues.length; i++) {
+      // 跳读灰显：上一条与这一条之间没被任何 cue 认领的正文，作为一行灰色小字
+      // 夹在两行之间。它不是 `.cue`——不进当前句高亮 / 逐字扫过、不计时、点按不
+      // 跳播放、不进收藏 / 焦点 caret / 字号适配（JS 全部按 `.cue` 取行）。
+      // 透明度跟着相邻两行里离当前句近的那行走（`near-N`，setCue 同步改）。
+      final LyricsCueText? skipped = i == 0 || textResolver == null
+          ? null
+          : textResolver.skippedTextBetween(cues[i - 1], cues[i]);
+      if (skipped != null) {
+        final int gapDist = i - 1 >= currentIndex
+            ? i - 1 - currentIndex + 1
+            : currentIndex - i + 1;
+        final String gapCls = gapDist <= 3 ? 'ly-gap near-$gapDist' : 'ly-gap';
+        cueHtml.write(
+          '<div class="$gapCls" data-after="${i - 1}">'
+          '<span class="ly-gap-tx">${_cueInnerHtml(skipped)}</span></div>\n',
+        );
+      }
       final LyricsCueText cueText =
           textResolver?.resolveForCue(cues[i]) ??
           LyricsCueText.plain(cues[i].text);
@@ -233,6 +251,15 @@ body.ly-themed .lyrics-container > .cue {
   padding: 14px 10px;
   margin: 0 2px;
 }
+.lyrics-container > .ly-gap {
+  max-width: none;
+  max-inline-size: calc(100% / var(--cue-scale) - 1%);
+  padding: 8px 2px;
+}
+/* 盖过横排的 body.ly-themed .ly-gap（0 14px）：竖排的行首在上，与歌词列同一行首缩进。 */
+body.ly-themed .lyrics-container > .ly-gap {
+  padding: 14px 2px;
+}
 .lyrics-container > .cue.favorited::before {
   right: auto;
   top: auto;
@@ -249,6 +276,7 @@ body.ly-themed .lyrics-container > .cue {
     // 维度与 writing-mode 正交——blur CSS 只作用在 cue 元素上，与轴/竖排无关。
     final List<String> bodyClasses = <String>[
       if (blur) 'lyrics-blur',
+      if (!showSkippedText) 'ly-hide-skipped',
       ...?themed?.bodyClasses,
       // 竖排标记只服务主题态的扫过 / 渐隐方向；旧观感不加 class（输出与改动前一致）。
       if (vertical && themed != null) 'ly-vertical',
@@ -377,6 +405,46 @@ body { font-family: $bodyFontFamily; }
 .cue.near-1 { opacity: var(--ly-op1, 0.55); transform: scale(var(--ly-near1-scale, 1.05)); }
 .cue.near-2 { opacity: var(--ly-op2, 0.35); }
 .cue.near-3 { opacity: var(--ly-op3, 0.25); }
+/* 跳读灰显：两行之间没被任何 cue 认领的正文（朗读者跳过 / 转录没对上）。次要文本
+   色（--ly-text，覆盖层主题下即非当前行色）+ 小字号 + 比相邻行再淡一档；透明度
+   阶梯跟着 near-N 走，与相邻行同进退。不可点、不参与高亮 / 扫过。 */
+.ly-gap {
+  position: relative;
+  text-align: var(--ly-align, center);
+  color: var(--ly-text, $textColor);
+  align-self: var(--ly-self, auto);
+  font-size: calc(var(--cue-font-size) * 0.62);
+  font-weight: 400;
+  line-height: 1.6;
+  padding: 2px 8px;
+  max-width: calc(100% / var(--cue-scale) - 1%);
+  overflow-wrap: break-word;
+  word-break: break-word;
+  opacity: calc(var(--ly-op4, 0.15) * var(--ly-gap-k, 0.8));
+  transition: opacity 0.35s ease-out, filter 0.3s ease-out;
+  cursor: default;
+}
+.ly-gap.near-1 { opacity: calc(var(--ly-op1, 0.55) * var(--ly-gap-k, 0.8)); }
+.ly-gap.near-2 { opacity: calc(var(--ly-op2, 0.35) * var(--ly-gap-k, 0.8)); }
+.ly-gap.near-3 { opacity: calc(var(--ly-op3, 0.25) * var(--ly-gap-k, 0.8)); }
+body.ly-themed .ly-gap { padding: 0 14px; }
+body.ly-browsing .ly-gap { opacity: calc(var(--ly-op-browse, 0.6) * var(--ly-gap-k, 0.8)); }
+body.ly-past-dim:not(.ly-browsing) .ly-gap:not(.current ~ .ly-gap) {
+  opacity: calc(var(--ly-op4, 0.15) * var(--ly-gap-k, 0.8) * var(--ly-past-k, 1));
+}
+body.ly-past-dim:not(.ly-browsing) .ly-gap.near-1:not(.current ~ .ly-gap) {
+  opacity: calc(var(--ly-op1, 0.55) * var(--ly-gap-k, 0.8) * var(--ly-past-k, 1));
+}
+body.ly-past-dim:not(.ly-browsing) .ly-gap.near-2:not(.current ~ .ly-gap) {
+  opacity: calc(var(--ly-op2, 0.35) * var(--ly-gap-k, 0.8) * var(--ly-past-k, 1));
+}
+body.ly-past-dim:not(.ly-browsing) .ly-gap.near-3:not(.current ~ .ly-gap) {
+  opacity: calc(var(--ly-op3, 0.25) * var(--ly-gap-k, 0.8) * var(--ly-past-k, 1));
+}
+body.ly-ctxblur .ly-gap { filter: blur(var(--ly-ctx-blur, 0px)); }
+body.ly-hide-skipped .ly-gap { display: none; }
+.ly-gap ruby { ruby-align: center; }
+.ly-gap rt { font-size: 0.5em; line-height: 1; }
 /* ── 覆盖层主题（Apple Music / MD3）──────────────────────────────────────
    整行粗体、行级圆角悬停底块；当前行弹簧放大（Niratan highlightAnimation：
    stiffness 322 / damping 24 → 轻微过冲），离开当前行用阻尼更大的收回。 */
@@ -525,6 +593,9 @@ body.lyrics-blur .cue:hover,
 body.lyrics-blur .cue.revealed {
   filter: blur(0);
 }
+/* 未朗读的原文同样不可预读，悬停显形。 */
+body.lyrics-blur .ly-gap { filter: blur(8px); }
+body.lyrics-blur .ly-gap:hover { filter: blur(0); }
 ::highlight(fushi-selection) {
   background-color: var(--ly-hl, $accentColor);
   color: var(--ly-hl-text, $backgroundColor);
@@ -778,6 +849,25 @@ document.addEventListener('scroll', function() {
 // ── cue 切换 ──
 var _currentIdx = -1;
 var _cues = document.querySelectorAll('.cue');
+// 跳读灰显行（不是 .cue）：按「夹在第几条 cue 之后」索引，setCue 时同步它们的
+// near-N（取相邻两行里离当前句近的那行）。
+var _lyGapAfter = {};
+(function() {
+  var gs = document.querySelectorAll('.ly-gap');
+  for (var g = 0; g < gs.length; g++) {
+    var after = parseInt(gs[g].getAttribute('data-after'), 10);
+    if (!isNaN(after)) _lyGapAfter[after] = gs[g];
+  }
+})();
+function _lyMarkGaps(index, add) {
+  for (var i = index - 3; i <= index + 2; i++) {
+    var gap = _lyGapAfter[i];
+    if (!gap) continue;
+    gap.classList.remove('near-1', 'near-2', 'near-3');
+    var d = (i >= index ? i - index : index - 1 - i) + 1;
+    if (add && d <= 3) gap.classList.add('near-' + d);
+  }
+}
 
 // 视口附近（上下 / 左右各多算一屏）的行标 .ly-vis，只有它们做过渡（见 CSS）。
 (function() {
@@ -898,7 +988,9 @@ function setCue(index, scroll) {
     for (var i = Math.max(0, old - 3), e = Math.min(len - 1, old + 3); i <= e; i++)
       _cues[i].classList.remove('current', 'near-1', 'near-2', 'near-3', 'revealed', 'ly-nosweep');
     _lySweepReset(_cues[old]);
+    _lyMarkGaps(old, false);
   }
+  _lyMarkGaps(index, true);
   for (var i = Math.max(0, index - 3), e = Math.min(len - 1, index + 3); i <= e; i++) {
     var d = Math.abs(i - index);
     if (d === 0) _cues[i].classList.add('current');
@@ -1237,6 +1329,12 @@ _lc.addEventListener('mousedown', function(e) {
   // 整个 arguments，语义与正文选区完全一致。
   window.fushiSelection.selectText = function(x, y, maxLen, fromHover) {
     var hitEl = document.elementFromPoint(x, y);
+    // 跳读灰显行不查词：它不属于任何 cue，查词 / 制卡会拿当前句的音频与句子
+    // 去配一段根本没念过的正文。
+    if (hitEl && hitEl.closest('.ly-gap')) {
+      window.__lyricsCueContext = null;
+      return;
+    }
     var cueEl = hitEl ? hitEl.closest('.cue') : null;
     if (cueEl) {
       // 查词高亮落在这一行：停掉逐字扫过（扫过用透明字 + 背景裁切，会把查词底块
@@ -1296,6 +1394,8 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
       // shrink overrides. Setting .cue's own font-size would beat the var and
       // strand overflowing cues at the un-shrunk size.
       root.style.setProperty('--cue-font-size', fontSize + 'px');
+    } else if (r.selectorText === '.ly-gap') {
+      if (!themed) r.style.color = textColor;
     } else if (r.selectorText === 'html, body') {
       r.style.setProperty('scrollbar-color', textColor + ' transparent');
     } else if (r.selectorText === '::-webkit-scrollbar-thumb') {
@@ -1334,6 +1434,17 @@ window.__lyricsSetBlur = function(on) {
     document.body.classList.remove('lyrics-blur');
     var revealed = document.querySelectorAll('.cue.revealed');
     for (var i = 0; i < revealed.length; i++) revealed[i].classList.remove('revealed');
+  }
+};
+
+// 跳读灰显开关热更（`lyrics_show_skipped_text`）：只换 body class。行高变了，
+// 跟随态下把当前句重新对准锚点。
+window.__lyricsSetShowSkipped = function(on) {
+  var hide = !on;
+  if (document.body.classList.contains('ly-hide-skipped') === hide) return;
+  document.body.classList.toggle('ly-hide-skipped', hide);
+  if (_currentIdx >= 0 && _currentIdx < _cues.length && !_lyBrowsing) {
+    _lyricsScrollByAxis(_lyricsCenterDelta(_cues[_currentIdx]));
   }
 };
 

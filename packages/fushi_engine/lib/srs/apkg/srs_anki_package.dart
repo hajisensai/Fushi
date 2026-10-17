@@ -295,6 +295,8 @@ class SrsAnkiPreset {
     required this.fsrs7Params,
     required this.fsrsVersion,
     required this.rwkvEnabled,
+    this.autoplay = true,
+    this.replayQuestion = true,
   });
 
   final int id;
@@ -315,6 +317,13 @@ class SrsAnkiPreset {
 
   /// fork 的 rwkv_review_enabled。
   final bool rwkvEnabled;
+
+  /// 自动播放音频（旧 JSON `autoplay`；新 schema `disable_autoplay` = 23 取反）。
+  final bool autoplay;
+
+  /// 答案面重播时包含问题音频（旧 JSON `replayq`；新 schema
+  /// `skip_question_when_replaying_answer` = 26 取反）。
+  final bool replayQuestion;
 }
 
 /// 来源集合的元信息（笔记 / 卡片 / revlog 由导入流程按需流式读）。
@@ -523,6 +532,8 @@ class SrsAnkiCollection {
         fsrs7Params: _doubles(c['fsrsParams7']),
         fsrsVersion: _int(c['fsrsVersion']),
         rwkvEnabled: c['rwkvReviewEnabled'] == true,
+        autoplay: c['autoplay'] != false,
+        replayQuestion: c['replayq'] != false,
       );
     }
   }
@@ -620,7 +631,9 @@ class SrsAnkiCollection {
       // DeckConfig.Config: learn_steps = 1, relearn_steps = 2, fsrs_params_6 = 6,
       // new_per_day = 9, reviews_per_day = 10, maximum_review_interval = 16,
       // desired_retention = 37；JSchoreels fork: fsrs_params_7 = 52,
-      // fsrs_version = 53, rwkv_review_enabled = 67。
+      // fsrs_version = 53, rwkv_review_enabled = 67；disable_autoplay = 23、
+      // skip_question_when_replaying_answer = 26（对照 ankitects/anki
+      // proto/anki/deck_config.proto 核实）。
       //
       // BUG-3455：除 fork 的 optional fsrs_version 外都是 proto3 标量，proto3 不写
       // 零值——字段缺失就是 0 / false / 空，不是「没设置」。一律按零值解码：每日
@@ -641,6 +654,8 @@ class SrsAnkiCollection {
         fsrs7Params: c.floatsOf(52).map(_f32).toList(),
         fsrsVersion: c.optInt(53),
         rwkvEnabled: c.boolOf(67),
+        autoplay: !c.boolOf(23),
+        replayQuestion: !c.boolOf(26),
       );
     }
   }

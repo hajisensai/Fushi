@@ -975,14 +975,25 @@ class _MaterialDesktopVideoControlsState
                         context.findRenderObject() as RenderBox;
                     final Offset localPosition =
                         box.globalToLocal(globalPosition);
-                    const double tapPadding = 10.0;
                     // Only play and pause when the bottom seek bar is visible
                     // and when clicking outside of the bottom seek bar region.
+                    // Fushi patch: the excluded strip covers the seek bar's
+                    // whole hit area, see [desktopControlsBottomStripHeight].
                     return !mount ||
                         localPosition.dy <
                             box.size.height -
-                                subtitleVerticalShiftOffset -
-                                tapPadding;
+                                desktopControlsBottomStripHeight(
+                                  bottomBarOffset: subtitleVerticalShiftOffset,
+                                  displaySeekBar:
+                                      _theme(context).displaySeekBar,
+                                  hasBottomButtonBar: _theme(context)
+                                      .bottomButtonBar
+                                      .isNotEmpty,
+                                  seekBarContainerHeight:
+                                      _theme(context).seekBarContainerHeight,
+                                  seekBarBottomButtonBarOverlap: _theme(context)
+                                      .seekBarBottomButtonBarOverlap,
+                                );
                   },
                   onAction: (DesktopControlsTapAction action) {
                     // (if-chain, not a switch: this package's language

@@ -40,6 +40,7 @@ import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
     show showDownloadTaskDeleteConfirm;
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/header_scroll_split.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -191,6 +192,12 @@ DownloadTaskEntry animeDownloadTaskEntry({
     collectionKey: collectionKey,
     collectionTitle: collectionKey == null ? null : plan.seriesTitle,
     searchTerms: <String>[plan.torrentTitle, plan.qbCategory],
+    // 旧番剧计划唯一记着的作品身份是 AniList id：有它就能被「定位到这部番」精确
+    // 命中，不必退回标题兜底。
+    workIdentity: DownloadTaskWorkIdentity.maybe(
+      'anilist',
+      plan.anilistId?.toString(),
+    ),
     actions: actions,
     builder: builder,
   );
@@ -1864,14 +1871,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   // ---- 阶段 2：选种 ----
 
   Widget _buildTorrentStage(ThemeData theme) {
-    // 标题 / 查询词 / 筛选条与种子列表同属一个滚动视图：头部随列表上滑让出屏幕，
-    // 手机上列表不再被压在头部与任务区之间的一条窄缝里滚（反馈 XFsZIWYbr8）。
-    return CustomScrollView(
-      key: const ValueKey<String>('anime-download-torrent-scroll'),
-      slivers: <Widget>[
-        SliverToBoxAdapter(child: _buildTorrentHeader(theme)),
-        ..._buildTorrentResultSlivers(theme),
-      ],
+    // 窄屏：标题 / 查询词 / 筛选条与种子列表同属一个滚动视图，头部随列表上滑
+    // 让出屏幕；宽屏头部固定、只滚种子列表（反馈 XFsZIWYbr8，见 HeaderScrollSplit）。
+    return HeaderScrollSplit(
+      scrollKey: const ValueKey<String>('anime-download-torrent-scroll'),
+      header: _buildTorrentHeader(theme),
+      resultSlivers: _buildTorrentResultSlivers(theme),
     );
   }
 

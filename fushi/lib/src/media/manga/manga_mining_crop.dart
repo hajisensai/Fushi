@@ -3,7 +3,7 @@ import 'dart:ui' show Rect, Size;
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart'
     show MangaCropSuggestions;
 import 'package:fushi_anki/fushi_anki_core.dart'
-    show MiningImageCrop, MiningRequestOverrides;
+    show MiningImageCrop, MiningMosaicRegion, MiningRequestOverrides;
 import 'package:fushi_engine/media/manga/panel_detection.dart' show PanelRect;
 
 /// 漫画制卡卡图裁切的纯函数层：预选建议、一键制卡的裁切决策。
@@ -98,12 +98,21 @@ enum MangaCardImageKind {
 
 /// [resolveMangaCardImagePlan] 的结论。
 class MangaCardImagePlan {
-  const MangaCardImagePlan(this.kind, {this.crop, this.diagnostic});
+  const MangaCardImagePlan(
+    this.kind, {
+    this.crop,
+    this.mosaic = const <MiningMosaicRegion>[],
+    this.diagnostic,
+  });
 
   final MangaCardImageKind kind;
 
   /// 只在 [MangaCardImageKind.crop] 时非 null。
   final Rect? crop;
+
+  /// 打码区域（相对未裁切原页图）；只在 [MangaCardImageKind.crop] 时可能非空。非空时
+  /// 宿主必须打码成功才能出卡图——失败就不要卡图，绝不退回整页原图。
+  final List<MiningMosaicRegion> mosaic;
 
   /// 退回整页的原因（只为留诊断，不给用户看）。
   final String? diagnostic;
@@ -114,6 +123,9 @@ class MangaCardImagePlan {
 /// * `omitImage` → 不要卡图。
 /// * 有 crop：`isWholePage` = 用户明确不裁（压过默认设置）；页码与本次制卡页
 ///   [miningPageIndex] 不一致 → 退整页并留诊断（绝不裁错页）；否则按 crop 裁。
+/// * 有打码（`mosaic`，与 crop 同属对话框里的那一页）：整页也要走裁切通道（裁 0..1）
+///   才能把码打上；页码对不上时**不要卡图**——打码位置是那一页的，退回整页就把用户
+///   想遮住的东西原样送进了卡片。没有 crop 却有打码（不该出现的组合）同样不要卡图。
 /// * 没有 crop：[cropToPanelByDefault] 开、非条漫、知道是哪一页 → 交给页面裁到所在
 ///   分镜（模型是否可用由页面在执行时判定，不可用即整页）；否则整页。
 ///   没有模型时**绝不**按文本外扩去裁：自动裁错比不裁更糟。
@@ -127,13 +139,21 @@ MangaCardImagePlan resolveMangaCardImagePlan({
     return const MangaCardImagePlan(MangaCardImageKind.omit);
   }
   final MiningImageCrop? crop = overrides?.crop;
+  final List<MiningMosaicRegion> mosaic =
+      overrides?.mosaic ?? const <MiningMosaicRegion>[];
+  if (crop == null && mosaic.isNotEmpty) {
+    return const MangaCardImagePlan(
+      MangaCardImageKind.omit,
+      diagnostic: 'mosaic without crop page',
+    );
+  }
   if (crop != null) {
-    if (crop.isWholePage) {
+    if (crop.isWholePage && mosaic.isEmpty) {
       return const MangaCardImagePlan(MangaCardImageKind.wholePage);
     }
     if (miningPageIndex == null || crop.pageIndex != miningPageIndex) {
       return MangaCardImagePlan(
-        MangaCardImageKind.wholePage,
+        mosaic.isEmpty ? MangaCardImageKind.wholePage : MangaCardImageKind.omit,
         diagnostic:
             'crop page ${crop.pageIndex} != mining page $miningPageIndex',
       );
@@ -141,6 +161,7 @@ MangaCardImagePlan resolveMangaCardImagePlan({
     return MangaCardImagePlan(
       MangaCardImageKind.crop,
       crop: Rect.fromLTRB(crop.left, crop.top, crop.right, crop.bottom),
+      mosaic: mosaic,
     );
   }
   if (cropToPanelByDefault && !webtoon && miningPageIndex != null) {

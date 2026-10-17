@@ -900,6 +900,9 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       // 那一刻，对端没读过的书一下完就顶到最前，和下载前占位卡的位置（同样按 host
       // 的入库时刻排）对不上。只动这次新导入的行：已在本机的书（有声书补拉重试）
       // 是用户自己的入库记录，不改；旧 host 不带该字段时保持本机时刻。
+      // 只改 importedAt（原始入库时刻）：本机开始拥有的时刻 localAddedAt 由
+      // insertEpubBook 记成落地那一刻、这里不动——删除墓碑仲裁与首页「最近添加」
+      // 读的是它（v118）。
       final int? hostImportedAt = book.importedAt;
       if (!hasExistingContent &&
           localBookKey != null &&

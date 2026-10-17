@@ -376,13 +376,36 @@ String updateFeedKindLabel(UpdateFeedKind kind) => switch (kind) {
   UpdateFeedKind.videoEpisode => t.updates_kind_video_episode,
   UpdateFeedKind.mangaChapter => t.updates_kind_manga_chapter,
   UpdateFeedKind.mangaExtension => t.updates_kind_manga_extension,
+  UpdateFeedKind.animeExtension => t.updates_kind_anime_extension,
   UpdateFeedKind.appRelease => t.updates_kind_app_release,
 };
+
+/// 扩展后台自动更新结果条目的状态句（detailJson 的 `autoUpdate`，见
+/// `runMihonExtensionUpdateProbe`）；普通「有新版」条目返回 null。
+///
+/// 在渲染时本地化而不是投递时写死进 subtitle：用户之后换界面语言，旧条目也跟着换。
+String? extensionAutoUpdateStatusLabel(Map<String, Object?> detail) {
+  final Object? outcome = detail['autoUpdate'];
+  if (outcome == ExtensionAutoUpdateOutcome.installed.name) {
+    return t.updates_extension_auto_updated;
+  }
+  if (outcome != ExtensionAutoUpdateOutcome.failed.name) return null;
+  final Object? code = detail['reasonCode'];
+  final String reason = switch (code) {
+    'SIGNATURE_CHANGED' ||
+    'SIGNER_NOT_TRUSTED' ||
+    'SIGNATURE_MISMATCH' => t.updates_extension_auto_update_reason_signature,
+    // 其余原因（网络、包不合格……）原样给出运行时的说明，没有更好的人话。
+    _ => (detail['reason'] as String?) ?? '',
+  };
+  return t.updates_extension_auto_update_failed(reason: reason);
+}
 
 IconData updateFeedKindIcon(UpdateFeedKind kind) => switch (kind) {
   UpdateFeedKind.videoEpisode => FushiIcons.video,
   UpdateFeedKind.mangaChapter => FushiIcons.manga,
   UpdateFeedKind.mangaExtension => FushiIcons.browserExtension,
+  UpdateFeedKind.animeExtension => FushiIcons.browserExtension,
   UpdateFeedKind.appRelease => FushiIcons.downloading,
 };
 
@@ -408,6 +431,8 @@ class _UpdateEntryTile extends StatelessWidget {
     final bool hasImage = imagePath != null && File(imagePath).existsSync();
     final int? publishedAt = detail['publishedAt'] as int?;
     final String subtitle = <String>[
+      if (extensionAutoUpdateStatusLabel(detail) case final String status)
+        status,
       if (entry.subtitle case final String s when s.isNotEmpty) s,
       if (publishedAt != null)
         FushiTimeFormat.dateHourMinute(

@@ -40,6 +40,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/video_advanced_mining.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart'
@@ -84,6 +85,7 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
+import 'package:fushi/src/media/video/source_review_remote_report_gate.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi_engine/media/video/strm_file.dart' show isStrmPath;
@@ -232,6 +234,7 @@ import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
+import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
@@ -2267,6 +2270,33 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           widget.sourceReviewSession?.isReview ??
           (widget.sourceReview != null && !_reviewContinued));
 
+  /// BUG-3490：卡片片段回看中对音轨 / 主副字幕 / 主副调轴的切换只在本次生效。保存动作
+  /// 按种类暂存（同种只留最后一次，key 与值在切换当时就已捕获），点「从这里继续观看」
+  /// 时按正常逻辑补存（本地偏好 + 同步 host）；回看中退出则整批丢弃。
+  late final SourceReviewDeferredWrites<_ReviewChoiceKind>
+  _reviewDeferredChoiceWrites = SourceReviewDeferredWrites<_ReviewChoiceKind>(
+    isReview: () => _sourceReviewActive,
+  );
+
+  /// 保存一次用户的播放选择：回看中暂存，否则立即写。
+  Future<void> _saveReviewableChoice(
+    _ReviewChoiceKind kind,
+    Future<void> Function() write,
+  ) => _reviewDeferredChoiceWrites.save(kind, write);
+
+  /// 「从这里继续观看」：把回看中暂存的选择按正常逻辑补存。
+  Future<void> _flushReviewDeferredChoiceWrites() =>
+      _reviewDeferredChoiceWrites.flush(
+        onError: (Object e) => debugPrint(
+          '[VideoFushiPage] deferred review choice save failed: $e',
+        ),
+      );
+
+  /// 回看期间压住一切远端进度 / 会话上报（BUG-3490）：回看直接串流，「不影响服务器
+  /// 进度」由这道闸门保证，不再要求先下载。
+  late final SourceReviewRemoteReportGate _remoteReportGate =
+      SourceReviewRemoteReportGate(isReview: () => _sourceReviewActive);
+
   @override
   void recordLookup() {
     if (_sourceReviewActive) return;
@@ -2293,6 +2323,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (!mounted || _sourceReviewActive || _reviewContinued) return;
     _reviewContinued = true;
     _sourceReviewPlayPending = true;
+    unawaited(_flushReviewDeferredChoiceWrites());
     _playAfterSourceReviewIfReady();
     setState(() {});
   }
@@ -2310,6 +2341,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     _sourceReviewPlayPending = false;
     _ensureWatchTracker(controller, _title ?? '');
+    // BUG-3490：远端回看的起播上报被闸门压住了；「从这里继续观看」才是这次正常观看的
+    // 起点，在此补发起播（之后的暂停 / 心跳 / 停止才有会话可挂）。
+    final RemoteVideoClient? remoteClient = _effectiveRemoteClient;
+    final RemoteVideoInfo? remoteInfo = _effectiveRemoteInfo;
+    if (remoteClient != null && remoteInfo != null) {
+      _startRemotePlaybackSession(
+        remoteClient,
+        remoteInfo,
+        controller.positionMs ?? 0,
+      );
+    }
     unawaited(controller.play());
     unawaited(controller.flushPosition());
     _focusOwnership.reclaimAfterFrame(FocusReclaimCause.chromeToggled);
@@ -3496,17 +3538,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 的远端播放路径（_initRemote）。YouTube 会在 buildStreamVideoLaunch 里重解析（临时流
     // URL 会过期）；重建失败按打开失败处理。放在读 row 后、本地字幕/进度恢复前短路。
     if (isStreamVideoBook(row)) {
-      // Block before the webpage player replacement or stream resolver: both
-      // may establish an external playback session before media_kit opens.
-      if (_sourceReviewActive) {
-        if (mounted) {
-          setState(() {
-            _failed = true;
-            _failReason = t.card_source_review_local_required;
-          });
-        }
-        return;
-      }
+      // BUG-3490：卡片片段回看在线条目直接在线播放，不再要求先下载。取流（URL /
+      // YouTube 经 youtube_explode、在线视频源经扩展 getVideoList）不改任何进度；
+      // 本地进度、观看统计与远端上报在回看态各自被拦下。网页播放器（站点自己的
+      // 播放器，会记进站点观看记录）在回看中不进，见下方分流。
       // 在线视频源（Aniyomi）入库集：按行里的规格重建扩展 client（起播时向扩展
       // 取流），合集里同一作品的在线行作连播成员。
       if (isAnimeSourceVideoPath(row.videoPath)) {
@@ -3565,7 +3600,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 站点自己的播放器播，Fushi 复用字幕面板 / 查词 / 进度登记。在这里分流而非各
       // push 点：书架 / 首页 / 合集 / 作品页 / app 外打开 8 处入口全部自动覆盖。
       // media_kit controller 尚未 load，pushReplacement 代价只是本页一次空 build。
-      if (shouldOpenInWebVideoPlayer(row.videoPath)) {
+      if (!_sourceReviewActive && shouldOpenInWebVideoPlayer(row.videoPath)) {
         final BuildContext pageContext = context;
         if (!pageContext.mounted) return;
         unawaited(
@@ -3813,8 +3848,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // RemoteVideoInfo.episodes（那是旧单行 playlistJson 模型），故由 client 用合集成员列表
     // 建 _episodes，绕开 info.isPlaylist 门控。换集换的是成员 id（见 _loadRemoteEpisode）。
     if (_isRemoteCollection) {
+      // 媒体库在线合集（在线视频源剧集）：来源链接的 uid 就是该集的行，起播成员已由
+      // 它定位（_resolvedStreamStartIndex）；链接里的 episodeIndex 恒 0，不能盖掉
+      // （BUG-3490）。
       final int startIndex =
-          (widget.sourceReview?.episodeIndex ??
+          ((_resolvedStreamStartIndex == null
+                      ? widget.sourceReview?.episodeIndex
+                      : null) ??
                   _remoteLastAttemptedEpisode ??
                   widget.initialEpisodeIndex ??
                   _resolvedStreamStartIndex ??
@@ -3932,17 +3972,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     // 新一次起播：暂停上报的基线随会话重置（起播上报本身带 IsPaused=false）。
     _lastReportedRemotePlaying = null;
-    // Remote negotiation may report Started/Played, and no transport supplies
-    // a locally verified full-file identity. Download before source review.
-    if (_sourceReviewActive) {
-      if (mounted) {
-        setState(() {
-          _failed = true;
-          _failReason = t.card_source_review_local_required;
-        });
-      }
-      return;
-    }
+    // BUG-3490：卡片片段回看直接串流，不再要求先下载。协商流地址本身（互联
+    // `/streamurl`、Jellyfin / Emby `PlaybackInfo`、Plex part URL）不改服务器进度；
+    // 会改进度的起播 / 心跳 / 暂停 / 停止上报全部经 [_remoteReportGate]，回看中一律
+    // 不发。身份由 host 的 bookUid 担保（见 card_source_router 的远端分支）。
     final int seq = ++_episodeLoadSeq;
     _cancelGraphicSubtitleOcr(); // 换集：旧集的整轨转文字作废，见 [_applyLoad]。
     _remoteLastAttemptedEpisode = index;
@@ -4416,6 +4449,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return nowMs;
   }
 
+  /// 记住用户为远端集选的主字幕（`off:` 哨兵 = 显式关闭）。卡片片段回看中暂存，
+  /// 继续观看时补存（BUG-3490）。
+  void _rememberRemoteSubtitleSource(
+    String uid,
+    int episodeIndex,
+    String? source,
+  ) {
+    unawaited(
+      _saveReviewableChoice(
+        _ReviewChoiceKind.primarySubtitle,
+        () => appModel.setRemoteSubtitleSource(uid, episodeIndex, source),
+      ),
+    );
+  }
+
   /// best-effort 上报播放偏好带戳字段到 host（能力探测 + 吞错；调整哪个字段就
   /// 只带哪个字段，host 逐字段 LWW 合并）。旧 host 无端点 / 离线只记日志。
   void _pushRemotePlayback(String uid, VideoPlaybackSyncState state) {
@@ -4552,7 +4600,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           kind: PlaybackPositionKind.video,
         ).reportLive(keyUid, (positionMs: clamped, updatedAtMs: nowMs));
       } else {
-        await client.putRemoteVideoPosition(
+        await _remoteReportGate.position(
+          client,
           keyUid,
           clamped,
           nowMs,
@@ -4577,18 +4626,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     int positionMs,
   ) {
     if (_sourceReviewActive) return;
-    final Object session = client;
-    if (session is! RemoteVideoPlaybackSession) return;
+    if (client is! RemoteVideoPlaybackSession) return;
+    // 每次起播（[_loadRemoteEpisode] 把基线清回 null）只发一次 Start：加载途中按下
+    // 「从这里继续观看」时，就绪回调与加载收尾会各调一次（BUG-3490）。
+    if (_lastReportedRemotePlaying != null) return;
     // 起播即「正在播放」（autoPlay）；之后 controller 的 playing 翻转才是暂停 / 继续。
     _lastReportedRemotePlaying = true;
     unawaited(
-      session
-          .startRemoteVideoPlayback(info.id, positionMs < 0 ? 0 : positionMs)
-          .catchError((Object e) {
-            debugPrint(
-              '[VideoFushiPage] remote playback start upload failed: $e',
-            );
-          }),
+      _remoteReportGate.start(client, info.id, positionMs).catchError((
+        Object e,
+      ) {
+        debugPrint('[VideoFushiPage] remote playback start upload failed: $e');
+        return false;
+      }),
     );
   }
 
@@ -4607,14 +4657,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _lastReportedRemotePlaying = playing;
     final int positionMs = controller.positionMs ?? 0;
     unawaited(
-      session
-          .setRemoteVideoPlaybackPaused(
-            info.id,
-            positionMs < 0 ? 0 : positionMs,
-            paused: !playing,
-          )
+      _remoteReportGate
+          .paused(session, info.id, positionMs, paused: !playing)
           .catchError((Object e) {
             debugPrint('[VideoFushiPage] remote pause state upload failed: $e');
+            return false;
           }),
     );
   }
@@ -4635,7 +4682,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (info == null || stopClient is! RemoteVideoPlaybackStop) return;
     if (!_remotePlaybackStopGenerations.add(generation)) return;
     try {
-      await stopClient.stopRemoteVideoPlayback(info.id, positionMs);
+      await _remoteReportGate.stop(stopClient, info.id, positionMs);
     } catch (e) {
       debugPrint('[VideoFushiPage] remote playback stop upload failed: $e');
     }
@@ -5097,7 +5144,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 远端条目（互联 host）的字节在 host 上，本机没有文件可比指纹：身份由 host 的
     // bookUid 担保（见 card_source_router 的远端分支），不在这里按本地指纹判死。
     final CardSourceLink? source = _isRemote ? null : widget.sourceReview;
-    if (source != null) {
+    // 无指纹的链接是在线内容身份（BUG-3490），身份由库 uid 担保。
+    if (source != null && source.fingerprint != null) {
       bool matches = false;
       try {
         matches =
@@ -5428,8 +5476,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _watchTracker = null;
     }
     final FushiDatabase db = appModel.database;
-    // 完成标记只对书架书：远端无行可标「看完」、也无库条目可报单集完成（与浏览器
-    // 网页视频 BrowserVideoStudyBridge 同律）；剧集面板的看完角标仍以 host 下发为准。
+    // 单集看完上报只对书架书：远端无库条目可报（与浏览器网页视频
+    // BrowserVideoStudyBridge 同律）；剧集面板的看完角标仍以 host 下发为准。
     final bool hasLibraryRow = _bookRow != null;
     _watchTrackerCoverageKey = coverageKey;
     _watchTracker =
@@ -5453,10 +5501,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             // 已看过的片内区间并集按视频身份持久化：次日重看同样不计（BUG-2108）。
             loadCoverage: () => db.getPref(coverageKey),
             saveCoverage: (String json) => db.setPref(coverageKey, json),
-            markCompleted: hasLibraryRow
-                ? (String bookUid) =>
-                      db.markVideoCompleted(bookUid, DateTime.now())
-                : (_) async {},
+            // BUG-3491（所有者 2026-10-17 拍板）：播放不再给库条目自动打「已看」勾；
+            // 列表显示时间进度 + 百分比，续播 / 已看计数认「手动标记或进度到片尾区」。
+            // 只保留单集看完的媒体追踪上报。
             onEpisodeCompleted: hasLibraryRow
                 ? () async {
                     if (!kMediaTrackingEnabled) return;
@@ -5670,6 +5717,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       videoRemotePositionEpisodeAtPrefKey(uid, 0),
       nowMs,
     );
+    await _persistKnownDuration(uid);
+  }
+
+  /// 上次为哪一集记下了多长的片长（只在变化时重写，见 [_persistKnownDuration]）。
+  (String uid, int durationMs)? _persistedDuration;
+
+  /// BUG-3491：把本集**真实片长**记进 `video_duration_ms_<uid>`。库里没有片长列，
+  /// 合集续播要靠它分清「已打勾的集重看到一半」与「看完了」，集卡要靠它算观看
+  /// 百分比（见 video_duration_pref.dart）。片长是文件事实，同一集只写一次。
+  Future<void> _persistKnownDuration(String uid) async {
+    final int? durationMs = _controller?.durationMs;
+    if (durationMs == null || durationMs <= 0) return;
+    final (String uid, int durationMs)? last = _persistedDuration;
+    if (last != null && last.$1 == uid && last.$2 == durationMs) return;
+    final int? stored = videoDurationMsFromPref(
+      appModel.prefsRepo.getPref(videoDurationPrefKey(uid)),
+    );
+    _persistedDuration = (uid, durationMs);
+    if (stored == durationMs) return;
+    await appModel.prefsRepo.setPref(videoDurationPrefKey(uid), durationMs);
   }
 
   void _prewarmNextEpisodeSubtitleCache() {
@@ -9898,7 +9965,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final String signed = clamped >= 0 ? '+$clamped' : '$clamped';
     _showOsd(t.video_subtitle_delay_osd(ms: signed), icon: Icons.sync_outlined);
     // 对齐产物生效期间的微调只在本次会话生效：落盘会写进系列级调轴，把同系列其它
-    // 没对齐的集一起推歪；而对齐产物重进时本来就按 0 起算。
+    // 没对齐的集一起推歪；而对齐产物重进时本来就按 0 起算。卡片片段回看中的调轴
+    // 同样只在本次生效（BUG-3490）。
     if (_primarySubtitleAligned) {
       if (mounted) setState(() {});
       return;
@@ -9915,39 +9983,44 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 时间戳者胜」+ 写穿行值，使 host 本机与其它设备跟随；失败/旧 host 无端点只记
     // 日志——本地 prefs 已写，不阻塞播放）。合集连播键 = 当前成员 id（与断点键
     // [_remotePositionKeyForIndex] 同构，成员天然隔离）。
-    if (_isRemote) {
-      final int nowMs = DateTime.now().millisecondsSinceEpoch;
-      final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
-      await appModel.prefsRepo.setPref(videoRemoteDelayPrefKey(uid), clamped);
-      await appModel.prefsRepo.setPref(videoRemoteDelayAtPrefKey(uid), nowMs);
-      _pushRemotePlayback(
-        uid,
-        VideoPlaybackSyncState(delayMs: clamped, delayAt: nowMs),
-      );
-    } else {
-      final int? collectionId = widget.playlistCollectionId;
-      if (collectionId != null) {
-        // 系列级写入内聚盖戳：repo 会把值 + now 镜像进**全体视频成员**的
-        // `video_remote_delay_` prefs 对（互联 LWW 用，见 repo doc），此处无需重复。
-        await widget.repo.updateCollectionSubtitleDelayMs(
-          collectionId,
-          clamped,
+    // 卡片片段回看中暂存、继续观看时补存（BUG-3490）：key 在切换当时捕获。
+    final bool remote = _isRemote;
+    final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+    final String bookUid = _activeBookUid;
+    final int? collectionId = widget.playlistCollectionId;
+    await _saveReviewableChoice(_ReviewChoiceKind.primaryDelay, () async {
+      if (remote) {
+        final int nowMs = DateTime.now().millisecondsSinceEpoch;
+        await appModel.prefsRepo.setPref(videoRemoteDelayPrefKey(uid), clamped);
+        await appModel.prefsRepo.setPref(videoRemoteDelayAtPrefKey(uid), nowMs);
+        _pushRemotePlayback(
+          uid,
+          VideoPlaybackSyncState(delayMs: clamped, delayAt: nowMs),
         );
       } else {
-        await widget.repo.updateDelayMs(_activeBookUid, clamped);
-        // 本机调轴镜像盖戳（断点 TODO-816 同范式）：调轴 + now 写进与互联同一键
-        // 空间，使 host 侧 getVideoDelay / 清单以带戳值参与 LWW——否则对端上报过
-        // 一次后，本机后续调轴（row 无戳恒 0）永远输给旧戳、再也传不出去。
-        await appModel.prefsRepo.setPref(
-          videoRemoteDelayPrefKey(_activeBookUid),
-          clamped,
-        );
-        await appModel.prefsRepo.setPref(
-          videoRemoteDelayAtPrefKey(_activeBookUid),
-          DateTime.now().millisecondsSinceEpoch,
-        );
+        if (collectionId != null) {
+          // 系列级写入内聚盖戳：repo 会把值 + now 镜像进**全体视频成员**的
+          // `video_remote_delay_` prefs 对（互联 LWW 用，见 repo doc），此处无需重复。
+          await widget.repo.updateCollectionSubtitleDelayMs(
+            collectionId,
+            clamped,
+          );
+        } else {
+          await widget.repo.updateDelayMs(bookUid, clamped);
+          // 本机调轴镜像盖戳（断点 TODO-816 同范式）：调轴 + now 写进与互联同一键
+          // 空间，使 host 侧 getVideoDelay / 清单以带戳值参与 LWW——否则对端上报过
+          // 一次后，本机后续调轴（row 无戳恒 0）永远输给旧戳、再也传不出去。
+          await appModel.prefsRepo.setPref(
+            videoRemoteDelayPrefKey(bookUid),
+            clamped,
+          );
+          await appModel.prefsRepo.setPref(
+            videoRemoteDelayAtPrefKey(bookUid),
+            DateTime.now().millisecondsSinceEpoch,
+          );
+        }
       }
-    }
+    });
     if (mounted) setState(() {});
   }
 
@@ -9975,45 +10048,49 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         icon: Icons.sync_outlined,
       );
     }
-    // TODO-2837 副字幕调轴入同步通道（播放偏好同步泛化批）：远端按 uid 落带戳
-    // 键对 + 上报 host；null（回跟随）也是一次带戳写，清除同样跨设备收敛。
-    if (_isRemote) {
-      final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
-      final int nowMs = await _stampRemoteStringPref(
-        videoRemoteSecondaryDelayPrefKey(uid),
-        videoRemoteSecondaryDelayAtPrefKey(uid),
+    // 卡片片段回看中暂存、继续观看时补存（BUG-3490）：key 在切换当时捕获。
+    final bool remote = _isRemote;
+    final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+    final String bookUid = _activeBookUid;
+    final int? collectionId = widget.playlistCollectionId;
+    await _saveReviewableChoice(_ReviewChoiceKind.secondaryDelay, () async {
+      // TODO-2837 副字幕调轴入同步通道（播放偏好同步泛化批）：远端按 uid 落带戳
+      // 键对 + 上报 host；null（回跟随）也是一次带戳写，清除同样跨设备收敛。
+      if (remote) {
+        final int nowMs = await _stampRemoteStringPref(
+          videoRemoteSecondaryDelayPrefKey(uid),
+          videoRemoteSecondaryDelayAtPrefKey(uid),
+          clamped?.toString(),
+        );
+        _pushRemotePlayback(
+          uid,
+          VideoPlaybackSyncState(
+            secondaryDelayMs: clamped,
+            secondaryDelayAt: nowMs,
+          ),
+        );
+        return;
+      }
+      if (collectionId != null) {
+        await widget.repo.updateCollectionSecondarySubtitleDelayMs(
+          collectionId,
+          clamped,
+        );
+        if (clamped == null) {
+          // 重置为跟随：连本集 per-book 旧值一起清（见 doc，消除回退复活特例）。
+          await widget.repo.updateSecondaryDelayMs(bookUid, null);
+        }
+      } else {
+        await widget.repo.updateSecondaryDelayMs(bookUid, clamped);
+      }
+      // 本机镜像盖戳（互联 LWW 载体；断点 TODO-816 同范式）：使 host 侧
+      // getVideoPlayback / 清单以带戳值参与逐字段 LWW。
+      await _stampRemoteStringPref(
+        videoRemoteSecondaryDelayPrefKey(bookUid),
+        videoRemoteSecondaryDelayAtPrefKey(bookUid),
         clamped?.toString(),
       );
-      _pushRemotePlayback(
-        uid,
-        VideoPlaybackSyncState(
-          secondaryDelayMs: clamped,
-          secondaryDelayAt: nowMs,
-        ),
-      );
-      if (mounted) setState(() {});
-      return;
-    }
-    final int? collectionId = widget.playlistCollectionId;
-    if (collectionId != null) {
-      await widget.repo.updateCollectionSecondarySubtitleDelayMs(
-        collectionId,
-        clamped,
-      );
-      if (clamped == null) {
-        // 重置为跟随：连本集 per-book 旧值一起清（见 doc，消除回退复活特例）。
-        await widget.repo.updateSecondaryDelayMs(_activeBookUid, null);
-      }
-    } else {
-      await widget.repo.updateSecondaryDelayMs(_activeBookUid, clamped);
-    }
-    // 本机镜像盖戳（互联 LWW 载体；断点 TODO-816 同范式）：使 host 侧
-    // getVideoPlayback / 清单以带戳值参与逐字段 LWW。
-    await _stampRemoteStringPref(
-      videoRemoteSecondaryDelayPrefKey(_activeBookUid),
-      videoRemoteSecondaryDelayAtPrefKey(_activeBookUid),
-      clamped?.toString(),
-    );
+    });
     if (mounted) setState(() {});
   }
 
@@ -11830,4 +11907,13 @@ class _VideoRepeatGestureButtonState extends State<_VideoRepeatGestureButton> {
       child: widget.child,
     );
   }
+}
+
+/// 卡片片段回看中暂存、继续观看时补存的播放选择种类（BUG-3490）。
+enum _ReviewChoiceKind {
+  audioTrack,
+  primarySubtitle,
+  secondarySubtitle,
+  primaryDelay,
+  secondaryDelay,
 }

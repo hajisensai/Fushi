@@ -32,7 +32,7 @@ void main() {
       isTrue,
       reason: 'Emby 的 streamIndex 是全局流号，mpv 要容器内字幕序号',
     );
-    expect(body.contains('setRemoteSubtitleSource('), isTrue);
+    expect(body.contains('_rememberRemoteSubtitleSource('), isTrue);
   });
 
   test('手选与重进恢复都走图形轨分支（不再一律「不支持」）', () {

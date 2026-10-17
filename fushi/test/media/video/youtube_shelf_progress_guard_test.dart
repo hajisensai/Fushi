@@ -101,9 +101,14 @@ void main() {
       reason: '采集器身份只经 _watchStatsIdentity（远端 = 断点键同口径）',
     );
     expect(
-      _flat(pageSrc).contains(_flat('markCompleted: hasLibraryRow')),
+      pageSrc.contains('markVideoCompleted('),
+      isFalse,
+      reason: 'BUG-3491：播放不再自动给库条目打「已看」勾（所有者拍板）',
+    );
+    expect(
+      _flat(pageSrc).contains(_flat('onEpisodeCompleted: hasLibraryRow')),
       isTrue,
-      reason: '看完标记只对有 VideoBooks 行的书架书（含流媒体书）',
+      reason: '单集看完的媒体追踪上报只对有 VideoBooks 行的书架书（含流媒体书）',
     );
   });
 }

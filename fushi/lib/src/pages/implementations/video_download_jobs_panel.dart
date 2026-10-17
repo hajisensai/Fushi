@@ -264,6 +264,8 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     this.executionDeviceLabel,
     this.onOpenExecutionSettings,
     this.header,
+    this.workFocus,
+    this.onClearWorkFocus,
   });
 
   factory VideoDownloadJobsPanel.database({
@@ -288,6 +290,8 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     String? executionDeviceLabel,
     VoidCallback? onOpenExecutionSettings,
     Widget? header,
+    DownloadTaskWorkFocus? workFocus,
+    VoidCallback? onClearWorkFocus,
   }) =>
       VideoDownloadJobsPanel(
         key: key,
@@ -313,10 +317,16 @@ class VideoDownloadJobsPanel extends StatefulWidget {
         executionDeviceLabel: executionDeviceLabel,
         onOpenExecutionSettings: onOpenExecutionSettings,
         header: header,
+        workFocus: workFocus,
+        onClearWorkFocus: onClearWorkFocus,
       );
 
   /// 统一列表顶部随列表滚动的一块（网络问题横幅等）。
   final Widget? header;
+
+  /// 统一列表只看某部作品的任务（见 [DownloadTaskBrowser.workFocus]）。
+  final DownloadTaskWorkFocus? workFocus;
+  final VoidCallback? onClearWorkFocus;
 
   /// 统一列表（[unified]）的添加任务入口：给了就挂 FAB / 空状态按钮。
   final VoidCallback? onAddTask;
@@ -415,6 +425,8 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
               onDelete(job, deleteFiles: deleteFiles),
       // durable pipeline 的 deleteJob 自己会去后端摘种子删数据，能删。
       deletesFiles: onDelete != null,
+      // 删文件时登记的视频库行与封面一并移除（deletePersistedVideoDownloadJob）。
+      deleteFilesRemovesLibraryEntries: onDelete != null,
       setPriority: onSetPriority != null && videoDownloadJobCanSetPriority(job)
           ? (int priority) => onSetPriority(job, priority)
           : null,
@@ -666,6 +678,8 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
       jobs: jobs,
       loading: loading,
       header: header,
+      workFocus: widget.workFocus,
+      onClearWorkFocus: widget.onClearWorkFocus,
       onAddTask: widget.onAddTask,
       executionDeviceLabel: widget.executionDeviceLabel,
       onOpenExecutionSettings: widget.onOpenExecutionSettings,
@@ -764,9 +778,13 @@ class _VideoDownloadJobList extends StatefulWidget {
     this.executionDeviceLabel,
     this.onOpenExecutionSettings,
     this.header,
+    this.workFocus,
+    this.onClearWorkFocus,
   });
 
   final Widget? header;
+  final DownloadTaskWorkFocus? workFocus;
+  final VoidCallback? onClearWorkFocus;
   final bool loading;
   final VoidCallback? onAddTask;
   final String? executionDeviceLabel;
@@ -908,6 +926,10 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
               snapshot?.progress ?? videoDownloadJobComparableProgress(job),
           collectionKey: collectionKey,
           collectionTitle: job.title,
+          workIdentity: DownloadTaskWorkIdentity.maybe(
+            job.metadataProvider,
+            job.externalId,
+          ),
           seeding: snapshot != null &&
               torrentDisplayStatusFor(snapshot.state) ==
                   TorrentDisplayStatus.seeding,
@@ -933,6 +955,8 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
         executionDeviceLabel: widget.executionDeviceLabel,
         onOpenExecutionSettings: widget.onOpenExecutionSettings,
         header: widget.header,
+        workFocus: widget.workFocus,
+        onClearWorkFocus: widget.onClearWorkFocus,
       );
     }
     return ListView.separated(

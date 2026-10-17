@@ -170,4 +170,32 @@ void main() {
       <String>['main-01', 'main-02'],
     );
   });
+
+  test('yt-dlp 默认命名的 YouTube 视频不进刮削计划，同来源番剧照常', () async {
+    final int sourceId = await addSource('D:/影视');
+    await addVideo(
+      'yt-01',
+      'D:/影视/vlog/【韓国ソウル旅行①】女子2人で食べて買って [dQw4w9WgXcQ].mp4',
+      sourceId,
+    );
+    await addVideo(
+      'yt-02',
+      'D:/影视/vlog/北京ユニバに初めて行ったら [jNQXAC9IVRw].f137.mp4',
+      sourceId,
+    );
+    await addVideo(
+      'anime-01',
+      'D:/影视/[SubsPlease] Sousou no Frieren - 01 (1080p) [F02B9CEE].mkv',
+      sourceId,
+    );
+
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final List<VideoSourceScrapeWork> works =
+        await VideoSourceWorkPlanner(db).plan(source);
+
+    expect(
+      works.map((VideoSourceScrapeWork work) => work.members.single.bookUid),
+      <String>['anime-01'],
+    );
+  });
 }

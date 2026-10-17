@@ -256,8 +256,6 @@ class BrowserVideoStudyBridge {
       loadCoverage: () => db.getPref(videoWatchCoveragePrefKey(key)),
       saveCoverage: (String json) =>
           db.setPref(videoWatchCoveragePrefKey(key), json),
-      // 网页视频没有库条目：无处标「看完」。
-      markCompleted: (_) async {},
     );
     debugOnTrackerCreated?.call(tracker);
     tracker

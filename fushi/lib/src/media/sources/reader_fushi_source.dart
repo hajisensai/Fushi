@@ -2052,6 +2052,17 @@ class ReaderFushiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  /// 歌词模式灰显未朗读的原文（`lyrics_show_skipped_text`，默认 `true`）。热更走
+  /// `onSettingsChangedLive` → `_updateLyricsStyleLive` → `__lyricsSetShowSkipped`。
+  bool get lyricsShowSkippedText =>
+      readerSettings?.lyricsShowSkippedText ??
+      getPreference<bool>(key: 'lyrics_show_skipped_text', defaultValue: true);
+  Future<void> setLyricsShowSkippedText(bool v) async {
+    await (readerSettings?.setLyricsShowSkippedText(v) ??
+        setPreference<bool>(key: 'lyrics_show_skipped_text', value: v));
+    onSettingsChangedLive?.call();
+  }
+
   /// 有声书正文当前句铺底色（`audio_highlight_background`，默认 `true`）。
   bool get audioHighlightBackground =>
       readerSettings?.audioHighlightBackground ??

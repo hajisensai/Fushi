@@ -231,6 +231,54 @@ void main() {
       );
     });
 
+    group('打码', () {
+      const List<MiningMosaicRegion> mosaic = <MiningMosaicRegion>[
+        MiningMosaicRegion(left: 0.2, top: 0.3, right: 0.4, bottom: 0.5),
+      ];
+
+      test('与裁切同页 → 裁切计划带上打码（坐标原样，相对整页）', () {
+        final MangaCardImagePlan p = plan(
+          overrides: const MiningRequestOverrides(crop: crop, mosaic: mosaic),
+        );
+        expect(p.kind, MangaCardImageKind.crop);
+        expect(p.crop, const Rect.fromLTRB(0.1, 0.2, 0.5, 0.6));
+        expect(p.mosaic, mosaic);
+      });
+
+      test('整页 + 打码 → 走裁切通道裁 0..1（才能把码打上）', () {
+        const MiningImageCrop whole = MiningImageCrop(
+          pageIndex: 2,
+          left: 0,
+          top: 0,
+          right: 1,
+          bottom: 1,
+        );
+        final MangaCardImagePlan p = plan(
+          overrides: const MiningRequestOverrides(crop: whole, mosaic: mosaic),
+        );
+        expect(p.kind, MangaCardImageKind.crop);
+        expect(p.crop, const Rect.fromLTRB(0, 0, 1, 1));
+        expect(p.mosaic, mosaic);
+      });
+
+      test('页码对不上 → 不要卡图（绝不退回没打码的整页）', () {
+        final MangaCardImagePlan p = plan(
+          overrides: const MiningRequestOverrides(crop: crop, mosaic: mosaic),
+          page: 3,
+        );
+        expect(p.kind, MangaCardImageKind.omit);
+        expect(p.diagnostic, isNotNull);
+      });
+
+      test('有打码却没有取景页（不该出现）→ 不要卡图', () {
+        final MangaCardImagePlan p = plan(
+          overrides: const MiningRequestOverrides(mosaic: mosaic),
+          setting: true,
+        );
+        expect(p.kind, MangaCardImageKind.omit);
+      });
+    });
+
     test('没有 crop：设置关 / 条漫 / 不知道页 → 整页（行为不变）', () {
       expect(plan().kind, MangaCardImageKind.wholePage);
       expect(
@@ -247,8 +295,9 @@ void main() {
   group('漫画页制卡接线（源码守卫）', () {
     // 注释掩掉再折叠空白（注释里会写「await」之类的字眼），走共享词法掩码。
     final String flat = compactCode(
-      File('lib/src/media/manga/reader/manga_fushi_page.dart')
-          .readAsStringSync(),
+      File(
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
+      ).readAsStringSync(),
     );
 
     String onMineBody() {
@@ -300,6 +349,12 @@ void main() {
         body.indexOf('coverPath=awaitensureMangaCoverPng(pageImage);'),
         lessThan(body.indexOf('coverPath=cropped.path;')),
       );
+      // 打了码的裁图失败：不要卡图，不退回整页原图。
+      expect(
+        body.contains('}elseif(imagePlan.mosaic.isNotEmpty){coverPath=null;'),
+        isTrue,
+      );
+      expect(body.contains('mosaic:imagePlan.mosaic,'), isTrue);
       // 临时裁图在制卡结束后清理。
       expect(body.contains('_deleteTempDir(dir)'), isTrue);
     });

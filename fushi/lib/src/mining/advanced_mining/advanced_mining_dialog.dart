@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_manga_panels.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_mosaic.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -269,6 +270,7 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
         _c.deckSection != null ||
         _c.audioSection != null ||
         _c.videoSection != null ||
+        _c.stillSection != null ||
         _c.mangaSection != null;
     final bool wide =
         screen.width - 80 >= kAdvancedMiningWideMinWidth && hasLeft && hasRight;
@@ -406,6 +408,8 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
         ),
       if (_c.videoSection != null)
         AdvancedMiningVideoImagePanel(controller: _c),
+      if (_c.stillSection != null)
+        AdvancedMiningStillImagePanel(controller: _c),
       if (manga) MangaCropPreviewPanel(controller: _c),
     ];
     return FushiEntranceScope(
@@ -487,6 +491,8 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
           ),
         if (_c.videoSection != null)
           AdvancedMiningVideoImagePanel(controller: _c),
+        if (_c.stillSection != null)
+          AdvancedMiningStillImagePanel(controller: _c),
       ],
       if (rows.isNotEmpty)
         ClipRRect(
@@ -578,6 +584,14 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
         expanded: _expanded.contains(_Fold.image),
         onTap: () => _toggleFold(_Fold.image),
         child: AdvancedMiningVideoImagePanel(controller: _c, embedded: true),
+      ),
+    if (foldInline && _c.stillSection != null)
+      _FoldRow(
+        label: t.popup_advanced_mining_image_section,
+        value: advancedMiningStillSummary(_c),
+        expanded: _expanded.contains(_Fold.image),
+        onTap: () => _toggleFold(_Fold.image),
+        child: AdvancedMiningStillImagePanel(controller: _c, embedded: true),
       ),
     // 漫画的框选需要整屏：摘要行点开进入全屏框选页，而不是在面板里挤一张小图。
     if (_c.mangaSection != null)

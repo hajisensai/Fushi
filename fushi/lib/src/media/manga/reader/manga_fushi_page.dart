@@ -4608,8 +4608,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 写进一个新临时目录。解码失败（如 AVIF）/ 读写失败返回 null，调用方用整页原图。
   Future<({String path, Directory dir})?> _writeCroppedCover(
     String pageImage,
-    Rect crop,
-  ) async {
+    Rect crop, {
+    List<MiningMosaicRegion> mosaic = const <MiningMosaicRegion>[],
+  }) async {
     Directory? dir;
     try {
       final Uint8List bytes = await File(pageImage).readAsBytes();
@@ -4625,6 +4626,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         bottom: crop.bottom,
         maxLongEdge: compression.screenshotMaxLongEdge,
         quality: compression.screenshotQuality,
+        mosaic: mosaic,
       );
       if (cropped == null) {
         ErrorLogService.instance.logDiagnostic(
@@ -4732,11 +4734,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         };
         if (cropRect != null) {
           // 从原图裁；任何一步失败都保留上面的整页原图，不让裁切弄丢卡图。
+          // 例外：用户打了码——失败就不要卡图，绝不把没打码的整页送进卡片。
           final ({String path, Directory dir})? cropped =
-              await _writeCroppedCover(pageImage, cropRect);
+              await _writeCroppedCover(
+                pageImage,
+                cropRect,
+                mosaic: imagePlan.mosaic,
+              );
           if (cropped != null) {
             coverPath = cropped.path;
             cropTempDir = cropped.dir;
+          } else if (imagePlan.mosaic.isNotEmpty) {
+            coverPath = null;
+            ErrorLogService.instance.logDiagnostic(
+              'MangaFushiPage.miningMosaic',
+              'mosaic failed, card image omitted',
+            );
           }
         }
       }

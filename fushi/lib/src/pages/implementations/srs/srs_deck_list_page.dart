@@ -1,13 +1,13 @@
 /// 复习模块主页：牌组列表（底栏 / 侧栏「复习」tab，见 `HomeTab.srs`）。
 ///
-/// 每行：牌组名按层级缩进 + 新卡 / 学习 / 到期三色计数；新卡被自动缩减时多一行
-/// 小字。点行进复习；行内菜单：新建子牌组 / 改名 / 牌组设置 / 删除（默认牌组不可删）。
+/// 每行：牌组名（子牌组前面按层级画细竖线）+ 新卡 / 学习 / 到期三色计数；新卡被自动
+/// 缩减时多一行小字。点行进复习；行内菜单：新建子牌组 / 改名 / 牌组设置 / 删除（默认
+/// 牌组不可删；空着又没有子牌组时不显示，见 [srsVisibleDecks]）。
 /// 顶栏动作默认平铺、放不下才按优先级收进「⋯」（MD3 = [FushiFloatingTopBar] 的
 /// 自适应溢出；Apple = 导航栏动作，由 [FushiPageHeader] 自己收）。
 library;
 
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -664,51 +664,29 @@ class _DeckRow extends StatelessWidget {
   /// - 牌组名可折两行，永远优先拿宽度。
   static const double compactBelow = 480;
 
-  /// 窄屏每层缩进与封顶层数：深层子牌组不再无限右移吃掉标题宽度。
-  static const double _compactIndentStep = 10;
-  static const int _compactIndentMaxDepth = 3;
-
-  /// 层级缩进。宽屏每深一层右移一格（spacing.card）；窄屏每层 10、最多 3 层。
-  static double indentFor({
-    required int depth,
-    required bool compact,
-    required FushiDesignTokens tokens,
-  }) => compact
-      ? math.min(depth, _compactIndentMaxDepth) * _compactIndentStep
-      : depth * tokens.spacing.card;
-
-  /// 行首：缩进 + 展开 / 收起箭头 + 牌组图标。有子牌组时整块都是展开 / 收起的
-  /// 命中区（用户 2026-10-16：只有箭头那 48 方框能折叠，旁边的缩进留白和图标一点
+  /// 行首：层级细竖线（[SrsDeckIndentGuides]）+ 展开 / 收起箭头。有子牌组时整块都是
+  /// 展开 / 收起的命中区（用户 2026-10-16：只有箭头那 48 方框能折叠，旁边的留白一点
   /// 就开始复习，太容易误触）；没有子牌组的行首照旧跟随整行打开牌组。
   ///
-  /// 窄屏（[compactBelow]）：缩进封顶、不画装饰性的牌组图标——层级已由缩进 + 箭头
-  /// 表达，把宽度留给牌组名（箭头仍是 48 见方命中区）。没有层级时窄屏行首为空。
-  Widget? _leading(
-    FushiDesignTokens tokens, {
-    required bool compact,
-    required _LeadingProbe probe,
-  }) {
-    if (compact && !hasTree) return null;
+  /// 行首不放牌组图标：窄屏上图标 + 每层一整格缩进会把名字挤没（三级以下只剩数字），
+  /// 层级改由细竖线表示，名字拿到尽量多的宽度。没有层级也没有箭头时行首为空。
+  Widget? _leading({required _LeadingProbe probe}) {
+    if (deck.depth == 0 && !hasTree) return null;
     final Widget row = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        // 层级缩进：子牌组每深一层右移一格。
-        SizedBox(
-          width: indentFor(depth: deck.depth, compact: compact, tokens: tokens),
-        ),
+        if (deck.depth > 0)
+          SrsDeckIndentGuides(
+            key: ValueKey<String>('srs-deck-indent-${deck.deck.id}'),
+            depth: deck.depth,
+            active: deck.reviewCount + deck.learnCount > 0,
+          ),
         if (hasTree)
           _CollapseToggle(
             deckId: deck.deck.id,
             visible: hasChildren,
             collapsed: collapsed,
             onPressed: () => onSetCollapsed(!collapsed),
-          ),
-        if (!compact)
-          FushiListLeadingIcon(
-            deck.depth == 0 ? FushiIcons.collection : FushiIcons.folder,
-            tone: deck.reviewCount + deck.learnCount > 0
-                ? FushiCardTone.primary
-                : FushiCardTone.neutral,
           ),
       ],
     );
@@ -821,7 +799,7 @@ class _DeckRow extends StatelessWidget {
                         )
                       : null,
                   minHeight: compact ? kMinInteractiveDimension : null,
-                  leading: _leading(tokens, compact: compact, probe: probe),
+                  leading: _leading(probe: probe),
                   // 窄屏放宽到两行：列表高度自由，长牌组名换行而不是只剩省略号。
                   titleMaxLines: compact ? 2 : 1,
                   // 窄屏不包完整路径的提示气泡：触屏上长按会先被气泡吃掉，弹不出
@@ -952,6 +930,65 @@ class _CollapseToggle extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 子牌组的层级指示：每深一层一条细竖线（取代原来的「图标 + 每层一整格缩进」）。
+///
+/// 每层只占 [step] 宽，四级子牌组也只让出约 30 逻辑像素，名字照样看得见；最深那条
+/// 在牌组有学习 / 到期卡时用主色（接替原来图标的着色信号）。
+@visibleForTesting
+class SrsDeckIndentGuides extends StatelessWidget {
+  const SrsDeckIndentGuides({
+    super.key,
+    required this.depth,
+    required this.active,
+  });
+
+  /// 每层的水平步长。
+  static const double step = 10;
+
+  /// 竖线粗细。
+  static const double stroke = 2;
+
+  /// 竖线高度（单行列表行内容区 40 里留上下余量）。
+  static const double height = 28;
+
+  final int depth;
+  final bool active;
+
+  /// 总宽：前 depth-1 层各占一步，最后一层只占线宽（后面 FushiListItem 自带行首间距）。
+  static double widthFor(int depth) =>
+      depth <= 0 ? 0 : (depth - 1) * step + stroke;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: widthFor(depth),
+      height: height,
+      child: Stack(
+        children: <Widget>[
+          for (int level = 0; level < depth; level++)
+            PositionedDirectional(
+              start: level * step,
+              top: 0,
+              bottom: 0,
+              width: stroke,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: level == depth - 1 && active
+                      ? scheme.primary
+                      : scheme.outlineVariant,
+                  borderRadius: const BorderRadius.all(
+                    Radius.circular(stroke / 2),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

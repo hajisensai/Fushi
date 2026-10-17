@@ -9,12 +9,16 @@
 //   POST   /v1/register                 {pubkey, nickname, email, code} 注册（验证码；幂等）
 //   POST   /v1/login                    {pubkey, email, code}   新设备登录（绑定本机钥匙）
 //   GET    /v1/me                        [签名]                  自己的账户
+//   GET    /v1/me/devices                [签名]                  本账户已登录的设备
+//   POST   /v1/me/devices                [签名] {pubkey, time, proof} 代已互联配对的新设备绑定钥匙（account.js addDevice）
+//   DELETE /v1/me/devices/:keyId         [签名]                  解绑另一台设备
 //   PATCH  /v1/me                        [签名] {nickname?, visibility?}
 //   DELETE /v1/me                        [签名]                  删除账户与全部数据
 //   PUT    /v1/me/avatar                 [签名] 图片字节
 //   DELETE /v1/me/avatar                 [签名]
 //   POST   /v1/shelf                     [签名] {reset?, put, remove, daily} 增量上报书架（shelf.js）
-//   PUT    /v1/works/:id/cover           [签名] 图片字节          缺封面的作品补缩略图
+//   PUT    /v1/works/:id/cover[?h=dHash] [签名] 图片字节          提交封面缩略图（投票，cover_votes.js）
+//   POST   /v1/works/:id/cover/vote      [签名] {hash} | {url}      不带字节的封面投票
 //   GET    /v1/rank?metric&window&scope&limit&offset   [可选签名]
 //   GET    /v1/works/popular?window&kind&limit&offset
 //   GET    /v1/works/:id?limit&offset                   [可选签名]
@@ -44,8 +48,16 @@ import { LIMITS, hit, purgeRateLimits } from './ratelimit.js';
 import { MAX_SHELF_BODY, applyShelfDelta, normalizeUpload } from './shelf.js';
 import { deleteMedia, purgeBudgets, spend } from './budget.js';
 import { refreshSnapshots } from './snapshots.js';
-import { AVATAR_MAX_BYTES, COVER_MAX_BYTES, clearAvatar, serveImage, setAvatar, setWorkCover } from './media.js';
-import { deleteAccount, listDevices, login, register, removeDevice, selfView, updateProfile } from './account.js';
+import {
+  AVATAR_MAX_BYTES,
+  COVER_MAX_BYTES,
+  clearAvatar,
+  serveImage,
+  setAvatar,
+  setWorkCover,
+  voteWorkCover,
+} from './media.js';
+import { addDevice, deleteAccount, listDevices, login, register, removeDevice, selfView, updateProfile } from './account.js';
 import { purgeEmailCodes, requestCode } from './email.js';
 import { leaderboard, popularWorks, userCard, userShelf, workPage } from './views.js';
 import { handleAdmin } from './admin.js';
@@ -61,6 +73,8 @@ const JSON_BODY_MAX = 16 * 1024;
 const PING_BODY_MAX = 1024;
 /** 小写操作（资料 / 好友 / 屏蔽 / 举报）按估算行数扣全局写入预算（含索引与防重放、限流记录）。 */
 const SMALL_WRITE_ROWS = 8;
+/** 一次封面投票的估算写入行数（投票行 + 两个候选计数 + 物化 + 索引 + 防重放 / 限流记录）。 */
+const COVER_VOTE_WRITE_ROWS = 16;
 const ID = '([A-Za-z0-9_-]{1,32})';
 
 function configMissing(env) {
@@ -242,6 +256,14 @@ async function route(request, env, now, ctx) {
     await removeDevice(env, account, m[1]);
     return new Response(null, { status: 204 });
   }
+  if (method === 'POST' && path === '/v1/me/devices') {
+    const bytes = await readBodyBytes(request, JSON_BODY_MAX);
+    const account = await authenticate(request, env, bytes, now, { mutating: true });
+    await hit(env, `link:${account.id}`, HOUR, LIMITS.deviceLinkPerHour, now);
+    await spend(env, 'write_rows', SMALL_WRITE_ROWS, now);
+    const res = await addDevice(env, account, parseJsonBytes(bytes), now);
+    return json(res.account, res.created ? 201 : 200);
+  }
   if (method === 'POST' && path === '/v1/shelf') {
     const bytes = await readBodyBytes(request, MAX_SHELF_BODY);
     const account = await authenticate(request, env, bytes, now, { mutating: true });
@@ -265,7 +287,16 @@ async function route(request, env, now, ctx) {
     const bytes = await readBodyBytes(request, COVER_MAX_BYTES);
     const account = await authenticate(request, env, bytes, now, { mutating: true });
     await hit(env, `media:${account.id}`, HOUR, LIMITS.mediaUploadPerHour, now);
-    return json({ cover: `/img/${await setWorkCover(env, account, m[1], bytes, now)}` });
+    await spend(env, 'write_rows', COVER_VOTE_WRITE_ROWS, now);
+    // h 在查询串里：查询串计入签名（auth.js signingString），中途改不了。
+    return json({ cover: await setWorkCover(env, account, m[1], bytes, now, url.searchParams.get('h')) });
+  }
+  if (method === 'POST' && (m = new RegExp(`^/v1/works/${ID}/cover/vote$`).exec(path))) {
+    const bytes = await readBodyBytes(request, JSON_BODY_MAX);
+    const account = await authenticate(request, env, bytes, now, { mutating: true });
+    await hit(env, `cover:${account.id}`, HOUR, LIMITS.coverVotePerHour, now);
+    await spend(env, 'write_rows', COVER_VOTE_WRITE_ROWS, now);
+    return json(await voteWorkCover(env, account, m[1], parseJsonBytes(bytes), now));
   }
   const social = matchSocialWrite(method, path);
   if (social) {

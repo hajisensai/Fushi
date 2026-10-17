@@ -884,8 +884,9 @@ class LibraryCtlShelf {
 
   // ── 读完标记 ─────────────────────────────────────────────────────────
 
-  /// 标记 / 取消读完（书架卡「标记已读完」同一列 `EpubBooks.completedAt`；视频走
-  /// 播放页看完时的 [FushiDatabase.markVideoCompleted]）。
+  /// 标记 / 取消读完（书架卡「标记已读完」同一列 `EpubBooks.completedAt`；视频写
+  /// [FushiDatabase.markVideoCompleted]——自 BUG-3491 起播放不再自动打勾，这是手动
+  /// 标记视频已看的入口之一）。
   Future<Map<String, Object?>> setCompleted(
     LibraryCtlKey key, {
     required bool completed,

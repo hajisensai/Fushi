@@ -102,3 +102,34 @@ class TtsResult {
 - 设置整合：「模型 › 语音合成」从只写着系统引擎的说明页改为 TTS 的唯一主页（朗读声音 + 本机 GPT-SoVITS 状态 + 制卡兜底）；「模型文件」分区把 GPT-SoVITS 整合包与 OCR 模型并列；「阅读 › 有声书 › 朗读声音」保留为同一页的快捷入口。
 - 易用性：本机服务时参考音频可直接选文件（复制进 `<support>/tts_reference_audio/`，文件名含假名 / 汉字时预填参考文本）；语言代码显示可读名。
 - 未做：macOS / Linux（官方无免安装包，仍按外部服务手填地址）；切换自训练权重（`/set_*_weights`）。真实整合包（约 11 GB）的下载 → 解压 → 合成未在真机端到端跑过，状态 `implemented_unverified`。
+
+## 本机一键部署官方 Irodori-TTS-Server（2026-10-16）
+
+所有者拍板：按官方来——部署 `Aratako/Irodori-TTS-Server`（OpenAI 兼容），不动所有者自己的有声书工作台接入（`IrodoriTtsDescriptor`，`/api/quick/*`、端口 7870，行为不变、两者并存）。
+
+上游事实（读 Irodori-TTS-Server main `61012c7` 与 Irodori-TTS `89f9d8f` 核实）：
+
+- 官方装法 `uv sync --extra cu128|rocm|cpu`（三者互斥；**没有 xpu**，xpu 只在 Irodori-TTS 训练仓里）+ `uv run --no-sync python -m irodori_openai_tts --host --port`；Python ≥3.10（`.python-version` = 3.10），`torch>=2.10,<2.11`。cpu extra 在 macOS 落到 PyPI 的 torch，`IRODORI_MODEL_DEVICE=auto` 时自己用 MPS。
+- 接口：`GET /health`（不加载模型）、`GET /v1/models`（`owned_by: irodori-tts`）、`GET/POST /v1/audio/voices`（multipart `file` + `voice_id`，id 只能 `[A-Za-z0-9_-]`）、`GET/PUT/DELETE /v1/audio/voices/{id}`、`POST /v1/audio/speech`（`model` 必须等于 `IRODORI_MODEL_NAME`，默认 `irodori-tts`）。内置声音 `none`（不用参考音频；配 `irodori.caption` 即 Voice Design）。
+- 服务默认 checkpoint 是 `Aratako/Irodori-TTS-v4-Small`；本实现按所有者要求默认 **v4.1-Small**（Irodori-TTS 主仓 README 的默认，同一代码路径），另给 **v4.1-Small-MF**（MeanFlow，4 步，CPU 上快得多）可选。编解码器 `Aratako/Semantic-DACVAE-Japanese-32dim`。三个模型仓库均 MIT、非 gated。
+- 依赖里有三个 git 依赖（`irodori-tts`、`dacvae`、`silentcipher`）。**uv 取 git 依赖必须调用系统 git**（实测无 git 时报 `Git executable not found`）；重新 `uv lock` 指向本地路径也不可行（要为 rocm 等全部平台取元数据，实测在 rocm torch 轮子上内存映射失败）。
+- 首次启动时水印模型 `silentcipher.get_model` 会 `snapshot_download("sony/silentcipher")`（约 70 MB，经 `HF_ENDPOINT`），失败只告警、不挡合成。
+
+部署设计（`packages/fushi_engine/lib/tts/local/irodori_local_*.dart`）：
+
+- 专属目录 `<安装目录>/fushi-irodori-tts/`：`uv/`（官方单文件 uv 0.12.21，四个平台包钉 sha256）、`python/`（`UV_PYTHON_INSTALL_DIR`，`uv python install 3.10 --no-bin --no-registry`：不写 PATH、不写注册表、不碰系统 Python）、`cache/`（`UV_CACHE_DIR`）、`src/{server,irodori-tts,dacvae,silentcipher}`（GitHub 源码 zip，commit 与 `uv.lock` 一致，sha256 校验）、`src/server/.venv`、`models/`、`voices/`（`IRODORI_VOICES_DIR`）、`hf/`（`HF_HOME`）。删除 = 整目录删掉。
+- 不经 git 的依赖安装：`uv export --frozen --extra <后端> --no-emit-project --emit-index-url` 导出官方锁定清单（带哈希）→ 三行 git 依赖换成 `file:///` 本地目录（缺一行或多出别的 git 依赖都拒绝安装）、只留所选后端的 PyTorch 索引（macOS 一个不留）、末尾加服务本体 → `uv venv --managed-python --clear` → `uv pip sync --index-strategy unsafe-best-match`（每个包都带锁文件哈希，从哪个索引取都必须是那个文件）。版本与哈希全部来自官方锁文件。
+- 安装命令不继承父进程的 `UV_*` / `VIRTUAL_ENV` / `PYTHONPATH` / `CONDA*` / `PIP_*INDEX*`；app 的代理经本机中继（`appNativeProxyEnvironment`）给 uv。
+- 模型由 app 下载（`ResumableDownloader`：断点续传、进度、sha256；钉 revision），可选 Hugging Face / hf-mirror.com（实测从境外出口访问 hf-mirror 会 308 回 huggingface.co）。服务用 `IRODORI_CHECKPOINT` / `IRODORI_CODEC_REPO` 本地路径加载，不在服务里下大文件。
+- 每步可重入：uv 版本对、源码 commit 对、环境指纹（uv / Python / 各 commit）与后端对、模型文件齐 → 跳过。换模型只补下模型，换后端只重装环境。
+- 进程托管：GPT-SoVITS 的托管逻辑抽成共用 `LocalServiceProcess`（`local_service_process.dart`，GPT-SoVITS 改为子类，行为与测试不变）。Irodori 起 `.venv` 里的 python `-m irodori_openai_tts --host 127.0.0.1 --port <port>`（等价于官方 `uv run --no-sync`；Windows 上 venv 的 `python.exe` 是启动器，杀它连坐子进程——实测）；`IRODORI_PRELOAD=true` 让模型读完才开端口，探活 `GET /health` + `GET /v1/models`（`owned_by == irodori-tts` 才算），就绪超时 10 分钟；pid 文件 `.fushi_irodori.pid` 认领崩溃残留；`PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8`。默认端口 8088，可改，不许 7870 / 7871 / 9880。
+- provider `irodori_server`（`irodori_server_tts_provider.dart`）：`/v1/audio/voices` 列声音，`/v1/audio/speech` 合成（`response_format: wav`，可选 `irodori.caption`、Bearer 密钥），并发 1；声音管理 `IrodoriServerVoiceApi`（上传 / 删除）。注册表里换成 `AutoStartIrodoriServerTtsDescriptor`（指向托管端口时朗读前自动拉起）。
+- UI：「本机 Irodori-TTS」页（显卡 / 后端 / 模型 / 端口 / 下载源 / 位置 / 进度与取消 / 安装日志 / 启停 / 服务日志 / 服务上的声音：上传参考音频、删除 / 用本机服务新建声音 / 删除）；入口：添加声音对话框、Irodori 声音编辑页、「模型 › 语音合成」「模型 › 模型文件」。桌面三端显示，移动端不显示。CLI：`fushi_cli models download|status|cancel|rm|start|stop irodori`（`--backend` / `--model` / `--source hf|hf-mirror` / `--dir`）。
+
+验证状态（2026-10-17）：
+
+- 引擎单测 68 条全绿（安装状态机 / 清单改写 / 探活判据 / provider 请求格式 / 上传 multipart / 设置 / 删除只删专属目录；GPT-SoVITS 原有测试照常通过）。
+- Windows 真机（RTX 4070 Ti，cu128）：用引擎层真实代码走 安装（uv → 源码 → Python 3.10 → `uv pip sync` → 模型，无 git，约 62 分钟，主要是 3 GB 模型下载）→ 启动（首次 75 s，其后 38 s）→ 列声音 → `none` 合成（4.6 s 音频，约 4.3 s）→ 上传参考音频 → 用它合成 → 删声音 → 停止（端口释放）全部通过；装好的目录约 8.6 GB。发现并修掉：停止后端口晚一拍才关（venv 启动器连坐子进程），`stop` 现在等端口释放。
+- macOS 27.2（Apple 芯片，cpu extra）：uv / Python / 锁定依赖 / 模型下载（经系统代理）/ 删除都通过；**服务启动失败**：官方锁文件钉的 `scipy==1.15.3`（Python 3.10 能用的最后一版）的 `_spropack` 扩展在 macOS 27 的 dyld 下加载失败（`__DATA/__thread_bss has a zero-fill section type, but offset field is not zero`），`irodori_tts` 导入 transformers 时连带失败。这是上游锁文件 × 新 macOS 的不兼容，要修只能偏离官方锁（换 Python 3.11+ 并升级 scipy，需重新解析依赖），待所有者拍板；app 内表现为「服务启动时退出了，请查看日志」。
+- Linux：只做了静态分析（引擎是纯 Dart，Linux 分支由单测的非 Windows 路径覆盖），未真机安装。
+- 部署页 UI 只过了 `flutter analyze`，未在真 app 里人工过一遍。

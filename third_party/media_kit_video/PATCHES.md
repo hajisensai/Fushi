@@ -873,3 +873,23 @@ Fushi injects `_controlsHeldByMenu` into both themes and drives it from
 `VideoControlBar.onMenuOpenChanged`.
 
 Source-guard test: `fushi/test/pages/video_controls_menu_hold_guard_test.dart`.
+
+## BUG-3498: clicking the seek bar's upper band toggled play / pause
+
+`lib/media_kit_video_controls/src/controls/material_desktop.dart`
+(`isInPlayPauseRegion` passed to `MaterialDesktopTapRouter`) and
+`lib/media_kit_video_controls/src/controls/widgets/desktop_tap_router.dart`
+(`desktopControlsBottomStripHeight`).
+
+The seek bar takes pointers through a `Listener`, which never joins the gesture
+arena, so the controls' tap router still wins a click on it and only the
+bottom-strip y threshold keeps it from toggling play / pause. Upstream excluded
+`bottomBarOffset + 10`, but the seek bar's hit area is `seekBarContainerHeight`
+(36) tall and only pushed `seekBarBottomButtonBarOverlap` (16) into the button
+bar, so its top 20px stuck out above the bar: a click in the upper 10px seeked
+*and* paused. The strip now covers the seek bar's whole hit area (the larger of
+that and the old `+ 10` padding).
+
+Tests: `fushi/test/pages/video_desktop_touch_tap_router_test.dart`
+(`desktopControlsBottomStripHeight` group: geometry, real router click, and a
+source check that `isInPlayPauseRegion` uses the helper).

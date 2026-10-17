@@ -945,9 +945,9 @@
   {
     "name": "libmpv-2.dll",
     "source_name": "libmpv-2.dll",
-    "source_sha256": "6c97afa7ccfa059b3cfd5a849dcf8abc898a71aba961d22861250ff77e797e83",
-    "sha256": "d16c19a8e6f4b7d3d483bf0c095073413de14347bf1c3329ca662b843c366492",
-    "bytes": 4553988,
+    "source_sha256": "e9e502d6189efc6ad69a35ee55e6e35d2d6d4f1a57b96633cb405e56a0dc442f",
+    "sha256": "55f957e5fd1edc9fb15f48755c964c1bdc3e386af366c9b81622d4e92fae4774",
+    "bytes": 4556072,
     "rewritten_references": 23,
     "imports_and_forwarders": [
       "ADVAPI32.dll",

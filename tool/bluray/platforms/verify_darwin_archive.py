@@ -57,7 +57,7 @@ def macho_slices(data, required_markers=()):
         position += size
     for marker in required_markers:
         if marker not in data:
-            raise ValueError(f"Missing navigation marker {marker!r} in CPU {cpu:x}")
+            raise ValueError(f"Missing required marker {marker!r} in CPU {cpu:x}")
     return [{"architecture": CPU_NAMES.get(cpu, f"unknown-{cpu:x}"),
              "dependencies": dependencies}]
 
@@ -90,7 +90,13 @@ def verify_archive(path, platform):
                 if executable is None:
                     raise ValueError(f"{framework}: no framework executable")
                 data = archive.extractfile(executable).read()
-                markers = (b"disc-navigation-state-json", b"disc-menu-active", b"discnav") if framework == "Mpv" else ()
+                # BUG-3499: "without DefaultDuration" is the trace message of
+                # mkv-laced-audio-timestamps.patch (laced Matroska audio timestamps);
+                # BUG-3500: "Deriving missing DTS" is the debug message of
+                # recorder-video-dts.patch (dump-cache of Matroska B-frame video).
+                markers = (b"disc-navigation-state-json", b"disc-menu-active", b"discnav",
+                           b"without DefaultDuration",
+                           b"Deriving missing DTS") if framework == "Mpv" else ()
                 slices = macho_slices(data, markers)
                 actual = {item["architecture"] for item in slices}
                 if actual != expected[variant] or actual != set(library["SupportedArchitectures"]):
@@ -123,7 +129,7 @@ def verify_archive(path, platform):
             checksum.update(chunk)
     digest = checksum.hexdigest()
     return {"sha256": digest, "platform": platform, "frameworks": frameworks,
-            "validation": "archive structure, Mach-O CPU slices, dylib closure, navigation markers",
+            "validation": "archive structure, Mach-O CPU slices, dylib closure, navigation, lace-timestamp and recorder-DTS markers",
             "device_menu_rendering_tested": False}
 
 

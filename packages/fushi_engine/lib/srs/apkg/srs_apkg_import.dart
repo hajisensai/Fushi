@@ -862,6 +862,9 @@ class _Importer {
       v[SrsFieldKeys.deckMaxInterval] = p.maxIntervalDays;
     }
     if (!own) return v;
+    // 音频两项随参数继承（只写在 own 牌组上）；与缺省值相同时不写，不产生多余记录。
+    if (!p.autoplay) v[SrsFieldKeys.deckAutoplay] = false;
+    if (!p.replayQuestion) v[SrsFieldKeys.deckReplayQuestion] = false;
     if (p.desiredRetention > 0 && p.desiredRetention < 1) {
       v[SrsFieldKeys.deckRetention] = p.desiredRetention;
     }

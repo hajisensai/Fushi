@@ -68,10 +68,21 @@ void main() {
     );
     expect(
       flat.contains(
-        '_openBrowseTab(tab, downloadsSection: downloadsSection); return true;',
+        '_openBrowseTab( tab, downloadsSection: downloadsSection, '
+        'downloadsWorkFocus: downloadsWorkFocus, ); return true;',
       ),
       isTrue,
-      reason: '第二处在 _popToBrowseTab 的可达分支里',
+      reason: '第二处在 _popToBrowseTab 的可达分支里（定位子 tab 与作品聚焦原样透传）',
+    );
+    expect(
+      flat.contains(
+        'onOpenWorkDownloads: browseReachable '
+        '? (VideoMediaReference reference) => _popToBrowseTab( '
+        'BrowseTab.downloads,',
+      ),
+      isTrue,
+      reason: '详情页「任务」端口同样必须走 _popToBrowseTab 并按下载可达性接线：'
+          '它也从 pushed 的详情页发起，只切 tab 用户会停在详情页上。',
     );
     expect(
       flat.contains(
