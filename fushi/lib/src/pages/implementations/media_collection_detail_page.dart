@@ -42,7 +42,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
-    show videoBookHasLocalFiles;
+    show localVideoFileCandidates, videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/scraper/episode_rename.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -70,6 +70,8 @@ import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
+    show currentRevealHost, revealFirstOf;
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_lock_dialog.dart';
@@ -2236,6 +2238,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     ).context.findRenderObject();
     if (overlay is! RenderBox) return;
     final Offset anchor = overlay.globalToLocal(globalPosition);
+    // 这一集在本机已有原始文件（流媒体 / 远端行的 videoPath 是 URL，不算）：下载
+    // 本集对它没有意义，换成「打开文件位置」。纯函数判据，不吃 IO。
+    final VideoBookRow? local = episode.local;
+    final bool hasLocalFiles = local != null && videoBookHasLocalFiles(local);
     final _EpisodeMenuAction? action = await showFushiMenu<_EpisodeMenuAction>(
       context: context,
       position: RelativeRect.fromRect(
@@ -2243,12 +2249,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         Offset.zero & overlay.size,
       ),
       items: <PopupMenuEntry<_EpisodeMenuAction>>[
-        if (_downloadsAvailable)
+        if (_downloadsAvailable && !hasLocalFiles)
           PopupMenuItem<_EpisodeMenuAction>(
             value: _EpisodeMenuAction.download,
             child: _menuItemRow(
               FushiIcons.download,
               t.collection_episode_download,
+            ),
+          ),
+        // 「打开文件位置」：与视频库卡同一条动作、同一份文案；移动端没有文件管理器
+        // 契约（[currentRevealHost] 为 null），整条不出。
+        if (hasLocalFiles && currentRevealHost() != null)
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.openFileLocation,
+            child: _menuItemRow(
+              FushiIcons.folderOpen,
+              t.media_file_location_open,
             ),
           ),
         // v95：完整技术规格（音轨/字幕轨在集卡上放不下，只能进弹窗）。
@@ -2290,6 +2306,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     switch (action) {
       case _EpisodeMenuAction.download:
         _openDownloadDialog(episodeNumber: _episodeNumberOf(episode));
+      case _EpisodeMenuAction.openFileLocation:
+        await _openEpisodeFileLocation(episode);
       case _EpisodeMenuAction.mediaInfo:
         await _showEpisodeMediaInfo(episode);
       case _EpisodeMenuAction.clearWatchProgress:
@@ -2301,6 +2319,25 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case null:
         break;
     }
+  }
+
+  /// 在系统文件管理器里定位并选中这一集的原始文件。候选表与视频库卡同源
+  /// （[localVideoFileCandidates]：`videoPath` 在前、播放列表各集在后），首选被外部
+  /// 删掉时顺延；全都打不开才提示。
+  Future<void> _openEpisodeFileLocation(CollectionEpisodeSlot episode) async {
+    final VideoBookRow? local = episode.local;
+    if (local == null) return;
+    final bool revealed = await revealFirstOf(
+      localVideoFileCandidates(
+        videoPath: local.videoPath,
+        playlistJson: local.playlistJson,
+      ),
+    );
+    if (revealed || !mounted) return;
+    FushiToast.show(
+      msg: t.media_file_location_failed,
+      severity: ToastSeverity.error,
+    );
   }
 
   /// 手动指定这个文件对应的季集（Shoko UserVerified）：写覆盖表并立刻改绑分集行，
@@ -2727,6 +2764,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 /// 集卡上下文菜单动作。
 enum _EpisodeMenuAction {
   download,
+  openFileLocation,
   mediaInfo,
   clearWatchProgress,
   pinEpisode,

@@ -199,7 +199,7 @@ void main() {
       findsNothing,
       reason: '历史绑定只读兼容，不得重新构造外部网络入口',
     );
-    expect(find.text(t.collection_episode_download), findsOneWidget);
+    expect(find.text(t.collection_remove_member), findsOneWidget);
   });
 
   testWidgets('未刮削合集：集卡菜单不出现 Bangumi 外链项', (WidgetTester tester) async {
@@ -217,8 +217,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.open_in_new), findsNothing);
-    expect(find.text(t.collection_episode_download), findsOneWidget,
-        reason: '下载本集不依赖刮削绑定，恒在');
+    expect(find.text(t.collection_remove_member), findsOneWidget,
+        reason: '菜单本身不依赖刮削绑定');
     // 关掉菜单，别把打开的菜单留给下一个用例。
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
@@ -234,6 +234,28 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
   }
+
+  testWidgets('本机已有文件的集：菜单不出「下载本集」，改出「打开文件位置」', (
+    WidgetTester tester,
+  ) async {
+    useSurface(tester, const Size(1280, 1600));
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openEpisodeMenu(tester, 'video/e1');
+    expect(
+      find.text(t.collection_episode_download),
+      findsNothing,
+      reason: '文件已在本地，下载本集没有意义（用户实报）',
+    );
+    expect(
+      find.text(t.media_file_location_open),
+      findsOneWidget,
+      reason: '桌面端本地集必须能在文件管理器里定位到文件',
+    );
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+  });
 
   testWidgets('集卡右键菜单「清除观看进度」只对有痕迹的集出现，点了真清行', (WidgetTester tester) async {
     useSurface(tester, const Size(1280, 1600));
