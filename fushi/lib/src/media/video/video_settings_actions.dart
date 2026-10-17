@@ -627,7 +627,7 @@ Widget buildVideoSubtitleTextColorRow(SettingsContext context) {
     context,
     title: t.video_setting_subtitle_text_color,
     icon: FushiIcons.textFields,
-    current: style.textColor ?? const Color(0xFFFFFFFF),
+    current: style.resolveTextColor(),
     onPreview: (Color c) => previewVideoSubtitleStyle(
       context,
       (VideoSubtitleStyle s) => applyVideoSubtitleTextColor(s, c),

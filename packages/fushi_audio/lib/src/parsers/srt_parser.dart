@@ -114,9 +114,14 @@ class SrtParser {
         continue;
       }
 
-      // 时间行之后的所有行合并为文本（多行字幕 → 空格连接），并剥离 HTML 标签
-      final String rawText =
-          lines.skip(timeLineIndex + 1).where((l) => l.isNotEmpty).join(' ');
+      // 时间行之后的所有行合并为文本，并剥离 HTML 标签。行间用 ASS 硬换行 `\N`
+      // 连接（#2312）：markup 解析把它记进 lineBreakGraphemes、plainText 里仍是空格
+      // ——查词 / 制卡 / DB 文本与旧的空格连接逐字节一致，只有渲染层按作者的行分行。
+      // 此前直接 join(' ')，双语字幕（原文一行 + 译文一行）在屏上并成一排。
+      final String rawText = lines
+          .skip(timeLineIndex + 1)
+          .where((l) => l.isNotEmpty)
+          .join(kSubtitleHardLineBreak);
       // 先剥 HTML 标签（`<i>` / `<b>` / `<font>` 等，共享 [stripHtmlTags]），
       // 再交 markup 解析 ASS override 块（两者正交）。
       final SubtitleMarkup markup = parseSubtitleMarkup(stripHtmlTags(rawText));

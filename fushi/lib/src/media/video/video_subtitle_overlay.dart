@@ -2517,7 +2517,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final int? fillArgb = ds?.colorArgb ?? cs?.primaryColorArgb;
     Color fill = fillArgb != null
         ? Color(fillArgb)
-        : (widget.textColor ?? Theme.of(context).colorScheme.onSurface);
+        : (widget.textColor ?? kDefaultSubtitleTextColor);
     final double? fillOp = ds?.fillOpacity;
     if (fillOp != null) fill = fill.withValues(alpha: fillOp);
     fill = _applyDynamicFill(TextStyle(color: fill), fill, markup, true,
@@ -2914,7 +2914,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         widget.fontFamily;
     final Color baseColor = (respect && cue?.primaryColorArgb != null)
         ? Color(cue!.primaryColorArgb!)
-        : (widget.textColor ?? Theme.of(context).colorScheme.onSurface);
+        : (widget.textColor ?? kDefaultSubtitleTextColor);
     // ASS 绝对字号（PlayRes 像素）按 显示区高 / PlayResY 缩放到播放尺寸（TODO-1246）；
     // cueStyle 无字号时回退用户统一样式（已含 subtitleScreenScaleFactor）。
     final double assFontScale = respect ? _assFontScale(markup) : 1.0;

@@ -279,6 +279,10 @@ SubtitleLayerVAnchor? resolveLayerForcedAnchor({
   return null;
 }
 
+/// 字幕**文字**的默认颜色：固定白（TODO-051）。旧数据 `textColor == null` 也解析成它
+/// （[VideoSubtitleStyle.resolveTextColor]，#2312），不跟随 App 主题。
+const Color kDefaultSubtitleTextColor = Color(0xFFFFFFFF);
+
 /// 字幕背景盒的**默认底色**（TODO-1059 方案A）：固定半透明黑，而非跟随
 /// `ColorScheme.surface`。
 ///
@@ -340,8 +344,10 @@ final ValueNotifier<VideoSubtitleStyle?> videoSubtitleStyleDraft =
 /// black outline/shadow so it stays readable on any video regardless of the
 /// active app theme (TODO-051). Weight and shadow thickness stay nullable so the
 /// default thickness can follow the global UI size, while explicit user choices
-/// remain fixed. [textColor]/[shadowColor] left null means "follow the theme"
-/// (legacy data persisted before TODO-051), resolved via [resolveTextColor] /
+/// remain fixed. [textColor] left null (legacy data persisted before TODO-051)
+/// resolves to the fixed white [kDefaultSubtitleTextColor] via [resolveTextColor]
+/// — subtitles sit on the video, not on the app surface, so they never follow
+/// the theme (#2312). [shadowColor] left null follows the theme shadow via
 /// [resolveShadowColor]. [backgroundColor] left null means "use the fixed
 /// [kDefaultSubtitleBackgroundColor] translucent black" (TODO-1059 方案A), NOT
 /// the theme surface — so a light theme no longer washes the subtitle box pale.
@@ -410,7 +416,7 @@ class VideoSubtitleStyle {
   /// field; the dynamic dodge takes the lower bound on top of it).
   static const VideoSubtitleStyle defaults = VideoSubtitleStyle(
     fontSize: 36,
-    textColor: Color(0xFFFFFFFF),
+    textColor: kDefaultSubtitleTextColor,
     fontWeight: null,
     // 黑 @ 0.9 alpha（抄 Niratan `.black.opacity(0.9)`）：柔和投影而非纯黑硬边。
     shadowColor: Color(0xE6000000),
@@ -507,7 +513,11 @@ class VideoSubtitleStyle {
     );
   }
 
-  Color resolveTextColor(Color themeColor) => textColor ?? themeColor;
+  /// 文字色：null（TODO-051 之前落盘的旧数据）解析为固定白 [kDefaultSubtitleTextColor]，
+  /// **不再跟随 App 主题**（#2312）。字幕画在视频画面上而不是 App 表面上，跟随主题意味着
+  /// 浅色主题下黑字压画面、主题随系统昼夜切换时字幕忽白忽黑；开着「尊重字幕自带样式」时
+  /// ASS 主色把它盖住，一关就暴露。持久化值原样保留（null 不被改写），只改解析。
+  Color resolveTextColor() => textColor ?? kDefaultSubtitleTextColor;
   Color resolveShadowColor(Color themeColor) => shadowColor ?? themeColor;
   Color resolveBackgroundColor(Color themeColor) =>
       backgroundColor ?? themeColor;
