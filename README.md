@@ -4,7 +4,7 @@
 
 <img src="docs/static-assets/fushi-logo.png" alt="Fushi logo" width="160">
 
-![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
 
@@ -20,15 +20,18 @@
 
 ## Platform Support
 
-| Platform | Status | Rendering / UI |
+| Platform | Status | Notes |
 |---|---|---|
-| Android | ✅ | Material Design 3 |
-| Windows | ✅ | Material Design 3 |
-| macOS | ✅ (Apple Silicon only) | Material Design 3 |
-| Linux | 🔧 (build from source) | Material Design 3 |
-| iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
+| Android | ✅ | Android 7.0 (API 24) or later |
+| Windows | ✅ | Galgame text and voice hooking is Windows-only |
+| macOS | ✅ | Apple Silicon only; Intel Macs are not supported |
+| iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | No discovery, online sources, or download center (App Store guidelines) |
+| Linux | 🔧 Build from source | Community-maintained; the EPUB reader needs WPE WebKit |
+| Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | Headless host for Linux / Windows / macOS with a web UI — see [packages/fushi_server](packages/fushi_server/README.md) |
 
-> Minimum Android 7.0 (API 24). Galgame voice mining is Windows-only. The languages available for dictionary lookup are determined by the imported dictionaries and Yomitan transformation tables, independently of the interface language. The iOS build is distributed through TestFlight: it omits the discovery and download features that the App Store guidelines do not allow, and its updates arrive a few days later than on the other platforms.
+**Design system** — every platform defaults to **Material 3 Expressive**; a **Cupertino** (Apple-style) design system can be selected in *Settings › Appearance › Design system*; with Cupertino, the window background uses Mica on Windows 11 and vibrancy on macOS (unless the system's reduce-transparency or high-contrast setting is on).
+
+> The languages available for dictionary lookup are determined by the imported dictionaries and Yomitan transformation tables, independently of the interface language. iOS updates arrive through TestFlight a few days later than on the other platforms.
 
 ### Interface Languages (17)
 
@@ -36,7 +39,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Installation
 
-Download the latest release from the [Fushi website](https://fushi.moe/) — Android APK, Windows installer, and macOS builds (Apple Silicon only; Intel Macs are not supported) are available; iOS is installed through [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux has no prebuilt release yet; build it from source.
+Download the latest release from the [Fushi website](https://fushi.moe/) — Android APK, Windows installer, and macOS builds (Apple Silicon only; Intel Macs are not supported) are available; iOS is installed through [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux has no prebuilt app release yet; build it from source. The headless Fushi Server is released separately on [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
 
 > Requires Android 7.0 (API 24) or higher.
 
@@ -57,22 +60,29 @@ flutter build macos --release
 flutter build linux --release
 # iOS
 flutter build ipa --release
+
+# Headless server (from packages/fushi_server; use `dart build cli`, not `dart compile exe`)
+dart build cli
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` collapse `flutter pub get` and `ci/apply-patches.sh` into a single command. This project is locked to Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`); some upstream dependencies are vendored under `third_party/` or patched by `ci/apply-patches.sh` — see [docs/agent/build.md](docs/agent/build.md) for details.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` collapse `flutter pub get` and `ci/apply-patches.sh` into a single command. This project is locked to Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`); earlier Flutter versions cannot build it because Material and Cupertino are consumed as the `material_ui` / `cupertino_ui` packages. Some upstream dependencies are vendored under `third_party/` or patched by `ci/apply-patches.sh` — see [docs/agent/build.md](docs/agent/build.md) for details, including the Linux desktop build dependencies.
 
 <details>
 <summary><b>Tech Stack</b></summary>
 
 | Layer | Technology |
 |---|---|
-| Framework | Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`) |
-| Platforms | Android / Windows / macOS / iOS (Material Design 3) |
+| Framework | Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
+| Platforms | Android / Windows / macOS / iOS / Linux, plus a headless server |
+| UI | `material_ui` (Material 3 Expressive) / `cupertino_ui` (Cupertino) |
 | Reader | WebView paging engine (derived from the Hoshi Reader family) |
-| Video | media_kit (libmpv core) |
+| Video | media_kit (libmpv core) + libplacebo |
 | Storage | Drift (SQLite, WAL) + fushidicts (C++ FFI dictionary engine) |
 | NLP | Yomitan transformation tables (multilingual lemmatization) + kana_kit (kana conversion); tokenization via fushidicts FFI |
-| Downloads | libtorrent 2.x via a C-ABI FFI bridge |
+| On-device AI | ONNX Runtime for speech recognition (subtitle generation) and manga OCR; algorithms live in [fushi-subtitles](https://github.com/hajisensai/fushi-subtitles) |
+| Downloads | libtorrent 2.x via a C-ABI FFI bridge (external qBittorrent as fallback) |
+| Sync | Cloud backends + Fushi Interconnect (LAN, remote addresses, and an iroh P2P tunnel) |
+| Shared engine | `fushi_engine` — pure-Dart core shared by the app and Fushi Server |
 | Card Creation | AnkiDroid API + AnkiConnect |
 | i18n | Slang (17 languages) |
 
@@ -87,17 +97,30 @@ Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 │   ├── lib/
 │   │   ├── i18n/            # Internationalization (17 languages, Slang)
 │   │   ├── src/
-│   │   │   ├── pages/       # Pages (bookshelf, reader, dictionary, settings, etc.)
+│   │   │   ├── pages/       # Pages (library pages, reader, video player, settings, etc.)
 │   │   │   ├── reader/      # Reader WebView JS/CSS scripts
-│   │   │   ├── media/       # Audiobook, subtitle parsing, reader source
+│   │   │   ├── media/       # Books, manga, video, audiobooks, online sources
+│   │   │   ├── lookup/      # Dictionary lookup popups and overlays
+│   │   │   ├── mining/      # Card creation (incl. galgame mining)
+│   │   │   ├── sync/        # Cloud sync, Interconnect, media servers
 │   │   │   └── models/      # Data models and state management (AppModel)
 │   │   └── main.dart
-│   └── android/             # Android project (manifest, native fushidicts)
-├── packages/                # Internal packages + flutter_inappwebview_windows (fork) + gamepads_android_stub
-├── native/                  # C++ sources: fushidicts (dictionary engine), fushi_torrent, galgame_hook
+│   └── android/             # Android project
+├── packages/                # Dart packages
+│   ├── fushi_core/          #   Database schema, preferences
+│   ├── fushi_engine/        #   Pure-Dart engine shared with the server
+│   ├── fushi_server/        #   Headless server CLI + web UI
+│   ├── fushi_cli/           #   Desktop command-line client
+│   ├── fushi_dictionary/    #   Dictionary engine bindings and importers
+│   ├── fushi_anki/ · fushi_audio/ · fushi_platform/ · fushi_srs/
+│   ├── fushi_torrent/ · fushi_p2p/   # libtorrent / iroh FFI bindings
+│   └── …                    #   Vendored forks (inappwebview Windows/Linux, gamepads)
+├── native/                  # Native sources: fushidicts, fushi_torrent, fushi_p2p (Rust), galgame_hook, …
+├── services/                # Log collector and leaderboard backends (deployed separately)
+├── tools/browser-extension/ # Browser lookup extension
 ├── third_party/             # Vendored patched packages (dependency_overrides)
-├── ci/                      # Build patches and integration test scripts
-├── tool/                    # bootstrap / i18n_sync and other scripts
+├── ci/                      # Build patches and CI scripts
+├── tool/                    # bootstrap / setup_worktree / bug tracker scripts
 └── docs/                    # Development documentation (incl. docs/agent/ operations manual)
 ```
 
@@ -111,7 +134,13 @@ Video import supports grouping by work or folder. See the [video workflow](docs/
 
 Fushi stores imported books, dictionaries, fonts, audiobook data, videos, reading progress, highlights, statistics, and settings in the app's local storage.
 
-Cloud sync (Google Drive / OneDrive / Dropbox) uses user-configured OAuth credentials; WebDAV / FTP / SFTP uses user-provided server addresses and credentials; Fushi Interconnect connects directly to a user-configured address on your own network. Anki card creation communicates with AnkiDroid or a configured AnkiConnect address.
+- **Sync** — Google Drive / OneDrive / Dropbox use OAuth sign-in; WebDAV / FTP / SFTP / Fushi Server use the server address and credentials you provide. Fushi Interconnect connects paired devices directly (LAN, IPv6, overlay networks, or public addresses), falling back to an end-to-end iroh P2P tunnel when no direct route works; pairing links always ask for confirmation.
+- **Anki** — card creation talks to AnkiDroid or the AnkiConnect address you configure.
+- **Usage statistics** — once a day, desktop and Android builds send a random install ID, the app version, platform, and update channel to fushi.moe to count active users; no account, library, or reading data is included and IP addresses are not stored. Turn it off with *Share usage statistics* in the update settings. iOS builds do not send it.
+- **Only when you ask** — log upload (after a one-time consent prompt), in-app feedback, and the leaderboard (off by default; uploads your library titles and progress only after you opt in).
+- **Manga OCR** — the default engine is Google Lens, which sends the page image to Google; switch to the on-device model or system OCR in settings to keep images local.
+- **AI features** — requests go only to the LLM provider you configure and assign to a feature; with no provider assigned, nothing is sent.
+- **Third-party services** — metadata, subtitle, and online-source features contact the services listed under [Content sources and integrations](#content-sources-and-integrations) only when you use them.
 
 ## Development Activity
 
@@ -171,6 +200,7 @@ Fushi builds on the following projects and ecosystem:
 | [libplacebo](https://github.com/haasn/libplacebo) | GPU video shaders and HDR tone mapping |
 | [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | WebView engine that renders the EPUB reader |
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) | On-device inference for speech recognition and OCR |
+| [iroh](https://github.com/n0-computer/iroh) | P2P tunnel for remote Fushi Interconnect connections |
 | [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | Dictionary engine dependencies |
 
 ### On-device models
@@ -179,6 +209,8 @@ Fushi builds on the following projects and ecosystem:
 |---|---|
 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Zipformer speech recognition model packages and VAD builds |
 | [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Japanese speech recognition model |
+| [Parakeet TDT-CTC 0.6B ja](https://huggingface.co/nvidia/parakeet-tdt_ctc-0.6b-ja) | Japanese speech recognition model |
+| [Kitsune](https://huggingface.co/subthx/kitsune-onnx) | Japanese speech recognition model (CC BY-NC 4.0, downloaded from its Hugging Face repository) |
 | [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | Multilingual CTC speech recognition model |
 | [Silero VAD](https://github.com/snakers4/silero-vad) | Voice activity detection model |
 | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Manga text and speech bubble detection model |
@@ -193,12 +225,17 @@ Fushi builds on the following projects and ecosystem:
 |---|---|
 | [Mihon](https://github.com/mihonapp/mihon) | Manga source extension ecosystem |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Anime source extension ecosystem (extensions-lib 14–16 hosted by the same runtime) |
-| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Manga extension runtime for desktop |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Manga extension runtime for desktop (vendored, MPL-2.0) |
+| [Mangayomi](https://github.com/kodjodevf/mangayomi) | Mihon / Aniyomi extension adaptation reference |
+| [LNReader](https://github.com/LNReader/lnreader-plugins) | Light novel source plugin ecosystem |
+| [Jellyfin](https://jellyfin.org) · [Emby](https://emby.media) · [Plex](https://www.plex.tv) | Media servers browsable from the video library |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Streaming subtitle bridge reference for the browser extension |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Anime identification and scraping architecture reference |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | Galgame library information architecture reference |
 | [AniDB](https://anidb.net) | Anime, episode, and file identity |
+| [MyAnimeList](https://myanimelist.net) (via [Jikan](https://jikan.moe)) | Anime metadata |
 | [TMDB](https://www.themoviedb.org) | Supplementary metadata and artwork |
+| [VNDB](https://vndb.org) | Visual novel metadata |
 | [Jimaku](https://jimaku.cc) | Japanese subtitle source |
 | [OpenSubtitles](https://www.opensubtitles.com) | Subtitle source |
 
