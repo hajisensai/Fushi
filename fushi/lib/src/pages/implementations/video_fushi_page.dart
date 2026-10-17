@@ -5429,8 +5429,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _watchTracker = null;
     }
     final FushiDatabase db = appModel.database;
-    // 完成标记只对书架书：远端无行可标「看完」、也无库条目可报单集完成（与浏览器
-    // 网页视频 BrowserVideoStudyBridge 同律）；剧集面板的看完角标仍以 host 下发为准。
+    // 单集看完上报只对书架书：远端无库条目可报（与浏览器网页视频
+    // BrowserVideoStudyBridge 同律）；剧集面板的看完角标仍以 host 下发为准。
     final bool hasLibraryRow = _bookRow != null;
     _watchTrackerCoverageKey = coverageKey;
     _watchTracker =
@@ -5454,10 +5454,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             // 已看过的片内区间并集按视频身份持久化：次日重看同样不计（BUG-2108）。
             loadCoverage: () => db.getPref(coverageKey),
             saveCoverage: (String json) => db.setPref(coverageKey, json),
-            markCompleted: hasLibraryRow
-                ? (String bookUid) =>
-                      db.markVideoCompleted(bookUid, DateTime.now())
-                : (_) async {},
+            // BUG-3491（所有者 2026-10-17 拍板）：播放不再给库条目自动打「已看」勾；
+            // 列表显示时间进度 + 百分比，续播 / 已看计数认「手动标记或进度到片尾区」。
+            // 只保留单集看完的媒体追踪上报。
             onEpisodeCompleted: hasLibraryRow
                 ? () async {
                     if (!kMediaTrackingEnabled) return;

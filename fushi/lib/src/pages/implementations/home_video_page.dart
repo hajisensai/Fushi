@@ -4716,8 +4716,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       });
       int completed = 0;
       DateTime? lastWatched;
-      for (final VideoBookRow m in members) {
-        if (m.completedAt != null) completed++;
+      final List<VideoSeriesPlaybackState> states = _seriesPlaybackStates(
+        members,
+      );
+      for (int i = 0; i < members.length; i++) {
+        final VideoBookRow m = members[i];
+        // 手动标记或进度到片尾区都算看完（BUG-3491）。
+        if (states[i].progress.countsAsWatched) completed++;
         final DateTime? at =
             _watchAtByUid[m.bookUid] ?? _legacyWatchAtByTitle[m.title];
         if (at != null && (lastWatched == null || at.isAfter(lastWatched))) {
@@ -4727,9 +4732,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // Next-Up 口径（[continueWatchingSeriesIndex]）：续播用户最后实际播放且尚未
       // 完成的那一集；那集已看完则落到紧接的下一集。不能退回序列中更早的未完成
       // 集，也不能误跳到合集最后一集；整部看完不进本行。
-      final int? currentIndex = continueWatchingSeriesIndex(
-        _seriesPlaybackStates(members),
-      );
+      final int? currentIndex = continueWatchingSeriesIndex(states);
       if (currentIndex == null) return;
       final MediaCollectionRow collection = _collectionsById[cid]!;
       items.add(
@@ -6616,18 +6619,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       final bool isCompleted = slot.local != null
           ? slot.local!.completedAt != null
           : slot.remote!.completedAt != null;
-      if (isCompleted) completed++;
-      progresses.add(
-        CollectionMemberProgress(
-          positionMs:
-              slot.local?.lastPositionMs ?? slot.remote?.positionMs ?? 0,
-          completed: isCompleted,
-          lastPlayedAt: _slotWatchedAtMs(slot),
-          durationMs: slot.local != null
-              ? _knownDurationMs(slot.local!.bookUid)
-              : slot.remote?.durationMs,
-        ),
+      final CollectionMemberProgress progress = CollectionMemberProgress(
+        positionMs: slot.local?.lastPositionMs ?? slot.remote?.positionMs ?? 0,
+        completed: isCompleted,
+        lastPlayedAt: _slotWatchedAtMs(slot),
+        durationMs: slot.local != null
+            ? _knownDurationMs(slot.local!.bookUid)
+            : slot.remote?.durationMs,
       );
+      // 与详情页「已看完 x/N」同口径：手动标记或进度到片尾区（BUG-3491）。
+      if (progress.countsAsWatched) completed++;
+      progresses.add(progress);
     }
     final bool anyTrace = progresses.any(
       (CollectionMemberProgress p) =>

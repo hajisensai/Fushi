@@ -218,6 +218,40 @@ void main() {
       );
     });
 
+    test('没打勾但进度到片尾区（所有者拍板：播放不再自动打勾）→ 推进到下一集', () {
+      expect(
+        continueMemberIndex(<CollectionMemberProgress>[
+          _m(pos: ep - 60 * 1000, at: 300, duration: ep),
+          _m(),
+        ]),
+        1,
+      );
+    });
+
+    test('没打勾、不知道片长 → 不推断，停在它', () {
+      expect(
+        continueMemberIndex(<CollectionMemberProgress>[
+          _m(pos: ep - 60 * 1000, at: 300),
+          _m(),
+        ]),
+        0,
+      );
+    });
+
+    test('reachedEnd / countsAsWatched 真值表', () {
+      expect(_m(pos: ep - 60 * 1000, duration: ep).reachedEnd, isTrue);
+      expect(_m(pos: ep - 60 * 1000, duration: ep).countsAsWatched, isTrue);
+      expect(_m(pos: ep - 60 * 1000, duration: ep).completed, isFalse);
+      expect(_m(pos: ep - 60 * 1000).reachedEnd, isFalse);
+      expect(_m(pos: 1000, duration: ep).countsAsWatched, isFalse);
+      expect(
+        _m(pos: 1000, done: true, duration: ep).countsAsWatched,
+        isTrue,
+        reason: '手动标记看完的集重看到一半仍计入已看',
+      );
+      expect(_m(done: true).countsAsWatched, isTrue);
+    });
+
     test('isRewatching / isFinished 真值表', () {
       expect(_m(pos: 1000, done: true, duration: ep).isRewatching, isTrue);
       expect(_m(pos: 1000, done: true, duration: ep).isFinished, isFalse);
@@ -226,6 +260,7 @@ void main() {
       expect(_m(pos: 1000, done: true).isFinished, isTrue);
       expect(_m(pos: 1000, duration: ep).isRewatching, isFalse);
       expect(_m(pos: 1000, duration: ep).isFinished, isFalse);
+      expect(_m(pos: ep - 1000, duration: ep).isFinished, isTrue);
     });
   });
 }

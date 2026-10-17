@@ -656,8 +656,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         : t.collection_group_season(n: season);
   }
 
-  int get _watchedCount =>
-      _slots.where((CollectionEpisodeSlot slot) => slot.completed).length;
+  /// 「已看完 x/N」：手动标记看完，或进度到片尾区（BUG-3491：播放不再自动打勾，
+  /// 看到片尾的集在计数上等同看完）。
+  int get _watchedCount => _slots
+      .where(
+        (CollectionEpisodeSlot slot) => _slotProgress(slot).countsAsWatched,
+      )
+      .length;
 
   /// 展示用集名（TODO-2491）：集级刮削行的 title。集名缺失时集级刮削会把**作品名**
   /// 回填进 title（那不是集名，与 episode_rename.dart 同判据），此时不当集名用。
@@ -751,8 +756,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 集卡观看进度 0..1：只在**知道总时长**时给（播放器记下的精确片长 / host 下发
   /// 的远端时长 / 规范分集的整分钟片长），算不出就返回 null——集卡只显示
-  /// 「看到 mm:ss」，不造假条、不写百分比。已打勾的集有断点也给（BUG-3491：
-  /// 状态行照样写百分比，进度条只画在没看完的集上）。
+  /// 「看到 mm:ss」，不造假条、不写百分比。看完的集有断点也给（BUG-3491：
+  /// 一律保留时间进度 + 百分比 + 进度条）。
   double? _episodeProgress(CollectionEpisodeSlot slot) {
     if (slot.positionMs <= 0) return null;
     final int? runtime =

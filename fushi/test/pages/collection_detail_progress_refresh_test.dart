@@ -218,4 +218,64 @@ void main() {
       endsWith(' · 37%'),
     );
   });
+
+  testWidgets('看到片尾区的集：不打勾，只显示进度 + 百分比 + 进度条；续播 / 计数等同看完', (
+    WidgetTester tester,
+  ) async {
+    useSurface(tester);
+    await db.updateVideoBookPosition(
+      'video/e1',
+      23 * 60 * 1000,
+      playedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    await setDuration('video/e1', episodeMs);
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('collection-episode-row-video/e1'),
+    );
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.byKey(
+          const ValueKey<String>('collection-episode-completed'),
+        ),
+      ),
+      findsNothing,
+      reason: '播放不再自动打勾',
+    );
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.text(
+          collectionEpisodeWatchedLabel(
+            positionMs: 23 * 60 * 1000,
+            progress: 23 / 24,
+          ),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.byKey(
+          const ValueKey<String>('collection-episode-progress'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(t.collection_continue_progress(n: 2)),
+      findsOneWidget,
+      reason: '续播推进到下一集',
+    );
+    expect(
+      find.text(t.collection_watched_progress(done: 1, total: 2)),
+      findsOneWidget,
+      reason: '已看完计数认片尾区',
+    );
+  });
 }

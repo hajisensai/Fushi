@@ -1031,10 +1031,12 @@ String collectionEpisodeWatchedLabel({
 /// 编号 / 播出日 · 时长 / 集简介 / 观看状态，底部观看进度条。
 ///
 /// - 续播那一集整卡 primaryContainer 高亮（Apple 抬一阶 raised 底）；
-/// - 已看完：tertiary 实心对勾、集名降为 onSurfaceVariant；有断点时对勾旁照样给
-///   「看到 mm:ss」（BUG-3491：打勾不吞掉时间进度，重看到哪一眼看得见）；
-/// - 看了一半：状态行「看到 mm:ss」，知道总时长（[progress]）时再接观看百分比
-///   「· 81%」并在底部画 primary 进度条；算不出百分比时不造假条、不写百分比。
+/// - 手动标记看完：tertiary 实心对勾、集名降为 onSurfaceVariant；有断点时对勾旁
+///   照样给「看到 mm:ss」；
+/// - 有断点（BUG-3491，所有者 2026-10-17 拍板：播放不再自动打勾，一律保留时间
+///   进度）：状态行「看到 mm:ss」，知道总时长（[progress]）时再接观看百分比
+///   「· 81%」并在底部画 primary 进度条（看完的集也画）；算不出百分比时不造假条、
+///   不写百分比。
 ///
 /// 纯视觉（手势归外层网格 / 焦点目标），整卡 [IgnorePointer]，调用方自己包
 /// [FushiFocusTarget] / [Actions]。
@@ -1074,7 +1076,6 @@ class CollectionEpisodeCard extends StatelessWidget {
   final int positionMs;
 
   /// 观看进度 0..1（总时长已知时）；null = 算不出，不写百分比、不画进度条。
-  /// 进度条只画在未看完的集上，百分比两者都写。
   final double? progress;
 
   /// 元信息（播出日 / 时长），逐项存在才出。
@@ -1101,7 +1102,6 @@ class CollectionEpisodeCard extends StatelessWidget {
     final FushiTypography type = context.fushiType;
     final bool apple = isGlassDesign(context);
     final bool eink = isEinkTheme(context);
-    final bool started = positionMs > 0 && !completed;
     final bool highlight = isContinue && !eink;
     // Apple：primaryContainer 在单色强调色下就是灰填充，续播集认不出来；改用
     // 高一阶的实色 raised 底（iOS 选中行同款）。M3E：续播集 = primaryContainer
@@ -1117,7 +1117,7 @@ class CollectionEpisodeCard extends StatelessWidget {
     final double? percent = positionMs > 0 && progress != null && progress > 0
         ? progress.clamp(0.0, 1.0)
         : null;
-    final double? fraction = started ? percent : null;
+    final double? fraction = percent;
     final List<String> meta = <String>[
       for (final String part in this.meta)
         if (part.trim().isNotEmpty) part.trim(),
