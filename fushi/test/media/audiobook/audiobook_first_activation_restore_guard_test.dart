@@ -109,11 +109,28 @@ void main() {
       reason: 'the paused open resolves the restore point',
     );
 
+    // 对外读口（进度条 / 悬浮字幕 / 歌词入场锚定）在窗口里也只看得到恢复点。
+    final List<int> sampledPositions = <int>[];
+    final List<int?> sampledBookCues = <int?>[];
+    final Timer sampler = Timer.periodic(const Duration(milliseconds: 30), (_) {
+      sampledPositions.add(c.position.inMilliseconds);
+      sampledBookCues.add(c.cueAtCurrentPositionInBook()?.sentenceIndex);
+      sampledBookCues.add(c.displayCueForFloatingLyric?.sentenceIndex);
+    });
+    addTearDown(sampler.cancel);
+
     await c.play().timeout(const Duration(seconds: 10));
     final _MediaKitLikePlayer player = platform.player!;
     await player.landed.future.timeout(const Duration(seconds: 10));
     // 落定后再走几个 125ms tick。
     await Future<void>.delayed(const Duration(milliseconds: 600));
+    sampler.cancel();
+    expect(
+      sampledPositions.where((int ms) => ms < restoreMs - 1000),
+      isEmpty,
+      reason: 'position exposed during the load window: $sampledPositions',
+    );
+    expect(sampledBookCues, isNot(contains(0)));
 
     expect(
       player.ticksNearZeroWhilePlaying,
@@ -123,12 +140,14 @@ void main() {
     expect(crossChapterRequests, isEmpty);
     expect(seenSentences, isNot(contains(0)));
     expect(c.currentCue, same(restored));
-    expect(c.activationRestorePendingForTesting, isFalse);
+    // 落点刚到、还没从它往后播满一秒：回退挡板仍在。
+    expect(c.activationRestorePendingForTesting, isTrue);
 
     // 落定后真实推进照常：平台走到下一句，当前句跟上。
     player.jumpTo(restoreMs + 5000);
     await Future<void>.delayed(const Duration(milliseconds: 400));
     expect(c.currentCue, same(next));
+    expect(c.activationRestorePendingForTesting, isFalse);
   });
 
   test(
@@ -158,37 +177,64 @@ void main() {
     },
   );
 
-  test('pure decision: landing accepts the target or an unreachable one', () {
-    expect(
-      AudiobookPlayerController.activationRestoreLandedForTesting(
-        currentFileIndex: 0,
-        posMs: 0,
-        targetFileIndex: 0,
-        targetMs: restoreMs,
-        durationMs: 20000000,
-      ),
-      isFalse,
+  group('pure decision: classifyActivationTickForTesting', () {
+    ActivationRestoreTick classify({
+      bool loading = false,
+      int? durationMs = 20000000,
+      int fileIndex = 0,
+      required int posMs,
+      int targetFileIndex = 0,
+      int targetMs = restoreMs,
+    }) => AudiobookPlayerController.classifyActivationTickForTesting(
+      platformLoading: loading,
+      durationMs: durationMs,
+      currentFileIndex: fileIndex,
+      posMs: posMs,
+      targetFileIndex: targetFileIndex,
+      targetMs: targetMs,
     );
-    expect(
-      AudiobookPlayerController.activationRestoreLandedForTesting(
-        currentFileIndex: 0,
-        posMs: restoreMs - 100,
-        targetFileIndex: 0,
-        targetMs: restoreMs,
-      ),
-      isTrue,
-    );
-    expect(
-      AudiobookPlayerController.activationRestoreLandedForTesting(
-        currentFileIndex: 0,
-        posMs: 0,
-        targetFileIndex: 0,
-        targetMs: restoreMs,
-        durationMs: restoreMs - 1,
-      ),
-      isTrue,
-      reason: 'a target beyond the decoded duration can never be reached',
-    );
+
+    test('the loading-state echo of initialPosition is not a landing', () {
+      expect(
+        classify(loading: true, durationMs: null, posMs: restoreMs),
+        ActivationRestoreTick.transient,
+      );
+      expect(
+        classify(loading: true, posMs: restoreMs),
+        ActivationRestoreTick.transient,
+      );
+    });
+
+    test('no decoded duration yet means the seek has not been issued', () {
+      expect(
+        classify(durationMs: null, posMs: restoreMs),
+        ActivationRestoreTick.transient,
+      );
+    });
+
+    test('positions below the target are transient, at the target land', () {
+      expect(classify(posMs: 0), ActivationRestoreTick.transient);
+      expect(classify(posMs: restoreMs - 100), ActivationRestoreTick.landed);
+      expect(classify(posMs: restoreMs + 40), ActivationRestoreTick.landed);
+    });
+
+    test('a later audio file counts as landed, an earlier one does not', () {
+      expect(
+        classify(fileIndex: 3, posMs: 0, targetFileIndex: 2),
+        ActivationRestoreTick.landed,
+      );
+      expect(
+        classify(fileIndex: 1, posMs: restoreMs, targetFileIndex: 2),
+        ActivationRestoreTick.transient,
+      );
+    });
+
+    test('a target beyond the decoded duration is unreachable', () {
+      expect(
+        classify(durationMs: restoreMs - 1, posMs: 0),
+        ActivationRestoreTick.unreachable,
+      );
+    });
   });
 }
 
@@ -218,10 +264,15 @@ class _MediaKitLikePlatform extends JustAudioPlatform {
   }
 }
 
-/// 按 just_audio_media_kit 2.1.0 `MediaKitPlayer` 的载入契约行事：
-/// * `load`：位置清零、`processingState=loading` 立即上报；
-/// * 播放请求先于 load 到达时按 `play: true` 打开，从 0 起播，若干 tick 报 0 附近；
-/// * 「mpv 报出时长」之后才 seek 到 `initialPosition`，此后位置由播放推进。
+/// 按 just_audio_media_kit 2.1.0 `MediaKitPlayer` 的载入契约行事（`load()` 与
+/// `stream.duration` / `stream.position` 监听）：
+/// 1. 位置清零、`loading` 立即上报；
+/// 2. `open()` 返回后、mpv 真 seek 之前回显一帧「恰为 initialPosition」（仍 loading、
+///    时长未知）——审查指出的那一步；
+/// 3. 挂起的播放请求让 mpv 从 0 起播：若干 tick 报 0 附近（先 loading，后 ready）；
+/// 4. 「时长到了」：此刻才下发 seek，而这一帧事件里的位置还是第 2 步留下的回显值；
+/// 5. seek 还没生效时 mpv 再报一帧旧的 0 附近位置；
+/// 6. seek 生效，位置从恢复点往后走。
 class _MediaKitLikePlayer extends AudioPlayerPlatform {
   _MediaKitLikePlayer(super.id);
 
@@ -232,7 +283,7 @@ class _MediaKitLikePlayer extends AudioPlayerPlatform {
   final Completer<void> landed = Completer<void>();
   bool _disposed = false;
   bool _playing = false;
-  bool _opened = false;
+  bool _durationKnown = false;
   ProcessingStateMessage _state = ProcessingStateMessage.idle;
   int _positionMs = 0;
 
@@ -247,7 +298,7 @@ class _MediaKitLikePlayer extends AudioPlayerPlatform {
         updateTime: DateTime.now(),
         updatePosition: Duration(milliseconds: _positionMs),
         bufferedPosition: Duration(milliseconds: _positionMs),
-        duration: _opened ? _duration : null,
+        duration: _durationKnown ? _duration : null,
         icyMetadata: null,
         currentIndex: 0,
         androidAudioSessionId: null,
@@ -260,27 +311,44 @@ class _MediaKitLikePlayer extends AudioPlayerPlatform {
     _emit();
   }
 
+  Future<void> _step() =>
+      Future<void>.delayed(const Duration(milliseconds: 125));
+
   @override
   Stream<PlaybackEventMessage> get playbackEventMessageStream => _events.stream;
 
   @override
   Future<LoadResponse> load(LoadRequest request) async {
+    final int target = request.initialPosition?.inMilliseconds ?? 0;
+    // 1.
     _positionMs = 0;
     _state = ProcessingStateMessage.loading;
     _emit();
-    final int target = request.initialPosition?.inMilliseconds ?? 0;
-    // 打开文件：挂起的播放请求让 mpv 从 0 起播。
-    _opened = true;
-    _state = ProcessingStateMessage.ready;
+    await _step();
+    // 2. open() 返回后的回显。
+    _positionMs = target;
+    _emit();
+    // 3. mpv 从 0 起播。
     for (int i = 0; i < 6; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 125));
-      if (_disposed) break;
+      await _step();
+      if (_disposed) return LoadResponse(duration: _duration);
       if (_playing) ticksNearZeroWhilePlaying++;
+      if (i == 3) _state = ProcessingStateMessage.ready;
       _positionMs = 40 * i;
       _emit();
     }
-    // 「时长到了」：seek 到 initialPosition。
+    // 4. 时长到达、seek 刚下发，事件里还是回显值。
+    await _step();
+    _durationKnown = true;
     _positionMs = target;
+    _emit();
+    // 5. seek 生效前 mpv 的旧 time-pos。
+    await _step();
+    _positionMs = 280;
+    _emit();
+    // 6. seek 生效。
+    await _step();
+    _positionMs = target + 20;
     _emit();
     if (!landed.isCompleted) landed.complete();
     return LoadResponse(duration: _duration);
