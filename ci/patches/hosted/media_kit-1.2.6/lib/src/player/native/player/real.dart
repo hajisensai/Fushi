@@ -2429,7 +2429,13 @@ class NativePlayer extends PlatformPlayer {
       // (`mp_hook_test_completion`: "client removed during hook handling").
       return;
     }
-    await _hookContinueOffThread(id);
+    try {
+      await _hookContinueOffThread(id);
+    } catch (exception, stacktrace) {
+      // Keep [_hookChain] alive: an errored link would skip every later hook.
+      print(exception);
+      print(stacktrace);
+    }
   }
 
   Future<void> _runOnLoadHook() async {
