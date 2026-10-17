@@ -18,10 +18,6 @@
 </div>
 
 
-## Maintainer
-
-Fushi is maintained by [hajisensai](https://github.com/hajisensai). Website: [fushi.moe](https://fushi.moe). Contact: [contact@fushi.moe](mailto:contact@fushi.moe).
-
 ## Platform Support
 
 | Platform | Status | Rendering / UI |
@@ -211,6 +207,10 @@ Fushi builds on the following projects and ecosystem:
 ## License
 
 Distributed under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
+
+## Maintainer
+
+Fushi is maintained by [hajisensai](https://github.com/hajisensai). Website: [fushi.moe](https://fushi.moe). Contact: [contact@fushi.moe](mailto:contact@fushi.moe).
 
 <div align="center">
 
