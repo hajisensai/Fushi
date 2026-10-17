@@ -275,7 +275,11 @@ import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show safeDictionaryMediaPath;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult, DictionaryPopupWebViewState, QueuedOverwriteReply;
+    show
+        MinePopupResult,
+        DictionaryPopupWebViewState,
+        QueuedOverwriteReply,
+        QueuedOverwriteSettled;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/interconnect_adaptive_quality.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
