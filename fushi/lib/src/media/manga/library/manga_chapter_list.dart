@@ -67,6 +67,7 @@ class MangaChapterList extends StatelessWidget {
     this.jobsByChapterKey = const <String, MangaDownloadJobRow>{},
     this.onDownload,
     this.onDeleteDownload,
+    this.onRevealDownload,
     this.onRetryDownload,
     this.onOcr,
     this.ocrRunningChapterKey,
@@ -109,6 +110,10 @@ class MangaChapterList extends StatelessWidget {
   /// 溢出菜单里的下载动作；null = 不出现对应项。
   final void Function(OnlineMangaChapter chapter)? onDownload;
   final void Function(OnlineMangaChapter chapter)? onDeleteDownload;
+
+  /// 「打开文件位置」（只对已下载的章出现）；null = 不出现（移动端没有文件管理器
+  /// 契约，宿主据此不接）。
+  final void Function(OnlineMangaChapter chapter)? onRevealDownload;
   final void Function(OnlineMangaChapter chapter)? onRetryDownload;
 
   /// 「识别本章」（只对已下载的章出现）；null = 不出现。
@@ -409,6 +414,7 @@ class MangaChapterList extends StatelessWidget {
         onMarkUpToRead != null ||
         onDownload != null ||
         onDeleteDownload != null ||
+        onRevealDownload != null ||
         onRetryDownload != null ||
         onOcr != null;
     if (!hasMenu) return null;
@@ -446,6 +452,13 @@ class MangaChapterList extends StatelessWidget {
             value: 'ocr',
             label: t.manga_chapter_ocr_action,
           ),
+        if (onRevealDownload != null &&
+            download == _ChapterDownloadState.downloaded)
+          FushiPopupMenuItem<String>(
+            key: const ValueKey<String>('manga_chapter_reveal'),
+            value: 'reveal-download',
+            label: t.media_file_location_open,
+          ),
         if (onDeleteDownload != null &&
             download == _ChapterDownloadState.downloaded)
           FushiPopupMenuItem<String>(
@@ -463,6 +476,8 @@ class MangaChapterList extends StatelessWidget {
             onDownload?.call(chapter);
           case 'retry-download':
             onRetryDownload?.call(chapter);
+          case 'reveal-download':
+            onRevealDownload?.call(chapter);
           case 'delete-download':
             onDeleteDownload?.call(chapter);
           case 'ocr':
