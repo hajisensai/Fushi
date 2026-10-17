@@ -755,10 +755,38 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
           : 0.0);
   Offset? _tapPosition;
 
+  // Fushi patch: whether the current tap / drag went down on the controls
+  // chrome ([VideoControlsChromeRegion]: a bar, the gaps between its buttons,
+  // the seek bar). Such a pointer belongs to the controls, not the picture: it
+  // must not toggle the controls, double-tap seek or start a swipe. Decided by
+  // a real hit test at pointer-down instead of insets guessing the bar height.
+  bool _tapDownOnChrome = false;
+  bool _dragDownOnChrome = false;
+
+  bool _hitsChrome(Offset globalPosition) =>
+      VideoControlsChromeRegion.hitsRegion(
+        globalPosition: globalPosition,
+        viewId: View.of(context).viewId,
+      );
+
   void _handleDoubleTapDown(TapDownDetails details) {
+    _tapDownOnChrome = _hitsChrome(details.globalPosition);
     setState(() {
       _tapPosition = details.localPosition;
     });
+  }
+
+  void _handleSurfaceDragDown(DragDownDetails details) {
+    _dragDownOnChrome = _hitsChrome(details.globalPosition);
+  }
+
+  /// Fushi patch: a tap on the chrome only keeps the visible controls alive.
+  void _handleSurfaceTap() {
+    if (_tapDownOnChrome && visible) {
+      _armHideTimer();
+      return;
+    }
+    onTap();
   }
 
   void _handleLongPress() {
@@ -944,16 +972,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
       });
       _publishVisibility();
       shiftSubtitle();
-      _timer?.cancel();
-      _timer = Timer(_theme(context).controlsHoverDuration, () {
-        if (mounted && !_held) {
-          setState(() {
-            visible = false;
-          });
-          _publishVisibility();
-          unshiftSubtitle();
-        }
-      });
+      _armHideTimer();
     } else {
       setState(() {
         visible = false;
@@ -962,6 +981,19 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
       unshiftSubtitle();
       _timer?.cancel();
     }
+  }
+
+  void _armHideTimer() {
+    _timer?.cancel();
+    _timer = Timer(_theme(context).controlsHoverDuration, () {
+      if (mounted && !_held) {
+        setState(() {
+          visible = false;
+        });
+        _publishVisibility();
+        unshiftSubtitle();
+      }
+    });
   }
 
   void onDoubleTapSeekBackward() {
@@ -1224,7 +1256,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                         // the controls only appear on a real single tap.
                         child: GestureDetector(
                           behavior: HitTestBehavior.translucent,
-                          onTap: onTap,
+                          onTap: _handleSurfaceTap,
                           onTapDown: _handleDoubleTapDown,
                           onDoubleTapDown: _handleDoubleTapDown,
                           onLongPress: _theme(context).speedUpOnLongPress
@@ -1234,7 +1266,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                               ? _handleLongPressEnd
                               : null,
                           onDoubleTap: () {
-                            if (_tapPosition == null) {
+                            if (_tapPosition == null || _tapDownOnChrome) {
                               return;
                             }
                             if (_isInRightSegment(_tapPosition!.dx)) {
@@ -1265,6 +1297,10 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                               // carries ONLY drag recognizers; tap/long-press
                               // stay on the full-cover parent so every point can
                               // reveal the controls.
+                              // The bottom inset stays a fixed dead zone (also
+                              // while the bar is hidden). Fushi patch: a drag
+                              // that goes down on the visible chrome is
+                              // additionally dropped via [_dragDownOnChrome].
                               Positioned.fill(
                                 left: 16.0,
                                 top: 16.0,
@@ -1272,7 +1308,10 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                 bottom: 16.0 + subtitleVerticalShiftOffset,
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.translucent,
+                                  onHorizontalDragDown: _handleSurfaceDragDown,
+                                  onVerticalDragDown: _handleSurfaceDragDown,
                                   onHorizontalDragUpdate: (details) {
+                                    if (_dragDownOnChrome) return;
                                     if ((!mount &&
                                             _theme(context).seekGesture) ||
                                         (_theme(context).seekGesture &&
@@ -1285,6 +1324,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                     onHorizontalDragEnd();
                                   },
                                   onVerticalDragUpdate: (e) async {
+                                    if (_dragDownOnChrome) return;
                                     final delta = e.delta.dy;
                                     final Offset position = e.localPosition;
 

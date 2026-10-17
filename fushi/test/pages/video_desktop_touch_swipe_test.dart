@@ -87,6 +87,15 @@ void main() {
                     child: const ColoredBox(color: Color(0xFF00FF00)),
                   ),
                 ),
+                // 底栏控件区（y ≥ 500）：区域里只有空隙、没有接手势的子节点，
+                // 落在这里的指针仍会穿到下面的滑动层——只能靠控件区判据拦。
+                const Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 100,
+                  child: VideoControlsChromeRegion(child: SizedBox.expand()),
+                ),
               ],
             ),
           ),
@@ -234,6 +243,34 @@ void main() {
     await tester.tapAt(at(tester, 40, 30), kind: PointerDeviceKind.touch);
     await tester.pump();
     expect(controlTaps, 1);
+  });
+
+  testWidgets('起点落在底栏控件区空隙的拖动作废（不 seek / 不调音量）', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(harness());
+    await tester.dragFrom(
+      at(tester, 200, 540),
+      const Offset(300, 0),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pump();
+    await tester.dragFrom(
+      at(tester, 600, 560),
+      const Offset(0, -200),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pump();
+    expect(seeks, isEmpty);
+    expect(volumes, isEmpty);
+    // 控件区之外同样的拖动照常生效（判据不是一刀切关掉滑动）。
+    await tester.dragFrom(
+      at(tester, 200, 300),
+      const Offset(300, 0),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pump();
+    expect(seeks, hasLength(1));
   });
 
   testWidgets('纯点击不被滑动层吞掉：touch 单击仍切控制条', (

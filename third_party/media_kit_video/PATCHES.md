@@ -784,8 +784,11 @@ them.
 The desktop State mounts the layer (only when one of the three `touch*Gesture`
 fields is on — all default `false` = upstream) as the bottom child of its
 controls `Stack`, inset like the mobile drag layer (16px edges, bottom
-`16 + subtitleVerticalShiftOffset`): a drag that starts on a bar button or the
-seek bar hits that control first and never reaches the layer. The two scrim
+`16 + subtitleVerticalShiftOffset`, a fixed dead zone that holds whether or not
+the bar is shown). A drag that starts on a bar button hits that control first;
+a drag that goes down anywhere on the visible chrome (bar gaps, seek bar) is
+additionally dropped by the layer itself (`onXxxDragDown` →
+`VideoControlsChromeRegion.hitsRegion`, see the marker section below). The two scrim
 gradients are wrapped in `IgnorePointer` — a gradient `BoxDecoration`
 hit-tests `true` and would otherwise swallow every hit above the layer; they
 are pure decoration, and the ancestors (tap router, `MouseRegion`) still see
@@ -890,9 +893,12 @@ bar, so its top 20px stuck out above the bar: a click in the upper 10px seeked
 *and* paused. The strip now covers the seek bar's whole hit area (the larger of
 that and the old `+ 10` padding).
 
-Tests: `fushi/test/pages/video_desktop_touch_tap_router_test.dart`
-(`desktopControlsBottomStripHeight` group: geometry, real router click, and a
-source check that `isInPlayPauseRegion` uses the helper).
+Superseded (BUG-3511): `desktopControlsBottomStripHeight` is gone;
+`isInPlayPauseRegion` now asks `VideoControlsChromeRegion.hitsRegion`, which
+covers the seek bar's real hit area by construction (see the marker section
+below). Tests: `fushi/test/pages/video_desktop_touch_tap_router_test.dart`
+(hit-test group: real router click on the seek bar's upper edge / bar gap, and
+a source check that `isInPlayPauseRegion` uses the hit test).
 
 ## Controls chrome hit-test marker (`VideoControlsChromeRegion`)
 
@@ -913,5 +919,17 @@ bottom bar in a `MetaData` marker with `HitTestBehavior.translucent`. The marker
 joins the hit path whenever the pointer is inside the bar's bounds (including
 gaps between buttons and margins) but returns its child's result, so hit
 testing of everything underneath (tap router, touch swipe layer) is unchanged.
-The host runs a real hit test at pointer-down and checks
-`VideoControlsChromeRegion.isRegion(target)` on the path.
+`VideoControlsChromeRegion.hitsRegion(globalPosition:, viewId:)` runs a real
+hit test and reports whether the path contains a marker. Every "is this pointer
+on the controls or on the picture" decision uses it, always at pointer-down:
+
+- host page (Fushi): double-tap fullscreen / seek / play-pause, wheel volume,
+  long-press speed-up (plus semantics-onTap nodes for its own overlays);
+- desktop: `isInPlayPauseRegion` of `MaterialDesktopTapRouter` (replaces
+  `desktopControlsBottomStripHeight`); the touch swipe layer drops drags that
+  go down on the chrome;
+- mobile: a tap that goes down on the chrome only re-arms the auto-hide timer
+  (no hide, no double-tap seek); the drag layer drops seek / volume /
+  brightness drags that go down on the chrome. Both drag layers keep their
+  bottom dead zone (`16 + subtitleVerticalShiftOffset`) unchanged: it applies
+  while the bar is hidden too and is not a chrome test.

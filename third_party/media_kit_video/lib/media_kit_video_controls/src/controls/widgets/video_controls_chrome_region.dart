@@ -23,6 +23,22 @@ class VideoControlsChromeRegion extends StatelessWidget {
   static bool isRegion(HitTestTarget target) =>
       target is RenderMetaData && identical(target.metaData, _marker);
 
+  /// Whether a pointer at [globalPosition] in view [viewId] lands on a chrome
+  /// region, by a real hit test against the current render tree. Call it with
+  /// the pointer-down position (tap down / drag down), so a bar that fades or
+  /// moves before the pointer is released does not change the answer.
+  static bool hitsRegion({
+    required Offset globalPosition,
+    required int viewId,
+  }) {
+    final HitTestResult result = HitTestResult();
+    RendererBinding.instance.hitTestInView(result, globalPosition, viewId);
+    for (final HitTestEntry entry in result.path) {
+      if (isRegion(entry.target)) return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return MetaData(

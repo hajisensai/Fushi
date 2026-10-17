@@ -16,7 +16,7 @@ import 'package:flutter/widgets.dart';
 
 /// What a single tap on the desktop controls surface should do.
 enum DesktopControlsTapAction {
-  /// Nothing (tap feature disabled, or a mouse tap on the bottom bar strip).
+  /// Nothing (tap feature disabled, or a mouse tap on the controls chrome).
   none,
 
   /// Toggle play / pause (mouse click, `playAndPauseOnTap`).
@@ -28,8 +28,8 @@ enum DesktopControlsTapAction {
   /// Hide the controls now (touch, bar visible).
   hideControls,
 
-  /// Keep the visible controls alive (touch on the bottom bar strip, i.e. in
-  /// the gaps between buttons / around the seek bar): restart auto-hide.
+  /// Keep the visible controls alive (touch on the controls chrome, i.e. in
+  /// the gaps between buttons / on the seek bar): restart auto-hide.
   keepControlsAlive,
 }
 
@@ -40,37 +40,10 @@ bool isTouchLikePointerKind(PointerDeviceKind? kind) =>
     kind == PointerDeviceKind.stylus ||
     kind == PointerDeviceKind.invertedStylus;
 
-/// Height, measured up from the bottom of the controls surface, of the strip in
-/// which a click must not toggle play / pause (the bottom bar plus the seek
-/// bar's full hit area).
-///
-/// Fushi patch (seek-bar click pauses): the seek bar receives pointers through
-/// a [Listener], which never enters the gesture arena, so the surrounding tap
-/// router still wins a click on it and relies solely on this strip to stay
-/// quiet. Upstream used `bottomBarOffset + 10`, but the seek bar's transparent
-/// hit area is [seekBarContainerHeight] tall and only pushed
-/// [seekBarBottomButtonBarOverlap] down into the button bar, so its top edge
-/// sticks out `seekBarContainerHeight - overlap` (20px by default) above the
-/// bar: clicking that upper band both seeked and toggled pause.
-double desktopControlsBottomStripHeight({
-  required double bottomBarOffset,
-  required bool displaySeekBar,
-  required bool hasBottomButtonBar,
-  required double seekBarContainerHeight,
-  required double seekBarBottomButtonBarOverlap,
-  double tapPadding = 10.0,
-}) {
-  final double padded = bottomBarOffset + tapPadding;
-  if (!displaySeekBar) return padded;
-  final double seekBarTop = bottomBarOffset +
-      seekBarContainerHeight -
-      (hasBottomButtonBar ? seekBarBottomButtonBarOverlap : 0.0);
-  return seekBarTop > padded ? seekBarTop : padded;
-}
-
 /// Pure decision for one tap. [inPlayPauseRegion] is false when the tap landed
-/// on the bottom bar strip while the bar is mounted (the upstream
-/// "don't pause when clicking next to the seek bar" exclusion).
+/// on the controls chrome while the bars are mounted (the upstream
+/// "don't pause when clicking next to the seek bar" exclusion, now decided by
+/// a hit test against [VideoControlsChromeRegion]).
 DesktopControlsTapAction resolveDesktopControlsTap({
   required PointerDeviceKind? kind,
   required bool inPlayPauseRegion,
@@ -116,8 +89,8 @@ class MaterialDesktopTapRouter extends StatefulWidget {
   /// The controls' current (authoritative) visibility.
   final bool controlsVisible;
 
-  /// Whether a tap starting at this global position is outside the bottom bar
-  /// strip (see [resolveDesktopControlsTap]).
+  /// Whether a tap starting at this global position is on the picture rather
+  /// than the controls chrome (see [resolveDesktopControlsTap]).
   final bool Function(Offset globalPosition) isInPlayPauseRegion;
 
   /// Called with the resolved action (never with [DesktopControlsTapAction.none]).

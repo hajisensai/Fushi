@@ -971,29 +971,19 @@ class _MaterialDesktopVideoControlsState
                       _theme(context).touchTapTogglesControls,
                   controlsVisible: visible,
                   isInPlayPauseRegion: (Offset globalPosition) {
-                    final RenderBox box =
-                        context.findRenderObject() as RenderBox;
-                    final Offset localPosition =
-                        box.globalToLocal(globalPosition);
-                    // Only play and pause when the bottom seek bar is visible
-                    // and when clicking outside of the bottom seek bar region.
-                    // Fushi patch: the excluded strip covers the seek bar's
-                    // whole hit area, see [desktopControlsBottomStripHeight].
+                    // Fushi patch: a click on the controls (any bar, the
+                    // seek bar's hit area, the gaps between buttons) is not a
+                    // click on the picture. Decided by a real hit test against
+                    // [VideoControlsChromeRegion] instead of a bottom strip
+                    // height re-derived from the theme, which drifted from the
+                    // real bar geometry. The seek bar takes pointers through a
+                    // [Listener] (outside the arena), so without this check
+                    // this router would still win a click on it.
                     return !mount ||
-                        localPosition.dy <
-                            box.size.height -
-                                desktopControlsBottomStripHeight(
-                                  bottomBarOffset: subtitleVerticalShiftOffset,
-                                  displaySeekBar:
-                                      _theme(context).displaySeekBar,
-                                  hasBottomButtonBar: _theme(context)
-                                      .bottomButtonBar
-                                      .isNotEmpty,
-                                  seekBarContainerHeight:
-                                      _theme(context).seekBarContainerHeight,
-                                  seekBarBottomButtonBarOverlap: _theme(context)
-                                      .seekBarBottomButtonBarOverlap,
-                                );
+                        !VideoControlsChromeRegion.hitsRegion(
+                          globalPosition: globalPosition,
+                          viewId: View.of(context).viewId,
+                        );
                   },
                   onAction: (DesktopControlsTapAction action) {
                     // (if-chain, not a switch: this package's language
@@ -1042,9 +1032,14 @@ class _MaterialDesktopVideoControlsState
                       children: [
                         // Fushi patch (touch on desktop): mobile-style swipe
                         // gestures for touch / stylus, below the bars so a
-                        // gesture that starts on a button / the seek bar goes
-                        // to that control. Same 16px edge + bottom-bar inset
-                        // as the mobile drag layer. See PATCHES.md.
+                        // gesture that starts on a button goes to that
+                        // control. Same 16px edge + bottom-bar inset as the
+                        // mobile drag layer: a fixed dead zone along the
+                        // bottom edge (OS edge swipes, subtitles) that holds
+                        // whether or not the bar is shown. A swipe that goes
+                        // down on the visible chrome is additionally dropped
+                        // by the layer's [VideoControlsChromeRegion] check.
+                        // See PATCHES.md.
                         if (_theme(context).touchSeekGesture ||
                             _theme(context).touchVolumeGesture ||
                             _theme(context).touchBrightnessGesture)
