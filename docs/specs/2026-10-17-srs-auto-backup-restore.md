@@ -71,15 +71,13 @@ zip，扩展名 `.fushisrs`：
   | 平台 | 位置 | 用户可见 / 卸载 |
   |---|---|---|
   | Windows / macOS / Linux | `<数据根>/…/srs_backups`（默认 `<文档>/Fushi/data/srs_backups`，老安装扁平布局为 `<文档>/srs_backups`；设了自定义数据根就在那里） | 文件管理器可见；备份页有「打开文件夹」「更改存储位置」（跳到现有的「数据存储位置」设置，随书库一起迁移）；卸载不删 |
-  | iOS | `<App Documents>/Fushi/data/srs_backups`（老安装 `<App Documents>/srs_backups`） | Info.plist 开了 `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace`，「文件」App ›「我的 iPhone」› Fushi 可见；进 iCloud 整机备份；卸载 app 会删除（iOS 沙盒规则，AnkiMobile 同样） |
+  | iOS | `<App Documents>/Fushi/data/srs_backups`（老安装 `<App Documents>/srs_backups`） | 「文件」App 不可见（**不开** `UIFileSharingEnabled`，理由见下）；进 iCloud 整机备份；卸载 app 会删除（iOS 沙盒规则）。带走用每份备份的「另存为 / 分享」（系统分享面板 → 存储到文件 / iCloud 云盘 / AirDrop），恢复用「从文件恢复」（系统文件选择器） |
   | Android | `/data/data/<包名>/app_flutter/Fushi/data/srs_backups`（应用私有内部存储） | 文件管理器不可见、卸载即删。现有「数据存储位置」设置只在桌面提供，Android 没有可跳转的改位置入口；备份页明确说明，并引导用每份备份的「另存为 / 分享」另存到别处（没有另造一套存储选择） |
 
-  iOS 开共享后「文件」App 里看得到 Documents 的全部内容：书（EPUB 解压正文）、有声书、视频与封面、字幕、词典资源、
-  自定义字体、制卡导出物、卡片来源回写草稿、`video_clips/`、未脱敏的 `error_log.txt` 与几个 breadcrumb 文件。
-  数据库、偏好、互联 TLS 私钥、设备私钥与同步凭据都在 Library（support 根 / NSUserDefaults），不暴露
-  （守卫 `test/ios/info_plist_file_sharing_guard_test.dart` 钉住「数据库目录 = support 根」）。
-  已知代价：错误日志可能含异常文本里的 URL 参数；用户可以在「文件」App 里删改书库等内部目录。
-- 恢复媒体：缺的（或大小不同的）从共享池 / 文件内嵌正文取，校验哈希后放回；本机多出来的文件不删（媒体删除本来就不跨设备传播）。
+  iOS 刻意不开「文件」App 共享（2026-10-17 审查）：iOS 只能整份共享 Documents，打开后书（EPUB 解压正文）、有声书、视频与封面、
+  字幕、词典资源、卡片来源回写草稿、未脱敏的 `error_log.txt` 等全部可见且可被用户删改，删改会让库条目指向丢失的文件。
+  备份可携带的需求由导出 / 从文件恢复满足（守卫 `test/ios/info_plist_file_sharing_guard_test.dart` 钉死两个键不出现）。
+- 恢复媒体：本机同名文件的内容哈希与清单一致才跳过；否则先从共享池取、哈希不符（池文件损坏）就删掉坏池文件改从文件内嵌正文取，取到后连同池文件一起修好，都取不到才记缺失；本机多出来的文件不删（媒体删除本来就不跨设备传播）。
 
 ## 恢复的语义（核心）
 

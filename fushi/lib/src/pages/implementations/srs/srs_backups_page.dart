@@ -14,7 +14,6 @@ import 'package:fushi_engine/srs/srs_backup_retention.dart';
 import 'package:fushi_engine/srs/srs_backup_store.dart';
 import 'package:fushi_engine/srs/srs_point_in_time_restore.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -80,9 +79,8 @@ class _SrsBackupsPageState extends ConsumerState<SrsBackupsPage> {
   List<SrsBackupInfo> _backups = const <SrsBackupInfo>[];
   int _diskBytes = 0;
 
-  /// 备份根（`<documents>/srs_backups`）与它在 iOS「文件」App 里显示的相对路径。
+  /// 备份根（`<documents>/srs_backups`）。
   String? _rootPath;
-  String? _iosRelativePath;
 
   @override
   void initState() {
@@ -111,21 +109,11 @@ class _SrsBackupsPageState extends ConsumerState<SrsBackupsPage> {
         ? const <SrsBackupInfo>[]
         : await store.list();
     final int disk = store == null ? 0 : await store.diskUsage();
-    String? iosRelative;
-    if (store != null && Platform.isIOS) {
-      try {
-        final Directory docs = await getApplicationDocumentsDirectory();
-        iosRelative = p.relative(store.root.path, from: docs.path);
-      } catch (e, stack) {
-        ErrorLogService.instance.log('SrsBackupsPage.iosPath', e, stack);
-      }
-    }
     if (!mounted) return;
     setState(() {
       _backups = list;
       _diskBytes = disk;
       _rootPath = store?.root.path;
-      _iosRelativePath = iosRelative;
       _loading = false;
     });
   }
@@ -417,16 +405,14 @@ class _SrsBackupsPageState extends ConsumerState<SrsBackupsPage> {
 
   // ---------------------------------------------------------------- 存放位置
 
-  /// 存放位置（对齐 Anki：用户看得到、换设备能带走的位置）：路径 + 各平台说明；
-  /// 桌面能直接打开文件夹，并跳到「数据存储位置」改位置（与书库一起迁移）。
+  /// 存放位置：路径 + 各平台说明。桌面能直接打开文件夹，并跳到「数据存储位置」改位置（与书库一起迁移）；
+  /// 移动端是应用私有存储（iOS 刻意不开「文件」App 共享，见 Info.plist 注释），带走靠每份备份的「另存为 / 分享」。
   Widget _buildLocation(BuildContext context) {
     final String? root = _rootPath;
     final bool desktop = isDesktopPlatform;
     final String hint = desktop
         ? t.srs_backup_location_desktop
-        : Platform.isIOS
-        ? t.srs_backup_location_ios(path: _iosRelativePath ?? 'srs_backups')
-        : t.srs_backup_location_android;
+        : t.srs_backup_location_mobile;
     return AdaptiveSettingsSection(
       title: t.srs_backup_location,
       children: <Widget>[

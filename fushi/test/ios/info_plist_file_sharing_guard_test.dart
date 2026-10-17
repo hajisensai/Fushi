@@ -3,22 +3,39 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 
-/// 复习自动备份放在 documents 根下（与 Anki / AnkiMobile 一样用户看得到、换设备能带走）。
-/// iOS 上要让「文件」App 看得到 app 的 Documents，Info.plist 必须同时开
-/// `UIFileSharingEnabled` 与 `LSSupportsOpeningDocumentsInPlace`；少一个「我的 iPhone」里就没有 Fushi。
+/// iOS 刻意**不开**「文件」App 共享（PR #2298 审查，2026-10-17）。
 ///
-/// 开共享的前提是 Documents 里没有数据库 / 凭据：数据库与偏好在 support 根（Library），
-/// 这里一并钉住「数据库目录 = support 根」，有人把它挪进 documents 根就红。
+/// iOS 没有「只共享 Documents 的某个子目录」的办法：`UIFileSharingEnabled` /
+/// `LSSupportsOpeningDocumentsInPlace` 一开就是整份 Documents——书正文、有声书、视频、词典资源、
+/// 卡片来源回写草稿、未脱敏的错误日志全部可见、可被用户删改（删改让库条目指向丢失的文件）。
+/// 复习备份的「带走」需求走备份页的「另存为 / 分享」与「从文件恢复」，不靠暴露 Documents。
+///
+/// 另外钉住「数据库目录 = support 根」：哪怕将来有人重新打开共享，数据库也不能在 Documents 里。
 void main() {
   // Tests run with CWD = `fushi/`.
   final String plist = File('ios/Runner/Info.plist').readAsStringSync();
 
-  bool keyIsTrue(String key) =>
-      RegExp('<key>$key</key>\\s*<true\\s*/>').hasMatch(plist);
+  // 只看真正生效的 <key>，注释里提到键名不算。
+  final String plistNoComments = plist.replaceAll(
+    RegExp(r'<!--.*?-->', dotAll: true),
+    '',
+  );
+  bool hasKey(String key) => plistNoComments.contains('<key>$key</key>');
 
-  test('Info.plist 开了「文件」App 共享（两个键都要）', () {
-    expect(keyIsTrue('UIFileSharingEnabled'), isTrue);
-    expect(keyIsTrue('LSSupportsOpeningDocumentsInPlace'), isTrue);
+  test('Info.plist 不开「文件」App 共享（两个键都不许出现）', () {
+    expect(hasKey('UIFileSharingEnabled'), isFalse);
+    expect(hasKey('LSSupportsOpeningDocumentsInPlace'), isFalse);
+    // 自检：去注释后确实还剩别的键（防止正则吃光整份文件让上面两条恒真）。
+    expect(hasKey('ITSAppUsesNonExemptEncryption'), isTrue);
+  });
+
+  test('备份页保留「另存为 / 分享」与「从文件恢复」两条带走 / 带回路径', () {
+    final String page = File(
+      'lib/src/pages/implementations/srs/srs_backups_page.dart',
+    ).readAsStringSync();
+    expect(page, contains('FushiShare.shareFiles('));
+    expect(page, contains('pickSystemFilePath('));
+    expect(page, contains("ValueKey<String>('srs_backup_restore_file')"));
   });
 
   test('复习备份目录在 documents 根下、并随数据根迁移', () {
