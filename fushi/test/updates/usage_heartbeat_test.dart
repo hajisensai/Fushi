@@ -5,8 +5,10 @@ import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/leaderboard/install_identity.dart';
 
 /// 安装统计心跳：平台门、UTC 日到期判据、开关、失败不记时刻、安装 id 稳定且设备本地。
+/// 安装证明的推导（机器标识 → installId、回退种子、PoW 缓存）见 install_attestation_test.dart。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -24,15 +26,25 @@ void main() {
   final List<Map<String, String>> sent = <Map<String, String>>[];
   bool fail = false;
 
+  final InstallAttestation install = InstallAttestation(
+    InstallIdentity.fromMachineId('heartbeat-test-machine'),
+    '1',
+  );
+  int resolves = 0;
+  Future<InstallAttestation> fakeResolve(PreferencesRepository _) async {
+    resolves++;
+    return install;
+  }
+
   Future<void> fakeSend({
-    required String installId,
+    required InstallAttestation install,
     required String version,
     required String platform,
     required String channel,
   }) async {
     if (fail) throw StateError('offline');
     sent.add(<String, String>{
-      'installId': installId,
+      'installId': install.installId,
       'version': version,
       'platform': platform,
       'channel': channel,
@@ -46,6 +58,7 @@ void main() {
     channel: () => 'debug',
     operatingSystem: os,
     now: () => clock,
+    install: fakeResolve,
   );
 
   setUp(() async {
@@ -53,6 +66,7 @@ void main() {
     clock = DateTime.utc(2026, 10, 17, 12);
     sent.clear();
     fail = false;
+    resolves = 0;
   });
 
   test('平台键：四个桌面 / 安卓平台发，iOS 与其它不发', () {
@@ -89,7 +103,7 @@ void main() {
     final UsageHeartbeat hb = heartbeat();
     expect(await hb.runIfDue(), isTrue);
     expect(sent.single, <String, String>{
-      'installId': await prefs.ensureUsageStatsInstallId(),
+      'installId': install.installId,
       'version': '2.10.0-debug.8',
       'platform': 'windows',
       'channel': 'debug',
@@ -119,12 +133,13 @@ void main() {
     expect(sent, isEmpty);
   });
 
-  test('iOS 不发，也不生成安装 id', () async {
+  test('iOS 不发，也不解析安装身份', () async {
     final UsageHeartbeat hb = heartbeat(os: 'ios');
     hb.start();
     expect(hb.isRunning, isFalse);
     expect(await hb.runIfDue(), isFalse);
     expect(sent, isEmpty);
+    expect(resolves, 0);
     expect(prefs.getPref('usage_stats_install_id', defaultValue: ''), '');
   });
 
@@ -138,28 +153,38 @@ void main() {
     expect(sent, hasLength(1));
   });
 
-  test('反馈附带的安装 id：开关开着且非 iOS 才有，与心跳同一个', () async {
-    final String? id = await usageStatsInstallIdForFeedback(
+  test('反馈附带的安装证明：开关开着且非 iOS 才有，与心跳同一个', () async {
+    final InstallAttestation? att = await usageStatsInstallIdForFeedback(
       prefs,
       operatingSystem: 'android',
+      resolve: fakeResolve,
     );
-    expect(id, isNotNull);
-    expect(id, await prefs.ensureUsageStatsInstallId());
+    expect(att?.installId, install.installId);
     expect(
-      await usageStatsInstallIdForFeedback(prefs, operatingSystem: 'ios'),
+      await usageStatsInstallIdForFeedback(
+        prefs,
+        operatingSystem: 'ios',
+        resolve: fakeResolve,
+      ),
       isNull,
     );
     await prefs.setUsageStatsEnabled(false);
     expect(
-      await usageStatsInstallIdForFeedback(prefs, operatingSystem: 'android'),
+      await usageStatsInstallIdForFeedback(
+        prefs,
+        operatingSystem: 'android',
+        resolve: fakeResolve,
+      ),
       isNull,
     );
+    expect(resolves, 1);
   });
 
-  test('三个偏好都是设备本地：不进备份 / 同步 / Profile 快照', () {
+  test('安装统计的偏好都是设备本地：不进备份 / 同步 / Profile 快照', () {
     for (final String key in <String>[
       'usage_stats_enabled',
       'usage_stats_install_id',
+      'usage_stats_install_pow',
       'usage_stats_last_ping_at',
     ]) {
       expect(

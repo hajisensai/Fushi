@@ -331,13 +331,17 @@ function distTable(rows, label = (k) => k) {
 async function statsPage(env, now) {
   const st = await installStats(env, now);
   const kpi = (label, n) => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${n}</b></div>`;
-  const head = `<tr><th>日期（UTC）</th><th>活跃</th><th>新增</th>${PING_PLATFORMS.map((p) => `<th>${esc(p)}</th>`).join('')}</tr>`;
+  const head = `<tr><th>日期（UTC）</th><th>活跃</th><th>新增</th>${PING_PLATFORMS.map((p) => `<th>${esc(p)}</th>`).join('')}`
+    + '<th class="muted">未验证</th></tr>';
   const daily = st.daily.map((d) => `<tr><td>${esc(d.day)}</td><td>${d.n}</td><td>${d.fresh}</td>`
-    + `${PING_PLATFORMS.map((p) => `<td>${d.platforms[p]}</td>`).join('')}</tr>`).join('');
+    + `${PING_PLATFORMS.map((p) => `<td>${d.platforms[p]}</td>`).join('')}<td class="muted">${d.unverified}</td></tr>`).join('');
+  const u = st.unverified;
   return html(layout('统计', `<h1>安装统计</h1>
 <p class="muted">来自 App 每天一次的匿名心跳（Android / Windows / macOS / Linux；iOS 看 App Store Connect）。
-按安装 id 去重，关了统计的安装不计；日期按 UTC。分布取近 30 天活跃安装各自最近一次上报的值。</p>
+按安装 id 去重，关了统计的安装不计；日期按 UTC。分布取近 30 天活跃安装各自最近一次上报的值。
+数字只算<b>已验证</b>安装（出示了安装证明：签名 + 工作量证明）；未验证的（旧版客户端或自报伪造）另列。</p>
 <div class="kpis">${kpi('今日活跃', st.dau)}${kpi('7 日活跃', st.wau)}${kpi('30 日活跃', st.mau)}${kpi('累计安装（保留期内）', st.total)}</div>
+<p class="muted">未验证：今日 ${u.dau} · 7 日 ${u.wau} · 30 日 ${u.mau} · 累计 ${u.total}</p>
 <h2>近 30 天</h2>
 <div class="card">${daily ? `<table class="grid">${head}${daily}</table>` : '<p class="muted">还没有心跳。</p>'}</div>
 <h2>平台</h2><div class="card">${distTable(st.platforms)}</div>
@@ -379,8 +383,16 @@ function installSection(trail, fix) {
 <span class="muted">#${esc(r.id)}</span><span class="t">${esc(r.title)}</span>
 <span class="muted">${esc(fmtTime(r.createdAt))}</span></a>`).join('')}</div>`
     : '';
-  return `<h2>安装 <span class="muted">（安装 id 为客户端自报，可伪造）</span></h2>
-<div class="card"><p class="muted"><code>${esc(trail.installId)}</code></p>${summary}</div>${versions}${related}`;
+  const badge = trail.verified
+    ? '<span class="badge ok">已验证</span> <span class="muted">（提交时出示了该安装的签名与工作量证明）</span>'
+    : '<span class="badge warn">未验证</span> <span class="muted">（安装 id 为客户端自报，可伪造）</span>';
+  if (trail.claimsVerifiedInstall) {
+    return `<h2>安装</h2>
+<div class="card"><p>${badge}</p><p class="muted"><code>${esc(trail.installId)}</code></p>
+<p class="muted">这个 id 属于一个已验证安装，但这条反馈没有出示它的证明，不展示该安装的轨迹与其它反馈。</p></div>`;
+  }
+  return `<h2>安装</h2>
+<div class="card"><p>${badge}</p><p class="muted"><code>${esc(trail.installId)}</code></p>${summary}</div>${versions}${related}`;
 }
 
 async function detailPage(env, id) {
