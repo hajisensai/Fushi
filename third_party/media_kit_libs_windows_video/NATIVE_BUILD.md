@@ -6,11 +6,46 @@ including upstream HDMV/BD-J navigation added on 2026-08-25. The previous
 2026-08-13 binary had neither `discnav` nor `disc-menu`; updating Flutter alone
 could not enable original menus.
 
-Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1.7z` (45,377,269 bytes).
-SHA-256: `446b883883ebccf207b09076dc2fc7deaa5538a3ecd693a230eb058ca972b2d8`.
-The `fushi-discnav1-hwcrop1-lua1` suffix identifies this patched build; it is not an
+Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1.7z` (45,377,913 bytes).
+SHA-256: `ed99f5667b6616ef962af31a6fc545301a6fe114ffccbf4d5178b922cf0951f4`.
+The `fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1` suffix identifies this patched build; it is not an
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
+
+`patches/mkv-laced-audio-timestamps.patch` (BUG-3453) fixes upstream
+`handle_block()` in `demux/demux_mkv.c`: when an audio track has no
+`DefaultDuration`, only the first frame of a laced block got a timestamp and
+the others were left unset. mkvmerge laces Opus eight frames per block and
+writes no `DefaultDuration`, so on such files the stream recorder
+(`dump-cache`, used for the online-video mining snapshot) had every frame but
+the first of each block rejected by the FFmpeg Matroska muxer
+(`non monotonically increasing dts ... >= NOPTS` / `Failed writing packet`)
+while still reporting success; the snapshot kept about 1/8 of the audio. The
+patch derives the later lace frames' timestamps from their own durations:
+Opus packets carry their length in the TOC byte (RFC 6716 section 3.1); for
+other codecs a known `BlockDuration` is split evenly over the laces, as
+FFmpeg's Matroska demuxer does; otherwise the old behaviour is kept. Block
+first-frame timestamps are unchanged. Upstream master is still unfixed as of
+2026-10-17.
+
+`patches/recorder-video-dts.patch` (BUG-3454) fixes upstream
+`common/recorder.c`: Matroska stores no DTS, and the recorder only set
+`video_delay` (so libavformat would guess DTS) when the stream had no
+`lav_codecpar` - but `demux_mkv` now attaches one to every video track. With
+`video_delay` 0 libavformat used DTS = PTS, so every reordered frame of H.264
+/ HEVC with B-frames was rejected and the `dump-cache` snapshot was mostly
+undecodable (corrupted video in mined clips). Even with the delay set,
+libavformat seeds its reorder buffer with the first packet's PTS, which
+rejects the leading pictures of an open GOP, and that guessing is deprecated.
+The recorder now derives the missing video DTS itself with the same reorder
+buffer, seeded with the segment's output start. Upstream master is still
+unfixed as of 2026-10-17.
+
+This rebuild differs from the `lua1-mkvlace1` archive only in `libmpv-2.dll`,
+`runtime-manifest.json` and `source-provenance.json` (which records both
+patches under `demux_patches`); the other 234 files are byte-identical (same
+MSYS2 package set). `verify_mkv_lace_dump.py` checks both fixes against the
+real library (`tests/laced-opus.mkv`, `tests/open-gop-hevc.mkv`).
 
 `patches/gpu-dumb-mode-hwdec-crop.patch` (BUG-3296) fixes upstream
 `pass_render_frame_dumb()` in `video/out/gpu/video.c`: the vo=gpu "dumb mode"

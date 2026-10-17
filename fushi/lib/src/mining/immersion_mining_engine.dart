@@ -7,6 +7,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_engine/utils/misc/snapshot_audio_coverage.dart';
 import 'package:fushi_engine/utils/misc/synchronized_video_exporter.dart';
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -102,6 +103,14 @@ typedef SynchronizedVideoExtractor = Future<VideoClipExportResult> Function({
   required Map<String, String> httpHeaders,
   required MiningClipFormat format,
 });
+/// 缓冲副本在 `[startMs, endMs)`（副本自己的时间轴）里的音轨是否完整，见
+/// [cachedSnapshotAudioCoversWindow]。
+typedef SnapshotAudioVerifier = Future<bool> Function({
+  required String snapshotPath,
+  required int startMs,
+  required int endMs,
+});
+
 typedef FrameExtractor = Future<String?> Function({
   required String inputPath,
   required String outputPath,
@@ -294,18 +303,33 @@ class ImmersionMiningEngine {
     FrameExtractor? frameExtractor,
     RemoteAudioMaterializer? audioMaterializer,
     SynchronizedVideoExtractor? synchronizedVideoExtractor,
+    SnapshotAudioVerifier? snapshotAudioVerifier,
   })  : _gif = gifExtractor ?? extractClipGifViaFfmpeg,
         _audio = audioExtractor ?? extractAudioSegmentViaFfmpeg,
         _frame = frameExtractor ?? extractVideoFrameViaFfmpeg,
         _materialize = audioMaterializer ?? _defaultAudioMaterializer,
         _synchronizedVideo =
-            synchronizedVideoExtractor ?? _exportSynchronizedVideo;
+            synchronizedVideoExtractor ?? _exportSynchronizedVideo,
+        _snapshotAudioCovers =
+            snapshotAudioVerifier ?? _defaultSnapshotAudioVerifier;
 
   final GifExtractor _gif;
   final AudioExtractor _audio;
   final FrameExtractor _frame;
   final RemoteAudioMaterializer _materialize;
   final SynchronizedVideoExtractor _synchronizedVideo;
+  final SnapshotAudioVerifier _snapshotAudioCovers;
+
+  static Future<bool> _defaultSnapshotAudioVerifier({
+    required String snapshotPath,
+    required int startMs,
+    required int endMs,
+  }) =>
+      cachedSnapshotAudioCoversWindow(
+        snapshotPath: snapshotPath,
+        startMs: startMs,
+        endMs: endMs,
+      );
 
   static Future<VideoClipExportResult> _exportSynchronizedVideo({
     required String videoPath,
@@ -399,16 +423,18 @@ class ImmersionMiningEngine {
         final CachedMediaSnapshot? snapshot = await pendingSnapshot;
         if (snapshot != null) {
           try {
-            final ImmersionMiningResult local = await _mineNow(
-              frozenRequest.withCachedSnapshot(snapshot),
-              compression: compression,
-              tempDir: resolvedTempDir,
-              repo: repo,
-              onFailure: onFailure,
-              onCoverFailure: onCoverFailure,
-              onAudioFailure: onAudioFailure,
-            );
-            if (!local.aborted) return local;
+            if (await _snapshotAudioUsable(frozenRequest, snapshot)) {
+              final ImmersionMiningResult local = await _mineNow(
+                frozenRequest.withCachedSnapshot(snapshot),
+                compression: compression,
+                tempDir: resolvedTempDir,
+                repo: repo,
+                onFailure: onFailure,
+                onCoverFailure: onCoverFailure,
+                onAudioFailure: onAudioFailure,
+              );
+              if (!local.aborted) return local;
+            }
           } finally {
             await _deleteQuietly(snapshot.path);
           }
@@ -427,6 +453,34 @@ class ImmersionMiningEngine {
         );
       },
     );
+  }
+
+  /// 副本里这句的音轨是否完整；不完整就不用副本，回到远端抽取。
+  ///
+  /// libmpv 写副本时可能丢掉大半音频包却照样报成功（mkvmerge 封装的 Opus 等，见
+  /// [cachedSnapshotAudioCoversWindow]），对这种副本抽取不会失败，只会抽出 0.2 秒、
+  /// 断断续续的句子音频——「抽不出来才回远端」那条兜底接不住它，只能先看内容。
+  /// 不要音频（[ImmersionMiningRequest.omitAudio]）或没有时间窗时不必看。
+  Future<bool> _snapshotAudioUsable(
+    ImmersionMiningRequest req,
+    CachedMediaSnapshot snapshot,
+  ) async {
+    if (req.omitAudio || !req.hasClipWindow) return true;
+    final int startMs = req.clipStartMs - snapshot.zeroMs;
+    final int endMs = req.clipEndMs - snapshot.zeroMs;
+    final bool covered = await _snapshotAudioCovers(
+      snapshotPath: snapshot.path,
+      startMs: startMs,
+      endMs: endMs,
+    );
+    if (!covered) {
+      engineLog.logDiagnostic(
+        'Anki.cachedSnapshot.audioIncomplete',
+        'snapshot audio does not cover ${startMs}ms..${endMs}ms; '
+            'falling back to the remote source',
+      );
+    }
+    return covered;
   }
 
   /// 缓冲副本；落盘任何异常都当「没有副本」（回到远端抽取），不让它打断制卡。
