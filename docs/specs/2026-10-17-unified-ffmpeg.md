@@ -47,6 +47,17 @@
 - 编码一律用软件编码器（x264 / libvpx-vp9 / SVT-AV1 / libwebp / libopus / aac）：同体积画质更好、支持按 CRF 控制质量、跨设备输出一致；规格（profile / level）写得规范，AnkiDroid / AnkiMobile / QQ 都能打开。
 - 解码优先用硬件（Android MediaCodec、Apple VideoToolbox、Windows d3d11va / nvdec 等），dav1d 等软件解码器兜底。
 
+## 落地实测（2026-10-17）
+
+| 平台 | 产物来源 | 体积变化 | 实测 |
+|---|---|---|---|
+| Windows | 本机 MSYS2：`build_ffmpeg_msys2.sh` → `build_libmpv.ps1`（与以往 libmpv 一样是本地构建） | 运行时 123 → 103 个文件、174 → 160 MB；另删 ffmpeg-min 两个 exe（约 48 MB） | 打包后在只有系统目录的 PATH 下：能力下限、`smoke-test.sh` 全部制卡 / 导出 / 转码形态、`probe_libmpv`（TrueHD / Lua）、mkv dump-cache、`-tls_pin_sha256` 端到端（pin 正确能开、错误 / 不带被拒）、公网 HTTPS（FFmpeg 8+ 默认校验证书） |
+| Android | `ffmpeg-unified-mobile.yml` run 39034160156；libmpv：`libmpv-android-build-fushi` run 39037350491（分支 `fushi/unified-ffmpeg` 452510d） | libmpv jar 约 9 → 3 MB / ABI；AAR 30 → 44 MB（多了 x86_64、SVT-AV1、WebP、libxml2、zlib、MediaCodec） | 产物字节守卫：configure、编解码器自证串、补丁标记、Android CA、16 KB 对齐；libmpv `DT_NEEDED libavcodec.so`、不含自带 FFmpeg 符号 |
+| iOS | run 39032008713；libmpv：`libmpv-darwin-build` run 39034287620（`fushi/unified-ffmpeg` 0f29c43） | libmpv 包 28 → 9.4 MB；进程内只剩一份 libavcodec | 产物字节守卫；`verify_darwin_archive.py` 拒绝打包 FFmpeg、要求链接 `@rpath/libavcodec.framework` |
+| macOS | run 39032008713；libmpv 同上 | libmpv 包 21.9 → 4.6 MB（只出 arm64）；FFmpeg 布局包 15.5 MB（替代 ffmpeg-min 的 28 MB） | CI Mac 上按 `fushi.app/Contents` 布局跑能力下限 + `smoke-test.sh`；libmpv 宿主探测：TrueHD、蓝光协议、碟片菜单、渲染 API |
+
+尚未做的真机验证：Android / iOS / macOS 真机上的播放与制卡（本机只有 Windows），尤其是 Android 15+ 16 KB 页设备、iOS 10-bit HDR 硬解（补丁 0003）、移动端「边播放边制卡」时的日志分流（补丁 0002）。
+
 ## 版本升级流程
 
 1. 改 `recipe.env`（FFmpeg tag + commit；FFmpegKitNext tag + commit）。
