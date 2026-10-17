@@ -129,8 +129,12 @@ class VttParser {
         continue;
       }
 
-      final String rawText =
-          lines.skip(timeLineIdx + 1).where((l) => l.isNotEmpty).join(' ');
+      // 多行 cue 用 ASS 硬换行 `\N` 连接（#2312，与 [SrtParser] 同源）：渲染层按原行
+      // 分行，plainText 里仍是空格。
+      final String rawText = lines
+          .skip(timeLineIdx + 1)
+          .where((l) => l.isNotEmpty)
+          .join(kSubtitleHardLineBreak);
       // 先剥 VTT/HTML 行内标签（`<b>` / `<ruby>` / `<c.className>` 等，共享
       // [stripHtmlTags]），再交 markup 解析 ASS override 块（两者正交）。
       final SubtitleMarkup markup = parseSubtitleMarkup(stripHtmlTags(rawText));

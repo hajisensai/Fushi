@@ -935,6 +935,11 @@ class _Style {
       (blur != null && blur! > 0);
 }
 
+/// ASS 硬换行标记 `\N`。srt / vtt 把一条 cue 的多行原文用它连接后交给
+/// [parseSubtitleMarkup]：换行处记进 [SubtitleMarkup.lineBreakGraphemes]（渲染层据此
+/// 分行），plainText 里替换成空格（与旧的空格连接逐字节一致，#2312）。
+const String kSubtitleHardLineBreak = r'\N';
+
 /// 单条 cue 原文 → 结构化 markup。一趟扫描同时构建 plainText 与 span 边界。
 ///
 /// [playResX]/[playResY] 仅用于把 `\pos` 归一化；srt/vtt 无 `\pos`，传 null 即可。

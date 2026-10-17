@@ -1484,7 +1484,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           fontSize: _videoControlTitleFontSize,
         );
 
-  Color _subtitleTextColor(ColorScheme cs) => cs.onSurface;
   Color _subtitleShadowColor(ColorScheme cs) => cs.shadow;
   // TODO-1059 方案A：字幕盒默认底色不再跟随主题 `surface`（浅色主题下近白 → 字幕
   // 背景泛白违和），改用固定半透明黑 [kDefaultSubtitleBackgroundColor]。仅当
