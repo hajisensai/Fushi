@@ -25,7 +25,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/net/app_native_proxy.dart';
 
 class TtsServices {
-  TtsServices._(PrefStore prefs)
+  TtsServices._(this.prefs)
     : store = TtsPresetStore(prefs),
       pronunciation = TtsPronunciationStore(prefs),
       localGptSovits = GptSovitsLocalEngine(
@@ -60,6 +60,10 @@ class TtsServices {
 
   /// 已创建的单例（退出清理用：没用过 TTS 就不必为了停服务而创建它）。
   static TtsServices? get existing => _instance;
+
+  /// 建单例时的偏好仓（只读已建好的单例的地方——如设置搜索求值副标题——经它
+  /// 读 TTS 相关偏好，不必碰 AppModel）。
+  final PrefStore prefs;
 
   final TtsPresetStore store;
 
