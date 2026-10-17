@@ -63,7 +63,7 @@ const CHECK = String.raw`(async () => {
     ok(ls.length > 0, name + ': has lanes');
     for (const r of rects) {
       // A box ending on full-width closing punctuation (、。) may stop at that glyph's ink
-      // (BUG-3503: checked exactly further down), 0.4em short of the box end.
+      // (BUG-3518: checked exactly further down), 0.4em short of the box end.
       const hit = ls.find((l) => Math.abs(mid(l) - mid(r)) <= tol &&
         span(l)[0] <= span(r)[0] + 1 && span(l)[1] >= span(r)[1] - 1 - 0.45 * em);
       ok(!!hit, name + ': text box at ' + Math.round(mid(r)) + ' has a covering lane');
@@ -233,7 +233,7 @@ const CHECK = String.raw`(async () => {
   ok(lanes('fushi-sentence-audio').length === 0, 'current-sentence lanes go away when the cue clears');
   ok(lanes('fushi-hl-yellow').length > 0, 'favourite lanes stay');
 
-  // BUG-3503: a lane ending on full-width closing punctuation stops at the punctuation ink
+  // BUG-3518: a lane ending on full-width closing punctuation stops at the punctuation ink
   // (first ~0.6 of its cell), not at the blank second half of the cell.
   const stopNode = textNodes(root()).find((n) => n.data.indexOf('。') >= 2);
   ok(!!stopNode, 'a text run with 。 exists');
@@ -257,7 +257,7 @@ const CHECK = String.raw`(async () => {
     await frames();
   }
 
-  // BUG-3503: paginated pages are columns of the body multicol. Text that runs past the
+  // BUG-3518: paginated pages are columns of the body multicol. Text that runs past the
   // column end (WebKit hanging punctuation; here a nowrap run, which Chrome overflows the
   // same way) must not drag its lane through the column gap into the next page.
   const bcs = getComputedStyle(document.body);
@@ -382,7 +382,7 @@ const BACKDROP = String.raw`(async () => {
   return { errors, checks, samples };
 })()`;
 
-// BUG-3503: on WebKit the current sentence is a set of live Ranges in CSS.highlights instead
+// BUG-3518: on WebKit the current sentence is a set of live Ranges in CSS.highlights instead
 // of <span> wrappers (splitting a text node drops WebKit's kerning at the cut and shifts the
 // rest of the line). Chrome runs that path here with window.__fushiSentenceAudioRangeMode.
 const RANGE = String.raw`(async () => {

@@ -1878,7 +1878,7 @@ window.__fushiInstallShell = function(C) {
     // 包裹走共享的 wrapSentenceAudioGroup（切开 / 搬移经 __fushiLiveRanges，不用 extractContents）：
     // 收藏 / 搜索高亮等 live Range 不随包裹塌缩。
     //
-    // BUG-3503：WebKit 上切开文本节点会丢掉切口处的字距调整、整行后移（句界被「顶开」），
+    // BUG-3518：WebKit 上切开文本节点会丢掉切口处的字距调整、整行后移（句界被「顶开」），
     // 所以那边不包裹：每句登记成 live Range（cueRangesMap），当前句交给 CSS.highlights（见选区脚本
     // window.__fushiCueRanges）。正文 DOM 不动，排版与原书逐像素一致。
     var self = this;
@@ -1928,7 +1928,7 @@ window.__fushiInstallShell = function(C) {
     if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('fushi-sentence-audio');
     var wrappers = this.cueWrappers.get(cueId) || [];
     var rubyElements = this.cueRubyElements.get(cueId) || [];
-    // BUG-3503：WebKit 上不包裹，当前句是一组 live Range（见 applySentenceAudioCues）。
+    // BUG-3518：WebKit 上不包裹，当前句是一组 live Range（见 applySentenceAudioCues）。
     var ranges = this.cueRangesMap.get(cueId) || [];
     // TODO-630/BUG-366 observability：本 cue 拿到几个文本 span/ruby；0+0 → 直接 return null（不高亮）。
     try { console.log('[sentence-audio-hl] highlightCue ranges=' + (wrappers.length || ranges.length) + ' ruby=' + rubyElements.length +
@@ -2481,7 +2481,7 @@ $kReaderPageTurnJs
     range.selectNodeContents(element);
     return this.scrollToRange(range);
   },
-  // BUG-3503：WebKit 上有声书当前句是 Range（不包裹），跟读揭示直接按它定位。
+  // BUG-3518：WebKit 上有声书当前句是 Range（不包裹），跟读揭示直接按它定位。
   revealRange: function(range) {
     return this.scrollToRange(range.cloneRange());
   },
@@ -3764,7 +3764,7 @@ $kSentenceAudioRubyGapJs
   revealElement: function(element) {
     return this.scrollToTarget(element);
   },
-  // BUG-3503：WebKit 上有声书当前句是 Range（不包裹）；getRect 对 Range 同样成立。
+  // BUG-3518：WebKit 上有声书当前句是 Range（不包裹）；getRect 对 Range 同样成立。
   revealRange: function(range) {
     return this.scrollToTarget(range.cloneRange());
   },

@@ -995,7 +995,7 @@ void main() {
       expect(css, contains('position: fixed !important;'));
       expect(css, contains('pointer-events: none !important;'),
           reason: '覆盖条不得拦截选词/点按');
-      // 四边 border 宽必须与 body padding 逐项一致（== 泄露带宽度）；BUG-3503：行尾一侧（横排右）
+      // 四边 border 宽必须与 body padding 逐项一致（== 泄露带宽度）；BUG-3518：行尾一侧（横排右）
       // 让出一个列间距给悬挂标点，与 body clip-path 同一表达式。
       expect(
           css,
@@ -1017,9 +1017,9 @@ void main() {
       expect(css, contains('z-index: 2147483000 !important;'));
     });
 
-    // BUG-3503：悬挂标点（两端对齐关时注入 hanging-punctuation）挂在栏尾之外，落在被裁的页边距带里。
+    // BUG-3518：悬挂标点（两端对齐关时注入 hanging-punctuation）挂在栏尾之外，落在被裁的页边距带里。
     // 行尾一侧（竖排下、横排右）的裁边与遮罩条都让出一个列间距；两端对齐开（不悬挂）时照旧裁满。
-    test('BUG-3503 行尾一侧让出一个列间距给悬挂标点', () async {
+    test('BUG-3518 行尾一侧让出一个列间距给悬挂标点', () async {
       final FushiDatabase db =
           FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);

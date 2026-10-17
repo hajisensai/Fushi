@@ -630,7 +630,7 @@ body::after {
     // html/body 背景（同色）= 页边距照常空白。四边都裁：竖排消上下露、横排消左右露。padding 四边
     // 与 body 的 padding-top/right/bottom/left 逐项一致（上=mt vh+chromeTop，下=mb vh+chromeBottom，
     // 左右=ml/mr vw），裁边恰在列边缘、不切正文。
-    // BUG-3503：开了悬挂标点（下面 gridCss，两端对齐关时）的行尾「、」「。」挂在栏尾之外，正好落在
+    // BUG-3518：开了悬挂标点（下面 gridCss，两端对齐关时）的行尾「、」「。」挂在栏尾之外，正好落在
     // 被裁掉的页边距带里、看不见。栏尾之外紧接着只有一道列间距（下一栏要再隔一个 column-gap 才
     // 开始），所以行尾那一侧（竖排下、横排右）的裁边往外放一个列间距：露出悬挂标点，相邻页仍被裁。
     final bool hangingPunctuation = !settings.enableTextJustification;
@@ -1500,7 +1500,7 @@ html::before {
   border-style: solid !important;
   border-color: ${colors.backgroundColor} !important;
   border-top-width: calc($marginTopCss + var(--chrome-top-inset, 0px)) !important;
-  /* BUG-3503：行尾一侧（竖排下、横排右）让出一个列间距给悬挂标点，与 contentClipCss 一致。 */
+  /* BUG-3518：行尾一侧（竖排下、横排右）让出一个列间距给悬挂标点，与 contentClipCss 一致。 */
   border-right-width: $clipRightCss !important;
   border-bottom-width: $clipBottomCss !important;
   border-left-width: $marginLeftCss !important;

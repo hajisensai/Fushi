@@ -836,7 +836,7 @@ window.fushiReader = {
   sentenceAudioCueMap: new Map(),
   sentenceAudioCuesSignature: null,
   cueWrappers: new Map(),
-  // BUG-3503：WebKit 上当前屏的句子不包裹，登记成 live Range（见选区脚本 window.__fushiCueRanges）。
+  // BUG-3518：WebKit 上当前屏的句子不包裹，登记成 live Range（见选区脚本 window.__fushiCueRanges）。
   cueRanges: new Map(),
 $kSentenceAudioRubyGapJs
   cueSourceRanges: new Map(),
@@ -3002,7 +3002,7 @@ $sharedInitViewport
   },
   wrapSentenceAudioCueRangesInBatch: function(cueRanges) {
     var wrapped = new Map();
-    // BUG-3503：WebKit 上切开文本节点会丢掉切口处的字距调整、整行后移；VN 又是播放到那句才包裹，
+    // BUG-3518：WebKit 上切开文本节点会丢掉切口处的字距调整、整行后移；VN 又是播放到那句才包裹，
     // 排版恰好在高亮出现那一刻变动（句子被「顶开」）。那边改登记 Range，不动 DOM。
     var rangeLayer = window.__fushiCueRanges;
     if (rangeLayer && rangeLayer.enabled()) {

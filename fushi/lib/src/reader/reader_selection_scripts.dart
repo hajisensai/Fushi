@@ -534,7 +534,7 @@ if (!window.__fushiLiveRanges) {
     }
   };
 }
-// BUG-3503（「句子被高亮顶开」）：WebKit 只在同一个文本节点内做字距调整（kerning，Hiragino 等日文字体
+// BUG-3518（「句子被高亮顶开」）：WebKit 只在同一个文本节点内做字距调整（kerning，Hiragino 等日文字体
 // 在「、机」「。表」这类字对上收 1–2px）；文本节点一旦被切开——包进 span、拆成两个相邻文本节点、
 // 哪怕包裹是 display:contents——切口两侧的字对就不再调整，切口之后整行的字往后挪（iOS 26.5 模拟器
 // 实测；font-feature-settings:'kern' 0 关不掉，只有 font-kerning:none 能关）。有声书原先把每句
@@ -936,7 +936,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
         var range = document.createRange();
         range.selectNodeContents(n);
         // 竖排（直立）注音逐字量真实墨迹：带浊点 / 半浊点的假名（ぶ ぱ）比「国」宽，按汉字墨迹厚居中会
-        // 低估 1–1.5px，窄条就压到振假名上（BUG-3503 顺带）。量不到时退回汉字墨迹厚居中。
+        // 低估 1–1.5px，窄条就压到振假名上（BUG-3518 顺带）。量不到时退回汉字墨迹厚居中。
         var glyphs = null;
         if (vertical && mt.ok) {
           glyphs = [];
@@ -1048,7 +1048,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // 行片段 → 窄条（块方向范围见 blockExtent）。同一行（文字盒中线一致、字号一致）里相隔不超过 join 个字的
     // 片段并成一条，块方向取并集（一行里 CJK 与西文混排也是一条等厚的条）；最后把条收到这一行振假名的
     // 墨迹之外，贴字而不碰注音。
-    // 翻页模式的分栏（BUG-3503）：body 是多列容器，每一栏（竖排一页 / 横排一页或子列）沿行方向占
+    // 翻页模式的分栏（BUG-3518）：body 是多列容器，每一栏（竖排一页 / 横排一页或子列）沿行方向占
     // [start + k·step, start + k·step + width)。悬挂标点（Apple 正文 hanging-punctuation: allow-end）
     // 把行尾「、」「。」挂到栏外，字形盒伸进列间距；窄条照字形盒画就越出栏尾，字号大于列间距时越出
     // 的那截落进下一页页顶（竖排各页同一横坐标、横排同一纵坐标）。栏外的字本来就被 body 的 clip-path

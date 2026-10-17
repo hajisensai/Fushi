@@ -129,7 +129,7 @@ void main() {
       }
       final List<Map<String, String>> pages = <Map<String, String>>[];
       final List<Map<String, String>> backdropPages = <Map<String, String>>[];
-      // BUG-3503：WebKit 上有声书当前句走 Range（不包裹正文）。Chrome 里强制打开这条路径验证。
+      // BUG-3518：WebKit 上有声书当前句走 Range（不包裹正文）。Chrome 里强制打开这条路径验证。
       final List<Map<String, String>> rangePages = <Map<String, String>>[];
       for (final TargetPlatform? platform in <TargetPlatform?>[
         null,
