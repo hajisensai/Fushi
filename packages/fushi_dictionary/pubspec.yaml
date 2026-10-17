@@ -11,7 +11,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  material_ui: ^1.5.0
+  material_ui: ^1.7.0
   fushi_core:
     path: ../fushi_core
   ffi: ^2.1.3
