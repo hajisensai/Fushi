@@ -147,8 +147,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   AudioCue? cueAtCurrentPositionInBook() {
     if (_allBookCues.isEmpty) return _currentCue;
     final int audioFileIndex = _player.currentIndex ?? 0;
-    final int effectiveMs =
-        (_player.position.inMilliseconds - delayMs.value).clamp(0, 1 << 30);
+    final int effectiveMs = (_player.position.inMilliseconds - delayMs.value)
+        .clamp(0, 1 << 30);
     AudioCue? best;
     int bestStart = -1;
     for (final AudioCue cue in _allBookCues) {
@@ -187,8 +187,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     final int audioFileIndex = _player.currentIndex ?? 0;
     final List<AudioCue> fileCues = _chapterCuesForAudioFile(audioFileIndex);
     if (fileCues.isEmpty) return _currentCue;
-    final int effectiveMs =
-        (_player.position.inMilliseconds - delayMs.value).clamp(0, 1 << 30);
+    final int effectiveMs = (_player.position.inMilliseconds - delayMs.value)
+        .clamp(0, 1 << 30);
     return _displayCueFor(cues: fileCues, effectiveMs: effectiveMs);
   }
 
@@ -346,6 +346,23 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 取约两个 125ms tick 的量级，吸收 just_audio 加载完成后的首帧抖动。
   static const int _kExplicitSeekToleranceMs = 300;
 
+  /// 首次激活平台时待落定的恢复位置（BUG-3453）。
+  ///
+  /// [load] 用 `preload: false` 设源，随后的「恢复上次播放位置」seek 只是记在
+  /// just_audio 的空闲播放器上：平台真正载入发生在**第一次 play**，由
+  /// `_setPlatformActive` 把这个位置当 `initialPosition` 交给平台。Windows / Linux
+  /// 的 just_audio_media_kit 载入时先把位置清零、按已挂起的播放请求从 0 起播，等
+  /// mpv 报出时长后才 seek 到 initialPosition——这段时间 positionStream 一路吐 0，
+  /// 当前句解析成全书第一句（「小学館eBooks」），按过播放、跟随开着，于是请求
+  /// 跨章、正文被拽到第 1 章，播放器随后落到真实位置也不再跨回（落点常是未匹配
+  /// 句，邻居判定保位）。BUG-3430 的 `_loadReady` 门挡不住它：门等的那次 seek
+  /// 根本没到平台。
+  ///
+  /// 激活前若播放器仍空闲且挂着非零位置，就记下这个落点；[_updateCurrentCue] 在位置
+  /// 到达它之前不推进 cue、不跨章、不落库，落定那一 tick 清掉。显式 seek / 拖进度
+  /// 是新的用户意图，直接取代它。
+  ({int fileIndex, int positionMs, int globalMs})? _activationRestoreTarget;
+
   /// Follow audio 开关变化时的持久化回调。Reader 页面 attach audiobook 时
   /// 装入这个字段（一般是 `(v) => repo.updateFollowAudio(bookKey, v)`），
   /// [setFollowAudio] 内部调用。独立于按钮 UI 让 play bar 只翻内存状态
@@ -467,8 +484,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   @visibleForTesting
   static bool shouldSnapAfterImagePauseResume({
     required bool readerMovedDuringPause,
-  }) =>
-      !readerMovedDuringPause;
+  }) => !readerMovedDuringPause;
 
   void setImagePauseSec(int sec) {
     final int clamped = sec.clamp(0, 15);
@@ -688,9 +704,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 同一套累加口径。
   int globalMsOfCue(AudioCue cue) {
     int base = 0;
-    for (int i = 0;
-        i < cue.audioFileIndex && i < _fileDurationsMs.length;
-        i++) {
+    for (
+      int i = 0;
+      i < cue.audioFileIndex && i < _fileDurationsMs.length;
+      i++
+    ) {
       base += _fileDurationsMs[i];
     }
     return base + cue.startMs;
@@ -852,6 +870,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       _hasPlayedOnce = false;
       _forceNextReveal = false;
       _chapterTransition = false;
+      _activationRestoreTarget = null;
       _imageChapterPauseActive = false;
 
       await _player.stop();
@@ -1007,7 +1026,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (_stopRequested) return;
     final String? uid = _audiobook?.bookKey;
     if (uid == null) return;
-    final int posMs = globalPosition.inMilliseconds;
+    final int posMs = _persistableGlobalMs;
     final int wholeSec = posMs ~/ 1000;
     if (!force && wholeSec == _lastSavedWholeSec) {
       return;
@@ -1040,7 +1059,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       await _positionWriteTail;
       return;
     }
-    final int posMs = globalPosition.inMilliseconds;
+    final int posMs = _persistableGlobalMs;
     _lastSavedWholeSec = posMs ~/ 1000;
     await _enqueuePositionWrite(uid, posMs);
   }
@@ -1163,6 +1182,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       // （含恢复 seek）完成再起播，与 [seekMs] 同一道门；从未载入时它本就已完成。
       await _loadReady.future;
       if (_stopRequested) return;
+      _armActivationRestoreGuard();
       await playActivationSettled(_player.play(), _player.playingStream);
     });
     _playActivationTail = operation.then<void>(
@@ -1171,6 +1191,35 @@ class AudiobookPlayerController extends ChangeNotifier {
     );
     return operation;
   }
+
+  /// 见 [_activationRestoreTarget]：只在播放器还没激活过平台（`idle`）、且挂着
+  /// 非零起播位置时武装；已载入的平台上 play 不经过载入，没有清零窗口。
+  void _armActivationRestoreGuard() {
+    if (_player.processingState != ProcessingState.idle ||
+        _player.audioSource == null) {
+      return;
+    }
+    final int positionMs = _player.position.inMilliseconds;
+    if (positionMs <= 0) {
+      _activationRestoreTarget = null;
+      return;
+    }
+    _activationRestoreTarget = (
+      fileIndex: _player.currentIndex ?? 0,
+      positionMs: positionMs,
+      globalMs: globalPosition.inMilliseconds,
+    );
+  }
+
+  /// 落库用的全书位置：激活落点还没到时，播放器报的是平台载入的瞬态 0，落的应是
+  /// 那个落点本身（它就是从持久层读出来的恢复点）。
+  int get _persistableGlobalMs =>
+      _activationRestoreTarget?.globalMs ?? globalPosition.inMilliseconds;
+
+  /// 测试钩子：激活落点是否仍挂起。
+  @visibleForTesting
+  bool get activationRestorePendingForTesting =>
+      _activationRestoreTarget != null;
 
   Future<void> pause() async {
     // TODO-2389：用户在插图停留期按暂停——成对作废，让 awaitImageChapterPause
@@ -1208,6 +1257,20 @@ class AudiobookPlayerController extends ChangeNotifier {
     final Duration? dur = _player.duration;
     if (dur == null || dur.inMilliseconds <= 0) return;
     final int clampedMs = positionMs.clamp(0, dur.inMilliseconds);
+    // BUG-3453：首次激活的落点还没到时用户拖了进度——落点改成用户要的位置，
+    // 平台载入期的瞬态 0 照旧挡住，落到新位置即放行。
+    if (_activationRestoreTarget != null) {
+      final int fileIndex = _player.currentIndex ?? 0;
+      int base = 0;
+      for (int i = 0; i < fileIndex && i < _fileDurationsMs.length; i++) {
+        base += _fileDurationsMs[i];
+      }
+      _activationRestoreTarget = (
+        fileIndex: fileIndex,
+        positionMs: clampedMs,
+        globalMs: base + clampedMs,
+      );
+    }
     await _player.seek(Duration(milliseconds: clampedMs));
     notifyListeners();
   }
@@ -1230,13 +1293,17 @@ class AudiobookPlayerController extends ChangeNotifier {
     final List<IndexedAudioSource>? sequence = _player.sequence;
     final Duration? targetDuration =
         sequence != null && fileIndex < sequence.length
-            ? sequence[fileIndex].duration
-            : null;
+        ? sequence[fileIndex].duration
+        : null;
     if (targetDuration != null &&
         targetDuration.inMilliseconds > 0 &&
         positionMs > targetDuration.inMilliseconds) {
       throw RangeError.range(
-          positionMs, 0, targetDuration.inMilliseconds, 'positionMs');
+        positionMs,
+        0,
+        targetDuration.inMilliseconds,
+        'positionMs',
+      );
     }
     _manualReaderOverrideCue = null;
     _stopAtPositionMs = null;
@@ -1275,7 +1342,10 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (audioSources.length != audioFiles.length ||
         audioFiles.length != _audioFiles.length) {
       throw ArgumentError.value(
-          audioSources.length, 'audioSources', 'Must match the loaded files');
+        audioSources.length,
+        'audioSources',
+        'Must match the loaded files',
+      );
     }
     if (fileIndex < 0 || fileIndex >= audioFiles.length) {
       throw RangeError.range(fileIndex, 0, audioFiles.length - 1, 'fileIndex');
@@ -1332,6 +1402,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 立起显式 seek 抑制窗：记录目标音频文件与位置，[_updateCurrentCue]
   /// 据此在加载期抑制瞬态 tick，直到真实位置落定（BUG-061）。
   void _beginExplicitSeek(int targetFileIndex, int targetMs) {
+    // 新的显式目标取代首次激活的恢复点（它自带同一判据的抑制窗）。
+    _activationRestoreTarget = null;
     _explicitSeekInFlight = true;
     _explicitSeekTargetFileIndex = targetFileIndex;
     _explicitSeekTargetMs = targetMs;
@@ -1597,12 +1669,12 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 状态变化时 just_audio 自发降频到 maxPeriod）。
     _positionSub = _player
         .createPositionStream(
-      minPeriod: const Duration(milliseconds: 125),
-      maxPeriod: const Duration(milliseconds: 125),
-    )
+          minPeriod: const Duration(milliseconds: 125),
+          maxPeriod: const Duration(milliseconds: 125),
+        )
         .listen((pos) {
-      _updateCurrentCue(pos.inMilliseconds);
-    });
+          _updateCurrentCue(pos.inMilliseconds);
+        });
     // 订阅播放状态流：just_audio 内部状态翻转（包括焦点丢失、播完自动暂停）
     // 都会在这里得到通知，UI 即时刷新播放/暂停图标。
     _playingSub = _player.playingStream.listen((_) {
@@ -1634,6 +1706,23 @@ class AudiobookPlayerController extends ChangeNotifier {
       } else {
         return;
       }
+    }
+    // BUG-3453：首次激活平台的载入窗口（见 [_activationRestoreTarget]）。平台还在从
+    // 0 起播、没 seek 到恢复点之前，位置全是瞬态：不推进 cue、不跨章、不落库，
+    // 当前句保持载入时按恢复点解析出的那一句。
+    final ({int fileIndex, int positionMs, int globalMs})? activation =
+        _activationRestoreTarget;
+    if (activation != null) {
+      if (!activationRestoreLandedForTesting(
+        currentFileIndex: _player.currentIndex ?? 0,
+        posMs: posMs,
+        targetFileIndex: activation.fileIndex,
+        targetMs: activation.positionMs,
+        durationMs: _player.duration?.inMilliseconds,
+      )) {
+        return;
+      }
+      _activationRestoreTarget = null;
     }
     // 位置持久化挪到 chapterTransition guard 之前，对齐 Sasayaki tick 的
     // 结构：位置保存在 tick() 主体，updateCue() 的 guard 不影响保存节奏。
@@ -1941,8 +2030,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   bool get readerFollowOverride => _readerFollowOverride;
 
   /// 正文跟随判据 = 用户开关 || 覆盖层强制。
-  bool get _effectiveFollowAudio =>
-      followAudio.value || _readerFollowOverride;
+  bool get _effectiveFollowAudio => followAudio.value || _readerFollowOverride;
 
   /// 进入 / 退出歌词覆盖层时由阅读器调用。打开时立即把正文对齐到音频（与
   /// OFF→ON 翻跟随开关同一条 [snapReaderToAudio]），否则要等下一句才跟上。
@@ -2218,6 +2306,31 @@ class AudiobookPlayerController extends ChangeNotifier {
         posMs >= targetMs - toleranceMs;
   }
 
+  /// 首次激活的恢复点是否「落定」（BUG-3453）：与显式 seek 同一判据；另外目标已超出
+  /// 平台报出的时长（音频被换短、存档越界）时平台永远到不了它，视为落定放行，
+  /// 否则当前句会冻在恢复点上。纯函数，可单测。
+  @visibleForTesting
+  static bool activationRestoreLandedForTesting({
+    required int currentFileIndex,
+    required int posMs,
+    required int targetFileIndex,
+    required int targetMs,
+    int? durationMs,
+  }) {
+    if (reachedExplicitSeekTargetForTesting(
+      currentFileIndex: currentFileIndex,
+      posMs: posMs,
+      targetFileIndex: targetFileIndex,
+      targetMs: targetMs,
+    )) {
+      return true;
+    }
+    return currentFileIndex == targetFileIndex &&
+        durationMs != null &&
+        durationMs > 0 &&
+        targetMs > durationMs;
+  }
+
   /// 测试钩子：直接以指定位置驱动一次 [_updateCurrentCue]，模拟 positionStream
   /// 的一帧 tick（含显式 seek 加载期的瞬态位置）。生产代码不调用。
   @visibleForTesting
@@ -2346,8 +2459,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 「同步采样 → 发出落库写 → 先止声 → 再 await 落库」：stop 反过来成为解开在途
     // play 的那一方，且音频停得更快（不被一次数据库写入挡在前面）。
     final String? uid = _audiobook?.bookKey;
-    final int? sampledPosMs =
-        uid == null ? null : globalPosition.inMilliseconds;
+    final int? sampledPosMs = uid == null ? null : _persistableGlobalMs;
 
     // 位置写必须在 `_player.stop()` **之前发出**（这里只建链，不 await），真正的
     // await 放到 stop 之后 —— 两个位置都不能挪：
@@ -2417,8 +2529,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     final String? uid = _audiobook?.bookKey;
     final int? sampled = _stopSampledGlobalMs;
     if (uid == null || sampled == null) return;
-    final int rebased =
-        rebaseAudiobookGlobalPositionMs(sampled, previous, next);
+    final int rebased = rebaseAudiobookGlobalPositionMs(
+      sampled,
+      previous,
+      next,
+    );
     _stopSampledGlobalMs = rebased;
     _lastSavedWholeSec = rebased ~/ 1000;
     await _enqueuePositionWrite(uid, rebased);
