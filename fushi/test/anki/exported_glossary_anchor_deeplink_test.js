@@ -174,4 +174,34 @@ function makeRoot(anchors) {
   );
 }
 
+// 场景 I：词典弹窗（definition.html，独立页面，没有 popup.js）点结构化内容里的交叉引用，
+// href 没带 ?query= 时退回可见文本——同样只取基字。definition.js 的 linkBaseText 是
+// popup.js linkVisibleBaseText 的同口径副本（两个页面互不加载对方的脚本），钉住两者输出一致。
+{
+  const defSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'popup', 'definition.js'), 'utf8');
+  const defMatch = defSrc.match(/function linkBaseText\(root\) \{[\s\S]*?\n\}/);
+  assert.ok(defMatch, 'definition.js must define linkBaseText(root)');
+  const defContext = { Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 } };
+  vm.createContext(defContext);
+  vm.runInContext(`${defMatch[0]}; this.__base = linkBaseText;`, defContext);
+  const popupContext = { Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 } };
+  vm.createContext(popupContext);
+  vm.runInContext(`${baseTextMatch[0]}; this.__base = linkVisibleBaseText;`, popupContext);
+
+  const ruby = (base, reading) => elementNode('RUBY', [
+    textNode(base),
+    elementNode('RP', [textNode('(')]),
+    elementNode('RT', [textNode(reading)]),
+    elementNode('RP', [textNode(')')]),
+    elementNode('SPAN', [textNode(reading)], 'ruby-reserve'),
+    elementNode('SPAN', [textNode(reading)], 'ruby-rt'),
+  ]);
+  const link = elementNode('A', [ruby('歯', 'は'), textNode(' が \n'), ruby('立', 'た'), textNode('たない ')]);
+  assert.strictEqual(defContext.__base(link), '歯 が 立たない', 'definition.js fallback query must be base text only');
+  assert.strictEqual(defContext.__base(link), popupContext.__base(link), 'definition.js and popup.js must agree');
+  // 点击路径：无 ?query= 时用的就是 linkBaseText，而不是带振假名的 textContent。
+  assert.ok(/const baseText = linkBaseText\(element\);/.test(defSrc), 'definition.js click must use linkBaseText');
+  assert.ok(!/get\('query'\) \|\| element\.textContent/.test(defSrc), 'definition.js must not fall back to raw textContent');
+}
+
 console.log('all assertions passed');
