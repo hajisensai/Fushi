@@ -285,7 +285,7 @@ const Anime4kPreset kAnime4kMobileRestoreMSoftPreset = Anime4kPreset(
 ///   一个 `cdn.` 节点，那个节点对某文件抖动一次就回退到中国本就不稳的 raw / 单一代理）。
 /// - **gh 加速代理前缀**：套在 `raw.githubusercontent.com` 直链前的反代（BUG-319 名单）。
 ///
-/// 顺序：jsDelivr 多节点（最稳、中国可达）→ 代理前缀 → raw 官方直连兜底。
+/// 顺序：raw 官方直连 → jsDelivr 多节点 → 代理前缀（中转只在 GitHub 连不上时启用）。
 const List<String> _kJsDelivrHosts = <String>[
   'cdn.jsdelivr.net',
   'fastly.jsdelivr.net',
@@ -295,9 +295,10 @@ const List<String> _kJsDelivrHosts = <String>[
 
 /// 为仓库相对路径 [repoPath] 生成按优先级排序的下载 URL 列表（多镜像回退）。纯函数。
 ///
-/// 顺序：① jsDelivr 多 CDN 节点（[_kJsDelivrHosts]，独立边缘网络互为后备，中国可达）→
-/// ② gh 加速代理前缀套 raw 直链（[kGitHubMirrorPrefixes]，BUG-319 名单）→ ③ raw.githubusercontent.com
-/// 官方直连兜底。app 运行时下载**不走**本机命令行代理，故必须靠这些镜像在中国网络兜底。
+/// 顺序：① raw.githubusercontent.com 官方直连（GitHub 首选，用户 2026-10-18 拍板：中转只在
+/// 连不上 GitHub 时才启用）→ ② jsDelivr 多 CDN 节点（[_kJsDelivrHosts]，独立边缘网络互为
+/// 后备，中国可达）→ ③ gh 加速代理前缀套 raw 直链（[kGitHubMirrorPrefixes]，BUG-319 名单）。
+/// 直连不通时靠后两类在中国网络兜底（代价是每个文件先吃一次直连的连接超时）。
 /// 逐个尝试，前一个失败回退下一个；整组跑完仍失败由 [downloadAnime4kFiles] 做有界重试
 /// （瞬态 CDN 抖动换轮再试）。
 List<String> anime4kMirrorUrls(
@@ -309,10 +310,10 @@ List<String> anime4kMirrorUrls(
   final String rawUrl =
       'https://raw.githubusercontent.com/$repo/$ref/$repoPath';
   return <String>[
+    rawUrl,
     for (final String host in _kJsDelivrHosts)
       'https://$host/gh/$repo@$ref/$repoPath',
     for (final String prefix in kGitHubMirrorPrefixes) '$prefix$rawUrl',
-    rawUrl,
   ];
 }
 
