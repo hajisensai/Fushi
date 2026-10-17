@@ -163,11 +163,12 @@ async function route(request, env, now, ctx) {
     return handleAdmin(env, request, path, body, now);
   }
 
-  // ---- 安装统计心跳（installs.js）：匿名、不签名；按 IP 过 AUTH_LIMITER，全局再由 'ping' 日预算兜底 ----
+  // ---- 安装统计心跳（installs.js）：无账户；可带安装证明（签名 + PoW，验过记已验证）；
+  //      按 IP 过 AUTH_LIMITER，全局再由 'ping' 日预算兜底 ----
   if (method === 'POST' && path === '/v1/ping') {
     await bindingLimit(env.AUTH_LIMITER, request);
     const bytes = await readBodyBytes(request, PING_BODY_MAX);
-    await recordPing(env, parseJsonBytes(bytes), now);
+    await recordPing(env, request, bytes, parseJsonBytes(bytes), now);
     return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
   }
 

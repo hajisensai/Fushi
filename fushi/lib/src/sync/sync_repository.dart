@@ -1627,10 +1627,11 @@ class SyncRepository {
     'video_download_backend_path_mappings',
     'video_download_target_source_id',
     'video_download_embedded_installation_id',
-    // 安装统计（updates/usage_heartbeat.dart）：安装 id 随备份漂到另一台设备，两台设备
-    // 就被算成同一个安装；发不发统计是这台设备上的同意，上次心跳时刻也只对本机有意义。
+    // 安装统计（updates/usage_heartbeat.dart）：回退种子 / PoW 缓存随备份漂到另一台设备，
+    // 两台设备就可能被算成同一个安装；发不发统计是这台设备上的同意，上次心跳时刻也只对本机有意义。
     'usage_stats_enabled',
     'usage_stats_install_id',
+    'usage_stats_install_pow',
     'usage_stats_last_ping_at',
     // 书架「仅从本机移除」的远端书：语义就是只对这台设备成立，随备份漂到另一台
     // 设备会让那边的同一份远端书也莫名消失。

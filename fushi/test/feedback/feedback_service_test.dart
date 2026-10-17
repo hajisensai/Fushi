@@ -10,9 +10,15 @@ import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
+import 'package:fushi_engine/leaderboard/install_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+
+final InstallAttestation _install = InstallAttestation(
+  InstallIdentity.fromMachineId('feedback-test-machine'),
+  '1',
+);
 
 http.Response _json(Object body, [int status = 200]) => http.Response.bytes(
   utf8.encode(jsonEncode(body)),
@@ -54,7 +60,7 @@ void main() {
       }),
     ),
     meta: () async => <String, Object?>{'platform': 'test'},
-    installId: () async => '0f8fad5b-d9cb-469f-a165-70867728950e',
+    installId: () async => _install,
     logText: () => 'E/boom',
     logEncoder: _fakeGzip,
   );
@@ -115,8 +121,13 @@ void main() {
       'logs_attached': true,
       'screenshots': 2,
     });
-    // 勾选「附带设备信息」（默认）时一并带上安装统计的安装 id。
-    expect(body['installId'], '0f8fad5b-d9cb-469f-a165-70867728950e');
+    // 勾选「附带设备信息」（默认）时一并带上安装统计的安装 id 与安装证明头。
+    expect(body['installId'], _install.installId);
+    expect(
+      requests.first.headers[kInstallKeyHeader],
+      _install.identity.pubkeyBase64Url,
+    );
+    expect(requests.first.headers[kInstallSigHeader], isNotEmpty);
     expect(requests.last.bodyBytes, _fakeGzip('E/boom'));
     // 落盘：新开一个服务也读得到回执。
     final List<FeedbackTicket> stored = await FeedbackTicketStore(root).read();

@@ -3,6 +3,8 @@
 // 反馈人（不要求账户；带签名提交时记下账户，开发者能看到昵称）：
 //   POST /v1/feedback                         {category, title, body, contact?, meta?, reopenOf?, installId?} → 201 {id, ticket, ...}
 //                                             installId：客户端安装 id（installs.js，勾选「附带设备信息」才带；不合法当没带）
+//                                             可带安装证明头（X-Fushi-Install-*，installs.js verifyInstallProof）：
+//                                             验过记 install_verified = 1；带了但验不过 401，不静默降级
 //                                             reopenOf = {id, ticket}：「问题没解决，重新提交」，新反馈记 parent_id
 //   PUT  /v1/feedback/:id/attachments/:slot   [X-Fushi-Ticket] 原始字节；slot = log（gzip）/ s0..s2（截图）
 //                                             / v0（视频 mp4 / mov / webm ≤ 50 MB，流式写 R2，见 putVideoAttachment）
@@ -57,7 +59,7 @@
 import { HttpError, b64urlEncode, background, clampInt, hex, json, randomId, sha256, timingSafeEqual } from './util.js';
 import { adjustSpend, deleteMedia, releaseMediaBytes, reserveMediaBytes, spend } from './budget.js';
 import { sniffImage } from './media.js';
-import { installTrail, normalizeInstallId } from './installs.js';
+import { installTrail, normalizeInstallId, verifyInstallProof } from './installs.js';
 import { DAY, HOUR, hit } from './ratelimit.js';
 import { clearFeedbackPushTokens, notifyFeedbackUpdate, registerPushToken, unregisterPushToken } from './feedback_push.js';
 import {
@@ -400,7 +402,7 @@ export async function devView(env, row) {
     reporter: reporter ? { id: reporter.id, nickname: reporter.nickname, discriminator: reporter.discriminator } : null,
     attachments: publicAttachments(row),
     messages: await timeline(env, row.id),
-    install: await installTrail(env, row.install_id, row.id),
+    install: await installTrail(env, row.install_id, row.id, row.install_verified === 1),
   };
 }
 
@@ -431,8 +433,9 @@ async function reopenCount(env, parentId) {
   return n.n;
 }
 
-export async function createFeedback(env, account, ip, body, now, origin = {}) {
+export async function createFeedback(env, account, ip, body, now, origin = {}, installVerified = false) {
   const sub = normalizeSubmission(body);
+  const installId = normalizeInstallId(body.installId);
   const parent = await reopenParent(env, body.reopenOf);
   const hash = await contentHash(sub);
   const source = account ? `acct:${account.id}` : `ip:${ip}`;
@@ -461,12 +464,12 @@ export async function createFeedback(env, account, ip, body, now, origin = {}) {
   // 重新提交的次数上限做成条件 INSERT：计数与写入在同一条语句里，并发的重新提交不会一起越过上限。
   const res = await env.DB.prepare(
     `INSERT INTO feedback (id, ticket_hash, account_id, category, title, body, contact, meta, created_at, updated_at,
-                           flags, content_hash, origin, parent_id, install_id)
-     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11, ?12, ?13, ?15
+                           flags, content_hash, origin, parent_id, install_id, install_verified)
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11, ?12, ?13, ?15, ?16
      WHERE ?13 IS NULL OR (SELECT COUNT(*) FROM feedback WHERE parent_id = ?13) < ?14`,
   ).bind(id, await ticketHash(ticket), account ? account.id : null, sub.category, sub.title, sub.body,
     sub.contact, sub.meta, now, JSON.stringify(flags), hash, JSON.stringify(origin), parent ? parent.id : null,
-    FEEDBACK_LIMITS.reopensPerFeedback, normalizeInstallId(body.installId)).run();
+    FEEDBACK_LIMITS.reopensPerFeedback, installId, installId && installVerified ? 1 : 0).run();
   if (res.meta.changes !== 1) throw new HttpError(429, 'too_many_reopens');
   return { id, ticket, status: 'open', createdAt: now, updatedAt: now, parentId: parent ? parent.id : null };
 }
@@ -1220,7 +1223,11 @@ export async function routeFeedback(request, env, url, now, io) {
     // 带签名 = 关联账户（验签失败照常 401，别静默降成匿名）。
     const account = request.headers.get('X-Fushi-Account') ? await io.auth(bytes, { mutating: true }) : null;
     const origin = requestOrigin(request, account !== null);
-    return json(await createFeedback(env, account, io.ip, io.parse(bytes), now, origin), 201, noStore);
+    const body = io.parse(bytes);
+    const installVerified = body && typeof body === 'object'
+      ? await verifyInstallProof(env, request, normalizeInstallId(body.installId), bytes, now)
+      : false;
+    return json(await createFeedback(env, account, io.ip, body, now, origin, installVerified), 201, noStore);
   }
   if (method === 'POST' && RE.status.test(path)) {
     const bytes = await io.readBody(16 * 1024);

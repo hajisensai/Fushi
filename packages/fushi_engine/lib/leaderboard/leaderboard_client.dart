@@ -24,6 +24,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/feedback/feedback_models.dart';
+import 'package:fushi_engine/leaderboard/install_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_signing.dart';
@@ -140,6 +141,7 @@ class LeaderboardClient {
   final Duration _requestTimeout;
   final Duration _uploadTimeout;
   int _lastSignedAt = 0;
+  int _lastInstallSignedAt = 0;
 
   /// 服务器时钟偏移（签名时刻与书架「读完时刻」上界都按它算）。
   final LeaderboardServerClock serverClock;
@@ -465,10 +467,11 @@ class LeaderboardClient {
   }
 
   /// 安装统计心跳（`POST /v1/ping`，服务端 `services/leaderboard/src/installs.js`）：
-  /// 匿名、不签名；同一 [installId] 同一 UTC 日服务端只记一次。成功返回、失败抛
-  /// [LeaderboardApiException] / [LeaderboardTimeoutException]，由调用方决定何时重试。
+  /// 不带账户签名，只出示安装证明（[InstallAttestation]，见 install_identity.dart）；同一
+  /// installId 同一 UTC 日服务端只记一次。成功返回、失败抛 [LeaderboardApiException] /
+  /// [LeaderboardTimeoutException]，由调用方决定何时重试。
   Future<void> ping({
-    required String installId,
+    required InstallAttestation install,
     required String version,
     required String platform,
     required String channel,
@@ -477,7 +480,7 @@ class LeaderboardClient {
       'POST',
       '/v1/ping',
       bytes: _encodeJson(<String, String>{
-        'installId': installId,
+        'installId': install.installId,
         'version': version,
         'platform': platform,
         'channel': channel,
@@ -485,12 +488,14 @@ class LeaderboardClient {
       contentType: _json,
       withAccount: false,
       signed: false,
+      install: install,
     );
   }
 
   /// 提交反馈。[linkAccount] 且本客户端有账户时带签名提交（开发者能看到反馈人昵称）；
-  /// 否则匿名。返回的 [FeedbackReceipt.ticket] 只给这一次。[installId]（安装统计的本机
-  /// 安装 id）非空时一并上报，开发者处理台据此关联该安装的版本轨迹。
+  /// 否则匿名。返回的 [FeedbackReceipt.ticket] 只给这一次。[install]（安装统计的本机
+  /// 安装证明）非空时上报其 installId 并出示安装签名，开发者处理台据此关联该安装的版本轨迹
+  /// （验过签的标「已验证」）。
   Future<FeedbackReceipt> submitFeedback({
     required FeedbackCategory category,
     required String title,
@@ -499,7 +504,7 @@ class LeaderboardClient {
     Map<String, Object?> meta = const <String, Object?>{},
     bool linkAccount = true,
     ({String id, String ticket})? reopenOf,
-    String? installId,
+    InstallAttestation? install,
   }) async {
     final bool signs = linkAccount && _identity != null;
     final JsonMap j = await _sendJson(
@@ -516,9 +521,10 @@ class LeaderboardClient {
             'id': reopenOf.id,
             'ticket': reopenOf.ticket,
           },
-        if (installId != null && installId.isNotEmpty) 'installId': installId,
+        if (install != null) 'installId': install.installId,
       },
       signed: signs,
+      install: install,
     );
     return FeedbackReceipt.fromJson(j);
   }
@@ -1014,6 +1020,7 @@ class LeaderboardClient {
     bool signed = true,
     Map<String, String>? headers,
     Duration? timeout,
+    InstallAttestation? install,
   }) async {
     final http.Response res = await _send(
       method,
@@ -1025,6 +1032,7 @@ class LeaderboardClient {
       signed: signed,
       headers: headers,
       timeout: timeout,
+      install: install,
     );
     try {
       final Object? decoded = jsonDecode(utf8.decode(res.bodyBytes));
@@ -1034,7 +1042,8 @@ class LeaderboardClient {
     }
   }
 
-  /// 发一个请求；签名请求遇 401 `stale_time` 时按该响应校准过的服务器偏移重签重发一次。
+  /// 发一个请求；签名请求遇 401 `stale_time`（账户签名）/ `stale_install_time`（安装签名）
+  /// 时按该响应校准过的服务器偏移重签重发一次。
   Future<http.Response> _send(
     String method,
     String path, {
@@ -1045,6 +1054,7 @@ class LeaderboardClient {
     bool signed = true,
     Map<String, String>? headers,
     Duration? timeout,
+    InstallAttestation? install,
   }) async {
     final bool signs = signed && _identity != null;
     for (int attempt = 0; ; attempt++) {
@@ -1059,6 +1069,7 @@ class LeaderboardClient {
           signed: signed,
           headers: headers,
           timeout: timeout ?? _requestTimeout,
+          install: install,
         );
       } on LeaderboardApiException catch (e) {
         if (signs &&
@@ -1068,15 +1079,16 @@ class LeaderboardClient {
           await _onAccountGone?.call(e);
           rethrow;
         }
-        if (!signs ||
-            attempt > 0 ||
-            e.status != 401 ||
-            e.code != 'stale_time') {
+        final bool staleAccount = signs && e.code == 'stale_time';
+        final bool staleInstall =
+            install != null && e.code == 'stale_install_time';
+        if (attempt > 0 || e.status != 401 || !(staleAccount || staleInstall)) {
           rethrow;
         }
         // 偏移刚由这个 401 的 Date 头校准；单调下界是按旧偏移推出来的，钟快时它仍停在
         // 未来，丢掉它。被判 stale 的请求服务端没有登记，不会与重签撞重放。
         _lastSignedAt = 0;
+        _lastInstallSignedAt = 0;
       }
     }
   }
@@ -1091,6 +1103,7 @@ class LeaderboardClient {
     required bool signed,
     required Map<String, String>? headers,
     required Duration timeout,
+    required InstallAttestation? install,
   }) async {
     final Uri url = _endpoint(path, query);
     final List<int> body = bytes ?? const <int>[];
@@ -1099,12 +1112,20 @@ class LeaderboardClient {
     if (bytes != null) req.bodyBytes = bytes;
     if (contentType != null) req.headers['Content-Type'] = contentType;
     req.headers['Accept'] = 'application/json';
+    final String pathWithQuery = url.hasQuery
+        ? '${url.path}?${url.query}'
+        : url.path;
+    if (install != null) {
+      // 安装签名单独一条单调时刻序列（服务端按安装签名串去重，与账户签名各自独立）。
+      final int installTime = max(serverNowMs(), _lastInstallSignedAt + 1);
+      _lastInstallSignedAt = installTime;
+      req.headers.addAll(
+        install.headersFor(method, pathWithQuery, installTime, body),
+      );
+    }
     final LeaderboardIdentity? id = signed ? _identity : null;
     if (id != null) {
       final int time = _nextSignTime();
-      final String pathWithQuery = url.hasQuery
-          ? '${url.path}?${url.query}'
-          : url.path;
       final String message = leaderboardSigningString(
         method,
         pathWithQuery,

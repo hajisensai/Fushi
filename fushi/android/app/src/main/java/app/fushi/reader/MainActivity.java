@@ -753,6 +753,16 @@ public class MainActivity extends AudioServiceActivity {
                     } catch (Exception e) {
                         result.error("INSTALL_ERROR", e.getMessage(), null);
                     }
+                } else if ("installMachineId".equals(call.method)) {
+                    // 安装统计的机器标识种子（updates/install_attestation.dart）：ANDROID_ID
+                    // 在 Android 8+ 按签名密钥 + 设备 + 用户稳定，重装不变。只在本机做 HMAC 种子，
+                    // Dart 侧不上传、不落盘原值。取不到返回 null，Dart 侧回退随机种子。
+                    try {
+                        result.success(Settings.Secure.getString(
+                            getContentResolver(), Settings.Secure.ANDROID_ID));
+                    } catch (Exception e) {
+                        result.success(null);
+                    }
                 } else {
                     result.notImplemented();
                 }

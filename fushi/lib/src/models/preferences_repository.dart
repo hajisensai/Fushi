@@ -2152,9 +2152,11 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 安装统计的本机安装 id（随机 UUID v4，与下载器安装身份同一个生成器，但各自独立）。
+  /// 安装统计的**回退随机种子**（随机 UUID v4，与下载器安装身份同一个生成器，但各自独立）。
+  /// 2026-10-17 起上报的 installId 由系统机器标识派生（updates/install_attestation.dart），
+  /// 只有取不到机器标识时才用它做种子（重装即变，等同旧行为）；它本身不再直接上报。
   /// 第一次读取时生成并持久化。设备本地：不进备份 / 同步 / Profile 快照，恢复备份到另一台
-  /// 设备不会克隆它（两台设备被算成一个安装）。
+  /// 设备不会克隆它（两台设备被算成一个安装）。持久化键名沿用 `usage_stats_install_id`（冻结）。
   Future<String> ensureUsageStatsInstallId() async {
     final String existing = getPref(
       'usage_stats_install_id',
@@ -2164,6 +2166,21 @@ class PreferencesRepository extends ChangeNotifier
     final String created = generateVideoDownloadInstallationId();
     await setPref('usage_stats_install_id', created);
     return created;
+  }
+
+  /// 安装证明的工作量证明 nonce 缓存（`<installId>:<nonce>`）。只在属于 [installId] 时返回，
+  /// 否则 null（installId 变了就该重算）。设备本地。
+  String? usageStatsInstallPowFor(String installId) {
+    final String raw =
+        getPref('usage_stats_install_pow', defaultValue: '') as String;
+    final String prefix = '$installId:';
+    if (!raw.startsWith(prefix)) return null;
+    final String nonce = raw.substring(prefix.length);
+    return nonce.isEmpty ? null : nonce;
+  }
+
+  Future<void> setUsageStatsInstallPow(String installId, String nonce) async {
+    await setPref('usage_stats_install_pow', '$installId:$nonce');
   }
 
   /// 上次心跳成功的时刻（毫秒；0 = 从没成功过）。设备本地。
