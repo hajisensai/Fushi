@@ -48,6 +48,7 @@ void main() {
     required String viewMode,
     TargetPlatform? platform,
     bool backdrop = false,
+    bool rangeMode = false,
   }) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -108,7 +109,8 @@ void main() {
                   'span.mk { background-color: rgb(240, 130, 60); }</style>' : ''}'
         '<script>window.flutter_inappwebview = { callHandler: function() '
         '{ return Promise.resolve(null); } };'
-        'window.__fushiApplyReaderMargins = function() {};</script>'
+        'window.__fushiApplyReaderMargins = function() {};'
+        '${rangeMode ? 'window.__fushiSentenceAudioRangeMode = true;' : ''}</script>'
         '</head><body><p>$p1</p>'
         '${backdrop ? '<p class="bd">${p2.replaceFirst('窓の外', '<span class="mk">窓の外</span>')}</p>' : '<p>$p2</p>'}'
         '<p>$p3</p>'
@@ -127,6 +129,8 @@ void main() {
       }
       final List<Map<String, String>> pages = <Map<String, String>>[];
       final List<Map<String, String>> backdropPages = <Map<String, String>>[];
+      // BUG-3503：WebKit 上有声书当前句走 Range（不包裹正文）。Chrome 里强制打开这条路径验证。
+      final List<Map<String, String>> rangePages = <Map<String, String>>[];
       for (final TargetPlatform? platform in <TargetPlatform?>[
         null,
         TargetPlatform.iOS,
@@ -147,6 +151,16 @@ void main() {
                 writingMode: writingMode,
                 viewMode: viewMode,
                 platform: platform,
+              ),
+            });
+            rangePages.add(<String, String>{
+              'name':
+                  '${platform == null ? '' : 'apple-css:'}$writingMode/$viewMode/range-mode',
+              'html': await page(
+                writingMode: writingMode,
+                viewMode: viewMode,
+                platform: platform,
+                rangeMode: true,
               ),
             });
             // 书自带底色（BUG-3421）只在默认 CSS 下跑一遍：与 Apple 注音规则正交。
@@ -172,6 +186,7 @@ void main() {
             jsonEncode(<String, Object>{
               'pages': pages,
               'backdropPages': backdropPages,
+              'rangePages': rangePages,
             }),
           );
         final Process process = await Process.start(nodeExe, <String>[
@@ -199,6 +214,7 @@ void main() {
         expect(exitCode, 0, reason: '$out\n${await stderr}');
         expect(out, contains('PASS 12 lane pages'));
         expect(out, contains('6 book-background pages'));
+        expect(out, contains('12 range-mode pages'));
       } finally {
         temp.deleteSync(recursive: true);
       }

@@ -52,6 +52,11 @@
 | [BUG-3505](bugs/BUG-3505-anki-crossref-deeplink-includes-furigana.md) | ✅ | ✅ | anki-crossref-deeplink-includes-furigana |
 | [BUG-3504](bugs/BUG-3504-ffmpeg-min-missing-decoders-tls-pin.md) | ✅ | ✅ | 桌面捆绑 ffmpeg-min 缺一批可导入格式的解码器 / muxer，且没打证书钉扎补丁（-tls_pin_sha256 不认） |
 | [BUG-3503](bugs/BUG-3503-dash-mpd-mining-demuxer.md) | ✅ | ✅ | 在线视频源给 DASH 清单（manifest.mpd）时制卡失败：捆绑 ffmpeg 缺 dash demuxer（required audio missing / Invalid data） |
+> 共 3133 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3503](bugs/BUG-3503-ios-audio-lane-page-bleed.md) | ✅ | ✅ | iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶 |
 | [BUG-3502](bugs/BUG-3502-srs-deck-count-rollup.md) | ✅ | ✅ | 复习牌组列表：父牌组新卡/到期数没按子牌组截断后自底向上汇总 |
 | [BUG-3501](bugs/BUG-3501-settings-row-dialog-intrinsic-layout.md) | ✅ | ✅ | settings-row-dialog-intrinsic-layout |
 | [BUG-3500](bugs/BUG-3500-snapshot-mkv-video-missing-dts.md) | ✅ | ✅ | 在线视频同步片段画面花屏（缓冲副本丢掉 Matroska B 帧视频包） |

@@ -411,6 +411,7 @@ if (!window.__fushiLiveRanges) {
         for (var id in pending) (pending[id].ranges || []).forEach(add);
       }
       if (window.fushiReader) add(window.fushiReader.__imgReanchorTarget);
+      if (window.__fushiCueRanges) window.__fushiCueRanges.tracked().forEach(add);
       return out;
     },
     // 在 offset 处切开文本节点，返回切点之后的新节点。live Range（含原生选区）由 DOM splitText 自己
@@ -532,6 +533,78 @@ if (!window.__fushiLiveRanges) {
       if (restore) restore();
     }
   };
+}
+// BUG-3503（「句子被高亮顶开」）：WebKit 只在同一个文本节点内做字距调整（kerning，Hiragino 等日文字体
+// 在「、机」「。表」这类字对上收 1–2px）；文本节点一旦被切开——包进 span、拆成两个相邻文本节点、
+// 哪怕包裹是 display:contents——切口两侧的字对就不再调整，切口之后整行的字往后挪（iOS 26.5 模拟器
+// 实测；font-feature-settings:'kern' 0 关不掉，只有 font-kerning:none 能关）。有声书原先把每句
+// 包进 .fushi-sentence-audio-cue：分页 / 滚动在开章时整章包裹，句界处的字距一律变松；VN 在播放到
+// 那句时才包裹，排版恰好在高亮出现那一刻变动。Blink 把整段行内文字一起排版，切开不影响字距。
+// 所以 WebKit 上有声书句子不再改 DOM：每句登记成 live Range，当前句交给 CSS.highlights 的
+// 'fushi-sentence-audio'——字色走 ::highlight()，底色照旧由窄条层画（窄条层本来就读这一组）。
+// Range 登记在 tracked() 里，正文其它 DOM 手术（__fushiLiveRanges.moveNodes）会把它们写回而不塌缩。
+// Blink 与不支持 CSS Highlight 的旧 WebView 继续走包裹。window.__fushiSentenceAudioRangeMode
+// （布尔）可强制开关，供测试在 Chrome 里跑这条路径。
+if (!window.__fushiCueRanges) {
+  window.__fushiCueRanges = (function() {
+    var HIGHLIGHT = 'fushi-sentence-audio';
+    var owners = [];
+    var isWebKit = function() {
+      var ua = typeof navigator !== 'undefined' && navigator.userAgent || '';
+      return /AppleWebKit\//.test(ua) && !/(Chrome|Chromium)\//.test(ua);
+    };
+    return {
+      enabled: function() {
+        if (!window.__fushiCssHighlightsSupported || typeof Highlight !== 'function') return false;
+        var forced = window.__fushiSentenceAudioRangeMode;
+        return typeof forced === 'boolean' ? forced : isWebKit();
+      },
+      // 分段 {node, start, end} → Range（建 Range 前让文本可被 ::highlight 绘制，见 BUG-3323）。
+      build: function(segments) {
+        var out = [];
+        for (var i = 0; i < segments.length; i++) {
+          var seg = segments[i];
+          if (!seg.node || !seg.node.parentNode || seg.end <= seg.start) continue;
+          if (typeof window.__fushiEnsureHighlightPaintable === 'function') {
+            window.__fushiEnsureHighlightPaintable(seg.node);
+          }
+          var r = document.createRange();
+          r.setStart(seg.node, seg.start);
+          r.setEnd(seg.node, seg.end);
+          out.push(r);
+        }
+        return out;
+      },
+      // owner：一个 Map(cueId → Range[])，由各引擎持有；登记后其中的 Range 随 DOM 手术写回。
+      track: function(owner) {
+        if (owners.indexOf(owner) < 0) owners.push(owner);
+      },
+      untrack: function(owner) {
+        var k = owners.indexOf(owner);
+        if (k >= 0) owners.splice(k, 1);
+      },
+      tracked: function() {
+        var out = [];
+        owners.forEach(function(owner) {
+          owner.forEach(function(ranges) { for (var i = 0; i < ranges.length; i++) out.push(ranges[i]); });
+        });
+        return out;
+      },
+      show: function(ranges) {
+        var h = new Highlight();
+        for (var i = 0; i < ranges.length; i++) h.add(ranges[i]);
+        // 查词（priority 1）压过当前句（BUG-125）。
+        h.priority = 0;
+        CSS.highlights.set(HIGHLIGHT, h);
+        if (window.__fushiLanes) window.__fushiLanes.repaint(HIGHLIGHT);
+      },
+      hide: function() {
+        if (!window.__fushiCssHighlightsSupported || !CSS.highlights.has(HIGHLIGHT)) return;
+        CSS.highlights.delete(HIGHLIGHT);
+        if (window.__fushiLanes) window.__fushiLanes.repaint(HIGHLIGHT);
+      }
+    };
+  })();
 }
 // BUG-3323: WebKit never paints ::highlight() on a text node whose layout parent is
 // an *anonymous* block -- i.e. text sitting directly in a block container that also
@@ -862,11 +935,30 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
         var mt = fontMetrics(cs);
         var range = document.createRange();
         range.selectNodeContents(n);
+        // 竖排（直立）注音逐字量真实墨迹：带浊点 / 半浊点的假名（ぶ ぱ）比「国」宽，按汉字墨迹厚居中会
+        // 低估 1–1.5px，窄条就压到振假名上（BUG-3503 顺带）。量不到时退回汉字墨迹厚居中。
+        var glyphs = null;
+        if (vertical && mt.ok) {
+          glyphs = [];
+          for (var g = 0; g < n.data.length; g++) {
+            var gm = n.data.charAt(g).trim() ? measureText(fontKey(cs), n.data.charAt(g)) : null;
+            if (gm && gm.actualBoundingBoxLeft + gm.actualBoundingBoxRight > 0) glyphs.push(gm);
+          }
+        }
         var rects = range.getClientRects();
         for (var i = 0; i < rects.length; i++) {
           var r = rects[i];
           if (r.width <= 0.5 || r.height <= 0.5) continue;
           var thick = vertical ? r.width : r.height;
+          if (glyphs && glyphs.length) {
+            var c = r.left + r.width / 2, glo = Infinity, ghi = -Infinity;
+            glyphs.forEach(function(m) {
+              glo = Math.min(glo, c - m.width / 2 - m.actualBoundingBoxLeft);
+              ghi = Math.max(ghi, c - m.width / 2 + m.actualBoundingBoxRight);
+            });
+            ink.push({ lo: glo, hi: ghi, a: r.top, b: r.bottom });
+            continue;
+          }
           var half = (mt.ok && mt.cjkInk > 0 ? Math.min(thick, mt.cjkInk) : thick) / 2;
           var mid = (vertical ? r.left : r.top) + thick / 2 + (vertical || !mt.ok ? 0 : mt.shift);
           ink.push({ lo: mid - half, hi: mid + half, a: vertical ? r.top : r.left, b: vertical ? r.bottom : r.right });
@@ -874,6 +966,36 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       }
       cache.push({ ruby: ruby, ink: ink });
       return ink;
+    };
+    // 片段两端的全角标点按墨迹收边：「、。」』）」这类收尾标点的墨迹在字格前半（竖排上半、横排左半），
+    // 「「『（」这类起头标点在后半；全角字格的另一半是空白，窄条铺满整格会伸到字外、像句与句之间多出
+    // 一截。只收片段的首尾字（并条时后续片段照常接上），字格已被 vpal / palt 压窄的不收。
+    var CLOSE_PUNCT = /[、。，．」』）】〉》〕｝］〙〗]/;
+    var OPEN_PUNCT = /[「『（【〈《〔｛［〘〖]/;
+    var PUNCT_INK = 0.6;
+    var punctInk = function(node, start, end, vertical, em, pieces) {
+      var s = start, e = end;
+      while (s < e && /\s/.test(node.data.charAt(s))) s++;
+      while (e > s && /\s/.test(node.data.charAt(e - 1))) e--;
+      if (e <= s) return;
+      var edge = function(i, open) {
+        var r = document.createRange();
+        r.setStart(node, i);
+        r.setEnd(node, i + 1);
+        var cr = r.getClientRects()[0];
+        if (!cr) return;
+        var a = vertical ? cr.top : cr.left, b = vertical ? cr.bottom : cr.right;
+        if (b - a < 0.75 * em) return;
+        var line = vertical ? cr.left + cr.width / 2 : cr.top + cr.height / 2;
+        pieces.forEach(function(p) {
+          var pl = vertical ? p.r.left + p.r.width / 2 : p.r.top + p.r.height / 2;
+          if (Math.abs(pl - line) >= 1) return;
+          if (open) p.inkA = b - PUNCT_INK * (b - a);
+          else p.inkB = a + PUNCT_INK * (b - a);
+        });
+      };
+      if (CLOSE_PUNCT.test(node.data.charAt(e - 1))) edge(e - 1, false);
+      if (OPEN_PUNCT.test(node.data.charAt(s))) edge(s, true);
     };
     // 一个文本节点 [start, end) 的行片段。
     var nodeRects = function(node, start, end, seen, out) {
@@ -895,11 +1017,13 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       var ruby = parent.closest('ruby');
       var owner = backdropOf(parent);
       var rects = r.getClientRects();
+      var first = out.length;
       for (var i = 0; i < rects.length; i++) {
         if (rects[i].width > 0.5 && rects[i].height > 0.5) {
           out.push({ r: rects[i], em: em, v: vertical, x: blockExtent(rects[i], cs, em, vertical, text), ruby: ruby, o: owner });
         }
       }
+      if (out.length > first) punctInk(node, start, end, vertical, em, out.slice(first));
     };
     // Range 的可见正文片段。整个元素被包住时 Range.getClientRects 还会带上元素边框盒（含注音的 ruby 盒），
     // 所以逐文本节点取。
@@ -924,25 +1048,59 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // 行片段 → 窄条（块方向范围见 blockExtent）。同一行（文字盒中线一致、字号一致）里相隔不超过 join 个字的
     // 片段并成一条，块方向取并集（一行里 CJK 与西文混排也是一条等厚的条）；最后把条收到这一行振假名的
     // 墨迹之外，贴字而不碰注音。
+    // 翻页模式的分栏（BUG-3503）：body 是多列容器，每一栏（竖排一页 / 横排一页或子列）沿行方向占
+    // [start + k·step, start + k·step + width)。悬挂标点（Apple 正文 hanging-punctuation: allow-end）
+    // 把行尾「、」「。」挂到栏外，字形盒伸进列间距；窄条照字形盒画就越出栏尾，字号大于列间距时越出
+    // 的那截落进下一页页顶（竖排各页同一横坐标、横排同一纵坐标）。栏外的字本来就被 body 的 clip-path
+    // 裁掉，所以窄条沿行方向收进它所在的栏；并条也不跨栏。滚动 / VN 没有分栏，返回 null 不收。
+    // 横排 RTL 的栏从右往左排，这里不处理（返回 null）。
+    var columnFrame = function() {
+      var body = document.body;
+      if (!body) return null;
+      var cs = getComputedStyle(body);
+      var width = parseFloat(cs.columnWidth);
+      if (!(width > 0)) return null;
+      var vertical = (cs.writingMode || '').indexOf('vertical') === 0;
+      if (!vertical && cs.direction === 'rtl') return null;
+      var box = body.getBoundingClientRect();
+      var start = vertical
+        ? box.top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0) - body.scrollTop
+        : box.left + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.paddingLeft) || 0) - body.scrollLeft;
+      return { v: vertical, start: start, step: width + (parseFloat(cs.columnGap) || 0), width: width };
+    };
     var lanes = function(pieces, join) {
       var annCache = [];
+      var frame = columnFrame();
       var items = pieces.map(function(p) {
         var r = p.r;
-        return {
+        var it = {
           v: p.v, em: p.em,
           line: p.v ? r.left + r.width / 2 : r.top + r.height / 2,
           lo: p.x.lo, hi: p.x.hi,
-          a: p.v ? r.top : r.left,
-          b: p.v ? r.bottom : r.right,
+          a: Math.max(p.v ? r.top : r.left, p.inkA == null ? -Infinity : p.inkA),
+          b: Math.min(p.v ? r.bottom : r.right, p.inkB == null ? Infinity : p.inkB),
+          col: 0,
           rubies: p.ruby ? [p.ruby] : []
         };
+        if (frame && frame.v === p.v && frame.step > 0) {
+          // 按片段起点归栏（悬挂字形只会伸出栏尾），再把两端收进这一栏。
+          it.col = Math.floor((it.a + 0.5 - frame.start) / frame.step);
+          var colStart = frame.start + it.col * frame.step;
+          it.a = Math.max(it.a, colStart);
+          it.b = Math.min(it.b, colStart + frame.width);
+        }
+        return it;
       });
-      items.sort(function(x, y) { return Math.abs(x.line - y.line) >= 1 ? x.line - y.line : x.a - y.a; });
+      items = items.filter(function(it) { return it.b - it.a > 0.5; });
+      items.sort(function(x, y) {
+        if (x.col !== y.col) return x.col - y.col;
+        return Math.abs(x.line - y.line) >= 1 ? x.line - y.line : x.a - y.a;
+      });
       var out = [];
       items.forEach(function(it) {
         var prev = out[out.length - 1];
-        if (prev && prev.v === it.v && Math.abs(prev.line - it.line) < 1 && Math.abs(prev.em - it.em) < 0.5 &&
-            it.a <= prev.b + join * it.em) {
+        if (prev && prev.v === it.v && prev.col === it.col && Math.abs(prev.line - it.line) < 1 &&
+            Math.abs(prev.em - it.em) < 0.5 && it.a <= prev.b + join * it.em) {
           prev.b = Math.max(prev.b, it.b);
           prev.lo = Math.min(prev.lo, it.lo);
           prev.hi = Math.max(prev.hi, it.hi);
@@ -1244,7 +1402,10 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // 从右往左（用户 2026-10-16「竖排是从右往左的，横排是上到下的」），中线降序。
     var readingOrder = function(list) {
       if (list.length > 1 && list[0].v && !readsLeftToRight()) {
-        return list.slice().sort(function(x, y) { return Math.abs(x.mid - y.mid) >= 1 ? y.mid - x.mid : x.a - y.a; });
+        return list.slice().sort(function(x, y) {
+          if (x.col !== y.col) return x.col - y.col;
+          return Math.abs(x.mid - y.mid) >= 1 ? y.mid - x.mid : x.a - y.a;
+        });
       }
       return list;
     };

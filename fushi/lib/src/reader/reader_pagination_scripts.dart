@@ -1877,7 +1877,24 @@ window.__fushiInstallShell = function(C) {
     // （__fushiLanes）画，同一行里同一句的片段并成一条。
     // 包裹走共享的 wrapSentenceAudioGroup（切开 / 搬移经 __fushiLiveRanges，不用 extractContents）：
     // 收藏 / 搜索高亮等 live Range 不随包裹塌缩。
+    //
+    // BUG-3503：WebKit 上切开文本节点会丢掉切口处的字距调整、整行后移（句界被「顶开」），
+    // 所以那边不包裹：每句登记成 live Range（cueRangesMap），当前句交给 CSS.highlights（见选区脚本
+    // window.__fushiCueRanges）。正文 DOM 不动，排版与原书逐像素一致。
     var self = this;
+    var cueRanges = window.__fushiCueRanges;
+    if (cueRanges && cueRanges.enabled()) {
+      this.withLiveRangeBatch(function() {
+        for (var c = 0; c < cueSegments.length; c++) {
+          var built = cueRanges.build(cueSegments[c].ranges);
+          if (built.length) self.cueRangesMap.set(cueSegments[c].id, built);
+        }
+      });
+      cueRanges.track(this.cueRangesMap);
+      // 让可绘制包裹（BUG-3323，整节点搬进行内元素、不切开）后的文本索引重建。
+      this.buildNodeOffsets();
+      return;
+    }
     this.withLiveRangeBatch(function() {
       for (var i = cueSegments.length - 1; i >= 0; i--) {
         var id = cueSegments[i].id;
@@ -1911,23 +1928,29 @@ window.__fushiInstallShell = function(C) {
     if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('fushi-sentence-audio');
     var wrappers = this.cueWrappers.get(cueId) || [];
     var rubyElements = this.cueRubyElements.get(cueId) || [];
+    // BUG-3503：WebKit 上不包裹，当前句是一组 live Range（见 applySentenceAudioCues）。
+    var ranges = this.cueRangesMap.get(cueId) || [];
     // TODO-630/BUG-366 observability：本 cue 拿到几个文本 span/ruby；0+0 → 直接 return null（不高亮）。
-    try { console.log('[sentence-audio-hl] highlightCue ranges=' + wrappers.length + ' ruby=' + rubyElements.length +
-      (!wrappers.length && !rubyElements.length ? ' RETURN_NULL_no_segments' : '')); } catch (e) {}
-    if (!wrappers.length && !rubyElements.length) return null;
+    try { console.log('[sentence-audio-hl] highlightCue ranges=' + (wrappers.length || ranges.length) + ' ruby=' + rubyElements.length +
+      (!wrappers.length && !rubyElements.length && !ranges.length ? ' RETURN_NULL_no_segments' : '')); } catch (e) {}
+    if (!wrappers.length && !rubyElements.length && !ranges.length) return null;
     this.activeCueId = cueId;
+    if (ranges.length) window.__fushiCueRanges.show(ranges);
     wrappers.forEach(function(wrapper) { wrapper.classList.add('fushi-sentence-audio-active'); });
     // ruby 元素用 class 高亮（避免 ::highlight 对 ruby 双绘，BUG-110）。底色由窄条层（__fushiLanes）
     // 按这些 class 画一个字高的窄条，同一行的片段并成一条（取代逐缝补 box-shadow）。
     rubyElements.forEach(function(ruby) { ruby.classList.add('fushi-sentence-audio-ruby-active'); });
     if (reveal) {
-      var target = wrappers.length ? wrappers[0] : rubyElements[0];
+      var target = wrappers.length ? wrappers[0] : (rubyElements.length ? rubyElements[0] : null);
+      var targetRange = !target && ranges.length ? ranges[0] : null;
       // 分页 shell：跟读落到相邻页时固定淡入（_alignRangeToPage 读这面旗）。翻页动画
       // 在途时新位置还没写进 DOM，进度按待落定的目标页算（不读几何、不打断动画）。
       this._audioRevealPageTurn = true;
       var revealed = false;
       try {
-        revealed = !!(target && this.revealElement && this.revealElement(target));
+        revealed = targetRange
+          ? !!(this.revealRange && this.revealRange(targetRange))
+          : !!(target && this.revealElement && this.revealElement(target));
       } finally {
         this._audioRevealPageTurn = false;
       }
@@ -2005,6 +2028,7 @@ window.__fushiInstallShell = function(C) {
   },
   clearSentenceAudioCue: function() {
     if (!this.activeCueId) return;
+    if (window.__fushiCueRanges) window.__fushiCueRanges.hide();
     if (window.__fushiCssHighlightsSupported) CSS.highlights.delete('fushi-sentence-audio');
     var rubyElements = this.cueRubyElements.get(this.activeCueId) || [];
     rubyElements.forEach(function(ruby) { ruby.classList.remove('fushi-sentence-audio-ruby-active'); });
@@ -2019,6 +2043,10 @@ window.__fushiInstallShell = function(C) {
       rubyElements.forEach(function(ruby) { ruby.classList.remove('fushi-sentence-audio-ruby-active'); });
     });
     this.cueRubyElements.clear();
+    if (window.__fushiCueRanges) {
+      window.__fushiCueRanges.hide();
+      window.__fushiCueRanges.untrack(this.cueRangesMap);
+    }
     this.cueRangesMap.clear();
     var self = this;
     this.withLiveRangeBatch(function() {
@@ -2452,6 +2480,10 @@ $kReaderPageTurnJs
     var range = document.createRange();
     range.selectNodeContents(element);
     return this.scrollToRange(range);
+  },
+  // BUG-3503：WebKit 上有声书当前句是 Range（不包裹），跟读揭示直接按它定位。
+  revealRange: function(range) {
+    return this.scrollToRange(range.cloneRange());
   },
   getScrollContext: function() {
     // 翻页动画：update 回调还没落位（旧页快照未截）时有人读几何，先同步落位并跳过这次
@@ -3731,6 +3763,10 @@ $kSentenceAudioRubyGapJs
   },
   revealElement: function(element) {
     return this.scrollToTarget(element);
+  },
+  // BUG-3503：WebKit 上有声书当前句是 Range（不包裹）；getRect 对 Range 同样成立。
+  revealRange: function(range) {
+    return this.scrollToTarget(range.cloneRange());
   },
   // BUG-2903：章内文本索引——按文档序列出有可匹配字符的文本节点、各自的章内起始字数与
   // 章总字数。滚动中的进度回报每帧都要「视口边之前有多少字」（onReaderScroll →
