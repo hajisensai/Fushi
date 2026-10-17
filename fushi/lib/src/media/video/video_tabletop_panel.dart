@@ -1,6 +1,3 @@
-import 'dart:async';
-
-import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -11,6 +8,8 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 桌面姿态（折叠屏半开平放、横向折痕）下视频页**下半屏**的播放控制面板。
@@ -22,13 +21,16 @@ import 'package:material_ui/material_ui.dart';
 /// 两套设计系统各自成套：
 /// - Material（M3E）：波浪进度条 + 形变播放键 + ±10 秒 tonal 圆钮（与歌词模式 /
 ///   字幕遥控器同一套 `fushi_m3e_player` 公共件）。
-/// - Apple：iOS 细轨滑块 + SF 实心字形圆钮，底色取系统分组灰（实色，不上玻璃）。
+/// - Apple：iOS 细轨滑块 + SF 实心字形圆钮（语义图标 [FushiIcons] 经 [FushiIcon]
+///   按设计系统换字形），底色取系统分组灰（实色，不上玻璃）。
 ///
 /// 不认识播放器对象：位置经 [position] / [duration] 读，操作全是回调，[listenable]
-/// 通知播放态变化。
+/// 通知播放态变化，[positionListenable] 推送位置变化——两套设计系统都由它驱动进度，
+/// 不起轮询定时器。
 class VideoTabletopPanel extends StatelessWidget {
   const VideoTabletopPanel({
     required this.listenable,
+    required this.positionListenable,
     required this.isPlaying,
     required this.position,
     required this.duration,
@@ -39,8 +41,12 @@ class VideoTabletopPanel extends StatelessWidget {
     this.title,
   });
 
-  /// 播放态 / 时长变化时通知重建（位置由进度条自己轮询）。
+  /// 播放态 / 时长变化时通知重建整块面板。
   final Listenable listenable;
+
+  /// 播放位置变化时通知（只重读进度条 / 时间，不重建整块面板）。生产接
+  /// `VideoPlayerController.positionMsListenable`。
+  final Listenable positionListenable;
   final bool Function() isPlaying;
   final Duration Function() position;
   final Duration Function() duration;
@@ -112,6 +118,7 @@ class _MaterialTabletopPanel extends StatelessWidget {
                 clock: _PanelClock(panel),
                 isPlaying: playing,
                 onSeek: panel.onSeek,
+                clockListenable: panel.positionListenable,
                 strokeWidth: 4,
                 barHeight: 28,
                 animateWave: false,
@@ -158,20 +165,32 @@ class _AppleTabletopPanel extends StatefulWidget {
 class _AppleTabletopPanelState extends State<_AppleTabletopPanel> {
   /// 拖动中的目标位置（毫秒）；null = 跟随播放位置。
   double? _dragMs;
-  Timer? _poll;
 
   @override
   void initState() {
     super.initState();
-    // 位置不经 listenable 推送：与 M3E 进度条暂停态同一节奏轮询。
-    _poll = Timer.periodic(const Duration(milliseconds: 250), (_) {
-      if (mounted && _dragMs == null) setState(() {});
-    });
+    widget.panel.positionListenable.addListener(_onPositionChanged);
+  }
+
+  @override
+  void didUpdateWidget(_AppleTabletopPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final Listenable previous = oldWidget.panel.positionListenable;
+    final Listenable next = widget.panel.positionListenable;
+    if (!identical(previous, next)) {
+      previous.removeListener(_onPositionChanged);
+      next.addListener(_onPositionChanged);
+    }
+  }
+
+  /// 位置推送：拖动中滑块跟手指，不被播放位置拽回。
+  void _onPositionChanged() {
+    if (mounted && _dragMs == null) setState(() {});
   }
 
   @override
   void dispose() {
-    _poll?.cancel();
+    widget.panel.positionListenable.removeListener(_onPositionChanged);
     super.dispose();
   }
 
@@ -251,7 +270,7 @@ class _AppleTabletopPanelState extends State<_AppleTabletopPanel> {
                     key: const ValueKey<String>(
                       'video_tabletop_seek_back_button',
                     ),
-                    icon: CupertinoIcons.gobackward_10,
+                    icon: FushiIcons.replay10,
                     diameter: 48,
                     iconSize: 24,
                     tooltip: t.video_control_seek_backward,
@@ -262,9 +281,9 @@ class _AppleTabletopPanelState extends State<_AppleTabletopPanel> {
                   const SizedBox(width: 24),
                   _AppleRoundButton(
                     key: const ValueKey<String>('video_tabletop_play_button'),
-                    icon: playing
-                        ? CupertinoIcons.pause_fill
-                        : CupertinoIcons.play_fill,
+                    icon: FushiIcons.filled(
+                      playing ? FushiIcons.pause : FushiIcons.play,
+                    ),
                     diameter: 64,
                     iconSize: 30,
                     tooltip: playing ? t.pause : t.play,
@@ -277,7 +296,7 @@ class _AppleTabletopPanelState extends State<_AppleTabletopPanel> {
                     key: const ValueKey<String>(
                       'video_tabletop_seek_forward_button',
                     ),
-                    icon: CupertinoIcons.goforward_10,
+                    icon: FushiIcons.forward10,
                     diameter: 48,
                     iconSize: 24,
                     tooltip: t.video_control_seek_forward,
@@ -331,7 +350,7 @@ class _AppleRoundButton extends StatelessWidget {
               onTap: onPressed,
               child: SizedBox.square(
                 dimension: diameter,
-                child: Icon(icon, size: iconSize, color: foreground),
+                child: FushiIcon(icon, size: iconSize, color: foreground),
               ),
             ),
           ),

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_tabletop_panel.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:material_ui/material_ui.dart';
 
 Widget _app(Widget home, {required bool apple}) {
@@ -32,14 +33,19 @@ void main() {
     ) async {
       final ValueNotifier<bool> playing = ValueNotifier<bool>(false);
       addTearDown(playing.dispose);
+      final ValueNotifier<Duration> position = ValueNotifier<Duration>(
+        const Duration(seconds: 30),
+      );
+      addTearDown(position.dispose);
       final List<int> seeks = <int>[];
       await tester.pumpWidget(
         _app(
           VideoTabletopPanel(
             listenable: playing,
+            positionListenable: position,
             title: () => 'Episode 1',
             isPlaying: () => playing.value,
-            position: () => const Duration(seconds: 30),
+            position: () => position.value,
             duration: () => const Duration(minutes: 24),
             onPlayPause: () => playing.value = !playing.value,
             onSeek: (_) {},
@@ -87,8 +93,33 @@ void main() {
         findsOneWidget,
       );
 
-      // 卸载：Apple 面板的位置轮询定时器必须随 dispose 取消。
+      // 位置由推送源驱动：通知后的下一帧（不推进任何时间）就显示新位置——轮询实现
+      // 要等定时器到点，这里会读不到。
+      final String before = formatFushiPlaybackTime(
+        const Duration(seconds: 30),
+      );
+      final String after = formatFushiPlaybackTime(
+        const Duration(minutes: 1, seconds: 30),
+      );
+      expect(find.text(before), findsWidgets);
+      position.value = const Duration(minutes: 1, seconds: 30);
+      await tester.pump();
+      expect(find.text(after), findsWidgets);
+      expect(find.text(before), findsNothing);
+
+      if (apple) {
+        // Apple 面板的按钮走语义图标 + FushiIcon 分派：渲染的是 SF 字形。
+        expect(find.byIcon(CupertinoIcons.gobackward_10), findsOneWidget);
+        expect(find.byIcon(CupertinoIcons.goforward_10), findsOneWidget);
+      }
+
+      // 卸载：面板必须从推送源上摘掉监听（否则通知会打到已卸载的 State）。
       await tester.pumpWidget(const SizedBox());
+      expect(
+        // ignore: invalid_use_of_protected_member
+        position.hasListeners,
+        isFalse,
+      );
     });
   }
 }
