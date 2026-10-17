@@ -83,7 +83,7 @@ void main() {
       expect(body, 'DIRECT-OK', reason: '直连在 tie-break 窗口内成功 → 直连优先');
     });
 
-    test('直连明显慢于镜像（超出 tie-break 窗口）→ 镜像胜出', () {
+    test('直连明显慢于镜像（超出 tie-break 窗口）→ 仍等直连，中转不抢', () {
       fakeAsync((FakeAsync async) {
         const String direct = 'https://api.github.com/x';
         const String mirror = 'https://ghfast.top/$direct';
@@ -96,7 +96,7 @@ void main() {
               await Future<void>.delayed(const Duration(milliseconds: 10));
               return 'MIRROR-OK';
             }
-            // 直连 2s 才到，远超 10ms + 500ms 窗口 → 不 tie-break。
+            // 直连 2s 才到，远超 10ms + 500ms 窗口。
             await Future<void>.delayed(const Duration(seconds: 2));
             return 'DIRECT-OK';
           },
@@ -104,10 +104,39 @@ void main() {
           body = b;
           done = true;
         });
-        // 镜像 10ms 到 → 启动 500ms tie-break；窗口内直连未到 → 镜像胜出。
         async.elapse(const Duration(milliseconds: 600));
         async.flushMicrotasks();
-        expect(done, isTrue, reason: 'tie-break 到点即裁决，不等慢直连');
+        expect(done, isFalse, reason: '中转只在首选档全部失败后才启用，直连还在路上就不裁决');
+        async.elapse(const Duration(seconds: 2));
+        async.flushMicrotasks();
+        expect(done, isTrue);
+        expect(body, 'DIRECT-OK');
+      });
+    });
+
+    test('直连失败 → 中转镜像胜出（直连一失败立即裁决）', () {
+      fakeAsync((FakeAsync async) {
+        const String direct = 'https://github.com/x/latest-debug.json';
+        const String mirror = 'https://ghfast.top/$direct';
+        String? body;
+        var done = false;
+        raceFirstSuccessfulBody(
+          <String>[direct, mirror],
+          fetch: (String url) async {
+            if (url == mirror) {
+              await Future<void>.delayed(const Duration(milliseconds: 10));
+              return 'MIRROR-OK';
+            }
+            await Future<void>.delayed(const Duration(seconds: 1));
+            throw StateError('direct blocked');
+          },
+        ).then((String? b) {
+          body = b;
+          done = true;
+        });
+        async.elapse(const Duration(milliseconds: 1010));
+        async.flushMicrotasks();
+        expect(done, isTrue);
         expect(body, 'MIRROR-OK');
       });
     });
