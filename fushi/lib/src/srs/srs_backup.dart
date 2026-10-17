@@ -22,16 +22,36 @@ import 'package:fushi_engine/srs/srs_point_in_time_restore.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+
+/// 复习备份根（`<documents>/srs_backups`，[AppPaths.srsBackupsDirectory]；测试覆写成临时目录）。
+final Provider<Future<Directory> Function()> srsBackupsRootProvider =
+    Provider<Future<Directory> Function()>(
+      (Ref ref) => AppPaths.srsBackupsDirectory,
+    );
 
 /// 当前 profile 的本机复习备份库；模块关着时为 null。
+///
+/// 打开时把旧位置（`<支持目录>/srs_backups`，第一版放在那里，iOS「文件」里看不到、卸载即删）
+/// 的备份整体搬到新位置；搬不动（权限、空间）只记日志、照常用新位置，旧文件原样留着下次再搬。
 final FutureProvider<SrsBackupStore?> srsBackupStoreProvider =
     FutureProvider<SrsBackupStore?>((Ref ref) async {
       final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
       if (store == null) return null;
       final Directory support = await ref.watch(srsSupportRootProvider)();
+      final Directory root = await ref.watch(srsBackupsRootProvider)();
+      try {
+        await srsRelocateBackupRoot(
+          from: SrsBackupStore.rootFor(support),
+          to: root,
+        );
+      } catch (e, stack) {
+        ErrorLogService.instance.log('srsRelocateBackupRoot', e, stack);
+      }
       return SrsBackupStore(
-        root: SrsBackupStore.rootFor(support),
+        root: root,
         profileUid: store.profileUid,
         mediaDir: SrsMediaStore.directoryFor(support, store.profileUid),
       );

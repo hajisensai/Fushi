@@ -52,10 +52,33 @@ zip，扩展名 `.fushisrs`：
   路径分隔符、`:`、首尾空格 / 结尾的点、控制字符与 Windows 保留设备名。
 - 一致性：指纹、事件、服务器时间、计数在同一个数据库事务里读（同一个快照）；事件规范行直接取库里存的规范编码拼外层
   （`exportCanonicalLines`，不解析再编码），拼正文、算摘要、deflate、写 zip 在后台 isolate；zip 写完 flush 再改名。
-- 本机布局：`<支持目录>/srs_backups/<profileUid>/<创建毫秒>-<种类>.fushisrs`（+ 同名 `.json` 清单副本，列表不用解压）；
-  `<支持目录>/srs_backups/media/<sha256>` 是所有备份共享的媒体池，同一个文件只存一份，哈希按 (文件名, 大小, 修改时间) 缓存；
-  清理 / 删除备份后，没有任何清单引用的媒体随之回收——只要有一份备份的清单读不出媒体列表（损坏、更新版本、读失败），
-  这一轮就不回收（媒体列表按宽松规则读：只认 `media[].sha256`，不看版本）。设备本地：不进同步；通用备份按类别显式收文件，不会收这个目录。
+- 本机布局（2026-10-17 第二版，对齐 Anki「备份放在用户看得到、卸载 / 换设备能带走的地方」）：
+  备份根 = **数据根的 documents 根**下 `srs_backups/`（`AppPaths.srsBackupsDirectory`）。
+  - `<profileUid>/fushi-review-<YYYY-MM-DD>_<HHMMSS>-<auto|manual|before-restore>.fushisrs`（本地时间 + 种类，
+    文件管理器 /「文件」App 里一眼能看懂；撞名加 `-2`），旁边隐藏的 `.<同名>.json` 是清单副本（列表不用解压）；
+  - `media/<sha256>`：所有备份共享的媒体池，同一个文件只存一份，哈希按 (文件名, 大小, 修改时间) 缓存；
+    清理 / 删除备份后，没有任何清单引用的媒体随之回收。
+  - 清单里只存相对名（文件名 + 哈希），没有绝对路径，数据根迁移无需 rebase；`srs_backups` 登记在
+    `AppPaths.fushiOwnedDocumentsEntries`，老安装扁平布局下的白名单迁移也会搬它。
+  - 不进同步；通用备份按类别显式收文件，不会收这个目录。
+  - 旧位置兼容：第一版放在 `<支持目录>/srs_backups`。打开备份库时若旧位置存在：新位置不存在 → 同卷改名，
+    跨卷则复制到 `<新位置>.relocating`、核对文件数与字节数、改名就位后再删旧位置；新位置已存在 → 逐个搬新位置没有的文件，
+    同名不覆盖、留在旧位置。任何失败都不丢文件：临时目录清掉、旧位置原样保留、记错误日志，下次打开再试
+    （`srsRelocateBackupRoot`）。
+
+  各平台最终位置：
+
+  | 平台 | 位置 | 用户可见 / 卸载 |
+  |---|---|---|
+  | Windows / macOS / Linux | `<数据根>/…/srs_backups`（默认 `<文档>/Fushi/data/srs_backups`，老安装扁平布局为 `<文档>/srs_backups`；设了自定义数据根就在那里） | 文件管理器可见；备份页有「打开文件夹」「更改存储位置」（跳到现有的「数据存储位置」设置，随书库一起迁移）；卸载不删 |
+  | iOS | `<App Documents>/Fushi/data/srs_backups`（老安装 `<App Documents>/srs_backups`） | Info.plist 开了 `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace`，「文件」App ›「我的 iPhone」› Fushi 可见；进 iCloud 整机备份；卸载 app 会删除（iOS 沙盒规则，AnkiMobile 同样） |
+  | Android | `/data/data/<包名>/app_flutter/Fushi/data/srs_backups`（应用私有内部存储） | 文件管理器不可见、卸载即删。现有「数据存储位置」设置只在桌面提供，Android 没有可跳转的改位置入口；备份页明确说明，并引导用每份备份的「另存为 / 分享」另存到别处（没有另造一套存储选择） |
+
+  iOS 开共享后「文件」App 里看得到 Documents 的全部内容：书（EPUB 解压正文）、有声书、视频与封面、字幕、词典资源、
+  自定义字体、制卡导出物、卡片来源回写草稿、`video_clips/`、未脱敏的 `error_log.txt` 与几个 breadcrumb 文件。
+  数据库、偏好、互联 TLS 私钥、设备私钥与同步凭据都在 Library（support 根 / NSUserDefaults），不暴露
+  （守卫 `test/ios/info_plist_file_sharing_guard_test.dart` 钉住「数据库目录 = support 根」）。
+  已知代价：错误日志可能含异常文本里的 URL 参数；用户可以在「文件」App 里删改书库等内部目录。
 - 恢复媒体：缺的（或大小不同的）从共享池 / 文件内嵌正文取，校验哈希后放回；本机多出来的文件不删（媒体删除本来就不跨设备传播）。
 
 ## 恢复的语义（核心）

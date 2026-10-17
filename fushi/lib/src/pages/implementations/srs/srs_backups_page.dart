@@ -14,6 +14,7 @@ import 'package:fushi_engine/srs/srs_backup_retention.dart';
 import 'package:fushi_engine/srs/srs_backup_store.dart';
 import 'package:fushi_engine/srs/srs_point_in_time_restore.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -21,6 +22,9 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_storage.dart';
+import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/srs/srs_backup.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -29,6 +33,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi/utils.dart';
 
 enum _BackupAction { restore, export, delete }
@@ -75,6 +80,10 @@ class _SrsBackupsPageState extends ConsumerState<SrsBackupsPage> {
   List<SrsBackupInfo> _backups = const <SrsBackupInfo>[];
   int _diskBytes = 0;
 
+  /// 备份根（`<documents>/srs_backups`）与它在 iOS「文件」App 里显示的相对路径。
+  String? _rootPath;
+  String? _iosRelativePath;
+
   @override
   void initState() {
     super.initState();
@@ -102,10 +111,21 @@ class _SrsBackupsPageState extends ConsumerState<SrsBackupsPage> {
         ? const <SrsBackupInfo>[]
         : await store.list();
     final int disk = store == null ? 0 : await store.diskUsage();
+    String? iosRelative;
+    if (store != null && Platform.isIOS) {
+      try {
+        final Directory docs = await getApplicationDocumentsDirectory();
+        iosRelative = p.relative(store.root.path, from: docs.path);
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsBackupsPage.iosPath', e, stack);
+      }
+    }
     if (!mounted) return;
     setState(() {
       _backups = list;
       _diskBytes = disk;
+      _rootPath = store?.root.path;
+      _iosRelativePath = iosRelative;
       _loading = false;
     });
   }
@@ -395,6 +415,62 @@ class _SrsBackupsPageState extends ConsumerState<SrsBackupsPage> {
     );
   }
 
+  // ---------------------------------------------------------------- 存放位置
+
+  /// 存放位置（对齐 Anki：用户看得到、换设备能带走的位置）：路径 + 各平台说明；
+  /// 桌面能直接打开文件夹，并跳到「数据存储位置」改位置（与书库一起迁移）。
+  Widget _buildLocation(BuildContext context) {
+    final String? root = _rootPath;
+    final bool desktop = isDesktopPlatform;
+    final String hint = desktop
+        ? t.srs_backup_location_desktop
+        : Platform.isIOS
+        ? t.srs_backup_location_ios(path: _iosRelativePath ?? 'srs_backups')
+        : t.srs_backup_location_android;
+    return AdaptiveSettingsSection(
+      title: t.srs_backup_location,
+      children: <Widget>[
+        AdaptiveSettingsRow(
+          key: const ValueKey<String>('srs_backup_location'),
+          title: root ?? '',
+          subtitle: hint,
+          icon: FushiIcons.folder,
+          showIcon: true,
+          titleMaxLines: 4,
+        ),
+        if (desktop && root != null)
+          AdaptiveSettingsNavigationRow(
+            key: const ValueKey<String>('srs_backup_open_folder'),
+            title: t.srs_backup_open_folder,
+            icon: FushiIcons.folderOpen,
+            onTap: () => srsRunLogged('SrsBackups.openFolder', () async {
+              await Directory(root).create(recursive: true);
+              await openDirectoryInFileManager(root);
+            }),
+          ),
+        if (desktop)
+          AdaptiveSettingsNavigationRow(
+            key: const ValueKey<String>('srs_backup_change_location'),
+            title: t.srs_backup_change_location,
+            icon: FushiIcons.moveFile,
+            onTap: () {
+              SettingsSearchReveal.pendingItemId = 'sync.data_storage_location';
+              unawaited(
+                Navigator.of(context).push<void>(
+                  adaptivePageRoute<void>(
+                    context: context,
+                    builder: (_) => SettingsDetailPage(
+                      destination: buildStorageDestination(),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
   // ---------------------------------------------------------------- 顶栏
 
   List<FushiToolbarItem> get _actions => <FushiToolbarItem>[
@@ -469,6 +545,7 @@ class _SrsBackupsPageState extends ConsumerState<SrsBackupsPage> {
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<Widget> items = <Widget>[
+      _buildLocation(context),
       _buildSettings(context),
       Padding(
         padding: EdgeInsets.fromLTRB(

@@ -724,4 +724,127 @@ void main() {
     );
     expect(srsBuiltinLapis(kProfile).fields.first.name, first.name);
   });
+
+  group('备份根搬家（旧位置 <支持目录>/srs_backups → 数据根下）', () {
+    late Directory from;
+    late Directory to;
+    setUp(() {
+      from = Directory(p.join(tmp.path, 'support', 'srs_backups'));
+      to = Directory(p.join(tmp.path, 'documents', 'srs_backups'));
+      File(p.join(from.path, 'u1', 'a.fushisrs'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+      File(p.join(from.path, 'media', 'abc'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(<int>[4]);
+    });
+
+    test('新位置没有：同卷整体改名', () async {
+      expect(
+        await srsRelocateBackupRoot(from: from, to: to),
+        SrsBackupRelocation.renamed,
+      );
+      expect(from.existsSync(), isFalse);
+      expect(File(p.join(to.path, 'u1', 'a.fushisrs')).readAsBytesSync(), <int>[
+        1,
+        2,
+        3,
+      ]);
+      expect(
+        await srsRelocateBackupRoot(from: from, to: to),
+        SrsBackupRelocation.none,
+      );
+    });
+
+    test('改名失败（跨卷）：复制、校验、就位后删旧位置', () async {
+      expect(
+        await srsRelocateBackupRoot(
+          from: from,
+          to: to,
+          debugRenameDirectory: (Directory f, String t) async =>
+              throw const FileSystemException('cross-device'),
+        ),
+        SrsBackupRelocation.copied,
+      );
+      expect(from.existsSync(), isFalse);
+      expect(File(p.join(to.path, 'media', 'abc')).readAsBytesSync(), <int>[4]);
+      expect(Directory('${to.path}.relocating').existsSync(), isFalse);
+    });
+
+    test('复制中途失败：旧位置原样保留，新位置与临时目录都不留', () async {
+      await expectLater(
+        srsRelocateBackupRoot(
+          from: from,
+          to: to,
+          debugRenameDirectory: (Directory f, String t) async =>
+              throw const FileSystemException('cross-device'),
+          debugAfterCopy: () async =>
+              throw const FileSystemException('disk full'),
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(
+        File(p.join(from.path, 'u1', 'a.fushisrs')).readAsBytesSync(),
+        <int>[1, 2, 3],
+      );
+      expect(to.existsSync(), isFalse);
+      expect(Directory('${to.path}.relocating').existsSync(), isFalse);
+    });
+
+    test('新位置已有：只搬新位置没有的文件，同名不覆盖', () async {
+      File(p.join(to.path, 'u1', 'a.fushisrs'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(<int>[9]);
+      expect(
+        await srsRelocateBackupRoot(from: from, to: to),
+        SrsBackupRelocation.merged,
+      );
+      expect(File(p.join(to.path, 'u1', 'a.fushisrs')).readAsBytesSync(), <int>[
+        9,
+      ]);
+      expect(File(p.join(to.path, 'media', 'abc')).existsSync(), isTrue);
+      expect(
+        File(p.join(from.path, 'u1', 'a.fushisrs')).existsSync(),
+        isTrue,
+        reason: '同名的留在旧位置，不丢',
+      );
+    });
+  });
+
+  test('备份文件名一眼能看懂：日期_时刻 + 种类；清单副本是隐藏文件', () async {
+    final SrsDbStore a = await device('a');
+    final SrsBackupStore bs = backups('a');
+    await addNote(a, '雪');
+    final int at = DateTime(2026, 10, 17, 9, 30, 15).millisecondsSinceEpoch;
+    final SrsBackupInfo info = await bs.create(
+      a,
+      kind: SrsBackupKind.preRestore,
+      profileName: '日语',
+      nowMs: at,
+    );
+    expect(
+      p.basename(info.file.path),
+      'fushi-review-2026-10-17_093015-before-restore.fushisrs',
+    );
+    expect(
+      File(
+        p.join(
+          bs.profileDir.path,
+          '.fushi-review-2026-10-17_093015-before-restore.json',
+        ),
+      ).existsSync(),
+      isTrue,
+    );
+    final SrsBackupInfo again = await bs.create(
+      a,
+      kind: SrsBackupKind.preRestore,
+      profileName: '日语',
+      nowMs: at,
+    );
+    expect(
+      p.basename(again.file.path),
+      'fushi-review-2026-10-17_093015-before-restore-2.fushisrs',
+    );
+    expect(await bs.list(), hasLength(2));
+  });
 }

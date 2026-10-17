@@ -198,6 +198,7 @@ void main() {
         findsOneWidget,
       );
       for (final String key in <String>[
+        'srs_backup_location',
         'srs_backup_auto',
         'srs_backup_interval',
         'srs_backup_keep_daily',
@@ -297,7 +298,12 @@ void main() {
       await tester.scrollUntilVisible(
         find.byKey(ValueKey<String>('srs-backup-${info.id}')),
         200,
-        scrollable: find.byType(Scrollable).first,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
       );
       expect(
         find.byKey(ValueKey<String>('srs-backup-${info.id}')),

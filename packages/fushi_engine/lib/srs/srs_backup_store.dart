@@ -12,8 +12,9 @@
 /// - `server_times.json`：已知的「事件 ID → 发布时服务器时间 S」（铁律 F，排序键要用）。
 /// - `media/<sha256>`：媒体正文，只在**导出的自包含文件**里有。
 ///
-/// **本机布局**（`<支持目录>/srs_backups/`，设备本地：不进同步，通用备份按类别显式收文件、不会收它）：
-/// - `<profileUid>/<id>.fushisrs` + `<id>.json`（清单副本，列表时不用解压）；
+/// **本机布局**（`<备份根>/`，app 里是数据根的 documents 根下 `srs_backups/`——与 Anki 一样放在用户看得到、
+/// 卸载 / 换设备时能带走的位置；不进同步，通用备份按类别显式收文件、不会收它）：
+/// - `<profileUid>/fushi-review-<日期_时刻>-<种类>.fushisrs` + 隐藏的 `.<同名>.json`（清单副本，列表时不用解压）；
 /// - `media/<sha256>`：所有备份共享的媒体池，按内容哈希存，同一个文件只存一份；
 ///   清理旧备份后，没有任何清单引用的媒体随之删除。
 library;
@@ -26,6 +27,7 @@ import 'dart:typed_data';
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/srs/srs_backup_retention.dart';
@@ -320,6 +322,151 @@ class SrsBackupArchive {
   }
 }
 
+/// 清单副本：备份文件旁的隐藏文件 `.<备份名>.json`（列表不用解压；点开头，「文件」app / Finder 里不显示）。
+File _sidecarOf(File backup) => File(
+  p.join(
+    p.dirname(backup.path),
+    '.${p.basenameWithoutExtension(backup.path)}.json',
+  ),
+);
+
+/// 备份文件名（不含扩展名）：用户在文件管理器 /「文件」app 里一眼能看懂——
+/// `fushi-review-2026-10-17_093015-auto`（本地时间 + 种类）。只用于显示与排序，读回一律以清单为准。
+String srsBackupFileStem(int createdAtMs, SrsBackupKind kind) {
+  final DateTime d = DateTime.fromMillisecondsSinceEpoch(createdAtMs);
+  String two(int v) => v.toString().padLeft(2, '0');
+  final String label = switch (kind) {
+    SrsBackupKind.auto => 'auto',
+    SrsBackupKind.manual => 'manual',
+    SrsBackupKind.preRestore => 'before-restore',
+  };
+  return 'fushi-review-${d.year}-${two(d.month)}-${two(d.day)}_'
+      '${two(d.hour)}${two(d.minute)}${two(d.second)}-$label';
+}
+
+/// [srsRelocateBackupRoot] 的结果。
+enum SrsBackupRelocation {
+  /// 旧位置不存在（或与新位置相同）：什么也没做。
+  none,
+
+  /// 同卷改名，整体搬过去。
+  renamed,
+
+  /// 跨卷：整体复制到新位置后删掉旧位置。
+  copied,
+
+  /// 新位置已存在：把旧位置里新位置没有的文件逐个搬过去（同名的不覆盖、留在旧位置）。
+  merged,
+}
+
+/// 把旧位置的备份库整体搬到新位置（见 [SrsBackupStore.rootFor]）。
+///
+/// - 新位置不存在：先试同卷改名；失败（跨卷等）就复制到新位置旁的临时目录、校验文件数与大小、
+///   改名就位，再删旧位置。复制中途失败删掉临时目录、旧位置原样保留，异常抛给调用方记日志——
+///   任何失败都不丢文件。
+/// - 新位置已存在：逐个文件搬「新位置没有的」，同名文件不覆盖（留在旧位置，下次再看）。
+Future<SrsBackupRelocation> srsRelocateBackupRoot({
+  required Directory from,
+  required Directory to,
+  @visibleForTesting
+  Future<void> Function(Directory from, String to)? debugRenameDirectory,
+  @visibleForTesting Future<void> Function()? debugAfterCopy,
+}) async {
+  if (!await from.exists()) return SrsBackupRelocation.none;
+  if (p.equals(p.canonicalize(from.path), p.canonicalize(to.path))) {
+    return SrsBackupRelocation.none;
+  }
+  if (!await to.exists()) {
+    await to.parent.create(recursive: true);
+    try {
+      if (debugRenameDirectory != null) {
+        await debugRenameDirectory(from, to.path);
+      } else {
+        await from.rename(to.path);
+      }
+      return SrsBackupRelocation.renamed;
+    } on FileSystemException {
+      // 跨卷：复制。
+    }
+    final Directory staging = Directory('${to.path}.relocating');
+    try {
+      if (await staging.exists()) await staging.delete(recursive: true);
+      final (int files, int bytes) = await _copyTree(from, staging);
+      await debugAfterCopy?.call();
+      final (int gotFiles, int gotBytes) = await _treeStats(staging);
+      if (gotFiles != files || gotBytes != bytes) {
+        throw FileSystemException('backup relocation copy incomplete', to.path);
+      }
+      await staging.rename(to.path);
+    } catch (_) {
+      if (await staging.exists()) await staging.delete(recursive: true);
+      rethrow;
+    }
+    await from.delete(recursive: true);
+    return SrsBackupRelocation.copied;
+  }
+  await for (final FileSystemEntity e in from.list(recursive: true)) {
+    if (e is! File) continue;
+    final String rel = p.relative(e.path, from: from.path);
+    final File target = File(p.join(to.path, rel));
+    if (await target.exists()) continue;
+    await target.parent.create(recursive: true);
+    try {
+      await e.rename(target.path);
+    } on FileSystemException {
+      final File tmp = File('${target.path}.relocating');
+      await e.copy(tmp.path);
+      await tmp.rename(target.path);
+      await e.delete();
+    }
+  }
+  // 旧位置只剩空目录（或同名未搬的文件）：能删就删，删不掉不要紧。
+  try {
+    if (!await _hasFiles(from)) await from.delete(recursive: true);
+  } on FileSystemException {
+    // 留着。
+  }
+  return SrsBackupRelocation.merged;
+}
+
+Future<(int, int)> _copyTree(Directory from, Directory to) async {
+  int files = 0;
+  int bytes = 0;
+  await to.create(recursive: true);
+  await for (final FileSystemEntity e in from.list(recursive: true)) {
+    final String rel = p.relative(e.path, from: from.path);
+    if (e is Directory) {
+      await Directory(p.join(to.path, rel)).create(recursive: true);
+    } else if (e is File) {
+      final File target = File(p.join(to.path, rel));
+      await target.parent.create(recursive: true);
+      await e.copy(target.path);
+      files++;
+      bytes += await e.length();
+    }
+  }
+  return (files, bytes);
+}
+
+Future<(int, int)> _treeStats(Directory d) async {
+  int files = 0;
+  int bytes = 0;
+  await for (final FileSystemEntity e in d.list(recursive: true)) {
+    if (e is File) {
+      files++;
+      bytes += await e.length();
+    }
+  }
+  return (files, bytes);
+}
+
+Future<bool> _hasFiles(Directory d) async {
+  await for (final FileSystemEntity e in d.list(recursive: true)) {
+    if (e is File) return true;
+  }
+  return false;
+}
+
 /// 本机备份库（一个 profile）。见库注释。
 class SrsBackupStore {
   SrsBackupStore({
@@ -335,6 +482,9 @@ class SrsBackupStore {
   /// 本 profile 的媒体目录（`<支持目录>/srs_media/<profileUid>`）。
   final Directory mediaDir;
 
+  /// 旧位置（2026-10-17 第一版）：`<支持目录>/srs_backups`。现在的位置由宿主给（app 放在数据根
+  /// 的 documents 根下，与 Anki 一样放在用户看得到、换设备能带走的地方），旧位置的备份由
+  /// [srsRelocateBackupRoot] 搬过去。
   static Directory rootFor(Directory supportRoot) =>
       Directory(p.join(supportRoot.path, kSrsBackupsDirName));
 
@@ -362,7 +512,7 @@ class SrsBackupStore {
 
   Future<SrsBackupInfo?> _infoOf(File f) async {
     SrsBackupManifest? m;
-    final File side = File(p.setExtension(f.path, '.json'));
+    final File side = _sidecarOf(f);
     try {
       if (await side.exists()) {
         m = SrsBackupManifest.fromJson(jsonDecode(await side.readAsString()));
@@ -428,9 +578,10 @@ class SrsBackupStore {
       media: media,
     );
     await profileDir.create(recursive: true);
-    String id = '$createdAt-${kind.wire}';
+    final String base = srsBackupFileStem(createdAt, kind);
+    String id = base;
     for (int i = 2; File(_pathOf(id)).existsSync(); i++) {
-      id = '$createdAt-${kind.wire}-$i';
+      id = '$base-$i';
     }
     final File out = File(_pathOf(id));
     // 事件编码、摘要、deflate 与写盘在后台 isolate 做，不卡界面。
@@ -440,8 +591,8 @@ class SrsBackupStore {
       lines: lines,
       serverTimes: serverTimes,
     );
-    await File(
-      p.setExtension(out.path, '.json'),
+    await _sidecarOf(
+      out,
     ).writeAsString(jsonEncode(manifest.toJson()), flush: true);
     return SrsBackupInfo(
       file: out,
@@ -478,6 +629,7 @@ class SrsBackupStore {
   Future<void> _deleteFiles(SrsBackupInfo b) async {
     for (final File f in <File>[
       b.file,
+      _sidecarOf(b.file),
       File(p.setExtension(b.file.path, '.json')),
     ]) {
       try {
@@ -529,7 +681,7 @@ class SrsBackupStore {
   /// 宽松地读一份备份引用的媒体哈希（不校验版本，只认 `media[].sha256`）；读不出返回 null。
   static Future<Set<String>?> _mediaShasOf(File f) async {
     Object? json;
-    final File side = File(p.setExtension(f.path, '.json'));
+    final File side = _sidecarOf(f);
     try {
       if (await side.exists()) json = jsonDecode(await side.readAsString());
     } on Object {
