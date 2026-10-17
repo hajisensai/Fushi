@@ -7,7 +7,7 @@ import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
-/// BUG-3453：有声书播放中正文被拽回第 1 章、高亮「小学館eBooks」（全书第一句）。
+/// BUG-3496：有声书播放中正文被拽回第 1 章、高亮「小学館eBooks」（全书第一句）。
 ///
 /// `load()` 以 `preload: false` 设源，「恢复上次播放位置」的 seek 只记在 just_audio
 /// 的空闲播放器上；平台真正载入发生在第一次 play，恢复点作为 `initialPosition`

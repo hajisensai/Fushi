@@ -346,7 +346,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 取约两个 125ms tick 的量级，吸收 just_audio 加载完成后的首帧抖动。
   static const int _kExplicitSeekToleranceMs = 300;
 
-  /// 首次激活平台时待落定的恢复位置（BUG-3453）。
+  /// 首次激活平台时待落定的恢复位置（BUG-3496）。
   ///
   /// [load] 用 `preload: false` 设源，随后的「恢复上次播放位置」seek 只是记在
   /// just_audio 的空闲播放器上：平台真正载入发生在**第一次 play**，由
@@ -1257,7 +1257,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     final Duration? dur = _player.duration;
     if (dur == null || dur.inMilliseconds <= 0) return;
     final int clampedMs = positionMs.clamp(0, dur.inMilliseconds);
-    // BUG-3453：首次激活的落点还没到时用户拖了进度——落点改成用户要的位置，
+    // BUG-3496：首次激活的落点还没到时用户拖了进度——落点改成用户要的位置，
     // 平台载入期的瞬态 0 照旧挡住，落到新位置即放行。
     if (_activationRestoreTarget != null) {
       final int fileIndex = _player.currentIndex ?? 0;
@@ -1707,7 +1707,7 @@ class AudiobookPlayerController extends ChangeNotifier {
         return;
       }
     }
-    // BUG-3453：首次激活平台的载入窗口（见 [_activationRestoreTarget]）。平台还在从
+    // BUG-3496：首次激活平台的载入窗口（见 [_activationRestoreTarget]）。平台还在从
     // 0 起播、没 seek 到恢复点之前，位置全是瞬态：不推进 cue、不跨章、不落库，
     // 当前句保持载入时按恢复点解析出的那一句。
     final ({int fileIndex, int positionMs, int globalMs})? activation =
@@ -2306,7 +2306,7 @@ class AudiobookPlayerController extends ChangeNotifier {
         posMs >= targetMs - toleranceMs;
   }
 
-  /// 首次激活的恢复点是否「落定」（BUG-3453）：与显式 seek 同一判据；另外目标已超出
+  /// 首次激活的恢复点是否「落定」（BUG-3496）：与显式 seek 同一判据；另外目标已超出
   /// 平台报出的时长（音频被换短、存档越界）时平台永远到不了它，视为落定放行，
   /// 否则当前句会冻在恢复点上。纯函数，可单测。
   @visibleForTesting
