@@ -3593,6 +3593,8 @@
   "interconnect_leaderboard_link_host_toggle": "Let paired devices sign in with my account",
   "interconnect_leaderboard_link_host_toggle_desc": "Only applies to paired devices marked as \"my device\": if they have no Fushi account, they sign in with this device's account automatically (HTTPS required). Your private key never leaves this device.",
   "interconnect_moved_note": "Bağlantı ve sunucu ayarları Fushi Interconnect kategorisindedir",
+  "interconnect_peer_forget_confirm": "All ${count} addresses of this device will be removed together, and it will stop syncing with this device. Pair again to reconnect.",
+  "interconnect_peer_forget_title": "Forget this device?",
   "interconnect_peer_list_empty": "Henüz eş eklenmedi. Otomatik eşleştirme için aşağıdaki LAN cihaz listesinden keşfedilen bir cihaz seçin veya manuel olarak bir eş adresi ekleyin.",
   "interconnect_peer_list_title": "Eklenen eşler",
   "interconnect_profile_download": "Yapılandırmayı ana makineden indir",
