@@ -435,6 +435,50 @@ void main() {
       );
     });
   });
+
+  group('已配对 host 交来的服务地址', () {
+    Map<String, dynamic> account() => <String, dynamic>{
+      'id': _hostAccountId,
+      'nickname': 'tom',
+      'discriminator': 42,
+      'avatar': null,
+      'visibility': 'public',
+      'createdAt': 1,
+      'shelfCount': 3,
+      'emailVerified': true,
+      'uploadDevice': false,
+      'role': 'user',
+    };
+
+    Future<void> adopt(String? serverUrl) => phoneService.adoptFromPairedDevice(
+      (LeaderboardDeviceLinkRequest _) async =>
+          (account: account(), serverUrl: serverUrl),
+    );
+
+    for (final String bad in <String>[
+      'http://rank.example',
+      'http://evil.example',
+      'ftp://rank.example',
+      'https://',
+      'https://user:pass@evil.example',
+      'not a url',
+    ]) {
+      test('拒绝 $bad，本机不落账户', () async {
+        await expectLater(adopt(bad), throwsFormatException);
+        expect(phoneService.account, isNull);
+      });
+    }
+
+    test('接受 https 地址', () async {
+      await adopt('https://rank2.example');
+      expect(phoneService.account!.serverUrl, 'https://rank2.example');
+    });
+
+    test('接受与本机默认服务地址一致的地址', () async {
+      await adopt('https://rank.example');
+      expect(phoneService.account!.accountId, _hostAccountId);
+    });
+  });
 }
 
 class _RecordingClient extends http.BaseClient {

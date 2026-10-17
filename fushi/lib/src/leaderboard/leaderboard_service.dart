@@ -328,12 +328,24 @@ class LeaderboardService extends ChangeNotifier {
       throw const FormatException('paired device returned no account id');
     }
     final String? serverUrl = linked.serverUrl;
-    if (serverUrl != null && Uri.tryParse(serverUrl)?.hasScheme != true) {
+    if (serverUrl != null && !_acceptablePairedServerUrl(serverUrl)) {
       throw const FormatException('paired device returned a bad server url');
     }
     if (_account != null) return null;
     await _adopt(identity, self, consent: false, serverUrl: serverUrl);
     return self;
+  }
+
+  /// 已配对 host 交来的账户服务地址能不能落进本机账户：只认 HTTPS（带主机名），或与本机
+  /// 已配置的默认服务地址完全一致（自建 / 开发环境的 http 地址要先在本机配好）。之后本机
+  /// 每个签名请求都发往这个地址——明文或乱填的地址会把账户请求交给不该收的人。
+  bool _acceptablePairedServerUrl(String serverUrl) {
+    final Uri? uri = Uri.tryParse(serverUrl);
+    if (uri == null) return false;
+    if (uri.scheme == 'https' && uri.host.isNotEmpty && uri.userInfo.isEmpty) {
+      return true;
+    }
+    return uri == _defaultBaseUrl;
   }
 
   /// 已登录设备侧：代已配对的新设备把 [request] 里的钥匙挂到本账户。本机没有账户返回

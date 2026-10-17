@@ -33,6 +33,8 @@ class FushiPairSession {
     this.clientDeviceId,
     this.ticketId,
     this.tunnelPeer,
+    this.devicePubkey,
+    this.ownerDeviceGrant,
   });
 
   /// 不透明会话 id（client 在 confirm 时回传以定位本会话）。
@@ -75,9 +77,28 @@ class FushiPairSession {
   /// 所有隧道对端共用一个桶，一个人撞 PIN 就把其他人全锁在外面。
   final String? tunnelPeer;
 
+  /// client 在 pair/v2 上报的互联设备公钥（base64url SPKI，见
+  /// `interconnect_device_key.dart`）。只有带了 [clientDeviceId] 时才记；旧 client 为 null。
+  /// confirm 时 client 用对应私钥签本会话，验签通过才算「设备钥匙已证明」。
+  final String? devicePubkey;
+
+  /// 本会话审批时 host 主人对「这是我的设备」的选择（**绑定本次会话**，不按 deviceId
+  /// 全局记账）。null = 本会话不提供该选项（没上报设备钥匙 / 扫码票据配对）。
+  final FushiPairOwnerDeviceGrant? ownerDeviceGrant;
+
   /// 单次消费标志：一旦 confirm（无论成功/失败）即置位，第二次 confirm 直接拒，
   /// 防 nonce 重放。
   bool consumed = false;
+}
+
+/// 一次配对会话里「这是我的设备」的审批结果。server 每个会话新建一个、随
+/// `FushiPairRequest.ownerDeviceGrant` 交给 host 审批 UI，UI 在点「允许 · 这是我的设备」
+/// 时置 [granted]；confirm 落库时 server 只读**本会话**的这一个实例，并且只在设备钥匙
+/// 验签通过时才生效。会话过期 / PIN 错 / 被拒，这个实例随会话一起丢弃，不会残留到
+/// 同一 deviceId 的下一次配对上（PR #2258 审查问题 1）。
+class FushiPairOwnerDeviceGrant {
+  /// host 主人选了「这是我的设备」。
+  bool granted = false;
 }
 
 /// 配对协议的纯函数集合：nonce 生成、PIN 生成、pinProof 计算与校验、pinRequired

@@ -954,11 +954,17 @@ class FushiSyncServerController extends ChangeNotifier {
         lastSeenIp: Value<String?>(registration.remoteAddress),
       ),
     );
-    // 「我的设备」标记按本次审批的选择**显式**重写（选「仅互联」/ 免审批的扫码票据配对
-    // = 不是），不沿用这台设备以前的标记，也不让残留的旧标记碰到新配上的 peer。
+    // 设备钥匙指纹与「我的设备」标记都按**本次配对会话**的结果显式重写：先记指纹（没
+    // 证明设备钥匙 = 清掉），再写标记——标记只认 server 在本会话里核实过的结论
+    // （本会话审批选了「这是我的设备」且设备钥匙验签通过），扫码票据 / 选「仅互联」/
+    // 旧 client 一律不是。不沿用这台 peerId 以前的任何标记（PR #2258 审查问题 1）。
+    await _repo.setPeerDeviceKeyFingerprint(
+      registration.peerId,
+      registration.deviceKeyFingerprint,
+    );
     await _repo.setOwnerDevicePeer(
       registration.peerId,
-      _pendingOwnerApprovals.remove(registration.peerId),
+      registration.ownerDevice,
     );
     // BUG-1558：已配对设备表变了就得告诉视图。新设备的审批发生在 server 线程上，
     // 设置页只在 initState / 吊销后重拉列表；不通知就是「刚配对成功、host 屏上
@@ -973,17 +979,19 @@ class FushiSyncServerController extends ChangeNotifier {
     return peers.map((FushiPairedPeerRow p) => p.token).toSet();
   }
 
-  /// 配对审批时选了「这是我的设备」、还在等 confirm 落库的 client 设备 id
-  /// （[FushiPairRequest.clientDeviceId]）。[_persistPairedPeer] 消费。
-  final Set<String> _pendingOwnerApprovals = <String>{};
-
   /// 被标记为「我的设备」的已配对 peer（peerId）。只有它们能跟随本机账户自动登录。
   Future<Set<String>> ownerDevicePeerIds() => _repo.getOwnerDevicePeerIds();
 
-  /// 在已配对设备列表里标记 / 取消「我的设备」。
-  Future<void> setOwnerDevicePeer(String peerId, bool owner) async {
-    await _repo.setOwnerDevicePeer(peerId, owner);
+  /// 配对时证明过设备钥匙的 peer（peerId）——只有它们能被标成「我的设备」。
+  Future<Set<String>> deviceKeyVerifiedPeerIds() async =>
+      (await _repo.getPeerDeviceKeyFingerprints()).keys.toSet();
+
+  /// 在已配对设备列表里标记 / 取消「我的设备」。没证明过设备钥匙的 peer 标不上，
+  /// 返回最终是否为「我的设备」。
+  Future<bool> setOwnerDevicePeer(String peerId, bool owner) async {
+    final bool result = await _repo.setOwnerDevicePeer(peerId, owner);
     notifyListeners();
+    return result;
   }
 
   /// 全部已配对设备（供「移除已配对设备」UI 列表）。按配对先后升序。
@@ -995,6 +1003,7 @@ class FushiSyncServerController extends ChangeNotifier {
   Future<bool> revokePeer(String peerId) async {
     final int deleted = await _database().revokePairedPeer(peerId);
     await _repo.setOwnerDevicePeer(peerId, false);
+    await _repo.setPeerDeviceKeyFingerprint(peerId, null);
     if (deleted > 0) {
       _server?.invalidatePeerTokenCache();
       // 与 [_persistPairedPeer] 同一契约：配对表的**任何**变动都从这里广播，
@@ -1132,16 +1141,17 @@ class FushiSyncServerController extends ChangeNotifier {
       popDialog();
     }
 
+    // 本会话能否授予「我的设备」：client 上报了设备钥匙才有这个选项（server 给的
+    // [FushiPairRequest.ownerDeviceGrant]）。旧 client / 没有设备钥匙 = 只有「允许」。
+    final FushiPairOwnerDeviceGrant? ownerDeviceGrant = request.ownerDeviceGrant;
+
     void onAllow({required bool ownerDevice}) {
-      // 「允许 · 这是我的设备」与「仅互联」都放行配对；前者额外把这台设备记成「我的设备」
-      // （可跟随本机 Fushi 账户自动登录），随 confirm 落库（见 [_persistPairedPeer]）。
-      final String? deviceId = request.clientDeviceId?.trim();
-      if (!approval.isCompleted && deviceId != null && deviceId.isNotEmpty) {
-        if (ownerDevice) {
-          _pendingOwnerApprovals.add(deviceId);
-        } else {
-          _pendingOwnerApprovals.remove(deviceId);
-        }
+      // 「允许 · 这是我的设备」与「仅互联」都放行配对；前者在**本会话**的 grant 上记下
+      // 选择，server 在 confirm 时只有设备钥匙验签通过才落成「我的设备」（见
+      // [_persistPairedPeer]）。不按 deviceId 记全局账：PIN 错 / 过期 / 被拒时 grant
+      // 随会话一起丢弃，碰不到同一 deviceId 的下一次（例如扫码票据）配对。
+      if (!approval.isCompleted && ownerDeviceGrant != null) {
+        ownerDeviceGrant.granted = ownerDevice;
       }
       // 先把结果交回 server（免得 client 一直等），再决定是否关窗。
       if (!approval.isCompleted) approval.complete(true);
@@ -1259,11 +1269,13 @@ class FushiSyncServerController extends ChangeNotifier {
                             ),
                             // 「我的设备」会让这台设备能跟随本机账户自动登录（满权限），
                             // 所以默认动作（回车 / 手柄 A）落在更保守的「仅互联」上。
-                            adaptiveDialogAction(
-                              context: c,
-                              onPressed: () => onAllow(ownerDevice: true),
-                              child: Text(t.sync_pair_allow_owner_device),
-                            ),
+                            // 只在本会话可授予（client 带设备钥匙）时出现。
+                            if (ownerDeviceGrant != null)
+                              adaptiveDialogAction(
+                                context: c,
+                                onPressed: () => onAllow(ownerDevice: true),
+                                child: Text(t.sync_pair_allow_owner_device),
+                              ),
                             adaptiveDialogAction(
                               context: c,
                               isDefaultAction: true,

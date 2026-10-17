@@ -50,6 +50,7 @@ import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
+import 'package:fushi_engine/sync/pairing/interconnect_device_key.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
@@ -108,6 +109,7 @@ class FushiPairRequest {
     this.pinVerified,
     this.pinRequired = false,
     this.clientDeviceId,
+    this.ownerDeviceGrant,
   });
 
   /// Self-reported name from the client (may be null/empty if not sent).
@@ -128,10 +130,16 @@ class FushiPairRequest {
   /// 出现一个 client 从未被要求输入的「幽灵 PIN」。旧 /api/pair（v1，无 PIN）默认 false。
   final bool pinRequired;
 
-  /// v2 配对里 client 上报的稳定设备 id（= 配对成功后 [FushiPairedPeerRegistration.peerId]）。
-  /// host UI 据此把审批时的选择（如「这是我的设备」）挂到随后落库的那台 peer 上。
-  /// 旧 /api/pair（v1，共享 token，不落 per-peer 行）与没上报 id 的旧 client 为 null。
+  /// v2 配对里 client 上报的设备 id（= 配对成功后 [FushiPairedPeerRegistration.peerId]）。
+  /// 自报值、可被冒报，**只作展示 / 诊断**：「这是我的设备」不按它记账，而是挂在
+  /// [ownerDeviceGrant]（本会话）上。旧 /api/pair（v1）与没上报 id 的旧 client 为 null。
   final String? clientDeviceId;
+
+  /// 本会话的「这是我的设备」选项。非 null = client 上报了互联设备公钥、本会话可以授予
+  /// 该资格：host 审批 UI 选「允许 · 这是我的设备」时置 `granted = true`，confirm 时只有
+  /// 设备钥匙验签通过才真正落成「我的设备」。null = 不提供该选项（旧 client 没有设备钥匙 /
+  /// v1 配对），UI 只给普通「允许」。
+  final FushiPairOwnerDeviceGrant? ownerDeviceGrant;
 }
 
 /// TODO-961 M1b: confirm 成功后要落库的一条 per-peer 授权凭据。server 生成 token、
@@ -143,6 +151,8 @@ class FushiPairedPeerRegistration {
     required this.token,
     required this.deviceName,
     required this.remoteAddress,
+    this.ownerDevice = false,
+    this.deviceKeyFingerprint,
   });
 
   /// 对端稳定身份（client 配对时上报的 deviceId）。表 UNIQUE 键，upsert 幂等基准。
@@ -156,6 +166,14 @@ class FushiPairedPeerRegistration {
 
   /// 配对时对端来源 IP（诊断/展示，可空）。
   final String? remoteAddress;
+
+  /// 本次配对是否授予「我的设备」资格：本会话审批选了「这是我的设备」**且** client 在
+  /// confirm 里用设备私钥签过本会话、验签通过。扫码票据配对 / 旧 client 恒 false。
+  final bool ownerDevice;
+
+  /// 本次配对里验签通过的设备公钥指纹（`interconnectDeviceKeyFingerprint`）；client 没
+  /// 证明设备钥匙时为 null。host 据此判断这台 peer 之后能不能被手动标成「我的设备」。
+  final String? deviceKeyFingerprint;
 }
 
 /// Thrown by [FushiSyncServer.start] when the requested port is already bound
