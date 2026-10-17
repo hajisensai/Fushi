@@ -311,7 +311,8 @@ void main() {
         six.reviews.last.deltaDays,
         (kDayCtx.dayIndexOf(kT0 + kDayMs * 3 ~/ 2) - kDayCtx.dayIndexOf(kT0))
             .toDouble(),
-        reason: 'FSRS-6 按翻日后的日序号取整');
+        reason: 'FSRS-6 按翻日后的日序号取整',
+      );
     });
 
     test('历史不完整：从锚点 SM-2 换算，接上锚点之后的评分', () {
@@ -741,6 +742,140 @@ void main() {
         isNot(const SrsTermQuery('上手', 'うわて').readingKey),
       );
       expect(srsTermKey('ＡＢＣ'), 'abc');
+    });
+  });
+
+  group('恢复计划（重放副本优先，旧版本客户端不分歧）', () {
+    SrsLogContext ctx() => SrsLogContext(
+      profileUid: kP,
+      clock: HlcClock('dev#9'),
+      now: () => (kT0 + 30 * kDayMs, SrsTimeSource.anchored),
+      day: kDayCtx,
+    );
+    List<(int, double)> shape(SrsMemoryInput m) => <(int, double)>[
+      for (final SrsFsrsReview r in m.reviews) (r.rating, r.deltaDays),
+    ];
+    SrsMemoryInput memory(SrsCardHistory h) => srsCollectMemoryInput(
+      h,
+      algorithm: SrsAlgorithm.fsrs7,
+      dayIndexOf: kDayCtx.dayIndexOf,
+    );
+
+    test('被撤销的是备份时有效历史的尾巴：重放副本，有效历史与备份逐条同构、不需要 ③′', () {
+      final SrsReviewLog r1 = _log(
+        card: 'c',
+        kind: SrsLogKind.review,
+        at: kT0,
+        rating: 3,
+        reviewType: SrsReviewType.learn,
+        result: const SrsScheduleResult(queue: SrsQueue.review, dueDay: 2),
+      );
+      final SrsReviewLog r2 = _log(
+        card: 'c',
+        kind: SrsLogKind.review,
+        at: kT0 + 2 * kDayMs,
+        rating: 3,
+        result: const SrsScheduleResult(queue: SrsQueue.review, dueDay: 9),
+      );
+      final SrsReviewLog u = _log(
+        card: 'c',
+        kind: SrsLogKind.undo,
+        at: kT0 + 3 * kDayMs,
+        revokes: r2.id,
+      );
+      final SrsCardHistory backup = SrsCardHistory(<SrsReviewLog>[r1, r2]);
+      final SrsCardHistory current = SrsCardHistory(<SrsReviewLog>[r1, r2, u]);
+      expect(current.state, isNot(backup.state));
+
+      final List<SrsReviewLog> plan = srsPlanStateRestore(
+        cardId: 'c',
+        current: current,
+        backupLogIds: <String>{r1.id, r2.id},
+        ctx: ctx(),
+        backupId: 'bk',
+      );
+      expect(plan, hasLength(1));
+      final SrsReviewLog copy = plan.single;
+      expect(copy.kind, SrsLogKind.review);
+      expect(copy.id, isNot(r2.id));
+      expect(copy.rating, r2.rating);
+      expect(copy.occurredAt, r2.occurredAt);
+      expect(copy.result, r2.result);
+      expect(copy.extra[srsReplayOfLogExtraKey], r2.id);
+      expect(copy.extra[srsRestoreLogExtraKey], 'bk');
+
+      final SrsCardHistory after = SrsCardHistory(<SrsReviewLog>[
+        ...current.all,
+        ...plan,
+      ]);
+      expect(after.state, backup.state);
+      expect(srsSameEffectiveShape(after.effective, backup.effective), isTrue);
+      // 不靠 ③′：没有任何一条是「照抄状态」日志，旧版本按原规则算出的记忆输入与备份时相同。
+      expect(after.all.any(srsIsRestoreState), isFalse);
+      expect(shape(memory(after)), shape(memory(backup)));
+      expect(memory(after).complete, memory(backup).complete);
+    });
+
+    test('不是尾巴（备份时有效的导入日志后来被判等价）：兜底写照抄状态的 manual 日志', () {
+      final SrsReviewLog imp = _log(
+        card: 'c',
+        kind: SrsLogKind.review,
+        at: kT0,
+        rating: 3,
+        origin: SrsLogOrigin.anki,
+        ankiId: kT0,
+        result: const SrsScheduleResult(queue: SrsQueue.review, dueDay: 7),
+      );
+      final SrsReviewLog native = _log(
+        card: 'c',
+        kind: SrsLogKind.review,
+        at: kT0 + 500,
+        rating: 3,
+        result: const SrsScheduleResult(queue: SrsQueue.review, dueDay: 8),
+      );
+      final SrsReviewLog undoNative = _log(
+        card: 'c',
+        kind: SrsLogKind.undo,
+        at: kT0 + 1000,
+        revokes: native.id,
+      );
+      final SrsCardHistory current = SrsCardHistory(<SrsReviewLog>[
+        imp,
+        native,
+        undoNative,
+      ]);
+      expect(current.equivalentImports, contains(imp.id));
+
+      final List<SrsReviewLog> plan = srsPlanStateRestore(
+        cardId: 'c',
+        current: current,
+        backupLogIds: <String>{imp.id},
+        ctx: ctx(),
+        backupId: 'bk',
+      );
+      expect(plan, hasLength(1));
+      expect(plan.single.kind, SrsLogKind.manual);
+      expect(srsIsRestoreState(plan.single), isTrue);
+      expect(plan.single.result, imp.result);
+    });
+
+    test('状态已一致：不写任何日志', () {
+      final SrsReviewLog r1 = _log(
+        card: 'c',
+        kind: SrsLogKind.review,
+        at: kT0,
+        rating: 3,
+      );
+      expect(
+        srsPlanStateRestore(
+          cardId: 'c',
+          current: SrsCardHistory(<SrsReviewLog>[r1]),
+          backupLogIds: <String>{r1.id},
+          ctx: ctx(),
+          backupId: 'bk',
+        ),
+        isEmpty,
+      );
     });
   });
 }

@@ -316,18 +316,27 @@ void main() {
     expect(await alive(a, n2), isTrue);
     expect((await a.note(n1))!.field(expr(a)), '雪（新）');
     expect(await stateOf(a, c1), c1Now);
-    // 被第一次恢复撤销的复习不能「撤销撤销」，卡片状态靠一条照抄状态的 manual 日志回来。
+    // 被第一次恢复撤销的复习不能「撤销撤销」：它是备份时有效历史的尾巴，重放一份副本补回
+    // （不写照抄状态的 manual 日志，不依赖新规则 ③′，旧版本客户端算出的记忆状态一样）。
     expect(r.statesRestored, 1);
-    final List<String> kinds = <String>[
+    final List<SrsReviewLog> logs = <SrsReviewLog>[
       for (final SrsEvent e in await a.exportAll())
-        if (e is SrsLogEvent) e.log.kind,
+        if (e is SrsLogEvent) e.log,
     ];
-    expect(kinds, contains(SrsLogKind.manual));
+    expect(logs.any(srsIsRestoreState), isFalse);
+    expect(
+      logs.where(
+        (SrsReviewLog l) =>
+            l.kind == SrsLogKind.review &&
+            l.extra[srsReplayOfLogExtraKey] != null,
+      ),
+      hasLength(1),
+    );
     expect(
       (await bs.list()).map((SrsBackupInfo b) => b.manifest.kind),
       containsAll(<SrsBackupKind>[SrsBackupKind.preRestore]),
     );
-    // 撤回后再评分：记忆状态的起点与备份时那张卡相同（照抄的 manual 日志是 S/D 起点，
+    // 撤回后再评分：记忆状态的起点与备份时那张卡相同（重放的副本把那次评分放回有效历史，
     // 不因被撤销的评分退回「从零算」）。
     expect((await a.preview(c1)).memoryBefore?.toJson(), memNow);
     t += 24 * 60 * 60 * 1000;

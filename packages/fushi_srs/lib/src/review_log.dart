@@ -13,6 +13,9 @@ const int srsLogFormatVersion = 1;
 /// 带它的 manual 日志是记忆状态的起点（见 valid_logs.dart `srsIsRestoreState`）；旧版本原样保留。
 const String srsRestoreLogExtraKey = 'restoreOf';
 
+/// 恢复写出的「重放副本」在 `extra` 里带这个键（值 = 被重放的原日志 ID；持久化名冻结，只作追溯）。
+const String srsReplayOfLogExtraKey = 'replayOf';
+
 /// 日志种类（持久化名冻结）。
 abstract final class SrsLogKind {
   static const String review = 'review';

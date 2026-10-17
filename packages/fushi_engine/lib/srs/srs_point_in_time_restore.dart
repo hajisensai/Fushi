@@ -13,7 +13,8 @@
 ///    - 备份里没有、之后才出现的字段键 → 写「不存在」对应的值（null；笔记类型的字段 / 模板定义写软删除，
 ///      内置项写回代码里的定义）。
 /// 3. 复习日志：备份之后的有效日志一律写 undo（[srsPlanRevokeLogs]）；备份内的日志后来被撤销、导致状态仍不同的卡，
-///    写一条 manual 日志照抄备份时的状态（[srsPlanStateRestore]）。日志本身一条不删（只追加）。
+///    由 [srsPlanStateRestore] 补回：被撤销的是备份时有效历史的尾巴就重放副本（旧版本客户端同样算对），
+///    否则写一条 manual 日志照抄备份时的状态。日志本身一条不删（只追加）。
 ///
 /// 恢复只覆盖本机在恢复那一刻**已经收到**的数据。那一刻别的设备上还没同步过来的修改与复习，与恢复是并发的：
 /// 字段按铁律 H 处理（内容类进「待裁决」，标志 / 设置类最后修改生效并进同步冲突记录），复习日志照常有效。
@@ -359,8 +360,9 @@ Future<void> _restoreLogs(
     for (final SrsCardCacheRow c in await store.cardRows(check)) c.id,
   };
   final List<SrsReviewLog> fixes = <SrsReviewLog>[];
+  int cardsFixed = 0;
   for (final String cardId in cached) {
-    final SrsReviewLog? fix = srsPlanStateRestore(
+    final List<SrsReviewLog> fix = srsPlanStateRestore(
       cardId: cardId,
       current: await store.history(cardId),
       backupLogIds: backupLogIds,
@@ -368,8 +370,10 @@ Future<void> _restoreLogs(
       backupId: backupId,
       serverTimeOf: serverTimeOf,
     );
-    if (fix != null) fixes.add(fix);
+    if (fix.isEmpty) continue;
+    cardsFixed++;
+    fixes.addAll(fix);
   }
   await store.appendLocalLogs(fixes);
-  report.statesRestored = fixes.length;
+  report.statesRestored = cardsFixed;
 }
