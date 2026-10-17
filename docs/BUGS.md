@@ -46,6 +46,7 @@
 | [BUG-3496](bugs/BUG-3496-audio-first-play-jumps-book-start.md) | ✅ | ✅ | 有声书首次播放载入窗口位置为 0 致正文跳回书首 |
 | [BUG-3494](bugs/BUG-3494-goldens-windows-red-triage.md) | ✅ | ✅ | Windows 本机 test/goldens 18 张基准图过期（CI 排除 golden，M3E 改版后无人重生成） |
 | [BUG-3495](bugs/BUG-3495-video-remote-row-toggle-tint.md) | ✅ | ✅ | 视频遥控：开关类按钮放进主控制行时没有着色 |
+| [BUG-3489](bugs/BUG-3489-feedback-video-compress-locks-form.md) | ✅ | ✅ | 反馈视频压缩中附件 × 与文字框都点不动 |
 | [BUG-3452](bugs/BUG-3452-peer-book-download-followups.md) | ✅ | ✅ | 对端书下载后多出未下载卡、合集册数翻倍、跳回顶部、最近阅读排序错位 |
 | [BUG-3451](bugs/BUG-3451-video-bar-menu-hides-controls.md) | ✅ | ✅ | 视频控制条「⋯」只有一项仍弹菜单、点开菜单时控制条消失 |
 | [BUG-3450](bugs/BUG-3450-browser-ext-subtitle-positioning.md) | ✅ | ✅ | 浏览器扩展字幕底板在全屏下与屏幕同高、缩放后整块上移飞出屏幕 |

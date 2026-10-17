@@ -4,6 +4,7 @@
 // - 已登录账户时「我的反馈」= 本机回执 ∪ GET /v1/feedback/mine（签名），按 id 去重、本机优先；
 //   账户条目没有 ticket，看详情走账户签名、不带 X-Fushi-Ticket；缓存按账户落盘。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -88,7 +89,12 @@ void main() {
         Uint8List.fromList(<int>[0x1f, 0x8b, ...utf8.encode(s)]),
     prepareVideo:
         prepare ??
-        (File source, Directory work, void Function(double) onProgress) async {
+        (
+          File source,
+          Directory work,
+          void Function(double) onProgress,
+          FeedbackVideoPrepareOptions _,
+        ) async {
           onProgress(0.5);
           final File out = await source.copy(p.join(work.path, 'out.mp4'));
           return PreparedFeedbackVideo(
@@ -168,11 +174,104 @@ void main() {
     expect(await FeedbackPendingStore(root).scan(), isEmpty);
   });
 
+  test('BUG-3489 提交页先 stageVideo 再 submit：档位透传、不重复转码、工作目录清干净', () async {
+    handler = (http.Request r) async {
+      if (r.url.path == '/v1/feedback') return receipt(r);
+      return _json(<String, dynamic>{'slot': 'x'}, 201);
+    };
+    final List<FeedbackVideoQuality> qualities = <FeedbackVideoQuality>[];
+    final FeedbackService s = service(
+      prepare:
+          (
+            File src,
+            Directory work,
+            void Function(double) onProgress,
+            FeedbackVideoPrepareOptions options,
+          ) async {
+            qualities.add(options.quality);
+            final File out = await src.copy(p.join(work.path, 'out.mp4'));
+            return PreparedFeedbackVideo(
+              file: out,
+              contentType: 'video/mp4',
+              bytes: await out.length(),
+              transcoded: true,
+            );
+          },
+    );
+    final FeedbackStagedVideo staged = await s.stageVideo(
+      source,
+      options: const FeedbackVideoPrepareOptions(
+        quality: FeedbackVideoQuality.p1080,
+      ),
+    );
+    final List<FeedbackSubmitStage> stages = <FeedbackSubmitStage>[];
+    final FeedbackSubmitResult result = await s.submit(
+      FeedbackDraft(
+        category: FeedbackCategory.bug,
+        title: 't',
+        body: 'b',
+        includeLogs: false,
+        video: source,
+      ),
+      stagedVideo: staged,
+      onStage: stages.add,
+    );
+    expect(result.failedAttachments, 0);
+    expect(qualities, <FeedbackVideoQuality>[FeedbackVideoQuality.p1080]);
+    expect(stages, <FeedbackSubmitStage>[
+      FeedbackSubmitStage.sending,
+      FeedbackSubmitStage.video,
+    ]);
+    expect(
+      requests.map((http.Request r) => r.url.path),
+      contains('/v1/feedback/abcdefghij/attachments/v0'),
+    );
+    expect(
+      Directory(p.join(root.path, 'feedback', 'video_work')).listSync(),
+      isEmpty,
+    );
+  });
+
+  test('BUG-3489 stageVideo 被取消：抛取消、工作目录清掉、什么也没发', () async {
+    handler = receipt;
+    final FeedbackService s = service(
+      prepare:
+          (
+            File src,
+            Directory work,
+            void Function(double) onProgress,
+            FeedbackVideoPrepareOptions options,
+          ) async {
+            File(p.join(work.path, 'half.mp4')).writeAsBytesSync(<int>[1, 2]);
+            await options.cancel;
+            throw const FeedbackVideoCancelledException();
+          },
+    );
+    final Completer<void> cancel = Completer<void>();
+    final Future<FeedbackStagedVideo> job = s.stageVideo(
+      source,
+      options: FeedbackVideoPrepareOptions(cancel: cancel.future),
+    );
+    cancel.complete();
+    await expectLater(job, throwsA(isA<FeedbackVideoCancelledException>()));
+    expect(
+      Directory(p.join(root.path, 'feedback', 'video_work')).listSync(),
+      isEmpty,
+    );
+    expect(requests, isEmpty);
+  });
+
   test('视频太大：准备阶段就抛，正文不提交', () async {
     handler = receipt;
     final FeedbackService s = service(
-      prepare: (File _, Directory _, void Function(double) _) async =>
-          throw const FeedbackVideoTooLargeException(60 * 1024 * 1024),
+      prepare:
+          (
+            File _,
+            Directory _,
+            void Function(double) _,
+            FeedbackVideoPrepareOptions _,
+          ) async =>
+              throw const FeedbackVideoTooLargeException(60 * 1024 * 1024),
     );
     await expectLater(
       s.submit(
@@ -381,50 +480,45 @@ void main() {
     // review of PR #2103：清旧账户列表原本排在批量查进度之后，断网时那一步先抛，
     // 换账户 / 退出登录后旧账户的工单标题一直挂在列表里。
     for (final bool signOut in <bool>[false, true]) {
-      test(
-        '${signOut ? '退出登录' : '换账户'}后刷新断网：旧账户的列表照样立刻丢掉',
-        () async {
-          await FeedbackTicketStore(root).write(<FeedbackTicket>[
-            const FeedbackTicket(
-              id: 'localloc00',
-              ticket: 'local-ticket',
-              title: 'local',
-              category: FeedbackCategory.bug,
-              createdAt: 3000,
-              status: FeedbackStatus.open,
-              updatedAt: 3000,
-            ),
-          ]);
-          handler = (http.Request r) async {
-            if (r.url.path == '/v1/feedback/status') {
-              return _json(<String, dynamic>{
-                'items': <Object>[_summary('localloc00', createdAt: 3000)],
-              });
-            }
+      test('${signOut ? '退出登录' : '换账户'}后刷新断网：旧账户的列表照样立刻丢掉', () async {
+        await FeedbackTicketStore(root).write(<FeedbackTicket>[
+          const FeedbackTicket(
+            id: 'localloc00',
+            ticket: 'local-ticket',
+            title: 'local',
+            category: FeedbackCategory.bug,
+            createdAt: 3000,
+            status: FeedbackStatus.open,
+            updatedAt: 3000,
+          ),
+        ]);
+        handler = (http.Request r) async {
+          if (r.url.path == '/v1/feedback/status') {
             return _json(<String, dynamic>{
-              'items': <Object>[_summary('otherdev01')],
-              'next': null,
+              'items': <Object>[_summary('localloc00', createdAt: 3000)],
             });
-          };
-          final FeedbackService s = service();
-          await s.refresh();
-          expect(s.byId('otherdev01'), isNotNull);
+          }
+          return _json(<String, dynamic>{
+            'items': <Object>[_summary('otherdev01')],
+            'next': null,
+          });
+        };
+        final FeedbackService s = service();
+        await s.refresh();
+        expect(s.byId('otherdev01'), isNotNull);
 
-          identity = signOut ? null : LeaderboardIdentity.generate();
-          handler = (http.Request r) async =>
-              throw const SocketException('offline');
-          int notified = 0;
-          s.addListener(() => notified++);
-          await expectLater(s.refresh(), throwsA(anything));
-          expect(s.byId('otherdev01'), isNull);
-          expect(
-            s.tickets.map((FeedbackTicket t) => t.id),
-            <String>['localloc00'],
-            reason: '本机回执不受换账户影响，只丢账户列表',
-          );
-          expect(notified, greaterThan(0));
-        },
-      );
+        identity = signOut ? null : LeaderboardIdentity.generate();
+        handler = (http.Request r) async =>
+            throw const SocketException('offline');
+        int notified = 0;
+        s.addListener(() => notified++);
+        await expectLater(s.refresh(), throwsA(anything));
+        expect(s.byId('otherdev01'), isNull);
+        expect(s.tickets.map((FeedbackTicket t) => t.id), <String>[
+          'localloc00',
+        ], reason: '本机回执不受换账户影响，只丢账户列表');
+        expect(notified, greaterThan(0));
+      });
     }
   });
 }
