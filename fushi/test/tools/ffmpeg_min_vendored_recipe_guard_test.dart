@@ -48,7 +48,8 @@ const Map<String, String> _componentVarToFlag = <String, String>{
 /// 音频容器元数据两条链在没装系统 ffmpeg 的机器上静默失效。libdav1d：BUG-2604——
 /// FFmpeg 原生 `av1` 解码器只是 hwaccel 挂钩壳，`--disable-everything` 后没有任何
 /// hwaccel，AV1 视频的截帧 / 动图 / 片段导出在捆绑 ffmpeg 上恒 exit 69（解码错误率
-/// 100%），真正的软件解码器是 libdav1d。
+/// 100%），真正的软件解码器是 libdav1d。libxml2：BUG-3503——dash demuxer 硬依赖它，
+/// 缺了在线源的 `manifest.mpd` 制卡恒 `Invalid data found when processing input`。
 /// 少任何一个都是「二进制比配方旧」。
 const List<String> _requiredStandaloneFlags = <String>[
   '--disable-everything',
@@ -57,6 +58,7 @@ const List<String> _requiredStandaloneFlags = <String>[
   '--enable-libsvtav1',
   '--enable-libwebp',
   '--enable-libdav1d',
+  '--enable-libxml2',
   '--enable-network',
   '--enable-ffprobe',
 ];
@@ -98,7 +100,11 @@ const List<_VendoredTarget> _targets = <_VendoredTarget>[
     ffmpegName: 'ffmpeg.exe',
     ffprobeName: 'ffprobe.exe',
     tlsFlag: '--enable-schannel',
-    extraConfigurationFlags: <String>['--enable-demuxer=xwma'],
+    // BUG-3504：证书钉扎补丁在 schannel 里调 crypt32 的 CertFreeCertificateContext。
+    extraConfigurationFlags: <String>[
+      '--enable-demuxer=xwma',
+      '--extra-libs=-lcrypt32',
+    ],
   ),
   _VendoredTarget(
     label: 'macos',
@@ -321,6 +327,45 @@ void main() {
               '${_revendorHint()}',
         );
       });
+
+      test('证书钉扎补丁打进了二进制（-tls_pin_sha256，BUG-3504）', () {
+        // 补丁改的是 libavformat 源码，不在 configure 串里，所以直接查选项名：
+        // 桌面作为客户端从互联 host（自签 https）制卡时，引擎会传
+        // `-tls_pin_sha256 <指纹>`；没打补丁的 ffmpeg 报 "Unrecognized option"，
+        // 截图 / 动图 / 片段整条失败。选项名只可能来自 tls.h 里补丁加的 AVOption。
+        final String text = latin1.decode(exe.readAsBytesSync(), allowInvalid: true);
+        expect(
+          text.contains('tls_pin_sha256'),
+          isTrue,
+          reason: '入库 ${target.ffmpegName}（${target.label}）没打证书钉扎补丁'
+              '（tool/ffmpeg-min/patches/ffmpeg-n7.1-tls-pin-sha256.patch）。'
+              '${_revendorHint()}',
+        );
+      });
     });
   }
+
+  test('配方在 configure 之前打证书钉扎补丁，且补丁文件在（BUG-3504）', () {
+    final String script = recipe.readAsStringSync();
+    expect(
+      script.contains('patches/ffmpeg-n7.1-tls-pin-sha256.patch'),
+      isTrue,
+      reason: 'build-ffmpeg-min.sh 不再打钉扎补丁，桌面 ffmpeg 会丢 -tls_pin_sha256',
+    );
+    // 锚 FFmpeg 自己那次 configure（前面还有 x264 等依赖的 ./configure）。
+    final int ffmpegConfigure =
+        script.indexOf('./configure \\\n  --prefix="\$OUT"');
+    expect(ffmpegConfigure, greaterThan(0),
+        reason: '找不到 FFmpeg 的 configure 调用，守卫锚点需同步');
+    expect(
+      script.indexOf('ffmpeg-n7.1-tls-pin-sha256.patch'),
+      lessThan(ffmpegConfigure),
+      reason: '补丁必须在 configure / make 之前打',
+    );
+    expect(
+      File('${root.path}/tool/ffmpeg-min/patches/ffmpeg-n7.1-tls-pin-sha256.patch')
+          .existsSync(),
+      isTrue,
+    );
+  });
 }
