@@ -297,6 +297,16 @@ run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y -i "$MP4_FIXTURE"   -map 0
 run "$FFMPEG_MIN" -hide_banner -loglevel error -y   -ss 0.100 -t 0.800 -i "$WORK/hls/index.m3u8" -vn -map_chapters -1   -c:a aac -ac 1 -b:a 64k "$WORK/hls.aac"
 assert_nonempty "$WORK/hls.aac"
 
+echo "[ffmpeg-min-smoke] exporting sentence audio from a DASH manifest"
+# BUG-3503: some online video sources (e.g. AnimeOnsen) hand mining a
+# `manifest.mpd`. Without the dash demuxer (+ libxml2) the bundled ffmpeg rejects
+# it with AVERROR_INVALIDDATA and the card aborts with `required audio missing`.
+# Segments are fMP4, read through the already-enabled mov demuxer.
+mkdir -p "$WORK/dash"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y -i "$MP4_FIXTURE"   -map 0:v:0 -map 0:a:0 -c:v copy -c:a copy -f dash -seg_duration 1   "$WORK/dash/manifest.mpd"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y   -ss 0.100 -t 0.800 -i "$WORK/dash/manifest.mpd" -vn -map_chapters -1   -c:a aac -ac 1 -b:a 64k "$WORK/dash.aac"
+assert_nonempty "$WORK/dash.aac"
+
 echo "[ffmpeg-min-smoke] exporting sentence audio at playback tempo (atempo)"
 # Audiobook mining at playback speed (buildFfmpegClipArgs tempo=...) cuts the
 # sentence clip through `-af atempo=R`. A minimal build without the atempo

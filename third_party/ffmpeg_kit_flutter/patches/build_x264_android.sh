@@ -36,9 +36,9 @@ for tool in meson ninja; do
 done
 
 cd "${FFMPEG_KIT_DIR}"
-echo "=== android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d START $(date) ==="
+echo "=== android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --enable-libxml2 START $(date) ==="
 rc=0
-./android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d \
+./android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --enable-libxml2 \
   --disable-x86 --disable-x86-64 --api-level=24 || rc=$?
 echo "ANDROID_BUILD_EXIT=${rc}"
 if [ "${rc}" -ne 0 ]; then

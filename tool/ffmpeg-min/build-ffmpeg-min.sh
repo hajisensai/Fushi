@@ -60,6 +60,7 @@ LIBWEBP_REF="${LIBWEBP_REF:-v1.5.0}"
 DAV1D_REF="${DAV1D_REF:-1.5.1}"
 LIBVPX_REF="${LIBVPX_REF:-v1.15.0}"
 OPUS_REF="${OPUS_REF:-v1.5.2}"
+LIBXML2_REF="${LIBXML2_REF:-v2.13.8}"
 
 # macOS 目标架构。macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac，所以
 # 默认就是 arm64，而且只接受 arm64（ffmpeg-min.yml 的 macOS job 显式传它）。
@@ -246,10 +247,29 @@ EOF
     cmake --install "$work/opus/build"
   fi
 
+  if [ ! -f "$prefix/lib/libxml2.a" ]; then
+    # dash demuxer 的 MPD 解析器（见 DEMUXERS 注释，BUG-3503）。只要 XML 树解析：
+    # iconv / zlib / lzma / icu / http / python 全关，免得把一串传递依赖带进静态链；
+    # MPD 是 UTF-8，libxml2 不靠 iconv 也原生支持 UTF-8/UTF-16/Latin-1。
+    echo "[ffmpeg-min] build static libxml2 @ $LIBXML2_REF"
+    rm -rf "$work/libxml2"
+    git clone --depth 1 --branch "$LIBXML2_REF" \
+      https://gitlab.gnome.org/GNOME/libxml2.git "$work/libxml2"
+    cmake -S "$work/libxml2" -B "$work/libxml2/build" \
+      -DCMAKE_OSX_ARCHITECTURES="$MACOS_ARCH" \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DLIBXML2_WITH_ICONV=OFF -DLIBXML2_WITH_ZLIB=OFF -DLIBXML2_WITH_LZMA=OFF \
+      -DLIBXML2_WITH_ICU=OFF -DLIBXML2_WITH_HTTP=OFF -DLIBXML2_WITH_PYTHON=OFF \
+      -DLIBXML2_WITH_PROGRAMS=OFF -DLIBXML2_WITH_TESTS=OFF
+    cmake --build "$work/libxml2/build" -j "$JOBS"
+    cmake --install "$work/libxml2/build"
+  fi
+
   # 缺任何一个 .a 就当场停：继续跑下去只会又编出一个动态依赖 Homebrew 的产物，
   # 而那个缺陷要到发版流水线才暴露。
   local archive
-  for archive in libx264.a libSvtAv1Enc.a libwebp.a libwebpmux.a libdav1d.a libvpx.a libopus.a; do
+  for archive in libx264.a libSvtAv1Enc.a libwebp.a libwebpmux.a libdav1d.a libvpx.a libopus.a libxml2.a; do
     if [ ! -f "$prefix/lib/$archive" ]; then
       echo "[ffmpeg-min] FATAL(BUG-1443): 缺静态库 $prefix/lib/$archive" >&2
       ls -la "$prefix/lib" >&2 || true
@@ -288,10 +308,17 @@ cd "$SRC"
 # ffmetadata：有声书工作室导出 M4B 时把章节表 + 书名/作者等元数据写成 `;FFMETADATA1`
 # 文本，作为第二路输入 `-i chapters.txt -map_metadata 1 -map_chapters 1` 喂给封装。
 # 缺它这个文本文件无从识别 → AVERROR_INVALIDDATA，成书没有章节。纯文本解析，LGPL，零依赖。
+# dash：在线视频源除了 `.m3u8` 还有给 MPEG-DASH 清单 `manifest.mpd` 的（如 AnimeOnsen）。
+# 与 BUG-2642 同一形态：播放走 libmpv 的完整 FFmpeg 能放，制卡的句子音频 / 封面走本
+# 捆绑 ffmpeg，缺 dash demuxer 时清单被当成未知格式 → AVERROR_INVALIDDATA，制卡中止在
+# `required audio missing`（BUG-3503）。FFmpeg 的 dash demuxer 硬依赖 libxml2（下方
+# --enable-libxml2，MIT 许可）；分片走已开启的 mov(fMP4) / webm(matroska) demuxer 与
+# http/https 协议。⚠️ CI 需装 libxml2 开发包（MSYS2: mingw-w64-x86_64-libxml2；apt:
+# libxml2-dev）；macOS 在 build_darwin_static_deps 里静态自编。
 # 封面（`-i cover.jpg|png -map N:v -c:v copy -disposition:v attached_pic`）不需要新增
 # 组件：image2 demuxer（按扩展名）+ mjpeg/png parser/decoder 早已在表内，mp4/ipod 的
 # movenc 把 mjpeg/png 附图写成 `covr` atom。
-DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls,concat,aiff,ffmetadata"
+DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls,concat,aiff,ffmetadata,dash"
 # libdav1d（而不是原生 `av1`）：FFmpeg 自带的 `av1` 解码器**只是 hwaccel 挂钩壳**
 # （libavcodec/av1dec.c，allcodecs.c 里注明 "hwaccel hooks only, so prefer external
 # decoders"），本 build `--disable-everything` 后一个 hwaccel 都没有，于是任何 AV1 源
@@ -457,7 +484,7 @@ esac
   --enable-ffmpeg \
   --enable-small --enable-zlib \
   --enable-gpl --enable-libx264 --enable-libsvtav1 --enable-libwebp --enable-libdav1d \
-  --enable-libvpx --enable-libopus \
+  --enable-libvpx --enable-libopus --enable-libxml2 \
   --enable-avcodec --enable-avformat --enable-avfilter \
   --enable-swscale --enable-swresample \
   --enable-demuxer="$DEMUXERS" \

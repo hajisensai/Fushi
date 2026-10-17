@@ -46,6 +46,9 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
 ///   挂钩壳，而移动端配方 `--disable-mediacodec` / `--disable-videotoolbox` 后一个 hwaccel
 ///   都没有——缺它，AV1 视频制卡的截帧 / 动图每帧都是 `Your platform doesn't support
 ///   hardware accelerated AV1 decoding`。ffmpeg-kit 的开关叫 `--enable-dav1d`。
+/// - `--enable-libxml2`：BUG-3503 dash demuxer 的前提。在线视频源给 `manifest.mpd` 时
+///   制卡经 ffmpeg-kit 打开清单，缺它 → `Invalid data found when processing input` →
+///   `required audio missing`。
 const List<String> _requiredMobileFlags = <String>[
   '--enable-gpl',
   '--enable-libx264',
@@ -53,6 +56,7 @@ const List<String> _requiredMobileFlags = <String>[
   '--enable-libvpx',
   '--enable-libopus',
   '--enable-libdav1d',
+  '--enable-libxml2',
 ];
 
 /// configure 声明了 ≠ 编码器真链进去了：FFmpeg 找不到 libvpx 时会**静默**关掉它的四个
@@ -76,6 +80,15 @@ const Map<String, String> _requiredAv1DecoderStrings = <String, String>{
   'libdav1d': 'FFmpeg 的 AV1 软件解码器封装',
   'Malformed ITU-T T.35 metadata message format':
       'dav1d 自身的日志串（证明真链进了 dav1d）',
+};
+
+/// BUG-3503：dash demuxer 同样要两证。`--enable-small` 剥掉了 demuxer 长名，所以判
+/// dashdec.c 与 libxml2 自身独有的串：加 libxml2 之前的四个切片一个都扫不到（2026-10-17
+/// 实测），带 dash 的完整 ffmpeg 里两个都在。dash **muxer**（ffmpeg-kit 一直编着）没有
+/// 这两个串，所以它们不会因 dashenc 而假绿。
+const Map<String, String> _requiredDashDemuxerStrings = <String, String>{
+  'missing root node': 'libavformat/dashdec.c 的 MPD 解析日志（dash demuxer 在）',
+  'xmlParseCharRef': 'libxml2 自身的错误串（证明真链进了 libxml2）',
 };
 
 /// 从当前 cwd 向上找含 vendored ffmpeg-kit 的仓库根。
@@ -167,6 +180,17 @@ void main() {
       });
     }
 
+    for (final String abi in <String>['arm64-v8a', 'armeabi-v7a']) {
+      test('$abi: dash demuxer + libxml2 真链进 libavformat（BUG-3503）', () {
+        final String format = _asSearchableText(soBytes(abi, 'libavformat.so'));
+        _requiredDashDemuxerStrings.forEach((String needle, String what) {
+          expect(format.contains(needle), isTrue,
+              reason: '$abi libavformat.so 里没有「$needle」（$what）——'
+                  '在线源 .mpd 制卡会报 Invalid data（BUG-3503）');
+        });
+      });
+    }
+
     test('BUG-891 未回退：TLS 后端与证书指纹钉扎补丁仍在', () {
       final String format =
           _asSearchableText(soBytes('arm64-v8a', 'libavformat.so'));
@@ -192,6 +216,8 @@ void main() {
           reason: 'opus 的许可文件必须随产物分发');
       expect(aar.findFile('res/raw/license_dav1d.txt'), isNotNull,
           reason: 'dav1d 的许可文件必须随产物分发');
+      expect(aar.findFile('res/raw/license_libxml2.txt'), isNotNull,
+          reason: 'libxml2 的许可文件必须随产物分发');
       expect(aar.findFile('res/raw/source.txt'), isNotNull,
           reason: 'GPL/LGPL 要求的「源码获取途径」声明不得丢失');
     });
@@ -243,6 +269,17 @@ void main() {
           expect(codec.contains(needle), isTrue,
               reason: '$label libavcodec 里没有「$needle」（$what）——'
                   'AV1 视频制卡截帧 / 动图会全挂（BUG-2947）');
+        });
+
+        final File formatFile = File(
+          '$base/libavformat.xcframework/$dir/libavformat.framework/libavformat',
+        );
+        expect(formatFile.existsSync(), isTrue);
+        final String format = _asSearchableText(formatFile.readAsBytesSync());
+        _requiredDashDemuxerStrings.forEach((String needle, String what) {
+          expect(format.contains(needle), isTrue,
+              reason: '$label libavformat 里没有「$needle」（$what）——'
+                  '在线源 .mpd 制卡会报 Invalid data（BUG-3503）');
         });
       });
     });

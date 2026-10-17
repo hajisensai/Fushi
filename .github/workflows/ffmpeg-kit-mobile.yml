@@ -4,7 +4,7 @@
 # 原本只在维护者局域网 Mac 构建机上手工编好再拷进仓库（见 third_party/ffmpeg_kit_flutter/patches/README.md）。
 # 本 workflow 把同一份配方（patches/build_x264_{android,ios}.sh）搬到 GitHub-hosted runner。
 #
-# 配方（两端一致）：--enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d
+# 配方（两端一致）：--enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --enable-libxml2
 #   + FFmpeg 源码先打 patches/ffmpeg-tls-pin-sha256.patch（BUG-891 证书指纹钉扎）。
 #   Android 另加 --disable-x86 --disable-x86-64 --api-level=24；iOS 另加 --xcframework 并关掉
 #   Mac Catalyst（入库产物只有 ios-arm64_arm64e + ios-arm64_x86_64-simulator 两个切片）。

@@ -38,9 +38,9 @@ echo "=== prepare src/ffmpeg (clone n6.0 if absent + cert-pin patch) ==="
 bash "${HERE}/prepare_ffmpeg_src.sh" "${FFMPEG_KIT_DIR}"
 
 cd "${FFMPEG_KIT_DIR}"
-echo "=== ios.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --xcframework START $(date) ==="
+echo "=== ios.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --enable-libxml2 --xcframework START $(date) ==="
 rc=0
-./ios.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --xcframework \
+./ios.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --enable-libxml2 --xcframework \
   --disable-arm64-mac-catalyst --disable-x86-64-mac-catalyst || rc=$?
 echo "IOS_BUILD_EXIT=${rc}"
 if [ "${rc}" -ne 0 ]; then
