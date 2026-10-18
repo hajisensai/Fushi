@@ -585,7 +585,7 @@ extension _VideoWebSource on _VideoFushiPageState {
           ),
         if (hasVideo)
           Positioned.fill(child: video)
-        else
+        else ...<Widget>[
           Positioned(
             left: 0,
             right: 0,
@@ -593,6 +593,15 @@ extension _VideoWebSource on _VideoFushiPageState {
             height: _kVideoWebPageBarHeight,
             child: _buildWebPageBar(),
           ),
+          // 网页档也要看得到短提示（登录导入等）：播放器档的 OSD 层挂在控制条里，这里补一层。
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            top: _kVideoWebPageBarHeight,
+            child: _buildOsdOverlay(),
+          ),
+        ],
       ],
     );
   }
@@ -649,7 +658,14 @@ extension _VideoWebSource on _VideoFushiPageState {
                   onSubmitted: _submitWebAddress,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
+              FushiIconButtonControl(
+                key: const ValueKey<String>('video-web-login-import'),
+                tooltip: t.web_video_login_import,
+                icon: Icon(_webLoginImport == null ? Icons.login : Icons.sync),
+                onPressed: _beginWebLoginImport,
+              ),
+              const SizedBox(width: 4),
               if (_webPageHasVideo) ...<Widget>[
                 FushiFilledButton.tonalIcon(
                   key: const ValueKey<String>('video-web-player-open'),
@@ -673,6 +689,80 @@ extension _VideoWebSource on _VideoFushiPageState {
         ),
       ),
     );
+  }
+
+  /// 「从浏览器导入登录」：与漫画源登录同一条扩展通道（[BrowserCookieImportGate]）——登记
+  /// 当前站点、在系统浏览器里打开它，Fushi 浏览器扩展在该站页面加载完 / 每分钟心跳时把它的
+  /// cookie 送来，写进视频的 WebView2 环境（[importWebVideoBrowserCookies]）后刷新本页。
+  /// 登记保持到本页关闭：用户可能还没在浏览器里登录，登完再加载一次就会再送。
+  void _beginWebLoginImport() {
+    final WebVideoSession? session = _webSession;
+    if (session == null) return;
+    final String current = session.nav.value.url;
+    final Uri? page = Uri.tryParse(
+      current.isNotEmpty ? current : session.pageUrl,
+    );
+    if (page == null || page.host.isEmpty) return;
+    final String host = BrowserCookieImportGate.normalizeHost(page.host);
+    if (_webLoginImport?.request.host != host) {
+      _endWebLoginImport();
+      final BrowserCookieImportRequestHandle handle =
+          BrowserCookieImportGate.begin(host);
+      // 句柄 end() 关闭 deliveries，订阅随之结束，不必另存。
+      handle.deliveries.listen(
+        (BrowserCookieDelivery delivery) =>
+            unawaited(_applyWebLoginImport(host, delivery)),
+      );
+      _rebuild(() => _webLoginImport = handle);
+    }
+    _showOsd(
+      t.web_video_login_import_waiting,
+      icon: Icons.login,
+      prominent: true,
+      severity: ToastSeverity.info,
+    );
+    unawaited(
+      launchUrl(
+        Uri(scheme: 'https', host: page.host, path: '/'),
+        mode: LaunchMode.externalApplication,
+      ).catchError((Object _) => false),
+    );
+  }
+
+  Future<void> _applyWebLoginImport(
+    String host,
+    BrowserCookieDelivery delivery,
+  ) async {
+    final List<BrowserSiteCookie> cookies = browserSiteCookiesForSite(
+      delivery.cookies,
+      host,
+    );
+    if (cookies.isEmpty) return;
+    final String signature =
+        (cookies
+                .map(
+                  (BrowserSiteCookie c) => '${c.domain}|${c.name}=${c.value}',
+                )
+                .toList()
+              ..sort())
+            .join(';');
+    if (signature == _webLoginImportSignature) return;
+    _webLoginImportSignature = signature;
+    final int written = await importWebVideoBrowserCookies(cookies);
+    final WebVideoSession? session = _webSession;
+    if (!mounted || session == null || written == 0) return;
+    _showOsd(
+      t.web_video_login_import_received(count: written),
+      icon: Icons.login,
+      severity: ToastSeverity.success,
+    );
+    await session.reload();
+  }
+
+  void _endWebLoginImport() {
+    _webLoginImport?.end();
+    _webLoginImport = null;
+    _webLoginImportSignature = null;
   }
 
   /// 地址栏没在编辑时跟着当前页面地址（[WebVideoSession.nav] 的监听者）。
@@ -760,6 +850,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       _webWindowFullscreen = false;
       unawaited(WindowCaptionChannel.setFullscreen(false));
     }
+    _endWebLoginImport();
     _webSession?.dispose();
     _webAddressController.dispose();
     _webAddressFocus.dispose();

@@ -3714,48 +3714,6 @@ class VideoPlayerController extends ChangeNotifier
   bool _isCurrentLoad(Player player, int loadToken) =>
       _player == player && _loadToken == loadToken;
 
-  /// 用网页站点当播放后端开一集：原生播放器页与控制条照常工作，画面由垫在 Flutter
-  /// 下面的 WebView2 自己画（[platform] 是外部渲染的，VideoController 不建纹理）。
-  /// 不做任何 mpv 设置；[cues] 来自站点字幕 bridge（之后可经 [setCues] 更新）。
-  Future<void> loadWeb({
-    required WebVideoPlatformPlayer platform,
-    required String bookUid,
-    required String pageUrl,
-    List<AudioCue> cues = const <AudioCue>[],
-    double initialSpeed = 1.0,
-    double initialVolume = 100.0,
-  }) async {
-    assert(_player == null, 'loadWeb opens a fresh controller only');
-    final int loadToken = ++_loadToken;
-    _webBackend = true;
-    _bookUid = bookUid;
-    _videoPath = null;
-    _sourceIsNetwork = true;
-    _mediaOpened = false;
-    _lastSpeed = initialSpeed;
-    _lastVolume = initialVolume;
-    final Player player = Player(platformPlayer: platform);
-    _player = player;
-    // 没有 libmpv：hwdec 无意义，但照常显式传 configuration（BUG-1545 守卫的口径）。
-    _videoController = VideoController(
-      player,
-      configuration: const VideoControllerConfiguration(),
-    );
-    setCues(cues);
-    final Future<void> opened = player.open(Media(pageUrl));
-    await opened;
-    if (!_isCurrentLoad(player, loadToken)) return;
-    _attachPlaybackStreams(player, loadToken);
-    notifyListeners();
-  }
-
-  /// 网页档换书身份（站内换集 / 站点入口播起某一集）：之后的进度写回落到 [bookUid]；null =
-  /// 暂不写（站点入口还没有书、站内刚换了视频还没认出是哪一集）。
-  void rebindWebBook(String? bookUid) {
-    assert(_webBackend, 'rebindWebBook is for the web backend only');
-    _bookUid = bookUid;
-  }
-
   /// 上一个控制器 [dispose] 时 fire-and-forget 的原生释放（进程级，同一时刻至多
   /// 一个视频页在拆）。
   ///
@@ -4072,6 +4030,48 @@ class VideoPlayerController extends ChangeNotifier
         _setSubtitleCuesLoading(false);
       }
     }
+  }
+
+  /// 用网页站点当播放后端开一集：原生播放器页与控制条照常工作，画面由垫在 Flutter
+  /// 下面的 WebView2 自己画（[platform] 是外部渲染的，VideoController 不建纹理）。
+  /// 不做任何 mpv 设置；[cues] 来自站点字幕 bridge（之后可经 [setCues] 更新）。
+  Future<void> loadWeb({
+    required WebVideoPlatformPlayer platform,
+    required String bookUid,
+    required String pageUrl,
+    List<AudioCue> cues = const <AudioCue>[],
+    double initialSpeed = 1.0,
+    double initialVolume = 100.0,
+  }) async {
+    assert(_player == null, 'loadWeb opens a fresh controller only');
+    final int loadToken = ++_loadToken;
+    _webBackend = true;
+    _bookUid = bookUid;
+    _videoPath = null;
+    _sourceIsNetwork = true;
+    _mediaOpened = false;
+    _lastSpeed = initialSpeed;
+    _lastVolume = initialVolume;
+    final Player player = Player(platformPlayer: platform);
+    _player = player;
+    // 没有 libmpv：hwdec 无意义，但照常显式传 configuration（BUG-1545 守卫的口径）。
+    _videoController = VideoController(
+      player,
+      configuration: const VideoControllerConfiguration(),
+    );
+    setCues(cues);
+    final Future<void> opened = player.open(Media(pageUrl));
+    await opened;
+    if (!_isCurrentLoad(player, loadToken)) return;
+    _attachPlaybackStreams(player, loadToken);
+    notifyListeners();
+  }
+
+  /// 网页档换书身份（站内换集 / 站点入口播起某一集）：之后的进度写回落到 [bookUid]；null =
+  /// 暂不写（站点入口还没有书、站内刚换了视频还没认出是哪一集）。
+  void rebindWebBook(String? bookUid) {
+    assert(_webBackend, 'rebindWebBook is for the web backend only');
+    _bookUid = bookUid;
   }
 
   @visibleForTesting

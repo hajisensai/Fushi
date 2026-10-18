@@ -100,6 +100,7 @@
     } else if (!ad && adRestore) {
       try { if (v) { v.muted = adRestore.muted; v.playbackRate = adRestore.rate; } } catch (_) {}
       adRestore = null;
+      healVideoOnly();
     }
   }
   try { setInterval(handleAds, 250); } catch (_) {}
@@ -180,6 +181,7 @@
     return true;
   }
   function sample() {
+    healVideoOnly();
     var s = snapshot();
     if (same(last, s)) return;
     last = s;
@@ -277,26 +279,47 @@
     ' height: 100vh !important; max-width: none !important; max-height: none !important;' +
     ' object-fit: contain !important; transform: none !important; margin: 0 !important;' +
     ' z-index: 2147483647 !important; background: #000 !important; }';
+  // 主画面：正在播的优先（广告结束后 YouTube 可能换 / 重建 <video>，旧元素还留着最后一帧的
+  // 尺寸），其次有画面尺寸的，再按面积。
   function mainVideo() {
     var vs = document.querySelectorAll('video');
-    var best = null;
+    var best = null, bestScore = -1;
     for (var i = 0; i < vs.length; i++) {
-      if (!best || vs[i].videoWidth * vs[i].videoHeight > best.videoWidth * best.videoHeight) best = vs[i];
+      var v = vs[i];
+      var area = v.videoWidth * v.videoHeight;
+      var score = (!v.paused && !v.ended ? 4 : 0) + (v.readyState > 0 ? 2 : 0) + (area > 0 ? 1 : 0);
+      if (score > bestScore || (score === bestScore && area > best.videoWidth * best.videoHeight)) {
+        best = v; bestScore = score;
+      }
     }
     return best;
   }
-  function setVideoOnly(on) {
+  var videoOnlyOn = false;
+  // 标记 v 及其祖先链；返回是否真改了标记。
+  function markVideoOnly(v) {
+    var changed = false;
     var marked = document.querySelectorAll('video[' + VIDEO_ONLY_ATTR + ']');
-    var v = on ? mainVideo() : null;
     for (var i = 0; i < marked.length; i++) {
-      if (marked[i] !== v) marked[i].removeAttribute(VIDEO_ONLY_ATTR);
+      if (marked[i] !== v) { marked[i].removeAttribute(VIDEO_ONLY_ATTR); changed = true; }
     }
-    if (v) v.setAttribute(VIDEO_ONLY_ATTR, '');
-    var chain = document.querySelectorAll('[' + VIDEO_CHAIN_ATTR + ']');
-    for (var c = 0; c < chain.length; c++) chain[c].removeAttribute(VIDEO_CHAIN_ATTR);
+    if (v && !v.hasAttribute(VIDEO_ONLY_ATTR)) { v.setAttribute(VIDEO_ONLY_ATTR, ''); changed = true; }
+    var want = [];
     for (var p = v && v.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
-      p.setAttribute(VIDEO_CHAIN_ATTR, '');
+      want.push(p);
     }
+    var chain = document.querySelectorAll('[' + VIDEO_CHAIN_ATTR + ']');
+    for (var c = 0; c < chain.length; c++) {
+      if (want.indexOf(chain[c]) < 0) { chain[c].removeAttribute(VIDEO_CHAIN_ATTR); changed = true; }
+    }
+    for (var w = 0; w < want.length; w++) {
+      if (!want[w].hasAttribute(VIDEO_CHAIN_ATTR)) { want[w].setAttribute(VIDEO_CHAIN_ATTR, ''); changed = true; }
+    }
+    return changed;
+  }
+  function setVideoOnly(on) {
+    videoOnlyOn = !!on;
+    var v = on ? mainVideo() : null;
+    markVideoOnly(v);
     var el = document.getElementById(VIDEO_ONLY_ID);
     if (on && !el) {
       el = document.createElement('style');
@@ -311,6 +334,15 @@
     if (on) preferHighestQuality();
     setAutoAdvanceGuard(on);
     return !!v;
+  }
+  // 只留画面期间标记自愈：站点换了 / 重建了 <video>（YouTube 广告结束换回正片、SPA 换集）或
+  // 抹掉了属性 / 样式，新画面会落在「body * 一律隐藏」里 = 黑屏。每轮核对、不对就重标。
+  function healVideoOnly() {
+    if (!videoOnlyOn) return;
+    var v = mainVideo();
+    if (!v) return;
+    var styleGone = !document.getElementById(VIDEO_ONLY_ID);
+    if (markVideoOnly(v) || styleGone) setVideoOnly(true);
   }
   // 站点自己的「自动连播」（YouTube autonav、网飞片尾倒计时进下一集）在 Fushi 里不该发生：
   // 下一集由 Fushi 决定。藏起来的控件 click() 照样生效。

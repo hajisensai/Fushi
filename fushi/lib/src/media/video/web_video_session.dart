@@ -18,6 +18,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/webview_key_bridge.dart';
+import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/web_video_shaders.dart';
@@ -181,6 +182,49 @@ Future<void> copyWebVideoLoginCookies({
   } catch (e) {
     ErrorLogService.instance.log('web_video', 'cookie copy: $e');
   }
+}
+
+/// 浏览器扩展送来的站点会话（[BrowserCookieImportGate]，与漫画源登录同一条通道）写进视频
+/// 的两个 WebView2 环境：窗口宿主档是站点页面真正用的那份；内置档也写，因为每次开页
+/// [copyWebVideoLoginCookies] 会把内置档的同名 cookie 抄过去，只写一边会被旧值盖回。
+/// 逐条写、单条失败不中断（WebView2 会拒个别属性组合）；返回写进窗口宿主档的条数。
+Future<int> importWebVideoBrowserCookies(
+  List<BrowserSiteCookie> cookies,
+) async {
+  int written = 0;
+  for (final Future<WebViewEnvironment> Function() env
+      in <Future<WebViewEnvironment> Function()>[
+        webVideoCapturableEnvironment,
+        webVideoWindowedEnvironment,
+      ]) {
+    final bool primary = env == webVideoWindowedEnvironment;
+    final CookieManager manager;
+    try {
+      manager = CookieManager.instance(webViewEnvironment: await env());
+    } catch (e) {
+      ErrorLogService.instance.log('web_video', 'browser cookie env: $e');
+      continue;
+    }
+    for (final BrowserSiteCookie cookie in cookies) {
+      try {
+        final bool ok = await manager.setCookie(
+          url: WebUri.uri(cookie.originUrl),
+          name: cookie.name,
+          value: cookie.value,
+          path: cookie.path,
+          // host-only cookie 不能带 domain：带了就变成覆盖全部子域的域 cookie。
+          domain: cookie.hostOnly ? null : cookie.canonicalDomain,
+          expiresDate: cookie.expiresAt,
+          isSecure: cookie.secure,
+          isHttpOnly: cookie.httpOnly,
+        );
+        if (ok && primary) written++;
+      } catch (_) {
+        // 单条写不进去：见方法注释。
+      }
+    }
+  }
+  return written;
 }
 
 /// 页面地址是不是「正在看某一集」的播放页（自动进播放器档的判据）：Netflix 的
@@ -386,6 +430,12 @@ class WebVideoSession {
     } else {
       await web.reload();
     }
+  }
+
+  Future<void> reload() async {
+    final InAppWebViewController? web = _web;
+    if (web == null || _disposed) return;
+    await web.reload();
   }
 
   Future<void> loadUrl(String url) async {
