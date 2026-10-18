@@ -21,6 +21,7 @@ pub mod html5lib;
 pub mod sanitize;
 mod study_char_table;
 pub mod fold;
+pub mod tts_split;
 
 use study_char_table::STUDY_CHAR_RANGES;
 

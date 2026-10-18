@@ -8,3 +8,4 @@ export 'src/parse/fold.dart';
 export 'src/parse/study_chars.dart';
 export 'src/parse/epub.dart';
 export 'src/parse/sanitize.dart';
+export 'src/parse/tts_split.dart';
