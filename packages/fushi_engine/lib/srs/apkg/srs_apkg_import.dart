@@ -18,6 +18,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'package:fushi_engine/srs/apkg/anki_collection_snapshot.dart';
 import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/apkg/srs_import_options.dart';
@@ -55,6 +56,54 @@ Future<SrsImportReport> importAnkiPackage({
   final SrsAnkiCollection col = await SrsAnkiCollection.open(
     pkg.collectionBytes,
   );
+  return _importOpened(
+    store: store,
+    pkg: pkg,
+    col: col,
+    storeMedia: storeMedia,
+    options: options,
+    onProgress: onProgress,
+  );
+}
+
+/// 导入本机 Anki 用户数据目录里的集合（[snapshot] = 集合文件的只读快照 + 原位媒体目录，
+/// 见 [snapshotAnkiCollection]）。与 [importAnkiPackage] 走同一条导入路径、同一套 ID 派生：
+/// 先迁移一次、之后又导入同一份集合导出的 .colpkg 不会出重复。
+///
+/// 用户的 Anki 数据只读：集合读的是快照，媒体只按字段引用逐个读。
+Future<SrsImportReport> importAnkiCollectionSnapshot({
+  required SrsDbStore store,
+  required AnkiCollectionSnapshot snapshot,
+  required SrsImportMediaSink storeMedia,
+  SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
+  void Function(double progress)? onProgress,
+}) async {
+  final AnkiMediaFolder media = AnkiMediaFolder(snapshot.mediaDir);
+  final SrsAnkiPackage pkg = SrsAnkiPackage.fromCollectionFolder(
+    mediaIndex: media.index(),
+    loadEntry: media.read,
+  );
+  final SrsAnkiCollection col = await SrsAnkiCollection.openFile(
+    snapshot.collection,
+  );
+  return _importOpened(
+    store: store,
+    pkg: pkg,
+    col: col,
+    storeMedia: storeMedia,
+    options: options,
+    onProgress: onProgress,
+  );
+}
+
+Future<SrsImportReport> _importOpened({
+  required SrsDbStore store,
+  required SrsAnkiPackage pkg,
+  required SrsAnkiCollection col,
+  required SrsImportMediaSink storeMedia,
+  required SrsAnkiImportOptions options,
+  required void Function(double progress)? onProgress,
+}) async {
   try {
     final _Importer imp = _Importer(
       store: store,
