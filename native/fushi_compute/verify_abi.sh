@@ -4,7 +4,8 @@
 #
 # 构建脚本自己只断言「文件存在」，而 FFI 的失败形态恰恰是「文件在、符号不在」：
 # iOS 上 -force_load / dead-strip / strip 任何一环不对，符号会被静默去掉，
-# `DynamicLibrary.process().lookup` 抛 ArgumentError → 该计算域判不可用、退回 Dart，CI 全绿。
+# `DynamicLibrary.process().lookup` 抛 ArgumentError → 运行时调用该域即抛 FushiComputeUnavailableError，
+# 而构建与只跑 Linux .so 的 CI 全绿。
 # 期望集**递归**取自 packages/fushi_compute/lib/ 下所有 .dart 里的 'ffc_xxx' 字面量
 # （各域绑定分文件放在 lib/src/<域>/ 下），所以新增域符号自动跟上，不用手改清单。
 #
@@ -29,11 +30,11 @@ grep -rhoE --include='*.dart' "'ffc_[a-z0-9_]+'" "$BINDINGS_DIR" | tr -d "'" | s
 expected_count="$(wc -l < "$work/expected.txt" | tr -d ' ')"
 echo "ffc_* symbols looked up by the Dart bindings: $expected_count"
 # 扫描规模哨兵：正则被绑定文件的格式改写打断时，期望集会塌成 0 条，「全都导出了」恒真。
-# 下界是「已知必有」的符号数（当前 16：ffc_abi_version、ffc_free_bytes 与 14 个 ffc_hash_*）；新增域符号
+# 下界是「已知必有」的符号数（当前 59：ffc_abi_version、ffc_free_bytes、14 个 ffc_hash_* 与 43 个 ffc_parse_*）；新增域符号
 # 会自动进期望集、不必改这里，但下界应随之调高，免得某个域的绑定整体漏扫还判通过。
 # 真删符号是破坏性 ABI 变更（ffc_abi_version 同时要升），应当同时改这里。
-if [[ "$expected_count" -lt 16 ]]; then
-  echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 ffc_* 名（<16），正则失效或绑定被大改，不能当通过。" >&2
+if [[ "$expected_count" -lt 59 ]]; then
+  echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 ffc_* 名（<59），正则失效或绑定被大改，不能当通过。" >&2
   exit 1
 fi
 
