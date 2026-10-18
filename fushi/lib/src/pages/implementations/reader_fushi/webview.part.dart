@@ -407,17 +407,12 @@ extension _ReaderWebView on _ReaderFushiPageState {
   }) {
     String html = utf8.decode(rawData, allowMalformed: true);
     html = ReaderResourceSanitizer.sanitizeXhtml(html);
-    // TODO-perf（跨章·图片）：离屏插图不该拖住 window.load —— 属性必须写进 HTML 源码
-    // 才对本次加载生效（JS 侧那次 lazy 跑在 load 之后，来不及，见 markImagesLazy）。
-    // 纯图片章整章 eager：它的分页几何要靠插图真实撑开（TODO-1349）。判据用 EpubBook
-    // 的 isImageOnlyChapter（比 JS 侧「正文无任何可匹配字符」宽松），保证这里 eager 的
-    // 集合是 JS 侧 eager 集合的超集，不会倒挂。合并注入的前导插图自带显式
-    // `loading="eager"`（见 [_injectMergedChapterImages]），故 TODO-1339 的 eager 不依赖
-    // 本行与注入行的先后顺序；守卫 `test/reader/reader_image_lazy_pipeline_guard_test.dart`。
-    html = ReaderResourceSanitizer.markImagesLazy(
-      html,
-      eagerAll: _isImageOnlyChapterCached(chapterIndex),
-    );
+    // 正文插图一律按浏览器默认（eager）加载（连原书自带的 loading="lazy" 也去掉）：
+    // 分页 / 连续 / VN 的章节几何（maxScroll、章首章末落点、跨章判定）都要靠每张图的
+    // 真实尺寸撑开，未加载的懒图是 0 尺寸、不占列，而分页的远列永远进不了懒加载视口——
+    // 章节会被算短，还没翻到插图末尾就判「到章末」跨到下一章。跨章首开的读图开销由
+    // [_prefetchAdjacentChapterImages] 预热下一章图片承担。
+    html = ReaderResourceSanitizer.stripImageLoadingAttributes(html);
     // TODO-1128 / TODO-1174: when this text chapter absorbs the preceding
     // single-image chapters (merge-image on), prepend their <img> to the *start*
     // of the flow before the reader style is injected, so the illustrations
@@ -477,16 +472,9 @@ extension _ReaderWebView on _ReaderFushiPageState {
             : ReaderFushiSource.epubUrl(
                 p.posix.normalize(p.posix.join(chapterDir, src)),
               );
-        // TODO-1339 / BUG-1140 第二轮：显式 `loading="eager"`。这些前导插图是章首
-        // **结构性**内容（firstContentEdge 只计入非零尺寸媒体，挂 lazy 会让章首锚跳过
-        // 第一张）。JS 侧靠 `.fushi-merged-image` 放行，Dart 侧原本只靠「markImagesLazy
-        // 排在本方法之前」这一条**调用顺序**——谁把两行调个个儿，守卫全绿而 bug 复活。
-        // 写成显式 loading 属性后 [ReaderResourceSanitizer.markImagesLazy] 的
-        // 「已有 loading= 就尊重原书」分支会跳过它们，顺序不再是正确性的承重墙。
         figures.write(
           '<div class="fushi-merged-image">'
-          '<img src="${htmlEscape.convert(absoluteUrl)}" class="block-img" '
-          'loading="eager"/>'
+          '<img src="${htmlEscape.convert(absoluteUrl)}" class="block-img"/>'
           '</div>',
         );
       }
@@ -572,17 +560,6 @@ extension _ReaderWebView on _ReaderFushiPageState {
         }
       }),
     );
-  }
-
-  /// 章号非法 / 书未就绪时返回 true（保守走 eager，宁可慢一点也不冒「该 eager 的图
-  /// 被挂 lazy」导致分页几何塌缩的风险）；其余委托 [EpubBook.isImageOnlyChapter]——
-  /// 记忆化已下沉到数据拥有者，本拦截器热路径与 spread 配对 / 边缘分析 / 预取共享
-  /// 同一份按章缓存，不再各存一份。
-  bool _isImageOnlyChapterCached(int chapterIndex) {
-    if (chapterIndex < 0) return true;
-    final EpubBook? book = _book;
-    if (book == null) return true;
-    return book.isImageOnlyChapter(chapterIndex);
   }
 
   /// TODO-perf（跨章·图片）：把下一章的插图预热进 WebView 的 HTTP 缓存。

@@ -63,39 +63,27 @@ class ReaderResourceSanitizer {
     '<img\\b((?:"[^"]*"|\'[^\']*\'|[^>"\'])*)>',
     caseSensitive: false,
   );
-  static final RegExp _loadingAttrPattern =
-      RegExp(r'\bloading\s*=', caseSensitive: false);
-  static final RegExp _gaijiClassPattern = RegExp(
-      r'''\bclass\s*=\s*(?:"[^"]*\bgaiji|'[^']*\bgaiji|gaiji)''',
-      caseSensitive: false);
+  // 引号串整段先被第一组吃掉（原样保留），属性值里的 `loading=` 字样就不会被误删；
+  // 只有落在引号外的 ` loading=…` 才进第二组。
+  static final RegExp _loadingAttrPattern = RegExp(
+    '("[^"]*"|\'[^\']*\')|(\\s+loading\\s*=\\s*(?:"[^"]*"|\'[^\']*\'|[^\\s>"\']+))',
+    caseSensitive: false,
+  );
 
-  /// TODO-perf（跨章·图片）：在**生成 HTML 时**就给正文插图标上 `loading="lazy"` /
-  /// `decoding="async"`。
-  ///
-  /// 阅读器 JS（`initialize` 里 TODO-1074 那段）本来就想给每张 `<img>` 挂 lazy，理由写的
-  /// 也正是「不再拖住 window.load」——但那段脚本是在 `onLoadStop`（即 `load` 事件**之后**）
-  /// 注入的，浏览器早已按标签里的原始属性把整章图片全部读盘+解码完毕。换句话说那行 lazy
-  /// 迟到了一整个加载周期，只是给一笔已经付掉的账贴了张标签。实测带插图的章 `nav.dcl`
-  /// 15~20ms 而 `nav.load` 687~717ms，遮罩全程盖在这段等待上。
-  ///
-  /// 属性只有写进 HTML 源码才能影响本次加载，所以判定上移到 Dart 侧。保持 eager 的例外与
-  /// JS 侧同款、且**更保守**（这里 eager 的集合是 JS 侧 eager 集合的超集，绝不会出现
-  /// 「Dart 挂了 lazy 而 JS 想要 eager」的倒挂）：
-  /// - [eagerAll] = true（纯图片章：整章就是几张整页插图，分页几何要靠它们真实撑开，见
-  ///   TODO-1349）→ 整章一律 eager，原样返回。
-  /// - `class` 含 `gaiji` 的内联小图参与文字排版几何，必须同步解码 → 跳过。
-  /// - 已显式写了 `loading=` 的标签 → 尊重原书，跳过。
-  ///
-  /// 合并注入的前导插图（`.fushi-merged-image`）不经过这里——调用点在
-  /// `_injectMergedChapterImages` **之前**，那些图天然保持 eager（TODO-1339）。
-  static String markImagesLazy(String html, {bool eagerAll = false}) {
-    if (eagerAll) return html;
+  /// 去掉正文 `<img>` 上原书自带的 `loading` 属性，让所有插图按浏览器默认（eager）
+  /// 加载。阅读器三种视图的章节几何（分页 maxScroll、章首章末落点、跨章判定、VN 屏
+  /// 切分）都要靠每张图的真实尺寸：`loading="lazy"` 的图在离视口远的分页列 / 脱离文档
+  /// 的 VN 源树里永远不会加载，保持 0 尺寸，章节被算短，用户还没看完插图就被判到章末。
+  static String stripImageLoadingAttributes(String html) {
     return html.replaceAllMapped(_imgTagPattern, (Match m) {
-      final String whole = m.group(0)!;
       final String attrs = m.group(1) ?? '';
-      if (_loadingAttrPattern.hasMatch(attrs)) return whole;
-      if (_gaijiClassPattern.hasMatch(attrs)) return whole;
-      return '<img loading="lazy" decoding="async"$attrs>';
+      final String stripped = attrs.replaceAllMapped(
+        _loadingAttrPattern,
+        (Match a) => a.group(1) ?? '',
+      );
+      final String whole = m.group(0)!;
+      // `<img` / `<IMG`：保留原书的标签名大小写。
+      return stripped == attrs ? whole : '${whole.substring(0, 4)}$stripped>';
     });
   }
 

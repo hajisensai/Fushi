@@ -83,24 +83,6 @@ void main() {
         reason: '须写进 _fushiRevealedKeys（_fushiBlurImage 命中此集即跳过遮罩）');
   });
 
-  test('crossed lazy image is eager-loaded before reveal so pause shows it',
-      () {
-    final int advIdx = slice(bridge, '__fushiImagePauseAdvance = function');
-    final int advEnd = bridge.indexOf('\n};', advIdx);
-    expect(advEnd, greaterThan(advIdx));
-    final String fn = bridge.substring(advIdx, advEnd);
-    expect(fn, contains("crossed.getAttribute('loading') === 'lazy'"),
-        reason: '命中插图是懒图时须处理（否则 reveal 落到 0 尺寸空位、暂停看不到图）');
-    expect(fn, contains("crossed.setAttribute('loading', 'eager')"),
-        reason: '须强制 eager 让懒图立即 load，reveal 落到真实图盒');
-    // eager-load 仍在 reveal && pauseEnabled 门控内（TODO-724：关暂停绝不滚图）。
-    final int gate = fn.indexOf('if (reveal && pauseEnabled)');
-    final int eager = fn.indexOf("crossed.setAttribute('loading', 'eager')");
-    expect(gate, greaterThan(-1));
-    expect(eager, greaterThan(gate),
-        reason: 'eager-load 须在 reveal && pauseEnabled 门控之内');
-  });
-
   test(
       'image-pause detection untouched: no IntersectionObserver, judge intact '
       '(BUG-007 iron rule)', () {

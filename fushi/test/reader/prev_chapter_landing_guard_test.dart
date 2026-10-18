@@ -19,10 +19,8 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 ///      只走文本节点，纯图片章无文本 → 返 null → 不滚动 → 停章首。修复 = 新增
 ///      `scrollToChapterEnd`（最后可见内容元素 `scrollIntoView(block:'end')`，含尾部插图），
 ///      `restoreProgress(progress>=0.99)` 路由到它（与分页 `contentLastPageScroll` 对称）。
-///   2. 纯图片章的 `<img>` 被 `_sharedInitImages` 无条件挂 `loading="lazy"` → 离屏图永不进
-///      视口 margin → 永不 load → 0 尺寸被 `buildPaginationMetrics` 的 first/lastContentEdge
-///      排除 → 分页版 maxScroll 塌缩。修复 = 纯图片章（`__fushiImageOnlyChapter`）的图保持
-///      eager（与 gaiji / 合并前导插图同理）。
+///   2. 插图被挂 `loading="lazy"` → 离屏图永不 load → 0 尺寸、分页 maxScroll 塌缩。
+///      已从根上去掉正文图片懒加载（见 `ReaderResourceSanitizer.stripImageLoadingAttributes`）。
 ///
 /// 行为断言在 `tool/reader_pitch_headless/prev_chapter_landing_probe.mjs`（headless Chrome
 /// 注入**真 shell**，对纯图片/尾部插图/图文混排三几何 × 分页/连续两 shell 断言
@@ -65,33 +63,5 @@ void main() {
       );
     });
 
-    test('image-only chapter keeps <img> eager (paginated + continuous)', () {
-      for (final bool continuous in <bool>[false, true]) {
-        final String shell = ReaderPaginationScripts.paginatedShellSource();
-        final String n = norm(shell);
-        // 纯图片章检测存在。
-        expect(n.contains('__fushiImageOnlyChapter'), isTrue,
-            reason: '必须检测纯图片章（continuous=$continuous）以对其 <img> 保持 eager');
-        // lazy 门控必须放行纯图片章（否则离屏图 0 尺寸致 maxScroll 塌缩）。
-        final int lazyIdx = n.indexOf("setAttribute('loading', 'lazy')");
-        expect(lazyIdx, greaterThan(0));
-        final String guardWindow =
-            n.substring((lazyIdx - 400).clamp(0, n.length), lazyIdx);
-        expect(guardWindow.contains('!__fushiImageOnlyChapter'), isTrue,
-            reason: 'loading=lazy 门控必须排除纯图片章（continuous=$continuous）');
-      }
-    });
-
-    test(
-        'normal text chapter still lazy-loads images (no TODO-1074 regression)',
-        () {
-      // 纯图片章检测用 readerRegex（有文本即短路→非纯图片→仍 lazy）。守卫接线在场即可，
-      // 行为（文本章 lazy）由 integration/headless 端到端断言。
-      final String n = norm(ReaderPaginationScripts.paginatedShellSource());
-      expect(n.contains("setAttribute('loading', 'lazy')"), isTrue,
-          reason: '普通图仍须 lazy 分支在场（不回退 TODO-1074）');
-      expect(n.contains('readerRegex.test(document.body.textContent'), isTrue,
-          reason: '纯图片章判定须基于正文可匹配文本（有文本=非纯图片=仍 lazy）');
-    });
   });
 }
