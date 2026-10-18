@@ -160,6 +160,9 @@ class EpubSrtMatcher {
   /// 规范化后 ≤ 此长度的 cue 视为「超短 cue」：精确命中只在游标附近
   /// [shortCueMaxAdvance] 字以内才作数（理由见主循环快速通道注释）。
   static const int shortCueMaxLen = 2;
+
+  /// 不足 [defaultProbeMinLen] 字的短 cue 同受此限，但可再加上自上一条命中
+  /// 以来 miss 掉的 cue 的字数（见快速通道）。
   static const int shortCueMaxAdvance = 16;
 
   /// 前一条 cue 的尾巴允许被下一条「吃回去」的最大字数（BUG-2204）。ASR 字幕的
@@ -321,6 +324,9 @@ class EpubSrtMatcher {
     int cursor = start;
     int matched = 0;
     int consecutiveMisses = 0;
+    // 自上一条命中（或恢复重锚）以来 miss 掉的 cue 的规范化字数（短 cue 领先上限，
+    // 见快速通道）。
+    int missedCharsSinceHit = 0;
     final _FuzzyBudget recoverFuzzyBudget = _FuzzyBudget(
       recoverFuzzyBudgetTotal,
     );
@@ -392,6 +398,7 @@ class EpubSrtMatcher {
             'cue="${_clip(cue.text, 24)}"',
           );
           cursor = anchor.pos;
+          missedCharsSinceHit = 0;
           // 游标可能回退到上一条命中之前：尾巴回吃 / 裁剪的参照作废。
           lastHitResult = -1;
           lastHitAbsStart = -1;
@@ -426,8 +433,17 @@ class EpubSrtMatcher {
         // 拽走，后面整段正文全 miss。2026-09-05 无職転生 01 真机对照：ASR 字幕的
         // 卷号 cue「一」命中了第七节「第一章」，游标越过第六节题词，12 条 cue
         // 连锁错过（SubPlz 那份写作「＊1」，规范化后是数字 1 才侥幸没撞）。
+        //
+        // 三到五字的短 cue 同理（BUG-3519：『少女事案 2』ASR 字幕「すげえ」——正文
+        // 写作「すげ～!!」精确不中——在 200 字窗口里撞上 170 字后的「すげえよなあ」，
+        // 中间 13 句全 miss、回填也挤不进 6 字的缝，歌词页整段灰显）。但它们不像
+        // 一两个字那样只能紧邻游标：前面有 cue 模糊没过线时游标停在原地，本句
+        // 真实位置就在那几句之后，所以上限再加上这些 miss 的字数。
+        final int maxAdvance = nc.length <= shortCueMaxLen
+            ? shortCueMaxAdvance
+            : shortCueMaxAdvance + missedCharsSinceHit;
         final bool tooFarForShortCue =
-            nc.length <= shortCueMaxLen && found > cursor + shortCueMaxAdvance;
+            nc.length < defaultProbeMinLen && found > cursor + maxAdvance;
         bool hit = found >= 0 && matchEnd <= windowEnd && !tooFarForShortCue;
         if (!hit && reading != null) {
           // 基底轨没有精确命中：同一窗口在读音轨再找一次，命中换算回基底偏移。
@@ -475,6 +491,7 @@ class EpubSrtMatcher {
           cursor = matchEnd;
           matched++;
           consecutiveMisses = 0;
+          missedCharsSinceHit = 0;
           continue;
         }
       }
@@ -559,9 +576,11 @@ class EpubSrtMatcher {
         cursor = matchEnd;
         matched++;
         consecutiveMisses = 0;
+        missedCharsSinceHit = 0;
       } else {
         results.add(CueMatch.unmatched);
         consecutiveMisses++;
+        missedCharsSinceHit += nc.length;
         fushiDebugPrint(
           '[sentenceAudioHighlight] matcher.miss sid=${cue.sentenceIndex} '
           'cue="${_clip(cue.text, 24)}" consecutive=$consecutiveMisses',
