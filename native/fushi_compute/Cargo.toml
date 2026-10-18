@@ -14,9 +14,7 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 crc32fast = "1"
 md4 = "0.10"
 sha2 = "0.10"
-# parse::epub：章节 XHTML 的 HTML5 树构建（与 package:html 同为 WHATWG 算法）与 CSS url 正则。
-html5ever = "0.27"
-markup5ever_rcdom = "0.3"
+# parse::epub：CSS url 正则（HTML 树构建是 parse::html5lib，package:html 的移植，无外部依赖）。
 regex = "1"
 
 [profile.release]

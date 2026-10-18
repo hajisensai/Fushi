@@ -87,15 +87,44 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
 | 内存 SHA-256 | 64 MiB | 1,173 ms | 43 ms | 27× |
 | 整文件 SHA-256（异步读，UI isolate 可用） | 256 MiB | 4,829 ms | 408 ms | 11.8× |
 
+## 解析域：EPUB 章节 DOM 派生量（BUG-3433）
+
+`ffc_parse_epub_chapter`（`src/parse/epub.rs`，Dart 绑定 `EpubChapterScanner`）一次解析一章 XHTML，
+按请求位产出纯文本（ruby 剥离、`\s+` 折叠）+ 学习字数、ruby 读音轨（块尾 / 场景分隔）、目录锚点偏移、
+带位置的插图扫描、整份文档的图片引用、全书搜索坐标系文本。调用方是 `EpubBook` 的
+`chapterPlainText` / `chapterPlainTextWithRuby` / `chapterCharacterCount` / `chapterAnchorCharOffsets` /
+`isImageOnlyChapter` / `chapterImageSrcs` / `images` / `chapterSearchText`，原 Dart 遍历已删除。
+
+**建树是 `package:html` 0.15.6 的逐行移植**（`src/parse/html5lib/`），不是任何现行规范实现：学习统计、
+阅读位置、有声书 cue 偏移都建在这些数上，结果必须与旧实现逐码元相同，而 `package:html` 停在旧版
+WHATWG 算法（没有 `<template>` 内容文档、`<rb>` / `<rtc>` 不隐含结束、外来内容里调整过名字的属性排到
+属性表末尾……），html5ever 在畸形输入上与它分叉。旧实现 `parse()` 会抛异常的输入（数字字符引用超出
+64 位）返回 `BAD_INPUT`，Dart 侧抛 `FormatException`。唯一的已知差异（所有者 2026-10-19 接受）：
+畸形的超深嵌套上旧实现抛 `StackOverflowError`（阈值随运行时变：JIT 约 5000 层、AOT 约 1–2 万层），
+这里深树换到按深度定栈的线程上遍历，照常给出结果，不设人为深度上限；旧实现能算出结果的输入，结果相同。
+
+对拍（2026-10-19）：61 本真书 1923 章（無職転生 1–26 卷等）树转储逐字节相同、全部派生量相同；固定种子
+标签汤 / 突变语料约 30 万份的树转储与派生量都相同。回归向量（旧实现生成）：树级见 `src/parse/html5lib/tests.rs`，
+派生量级见 `packages/fushi_engine/test/epub/chapter_scan_vectors_test.dart`。
+
+| 项（55 本书 1649 章、2357 万 UTF-16 码元，整书一遍） | Dart DOM + Rust 字数（迁移前） | Rust | 倍数 |
+|---|---|---|---|
+| 纯文本 `chapterPlainText` | 5,986–6,261 ms | 2,767–3,085 ms | 2.0–2.2× |
+| 学习字数 `chapterCharacterCount` | 6,403–6,412 ms | 2,688–3,389 ms | 1.9–2.4× |
+| 插图索引 `images` | 4,492–4,589 ms | 2,746–2,986 ms | 1.5–1.6× |
+| 锚点偏移 `chapterAnchorCharOffsets` | 4,153–4,196 ms | 2,605–3,314 ms | 1.3–1.6× |
+
+基准脚本 `packages/fushi_engine/tool/bench/epub_chapter_scan_bench.dart`（Windows x64，同机交替跑两轮）。
+
 ## 构建
 
-| 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-18 实测） |
+| 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-19 实测，含 parse 域） |
 |---|---|---|---|---|
-| Windows x64 | `powershell -ExecutionPolicy Bypass -File native/fushi_compute/build_windows_dll.ps1` | `prebuilt/windows-x64/fushi_compute.dll` | `fushi/windows/CMakeLists.txt` 拷到 exe 同级（缺则配置期 `FATAL_ERROR`）；服务端放 `bundle/lib/` | 156,672 B（依赖只有 KERNEL32 / VCRUNTIME140 / api-ms-win-crt） |
-| Android | `build_android_so.ps1 [-NdkRoot …] [-Abis …]` / `build_android_so.sh <ndk-root> [abi…]`（cargo-ndk，API 24） | `prebuilt/android/<abi>/libfushi_compute.so` | `fushi/android/app/build.gradle` 的 `jniLibs.srcDirs`；`preBuild` 上的 `checkFushiComputeNative` 按 Flutter 的 target-platform 逐 ABI 检查 | arm64-v8a 320,216 B / armeabi-v7a 226,912 B / x86_64 353,072 B（加 CRC-32 前测；NEEDED 只有 libc / libdl） |
+| Windows x64 | `powershell -ExecutionPolicy Bypass -File native/fushi_compute/build_windows_dll.ps1` | `prebuilt/windows-x64/fushi_compute.dll` | `fushi/windows/CMakeLists.txt` 拷到 exe 同级（缺则配置期 `FATAL_ERROR`）；服务端放 `bundle/lib/` | 1,888,256 B（依赖只有 KERNEL32 / VCRUNTIME140 / api-ms-win-crt） |
+| Android | `build_android_so.ps1 [-NdkRoot …] [-Abis …]` / `build_android_so.sh <ndk-root> [abi…]`（cargo-ndk，API 24） | `prebuilt/android/<abi>/libfushi_compute.so` | `fushi/android/app/build.gradle` 的 `jniLibs.srcDirs`；`preBuild` 上的 `checkFushiComputeNative` 按 Flutter 的 target-platform 逐 ABI 检查 | arm64-v8a 2,062,568 B / x86_64 2,291,104 B（NDK 28.2；armeabi-v7a 未重测；NEEDED 只有 libc / libdl） |
 | Linux x64 | `build_linux_so.sh` | `prebuilt/linux-x64/libfushi_compute.so` | `fushi/linux/CMakeLists.txt` 装进 `bundle/lib/`（缺则 `FATAL_ERROR`）；服务端放 `bundle/lib/` | 本机无 Linux，CI 出 |
-| macOS | `build_macos_dylib.sh`（只出 arm64，部署目标 13.4） | `prebuilt/macos/libfushi_compute.dylib`（install name `@rpath/…`） | Runner 构建阶段（`fushi/macos/bundle_fushi_compute.sh`）拷进 `Contents/Frameworks`，缺则 `exit 1` | 302,120 B |
-| iOS | `native/fushi_ios_umbrella/build_ios_staticlib.sh [device\|simulator\|all]` | 伞形 `libfushi_ios_umbrella.a`（fushi_p2p + fushi_fsrs + fushi_compute） | `-force_load` 链进 Runner；Runner 构建阶段 `fushi/ios/check_fushi_compute.sh` 在缺 `.a` / `FUSHI_IOS_NATIVE_LDFLAGS` 为空 / `.a` 不导出 `ffc_abi_version` 时失败 | device `.a` 16,526,192 B（三合一） |
+| macOS | `build_macos_dylib.sh`（只出 arm64，部署目标 13.4） | `prebuilt/macos/libfushi_compute.dylib`（install name `@rpath/…`） | Runner 构建阶段（`fushi/macos/bundle_fushi_compute.sh`）拷进 `Contents/Frameworks`，缺则 `exit 1` | 1,725,464 B |
+| iOS | `native/fushi_ios_umbrella/build_ios_staticlib.sh [device\|simulator\|all]` | 伞形 `libfushi_ios_umbrella.a`（fushi_p2p + fushi_fsrs + fushi_compute） | `-force_load` 链进 Runner；Runner 构建阶段 `fushi/ios/check_fushi_compute.sh` 在缺 `.a` / `FUSHI_IOS_NATIVE_LDFLAGS` 为空 / `.a` 不导出 `ffc_abi_version` 时失败 | device `.a` 16,526,192 B（三合一，2026-10-18 测、未含 parse 域） |
 
 - macOS 坑：本机 Mac（macOS 27.2）上 rustc 自带 strip（`strip = true`）+ `MACOSX_DEPLOYMENT_TARGET` 出的
   dylib dlopen 报 `mis-aligned LINKEDIT string pool`，`verify_abi.sh` 查不出来；所以
@@ -145,3 +174,5 @@ dart test                               # packages/fushi_compute 下（真 FFI�
 
 本 crate GPL-3.0-only（随 app）。依赖：`md4` / `sha2`（RustCrypto）、`crc32fast`，均 MIT OR Apache-2.0，可链进
 GPL-3.0 的 app 本体；发版前确认 app 开源许可页带上它们的声明。
+`regex`（MIT OR Apache-2.0）同理。`src/parse/html5lib/` 移植自 `package:html`（MIT，原许可全文保留在
+`mod.rs` 头部），发版许可页同样要带上。

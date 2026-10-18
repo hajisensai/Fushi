@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 use crate::{guard, status};
 
 pub mod epub;
+pub mod html5lib;
 mod study_char_table;
 
 use study_char_table::STUDY_CHAR_RANGES;

@@ -302,7 +302,8 @@ class EpubBook {
   /// is what lets every surface answer "has the reader got here yet?" from one
   /// scan instead of one per surface.
   ///
-  /// Ruby readings (`<rt>/<rp>/<rtc>`) are skipped when counting the offsets, the
+  /// Per-chapter parse failures skip that chapter rather than failing the whole
+  /// list. Ruby readings (`<rt>/<rp>/<rtc>`) are skipped when counting the offsets, the
   /// same caliber [chapterCharacterCount] uses. [EpubImageRef.sharesLineWithText]
   /// compares the image's nearest block-level ancestor's own inline text.
   /// Built lazily and cached in [_images] (the illustration set does not
@@ -345,7 +346,13 @@ class EpubBook {
 
     for (int i = 0; i < chapters.length; i++) {
       final String chapterHref = chapters[i].href;
-      final EpubChapterScan scan = _scanChapter(i, EpubScanRequest.images);
+      // 解析失败的一章跳过、不让整份列表失败（与旧实现相同）。
+      final EpubChapterScan scan;
+      try {
+        scan = _scanChapter(i, EpubScanRequest.images);
+      } on FormatException {
+        continue;
+      }
       final int totalChars = scan.imageTotalChars!;
       for (final EpubScanImageHit hit in scan.imageHits!) {
         add(

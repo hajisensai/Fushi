@@ -5,11 +5,11 @@
 //! （那份已删除，这里是唯一实现）。结果必须与旧实现**逐码元一致**：学习统计、阅读位置、
 //! 有声书 cue 偏移都建立在这些数上。为此：
 //!
-//! - HTML5 树构建用 html5ever（与 `package:html` 同为 WHATWG 解析算法）；解析后先拍平成
-//!   [Tree]，把 `package:html`（html5lib 移植，没有 template 支持）与 html5ever 的结构差异
-//!   抹平：`<template>` 的内容当作它的普通子节点；不丢弃开头的 U+FEFF。
-//! - 属性的迭代顺序复刻 `package:html`：它在外来内容（SVG / MathML）里调整过名字的属性
-//!   （`xlink:href` 等带命名空间的）会被挪到属性表末尾。
+//! - HTML5 树构建用 [super::html5lib]：`package:html` 0.15.6 解析器本身的逐行移植（不是
+//!   另一份规范实现——现行规范与它在 `<template>` / ruby / select / 外来内容等畸形输入上
+//!   结论不同），树、属性迭代序（外来内容里调整过名字的属性在表末尾）都按构造与旧实现相同。
+//!   旧实现里 `parse()` 抛异常的输入（数字字符引用溢出 64 位等）这里返回失败状态，Dart
+//!   侧随之抛异常，与旧行为一致。
 //! - 空白判定分两套：`\s` 正则（JS 语义）与 `String.trim()`（多一个 U+0085），见
 //!   [is_regex_space] / [is_trim_space]。
 //! - 偏移全部以 UTF-16 码元计（Dart `String.length`），字数用 [super::StudyCharState]。
@@ -20,13 +20,9 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use html5ever::tendril::TendrilSink;
-use html5ever::tokenizer::TokenizerOpts;
-use html5ever::{parse_document, ParseOpts};
-use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use regex::Regex;
 
-use super::StudyCharState;
+use super::{html5lib, StudyCharState};
 use crate::{guard, status};
 
 // ---------------------------------------------------------------------------
@@ -53,73 +49,62 @@ struct Node {
 
 struct Tree {
     nodes: Vec<Node>,
+    /// 最深节点的祖先链长度（Document 为 0）：派生量的遍历是递归的，见 [scan_chapter]。
+    depth: usize,
 }
 
 impl Tree {
-    fn parse(html: &str) -> Tree {
-        let opts = ParseOpts {
-            tokenizer: TokenizerOpts {
-                discard_bom: false,
-                ..Default::default()
-            },
-            ..Default::default()
+    /// `EpubBook.parseChapterHtml` 的 `html_parser.parse(...)`：用 [html5lib]（`package:html`
+    /// 0.15.6 的逐行移植）建树，再拍平。Dart 侧会抛异常的输入返回 `Err`。
+    fn parse(html: &str) -> Result<Tree, html5lib::ParseFailure> {
+        let dom = html5lib::parse_document(html)?;
+        let mut tree = Tree {
+            nodes: Vec::with_capacity(dom.nodes.len()),
+            depth: 0,
         };
-        let dom = parse_document(RcDom::default(), opts).one(html);
-        let mut tree = Tree { nodes: Vec::new() };
-        tree.add(&dom.document, None);
-        tree
+        // 从 Document 起按子节点列表先序拍平（脱离文档的节点不可达，自然不进来）。
+        // 显式栈：畸形输入可以嵌套很深。
+        let mut stack: Vec<(usize, Option<usize>, usize)> = vec![(0, None, 0)];
+        while let Some((id, parent, depth)) = stack.pop() {
+            let index = tree.push(&dom, id, parent);
+            if let Some(p) = parent {
+                tree.nodes[p].children.push(index);
+            }
+            tree.depth = tree.depth.max(depth);
+            for &child in dom.nodes[id].children.iter().rev() {
+                stack.push((child, Some(index), depth + 1));
+            }
+        }
+        Ok(tree)
     }
 
-    fn add(&mut self, handle: &Handle, parent: Option<usize>) -> usize {
+    fn push(&mut self, dom: &html5lib::Dom, id: usize, parent: Option<usize>) -> usize {
         let index = self.nodes.len();
-        let mut child_handles: Vec<Handle> = handle.children.borrow().clone();
-        let kind = match &handle.data {
-            NodeData::Document => Kind::Document,
-            NodeData::Text { contents } => Kind::Text(contents.borrow().encode_utf16().collect()),
-            NodeData::Element {
-                name,
-                attrs,
-                template_contents,
-                ..
-            } => {
-                if let Some(contents) = template_contents.borrow().as_ref() {
-                    // package:html 没有 template 内容文档：内容就是普通子节点。
-                    child_handles.extend(contents.children.borrow().iter().cloned());
-                }
-                let attrs = attrs.borrow();
-                let mut plain = Vec::new();
-                let mut namespaced = Vec::new();
-                for a in attrs.iter() {
-                    let has_ns = !a.name.ns.is_empty();
-                    let local: &str = &a.name.local;
-                    let label = match &a.name.prefix {
-                        Some(prefix) => format!("{}:{}", &**prefix, local),
-                        None => local.to_string(),
-                    };
-                    let entry = (label, has_ns, a.value.to_string());
-                    if has_ns {
-                        namespaced.push(entry);
-                    } else {
-                        plain.push(entry);
-                    }
-                }
-                plain.extend(namespaced);
-                Kind::Element {
-                    name: name.local.to_string(),
-                    attrs: plain,
-                }
-            }
-            _ => Kind::Other,
+        let kind = match &dom.nodes[id].kind {
+            html5lib::NodeKind::Document => Kind::Document,
+            html5lib::NodeKind::Text(t) => Kind::Text(t.encode_utf16().collect()),
+            html5lib::NodeKind::Element { name, attrs, .. } => Kind::Element {
+                name: name.clone(),
+                attrs: attrs
+                    .borrow()
+                    .entries
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            k.label(),
+                            !matches!(k, html5lib::AttrKey::Plain(_)),
+                            v.clone(),
+                        )
+                    })
+                    .collect(),
+            },
+            html5lib::NodeKind::Comment(_) | html5lib::NodeKind::Doctype { .. } => Kind::Other,
         };
         self.nodes.push(Node {
             kind,
             parent,
             children: Vec::new(),
         });
-        for child in child_handles.iter() {
-            let c = self.add(child, Some(index));
-            self.nodes[index].children.push(c);
-        }
         index
     }
 
@@ -282,7 +267,19 @@ fn push_background_urls(css: &str, refs: &mut Vec<Vec<u16>>) {
 // ---------------------------------------------------------------------------
 
 const BLOCK_TAGS: &[&str] = &[
-    "p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "dd", "dt", "pre",
+    "p",
+    "div",
+    "li",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "blockquote",
+    "dd",
+    "dt",
+    "pre",
 ];
 const MEDIA_TAGS: &[&str] = &["img", "image", "svg", "video"];
 const MAX_SEPARATOR_BLOCK: usize = 64;
@@ -380,7 +377,10 @@ impl<'a> Walker<'a> {
         }
         let tag = tree.name(i).unwrap_or("");
         if is_ruby_annotation(tag) {
-            if self.reading.is_some() && tag != "rp" {
+            if tag == "rp" {
+                return;
+            }
+            if let Some(reading) = self.reading.as_mut() {
                 let targets: Vec<usize> = if tag == "rt" {
                     vec![i]
                 } else {
@@ -393,7 +393,7 @@ impl<'a> Walker<'a> {
                 for rt in targets {
                     tree.text_of(rt, &mut buf);
                 }
-                self.reading.as_mut().unwrap().extend_from_slice(&buf);
+                reading.extend_from_slice(&buf);
             }
             return;
         }
@@ -534,9 +534,38 @@ fn anchor_offsets(tree: &Tree, body: Option<usize>, wanted: &[Vec<u16>]) -> Vec<
 // ---------------------------------------------------------------------------
 
 const IMAGE_BLOCK_TAGS: &[&str] = &[
-    "address", "article", "aside", "blockquote", "body", "center", "dd", "div", "dl", "dt",
-    "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "li", "main",
-    "nav", "ol", "p", "pre", "section", "table", "td", "th", "tr", "ul",
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "body",
+    "center",
+    "dd",
+    "div",
+    "dl",
+    "dt",
+    "figcaption",
+    "figure",
+    "footer",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "li",
+    "main",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "table",
+    "td",
+    "th",
+    "tr",
+    "ul",
 ];
 
 pub struct ImageHit {
@@ -607,7 +636,10 @@ fn shares_block_with_text(tree: &Tree, element: usize) -> bool {
             }
             _ => {}
         }
-        tree.nodes[i].children.iter().any(|&c| has_text(tree, c, block))
+        tree.nodes[i]
+            .children
+            .iter()
+            .any(|&c| has_text(tree, c, block))
     }
 
     has_text(tree, block, block)
@@ -633,7 +665,6 @@ fn scan_images(tree: &Tree, body: Option<usize>) -> ImageScan {
                     s.chars = s.counter.total();
                     s.ids_at_count = Vec::new();
                 }
-                return;
             }
             Kind::Element { name, .. } => {
                 let tag = lower(name);
@@ -818,7 +849,10 @@ pub unsafe extern "C" fn ffc_parse_epub_chapter(
         let Some(ids) = decode_strs(wanted_units) else {
             return status::INVALID_ARGUMENT;
         };
-        let out = scan_chapter(source, request, &ids);
+        // 旧实现里 `parse()` 抛异常的输入：返回失败状态，Dart 侧照旧抛异常。
+        let Ok(out) = scan_chapter(source, request, &ids) else {
+            return status::BAD_INPUT;
+        };
         let boxed = out.into_boxed_slice();
         *out_len = boxed.len();
         *out_ptr = Box::into_raw(boxed) as *mut u16;
@@ -852,13 +886,52 @@ fn decode_strs(units: &[u16]) -> Option<Vec<Vec<u16>>> {
     Some(out)
 }
 
+/// 树深不超过它时直接在调用方线程上遍历（真书章节的深度是个位数到几十）。
+const SHALLOW_DEPTH: usize = 256;
+
+/// 深树遍历线程的栈：固定底数 + 每层预算（递归遍历每层一到两帧，实测远小于此）。
+const DEEP_STACK_BASE: usize = 1 << 20;
+const DEEP_STACK_PER_LEVEL: usize = 1 << 10;
+
 /// 纯 Rust 入口（测试与 FFI 共用）。
-pub fn scan_chapter(source: &str, request: u32, wanted: &[Vec<u16>]) -> Vec<u16> {
-    let tree = Tree::parse(source);
+///
+/// 派生量的遍历按旧 Dart 实现的结构递归。旧实现在畸形的超深嵌套上抛
+/// `StackOverflowError`，阈值随运行时和线程栈变化（实测 JIT 约 5000 层、AOT 约 1 万层）；
+/// 这里不能让它变成整个进程崩溃，所以深树换到一个按深度定栈大小的线程上遍历：旧实现
+/// 能算出结果的输入，这里结果相同；线程起不来（栈预算过大）时按解析失败处理。
+pub fn scan_chapter(
+    source: &str,
+    request: u32,
+    wanted: &[Vec<u16>],
+) -> Result<Vec<u16>, html5lib::ParseFailure> {
+    let tree = Tree::parse(source)?;
+    if tree.depth <= SHALLOW_DEPTH {
+        return Ok(scan_tree(&tree, request, wanted));
+    }
+    let stack = tree
+        .depth
+        .checked_mul(DEEP_STACK_PER_LEVEL)
+        .and_then(|s| s.checked_add(DEEP_STACK_BASE))
+        .ok_or(html5lib::ParseFailure("tree too deep"))?;
+    std::thread::scope(|scope| {
+        let worker = std::thread::Builder::new()
+            .name("ffc-epub-deep".into())
+            .stack_size(stack)
+            .spawn_scoped(scope, || scan_tree(&tree, request, wanted))
+            .map_err(|_| html5lib::ParseFailure("tree too deep"))?;
+        match worker.join() {
+            Ok(out) => Ok(out),
+            // 交回调用方线程上的 guard，与浅树上的 panic 走同一条路。
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    })
+}
+
+fn scan_tree(tree: &Tree, request: u32, wanted: &[Vec<u16>]) -> Vec<u16> {
     let body = tree.body();
     let mut out = Out(Vec::new());
     if request & flags::TEXT != 0 {
-        let pt = plain_text(&tree, body);
+        let pt = plain_text(tree, body);
         let mut st = StudyCharState::default();
         st.add_utf16(&pt.text);
         out.u32(st.total());
@@ -881,7 +954,7 @@ pub fn scan_chapter(source: &str, request: u32, wanted: &[Vec<u16>]) -> Vec<u16>
         }
     }
     if request & flags::ANCHORS != 0 {
-        let found = anchor_offsets(&tree, body, wanted);
+        let found = anchor_offsets(tree, body, wanted);
         out.u32(found.len() as u64);
         for (w, o) in found {
             out.u32(w as u64);
@@ -889,7 +962,7 @@ pub fn scan_chapter(source: &str, request: u32, wanted: &[Vec<u16>]) -> Vec<u16>
         }
     }
     if request & flags::IMAGES != 0 {
-        let scan = scan_images(&tree, body);
+        let scan = scan_images(tree, body);
         out.u32(scan.total_chars);
         out.u32(scan.hits.len() as u64);
         for h in &scan.hits {
@@ -903,7 +976,7 @@ pub fn scan_chapter(source: &str, request: u32, wanted: &[Vec<u16>]) -> Vec<u16>
         }
     }
     if request & flags::IMAGE_REFS != 0 {
-        let refs = chapter_image_refs(&tree);
+        let refs = chapter_image_refs(tree);
         out.u32(refs.len() as u64);
         for r in &refs {
             out.str(r);
@@ -912,7 +985,7 @@ pub fn scan_chapter(source: &str, request: u32, wanted: &[Vec<u16>]) -> Vec<u16>
     if request & flags::SEARCH_TEXT != 0 {
         let mut text = Vec::new();
         if let Some(b) = body {
-            search_text(&tree, b, &mut text);
+            search_text(tree, b, &mut text);
         }
         out.str(&text);
     }
@@ -924,7 +997,7 @@ mod tests {
     use super::*;
 
     fn text(html: &str) -> String {
-        let tree = Tree::parse(html);
+        let tree = Tree::parse(html).unwrap();
         String::from_utf16(&plain_text(&tree, tree.body()).text).unwrap()
     }
 
@@ -938,7 +1011,9 @@ mod tests {
 
     #[test]
     fn ruby_track() {
-        let tree = Tree::parse("<body><p>a<ruby>漢<rp>(</rp><rt>か ん</rt><rp>)</rp></ruby></p></body>");
+        let tree =
+            Tree::parse("<body><p>a<ruby>漢<rp>(</rp><rt>か ん</rt><rp>)</rp></ruby></p></body>")
+                .unwrap();
         let pt = plain_text(&tree, tree.body());
         assert_eq!(String::from_utf16(&pt.text).unwrap(), "a漢");
         assert_eq!(pt.rubies.len(), 1);
@@ -949,7 +1024,10 @@ mod tests {
 
     #[test]
     fn anchors_count_concatenated_prefix() {
-        let tree = Tree::parse("<body><p>abc</p><p>def</p><h2 id=\"x\">見</h2><span id=\"\">y</span></body>");
+        let tree = Tree::parse(
+            "<body><p>abc</p><p>def</p><h2 id=\"x\">見</h2><span id=\"\">y</span></body>",
+        )
+        .unwrap();
         let found = anchor_offsets(&tree, tree.body(), &[utf16("x"), utf16(""), utf16("zz")]);
         assert_eq!(found, vec![(0, 1)]);
     }
@@ -957,8 +1035,14 @@ mod tests {
     #[test]
     fn background_url_matches_like_dart() {
         let mut refs = Vec::new();
-        push_background_urls("BACKGROUND:#fff URL( x.png ) ; background-image : url(\"a b.png\")", &mut refs);
-        let got: Vec<String> = refs.iter().map(|r| String::from_utf16(r).unwrap()).collect();
+        push_background_urls(
+            "BACKGROUND:#fff URL( x.png ) ; background-image : url(\"a b.png\")",
+            &mut refs,
+        );
+        let got: Vec<String> = refs
+            .iter()
+            .map(|r| String::from_utf16(r).unwrap())
+            .collect();
         assert_eq!(got, vec!["x.png", "a b.png"]);
     }
 
@@ -966,13 +1050,40 @@ mod tests {
     fn xlink_href_iterates_after_plain_attributes() {
         let tree = Tree::parse(
             "<body><svg xmlns:xlink=\"http://www.w3.org/1999/xlink\"><image xlink:href=\"a.jpg\" href=\"b.jpg\"/></svg></body>",
+        )
+        .unwrap();
+        let image = tree
+            .descendants(0)
+            .into_iter()
+            .find(|&i| tree.name(i) == Some("image"))
+            .unwrap();
+        assert_eq!(
+            String::from_utf16(&svg_image_href(&tree, image).unwrap()).unwrap(),
+            "b.jpg"
         );
-        let image = tree.descendants(0).into_iter().find(|&i| tree.name(i) == Some("image")).unwrap();
-        assert_eq!(String::from_utf16(&svg_image_href(&tree, image).unwrap()).unwrap(), "b.jpg");
+    }
+
+    #[test]
+    fn deep_nesting_does_not_overflow_the_caller_stack() {
+        // 旧实现在这种深度上抛 StackOverflowError；这里必须算完而不是让进程崩溃。
+        let n = 20_000;
+        let html = format!("<body>{}x{}</body>", "<span>".repeat(n), "</span>".repeat(n));
+        let all = flags::TEXT
+            | flags::RUBY
+            | flags::ANCHORS
+            | flags::IMAGES
+            | flags::IMAGE_REFS
+            | flags::SEARCH_TEXT;
+        let out = scan_chapter(&html, all, &[utf16("a")]).unwrap();
+        // 学习字数 1、纯文本 "x"。
+        assert_eq!(&out[..5], &[1, 0, 1, 0, u16::from(b'x')]);
     }
 
     #[test]
     fn template_contents_are_children() {
-        assert_eq!(text("<body><template><p>内</p></template><p>外</p></body>"), "内外");
+        assert_eq!(
+            text("<body><template><p>内</p></template><p>外</p></body>"),
+            "内外"
+        );
     }
 }

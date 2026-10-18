@@ -168,6 +168,13 @@ final class EpubChapterScanner {
         _outPtr,
         _outLen,
       );
+      if (status == FfcStatus.badInput) {
+        // 旧 `package:html` 的 `parse()` 在这类输入上抛异常（数字字符引用溢出 64 位
+        // 等），这里同样抛，调用方的「这一章解析失败」分支照旧生效。
+        throw const FormatException(
+          'ffc_parse_epub_chapter: chapter HTML cannot be parsed',
+        );
+      }
       if (status != FfcStatus.ok) {
         throw StateError('ffc_parse_epub_chapter failed with status $status');
       }
