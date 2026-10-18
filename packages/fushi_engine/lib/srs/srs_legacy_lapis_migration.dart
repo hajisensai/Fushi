@@ -395,6 +395,32 @@ SrsLapisFieldPlan srsLapisFieldPlan(
   );
 }
 
+/// 模板映射（新 templateId → 旧 templateId）：Fushi 卡片唯一的模板 ← 同名模板，没有就接源
+/// 类型的第一个模板（复习历史比模板名重要；与 srs_builtin_migration.dart 的预设一致）。
+Map<String, String?> srsLapisTemplateMap(
+  SrsNoteTypeView from,
+  SrsNoteTypeView to,
+) {
+  final Map<String, String?> out = <String, String?>{};
+  final Set<String> used = <String>{};
+  for (final SrsTemplateDef t in to.templates) {
+    final SrsTemplateDef? same = from.templates
+        .where(
+          (SrsTemplateDef s) =>
+              !used.contains(s.id) && _sameName(s.name, t.name),
+        )
+        .firstOrNull;
+    out[t.id] = same?.id;
+    if (same != null) used.add(same.id);
+  }
+  if (to.templates.length == 1 &&
+      out.values.every((String? v) => v == null) &&
+      from.templates.isNotEmpty) {
+    out[to.templates.first.id] = from.templates.first.id;
+  }
+  return out;
+}
+
 /// 一条笔记里某个候选字段的值。
 class SrsLapisFieldValue {
   const SrsLapisFieldValue(this.candidate, this.value);
@@ -591,7 +617,7 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
       noteIds: source.noteIds,
       targetTypeId: to.id,
       fieldMap: plan.fieldMap,
-      templateMap: _templateMap(source.type, to),
+      templateMap: srsLapisTemplateMap(source.type, to),
     );
     final Map<String, SrsLapisFieldCandidate> owners =
         <String, SrsLapisFieldCandidate>{
@@ -644,29 +670,6 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     );
   }
 
-  /// 模板映射：Fushi 卡片唯一的模板 ← 同名模板，没有就接源类型的第一个模板（复习历史比模板名
-  /// 重要；与 srs_builtin_migration.dart 的预设一致）。
-  Map<String, String?> _templateMap(SrsNoteTypeView from, SrsNoteTypeView to) {
-    final Map<String, String?> out = <String, String?>{};
-    final Set<String> used = <String>{};
-    for (final SrsTemplateDef t in to.templates) {
-      final SrsTemplateDef? same = from.templates
-          .where(
-            (SrsTemplateDef s) =>
-                !used.contains(s.id) && _sameName(s.name, t.name),
-          )
-          .firstOrNull;
-      out[t.id] = same?.id;
-      if (same != null) used.add(same.id);
-    }
-    if (to.templates.length == 1 &&
-        out.values.every((String? v) => v == null) &&
-        from.templates.isNotEmpty) {
-      out[to.templates.first.id] = from.templates.first.id;
-    }
-    return out;
-  }
-
   /// 把 [sourceTypeId] 的笔记（缺省全部；给了 [noteIds] 就只迁这些，它们必须都是这个类型）
   /// 迁到 Fushi 卡片：按语义映射换类型（复习历史经前身链接随迁），再对这些笔记跑一遍补迁
   /// （主映射为空、同槽的其它源字段有内容的逐条补上）。返回迁移的笔记数。
@@ -690,7 +693,7 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
       noteIds: ids,
       targetTypeId: to.id,
       fieldMap: plan.fieldMap,
-      templateMap: _templateMap(from, to),
+      templateMap: srsLapisTemplateMap(from, to),
     );
     await applyLapisBackfill(noteIds: ids);
     return ids.length;
