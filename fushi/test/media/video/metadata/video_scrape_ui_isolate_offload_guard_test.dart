@@ -6,11 +6,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// 根因是几段十万级数据的解析、建索引与打分全跑在 UI isolate 上。修复后这些
 /// 不变式必须钉住，否则回归者会把同样的冻结再带回来：
 ///
-/// 1. AniDB 标题包只能在后台 isolate 里**流式**解析（`Isolate.run` +
-///    `XmlEventDecoder`），不得再对几十 MB 明文 `XmlDocument.parse`。
+/// 1. AniDB 标题包只能在后台 isolate 里**流式**解析（`Isolate.run` + 逐块喂给原生
+///    构建器 `AniDbCatalogBuilderNative`），不得再对几十 MB 明文 `XmlDocument.parse`。
 /// 2. Fribb 身份映射（十几 MB JSON）同样必须在后台 isolate 解码。
-/// 3. `TitleNormalizer` 的逐字符热路径里不得现编正则；索引打分必须走
-///    已归一化输入的 `similarityNormalized`，不再每候选重归一化两遍。
+/// 3. 标题归一化 / 打分在 Rust 计算内核里：`TitleNormalizer` 只是 FFI 外壳（不得在
+///    Dart 里重新长出逐字符算法或正则）；AniDB 搜索在原生索引里对已归一化的条目打分，
+///    Dart 侧不再逐候选调相似度。
 /// 4. 视频库页对 `videoBooks` uid 流的整页刷新必须经节流，而不是每落一条就
 ///    `_refresh()` + 重算待确认队列。
 void main() {
@@ -39,17 +40,21 @@ void main() {
       );
     });
 
-    test('streams XML events instead of building a whole document', () {
-      expect(src.contains('XmlEventDecoder('), isTrue);
-      expect(
-        src.contains('XmlDocument.parse('),
-        isFalse,
-        reason: 'BUG-2577：几十 MB 标题包建整棵 DOM 是低内存机被杀的堆峰值来源',
-      );
-    });
+    test(
+      'streams chunks into the native builder instead of a whole document',
+      () {
+        expect(src.contains('AniDbCatalogBuilderNative('), isTrue);
+        expect(src.contains('builder.add(chunk)'), isTrue);
+        expect(
+          src.contains('XmlDocument.parse('),
+          isFalse,
+          reason: 'BUG-2577：几十 MB 标题包建整棵 DOM 是低内存机被杀的堆峰值来源',
+        );
+      },
+    );
 
-    test('ranks fuzzy candidates with pre-normalized similarity', () {
-      expect(src.contains('TitleNormalizer.similarityNormalized('), isTrue);
+    test('ranks candidates inside the native index', () {
+      expect(src.contains('catalog.search(normalizedQuery, limit)'), isTrue);
       expect(
         src.contains('TitleNormalizer.similarity('),
         isFalse,
@@ -68,40 +73,33 @@ void main() {
     );
   });
 
-  group('TitleNormalizer hot path', () {
+  group('TitleNormalizer is a native shell', () {
     late String src;
     setUpAll(() => src = normalizer.readAsStringSync());
 
-    String bodyOf(String signature) {
-      final int start = src.indexOf(signature);
-      expect(start, greaterThanOrEqualTo(0), reason: '找不到 $signature');
-      final int next = src.indexOf('\n  static ', start + signature.length);
-      return src.substring(start, next < 0 ? src.length : next);
-    }
-
-    test('_isWordChar does not construct a RegExp per rune', () {
-      expect(
-        bodyOf('static bool _isWordChar(int rune)').contains('RegExp('),
-        isFalse,
-        reason: 'BUG-2577：逐字符现编 unicode 正则是汉字标题模糊匹配的主要开销',
-      );
+    test('delegates every entry point to fushi_compute', () {
+      for (final String call in <String>[
+        'TitleScoreNative.normalize(title)',
+        'TitleScoreNative.tokens(normalized)',
+        'TitleScoreNative.similarity(a, b)',
+        'TitleScoreNative.similarityNormalized(na, nb)',
+        'TitleScoreNative.similarityNormalizedBatch(query, candidates)',
+      ]) {
+        expect(src.contains(call), isTrue, reason: call);
+      }
     });
 
-    test('normalize does not construct its whitespace RegExp per call', () {
-      expect(
-        bodyOf('static String normalize(String title)').contains('RegExp('),
-        isFalse,
-      );
+    test('no Dart-side character algorithm or RegExp grows back', () {
+      expect(src.contains('RegExp('), isFalse);
+      expect(src.contains('.runes'), isFalse);
+      expect(src.contains('_levenshtein'), isFalse);
     });
 
-    test('similarityNormalized exists and similarity delegates to it', () {
+    test('similarityNormalized keeps its signature', () {
       expect(
-        src.contains('static double similarityNormalized(String na, String nb)'),
-        isTrue,
-      );
-      expect(
-        bodyOf('static double similarity(String a, String b)')
-            .contains('similarityNormalized(normalize(a), normalize(b))'),
+        src.contains(
+          'static double similarityNormalized(String na, String nb)',
+        ),
         isTrue,
       );
     });

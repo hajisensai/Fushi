@@ -16,20 +16,21 @@ use std::sync::OnceLock;
 
 use crate::{guard, status};
 
+pub mod anidb;
 pub mod anki_media;
 pub mod bencode;
 pub mod danmaku;
 pub mod epub;
 pub mod fold;
+pub mod fribb;
 pub mod html5lib;
+pub mod media_name;
 pub mod sanitize;
 mod study_char_table;
 pub mod subtitle;
-pub mod tts_split;
-
-pub mod fribb;
-pub mod media_name;
 pub mod subtitle_timing;
+pub mod title_score;
+pub mod tts_split;
 
 use study_char_table::STUDY_CHAR_RANGES;
 

@@ -257,6 +257,45 @@ Anki 媒体引用扫描（真实牌组 30794 条笔记 / 9054 万 UTF-16 码元�
 | 18,000 | 24.6 ms | 11,730 ms | 43.6 ms | 1,849 ms |
 | 223,572 | 364.7 ms | 20,331 ms | 777.7 ms | 3,356 ms |
 
+## 解析域：视频标题打分 / AniDB 标题目录 / anime XML
+
+| 调用方 | 之前（纯 Dart） | 现在 |
+|---|---|---|
+| `fushi_engine/.../scraper/title_normalizer.dart`（`TitleNormalizer`，39 处调用） | 逐码点查繁简 Map + 正则折叠空白；`tokens` / Levenshtein DP | 只剩 FFI 外壳（`TitleScoreNative`，`src/parse/title_score.rs`）；另有批量入口 `normalizeAll` / `similarityNormalizedBatch` / `similarityNormalizedMatrix` |
+| `fushi_engine/.../metadata/anidb_title_catalog.dart` | 后台 isolate 里 `XmlEventDecoder` 流式事件 + Dart 建三张索引，Isolate.exit 交回整图 | 后台 isolate 把 gzip 解压块原样喂 `AniDbCatalogBuilderNative`；目录与索引驻留原生内存，句柄地址交回主 isolate `AniDbCatalogNative.adopt`（`NativeFinalizer` 兜底释放）；搜索 / 取记录一次 FFI |
+| `fushi_engine/.../metadata/anidb_video_metadata_provider.dart` | DOCTYPE 正则预检 + `XmlDocument.parse` | `parseAniDbAnimeXml`：原生解析成只读元素树，取值逻辑（`getElement` / `findElements` / `innerText`）仍在 Dart |
+| `fushi_engine/.../metadata/tmdb_episode_matcher.dart` | 四轮 × 来源 × 候选 × 标题² 逐对 `similarityNormalized` | 整池标题一次批量归一化 + 一次相似度矩阵，查表；匹配逻辑不变 |
+
+**逐位一致是硬约束**，按 Dart 语义复刻而不是按 Rust 习惯：字符串一律 UTF-16（`String.runes`
+解码规则、孤立代理照算）；长度比较用码元、编辑距离与分词用码点（原实现就是混用的）；`toLowerCase`
+/ `\s` / `trim()` / 分词字母判定是 `tool/gen_title_tables.dart` 从 Dart 运行时逐码点冻结的表
+（换 SDK 重生成会改口径）；`package:xml` 6.6 的事件语法、实体解码、嵌套校验、`int.tryParse`
+（含 `0x` 前缀与 64 位回绕）、Dart UTF-8 解码器的报错文案与偏移、Dart `List.sort` 的不稳定
+双轴快排（两处排序有打平且后面截断，换稳定排序会换掉选中的标题）都逐步照抄。编辑距离用 Myers 位
+并行（≤64 码点），与 DP 随机对拍相等。唯一刻意差异：原实现在块尾把未见 `<` 的文本先吐成事件，
+实体恰被 zlib 输出块切开时解不出来；这里等到 `<` 才吐（真实标题包上两者输出相同）。
+
+回归：`fushi/test/media/video/metadata/anidb_native_parity_test.dart`（合成 3000 部目录 /
+370 查询 / 3255 标题对 / 300 个分集匹配场景的输出摘要，由删除前的 Dart 实现冻结）、
+`packages/fushi_compute/test/{title_score,anidb_native}_test.dart`。迁移时另对真实每日标题包
+（17063 部 / 101889 标题、679 条查询的完整结果、8800 对相似度位模式）和 1500 个分集匹配场景做过
+全量对拍，完全一致；畸形包 68 例 × 明文 / gzip 结局（异常文案 + cause）、anime XML DOM 19 例一致。
+
+基准（2026-10-19 复测，本机仍有其它会话并发；JIT `dart run`；真实标题包 1.8 MB gzip /
+8.0 MB XML；同一台机器、同一轮先跑旧实现再跑新实现）：
+
+| 场景 | 规模 | 改动前（Dart） | 改动后（Rust 含 FFI） | 倍数 |
+|---|---|---|---|---|
+| 标题包首次加载（后台 isolate：解压 + 解析 + 建索引，3 次） | 17063 部 / 101889 标题 | 5.37 / 5.96 / 5.24 s | 0.93 / 0.81 / 0.90 s | ≈ 6× |
+| 精确搜索 p50 / p90 | 283 条 | 25 / 160 µs | 21 / 41 µs | 1.2× / 3.9× |
+| 前缀搜索 p50 / p90 / max | 58 条 | 141 µs / 11.3 / 61.6 ms | 44 µs / 1.5 / 3.4 ms | 3–18× |
+| 模糊搜索 p50 / p90 / max（UI isolate 上） | 330 条 | 33.6 / 99.1 / 381.7 ms | 2.8 / 9.1 / 39.1 ms | ≈ 10–12× |
+| `similarity`（含两次归一化） | 8800 对 | 237 ms | 83 ms | 2.9× |
+| `similarityNormalized`（逐对 FFI） | 8800 对 | 114 ms | 36 ms | 3.2× |
+| `normalize` | 101889 个标题 | 618 ms | 92 ms | 6.7× |
+| TMDB 分集匹配（批量归一化 + 相似度矩阵） | 1500 场景 / ≈35k 链接 | 35.0 s | 6.4 s | 5.4× |
+| `findByAnimeId`（异步 API，记录缓存未命中） | 25000 次 | 307 ms | 514 ms | 0.6×（变慢：每次未命中多一次 FFI 取记录 + 解码，≈20 µs/次） |
+
 ## 构建
 
 | 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-19 实测，含 parse 域） |
