@@ -9,6 +9,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,6 +37,7 @@ import 'package:fushi/src/srs/srs_import_entry.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -55,6 +57,37 @@ class SrsDeckListPage extends ConsumerStatefulWidget {
 }
 
 class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
+  /// 正在删的牌组 → 进度（0–1；null = 还不知道总数）。删完、重读的列表里已经没有它之后才移除
+  /// （否则旧数据里的行会先「复原」一下再消失）。
+  final Map<String, ValueNotifier<double?>> _deleting =
+      <String, ValueNotifier<double?>>{};
+
+  /// 已经删完、等列表重读的牌组。
+  final Set<String> _deleted = <String>{};
+
+  @override
+  void dispose() {
+    for (final ValueNotifier<double?> n in _deleting.values) {
+      n.dispose();
+    }
+    super.dispose();
+  }
+
+  /// 重读回来的列表里已经没有的、删完的牌组：撤掉删除中状态。
+  void _pruneDeleted(SrsDeckListData? data) {
+    if (data == null || _deleted.isEmpty) return;
+    final Set<String> present = <String>{
+      for (final SrsDeckSummary d in data.decks) d.deck.id,
+    };
+    for (final String id in _deleted.toList()) {
+      if (present.contains(id)) continue;
+      _deleted.remove(id);
+      // 本帧里旧行可能还挂着监听：下一帧再释放。
+      final ValueNotifier<double?>? n = _deleting.remove(id);
+      WidgetsBinding.instance.addPostFrameCallback((_) => n?.dispose());
+    }
+  }
+
   /// Anki 一键迁移完成后：迁进来的笔记里有旧 Lapis（或此前迁移漏掉的字段）时，
   /// 顺手问一句要不要迁到 Fushi 卡片。[context] 是迁移页的。
   Future<void> _offerLegacyLapisMigration(
@@ -155,9 +188,25 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     );
     if (!confirmed || !mounted) return;
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
-    await store.deleteDeck(deck.deck.id);
-    if (mounted) bumpSrsRevision(ref);
+    if (store == null || !mounted) return;
+    // 删除按块进行（BUG-3524）：行里显示进度、不可点，界面其余部分照常可用；删完重读列表。
+    final String id = deck.deck.id;
+    final ValueNotifier<double?> progress = ValueNotifier<double?>(null);
+    setState(() => _deleting[id] = progress);
+    try {
+      await store.deleteDeck(
+        id,
+        onProgress: (int done, int total) {
+          if (total > 0) progress.value = done / total;
+        },
+      );
+      if (mounted) setState(() => _deleted.add(id));
+    } catch (_) {
+      if (mounted) setState(() => _deleting.remove(id)?.dispose());
+      rethrow;
+    } finally {
+      if (mounted) bumpSrsRevision(ref);
+    }
   }
 
   /// 收起 / 展开子牌组：写进牌组本身（Anki deck collapsed），随同步到其它设备。
@@ -405,8 +454,10 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (list == null) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
     }
+    _pruneDeleted(list);
     return _DeckList(
       data: list,
+      deleting: _deleting,
       showImportTasks: ref.read(srsImportControllerProvider).tasks.isNotEmpty,
       onOpen: (SrsDeckSummary d) =>
           srsRunLogged('SrsDeckList.review', () => _openReview(d)),
@@ -420,6 +471,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
 class _DeckList extends StatefulWidget {
   const _DeckList({
     required this.data,
+    required this.deleting,
     required this.onOpen,
     required this.onAction,
     required this.onAddFirst,
@@ -428,6 +480,9 @@ class _DeckList extends StatefulWidget {
   });
 
   final SrsDeckListData data;
+
+  /// 正在删的牌组（及其进度）；子牌组随父牌组一起显示删除中。
+  final Map<String, ValueListenable<double?>> deleting;
 
   /// 有后台导入任务（排队 / 运行中 / 结束未关）：列表最前显示任务条。
   final bool showImportTasks;
@@ -538,6 +593,18 @@ class _DeckListState extends State<_DeckList> {
           ),
         ),
     ];
+    // 删除中的牌组连同它的子牌组一起显示删除中（子牌组随父牌组一并删除）。
+    ValueListenable<double?>? deletingOf(SrsDeckSummary d) {
+      String? id = d.deck.id;
+      int guard = 0;
+      while (id != null && guard++ < 64) {
+        final ValueListenable<double?>? p = widget.deleting[id];
+        if (p != null) return p;
+        id = byId[id]?.parentId;
+      }
+      return null;
+    }
+
     final int firstDeckItem = items.length;
     int shown = 0;
     for (int i = 0; i < decks.length; i++) {
@@ -550,6 +617,7 @@ class _DeckListState extends State<_DeckList> {
           visible: visible[i],
           child: _DeckRow(
             deck: d,
+            deleting: deletingOf(d),
             index: index,
             count: visibleCount,
             isDefault: d.deck.id == widget.data.store.defaultDeckId,
@@ -663,6 +731,7 @@ class _DeckRevealState extends State<_DeckReveal>
 class _DeckRow extends StatelessWidget {
   const _DeckRow({
     required this.deck,
+    required this.deleting,
     required this.index,
     required this.count,
     required this.isDefault,
@@ -675,6 +744,9 @@ class _DeckRow extends StatelessWidget {
   });
 
   final SrsDeckSummary deck;
+
+  /// 非 null = 正在删除（本牌组或祖先）：行变淡、不可点 / 不进焦点，副标题换成进度条。
+  final ValueListenable<double?>? deleting;
   final int index;
   final int count;
   final bool isDefault;
@@ -762,10 +834,62 @@ class _DeckRow extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (BuildContext context, BoxConstraints constraints) =>
-        _buildRow(context, compact: constraints.maxWidth < compactBelow),
-  );
+  Widget build(BuildContext context) {
+    final bool busy = deleting != null;
+    return ExcludeFocus(
+      excluding: busy,
+      child: IgnorePointer(
+        ignoring: busy,
+        child: AnimatedOpacity(
+          opacity: busy ? 0.6 : 1,
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) =>
+                _buildRow(
+                  context,
+                  compact: constraints.maxWidth < compactBelow,
+                ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 删除中的副标题：「正在删除…」+ 进度条（总数未知时不定进度）。展开 / 收起带尺寸与淡入淡出。
+  Widget? _subtitle(BuildContext context, String? note) {
+    final ValueListenable<double?>? progress = deleting;
+    final Widget? body = progress == null
+        ? (note == null ? null : Text(note))
+        : Column(
+            key: ValueKey<String>('srs-deck-deleting-${deck.deck.id}'),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            spacing: FushiDesignTokens.of(context).spacing.gap / 2,
+            children: <Widget>[
+              Text(t.srs_deck_deleting),
+              ValueListenableBuilder<double?>(
+                valueListenable: progress,
+                builder: (BuildContext context, double? value, Widget? _) =>
+                    FushiLinearProgressIndicator(
+                      value: value,
+                      semanticsLabel: t.srs_deck_deleting,
+                    ),
+              ),
+            ],
+          );
+    if (body == null && note == null && progress == null) return null;
+    return FushiAnimatedSize(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      child: AnimatedSwitcher(
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        switchInCurve: FushiMotion.enter,
+        switchOutCurve: FushiMotion.exit,
+        child: body ?? const SizedBox.shrink(),
+      ),
+    );
+  }
 
   List<PopupMenuEntry<_DeckAction>> _menuItems() =>
       <PopupMenuEntry<_DeckAction>>[
@@ -871,7 +995,7 @@ class _DeckRow extends StatelessWidget {
                           message: deck.fullName,
                           child: Text(deck.deck.name),
                         ),
-                  subtitle: note == null ? null : Text(note),
+                  subtitle: _subtitle(context, note),
                   trailing: compact
                       ? SrsCountTriple(
                           dense: true,

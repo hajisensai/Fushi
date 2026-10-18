@@ -6114,6 +6114,7 @@
   "srs_deck_collapse": "Collapse subdecks",
   "srs_deck_delete": "Delete deck",
   "srs_deck_delete_confirm": "Delete \"$name\" and its subdecks? Their cards move to the parent deck (or the default deck).",
+  "srs_deck_deleting": "Deleting…",
   "srs_deck_expand": "Expand subdecks",
   "srs_deck_menu": "More actions",
   "srs_deck_name": "Deck name",

@@ -6114,6 +6114,7 @@
   "srs_deck_collapse": "收起子牌组",
   "srs_deck_delete": "删除牌组",
   "srs_deck_delete_confirm": "删除「$name」及其子牌组？其中的卡片会移到上级牌组（没有上级则移到默认牌组）。",
+  "srs_deck_deleting": "正在删除…",
   "srs_deck_expand": "展开子牌组",
   "srs_deck_menu": "更多操作",
   "srs_deck_name": "牌组名称",

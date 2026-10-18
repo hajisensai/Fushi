@@ -3,12 +3,15 @@
 // - 后台导入控制器：串行、进度、完成 / 失败回调、完成后让牌组列表重读、迁移用的临时包结束后删除。
 // - 任务条（MD3 / Apple）：运行中显示进度条，结束后显示结果与「关闭」。
 // - 牌组列表：新建牌组后列表只等牌组行重读，不等同步冲突扫描（冲突数是另一个 provider）。
+// - 删牌组（BUG-3524）：删除进行中行变成「正在删除」+ 进度条且不可点，删完立即从列表消失。
 //
 // 数据库读写一律放 tester.runAsync（fake zone 里 await 真异步会挂死）。
 import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -279,6 +282,128 @@ void main() {
       await _settle(tester);
       expect(c.tasks, isEmpty);
       expect(find.text('Imported Japanese.apkg: 12 notes added'), findsNothing);
+    });
+
+    testWidgets('[$ds] 删牌组：进行中显示「正在删除」与进度条、行不可点；删完立即消失，卡移到默认牌组', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(1100, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      // 库开在后台 isolate（与 app 同一种连接）：fake zone 里收不到它的回包，删除会停在进行中，
+      // 直到 runAsync 推进。
+      final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
+        () async {
+          final FushiDatabase db = FushiDatabase.forTesting(
+            NativeDatabase.createInBackground(File('${tmp.path}/srs.db')),
+          );
+          return (
+            db,
+            await SrsDbStore.open(
+              db: db,
+              profileUid: kSrsTestProfile,
+              deviceId: 'dev',
+              engine: const SrsTestEngine(),
+            ),
+          );
+        },
+      ))!;
+      addTearDown(() => tester.runAsync(db.close));
+      final (String deck, String child) = (await tester.runAsync(() async {
+        final String deck = await store.createDeck('Old');
+        final String child = await store.createDeck('Sub', parentId: deck);
+        for (int i = 0; i < 3; i++) {
+          await store.createNote(
+            noteTypeId: store.lapisNoteTypeId,
+            fieldsById: <String, String>{
+              (await store.noteType(store.lapisNoteTypeId))!.fields.first.id:
+                  'w$i',
+            },
+            deckId: i.isEven ? deck : child,
+          );
+        }
+        return (deck, child);
+      }))!;
+      final SrsImportController c = SrsImportController(onDataChanged: () {});
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        _app(
+          apple: apple,
+          overrides: <Override>[
+            appProvider.overrideWith(
+              (Ref ref) => AppModel(testPlatformServices()),
+            ),
+            srsStoreProvider.overrideWith((Ref ref) async => store),
+            srsConflictCountProvider.overrideWith((Ref ref) async => 0),
+            srsImportControllerProvider.overrideWithValue(c),
+            srsCardFaceBuilderProvider.overrideWithValue(
+              (BuildContext context, SrsCardFace face) =>
+                  SrsPlainCardFace(face: face),
+            ),
+          ],
+          home: const SrsDeckListPage(),
+        ),
+      );
+      await _settle(tester);
+      final Finder row = find.byKey(ValueKey<String>('srs-deck-$deck'));
+      expect(row, findsOneWidget);
+
+      // 右键行：两套设计系统都弹同一份牌组菜单。
+      await tester.tap(find.text('Old'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.srs_deck_delete).last);
+      await tester.pumpAndSettle();
+      // 确认框：标题与确认按钮同名，按钮在后。
+      await tester.tap(find.text(t.srs_deck_delete).last);
+      // 不推进数据库（fake zone 里真异步不走）：删除停在进行中。
+      for (int i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+
+      expect(
+        find.byKey(ValueKey<String>('srs-deck-deleting-$deck')),
+        findsOneWidget,
+      );
+      // 子牌组随父牌组一起显示删除中。
+      expect(
+        find.byKey(ValueKey<String>('srs-deck-deleting-$child')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.byType(FushiLinearProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(
+          of: find.byKey(ValueKey<String>('srs-deck-deleting-$deck')),
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is IgnorePointer && w.ignoring,
+          ),
+        ),
+        findsWidgets,
+        reason: '删除中的行不可点',
+      );
+
+      // 推进后台库直到删完（库在后台 isolate，往返由 runAsync 送达）。
+      for (int i = 0; i < 400 && row.evaluate().isNotEmpty; i++) {
+        await _settle(tester, rounds: 1);
+      }
+      expect(row, findsNothing, reason: '删完列表立即重读，牌组消失');
+      expect(find.byKey(ValueKey<String>('srs-deck-$child')), findsNothing);
+      expect(find.textContaining(t.srs_deck_deleting), findsNothing);
+      final List<SrsCardCacheRow> cards = (await tester.runAsync(
+        store.allCardRows,
+      ))!;
+      expect(cards, hasLength(3));
+      expect(
+        cards.every((SrsCardCacheRow x) => x.deckId == store.defaultDeckId),
+        isTrue,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
     });
 
     testWidgets('[$ds] 牌组列表：新建牌组立即出现，不等同步冲突扫描；有导入任务时列表最前是任务条', (
