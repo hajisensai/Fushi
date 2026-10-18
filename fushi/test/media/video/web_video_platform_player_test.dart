@@ -9,7 +9,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi/src/media/video/web_video_platform_player.dart';
 
 WebVideoPlaybackState _state({
@@ -107,6 +109,47 @@ void main() {
       await expectLater(platform.handle, throwsUnsupportedError);
       expect(await platform.screenshot(), isNull);
     });
+  });
+
+  testWidgets('VideoPlayerController.loadWeb drives cues from page state', (
+    WidgetTester tester,
+  ) async {
+    final List<String> js = <String>[];
+    final WebVideoPlatformPlayer platform = WebVideoPlatformPlayer(
+      evaluate: (String s) async => js.add(s),
+    );
+    final VideoPlayerController controller = VideoPlayerController();
+    await controller.loadWeb(
+      platform: platform,
+      bookUid: 'video/stream/nf:1',
+      pageUrl: 'https://www.netflix.com/watch/1',
+      cues: <AudioCue>[
+        AudioCue()
+          ..sentenceIndex = 0
+          ..startMs = 1000
+          ..endMs = 3000
+          ..text = 'はじめまして',
+        AudioCue()
+          ..sentenceIndex = 1
+          ..startMs = 5000
+          ..endMs = 7000
+          ..text = 'よろしく',
+      ],
+    );
+    expect(controller.isWebBackend, isTrue);
+    expect(controller.hasNativePlayer, isFalse);
+
+    platform.applySnapshot(_state(pos: 5500, paused: true));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(controller.positionMs, 5500);
+    expect(controller.isPlaying, isFalse);
+    expect(controller.currentCue?.text, 'よろしく');
+
+    await controller.seekMs(1200);
+    expect(js, contains('window.__fushiWebVideo.seek(1200)'));
+
+    controller.dispose();
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets(
