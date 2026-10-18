@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:fushi_compute/fushi_compute.dart';
+
 import '../audiobook/audiobook_model.dart';
 
 /// 把**紧挨着**的两条 cue 之间的切点吸到真实的停顿（能量谷）上（设备端转录产物
@@ -85,77 +87,20 @@ class CueEnergySnapper {
   /// 比它还晚很多就是吸错了谷、会吃掉字头）。
   final int tokenGuardMs;
 
-  static const int _floorBlockFrames = 250;
-  static const int _floorSpanFrames = 750;
+  // 两个方法共用的门限：每 250 帧一块、取前后 750 帧已知电平的第 10 百分位当底噪 +
+  // [floorMarginDb]，夹到 [[minThresholdDb], [maxThresholdDb]]。判定本体在 Rust
+  // （native/fushi_compute/src/signal.rs，整本书一次调用），这里只打包 / 写回。
 
   /// [energyDb]：从时间 0 起每 [frameMs] 一帧的电平（整数 dBFS，0 = 未知，按有声
   /// 处理）。就地修改 [cues] 的起止时间，返回挪动的切点数。
+  ///
+  /// 库不可用抛 `FushiComputeUnavailableError`；[frameMs] <= 0 或门限上下限颠倒抛
+  /// [ArgumentError]。
   int snap(List<AudioCue> cues, Int8List energyDb) {
-    final int n = energyDb.length;
-    if (n == 0 || cues.length < 2) return 0;
-    final Float64List threshold = _thresholds(energyDb);
-    bool quiet(int f) {
-      final int v = energyDb[f];
-      return v != 0 && v < threshold[f];
-    }
-
-    final int minValley = (minValleyMs / frameMs).ceil();
-    int moved = 0;
-    for (int i = 0; i + 1 < cues.length; i++) {
-      final AudioCue cur = cues[i];
-      final AudioCue next = cues[i + 1];
-      if (cur.audioFileIndex != next.audioFileIndex) continue;
-      final int gap = next.startMs - cur.endMs;
-      if (gap < 0 || gap > maxGapMs) continue;
-      final int b = (cur.endMs + next.startMs) ~/ 2;
-      final int f0 = math.max(0, (b - windowMs) ~/ frameMs);
-      final int f1 = math.min(n, (b + windowMs) ~/ frameMs);
-      int best = -1;
-      int bestLen = 0;
-      double bestScore = 0;
-      int f = f0;
-      while (f < f1) {
-        if (!quiet(f)) {
-          f++;
-          continue;
-        }
-        // 窗口只限定谷落在哪，谷本身量到真实的两端（不被窗口边截断）。
-        int s = f;
-        while (s > 0 && quiet(s - 1)) {
-          s--;
-        }
-        while (f < n && quiet(f)) {
-          f++;
-        }
-        final int len = f - s;
-        if (len < minValley) continue;
-        final double center = (s + f) * frameMs / 2;
-        final double score =
-            len * frameMs - distancePenalty * (center - b).abs();
-        if (best < 0 || score > bestScore) {
-          best = s;
-          bestLen = len;
-          bestScore = score;
-        }
-      }
-      if (best < 0) continue;
-      final int valleyStart = best * frameMs;
-      final int valleyEnd = (best + bestLen) * frameMs;
-      final int end = math.min(valleyStart + tailMs, valleyEnd);
-      final int start = math.max(
-        math.max(valleyEnd - leadMs, valleyStart),
-        end,
-      );
-      if (end - cur.startMs < minDurationMs ||
-          next.endMs - start < minDurationMs) {
-        continue;
-      }
-      final int? firstToken = _firstTokenMs(next);
-      if (firstToken != null && start > firstToken + tokenGuardMs) continue;
-      _shiftStart(next, start);
-      cur.endMs = end;
-      moved++;
-    }
+    if (energyDb.isEmpty || cues.length < 2) return 0;
+    final Int64List packed = _pack(cues);
+    final int moved = ffcCueEnergySnap(packed, energyDb, _params());
+    _unpack(cues, packed);
     return moved;
   }
 
@@ -165,128 +110,68 @@ class CueEnergySnapper {
   /// 而那里恰是 token 时刻粗的模型（Kitsune CTC 80 ms 一帧、多字 token 线性摊开，
   /// 同一字相对 RNN-T ±200 ms 散布）最常把字幕挂进静音的地方：
   /// - 起点所在帧是静音 → 往后 [edgeMaxShiftMs] 内找第一段 ≥ [edgeMinVoiceMs] 的
-  ///   有声，起点挪到它 − [leadMs]；
-  /// - 终点前一帧是静音 → 往前同样找最后一段有声，终点收到它 + [tailMs]，但不早于
+  ///   有声，起点挪到它 − [edgeLeadMs]；
+  /// - 终点前一帧是静音 → 往前同样找最后一段有声，终点收到它 + [edgeTailMs]，但不早于
   ///   末 token 发射时刻 − [tokenGuardMs]。
   ///
   /// 只往 cue 内部收，不越界、不动文本；挪完短于 [minDurationMs] 的不动。返回
-  /// 挪动的边数。
+  /// 挪动的边数。异常同 [snap]。
   int refineEdges(List<AudioCue> cues, Int8List energyDb) {
-    final int n = energyDb.length;
-    if (n == 0 || cues.isEmpty) return 0;
-    final Float64List threshold = _thresholds(energyDb);
-    bool quiet(int f) {
-      final int v = energyDb[f];
-      return v != 0 && v < threshold[f];
-    }
-
-    final int maxShift = edgeMaxShiftMs ~/ frameMs;
-    final int minVoice = (edgeMinVoiceMs / frameMs).ceil();
-    int moved = 0;
-    for (final AudioCue cue in cues) {
-      final int fs = cue.startMs ~/ frameMs;
-      if (fs >= 0 && fs < n && quiet(fs)) {
-        int f = fs;
-        final int limit = math.min(n, fs + maxShift);
-        int onset = -1;
-        while (f < limit) {
-          if (quiet(f)) {
-            f++;
-            continue;
-          }
-          int g = f;
-          while (g < n && !quiet(g) && g - f < minVoice) {
-            g++;
-          }
-          if (g - f >= minVoice) {
-            onset = f;
-            break;
-          }
-          f = g;
-        }
-        if (onset >= 0) {
-          final int start = math.max(cue.startMs, onset * frameMs - edgeLeadMs);
-          if (start > cue.startMs && cue.endMs - start >= minDurationMs) {
-            _shiftStart(cue, start);
-            moved++;
-          }
-        }
-      }
-      final int fe = (cue.endMs - 1) ~/ frameMs;
-      if (fe >= 0 && fe < n && quiet(fe)) {
-        int f = fe;
-        final int limit = math.max(-1, fe - maxShift);
-        int offset = -1;
-        while (f > limit) {
-          if (quiet(f)) {
-            f--;
-            continue;
-          }
-          int g = f;
-          while (g >= 0 && !quiet(g) && f - g < minVoice) {
-            g--;
-          }
-          if (f - g >= minVoice) {
-            offset = f;
-            break;
-          }
-          f = g;
-        }
-        if (offset >= 0) {
-          final int end = math.min(
-            cue.endMs,
-            (offset + 1) * frameMs + edgeTailMs,
-          );
-          final int? lastToken = _lastTokenMs(cue);
-          if (end < cue.endMs &&
-              end - cue.startMs >= minDurationMs &&
-              (lastToken == null || end >= lastToken - tokenGuardMs)) {
-            cue.endMs = end;
-            moved++;
-          }
-        }
-      }
-    }
+    if (energyDb.isEmpty || cues.isEmpty) return 0;
+    final Int64List packed = _pack(cues);
+    final int moved = ffcCueRefineEdges(packed, energyDb, _params());
+    _unpack(cues, packed);
     return moved;
   }
 
-  static int? _lastTokenMs(AudioCue cue) {
-    final CueTokenTiming? t = cue.tokenTiming;
-    if (t == null || t.isEmpty) return null;
-    return cue.startMs + t.offsetsMs.last;
-  }
+  /// 顺序见 [kFfcSnapParamCount]。
+  Float64List _params() => Float64List.fromList(<double>[
+    frameMs.toDouble(),
+    maxGapMs.toDouble(),
+    windowMs.toDouble(),
+    minValleyMs.toDouble(),
+    distancePenalty,
+    tailMs.toDouble(),
+    leadMs.toDouble(),
+    minDurationMs.toDouble(),
+    floorMarginDb,
+    minThresholdDb,
+    maxThresholdDb,
+    tokenGuardMs.toDouble(),
+    edgeMaxShiftMs.toDouble(),
+    edgeMinVoiceMs.toDouble(),
+    edgeLeadMs.toDouble(),
+    edgeTailMs.toDouble(),
+  ]);
 
-  /// 每帧的门限（按 [_floorBlockFrames] 一块算一次局部底噪）。未知帧不参与。
-  Float64List _thresholds(Int8List db) {
-    final int n = db.length;
-    final Float64List out = Float64List(n);
-    final List<int> window = <int>[];
-    for (int b0 = 0; b0 < n; b0 += _floorBlockFrames) {
-      final int lo = math.max(0, b0 - _floorSpanFrames);
-      final int hi = math.min(n, b0 + _floorBlockFrames + _floorSpanFrames);
-      window.clear();
-      for (int k = lo; k < hi; k++) {
-        if (db[k] != 0) window.add(db[k]);
-      }
-      double t = maxThresholdDb;
-      if (window.isNotEmpty) {
-        window.sort();
-        final double floor = window[((window.length - 1) * 10 / 100).round()]
-            .toDouble();
-        t = (floor + floorMarginDb).clamp(minThresholdDb, maxThresholdDb);
-      }
-      final int end = math.min(n, b0 + _floorBlockFrames);
-      for (int k = b0; k < end; k++) {
-        out[k] = t;
-      }
+  /// 打包成 [kFfcSnapCueStride] 槽一条：起止、文件序号、有无 token、首末 token 偏移
+  /// （判定只看首末两个偏移；平移规则 `max(0, o − Δ)` 单调，首末位置不变）。
+  static Int64List _pack(List<AudioCue> cues) {
+    final Int64List out = Int64List(cues.length * kFfcSnapCueStride);
+    for (int i = 0; i < cues.length; i++) {
+      final AudioCue cue = cues[i];
+      final CueTokenTiming? t = cue.tokenTiming;
+      final bool hasTokens = t != null && !t.isEmpty;
+      final int at = i * kFfcSnapCueStride;
+      out[at] = cue.startMs;
+      out[at + 1] = cue.endMs;
+      out[at + 2] = cue.audioFileIndex;
+      out[at + 3] = hasTokens ? 1 : 0;
+      out[at + 4] = hasTokens ? t.offsetsMs.first : 0;
+      out[at + 5] = hasTokens ? t.offsetsMs.last : 0;
     }
     return out;
   }
 
-  static int? _firstTokenMs(AudioCue cue) {
-    final CueTokenTiming? t = cue.tokenTiming;
-    if (t == null || t.isEmpty) return null;
-    return cue.startMs + t.offsetsMs.first;
+  /// 写回 Rust 改过的起止。每条 cue 的起点在一次调用里最多挪一次，所以按新旧起点之差
+  /// 一次平移全部 token 偏移，与原先在循环里就地平移结果相同。
+  static void _unpack(List<AudioCue> cues, Int64List packed) {
+    for (int i = 0; i < cues.length; i++) {
+      final AudioCue cue = cues[i];
+      final int at = i * kFfcSnapCueStride;
+      if (packed[at] != cue.startMs) _shiftStart(cue, packed[at]);
+      cue.endMs = packed[at + 1];
+    }
   }
 
   /// 挪起点时 token 偏移（相对起点）一起平移，绝对发射时刻不变。

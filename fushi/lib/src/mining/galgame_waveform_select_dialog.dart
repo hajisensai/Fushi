@@ -2,8 +2,6 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/media/video/audio_energy_probe.dart'
-    show downsampleEnergyEnvelope;
 import 'package:fushi/src/media/video/subtitle_waveform_painter.dart'
     show SubtitleWaveformPainter;
 import 'package:fushi/src/mining/galgame_audio_encode.dart' show pcmDurationMs;
@@ -12,6 +10,7 @@ import 'package:fushi/src/mining/galgame_waveform.dart'
     show kGalWaveformWindowMs, pcmToEnergyEnvelope;
 import 'package:fushi/src/mining/galgame_waveform_select.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 /// galgame 一键制卡（docs/specs/galgame-mining）波形选区对话框。
 ///
@@ -49,6 +48,9 @@ class _GalWaveformSelectDialogState extends State<_GalWaveformSelectDialog> {
 
   late final int _totalMs;
   late final List<double> _dbFrames;
+
+  /// [_dbFrames] 的线性振幅副本（原生内存）：改宽度只重跑降采样，不重算 dB → 振幅。
+  late final FfcEnergyEnvelope _envelope;
   late GalWaveformRange _range;
 
   /// 波形显示区最近一次布局宽度（拖动换算用）。
@@ -67,9 +69,12 @@ class _GalWaveformSelectDialogState extends State<_GalWaveformSelectDialog> {
   @override
   void initState() {
     super.initState();
-    _totalMs =
-        pcmDurationMs(widget.slice.pcm.length, widget.slice.format.byteRate);
+    _totalMs = pcmDurationMs(
+      widget.slice.pcm.length,
+      widget.slice.format.byteRate,
+    );
     _dbFrames = pcmToEnergyEnvelope(widget.slice.pcm, widget.slice.format);
+    _envelope = FfcEnergyEnvelope.fromDb(_dbFrames);
     _range = defaultVadRange(
       _dbFrames,
       windowMs: kGalWaveformWindowMs,
@@ -83,7 +88,7 @@ class _GalWaveformSelectDialogState extends State<_GalWaveformSelectDialog> {
       return _cachedBuckets;
     }
     _cachedBucketCount = targetBuckets;
-    _cachedBuckets = downsampleEnergyEnvelope(_dbFrames, targetBuckets);
+    _cachedBuckets = _envelope.downsample(targetBuckets);
     return _cachedBuckets;
   }
 
@@ -138,8 +143,10 @@ class _GalWaveformSelectDialogState extends State<_GalWaveformSelectDialog> {
           );
         case _GalDragMode.move:
           final int duration = _range.durationMs;
-          final int start =
-              (ms - _moveGrabOffsetMs).clamp(0, _totalMs - duration);
+          final int start = (ms - _moveGrabOffsetMs).clamp(
+            0,
+            _totalMs - duration,
+          );
           _range = GalWaveformRange(startMs: start, endMs: start + duration);
       }
     });
@@ -190,50 +197,57 @@ class _GalWaveformSelectDialogState extends State<_GalWaveformSelectDialog> {
                 child: ColoredBox(
                   color: fushiNeutralBlockColor(context),
                   child: LayoutBuilder(
-                    builder: (BuildContext context, BoxConstraints constraints) {
-                      final double width = constraints.maxWidth.isFinite
-                          ? constraints.maxWidth
-                          : 480.0;
-                      _lastWidth = width;
-                      final int targetBuckets = math.max(1, width ~/ 2);
-                      final List<double> buckets = _bucketsFor(targetBuckets);
-                      return GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onHorizontalDragStart: _onDragStart,
-                        onHorizontalDragUpdate: _onDragUpdate,
-                        onHorizontalDragEnd: _onDragEnd,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: <Widget>[
-                            RepaintBoundary(
-                              child: CustomPaint(
-                                painter: SubtitleWaveformPainter(
-                                  buckets: buckets,
-                                  windowStartMs: 0,
-                                  windowEndMs: _totalMs,
-                                  cueBoundariesMs: const <int>[],
-                                  previewDelayMs: 0,
-                                  currentPositionMs: 0,
-                                  waveColor: cs.primary.withValues(alpha: 0.55),
-                                  cueLineColor: cs.secondary,
-                                  playheadColor: cs.tertiary,
-                                  centerLineColor: cs.outlineVariant,
+                    builder:
+                        (BuildContext context, BoxConstraints constraints) {
+                          final double width = constraints.maxWidth.isFinite
+                              ? constraints.maxWidth
+                              : 480.0;
+                          _lastWidth = width;
+                          final int targetBuckets = math.max(1, width ~/ 2);
+                          final List<double> buckets = _bucketsFor(
+                            targetBuckets,
+                          );
+                          return GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onHorizontalDragStart: _onDragStart,
+                            onHorizontalDragUpdate: _onDragUpdate,
+                            onHorizontalDragEnd: _onDragEnd,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: <Widget>[
+                                RepaintBoundary(
+                                  child: CustomPaint(
+                                    painter: SubtitleWaveformPainter(
+                                      buckets: buckets,
+                                      windowStartMs: 0,
+                                      windowEndMs: _totalMs,
+                                      cueBoundariesMs: const <int>[],
+                                      previewDelayMs: 0,
+                                      currentPositionMs: 0,
+                                      waveColor: cs.primary.withValues(
+                                        alpha: 0.55,
+                                      ),
+                                      cueLineColor: cs.secondary,
+                                      playheadColor: cs.tertiary,
+                                      centerLineColor: cs.outlineVariant,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                CustomPaint(
+                                  painter: _GalSelectionOverlayPainter(
+                                    startMs: _range.startMs,
+                                    endMs: _range.endMs,
+                                    totalMs: _totalMs,
+                                    fillColor: cs.primary.withValues(
+                                      alpha: 0.16,
+                                    ),
+                                    edgeColor: cs.primary,
+                                  ),
+                                ),
+                              ],
                             ),
-                            CustomPaint(
-                              painter: _GalSelectionOverlayPainter(
-                                startMs: _range.startMs,
-                                endMs: _range.endMs,
-                                totalMs: _totalMs,
-                                fillColor: cs.primary.withValues(alpha: 0.16),
-                                edgeColor: cs.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                          );
+                        },
                   ),
                 ),
               ),

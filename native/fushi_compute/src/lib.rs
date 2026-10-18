@@ -1,8 +1,8 @@
-//! Fushi 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配）的 C ABI。
+//! Fushi 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配 / 信号处理）的 C ABI。
 //!
 //! ABI 约定（Dart 侧见 packages/fushi_compute）：
 //! - 导出符号一律 `ffc_<域>_<动作>`，`#[no_mangle] pub extern "C"`；每个域一个模块文件
-//!   （`hash.rs` / `image.rs` / `text.rs`），互不依赖。
+//!   （`hash.rs` / `image.rs` / `text.rs` / `signal.rs`），互不依赖。
 //! - 数据走原始缓冲区（指针 + 长度），不走 JSON：这些接口按块 / 像素 / 字符批量调用，
 //!   编码开销会吃掉收益（fushi_fsrs 实测逐次 JSON 往返 25～30 µs）。
 //! - 能由调用方分配输出就由调用方分配；必须由 Rust 分配的缓冲区用 [ffc_free_bytes] 释放。
@@ -18,6 +18,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 pub mod hash;
 pub mod image;
+pub mod signal;
 pub mod text;
 
 /// C ABI 版本。Dart 侧加载时比对，不一致抛带原因的加载异常。

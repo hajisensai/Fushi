@@ -1,6 +1,6 @@
 # fushi_compute
 
-Fushi 的 Rust 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配）的薄 C ABI，给 Dart FFI
+Fushi 的 Rust 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配 / 信号处理）的薄 C ABI，给 Dart FFI
 （`packages/fushi_compute/`，纯 Dart，无 Flutter / 插件依赖）用。五个平台 app、
 `packages/fushi_engine` 与无头服务端都调这一份 Rust。
 
@@ -87,6 +87,44 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
 | 内存 SHA-256 | 64 MiB | 1,173 ms | 43 ms | 27× |
 | 整文件 SHA-256（异步读，UI isolate 可用） | 256 MiB | 4,829 ms | 408 ms | 11.8× |
 
+## 信号域
+
+`src/signal.rs`，Dart 绑定 `packages/fushi_compute/lib/src/signal/ffc_signal.dart`。每个导出函数一次处理一整批
+（整条包络 / 整段 PCM / 整本书的 cue），不逐元素跨 FFI。
+
+| 符号 | 调用方（之前的纯 Dart 实现已删） |
+|---|---|
+| `ffc_signal_xcorr_best_shift(audio, n, cue, m, bin_ms, max_shift_ms, *has_data, *shift_bins, *confidence)` | fushi `subtitle_auto_align.dart` `bestOffsetMsByCrossCorrelation`（字幕自动对轴，视频页 UI isolate 同步调） |
+| `ffc_signal_pcm_rms_db(pcm, len, rate, channels, bits, is_float, window_ms, silence_db, out, cap, *out_len)` | fushi `galgame_waveform.dart` `pcmToEnergyEnvelope`（galgame 制卡波形弹窗 `initState`；纯计算，与 hook / helper 无关） |
+| `ffc_signal_parse_rms_log(utf8, len, silence_db, **out, *out_len)` | fushi `audio_energy_probe.dart`：`file=` 写出的逐帧 RMS 文件直接按字节解析（原来 `readAsStringSync` + `RegExp.allMatches`），stderr 兜底走同一函数 |
+| `ffc_signal_db_to_amplitude(db, out, n)` + `ffc_signal_downsample_peaks(amp, n, buckets, percentile, out, cap, *out_len)` | `downsampleEnergyEnvelope` 与 `FfcEnergyEnvelope`：字幕对轴波形面板 / galgame 波形弹窗缓存线性振幅，改宽度只重跑降采样，不再每次重算 6 万次 `pow` |
+| `ffc_signal_cue_energy_snap` / `ffc_signal_cue_refine_edges(energy, n, cues[6×k], k, params[16], *moved)` | fushi_audio `CueEnergySnapper.snap` / `refineEdges`（有声书转录产物切点吸附，整本一次调用；token 偏移平移在 Dart 侧写回） |
+
+一致性：回归向量 `packages/fushi_compute/test/fixtures/signal_vectors.json` 由删除前的 Dart 实现生成
+（`test/signal/signal_vector_inputs.dart` 造输入）。互相关、日志解析（含 JS 正则 `\s` 的 Unicode 空白、
+`-inf` / 超长数字 / 非法 UTF-8）、cue 吸附是整数与四则运算，**逐位一致**；`num.clamp` / `List<double>.sort`
+的 NaN 与 −0.0 语义在 Rust 里照抄。逐窗 RMS 用 `sqrt` / `log`、降采样用 `pow`，走 libm：`log` 实测逐位一致，
+`pow` 不是——Dart VM 链的 CRT 与 Rust 调到的 `ucrtbase` 不是同一份（60000 个 dB 值里 dart.exe 有 11 个、
+flutter_tester 有 94 个差 1 ULP，旧实现自己在两个宿主上也不一致），所以这两类按 ULP 容差（≤ 64）比，
+冻结向量里实测最大偏差 5 ULP（归一化后的 0..1 波形桶，约 1e-15）。
+
+基准（`packages/fushi_audio/benchmark/signal_benchmark.dart`，AOT，旧 Dart 实现原样复制在文件里对拍，
+5 次中位数；2026-10-18，i5-12600KF / Windows 11，Dart 3.13.5）：
+
+| 调用点 | 输入 | 改动前（Dart） | 改动后（Rust） | 倍数 |
+|---|---|---|---|---|
+| 字幕自动对轴互相关 | 20 分钟 @100 ms = 12000 格，±15 s（301 个 shift） | 13.5 ms | 5.6 ms | 2.4× |
+| galgame 波形逐窗 RMS | 10 s 48 kHz 立体声 float32 | 7.6 ms | 2.1 ms | 3.6× |
+| 同上 | 30 s | 24.3 ms | 7.2 ms | 3.4× |
+| ffmpeg 逐帧 RMS 日志解析 | 60000 帧（5.1 MB） | 96.5 ms | 14.2 ms | 6.8× |
+| 波形降采样 | 60000 帧 → 1366 桶，一次性（含 dB → 振幅） | 1.97 ms | 1.92 ms | 1.0× |
+| 同上 | 改宽度重算（振幅已缓存） | 1.97 ms | 0.15 ms | 13.6× |
+| 有声书 cue 能量吸附 | 7 小时整本 = 1,260,000 帧、5551 条 cue，snap + refineEdges | 3415 ms | 31.3 ms | 109× |
+
+本机同时有多个会话在跑重活，绝对值有 ±30% 噪声（同一份旧实现两次运行 2645 / 3415 ms），倍数更可信。
+互相关的累加次序要与旧实现一致，不能向量化重排，只跳过 `audio[i] ≤ 0` 的项（本来就不加）；
+降采样一次性调用基本持平（主要成本是 6 万次 `pow`，两边调的都是 CRT），收益在面板改宽度时不再重算。
+
 ## 构建
 
 | 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-18 实测） |
@@ -105,7 +143,7 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
   fushi_compute 加依赖时要同步更新 `native/fushi_ios_umbrella/Cargo.lock`（构建用 `--locked`）。
   因为三个 crate 编成一个 `.a`，iOS 上 fushi_p2p / fushi_fsrs 实际也随之变成必需。
 - `verify_abi.sh <二进制> [nm]` 递归抓 `packages/fushi_compute/lib/` 下所有 `'ffc_*'` 字面量，逐个核对
-  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 11。
+  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 18。
 
 ## CI
 
