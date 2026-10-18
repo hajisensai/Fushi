@@ -137,15 +137,28 @@ if(EXISTS "${FUSHI_FSRS_SO}")
   install(FILES "${FUSHI_FSRS_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
-# 网页广告拦截内核（adblock-rust，copy-if-present）：native/fushi_web_core/build_linux_so.sh 产出
-# prebuilt/linux-x64/libfushi_web_core.so 则随包进 bundle/lib/（Dart 侧按裸名经 $ORIGIN/lib 定位）；
-# 缺失时网页广告拦截判不可用（WebView 照常、只是不拦），构建照常。与 fushi_p2p 同一语义。
+# 网页内容核心（fushi_web_core：广告拦截 + 漫画章末广告页识别，Rust）：
+# native/fushi_web_core/build_linux_so.sh 产出 prebuilt/linux-x64/libfushi_web_core.so，随包进
+# bundle/lib/（Dart 侧按裸名经 $ORIGIN/lib 定位）。**硬依赖**（Dart 侧没有降级分支）：
+# Profile/Release bundle 缺它构建失败，Debug 只告警。Linux 网络层不拦广告是插件能力问题，
+# 与此无关——cosmetic 隐藏与漫画广告页识别照样要这个库。
 set(FUSHI_WEB_CORE_SO
   "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so")
 if(EXISTS "${FUSHI_WEB_CORE_SO}")
   install(FILES "${FUSHI_WEB_CORE_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
+else()
+  message(WARNING
+    "fushi_web_core: ${FUSHI_WEB_CORE_SO} not found. Run "
+    "native/fushi_web_core/build_linux_so.sh; Profile/Release bundles refuse to build without it.")
 endif()
+install(CODE "
+  if(CMAKE_INSTALL_CONFIG_NAME MATCHES \"^(Profile|Release)$\" AND NOT EXISTS \"${FUSHI_WEB_CORE_SO}\")
+    message(FATAL_ERROR
+      \"Missing required native library libfushi_web_core.so. \"
+      \"Run native/fushi_web_core/build_linux_so.sh before building a Profile/Release bundle.\")
+  endif()
+" COMPONENT Runtime)
 
 # 内置 libtorrent 引擎（copy-if-present）：native/fushi_torrent/build_linux_so.sh 产出
 # prebuilt/linux-x64/libfushi_torrent_ffi.so（vcpkg 静态链 libtorrent/boost/openssl +

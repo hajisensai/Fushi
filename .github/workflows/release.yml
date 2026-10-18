@@ -25,7 +25,7 @@ on:
       - 'fushi/**'
       - 'packages/**'
       # Android 构建真正用到的原生源码：fushidicts 走 build.gradle 的 CMake，
-      # torrent / p2p / fsrs / adblock 在本 workflow 里编成 .so 进 jniLibs。
+      # torrent / p2p / fsrs / web_core 在本 workflow 里编成 .so 进 jniLibs。
       - 'native/fushidicts/**'
       - 'native/fushi_torrent/**'
       - 'native/fushi_p2p/**'
@@ -44,6 +44,7 @@ on:
       - '.github/actions/native-artifact-store/**'
       - '.github/actions/native-store-names/**'
       - '.github/actions/pdfium-hook-cache/**'
+      - '.github/actions/fushi-web-core-linux/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -719,8 +720,8 @@ jobs:
           esac
           bash native/fushi_fsrs/verify_abi.sh "$so" "$nm_bin"
         done
-    # 网页广告拦截内核（adblock-rust）的 Android .so：cargo-ndk 交叉编，产物落
-    # native/fushi_web_core/prebuilt/android/<abi>/，由 build.gradle 的 jniLibs copy-if-present
+    # 网页内容核心（fushi_web_core，硬依赖）的 Android .so：cargo-ndk 交叉编，产物落
+    # native/fushi_web_core/prebuilt/android/<abi>/，由 build.gradle 的 jniLibs 随包（release 构建缺库即失败）
     # 随包。失败口径同 fushi_p2p：**构建失败即 job 失败**，不降级出一个悄悄少了网页广告拦截原生
     # 库的包；出包后下面还会逐 ABI 核对 APK 里确有 libfushi_web_core.so。
     # 工具链钉法与 fushi_p2p 同源（Rust / cargo-ndk 版本都从 native_store 读，与
@@ -974,7 +975,7 @@ jobs:
             echo "ok: $apk lib/$abi/libfushi_fsrs.so"
           done
         done
-    # 同上，fushi_web_core（网页广告拦截内核）也是 jniLibs copy-if-present：逐包、逐 ABI 核对
+    # 同上，fushi_web_core（网页内容核心）也走 jniLibs：逐包、逐 ABI 核对
     # APK 里确有 libfushi_web_core.so，把「编了但没进包」挡在发布前。判据与 here-string
     # 理由（BUG-2804）同上一步。
     - name: Verify fushi_web_core is packaged in every APK ABI
@@ -1465,6 +1466,23 @@ jobs:
         echo "::error title=main sync failed::推 main 三次都被拒（有人同时在推 main）。请人工把 develop 合进 main。"
         exit 1
 
+  # 网页内容核心（native/fushi_web_core）Linux .so：packages/fushi_web_core 把原生库当硬依赖
+  # （没有「缺库判不可用」的分支，测试找不到库就失败、不 skip），所以 fushi/ 与 packages/ 的
+  # 单测 job 都要它。只编一次、以 workflow artifact 交给下游（artifact 不占 Actions 缓存配额）。
+  web-core-linux:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/fushi-web-core-linux
+    - uses: actions/upload-artifact@v7
+      with:
+        name: fushi-web-core-linux-x64
+        path: native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
+        if-no-files-found: error
+        retention-days: 3
+
   # TODO-fast-release: the analyze/unit/package suites that used to run as
   # sequential steps at the top of the `build` job (gating `flutter build apk`)
   # now live here as an INDEPENDENT job. It shares the same trigger as `build`
@@ -1500,6 +1518,9 @@ jobs:
       matrix:
         part: ['0', '1', '2', '3', checks]
     name: tests (${{ matrix.part }})
+    needs: web-core-linux
+    env:
+      FUSHI_WEB_CORE_LIB: ${{ github.workspace }}/native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
     steps:
     - uses: actions/checkout@v6
 
@@ -1534,6 +1555,12 @@ jobs:
       run: |
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
+
+    - name: Fetch fushi_web_core linux-x64 library (hard dependency of the unit tests)
+      uses: actions/download-artifact@v7
+      with:
+        name: fushi-web-core-linux-x64
+        path: native/fushi_web_core/prebuilt/linux-x64
 
     - name: Run dart analyze
       if: matrix.part == 'checks'

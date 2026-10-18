@@ -201,17 +201,29 @@ if(EXISTS "${FUSHI_FSRS_DLL}")
   install(FILES "${FUSHI_FSRS_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
-# === 网页广告拦截内核（adblock-rust，copy-if-present）===
+# === 网页内容核心（fushi_web_core：广告拦截 + 漫画章末广告页识别，Rust）===
 # native/fushi_web_core/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_web_core.dll，
-# 存在则随包到 exe 同级（Dart 侧 packages/fushi_web_core 的 FushiWebCoreLibrary 按 exe 同级定位）。
-# 缺失时网页广告拦截判不可用（WebView 照常、只是不拦），构建照常——与上面 fushi_p2p 同一语义；发布包的保证在
-# 流水线侧（先跑构建脚本，失败即红）。
+# 随包到 exe 同级（Dart 侧 packages/fushi_web_core 的 FushiWebCoreLibrary 按 exe 同级定位）。
+# **硬依赖**：Dart 侧没有「缺库判不可用」的分支，缺库在运行时就是 FushiWebCoreLibraryMissing。
+# 所以 Profile/Release bundle 缺它直接构建失败（下面的 install(CODE) 门）；Debug 构建只告警，
+# 不挡纯 UI 开发，但用到网页浏览 / 网页漫画时会如实报错。
 set(FUSHI_WEB_CORE_DLL
   "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_web_core/prebuilt/windows-x64/fushi_web_core.dll")
 if(EXISTS "${FUSHI_WEB_CORE_DLL}")
   install(FILES "${FUSHI_WEB_CORE_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
+else()
+  message(WARNING
+    "fushi_web_core: ${FUSHI_WEB_CORE_DLL} not found. Run "
+    "native/fushi_web_core/build_windows_dll.ps1; Profile/Release bundles refuse to build without it.")
 endif()
+install(CODE "
+  if(CMAKE_INSTALL_CONFIG_NAME MATCHES \"^(Profile|Release)$\" AND NOT EXISTS \"${FUSHI_WEB_CORE_DLL}\")
+    message(FATAL_ERROR
+      \"Missing required native library fushi_web_core.dll. \"
+      \"Run native/fushi_web_core/build_windows_dll.ps1 before building a Profile/Release bundle.\")
+  endif()
+" COMPONENT Runtime)
 
 # Debug builds may intentionally omit the expensive libtorrent prebuild so UI
 # work stays lightweight. A Profile/Release bundle, however, must never be

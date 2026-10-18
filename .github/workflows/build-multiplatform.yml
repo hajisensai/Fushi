@@ -886,8 +886,8 @@ jobs:
           set -euo pipefail
           bash native/fushi_fsrs/build_macos_dylib.sh
           bash native/fushi_fsrs/verify_abi.sh native/fushi_fsrs/prebuilt/macos/libfushi_fsrs.dylib nm
-      # 网页广告拦截内核（adblock-rust）dylib：Runner 的「Bundle fushi_web_core dylib」构建阶段
-      # （fushi/macos/bundle_fushi_web_core.sh）copy-if-present 进 Contents/Frameworks。只编 arm64。
+      # 网页内容核心（fushi_web_core，硬依赖）dylib：Runner 的「Bundle fushi_web_core dylib」构建阶段
+      # （fushi/macos/bundle_fushi_web_core.sh）拷进 Contents/Frameworks（Release 缺库构建失败）。只编 arm64。
       - name: Set up Rust (fushi_web_core, macOS targets)
         uses: dtolnay/rust-toolchain@master
         with:
@@ -1334,7 +1334,7 @@ jobs:
       # DynamicLibrary.process().lookup 在用户手里才抛。直接查 Runner 主二进制的导出表。
       # Xcode 的 debug 构建会把 app 代码放进 Runner.debug.dylib（ENABLE_DEBUG_DYLIB），有就查它。
       # 三组都查：fp2p_*（互联 P2P）、ffsrs_*（SRS 排程内核，缺了复习页报「排程内核不可用」）与
-      # fwc_*（网页广告拦截内核，缺了 WebView 照常、只是不拦）。
+      # fwc_*（网页内容核心，硬依赖：缺了运行时 FushiWebCoreLibraryMissing）。
       - name: Verify fushi_p2p + fushi_fsrs + fushi_web_core symbols are linked into Runner (iOS)
         working-directory: fushi
         shell: bash
@@ -1608,8 +1608,9 @@ jobs:
             echo "::error::fushi_fsrs tests were skipped: $FUSHI_FSRS_LIB did not load"
             exit 1
           fi
-      # 网页广告拦截内核（adblock-rust）Windows DLL：产物落 native/fushi_web_core/prebuilt/windows-x64/，
-      # 供下面 flutter build windows 的 copy-if-present 随包；构建失败即 job 失败。
+      # 网页内容核心（fushi_web_core：广告拦截 + 漫画章末广告页识别）Windows DLL：产物落
+      # native/fushi_web_core/prebuilt/windows-x64/，供下面 flutter build windows 随包（硬依赖）；
+      # 构建失败即 job 失败。
       - name: Set up Rust (fushi_web_core)
         uses: dtolnay/rust-toolchain@master
         with:
@@ -1634,11 +1635,9 @@ jobs:
           set -euo pipefail
           test -f "$FUSHI_WEB_CORE_LIB" || { echo "::error::DLL not found at $FUSHI_WEB_CORE_LIB"; exit 1; }
           dart pub get
-          dart test test/ffi_adblock_engine_test.dart --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_web_core_test.log"
-          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_web_core_test.log"; then
-            echo "::error::fushi_web_core tests were skipped: $FUSHI_WEB_CORE_LIB did not load"
-            exit 1
-          fi
+          # 原生库是硬依赖：找不到库测试直接失败（不 skip），退出码就是判据。整包都跑：
+          # 广告拦截核心 + 漫画章末广告页回归向量（native/fushi_web_core/tests/vectors）。
+          dart test --reporter expanded
       # Windows is the ONLY platform that renders EPUB via the forked
       # flutter_inappwebview_windows C++ plugin; an MSVC/native break here was
       # previously invisible to CI (the audit: Windows never built anywhere).

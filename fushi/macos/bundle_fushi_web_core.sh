@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Xcode 构建阶段「Bundle fushi_web_core dylib」：网页广告拦截内核（adblock-rust）的原生库 copy-if-present。
+# Xcode 构建阶段「Bundle fushi_web_core dylib」：网页内容核心（fushi_web_core：广告拦截 + 漫画
+# 章末广告页识别，Rust）的原生库。
 #
-# native/fushi_web_core/build_macos_dylib.sh 产出 prebuilt/macos/libfushi_web_core.dylib 则拷进
+# native/fushi_web_core/build_macos_dylib.sh 产出 prebuilt/macos/libfushi_web_core.dylib，拷进
 # Contents/Frameworks（Runner 的 LD_RUNPATH_SEARCH_PATHS 含 @executable_path/../Frameworks，
-# Dart 侧 packages/fushi_web_core 按裸名经这个 rpath 加载）；缺失时 网页广告拦截原生库判不可用（WebView 照常、只是不拦）、其余照常——
-# 与 Windows CMake / Android jniLibs 同一语义，没装 Rust 的 Mac 也能构建。
-# 发布流水线（release-desktop.yml / build-multiplatform.yml）先跑构建脚本，再在出包后
-# 核对 Frameworks 里确有此库，所以「CI 忘了编」不会静默发出缺库的包。
+# Dart 侧 packages/fushi_web_core 按裸名经这个 rpath 加载）。
+# **硬依赖**：Dart 侧没有「缺库判不可用」的分支。Release / Profile 构建缺它直接失败；Debug 构建
+# 只告警（不挡纯 UI 开发，用到网页浏览 / 网页漫画时如实报错）。发布流水线（release-desktop.yml /
+# build-multiplatform.yml）先跑构建脚本，出包后再核对 Frameworks 里确有此库。
 set -euo pipefail
 
 name="libfushi_web_core.dylib"
@@ -17,7 +18,13 @@ destination="${destination_dir}/${name}"
 if [[ ! -f "$source" ]]; then
   # 上一次构建拷进去的旧库不能留着冒充本次产物。
   rm -f "$destination"
-  echo "note: ${source} not found; fushi_web_core is not bundled (web ad-blocking unavailable in this build)"
+  case "${CONFIGURATION:-}" in
+    Release*|Profile*)
+      echo "error: ${source} not found; fushi_web_core is a required native library. Run native/fushi_web_core/build_macos_dylib.sh first." >&2
+      exit 1
+      ;;
+  esac
+  echo "warning: ${source} not found; fushi_web_core is not bundled in this ${CONFIGURATION:-Debug} build (web ad blocking / web comic ad-page detection will fail at runtime)"
   exit 0
 fi
 

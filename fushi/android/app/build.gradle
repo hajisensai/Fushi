@@ -148,9 +148,28 @@ def requireReleaseKeystore = {
     }
 }
 
+// 网页内容核心（native/fushi_web_core：广告拦截 + 漫画章末广告页识别）是硬依赖：Dart 侧没有
+// 「缺库判不可用」的分支，Release 包缺 .so 在运行时就是 FushiWebCoreLibraryMissing。按 Flutter
+// 传进来的 target-platform 逐 ABI 核对 prebuilt 在不在（build_android_so.* 产出），缺就拒绝出包。
+def requireWebCoreSo = {
+    def abiOf = ['android-arm': 'armeabi-v7a', 'android-arm64': 'arm64-v8a', 'android-x64': 'x86_64']
+    def platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString().split(',')
+    platforms.each { platform ->
+        def abi = abiOf[platform.trim()]
+        if (abi == null) {
+            return
+        }
+        def so = file("../../../native/fushi_web_core/prebuilt/android/${abi}/libfushi_web_core.so")
+        if (!so.exists()) {
+            throw new GradleException("Missing required native library ${so}. Run native/fushi_web_core/build_android_so.{sh,ps1} for ${abi} before building a release APK.")
+        }
+    }
+}
+
 gradle.taskGraph.whenReady { taskGraph ->
     if (taskGraph.allTasks.any { it.name.toLowerCase().contains("release") }) {
         requireReleaseKeystore()
+        requireWebCoreSo()
     }
 }
 
@@ -191,9 +210,9 @@ android {
         // 产出 prebuilt/android/<abi>/libfushi_fsrs.so 则随包；缺失时 SRS 原生内核
         // 判不可用，构建照常。
         main.jniLibs.srcDirs += '../../../native/fushi_fsrs/prebuilt/android'
-        // 网页广告拦截内核（adblock-rust，copy-if-present）：native/fushi_web_core/build_android_so.*
-        // 产出 prebuilt/android/<abi>/libfushi_web_core.so 则随包；缺失时网页广告拦截
-        // 判不可用（WebView 照常、只是不拦），构建照常。
+        // 网页内容核心（fushi_web_core，硬依赖）：native/fushi_web_core/build_android_so.*
+        // 产出 prebuilt/android/<abi>/libfushi_web_core.so；Release 构建缺它直接失败
+        // （见上面的 requireWebCoreSo），Debug 构建不挡、运行时用到时如实报错。
         main.jniLibs.srcDirs += '../../../native/fushi_web_core/prebuilt/android'
     }
 

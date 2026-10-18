@@ -542,7 +542,7 @@ jobs:
           name: ${{ steps.native_store.outputs.p2p }}
           path: native\fushi_p2p\prebuilt\windows-x64
       # SRS 排程内核（fsrs-rs）DLL：产物落 native/fushi_fsrs/prebuilt/windows-x64/，由
-      # fushi/windows/CMakeLists.txt 的 copy-if-present 随包。失败口径同 fushi_p2p：**构建失败
+      # fushi/windows/CMakeLists.txt 随包（Release 缺库构建失败）。失败口径同 fushi_p2p：**构建失败
       # 即 job 失败**；出包后下面还会核对 bundle 里确有这个 DLL。不进原生产物持久库（与
       # build-multiplatform.yml windows job 的 fushi_fsrs 同一口径），只靠 rust-cache；工具链
       # 版本与 fushi_p2p 同源。fushi_p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
@@ -561,8 +561,8 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File native/fushi_fsrs/build_windows_dll.ps1
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_fsrs) failed" }
-      # 网页广告拦截内核（adblock-rust）DLL：产物落 native/fushi_web_core/prebuilt/windows-x64/，由
-      # fushi/windows/CMakeLists.txt 的 copy-if-present 随包。失败口径同 fushi_p2p：**构建失败
+      # 网页内容核心（fushi_web_core，硬依赖）DLL：产物落 native/fushi_web_core/prebuilt/windows-x64/，由
+      # fushi/windows/CMakeLists.txt 随包（Release 缺库构建失败）。失败口径同 fushi_p2p：**构建失败
       # 即 job 失败**；出包后下面还会核对 bundle 里确有这个 DLL。不进原生产物持久库（与
       # build-multiplatform.yml windows job 的 fushi_web_core 同一口径），只靠 rust-cache；工具链
       # 版本与 fushi_p2p 同源。fushi_p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
@@ -646,7 +646,7 @@ jobs:
             throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_fsrs/prebuilt/windows-x64"
           }
           Get-Item -LiteralPath $dll | Select-Object FullName, Length
-      # 同上：fushi_web_core 也是 CMake copy-if-present，发布前钉成硬检查。
+      # 同上：fushi_web_core 出包后再核对一次 bundle 里确有。
       - name: Verify fushi_web_core is in the Windows bundle
         shell: pwsh
         run: |
@@ -1616,8 +1616,8 @@ jobs:
           set -euo pipefail
           bash native/fushi_fsrs/build_macos_dylib.sh
           bash native/fushi_fsrs/verify_abi.sh native/fushi_fsrs/prebuilt/macos/libfushi_fsrs.dylib nm
-      # 网页广告拦截内核（adblock-rust）arm64 dylib：Runner 的「Bundle fushi_web_core dylib」构建阶段
-      # （fushi/macos/bundle_fushi_web_core.sh）copy-if-present 进 Contents/Frameworks，之后由下面
+      # 网页内容核心（fushi_web_core，硬依赖）arm64 dylib：Runner 的「Bundle fushi_web_core dylib」构建阶段
+      # （fushi/macos/bundle_fushi_web_core.sh）拷进 Contents/Frameworks（Release 缺库失败），之后由下面
       # 的 Developer ID 签名循环随其它 Mach-O 一起签。失败口径同 p2p：构建失败即 job 失败；
       # 出包后再核对。不进原生产物持久库（与 build-multiplatform.yml macos job 同一口径），
       # 工具链版本与 fushi_p2p 同源；p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
