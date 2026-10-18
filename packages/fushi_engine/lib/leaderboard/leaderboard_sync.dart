@@ -27,6 +27,10 @@
 //    coverVotes 记着上次投的来源（URL / 本地封面文件指纹）：来源没变就不再投；本地更正了刮削、
 //    封面文件变了 → 重新投，服务端随之移票。遇到第一个 429 / 5xx / 网络错误立即停止本轮，
 //    剩下的下次再投。封面问题不算同步失败（[ShelfSyncOutcome.coverError]）。
+//    **确认票**（cover_compare.dart）：按哈希命中已有候选时不直接投，先 `check` 拿到候选缩略图，
+//    在后台 isolate 里与本地缩略图强比对——同一张图才投确认票（只有确认票计入服务端的替换门槛），
+//    不是就报「不符」并去看下一个候选 / 上传自己的图另立候选。同一作品同一候选（同一本地封面）
+//    只比一次，结论存在 coverChecks 里；下载 / 网络失败不投、不记账，下次重试。
 // 中途失败抛 [LeaderboardSyncException]，携带已推进的 state：调用方存下它，下次从断点续。
 //
 // 另外两条规则：
@@ -36,6 +40,7 @@
 
 import 'dart:typed_data';
 
+import 'package:fushi_engine/leaderboard/cover_compare.dart';
 import 'package:fushi_engine/leaderboard/cover_hash.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
@@ -65,22 +70,36 @@ class SyncedEntry {
 /// 或 `-`（没有可投的封面）；[hash] = 投的缩略图 dHash（URL 票 / 没投成的本地封面为 null）；
 /// [rejectedUrl] = 服务端判为白名单外的 coverUrl（同一个 URL 不再重试，直接用本地封面）。
 class CoverVoteRecord {
-  const CoverVoteRecord({required this.source, this.hash, this.rejectedUrl});
+  const CoverVoteRecord({
+    required this.source,
+    this.hash,
+    this.rejectedUrl,
+    this.confirmed = false,
+  });
 
   factory CoverVoteRecord.fromJson(Map<String, dynamic> j) => CoverVoteRecord(
     source: j['s'] as String,
     hash: j['h'] as String?,
     rejectedUrl: j['x'] as String?,
+    confirmed: j['c'] == true,
   );
 
   final String source;
   final String? hash;
   final String? rejectedUrl;
 
+  /// 缩略图票是确认票（本机比对通过 / 自己上传建的候选）。旧版本记下的缩略图票没有这一位：
+  /// 下次同步补一次本机比对（服务端的替换门槛只数确认票）。
+  final bool confirmed;
+
+  /// 这条记录已经不用再处理：不是缩略图票（URL / 没投成），或缩略图票已确认。
+  bool get settled => hash == null || confirmed;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
     's': source,
     if (hash != null) 'h': hash,
     if (rejectedUrl != null) 'x': rejectedUrl,
+    if (confirmed) 'c': true,
   };
 
   @override
@@ -88,10 +107,11 @@ class CoverVoteRecord {
       other is CoverVoteRecord &&
       other.source == source &&
       other.hash == hash &&
-      other.rejectedUrl == rejectedUrl;
+      other.rejectedUrl == rejectedUrl &&
+      other.confirmed == confirmed;
 
   @override
-  int get hashCode => Object.hash(source, hash, rejectedUrl);
+  int get hashCode => Object.hash(source, hash, rejectedUrl, confirmed);
 }
 
 class LeaderboardSyncState {
@@ -100,6 +120,7 @@ class LeaderboardSyncState {
     this.daily = const <String, int>{},
     this.shelfCount,
     this.coverVotes = const <String, CoverVoteRecord>{},
+    this.coverChecks = const <String, bool>{},
   });
 
   static const LeaderboardSyncState empty = LeaderboardSyncState();
@@ -117,6 +138,10 @@ class LeaderboardSyncState {
       // 没有记录的作品都会补投一次。
       final Map<String, dynamic> votes =
           (j['coverVotes'] as Map<Object?, Object?>? ??
+                  const <Object?, Object?>{})
+              .cast<String, dynamic>();
+      final Map<String, dynamic> checks =
+          (j['coverChecks'] as Map<Object?, Object?>? ??
                   const <Object?, Object?>{})
               .cast<String, dynamic>();
       return LeaderboardSyncState(
@@ -138,6 +163,10 @@ class LeaderboardSyncState {
                   (e.value as Map<Object?, Object?>).cast<String, dynamic>(),
                 ),
             }),
+        coverChecks: Map<String, bool>.unmodifiable(<String, bool>{
+          for (final MapEntry<String, dynamic> e in checks.entries)
+            e.key: e.value as bool,
+        }),
       );
     } on TypeError catch (e) {
       throw FormatException('bad leaderboard sync state: $e');
@@ -151,6 +180,10 @@ class LeaderboardSyncState {
   /// workId → 本账户上次给它投的封面。
   final Map<String, CoverVoteRecord> coverVotes;
 
+  /// 本机比对的结论缓存：`<workId>|<候选 id>|<本地封面来源>` → 是不是同一张图。投票还没落地（确认 /
+  /// 不符请求失败）时下次同步直接用它，不再下载、解码一遍。该作品的投票落地后清掉。
+  final Map<String, bool> coverChecks;
+
   /// 从没成功同步过。
   bool get neverSynced => shelfCount == null;
 
@@ -163,6 +196,7 @@ class LeaderboardSyncState {
     Map<String, int>? daily,
     int? shelfCount,
     Map<String, CoverVoteRecord>? coverVotes,
+    Map<String, bool>? coverChecks,
   }) => LeaderboardSyncState(
     entries: entries == null
         ? this.entries
@@ -172,6 +206,9 @@ class LeaderboardSyncState {
     coverVotes: coverVotes == null
         ? this.coverVotes
         : Map<String, CoverVoteRecord>.unmodifiable(coverVotes),
+    coverChecks: coverChecks == null
+        ? this.coverChecks
+        : Map<String, bool>.unmodifiable(coverChecks),
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -186,6 +223,7 @@ class LeaderboardSyncState {
         for (final MapEntry<String, CoverVoteRecord> e in coverVotes.entries)
           e.key: e.value.toJson(),
       },
+    if (coverChecks.isNotEmpty) 'coverChecks': coverChecks,
   };
 }
 
@@ -551,6 +589,12 @@ bool _stopsCoverRound(Object e) => e is LeaderboardApiException
     ? e.status == 429 || e.status >= 500 || e.status == 404
     : true;
 
+bool _isCandidateGone(Object e) =>
+    e is _CoverRoundsExhausted ||
+    (e is LeaderboardApiException &&
+        e.status == 409 &&
+        e.code == 'cover_candidate_gone');
+
 bool _isBadCoverUrl(Object e) =>
     e is LeaderboardApiException &&
     e.status == 400 &&
@@ -562,7 +606,8 @@ bool _isBadCoverUrl(Object e) =>
 /// [coverThumb]：取条目的缩略图字节（返回 null = 本地没有封面）；不给则不处理封面。
 /// [coverFingerprint]：本地封面的指纹（默认 [localCoverFingerprint]：路径 + 大小 + 修改时刻），
 /// 指纹没变就不重新生成缩略图。[coverHash]：缩略图的 dHash（默认在当前 isolate 里跑
-/// [coverDHash]；app 传后台 isolate 版本）。
+/// [coverDHash]；app 传后台 isolate 版本）。[coverCompare]：本地缩略图与候选缩略图的强比对
+/// （默认 [compareCoverBytesInBackground]；返回 null = 本地图解不开）。
 ///
 /// 上传设备不是本机时抛 [LeaderboardUploadOwnedElsewhere]；其余失败抛
 /// [LeaderboardSyncException]（带已推进的状态）。
@@ -574,6 +619,8 @@ Future<ShelfSyncOutcome> syncShelf(
   Future<Uint8List?> Function(LocalShelfEntry entry)? coverThumb,
   Future<String?> Function(LocalShelfEntry entry)? coverFingerprint,
   Future<String?> Function(Uint8List thumb)? coverHash,
+  Future<CoverSimilarity?> Function(Uint8List local, Uint8List remote)?
+  coverCompare,
 }) => _ShelfSyncRun(
   client,
   local,
@@ -582,7 +629,11 @@ Future<ShelfSyncOutcome> syncShelf(
   coverThumb,
   coverFingerprint ?? localCoverFingerprint,
   coverHash ?? _hashHere,
+  coverCompare ?? compareCoverBytesInBackground,
 ).run();
+
+/// 一部作品的确认票流程里最多看几个候选（每看一个不符就换下一个）；超过就留待下次同步。
+const int kCoverConfirmMaxCandidates = 4;
 
 Future<String?> _hashHere(Uint8List thumb) async => coverDHash(thumb);
 
@@ -595,6 +646,7 @@ class _ShelfSyncRun {
     this.coverThumb,
     this.coverFingerprint,
     this.coverHash,
+    this.coverCompare,
   );
 
   final LeaderboardClient client;
@@ -603,6 +655,14 @@ class _ShelfSyncRun {
   final Future<Uint8List?> Function(LocalShelfEntry entry)? coverThumb;
   final Future<String?> Function(LocalShelfEntry entry) coverFingerprint;
   final Future<String?> Function(Uint8List thumb) coverHash;
+  final Future<CoverSimilarity?> Function(Uint8List local, Uint8List remote)
+  coverCompare;
+
+  /// 本次同步发现服务端还不认识确认票协议（响应里没有 `confirmed`）：其余作品不再为补确认重投。
+  bool _legacyCoverServer = false;
+
+  /// 本机比对结论缓存（见 [LeaderboardSyncState.coverChecks]），本轮在它上面增删。
+  Map<String, bool> _checks = <String, bool>{};
 
   LeaderboardSyncState current;
   bool accepted = false;
@@ -884,8 +944,10 @@ class _ShelfSyncRun {
     final Map<String, CoverVoteRecord> votes = Map<String, CoverVoteRecord>.of(
       current.coverVotes,
     )..removeWhere((String w, CoverVoteRecord _) => !live.contains(w));
+    _checks = Map<String, bool>.of(current.coverChecks)
+      ..removeWhere((String k, bool _) => !live.contains(_checkWork(k)));
     if (thumb == null) {
-      current = current.copyWith(coverVotes: votes);
+      current = current.copyWith(coverVotes: votes, coverChecks: _checks);
       return (null, null);
     }
     final Map<String, List<LocalShelfEntry>> byWork =
@@ -906,14 +968,18 @@ class _ShelfSyncRun {
           thumb,
           attempt,
         );
-        if (done != null) votes[w.key] = done;
+        if (done != null) {
+          votes[w.key] = done;
+          _checks.removeWhere((String k, bool _) => _checkWork(k) == w.key);
+        }
       } on Object catch (e, st) {
         error ??= e;
         stack ??= st;
         if (e is! _CoverThumbFailure && _stopsCoverRound(e)) break;
-        // 409 `conflict`：与本账户的书架上报交错、服务端整批回滚（账户级 CAS），是临时失败——
-        // 不记账，下次同步照常重投这部作品；本轮继续投后面的。
-        if (_isConflict(e)) continue;
+        // 409 `conflict`：与本账户的书架上报交错、服务端整批回滚（账户级 CAS）；409
+        // `cover_candidate_gone`：要确认的候选刚被清理。都是临时失败——不记账，下次同步照常
+        // 重投这部作品；本轮继续投后面的。
+        if (_isConflict(e) || _isCandidateGone(e)) continue;
         final String? source = attempt.source;
         if (source != null) {
           votes[w.key] = CoverVoteRecord(
@@ -923,9 +989,11 @@ class _ShelfSyncRun {
         }
       }
     }
-    current = current.copyWith(coverVotes: votes);
+    current = current.copyWith(coverVotes: votes, coverChecks: _checks);
     return (error is _CoverThumbFailure ? error.error : error, stack);
   }
+
+  static String _checkWork(String key) => key.substring(0, key.indexOf('|'));
 
   /// 给一部作品投票；返回新的投票记录（null = 不用投 / 没有可投的封面）。
   Future<CoverVoteRecord?> _voteCover(
@@ -959,7 +1027,9 @@ class _ShelfSyncRun {
       final String? fingerprint = await coverFingerprint(e);
       if (fingerprint == null) continue;
       final String source = 'f:$fingerprint';
-      if (previous?.source == source && previous?.rejectedUrl == rejected) {
+      if (previous?.source == source &&
+          previous?.rejectedUrl == rejected &&
+          (previous!.settled || _legacyCoverServer)) {
         return null;
       }
       attempt.source = source;
@@ -974,23 +1044,25 @@ class _ShelfSyncRun {
       if (bytes == null || hash == null) {
         return CoverVoteRecord(source: source, rejectedUrl: rejected);
       }
-      // 文件被改动过但还是同一张图（距离在阈值内）：服务端那票仍然对，只更新指纹。
+      // 文件被改动过但还是同一张图（距离在阈值内）、且服务端那票已确认：只更新指纹。
       final String? before = previous?.hash;
       if (before != null &&
+          (previous!.confirmed || _legacyCoverServer) &&
           coverHashDistance(before, hash) <= kCoverHashMaxDistance) {
         return CoverVoteRecord(
           source: source,
           hash: before,
           rejectedUrl: rejected,
+          confirmed: previous.confirmed,
         );
       }
-      try {
-        await client.voteCover(workId, hash: hash);
-      } on LeaderboardApiException catch (err) {
-        if (!isCoverBytesRequired(err)) rethrow;
-        await client.uploadCover(workId, bytes, hash: hash);
-      }
-      return CoverVoteRecord(source: source, hash: hash, rejectedUrl: rejected);
+      final bool confirmed = await _voteThumb(workId, source, bytes, hash);
+      return CoverVoteRecord(
+        source: source,
+        hash: hash,
+        rejectedUrl: rejected,
+        confirmed: confirmed,
+      );
     }
     // 没有可投的本地封面：URL 被拒时也记下来，免得每次同步都重试同一个 URL。
     if (rejected != null && previous?.rejectedUrl != rejected) {
@@ -998,6 +1070,76 @@ class _ShelfSyncRun {
     }
     return null;
   }
+
+  /// 缩略图的确认票流程（文件头第 7 步）。返回最终的票是不是确认票。服务端不认识确认票协议
+  /// （旧版本）时退化为旧行为：按哈希投了一张未确认票，返回 false。
+  ///
+  /// 网络 / 下载失败原样抛出（调用方不记账，下次重试）；本地缩略图解不开抛 [_CoverThumbFailure]。
+  Future<bool> _voteThumb(
+    String workId,
+    String source,
+    Uint8List bytes,
+    String hash,
+  ) async {
+    CoverVoteResult r;
+    try {
+      r = await client.checkCover(workId, hash);
+    } on LeaderboardApiException catch (err) {
+      if (!isCoverBytesRequired(err)) rethrow;
+      r = await client.uploadCoverChecked(workId, bytes, hash: hash);
+    }
+    for (int i = 0; i < kCoverConfirmMaxCandidates; i++) {
+      if (r.legacyServer) {
+        _legacyCoverServer = true;
+        return false;
+      }
+      final CoverCandidateRef? candidate = r.candidate;
+      if (r.confirmed || candidate == null) return r.confirmed;
+      final String key = '$workId|${candidate.id}|$source';
+      bool? same = _checks[key];
+      if (same == null) {
+        final Uint8List remote;
+        try {
+          remote = await client.fetchCoverImage(candidate.image);
+        } on LeaderboardApiException catch (err) {
+          // 缩略图 404 = 候选在 check 之后被清理了（不是服务端不认接口）：按临时失败跳过这部，
+          // 不停本轮、不记账，下次同步重新 check。
+          if (err.status == 404) {
+            throw const LeaderboardApiException(409, 'cover_candidate_gone');
+          }
+          rethrow;
+        }
+        final CoverSimilarity? sim = await coverCompare(bytes, remote);
+        if (sim == null) {
+          throw _CoverThumbFailure(
+            const FormatException('local cover thumbnail is not decodable'),
+          );
+        }
+        same = sim.sameImage;
+        _checks[key] = same;
+      }
+      if (same) {
+        return (await client.confirmCover(
+          workId,
+          hash,
+          candidate.id,
+        )).confirmed;
+      }
+      try {
+        r = await client.rejectCover(workId, hash, candidate.id);
+      } on LeaderboardApiException catch (err) {
+        if (!isCoverBytesRequired(err)) rethrow;
+        r = await client.uploadCoverChecked(workId, bytes, hash: hash);
+      }
+    }
+    // 连着几个候选都不符还没落地：留待下次同步（不记账）。
+    throw const _CoverRoundsExhausted();
+  }
+}
+
+/// 一部作品看了 [kCoverConfirmMaxCandidates] 个候选仍没投成（临时状态，不记账）。
+class _CoverRoundsExhausted implements Exception {
+  const _CoverRoundsExhausted();
 }
 
 /// 本次正在尝试的封面来源（出错时据此记账，免得本地封面没变时反复重试）。

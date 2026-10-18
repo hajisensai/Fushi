@@ -36,28 +36,28 @@ class FushiApiServerManager {
     String Function()? extensionTestPageProvider,
     ExtensionFontApi? fontApi,
     SrsExtensionApi? Function()? srsApiProvider,
-  })  : _lookup = lookupService,
-        _mining = miningService,
-        _history = historyService,
-        _tokenizer = tokenizer,
-        _readingResolver = readingResolver,
-        _themeColorsProvider = themeColorsProvider,
-        _audioSourcesProvider = audioSourcesProvider,
-        _autoReadOnLookupProvider = autoReadOnLookupProvider,
-        _dictionaryUnifiedStyleProvider = dictionaryUnifiedStyleProvider,
-        _extensionBuildProvider = extensionBuildProvider,
-        _appLocaleProvider = appLocaleProvider,
-        _popupDictionaryCssProvider = popupDictionaryCssProvider,
-        _onExtensionPopupSize = onExtensionPopupSize,
-        _onExtensionStudy = onExtensionStudy,
-        _onExtensionFavorite = onExtensionFavorite,
-        _onExtensionSeen = onExtensionSeen,
-        _onLookupActivity = onLookupActivity,
-        _onExtensionReport = onExtensionReport,
-        _subtitleRegistryProvider = subtitleRegistryProvider,
-        _extensionTestPageProvider = extensionTestPageProvider,
-        _fontApi = fontApi,
-        _srsApiProvider = srsApiProvider;
+  }) : _lookup = lookupService,
+       _mining = miningService,
+       _history = historyService,
+       _tokenizer = tokenizer,
+       _readingResolver = readingResolver,
+       _themeColorsProvider = themeColorsProvider,
+       _audioSourcesProvider = audioSourcesProvider,
+       _autoReadOnLookupProvider = autoReadOnLookupProvider,
+       _dictionaryUnifiedStyleProvider = dictionaryUnifiedStyleProvider,
+       _extensionBuildProvider = extensionBuildProvider,
+       _appLocaleProvider = appLocaleProvider,
+       _popupDictionaryCssProvider = popupDictionaryCssProvider,
+       _onExtensionPopupSize = onExtensionPopupSize,
+       _onExtensionStudy = onExtensionStudy,
+       _onExtensionFavorite = onExtensionFavorite,
+       _onExtensionSeen = onExtensionSeen,
+       _onLookupActivity = onLookupActivity,
+       _onExtensionReport = onExtensionReport,
+       _subtitleRegistryProvider = subtitleRegistryProvider,
+       _extensionTestPageProvider = extensionTestPageProvider,
+       _fontApi = fontApi,
+       _srsApiProvider = srsApiProvider;
 
   final FushiRemoteLookupService _lookup;
   final FushiRemoteMiningService? _mining;
@@ -147,8 +147,19 @@ class FushiApiServerManager {
       allowLan: true,
       ankiConnectEndpoint: _ankiConnectEndpoint,
     );
-    await server.start();
+    // 先登记再 await 绑端口：绑定是 I/O、会让出事件循环，启动期间（app 冷启动时
+    // SRS runtime 恰在这段空档里注入 AnkiConnect 端点）的 setter 必须能推到这台
+    // server 上——登记晚于 await 时注入只落在 manager，server 的端点永远是 null，
+    // 根路径恒 404。
     _server = server;
+    try {
+      await server.start();
+    } catch (_) {
+      if (identical(_server, server)) _server = null;
+      rethrow;
+    }
+    // 绑定期间被 [stop] 撤下：起好的这台没人再持有，立即关掉而不是让它孤儿运行。
+    if (!identical(_server, server)) await server.stop();
   }
 
   Future<void> stop() async {

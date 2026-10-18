@@ -97,10 +97,20 @@ void main() {
       'Color get _backgroundColor',
     );
     expect(build, contains('version: _pageSessionGeneration,'));
+    expect(build, contains('scope: _pageScope,'));
     expect(
-      '_pageSessionGeneration++;'.allMatches(source).length,
+      '_pageSessionGeneration = ++_pageSessionGenerationCounter;'
+          .allMatches(source)
+          .length,
       1,
       reason: 'bumped exactly where a new page session is installed',
     );
+  });
+
+  test('page session generation is process-wide, not per reader instance', () {
+    // 每个阅读器从 0 数时，先开卷 2 退出再开卷 1，两卷首页 URL 同为 `?v=1`，
+    // WebView 把卷 2 的缓存页图端给卷 1。
+    expect(source, contains('static int _pageSessionGenerationCounter = 0;'));
+    expect(source, isNot(contains('_pageSessionGeneration++;')));
   });
 }

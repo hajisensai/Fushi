@@ -4,7 +4,8 @@
 /// （单写者规则）；读方从任意写入者的 media 目录取。
 ///
 /// 每轮（事件同步之后）：
-/// 1. 收集本 profile 全部笔记字段里引用的媒体文件名（`<img src>` / `[sound:]` 等）。
+/// 1. 收集本 profile 全部笔记字段里引用的媒体文件名（`<img src>` / `[sound:]` 等，
+///    以及释义样式去重换出来的共享样式文件）。
 /// 2. 本机缺的 → 从任一写入者的 media 目录下载。
 /// 3. 本机有、但所有现存写入者的 media 目录里都没有的 → 上传到本写入者自己的 media 目录。
 ///    退役写入者的目录被清理后，下一台仍持有该文件的活跃设备会在下一轮把它补传回来，
@@ -39,6 +40,8 @@ Future<Set<String>> srsReferencedMedia(SrsDbStore store) async {
     if (n.deletedAt != null) continue;
     for (final String v in n.fields.values) {
       out.addAll(srsMediaRefsIn(v));
+      // 释义样式去重的共享样式文件（`_fushi_style_<sha1>.css`，见 srs_style_store.dart）。
+      out.addAll(srsStyleRefsIn(v));
     }
   }
   for (final SrsNoteTypeView t in await store.noteTypes()) {

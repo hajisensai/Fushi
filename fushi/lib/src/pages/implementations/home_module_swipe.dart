@@ -33,19 +33,15 @@ import 'package:fushi/src/utils/components/section_visibility.dart';
 /// 参与横滑切换的 tab，按**屏幕上的从左到右**排列（LTR）。
 ///
 /// [tabs] 是 `homeActiveTabs` 的逻辑顺序；[reversed] 是「反转导航栏」。
-/// [lookupInBar]：查词也是胶囊里的目的地（底栏「分页滑动」形态把查词并进
-/// 胶囊，不再拆成 FAB），此时它也参与横滑。
 List<HomeTab> homeSwipeTabs({
   required List<HomeTab> tabs,
   required bool reversed,
-  bool lookupInBar = false,
 }) {
   // 与底栏胶囊同一份序列：只去掉不在胶囊里的查词（FAB）。设置必须留着——它是
   // 胶囊里的目的地，排除它会让落到设置上的用户再也滑不回去（BUG-3351）。
-  // 同理，分页滑动形态下查词在胶囊里，排除它会让落到查词上的人滑不出去。
   final List<HomeTab> modules = <HomeTab>[
     for (final HomeTab tab in tabs)
-      if (lookupInBar || tab != HomeTab.dictionaries) tab,
+      if (tab != HomeTab.dictionaries) tab,
   ];
   return reversed ? modules.reversed.toList() : modules;
 }
@@ -58,12 +54,7 @@ List<HomeTab> homeSwipeTabs({
 bool homeModuleSwipeArmed({
   required List<HomeTab> tabs,
   required HomeTab current,
-  bool lookupInBar = false,
-}) => homeSwipeTabs(
-  tabs: tabs,
-  reversed: false,
-  lookupInBar: lookupInBar,
-).contains(current);
+}) => homeSwipeTabs(tabs: tabs, reversed: false).contains(current);
 
 /// 一次横滑的目标 tab；`null` = 当前 tab 不参与横滑或已经到头。
 ///
@@ -76,13 +67,8 @@ HomeTab? homeModuleSwipeTarget({
   required bool reversed,
   required bool fingerTowardStart,
   TextDirection textDirection = TextDirection.ltr,
-  bool lookupInBar = false,
 }) {
-  final List<HomeTab> order = homeSwipeTabs(
-    tabs: tabs,
-    reversed: reversed,
-    lookupInBar: lookupInBar,
-  );
+  final List<HomeTab> order = homeSwipeTabs(tabs: tabs, reversed: reversed);
   final int index = order.indexOf(current);
   if (index < 0) return null;
   final bool towardScreenRight = fingerTowardStart;

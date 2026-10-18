@@ -174,9 +174,14 @@ bool windowBackdropRequestedOf(BuildContext context) {
 /// 与 [glassMaterialOf] 正交：后者决定表面透不透明，这里决定渲染 MD3 还是
 /// 玻璃组件。墨水屏下恒 false（墨水屏的可读性调校全建在 MD3 组件上）；
 /// 读不到扩展（测试裸 ThemeData、查词弹窗主题）同样 false。
-bool isGlassDesign(BuildContext context) {
-  if (isEinkTheme(context)) return false;
-  return Theme.of(context).extension<FushiGlassTheme>()?.glassDesign ?? false;
+bool isGlassDesign(BuildContext context) =>
+    isGlassDesignTheme(Theme.of(context));
+
+/// [isGlassDesign] 的 ThemeData 版：手里只有主题、没有 BuildContext 的装配点（例如
+/// 生成 WebView 注入样式）用它，与 [isGlassDesign] 同一判据。
+bool isGlassDesignTheme(ThemeData theme) {
+  if (theme.extension<FushiEinkTheme>()?.einkMode ?? false) return false;
+  return theme.extension<FushiGlassTheme>()?.glassDesign ?? false;
 }
 
 /// eink 下把动画时长归零（墨水屏连续重绘=残影），否则原样返回。

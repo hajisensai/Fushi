@@ -995,7 +995,8 @@ void main() {
       expect(css, contains('position: fixed !important;'));
       expect(css, contains('pointer-events: none !important;'),
           reason: '覆盖条不得拦截选词/点按');
-      // 四边 border 宽必须与 body padding 逐项一致（== 泄露带宽度）。
+      // 四边 border 宽必须与 body padding 逐项一致（== 泄露带宽度）；BUG-3518：行尾一侧（横排右）
+      // 让出一个列间距给悬挂标点，与 body clip-path 同一表达式。
       expect(
           css,
           contains(
@@ -1003,7 +1004,7 @@ void main() {
       expect(
           css,
           contains(
-              'border-right-width: var(--reader-margin-right, ${settings.marginRight}vw) !important;'));
+              'border-right-width: max(0px, calc(var(--reader-margin-right, ${settings.marginRight}vw) - ${ReaderLayoutDefaults.columnGapPx}px)) !important;'));
       expect(
           css,
           contains(
@@ -1014,6 +1015,37 @@ void main() {
       expect(css, contains('html::before {'));
       // z-index 必须低于 caret（2147483646）以免遮住焦点/查词 caret。
       expect(css, contains('z-index: 2147483000 !important;'));
+    });
+
+    // BUG-3518：悬挂标点（两端对齐关时注入 hanging-punctuation）挂在栏尾之外，落在被裁的页边距带里。
+    // 行尾一侧（竖排下、横排右）的裁边与遮罩条都让出一个列间距；两端对齐开（不悬挂）时照旧裁满。
+    test('BUG-3518 行尾一侧让出一个列间距给悬挂标点', () async {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setWritingMode('vertical-rl');
+      const String gap = '${ReaderLayoutDefaults.columnGapPx}px';
+      final String bottom =
+          'calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))';
+      final String revealed = 'max(0px, calc($bottom - $gap))';
+      String css = ReaderContentStyles.css(settings: settings);
+      expect(css, contains('hanging-punctuation: allow-end'));
+      expect(css, contains('border-bottom-width: $revealed !important;'));
+      expect(css, contains('$revealed var(--reader-margin-left'),
+          reason: 'body clip-path 的下边与遮罩条一致');
+      expect(
+          css,
+          contains(
+              'border-right-width: var(--reader-margin-right, ${settings.marginRight}vw) !important;'),
+          reason: '竖排右侧不是行尾，照旧裁满');
+
+      await settings.setEnableTextJustification(true);
+      css = ReaderContentStyles.css(settings: settings);
+      expect(css, isNot(contains('hanging-punctuation: allow-end')));
+      expect(css, contains('border-bottom-width: $bottom !important;'),
+          reason: '不悬挂时行尾一侧照旧裁满');
     });
 
     // 覆盖条只属分页：连续模式不发 html::before（避免连续滚动被 padding 条错遮）。

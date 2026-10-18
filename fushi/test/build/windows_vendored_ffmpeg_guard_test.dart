@@ -84,6 +84,9 @@ void main() {
     const Set<String> systemDlls = <String>{
       'advapi32.dll',
       'bcrypt.dll',
+      // BUG-3504: the TLS cert-pin patch frees the schannel peer cert with
+      // CertFreeCertificateContext; crypt32 ships with every Windows like secur32.
+      'crypt32.dll',
       'kernel32.dll',
       'kernelbase.dll',
       'msvcrt.dll',

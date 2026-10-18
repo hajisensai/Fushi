@@ -3,8 +3,9 @@ enum AdaptiveNavBarStyle {
   /// 平铺：放得下全部平铺，放不下的收进最右的「更多」（原有形态）。
   flat('flat'),
 
-  /// 分页滑动：查词并进胶囊、所有目的地同级，每页 5 个，在底栏上左右滑翻页；
-  /// 按住约 0.3 秒拖选（可拖到边缘翻页）。MD3 悬浮胶囊与 Apple 胶囊都支持。
+  /// 分页滑动：胶囊里每页 5 个，在底栏上左右滑翻页；按住约 0.3 秒拖选（可拖到
+  /// 边缘翻页）。查词仍是右下角固定的 FAB / 圆钮，不进分页（2026-10-17 用户
+  /// 「底部左边要分页右下角是查词」）。MD3 悬浮胶囊与 Apple 胶囊都支持。
   pager('pager');
 
   const AdaptiveNavBarStyle(this.prefValue);
@@ -18,10 +19,6 @@ enum AdaptiveNavBarStyle {
 
   /// 落库的字符串（冻结，改名不改它）。
   final String prefValue;
-
-  /// 查词是否进胶囊（不再拆成 FAB / 圆钮）；横滑切模块的序列也随之带上查词
-  /// （见 `homeSwipeTabs`）。
-  bool get lookupInBar => this == pager;
 
   /// 没写过（空串）与未知值（含原型期一度存在、已删掉的 launcher /
   /// launcher_pager）一律回落出厂默认 [defaultStyle]。

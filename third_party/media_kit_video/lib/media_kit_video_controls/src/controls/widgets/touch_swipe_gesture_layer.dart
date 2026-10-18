@@ -19,6 +19,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:media_kit_video/media_kit_video_controls/src/controls/material.dart'
     show HorizontalSeekResolver;
+import 'package:media_kit_video/media_kit_video_controls/src/controls/widgets/video_controls_chrome_region.dart';
 
 /// Pointer kinds the swipe layer listens to by default.
 const Set<PointerDeviceKind> kTouchSwipePointerKinds = <PointerDeviceKind>{
@@ -96,6 +97,18 @@ class _TouchSwipeGestureLayerState extends State<TouchSwipeGestureLayer> {
   _VerticalTarget _verticalTarget = _VerticalTarget.none;
   double _level = 0.0;
 
+  // Fushi patch: the drag went down on the controls chrome (a bar gap, the seek
+  // bar), recorded at drag-down — [DragStartDetails] only carries the position
+  // after the touch slop. Such a drag belongs to the controls, not the picture.
+  bool _downOnChrome = false;
+
+  void _onDragDown(DragDownDetails details) {
+    _downOnChrome = VideoControlsChromeRegion.hitsRegion(
+      globalPosition: details.globalPosition,
+      viewId: View.of(context).viewId,
+    );
+  }
+
   bool get _seekEnabled =>
       widget.seekGesture && widget.horizontalSeekResolver != null;
 
@@ -109,7 +122,7 @@ class _TouchSwipeGestureLayerState extends State<TouchSwipeGestureLayer> {
   }
 
   void _onHorizontalDragStart(DragStartDetails details) {
-    if (!_seekEnabled) return;
+    if (!_seekEnabled || _downOnChrome) return;
     _dragOrigin = details.localPosition;
     _swipeBase = widget.seekBase();
   }
@@ -154,6 +167,10 @@ class _TouchSwipeGestureLayerState extends State<TouchSwipeGestureLayer> {
   }
 
   void _onVerticalDragStart(DragStartDetails details) {
+    if (_downOnChrome) {
+      _verticalTarget = _VerticalTarget.none;
+      return;
+    }
     final bool leftHalf = details.localPosition.dx <= _width() / 2;
     if (leftHalf) {
       if (widget.brightnessGesture && widget.onBrightnessChanged != null) {
@@ -195,10 +212,12 @@ class _TouchSwipeGestureLayerState extends State<TouchSwipeGestureLayer> {
         GestureDetector(
           behavior: HitTestBehavior.translucent,
           supportedDevices: widget.supportedDevices,
+          onHorizontalDragDown: _seekEnabled ? _onDragDown : null,
           onHorizontalDragStart: _seekEnabled ? _onHorizontalDragStart : null,
           onHorizontalDragUpdate: _seekEnabled ? _onHorizontalDragUpdate : null,
           onHorizontalDragEnd: _seekEnabled ? _onHorizontalDragEnd : null,
           onHorizontalDragCancel: _seekEnabled ? _resetHorizontal : null,
+          onVerticalDragDown: _verticalEnabled ? _onDragDown : null,
           onVerticalDragStart: _verticalEnabled ? _onVerticalDragStart : null,
           onVerticalDragUpdate: _verticalEnabled ? _onVerticalDragUpdate : null,
           onVerticalDragEnd: _verticalEnabled

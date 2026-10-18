@@ -33,10 +33,28 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3129 条。点号进各自文件。
+> 共 3148 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3518](bugs/BUG-3518-ios-audio-lane-page-bleed.md) | ✅ | ✅ | iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶 |
+| [BUG-3517](bugs/BUG-3517-video-chrome-double-click-fullscreen.md) | ✅ | ✅ | video-chrome-double-click-fullscreen |
+| [BUG-3516](bugs/BUG-3516-collection-member-touch-longpress-no-menu.md) | ✅ | ✅ | 合集详情页触屏长按成员只进多选，拿不到库页同一份卡片菜单 |
+| [BUG-3515](bugs/BUG-3515-collection-episode-menu-download-on-local-file.md) | ✅ | ✅ | 合集详情集卡菜单对本机已有文件的集仍显示「下载本集」 |
+| [BUG-3514](bugs/BUG-3514-manga-ipad-pinch-zoom-broken.md) | ✅ | ✅ | iPad 漫画阅读器双指缩放失灵、大滑动后突然放大到上限并卡死 |
+| [BUG-3513](bugs/BUG-3513-collection-detail-duplicate-tag-button.md) | ✅ | ✅ | 合集详情页顶栏标签按钮与 hero「编辑标签」功能重复 |
+| [BUG-3512](bugs/BUG-3512-collection-overall-progress-and-continue-target.md) | ✅ | ✅ | 合集「整体进度」2/4 读完显示 100%，读完第二卷「继续」回到第一卷 |
+| [BUG-3511](bugs/BUG-3511-video-mining-audio-follows-stale-track.md) | ✅ | ✅ | video-mining-audio-follows-stale-track |
+| [BUG-3510](bugs/BUG-3510-manga-local-ocr-boxes-misaligned.md) | ✅ | ✅ | manga-local-ocr-boxes-misaligned |
+| [BUG-3509](bugs/BUG-3509-manga-volume-opens-other-volume-cached-pages.md) | ✅ | ✅ | manga-volume-opens-other-volume-cached-pages |
+| [BUG-3508](bugs/BUG-3508-deleted-book-returns-as-remote-placeholder.md) | ✅ | ✅ | deleted-book-returns-as-remote-placeholder |
+| [BUG-3507](bugs/BUG-3507-video-mpv-sync-getproperty-ui-stall.md) | ✅ | ✅ | Windows 视频播放偶发冻帧：UI 线程同步读写 mpv 排内核锁 |
+| [BUG-3506](bugs/BUG-3506-ios-stroke-highlight-stall.md) | ✅ | ✅ | iOS 笔触样式高亮停住不跟随、查词无高亮 |
+| [BUG-3505](bugs/BUG-3505-anki-crossref-deeplink-includes-furigana.md) | ✅ | ✅ | anki-crossref-deeplink-includes-furigana |
+| [BUG-3504](bugs/BUG-3504-ffmpeg-min-missing-decoders-tls-pin.md) | ✅ | ✅ | 桌面捆绑 ffmpeg-min 缺一批可导入格式的解码器 / muxer，且没打证书钉扎补丁（-tls_pin_sha256 不认） |
+| [BUG-3503](bugs/BUG-3503-dash-mpd-mining-demuxer.md) | ✅ | ✅ | 在线视频源给 DASH 清单（manifest.mpd）时制卡失败：捆绑 ffmpeg 缺 dash demuxer（required audio missing / Invalid data） |
+| [BUG-3502](bugs/BUG-3502-srs-deck-count-rollup.md) | ✅ | ✅ | 复习牌组列表：父牌组新卡/到期数没按子牌组截断后自底向上汇总 |
+| [BUG-3501](bugs/BUG-3501-settings-row-dialog-intrinsic-layout.md) | ✅ | ✅ | settings-row-dialog-intrinsic-layout |
 | [BUG-3500](bugs/BUG-3500-snapshot-mkv-video-missing-dts.md) | ✅ | ✅ | 在线视频同步片段画面花屏（缓冲副本丢掉 Matroska B 帧视频包） |
 | [BUG-3499](bugs/BUG-3499-snapshot-laced-opus-audio-truncated.md) | ✅ | ✅ | 在线视频同步片段的音频只剩 0.2～0.4 秒且断续（缓冲副本丢音频包） |
 | [BUG-3498](bugs/BUG-3498-seekbar-click-toggles-pause.md) | ✅ | ✅ | seekbar-click-toggles-pause |
@@ -57,6 +75,7 @@
 | [BUG-3482](bugs/BUG-3482-ios-continuous-cross-axis-drag.md) | ✅ | ✅ | iOS 滚动模式交叉轴能被拖动（竖排上下 / 横排左右） |
 | [BUG-3481](bugs/BUG-3481-audiobook-gap-fill-skipped-text.md) | ✅ | ✅ | 有声书 ASR 漏转后半句时合缝切点落空、整句无人认领 |
 | [BUG-3480](bugs/BUG-3480-screen-ocr-hdr-capture.md) | ✅ | ✅ | Windows 截屏识字在系统开 HDR 时截图发白过曝 |
+| [BUG-3455](bugs/BUG-3455-srs-apkg-proto3-zero-defaults.md) | ✅ | ✅ | srs-apkg-proto3-zero-defaults |
 | [BUG-3454](bugs/BUG-3454-hidden-term-dict-still-in-lookup-engine.md) | ✅ | ✅ | hidden-term-dict-still-in-lookup-engine |
 | [BUG-3453](bugs/BUG-3453-reader-cue-gap-glues-last-word.md) | ✅ | ✅ | reader-cue-gap-glues-last-word |
 | [BUG-3452](bugs/BUG-3452-peer-book-download-followups.md) | ✅ | ✅ | 对端书下载后多出未下载卡、合集册数翻倍、跳回顶部、最近阅读排序错位 |

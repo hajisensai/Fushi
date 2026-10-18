@@ -820,6 +820,16 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
             ..where((t) => t.mediaType.equals(mediaType)))
           .get();
 
+  /// 某种资产的删除墓碑，按 itemKey → deletedAt（远端清单剔除本端已删条目用）。
+  Future<Map<String, int>> getSyncDeletionDeletedAtByKey(
+      String mediaType) async {
+    return <String, int>{
+      for (final SyncDeletionTombstoneRow row
+          in await getSyncDeletionTombstonesOfType(mediaType))
+        row.itemKey: row.deletedAt,
+    };
+  }
+
   /// 标记某墓碑已发布到远端（避免每轮重发；[publishedAt] = 发布时刻）。
   Future<void> markSyncDeletionPublished(
           String mediaType, String itemKey, int publishedAt) =>

@@ -836,6 +836,8 @@ window.fushiReader = {
   sentenceAudioCueMap: new Map(),
   sentenceAudioCuesSignature: null,
   cueWrappers: new Map(),
+  // BUG-3518：WebKit 上当前屏的句子不包裹，登记成 live Range（见选区脚本 window.__fushiCueRanges）。
+  cueRanges: new Map(),
 $kSentenceAudioRubyGapJs
   cueSourceRanges: new Map(),
   nodeStartOffsets: new WeakMap(),
@@ -2990,7 +2992,7 @@ $sharedInitViewport
     }
   },
   sentenceAudioInlineTargetsForCue: function(cueId) {
-    return this.cueWrappers.get(cueId) || [];
+    return this.cueWrappers.get(cueId) || (this.cueRanges && this.cueRanges.get(cueId)) || [];
   },
   wrapSentenceAudioCueRanges: function(cueRanges) {
     var self = this;
@@ -3000,6 +3002,20 @@ $sharedInitViewport
   },
   wrapSentenceAudioCueRangesInBatch: function(cueRanges) {
     var wrapped = new Map();
+    // BUG-3518：WebKit 上切开文本节点会丢掉切口处的字距调整、整行后移；VN 又是播放到那句才包裹，
+    // 排版恰好在高亮出现那一刻变动（句子被「顶开」）。那边改登记 Range，不动 DOM。
+    var rangeLayer = window.__fushiCueRanges;
+    if (rangeLayer && rangeLayer.enabled()) {
+      if (!this.cueRanges) this.cueRanges = new Map();
+      for (var r = 0; r < cueRanges.length; r++) {
+        var built = rangeLayer.build(cueRanges[r].ranges);
+        if (!built.length) continue;
+        this.cueRanges.set(cueRanges[r].id, built);
+        wrapped.set(cueRanges[r].id, built);
+      }
+      rangeLayer.track(this.cueRanges);
+      return wrapped;
+    }
     for (var i = cueRanges.length - 1; i >= 0; i--) {
       var id = cueRanges[i].id;
       var ranges = cueRanges[i].ranges;
@@ -3035,6 +3051,9 @@ $sharedInitViewport
     this.prepareSentenceAudioInlineTargets(cueRanges);
   },
   clearInlineSentenceAudioCue: function(cueId) {
+    if (window.__fushiCueRanges && (!cueId || (this.cueRanges && this.cueRanges.has(cueId)))) {
+      window.__fushiCueRanges.hide();
+    }
     var clearWrappers = function(wrappers) {
       wrappers.forEach(function(wrapper) {
         wrapper.classList.remove('fushi-sentence-audio-active');
@@ -3047,6 +3066,11 @@ $sharedInitViewport
     this.cueWrappers.forEach(clearWrappers);
   },
   applyInlineSentenceAudioCue: function(cueId) {
+    var ranges = this.cueRanges && this.cueRanges.get(cueId);
+    if (ranges && ranges.length) {
+      window.__fushiCueRanges.show(ranges);
+      return true;
+    }
     var wrappers = this.cueWrappers.get(cueId) || [];
     wrappers.forEach(function(wrapper) {
       wrapper.classList.add('fushi-sentence-audio-active');
@@ -3061,6 +3085,10 @@ $sharedInitViewport
   clearCurrentSentenceAudioScreenTargets: function() {
     this.cueSourceRanges.clear();
     this.cueWrappers.clear();
+    if (this.cueRanges && this.cueRanges.size) {
+      if (window.__fushiCueRanges) window.__fushiCueRanges.hide();
+      this.cueRanges.clear();
+    }
   },
   clearSentenceAudioTargets: function() {
     this.clearSentenceAudioCuePresentation();
@@ -3071,6 +3099,10 @@ $sharedInitViewport
       });
     });
     this.cueWrappers.clear();
+    if (this.cueRanges) {
+      if (window.__fushiCueRanges) window.__fushiCueRanges.untrack(this.cueRanges);
+      this.cueRanges.clear();
+    }
     this.cueSourceRanges.clear();
     this.buildNodeOffsets();
   },

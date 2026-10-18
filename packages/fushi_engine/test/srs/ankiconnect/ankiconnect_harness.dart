@@ -7,6 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_media.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 const String kAcProfile = '01928c3e-0000-7000-8000-0000000000ac';
@@ -29,6 +30,7 @@ class AcHarness {
   static Future<AcHarness> create({
     Map<String, List<InternetAddress>> dns =
         const <String, List<InternetAddress>>{},
+    SrsStyleStore? styles,
   }) async {
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -42,6 +44,7 @@ class AcHarness {
         monotonicMs: () => t++,
         bootId: 'boot',
       ),
+      styles: styles,
     );
     final AcHarness h = AcHarness._(store);
     h.handler = SrsAnkiConnectHandler(

@@ -90,6 +90,26 @@ void main() {
     );
     expect(h.requests.last.headers.containsKey('X-Fushi-Account'), isFalse);
     expect(h.requests.last.headers.containsKey('X-Fushi-Sig'), isFalse);
+    expect(
+      (jsonDecode(h.requests.last.body) as Map<String, dynamic>).containsKey(
+        'submissionKey',
+      ),
+      isFalse,
+      reason: '没给幂等键就不带（服务端照旧随机回执）',
+    );
+
+    // 幂等键：原样放进请求体（服务端按它重放同一张回执）。
+    await h.client.submitFeedback(
+      category: FeedbackCategory.bug,
+      title: 'x',
+      body: 'y',
+      submissionKey: 'K' * 32,
+    );
+    expect(
+      (jsonDecode(h.requests.last.body)
+          as Map<String, dynamic>)['submissionKey'],
+      'K' * 32,
+    );
   });
 
   test('附件：带 ticket、不签名；409 slot_taken 当成功；其它错误抛出', () async {

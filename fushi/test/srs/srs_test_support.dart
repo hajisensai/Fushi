@@ -6,6 +6,7 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 const String kSrsTestProfile = '01928c3e-0000-7000-8000-0000000000cd';
@@ -117,6 +118,7 @@ Future<(FushiDatabase, SrsDbStore)> openSrsTestStore({
   String deviceId = 'dev',
   FsrsEngine? engine = const SrsTestEngine(),
   SrsTestClock? clock,
+  SrsStyleStore? styles,
 }) async {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -126,6 +128,7 @@ Future<(FushiDatabase, SrsDbStore)> openSrsTestStore({
     deviceId: deviceId,
     engine: engine,
     trustedClock: clock?.trusted(),
+    styles: styles,
   );
   return (db, store);
 }

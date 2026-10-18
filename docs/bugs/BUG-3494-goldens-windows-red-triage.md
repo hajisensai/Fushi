@@ -11,4 +11,4 @@
   - 附带发现：`sync_settings_layout_golden_test.dart` 写死视口高 2400，新版窄档页高约 3050，截图把页面下半截（约 650px）静默截掉，golden 只比上半页。
 - **[x] ① 已修复** — 只对上述 18 张用 `flutter test --update-goldens <文件> [--name/--plain-name 精确到失败用例]` 重生成（同文件里本来就过的 `list_tile_custom_fg` / `tag_*` 其余 5 张未动）；`fushi/test/goldens/sync_settings_layout_golden_test.dart` 视口高度改为按档给（宽 2400、窄 3400），让整页落进截图。没有改容差、没有跳过任何用例。
 - **[x] ② 已加自动化测试** — `fushi/test/goldens/sync_settings_layout_golden_test.dart` 新增 `_expectWholePageVisible`：截图前断言所有竖向 Scrollable 的 `maxScrollExtent == 0`，页面再长高装不下时直接红并提示加高，而不是让 golden 静默只截上半页。重生成后 Windows 本机 `flutter test --no-pub test/goldens` 连跑两遍全绿。
-- **备注**：防再次悄悄变红需要 CI 真跑 golden（例如 windows-latest 上单独一个 `--tags golden` job），属于 CI 成本取舍，留给所有者拍板，本条未改 workflow。
+- **备注**：防再次悄悄变红：所有者 2026-10-17 拍板加 `.github/workflows/golden-tests.yml`——每个 PR 与 develop push 在 windows-latest 上跑 `flutter test --no-pub --tags golden`，红了只显示不拦合并（不设 required check），失败时上传 `test/goldens/failures/` 对比图为 artifact。

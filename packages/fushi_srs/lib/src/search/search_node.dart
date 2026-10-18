@@ -11,7 +11,7 @@ enum SrsSearchErrorKind {
   /// 查询本身不合法（Anki 同样会报错，如括号不配对、`is:foo`、非法转义）。
   syntax,
 
-  /// 合法的 Anki 语法，但本子集不支持（如 `prop:`、`flag:`、`re:`）。
+  /// 合法的 Anki 语法，但本子集不支持（如 `rated:`、`prop:ease`、`nc:`）。
   unsupported,
 }
 
@@ -71,6 +71,40 @@ abstract interface class SrsSearchSubject {
 
   /// 今天的排程日序号。
   int get todayDayIndex;
+
+  /// `flag:N`：旗标（0 = 无，1–7 与 Anki 同序）。
+  int get flag;
+
+  /// `is:buried`：被手动搁置、还没到解除那天。
+  bool get isBuried;
+
+  /// `card:N`：卡片序号，从 1 起（普通笔记 = 模板序号 + 1；填空 = 填空编号）。
+  int get cardOrdinal;
+
+  /// `card:名`：模板名。
+  String get templateName;
+
+  /// `prop:ivl`：当前间隔（天；新卡 / 学习中为 0，与 Anki 的 `c.ivl` 同口径）。
+  int get intervalDays;
+
+  /// `prop:due`：距今天的到期天数（复习卡 = 到期日 - 今天；学习中 = 到期时刻减明天日界
+  /// 按天截断）；新卡没有到期日，返回 null（不命中任何 `prop:due`）。
+  int? get dueInDays;
+
+  /// `prop:reps`：复习次数。
+  int get reps;
+
+  /// `prop:lapses`：遗忘次数。
+  int get lapses;
+
+  /// `prop:s`：FSRS 稳定性（天）；没有记忆状态返回 null。
+  double? get stability;
+
+  /// `prop:d`：FSRS 难度（内核原值 1–10）；没有记忆状态返回 null。
+  double? get difficulty;
+
+  /// `edited:N`：笔记最后一次改动那天的排程日序号。
+  int get editedDayIndex;
 }
 
 /// 搜索语法树。叶子节点里的文本保留 Anki 的通配转义（`\*` `\_` `\\`），
@@ -97,6 +131,23 @@ final class SrsSearchOr extends SrsSearchNode {
 final class SrsSearchNot extends SrsSearchNode {
   const SrsSearchNot(this.child);
   final SrsSearchNode child;
+}
+
+/// `re:正则`：在全部字段原文（0x1f 连接）里做正则搜索，默认不区分大小写。
+final class SrsSearchRegex extends SrsSearchNode {
+  SrsSearchRegex(this.source, this.pattern);
+  final String source;
+  final RegExp pattern;
+}
+
+/// `字段名:re:正则`：字段名通配；值按正则在字段原文里搜索（不锚定，默认不区分大小写）。
+final class SrsSearchFieldRegex extends SrsSearchNode {
+  SrsSearchFieldRegex(this.field, this.source, this.pattern)
+    : fieldPattern = ankiGlobRegExp(field);
+  final String field;
+  final String source;
+  final RegExp pattern;
+  final RegExp fieldPattern;
 }
 
 /// 裸词：在全部字段（原文）里做包含匹配，支持 `*` / `_`。
@@ -152,9 +203,10 @@ final class SrsSearchTag extends SrsSearchNode {
   final RegExp pattern;
 }
 
-enum SrsSearchCardState { isNew, learn, review, due, suspended }
+enum SrsSearchCardState { isNew, learn, review, due, suspended, buried }
 
-/// `is:new` / `is:learn` / `is:review` / `is:due` / `is:suspended`。
+/// `is:new` / `is:learn` / `is:review` / `is:due` / `is:suspended` /
+/// `is:buried`（= `is:buried-manually`；本实现没有兄弟卡自动搁置）。
 final class SrsSearchState extends SrsSearchNode {
   const SrsSearchState(this.state);
   final SrsSearchCardState state;
@@ -176,4 +228,59 @@ final class SrsSearchCardIds extends SrsSearchNode {
 final class SrsSearchAddedInDays extends SrsSearchNode {
   const SrsSearchAddedInDays(this.days);
   final int days;
+}
+
+/// `flag:N`（0–7）。
+final class SrsSearchFlag extends SrsSearchNode {
+  const SrsSearchFlag(this.flag);
+  final int flag;
+}
+
+/// `card:N`（从 1 起的卡片序号）或 `card:模板名`（通配）。
+final class SrsSearchCardTemplate extends SrsSearchNode {
+  SrsSearchCardTemplate.ordinal(int this.ordinal) : name = null, pattern = null;
+  SrsSearchCardTemplate.named(String this.name)
+    : ordinal = null,
+      pattern = ankiGlobRegExp(name);
+  final int? ordinal;
+  final String? name;
+  final RegExp? pattern;
+}
+
+/// `edited:N`：最近 N 天（含今天）改过内容的笔记；N 至少为 1。
+final class SrsSearchEditedInDays extends SrsSearchNode {
+  const SrsSearchEditedInDays(this.days);
+  final int days;
+}
+
+/// `prop:` 支持的属性。
+enum SrsSearchProperty {
+  /// `ivl`：间隔（天，整数）。
+  interval,
+
+  /// `due`：距今天的到期天数（整数，可为负）。
+  due,
+
+  /// `reps`：复习次数（整数）。
+  reps,
+
+  /// `lapses`：遗忘次数（整数）。
+  lapses,
+
+  /// `s`：FSRS 稳定性（天，小数）。
+  stability,
+
+  /// `d`：FSRS 难度，0–1（Anki 口径：(内核难度 - 1) / 9）。
+  difficulty,
+}
+
+/// `prop:` 的比较符。
+enum SrsSearchCompare { eq, ne, lt, le, gt, ge }
+
+/// `prop:属性 比较符 数值`，如 `prop:ivl>=10`、`prop:due=1`、`prop:d>0.8`。
+final class SrsSearchProp extends SrsSearchNode {
+  const SrsSearchProp(this.property, this.compare, this.value);
+  final SrsSearchProperty property;
+  final SrsSearchCompare compare;
+  final num value;
 }

@@ -7,6 +7,9 @@
 //                                             验过记 install_verified = 1；验不过不拒收反馈，丢掉这个不可信的
 //                                             installId（不关联任何安装），反馈照常落库
 //                                             reopenOf = {id, ticket}：「问题没解决，重新提交」，新反馈记 parent_id
+//                                             submissionKey：客户端为「这一次提交」生成的随机密钥（32–64 位 base64url），
+//                                             重试复用同一个。同一个 key 再来一次 → 原样回同一张回执（同 id、同 ticket），
+//                                             不新建反馈、不再计限流 / 预算（见 createFeedback 幂等说明）
 //   PUT  /v1/feedback/:id/attachments/:slot   [X-Fushi-Ticket] 原始字节；slot = log（gzip）/ s0..s2（截图）
 //                                             / v0（视频 mp4 / mov / webm ≤ 50 MB，流式写 R2，见 putVideoAttachment）
 //   POST /v1/feedback/status                  {items:[{id, ticket}] ≤ 50} → 各条进度摘要（凭据不对的条目不返回）
@@ -449,8 +452,59 @@ export async function feedbackInstall(env, request, body, bytes, now) {
   }
 }
 
+const SUBMISSION_KEY_RE = /^[A-Za-z0-9_-]{32,64}$/;
+
+/** 提交幂等键：没带 = null（旧客户端 / 网页表单照旧）；带了但格式不对直接 400，别悄悄失去幂等。 */
+export function normalizeSubmissionKey(v) {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== 'string' || !SUBMISSION_KEY_RE.test(v)) throw new HttpError(400, 'bad_submission_key');
+  return v;
+}
+
+/** 库里只存幂等键的哈希（与 ticket 同理：拿到库也重放不出回执）。 */
+async function submissionHash(key) {
+  return hex(await sha256(new TextEncoder().encode(`fushi-feedback-submission\n${key}`)));
+}
+
+/**
+ * 带幂等键的提交，ticket 由键派生（与 randomId(32) 同字母表同长度）。键是客户端本机生成的随机密钥、只经
+ * TLS 发给服务端，等价于「客户端自己出 ticket」：知道键的只有提交者本人。这样重试时服务端不必存 ticket
+ * 明文也能回出同一张回执。
+ */
+async function ticketFromSubmissionKey(key) {
+  return b64urlEncode(await sha256(new TextEncoder().encode(`fushi-feedback-ticket\n${key}`))).slice(0, 32);
+}
+
+/** 同一个幂等键已经建过的反馈 → 原样回执；没有 → null。 */
+async function replaySubmission(env, keyHash, key) {
+  const row = await env.DB.prepare(
+    'SELECT id, ticket_hash, status, created_at, updated_at, parent_id FROM feedback WHERE submission_hash = ?1',
+  ).bind(keyHash).first();
+  if (!row) return null;
+  const ticket = await ticketFromSubmissionKey(key);
+  // 构造上恒等；不等说明库里的行不是这把键建的，宁可拒收也不回一张打不开的回执。
+  if (!timingSafeEqual(await ticketHash(ticket), row.ticket_hash)) throw new HttpError(409, 'submission_key_conflict');
+  return {
+    id: row.id, ticket, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at,
+    parentId: row.parent_id ?? null,
+  };
+}
+
+/**
+ * 建反馈。幂等（2026-10-17，BUG-3489 审查）：客户端带 submissionKey 时，同一个键只会建一条反馈——
+ * 「请求其实到了、回执没收到」（超时 / 断网）或「回执收到了、本机落盘失败」之后重试，都拿回同一张回执，
+ * 而不是再建一条重复反馈或撞上「重复反馈」409 丢掉回执。查重放在最前面：重放不经限流 / 预算 / 判重桶，
+ * 也不再核原反馈状态（第一次已经核过）。两个同键请求并发时都可能没查到，由 submission_hash 唯一索引
+ * 兜底：后到的 INSERT 撞约束 → 再查一次按重放回。
+ */
 export async function createFeedback(env, account, ip, body, now, origin = {}, install = undefined) {
   const sub = normalizeSubmission(body);
+  const submissionKey = normalizeSubmissionKey(body.submissionKey);
+  const keyHash = submissionKey ? await submissionHash(submissionKey) : null;
+  if (keyHash) {
+    const replay = await replaySubmission(env, keyHash, submissionKey);
+    if (replay) return replay;
+  }
   const installId = install ? install.installId : normalizeInstallId(body.installId);
   const installVerified = install ? install.verified : false;
   const parent = await reopenParent(env, body.reopenOf);
@@ -464,7 +518,12 @@ export async function createFeedback(env, account, ip, body, now, origin = {}, i
   try {
     await hit(env, dupBucket, FEEDBACK_LIMITS.duplicateWindowMs, 1, now);
   } catch (e) {
-    if (e instanceof HttpError && e.status === 429) throw new HttpError(409, 'duplicate_feedback');
+    if (e instanceof HttpError && e.status === 429) {
+      // 同键并发：另一个请求刚建完（判重桶比它先记上）→ 按重放回，不报重复。
+      const replay = keyHash ? await replaySubmission(env, keyHash, submissionKey) : null;
+      if (replay) return replay;
+      throw new HttpError(409, 'duplicate_feedback');
+    }
     throw e;
   }
   await hit(env, `feedback:ip:${ip}`, HOUR, FEEDBACK_LIMITS.submitPerIpHour, now);
@@ -477,16 +536,26 @@ export async function createFeedback(env, account, ip, body, now, origin = {}, i
   ).bind(hash, now - FEEDBACK_LIMITS.duplicateLookbackMs, parent ? parent.id : null).first();
   const flags = earlier ? [...sub.flags, `duplicate:${earlier.id}`] : sub.flags;
   const id = randomId(10);
-  const ticket = randomId(32);
+  const ticket = submissionKey ? await ticketFromSubmissionKey(submissionKey) : randomId(32);
   // 重新提交的次数上限做成条件 INSERT：计数与写入在同一条语句里，并发的重新提交不会一起越过上限。
-  const res = await env.DB.prepare(
-    `INSERT INTO feedback (id, ticket_hash, account_id, category, title, body, contact, meta, created_at, updated_at,
-                           flags, content_hash, origin, parent_id, install_id, install_verified)
-     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11, ?12, ?13, ?15, ?16
-     WHERE ?13 IS NULL OR (SELECT COUNT(*) FROM feedback WHERE parent_id = ?13) < ?14`,
-  ).bind(id, await ticketHash(ticket), account ? account.id : null, sub.category, sub.title, sub.body,
-    sub.contact, sub.meta, now, JSON.stringify(flags), hash, JSON.stringify(origin), parent ? parent.id : null,
-    FEEDBACK_LIMITS.reopensPerFeedback, installId, installId && installVerified ? 1 : 0).run();
+  let res;
+  try {
+    res = await env.DB.prepare(
+      `INSERT INTO feedback (id, ticket_hash, account_id, category, title, body, contact, meta, created_at, updated_at,
+                             flags, content_hash, origin, parent_id, install_id, install_verified, submission_hash)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11, ?12, ?13, ?15, ?16, ?17
+       WHERE ?13 IS NULL OR (SELECT COUNT(*) FROM feedback WHERE parent_id = ?13) < ?14`,
+    ).bind(id, await ticketHash(ticket), account ? account.id : null, sub.category, sub.title, sub.body,
+      sub.contact, sub.meta, now, JSON.stringify(flags), hash, JSON.stringify(origin), parent ? parent.id : null,
+      FEEDBACK_LIMITS.reopensPerFeedback, installId, installId && installVerified ? 1 : 0, keyHash).run();
+  } catch (e) {
+    // 同键并发撞唯一索引：另一个请求已经建好了 → 按重放回。别的错误照常抛。
+    const replay = keyHash && /UNIQUE/i.test(String(e && e.message))
+      ? await replaySubmission(env, keyHash, submissionKey)
+      : null;
+    if (replay) return replay;
+    throw e;
+  }
   if (res.meta.changes !== 1) throw new HttpError(429, 'too_many_reopens');
   return { id, ticket, status: 'open', createdAt: now, updatedAt: now, parentId: parent ? parent.id : null };
 }

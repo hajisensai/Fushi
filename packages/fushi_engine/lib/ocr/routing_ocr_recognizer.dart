@@ -43,6 +43,7 @@ import 'dart:math' as math;
 import 'package:image/image.dart' as img;
 
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_line_layout.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
@@ -115,13 +116,47 @@ class RoutingOcrRecognizer
     for (final OcrRect box in boxes) await _recognizeOne(page, box),
   ];
 
+  /// 与 [_recognizeOne] 走同一条路由，只把「整块交 manga-ocr 读」那一步换成缓存
+  /// 里的 [text]——升级出的块与新识别逐项相同：
+  /// - 横排走 PP 逐行识别的块重读这一块：逐字命中格来自 PP rec 的 token 位置，缓存
+  ///   里没有；读哪几行又取决于当前的碎片合并口径（[horizontalBlockReadingLines]），
+  ///   旧版缓存的文字对这类块已不是当前版本的结果。PP rec 很轻，不是整卷重认。
+  /// - 主识别器逐行识别（[LineOcrRecognizer]）时同理整块重读：逐行文本与字格只有
+  ///   它自己给得出。
+  /// - 其余（整块 manga-ocr）用缓存文本按检出行排版，与新识别同口径（新识别这条
+  ///   路也不出字格）。
+  ///
+  /// [vertical] 只是缓存里的旧结论，方向以路由为准（与新识别同一个判据）。
   @override
   Future<OcrRecognition> layoutRecognized(
     img.Image page,
     OcrRect box,
     String text, {
     required bool vertical,
-  }) => _withLineLayout(page, box, text, vertical: vertical);
+  }) async {
+    final _RoutedBlock routed = await _routeBlock(page, box);
+    if (routed.recognition.text.isNotEmpty) return routed.recognition;
+    final OcrRecognizer primary = _mangaOcr;
+    if (primary is LineOcrRecognizer) {
+      return _withRoutedTilt(
+        await primary.recognizeWithLines(
+          page,
+          box,
+          vertical: routed.recognition.vertical,
+          lineHints: routed.lineHints,
+        ),
+        routed,
+      );
+    }
+    return _withLineLayout(
+      page,
+      box,
+      text,
+      vertical: routed.recognition.vertical,
+      lineHints: routed.lineHints,
+      lineTilt: routed.lineTilt,
+    );
+  }
 
   Future<OcrRecognition> _recognizeOne(img.Image page, OcrRect box) async {
     final _RoutedBlock routed = await _routeBlock(page, box);
@@ -248,13 +283,19 @@ class RoutingOcrRecognizer
     );
     final List<String> texts = <String>[];
     final List<OcrRect> boxes = <OcrRect>[];
+    // 逐字命中格：横行由 PP rec 的 token 位置给出；竖行交整块识别器，拿不到
+    // 位置（null），整块随之退回按行均分。
+    final List<List<OcrGlyphBox>?> glyphs = <List<OcrGlyphBox>?>[];
+    int utf16Offset = 0;
     double? confidence;
     for (final PpTextLine line in lines) {
       final OcrRect r = line.rect.clamp(w.toDouble(), h.toDouble());
       if (r.width < 1 || r.height < 1) {
         continue;
       }
+      final OcrRect pageLine = crop.toPage(r);
       final ScoredOcrText lineRead;
+      List<OcrGlyphBox>? lineGlyphs;
       if (line.vertical) {
         // 竖行回到页面坐标、外扩边距，仍由 manga-ocr 识别。
         lineRead = await _readScored(
@@ -277,11 +318,24 @@ class RoutingOcrRecognizer
           width: math.min(math.max(1, r.width.ceil()), w - lx),
           height: math.min(math.max(1, r.height.ceil()), h - ly),
         );
-        lineRead = await _lineRecognizer.recognizeLineScored(lineCrop);
+        final PpOcrPositionedLine positioned = await _lineRecognizer
+            .recognizeLinePositioned(lineCrop);
+        lineRead = (text: positioned.text, confidence: positioned.confidence);
+        lineGlyphs = ocrLineGlyphBoxes(
+          text: positioned.text,
+          tokens: positioned.tokens,
+          line: pageLine,
+          vertical: false,
+          // 行裁图左边在页面上的 x。
+          alongOrigin: (x + lx).toDouble(),
+          utf16Offset: utf16Offset,
+        );
       }
       if (lineRead.text.isEmpty) continue;
       texts.add(lineRead.text);
-      boxes.add(crop.toPage(r));
+      boxes.add(pageLine);
+      glyphs.add(lineGlyphs);
+      utf16Offset += lineRead.text.length;
       confidence = minOcrConfidence(confidence, lineRead.confidence);
     }
     final String text = texts.join();
@@ -293,6 +347,7 @@ class RoutingOcrRecognizer
         lineBoxes: text.isEmpty ? null : boxes,
         lineTilt: text.isEmpty ? 0 : ppBlockTilt(raw),
         confidence: text.isEmpty ? null : confidence,
+        glyphBoxes: text.isEmpty ? null : joinOcrLineGlyphBoxes(glyphs),
       ),
       lineHints: lineHints,
       lineTilt: ppBlockTilt(raw),

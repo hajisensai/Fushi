@@ -350,6 +350,43 @@ void main() {
         reason: 'host 删书后必须记同步墓碑，否则删除传播在 host 这里断链');
   });
 
+  // BUG-3508 审查跟进：远端占位卡在墓碑送达后就不再藏这个键，前提是送达之后拿到的
+  // 清单一定是删除之后取的——删除成功必须通知清单缓存作废（provider 订阅本计数）。
+  test('host 删除成功才推进 remoteLibraryMutationRevision；不支持的删除不推进', () async {
+    await hostDb.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'bk-rev',
+      title: 'Book Rev',
+      epubPath: p.join(work.path, 'x.epub'),
+      extractDir: '',
+      chapterCount: 1,
+      chaptersJson: '["c"]',
+      importedAt: 0,
+    ));
+    final InterconnectSyncBackend backend =
+        await _buildClientBackend(base: base, token: token);
+    expect(backend.remoteLibraryMutationRevision.value, 0);
+    await backend.deleteRemoteBook('bk-rev');
+    expect(backend.remoteLibraryMutationRevision.value, 1);
+    expect(await hostDb.getAllEpubBooks(), isEmpty);
+
+    final FushiSyncServer legacy = FushiSyncServer(
+      syncDataDir: p.join(work.path, 'legacy_rev'),
+      port: 0,
+      token: token,
+      allowLan: false,
+      libraryService: _LegacyHostWithoutVideoDelete(),
+    );
+    await legacy.start();
+    addTearDown(legacy.stop);
+    final InterconnectSyncBackend old = await _buildClientBackend(
+      base: 'http://127.0.0.1:${legacy.port}',
+      token: token,
+    );
+    expect(await old.deleteRemoteVideo('video/whatever'), isFalse);
+    expect(old.remoteLibraryMutationRevision.value, 0,
+        reason: 'host 没删掉，清单仍然有效');
+  });
+
   test('client 删有声书推送到 host：host 只写 audiobook 墓碑（关联 SRT 不另写）',
       () async {
     await hostDb.upsertAudiobook(AudiobooksCompanion.insert(

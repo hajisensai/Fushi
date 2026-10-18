@@ -578,6 +578,10 @@ class AppPaths {
     // 音频 CD 抓轨产物（BUG-3312，`<documents>/audio_cd/<卷标> (<光盘id>)/`）。导入后的
     // 视频条目 videoPath 指向这里，必须随数据根走。派生点：audio_cd_import.dart。
     'audio_cd',
+    // 复习（Fushi SRS）自动备份（`<documents>/srs_backups/<profileUid>/*.fushisrs` + 共享媒体池
+    // `media/<sha256>`）。与 Anki 一样放在用户看得到、换设备能带走的位置，必须随数据根走；
+    // 清单里只存相对名，无需 rebase。派生点：[srsBackupsDirectory]。
+    'srs_backups',
   };
 
   /// BUG-1115：[newDataRoot] 落在**共享** documents 根（老安装的扁平布局 = 平台
@@ -659,4 +663,8 @@ class AppPaths {
   /// 远程视频下载目录 `<documents>/remote_videos`。
   static Future<Directory> remoteVideosDirectory() =>
       documentsSubdirectory('remote_videos');
+
+  /// 复习自动备份根 `<documents>/srs_backups`（见 docs/specs/2026-10-17-srs-auto-backup-restore.md）。
+  static Future<Directory> srsBackupsDirectory() =>
+      documentsSubdirectory('srs_backups');
 }

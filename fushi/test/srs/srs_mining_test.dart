@@ -1,4 +1,5 @@
-// 挖词目标「Fushi SRS」（计划 PR3a）：SrsMiningAnkiRepository 的三种目标、字段映射、
+// 挖词目标「Fushi SRS」（计划 PR3a）：SrsMiningAnkiRepository（只写复习）、落地牌组 /
+// 笔记类型 / 字段映射与被删回落、
 // 媒体落盘与引用改写、出处、判重（同形异读不算重复），以及「模块关着时装饰层根本不在
 // ankiRepositoryProvider 的链上」。
 import 'dart:convert';
@@ -30,9 +31,46 @@ class _FakeAnki extends BaseAnkiRepository {
   bool duplicate;
   int mined = 0;
 
+  /// 复习模式下任何「写 Anki / 依赖 Anki」的调用都不该落到这里（见各用例）。
+  int ankiCalls = 0;
+  AnkiSettings settings = const AnkiSettings(tags: 'mine-tag');
+
   @override
-  Future<AnkiSettings> loadSettings() async =>
-      const AnkiSettings(tags: 'mine-tag');
+  Future<AnkiSettings> loadSettings() async => settings;
+
+  @override
+  Future<MineOutcome> updateMinedNote({
+    required int noteId,
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
+    ankiCalls++;
+    return const MineOutcome.success();
+  }
+
+  @override
+  Future<bool> openNoteInAnki(int noteId) async {
+    ankiCalls++;
+    return true;
+  }
+
+  @override
+  Future<List<MinedNoteRef>> findMatchingNotes(
+    String expression,
+    String reading,
+  ) async {
+    ankiCalls++;
+    return const <MinedNoteRef>[MinedNoteRef(noteId: 1)];
+  }
+
+  /// 出处不在复习里时才会问到 Anki。
+  int sourceLookups = 0;
+
+  @override
+  Future<AnkiSourceNote?> readSourceNote(String sourceId) async {
+    sourceLookups++;
+    return null;
+  }
 
   @override
   Future<AnkiFetchResult> fetchConfiguration() async =>
@@ -81,7 +119,9 @@ void main() {
   late File sentenceAudio;
   late File wordAudio;
 
-  String fid(String key) => srsLapisFieldId(kSrsTestProfile, key);
+  // 没选过笔记类型时制卡落进内置 Fushi 卡片（2026-10-16 起的默认）。
+  String fid(String key) => srsFushiCardFieldId(kSrsTestProfile, key);
+  String lapisFid(String key) => srsLapisFieldId(kSrsTestProfile, key);
 
   setUp(() async {
     tmp = Directory.systemTemp.createTempSync('fushi_srs_mining_');
@@ -98,12 +138,10 @@ void main() {
     tmp.deleteSync(recursive: true);
   });
 
-  SrsMiningAnkiRepository repoFor(_FakeAnki inner, SrsMiningTarget target) =>
-      SrsMiningAnkiRepository(
-        inner: inner,
-        target: () => target,
-        miner: () async => SrsMiner(store: store, media: media),
-      );
+  SrsMiningAnkiRepository repoFor(_FakeAnki inner) => SrsMiningAnkiRepository(
+    inner: inner,
+    miner: () async => SrsMiner(store: store, media: media),
+  );
 
   AnkiMiningContext bookContext() => AnkiMiningContext(
     sentence: '雪が降る。',
@@ -130,9 +168,9 @@ void main() {
     return (await store.note(hit[expression]!.noteId))!;
   }
 
-  test('目标 = SRS：Lapis 字段按 fieldId 落库，媒体按内容哈希存盘并改写引用，出处为书', () async {
+  test('目标 = SRS：默认落进 Fushi 卡片（字段按 fieldId），媒体按内容哈希存盘并改写引用，出处为书', () async {
     final _FakeAnki inner = _FakeAnki();
-    final MineOutcome out = await repoFor(inner, SrsMiningTarget.srs).mineEntry(
+    final MineOutcome out = await repoFor(inner).mineEntry(
       rawPayloadJson: _payload('雪', 'ゆき', audio: wordAudio.path),
       context: bookContext(),
     );
@@ -140,7 +178,7 @@ void main() {
     expect(inner.mined, 0, reason: '仅 SRS 时不碰 Anki');
 
     final SrsNoteView note = await noteOf('雪', 'ゆき');
-    expect(note.noteTypeId, store.lapisNoteTypeId);
+    expect(note.noteTypeId, store.fushiCardNoteTypeId);
     expect(note.field(fid('Expression')), '雪');
     expect(note.field(fid('ExpressionReading')), 'ゆき');
     expect(note.field(fid('Sentence')), contains('降る'));
@@ -175,10 +213,7 @@ void main() {
   });
 
   test('判重：同词同读重复；同形异读不算重复；allowDuplicate 跳过判重', () async {
-    final SrsMiningAnkiRepository repo = repoFor(
-      _FakeAnki(),
-      SrsMiningTarget.srs,
-    );
+    final SrsMiningAnkiRepository repo = repoFor(_FakeAnki());
     const AnkiMiningContext ctx = AnkiMiningContext(sentence: '');
     expect(
       (await repo.mineEntry(
@@ -219,80 +254,335 @@ void main() {
     expect((await store.note(s['上手']!.noteId))!.source!.kind, isNotNull);
   });
 
-  test('目标 = Anki：完全走内层，SRS 不写', () async {
+  test('SRS 层二选一：制卡不发往 Anki；判重只看 SRS，Anki 那边有也不算', () async {
     final _FakeAnki inner = _FakeAnki(duplicate: true);
-    final SrsMiningAnkiRepository repo = repoFor(inner, SrsMiningTarget.anki);
-    final MineOutcome out = await repo.mineEntry(
-      rawPayloadJson: _payload('雪', 'ゆき'),
-      context: const AnkiMiningContext(sentence: ''),
-    );
-    expect(out.deckName, 'Anki deck');
-    expect(inner.mined, 1);
-    expect(await repo.isDuplicate('雪', 'ゆき'), isTrue);
-    expect(
-      await store.lookupTermStatus(const <SrsTermQuery>[SrsTermQuery('雪')]),
-      isEmpty,
-    );
-  });
-
-  test('目标 = 两者：两边都写；判重 = SRS 有 || Anki 有；结果合并', () async {
-    final _FakeAnki inner = _FakeAnki();
-    final SrsMiningAnkiRepository repo = repoFor(inner, SrsMiningTarget.both);
+    final SrsMiningAnkiRepository repo = repoFor(inner);
+    expect(await repo.isDuplicate('雪', 'ゆき'), isFalse);
     final MineOutcome out = await repo.mineEntry(
       rawPayloadJson: _payload('雪', 'ゆき'),
       context: const AnkiMiningContext(sentence: ''),
     );
     expect(out.result, MineResult.success);
-    expect(out.deckName, 'Anki deck', reason: 'Anki 成功时用它的结果（noteId / 牌组名）');
-    expect(inner.mined, 1);
+    expect(inner.mined, 0, reason: '目标是 Fushi 复习时不再同时发往 Anki');
     expect(await repo.isDuplicate('雪', 'ゆき'), isTrue);
-    expect(await repo.isDuplicate('雨', 'あめ'), isFalse);
-    inner.duplicate = true;
-    expect(await repo.isDuplicate('雨', 'あめ'), isTrue);
-
-    // Anki 失败：整体失败（用户必须知道有一边没进去）。
-    inner.outcome = MineOutcome.failure('anki down');
-    final MineOutcome failed = await repo.mineEntry(
-      rawPayloadJson: _payload('風', 'かぜ'),
-      context: const AnkiMiningContext(sentence: ''),
-    );
-    expect(failed.result, MineResult.error);
     expect(
-      await store.lookupTermStatus(const <SrsTermQuery>[SrsTermQuery('風')]),
+      await store.lookupTermStatus(const <SrsTermQuery>[SrsTermQuery('雪')]),
       isNotEmpty,
-      reason: 'SRS 那一半已经写进去，不回滚',
     );
   });
 
-  test('合并规则', () {
-    const MineOutcome ok = MineOutcome.success(deckName: 'd');
-    const MineOutcome dup = MineOutcome.duplicate();
-    const MineOutcome queued = MineOutcome.queued();
-    const MineOutcome none = MineOutcome.notConfigured();
-    expect(
-      combineSrsAndAnkiOutcomes(srs: ok, anki: dup).result,
-      MineResult.success,
+  test('SRS 打不开：制卡报错（不悄悄落回 Anki），判重为否', () async {
+    final _FakeAnki inner = _FakeAnki(duplicate: true);
+    final SrsMiningAnkiRepository repo = SrsMiningAnkiRepository(
+      inner: inner,
+      miner: () async => null,
     );
-    expect(
-      combineSrsAndAnkiOutcomes(srs: dup, anki: ok).result,
-      MineResult.success,
+    final MineOutcome out = await repo.mineEntry(
+      rawPayloadJson: _payload('雪', 'ゆき'),
+      context: const AnkiMiningContext(sentence: ''),
     );
+    expect(out.result, MineResult.error);
+    expect(inner.mined, 0);
+    expect(await repo.isDuplicate('雪', 'ゆき'), isFalse);
+  });
+
+  /// 一个非 Lapis 的笔记类型：字段 Word / Meaning / Sentence，词条字段 = Word。
+  Future<String> createVocabType() async {
+    const String id = 'nt-vocab';
+    await store.importEvents(<SrsEvent>[
+      SrsEntityEvent(
+        SrsEntityRecord(
+          id: id,
+          profileUid: kSrsTestProfile,
+          kind: SrsEntityKind.noteType,
+          payload: <String, Object?>{
+            'ankiNum': 1,
+            'ntKind': SrsNoteTypeKind.standard,
+            'createdAt': 1,
+          },
+        ),
+      ),
+    ]);
+    await store.editFields(SrsEntityKind.noteType, id, <String, Object?>{
+      SrsFieldKeys.name: 'Vocab',
+      SrsFieldKeys.fieldDef('fw'): const SrsFieldDef(
+        id: 'fw',
+        name: 'Word',
+        ord: 0,
+      ).toValue(),
+      SrsFieldKeys.fieldDef('fm'): const SrsFieldDef(
+        id: 'fm',
+        name: 'Meaning',
+        ord: 1,
+      ).toValue(),
+      SrsFieldKeys.fieldDef('fs'): const SrsFieldDef(
+        id: 'fs',
+        name: 'Sentence',
+        ord: 2,
+      ).toValue(),
+      SrsFieldKeys.templateDef('t1'): const SrsTemplateDef(
+        id: 't1',
+        name: 'Card 1',
+        ord: 0,
+        front: '{{fld:fw}}',
+        back: '{{fld:fm}}',
+      ).toValue(),
+      SrsFieldKeys.termField: 'fw',
+    });
+    return id;
+  }
+
+  SrsMiningAnkiRepository repoWith(SrsMiningDestination destination) =>
+      SrsMiningAnkiRepository(
+        inner: _FakeAnki(),
+        miner: () async =>
+            SrsMiner(store: store, media: media, destination: destination),
+      );
+
+  test('落地：选定牌组 → 卡进该牌组，回执带牌组名', () async {
+    final String deck = await store.createDeck('Mining');
+    final MineOutcome out = await repoWith(
+      SrsMiningDestination(deckId: deck),
+    ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: bookContext());
+    expect(out.result, MineResult.success);
+    expect(out.deckName, 'Mining');
+    final SrsNoteView note = await noteOf('雪', 'ゆき');
+    expect(note.deckId, deck);
+    expect(note.noteTypeId, store.fushiCardNoteTypeId);
+  });
+
+  test('落地：明确选了 Lapis 的仍落 Lapis（只改「没选过」的默认）', () async {
+    final MineOutcome out = await repoWith(
+      SrsMiningDestination(noteTypeId: store.lapisNoteTypeId),
+    ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: bookContext());
+    expect(out.result, MineResult.success);
+    final SrsNoteView note = await noteOf('雪', 'ゆき');
+    expect(note.noteTypeId, store.lapisNoteTypeId);
+    expect(note.field(lapisFid('Expression')), '雪');
+    expect(note.field(lapisFid('ExpressionReading')), 'ゆき');
+  });
+
+  test('落地：非 Lapis 笔记类型按映射落字段；没映射过的同名字段沿用 Lapis 默认', () async {
+    final String type = await createVocabType();
+    final MineOutcome out = await repoWith(
+      SrsMiningDestination(
+        noteTypeId: type,
+        fieldMappingsByType: <String, Map<String, String>>{
+          type: <String, String>{'fw': '{expression}', 'fm': '{glossary}'},
+        },
+      ),
+    ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: bookContext());
+    expect(out.result, MineResult.success);
+    final SrsNoteView note = await noteOf('雪', 'ゆき');
+    expect(note.noteTypeId, type);
+    expect(note.field('fw'), '雪');
+    expect(note.field('fm'), contains('snow'));
+    expect(note.field('fs'), contains('降る'), reason: 'Sentence 与 Lapis 同名');
+    expect(note.deckId, store.defaultDeckId);
+    // 查重仍按 SRS 词状态：同一个词再制一次是重复。
     expect(
-      combineSrsAndAnkiOutcomes(srs: dup, anki: dup).result,
+      (await repoWith(SrsMiningDestination(noteTypeId: type)).mineEntry(
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: bookContext(),
+      )).result,
       MineResult.duplicate,
     );
-    expect(
-      combineSrsAndAnkiOutcomes(srs: ok, anki: queued).result,
-      MineResult.queued,
+  });
+
+  test('落地：非 Lapis 类型第一字段映射成空 → 拒绝建卡', () async {
+    final String type = await createVocabType();
+    final MineOutcome out = await repoWith(
+      SrsMiningDestination(
+        noteTypeId: type,
+        fieldMappingsByType: <String, Map<String, String>>{
+          type: <String, String>{'fw': ''},
+        },
+      ),
+    ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: bookContext());
+    expect(out.result, MineResult.error);
+    expect(out.errorCode, AnkiErrorCode.firstFieldEmpty);
+  });
+
+  test('落地：选中的牌组 / 笔记类型被删 → 回落默认牌组 + Lapis', () async {
+    final String deck = await store.createDeck('Gone');
+    final String type = await createVocabType();
+    await store.deleteDeck(deck);
+    await store.editField(
+      SrsEntityKind.noteType,
+      type,
+      SrsFieldKeys.deleted,
+      1,
     );
-    expect(
-      combineSrsAndAnkiOutcomes(srs: ok, anki: none).result,
-      MineResult.success,
+    final SrsMiningDestination dest = SrsMiningDestination(
+      deckId: deck,
+      noteTypeId: type,
     );
-    expect(
-      combineSrsAndAnkiOutcomes(srs: dup, anki: none).result,
-      MineResult.duplicate,
-    );
+    final SrsResolvedMiningDestination resolved =
+        await resolveSrsMiningDestination(store, dest);
+    expect(resolved.deckFellBack, isTrue);
+    expect(resolved.noteTypeFellBack, isTrue);
+    expect(resolved.usesLapis, isTrue);
+    expect(resolved.deckId, store.defaultDeckId);
+
+    final MineOutcome out = await repoWith(
+      dest,
+    ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: bookContext());
+    expect(out.result, MineResult.success);
+    final SrsNoteView note = await noteOf('雪', 'ゆき');
+    expect(note.deckId, store.defaultDeckId);
+    expect(note.noteTypeId, store.lapisNoteTypeId);
+    expect(note.field(lapisFid('Expression')), '雪');
+  });
+
+  test('落地：没选过 = 默认牌组 + Fushi 卡片，不算回落', () async {
+    final SrsResolvedMiningDestination resolved =
+        await resolveSrsMiningDestination(store, const SrsMiningDestination());
+    expect(resolved.deckFellBack, isFalse);
+    expect(resolved.noteTypeFellBack, isFalse);
+    expect(resolved.usesLapis, isFalse);
+    expect(resolved.noteType?.id, store.fushiCardNoteTypeId);
+    expect(resolved.deckId, store.defaultDeckId);
+  });
+
+  group('复习模式下的其余制卡操作走 SRS（不碰 Anki）', () {
+    late _FakeAnki inner;
+    late List<String> opened;
+    late SrsMiningAnkiRepository repo;
+
+    setUp(() {
+      inner = _FakeAnki();
+      opened = <String>[];
+      repo = SrsMiningAnkiRepository(
+        inner: inner,
+        miner: () async => SrsMiner(store: store, media: media),
+        openNote: (String id) async {
+          opened.add(id);
+          return true;
+        },
+      );
+    });
+
+    Future<int> mine(String expression, String reading) async {
+      final MineOutcome out = await repo.mineEntry(
+        rawPayloadJson: _payload(expression, reading, allowDuplicate: true),
+        context: bookContext(),
+      );
+      expect(out.result, MineResult.success);
+      expect(out.noteId, isNotNull, reason: '有整数句柄才能进「可覆写」态');
+      return out.noteId!;
+    }
+
+    test('覆写：按句柄改同一条复习笔记的字段，标签只增不减，不新建', () async {
+      final int handle = await mine('雪', 'ゆき');
+      final SrsNoteView before = await noteOf('雪', 'ゆき');
+      final MineOutcome out = await repo.updateMinedNote(
+        noteId: handle,
+        rawPayloadJson: jsonEncode(<String, Object?>{
+          'expression': '雪',
+          'reading': 'ゆき',
+          'glossary': '<ol><li>snowfall</li></ol>',
+          'glossaryFirst': '<ol><li>snowfall</li></ol>',
+          'audio': '',
+        }),
+        context: const AnkiMiningContext(sentence: '雪が積もる。'),
+      );
+      expect(out.result, MineResult.success);
+      expect(out.noteId, handle);
+      final SrsNoteView after = (await store.note(before.id))!;
+      expect(after.field(fid('Sentence')), contains('積もる'));
+      expect(after.field(fid('Glossary')), contains('snowfall'));
+      expect(after.tags, containsAll(before.tags));
+      expect(
+        (await repo.findMatchingNotes('雪', 'ゆき')).length,
+        1,
+        reason: '覆写不新建笔记',
+      );
+      expect(inner.ankiCalls, 0);
+      expect(inner.mined, 0);
+    });
+
+    test('覆写：原笔记已删 → 明确失败', () async {
+      final int handle = await mine('雪', 'ゆき');
+      await store.deleteNote((await noteOf('雪', 'ゆき')).id);
+      final MineOutcome out = await repo.updateMinedNote(
+        noteId: handle,
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: const AnkiMiningContext(sentence: ''),
+      );
+      expect(out.result, MineResult.error);
+      expect(inner.ankiCalls, 0);
+    });
+
+    test('覆写范围：仅最近一张 → null；全部 → 这个词最新的复习笔记', () async {
+      await mine('雪', 'ゆき');
+      final int newer = await mine('雪', 'ゆき');
+      expect(await repo.findOverwriteTargetNoteId('雪', 'ゆき'), isNull);
+      inner.settings = inner.settings.copyWith(
+        overwriteScope: AnkiOverwriteScope.all,
+      );
+      expect(await repo.findOverwriteTargetNoteId('雪', 'ゆき'), newer);
+      expect(await repo.findOverwriteTargetNoteId('雨', 'あめ'), isNull);
+    });
+
+    test('同词反查新建的在前；读字段按字段名；已删复核只报明确删掉的', () async {
+      final int older = await mine('雪', 'ゆき');
+      final int newer = await mine('雪', 'ゆき');
+      final List<MinedNoteRef> refs = await repo.findMatchingNotes('雪', 'ゆき');
+      expect(refs.map((MinedNoteRef r) => r.noteId), <int>[newer, older]);
+      expect(refs.first.preview, '雪');
+      expect((await repo.noteFields(newer))!['Expression'], '雪');
+      expect(await repo.noteFields(12345), isNull);
+
+      final String olderId = (await store.noteIdForAnkiNumericId(older))!;
+      await store.deleteNote(olderId);
+      expect(await repo.findDeletedNotes(<int>{older, newer}), <int>{older});
+      expect(inner.ankiCalls, 0);
+    });
+
+    test('打开笔记 / 打开这个词：打开复习的笔记编辑页', () async {
+      final int handle = await mine('雪', 'ゆき');
+      final String id = (await store.noteIdForAnkiNumericId(handle))!;
+      expect(await repo.openNoteInAnki(handle), isTrue);
+      expect(opened, <String>[id]);
+      expect(await repo.openWordInAnki('雪', 'ゆき'), AnkiOpenWordOutcome.opened);
+      expect(opened, <String>[id, id]);
+      expect(await repo.openWordInAnki('雨', 'あめ'), AnkiOpenWordOutcome.noMatch);
+      expect(await repo.openNoteInAnki(98765), isFalse);
+      expect(inner.ankiCalls, 0);
+    });
+
+    test('回到出处改卡：出处在复习里时读写复习笔记；不在复习里才问 Anki', () async {
+      final AnkiMiningContext ctx = bookContext();
+      final MineOutcome out = await repo.mineEntry(
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: ctx,
+      );
+      final String sourceId = ctx.sourceLink!.sourceId;
+      final AnkiSourceNote? original = await repo.readSourceNote(sourceId);
+      expect(original, isNotNull, reason: 'MiscInfo 的出处链接带着 sourceId');
+      expect(original!.noteId, out.noteId);
+      expect(inner.sourceLookups, 0);
+
+      await repo.patchSourceNote(
+        original: original,
+        fields: <String, String>{'Sentence': '雪が止む。'},
+      );
+      expect((await noteOf('雪', 'ゆき')).field(fid('Sentence')), '雪が止む。');
+
+      expect(await repo.readSourceNote(CardSourceLink.newSourceId()), isNull);
+      expect(inner.sourceLookups, 1, reason: '复习里没有 → 交给 Anki（切换前的卡）');
+    });
+
+    test('Anki 专属能力在复习模式下关闭', () async {
+      expect(repo.supportsNoteTypeEditing, isFalse);
+      expect(repo.supportsMediaMaintenance, isFalse);
+      expect(await repo.probeMediaMaintenance(), isFalse);
+      expect(repo.supportsDeckReposition, isFalse);
+      expect(await repo.rendersSynchronizedClip(), isNull);
+      expect(repo.canVerifyExistingCards, isTrue);
+      expect(() => repo.createDeck('X'), throwsUnsupportedError);
+      expect(() => repo.listNewCards('X'), throwsUnsupportedError);
+    });
   });
 
   test('出处转换：漫画 / 本地视频 / 在线视频 / 游戏 / 无定位', () {
@@ -406,23 +696,26 @@ void main() {
       expect(repo, isNot(isA<SrsMiningAnkiRepository>()));
     });
 
-    test('模块开着、目标含 SRS：最外层是 SRS 层', () {
-      for (final SrsMiningTarget t in <SrsMiningTarget>[
-        SrsMiningTarget.srs,
-        SrsMiningTarget.both,
-      ]) {
-        final BaseAnkiRepository repo = container(
-          srsEnabled: true,
-          target: t,
-        ).read(ankiRepositoryProvider);
-        expect(repo, isA<SrsMiningAnkiRepository>());
-      }
+    test('模块开着、目标是 Fushi 复习：最外层是 SRS 层', () {
+      final BaseAnkiRepository repo = container(
+        srsEnabled: true,
+        target: SrsMiningTarget.srs,
+      ).read(ankiRepositoryProvider);
+      expect(repo, isA<SrsMiningAnkiRepository>());
     });
   });
 
   test('偏好 wire 值', () {
-    expect(SrsMiningTarget.fromWire(null), SrsMiningTarget.anki);
+    // 没设过 = 新默认 Fushi 复习（所有者 2026-10-16）；认不出的显式值仍按 Anki。
+    expect(SrsMiningTarget.fromWire(null), SrsMiningTarget.srs);
     expect(SrsMiningTarget.fromWire('garbage'), SrsMiningTarget.anki);
+    // 只有二选一两档。
+    expect(SrsMiningTarget.values, <SrsMiningTarget>[
+      SrsMiningTarget.anki,
+      SrsMiningTarget.srs,
+    ]);
+    // 已退役的「两者」存量值读成 Anki：老用户更新后继续发 Anki。
+    expect(SrsMiningTarget.fromWire('both'), SrsMiningTarget.anki);
     for (final SrsMiningTarget t in SrsMiningTarget.values) {
       expect(SrsMiningTarget.fromWire(t.wire), t);
     }

@@ -477,14 +477,13 @@ class _MaterialNavCluster extends StatelessWidget {
   /// 最小化圆用单独的 `nav-mini-bar`。
   ///
   /// 分页滑动（[barStyle]，2026-10-16 用户「apple 也要分页」）：与 MD3 同语义
-  /// ——查词并进胶囊、所有目的地同级，多于一页时胶囊里换成共用的
+  /// ——查词仍是右侧圆钮，其余目的地多于一页时胶囊里换成共用的
   /// [_NavPagedRow]（横滑翻页、页点、按住拖选、边缘停留翻页）；胶囊自己的
   /// 「横拖 lens」让位给翻页手势，选中态由各格自己画 lens。
   Widget _buildGlassTabBar(BuildContext context) {
     final int? rawSearch = glassSearchIndex;
     final int? search =
-        !barStyle.lookupInBar &&
-            rawSearch != null &&
+        rawSearch != null &&
             rawSearch >= 0 &&
             rawSearch < items.length &&
             items.length > 1
@@ -627,7 +626,6 @@ class _MaterialNavCluster extends StatelessWidget {
     final int? rawSearch = glassSearchIndex;
     int? search;
     if (materialFab == null &&
-        !barStyle.lookupInBar &&
         rawSearch != null &&
         rawSearch >= 0 &&
         rawSearch < items.length &&

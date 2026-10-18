@@ -60,7 +60,11 @@ class SrsCardHistory {
         if (imp.origin == SrsLogOrigin.anki &&
             imp.isRatingReview &&
             imp.ankiRevlogId != null &&
-            nativeRatings.any((SrsReviewLog n) => srsImportEquivalent(imp, n)))
+            nativeRatings.any(
+              // 一份历史就是一张逻辑卡（含「更改笔记类型」继承来的前身卡的日志），
+              // 前身卡的原生日志与新卡的导入日志照样判等价。
+              (SrsReviewLog n) => srsImportEquivalent(imp, n, sameCard: true),
+            ))
           imp.id,
     };
     effective = <SrsReviewLog>[
@@ -112,8 +116,15 @@ class SrsCardHistory {
 }
 
 /// 导入日志 [imported] 与原生日志 [native] 是否是同一次复习（铁律 B）。只看两条日志自身。
-bool srsImportEquivalent(SrsReviewLog imported, SrsReviewLog native) {
-  if (imported.cardId != native.cardId) return false;
+///
+/// [sameCard] = 调用方已知两条日志属于同一张逻辑卡（同一份卡片历史：新卡与它经「更改笔记类型」
+/// 继承的前身卡），此时不再比 cardId。
+bool srsImportEquivalent(
+  SrsReviewLog imported,
+  SrsReviewLog native, {
+  bool sameCard = false,
+}) {
+  if (!sameCard && imported.cardId != native.cardId) return false;
   if (imported.rating != native.rating) return false;
   if (!imported.isRatingReview || !native.isRatingReview) return false;
   final int? ankiMs = imported.ankiRevlogId;
@@ -127,6 +138,14 @@ bool srsIsReset(SrsReviewLog log) =>
     log.result != null &&
     log.result!.queue == SrsQueue.newCard &&
     log.result!.reps == 0;
+
+/// 「恢复到备份时间点」照抄状态的 manual 日志（restore_plan.dart `srsPlanStateRestore`）：
+/// 结果是备份那一刻的卡片状态（含记忆状态），作为 S/D 的起点，与导入锚点同一种处理（铁律 A ③′）。
+bool srsIsRestoreState(SrsReviewLog log) =>
+    log.kind == SrsLogKind.manual &&
+    log.result != null &&
+    log.extra[srsRestoreLogExtraKey] != null &&
+    !srsIsReset(log);
 
 /// 交给 FSRS 的记忆状态输入。
 class SrsMemoryInput {
@@ -208,6 +227,17 @@ SrsMemoryInput srsCollectMemoryInput(
     return out;
   }
 
+  // ③′ 恢复照抄的状态：被撤销的评分已不在有效历史里，从这条日志的结果（含记忆状态）接着算，
+  // 之后的评分接在后面；与「从锚点起算」同一套规则（同算法直接用，否则 SM-2 换算）。
+  for (int i = window.length - 1; i >= 0; i--) {
+    final SrsReviewLog l = window[i];
+    if (!srsIsRestoreState(l)) continue;
+    final List<SrsReviewLog> after = <SrsReviewLog>[
+      for (final SrsReviewLog r in ratings)
+        if (history.sortKeyOf(r) > history.sortKeyOf(l)) r,
+    ];
+    return _fromAnchor(l, after, algorithm, toReviews);
+  }
   if (ratings.isEmpty) {
     final SrsReviewLog? anchor = _lastAnchor(window);
     if (anchor == null) {

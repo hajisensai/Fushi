@@ -72,6 +72,15 @@ extension _VideoSpeed on _VideoFushiPageState {
 
   void _handleVideoLongPressStart(LongPressStartDetails details) {
     if (_longPressPreviousSpeed != null) return;
+    // 长按落在控件上（控制条空隙 / 只认单击的按钮 / 浮层面板）不是长按画面：外层长按
+    // 手势是所有控件的祖先，不拦就会在按住按钮时顺手临时加速。判据与双击 / 滚轮同一个
+    // （[videoPointerHitsChrome]，真实 hit-test）。start 早退后 move / end 都是空操作。
+    if (videoPointerHitsChrome(
+      globalPosition: details.globalPosition,
+      viewId: View.of(context).viewId,
+    )) {
+      return;
+    }
     _longPressPreviousSpeed = _playbackSpeed;
     final double speed = _asbConfig.longPressSpeed;
     // 长按拖动以固定加速速为基准（TODO-338）：拖动位移在此基础上连续加减。

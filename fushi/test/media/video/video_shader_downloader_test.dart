@@ -163,6 +163,53 @@ void main() {
       ],
     );
 
+    test('本批连不上的 host 后续文件挪到末尾：只吃一次连接超时', () async {
+      const Anime4kPreset two = Anime4kPreset(
+        id: 'two',
+        name: 'Two',
+        description: '',
+        shaders: <Anime4kShaderFile>[
+          Anime4kShaderFile('glsl/Restore/Anime4K_Clamp_Highlights.glsl'),
+          Anime4kShaderFile('glsl/Restore/Anime4K_Restore_CNN_M.glsl'),
+        ],
+      );
+      final _FakeAdapter adapter = _FakeAdapter((String url) {
+        if (url.contains('cdn.jsdelivr.net')) {
+          throw DioError(
+            requestOptions: RequestOptions(path: url),
+            type: DioErrorType.connectionTimeout,
+          );
+        }
+        return _glslBody();
+      });
+      final Anime4kDownloadResult result = await downloadAnime4kFiles(
+        two,
+        targetDir: dir,
+        dio: _dioWith(adapter),
+      );
+      expect(result.allOk, isTrue);
+      expect(adapter.requested.length, 3,
+          reason: '第一个文件：cdn 超时 + fastly 成功；第二个文件直接 fastly');
+      expect(adapter.requested[0], contains('cdn.jsdelivr.net'));
+      expect(adapter.requested[1], contains('fastly.jsdelivr.net'));
+      expect(adapter.requested[2], contains('fastly.jsdelivr.net'));
+      expect(adapter.requested[2], contains('Anime4K_Restore_CNN_M.glsl'));
+    });
+
+    test('orderAnime4kCandidatesForBatch：连不上的稳定挪末尾、不删', () {
+      final List<String> urls =
+          anime4kMirrorUrls('glsl/Restore/Anime4K_Clamp_Highlights.glsl');
+      expect(orderAnime4kCandidatesForBatch(urls, <String>{}), urls);
+      final List<String> ordered = orderAnime4kCandidatesForBatch(
+          urls, <String>{'cdn.jsdelivr.net', 'ghfast.top'});
+      expect(ordered.toSet(), urls.toSet());
+      expect(ordered.first, contains('fastly.jsdelivr.net'));
+      expect(ordered.sublist(ordered.length - 2), <String>[
+        urls.firstWhere((String u) => u.contains('cdn.jsdelivr.net')),
+        urls.firstWhere((String u) => u.startsWith('https://ghfast.top/')),
+      ]);
+    });
+
     test('主源成功 → 落盘 + 不试镜像', () async {
       final _FakeAdapter adapter = _FakeAdapter((String url) => _glslBody());
       final Anime4kDownloadResult result = await downloadAnime4kFiles(

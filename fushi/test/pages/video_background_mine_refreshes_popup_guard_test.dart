@@ -34,4 +34,57 @@ void main() {
       reason: '只有卡真的进了 Anki 才通知（暂存 / 失败不该把按钮画成 ✓）',
     );
   });
+
+  // 排队覆盖（方案 B）的结算必须覆盖所有结局：`then(onSuccess, onError:)` 的 onError
+  // 只接 job 自己的错误，onSuccess 里 `land(res)` 抛错时不会走到它——不包住就会让这个词
+  // 的在途标记永远不清、排队的覆盖永远不结算。
+  test('后台落卡：land 抛错也结算排队的覆盖，且按写入代号结算', () {
+    final String source = File(
+      'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
+    ).readAsStringSync();
+    final int background = source.indexOf('_trackBackgroundMine(');
+    final int queuedReturn = source.indexOf(
+      'return const MinePopupResult.queued();',
+      background,
+    );
+    final String branch = source.substring(background, queuedReturn);
+    expect(
+      RegExp(
+        r'try \{\s*landed = land\(res\);\s*\} on Object catch \(error\) \{\s*'
+        r'settleFailed\(error\);\s*rethrow;',
+      ).hasMatch(branch),
+      isTrue,
+      reason: 'land(res) 抛错必须先结算排队的覆盖再抛出',
+    );
+    expect(
+      RegExp(
+        r'onError: \(Object error, StackTrace stack\) \{\s*settleFailed\(error\);',
+      ).hasMatch(branch),
+      isTrue,
+      reason: 'job 自己抛错同样要结算',
+    );
+    expect(
+      source,
+      contains('_pendingOverwrites.addStarted(overwriteKey)'),
+      reason: '每次后台写入领一个代号',
+    );
+    expect(branch, contains('overwriteAddId,'), reason: '结算时带上这次写入的代号');
+  });
+
+  test('迟到的覆盖请求按那次写入的结局回 settled，而不是一律说「还在写入」', () {
+    final String source = File(
+      'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
+    ).readAsStringSync();
+    final int start = source.indexOf(
+      'Future<QueuedOverwriteReply> _onQueueOverwriteImpl(',
+    );
+    expect(start, greaterThan(0));
+    final String body = source.substring(
+      start,
+      source.indexOf('final MiningRequestOverrides? overrides', start),
+    );
+    expect(body, contains('_pendingOverwrites.lastLanded(key)'));
+    expect(body, contains('QueuedOverwriteSettled.landed'));
+    expect(body, contains('QueuedOverwriteSettled.failed'));
+  });
 }

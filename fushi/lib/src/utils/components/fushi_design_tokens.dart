@@ -41,6 +41,12 @@ double textLineHeight(BuildContext context, TextStyle style) {
   return MediaQuery.textScalerOf(context).scale(fontSize) * factor;
 }
 
+/// 内容排版（卡面这类字号可由用户调的内容）的字号：取当前设计系统字阶角色 [role]
+/// 的字号，再乘内容自己的用户缩放 [scale]。只带字号——字重 / 字族 / 颜色由内容自己定。
+/// 字号只能来自字阶角色；界面 chrome 直接用角色本身，不经这里。
+TextStyle fushiContentTypeSize(TextStyle role, {double scale = 1}) =>
+    TextStyle(fontSize: (role.fontSize ?? FushiTypeScale.bodyLarge.size) * scale);
+
 class FushiDesignTokens {
   const FushiDesignTokens({
     required this.radii,

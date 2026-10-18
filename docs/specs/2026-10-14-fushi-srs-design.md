@@ -8,6 +8,7 @@
 ## 产品约束（用户 2026-10-14 追加）
 
 - SRS 整体是一个默认关闭的模块（`ModuleId.srs`，「外观 → 模块」里打开；`ModuleId.defaultEnabled` 只有它为 false）。没打开的用户看不到任何入口。
+  **2026-10-16 更新**：出厂默认改为开（新装默认 Fushi 复习；升级上来的老用户由 `PreferencesRepository.settleSrsMiningTargetInstallDefault` 一次性显式写关、不提醒），见 `ModuleId.srs` 文档；正式版构建仍整体屏蔽（`PrereleaseOnlyCapability.srs`）。
 - 新手引导里有 SRS 步骤，但只有模块已开启时才进入步骤序列；向导不替用户勾选 SRS 模块。
 - 所有页面同时适配 MD3 与 Apple 两套设计系统，并带动效（仓库规则）。
 
@@ -53,6 +54,81 @@
 - 备份恢复语义：恢复 = 本机数据整体换成备份内容并换新化身；模拟器最初的内存副本把备份叠加在现有数据上，导致备份之后的本机事件滞留未发布、各端不收敛（随机种子 1、4、24…）。已修。数据库副本：本机状态与缓存表不进备份，`SrsDbStore.open` 发现「有事件、无本机状态」即判为覆盖恢复：换新化身、全部重新发布、重建缓存。
 - v117 迁移在没有 profiles 表的合成旧库上 ALTER 失败（`_tableExists` 守卫已补）。
 
+## 笔记类型管理与「更改笔记类型」（2026-10-15，分支 `pr/srs-note-types`）
+
+用户反馈「没有地方能改笔记类型」。补齐 Anki 的笔记类型管理与 Change Note Type，规则全部落在铁律 C / D / H 之内：
+
+- 结构编辑（铁律 D）：新建（基础类型 / 克隆）、改名、加 / 删 / 改名 / 调序字段、加 / 删 / 改名 / 调序模板、改模板与 CSS、
+  选词条字段，都只写笔记类型这一行的修改记录（每个字段定义、模板定义各是一个字段键，按项合并）。新建项的 ankiNum 随机、
+  ID 由 noteTypeId + ankiNum 派生（铁律 C），导出写进 Anki 的 config.id。调序只给 ord 真变了的项写记录（内置项没动过的继续跟随代码）。
+  删字段按 rslib 语义把模板里对它的引用一起去掉（条件段保留段内内容）；删模板 / 删字段 / 删笔记类型都是软删除，删笔记类型连同它的笔记。
+  内置 Lapis：可以改，不能删笔记类型、不能删内置字段（挖词与词状态按内置 fieldId 读写）。代码：`fushi_srs/lib/src/note_type_ops.dart`、
+  `fushi_engine/lib/srs/srs_note_type_store.dart`。
+- 更改笔记类型：笔记身份记录不可变，换类型写笔记的修改记录 `noteType`（设置类：并发换成不同类型时最后修改生效、进同步冲突记录）；
+  字段值按「新字段 ← 旧字段」映射写到新 fieldId（旧字段的值留在修改记录里，读时忽略，换回原类型时还在）。
+  卡片 ID 由 (noteId, templateId, clozeOrd) 派生，换类型后必然是新卡；新卡上写 `historyFrom/<旧 cardId>` = true（每个前身一个键，
+  集合语义，两台设备加同一个前身是同值、不冲突）。新卡的复习历史 = 自己 + 全部前身卡的日志（`SrsDbStore.history` 按血统收集），
+  卡片标志（暂停 / 埋卡 / 旗标 / 牌组）自己没有记录的键沿最近的前身继承。**复习日志一条不改**（铁律 F：事件创建即不可变）；
+  别的设备在收到换类型之前复习旧卡，那条日志同步过来后自然进入新卡的历史。一份历史就是一张逻辑卡，铁律 B 的导入等价判定在同一份历史内不再比 cardId。
+  普通 → 普通按用户的模板映射；涉及填空类型时按 Anki「序号不变」：第 i 个模板 ↔ c(i+1)。没有去处的旧卡在查询层隐藏（生成门），历史留在日志里。
+- 导出 / 回导：导出的 revlog 归到新卡（Anki 看到的是一张带完整历史的卡）；fushi-ext 多一项 `logCards`（前身卡日志 → 它在包里归的卡），
+  同 profile 回导时日志原样落回前身卡并补上前身链接，另一个 profile 回导时日志重映射到新卡。
+- 界面：牌组列表 ⋯ →「笔记类型」（`srs_note_types_page.dart` → `srs_note_type_editor_page.dart` → `srs_template_editor_page.dart`，
+  模板编辑器带实时预览）；笔记编辑页的类型行与浏览页批量操作走 `fushi/lib/src/srs/srs_change_note_type.dart` 的
+  `showSrsChangeNoteTypeFlow`。
+
+## 释义样式去重（2026-10-16，分支 `pr/srs-style-dedup`）
+
+Yomitan 导出释义时每部词典内联一份 `<style>`，同一部词典的每张卡都带同一份。开发版制卡历史实测：最近 50 条释义平均
+11.7 万字符 / 卡，其中 7.1 万是样式；全部 208 条只有 7 种不同的样式块。每条笔记一份 → 数据库、同步批次、备份同比放大。
+
+- **表示**（fushi_srs `style_dedup.dart`，冻结）：笔记字段值里**无属性**的 `<style>`…`</style>`、正文 ≥ 512 码元、不在
+  `<script>` 里的块，换成 `<link rel="stylesheet" href="_fushi_style_<sha1(css)>.css">`；样式正文存成同名共享媒体文件
+  （下划线开头，Anki「检查媒体」不删）。文件名只由内容决定 → 各设备各自去重得到逐字节相同的值；展开是逐字节还原。
+- **为什么是共享媒体文件、不是新表**：媒体已经按内容哈希同步（只传对方没有的）、随「复习」备份打包，不用升 schema、
+  不用为样式另开一条同步通道；新表方案（落库占位、读出展开）要么让同步批次继续带全文（省不了流量），要么新增一种同步实体。
+- **落库**（`SrsDbStore._store` → `_compactEdit`）：一切修改记录落库都经这里——本机写（制卡、笔记编辑、制卡历史导入、
+  AnkiConnect 加卡 / 改卡、浏览页批量）、`.apkg` 导入、对端事件——只动 `note` 的 `f/<fieldId>` 字符串值。
+  `SrsDbStore.open(styles:)` 不给样式库时一律原样落库（无头服务端、测试、备份合并步骤临时打开的副本）；
+  这样落下的行由下面的存量迁移在 app 下次打开 store 时补上。
+- **合并语义不变**：`_sameValue`（冲突判定、no-op 判定的唯一口径）对字符串按去重规范形比较，内联样式与引用行同值。
+  所以同一内容由两台设备（一台去重、一台没有）并发写下不进「待裁决」；用户把原文再存一遍是 no-op。
+  这是「事件创建即不可变」的唯一表示层例外：同 ID 的记录可能一端存内联、一端存引用，`_store` 按 ID 去重，二者在合并里同值；
+  id / dot / ctx / hlc 一律不动。
+- **对外的读展开**（`SrsDbStore.expandStyles` / `expandFields`）：`renderCard`（文件还没同步到时删掉引用行，不让 WebView
+  请求相对地址；渲染结果与去重前逐字节相同，卡面外壳照旧按内容哈希登记样式）、`.apkg` 导出（自包含：展开回内联、不带样式文件，
+  AnkiDroid / AnkiMobile 对字段里 `<link>` 的支持未验证）、AnkiConnect `notesInfo` / `cardsInfo` 的字段值、制卡回读
+  `SrsMiner.fieldsByName`（出处卡片的乐观并发检查要求读回与写入一致）、模板编辑器的示例笔记。
+- **编辑器里看到的**：笔记编辑页是原始 HTML 输入框，用户看到的是一行 `<link>`（几十 KB 的 CSS 不再塞进输入框）。原样保存是
+  no-op；删掉这一行就是删掉该词典的样式（与在 Anki 里删 `<style>` 等价）；粘贴进来的大样式保存时照样去重。
+  浏览页的「查找替换」作用在引用表示上（搜 CSS 文本不再命中）。
+- **导入回读**：Fushi 导出的包本来就是内联样式，回导时重新去重；字段里是引用行、包里带同名样式文件的包（例如手工处理过的），
+  按包内文件校验哈希后展开再去重。
+- **媒体同步**：`srsReferencedMedia` 把字段里的样式引用算进被引用媒体，样式文件与图片 / 音频同一条通道上传下载。
+  对端先收到事件、后收到样式文件时，卡面暂时没有词典样式，下一轮媒体同步后恢复。
+- **存量迁移**（`SrsDbStore.compactStoredStyles`，打开 store 后在后台跑）：按 rowid 游标分批（每批一个事务），把已落库的
+  记录就地换成引用表示；游标记在本机状态里，可中断可续，幂等；恢复备份后游标归零。**不产生任何新事件、不进发件箱**：
+  零同步流量，每台设备迁移自己的库。若改用「写新的修改记录」迁移，每台设备都要把所有带样式的字段（去掉样式后）重新发布一遍
+  ——开发版 50 / 208 条分别约 2.7 MB / 12 MB，再乘以设备数，且各端都会收到别人的那一份。
+  服务器上已发布的旧批次仍是内联样式（不改），新设备首次同步下载它们后由自己的迁移去重；之后写的快照是引用表示。
+- **实测**（`packages/fushi_engine/test/srs/srs_style_dedup_real_data_test.dart`，开发版库只读副本）：修改记录总字节
+  50 条 6795 KB → 2731 KB（40.2%）、208 条 30560 KB → 12275 KB（40.2%），共享样式文件 7 个 / 189 KB；逐张渲染与去重前一致。
+- 代码：`fushi_srs/lib/src/style_dedup.dart`、`fushi_engine/lib/srs/srs_style_store.dart`、`srs_db_store.dart`；
+  测试：`fushi_srs/test/style_dedup_test.dart`、`fushi_engine/test/srs/srs_style_dedup_test.dart`、
+  `fushi/test/srs/srs_style_dedup_app_test.dart`。
+
+## 自动全量备份与按时间点恢复（2026-10-17，分支 `pr/srs-auto-backup`）
+
+对标 Anki 的「备份」：定期全量快照 + 恢复到某个时间点，详见 [2026-10-17-srs-auto-backup-restore.md](2026-10-17-srs-auto-backup-restore.md)。
+要点：恢复**不是**覆盖恢复（那样别的设备一同步，备份之后的事件就全回来了），而是先并入备份事件，再把差异写成新事件——
+字段写一条支配本机已见一切记录的修改记录（新建的软删除、删掉的恢复），备份之后的有效日志写 undo，
+仍不一致的卡写 manual 日志照抄备份时的状态。这些新事件随同步传播，恢复时本机已见过的旧数据被支配、回不来。
+
+**铁律 A 追加 ③′（恢复照抄状态的起点）**：带 `extra.restoreOf` 的 manual 日志（不是重置）是记忆状态 S/D 的起点，
+与导入锚点同一套规则：结果里有同算法（`extra.memAlg`）的记忆状态就直接用，否则由 ease + 间隔做 SM-2 换算，
+再接上它之后的有效评分（`valid_logs.dart` 的 `srsIsRestoreState`）。被它取代的评分已被撤销、不在有效历史里，
+不这样做下一次评分就从零重算。
+
 ## 实现现状（分支 worktree-fushi-srs）
 
 | 计划项 | 位置 | 状态 |
@@ -66,6 +142,7 @@
 | PR5 接线 | 默认关闭的模块（首页「复习」tab）、新手引导、同步冲突页、查词弹窗复习标记（app 内 / app 外 / 浏览器扩展） | 完成 |
 | PR6 自动优化 | `srs_optimizer.dart` + `fushi/lib/src/srs/srs_optimization_scheduler.dart`（空闲时后台 isolate） | 完成 |
 | PR7 AnkiConnect | `fushi_engine/lib/srs/ankiconnect/`，挂在 Fushi API 根路径 | 完成；仅 SRS 开启时可用 |
+| 浏览页增强 | `fushi_engine/lib/srs/srs_browse.dart`（快照 + 搜索 + 排序 + 卡片 / 笔记模式；搜索求值对象与 AnkiConnect 共用）、`srs_browse_ops.dart`（批量操作，每个一个事件批次 + 撤销）、`fushi/lib/src/pages/implementations/srs/srs_browse_*.dart` | 完成；搜索子集补 `flag:` `card:` `edited:` `is:buried` `prop:ivl/due/reps/lapses/s/d` `re:` `字段:re:`（`rated:` `prop:ease/pos/r` `nc:` `dupe:` 等仍明确报不支持）；「更改笔记类型」只留了入口（`SrsBrowsePage.onChangeNoteType`） |
 | 第三期同步 | 协议 + `srs_asset_store_directory.dart`；七个后端的服务器时间；媒体按内容哈希同步（`srs_media_sync.dart`）；备份合并（铁律 E） | 完成 |
 
 ### 已知缺口（需要真机 / 外部条件，或留到下一期）
@@ -448,9 +525,21 @@ C. 所有实体 ID 全局唯一（UUIDv7 文本），日志 ID 由写入设备�
      · 来源时刻晚于导入设备可信时间 10 分钟以上的卡（Anki 那边时钟坏了）：本次不导入，列进导入报告。
      · 用户要「用导入的排程覆盖 Fushi 的当前排程」时，写一条新的 manual 事件（本机 HLC），不改写锚点。
    用户在某台设备上主动新建的复习日志、牌组仍用 UUIDv7——它们是不同的事件，本来就该是不同的行。
-   重复导入同一 guid 的笔记：行已存在时默认不覆盖本地字段（导入对话框可选「用导入内容更新已有笔记」，
-   选了才写入新值）。【修8】写入时按铁律 H 生成本机的字段修改记录（带本机因果上下文），
-   与别的设备的并发修改照常判冲突。
+   重复导入同一 guid 的笔记：按导入选项「更新笔记」（对齐 Anki ImportAnkiPackageOptions，默认「较新时」）
+   决定是否写入：较新时 = 来源笔记 mod 晚于本机该笔记内容键最后一条修改记录的 HLC 物理时刻；
+   始终 = 内容不同就写；从不 = 不写。只写与本机物化值不同的项。【修8】写入时按铁律 H 生成本机的
+   字段修改记录（带本机因果上下文），与别的设备的并发修改照常判冲突。
+   其余导入选项（默认值都与 Anki 相同）：
+     · 更新笔记类型（较新时 / 始终 / 从不）：管名字、CSS、模板正文、已有字段 / 模板的名字与顺序；
+       合并时来源新增的字段 / 模板不受它限制。
+     · 合并笔记类型（默认关）：关时若来源与本机同一笔记类型的字段 / 模板不是同一组，来源笔记类型另建一份，
+       ankiNum = hash53("notetype-dup/" + 来源 ankiNum + "/" + 字段 / 模板组成)，仍是来源确定性 ID（铁律 C），
+       同一结构再导入回到同一份；本机同 guid 的已有笔记记冲突、不更新（与 rslib 相同）。开时按上面「结构变化」合并。
+     · 包含排程（默认关）：关时不写 revlog / 锚点 / fushi-ext 日志、不导入暂停，去掉 marked / leech 标签，
+       卡片全部为新卡；报告给出「作为新卡导入」与未导入的 revlog 数。
+     · 包含牌组预设（默认关）：关时新建牌组不写来源预设（用默认设置）。
+     · .colpkg 走同一条合并路径（Anki 会整库替换，Fushi 不替换、不删本机数据）。
+     · 上次的选择记在 app 偏好 srs_import_anki_options（不进复习事件存储）。
    【修5】导出 Anki 时的数字 id（全部确定性，不用「时间戳 + 撞号 +1」）：
    - 笔记类型 / 字段 / 模板 = 各自的 ankiNum；笔记 guid = 笔记的 guid；
      Anki 笔记 id / 卡片 id = noteId / cardId 哈希出的 53 位正整数（Anki 导入按 guid 认笔记，数字 id 撞了它会自己换）。
@@ -607,6 +696,9 @@ H. 【修8】可编辑字段的并发修改：用版本向量判因果，不用�
        · 【修8】标志类与设置类（用户 2026-10-14 定方案 C：自动生效 + 冲突记录 + 一键改回）：
            标志类：卡片的 suspended、buriedUntilDay、旗标、deckId；
            设置类：牌组设置、algorithm（与 algorithmAuto 同一个键）、参数组、profile 设置（日界、时区）。
+           界面状态类（2026-10-16 补）：牌组的 collapsed（牌组列表里收起子牌组，对应 Anki deck `collapsed` /
+           Deck.Common.study_collapsed）。同样是修改记录、随同步、最后修改生效，但被覆盖的候选不进「同步冲突记录」
+           （两台设备各自开合是常态，不是冲突）。.apkg 导入首次建牌组时读 Anki 的值，导出写回 decks JSON 的 collapsed。
          · 当前生效值就是 sortKey 较大的候选（最后一次修改胜出，与 Anki 的口径一致，但按字段而不是整张卡）；
            同步不停下来等用户。
          · 被覆盖的候选留在集合里，进「同步冲突记录」。同步状态里出现不弹窗的提示，例如

@@ -43,6 +43,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/video_advanced_mining.dart';
+import 'package:fushi/src/mining/pending_mine_overwrites.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart'
     show probeSynchronizedClipSupport;
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -150,6 +151,7 @@ import 'package:fushi_engine/media/video/series_playback_prefs.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
+import 'package:fushi/src/media/video/video_chrome_hit_test.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
@@ -159,6 +161,8 @@ import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/media/video/video_control_layout_edit_overlay.dart';
 import 'package:fushi/src/media/video/video_control_popover_placement.dart';
 import 'package:fushi/src/media/video/video_controls_density.dart';
+import 'package:fushi/src/media/video/video_tabletop_panel.dart';
+import 'package:fushi/src/utils/adaptive/fushi_tabletop_split.dart';
 import 'package:fushi/src/media/video/video_controls_focus_gate.dart';
 import 'package:fushi/src/media/video/video_controls_theme_pair.dart';
 import 'package:fushi/src/media/video/video_slim_progress_bar.dart';
@@ -274,7 +278,11 @@ import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show safeDictionaryMediaPath;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult, DictionaryPopupWebViewState;
+    show
+        MinePopupResult,
+        DictionaryPopupWebViewState,
+        QueuedOverwriteReply,
+        QueuedOverwriteSettled;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/interconnect_adaptive_quality.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -2207,6 +2215,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 录制、鼠标绑定通道、右键菜单读的都是它）。左键与触摸在那里恒折不出按钮号，故
   /// 恒不入集合，双击全屏 / 双击 seek / 移动端双击暂停行为逐字不变。
   final Set<int> _nonPrimaryVideoPointers = <int>{};
+
+  /// 按下时落在控件上（控制条 / 浮层按钮）的指针集合，判据见 [videoPointerHitsChrome]。
+  /// 与 [_nonPrimaryVideoPointers] 同一套按下记账、抬起取走：落点是按下那一刻的渲染树
+  /// 说了算（与手势竞技场同一时刻），抬起前控件淡出或挪位都不改变这次点击的归属。
+  final Set<int> _chromeVideoPointers = <int>{};
   bool _videoFullscreenTransitioning = false;
 
   /// 全屏路由当前是否在栈上：进全屏置位、全屏路由 future 完成（任意退出路径：
@@ -2456,6 +2469,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 正开着的「高级制卡」对话框会话（锁住的查词画面、在线流缓冲副本、缩略图缓存）。
   /// [buildAdvancedMiningSections] 建，对话框 onClosed 释放；制卡在同步前缀里读它。
   _VideoAdvancedMiningSession? _advancedMiningSession;
+
+  /// BUG-3492：后台写入还没落地时排队的覆盖请求（每个词只留最后一次），落地后执行。
+  final PendingMineOverwrites<_QueuedVideoOverwrite> _pendingOverwrites =
+      PendingMineOverwrites<_QueuedVideoOverwrite>();
 
   /// 最近一次字幕查词命中的词在字幕上的范围（BUG-2091），由 [_lookupAt] 按引擎回报的
   /// 匹配长度写入；查无结果写 null。**不**在关栈路径复位——overlay 拿到的是
@@ -7081,6 +7098,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _onMineEntryImpl(fields);
 
   @override
+  Future<QueuedOverwriteReply> onQueueOverwrite(Map<String, String> fields) =>
+      _onQueueOverwriteImpl(fields);
+
+  @override
   Future<MinePopupResult> onMinedCardAction(Map<String, String> fields) =>
       _sourceReviewSession != null
       ? onMineEntry(fields)
@@ -11421,9 +11442,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ///
   /// 只记非主键：左键与触摸在 [domMouseButtonFromPointerButtons] 里恒折不出按钮号，
   /// 集合对它们始终为空，双击路径零改变。
+  ///
+  /// 同一处顺带记「按下是否落在控件上」（[_chromeVideoPointers]）：按真实 hit-test
+  /// 判，取代旧的顶 / 底两条按钮行高几何带——M3E 浮动底栏比那条带高，连点 ±10s
+  /// 的上半截会被当成双击画面切全屏。
   void _recordVideoPointerButton(PointerDownEvent event) {
     if (domMouseButtonFromPointerButtons(event.buttons) != null) {
       _nonPrimaryVideoPointers.add(event.pointer);
+    }
+    if (videoPointerHitsChrome(
+      globalPosition: event.position,
+      viewId: event.viewId,
+    )) {
+      _chromeVideoPointers.add(event.pointer);
     }
   }
 
@@ -11431,6 +11462,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 会一直留在集合里——抬起事件不会再来，[_handleVideoPointerUp] 也就没机会取走。
   void _forgetVideoPointerButton(PointerCancelEvent event) {
     _nonPrimaryVideoPointers.remove(event.pointer);
+    _chromeVideoPointers.remove(event.pointer);
   }
 
   void _handleVideoPointerUp(PointerUpEvent event) {
@@ -11441,6 +11473,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final bool nonPrimaryButton = _nonPrimaryVideoPointers.remove(
       event.pointer,
     );
+    final bool chromePointer = _chromeVideoPointers.remove(event.pointer);
     // 点视频区任意位置 = 用户把交互意图交还播放器：顺手收回键盘焦点（TODO-040 ①
     // 「点了外面/焦点丢失后」的恢复路径——与原生播放器一致，点一下画面即恢复键盘）。
     // 查词浮层打开时点击被根 Overlay barrier 拦截、到不了这里，guard 仅兜底；点
@@ -11481,10 +11514,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _lastVideoPointerUpPosition = null;
       return;
     }
+    // 按下落在控件上（控制条任意位置 / 任何可点浮层按钮）不是「点画面」：不参与双击
+    // 判定，并清掉双击追踪——否则连点 ±10s 这类按钮，两次抬起就凑成一次双击画面。
     final BuildContext? controlsContext = _videoControlsContext;
-    if (controlsContext == null ||
-        !controlsContext.mounted ||
-        _isVideoChromePointer(controlsContext, event.position)) {
+    if (controlsContext == null || !controlsContext.mounted || chromePointer) {
       _lastVideoPointerUpAt = null;
       _lastVideoPointerUpPosition = null;
       return;
@@ -11567,11 +11600,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_videoSidePanel.value != null) return;
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    final BuildContext? controlsContext = _videoControlsContext;
-    if (controlsContext != null &&
-        controlsContext.mounted &&
-        _isVideoChromePointer(controlsContext, event.position)) {
-      return; // 落在控制条 chrome 上：交回 chrome 自己的滚轮/滚动语义。
+    if (videoPointerHitsChrome(
+      globalPosition: event.position,
+      viewId: event.viewId,
+    )) {
+      return; // 落在控件上：交回控件自己的滚轮/滚动语义。
     }
     _onVolumeWheel(controller, event.scrollDelta.dy);
   }
@@ -11581,7 +11614,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 关闭，调用方继续走 BUG-221 的暂停 / 全屏分流。
   ///
   /// 用 [_videoControlsContext] 的 [RenderBox] 把双击点 [globalPosition] 换成本地坐标
-  /// 拿 dx 与可视区宽度（复用 [_isVideoChromePointer] 的 `globalToLocal` 范式），按
+  /// 拿 dx 与可视区宽度（`globalToLocal`），按
   /// 三等分判定：左 1/3 → 后退、右 1/3 → 前进、中间 1/3 → 中带（保留暂停 / 全屏）。
   /// [VideoAsbplayerConfig.doubleTapSeekSeconds]：0=关（整体跳过分区）、3/5/10=相对
   /// seek 该秒数、[VideoAsbplayerConfig.kDoubleTapSubtitle]=跳上 / 下一句。
@@ -11628,26 +11661,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       feedback('${forward ? '+' : '-'}${action}s');
     }
     return true;
-  }
-
-  bool _isVideoChromePointer(
-    BuildContext controlsContext,
-    Offset globalPosition,
-  ) {
-    final RenderObject? renderObject = controlsContext.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
-    final Offset local = renderObject.globalToLocal(globalPosition);
-    if (local.dx < 0 ||
-        local.dy < 0 ||
-        local.dx > renderObject.size.width ||
-        local.dy > renderObject.size.height) {
-      return false;
-    }
-    final EdgeInsets padding = MediaQuery.of(controlsContext).padding;
-    final double topChromeBottom = padding.top + _videoButtonBarHeight;
-    final double bottomChromeTop =
-        renderObject.size.height - padding.bottom - _videoButtonBarHeight;
-    return local.dy <= topChromeBottom || local.dy >= bottomChromeTop;
   }
 
   /// 桌面右键 = 视频上下文菜单（TODO-048c）。右键松手处 [globalPosition] 作锚点弹

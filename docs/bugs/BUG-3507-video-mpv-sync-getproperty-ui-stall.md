@@ -1,0 +1,12 @@
+## BUG-3507 · Windows 视频播放偶发冻帧：UI 线程同步读写 mpv 排内核锁
+- **报告**：2026-10-17（用户：「我的视频又掉帧了」「偶尔顿一下，然后会有连续3次左右的多少ms只有一帧。声音正常」）
+- **真实性**：✅ 真 bug。用户正式版（`D:\APP\Hibiki`，RTX 5090，4K 159Hz，网络流 23.976fps）开着视频诊断，`Documents\video_diag_log.txt` 显示：
+  - mpv 层几乎零丢帧（810 s 播放里 late=0、dec-drop=0、vo-drop 仅 2 秒），硬解、avsync≈0、缓存 69 s——解码 / mpv 渲染没问题。
+  - `[mpv/stats]` 的 `window` 成簇拉长到 1.3–1.7 s（每簇约 20 s、每 ~1.5 s 一次）。同一簇里 `[frame]` 探针的独立 1 s 定时器本应落在 `.133`，被拖到 `164677.533` / `164682.537` / `164686.589` / `164692.702`（晚 400–569 ms），且每次都与 `mpv/stats` 那轮采样**完成的同一毫秒**——整个 Dart 事件循环被那轮同步属性读取堵住。
+  - 根因：media_kit 1.2.6 `NativePlayer.getProperty` 在调用线程（Flutter UI 线程）上同步 `mpv_get_property_string`（`ci/patches/hosted/media_kit-1.2.6/lib/src/player/native/player/real.dart` 原 `:1273`），要先拿 mpv 内核锁；中间的 `await` 都是已完成 Future，只走微任务、不让出事件循环。诊断采样每秒同步读 17 个属性（`fushi/lib/src/media/video/video_player_controller.dart` `_sampleBlackFlicker`），关诊断时黑闪检测每秒仍读 2 个，网络流的 `_startCacheSpeedSampling` 每秒读 2 个，蓝光菜单每 125 ms 读一次（`video_disc_menu.part.dart` `_readDiscMenu`）且命令直调同步 `mpv_command`（`video_disc_menu.dart` 原 `:318`）。公开 `setProperty` 同样是同步 `mpv_set_property_string`（原 `:1244`）。UI 线程一堵，Windows 上视频纹理新帧排不上合成 → 画面冻住；音频在 mpv 自己的线程上不受影响。
+- **[x] ① 已修复** — media_kit 补丁新增 `getPropertyAsync`（`mpv_get_property_async` + `MPV_EVENT_GET_PROPERTY_REPLY`）与 `commandWithResult`（`mpv_command_async`，返回结果码），公开 `setProperty` 改走 `mpv_set_property_async`（mpv 对同一 client 的异步请求按序执行，awaiting 调用方的先后关系不变），`dispose` 收掉全部挂起的异步请求。app 侧所有读（诊断 / 黑闪 / 缓存速度 / 章节 / file-format / 蓝光）走 `getPropertyAsync`，蓝光命令走 `commandWithResult`。媒体事件循环是串行的（`await _handler` 后才取下一事件），所以 media_kit 回调里不能 await 异步读写：蓝光 `disc-navigation-state-json` 观察者改为 `unawaited`（采样器自带合并），`_invalidateDiscTitle` 里的清理命令改为排队 + 失败记诊断。已核查无 `onLoadHooks` 注册、图形字幕观察者本就 `unawaited`。
+- **[x] ② 已加自动化测试** — `fushi/test/third_party/media_kit_async_property_test.dart`（真 libmpv：读在微任务排空后仍未完成 = 不在调用线程上读；异步写后读保序；`commandWithResult` 结果码；dispose 不挂死。变异实测：把 `getPropertyAsync` / `setProperty` 改回同步，恰好前两条变红）；守卫 `fushi/test/media/video/video_mpv_ui_thread_native_calls_guard_test.dart`（`fushi/lib` 禁同步 `getProperty(` / `.mpv.mpv_*(`，并钉住补丁三处异步实现与 dispose 收尾）；`video_disc_menu_test.dart` 改为异步命令假对象。
+- **备注**：
+  - 真机冻帧消失需要用户装上含本补丁的新包后再播网络流验证（诊断开着时看 `[frame]` 行不再出现偏离 `.133` 的打点、`mpv/stats` 的 `window` 不再成簇超过 1.15 s）。
+  - 同步读为何每次要等几百毫秒（mpv 内核在那几十秒里忙什么）没有单独定性；修复不依赖它——UI 线程不再等内核锁。
+  - 真 libmpv 测试需 `FUSHI_TEST_LIBMPV`；用安装目录的 dll 时把该目录追加进 PATH（依赖 DLL 同目录）。

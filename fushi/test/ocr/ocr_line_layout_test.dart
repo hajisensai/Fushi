@@ -52,6 +52,145 @@ void main() {
       expect(merged.single.right, 1344);
     });
 
+    test('横排：左右两栏同一高度的两行（栏距约 5 倍行厚）不并成跨栏长行', () {
+      // 人物资料页两栏：行厚 30，栏间空白 150。旧口径只看跨轴重叠，两行并成一条
+      // 0~550 的长行，逐行识别读出串栏的句子。
+      final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
+        _r(0, 0, 200, 30),
+        _r(350, 2, 550, 31),
+      ], vertical: false);
+      expect(merged, hasLength(2));
+    });
+
+    test('横排：左栏一行被切成两段、右栏同高还有一行——左栏两段仍合并', () {
+      // 按跨轴中心排序后右栏那行会夹在左栏两段之间，只和最后一条比会把左栏拆开。
+      final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
+        _r(0, 0, 90, 30),
+        _r(350, 1, 550, 31),
+        _r(100, 2, 200, 30),
+      ], vertical: false);
+      expect(merged, hasLength(2));
+      final OcrRect left = merged.firstWhere((OcrRect r) => r.left == 0);
+      expect(left.right, 200);
+    });
+
+    test('竖排：同一 x 上下两段列之间空白约 5 倍列宽，不并成一列', () {
+      final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
+        _r(0, 0, 30, 100),
+        _r(1, 250, 30, 350),
+      ], vertical: true);
+      expect(merged, hasLength(2));
+    });
+
+    test('空隙上限按较厚行厚的 kOcrFragmentMaxGapRatio 倍：刚好在线内仍合并', () {
+      final List<OcrRect> within = mergeOcrLineFragments(<OcrRect>[
+        _r(0, 0, 100, 30),
+        _r(100 + kOcrFragmentMaxGapRatio * 30, 0, 300, 30),
+      ], vertical: false);
+      expect(within, hasLength(1));
+      final List<OcrRect> beyond = mergeOcrLineFragments(<OcrRect>[
+        _r(0, 0, 100, 30),
+        _r(101 + kOcrFragmentMaxGapRatio * 30, 0, 300, 30),
+      ], vertical: false);
+      expect(beyond, hasLength(2));
+    });
+
+    // 同一行三段 A[0..100]、B[110..400]、C[410..500]，行厚 40，按跨轴中心排序后
+    // 到达顺序是 A、C、B：C 与 A 隔着 310 > 3×40 单独成条，B 并进 C，A 与 B+C 之间
+    // 只有 10 却再不比较——单趟贪心把一行拆成两条。合并必须做到不动点。
+    test('横排：同一行三段乱序到达（A、C、B）仍并成一行', () {
+      final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
+        _r(0, 0, 100, 40), // A，跨轴中心 20
+        _r(410, 1, 500, 41), // C，跨轴中心 21
+        _r(110, 2, 400, 42), // B，跨轴中心 22
+      ], vertical: false);
+      expect(merged, hasLength(1));
+      expect(
+        <double>[
+          merged.single.left,
+          merged.single.top,
+          merged.single.right,
+          merged.single.bottom,
+        ],
+        <double>[0, 0, 500, 42],
+      );
+    });
+
+    test('竖排：同一列三段乱序到达（A、C、B）仍并成一列', () {
+      final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
+        _r(0, 0, 40, 100), // A
+        _r(1, 410, 41, 500), // C
+        _r(2, 110, 42, 400), // B
+      ], vertical: true);
+      expect(merged, hasLength(1));
+      expect(
+        <double>[
+          merged.single.left,
+          merged.single.top,
+          merged.single.right,
+          merged.single.bottom,
+        ],
+        <double>[0, 0, 42, 500],
+      );
+    });
+
+    test('合并结果与碎片输入顺序无关（三段的全部 6 种排列）', () {
+      final List<OcrRect> parts = <OcrRect>[
+        _r(0, 0, 100, 40),
+        _r(110, 2, 400, 42),
+        _r(410, 1, 500, 41),
+      ];
+      const List<List<int>> permutations = <List<int>>[
+        <int>[0, 1, 2],
+        <int>[0, 2, 1],
+        <int>[1, 0, 2],
+        <int>[1, 2, 0],
+        <int>[2, 0, 1],
+        <int>[2, 1, 0],
+      ];
+      for (final List<int> order in permutations) {
+        final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
+          for (final int i in order) parts[i],
+        ], vertical: false);
+        expect(merged, hasLength(1), reason: 'order $order');
+        expect(merged.single.left, 0, reason: 'order $order');
+        expect(merged.single.right, 500, reason: 'order $order');
+      }
+    });
+
+    test('竖排三列各被切成三段、碎片全乱序：合并后仍是三列、阅读序从右到左', () {
+      // 列宽 40、列距 20；每列都是 A[0..100] / B[110..400] / C[410..500] 的切法，
+      // 跨轴中心按 A、C、B 递增，单趟合并会把每一列都拆成两条。
+      List<OcrRect> column(double left) => <OcrRect>[
+        _r(left, 0, left + 40, 100),
+        _r(left + 2, 110, left + 42, 400),
+        _r(left + 1, 410, left + 41, 500),
+      ];
+      final List<OcrRect> right = column(120);
+      final List<OcrRect> middle = column(60);
+      final List<OcrRect> left = column(0);
+      final List<OcrRect> lines = orderOcrLinesForReading(
+        mergeOcrLineFragments(<OcrRect>[
+          middle[2],
+          left[1],
+          right[0],
+          left[2],
+          middle[0],
+          right[1],
+          left[0],
+          right[2],
+          middle[1],
+        ], vertical: true),
+        vertical: true,
+      );
+      expect(lines, hasLength(3));
+      expect(lines.map((OcrRect r) => r.left), <double>[120, 60, 0]);
+      for (final OcrRect line in lines) {
+        expect(line.top, 0);
+        expect(line.bottom, 500);
+      }
+    });
+
     test('横排：同一行的几段合并，上下两行保持分开', () {
       final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
         _r(0, 0, 80, 30),

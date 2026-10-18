@@ -117,6 +117,19 @@ jobs:
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
       # job 级 permissions 会把没列出的 scope 置 none，缺 actions: write 则 dispatch 403。
       actions: write
+    # 发布步骤已搬到下面的 `publish-android` job（2026-10-17，正式版云端预构建 + 审批门）：
+    # 这里只构建、签名、上传 run artifact，绝不对外发布任何东西。
+    #
+    # job outputs 只留 publish-android 的 job 级 if 要用的三个开关。通道解析结果（tag、
+    # 发布 tag、文件清单、公告正文……）经 `fushi-release-channel-<sha>` artifact 交过去：
+    # GitHub 会把「可能含 secret 值」的 job output 整条丢掉（只打一行 Skip output 警告）。
+    # 2026-10-17 实测 publish_tag=fushi-debug-rolling 与 files 被丢，publish 拿空 tag 去
+    # prune rolling release，`gh release view ''` 落到 Latest（v2.9.1）上差点删掉它的资产。
+    # artifact 内容不做这种过滤。守卫 fushi/test/build/release_publish_gate_guard_test.dart。
+    outputs:
+      channel: ${{ steps.channel.outputs.channel }}
+      publish_managed_release: ${{ steps.channel.outputs.publish_managed_release }}
+      publish_manifest: ${{ steps.channel.outputs.publish_manifest }}
 
     steps:
     - uses: actions/checkout@v6
@@ -945,6 +958,44 @@ jobs:
     # logic. always() + no channel gate so a successful build is downloadable
     # even if a later publish step 403s; if-no-files-found: ignore tolerates
     # channels/events that produced no APK.
+    # 通道解析结果交给 publish-android 的唯一通道（不走 job outputs，原因见本 job 的
+    # outputs 注释）。一键一文件，原样写值：不经 shell 展开、不怕多行公告。
+    - name: Save Android release channel for publish job
+      if: always() && steps.channel.outcome == 'success'
+      shell: bash
+      env:
+        CH_CHANNEL: ${{ steps.channel.outputs.channel }}
+        CH_TAG: ${{ steps.channel.outputs.tag }}
+        CH_PUBLISH_TAG: ${{ steps.channel.outputs.publish_tag }}
+        CH_ROLLING_DEBUG: ${{ steps.channel.outputs.rolling_debug }}
+        CH_NAME: ${{ steps.channel.outputs.name }}
+        CH_PRERELEASE: ${{ steps.channel.outputs.prerelease }}
+        CH_MAKE_LATEST: ${{ steps.channel.outputs.make_latest }}
+        CH_BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
+        CH_RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
+        CH_PUBLISH_MANAGED_RELEASE: ${{ steps.channel.outputs.publish_managed_release }}
+        CH_PUBLISH_MANIFEST: ${{ steps.channel.outputs.publish_manifest }}
+        CH_MANIFEST_CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
+        CH_FILES: ${{ steps.channel.outputs.files }}
+        CH_BODY: ${{ steps.channel.outputs.body }}
+      run: |
+        set -euo pipefail
+        dir=fushi/build/release-channel
+        mkdir -p "$dir"
+        for key in channel tag publish_tag rolling_debug name prerelease make_latest build_version_name release_sequence publish_managed_release publish_manifest manifest_channel files body; do
+          var="CH_${key^^}"
+          printf '%s' "${!var}" > "$dir/$key"
+        done
+
+    - name: Upload Android release channel to workflow run
+      if: always() && steps.channel.outcome == 'success'
+      uses: actions/upload-artifact@v7
+      with:
+        name: fushi-release-channel-${{ github.sha }}
+        path: fushi/build/release-channel/
+        if-no-files-found: error
+        retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
+
     - name: Upload APK artifacts to workflow run
       if: always()
       uses: actions/upload-artifact@v7
@@ -952,7 +1003,89 @@ jobs:
         name: fushi-${{ steps.channel.outputs.channel }}-apk-${{ github.sha }}
         path: fushi/build/release-artifacts/*.apk
         if-no-files-found: ignore
-        retention-days: 14
+        # 正式 / 测试版 dispatch 的 publish job 要等人工审批（环境 release-publish，
+        # 待审批 job 最长挂 30 天），publish job 从这份 artifact 取 APK：保留期必须
+        # 盖住整个审批窗口，否则过了 14 天再批就发不出去。
+        retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
+
+  # 对外发布全部收在这个 job（2026-10-17 用户要求：正式版必须云端预构建好，说「发版」
+  # 时秒发、不重新构建）。build job 只构建 + 签名 + 上传 run artifact；这里下载 artifact
+  # 后才做 GitHub Release 创建 / 上传、滚动 debug 清理、更新清单、反馈回填、main 同步。
+  #
+  # 审批门：workflow_dispatch 的 formal / beta 走环境 `release-publish`（必需审批人
+  # hajisensai、允许自审），job 停在「Waiting」直到批准；push 的滚动 debug 与手动发
+  # GitHub Release（`release` 事件，本身就是发布动作）走无保护规则的 `release-auto`，
+  # 不等人。不用「表达式算出空串 = 不挂环境」：官方文档没写这条语义，push 发布每天
+  # 跑十几次，赌错就是全停；两个具名环境的行为都有文档保证。
+  # build_only 时两个发布开关都是 false，job 级 if 直接跳过，不会弹审批。
+  # release-desktop.yml 的 publish / testflight 两个 job 挂同一个门（本 job 叫 publish-android：
+  # 两条 workflow 的 job 名按产出不相交，守卫 release_workflow_push_branches_guard_test），同 tag 两条
+  # dispatch 都停在门口，两条都批准才是完整的一次发版。流程见 docs/agent/build.md
+  # 「正式版预构建与审批发布」；守卫 fushi/test/build/release_publish_gate_guard_test.dart。
+  publish-android:
+    needs: build
+    if: ${{ (github.event_name == 'release' || needs.build.outputs.publish_managed_release == 'true' || needs.build.outputs.publish_manifest == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    environment: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
+      # job 级 permissions 会把没列出的 scope 置 none，缺 actions: write 则 dispatch 403。
+      actions: write
+
+    steps:
+    # 完整历史：反馈回填要 `git merge-base --is-ancestor`，main 同步拿工作区当
+    # `--reference` 借对象，清单脚本在 tool/ 下。
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    # 把 build job 的通道解析结果还原成 steps.channel.outputs.*（不在这里重新解析：
+    # 同一份结果只算一次，publish 与 build 不可能对版本串 / tag / 开关各执一词）。
+    # 来源是 build job 上传的 artifact，不是 job outputs（会被 secret 过滤静默丢值）。
+    - name: Download Android release channel from build job
+      uses: actions/download-artifact@v7
+      with:
+        name: fushi-release-channel-${{ github.sha }}
+        path: ${{ runner.temp }}/release-channel
+
+    - name: Load Android release channel from build job
+      id: channel
+      shell: bash
+      env:
+        CH_DIR: ${{ runner.temp }}/release-channel
+      run: |
+        set -euo pipefail
+        for key in channel tag publish_tag rolling_debug name prerelease make_latest build_version_name release_sequence publish_managed_release publish_manifest manifest_channel files body; do
+          if [ ! -f "$CH_DIR/$key" ]; then
+            echo "::error title=Release channel incomplete::build job did not hand over '$key'"
+            exit 1
+          fi
+        done
+        # 空 tag 绝不能往下走：prune / 上传拿空 tag 会落到 Latest release 上。
+        for key in channel tag publish_tag; do
+          if [ -z "$(cat "$CH_DIR/$key")" ]; then
+            echo "::error title=Empty release channel value::'$key' is empty; refusing to publish"
+            exit 1
+          fi
+        done
+        {
+          for key in channel tag publish_tag rolling_debug name prerelease make_latest build_version_name release_sequence publish_managed_release publish_manifest manifest_channel files; do
+            printf '%s=%s\n' "$key" "$(cat "$CH_DIR/$key")"
+          done
+          echo "body<<FUSHI_RELEASE_BODY_EOF"
+          cat "$CH_DIR/body"
+          printf '\n'
+          echo "FUSHI_RELEASE_BODY_EOF"
+        } >> "$GITHUB_OUTPUT"
+        echo "channel=$(cat "$CH_DIR/channel") tag=$(cat "$CH_DIR/tag") publish_tag=$(cat "$CH_DIR/publish_tag") managed=$(cat "$CH_DIR/publish_managed_release") manifest=$(cat "$CH_DIR/publish_manifest")/$(cat "$CH_DIR/manifest_channel")"
+
+    - name: Download APK artifacts from build job
+      uses: actions/download-artifact@v7
+      with:
+        name: fushi-${{ steps.channel.outputs.channel }}-apk-${{ github.sha }}
+        path: fushi/build/release-artifacts
 
     - name: Upload APKs to GitHub Release event
       if: github.event_name == 'release'

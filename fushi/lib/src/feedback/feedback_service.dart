@@ -16,7 +16,9 @@
 // （[FeedbackTicket.viaAccount]），看详情 / 追加说明 / 标记完成都用账户签名。
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -47,6 +49,7 @@ class FeedbackDraft {
     this.screenshots = const <Uint8List>[],
     this.video,
     this.reopenOf,
+    this.submissionKey,
   });
 
   final FeedbackCategory category;
@@ -67,6 +70,21 @@ class FeedbackDraft {
 
   /// 「问题没解决，重新提交」：原反馈 id（必须是本机清单里的、带 ticket 的那条）。
   final String? reopenOf;
+
+  /// 提交幂等键（[newFeedbackSubmissionKey]）：**同一次提交**的重试必须带同一个键。
+  /// 请求其实到了服务端、回执却没收到（超时 / 断网）时，重试拿回的是同一条反馈的回执，
+  /// 而不是再建一条重复反馈。null = 不要幂等（每次都是新提交）。
+  final String? submissionKey;
+}
+
+/// 新的提交幂等键：24 字节安全随机数的 base64url（32 位，服务端要求 32–64 位）。
+/// 键只经 TLS 发给服务端、服务端只存哈希，回执 ticket 由它派生——等价于本机自己出
+/// ticket，所以必须用安全随机数。
+String newFeedbackSubmissionKey([Random? random]) {
+  final Random r = random ?? Random.secure();
+  return base64Url
+      .encode(List<int>.generate(24, (_) => r.nextInt(256)))
+      .replaceAll('=', '');
 }
 
 /// 提交进行到哪一步（提交页的进度文案）。[videoPrepare] 在发正文之前（转码失败 / 太大
@@ -445,9 +463,9 @@ class FeedbackService extends ChangeNotifier {
   /// 0..1；太大 / 不是视频直接抛，反馈不提交），正文与其它附件交完后最后传视频
   /// （[FeedbackSubmitStage.video]）；视频传失败留在待传区，详情页可重试。
   ///
-  /// [stagedVideo] 非空 = 调用方已用 [stageVideo] 压好（提交页压缩期间表单仍可编辑、可取消，
-  /// 压完才读表单提交）：直接用它、不再转码，[FeedbackDraft.video] 不再看；提交结束（成功或
-  /// 失败）都清掉它的工作目录。
+  /// [stagedVideo] 非空 = 调用方已用 [stageVideo] 压好（提交页选完视频就在后台压）：直接用它、
+  /// 不再转码，[FeedbackDraft.video] 不再看。它的工作目录仍归调用方：正文没发出去时留着可以
+  /// 原样再提交，提交成功后由调用方 [FeedbackStagedVideo.discard]（视频已挪进待传区）。
   Future<FeedbackSubmitResult> submit(
     FeedbackDraft draft, {
     void Function(FeedbackSubmitStage stage)? onStage,
@@ -455,17 +473,8 @@ class FeedbackService extends ChangeNotifier {
     FeedbackStagedVideo? stagedVideo,
   }) async {
     if (stagedVideo != null) {
-      try {
-        await load();
-        return await _submit(
-          draft,
-          onStage,
-          stagedVideo.video,
-          onVideoProgress,
-        );
-      } finally {
-        await stagedVideo.discard();
-      }
+      await load();
+      return _submit(draft, onStage, stagedVideo.video, onVideoProgress);
     }
     await load();
     final File? source = draft.video;
@@ -486,8 +495,8 @@ class FeedbackService extends ChangeNotifier {
     }
   }
 
-  /// 提交页「提交」的第一步：在本机把视频压好（[onProgress] 回报 0..1）。压缩期间表单
-  /// 仍可编辑；[FeedbackVideoPrepareOptions.cancel] 完成即中止并清掉工作目录，抛
+  /// 提交页选完视频就调：在本机把视频压好（[onProgress] 回报 0..1），用户同时写反馈；
+  /// [FeedbackVideoPrepareOptions.cancel] 完成即中止并清掉工作目录，抛
   /// [FeedbackVideoCancelledException]。太大 / 不是视频照常抛（工作目录同样清掉）。
   /// 返回值交给 [submit] 的 `stagedVideo`，不提交时调用方负责 [FeedbackStagedVideo.discard]。
   Future<FeedbackStagedVideo> stageVideo(
@@ -546,7 +555,10 @@ class FeedbackService extends ChangeNotifier {
       linkAccount: draft.linkAccount,
       reopenOf: parent == null ? null : (id: parent.id, ticket: parent.ticket),
       install: install,
+      submissionKey: draft.submissionKey,
     );
+    // 从这里起反馈**已经交上去了**：之后任何一步（落盘、补传附件）出错都不能再让调用方
+    // 以为「提交失败」——用户会再点一次，生成一条重复反馈（BUG-3489 审查）。
     final FeedbackTicket ticket = FeedbackTicket(
       id: receipt.id,
       ticket: receipt.ticket,
@@ -559,8 +571,20 @@ class FeedbackService extends ChangeNotifier {
       body: draft.body.trim(),
       parentId: parent?.id,
     );
-    _tickets = <FeedbackTicket>[ticket, ..._tickets];
-    await _persist();
+    // 幂等重试拿回的是同一条（同 id）：替换而不是再插一条。
+    _tickets = <FeedbackTicket>[
+      ticket,
+      for (final FeedbackTicket t in _tickets)
+        if (t.id != receipt.id) t,
+    ];
+    try {
+      await _persist();
+    } on Object catch (e, st) {
+      // 回执落盘失败：回执仍在内存清单里（反馈中心看得到），下一次任何落盘都会把它一起写下；
+      // 绝不把它报成提交失败。
+      ErrorLogService.instance.log('feedback.persist_after_submit', e, st);
+      notifyListeners();
+    }
     if (onSubmitted case final Future<void> Function() hook) unawaited(hook());
     if (draft.contact.trim().isNotEmpty) {
       try {

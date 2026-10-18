@@ -358,6 +358,33 @@ Future<bool> _canAdoptUid(
   return !store.everPublished && !await store.hasUserNotes();
 }
 
+/// 本机 profile（当前 uid [currentUid]）能否改用另一个 uid：没有用户笔记、也从未发布过批次（铁律 E）。
+/// 复习备份页「从文件恢复」另一台设备的备份时用：新装的设备可以直接接上那个 profile。
+Future<bool> srsCanAdoptProfileUid(
+  FushiDatabase db,
+  String currentUid,
+  String deviceId,
+) => _canAdoptUid(db, currentUid, deviceId);
+
+/// 本机 profile [profileId] 改用 [newUid]：先删掉旧 uid 下的全部 SRS 行（只可能是内置行 / 本机状态 /
+/// 缓存，内置行的 ID 由 uid 派生，换 uid 后随新 uid 重新生成）。调用方先用 [srsCanAdoptProfileUid] 检查。
+Future<void> srsAdoptProfileUid(
+  FushiDatabase db, {
+  required int profileId,
+  required String oldUid,
+  required String newUid,
+}) async {
+  await db.transaction(() async {
+    for (final String table in _kSrsProfileTables) {
+      await db.customStatement(
+        'DELETE FROM main.$table WHERE profile_uid = ?',
+        <Object>[oldUid],
+      );
+    }
+    await db.adoptProfileUid(profileId, newUid);
+  });
+}
+
 /// 本机 SRS 四张事件表里已存在的事件 ID。
 Future<Set<String>> _existingEventIds(
   FushiDatabase db,

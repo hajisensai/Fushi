@@ -1,7 +1,4 @@
 import 'dart:convert';
-import 'dart:ffi';
-
-import 'package:ffi/ffi.dart';
 
 /// One atomic libbluray snapshot. Playlist numbers come from libbluray itself,
 /// never from mpv's edition index (which also includes a synthetic menu entry).
@@ -289,37 +286,35 @@ bool isVideoDiscInputCommand(List<String> command) =>
 /// Sends a disc input (see [isVideoDiscInputCommand]) and reports whether the
 /// disc consumed it. An unconsumed key is a normal remote-control outcome, so it
 /// is a `false` result rather than a [VideoDiscMenuException].
-bool runVideoDiscInputCommand(dynamic native, List<String> command) {
+Future<bool> runVideoDiscInputCommand(dynamic native, List<String> command) {
+  // Checked synchronously: a non-input command is a programming error, not a
+  // native outcome.
   if (!isVideoDiscInputCommand(command)) {
     throw ArgumentError.value(command, 'command', 'Not a disc input');
   }
-  return _runVideoDiscCommand(native, command) >= 0;
+  return _runVideoDiscCommand(
+    native,
+    command,
+  ).then((int result) => result >= 0);
 }
 
 /// media_kit's public command() logs negative mpv results but completes normally.
 /// Disc actions need the actual result so a rejected menu never looks successful.
 /// The caller must await native initialization and check its load token first.
-void runCheckedVideoDiscCommand(dynamic native, List<String> command) {
-  final int result = _runVideoDiscCommand(native, command);
+Future<void> runCheckedVideoDiscCommand(
+  dynamic native,
+  List<String> command,
+) async {
+  final int result = await _runVideoDiscCommand(native, command);
   if (result < 0) throw VideoDiscMenuException('command-failed:$result');
 }
 
-int _runVideoDiscCommand(dynamic native, List<String> command) {
-  final List<Pointer<Utf8>> strings = command
-      .map((String argument) => argument.toNativeUtf8())
-      .toList(growable: false);
-  final Pointer<Pointer<Char>> arguments = calloc<Pointer<Char>>(
-    strings.length + 1,
-  );
-  try {
-    for (int i = 0; i < strings.length; i++) {
-      arguments[i] = strings[i].cast<Char>();
-    }
-    return native.mpv.mpv_command(native.ctx, arguments) as int;
-  } finally {
-    calloc.free(arguments);
-    for (final Pointer<Utf8> string in strings) {
-      calloc.free(string);
-    }
-  }
+/// BUG-3507: goes through the media_kit patch's `commandWithResult`
+/// (`mpv_command_async`). A synchronous `mpv_command` waits for the mpv core
+/// lock on the UI thread and freezes video composition while the core is busy.
+/// mpv runs a client's async requests in order, so commands issued one after
+/// another keep their order against media_kit's own commands and writes.
+Future<int> _runVideoDiscCommand(dynamic native, List<String> command) async {
+  final Object? result = await native.commandWithResult(command);
+  return result is int ? result : -1;
 }

@@ -15,6 +15,8 @@ import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart'
+    show canonicalSha256Fingerprint;
 
 // resolveFfmpegExecutable 已移到 ffmpeg_backend.dart（执行配置的自然归宿）；
 // 从这里 re-export 让既有 importer 与测试仍从本文件解析它。
@@ -259,6 +261,26 @@ void debugResetFfmpegHlsSegmentExtensionSupport() {
   _hlsDemuxerHelpText = null;
 }
 
+/// `-tls_pin_sha256` 的实参：把 TOFU 存的指纹规范成原生补丁认的唯一形态（64 位小写
+/// hex，见 [canonicalSha256Fingerprint]）。空 / 空白 = 不钉扎（null）。
+///
+/// 非空却不是合法 SHA-256 指纹时**原样（trim 后）下发、不丢弃**：丢掉 pin 等于让
+/// ffmpeg 退回默认的 `tls_verify=0`、接受任意证书——钉扎静默降级成无校验。原样下发则由
+/// 补丁的 `ff_tls_check_cert_pin` 以 EINVAL 拒绝握手（fail closed），并记一条诊断。
+@visibleForTesting
+String? ffmpegTlsPinArg(String? raw) {
+  final String trimmed = raw?.trim() ?? '';
+  if (trimmed.isEmpty) return null;
+  final String? canonical = canonicalSha256Fingerprint(trimmed);
+  if (canonical != null) return canonical;
+  engineLog.logDiagnostic(
+    'ffmpeg-tls-pin',
+    'pinned fingerprint is not a SHA-256 hex digest; passing it through so '
+        'ffmpeg rejects the handshake instead of skipping the pin',
+  );
+  return trimmed;
+}
+
 /// TODO-1000（BUG-528/522）：http(s) 流输入（YouTube googlevideo 分离流/直链）的 ffmpeg
 /// 网络韧性开关，**必须放在 `-i` 之前**（这些是 http 协议的输入选项）。googlevideo 在打开
 /// 输入时会间歇性丢连（实测 `Error number -138` opening input——多帧 GIF/音频段读取更易撞上），
@@ -291,7 +313,7 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath,
     inputPath,
   );
   final String? httpProxy = route?.httpProxy;
-  final String? pin = tlsPinSha256?.trim();
+  final String? pin = ffmpegTlsPinArg(tlsPinSha256);
   final _FfmpegHttpHeaderArgs headers =
       _FfmpegHttpHeaderArgs.from(httpHeaders, inputPath);
   final String? referer = headers.referer;

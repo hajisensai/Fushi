@@ -25,6 +25,13 @@ const List<String> kGitHubMirrorPrefixes = <String>[
   'https://gh.llkk.cc/',
 ];
 
+/// [url] 是否是套了 [kGitHubMirrorPrefixes] 的**中转**候选。
+///
+/// 下载选源分两档（用户 2026-10-18 拍板）：官网 Cloudflare / GitHub 直连是首选档，
+/// 中转镜像只在首选档全部连不上时才启用——并发竞速里镜像再快也不许抢首选档。
+bool isGitHubMirrorUrl(String url) =>
+    kGitHubMirrorPrefixes.any((String prefix) => url.startsWith(prefix));
+
 /// 镜像能代理的 GitHub 下载域。`github.com/<o>/<r>/raw/<ref>/<p>` 会 302 到
 /// `raw.githubusercontent.com`，release 资产会 302 到 `objects.githubusercontent.com`
 /// / `release-assets.githubusercontent.com`，`codeload.github.com` 是源码归档直链。

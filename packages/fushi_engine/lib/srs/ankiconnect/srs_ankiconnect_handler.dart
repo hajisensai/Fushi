@@ -22,6 +22,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_media.dart';
+import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 
 /// 兼容的 AnkiConnect API 版本。
@@ -108,50 +109,25 @@ class _Snapshot {
       tree[deckId] == null ? '' : tree.fullName(deckId);
 }
 
-class _CardSubject implements SrsSearchSubject {
-  _CardSubject(this.s, this.note, this.type, this.card, this.ids);
-
-  final _Snapshot s;
-  final SrsNoteView note;
-  final SrsNoteTypeView type;
-  final SrsCardCacheRow card;
-  final int Function(String) ids;
-
-  SrsQueue get _q => SrsQueue.parse(card.queue);
-
-  @override
-  String get deckName => s.deckName(card.deckId);
-  @override
-  String get noteTypeName => type.name;
-  @override
-  Map<String, String> get fields => <String, String>{
-    for (final SrsFieldDef f in type.fields) f.name: note.field(f.id),
-  };
-  @override
-  List<String> get tags => note.tags;
-  @override
-  bool get isNew => _q == SrsQueue.newCard;
-  @override
-  bool get isLearn => _q == SrsQueue.learning || _q == SrsQueue.relearning;
-  @override
-  bool get isReview => _q == SrsQueue.review || _q == SrsQueue.relearning;
-  @override
-  bool get isDue => switch (_q) {
-    SrsQueue.newCard => false,
-    SrsQueue.review => (card.dueDay ?? 0) <= s.today,
-    SrsQueue.learning ||
-    SrsQueue.relearning => (card.dueAt ?? 0) <= s.nowMs + 20 * 60000,
-  };
-  @override
-  bool get isSuspended => card.suspended;
-  @override
-  int get noteId => ids(note.id);
-  @override
-  int get cardId => ids(card.id);
-  @override
-  int get addedDayIndex => s.day.dayIndexOf(note.createdAt);
-  @override
-  int get todayDayIndex => s.today;
+/// 一张卡作为搜索求值对象：语义与浏览页同一份（[SrsCardSearchSubject]），整数 id 走本请求的
+/// 记忆化映射。
+class _CardSubject extends SrsCardSearchSubject {
+  _CardSubject(
+    _Snapshot s,
+    SrsNoteView note,
+    SrsNoteTypeView type,
+    SrsCardCacheRow card,
+    int Function(String) ids,
+  ) : super(
+        note: note,
+        noteType: type,
+        card: card,
+        deckName: s.deckName(card.deckId),
+        day: s.day,
+        nowMs: s.nowMs,
+        todayDayIndex: s.today,
+        numericId: ids,
+      );
 }
 
 /// 准备好要写的笔记（字段已按名字映射到 fieldId）。
@@ -744,7 +720,9 @@ class SrsAnkiConnectHandler {
 
   // ---------------------------------------------------------------- 加卡与查重
 
-  static String _norm(String field) => ankiSearchStripHtml(field).trim();
+  /// 判重比较用的首字段：先按样式去重规范形（内联样式与引用行同值），再去 HTML。
+  static String _norm(String field) =>
+      ankiSearchStripHtml(srsDedupStyles(field).html).trim();
 
   /// 能加返回 null，不能加返回 AnkiConnect 的错误串。
   String? _tryPrepare(_Snapshot s, Object? raw) {
@@ -1154,14 +1132,19 @@ class SrsAnkiConnectHandler {
 
   // ---------------------------------------------------------------- 信息
 
-  Map<String, Object?> _fieldsInfo(SrsNoteTypeView t, SrsNoteView n) =>
-      <String, Object?>{
-        for (int i = 0; i < t.fields.length; i++)
-          t.fields[i].name: <String, Object?>{
-            'value': n.field(t.fields[i].id),
-            'order': i,
-          },
-      };
+  /// 字段值对外按 Anki 的样子给：释义样式去重的引用行展开回内联 `<style>`
+  /// （外部工具读到的与它当初写进来的逐字节相同）。
+  Future<Map<String, Object?>> _fieldsInfo(
+    SrsDbStore store,
+    SrsNoteTypeView t,
+    SrsNoteView n,
+  ) async => <String, Object?>{
+    for (int i = 0; i < t.fields.length; i++)
+      t.fields[i].name: <String, Object?>{
+        'value': await store.expandStyles(n.field(t.fields[i].id)),
+        'order': i,
+      },
+  };
 
   Future<List<Object?>> _notesInfo(Map<String, Object?> p) async {
     final _Snapshot s = await _snapshot();
@@ -1183,7 +1166,7 @@ class SrsAnkiConnectHandler {
         'noteId': n,
         'profile': _profile,
         'tags': note.tags,
-        'fields': _fieldsInfo(t, note),
+        'fields': await _fieldsInfo(s.store, t, note),
         'modelName': t.name,
         'cards': <int>[
           for (final SrsCardCacheRow c
@@ -1242,7 +1225,7 @@ class SrsAnkiConnectHandler {
       final SrsQueue q = SrsQueue.parse(c.queue);
       out.add(<String, Object?>{
         'cardId': n,
-        'fields': _fieldsInfo(t, note),
+        'fields': await _fieldsInfo(s.store, t, note),
         'fieldOrder': ord,
         'question': r?.question ?? '',
         'answer': r?.answer ?? '',

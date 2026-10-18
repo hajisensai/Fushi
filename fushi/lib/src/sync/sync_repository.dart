@@ -6,7 +6,8 @@ import 'package:fushi/src/models/preferences_repository.dart'
         kDownloadExecutionHostPrefKey,
         kFloatingLyricWindowRectPrefKey,
         kGameStreamLookupLayoutPrefKey,
-        kGameStreamRemoteLaunchPrefKey;
+        kGameStreamRemoteLaunchPrefKey,
+        PreferencesRepository;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
@@ -1660,9 +1661,25 @@ class SyncRepository {
   /// 编译错误而是静默泄漏——基线会随备份跨设备携带，正是拆键前就有的老毛病。
   static final List<String> deviceLocalPrefKeys = <String>[
     ..._deviceLocalFixedKeys,
+    ...installScopedPrefKeys,
     for (final String base in _perChannelDeviceLocalBases)
       for (final SyncChannelScope scope in SyncChannelScope.all)
         scope.key(base),
+  ];
+
+  /// 设备本地键里更严的一类：描述**本次安装**的一次性判定 / 迁移结论。
+  ///
+  /// 和其余设备本地键一样导出时剔除、不进 Profile 快照 / 分享。导入侧更严：导入
+  /// 设置的覆盖恢复（含崩溃恢复重放）会把它们**清掉**——外来值是别的机器的结论，
+  /// 本机旧值依据的是恢复前的数据，两者都不留，下次启动按恢复后的数据重新判定
+  /// （见 `BackupRestoreService._clearInstallScopedPrefs`）。不导入设置的恢复把设置层
+  /// 整层写回本机，判定随之保留。旧版本导出的、还带着这些键的包也靠这一步兜住。
+  ///
+  /// - `srs_mining_target_install_default`：挖词目标出厂默认（'anki' / 'srs'），兼
+  ///   一次性判定标记。维护者用装了新版的机器打推荐包，包里会是 'anki'；新用户一导入
+  ///   就会被当成老 Anki 用户（复习模块关、挖词发 Anki）。
+  static const List<String> installScopedPrefKeys = <String>[
+    PreferencesRepository.srsMiningTargetInstallDefaultKey,
   ];
 
   /// 按通道分槽、且属设备本地的键基名（展开进 [deviceLocalPrefKeys]）。
@@ -1695,6 +1712,10 @@ class SyncRepository {
     // 「本机作为制卡落地设备」：换设备恢复备份若把它带过去，就会同时有两台落地设备，
     // 同一张卡被两边各落一次。
     _keyPendingMineLandingClaimedAt,
+    // 复习自动备份的开关与保留策略：备份文件只存在本机（<documents>/srs_backups），
+    // 设置描述的是这台设备的磁盘，换设备恢复带过去没有意义。
+    PreferencesRepository.srsBackupAutoKey,
+    PreferencesRepository.srsBackupLimitsKey,
     // （旧键 google_drive_hoshi_compat 已由 fushi_core v72 迁移清行：Hoshi 共享
     // 空间功能删除后它无任何读写方；导入的旧备份库开库时同样被清，故无需再列。）
     _keyDesktopCredentials,

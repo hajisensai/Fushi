@@ -77,6 +77,14 @@ class SrsFieldDef {
   final int? ankiNum;
   final bool deleted;
 
+  SrsFieldDef copyWith({String? name, int? ord, bool? deleted}) => SrsFieldDef(
+    id: id,
+    name: name ?? this.name,
+    ord: ord ?? this.ord,
+    ankiNum: ankiNum,
+    deleted: deleted ?? this.deleted,
+  );
+
   Map<String, Object?> toValue() => <String, Object?>{
     'name': name,
     'ord': ord,
@@ -115,6 +123,22 @@ class SrsTemplateDef {
   final String back;
   final int? ankiNum;
   final bool deleted;
+
+  SrsTemplateDef copyWith({
+    String? name,
+    int? ord,
+    String? front,
+    String? back,
+    bool? deleted,
+  }) => SrsTemplateDef(
+    id: id,
+    name: name ?? this.name,
+    ord: ord ?? this.ord,
+    front: front ?? this.front,
+    back: back ?? this.back,
+    ankiNum: ankiNum,
+    deleted: deleted ?? this.deleted,
+  );
 
   Map<String, Object?> toValue() => <String, Object?>{
     'name': name,
@@ -320,6 +344,8 @@ class SrsNoteView {
   });
 
   final String id;
+
+  /// 当前笔记类型：「更改笔记类型」的修改记录优先，没有时取身份记录里的创建类型。
   final String noteTypeId;
   final String guid;
   final int createdAt;
@@ -359,7 +385,9 @@ class SrsNoteView {
     final Object? tags = edits.value(SrsFieldKeys.noteTags);
     return SrsNoteView(
       id: record.id,
-      noteTypeId: record.payload['noteTypeId']! as String,
+      noteTypeId:
+          (edits.value(SrsFieldKeys.noteType) as String?) ??
+          record.payload['noteTypeId']! as String,
       guid: record.payload['guid']! as String,
       createdAt: record.createdAt,
       fields: fields,

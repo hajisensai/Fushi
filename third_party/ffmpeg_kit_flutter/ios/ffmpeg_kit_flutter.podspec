@@ -49,6 +49,11 @@ Pod::Spec.new do |s|
     'Frameworks/libswresample.xcframework',
   ]
   # ffmpeg/ffmpeg-kit 链接的系统 framework / 库（otool -L 实测 + 常见项；多声明无害）。
+  # charset：--enable-libxml2（BUG-3503 dash demuxer）后五个 libav* framework 新增
+  # LC_LOAD_DYLIB /usr/lib/libiconv.2.dylib（compat 7.0.0）与 /usr/lib/libcharset.1.dylib。
+  # 两者都是 iOS 系统库；这里显式声明，守卫
+  # fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart 与 patches/verify_mobile_outputs.py
+  # 钉住「framework 链接的每个 /usr/lib 库都在这一行」。
   s.frameworks = 'Foundation', 'CoreFoundation', 'CoreMedia', 'CoreVideo', 'AudioToolbox', 'VideoToolbox'
-  s.libraries  = 'c++', 'z', 'bz2', 'iconv'
+  s.libraries  = 'c++', 'z', 'bz2', 'iconv', 'charset'
 end

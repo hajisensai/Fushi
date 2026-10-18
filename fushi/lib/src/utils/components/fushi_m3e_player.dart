@@ -284,6 +284,9 @@ const Duration _kStaticWavePoll = Duration(milliseconds: 250);
 /// [onSeek] 为 null 时只显示进度（不可拖、不可聚焦）。[animateWave] = false 时
 /// 波形静止（不逐帧流动，振幅照样随播放态弹簧收放），位置每 250ms 轮询一次——
 /// 常亮的遥控页不为一条进度条逐帧重建。
+///
+/// 给了 [clockListenable]（位置变化的推送源）时，位置改由它的通知驱动，**不再起任何
+/// 轮询定时器**；Ticker 只负责波浪流动 / 振幅弹簧 / 拖动这些纯动画。
 class FushiWavySeekBar extends StatefulWidget {
   const FushiWavySeekBar({
     super.key,
@@ -295,6 +298,7 @@ class FushiWavySeekBar extends StatefulWidget {
     this.animateWave = true,
     this.showTimes = true,
     this.debugLabel = 'fushi-wavy-seek',
+    this.clockListenable,
   });
 
   final FushiPlaybackClock clock;
@@ -309,6 +313,9 @@ class FushiWavySeekBar extends StatefulWidget {
 
   /// 焦点节点调试名。
   final String debugLabel;
+
+  /// [clock] 位置 / 时长变化时通知；null = 没有推送源，按上面的节奏轮询 [clock]。
+  final Listenable? clockListenable;
 
   @override
   State<FushiWavySeekBar> createState() => _FushiWavySeekBarState();
@@ -345,6 +352,13 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     super.initState();
     _position = widget.clock.position;
     _duration = widget.clock.duration;
+    widget.clockListenable?.addListener(_onClockChanged);
+  }
+
+  /// 推送源通知：读一次时钟，有变化才重建（拖动中不打断拖动显示）。
+  void _onClockChanged() {
+    if (!mounted) return;
+    if (_readClock()) setState(() {});
   }
 
   @override
@@ -359,6 +373,11 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     if (oldWidget.isPlaying != widget.isPlaying ||
         oldWidget.animateWave != widget.animateWave) {
       _syncMotion(animate: true);
+    }
+    if (!identical(oldWidget.clockListenable, widget.clockListenable)) {
+      oldWidget.clockListenable?.removeListener(_onClockChanged);
+      widget.clockListenable?.addListener(_onClockChanged);
+      _syncMotion(animate: false);
     }
     if (!identical(oldWidget.clock, widget.clock)) _readClock();
   }
@@ -385,6 +404,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
   }
 
   void _startIdlePoll() {
+    if (widget.clockListenable != null) return; // 有推送源：位置不靠轮询。
     _idlePoll ??= Timer.periodic(const Duration(milliseconds: 400), (_) {
       if (!mounted) return;
       if (_readClock()) setState(() {});
@@ -393,6 +413,8 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
 
   void _restartIdlePoll(Duration interval) {
     _idlePoll?.cancel();
+    _idlePoll = null;
+    if (widget.clockListenable != null) return; // 有推送源：位置不靠轮询。
     _idlePoll = Timer.periodic(interval, (_) {
       if (!mounted) return;
       if (_readClock()) setState(() {});
@@ -437,6 +459,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
 
   @override
   void dispose() {
+    widget.clockListenable?.removeListener(_onClockChanged);
     _ticker.dispose();
     _idlePoll?.cancel();
     _amp.dispose();

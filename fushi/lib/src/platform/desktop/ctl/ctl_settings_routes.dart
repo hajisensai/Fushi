@@ -213,7 +213,7 @@ final Map<String, _VirtualSetting> _virtualSettings = <String, _VirtualSetting>{
     read: (AppModel appModel) => appModel.themeNotifier.designSystem,
     options: (AppModel _) => const <(String, String)>[
       ('auto', 'auto'),
-      ('material', 'M3E'),
+      ('material', 'Material'),
       ('glass', 'glass'),
     ],
     write: (SettingsContext context, String value) =>

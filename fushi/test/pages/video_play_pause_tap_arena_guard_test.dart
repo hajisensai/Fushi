@@ -74,10 +74,11 @@ void main() {
     final String onActionBlock = src.substring(onActionIdx, tapUpIdx);
     expect(onActionBlock.contains('player.playOrPause()'), isTrue,
         reason: '鼠标单击播放/暂停行为不得丢失');
-    // 底栏带排除（不在进度条附近误暂停）仍由 State 提供几何判据。
+    // 控件区排除（不在进度条 / 底栏附近误暂停）走真实 hit-test（BUG-3517），
+    // 不再由 State 按主题几何推底部条带。
     final String routerBlock = src.substring(routerIdx, onActionIdx);
-    expect(routerBlock.contains('subtitleVerticalShiftOffset'), isTrue,
-        reason: '播放/暂停资格仍需排除底部进度条区域');
+    expect(routerBlock.contains('VideoControlsChromeRegion.hitsRegion('), isTrue,
+        reason: '播放/暂停资格须排除控件区（进度条、底栏及其空隙）');
   });
 
   test('路由 State 持有 _playPauseTapEligible 字段', () {

@@ -46,7 +46,7 @@ extension _VideoSubtitleLanguage on _VideoFushiPageState {
 /// `build(BuildContext)` (the @override entry point) stays in the main shell — it
 /// only delegates to [_buildScaffold]. [_buildScaffold] / [_pageDropTarget] and
 /// the pointer/gesture handlers ([_handleVideoPointerUp] / [_handleDoubleTapSeek]
-/// / [_isVideoChromePointer] / [_handleSecondaryTap] / [_buildVideoContextMenuItems])
+/// / [_handleSecondaryTap] / [_buildVideoContextMenuItems])
 /// also stay in the main shell: they sit between `build` and [_buildVideoBody] and
 /// are not part of this contiguous render-tree run (cutting them would require
 /// splitting a non-contiguous subset).
@@ -1096,6 +1096,23 @@ extension _VideoLayout on _VideoFushiPageState {
     );
   }
 
+  /// 桌面姿态下半屏的播放面板（见 [VideoTabletopPanel]）。
+  Widget _videoTabletopPanel(VideoPlayerController controller) {
+    return VideoTabletopPanel(
+      key: const ValueKey<String>('video_tabletop_panel'),
+      listenable: Listenable.merge(<Listenable>[controller, _titleNotifier]),
+      positionListenable: controller.positionMsListenable,
+      title: () => _titleNotifier.value,
+      isPlaying: () => controller.isPlaying,
+      position: () => Duration(milliseconds: controller.positionMs ?? 0),
+      duration: () => Duration(milliseconds: controller.durationMs ?? 0),
+      onPlayPause: () => unawaited(controller.playOrPause()),
+      onSeek: (Duration d) => unawaited(controller.seekMs(d.inMilliseconds)),
+      onSeekRelative: (int seconds) =>
+          unawaited(controller.seekRelative(seconds * 1000)),
+    );
+  }
+
   /// 把 [video]（media_kit `Video` 控件）与字幕跳转列表面板组成「真 push-aside」横向
   /// 布局（TODO-121，asbplayer 同款）。面板可见时返回 `Row[Expanded(video), 面板列]`：
   /// `Expanded` 收窄 `Video` 的 `Container` 宽度 → libmpv 纹理的 `FittedBox` 真正缩窄
@@ -1142,7 +1159,21 @@ extension _VideoLayout on _VideoFushiPageState {
             Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Expanded(child: video),
+                // 折叠屏桌面姿态（半开平放、横向折痕）：画面连同控件 / 字幕留在折痕
+                // 上方，下半屏常驻播放面板。窗口与全屏两处 Video 都经这里，一处接线。
+                // 小窗 / 画中画不切分（系统或小窗 chrome 接管）。
+                Expanded(
+                  child: ValueListenableBuilder<VideoMiniSurface>(
+                    valueListenable: _miniSurface,
+                    builder: (BuildContext _, VideoMiniSurface surface, __) =>
+                        FushiTabletopSplit(
+                          enabled: surface == VideoMiniSurface.none,
+                          top: video,
+                          bottomBuilder: (BuildContext _) =>
+                              _videoTabletopPanel(controller),
+                        ),
+                  ),
+                ),
                 _subtitleJumpSidePanel(controller, visible),
               ],
             ),

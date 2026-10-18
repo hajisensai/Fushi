@@ -1158,6 +1158,11 @@ class BackupRestoreService {
         if (preservedSync.isNotEmpty) {
           await _applyPreservedConfig(dbDirectory, preservedSync);
         }
+        // 本安装的一次性判定键：设置层换成了备份的，判定所依据的数据也随之换了——
+        // 外来值与本机旧值都不留，下次启动按恢复后的数据重判（全新安装
+        // haveCurrent=false 时也必须走这一步）。必须排在上面两步之后：它们会把本机
+        // 旧值写回来。
+        await _clearInstallScopedPrefs(dbDirectory);
       } else if (haveCurrent) {
         // Keep this device's whole settings layer.
         await _reapplySettingsLayer(dbDirectory);
@@ -1669,6 +1674,7 @@ class BackupRestoreService {
             (decoded['prefs'] as Map<String, dynamic>?) ?? decoded;
         final prefs = prefsRaw.map((k, v) => MapEntry(k, v as String));
         if (prefs.isNotEmpty) await _applyPreservedConfig(dbDirectory, prefs);
+        await _clearInstallScopedPrefs(dbDirectory);
       }
       sidecarStateApplied = true;
     } on FormatException catch (e, st) {
@@ -1918,6 +1924,36 @@ class BackupRestoreService {
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       await db.close();
+    }
+  }
+
+  /// 导入设置的覆盖恢复（含崩溃恢复重放）收尾：删掉导入库里全部
+  /// [SyncRepository.installScopedPrefKeys]，让下次启动按恢复后的数据重新判定。
+  ///
+  /// 两种值都不能留：外来值是另一台机器（或打包机）的结论；本机旧值依据的是恢复
+  /// **前**的数据——新装判成 'srs' 后恢复一份老 Anki 用户的完整备份，留着旧值就会
+  /// 把这位老用户的卡送进复习。重判时推荐包回执照旧只认制卡数据信号；用户显式设过
+  /// 的 `srs_mining_target` 是普通偏好、随设置恢复，判定只给它兜默认值，不覆盖。
+  /// 不导入设置的恢复（设置层整层写回本机）不调本方法，本机判定原样保留。
+  static Future<void> _clearInstallScopedPrefs(String dbDirectory) async {
+    const List<String> keys = SyncRepository.installScopedPrefKeys;
+    FushiDatabase? db;
+    try {
+      db = FushiDatabase(dbDirectory);
+      await (db.delete(db.preferences)..where((t) => t.key.isIn(keys))).go();
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (e, st) {
+      // 导入的库打不开（不是 SQLite / 已损坏）：与 [_readDeviceLocalPrefs] 同口径，
+      // 不因这一步把整次恢复判失败——那样的库本来就读不出任何偏好。
+      debugPrint(
+        'BackupRestoreService._clearInstallScopedPrefs failed: $e\n$st',
+      );
+    } finally {
+      try {
+        await db?.close();
+      } catch (_) {
+        /* db may have failed to open */
+      }
     }
   }
 
@@ -2322,44 +2358,20 @@ class BackupRestoreService {
   }
 
   /// Streams one [file]'s uncompressed bytes to [destPath] without buffering the
-  /// whole entry. Fushi backups are written STORE (see
-  /// [_writeBackupZipInIsolate]) so the raw window IS the uncompressed data and is
-  /// copied in bounded 4 MB chunks (each chunk's size reported via [port]); a
-  /// DEFLATE entry (small metadata / test fixtures — never a multi-GB file in
-  /// practice) is inflated streaming.
+  /// whole entry: STORE is copied and DEFLATE is inflated by the native zlib,
+  /// both in bounded 4 MB chunks ([extractZipEntryToFile]), each written chunk's
+  /// uncompressed size reported via [port] so the progress bar keeps moving.
+  ///
+  /// Do NOT go back to archive 3.6.1's `Inflate.stream(raw, OutputFileStream)`:
+  /// it resolves every LZ77 back-reference through `OutputFileStream.subset`
+  /// (flush + seek + read per match). Measured 1.13 MB/s on desktop, i.e. hours
+  /// for the deflated recommended pack.
   static void _streamArchiveFileToDisk(
     ArchiveFile file,
     String destPath,
     SendPort port,
   ) {
-    File(destPath).parent.createSync(recursive: true);
-    final OutputFileStream output = OutputFileStream(destPath);
-    try {
-      final InputStreamBase? raw = file.rawContent;
-      if (raw != null && !file.isCompressed) {
-        const int chunkSize = 4 * 1024 * 1024; // 4 MB peak heap per chunk
-        final int total = raw.length;
-        int written = 0;
-        while (written < total) {
-          final int want =
-              (total - written) < chunkSize ? (total - written) : chunkSize;
-          final Uint8List bytes = raw.readBytes(want).toUint8List();
-          if (bytes.isEmpty) break;
-          output.writeBytes(bytes);
-          written += bytes.length;
-          port.send(bytes.length);
-        }
-      } else if (raw != null && file.compressionType == ArchiveFile.DEFLATE) {
-        Inflate.stream(raw, output);
-        port.send(file.size);
-      } else {
-        // Last resort (already-materialized content): write buffered bytes.
-        output.writeBytes(file.content as List<int>);
-        port.send(file.size);
-      }
-    } finally {
-      output.closeSync();
-    }
+    extractZipEntryToFile(file, destPath, onBytes: port.send);
   }
 }
 

@@ -99,12 +99,16 @@ class NativePlayer extends PlatformPlayer {
       await stop(notify: false, synchronized: false);
 
       disposed = true;
+      _completePendingAsyncRequests();
 
       await super.dispose();
 
       Initializer(mpv).dispose(ctx);
 
-      Future.delayed(const Duration(seconds: 5), () {
+      Future.delayed(const Duration(seconds: 5), () async {
+        // Fushi patch (BUG-3507): hook continuations run on a helper isolate
+        // ([_hookContinueOffThread]); never destroy the handle under one.
+        await Future.wait(_offThreadNativeCalls.toList());
         mpv.mpv_terminate_destroy(ctx);
       });
     }
@@ -1237,16 +1241,50 @@ class NativePlayer extends PlatformPlayer {
       await waitForPlayerInitialization;
       await waitForVideoControllerInitializationIfAttached;
     }
+    // Fushi patch (BUG-3507): [dispose] may have run during the awaits above and
+    // already completed every pending request; a request queued now could wait
+    // forever for a reply that never reaches Dart.
+    if (disposed) {
+      return;
+    }
 
     final name = property.toNativeUtf8();
     final data = value.toNativeUtf8();
-    mpv.mpv_set_property_string(
+    if (!configuration.async) {
+      mpv.mpv_set_property_string(
+        ctx,
+        name.cast(),
+        data.cast(),
+      );
+      calloc.free(name);
+      calloc.free(data);
+      return;
+    }
+    // Fushi patch (BUG-3507): `mpv_set_property_string` waits for the mpv core
+    // lock on the calling (UI) thread, see [getPropertyAsync]. Queue the write
+    // instead. libmpv's contract does not order async calls against each other
+    // (client.h: "Asynchronous calls may be reordered"), so a caller that needs
+    // ordering must await this before its next request. libmpv copies
+    // the name and the value, so both are freed right away. Errors stay silent,
+    // as with the synchronous call.
+    final ptr = calloc<Pointer<Utf8>>(1)..value = data;
+    final requestNumber = _asyncRequestNumber++;
+    final completer = _setPropertyRequests[requestNumber] = Completer<int>();
+    final immediate = mpv.mpv_set_property_async(
       ctx,
+      requestNumber,
       name.cast(),
-      data.cast(),
+      generated.mpv_format.MPV_FORMAT_STRING,
+      ptr.cast(),
     );
+    calloc.free(ptr);
     calloc.free(name);
     calloc.free(data);
+    if (immediate < 0) {
+      _setPropertyRequests.remove(requestNumber);
+      return;
+    }
+    await completer.future;
   }
 
   /// Retrieves the value of a property from the internal libmpv instance of this [Player].
@@ -1280,6 +1318,121 @@ class NativePlayer extends PlatformPlayer {
     }
 
     return "";
+  }
+
+  /// Fushi patch (BUG-3507): same contract as [getProperty] (`''` when the
+  /// property is unavailable, throws once disposed), but never blocks the
+  /// calling thread.
+  ///
+  /// [getProperty] is a synchronous `mpv_get_property_string`, which waits for
+  /// the mpv core lock on the caller's thread — the Flutter UI thread. While the
+  /// core is busy each read stalls the event loop; a batch of reads froze the
+  /// video for 0.4–0.6 s at a time because new texture frames could not be
+  /// composited (audio, on mpv's own thread, kept playing).
+  ///
+  /// This queues `mpv_get_property_async` (`MPV_FORMAT_STRING`) instead; the
+  /// value arrives with `MPV_EVENT_GET_PROPERTY_REPLY` on the event loop. Pending
+  /// requests complete with `''` on [dispose].
+  Future<String> getPropertyAsync(
+    String property, {
+    bool waitForInitialization = true,
+  }) async {
+    if (disposed) {
+      throw AssertionError('[Player] has been disposed');
+    }
+
+    if (waitForInitialization) {
+      await waitForPlayerInitialization;
+      await waitForVideoControllerInitializationIfAttached;
+    }
+    if (disposed) {
+      return '';
+    }
+
+    return (await _queuePropertyRead(property)) ?? '';
+  }
+
+  /// Queues `mpv_get_property_async` (`MPV_FORMAT_STRING`) and resolves with the
+  /// value, or `null` when the property is unavailable, the request is rejected
+  /// or the player is disposed. Callers check [disposed] first.
+  Future<String?> _queuePropertyRead(String property) {
+    final requestNumber = _asyncRequestNumber++;
+    final completer =
+        _getPropertyRequests[requestNumber] = Completer<String?>();
+    final name = property.toNativeUtf8();
+    // libmpv copies the name into the request; it can be freed right away.
+    final immediate = mpv.mpv_get_property_async(
+      ctx,
+      requestNumber,
+      name.cast(),
+      generated.mpv_format.MPV_FORMAT_STRING,
+    );
+    calloc.free(name);
+    if (immediate < 0) {
+      _getPropertyRequests.remove(requestNumber);
+      return Future<String?>.value(null);
+    }
+    return completer.future;
+  }
+
+  /// Fushi patch (BUG-3507): runs an mpv command without blocking the calling
+  /// thread and returns libmpv's result code (`>= 0` success). Unlike the
+  /// internal `_command`, a negative result is returned, not logged, so callers
+  /// that must tell a rejected command from a successful one can (Blu-ray menu
+  /// navigation). `mpv_command` would wait for the core lock on the UI thread.
+  /// Resolves to `MPV_ERROR_UNINITIALIZED` when the player is (or gets) disposed.
+  Future<int> commandWithResult(List<String> args) async {
+    if (disposed) {
+      return generated.mpv_error.MPV_ERROR_UNINITIALIZED;
+    }
+    final pointers = args.map<Pointer<Utf8>>((e) => e.toNativeUtf8()).toList();
+    final arr = calloc<Pointer<Utf8>>(args.length + 1);
+    for (int i = 0; i < args.length; i++) {
+      arr[i] = pointers[i];
+    }
+    final requestNumber = _asyncRequestNumber++;
+    final completer =
+        _commandResultRequests[requestNumber] = Completer<int>();
+    // libmpv copies the arguments into the request before returning.
+    final immediate = mpv.mpv_command_async(ctx, requestNumber, arr.cast());
+    calloc.free(arr);
+    pointers.forEach(calloc.free);
+    if (immediate < 0) {
+      _commandResultRequests.remove(requestNumber);
+      return immediate;
+    }
+    return completer.future;
+  }
+
+  /// Completes every pending async request once the player is disposed: reads
+  /// with `''`, writes and commands with success. Without this a caller awaiting
+  /// a reply that libmpv will never send (the handle is torn down) hangs forever.
+  void _completePendingAsyncRequests() {
+    final gets = _getPropertyRequests.values.toList();
+    final others = <Completer<int>>[
+      ..._setPropertyRequests.values,
+      ..._commandRequests.values,
+    ];
+    final results = _commandResultRequests.values.toList();
+    _getPropertyRequests.clear();
+    _setPropertyRequests.clear();
+    _commandRequests.clear();
+    _commandResultRequests.clear();
+    for (final completer in gets) {
+      if (!completer.isCompleted) {
+        completer.complete(null);
+      }
+    }
+    for (final completer in others) {
+      if (!completer.isCompleted) {
+        completer.complete(0);
+      }
+    }
+    for (final completer in results) {
+      if (!completer.isCompleted) {
+        completer.complete(generated.mpv_error.MPV_ERROR_UNINITIALIZED);
+      }
+    }
   }
 
   /// Observes property for the internal libmpv instance of this [Player].
@@ -1358,6 +1511,7 @@ class NativePlayer extends PlatformPlayer {
     }
     final reply = property.hashCode;
     observed[property] = listener;
+    _valueObserved.add(property);
     final name = property.toNativeUtf8();
     mpv.mpv_observe_property(
       ctx,
@@ -1397,6 +1551,7 @@ class NativePlayer extends PlatformPlayer {
     }
     final reply = property.hashCode;
     observed.remove(property);
+    _valueObserved.remove(property);
     mpv.mpv_unobserve_property(ctx, reply);
   }
 
@@ -1489,17 +1644,56 @@ class NativePlayer extends PlatformPlayer {
         generated.mpv_event_id.MPV_EVENT_SET_PROPERTY_REPLY) {
       final completer = _setPropertyRequests.remove(event.ref.reply_userdata);
       if (completer == null) {
-        print(
-            'Warning: Received MPV_EVENT_SET_PROPERTY_REPLY with unregistered ID ${event.ref.reply_userdata}');
+        // After [dispose] the pending table is already drained; a late reply is
+        // expected, not a protocol error.
+        if (!disposed) {
+          print(
+              'Warning: Received MPV_EVENT_SET_PROPERTY_REPLY with unregistered ID ${event.ref.reply_userdata}');
+        }
       } else {
         completer.complete(event.ref.error);
       }
     }
+    if (event.ref.event_id ==
+        generated.mpv_event_id.MPV_EVENT_GET_PROPERTY_REPLY) {
+      // Fushi patch (BUG-3507): reply to [getPropertyAsync]. The event (and the
+      // string it points to) stays valid until the event loop fetches the next
+      // one, which happens only after this handler returns. A missing ID means
+      // the request was already completed by [dispose].
+      final completer = _getPropertyRequests.remove(event.ref.reply_userdata);
+      if (completer != null && !completer.isCompleted) {
+        String? value;
+        final prop = event.ref.data.cast<generated.mpv_event_property>();
+        if (event.ref.error >= 0 &&
+            prop != nullptr &&
+            prop.ref.format == generated.mpv_format.MPV_FORMAT_STRING) {
+          final data = prop.ref.data.cast<Pointer<Utf8>>();
+          if (data != nullptr && data.value != nullptr) {
+            value = data.value.toDartString();
+          }
+        }
+        completer.complete(value);
+      }
+    }
     if (event.ref.event_id == generated.mpv_event_id.MPV_EVENT_COMMAND_REPLY) {
-      final completer = _commandRequests.remove(event.ref.reply_userdata);
+      // Fushi patch (BUG-3507): [commandWithResult] shares the request counter,
+      // so its IDs never collide with `_command`'s.
+      final resultCompleter =
+          _commandResultRequests.remove(event.ref.reply_userdata);
+      if (resultCompleter != null && !resultCompleter.isCompleted) {
+        resultCompleter.complete(event.ref.error);
+      }
+      final completer = resultCompleter != null
+          ? null
+          : _commandRequests.remove(event.ref.reply_userdata);
       if (completer == null) {
-        print(
-            'Warning: Received MPV_EVENT_COMMAND_REPLY with unregistered ID ${event.ref.reply_userdata}');
+        if (resultCompleter != null) {
+          return;
+        }
+        if (!disposed) {
+          print(
+              'Warning: Received MPV_EVENT_COMMAND_REPLY with unregistered ID ${event.ref.reply_userdata}');
+        }
       } else {
         completer.complete(event.ref.error);
       }
@@ -2100,18 +2294,31 @@ class NativePlayer extends PlatformPlayer {
       }
       if (observed.containsKey(prop.ref.name.cast<Utf8>().toDartString())) {
         if (prop.ref.format == generated.mpv_format.MPV_FORMAT_NONE) {
-          final fn = observed[prop.ref.name.cast<Utf8>().toDartString()];
-          if (fn != null) {
-            final data = mpv.mpv_get_property_string(ctx, prop.ref.name);
-            if (data != nullptr) {
+          // Fushi patch (BUG-3507): upstream answered every FORMAT_NONE event
+          // with a synchronous `mpv_get_property_string`, i.e. the mpv core lock
+          // on the event loop (the UI thread). For a value-observed property the
+          // event only means "unavailable" (that read returned NULL and no
+          // listener ran), so nothing is read. A plain [observeProperty]
+          // subscription queues an async read now (FIFO with the event) and runs
+          // the listener when the reply arrives; the chain keeps listener calls
+          // in event order. The handler must not await the reply itself: it
+          // would queue behind this very event (see PATCHES.md).
+          final name = prop.ref.name.cast<Utf8>().toDartString();
+          final fn = observed[name];
+          if (fn != null && !_valueObserved.contains(name) && !disposed) {
+            final read = _queuePropertyRead(name);
+            _observerChain = _observerChain.then((_) async {
+              final value = await read;
+              if (value == null || disposed || !identical(observed[name], fn)) {
+                return;
+              }
               try {
-                await fn.call(data.cast<Utf8>().toDartString());
+                await fn.call(value);
               } catch (exception, stacktrace) {
                 print(exception);
                 print(stacktrace);
               }
-              mpv.mpv_free(data.cast());
-            }
+            });
           }
         } else if (prop.ref.format == generated.mpv_format.MPV_FORMAT_STRING) {
           // Fushi patch (BUG-3315): value-compared observation from
@@ -2186,197 +2393,225 @@ class NativePlayer extends PlatformPlayer {
       }
     }
     if (event.ref.event_id == generated.mpv_event_id.MPV_EVENT_HOOK) {
+      // Fushi patch (BUG-3507): upstream ran the hook body on the event loop
+      // with synchronous `mpv_get_property*` / `mpv_set_property*` (core lock
+      // on the UI thread) and finished with a synchronous `mpv_hook_continue`.
+      // The body now runs off the event loop ([_runHook]) so it can await async
+      // requests, whose replies arrive on this same loop; the chain keeps hooks
+      // in order. mpv waits at the hook until [_hookContinueOffThread].
       final prop = event.ref.data.cast<generated.mpv_event_hook>();
-      if (prop.ref.name.cast<Utf8>().toDartString() == 'on_load') {
-        // --------------------------------------------------
-        for (final hook in onLoadHooks) {
-          try {
-            await hook.call();
-          } catch (exception, stacktrace) {
-            print(exception);
-            print(stacktrace);
-          }
-        }
-        // --------------------------------------------------
-        // Handle HTTP headers specified in the [Media].
-        try {
-          final name = 'path'.toNativeUtf8();
-          final uri = mpv.mpv_get_property_string(
-            ctx,
-            name.cast(),
-          );
-          // Get the headers for current [Media] by looking up [uri] in the [HashMap].
-          final headers = Media(uri.cast<Utf8>().toDartString()).httpHeaders;
-          if (headers != null) {
-            final property = 'http-header-fields'.toNativeUtf8();
-            // Allocate & fill the [mpv_node] with the headers.
-            final value = calloc<generated.mpv_node>();
-            value.ref.format = generated.mpv_format.MPV_FORMAT_NODE_ARRAY;
-            value.ref.u.list = calloc<generated.mpv_node_list>();
-            value.ref.u.list.ref.num = headers.length;
-            value.ref.u.list.ref.values = calloc<generated.mpv_node>(
-              headers.length,
-            );
-            final entries = headers.entries.toList();
-            for (int i = 0; i < entries.length; i++) {
-              final k = entries[i].key;
-              final v = entries[i].value;
-              final data = '$k: $v'.toNativeUtf8();
-              value.ref.u.list.ref.values[i].format =
-                  generated.mpv_format.MPV_FORMAT_STRING;
-              value.ref.u.list.ref.values[i].u.string = data.cast();
-            }
-            mpv.mpv_set_property(
-              ctx,
-              property.cast(),
-              generated.mpv_format.MPV_FORMAT_NODE,
-              value.cast(),
-            );
-            // Free the allocated memory.
-            calloc.free(property);
-            for (int i = 0; i < value.ref.u.list.ref.num; i++) {
-              calloc.free(value.ref.u.list.ref.values[i].u.string);
-            }
-            calloc.free(value.ref.u.list.ref.values);
-            calloc.free(value.ref.u.list);
-            calloc.free(value);
-          }
-          mpv.mpv_free(uri.cast());
-          calloc.free(name);
-        } catch (exception, stacktrace) {
-          print(exception);
-          print(stacktrace);
-        }
-        // Handle start & end position specified in the [Media].
-        try {
-          final name = 'playlist-pos'.toNativeUtf8();
-          final value = calloc<Int64>();
-          value.value = -1;
-
-          mpv.mpv_get_property(
-            ctx,
-            name.cast(),
-            generated.mpv_format.MPV_FORMAT_INT64,
-            value.cast(),
-          );
-
-          final index = value.value;
-
-          calloc.free(name.cast());
-          calloc.free(value.cast());
-
-          if (index >= 0) {
-            final start = current[index].start;
-            final end = current[index].end;
-
-            if (start != null) {
-              try {
-                final property = 'start'.toNativeUtf8();
-                final value = (start.inMilliseconds / 1000)
-                    .toStringAsFixed(3)
-                    .toNativeUtf8();
-                mpv.mpv_set_property_string(
-                  ctx,
-                  property.cast(),
-                  value.cast(),
-                );
-                calloc.free(property);
-                calloc.free(value);
-              } catch (exception, stacktrace) {
-                print(exception);
-                print(stacktrace);
-              }
-            }
-
-            if (end != null) {
-              try {
-                final property = 'end'.toNativeUtf8();
-                final value = (end.inMilliseconds / 1000)
-                    .toStringAsFixed(3)
-                    .toNativeUtf8();
-                mpv.mpv_set_property_string(
-                  ctx,
-                  property.cast(),
-                  value.cast(),
-                );
-                calloc.free(property);
-                calloc.free(value);
-              } catch (exception, stacktrace) {
-                print(exception);
-                print(stacktrace);
-              }
-            }
-          }
-        } catch (_) {}
-        // --------------------------------------------------
-        mpv.mpv_hook_continue(
-          ctx,
-          prop.ref.id,
-        );
+      final name = prop.ref.name.cast<Utf8>().toDartString();
+      final id = prop.ref.id;
+      if (name == 'on_load' || name == 'on_unload') {
+        _hookChain = _hookChain.then((_) => _runHook(name, id));
       }
-      if (prop.ref.name.cast<Utf8>().toDartString() == 'on_unload') {
-        // --------------------------------------------------
-        for (final hook in onUnloadHooks) {
-          try {
-            await hook.call();
-          } catch (exception, stacktrace) {
-            print(exception);
-            print(stacktrace);
-          }
-        }
-        // --------------------------------------------------
-        // Set http-header-fields as [generated.mpv_format.MPV_FORMAT_NONE] [generated.mpv_node].
-        try {
-          final property = 'http-header-fields'.toNativeUtf8();
+    }
+  }
+
+  /// Fushi patch (BUG-3507): body of the `on_load` / `on_unload` hooks. Every
+  /// property access is an async request awaited before the next one (libmpv
+  /// may reorder async calls), so the hook is released only after all of them
+  /// were applied. Nothing here takes the mpv core lock on the calling thread;
+  /// the release itself runs on a helper isolate.
+  Future<void> _runHook(String name, int id) async {
+    try {
+      if (name == 'on_load') {
+        await _runOnLoadHook();
+      } else {
+        await _runOnUnloadHook();
+      }
+    } catch (exception, stacktrace) {
+      print(exception);
+      print(stacktrace);
+    }
+    if (disposed) {
+      // A destroyed client's hooks are dropped by mpv itself
+      // (`mp_hook_test_completion`: "client removed during hook handling").
+      return;
+    }
+    try {
+      await _hookContinueOffThread(id);
+    } catch (exception, stacktrace) {
+      // Keep [_hookChain] alive: an errored link would skip every later hook.
+      print(exception);
+      print(stacktrace);
+    }
+  }
+
+  Future<void> _runOnLoadHook() async {
+    for (final hook in onLoadHooks) {
+      try {
+        await hook.call();
+      } catch (exception, stacktrace) {
+        print(exception);
+        print(stacktrace);
+      }
+    }
+    if (disposed) return;
+    // Handle HTTP headers specified in the [Media].
+    try {
+      final uri = await _queuePropertyRead('path');
+      if (uri != null && !disposed) {
+        // Get the headers for current [Media] by looking up [uri] in the [HashMap].
+        final headers = Media(uri).httpHeaders;
+        if (headers != null) {
+          // Allocate & fill the [mpv_node] with the headers. libmpv copies the
+          // value inside `mpv_set_property_async`, so it is freed right after.
           final value = calloc<generated.mpv_node>();
-          value.ref.format = generated.mpv_format.MPV_FORMAT_NONE;
-          mpv.mpv_set_property(
-            ctx,
-            property.cast(),
+          value.ref.format = generated.mpv_format.MPV_FORMAT_NODE_ARRAY;
+          value.ref.u.list = calloc<generated.mpv_node_list>();
+          value.ref.u.list.ref.num = headers.length;
+          value.ref.u.list.ref.values = calloc<generated.mpv_node>(
+            headers.length,
+          );
+          final entries = headers.entries.toList();
+          for (int i = 0; i < entries.length; i++) {
+            final k = entries[i].key;
+            final v = entries[i].value;
+            final data = '$k: $v'.toNativeUtf8();
+            value.ref.u.list.ref.values[i].format =
+                generated.mpv_format.MPV_FORMAT_STRING;
+            value.ref.u.list.ref.values[i].u.string = data.cast();
+          }
+          final reply = _queueHookPropertyWrite(
+            'http-header-fields',
             generated.mpv_format.MPV_FORMAT_NODE,
             value.cast(),
           );
-          calloc.free(property);
+          for (int i = 0; i < value.ref.u.list.ref.num; i++) {
+            calloc.free(value.ref.u.list.ref.values[i].u.string);
+          }
+          calloc.free(value.ref.u.list.ref.values);
+          calloc.free(value.ref.u.list);
           calloc.free(value);
-        } catch (exception, stacktrace) {
-          print(exception);
-          print(stacktrace);
+          await reply;
         }
-        // Set start & end position as [generated.mpv_format.MPV_FORMAT_NONE] [generated.mpv_node].
-        try {
-          final property = 'start'.toNativeUtf8();
-          final value = 'none'.toNativeUtf8();
-          mpv.mpv_set_property_string(
-            ctx,
-            property.cast(),
-            value.cast(),
-          );
-          calloc.free(property);
-          calloc.free(value);
-        } catch (exception, stacktrace) {
-          print(exception);
-          print(stacktrace);
-        }
-        try {
-          final property = 'end'.toNativeUtf8();
-          final value = 'none'.toNativeUtf8();
-          mpv.mpv_set_property_string(
-            ctx,
-            property.cast(),
-            value.cast(),
-          );
-          calloc.free(property);
-          calloc.free(value);
-        } catch (exception, stacktrace) {
-          print(exception);
-          print(stacktrace);
-        }
-        // --------------------------------------------------
-        mpv.mpv_hook_continue(
-          ctx,
-          prop.ref.id,
-        );
       }
+    } catch (exception, stacktrace) {
+      print(exception);
+      print(stacktrace);
+    }
+    // Handle start & end position specified in the [Media].
+    try {
+      if (disposed) return;
+      final index =
+          int.tryParse(await _queuePropertyRead('playlist-pos') ?? '');
+      if (index != null && index >= 0 && index < current.length) {
+        final start = current[index].start;
+        final end = current[index].end;
+        if (start != null) {
+          await _hookPropertyWriteString(
+            'start',
+            (start.inMilliseconds / 1000).toStringAsFixed(3),
+          );
+        }
+        if (end != null) {
+          await _hookPropertyWriteString(
+            'end',
+            (end.inMilliseconds / 1000).toStringAsFixed(3),
+          );
+        }
+      }
+    } catch (exception, stacktrace) {
+      print(exception);
+      print(stacktrace);
+    }
+  }
+
+  Future<void> _runOnUnloadHook() async {
+    for (final hook in onUnloadHooks) {
+      try {
+        await hook.call();
+      } catch (exception, stacktrace) {
+        print(exception);
+        print(stacktrace);
+      }
+    }
+    if (disposed) return;
+    // Set http-header-fields as [generated.mpv_format.MPV_FORMAT_NONE] [generated.mpv_node].
+    try {
+      final value = calloc<generated.mpv_node>();
+      value.ref.format = generated.mpv_format.MPV_FORMAT_NONE;
+      final reply = _queueHookPropertyWrite(
+        'http-header-fields',
+        generated.mpv_format.MPV_FORMAT_NODE,
+        value.cast(),
+      );
+      calloc.free(value);
+      await reply;
+    } catch (exception, stacktrace) {
+      print(exception);
+      print(stacktrace);
+    }
+    // Reset start & end position.
+    try {
+      await _hookPropertyWriteString('start', 'none');
+      await _hookPropertyWriteString('end', 'none');
+    } catch (exception, stacktrace) {
+      print(exception);
+      print(stacktrace);
+    }
+  }
+
+  /// Queues `mpv_set_property_async` regardless of [PlayerConfiguration.async]
+  /// (the hook body must never take the core lock on the calling thread) and
+  /// resolves with libmpv's result code. libmpv copies [data] before
+  /// returning, so the caller may free it as soon as this returns.
+  Future<int> _queueHookPropertyWrite(
+    String name,
+    int format,
+    Pointer<Void> data,
+  ) {
+    if (disposed) {
+      return Future<int>.value(generated.mpv_error.MPV_ERROR_UNINITIALIZED);
+    }
+    final requestNumber = _asyncRequestNumber++;
+    final completer = _setPropertyRequests[requestNumber] = Completer<int>();
+    final namePtr = name.toNativeUtf8();
+    final immediate = mpv.mpv_set_property_async(
+      ctx,
+      requestNumber,
+      namePtr.cast(),
+      format,
+      data,
+    );
+    calloc.free(namePtr);
+    if (immediate < 0) {
+      _setPropertyRequests.remove(requestNumber);
+      return Future<int>.value(immediate);
+    }
+    return completer.future;
+  }
+
+  Future<void> _hookPropertyWriteString(String name, String value) async {
+    if (disposed) return;
+    final string = value.toNativeUtf8();
+    final ptr = calloc<Pointer<Utf8>>(1)..value = string;
+    final reply = _queueHookPropertyWrite(
+      name,
+      generated.mpv_format.MPV_FORMAT_STRING,
+      ptr.cast(),
+    );
+    calloc.free(ptr);
+    calloc.free(string);
+    await reply;
+  }
+
+  /// Releases hook [id]. libmpv has no async `mpv_hook_continue` (it takes the
+  /// core lock, `lock_core` in `player/client.c`), so the call runs on a helper
+  /// isolate instead of the UI thread. [dispose] waits for it before
+  /// `mpv_terminate_destroy`.
+  Future<void> _hookContinueOffThread(int id) async {
+    if (disposed) return;
+    final call = compute(
+      _hookContinue,
+      _HookContinueData(ctx.address, NativeLibrary.path, id),
+    );
+    _offThreadNativeCalls.add(call);
+    try {
+      await call;
+    } finally {
+      _offThreadNativeCalls.remove(call);
     }
   }
 
@@ -2585,12 +2820,12 @@ class NativePlayer extends PlatformPlayer {
       }
 
       // Add libmpv hooks for supporting custom HTTP headers in [Media].
-      final load = 'on_load'.toNativeUtf8();
-      final unload = 'on_unload'.toNativeUtf8();
-      mpv.mpv_hook_add(ctx, 0, load.cast(), 0);
-      mpv.mpv_hook_add(ctx, 0, unload.cast(), 0);
-      calloc.free(load);
-      calloc.free(unload);
+      // Fushi patch (BUG-3507): `mpv_hook_add` takes the core lock and has no
+      // async variant; register on a helper isolate, not the UI thread.
+      await compute(
+        _hookAddLoadUnload,
+        _HookAddData(ctx.address, NativeLibrary.path),
+      );
 
       await NativeReferenceHolder.instance.add(ctx);
     });
@@ -2613,6 +2848,24 @@ class NativePlayer extends PlatformPlayer {
   int _asyncRequestNumber = 0;
   final Map<int, Completer<int>> _setPropertyRequests = {};
   final Map<int, Completer<int>> _commandRequests = {};
+  final Map<int, Completer<String?>> _getPropertyRequests = {};
+
+  /// Properties subscribed through [observePropertyChanges] (`MPV_FORMAT_STRING`).
+  /// For these a `MPV_FORMAT_NONE` event only means "became unavailable".
+  final Set<String> _valueObserved = <String>{};
+
+  /// Serializes [observeProperty] listener calls in event order now that their
+  /// value is read asynchronously, off the event loop (BUG-3507).
+  Future<void> _observerChain = Future<void>.value();
+
+  /// Serializes `on_load` / `on_unload` hook processing, which runs off the
+  /// event loop so it can await async replies (BUG-3507).
+  Future<void> _hookChain = Future<void>.value();
+
+  /// Native calls running on helper isolates; [dispose] waits for them before
+  /// `mpv_terminate_destroy`.
+  final Set<Future<void>> _offThreadNativeCalls = <Future<void>>{};
+  final Map<int, Completer<int>> _commandResultRequests = {};
 
   Future<void> _setProperty(String name, int format, Pointer<Void> data) async {
     final requestNumber = _asyncRequestNumber++;
@@ -2927,6 +3180,44 @@ Uint8List? _screenshot(_ScreenshotData data) {
   calloc.free(result.cast());
 
   return image;
+}
+
+/// Fushi patch (BUG-3507): arguments of [_hookAddLoadUnload].
+class _HookAddData {
+  final int ctx;
+  final String lib;
+
+  const _HookAddData(this.ctx, this.lib);
+}
+
+/// Registers the `on_load` / `on_unload` hooks (`mpv_hook_add` takes the mpv
+/// core lock) on a helper isolate.
+void _hookAddLoadUnload(_HookAddData data) {
+  final mpv = generated.MPV(DynamicLibrary.open(data.lib));
+  final ctx = Pointer<generated.mpv_handle>.fromAddress(data.ctx);
+  final load = 'on_load'.toNativeUtf8();
+  final unload = 'on_unload'.toNativeUtf8();
+  mpv.mpv_hook_add(ctx, 0, load.cast(), 0);
+  mpv.mpv_hook_add(ctx, 0, unload.cast(), 0);
+  calloc.free(load);
+  calloc.free(unload);
+}
+
+/// Fushi patch (BUG-3507): arguments of [_hookContinue].
+class _HookContinueData {
+  final int ctx;
+  final String lib;
+  final int id;
+
+  const _HookContinueData(this.ctx, this.lib, this.id);
+}
+
+/// Releases a hook (`mpv_hook_continue` takes the mpv core lock) on a helper
+/// isolate.
+void _hookContinue(_HookContinueData data) {
+  final mpv = generated.MPV(DynamicLibrary.open(data.lib));
+  final ctx = Pointer<generated.mpv_handle>.fromAddress(data.ctx);
+  mpv.mpv_hook_continue(ctx, data.id);
 }
 
 class _GetPlaylistData {

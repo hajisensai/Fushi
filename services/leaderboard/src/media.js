@@ -6,10 +6,13 @@ import { HttpError, randomId } from './util.js';
 import { deleteMedia, reserveMediaBytes, spend } from './budget.js';
 import { acceptCoverUrl, casBatch, casStatements } from './shelf.js';
 import {
+  COVER_HASH_MAX_DISTANCE,
   accountVotes,
+  hammingHex,
   nearestCandidate,
   releasedCoverKeys,
   requireOneOf,
+  settleStatements,
   voteStatements,
 } from './cover_votes.js';
 import { verifiedCoverHash } from './cover_hash.js';
@@ -86,9 +89,27 @@ async function castVote(env, account, workId, target, now, pre = []) {
   const acc = await env.DB.prepare('SELECT shelf_rev, hidden FROM accounts WHERE id = ?1').bind(account.id).first();
   if (!acc) throw new HttpError(401, 'unknown_account');
   const cur = (await accountVotes(env.DB, account.id, [workId])).get(workId);
-  if (cur && target.cid !== undefined && cur.candidateId === target.cid) return [];
   if (cur && target.url !== undefined && cur.url === target.url) return [];
-  const op = { w: workId, from: cur ? cur.candidateId : null, cid: target.cid ?? null, key: target.key ?? null, url: target.url ?? null };
+  if (cur && target.cid !== undefined && cur.candidateId === target.cid) {
+    if (!target.confirmed || cur.confirmed) return [];
+    // 已投这个候选、现在补上确认：只改 confirmed，不动票数与 reached_at（不改平票次序），再物化。
+    const works = JSON.stringify([workId]);
+    const results = await casBatch(env.DB, [
+      ...casStatements(env.DB, account.id, acc.shelf_rev),
+      env.DB.prepare('UPDATE cover_votes SET confirmed = 1 WHERE work_id = ?1 AND account_id = ?2 AND candidate_id = ?3')
+        .bind(workId, account.id, target.cid),
+      ...settleStatements(env.DB, works, now),
+    ]);
+    return releasedCoverKeys(results);
+  }
+  const op = {
+    w: workId,
+    from: cur ? cur.candidateId : null,
+    cid: target.cid ?? null,
+    key: target.key ?? null,
+    url: target.url ?? null,
+    confirmed: target.confirmed ? 1 : 0,
+  };
   const results = await casBatch(env.DB, [
     ...casStatements(env.DB, account.id, acc.shelf_rev),
     ...pre,
@@ -107,32 +128,98 @@ async function votedCover(env, account, workId) {
   return row.cover_url || `/img/${row.cover_key}`;
 }
 
+/** 给客户端比对用的候选描述：id + 缩略图地址（/img/<key>，公开、边缘缓存）。 */
+function candidateRef(c) {
+  return { id: c.id, image: `/img/${c.cover_key}` };
+}
+
+/** 本账户在 workId 上的现票（{candidateId, url, confirmed}），没有为 null。 */
+async function currentVote(env, account, workId) {
+  return (await accountVotes(env.DB, account.id, [workId])).get(workId) ?? null;
+}
+
+/** 哈希命中的候选（跳过本账户标过不符的）；返回给客户端的「待比对」响应，没命中抛 409。 */
+async function checkResponse(env, account, workId, hash) {
+  const match = await matchHash(env, workId, hash, account.id);
+  if (!match) throw new HttpError(409, 'cover_bytes_required');
+  const cur = await currentVote(env, account, workId);
+  return {
+    voted: false,
+    candidate: candidateRef(match),
+    confirmed: !!(cur && cur.candidateId === match.id && cur.confirmed),
+  };
+}
+
 /**
- * POST /v1/works/:id/cover/vote {hash} | {url}：不带图片字节的投票。
- * hash 命中（汉明距离 ≤ 阈值）已有候选就投给它；没命中抛 409 cover_bytes_required
- * （客户端随后 PUT 图片字节）。url 必须是白名单图床，候选按 URL 相等归并。
+ * POST /v1/works/:id/cover/vote：不带图片字节的投票（请求体见 cover_votes.js requireOneOf）。
+ *   - {url}：白名单图床，候选按 URL 相等归并，确认票。
+ *   - {hash}（旧客户端）：命中（汉明距离 ≤ 阈值）已有候选就投给它，未确认票；没命中 409
+ *     cover_bytes_required（客户端随后 PUT 图片字节）。
+ *   - {hash, check}：只返回命中的候选 {candidate: {id, image}, confirmed}，不投票；没命中 409。
+ *   - {hash, confirm: cid}：本机比对通过，投确认票。cid 必须是本作品的缩略图候选、与 hash 在阈值内、
+ *     且本账户没标过不符。
+ *   - {hash, mismatch: cid}：本机比对不通过。记不符、撤掉投给 cid 的票，再按 check 返回下一个候选
+ *     （或 409 cover_bytes_required）。
  */
 export async function voteWorkCover(env, account, workId, body, now) {
-  const { hash, url } = requireOneOf(body);
+  const { hash, url, check, confirm, mismatch } = requireOneOf(body);
   await requireOnShelf(env, account, workId);
-  let target;
   if (url !== null) {
     const accepted = acceptCoverUrl(url);
     if (!accepted) throw new HttpError(400, 'bad_cover_url');
-    target = { url: accepted };
+    await deleteMedia(env, await castVote(env, account, workId, { url: accepted, confirmed: true }, now));
+    return { voted: true, cover: await votedCover(env, account, workId), confirmed: true };
+  }
+  if (check) return checkResponse(env, account, workId, hash);
+  if (mismatch !== null) {
+    await recordMismatch(env, account, workId, mismatch, now);
+    return checkResponse(env, account, workId, hash);
+  }
+  let target;
+  if (confirm !== null) {
+    const c = await env.DB.prepare(
+      `SELECT id, phash FROM cover_candidates WHERE id = ?1 AND work_id = ?2 AND phash IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM cover_mismatches m WHERE m.candidate_id = ?1 AND m.account_id = ?3)`,
+    ).bind(confirm, workId, account.id).first();
+    if (!c) throw new HttpError(409, 'cover_candidate_gone');
+    if (hammingHex(c.phash, hash) > COVER_HASH_MAX_DISTANCE) throw new HttpError(400, 'cover_hash_mismatch');
+    target = { cid: c.id, confirmed: true };
   } else {
-    const match = await matchHash(env, workId, hash);
+    const match = await matchHash(env, workId, hash, account.id);
     if (!match) throw new HttpError(409, 'cover_bytes_required');
-    target = { cid: match.id };
+    target = { cid: match.id, confirmed: false };
   }
   await deleteMedia(env, await castVote(env, account, workId, target, now));
-  return { voted: true, cover: await votedCover(env, account, workId) };
+  const cur = await currentVote(env, account, workId);
+  return { voted: true, cover: await votedCover(env, account, workId), confirmed: !!(cur && cur.confirmed) };
 }
 
-async function matchHash(env, workId, hash) {
+/**
+ * 记一条「不符」：本账户本机比对认定 cid 不是他手里那张图。撤掉他投给 cid 的票（同一事务，账户级
+ * CAS），之后按哈希查找时对他跳过 cid。cid 不存在 / 不属于本作品时静默忽略（候选可能刚被清理）。
+ */
+async function recordMismatch(env, account, workId, cid, now) {
+  const acc = await env.DB.prepare('SELECT shelf_rev, hidden FROM accounts WHERE id = ?1').bind(account.id).first();
+  if (!acc) throw new HttpError(401, 'unknown_account');
+  const cur = await currentVote(env, account, workId);
+  const ops = cur && cur.candidateId === cid ? [{ w: workId, from: cid, cid: null, key: null, url: null }] : [];
+  const results = await casBatch(env.DB, [
+    ...casStatements(env.DB, account.id, acc.shelf_rev),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO cover_mismatches (work_id, candidate_id, account_id, at)
+       SELECT work_id, id, ?3, ?4 FROM cover_candidates WHERE id = ?1 AND work_id = ?2`,
+    ).bind(cid, workId, account.id, now),
+    ...voteStatements(env.DB, account.id, ops, now, acc.hidden === 0),
+  ]);
+  await deleteMedia(env, releasedCoverKeys(results));
+}
+
+/** 哈希最近的候选（阈值内）；accountId 给出时跳过该账户标过不符的候选。 */
+async function matchHash(env, workId, hash, accountId = null) {
   const rows = await env.DB.prepare(
-    'SELECT id, phash, votes FROM cover_candidates WHERE work_id = ?1 AND phash IS NOT NULL',
-  ).bind(workId).all();
+    `SELECT id, phash, votes, cover_key FROM cover_candidates c WHERE work_id = ?1 AND phash IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM cover_mismatches m WHERE m.candidate_id = c.id AND m.account_id = ?2)`,
+  ).bind(workId, accountId ?? '').all();
   return nearestCandidate(rows.results, hash);
 }
 
@@ -140,10 +227,11 @@ async function matchHash(env, workId, hash) {
  * PUT /v1/works/:id/cover[?h=<dHash>]：上传封面缩略图（只收 JPEG）。
  * 候选的哈希一律由服务端从字节算（cover_hash.js；客户端上报的哈希不可信，见那里的文件头）。
  *   - 带 h（新客户端）：h 只用来核对——与服务端哈希距离超过阈值 → 400 cover_hash_mismatch。
- *     服务端哈希命中已有候选只投票、不存图；没命中则存 R2、建候选并投票。
+ *     服务端哈希命中已有候选（跳过本账户标过不符的）只投未确认票、不存图，响应带 candidate 供客户端
+ *     本机比对后 confirm / mismatch；没命中则存 R2、建候选并投确认票（他传的就是这张图）。
  *   - 不带 h（旧客户端）：作品已有封面 → 409 cover_exists（与旧版先到先得一致，旧客户端照旧丢弃）；
  *     没有 → 存为候选（同样带服务端哈希，之后的新客户端可以归并到它）并记上传者一票。
- * 返回本账户所投候选的展示地址。
+ * 返回 {cover: 本账户所投候选的展示地址, confirmed, candidate?}。
  */
 export async function setWorkCover(env, account, workId, bytes, now, rawHash = null) {
   const kind = requireImage(bytes);
@@ -156,10 +244,15 @@ export async function setWorkCover(env, account, workId, bytes, now, rawHash = n
   }
   const hash = verifiedCoverHash(bytes, rawHash);
   if (rawHash !== null) {
-    const match = await matchHash(env, workId, hash);
+    const match = await matchHash(env, workId, hash, account.id);
     if (match) {
-      await deleteMedia(env, await castVote(env, account, workId, { cid: match.id }, now));
-      return votedCover(env, account, workId);
+      await deleteMedia(env, await castVote(env, account, workId, { cid: match.id, confirmed: false }, now));
+      const cur = await currentVote(env, account, workId);
+      return {
+        cover: await votedCover(env, account, workId),
+        confirmed: !!(cur && cur.confirmed),
+        candidate: candidateRef(match),
+      };
     }
   }
   const key = objectKey('c', workId, now, kind.ext);
@@ -167,7 +260,7 @@ export async function setWorkCover(env, account, workId, bytes, now, rawHash = n
   let released;
   try {
     // 建候选与投票同一个事务：零票的新候选不会在中间被别的请求的清理删掉。
-    released = await castVote(env, account, workId, { key }, now, [
+    released = await castVote(env, account, workId, { key, confirmed: true }, now, [
       env.DB.prepare(
         `INSERT INTO cover_candidates (work_id, phash, cover_key, votes, reached_at, created_at)
          VALUES (?1, ?2, ?3, 0, ?4, ?4)`,
@@ -179,7 +272,7 @@ export async function setWorkCover(env, account, workId, bytes, now, rawHash = n
     throw e;
   }
   await deleteMedia(env, released);
-  return votedCover(env, account, workId);
+  return { cover: await votedCover(env, account, workId), confirmed: true };
 }
 
 /**

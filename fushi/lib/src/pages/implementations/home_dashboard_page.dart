@@ -32,6 +32,11 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
+import 'package:fushi/src/pages/implementations/home_srs_panel.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
+import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
 import 'package:fushi/src/pages/implementations/home_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/pages/implementations/updates_center_open.dart';
@@ -59,7 +64,9 @@ import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/sync/remote_deletion_filter.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/cover_image.dart';
@@ -1157,6 +1164,19 @@ class _HomeDashboardPageState
       // ① 过共享 TTL 缓存（书/视频清单与书架、视频页同槽，谁先拉到谁受益），
       // ② 请求并行而不是串行。
       final RemoteLibraryCache cache = ref.read(remoteLibraryCacheProvider);
+      // 与书架 / 视频库远端占位卡同一道过滤（BUG-3508）：本端「从所有设备删除」过的
+      // 书 / 视频在墓碑送达 host 前不能以远端「继续」卡复活。**先于取清单读**（见
+      // loadPendingRemoteDeletionKeys）。
+      final Set<String> deletedBookKeys = await loadPendingRemoteDeletionKeys(
+        appModel.database,
+        SyncTombstoneKind.book,
+        remoteLibrarySourceId: backend.remoteLibrarySourceId,
+      );
+      final Set<String> deletedVideoKeys = await loadPendingRemoteDeletionKeys(
+        appModel.database,
+        SyncTombstoneKind.video,
+        remoteLibrarySourceId: backend.remoteLibrarySourceId,
+      );
       final List<Object> results = await Future.wait<Object>(<Future<Object>>[
         // 首页只走互联（上面已 return 掉未启用的情况），来源身份仍从 backend 自己
         // 取而不是写字面量——书/视频两个域与书架、视频页同槽命中，靠的就是双方报出
@@ -1215,8 +1235,15 @@ class _HomeDashboardPageState
           remoteContinueCandidates(
         localBookKeys: localBookKeys,
         localVideoUids: localVideoUids,
-        remoteBooks: remoteBooks,
-        remoteVideos: remoteVideos,
+        remoteBooks: filterOutLocallyDeletedRemoteBooks(
+          remote: remoteBooks,
+          deletedKeys: deletedBookKeys,
+          keyOf: sanitizeTtuFilename,
+        ),
+        remoteVideos: filterOutLocallyDeletedRemoteVideos(
+          remote: remoteVideos,
+          deletedKeys: deletedVideoKeys,
+        ),
       );
       // 设备来源标注：配对时存下的 host 设备名（多地址时取第一个启用且有名的）。
       final List<FushiClientUrl> urls = await syncRepo.getFushiClientUrls();
@@ -1285,6 +1312,12 @@ class _HomeDashboardPageState
             appModel.moduleVisibility.isEnabled(ModuleId.services)
         ? _buildTrackingCard(tokens, appModel, DateTime.now())
         : null;
+    // 可选面板（[HomeDashboardPanel] 注册表，按注册顺序）：各自判定是否出现，
+    // 紧跟「今日」之后。
+    final List<Widget> optionalPanels = <Widget>[
+      for (final HomeDashboardPanel panel in HomeDashboardPanel.values)
+        if (_buildOptionalPanel(panel) case final Widget w) w,
+    ];
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1338,6 +1371,7 @@ class _HomeDashboardPageState
           final Widget main = entering(continueCard);
           final List<Widget> side = <Widget>[
             entering(studyCard),
+            for (final Widget panel in optionalPanels) entering(panel),
             if (recentCard != null) entering(recentCard),
             if (trackingCard != null) entering(trackingCard),
           ];
@@ -1368,6 +1402,10 @@ class _HomeDashboardPageState
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               entering(studyCard),
+              for (final Widget panel in optionalPanels) ...<Widget>[
+                SizedBox(height: tokens.spacing.card),
+                entering(panel),
+              ],
               SizedBox(height: tokens.spacing.card),
               entering(continueCard),
               if (trackingCard != null) ...<Widget>[
@@ -1758,6 +1796,32 @@ class _HomeDashboardPageState
     _resumeEntry = visible.isEmpty ? null : visible.first;
     _continueVisible = visible;
     return visible;
+  }
+
+  /// [HomeDashboardPanel] 注册表里一个面板此刻的 widget；不该出现时为 null。
+  /// 在 build 里（LayoutBuilder 之外）调用：各面板的显隐判据经 ref.watch 订阅。
+  Widget? _buildOptionalPanel(HomeDashboardPanel panel) => switch (panel) {
+        HomeDashboardPanel.srsReview => ref.watch(homeSrsPanelVisibleProvider)
+            ? HomeSrsPanel(
+                key: const ValueKey<String>('home-srs-card'),
+                onOpenDecks: () => _goToTab(HomeTab.srs),
+                onStartReview: _startSrsReview,
+              )
+            : null,
+      };
+
+  /// 复习条「开始复习」：直接进该牌组的复习页；回来后递增刷新信号重读计数。
+  void _startSrsReview(SrsDeckSummary deck) {
+    srsRunLogged('HomeDashboard.srsReview', () async {
+      await Navigator.of(context).push<void>(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (BuildContext context) =>
+              SrsReviewPage(deckId: deck.deck.id, deckName: deck.fullName),
+        ),
+      );
+      if (mounted) bumpSrsRevision(ref);
+    });
   }
 
   /// 「今日」分区：学习头部行（[HomeStudyHeader]），首载未结束时挂同轮廓骨架。

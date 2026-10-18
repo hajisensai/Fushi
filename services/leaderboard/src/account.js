@@ -3,7 +3,7 @@
 import { HttpError } from './util.js';
 import { verifyDeviceLinkProof, verifyRegistration } from './auth.js';
 import { allocateDiscriminator, checkNickname } from './nickname.js';
-import { consumeCode } from './email.js';
+import { consumeCode, emailTaken, resolveEmailAccount } from './email.js';
 import { casBatch, casStatements, coverKeysOf, orphanPurgeStatements, readersDeltaStatement } from './shelf.js';
 import { accountVotes, voteStatements } from './cover_votes.js';
 import { periodContributions, workPeriodsDeltaStatements } from './periods.js';
@@ -41,9 +41,10 @@ export async function register(env, request, body, bodyBytes, now) {
   const existing = await accountOfKey(env, reg.id);
   if (existing) return { created: false, account: selfView(existing) };
   const nickname = checkNickname(body.nickname, env);
-  const hash = await consumeCode(env, body.email, 'register', body.code, now);
-  const taken = await env.DB.prepare('SELECT 1 AS x FROM accounts WHERE email_hash = ?1').bind(hash).first();
-  if (taken) throw new HttpError(409, 'email_taken');
+  const ids = await consumeCode(env, body.email, 'register', body.code, now);
+  const { hash } = ids;
+  // 规范化哈希（别名）或旧规则哈希（2026-10-17 前按原样地址注册的账户）任一命中都算已占用。
+  if (await emailTaken(env, ids)) throw new HttpError(409, 'email_taken');
   await spend(env, 'register', 1, now);
   const discriminator = await allocateDiscriminator(env, nickname);
   try {
@@ -59,8 +60,7 @@ export async function register(env, request, body, bodyBytes, now) {
     // 并发：同钥匙另一请求先落库 → 按幂等返回；同邮箱并发注册 → email_taken；判别码撞车 → 重试。
     const again = await accountOfKey(env, reg.id);
     if (again) return { created: false, account: selfView(again) };
-    const dup = await env.DB.prepare('SELECT 1 AS x FROM accounts WHERE email_hash = ?1').bind(hash).first();
-    if (dup) throw new HttpError(409, 'email_taken');
+    if (await emailTaken(env, ids)) throw new HttpError(409, 'email_taken');
     throw new HttpError(409, 'retry', String(e && e.message));
   }
   return { created: true, account: selfView(await accountOfKey(env, reg.id)) };
@@ -139,8 +139,8 @@ export async function login(env, request, body, bodyBytes, now) {
   const reg = await verifyRegistration(request, body.pubkey, bodyBytes, now);
   const bound = await accountOfKey(env, reg.id);
   if (bound) return selfView(bound);
-  const hash = await consumeCode(env, body.email, 'login', body.code, now);
-  const acc = await env.DB.prepare('SELECT * FROM accounts WHERE email_hash = ?1').bind(hash).first();
+  const ids = await consumeCode(env, body.email, 'login', body.code, now);
+  const acc = await resolveEmailAccount(env, ids, now);
   if (!acc) throw new HttpError(404, 'no_account');
   // 计数与插入在同一条语句里：并发登录也不会越过上限。
   const res = await env.DB.prepare(
@@ -208,6 +208,7 @@ export async function deleteAccount(env, account) {
     // 反馈是给开发者的问题记录，不随账户删除；只断开与账户的关联（变成匿名反馈，ticket 照旧可用）。
     env.DB.prepare('UPDATE feedback SET account_id = NULL WHERE account_id = ?1').bind(id),
     env.DB.prepare('DELETE FROM dev_sessions WHERE account_id = ?1').bind(id),
+    env.DB.prepare('DELETE FROM email_hash_conflicts WHERE account_id = ?1 OR holder_id = ?1').bind(id),
     env.DB.prepare('DELETE FROM reports WHERE reporter = ?1 OR (target_kind = \'account\' AND target_id = ?1)').bind(id),
     // 精确列出本账户的限流桶（LIKE 的 '_' 是通配符，账户 id 里正好有 '_'）。
     env.DB.prepare('DELETE FROM rate_limits WHERE bucket IN (?1, ?2, ?3, ?4, ?5, ?6)')
@@ -216,6 +217,7 @@ export async function deleteAccount(env, account) {
       'DELETE FROM used_sigs WHERE account_id IN (SELECT key_id FROM device_keys WHERE account_id = ?1)',
     ).bind(id),
     env.DB.prepare('DELETE FROM device_keys WHERE account_id = ?1').bind(id),
+    env.DB.prepare('DELETE FROM cover_mismatches WHERE account_id = ?1').bind(id),
     ...voteStatements(env.DB, id, voteOps, Date.now(), !acc.hidden),
     env.DB.prepare('DELETE FROM accounts WHERE id = ?1').bind(id),
     // 只有他一个人读过的作品随之消失；别人也在架的作品（及其封面）保留。
