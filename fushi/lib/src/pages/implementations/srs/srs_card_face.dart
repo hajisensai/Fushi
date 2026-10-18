@@ -787,41 +787,44 @@ class SrsCardFaceDocument {
     String appearanceCss = '',
     String appearanceClasses = '',
     String hostScript = '',
-  }) => SrsCardFaceDocument(
-    hostScript: hostScript,
-    themeCss: srsCardThemeCss(
-      dark: dark,
-      background: background,
-      foreground: foreground,
-      accent: accent,
-      onAccent: onAccent,
-      themedScrollbar: themedScrollbar,
-      appearanceCss:
-          (face.pageZoom == null
-              ? appearanceCss
-              : '${appearanceCss}html{zoom:${face.pageZoom!.toStringAsFixed(4)};}') +
-          face.hostCss,
-    ),
-    classes: srsCardHostClasses(
-      dark: dark,
-      appearanceClasses: <String>[
-        appearanceClasses,
-        face.layout.hostClass,
-      ].where((String c) => c.isNotEmpty).join(' '),
-    ),
-    cardId: face.cardId,
-    showingAnswer: face.showingAnswer,
-    cardCss: _memo(
-      _localizedCssMemo,
-      '$mediaUrlPrefix\u0000${face.css}',
-      () => srsLocalizeCardCss(face.css, urlPrefix: mediaUrlPrefix),
-    ),
-    bodyHtml: wrapAnkiCardHtmlWithLang(
-      srsPrepareCardBody(face.bodyHtml, mediaUrlPrefix).body,
-      face.languageCode,
-    ),
-    bodyStyles: srsPrepareCardBody(face.bodyHtml, mediaUrlPrefix).styles,
-  );
+  }) {
+    final ({String body, List<String> styles}) prepared = srsPrepareCardBody(
+      face.bodyHtml,
+      mediaUrlPrefix,
+    );
+    return SrsCardFaceDocument(
+      hostScript: hostScript,
+      themeCss: srsCardThemeCss(
+        dark: dark,
+        background: background,
+        foreground: foreground,
+        accent: accent,
+        onAccent: onAccent,
+        themedScrollbar: themedScrollbar,
+        appearanceCss:
+            (face.pageZoom == null
+                ? appearanceCss
+                : '${appearanceCss}html{zoom:${face.pageZoom!.toStringAsFixed(4)};}') +
+            face.hostCss,
+      ),
+      classes: srsCardHostClasses(
+        dark: dark,
+        appearanceClasses: <String>[
+          appearanceClasses,
+          face.layout.hostClass,
+        ].where((String c) => c.isNotEmpty).join(' '),
+      ),
+      cardId: face.cardId,
+      showingAnswer: face.showingAnswer,
+      cardCss: _memo(
+        _localizedCssMemo,
+        '$mediaUrlPrefix\u0000${face.css}',
+        () => srsLocalizeCardCss(face.css, urlPrefix: mediaUrlPrefix),
+      ),
+      bodyHtml: wrapAnkiCardHtmlWithLang(prepared.body, face.languageCode),
+      bodyStyles: prepared.styles,
+    );
+  }
 
   final String themeCss;
   final String classes;
@@ -929,14 +932,16 @@ class SrsCardFaceSync {
     final SrsCardFaceDocument? doc = _wanted;
     if (!_ready || doc == null) return;
     final StringBuffer calls = StringBuffer();
-    if (doc._themeKey != _appliedTheme) {
+    final Set<String> defining = <String>{};
+    final String themeKey = doc._themeKey;
+    final String cardKey = doc._cardKey;
+    if (themeKey != _appliedTheme) {
       calls.write(doc.hostScript);
       calls.write(
         srsCardSetThemeScript(themeCss: doc.themeCss, classes: doc.classes),
       );
     }
-    final Set<String> defining = <String>{};
-    if (doc._cardKey != _appliedCard) {
+    if (cardKey != _appliedCard) {
       final List<SrsCardStyle> styles = doc.styles;
       for (final SrsCardStyle st in styles) {
         if (_definedStyles.contains(st.hash) || !defining.add(st.hash)) {
@@ -953,8 +958,8 @@ class SrsCardFaceSync {
       );
     }
     if (calls.isEmpty) return;
-    _appliedTheme = doc._themeKey;
-    _appliedCard = doc._cardKey;
+    _appliedTheme = themeKey;
+    _appliedCard = cardKey;
     _definedStyles.addAll(defining);
     final int generation = ++_generation;
     final String source =
@@ -1076,6 +1081,86 @@ Future<WebResourceResponse?> srsCardFontResponse(
   );
 }
 
+/// 本平台卡面媒体的 URL 前缀（自定义 scheme 平台与拦截 https 的平台不同）。
+final String srsCardMediaUrlPrefix = srsMediaUrlPrefix(
+  customScheme: webViewUsesCustomSchemeTransport,
+);
+
+/// [srsCardFaceDocumentFor] 的输入（卡面 State 据此判断文档要不要重算）。字符串字段按值比
+/// （同一张卡的正文是同一个对象，`==` 先比引用）；主题 / 外观按各自的 `==`；字体链按引用
+/// （provider 换链才换列表）。
+@immutable
+class SrsCardFaceDocumentInputs {
+  const SrsCardFaceDocumentInputs({
+    required this.face,
+    required this.theme,
+    required this.appearance,
+    required this.labels,
+    required this.fonts,
+    required this.fontRoot,
+  });
+
+  final SrsCardFace face;
+  final ThemeData theme;
+  final SrsCardAppearance appearance;
+  final SrsCardLabels labels;
+  final List<Map<String, dynamic>> fonts;
+  final String? fontRoot;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! SrsCardFaceDocumentInputs) return false;
+    final SrsCardFace a = face, b = other.face;
+    return a.cardId == b.cardId &&
+        a.showingAnswer == b.showingAnswer &&
+        a.fushiCard == b.fushiCard &&
+        a.layout == b.layout &&
+        a.pageZoom == b.pageZoom &&
+        a.languageCode == b.languageCode &&
+        a.bodyHtml == b.bodyHtml &&
+        a.css == b.css &&
+        a.hostCss == b.hostCss &&
+        identical(fonts, other.fonts) &&
+        fontRoot == other.fontRoot &&
+        appearance == other.appearance &&
+        labels.allDefinitions == other.labels.allDefinitions &&
+        labels.frequency == other.labels.frequency &&
+        labels.source == other.labels.source &&
+        labels.showMore == other.labels.showMore &&
+        theme == other.theme;
+  }
+
+  @override
+  int get hashCode => Object.hash(face.cardId, face.showingAnswer, theme);
+}
+
+/// 卡面 State 的文档缓存：输入 + 文档 + 外壳 HTML（外壳只在平台视图创建时用，懒算）。
+class SrsCardFaceDocumentCache {
+  SrsCardFaceDocumentCache(this.inputs, this.document);
+
+  final SrsCardFaceDocumentInputs inputs;
+  final SrsCardFaceDocument document;
+  late final String shellHtml = document.shellHtml;
+}
+
+/// 预取到的下一张卡：提前把它的笔记类型样式与两面正文的预处理（媒体引用改写、抽 `<style>`、
+/// 样式哈希）算进记忆表。真正显示时 [SrsCardFaceDocument.of] 全部命中，主 isolate 上只剩
+/// 拼主题样式与下发。
+void srsWarmCardFace({required String css, required List<String> bodies}) {
+  final String prefix = srsCardMediaUrlPrefix;
+  final String localizedCss = _memo(
+    _localizedCssMemo,
+    '$prefix\u0000$css',
+    () => srsLocalizeCardCss(css, urlPrefix: prefix),
+  );
+  if (localizedCss.isNotEmpty) srsCardStyleHash(localizedCss);
+  for (final String body in bodies) {
+    for (final String style in srsPrepareCardBody(body, prefix).styles) {
+      srsCardStyleHash(style);
+    }
+  }
+}
+
 /// 一面卡在给定主题 / 外观下的外壳文档。外观设置只属于 Fushi 卡片
 /// （[SrsCardFace.fushiCard]）：别的类型拿不到它的变量、类名、字体与自定义配色，按自身
 /// HTML/CSS 原样渲染（与 Anki 一致）。
@@ -1175,11 +1260,6 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     ReaderSelectionScripts.source(),
   );
 
-  /// 本平台卡面媒体的 URL 前缀（自定义 scheme 平台与拦截 https 的平台不同）。
-  static final String _mediaPrefix = srsMediaUrlPrefix(
-    customScheme: webViewUsesCustomSchemeTransport,
-  );
-
   late final SrsCardFaceSync _sync = SrsCardFaceSync(
     evaluate: (String source) async {
       final InAppWebViewController? controller = _controller;
@@ -1203,18 +1283,37 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     },
   );
 
-  SrsCardFaceDocument _document(BuildContext context) => srsCardFaceDocumentFor(
-    widget.face,
-    theme: Theme.of(context),
-    appearance: ref.read(srsCardAppearanceProvider),
-    labels: srsCardLabels(),
-    mediaUrlPrefix: _mediaPrefix,
-    themedScrollbar: srsCardUsesThemedScrollbar,
-    fontUrl: (String path) =>
-        srsCardFontUrl(path, customScheme: webViewUsesCustomSchemeTransport),
-    fonts: ref.read(srsCardFontsProvider),
-    fontRoot: ref.read(srsCardFontRootProvider),
-  );
+  /// 上一次算文档用的输入与结果：复习页换一张卡要重建这面卡 4~5 次（忙碌态开 / 新卡 /
+  /// 忙碌态关 / 补算预览），每次 didUpdateWidget 与 build 都要文档；输入没变就原样复用，
+  /// 不再每次重拼主题样式、外壳 HTML 与几十 KB 的卡片键。
+  SrsCardFaceDocumentCache? _docCache;
+
+  SrsCardFaceDocument _document(BuildContext context) {
+    final SrsCardFaceDocumentInputs inputs = SrsCardFaceDocumentInputs(
+      face: widget.face,
+      theme: Theme.of(context),
+      appearance: ref.read(srsCardAppearanceProvider),
+      labels: srsCardLabels(),
+      fonts: ref.read(srsCardFontsProvider),
+      fontRoot: ref.read(srsCardFontRootProvider),
+    );
+    final SrsCardFaceDocumentCache? hit = _docCache;
+    if (hit != null && hit.inputs == inputs) return hit.document;
+    final SrsCardFaceDocument document = srsCardFaceDocumentFor(
+      inputs.face,
+      theme: inputs.theme,
+      appearance: inputs.appearance,
+      labels: inputs.labels,
+      mediaUrlPrefix: srsCardMediaUrlPrefix,
+      themedScrollbar: srsCardUsesThemedScrollbar,
+      fontUrl: (String path) =>
+          srsCardFontUrl(path, customScheme: webViewUsesCustomSchemeTransport),
+      fonts: inputs.fonts,
+      fontRoot: inputs.fontRoot,
+    );
+    _docCache = SrsCardFaceDocumentCache(inputs, document);
+    return document;
+  }
 
   Future<SrsMediaStore?> _mediaStore() async {
     try {
@@ -1506,7 +1605,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
       child: InAppWebView(
         // 只在平台视图创建时读一次：外壳页，内容由 _sync 在 onLoadStop 后下发。
         initialData: InAppWebViewInitialData(
-          data: _document(context).shellHtml,
+          data: _docCache?.shellHtml ?? _document(context).shellHtml,
           mimeType: 'text/html',
           encoding: 'utf-8',
         ),

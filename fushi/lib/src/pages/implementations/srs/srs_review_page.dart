@@ -239,6 +239,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         final SrsCardDetail? detail = await store.cardDetail(id);
         if (detail == null) return null;
         final SrsRenderedCard? rendered = await store.renderCard(id);
+        // 卡面预处理（媒体改写、抽样式、样式哈希）趁出题间隙算好，换卡时全命中。
+        if (rendered != null) {
+          srsWarmCardFace(
+            css: rendered.css,
+            bodies: <String>[
+              rendered.question,
+              rendered.answer,
+              ?rendered.fushiCardDefinitions,
+            ],
+          );
+        }
         return _PrefetchedCard(
           detail: detail,
           rendered: rendered,
