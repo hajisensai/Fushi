@@ -362,7 +362,7 @@ SettingsDestination buildLookupDestination() {
             dropdown: true,
             title: t.hover_lookup_modifier,
             subtitle: t.hover_lookup_modifier_hint,
-            icon: Icons.keyboard_outlined,
+            icon: FushiIcons.keyboard,
             visible: (SettingsContext settingsContext) =>
                 DesktopLookupService.isDesktop,
             reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 26),

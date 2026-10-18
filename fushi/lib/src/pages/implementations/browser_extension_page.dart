@@ -41,10 +41,16 @@ class BrowserExtensionPage extends ConsumerStatefulWidget {
   const BrowserExtensionPage({
     super.key,
     this.detectBrowser = detectDefaultBrowserKind,
+    this.navigation,
   });
 
   /// 默认浏览器探测（只用来预选第 1 步的浏览器 chip）。
   final BrowserKindDetector detectBrowser;
+
+  /// 作「网页」模块的子页时（[WebHubPage]），宿主交来的子页页签，占页头标题位；
+  /// null = 独立页（从「设置 › 查词」push 进来，或网页模块只剩这一个子页），
+  /// 页头画本页标题。
+  final Widget? navigation;
 
   @override
   ConsumerState<BrowserExtensionPage> createState() =>
@@ -164,16 +170,19 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
           // 判据是**本页自己所在的 PageRoute 是不是首个**，不是 `Navigator.canPop()`：
           // 本页的下拉框会临时 push 一个 PopupRoute，canPop() 会因此变成 true，
           // 于是每开一次下拉都闪出一个返回箭头。
-          FushiPageHeader(
-            title: t.nav_browser_extension,
-            leading: ModalRoute.of(context)?.isFirst == false
-                ? FushiIconButton(
-                    icon: Icons.arrow_back,
-                    tooltip: t.back,
-                    onTap: () => Navigator.of(context).maybePop(),
-                  )
-                : null,
-          ),
+          if (widget.navigation case final Widget navigation)
+            FushiPageHeader.customTitle(title: navigation)
+          else
+            FushiPageHeader(
+              title: t.nav_browser_extension,
+              leading: ModalRoute.of(context)?.isFirst == false
+                  ? FushiIconButton(
+                      icon: Icons.arrow_back,
+                      tooltip: t.back,
+                      onTap: () => Navigator.of(context).maybePop(),
+                    )
+                  : null,
+            ),
           Expanded(child: _buildBody(theme, appModel)),
         ],
       ),

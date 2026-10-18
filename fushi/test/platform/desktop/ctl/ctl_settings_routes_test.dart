@@ -558,7 +558,7 @@ void main() {
     });
 
     test('模块 id：枚举名各种写法与持久化键', () {
-      expect(parseCtlModuleId('browser-extension'), ModuleId.browserExtension);
+      expect(parseCtlModuleId('browser-extension'), ModuleId.web);
       expect(parseCtlModuleId('CARD_CREATION'), ModuleId.cardCreation);
       expect(parseCtlModuleId('module_downloads_enabled'), ModuleId.browse);
       expect(parseCtlModuleId('nope'), isNull);

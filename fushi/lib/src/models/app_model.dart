@@ -3608,7 +3608,7 @@ class AppModel with ChangeNotifier {
       // 助手，模块关掉后那个页面本身也不存在。关掉后不再刷新副本，也不再算内置指纹
       // （查词响应里的 `extensionBuild` 字段随之省略——扩展模块已关，没有消费者）。
       // 平台判据走 modules（browserExtension 仅桌面），与函数内既有的桌面早退同向。
-      if (modules.isEnabled(ModuleId.browserExtension)) {
+      if (modules.isEnabled(ModuleId.web)) {
         unawaited(
             refreshBrowserExtensionCopy().catchError((Object e, StackTrace s) {
           ErrorLogService.instance

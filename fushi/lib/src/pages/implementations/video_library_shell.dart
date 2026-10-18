@@ -8,7 +8,6 @@ import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dar
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
-import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
@@ -17,7 +16,6 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_browse
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
-import 'package:fushi/src/pages/implementations/video_web_sites_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart'
     show FushiHeaderSearchKeys, fushiVisibleHeaderSearch;
@@ -126,11 +124,9 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   VideoLibrarySection _section = VideoLibrarySection.home;
   VideoLibrarySection _localSection = VideoLibrarySection.home;
 
-  /// 「在线源」组上次停留的分区（网站 / 来源 / 扩展），点组页签回到这里；有网站分区时
-  /// 首次进组落在网站上。
-  VideoLibrarySection _onlineSection = webVideoSitesAvailable()
-      ? VideoLibrarySection.sites
-      : VideoLibrarySection.onlineSources;
+  /// 「在线源」组上次停留的分区（来源 / 扩展），点组页签回到这里。网页视频站点
+  /// 2026-10-19 搬去「网页」模块（`WebHubPage`）。
+  VideoLibrarySection _onlineSection = VideoLibrarySection.onlineSources;
   bool _mediaServersVisited = false;
   bool _sourcesVisited = false;
 
@@ -171,13 +167,11 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         _mediaServersVisited = true;
       }
       if (value == VideoLibrarySection.sources) _sourcesVisited = true;
-      if (value == VideoLibrarySection.sites ||
-          value == VideoLibrarySection.onlineSources ||
+      if (value == VideoLibrarySection.onlineSources ||
           value == VideoLibrarySection.extensions) {
         _onlineSection = value;
       }
       if (value == VideoLibrarySection.discover ||
-          value == VideoLibrarySection.sites ||
           value == VideoLibrarySection.onlineSources ||
           value == VideoLibrarySection.extensions) {
         _onlineVisited.add(value);
@@ -209,7 +203,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
     VideoLibrarySection.allVideos => true,
     VideoLibrarySection.mediaServers ||
     VideoLibrarySection.discover ||
-    VideoLibrarySection.sites ||
     VideoLibrarySection.onlineSources ||
     VideoLibrarySection.extensions ||
     VideoLibrarySection.sources => false,
@@ -272,12 +265,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
             value: VideoLibrarySection.mediaServers,
             label: t.video_library_media_servers,
           ),
-          // 网站不受扩展源的合规门约束（站点自己的页面），只看平台能不能开网页档。
-          if (webVideoSitesAvailable())
-            LibrarySectionTab<VideoLibrarySection>(
-              value: VideoLibrarySection.sites,
-              label: t.video_library_sites,
-            ),
           if (online)
             LibrarySectionTab<VideoLibrarySection>(
               value: VideoLibrarySection.onlineSources,
@@ -465,7 +452,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           ),
         for (final VideoLibrarySection section in <VideoLibrarySection>[
           VideoLibrarySection.discover,
-          VideoLibrarySection.sites,
           VideoLibrarySection.onlineSources,
           VideoLibrarySection.extensions,
         ])
@@ -541,11 +527,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           controller: widget.discoveryController,
           actions: widget.discoveryActions,
         ),
-        VideoLibrarySection.sites => VideoWebSitesPage(
-          key: const ValueKey<String>('video-library-sites'),
-          repo: widget.repository,
-          navigation: navigation,
-        ),
         VideoLibrarySection.extensions => LibraryOnlineSourcesView(
           domain: OnlineSourcesDomain.video,
           section: OnlineSourcesSection.extensions,
@@ -568,7 +549,6 @@ _VideoSectionGroup _groupOf(VideoLibrarySection section) => switch (section) {
   VideoLibrarySection.allVideos => _VideoSectionGroup.library,
   VideoLibrarySection.discover => _VideoSectionGroup.discover,
   VideoLibrarySection.mediaServers => _VideoSectionGroup.mediaServers,
-  VideoLibrarySection.sites ||
   VideoLibrarySection.onlineSources ||
   VideoLibrarySection.extensions => _VideoSectionGroup.online,
   VideoLibrarySection.sources => _VideoSectionGroup.import,

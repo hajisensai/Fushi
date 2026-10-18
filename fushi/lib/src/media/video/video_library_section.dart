@@ -9,10 +9,6 @@ enum VideoLibrarySection {
   /// 视频在线发现（与「浏览 › 发现 › 视频」同一个生产发现页）。
   discover,
 
-  /// 网页视频站入口（Netflix / YouTube / 自加站点，[VideoWebSitesPage]）：站点在原生播放器页
-  /// 的网页档里打开，只有 Windows 有。
-  sites,
-
   /// 已装视频源扩展（Aniyomi）提供的在线源（与「浏览 › 来源」同一组件）。
   onlineSources,
 
