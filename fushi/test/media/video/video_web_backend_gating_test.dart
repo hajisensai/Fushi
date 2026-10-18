@@ -3,7 +3,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
-    show videoWebBackendSettingsGroups, videoWebBackendSupportsControlItem;
+    show
+        videoWebBackendSettingsGroups,
+        videoWebBackendSupportsControlItem,
+        webVideoPendingTrackCaptureFailed;
 import 'package:fushi/src/settings/settings_destination.dart' show VideoGroup;
 
 void main() {
@@ -13,10 +16,8 @@ void main() {
       VideoControlItem.frameForward,
       VideoControlItem.screenshot,
       VideoControlItem.clipExport,
+      // 音轨只在站点上报了音轨时才画（见下一条测试）。
       VideoControlItem.audioTrack,
-      VideoControlItem.previousChapter,
-      VideoControlItem.nextChapter,
-      VideoControlItem.chapterList,
       VideoControlItem.danmaku,
     };
     for (final VideoControlItem item in VideoControlItem.values) {
@@ -39,6 +40,63 @@ void main() {
     ]) {
       expect(videoWebBackendSupportsControlItem(item), isTrue, reason: '$item');
     }
+  });
+
+  test('音轨按钮跟着站点音轨走；章节按钮交给通用门控（站点给了片头片尾标记才有章节）', () {
+    expect(
+      videoWebBackendSupportsControlItem(
+        VideoControlItem.audioTrack,
+        hasSiteAudioTracks: true,
+      ),
+      isTrue,
+    );
+    for (final VideoControlItem item in <VideoControlItem>[
+      VideoControlItem.previousChapter,
+      VideoControlItem.nextChapter,
+      VideoControlItem.chapterList,
+    ]) {
+      expect(videoWebBackendSupportsControlItem(item), isTrue, reason: '$item');
+    }
+  });
+
+  test('待采整轨的确定失败判据：站点已切到该轨且 live 轨在请求后长出新 cue', () {
+    expect(
+      webVideoPendingTrackCaptureFailed(
+        requestedSiteTrackId: 'T:ja',
+        siteTrackCurrent: 'T:ja',
+        liveCueCountAtRequest: 3,
+        liveCueCountNow: 4,
+      ),
+      isTrue,
+    );
+    // 站点还没切过去 / live 轨没长 / 不是站点轨：都不算失败（继续等）。
+    expect(
+      webVideoPendingTrackCaptureFailed(
+        requestedSiteTrackId: 'T:ja',
+        siteTrackCurrent: 'T:en',
+        liveCueCountAtRequest: 3,
+        liveCueCountNow: 9,
+      ),
+      isFalse,
+    );
+    expect(
+      webVideoPendingTrackCaptureFailed(
+        requestedSiteTrackId: 'T:ja',
+        siteTrackCurrent: 'T:ja',
+        liveCueCountAtRequest: 3,
+        liveCueCountNow: 3,
+      ),
+      isFalse,
+    );
+    expect(
+      webVideoPendingTrackCaptureFailed(
+        requestedSiteTrackId: '',
+        siteTrackCurrent: '',
+        liveCueCountAtRequest: 0,
+        liveCueCountNow: 5,
+      ),
+      isFalse,
+    );
   });
 
   test('设置面板去掉着色器 / mpv / 弹幕分组，其余保持原顺序', () {

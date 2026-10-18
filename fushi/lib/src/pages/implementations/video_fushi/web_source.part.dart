@@ -5,25 +5,40 @@ part of '../video_fushi_page.dart';
 const double _kVideoWebPageBarHeight = 52;
 
 /// 网页档（站点视频，[VideoPlayerController.isWebBackend]）能服务的控制条按钮：逐帧 /
-/// 截图 / 片段导出 / 音轨 / 章节 / 弹幕都要 libmpv 或本地媒体文件，一律不画。纯函数，
-/// 控制条门控 `_shouldRenderControlItem` 与测试同源调用。
+/// 截图 / 片段导出 / 弹幕都要 libmpv 或本地媒体文件，一律不画；音轨只在站点上报了音轨时画
+/// （[hasSiteAudioTracks]，目前只有 Netflix）；章节按钮交给通用门控（站点给了片头片尾标记才
+/// 有章节）。纯函数，控制条门控 `_shouldRenderControlItem` 与测试同源调用。
 @visibleForTesting
-bool videoWebBackendSupportsControlItem(VideoControlItem item) {
+bool videoWebBackendSupportsControlItem(
+  VideoControlItem item, {
+  bool hasSiteAudioTracks = false,
+}) {
   switch (item) {
     case VideoControlItem.frameBackward:
     case VideoControlItem.frameForward:
     case VideoControlItem.screenshot:
     case VideoControlItem.clipExport:
-    case VideoControlItem.audioTrack:
-    case VideoControlItem.previousChapter:
-    case VideoControlItem.nextChapter:
-    case VideoControlItem.chapterList:
     case VideoControlItem.danmaku:
       return false;
+    case VideoControlItem.audioTrack:
+      return hasSiteAudioTracks;
     default:
       return true;
   }
 }
+
+/// 待采整轨的确定失败判据（纯函数，见 `_webPendingLiveCueCount`）：站点当前轨已是所请求的那条，
+/// 且 live 轨（DOM 采样）在请求之后长出了新 cue。
+@visibleForTesting
+bool webVideoPendingTrackCaptureFailed({
+  required String requestedSiteTrackId,
+  required String siteTrackCurrent,
+  required int liveCueCountAtRequest,
+  required int liveCueCountNow,
+}) =>
+    requestedSiteTrackId.isNotEmpty &&
+    requestedSiteTrackId == siteTrackCurrent &&
+    liveCueCountNow > liveCueCountAtRequest;
 
 /// 网页档设置面板的分组：着色器 / mpv / 弹幕都作用在 libmpv 或本地文件上，去掉。
 @visibleForTesting
@@ -113,6 +128,11 @@ extension _VideoWebSource on _VideoFushiPageState {
       onKeyToken: _onWebKeyToken,
       onPageLookup: _onWebPageLookup,
       hoverLookupModifier: () => ReaderFushiSource.instance.hoverLookupModifier,
+      onSeekDone: (WebVideoSeekDone done) => _webPlatform?.applySeekDone(done),
+      onCommandFailed: (String command, String _) =>
+          _webPlatform?.applyCommandFailed(command),
+      onTrackFailed: _onWebTrackFailed,
+      onNetflixMetadata: _onWebNetflixMetadata,
     );
     final VideoPlayerController controller = VideoPlayerController();
     final WebVideoPlatformPlayer platform = WebVideoPlatformPlayer(
@@ -178,6 +198,9 @@ extension _VideoWebSource on _VideoFushiPageState {
       _videoReadyToShow = true;
     });
     _syncVolumeDisplay(controller.volume);
+    // 章节来自站点（Netflix 片头片尾标记，[setWebChapters]）：按钮随有无章节出现 / 消失。
+    _attachControllerChapterListener(controller);
+    _adoptHandedOverFullscreenForWeb();
     _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
     _seedWarmPopup();
     unawaited(_refreshFavoritedCueCache());
@@ -218,6 +241,9 @@ extension _VideoWebSource on _VideoFushiPageState {
       _webVideoKey = state.videoKey;
       _webActiveTrackKey = null;
       _webPendingTrackKey = null;
+      _webFailedTrackKeys.clear();
+      // 上一集选的图片字幕轨不跟到新视频（新文档的 glue 也已按宿主开关藏起站点字幕）。
+      _setWebSiteImageTrackShown(false);
       _reselectWebTrack();
     }
     if (!listEquals(state.siteTracks, _webSiteTracks) ||
@@ -227,7 +253,11 @@ extension _VideoWebSource on _VideoFushiPageState {
         _webSiteTrackCurrent = state.siteTrackCurrent;
       });
     }
+    _checkWebPendingTrackCapture();
     _maybeRequestDefaultSiteTrack();
+    _syncWebAudioTracks(state);
+    _syncWebNetflixMetadata(state);
+    _notifyWebBlocker(state);
     // 站点自己的全屏钮（网页档里点的）= 「我要看了」：换成播放器档 + 窗口全屏。
     if (state.fullscreen && state.hasVideo && !_webPlayerModeFor(state)) {
       _webForcePlayerKey = state.videoKey;
@@ -278,10 +308,13 @@ extension _VideoWebSource on _VideoFushiPageState {
         widget.webSite?.title ?? webVideoSiteDefaultTitle(url);
     VideoBookRow? row;
     try {
+      final String metaTitle = _webEpisodeMetaTitle(state.href);
       row = await ensureWebVideoEpisodeBook(
         widget.repo,
         episodeUrl: url,
-        title: state.videoTitle.isNotEmpty
+        title: metaTitle.isNotEmpty
+            ? metaTitle
+            : state.videoTitle.isNotEmpty
             ? state.videoTitle
             : webVideoEpisodeTitle(
                 pageTitle: state.title,
@@ -348,14 +381,22 @@ extension _VideoWebSource on _VideoFushiPageState {
       _webEpisodeMetaDoneUrl = url;
       return;
     }
-    if (needsTitle && state.videoTitle.isEmpty && !needsCover) return;
+    // 站点 metadata（Netflix：「作品 · S1E2 集名」+ 剧照）优于页面 DOM / og（播放器档里 DOM
+    // 标题常被藏、播放页没有 og:image）。
+    final String metaTitle = _webEpisodeMetaTitle(state.href);
+    final String metaCover = _webEpisodeMetaCover(state.href);
+    final String videoTitle = metaTitle.isNotEmpty
+        ? metaTitle
+        : state.videoTitle;
+    final String pageImage = metaCover.isNotEmpty ? metaCover : state.imageUrl;
+    if (needsTitle && videoTitle.isEmpty && !needsCover) return;
     _webEpisodeMetaBusy = true;
     try {
       final VideoBookRow updated = await refreshWebVideoEpisodeBook(
         widget.repo,
         row,
-        videoTitle: state.videoTitle,
-        pageImage: state.imageUrl,
+        videoTitle: videoTitle,
+        pageImage: pageImage,
       );
       if (!mounted || _bookRow?.bookUid != updated.bookUid) return;
       if (!identical(updated, row)) {
@@ -379,11 +420,30 @@ extension _VideoWebSource on _VideoFushiPageState {
     }
   }
 
-  /// 这份快照该不该是播放器档：没视频一定不是；用户对**这一集**点过「回到网页」/「在播放器里
-  /// 看」以用户为准（换一集即失效——在网页里点了另一集，就自动进播放器）；否则看地址是不是
+  String _webEpisodeMetaTitle(String href) {
+    final String? watchId = _webNetflixWatchId(href);
+    final NetflixTitleMetadata? meta = watchId == null
+        ? null
+        : _webNetflixMeta[watchId];
+    return meta == null ? '' : meta.displayTitleFor(watchId!);
+  }
+
+  String _webEpisodeMetaCover(String href) {
+    final String? watchId = _webNetflixWatchId(href);
+    final NetflixTitleMetadata? meta = watchId == null
+        ? null
+        : _webNetflixMeta[watchId];
+    return meta == null ? '' : meta.coverFor(watchId!);
+  }
+
+  /// 这份快照该不该是播放器档：没视频一定不是；站点弹层打断播放时不是；用户对**这一集**点过
+  /// 「回到网页」/「在播放器里看」以用户为准（换一集即失效——在网页里点了另一集，就自动进播放器）；否则看地址是不是
   /// 播放页（[webVideoIsWatchPage]：Netflix 浏览页的预告片不算）。
   bool _webPlayerModeFor(WebVideoPlaybackState state) {
     if (!state.hasVideo) return false;
+    // 站点弹层打断了播放（「还在看吗？」/ 播放错误）：播放器档藏着站点页面、WebView 也不收输入，
+    // 用户既看不到也点不到——让位给网页档。弹层没了（快照 blk 回空）自动回到播放器档。
+    if (state.isBlocked) return false;
     if (_webBrowseVideoKey == state.videoKey) return false;
     if (_webForcePlayerKey == state.videoKey) return true;
     return webVideoIsWatchPage(state.href);
@@ -413,7 +473,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       VideoBarEntry(
         priority: 87,
         menuAction: VideoBarMenuAction(
-          icon: Icons.web,
+          icon: FushiIcons.webAsset,
           label: t.web_video_page_show,
           onSelected: run,
         ),
@@ -422,7 +482,7 @@ extension _VideoWebSource on _VideoFushiPageState {
           child: KeyedSubtree(
             key: const ValueKey<String>('video-web-page-show'),
             child: _chromeIconButton(
-              icon: Icons.web,
+              icon: FushiIcons.webAsset,
               desktop: desktop,
               onPressed: run,
             ),
@@ -435,7 +495,43 @@ extension _VideoWebSource on _VideoFushiPageState {
   void _onWebTrack(WebVideoTrack track) {
     if (!mounted) return;
     _webTracks[track.key] = track;
+    if (track.cues.isNotEmpty) _webFailedTrackKeys.remove(track.key);
     _reselectWebTrack();
+    // live 轨长了：待采整轨的失败判据可能成立了。
+    if (track.isLive) _checkWebPendingTrackCapture();
+  }
+
+  /// bridge 回报某条整轨抓取失败：在途的那条落成失败（面板显示失败、可点选重试）。
+  void _onWebTrackFailed(String key) {
+    if (!mounted) return;
+    _rebuild(() {
+      _webFailedTrackKeys.add(key);
+      if (_webPendingTrackKey == key) _webPendingTrackKey = null;
+    });
+  }
+
+  int _webLiveCueCount() =>
+      _webTracks['$_webVideoKey|$kWebVideoLiveTrackLang']?.cues.length ?? 0;
+
+  /// 待采整轨的确定失败判据（[webVideoPendingTrackCaptureFailed]）。
+  void _checkWebPendingTrackCapture() {
+    final String? pending = _webPendingTrackKey;
+    if (pending == null) return;
+    final int tilde = pending.indexOf('~');
+    final String requestedId = tilde >= 0 ? pending.substring(tilde + 1) : '';
+    if (!webVideoPendingTrackCaptureFailed(
+      requestedSiteTrackId: requestedId,
+      siteTrackCurrent: _webSiteTrackCurrent,
+      liveCueCountAtRequest: _webPendingLiveCueCount,
+      liveCueCountNow: _webLiveCueCount(),
+    )) {
+      return;
+    }
+    ErrorLogService.instance.log(
+      'VideoFushi.web',
+      'site subtitle shown but full track not captured: $pending',
+    );
+    _onWebTrackFailed(pending);
   }
 
   /// 轨集 / 当前视频变化后重选当前轨并灌进 controller（同轨更新也要灌：live 轨边看边长）。
@@ -475,42 +571,241 @@ extension _VideoWebSource on _VideoFushiPageState {
 
   /// 让站点播放器切到 [track]：它随即下载那条字幕文件，bridge 截下整轨后由
   /// [_reselectWebTrack] 选中（[_webPendingTrackKey]）。
-  void _requestWebSiteTrack(WebVideoSiteTrack track) {
+  void _requestWebSiteTrack(WebVideoSiteTrack track, {bool byUser = false}) {
     final WebVideoSession? session = _webSession;
     if (session == null) return;
+    if (byUser) _webSubtitleUserChosen = true;
     _webSubtitlesOff = false;
-    _webPendingTrackKey = '$_webVideoKey|${track.lang}';
     unawaited(
       session.evaluate(
         'window.__fushiWebVideo.selectNetflixTrack(${jsonEncode(track.id)})',
       ),
     );
+    if (track.imageBased) {
+      // 图片字幕截不到文字：不进 Fushi 叠层，让站点自己画（不可查词）。
+      _webPendingTrackKey = null;
+      _webActiveTrackKey = null;
+      _setWebSiteImageTrackShown(true);
+      _reselectWebTrack();
+      _rebuild(() {});
+      return;
+    }
+    _setWebSiteImageTrackShown(false);
+    final String key = track.storeKey(_webVideoKey);
+    _webFailedTrackKeys.remove(key);
+    _webPendingLiveCueCount = _webLiveCueCount();
+    if (_webTracks[key]?.cues.isNotEmpty ?? false) {
+      // 早已采到（Netflix 选回之前看过的轨不会重新下载）：直接选中。
+      _webPendingTrackKey = null;
+      _webActiveTrackKey = key;
+    } else {
+      _webPendingTrackKey = key;
+    }
+    _reselectWebTrack();
     _rebuild(() {});
   }
 
-  /// 站点字幕关着、这一集一条整轨都还没采到：按首选字幕语言替用户开一条（每集一次；用户
-  /// 在面板里关掉字幕后不再自作主张）。没有首选语言的轨就开第一条。
+  void _setWebSiteImageTrackShown(bool shown) {
+    if (_webSiteImageTrackShown == shown) return;
+    _webSiteImageTrackShown = shown;
+    unawaited(_webSession?.setNativeSubtitlesHidden(!shown));
+  }
+
+  /// 每集首次（P1-5）：按首选字幕语言替用户选一条站点字幕轨——即使站点已默认开着别的语言
+  /// （Netflix 按账号习惯默认开英文）。用户在面板里亲手选过 / 关掉字幕后不再干预。没有首选
+  /// 语言的轨时：站点字幕关着、也没采到任何整轨，就开第一条文字轨（否则无字可查）。
   void _maybeRequestDefaultSiteTrack() {
     if (_webSubtitlesOff ||
+        _webSubtitleUserChosen ||
         _webSiteTracks.isEmpty ||
-        _webSiteTrackCurrent.isNotEmpty ||
-        _webSiteTrackAutoVideoKey == _webVideoKey ||
-        _currentWebTracks().any((WebVideoTrack t) => !t.isLive)) {
+        _webSiteTrackAutoVideoKey == _webVideoKey) {
       return;
     }
     _webSiteTrackAutoVideoKey = _webVideoKey;
-    final String pref = (_webPreferredSubtitleLanguage ?? '').toLowerCase();
-    WebVideoSiteTrack pick = _webSiteTracks.first;
-    if (pref.isNotEmpty) {
-      for (final WebVideoSiteTrack track in _webSiteTracks) {
-        final String lang = track.lang.toLowerCase();
-        if (lang == pref || lang.startsWith('$pref-')) {
-          pick = track;
-          break;
-        }
+    final WebVideoSiteTrack? preferred = pickWebVideoSiteTrackForLanguage(
+      _webSiteTracks,
+      _webPreferredSubtitleLanguage,
+    );
+    if (preferred != null) {
+      if (preferred.id != _webSiteTrackCurrent ||
+          _webActiveTrackKey != preferred.storeKey(_webVideoKey)) {
+        _requestWebSiteTrack(preferred);
       }
+      return;
     }
-    _requestWebSiteTrack(pick);
+    if (_webSiteTrackCurrent.isNotEmpty ||
+        _currentWebTracks().any((WebVideoTrack t) => !t.isLive)) {
+      return;
+    }
+    final WebVideoSiteTrack? firstText = _webSiteTracks
+        .where((WebVideoSiteTrack t) => !t.imageBased)
+        .firstOrNull;
+    if (firstText != null) _requestWebSiteTrack(firstText);
+  }
+
+  /// 站点音轨（P1-4）：音轨清单由 [WebVideoPlatformPlayer] 变成 media_kit 的音轨，原生的音轨菜单 /
+  /// 侧栏「音频」照常工作；这里同步选中态，并在每集首次按内容语言偏好替用户选一次（P1-5）。
+  void _syncWebAudioTracks(WebVideoPlaybackState state) {
+    final String current = state.siteAudioTrackCurrent;
+    if (current.isNotEmpty && current != _currentAudioTrackId) {
+      _rebuild(() => _currentAudioTrackId = current);
+    }
+    if (_webAudioUserChosen ||
+        state.siteAudioTracks.isEmpty ||
+        _webAudioAutoVideoKey == state.videoKey) {
+      return;
+    }
+    _webAudioAutoVideoKey = state.videoKey;
+    final WebVideoSiteTrack? preferred = pickWebVideoSiteTrackForLanguage(
+      state.siteAudioTracks,
+      _bookRow?.language ?? appModel.defaultContentLanguage,
+    );
+    final VideoPlayerController? controller = _controller;
+    if (preferred == null || preferred.id == current || controller == null) {
+      return;
+    }
+    final AudioTrack? track = controller.audioTracks
+        .where((AudioTrack t) => t.id == preferred.id)
+        .firstOrNull;
+    if (track != null) unawaited(controller.selectAudioTrack(track));
+  }
+
+  /// 站点弹层打断播放（[WebVideoPlaybackState.blocker]）：[_webPlayerModeFor] 已让位给网页档，这里
+  /// 告诉用户为什么画面没了（同一次打断只说一次）。
+  void _notifyWebBlocker(WebVideoPlaybackState state) {
+    if (!state.isBlocked || !state.hasVideo) {
+      if (!state.isBlocked) _webBlockerNotified = '';
+      return;
+    }
+    final String token = '${state.videoKey}#${state.blocker}';
+    if (_webBlockerNotified == token) return;
+    _webBlockerNotified = token;
+    ErrorLogService.instance.log(
+      'VideoFushi.web',
+      'playback blocked by site: ${state.blocker} (${state.href})',
+    );
+    final String code = state.blockerErrorCode;
+    _showOsd(
+      state.blocker == 'interrupt'
+          ? t.web_video_blocked_interrupt
+          : code.isEmpty
+          ? t.web_video_blocked_error_generic
+          : t.web_video_blocked_error(code: code),
+      icon: FushiIcons.webAsset,
+      prominent: true,
+      severity: state.blocker == 'interrupt'
+          ? ToastSeverity.info
+          : ToastSeverity.warning,
+    );
+  }
+
+  // ── Netflix 剧集 / 章节（P2-2）───────────────────────────────────────────
+
+  /// Netflix 播放页的播放 id（`/watch/<id>`）；不是 Netflix 播放页为 null。
+  String? _webNetflixWatchId(String href) {
+    final String? url = webVideoEpisodeUrl(href);
+    if (url == null || !url.startsWith('https://www.netflix.com/watch/')) {
+      return null;
+    }
+    return url.substring('https://www.netflix.com/watch/'.length);
+  }
+
+  /// 正在看的这一集有 metadata 就用（剧集面板 / 章节），没有就向站点要一次（每个 id 一次；失败
+  /// 只记日志，面板没有剧集）。
+  void _syncWebNetflixMetadata(WebVideoPlaybackState state) {
+    final String? watchId = _webNetflixWatchId(state.href);
+    if (watchId == null) return;
+    final NetflixTitleMetadata? meta = _webNetflixMeta[watchId];
+    if (meta != null) {
+      _applyWebNetflixMetadata(meta, watchId, state.durationMs);
+      return;
+    }
+    if (!state.hasVideo || !_webNetflixMetaRequested.add(watchId)) return;
+    unawaited(
+      _webSession?.evaluate(
+        'window.__fushiWebVideo.fetchNetflixMetadata(${jsonEncode(watchId)})',
+      ),
+    );
+  }
+
+  void _onWebNetflixMetadata(String movieId, String? text, String error) {
+    if (!mounted || text == null) return;
+    final NetflixTitleMetadata? meta = parseNetflixMetadata(text);
+    if (meta == null) {
+      ErrorLogService.instance.log(
+        'VideoFushi.web',
+        'netflix metadata $movieId: unrecognised shape',
+      );
+      return;
+    }
+    _webNetflixMeta[movieId] = meta;
+    for (final NetflixEpisode e in meta.episodes) {
+      _webNetflixMeta[e.id] = meta;
+      _webNetflixMetaRequested.add(e.id);
+    }
+    final WebVideoPlaybackState? state = _webSession?.lastState;
+    final String? watchId = state == null
+        ? null
+        : _webNetflixWatchId(state.href);
+    if (watchId != null && _webNetflixMeta[watchId] == meta) {
+      _applyWebNetflixMetadata(meta, watchId, state!.durationMs);
+    }
+  }
+
+  /// metadata → 剧集面板（[_episodes]，换集走 [_switchWebEpisode]）+ 章节（片头片尾标记）。
+  void _applyWebNetflixMetadata(
+    NetflixTitleMetadata meta,
+    String watchId,
+    int? durationMs,
+  ) {
+    final List<String> urls = <String>[
+      for (final NetflixEpisode e in meta.episodes) e.watchUrl,
+    ];
+    final int index = meta.indexOfEpisode(watchId);
+    if (!listEquals(urls, _webEpisodeUrls) || index != _currentEpisode) {
+      _rebuild(() {
+        _webEpisodeUrls = urls;
+        _episodes = <_PlaylistEpisodeRef>[
+          for (final NetflixEpisode e in meta.episodes)
+            _PlaylistEpisodeRef(
+              title: meta.displayTitleFor(e.id),
+              displayTitle: e.title.isEmpty ? null : e.title,
+              // 剧集面板按标题解析季 / 集号（collectionGroupKeyForFilename）：给它标准形状。
+              path:
+                  'S${e.seasonSeq.toString().padLeft(2, '0')}'
+                  'E${e.seq.toString().padLeft(2, '0')}',
+              coverUrl: e.stillUrl.isEmpty ? null : e.stillUrl,
+              coverCacheKey: e.stillUrl.isEmpty ? null : 'netflix:${e.id}',
+            ),
+        ];
+        _currentEpisode = index < 0 ? 0 : index;
+      });
+    }
+    final VideoPlayerController? controller = _controller;
+    if (controller == null || !controller.isWebBackend) return;
+    controller.setWebChapters(
+      netflixChaptersFromMarkers(
+        meta.markersFor(watchId),
+        NetflixChapterLabels(
+          recap: t.web_video_chapter_recap,
+          intro: t.web_video_chapter_intro,
+          main: t.web_video_chapter_main,
+          credits: t.web_video_chapter_credits,
+        ),
+        durationMs: durationMs,
+      ),
+    );
+  }
+
+  /// 剧集面板 / 上下一集 / 自动连播选了第 [index] 集：同一个 WebView 导航过去（站点播放页），
+  /// 之后的落书 / 进度 / 字幕由 [_onWebState] 按新地址接上。
+  void _switchWebEpisode(int index) {
+    final WebVideoSession? session = _webSession;
+    if (session == null || index < 0 || index >= _webEpisodeUrls.length) {
+      return;
+    }
+    _webBrowseVideoKey = null;
+    unawaited(session.loadUrl(_webEpisodeUrls[index]));
   }
 
   /// 站点播放器里还没采到整轨的字幕轨（面板里列在已采到的轨后面，点选加载）。
@@ -520,8 +815,29 @@ extension _VideoWebSource on _VideoFushiPageState {
     };
     return <WebVideoSiteTrack>[
       for (final WebVideoSiteTrack track in _webSiteTracks)
-        if (!loaded.contains('$_webVideoKey|${track.lang}')) track,
+        if (!loaded.contains(track.storeKey(_webVideoKey))) track,
     ];
+  }
+
+  /// 已采到的整轨在面板里的名字：站点显示名（「English [CC]」）优先，live 轨用固定文案。
+  String _webTrackLabel(WebVideoTrack track) {
+    if (track.isLive) return t.web_video_track_live;
+    if (track.siteTrackId.isNotEmpty) {
+      for (final WebVideoSiteTrack site in _webSiteTracks) {
+        if (site.id == track.siteTrackId && site.name.isNotEmpty) {
+          return site.name;
+        }
+      }
+    }
+    return track.lang;
+  }
+
+  String _webSiteTrackStatus(WebVideoSiteTrack track) {
+    if (track.imageBased) return t.web_video_track_image;
+    final String key = track.storeKey(_webVideoKey);
+    if (_webFailedTrackKeys.contains(key)) return t.web_video_track_failed;
+    if (_webPendingTrackKey == key) return t.web_video_track_loading;
+    return t.web_video_track_site;
   }
 
   /// 当前视频可选的站点字幕轨（有 cue 的才列）。
@@ -531,8 +847,10 @@ extension _VideoWebSource on _VideoFushiPageState {
   ];
 
   void _selectWebTrack(String? key) {
+    _webSubtitleUserChosen = true;
     _webSubtitlesOff = key == null;
     _webPendingTrackKey = null;
+    _setWebSiteImageTrackShown(false);
     _webActiveTrackKey = key;
     _reselectWebTrack();
     _rebuild(() {});
@@ -549,7 +867,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       children: <Widget>[
         FushiListTileControl(
           key: const ValueKey<String>('video-web-subtitle-off'),
-          leading: const FushiIcon(Icons.subtitles_off),
+          leading: const FushiIcon(FushiIcons.subtitlesOff),
           title: Text(t.video_subtitle_off),
           selected: _webActiveTrackKey == null,
           selectedColor: selectedFg,
@@ -558,15 +876,15 @@ extension _VideoWebSource on _VideoFushiPageState {
         if (tracks.isEmpty && siteTracks.isEmpty)
           FushiListTileControl(
             dense: true,
-            leading: const FushiIcon(Icons.closed_caption_outlined),
+            leading: const FushiIcon(FushiIcons.subtitles),
             title: Text(t.web_video_no_tracks),
             enabled: false,
           ),
         for (final WebVideoTrack track in tracks)
           FushiListTileControl(
             key: ValueKey<String>('video-web-subtitle-${track.key}'),
-            leading: const FushiIcon(Icons.closed_caption_outlined),
-            title: Text(track.isLive ? t.web_video_track_live : track.lang),
+            leading: const FushiIcon(FushiIcons.subtitles),
+            title: Text(_webTrackLabel(track)),
             selected: track.key == _webActiveTrackKey,
             selectedColor: selectedFg,
             onTap: () => _selectWebTrack(track.key),
@@ -574,14 +892,12 @@ extension _VideoWebSource on _VideoFushiPageState {
         for (final WebVideoSiteTrack track in siteTracks)
           FushiListTileControl(
             key: ValueKey<String>('video-web-site-subtitle-${track.id}'),
-            leading: const FushiIcon(Icons.closed_caption_outlined),
+            leading: const FushiIcon(FushiIcons.subtitles),
             title: Text(track.name.isEmpty ? track.lang : track.name),
-            subtitle: Text(
-              _webPendingTrackKey == '$_webVideoKey|${track.lang}'
-                  ? t.web_video_track_loading
-                  : t.web_video_track_site,
-            ),
-            onTap: () => _requestWebSiteTrack(track),
+            subtitle: Text(_webSiteTrackStatus(track)),
+            selected: track.imageBased && track.id == _webSiteTrackCurrent,
+            selectedColor: selectedFg,
+            onTap: () => _requestWebSiteTrack(track, byUser: true),
           ),
       ],
     );
@@ -628,17 +944,38 @@ extension _VideoWebSource on _VideoFushiPageState {
 
   /// 网页档的全屏：窗口全屏（与本地视频进全屏同一组 runner 调用），不推全屏路由——
   /// WebView2 子窗口挂在本页的平台视图上，不会跟进新路由。
+  ///
+  /// 进 / 退是异步的 runner 调用：切换在途时再来的请求（双击 + 快捷键、站点全屏钮连发）直接
+  /// 丢弃，否则两次翻转交错会让 [_webWindowFullscreen] 与窗口真实状态反相（标志说「窗口」、窗口
+  /// 却还全屏，之后每一次切换都反着来）。
   Future<void> _toggleWebWindowFullscreen() async {
+    if (_webWindowFullscreenTransitioning) return;
+    _webWindowFullscreenTransitioning = true;
     final bool enter = !_webWindowFullscreen;
     _rebuild(() => _webWindowFullscreen = enter);
-    if (enter) {
-      await _enterVideoNativeFullscreen();
-    } else {
-      await _exitVideoNativeFullscreen();
+    try {
+      if (enter) {
+        await _enterVideoNativeFullscreen();
+      } else {
+        await _exitVideoNativeFullscreen();
+      }
+    } finally {
+      _webWindowFullscreenTransitioning = false;
     }
     if (mounted) {
       _focusOwnership.reclaimAfterFrame(FocusReclaimCause.chromeToggled);
     }
+  }
+
+  /// 从全屏页换集而来的网页档新页（[VideoFushiPage.initialFullscreen]）：本地分支等就绪后压
+  /// media_kit 全屏路由，但站点画面是 WebView2 子窗口、跟不进新路由（会被路由盖成黑屏）。网页档
+  /// 的全屏就是窗口全屏——把认领来的原生全屏原样收作 [_webWindowFullscreen]，不再压路由，按钮、
+  /// Esc 与退页都按网页档的全屏收口。
+  void _adoptHandedOverFullscreenForWeb() {
+    _didInitialFullscreen = true;
+    if (!_ownsHandedOverNativeFullscreen) return;
+    _ownsHandedOverNativeFullscreen = false;
+    _rebuild(() => _webWindowFullscreen = true);
   }
 
   /// 视频槽：站点 WebView 垫在最底层（稳定 key，有无 <video> 两种布局之间不重建）；有视频时
@@ -718,7 +1055,7 @@ extension _VideoWebSource on _VideoFushiPageState {
               FushiIconButtonControl(
                 key: const ValueKey<String>('video-web-nav-forward'),
                 tooltip: t.web_video_nav_forward,
-                icon: const Icon(Icons.arrow_forward),
+                icon: const FushiIcon(FushiIcons.forward),
                 onPressed: nav.canGoForward
                     ? () => unawaited(session.goForward())
                     : null,
@@ -726,7 +1063,9 @@ extension _VideoWebSource on _VideoFushiPageState {
               FushiIconButtonControl(
                 key: const ValueKey<String>('video-web-nav-reload'),
                 tooltip: nav.loading ? t.web_video_nav_close : t.refresh,
-                icon: Icon(nav.loading ? Icons.close : Icons.refresh),
+                icon: FushiIcon(
+                  nav.loading ? FushiIcons.close : FushiIcons.refresh,
+                ),
                 onPressed: () => unawaited(session.reloadOrStop()),
               ),
               const SizedBox(width: 8),
@@ -738,8 +1077,8 @@ extension _VideoWebSource on _VideoFushiPageState {
                   hintText: t.web_video_address_hint,
                   leading: FushiIcon(
                     nav.url.startsWith('https://')
-                        ? Icons.lock_outline
-                        : Icons.public,
+                        ? FushiIcons.lock
+                        : FushiIcons.globe,
                   ),
                   onChanged: (String _) {},
                   onSubmitted: _submitWebAddress,
@@ -749,7 +1088,9 @@ extension _VideoWebSource on _VideoFushiPageState {
               FushiIconButtonControl(
                 key: const ValueKey<String>('video-web-login-import'),
                 tooltip: t.web_video_login_import,
-                icon: Icon(_webLoginImport == null ? Icons.login : Icons.sync),
+                icon: FushiIcon(
+                  _webLoginImport == null ? FushiIcons.login : FushiIcons.sync,
+                ),
                 onPressed: _beginWebLoginImport,
               ),
               const SizedBox(width: 4),
@@ -757,7 +1098,7 @@ extension _VideoWebSource on _VideoFushiPageState {
                 FushiFilledButton.tonalIcon(
                   key: const ValueKey<String>('video-web-player-open'),
                   onPressed: () => _setWebPlayerMode(true),
-                  icon: const Icon(Icons.play_circle_outline),
+                  icon: const FushiIcon(FushiIcons.playCircle),
                   label: Text(t.web_video_player_open),
                 ),
                 const SizedBox(width: 4),
@@ -765,7 +1106,7 @@ extension _VideoWebSource on _VideoFushiPageState {
               FushiIconButtonControl(
                 key: const ValueKey<String>('video-web-nav-close'),
                 tooltip: t.web_video_nav_close,
-                icon: const Icon(Icons.close),
+                icon: const FushiIcon(FushiIcons.close),
                 onPressed: () {
                   _webClosing = true;
                   unawaited(_handleBackOrExit());
@@ -804,7 +1145,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     }
     _showOsd(
       t.web_video_login_import_waiting,
-      icon: Icons.login,
+      icon: FushiIcons.login,
       prominent: true,
       severity: ToastSeverity.info,
     );
@@ -840,7 +1181,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (!mounted || session == null || written == 0) return;
     _showOsd(
       t.web_video_login_import_received(count: written),
-      icon: Icons.login,
+      icon: FushiIcons.login,
       severity: ToastSeverity.success,
     );
     await session.reload();
@@ -916,7 +1257,7 @@ extension _VideoWebSource on _VideoFushiPageState {
           ),
         ),
       );
-      _showOsd(t.web_video_mine_background, icon: Icons.playlist_add_check);
+      _showOsd(t.web_video_mine_background, icon: FushiIcons.checklist);
       return const MinePopupResult.queued();
     }
     await _webMineQueue.enqueue(
@@ -933,7 +1274,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (mounted) {
       _showOsd(
         t.web_video_mine_queued(count: _stagedMineCount.value),
-        icon: Icons.playlist_add_check,
+        icon: FushiIcons.checklist,
       );
     }
     // 卡还没真落地：弹窗画「已加入」✓、不回查 Anki（TODO-448）。空回执会被弹窗当成失败
@@ -980,6 +1321,7 @@ extension _VideoWebSource on _VideoFushiPageState {
 
   /// dispose：退窗口全屏（runner 拥有的全屏态不随路由消失）、拆会话、归还底层合成。
   void _disposeWebSource() {
+    _detachControllerChapterListener();
     if (_webWindowFullscreen && Platform.isWindows) {
       _webWindowFullscreen = false;
       unawaited(WindowCaptionChannel.setFullscreen(false));

@@ -96,6 +96,16 @@ Future<WebViewEnvironment> webVideoWindowedEnvironment() {
   );
 }
 
+/// 窗口宿主档环境的浏览器进程没了（WebView2 ProcessFailed，fork 转成 onRenderProcessGone）：
+/// 丢掉单例，下次 [webVideoWindowedEnvironment] 重建。同目录同参数的新环境在旧浏览器进程还活着
+/// 时会直接接到它上面（WebView2 的环境共享规则），所以只是渲染进程死了也照样可用。返回被换下
+/// 的旧环境（调用方负责释放）。
+Future<WebViewEnvironment>? discardWebVideoWindowedEnvironment() {
+  final Future<WebViewEnvironment>? old = _windowedEnv;
+  _windowedEnv = null;
+  return old;
+}
+
 // ── 注入脚本 / cookie ───────────────────────────────────────────────────────
 
 /// WebView2 持焦期间截获视频作用域全部键盘绑定（token 直接取注册表序列化形式，
@@ -120,30 +130,34 @@ String webVideoKeyBridgeScript(FushiShortcutRegistry registry) {
   );
 }
 
-/// document-start 注入脚本（按导航 host 选 bridge）：垫片（可选）→ 站点 bridge → adapters →
-/// providers → glue →（可选）DOM 字幕层 → 键盘桥。资产读取失败直接抛（调用方落失败态）。
+/// document-start 注入脚本：垫片（可选）→ 全部站点 bridge（各自按当前文档 host 自判，见
+/// [webVideoHostGuardedBridgeSource]：document-start 脚本建 WebView 时就定死，按起始页选 bridge
+/// 的话换站后就没有 bridge）→ adapters → providers →（可选）原生字幕开关 → glue →（可选）DOM
+/// 字幕层 → 键盘桥。资产读取失败直接抛（调用方落失败态）。
 Future<UnmodifiableListView<UserScript>> loadWebVideoUserScripts({
-  required String host,
   required bool softwareDrm,
   required bool domOverlay,
   required String keyBridgeScript,
   bool pageLookup = false,
+  bool hideNativeSubtitles = false,
 }) async {
-  final List<String> assets = <String>[
+  final List<String> sources = <String>[
     // 垫片必须排第一：站点脚本一跑就会抓走原始 EME 函数引用。
-    if (softwareDrm) kWebVideoEmeShimAsset,
-    ...webVideoBridgeAssetsForHost(host),
-    kWebVideoAdaptersAsset,
-    kWebVideoProvidersAsset,
-    kWebVideoGlueAsset,
-    if (domOverlay) kWebVideoDomSubtitlesAsset,
-    if (pageLookup) kWebVideoPageLookupAsset,
+    if (softwareDrm) await rootBundle.loadString(kWebVideoEmeShimAsset),
+    for (final (String asset, List<String> hosts) in kWebVideoSiteBridges)
+      webVideoHostGuardedBridgeSource(
+        await rootBundle.loadString(asset),
+        hosts,
+      ),
+    await rootBundle.loadString(kWebVideoAdaptersAsset),
+    await rootBundle.loadString(kWebVideoProvidersAsset),
+    // 站点字幕在页面第一帧之前就藏（glue 装载即读这个开关），不等 onLoadStop。
+    if (hideNativeSubtitles) kWebVideoHideNativeSubtitlesPrelude,
+    await rootBundle.loadString(kWebVideoGlueAsset),
+    if (domOverlay) await rootBundle.loadString(kWebVideoDomSubtitlesAsset),
+    if (pageLookup) await rootBundle.loadString(kWebVideoPageLookupAsset),
+    keyBridgeScript,
   ];
-  final List<String> sources = <String>[];
-  for (final String asset in assets) {
-    sources.add(await rootBundle.loadString(asset));
-  }
-  sources.add(keyBridgeScript);
   return UnmodifiableListView<UserScript>(<UserScript>[
     for (final String src in sources)
       UserScript(
@@ -312,7 +326,23 @@ class WebVideoSession {
     this.onKeyToken,
     this.onPageLookup,
     this.hoverLookupModifier,
+    this.onSeekDone,
+    this.onTrackFailed,
+    this.onCommandFailed,
+    this.onNetflixMetadata,
   });
+
+  /// seek 回执（[WebVideoPlatformPlayer.applySeekDone]）。
+  void Function(WebVideoSeekDone done)? onSeekDone;
+
+  /// 站点整轨抓取失败（store key）。
+  void Function(String key)? onTrackFailed;
+
+  /// 页面命令异步失败（目前只有 play 被自动播放策略拒绝）。
+  void Function(String command, String error)? onCommandFailed;
+
+  /// Netflix metadata 接口回执：成功时 [text] 是原文，失败时为 null、[error] 是原因。
+  void Function(String movieId, String? text, String error)? onNetflixMetadata;
 
   /// 书架流媒体书 uid（写进每条 cue 的 bookKey）；站内换集落成新书时由页面改写。
   String bookUid;
@@ -359,13 +389,43 @@ class WebVideoSession {
 
   bool get isReady => _environment != null && _userScripts != null;
 
+  /// WebView（重）建时打开的地址：首建是起始页；进程死后重建回到死前所在的页面
+  /// （[recoverFromProcessGone]），不把用户甩回起始页。
+  String get surfaceUrl => _surfaceUrl ?? pageUrl;
+  String? _surfaceUrl;
+
+  /// 渲染 / 浏览器进程死后、表面重建前（[WebViewDeathGuard] 的 flushBeforeRebuild）：换一个新的
+  /// 窗口宿主档环境（浏览器进程没了旧环境就是废的；只是渲染进程没了新环境会接回同一个浏览器
+  /// 进程）、重新抄登录 cookie，并记下重建后要回到的地址。失败抛出由 death guard 记录——重建
+  /// 照样进行，最坏是新 WebView 在旧环境里建不出来，与修复前一样停在死页面。
+  Future<void> recoverFromProcessGone() async {
+    if (_disposed) return;
+    final String current = nav.value.url;
+    if (current.isNotEmpty) _surfaceUrl = current;
+    _web = null;
+    _viewId = null;
+    final Future<WebViewEnvironment>? old =
+        discardWebVideoWindowedEnvironment();
+    final WebViewEnvironment env = await webVideoWindowedEnvironment();
+    await copyWebVideoLoginCookies(uri: Uri.parse(surfaceUrl), to: env);
+    if (_disposed) return;
+    _environment = env;
+    if (old != null) {
+      try {
+        final WebViewEnvironment stale = await old;
+        if (!identical(stale, env)) await stale.dispose();
+      } catch (e) {
+        ErrorLogService.instance.log('web_video', 'stale env dispose: $e');
+      }
+    }
+  }
+
   /// 建 WebView 之前的异步准备：注入脚本、窗口宿主档环境、从内置档复制登录 cookie。
   /// 资产缺失 / WebView2 Runtime 缺失会抛（调用方落失败态，不吞）。
   Future<void> prepare({required FushiShortcutRegistry shortcuts}) async {
     final Uri uri = Uri.parse(pageUrl);
     final UnmodifiableListView<UserScript> scripts =
         await loadWebVideoUserScripts(
-          host: uri.host,
           // 窗口宿主档就是为硬件 DRM 开的，不装软件 DRM 垫片。
           softwareDrm: false,
           // 字幕归 Flutter 叠层（底层合成下 Flutter 画在 WebView 上面）。
@@ -373,6 +433,8 @@ class WebVideoSession {
           keyBridgeScript: webVideoKeyBridgeScript(shortcuts),
           // 网页档（站点页面可点）里按住 Shift 悬停查任意文字。
           pageLookup: true,
+          // 字幕归 Fushi 叠层：站点自己的字幕从第一帧起就藏（visibility，DOM 采样 live 轨照读）。
+          hideNativeSubtitles: true,
         );
     final WebViewEnvironment env = await webVideoWindowedEnvironment();
     await copyWebVideoLoginCookies(uri: uri, to: env);
@@ -381,12 +443,13 @@ class WebVideoSession {
   }
 
   /// 在站点页面里执行一条 `window.__fushiWebVideo.*` 表达式（[WebVideoPlatformPlayer.evaluate]
-  /// 的实现）。glue 没装上 / WebView 还没建时什么也不做；失败只记日志。
-  Future<void> evaluate(String expression) async {
+  /// 的实现），返回表达式的值（命令的结果码）。glue 没装上 / WebView 还没建时返回 null；失败记
+  /// 日志并返回 null——调用方把 null 当「命令没发出去」。
+  Future<Object?> evaluate(String expression) async {
     final InAppWebViewController? web = _web;
-    if (web == null || _disposed) return;
+    if (web == null || _disposed) return null;
     try {
-      await web.evaluateJavascript(
+      return await web.evaluateJavascript(
         source:
             '(function(){try{return window.__fushiWebVideo&&'
             '($expression);}catch(e){return String(e);}})()',
@@ -396,6 +459,7 @@ class WebVideoSession {
         'web_video',
         'evaluateJavascript failed: $e',
       );
+      return null;
     }
   }
 
@@ -539,8 +603,6 @@ class WebVideoSession {
         ),
       ).catchError((Object _) => null),
     );
-    // 字幕由 Fushi 叠层画，站点自己的字幕藏起来（visibility，DOM 采样 live 轨照读）。
-    unawaited(setNativeSubtitlesHidden(true));
     unawaited(evaluate('window.__fushiWebVideo.replayCues()'));
     if (_playerMode) _applyPageMode();
   }
@@ -564,6 +626,38 @@ class WebVideoSession {
           _lastState = state;
           onState?.call(state);
         }
+      case 'seekDone':
+        final WebVideoSeekDone? done = parseWebVideoSeekDonePayload(msg);
+        if (done != null) onSeekDone?.call(done);
+      case 'trackFailed':
+        final String? key = parseWebVideoTrackFailedKey(msg);
+        if (key != null) {
+          ErrorLogService.instance.log(
+            'web_video',
+            'site subtitle track capture failed: $key ${msg['err'] ?? ''}',
+          );
+          onTrackFailed?.call(key);
+        }
+      case 'cmdFailed':
+        final String command = (msg['cmd'] ?? '').toString();
+        final String error = (msg['err'] ?? '').toString();
+        ErrorLogService.instance.log(
+          'web_video',
+          'page command $command failed: $error',
+        );
+        onCommandFailed?.call(command, error);
+      case 'nfMeta':
+        final String movieId = (msg['movieId'] ?? '').toString();
+        if (msg['ok'] == true && msg['text'] is String) {
+          onNetflixMetadata?.call(movieId, msg['text'] as String, '');
+        } else {
+          final String error = (msg['err'] ?? '').toString();
+          ErrorLogService.instance.log(
+            'web_video',
+            'netflix metadata $movieId failed: $error',
+          );
+          onNetflixMetadata?.call(movieId, null, error);
+        }
     }
     return null;
   }
@@ -577,6 +671,10 @@ class WebVideoSession {
     onState = null;
     onKeyToken = null;
     onPageLookup = null;
+    onSeekDone = null;
+    onTrackFailed = null;
+    onCommandFailed = null;
+    onNetflixMetadata = null;
   }
 }
 
@@ -595,9 +693,12 @@ class WebVideoSurface extends StatefulWidget {
 class _WebVideoSurfaceState extends State<WebVideoSurface> {
   late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
     surface: 'web_video_underlay',
+    flushBeforeRebuild: widget.session.recoverFromProcessGone,
     afterRebuild: () {
       if (mounted) setState(() {});
     },
+    reporter: (String surface, String message) =>
+        ErrorLogService.instance.log('web_video', '$surface: $message'),
   );
 
   @override
@@ -608,7 +709,7 @@ class _WebVideoSurfaceState extends State<WebVideoSurface> {
       key: _deathGuard.rebuildKey,
       child: InAppWebView(
         webViewEnvironment: session._environment,
-        initialUrlRequest: URLRequest(url: WebUri(session.pageUrl)),
+        initialUrlRequest: URLRequest(url: WebUri(session.surfaceUrl)),
         initialUserScripts: session._userScripts,
         initialSettings: InAppWebViewSettings(
           javaScriptEnabled: true,
