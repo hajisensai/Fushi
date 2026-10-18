@@ -12,6 +12,8 @@ typedef _FreeC = Void Function(Pointer<Void>);
 typedef _FreeDart = void Function(Pointer<Void>);
 typedef _NeedC = Uint64 Function(Pointer<Void>);
 typedef _NeedDart = int Function(Pointer<Void>);
+typedef _BoundC = Size Function(Pointer<Void>, Size);
+typedef _BoundDart = int Function(Pointer<Void>, int);
 typedef _FeedC =
     Int32 Function(
       Pointer<Void>,
@@ -19,7 +21,8 @@ typedef _FeedC =
       Size,
       Uint64,
       Int32,
-      Pointer<Pointer<Uint8>>,
+      Pointer<Uint8>,
+      Size,
       Pointer<Size>,
     );
 typedef _FeedDart =
@@ -29,7 +32,8 @@ typedef _FeedDart =
       int,
       int,
       int,
-      Pointer<Pointer<Uint8>>,
+      Pointer<Uint8>,
+      int,
       Pointer<Size>,
     );
 
@@ -49,17 +53,19 @@ class FushiComputeTs {
       _need = lib.library.lookupFunction<_NeedC, _NeedDart>(
         'ffc_ts_demux_need_offset',
       ),
+      _bound = lib.library.lookupFunction<_BoundC, _BoundDart>(
+        'ffc_ts_demux_output_bound',
+      ),
       _feed = lib.library.lookupFunction<_FeedC, _FeedDart>(
         'ffc_ts_demux_feed',
-      ),
-      _lib = lib;
+      );
 
   final _NewDart _new;
   final _FreeDart _free;
   final Pointer<NativeFunction<_FreeC>> _freePtr;
   final _NeedDart _need;
+  final _BoundDart _bound;
   final _FeedDart _feed;
-  final FushiCompute _lib;
 
   static FushiComputeTs? _instance;
 
@@ -101,18 +107,21 @@ class FushiComputeTs {
     required int base,
     required bool complete,
   }) {
+    final Pointer<Void> h = Pointer<Void>.fromAddress(handle);
     final Pointer<Uint8> src = NativeScratch.input.reserve(data.length);
     src.asTypedList(data.length).setAll(0, data);
-    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final int cap = _bound(h, data.length);
+    final Pointer<Uint8> out = NativeScratch.output.reserve(cap);
     final Pointer<Size> outLen = malloc<Size>();
     try {
       final int status = _feed(
-        Pointer<Void>.fromAddress(handle),
+        h,
         src,
         data.length,
         base,
         complete ? 1 : 0,
-        outPtr,
+        out,
+        cap,
         outLen,
       );
       if (status != FfcStatus.ok) {
@@ -120,29 +129,24 @@ class FushiComputeTs {
           'fushi_compute ffc_ts_demux_feed failed: status $status',
         );
       }
-      final Pointer<Uint8> blob = outPtr.value;
       final int n = outLen.value;
-      try {
-        final Uint8List bytes = blob.asTypedList(n);
-        final ByteData view = ByteData.sublistView(bytes);
-        final List<FfcTsPacket> packets = <FfcTsPacket>[];
-        int o = 0;
-        while (o + 12 <= n) {
-          final int pts = view.getInt64(o, Endian.host);
-          final int len = view.getUint32(o + 8, Endian.host);
-          o += 12;
-          packets.add((
-            pts90k: pts,
-            data: Uint8List.fromList(Uint8List.sublistView(bytes, o, o + len)),
-          ));
-          o += len;
-        }
-        return packets;
-      } finally {
-        _lib.freeBytes(blob, n);
+      // 一次拷回 Dart 堆，各包取它的视图（不逐包分配）。
+      final Uint8List bytes = Uint8List.fromList(out.asTypedList(n));
+      final ByteData view = ByteData.sublistView(bytes);
+      final List<FfcTsPacket> packets = <FfcTsPacket>[];
+      int o = 0;
+      while (o + 12 <= n) {
+        final int pts = view.getInt64(o, Endian.host);
+        final int len = view.getUint32(o + 8, Endian.host);
+        o += 12;
+        packets.add((
+          pts90k: pts,
+          data: Uint8List.sublistView(bytes, o, o + len),
+        ));
+        o += len;
       }
+      return packets;
     } finally {
-      malloc.free(outPtr);
       malloc.free(outLen);
     }
   }

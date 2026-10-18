@@ -33,20 +33,20 @@ pub const INTERP_AVERAGE: i32 = 2;
 
 /// 一张行主序 uint8 图上的矩形视图（`copyCrop` 的零拷贝等价物）。
 #[derive(Clone, Copy)]
-struct View<'a> {
-    data: &'a [u8],
-    stride: usize,
-    ch: usize,
-    x0: usize,
-    y0: usize,
-    w: usize,
-    h: usize,
+pub(crate) struct View<'a> {
+    pub(crate) data: &'a [u8],
+    pub(crate) stride: usize,
+    pub(crate) ch: usize,
+    pub(crate) x0: usize,
+    pub(crate) y0: usize,
+    pub(crate) w: usize,
+    pub(crate) h: usize,
 }
 
 impl<'a> View<'a> {
     /// 校验后构造；失败返回状态码。
     #[allow(clippy::too_many_arguments)]
-    fn new(
+    pub(crate) fn new(
         data: &'a [u8],
         stride: usize,
         ch: u32,
@@ -63,9 +63,7 @@ impl<'a> View<'a> {
         if w == 0 || h == 0 {
             return Err(status::INVALID_ARGUMENT);
         }
-        let row_end = (x0 + w)
-            .checked_mul(ch)
-            .ok_or(status::INVALID_ARGUMENT)?;
+        let row_end = (x0 + w).checked_mul(ch).ok_or(status::INVALID_ARGUMENT)?;
         if row_end > stride {
             return Err(status::INVALID_ARGUMENT);
         }
@@ -88,14 +86,14 @@ impl<'a> View<'a> {
     }
 
     #[inline(always)]
-    fn offset(&self, x: usize, y: usize) -> usize {
+    pub(crate) fn offset(&self, x: usize, y: usize) -> usize {
         (self.y0 + y) * self.stride + (self.x0 + x) * self.ch
     }
 
     /// `PixelUint8` 的 r/g/b/a 读法：1 通道 `[l, 0, 0, 255]`、2 通道 `[l, l, l, a]`、
     /// 3 通道 a 恒为 255。
     #[inline(always)]
-    fn rgba(&self, x: usize, y: usize) -> [i64; 4] {
+    pub(crate) fn rgba(&self, x: usize, y: usize) -> [i64; 4] {
         let i = self.offset(x, y);
         let d = &self.data[i..i + self.ch];
         match self.ch {
@@ -131,7 +129,7 @@ fn to_u8(v: f64) -> u8 {
 
 /// `copyResize(src, width: dw, height: dh, interpolation: ...)`（不保持比例、单帧）写进 [dst]
 /// （行紧排、与源同通道数）。目标与源同尺寸时等价于 `clone`。
-fn resize_into(src: &View, dst: &mut [u8], dw: usize, dh: usize, interp: i32) {
+pub(crate) fn resize_into(src: &View, dst: &mut [u8], dw: usize, dh: usize, interp: i32) {
     let ch = src.ch;
     if dw == src.w && dh == src.h {
         for y in 0..dh {
@@ -339,7 +337,11 @@ fn letterbox_canvas(resized: &View, cw: usize, chh: usize, pad_x: i64, pad_y: i6
                 continue;
             }
             let p = resized.rgba(x, y);
-            let oa = if resized.ch == 4 { p[3] as f64 / 255.0 } else { 1.0 };
+            let oa = if resized.ch == 4 {
+                p[3] as f64 / 255.0
+            } else {
+                1.0
+            };
             if oa == 0.0 {
                 continue;
             }
@@ -588,8 +590,11 @@ fn mosaic_rgba(px: &mut [u8], w: usize, h: usize, s: usize, bounds: &[[usize; 4]
             cy += 1;
         }
     }
-    let covered =
-        |x: usize, y: usize| bounds.iter().any(|b| x >= b[0] && x < b[2] && y >= b[1] && y < b[3]);
+    let covered = |x: usize, y: usize| {
+        bounds
+            .iter()
+            .any(|b| x >= b[0] && x < b[2] && y >= b[1] && y < b[3])
+    };
     for (cell, _) in touched.iter().enumerate().filter(|(_, &t)| t) {
         let cx0 = (cell % cols) * s;
         let cy0 = (cell / cols) * s;
@@ -1386,9 +1391,7 @@ struct Decoded {
     format: u32,
 }
 
-fn open_decoder(
-    data: &[u8],
-) -> Result<(impl image::ImageDecoder + '_, u32), i32> {
+fn open_decoder(data: &[u8]) -> Result<(impl image::ImageDecoder + '_, u32), i32> {
     // TGA 没有文件头魔数，猜不出格式时按 TGA 试（其头部校验会拒掉别的字节）。
     let format = image::guess_format(data).unwrap_or(image::ImageFormat::Tga);
     let code = format_code(format).ok_or(status::BAD_INPUT)?;
@@ -1617,7 +1620,11 @@ pub unsafe extern "C" fn ffc_image_edge_similarity(
                 count += 1;
             }
         }
-        *out = if count == 0 { 0.0 } else { 1.0 - total / count as f64 };
+        *out = if count == 0 {
+            0.0
+        } else {
+            1.0 - total / count as f64
+        };
         status::OK
     })
 }
@@ -2119,6 +2126,63 @@ pub unsafe extern "C" fn ffc_image_ai_crops(
     })
 }
 
+// ---------------------------------------------------------------------------
+// 保留通道布局的 PNG 解码（`img.decodePng` 的像素语义）。
+// ---------------------------------------------------------------------------
+
+/// 只认 PNG，按 `package:image` `decodePng` 的通道布局交出 8 位像素：灰度 1 通道、灰度 + alpha
+/// 2 通道、RGB 3 通道、RGBA 4 通道；调色板图展开成 RGB / RGBA（`decodePng` 的调色板像素读出来
+/// 也是调色板颜色），带 tRNS 的灰度 / RGB 带上 alpha。与 `decodePng` 的差别只在它本来就不按
+/// 8 位读的输入：16 位通道截成 8 位（`decodePng` 留 uint16），1/2/4 位灰度放大到 0–255
+/// （`decodePng` 留原始位值）。不转方向。
+pub(crate) fn decode_png_layout(data: &[u8]) -> Result<(Vec<u8>, u32, u32, u32), i32> {
+    if image::guess_format(data).ok() != Some(image::ImageFormat::Png) {
+        return Err(status::BAD_INPUT);
+    }
+    let img = image::load_from_memory_with_format(data, image::ImageFormat::Png)
+        .map_err(|_| status::BAD_INPUT)?;
+    let (w, h) = (img.width(), img.height());
+    if w == 0 || h == 0 {
+        return Err(status::BAD_INPUT);
+    }
+    use image::ColorType as C;
+    let (pixels, ch) = match img.color() {
+        C::L8 | C::L16 => (img.into_luma8().into_raw(), 1),
+        C::La8 | C::La16 => (img.into_luma_alpha8().into_raw(), 2),
+        c if c.has_alpha() => (img.into_rgba8().into_raw(), 4),
+        _ => (img.into_rgb8().into_raw(), 3),
+    };
+    Ok((pixels, w, h, ch))
+}
+
+/// [decode_png_layout] 的 C ABI：像素经 `out_ptr` / `out_len` 交出（[crate::ffc_free_bytes]
+/// 释放），`out_meta = [width, height, channels]`。不是 PNG / 解不开返回 [status::BAD_INPUT]。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写；`out_meta` 可写 3 个 u32。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_decode_png(
+    data: *const u8,
+    len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+    out_meta: *mut u32,
+) -> i32 {
+    guard(|| {
+        if data.is_null() || out_ptr.is_null() || out_len.is_null() || out_meta.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        match decode_png_layout(slice(data, len)) {
+            Ok((pixels, w, h, ch)) => {
+                slice_mut(out_meta, 3).copy_from_slice(&[w, h, ch]);
+                crate::hand_over_bytes(pixels, out_ptr, out_len);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2156,7 +2220,9 @@ mod tests {
     #[test]
     fn mosaic_averages_touched_blocks_only_inside_regions() {
         // 4x1 RGBA，块 2，区域只盖 x = 1。
-        let mut px = vec![0u8, 0, 0, 255, 10, 10, 10, 255, 100, 0, 0, 255, 0, 0, 0, 255];
+        let mut px = vec![
+            0u8, 0, 0, 255, 10, 10, 10, 255, 100, 0, 0, 255, 0, 0, 0, 255,
+        ];
         mosaic_rgba(&mut px, 4, 1, 2, &[[1, 0, 2, 1]]);
         assert_eq!(&px[0..8], &[0, 0, 0, 255, 5, 5, 5, 255]);
         assert_eq!(&px[8..16], &[100, 0, 0, 255, 0, 0, 0, 255]);

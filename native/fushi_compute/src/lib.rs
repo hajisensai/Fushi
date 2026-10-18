@@ -2,7 +2,7 @@
 //!
 //! ABI 约定（Dart 侧见 packages/fushi_compute）：
 //! - 导出符号一律 `ffc_<域>_<动作>`，`#[no_mangle] pub extern "C"`；每个域一个模块文件
-//!   （`hash.rs` / `image.rs` / `ocr.rs` / `text.rs` / `ts.rs`），互不依赖；
+//!   （`galcal.rs` / `hash.rs` / `image.rs` / `ocr.rs` / `text.rs` / `ts.rs`），互不依赖；
 //!   `dart.rs` 是共用的 Dart 数值语义复刻（`max` / `min` / `clamp` / `compareTo` / `List.sort`）。
 //! - 数据走原始缓冲区（指针 + 长度），不走 JSON：这些接口按块 / 像素 / 字符批量调用，
 //!   编码开销会吃掉收益（fushi_fsrs 实测逐次 JSON 往返 25～30 µs）。
@@ -18,6 +18,7 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 pub mod dart;
+pub mod galcal;
 pub mod hash;
 pub mod image;
 pub mod ocr;

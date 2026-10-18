@@ -215,6 +215,22 @@ typedef _DbDart =
       Pointer<Size>,
     );
 
+typedef _DecodePngC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+      Pointer<Uint32>,
+    );
+typedef _DecodePngDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+      Pointer<Uint32>,
+    );
 typedef _CoverSigC = Int32 Function(Pointer<Uint8>, Size, Pointer<Double>);
 typedef _CoverSigDart = int Function(Pointer<Uint8>, int, Pointer<Double>);
 typedef _CoverCmpC =
@@ -322,6 +338,9 @@ class FushiComputeImage {
       _db = lib.library.lookupFunction<_DbC, _DbDart>(
         'ffc_image_db_components',
       ),
+      _decodePng = lib.library.lookupFunction<_DecodePngC, _DecodePngDart>(
+        'ffc_image_decode_png',
+      ),
       _coverSig = lib.library.lookupFunction<_CoverSigC, _CoverSigDart>(
         'ffc_image_cover_signature',
       ),
@@ -343,6 +362,7 @@ class FushiComputeImage {
   final _ToJpegDart _toJpeg;
   final _EdgeDart _edge;
   final _DbDart _db;
+  final _DecodePngDart _decodePng;
   final _CoverSigDart _coverSig;
   final _CoverCmpDart _coverCmp;
   final _AiCropsDart _aiCrops;
@@ -851,6 +871,33 @@ class FushiComputeImage {
     } finally {
       malloc.free(outPtr);
       malloc.free(outLen);
+    }
+  }
+
+  /// 只认 PNG、按 `package:image` `decodePng` 的通道布局解码（灰度 1 通道、灰度 + alpha 2 通道、
+  /// RGB 3、RGBA 4；调色板展开），不转方向。不是 PNG / 解不开返回 null。与 `decodePng` 的差别
+  /// 只在 16 位与 1/2/4 位灰度（这里一律给 8 位，见 image.rs `decode_png_layout`）。
+  ({Uint8List pixels, int width, int height, int channels})? decodePng(
+    Uint8List bytes,
+  ) {
+    final Pointer<Uint8> src = _copyIn(bytes);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    final Pointer<Uint32> meta = malloc<Uint32>(3);
+    try {
+      final int status = _decodePng(src, bytes.length, outPtr, outLen, meta);
+      if (status == FfcStatus.badInput) return null;
+      _check('ffc_image_decode_png', status);
+      return (
+        pixels: _takeBytes(outPtr, outLen),
+        width: meta[0],
+        height: meta[1],
+        channels: meta[2],
+      );
+    } finally {
+      malloc.free(outPtr);
+      malloc.free(outLen);
+      malloc.free(meta);
     }
   }
 

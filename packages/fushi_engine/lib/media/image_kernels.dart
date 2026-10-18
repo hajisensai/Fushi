@@ -183,6 +183,21 @@ uint8Pixels(img.Image image) {
 Uint8List? encodeImageAsJpeg(Uint8List bytes, {required int quality}) =>
     FushiComputeImage.instance.toJpeg(bytes, quality: quality);
 
+/// 原生 PNG 解码，像素布局同 `img.decodePng`（灰度 1 通道 / 灰度 + alpha 2 通道 / RGB / RGBA，
+/// 调色板展开，不转方向）；不是 PNG 或解不开返回 null。16 位与 1/2/4 位灰度一律给 8 位。
+img.Image? decodePngNative(Uint8List bytes) {
+  final ({Uint8List pixels, int width, int height, int channels})? d =
+      FushiComputeImage.instance.decodePng(bytes);
+  if (d == null) return null;
+  return img.Image.fromBytes(
+    width: d.width,
+    height: d.height,
+    bytes: d.pixels.buffer,
+    bytesOffset: d.pixels.offsetInBytes,
+    numChannels: d.channels,
+  );
+}
+
 /// 原生解码（见 [decodeImageNative]）连同识别出的格式。
 ({img.Image image, FfcImageFormat format})? decodeImageWithFormat(
   Uint8List bytes, {

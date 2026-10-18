@@ -15,11 +15,46 @@ use crate::{guard, status};
 const TS_PACKET: usize = 188;
 const TS_SYNC: u8 = 0x47;
 
+/// 输出游标：写进调用方的缓冲区（测试里写进自有的 Vec）。容量由
+/// [ffc_ts_demux_output_bound] 保证够用。
+#[derive(Default)]
+struct Sink {
+    ptr: usize,
+    cap: usize,
+    len: usize,
+    #[cfg(test)]
+    owned: Vec<u8>,
+}
+
+impl Sink {
+    fn push(&mut self, bytes: &[u8]) {
+        #[cfg(test)]
+        if self.ptr == 0 {
+            self.owned.extend_from_slice(bytes);
+            return;
+        }
+        assert!(
+            self.len + bytes.len() <= self.cap,
+            "ts output bound violated"
+        );
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                (self.ptr as *mut u8).add(self.len),
+                bytes.len(),
+            );
+        }
+        self.len += bytes.len();
+    }
+}
+
 #[derive(Default)]
 pub struct TsDemuxer {
     pmt_pid: Option<u32>,
     es_pid: Option<u32>,
-    pes: Option<Vec<u8>>,
+    /// 在拼的 PES（`pes_active` 为假时无；缓冲区复用，不逐 PES 分配）。
+    pes: Vec<u8>,
+    pes_active: bool,
     pes_expected: usize,
     last_pts: Option<i64>,
     pts_wrap: i64,
@@ -29,8 +64,8 @@ pub struct TsDemuxer {
     resync_from: Option<u64>,
     /// 已按 `complete = true` 收尾：之后不再接受输入。
     finished: bool,
-    /// 本次 feed 交出的包（序列化后交给调用方）。
-    emitted: Vec<(i64, Vec<u8>)>,
+    /// 本次 feed 交出的包，按 [ffc_ts_demux_feed] 的格式序列化进调用方给的缓冲区。
+    out: Sink,
 }
 
 impl TsDemuxer {
@@ -119,18 +154,18 @@ impl TsDemuxer {
         }
         if unit_start {
             self.flush(true);
-            self.pes = Some(payload.to_vec());
+            self.pes.clear();
+            self.pes.extend_from_slice(payload);
+            self.pes_active = true;
             self.pes_expected = if payload.len() >= 6 {
                 ((payload[4] as usize) << 8) | payload[5] as usize
             } else {
                 0
             };
-        } else if let Some(pes) = self.pes.as_mut() {
-            pes.extend_from_slice(payload);
+        } else if self.pes_active {
+            self.pes.extend_from_slice(payload);
         }
-        if self.pes_expected > 0
-            && self.pes.as_ref().map_or(0, |p| p.len()) >= self.pes_expected + 6
-        {
+        if self.pes_expected > 0 && self.pes_active && self.pes.len() >= self.pes_expected + 6 {
             self.flush(true);
         }
     }
@@ -166,7 +201,8 @@ impl TsDemuxer {
         while i + 5 <= n - 4 {
             let k = i as usize;
             let pid = (((section[k + 1] & 0x1F) as u32) << 8) | section[k + 2] as u32;
-            let es_info = ((((section[k + 3] & 0x0F) as usize) << 8) | section[k + 4] as usize) as i64;
+            let es_info =
+                ((((section[k + 3] & 0x0F) as usize) << 8) | section[k + 4] as usize) as i64;
             if self.es_pid.is_none() {
                 self.es_pid = Some(pid);
             }
@@ -176,29 +212,33 @@ impl TsDemuxer {
 
     /// `_flush`：交出在拼的 PES；[force] 为假时只交长度已收满的。
     fn flush(&mut self, force: bool) {
-        let Some(pes) = self.pes.as_ref() else {
+        if !self.pes_active {
             return;
-        };
+        }
         let sized = self.pes_expected > 0;
-        if sized && pes.len() < self.pes_expected + 6 {
+        if sized && self.pes.len() < self.pes_expected + 6 {
             if !force {
                 return;
             }
-            self.pes = None;
+            self.pes_active = false;
             return;
         }
-        let pes = self.pes.take().unwrap();
+        self.pes_active = false;
+        let pes = std::mem::take(&mut self.pes);
         let body = if sized {
             &pes[..self.pes_expected + 6]
         } else {
             &pes[..]
         };
-        if let Some(packet) = self.read_pes(body) {
-            self.emitted.push(packet);
+        if let Some((pts, payload)) = self.read_pes(body) {
+            self.out.push(&pts.to_ne_bytes());
+            self.out.push(&(payload.len() as u32).to_ne_bytes());
+            self.out.push(payload);
         }
+        self.pes = pes;
     }
 
-    fn read_pes(&mut self, pes: &[u8]) -> Option<(i64, Vec<u8>)> {
+    fn read_pes<'p>(&mut self, pes: &'p [u8]) -> Option<(i64, &'p [u8])> {
         if pes.len() < 9 || pes[0] != 0 || pes[1] != 0 || pes[2] != 1 {
             return None;
         }
@@ -216,7 +256,7 @@ impl TsDemuxer {
             | (((pes[11] >> 1) as i64) << 15)
             | ((pes[12] as i64) << 7)
             | ((pes[13] >> 1) as i64);
-        Some((self.unwrap_pts(raw), pes[payload_start..].to_vec()))
+        Some((self.unwrap_pts(raw), &pes[payload_start..]))
     }
 
     fn unwrap_pts(&mut self, raw: i64) -> i64 {
@@ -283,10 +323,25 @@ pub unsafe extern "C" fn ffc_ts_demux_need_offset(handle: *const TsDemuxer) -> u
     }
 }
 
+/// 喂 [len] 字节时输出缓冲区至少要多大：已拼的尾 PES + 本段字节 + 每个可能的 PES 12 字节头。
+///
+/// # Safety
+/// [handle] 是有效句柄。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_ts_demux_output_bound(handle: *const TsDemuxer, len: usize) -> usize {
+    if handle.is_null() {
+        return 0;
+    }
+    let d = &*handle;
+    let pending = if d.pes_active { d.pes.len() } else { 0 };
+    pending + len + 12 * (len / TS_PACKET + 2)
+}
+
 /// 喂一段数据：[data] 是文件从绝对偏移 [base]（必须等于 [ffc_ts_demux_need_offset]）到当前
 /// 文件尾的字节。本次新交出的 PES 序列化成 `[i64 pts90k][u32 len][len 字节]…`（本机字节序）
-/// 经 `out_ptr` / `out_len` 交出（[crate::ffc_free_bytes] 释放）。`complete != 0` 时按文件
-/// 已写完收尾，之后句柄不再接受输入。
+/// 写进调用方的 [out]（容量至少 [ffc_ts_demux_output_bound]；不由 Rust 分配——整轨一次解时
+/// 输出与输入同量级，新分配的缺页比解析本身还贵），`out_len` 写字节数。`complete != 0` 时按
+/// 文件已写完收尾，之后句柄不再接受输入。
 ///
 /// # Safety
 /// [handle] 有效；指针按给定长度可读 / 可写。
@@ -297,13 +352,16 @@ pub unsafe extern "C" fn ffc_ts_demux_feed(
     len: usize,
     base: u64,
     complete: i32,
-    out_ptr: *mut *mut u8,
+    out: *mut u8,
+    out_cap: usize,
     out_len: *mut usize,
 ) -> i32 {
     guard(|| {
-        if handle.is_null() || out_ptr.is_null() || out_len.is_null() || (len > 0 && data.is_null())
-        {
+        if handle.is_null() || out.is_null() || out_len.is_null() || (len > 0 && data.is_null()) {
             return status::NULL_ARGUMENT;
+        }
+        if out_cap < ffc_ts_demux_output_bound(handle, len) {
+            return status::BUFFER_TOO_SMALL;
         }
         let demux = &mut *handle;
         if demux.finished || base != demux.need_offset() {
@@ -314,16 +372,14 @@ pub unsafe extern "C" fn ffc_ts_demux_feed(
         } else {
             std::slice::from_raw_parts(data, len)
         };
+        demux.out = Sink {
+            ptr: out as usize,
+            cap: out_cap,
+            ..Sink::default()
+        };
         demux.feed(bytes, base, complete != 0);
-        let packets = std::mem::take(&mut demux.emitted);
-        let total: usize = packets.iter().map(|(_, d)| 12 + d.len()).sum();
-        let mut out = Vec::with_capacity(total);
-        for (pts, d) in packets {
-            out.extend_from_slice(&pts.to_ne_bytes());
-            out.extend_from_slice(&(d.len() as u32).to_ne_bytes());
-            out.extend_from_slice(&d);
-        }
-        crate::hand_over_bytes(out, out_ptr, out_len);
+        *out_len = demux.out.len;
+        demux.out = Sink::default();
         status::OK
     })
 }
@@ -344,10 +400,12 @@ mod tests {
     }
 
     fn stream() -> Vec<u8> {
-        let pat = [0x00, 0xB0, 13, 0, 1, 0xC1, 0, 0, 0, 1, 0xF0, 0x00, 0, 0, 0, 0];
+        let pat = [
+            0x00, 0xB0, 13, 0, 1, 0xC1, 0, 0, 0, 1, 0xF0, 0x00, 0, 0, 0, 0,
+        ];
         let pmt = [
-            0x02, 0xB0, 18, 0, 1, 0xC1, 0, 0, 0xE1, 0x00, 0xF0, 0x00, 0x06, 0xE1, 0x00, 0xF0,
-            0x00, 0, 0, 0, 0,
+            0x02, 0xB0, 18, 0, 1, 0xC1, 0, 0, 0xE1, 0x00, 0xF0, 0x00, 0x06, 0xE1, 0x00, 0xF0, 0x00,
+            0, 0, 0, 0,
         ];
         let mut out = psi(0, &pat);
         out.extend(psi(0x1000, &pmt));
@@ -400,10 +458,22 @@ mod tests {
         out
     }
 
+    fn parse(blob: &[u8]) -> Vec<(i64, Vec<u8>)> {
+        let mut out = Vec::new();
+        let mut o = 0;
+        while o + 12 <= blob.len() {
+            let pts = i64::from_ne_bytes(blob[o..o + 8].try_into().unwrap());
+            let len = u32::from_ne_bytes(blob[o + 8..o + 12].try_into().unwrap()) as usize;
+            out.push((pts, blob[o + 12..o + 12 + len].to_vec()));
+            o += 12 + len;
+        }
+        out
+    }
+
     fn run_full(data: &[u8], complete: bool) -> Vec<(i64, Vec<u8>)> {
         let mut d = TsDemuxer::default();
         d.feed(data, 0, complete);
-        d.emitted
+        parse(&d.out.owned)
     }
 
     #[test]
@@ -418,12 +488,12 @@ mod tests {
                 end = (end + step).min(ts.len());
                 let from = d.need_offset() as usize;
                 d.feed(&ts[from..end], from as u64, false);
-                got.append(&mut d.emitted);
+                got.extend(parse(&std::mem::take(&mut d.out.owned)));
                 assert_eq!(got, run_full(&ts[..end], false), "step {step} end {end}");
             }
             let from = d.need_offset() as usize;
             d.feed(&ts[from..], from as u64, true);
-            got.append(&mut d.emitted);
+            got.extend(parse(&std::mem::take(&mut d.out.owned)));
             assert_eq!(got, run_full(&ts, true));
         }
     }
