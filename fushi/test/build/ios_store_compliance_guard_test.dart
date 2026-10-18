@@ -464,8 +464,9 @@ void main() {
 
     test('网页漫画（浏览器上的「用 Fushi 阅读本章」）由 onlineMangaSource 门控，'
         '通用浏览器本身不过门', () {
-      // 判据只写在 webComicReaderActionAvailable 一处；浏览器页、临时入口与运行时
-      // 适配器都只问它 / 同一道门，不写 Platform.isIOS。
+      // 判据只写在 webComicReaderActionAvailable 一处；浏览器页与运行时适配器
+      // 都只问它 / 同一道门，不写 Platform.isIOS。浏览器页的入口是「浏览器」模块
+      // （五端都有），所以门必须落在页内的漫画动作上，而不是入口上。
       final String launch = compactCode(
         read('lib/src/media/manga/web/web_comic_reader_launch.dart'),
       );
@@ -510,10 +511,6 @@ void main() {
           'boolgetisSupportedOnThisPlatform=>'
           'StoreRestrictedCapability.onlineMangaSource.isAvailable;',
         ),
-      );
-      expect(
-        compactCode(read('lib/src/pages/implementations/browse_page.dart')),
-        contains('webComicReaderActionAvailable())FushiIconButton('),
       );
     });
 
