@@ -43,14 +43,6 @@ typedef _CbcPkcs7Dart =
       Pointer<Size>,
     );
 
-/// 原生库（或本域需要的符号）加载不了。
-///
-/// 临时定义在本域：平台接线 PR 会在 `fushi_compute_library.dart` 提供同名的统一类型，
-/// rebase 时删掉这里、改用那边的。
-final class FushiComputeUnavailableError extends StateError {
-  FushiComputeUnavailableError(super.message);
-}
-
 /// fushi_compute 的加密域（AES / AACS）。
 ///
 /// 原生库是硬依赖：库或本域符号缺失时 [instance] 抛 [FushiComputeUnavailableError]，
@@ -110,27 +102,12 @@ final class FushiComputeCrypto {
   static FushiComputeCrypto get instance => _instance ??= _load();
 
   static FushiComputeCrypto _load() {
-    final FushiCompute? lib = FushiCompute.instance;
-    if (lib == null) {
-      throw FushiComputeUnavailableError(
-        'fushi_compute native library is not loadable '
-        '(${FushiCompute.defaultLibraryName()}; set $kFushiComputeLibEnv)',
-      );
+    final FushiCompute lib = FushiCompute.require();
+    try {
+      return FushiComputeCrypto._(lib);
+    } on ArgumentError catch (e) {
+      throw lib.missingSymbols('crypto', e.message ?? e);
     }
-    for (final String symbol in const <String>[
-      'ffc_crypto_aacs_open',
-      'ffc_crypto_aacs_close',
-      'ffc_crypto_aacs_decrypt_units',
-      'ffc_crypto_aes128_ecb_decrypt',
-      'ffc_crypto_aes_cbc_pkcs7_decrypt',
-    ]) {
-      if (!lib.providesSymbol(symbol)) {
-        throw FushiComputeUnavailableError(
-          'fushi_compute at ${lib.libraryPath} lacks $symbol (stale build)',
-        );
-      }
-    }
-    return FushiComputeCrypto._(lib);
   }
 
   /// AES-128 ECB 原地解 [data]（长度须为 16 的倍数）。
