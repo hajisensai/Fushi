@@ -20,6 +20,7 @@ pub mod epub;
 pub mod html5lib;
 pub mod sanitize;
 mod study_char_table;
+pub mod fold;
 
 use study_char_table::STUDY_CHAR_RANGES;
 
