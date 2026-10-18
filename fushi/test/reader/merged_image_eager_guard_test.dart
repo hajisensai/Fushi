@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// TODO-1339 回归守卫（源码扫描，CI 可跑）：图片合并（前导单图片 run 折进后随文本章，
 /// TODO-1128/1174）注入的插图（`<div class="fushi-merged-image"><img ...></div>`，
-/// webview.part.dart `_injectMergedChapterImages`）必须在 `_sharedInitImages` 里保持
+/// webview.part.dart `_mergedChapterImagesHtml`）必须在 `_sharedInitImages` 里保持
 /// **eager**，不得被无条件挂 `loading="lazy"`。
 ///
 /// 根因（本 bug）：`_sharedInitImages` 曾给所有非 gaiji 图无条件挂 lazy。合并注入的
@@ -55,7 +55,7 @@ void main() {
       );
       final String src = webviewFile.readAsStringSync();
       expect(src.contains('class="fushi-merged-image"'), isTrue,
-          reason: '_injectMergedChapterImages 必须用 fushi-merged-image 包裹每张前导插图');
+          reason: '_mergedChapterImagesHtml 必须用 fushi-merged-image 包裹每张前导插图');
     });
   });
 }
