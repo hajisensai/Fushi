@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/widgets.dart';
 import '_static_channel.dart';
@@ -406,7 +407,8 @@ class CustomPlatformView extends StatefulWidget {
   _CustomPlatformViewState createState() => _CustomPlatformViewState();
 }
 
-class _CustomPlatformViewState extends State<CustomPlatformView> {
+class _CustomPlatformViewState extends State<CustomPlatformView>
+    with SingleTickerProviderStateMixin {
   final GlobalKey _key = GlobalKey();
 
   /// BUG-1419：WebView2 侧的鼠标键状态（`VirtualKeyState`，in_app_webview.h）是
@@ -426,6 +428,40 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
 
   PointerDeviceKind _pointerKind = PointerDeviceKind.unknown;
   final TrackpadGestureRouter _trackpad = TrackpadGestureRouter();
+
+  /// 触控板两指滚动的速度采样（喂 PanZoom 的累计平移），松手时据此起惯性。
+  VelocityTracker _trackpadVelocity =
+      VelocityTracker.withKind(PointerDeviceKind.trackpad);
+
+  /// 正在进行的触控板惯性；每帧由 [_trackpadFlingTicker] 推进。
+  TrackpadFling? _trackpadFling;
+  late final Ticker _trackpadFlingTicker = createTicker(_onTrackpadFlingTick);
+
+  void _onTrackpadFlingTick(Duration elapsed) {
+    final Offset? delta = _trackpadFling?.step(elapsed);
+    if (delta == null) {
+      _stopTrackpadFling();
+      return;
+    }
+    if (delta != Offset.zero) {
+      _controller._setScrollDelta(delta.dx, delta.dy);
+    }
+  }
+
+  /// 新手势 / 按下 / 鼠标滚轮 / 系统惯性取消 / 销毁时立刻停下，与浏览器里
+  /// 「手指再次放上触控板惯性即停」一致。
+  void _stopTrackpadFling() {
+    _trackpadFling = null;
+    if (_trackpadFlingTicker.isActive) _trackpadFlingTicker.stop();
+  }
+
+  void _startTrackpadFling(Offset velocity) {
+    _stopTrackpadFling();
+    final TrackpadFling? fling = TrackpadFling.fromVelocity(velocity);
+    if (fling == null) return;
+    _trackpadFling = fling;
+    _trackpadFlingTicker.start();
+  }
 
   MouseCursor _cursor = SystemMouseCursors.basic;
 
@@ -525,6 +561,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                       _syncMouseInput(ev.localPosition, ev.buttons);
                     },
                     onPointerDown: (ev) {
+                      _stopTrackpadFling();
                       _reportSurfaceSize();
                       _reportWidgetPosition();
 
@@ -603,13 +640,29 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                       }
                     },
                     onPointerSignal: (signal) {
-                      if (signal is PointerScrollEvent) {
+                      if (signal is PointerScrollInertiaCancelEvent) {
+                        _stopTrackpadFling();
+                      } else if (signal is PointerScrollEvent) {
+                        _stopTrackpadFling();
                         _controller._setScrollDelta(
                             -signal.scrollDelta.dx, -signal.scrollDelta.dy);
                       }
                     },
-                    onPointerPanZoomStart: (_) => _trackpad.start(),
+                    onPointerPanZoomStart: (ev) {
+                      _stopTrackpadFling();
+                      _trackpad.start();
+                      _trackpadVelocity =
+                          VelocityTracker.withKind(PointerDeviceKind.trackpad)
+                            ..addPosition(ev.timeStamp, Offset.zero);
+                    },
+                    onPointerPanZoomEnd: (_) {
+                      // 捏合不续惯性（浏览器里缩放松手即停）。
+                      if (_trackpad.isPinching) return;
+                      _startTrackpadFling(
+                          _trackpadVelocity.getVelocity().pixelsPerSecond);
+                    },
                     onPointerPanZoomUpdate: (ev) {
+                      _trackpadVelocity.addPosition(ev.timeStamp, ev.pan);
                       final TrackpadGestureOutput out = _trackpad.update(
                           panDelta: ev.panDelta, scale: ev.scale);
                       switch (out.kind) {
@@ -658,6 +711,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
 
   @override
   void dispose() {
+    _trackpadFlingTicker.dispose();
     super.dispose();
     _cursorSubscription?.cancel();
     _controller.dispose();
