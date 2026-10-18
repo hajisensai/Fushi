@@ -13,7 +13,9 @@
 //!   ffsrs_call / ffsrs_compute_parameters / ffsrs_retrievability_batch / ffsrs_free_string /
 //!   ffsrs_zstd_decompress / ffsrs_free_bytes / ffsrs_abi_version /
 //!   ffsrs_search_corpus_new / ffsrs_search_corpus_free / ffsrs_search_corpus_set_ints /
-//!   ffsrs_search_corpus_set_floats / ffsrs_search_corpus_match / ffsrs_search_dupe_norm_batch
+//!   ffsrs_search_corpus_set_floats / ffsrs_search_chunk_new / ffsrs_search_chunk_free /
+//!   ffsrs_search_corpus_attach / ffsrs_search_corpus_needs / ffsrs_search_corpus_match /
+//!   ffsrs_search_dupe_norm_batch
 //!   （Anki 搜索的逐卡求值与查重规范形，见 search.rs）
 
 pub mod search;
@@ -520,6 +522,36 @@ fn set_error(error_out: *mut *mut c_char, message: &str) {
     }
 }
 
+/// FFI 句柄：语料加一把锁。Dart 侧可能在后台 isolate 上预先求值（[ffsrs_search_corpus_match]，
+/// 结果缓存在这里），同时 UI isolate 也可能调进来，所以每个入口都先拿锁。
+pub struct SearchCorpus {
+    inner: Mutex<SearchState>,
+}
+
+struct SearchState {
+    corpus: search::Corpus,
+    /// 最近一次求值（查询 JSON → 位图、命中数）；任何修改语料的调用都会清掉。
+    last: Option<(String, Vec<u8>, usize)>,
+}
+
+impl SearchCorpus {
+    fn lock(&self) -> std::sync::MutexGuard<'_, SearchState> {
+        // 锁被 panic 毒化只可能是之前某次调用 panic 了（已被 catch_unwind 接住）：数据仍完整可用。
+        self.inner.lock().unwrap_or_else(|p| p.into_inner())
+    }
+}
+
+/// 一块已校验的字段值文本（[ffsrs_search_chunk_new]），交给 [ffsrs_search_corpus_attach] 后归语料。
+pub struct SearchChunk(String);
+
+fn bytes<'a, T>(ptr: *const T, n: usize) -> &'a [T] {
+    if n == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(ptr, n) }
+    }
+}
+
 /// 建一批卡的搜索语料（布局见 `search::Corpus::new`）。失败返回空指针，并在 `error_out`
 /// （可空）写一条用 [ffsrs_free_string] 释放的错误串。句柄用 [ffsrs_search_corpus_free] 释放。
 #[no_mangle]
@@ -529,17 +561,17 @@ pub extern "C" fn ffsrs_search_corpus_new(
     layout: *const u32,
     layout_len: usize,
     error_out: *mut *mut c_char,
-) -> *mut search::Corpus {
+) -> *mut SearchCorpus {
     let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<search::Corpus, String> {
         if (text.is_null() && text_len > 0) || layout.is_null() {
             return Err("null buffer".into());
         }
-        let text: &[u8] = if text_len == 0 { &[] } else { unsafe { std::slice::from_raw_parts(text, text_len) } };
-        let layout = unsafe { std::slice::from_raw_parts(layout, layout_len) };
-        search::Corpus::new(text, layout)
+        search::Corpus::new(bytes(text, text_len), bytes(layout, layout_len))
     }));
     match outcome.unwrap_or_else(|_| Err("panic in fushi_fsrs".into())) {
-        Ok(corpus) => Box::into_raw(Box::new(corpus)),
+        Ok(corpus) => Box::into_raw(Box::new(SearchCorpus {
+            inner: Mutex::new(SearchState { corpus, last: None }),
+        })),
         Err(e) => {
             set_error(error_out, &e);
             std::ptr::null_mut()
@@ -548,7 +580,7 @@ pub extern "C" fn ffsrs_search_corpus_new(
 }
 
 #[no_mangle]
-pub extern "C" fn ffsrs_search_corpus_free(corpus: *mut search::Corpus) {
+pub extern "C" fn ffsrs_search_corpus_free(corpus: *mut SearchCorpus) {
     if !corpus.is_null() {
         unsafe { drop(Box::from_raw(corpus)) };
     }
@@ -557,7 +589,7 @@ pub extern "C" fn ffsrs_search_corpus_free(corpus: *mut search::Corpus) {
 /// 设整数列（`search::IntColumn`），`n` 必须等于卡数。成功 0，失败 -1。
 #[no_mangle]
 pub extern "C" fn ffsrs_search_corpus_set_ints(
-    corpus: *mut search::Corpus,
+    corpus: *const SearchCorpus,
     column: i32,
     data: *const i64,
     n: usize,
@@ -566,8 +598,9 @@ pub extern "C" fn ffsrs_search_corpus_set_ints(
         if corpus.is_null() || (data.is_null() && n > 0) || column < 0 {
             return Err("null".into());
         }
-        let data: &[i64] = if n == 0 { &[] } else { unsafe { std::slice::from_raw_parts(data, n) } };
-        unsafe { &mut *corpus }.set_ints(column as usize, data)
+        let mut state = unsafe { &*corpus }.lock();
+        state.last = None;
+        state.corpus.set_ints(column as usize, bytes(data, n))
     }));
     if matches!(outcome, Ok(Ok(()))) { 0 } else { -1 }
 }
@@ -575,7 +608,7 @@ pub extern "C" fn ffsrs_search_corpus_set_ints(
 /// 设小数列（`search::FloatColumn`，NaN = 没有值），`n` 必须等于卡数。成功 0，失败 -1。
 #[no_mangle]
 pub extern "C" fn ffsrs_search_corpus_set_floats(
-    corpus: *mut search::Corpus,
+    corpus: *const SearchCorpus,
     column: i32,
     data: *const f64,
     n: usize,
@@ -584,34 +617,125 @@ pub extern "C" fn ffsrs_search_corpus_set_floats(
         if corpus.is_null() || (data.is_null() && n > 0) || column < 0 {
             return Err("null".into());
         }
-        let data: &[f64] = if n == 0 { &[] } else { unsafe { std::slice::from_raw_parts(data, n) } };
-        unsafe { &mut *corpus }.set_floats(column as usize, data)
+        let mut state = unsafe { &*corpus }.lock();
+        state.last = None;
+        state.corpus.set_floats(column as usize, bytes(data, n))
     }));
     if matches!(outcome, Ok(Ok(()))) { 0 } else { -1 }
 }
 
+/// 校验并拷下一块字段值文本（UTF-8）。不碰任何语料，可在任意线程上调（Dart 侧在编码的后台
+/// isolate 里调，校验和拷贝不占 UI isolate）。失败（不是 UTF-8）返回空指针。用
+/// [ffsrs_search_corpus_attach] 交给语料，或 [ffsrs_search_chunk_free] 丢弃。
+#[no_mangle]
+pub extern "C" fn ffsrs_search_chunk_new(text: *const u8, text_len: usize) -> *mut SearchChunk {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Option<String> {
+        if text.is_null() && text_len > 0 {
+            return None;
+        }
+        std::str::from_utf8(bytes(text, text_len)).ok().map(str::to_owned)
+    }));
+    match outcome.ok().flatten() {
+        Some(s) => Box::into_raw(Box::new(SearchChunk(s))),
+        None => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn ffsrs_search_chunk_free(chunk: *mut SearchChunk) {
+    if !chunk.is_null() {
+        unsafe { drop(Box::from_raw(chunk)) };
+    }
+}
+
+/// 把一块文本挂进语料（`search::Corpus::attach`）：第 k 个值 = `chunk[spans[2k]..spans[2k+1]]`，
+/// 属于字段 `fields[k]`。`chunk` 的所有权无论成败都转给这里。成功 0，失败 -1。
+#[no_mangle]
+pub extern "C" fn ffsrs_search_corpus_attach(
+    corpus: *const SearchCorpus,
+    chunk: *mut SearchChunk,
+    fields: *const u32,
+    n: usize,
+    spans: *const u32,
+) -> i32 {
+    let chunk = if chunk.is_null() { None } else { Some(unsafe { Box::from_raw(chunk) }) };
+    let outcome = catch_unwind(AssertUnwindSafe(move || -> Result<(), String> {
+        let chunk = chunk.ok_or("null chunk")?;
+        if corpus.is_null() || ((fields.is_null() || spans.is_null()) && n > 0) {
+            return Err("null".into());
+        }
+        let mut state = unsafe { &*corpus }.lock();
+        state.last = None;
+        state.corpus.attach(chunk.0, bytes(fields, n), bytes(spans, 2 * n))
+    }));
+    if matches!(outcome, Ok(Ok(()))) { 0 } else { -1 }
+}
+
+fn search_error_json(e: search::SearchError) -> Value {
+    json!({ "error": e.reason, "kind": e.kind, "at": e.at })
+}
+
+fn query_str<'a>(query: *const c_char) -> Result<&'a str, search::SearchError> {
+    let internal = |m: &str| search::SearchError { kind: "internal", reason: m.into(), at: String::new() };
+    if query.is_null() {
+        return Err(internal("null"));
+    }
+    unsafe { CStr::from_ptr(query) }.to_str().map_err(|_| internal("query is not UTF-8"))
+}
+
+/// 一条搜索求值要的字段值（`search::Corpus::needs`）：返回 `{"ok":{"all":true}}` /
+/// `{"ok":{"all":false,"names":[字段名的字符串 id…]}}` 或与 [ffsrs_search_corpus_match]
+/// 同形的错误，由 [ffsrs_free_string] 释放。
+#[no_mangle]
+pub extern "C" fn ffsrs_search_corpus_needs(corpus: *const SearchCorpus, query: *const c_char) -> *mut c_char {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<search::Needs, search::SearchError> {
+        let query = query_str(query)?;
+        if corpus.is_null() {
+            return Err(search::SearchError { kind: "internal", reason: "null".into(), at: String::new() });
+        }
+        unsafe { &*corpus }.lock().corpus.needs(query)
+    }));
+    let value = match outcome {
+        Ok(Ok(search::Needs::All)) => json!({ "ok": { "all": true } }),
+        Ok(Ok(search::Needs::Names(names))) => json!({ "ok": { "all": false, "names": names } }),
+        Ok(Err(e)) => search_error_json(e),
+        Err(_) => json!({ "error": "panic in fushi_fsrs", "kind": "internal", "at": "" }),
+    };
+    CString::new(value.to_string()).unwrap().into_raw()
+}
+
 /// 对整批卡求值一条搜索（`query` 是语法树 JSON，见 `search::Node`）：`out[i]` 写 1 / 0，
 /// `n` 必须等于卡数。返回 `{"ok":命中数}` 或 `{"error","kind":"syntax"|"internal","at"}`，
-/// 由 [ffsrs_free_string] 释放。
+/// 由 [ffsrs_free_string] 释放。最近一次的结果缓存着：同一条查询再求值（语料没改过）直接给结果，
+/// 所以 Dart 可以先在后台 isolate 上算一遍，UI isolate 上的那次只是取结果。
 #[no_mangle]
 pub extern "C" fn ffsrs_search_corpus_match(
-    corpus: *const search::Corpus,
+    corpus: *const SearchCorpus,
     query: *const c_char,
     out: *mut u8,
     n: usize,
 ) -> *mut c_char {
     let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<usize, search::SearchError> {
         let internal = |m: &str| search::SearchError { kind: "internal", reason: m.into(), at: String::new() };
-        if corpus.is_null() || query.is_null() || (out.is_null() && n > 0) {
+        let query = query_str(query)?;
+        if corpus.is_null() || (out.is_null() && n > 0) {
             return Err(internal("null"));
         }
-        let query = unsafe { CStr::from_ptr(query) }.to_str().map_err(|_| internal("query is not UTF-8"))?;
         let out: &mut [u8] = if n == 0 { &mut [] } else { unsafe { std::slice::from_raw_parts_mut(out, n) } };
-        unsafe { &*corpus }.search(query, out)
+        let mut state = unsafe { &*corpus }.lock();
+        if let Some((q, bits, hits)) = &state.last {
+            if q == query && bits.len() == out.len() {
+                out.copy_from_slice(bits);
+                return Ok(*hits);
+            }
+        }
+        let hits = state.corpus.search(query, out)?;
+        state.last = Some((query.to_owned(), out.to_vec(), hits));
+        Ok(hits)
     }));
     let value = match outcome {
         Ok(Ok(hits)) => json!({ "ok": hits }),
-        Ok(Err(e)) => json!({ "error": e.reason, "kind": e.kind, "at": e.at }),
+        Ok(Err(e)) => search_error_json(e),
         Err(_) => json!({ "error": "panic in fushi_fsrs", "kind": "internal", "at": "" }),
     };
     CString::new(value.to_string()).unwrap().into_raw()

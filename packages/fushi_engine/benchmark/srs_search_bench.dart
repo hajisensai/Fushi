@@ -6,6 +6,7 @@
 // 合成集合：每条笔记两张卡，Lapis 形状的 13 个字段；Glossary 是 Yomitan 释义 HTML，
 // [_inlineStyleRate] 的笔记内联 1～3 部词典的 `<style>`（2～40 KB，未经样式去重的旧卡 / 导入卡），
 // 其余是去重后的引用行。
+import 'dart:async';
 import 'dart:math';
 
 import 'package:fushi_core/fushi_core.dart';
@@ -287,6 +288,14 @@ const List<String> _browseQueries = <String>[
   '"Expression:*語*" OR "Sentence:*語*"',
 ];
 
+/// 首次搜索分别量的查询：只看状态、限定小字段（Yomitan 查重形状）、限定大字段、未限定字段。
+const List<String> _firstQueries = <String>[
+  'is:new',
+  '"Expression:語12"',
+  '"Glossary:*to eat*"',
+  '食',
+];
+
 const List<String> _statsQueries = <String>[
   'deck:Japanese::Core prop:ivl>=21',
   '"Glossary:*language*"',
@@ -309,7 +318,31 @@ int _dupeScan(_Corpus c, String candidate) {
 
 int _ms(Stopwatch sw) => sw.elapsedMilliseconds;
 
-void main(List<String> args) {
+/// 量 await 期间当前 isolate 的事件循环最长被占住多久（= 界面卡住的最长一段）。
+class _StallProbe {
+  final Stopwatch _sw = Stopwatch();
+  Timer? _timer;
+  int _last = 0;
+  int _worst = 0;
+
+  void start() {
+    _sw.start();
+    _timer = Timer.periodic(const Duration(milliseconds: 1), (_) {
+      final int now = _sw.elapsedMilliseconds;
+      if (now - _last > _worst) _worst = now - _last;
+      _last = now;
+    });
+  }
+
+  int stop() {
+    _timer?.cancel();
+    final int now = _sw.elapsedMilliseconds;
+    if (now - _last > _worst) _worst = now - _last;
+    return _worst;
+  }
+}
+
+Future<void> main(List<String> args) async {
   final List<int> sizes = args.isEmpty
       ? <int>[10000, 50000, 100000]
       : <int>[for (final String a in args) int.parse(a)];
@@ -320,6 +353,35 @@ void main(List<String> args) {
       '== $size cards / ${c.notes.length} notes '
       '(generated in ${_ms(gen)} ms)',
     );
+    // 首次搜索（新快照，语料从零建）：各类查询分别量，每个都用全新的快照。
+    // sync = 直接 query（字段文本在当前 isolate 上串行编码）；prepare = 浏览页的路径（先 await
+    // prepare 并行编码，再 query），后一列是其中同步占住 UI isolate 的部分。
+    for (final String q in _firstQueries) {
+      final SrsBrowseSnapshot fresh = SrsBrowseSnapshot.fromCards(
+        c.cards,
+        c.noteTypes,
+      );
+      final Stopwatch sw = Stopwatch()..start();
+      final int hits = fresh.query(query: q).length;
+      final int syncMs = _ms(sw);
+      final SrsBrowseSnapshot fresh2 = SrsBrowseSnapshot.fromCards(
+        c.cards,
+        c.noteTypes,
+      );
+      final Stopwatch sw2 = Stopwatch()..start();
+      final _StallProbe probe = _StallProbe()..start();
+      await fresh2.prepare(q);
+      final int prepMs = _ms(sw2);
+      final int stallMs = probe.stop();
+      final Stopwatch sw3 = Stopwatch()..start();
+      final int hits2 = fresh2.query(query: q).length;
+      final int queryMs = _ms(sw3);
+      print(
+        'first   sync $syncMs ms | prepare $prepMs (UI isolate longest stall '
+        '$stallMs) + query $queryMs = ${prepMs + queryMs} ms  '
+        'hits=$hits/$hits2  $q',
+      );
+    }
     final SrsBrowseSnapshot snap = SrsBrowseSnapshot.fromCards(
       c.cards,
       c.noteTypes,

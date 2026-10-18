@@ -90,6 +90,39 @@ typedef _SetFloatsC =
     );
 typedef _SetFloatsDart =
     int Function(ffi.Pointer<ffi.Void>, int, ffi.Pointer<ffi.Double>, int);
+
+/// `ffsrs_search_chunk_new`（公开：搜索的后台编码 isolate 经函数指针直接调）。
+typedef FfsrsChunkNewC =
+    ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Uint8>, ffi.Size);
+typedef FfsrsChunkNewDart =
+    ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Uint8>, int);
+typedef _ChunkFreeC = ffi.Void Function(ffi.Pointer<ffi.Void>);
+typedef _ChunkFreeDart = void Function(ffi.Pointer<ffi.Void>);
+typedef _AttachC =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+    );
+typedef _AttachDart =
+    int Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Uint32>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+    );
+typedef _NeedsC =
+    ffi.Pointer<ffi.Char> Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Char>,
+    );
+
+/// `ffsrs_search_corpus_match`（公开：搜索的后台预求值 isolate 经函数指针直接调）。
+typedef FfsrsMatchC = _MatchC;
+typedef FfsrsMatchDart = _MatchDart;
 typedef _MatchC =
     ffi.Pointer<ffi.Char> Function(
       ffi.Pointer<ffi.Void>,
@@ -159,7 +192,18 @@ class FushiFsrsBindings {
           .lookupFunction<_SetFloatsC, _SetFloatsDart>(
             'ffsrs_search_corpus_set_floats',
           ),
-      ffsrs_search_corpus_match = lib.lookupFunction<_MatchC, _MatchDart>(
+      ffsrs_search_chunk_new_ptr = lib
+          .lookup<ffi.NativeFunction<FfsrsChunkNewC>>('ffsrs_search_chunk_new'),
+      ffsrs_search_chunk_free = lib.lookupFunction<_ChunkFreeC, _ChunkFreeDart>(
+        'ffsrs_search_chunk_free',
+      ),
+      ffsrs_search_corpus_attach = lib.lookupFunction<_AttachC, _AttachDart>(
+        'ffsrs_search_corpus_attach',
+      ),
+      ffsrs_search_corpus_needs = lib.lookupFunction<_NeedsC, _NeedsC>(
+        'ffsrs_search_corpus_needs',
+      ),
+      ffsrs_search_corpus_match_ptr = lib.lookup<ffi.NativeFunction<_MatchC>>(
         'ffsrs_search_corpus_match',
       ),
       ffsrs_search_dupe_norm_batch = lib
@@ -249,15 +293,43 @@ class FushiFsrsBindings {
   )
   ffsrs_search_corpus_set_floats;
 
-  /// 整批求值：[out] 长 [n]（= 卡数），返回 `{"ok":命中数}` / `{"error","kind","at"}`，
+  /// 校验并拷下一块字段值文本（不碰语料，任意线程可调）；失败（非 UTF-8）返回 nullptr。
+  final ffi.Pointer<ffi.NativeFunction<FfsrsChunkNewC>>
+  ffsrs_search_chunk_new_ptr;
+
+  late final FfsrsChunkNewDart ffsrs_search_chunk_new =
+      ffsrs_search_chunk_new_ptr.asFunction<FfsrsChunkNewDart>();
+
+  /// 丢弃一块没交给语料的文本。
+  final void Function(ffi.Pointer<ffi.Void> chunk) ffsrs_search_chunk_free;
+
+  /// 把文本块挂进语料：第 k 个值 = `chunk[spans[2k]..spans[2k+1]]`，属于字段 `fields[k]`；
+  /// 块的所有权无论成败都交出去。成功 0，失败 -1。
+  final int Function(
+    ffi.Pointer<ffi.Void> corpus,
+    ffi.Pointer<ffi.Void> chunk,
+    ffi.Pointer<ffi.Uint32> fields,
+    int n,
+    ffi.Pointer<ffi.Uint32> spans,
+  )
+  ffsrs_search_corpus_attach;
+
+  /// 一条搜索要的字段值：`{"ok":{"all":true}}` / `{"ok":{"all":false,"names":[…]}}` 或错误，
   /// 由 [ffsrs_free_string] 释放。
   final ffi.Pointer<ffi.Char> Function(
     ffi.Pointer<ffi.Void> corpus,
     ffi.Pointer<ffi.Char> query,
-    ffi.Pointer<ffi.Uint8> out,
-    int n,
   )
-  ffsrs_search_corpus_match;
+  ffsrs_search_corpus_needs;
+
+  /// `ffsrs_search_corpus_match` 的函数指针（后台预求值 isolate 用）。
+  final ffi.Pointer<ffi.NativeFunction<FfsrsMatchC>>
+  ffsrs_search_corpus_match_ptr;
+
+  /// 整批求值：[out] 长 [n]（= 卡数），返回 `{"ok":命中数}` / `{"error","kind","at"}`，
+  /// 由 [ffsrs_free_string] 释放。最近一次的结果由原生侧缓存（同一条查询再调直接取结果）。
+  late final FfsrsMatchDart ffsrs_search_corpus_match =
+      ffsrs_search_corpus_match_ptr.asFunction<FfsrsMatchDart>();
 
   /// AnkiConnect 查重规范形，批量；返回 `[u32 LE 偏移 × (n+1)][UTF-8]`，由 [ffsrs_free_bytes] 释放。
   final ffi.Pointer<ffi.Uint8> Function(

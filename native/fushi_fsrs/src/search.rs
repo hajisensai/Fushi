@@ -55,23 +55,52 @@ const STATE_BURIED: i64 = 32;
 
 /// 一批卡（连同所属笔记）的搜索语料。不是线程安全的：一个句柄同一时刻只在一个线程上用
 /// （Dart 侧一个 isolate 持有一个句柄）。
+///
+/// 结构（名字、标签、牌组、模板、字段排布）建语料时一次给齐；**字段值按需上传**
+/// （[`Corpus::needs`] 说出一条查询要哪些字段名的值，调用方用 [`Corpus::set_values`] 补上），
+/// 只碰状态 / 牌组 / 标签的查询完全不用传字段文本，`字段名:值` 只传那一列。
 pub struct Corpus {
+    /// 名字类小字符串（笔记类型名、字段名、标签、牌组名、模板名）的拼接，Dart 侧去重过。
     text: String,
     str_off: Vec<u32>,
     note_type: Vec<u32>,
+    /// 第 i 条笔记的字段 = `note_field_off[i]..note_field_off[i+1]`（由字段排布推出）。
     note_field_off: Vec<u32>,
+    /// 每个字段的字段名（字符串 id）。
     field_name: Vec<u32>,
-    field_value: Vec<u32>,
     note_tag_off: Vec<u32>,
     tag: Vec<u32>,
     card_note: Vec<u32>,
     card_deck: Vec<u32>,
     card_tpl: Vec<u32>,
+    /// 出现过的字段名（字符串 id，去重）。
+    field_names: Vec<u32>,
+    /// 字段值：分批上传的文本块与每个字段在块里的位置（`chunk == MISSING` = 还没传）。
+    chunks: Vec<String>,
+    /// 每块还被多少个字段引用；降到 0（全被后来的上传覆盖）就释放那块文本。
+    chunk_refs: Vec<u32>,
+    value_loc: Vec<ValueLoc>,
     ints: [Option<Vec<i64>>; INT_COLUMNS],
     floats: [Option<Vec<f64>>; FLOAT_COLUMNS],
     joined: Vec<OnceCell<String>>,
     tags_joined: Vec<OnceCell<String>>,
     stripped: Vec<OnceCell<String>>,
+}
+
+#[derive(Clone, Copy)]
+struct ValueLoc {
+    chunk: u32,
+    start: u32,
+    end: u32,
+}
+
+const MISSING: u32 = u32::MAX;
+
+/// 一条查询要的字段值：全部（未限定字段的文本 / `re:`）或若干字段名（字符串 id）。
+#[derive(Debug, PartialEq)]
+pub enum Needs {
+    All,
+    Names(Vec<u32>),
 }
 
 /// 搜索失败：`syntax` = 查询本身不合法（如正则写错），`internal` = 调用方给的数据不对。
@@ -92,11 +121,15 @@ impl SearchError {
     }
 }
 
-/// 布局数组（u32）：`[n_str, n_notes, n_fields, n_tags, n_cards,
-/// str_off(n_str+1), note_type(n_notes), note_field_off(n_notes+1), field_name(n_fields),
-/// field_value(n_fields), note_tag_off(n_notes+1), tag(n_tags), card_note(n_cards),
-/// card_deck(n_cards), card_tpl(n_cards)]`。`text` 是全部字符串的 UTF-8 拼接，
-/// 第 i 个串 = `text[str_off[i]..str_off[i+1]]`。
+/// 去 HTML 一次至少分给一个线程的字段数（少于它不开线程）。
+const PARALLEL_STRIP_MIN: usize = 512;
+
+/// 布局数组（u32）：`[n_str, n_schemas, n_schema_names, n_notes, n_tags, n_cards,
+/// str_off(n_str+1), schema_off(n_schemas+1), schema_names(n_schema_names), note_type(n_notes),
+/// note_schema(n_notes), note_tag_off(n_notes+1), tag(n_tags), card_note(n_cards),
+/// card_deck(n_cards), card_tpl(n_cards)]`。`text` 是全部名字类字符串的 UTF-8 拼接，
+/// 第 i 个串 = `text[str_off[i]..str_off[i+1]]`。字段排布（schema）= 一串字段名 id，
+/// 同一笔记类型的笔记共用一份；笔记的字段按排布顺序编号。
 impl Corpus {
     pub fn new(text: &[u8], layout: &[u32]) -> Result<Corpus, String> {
         let text = std::str::from_utf8(text).map_err(|e| format!("text is not UTF-8: {e}"))?;
@@ -107,19 +140,20 @@ impl Corpus {
             pos = end;
             Ok(slice.to_vec())
         };
-        let header = take(5)?;
-        let (n_str, n_notes, n_fields, n_tags, n_cards) = (
+        let header = take(6)?;
+        let (n_str, n_schemas, n_schema_names, n_notes, n_tags, n_cards) = (
             header[0] as usize,
             header[1] as usize,
             header[2] as usize,
             header[3] as usize,
             header[4] as usize,
+            header[5] as usize,
         );
         let str_off = take(n_str + 1)?;
+        let schema_off = take(n_schemas + 1)?;
+        let schema_names = take(n_schema_names)?;
         let note_type = take(n_notes)?;
-        let note_field_off = take(n_notes + 1)?;
-        let field_name = take(n_fields)?;
-        let field_value = take(n_fields)?;
+        let note_schema = take(n_notes)?;
         let note_tag_off = take(n_notes + 1)?;
         let tag = take(n_tags)?;
         let card_note = take(n_cards)?;
@@ -143,32 +177,56 @@ impl Corpus {
                 && offs.windows(2).all(|w| w[0] <= w[1])
         };
         if !str_ok(&note_type)
-            || !str_ok(&field_name)
-            || !str_ok(&field_value)
+            || !str_ok(&schema_names)
             || !str_ok(&tag)
             || !str_ok(&card_deck)
             || !str_ok(&card_tpl)
         {
             return Err("string id out of range".into());
         }
-        if !monotone(&note_field_off, n_fields) || !monotone(&note_tag_off, n_tags) {
-            return Err("bad note offsets".into());
+        if !monotone(&schema_off, n_schema_names) || !monotone(&note_tag_off, n_tags) {
+            return Err("bad offsets".into());
+        }
+        if note_schema.iter().any(|&s| s as usize >= n_schemas) {
+            return Err("note schema index out of range".into());
         }
         if card_note.iter().any(|&n| n as usize >= n_notes) {
             return Err("card note index out of range".into());
         }
+        let mut note_field_off = Vec::with_capacity(n_notes + 1);
+        let mut field_name = Vec::new();
+        note_field_off.push(0u32);
+        for &s in &note_schema {
+            let names = &schema_names[schema_off[s as usize] as usize..schema_off[s as usize + 1] as usize];
+            field_name.extend_from_slice(names);
+            note_field_off.push(u32::try_from(field_name.len()).map_err(|_| "too many fields")?);
+        }
+        let mut field_names: Vec<u32> = schema_names.clone();
+        field_names.sort_unstable();
+        field_names.dedup();
+        let n_fields = field_name.len();
         Ok(Corpus {
             text: text.to_owned(),
             str_off,
             note_type,
             note_field_off,
             field_name,
-            field_value,
             note_tag_off,
             tag,
             card_note,
             card_deck,
             card_tpl,
+            field_names,
+            chunks: Vec::new(),
+            chunk_refs: Vec::new(),
+            value_loc: vec![
+                ValueLoc {
+                    chunk: MISSING,
+                    start: 0,
+                    end: 0
+                };
+                n_fields
+            ],
             ints: Default::default(),
             floats: Default::default(),
             joined: (0..n_notes).map(|_| OnceCell::new()).collect(),
@@ -179,6 +237,10 @@ impl Corpus {
 
     pub fn card_count(&self) -> usize {
         self.card_note.len()
+    }
+
+    pub fn field_count(&self) -> usize {
+        self.field_name.len()
     }
 
     pub fn set_ints(&mut self, col: usize, data: &[i64]) -> Result<(), String> {
@@ -197,6 +259,62 @@ impl Corpus {
         Ok(())
     }
 
+    /// 上传一批字段值：第 k 个值 = `text[spans[2k]..spans[2k+1]]`，属于字段 `fields[k]`
+    /// （值之间可以有间隙）。已有值的字段被覆盖、缓存作废。
+    ///
+    /// 同一条笔记的字段若按顺序紧挨着、中间各隔一个 0x1f 字节，拼接文本（`n.flds`）直接取这段
+    /// 切片，不再另拷一份。
+    pub fn set_values(&mut self, fields: &[u32], text: &[u8], spans: &[u32]) -> Result<(), String> {
+        let text = std::str::from_utf8(text).map_err(|e| format!("values are not UTF-8: {e}"))?;
+        self.attach(text.to_owned(), fields, spans)
+    }
+
+    /// [Corpus::set_values]，文本已是校验过的 `String`（所有权转给语料，不再拷贝）。
+    pub fn attach(&mut self, text: String, fields: &[u32], spans: &[u32]) -> Result<(), String> {
+        if spans.len() != fields.len() * 2 {
+            return Err("spans length != 2 * fields".into());
+        }
+        for (k, &f) in fields.iter().enumerate() {
+            let (a, b) = (spans[2 * k] as usize, spans[2 * k + 1] as usize);
+            if f as usize >= self.field_count()
+                || a > b
+                || b > text.len()
+                || !text.is_char_boundary(a)
+                || !text.is_char_boundary(b)
+            {
+                return Err("bad field value".into());
+            }
+        }
+        let chunk = u32::try_from(self.chunks.len()).map_err(|_| "too many chunks")?;
+        self.chunks.push(text);
+        self.chunk_refs.push(0);
+        for (k, &f) in fields.iter().enumerate() {
+            let f = f as usize;
+            let old = self.value_loc[f];
+            self.chunk_refs[chunk as usize] += 1;
+            if old.chunk != MISSING {
+                let refs = &mut self.chunk_refs[old.chunk as usize];
+                *refs -= 1;
+                if *refs == 0 {
+                    self.chunks[old.chunk as usize] = String::new();
+                }
+            }
+            self.value_loc[f] = ValueLoc {
+                chunk,
+                start: spans[2 * k],
+                end: spans[2 * k + 1],
+            };
+            if old.chunk != MISSING {
+                self.stripped[f] = OnceCell::new();
+            }
+        }
+        // 覆盖了字段值：拼接缓存全部作废（极少发生：Dart 侧只在补传全部字段时覆盖）。
+        for cell in &mut self.joined {
+            cell.take();
+        }
+        Ok(())
+    }
+
     fn s(&self, id: u32) -> &str {
         let i = id as usize;
         &self.text[self.str_off[i] as usize..self.str_off[i + 1] as usize]
@@ -206,18 +324,49 @@ impl Corpus {
         self.note_field_off[note] as usize..self.note_field_off[note + 1] as usize
     }
 
+    /// 字段原文。调用方（[`Corpus::search`]）先核对过需要的值都已上传。
+    fn value(&self, field: usize) -> &str {
+        let loc = self.value_loc[field];
+        &self.chunks[loc.chunk as usize][loc.start as usize..loc.end as usize]
+    }
+
     /// 全部字段原文用 0x1f 连接（rslib 的 `n.flds`）。
     fn joined(&self, note: usize) -> &str {
+        let range = self.fields(note);
+        if range.is_empty() {
+            return "";
+        }
+        if let Some(slice) = self.contiguous_joined(range.clone()) {
+            return slice;
+        }
         self.joined[note].get_or_init(|| {
             let mut out = String::new();
-            for (k, f) in self.fields(note).enumerate() {
+            for (k, f) in range.enumerate() {
                 if k > 0 {
                     out.push('\x1f');
                 }
-                out.push_str(self.s(self.field_value[f]));
+                out.push_str(self.value(f));
             }
             out
         })
+    }
+
+    fn contiguous_joined(&self, range: std::ops::Range<usize>) -> Option<&str> {
+        let first = self.value_loc[range.start];
+        let chunk = self.chunks.get(first.chunk as usize)?;
+        let bytes = chunk.as_bytes();
+        let mut end = first.end;
+        for f in range.start + 1..range.end {
+            let loc = self.value_loc[f];
+            if loc.chunk != first.chunk
+                || loc.start != end + 1
+                || bytes.get(end as usize) != Some(&0x1f)
+            {
+                return None;
+            }
+            end = loc.end;
+        }
+        Some(&chunk[first.start as usize..end as usize])
     }
 
     /// `" a b c "`：标签以空格连接、两端各补一个空格。
@@ -241,7 +390,7 @@ impl Corpus {
     }
 
     fn stripped(&self, field: usize) -> &str {
-        self.stripped[field].get_or_init(|| strip_html(self.s(self.field_value[field])))
+        self.stripped[field].get_or_init(|| strip_html(self.value(field)))
     }
 
     fn int_col(&self, col: IntColumn) -> Result<&[i64], SearchError> {
@@ -256,14 +405,56 @@ impl Corpus {
             .ok_or_else(|| SearchError::internal(format!("column {col:?} not set")))
     }
 
+    fn parse(query: &str) -> Result<Compiled, SearchError> {
+        let node: Node = serde_json::from_str(query)
+            .map_err(|e| SearchError::internal(format!("bad query json: {e}")))?;
+        compile(&node)
+    }
+
+    /// 一条查询求值要的字段值（不看已经上传了哪些）。查询本身不合法时报错（与 [`Corpus::search`]
+    /// 同一个错误）。
+    pub fn needs(&self, query: &str) -> Result<Needs, SearchError> {
+        Ok(self.needs_of(&Self::parse(query)?))
+    }
+
+    fn needs_of(&self, compiled: &Compiled) -> Needs {
+        let mut name_res: Vec<&Regex> = Vec::new();
+        if collect_needs(compiled, &mut name_res) {
+            return Needs::All;
+        }
+        let names = self
+            .field_names
+            .iter()
+            .copied()
+            .filter(|&id| name_res.iter().any(|re| re.is_match(self.s(id))))
+            .collect();
+        Needs::Names(names)
+    }
+
+    /// 字段名属于 [names] 的字段（全部字段时 [names] 为 None）。
+    fn needed_fields(&self, names: Option<&[u32]>) -> Vec<usize> {
+        (0..self.field_count())
+            .filter(|&f| names.map_or(true, |ns| ns.binary_search(&self.field_name[f]).is_ok()))
+            .collect()
+    }
+
     /// 对整批卡求值：`out[i]` = 第 i 张卡是否命中（1 / 0）；返回命中数。
     pub fn search(&self, query: &str, out: &mut [u8]) -> Result<usize, SearchError> {
         if out.len() != self.card_count() {
             return Err(SearchError::internal("output length != card count"));
         }
-        let node: Node = serde_json::from_str(query)
-            .map_err(|e| SearchError::internal(format!("bad query json: {e}")))?;
-        let compiled = compile(&node)?;
+        let compiled = Self::parse(query)?;
+        let fields = match self.needs_of(&compiled) {
+            Needs::All => self.needed_fields(None),
+            Needs::Names(mut names) => {
+                names.sort_unstable();
+                self.needed_fields(Some(&names))
+            }
+        };
+        if fields.iter().any(|&f| self.value_loc[f].chunk == MISSING) {
+            return Err(SearchError::internal("field values not uploaded"));
+        }
+        self.prestrip(&compiled);
         let all: Vec<u32> = (0..self.card_count() as u32).collect();
         let hits = self.eval(&compiled, all)?;
         out.fill(0);
@@ -271,6 +462,61 @@ impl Corpus {
             out[i as usize] = 1;
         }
         Ok(hits.len())
+    }
+
+    /// `字段名:值` 要比较去 HTML 后的值：把命中字段名、还没算过的字段并行剥好（结果与逐个惰性算
+    /// 相同，只是提前、分到多个线程上）。
+    fn prestrip(&self, compiled: &Compiled) {
+        let mut name_res: Vec<&Regex> = Vec::new();
+        collect_stripped_names(compiled, &mut name_res);
+        if name_res.is_empty() {
+            return;
+        }
+        let mut names: Vec<u32> = self
+            .field_names
+            .iter()
+            .copied()
+            .filter(|&id| name_res.iter().any(|re| re.is_match(self.s(id))))
+            .collect();
+        names.sort_unstable();
+        let todo: Vec<usize> = self
+            .needed_fields(Some(&names))
+            .into_iter()
+            .filter(|&f| self.stripped[f].get().is_none())
+            .collect();
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(todo.len() / PARALLEL_STRIP_MIN)
+            .min(16);
+        if threads < 2 {
+            return; // 量小：留给求值时惰性剥。
+        }
+        let per = todo.len().div_ceil(threads);
+        // Corpus 自己不是 Sync（惰性缓存用 OnceCell）：线程里只借只读的文本块与位置。
+        let (chunks, locs) = (&self.chunks, &self.value_loc);
+        let value = move |f: usize| {
+            let loc = locs[f];
+            &chunks[loc.chunk as usize][loc.start as usize..loc.end as usize]
+        };
+        let results: Vec<Vec<String>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = todo
+                .chunks(per)
+                .map(|part| {
+                    scope.spawn(move || {
+                        part.iter()
+                            .map(|&f| strip_html(value(f)))
+                            .collect::<Vec<String>>()
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        for (part, stripped) in todo.chunks(per).zip(results) {
+            for (&f, s) in part.iter().zip(stripped) {
+                let _ = self.stripped[f].set(s);
+            }
+        }
     }
 
     /// 求值 [node]，只看 [cand]（升序的卡片下标），返回其中命中的（仍升序）。
@@ -320,18 +566,15 @@ impl Corpus {
                 self.by_note(cand, |n| {
                     self.fields(n).any(|f| {
                         names.matches(self, self.field_name[f])
-                            && (value.is_match(self.stripped(f))
-                                || value.is_match(self.s(self.field_value[f])))
+                            && (value.is_match(self.stripped(f)) || value.is_match(self.value(f)))
                     })
                 })
             }
             Compiled::FieldRegex { name, value } => {
                 let mut names = StrMemo::new(name);
                 self.by_note(cand, |n| {
-                    self.fields(n).any(|f| {
-                        names.matches(self, self.field_name[f])
-                            && value.is_match(self.s(self.field_value[f]))
-                    })
+                    self.fields(n)
+                        .any(|f| names.matches(self, self.field_name[f]) && value.is_match(self.value(f)))
                 })
             }
             Compiled::Deck(None) => cand,
@@ -422,6 +665,37 @@ impl Corpus {
                 *memo.entry(n).or_insert_with(|| pred(n as usize))
             })
             .collect()
+    }
+}
+
+/// 收集要字段值的叶子：返回 true = 要全部字段（未限定字段的文本 / `re:`），否则把限定字段的
+/// 字段名正则放进 [names]。
+fn collect_needs<'c>(node: &'c Compiled, names: &mut Vec<&'c Regex>) -> bool {
+    match node {
+        Compiled::And(c) | Compiled::Or(c) => {
+            let mut all = false;
+            for child in c {
+                all |= collect_needs(child, names);
+            }
+            all
+        }
+        Compiled::Not(c) => collect_needs(c, names),
+        Compiled::Text(_) | Compiled::Regex(_) => true,
+        Compiled::Field { name, .. } | Compiled::FieldRegex { name, .. } => {
+            names.push(name);
+            false
+        }
+        _ => false,
+    }
+}
+
+/// `字段名:值`（比较去 HTML 后的值）的字段名正则。
+fn collect_stripped_names<'c>(node: &'c Compiled, names: &mut Vec<&'c Regex>) {
+    match node {
+        Compiled::And(c) | Compiled::Or(c) => c.iter().for_each(|child| collect_stripped_names(child, names)),
+        Compiled::Not(c) => collect_stripped_names(c, names),
+        Compiled::Field { name, .. } => names.push(name),
+        _ => {}
     }
 }
 
@@ -606,8 +880,32 @@ fn glob_re(source: &str) -> Result<Regex, SearchError> {
         })
 }
 
+/// 整值匹配的通配：`^…$`。开头 / 结尾的 `*` 译成 `.*`，在 dotall 下 `^.*` 与 `.*$` 不改变是否匹配，
+/// 去掉后引擎不必把每个值从头扫到尾，能直接按子串搜索（`*词*` 是浏览页 / 统计页最常见的形状）。
 fn anchored_glob(text: &str) -> Result<Regex, SearchError> {
-    glob_re(&format!("^{}$", glob_to_re(text, ".")))
+    let body = glob_to_re(text, ".");
+    let mut body = body.as_str();
+    let lead = text.starts_with('*');
+    if lead {
+        body = &body[2..];
+    }
+    let trail = ends_with_wildcard(text) && body.ends_with(".*");
+    if trail {
+        body = &body[..body.len() - 2];
+    }
+    glob_re(&format!(
+        "{}{body}{}",
+        if lead { "" } else { "^" },
+        if trail { "" } else { "$" }
+    ))
+}
+
+/// 通配串是否以未转义的 `*` 结尾（前面连续的反斜杠是偶数个）。
+fn ends_with_wildcard(text: &str) -> bool {
+    let Some(rest) = text.strip_suffix('*') else {
+        return false;
+    };
+    rest.bytes().rev().take_while(|&b| b == b'\\').count() % 2 == 0
 }
 
 /// `re:` 的正则：与 rslib 一样在用户写的正则前加 `(?i)`（开头写 `(?-i)` 即改回区分大小写）。
@@ -721,19 +1019,107 @@ pub fn glob_to_re(text: &str, wildcard: &str) -> String {
 // ------------------------------------------------------------------ 去 HTML
 
 thread_local! {
-    // rslib text.rs `strip_html` 的同一条正则（`(?si)`）。
-    static HTML: Regex = Regex::new(concat!(
-        "(?si)",
-        r"(<!--.*?-->)|(<style.*?>.*?</style>)|(<script.*?>.*?</script>)",
-        r"|(<.*?>)",
-    ))
-    .unwrap();
     static ENTITY: Regex = Regex::new(r"&(#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z]+);").unwrap();
+}
+
+/// rslib text.rs `strip_html` 那条正则
+/// `(?si)(<!--.*?-->)|(<style.*?>.*?</style>)|(<script.*?>.*?</script>)|(<.*?>)` 的
+/// `replace_all(…, "")`，手写成线性扫描（逐位一致，对照见测试 `strip_scanner_matches_regex`）：
+/// 在每个 `<` 处按分支顺序试——注释到其后第一个 `-->`；`<style`（不区分大小写）到其后第一个 `>`，
+/// 再到其后第一个 `</style>`（没有就整个分支不成立）；`<script` 同理；否则到其后第一个 `>`。
+/// 都不成立的 `<` 原样保留。
+fn strip_tags(html: &str) -> String {
+    let bytes = html.as_bytes();
+    let mut out = String::with_capacity(html.len());
+    let mut last = 0;
+    let mut from = 0;
+    while from < bytes.len() {
+        let Some(rel) = find_byte(&bytes[from..], b'<') else {
+            break;
+        };
+        let p = from + rel;
+        match tag_end(html, p) {
+            Some(e) => {
+                out.push_str(&html[last..p]);
+                last = e;
+                from = e;
+            }
+            // 这个 `<` 之后没有 `>`：后面任何 `<` 也凑不成标签。
+            None => break,
+        }
+    }
+    out.push_str(&html[last..]);
+    out
+}
+
+fn find_byte(bytes: &[u8], b: u8) -> Option<usize> {
+    bytes.iter().position(|&x| x == b)
+}
+
+/// 从 `p`（一个 `<`）起能被删掉的区间终点；`None` = `p` 之后没有 `>`（什么分支都不成立）。
+fn tag_end(html: &str, p: usize) -> Option<usize> {
+    let bytes = html.as_bytes();
+    let gt = |from: usize| find_byte(&bytes[from..], b'>').map(|i| from + i);
+    let first_gt = gt(p + 1)?;
+    if html[p..].starts_with("<!--") {
+        if let Some(i) = html[p + 4..].find("-->") {
+            return Some(p + 4 + i + 3);
+        }
+    }
+    for (open, close) in [("style", "/style>"), ("script", "/script>")] {
+        if let Some(name_end) = match_ci(html, p + 1, open) {
+            if let Some(g) = gt(name_end) {
+                if let Some(e) = find_ci(html, g + 1, close) {
+                    return Some(e);
+                }
+            }
+        }
+    }
+    Some(first_gt + 1)
+}
+
+/// regex 的 `(?i)` 用 Unicode 简单大小写折叠：ASCII 字母大小写互通，`s` 还认 `ſ`（U+017F）。
+/// 模式只有 ASCII 小写字母与标点。
+fn ci_char_eq(pat: u8, c: char) -> bool {
+    if c.is_ascii() {
+        c.to_ascii_lowercase() == pat as char
+    } else {
+        pat == b's' && c == '\u{17F}'
+    }
+}
+
+/// `html[at..]` 是否以 `pat` 开头（不区分大小写，见 [ci_char_eq]）；是则返回匹配终点。
+fn match_ci(html: &str, at: usize, pat: &str) -> Option<usize> {
+    let rest = html.get(at..)?;
+    let mut end = 0;
+    let mut chars = rest.chars();
+    for &pb in pat.as_bytes() {
+        let c = chars.next()?;
+        if !ci_char_eq(pb, c) {
+            return None;
+        }
+        end += c.len_utf8();
+    }
+    Some(at + end)
+}
+
+/// `html[from..]` 里第一个 `<` + 不区分大小写的 `pat` 的终点。
+fn find_ci(html: &str, from: usize, pat: &str) -> Option<usize> {
+    let bytes = html.as_bytes();
+    let mut at = from;
+    while at < bytes.len() {
+        let p = at + find_byte(&bytes[at..], b'<')?;
+        if let Some(e) = match_ci(html, p + 1, pat) {
+            return Some(e);
+        }
+        at = p + 1;
+    }
+    None
 }
 
 /// 去掉 HTML 标签并解码实体（数字实体与常用命名实体；`&nbsp;` / `&#160;` 解成空格）。
 pub fn strip_html(html: &str) -> String {
-    let stripped = HTML.with(|re| re.replace_all(html, "").into_owned());
+    let stripped = strip_tags(html);
     if !stripped.contains('&') {
         return stripped;
     }
@@ -903,21 +1289,27 @@ pub fn dupe_norm(field: &str) -> String {
 mod tests {
     use super::*;
 
-    fn corpus(notes: &[(&str, &[(&str, &str)], &[&str])], cards: &[(usize, &str, &str)]) -> Corpus {
+    /// 测试语料：每条笔记一个字段排布；[joined_layout] 为 true 时按 Dart 补传全部字段的形状上传
+    /// （同一笔记的字段紧挨着、隔 0x1f），否则每个字段值单独一块（走拼接缓存）。
+    fn corpus_with(
+        notes: &[(&str, &[(&str, &str)], &[&str])],
+        cards: &[(usize, &str, &str)],
+        joined_layout: bool,
+    ) -> Corpus {
         let mut strs: Vec<String> = Vec::new();
         let id = |s: &str, strs: &mut Vec<String>| -> u32 {
             strs.push(s.to_owned());
             (strs.len() - 1) as u32
         };
-        let (mut nt, mut nfo, mut fname, mut fval, mut nto, mut tags) =
-            (vec![], vec![0u32], vec![], vec![], vec![0u32], vec![]);
-        for (ty, fields, ts) in notes {
+        let (mut nt, mut ns, mut so, mut sn, mut nto, mut tags) =
+            (vec![], vec![], vec![0u32], vec![], vec![0u32], vec![]);
+        for (k, (ty, fields, ts)) in notes.iter().enumerate() {
             nt.push(id(ty, &mut strs));
-            for (n, v) in fields.iter() {
-                fname.push(id(n, &mut strs));
-                fval.push(id(v, &mut strs));
+            for (n, _) in fields.iter() {
+                sn.push(id(n, &mut strs));
             }
-            nfo.push(fname.len() as u32);
+            so.push(sn.len() as u32);
+            ns.push(k as u32);
             for t in ts.iter() {
                 tags.push(id(t, &mut strs));
             }
@@ -938,14 +1330,41 @@ mod tests {
         let mut layout = vec![
             strs.len() as u32,
             notes.len() as u32,
-            fname.len() as u32,
+            sn.len() as u32,
+            notes.len() as u32,
             tags.len() as u32,
             cards.len() as u32,
         ];
-        for part in [&off, &nt, &nfo, &fname, &fval, &nto, &tags, &cn, &cd, &ct] {
+        for part in [&off, &so, &sn, &nt, &ns, &nto, &tags, &cn, &cd, &ct] {
             layout.extend_from_slice(part);
         }
-        Corpus::new(text.as_bytes(), &layout).unwrap()
+        let mut c = Corpus::new(text.as_bytes(), &layout).unwrap();
+        let mut f = 0u32;
+        let (mut vals, mut fids, mut spans) = (String::new(), vec![], vec![]);
+        for (_, fields, _) in notes {
+            for (k, (_, v)) in fields.iter().enumerate() {
+                if joined_layout {
+                    if k > 0 {
+                        vals.push('');
+                    }
+                    spans.push(vals.len() as u32);
+                    vals.push_str(v);
+                    spans.push(vals.len() as u32);
+                    fids.push(f);
+                } else {
+                    c.set_values(&[f], v.as_bytes(), &[0, v.len() as u32]).unwrap();
+                }
+                f += 1;
+            }
+        }
+        if joined_layout {
+            c.set_values(&fids, vals.as_bytes(), &spans).unwrap();
+        }
+        c
+    }
+
+    fn corpus(notes: &[(&str, &[(&str, &str)], &[&str])], cards: &[(usize, &str, &str)]) -> Corpus {
+        corpus_with(notes, cards, false)
     }
 
     fn hits(c: &Corpus, q: serde_json::Value) -> Vec<u8> {
@@ -956,7 +1375,13 @@ mod tests {
 
     #[test]
     fn text_field_deck_tag() {
-        let c = corpus(
+        for joined_layout in [false, true] {
+            text_field_deck_tag_with(joined_layout);
+        }
+    }
+
+    fn text_field_deck_tag_with(joined_layout: bool) {
+        let c = corpus_with(
             &[
                 (
                     "Lapis",
@@ -970,8 +1395,12 @@ mod tests {
                 (0, "Japanese", "Card 2"),
                 (1, "Default", "Card 1"),
             ],
+            joined_layout,
         );
         use serde_json::json;
+        // 未限定字段的文本按 0x1f 连接：不跨字段拼出 "るto"。
+        assert_eq!(hits(&c, json!({"t":"text","v":"るto"})), [0, 0, 0]);
+        assert_eq!(hits(&c, json!({"t":"re","v":"る</b>\x1fto","at":"re:x"})), [1, 1, 0]);
         assert_eq!(hits(&c, json!({"t":"text","v":"食べ"})), [1, 1, 0]);
         assert_eq!(hits(&c, json!({"t":"text","v":"STRASSE"})), [0, 0, 0]);
         assert_eq!(hits(&c, json!({"t":"text","v":"STRAẞE"})), [0, 0, 1]);
@@ -1034,6 +1463,119 @@ mod tests {
     }
 
     #[test]
+    fn values_on_demand() {
+        use serde_json::json;
+        let notes: &[(&str, &[(&str, &str)], &[&str])] = &[
+            ("Lapis", &[("Expression", "食べる"), ("Glossary", "<i>to eat</i>")], &["n5"]),
+            ("Basic", &[("Front", "x"), ("Back", "y")], &[]),
+        ];
+        let cards = &[(0, "D", "T"), (1, "D", "T")];
+        let full = corpus(notes, cards);
+        // 名字类的结构不用字段值。
+        let mut layout_only = full_layout_only(notes, cards);
+        let mut out = vec![0u8; 2];
+        let q = |v: serde_json::Value| v.to_string();
+        assert_eq!(layout_only.needs(&q(json!({"t":"deck","v":"d"}))).unwrap(), Needs::Names(vec![]));
+        assert_eq!(layout_only.search(&q(json!({"t":"tag","v":"n5"})), &mut out).unwrap(), 1);
+        assert_eq!(layout_only.needs(&q(json!({"t":"text","v":"x"}))).unwrap(), Needs::All);
+        assert_eq!(
+            layout_only.needs(&q(json!({"t":"re","v":"(","at":"re:("}))).unwrap_err().kind,
+            "syntax"
+        );
+        let Needs::Names(names) = layout_only
+            .needs(&q(json!({"t":"and","c":[{"t":"field","f":"gloss*","v":"*eat*"},{"t":"not","c":{"t":"fre","f":"front","v":"x","at":"a"}}]})))
+            .unwrap()
+        else {
+            panic!("expected names");
+        };
+        let named: Vec<&str> = names.iter().map(|&i| layout_only.s(i)).collect();
+        assert_eq!(named.len(), 2);
+        assert!(named.contains(&"Glossary") && named.contains(&"Front"));
+        let gq = q(json!({"t":"field","f":"glossary","v":"to eat"}));
+        assert_eq!(layout_only.search(&gq, &mut out).unwrap_err().kind, "internal");
+        // 只传 Glossary 一列（字段 1）就能求值，结果与全量语料一致。
+        layout_only.set_values(&[1], b"<i>to eat</i>", &[0, 13]).unwrap();
+        assert_eq!(layout_only.search(&gq, &mut out).unwrap(), 1);
+        assert_eq!(hits(&layout_only, json!({"t":"field","f":"glossary","v":"to eat"})), hits(&full, json!({"t":"field","f":"glossary","v":"to eat"})));
+        assert!(layout_only.set_values(&[9], b"x", &[0, 1]).is_err());
+        assert!(layout_only.set_values(&[0], "語".as_bytes(), &[0, 1]).is_err());
+    }
+
+    fn full_layout_only(notes: &[(&str, &[(&str, &str)], &[&str])], cards: &[(usize, &str, &str)]) -> Corpus {
+        let full = corpus(notes, cards);
+        Corpus {
+            chunks: Vec::new(),
+            chunk_refs: Vec::new(),
+            value_loc: vec![
+                ValueLoc {
+                    chunk: MISSING,
+                    start: 0,
+                    end: 0
+                };
+                full.field_count()
+            ],
+            ..full
+        }
+    }
+
+    #[test]
+    fn parallel_prestrip_matches_lazy() {
+        use serde_json::json;
+        let values: Vec<String> = (0..3000)
+            .map(|i| format!("<style>.x{{}}</style><b>w{i}</b> &amp; {}", if i % 7 == 0 { "eat" } else { "run" }))
+            .collect();
+        let fields: Vec<Vec<(&str, &str)>> = values.iter().map(|v| vec![("G", v.as_str())]).collect();
+        let notes: Vec<(&str, &[(&str, &str)], &[&str])> =
+            fields.iter().map(|f| ("T", f.as_slice(), &[][..])).collect();
+        let cards: Vec<(usize, &str, &str)> = (0..notes.len()).map(|i| (i, "D", "C")).collect();
+        let c = corpus(&notes, &cards);
+        let got = hits(&c, json!({"t":"field","f":"g","v":"w* & eat"}));
+        let want: Vec<u8> = (0..3000).map(|i| u8::from(i % 7 == 0)).collect();
+        assert_eq!(got, want);
+        assert!(c.stripped.iter().all(|s| s.get().is_some()));
+    }
+
+    /// 原来的正则实现，只作对照。
+    fn strip_tags_regex(html: &str) -> String {
+        let re = Regex::new(concat!(
+            "(?si)",
+            r"(<!--.*?-->)|(<style.*?>.*?</style>)|(<script.*?>.*?</script>)",
+            r"|(<.*?>)",
+        ))
+        .unwrap();
+        re.replace_all(html, "").into_owned()
+    }
+
+    #[test]
+    fn strip_scanner_matches_regex() {
+        let atoms = [
+            "<", ">", "!", "-", "--", "<!--", "-->", "style", "STYLE", "\u{17F}tyle", "Style", "script",
+            "SCR\u{130}PT", "scr\u{131}pt", "</style>", "</STYLE>", "</\u{17F}tyle>", "</script>",
+            "</script >", "<style>", "<script>", "<style", "<script", "</", "a", " ", "\n", "語",
+            "\u{212A}", "&amp;", "<b>", "</b>", "x>", "<<", ">>",
+        ];
+        let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let re = Regex::new(concat!(
+            "(?si)",
+            r"(<!--.*?-->)|(<style.*?>.*?</style>)|(<script.*?>.*?</script>)",
+            r"|(<.*?>)",
+        ))
+        .unwrap();
+        for _ in 0..300_000 {
+            let len = (next() % 24) as usize;
+            let s: String = (0..len).map(|_| atoms[(next() % atoms.len() as u64) as usize]).collect();
+            assert_eq!(strip_tags(&s), re.replace_all(&s, "").into_owned(), "{s:?}");
+        }
+        assert_eq!(strip_tags_regex("<b>x</b>"), "x");
+    }
+
+    #[test]
     fn strip_and_norm() {
         assert_eq!(
             strip_html("a<b>b</b><!-- c --><STYLE x>d</style>&amp;&#x41;&#160;&nbsp;&zz;"),
@@ -1050,6 +1592,26 @@ mod tests {
             dupe_norm(&format!("<script><style>{css}</style></script >語")),
             "語"
         );
+    }
+
+    #[test]
+    fn anchored_glob_drops_only_equivalent_anchors() {
+        let full = |t: &str| glob_re(&format!("^{}$", glob_to_re(t, "."))).unwrap();
+        let globs = [
+            "*", "**", "*a*", "a*", "*a", "a", r"*a\*", r"*a\\*", r"\*", r"\\*", r"*a\\\*", "*_*",
+            "_*", "*a*b*", r"*\\", "", "*to eat*", "x_y*",
+        ];
+        let values = [
+            "", "a", "ba", "ab", "bab", "a*", r"a\", r"\", "*", "x\ny", "a\nb", "xzy1", "to eat",
+            "TO EAT\n", "b\na\nb", "a*b", r"ba\*",
+        ];
+        for g in globs {
+            let fast = anchored_glob(g).unwrap();
+            let slow = full(g);
+            for v in values {
+                assert_eq!(fast.is_match(v), slow.is_match(v), "glob {g:?} value {v:?}");
+            }
+        }
     }
 
     #[test]

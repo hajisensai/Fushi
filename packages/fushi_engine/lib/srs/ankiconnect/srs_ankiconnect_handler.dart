@@ -411,7 +411,7 @@ class SrsAnkiConnectHandler {
         final Object? q = p['query'];
         if (q == null) return <int>[];
         return <int>[
-          for (final _CardSubject c in _matchCards(
+          for (final _CardSubject c in await _matchCards(
             await _snapshot(),
             _asString(q, 'query'),
           ))
@@ -476,7 +476,7 @@ class SrsAnkiConnectHandler {
         final Object? q = p['query'];
         final List<_CardSubject> cards = q == null
             ? const <_CardSubject>[]
-            : _matchCards(await _snapshot(), _asString(q, 'query'));
+            : await _matchCards(await _snapshot(), _asString(q, 'query'));
         await browse(q as String?, <String>[
           for (final _CardSubject c in cards) c.card.id,
         ]);
@@ -697,7 +697,7 @@ class SrsAnkiConnectHandler {
         SrsSearchErrorKind.unavailable => 'search unavailable: ${e.reason}',
       });
 
-  List<_CardSubject> _matchCards(_Snapshot s, String query) {
+  Future<List<_CardSubject>> _matchCards(_Snapshot s, String query) async {
     try {
       final SrsSearchNode node = parseAnkiSearch(query);
       final List<_CardSubject> subjects = s.subjects ??= <_CardSubject>[
@@ -710,6 +710,8 @@ class SrsAnkiConnectHandler {
       // 原生语料与请求同生命周期：用完立即释放，不等 GC（Yomitan 会频繁 findNotes）。
       final SrsSearchCorpus corpus = SrsSearchCorpus(subjects);
       try {
+        // 只传查询要的字段列；量大（未限定字段的文本）时多 isolate 并行编码。
+        await corpus.prepare(node, query: query);
         return <_CardSubject>[
           for (final int i in corpus.match(node, query: query)) subjects[i],
         ];
@@ -721,10 +723,10 @@ class SrsAnkiConnectHandler {
     }
   }
 
-  List<int> _findNotes(_Snapshot s, String query) {
+  Future<List<int>> _findNotes(_Snapshot s, String query) async {
     final List<int> out = <int>[];
     String? last;
-    for (final _CardSubject c in _matchCards(s, query)) {
+    for (final _CardSubject c in await _matchCards(s, query)) {
       if (c.note.id == last) continue;
       last = c.note.id;
       out.add(c.noteId);
@@ -1204,7 +1206,7 @@ class SrsAnkiConnectHandler {
   Future<List<Object?>> _notesInfo(Map<String, Object?> p) async {
     final _Snapshot s = await _snapshot();
     final List<int> ids = p.containsKey('query') && !p.containsKey('notes')
-        ? _findNotes(s, _requireString(p, 'query'))
+        ? await _findNotes(s, _requireString(p, 'query'))
         : _requireIntList(p, 'notes');
     final List<Object?> out = <Object?>[];
     for (final int n in ids) {
