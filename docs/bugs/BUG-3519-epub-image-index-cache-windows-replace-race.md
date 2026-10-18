@@ -6,6 +6,6 @@
     - 替换进行中读者去开目标被拒 → errno 32（ERROR_SHARING_VIOLATION），读缓存记一条 read 失败并整本重扫（修前 `_readCache` 的 `file.readAsStringSync()`，第 170 行）。
   - 测试此前用「Windows 上 write 失败不算错」掩盖了前者，后者偶发即红。
   - 取证：纯 dart:io 原语压测（8 isolate 同时「读 → 写临时文件 → rename → 再读」，200 轮）修前 read errno 32 ×96、rename errno 5 ×958；加锁后 0。用真 `loadEpubImagesWithCache` 的离线 harness（与测试同形，8 isolate/轮，100 轮）：e35042dda1 与 8f0b77480e 都是 100/100 轮出现 rename errno 5（每轮约 4 次），修后 0/100。
-- **[x] ① 已修复** — 缓存目录一把锁文件（`.lock`）：读者在共享锁（`FileLock.blockingShared`）里读整份 JSON，写者在锁外写完临时文件、在排他锁（`FileLock.blockingExclusive`）里只做 rename，删书时的删除同样持排他锁（`_withCacheLock`）。Windows 的 `LockFileEx` 按句柄生效，跨 isolate、跨进程都互斥；POSIX 上 rename 本就不碍着开着的读者，fcntl 锁同进程不互斥也无碍。临界区只有一次读或一次 rename，不嵌套、不会死锁。没有用重试 / 延迟，也没有把 errno 32 当未命中吞掉——那会让 Windows 上缓存时有时无且每次都多扫一遍书。提交：见本分支 `fix(epub): serialize image index cache reads with replacement`。
+- **[x] ① 已修复** — 缓存目录一把锁文件（`.lock`）：读者在共享锁（`FileLock.blockingShared`）里读整份 JSON，写者在锁外写完临时文件、在排他锁（`FileLock.blockingExclusive`）里只做 rename，删书时的删除同样持排他锁（`_withCacheLock`）。Windows 的 `LockFileEx` 按句柄生效，跨 isolate、跨进程都互斥；POSIX 上 rename 本就不碍着开着的读者，fcntl 锁同进程不互斥也无碍。临界区只有一次读或一次 rename，不嵌套、不会死锁。没有用重试 / 延迟，也没有把 errno 32 当未命中吞掉——那会让 Windows 上缓存时有时无且每次都多扫一遍书。提交 e85685b4c0。
 - **[x] ② 已加自动化测试** — `fushi/test/epub/epub_image_index_cache_test.dart`「isolates writing the same book cache concurrently」：去掉「Windows 上 write 失败不算错」的豁免，任何平台读写失败都判红；改成 12 轮（每轮先删缓存，8 个 isolate 同时读写），修前在 Windows 上必红（每轮都有 rename errno 5），修后单跑多次全绿。
 - **备注**：同进程外的其它程序（杀毒、索引器）若不带共享删除地开着缓存文件，rename 仍可能被拒，那是真实的外部异常，照常作为 write 失败上报、下次再算。
