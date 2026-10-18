@@ -5,7 +5,6 @@ import 'dart:io';
 const String kFushiComputeLibEnv = 'FUSHI_COMPUTE_LIB';
 
 /// Dart 绑定期望的 C ABI 版本，与 native/fushi_compute/src/lib.rs 的 `ABI_VERSION` 一致。
-/// 不一致视为库不可用（不崩、不猜着调）。
 const int kFushiComputeAbiVersion = 1;
 
 /// FFI 状态码，与 lib.rs 的 `status` 模块一致。
@@ -18,6 +17,41 @@ abstract final class FfcStatus {
   static const int panic = -100;
 }
 
+/// fushi_compute 原生库加载失败（或缺某个域的符号）。
+///
+/// fushi_compute 是**硬依赖**：五个平台 app 与无头服务端都随包，没有 Dart 回退实现。
+/// 走到这里说明部署坏了（构建漏了库 / 架构不符 / 库比绑定旧），所以抛出带原因的异常，
+/// 而不是返回 null 让功能悄悄失效。
+///
+/// 是 [Error] 而不是 [Exception]：这是部署缺陷，调用方不该把它当业务失败吞掉重试。
+/// 各域（哈希 / 图像 / 文本 …）共用这一个类型。
+final class FushiComputeUnavailableError extends Error {
+  FushiComputeUnavailableError(
+    this.message, [
+    this.attempts = const <String>[],
+  ]);
+
+  final String message;
+
+  /// 逐个候选路径的失败原因。
+  final List<String> attempts;
+
+  @override
+  String toString() {
+    final StringBuffer out = StringBuffer(
+      'FushiComputeUnavailableError: $message',
+    );
+    for (final String attempt in attempts) {
+      out.write('\n  - $attempt');
+    }
+    out.write(
+      '\n  (build it with native/fushi_compute/build_*.{ps1,sh}, '
+      'or set $kFushiComputeLibEnv to its absolute path)',
+    );
+    return out.toString();
+  }
+}
+
 typedef _AbiVersionC = Int32 Function();
 typedef _AbiVersionDart = int Function();
 typedef _FreeBytesC = Void Function(Pointer<Uint8>, Size);
@@ -25,11 +59,10 @@ typedef _FreeBytesDart = void Function(Pointer<Uint8>, int);
 
 /// 已加载的 fushi_compute 原生库。
 ///
-/// 库缺失是**正常部署形态**（某平台没随包、CI 测试机没编），所以加载失败不抛，
-/// [instance] 为 null。与 `FushiFsrs` / `FushiP2p` 同一套定位规则。
-///
-/// 只在加载时核对 ABI 版本与公共符号；各域的符号由该域的绑定在首次使用时自己 lookup
-/// （[lookupOrNull]），缺符号（旧库）只让那一个域不可用。
+/// 加载时核对 ABI 版本与公共符号；各域的符号由该域的绑定在首次使用时 lookup，缺符号
+/// 同样抛 [FushiComputeUnavailableError]（见 [missingSymbols]）。定位规则与 `FushiFsrs` /
+/// `FushiP2p` 一致，另在测试宿主（`dart` / `flutter_tester`）下向上查找本仓
+/// `native/fushi_compute/prebuilt/<平台>/`。
 class FushiCompute {
   FushiCompute._(this.library, this.libraryPath, this._freeBytes);
 
@@ -44,20 +77,36 @@ class FushiCompute {
   /// 释放原生库分配并交给调用方的缓冲区（`ffc_free_bytes`）。
   void freeBytes(Pointer<Uint8> ptr, int len) => _freeBytes(ptr, len);
 
-  /// 库里是否导出了 [symbol]。各域绑定先用它判断，再用具体类型
-  /// `library.lookupFunction<C, D>(symbol)`（类型参数必须是编译期常量，没法包成泛型 helper）。
+  /// 库里是否导出了 [symbol]。
   bool providesSymbol(String symbol) => library.providesSymbol(symbol);
 
-  static bool _defaultResolved = false;
-  static FushiCompute? _default;
+  /// 某个域的绑定 lookup 失败时抛的统一异常。
+  FushiComputeUnavailableError missingSymbols(String domain, Object error) =>
+      FushiComputeUnavailableError(
+        'fushi_compute at ${libraryPath ?? '<process>'} lacks the $domain '
+        'symbols (library older than the Dart bindings?): $error',
+      );
 
-  /// 按默认规则加载一次并缓存（见 [libraryCandidates]）。
-  static FushiCompute? get instance {
-    if (!_defaultResolved) {
-      _default = tryLoad();
-      _defaultResolved = true;
+  /// 返回已加载的默认库（同 [instance]）；不可用时抛 [FushiComputeUnavailableError]。
+  /// 各域绑定一律经它取库。
+  static FushiCompute require() => instance;
+
+  static FushiCompute? _default;
+  static FushiComputeUnavailableError? _defaultError;
+
+  /// 按默认规则加载一次并缓存（见 [libraryCandidates]）；失败抛
+  /// [FushiComputeUnavailableError]（之后每次访问都抛同一个）。
+  static FushiCompute get instance {
+    final FushiCompute? loaded = _default;
+    if (loaded != null) return loaded;
+    final FushiComputeUnavailableError? error = _defaultError;
+    if (error != null) throw error;
+    try {
+      return _default = load();
+    } on FushiComputeUnavailableError catch (e) {
+      _defaultError = e;
+      rethrow;
     }
-    return _default;
   }
 
   /// 当前平台的裸库名。
@@ -67,14 +116,37 @@ class FushiCompute {
     return 'libfushi_compute.so';
   }
 
+  /// 本仓构建脚本的产物子目录（`native/fushi_compute/prebuilt/<它>/`）；无对应时 null。
+  static String? _prebuiltPlatformDir() {
+    if (Platform.isWindows) return 'windows-x64';
+    if (Platform.isMacOS) return 'macos';
+    if (Platform.isLinux) return 'linux-x64';
+    return null;
+  }
+
+  /// 进程是不是测试宿主（`dart test` / `flutter test`）。只有它才去仓库里找 prebuilt：
+  /// 正式 app 与服务端不能从当前目录的上级加载库（DLL 投毒面）。
+  static bool isTestHost(String executablePath) {
+    final String base = executablePath
+        .split(RegExp(r'[\\/]'))
+        .last
+        .toLowerCase();
+    return base == 'dart' ||
+        base == 'dart.exe' ||
+        base == 'flutter_tester' ||
+        base == 'flutter_tester.exe';
+  }
+
   /// 候选路径，按优先级：显式 [libraryPath] → 环境变量 `FUSHI_COMPUTE_LIB` →
-  /// 可执行文件同级 → `bin/../lib/<name>`（无头服务端 bundle）→ 裸名（Android APK
-  /// native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）。
-  /// iOS 不走候选：静态库链进主二进制，见 [tryLoad]。
+  /// 可执行文件同级 → `bin/../lib/<name>`（无头服务端 bundle）→ 测试宿主下从
+  /// [currentDirectory] 向上找到的 `native/fushi_compute/prebuilt/<平台>/<name>` →
+  /// 裸名（Android APK native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）。
+  /// iOS 不走候选：静态库链进主二进制，见 [load]。
   static List<String> libraryCandidates({
     String? libraryPath,
     Map<String, String>? environment,
     String? executablePath,
+    String? currentDirectory,
   }) {
     final String name = defaultLibraryName();
     final Map<String, String> env = environment ?? Platform.environment;
@@ -82,67 +154,116 @@ class FushiCompute {
     final String binDir = File(exe).parent.path;
     final String sep = Platform.pathSeparator;
     final String? fromEnv = env[kFushiComputeLibEnv];
+    final String? prebuilt = isTestHost(exe)
+        ? _findRepoPrebuilt(currentDirectory ?? Directory.current.path, name)
+        : null;
     return <String>[
       if (libraryPath != null && libraryPath.isNotEmpty) libraryPath,
       if (fromEnv != null && fromEnv.isNotEmpty) fromEnv,
       '$binDir$sep$name',
       File('$binDir$sep..${sep}lib$sep$name').absolute.path,
+      if (prebuilt != null) prebuilt,
       name,
     ];
   }
 
-  /// 按 [libraryCandidates] 顺序加载原生库；全部失败返回 null（不抛）。
+  static String? _findRepoPrebuilt(String start, String name) {
+    final String? platformDir = _prebuiltPlatformDir();
+    if (platformDir == null) return null;
+    final String sep = Platform.pathSeparator;
+    Directory dir = Directory(start).absolute;
+    for (int depth = 0; depth < 8; depth++) {
+      final File candidate = File(
+        '${dir.path}${sep}native${sep}fushi_compute${sep}prebuilt'
+        '$sep$platformDir$sep$name',
+      );
+      if (candidate.existsSync()) return candidate.path;
+      final Directory parent = dir.parent;
+      if (parent.path == dir.path) break;
+      dir = parent;
+    }
+    return null;
+  }
+
+  /// 按 [libraryCandidates] 顺序加载原生库；全部失败抛 [FushiComputeUnavailableError]，
+  /// 带每个候选的失败原因。
   ///
-  /// 显式给了 [libraryPath] 时**只试这一个**：调用方点名要某个文件，那个文件不能用就该报
-  /// 不可用，而不是悄悄换成系统里别的副本。[environment] / [executablePath] 仅供测试覆盖。
-  static FushiCompute? tryLoad({
+  /// 显式给了 [libraryPath] 时**只试这一个**：调用方点名要某个文件，那个文件不能用就该报错，
+  /// 而不是悄悄换成系统里别的副本。其余参数仅供测试覆盖。
+  static FushiCompute load({
     String? libraryPath,
     Map<String, String>? environment,
     String? executablePath,
+    String? currentDirectory,
   }) {
-    try {
-      if (Platform.isIOS) {
-        // iOS 以静态库（native/fushi_ios_umbrella）链进主二进制。
-        return _bind(DynamicLibrary.process(), null);
+    if (Platform.isIOS && (libraryPath == null || libraryPath.isEmpty)) {
+      // iOS 以静态库（native/fushi_ios_umbrella）链进主二进制。
+      final DynamicLibrary process = DynamicLibrary.process();
+      final String? error = _bindError(process);
+      if (error != null) {
+        throw FushiComputeUnavailableError(
+          'fushi_compute is not linked into this iOS binary '
+          '(native/fushi_ios_umbrella): $error',
+        );
       }
-      final List<String> candidates =
-          libraryPath != null && libraryPath.isNotEmpty
-          ? <String>[libraryPath]
-          : libraryCandidates(
-              environment: environment,
-              executablePath: executablePath,
-            );
-      for (final String candidate in candidates) {
-        final bool isBareName =
-            !candidate.contains('/') &&
-            !candidate.contains(Platform.pathSeparator);
-        if (!isBareName && !File(candidate).existsSync()) continue;
-        final DynamicLibrary lib;
-        try {
-          lib = DynamicLibrary.open(candidate);
-        } on ArgumentError {
-          continue; // 打不开（架构不符 / 依赖缺失 / 系统路径没有）：试下一个。
-        }
-        final FushiCompute? loaded = _bind(lib, candidate);
-        if (loaded != null) return loaded;
-      }
-      return null;
-    } on Object {
-      // 任何意外都只意味着「不可用」，绝不抛给调用方。
-      return null;
+      return _bind(process, null);
     }
+    final List<String> candidates =
+        libraryPath != null && libraryPath.isNotEmpty
+        ? <String>[libraryPath]
+        : libraryCandidates(
+            environment: environment,
+            executablePath: executablePath,
+            currentDirectory: currentDirectory,
+          );
+    final List<String> attempts = <String>[];
+    for (final String candidate in candidates) {
+      final bool isBareName =
+          !candidate.contains('/') &&
+          !candidate.contains(Platform.pathSeparator);
+      if (!isBareName && !File(candidate).existsSync()) {
+        attempts.add('$candidate: not found');
+        continue;
+      }
+      final DynamicLibrary lib;
+      try {
+        lib = DynamicLibrary.open(candidate);
+      } on ArgumentError catch (e) {
+        attempts.add('$candidate: cannot open (${e.message})');
+        continue;
+      }
+      final String? error = _bindError(lib);
+      if (error != null) {
+        attempts.add('$candidate: $error');
+        continue;
+      }
+      return _bind(lib, candidate);
+    }
+    throw FushiComputeUnavailableError(
+      'cannot load ${defaultLibraryName()}',
+      attempts,
+    );
   }
 
-  static FushiCompute? _bind(DynamicLibrary lib, String? path) {
+  /// 库可用返回 null；否则返回原因（ABI 不符 / 缺公共符号）。
+  static String? _bindError(DynamicLibrary lib) {
     try {
       final _AbiVersionDart abi = lib
           .lookupFunction<_AbiVersionC, _AbiVersionDart>('ffc_abi_version');
-      if (abi() != kFushiComputeAbiVersion) return null;
-      final _FreeBytesDart free = lib
-          .lookupFunction<_FreeBytesC, _FreeBytesDart>('ffc_free_bytes');
-      return FushiCompute._(lib, path, free);
-    } on ArgumentError {
-      return null; // 缺公共符号：不是这个库 / 版本太老。
+      final int version = abi();
+      if (version != kFushiComputeAbiVersion) {
+        return 'ABI version $version, bindings expect $kFushiComputeAbiVersion';
+      }
+      lib.lookupFunction<_FreeBytesC, _FreeBytesDart>('ffc_free_bytes');
+      return null;
+    } on ArgumentError catch (e) {
+      return 'missing common symbols (${e.message})';
     }
   }
+
+  static FushiCompute _bind(DynamicLibrary lib, String? path) => FushiCompute._(
+    lib,
+    path,
+    lib.lookupFunction<_FreeBytesC, _FreeBytesDart>('ffc_free_bytes'),
+  );
 }

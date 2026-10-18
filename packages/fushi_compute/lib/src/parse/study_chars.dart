@@ -37,34 +37,22 @@ final class StudyCharsNative {
   static StudyCharsNative get instance => _instance ??= _load();
 
   static StudyCharsNative _load() {
-    final FushiCompute? lib = FushiCompute.instance;
-    if (lib == null) {
-      throw FushiComputeUnavailableError(
-        'fushi_compute native library is not available '
-        '(${FushiCompute.defaultLibraryName()}); set $kFushiComputeLibEnv '
-        'to its path or ship it next to the executable',
+    final FushiCompute compute = FushiCompute.require();
+    // lookup 名写成字符串字面量：verify_abi.sh 从绑定源码抓期望符号集。
+    try {
+      return StudyCharsNative._(
+        compute.library.lookupFunction<_ClassOfC, _ClassOfDart>(
+          'ffc_parse_study_char_class',
+          isLeaf: true,
+        ),
+        compute.library.lookupFunction<_CountUtf16C, _CountUtf16Dart>(
+          'ffc_parse_study_chars_utf16',
+          isLeaf: true,
+        ),
       );
+    } on ArgumentError catch (e) {
+      throw compute.missingSymbols('parse', e.message ?? e);
     }
-    const String classSymbol = 'ffc_parse_study_char_class';
-    const String countSymbol = 'ffc_parse_study_chars_utf16';
-    for (final String symbol in <String>[classSymbol, countSymbol]) {
-      if (!lib.providesSymbol(symbol)) {
-        throw FushiComputeUnavailableError(
-          'fushi_compute at ${lib.libraryPath} does not export $symbol '
-          '(library is older than this build)',
-        );
-      }
-    }
-    return StudyCharsNative._(
-      lib.library.lookupFunction<_ClassOfC, _ClassOfDart>(
-        classSymbol,
-        isLeaf: true,
-      ),
-      lib.library.lookupFunction<_CountUtf16C, _CountUtf16Dart>(
-        countSymbol,
-        isLeaf: true,
-      ),
-    );
   }
 
   /// 码点 [codePoint] 的分类：0 断词不计 / 1 透明 / 2 每码点计 1 / 3 连续串计 1。

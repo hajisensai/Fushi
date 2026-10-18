@@ -65,8 +65,8 @@ tree_hash() {
 
 TORRENT=(native/fushi_torrent)
 P2P=(native/fushi_p2p)
-# iOS umbrella staticlib (fushi_p2p + fushi_fsrs in one crate, one Rust std).
-IOS_NATIVE=(native/fushi_ios_umbrella native/fushi_p2p native/fushi_fsrs)
+# iOS umbrella staticlib (fushi_p2p + fushi_fsrs + fushi_compute in one crate, one Rust std).
+IOS_NATIVE=(native/fushi_ios_umbrella native/fushi_p2p native/fushi_fsrs native/fushi_compute)
 MIHON=(third_party/m_extension_server third_party/jogamp tool/mihon)
 GALGAME=(native/galgame_hook)
 ANKI_SYNC=(native/fushi_anki_sync .github/actions/setup-fushi-anki-sync)
@@ -100,7 +100,7 @@ case "$platform" in
     ;;
   ios)
     names+=(
-      # Umbrella staticlib (fp2p_* + ffsrs_*), device slice only
+      # Umbrella staticlib (fp2p_* + ffsrs_* + ffc_*), device slice only
       # (native/fushi_ios_umbrella/build_ios_staticlib.sh device), shared by PR gate and release.
       "ios_native=ios-device-fushi-ios-umbrella-staticlib-v1-rust$P2P_RUST-$image_os-$image-$(tree_hash "$toolchain_env rust=$P2P_RUST" "${IOS_NATIVE[@]}")"
     )

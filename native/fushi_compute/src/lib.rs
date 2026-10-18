@@ -1,4 +1,4 @@
-//! Fushi 计算内核：纯 Dart 实现太慢的 CPU 密集操作（哈希 / 图像 / 文本匹配）的 C ABI。
+//! Fushi 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配）的 C ABI。
 //!
 //! ABI 约定（Dart 侧见 packages/fushi_compute）：
 //! - 导出符号一律 `ffc_<域>_<动作>`，`#[no_mangle] pub extern "C"`；每个域一个模块文件
@@ -8,9 +8,10 @@
 //! - 能由调用方分配输出就由调用方分配；必须由 Rust 分配的缓冲区用 [ffc_free_bytes] 释放。
 //! - 返回 `i32` 状态码：0 = 成功，负数 = 失败（见 [status]）；panic 一律接住转成
 //!   [status::PANIC]，不越过 FFI 边界。
-//! - 结果必须与 Dart 回退实现一致（纯算术内核逐位一致；涉及有损解码的在模块注释写明容差）：
-//!   库缺失时各端退回 Dart，两条路径不一致会变成「同一份数据在不同设备上结果不同」。
-//! - 新增符号不升 [ABI_VERSION]（Dart 侧按域单独 lookup，旧库缺符号只让该域退回 Dart）；
+//! - **硬依赖、无 Dart 回退**：五个平台 app 与无头服务端都必须随包本库（缺产物构建失败），
+//!   Dart 侧加载失败抛带原因的 `FushiComputeUnavailableError`。所以每个域只有这一份实现；
+//!   从 Dart 迁过来的内核要先用旧 Dart 实现冻结输入 → 输出向量做回归测试，再删 Dart。
+//! - 新增符号不升 [ABI_VERSION]（Dart 侧按域 lookup，库比绑定旧时那个域抛缺符号异常）；
 //!   改动既有符号的签名或语义才升。
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -20,7 +21,7 @@ pub mod image;
 pub mod parse;
 pub mod text;
 
-/// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。
+/// C ABI 版本。Dart 侧加载时比对，不一致抛带原因的加载异常。
 pub const ABI_VERSION: i32 = 1;
 
 /// 各导出函数共用的返回码。
