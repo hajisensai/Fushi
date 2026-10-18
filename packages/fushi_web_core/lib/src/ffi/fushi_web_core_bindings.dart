@@ -6,7 +6,9 @@
 // - 失败原因用 fwc_last_error 取，用 fwc_string_free 释放；
 // - fwc_adblock_check 是微秒级、不分配、不回调的热路径，绑定成 leaf 调用（入参写在
 //   AdblockCore 常驻的原生暂存区里，每次请求零 malloc）；其余命令走普通调用。
-// 高层封装见 ../adblock/adblock_core.dart 与 ../comic_ad/comic_ad_detector.dart。
+// 高层封装见 ../adblock/adblock_core.dart、../comic_ad/comic_ad_detector.dart 与
+// ../article/web_novel_session.dart（正文提取 + 连载会话：整页 HTML 一次交进去，结果是
+// 「u32 LE 头长度 + JSON 头 + 正文 XHTML 字节」的帧，正文不进 JSON）。
 // native/fushi_web_core/verify_abi.sh 与 iOS 伞形库的符号核对直接从本文件的 lookup 字面量
 // 取期望集（单引号包住的 fwc_ 名字面量），新增符号照现有写法 lookup 即可自动纳入核对；
 // 注释里别写单引号包住的 fwc_ 名，会被当成期望符号。
@@ -17,6 +19,9 @@ import 'dart:ffi' as ffi;
 
 /// 不透明的广告拦截核心句柄（Rust 侧 `Box<AdblockCore>`）。
 final class FwcAdblockCore extends ffi.Opaque {}
+
+/// 不透明的连载会话句柄（Rust 侧 `Box<FwcNovelSession>`）。
+final class FwcNovelSession extends ffi.Opaque {}
 
 /// 章末广告页判定规则（Rust `#[repr(C)] ComicAdRules`）。
 final class FwcComicAdRules extends ffi.Struct {
@@ -194,6 +199,63 @@ typedef _GenericDart =
       int,
       ffi.Pointer<ffi.Size>,
     );
+typedef _ExtractC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Size>,
+    );
+typedef _ExtractDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Size>,
+    );
+typedef _WorkKeyC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Size>,
+    );
+typedef _WorkKeyDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Size>,
+    );
+typedef _SessionOpenC =
+    ffi.Pointer<FwcNovelSession> Function(ffi.Pointer<ffi.Uint8>, ffi.Size);
+typedef _SessionOpenDart =
+    ffi.Pointer<FwcNovelSession> Function(ffi.Pointer<ffi.Uint8>, int);
+typedef NovelSessionCloseC = ffi.Void Function(ffi.Pointer<FwcNovelSession>);
+typedef _SessionCloseDart = void Function(ffi.Pointer<FwcNovelSession>);
+typedef _SessionIngestC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<FwcNovelSession>,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Size>,
+    );
+typedef _SessionIngestDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<FwcNovelSession>,
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Size>,
+    );
+typedef _SessionOutC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<FwcNovelSession>,
+      ffi.Pointer<ffi.Size>,
+    );
 typedef _DefaultRulesC = FwcComicAdRules Function();
 typedef _CandidateStartC =
     ffi.Uint32 Function(ffi.Uint32, ffi.Pointer<FwcComicAdRules>);
@@ -290,6 +352,32 @@ class FushiWebCoreBindings {
       fwc_comic_ad_detect_batch = lib
           .lookupFunction<_DetectBatchC, _DetectBatchDart>(
             'fwc_comic_ad_detect_batch',
+          ),
+      fwc_article_extract = lib.lookupFunction<_ExtractC, _ExtractDart>(
+        'fwc_article_extract',
+      ),
+      fwc_article_work_key = lib.lookupFunction<_WorkKeyC, _WorkKeyDart>(
+        'fwc_article_work_key',
+      ),
+      fwc_novel_session_open = lib
+          .lookupFunction<_SessionOpenC, _SessionOpenDart>(
+            'fwc_novel_session_open',
+          ),
+      fwc_novel_session_close = lib
+          .lookupFunction<NovelSessionCloseC, _SessionCloseDart>(
+            'fwc_novel_session_close',
+          ),
+      fwc_novel_session_close_ptr = lib
+          .lookup<ffi.NativeFunction<NovelSessionCloseC>>(
+            'fwc_novel_session_close',
+          ),
+      fwc_novel_session_ingest = lib
+          .lookupFunction<_SessionIngestC, _SessionIngestDart>(
+            'fwc_novel_session_ingest',
+          ),
+      fwc_novel_session_snapshot = lib
+          .lookupFunction<_SessionOutC, _SessionOutC>(
+            'fwc_novel_session_snapshot',
           );
 
   final ffi.Pointer<ffi.Char> Function() fwc_version;
@@ -409,4 +497,41 @@ class FushiWebCoreBindings {
     ffi.Pointer<ffi.Uint8>,
   )
   fwc_comic_ad_detect_batch;
+
+  /// 慢调用（整页 DOM 解析，毫秒级）：放后台 isolate。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Uint8>,
+    int,
+    ffi.Pointer<ffi.Uint8>,
+    int,
+    ffi.Pointer<ffi.Size>,
+  )
+  fwc_article_extract;
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Uint8>,
+    int,
+    ffi.Pointer<ffi.Size>,
+  )
+  fwc_article_work_key;
+  final ffi.Pointer<FwcNovelSession> Function(ffi.Pointer<ffi.Uint8>, int)
+  fwc_novel_session_open;
+  final void Function(ffi.Pointer<FwcNovelSession>) fwc_novel_session_close;
+  final ffi.Pointer<ffi.NativeFunction<NovelSessionCloseC>>
+  fwc_novel_session_close_ptr;
+
+  /// 慢调用（提取 + 并进会话）：放后台 isolate。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<FwcNovelSession>,
+    ffi.Pointer<ffi.Uint8>,
+    int,
+    ffi.Pointer<ffi.Uint8>,
+    int,
+    ffi.Pointer<ffi.Size>,
+  )
+  fwc_novel_session_ingest;
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<FwcNovelSession>,
+    ffi.Pointer<ffi.Size>,
+  )
+  fwc_novel_session_snapshot;
 }
