@@ -216,8 +216,8 @@ class WebVideoSession {
     this.onKeyToken,
   });
 
-  /// 书架流媒体书 uid（写进每条 cue 的 bookKey）。
-  final String bookUid;
+  /// 书架流媒体书 uid（写进每条 cue 的 bookKey）；站内换集落成新书时由页面改写。
+  String bookUid;
 
   /// 起始页（书的 `videoPath`）。
   final String pageUrl;
@@ -295,6 +295,9 @@ class WebVideoSession {
     final Object? r = await web.evaluateJavascript(source: source);
     return r?.toString();
   }
+
+  /// 已采到的字幕轨整轨重投（换了书身份后 cue 的 bookKey 要跟着换）。
+  Future<void> replayCues() => evaluate('window.__fushiWebVideo.replayCues()');
 
   Future<void> setVideoOnly(bool on) =>
       evaluate('window.__fushiWebVideo.setVideoOnly($on)');

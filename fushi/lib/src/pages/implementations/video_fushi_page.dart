@@ -139,6 +139,7 @@ import 'package:fushi/src/media/video/web_video_hosting.dart'
     show WebVideoHosting, kWebVideoHostingPrefKey, webVideoHostingFromPref;
 import 'package:fushi/src/media/video/web_video_platform_player.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
+import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/media/video/youtube_range_relay.dart'
     show relayYoutubeStreamUrl;
 import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart'
@@ -613,6 +614,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.initialSubtitleListVisible = false,
     this.initialFullscreen = false,
     this.openBlurayMenu = false,
+    this.webSite,
     super.key,
   }) : remoteInfo = null,
        remoteClient = null,
@@ -635,6 +637,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        remoteClient = client,
        initialFullscreen = false,
        openBlurayMenu = false,
+       webSite = null,
        playlistCollectionId = null;
 
   final String bookUid;
@@ -669,6 +672,10 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// Open the disc-authored menu, without loading the representative title.
   final bool openBlurayMenu;
 
+  /// 「在线源 › 网站」的站点入口：不读库，按 [webVideoSiteRow] 的伪书在网页档打开站点；
+  /// 播起某一集时这一集才落库、本页身份换成它（web_source.part.dart `_bindWebEpisode`）。
+  final WebVideoSite? webSite;
+
   /// 打开视频播放页的**唯一入口**：在路由层用 [FushiAppUiScaleNeutralizer] 把整页中和
   /// （与阅读器 [ReaderFushiSource.buildLaunchPage] 同范式）。
   ///
@@ -689,6 +696,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     bool initialSubtitleListVisible = false,
     bool initialFullscreen = false,
     bool openBlurayMenu = false,
+    WebVideoSite? webSite,
   }) => FushiAppUiScaleNeutralizer(
     child: VideoFushiPage(
       bookUid: bookUid,
@@ -702,6 +710,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       initialSubtitleListVisible: initialSubtitleListVisible,
       initialFullscreen: initialFullscreen,
       openBlurayMenu: openBlurayMenu,
+      webSite: webSite,
     ),
   );
 
@@ -2076,6 +2085,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String? _webBrowseVideoKey;
   String? _webForcePlayerKey;
 
+  /// 网页档里播起的那一集落成的书（站点入口打开 / 站内换了集）；null = 仍是打开时那本。
+  String? _webEpisodeBookUid;
+
+  /// [_activeBookUid] 此刻代表的那一集的规范地址（[webVideoEpisodeUrl]）；站点入口还没播
+  /// 起任何一集时为 null。正在落库的那一集记在 [_webBindingEpisodeUrl]。
+  String? _webBoundEpisodeUrl;
+  String? _webBindingEpisodeUrl;
+
   /// 站点当前视频身份（glue 的 `videoKey`；SPA 换集即变）与它名下的字幕轨。
   String _webVideoKey = '';
   final Map<String, WebVideoTrack> _webTracks = <String, WebVideoTrack>{};
@@ -2358,7 +2375,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   bool _discMenuChromeFocused = false;
   List<SubtitleTrack>? _discLastSubtitleTracks;
   int _discSubtitleTracksRevision = 0;
-  String get _activeBookUid => _discBookUid ?? widget.bookUid;
+  String get _activeBookUid =>
+      _discBookUid ?? _webEpisodeBookUid ?? widget.bookUid;
   bool get _discLearningBlocked =>
       _controller?.isBlurayNavigationSession == true &&
       (_controller!.discMenuActive || !_controller!.discTitleReady);
@@ -3630,7 +3648,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       await _initRemote();
       return;
     }
-    final VideoBookRow? row = await widget.repo.getByBookUid(_activeBookUid);
+    final WebVideoSite? site = widget.webSite;
+    final VideoBookRow? row = site != null
+        ? webVideoSiteRow(site)
+        : await widget.repo.getByBookUid(_activeBookUid);
     if (row == null) {
       if (mounted) {
         setState(() {

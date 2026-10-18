@@ -66,6 +66,14 @@ extension _VideoWebSource on _VideoFushiPageState {
       return;
     }
     if (!context.mounted) return;
+    // 站点入口没有库里的书，内置网页播放器页读不到它：只有底层合成档能开站点入口。
+    if (widget.webSite != null) {
+      _rebuild(() {
+        _failed = true;
+        _failReason = t.video_load_failed_generic;
+      });
+      return;
+    }
     // media_kit controller 尚未 load，pushReplacement 代价只是本页一次空 build。
     unawaited(
       Navigator.of(context).pushReplacement(
@@ -120,6 +128,9 @@ extension _VideoWebSource on _VideoFushiPageState {
       }
       _pendingController = controller;
       handedToPlayer = true;
+      _webBoundEpisodeUrl = widget.webSite == null
+          ? webVideoEpisodeUrl(row.videoPath)
+          : null;
       await controller.loadWeb(
         platform: platform,
         bookUid: _activeBookUid,
@@ -168,7 +179,12 @@ extension _VideoWebSource on _VideoFushiPageState {
     _seedWarmPopup();
     unawaited(_refreshFavoritedCueCache());
     unawaited(_refreshStagedMineCount());
-    _ensureWatchTracker(controller, row.title);
+    // 站点入口还没有书：进度 / 观看统计等播起某一集落库后再接（[_bindWebEpisode]）。
+    if (_webBoundEpisodeUrl == null) {
+      controller.rebindWebBook(null);
+    } else {
+      _ensureWatchTracker(controller, row.title);
+    }
   }
 
   /// 进度写库：与本地书同一条 [_persistPosition]（lastPositionMs + 远端进度镜像 + 片长），
@@ -191,6 +207,8 @@ extension _VideoWebSource on _VideoFushiPageState {
     );
     final bool videoChanged = state.videoKey != _webVideoKey;
     if (videoChanged) {
+      // 站内换了视频：新视频的播放头不能写进上一集的进度，先断开，播放器档再按地址重绑。
+      _controller?.rebindWebBook(null);
       _webVideoKey = state.videoKey;
       _webActiveTrackKey = null;
       _reselectWebTrack();
@@ -204,6 +222,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     }
     final bool playerMode = _webPlayerModeFor(state);
     session.syncInput(playerMode: playerMode, videoChanged: videoChanged);
+    if (playerMode) unawaited(_bindWebEpisode(state));
     final VideoPlayerController? controller = _controller;
     if (controller != null) _syncVolumeDisplay(controller.volume);
     // 标题后缀站点实际解码的分辨率：4K 档画质够不够一眼可见。
@@ -222,6 +241,71 @@ extension _VideoWebSource on _VideoFushiPageState {
         _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
       }
     }
+  }
+
+  /// 播放器档里正在播的这一集 = 本页的书：同一集只把进度写回接上；换了集（站点入口里点了
+  /// 某一集 / 站内下一集）就把这一集落成书（[ensureWebVideoEpisodeBook]，已有则复用）、
+  /// 本页身份原子地换过去——进度、观看统计、收藏、制卡队列、字幕 cue 的 bookKey 都跟着走
+  /// （与原盘选片 `_bindDiscPlaylist` 同一套换身份）。
+  Future<void> _bindWebEpisode(WebVideoPlaybackState state) async {
+    final VideoPlayerController? controller = _controller;
+    final WebVideoSession? session = _webSession;
+    final String? url = webVideoEpisodeUrl(state.href);
+    if (controller == null || session == null || url == null) return;
+    if (url == _webBoundEpisodeUrl) {
+      controller.rebindWebBook(_activeBookUid);
+      return;
+    }
+    if (url == _webBindingEpisodeUrl) return;
+    _webBindingEpisodeUrl = url;
+    final String siteTitle =
+        widget.webSite?.title ?? webVideoSiteDefaultTitle(url);
+    VideoBookRow? row;
+    try {
+      row = await ensureWebVideoEpisodeBook(
+        widget.repo,
+        episodeUrl: url,
+        title: webVideoEpisodeTitle(
+          pageTitle: state.title,
+          episodeUrl: url,
+          siteTitle: siteTitle,
+        ),
+      );
+    } catch (e, st) {
+      ErrorLogService.instance.log('VideoFushi.webEpisode', e, st);
+    }
+    if (_webBindingEpisodeUrl == url) _webBindingEpisodeUrl = null;
+    final WebVideoPlaybackState? latest = session.lastState;
+    if (!mounted ||
+        row == null ||
+        !identical(_controller, controller) ||
+        !identical(_webSession, session) ||
+        latest == null ||
+        webVideoEpisodeUrl(latest.href) != url) {
+      return;
+    }
+    final VideoBookRow bound = row;
+    _rebuild(() {
+      _webEpisodeBookUid = bound.bookUid;
+      _webBoundEpisodeUrl = url;
+      _bookRow = bound;
+      _title = bound.title;
+      _delayMs = bound.delayMs;
+      _secondaryDelayMs = bound.secondaryDelayMs;
+      _favoritedVideoSentences.clear();
+      _webTracks.clear();
+      _webActiveTrackKey = null;
+    });
+    session.bookUid = bound.bookUid;
+    controller.setDelayMs(_delayMs);
+    controller.setSecondaryDelayMs(_secondaryDelayMs);
+    controller.setCues(const <AudioCue>[]);
+    controller.rebindWebBook(bound.bookUid);
+    // 已采到的轨带着旧 bookKey：让 glue 按新身份整轨重投。
+    unawaited(session.replayCues());
+    _ensureWatchTracker(controller, bound.title);
+    unawaited(_refreshFavoritedCueCache());
+    unawaited(_refreshStagedMineCount());
   }
 
   /// 这份快照该不该是播放器档：没视频一定不是；用户对**这一集**点过「回到网页」/「在播放器里

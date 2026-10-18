@@ -3749,6 +3749,13 @@ class VideoPlayerController extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 网页档换书身份（站内换集 / 站点入口播起某一集）：之后的进度写回落到 [bookUid]；null =
+  /// 暂不写（站点入口还没有书、站内刚换了视频还没认出是哪一集）。
+  void rebindWebBook(String? bookUid) {
+    assert(_webBackend, 'rebindWebBook is for the web backend only');
+    _bookUid = bookUid;
+  }
+
   /// 上一个控制器 [dispose] 时 fire-and-forget 的原生释放（进程级，同一时刻至多
   /// 一个视频页在拆）。
   ///
