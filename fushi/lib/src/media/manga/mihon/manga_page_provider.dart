@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -150,7 +148,7 @@ class LocalMangaReaderSession implements MangaReaderSession {
 /// 页图（按 EXIF 方向摆正后的）宽高。
 ///
 /// BUG-3041：阅读器每个页图请求（WebView 拦截 `/img/`、面板检测、在线直读首页）
-/// 都经 [MangaReaderSession.page] 走到这里。以前一律 `img.decodeImage` 整张纯
+/// 都经 [MangaReaderSession.page] 走到这里。以前一律 `decodeImage`（package:image）整张纯
 /// Dart 解码——2400×3400 的页在桌面要 0.5~0.7 s、几十 MB 堆，iOS 自定义 scheme
 /// 又没有 HTTP 缓存，大图卷每次装窗口 / 翻页都要重付，阅读与查词一起被拖慢。
 /// 宽高只需文件头：先走与导入同一口径的 [probeOrientedImageSize]（JPEG 读到
