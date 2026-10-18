@@ -111,4 +111,90 @@ void main() {
       expect(tester.getSize(find.byType(Image)), const Size(700, 400));
     });
   }
+
+  // 手机单列 hero 是竖长容器：横版 fanart 铺满会被放大四五倍、再被两栏用的起始侧
+  // 底色冲成白雾（反馈「看不到背景插画」）。露画面时只画在顶部与宽等高的带里。
+  testWidgets('竖长容器里露画面的 fanart 只占顶部画面带', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 400,
+            height: 560,
+            child: MediaDetailBackdrop(image: MemoryImage(_png), blurSigma: 0),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final Finder image = find.byType(Image);
+    expect(tester.getSize(image), const Size(400, 400));
+    expect(tester.getTopLeft(image), Offset.zero);
+    final Iterable<LinearGradient> gradients = tester
+        .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+        .map((DecoratedBox box) => box.decoration)
+        .whereType<BoxDecoration>()
+        .map((BoxDecoration d) => d.gradient)
+        .whereType<LinearGradient>();
+    expect(
+      gradients.where(
+        (LinearGradient g) => g.begin == AlignmentDirectional.centerStart,
+      ),
+      isEmpty,
+      reason: '单列 hero 文字居中，两栏用的起始侧底色只会把画面冲淡',
+    );
+  });
+
+  testWidgets('竖长容器里的模糊封面仍铺满（只在色彩垫底，不受画面带影响）', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 400,
+            height: 560,
+            child: MediaDetailBackdrop(image: MemoryImage(_png)),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.getSize(find.byType(Image)), const Size(400, 560));
+  });
+
+  group('MediaDetailSynopsis', () {
+    Future<void> pumpSynopsis(WidgetTester tester, int lines) =>
+        tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 400,
+                child: MediaDetailSynopsis(
+                  text: List<String>.generate(
+                    lines,
+                    (int i) => 'line $i',
+                  ).join('\n'),
+                ),
+              ),
+            ),
+          ),
+        );
+
+    testWidgets('只超出一行不出折叠按钮', (WidgetTester tester) async {
+      await pumpSynopsis(tester, 5);
+      expect(
+        find.byKey(const ValueKey<String>('media-detail-synopsis-toggle')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('超出两行以上才出折叠按钮', (WidgetTester tester) async {
+      await pumpSynopsis(tester, 6);
+      expect(
+        find.byKey(const ValueKey<String>('media-detail-synopsis-toggle')),
+        findsOneWidget,
+      );
+    });
+  });
 }
