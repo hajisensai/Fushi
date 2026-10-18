@@ -24,7 +24,7 @@
 - **Rust 胖核心、Flutter 薄 UI（用户 2026-10-19 拍板）**：
   - **新的计算型子系统直接按胖核心设计**：状态与业务逻辑由 Rust 持有（`native/fushi_*`，C ABI + `dart:ffi`），对外只暴露少量粗粒度命令（如 `open_book(id)`）加一条事件 / 快照 stream；Dart 只负责渲染推过来的快照，不另存一份镜像状态。一次用户交互对应个位数的 FFI 调用。
   - **FFI 边界必须粗粒度**：禁止在循环里按元素 / 逐行 / 逐码点跨 FFI；大块数据传指针或 `TypedData`，不反复编码成字符串来回拷贝；可能超过约 1 ms 的调用放后台 isolate，不阻塞 UI isolate。「FFI 比 Dart 还慢」几乎都出在调用粒度和拷贝上，先加粗边界（把调用方的整段处理一起搬过去），不要退回 Dart 写一份。
-  - **存量 Dart 不为「统一语言」而重写**：UI、Riverpod 状态、Drift、网络 / 文件 IO、平台插件与 method channel、WebView JS 桥、i18n，以及 `fushi_engine` / `fushi_server` 编排层留在 Dart（这些瓶颈不在 CPU，搬过去只多一层 FFI、丢热重载）。只有实测出 CPU 热点才按上面的粗粒度规则把那一整段搬进 Rust：搬了就删 Dart 版、不留回退，原生库是硬依赖（加载失败明确报错，测试找不到库要失败而非 skip），删之前用旧实现生成固定输入→输出向量做回归测试；PR 写端到端耗时（含 FFI 与拷贝，不只量内核），不设提速倍数门槛，唯一不搬的理由是边界加粗后端到端仍不比 Dart 快（写明原因）。
+  - **存量 Dart 可以为优化或收编进计算型子系统而重写成 Rust，但不为「统一语言」本身重写**（这是上一条「不从零重写现有功能」的明示例外）。动因只认两种：① 实测出性能问题（CPU 热点、内存、卡顿）；② 把散落在 Dart 里的计算逻辑收编进某个胖核心子系统，让状态归 Rust、减少跨边界次数。UI、平台插件与 method channel、WebView JS 桥、i18n，以及只做 IO / 编排而没有上述两种动因的代码留在 Dart（这些瓶颈不在 CPU，搬过去只多一层 FFI、丢热重载）。重写按上面的粗粒度规则整段搬：搬了就删 Dart 版、不留回退，原生库是硬依赖（加载失败明确报错，测试找不到库要失败而非 skip），删之前用旧实现生成固定输入→输出向量做回归测试；PR 写端到端耗时（含 FFI 与拷贝，不只量内核），不设提速倍数门槛，唯一不搬的理由是边界加粗后端到端仍不比 Dart 快（写明原因）。
   - 已有 C++ 原生模块（`fushidicts`、`fushi_torrent`、`galgame_hook`）不因本条改写成 Rust；ASR 算法仍归上游 `fushi-subtitles`。
 - 发现问题直接说，不要为了顺滑把风险说轻。
 - **合并 PR 要看作者**：只有 `hajisensai`（仓库所有者）与 `W1ght` 的 PR 可以在常规审查后直接合并；**其他任何人的 PR 一律先问用户拿许可再合**，哪怕用户说过「全部合并」——那句话不覆盖后来新出现的第三方 PR。许可的可追溯形态是给 PR 打 `merge-approved` 标签。CI 侧有一条会变红的门 `.github/workflows/pr-merge-gate.yml`（白名单被守卫测试 `fushi/test/tools/pr_merge_gate_allowlist_guard_test.dart` 钉死）；它默认是建议性的——本仓刻意不设分支保护，因为日常大量直推 develop，加 required check 会把直推一起挡掉。要改白名单必须用户点头。
