@@ -1,14 +1,15 @@
 // Fushi 内置网页播放器（WebView2，Windows）主世界胶水。
 //
 // 注入顺序（全部 document-start、主世界、同一全局作用域）：站点 bridge（netflix-bridge /
-// stream-bridge / youtube-bridge，按 host 选）→ subtitle-adapters.js → subtitle-providers.js →
-// 本文件。前三样与浏览器扩展**逐字节同一份**（assets/browser_extension/ 镜像），本文件只做扩展里
+// stream-bridge / youtube-bridge，全部注入、各自按当前文档 host 自判）→ subtitle-adapters.js →
+// subtitle-providers.js →（宿主开关）→ 本文件。前三样与浏览器扩展**逐字节同一份**（assets/browser_extension/ 镜像），本文件只做扩展里
 // content.js/subtitle-panel.js 承担的「消费 store」那一半，并把它改成投给 Dart：
 //   · window.fushiSubtitlePanelOnCues(key)  → 节流后整轨 {type:'track'} 投 Dart；
 //   · 250ms 轮询 <video> 播放态                → 变化才 {type:'state'} 投 Dart；
 //   · window.__fushiWebVideo.*                → Dart 经 evaluateJavascript 调的命令（seek/play/pause…）。
-// 站点 seek 语义沿用扩展：Netflix 走 netflix-bridge 的官方播放器 API（直接改 currentTime 会 M7375），
-// 其它站直接写 video.currentTime。
+// 站点控制语义：Netflix 的 seek / 播放 / 暂停 / 倍速 / 音量 / 选轨一律走正片播放器 API（直接改
+// currentTime 会 M7375；<video> 的状态在 seek 后滞后 1–2 s），会话选择只认 netflix-bridge 的
+// fushiNetflixPlayer（`watch` 前缀）；其它站直接操作 <video>。
 (function () {
   if (window.__fushiWebVideoGlue) return;
   window.__fushiWebVideoGlue = true;
@@ -44,6 +45,18 @@
   // ── store → Dart：同一轨 250ms 内多次变化（DOM 采样逐字扩长 / textTracks 归并）合并成一次整轨投递 ──
   var pendingKeys = Object.create(null);
   var flushTimer = null;
+  // store key = `videoKey|语言段`；语言段带站点轨 id 时是 `lang~trackId`（subtitle-providers 的
+  // fushiFullTrackLangSegment，Netflix 同语言普通 / CC 两条轨靠它区分）。
+  function splitTrackKey(key) {
+    var sep = key.indexOf('|');
+    var seg = sep >= 0 ? key.slice(sep + 1) : 'und';
+    var tilde = seg.indexOf('~');
+    return {
+      videoKey: sep >= 0 ? key.slice(0, sep) : key,
+      lang: tilde >= 0 ? seg.slice(0, tilde) : seg,
+      trackId: tilde >= 0 ? seg.slice(tilde + 1) : '',
+    };
+  }
   function flushTracks() {
     flushTimer = null;
     var store = window.fushiEpisodeCues || {};
@@ -51,13 +64,14 @@
     pendingKeys = Object.create(null);
     for (var i = 0; i < keys.length; i++) {
       var key = keys[i];
-      var sep = key.indexOf('|');
+      var parts = splitTrackKey(key);
       var cues = store[key] || [];
       post({
         type: 'track',
         key: key,
-        videoKey: sep >= 0 ? key.slice(0, sep) : key,
-        lang: sep >= 0 ? key.slice(sep + 1) : 'und',
+        videoKey: parts.videoKey,
+        lang: parts.lang,
+        trackId: parts.trackId,
         cues: cues.map(function (c) { return { s: c.startMs, e: c.endMs, t: c.text }; }),
       });
     }
@@ -66,6 +80,19 @@
     if (!key) return;
     pendingKeys[String(key)] = true;
     if (!flushTimer) flushTimer = setTimeout(flushTracks, 250);
+  };
+  // 站点整轨抓取失败（netflix-bridge 的 cuesFailed）：确定的失败回执，Dart 把「加载中」落成失败。
+  window.fushiSubtitlePanelOnTrackFailed = function (key, err) {
+    if (!key) return;
+    var parts = splitTrackKey(String(key));
+    post({
+      type: 'trackFailed',
+      key: String(key),
+      videoKey: parts.videoKey,
+      lang: parts.lang,
+      trackId: parts.trackId,
+      err: String(err || ''),
+    });
   };
 
   // ── 广告（YouTube 片头 / 中插）：能跳就点「跳过」，不能跳就静音 16 倍速放完，结束后还原
@@ -114,16 +141,42 @@
 
   // ── 播放态轮询（与扩展面板同为轮询，站点播放器不保证派发 timeupdate）──
   var last = null;
+  // Netflix 的播放位置 / 暂停态以它自己的播放器 API 为准：<video>.currentTime 在 seek 后要 1–2 s
+  // 才跟上（MSE 重新缓冲），按它上报会把刚跳过去的进度条拽回旧位置；暂停同理。拿不到正片播放器
+  // （不是播放页 / API 改了）才退回 <video>。
+  function playbackClock(v) {
+    var p = nfPlayer();
+    if (p) {
+      try {
+        var t = Number(p.getCurrentTime());
+        var paused = !!p.isPaused();
+        var d = Number(p.getDuration());
+        if (isFinite(t)) {
+          return {
+            t: Math.round(t),
+            paused: paused,
+            dur: isFinite(d) && d > 0 ? Math.round(d) : null,
+          };
+        }
+      } catch (_) {}
+    }
+    return {
+      t: v ? Math.round(v.currentTime * 1000) : null,
+      paused: v ? !!v.paused : true,
+      dur: v && isFinite(v.duration) ? Math.round(v.duration * 1000) : null,
+    };
+  }
   function snapshot() {
     var v = video();
-    var dur = v && isFinite(v.duration) ? Math.round(v.duration * 1000) : null;
+    var clock = playbackClock(v);
+    var dur = clock.dur;
     return {
       type: 'state',
       href: location.href,
       videoKey: videoKey(),
       hasVideo: !!v,
-      t: v ? Math.round(v.currentTime * 1000) : null,
-      paused: v ? !!v.paused : true,
+      t: clock.t,
+      paused: clock.paused,
       dur: dur,
       vw: v ? v.videoWidth : 0,
       vh: v ? v.videoHeight : 0,
@@ -138,47 +191,139 @@
       vtitle: v ? videoTitle() : '',
       vimg: v ? pageImage() : '',
       nftt: v ? netflixTextTracks() : '',
+      nfat: v ? netflixAudioTracks() : '',
+      blk: v ? playbackBlocker(v) : '',
     };
+  }
+  // ── 播放被站点打断（P0-3）：「还在看吗？」/ 播放错误页（M7375 之类）/ <video> 自己报错。播放器档
+  // 把页面除画面外全部藏起来、WebView 也不收输入，这些站点弹层用户既看不到也点不到——画面停住像
+  // 黑屏。上报给 Dart，由它切回网页档让用户处理；弹层消失后自动回到播放器档。
+  // 形状：'' = 正常；'interrupt' = 等用户确认继续；'error' / 'error:<码>' = 播放错误。
+  var NETFLIX_INTERRUPT_SELECTORS =
+    '[data-uia="interrupt-autoplay-continue"],[data-uia="interrupter"],.watch-video--interrupter,' +
+    '.interrupter-container';
+  var NETFLIX_ERROR_SELECTORS =
+    '[data-uia="player-error"],[data-uia="error-page"],.nfp-fatal-error-view,.watch-video--error,' +
+    '.player-error-view';
+  function errorCodeIn(text) {
+    var m = /\b([A-Z]{1,2}\d{3,5}(?:-\d+)?)\b/.exec(String(text || ''));
+    return m ? m[1] : '';
+  }
+  function playbackBlocker(v) {
+    try {
+      // 只认 Netflix：YouTube 广告前后会换 / 重建 <video>，旧元素可能挂着 error 而正片照常播。
+      if (location.hostname.indexOf('netflix.com') < 0) return '';
+      if (v && v.error) return 'error:MEDIA_ERR_' + v.error.code;
+      if (document.querySelector(NETFLIX_INTERRUPT_SELECTORS)) return 'interrupt';
+      var err = document.querySelector(NETFLIX_ERROR_SELECTORS);
+      if (err) {
+        var code = errorCodeIn(err.textContent);
+        return code ? 'error:' + code : 'error';
+      }
+    } catch (_) {}
+    return '';
   }
   // ── Netflix 字幕轨（Netflix 的字幕采集是被动的：只截播放器自己下载的那一条轨。播放器档里用户
   // 够不到 Netflix 自己的字幕菜单，所以轨清单从播放器 API 读出来交给 Dart 列在原生面板里，选哪条
   // 就让播放器切到哪条——它随即下载那条字幕文件，netflix-bridge 照常截下整轨）。
-  // 形状：每轨一行 `trackId\tbcp47\t显示名`，末行 `#当前轨 trackId`（字幕关着为空）。用字符串
-  // 而不是数组，快照才能按值比较、不每轮重发。图片字幕截不到文字，不列。
+  // 形状：每轨一行 `trackId\tbcp47\t显示名\t轨类型\t图片轨(1/0)`，末行 `#当前轨 trackId`（字幕关着
+  // 为空）。用字符串而不是数组，快照才能按值比较、不每轮重发。图片字幕截不到文字，照样列出（标 1），
+  // Dart 侧标「不可查词」、选它时让站点自己的字幕显示出来。
+  // 正片播放器会话的选择判据只在 netflix-bridge.js 写一次（`watch` 前缀，没有就是没有）。
   function nfPlayer() {
     try {
-      var vp = window.netflix.appContext.state.playerApp.getAPI().videoPlayer;
-      var ids = vp.getAllPlayerSessionIds();
-      return ids && ids.length ? vp.getVideoPlayerBySessionId(ids[ids.length - 1]) : null;
-    } catch (_) { return null; }
+      if (typeof window.fushiNetflixPlayer === 'function') return window.fushiNetflixPlayer();
+    } catch (_) {}
+    return null;
+  }
+  function trackRows(list, cur, skip) {
+    var rows = [];
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      if (!t || skip(t)) continue;
+      rows.push([
+        t.trackId,
+        t.bcp47 || t.language || 'und',
+        String(t.displayName || '').replace(/[\t\n]/g, ' '),
+        String(t.trackType || t.rawTrackType || ''),
+        t.isImageBased ? '1' : '0',
+      ].join('\t'));
+    }
+    rows.push('#' + (cur && !cur.isNoneTrack ? cur.trackId : ''));
+    return rows.join('\n');
   }
   function netflixTextTracks() {
     if (location.hostname.indexOf('netflix.com') < 0) return '';
     var p = nfPlayer();
     if (!p) return '';
     try {
-      var list = p.getTimedTextTrackList() || [];
-      var rows = [];
-      for (var i = 0; i < list.length; i++) {
-        var t = list[i];
-        if (!t || t.isNoneTrack || t.isForcedNarrative || t.isImageBased) continue;
-        rows.push([t.trackId, t.bcp47 || t.language || 'und', t.displayName || ''].join('\t'));
-      }
-      var cur = p.getTimedTextTrack();
-      rows.push('#' + (cur && !cur.isNoneTrack ? cur.trackId : ''));
-      return rows.join('\n');
+      return trackRows(p.getTimedTextTrackList() || [], p.getTimedTextTrack(), function (t) {
+        return t.isNoneTrack || t.isForcedNarrative;
+      });
     } catch (_) { return ''; }
+  }
+  // 音轨（同一形状，末行当前音轨）：站点播放器的音轨菜单被藏起来了，切换交给 Fushi 的音轨菜单。
+  function netflixAudioTracks() {
+    if (location.hostname.indexOf('netflix.com') < 0) return '';
+    var p = nfPlayer();
+    if (!p || typeof p.getAudioTrackList !== 'function') return '';
+    try {
+      return trackRows(p.getAudioTrackList() || [], p.getAudioTrack(), function (t) {
+        return t.isNoneTrack;
+      });
+    } catch (_) { return ''; }
+  }
+  function selectTrackIn(list, trackId, apply) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].trackId === trackId) { apply(list[i]); return true; }
+    }
+    return false;
   }
   function selectNetflixTrack(trackId) {
     var p = nfPlayer();
     if (!p) return false;
     try {
-      var list = p.getTimedTextTrackList() || [];
-      for (var i = 0; i < list.length; i++) {
-        if (list[i] && list[i].trackId === trackId) { p.setTimedTextTrack(list[i]); return true; }
-      }
+      return selectTrackIn(p.getTimedTextTrackList() || [], trackId, function (t) { p.setTimedTextTrack(t); });
     } catch (_) {}
     return false;
+  }
+  function selectNetflixAudioTrack(trackId) {
+    var p = nfPlayer();
+    if (!p || typeof p.getAudioTrackList !== 'function') return false;
+    try {
+      return selectTrackIn(p.getAudioTrackList() || [], trackId, function (t) { p.setAudioTrack(t); });
+    } catch (_) {}
+    return false;
+  }
+  // 剧集 / 片头片尾标记（P2-2）：Netflix 网站自己用的 shakti metadata 接口，页面同源、带登录 cookie。
+  // build id 取自页面的 reactContext。原文整份交给 Dart 解析（解析逻辑在 Dart 侧有单测）。
+  function netflixBuildId() {
+    try {
+      var d = window.netflix.reactContext.models.serverDefs.data;
+      return String(d.BUILD_IDENTIFIER || '');
+    } catch (_) { return ''; }
+  }
+  function fetchNetflixMetadata(movieId) {
+    var id = String(movieId || '').replace(/\D/g, '');
+    var build = netflixBuildId();
+    if (!id || !build) {
+      post({ type: 'nfMeta', movieId: id, ok: false, err: build ? 'no movie id' : 'no build id' });
+      return false;
+    }
+    var url = '/nq/website/memberapi/' + encodeURIComponent(build) + '/metadata?movieid=' + id;
+    try {
+      fetch(url, { credentials: 'include' })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+        .then(function (text) { post({ type: 'nfMeta', movieId: id, ok: true, text: text }); })
+        .catch(function (e) { post({ type: 'nfMeta', movieId: id, ok: false, err: String(e && e.message || e) }); });
+    } catch (e) {
+      post({ type: 'nfMeta', movieId: id, ok: false, err: String(e) });
+      return false;
+    }
+    return true;
   }
   // 正在播的这一集的真名（落库的书名）：站点播放器自己的数据优先，document.title 在 SPA
   // 换集后常常还停在站名上。
@@ -223,6 +368,7 @@
   }
   function sample() {
     healVideoOnly();
+    healNativeSubtitlesHidden();
     var s = snapshot();
     if (same(last, s)) return;
     last = s;
@@ -231,30 +377,61 @@
   try { setInterval(sample, 250); } catch (_) {}
   try { document.addEventListener('fullscreenchange', sample); } catch (_) {}
 
-  // Netflix seek 完成回执（netflix-bridge 轮询播放器时间收敛后才回）→ 透传给 Dart。
+  // seek 完成回执 → Dart（[WebVideoPlatformPlayer] 据此结束「跳转在途」）。Netflix 由 netflix-bridge
+  // 轮询播放器时间收敛后回（超时回 ok:false）；其它站点由 <video> 的 seeked 事件回。id 原样回显。
+  function postSeekDone(ok, err, id) {
+    post({ type: 'seekDone', ok: !!ok, err: String(err || ''), id: id == null ? null : Number(id) });
+  }
   window.addEventListener('message', function (e) {
     if (e.source !== window || !e.data || e.data.__fushiNf !== 'seekDone') return;
-    post({ type: 'seekDone', ok: !!e.data.ok, err: String(e.data.err || '') });
+    postSeekDone(e.data.ok, e.data.err, e.data.id);
   });
 
+  // document-start 时 <head> / <html> 可能都还没有：等根元素出现再挂（一次性观察）。
+  function appendStyleEarly(el) {
+    var root = document.head || document.documentElement;
+    if (root) { root.appendChild(el); return; }
+    try {
+      var mo = new MutationObserver(function () {
+        var r = document.head || document.documentElement;
+        if (!r) return;
+        mo.disconnect();
+        if (!el.isConnected) r.appendChild(el);
+      });
+      mo.observe(document, { childList: true, subtree: true });
+    } catch (_) {}
+  }
+
   // ── 站点原生字幕隐藏：visibility 而非 display——DOM 采样 live 轨要继续读到文本 ──
+  // Netflix 的图片字幕（日文竖排 / 注音轨常是图片）画在 .image-based-timed-text 里，与文字轨不同层。
   var HIDE_NATIVE_ID = 'fushi-hide-native-subtitles';
   var HIDE_NATIVE_CSS =
-    '.player-timedtext,.player-timedtext-text-container,.ytp-caption-window-container,' +
+    '.player-timedtext,.player-timedtext-text-container,.image-based-timed-text,' +
+    '.ytp-caption-window-container,' +
     '.captions-text,.bpx-player-subtitle-wrap,.vjs-text-track-display,.shaka-text-container' +
     '{visibility:hidden !important}';
+  // 宿主要的状态（不是 DOM 现状）：站点重建 <head> / 整块替换播放器时 <style> 可能被抹掉，每轮
+  // 采样按它自愈。
+  var nativeSubtitlesHidden = false;
   function setNativeSubtitlesHidden(hidden) {
+    nativeSubtitlesHidden = !!hidden;
     var el = document.getElementById(HIDE_NATIVE_ID);
     if (hidden && !el) {
       el = document.createElement('style');
       el.id = HIDE_NATIVE_ID;
       el.textContent = HIDE_NATIVE_CSS;
-      (document.head || document.documentElement).appendChild(el);
+      appendStyleEarly(el);
     } else if (!hidden && el) {
       el.remove();
     }
     return !!hidden;
   }
+  function healNativeSubtitlesHidden() {
+    if (nativeSubtitlesHidden && !document.getElementById(HIDE_NATIVE_ID)) setNativeSubtitlesHidden(true);
+  }
+  // 宿主在本脚本之前注入的开关（[loadWebVideoUserScripts] 的 hideNativeSubtitles）：在页面第一帧
+  // 之前就藏，不等 onLoadStop（那时站点字幕早已显示过、SPA 换集也不再触发 onLoadStop）。
+  if (window.__fushiHideNativeSubtitlesAtStart === true) setNativeSubtitlesHidden(true);
   // 全屏元素换了父节点时 <style> 仍在 head 里全局生效，无需迁移。
 
   // ── Netflix 年龄分级/内容提示 overlay（左上角 "RATED 13+ / 暴力, 自杀"）：常驻隐藏 ──
@@ -273,7 +450,7 @@
     var advisoryStyle = document.createElement('style');
     advisoryStyle.id = HIDE_ADVISORY_ID;
     advisoryStyle.textContent = NETFLIX_ADVISORY_SELECTORS + '{display:none !important}';
-    (document.head || document.documentElement).appendChild(advisoryStyle);
+    appendStyleEarly(advisoryStyle);
   }
 
   // 制卡重放期间隐藏站点播放器 chrome（进度条 / 按钮 / 顶栏）：Dart 驱动的 seek/pause 会让
@@ -423,21 +600,60 @@
 
   // ── Dart → 页面命令 ──
   window.__fushiWebVideo = {
-    seek: function (ms) {
+    // 返回值是确定的结果码：'bridge' / 'direct' = 已发出、回执随后由 seekDone 送达；其它（'no-video'
+    // / 'no-player'）= 没发出去，调用方立即结束「跳转在途」。
+    seek: function (ms, id) {
       ms = Math.max(0, Math.round(Number(ms) || 0));
       if (site() === 'netflix') {
-        try { window.postMessage({ __fushiNf: 'seek', ms: ms }, '/'); } catch (_) {}
+        // Netflix 必须走播放器 API（直接写 currentTime 会 M7375）；没有正片会话就不发。
+        if (!nfPlayer()) return 'no-player';
+        try { window.postMessage({ __fushiNf: 'seek', ms: ms, id: id }, '/'); } catch (_) {}
         return 'bridge';
       }
       var v = video();
       if (!v) return 'no-video';
+      var onSeeked = function () {
+        v.removeEventListener('seeked', onSeeked);
+        postSeekDone(true, '', id);
+      };
+      v.addEventListener('seeked', onSeeked);
       v.currentTime = ms / 1000;
       return 'direct';
     },
-    play: function () { var v = video(); if (!v) return false; try { var p = v.play(); if (p && p.catch) p.catch(function () {}); } catch (_) {} return true; },
-    pause: function () { var v = video(); if (!v) return false; try { v.pause(); } catch (_) {} return true; },
-    toggle: function () { var v = video(); if (!v) return false; return v.paused ? this.play() : this.pause(); },
-    setRate: function (r) { var v = video(); if (!v) return 1; r = Math.min(4, Math.max(0.25, Number(r) || 1)); v.playbackRate = r; return v.playbackRate; },
+    // 播放 / 暂停 / 倍速 / 音量：Netflix 走正片播放器 API（与 seek 同一通道，状态与它自己的控件一致），
+    // 其它站点直接操作 <video>。返回 'ok' / 'no-video'；play 的异步拒绝（自动播放策略）补发 cmdFailed。
+    play: function () {
+      var p = nfPlayer();
+      if (p) { try { p.play(); return 'ok'; } catch (e) { return 'error:' + e; } }
+      var v = video();
+      if (!v) return 'no-video';
+      try {
+        var r = v.play();
+        if (r && r.catch) r.catch(function (e) { post({ type: 'cmdFailed', cmd: 'play', err: String(e && e.name || e) }); });
+      } catch (e) { return 'error:' + e; }
+      return 'ok';
+    },
+    pause: function () {
+      var p = nfPlayer();
+      if (p) { try { p.pause(); return 'ok'; } catch (e) { return 'error:' + e; } }
+      var v = video();
+      if (!v) return 'no-video';
+      try { v.pause(); } catch (e) { return 'error:' + e; }
+      return 'ok';
+    },
+    toggle: function () {
+      var clock = playbackClock(video());
+      return clock.paused ? this.play() : this.pause();
+    },
+    setRate: function (r) {
+      r = Math.min(4, Math.max(0.25, Number(r) || 1));
+      var p = nfPlayer();
+      if (p && typeof p.setPlaybackRate === 'function') { try { p.setPlaybackRate(r); return r; } catch (_) {} }
+      var v = video();
+      if (!v) return 1;
+      v.playbackRate = r;
+      return v.playbackRate;
+    },
     toggleMute: function () { var v = video(); if (!v) return false; v.muted = !v.muted; return v.muted; },
     replayCues: function () {
       try { window.postMessage({ __fushiNf: 'replayCues' }, '/'); } catch (_) {}
@@ -451,11 +667,18 @@
     setPlayerChromeHidden: setPlayerChromeHidden,
     setVideoOnly: setVideoOnly,
     selectNetflixTrack: selectNetflixTrack,
+    selectNetflixAudioTrack: selectNetflixAudioTrack,
+    fetchNetflixMetadata: fetchNetflixMetadata,
     // 原生播放器的音量控件（站点自己的音量键被藏起来了）：音量 0–1 + 静音一次设定。
     setVolume: function (volume, muted) {
+      var vol = Math.max(0, Math.min(1, Number(volume) || 0));
+      var p = nfPlayer();
+      if (p && typeof p.setVolume === 'function' && typeof p.setMuted === 'function') {
+        try { p.setVolume(vol); p.setMuted(!!muted); return 'ok'; } catch (_) {}
+      }
       var v = video();
       if (!v) return 'no-video';
-      v.volume = Math.max(0, Math.min(1, Number(volume) || 0));
+      v.volume = vol;
       v.muted = !!muted;
       return 'ok';
     },

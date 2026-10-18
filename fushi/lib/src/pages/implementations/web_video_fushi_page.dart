@@ -530,8 +530,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     // 注入脚本 / 环境 / cookie 与原生播放器页的网页档同一套实现（web_video_session.dart）。
     final UnmodifiableListView<UserScript> scripts =
         await loadWebVideoUserScripts(
-          host: uri.host,
           softwareDrm: _softwareDrm,
+          hideNativeSubtitles: _hideNativeSubtitles,
           domOverlay: _windowed,
           keyBridgeScript: webVideoKeyBridgeScript(_appModel.shortcutRegistry),
         );

@@ -127,9 +127,12 @@ import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart'
     show
         WebVideoPlaybackState,
+        WebVideoSeekDone,
         WebVideoSiteTrack,
         WebVideoTrack,
         chooseWebVideoTrackKey,
+        kWebVideoLiveTrackLang,
+        pickWebVideoSiteTrackForLanguage,
         shouldOpenInWebVideoPlayer;
 import 'package:fushi/src/media/video/underlay_composition.dart'
     show
@@ -143,6 +146,7 @@ import 'package:fushi/src/media/video/web_video_hosting.dart'
         WebVideoLookupRequest,
         kWebVideoHostingPrefKey,
         webVideoHostingFromPref;
+import 'package:fushi/src/media/video/netflix_metadata.dart';
 import 'package:fushi/src/media/video/web_video_platform_player.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
@@ -2139,8 +2143,36 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String? _webPendingTrackKey;
   String? _webSiteTrackAutoVideoKey;
 
+  /// 待采整轨的确定失败判据（P2-1）：请求那一刻 live 轨已有的 cue 数。站点已切到所请求的轨、
+  /// live 轨在那之后又长出新 cue（= 播放器已在显示这条轨的文字，文件早已下完），整轨却没截到
+  /// → 截获失败，面板显示失败而不是永远「加载中」。bridge 的抓取失败回执同样落到这里。
+  int _webPendingLiveCueCount = 0;
+  final Set<String> _webFailedTrackKeys = <String>{};
+
+  /// 用户亲手选过字幕轨 / 音轨（面板点选）：此后不再按语言偏好替用户改（P1-5）。站点会把用户的
+  /// 选择带到下一集，所以整个页面会话有效。
+  bool _webSubtitleUserChosen = false;
+  bool _webAudioUserChosen = false;
+  String? _webAudioAutoVideoKey;
+
+  /// 当前选中的是站点的图片字幕：Fushi 叠层画不了，站点自己的字幕层要显示出来。
+  bool _webSiteImageTrackShown = false;
+
+  /// 已经为哪一个打断 / 错误状态（`videoKey#blocker`）提示过：同一次打断只提示一次。
+  String _webBlockerNotified = '';
+
+  /// Netflix metadata（剧集 / 片头片尾标记）：按播放 id 缓存（同一部剧各集共用一份）；在途请求
+  /// 记 id 防重。
+  final Map<String, NetflixTitleMetadata> _webNetflixMeta =
+      <String, NetflixTitleMetadata>{};
+  final Set<String> _webNetflixMetaRequested = <String>{};
+
+  /// 剧集面板（[_episodes]）里每一集对应的站点播放地址。
+  List<String> _webEpisodeUrls = const <String>[];
+
   /// 网页档的全屏 = 窗口全屏（不推全屏路由：WebView2 子窗口不会跟着进新路由）。
   bool _webWindowFullscreen = false;
+  bool _webWindowFullscreenTransitioning = false;
 
   /// 网页档制卡只入队（硬件 DRM 画面截不到、没有本地媒体源），由内置档逐句重放落卡。
   late final WebMineQueueStore _webMineQueue = WebMineQueueStore(
@@ -9089,7 +9121,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           customSlot == _customActionBindings.firstUnboundSlotIndex;
     }
     // 网页档（站点视频）：逐帧 / 截图 / 片段导出 / 音轨都要 libmpv 或本地媒体，按钮不画。
-    if (_webMode && !videoWebBackendSupportsControlItem(item)) return false;
+    if (_webMode &&
+        !videoWebBackendSupportsControlItem(
+          item,
+          hasSiteAudioTracks: _controller?.audioTracks.isNotEmpty ?? false,
+        )) {
+      return false;
+    }
     switch (item) {
       case VideoControlItem.previousEpisode:
       case VideoControlItem.nextEpisode:

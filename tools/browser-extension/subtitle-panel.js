@@ -1358,7 +1358,8 @@
       tracks: tracks.map(function (track) {
         return {
           lang: track.lang,
-          label: track.lang === LIVE_LANG ? tr('track_live_label') : track.lang,
+          label: track.lang === LIVE_LANG ? tr('track_live_label')
+            : ((window.fushiTrackLabels && window.fushiTrackLabels[track.key]) || track.lang),
           length: track.cues.length,
           pending: !!track.pending,
           signature: trackSignature(track),

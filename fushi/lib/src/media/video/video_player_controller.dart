@@ -4067,6 +4067,15 @@ class VideoPlayerController extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 网页档的章节（站点给的片头 / 片尾标记，如 Netflix metadata）：替换整张章节表并通知。
+  /// 空表 = 这一集没有章节。
+  void setWebChapters(List<VideoChapter> chapters) {
+    assert(_webBackend, 'setWebChapters is for the web backend only');
+    if (listEquals(_chapters, chapters)) return;
+    _chapters = List<VideoChapter>.unmodifiable(chapters);
+    notifyListeners();
+  }
+
   /// 网页档换书身份（站内换集 / 站点入口播起某一集）：之后的进度写回落到 [bookUid]；null =
   /// 暂不写（站点入口还没有书、站内刚换了视频还没认出是哪一集）。
   void rebindWebBook(String? bookUid) {
@@ -5311,6 +5320,11 @@ class VideoPlayerController extends ChangeNotifier
   /// 首章之前可能为负（章节面板据此高亮当前章；负/越界视为「无当前章」）。未 [load]
   /// 或解析失败时返回 null。
   Future<int?> currentChapterIndex() async {
+    // 网页档没有 libmpv：章节来自站点数据（[setWebChapters]），按播放位置算。
+    if (_webBackend) {
+      final int? pos = positionMs;
+      return pos == null ? null : chapterIndexForPosition(pos);
+    }
     final String raw = await _getMpvProperty('chapter');
     if (raw.isEmpty) return null;
     return int.tryParse(raw.trim());
