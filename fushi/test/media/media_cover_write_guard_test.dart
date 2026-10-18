@@ -171,6 +171,12 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     'ffmpeg 子进程直写目标路径（Dart 侧无字节）；下载路已走 applyCoverBytes。'
         '本文件的裸写边界由下面第 ③ 条逐函数名单钉死。',
   ),
+  'lib/src/media/video/web_video_sites.dart': (
+    CoverDeriverRole.derivesPathOnly,
+    '网页站点集的书（Netflix / YouTube 每集一本）补封面：派生 videoCoverFileName '
+        '目的地后交给 downloadVideoCoverToPath（video_cover_extractor）落盘，'
+        '本文件自己不写。',
+  ),
   'lib/src/media/video/video_import_dialog.dart': (
     CoverDeriverRole.writesViaService,
     '导入弹窗重取封面，字节走 applyCover*。',

@@ -183,6 +183,22 @@ class HeadlessWebComicChapterScanner implements WebComicChapterScanner {
               loaded.completeError(WebComicScanException(error.description));
             }
           },
+      // 渲染进程死了页面不会再 loadStop：立刻判失败，不白等到超时。
+      onRenderProcessGone:
+          (InAppWebViewController _, RenderProcessGoneDetail detail) {
+            if (!loaded.isCompleted) {
+              loaded.completeError(
+                const WebComicScanException('renderer process gone'),
+              );
+            }
+          },
+      onWebContentProcessDidTerminate: (InAppWebViewController _) {
+        if (!loaded.isCompleted) {
+          loaded.completeError(
+            const WebComicScanException('web content process terminated'),
+          );
+        }
+      },
     );
     try {
       await webView.run();

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
+import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:fushi_web_core/fushi_web_core.dart';
 
 /// WebView 接线读的拦截策略（app 侧是 `WebAdblockService`——Rust 胖核心的薄壳；测试可注入
@@ -508,41 +509,31 @@ AdblockRequestType inferAdblockRequestType(WebResourceRequest request) {
     if (accept.startsWith('image/')) return AdblockRequestType.image;
     if (accept.startsWith('text/html')) return AdblockRequestType.subdocument;
   }
-  final String path = request.url.path.toLowerCase();
-  final int dot = path.lastIndexOf('.');
-  final String ext = dot >= 0 ? path.substring(dot + 1) : '';
-  switch (ext) {
-    case 'js':
-    case 'mjs':
-      return AdblockRequestType.script;
-    case 'css':
-      return AdblockRequestType.stylesheet;
-    case 'png':
-    case 'jpg':
-    case 'jpeg':
-    case 'gif':
-    case 'webp':
-    case 'svg':
-    case 'ico':
-    case 'avif':
-    case 'bmp':
-      return AdblockRequestType.image;
-    case 'woff':
-    case 'woff2':
-    case 'ttf':
-    case 'otf':
-    case 'eot':
-      return AdblockRequestType.font;
-    case 'mp4':
-    case 'webm':
-    case 'm3u8':
-    case 'mp3':
-    case 'm4a':
-    case 'aac':
-    case 'ogg':
-      return AdblockRequestType.media;
-  }
+  // 扩展名 → MIME 只查 fushi_core 的单一映射表，这里只按 MIME 归类。
+  final AdblockRequestType? byMime = _adblockRequestTypeOfMime(
+    mimeTypeForFilePath(request.url.path, fallback: ''),
+  );
+  if (byMime != null) return byMime;
   final String scheme = request.url.scheme;
   if (scheme == 'ws' || scheme == 'wss') return AdblockRequestType.websocket;
   return AdblockRequestType.other;
+}
+
+/// 按 MIME 归类请求（扩展名推断的兜底一级）；归不了类返回 null。
+AdblockRequestType? _adblockRequestTypeOfMime(String mime) {
+  if (mime.isEmpty) return null;
+  if (mime == 'application/javascript' || mime == 'text/javascript') {
+    return AdblockRequestType.script;
+  }
+  if (mime == 'text/css') return AdblockRequestType.stylesheet;
+  if (mime.startsWith('image/')) return AdblockRequestType.image;
+  if (mime.startsWith('font/') || mime == 'application/vnd.ms-fontobject') {
+    return AdblockRequestType.font;
+  }
+  if (mime.startsWith('audio/') ||
+      mime.startsWith('video/') ||
+      mime == 'application/vnd.apple.mpegurl') {
+    return AdblockRequestType.media;
+  }
+  return null;
 }

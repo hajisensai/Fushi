@@ -1348,6 +1348,7 @@ const Map<String, String> kAnkiMimeTypeByExtension = <String, String>{
   'epub': 'application/epub+zip',
   'css': 'text/css',
   'js': 'application/javascript',
+  'mjs': 'application/javascript',
   'xhtml': 'text/html',
   'html': 'text/html',
   'htm': 'text/html',
@@ -1361,12 +1362,14 @@ const Map<String, String> kAnkiMimeTypeByExtension = <String, String>{
   // 制卡封面动图的默认格式（`MiningAnimatedFormat.avif`），见 fushi_core 侧同项注释。
   'avif': 'image/avif',
   'svg': 'image/svg+xml',
+  'ico': 'image/x-icon',
   // ── 字体 ──
   'woff': 'font/woff',
   'woff2': 'font/woff2',
   'ttf': 'font/ttf',
   'otf': 'font/otf',
   'ttc': 'font/collection',
+  'eot': 'application/vnd.ms-fontobject',
   // ── 音频 ──
   'mp3': 'audio/mpeg',
   'm4a': 'audio/mp4',
@@ -1383,6 +1386,7 @@ const Map<String, String> kAnkiMimeTypeByExtension = <String, String>{
   'avi': 'video/x-msvideo',
   'mov': 'video/quicktime',
   'ts': 'video/mp2t',
+  'm3u8': 'application/vnd.apple.mpegurl',
   'm2ts': 'video/mp2t',
   'mts': 'video/mp2t',
   'flv': 'video/x-flv',
