@@ -114,6 +114,7 @@ import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/manga/web/web_comic_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/download/manga_download_auto_ocr.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
@@ -5197,8 +5198,23 @@ class AppModel with ChangeNotifier {
           rootDirectory: interconnectMangaLibraryRoot,
           adapter: const InterconnectLibraryAdapter(),
         );
+      // 网页漫画同样不碰 [mihonManager]（不依赖任何扩展运行时）；iOS 上由
+      // 适配器的合规门回报不可用。
+      case OnlineMangaRuntimeKind.web:
+        return OnlineMangaLibraryService(
+          database: database,
+          rootDirectory: webComicLibraryRoot,
+          adapter: WebComicLibraryAdapter(
+            adFilterEnabled: () => prefsRepo.webComicAdFilter,
+          ),
+        );
     }
   }
+
+  /// 网页漫画书架条目的旧落盘根（只为 [OnlineMangaLibraryService] 的构造参数；
+  /// 新条目一律住 `fushi_books`，这里从不写东西）。目录名是持久化名，冻结。
+  Directory get webComicLibraryRoot =>
+      Directory(path.join(databaseDirectory.path, 'web_comic'));
 
   /// 互联漫画源书架条目的本地落盘根（占位 manga.json、封面、章节页缓存）。
   ///

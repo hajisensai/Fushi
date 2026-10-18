@@ -621,6 +621,18 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       windowSizeClassReal(logicalWidth, FushiAppUiScale.of(context)) ==
       WindowSizeClass.expanded;
 
+  /// MD3 窄屏的 tab 承载不画页头：底栏已标明「查词」，页头只剩一行重复的大标题 +
+  /// 一枚清空历史，白占搜索栏上方一整行（用户 2026-10-18 实报「只有查词有这个多余
+  /// 的标题」——库页页头放的是库导航，不多余）。清空历史并进搜索栏一行，与
+  /// Cupertino 同位。独立路由仍要页头：返回键是它唯一的出口。
+  bool _hidesCompactPageHeader(BuildContext context) =>
+      !widget.showBackButton &&
+      windowSizeClassReal(
+            MediaQuery.sizeOf(context).width,
+            FushiAppUiScale.of(context),
+          ) ==
+          WindowSizeClass.compact;
+
   /// Apple（iOS）搜索中折叠大标题：搜索区持焦或已有查询时收起，把高度让给建议与
   /// 结果（UISearchController 搜索态隐藏导航栏大标题的同款）。只在窄屏——桌面 /
   /// 平板的大标题不挤占结果区。独立路由不折叠：它的返回键在页头里，是 iOS 上唯一的
@@ -662,7 +674,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               // 走的 `_StandaloneDictionaryRoute`）是个裸 Scaffold，页头里的返回键
               // 是它唯一的可见出口——iOS 没有系统返回键，`canPop` 又在有查询词时
               // 关掉侧滑，藏掉页头就等于把用户锁在查词页里。
-              if (!isCupertinoPlatform(context) || widget.showBackButton)
+              // MD3 窄屏同理不画页头（见 [_hidesCompactPageHeader]）。
+              if ((!isCupertinoPlatform(context) &&
+                      !_hidesCompactPageHeader(context)) ||
+                  widget.showBackButton)
                 _buildCollapsibleHeader(
                   collapsed: _collapsesLargeTitle(context),
                   child: _buildPageHeader(),
@@ -967,8 +982,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                   )
                 : const SizedBox.shrink(),
           ),
-          if (isCupertinoPlatform(context))
+          if (isCupertinoPlatform(context) || _hidesCompactPageHeader(context))
             FushiIconButton(
+              key: const ValueKey<String>('home_dictionary_search_row_clear'),
               tooltip: t.clear_dictionary_title,
               icon: FushiIcons.deleteSweep,
               onTap: _showDeleteDictionaryHistoryPrompt,

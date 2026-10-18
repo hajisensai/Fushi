@@ -31,8 +31,8 @@ class _StandaloneRouteAppModel extends AppModel {
 
   @override
   List<Dictionary> get dictionaries => <Dictionary>[
-        Dictionary(name: 'Test', formatKey: 'test', order: 0),
-      ];
+    Dictionary(name: 'Test', formatKey: 'test', order: 0),
+  ];
 
   @override
   int get maximumTerms => 10;
@@ -116,8 +116,9 @@ void main() {
     );
   }
 
-  testWidgets('查词 tab 隐藏时推成独立路由：仍消费挂载前排入的 pending 并发起查询',
-      (WidgetTester tester) async {
+  testWidgets('查词 tab 隐藏时推成独立路由：仍消费挂载前排入的 pending 并发起查询', (
+    WidgetTester tester,
+  ) async {
     final _StandaloneRouteAppModel appModel = _StandaloneRouteAppModel();
     mockWindowManager(tester);
 
@@ -134,14 +135,13 @@ void main() {
     expect(
       DesktopLookupService.instance.pendingText,
       isNull,
-      reason: '独立路由承载的查词页必须与 tab 承载一样消费已排入的 pending；'
+      reason:
+          '独立路由承载的查词页必须与 tab 承载一样消费已排入的 pending；'
           '否则用户按热键只会看到窗口弹到前台却什么都不显示。',
     );
-    expect(
-      appModel.searchedTerms,
-      <String>['hotkeyword'],
-      reason: '查词 tab 被「功能模块」隐藏，隐藏的是导航项而不是查词能力。',
-    );
+    expect(appModel.searchedTerms, <String>[
+      'hotkeyword',
+    ], reason: '查词 tab 被「功能模块」隐藏，隐藏的是导航项而不是查词能力。');
   });
 
   testWidgets('独立路由承载时页头有返回箭头，按下退回来源页', (WidgetTester tester) async {
@@ -154,8 +154,9 @@ void main() {
 
     await _pushStandaloneLookup(tester, appModel);
 
-    final Finder back =
-        find.byKey(const ValueKey<String>('home-dictionary-route-back'));
+    final Finder back = find.byKey(
+      const ValueKey<String>('home-dictionary-route-back'),
+    );
     expect(back, findsOneWidget, reason: '推成路由的查词页必须给得出返回路径。');
 
     await tester.tap(back);
@@ -170,8 +171,9 @@ void main() {
     expect(find.text('origin-page'), findsOneWidget);
   });
 
-  testWidgets('tab 承载（showBackButton 默认 false）不画返回箭头',
-      (WidgetTester tester) async {
+  testWidgets('tab 承载（showBackButton 默认 false）不画返回箭头', (
+    WidgetTester tester,
+  ) async {
     final _StandaloneRouteAppModel appModel = _StandaloneRouteAppModel();
     mockWindowManager(tester);
 
@@ -195,6 +197,79 @@ void main() {
       find.byKey(const ValueKey<String>('home-dictionary-route-back')),
       findsNothing,
       reason: '切 tab 不产生路由栈，画返回箭头没有可返回的目标。',
+    );
+  });
+
+  Future<void> pumpTabHosted(
+    WidgetTester tester,
+    _StandaloneRouteAppModel appModel,
+    Size size,
+  ) async {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: appModel.navigatorKey,
+            home: const Scaffold(body: HomeDictionaryPage()),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+  }
+
+  const ValueKey<String> searchRowClear = ValueKey<String>(
+    'home_dictionary_search_row_clear',
+  );
+
+  testWidgets('MD3 窄屏 tab 承载不画「查词」页头，清空历史并进搜索栏一行', (WidgetTester tester) async {
+    final _StandaloneRouteAppModel appModel = _StandaloneRouteAppModel();
+    mockWindowManager(tester);
+
+    await pumpTabHosted(tester, appModel, const Size(400, 800));
+
+    expect(
+      find.text(t.nav_lookup),
+      findsNothing,
+      reason: '底栏已标明查词，窄屏再顶一行同名大标题只是占地方。',
+    );
+    expect(
+      find.byKey(searchRowClear),
+      findsOneWidget,
+      reason: '页头收掉后清空历史不能跟着丢。',
+    );
+  });
+
+  testWidgets('MD3 非窄屏 tab 承载保留页头', (WidgetTester tester) async {
+    final _StandaloneRouteAppModel appModel = _StandaloneRouteAppModel();
+    mockWindowManager(tester);
+
+    await pumpTabHosted(tester, appModel, const Size(800, 900));
+
+    expect(find.text(t.nav_lookup), findsOneWidget);
+    expect(find.byKey(searchRowClear), findsNothing);
+  });
+
+  testWidgets('窄屏独立路由仍保留页头与返回箭头', (WidgetTester tester) async {
+    final _StandaloneRouteAppModel appModel = _StandaloneRouteAppModel();
+    mockWindowManager(tester);
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_wrap(appModel));
+    await tester.pump();
+    await _pushStandaloneLookup(tester, appModel);
+
+    expect(
+      find.byKey(const ValueKey<String>('home-dictionary-route-back')),
+      findsOneWidget,
+      reason: '独立路由的返回键在页头里，是唯一出口，窄屏也不能藏。',
     );
   });
 }

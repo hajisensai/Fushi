@@ -273,6 +273,8 @@ void main() {
           'lib/src/media/manga/manga_online_sources_view.dart': 1,
           // Mihon 登录：整页 WebView。
           'lib/src/media/manga/mihon/mihon_web_login_page.dart': 1,
+          // app 内浏览器：整页 WebView（同 Mihon 登录页，内容在 WebView 里滚）。
+          'lib/src/pages/implementations/fushi_web_browser_page.dart': 1,
           // 字幕工作台：定高面板，顶部控件行固定、列表区各自滚动。
           'lib/src/pages/implementations/subtitle_workbench_page.dart': 1,
           // 标签选择：与弹层共用的面板，固定标题行 + 底部动作行。

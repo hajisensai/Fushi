@@ -20,6 +20,11 @@ import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/torrent/torrent_network_issue_banner.dart';
 import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
+import 'package:fushi/src/media/manga/web/web_comic_reader_launch.dart'
+    show webComicReaderActionAvailable;
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart'
+    show openFushiWebBrowser;
 import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/remote_download_tasks_section.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
@@ -797,6 +802,19 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
               tooltip: t.media_import_segment_stores,
               label: t.media_import_segment_stores,
               onTap: () => openOnlineSourceStores(context, storesDomain),
+            ),
+          // 临时入口（「浏览器」模块 hub 落地前）：发现页签的漫画域打开 app 内
+          // 浏览器，在漫画站上「用 Fushi 阅读本章」。浏览模块本身在 iOS 上不存在，
+          // 这里再问一遍网页漫画的合规门，判据只在 webComicReaderActionAvailable。
+          if (current == BrowseTab.discover &&
+              _resourceDomain == _DownloadsResourceDomain.manga &&
+              webComicReaderActionAvailable())
+            FushiIconButton(
+              key: const ValueKey<String>('browse-open-web-browser'),
+              icon: FushiIcons.globe,
+              tooltip: t.web_browser_title,
+              label: t.web_browser_title,
+              onTap: () => unawaited(openFushiWebBrowser(context)),
             ),
           if (onDownloads) ...<Widget>[
             FushiIconButton(
