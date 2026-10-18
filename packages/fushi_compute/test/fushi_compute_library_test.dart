@@ -1,8 +1,8 @@
-// 库定位与加载：缺库不可用且不抛；候选顺序；有真实库时 ABI 版本对得上。
+// 库定位与加载：缺库抛带原因的异常；候选顺序；真实库 ABI 版本对得上。
 //
-// 库定位：环境变量 FUSHI_COMPUTE_LIB，缺省用本仓 native/fushi_compute/prebuilt/<平台>/ 下
-// 构建脚本的产物。库不可用时真实库那组 skip 并打印 'native library not found'
-// （CI 用它断言没有被静默跳过，与 fushi_fsrs / fushi_p2p 同一约定）。
+// fushi_compute 是硬依赖：真实库那组**不 skip**，库找不到直接失败。库定位：环境变量
+// FUSHI_COMPUTE_LIB，缺省由加载器在测试宿主下向上找本仓
+// native/fushi_compute/prebuilt/<平台>/（先跑对应平台的 build_* 脚本）。
 @TestOn('vm')
 library;
 
@@ -11,27 +11,18 @@ import 'dart:io';
 import 'package:fushi_compute/fushi_compute.dart';
 import 'package:test/test.dart';
 
-String _defaultPrebuiltPath() {
-  final String sep = Platform.pathSeparator;
-  final String root = '..$sep..${sep}native${sep}fushi_compute${sep}prebuilt';
-  if (Platform.isWindows) {
-    return '$root${sep}windows-x64${sep}fushi_compute.dll';
-  }
-  if (Platform.isMacOS) return '$root${sep}macos${sep}libfushi_compute.dylib';
-  return '$root${sep}linux-x64${sep}libfushi_compute.so';
-}
-
-String _libraryPath() {
-  final String? env = Platform.environment[kFushiComputeLibEnv];
-  if (env != null && env.isNotEmpty) return env;
-  return File(_defaultPrebuiltPath()).absolute.path;
-}
-
 void main() {
-  test('missing library => unavailable, never throws', () {
+  test('missing explicit library throws with the reason', () {
     expect(
-      FushiCompute.tryLoad(libraryPath: '/definitely/not/here/fushi_compute'),
-      isNull,
+      () =>
+          FushiCompute.load(libraryPath: '/definitely/not/here/fushi_compute'),
+      throwsA(
+        isA<FushiComputeUnavailableError>().having(
+          (FushiComputeUnavailableError e) => e.toString(),
+          'message',
+          allOf(contains('/definitely/not/here'), contains('not found')),
+        ),
+      ),
     );
   });
 
@@ -49,23 +40,22 @@ void main() {
     expect(c[2], '${sep}app${sep}bin$sep$name');
     expect(c[3], endsWith('lib$sep$name'));
     expect(c.last, name);
+    // 正式可执行文件不从当前目录的上级找仓库 prebuilt。
+    expect(c, hasLength(5));
   });
 
-  final FushiCompute? lib = FushiCompute.tryLoad(libraryPath: _libraryPath());
-  final String? skipReason = lib == null
-      ? 'native library not found: ${_libraryPath()}'
-      : null;
-  if (skipReason != null) {
-    // ignore: avoid_print
-    print('SKIP: $skipReason');
-  }
+  test('only test hosts search the repository prebuilt directory', () {
+    expect(FushiCompute.isTestHost('/sdk/bin/dart'), isTrue);
+    expect(FushiCompute.isTestHost(r'C:\sdk\bin\dart.exe'), isTrue);
+    expect(FushiCompute.isTestHost('/cache/flutter_tester'), isTrue);
+    expect(FushiCompute.isTestHost(r'C:\app\fushi.exe'), isFalse);
+    expect(FushiCompute.isTestHost('/opt/fushi/bin/fushi_server'), isFalse);
+  });
 
-  group('FushiCompute (real native library)', skip: skipReason, () {
-    test('loads with the expected ABI and resolves only real symbols', () {
-      expect(lib, isNotNull);
-      expect(lib!.providesSymbol('ffc_abi_version'), isTrue);
-      expect(lib.providesSymbol('ffc_free_bytes'), isTrue);
-      expect(lib.providesSymbol('ffc_no_such_symbol'), isFalse);
-    });
+  test('real library loads with the expected ABI', () {
+    final FushiCompute lib = FushiCompute.require();
+    expect(lib.providesSymbol('ffc_abi_version'), isTrue);
+    expect(lib.providesSymbol('ffc_free_bytes'), isTrue);
+    expect(lib.providesSymbol('ffc_no_such_symbol'), isFalse);
   });
 }

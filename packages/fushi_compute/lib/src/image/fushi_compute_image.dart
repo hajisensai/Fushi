@@ -19,29 +19,6 @@ enum FfcInterpolation {
   final int code;
 }
 
-/// 原生库不可用（没随包 / 打不开 / 缺图像域符号）。图像内核只有原生这一份实现，
-/// 这里直接抛，不退回任何 Dart 实现。
-class FushiComputeUnavailableError extends Error {
-  FushiComputeUnavailableError(this.message);
-
-  final String message;
-
-  @override
-  String toString() => 'FushiComputeUnavailableError: $message';
-}
-
-/// 原生调用返回了非 0 状态码（见 `FfcStatus`）。参数已在 Dart 侧校验，走到这里说明
-/// 调用方传了自相矛盾的尺寸 / 缓冲区，属于编程错误。
-class FushiComputeCallError extends Error {
-  FushiComputeCallError(this.symbol, this.status);
-
-  final String symbol;
-  final int status;
-
-  @override
-  String toString() => 'FushiComputeCallError: $symbol returned $status';
-}
-
 typedef _ResizeC =
     Int32 Function(
       Pointer<Uint8>,
@@ -238,43 +215,27 @@ class FushiComputeImage {
   final _PngToJpegDart _pngToJpeg;
   final FushiCompute _lib;
 
-  /// 图像域用到的全部符号；缺任何一个都视为库不可用。
-  static const List<String> symbols = <String>[
-    'ffc_image_resize',
-    'ffc_image_resize_chw',
-    'ffc_image_to_rgba8',
-    'ffc_image_mosaic_rgba8',
-    'ffc_image_dhash',
-    'ffc_image_png_decode_rgba',
-    'ffc_image_png_to_jpeg',
-  ];
-
   static FushiComputeImage? _instance;
 
-  /// 默认库（[FushiCompute.instance]）上的图像域绑定；库或符号缺失抛
-  /// [FushiComputeUnavailableError]。
-  static FushiComputeImage get instance => _instance ??= bind(
-    FushiCompute.instance ??
-        (throw FushiComputeUnavailableError(
-          'fushi_compute native library not found '
-          '(set $kFushiComputeLibEnv or ship the platform library)',
-        )),
-  );
+  /// 默认库上的图像域绑定。库不可用或缺图像域符号抛 [FushiComputeUnavailableError]
+  /// （图像内核没有 Dart 回退）。
+  static FushiComputeImage get instance =>
+      _instance ??= bind(FushiCompute.require());
 
   /// 在指定库上绑定图像域（测试用）。缺符号抛 [FushiComputeUnavailableError]。
   static FushiComputeImage bind(FushiCompute lib) {
-    for (final String symbol in symbols) {
-      if (!lib.providesSymbol(symbol)) {
-        throw FushiComputeUnavailableError(
-          'fushi_compute at ${lib.libraryPath} lacks $symbol (library too old)',
-        );
-      }
+    try {
+      return FushiComputeImage._(lib);
+    } on ArgumentError catch (e) {
+      throw lib.missingSymbols('image', e.message ?? e);
     }
-    return FushiComputeImage._(lib);
   }
 
+  /// 非 0 状态码：参数已在 Dart 侧校验，走到这里是调用方传了自相矛盾的尺寸 / 缓冲区。
   void _check(String symbol, int status) {
-    if (status != FfcStatus.ok) throw FushiComputeCallError(symbol, status);
+    if (status != FfcStatus.ok) {
+      throw StateError('fushi_compute $symbol failed: status $status');
+    }
   }
 
   /// 把输入拷进本 isolate 的输入暂存区（[NativeScratch.input]，不需要释放）。

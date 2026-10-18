@@ -11,8 +11,11 @@ license = "GPL-3.0-only"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+crc32fast = "1"
 jpeg-encoder = "0.6"
+md4 = "0.10"
 png = { version = "0.17", default-features = false }
+sha2 = "0.10"
 
 [profile.release]
 # 计算内核吃 CPU：取 3（不是 fushi_fsrs 的 "z"），体积换速度。

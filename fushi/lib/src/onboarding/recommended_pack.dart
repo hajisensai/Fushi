@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/download_plan.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi/src/utils/misc/segmented_downloader.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -834,8 +834,8 @@ class RecommendedPackDownloader {
       );
     }
     if (sha256Hex != null) {
-      final Digest digest = await sha256.bind(_partFile.openRead()).first;
-      if (digest.toString() != sha256Hex) {
+      final String digest = await ffcSha256File(_partFile.path);
+      if (digest != sha256Hex) {
         // 坏包不留：删掉半截，下次从头下（续传一个已知坏的文件没有意义）。
         _partFile.deleteSync();
         _writeSingleStreamValidator(null);

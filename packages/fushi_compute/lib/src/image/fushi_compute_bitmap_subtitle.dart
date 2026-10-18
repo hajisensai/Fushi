@@ -5,8 +5,6 @@ import 'package:ffi/ffi.dart';
 
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
-import 'fushi_compute_image.dart'
-    show FushiComputeCallError, FushiComputeUnavailableError;
 
 /// 合成的一层：调色板索引平面 [indices]（按 [stride] 跨行，从 ([sourceX], [sourceY]) 起取
 /// [width] × [height]）贴到画布坐标 ([x], [y])；[palette] 为 ARGB。
@@ -123,38 +121,25 @@ class FushiComputeBitmapSubtitle {
   final _DvbRenderDart _dvbRender;
   final _ComposeDart _compose;
 
-  /// 本域用到的全部符号；缺任何一个都视为库不可用。
-  static const List<String> symbols = <String>[
-    'ffc_image_dvb_object_size',
-    'ffc_image_dvb_render_region',
-    'ffc_image_compose_indexed',
-  ];
-
   static FushiComputeBitmapSubtitle? _instance;
 
-  /// 默认库上的绑定；库或符号缺失抛 [FushiComputeUnavailableError]。
-  static FushiComputeBitmapSubtitle get instance => _instance ??= bind(
-    FushiCompute.instance ??
-        (throw FushiComputeUnavailableError(
-          'fushi_compute native library not found '
-          '(set $kFushiComputeLibEnv or ship the platform library)',
-        )),
-  );
+  /// 默认库上的绑定；库不可用或缺本域符号抛 [FushiComputeUnavailableError]。
+  static FushiComputeBitmapSubtitle get instance =>
+      _instance ??= bind(FushiCompute.require());
 
-  /// 在指定库上绑定（测试用）。
+  /// 在指定库上绑定（测试用）。缺符号抛 [FushiComputeUnavailableError]。
   static FushiComputeBitmapSubtitle bind(FushiCompute lib) {
-    for (final String symbol in symbols) {
-      if (!lib.providesSymbol(symbol)) {
-        throw FushiComputeUnavailableError(
-          'fushi_compute at ${lib.libraryPath} lacks $symbol (library too old)',
-        );
-      }
+    try {
+      return FushiComputeBitmapSubtitle._(lib);
+    } on ArgumentError catch (e) {
+      throw lib.missingSymbols('bitmap subtitle', e.message ?? e);
     }
-    return FushiComputeBitmapSubtitle._(lib);
   }
 
   static void _check(String symbol, int status) {
-    if (status != FfcStatus.ok) throw FushiComputeCallError(symbol, status);
+    if (status != FfcStatus.ok) {
+      throw StateError('fushi_compute $symbol failed: status $status');
+    }
   }
 
   static Pointer<Uint8> _copyIn(Uint8List bytes, Arena arena) {

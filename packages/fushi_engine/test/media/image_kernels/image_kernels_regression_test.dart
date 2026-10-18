@@ -1,4 +1,4 @@
-// 图像内核回归：原生实现（native/fushi_compute，经 FUSHI_COMPUTE_LIB 定位）必须逐位复现
+// 图像内核回归：原生实现（native/fushi_compute；测试宿主下加载器自动找本仓 prebuilt，也可用 FUSHI_COMPUTE_LIB 指定）必须逐位复现
 // 旧纯 Dart 实现在合成图上的输出摘要（image_kernel_vectors.dart）。库找不到时整组失败，
 // 不 skip。
 @TestOn('vm')

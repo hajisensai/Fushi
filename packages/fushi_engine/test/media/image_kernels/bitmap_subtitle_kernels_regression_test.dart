@@ -1,4 +1,4 @@
-// 位图字幕内核回归：原生实现（经 FUSHI_COMPUTE_LIB 定位）必须逐位复现旧纯 Dart 实现在
+// 位图字幕内核回归：原生实现（测试宿主下自动找本仓 prebuilt，或 FUSHI_COMPUTE_LIB）必须逐位复现旧纯 Dart 实现在
 // 合成码流上的输出摘要（bitmap_subtitle_kernel_vectors.dart）。库找不到时失败，不 skip。
 @TestOn('vm')
 library;
