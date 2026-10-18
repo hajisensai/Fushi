@@ -112,10 +112,11 @@ class PgsCue implements BitmapSubtitleCue {
   /// 与 [renderPng] 同一张图的原始 RGBA 像素（不编码 PNG）：整轨识别直接把像素交给
   /// 识别会话，省掉「编码 PNG → 落盘 → 后台再解码」的往返。
   @override
-  BitmapSubtitleImage renderRgba({int padding = 16}) =>
-      bitmapSubtitleImageOf(_renderCanvas(padding));
+  BitmapSubtitleImage renderRgba({int padding = 16}) => _render(padding);
 
-  img.Image _renderCanvas(int padding) => composeBitmapSubtitleImage(
+  img.Image _renderCanvas(int padding) => _render(padding).toImage();
+
+  BitmapSubtitleImage _render(int padding) => composeBitmapSubtitleRgba(
     bounds: bounds,
     padding: padding,
     layers: <BitmapSubtitleLayer>[

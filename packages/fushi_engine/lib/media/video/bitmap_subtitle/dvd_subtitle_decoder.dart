@@ -129,7 +129,9 @@ class DvdSubtitleCue implements BitmapSubtitleCue {
     bottomFieldOffset: _bottomFieldOffset,
   );
 
-  img.Image _renderCanvas(int padding) => composeBitmapSubtitleImage(
+  img.Image _renderCanvas(int padding) => _render(padding).toImage();
+
+  BitmapSubtitleImage _render(int padding) => composeBitmapSubtitleRgba(
     bounds: area,
     padding: padding,
     layers: <BitmapSubtitleLayer>[
@@ -146,8 +148,7 @@ class DvdSubtitleCue implements BitmapSubtitleCue {
   );
 
   @override
-  BitmapSubtitleImage renderRgba({int padding = 16}) =>
-      bitmapSubtitleImageOf(_renderCanvas(padding));
+  BitmapSubtitleImage renderRgba({int padding = 16}) => _render(padding);
 
   @override
   Uint8List renderPng({int padding = 16}) =>
