@@ -86,26 +86,14 @@ final class FushiComputeText {
 
   static FushiComputeText? _instance;
 
-  /// 按 [FushiCompute.instance] 加载；不可用时抛 [FushiComputeUnavailableError]。
-  static FushiComputeText get instance {
-    final FushiComputeText? cached = _instance;
-    if (cached != null) return cached;
-    final FushiCompute? compute = FushiCompute.instance;
-    if (compute == null) {
-      throw FushiComputeUnavailableError(
-        'fushi_compute native library could not be loaded '
-        '(set $kFushiComputeLibEnv to the built library to run tests)',
-      );
-    }
-    return _instance = forLibrary(compute);
-  }
+  /// 按 [FushiCompute.require] 加载；不可用时抛 [FushiComputeUnavailableError]。
+  static FushiComputeText get instance =>
+      _instance ??= forLibrary(FushiCompute.require());
 
   /// 绑定指定的已加载库（测试用）；缺符号时抛 [FushiComputeUnavailableError]。
   static FushiComputeText forLibrary(FushiCompute compute) {
     if (!compute.providesSymbol(cueMatchSymbol)) {
-      throw FushiComputeUnavailableError(
-        'fushi_compute library at ${compute.libraryPath} lacks $cueMatchSymbol',
-      );
+      throw compute.missingSymbols('text', 'missing $cueMatchSymbol');
     }
     return FushiComputeText._(
       compute,
@@ -286,17 +274,6 @@ final class FushiComputeText {
     p.asTypedList(xs.length).setAll(0, xs);
     return p;
   }
-}
-
-/// 原生库（或其中某个符号）不可用。fushi_compute 是硬依赖：各平台必定随包，
-/// 测试前必须先编库；遇到这个错误说明部署 / 测试环境缺库，不是数据问题。
-final class FushiComputeUnavailableError extends Error {
-  FushiComputeUnavailableError(this.message);
-
-  final String message;
-
-  @override
-  String toString() => 'FushiComputeUnavailableError: $message';
 }
 
 typedef _CueMatchC =
