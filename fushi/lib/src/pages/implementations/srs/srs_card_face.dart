@@ -28,6 +28,7 @@ import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_design_skin.dart';
 import 'package:fushi/src/srs/srs_card_dict_style.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
@@ -519,16 +520,27 @@ const String kSrsCardShellScript = r'''
       if (window.console) console.error(e);
     }
   }
+  // 设计系统样式覆盖（srs_card_design_skin.dart）：只在覆盖开着时随主题下发定义；卡片脚本
+  // 与钩子都跑完、DOM 定型后再判定。
+  function designSkin(){
+    try {
+      if (window.__fushiSrsDesignSkin) window.__fushiSrsDesignSkin();
+    } catch (e) {
+      if (window.console) console.error(e);
+    }
+  }
   function finish(my, ok){
     if (ok !== true || my !== seq) return;
     dictStyle();
     runHooks(window.onUpdateHook);
     runHooks(window.onShownHook);
+    designSkin();
   }
   window.__fushiSrsSetTheme = function(themeCss, classes){
     document.getElementById('fushi-theme-css').textContent = themeCss;
     setClasses(classes);
     dictStyle();
+    designSkin();
     // 卡片脚本可据此跟随外观变化（例如「全部释义默认展开」），不必重跑。
     try {
       document.dispatchEvent(new CustomEvent('fushi-srs-theme', { detail: classes }));
@@ -759,6 +771,7 @@ class SrsCardFaceDocument {
     required this.cardCss,
     required this.bodyHtml,
     this.bodyStyles = const <String>[],
+    this.hostScript = '',
   });
 
   /// 由一面卡与主题算出（媒体引用改写、`lang` 包裹都在这里做）。
@@ -773,7 +786,9 @@ class SrsCardFaceDocument {
     required bool themedScrollbar,
     String appearanceCss = '',
     String appearanceClasses = '',
+    String hostScript = '',
   }) => SrsCardFaceDocument(
+    hostScript: hostScript,
     themeCss: srsCardThemeCss(
       dark: dark,
       background: background,
@@ -822,6 +837,10 @@ class SrsCardFaceDocument {
   /// 正文里抽出的样式块（文档顺序）。
   final List<String> bodyStyles;
 
+  /// 随主题下发、先于 `__fushiSrsSetTheme` 执行的宿主脚本（幂等定义；空 = 不下发）。目前只有
+  /// 设计系统样式覆盖的判定脚本：覆盖关着时外壳里连脚本都没有（零注入）。
+  final String hostScript;
+
   /// 这张卡用到的全部样式（注册表项）：笔记类型 CSS 在前，正文样式在后。
   List<SrsCardStyle> get styles => <SrsCardStyle>[
     if (cardCss.isNotEmpty) SrsCardStyle.of('t', cardCss),
@@ -842,7 +861,7 @@ class SrsCardFaceDocument {
     ].join();
   }
 
-  String get _themeKey => '$themeCss\u0000$classes';
+  String get _themeKey => '$themeCss\u0000$classes\u0000${hostScript.length}';
 
   /// 换了卡（哪怕正文一字不差）也要重放：滚回顶部、重跑卡片脚本。夜间类名与外观
   /// （变量、类名、字体）都不在里面：只换主题 / 外观时走 `__fushiSrsSetTheme`，不重跑
@@ -911,6 +930,7 @@ class SrsCardFaceSync {
     if (!_ready || doc == null) return;
     final StringBuffer calls = StringBuffer();
     if (doc._themeKey != _appliedTheme) {
+      calls.write(doc.hostScript);
       calls.write(
         srsCardSetThemeScript(themeCss: doc.themeCss, classes: doc.classes),
       );
@@ -1072,6 +1092,8 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
 }) {
   final bool dark = theme.brightness == Brightness.dark;
   final bool fushi = face.fushiCard;
+  // 其它卡片类型的设计系统样式覆盖（关 = 零注入：不加样式、类名与脚本）。
+  final bool skin = !fushi && appearance.designSkin;
   final ColorScheme scheme = fushi
       ? srsCardColorScheme(appearance, theme.colorScheme)
       : theme.colorScheme;
@@ -1095,8 +1117,18 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
             fonts: fonts,
             fontRoot: fontRoot,
           )
+        : skin
+        ? srsCardDesignSkinCss(
+            scheme: scheme,
+            tokens: SrsCardTokens.fromTheme(theme),
+          )
         : '',
-    appearanceClasses: fushi ? srsCardAppearanceClasses(appearance) : '',
+    appearanceClasses: fushi
+        ? srsCardAppearanceClasses(appearance)
+        : skin
+        ? kSrsDesignSkinClass
+        : '',
+    hostScript: skin ? kSrsCardDesignSkinScript : '',
   );
 }
 

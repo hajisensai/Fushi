@@ -596,6 +596,20 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
     final SrsCardAppearance a = _appearance;
     String pct(double v) => '${(v * 100).round()}%';
     final List<Widget> sections = <Widget>[
+      // 其它卡片类型（Anki 导入牌组、Lapis、自建）的设计系统样式覆盖：下面各节只管 Fushi 卡片，
+      // 这一项管其余全部卡片，放最前面。
+      AdaptiveSettingsSection(
+        title: t.srs_card_appearance_section_other,
+        children: <Widget>[
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('srs-card-design-skin'),
+            title: t.srs_card_appearance_design_skin,
+            subtitle: t.srs_card_appearance_design_skin_hint,
+            value: a.designSkin,
+            onChanged: (bool v) => _set(a.copyWith(designSkin: v)),
+          ),
+        ],
+      ),
       AdaptiveSettingsSection(
         title: t.srs_card_appearance_section_fonts,
         children: <Widget>[
