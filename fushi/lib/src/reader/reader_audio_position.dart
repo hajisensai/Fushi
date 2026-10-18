@@ -104,10 +104,10 @@ class ReaderAudioPositionIndex {
       _text.codeUnitAt(offset) < 0xdc00 ||
       _text.codeUnitAt(offset) > 0xdfff;
 
-  static int _classify(int rune) {
-    final String char = String.fromCharCode(rune);
-    if (kStudyTransparentPattern.hasMatch(char)) return 0;
-    if (!kStudyLetterOrNumberPattern.hasMatch(char)) return 3;
-    return kStudyNoSpaceScriptPattern.hasMatch(char) ? 1 : 2;
-  }
+  static int _classify(int rune) => switch (studyCharClassOf(rune)) {
+    StudyCharClass.transparent => 0,
+    StudyCharClass.perCodePoint => 1,
+    StudyCharClass.word => 2,
+    StudyCharClass.breaker => 3,
+  };
 }

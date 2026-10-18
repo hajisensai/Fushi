@@ -3,3 +3,4 @@
 library;
 
 export 'src/fushi_compute_library.dart';
+export 'src/parse/study_chars.dart';

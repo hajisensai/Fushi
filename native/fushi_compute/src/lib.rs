@@ -17,6 +17,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 pub mod hash;
 pub mod image;
+pub mod parse;
 pub mod text;
 
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。
