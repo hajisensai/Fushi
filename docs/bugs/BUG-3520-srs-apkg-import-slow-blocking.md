@@ -15,7 +15,7 @@
   - `srs_apkg_import.dart:51`（修前）：解 zip / zstd / 集合在 UI isolate 上同步跑。
   - `fushi/lib/src/srs/srs_import_entry.dart:192`（修前）：`showAppDialog(barrierDismissible: false)` + `PopScope(canPop: false)`
     模态进度框，导入期间整个 app 不可用。
-- **[x] ① 已修复** — 本分支提交（见 git log「fix(srs): deck list refresh + background apkg import」）：
+- **[x] ① 已修复** — 提交 e3ad23b2d4：
   - 导入：新笔记 / 新卡的事件（`SrsDbStore.newNoteEvents` / `newEditEvents`，不落库）与日志一起攒批，每约 1000 条事件
     一个事务；开头一次读出本机已有笔记 ID，新笔记不再逐条查库。包解析放 `Isolate.run`。
   - 落库：`_storeLocalBatch` 按 ID 分块预读已有身份记录 / 日志 / 相关实体的修改记录，在内存视图上按序做与 `_storeRow`

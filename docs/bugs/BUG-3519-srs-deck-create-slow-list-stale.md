@@ -10,7 +10,7 @@
   - `srs_db_store.dart:1171`（修前 `createDeck`）：身份记录与名字记录分两次事务、两次缓存刷新。
   - 每次刷新缓存里 `_successorsOf`（修前 `srs_db_store.dart:820`）对每张脏卡按无索引的 `field_key` 扫一遍修改记录表
     （评分 / 移卡这类写入每次至少一次全表扫描）。
-- **[x] ① 已修复** — 本分支提交（见 git log「fix(srs): deck list refresh + background apkg import」）：
+- **[x] ① 已修复** — 提交 e3ad23b2d4：
   - 冲突数拆成独立的 `srsConflictCountProvider`（`srs_providers.dart`），牌组列表只等牌组行；顶栏冲突角标读新 provider。
   - `syncConflicts` 先在 SQLite 侧 `GROUP BY ... HAVING COUNT(*) > 1` 挑出有 ≥ 2 条记录的字段键，只读回这些记录
     （被支配的记录落库时就删了，单条记录的字段键不可能有冲突）。
