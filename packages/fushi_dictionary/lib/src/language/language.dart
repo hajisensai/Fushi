@@ -15,8 +15,8 @@ import 'transform_description_i18n.dart';
 typedef DeinflectionTag = ({String name, String description});
 
 /// 词形变化链 → 弹窗标签序列。**这是全 app 唯一一处生成变形标签的地方**，
-/// `buildLookupEntriesJson` / 原生弹窗（extra 路径）和 C++ 的 `build_popup_json`
-/// （`FushiDicts.lookupWithPopup` 的弹窗 JSON）都必须走这套语义，不允许各自再拼。
+/// 三条弹窗路径（[buildPopupJsonFromLookup] / `buildLookupEntriesJson` /
+/// 原生弹窗）和 C++ 的 `build_popup_json` 都必须走这套语义，不允许各自再拼。
 ///
 /// `trace` 是唯一真相：引擎每剥掉一层变形就往里压一个 [FushiTransformGroup]，
 /// 带着变形名和 `assets/transforms/<lang>.json` 里的语法说明。压栈顺序是**剥离
@@ -164,7 +164,7 @@ DictionarySearchResult buildResultFromLookup({
   final Map<String, String> soleReadings = soleExplicitReadings(results);
   outer:
   for (final r in results) {
-    // 与原生弹窗 JSON（`FushiDicts.lookupWithPopup`）同一道源头过滤：被用户关掉的词典不进 entries。
+    // 与 [buildPopupJsonFromLookup] 同一道源头过滤：被用户关掉的词典不进 entries。
     // 此前只有 popupJson 过滤、entries 不过滤——只命中已隐藏词典的词，宿主据
     // entries 判「有结果」去等 WebView 渲染，页面拿到的 popupJson 却是 `[]`，画出
     // 页面自己的「No results」（emoji 放大镜）并按最大宽高铺成一大块空面板。只有
@@ -266,6 +266,198 @@ String resolvedLookupReading(
 ) {
   if (r.term.reading.isNotEmpty) return r.term.reading;
   return soleReadings[r.term.expression] ?? '';
+}
+
+String buildPopupJsonFromLookup({
+  required List<FushiLookupResult> results,
+  required int maximumTerms,
+  required Set<String> hiddenDictionaries,
+  List<String> dictionaryOrder = const <String>[],
+}) {
+  if (results.isEmpty) return '[]';
+
+  final groupKeys = <String>[];
+  final groupExpression = <String, String>{};
+  final groupReading = <String, String>{};
+  final groupMatched = <String, String>{};
+  final groupDeinflected = <String, String>{};
+  final groupTrace = <String, List<FushiTransformGroup>>{};
+  final groupFrequencies = <String, List<FushiFrequencyEntry>>{};
+  final groupPitches = <String, List<FushiPitchEntry>>{};
+  final seenFreqs = <String, Set<String>>{};
+  final seenPitches = <String, Set<String>>{};
+  final groupGlossaries =
+      <
+        String,
+        List<
+          ({
+            String dictionary,
+            String contentJson,
+            String defTags,
+            String termTags,
+          })
+        >
+      >{};
+
+  // BUG-1472：与 [buildResultFromLookup] 同一处根因——预算按词头算，不按 glossary
+  // 注释行算。这里本来就是按 key 分组的，所以「已有几个词头」= groupKeys.length。
+  // BUG-2753：与 [buildResultFromLookup] 同一口径补全空读音。
+  final Map<String, String> soleReadings = soleExplicitReadings(results);
+  outer:
+  for (final r in results) {
+    final key = lookupHeadwordKey(r, soleReadings: soleReadings);
+    if (!groupExpression.containsKey(key) && groupKeys.length >= maximumTerms) {
+      break outer;
+    }
+    // 词典顺序在下方出 JSON 时按整张卡排（BUG-2579），这里不排：同一个词头会由
+    // 多条引擎结果行拼成（显式读音的 Yomitan 行 + 空读音的 MDX 行），逐行排序只
+    // 能排到行内。
+    for (final g in r.term.glossaries) {
+      // 被用户关掉的词典在源头就不进 popupJson。此前这步只存在于渲染期的 JS
+      // （靠宿主注入 window.hiddenDictionaryNames 驱动），app 内 WebView 注入了、浏览器
+      // 扩展走的 HTTP 路径从来不下发它 ⇒ 关掉的词典在扩展里照旧出释义，
+      // 连制卡也一并写进去。过滤下沉到这个唯一数据出口后，app 内弹窗 / 全局查词窗 /
+      // 浏览器扩展 / 制卡四个消费者一次性全对；JS 侧原有过滤退化为冗余保险。
+      //
+      // 放在循环最前（而不是只跳 groupGlossaries.add）：只有隐藏词典释义的词头不应
+      // 该撑起一张空卡片，也不应占用 maximumTerms 词头预算。
+      if (hiddenDictionaries.contains(g.dictName)) continue;
+      if (!groupExpression.containsKey(key)) {
+        groupKeys.add(key);
+        groupExpression[key] = r.term.expression;
+        // 空读音行可能先于显式读音行建组（词典顺序在 MDX 前）：取补全后的读音。
+        groupReading[key] = resolvedLookupReading(r, soleReadings);
+        groupMatched[key] = r.matched;
+        groupDeinflected[key] = r.deinflected;
+        groupTrace[key] = r.trace;
+        groupFrequencies[key] = [];
+        groupPitches[key] = [];
+        seenFreqs[key] = {};
+        seenPitches[key] = {};
+        groupGlossaries[key] = [];
+      } else if (groupMatched[key] == groupExpression[key] &&
+          r.matched != r.term.expression) {
+        // Unlike the fallback path (buildLookupEntriesJson), the last
+        // qualifying deinflection wins here. This is intentional: matched
+        // and trace stay consistent on the same FushiLookupResult.
+        groupMatched[key] = r.matched;
+        groupDeinflected[key] = r.deinflected;
+        groupTrace[key] = r.trace;
+      }
+
+      for (final f in r.term.frequencies) {
+        final fKey =
+            '${f.dictName}:${f.frequencies.map((v) => '${v.value}:${v.displayValue}').join(',')}';
+        if (seenFreqs[key]!.add(fKey)) {
+          groupFrequencies[key]!.add(f);
+        }
+      }
+      for (final p in r.term.pitches) {
+        // Fold patterns + transcriptions into the dedup key (mirrors native
+        // popup_json): IPA entries have no pitch accents, and pattern-only
+        // accents have no numeric positions, so a positions-only key would
+        // collapse distinct records of one dict and drop all but the first.
+        final pKey =
+            '${p.dictName}:${p.pitchPositions.join(',')},${p.patterns.join(',')}'
+            '|${p.transcriptions.join(',')}';
+        if (seenPitches[key]!.add(pKey)) {
+          groupPitches[key]!.add(p);
+        }
+      }
+
+      final String m = g.glossary;
+      final String contentJson = (m.isNotEmpty && (m[0] == '[' || m[0] == '{'))
+          ? m
+          : jsonEncode(m);
+      groupGlossaries[key]!.add((
+        dictionary: g.dictName,
+        contentJson: contentJson,
+        defTags: g.definitionTags,
+        termTags: g.termTags,
+      ));
+    }
+  }
+
+  final sb = StringBuffer('[');
+  for (var i = 0; i < groupKeys.length; i++) {
+    if (i > 0) sb.write(',');
+    final key = groupKeys[i];
+    sb.write('{"expression":');
+    sb.write(jsonEncode(groupExpression[key]));
+    sb.write(',"reading":');
+    sb.write(jsonEncode(groupReading[key]));
+    sb.write(',"matched":');
+    sb.write(jsonEncode(groupMatched[key]));
+    sb.write(',"rules":[],"deinflectionTrace":');
+    // 弹窗 JSON 是显示路径 → 翻译；持久化的 extra 不翻（BUG-2038）。
+    sb.write(
+      jsonEncode(
+        deinflectionTagsToJson(
+          localizeDeinflectionTags(
+            buildDeinflectionTags(
+              matched: groupMatched[key]!,
+              deinflected: groupDeinflected[key]!,
+              trace: groupTrace[key] ?? const <FushiTransformGroup>[],
+            ),
+          ),
+        ),
+      ),
+    );
+    sb.write(',"glossaries":[');
+    final gl = _sortedByDictionaryOrder(
+      groupGlossaries[key]!,
+      dictionaryOrder,
+      groupOf: (_) => 0,
+      dictNameOf: (item) => item.dictionary,
+    );
+    for (var j = 0; j < gl.length; j++) {
+      if (j > 0) sb.write(',');
+      sb.write('{"dictionary":');
+      sb.write(jsonEncode(gl[j].dictionary));
+      sb.write(',"content":');
+      sb.write(gl[j].contentJson);
+      sb.write(',"definitionTags":');
+      sb.write(jsonEncode(gl[j].defTags));
+      sb.write(',"termTags":');
+      sb.write(jsonEncode(gl[j].termTags));
+      sb.write('}');
+    }
+    sb.write('],"frequencies":[');
+    final freqs = groupFrequencies[key]!;
+    for (var fi = 0; fi < freqs.length; fi++) {
+      if (fi > 0) sb.write(',');
+      sb.write('{"dictionary":');
+      sb.write(jsonEncode(freqs[fi].dictName));
+      sb.write(',"frequencies":[');
+      final fvals = freqs[fi].frequencies;
+      for (var k = 0; k < fvals.length; k++) {
+        if (k > 0) sb.write(',');
+        sb.write('{"value":');
+        sb.write(fvals[k].value);
+        sb.write(',"displayValue":');
+        sb.write(jsonEncode(fvals[k].displayValue));
+        sb.write('}');
+      }
+      sb.write(']}');
+    }
+    sb.write('],"pitches":[');
+    final pitches = groupPitches[key]!;
+    for (var pi = 0; pi < pitches.length; pi++) {
+      if (pi > 0) sb.write(',');
+      sb.write('{"dictionary":');
+      sb.write(jsonEncode(pitches[pi].dictName));
+      sb.write(',"pitchPositions":');
+      sb.write(jsonEncode(pitches[pi].pitchPositions));
+      sb.write(',"patterns":');
+      sb.write(jsonEncode(pitches[pi].patterns));
+      sb.write(',"transcriptions":');
+      sb.write(jsonEncode(pitches[pi].transcriptions));
+      sb.write('}');
+    }
+    sb.write(']}');
+  }
+  sb.write(']');
+  return sb.toString();
 }
 
 /// Applies the user-managed dictionary priority at the Dart result boundary.

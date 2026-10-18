@@ -438,9 +438,6 @@ struct FushidictsHandle {
   // 分词的匹配长度缓存。结果依赖词典集合与变形表，所以 add_*_dict /
   // load_transforms 都要清空它（见 tokenize.hpp）。
   MatchLengthCache match_cache;
-  // 弹窗 JSON 的变形名 / 语法说明译文（英文原文 → 界面语言），由 Dart 侧在
-  // TransformDescriptionCatalog 变化后推下来；空表 = 不翻译。
-  PopupTranslations popup_translations;
 };
 
 FUSHI_EXPORT
@@ -748,81 +745,25 @@ void fushidicts_free_media(FfiMediaFile* r) {
   });
 }
 
+// ── popup JSON (single source of truth for both FFI and JNI) ───────
+
+FUSHI_EXPORT
+char* fushidicts_lookup_popup_json(void* handle, const char* text,
+                                   int32_t max_results, int32_t scan_length,
+                                   int32_t max_terms) {
+  return ffi_guard("fushidicts_lookup_popup_json", [&]() -> char* {
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    Lookup lookup(h->query, h->deinflector);
+    auto results = lookup.lookup(text, max_results,
+                                 static_cast<size_t>(scan_length));
+    std::string json = build_popup_json(results, max_terms);
+    return dup(json);
+  });
+}
+
 FUSHI_EXPORT
 void fushidicts_free_string(char* s) {
   ffi_guard_void("fushidicts_free_string", [&]() { free(s); });
-}
-
-// ── 查词 + 弹窗 JSON（一次调用） ──────────────────────────────────────
-//
-// app 内弹窗 / 浏览器扩展 / 无头服务端的唯一弹窗数据出口：一次 lookup，同时返回
-// 结构化结果（Dart 侧制卡 / DictionaryEntry 用）和按用户设置拼好的弹窗 JSON
-// （词头预算 BUG-1472、隐藏词典、词典顺序 BUG-2579、变形说明译文 BUG-2038）。
-// 以前弹窗 JSON 在 Dart 里逐字段 jsonEncode 拼，现在与 Android 系统划词弹窗走
-// 同一份 build_popup_json。
-
-struct FfiLookupPopupResult {
-  FfiLookupResults results;
-  char* popup_json;
-};
-
-static std::vector<std::string> read_string_array(const char* const* items, int32_t count) {
-  std::vector<std::string> out;
-  if (!items || count <= 0) return out;
-  out.reserve(static_cast<size_t>(count));
-  for (int32_t i = 0; i < count; i++) {
-    out.emplace_back(items[i] ? items[i] : "");
-  }
-  return out;
-}
-
-FUSHI_EXPORT
-void fushidicts_set_popup_translations(void* handle, const char* const* keys, const char* const* values,
-                                       int32_t count) {
-  ffi_guard_void("fushidicts_set_popup_translations", [&]() {
-    auto* h = static_cast<FushidictsHandle*>(handle);
-    PopupTranslations translations;
-    if (keys && values) {
-      for (int32_t i = 0; i < count; i++) {
-        if (!keys[i]) continue;
-        translations[keys[i]] = values[i] ? values[i] : "";
-      }
-    }
-    h->popup_translations = std::move(translations);
-  });
-}
-
-FUSHI_EXPORT
-FfiLookupPopupResult fushidicts_lookup_with_popup(void* handle, const char* text, int32_t max_results,
-                                                  int32_t scan_length, int32_t max_terms,
-                                                  const char* const* hidden_dicts, int32_t hidden_count,
-                                                  const char* const* dictionary_order, int32_t order_count) {
-  return ffi_guard("fushidicts_lookup_with_popup", [&]() -> FfiLookupPopupResult {
-    auto* h = static_cast<FushidictsHandle*>(handle);
-    Lookup lookup(h->query, h->deinflector);
-    auto results = lookup.lookup(text, max_results, static_cast<size_t>(scan_length));
-    PopupJsonOptions options;
-    options.max_terms = max_terms;
-    for (auto& name : read_string_array(hidden_dicts, hidden_count)) {
-      options.hidden.insert(std::move(name));
-    }
-    options.dictionary_order = read_string_array(dictionary_order, order_count);
-    options.translations = &h->popup_translations;
-    FfiLookupPopupResult r{};
-    r.popup_json = dup(build_popup_json(results, options));
-    r.results = marshal_lookup_results(results);
-    return r;
-  });
-}
-
-FUSHI_EXPORT
-void fushidicts_free_lookup_popup_result(FfiLookupPopupResult* r) {
-  ffi_guard_void("fushidicts_free_lookup_popup_result", [&]() {
-    if (!r) return;
-    fushidicts_free_lookup_results(&r->results);
-    free(r->popup_json);
-    r->popup_json = nullptr;
-  });
 }
 
 // ── 分词 ──────────────────────────────────────────────────────────────

@@ -537,20 +537,6 @@ String buildFfiLookupCacheKey({
   return '${term.length}:$term/$maxResults';
 }
 
-/// 原生弹窗 JSON 依赖的设置签名：隐藏词典（无序）+ 词典顺序 + 变形说明译文代次。
-///
-/// FFI 缓存里的弹窗 JSON 是与结果同一次原生调用拼的；签名对不上（期间换了界面语言
-/// 等没走 clearDictionaryResultsCache 的变更）就重查，不复用旧设置下的 JSON。
-@visibleForTesting
-String buildPopupJsonSignature({
-  required Set<String> hiddenDictionaries,
-  required List<String> dictionaryOrder,
-}) {
-  final List<String> hidden = hiddenDictionaries.toList()..sort();
-  return '${TransformDescriptionCatalog.generation}\u0001'
-      '${hidden.join('\u0002')}\u0001${dictionaryOrder.join('\u0002')}';
-}
-
 /// 从 `blobs.bin` 头部字节解码词典实际类型（freq/pitch），供 term 词典的类型回填迁移。
 /// 此前解析与 `RandomAccessFile` 的分次读/定位深交织（[AppModel._migrateDictionaryTypes]），
 /// 无法单测（依赖真文件）。纯逻辑吃**已读入的字节**（调用方负责打开/读盘/关闭），按
@@ -7159,35 +7145,36 @@ class AppModel with ChangeNotifier {
     // here so all local FFI return paths below carry the same kanji payload.
     final List<FushiKanjiResult> kanjiResults = queryKanjiForTerm(searchTerm);
 
-    final Set<String> hiddenDictionaries = hiddenDictionaryNames;
-    final String popupSignature = buildPopupJsonSignature(
-      hiddenDictionaries: hiddenDictionaries,
-      dictionaryOrder: currentDictionaryOrder,
-    );
     List<FushiLookupResult>? ffiResults =
         dictRepo.getCachedFfiLookup(ffiCacheKey);
-    final String? cachedPopupJson =
-        dictRepo.getCachedFfiPopupJson(ffiCacheKey, popupSignature);
     DictionarySearchResult? result;
 
-    if (ffiResults != null && cachedPopupJson != null) {
+    if (ffiResults != null) {
       result = buildResultFromLookup(
         searchTerm: searchTerm,
         results: ffiResults,
         maximumTerms: effectiveMaxTerms,
         dictionaryOrder: currentDictionaryOrder,
-        hiddenDictionaries: hiddenDictionaries,
+        hiddenDictionaries: hiddenDictionaryNames,
       );
-      // popupJson 与 ffiResults 出自同一次原生 lookupWithPopup（C++ build_popup_json），
-      // 缓存命中时两者一起复用：entries 与弹窗内容不会来自两次不同的查询。
-      result.popupJson = cachedPopupJson;
+      // 性能：popupJson 从已拿到的 ffiResults 在 Dart 侧生成（buildPopupJsonFromLookup
+      // 与 C++ build_popup_json 逐字段对齐，parity 测试见 dictionary_popup_webview_test）。
+      // 此前这里调 lookupPopupJson 让 C++ 把同一个词的完整查询管线（scan×文本变体×
+      // 去屈折×hash 查询×排序×zstd 解压）从零再跑一遍——FFI 缓存命中/load-more 每页
+      // 也照跑。同源生成还消除了「entries 来自缓存、popupJson 来自新查询」的双源分叉。
+      result.popupJson = buildPopupJsonFromLookup(
+        results: ffiResults,
+        maximumTerms: effectiveMaxTerms,
+        hiddenDictionaries: hiddenDictionaryNames,
+        dictionaryOrder: currentDictionaryOrder,
+      );
       result = result.withKanjiResults(kanjiResults);
     } else {
       // 🔴 引擎上限 == 本次真正要消费的词头预算。
       // `lookup.cpp` 在 `partial_sort` + `resize(max_results)` **之后**才对存活的
       // 每条结果做 `materialize()`（逐 glossary zstd 解压，每条落在 blobs.bin 的
       // 一个随机偏移上）。此前这里传硬编码 200，而下面的 buildResultFromLookup /
-      // 弹窗 JSON 只取 effectiveMaxTerms（默认 10）条 —— 相当于在
+      // buildPopupJsonFromLookup 只取 effectiveMaxTerms（默认 10）条 —— 相当于在
       // 整条链路最贵的按需分页段上白解压 20 倍。
       //
       // 输出逐字不变，三条理由（改这里前必须逐条复核）：
@@ -7199,31 +7186,27 @@ class AppModel with ChangeNotifier {
       //    同一个查询串的前缀（`scan_candidates` 只产出前缀），故「码点最长」与
       //    「UTF-16 最长」是同一个元素，它必在 `partial_sort` 后排首位、
       //    永远落在 top-N 内。
-      // 一次 FFI：结构化结果 + 原生拼好的弹窗 JSON（分组 / 去重 / 词典顺序 / 隐藏
-      // 词典 / 变形说明译文都在 C++ build_popup_json 里）。
-      final FushiLookupWithPopup lookup = FushiDicts.instance.lookupWithPopup(
+      ffiResults = FushiDicts.instance.lookup(
         searchTerm,
         maxResults: effectiveMaxTerms,
-        maxTerms: effectiveMaxTerms,
-        hiddenDictionaries: hiddenDictionaries,
-        dictionaryOrder: currentDictionaryOrder,
       );
-      ffiResults = lookup.results;
       if (ffiResults.isNotEmpty) {
-        dictRepo.cacheFfiLookup(
-          ffiCacheKey,
-          ffiResults,
-          popupJson: lookup.popupJson,
-          popupSignature: popupSignature,
-        );
+        dictRepo.cacheFfiLookup(ffiCacheKey, ffiResults);
         result = buildResultFromLookup(
           searchTerm: searchTerm,
           results: ffiResults,
           maximumTerms: effectiveMaxTerms,
           dictionaryOrder: currentDictionaryOrder,
-          hiddenDictionaries: hiddenDictionaries,
+          hiddenDictionaries: hiddenDictionaryNames,
         );
-        result.popupJson = lookup.popupJson;
+        // 同上：popupJson 由本次 lookup 的 ffiResults 直接生成，砍掉第二次
+        // 完整 C++ 查询（原生查词成本 ×2 → ×1）。
+        result.popupJson = buildPopupJsonFromLookup(
+          results: ffiResults,
+          maximumTerms: effectiveMaxTerms,
+          hiddenDictionaries: hiddenDictionaryNames,
+          dictionaryOrder: currentDictionaryOrder,
+        );
         result = result.withKanjiResults(kanjiResults);
       }
     }
@@ -10712,50 +10695,25 @@ class _AppModelRemoteLookupService
         term: searchTerm,
         maxResults: maximumTerms,
       );
-      final Set<String> hiddenDictionaries = _appModel.hiddenDictionaryNames;
-      final List<String> dictionaryOrder = _appModel.termDictionaries
-          .map((Dictionary dictionary) => dictionary.name)
-          .toList();
-      final String popupSignature = buildPopupJsonSignature(
-        hiddenDictionaries: hiddenDictionaries,
-        dictionaryOrder: dictionaryOrder,
-      );
       final Stopwatch? ffiCacheWatch = startPhase();
       List<FushiLookupResult>? ffiResults =
           _appModel.dictRepo.getCachedFfiLookup(ffiCacheKey);
-      String? popupJson = _appModel.dictRepo.getCachedFfiPopupJson(
-        ffiCacheKey,
-        popupSignature,
-      );
       if (timing != null) {
         timing.ffiCacheMicros = finishPhase(ffiCacheWatch);
       }
-      if (ffiResults == null || popupJson == null) {
-        // 一次 FFI 同时拿结果与原生拼好的弹窗 JSON（C++ build_popup_json），分组 /
-        // 去重 / 排序 / 序列化都不在 Dart 里做；popupJsonMicros 因此并进这一段。
+      if (ffiResults != null && timing != null) timing.cache = 'ffi';
+      if (ffiResults == null) {
         final Stopwatch? ffiLookupWatch = startPhase();
-        final FushiLookupWithPopup lookup = FushiDicts.instance.lookupWithPopup(
+        ffiResults = FushiDicts.instance.lookup(
           searchTerm,
           maxResults: maximumTerms,
-          maxTerms: maximumTerms,
-          hiddenDictionaries: hiddenDictionaries,
-          dictionaryOrder: dictionaryOrder,
         );
         if (timing != null) {
           timing.ffiLookupMicros = finishPhase(ffiLookupWatch);
         }
-        ffiResults = lookup.results;
-        popupJson = lookup.popupJson;
         if (ffiResults.isNotEmpty) {
-          _appModel.dictRepo.cacheFfiLookup(
-            ffiCacheKey,
-            ffiResults,
-            popupJson: popupJson,
-            popupSignature: popupSignature,
-          );
+          _appModel.dictRepo.cacheFfiLookup(ffiCacheKey, ffiResults);
         }
-      } else if (timing != null) {
-        timing.cache = 'ffi';
       }
       if (ffiResults.isEmpty) return null;
 
@@ -10764,6 +10722,18 @@ class _AppModelRemoteLookupService
         if (result.matched.length > bestLength) {
           bestLength = result.matched.length;
         }
+      }
+      final Stopwatch? popupJsonWatch = startPhase();
+      final String popupJson = buildPopupJsonFromLookup(
+        results: ffiResults,
+        maximumTerms: maximumTerms,
+        hiddenDictionaries: _appModel.hiddenDictionaryNames,
+        dictionaryOrder: _appModel.termDictionaries
+            .map((Dictionary dictionary) => dictionary.name)
+            .toList(),
+      );
+      if (timing != null) {
+        timing.popupJsonMicros = finishPhase(popupJsonWatch);
       }
       final DictionaryPopupCacheEntry entry = (
         popupJson: popupJson,

@@ -15,9 +15,9 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 /// 白解压 20 倍。
 ///
 /// 本文件三组断言各守一件事：
-/// 1. **输出不变性**：把结果集截到词头预算长度，`buildResultFromLookup` 的输出
-///    （含 `bestLength`）逐字不变——这是「可以降上限」的全部依据（弹窗 JSON 一侧在
-///    原生 popup_json_options_test.cpp）。
+/// 1. **输出不变性**：把结果集截到词头预算长度，`buildResultFromLookup` /
+///    `buildPopupJsonFromLookup` 的输出（含 `bestLength`）逐字不变——这是「可以
+///    降上限」的全部依据。
 /// 2. **load-more 不被缓存击穿**：引擎原始结果缓存的键必须带上限。
 /// 3. **接线守卫**：`app_model.dart` 真的把 `effectiveMaxTerms` 传给了引擎，
 ///    且 FFI 缓存读写走的是带上限的键。
@@ -97,15 +97,23 @@ void main() {
           expect(fromCapped.entries[i].meaning, fromFull.entries[i].meaning);
         }
         // bestLength 是用户可见的整词高亮长度（global_lookup_controller）。
-        expect(
-          fromCapped.bestLength,
-          fromFull.bestLength,
-          reason: 'bestLength 变了会让横幅高亮跨度变化',
-        );
+        expect(fromCapped.bestLength, fromFull.bestLength,
+            reason: 'bestLength 变了会让横幅高亮跨度变化');
       });
 
-      // popupJson 一侧的同一不变性（截到词头预算长度后逐字节不变）在原生
-      // build_popup_json：native/fushidicts/tests/popup_json_options_test.cpp 的 1307-*。
+      test('maxTerms=$maxTerms：popupJson 逐字节一致', () {
+        final List<FushiLookupResult> full = engineResults(count: 200);
+        expect(
+          buildPopupJsonFromLookup(
+              results: full.take(maxTerms).toList(),
+              maximumTerms: maxTerms,
+              hiddenDictionaries: const <String>{}),
+          buildPopupJsonFromLookup(
+              results: full,
+              maximumTerms: maxTerms,
+              hiddenDictionaries: const <String>{}),
+        );
+      });
     }
 
     test('每个 term 至少一条 glossary ⇒ N 个结果必凑够 N 条词头预算', () {
@@ -169,7 +177,7 @@ void main() {
     ///
     /// 变量名不同是因为两条路径的预算来源不同（前者还要过 `overrideMaximumTerms`
     /// 覆盖），但**单位相同**：都是词头数（`buildResultFromLookup` /
-    /// 原生 `build_popup_json` 里按「表记 + 有效读音」计数的那个预算），
+    /// `buildPopupJsonFromLookup` 里按 `lookupHeadwordKey` 计数的那个预算），
     /// 也都是本次真正会被消费掉的那个数。
     const List<String> engineBudgets = <String>[
       'effectiveMaxTerms',
@@ -178,7 +186,7 @@ void main() {
 
     test('每个引擎调用点的 maxResults 都是该路径本次消费的词头预算', () {
       final RegExp call = RegExp(
-        r'FushiDicts\.instance\.lookupWithPopup\(\s*searchTerm,\s*maxResults:\s*([A-Za-z0-9_]+)\s*,',
+        r'FushiDicts\.instance\.lookup\(\s*searchTerm,\s*maxResults:\s*([A-Za-z0-9_]+)\s*,',
         multiLine: true,
       );
       final List<String> budgets = call
@@ -188,27 +196,8 @@ void main() {
       // 逐点列名（而不是「至少一个」）：新增第三条查词路径必须来这里登记，顺带把
       // 「传硬编码 200」挡在门外——数字字面量虽然也能被 `[A-Za-z0-9_]+` 捕获，
       // 但绝不会等于登记表里的任何一个变量名。
-      expect(
-        budgets,
-        engineBudgets,
-        reason: 'BUG-1307：上限必须等于本次消费的词头预算，不得是硬编码常量',
-      );
-    });
-
-    test('原生弹窗 JSON 的词头预算（maxTerms）与引擎上限同源', () {
-      final RegExp call = RegExp(
-        r'FushiDicts\.instance\.lookupWithPopup\(\s*searchTerm,\s*maxResults:\s*([A-Za-z0-9_]+)\s*,\s*maxTerms:\s*([A-Za-z0-9_]+)\s*,',
-        multiLine: true,
-      );
-      final List<RegExpMatch> matches = call.allMatches(source).toList();
-      expect(
-        matches.map((RegExpMatch m) => m.group(2)!).toList(),
-        engineBudgets,
-        reason: '弹窗 JSON 的词头预算必须与引擎上限是同一个变量（BUG-1472 / BUG-1307）',
-      );
-      for (final RegExpMatch m in matches) {
-        expect(m.group(2), m.group(1));
-      }
+      expect(budgets, engineBudgets,
+          reason: 'BUG-1307：上限必须等于本次消费的词头预算，不得是硬编码常量');
     });
 
     test('每条路径的 FFI 缓存键上限与它自己的引擎上限同源', () {
@@ -232,15 +221,10 @@ void main() {
 
     test('FFI 缓存读写都走带上限的 ffiCacheKey', () {
       expect(
-        source.contains('dictRepo.getCachedFfiLookup(ffiCacheKey)'),
-        isTrue,
-        reason: '读 FFI 缓存必须用带上限的键，否则 load-more 被短结果集击穿',
-      );
-      expect(
-        RegExp(r'dictRepo\.cacheFfiLookup\(\s*ffiCacheKey,').hasMatch(source),
-        isTrue,
-        reason: '写 FFI 缓存必须用带上限的键',
-      );
+          source.contains('dictRepo.getCachedFfiLookup(ffiCacheKey)'), isTrue,
+          reason: '读 FFI 缓存必须用带上限的键，否则 load-more 被短结果集击穿');
+      expect(source.contains('dictRepo.cacheFfiLookup(ffiCacheKey,'), isTrue,
+          reason: '写 FFI 缓存必须用带上限的键');
     });
   });
 }

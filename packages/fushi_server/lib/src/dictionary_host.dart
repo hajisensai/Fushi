@@ -238,9 +238,8 @@ class ServerDictionaryHost {
   }
 
   /// 查一个词：与 app `searchDictionary(useCache: false, allowRemoteLookup: false)`
-  /// 同一条链路——清洗 → 一次 FFI `lookupWithPopup`（上限 = 词头预算；弹窗 JSON 由
-  /// 原生 build_popup_json 拼好，隐藏词典在源头剔除）→ [buildResultFromLookup] →
-  /// 单汉字附汉字词典结果。
+  /// 同一条链路——清洗 → FFI lookup（上限 = 词头预算）→ [buildResultFromLookup] +
+  /// [buildPopupJsonFromLookup]（隐藏词典在源头剔除）→ 单汉字附汉字词典结果。
   /// 无结果返回 null。
   DictionarySearchResult? search(String rawTerm, {required int maximumTerms}) {
     if (!_available) return null;
@@ -249,19 +248,12 @@ class ServerDictionaryHost {
     final List<FushiKanjiResult> kanji = isSingleKanjiTerm(term)
         ? FushiDicts.instance.queryKanji(term)
         : const <FushiKanjiResult>[];
-    final _DictionarySnapshot snap = _snapshot;
-    final FushiLookupWithPopup lookup = FushiDicts.instance.lookupWithPopup(
-      term,
-      maxResults: maximumTerms,
-      maxTerms: maximumTerms,
-      hiddenDictionaries: snap.hidden,
-      dictionaryOrder: snap.termOrder,
-    );
-    final List<FushiLookupResult> results = lookup.results;
+    final List<FushiLookupResult> results = FushiDicts.instance.lookup(term, maxResults: maximumTerms);
     if (results.isEmpty) {
       if (kanji.isEmpty) return null;
       return DictionarySearchResult(searchTerm: term, kanjiResults: kanji);
     }
+    final _DictionarySnapshot snap = _snapshot;
     final DictionarySearchResult built = buildResultFromLookup(
       searchTerm: term,
       results: results,
@@ -269,7 +261,12 @@ class ServerDictionaryHost {
       dictionaryOrder: snap.termOrder,
     );
     final DictionarySearchResult result = built.withKanjiResults(kanji);
-    result.popupJson = lookup.popupJson;
+    result.popupJson = buildPopupJsonFromLookup(
+      results: results,
+      maximumTerms: maximumTerms,
+      hiddenDictionaries: snap.hidden,
+      dictionaryOrder: snap.termOrder,
+    );
     if (result.entries.isEmpty && result.kanjiResults.isEmpty) return null;
     return result;
   }
@@ -279,20 +276,22 @@ class ServerDictionaryHost {
     if (!_available) return null;
     final String term = normalizeServerSearchTerm(rawTerm);
     if (term.trim().isEmpty) return null;
-    final _DictionarySnapshot snap = _snapshot;
-    final FushiLookupWithPopup lookup = FushiDicts.instance.lookupWithPopup(
-      term,
-      maxResults: maximumTerms,
-      maxTerms: maximumTerms,
-      hiddenDictionaries: snap.hidden,
-      dictionaryOrder: snap.termOrder,
-    );
-    if (lookup.results.isEmpty) return null;
+    final List<FushiLookupResult> results = FushiDicts.instance.lookup(term, maxResults: maximumTerms);
+    if (results.isEmpty) return null;
     int bestLength = 0;
-    for (final FushiLookupResult r in lookup.results) {
+    for (final FushiLookupResult r in results) {
       if (r.matched.length > bestLength) bestLength = r.matched.length;
     }
-    return RemoteDictionaryPopupLookup(popupJson: lookup.popupJson, bestLength: bestLength);
+    final _DictionarySnapshot snap = _snapshot;
+    return RemoteDictionaryPopupLookup(
+      popupJson: buildPopupJsonFromLookup(
+        results: results,
+        maximumTerms: maximumTerms,
+        hiddenDictionaries: snap.hidden,
+        dictionaryOrder: snap.termOrder,
+      ),
+      bestLength: bestLength,
+    );
   }
 
   /// 词典名 → 词典自带 CSS，给 `/api/lookup/dictionary/styles`（对端弹窗渲染本机结果）。

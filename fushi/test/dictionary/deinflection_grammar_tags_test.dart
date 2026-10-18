@@ -166,31 +166,55 @@ void main() {
   });
 
   group('两条弹窗路径都送出真实变形链', () {
-    // 主路径（弹窗 JSON）已搬进原生 C++ build_popup_json，同一组断言在
-    // native/fushidicts/tests/popup_json_deinflection_test.cpp（变形链反转 + 语法说明）
-    // 与 popup_json_vectors_test.cpp（旧 Dart 实现的逐字节向量）里。这里守 extra 路径。
-    test('buildLookupEntriesJson（extra 路径）送出接续顺序的变形链与语法说明', () {
-      final List<FushiLookupResult> results = [
-        lookup(matched: '当たっていた', deinflected: '当たる', trace: ateiruTrace),
-      ];
+    test('buildPopupJsonFromLookup（主路径）', () {
+      final List decoded = jsonDecode(buildPopupJsonFromLookup(
+        results: [
+          lookup(
+            matched: '当たっていた',
+            deinflected: '当たる',
+            trace: ateiruTrace,
+          )
+        ],
+        maximumTerms: 100,
+        hiddenDictionaries: const <String>{},
+      )) as List;
 
-      final List viaExtra =
-          jsonDecode(
-                DictionaryPopupWebViewState.buildLookupEntriesJson(
-                  buildResultFromLookup(
-                    searchTerm: '当たっていた',
-                    results: results,
-                    maximumTerms: 100,
-                  ),
-                ),
-              )
-              as List;
-
-      expect((viaExtra.single as Map<String, dynamic>)['deinflectionTrace'], [
+      expect((decoded.single as Map<String, dynamic>)['deinflectionTrace'], [
         {'name': '-て', 'description': 'て-form.'},
         {'name': '-いる', 'description': 'Indicates continuation.'},
         {'name': '-た', 'description': 'Indicates the past.'},
       ]);
+    });
+
+    test('buildLookupEntriesJson（extra 路径）与主路径逐字段一致', () {
+      final List<FushiLookupResult> results = [
+        lookup(
+          matched: '当たっていた',
+          deinflected: '当たる',
+          trace: ateiruTrace,
+        )
+      ];
+
+      final List viaLookup = jsonDecode(buildPopupJsonFromLookup(
+        results: results,
+        maximumTerms: 100,
+        hiddenDictionaries: const <String>{},
+      )) as List;
+
+      final List viaExtra = jsonDecode(
+        DictionaryPopupWebViewState.buildLookupEntriesJson(
+          buildResultFromLookup(
+            searchTerm: '当たっていた',
+            results: results,
+            maximumTerms: 100,
+          ),
+        ),
+      ) as List;
+
+      expect(
+        (viaExtra.single as Map<String, dynamic>)['deinflectionTrace'],
+        (viaLookup.single as Map<String, dynamic>)['deinflectionTrace'],
+      );
     });
   });
 

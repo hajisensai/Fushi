@@ -485,7 +485,7 @@ void main() {
     });
   });
 
-  group('native popup JSON parity', () {
+  group('buildPopupJsonFromLookup parity', () {
     List<FushiLookupResult> makeLookupResults() {
       return [
         FushiLookupResult(
@@ -509,7 +509,7 @@ void main() {
                 glossary: jsonEncode({
                   'tag': 'div',
                   'content': [
-                    {'tag': 'span', 'content': '食べること'},
+                    {'tag': 'span', 'content': '食べること'}
                   ],
                 }),
                 definitionTags: '',
@@ -581,12 +581,10 @@ void main() {
       final lookupResults = makeLookupResults();
       const maxTerms = 100;
 
-      // 弹窗 JSON 的生成器是原生 C++ build_popup_json（Dart 测试宿主没有原生库）。
-      // 这份是旧 Dart 生成器对本 fixture 的输出，也是
-      // native/fushidicts/tests/popup_json_vectors.inc 里 `parity_taberu` 那条向量的
-      // 期望值——popup_json_vectors_test 逐字节钉住 C++ 与它一致，这里钉住 extra 路径
-      // （buildLookupEntriesJson）与它逐字段一致，两条弹窗路径因此仍然同源。
-      const newJson = _kNativeParityJson;
+      final newJson = buildPopupJsonFromLookup(
+          results: lookupResults,
+          maximumTerms: maxTerms,
+          hiddenDictionaries: const <String>{});
       final oldResult = buildResultFromLookup(
         searchTerm: '食べた',
         results: lookupResults,
@@ -640,7 +638,7 @@ void main() {
           expect(nPitches[j]['transcriptions'], oPitches[j]['transcriptions']);
         }
 
-        // BUG-712 P4：searchDictionary 的弹窗 JSON 与 extra 路径必须同源，
+        // BUG-712 P4：searchDictionary 改走 Dart 侧 buildPopupJsonFromLookup 后，
         // deinflectionTrace 必须与旧路径（buildLookupEntriesJson）逐字段一致——
         // fixture 的 matched(食べた)≠deinflected(食べる) 正好覆盖非空痕迹；丢了它
         // 弹窗就不再显示「食べた → 食べる」的去屈折痕迹。
@@ -657,50 +655,133 @@ void main() {
       FushiLookupResult make({
         required String matched,
         required String deinflected,
-      }) => FushiLookupResult(
-        matched: matched,
-        deinflected: deinflected,
-        trace: [],
-        preprocessorSteps: 0,
-        term: FushiTermResult(
-          expression: '食べる',
-          reading: 'たべる',
-          rules: '',
-          glossaries: [
-            FushiGlossaryEntry(
-              dictName: 'JMdict',
-              glossary: jsonEncode(['to eat']),
-              definitionTags: '',
-              termTags: '',
-            ),
-          ],
-          frequencies: [],
-          pitches: [],
-        ),
-      );
-
-      // ①②③（原生弹窗 JSON 的三个分支）在
-      // native/fushidicts/tests/popup_json_options_test.cpp 的 fallback-*。
-      // extra 路径（buildResultFromLookup → buildLookupEntriesJson）对同一输入产出
-      // 与原生 write_deinflection_tags 一致的单条痕迹。
-      final oldParsed =
-          jsonDecode(
-                DictionaryPopupWebViewState.buildLookupEntriesJson(
-                  buildResultFromLookup(
-                    searchTerm: '食べた',
-                    results: [make(matched: '食べた', deinflected: '食べる')],
-                    maximumTerms: 100,
-                  ),
+      }) =>
+          FushiLookupResult(
+            matched: matched,
+            deinflected: deinflected,
+            trace: [],
+            preprocessorSteps: 0,
+            term: FushiTermResult(
+              expression: '食べる',
+              reading: 'たべる',
+              rules: '',
+              glossaries: [
+                FushiGlossaryEntry(
+                  dictName: 'JMdict',
+                  glossary: jsonEncode(['to eat']),
+                  definitionTags: '',
+                  termTags: '',
                 ),
-              )
-              as List;
-      expect((oldParsed.single as Map<String, dynamic>)['deinflectionTrace'], [
+              ],
+              frequencies: [],
+              pitches: [],
+            ),
+          );
+
+      // ① 屈折命中（matched≠deinflected 且非空）→ 恰好一条痕迹。
+      final withTrace = jsonDecode(buildPopupJsonFromLookup(
+          results: [make(matched: '食べた', deinflected: '食べる')],
+          maximumTerms: 100,
+          hiddenDictionaries: const <String>{})) as List;
+      expect((withTrace.single as Map<String, dynamic>)['deinflectionTrace'], [
         {'name': '食べた → 食べる', 'description': ''},
       ]);
+
+      // ② 原形直查（matched == deinflected）→ 空数组，不生成自指痕迹。
+      final noInflection = jsonDecode(buildPopupJsonFromLookup(
+          results: [make(matched: '食べる', deinflected: '食べる')],
+          maximumTerms: 100,
+          hiddenDictionaries: const <String>{})) as List;
+      expect(
+        (noInflection.single as Map<String, dynamic>)['deinflectionTrace'],
+        isEmpty,
+      );
+
+      // ③ 引擎未回填 deinflected（空串）→ 同样空数组，不生成「x → 」残缺痕迹。
+      final emptyDeinflected = jsonDecode(buildPopupJsonFromLookup(
+          results: [make(matched: '食べた', deinflected: '')],
+          maximumTerms: 100,
+          hiddenDictionaries: const <String>{})) as List;
+      expect(
+        (emptyDeinflected.single as Map<String, dynamic>)['deinflectionTrace'],
+        isEmpty,
+      );
+
+      // ④ 与旧路径（buildResultFromLookup → buildLookupEntriesJson，即 P4 换掉的
+      //    渲染真值）对同一输入产出完全一致的痕迹。
+      final oldParsed = jsonDecode(
+        DictionaryPopupWebViewState.buildLookupEntriesJson(
+          buildResultFromLookup(
+            searchTerm: '食べた',
+            results: [make(matched: '食べた', deinflected: '食べる')],
+            maximumTerms: 100,
+          ),
+        ),
+      ) as List;
+      expect(
+        (oldParsed.single as Map<String, dynamic>)['deinflectionTrace'],
+        [
+          {'name': '食べた → 食べる', 'description': ''},
+        ],
+      );
     });
 
-    // BUG-1472（maximumTerms 按词头卡计）与空结果 `[]` 的用例在
-    // native/fushidicts/tests/popup_json_options_test.cpp（1472-* / empty）。
+    // BUG-1472：maximumTerms 的单位是**词头卡**，不是 glossary 注释行。
+    // 这个 fixture 是同一个词头（食べる/たべる）跨两本词典共 3 条注释——旧断言
+    // 「maximumTerms=2 ⇒ 只剩 2 条注释」把 bug 本身写成了契约：用户会静默丢掉
+    // 第三本词典的释义，而真正该被上限约束的「还有几个别的读音/表记」反而不受控。
+    test('maximumTerms 约束词头卡数，不腰斩单个词头的注释', () {
+      final lookupResults = makeLookupResults();
+      final json = buildPopupJsonFromLookup(
+          results: lookupResults,
+          maximumTerms: 2,
+          hiddenDictionaries: const <String>{});
+      final parsed = jsonDecode(json) as List;
+      expect(parsed.length, 1, reason: '两条结果同属一个词头，只该出一张卡');
+      final entry = parsed.single as Map<String, dynamic>;
+      expect(
+        (entry['glossaries'] as List).length,
+        3,
+        reason: '同一个词头的三本词典释义必须全在——按注释行计预算会砍掉第三本',
+      );
+    });
+
+    test('maximumTerms 真的截断词头卡数', () {
+      final json = buildPopupJsonFromLookup(
+          results: <FushiLookupResult>[
+            ...makeLookupResults(),
+            FushiLookupResult(
+              matched: '食べた',
+              deinflected: '食べる',
+              trace: const [],
+              preprocessorSteps: 0,
+              term: FushiTermResult(
+                expression: '喰べる',
+                reading: 'くべる',
+                rules: '',
+                glossaries: [
+                  FushiGlossaryEntry(
+                    dictName: '大辞林',
+                    glossary: jsonEncode('別表記・別読み'),
+                    definitionTags: '',
+                    termTags: '',
+                  ),
+                ],
+                frequencies: const [],
+                pitches: const [],
+              ),
+            ),
+          ],
+          maximumTerms: 1,
+          hiddenDictionaries: const <String>{});
+      expect((jsonDecode(json) as List).length, 1);
+    });
+
+    test('returns empty array for empty results', () {
+      final json = buildPopupJsonFromLookup(
+          results: [], maximumTerms: 100, hiddenDictionaries: const <String>{});
+      expect(json, '[]');
+    });
   });
 
   // TODO-896 源码守卫：查词弹窗两交互修复。整页 widget 测试依赖真实平台 WebView
@@ -804,8 +885,3 @@ void main() {
     });
   });
 }
-
-// 旧 Dart buildPopupJsonFromLookup 对 `native popup JSON parity` fixture 的输出（= C++
-// build_popup_json 的输出，见 popup_json_vectors.inc 的 parity_taberu）。
-const String _kNativeParityJson =
-    '[{"expression":"食べる","reading":"たべる","matched":"食べた","rules":[],"deinflectionTrace":[{"name":"食べた → 食べる","description":""}],"glossaries":[{"dictionary":"JMdict","content":["to eat","to consume"],"definitionTags":"v1","termTags":"common"},{"dictionary":"大辞泉","content":{"tag":"div","content":[{"tag":"span","content":"食べること"}]},"definitionTags":"","termTags":""},{"dictionary":"Kenkyusha","content":"\\"eat; consume\\"","definitionTags":"","termTags":""}],"frequencies":[{"dictionary":"BCCWJ","frequencies":[{"value":500,"displayValue":"500"},{"value":0,"displayValue":"Top 500"}]},{"dictionary":"JPDB","frequencies":[{"value":120,"displayValue":"#120"}]}],"pitches":[{"dictionary":"NHK","pitchPositions":[2],"patterns":["heiban"],"transcriptions":[]},{"dictionary":"IPA","pitchPositions":[],"patterns":[],"transcriptions":["taꜜbeɾɯ","tabeɾu"]}]}]';

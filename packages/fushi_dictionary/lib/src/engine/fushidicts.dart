@@ -14,7 +14,6 @@ import '../ffi/fushidicts_ffi_bindings.dart';
 import 'transform_asset_loader_stub.dart'
     if (dart.library.ui) 'transform_asset_loader_flutter.dart';
 import 'fushidicts_models.dart';
-import '../language/transform_description_i18n.dart';
 
 export 'fushidicts_models.dart';
 
@@ -140,61 +139,6 @@ FushiKanjiResult _convertKanji(FfiKanjiResult ffi) {
     dictName: _utf8OrEmpty(ffi.dictName),
   );
 }
-
-List<FushiLookupResult> _convertLookupResults(FfiLookupResults r) {
-  final results = <FushiLookupResult>[];
-  for (int i = 0; i < r.count; i++) {
-    final src = r.results[i];
-    final trace = <FushiTransformGroup>[];
-    for (int j = 0; j < src.traceCount; j++) {
-      trace.add(
-        FushiTransformGroup(
-          name: _utf8OrEmpty(src.trace[j].name),
-          description: _utf8OrEmpty(src.trace[j].description),
-        ),
-      );
-    }
-    results.add(
-      FushiLookupResult(
-        matched: _utf8OrEmpty(src.matched),
-        deinflected: _utf8OrEmpty(src.deinflected),
-        trace: trace,
-        term: _convertTerm(src.term),
-        preprocessorSteps: src.preprocessorSteps,
-      ),
-    );
-  }
-  return results;
-}
-
-/// 一组 Dart 字符串 → 原生 `const char* const*` 数组（calloc 分配，用完 [free]）。
-class _NativeStrings {
-  _NativeStrings(Iterable<String> values) {
-    final List<String> list = values.toList(growable: false);
-    count = list.length;
-    array = calloc<Pointer<Utf8>>(count == 0 ? 1 : count);
-    for (int i = 0; i < count; i++) {
-      array[i] = list[i].toNativeUtf8(allocator: calloc);
-    }
-  }
-
-  late final int count;
-  late final Pointer<Pointer<Utf8>> array;
-
-  void free() {
-    for (int i = 0; i < count; i++) {
-      calloc.free(array[i]);
-    }
-    calloc.free(array);
-  }
-}
-
-/// [FushiDicts.lookupWithPopup] 的结果：结构化结果（制卡 / DictionaryEntry 用）与
-/// 原生拼好的弹窗 JSON。
-typedef FushiLookupWithPopup = ({
-  List<FushiLookupResult> results,
-  String popupJson,
-});
 
 // ── main wrapper class ──────────────────────────────────────────────
 
@@ -777,7 +721,25 @@ class FushiDicts {
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;
       try {
-        return _convertLookupResults(r);
+        final results = <FushiLookupResult>[];
+        for (int i = 0; i < r.count; i++) {
+          final src = r.results[i];
+          final trace = <FushiTransformGroup>[];
+          for (int j = 0; j < src.traceCount; j++) {
+            trace.add(FushiTransformGroup(
+              name: _utf8OrEmpty(src.trace[j].name),
+              description: _utf8OrEmpty(src.trace[j].description),
+            ));
+          }
+          results.add(FushiLookupResult(
+            matched: _utf8OrEmpty(src.matched),
+            deinflected: _utf8OrEmpty(src.deinflected),
+            trace: trace,
+            term: _convertTerm(src.term),
+            preprocessorSteps: src.preprocessorSteps,
+          ));
+        }
+        return results;
       } finally {
         _bindings!.freeLookupResults(rPtr);
         calloc.free(rPtr);
@@ -789,81 +751,28 @@ class FushiDicts {
     }
   }
 
-  // ── lookup + popup JSON（一次 FFI） ─────────────────────────────
-  //
-  // 弹窗 JSON 的唯一实现在 C++ `build_popup_json`（popup_json.cpp），与 Android 系统
-  // 划词弹窗同一份：按词头分组（表记 + 有效读音，BUG-2753 空读音并卡）、词头预算
-  // （BUG-1472）、隐藏词典在源头剔除、卡内按 [dictionaryOrder] 稳定排序（BUG-2579）、
-  // 频率 / 音调去重、变形标签按 [TransformDescriptionCatalog] 译成界面语言（BUG-2038，
-  // 只在这条显示路径翻译；持久化的 entry extra 仍是英文原文）。
-  FushiLookupWithPopup lookupWithPopup(
+  // ── popup JSON (single source of truth — same C++ as JNI) ───────
+  String lookupPopupJson(
     String text, {
-    required int maxResults,
-    required int maxTerms,
-    Set<String> hiddenDictionaries = const <String>{},
-    List<String> dictionaryOrder = const <String>[],
+    int maxResults = defaultMaxResults,
     int scanLength = defaultScanLength,
+    int maxTerms = 100,
   }) {
-    _syncPopupTranslations();
     final tp = text.toNativeUtf8(allocator: calloc);
-    final _NativeStrings hidden = _NativeStrings(hiddenDictionaries);
-    final _NativeStrings order = _NativeStrings(dictionaryOrder);
     try {
-      final r = _bindings!.lookupWithPopup(
-        _handle!,
-        tp,
-        maxResults,
-        scanLength,
-        maxTerms,
-        hidden.array,
-        hidden.count,
-        order.array,
-        order.count,
-      );
-      final rPtr = calloc<FfiLookupPopupResult>();
-      rPtr.ref = r;
+      final ptr = _bindings!
+          .lookupPopupJson(_handle!, tp, maxResults, scanLength, maxTerms);
+      if (ptr == nullptr) return '[]';
       try {
-        final List<FushiLookupResult> results = _convertLookupResults(
-          r.results,
-        );
-        // nullptr 只出现在原生异常 / 分配失败的兜底分支：按「无可显示结果」处理。
-        // 容错解码：词典数据可能含非法 UTF-8 字节（非标准编码导入的词典）。
-        final String popupJson = r.popupJson == nullptr
-            ? '[]'
-            : _utf8OrEmpty(r.popupJson);
-        return (results: results, popupJson: popupJson);
+        // 容错解码：词典 popupJson 数据可能含非法 UTF-8 字节（非标准编码导入的
+        // 词典），严格 toDartString 会抛 FormatException 让整个查词失败。
+        return _utf8OrEmpty(ptr);
       } finally {
-        _bindings!.freeLookupPopupResult(rPtr);
-        calloc.free(rPtr);
+        _bindings!.freeString(ptr);
       }
     } finally {
       calloc.free(tp);
-      hidden.free();
-      order.free();
     }
-  }
-
-  /// 本实例最后一次推给原生的 [TransformDescriptionCatalog] 代次（-1 = 从未推过）。
-  int _pushedCatalogGeneration = -1;
-
-  void _syncPopupTranslations() {
-    final int generation = TransformDescriptionCatalog.generation;
-    if (generation == _pushedCatalogGeneration) return;
-    final Map<String, String> table = TransformDescriptionCatalog.translations;
-    final _NativeStrings keys = _NativeStrings(table.keys);
-    final _NativeStrings values = _NativeStrings(table.values);
-    try {
-      _bindings!.setPopupTranslations(
-        _handle!,
-        keys.array,
-        values.array,
-        keys.count,
-      );
-    } finally {
-      keys.free();
-      values.free();
-    }
-    _pushedCatalogGeneration = generation;
   }
 
   // ── tokenize（最长匹配分词，一次 FFI 切完整段） ────────────────────

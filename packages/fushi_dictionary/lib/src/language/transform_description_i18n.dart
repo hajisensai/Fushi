@@ -23,15 +23,6 @@ class TransformDescriptionCatalog {
 
   static String? _localeTag;
 
-  static int _generation = 0;
-
-  /// 译文表的代次：每次 [apply] / [clear] +1。弹窗 JSON 在原生侧拼（C++
-  /// `build_popup_json`），译文表要推给每个引擎句柄；`FushiDicts` 按代次判断要不要重推。
-  static int get generation => _generation;
-
-  /// 当前译文表（只读；空表 = 不翻译）。
-  static Map<String, String> get translations => _translations;
-
   /// 当前生效的译文语言标签（`zh-CN` 之类）；没装载译文时为 null。
   static String? get localeTag => _localeTag;
 
@@ -43,14 +34,12 @@ class TransformDescriptionCatalog {
   }) {
     _localeTag = localeTag;
     _translations = Map<String, String>.unmodifiable(translations);
-    _generation++;
   }
 
   /// 卸载译文，回落英文原文（界面语言切到英文、或该语言没有译文资产时）。
   static void clear() {
     _localeTag = null;
     _translations = const <String, String>{};
-    _generation++;
   }
 
   /// 英文原文 → 译文；查不到原样返回。

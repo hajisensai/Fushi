@@ -137,6 +137,27 @@ void main() {
     });
   });
 
-  // 弹窗 JSON 一侧的同一处预算语义（三个读音出全 / 上限截断词头数）在原生
-  // build_popup_json：native/fushidicts/tests/popup_json_options_test.cpp（1472-*）。
+  group('buildPopupJsonFromLookup：同一处预算语义（BUG-1472）', () {
+    List<Map<String, dynamic>> groups(
+      List<FushiLookupResult> results,
+      int maximumTerms,
+    ) {
+      final String json = buildPopupJsonFromLookup(
+          results: results,
+          maximumTerms: maximumTerms,
+          hiddenDictionaries: const <String>{});
+      return (jsonDecode(json) as List).cast<Map<String, dynamic>>();
+    }
+
+    test('弹窗侧同样必须出全三个读音', () {
+      final List<Map<String, dynamic>> cards = groups(eienFixture(), 10);
+      final Set<String> readings =
+          cards.map((Map<String, dynamic> c) => c['reading'] as String).toSet();
+      expect(readings, containsAll(<String>['えいえん', 'とわ', 'とこしえ']));
+    });
+
+    test('上限仍然截断词头数', () {
+      expect(groups(eienFixture(), 2).length, 2);
+    });
+  });
 }

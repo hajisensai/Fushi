@@ -60,11 +60,6 @@ add_fushi_test(text_processor_test text_processor_test.cpp
 add_fushi_test(popup_json_deinflection_test popup_json_deinflection_test.cpp)
 # BUG-2753：空读音（MDX 等）并入同表记唯一显式读音的卡，与 Dart 侧同口径。
 add_fushi_test(popup_json_reading_merge_test popup_json_reading_merge_test.cpp)
-# 弹窗 JSON 从 Dart 搬进原生：与旧 Dart buildPopupJsonFromLookup 生成的固定向量逐字节比对。
-add_fushi_test(popup_json_vectors_test popup_json_vectors_test.cpp
-    "${CMAKE_CURRENT_SOURCE_DIR}")
-# 弹窗 JSON 选项语义（词头预算 / 隐藏词典 / 词典顺序 / 变形说明译文）的定点用例，从 Dart 迁来。
-add_fushi_test(popup_json_options_test popup_json_options_test.cpp)
 # FFI 边界异常闸门覆盖守卫：扫 fushidicts_ffi.cpp 源码，确认每个导出都经过
 # ffi_guard*。漏掉闸门的后果是异常逃出 extern "C" → std::terminate → 进程静默
 # 消失（用户侧：「转圈转一半 app 自己退出，没有报错」），人工 review 兜不住。
