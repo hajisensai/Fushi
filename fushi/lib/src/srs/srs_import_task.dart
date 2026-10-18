@@ -53,30 +53,28 @@ Future<SrsImportReport> _defaultRunner({
   onProgress: onProgress,
 );
 
+/// 一次导入的执行体：只管写库并上报进度（store / 媒体目录在入队时已锁定进闭包）。
+typedef SrsImportJob =
+    Future<SrsImportReport> Function(void Function(double progress) onProgress);
+
 /// 一个后台导入任务。
 class SrsImportTask {
   SrsImportTask._({
     required this.id,
-    required this.file,
     required this.displayName,
-    required this.options,
-    required this.deleteFileWhenDone,
-    required SrsDbStore store,
-    required SrsMediaStore media,
-  }) : _store = store,
-       _media = media;
+    required SrsImportJob job,
+    Future<void> Function()? cleanup,
+  }) : _job = job,
+       _cleanup = cleanup;
 
   final int id;
-  final File file;
 
   /// 界面上显示的名字（缺省文件名）。
   final String displayName;
-  final SrsAnkiImportOptions options;
+  final SrsImportJob _job;
 
-  /// 结束（成功或失败）后删掉 [file]（迁移流程导出的临时包）。
-  final bool deleteFileWhenDone;
-  final SrsDbStore _store;
-  final SrsMediaStore _media;
+  /// 结束（成功或失败）后的收尾：删迁移导出的临时包 / 丢弃 Anki 集合快照目录。
+  final Future<void> Function()? _cleanup;
 
   /// 0..1；0 = 还没有进度（显示不定态）。
   final ValueNotifier<double> progress = ValueNotifier<double>(0);
@@ -134,14 +132,39 @@ class SrsImportController extends ChangeNotifier {
     String? displayName,
     bool deleteFileWhenDone = false,
   }) {
+    return enqueueJob(
+      displayName: displayName ?? file.uri.pathSegments.last,
+      job: (void Function(double progress) onProgress) => _runner(
+        store: store,
+        media: media,
+        file: file,
+        options: options,
+        onProgress: onProgress,
+      ),
+      cleanup: deleteFileWhenDone
+          ? () async {
+              try {
+                await file.delete();
+              } on FileSystemException {
+                // 临时包删不掉（被占用）：留给系统临时目录清理。
+              }
+            }
+          : null,
+    );
+  }
+
+  /// 排一个不是单个包文件的导入（Anki 一键迁移的本机集合快照）。[cleanup] 在任务结束
+  /// （成功或失败）后、[SrsImportTask.result] 完成前执行。
+  SrsImportTask enqueueJob({
+    required String displayName,
+    required SrsImportJob job,
+    Future<void> Function()? cleanup,
+  }) {
     final SrsImportTask task = SrsImportTask._(
       id: _nextId++,
-      file: file,
-      displayName: displayName ?? file.uri.pathSegments.last,
-      options: options,
-      deleteFileWhenDone: deleteFileWhenDone,
-      store: store,
-      media: media,
+      displayName: displayName,
+      job: job,
+      cleanup: cleanup,
     );
     // 失败由控制器提示；没人 await result 时也不能变成未处理的异步错误。
     task.result.ignore();
@@ -183,26 +206,21 @@ class SrsImportController extends ChangeNotifier {
     Object? error;
     StackTrace? errorStack;
     try {
-      report = await _runner(
-        store: task._store,
-        media: task._media,
-        file: task.file,
-        options: task.options,
-        onProgress: (double p) {
-          if (!_disposed) task.progress.value = p.clamp(0.0, 1.0);
-        },
-      );
+      report = await task._job((double p) {
+        if (!_disposed) task.progress.value = p.clamp(0.0, 1.0);
+      });
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsImportController', e, stack);
       error = e;
       errorStack = stack;
     }
-    // 收尾（删临时包）做完才算任务结束：result 完成时文件已不在。
-    if (task.deleteFileWhenDone) {
+    // 收尾（删临时包 / 丢快照）做完才算任务结束：result 完成时临时文件已不在。
+    final Future<void> Function()? cleanup = task._cleanup;
+    if (cleanup != null) {
       try {
-        await task.file.delete();
-      } on FileSystemException {
-        // 临时包删不掉（被占用）：留给系统临时目录清理。
+        await cleanup();
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsImportController.cleanup', e, stack);
       }
     }
     if (report != null) {

@@ -26,6 +26,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_backups_page.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_anki_migration.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart' show srsImportReportLines;
+import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -204,7 +205,14 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage> {
         cancelLabel: t.cancel,
       );
       if (!go || !mounted) return;
-      await _run(SrsAnkiMigrationFromCollection(snapshot));
+      // 快照归后台任务所有：任务结束（成功或失败）时由它丢弃，用户中途离开本页也一样。
+      final AnkiCollectionSnapshot owned = snapshot;
+      snapshot = null;
+      await _run(
+        SrsAnkiMigrationFromCollection(owned),
+        displayName: profile.name,
+        cleanup: owned.discard,
+      );
     } finally {
       await snapshot?.discard();
       if (mounted) setState(() => _busy = false);
@@ -231,14 +239,25 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage> {
     if (!go || !mounted) return;
     setState(() => _busy = true);
     try {
-      await _run(SrsAnkiMigrationFromPackage(File(path)));
+      await _run(
+        SrsAnkiMigrationFromPackage(File(path)),
+        displayName: File(path).uri.pathSegments.last,
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  /// 进度 → [runSrsAnkiMigration] → 结果。
-  Future<void> _run(SrsAnkiMigrationSource source) async {
+  /// 排进后台导入队列（[srsImportControllerProvider]）→ [runSrsAnkiMigration]。
+  ///
+  /// 用户可以立刻离开本页继续用 app：牌组列表的任务条显示进度，结束时控制器弹全局提示并
+  /// 让列表重读。本页还开着时才在结束后补上报告对话框与 [SrsAnkiMigrationPage.onMigrated]。
+  /// [cleanup] 由任务在结束后执行（本机集合快照的临时目录）；没排上队时这里直接执行。
+  Future<void> _run(
+    SrsAnkiMigrationSource source, {
+    required String displayName,
+    Future<void> Function()? cleanup,
+  }) async {
     final SrsDbStore? store = await readSrsStore(ref);
     SrsMediaStore? media;
     try {
@@ -246,50 +265,40 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage> {
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsAnkiMigration.media', e, stack);
     }
-    if (store == null || media == null) {
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    if (store == null || media == null || !mounted) {
+      await cleanup?.call();
+      if (mounted) {
+        FushiToast.show(
+          msg: t.srs_action_failed,
+          severity: ToastSeverity.error,
+        );
+      }
       return;
     }
-    if (!mounted) return;
-    final ValueNotifier<double> progress = ValueNotifier<double>(0);
-    final NavigatorState navigator = Navigator.of(context, rootNavigator: true);
-    unawaited(
-      showAppDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext dialogContext) => PopScope(
-          canPop: false,
-          child: FushiAlertDialog(
-            title: Text(t.srs_import_running),
-            content: ValueListenableBuilder<double>(
-              valueListenable: progress,
-              builder: (BuildContext context, double value, Widget? _) =>
-                  FushiLinearProgressIndicator(
-                    value: value <= 0 ? null : value,
-                  ),
-            ),
-          ),
-        ),
-      ),
-    );
+    final SrsMediaStore lockedMedia = media;
+    final SrsImportTask task = ref
+        .read(srsImportControllerProvider)
+        .enqueueJob(
+          displayName: displayName,
+          job: (void Function(double progress) onProgress) =>
+              runSrsAnkiMigration(
+                store: store,
+                media: lockedMedia,
+                source: source,
+                onProgress: onProgress,
+              ),
+          cleanup: cleanup,
+        );
+    FushiToast.show(msg: t.srs_import_background_started);
     SrsImportReport? report;
     Object? failure;
     try {
-      report = await runSrsAnkiMigration(
-        store: store,
-        media: media,
-        source: source,
-        onProgress: (double p) => progress.value = p.clamp(0.0, 1.0),
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsAnkiMigration.run', e, stack);
+      report = await task.result;
+    } catch (e) {
+      // 控制器已记日志并弹过全局失败提示；这里只补详细原因。
       failure = e;
-    } finally {
-      if (navigator.mounted) navigator.pop();
-      progress.dispose();
     }
     if (!mounted) return;
-    bumpSrsRevision(ref);
     if (failure != null) {
       await showFushiConfirmDialog(
         context: context,

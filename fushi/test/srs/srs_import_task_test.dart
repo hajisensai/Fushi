@@ -106,6 +106,46 @@ void main() {
   });
 
   group('SrsImportController', () {
+    test('enqueueJob：成功与失败都在 result 完成前执行收尾（Anki 集合快照的临时目录）', () async {
+      final SrsImportController c = SrsImportController(onDataChanged: () {});
+      addTearDown(c.dispose);
+      final List<String> order = <String>[];
+
+      final Completer<SrsImportReport> okJob = Completer<SrsImportReport>();
+      final SrsImportTask ok = c.enqueueJob(
+        displayName: 'User 1',
+        job: (void Function(double progress) onProgress) {
+          onProgress(0.5);
+          return okJob.future;
+        },
+        cleanup: () async => order.add('cleanup-ok'),
+      );
+      final SrsImportTask bad = c.enqueueJob(
+        displayName: 'User 2',
+        job: (void Function(double progress) onProgress) =>
+            Future<SrsImportReport>.error(StateError('boom')),
+        cleanup: () async => order.add('cleanup-bad'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(ok.status, SrsImportTaskStatus.running);
+      expect(ok.progress.value, 0.5);
+      expect(bad.status, SrsImportTaskStatus.queued);
+
+      okJob.complete(_report(3));
+      final SrsImportReport report = await ok.result;
+      order.add('result-ok');
+      expect(report.notesAdded, 3);
+      await expectLater(bad.result, throwsStateError);
+      order.add('result-bad');
+      expect(order.indexOf('cleanup-ok'), lessThan(order.indexOf('result-ok')));
+      expect(
+        order.indexOf('cleanup-bad'),
+        lessThan(order.indexOf('result-bad')),
+      );
+      expect(order, containsAll(<String>['cleanup-ok', 'cleanup-bad']));
+      expect(bad.status, SrsImportTaskStatus.failed);
+    });
+
     test('串行：第二个导入排队到第一个结束；进度、完成回调与牌组列表重读', () async {
       final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore();
       addTearDown(db.close);
