@@ -4,8 +4,10 @@ library;
 
 export 'src/fushi_compute_library.dart';
 export 'src/hash/ffc_hash.dart';
-export 'src/parse/fold.dart';
-export 'src/parse/study_chars.dart';
+export 'src/parse/danmaku.dart';
 export 'src/parse/epub.dart';
+export 'src/parse/fold.dart';
 export 'src/parse/sanitize.dart';
+export 'src/parse/study_chars.dart';
+export 'src/parse/subtitle.dart';
 export 'src/parse/tts_split.dart';

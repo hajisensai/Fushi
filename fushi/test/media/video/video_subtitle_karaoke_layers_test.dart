@@ -31,8 +31,10 @@ Dialogue: 5,0:00:01.00,0:00:05.00,OP - JP,color,0,0,0,,{\c&H5659FF&\clip(m 571 4
 
 void main() {
   test(r'parser captures Layer / \1a fill opacity / \clip objects', () {
-    final List<AudioCue> cues =
-        AssParser.parseString(content: _kAss, bookKey: 'k');
+    final List<AudioCue> cues = AssParser.parseString(
+      content: _kAss,
+      bookKey: 'k',
+    );
     expect(cues, hasLength(3));
     expect(cues.map((c) => c.markup!.layer).toList(), <int>[3, 4, 5]);
     // \1a&HFF& → 填充全透明。
@@ -46,58 +48,64 @@ void main() {
     expect(cues[2].markup!.clip!.segments.first.x1, closeTo(571 / 1920, 1e-6));
   });
 
-  test(r'parseAssClip rect / scale-drawing / bezier forms', () {
-    final SubtitleClip rect = parseAssClip(
-        inverse: false, inner: '0,0,960,540', playResX: 1920, playResY: 1080)!;
+  test(r'\clip rect / scale-drawing / bezier forms', () {
+    SubtitleClip? clipOf(String tag, double resX, double resY) =>
+        parseSubtitleMarkup('{$tag}x', playResX: resX, playResY: resY).clip;
+
+    final SubtitleClip rect = clipOf(r'\clip(0,0,960,540)', 1920, 1080)!;
     expect(rect.segments, hasLength(4));
     expect(rect.segments[2].x1, closeTo(0.5, 1e-6));
     expect(rect.segments[2].y1, closeTo(0.5, 1e-6));
 
     // scale=2 变体：坐标除以 2^(2-1)=2。
-    final SubtitleClip scaled = parseAssClip(
-        inverse: false,
-        inner: '2,m 192 108 l 384 108',
-        playResX: 1920,
-        playResY: 1080)!;
+    final SubtitleClip scaled = clipOf(
+      r'\clip(2,m 192 108 l 384 108)',
+      1920,
+      1080,
+    )!;
     expect(scaled.segments.first.x1, closeTo(192 / 2 / 1920, 1e-6));
 
     // 贝塞尔 b：三控制点。
-    final SubtitleClip bez = parseAssClip(
-        inverse: true,
-        inner: 'm 0 0 b 10 0 10 10 0 10',
-        playResX: 100,
-        playResY: 100)!;
+    final SubtitleClip bez = clipOf(
+      r'\iclip(m 0 0 b 10 0 10 10 0 10)',
+      100,
+      100,
+    )!;
     expect(bez.inverse, isTrue);
     expect(bez.segments[1].op, SubtitleClipOp.cubic);
     expect(bez.segments[1].x3, closeTo(0.0, 1e-6));
     expect(bez.segments[1].y3, closeTo(0.1, 1e-6));
 
     // 垃圾输入 → null。
-    expect(
-        parseAssClip(
-            inverse: false, inner: 'l 1 2', playResX: 100, playResY: 100),
-        isNull);
+    expect(clipOf(r'\clip(l 1 2)', 100, 100), isNull);
   });
 
-  testWidgets('layered karaoke copies overlap in place with real ClipPath',
-      (WidgetTester tester) async {
-    final List<AudioCue> cues =
-        AssParser.parseString(content: _kAss, bookKey: 'k');
+  testWidgets('layered karaoke copies overlap in place with real ClipPath', (
+    WidgetTester tester,
+  ) async {
+    final List<AudioCue> cues = AssParser.parseString(
+      content: _kAss,
+      bookKey: 'k',
+    );
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
     c.setCues(cues);
     c.debugUpdateCueForPosition(2000); // 三层同刻活跃
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+        ),
       ),
-    ));
+    );
     await tester.pump();
 
     // 真 \clip 裁剪后三层全渲染（shadow + 主文字 + 点缀），点缀被 ClipPath 限制。
     final List<Element> fills = find
-        .byWidgetPredicate((Widget w) =>
-            w is Text && w.data == 'め' && w.style?.foreground == null)
+        .byWidgetPredicate(
+          (Widget w) =>
+              w is Text && w.data == 'め' && w.style?.foreground == null,
+        )
         .evaluate()
         .toList();
     expect(fills, hasLength(3), reason: '三层（含裁剪点缀层）都应渲染');
@@ -105,8 +113,9 @@ void main() {
     // \clip 与 \iclip 各挂一个 ClipPath（真矢量裁剪）。
     expect(
       find.descendant(
-          of: find.byType(VideoSubtitleOverlay),
-          matching: find.byType(ClipPath)),
+        of: find.byType(VideoSubtitleOverlay),
+        matching: find.byType(ClipPath),
+      ),
       findsNWidgets(2),
     );
 

@@ -1,4 +1,6 @@
-import 'package:characters/characters.dart';
+import 'package:fushi_compute/fushi_compute.dart';
+
+import 'subtitle_native_decode.dart';
 
 /// ASS `\an1-9` 解码出的垂直/水平锚点。
 enum SubtitleVAlign { top, middle, bottom }
@@ -44,13 +46,13 @@ class SubtitlePos {
 class SubtitleFade {
   /// `\fad(fadeInMs, fadeOutMs)` 简式。
   const SubtitleFade.simple(this.fadeInMs, this.fadeOutMs)
-      : _op1 = 0.0,
-        _op2 = 1.0,
-        _op3 = 0.0,
-        _t1 = null,
-        _t2 = null,
-        _t3 = null,
-        _t4 = null;
+    : _op1 = 0.0,
+      _op2 = 1.0,
+      _op3 = 0.0,
+      _t1 = null,
+      _t2 = null,
+      _t3 = null,
+      _t4 = null;
 
   /// `\fade(...)` 全式（alpha 已换算成 op 0..1，时间为绝对毫秒）。
   const SubtitleFade.full({
@@ -61,15 +63,15 @@ class SubtitleFade {
     required int t2,
     required int t3,
     required int t4,
-  })  : fadeInMs = 0,
-        fadeOutMs = 0,
-        _op1 = op1,
-        _op2 = op2,
-        _op3 = op3,
-        _t1 = t1,
-        _t2 = t2,
-        _t3 = t3,
-        _t4 = t4;
+  }) : fadeInMs = 0,
+       fadeOutMs = 0,
+       _op1 = op1,
+       _op2 = op2,
+       _op3 = op3,
+       _t1 = t1,
+       _t2 = t2,
+       _t3 = t3,
+       _t4 = t4;
 
   /// 简式淡入 / 淡出毫秒（全式恒 0，收尾时间走 [_t3]/[_t4]）。
   final int fadeInMs;
@@ -98,8 +100,16 @@ class SubtitleFade {
     return _evaluate(elapsedMs, t1, t2, t3, t4, _op1, _op2, _op3);
   }
 
-  static double _evaluate(int t, int t1, int t2, int t3, int t4, double op1,
-      double op2, double op3) {
+  static double _evaluate(
+    int t,
+    int t1,
+    int t2,
+    int t3,
+    int t4,
+    double op1,
+    double op2,
+    double op3,
+  ) {
     // 淡入段（含之前）：仅当 t<t2 才可能是 op1 / 入坡。零宽入坡（t1==t2，如 \fad(0,..)）时
     // t==t1 直接落到平台 op2（瞬时不透明），不会误显 op1（透明），也避免除零。
     if (t < t2) {
@@ -368,20 +378,25 @@ class SubtitleClipSegment {
   final double x2, y2;
   final double x3, y3;
   const SubtitleClipSegment.move(this.x1, this.y1)
-      : op = SubtitleClipOp.move,
-        x2 = 0,
-        y2 = 0,
-        x3 = 0,
-        y3 = 0;
+    : op = SubtitleClipOp.move,
+      x2 = 0,
+      y2 = 0,
+      x3 = 0,
+      y3 = 0;
   const SubtitleClipSegment.line(this.x1, this.y1)
-      : op = SubtitleClipOp.line,
-        x2 = 0,
-        y2 = 0,
-        x3 = 0,
-        y3 = 0;
+    : op = SubtitleClipOp.line,
+      x2 = 0,
+      y2 = 0,
+      x3 = 0,
+      y3 = 0;
   const SubtitleClipSegment.cubic(
-      this.x1, this.y1, this.x2, this.y2, this.x3, this.y3)
-      : op = SubtitleClipOp.cubic;
+    this.x1,
+    this.y1,
+    this.x2,
+    this.y2,
+    this.x3,
+    this.y3,
+  ) : op = SubtitleClipOp.cubic;
 }
 
 enum SubtitleClipOp { move, line, cubic }
@@ -420,174 +435,6 @@ class SubtitleDrawing {
 
   double get widthFraction => maxX - minX;
   double get heightFraction => maxY - minY;
-}
-
-/// 解析 ASS 绘图命令串 [drawing]（`m/n/l/b/s/p/c`）→ 段列表；坐标先除以 [divisor]
-/// （`2^(scale-1)`）再按 PlayRes 归一化。`\clip(...)` 绘图形式与 `\p` 正文绘图共用。
-/// 无有效段 / 首段不是 `m` 返回空列表（调用方按无绘图）。
-List<SubtitleClipSegment> parseAssDrawingSegments(
-  String drawing, {
-  required double divisor,
-  required double playResX,
-  required double playResY,
-}) {
-  final List<SubtitleClipSegment> segments = <SubtitleClipSegment>[];
-  final List<String> tokens = drawing
-      .split(_reWhitespaceRun)
-      .where((String t) => t.isNotEmpty)
-      .toList();
-  int i = 0;
-  String mode = '';
-  final List<double> nums = <double>[];
-  void flushNums() {
-    if (mode == 'm' || mode == 'n') {
-      for (int k = 0; k + 1 < nums.length; k += 2) {
-        segments.add(SubtitleClipSegment.move(
-            nums[k] / divisor / playResX, nums[k + 1] / divisor / playResY));
-      }
-    } else if (mode == 'l' || mode == 's' || mode == 'p') {
-      // s（B 样条）按折线近似；p（延长点）并入折线近似。
-      if (mode == 'p') return;
-      for (int k = 0; k + 1 < nums.length; k += 2) {
-        segments.add(SubtitleClipSegment.line(
-            nums[k] / divisor / playResX, nums[k + 1] / divisor / playResY));
-      }
-    } else if (mode == 'b') {
-      for (int k = 0; k + 5 < nums.length; k += 6) {
-        segments.add(SubtitleClipSegment.cubic(
-          nums[k] / divisor / playResX,
-          nums[k + 1] / divisor / playResY,
-          nums[k + 2] / divisor / playResX,
-          nums[k + 3] / divisor / playResY,
-          nums[k + 4] / divisor / playResX,
-          nums[k + 5] / divisor / playResY,
-        ));
-      }
-    }
-    nums.clear();
-  }
-
-  while (i < tokens.length) {
-    final String t = tokens[i];
-    final double? v = double.tryParse(t);
-    if (v != null) {
-      nums.add(v);
-    } else {
-      flushNums();
-      mode = t.toLowerCase();
-    }
-    i++;
-  }
-  flushNums();
-  if (segments.isEmpty || segments.first.op != SubtitleClipOp.move) {
-    return const <SubtitleClipSegment>[];
-  }
-  return segments;
-}
-
-/// `\p<n>` 正文绘图 → [SubtitleDrawing]（含包围盒）。[scale] 是 `\p` 的 n（>=1）；
-/// [baselineOffsetPx] 是 `\pbo`（脚本像素）。空 / 非法命令串或缺 PlayRes 返回 null。
-SubtitleDrawing? parseAssDrawing(
-  String drawing, {
-  required int scale,
-  required double? playResX,
-  required double? playResY,
-  double baselineOffsetPx = 0,
-}) {
-  if (playResX == null || playResY == null || playResX <= 0 || playResY <= 0) {
-    return null;
-  }
-  final int shift = scale >= 1 ? scale - 1 : 0;
-  final double divisor = (1 << shift).toDouble();
-  final List<SubtitleClipSegment> segments = parseAssDrawingSegments(
-    drawing,
-    divisor: divisor,
-    playResX: playResX,
-    playResY: playResY,
-  );
-  if (segments.isEmpty) return null;
-  double minX = double.infinity, minY = double.infinity;
-  double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
-  void grow(double x, double y) {
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  }
-
-  for (final SubtitleClipSegment s in segments) {
-    grow(s.x1, s.y1);
-    if (s.op == SubtitleClipOp.cubic) {
-      grow(s.x2, s.y2);
-      grow(s.x3, s.y3);
-    }
-  }
-  if (!minX.isFinite || !minY.isFinite || !maxX.isFinite || !maxY.isFinite) {
-    return null;
-  }
-  return SubtitleDrawing(
-    segments: segments,
-    minX: minX,
-    minY: minY,
-    maxX: maxX,
-    maxY: maxY,
-    baselineOffsetFraction: baselineOffsetPx / divisor / playResY,
-  );
-}
-
-/// 解析 `\clip`/`\iclip` 括号内参数 [inner] → [SubtitleClip]（坐标除以 PlayRes 归一化）。
-///
-/// 两种形式（ASS 规范）：
-/// - 矩形 `x1,y1,x2,y2` → 四段折线；
-/// - 绘图 `[scale,] m/l/b/s/n 命令串`：`m x y` 移动、`l x y ...` 连续直线、
-///   `b x1 y1 x2 y2 x3 y3 ...` 连续三次贝塞尔、`s ...` B 样条按折线近似、`n` 按移动
-///   处理、`c`/`p` 忽略。scale 变体坐标除以 `2^(scale-1)`。
-/// 解析失败 / 空路径 / PlayRes 缺失返回 null（调用方按无裁剪）。
-SubtitleClip? parseAssClip({
-  required bool inverse,
-  required String inner,
-  required double? playResX,
-  required double? playResY,
-}) {
-  if (playResX == null || playResY == null || playResX <= 0 || playResY <= 0) {
-    return null;
-  }
-
-  // 矩形形式：恰好 4 个纯数字参数。
-  final List<String> csv =
-      inner.split(',').map((String p) => p.trim()).toList();
-  if (csv.length == 4 && csv.every((String p) => double.tryParse(p) != null)) {
-    final double x1 = double.parse(csv[0]) / playResX;
-    final double y1 = double.parse(csv[1]) / playResY;
-    final double x2 = double.parse(csv[2]) / playResX;
-    final double y2 = double.parse(csv[3]) / playResY;
-    return SubtitleClip(inverse: inverse, segments: <SubtitleClipSegment>[
-      SubtitleClipSegment.move(x1, y1),
-      SubtitleClipSegment.line(x2, y1),
-      SubtitleClipSegment.line(x2, y2),
-      SubtitleClipSegment.line(x1, y2),
-    ]);
-  }
-
-  // 绘图形式：可选前导 `scale,`（单个正整数）+ 命令串。
-  String drawing = inner;
-  double divisor = 1.0;
-  final int comma = inner.indexOf(',');
-  if (comma > 0) {
-    final int? scale = int.tryParse(inner.substring(0, comma).trim());
-    if (scale != null && scale >= 1) {
-      drawing = inner.substring(comma + 1);
-      divisor = 1 << (scale - 1) == 0 ? 1.0 : (1 << (scale - 1)).toDouble();
-    }
-  }
-  final List<SubtitleClipSegment> path = parseAssDrawingSegments(
-    drawing,
-    divisor: divisor,
-    playResX: playResX,
-    playResY: playResY,
-  );
-  if (path.isEmpty) return null;
-  return SubtitleClip(inverse: inverse, segments: path);
 }
 
 /// 单条 cue 的**默认样式**：来自 ASS `[V4+ Styles]` 段里该 Dialogue 引用的 Style 行
@@ -811,808 +658,38 @@ class SubtitleMarkup {
   });
 }
 
-/// 扫描过程内部可变的行级变换状态（`\frz` 旋转 / `\fscx\fscy` 缩放 / `\t` 缩放动画 /
-/// `\move` 运动，TODO-1374）。跨同条 cue 的多个 `{...}` 块累积，扫描结束后归一成
-/// [SubtitleMarkup] 的 rotationDeg / scale / move。
-class _Transform {
-  double? rotationDeg;
-  double scaleX = 1.0;
-  double scaleY = 1.0;
-  bool scaleSet = false;
-  // \t(...) 缩放动画目标（相对当前 scaleX/scaleY 为起点）。
-  double? tScaleX;
-  double? tScaleY;
-  int? tStartMs;
-  int? tEndMs;
-  // \move(...)（归一化后坐标）。
-  double? mx1, my1, mx2, my2;
-  int? mt1, mt2;
-  bool moveSet = false;
-
-  /// 本 cue 的 `\clip`/`\iclip` 静态裁剪（见 [SubtitleMarkup.clip]）。
-  SubtitleClip? clip;
-
-  /// `\frx`/`\fry` 3D 旋转、`\fax`/`\fay` 切变（行级）。
-  double? frxDeg;
-  double? fryDeg;
-  double? faxShear;
-  double? fayShear;
-
-  /// `\t(...)` 通用动画段（按出现顺序累积）。
-  final List<SubtitleTransition> transitions = <SubtitleTransition>[];
-
-  /// 卡拉 OK 音节起点累计（厘秒）：每个 \k 段的起点=之前所有 \k 时长之和。
-  int kAccumCs = 0;
-}
-
-/// 扫描过程内部可变样式状态。
-class _Style {
-  bool italic = false;
-  bool bold = false;
-  bool underline = false;
-  bool strike = false;
-  int? colorArgb;
-  double? fontSizePx;
-  String? fontName;
-  int? outlineColorArgb;
-  int? shadowColorArgb;
-  double? outlineWidthPx;
-  double? shadowDepthPx;
-  double? blur;
-  double? fillOpacity;
-  double? letterSpacingPx;
-  double? scaleX;
-  double? scaleY;
-  String? kMode;
-  int? kStartCs;
-  int? kDurCs;
-
-  _Style clone() => _Style()
-    ..italic = italic
-    ..bold = bold
-    ..underline = underline
-    ..strike = strike
-    ..colorArgb = colorArgb
-    ..fontSizePx = fontSizePx
-    ..fontName = fontName
-    ..outlineColorArgb = outlineColorArgb
-    ..shadowColorArgb = shadowColorArgb
-    ..outlineWidthPx = outlineWidthPx
-    ..shadowDepthPx = shadowDepthPx
-    ..blur = blur
-    ..fillOpacity = fillOpacity
-    ..letterSpacingPx = letterSpacingPx
-    ..scaleX = scaleX
-    ..scaleY = scaleY
-    ..kMode = kMode
-    ..kStartCs = kStartCs
-    ..kDurCs = kDurCs;
-
-  /// Clears every accumulated inline override, returning to the "no override"
-  /// state (ASS `\r` reset-tag semantics, TODO-1246). A segment reset this way
-  /// reports [hasStyle] == false, so the renderer falls back to this cue's
-  /// [V4+ Styles] baseline ([SubtitleCueStyle]) instead of inheriting the
-  /// previous span's inline primary colour / outline / font.
-  void reset() {
-    italic = false;
-    bold = false;
-    underline = false;
-    strike = false;
-    colorArgb = null;
-    fontSizePx = null;
-    fontName = null;
-    outlineColorArgb = null;
-    shadowColorArgb = null;
-    outlineWidthPx = null;
-    shadowDepthPx = null;
-    blur = null;
-    fillOpacity = null;
-    letterSpacingPx = null;
-    scaleX = null;
-    scaleY = null;
-    kMode = null;
-    kStartCs = null;
-    kDurCs = null;
-  }
-
-  bool get hasStyle =>
-      italic ||
-      bold ||
-      underline ||
-      strike ||
-      colorArgb != null ||
-      fontSizePx != null ||
-      fontName != null ||
-      outlineColorArgb != null ||
-      shadowColorArgb != null ||
-      outlineWidthPx != null ||
-      shadowDepthPx != null ||
-      fillOpacity != null ||
-      letterSpacingPx != null ||
-      scaleX != null ||
-      scaleY != null ||
-      kMode != null ||
-      (blur != null && blur! > 0);
-}
-
-/// 单条 cue 原文 → 结构化 markup。一趟扫描同时构建 plainText 与 span 边界。
+/// 单条 cue 原文 → 结构化 markup。实现在 Rust（`ffc_parse_subtitle_markup`，
+/// native/fushi_compute/src/parse/subtitle/markup.rs），这里只做 FFI 往返与解码。
 ///
-/// [playResX]/[playResY] 仅用于把 `\pos` 归一化；srt/vtt 无 `\pos`，传 null 即可。
-/// [cueStyle] 是本条 cue 引用的 ASS `[V4+ Styles]` 默认样式（TODO-1105）：原样透传到
-/// 返回的 [SubtitleMarkup.cueStyle]，供渲染层作行内 span 之下的基线；行内 `{...}` 覆盖
-/// 它。srt/vtt 无 Style 段传 null。
-/// 支持行内 `\blur`/`\be`（辉光）、行级 `\fad`/`\fade`（淡入淡出，TODO-1373）、`\frz` 旋转
-/// / `\fscx`\`\fscy`(+`\t`) 缩放 / `\move` 运动（TODO-1374）。其余不支持的标签（卡拉OK `\k`、
-/// 3D 旋转 `\frx`/`\fry`、`\clip`、绘图 `\p` 正文等）静默删除，既不显示控制码也不产出样式。
-SubtitleMarkup parseSubtitleMarkup(String raw,
-    {double? playResX,
-    double? playResY,
-    SubtitleCueStyle? cueStyle,
-    int layer = 0}) {
-  final List<({String text, _Style style})> segments =
-      <({String text, _Style style})>[];
-  final StringBuffer cur = StringBuffer();
-  final _Style style = _Style();
-  SubtitleAnchor? anchor;
-  SubtitlePos? pos;
-  SubtitleFade? fade;
-  final _Transform xf = _Transform();
-  // ASS 绘图模式：\pN(N>0) 开启、\p0 关闭，作用域持续到本条 cue 结束。开启
-  // 期间标签块之外的正文是矢量绘图命令（m/l/b 坐标），是图形不是文字，绝不能进
-  // plainText（TODO-799 OP 卡拉OK 满屏坐标乱码）——收进 [_DrawingState.buffer]，
-  // 扫描结束后解析成 [SubtitleDrawing]（招牌白底遮罩靠它才画得出来）。
-  final _DrawingState drawing = _DrawingState();
-
-  void flush() {
-    if (cur.isEmpty) return;
-    segments.add((text: cur.toString(), style: style.clone()));
-    cur.clear();
-  }
-
-  final int n = raw.length;
-  int i = 0;
-  while (i < n) {
-    final String c = raw[i];
-    if (c == '{') {
-      final int close = raw.indexOf('}', i + 1);
-      if (close < 0) {
-        // 无闭合括号：剩余当普通文本。
-        cur.write(raw.substring(i));
-        break;
-      }
-      flush();
-      _applyOverrideBlock(
-        raw.substring(i + 1, close),
-        style,
-        (SubtitleAnchor a) => anchor = a,
-        (SubtitlePos p) => pos = p,
-        (int scale) => drawing.setScale(scale),
-        (SubtitleFade f) => fade = f,
-        xf,
-        playResX,
-        playResY,
-        drawing,
-      );
-      i = close + 1;
-      continue;
-    }
-    if (drawing.active) {
-      // 绘图模式下标签块之外的正文是矢量命令：不进 plainText，收进绘图缓冲；样式
-      // 快照取首个命令字符时刻的行内覆盖（`{\1c&HFFFFFF&\p1}m 0 0 ...` 的白填充）。
-      drawing.style ??= style.clone();
-      drawing.buffer.write(c);
-      i++;
-      continue;
-    }
-    if (c == r'\' && i + 1 < n) {
-      final String next = raw[i + 1];
-      // \N 硬换行：内部先写 '\n' 占位（同为 1 grapheme，span 偏移不变），扫描结束后
-      // 记录其下标进 lineBreakGraphemes、并在 plainText 里替换回空格——查词 / 制卡 /
-      // DB 文本与历史逐字节一致，只有渲染层看得到换行。\n（软换行，仅 WrapStyle 2 生效，
-      // 罕见）/ \h（不断行空格）维持空格。
-      if (next == 'N') {
-        cur.write('\n');
-        i += 2;
-        continue;
-      }
-      if (next == 'n' || next == 'h') {
-        cur.write(' ');
-        i += 2;
-        continue;
-      }
-    }
-    cur.write(c);
-    i++;
-  }
-  flush();
-
-  // 修剪首尾空白（在计算 grapheme 偏移前裁段，保证偏移与 span 对齐）。
-  if (segments.isNotEmpty) {
-    final ({String text, _Style style}) first = segments.first;
-    segments[0] = (text: first.text.trimLeft(), style: first.style);
-    final ({String text, _Style style}) last = segments.last;
-    segments[segments.length - 1] =
-        (text: last.text.trimRight(), style: last.style);
-    segments.removeWhere((({String text, _Style style}) s) => s.text.isEmpty);
-  }
-
-  final StringBuffer plain = StringBuffer();
-  final List<SubtitleSpan> spans = <SubtitleSpan>[];
-  int g = 0;
-  for (final ({String text, _Style style}) seg in segments) {
-    final int len = seg.text.characters.length;
-    if (seg.style.hasStyle && len > 0) {
-      spans.add(SubtitleSpan(
-        startGrapheme: g,
-        endGrapheme: g + len,
-        italic: seg.style.italic,
-        bold: seg.style.bold,
-        underline: seg.style.underline,
-        strike: seg.style.strike,
-        colorArgb: seg.style.colorArgb,
-        fontSizePx: seg.style.fontSizePx,
-        fontName: seg.style.fontName,
-        outlineColorArgb: seg.style.outlineColorArgb,
-        shadowColorArgb: seg.style.shadowColorArgb,
-        outlineWidthPx: seg.style.outlineWidthPx,
-        shadowDepthPx: seg.style.shadowDepthPx,
-        blur: seg.style.blur,
-        fillOpacity: seg.style.fillOpacity,
-        letterSpacingPx: seg.style.letterSpacingPx,
-        scaleX: seg.style.scaleX,
-        scaleY: seg.style.scaleY,
-        kMode: seg.style.kMode,
-        kStartCs: seg.style.kStartCs,
-        kDurCs: seg.style.kDurCs,
-      ));
-    }
-    plain.write(seg.text);
-    g += len;
-  }
-
-  // 行级变换（\frz / \fscx\fscy / \t / \move，TODO-1374）归一：缩放取 (from)=静态
-  // \fscx\fscy、(to)=\t 目标（无 \t 时 to==from）；有 \t 或静态缩放非 100% 才产出。
-  final bool hasScale = xf.scaleSet || xf.tScaleX != null || xf.tScaleY != null;
-  final SubtitleScale? scale = hasScale
-      ? SubtitleScale(
-          fromX: xf.scaleX,
-          fromY: xf.scaleY,
-          toX: xf.tScaleX ?? xf.scaleX,
-          toY: xf.tScaleY ?? xf.scaleY,
-          t1Ms: xf.tStartMs,
-          t2Ms: xf.tEndMs,
-        )
-      : null;
-  final SubtitleMove? move = xf.moveSet
-      ? SubtitleMove(xf.mx1!, xf.my1!, xf.mx2!, xf.my2!,
-          t1Ms: xf.mt1, t2Ms: xf.mt2)
-      : null;
-
-  // `\p` 正文绘图：命令串 → 归一化路径 + 包围盒；样式快照转成空区间 span。
-  final String drawingSrc = drawing.buffer.toString();
-  final SubtitleDrawing? drawingShape = drawingSrc.trim().isEmpty
-      ? null
-      : parseAssDrawing(
-          drawingSrc,
-          scale: drawing.scale,
-          playResX: playResX,
-          playResY: playResY,
-          baselineOffsetPx: drawing.baselineOffsetPx,
-        );
-  final _Style? ds = drawing.style;
-  final SubtitleSpan? drawingStyle = (drawingShape != null &&
-          ds != null &&
-          ds.hasStyle)
-      ? SubtitleSpan(
-          startGrapheme: 0,
-          endGrapheme: 0,
-          italic: ds.italic,
-          bold: ds.bold,
-          underline: ds.underline,
-          strike: ds.strike,
-          colorArgb: ds.colorArgb,
-          fontSizePx: ds.fontSizePx,
-          fontName: ds.fontName,
-          outlineColorArgb: ds.outlineColorArgb,
-          shadowColorArgb: ds.shadowColorArgb,
-          outlineWidthPx: ds.outlineWidthPx,
-          shadowDepthPx: ds.shadowDepthPx,
-          blur: ds.blur,
-          fillOpacity: ds.fillOpacity,
-          letterSpacingPx: ds.letterSpacingPx,
-          scaleX: ds.scaleX,
-          scaleY: ds.scaleY,
-        )
-      : null;
-
-  // \N 硬换行占位（'\n'）→ 下标记录 + 替换回空格（plainText 与历史逐字节一致，查词 /
-  // 制卡 / DB 零变化；渲染层按下标切行）。逐 grapheme 扫描一次即可（'\n' 恒单 grapheme）。
-  final String rawPlain = plain.toString();
-  List<int> breaks = const <int>[];
-  String plainText = rawPlain;
-  if (rawPlain.contains('\n')) {
-    breaks = <int>[];
-    int gi = 0;
-    for (final String ch in rawPlain.characters) {
-      if (ch == '\n') breaks.add(gi);
-      gi++;
-    }
-    plainText = rawPlain.replaceAll('\n', ' ');
-  }
-
-  return SubtitleMarkup(
-    plainText: plainText,
-    spans: spans,
-    // 行内 \an 优先；无行内 \an 时回退 cueStyle（V4+ Styles）的 Alignment（TODO-1105）。
-    anchor: anchor ?? cueStyle?.anchor,
-    posFraction: pos,
-    cueStyle: cueStyle,
-    // PlayResY 原样透传，供渲染层把 ASS 绝对字号 / 阴影深度缩放到播放尺寸（TODO-1246）。
-    playResY: playResY,
-    // PlayResX 透传，供渲染层缩放 MarginL/MarginR 水平边距（与 PlayResY 同构）。
-    playResX: playResX,
-    lineBreakGraphemes: breaks,
-    fade: fade,
-    rotationDeg: xf.rotationDeg,
-    scale: scale,
-    move: move,
-    layer: layer,
-    clip: xf.clip,
-    transitions: List<SubtitleTransition>.unmodifiable(xf.transitions),
-    rotationXDeg: xf.frxDeg,
-    rotationYDeg: xf.fryDeg,
-    shearX: xf.faxShear,
-    shearY: xf.fayShear,
-    drawing: drawingShape,
-    drawingStyle: drawingStyle,
-  );
-}
-
-// ── 覆盖标签正则（编译一次） ───────────────────────────────────────────────
-//
-// 以前每个 `RegExp(r'…')` 都写在 [_applyOverrideBlock] 的循环体里：每条 cue 的每个
-// `\tag` 都要把下面这三十来个正则**顺序**重新编译直到命中——一份几千条 cue 的 ASS
-// 解析绝大部分时间花在编译正则而不是匹配上。
-final RegExp _reTagTransition = RegExp(r'\\t\(([^)]*)\)');
-final RegExp _reTagAn = RegExp(r'^an?([1-9])$');
-final RegExp _reTagPos =
-    RegExp(r'^pos\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)$');
-final RegExp _reTagToggle = RegExp(r'^([ibus])(\d+)$');
-final RegExp _reTagFs = RegExp(r'^fs(\d+(?:\.\d+)?)$');
-final RegExp _reTagColor1 = RegExp(r'^1?c&H([0-9a-fA-F]{1,8})&?$');
-final RegExp _reTagColor3 = RegExp(r'^3c&H([0-9a-fA-F]{1,8})&?$');
-final RegExp _reTagColor4 = RegExp(r'^4c&H([0-9a-fA-F]{1,8})&?$');
-final RegExp _reTagBord = RegExp(r'^bord(\d+(?:\.\d+)?)$');
-final RegExp _reTagShad = RegExp(r'^shad(\d+(?:\.\d+)?)$');
-final RegExp _reTagDrawing = RegExp(r'^p(\d+)$');
-final RegExp _reTagDrawingBaseline = RegExp(r'^pbo(-?\d+(?:\.\d+)?)$');
-final RegExp _reTagBlur = RegExp(r'^(?:blur|be)(\d+(?:\.\d+)?)$');
-final RegExp _reTagFad = RegExp(r'^fad\(\s*(\d+)\s*,\s*(\d+)\s*\)$');
-final RegExp _reTagFade = RegExp(
-    r'^fade\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$');
-final RegExp _reTagReset = RegExp(r'^r[A-Za-z0-9_ \-]+$');
-final RegExp _reTagFrz = RegExp(r'^frz?(-?\d+(?:\.\d+)?)$');
-final RegExp _reTagFscx = RegExp(r'^fscx(\d+(?:\.\d+)?)$');
-final RegExp _reTagFscy = RegExp(r'^fscy(\d+(?:\.\d+)?)$');
-final RegExp _reTagMove = RegExp(
-    r'^move\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*(?:,\s*(\d+)\s*,\s*(\d+)\s*)?\)$');
-final RegExp _reTagAlpha = RegExp(r'^(?:1a|alpha)&?H?([0-9A-Fa-f]{1,2})&?$');
-final RegExp _reTagClip = RegExp(r'^(i?)clip\((.*)\)$');
-final RegExp _reTagFsp = RegExp(r'^fsp(-?\d+(?:\.\d+)?)$');
-final RegExp _reTagFrx = RegExp(r'^frx(-?\d+(?:\.\d+)?)$');
-final RegExp _reTagFry = RegExp(r'^fry(-?\d+(?:\.\d+)?)$');
-final RegExp _reTagFax = RegExp(r'^fax(-?\d+(?:\.\d+)?)$');
-final RegExp _reTagFay = RegExp(r'^fay(-?\d+(?:\.\d+)?)$');
-final RegExp _reTagKaraoke = RegExp(r'^(k|K|kf|ko)(\d+(?:\.\d+)?)$');
-// `\t(...)` 内部子标签。
-final RegExp _reTrTimes =
-    RegExp(r'^\s*(-?\d+)\s*,\s*(-?\d+)\s*(?:,\s*(-?\d+(?:\.\d+)?)\s*)?,');
-final RegExp _reTrAccelOnly = RegExp(r'^\s*(-?\d+(?:\.\d+)?)\s*,');
-final RegExp _reTrFscx = RegExp(r'\\fscx(\d+(?:\.\d+)?)');
-final RegExp _reTrFscy = RegExp(r'\\fscy(\d+(?:\.\d+)?)');
-final RegExp _reTrAlpha = RegExp(r'\\(?:1a|alpha)&?H?([0-9A-Fa-f]{1,2})&?');
-final RegExp _reTrColor = RegExp(r'\\1?c&H([0-9A-Fa-f]{1,8})&?');
-final RegExp _reTrBlur = RegExp(r'\\(?:blur|be)(\d+(?:\.\d+)?)');
-final RegExp _reTrBord = RegExp(r'\\bord(\d+(?:\.\d+)?)');
-final RegExp _reTrFrz = RegExp(r'\\frz?(-?\d+(?:\.\d+)?)');
-final RegExp _reWhitespaceRun = RegExp(r'\s+');
-
-/// 解析单个 `{...}` 块内的 `\tag` 序列，更新样式/锚点/位置/淡变。未知标签忽略。
-void _applyOverrideBlock(
-  String block,
-  _Style style,
-  void Function(SubtitleAnchor) setAnchor,
-  void Function(SubtitlePos) setPos,
-  void Function(int) setDrawing,
-  void Function(SubtitleFade) setFade,
-  _Transform xf,
+/// [playResX]/[playResY] 仅用于把 `\pos` / `\move` / `\clip` / `\p` 绘图归一化；srt/vtt 无
+/// PlayRes，传 null。[cueStyle] 是本条 cue 引用的 ASS `[V4+ Styles]` 默认样式（TODO-1105）：
+/// 原样透传到返回的 [SubtitleMarkup.cueStyle]，行内无 `\an` 时回退它的 anchor。
+/// 支持的标签见 markup.rs；不支持的标签静默删除，既不显示控制码也不产出样式。
+///
+/// 旧 Dart 实现会在这里抛出的异常（标签里的整数越界 → `FormatException`、卡拉 OK 时长
+/// 溢出成 Infinity → `UnsupportedError`）照原类型抛出。
+SubtitleMarkup parseSubtitleMarkup(
+  String raw, {
   double? playResX,
   double? playResY,
-  _DrawingState drawing,
-) {
-  // \t(...) 动画：内含 \fscy 等带反斜杠的子标签，会被下面 split('\\') 打碎，故先整体抽出
-  // 记录目标，再从 block 里剔除（TODO-1374）。目标缩放的「起点」用后续静态 \fscx\fscy 累积值
-  // （在下方循环里设），故此处只记 (t1,t2) 与目标倍数，实际 from 在扫描结束时归一。
-  final String working = block.replaceAllMapped(_reTagTransition, (Match m) {
-    _parseTransition(m.group(1) ?? '', xf);
-    return '';
-  });
-
-  // 按 '\' 切分各 tag；首段（第一个 '\' 前，通常空或注释）忽略。
-  final List<String> tags = working.split(r'\');
-  for (int t = 1; t < tags.length; t++) {
-    final String tag = tags[t].trim();
-    if (tag.isEmpty) continue;
-
-    // \an<d> / \a<d>（旧式）
-    final RegExpMatch? an = _reTagAn.firstMatch(tag);
-    if (an != null) {
-      final SubtitleAnchor? a =
-          SubtitleAnchor.fromAnCode(int.parse(an.group(1)!));
-      if (a != null) setAnchor(a);
-      continue;
-    }
-
-    // \pos(x,y)
-    final RegExpMatch? p = _reTagPos.firstMatch(tag);
-    if (p != null &&
-        playResX != null &&
-        playResY != null &&
-        playResX > 0 &&
-        playResY > 0) {
-      final double x = double.parse(p.group(1)!);
-      final double y = double.parse(p.group(2)!);
-      setPos(SubtitlePos(x / playResX, y / playResY));
-      continue;
-    }
-
-    // \i1 \i0 \b1 \b0 \u1 \u0 \s1 \s0（\b 接粗细数值时 >0 视为粗体）
-    final RegExpMatch? toggle = _reTagToggle.firstMatch(tag);
-    if (toggle != null) {
-      final bool on = int.parse(toggle.group(2)!) > 0;
-      switch (toggle.group(1)!) {
-        case 'i':
-          style.italic = on;
-        case 'b':
-          style.bold = on;
-        case 'u':
-          style.underline = on;
-        case 's':
-          style.strike = on;
-      }
-      continue;
-    }
-
-    // \fs<n>
-    final RegExpMatch? fs = _reTagFs.firstMatch(tag);
-    if (fs != null) {
-      style.fontSizePx = double.parse(fs.group(1)!);
-      continue;
-    }
-
-    // \c&H..& / \1c&H..&（主色，BGR）
-    final RegExpMatch? col = _reTagColor1.firstMatch(tag);
-    if (col != null) {
-      style.colorArgb = assColorToArgb(col.group(1)!);
-      continue;
-    }
-
-    // \3c&H..&（描边色，BGR，TODO-1105）
-    final RegExpMatch? col3 = _reTagColor3.firstMatch(tag);
-    if (col3 != null) {
-      style.outlineColorArgb = assColorToArgb(col3.group(1)!);
-      continue;
-    }
-
-    // \4c&H..&（阴影色，BGR，TODO-1105）
-    final RegExpMatch? col4 = _reTagColor4.firstMatch(tag);
-    if (col4 != null) {
-      style.shadowColorArgb = assColorToArgb(col4.group(1)!);
-      continue;
-    }
-
-    // \fn<字体名>（TODO-1105）。字体名可含空格；截到本 tag 末尾（\ 切分已隔开各 tag）。
-    if (tag.startsWith('fn') && tag.length > 2) {
-      final String name = tag.substring(2).trim();
-      if (name.isNotEmpty) style.fontName = name;
-      continue;
-    }
-
-    // \bord<n> 描边宽（px，TODO-1105）
-    final RegExpMatch? bord = _reTagBord.firstMatch(tag);
-    if (bord != null) {
-      style.outlineWidthPx = double.parse(bord.group(1)!);
-      continue;
-    }
-
-    // \shad<n> 阴影深度（px，TODO-1105）
-    final RegExpMatch? shad = _reTagShad.firstMatch(tag);
-    if (shad != null) {
-      style.shadowDepthPx = double.parse(shad.group(1)!);
-      continue;
-    }
-
-    // \p<n>：绘图模式开关。n>0 进入（n 是坐标缩放级，坐标 ÷ 2^(n-1)），n=0 退出；
-    // 作用域持续到本条 cue 结束。
-    final RegExpMatch? p1 = _reTagDrawing.firstMatch(tag);
-    if (p1 != null) {
-      setDrawing(int.parse(p1.group(1)!));
-      continue;
-    }
-
-    // \pbo<y>：绘图基线偏移（绘图坐标单位，正值向下）。
-    final RegExpMatch? pbo = _reTagDrawingBaseline.firstMatch(tag);
-    if (pbo != null) {
-      drawing.baselineOffsetPx = double.parse(pbo.group(1)!);
-      continue;
-    }
-
-    // \blur<n> / \be<n>：辉光边缘模糊（TODO-1373）。两者都软化字形边缘成辉光，归一到
-    // 同一 `blur` 强度字段（span 级，随文本作用域），消除按标签特判。value<=0 视为无。
-    final RegExpMatch? blur = _reTagBlur.firstMatch(tag);
-    if (blur != null) {
-      final double v = double.parse(blur.group(1)!);
-      style.blur = v > 0 ? v : null;
-      continue;
-    }
-
-    // \fad(t1,t2)：行级淡入 t1ms / 淡出 t2ms（收尾依赖 cue 时长，渲染时解析，TODO-1373）。
-    final RegExpMatch? fad = _reTagFad.firstMatch(tag);
-    if (fad != null) {
-      setFade(SubtitleFade.simple(
-        int.parse(fad.group(1)!),
-        int.parse(fad.group(2)!),
-      ));
-      continue;
-    }
-
-    // \fade(a1,a2,a3,t1,t2,t3,t4)：行级七参淡变。alpha 0..255（0=不透明）→
-    // 不透明度 op=1-alpha/255；时间为绝对毫秒（TODO-1373）。
-    final RegExpMatch? fade = _reTagFade.firstMatch(tag);
-    if (fade != null) {
-      double toOp(String a) => 1.0 - (int.parse(a).clamp(0, 255) / 255.0);
-      setFade(SubtitleFade.full(
-        op1: toOp(fade.group(1)!),
-        op2: toOp(fade.group(2)!),
-        op3: toOp(fade.group(3)!),
-        t1: int.parse(fade.group(4)!),
-        t2: int.parse(fade.group(5)!),
-        t3: int.parse(fade.group(6)!),
-        t4: int.parse(fade.group(7)!),
-      ));
-      continue;
-    }
-
-    // \r / \r<StyleName>: ASS reset tag. Clears every accumulated inline
-    // override so the reset region falls back to this cue's [V4+ Styles]
-    // baseline instead of inheriting the previous span's primary colour /
-    // outline / font (TODO-1246). Without it, `{\c&Hxxxxxx&}...{\r}...` bleeds
-    // the earlier colour past the reset and paints the wrong colour / stroke
-    // rather than honouring the subtitle's own style. The only ASS tag starting
-    // with a bare `r` is `\r` (`\frx` / `\fscx` start with `f`), so a prefix
-    // test is safe. Named-style `\r<StyleName>` switching needs the
-    // [V4+ Styles] map (not held here); a baseline reset is a safe approximation
-    // that at least stops stale overrides from leaking.
-    if (tag == 'r' || _reTagReset.hasMatch(tag)) {
-      style.reset();
-      continue;
-    }
-
-    // \frz<deg> / \fr<deg>（旧式 \fr 即 \frz，Z 轴旋转；ASS 逆时针为正，TODO-1374）。
-    // \frx / \fry（3D 旋转）不支持——`frz?` 的 z 可选但后面必须紧跟数字，`frx10` 的 x
-    // 非数字故不误命中。
-    final RegExpMatch? frz = _reTagFrz.firstMatch(tag);
-    if (frz != null) {
-      xf.rotationDeg = double.parse(frz.group(1)!);
-      continue;
-    }
-
-    // \fscx<pct> / \fscy<pct> 横 / 纵缩放（百分比）。**span 级语义**：写进段样式
-    // （渲染层逐段缩放，BUG：行级「最后值生效」把 `…{\fscx50}。` 整行压扁）；同时
-    // 记入 xf 供 `\t` 缩放动画取 from 基线（TODO-1374 招牌弹入不回归）。
-    final RegExpMatch? fscx = _reTagFscx.firstMatch(tag);
-    if (fscx != null) {
-      final double v = double.parse(fscx.group(1)!) / 100.0;
-      style.scaleX = v == 1.0 ? null : v;
-      xf.scaleX = v;
-      xf.scaleSet = true;
-      continue;
-    }
-    final RegExpMatch? fscy = _reTagFscy.firstMatch(tag);
-    if (fscy != null) {
-      final double v = double.parse(fscy.group(1)!) / 100.0;
-      style.scaleY = v == 1.0 ? null : v;
-      xf.scaleY = v;
-      xf.scaleSet = true;
-      continue;
-    }
-
-    // \move(x1,y1,x2,y2[,t1,t2])：行级运动（TODO-1374）。坐标按 PlayRes 归一化（同 \pos）。
-    final RegExpMatch? mv = _reTagMove.firstMatch(tag);
-    if (mv != null &&
-        playResX != null &&
-        playResY != null &&
-        playResX > 0 &&
-        playResY > 0) {
-      xf.mx1 = double.parse(mv.group(1)!) / playResX;
-      xf.my1 = double.parse(mv.group(2)!) / playResY;
-      xf.mx2 = double.parse(mv.group(3)!) / playResX;
-      xf.my2 = double.parse(mv.group(4)!) / playResY;
-      xf.mt1 = mv.group(5) != null ? int.parse(mv.group(5)!) : null;
-      xf.mt2 = mv.group(6) != null ? int.parse(mv.group(6)!) : null;
-      xf.moveSet = true;
-      continue;
-    }
-
-    // \1a&HXX& / \alpha&HXX&：主填充透明度（ASS alpha 00=不透明 FF=全透明）→
-    // op=1-a/255。\alpha 一次设四通道，按主填充近似（描边/阴影 alpha 不单独建模，
-    // 多层卡拉 OK 光晕层 `\1a&HFF&` 抹透明填充、留模糊描边成辉光）；\2a/\3a/\4a 忽略。
-    final RegExpMatch? a1 = _reTagAlpha.firstMatch(tag);
-    if (a1 != null) {
-      style.fillOpacity =
-          (1.0 - int.parse(a1.group(1)!, radix: 16) / 255.0).clamp(0.0, 1.0);
-      continue;
-    }
-
-    // \clip(...) / \iclip(...)：静态矢量/矩形裁剪 → [SubtitleClip]（归一化分数坐标）。
-    // 支持矩形四参形式与 m/l/b 绘图形式（含 scale 变体）；解析失败按无裁剪。
-    final RegExpMatch? clipM = _reTagClip.firstMatch(tag);
-    if (clipM != null) {
-      final SubtitleClip? parsed = parseAssClip(
-        inverse: clipM.group(1) == 'i',
-        inner: clipM.group(2)!,
-        playResX: playResX,
-        playResY: playResY,
-      );
-      if (parsed != null) xf.clip = parsed;
-      continue;
-    }
-
-    // \fsp<px>：字间距（可负/小数）。
-    final RegExpMatch? fsp = _reTagFsp.firstMatch(tag);
-    if (fsp != null) {
-      style.letterSpacingPx = double.parse(fsp.group(1)!);
-      continue;
-    }
-
-    // \frx / \fry：3D 旋转（度）。\frz 已在上方处理（frz? 的 z 可选不会误吞 x/y）。
-    final RegExpMatch? frx = _reTagFrx.firstMatch(tag);
-    if (frx != null) {
-      xf.frxDeg = double.parse(frx.group(1)!);
-      continue;
-    }
-    final RegExpMatch? fry = _reTagFry.firstMatch(tag);
-    if (fry != null) {
-      xf.fryDeg = double.parse(fry.group(1)!);
-      continue;
-    }
-
-    // \fax / \fay：切变因子。
-    final RegExpMatch? fax = _reTagFax.firstMatch(tag);
-    if (fax != null) {
-      xf.faxShear = double.parse(fax.group(1)!);
-      continue;
-    }
-    final RegExpMatch? fay = _reTagFay.firstMatch(tag);
-    if (fay != null) {
-      xf.fayShear = double.parse(fay.group(1)!);
-      continue;
-    }
-
-    // \k / \K / \kf / \ko<cs>：卡拉 OK 音节计时（厘秒）。本块起的文字段=一个音节：
-    // 起点=之前音节时长累计，点亮方式 k=瞬切 / K=kf=渐变扫填近似 / ko=点亮前无描边。
-    final RegExpMatch? kar = _reTagKaraoke.firstMatch(tag);
-    if (kar != null) {
-      final String mode = switch (kar.group(1)!) {
-        'K' || 'kf' => 'kf',
-        'ko' => 'ko',
-        _ => 'k',
-      };
-      final int dur = double.parse(kar.group(2)!).round();
-      style.kMode = mode;
-      style.kStartCs = xf.kAccumCs;
-      style.kDurCs = dur;
-      xf.kAccumCs += dur;
-      continue;
-    }
-
-    // 其余（\k \frx \fry \xbord \ybord ...）忽略。
-  }
-}
-
-/// 解析 `\t(...)` 内部：形如 `t1,t2[,accel],<子标签>`、`accel,<子标签>` 或纯 `<子标签>`。
-///
-/// 缩放（`\fscx`/`\fscy`）沿用既有 [SubtitleScale] 通道（TODO-1374 历史兼容）；其余
-/// 支持维度（`\1a`/`\alpha` 透明度、`\c`/`\1c` 颜色、`\blur`/`\be`、`\bord`、`\frz`）
-/// 归一成一段 [SubtitleTransition] 追加进 [_Transform.transitions]，渲染层按
-/// `p=((t-t1)/(t2-t1))^accel` 逐帧插值。不支持的子标签（\pos 渐变等）忽略。
-void _parseTransition(String inner, _Transform xf) {
-  int? t1;
-  int? t2;
-  double accel = 1.0;
-  String rest = inner;
-  final RegExpMatch? times = _reTrTimes.firstMatch(inner);
-  if (times != null) {
-    t1 = int.parse(times.group(1)!);
-    t2 = int.parse(times.group(2)!);
-    if (times.group(3) != null) accel = double.parse(times.group(3)!);
-    rest = inner.substring(times.end);
-  } else {
-    // 纯加速度形式：`accel,<子标签>`。
-    final RegExpMatch? onlyAccel = _reTrAccelOnly.firstMatch(inner);
-    if (onlyAccel != null) {
-      accel = double.parse(onlyAccel.group(1)!);
-      rest = inner.substring(onlyAccel.end);
-    }
-  }
-  // 历史缩放通道（整条 cue 只支持一段缩放动画，后段覆盖）。
-  if (times != null) {
-    xf.tStartMs = t1;
-    xf.tEndMs = t2;
-  }
-  final RegExpMatch? tx = _reTrFscx.firstMatch(rest);
-  if (tx != null) xf.tScaleX = double.parse(tx.group(1)!) / 100.0;
-  final RegExpMatch? ty = _reTrFscy.firstMatch(rest);
-  if (ty != null) xf.tScaleY = double.parse(ty.group(1)!) / 100.0;
-
-  // 通用动画维度。
-  double? alphaTo;
-  int? colorTo;
-  double? blurTo;
-  double? bordTo;
-  double? frzTo;
-  final RegExpMatch? ta = _reTrAlpha.firstMatch(rest);
-  if (ta != null) {
-    alphaTo =
-        (1.0 - int.parse(ta.group(1)!, radix: 16) / 255.0).clamp(0.0, 1.0);
-  }
-  final RegExpMatch? tc = _reTrColor.firstMatch(rest);
-  if (tc != null) colorTo = assColorToArgb(tc.group(1)!);
-  final RegExpMatch? tb = _reTrBlur.firstMatch(rest);
-  if (tb != null) blurTo = double.parse(tb.group(1)!);
-  final RegExpMatch? tbo = _reTrBord.firstMatch(rest);
-  if (tbo != null) bordTo = double.parse(tbo.group(1)!);
-  final RegExpMatch? tfrz = _reTrFrz.firstMatch(rest);
-  if (tfrz != null) frzTo = double.parse(tfrz.group(1)!);
-
-  final SubtitleTransition tr = SubtitleTransition(
-    t1Ms: t1,
-    t2Ms: t2,
-    accel: accel,
-    alphaTo: alphaTo,
-    colorToArgb: colorTo,
-    blurTo: blurTo,
-    bordTo: bordTo,
-    frzToDeg: frzTo,
+  SubtitleCueStyle? cueStyle,
+  int layer = 0,
+}) {
+  final SubtitleNativeResult result = SubtitleParseNative.instance.parseMarkup(
+    raw,
+    playResX: playResX,
+    playResY: playResY,
+    layer: layer,
   );
-  if (tr.hasTarget) xf.transitions.add(tr);
-}
-
-/// ASS 颜色十六进制（BGR，可省前导零）→ 0xFFRRGGBB。
-///
-/// 公开供 [SubtitleMarkup] 与 ass_parser 的 `[V4+ Styles]` 颜色列（PrimaryColour /
-/// OutlineColour / BackColour）共用同一份 BGR→ARGB 解码（TODO-1105），消除重复实现。
-/// 高字节（AA）在 ASS 里是「透明度」（0=不透明，255=全透明）——本函数忽略之，一律返回
-/// 不透明 0xFF；字幕渲染层不消费 ASS alpha（与行内 \c 路径一致）。
-int assColorToArgb(String hex) {
-  final int v = int.parse(hex, radix: 16);
-  final int b = (v >> 16) & 0xFF;
-  final int g = (v >> 8) & 0xFF;
-  final int r = v & 0xFF;
-  return 0xFF000000 | (r << 16) | (g << 8) | b;
-}
-
-/// 扫描过程内部可变绘图模式状态（\pN 开 / \p0 关）：收集标签块之外的命令正文、
-/// 记录缩放级 / `\pbo` / 首个命令字符时刻的行内样式快照。
-class _DrawingState {
-  bool active = false;
-  int scale = 1;
-  double baselineOffsetPx = 0;
-  final StringBuffer buffer = StringBuffer();
-  _Style? style;
-
-  void setScale(int n) {
-    active = n > 0;
-    if (n > 0) scale = n;
+  result.throwIfError();
+  try {
+    return readSubtitleMarkup(
+      result.reader(),
+      playResX: playResX,
+      playResY: playResY,
+      cueStyle: cueStyle,
+    );
+  } finally {
+    result.free();
   }
 }
