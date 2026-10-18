@@ -4,7 +4,7 @@
 #
 # 构建脚本自己只断言「文件存在」，而 FFI 的失败形态恰恰是「文件在、符号不在」：
 # iOS 上 -force_load / dead-strip / strip 任何一环不对，符号会被静默去掉，
-# `DynamicLibrary.process().lookup` 抛 ArgumentError → 广告拦截能力判不可用，CI 全绿。
+# `DynamicLibrary.process().lookup` 抛 ArgumentError → 运行时 FushiWebCoreLibraryMissing，而 CI 全绿。
 # 期望集直接取自 packages/fushi_web_core/lib/src/ffi/fushi_web_core_bindings.dart 的 lookup 名，
 # 所以 lib.rs 与绑定新增符号时这里自动跟上，不用手改清单。
 #
@@ -28,9 +28,9 @@ grep -oE "'fwc_[a-z0-9_]+'" "$BINDINGS" | tr -d "'" | sort -u > "$work/expected.
 expected_count="$(wc -l < "$work/expected.txt" | tr -d ' ')"
 echo "fwc_* symbols looked up by the Dart bindings: $expected_count"
 # 扫描规模哨兵：正则被绑定文件的格式改写打断时，期望集会塌成 0 条，「全都导出了」
-# 恒真。下界取当前 14 个里的保守值 8；真删符号是破坏性 ABI 变更，应当同时改这里。
-if [[ "$expected_count" -lt 8 ]]; then
-  echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 fwc_* 名（<8），正则失效或绑定被大改，不能当通过。" >&2
+# 恒真。下界取当前 21 个里的保守值 15；真删符号是破坏性 ABI 变更，应当同时改这里。
+if [[ "$expected_count" -lt 15 ]]; then
+  echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 fwc_* 名（<15），正则失效或绑定被大改，不能当通过。" >&2
   exit 1
 fi
 

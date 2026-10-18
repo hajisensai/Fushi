@@ -10,7 +10,7 @@
 #   #include? "../../../native/fushi_web_core/prebuilt/ios/fushi_web_core.xcconfig"
 # 与 Runner 的 OTHER_LDFLAGS 里的 $(FUSHI_WEB_CORE_LDFLAGS)：
 #   - 本脚本生成那份 xcconfig，定义 FUSHI_WEB_CORE_LDFLAGS = -force_load <.a> + Rust 要的系统库；
-#   - 没跑过本脚本 → 可选 include 静默缺席 → 变量为空 → 不链接，广告拦截能力判不可用，
+#   - 没跑过本脚本 → 可选 include 静默缺席 → 变量为空 → 不链接，运行时 FushiWebCoreLibraryMissing，
 #     Runner 照常构建（与 Windows/Android 的「prebuilt 有则随包」同一语义，Mac 上不装
 #     Rust 也能出包）。
 #   - 必须 -force_load：没有任何 Objective-C/Swift 代码引用 fwc_*，普通链接会把整个

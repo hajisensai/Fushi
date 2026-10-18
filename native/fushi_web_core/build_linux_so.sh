@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Linux x86_64 版 libfushi_web_core.so（无头服务端 bundle 随包：bin/../lib/libfushi_web_core.so）。
+# Linux x86_64 版 libfushi_web_core.so（Linux 桌面 bundle 的 bundle/lib/；CI 上 flutter / dart 单测经
+# FUSHI_WEB_CORE_LIB 加载它）。
 #
 # 用法: build_linux_so.sh [target]   缺省 x86_64-unknown-linux-gnu
 # 产物: prebuilt/linux-x64/libfushi_web_core.so（git 忽略，不入库）
