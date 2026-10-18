@@ -39,6 +39,11 @@
 |---|:--:|:--:|---|
 | [BUG-3520](bugs/BUG-3520-srs-review-deck-settings-not-live.md) | ✅ | ✅ | 复习中改牌组设置返回后不立即生效（间隔预览/计数/下一张仍按旧设置） |
 | [BUG-3519](bugs/BUG-3519-srs-autoplay-off-inline-media-still-plays.md) | ✅ | ✅ | SRS 牌组关了自动播放音频，卡面内嵌片段/音频仍自己播放，且时播时不播 |
+> 共 3149 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3519](bugs/BUG-3519-srs-legacy-lapis-migration-drops-fields.md) | ✅ | ✅ | 旧 Lapis 迁到 Fushi 卡片时部分字段内容没跟过去，导入 / 改名的 Lapis 无法一键迁移 |
 | [BUG-3518](bugs/BUG-3518-ios-audio-lane-page-bleed.md) | ✅ | ✅ | iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶 |
 | [BUG-3517](bugs/BUG-3517-video-chrome-double-click-fullscreen.md) | ✅ | ✅ | video-chrome-double-click-fullscreen |
 | [BUG-3516](bugs/BUG-3516-collection-member-touch-longpress-no-menu.md) | ✅ | ✅ | 合集详情页触屏长按成员只进多选，拿不到库页同一份卡片菜单 |
