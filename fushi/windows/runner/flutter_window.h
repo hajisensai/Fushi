@@ -15,7 +15,7 @@
 #include "floating_lyric_window.h"
 #include "global_lookup_window.h"
 #include "game_stream_input.h"
-#include "hdr_video_host_window.h"
+#include "hdr_display_info.h"
 #include "ime_association_guard.h"
 #include "ime_language_switch.h"
 #include "screen_ocr_overlay.h"
@@ -172,15 +172,15 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<fushi::WindowCaptureReplyQueue> window_capture_replies_;
   void RegisterWindowCaptureChannel();
 
-  // Windows HDR passthrough (docs/plans/2026-08-30-video-hdr-passthrough.md):
-  // Dart asks for the libmpv host popup behind the main window
-  // (create / setRect / destroy) and for the monitor's colour space
-  // (displayInfo); WM_DISPLAYCHANGE is pushed back as onDisplayChanged.
-  // Placement follows the main window from MessageHandler.
+  // Windows HDR output (docs/specs/2026-10-06-hdr-in-flutter-compositor.md):
+  // Dart asks for the monitor's colour space (displayInfo) and switches the
+  // compositor HDR output (compositorHdrSupported / setCompositorHdrOutput);
+  // WM_DISPLAYCHANGE is pushed back as onDisplayChanged.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
-      hdr_video_host_channel_;
-  std::unique_ptr<fushi::HdrVideoHostWindow> hdr_video_host_;
-  void RegisterHdrVideoHostChannel();
+      hdr_output_channel_;
+  void RegisterHdrOutputChannel();
+  // Whether the last SetCompositorHdrOutput turned the HDR output on.
+  bool compositor_hdr_output_on_ = false;
 
   // HDR inside Flutter's own swap chain: the patched engine's
   // FlutterDesktopViewSetHdrOutput, or null on a stock engine.
@@ -237,16 +237,10 @@ class FlutterWindow : public Win32Window {
   // something behind it (Windows 10 / older Windows 11 builds return false).
   bool ApplySystemBackdrop(bool mica, bool dark);
 
-  // BUG-2964: the single writer of the main window's DWM composition
-  // (DwmExtendFrameIntoClientArea margins + non-client rendering policy),
-  // derived from a MainSurfaceState (see main_surface_composition.h). Mica,
-  // the HDR passthrough and fullscreen all go through here instead of each
-  // writing DWM state of their own.
-  void ApplyMainSurfaceComposition(const fushi::MainSurfaceState& state);
+  // BUG-2964: the single writer of the main window's DWM frame margins
+  // (DwmExtendFrameIntoClientArea), derived from a MainSurfaceState (see
+  // main_surface_composition.h).
   void ApplyMainSurfaceComposition();
-
-  // Called by HdrVideoHostWindow when the passthrough host goes live / away.
-  void SetMainVideoPassthrough(bool enabled);
 
   // TODO-1092: notify Dart (system_theme_channel_) that the OS accent/theme
   // color changed so ThemeNotifier.refreshSystemPalette() re-reads it live.

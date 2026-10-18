@@ -8,7 +8,7 @@
 // * 参考白 = 该显示器的「SDR 内容亮度」（DISPLAYCONFIG_SDR_WHITE_LEVEL）。DWM 把每个
 //   SDR 窗口的 sRGB 1.0 合成成 white_nits，所以 scRGB 值 ÷ (white_nits / 80) 就回到
 //   SDR 窗口原本的线性值，再走 sRGB OETF 即还原原像素（量化误差 ≤ 1 级）。
-//   查不到白电平（0）时按 80 nit（scRGB 1.0 本身）兜底，与 hdr_video_host_window 同口径。
+//   查不到白电平（0）时按 80 nit（scRGB 1.0 本身）兜底，与 hdr_display_info 同口径。
 // * 整帧峰值 ≤ 1（只有 SDR 内容，桌面常态）：恒等，逐像素还原。
 // * 有超过参考白的 HDR 高光：按 max(R,G,B) 等比缩放（保色相），knee 以下恒等、
 //   knee 以上用扩展 Reinhard 把 [knee, 峰值] 平滑压到 [knee, 1]，连续且一阶导连续。

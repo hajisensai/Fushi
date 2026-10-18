@@ -1233,8 +1233,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 界面语言：pref 写入 + LocaleSettings 真切换 + 顶层 Key 重挂（整树重建才让 t 重算）。
   'appearance/Language settings':
       'test/settings/locale_switch_no_restart_test.dart',
-  // HDR/10-bit 输出：storageValue 往返 + shouldUseHdrHostWindow 三态真值表 + 宿主窗
-  // mpv 属性下发顺序；真实 HDR 片源效果需桌面设备验。
+  // HDR/10-bit 输出：storageValue 往返 + shouldUseHdrOutput 三态真值表 + 控制器只走
+  // 合成器 HDR 的源码守卫；真实 HDR 片源效果需桌面设备验。
   'video/HDR / 10-bit output': 'test/media/video/video_hdr_output_test.dart',
   // YouTube 画质：消费点是 pickVideoStreamForTargetHeight（目标档优先/降档省流），
   // 外加「playbackTargetHeight 真被传下去」的接线守卫。
