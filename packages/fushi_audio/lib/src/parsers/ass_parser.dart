@@ -1,11 +1,11 @@
 import 'dart:io';
 
-import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 import '../audiobook/audiobook_model.dart';
 import 'cue_parse_dispatch.dart';
 import 'srt_parser.dart';
-import 'subtitle_markup.dart';
+import 'subtitle_native_decode.dart';
 import 'text_file_io.dart';
 
 /// 解析 ASS/SSA（.ass / .ssa）字幕文件，产出 [AudioCue] 列表。
@@ -84,6 +84,13 @@ class AssParser {
   /// cue 产出（`text` 为空、`markup.drawing` 非空）。默认关——字幕列表 / 制卡 / 导入
   /// 持久化只认可读对白；播放渲染路径开（[VideoPlayerController] 再把它们分流到
   /// 渲染专用流，不进对白流）。
+  ///
+  /// 实现在 Rust（`ffc_parse_subtitle_ass`，native/fushi_compute/src/parse/subtitle/
+  /// formats.rs）：`[Script Info]` 的 PlayResX/Y（缺省 384×288）、`[V4+ Styles]` /
+  /// `[V4 Styles]` 的 `Format:` 动态列序与 `Style:` 行（样式名大小写不敏感，同名后者覆盖）、
+  /// `[Events]` 的 `Format:` 动态列序与 `Dialogue:` 行（Text 列之后的逗号拼回、Layer、
+  /// 行级 MarginL/R/V >0 覆盖），Events 之后遇到新段即停；按起始时间**稳定**排序（文件序
+  /// 即 libass 同层 z 序），缺 End 用下一条起点补、最后一条 +5 s，丢弃 end <= start。
   static List<AudioCue> parseString({
     required String content,
     required String bookKey,
@@ -91,325 +98,14 @@ class AssParser {
     int audioFileIndex = 0,
     bool includeDrawings = false,
   }) {
-    final String stripped =
-        content.startsWith('\uFEFF') ? content.substring(1) : content;
-
-    final List<String> lines =
-        stripped.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
-
-    bool inEvents = false;
-    bool inStyles = false;
-    int startCol = -1;
-    int endCol = -1;
-    int textCol = -1;
-    int styleCol = -1;
-    // Dialogue 行级 Margin 覆盖列（MarginL/MarginR/MarginV，>0 覆盖样式默认，ASS 规范）。
-    int marginLCol = -1;
-    int marginRCol = -1;
-    int marginVCol = -1;
-    // Layer 列（libass：碰撞只发生在同层事件之间，多层卡拉 OK 靠不同层同位叠画）。
-    int layerCol = -1;
-    // 脚本坐标系分辨率（[Script Info]）：\pos 归一化 + MarginL/R（PlayResX）与字号/阴影
-    // （PlayResY）缩放基准；缺省按 ASS 规范 384×288。
-    double? playResX;
-    double? playResY;
-
-    // [V4+ Styles] 段解析出的 style-name（小写）→ 默认样式映射（TODO-1105）。
-    final Map<String, SubtitleCueStyle> styles = <String, SubtitleCueStyle>{};
-    // Styles 段 Format: 行的列名列表（区分 V4 与 V4+ 列序差异；动态定位）。
-    List<String>? styleFormatCols;
-
-    // 收集 (startMs, endMs?, text, markup)，最后按 startMs 排序。
-    // endMs 为 null 表示 End 列缺失/无法解析，留待排序后用下一条 cue 的
-    // startMs 推断（HBK-AUDIT-067），而不是当场伪造固定的 5s 时长。
-    List<(int, int?, String, SubtitleMarkup)> rawCues = [];
-
-    for (final String line in lines) {
-      final String trimmed = line.trim();
-      final String lowSection = trimmed.toLowerCase();
-
-      // 进入 [Events] 段
-      if (lowSection == '[events]') {
-        inEvents = true;
-        inStyles = false;
-        continue;
-      }
-      // 进入 [V4+ Styles] / [V4 Styles] / [V4++ Styles] 段（TODO-1105）。
-      if (lowSection.startsWith('[v4') && lowSection.endsWith('styles]')) {
-        inStyles = true;
-        inEvents = false;
-        styleFormatCols = null;
-        continue;
-      }
-      // 进入其它段头：退出 styles 段。若已在 Events 段（遇到 Events 之后的下一段）
-      // 则收工——Styles 段规范上在 Events 之前，Events 之后无需再扫。
-      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-        if (inEvents) break;
-        inStyles = false;
-        inEvents = false;
-        // 其余（如 [Script Info]）继续下方 PlayRes 捕获。
-      }
-
-      if (inStyles) {
-        if (trimmed.startsWith('Format:')) {
-          styleFormatCols = trimmed
-              .substring('Format:'.length)
-              .split(',')
-              .map((c) => c.trim().toLowerCase())
-              .toList();
-          continue;
-        }
-        if (trimmed.startsWith('Style:') && styleFormatCols != null) {
-          final String body = trimmed.substring('Style:'.length);
-          final SubtitleCueStyle? parsed =
-              _parseStyleRow(body, styleFormatCols);
-          final int nameIdx = styleFormatCols.indexOf('name');
-          if (parsed != null && nameIdx >= 0) {
-            // Style 名可含空格但规范不含逗号；按逗号取第 nameIdx 段。
-            final List<String> cells =
-                body.split(',').map((c) => c.trim()).toList();
-            if (nameIdx < cells.length && cells[nameIdx].isNotEmpty) {
-              styles[cells[nameIdx].toLowerCase()] = parsed;
-            }
-          }
-        }
-        continue;
-      }
-
-      if (!inEvents) {
-        // [Script Info] 里捕获 PlayResX/Y（供 \pos 归一化）。
-        final String low = trimmed.toLowerCase();
-        if (low.startsWith('playresx:')) {
-          playResX = double.tryParse(trimmed.substring(9).trim());
-        } else if (low.startsWith('playresy:')) {
-          playResY = double.tryParse(trimmed.substring(9).trim());
-        }
-        continue;
-      }
-
-      // 解析 Format 行，确定列索引
-      if (trimmed.startsWith('Format:')) {
-        final List<String> cols = trimmed
-            .substring('Format:'.length)
-            .split(',')
-            .map((c) => c.trim().toLowerCase())
-            .toList();
-        startCol = cols.indexOf('start');
-        endCol = cols.indexOf('end');
-        textCol = cols.indexOf('text');
-        styleCol = cols.indexOf('style');
-        marginLCol = cols.indexOf('marginl');
-        marginRCol = cols.indexOf('marginr');
-        marginVCol = cols.indexOf('marginv');
-        layerCol = cols.indexOf('layer');
-        continue;
-      }
-
-      // 解析 Dialogue 行
-      if (trimmed.startsWith('Dialogue:') && startCol >= 0 && textCol >= 0) {
-        final String data = trimmed.substring('Dialogue:'.length).trim();
-
-        // 以逗号拆分；Text 列之后的内容（含逗号）整体取出
-        final List<String> parts = data.split(',');
-        if (parts.length <= textCol) {
-          continue;
-        }
-
-        final int? startMs = _parseAssTime(parts[startCol].trim());
-        if (startMs == null) {
-          continue;
-        }
-
-        // End 列缺失或无法解析时保持 null，排序后再用下一条 cue 推断时长，
-        // 而非伪造固定 5s（HBK-AUDIT-067）。
-        final int? endMs = endCol >= 0 && endCol < parts.length
-            ? _parseAssTime(parts[endCol].trim())
-            : null;
-
-        // 本条引用的 Style（V4+ Format 里的 'style' 列）→ cue 级默认样式（TODO-1105）。
-        SubtitleCueStyle? cueStyle;
-        if (styleCol >= 0 && styleCol < parts.length) {
-          cueStyle = styles[parts[styleCol].trim().toLowerCase()];
-        }
-
-        // Dialogue 行级 Margin 覆盖（ASS 规范：>0 覆盖样式默认，0 沿用）。样式实例被
-        // 同名多条共享，覆盖走 clone（withEventMargins），不原地改。字幕组用它把单句
-        // 对白横移到说话人一侧（MarginL/R）或抬离默认高度（MarginV）。
-        double? eventMargin(int col) {
-          if (col < 0 || col >= parts.length) return null;
-          final double? v = double.tryParse(parts[col].trim());
-          return (v == null || v <= 0) ? null : v;
-        }
-
-        final double? evL = eventMargin(marginLCol);
-        final double? evR = eventMargin(marginRCol);
-        final double? evV = eventMargin(marginVCol);
-        if (evL != null || evR != null || evV != null) {
-          cueStyle = (cueStyle ?? const SubtitleCueStyle())
-              .withEventMargins(marginL: evL, marginR: evR, marginV: evV);
-        }
-
-        // Text 列及其后所有列重新拼合（Text 本身可能含逗号）
-        final String rawText = parts.sublist(textCol).join(',');
-        // markup 负责剥离 {...} override 块、转换 \N/\n/\h 软换行，并解析
-        // \an/\pos/行内样式；缺 PlayRes 时按 ASS 规范回退 384×288。cueStyle 作为
-        // 行内 span 之下的基线透传（TODO-1105）。
-        // Layer 列（缺列/解析失败按 0，srt/vtt 同义）。
-        final int layer = (layerCol >= 0 && layerCol < parts.length)
-            ? (int.tryParse(parts[layerCol].trim()) ?? 0)
-            : 0;
-        final SubtitleMarkup markup = parseSubtitleMarkup(
-          rawText,
-          playResX: playResX ?? 384,
-          playResY: playResY ?? 288,
-          cueStyle: cueStyle,
-          layer: layer,
-        );
-        final String text = markup.plainText;
-        if (text.isEmpty && !(includeDrawings && markup.drawing != null)) {
-          continue;
-        }
-
-        rawCues.add((startMs, endMs, text, markup));
-      }
-    }
-
-    // 按起始时间**稳定**排序：Dart `List.sort` 不稳定，同一起始时间的招牌 / 对白会被
-    // 打乱文件先后——而文件序正是 libass 同层事件的绘制 z 序（后者盖前者）。
-    final List<int> order = List<int>.generate(rawCues.length, (int i) => i)
-      ..sort((int a, int b) {
-        final int byStart = rawCues[a].$1.compareTo(rawCues[b].$1);
-        return byStart != 0 ? byStart : a.compareTo(b);
-      });
-    rawCues = <(int, int?, String, SubtitleMarkup)>[
-      for (final int i in order) rawCues[i],
-    ];
-
-    // 解析 endMs：缺失的用下一条 cue 的 startMs 收口（最后一条退回 5s）；
-    // 同时丢弃 end <= start 的反向/零长 cue，避免静默产出永不命中的高亮区间
-    // （HBK-AUDIT-067）。
-    final List<AudioCue> cues = [];
-    for (int i = 0; i < rawCues.length; i++) {
-      final (int start, int? rawEnd, String text, SubtitleMarkup markup) =
-          rawCues[i];
-      final int fallbackEnd =
-          i + 1 < rawCues.length ? rawCues[i + 1].$1 : start + 5000;
-      final int end = rawEnd ?? fallbackEnd;
-      if (end <= start) {
-        if (fushiDebugMode) {
-          fushiDebugPrint(
-              'AssParser: skip cue with end<=start (start=$start end=$end): $text');
-        }
-        continue;
-      }
-      cues.add(AudioCue()
-        ..bookKey = bookKey
-        ..chapterHref = chapterHref
-        ..sentenceIndex = cues.length
-        ..textFragmentId = '[data-cue-id="${cues.length}"]'
-        ..text = text
-        ..markup = markup
-        ..startMs = start
-        ..endMs = end
-        ..audioFileIndex = audioFileIndex);
-    }
-    return cues;
-  }
-
-  /// 将 ASS 时间码 `H:MM:SS.x` 转换为毫秒。小数秒接受 1~3 位
-  /// （厘秒/毫秒/十分之一秒可变精度），归一到毫秒的写法与 SRT/VTT
-  /// 解析器同构（`padRight(3, '0')`），消除外挂 .ass 的孤立特例（TODO-870）。
-  static final RegExp _assTimeRe =
-      RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
-  static final RegExp _assColorRe = RegExp(r'&H([0-9a-fA-F]{1,8})&?$');
-
-  static int? _parseAssTime(String timecode) {
-    final RegExpMatch? m = _assTimeRe.firstMatch(timecode);
-    if (m == null) {
-      return null;
-    }
-    final int ah = int.parse(m.group(1)!);
-    final int am = int.parse(m.group(2)!);
-    final int as_ = int.parse(m.group(3)!);
-    if (am >= 60 || as_ >= 60) return null;
-    // 小数秒右补 0 到 3 位再当毫秒（与 srt_parser.dart 同构）：
-    // '1'→100ms（十分之一秒）/ '67'→670ms（厘秒）/ '000'→0ms（毫秒）。
-    final int frac = int.parse(m.group(4)!.padRight(3, '0'));
-    return ah * 3600000 + am * 60000 + as_ * 1000 + frac;
-  }
-
-  /// 把一条 `Style: ...` 行（`Style:` 前缀已剥）按 [formatCols]（`[V4+ Styles]` 的
-  /// `Format:` 列名，小写）解析成 [SubtitleCueStyle]（TODO-1105）。列名不存在的字段留
-  /// null，渲染层据此回退用户统一样式（fail-safe）。颜色列走与行内 \c 同一份
-  /// [assColorToArgb]（BGR→ARGB）。V4 与 V4+ 列序不同，故一律按列名动态取，不按固定下标。
-  static SubtitleCueStyle? _parseStyleRow(
-    String body,
-    List<String> formatCols,
-  ) {
-    // Style 名规范不含逗号，其余数值/颜色列也不含逗号 → 直接按逗号切分，与列名一一对应。
-    final List<String> cells =
-        body.split(',').map((String c) => c.trim()).toList();
-    String? cell(String name) {
-      final int idx = formatCols.indexOf(name);
-      if (idx < 0 || idx >= cells.length) return null;
-      final String v = cells[idx];
-      return v.isEmpty ? null : v;
-    }
-
-    int? color(String name) {
-      final String? raw = cell(name);
-      if (raw == null) return null;
-      // ASS 颜色形如 &HAABBGGRR& 或 &HBBGGRR；取出十六进制主体交给 assColorToArgb。
-      final RegExpMatch? m = _assColorRe.firstMatch(raw);
-      if (m == null) return null;
-      return assColorToArgb(m.group(1)!);
-    }
-
-    double? number(String name) {
-      final String? raw = cell(name);
-      if (raw == null) return null;
-      return double.tryParse(raw);
-    }
-
-    // ASS 布尔列：-1 / 1 = 真，0 = 假（负数按 SSA 惯例视为真）。
-    bool? flag(String name) {
-      final String? raw = cell(name);
-      if (raw == null) return null;
-      final int? v = int.tryParse(raw);
-      if (v == null) return null;
-      return v != 0;
-    }
-
-    SubtitleAnchor? anchor() {
-      final String? raw = cell('alignment');
-      if (raw == null) return null;
-      final int? a = int.tryParse(raw);
-      if (a == null) return null;
-      // V4+ Alignment 与行内 \an 同为小键盘 1..9；SubtitleAnchor.fromAnCode 复用。
-      return SubtitleAnchor.fromAnCode(a);
-    }
-
-    return SubtitleCueStyle(
-      fontName: cell('fontname'),
-      primaryColorArgb: color('primarycolour'),
-      outlineColorArgb: color('outlinecolour'),
-      shadowColorArgb: color('backcolour'),
-      fontSizePx: number('fontsize'),
-      outlineWidthPx: number('outline'),
-      shadowDepthPx: number('shadow'),
-      bold: flag('bold'),
-      italic: flag('italic'),
-      underline: flag('underline'),
-      strikeOut: flag('strikeout'),
-      anchor: anchor(),
-      marginV: number('marginv'),
-      marginL: number('marginl'),
-      marginR: number('marginr'),
-      secondaryColorArgb: color('secondarycolour'),
-      spacingPx: number('spacing'),
-      angleDeg: number('angle'),
-      scaleXPct: number('scalex'),
-      scaleYPct: number('scaley'),
+    return decodeAssCues(
+      SubtitleParseNative.instance.parseAss(
+        content,
+        includeDrawings: includeDrawings,
+      ),
+      bookKey: bookKey,
+      chapterHref: chapterHref,
+      audioFileIndex: audioFileIndex,
     );
   }
 }

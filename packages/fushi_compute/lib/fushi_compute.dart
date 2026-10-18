@@ -4,4 +4,6 @@ library;
 
 export 'src/fushi_compute_library.dart';
 export 'src/hash/ffc_hash.dart';
+export 'src/parse/danmaku.dart';
 export 'src/parse/study_chars.dart';
+export 'src/parse/subtitle.dart';

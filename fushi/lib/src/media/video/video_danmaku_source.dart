@@ -1,11 +1,11 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:xml/xml.dart';
 
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_compute/fushi_compute.dart'
+    show DanmakuNative, DanmakuParseOutcome, DanmakuParseResult;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 
 const List<String> _danmakuSidecarSuffixes = <String>[
@@ -41,8 +41,10 @@ String? findDanmakuSidecar(String videoPath) {
   } on FileSystemException {
     return null;
   }
-  final String? picked =
-      pickDanmakuSidecar(p.basenameWithoutExtension(videoPath), files);
+  final String? picked = pickDanmakuSidecar(
+    p.basenameWithoutExtension(videoPath),
+    files,
+  );
   return picked == null ? null : p.normalize(p.join(dir.path, picked));
 }
 
@@ -65,16 +67,16 @@ Future<VideoDanmakuLoadResult> loadDanmakuSidecarFile(
         tooLarge: true,
       );
     }
-    // IO（读盘 + 编码探测）留在主 isolate；CPU 密集解析（XmlDocument.parse /
-    // jsonDecode + 遍历 + sort，20MB sidecar 可卡帧）搬进后台 isolate。
+    // IO（读盘 + 编码探测）留在主 isolate；CPU 密集解析（原生 fushi_compute 解析 +
+    // 逐条重建 Dart 对象，20MB sidecar 可卡帧）搬进后台 isolate。
     // 入参 (String, bool) 与出参 List<VideoDanmakuItem>（纯 int/String/enum 数据类）
     // 均可跨 isolate 传输，`_parseDanmakuContent` 是无闭包捕获的顶层纯函数。
     final String content = await readTextWithEncoding(file);
     final String ext = p.extension(file.path).toLowerCase();
-    final List<VideoDanmakuItem> items = await compute(
-      _parseDanmakuContent,
-      (content, ext == '.json'),
-    );
+    final List<VideoDanmakuItem> items = await compute(_parseDanmakuContent, (
+      content,
+      ext == '.json',
+    ));
     return VideoDanmakuLoadResult(items: items, sourcePath: file.path);
   } catch (e) {
     return VideoDanmakuLoadResult(
@@ -94,128 +96,67 @@ List<VideoDanmakuItem> _parseDanmakuContent((String, bool) request) {
       : parseBilibiliDanmakuXml(content);
 }
 
-List<VideoDanmakuItem> parseBilibiliDanmakuXml(String xml) {
-  try {
-    final XmlDocument doc = XmlDocument.parse(xml);
-    final List<VideoDanmakuItem> items = <VideoDanmakuItem>[];
-    for (final XmlElement node in doc.findAllElements('d')) {
-      final String? pValue = node.getAttribute('p');
-      final String text = node.innerText.trim();
-      final VideoDanmakuItem? item =
-          _itemFromParts(pValue?.split(','), text, colorIndex: 3);
-      if (item != null) items.add(item);
-    }
-    items.sort((VideoDanmakuItem a, VideoDanmakuItem b) =>
-        a.startMs.compareTo(b.startMs));
-    return items;
-  } catch (_) {
-    return const <VideoDanmakuItem>[];
-  }
+/// 弹幕解析的唯一实现在原生 `fushi_compute`（`DanmakuNative`，
+/// native/fushi_compute/src/parse/danmaku.rs）：它逐位复刻了旧 Dart 实现
+/// （`package:xml` / `jsonDecode` + 逐条转换 + `List.sort`）的结果，冻结向量见
+/// packages/fushi_compute/test/danmaku_parity_test.dart。原生库是硬依赖，缺失时抛
+/// `FushiComputeUnavailableError`（不是解析失败，不吞成空表）。
+VideoDanmakuItem _danmakuItem(
+  int startMs,
+  String text,
+  int mode,
+  int colorArgb,
+) {
+  return VideoDanmakuItem(
+    startMs: startMs,
+    text: text,
+    mode: VideoDanmakuMode.values[mode],
+    colorArgb: colorArgb,
+  );
 }
 
+/// Bilibili XML（`<d p="时间,模式,字号,颜色,…">文本</d>`）。XML 损坏或某条时间不是
+/// 有限数时整份返回空表（与旧实现一致）。
+List<VideoDanmakuItem> parseBilibiliDanmakuXml(String xml) {
+  final DanmakuParseResult<VideoDanmakuItem> result = DanmakuNative.instance
+      .parseBilibiliXml(xml, _danmakuItem);
+  return result.outcome == DanmakuParseOutcome.ok
+      ? result.items
+      : const <VideoDanmakuItem>[];
+}
+
+/// 弹弹play JSON（`{"comments": [...]}`）。JSON 损坏、形状不对或数值非有限时返回空表。
 List<VideoDanmakuItem> parseDandanplayDanmakuJson(
   String json, {
   int shiftMs = 0,
 }) {
-  try {
-    final dynamic decoded = jsonDecode(json);
-    if (decoded is! Map) return const <VideoDanmakuItem>[];
-    final dynamic rawComments = decoded['comments'];
-    if (rawComments is! List) return const <VideoDanmakuItem>[];
-    return dandanplayCommentsToDanmaku(rawComments, shiftMs: shiftMs);
-  } catch (_) {
-    return const <VideoDanmakuItem>[];
-  }
+  final DanmakuParseResult<VideoDanmakuItem> result = DanmakuNative.instance
+      .parseDandanplayJson(json, _danmakuItem, shiftMs: shiftMs);
+  return result.outcome == DanmakuParseOutcome.ok
+      ? result.items
+      : const <VideoDanmakuItem>[];
 }
 
-List<VideoDanmakuItem> dandanplayCommentsToDanmaku(
-  Iterable<dynamic> comments, {
-  int shiftMs = 0,
+/// 在线 `/api/v2/comment` 的响应体 → 弹幕（偏移按 `(shiftSeconds * 1000).round()`）。
+///
+/// 返回 null 表示形状不对（根不是对象或 `comments` 不是数组）；JSON 语法错误抛与
+/// `jsonDecode` 相同的 [FormatException]；偏移或某条数值不是有限数时抛
+/// `UnsupportedError('Infinity or NaN toInt')`——与旧的 `jsonDecode` + 形状校验 +
+/// 逐条转换在同样的输入上抛同样的异常，调用方的状态分类不变。
+List<VideoDanmakuItem>? dandanplayDanmakuFromResponseBody(
+  String body, {
+  required double shiftSeconds,
 }) {
-  final List<VideoDanmakuItem> items = <VideoDanmakuItem>[];
-  for (final dynamic row in comments) {
-    if (row is! Map) continue;
-    final String text = (row['m'] ?? row['text'] ?? '').toString().trim();
-    if (text.isEmpty) continue;
-    VideoDanmakuItem? item;
-    final Object? pValue = row['p'];
-    if (pValue is String) {
-      item = _itemFromParts(pValue.split(','), text);
-    } else {
-      item = _itemFromObject(row, text);
-    }
-    if (item == null) continue;
-    final int shifted = (item.startMs + shiftMs).clamp(0, 1 << 30).toInt();
-    items.add(item.copyWith(startMs: shifted));
+  final DanmakuParseResult<VideoDanmakuItem> result = DanmakuNative.instance
+      .parseDandanplayJson(body, _danmakuItem, shiftSeconds: shiftSeconds);
+  switch (result.outcome) {
+    case DanmakuParseOutcome.ok:
+      return result.items;
+    case DanmakuParseOutcome.shapeError:
+      return null;
+    case DanmakuParseOutcome.syntaxError:
+      throw result.formatException!;
+    case DanmakuParseOutcome.nonFiniteNumber:
+      throw UnsupportedError('Infinity or NaN toInt');
   }
-  items.sort((VideoDanmakuItem a, VideoDanmakuItem b) =>
-      a.startMs.compareTo(b.startMs));
-  return items;
 }
-
-VideoDanmakuItem? _itemFromParts(
-  List<String>? parts,
-  String text, {
-  int colorIndex = 2,
-}) {
-  if (parts == null || parts.length <= colorIndex || text.trim().isEmpty) {
-    return null;
-  }
-  final double? seconds = double.tryParse(parts[0].trim());
-  final int? rawMode = int.tryParse(parts[1].trim());
-  final int? color = int.tryParse(parts[colorIndex].trim());
-  if (seconds == null || rawMode == null || color == null) return null;
-  final VideoDanmakuMode? mode = _modeFromRaw(rawMode);
-  if (mode == null) return null;
-  return VideoDanmakuItem(
-    startMs: (seconds * 1000).round().clamp(0, 1 << 30).toInt(),
-    text: text.trim(),
-    mode: mode,
-    colorArgb: _argbFromRgbInt(color),
-  );
-}
-
-VideoDanmakuItem? _itemFromObject(Map<dynamic, dynamic> row, String text) {
-  final Object? rawTime = row['time'] ?? row['t'] ?? row['start'];
-  final double? seconds = rawTime is num
-      ? rawTime.toDouble()
-      : rawTime is String
-          ? double.tryParse(rawTime)
-          : null;
-  if (seconds == null) return null;
-  final Object? rawMode = row['mode'] ?? row['type'];
-  final VideoDanmakuMode? mode = rawMode is num
-      ? _modeFromRaw(rawMode.toInt())
-      : rawMode is String
-          ? _modeFromString(rawMode)
-          : VideoDanmakuMode.scroll;
-  if (mode == null) return null;
-  final Object? rawColor = row['color'];
-  final int color = rawColor is num ? rawColor.toInt() : 0xFFFFFF;
-  return VideoDanmakuItem(
-    startMs: (seconds * 1000).round().clamp(0, 1 << 30).toInt(),
-    text: text,
-    mode: mode,
-    colorArgb: _argbFromRgbInt(color),
-  );
-}
-
-VideoDanmakuMode? _modeFromRaw(int raw) {
-  return switch (raw) {
-    1 || 2 || 3 => VideoDanmakuMode.scroll,
-    4 => VideoDanmakuMode.bottom,
-    5 => VideoDanmakuMode.top,
-    _ => null,
-  };
-}
-
-VideoDanmakuMode? _modeFromString(String raw) {
-  return switch (raw.toLowerCase()) {
-    'scroll' || 'rolling' || 'right' => VideoDanmakuMode.scroll,
-    'top' => VideoDanmakuMode.top,
-    'bottom' => VideoDanmakuMode.bottom,
-    _ => null,
-  };
-}
-
-int _argbFromRgbInt(int rgb) => 0xFF000000 | (rgb & 0x00FFFFFF);
