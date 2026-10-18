@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
@@ -32,7 +33,9 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-import 'package:fushi/src/web_browser/web_browser_request_filter.dart';
+import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
+import 'package:fushi/src/web_adblock/web_adblock_service.dart';
+import 'package:fushi/src/web_adblock/web_adblock_wiring.dart';
 import 'package:fushi/src/web_browser/web_browser_sites.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 
@@ -46,7 +49,8 @@ import 'package:fushi/src/webview/webview_death_guard.dart';
 /// - **网页漫画**（附加动作）：「用 Fushi 阅读本章」扫当前页的漫画图交给漫画
 ///   阅读器。只在 [webComicReaderActionAvailable]（`onlineMangaSource` 合规门）
 ///   为真时出现——iOS 上浏览器照常可用，只是没有这项动作，也不预置漫画站；
-/// - **请求过滤**：[webBrowserRequestFilter] 装配点（默认 null = 不拦截）。
+/// - **广告 / 跟踪拦截**：[applyAdblockTo]（Rust adblock 引擎，设置 › 系统里的
+///   开关、订阅列表与白名单现读生效；iOS / macOS 的规则在 WebView 创建时固化）。
 ///
 /// [navigation] 非 null 时由宿主 hub 提供页头标题位（子页页签），用
 /// [FushiPageHeader.customTitle] 摆；null 时画自己的标题。
@@ -99,8 +103,9 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       : null;
   bool _scanning = false;
 
-  /// 本页 WebView 建时读到的过滤器（建好后换装配点不影响已建的 WebView）。
-  final WebBrowserRequestFilter? _filter = webBrowserRequestFilter;
+  /// 广告拦截接线：环境就绪时建一次，WebView 重建（死亡守卫）也沿用同一份，
+  /// 让 cosmetic 的 JS handler 与按 href 记的例外集始终是同一个对象。
+  WebAdblockWiring? _adblock;
 
   bool _environmentReady = false;
   WebViewEnvironment? _environment;
@@ -158,9 +163,29 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     } on Object {
       environment = null;
     }
+    final WebAdblockService adblock = ref.read(webAdblockServiceProvider);
+    final WebAdblockNetworkMode mode = currentWebAdblockNetworkMode;
+    final Future<void> loading = adblock.ensureLoaded().catchError((
+      Object e,
+      StackTrace s,
+    ) {
+      ErrorLogService.instance.log('FushiWebBrowserPage.adblockLoad', e, s);
+    });
+    // contentBlockers 平台（iOS / macOS）的规则在 WebView 创建时固化：等引擎就绪
+    // 再建，否则这一页整页不拦。逐请求平台每次请求现读策略，后台加载即可，不让
+    // 首次下载订阅列表卡住页面。
+    if (mode == WebAdblockNetworkMode.contentBlockers) await loading;
     if (!mounted) return;
     setState(() {
       _environment = environment;
+      _adblock = applyAdblockTo(
+        InAppWebViewSettings(
+          javaScriptEnabled: true,
+          sharedCookiesEnabled: true,
+        ),
+        policy: adblock,
+        mode: mode,
+      );
       _environmentReady = true;
     });
   }
@@ -440,29 +465,6 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     lookupAt(event.position, fromHover: true);
   }
 
-  // ── 请求过滤 ─────────────────────────────────────────────────────────
-
-  Future<WebResourceResponse?> _interceptRequest(
-    WebResourceRequest request,
-  ) async {
-    final WebBrowserRequestFilter? filter = _filter;
-    if (filter == null) return null;
-    final bool block = filter.shouldBlock(
-      WebBrowserRequest(
-        url: request.url,
-        pageUrl: _currentUrl,
-        isMainFrame: request.isForMainFrame ?? false,
-      ),
-    );
-    if (!block) return null;
-    return WebResourceResponse(
-      statusCode: 204,
-      reasonPhrase: 'Blocked',
-      contentType: 'text/plain',
-      data: Uint8List(0),
-    );
-  }
-
   // ── 构建 ─────────────────────────────────────────────────────────────
 
   List<FushiToolbarItem> _navigationItems() {
@@ -628,9 +630,9 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     final Widget Function(BuildContext context)? stub =
         FushiWebBrowserPage.debugWebViewBuilder;
     if (stub != null) return stub(context);
-    if (!_environmentReady) return const FushiLoadingView();
+    final WebAdblockWiring? adblock = _adblock;
+    if (!_environmentReady || adblock == null) return const FushiLoadingView();
     final Uri? initial = _pendingUrl;
-    final WebBrowserRequestFilter? filter = _filter;
     final Widget webView = KeyedSubtree(
       key: _deathGuard.rebuildKey,
       child: InAppWebView(
@@ -639,18 +641,15 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         initialUrlRequest: initial == null
             ? null
             : URLRequest(url: WebUri.uri(initial)),
-        initialSettings: InAppWebViewSettings(
-          javaScriptEnabled: true,
-          sharedCookiesEnabled: true,
-          // 没有过滤器时不开逐请求拦截（Windows 上每个请求都要绕宿主一圈）。
-          useShouldInterceptRequest: filter != null,
-          contentBlockers: filter?.contentBlockers() ?? <ContentBlocker>[],
+        initialSettings: adblock.settings,
+        initialUserScripts: UnmodifiableListView<UserScript>(
+          adblock.userScripts,
         ),
-        shouldInterceptRequest: filter == null
-            ? null
-            : (InAppWebViewController _, WebResourceRequest request) =>
-                  _interceptRequest(request),
+        shouldInterceptRequest: adblock.shouldInterceptRequest,
+        onLoadStart: (InAppWebViewController _, WebUri? url) =>
+            adblock.onLoadStart(url),
         onWebViewCreated: (InAppWebViewController controller) {
+          adblock.onWebViewCreated(controller);
           controller.addJavaScriptHandler(
             handlerName: 'onTextSelected',
             callback: (List<dynamic> arguments) {
@@ -679,8 +678,10 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         onTitleChanged: (InAppWebViewController controller, String? _) =>
             unawaited(_syncNavigation(controller, null)),
         onUpdateVisitedHistory:
-            (InAppWebViewController controller, WebUri? url, bool? _) =>
-                unawaited(_syncNavigation(controller, url)),
+            (InAppWebViewController controller, WebUri? url, bool? _) {
+              adblock.onUpdateVisitedHistory(url);
+              unawaited(_syncNavigation(controller, url));
+            },
         onWebContentProcessDidTerminate: (InAppWebViewController _) =>
             unawaited(_deathGuard.handleWebContentTerminated()),
         onRenderProcessGone:

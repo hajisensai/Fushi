@@ -93,7 +93,7 @@ class _VideoWebSitesPageState extends ConsumerState<VideoWebSitesPage> {
     );
     final TextEditingController name = TextEditingController();
     String? error;
-    final WebVideoSite? site = await showDialog<WebVideoSite>(
+    final WebVideoSite? site = await showAppDialog<WebVideoSite>(
       context: context,
       builder: (BuildContext context) => StatefulBuilder(
         builder: (BuildContext context, StateSetter setDialogState) {
@@ -114,7 +114,7 @@ class _VideoWebSitesPageState extends ConsumerState<VideoWebSitesPage> {
             );
           }
 
-          return AlertDialog(
+          return FushiAlertDialog(
             title: Text(t.web_video_site_add),
             content: Column(
               mainAxisSize: MainAxisSize.min,
