@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../fushi_compute_library.dart';
+import '../native_scratch.dart';
 import 'fushi_compute_image.dart'
     show FushiComputeCallError, FushiComputeUnavailableError;
 
@@ -192,7 +193,7 @@ class FushiComputeBitmapSubtitle {
     }
     final int outLen = width * height;
     return using((Arena arena) {
-      final Pointer<Uint8> out = arena<Uint8>(outLen == 0 ? 1 : outLen);
+      final Pointer<Uint8> out = NativeScratch.output.reserve(outLen);
       final Pointer<_DvbObject> objs = arena<_DvbObject>(
         objects.isEmpty ? 1 : objects.length,
       );
@@ -239,7 +240,7 @@ class FushiComputeBitmapSubtitle {
     }
     final int outLen = canvasWidth * canvasHeight * 4;
     return using((Arena arena) {
-      final Pointer<Uint8> out = arena<Uint8>(outLen);
+      final Pointer<Uint8> out = NativeScratch.output.reserve(outLen);
       final Pointer<_Layer> ls = arena<_Layer>(
         layers.isEmpty ? 1 : layers.length,
       );
