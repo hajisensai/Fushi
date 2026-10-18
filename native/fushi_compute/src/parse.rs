@@ -16,6 +16,8 @@ use std::sync::OnceLock;
 
 use crate::{guard, status};
 
+pub mod anki_media;
+pub mod bencode;
 pub mod danmaku;
 pub mod epub;
 pub mod fold;
