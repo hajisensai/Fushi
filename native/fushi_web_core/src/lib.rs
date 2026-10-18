@@ -7,7 +7,8 @@
 //! - [`adblock`]：网页广告 / 跟踪拦截（Brave adblock-rust）。订阅列表、缓存、过期、引擎编译与
 //!   序列化缓存、白名单都在这里；Dart 按 `begin_sync` 的清单联网、把原始字节交回 `ingest`。
 //! - [`comic_ad`]：网页漫画章末广告页识别（彩色 + 二维码定位图形），整批一次调用。
-//! - [`article`]：网页小说正文提取（预留，尚未实现）。
+//! - [`article`]：网页小说正文提取（站点规则表 + readability + 密度兜底）与连载会话（已取章节、
+//!   去重、下一章队列）；Dart 只发命令（开会话 / 喂一页 HTML / 取快照）并把快照原样存进书行。
 //!
 //! C ABI 约定（全部 `fwc_` 前缀，与 native/fushi_p2p 同一套纪律）：
 //! - 永不 panic 过 FFI 边界（每个导出函数都包 `catch_unwind`，`panic = "unwind"`）；
@@ -20,4 +21,8 @@ pub mod article;
 pub mod comic_ad;
 mod ffi_util;
 
+pub use article::ffi::{
+    fwc_article_extract, fwc_article_work_key, fwc_novel_session_close, fwc_novel_session_ingest,
+    fwc_novel_session_open, fwc_novel_session_snapshot,
+};
 pub use ffi_util::{fwc_bytes_free, fwc_last_error, fwc_string_free, fwc_version};

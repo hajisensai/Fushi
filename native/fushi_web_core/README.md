@@ -7,7 +7,7 @@ app 内**网页内容**的计算核心（Rust），给 Dart FFI（`packages/fush
 |---|---|---|---|
 | `src/adblock/` | 网页广告 / 跟踪拦截（Brave adblock-rust） | `AdblockCore` | `fushi/lib/src/web_adblock/` |
 | `src/comic_ad/` | 网页漫画章末广告页识别（彩色 + 二维码定位图形） | `ComicAdDetector` | `fushi/lib/src/media/manga/web/web_comic_runtime_adapter.dart` |
-| `src/article/` | 网页小说正文提取（**预留，尚未实现**） | — | — |
+| `src/article/` | 网页小说正文提取（站点规则表 + readability + 密度兜底）与连载会话 | `WebNovelSession` / `WebArticleExtractor` | `fushi/lib/src/media/novel/web/` |
 
 ## 设计：胖核心
 
@@ -64,6 +64,47 @@ Last-Modified / 上次成功核对 / 上次尝试 / 规则行数 / 内容哈希 
 `image` crate（MIT OR Apache-2.0；只开 png / jpeg / webp / gif / bmp），截断的 JPEG（无 EOI）按
 解码失败处理，与 Dart 一致。
 
+### 网页小说正文提取与连载会话（`WebNovelSession`）
+
+一次调用交进**整页 HTML 原始字节** + 页面 URL（编码在 Rust 里嗅探：BOM → 整段合法 UTF-8 → `<meta charset>`
+→ Shift_JIS / GB18030 里挑错误少的），出：章节标题、作品名 / 作者、清洗后的正文 XHTML 片段、上一章 / 下一章 /
+目录链接、语言提示、正文指纹。
+
+取正文：**站点规则**（`src/article/sites.rs` 的数据表，选择器命中且有字就用）→ 否则 **readability**
+（dom_smoothie）与**文本密度兜底**都跑、取字数多的（readability 不到密度结果 60% 时用密度）。清洗只留段落、
+空行（作者的 `<p><br></p>` 与三个以上连续 `<br>`）、`h2`–`h6`、ruby 注音（`ruby/rb/rt/rp/rtc`）、强调类行内
+标签与图片；`<br>` 分隔的纯文本切成段落；只折叠 ASCII 空白（全角空格缩进原样保留）；通用模式额外按 class / id
+关键词与「最新域名 / 加入书签…」垃圾行表剔除。图片 `src` 写成占位 `fushi-web-image:<i>`，绝对 URL 在 `images`
+里——取图（联网、cookie、全局代理）在 Dart。上下章：规则选择器 → `rel=next/prev` → id / class → 锚文字
+（下一章 / 次へ / 次の話 / Next…）→ 页面里**真实存在**的「末尾数字 ±1」链接；指回目录的「下一章」丢掉。
+
+站点规则（真实页面快照在 `tests/vectors/article/inputs/`）：
+
+| 规则 | 站点 | 作品身份 | 验证 |
+|---|---|---|---|
+| `syosetu` | 小説家になろう（ncode / novel18） | 路径第 1 段 | 真实页面快照（含 ruby） |
+| `kakuyomu` | カクヨム | `/works/<id>` | 真实页面快照 |
+| `jjwxc` | 晋江文学城 | `novelid` 参数 | 真实页面快照（GB18030 原编码） |
+| `hameln` | ハーメルン（syosetu.org） | `/novel/<id>` | **只有合成快照**：站点对非浏览器请求给 Cloudflare 质询页，本机抓不到真实页面；选择器不中时通用算法兜底 |
+
+通用算法另有合成的中文盗版站页面与「真实页面换到规则表外的主机」三条用例。
+
+连载会话状态（快照 JSON，Dart 原样存进书行 `sourceMetadata`，几 KB）：`{"type":"fushi_web_novel","version":1,
+"workKey","siteRule","workTitle","author","lang","toc","chapters":[{"url","title","next","prev","chars","hash"}],
+"queue":[…],"tailNext"}`。第一章定下 `workKey`，别的作品的页拒收（`otherWork`）；规范 URL（https、去 `www.`、
+去片段与末尾斜杠）或正文指纹相同 → 原地更新（`updated`，典型是「上次的末章现在有下一章了」）；新章按章节之间
+声明的 next / prev 插到对的位置；`tailNext` = 末章的下一章（追更取它）。
+
+| C ABI | 作用 |
+|---|---|
+| `fwc_article_extract(html, len, url, len, &len)` | 无状态提取一页（预览 / 测量）；慢调用，后台 isolate |
+| `fwc_article_work_key(url, len, &len)` | 只从 URL 推作品身份键（Dart 找书架上已有的同一部作品） |
+| `fwc_novel_session_open(snapshot, len) -> session*` / `fwc_novel_session_close` | 开会话（空 = 新；快照坏了 NULL）/ 关闭 |
+| `fwc_novel_session_ingest(session, html, len, url, len, &len)` | 喂一页：提取 + 并进会话；慢调用，后台 isolate |
+| `fwc_novel_session_snapshot(session, &len)` | 快照 JSON |
+
+提取结果是帧 `[u32 LE 头长度][JSON 头][正文 XHTML 的 UTF-8]`：正文不进 JSON（不转义、不来回编码）。
+
 ## 端到端耗时（Windows x64，AOT Dart + release DLL，2026-10-19）
 
 均含 Dart 侧编码 / 拷贝、FFI 与 isolate 开销；广告拦截用真实四份默认列表（~5.1 MB 文本、17.3 万条规则）。
@@ -77,14 +118,22 @@ Last-Modified / 上次成功核对 / 上次尝试 / 规则行数 / 内容哈希 
 | 编译引擎（后台 isolate） | 108 ms | 102 ms（含落盘） |
 | 冷启动从缓存恢复引擎 | 29 ms（UI isolate 上反序列化） | 27 ms（后台 isolate） |
 
+网页小说正文提取（没有旧实现可比）：~198 KB 的典型小说页（真实快照段落重复拼接，1480 段、3.3 万字）。
+
+| 场景 | Rust 内（`cargo test --release`） | Dart 端到端（AOT，含开会话 + 整页拷进原生内存 + 后台 isolate + FFI + 帧拷回 + 解码 + 取快照） |
+|---|---|---|
+| 站点规则命中（なろう） | 10.2 ms | 12.1 ms |
+| 通用算法（readability + 密度兜底都跑） | 30.6 ms | 35.4 ms |
+
 ## 上游与许可
 
 | 项 | 值 |
 |---|---|
-| 上游 crate | `adblock` **0.13.3**（MPL-2.0）、`image` 0.25（MIT OR Apache-2.0） |
+| 上游 crate | `adblock` **0.13.3**（MPL-2.0）、`image` 0.25（MIT OR Apache-2.0）、`dom_query` 0.28 / `dom_smoothie` 0.18（MIT；readability.js 的 Rust 移植，本仓未改源码）、`encoding_rs` 0.8 / `url` 2（MIT OR Apache-2.0） |
 | 本 crate 许可 | MPL-2.0（与 adblock-rust 一致） |
 | adblock 特性 | `embedded-domain-resolver`、`full-regex-handling`、`content-blocking`；**关掉**默认的 `single-thread`（引擎因此是 `Send + Sync`） |
 
+MIT / Apache-2.0 与 GPL-3.0 兼容（GPL 作品可以包含它们，只需保留版权与许可声明）。
 MPL-2.0 是文件级 copyleft：链接进本体（GPL-3.0）作为「更大作品」分发是许可明文允许的（MPL-2.0 §3.3）。
 本仓**没有改**上游源码。iOS 伞形库 `native/fushi_ios_umbrella`（GPL-3.0-only）把它与 fushi_p2p /
 fushi_fsrs 合成一个归档，同理。

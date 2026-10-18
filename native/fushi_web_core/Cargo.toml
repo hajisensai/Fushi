@@ -27,6 +27,15 @@ serde_json = "1"
 # 漫画章末广告页识别的图像解码。MIT OR Apache-2.0；只开网页漫画会遇到的格式
 # （解码器 png / zune-jpeg / image-webp / gif / bmp 同为 MIT/Apache 系）。
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
+# 网页小说正文提取（article）：HTML5 解析 + CSS 选择器（dom_query，MIT）与 readability.js 的
+# Rust 移植（dom_smoothie，MIT；只做通用兜底，站点规则命中时不经过它）。两者同一作者、同一 DOM，
+# 版本必须对齐（dom_smoothie 0.18 依赖 dom_query 0.28）。
+dom_query = { version = "0.28", default-features = false }
+dom_smoothie = "0.18.2"
+# 整页原始字节的字符集解码（GB18030 / Shift_JIS / EUC-*；MIT OR Apache-2.0，WHATWG Encoding Standard）。
+encoding_rs = "0.8"
+# 相对链接解析（MIT OR Apache-2.0；adblock 已经依赖同一份，不多带）。
+url = "2"
 
 [profile.release]
 opt-level = "s"
