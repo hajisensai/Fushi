@@ -412,22 +412,26 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // `_syncBooksContentLive` importBook 推成 host 书，故正常同步不被此闸门误挡。）
     final EpubBookRow? hostBook = await _db.getEpubBook(bookKey);
     if (hostBook == null || hostBook.uid.isEmpty) return;
-    final RemoteBookProgress current = await getBookProgress(bookKey);
     final RemoteBookProgress incoming = RemoteBookProgress(
       sectionIndex: progress.sectionIndex < 0 ? 0 : progress.sectionIndex,
       normCharOffset: progress.normCharOffset < 0 ? 0 : progress.normCharOffset,
       charOffset: progress.charOffset,
       updatedAtMs: progress.updatedAtMs,
     );
-    final RemoteBookProgress winner =
-        resolveBookProgressSync(local: current, remote: incoming);
-    if (winner.sectionIndex == current.sectionIndex &&
-        winner.normCharOffset == current.normCharOffset &&
-        winner.charOffset == current.charOffset &&
-        winner.updatedAtMs == current.updatedAtMs) {
-      return; // host 已存更新或相等，no-op。
-    }
-    await _runExclusive(() async {
+    // 窄锁而非 _runExclusive：后者在 app 里罩着整个自动同步轮（含云备份，动辄
+    // 几分钟），对端这条单行 PUT 排在后面拿不到响应头，15s 判超时——而 host 等锁
+    // 放开后照样落库，对端便漏记「已对齐」，下一轮误报进度冲突。读-比较-写整段在
+    // 锁内，两个对端并发上报不会互相用旧值盖掉对方。
+    await _runSyncStateExclusive(() async {
+      final RemoteBookProgress current = await getBookProgress(bookKey);
+      final RemoteBookProgress winner =
+          resolveBookProgressSync(local: current, remote: incoming);
+      if (winner.sectionIndex == current.sectionIndex &&
+          winner.normCharOffset == current.normCharOffset &&
+          winner.charOffset == current.charOffset &&
+          winner.updatedAtMs == current.updatedAtMs) {
+        return; // host 已存更新或相等，no-op。
+      }
       await _db.upsertReaderPosition(ReaderPositionsCompanion(
         bookUid: Value(hostBook.uid),
         sectionIndex: Value(winner.sectionIndex),
