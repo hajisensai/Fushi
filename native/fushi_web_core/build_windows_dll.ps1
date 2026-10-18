@@ -1,11 +1,11 @@
-﻿# 构建 Windows x64 版 fushi_adblock.dll（Rust + Brave adblock-rust，无额外运行时依赖 DLL）。
+﻿# 构建 Windows x64 版 fushi_web_core.dll（Rust + Brave adblock-rust，无额外运行时依赖 DLL）。
 #
 # 前提：rustup target add x86_64-pc-windows-msvc（MSVC 工具链）。
 # 访问 crates.io 不稳时先设代理：$env:CARGO_HTTP_PROXY='http://127.0.0.1:34151'
 #
 # 用法：
-#   powershell -ExecutionPolicy Bypass -File native/fushi_adblock/build_windows_dll.ps1
-# 产物：native/fushi_adblock/prebuilt/windows-x64/fushi_adblock.dll（git 忽略，不入库）
+#   powershell -ExecutionPolicy Bypass -File native/fushi_web_core/build_windows_dll.ps1
+# 产物：native/fushi_web_core/prebuilt/windows-x64/fushi_web_core.dll（git 忽略，不入库）
 
 [CmdletBinding()]
 param(
@@ -25,8 +25,8 @@ try {
     Pop-Location
 }
 
-$dll = Join-Path $scriptDir "target\$Target\release\fushi_adblock.dll"
+$dll = Join-Path $scriptDir "target\$Target\release\fushi_web_core.dll"
 if (-not (Test-Path $dll)) { throw "缺少构建产物 $dll" }
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-Copy-Item $dll (Join-Path $outDir "fushi_adblock.dll") -Force
-Write-Host ("==> Done: {0} ({1:N0} bytes)" -f (Join-Path $outDir "fushi_adblock.dll"), (Get-Item $dll).Length)
+Copy-Item $dll (Join-Path $outDir "fushi_web_core.dll") -Force
+Write-Host ("==> Done: {0} ({1:N0} bytes)" -f (Join-Path $outDir "fushi_web_core.dll"), (Get-Item $dll).Length)

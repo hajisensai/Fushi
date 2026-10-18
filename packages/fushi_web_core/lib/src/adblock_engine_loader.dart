@@ -4,8 +4,8 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'adblock_filter_list_service.dart';
-import 'fushi_adblock_engine.dart';
-import 'fushi_adblock_library.dart';
+import 'adblock_engine.dart';
+import 'fushi_web_core_library.dart';
 
 /// [AdblockEngineLoader.load] 的产物。
 class AdblockEngineBundle {
@@ -33,13 +33,13 @@ class AdblockEngineBundle {
 /// 编译在后台 isolate 里做，结果序列化落盘（`<cacheDir>/engine/<key>.dat`），列表内容与
 /// 原生库版本不变时下次直接反序列化，不再编译。
 class AdblockEngineLoader {
-  AdblockEngineLoader({required this.listService, FushiAdblockLibrary? library})
+  AdblockEngineLoader({required this.listService, FushiWebCoreLibrary? library})
     : _library = library;
 
   final AdblockFilterListService listService;
-  final FushiAdblockLibrary? _library;
+  final FushiWebCoreLibrary? _library;
 
-  FushiAdblockLibrary? get _lib => _library ?? FushiAdblockLibrary.instance;
+  FushiWebCoreLibrary? get _lib => _library ?? FushiWebCoreLibrary.instance;
 
   Directory get _engineDir =>
       Directory('${listService.cacheDir.path}${Platform.pathSeparator}engine');
@@ -53,7 +53,7 @@ class AdblockEngineLoader {
     bool forceRefresh = false,
     bool withContentBlockingRules = false,
   }) async {
-    final FushiAdblockLibrary? lib = _lib;
+    final FushiWebCoreLibrary? lib = _lib;
     if (lib == null) return null;
     final List<AdblockListLoadResult> results = await listService.loadLists(
       lists,
@@ -128,11 +128,11 @@ class AdblockEngineLoader {
     String? libraryPath,
   }) {
     return Isolate.run<Uint8List>(() {
-      final FushiAdblockLibrary? lib = FushiAdblockLibrary.tryLoad(
+      final FushiWebCoreLibrary? lib = FushiWebCoreLibrary.tryLoad(
         libraryPath: libraryPath,
       );
       if (lib == null) {
-        throw StateError('fushi_adblock native library is not available');
+        throw StateError('fushi_web_core native library is not available');
       }
       final FushiAdblockEngine engine = FushiAdblockEngine.load(
         texts,
@@ -152,11 +152,11 @@ class AdblockEngineLoader {
     String? libraryPath,
   }) {
     return Isolate.run<List<Map<String, Object?>>>(() {
-      final FushiAdblockLibrary? lib = FushiAdblockLibrary.tryLoad(
+      final FushiWebCoreLibrary? lib = FushiWebCoreLibrary.tryLoad(
         libraryPath: libraryPath,
       );
       if (lib == null) {
-        throw StateError('fushi_adblock native library is not available');
+        throw StateError('fushi_web_core native library is not available');
       }
       return FushiAdblockEngine.contentBlockingRules(texts, library: lib);
     });

@@ -1,14 +1,14 @@
-//! fushi_adblock：Brave `adblock` crate（adblock-rust，MPL-2.0）上的薄 C ABI，给 Dart FFI
-//! （`packages/fushi_adblock`，纯 Dart）用。app 内所有网页浏览场景（InAppWebView）共用一个引擎。
+//! fushi_web_core：Brave `adblock` crate（adblock-rust，MPL-2.0）上的薄 C ABI，给 Dart FFI
+//! （`packages/fushi_web_core`，纯 Dart）用。app 内所有网页浏览场景（InAppWebView）共用一个引擎。
 //!
 //! 约定（与 native/fushi_p2p 一致）：
-//! - 符号前缀 `fadb_`；永不 panic 过 FFI 边界（每个导出函数都包 `catch_unwind`，`panic = "unwind"`）。
-//! - 返回的 `char*` 一律由调用方用 `fadb_string_free` 释放（`fadb_version` 是静态串除外）；
-//!   返回的字节缓冲用 `fadb_bytes_free(ptr, len)` 释放。
-//! - 创建 / 反序列化失败返回 NULL，原因用 `fadb_last_error()` 取（线程局部）。
+//! - 符号前缀 `fwc_`；永不 panic 过 FFI 边界（每个导出函数都包 `catch_unwind`，`panic = "unwind"`）。
+//! - 返回的 `char*` 一律由调用方用 `fwc_string_free` 释放（`fwc_version` 是静态串除外）；
+//!   返回的字节缓冲用 `fwc_bytes_free(ptr, len)` 释放。
+//! - 创建 / 反序列化失败返回 NULL，原因用 `fwc_last_error()` 取（线程局部）。
 //! - 引擎是 `Send + Sync`（关掉了 adblock 的 `single-thread` 特性，正则缓存走 Mutex），
-//!   Dart 侧 isolate 换 OS 线程调用也安全；`fadb_engine_free` 之后句柄不可再用。
-//! - 复杂返回值是 JSON；热路径 `fadb_engine_check` 只返回整数码，不分配。
+//!   Dart 侧 isolate 换 OS 线程调用也安全；`fwc_engine_free` 之后句柄不可再用。
+//! - 复杂返回值是 JSON；热路径 `fwc_engine_check` 只返回整数码，不分配。
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -21,16 +21,16 @@ use adblock::resources::Resource;
 use adblock::Engine;
 use serde_json::{json, Value};
 
-/// `fadb_engine_check` 返回码：没有任何规则命中（放行）。
-pub const FADB_ALLOW: i32 = 0;
+/// `fwc_engine_check` 返回码：没有任何规则命中（放行）。
+pub const FWC_ALLOW: i32 = 0;
 /// 命中拦截规则且没有被例外规则抵消（拦截）。
-pub const FADB_BLOCK: i32 = 1;
-/// 拦截，且规则带 `$redirect`：应以替身资源（`fadb_engine_check_json` 的 `redirect`）应答。
-pub const FADB_REDIRECT: i32 = 2;
+pub const FWC_BLOCK: i32 = 1;
+/// 拦截，且规则带 `$redirect`：应以替身资源（`fwc_engine_check_json` 的 `redirect`）应答。
+pub const FWC_REDIRECT: i32 = 2;
 /// 命中拦截规则但被 `@@` 例外规则抵消（放行）。
-pub const FADB_EXCEPTION: i32 = 3;
+pub const FWC_EXCEPTION: i32 = 3;
 /// 参数无效（NULL / 非 UTF-8 / URL 解析失败）：调用方按放行处理。
-pub const FADB_ERROR: i32 = -1;
+pub const FWC_ERROR: i32 = -1;
 
 thread_local! {
     static LAST_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
@@ -135,7 +135,7 @@ fn filter_set_from(texts: Vec<String>, debug: bool) -> FilterSet {
 // 纯 Rust 核心（单测直接打这一层；C ABI 只做参数转换与 panic 隔离）
 // ---------------------------------------------------------------------------------------------
 
-/// 一次请求检查的完整结论（`fadb_engine_check_json` 的载荷）。
+/// 一次请求检查的完整结论（`fwc_engine_check_json` 的载荷）。
 pub fn check_result(
     engine: &Engine,
     url: &str,
@@ -173,14 +173,14 @@ pub fn check_result(
 fn classify(blocked: bool, redirect: bool, matched: bool, excepted: bool) -> i32 {
     if blocked {
         if redirect {
-            FADB_REDIRECT
+            FWC_REDIRECT
         } else {
-            FADB_BLOCK
+            FWC_BLOCK
         }
     } else if matched && excepted {
-        FADB_EXCEPTION
+        FWC_EXCEPTION
     } else {
-        FADB_ALLOW
+        FWC_ALLOW
     }
 }
 
@@ -201,7 +201,7 @@ pub fn check_code(engine: &Engine, url: &str, source_url: &str, request_type: &s
                 r.exception.is_some(),
             )
         }
-        Err(_) => FADB_ERROR,
+        Err(_) => FWC_ERROR,
     }
 }
 
@@ -267,7 +267,7 @@ fn parse_string_array(p: *const c_char, name: &str) -> Result<Vec<String>, Strin
 
 /// 库版本（静态字符串，不要 free）。
 #[no_mangle]
-pub extern "C" fn fadb_version() -> *const c_char {
+pub extern "C" fn fwc_version() -> *const c_char {
     concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr() as *const c_char
 }
 
@@ -276,18 +276,18 @@ pub extern "C" fn fadb_version() -> *const c_char {
 /// # Safety
 /// `s` 必须是本库返回、尚未释放的指针。
 #[no_mangle]
-pub unsafe extern "C" fn fadb_string_free(s: *mut c_char) {
+pub unsafe extern "C" fn fwc_string_free(s: *mut c_char) {
     if !s.is_null() {
         let _ = catch_unwind(AssertUnwindSafe(|| drop(CString::from_raw(s))));
     }
 }
 
-/// 释放 `fadb_engine_serialize` 返回的缓冲。NULL 为 no-op。
+/// 释放 `fwc_engine_serialize` 返回的缓冲。NULL 为 no-op。
 ///
 /// # Safety
-/// `ptr` / `len` 必须原样来自 `fadb_engine_serialize`。
+/// `ptr` / `len` 必须原样来自 `fwc_engine_serialize`。
 #[no_mangle]
-pub unsafe extern "C" fn fadb_bytes_free(ptr: *mut u8, len: usize) {
+pub unsafe extern "C" fn fwc_bytes_free(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
         let _ = catch_unwind(AssertUnwindSafe(|| {
             drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)));
@@ -297,7 +297,7 @@ pub unsafe extern "C" fn fadb_bytes_free(ptr: *mut u8, len: usize) {
 
 /// 本线程最近一次创建 / 反序列化失败的原因；无则 NULL。调用方 free。
 #[no_mangle]
-pub extern "C" fn fadb_last_error() -> *mut c_char {
+pub extern "C" fn fwc_last_error() -> *mut c_char {
     catch_unwind(|| LAST_ERROR.with(|e| e.borrow().clone()))
         .ok()
         .flatten()
@@ -311,7 +311,7 @@ pub extern "C" fn fadb_last_error() -> *mut c_char {
 /// # Safety
 /// `texts` 指向 `count` 个以 NUL 结尾的 UTF-8 字符串。
 #[no_mangle]
-pub unsafe extern "C" fn fadb_engine_create(
+pub unsafe extern "C" fn fwc_engine_create(
     texts: *const *const c_char,
     count: usize,
 ) -> *mut Engine {
@@ -333,12 +333,12 @@ pub unsafe extern "C" fn fadb_engine_create(
     }
 }
 
-/// 从 `fadb_engine_serialize` 的产物恢复引擎（格式版本不符 / 数据损坏 → NULL）。
+/// 从 `fwc_engine_serialize` 的产物恢复引擎（格式版本不符 / 数据损坏 → NULL）。
 ///
 /// # Safety
 /// `data` 指向 `len` 个可读字节。
 #[no_mangle]
-pub unsafe extern "C" fn fadb_engine_deserialize(data: *const u8, len: usize) -> *mut Engine {
+pub unsafe extern "C" fn fwc_engine_deserialize(data: *const u8, len: usize) -> *mut Engine {
     clear_last_error();
     let r = catch_unwind(AssertUnwindSafe(|| -> Result<Engine, String> {
         if data.is_null() || len == 0 {
@@ -364,12 +364,12 @@ pub unsafe extern "C" fn fadb_engine_deserialize(data: *const u8, len: usize) ->
     }
 }
 
-/// 序列化引擎；`*out_len` 写入长度。失败返回 NULL。结果用 `fadb_bytes_free(ptr, len)` 释放。
+/// 序列化引擎；`*out_len` 写入长度。失败返回 NULL。结果用 `fwc_bytes_free(ptr, len)` 释放。
 ///
 /// # Safety
 /// `e` 是有效引擎句柄，`out_len` 可写。
 #[no_mangle]
-pub unsafe extern "C" fn fadb_engine_serialize(e: *const Engine, out_len: *mut usize) -> *mut u8 {
+pub unsafe extern "C" fn fwc_engine_serialize(e: *const Engine, out_len: *mut usize) -> *mut u8 {
     if out_len.is_null() {
         return std::ptr::null_mut();
     }
@@ -392,7 +392,7 @@ pub unsafe extern "C" fn fadb_engine_serialize(e: *const Engine, out_len: *mut u
 /// # Safety
 /// `e` 必须是本库返回、尚未释放的引擎句柄。
 #[no_mangle]
-pub unsafe extern "C" fn fadb_engine_free(e: *mut Engine) {
+pub unsafe extern "C" fn fwc_engine_free(e: *mut Engine) {
     if !e.is_null() {
         let _ = catch_unwind(AssertUnwindSafe(|| drop(Box::from_raw(e))));
     }
@@ -405,7 +405,7 @@ pub unsafe extern "C" fn fadb_engine_free(e: *mut Engine) {
 /// # Safety
 /// `e` 是有效引擎句柄，`resources_json` 是 NUL 结尾 UTF-8。
 #[no_mangle]
-pub unsafe extern "C" fn fadb_engine_use_resources(
+pub unsafe extern "C" fn fwc_engine_use_resources(
     e: *mut Engine,
     resources_json: *const c_char,
 ) -> *mut c_char {
@@ -420,15 +420,15 @@ pub unsafe extern "C" fn fadb_engine_use_resources(
     })
 }
 
-/// 热路径：检查一个子资源请求。返回 `FADB_ALLOW` / `FADB_BLOCK` / `FADB_REDIRECT` /
-/// `FADB_EXCEPTION` / `FADB_ERROR`。`source_url` NULL 或空 = 与 `url` 同源（第一方）。
+/// 热路径：检查一个子资源请求。返回 `FWC_ALLOW` / `FWC_BLOCK` / `FWC_REDIRECT` /
+/// `FWC_EXCEPTION` / `FWC_ERROR`。`source_url` NULL 或空 = 与 `url` 同源（第一方）。
 /// `request_type` 用 adblock 的资源类型名：`document` / `subdocument` / `script` / `image` /
 /// `stylesheet` / `xmlhttprequest` / `font` / `media` / `websocket` / `ping` / `other` 等。
 ///
 /// # Safety
 /// 字符串参数为 NUL 结尾 UTF-8（`source_url` 可为 NULL）。
 #[no_mangle]
-pub unsafe extern "C" fn fadb_engine_check(
+pub unsafe extern "C" fn fwc_engine_check(
     e: *const Engine,
     url: *const c_char,
     source_url: *const c_char,
@@ -436,32 +436,32 @@ pub unsafe extern "C" fn fadb_engine_check(
 ) -> i32 {
     catch_unwind(AssertUnwindSafe(|| -> i32 {
         let Ok(engine) = engine_ref(e) else {
-            return FADB_ERROR;
+            return FWC_ERROR;
         };
         let Ok(url) = req_str(url, "url") else {
-            return FADB_ERROR;
+            return FWC_ERROR;
         };
         let Ok(source) = opt_str(source_url) else {
-            return FADB_ERROR;
+            return FWC_ERROR;
         };
         let request_type = match opt_str(request_type) {
             Ok(Some(t)) if !t.is_empty() => t,
             Ok(_) => "other",
-            Err(_) => return FADB_ERROR,
+            Err(_) => return FWC_ERROR,
         };
         check_code(engine, url, source.unwrap_or(""), request_type)
     }))
-    .unwrap_or(FADB_ERROR)
+    .unwrap_or(FWC_ERROR)
 }
 
-/// 同 `fadb_engine_check`，但返回完整 JSON：
+/// 同 `fwc_engine_check`，但返回完整 JSON：
 /// `{"ok":true,"code":N,"blocked":b,"matched":b,"exception":b,"important":b,
 ///   "redirect":"data:..."|null,"rewrittenUrl":".."|null,"filter":..,"exceptionFilter":..}`。
 ///
 /// # Safety
-/// 同 `fadb_engine_check`。
+/// 同 `fwc_engine_check`。
 #[no_mangle]
-pub unsafe extern "C" fn fadb_engine_check_json(
+pub unsafe extern "C" fn fwc_engine_check_json(
     e: *const Engine,
     url: *const c_char,
     source_url: *const c_char,
@@ -486,7 +486,7 @@ pub unsafe extern "C" fn fadb_engine_check_json(
 /// # Safety
 /// `e` 有效，`url` 为 NUL 结尾 UTF-8。
 #[no_mangle]
-pub unsafe extern "C" fn fadb_engine_cosmetic(e: *const Engine, url: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn fwc_engine_cosmetic(e: *const Engine, url: *const c_char) -> *mut c_char {
     guard_json(|| {
         let engine = engine_ref(e)?;
         let url = req_str(url, "url")?;
@@ -495,13 +495,13 @@ pub unsafe extern "C" fn fadb_engine_cosmetic(e: *const Engine, url: *const c_ch
 }
 
 /// 通用 hide 选择器（按需取）：`classes_json` / `ids_json` / `exceptions_json` 都是字符串数组
-/// JSON（NULL 视为空数组；exceptions 原样取自 `fadb_engine_cosmetic` 的 `exceptions`）。
+/// JSON（NULL 视为空数组；exceptions 原样取自 `fwc_engine_cosmetic` 的 `exceptions`）。
 /// 返回 `{"ok":true,"selectors":[..]}`。页面 `generichide` 为真时调用方不应再取。
 ///
 /// # Safety
 /// `e` 有效，字符串参数为 NUL 结尾 UTF-8 或 NULL。
 #[no_mangle]
-pub unsafe extern "C" fn fadb_engine_generic_selectors(
+pub unsafe extern "C" fn fwc_engine_generic_selectors(
     e: *const Engine,
     classes_json: *const c_char,
     ids_json: *const c_char,
@@ -524,7 +524,7 @@ pub unsafe extern "C" fn fadb_engine_generic_selectors(
 /// # Safety
 /// `texts` 指向 `count` 个以 NUL 结尾的 UTF-8 字符串。
 #[no_mangle]
-pub unsafe extern "C" fn fadb_content_blocking_rules(
+pub unsafe extern "C" fn fwc_content_blocking_rules(
     texts: *const *const c_char,
     count: usize,
 ) -> *mut c_char {
@@ -565,7 +565,7 @@ example.com#@#.generic-ad
                 "https://news.test/",
                 "script"
             ),
-            FADB_BLOCK
+            FWC_BLOCK
         );
         assert_eq!(
             check_code(
@@ -574,7 +574,7 @@ example.com#@#.generic-ad
                 "https://news.test/",
                 "script"
             ),
-            FADB_ALLOW
+            FWC_ALLOW
         );
     }
 
@@ -588,7 +588,7 @@ example.com#@#.generic-ad
                 "https://news.test/",
                 "image"
             ),
-            FADB_BLOCK
+            FWC_BLOCK
         );
         // 第一方请求不受 $third-party 规则影响。
         assert_eq!(
@@ -598,7 +598,7 @@ example.com#@#.generic-ad
                 "https://tracker.example.net/",
                 "image"
             ),
-            FADB_ALLOW
+            FWC_ALLOW
         );
     }
 
@@ -612,7 +612,7 @@ example.com#@#.generic-ad
                 "https://site.test/",
                 "image"
             ),
-            FADB_BLOCK
+            FWC_BLOCK
         );
         assert_eq!(
             check_code(
@@ -621,7 +621,7 @@ example.com#@#.generic-ad
                 "https://site.test/",
                 "script"
             ),
-            FADB_ALLOW
+            FWC_ALLOW
         );
     }
 
@@ -635,7 +635,7 @@ example.com#@#.generic-ad
                 "https://news.test/",
                 "script"
             ),
-            FADB_EXCEPTION
+            FWC_EXCEPTION
         );
         let v = check_result(
             &e,
@@ -659,7 +659,7 @@ example.com#@#.generic-ad
             "https://news.test/",
             "script",
         );
-        assert!(code == FADB_BLOCK || code == FADB_REDIRECT, "code={code}");
+        assert!(code == FWC_BLOCK || code == FWC_REDIRECT, "code={code}");
     }
 
     #[test]
@@ -680,7 +680,7 @@ example.com#@#.generic-ad
                 "https://news.test/",
                 "script"
             ),
-            FADB_REDIRECT
+            FWC_REDIRECT
         );
         let v = check_result(
             &e,
@@ -698,7 +698,7 @@ example.com#@#.generic-ad
     #[test]
     fn bad_url_is_error_not_panic() {
         let e = engine();
-        assert_eq!(check_code(&e, "not a url", "", "script"), FADB_ERROR);
+        assert_eq!(check_code(&e, "not a url", "", "script"), FWC_ERROR);
     }
 
     #[test]
@@ -740,7 +740,7 @@ example.com#@#.generic-ad
                 "https://news.test/",
                 "script"
             ),
-            FADB_BLOCK
+            FWC_BLOCK
         );
         let v = cosmetic_result(&restored, "https://example.com/");
         assert!(v["hideSelectors"]
@@ -766,63 +766,63 @@ example.com#@#.generic-ad
         unsafe {
             let text = CString::new(LIST).unwrap();
             let arr = [text.as_ptr()];
-            let e = fadb_engine_create(arr.as_ptr(), 1);
+            let e = fwc_engine_create(arr.as_ptr(), 1);
             assert!(!e.is_null());
 
             let url = CString::new("https://ads.example.com/x.js").unwrap();
             let src = CString::new("https://news.test/").unwrap();
             let ty = CString::new("script").unwrap();
             assert_eq!(
-                fadb_engine_check(e, url.as_ptr(), src.as_ptr(), ty.as_ptr()),
-                FADB_BLOCK
+                fwc_engine_check(e, url.as_ptr(), src.as_ptr(), ty.as_ptr()),
+                FWC_BLOCK
             );
             assert_eq!(
-                fadb_engine_check(e, url.as_ptr(), std::ptr::null(), std::ptr::null()),
-                FADB_BLOCK
+                fwc_engine_check(e, url.as_ptr(), std::ptr::null(), std::ptr::null()),
+                FWC_BLOCK
             );
             assert_eq!(
-                fadb_engine_check(std::ptr::null(), url.as_ptr(), src.as_ptr(), ty.as_ptr()),
-                FADB_ERROR
+                fwc_engine_check(std::ptr::null(), url.as_ptr(), src.as_ptr(), ty.as_ptr()),
+                FWC_ERROR
             );
 
             let mut len = 0usize;
-            let buf = fadb_engine_serialize(e, &mut len);
+            let buf = fwc_engine_serialize(e, &mut len);
             assert!(!buf.is_null() && len > 0);
-            let e2 = fadb_engine_deserialize(buf, len);
+            let e2 = fwc_engine_deserialize(buf, len);
             assert!(!e2.is_null());
-            fadb_bytes_free(buf, len);
+            fwc_bytes_free(buf, len);
             assert_eq!(
-                fadb_engine_check(e2, url.as_ptr(), src.as_ptr(), ty.as_ptr()),
-                FADB_BLOCK
+                fwc_engine_check(e2, url.as_ptr(), src.as_ptr(), ty.as_ptr()),
+                FWC_BLOCK
             );
 
             let garbage = [1u8, 2, 3];
-            let bad = fadb_engine_deserialize(garbage.as_ptr(), garbage.len());
+            let bad = fwc_engine_deserialize(garbage.as_ptr(), garbage.len());
             assert!(bad.is_null());
-            let err = fadb_last_error();
+            let err = fwc_last_error();
             assert!(!err.is_null());
-            fadb_string_free(err);
+            fwc_string_free(err);
 
             let page = CString::new("https://example.com/").unwrap();
-            let c = fadb_engine_cosmetic(e2, page.as_ptr());
+            let c = fwc_engine_cosmetic(e2, page.as_ptr());
             let s = CStr::from_ptr(c).to_str().unwrap().to_owned();
-            fadb_string_free(c);
+            fwc_string_free(c);
             let v: Value = serde_json::from_str(&s).unwrap();
             assert_eq!(v["ok"], true);
 
             let classes = CString::new(r#"["generic-ad"]"#).unwrap();
-            let g = fadb_engine_generic_selectors(
+            let g = fwc_engine_generic_selectors(
                 e2,
                 classes.as_ptr(),
                 std::ptr::null(),
                 std::ptr::null(),
             );
             let gs = CStr::from_ptr(g).to_str().unwrap().to_owned();
-            fadb_string_free(g);
+            fwc_string_free(g);
             assert!(gs.contains(".generic-ad"), "{gs}");
 
-            fadb_engine_free(e);
-            fadb_engine_free(e2);
+            fwc_engine_free(e);
+            fwc_engine_free(e2);
         }
     }
 }

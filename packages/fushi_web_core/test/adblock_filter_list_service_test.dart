@@ -5,7 +5,7 @@ library;
 
 import 'dart:io';
 
-import 'package:fushi_adblock/fushi_adblock.dart';
+import 'package:fushi_web_core/fushi_web_core.dart';
 import 'package:test/test.dart';
 
 class _FakeFetcher {
@@ -38,7 +38,7 @@ void main() {
   );
 
   setUp(() {
-    tmp = Directory.systemTemp.createTempSync('fadb_lists_');
+    tmp = Directory.systemTemp.createTempSync('fwc_lists_');
     fetcher = _FakeFetcher();
     now = DateTime.utc(2026, 10, 1, 12);
     service = AdblockFilterListService(
@@ -189,25 +189,25 @@ void main() {
   });
 
   test('library candidates honour explicit path and env var', () {
-    final List<String> c = FushiAdblockLibrary.libraryCandidates(
+    final List<String> c = FushiWebCoreLibrary.libraryCandidates(
       libraryPath: '/explicit/lib',
-      environment: <String, String>{kFushiAdblockLibEnv: '/from/env'},
+      environment: <String, String>{kFushiWebCoreLibEnv: '/from/env'},
       executablePath: '/app/bin/fushi',
     );
     expect(c.first, '/explicit/lib');
     expect(c[1], '/from/env');
-    expect(c.last, FushiAdblockLibrary.defaultLibraryName());
+    expect(c.last, FushiWebCoreLibrary.defaultLibraryName());
   });
 
   test('missing library: tryLoad returns null instead of throwing', () {
     expect(
-      FushiAdblockLibrary.tryLoad(
+      FushiWebCoreLibrary.tryLoad(
         libraryPath: '${tmp.path}${Platform.pathSeparator}nope.dll',
         environment: const <String, String>{},
         executablePath: '${tmp.path}${Platform.pathSeparator}app.exe',
       ),
       // 裸名候选可能在系统路径里命中真库（CI 装了的话），所以只断言「不抛」。
-      anyOf(isNull, isA<FushiAdblockLibrary>()),
+      anyOf(isNull, isA<FushiWebCoreLibrary>()),
     );
   });
 }

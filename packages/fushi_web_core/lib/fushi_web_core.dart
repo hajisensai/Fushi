@@ -4,7 +4,7 @@ library;
 
 export 'src/adblock_engine_loader.dart';
 export 'src/adblock_filter_list_service.dart';
-export 'src/ffi/fushi_adblock_bindings.dart'
-    show FushiAdblockBindings, FadbEngine;
-export 'src/fushi_adblock_engine.dart';
-export 'src/fushi_adblock_library.dart';
+export 'src/ffi/fushi_web_core_bindings.dart'
+    show FushiWebCoreBindings, FwcAdblockEngine;
+export 'src/adblock_engine.dart';
+export 'src/fushi_web_core_library.dart';

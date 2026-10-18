@@ -4,8 +4,8 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
-import 'ffi/fushi_adblock_bindings.dart';
-import 'fushi_adblock_library.dart';
+import 'ffi/fushi_web_core_bindings.dart';
+import 'fushi_web_core_library.dart';
 
 /// 子资源请求类型（adblock-rust 的资源类型名，决定 `$script` / `$image` 等选项是否生效）。
 enum AdblockRequestType {
@@ -27,7 +27,7 @@ enum AdblockRequestType {
   final String wireName;
 }
 
-/// 一次请求检查的结论（与 C ABI 的 `FADB_*` 返回码一一对应）。
+/// 一次请求检查的结论（与 C ABI 的 `FWC_*` 返回码一一对应）。
 enum AdblockDecision {
   /// 没有规则命中：放行。
   allow,
@@ -194,16 +194,16 @@ class FushiAdblockEngine implements AdblockMatcher, ffi.Finalizable {
   }
 
   /// 从过滤列表文本（ABP / uBO 语法）编译引擎。原生库不可用时抛 [StateError]（先查
-  /// [FushiAdblockLibrary.isAvailable]）；编译失败抛 [AdblockEngineException]。
+  /// [FushiWebCoreLibrary.isAvailable]）；编译失败抛 [AdblockEngineException]。
   factory FushiAdblockEngine.load(
     List<String> filterLists, {
-    FushiAdblockLibrary? library,
+    FushiWebCoreLibrary? library,
   }) {
-    final FushiAdblockLibrary lib = _requireLibrary(library);
-    final ffi.Pointer<FadbEngine> handle = _withCStringArray(
+    final FushiWebCoreLibrary lib = _requireLibrary(library);
+    final ffi.Pointer<FwcAdblockEngine> handle = _withCStringArray(
       filterLists,
       (ffi.Pointer<ffi.Pointer<ffi.Char>> arr, int count) =>
-          lib.bindings.fadb_engine_create(arr, count),
+          lib.bindings.fwc_engine_create(arr, count),
     );
     if (handle == ffi.nullptr) {
       throw AdblockEngineException(_lastError(lib) ?? 'engine create failed');
@@ -215,17 +215,17 @@ class FushiAdblockEngine implements AdblockMatcher, ffi.Finalizable {
   /// （调用方删缓存重编即可）。
   factory FushiAdblockEngine.deserialize(
     Uint8List bytes, {
-    FushiAdblockLibrary? library,
+    FushiWebCoreLibrary? library,
   }) {
-    final FushiAdblockLibrary lib = _requireLibrary(library);
+    final FushiWebCoreLibrary lib = _requireLibrary(library);
     if (bytes.isEmpty) {
       throw AdblockEngineException('serialized engine is empty');
     }
     final ffi.Pointer<ffi.Uint8> buf = malloc<ffi.Uint8>(bytes.length);
     try {
       buf.asTypedList(bytes.length).setAll(0, bytes);
-      final ffi.Pointer<FadbEngine> handle = lib.bindings
-          .fadb_engine_deserialize(buf, bytes.length);
+      final ffi.Pointer<FwcAdblockEngine> handle = lib.bindings
+          .fwc_engine_deserialize(buf, bytes.length);
       if (handle == ffi.nullptr) {
         throw AdblockEngineException(
           _lastError(lib) ?? 'engine deserialize failed',
@@ -242,15 +242,15 @@ class FushiAdblockEngine implements AdblockMatcher, ffi.Finalizable {
   /// 与编译引擎是两条独立路径，不需要引擎实例。
   static List<Map<String, Object?>> contentBlockingRules(
     List<String> filterLists, {
-    FushiAdblockLibrary? library,
+    FushiWebCoreLibrary? library,
   }) {
-    final FushiAdblockLibrary lib = _requireLibrary(library);
+    final FushiWebCoreLibrary lib = _requireLibrary(library);
     final Map<String, Object?> json = _takeJson(
       lib,
       _withCStringArray(
         filterLists,
         (ffi.Pointer<ffi.Pointer<ffi.Char>> arr, int count) =>
-            lib.bindings.fadb_content_blocking_rules(arr, count),
+            lib.bindings.fwc_content_blocking_rules(arr, count),
       ),
     );
     final Object? rules = json['rules'];
@@ -261,27 +261,29 @@ class FushiAdblockEngine implements AdblockMatcher, ffi.Finalizable {
         .toList(growable: false);
   }
 
-  static final Map<FushiAdblockLibrary, ffi.NativeFinalizer> _finalizers =
-      <FushiAdblockLibrary, ffi.NativeFinalizer>{};
+  static final Map<FushiWebCoreLibrary, ffi.NativeFinalizer> _finalizers =
+      <FushiWebCoreLibrary, ffi.NativeFinalizer>{};
 
-  static ffi.NativeFinalizer _finalizerFor(FushiAdblockLibrary lib) =>
+  static ffi.NativeFinalizer _finalizerFor(FushiWebCoreLibrary lib) =>
       _finalizers.putIfAbsent(
         lib,
-        () => ffi.NativeFinalizer(lib.bindings.fadb_engine_free_ptr.cast()),
+        () => ffi.NativeFinalizer(lib.bindings.fwc_engine_free_ptr.cast()),
       );
 
-  final FushiAdblockLibrary _library;
-  ffi.Pointer<FadbEngine> _handle;
+  final FushiWebCoreLibrary _library;
+  ffi.Pointer<FwcAdblockEngine> _handle;
 
   bool get isDisposed => _handle == ffi.nullptr;
 
   /// 序列化引擎（落盘缓存用）。
   Uint8List serialize() {
-    final ffi.Pointer<FadbEngine> h = _live();
+    final ffi.Pointer<FwcAdblockEngine> h = _live();
     final ffi.Pointer<ffi.Size> lenOut = malloc<ffi.Size>();
     try {
-      final ffi.Pointer<ffi.Uint8> buf = _library.bindings
-          .fadb_engine_serialize(h, lenOut);
+      final ffi.Pointer<ffi.Uint8> buf = _library.bindings.fwc_engine_serialize(
+        h,
+        lenOut,
+      );
       final int len = lenOut.value;
       if (buf == ffi.nullptr) {
         throw AdblockEngineException('engine serialize failed');
@@ -289,7 +291,7 @@ class FushiAdblockEngine implements AdblockMatcher, ffi.Finalizable {
       try {
         return Uint8List.fromList(buf.asTypedList(len));
       } finally {
-        _library.bindings.fadb_bytes_free(buf, len);
+        _library.bindings.fwc_bytes_free(buf, len);
       }
     } finally {
       malloc.free(lenOut);
@@ -298,12 +300,12 @@ class FushiAdblockEngine implements AdblockMatcher, ffi.Finalizable {
 
   /// 加载 `$redirect` / scriptlet 资源（adblock-rust 的 Resource JSON 数组）。返回资源条数。
   int useResources(String resourcesJson) {
-    final ffi.Pointer<FadbEngine> h = _live();
+    final ffi.Pointer<FwcAdblockEngine> h = _live();
     final ffi.Pointer<Utf8> arg = resourcesJson.toNativeUtf8();
     try {
       final Map<String, Object?> json = _takeJson(
         _library,
-        _library.bindings.fadb_engine_use_resources(h, arg.cast()),
+        _library.bindings.fwc_engine_use_resources(h, arg.cast()),
       );
       return (json['count'] as num?)?.toInt() ?? 0;
     } finally {
@@ -317,13 +319,13 @@ class FushiAdblockEngine implements AdblockMatcher, ffi.Finalizable {
     String? sourceUrl,
     AdblockRequestType type = AdblockRequestType.other,
   }) {
-    final ffi.Pointer<FadbEngine> h = _live();
+    final ffi.Pointer<FwcAdblockEngine> h = _live();
     final ffi.Pointer<Utf8> u = url.toNativeUtf8();
     final ffi.Pointer<Utf8> s = (sourceUrl ?? '').toNativeUtf8();
     final ffi.Pointer<Utf8> t = type.wireName.toNativeUtf8();
     try {
       return AdblockDecision.fromCode(
-        _library.bindings.fadb_engine_check(h, u.cast(), s.cast(), t.cast()),
+        _library.bindings.fwc_engine_check(h, u.cast(), s.cast(), t.cast()),
       );
     } finally {
       malloc
@@ -339,14 +341,14 @@ class FushiAdblockEngine implements AdblockMatcher, ffi.Finalizable {
     String? sourceUrl,
     AdblockRequestType type = AdblockRequestType.other,
   }) {
-    final ffi.Pointer<FadbEngine> h = _live();
+    final ffi.Pointer<FwcAdblockEngine> h = _live();
     final ffi.Pointer<Utf8> u = url.toNativeUtf8();
     final ffi.Pointer<Utf8> s = (sourceUrl ?? '').toNativeUtf8();
     final ffi.Pointer<Utf8> t = type.wireName.toNativeUtf8();
     try {
       final Map<String, Object?> json = _takeJson(
         _library,
-        _library.bindings.fadb_engine_check_json(
+        _library.bindings.fwc_engine_check_json(
           h,
           u.cast(),
           s.cast(),
@@ -368,12 +370,12 @@ class FushiAdblockEngine implements AdblockMatcher, ffi.Finalizable {
 
   @override
   AdblockCosmeticResources cosmetic(String url) {
-    final ffi.Pointer<FadbEngine> h = _live();
+    final ffi.Pointer<FwcAdblockEngine> h = _live();
     final ffi.Pointer<Utf8> u = url.toNativeUtf8();
     try {
       final Map<String, Object?> json = _takeJson(
         _library,
-        _library.bindings.fadb_engine_cosmetic(h, u.cast()),
+        _library.bindings.fwc_engine_cosmetic(h, u.cast()),
         throwOnError: false,
       );
       if (json['ok'] != true) return AdblockCosmeticResources.empty;
@@ -389,14 +391,14 @@ class FushiAdblockEngine implements AdblockMatcher, ffi.Finalizable {
     Iterable<String> ids = const <String>[],
     Iterable<String> exceptions = const <String>[],
   }) {
-    final ffi.Pointer<FadbEngine> h = _live();
+    final ffi.Pointer<FwcAdblockEngine> h = _live();
     final ffi.Pointer<Utf8> c = jsonEncode(classes.toList()).toNativeUtf8();
     final ffi.Pointer<Utf8> i = jsonEncode(ids.toList()).toNativeUtf8();
     final ffi.Pointer<Utf8> e = jsonEncode(exceptions.toList()).toNativeUtf8();
     try {
       final Map<String, Object?> json = _takeJson(
         _library,
-        _library.bindings.fadb_engine_generic_selectors(
+        _library.bindings.fwc_engine_generic_selectors(
           h,
           c.cast(),
           i.cast(),
@@ -420,38 +422,38 @@ class FushiAdblockEngine implements AdblockMatcher, ffi.Finalizable {
   void dispose() {
     if (_handle == ffi.nullptr) return;
     _finalizerFor(_library).detach(this);
-    _library.bindings.fadb_engine_free(_handle);
+    _library.bindings.fwc_engine_free(_handle);
     _handle = ffi.nullptr;
   }
 
-  ffi.Pointer<FadbEngine> _live() {
+  ffi.Pointer<FwcAdblockEngine> _live() {
     if (_handle == ffi.nullptr) {
       throw StateError('FushiAdblockEngine used after dispose()');
     }
     return _handle;
   }
 
-  static FushiAdblockLibrary _requireLibrary(FushiAdblockLibrary? library) {
-    final FushiAdblockLibrary? lib = library ?? FushiAdblockLibrary.instance;
+  static FushiWebCoreLibrary _requireLibrary(FushiWebCoreLibrary? library) {
+    final FushiWebCoreLibrary? lib = library ?? FushiWebCoreLibrary.instance;
     if (lib == null) {
-      throw StateError('fushi_adblock native library is not available');
+      throw StateError('fushi_web_core native library is not available');
     }
     return lib;
   }
 
-  static String? _lastError(FushiAdblockLibrary lib) {
-    final ffi.Pointer<ffi.Char> p = lib.bindings.fadb_last_error();
+  static String? _lastError(FushiWebCoreLibrary lib) {
+    final ffi.Pointer<ffi.Char> p = lib.bindings.fwc_last_error();
     if (p == ffi.nullptr) return null;
     try {
       return p.cast<Utf8>().toDartString();
     } finally {
-      lib.bindings.fadb_string_free(p);
+      lib.bindings.fwc_string_free(p);
     }
   }
 
   /// 取走原生返回的 JSON 串并释放。`{"ok":false}` 时按 [throwOnError] 抛或原样返回。
   static Map<String, Object?> _takeJson(
-    FushiAdblockLibrary lib,
+    FushiWebCoreLibrary lib,
     ffi.Pointer<ffi.Char> p, {
     bool throwOnError = true,
   }) {
@@ -463,7 +465,7 @@ class FushiAdblockEngine implements AdblockMatcher, ffi.Finalizable {
     try {
       text = p.cast<Utf8>().toDartString();
     } finally {
-      lib.bindings.fadb_string_free(p);
+      lib.bindings.fwc_string_free(p);
     }
     final Object? decoded = jsonDecode(text);
     final Map<String, Object?> json = decoded is Map<String, Object?>

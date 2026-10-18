@@ -761,14 +761,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fushi_adblock"
-version = "0.1.0"
-dependencies = [
- "adblock",
- "serde_json",
-]
-
-[[package]]
 name = "fushi_fsrs"
 version = "0.1.0"
 dependencies = [
@@ -782,9 +774,9 @@ dependencies = [
 name = "fushi_ios_umbrella"
 version = "0.1.0"
 dependencies = [
- "fushi_adblock",
  "fushi_fsrs",
  "fushi_p2p",
+ "fushi_web_core",
 ]
 
 [[package]]
@@ -797,6 +789,14 @@ dependencies = [
  "iroh-mainline-address-lookup",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "fushi_web_core"
+version = "0.1.0"
+dependencies = [
+ "adblock",
+ "serde_json",
 ]
 
 [[package]]

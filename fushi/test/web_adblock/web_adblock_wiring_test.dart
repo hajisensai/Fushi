@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi/src/web_adblock/web_adblock_wiring.dart';
-import 'package:fushi_adblock/fushi_adblock.dart';
+import 'package:fushi_web_core/fushi_web_core.dart';
 
 class _FakeMatcher implements AdblockMatcher {
   final List<({String url, String? source, AdblockRequestType type})> checks =

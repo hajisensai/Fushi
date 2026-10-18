@@ -202,14 +202,14 @@ if(EXISTS "${FUSHI_FSRS_DLL}")
     COMPONENT Runtime)
 endif()
 # === 网页广告拦截内核（adblock-rust，copy-if-present）===
-# native/fushi_adblock/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_adblock.dll，
-# 存在则随包到 exe 同级（Dart 侧 packages/fushi_adblock 的 FushiAdblockLibrary 按 exe 同级定位）。
+# native/fushi_web_core/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_web_core.dll，
+# 存在则随包到 exe 同级（Dart 侧 packages/fushi_web_core 的 FushiWebCoreLibrary 按 exe 同级定位）。
 # 缺失时网页广告拦截判不可用（WebView 照常、只是不拦），构建照常——与上面 fushi_p2p 同一语义；发布包的保证在
 # 流水线侧（先跑构建脚本，失败即红）。
-set(FUSHI_ADBLOCK_DLL
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_adblock/prebuilt/windows-x64/fushi_adblock.dll")
-if(EXISTS "${FUSHI_ADBLOCK_DLL}")
-  install(FILES "${FUSHI_ADBLOCK_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+set(FUSHI_WEB_CORE_DLL
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_web_core/prebuilt/windows-x64/fushi_web_core.dll")
+if(EXISTS "${FUSHI_WEB_CORE_DLL}")
+  install(FILES "${FUSHI_WEB_CORE_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
 

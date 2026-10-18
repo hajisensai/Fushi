@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
 import 'package:fushi/src/web_adblock/web_adblock_wiring.dart';
-import 'package:fushi_adblock/fushi_adblock.dart';
+import 'package:fushi_web_core/fushi_web_core.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 引擎所处阶段（设置页副标题用）。
@@ -69,7 +69,7 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
     required List<String> Function() readListIds,
     required String Function() readAllowlist,
     AdblockHttpFetcher? fetcher,
-    FushiAdblockLibrary? library,
+    FushiWebCoreLibrary? library,
     WebAdblockNetworkMode? mode,
   }) : _cacheDir = cacheDir,
        _fetcher = fetcher,
@@ -93,7 +93,7 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
   final bool Function() _readEnabled;
   final List<String> Function() _readListIds;
   final String Function() _readAllowlist;
-  final FushiAdblockLibrary? _library;
+  final FushiWebCoreLibrary? _library;
   final WebAdblockNetworkMode _mode;
   final Directory Function() _cacheDir;
   final AdblockHttpFetcher? _fetcher;
@@ -112,7 +112,7 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
   Set<String> _allowlist = const <String>{};
   bool _disposed = false;
 
-  FushiAdblockLibrary? get _lib => _library ?? FushiAdblockLibrary.instance;
+  FushiWebCoreLibrary? get _lib => _library ?? FushiWebCoreLibrary.instance;
 
   /// 原生库是否在本构建里。
   bool get isNativeAvailable => _lib != null;
@@ -185,7 +185,7 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
   }
 
   Future<void> _load({required bool force}) async {
-    final FushiAdblockLibrary? lib = _lib;
+    final FushiWebCoreLibrary? lib = _lib;
     if (lib == null) return;
     _setStatus(WebAdblockStatus.loading);
     final List<AdblockFilterList> lists = selectedLists;

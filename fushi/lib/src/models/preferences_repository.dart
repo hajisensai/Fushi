@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_adblock/fushi_adblock.dart'
+import 'package:fushi_web_core/fushi_web_core.dart'
     show AdblockFilterList, kDefaultAdblockFilterLists;
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/srs/srs_backup_retention.dart';

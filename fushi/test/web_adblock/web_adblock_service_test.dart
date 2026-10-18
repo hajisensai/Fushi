@@ -1,6 +1,6 @@
 // WebAdblockService 端到端（偏好闭包 → 假下载器 → 真原生库编译 → 接线判定）。
-// 原生库取 FUSHI_ADBLOCK_LIB 或本仓 native/fushi_adblock/prebuilt 产物，找不到就 skip
-// （库缺失是正常部署形态，已由 packages/fushi_adblock 的测试与 CI 构建步骤覆盖）。
+// 原生库取 FUSHI_WEB_CORE_LIB 或本仓 native/fushi_web_core/prebuilt 产物，找不到就 skip
+// （库缺失是正常部署形态，已由 packages/fushi_web_core 的测试与 CI 构建步骤覆盖）。
 import 'dart:io';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -8,28 +8,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi/src/web_adblock/web_adblock_wiring.dart';
-import 'package:fushi_adblock/fushi_adblock.dart';
+import 'package:fushi_web_core/fushi_web_core.dart';
 
-FushiAdblockLibrary? _loadLib() {
+FushiWebCoreLibrary? _loadLib() {
   final String sep = Platform.pathSeparator;
   final String name = Platform.isWindows
-      ? 'windows-x64${sep}fushi_adblock.dll'
+      ? 'windows-x64${sep}fushi_web_core.dll'
       : Platform.isMacOS
-      ? 'macos${sep}libfushi_adblock.dylib'
-      : 'linux-x64${sep}libfushi_adblock.so';
+      ? 'macos${sep}libfushi_web_core.dylib'
+      : 'linux-x64${sep}libfushi_web_core.so';
   final String path =
-      Platform.environment[kFushiAdblockLibEnv] ??
+      Platform.environment[kFushiWebCoreLibEnv] ??
       File(
-        '..${sep}native${sep}fushi_adblock${sep}prebuilt$sep$name',
+        '..${sep}native${sep}fushi_web_core${sep}prebuilt$sep$name',
       ).absolute.path;
-  return FushiAdblockLibrary.tryLoad(libraryPath: path);
+  return FushiWebCoreLibrary.tryLoad(libraryPath: path);
 }
 
 void main() {
-  final FushiAdblockLibrary? lib = _loadLib();
+  final FushiWebCoreLibrary? lib = _loadLib();
 
   test('loads selected lists, honours switch and allowlist live', () async {
-    final Directory tmp = Directory.systemTemp.createTempSync('fadb_svc_');
+    final Directory tmp = Directory.systemTemp.createTempSync('fwc_svc_');
     addTearDown(() => tmp.deleteSync(recursive: true));
     bool enabled = true;
     String allowlist = '';
@@ -85,5 +85,5 @@ void main() {
     await service.reload();
     expect(service.isActive, isTrue);
     expect(fetched, hasLength(1), reason: 'reload reuses fresh list cache');
-  }, skip: lib == null ? 'fushi_adblock native library not found' : null);
+  }, skip: lib == null ? 'fushi_web_core native library not found' : null);
 }

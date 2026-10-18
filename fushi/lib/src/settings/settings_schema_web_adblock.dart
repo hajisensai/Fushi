@@ -6,7 +6,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi_adblock/fushi_adblock.dart';
+import 'package:fushi_web_core/fushi_web_core.dart';
 
 /// 「系统 › 网页广告拦截」分组：总开关、订阅列表、立即更新、白名单。
 ///

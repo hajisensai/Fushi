@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Linux x86_64 版 libfushi_adblock.so（无头服务端 bundle 随包：bin/../lib/libfushi_adblock.so）。
+# Linux x86_64 版 libfushi_web_core.so（无头服务端 bundle 随包：bin/../lib/libfushi_web_core.so）。
 #
 # 用法: build_linux_so.sh [target]   缺省 x86_64-unknown-linux-gnu
-# 产物: prebuilt/linux-x64/libfushi_adblock.so（git 忽略，不入库）
+# 产物: prebuilt/linux-x64/libfushi_web_core.so（git 忽略，不入库）
 set -euo pipefail
 
 TARGET="${1:-x86_64-unknown-linux-gnu}"
@@ -13,5 +13,5 @@ cd "$SCRIPT_DIR"
 echo "==> cargo build --release --target $TARGET"
 cargo build --release --target "$TARGET"
 mkdir -p "$OUT_DIR"
-cp "target/$TARGET/release/libfushi_adblock.so" "$OUT_DIR/libfushi_adblock.so"
-echo "==> Done: $OUT_DIR/libfushi_adblock.so ($(wc -c < "$OUT_DIR/libfushi_adblock.so") bytes)"
+cp "target/$TARGET/release/libfushi_web_core.so" "$OUT_DIR/libfushi_web_core.so"
+echo "==> Done: $OUT_DIR/libfushi_web_core.so ($(wc -c < "$OUT_DIR/libfushi_web_core.so") bytes)"

@@ -1,4 +1,4 @@
-﻿# 用 cargo-ndk 构建 Android 版 libfushi_adblock.so。
+﻿# 用 cargo-ndk 构建 Android 版 libfushi_web_core.so。
 #
 # 前提：rustup target add aarch64-linux-android x86_64-linux-android；cargo install cargo-ndk。
 # 默认只编 arm64-v8a / x86_64（本机调试够用）；要与 split-per-abi APK 对齐时加
@@ -8,8 +8,8 @@
 # 平台 API = minSdk 24。
 #
 # 用法：
-#   powershell -ExecutionPolicy Bypass -File native/fushi_adblock/build_android_so.ps1 [-NdkRoot D:\android_sdk\ndk\28.2.13676358] [-Abis arm64-v8a,x86_64]
-# 产物：native/fushi_adblock/prebuilt/android/<abi>/libfushi_adblock.so（git 忽略，不入库）
+#   powershell -ExecutionPolicy Bypass -File native/fushi_web_core/build_android_so.ps1 [-NdkRoot D:\android_sdk\ndk\28.2.13676358] [-Abis arm64-v8a,x86_64]
+# 产物：native/fushi_web_core/prebuilt/android/<abi>/libfushi_web_core.so（git 忽略，不入库）
 
 [CmdletBinding()]
 param(
@@ -44,12 +44,12 @@ try {
 }
 foreach ($abi in $Abis) {
     # cargo-ndk 可能把 deps 里自带 cdylib 的 crate 副本（lib<dep>-<hash>.so）
-    # 一并拷出来；libfushi_adblock.so 是静态链接的（NEEDED 只有 libc/libm/libdl），
+    # 一并拷出来；libfushi_web_core.so 是静态链接的（NEEDED 只有 libc/libm/libdl），
     # 这些副本不被任何人加载，删掉免得被误打进 APK。
     Get-ChildItem (Join-Path $outDir $abi) -Filter "*.so" |
-        Where-Object { $_.Name -ne "libfushi_adblock.so" } |
+        Where-Object { $_.Name -ne "libfushi_web_core.so" } |
         Remove-Item -Force
-    $so = Join-Path $outDir "$abi\libfushi_adblock.so"
+    $so = Join-Path $outDir "$abi\libfushi_web_core.so"
     if (-not (Test-Path $so)) { throw "缺少产物 $so" }
     Write-Host ("  {0}  {1:N0} bytes" -f $so, (Get-Item $so).Length)
 }

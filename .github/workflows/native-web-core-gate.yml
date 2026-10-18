@@ -1,13 +1,13 @@
-# 网页广告拦截内核原生库（native/fushi_adblock，Rust + adblock-rust）的 **PR 阶段门**。
+# 网页广告拦截内核原生库（native/fushi_web_core，Rust + adblock-rust）的 **PR 阶段门**。
 #
 # ── 补的是哪个缺口（与 native-p2p-gate.yml 同一形态）──────────────────────────────
 #   build_windows_dll.ps1 / build_macos_dylib.sh / iOS 伞形库
 #       -> build-multiplatform.yml 的 windows / macos / ios job（路径门把
-#          `native/fushi_adblock/**` 与 `packages/fushi_adblock/**` 路由给 app_common），
-#          Windows 还跑 packages/fushi_adblock 的真 FFI 测试。linux-server 是无头服务端，不带广告拦截。
+#          `native/fushi_web_core/**` 与 `packages/fushi_web_core/**` 路由给 app_common），
+#          Windows 还跑 packages/fushi_web_core 的真 FFI 测试。linux-server 是无头服务端，不带广告拦截。
 #   build_android_so.sh
 #       -> 没有任何 `pull_request` 触发的 workflow 编它。本 workflow 的 android job 补这一条：
-#          cargo-ndk 三个 ABI + ELF 架构 + fadb_* 符号核对。
+#          cargo-ndk 三个 ABI + ELF 架构 + fwc_* 符号核对。
 #   lib.rs 自己的单元测试（规则匹配、序列化往返、错误码……）
 #       -> 本 workflow 的 rust-tests job（ubuntu 上 `cargo test --release`）。
 #
@@ -16,16 +16,16 @@
 #
 # ── 退出码纪律 ────────────────────────────────────────────────────────────────────
 # `shell: bash` + `set -euo pipefail`，无 `continue-on-error`；缓存未命中只会变慢。
-name: native-adblock-gate
+name: native-web-core-gate
 
 on:
   workflow_dispatch:
   pull_request:
     branches: ['main', 'develop']
     paths:
-      - 'native/fushi_adblock/**'
-      - 'packages/fushi_adblock/lib/src/ffi/**'
-      - '.github/workflows/native-adblock-gate.yml'
+      - 'native/fushi_web_core/**'
+      - 'packages/fushi_web_core/lib/src/ffi/**'
+      - '.github/workflows/native-web-core-gate.yml'
 
 permissions:
   contents: read
@@ -41,25 +41,25 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       # 工具链钉法与 native-p2p-gate.yml 一致（Rust 1.95.0、cargo-ndk 4.1.2）。
-      - name: Set up Rust (fushi_adblock, Android targets)
+      - name: Set up Rust (fushi_web_core, Android targets)
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.95.0'
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
-      - name: Cache Rust build (fushi_adblock)
+      - name: Cache Rust build (fushi_web_core)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: native/fushi_adblock -> target
-          key: fushi-adblock-android
+          workspaces: native/fushi_web_core -> target
+          key: fushi-web-core-android
       - name: Install cargo-ndk
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-ndk@4.1.2
-      - name: Build fushi_adblock Android .so (arm64-v8a, armeabi-v7a, x86_64)
+      - name: Build fushi_web_core Android .so (arm64-v8a, armeabi-v7a, x86_64)
         shell: bash
         run: |
           set -euo pipefail
-          bash native/fushi_adblock/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+          bash native/fushi_web_core/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
       - name: Verify .so architecture and exported C ABI surface
         shell: bash
         run: |
@@ -68,14 +68,14 @@ jobs:
           if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
           for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
             abi="${pair%%:*}"; want="${pair#*:}"
-            so="native/fushi_adblock/prebuilt/android/$abi/libfushi_adblock.so"
+            so="native/fushi_web_core/prebuilt/android/$abi/libfushi_web_core.so"
             machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
             echo "$abi: ELF machine = $machine"
             case "$machine" in
               *"$want"*) : ;;
               *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
             esac
-            bash native/fushi_adblock/verify_abi.sh "$so" "$nm_bin"
+            bash native/fushi_web_core/verify_abi.sh "$so" "$nm_bin"
           done
 
   rust-tests:
@@ -83,18 +83,18 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
-      - name: Set up Rust (fushi_adblock)
+      - name: Set up Rust (fushi_web_core)
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.95.0'
-      - name: Cache Rust build (fushi_adblock tests)
+      - name: Cache Rust build (fushi_web_core tests)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: native/fushi_adblock -> target
-          key: fushi-adblock-tests
-      - name: cargo test --release (fushi_adblock)
+          workspaces: native/fushi_web_core -> target
+          key: fushi-web-core-tests
+      - name: cargo test --release (fushi_web_core)
         shell: bash
-        working-directory: native/fushi_adblock
+        working-directory: native/fushi_web_core
         run: |
           set -euo pipefail
           cargo test --release --locked

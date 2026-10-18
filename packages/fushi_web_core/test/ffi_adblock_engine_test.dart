@@ -1,6 +1,6 @@
-// native/fushi_adblock（adblock-rust C ABI）的真实 FFI 调用测试。
+// native/fushi_web_core（adblock-rust C ABI）的真实 FFI 调用测试。
 //
-// 库定位：环境变量 FUSHI_ADBLOCK_LIB，缺省用本仓 native/fushi_adblock/prebuilt/<平台>/ 下
+// 库定位：环境变量 FUSHI_WEB_CORE_LIB，缺省用本仓 native/fushi_web_core/prebuilt/<平台>/ 下
 // 构建脚本的产物。库不可用时整组 skip 并打印原因（CI 用输出里的 'native library not found'
 // 断言没有被静默跳过，与 packages/fushi_p2p / fushi_srs 同一约定）。
 @TestOn('vm')
@@ -9,21 +9,21 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi_adblock/fushi_adblock.dart';
+import 'package:fushi_web_core/fushi_web_core.dart';
 import 'package:test/test.dart';
 
-/// 本仓构建脚本的默认产物路径（相对 packages/fushi_adblock）。
+/// 本仓构建脚本的默认产物路径（相对 packages/fushi_web_core）。
 String _defaultPrebuiltPath() {
   final String sep = Platform.pathSeparator;
-  final String root = '..$sep..${sep}native${sep}fushi_adblock${sep}prebuilt';
+  final String root = '..$sep..${sep}native${sep}fushi_web_core${sep}prebuilt';
   if (Platform.isWindows)
-    return '$root${sep}windows-x64${sep}fushi_adblock.dll';
-  if (Platform.isMacOS) return '$root${sep}macos${sep}libfushi_adblock.dylib';
-  return '$root${sep}linux-x64${sep}libfushi_adblock.so';
+    return '$root${sep}windows-x64${sep}fushi_web_core.dll';
+  if (Platform.isMacOS) return '$root${sep}macos${sep}libfushi_web_core.dylib';
+  return '$root${sep}linux-x64${sep}libfushi_web_core.so';
 }
 
 String _libraryPath() {
-  final String? env = Platform.environment[kFushiAdblockLibEnv];
+  final String? env = Platform.environment[kFushiWebCoreLibEnv];
   if (env != null && env.isNotEmpty) return env;
   return File(_defaultPrebuiltPath()).absolute.path;
 }
@@ -42,12 +42,12 @@ example.com#@#.generic-ad
 
 void main() {
   final String path = _libraryPath();
-  final FushiAdblockLibrary? lib = FushiAdblockLibrary.tryLoad(
+  final FushiWebCoreLibrary? lib = FushiWebCoreLibrary.tryLoad(
     libraryPath: path,
   );
   if (lib == null) {
     // ignore: avoid_print
-    print('fushi_adblock native library not found at $path; skipping');
+    print('fushi_web_core native library not found at $path; skipping');
   }
   final Object? skip = lib == null ? 'native library not found: $path' : null;
 
@@ -205,7 +205,7 @@ void main() {
   group('AdblockEngineLoader (real native library)', () {
     late Directory tmp;
 
-    setUp(() => tmp = Directory.systemTemp.createTempSync('fadb_loader_'));
+    setUp(() => tmp = Directory.systemTemp.createTempSync('fwc_loader_'));
     tearDown(() => tmp.deleteSync(recursive: true));
 
     test('compiles in background, caches engine, reuses cache', () async {

@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
-import 'package:fushi_adblock/fushi_adblock.dart';
+import 'package:fushi_web_core/fushi_web_core.dart';
 
 /// WebView 接线读的拦截策略（app 侧是 `WebAdblockService`，测试注入假实现）。
 ///
@@ -44,7 +44,7 @@ const String kWebAdblockCosmeticScript = r'''
 (function () {
   if (window.__fushiAdblockInstalled) return;
   window.__fushiAdblockInstalled = true;
-  var STYLE_ID = 'fushi-adblock-style';
+  var STYLE_ID = 'fushi-web-core-style';
   var seen = Object.create(null);
   var href = location.href;
   function root() { return document.head || document.documentElement; }
@@ -149,7 +149,7 @@ const String kWebAdblockCosmeticHandler = 'fushiAdblockCosmetic';
 const String kWebAdblockGenericHandler = 'fushiAdblockGeneric';
 
 /// UserScript 分组名：调用方要整体移除时用 `removeUserScriptsByGroupName`。
-const String kWebAdblockUserScriptGroup = 'fushi_adblock';
+const String kWebAdblockUserScriptGroup = 'fushi_web_core';
 
 /// 原始 `shouldInterceptRequest` 回调签名（与 InAppWebView 的参数同型）。
 typedef WebAdblockInterceptCallback =

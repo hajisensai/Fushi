@@ -4,7 +4,7 @@
 # 用法: build_android_so.sh <ndk-root> [abi ...]
 #   abi 缺省 arm64-v8a x86_64（本机调试够用）。发布（release.yml）与 PR 门
 #   （native-p2p-gate.yml 同款）传 arm64-v8a armeabi-v7a x86_64，与 split-per-abi APK 对齐。
-#   产物: prebuilt/android/<abi>/libfushi_adblock.so
+#   产物: prebuilt/android/<abi>/libfushi_web_core.so
 # 前提: rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android;
 #       cargo install cargo-ndk（CI 钉 4.1.2）
 set -euo pipefail
@@ -25,8 +25,8 @@ echo "==> cargo ${args[*]}"
 cargo "${args[@]}"
 for abi in "${ABIS[@]}"; do
   # cargo-ndk 可能顺带拷出的依赖 cdylib 副本无人加载（见 .ps1 版注释）。
-  find "$OUT_DIR/$abi" -name '*.so' ! -name libfushi_adblock.so -delete
-  so="$OUT_DIR/$abi/libfushi_adblock.so"
+  find "$OUT_DIR/$abi" -name '*.so' ! -name libfushi_web_core.so -delete
+  so="$OUT_DIR/$abi/libfushi_web_core.so"
   [[ -f "$so" ]] || { echo "missing $so" >&2; exit 1; }
   echo "  $so $(wc -c < "$so") bytes"
 done

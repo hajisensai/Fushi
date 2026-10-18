@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# macOS 版 libfushi_adblock.dylib（只出 Apple Silicon arm64：macOS 版不再支持 Intel Mac），
-# 给 app bundle 的 Contents/Frameworks 用（fushi/macos/bundle_fushi_adblock.sh 在 Xcode
+# macOS 版 libfushi_web_core.dylib（只出 Apple Silicon arm64：macOS 版不再支持 Intel Mac），
+# 给 app bundle 的 Contents/Frameworks 用（fushi/macos/bundle_fushi_web_core.sh 在 Xcode
 # 构建阶段拷进去）。
 #
 # 用法: build_macos_dylib.sh
 # 前提: rustup target add aarch64-apple-darwin
-# 产物: prebuilt/macos/libfushi_adblock.dylib（git 忽略，不入库；install name = @rpath/libfushi_adblock.dylib）
+# 产物: prebuilt/macos/libfushi_web_core.dylib（git 忽略，不入库；install name = @rpath/libfushi_web_core.dylib）
 #
 # 部署目标与 fushi/macos/Runner.xcodeproj 的 MACOSX_DEPLOYMENT_TARGET 对齐（13.4），
 # 否则链接 Runner 时 ld 会对「dylib 比 app 要求更新的系统」报警、老系统上加载失败。
@@ -21,13 +21,13 @@ cd "$SCRIPT_DIR"
 # 只出 cdylib：Cargo.toml 同时声明了 staticlib（iOS 用），这里不必为它再跑一遍 fat LTO。
 echo "==> cargo rustc --release --lib --target $target --crate-type cdylib (MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET)"
 cargo rustc --release --lib --target "$target" --crate-type cdylib
-built="target/$target/release/libfushi_adblock.dylib"
+built="target/$target/release/libfushi_web_core.dylib"
 [[ -f "$built" ]] || { echo "missing $built" >&2; exit 1; }
 
 mkdir -p "$OUT_DIR"
-out="$OUT_DIR/libfushi_adblock.dylib"
+out="$OUT_DIR/libfushi_web_core.dylib"
 cp -f "$built" "$out"
-install_name_tool -id "@rpath/libfushi_adblock.dylib" "$out"
+install_name_tool -id "@rpath/libfushi_web_core.dylib" "$out"
 lipo -info "$out"
 otool -L "$out"
 echo "==> Done: $out ($(wc -c < "$out") bytes)"

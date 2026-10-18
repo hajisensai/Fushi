@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# Xcode 构建阶段「Bundle fushi_adblock dylib」：网页广告拦截内核（adblock-rust）的原生库 copy-if-present。
+# Xcode 构建阶段「Bundle fushi_web_core dylib」：网页广告拦截内核（adblock-rust）的原生库 copy-if-present。
 #
-# native/fushi_adblock/build_macos_dylib.sh 产出 prebuilt/macos/libfushi_adblock.dylib 则拷进
+# native/fushi_web_core/build_macos_dylib.sh 产出 prebuilt/macos/libfushi_web_core.dylib 则拷进
 # Contents/Frameworks（Runner 的 LD_RUNPATH_SEARCH_PATHS 含 @executable_path/../Frameworks，
-# Dart 侧 packages/fushi_adblock 按裸名经这个 rpath 加载）；缺失时 网页广告拦截原生库判不可用（WebView 照常、只是不拦）、其余照常——
+# Dart 侧 packages/fushi_web_core 按裸名经这个 rpath 加载）；缺失时 网页广告拦截原生库判不可用（WebView 照常、只是不拦）、其余照常——
 # 与 Windows CMake / Android jniLibs 同一语义，没装 Rust 的 Mac 也能构建。
 # 发布流水线（release-desktop.yml / build-multiplatform.yml）先跑构建脚本，再在出包后
 # 核对 Frameworks 里确有此库，所以「CI 忘了编」不会静默发出缺库的包。
 set -euo pipefail
 
-name="libfushi_adblock.dylib"
-source="${PROJECT_DIR}/../../native/fushi_adblock/prebuilt/macos/${name}"
+name="libfushi_web_core.dylib"
+source="${PROJECT_DIR}/../../native/fushi_web_core/prebuilt/macos/${name}"
 destination_dir="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}"
 destination="${destination_dir}/${name}"
 
 if [[ ! -f "$source" ]]; then
   # 上一次构建拷进去的旧库不能留着冒充本次产物。
   rm -f "$destination"
-  echo "note: ${source} not found; fushi_adblock is not bundled (web ad-blocking unavailable in this build)"
+  echo "note: ${source} not found; fushi_web_core is not bundled (web ad-blocking unavailable in this build)"
   exit 0
 fi
 
@@ -27,7 +27,7 @@ for arch in ${ARCHS:-$(uname -m)}; do
   case "$available_archs" in
     *" $arch "*) ;;
     *)
-      echo "error: ${source} lacks ${arch} (has:${available_archs}); rebuild with native/fushi_adblock/build_macos_dylib.sh" >&2
+      echo "error: ${source} lacks ${arch} (has:${available_archs}); rebuild with native/fushi_web_core/build_macos_dylib.sh" >&2
       exit 1
       ;;
   esac

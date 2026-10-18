@@ -44,7 +44,7 @@ void main() {
       );
       expect(xc, isNot(contains('native/fushi_p2p/prebuilt/ios')));
       expect(xc, isNot(contains('native/fushi_fsrs/prebuilt/ios')));
-      expect(xc, isNot(contains('native/fushi_adblock/prebuilt/ios')));
+      expect(xc, isNot(contains('native/fushi_web_core/prebuilt/ios')));
     });
   }
 
@@ -56,10 +56,10 @@ void main() {
     );
     expect(pbx, isNot(contains('FUSHI_P2P_LDFLAGS')));
     expect(pbx, isNot(contains('FUSHI_FSRS_LDFLAGS')));
-    expect(pbx, isNot(contains('FUSHI_ADBLOCK_LDFLAGS')));
+    expect(pbx, isNot(contains('FUSHI_WEB_CORE_LDFLAGS')));
   });
 
-  test('出 iOS 包的 workflow 编伞形库，并在 Runner 上核对 ffsrs_* / fadb_* 符号', () {
+  test('出 iOS 包的 workflow 编伞形库，并在 Runner 上核对 ffsrs_* / fwc_* 符号', () {
     for (final String path in <String>[
       '../.github/workflows/build-multiplatform.yml',
       '../.github/workflows/release-desktop.yml',
@@ -94,7 +94,7 @@ void main() {
           reason: '$path：「$check」只核对了 fp2p_*，缺 ffsrs_*',
         );
       }
-      // 网页广告拦截内核（fadb_*）同样静态链进 iOS Runner：只核对「iOS 产物」那几条
+      // 网页广告拦截内核（fwc_*）同样静态链进 iOS Runner：只核对「iOS 产物」那几条
       // （Runner 主二进制 / xcarchive 里的 Runner），macOS dylib 的核对不在此列。
       final List<String> iosRunnerChecks = <String>[
         for (final String line in workflow.split('\n'))
@@ -108,8 +108,8 @@ void main() {
       for (final String check in iosRunnerChecks) {
         expect(
           workflow,
-          contains(check.replaceFirst('fushi_fsrs/', 'fushi_adblock/')),
-          reason: '$path：「$check」只核对了 ffsrs_*，缺 fadb_*',
+          contains(check.replaceFirst('fushi_fsrs/', 'fushi_web_core/')),
+          reason: '$path：「$check」只核对了 ffsrs_*，缺 fwc_*',
         );
       }
     }

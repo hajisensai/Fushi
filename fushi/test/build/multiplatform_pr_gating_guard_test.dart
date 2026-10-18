@@ -184,8 +184,8 @@ void main() {
       'native/fushi_fsrs/src/lib.rs': all,
       'packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart': all,
       // 网页广告拦截内核（adblock-rust）：只随三个 app，无头服务端不带；verify_abi.sh 读 Dart 绑定。
-      'native/fushi_adblock/src/lib.rs': apps,
-      'packages/fushi_adblock/lib/src/ffi/fushi_adblock_bindings.dart': apps,
+      'native/fushi_web_core/src/lib.rs': apps,
+      'packages/fushi_web_core/lib/src/ffi/fushi_web_core_bindings.dart': apps,
       // iOS 伞形静态库（fushi_p2p + fushi_fsrs 合一）只有 iOS job 编。
       'native/fushi_ios_umbrella/src/lib.rs': <String>{'ios'},
       // fushidicts 编进三个 app，也随无头服务端包（linux-server 编 .so + 冒烟）。
