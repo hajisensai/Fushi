@@ -44,6 +44,16 @@ const String _kFloatingBallSceneButtons =
     '各场景的勾选互不影响 / 勾选了但页面此刻没提供的专属按钮跳过';
 
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
+  // 没有 WebView。总开关与订阅列表经 WebAdblockService 的现读闭包生效，由
+  // web_adblock_service_test（开关 / 白名单现读、订阅集决定下载哪些列表）与
+  // web_adblock_wiring_test（策略关闭时一律放行）咬住。
+  'system/Block ads and trackers on web pages':
+      'test/web_adblock/web_adblock_service_test.dart + test/web_adblock/web_adblock_wiring_test.dart',
+  'system/EasyList': 'test/web_adblock/web_adblock_service_test.dart',
+  'system/EasyPrivacy': 'test/web_adblock/web_adblock_service_test.dart',
+  'system/AdGuard Chinese': 'test/web_adblock/web_adblock_service_test.dart',
+  'system/AdGuard Japanese': 'test/web_adblock/web_adblock_service_test.dart',
   // 悬浮球「显示按钮文字」：生效点在悬浮球展开态（应用内球 / 系统球原生面），
   // 设置页 harness 里没有展开的悬浮球。行为由 floating_ball_labels_test 咬住。
   'floatingBall/Show button labels':

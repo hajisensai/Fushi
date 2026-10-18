@@ -137,6 +137,15 @@ if(EXISTS "${FUSHI_FSRS_SO}")
   install(FILES "${FUSHI_FSRS_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+# 网页广告拦截内核（adblock-rust，copy-if-present）：native/fushi_adblock/build_linux_so.sh 产出
+# prebuilt/linux-x64/libfushi_adblock.so 则随包进 bundle/lib/（Dart 侧按裸名经 $ORIGIN/lib 定位）；
+# 缺失时网页广告拦截判不可用（WebView 照常、只是不拦），构建照常。与 fushi_p2p 同一语义。
+set(FUSHI_ADBLOCK_SO
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_adblock/prebuilt/linux-x64/libfushi_adblock.so")
+if(EXISTS "${FUSHI_ADBLOCK_SO}")
+  install(FILES "${FUSHI_ADBLOCK_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
 
 # 内置 libtorrent 引擎（copy-if-present）：native/fushi_torrent/build_linux_so.sh 产出
 # prebuilt/linux-x64/libfushi_torrent_ffi.so（vcpkg 静态链 libtorrent/boost/openssl +

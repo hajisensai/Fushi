@@ -23,6 +23,7 @@ workspace:
   - fushi
   - packages/flutter_inappwebview_linux
   - packages/flutter_inappwebview_windows
+  - packages/fushi_adblock
   - packages/fushi_anki
   - packages/fushi_audio
   - packages/fushi_cli

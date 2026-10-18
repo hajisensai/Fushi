@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# iOS 伞形静态库 libfushi_ios_umbrella.a（fushi_p2p + fushi_fsrs 合一）+ 给 Runner 链接用的
-# xcconfig 片段。
+# iOS 伞形静态库 libfushi_ios_umbrella.a（fushi_p2p + fushi_fsrs + fushi_adblock 合一）+ 给
+# Runner 链接用的 xcconfig 片段。
 #
-# 为什么要伞形：每个 Rust staticlib 都带一整份 Rust std，libfushi_p2p.a 与 libfushi_fsrs.a
-# 同时 -force_load 进 Runner 会撞重复符号。合成一个 crate 编译，std 只有一份，同时导出
-# fp2p_* 与 ffsrs_*（Dart 两边都用 `DynamicLibrary.process()` 取符号）。
+# 为什么要伞形：每个 Rust staticlib 都带一整份 Rust std，libfushi_p2p.a / libfushi_fsrs.a /
+# libfushi_adblock.a 同时 -force_load 进 Runner 会撞重复符号。合成一个 crate 编译，std 只有
+# 一份，同时导出 fp2p_* / ffsrs_* / fadb_*（Dart 各侧都用 `DynamicLibrary.process()` 取符号）。
 #
 # 生成的 xcconfig 定义 FUSHI_IOS_NATIVE_LDFLAGS = -force_load <.a> + rustc 报的系统库。
 # fushi/ios 的 Flutter/{Debug,Release}.xcconfig `#include?` 这份 xcconfig，Runner 的
@@ -61,7 +61,7 @@ build_target() {
   [[ -f "target/$target/release/$LIB" ]] || { echo "missing target/$target/release/$LIB" >&2; exit 1; }
 }
 
-# 归档必须同时导出两个 Dart 绑定 lookup 的全部符号（期望集取自绑定文件的字面量）。
+# 归档必须同时导出各 Dart 绑定 lookup 的全部符号（期望集取自绑定文件的字面量）。
 verify_archive() {
   local archive="$1" prefix bindings expected exported missing
   # nm 的退出码不作数：rustc 的 compiler_builtins 成员是 bitcode，Xcode 自带 nm 的 LLVM 比
@@ -69,7 +69,8 @@ verify_archive() {
   # 那些成员里没有 fp2p_* / ffsrs_*；真正的门是下面的「期望符号一个不缺」。
   exported="$({ nm -gU "$archive" 2>/dev/null || true; } | awk 'NF >= 2 { print $NF }' | sed 's/^_//' | sort -u)"
   for pair in "fp2p:$SCRIPT_DIR/../../packages/fushi_p2p/lib/src/ffi/fushi_p2p_bindings.dart" \
-              "ffsrs:$SCRIPT_DIR/../../packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart"; do
+              "ffsrs:$SCRIPT_DIR/../../packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart" \
+              "fadb:$SCRIPT_DIR/../../packages/fushi_adblock/lib/src/ffi/fushi_adblock_bindings.dart"; do
     prefix="${pair%%:*}"
     bindings="${pair#*:}"
     expected="$(grep -oE "'${prefix}_[a-z0-9_]+'" "$bindings" | tr -d "'" | sort -u)"
