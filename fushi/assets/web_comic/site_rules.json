@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "comment": "Fushi web comic site rules. Schema: lib/src/media/manga/web/web_comic_site_rule.dart. verified=false means nobody has walked open-chapter -> read-in-Fushi -> finish on a real device yet.",
+  "rules": [
+    {
+      "id": "mangadex",
+      "name": "MangaDex",
+      "hosts": ["mangadex.org"],
+      "chapterUrlPattern": "^/chapter/(?<id>[0-9a-fA-F-]{36})",
+      "images": {
+        "mode": "api",
+        "method": "GET",
+        "url": "https://api.mangadex.org/at-home/server/{id}",
+        "itemsPath": "chapter.data",
+        "imageTemplate": "{$baseUrl}/data/{$chapter.hash}/{item}"
+      },
+      "referer": "none",
+      "verified": false
+    },
+    {
+      "id": "komiic",
+      "name": "Komiic",
+      "hosts": ["komiic.com", "*.komiic.com"],
+      "chapterUrlPattern": "^/comic/(?<comicId>\\d+)/chapter/(?<chapterId>\\d+)",
+      "seriesKeyPattern": "/comic/(\\d+)/chapter/",
+      "images": {
+        "mode": "api",
+        "method": "POST",
+        "contentType": "application/json",
+        "url": "{origin}/api/query",
+        "body": {
+          "operationName": "imagesByChapterId",
+          "variables": { "chapterId": "{chapterId}" },
+          "query": "query imagesByChapterId($chapterId: ID!) { imagesByChapterId(chapterId: $chapterId) { id kid height width } }"
+        },
+        "itemsPath": "data.imagesByChapterId",
+        "imageTemplate": "{origin}/api/image/{item.kid}"
+      },
+      "referer": "origin",
+      "verified": false
+    },
+    {
+      "id": "webtoons",
+      "name": "WEBTOON",
+      "hosts": ["www.webtoons.com", "m.webtoons.com"],
+      "chapterUrlPattern": "/viewer\\?(?:.*&)?title_no=(?<titleNo>\\d+)",
+      "seriesKeyPattern": "[?&]title_no=(\\d+)",
+      "images": {
+        "mode": "dom",
+        "selector": "#_imageList img._images",
+        "attributes": ["data-url", "src"],
+        "scroll": false
+      },
+      "referer": "fixed",
+      "refererUrl": "https://www.webtoons.com/",
+      "nextSelector": "a.pg_next",
+      "prevSelector": "a.pg_prev",
+      "verified": false
+    },
+    {
+      "id": "copymanga",
+      "name": "拷贝漫画",
+      "hosts": ["mangacopy.com", "www.mangacopy.com", "*.copymanga.tv", "*.copymanga.site"],
+      "chapterUrlPattern": "^/comic/(?<slug>[^/]+)/chapter/(?<chapterId>[^/?#]+)",
+      "seriesKeyPattern": "/comic/([^/]+)/chapter/",
+      "images": {
+        "mode": "dom",
+        "selector": ".comicContent-list img",
+        "attributes": ["data-src", "src"],
+        "scroll": true
+      },
+      "referer": "origin",
+      "verified": false
+    }
+  ]
+}

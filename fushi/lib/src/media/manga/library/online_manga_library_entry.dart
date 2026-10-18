@@ -18,7 +18,14 @@ enum OnlineMangaRuntimeKind {
   ///
   /// 它没有「扩展包」，`extensionPackage` 恒是 [kInterconnectMangaPackage]、
   /// `sourceId` 恒是对端库那一维的常量，`seriesKey` = 对端 `bookKey`。
-  interconnect('interconnect');
+  interconnect('interconnect'),
+
+  /// 网页漫画：在 app 内浏览器里打开的漫画站章节页，扫图后交给阅读器。
+  ///
+  /// 没有扩展包，`extensionPackage` 恒是 [kWebComicMangaPackage]、`sourceId` 是
+  /// 站点 host，`seriesKey` 是站点规则推出的作品身份（推不出时 = 章节 URL）。
+  /// 章节 `raw` 存章节页 URL、扫到的图、上下章链接与取图请求头。
+  web('web');
 
   const OnlineMangaRuntimeKind(this.wireValue);
 
@@ -48,6 +55,11 @@ const String kInterconnectMangaPackage = 'fushi.interconnect';
 ///
 /// ⚠️ 同样已进 bookKey，**永不可改**。
 const String kInterconnectMangaSourceId = 'library';
+
+/// 网页漫画在书架身份里占的「扩展包」位（同 [kInterconnectMangaPackage] 的理由）。
+///
+/// ⚠️ 值进 bookKey 与磁盘目录名，**永不可改**。
+const String kWebComicMangaPackage = 'fushi.web';
 
 /// 归一化后的章节。
 ///

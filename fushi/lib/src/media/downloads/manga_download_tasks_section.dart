@@ -188,6 +188,8 @@ DownloadTaskEntry mangaDownloadTaskEntry(
           method: DownloadTransferMethod.direct,
           external: false
         ),
+      // 网页漫画：宿主自己按扫到的地址 HTTP 直取，来源是第三方站点。
+      'web' => (method: DownloadTransferMethod.direct, external: true),
       _ => (method: DownloadTransferMethod.extension, external: true),
     };
 
