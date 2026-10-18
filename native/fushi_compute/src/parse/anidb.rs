@@ -216,50 +216,56 @@ pub unsafe extern "C" fn ffc_parse_anidb_catalog_anime_ids(
     }
     guard(|| {
         let bytes: Vec<u8> = c
-            .records()
+            .table()
+            .ids
             .iter()
-            .flat_map(|r| r.anime_id.to_le_bytes())
+            .flat_map(|id| id.to_le_bytes())
             .collect();
         hand_over_bytes(bytes, out_ptr, out_len);
         status::OK
     })
 }
 
-/// 按 anime id 取一条记录：字符串列表（见 `encode_string_list`），每个标题依次 4 项
-/// value / type / language / normalized。找不到时 `*out_len == 0`、`*out_ptr` 为空。
+/// `ffc_parse_anidb_catalog_record_table` 写进 `out_words` 的字数。
+pub const RECORD_TABLE_WORDS: usize = 7;
+
+/// 借出目录的扁平记录表（见 `catalog::RecordTable`），供 Dart 侧在原生内存上建零拷贝视图、
+/// 取记录时不再逐条跨 FFI。`out_words` 依次写入：
+/// `ids` 指针（`i64[记录数]`，升序）、记录数、`title_start` 指针（`u32[记录数 + 1]`）、
+/// `titles` 指针（`u32[标题数 * 6]`：value 偏移 / 长度、normalized 偏移 / 长度、type 下标、
+/// language 下标）、标题数、`units` 指针（`u16[码元数]`）、码元数。这些指针归目录所有，
+/// 在 `catalog_free` 之前一直有效、内容不变；数组为空时指针仍非空（悬空但对齐）。
+/// type / language 去重后的字符串表另外复制一份交出（`encode_string_list`，调用方
+/// `ffc_free_bytes`）。
 ///
 /// # Safety
-/// `handle` 有效；输出指针非空可写。
+/// `handle` 有效；`out_words` 指向至少 [RECORD_TABLE_WORDS] 个可写 `usize`；输出指针非空可写。
 #[no_mangle]
-pub unsafe extern "C" fn ffc_parse_anidb_catalog_find(
+pub unsafe extern "C" fn ffc_parse_anidb_catalog_record_table(
     handle: *const c_void,
-    anime_id: i64,
+    out_words: *mut usize,
     out_ptr: *mut *mut u8,
     out_len: *mut usize,
 ) -> i32 {
     let Some(c) = catalog(handle) else {
         return status::NULL_ARGUMENT;
     };
-    if out_ptr.is_null() || out_len.is_null() {
+    if out_words.is_null() || out_ptr.is_null() || out_len.is_null() {
         return status::NULL_ARGUMENT;
     }
     guard(|| {
-        match c.find(anime_id) {
-            None => {
-                *out_ptr = std::ptr::null_mut();
-                *out_len = 0;
-            }
-            Some(record) => {
-                let mut items: Vec<Vec<u16>> = Vec::with_capacity(record.titles.len() * 4);
-                for t in &record.titles {
-                    items.push(t.value.clone());
-                    items.push(t.kind.clone());
-                    items.push(t.language.clone());
-                    items.push(t.normalized.clone());
-                }
-                hand_over_bytes(encode_string_list(&items), out_ptr, out_len);
-            }
-        }
+        let t = c.table();
+        let words = [
+            t.ids.as_ptr() as usize,
+            t.len(),
+            t.title_start.as_ptr() as usize,
+            t.titles.as_ptr() as usize,
+            t.title_count(),
+            t.units.as_ptr() as usize,
+            t.units.len(),
+        ];
+        std::ptr::copy_nonoverlapping(words.as_ptr(), out_words, RECORD_TABLE_WORDS);
+        hand_over_bytes(encode_string_list(&t.strings), out_ptr, out_len);
         status::OK
     })
 }
@@ -293,7 +299,7 @@ pub unsafe extern "C" fn ffc_parse_anidb_catalog_search(
         out.extend_from_slice(&(results.len() as u32).to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
         for r in &results {
-            out.extend_from_slice(&c.records()[r.record as usize].anime_id.to_le_bytes());
+            out.extend_from_slice(&c.table().ids[r.record as usize].to_le_bytes());
             out.extend_from_slice(&r.title.to_le_bytes());
             out.extend_from_slice(&(r.kind as u32).to_le_bytes());
             out.extend_from_slice(&r.similarity.to_bits().to_le_bytes());

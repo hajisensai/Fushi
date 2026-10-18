@@ -272,7 +272,7 @@ Anki 媒体引用扫描（真实牌组 30794 条笔记 / 9054 万 UTF-16 码元�
 | 调用方 | 之前（纯 Dart） | 现在 |
 |---|---|---|
 | `fushi_engine/.../scraper/title_normalizer.dart`（`TitleNormalizer`，39 处调用） | 逐码点查繁简 Map + 正则折叠空白；`tokens` / Levenshtein DP | 只剩 FFI 外壳（`TitleScoreNative`，`src/parse/title_score.rs`）；另有批量入口 `normalizeAll` / `similarityNormalizedBatch` / `similarityNormalizedMatrix` |
-| `fushi_engine/.../metadata/anidb_title_catalog.dart` | 后台 isolate 里 `XmlEventDecoder` 流式事件 + Dart 建三张索引，Isolate.exit 交回整图 | 后台 isolate 把 gzip 解压块原样喂 `AniDbCatalogBuilderNative`；目录与索引驻留原生内存，句柄地址交回主 isolate `AniDbCatalogNative.adopt`（`NativeFinalizer` 兜底释放）；搜索 / 取记录一次 FFI |
+| `fushi_engine/.../metadata/anidb_title_catalog.dart` | 后台 isolate 里 `XmlEventDecoder` 流式事件 + Dart 建三张索引，Isolate.exit 交回整图 | 后台 isolate 把 gzip 解压块原样喂 `AniDbCatalogBuilderNative`；目录与索引驻留原生内存，句柄地址交回主 isolate `AniDbCatalogNative.adopt`（`NativeFinalizer` 兜底释放）；搜索一次 FFI。记录在同一后台 isolate 里一次物化：`AniDbCatalogNative.borrow` 借出扁平记录表（`ffc_parse_anidb_catalog_record_table`，原生内存上的零拷贝视图，type / language 去重），整表解码成按 id 的 Map 随句柄经 Isolate.exit 交回，`findByAnimeId` 与搜索命中取记录都是 Map 查找 |
 | `fushi_engine/.../metadata/anidb_video_metadata_provider.dart` | DOCTYPE 正则预检 + `XmlDocument.parse` | `parseAniDbAnimeXml`：原生解析成只读元素树，取值逻辑（`getElement` / `findElements` / `innerText`）仍在 Dart |
 | `fushi_engine/.../metadata/tmdb_episode_matcher.dart` | 四轮 × 来源 × 候选 × 标题² 逐对 `similarityNormalized` | 整池标题一次批量归一化 + 一次相似度矩阵，查表；匹配逻辑不变 |
 
@@ -304,7 +304,17 @@ Anki 媒体引用扫描（真实牌组 30794 条笔记 / 9054 万 UTF-16 码元�
 | `similarityNormalized`（逐对 FFI） | 8800 对 | 114 ms | 36 ms | 3.2× |
 | `normalize` | 101889 个标题 | 618 ms | 92 ms | 6.7× |
 | TMDB 分集匹配（批量归一化 + 相似度矩阵） | 1500 场景 / ≈35k 链接 | 35.0 s | 6.4 s | 5.4× |
-| `findByAnimeId`（异步 API，记录缓存未命中） | 25000 次 | 307 ms | 514 ms | 0.6×（变慢：每次未命中多一次 FFI 取记录 + 解码，≈20 µs/次） |
+| `findByAnimeId`（异步 API，id 1..25000，见下） | 25000 次 | 稳态 10 / 12 ms（min / 中位） | 稳态 9 / 12–13 ms | ≈ 1×（两边都是 Map 查找） |
+
+`findByAnimeId` 那一行是 2026-10-19 加粗边界之后重测的（同一进程里两份目录各加载一次，交替各跑
+15 轮 id 1..25000、并交换先后顺序；首轮含 JIT 预热，谁先跑谁慢，不计）。加粗之前逐条
+`ffc_parse_anidb_catalog_find`：每条记录在 Rust 侧逐字段 clone + 编码字符串列表、Dart 侧再解码，
+首轮 25000 次 317–377 ms（同轮旧 Dart 47–55 ms，≈ 13 µs/条；拆开看纯 FFI 调用 25000 次只有
+≈ 1 ms，钱全花在逐条复制 / 编码 / 解码上）。现在改成：Rust 目录本身就存成扁平记录表（同时省掉
+原来每个标题 4 个 `Vec<u16>` 的堆分配，搜索索引直接读它的 normalized 区间），后台 isolate 一次
+FFI 借出、整表物化成 Dart 记录。代价是首次加载多了这一步物化：同轮 7 次加载中位数 加粗前
+739–925 ms → 加粗后 872–1016 ms（物化本身 36–130 ms，都在后台 isolate；旧 Dart 2911–3529 ms）。
+搜索不变（同轮 600 条：加粗前 399–443 ms / 加粗后 411–543 ms / 旧 Dart 3617–4069 ms，结果摘要三者一致）。
 
 ## Dart `toLowerCase` 口径（全 crate 共用）
 
