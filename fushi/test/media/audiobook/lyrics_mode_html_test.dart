@@ -529,13 +529,19 @@ void main() {
         );
       });
 
-      test('hover is gated on Shift or the __hoverAutoLookup toggle', () {
+      test('hover is gated on the lookup key or the __hoverAutoLookup toggle',
+          () {
         final String html = buildHtml();
-        // Same gate as the reader body: Shift held OR the "hover to look up"
-        // setting on; neither → reset the throttle anchor and bail.
+        // Same gate as the reader body: the configured lookup key held (setting
+        // 「悬停查词按键」, pushed as window.__fushiHoverKey, Shift by default)
+        // OR the "hover to look up" setting on; neither → reset the throttle
+        // anchor and bail.
         expect(
           html,
-          contains('!e.shiftKey && !window.__hoverAutoLookup'),
+          contains(
+            "!e[window.__fushiHoverKey || 'shiftKey'] && "
+            '!window.__hoverAutoLookup',
+          ),
         );
       });
 

@@ -66,6 +66,10 @@ const String kWebVideoYoutubeBridgeAsset =
     'assets/browser_extension/youtube-bridge.js';
 const String kWebVideoGlueAsset = 'assets/web_video/web_video_glue.js';
 
+/// 网页档 Shift 悬停查词（站点页面上的任意文字，投 `{type:'pageLookup'}`）。
+const String kWebVideoPageLookupAsset =
+    'assets/web_video/web_video_page_lookup.js';
+
 /// 软件 DRM 档 EME 垫片（拒 PlayReady、Widevine 降软件级），仅制卡 / 增强环境用；须与
 /// [kWebVideoChromeUserAgent] 配对，否则 Netflix 被拒后不试 Widevine。
 const String kWebVideoEmeShimAsset = 'assets/web_video/web_video_eme_shim.js';

@@ -3492,6 +3492,8 @@
   "hoshi_import_summary_records": "Enregistrements de statistiques : $records · positions de lecture : $positions",
   "hover_auto_lookup": "Rechercher au survol",
   "hover_auto_lookup_hint": "Recherche automatique lorsque la souris survole un caractère ; pas besoin de cliquer ni de maintenir Maj. Affiche au plus une fenêtre contextuelle. Bureau uniquement.",
+  "hover_lookup_modifier": "Hover lookup key",
+  "hover_lookup_modifier_hint": "Hold this key and move the mouse over text to look it up (readers, subtitles, web pages)",
   "icon_custom": "Personnalisé",
   "icon_custom_confirm_body": "Cela créera un raccourci sur l'écran d'accueil avec l'image choisie. Continuer ?",
   "icon_custom_confirm_title": "Icône personnalisée",

@@ -3492,6 +3492,8 @@
   "hoshi_import_summary_records": "Registros de estatísticas: $records · posições de leitura: $positions",
   "hover_auto_lookup": "Pesquisar ao passar o cursor",
   "hover_auto_lookup_hint": "Pesquisa automaticamente ao passar o mouse sobre um caractere; sem clicar ou segurar Shift. Exibe no máximo uma camada de pop-up. Apenas no desktop.",
+  "hover_lookup_modifier": "Hover lookup key",
+  "hover_lookup_modifier_hint": "Hold this key and move the mouse over text to look it up (readers, subtitles, web pages)",
   "icon_custom": "Personalizado",
   "icon_custom_confirm_body": "Isso criará um atalho na tela inicial com a imagem escolhida. Continuar?",
   "icon_custom_confirm_title": "Ícone Personalizado",

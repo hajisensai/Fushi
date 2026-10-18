@@ -135,8 +135,13 @@ import 'package:fushi/src/media/video/underlay_composition.dart'
         acquireUnderlayComposition,
         releaseUnderlayComposition,
         underlayCompositionSupported;
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart'
-    show WebVideoHosting, kWebVideoHostingPrefKey, webVideoHostingFromPref;
+    show
+        WebVideoHosting,
+        WebVideoLookupRequest,
+        kWebVideoHostingPrefKey,
+        webVideoHostingFromPref;
 import 'package:fushi/src/media/video/web_video_platform_player.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
 import 'package:fushi/src/media/video/web_video_sites.dart';
@@ -2099,6 +2104,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 网页档工具条的地址栏（没在编辑时跟着当前地址走）。
   final TextEditingController _webAddressController = TextEditingController();
   final FocusNode _webAddressFocus = FocusNode(debugLabel: 'video-web-address');
+
+  /// 工具条的「关闭」：这一次返回不再一级一级退，直接关掉本页。
+  bool _webClosing = false;
 
   /// 站点当前视频身份（glue 的 `videoKey`；SPA 换集即变）与它名下的字幕轨。
   String _webVideoKey = '';
@@ -7272,13 +7280,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 键盘 / 系统返回 / 手柄三条输入通道共用同一份语义，不再各写一份。
   Future<void> _handleBackOrExit() async {
     if (_dismissTopForegroundLayer()) return;
-    // 网页档一级一级往外退：播放器档 → 网页 → 站内上一页 → … → 关掉本页。
-    if (await _webBackStep()) return;
-    if (!mounted) return;
-    _exitVideoPage();
-  }
-
-  void _exitVideoPage() {
+    // 网页档一级一级往外退：播放器档 → 网页 → 站内上一页 → … → 关掉本页（同步判定，
+    // 退出路径不 await，BUG-2119）。
+    if (_webBackStep()) return;
     final NavigatorState nav = Navigator.of(context);
     final VideoPlayerController? controller = _controller;
     final int? remotePositionMs = controller?.positionMs;

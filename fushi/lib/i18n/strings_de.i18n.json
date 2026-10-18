@@ -3492,6 +3492,8 @@
   "hoshi_import_summary_records": "Statistikeinträge: $records · Lesepositionen: $positions",
   "hover_auto_lookup": "Beim Überfahren nachschlagen",
   "hover_auto_lookup_hint": "Automatisch nachschlagen, wenn die Maus über ein Zeichen fährt; ohne Klicken oder Shift zu halten. Erzeugt höchstens eine Popup-Ebene. Nur Desktop.",
+  "hover_lookup_modifier": "Hover lookup key",
+  "hover_lookup_modifier_hint": "Hold this key and move the mouse over text to look it up (readers, subtitles, web pages)",
   "icon_custom": "Benutzerdefiniert",
   "icon_custom_confirm_body": "Dies erstellt eine Verknüpfung auf dem Startbildschirm mit dem gewählten Bild. Fortfahren?",
   "icon_custom_confirm_title": "Benutzerdefiniertes Symbol",

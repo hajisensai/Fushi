@@ -3492,6 +3492,8 @@
   "hoshi_import_summary_records": "Bản ghi thống kê: $records · vị trí đọc: $positions",
   "hover_auto_lookup": "Tra cứu khi di chuột",
   "hover_auto_lookup_hint": "Tự động tra cứu khi di chuột qua một ký tự; không cần nhấp hay giữ Shift. Hiển thị tối đa một lớp cửa sổ bật lên. Chỉ trên máy tính.",
+  "hover_lookup_modifier": "Hover lookup key",
+  "hover_lookup_modifier_hint": "Hold this key and move the mouse over text to look it up (readers, subtitles, web pages)",
   "icon_custom": "Tùy chỉnh",
   "icon_custom_confirm_body": "Thao tác này sẽ tạo lối tắt trên màn hình chính với hình ảnh bạn chọn. Tiếp tục?",
   "icon_custom_confirm_title": "Biểu tượng tùy chỉnh",

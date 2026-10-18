@@ -3492,6 +3492,8 @@
   "hoshi_import_summary_records": "บันทึกสถิติ: $records · ตำแหน่งการอ่าน: $positions",
   "hover_auto_lookup": "ค้นหาเมื่อชี้เมาส์",
   "hover_auto_lookup_hint": "ค้นหาคำโดยอัตโนมัติเมื่อชี้เมาส์ไปที่ตัวอักษร โดยไม่ต้องคลิกหรือกด Shift ค้างไว้ แสดงป๊อปอัปได้สูงสุดหนึ่งชั้น สำหรับเดสก์ท็อปเท่านั้น",
+  "hover_lookup_modifier": "Hover lookup key",
+  "hover_lookup_modifier_hint": "Hold this key and move the mouse over text to look it up (readers, subtitles, web pages)",
   "icon_custom": "กำหนดเอง",
   "icon_custom_confirm_body": "จะสร้างทางลัดบนหน้าจอหลักด้วยรูปที่เลือก ต้องการดำเนินการต่อหรือไม่?",
   "icon_custom_confirm_title": "ไอคอนกำหนดเอง",

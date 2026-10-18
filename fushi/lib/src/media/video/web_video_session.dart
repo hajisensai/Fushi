@@ -26,6 +26,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
+import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 
 /// JS→Dart 单一 handler 名（glue 的 `HANDLER`），载荷按 `type` 分派。
 const String kWebVideoJsHandler = 'fushiWebVideo';
@@ -125,6 +126,7 @@ Future<UnmodifiableListView<UserScript>> loadWebVideoUserScripts({
   required bool softwareDrm,
   required bool domOverlay,
   required String keyBridgeScript,
+  bool pageLookup = false,
 }) async {
   final List<String> assets = <String>[
     // 垫片必须排第一：站点脚本一跑就会抓走原始 EME 函数引用。
@@ -134,6 +136,7 @@ Future<UnmodifiableListView<UserScript>> loadWebVideoUserScripts({
     kWebVideoProvidersAsset,
     kWebVideoGlueAsset,
     if (domOverlay) kWebVideoDomSubtitlesAsset,
+    if (pageLookup) kWebVideoPageLookupAsset,
   ];
   final List<String> sources = <String>[];
   for (final String asset in assets) {
@@ -263,6 +266,8 @@ class WebVideoSession {
     this.onTrack,
     this.onState,
     this.onKeyToken,
+    this.onPageLookup,
+    this.hoverLookupModifier,
   });
 
   /// 书架流媒体书 uid（写进每条 cue 的 bookKey）；站内换集落成新书时由页面改写。
@@ -279,6 +284,12 @@ class WebVideoSession {
 
   /// WebView2 持焦时截获的快捷键 token（[InputBinding.serialize] 形式）。
   void Function(String token)? onKeyToken;
+
+  /// 网页档 Shift 悬停在站点文字上（[kWebVideoPageLookupAsset]）。
+  void Function(WebVideoLookupRequest request)? onPageLookup;
+
+  /// 悬停查词按住的键（每次页面加载读一次，设置改了下一页即生效）；null = Shift。
+  final HoverLookupModifier Function()? hoverLookupModifier;
 
   WebViewEnvironment? _environment;
   UnmodifiableListView<UserScript>? _userScripts;
@@ -316,6 +327,8 @@ class WebVideoSession {
           // 字幕归 Flutter 叠层（底层合成下 Flutter 画在 WebView 上面）。
           domOverlay: false,
           keyBridgeScript: webVideoKeyBridgeScript(shortcuts),
+          // 网页档（站点页面可点）里按住 Shift 悬停查任意文字。
+          pageLookup: true,
         );
     final WebViewEnvironment env = await webVideoWindowedEnvironment();
     await copyWebVideoLoginCookies(uri: uri, to: env);
@@ -469,6 +482,13 @@ class WebVideoSession {
   }
 
   void _onLoadStop() {
+    unawaited(
+      evaluateRaw(
+        hoverLookupModifierJs(
+          hoverLookupModifier?.call() ?? HoverLookupModifier.shift,
+        ),
+      ).catchError((Object _) => null),
+    );
     // 字幕由 Fushi 叠层画，站点自己的字幕藏起来（visibility，DOM 采样 live 轨照读）。
     unawaited(setNativeSubtitlesHidden(true));
     unawaited(evaluate('window.__fushiWebVideo.replayCues()'));
@@ -485,6 +505,9 @@ class WebVideoSession {
           bookUid: bookUid,
         );
         if (track != null) onTrack?.call(track);
+      case 'pageLookup':
+        final WebVideoLookupRequest? request = parseWebVideoLookupPayload(msg);
+        if (request != null) onPageLookup?.call(request);
       case 'state':
         final WebVideoPlaybackState? state = parseWebVideoStatePayload(msg);
         if (state != null) {
@@ -503,6 +526,7 @@ class WebVideoSession {
     onTrack = null;
     onState = null;
     onKeyToken = null;
+    onPageLookup = null;
   }
 }
 

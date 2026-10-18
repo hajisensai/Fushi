@@ -1114,6 +1114,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 行为测试 test/media/video/video_subtitle_hover_lookup_test.dart 覆盖。
   'lookup/Look up on hover':
       'test/media/video/video_subtitle_hover_lookup_test.dart',
+  // 悬停查词按键（Shift / Ctrl / Alt）。change/persist/restore 经 DB 由本测试守；值域与
+  // 下发给 WebView 的全局名由 test/lookup/hover_lookup_modifier_test.dart 咬住，各入口
+  // 改读这一个设置由源码守卫咬住（阅读器 / 歌词 / 漫画 / 字幕列表）。真按键需要真 OS
+  // 修饰键 + 真 WebView，widget 层跑不到。
+  'lookup/Hover lookup key':
+      'test/lookup/hover_lookup_modifier_test.dart + '
+      'test/media/audiobook/lyrics_mode_html_test.dart + '
+      'test/reader/reader_host_hover_lookup_test.dart',
   // 悬停查词的收尾：离开字幕与浮层即自动关浮层 + 续播。change/persist/restore 经 DB 由
   // 本测试守；运行时的判据与接线（barrier hover 的离开臂、浮层 MouseRegion、关栈汇聚点
   // 复位）由专项测试咬住——真效果需要真播放器 + 真 WebView 浮层 + 真 OS hover，widget

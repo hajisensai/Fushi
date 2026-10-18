@@ -223,6 +223,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show GlassContainer, LiquidRoundedSuperellipse;
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 
 part 'reader_fushi/lyrics.part.dart';
 part 'reader_fushi/mining.part.dart';
@@ -4377,7 +4378,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         await web?.evaluateJavascript(
           source:
               'window.__hoverAutoLookup = $enabled;'
-              'window.__fushiHostHoverLookup = $hostHover;',
+              'window.__fushiHostHoverLookup = $hostHover;'
+              '${hoverLookupModifierJs(ReaderFushiSource.instance.hoverLookupModifier)}',
         );
       }
     } catch (e, stack) {
@@ -5280,7 +5282,8 @@ $liveConfigJs
   void _hostHoverLookupAt(Offset local, {required bool hoverAutoLookup}) {
     if (!_hostHoverGate.shouldLookup(
       local,
-      shiftPressed: HardwareKeyboard.instance.isShiftPressed,
+      shiftPressed: ReaderFushiSource.instance.hoverLookupModifier
+          .isPressed(),
       hoverAutoLookup: hoverAutoLookup,
     )) {
       return;

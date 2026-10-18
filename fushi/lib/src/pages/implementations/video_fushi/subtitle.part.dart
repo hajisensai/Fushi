@@ -3531,6 +3531,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
                             // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
                             hoverAutoLookupEnabled:
                                 ReaderFushiSource.instance.hoverAutoLookup,
+                            hoverLookupModifier:
+                                ReaderFushiSource.instance.hoverLookupModifier,
                             onClose: _closeSubtitleJumpList,
                             colorScheme: cs,
                             title: t.video_subtitle_list,

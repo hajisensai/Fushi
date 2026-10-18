@@ -1299,7 +1299,7 @@ document.addEventListener('mousemove', function(e) {
   // BUG-2508：宿主（Flutter）侧接管悬停查词的平台上本腿让路（开关由 Dart 与
   // __hoverAutoLookup 一起在歌词页就绪时下发）。
   if (window.__fushiHostHoverLookup) return;
-  if (!e.shiftKey && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
+  if (!e[window.__fushiHoverKey || 'shiftKey'] && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
   var dx = e.clientX - _shiftHoverLastX, dy = e.clientY - _shiftHoverLastY;
   if (dx * dx + dy * dy < 64) return;
   _shiftHoverLastX = e.clientX; _shiftHoverLastY = e.clientY;

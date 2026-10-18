@@ -3492,6 +3492,8 @@
   "hoshi_import_summary_records": "Statistiekrecords: $records · leesposities: $positions",
   "hover_auto_lookup": "Opzoeken bij hover",
   "hover_auto_lookup_hint": "Automatisch opzoeken wanneer de muis over een teken zweeft; zonder te klikken of Shift in te drukken. Toont hooguit één popuplaag. Alleen desktop.",
+  "hover_lookup_modifier": "Hover lookup key",
+  "hover_lookup_modifier_hint": "Hold this key and move the mouse over text to look it up (readers, subtitles, web pages)",
   "icon_custom": "Aangepast",
   "icon_custom_confirm_body": "Er wordt een snelkoppeling op het startscherm aangemaakt met de gekozen afbeelding. Doorgaan?",
   "icon_custom_confirm_title": "Aangepast icoon",

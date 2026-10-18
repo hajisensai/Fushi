@@ -111,6 +111,8 @@ extension _VideoWebSource on _VideoFushiPageState {
       onTrack: _onWebTrack,
       onState: _onWebState,
       onKeyToken: _onWebKeyToken,
+      onPageLookup: _onWebPageLookup,
+      hoverLookupModifier: () => ReaderFushiSource.instance.hoverLookupModifier,
     );
     final VideoPlayerController controller = VideoPlayerController();
     final WebVideoPlatformPlayer platform = WebVideoPlatformPlayer(
@@ -442,6 +444,24 @@ extension _VideoWebSource on _VideoFushiPageState {
     );
   }
 
+  /// 网页档里按住 Shift 悬停在站点文字上：顶层查词窗口在光标处弹出（它是独立的置顶窗口，
+  /// 不受收输入的 WebView2 子窗口挡点击）。站点页面不是字幕：不暂停、不锚 cue。
+  void _onWebPageLookup(WebVideoLookupRequest request) {
+    if (!mounted || _webPlayerMode) return;
+    final String term = subtitleLookupTerm(
+      request.sentence,
+      request.graphemeIndex,
+    );
+    if (term.isEmpty) return;
+    unawaited(
+      GlobalLookupController.instance.lookupText(
+        term,
+        sentence: request.sentence,
+        autoRead: false,
+      ),
+    );
+  }
+
   /// WebView2 持焦（登录页里点过）时截获的视频快捷键：走与键盘同一张动作表。
   void _onWebKeyToken(String token) {
     if (!mounted) return;
@@ -502,7 +522,7 @@ extension _VideoWebSource on _VideoFushiPageState {
               child: Center(
                 child: Text(
                   t.web_video_ad_skipping,
-                  style: const TextStyle(color: Colors.white70, fontSize: 16),
+                  style: _videoControlTitleStyle(),
                 ),
               ),
             ),
@@ -559,43 +579,23 @@ extension _VideoWebSource on _VideoFushiPageState {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: TextField(
-                  key: const ValueKey<String>('video-web-address'),
+                child: FushiSearchField(
+                  fieldKey: const ValueKey<String>('video-web-address'),
                   controller: _webAddressController,
                   focusNode: _webAddressFocus,
-                  keyboardType: TextInputType.url,
-                  textInputAction: TextInputAction.go,
-                  style: theme.textTheme.bodyMedium,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    filled: true,
-                    fillColor: cs.surfaceContainerHighest,
-                    hintText: t.web_video_address_hint,
-                    prefixIcon: Icon(
-                      nav.url.startsWith('https://')
-                          ? Icons.lock_outline
-                          : Icons.public,
-                      size: 18,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide.none,
-                    ),
+                  hintText: t.web_video_address_hint,
+                  leading: FushiIcon(
+                    nav.url.startsWith('https://')
+                        ? Icons.lock_outline
+                        : Icons.public,
                   ),
-                  onTap: () => _webAddressController.selection = TextSelection(
-                    baseOffset: 0,
-                    extentOffset: _webAddressController.text.length,
-                  ),
+                  onChanged: (String _) {},
                   onSubmitted: _submitWebAddress,
                 ),
               ),
               const SizedBox(width: 8),
               if (_webPageHasVideo) ...<Widget>[
-                FilledButton.tonalIcon(
+                FushiFilledButton.tonalIcon(
                   key: const ValueKey<String>('video-web-player-open'),
                   onPressed: () => _setWebPlayerMode(true),
                   icon: const Icon(Icons.play_circle_outline),
@@ -607,7 +607,10 @@ extension _VideoWebSource on _VideoFushiPageState {
                 key: const ValueKey<String>('video-web-nav-close'),
                 tooltip: t.web_video_nav_close,
                 icon: const Icon(Icons.close),
-                onPressed: _exitVideoPage,
+                onPressed: () {
+                  _webClosing = true;
+                  unawaited(_handleBackOrExit());
+                },
               ),
             ],
           ),
@@ -632,16 +635,19 @@ extension _VideoWebSource on _VideoFushiPageState {
     unawaited(session.loadUrl(target));
   }
 
-  /// 返回键在网页档里的一级：播放器档先退回网页；网页有站内历史就后退一页。都没有
-  /// 返回 false（调用方关掉本页）。
-  Future<bool> _webBackStep() async {
+  /// 返回键在网页档里的一级：播放器档先退回网页；网页有站内历史就后退一页。都没有（或
+  /// 点了工具条「关闭」）返回 false，调用方关掉本页。同步判定：能否后退读工具条缓存的
+  /// [WebVideoNavState.canGoBack]（退出路径不 await，BUG-2119）。
+  bool _webBackStep() {
     final WebVideoSession? session = _webSession;
-    if (session == null) return false;
+    if (session == null || _webClosing) return false;
     if (_webPlayerMode) {
       _setWebPlayerMode(false);
       return true;
     }
-    return session.goBack();
+    if (!session.nav.value.canGoBack) return false;
+    unawaited(session.goBack());
+    return true;
   }
 
   /// 网页档制卡（[_onMineEntryImpl] 分流到这里）：**只入队**（schema v90 `web_mine_queue`），

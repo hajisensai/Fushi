@@ -3492,6 +3492,8 @@
   "hoshi_import_summary_records": "统计记录 $records 条 · 阅读位置 $positions 个",
   "hover_auto_lookup": "悬停即查词",
   "hover_auto_lookup_hint": "鼠标悬停在文字上即自动查词，无需点击或按住 Shift；最多触发一层弹窗。仅桌面端。",
+  "hover_lookup_modifier": "悬停查词按键",
+  "hover_lookup_modifier_hint": "按住这个键把鼠标移到文字上即查词（阅读器、字幕、网页）",
   "icon_custom": "自定义",
   "icon_custom_confirm_body": "将使用所选图片创建主屏幕快捷方式。是否继续？",
   "icon_custom_confirm_title": "自定义图标",

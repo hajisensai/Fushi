@@ -620,6 +620,9 @@ extension _VideoLayout on _VideoFushiPageState {
                               // 关闭退回 756a 的 Shift+悬停。视频与阅读器共享 instance。
                               hoverAutoLookupEnabled:
                                   ReaderFushiSource.instance.hoverAutoLookup,
+                              hoverLookupModifier: ReaderFushiSource
+                                  .instance
+                                  .hoverLookupModifier,
                               onHoverChanged: _handleSubtitleHover,
                               hitTester: _subtitleHitTester,
                               // 字级选词光标环（videoEnterCaret，手柄/键盘查词）。

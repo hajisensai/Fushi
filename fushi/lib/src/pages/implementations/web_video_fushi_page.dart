@@ -1641,6 +1641,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                               onCharTap: _handleSubtitleLookupTap,
                               hoverAutoLookupEnabled:
                                   ReaderFushiSource.instance.hoverAutoLookup,
+                              hoverLookupModifier: ReaderFushiSource
+                                  .instance
+                                  .hoverLookupModifier,
                               hitTester: _subtitleHitTester,
                               isCueFavorited: _isCueFavorited,
                               fontFamily: _appModel.subtitleFontFamily,
@@ -2296,6 +2299,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         onFontScaleIndexChanged: (int value) =>
             unawaited(_appModel.setVideoSubtitleListFontScaleIndex(value)),
         hoverAutoLookupEnabled: ReaderFushiSource.instance.hoverAutoLookup,
+        hoverLookupModifier: ReaderFushiSource.instance.hoverLookupModifier,
         onClose: _toggleList,
         colorScheme: cs,
         title: t.video_subtitle_list,

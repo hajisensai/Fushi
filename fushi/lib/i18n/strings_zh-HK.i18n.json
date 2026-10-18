@@ -3492,6 +3492,8 @@
   "hoshi_import_summary_records": "統計記錄 $records 條 · 閱讀位置 $positions 個",
   "hover_auto_lookup": "停留即查詞",
   "hover_auto_lookup_hint": "滑鼠停留在文字上即自動查詞，無需點擊或按住 Shift；最多觸發一層彈窗。僅桌面版。",
+  "hover_lookup_modifier": "懸停查詞按鍵",
+  "hover_lookup_modifier_hint": "按住這個鍵把滑鼠移到文字上即查詞（閱讀器、字幕、網頁）",
   "icon_custom": "自訂",
   "icon_custom_confirm_body": "將使用所選圖片建立主畫面捷徑。是否繼續？",
   "icon_custom_confirm_title": "自訂圖示",

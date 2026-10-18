@@ -3492,6 +3492,8 @@
   "hoshi_import_summary_records": "통계 기록: $records · 읽기 위치: $positions",
   "hover_auto_lookup": "마우스를 올리면 사전 찾기",
   "hover_auto_lookup_hint": "마우스를 글자 위에 올리면 자동으로 사전을 찾습니다. 클릭하거나 Shift를 누를 필요가 없습니다. 팝업은 최대 1개 층까지. 데스크톱 전용.",
+  "hover_lookup_modifier": "Hover lookup key",
+  "hover_lookup_modifier_hint": "Hold this key and move the mouse over text to look it up (readers, subtitles, web pages)",
   "icon_custom": "사용자 정의",
   "icon_custom_confirm_body": "선택한 이미지로 홈 화면 바로가기를 만듭니다. 계속하시겠습니까?",
   "icon_custom_confirm_title": "사용자 정의 아이콘",

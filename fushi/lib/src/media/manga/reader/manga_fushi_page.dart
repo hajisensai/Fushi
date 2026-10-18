@@ -2802,6 +2802,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       imgSrcs,
       mode: _mode,
       readerPreferences: _readerPreferences,
+      hoverKey: ReaderFushiSource.instance.hoverLookupModifier.jsEventFlag,
       readingModeLabel: switch (_mode) {
         MangaReadingMode.spread => t.manga_reading_mode_spread,
         MangaReadingMode.pagedVertical => t.manga_reading_mode_vertical,
@@ -6826,7 +6827,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @override
   void onDismissBarrierHover(PointerHoverEvent event) {
     if (!_readerPreferences.lookupOnHover &&
-        !HardwareKeyboard.instance.isShiftPressed) {
+        !ReaderFushiSource.instance.hoverLookupModifier.isPressed()) {
       _barrierHoverLastDx = -1;
       _barrierHoverLastDy = -1;
       return;

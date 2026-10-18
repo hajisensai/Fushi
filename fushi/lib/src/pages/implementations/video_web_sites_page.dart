@@ -7,6 +7,7 @@ import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
@@ -33,6 +34,9 @@ class VideoWebSitesPage extends ConsumerStatefulWidget {
 
 class _VideoWebSitesPageState extends ConsumerState<VideoWebSitesPage> {
   final TextEditingController _address = TextEditingController();
+  final FocusNode _addressFocus = FocusNode(
+    debugLabel: 'video-web-site-address',
+  );
   String? _addressError;
 
   AppModel get _appModel => ref.read(appProvider);
@@ -43,6 +47,7 @@ class _VideoWebSitesPageState extends ConsumerState<VideoWebSitesPage> {
   @override
   void dispose() {
     _address.dispose();
+    _addressFocus.dispose();
     super.dispose();
   }
 
@@ -112,7 +117,7 @@ class _VideoWebSitesPageState extends ConsumerState<VideoWebSitesPage> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                TextField(
+                FushiTextFieldControl(
                   key: const ValueKey<String>('video-web-site-add-url'),
                   controller: url,
                   autofocus: true,
@@ -124,7 +129,7 @@ class _VideoWebSitesPageState extends ConsumerState<VideoWebSitesPage> {
                   onSubmitted: (_) => submit(),
                 ),
                 const SizedBox(height: 12),
-                TextField(
+                FushiTextFieldControl(
                   key: const ValueKey<String>('video-web-site-add-name'),
                   controller: name,
                   decoration: InputDecoration(
@@ -135,11 +140,11 @@ class _VideoWebSitesPageState extends ConsumerState<VideoWebSitesPage> {
               ],
             ),
             actions: <Widget>[
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.of(context).pop(),
                 child: Text(t.cancel),
               ),
-              FilledButton(
+              FushiFilledButton(
                 onPressed: submit,
                 child: Text(t.web_video_site_add),
               ),
@@ -193,23 +198,24 @@ class _VideoWebSitesPageState extends ConsumerState<VideoWebSitesPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Expanded(
-                      child: TextField(
-                        key: const ValueKey<String>('video-web-site-address'),
-                        controller: _address,
-                        keyboardType: TextInputType.url,
-                        textInputAction: TextInputAction.go,
-                        decoration: InputDecoration(
-                          prefixIcon: const Icon(Icons.public),
-                          hintText: t.web_video_site_address_hint,
-                          errorText: _addressError,
-                          border: const OutlineInputBorder(),
-                          isDense: true,
+                      child: FushiSearchField(
+                        fieldKey: const ValueKey<String>(
+                          'video-web-site-address',
                         ),
-                        onSubmitted: (_) => _openAddress(),
+                        controller: _address,
+                        focusNode: _addressFocus,
+                        hintText: t.web_video_site_address_hint,
+                        leading: const FushiIcon(Icons.public),
+                        onChanged: (String _) {
+                          if (_addressError != null) {
+                            setState(() => _addressError = null);
+                          }
+                        },
+                        onSubmitted: (String _) => _openAddress(),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    FilledButton(
+                    FushiFilledButton(
                       key: const ValueKey<String>(
                         'video-web-site-address-open',
                       ),
@@ -218,6 +224,15 @@ class _VideoWebSitesPageState extends ConsumerState<VideoWebSitesPage> {
                     ),
                   ],
                 ),
+                if (_addressError != null) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    _addressError!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 Text(
                   t.web_video_sites_hint,
@@ -268,7 +283,7 @@ class _SiteCard extends StatelessWidget {
     return SizedBox(
       width: _kSiteCardWidth,
       height: _kSiteCardHeight,
-      child: Card(
+      child: FushiCardControl.filled(
         key: ValueKey<String>('video-web-site-${site.url}'),
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
@@ -309,10 +324,10 @@ class _SiteCard extends StatelessWidget {
                   ),
                 ),
                 if (onRemove != null)
-                  IconButton(
+                  FushiIconButtonControl(
                     key: ValueKey<String>('video-web-site-remove-${site.url}'),
                     tooltip: t.web_video_site_remove,
-                    icon: const Icon(Icons.close),
+                    icon: const FushiIcon(Icons.close),
                     onPressed: onRemove,
                   ),
               ],
@@ -335,7 +350,7 @@ class _AddSiteCard extends StatelessWidget {
     return SizedBox(
       width: _kSiteCardWidth,
       height: _kSiteCardHeight,
-      child: Card.outlined(
+      child: FushiCardControl.outlined(
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
         child: InkWell(

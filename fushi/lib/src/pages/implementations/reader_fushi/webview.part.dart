@@ -719,6 +719,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       // TODO-756b：是否“鼠标悬停即自动查词”。live 变更经 _applyHoverAutoLookupLive
       // 改同一个 JS 全局，无需整章重注入。
       hoverAutoLookup: ReaderFushiSource.instance.hoverAutoLookup,
+      hoverKey: ReaderFushiSource.instance.hoverLookupModifier.jsEventFlag,
       // BUG-2508：macOS 由宿主腿接管悬停查词，关掉文档内 mousemove 腿（判据见
       // [hostOwnsWebViewHoverLookup]，只有 macOS；其余平台 JS 腿不动）。
       hostHoverLookup: hostOwnsWebViewHoverLookup,
@@ -928,6 +929,7 @@ install: function(C) {
   var fushiVnMode = C.vnMode;
   var fushiVnClickAdvance = C.vnClickAdvance;
   window.__hoverAutoLookup = C.hoverAutoLookup;
+  window.__fushiHoverKey = C.hoverKey || 'shiftKey';
   // BUG-2508：宿主（Flutter）侧接管悬停查词的平台上，本文档的 mousemove 腿整条关掉
   // （一平台一条腿，见 reader_host_hover_lookup.dart）。与 __hoverAutoLookup 同为
   // Dart 单写的只读镜像，live 变更经 _applyHoverAutoLookupLive 改同一全局。
@@ -1725,7 +1727,7 @@ $kContinuousWheelScrollJs
     if (window.__fushiHostHoverLookup) return;
     // TODO-756b：开了 window.__hoverAutoLookup 则纯悬停即查词（不要求 Shift）；
     // 否则退回 756a 的 Shift 门控。未触发分支仍复位节流锚，使下次进入即触发。
-    if (!e.shiftKey && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
+    if (!e[window.__fushiHoverKey || 'shiftKey'] && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
     var dx = e.clientX - _shiftHoverLastX, dy = e.clientY - _shiftHoverLastY;
     if (dx * dx + dy * dy < 64) return;
     _shiftHoverLastX = e.clientX; _shiftHoverLastY = e.clientY;
@@ -3056,9 +3058,7 @@ updateLive: function(patch) {
         generation == _lyricsLoadGeneration;
   }
 
-  Future<void> _onChapterLoadComplete(
-    InAppWebViewController controller,
-  ) async {
+  Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
     // BUG-1280（平台分叉守卫）：spread 独立文档绝不注入正文引擎。
     //
     // `_loadSpreadPage` 传给 `loadData` 的 baseUrl 与 `_chapterUrl(_currentChapter)`
