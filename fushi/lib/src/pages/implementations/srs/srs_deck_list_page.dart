@@ -12,7 +12,9 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -21,6 +23,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_backups_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
@@ -50,6 +53,27 @@ class SrsDeckListPage extends ConsumerStatefulWidget {
 }
 
 class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
+  /// Anki 一键迁移完成后：迁进来的笔记里有旧 Lapis（或此前迁移漏掉的字段）时，
+  /// 顺手问一句要不要迁到 Fushi 卡片。[context] 是迁移页的。
+  Future<void> _offerLegacyLapisMigration(
+    BuildContext context,
+    SrsImportReport report,
+  ) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null || !context.mounted) return;
+    final ({int migratable, int backfill}) pending = await store
+        .legacyLapisPendingCounts();
+    final int n = pending.migratable + pending.backfill;
+    if (n == 0 || !context.mounted) return;
+    final bool go = await showFushiConfirmDialog(
+      context: context,
+      title: t.srs_lapis_migration_title,
+      message: t.srs_lapis_migration_entry_summary(n: n),
+      confirmLabel: t.srs_lapis_migration_migrate,
+    );
+    if (go && context.mounted) await openSrsLegacyLapisMigrationPage(context);
+  }
+
   Future<T?> _push<T>(Widget Function(BuildContext context) builder) async {
     final T? result = await Navigator.of(
       context,
@@ -201,7 +225,9 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       label: t.srs_anki_migrate,
       onPressed: () => srsRunLogged(
         'SrsDeckList.ankiMigrate',
-        () => _push<void>((_) => const SrsAnkiMigrationPage()),
+        () => _push<void>(
+          (_) => SrsAnkiMigrationPage(onMigrated: _offerLegacyLapisMigration),
+        ),
       ),
     ),
     FushiToolbarItem(
