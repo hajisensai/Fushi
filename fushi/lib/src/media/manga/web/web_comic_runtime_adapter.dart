@@ -1,10 +1,8 @@
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
-import 'package:fushi/src/media/manga/web/web_comic_ad_filter.dart';
 import 'package:fushi/src/media/manga/web/web_comic_chapter.dart';
 import 'package:fushi/src/media/manga/web/web_comic_scan.dart';
 import 'package:fushi/src/media/manga/web/web_comic_scanner.dart';
@@ -12,6 +10,7 @@ import 'package:fushi/src/media/manga/web/web_comic_site_rule.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_web_core/fushi_web_core.dart';
 
 /// 取一页字节（测试缝；生产 = [webComicHttpGet]）。
 typedef WebComicHttpGet =
@@ -24,8 +23,9 @@ typedef WebComicHttpGet =
 /// - 每页是 [HttpMangaPageRef]：Referer 按站点规则，[HttpMangaPageRef.headers]
 ///   带同站 Cookie（从浏览器 CookieManager 按站点过滤）+ 扫图时的 UA + 规则头。
 /// - 取图走 [createAppHttpClient]（全局代理装配），不走 WebView 网络。
-/// - 章末广告页剔除（[adFilterEnabled]）：只看最后 10 张、前 3 张不动；判定时
-///   取到的字节缓存住，阅读器随后取同一页不再走网络。
+/// - 章末广告页剔除（[adFilterEnabled]）：判哪几张、怎么判都在 Rust（`fushi_web_core`
+///   的 `comic_ad`：只看最后 10 张、前 3 张不动、彩色 + 二维码定位图形）；这里只按 Rust 给的
+///   页序取字节、整批交过去一次判完。判定时取到的字节缓存住，阅读器随后取同一页不再走网络。
 class WebComicLibraryAdapter
     implements OnlineMangaRuntimeAdapter, OnlineMangaWebUrlCapable {
   WebComicLibraryAdapter({
@@ -34,7 +34,7 @@ class WebComicLibraryAdapter
     Future<WebComicRuleSet> Function()? rules,
     Future<List<WebComicCookie>> Function(Uri pageUrl)? cookies,
     WebComicHttpGet? httpGet,
-    bool Function(Uint8List bytes)? adDetector,
+    ComicAdDetector? adDetector,
     int Function()? now,
   }) : _scanner = scanner ?? const HeadlessWebComicChapterScanner(),
        _rules = rules ?? WebComicAssets.rules,
@@ -50,8 +50,9 @@ class WebComicLibraryAdapter
   final Future<List<WebComicCookie>> Function(Uri pageUrl) _cookies;
   final WebComicHttpGet _httpGet;
 
-  /// null = 生产判定（后台 isolate 跑 [isWebComicAdImage]）。
-  final bool Function(Uint8List bytes)? _adDetector;
+  /// null = 生产判定（[ComicAdDetector]：原生库内置规则，后台 isolate 整批判）。
+  final ComicAdDetector? _adDetector;
+  late final ComicAdDetector _detector = _adDetector ?? ComicAdDetector();
   final int Function() _now;
 
   /// 广告判定时已经取到的页字节（按 URL），被阅读器取走一次即删。
@@ -176,22 +177,26 @@ class WebComicLibraryAdapter
   Future<List<OnlineMangaPageRef>> _dropAdPages(
     List<HttpMangaPageRef> pages,
   ) async {
-    final Set<int> ads = <int>{};
-    for (final int index in webComicAdCandidateIndices(pages.length)) {
+    final List<HttpMangaPageRef> fetched = <HttpMangaPageRef>[];
+    final List<Uint8List> images = <Uint8List>[];
+    for (final int index in _detector.candidateIndices(pages.length)) {
       final HttpMangaPageRef page = pages[index];
       try {
         final Uint8List bytes = await _fetch(page);
         _prefetched[page.url] = bytes;
-        final bool Function(Uint8List bytes)? detector = _adDetector;
-        final bool ad = detector != null
-            ? detector(bytes)
-            : await Isolate.run(() => isWebComicAdImage(bytes));
-        if (ad) {
-          ads.add(index);
-          _prefetched.remove(page.url);
-        }
+        fetched.add(page);
+        images.add(bytes);
       } on Object {
-        // 取不到 / 判不了的页按正文保留：判广告只许漏判，不许误删。
+        // 取不到的页按正文保留：判广告只许漏判，不许误删。
+      }
+    }
+    final Set<int> ads = <int>{};
+    if (images.isNotEmpty) {
+      final List<ComicAdVerdict> verdicts = await _detector.detect(images);
+      for (int i = 0; i < fetched.length; i++) {
+        if (verdicts[i] != ComicAdVerdict.ad) continue;
+        ads.add(fetched[i].index);
+        _prefetched.remove(fetched[i].url);
       }
     }
     if (ads.isEmpty) return pages;

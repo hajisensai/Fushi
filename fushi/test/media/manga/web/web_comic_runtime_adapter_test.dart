@@ -9,6 +9,7 @@ import 'package:fushi/src/media/manga/web/web_comic_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/web/web_comic_scan.dart';
 import 'package:fushi/src/media/manga/web/web_comic_scanner.dart';
 import 'package:fushi/src/media/manga/web/web_comic_site_rule.dart';
+import 'package:fushi_web_core/fushi_web_core.dart';
 
 const WebComicSiteRule _rule = WebComicSiteRule(
   id: 'demo',
@@ -334,6 +335,10 @@ void main() {
     test('广告页剔除：只判最后 10 张、前 3 张不判，判过的字节复用不再取', () async {
       final List<String> fetched = <String>[];
       final List<String> judged = <String>[];
+      final _FakeAdDetector detector = _FakeAdDetector((Uint8List bytes) {
+        judged.add('p${bytes[4]}');
+        return bytes[4] == 13 || bytes[4] == 14;
+      });
       final WebComicLibraryAdapter adapter = WebComicLibraryAdapter(
         adFilterEnabled: () => true,
         scanner: _FakeScanner(_scan()),
@@ -346,11 +351,8 @@ void main() {
           );
           return _jpeg(n);
         },
-        // 第 13、14 张（0 起）是广告。
-        adDetector: (Uint8List bytes) {
-          judged.add('p${bytes[4]}');
-          return bytes[4] == 13 || bytes[4] == 14;
-        },
+        // 第 13、14 张（0 起）是广告。判哪几张由原生库的真规则决定，判定本身用假的。
+        adDetector: detector,
         now: () => now,
       );
       final OnlineMangaLibraryEntry entry = entryFor(_scan(pages: 15));
@@ -359,6 +361,7 @@ void main() {
         chapter: entry.chapters[1],
       );
       expect(judged, <String>[for (int i = 5; i < 15; i++) 'p$i']);
+      expect(detector.batches, 1, reason: '整章末尾一次批量判定');
       expect(pages, hasLength(13));
       expect(
         pages.map((OnlineMangaPageRef p) => p.index),
@@ -380,10 +383,10 @@ void main() {
         rules: () async => WebComicRuleSet.empty,
         cookies: (Uri _) async => const <WebComicCookie>[],
         httpGet: (Uri _, Map<String, String> _) async => _jpeg(0),
-        adDetector: (Uint8List _) {
+        adDetector: _FakeAdDetector((Uint8List _) {
           judged++;
           return true;
-        },
+        }),
         now: () => now,
       );
       final OnlineMangaLibraryEntry entry = entryFor(_scan());
@@ -405,4 +408,21 @@ void main() {
       );
     });
   });
+}
+
+/// 判哪几张走原生库的真规则（[ComicAdDetector.candidateIndices]），判定结果由 [judge] 给。
+class _FakeAdDetector extends ComicAdDetector {
+  _FakeAdDetector(this.judge);
+
+  final bool Function(Uint8List bytes) judge;
+  int batches = 0;
+
+  @override
+  Future<List<ComicAdVerdict>> detect(List<Uint8List> images) async {
+    batches++;
+    return <ComicAdVerdict>[
+      for (final Uint8List b in images)
+        judge(b) ? ComicAdVerdict.ad : ComicAdVerdict.content,
+    ];
+  }
 }
