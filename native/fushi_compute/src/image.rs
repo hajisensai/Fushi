@@ -722,8 +722,8 @@ fn dhash(v: &View) -> u64 {
 // packages/fushi_engine/lib/media/video/bitmap_subtitle/ 里原先的 Dart 实现。
 // ---------------------------------------------------------------------------
 
-/// `decodePgsRle`：PGS RLE → `width × height` 调色板索引平面（调用方已校验尺寸并给好
-/// 清零的 [out]）；数据不足时余下像素保持 0。
+/// `decodePgsRle`：PGS RLE → `width × height` 调色板索引平面（[out] 由本函数先清零）；
+/// 数据不足时余下像素为 0。
 ///
 /// # Safety
 /// 指针按给定长度可读 / 可写。
@@ -747,7 +747,10 @@ pub unsafe extern "C" fn ffc_image_pgs_rle_decode(
         if out_len < w * h {
             return status::BUFFER_TOO_SMALL;
         }
-        pgs_rle_decode(slice(rle, rle_len), w, h, slice_mut(out, w * h));
+        // 透明游程不写：先在这里整块清零（比调用方在 Dart 里 fillRange 快得多）。
+        let out = slice_mut(out, w * h);
+        out.fill(0);
+        pgs_rle_decode(slice(rle, rle_len), w, h, out);
         status::OK
     })
 }
@@ -796,7 +799,7 @@ fn pgs_rle_decode(rle: &[u8], w: usize, h: usize, out: &mut [u8]) {
 /// `decodeDvdSubtitleRle`：SPU 两场 2 bit RLE → `width × height` 索引平面（0..3）。
 ///
 /// # Safety
-/// 指针按给定长度可读 / 可写；[out] 已清零。
+/// 指针按给定长度可读 / 可写（[out] 由本函数先清零）。
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn ffc_image_dvd_rle_decode(
@@ -820,12 +823,14 @@ pub unsafe extern "C" fn ffc_image_dvd_rle_decode(
         if out_len < w * h {
             return status::BUFFER_TOO_SMALL;
         }
+        let out = slice_mut(out, w * h);
+        out.fill(0);
         dvd_rle_decode(
             slice(packet, packet_len),
             w,
             h,
             [top_field_offset as usize, bottom_field_offset as usize],
-            slice_mut(out, w * h),
+            out,
         );
         status::OK
     })

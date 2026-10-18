@@ -173,7 +173,16 @@ class FushiComputeBitmapSubtitle {
     return ptr;
   }
 
-  /// PGS RLE → [width] × [height] 调色板索引平面（数据不足时余下为 0）。
+  /// 输入拷进本 isolate 的输入暂存区（不逐次 malloc / free）。
+  static Pointer<Uint8> _scratchIn(Uint8List bytes) {
+    final Pointer<Uint8> ptr = NativeScratch.input.reserve(
+      bytes.isEmpty ? 1 : bytes.length,
+    );
+    ptr.asTypedList(bytes.length).setAll(0, bytes);
+    return ptr;
+  }
+
+  /// PGS RLE → [width] × [height] 调色板索引平面（数据不足时余下为 0；清零在原生里做）。
   Uint8List decodePgsRle(Uint8List rle, int width, int height) {
     if (width <= 0 || height <= 0) {
       throw ArgumentError('invalid size ${width}x$height');
@@ -181,10 +190,9 @@ class FushiComputeBitmapSubtitle {
     final int outLen = width * height;
     return using((Arena arena) {
       final Pointer<Uint8> out = NativeScratch.output.reserve(outLen);
-      out.asTypedList(outLen).fillRange(0, outLen, 0);
       _check(
         'ffc_image_pgs_rle_decode',
-        _pgs(_copyIn(rle, arena), rle.length, width, height, out, outLen),
+        _pgs(_scratchIn(rle), rle.length, width, height, out, outLen),
       );
       return Uint8List.fromList(out.asTypedList(outLen));
     });
@@ -205,11 +213,10 @@ class FushiComputeBitmapSubtitle {
     final int outLen = width * height;
     return using((Arena arena) {
       final Pointer<Uint8> out = NativeScratch.output.reserve(outLen);
-      out.asTypedList(outLen).fillRange(0, outLen, 0);
       _check(
         'ffc_image_dvd_rle_decode',
         _dvd(
-          _copyIn(packet, arena),
+          _scratchIn(packet),
           packet.length,
           width,
           height,
