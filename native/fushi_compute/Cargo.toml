@@ -13,6 +13,7 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 [dependencies]
 crc32fast = "1"
 md4 = "0.10"
+sha1 = "0.10"
 sha2 = "0.10"
 
 [profile.release]

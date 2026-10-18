@@ -12,6 +12,9 @@ dependencies:
     sdk: flutter
   collection: any
   crypto: ^3.0.0
+  # Rust 计算内核（纯 Dart FFI，硬依赖）：媒体去重的引用扫描（MediaNameMatcher）。
+  fushi_compute:
+    path: ../fushi_compute
   # 纯 Dart 模型层（fushi_anki_core.dart 闭包）用 fushiDebugPrint 顶替
   # foundation.debugPrint，让无头服务端不拖进 dart:ui。
   fushi_core:

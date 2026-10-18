@@ -87,6 +87,54 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
 | 内存 SHA-256 | 64 MiB | 1,173 ms | 43 ms | 27× |
 | 整文件 SHA-256（异步读，UI isolate 可用） | 256 MiB | 4,829 ms | 408 ms | 11.8× |
 
+## 解析域：种子元数据 bencode 与 Anki 媒体引用扫描
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_parse_bencode_inspect_torrent(const u8*, usize, u8** out, usize* out_len) -> i32` | 严格校验 .torrent 的 bencode、算 info hash（v1 SHA-1 / v2 SHA-256，取 `info` 值的原始字节）、读 name 与文件清单；结果是定长头 + 16 字节文件记录 + UTF-16 池（布局见 `src/parse/bencode.rs`），`ffc_free_bytes` 释放 |
+| `ffc_parse_anki_matcher_new(const u16*, usize, const u64* offsets, usize count, Matcher** out) -> i32` / `ffc_parse_anki_matcher_free(Matcher*)` | 用一批媒体文件名（UTF-16 池 + `count + 1` 个偏移）建匹配器；Dart 侧挂 `NativeFinalizer` |
+| `ffc_parse_anki_names_in(Matcher*, const u16*, usize, const u64* text_offsets, usize, const u64* group_offsets, usize, u8** out, usize* out_len) -> i32` | 一次扫一批「组」（一组 = 一条笔记的全部字段），输出 u32：组起点表 + 命中的名字下标 |
+| `ffc_parse_anki_lower_utf16(u16*, usize) -> i32` | 原地按 Dart `toLowerCase` 折叠（口径自检用） |
+
+| 调用方 | 之前（纯 Dart） | 现在 |
+|---|---|---|
+| `fushi_engine/lib/media/torrent/torrent_metainfo.dart` `inspectTorrentMetainfo` | `_BencodeReader` 建整棵值树 + `package:crypto` | `ffcInspectTorrentMetainfo`；Dart 只留空 / 超 16 MiB 入口检查、`expectedInfoHash` 比对、展示名 `trim()`，文件清单错误仍在 hash 比对之后抛 |
+| `fushi_anki/lib/src/anki_media_dedup.dart` `MediaNameMatcher` | 按扩展名锚定的多模式子串匹配 | `FfcMediaNameMatcher`；新增 `namesInEach`，`AnkiConnectRepository` 建对照表 / 删前复核都整批一次调用 |
+
+口径逐条照旧实现复现（Rust 模块注释里列了全部）：错误消息逐字一致；键按 Dart
+`utf8.decode(allowMalformed: true)` 解码后判重——**开头的 UTF-8 BOM 被剥掉**（`\u{FEFF}info` 与
+`info` 是同一个键）；字节串在 Dart 里是 `Uint8List`，也满足 `is List<Object?>`，所以 `files` /
+`path` 写成字节串时按「元素全是整数的列表」处理；字节串长度让 `index + length` 溢出 i64 时
+报旧实现 catch-all 的「truncated or malformed bencode」。大小写折叠用
+`tool/gen_dart_lower_table.dart` 从 Dart SDK 冻结的逐码点表（Dart 是简单映射、不看上下文：
+词尾 Σ 照样折成 σ，U+0130 折成单个 `i`），测试对每个码点与 `String.toLowerCase` 比对。
+
+SHA-1 用 RustCrypto `sha1` 0.10（MIT OR Apache-2.0）。
+
+回归：删旧实现前用旧 Dart 跑真实种子（libtorrent 测试集 + 本机下载的种子）、手写边界样本与
+模糊变异，以及本机真实 Anki 牌组（30794 条笔记、223572 个媒体名）全量对拍，0 处不一致；冻结的
+向量在 `packages/fushi_compute/test/{bencode_test,anki_media_test}.dart` 与
+`packages/fushi_engine/test/media/torrent/torrent_metainfo_native_test.dart`。
+
+基准（AOT，2026-10-18，i5-12600KF / Windows 11；旧 Dart vs Rust + FFI，含结果解码）：
+
+| 输入 | 字节 | 文件数 | 旧 Dart | Rust + FFI |
+|---|---|---|---|---|
+| 真实种子 | 542 KB | 290 | 13.80 ms | 0.91 ms |
+| libtorrent `large.torrent` | 100 KB | 1 | 1.95 ms | 0.09 ms |
+| `v2_multiple_files` | 97 KB | 0 | 0.03 ms | 0.03 ms |
+| 合成 2 万文件 | 1.38 MB | 20000 | 198.6 ms | 53.8 ms |
+| 合成 10 万文件 | 6.93 MB | 100000 | 880.1 ms | 395.4 ms（其中 FFI 本体 216.7 ms，余为 Dart 侧建文件清单对象） |
+
+Anki 媒体引用扫描（真实牌组 30794 条笔记 / 9054 万 UTF-16 码元，扫全部笔记；Rust 每批 100 条笔记一次 FFI）：
+
+| 媒体名数 | 旧 Dart 建表 | 旧 Dart 扫描 | Rust 建表 | Rust 扫描 |
+|---|---|---|---|---|
+| 50 | 0.0 ms | 6,034 ms | 0.1 ms | 1,824 ms |
+| 2,000 | 1.4 ms | 10,070 ms | 3.8 ms | 2,143 ms |
+| 18,000 | 24.6 ms | 11,730 ms | 43.6 ms | 1,849 ms |
+| 223,572 | 364.7 ms | 20,331 ms | 777.7 ms | 3,356 ms |
+
 ## 构建
 
 | 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-18 实测） |
@@ -143,5 +191,5 @@ dart test                               # packages/fushi_compute 下（真 FFI�
 
 ## 许可
 
-本 crate GPL-3.0-only（随 app）。依赖：`md4` / `sha2`（RustCrypto）、`crc32fast`，均 MIT OR Apache-2.0，可链进
+本 crate GPL-3.0-only（随 app）。依赖：`md4` / `sha1` / `sha2`（RustCrypto）、`crc32fast`，均 MIT OR Apache-2.0，可链进
 GPL-3.0 的 app 本体；发版前确认 app 开源许可页带上它们的声明。
