@@ -100,6 +100,33 @@ void main() {
       expect(run(crypto.syncObfuscateFile, const <int>[]).length, 8);
     });
 
+    test('non-ASCII paths (Chinese / space / kana / emoji) round-trip', () {
+      // 用户安装版的数据根在 `D:\文档` 这类非 ASCII 路径下：源 / 目标路径各含一种。
+      for (final String name in const <String>[
+        '文档 数据',
+        'with space',
+        'かなカナ',
+        'emoji 😀',
+      ]) {
+        final Directory sub = Directory(
+          '${dir.path}${Platform.pathSeparator}$name',
+        )..createSync();
+        final String sep = Platform.pathSeparator;
+        final File src = File('${sub.path}${sep}源 文件.bin')
+          ..writeAsBytesSync(data);
+        final File obf = File('${sub.path}${sep}混淆 ファイル😀.obf');
+        final File back = File('${sub.path}${sep}还原 目标.bin');
+        crypto.syncObfuscateFile(src.path, obf.path);
+        expect(
+          _sha(obf.readAsBytesSync()),
+          v['obfuscated_sha256'],
+          reason: name,
+        );
+        crypto.syncDeobfuscateFile(obf.path, back.path);
+        expect(back.readAsBytesSync(), data, reason: name);
+      }
+    });
+
     test('I/O failure surfaces as FileSystemException', () {
       expect(
         () => crypto.syncDeobfuscateFile(
