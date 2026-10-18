@@ -28,6 +28,11 @@ Fushi 的 Rust 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配�
 | `ffc_hash_ed2k_free(ctx*)` | 释放（NULL 无操作） |
 | `ffc_hash_sha256_new / _update / _finish(ctx*, u8 out[32]) / _free` | SHA-256，同上形态 |
 | `ffc_hash_crc32(u32 crc, const u8*, usize) -> u32` | CRC-32（zip / IEEE），在上一段结果上续算，首段传 0 |
+| `ffc_hash_uuid_v5_batch(const u8* ns[16n], const u8* names, const u64* offsets[n+1], usize n, u8* out[16n]) -> i32` | 批量 RFC 9562 UUIDv5（SHA-1）；名字是打包的 UTF-8（第 i 个 = `names[offsets[i]..offsets[i+1]]`） |
+| `ffc_hash_hash53_batch(const u8* data, const u64* offsets[n+1], usize n, u64* out[n]) -> i32` | 批量 53 位确定性正整数（SHA-256 前 7 字节大端取低 53 位，0 记作 1） |
+| `ffc_hash_pow_solve(const u8* prefix, usize, u32 bits, u64* out_nonce) -> i32` | 工作量证明：最小的十进制 nonce 使 SHA-256(prefix ‖ nonce) 至少 `bits` 个前导零位（`bits ≤ 64`） |
+| `ffc_hash_pow_check(const u8* prefix, usize, const u8* nonce, usize, u32 bits) -> i32` | 校验：1 满足 / 0 不满足 / 负数参数错 |
+| `ffc_hash_bytes_equal(const u8*, usize, const u8*, usize) -> i32` | 两段字节是否相同：1 / 0 / 负数 |
 
 `finish` 之后再 `update` / `finish` 返回 -2（INVALID_ARGUMENT）。Dart 侧 lookup 名都写成字符串
 字面量，`verify_abi.sh` 递归抓 `packages/fushi_compute/lib/` 下所有 `'ffc_*'` 作期望符号集，
@@ -58,6 +63,58 @@ ARMv8 SHA 扩展）。回归向量：`packages/fushi_compute/test/ffi_hash_test.
 
 （ED2K 的 Dart 基线只在删除前测过；SHA-256 的 `package:crypto` 对照仍在基准里跑。）
 
+### 其余 CRC-32 / zip 写出 / 备份媒体池
+
+| 调用点 | 改动 |
+|---|---|
+| `fushi_engine/lib/utils/archive/native_zip.dart` 的 `nativeDeflatedArchiveFile` / `addFileNativeDeflate` | `ffcCrc32`（后者 4 MiB 读块链式） |
+| 新增 `addFileStored`（native_zip）：分块读 + `ffcCrc32` 增量 CRC、真流式写 STORE 条目 | `fushi/lib/src/sync/backup_service.dart` 与 `fushi_engine/lib/sync/sync_asset_package_service.dart` 原来的 `ZipFileEncoder.addFile(..., STORE)`（archive 包内部纯 Dart CRC）改走它；现有恢复路径读回测试 `fushi/test/sync/store_zip_native_crc_roundtrip_test.dart` |
+| 备份 meta 条目 | `ArchiveFile(meta)` → `nativeDeflatedArchiveFile`（原生 deflate + Rust CRC） |
+| `fushi_engine/lib/srs/srs_backup_store.dart` `_deflateFile` | 逐块 `ffcCrc32` + `FfcSha256Hasher`；回归 `packages/fushi_engine/test/srs/srs_backup_zip_crc_test.dart` |
+| 同文件媒体池入池 / 恢复时的 `sha256.bind(f.openRead())`（两处） | `ffcSha256File`；`srs_backup_restore_test.dart` 用 `package:crypto` 对拍池文件名 |
+| `fushi_engine/lib/media/video/bluray/aacs_configuration.dart` KEYDB.cfg 校验 | `ffcCrc32` |
+
+基准（`packages/fushi_engine/benchmark/zip_crc_callsites_benchmark.dart`，AOT，3 次中位数）：
+
+| 调用点 | 输入 | 改动前 | 改动后 |
+|---|---|---|---|
+| `nativeDeflatedArchiveFile` CRC | 64 MiB | 485 ms | 9 ms |
+| `addFileNativeDeflate` 链式 CRC | 4 MiB × 64 | 2,197 ms | 47 ms |
+| 备份 / 音频同步包 STORE 写出（端到端，含读写盘） | 4 × 128 MiB | 6,188 ms | 1,899 ms |
+| 备份 meta 条目（小对象） | 32 KB JSON × 200 | 219 ms | 238 ms（3 次 148 / 238 / 262，与旧值在噪声内持平） |
+| 复习备份 `_deflateFile`（端到端） | 64 MiB JSONL | 2,471 ms | 969 ms |
+| AACS KEYDB.cfg CRC | 16 MiB × 1 / 256 KiB × 64 | 89 / 113 ms | 2 / 1 ms |
+
+### SRS 确定性 ID、同步摘要与安装工作量证明
+
+- `packages/fushi_srs/lib/src/ids.dart`：`uuidV5`（SHA-1）与 `hash53`（SHA-256）只剩 Rust 一份算法；
+  Dart 只做 UUID 解析 / 格式化。单个调用走不分配的 `ffcUuidV5` / `ffcHash53`（`ffc_hash_*_batch`
+  的 n = 1）；批量入口 `uuidV5Batch` / `SrsIds.importedRevlogs`（apkg 导入时整张卡的 revlog id，
+  `srs_apkg_import.dart`）一次 FFI 调用；`hash53Batch` / `SrsIds.ankiNumericIds`（`srs_db_store.dart`
+  重建数字索引）逐个走 `ffcHash53`——实测比先打包再一次调用更快（打包要攒下整批字符串与字节，
+  GC 压力比哈希本身还大）。`fushi_srs` 因此依赖 `fushi_compute`（纯 Dart FFI，不违反「不依赖
+  Flutter / 插件 / 数据库」）；`style_dedup.dart` 的 css SHA-1（小数据）仍用 `package:crypto`。
+- `fushi_srs/lib/src/sync/sync_files.dart` 批文件 body 摘要、`fushi_engine/lib/srs/srs_backup_store.dart`
+  events body 摘要：`ffcSha256Bytes`。
+- `fushi_engine/lib/leaderboard/install_identity.dart`：`solveInstallPow` 一次 FFI 调用解完
+  （`ffc_hash_pow_solve`），`installPowValid` 走 `ffc_hash_pow_check`；删掉 Dart 的逐 nonce 循环与
+  `_leadingZeroBits`。冻结向量（删除前 Dart 求出）在 `install_identity_test.dart`。
+
+基准（`packages/fushi_engine/benchmark/srs_ids_pow_benchmark.dart`；旧实现在删除前同一进程对比；
+AOT，中位数；本机同时跑着别的构建，绝对值有波动，比值可参考）：
+
+| 调用点 | 规模 | 改动前（Dart） | 改动后（Rust） |
+|---|---|---|---|
+| `uuidV5` 单个（`SrsIds.importedRevlog` 等全部单点） | 10 万次 | 600 ms | 386 ms（同轮另一次 996 → 651 ms） |
+| `uuidV5` 批量（`SrsIds.importedRevlogs`，apkg 导入） | 10 万个 | 600 ms | 218 ms（996 → 344 ms） |
+| `hash53` 单个（`SrsIds.ankiNumericId`） | 10 万次 | 287 ms | 73 ms（392 → 66 ms） |
+| `hash53` 批量（`SrsIds.ankiNumericIds`，重建索引） | 10 万个 | 287 ms | 132 ms（392 → 137 ms） |
+| 安装 PoW 18 位（`solveInstallPow`） | `test-install`（nonce 97403） | 333 ms | 9 ms |
+| | 32 位 hex id（nonce 615991） | 3,120 ms | 87 ms |
+| SHA-256 body（同步批文件 / 备份 events） | 4 KiB × 16384 | 2,002 ms | 135 ms |
+| | 1 MiB × 64 | 1,972 ms | 66 ms |
+| | 16 MiB × 4 | 1,545 ms | 61 ms |
+
 ### CRC-32 与其它大文件 SHA-256
 
 `ffc_hash_crc32(u32 crc, const u8*, usize) -> u32`（`crc32fast`，MIT OR Apache-2.0）：与 `package:archive`
@@ -74,8 +131,7 @@ Dart 堆数组；`.address` 只对 `@Native` 叶子函数可用，而本库走 `
 
 不动的：小数据（字符串键、PKCE、签名、字幕 / NFO / 封面这类小文件）；下载过程中边收边算的
 （`segmented_downloader` 分片摘要，瓶颈是网络）；Anki 媒体去重（BUG-1491 实测瓶颈是 HTTP）；
-galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs_configuration` /
-`srs_backup_store` / `utils/archive/native_zip.dart` 的 `getCrc32`（不在本次范围）。
+galgame helper / hook 相关（Windows 专属规则域，另开任务）。
 
 基准（`packages/fushi_engine/benchmark/crc32_sha256_benchmark.dart`，AOT，同一台机器，3 次中位数）：
 
@@ -86,30 +142,6 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
 | epub_builder `_crc32` | 同上 400 MiB | 3,470 ms | 80 ms | 43× |
 | 内存 SHA-256 | 64 MiB | 1,173 ms | 43 ms | 27× |
 | 整文件 SHA-256（异步读，UI isolate 可用） | 256 MiB | 4,829 ms | 408 ms | 11.8× |
-
-## 文本域：有声书 cue 重切的位置对齐
-
-`ffc_text_align_positions(a_units, a_len, a_offsets, b_units, b_len, b_offsets, count, max_cells, out, out_len) -> i32`
-是 fushi_audio `CueSentenceResegmenter` 原先逐条 cue 调的编辑距离对齐 `_alignPositions`
-（DP + 回溯，`听写长 × 切片长 > maxAlignCells(400000)` 时按比例线性映射）。现在重切器在合缝之后
-把整本书全部模糊命中 cue（听写 ≠ 命中正文切片）攒成一批、一次调用；听写 = 切片的仍取恒等映射，
-不过 FFI。字符串按 UTF-16 码元（`String.codeUnitAt` 同口径），全整数运算外加一次
-`round(i * m / n)`，与旧实现逐值一致。Dart 侧 `FushiComputeText.alignPositions`。
-
-回归：`packages/fushi_compute/test/text_align_positions_test.dart`（旧实现对 580 对合成输入冻结的
-映射，含空串 / 代理对 / 超预算 / 预算 0）；`packages/fushi_audio/test/matching/cue_resegmenter_golden_test.dart`
-（160 个合成用例 × 两档 maxAlignCells 的整条重切输出，旧实现冻结）；真实书
-`cue_resegmenter_realdata_golden_test.dart`（`realdata` tag，不入 CI）。
-
-基准（`packages/fushi_audio/benchmark/align_positions_benchmark.dart`，AOT，真实书匹配后的全部模糊命中对，
-5 次中位数；2026-10-18，i5-12600KF / Windows 11，Dart 3.13.5）：
-
-| 书 | cue 数 | 模糊对 | 平均 DP 格 | 改动前（Dart，逐条） | 改动后（Rust，一批） | 倍数 |
-|---|---|---|---|---|---|---|
-| mt01 | 8597 | 83 | 291 | 0.300 ms | 0.148 ms | 2.0× |
-| mt04 | 7643 | 1976 | 581 | 14.962 ms | 6.938 ms | 2.2× |
-| mt16 | 9879 | 2027 | 473 | 13.116 ms | 6.214 ms | 2.1× |
-| ore | 6129 | 2159 | 829 | 21.285 ms | 9.343 ms | 2.3× |
 
 ## 构建
 
@@ -124,12 +156,13 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
 - macOS 坑：本机 Mac（macOS 27.2）上 rustc 自带 strip（`strip = true`）+ `MACOSX_DEPLOYMENT_TARGET` 出的
   dylib dlopen 报 `mis-aligned LINKEDIT string pool`，`verify_abi.sh` 查不出来；所以
   `build_macos_dylib.sh` 关掉 cargo strip、改用 `strip -x`，并用 python ctypes 调 `ffc_abi_version`
-  冒烟。fushi_fsrs / fushi_p2p 用的是旧写法，可能同样受影响（未验证）。
+  冒烟。`Cargo.toml` 另设 `[profile.release.build-override] strip = false`：同一工具链上被 strip 的
+  构建脚本 / 过程宏也会坏（hajisensai/Fushi#2329）。fushi_fsrs / fushi_p2p 用的是旧写法，可能同样受影响（未验证）。
 - 伞形库：`pub extern crate fushi_compute;`（不用 glob 重导出，`ABI_VERSION` 会与 fushi_fsrs 撞名）；
   fushi_compute 加依赖时要同步更新 `native/fushi_ios_umbrella/Cargo.lock`（构建用 `--locked`）。
   因为三个 crate 编成一个 `.a`，iOS 上 fushi_p2p / fushi_fsrs 实际也随之变成必需。
 - `verify_abi.sh <二进制> [nm]` 递归抓 `packages/fushi_compute/lib/` 下所有 `'ffc_*'` 字面量，逐个核对
-  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 13。
+  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 18。
 
 ## CI
 
@@ -167,5 +200,5 @@ dart test                               # packages/fushi_compute 下（真 FFI�
 
 ## 许可
 
-本 crate GPL-3.0-only（随 app）。依赖：`md4` / `sha2`（RustCrypto）、`crc32fast`，均 MIT OR Apache-2.0，可链进
+本 crate GPL-3.0-only（随 app）。依赖：`md4` / `sha1` / `sha2`（RustCrypto）、`crc32fast`，均 MIT OR Apache-2.0，可链进
 GPL-3.0 的 app 本体；发版前确认 app 开源许可页带上它们的声明。

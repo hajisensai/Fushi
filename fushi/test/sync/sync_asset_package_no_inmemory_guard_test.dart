@@ -30,7 +30,10 @@ void main() {
         reason: '词典包导出必须走原生 zlib deflate，不用 archive 纯 Dart 的 GZIP 档');
     expect(src.contains('ZipFileEncoder.GZIP'), isFalse,
         reason: 'archive 的 GZIP 档是纯 Dart Deflate 且整文件入内存');
-    expect(src.contains('ZipFileEncoder.STORE'), isTrue,
-        reason: '音频包导出必须用 STORE 流式（避免大文件整入内存 + deflate 浪费）');
+    expect(src.contains('addFileStored(encoder, file, entry.key)'), isTrue,
+        reason: '音频包导出必须用 STORE 流式（避免大文件整入内存 + deflate 浪费），'
+            'CRC 走 native_zip 的 Rust ffcCrc32');
+    expect(src.contains('ZipFileEncoder.STORE'), isFalse,
+        reason: 'archive 的 STORE 档用纯 Dart getCrc32 逐字节算 CRC，改用 addFileStored');
   });
 }
