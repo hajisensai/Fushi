@@ -3,3 +3,4 @@
 library;
 
 export 'src/fushi_compute_library.dart';
+export 'src/image/fushi_compute_image.dart';

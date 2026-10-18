@@ -28,6 +28,7 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 
@@ -117,44 +118,28 @@ LetterboxTransform computeLetterbox(
 Float32List rtdetrPreprocess(img.Image source, LetterboxTransform transform) {
   final int dstW = transform.dstWidth;
   final int dstH = transform.dstHeight;
-  final int scaledW =
-      (transform.srcWidth * transform.scaleX).round().clamp(1, dstW);
-  final int scaledH =
-      (transform.srcHeight * transform.scaleY).round().clamp(1, dstH);
+  final int scaledW = (transform.srcWidth * transform.scaleX).round().clamp(
+    1,
+    dstW,
+  );
+  final int scaledH = (transform.srcHeight * transform.scaleY).round().clamp(
+    1,
+    dstH,
+  );
 
-  img.Image canvas;
-  final img.Image resized = img.copyResize(
+  // 缩放 + letterbox 合成 + 归一化都在原生内核里（image_kernels.dart，与旧的
+  // copyResize + compositeImage + 逐像素 getPixel 逐位相同）。
+  return imageToChw(
     source,
     width: scaledW,
     height: scaledH,
     interpolation: img.Interpolation.linear,
+    canvasWidth: dstW,
+    canvasHeight: dstH,
+    padX: transform.padX.round(),
+    padY: transform.padY.round(),
+    bgr: false,
   );
-  if (scaledW == dstW && scaledH == dstH) {
-    canvas = resized;
-  } else {
-    canvas = img.Image(width: dstW, height: dstH);
-    img.fill(canvas, color: img.ColorRgb8(114, 114, 114));
-    img.compositeImage(
-      canvas,
-      resized,
-      dstX: transform.padX.round(),
-      dstY: transform.padY.round(),
-    );
-  }
-
-  final Float32List chw = Float32List(3 * dstH * dstW);
-  final int planeSize = dstH * dstW;
-  int index = 0;
-  for (int y = 0; y < dstH; y++) {
-    for (int x = 0; x < dstW; x++) {
-      final img.Pixel pixel = canvas.getPixel(x, y);
-      chw[index] = pixel.r / 255.0;
-      chw[planeSize + index] = pixel.g / 255.0;
-      chw[2 * planeSize + index] = pixel.b / 255.0;
-      index++;
-    }
-  }
-  return chw;
 }
 
 /// 解码后的原始检测（坐标已反变换回原图像素并 clamp）。
@@ -258,11 +243,7 @@ List<RawDetection> decodeProcessedRtdetrOutputs({
       continue;
     }
     detections.add(
-      RawDetection(
-        rect: rect,
-        score: score,
-        classId: labels[i].round(),
-      ),
+      RawDetection(rect: rect, score: score, classId: labels[i].round()),
     );
   }
   return detections;
@@ -320,14 +301,17 @@ PageDetections buildPageDetections(
     if (d.classId != kDetClassTextBubble && d.classId != kDetClassTextFree) {
       continue;
     }
-    final bool inside = bubbles
-        .any((OcrRect b) => b.containsPoint(d.rect.centerX, d.rect.centerY));
-    textRegions.add(DetectedTextRegion(
-      rect: d.rect,
-      score: d.score,
-      classId: d.classId,
-      insideBubble: inside,
-    ));
+    final bool inside = bubbles.any(
+      (OcrRect b) => b.containsPoint(d.rect.centerX, d.rect.centerY),
+    );
+    textRegions.add(
+      DetectedTextRegion(
+        rect: d.rect,
+        score: d.score,
+        classId: d.classId,
+        insideBubble: inside,
+      ),
+    );
   }
   return PageDetections(
     textRegions: textRegions,
@@ -340,7 +324,8 @@ PageDetections buildPageDetections(
             score: d.score,
             classId: d.classId,
             insideBubble: bubbles.any(
-                (OcrRect b) => b.containsPoint(d.rect.centerX, d.rect.centerY)),
+              (OcrRect b) => b.containsPoint(d.rect.centerX, d.rect.centerY),
+            ),
           ),
     ],
   );
@@ -383,18 +368,20 @@ class TextDetector implements OcrDetector {
       preserveAspect: preserveAspect,
     );
     final Float32List input = rtdetrPreprocess(page, transform);
-    final Map<String, OcrTensor> outputs =
-        await _session.run(<String, OcrTensor>{
-      inputName: OcrTensor.float32(
-          input, <int>[1, 3, transform.dstHeight, transform.dstWidth]),
-      'orig_target_sizes': OcrTensor.int64(
-        Int64List.fromList(<int>[
+    final Map<String, OcrTensor> outputs = await _session.run(
+      <String, OcrTensor>{
+        inputName: OcrTensor.float32(input, <int>[
+          1,
+          3,
           transform.dstHeight,
           transform.dstWidth,
         ]),
-        const <int>[1, 2],
-      ),
-    });
+        'orig_target_sizes': OcrTensor.int64(
+          Int64List.fromList(<int>[transform.dstHeight, transform.dstWidth]),
+          const <int>[1, 2],
+        ),
+      },
+    );
     final OcrTensor? logits = outputs[logitsName];
     final OcrTensor? rawBoxes = outputs[boxesName];
     final OcrTensor? scores = outputs['scores'];
@@ -423,8 +410,9 @@ class TextDetector implements OcrDetector {
       );
     } else {
       throw StateError(
-          'detector outputs missing: got ${outputs.keys.toList()}, '
-          'expected [$logitsName, $boxesName] or [scores, labels, boxes]');
+        'detector outputs missing: got ${outputs.keys.toList()}, '
+        'expected [$logitsName, $boxesName] or [scores, labels, boxes]',
+      );
     }
     return buildPageDetections(
       applyClassAwareNms(<RawDetection>[

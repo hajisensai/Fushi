@@ -27,6 +27,7 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/manga/mokuro_geometry.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
@@ -68,31 +69,19 @@ const List<double> kPpDetStd = <double>[0.229, 0.224, 0.225];
 }
 
 /// resize 到 [width]x[height] 并输出 BGR CHW float32（ImageNet 归一化）。
-Float32List ppDetPreprocess(img.Image source, int width, int height) {
-  final img.Image resized = (source.width == width && source.height == height)
-      ? source
-      : img.copyResize(
-          source,
-          width: width,
-          height: height,
-          interpolation: img.Interpolation.linear,
-        );
-  final int planeSize = width * height;
-  final Float32List chw = Float32List(3 * planeSize);
-  int index = 0;
-  for (int y = 0; y < height; y++) {
-    for (int x = 0; x < width; x++) {
-      final img.Pixel pixel = resized.getPixel(x, y);
-      // 通道序 BGR：channel0 = B 配 mean[0]。
-      chw[index] = (pixel.b / 255.0 - kPpDetMean[0]) / kPpDetStd[0];
-      chw[planeSize + index] = (pixel.g / 255.0 - kPpDetMean[1]) / kPpDetStd[1];
-      chw[2 * planeSize + index] =
-          (pixel.r / 255.0 - kPpDetMean[2]) / kPpDetStd[2];
-      index++;
-    }
-  }
-  return chw;
-}
+Float32List ppDetPreprocess(img.Image source, int width, int height) =>
+    // 缩放 + 归一化在原生内核（image_kernels.dart，与旧的 copyResize + 逐像素 getPixel
+    // 逐位相同）。尺寸已对上时直接读源图像素、不转正 EXIF 方向（旧语义）。
+    imageToChw(
+      source,
+      width: width,
+      height: height,
+      interpolation: img.Interpolation.linear,
+      bgr: true,
+      mean: kPpDetMean,
+      std: kPpDetStd,
+      bake: source.width != width || source.height != height,
+    );
 
 /// 一条检测到的文本行（坐标在**输入给检测器的那张图**的像素系）。
 class PpTextLine {

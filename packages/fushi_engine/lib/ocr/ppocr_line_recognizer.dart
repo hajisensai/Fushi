@@ -19,6 +19,7 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 
@@ -82,23 +83,17 @@ List<String> buildPpOcrCtcVocab(List<String> characterDict) => <String>[
     (kPpRecHeight * line.width / line.height).ceil(),
   );
   final int inputW = math.max(kPpRecMinWidth, scaledW);
-  final img.Image resized = img.copyResize(
+  // 填充区（x ≥ scaledW）保持 0。
+  final Float32List chw = imageToChw(
     line,
     width: scaledW,
     height: kPpRecHeight,
     interpolation: img.Interpolation.linear,
+    planeWidth: inputW,
+    bgr: true,
+    mean: const <double>[0.5, 0.5, 0.5],
+    std: const <double>[0.5, 0.5, 0.5],
   );
-  final int planeSize = kPpRecHeight * inputW;
-  final Float32List chw = Float32List(3 * planeSize); // 填充区保持 0
-  for (int y = 0; y < kPpRecHeight; y++) {
-    for (int x = 0; x < scaledW; x++) {
-      final img.Pixel pixel = resized.getPixel(x, y);
-      final int index = y * inputW + x;
-      chw[index] = (pixel.b / 255.0 - 0.5) / 0.5;
-      chw[planeSize + index] = (pixel.g / 255.0 - 0.5) / 0.5;
-      chw[2 * planeSize + index] = (pixel.r / 255.0 - 0.5) / 0.5;
-    }
-  }
   return (data: chw, width: inputW);
 }
 

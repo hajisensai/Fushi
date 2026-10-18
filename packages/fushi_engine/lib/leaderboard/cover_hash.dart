@@ -14,13 +14,12 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/leaderboard/local_shelf.dart';
+import 'package:fushi_engine/media/image_kernels.dart';
 
 /// 与服务端 `COVER_HASH_MAX_DISTANCE` 一致：汉明距离不超过它视为同一张图。
 const int kCoverHashMaxDistance = 10;
-
-const int _cols = 9;
-const int _rows = 8;
 
 /// 图片字节（JPEG / PNG / WebP 等 `image` 包能解的格式）的 dHash；解不开返回 null。
 String? coverDHash(Uint8List bytes) {
@@ -35,43 +34,22 @@ String? coverDHash(Uint8List bytes) {
   return coverDHashOfImage(decoded);
 }
 
-/// 已解码图片的 dHash（见文件头）。
+/// 已解码图片（首帧）的 dHash（见文件头）。灰度 / 求均值 / 比较在原生内核
+/// （ffc_image_dhash）里，与旧的逐像素 Dart 循环逐位相同；调色板与非 uint8 图先展开成
+/// uint8（16 位图因此按 8 位精度求亮度，与服务端容差 [kCoverHashMaxDistance] 相比可忽略）。
 String coverDHashOfImage(img.Image image) {
-  final int w = image.width;
-  final int h = image.height;
-  final List<double> sum = List<double>.filled(_cols * _rows, 0);
-  final List<int> count = List<int>.filled(_cols * _rows, 0);
-  for (final img.Pixel p in image) {
-    final int cx = p.x * _cols ~/ w;
-    final int cy = p.y * _rows ~/ h;
-    final int cell = cy * _cols + cx;
-    sum[cell] +=
-        0.299 * p.rNormalized + 0.587 * p.gNormalized + 0.114 * p.bNormalized;
-    count[cell]++;
-  }
-  // 源图比 9×8 还小时有空格子：取同一行左侧最近的非空格子（第一格空就取 0）。
-  final List<double> mean = List<double>.filled(_cols * _rows, 0);
-  for (int y = 0; y < _rows; y++) {
-    double last = 0;
-    for (int x = 0; x < _cols; x++) {
-      final int i = y * _cols + x;
-      if (count[i] > 0) last = sum[i] / count[i];
-      mean[i] = last;
-    }
-  }
+  final ({Uint8List pixels, int stride, int channels, int width, int height})
+  p = uint8Pixels(image);
+  final Uint8List bits = FushiComputeImage.instance.dHash(
+    p.pixels,
+    stride: p.stride,
+    channels: p.channels,
+    width: p.width,
+    height: p.height,
+  );
   final StringBuffer out = StringBuffer();
-  int nibble = 0;
-  int bits = 0;
-  for (int y = 0; y < _rows; y++) {
-    for (int x = 0; x < _cols - 1; x++) {
-      final bool brighter = mean[y * _cols + x] > mean[y * _cols + x + 1];
-      nibble = (nibble << 1) | (brighter ? 1 : 0);
-      if (++bits == 4) {
-        out.write(nibble.toRadixString(16));
-        nibble = 0;
-        bits = 0;
-      }
-    }
+  for (final int byte in bits) {
+    out.write(byte.toRadixString(16).padLeft(2, '0'));
   }
   return out.toString();
 }

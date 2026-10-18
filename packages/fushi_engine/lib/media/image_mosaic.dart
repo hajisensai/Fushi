@@ -13,6 +13,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:fushi_anki/fushi_anki_core.dart' show MiningMosaicRegion;
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:image/image.dart' as img;
 
 /// 马赛克块边长占图像长边的比例：长边 1920 → 40px 一块，糊到看不出细节，又能看出
@@ -81,55 +82,8 @@ void applyMosaicRgba(
       ];
   if (bounds.isEmpty) return;
 
-  // 收集被任一区域碰到的块（按块坐标去重）。
-  final int cols = (width + s - 1) ~/ s;
-  final Set<int> cells = <int>{};
-  for (final ({int x0, int y0, int x1, int y1}) b in bounds) {
-    for (int cy = b.y0 ~/ s; cy * s < b.y1; cy++) {
-      for (int cx = b.x0 ~/ s; cx * s < b.x1; cx++) {
-        cells.add(cy * cols + cx);
-      }
-    }
-  }
-
-  bool covered(int x, int y) {
-    for (final ({int x0, int y0, int x1, int y1}) b in bounds) {
-      if (x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1) return true;
-    }
-    return false;
-  }
-
-  for (final int cell in cells) {
-    final int cx0 = (cell % cols) * s;
-    final int cy0 = (cell ~/ cols) * s;
-    final int cx1 = math.min(cx0 + s, width);
-    final int cy1 = math.min(cy0 + s, height);
-    int r = 0, g = 0, bl = 0, a = 0;
-    for (int y = cy0; y < cy1; y++) {
-      int i = (y * width + cx0) * 4;
-      for (int x = cx0; x < cx1; x++, i += 4) {
-        r += rgba[i];
-        g += rgba[i + 1];
-        bl += rgba[i + 2];
-        a += rgba[i + 3];
-      }
-    }
-    final int n = (cx1 - cx0) * (cy1 - cy0);
-    final int ar = (r / n).round();
-    final int ag = (g / n).round();
-    final int ab = (bl / n).round();
-    final int aa = (a / n).round();
-    for (int y = cy0; y < cy1; y++) {
-      int i = (y * width + cx0) * 4;
-      for (int x = cx0; x < cx1; x++, i += 4) {
-        if (!covered(x, y)) continue;
-        rgba[i] = ar;
-        rgba[i + 1] = ag;
-        rgba[i + 2] = ab;
-        rgba[i + 3] = aa;
-      }
-    }
-  }
+  // 收块 / 求块平均 / 回写都在原生内核（ffc_image_mosaic_rgba8），与旧 Dart 循环逐位相同。
+  FushiComputeImage.instance.mosaicRgba8(rgba, width, height, s, bounds);
 }
 
 /// 给一张已解码的 [image] 打码，返回新图（RGBA8888）。[regions] 为空时原样返回。
@@ -138,19 +92,27 @@ img.Image applyMosaicToImage(
   List<MiningMosaicRegion> regions,
 ) {
   if (regions.isEmpty) return image;
-  final img.Image rgbaImage =
-      image.format == img.Format.uint8 &&
-          image.numChannels == 4 &&
-          !image.hasPalette
-      ? image
-      : image.convert(format: img.Format.uint8, numChannels: 4, alpha: 255);
-  final Uint8List bytes = Uint8List.fromList(
-    rgbaImage.getBytes(order: img.ChannelOrder.rgba),
-  );
-  applyMosaicRgba(bytes, rgbaImage.width, rgbaImage.height, regions);
+  final bool plainUint8 = image.format == img.Format.uint8 && !image.hasPalette;
+  final Uint8List bytes;
+  if (plainUint8 && (image.numChannels == 3 || image.numChannels == 4)) {
+    // 3 通道补 a = 255（同 convert(numChannels: 4, alpha: 255)），4 通道原样拷。
+    bytes = FushiComputeImage.instance.toRgba8(
+      image.toUint8List(),
+      image.numChannels,
+      image.width,
+      image.height,
+    );
+  } else {
+    bytes = Uint8List.fromList(
+      image
+          .convert(format: img.Format.uint8, numChannels: 4, alpha: 255)
+          .getBytes(order: img.ChannelOrder.rgba),
+    );
+  }
+  applyMosaicRgba(bytes, image.width, image.height, regions);
   return img.Image.fromBytes(
-    width: rgbaImage.width,
-    height: rgbaImage.height,
+    width: image.width,
+    height: image.height,
     bytes: bytes.buffer,
     numChannels: 4,
     order: img.ChannelOrder.rgba,

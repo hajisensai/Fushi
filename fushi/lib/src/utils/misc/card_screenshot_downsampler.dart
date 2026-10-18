@@ -1,6 +1,7 @@
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:image/image.dart' as img;
 
 /// TODO-646 近无损压缩：制卡截图降采样。
@@ -89,11 +90,8 @@ Uint8List downsampleCardScreenshot(
     }
     final img.Image out = target == null
         ? decoded
-        : img.copyResize(
-            decoded,
-            width: target.width,
-            height: target.height,
-          );
+        // 最近邻（= 旧的 img.copyResize 缺省插值），原生内核实现。
+        : resizeImageExact(decoded, width: target.width, height: target.height);
     return switch (encoding) {
       CardScreenshotEncoding.jpeg => img.encodeJpg(out, quality: quality),
       CardScreenshotEncoding.png => img.encodePng(out),

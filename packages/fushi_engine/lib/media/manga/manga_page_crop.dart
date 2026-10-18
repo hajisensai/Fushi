@@ -13,6 +13,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:fushi_anki/fushi_anki_core.dart' show MiningMosaicRegion;
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/image_mosaic.dart';
 import 'package:image/image.dart' as img;
 
@@ -140,22 +141,26 @@ MangaPageCropResult? cropMangaPage(
       right: right,
       bottom: bottom,
     );
-    img.Image out = img.copyCrop(
-      page,
-      x: rect.x,
-      y: rect.y,
-      width: rect.width,
-      height: rect.height,
-    );
-    final int longEdge = math.max(out.width, out.height);
+    final int longEdge = math.max(rect.width, rect.height);
+    final img.Image out;
     if (maxLongEdge > 0 && longEdge > maxLongEdge) {
       final double scale = maxLongEdge / longEdge;
-      out = img.copyResize(
-        out,
-        width: math.max(1, (out.width * scale).round()),
-        height: math.max(1, (out.height * scale).round()),
+      // 裁切 + 缩放一次过原生内核（= copyCrop 后 copyResize）。
+      out = resizeImageExact(
+        page,
+        crop: rect,
+        width: math.max(1, (rect.width * scale).round()),
+        height: math.max(1, (rect.height * scale).round()),
         // 缩小用 average：漫画网点用最近邻 / 双线性缩会出摩尔纹。
         interpolation: img.Interpolation.average,
+      );
+    } else {
+      out = img.copyCrop(
+        page,
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
       );
     }
     final MangaCropEncoding encoding = format == img.ImageFormat.png
