@@ -260,6 +260,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (controller == null || session == null || url == null) return;
     if (url == _webBoundEpisodeUrl) {
       controller.rebindWebBook(_activeBookUid);
+      unawaited(_refreshWebEpisodeBook(state, url));
       return;
     }
     if (url == _webBindingEpisodeUrl) return;
@@ -271,11 +272,13 @@ extension _VideoWebSource on _VideoFushiPageState {
       row = await ensureWebVideoEpisodeBook(
         widget.repo,
         episodeUrl: url,
-        title: webVideoEpisodeTitle(
-          pageTitle: state.title,
-          episodeUrl: url,
-          siteTitle: siteTitle,
-        ),
+        title: state.videoTitle.isNotEmpty
+            ? state.videoTitle
+            : webVideoEpisodeTitle(
+                pageTitle: state.title,
+                episodeUrl: url,
+                siteTitle: siteTitle,
+              ),
       );
     } catch (e, st) {
       ErrorLogService.instance.log('VideoFushi.webEpisode', e, st);
@@ -312,6 +315,59 @@ extension _VideoWebSource on _VideoFushiPageState {
     _ensureWatchTracker(controller, bound.title);
     unawaited(_refreshFavoritedCueCache());
     unawaited(_refreshStagedMineCount());
+  }
+
+  /// 已绑定的这一集还是占位书名 / 没封面，而页面已经给出真名 / 封面：补上（每集最多跑一次
+  /// 成功的补全；站点 SPA 里真名往往晚于播放几百毫秒才出来，所以按快照重试）。
+  Future<void> _refreshWebEpisodeBook(
+    WebVideoPlaybackState state,
+    String url,
+  ) async {
+    final VideoBookRow? row = _bookRow;
+    if (row == null ||
+        _webEpisodeMetaDoneUrl == url ||
+        _webEpisodeMetaBusy ||
+        isWebVideoSiteBookUid(row.bookUid)) {
+      return;
+    }
+    final bool needsTitle = webVideoEpisodeTitleIsPlaceholder(
+      row.title,
+      row.videoPath,
+    );
+    final bool needsCover = row.coverPath == null || row.coverPath!.isEmpty;
+    if (!needsTitle && !needsCover) {
+      _webEpisodeMetaDoneUrl = url;
+      return;
+    }
+    if (needsTitle && state.videoTitle.isEmpty && !needsCover) return;
+    _webEpisodeMetaBusy = true;
+    try {
+      final VideoBookRow updated = await refreshWebVideoEpisodeBook(
+        widget.repo,
+        row,
+        videoTitle: state.videoTitle,
+        pageImage: state.imageUrl,
+      );
+      if (!mounted || _bookRow?.bookUid != updated.bookUid) return;
+      if (!identical(updated, row)) {
+        _rebuild(() {
+          _bookRow = updated;
+          _title = updated.title;
+        });
+      }
+      final bool titleDone = !webVideoEpisodeTitleIsPlaceholder(
+        updated.title,
+        updated.videoPath,
+      );
+      final bool coverDone =
+          updated.coverPath != null && updated.coverPath!.isNotEmpty;
+      if (titleDone && coverDone) _webEpisodeMetaDoneUrl = url;
+    } catch (e, st) {
+      ErrorLogService.instance.log('VideoFushi.webEpisodeMeta', e, st);
+      _webEpisodeMetaDoneUrl = url;
+    } finally {
+      _webEpisodeMetaBusy = false;
+    }
   }
 
   /// 这份快照该不该是播放器档：没视频一定不是；用户对**这一集**点过「回到网页」/「在播放器里

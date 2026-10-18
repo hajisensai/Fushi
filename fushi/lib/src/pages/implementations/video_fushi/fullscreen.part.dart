@@ -43,6 +43,12 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// 移动端**直接短路 false**：BUG-221 已把移动端全屏路由统一 no-op 掉，横屏沉浸态是唯一
   /// 形态。短路同时避开「兄弟层在同帧早于 Builder 回调执行、只能读到上一帧 context」的时序
   /// 依赖——移动端恰恰是本 bug 的唯一暴露面，不能让它的正确性挂在帧序上。
+  /// [_VideoControlsContextCapture] 被移出树时交还引用：只清它自己存进去的那个（新节点
+  /// 可能已经先一步存了自己的）。重新插回树时 StatefulElement.activate 会重建、再存一次。
+  void _releaseVideoControlsContext(BuildContext context) {
+    if (identical(_videoControlsContext, context)) _videoControlsContext = null;
+  }
+
   bool get _isVideoFullscreenRoute {
     if (isMobilePlatform) return false;
     final BuildContext? ctx = _videoControlsContext;

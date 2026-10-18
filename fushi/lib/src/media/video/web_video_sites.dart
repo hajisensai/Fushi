@@ -10,8 +10,12 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_cover_extractor.dart'
+    show downloadVideoCoverToPath, videoCoverFileName;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
-    show youtubeVideoIdOrNull;
+    show youtubeThumbnailUrl, youtubeVideoIdOrNull;
+import 'package:fushi/src/storage/app_paths.dart' show AppPaths;
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
@@ -111,7 +115,8 @@ bool isWebVideoSiteBookUid(String bookUid) =>
 
 /// 某一集的规范地址（落库身份）：Netflix `https://www.netflix.com/watch/<id>`（去掉
 /// trackId 之类的跟踪参数），YouTube `https://www.youtube.com/watch?v=<id>`（与导入同一
-/// 身份 `video/stream/yt:<id>`），其它站点去掉 `#` 片段。不是 http(s) 返回 null。
+/// 身份 `video/stream/yt:<id>`），其它站点去掉 `#` 片段。不是 http(s) 返回 null；Netflix /
+/// YouTube 不是某一集的页面（首页、浏览页上的预告片）也返回 null——那不是一集，不落库。
 String? webVideoEpisodeUrl(String href) {
   final Uri? uri = Uri.tryParse(href);
   if (uri == null || !isPlayableStreamUrl(href)) return null;
@@ -119,15 +124,75 @@ String? webVideoEpisodeUrl(String href) {
   bool on(String domain) => host == domain || host.endsWith('.$domain');
   if (on('netflix.com')) {
     final RegExpMatch? m = RegExp(r'^/watch/(\d+)').firstMatch(uri.path);
-    if (m != null) return 'https://www.netflix.com/watch/${m.group(1)}';
+    return m == null ? null : 'https://www.netflix.com/watch/${m.group(1)}';
   }
   if (on('youtube.com') || on('youtu.be')) {
     final String? id = youtubeVideoIdOrNull(href);
-    if (id != null && id.isNotEmpty) {
-      return 'https://www.youtube.com/watch?v=$id';
-    }
+    return id == null || id.isEmpty
+        ? null
+        : 'https://www.youtube.com/watch?v=$id';
   }
   return uri.removeFragment().toString();
+}
+
+/// 这一集的 id（YouTube `v`、Netflix `/watch/<id>`、其它站点路径末段）；占位书名里用。
+String _webVideoEpisodeId(String episodeUrl) {
+  final Uri? uri = Uri.tryParse(episodeUrl);
+  if (uri == null) return '';
+  return uri.queryParameters['v'] ??
+      (uri.pathSegments.isEmpty ? '' : uri.pathSegments.last);
+}
+
+/// 书名还是落库时的占位（「站名 · 集 id」/ 光站名）：拿到真名就该换掉。
+bool webVideoEpisodeTitleIsPlaceholder(String title, String episodeUrl) {
+  final String id = _webVideoEpisodeId(episodeUrl);
+  if (id.isNotEmpty && title.endsWith(' · $id')) return true;
+  final String site = webVideoSiteDefaultTitle(episodeUrl).split('.').first;
+  return title.trim().isEmpty || title.toLowerCase() == site.toLowerCase();
+}
+
+/// 这一集的封面地址：YouTube 用视频缩略图（不需要页面给），其它站点用页面的 og:image。
+String? webVideoEpisodeCoverUrl(String episodeUrl, {String pageImage = ''}) {
+  final String? ytId = youtubeVideoIdOrNull(episodeUrl);
+  if (ytId != null && ytId.isNotEmpty) return youtubeThumbnailUrl(ytId);
+  return pageImage.isEmpty ? null : pageImage;
+}
+
+/// 补全这一集的书：占位书名换成站点给的真名、没封面的下一张。返回更新后的行（没变就是原行）。
+/// 尽力而为：下载失败只是继续没封面。
+Future<VideoBookRow> refreshWebVideoEpisodeBook(
+  VideoBookRepository repo,
+  VideoBookRow row, {
+  required String videoTitle,
+  required String pageImage,
+}) async {
+  bool changed = false;
+  if (videoTitle.isNotEmpty &&
+      videoTitle != row.title &&
+      webVideoEpisodeTitleIsPlaceholder(row.title, row.videoPath)) {
+    await repo.updateTitle(row.bookUid, videoTitle);
+    changed = true;
+  }
+  final String? coverUrl = webVideoEpisodeCoverUrl(
+    row.videoPath,
+    pageImage: pageImage,
+  );
+  if ((row.coverPath == null || row.coverPath!.isEmpty) && coverUrl != null) {
+    final String outputPath = p.join(
+      (await AppPaths.videoCoversDirectory()).path,
+      videoCoverFileName(row.bookUid),
+    );
+    final String? cover = await downloadVideoCoverToPath(
+      coverUrl: coverUrl,
+      outputPath: outputPath,
+    );
+    if (cover != null) {
+      await repo.updateCover(row.bookUid, cover);
+      changed = true;
+    }
+  }
+  if (!changed) return row;
+  return await repo.getByBookUid(row.bookUid) ?? row;
 }
 
 /// 页面标题去掉站名后缀（「… - YouTube」）；站点只给站名（Netflix 播放页的

@@ -415,21 +415,26 @@ extension _VideoLayout on _VideoFushiPageState {
       builder: (BuildContext context, _) {
         if (controller.isBlurayNavigationSession &&
             (controller.discMenuActive || !controller.discTitleReady)) {
-          _videoControlsContext = context;
           // Video only stores this node in its view parameters. The normal
           // AdaptiveVideoControls widget owns the actual Focus host, so the
           // authored-menu replacement must host it too. The outer shared
           // VideoControlsFocusGate keeps exactly one host across fullscreen.
-          return BlurayDiscMenuFocusHost(
-            focusNode: _videoFocusNode,
-            onAttached: _reclaimDiscMenuFocusAfterAttachment,
-            child: Stack(
-              children: <Widget>[
-                Positioned.fill(child: _buildDiscMenuSurface(controller)),
-                _buildDiscMenuChrome(controller),
-                _buildOsdOverlay(),
-              ],
-            ),
+          return _VideoControlsContextCapture(
+            onRelease: _releaseVideoControlsContext,
+            builder: (BuildContext captured) {
+              _videoControlsContext = captured;
+              return BlurayDiscMenuFocusHost(
+                focusNode: _videoFocusNode,
+                onAttached: _reclaimDiscMenuFocusAfterAttachment,
+                child: Stack(
+                  children: <Widget>[
+                    Positioned.fill(child: _buildDiscMenuSurface(controller)),
+                    _buildDiscMenuChrome(controller),
+                    _buildOsdOverlay(),
+                  ],
+                ),
+              );
+            },
           );
         }
         final VideoControlLayout layout = _controlLayoutNotifier.value;
@@ -516,7 +521,8 @@ extension _VideoLayout on _VideoFushiPageState {
                         // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
                         // InheritedWidget。全屏复用同一 builder，故全屏路由会重新捕获其子树 context。
                         Positioned.fill(
-                          child: Builder(
+                          child: _VideoControlsContextCapture(
+                            onRelease: _releaseVideoControlsContext,
                             builder: (BuildContext controlsContext) {
                               _videoControlsContext = controlsContext;
                               // 锁定 / 沉浸模式（TODO-101）：用 IgnorePointer 拦掉送往 media_kit
@@ -1437,4 +1443,35 @@ extension _VideoLayout on _VideoFushiPageState {
       ),
     );
   }
+}
+
+/// 捕获 [_VideoFushiPageState._videoControlsContext] 的那个子树节点：被移出树（网页档在
+/// 播放器档 / 网页之间切、原盘菜单换正片、全屏路由换宿主）时立刻交还引用。只靠
+/// `context.mounted` 不够——停用（deactivate）到真卸载之间 mounted 仍是 true，这一帧里
+/// 兄弟层读全屏态（[isFullscreen]）就是在停用节点上查祖先（「Looking up a deactivated
+/// widget's ancestor is unsafe」）。
+class _VideoControlsContextCapture extends StatefulWidget {
+  const _VideoControlsContextCapture({
+    required this.onRelease,
+    required this.builder,
+  });
+
+  final void Function(BuildContext context) onRelease;
+  final WidgetBuilder builder;
+
+  @override
+  State<_VideoControlsContextCapture> createState() =>
+      _VideoControlsContextCaptureState();
+}
+
+class _VideoControlsContextCaptureState
+    extends State<_VideoControlsContextCapture> {
+  @override
+  void deactivate() {
+    widget.onRelease(context);
+    super.deactivate();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
 }

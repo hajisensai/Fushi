@@ -144,6 +144,8 @@ class WebVideoPlaybackState {
     this.muted = false,
     this.buffering = false,
     this.ad = false,
+    this.videoTitle = '',
+    this.imageUrl = '',
   });
 
   final String href;
@@ -170,6 +172,13 @@ class WebVideoPlaybackState {
   /// 站点正在放广告（YouTube `ad-showing`）：位置 / 时长 / 倍速 / 静音都是广告的，
   /// 不是正片的。
   final bool ad;
+
+  /// 站点播放器给的这一集真名（YouTube 播放器数据 / Netflix 播放器标题 / og:title）；
+  /// 取不到为空。
+  final String videoTitle;
+
+  /// 页面的 og:image（封面候选）；没有为空。
+  final String imageUrl;
 
   bool get isPlaying => hasVideo && !paused;
 }
@@ -240,6 +249,8 @@ WebVideoPlaybackState? parseWebVideoStatePayload(Object? raw) {
     muted: raw['muted'] == true,
     buffering: raw['buf'] == true,
     ad: raw['ad'] == true,
+    videoTitle: (raw['vtitle'] ?? '').toString().trim(),
+    imageUrl: (raw['vimg'] ?? '').toString().trim(),
   );
 }
 

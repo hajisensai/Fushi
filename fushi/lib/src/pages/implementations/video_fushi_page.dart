@@ -2101,6 +2101,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String? _webBoundEpisodeUrl;
   String? _webBindingEpisodeUrl;
 
+  /// 这一集的书名 / 封面已补全（或补全失败不再重试）的那一集；补全进行中不重入。
+  String? _webEpisodeMetaDoneUrl;
+  bool _webEpisodeMetaBusy = false;
+
   /// 网页档工具条的地址栏（没在编辑时跟着当前地址走）。
   final TextEditingController _webAddressController = TextEditingController();
   final FocusNode _webAddressFocus = FocusNode(debugLabel: 'video-web-address');

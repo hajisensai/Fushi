@@ -88,4 +88,48 @@ void main() {
     expect(webVideoSitesAvailable(platform: TargetPlatform.android), isFalse);
     expect(webVideoSitesAvailable(platform: TargetPlatform.macOS), isFalse);
   });
+
+  test('Netflix / YouTube 不是某一集的页面不落库', () {
+    expect(webVideoEpisodeUrl('https://www.youtube.com/'), isNull);
+    expect(webVideoEpisodeUrl('https://www.youtube.com/@channel'), isNull);
+    expect(webVideoEpisodeUrl('https://www.netflix.com/browse'), isNull);
+    expect(
+      webVideoEpisodeUrl('https://www.netflix.com/title/80100172'),
+      isNull,
+    );
+  });
+
+  test('占位书名：「站名 · 集 id」/ 光站名；真名不算', () {
+    const String yt = 'https://www.youtube.com/watch?v=QN-imnDC0PM';
+    expect(
+      webVideoEpisodeTitleIsPlaceholder('YouTube · QN-imnDC0PM', yt),
+      isTrue,
+    );
+    expect(webVideoEpisodeTitleIsPlaceholder('YouTube', yt), isTrue);
+    expect(
+      webVideoEpisodeTitleIsPlaceholder('Japanese Podcast 日本超市', yt),
+      isFalse,
+    );
+    const String nf = 'https://www.netflix.com/watch/81234567';
+    expect(webVideoEpisodeTitleIsPlaceholder('Netflix · 81234567', nf), isTrue);
+    expect(webVideoEpisodeTitleIsPlaceholder('葬送のフリーレン · 第1話', nf), isFalse);
+  });
+
+  test('封面：YouTube 用缩略图，其它站点用页面 og:image', () {
+    expect(
+      webVideoEpisodeCoverUrl('https://www.youtube.com/watch?v=QN-imnDC0PM'),
+      contains('QN-imnDC0PM'),
+    );
+    expect(
+      webVideoEpisodeCoverUrl(
+        'https://www.netflix.com/watch/81234567',
+        pageImage: 'https://example.com/a.jpg',
+      ),
+      'https://example.com/a.jpg',
+    );
+    expect(
+      webVideoEpisodeCoverUrl('https://www.netflix.com/watch/81234567'),
+      isNull,
+    );
+  });
 }

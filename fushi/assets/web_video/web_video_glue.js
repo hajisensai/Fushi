@@ -77,8 +77,9 @@
   }
   var adRestore = null;
   function handleAds() {
-    var v = video();
     var ad = adShowing();
+    if (!ad && !adRestore) return; // 绝大多数调用（class 变化）在这里就结束
+    var v = video();
     if (ad && v) {
       if (!adRestore) adRestore = { muted: !!v.muted, rate: v.playbackRate || 1 };
       try {
@@ -87,13 +88,28 @@
         if (skip) skip.click();
       } catch (_) {}
       try { v.muted = true; } catch (_) {}
-      try { if (v.playbackRate < 16) v.playbackRate = 16; } catch (_) {}
+      // 真跳过：广告片段直接拖到结尾（不可跳过的广告也一样），YouTube 随即进下一条广告 / 正片。
+      // 时长还没就绪（元数据未到）时先 16 倍速顶着，下一轮再拖。
+      try {
+        if (isFinite(v.duration) && v.duration > 0 && v.currentTime < v.duration - 0.1) {
+          v.currentTime = v.duration;
+        } else if (v.playbackRate < 16) {
+          v.playbackRate = 16;
+        }
+      } catch (_) {}
     } else if (!ad && adRestore) {
       try { if (v) { v.muted = adRestore.muted; v.playbackRate = adRestore.rate; } } catch (_) {}
       adRestore = null;
     }
   }
-  try { setInterval(handleAds, 300); } catch (_) {}
+  try { setInterval(handleAds, 250); } catch (_) {}
+  // 广告一挂上就处理，不等下一轮轮询（player 的 class 变化 + 广告片段元数据到达）。
+  try {
+    new MutationObserver(handleAds).observe(document.documentElement, {
+      subtree: true, attributes: true, attributeFilter: ['class'],
+    });
+    document.addEventListener('loadedmetadata', handleAds, true);
+  } catch (_) {}
 
   // ── 播放态轮询（与扩展面板同为轮询，站点播放器不保证派发 timeupdate）──
   var last = null;
@@ -118,7 +134,45 @@
       fs: !!document.fullscreenElement,
       title: document.title,
       ad: adShowing(),
+      vtitle: v ? videoTitle() : '',
+      vimg: v ? pageImage() : '',
     };
+  }
+  // 正在播的这一集的真名（落库的书名）：站点播放器自己的数据优先，document.title 在 SPA
+  // 换集后常常还停在站名上。
+  function videoTitle() {
+    try {
+      var host = location.hostname;
+      if (host.indexOf('youtube.com') >= 0) {
+        var p = document.getElementById('movie_player');
+        var d = p && p.getVideoData ? p.getVideoData() : null;
+        if (d && d.title) return String(d.title);
+        var h = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, h1.title');
+        if (h && h.textContent.trim()) return h.textContent.trim();
+      }
+      if (host.indexOf('netflix.com') >= 0) {
+        var t = document.querySelector('[data-uia="video-title"]');
+        if (t) {
+          var parts = [];
+          for (var i = 0; i < t.children.length; i++) {
+            var s = (t.children[i].textContent || '').trim();
+            if (s) parts.push(s);
+          }
+          var joined = parts.length ? parts.join(' · ') : (t.textContent || '').trim();
+          if (joined) return joined;
+        }
+      }
+      var og = document.querySelector('meta[property="og:title"]');
+      if (og && og.content) return String(og.content).trim();
+    } catch (_) {}
+    return '';
+  }
+  function pageImage() {
+    try {
+      var og = document.querySelector('meta[property="og:image"]');
+      if (og && og.content) return new URL(og.content, location.href).href;
+    } catch (_) {}
+    return '';
   }
   function same(a, b) {
     if (!a || !b) return false;

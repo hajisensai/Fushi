@@ -57,4 +57,14 @@ void main() {
     expect(parseWebVideoStatePayload(<String, Object>{'ad': true})!.ad, isTrue);
     expect(parseWebVideoStatePayload(<String, Object>{})!.ad, isFalse);
   });
+
+  test('站点给的集名 / 封面候选解析出来，缺省为空串', () {
+    final WebVideoPlaybackState s = parseWebVideoStatePayload(<String, Object>{
+      'vtitle': ' 本当の名前 ',
+      'vimg': 'https://example.com/a.jpg',
+    })!;
+    expect(s.videoTitle, '本当の名前');
+    expect(s.imageUrl, 'https://example.com/a.jpg');
+    expect(parseWebVideoStatePayload(<String, Object>{})!.videoTitle, isEmpty);
+  });
 }
