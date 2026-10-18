@@ -95,7 +95,7 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
 | `ffc_crypto_aes128_ecb_decrypt` | unit key 表解密 | 同上 `fromVolumeUniqueKey` |
 | `ffc_crypto_aes_cbc_pkcs7_decrypt` | AES-128/192/256-CBC + PKCS7，原地 | HLS 分片（`anime_episode_downloader.dart`）、comico 根 URL |
 | `ffc_crypto_aes_cbc_encrypt` | AES-CBC 加密（不填充） | 只给测试造密文 |
-| `ffc_crypto_sync_xor` | 云同步「防扫盘」XOR（keystream = SHA-256("hibiki")，**永远不能改**，云端旧文件靠它解开） | `fushi/lib/src/sync/sync_obfuscator.dart` 整块 / 流式 / Range 三条路径 |
+| `ffc_crypto_sync_xor` | 云同步「防扫盘」XOR（keystream = SHA-256("hibiki")，**永远不能改**，云端旧文件靠它解开） | `fushi/lib/src/sync/sync_obfuscator.dart` 整块 / 流式两条路径（Range 路径留 Dart，见下） |
 | `ffc_crypto_p256_public_key / _sign_sha256 / _verify_sha256` | P-256 ECDSA/SHA-256，RFC 6979 确定性 k，P1363 `r‖s`，不做 low-s 归一 | `LeaderboardIdentity`（排行榜账户 / 安装身份）、`InterconnectDeviceKey`、host 自签 TLS 证书（`fushi_tls_identity.dart`，DER 在 Dart 拼） |
 
 依赖：RustCrypto `aes` 0.8 / `cbc` 0.1 / `p256` 0.13（Apache-2.0 OR MIT）。仓库因此不再直接依赖
@@ -119,13 +119,18 @@ pointycastle / basic_utils（pointycastle 仍经 dartssh2 等第三方包间接�
 | 场景 | 旧（Dart） | 新（Rust，含 FFI 拷入拷出） |
 |---|---|---|
 | 同步 XOR 整块 / 流式路径（旧为逐字节循环），64 KiB～8 MiB 分块 | 150～196 MB/s | 390～750 MB/s（2.5～4×） |
-| 同步 XOR Range 路径（旧为 64 位字长循环），同上 | 570～980 MB/s | 同上，**大致持平到 0.6×** |
+| 同步 XOR Range 路径（64 位字长循环），64 KiB / 1 MiB / 8 MiB 各 3 轮 | 520～1870 MB/s | 550～1280 MB/s（9 组里 8 组更慢）→ **不搬，留 Dart** |
 | ECDSA 签名（RFC 6979） | 22.7 ms | 0.92 ms（25×） |
 | ECDSA 验签 | 40.2 ms | 0.89 ms（45×） |
 | 私钥 → 公钥点 | 25.4 ms | 0.47 ms（54×） |
 
 XOR 是纯内存带宽操作：Rust 内核本身远快于 Dart，但 FFI 必须把数据拷进原生暂存区再拷回 Dart 堆，
-比旧 Range 路径（拷一次 + 原地字长 XOR）多一趟内存，所以在流播 Range 路径上没有提速、大分块时略慢。
+比 Range 路径的 Dart 实现（拷一次 + 原地字长 XOR）多一趟内存。试过的加粗办法都走不通：
+`TypedData.address` 免拷贝只给 `@Native` 静态绑定（本包按路径 `DynamicLibrary.open`，编译期即报错）；
+`Pointer.asTypedList(finalizer:)` 让 Rust 结果直接当 Dart 字节交出去、省掉拷出——Dart 3.13.5 AOT
+（Windows）下循环分配几次就访问违例崩溃（JIT 正常）；数据来自 Dart 侧 HTTP 流，整段搬进 Rust 等于把
+网络栈搬过去。所以 Range 路径（`SyncObfuscator.deobfuscateBodyAt`）按规则留在 Dart，keystream 在那里
+另有一份 SHA-256("hibiki")，`sync_obfuscator_vectors_test.dart` 用删除前的冻结向量同时钉住两条路径。
 同一份脚本核对了签名与旧实现逐字节相同。
 
 ## 构建
