@@ -15,9 +15,13 @@ class CountingInterceptor extends QueryInterceptor {
     counts.clear();
     micros.clear();
     rowsRead = 0;
+    transactions = 0;
   }
 
   int count(String kind) => counts[kind] ?? 0;
+
+  /// 全部语句往返（SELECT / 写 / 批 / 自定义语句）。
+  int get total => counts.values.fold<int>(0, (int a, int b) => a + b);
 
   Future<T> _run<T>(String kind, Future<T> Function() body) async {
     final Stopwatch sw = Stopwatch()..start();
@@ -32,6 +36,7 @@ class CountingInterceptor extends QueryInterceptor {
   String summary() => <String>[
     for (final MapEntry<String, int> e in counts.entries)
       '${e.key}=${e.value}/${(micros[e.key]! / 1000).round()}ms',
+    'tx=$transactions',
   ].join(' ');
 
   @override
@@ -75,6 +80,15 @@ class CountingInterceptor extends QueryInterceptor {
     String statement,
     List<Object?> args,
   ) => _run('custom', () => executor.runCustom(statement, args));
+
+  /// 开过的事务数（含嵌套事务的保存点）。
+  int transactions = 0;
+
+  @override
+  TransactionExecutor beginTransaction(QueryExecutor parent) {
+    transactions++;
+    return parent.beginTransaction();
+  }
 
   @override
   Future<void> runBatched(

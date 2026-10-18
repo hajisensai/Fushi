@@ -139,8 +139,12 @@ Future<SrsBatchOutcome> srsBatchEditTags(
   };
   final Map<String, List<String>> old = <String, List<String>>{};
   final List<SrsFieldChange> changes = <SrsFieldChange>[];
-  for (final String id in noteIds.toSet()) {
-    final SrsNoteView? n = await store.note(id);
+  // 笔记按块一次预读（以前每条笔记各查三次，BUG-3524）。
+  for (final MapEntry<String, SrsNoteView?> e in (await store.notes(
+    noteIds,
+  )).entries) {
+    final String id = e.key;
+    final SrsNoteView? n = e.value;
     if (n == null) continue;
     final List<String> next = <String>[
       for (final String t in n.tags)

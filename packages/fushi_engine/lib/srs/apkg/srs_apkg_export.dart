@@ -118,16 +118,29 @@ class _Exporter {
       for (final SrsCardCacheRow c in all)
         if (!c.hidden && (scope == null || scope.contains(c.deckId))) c.noteId,
     };
-    final List<SrsNoteView> notes = <SrsNoteView>[];
-    for (final String id in noteIds) {
-      final SrsNoteView? n = await store.note(id);
-      if (n != null && n.deletedAt == null) notes.add(n);
-    }
+    // 笔记、卡片历史各按块一次预读；卡按笔记先分好组（以前每条笔记各查三次、每张卡各查四五次，
+    // 每条笔记还把全部卡片行过滤一遍——平方级，BUG-3524）。
+    final List<SrsNoteView> notes = <SrsNoteView>[
+      for (final SrsNoteView? n in (await store.notes(noteIds)).values)
+        if (n != null && n.deletedAt == null) n,
+    ];
     notes.sort((SrsNoteView a, SrsNoteView b) {
       final int c = a.createdAt.compareTo(b.createdAt);
       return c != 0 ? c : a.id.compareTo(b.id);
     });
 
+    final Map<String, List<SrsCardCacheRow>> visibleCardsOf =
+        <String, List<SrsCardCacheRow>>{};
+    for (final SrsCardCacheRow c in all) {
+      if (!c.hidden) (visibleCardsOf[c.noteId] ??= <SrsCardCacheRow>[]).add(c);
+    }
+    final Map<String, SrsCardHistory> histories = await store
+        .histories(<String>[
+          for (final SrsNoteView n in notes)
+            for (final SrsCardCacheRow c
+                in visibleCardsOf[n.id] ?? const <SrsCardCacheRow>[])
+              c.id,
+        ]);
     final Map<String, SrsNoteTypeView> types = <String, SrsNoteTypeView>{};
     final Map<String, List<_ExportCard>> cardsOf =
         <String, List<_ExportCard>>{};
@@ -139,10 +152,9 @@ class _Exporter {
       if (t == null) continue;
       types[n.noteTypeId] = t;
       final List<_ExportCard> cs = <_ExportCard>[];
-      for (final SrsCardCacheRow c in all.where(
-        (SrsCardCacheRow c) => c.noteId == n.id && !c.hidden,
-      )) {
-        final SrsCardHistory h = await store.history(c.id);
+      for (final SrsCardCacheRow c
+          in visibleCardsOf[n.id] ?? const <SrsCardCacheRow>[]) {
+        final SrsCardHistory h = histories[c.id]!;
         cs.add(_ExportCard(c, h));
         String? d = tree[c.deckId] == null ? store.defaultDeckId : c.deckId;
         while (d != null) {

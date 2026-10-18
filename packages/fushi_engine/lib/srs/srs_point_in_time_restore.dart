@@ -87,25 +87,30 @@ Future<SrsRestoreReport> srsRestoreToBackup({
     }
   }
   final SrsRestoreReport report = SrsRestoreReport();
-  try {
-    await store.db.transaction(() async {
-      report.mergedEvents = await _mergeBackupEvents(
-        store,
-        backupEvents,
-        backupServerTimes,
-      );
-      await debugOnStage?.call('merged');
-      await _restoreFields(store, backupEvents, report);
-      await debugOnStage?.call('fields');
-      await _restoreLogs(store, backupEvents, backupId, report);
-      await debugOnStage?.call('logs');
-    });
-  } catch (_) {
-    // 事务回滚了库，但写入者的因果上下文 / 时钟 / 发件箱序号已在内存里前进：从库重读，
-    // 否则 applied 里留着回滚掉的 dot（见 SrsDbStore.reloadLocal）。
-    await store.reloadLocal();
-    rethrow;
-  }
+  // 先进副本的独占区再开事务：事务里调的写方法（applyRemote / writeEdits / appendLocalLogs）都要
+  // 这把锁；反过来先开事务，排队等锁的别处写入又在等这个事务，两边互等。整个恢复期间别的写入
+  // 排在后面，恢复写出的记录序号连续、与落库顺序一致。
+  await store.runExclusive(() async {
+    try {
+      await store.db.transaction(() async {
+        report.mergedEvents = await _mergeBackupEvents(
+          store,
+          backupEvents,
+          backupServerTimes,
+        );
+        await debugOnStage?.call('merged');
+        await _restoreFields(store, backupEvents, report);
+        await debugOnStage?.call('fields');
+        await _restoreLogs(store, backupEvents, backupId, report);
+        await debugOnStage?.call('logs');
+      });
+    } catch (_) {
+      // 事务回滚了库，但写入者的因果上下文 / 时钟 / 发件箱序号已在内存里前进：从库重读，
+      // 否则 applied 里留着回滚掉的 dot（见 SrsDbStore.reloadLocal）。
+      await store.reloadLocal();
+      rethrow;
+    }
+  });
   return report;
 }
 
@@ -361,10 +366,12 @@ Future<void> _restoreLogs(
   };
   final List<SrsReviewLog> fixes = <SrsReviewLog>[];
   int cardsFixed = 0;
+  // 各卡历史按块一次预读（以前每张卡各查四五次，BUG-3524）。
+  final Map<String, SrsCardHistory> histories = await store.histories(cached);
   for (final String cardId in cached) {
     final List<SrsReviewLog> fix = srsPlanStateRestore(
       cardId: cardId,
-      current: await store.history(cardId),
+      current: histories[cardId]!,
       backupLogIds: backupLogIds,
       ctx: ctx,
       backupId: backupId,

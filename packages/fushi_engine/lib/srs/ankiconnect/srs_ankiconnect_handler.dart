@@ -1103,31 +1103,110 @@ class SrsAnkiConnectHandler {
       p,
       'tags',
     ).split(RegExp(r'\s+')).where((String t) => t.isNotEmpty).toList();
-    for (final Object? raw in _requireList(p, 'notes')) {
-      final SrsNoteView note = await _noteByNum(store, raw);
-      final List<String> tags = List<String>.of(note.tags);
-      for (final String t in changes) {
-        final String lower = t.toLowerCase();
-        final bool present = tags.any((String x) => x.toLowerCase() == lower);
-        if (add && !present) tags.add(t);
-        if (!add) tags.removeWhere((String x) => x.toLowerCase() == lower);
+    // 笔记按块一次预读、改动攒成一个批次写（以前每条笔记各查三次、各一个事务一次缓存刷新，
+    // BUG-3524）。中途遇到不存在的笔记：前面算好的照写再报错，与逐条写同结果。
+    final Map<String, List<String>> next = <String, List<String>>{};
+    try {
+      for (final Object r in await _notesByNums(
+        store,
+        _requireList(p, 'notes'),
+      )) {
+        if (r is _AcError) throw r;
+        final SrsNoteView note = r as SrsNoteView;
+        final List<String> before = next[note.id] ?? note.tags;
+        final List<String> tags = List<String>.of(before);
+        for (final String t in changes) {
+          final String lower = t.toLowerCase();
+          final bool present = tags.any((String x) => x.toLowerCase() == lower);
+          if (add && !present) tags.add(t);
+          if (!add) tags.removeWhere((String x) => x.toLowerCase() == lower);
+        }
+        if (!const ListEquality<String>().equals(tags, before)) {
+          next[note.id] = tags;
+        }
       }
-      if (!const ListEquality<String>().equals(tags, note.tags)) {
-        await store.updateNote(note.id, tags: tags);
+    } finally {
+      if (next.isNotEmpty) {
+        await store.editFieldsBatch(<SrsFieldChange>[
+          for (final MapEntry<String, List<String>> e in next.entries)
+            SrsFieldChange(
+              SrsEntityKind.note,
+              e.key,
+              SrsFieldKeys.noteTags,
+              e.value,
+            ),
+        ]);
       }
     }
   }
 
+  /// [_noteByNum] 的成批版本：按序给出每项的笔记（[SrsNoteView]），或逐条查时它会抛的错误
+  /// （[_AcError]，由调用方按序抛出）。笔记按块一次预读。
+  Future<List<Object>> _notesByNums(
+    SrsDbStore store,
+    List<Object?> raws,
+  ) async {
+    final List<(int?, String?)> ids = <(int?, String?)>[];
+    for (final Object? raw in raws) {
+      final int? n = raw is int
+          ? raw
+          : (raw is num && raw == raw.truncate() ? raw.toInt() : null);
+      ids.add((n, n == null ? null : await store.noteIdForAnkiNumericId(n)));
+    }
+    final Map<String, SrsNoteView?> views = await store.notes(<String>[
+      for (final (int?, String?) e in ids)
+        if (e.$2 != null) e.$2!,
+    ]);
+    return <Object>[
+      for (final (int? n, String? id) in ids)
+        if (n == null)
+          const _AcError('note id must be an integer')
+        else if (id == null ||
+            views[id] == null ||
+            views[id]!.deletedAt != null)
+          _AcError('Note was not found: $n')
+        else
+          views[id]!,
+    ];
+  }
+
   Future<bool> _setSuspended(List<int> cards, bool value) async {
     final SrsDbStore store = await _store();
-    bool changed = false;
-    for (final int n in cards) {
-      final SrsCardCacheRow c = await _cardByNum(n);
-      if (c.suspended == value) continue;
-      await store.setSuspended(c.id, value);
-      changed = true;
+    // 卡片缓存行一次读、改动攒成一个批次写（以前每张卡一个事务一次缓存刷新，BUG-3524）。
+    // 中途遇到不存在的卡：前面的照写再报错，与逐张写同结果。
+    final List<String?> ids = <String?>[
+      for (final int n in cards) await store.cardIdForAnkiNumericId(n),
+    ];
+    final Map<String, SrsCardCacheRow> rows = <String, SrsCardCacheRow>{
+      for (final SrsCardCacheRow c in await store.cardRows(<String>[
+        for (final String? id in ids)
+          if (id != null) id,
+      ]))
+        c.id: c,
+    };
+    final Set<String> changed = <String>{};
+    try {
+      for (int i = 0; i < cards.length; i++) {
+        final SrsCardCacheRow? c = ids[i] == null ? null : rows[ids[i]];
+        if (c == null) throw _AcError('Card was not found: ${cards[i]}');
+        // 重复的卡：第一次已经记下（逐张写时第二次读到的已是新值，跳过）。
+        if (c.suspended == value) continue;
+        changed.add(c.id);
+      }
+    } finally {
+      if (changed.isNotEmpty) {
+        await store.editFieldsBatch(<SrsFieldChange>[
+          for (final String id in changed)
+            SrsFieldChange(
+              SrsEntityKind.card,
+              id,
+              SrsFieldKeys.suspended,
+              value,
+            ),
+        ]);
+      }
     }
-    return changed;
+    return changed.isNotEmpty;
   }
 
   // ---------------------------------------------------------------- 信息

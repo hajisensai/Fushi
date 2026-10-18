@@ -259,7 +259,9 @@ class _Importer {
   final Map<int, String> _deckOf = <int, String>{};
   final Map<String, String> _mediaRenames = <String, String>{};
   final Set<String> _mediaDone = <String>{};
-  final List<SrsEvent> _pending = <SrsEvent>[];
+
+  /// 本批攒下的事件草稿：修改记录的序号在落库时（[SrsDbStore.importDrafts]）才分配。
+  final List<SrsEventDraft> _pending = <SrsEventDraft>[];
 
   // fushi-ext
   bool _extSameProfile = false;
@@ -1011,9 +1013,9 @@ class _Importer {
 
   Future<void> _flush({bool force = false}) async {
     if (_pending.isEmpty || (!force && _pending.length < _batchEvents)) return;
-    final List<SrsEvent> batch = List<SrsEvent>.of(_pending);
+    final List<SrsEventDraft> batch = List<SrsEventDraft>.of(_pending);
     _pending.clear();
-    await store.importEvents(batch);
+    await store.importDrafts(batch);
   }
 
   Future<void> _importNote(
@@ -1063,7 +1065,7 @@ class _Importer {
       // 新笔记的事件攒进本批，与它的卡片标志、日志同一个事务落库（以前每条笔记各自
       // 落两三次库、各刷新一遍缓存，见 BUG-3522）。
       _pending.addAll(
-        store.newNoteEvents(
+        store.newNoteDrafts(
           noteTypeId: nt.id,
           fieldsById: fields,
           deckId: firstDeck,
@@ -1155,7 +1157,7 @@ class _Importer {
     if (isNew) {
       // 卡片随笔记在同一批里新建：修改记录直接攒进本批（本机没有这张卡的记录，不必读库判 no-op）。
       _pending.addAll(
-        store.newEditEvents(SrsEntityKind.card, cardId, <String, Object?>{
+        store.newEditDrafts(SrsEntityKind.card, cardId, <String, Object?>{
           if (deck != noteDeck) SrsFieldKeys.cardDeck: deck,
           if (withSuspend && suspended) SrsFieldKeys.suspended: true,
         }),
@@ -1194,7 +1196,7 @@ class _Importer {
       for (final SrsReviewLog l in extLogs) {
         final int? rid = _extRevlogIds[l.id];
         if (rid != null) extRevlogs.add(rid);
-        _pending.add(SrsLogEvent(_remapExtLog(l, cardId)));
+        _pending.add(SrsReadyDraft(SrsLogEvent(_remapExtLog(l, cardId))));
         report.fushiLogsRestored++;
       }
     }
@@ -1225,13 +1227,15 @@ class _Importer {
       }
       if (pkg.fushiExt != null) report.revlogsNotInExt++;
       _pending.add(
-        SrsLogEvent(
-          _revlogLog(
-            cardId,
-            r,
-            reps: reps,
-            lapses: lapses,
-            lastRated: lastRated,
+        SrsReadyDraft(
+          SrsLogEvent(
+            _revlogLog(
+              cardId,
+              r,
+              reps: reps,
+              lapses: lapses,
+              lastRated: lastRated,
+            ),
           ),
         ),
       );
@@ -1266,23 +1270,25 @@ class _Importer {
     final int t = d.anchorMs!;
     final SrsMemory? mem = _memoryOf(c.data);
     _pending.add(
-      SrsLogEvent(
-        SrsReviewLog(
-          id: SrsIds.importAnchor(cardId, t),
-          profileUid: profileUid,
-          cardId: cardId,
-          kind: SrsLogKind.importAnchor,
-          hlc: srsImportAnchorHlc(t),
-          occurredAt: t,
-          timeSource: SrsTimeSource.wall,
-          origin: SrsLogOrigin.anki,
-          reviewType: SrsReviewType.manual,
-          utcOffsetMin: srcDay.utcOffsetMin,
-          dayRolloverHour: srcDay.rolloverHour,
-          result: _cardState(c, lastRated, mem),
-          extra: mem == null
-              ? const <String, Object?>{}
-              : <String, Object?>{'memAlg': SrsAlgorithm.fsrs6.wire},
+      SrsReadyDraft(
+        SrsLogEvent(
+          SrsReviewLog(
+            id: SrsIds.importAnchor(cardId, t),
+            profileUid: profileUid,
+            cardId: cardId,
+            kind: SrsLogKind.importAnchor,
+            hlc: srsImportAnchorHlc(t),
+            occurredAt: t,
+            timeSource: SrsTimeSource.wall,
+            origin: SrsLogOrigin.anki,
+            reviewType: SrsReviewType.manual,
+            utcOffsetMin: srcDay.utcOffsetMin,
+            dayRolloverHour: srcDay.rolloverHour,
+            result: _cardState(c, lastRated, mem),
+            extra: mem == null
+                ? const <String, Object?>{}
+                : <String, Object?>{'memAlg': SrsAlgorithm.fsrs6.wire},
+          ),
         ),
       ),
     );

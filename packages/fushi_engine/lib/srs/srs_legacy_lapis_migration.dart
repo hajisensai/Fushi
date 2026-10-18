@@ -533,12 +533,10 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
                 .get())
             .map((r) => r.id)
             .toList();
-    final List<SrsNoteTypeView> out = <SrsNoteTypeView>[];
-    for (final String id in ids) {
-      final SrsNoteTypeView? v = await noteType(id);
-      if (v != null) out.add(v);
-    }
-    return out;
+    return <SrsNoteTypeView>[
+      for (final SrsNoteTypeView? v in (await noteTypesById(ids)).values)
+        if (v != null) v,
+    ];
   }
 
   Future<SrsNoteTypeView> _fushiCardType() async {
@@ -637,8 +635,9 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     };
     final Map<SrsFieldDef, int> lost = <SrsFieldDef, int>{};
     int fallback = 0;
+    final Map<String, SrsNoteView?> views = await notes(source.noteIds);
     for (final String id in source.noteIds) {
-      final SrsNoteView n = (await note(id))!;
+      final SrsNoteView n = views[id]!;
       final Map<String, String> mapped = <String, String>{
         for (final MapEntry<String, String?> e in plan.fieldMap.entries)
           e.key: e.value == null ? '' : n.field(e.value!),
@@ -676,7 +675,7 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
   Future<int> migrateLegacyLapis(
     String sourceTypeId, {
     List<String>? noteIds,
-  }) async {
+  }) => runExclusive(() async {
     final SrsNoteTypeView? from = await noteType(sourceTypeId);
     if (from == null || srsDetectLapisVariant(from) == null) {
       throw ArgumentError.value(
@@ -697,7 +696,7 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     );
     await applyLapisBackfill(noteIds: ids);
     return ids.length;
-  }
+  });
 
   /// 预演「遗漏字段补迁」：当前是 Fushi 卡片的笔记（缺省全部，或只看 [noteIds]），新字段
   /// 为空、迁移前所属的旧 Lapis 变体里同语义的字段有内容的。不写库。
@@ -716,8 +715,10 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     final Map<String, Map<String, String>> fills =
         <String, Map<String, String>>{};
     if (owners.isEmpty) return SrsLapisBackfillPreview(fills: fills);
-    for (final String id in noteIds ?? await noteIdsOfType(to.id)) {
-      final SrsNoteView? n = await note(id);
+    final List<String> ids = noteIds ?? await noteIdsOfType(to.id);
+    final Map<String, SrsNoteView?> views = await notes(ids);
+    for (final String id in ids) {
+      final SrsNoteView? n = views[id];
       if (n == null || n.deletedAt != null || n.noteTypeId != to.id) continue;
       final Map<String, String> fill = srsPlanLapisFieldFill(
         profileUid: profileUid,
@@ -731,23 +732,24 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
   }
 
   /// 执行「遗漏字段补迁」（只写空字段，幂等）。返回补过的笔记数。
-  Future<int> applyLapisBackfill({List<String>? noteIds}) async {
-    final SrsLapisBackfillPreview p = await previewLapisBackfill(
-      noteIds: noteIds,
-    );
-    if (p.fills.isEmpty) return 0;
-    await writeEdits(<SrsEditSpec>[
-      for (final MapEntry<String, Map<String, String>> n in p.fills.entries)
-        for (final MapEntry<String, String> f in n.value.entries)
-          SrsEditSpec(
-            SrsEntityKind.note,
-            n.key,
-            SrsFieldKeys.noteField(f.key),
-            f.value,
-          ),
-    ]);
-    return p.notes;
-  }
+  Future<int> applyLapisBackfill({List<String>? noteIds}) =>
+      runExclusive(() async {
+        final SrsLapisBackfillPreview p = await previewLapisBackfill(
+          noteIds: noteIds,
+        );
+        if (p.fills.isEmpty) return 0;
+        await writeEdits(<SrsEditSpec>[
+          for (final MapEntry<String, Map<String, String>> n in p.fills.entries)
+            for (final MapEntry<String, String> f in n.value.entries)
+              SrsEditSpec(
+                SrsEntityKind.note,
+                n.key,
+                SrsFieldKeys.noteField(f.key),
+                f.value,
+              ),
+        ]);
+        return p.notes;
+      });
 
   /// 迁移页入口的角标：可迁移的旧 Lapis 笔记数 + 需要补迁的笔记数。
   Future<({int migratable, int backfill})> legacyLapisPendingCounts() async {
