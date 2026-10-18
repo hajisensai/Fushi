@@ -92,7 +92,7 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
 `ffc_font_woff2_to_sfnt(const u8*, usize, u8** out, usize* out_len) -> i32`：WOFF2 → 裸 sfnt
 （Brotli 解压 + 逆转 glyf / loca / hmtx 变换 + 按标签排序重组、4 字节对齐、重算
 `head.checkSumAdjustment`）。成功时输出由本库分配，`ffc_free_bytes` 释放；不是可解码的 WOFF2
-（含字体集合 `ttcf`）返回 -3（BAD_INPUT），Dart 侧 `FushiFont.woff2ToSfnt` 映射成 null。
+（含字体集合 `ttcf`）返回 -3（BAD_INPUT），Dart 侧 `FushiFont.woff2ToSfnt` 映射成 null。表校验和见下面「表校验和」。
 
 | 调用方 | 之前（纯 Dart） | 现在 |
 |---|---|---|
@@ -123,6 +123,34 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
 
 glyf 重建是 Dart 的大头（Rust 里只剩几十毫秒）；Brotli 本身只快约 2×（`brotli-decompressor` 比 C 版
 libbrotli 慢约 1.5×），所以只走 Brotli 的 CFF 字体收益最小。
+
+### 表校验和
+
+`ffc_font_table_checksum(const u8*, usize, i32 head_table, u32* out) -> i32`：OpenType 表校验和（大端 u32
+回绕求和，尾部补零；`head_table != 0` 时偏移 8 的 `checkSumAdjustment` 按 0 算）。Dart 侧
+`FushiFont.tableChecksum(data, offset:, length:, headTable:)`，按区间拷进原生内存再算（`isLeaf`）。
+
+| 调用方 | 之前（纯 Dart） | 现在 |
+|---|---|---|
+| `fushi/lib/src/reader/font_vertical_baseline_flag.dart`（清竖排基线位后重算 head 表与整字体校验和，sfnt / TTC / WOFF） | `_tableChecksum`：逐字节拼大端字 | `FushiFont.instance.tableChecksum` |
+| `fushi/lib/src/models/font_decoder.dart`（WOFF 1.0 → sfnt 的 `checkSumAdjustment`） | `_checksum`：`ByteData.getUint32` | 同上 |
+
+两个 Dart 版都已删除。回归向量（`packages/fushi_compute/test/font/fushi_font_test.dart` 的 `tableChecksum` 组）由删除前的
+`_tableChecksum` 对确定性输入生成，覆盖补零尾字与「偏移 8 恰是补零尾字」；`FontDecoder._checksum` 只丢弃不足 4 字节的尾部，
+而它的输入总是 4 字节对齐，所以和补零语义等价（基准里对 8 份字体逐个核对三者相等）。
+
+基准（整字体一次求和，AOT，9 次取中位数，新实现含 malloc + 拷入；同上机器、同样有别的重任务在跑）：
+
+| 字体（sfnt） | 旧 `_tableChecksum` | 旧 `_checksum`（ByteData） | Rust | 倍数（对两者） |
+|---|---|---|---|---|
+| SimSun-ExtB（20.9 MB） | 54.2 ms | 17.0 ms | 9.2 ms | 5.9× / 1.8× |
+| Noto Sans SC VF（17.0 MB） | 56.0 ms | 15.5 ms | 8.2 ms | 6.9× / 1.9× |
+| Yu Mincho（12.5 MB） | 38.1 ms | 12.8 ms | 6.5 ms | 5.9× / 2.0× |
+| Microsoft YaHei 第 0 个（18.7 MB） | 50.1 ms | 14.5 ms | 8.6 ms | 5.8× / 1.7× |
+| Noto Serif JP VF（13.0 MB） | 42.0 ms | 18.4 ms | 11.3 ms | 3.7× / 1.6× |
+| Noto Sans JP（CFF，4.3 MB） | 11.3 ms | 3.4 ms | 1.8 ms | 6.3× / 1.9× |
+
+Rust 这边的时间大半是把 Dart 堆上的字节拷进原生内存（`DynamicLibrary` 绑定拿不到 Dart 数组的地址）。
 
 ## 构建
 

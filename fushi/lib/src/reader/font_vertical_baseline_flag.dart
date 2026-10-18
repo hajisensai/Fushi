@@ -261,10 +261,15 @@ Uint8List? _patchSfnt(
     if (wholeFontChecksum) dst.setUint32(offset + 8, 0);
     dst.setUint32(
       rec + 4,
-      _tableChecksum(out, offset, length, headTable: true),
+      FushiFont.instance.tableChecksum(
+        out,
+        offset: offset,
+        length: length,
+        headTable: true,
+      ),
     );
     if (wholeFontChecksum) {
-      final int sum = _tableChecksum(out, 0, out.length, headTable: false);
+      final int sum = FushiFont.instance.tableChecksum(out);
       dst.setUint32(offset + 8, (0xB1B0AFBA - sum) & 0xFFFFFFFF);
     }
     return out;
@@ -314,30 +319,14 @@ Uint8List? _patchWoff(Uint8List data) {
     dst.setUint16(offset + 16, flags & ~_flagBit);
     dst.setUint32(
       rec + 16,
-      _tableChecksum(out, offset, origLength, headTable: true),
+      FushiFont.instance.tableChecksum(
+        out,
+        offset: offset,
+        length: origLength,
+        headTable: true,
+      ),
     );
     return out;
   }
   return null;
-}
-
-/// OpenType 表校验和：按大端 uint32 求和（不足 4 字节补 0）。head 表计算时
-/// `checkSumAdjustment`（偏移 8）按 0 算。
-int _tableChecksum(
-  Uint8List data,
-  int offset,
-  int length, {
-  required bool headTable,
-}) {
-  int sum = 0;
-  final int end = offset + length;
-  for (int i = offset; i < end; i += 4) {
-    int word = 0;
-    for (int k = 0; k < 4; k++) {
-      word = (word << 8) | (i + k < end ? data[i + k] : 0);
-    }
-    if (headTable && i - offset == 8) word = 0;
-    sum = (sum + word) & 0xFFFFFFFF;
-  }
-  return sum;
 }

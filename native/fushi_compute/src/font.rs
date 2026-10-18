@@ -723,6 +723,37 @@ pub unsafe extern "C" fn ffc_font_woff2_to_sfnt(
     })
 }
 
+/// OpenType 表校验和（大端 u32 回绕求和，尾部不足 4 字节补零）。`head_table != 0` 时
+/// 偏移 8 的字（`checkSumAdjustment`）按 0 算。整字体校验和就是对整份 sfnt 调一次。
+/// 结果写进 `*out`。
+///
+/// # Safety
+/// `data` 指向至少 `len` 个可读字节（`len == 0` 时可为任意非空指针）；`out` 非空且可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_font_table_checksum(
+    data: *const u8,
+    len: usize,
+    head_table: i32,
+    out: *mut u32,
+) -> i32 {
+    guard(|| {
+        if data.is_null() || out.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let bytes = std::slice::from_raw_parts(data, len);
+        let mut sum = checksum(bytes);
+        if head_table != 0 && len > 8 {
+            // 减掉偏移 8 那个字（可能是补零的尾字）。
+            let mut w = [0u8; 4];
+            let end = len.min(12);
+            w[..end - 8].copy_from_slice(&bytes[8..end]);
+            sum = sum.wrapping_sub(u32::from_be_bytes(w));
+        }
+        *out = sum;
+        status::OK
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -780,6 +811,29 @@ mod tests {
     #[test]
     fn checksum_pads_tail_with_zeros() {
         assert_eq!(checksum(&[0, 0, 0, 1, 0x80]), 1 + 0x8000_0000);
+    }
+
+    #[test]
+    fn table_checksum_zeroes_head_adjustment_word() {
+        let data: Vec<u8> = (0u8..54).map(|b| b.wrapping_mul(37)).collect();
+        let mut plain = 0u32;
+        let mut head = 0u32;
+        unsafe {
+            assert_eq!(ffc_font_table_checksum(data.as_ptr(), data.len(), 0, &mut plain), 0);
+            assert_eq!(ffc_font_table_checksum(data.as_ptr(), data.len(), 1, &mut head), 0);
+        }
+        assert_eq!(plain, checksum(&data));
+        let mut zeroed = data.clone();
+        zeroed[8..12].copy_from_slice(&[0; 4]);
+        assert_eq!(head, checksum(&zeroed));
+        // 偏移 8 是补零的尾字（长度 10）。
+        let short = &data[..10];
+        let mut s = 0u32;
+        unsafe { ffc_font_table_checksum(short.as_ptr(), short.len(), 1, &mut s) };
+        assert_eq!(s, checksum(&short[..8]));
+        let mut e = 7u32;
+        unsafe { ffc_font_table_checksum(data.as_ptr(), 0, 1, &mut e) };
+        assert_eq!(e, 0);
     }
 
     #[test]

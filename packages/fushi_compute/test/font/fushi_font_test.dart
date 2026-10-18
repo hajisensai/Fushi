@@ -129,6 +129,75 @@ void main() {
     }
   }, skip: corpus == null ? 'FUSHI_WOFF2_CORPUS not set' : null);
 
+  group('tableChecksum', () {
+    // 向量由删除前的 Dart `_tableChecksum`（font_vertical_baseline_flag.dart）对确定性输入
+    // byte(i) = (i * 0x9E3779B1 mod 2^32) >> 24 生成：(长度, headTable, 结果)。
+    // 覆盖空、补零尾字（1/3/9/10/11/13/4099）、偏移 8 恰为补零尾字（9～11）与整字。
+    const List<(int, bool, int)> vectors = <(int, bool, int)>[
+      (0, false, 0),
+      (0, true, 0),
+      (1, false, 0),
+      (1, true, 0),
+      (3, false, 10370048),
+      (3, true, 10370048),
+      (4, false, 10370266),
+      (4, true, 10370266),
+      (8, false, 2025189933),
+      (8, true, 2025189933),
+      (9, false, 1773531693),
+      (9, true, 2025189933),
+      (10, false, 1782903341),
+      (10, true, 2025189933),
+      (11, false, 1782915117),
+      (11, true, 2025189933),
+      (12, false, 1782915321),
+      (12, true, 2025189933),
+      (13, false, 3561300217),
+      (13, true, 3803574829),
+      (54, false, 4154254568),
+      (54, true, 101561884),
+      (4096, false, 2052601364),
+      (4096, true, 2294875976),
+      (4099, false, 4050512404),
+      (4099, true, 4292787016),
+    ];
+    final Uint8List buf = Uint8List(4099);
+    for (int i = 0; i < buf.length; i++) {
+      buf[i] = ((i * 0x9E3779B1) & 0xffffffff) >> 24;
+    }
+
+    test('matches the former Dart implementation bit for bit', () {
+      for (final (int len, bool head, int expected) in vectors) {
+        expect(
+          font.tableChecksum(buf, length: len, headTable: head),
+          expected,
+          reason: 'length $len headTable $head',
+        );
+      }
+      // 非零 offset：[5, 59)，head 表。
+      expect(
+        font.tableChecksum(buf, offset: 5, length: 54, headTable: true),
+        825805873,
+      );
+    });
+
+    test('whole decoded font sums to the OpenType magic', () {
+      final Uint8List sfnt = font.woff2ToSfnt(
+        File(
+          '$_fontDir/fixtures/NotoSerifJP-subset-hmtx.woff2',
+        ).readAsBytesSync(),
+      )!;
+      expect(font.tableChecksum(sfnt), 0xB1B0AFBA);
+    });
+
+    test('out-of-range slice throws RangeError', () {
+      expect(
+        () => font.tableChecksum(buf, offset: 4000, length: 200),
+        throwsRangeError,
+      );
+    });
+  });
+
   group('rejects undecodable input with null', () {
     test('wrong signature / empty / truncated', () {
       expect(font.woff2ToSfnt(Uint8List(0)), isNull);

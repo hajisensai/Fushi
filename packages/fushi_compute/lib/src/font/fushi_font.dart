@@ -14,16 +14,21 @@ typedef _Woff2ToSfntC =
     );
 typedef _Woff2ToSfntDart =
     int Function(Pointer<Uint8>, int, Pointer<Pointer<Uint8>>, Pointer<Size>);
+typedef _TableChecksumC =
+    Int32 Function(Pointer<Uint8>, Size, Int32, Pointer<Uint32>);
+typedef _TableChecksumDart =
+    int Function(Pointer<Uint8>, int, int, Pointer<Uint32>);
 
 /// `ffc_font_*`：字体容器解码（native/fushi_compute/src/font.rs）。
 ///
 /// 原生库是硬依赖：库不可用或缺字体域符号时 [instance] / [FushiFont.of] 抛
 /// [FushiComputeUnavailableError]，不退回任何 Dart 实现——WOFF2 解码只有 Rust 这一份。
 final class FushiFont {
-  FushiFont._(this._compute, this._woff2ToSfnt);
+  FushiFont._(this._compute, this._woff2ToSfnt, this._tableChecksum);
 
   final FushiCompute _compute;
   final _Woff2ToSfntDart _woff2ToSfnt;
+  final _TableChecksumDart _tableChecksum;
 
   static final Expando<FushiFont> _cache = Expando<FushiFont>();
 
@@ -41,6 +46,10 @@ final class FushiFont {
         compute,
         compute.library.lookupFunction<_Woff2ToSfntC, _Woff2ToSfntDart>(
           'ffc_font_woff2_to_sfnt',
+        ),
+        compute.library.lookupFunction<_TableChecksumC, _TableChecksumDart>(
+          'ffc_font_table_checksum',
+          isLeaf: true,
         ),
       );
     } on ArgumentError catch (e) {
@@ -75,6 +84,34 @@ final class FushiFont {
       malloc.free(input);
       malloc.free(outPtr);
       malloc.free(outLen);
+    }
+  }
+
+  /// OpenType 表校验和：[data] 的 `[offset, offset + length)` 按大端 uint32 回绕求和，
+  /// 尾部不足 4 字节补 0；[headTable] 时偏移 8 的字（`checkSumAdjustment`）按 0 算。
+  /// 整字体校验和（算 `checkSumAdjustment` 用）就是对整份 sfnt 求和。
+  ///
+  /// [length] 缺省到 [data] 末尾。越界抛 [RangeError]。
+  int tableChecksum(
+    Uint8List data, {
+    int offset = 0,
+    int? length,
+    bool headTable = false,
+  }) {
+    final int len = length ?? data.length - offset;
+    RangeError.checkValidRange(offset, offset + len, data.length);
+    final Pointer<Uint8> buf = malloc<Uint8>(len == 0 ? 1 : len);
+    final Pointer<Uint32> out = malloc<Uint32>();
+    try {
+      buf.asTypedList(len).setRange(0, len, data, offset);
+      final int status = _tableChecksum(buf, len, headTable ? 1 : 0, out);
+      if (status != FfcStatus.ok) {
+        throw StateError('ffc_font_table_checksum failed with status $status');
+      }
+      return out.value;
+    } finally {
+      malloc.free(buf);
+      malloc.free(out);
     }
   }
 }
