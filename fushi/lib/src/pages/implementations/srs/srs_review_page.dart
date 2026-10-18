@@ -157,6 +157,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   int _newCount = 0;
   int _learnCount = 0;
   int _reviewCount = 0;
+
+  /// 牌组当前的全名（随计数一起现读；复习中在牌组设置里改了名立即换标题）。
+  String? _deckTitle;
+
+  String get _title => _deckTitle ?? widget.deckName;
   int _reviewedThisSession = 0;
 
   final List<_UndoStep> _undo = <_UndoStep>[];
@@ -209,6 +214,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     _newCount = sum?.newCount ?? 0;
     _learnCount = sum?.learnCount ?? 0;
     _reviewCount = sum?.reviewCount ?? 0;
+    _deckTitle = sum?.fullName;
   }
 
   Future<void> _refreshCounts() async => _applyCounts(await _deckSummary());
@@ -671,30 +677,44 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     await _reloadCurrent();
   }
 
-  /// 原地刷新当前这张（编辑 / 改旗标后），保持正反面状态。
+  /// 原地刷新当前这张（编辑 / 浏览 / 牌组设置回来后），保持正反面状态。
+  ///
+  /// 除了卡面内容与音频设置，间隔预览、顶栏计数与标题也现读（BUG-3520）：它们是本页
+  /// 在出题时算好缓存的，牌组设置改了学习步长 / 记忆率 / 最大间隔 / 每日上限 / 名字，
+  /// 浏览里改了期，都会让缓存值过期——原先只刷卡面，评分按钮上的间隔仍是旧设置算的。
   Future<void> _reloadCurrent() async {
     final SrsCardDetail? detail = _detail;
     final SrsDbStore? store = _store;
     if (detail == null || store == null) return;
-    final SrsCardCacheRow? row = await store.cardRow(detail.card.id);
+    // 刷新途中已换了卡（评分 / 撤销）：旧卡的结果不能盖回去。
+    final int generation = _shownGeneration;
+    final String id = detail.card.id;
+    final SrsCardCacheRow? row = await store.cardRow(id);
+    if (!mounted || generation != _shownGeneration) return;
     // 改完变成空卡 / 被删：直接下一张。
     if (row == null || row.hidden) {
       await _loadNext();
       return;
     }
-    final bool showing = _showingAnswer;
-    final SrsCardDetail? fresh = await store.cardDetail(detail.card.id);
-    final SrsRenderedCard? rendered = await store.renderCard(detail.card.id);
+    final SrsCardDetail? fresh = await store.cardDetail(id);
+    final SrsRenderedCard? rendered = await store.renderCard(id);
     final SrsDeckView? audioOwner = await _audioOwnerOf(store, fresh);
-    if (!mounted) return;
+    final SrsDeckSummary? sum = await _deckSummary();
+    final SrsDayContext day = await store.dayContext();
+    final SrsAnswerPreview? preview = store.canSchedule
+        ? await store.preview(id)
+        : null;
+    if (!mounted || generation != _shownGeneration) return;
     setState(() {
       _detail = fresh;
       _rendered = rendered;
       _audioOwner = audioOwner;
-      _showingAnswer = showing;
+      _applyCounts(sum);
+      _day = day;
+      _preview = preview;
     });
-    // 编辑可能改了同一笔记的兄弟卡：预取作废重来。
-    _startPrefetch(detail.card.id);
+    // 编辑可能改了同一笔记的兄弟卡、设置可能改了下一张的音频设置：预取作废重来。
+    _startPrefetch(id);
   }
 
   // ------------------------------------------------------------------ 键盘
@@ -999,9 +1019,28 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       ),
     );
     if (!mounted) return;
+    await _applyDeckSettingsChange();
+  }
+
+  /// 牌组设置页回来后，当前会话立即按新设置走（BUG-3520）。
+  ///
+  /// 排程层没有跨调用的配置快照：`SrsDbStore.nextCard` / `answer` / `preview` 每次都现读
+  /// 牌组树，所以「下一张选谁」（每日上限、学习卡优先）与「评分后的间隔」（学习步长、
+  /// 记忆率、最大间隔）在下一次调用时自然用新值，**没有预排好的队列需要重建**。
+  /// 过期的只有本页自己缓存的东西：
+  /// - 预取的下一张：它连同出发时读到的音频设置一起缓存（[_PrefetchedCard.audioOwner]），
+  ///   在这里**同步**作废——设置页一关就按评分键时不会再拿旧快照显示下一张、按旧开关
+  ///   自动播放；[_reloadCurrent] 随后按新设置重新预取。
+  /// - 当前这张的间隔预览、计数、标题、音频开关：[_reloadCurrent] 现读。
+  ///
+  /// 当前这张卡本身不换：用户正在看它（可能已翻到答案面），与 Anki 一样让它答完；
+  /// 调低了每日上限时，答完这张后的选卡按新上限走。
+  Future<void> _applyDeckSettingsChange() async {
+    _prefetch = null;
     final bool wasAutoplay = _autoplayEnabled;
     await _reloadCurrent();
-    // 刚打开自动播放：当前这一面立刻按新设置播；刚关掉：停掉正在自动播的。
+    // 刚打开自动播放：当前这一面立刻按新设置播；刚关掉：停掉正在自动播的
+    // （卡面页内的片段由卡面闸门随 [SrsCardFace.autoplayMedia] 重放 / 停下）。
     if (mounted && wasAutoplay != _autoplayEnabled) _autoplayAudio();
   }
 
@@ -1016,7 +1055,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         tokens.spacing.gap,
       ),
       child: FushiFloatingTopBar(
-        title: widget.deckName,
+        title: _title,
         subtitle: _finished ? '' : _countsText,
         leading: <FushiToolbarItem>[
           if (navigator != null && navigator.canPop())
@@ -1056,7 +1095,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       autofocus: true,
       onKeyEvent: _onKey,
       child: FushiPageScaffold(
-        title: widget.deckName,
+        title: _title,
         header: apple ? null : _buildTopBar(context),
         actions: apple ? _buildAppleActions() : const <Widget>[],
         headerBottom: apple && !_finished
@@ -1179,6 +1218,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       pageZoom: zoom == 1 ? null : zoom,
       onZoomWheel: _zoomWheel,
       onSourceLink: _openSource,
+      // 卡面页内自己出声的媒体（视频制卡的同步片段等）同样服从牌组的自动播放开关
+      // （BUG-3519）；`[sound:]` 由 [_autoplayAudio] 按同一开关处理。
+      autoplayMedia: _autoplayEnabled,
     );
     final MediaQueryData media = MediaQuery.of(context);
     return SrsCardLookupHost(
