@@ -229,19 +229,12 @@ void bumpSrsRevision(WidgetRef ref) {
   ref.read(srsRevisionProvider.notifier).state++;
 }
 
-/// 牌组列表数据（牌组行 + 待处理的同步冲突数 + 待裁决笔记数）。
+/// 牌组列表数据（牌组行）。同步冲突数另见 [srsConflictCountProvider]。
 class SrsDeckListData {
-  const SrsDeckListData({
-    required this.store,
-    required this.decks,
-    required this.conflictCount,
-  });
+  const SrsDeckListData({required this.store, required this.decks});
 
   final SrsDbStore store;
   final List<SrsDeckSummary> decks;
-
-  /// 同步冲突（标志 / 设置类）+ 待裁决笔记，合计。
-  final int conflictCount;
 
   int get totalCards => _sumRoots((SrsDeckSummary d) => d.totalCards);
 
@@ -301,6 +294,10 @@ List<SrsDeckSummary> srsVisibleDecks(
 }
 
 /// 牌组列表（订阅 [srsRevisionProvider]，写操作后自动重读）。模块关着时为 null。
+///
+/// 只读牌组行：同步冲突数是另一个 provider（[srsConflictCountProvider]）。以前两者合在一个
+/// Future 里，新建 / 改名牌组后列表要等冲突扫描（读回并解析全部修改记录）跑完才换成新数据，
+/// 新牌组迟迟不出现（BUG-3519）。
 final FutureProvider<SrsDeckListData?> srsDeckListProvider =
     FutureProvider<SrsDeckListData?>((Ref ref) async {
       ref.watch(srsRevisionProvider);
@@ -310,14 +307,21 @@ final FutureProvider<SrsDeckListData?> srsDeckListProvider =
         await store.deckSummaries(),
         defaultDeckId: store.defaultDeckId,
       );
-      final int conflicts = (await store.syncConflicts()).length;
-      final int pending = (await store.notesPendingDecision()).length;
-      return SrsDeckListData(
-        store: store,
-        decks: decks,
-        conflictCount: conflicts + pending,
-      );
+      return SrsDeckListData(store: store, decks: decks);
     });
+
+/// 待处理的同步冲突（标志 / 设置类）+ 待裁决笔记，合计（牌组列表顶栏的冲突角标）。
+/// 订阅 [srsRevisionProvider]；与牌组列表各自重读，互不等待。模块关着时为 0。
+final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
+  Ref ref,
+) async {
+  ref.watch(srsRevisionProvider);
+  final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+  if (store == null) return 0;
+  final int conflicts = (await store.syncConflicts()).length;
+  final int pending = (await store.notesPendingDecision()).length;
+  return conflicts + pending;
+});
 
 /// 等 store 就绪（页面动作里用）。模块关着 / 打开失败时返回 null。
 Future<SrsDbStore?> readSrsStore(WidgetRef ref) async {

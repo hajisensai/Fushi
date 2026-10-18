@@ -33,6 +33,8 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart';
+import 'package:fushi/src/srs/srs_import_task.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -263,7 +265,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   @override
   Widget build(BuildContext context) {
     final AsyncValue<SrsDeckListData?> data = ref.watch(srsDeckListProvider);
-    final int conflicts = data.valueOrNull?.conflictCount ?? 0;
+    final int conflicts = ref.watch(srsConflictCountProvider).valueOrNull ?? 0;
     final bool apple = isGlassDesign(context);
     return FushiPageScaffold(
       title: t.nav_srs,
@@ -282,7 +284,12 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
                   ? 'error'
                   : 'list',
             ),
-            child: _buildBody(context, data),
+            // 后台导入任务增减时重建（任务条在列表最前，见 [_DeckList.showImportTasks]）。
+            child: ListenableBuilder(
+              listenable: ref.watch(srsImportControllerProvider),
+              builder: (BuildContext context, Widget? _) =>
+                  _buildBody(context, data),
+            ),
           ),
         ),
       ),
@@ -400,6 +407,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     }
     return _DeckList(
       data: list,
+      showImportTasks: ref.read(srsImportControllerProvider).tasks.isNotEmpty,
       onOpen: (SrsDeckSummary d) =>
           srsRunLogged('SrsDeckList.review', () => _openReview(d)),
       onAction: _onDeckAction,
@@ -416,9 +424,13 @@ class _DeckList extends StatefulWidget {
     required this.onAction,
     required this.onAddFirst,
     required this.onSetCollapsed,
+    required this.showImportTasks,
   });
 
   final SrsDeckListData data;
+
+  /// 有后台导入任务（排队 / 运行中 / 结束未关）：列表最前显示任务条。
+  final bool showImportTasks;
   final void Function(SrsDeckSummary deck) onOpen;
   final void Function(SrsDeckSummary deck, _DeckAction action) onAction;
   final VoidCallback onAddFirst;
@@ -485,6 +497,9 @@ class _DeckListState extends State<_DeckList> {
     ];
     final int visibleCount = visible.where((bool v) => v).length;
     final List<Widget> items = <Widget>[
+      // 后台导入任务（BUG-3520）：有任务时排在最前。
+      if (widget.showImportTasks)
+        const SrsImportTasksBar(key: ValueKey<String>('srs-import-tasks')),
       if (!widget.data.store.canSchedule)
         FushiCard(
           key: const ValueKey<String>('srs-engine-missing'),
