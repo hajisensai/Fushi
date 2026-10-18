@@ -886,9 +886,10 @@ fn decode_strs(units: &[u16]) -> Option<Vec<Vec<u16>>> {
 /// 树深不超过它时直接在调用方线程上遍历（真书章节的深度是个位数到几十）。
 const SHALLOW_DEPTH: usize = 256;
 
-/// 深树遍历线程的栈：固定底数 + 每层预算（递归遍历每层一到两帧，实测远小于此）。
+/// 深树遍历线程的栈：固定底数 + 每层预算（递归遍历每层一到两帧）。release 下 1 KiB 实测远够；
+/// 未优化构建（`cargo test` 默认 debug）帧大得多，arm64 上 1 KiB 实测栈溢出，所以按 4 KiB 留。
 const DEEP_STACK_BASE: usize = 1 << 20;
-const DEEP_STACK_PER_LEVEL: usize = 1 << 10;
+const DEEP_STACK_PER_LEVEL: usize = if cfg!(debug_assertions) { 1 << 12 } else { 1 << 10 };
 
 /// 纯 Rust 入口（测试与 FFI 共用）。
 ///
