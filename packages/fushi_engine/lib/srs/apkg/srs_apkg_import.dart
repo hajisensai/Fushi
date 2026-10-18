@@ -10,6 +10,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -48,9 +49,12 @@ Future<SrsImportReport> importAnkiPackage({
   void Function(double progress)? onProgress,
   SrsZstdDecoder? zstdDecompress,
 }) async {
-  final SrsAnkiPackage pkg = SrsAnkiPackage.open(
-    bytes,
-    zstd: zstdDecompress ?? FfiFsrsEngine.zstdDecompress,
+  // 解 zip、解 zstd、解出集合 SQLite 是纯 CPU 活（几十 MB 的包要几百毫秒到数秒）：放后台
+  // isolate，不卡 UI 帧；结果经 Isolate.exit 交回，不复制（BUG-3520）。
+  final SrsZstdDecoder zstd = zstdDecompress ?? _defaultZstd;
+  final SrsAnkiPackage pkg = await Isolate.run(
+    () => SrsAnkiPackage.open(bytes, zstd: zstd),
+    debugName: 'srs-apkg-open',
   );
   final SrsAnkiCollection col = await SrsAnkiCollection.open(
     pkg.collectionBytes,
@@ -69,6 +73,9 @@ Future<SrsImportReport> importAnkiPackage({
     await col.close();
   }
 }
+
+/// 缺省 zstd 解码（排程内核）。顶层函数：可随闭包送进后台 isolate。
+Uint8List? _defaultZstd(Uint8List data) => FfiFsrsEngine.zstdDecompress(data);
 
 /// 同 [importAnkiPackage]，从文件读。
 Future<SrsImportReport> importAnkiPackageFile({
@@ -925,6 +932,8 @@ class _Importer {
     final PreparedStatement notes = col.db.prepare(
       'SELECT id, guid, mid, mod, tags, flds FROM notes ORDER BY id',
     );
+    // 本机已有哪些笔记：一次读出 ID 集合，新笔记不必逐条查库（绝大多数导入全是新笔记）。
+    _existingNotes = await store.entityIds(SrsEntityKind.note);
     try {
       final IteratingCursor cur = notes.selectCursor();
       int done = 0;
@@ -944,8 +953,15 @@ class _Importer {
     }
   }
 
+  /// 一批攒多少条事件再落库（一个事务 + 一次缓存刷新）。太小则事务与刷新次数多；太大则单个
+  /// 事务占住连接太久（后台导入时用户仍在用复习页，别的写入要排在事务后面）。
+  static const int _batchEvents = 1000;
+
+  /// 导入开始时本机已有的笔记 ID（见 [_importNotes]）。
+  Set<String> _existingNotes = const <String>{};
+
   Future<void> _flush({bool force = false}) async {
-    if (_pending.isEmpty || (!force && _pending.length < 500)) return;
+    if (_pending.isEmpty || (!force && _pending.length < _batchEvents)) return;
     final List<SrsEvent> batch = List<SrsEvent>.of(_pending);
     _pending.clear();
     await store.importEvents(batch);
@@ -985,7 +1001,9 @@ class _Importer {
         )
         .toList();
     final String noteId = SrsIds.note(profileUid, guid);
-    final SrsNoteView? existing = await store.note(noteId);
+    final SrsNoteView? existing = _existingNotes.contains(noteId)
+        ? await store.note(noteId)
+        : null;
     final String firstDeck = cards.isEmpty
         ? store.defaultDeckId
         : (_deckOf[cards.first.homeDeck] ?? store.defaultDeckId);
@@ -993,14 +1011,18 @@ class _Importer {
     final bool isNew = existing == null;
     bool update = false;
     if (isNew) {
-      await store.createNote(
-        noteTypeId: nt.id,
-        fieldsById: fields,
-        deckId: firstDeck,
-        tags: tags,
-        source: SrsSourceRef.fromJson(_extNotes[guid]),
-        guid: guid,
-        createdAt: n['id'] as int,
+      // 新笔记的事件攒进本批，与它的卡片标志、日志同一个事务落库（以前每条笔记各自
+      // 落两三次库、各刷新一遍缓存，见 BUG-3520）。
+      _pending.addAll(
+        store.newNoteEvents(
+          noteTypeId: nt.id,
+          fieldsById: fields,
+          deckId: firstDeck,
+          tags: tags,
+          source: SrsSourceRef.fromJson(_extNotes[guid]),
+          guid: guid,
+          createdAt: n['id'] as int,
+        ),
       );
       report.notesAdded++;
       report.cardsAdded += cards.length;
@@ -1082,8 +1104,13 @@ class _Importer {
     final bool suspended = c.queue == -1;
     final bool withSuspend = options.withScheduling;
     if (isNew) {
-      if (deck != noteDeck) await store.moveCard(cardId, deck);
-      if (withSuspend && suspended) await store.setSuspended(cardId, true);
+      // 卡片随笔记在同一批里新建：修改记录直接攒进本批（本机没有这张卡的记录，不必读库判 no-op）。
+      _pending.addAll(
+        store.newEditEvents(SrsEntityKind.card, cardId, <String, Object?>{
+          if (deck != noteDeck) SrsFieldKeys.cardDeck: deck,
+          if (withSuspend && suspended) SrsFieldKeys.suspended: true,
+        }),
+      );
       return;
     }
     final SrsCardCacheRow? row = await store.cardRow(cardId);

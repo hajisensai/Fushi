@@ -8,6 +8,7 @@
 ///   排序字段一律不动，合并时两种表示按同一内容比较（fushi_srs style_dedup.dart）。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -328,7 +329,14 @@ class SrsDbStore implements SrsSyncReplica {
   // ------------------------------------------------------------------ 事件落库
 
   Future<Map<String, int>> _serverTimesFor(Iterable<String> ids) async {
+    final _RefreshPrefetch? pre = _RefreshPrefetch.current;
     final List<String> list = ids.toList();
+    if (pre != null && list.every(pre.serverTimesKnown.contains)) {
+      return <String, int>{
+        for (final String id in list)
+          if (pre.serverTimes[id] != null) id: pre.serverTimes[id]!,
+      };
+    }
     if (list.isEmpty) return const <String, int>{};
     final Map<String, int> out = <String, int>{};
     for (int i = 0; i < list.length; i += 500) {
@@ -347,6 +355,7 @@ class SrsDbStore implements SrsSyncReplica {
 
   Future<SrsEntityEdits> _entityEdits(SrsEntityKind kind, String id) async {
     final List<SrsFieldEditRow> rows =
+        _RefreshPrefetch.current?.edits['${kind.wire}/$id'] ??
         await (db.select(db.srsFieldEdits)..where(
               (t) => t.entityKind.equals(kind.wire) & t.entityId.equals(id),
             ))
@@ -650,15 +659,224 @@ class SrsDbStore implements SrsSyncReplica {
   /// 本机产生事件：落库、进发件箱、刷新缓存。
   Future<void> _emit(List<SrsEvent> events) async {
     await db.transaction(() async {
-      for (final SrsEvent e in events) {
-        if (await _store(e)) {
-          _outboxSeq += 1;
-          await _upsertServerTime(e.id, null, outboxSeq: _outboxSeq);
-        }
+      final List<String> landed = await _storeLocalBatch(events);
+      if (landed.isNotEmpty) {
+        // 进发件箱：等价于逐条 `_upsertServerTime(id, null, outboxSeq:)`——本机事件没有服务器
+        // 时刻，合并后的 serverTime 恒为旧值，只需写 outboxSeq。
+        final int receivedAt = DateTime.now().millisecondsSinceEpoch;
+        await db.batch((Batch b) {
+          for (final String id in landed) {
+            _outboxSeq += 1;
+            final int seq = _outboxSeq;
+            b.insert(
+              db.srsEventLocal,
+              SrsEventLocalCompanion.insert(
+                eventId: id,
+                profileUid: profileUid,
+                outboxSeq: Value<int?>(seq),
+                receivedAt: Value<int>(receivedAt),
+              ),
+              onConflict: DoUpdate(
+                (_) => SrsEventLocalCompanion(outboxSeq: Value<int?>(seq)),
+              ),
+            );
+          }
+        });
       }
       await _flushCaches();
       await _saveLocal();
     });
+  }
+
+  /// [_storeRow] 的成批版本（本机产生 / 导入的一批事件）：已有的身份记录、日志、相关实体的
+  /// 修改记录各按 ID 分块一次预读，写入合成一个 Drift batch。判定与 [_storeRow] 逐条相同：按事件
+  /// 顺序在内存视图上推进（批内重复、批内互相支配都与逐条落库同结果）。返回真正新落的事件 ID（按序）。
+  ///
+  /// 以前每条事件「先查再写」各两三次往返（库在后台 isolate，每次往返都是一次跨 isolate 消息），
+  /// 导入一个几千条笔记的包要几万次往返（BUG-3520）。
+  Future<List<String>> _storeLocalBatch(List<SrsEvent> events) async {
+    final Set<String> entityIds = <String>{};
+    final Set<String> logIds = <String>{};
+    final Map<SrsEntityKind, Set<String>> editEntities =
+        <SrsEntityKind, Set<String>>{};
+    for (final SrsEvent e in events) {
+      switch (e) {
+        case SrsEntityEvent(:final SrsEntityRecord record):
+          entityIds.add(record.id);
+        case SrsEditEvent(:final SrsFieldEdit edit):
+          (editEntities[edit.entityKind] ??= <String>{}).add(edit.entityId);
+        case SrsLogEvent(:final SrsReviewLog log):
+          logIds.add(log.id);
+        case SrsUnknownEvent():
+          break;
+      }
+    }
+    final Map<String, SrsEntityRecord> entities = <String, SrsEntityRecord>{};
+    for (final List<String> chunk in _chunks(entityIds)) {
+      for (final SrsEntityRow r in await (db.select(
+        db.srsEntities,
+      )..where((t) => t.id.isIn(chunk))).get()) {
+        entities[r.id] = _entityFromRow(r);
+      }
+    }
+    final Map<String, String> logs = <String, String>{};
+    for (final List<String> chunk in _chunks(logIds)) {
+      for (final SrsReviewLogRow r in await (db.select(
+        db.srsReviewLogs,
+      )..where((t) => t.id.isIn(chunk))).get()) {
+        logs[r.id] = r.json;
+      }
+    }
+    // 同一字段键（registerKey）上现存的、没被支配的修改记录。
+    final Map<String, List<SrsFieldEdit>> registers =
+        <String, List<SrsFieldEdit>>{};
+    final Set<String> editIds = <String>{};
+    for (final MapEntry<SrsEntityKind, Set<String>> k in editEntities.entries) {
+      for (final List<String> chunk in _chunks(k.value)) {
+        for (final SrsFieldEditRow r
+            in await (db.select(db.srsFieldEdits)..where(
+                  (t) =>
+                      t.entityKind.equals(k.key.wire) & t.entityId.isIn(chunk),
+                ))
+                .get()) {
+          final SrsFieldEdit e = SrsFieldEdit.fromJson(
+            (jsonDecode(r.json) as Map).cast<String, Object?>(),
+          );
+          (registers[e.registerKey] ??= <SrsFieldEdit>[]).add(e);
+          editIds.add(r.id);
+        }
+      }
+    }
+
+    final List<void Function(Batch b)> writes = <void Function(Batch b)>[];
+    final List<String> landed = <String>[];
+    for (final SrsEvent e in events) {
+      bool ok;
+      switch (e) {
+        case SrsEntityEvent(:final SrsEntityRecord record):
+          final SrsEntityRecord? old = entities[record.id];
+          ok =
+              old == null ||
+              (old.canonical() != record.canonical() &&
+                  SrsEntityRecord.pick(old, record) != old);
+          if (ok) {
+            entities[record.id] = record;
+            final SrsEntitiesCompanion row = SrsEntitiesCompanion.insert(
+              id: record.id,
+              profileUid: record.profileUid,
+              kind: record.kind.wire,
+              payloadJson: srsCanonicalJson(record.payload),
+              createdAt: Value<int>(record.createdAt),
+            );
+            writes.add(
+              (Batch b) => b.insertAllOnConflictUpdate(
+                db.srsEntities,
+                <SrsEntitiesCompanion>[row],
+              ),
+            );
+            _markEntity(record.kind, record.id);
+          }
+        case SrsEditEvent(:final SrsFieldEdit edit):
+          _writer.apply(edit);
+          final List<SrsFieldEdit> reg = registers[edit.registerKey] ??=
+              <SrsFieldEdit>[];
+          ok =
+              !editIds.contains(edit.id) &&
+              !reg.any((SrsFieldEdit b) => b.dominates(edit));
+          if (ok) {
+            final List<String> dominated = <String>[
+              for (final SrsFieldEdit a in reg)
+                if (edit.dominates(a)) a.id,
+            ];
+            if (dominated.isNotEmpty) {
+              reg.removeWhere((SrsFieldEdit a) => dominated.contains(a.id));
+              editIds.removeAll(dominated);
+              writes.add(
+                (Batch b) => b.deleteWhere(
+                  db.srsFieldEdits,
+                  ($SrsFieldEditsTable t) => t.id.isIn(dominated),
+                ),
+              );
+            }
+            reg.add(edit);
+            editIds.add(edit.id);
+            final SrsFieldEditsCompanion row = SrsFieldEditsCompanion.insert(
+              id: edit.id,
+              profileUid: edit.profileUid,
+              entityKind: edit.entityKind.wire,
+              entityId: edit.entityId,
+              fieldKey: edit.fieldKey,
+              writerId: edit.dot.writerId,
+              seq: edit.dot.seq,
+              // 表示层：内联样式换成共享样式引用（见 [_compactEdit]）。
+              json: (await _compactEdit(edit)).canonical(),
+            );
+            writes.add((Batch b) => b.insert(db.srsFieldEdits, row));
+            _markEntity(edit.entityKind, edit.entityId);
+          }
+        case SrsLogEvent(:final SrsReviewLog log):
+          final String canon = log.canonical();
+          final String? old = logs[log.id];
+          ok = old == null || canon.compareTo(old) < 0;
+          if (ok) {
+            logs[log.id] = canon;
+            final SrsReviewLogsCompanion row = SrsReviewLogsCompanion.insert(
+              id: log.id,
+              profileUid: log.profileUid,
+              cardId: log.cardId,
+              kind: log.kind,
+              rating: Value<int?>(log.rating),
+              occurredAt: log.occurredAt,
+              reviewType: log.reviewType,
+              origin: log.origin,
+              durationMs: Value<int>(log.durationMs),
+              json: canon,
+            );
+            writes.add(
+              (Batch b) => b.insertAllOnConflictUpdate(
+                db.srsReviewLogs,
+                <SrsReviewLogsCompanion>[row],
+              ),
+            );
+            _dirtyCards.add(log.cardId);
+          }
+        case SrsUnknownEvent():
+          final SrsUnknownEventsCompanion row =
+              SrsUnknownEventsCompanion.insert(
+                id: e.id,
+                profileUid: profileUid,
+                json: e.canonical(),
+              );
+          writes.add(
+            (Batch b) => b.insert(
+              db.srsUnknownEvents,
+              row,
+              mode: InsertMode.insertOrIgnore,
+            ),
+          );
+          ok = true;
+      }
+      if (ok) {
+        _revision++;
+        landed.add(e.id);
+      }
+    }
+    if (writes.isNotEmpty) {
+      await db.batch((Batch b) {
+        for (final void Function(Batch b) w in writes) {
+          w(b);
+        }
+      });
+    }
+    return landed;
+  }
+
+  /// 按 SQLite 变量上限分块（IN 列表）。
+  static Iterable<List<String>> _chunks(Iterable<String> ids) sync* {
+    final List<String> all = ids.toList();
+    for (int i = 0; i < all.length; i += 500) {
+      yield all.sublist(i, min(i + 500, all.length));
+    }
   }
 
   /// 导入（Anki 包 / fushi-ext）批量落一组事件：视同本机产生（进发件箱）、刷新缓存。幂等。
@@ -706,9 +924,7 @@ class SrsDbStore implements SrsSyncReplica {
   // ------------------------------------------------------------------ 物化
 
   Future<SrsNoteTypeView?> noteType(String id) async {
-    final SrsEntityRow? row = await (db.select(
-      db.srsEntities,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    final SrsEntityRow? row = await _entityRow(id);
     if (row == null) return null;
     final SrsEntityRecord rec = _entityFromRow(row);
     return SrsNoteTypeView.materialize(
@@ -741,9 +957,7 @@ class SrsDbStore implements SrsSyncReplica {
   }
 
   Future<SrsNoteView?> note(String id) async {
-    final SrsEntityRow? row = await (db.select(
-      db.srsEntities,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    final SrsEntityRow? row = await _entityRow(id);
     if (row == null) return null;
     return SrsNoteView.materialize(
       _entityFromRow(row),
@@ -799,34 +1013,191 @@ class SrsDbStore implements SrsSyncReplica {
     }
     final List<String> notes = _dirtyNotes.toList();
     _dirtyNotes.clear();
-    for (final String n in notes) {
-      await _refreshNote(n);
+    // 一次刷新内同一笔记类型只物化一次（导入一批几百条同类型笔记，类型的模板 / CSS 修改记录
+    // 不必每条笔记各读一遍、各解析一遍）。本次刷新的事件都已落库，物化结果在刷新期间不变。
+    final Map<String, SrsNoteTypeView?> noteTypes =
+        <String, SrsNoteTypeView?>{};
+    // 本次刷新里已经按最新事件重算过的卡（笔记刷新会重算它全部的卡）：下面不再算第二遍。
+    final Set<String> refreshed = <String>{};
+    // 分块：每块先把这些笔记 / 它们的卡要读的行一次预读进内存（Zone 里的 [_RefreshPrefetch]），再逐条算、逐条写。
+    // 以前每条笔记、每张卡各自查身份记录 / 修改记录 / 服务器时刻 / 日志，一条笔记十几次往返（BUG-3520）。
+    for (int i = 0; i < notes.length; i += 200) {
+      final List<String> chunk = notes.sublist(i, min(i + 200, notes.length));
+      final _RefreshPrefetch pre = _RefreshPrefetch();
+      // 预读只对本次刷新（同一 Zone 里的调用链）可见：同一时刻 UI 别处读 store 不会读到
+      // 这个事务里尚未提交的行。
+      await runZoned(
+        () => _flushChunk(pre, chunk, noteTypes, refreshed),
+        zoneValues: <Object, Object>{_RefreshPrefetch.zoneKey: pre},
+      );
     }
     // 卡片的历史 / 标志沿「前身」继承：前身变了，后继卡也要重算。
     final Set<String> cards = <String>{};
     final List<String> queue = _dirtyCards.toList();
     _dirtyCards.clear();
+    // 「前身 → 后继」一次读全（field_key 没有索引：以前每张脏卡各扫一遍修改记录表，
+    // 导入几千张卡就是几千次全表扫描，随表长成平方级，BUG-3520）。
+    final Map<String, List<String>> successors = queue.isEmpty
+        ? const <String, List<String>>{}
+        : await _successorIndex();
     while (queue.isNotEmpty) {
       final String c = queue.removeLast();
       if (!cards.add(c)) continue;
-      queue.addAll(await _successorsOf(c));
+      queue.addAll(successors[c] ?? const <String>[]);
     }
     for (final String c in cards) {
+      if (refreshed.contains(c)) continue;
       await _refreshCardById(c);
     }
   }
 
-  /// 以 [cardId] 为前身的卡（更改笔记类型时由新卡记下）。
-  Future<List<String>> _successorsOf(String cardId) async =>
-      (await (db.select(db.srsFieldEdits)..where(
-                (t) =>
-                    t.entityKind.equals(SrsEntityKind.card.wire) &
-                    t.fieldKey.equals(SrsFieldKeys.cardHistoryFrom(cardId)),
+  /// 一块笔记的缓存刷新（在带预读的 Zone 里跑，见 [_flushCaches]）。
+  Future<void> _flushChunk(
+    _RefreshPrefetch pre,
+    List<String> chunk,
+    Map<String, SrsNoteTypeView?> noteTypes,
+    Set<String> refreshed,
+  ) async {
+    await _prefetchEntities(pre, chunk);
+    await _prefetchEdits(pre, SrsEntityKind.note, chunk);
+    await _prefetchCardsOfNotes(pre, chunk);
+    final List<_NotePlan> plans = <_NotePlan>[];
+    for (final String n in chunk) {
+      final _NotePlan? plan = await _planNote(n, noteTypes: noteTypes);
+      if (plan != null) plans.add(plan);
+    }
+    final Set<String> cardIds = <String>{
+      for (final _NotePlan p in plans) ...p.expected.keys,
+    };
+    await _prefetchEdits(pre, SrsEntityKind.card, cardIds);
+    await _prefetchLogs(pre, cardIds);
+    for (final _NotePlan p in plans) {
+      await _applyNotePlan(p, refreshed);
+    }
+  }
+
+  /// 身份记录行（刷新期间先查预读）。
+  Future<SrsEntityRow?> _entityRow(String id) async {
+    final _RefreshPrefetch? pre = _RefreshPrefetch.current;
+    if (pre != null && pre.entities.containsKey(id)) return pre.entities[id];
+    return (db.select(
+      db.srsEntities,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
+  }
+
+  Future<void> _prefetchEntities(
+    _RefreshPrefetch pre,
+    Iterable<String> ids,
+  ) async {
+    for (final List<String> chunk in _chunks(ids)) {
+      for (final String id in chunk) {
+        pre.entities[id] = null;
+      }
+      for (final SrsEntityRow r in await (db.select(
+        db.srsEntities,
+      )..where((t) => t.id.isIn(chunk))).get()) {
+        pre.entities[r.id] = r;
+      }
+    }
+  }
+
+  /// 一组实体的全部修改记录 + 这些记录的服务器时刻。
+  Future<void> _prefetchEdits(
+    _RefreshPrefetch pre,
+    SrsEntityKind kind,
+    Iterable<String> ids,
+  ) async {
+    final List<String> editIds = <String>[];
+    for (final List<String> chunk in _chunks(ids)) {
+      for (final String id in chunk) {
+        pre.edits['${kind.wire}/$id'] = <SrsFieldEditRow>[];
+      }
+      for (final SrsFieldEditRow r
+          in await (db.select(db.srsFieldEdits)..where(
+                (t) => t.entityKind.equals(kind.wire) & t.entityId.isIn(chunk),
               ))
-              .get())
-          .map((SrsFieldEditRow r) => r.entityId)
-          .toSet()
-          .toList();
+              .get()) {
+        pre.edits['${kind.wire}/${r.entityId}']!.add(r);
+        editIds.add(r.id);
+      }
+    }
+    await _prefetchServerTimes(pre, editIds);
+  }
+
+  /// 一组卡的全部复习日志 + 日志的服务器时刻。
+  Future<void> _prefetchLogs(
+    _RefreshPrefetch pre,
+    Iterable<String> cardIds,
+  ) async {
+    final List<String> logIds = <String>[];
+    for (final List<String> chunk in _chunks(cardIds)) {
+      for (final String id in chunk) {
+        pre.logsByCard[id] = <SrsReviewLogRow>[];
+      }
+      for (final SrsReviewLogRow r in await (db.select(
+        db.srsReviewLogs,
+      )..where((t) => t.cardId.isIn(chunk))).get()) {
+        pre.logsByCard[r.cardId]!.add(r);
+        logIds.add(r.id);
+      }
+    }
+    await _prefetchServerTimes(pre, logIds);
+  }
+
+  Future<void> _prefetchServerTimes(
+    _RefreshPrefetch pre,
+    Iterable<String> eventIds,
+  ) async {
+    for (final List<String> chunk in _chunks(eventIds)) {
+      pre.serverTimesKnown.addAll(chunk);
+      for (final SrsEventLocalRow r in await (db.select(
+        db.srsEventLocal,
+      )..where((t) => t.eventId.isIn(chunk))).get()) {
+        if (r.serverTime != null) pre.serverTimes[r.eventId] = r.serverTime!;
+      }
+    }
+  }
+
+  Future<void> _prefetchCardsOfNotes(
+    _RefreshPrefetch pre,
+    Iterable<String> noteIds,
+  ) async {
+    for (final List<String> chunk in _chunks(noteIds)) {
+      for (final String id in chunk) {
+        pre.cardsByNote[id] = <SrsCardCacheRow>[];
+      }
+      for (final SrsCardCacheRow r in await (db.select(
+        db.srsCardsCache,
+      )..where((t) => t.noteId.isIn(chunk))).get()) {
+        pre.cardsByNote[r.noteId]!.add(r);
+      }
+    }
+  }
+
+  /// 全部「前身卡 → 后继卡」链接（卡的 `historyFrom/<前身>` 修改记录；一次扫描）。
+  Future<Map<String, List<String>>> _successorIndex() async {
+    const String prefix = SrsFieldKeys.cardHistoryFromPrefix;
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT DISTINCT entity_id, field_key FROM srs_field_edits '
+          'WHERE entity_kind = ? AND substr(field_key, 1, ?) = ?',
+          variables: <Variable<Object>>[
+            Variable<String>(SrsEntityKind.card.wire),
+            Variable<int>(prefix.length),
+            Variable<String>(prefix),
+          ],
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.srsFieldEdits,
+          },
+        )
+        .get();
+    final Map<String, List<String>> out = <String, List<String>>{};
+    for (final QueryRow r in rows) {
+      final String pred = r.read<String>('field_key').substring(prefix.length);
+      (out[pred] ??= <String>[]).add(r.read<String>('entity_id'));
+    }
+    return out;
+  }
 
   /// 一张卡的「血统」：自己在前，再按广度优先列出全部前身（防环）。每张卡附带它自己的修改记录。
   Future<List<(String, SrsEntityEdits)>> _cardLineage(String cardId) async {
@@ -895,10 +1266,16 @@ class SrsDbStore implements SrsSyncReplica {
     for (final SrsFieldDef f in t.fields) f.id: f.name,
   };
 
-  Future<void> _refreshNote(String noteId) async {
+  /// 笔记缓存刷新的第一步（只读）：物化笔记与类型，算出缓存行的派生值与应有的卡。
+  Future<_NotePlan?> _planNote(
+    String noteId, {
+    required Map<String, SrsNoteTypeView?> noteTypes,
+  }) async {
     final SrsNoteView? n = await note(noteId);
-    if (n == null) return;
-    final SrsNoteTypeView? t = await noteType(n.noteTypeId);
+    if (n == null) return null;
+    final SrsNoteTypeView? t = noteTypes.containsKey(n.noteTypeId)
+        ? noteTypes[n.noteTypeId]
+        : noteTypes[n.noteTypeId] = await noteType(n.noteTypeId);
     final String term = t?.termFieldId == null
         ? ''
         : srsTermKey(n.field(t!.termFieldId!));
@@ -912,27 +1289,6 @@ class SrsDbStore implements SrsSyncReplica {
     final String sortField = t == null || t.fields.isEmpty
         ? ''
         : ankiStripHtml(n.field(t.fields.first.id)).trim();
-    await db
-        .into(db.srsNotesCache)
-        .insertOnConflictUpdate(
-          SrsNotesCacheCompanion.insert(
-            id: n.id,
-            profileUid: profileUid,
-            noteTypeId: n.noteTypeId,
-            guid: n.guid,
-            createdAt: n.createdAt,
-            deckId: Value<String?>(n.deckId),
-            deletedAt: Value<int?>(n.deletedAt),
-            termKey: Value<String>(term),
-            readingKey: Value<String>(reading),
-            sortField: Value<String>(
-              sortField.length > 200 ? sortField.substring(0, 200) : sortField,
-            ),
-            tagsJson: Value<String>(jsonEncode(n.tags)),
-            pendingDecision: Value<bool>(n.hasPendingDecision),
-            updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
-          ),
-        );
 
     // 卡片生成（铁律 D）：期望的 (templateId, clozeOrd) 集合；不在集合里的现存卡片隐藏，不写同步行。
     final Map<String, (String, int, bool)> expected =
@@ -965,9 +1321,49 @@ class SrsDbStore implements SrsSyncReplica {
     }
     final bool noteGone =
         n.deletedAt != null || t == null || t.deletedAt != null;
-    final List<SrsCardCacheRow> existing = await (db.select(
-      db.srsCardsCache,
-    )..where((c) => c.noteId.equals(noteId))).get();
+    return _NotePlan(
+      note: n,
+      noteType: t,
+      term: term,
+      reading: reading,
+      sortField: sortField,
+      expected: expected,
+      noteGone: noteGone,
+    );
+  }
+
+  /// 笔记缓存刷新的第二步：写笔记缓存行，隐藏不再应有的卡，重算应有的卡（记进 [refreshed]）。
+  Future<void> _applyNotePlan(_NotePlan plan, Set<String> refreshed) async {
+    final SrsNoteView n = plan.note;
+    final String sortField = plan.sortField;
+    await db
+        .into(db.srsNotesCache)
+        .insertOnConflictUpdate(
+          SrsNotesCacheCompanion.insert(
+            id: n.id,
+            profileUid: profileUid,
+            noteTypeId: n.noteTypeId,
+            guid: n.guid,
+            createdAt: n.createdAt,
+            deckId: Value<String?>(n.deckId),
+            deletedAt: Value<int?>(n.deletedAt),
+            termKey: Value<String>(plan.term),
+            readingKey: Value<String>(plan.reading),
+            sortField: Value<String>(
+              sortField.length > 200 ? sortField.substring(0, 200) : sortField,
+            ),
+            tagsJson: Value<String>(jsonEncode(n.tags)),
+            pendingDecision: Value<bool>(n.hasPendingDecision),
+            updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+          ),
+        );
+    final Map<String, (String, int, bool)> expected = plan.expected;
+    final bool noteGone = plan.noteGone;
+    final List<SrsCardCacheRow> existing =
+        _RefreshPrefetch.current?.cardsByNote[n.id] ??
+        await (db.select(
+          db.srsCardsCache,
+        )..where((c) => c.noteId.equals(n.id))).get();
     for (final SrsCardCacheRow c in existing) {
       if (!expected.containsKey(c.id)) {
         await (db.update(db.srsCardsCache)..where((x) => x.id.equals(c.id)))
@@ -985,6 +1381,7 @@ class SrsDbStore implements SrsSyncReplica {
         noteCreatedAt: n.createdAt,
         hidden: noteGone || empty,
       );
+      refreshed.add(e.key);
     }
   }
 
@@ -1013,9 +1410,15 @@ class SrsDbStore implements SrsSyncReplica {
   ]);
 
   Future<SrsCardHistory> _historyOf(List<String> cardIds) async {
-    final List<SrsReviewLogRow> rows = await (db.select(
-      db.srsReviewLogs,
-    )..where((t) => t.cardId.isIn(cardIds))).get();
+    final _RefreshPrefetch? pre = _RefreshPrefetch.current;
+    final List<SrsReviewLogRow> rows =
+        pre != null && cardIds.every(pre.logsByCard.containsKey)
+        ? <SrsReviewLogRow>[
+            for (final String c in cardIds) ...pre.logsByCard[c]!,
+          ]
+        : await (db.select(
+            db.srsReviewLogs,
+          )..where((t) => t.cardId.isIn(cardIds))).get();
     final List<SrsReviewLog> logs = <SrsReviewLog>[
       for (final SrsReviewLogRow r in rows)
         SrsReviewLog.fromJson(
@@ -1174,6 +1577,8 @@ class SrsDbStore implements SrsSyncReplica {
         ? ''
         : '${tree.fullName(parentId)}::';
     final String id = SrsIds.deck(profileUid, '$parentPath$name');
+    final SrsEntityEdits current = await _entityEdits(SrsEntityKind.deck, id);
+    // 身份记录与名字 / 父牌组记录同一个事务落库（以前分两次事务、两次缓存刷新）。
     await _emit(<SrsEvent>[
       SrsEntityEvent(
         SrsEntityRecord(
@@ -1183,13 +1588,12 @@ class SrsDbStore implements SrsSyncReplica {
           payload: const <String, Object?>{'createdAt': 0},
         ),
       ),
+      ...newEditEvents(SrsEntityKind.deck, id, <String, Object?>{
+        SrsFieldKeys.name: name.trim(),
+        if (parentId != null) SrsFieldKeys.deckParent: parentId,
+        if (current.deletedAt != null) SrsFieldKeys.deleted: null,
+      }, current: current),
     ]);
-    final SrsEntityEdits current = await _entityEdits(SrsEntityKind.deck, id);
-    await editFields(SrsEntityKind.deck, id, <String, Object?>{
-      SrsFieldKeys.name: name.trim(),
-      if (parentId != null) SrsFieldKeys.deckParent: parentId,
-      if (current.deletedAt != null) SrsFieldKeys.deleted: null,
-    });
     return id;
   }
 
@@ -1254,10 +1658,42 @@ class SrsDbStore implements SrsSyncReplica {
     String? guid,
     int? createdAt,
   }) async {
-    final (int nowMs, _) = now();
     final String g = guid ?? newNoteGuid();
     final String id = SrsIds.note(profileUid, g);
-    await _emit(<SrsEvent>[
+    // 身份记录与字段修改记录同一个事务、同一次缓存刷新（以前分两次落库，笔记先以空字段生成一遍卡）。
+    await _emit(
+      newNoteEvents(
+        noteTypeId: noteTypeId,
+        fieldsById: fieldsById,
+        deckId: deckId,
+        tags: tags,
+        source: source,
+        guid: g,
+        createdAt: createdAt,
+        current: await _entityEdits(SrsEntityKind.note, id),
+      ),
+    );
+    return id;
+  }
+
+  /// 新笔记的全部事件（身份记录 + 字段 / 标签 / 来源 / 牌组修改记录），**不落库**：
+  /// 交给 [importEvents] 与别的事件攒成一批一次落库（Anki 包导入每批几十条笔记一个事务）。
+  ///
+  /// [current] 是这条笔记已有的修改记录（值相同的键不再写）；null = 调用方确定本机还没有这条笔记
+  /// （导入先查过身份记录），跳过逐条读库。noteId = `SrsIds.note(profileUid, guid)`。
+  List<SrsEvent> newNoteEvents({
+    required String noteTypeId,
+    required Map<String, String> fieldsById,
+    required String guid,
+    String? deckId,
+    List<String> tags = const <String>[],
+    SrsSourceRef? source,
+    int? createdAt,
+    SrsEntityEdits? current,
+  }) {
+    final (int nowMs, _) = now();
+    final String id = SrsIds.note(profileUid, guid);
+    return <SrsEvent>[
       SrsEntityEvent(
         SrsEntityRecord(
           id: id,
@@ -1265,20 +1701,59 @@ class SrsDbStore implements SrsSyncReplica {
           kind: SrsEntityKind.note,
           payload: <String, Object?>{
             'noteTypeId': noteTypeId,
-            'guid': g,
+            'guid': guid,
             'createdAt': createdAt ?? nowMs,
           },
         ),
       ),
-    ]);
-    await editFields(SrsEntityKind.note, id, <String, Object?>{
-      for (final MapEntry<String, String> f in fieldsById.entries)
-        if (f.value.isNotEmpty) SrsFieldKeys.noteField(f.key): f.value,
-      if (tags.isNotEmpty) SrsFieldKeys.noteTags: tags,
-      if (source != null) SrsFieldKeys.noteSource: source.toJson(),
-      SrsFieldKeys.noteDeck: deckId ?? defaultDeckId,
-    });
-    return id;
+      ...newEditEvents(SrsEntityKind.note, id, <String, Object?>{
+        for (final MapEntry<String, String> f in fieldsById.entries)
+          if (f.value.isNotEmpty) SrsFieldKeys.noteField(f.key): f.value,
+        if (tags.isNotEmpty) SrsFieldKeys.noteTags: tags,
+        if (source != null) SrsFieldKeys.noteSource: source.toJson(),
+        SrsFieldKeys.noteDeck: deckId ?? defaultDeckId,
+      }, current: current),
+    ];
+  }
+
+  /// 一个实体若干字段的本机修改记录，**不落库**（交给 [importEvents] 成批落）。
+  /// [current] 同 [newNoteEvents]：给了就跳过与现值相同的键；null = 实体刚由同一批事件新建、本机没有记录。
+  List<SrsEditEvent> newEditEvents(
+    SrsEntityKind kind,
+    String entityId,
+    Map<String, Object?> values, {
+    SrsEntityEdits? current,
+  }) {
+    final (int nowMs, SrsTimeSource src) = now();
+    return <SrsEditEvent>[
+      for (final MapEntry<String, Object?> e in values.entries)
+        if (current?[e.key] == null ||
+            !srsEditIsNoop(current![e.key]!, e.value))
+          SrsEditEvent(
+            _writer.create(
+              profileUid: profileUid,
+              entityKind: kind,
+              entityId: entityId,
+              fieldKey: e.key,
+              value: e.value,
+              hlc: _clock.tick(nowMs),
+              timeSource: src,
+            ),
+          ),
+    ];
+  }
+
+  /// 本 profile 某类实体的全部 ID（只读 ID 列；导入据此一次判断哪些笔记本机已有）。
+  Future<Set<String>> entityIds(SrsEntityKind kind) async {
+    final $SrsEntitiesTable t = db.srsEntities;
+    final List<TypedResult> rows =
+        await (db.selectOnly(t)
+              ..addColumns(<Expression<Object>>[t.id])
+              ..where(
+                t.profileUid.equals(profileUid) & t.kind.equals(kind.wire),
+              ))
+            .get();
+    return <String>{for (final TypedResult r in rows) r.read(t.id)!};
   }
 
   Future<void> updateNote(
@@ -2082,15 +2557,34 @@ class SrsDbStore implements SrsSyncReplica {
           .get();
 
   /// 标志类 / 设置类的同步冲突（被覆盖的候选），不含机器产出（第六轮审查第 10 条）与界面状态（折叠）。
+  ///
+  /// 被支配的记录落库时就删了，所以一个字段键上还留着 ≥ 2 条记录的才可能有冲突：先在库里
+  /// （SQLite 侧 GROUP BY）挑出这些字段键，只把它们的记录读回来解析。以前把本 profile 全部修改
+  /// 记录（含每条笔记的字段正文）整表读回 UI isolate 逐条 JSON 解析，牌组列表每次重读都付一遍
+  /// O(全部修改记录) 的代价（BUG-3519）。
   Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts() async {
-    final List<SrsFieldEditRow> rows = await (db.select(
-      db.srsFieldEdits,
-    )..where((t) => t.profileUid.equals(profileUid))).get();
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT e.json AS json FROM srs_field_edits e '
+          'JOIN (SELECT entity_kind AS k, entity_id AS i, field_key AS f '
+          'FROM srs_field_edits WHERE profile_uid = ? '
+          'GROUP BY entity_kind, entity_id, field_key HAVING COUNT(*) > 1) m '
+          'ON e.entity_kind = m.k AND e.entity_id = m.i AND e.field_key = m.f '
+          'WHERE e.profile_uid = ?',
+          variables: <Variable<Object>>[
+            Variable<String>(profileUid),
+            Variable<String>(profileUid),
+          ],
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.srsFieldEdits,
+          },
+        )
+        .get();
     final Map<String, List<SrsFieldEdit>> byReg =
         <String, List<SrsFieldEdit>>{};
-    for (final SrsFieldEditRow r in rows) {
+    for (final QueryRow r in rows) {
       final SrsFieldEdit e = SrsFieldEdit.fromJson(
-        (jsonDecode(r.json) as Map).cast<String, Object?>(),
+        (jsonDecode(r.read<String>('json')) as Map).cast<String, Object?>(),
       );
       (byReg[e.registerKey] ??= <SrsFieldEdit>[]).add(e);
     }
@@ -2746,4 +3240,48 @@ class _CountContext {
   final List<int> last30;
   final Set<String> introducedToday;
   final Set<String> reviewedToday;
+}
+
+/// 缓存刷新的一块笔记的预读（见 [SrsDbStore._flushCaches]）：只在那次刷新的 Zone 里可见。
+/// 各 Map 里「有键」= 已预读（值可能为空 / null）；没键的照常查库。
+class _RefreshPrefetch {
+  static final Object zoneKey = Object();
+
+  static _RefreshPrefetch? get current =>
+      Zone.current[zoneKey] as _RefreshPrefetch?;
+
+  final Map<String, SrsEntityRow?> entities = <String, SrsEntityRow?>{};
+
+  /// `<kind>/<entityId>` → 修改记录行。
+  final Map<String, List<SrsFieldEditRow>> edits =
+      <String, List<SrsFieldEditRow>>{};
+  final Map<String, List<SrsReviewLogRow>> logsByCard =
+      <String, List<SrsReviewLogRow>>{};
+  final Map<String, List<SrsCardCacheRow>> cardsByNote =
+      <String, List<SrsCardCacheRow>>{};
+  final Map<String, int> serverTimes = <String, int>{};
+  final Set<String> serverTimesKnown = <String>{};
+}
+
+/// [SrsDbStore._planNote] 的结果。
+class _NotePlan {
+  const _NotePlan({
+    required this.note,
+    required this.noteType,
+    required this.term,
+    required this.reading,
+    required this.sortField,
+    required this.expected,
+    required this.noteGone,
+  });
+
+  final SrsNoteView note;
+  final SrsNoteTypeView? noteType;
+  final String term;
+  final String reading;
+  final String sortField;
+
+  /// cardId → (templateId, clozeOrd, empty)。
+  final Map<String, (String, int, bool)> expected;
+  final bool noteGone;
 }

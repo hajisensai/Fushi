@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3148 条。点号进各自文件。
+> 共 3150 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3520](bugs/BUG-3520-srs-apkg-import-slow-blocking.md) | ✅ | ✅ | 复习：Anki 包导入慢且阻塞在模态对话框里，不能后台导入 |
+| [BUG-3519](bugs/BUG-3519-srs-deck-create-slow-list-stale.md) | ✅ | ✅ | 复习：新建牌组慢、列表不立即出现新牌组 |
 | [BUG-3518](bugs/BUG-3518-ios-audio-lane-page-bleed.md) | ✅ | ✅ | iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶 |
 | [BUG-3517](bugs/BUG-3517-video-chrome-double-click-fullscreen.md) | ✅ | ✅ | video-chrome-double-click-fullscreen |
 | [BUG-3516](bugs/BUG-3516-collection-member-touch-longpress-no-menu.md) | ✅ | ✅ | 合集详情页触屏长按成员只进多选，拿不到库页同一份卡片菜单 |
