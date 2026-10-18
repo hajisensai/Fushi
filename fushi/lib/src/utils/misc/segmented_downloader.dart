@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'package:crypto/crypto.dart';
 import 'package:fushi/src/utils/misc/download_plan.dart';
 import 'package:fushi/src/utils/misc/source_speed_ledger.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 
 /// 打开一次请求。与 [ResumableDownloadOpen] 同形（复用 [ResumableDownloadResponse]），
@@ -68,8 +69,8 @@ class SegmentedDownloader {
     this.isCancelled,
     this.flushInterval = kDefaultFlushInterval,
     this.retryBackoff,
-  })  : assert(concurrency > 0, 'concurrency 必须为正'),
-        assert(maxAttemptsPerPart > 0, 'maxAttemptsPerPart 必须为正');
+  }) : assert(concurrency > 0, 'concurrency 必须为正'),
+       assert(maxAttemptsPerPart > 0, 'maxAttemptsPerPart 必须为正');
 
   /// 并发段数默认值：国内下 CF 单连接常被限速，多连接叠加是主要提速手段；再大对
   /// 移动端内存/CDN 都不友好。
@@ -308,8 +309,10 @@ class SegmentedDownloader {
       headers[HttpHeaders.ifRangeHeader] = validator;
     }
 
-    Future<ResumableDownloadResponse> opened =
-        open(Uri.parse(source.url), headers);
+    Future<ResumableDownloadResponse> opened = open(
+      Uri.parse(source.url),
+      headers,
+    );
     if (firstByteTimeout != null) {
       opened = opened.timeout(firstByteTimeout!);
     }
@@ -318,8 +321,9 @@ class SegmentedDownloader {
     if (response.statusCode == HttpStatus.partialContent) {
       // 206 必须带可解析的 Content-Range（RFC 9110）。缺了或看不懂就**不猜**——
       // 猜错就是把别处的字节写进本片偏移，最后只体现为一个 sha256 不符的坏包。
-      final int? gotStart =
-          _contentRangeStart(response.header(HttpHeaders.contentRangeHeader));
+      final int? gotStart = _contentRangeStart(
+        response.header(HttpHeaders.contentRangeHeader),
+      );
       if (gotStart != start) {
         await _abort(response);
         throw HttpException(
@@ -352,7 +356,8 @@ class SegmentedDownloader {
       );
     }
 
-    _validator ??= response.header(HttpHeaders.etagHeader) ??
+    _validator ??=
+        response.header(HttpHeaders.etagHeader) ??
         response.header(HttpHeaders.lastModifiedHeader);
 
     await _consumePart(part: part, response: response, alreadyDone: done);
@@ -412,9 +417,7 @@ class SegmentedDownloader {
 
     if (written < part.length) {
       await _flushAndPersist(part.index, written);
-      throw HttpException(
-        '片 #${part.index} 提前结束：$written / ${part.length}',
-      );
+      throw HttpException('片 #${part.index} 提前结束：$written / ${part.length}');
     }
 
     if (expected != null) {
@@ -474,8 +477,10 @@ class SegmentedDownloader {
   /// 断开一条不要的响应流：**不能**用 `drain`——整包来源的 body 是 9.5 GB。
   Future<void> _abort(ResumableDownloadResponse response) async {
     try {
-      final StreamSubscription<List<int>> sub =
-          response.stream.listen(null, cancelOnError: true);
+      final StreamSubscription<List<int>> sub = response.stream.listen(
+        null,
+        cancelOnError: true,
+      );
       await sub.cancel();
     } catch (_) {
       // best-effort：断连失败不该盖住真正的失败原因。
@@ -500,8 +505,8 @@ class SegmentedDownloader {
     final String? expected = plan.sha256;
     // 每片都验过摘要时，逐片校验已严格强于整包校验，省掉一次 9.5 GB 重读。
     if (expected == null || plan.hasPerPartDigests) return;
-    final Digest digest = await sha256.bind(partFile.openRead()).first;
-    if (digest.toString() != expected) {
+    final String digest = await ffcSha256File(partFile.path);
+    if (digest != expected) {
       await _deleteQuietly(partFile);
       await _deleteQuietly(progressFile);
       throw ResumableDownloadIntegrityException(
@@ -528,8 +533,9 @@ class SegmentedDownloader {
 
   static int? _contentRangeStart(String? value) {
     if (value == null) return null;
-    final RegExpMatch? match =
-        RegExp(r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$').firstMatch(value.trim());
+    final RegExpMatch? match = RegExp(
+      r'^bytes\s+(\d+)-(\d+)/(\d+|\*)$',
+    ).firstMatch(value.trim());
     if (match == null) return null;
     return int.tryParse(match.group(1)!);
   }
@@ -626,17 +632,19 @@ class _ProgressStore {
     this.validator = validator;
     try {
       await file.parent.create(recursive: true);
-      await file.writeAsString(json.encode(<String, Object?>{
-        'version': _formatVersion,
-        'totalBytes': plan.totalBytes,
-        'planVersion': plan.version,
-        'sha256': plan.sha256,
-        'validator': validator,
-        'parts': <String, int>{
-          for (final MapEntry<int, int> e in _received.entries)
-            if (e.value > 0) '${e.key}': e.value,
-        },
-      }));
+      await file.writeAsString(
+        json.encode(<String, Object?>{
+          'version': _formatVersion,
+          'totalBytes': plan.totalBytes,
+          'planVersion': plan.version,
+          'sha256': plan.sha256,
+          'validator': validator,
+          'parts': <String, int>{
+            for (final MapEntry<int, int> e in _received.entries)
+              if (e.value > 0) '${e.key}': e.value,
+          },
+        }),
+      );
     } catch (_) {
       // 进度落盘失败只影响续传效率，不该中断正在进行的下载。
     }

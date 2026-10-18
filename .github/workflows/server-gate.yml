@@ -31,15 +31,25 @@ on:
     paths:
       - 'packages/fushi_server/**'
       - 'packages/fushi_engine/**'
+      # 硬依赖的 Rust 计算内核：服务端 / 引擎测试要真库。
+      - 'packages/fushi_compute/**'
+      - 'native/fushi_compute/**'
       - '.github/workflows/server-gate.yml'
       - '.github/actions/pdfium-hook-cache/**'
+      - '.github/actions/setup-fushi-compute/**'
+      - '.github/actions/native-store-names/names.sh'
   push:
     branches: ['develop']
     paths:
       - 'packages/fushi_server/**'
       - 'packages/fushi_engine/**'
+      # 硬依赖的 Rust 计算内核：服务端 / 引擎测试要真库。
+      - 'packages/fushi_compute/**'
+      - 'native/fushi_compute/**'
       - '.github/workflows/server-gate.yml'
       - '.github/actions/pdfium-hook-cache/**'
+      - '.github/actions/setup-fushi-compute/**'
+      - '.github/actions/native-store-names/names.sh'
 
 permissions:
   contents: read
@@ -77,6 +87,9 @@ jobs:
       - name: Analyze fushi_server
         working-directory: packages/fushi_server
         run: dart analyze
+      # 计算内核 fushi_compute 是硬依赖（经 fushi_engine）：先编 Linux .so、导出 FUSHI_COMPUTE_LIB。
+      - name: Build fushi_compute (Linux .so)
+        uses: ./.github/actions/setup-fushi-compute
       - name: Test fushi_server
         working-directory: packages/fushi_server
         run: dart ../../fushi/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/fushi_server
