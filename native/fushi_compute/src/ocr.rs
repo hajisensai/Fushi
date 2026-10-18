@@ -322,7 +322,8 @@ pub unsafe extern "C" fn ffc_ocr_rtdetr_decode(
                 let cy = boxes[q * 4 + 1] as f64 * tr.dst_h;
                 let w = boxes[q * 4 + 2] as f64 * tr.dst_w;
                 let h = boxes[q * 4 + 3] as f64 * tr.dst_h;
-                if let Some(rect) = tr.rect(cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0) {
+                if let Some(rect) = tr.rect(cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0)
+                {
                     push_det(out, &mut count, rect, score, c as f64);
                 }
             }
@@ -430,9 +431,9 @@ pub unsafe extern "C" fn ffc_ocr_class_aware_nms(
         for &candidate in &order {
             let cr = rect(candidate);
             let group = nms_group(class(candidate));
-            let suppressed = kept_out[..kept].iter().any(|&k| {
-                nms_group(class(k)) == group && ocr_iou(&rect(k), &cr) >= iou_threshold
-            });
+            let suppressed = kept_out[..kept]
+                .iter()
+                .any(|&k| nms_group(class(k)) == group && ocr_iou(&rect(k), &cr) >= iou_threshold);
             if !suppressed {
                 kept_out[kept] = candidate;
                 kept += 1;
@@ -470,7 +471,8 @@ pub unsafe extern "C" fn ffc_ocr_inside_bubbles(
             let (x, y) = ((t[0] + t[2]) / 2.0, (t[1] + t[3]) / 2.0);
             out[i] = bubbles
                 .chunks_exact(4)
-                .any(|b| x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]) as u8;
+                .any(|b| x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3])
+                as u8;
         }
         status::OK
     })
@@ -548,7 +550,9 @@ fn order_panels(rects: &[f64], iou_threshold: f64, rtl: bool) -> Vec<u32> {
         }
         kept.push(c);
     }
-    sort(&mut kept, &mut |a, b| compare_f64(a.center_y(), b.center_y()));
+    sort(&mut kept, &mut |a, b| {
+        compare_f64(a.center_y(), b.center_y())
+    });
     let mut rows: Vec<Vec<Panel>> = Vec::new();
     for panel in kept {
         let mut target: Option<usize> = None;
@@ -584,7 +588,9 @@ fn order_panels(rects: &[f64], iou_threshold: f64, rtl: bool) -> Vec<u32> {
         })
         .collect();
     let mut row_order: Vec<usize> = (0..rows.len()).collect();
-    sort(&mut row_order, &mut |a, b| compare_f64(centers[a], centers[b]));
+    sort(&mut row_order, &mut |a, b| {
+        compare_f64(centers[a], centers[b])
+    });
     let mut out = Vec::new();
     for ri in row_order {
         let row = &mut rows[ri];
@@ -658,7 +664,10 @@ mod tests {
         let runs: Vec<(f64, f64, f64)> = (0..n)
             .map(|i| (out[i * 5], out[i * 5 + 1], out[i * 5 + 2]))
             .collect();
-        assert_eq!(runs, vec![(1.0, 0.0, 2.0), (1.0, 3.0, 4.0), (2.0, 4.0, 6.0)]);
+        assert_eq!(
+            runs,
+            vec![(1.0, 0.0, 2.0), (1.0, 3.0, 4.0), (2.0, 4.0, 6.0)]
+        );
         // 概率行（one-hot）：置信度 1。
         assert_eq!(out[3], 1.0);
         assert_eq!(out[4], 1.0);
