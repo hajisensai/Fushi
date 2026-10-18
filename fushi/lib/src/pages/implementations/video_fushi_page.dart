@@ -17,7 +17,7 @@ import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -127,6 +127,7 @@ import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart'
     show
         WebVideoPlaybackState,
+        WebVideoSiteTrack,
         WebVideoTrack,
         chooseWebVideoTrackKey,
         shouldOpenInWebVideoPlayer;
@@ -144,6 +145,9 @@ import 'package:fushi/src/media/video/web_video_hosting.dart'
         webVideoHostingFromPref;
 import 'package:fushi/src/media/video/web_video_platform_player.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
+import 'package:fushi_engine/sync/immersion_mine_payload.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show RemoteMineResult;
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/media/video/web_video_sites.dart';
@@ -162,7 +166,8 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
         YoutubeVideoVariant,
         YoutubeVariantSet,
         resolveYoutubeVideoVariants,
-        isYoutubeUrl;
+        isYoutubeUrl,
+        youtubeVideoIdOrNull;
 import 'package:fushi/src/media/video/video_resource_check.dart';
 import 'package:fushi/src/media/video/video_long_press_speed_badge.dart';
 import 'package:fushi/src/media/video/video_double_tap_center_action.dart';
@@ -2126,6 +2131,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 用户在字幕面板选了「关闭」：不再自动挑轨。
   bool _webSubtitlesOff = false;
+
+  /// 站点播放器自己的字幕轨清单（Netflix）与它当前开着的轨；用户 / 默认选轨请求的那条在采到
+  /// 整轨前记在 [_webPendingTrackKey]（`videoKey|lang`），采到即选中；每集只替用户自动开一次。
+  List<WebVideoSiteTrack> _webSiteTracks = const <WebVideoSiteTrack>[];
+  String _webSiteTrackCurrent = '';
+  String? _webPendingTrackKey;
+  String? _webSiteTrackAutoVideoKey;
 
   /// 网页档的全屏 = 窗口全屏（不推全屏路由：WebView2 子窗口不会跟着进新路由）。
   bool _webWindowFullscreen = false;

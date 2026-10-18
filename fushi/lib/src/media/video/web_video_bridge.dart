@@ -126,6 +126,60 @@ class WebVideoTrack {
   bool get isLive => lang == kWebVideoLiveTrackLang;
 }
 
+/// 站点播放器里可切换的一条字幕轨（还没采到 cue；选中后由站点自己下载、bridge 截下整轨）。
+@immutable
+class WebVideoSiteTrack {
+  const WebVideoSiteTrack({
+    required this.id,
+    required this.lang,
+    required this.name,
+  });
+
+  final String id;
+
+  /// BCP 47；采到的整轨 key 是 `videoKey|lang`，按它对上。
+  final String lang;
+
+  /// 站点的显示名（「日本語」「English [CC]」）；没有为空。
+  final String name;
+
+  @override
+  bool operator ==(Object other) =>
+      other is WebVideoSiteTrack &&
+      other.id == id &&
+      other.lang == lang &&
+      other.name == name;
+
+  @override
+  int get hashCode => Object.hash(id, lang, name);
+}
+
+/// glue `nftt`：每轨一行 `id\tlang\tname`，末行 `#当前轨 id`。坏行跳过。
+List<WebVideoSiteTrack> parseWebVideoSiteTracks(Object? raw) {
+  if (raw is! String || raw.isEmpty) return const <WebVideoSiteTrack>[];
+  final List<WebVideoSiteTrack> out = <WebVideoSiteTrack>[];
+  for (final String line in raw.split('\n')) {
+    if (line.isEmpty || line.startsWith('#')) continue;
+    final List<String> parts = line.split('\t');
+    if (parts.length < 2 || parts[0].isEmpty || parts[1].isEmpty) continue;
+    out.add(
+      WebVideoSiteTrack(
+        id: parts[0],
+        lang: parts[1],
+        name: parts.length > 2 ? parts[2] : '',
+      ),
+    );
+  }
+  return out;
+}
+
+String parseWebVideoSiteTrackCurrent(Object? raw) {
+  if (raw is! String) return '';
+  final int i = raw.lastIndexOf('\n#');
+  if (i >= 0) return raw.substring(i + 2);
+  return raw.startsWith('#') ? raw.substring(1) : '';
+}
+
 /// 页面 JS 轮询上报的播放态快照。
 class WebVideoPlaybackState {
   const WebVideoPlaybackState({
@@ -146,6 +200,8 @@ class WebVideoPlaybackState {
     this.ad = false,
     this.videoTitle = '',
     this.imageUrl = '',
+    this.siteTracks = const <WebVideoSiteTrack>[],
+    this.siteTrackCurrent = '',
   });
 
   final String href;
@@ -179,6 +235,13 @@ class WebVideoPlaybackState {
 
   /// 页面的 og:image（封面候选）；没有为空。
   final String imageUrl;
+
+  /// 站点播放器自己的文字字幕轨（目前只有 Netflix：采集是被动的，要让播放器切到某条轨它才
+  /// 下载那条字幕，见 glue 的 `netflixTextTracks`）；其它站点为空。
+  final List<WebVideoSiteTrack> siteTracks;
+
+  /// 站点播放器当前开着的轨 id（[WebVideoSiteTrack.id]）；字幕关着为空。
+  final String siteTrackCurrent;
 
   bool get isPlaying => hasVideo && !paused;
 }
@@ -251,6 +314,8 @@ WebVideoPlaybackState? parseWebVideoStatePayload(Object? raw) {
     ad: raw['ad'] == true,
     videoTitle: (raw['vtitle'] ?? '').toString().trim(),
     imageUrl: (raw['vimg'] ?? '').toString().trim(),
+    siteTracks: parseWebVideoSiteTracks(raw['nftt']),
+    siteTrackCurrent: parseWebVideoSiteTrackCurrent(raw['nftt']),
   );
 }
 

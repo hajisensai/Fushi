@@ -217,8 +217,17 @@ extension _VideoWebSource on _VideoFushiPageState {
       _controller?.rebindWebBook(null);
       _webVideoKey = state.videoKey;
       _webActiveTrackKey = null;
+      _webPendingTrackKey = null;
       _reselectWebTrack();
     }
+    if (!listEquals(state.siteTracks, _webSiteTracks) ||
+        state.siteTrackCurrent != _webSiteTrackCurrent) {
+      _rebuild(() {
+        _webSiteTracks = state.siteTracks;
+        _webSiteTrackCurrent = state.siteTrackCurrent;
+      });
+    }
+    _maybeRequestDefaultSiteTrack();
     // 站点自己的全屏钮（网页档里点的）= 「我要看了」：换成播放器档 + 窗口全屏。
     if (state.fullscreen && state.hasVideo && !_webPlayerModeFor(state)) {
       _webForcePlayerKey = state.videoKey;
@@ -434,12 +443,17 @@ extension _VideoWebSource on _VideoFushiPageState {
   void _reselectWebTrack() {
     final VideoPlayerController? controller = _controller;
     if (controller == null || !controller.isWebBackend) return;
+    final String? pending = _webPendingTrackKey;
+    if (pending != null && (_webTracks[pending]?.cues.isNotEmpty ?? false)) {
+      _webPendingTrackKey = null;
+      _webActiveTrackKey = pending;
+    }
     final String? next = _webSubtitlesOff
         ? null
         : chooseWebVideoTrackKey(
             tracks: _webTracks.values,
             videoKey: _webVideoKey,
-            preferredLanguage: _bookRow?.language,
+            preferredLanguage: _webPreferredSubtitleLanguage,
             current: _webActiveTrackKey,
           );
     final bool changed = next != _webActiveTrackKey;
@@ -451,6 +465,65 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (changed) _rebuild(() {});
   }
 
+  /// 默认字幕语言：这本书自己的语言，没有就走与自动下字幕同一条偏好链（字幕工作台默认语言
+  /// > 默认内容语言）。stream 书的 language 多半是空的，只看它就会落到「第一条轨」= 随机语言。
+  String? get _webPreferredSubtitleLanguage => resolveSubtitleDownloadLanguage(
+    explicitSubtitlePreference: appModel.jimakuDefaultLanguage,
+    videoContentLanguage: _bookRow?.language,
+    globalDefaultContentLanguage: appModel.defaultContentLanguage,
+  );
+
+  /// 让站点播放器切到 [track]：它随即下载那条字幕文件，bridge 截下整轨后由
+  /// [_reselectWebTrack] 选中（[_webPendingTrackKey]）。
+  void _requestWebSiteTrack(WebVideoSiteTrack track) {
+    final WebVideoSession? session = _webSession;
+    if (session == null) return;
+    _webSubtitlesOff = false;
+    _webPendingTrackKey = '$_webVideoKey|${track.lang}';
+    unawaited(
+      session.evaluate(
+        'window.__fushiWebVideo.selectNetflixTrack(${jsonEncode(track.id)})',
+      ),
+    );
+    _rebuild(() {});
+  }
+
+  /// 站点字幕关着、这一集一条整轨都还没采到：按首选字幕语言替用户开一条（每集一次；用户
+  /// 在面板里关掉字幕后不再自作主张）。没有首选语言的轨就开第一条。
+  void _maybeRequestDefaultSiteTrack() {
+    if (_webSubtitlesOff ||
+        _webSiteTracks.isEmpty ||
+        _webSiteTrackCurrent.isNotEmpty ||
+        _webSiteTrackAutoVideoKey == _webVideoKey ||
+        _currentWebTracks().any((WebVideoTrack t) => !t.isLive)) {
+      return;
+    }
+    _webSiteTrackAutoVideoKey = _webVideoKey;
+    final String pref = (_webPreferredSubtitleLanguage ?? '').toLowerCase();
+    WebVideoSiteTrack pick = _webSiteTracks.first;
+    if (pref.isNotEmpty) {
+      for (final WebVideoSiteTrack track in _webSiteTracks) {
+        final String lang = track.lang.toLowerCase();
+        if (lang == pref || lang.startsWith('$pref-')) {
+          pick = track;
+          break;
+        }
+      }
+    }
+    _requestWebSiteTrack(pick);
+  }
+
+  /// 站点播放器里还没采到整轨的字幕轨（面板里列在已采到的轨后面，点选加载）。
+  List<WebVideoSiteTrack> _unloadedWebSiteTracks() {
+    final Set<String> loaded = <String>{
+      for (final WebVideoTrack track in _currentWebTracks()) track.key,
+    };
+    return <WebVideoSiteTrack>[
+      for (final WebVideoSiteTrack track in _webSiteTracks)
+        if (!loaded.contains('$_webVideoKey|${track.lang}')) track,
+    ];
+  }
+
   /// 当前视频可选的站点字幕轨（有 cue 的才列）。
   List<WebVideoTrack> _currentWebTracks() => <WebVideoTrack>[
     for (final WebVideoTrack track in _webTracks.values)
@@ -459,6 +532,7 @@ extension _VideoWebSource on _VideoFushiPageState {
 
   void _selectWebTrack(String? key) {
     _webSubtitlesOff = key == null;
+    _webPendingTrackKey = null;
     _webActiveTrackKey = key;
     _reselectWebTrack();
     _rebuild(() {});
@@ -469,6 +543,7 @@ extension _VideoWebSource on _VideoFushiPageState {
   Widget _buildWebSubtitleTrackRows(BuildContext context) {
     final Color? selectedFg = videoPanelSelectedForeground(context);
     final List<WebVideoTrack> tracks = _currentWebTracks();
+    final List<WebVideoSiteTrack> siteTracks = _unloadedWebSiteTracks();
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -480,7 +555,7 @@ extension _VideoWebSource on _VideoFushiPageState {
           selectedColor: selectedFg,
           onTap: () => _selectWebTrack(null),
         ),
-        if (tracks.isEmpty)
+        if (tracks.isEmpty && siteTracks.isEmpty)
           FushiListTileControl(
             dense: true,
             leading: const FushiIcon(Icons.closed_caption_outlined),
@@ -495,6 +570,18 @@ extension _VideoWebSource on _VideoFushiPageState {
             selected: track.key == _webActiveTrackKey,
             selectedColor: selectedFg,
             onTap: () => _selectWebTrack(track.key),
+          ),
+        for (final WebVideoSiteTrack track in siteTracks)
+          FushiListTileControl(
+            key: ValueKey<String>('video-web-site-subtitle-${track.id}'),
+            leading: const FushiIcon(Icons.closed_caption_outlined),
+            title: Text(track.name.isEmpty ? track.lang : track.name),
+            subtitle: Text(
+              _webPendingTrackKey == '$_webVideoKey|${track.lang}'
+                  ? t.web_video_track_loading
+                  : t.web_video_track_site,
+            ),
+            onTap: () => _requestWebSiteTrack(track),
           ),
       ],
     );
@@ -805,13 +892,40 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (cue == null || row == null) return _mineFieldsOnly(fields);
     final WebVideoPlaybackState? state = _webSession?.lastState;
     final String fieldSentence = (fields['sentence'] ?? '').trim();
+    final String href = state != null && state.href.isNotEmpty
+        ? state.href
+        : row.videoPath;
+    final String sentence = fieldSentence.isEmpty
+        ? cue.text.trim()
+        : fieldSentence;
+    // YouTube 与浏览器扩展同一条路（[FushiRemoteMiningService.mineImmersion] 的 YouTube 分支）：
+    // 按视频 id + 字幕时间窗从真实视频流裁画面与音频，点下就在后台制卡——不进队列、不回放，
+    // 也就没有「回放时没全屏 / 外放声音 / 字幕换了语言」这些问题。
+    final String? youtubeId = youtubeVideoIdOrNull(href);
+    if (youtubeId != null) {
+      _trackBackgroundMine(
+        _mineWebYoutubeCue(
+          ImmersionMinePayload(
+            fields: fields,
+            sentence: sentence,
+            cueSentence: cue.text,
+            documentTitle: row.title,
+            youtubeVideoId: youtubeId,
+            clipStartMs: cue.startMs,
+            clipEndMs: cue.endMs,
+          ),
+        ),
+      );
+      _showOsd(t.web_video_mine_background, icon: Icons.playlist_add_check);
+      return const MinePopupResult.queued();
+    }
     await _webMineQueue.enqueue(
       bookUid: _activeBookUid,
       videoKey: _webVideoKey,
-      href: state != null && state.href.isNotEmpty ? state.href : row.videoPath,
+      href: href,
       cueStartMs: cue.startMs,
       cueEndMs: cue.endMs,
-      sentence: fieldSentence.isEmpty ? cue.text.trim() : fieldSentence,
+      sentence: sentence,
       cueSentence: cue.text,
       fields: fields,
     );
@@ -822,8 +936,28 @@ extension _VideoWebSource on _VideoFushiPageState {
         icon: Icons.playlist_add_check,
       );
     }
-    // 卡还没真落地：不把弹窗按钮画成 ✓（弹窗侧「未知结局不重画」契约，TODO-448）。
-    return const MinePopupResult();
+    // 卡还没真落地：弹窗画「已加入」✓、不回查 Anki（TODO-448）。空回执会被弹窗当成失败
+    // （「导出卡片失败」），用户再点一次就重复入队。
+    return const MinePopupResult.queued();
+  }
+
+  /// YouTube 后台制卡的结局只剩 OSD 能告诉用户（弹窗早已画了「已加入」）；失败抛出，由
+  /// [_trackBackgroundMine] 报错并记日志。
+  Future<void> _mineWebYoutubeCue(ImmersionMinePayload payload) async {
+    final RemoteMineResult res = await appModel
+        .createRemoteMiningService()
+        .mineImmersion(payload);
+    switch (res.result) {
+      case 'success':
+        _showOsd(
+          t.card_exported(deck: res.deckName ?? ''),
+          severity: ToastSeverity.success,
+        );
+      case 'duplicate':
+        _showOsd(t.card_duplicate, severity: ToastSeverity.warning);
+      default:
+        throw StateError(res.message ?? res.detail ?? res.result);
+    }
   }
 
   /// 跑制卡队列：同一本书原地换成内置网页播放器（可捕获的 1080p 档），画面一就绪就自动

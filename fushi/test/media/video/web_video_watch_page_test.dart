@@ -67,4 +67,18 @@ void main() {
     expect(s.imageUrl, 'https://example.com/a.jpg');
     expect(parseWebVideoStatePayload(<String, Object>{})!.videoTitle, isEmpty);
   });
+  test('Netflix 字幕轨清单：每轨一行 id/lang/名，末行当前轨；坏行跳过', () {
+    const String raw = 'T1\tja\t日本語\nT2\ten\tEnglish [CC]\n\tbad\n#T2';
+    final WebVideoPlaybackState? state = parseWebVideoStatePayload(
+      <String, Object?>{'href': 'https://www.netflix.com/watch/1', 'nftt': raw},
+    );
+    expect(state!.siteTracks, const <WebVideoSiteTrack>[
+      WebVideoSiteTrack(id: 'T1', lang: 'ja', name: '日本語'),
+      WebVideoSiteTrack(id: 'T2', lang: 'en', name: 'English [CC]'),
+    ]);
+    expect(state.siteTrackCurrent, 'T2');
+    expect(parseWebVideoSiteTrackCurrent('T1\tja\tx\n#'), '');
+    expect(parseWebVideoSiteTracks(null), isEmpty);
+    expect(parseWebVideoStatePayload(<String, Object?>{})!.siteTracks, isEmpty);
+  });
 }

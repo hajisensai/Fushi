@@ -137,7 +137,48 @@
       ad: adShowing(),
       vtitle: v ? videoTitle() : '',
       vimg: v ? pageImage() : '',
+      nftt: v ? netflixTextTracks() : '',
     };
+  }
+  // ── Netflix 字幕轨（Netflix 的字幕采集是被动的：只截播放器自己下载的那一条轨。播放器档里用户
+  // 够不到 Netflix 自己的字幕菜单，所以轨清单从播放器 API 读出来交给 Dart 列在原生面板里，选哪条
+  // 就让播放器切到哪条——它随即下载那条字幕文件，netflix-bridge 照常截下整轨）。
+  // 形状：每轨一行 `trackId\tbcp47\t显示名`，末行 `#当前轨 trackId`（字幕关着为空）。用字符串
+  // 而不是数组，快照才能按值比较、不每轮重发。图片字幕截不到文字，不列。
+  function nfPlayer() {
+    try {
+      var vp = window.netflix.appContext.state.playerApp.getAPI().videoPlayer;
+      var ids = vp.getAllPlayerSessionIds();
+      return ids && ids.length ? vp.getVideoPlayerBySessionId(ids[ids.length - 1]) : null;
+    } catch (_) { return null; }
+  }
+  function netflixTextTracks() {
+    if (location.hostname.indexOf('netflix.com') < 0) return '';
+    var p = nfPlayer();
+    if (!p) return '';
+    try {
+      var list = p.getTimedTextTrackList() || [];
+      var rows = [];
+      for (var i = 0; i < list.length; i++) {
+        var t = list[i];
+        if (!t || t.isNoneTrack || t.isForcedNarrative || t.isImageBased) continue;
+        rows.push([t.trackId, t.bcp47 || t.language || 'und', t.displayName || ''].join('\t'));
+      }
+      var cur = p.getTimedTextTrack();
+      rows.push('#' + (cur && !cur.isNoneTrack ? cur.trackId : ''));
+      return rows.join('\n');
+    } catch (_) { return ''; }
+  }
+  function selectNetflixTrack(trackId) {
+    var p = nfPlayer();
+    if (!p) return false;
+    try {
+      var list = p.getTimedTextTrackList() || [];
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] && list[i].trackId === trackId) { p.setTimedTextTrack(list[i]); return true; }
+      }
+    } catch (_) {}
+    return false;
   }
   // 正在播的这一集的真名（落库的书名）：站点播放器自己的数据优先，document.title 在 SPA
   // 换集后常常还停在站名上。
@@ -409,6 +450,7 @@
     setNativeSubtitlesHidden: setNativeSubtitlesHidden,
     setPlayerChromeHidden: setPlayerChromeHidden,
     setVideoOnly: setVideoOnly,
+    selectNetflixTrack: selectNetflixTrack,
     // 原生播放器的音量控件（站点自己的音量键被藏起来了）：音量 0–1 + 静音一次设定。
     setVolume: function (volume, muted) {
       var v = video();
