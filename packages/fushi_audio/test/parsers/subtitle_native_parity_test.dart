@@ -25,6 +25,11 @@ import 'subtitle_parity_corpus.dart';
 /// NaN——x64 是 0xFFF8…、arm64 是 0x7FF8…——所以旧实现本身在两种 CPU 上的输出就差在这几
 /// 个位上（markup / ass 两项）。x64 摘要在 Windows x64 上求得，arm64 摘要在 macOS arm64 上
 /// 求得（都是删除前的旧 Dart 实现）；Rust 侧 `dart_nan()` 同样取硬件 NaN。
+///
+/// arm64 表 2026-10-19 在 macOS arm64（Apple Silicon，Flutter 3.47.6）上用 e35042dda1 的旧
+/// Dart 实现对同一语料逐项重新实测：六项里 strip / srt / vtt / ass / sweep 与原表一致，
+/// `markup` 原先钉的 `9e8c3c547a4312bb` 不是旧实现的实测值（旧实现实测 `9d8ad6ef76adc21f`），
+/// 已改为实测值。
 const Map<String, String> _oldDartDigestsX64 = <String, String>{
   'markup': '72e2b157fcf311f9',
   'strip': 'e9e4cddfbe457903',
@@ -35,7 +40,7 @@ const Map<String, String> _oldDartDigestsX64 = <String, String>{
 };
 
 const Map<String, String> _oldDartDigestsArm64 = <String, String>{
-  'markup': '9e8c3c547a4312bb',
+  'markup': '9d8ad6ef76adc21f',
   'strip': 'e9e4cddfbe457903',
   'srt': '83417cc5f677979e',
   'vtt': 'a205570d14cc5fc9',
