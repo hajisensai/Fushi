@@ -15,6 +15,10 @@ environment:
 dependencies:
   fushi_core:
     path: ../fushi_core
+  # cue↔EPUB 匹配的算法主体（Rust，native/fushi_compute）。纯 Dart FFI 绑定，
+  # 不依赖 Flutter / 插件。
+  fushi_compute:
+    path: ../fushi_compute
   xml: ^6.3.0
   meta: ^1.9.0
   # subtitle_markup.dart 用 package:characters 做字素簇切分；此前靠传递依赖

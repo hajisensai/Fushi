@@ -11,6 +11,8 @@ license = "GPL-3.0-only"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+# text.rs：UTF-16 子串查找（memmem，SIMD）。MIT / Unlicense。
+memchr = { version = "2.7", default-features = false, features = ["std"] }
 
 [profile.release]
 # 计算内核吃 CPU：取 3（不是 fushi_fsrs 的 "z"），体积换速度。

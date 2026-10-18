@@ -1,6 +1,7 @@
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'anchor_gap_filler.dart';
@@ -106,7 +107,7 @@ class MatchResult {
 /// 3. **起点检测**：取前 [defaultProbeCount] 条探测 cue（跳过以 `＊` 开头的
 ///    旁白 / 标题 cue 与规范化后 < [defaultProbeMinLen] 字的短 cue），在全书做精确
 ///    `indexOf`（+ 模糊兜底），选被最多条探测 cue 佐证的簇（BUG-2147），再收敛到
-///    簇内按 cue 序单调递增的那条命中链的首处（见 [_clusterAnchor]）。
+///    簇内按 cue 序单调递增的那条命中链的首处（native `cluster_anchor`）。
 /// 4. **主循环**（移植自 ttu-whispersync Match.svelte）：
 ///    a. 快速通道：精确 `indexOf` 命中 → score=1.0，cursor 推进。
 ///    b. 模糊兜底：在 `[cursor, cursor+searchWindow]` 内单次 Dice 滑窗扫描，
@@ -123,6 +124,11 @@ class MatchResult {
 ///       页（不在正文里）攒满 20 次 miss 后，「大野アシュリー」在正文里第一次出现
 ///       是第 18 节，游标就被钉到那里；之后每次恢复都只会再往后跳、永不回头，
 ///       整本 4719 条 cue 只命中 79 条（『妹さえいればいい。』第 2 卷）。
+///
+/// 3~4 步（算法主体）只有一份实现：native/fushi_compute 的 `ffc_text_cue_match`
+/// （Rust，`src/text.rs`），本类只做归一化 / 读音轨等数据准备与结果装配，调参常量
+/// 仍以这里的 static const 为准、按调用传过去。原生库是硬依赖，缺库时抛
+/// [FushiComputeUnavailableError]。
 class EpubSrtMatcher {
   static const int defaultSearchWindow = 200;
   static const int defaultProbeCount = 24;
@@ -221,21 +227,20 @@ class EpubSrtMatcher {
     double bestRate = -1;
     MatchResult? bestResult;
 
-    final _Index idx = _buildIndex(sections);
-    final List<String> normCueTexts = <String>[
-      for (final AudioCue c in cues) _normalizeForMatch(c.text),
-    ];
-
-    for (final int w in windows) {
-      final MatchResult r = _matchCore(
-        idx: idx,
-        sections: sections,
-        cues: cues,
-        searchWindow: w,
-        similarityThreshold: similarityThreshold,
-        maxConsecutiveMisses: maxConsecutiveMisses,
-        preNormCueTexts: normCueTexts,
-      );
+    final List<MatchResult> results = _matchWindows(
+      idx: _buildIndex(sections),
+      sections: sections,
+      cues: cues,
+      windows: windows,
+      similarityThreshold: similarityThreshold,
+      maxConsecutiveMisses: maxConsecutiveMisses,
+      normCueTexts: <String>[
+        for (final AudioCue c in cues) _normalizeForMatch(c.text),
+      ],
+    );
+    for (int i = 0; i < windows.length; i++) {
+      final int w = windows[i];
+      final MatchResult r = results[i];
       map[w] = r.matchRate;
       if (r.matchRate > bestRate + 1e-9 ||
           (r.matchRate > bestRate - 1e-9 && w < bestWindow)) {
@@ -269,42 +274,141 @@ class EpubSrtMatcher {
       );
     }
 
-    final List<String> normCueTexts = <String>[
-      for (final AudioCue c in cues) _normalizeForMatch(c.text),
-    ];
-    return _matchCore(
+    return _matchWindows(
       idx: _buildIndex(sections),
       sections: sections,
       cues: cues,
-      searchWindow: searchWindow,
+      windows: <int>[searchWindow],
       similarityThreshold: similarityThreshold,
       maxConsecutiveMisses: maxConsecutiveMisses,
-      preNormCueTexts: normCueTexts,
-    );
+      normCueTexts: <String>[
+        for (final AudioCue c in cues) _normalizeForMatch(c.text),
+      ],
+    ).single;
   }
 
-  static MatchResult _matchCore({
+  /// 每条聚簇探测 cue 在全书最多收集的精确出现处数。
+  static const int maxExactHitsPerProbe = 8;
+
+  /// 算法主体（起点检测 / 主循环 / 恢复扫描，见类注释）在
+  /// native/fushi_compute `ffc_text_cue_match` 里，一次调用跑完 [windows] 各档
+  /// （互不依赖，原生侧并行）。这里只把索引与归一化后的 cue 交过去、把结果装回
+  /// [CueMatch]，并打诊断日志。
+  static List<MatchResult> _matchWindows({
     required _Index idx,
     required List<EpubSection> sections,
     required List<AudioCue> cues,
-    required int searchWindow,
+    required List<int> windows,
     required double similarityThreshold,
     required int maxConsecutiveMisses,
-    List<String>? preNormCueTexts,
+    required List<String> normCueTexts,
+  }) {
+    final String big = idx.normText;
+    if (cues.isEmpty || sections.isEmpty) {
+      return <MatchResult>[
+        for (final int _ in windows)
+          MatchResult(
+            matches: List<CueMatch>.filled(cues.length, CueMatch.unmatched),
+            totalCues: cues.length,
+            matchedCues: 0,
+          ),
+      ];
+    }
+    final Uint8List flags = Uint8List(cues.length);
+    for (int i = 0; i < cues.length; i++) {
+      final String raw = cues[i].text;
+      if (raw.startsWith('＊') || raw.startsWith('*')) {
+        flags[i] = kCueMatchFlagSkipProbe;
+      }
+    }
+    final Int32List intParams = Int32List(CueMatchIntParam.count);
+    intParams[CueMatchIntParam.probeCount] = defaultProbeCount;
+    intParams[CueMatchIntParam.recoverMinSupport] = recoverMinSupport;
+    intParams[CueMatchIntParam.recoverScanLimit] = recoverScanLimit;
+    intParams[CueMatchIntParam.recoverMaxFuzzyProbes] = recoverMaxFuzzyProbes;
+    intParams[CueMatchIntParam.recoverFuzzyBudgetTotal] =
+        recoverFuzzyBudgetTotal;
+    intParams[CueMatchIntParam.startClusterSpan] = startClusterSpan;
+    intParams[CueMatchIntParam.probeMinLen] = defaultProbeMinLen;
+    intParams[CueMatchIntParam.shortCueMaxLen] = shortCueMaxLen;
+    intParams[CueMatchIntParam.shortCueMaxAdvance] = shortCueMaxAdvance;
+    intParams[CueMatchIntParam.cueTailOverlap] = cueTailOverlap;
+    intParams[CueMatchIntParam.maxExactHits] = maxExactHitsPerProbe;
+    intParams[CueMatchIntParam.maxConsecutiveMisses] = maxConsecutiveMisses;
+    final _ReadingTrack? reading = idx.reading;
+    final List<CueMatchWindowResult> raw = FushiComputeText.instance.match(
+      base: big,
+      sectionStarts: Int32List.fromList(idx.sectionNormStarts),
+      reading: reading == null
+          ? null
+          : CueMatchReadingTrack(
+              text: reading.text,
+              toBaseStart: reading.toBaseStart,
+              toBaseEnd: reading.toBaseEnd,
+              atomReadStart: reading.atomReadStart,
+              atomReadEnd: reading.atomReadEnd,
+              fromBase: reading.fromBase,
+            ),
+      cueTexts: normCueTexts,
+      cueFlags: flags,
+      windows: windows,
+      intParams: intParams,
+      threshold: similarityThreshold,
+      startMinRemainingRatio: startMinRemainingRatio,
+    );
+
+    final List<MatchResult> out = <MatchResult>[];
+    for (int wi = 0; wi < windows.length; wi++) {
+      final CueMatchWindowResult r = raw[wi];
+      final List<CueMatch> matches = <CueMatch>[
+        for (int ci = 0; ci < cues.length; ci++)
+          r.section[ci] < 0
+              ? CueMatch.unmatched
+              : CueMatch(
+                  cueSentenceIndex: cues[ci].sentenceIndex,
+                  sectionIndex: r.section[ci],
+                  normCharStart: r.start[ci],
+                  normCharEnd: r.end[ci],
+                  score: r.score[ci],
+                ),
+      ];
+      _logWindow(
+        idx: idx,
+        sections: sections,
+        cues: cues,
+        normCueTexts: normCueTexts,
+        window: windows[wi],
+        similarityThreshold: similarityThreshold,
+        raw: r,
+        matches: matches,
+      );
+      out.add(
+        MatchResult(
+          matches: matches,
+          totalCues: cues.length,
+          matchedCues: r.matched,
+        ),
+      );
+    }
+    return out;
+  }
+
+  static void _logWindow({
+    required _Index idx,
+    required List<EpubSection> sections,
+    required List<AudioCue> cues,
+    required List<String> normCueTexts,
+    required int window,
+    required double similarityThreshold,
+    required CueMatchWindowResult raw,
+    required List<CueMatch> matches,
   }) {
     final String big = idx.normText;
     final int totalLen = big.length;
-
-    final int start = _findStart(
-      big,
-      cues,
-      similarityThreshold,
-      preNormCueTexts,
-    );
     fushiDebugPrint(
       '[sentenceAudioHighlight] matcher: sections=${sections.length} '
-      'totalNormLen=$totalLen cues=${cues.length} startCursor=$start '
-      'threshold=$similarityThreshold',
+      'totalNormLen=$totalLen cues=${cues.length} startCursor=${raw.startCursor} '
+      'window=$window threshold=$similarityThreshold',
     );
     for (int si = 0; si < sections.length; si++) {
       final int s0 = idx.sectionNormStarts[si];
@@ -316,645 +420,42 @@ class EpubSrtMatcher {
         'normStart=$s0 normLen=${s1 - s0}',
       );
     }
-
-    final List<CueMatch> results = <CueMatch>[];
-    int cursor = start;
-    int matched = 0;
-    int consecutiveMisses = 0;
-    final _FuzzyBudget recoverFuzzyBudget = _FuzzyBudget(
-      recoverFuzzyBudgetTotal,
-    );
-    // 最近一次命中：results 下标与全书绝对起点（尾巴回吃 / 裁剪用，BUG-2204）。
-    int lastHitResult = -1;
-    int lastHitAbsStart = -1;
-
-    /// 本条在游标之前 [found] 处命中：把前一条的终点裁到 [found]（它多吃的尾巴
-    /// 还给本条），高亮 range 才不重叠。
-    void trimPreviousTo(int found) {
-      if (lastHitResult < 0 || found >= cursor) return;
-      final CueMatch prev = results[lastHitResult];
-      final int prevSectionStart = idx.sectionNormStarts[prev.sectionIndex];
-      final int newEnd = found - prevSectionStart;
-      if (newEnd <= prev.normCharStart) return;
-      results[lastHitResult] = CueMatch(
-        cueSentenceIndex: prev.cueSentenceIndex,
-        sectionIndex: prev.sectionIndex,
-        normCharStart: prev.normCharStart,
-        normCharEnd: newEnd,
-        score: prev.score,
-      );
-    }
-
-    for (int ci = 0; ci < cues.length; ci++) {
-      final AudioCue cue = cues[ci];
-      final String nc = preNormCueTexts != null
-          ? preNormCueTexts[ci]
-          : _normalizeForMatch(cue.text);
-      if (nc.isEmpty) {
-        results.add(CueMatch.unmatched);
-        continue;
-      }
-
-      // --- 恢复机制：连续 miss 过多时用聚簇佐证在全书重锚 ---
-      // 找不到够佐证的位置就原地不动，再攒 [maxConsecutiveMisses] 次 miss 才
-      // 试下一回（每次尝试最多 O(探测数 × 全书)，不能每条 miss 都跑）。
-      if (consecutiveMisses >= maxConsecutiveMisses) {
-        consecutiveMisses = 0;
-        final _ClusterAnchor? anchor = _clusterAnchor(
-          big: big,
-          cues: cues,
-          preNormCueTexts: preNormCueTexts,
-          fromCue: ci,
-          scanLimit: recoverScanLimit,
-          maxFuzzyProbes: recoverMaxFuzzyProbes,
-          fuzzyBudget: recoverFuzzyBudget,
-          similarityThreshold: similarityThreshold,
-          // 不做余量检查：剩余音频里可能整段都不在书里（片尾花絮），书尾最后
-          // 几句会被「装不下」误杀；恢复靠佐证条数守门。
-          minRemainingRatio: 0,
-          preferFrom: cursor,
-        );
-        // 往前搬：够 [recoverMinSupport] 条佐证，或（至少两条且）所有有候选的
-        // 探测 cue 都落在这一簇**且每条在全书都只精确出现一次**——书尾只剩两三条
-        // 正文 cue 时凑不满三条，但它们彼此一致、没有反证；候选只收前 8 处出现，
-        // 两条泛用短语在全书某处 3000 字内共现几乎必然，不要求唯一就会在长段人物
-        // 卡 / 广告后前跳到那个假簇。单条撞中一律不搬（泛用短语 / 版权页出版社
-        // 名）；往回搬只认前者。
-        if (anchor != null &&
-            (anchor.support >= recoverMinSupport ||
-                (anchor.pos >= cursor &&
-                    anchor.hittingProbes >= 2 &&
-                    anchor.support == anchor.hittingProbes &&
-                    anchor.allExactUnique))) {
-          fushiDebugPrint(
-            '[sentenceAudioHighlight] matcher.recover cursor=$cursor -> '
-            '${anchor.pos} support=${anchor.support} '
-            'cue="${_clip(cue.text, 24)}"',
-          );
-          cursor = anchor.pos;
-          // 游标可能回退到上一条命中之前：尾巴回吃 / 裁剪的参照作废。
-          lastHitResult = -1;
-          lastHitAbsStart = -1;
-        }
-      }
-
-      // --- 快速通道：精确 indexOf ---
-      final int windowEnd = (cursor + searchWindow).clamp(0, totalLen);
-      // 读音轨只给 ≥ [defaultProbeMinLen] 的 cue 用：全假名的读音轨里三四个字
-      // 的串随处可撞（与模糊通道限长同一理由，TODO-906）。
-      final _ReadingTrack? reading = nc.length >= defaultProbeMinLen
-          ? idx.reading
-          : null;
-      // BUG-2204：搜索起点允许回到游标前 [cueTailOverlap] 字（不越过前一条命中的
-      // 起点），让被前一条多吃掉首字的本句仍能在真实位置命中。
-      final int searchFrom = lastHitResult >= 0
-          ? (cursor - cueTailOverlap > lastHitAbsStart + 1
-                ? cursor - cueTailOverlap
-                : lastHitAbsStart + 1)
-          : cursor;
-      // 读音轨命中换回基底轨后的下限：[searchFrom] 落在某处 ruby 基底中间时，
-      // `fromBase` 把读音轨起点映回该 ruby 读音开头（偏早不跳过），命中可能整个
-      // 落回前一条命中的那处 ruby 上——基底轨的 `indexOf(nc, searchFrom)` 天然守着
-      // 「不越过前一条命中的起点」，读音轨要显式守（BUG-2928：「おいらんシルフィード」
-      // 叠到上一条「オイレンシルフィード」的同一处 ruby 上）。
-      final int readingHitFloor = lastHitResult >= 0 ? lastHitAbsStart + 1 : 0;
-      if (windowEnd - searchFrom >= nc.length) {
-        int found = big.indexOf(nc, searchFrom);
-        int matchEnd = found + nc.length;
-        // 超短 cue（≤ [shortCueMaxLen] 字）的精确命中只认紧邻游标的位置：一两个
-        // 字在 200 字窗口里几乎必然能撞上（「一」「え」「ああ」），撞上就把游标
-        // 拽走，后面整段正文全 miss。2026-09-05 无職転生 01 真机对照：ASR 字幕的
-        // 卷号 cue「一」命中了第七节「第一章」，游标越过第六节题词，12 条 cue
-        // 连锁错过（SubPlz 那份写作「＊1」，规范化后是数字 1 才侥幸没撞）。
-        final bool tooFarForShortCue =
-            nc.length <= shortCueMaxLen && found > cursor + shortCueMaxAdvance;
-        bool hit = found >= 0 && matchEnd <= windowEnd && !tooFarForShortCue;
-        if (!hit && reading != null) {
-          // 基底轨没有精确命中：同一窗口在读音轨再找一次，命中换算回基底偏移。
-          final int rLimit = reading.fromBase[windowEnd];
-          int rFrom = reading.fromBase[searchFrom];
-          while (true) {
-            final int rFound = reading.text.indexOf(nc, rFrom);
-            if (rFound < 0 || rFound + nc.length > rLimit) break;
-            final int b0 = reading.toBaseStart[rFound];
-            if (b0 >= readingHitFloor) {
-              found = b0;
-              matchEnd = reading.toBaseEnd[rFound + nc.length];
-              hit = matchEnd > found;
-              break;
-            }
-            rFrom = rFound + 1;
-          }
-        }
-        if (hit) {
-          final int secIdx = _sectionForOffset(idx.sectionNormStarts, found);
-          trimPreviousTo(found);
-          lastHitResult = results.length;
-          lastHitAbsStart = found;
-          results.add(
-            CueMatch(
-              cueSentenceIndex: cue.sentenceIndex,
-              sectionIndex: secIdx,
-              normCharStart: found - idx.sectionNormStarts[secIdx],
-              normCharEnd: matchEnd - idx.sectionNormStarts[secIdx],
-              score: 1,
-            ),
-          );
-          _logHit(
-            matched,
-            cue,
-            nc,
-            big,
-            found,
-            matchEnd,
-            secIdx,
-            idx.sectionNormStarts[secIdx],
-            1,
-            ci == cues.length - 1,
-          );
-          cursor = matchEnd;
-          matched++;
-          consecutiveMisses = 0;
-          continue;
-        }
-      }
-
-      // --- 模糊通道：滚动窗口 Dice 系数，O(window) 而非 O(window×len) ---
-      // 收紧虚高（TODO-906）：规范化后 < [defaultProbeMinLen] 的短 cue 退化为
-      // unigram Dice（[_slidingDice] 在 nLen<5 时 n=1），日语高频短虚词
-      // （うん / はい 等）极易在正文任意位置凑够字符重叠误判命中，整体抬高
-      // matchRate。这类短 cue 一律要求精确子串命中（上面的快速通道已处理），
-      // 模糊兜底只留给长 cue（听写/排版 1~2 字差异的真实正文句）。
-      double bestSim = 0;
-      int bestPos = -1;
-      int bestLen = nc.length;
-
-      final bool allowFuzzy = nc.length >= defaultProbeMinLen;
-      if (allowFuzzy && windowEnd - cursor >= nc.length) {
-        final _SlidingDiceResult r = _slidingDice(
-          needle: nc,
-          haystack: big,
-          start: searchFrom,
-          end: windowEnd,
-        );
-        if (r.score > bestSim) {
-          bestSim = r.score;
-          bestPos = r.pos;
-          bestLen = r.len;
-        }
-        // 基底轨够不到阈值时在读音轨同一窗口再扫一遍，取更高分者；区间换算回
-        // 基底轨（整个 ruby 为原子）。
-        if (bestSim < similarityThreshold && reading != null) {
-          final int rStart = reading.fromBase[searchFrom];
-          final int rEnd = reading.fromBase[windowEnd];
-          if (rEnd - rStart >= nc.length) {
-            final _SlidingDiceResult rr = _slidingDice(
-              needle: nc,
-              haystack: reading.text,
-              start: rStart,
-              end: rEnd,
-            );
-            if (rr.score > bestSim && rr.pos >= 0) {
-              // 模糊命中按覆盖过半就近取整到 ruby 边界（见
-              // [_ReadingTrack.nearestBaseStart]），不一律向外扩。
-              final int b0 = reading.nearestBaseStart(rr.pos);
-              final int b1 = reading.nearestBaseEnd(rr.pos + rr.len);
-              if (b1 > b0 && b0 >= readingHitFloor) {
-                bestSim = rr.score;
-                bestPos = b0;
-                bestLen = b1 - b0;
-              }
-            }
-          }
-        }
-      }
-
-      if (bestSim >= similarityThreshold && bestPos >= 0) {
-        final int matchEnd = bestPos + bestLen;
-        final int secIdx = _sectionForOffset(idx.sectionNormStarts, bestPos);
-        trimPreviousTo(bestPos);
-        lastHitResult = results.length;
-        lastHitAbsStart = bestPos;
-        results.add(
-          CueMatch(
-            cueSentenceIndex: cue.sentenceIndex,
-            sectionIndex: secIdx,
-            normCharStart: bestPos - idx.sectionNormStarts[secIdx],
-            normCharEnd: matchEnd - idx.sectionNormStarts[secIdx],
-            score: bestSim,
-          ),
-        );
-        _logHit(
-          matched,
-          cue,
-          nc,
-          big,
-          bestPos,
-          matchEnd,
-          secIdx,
-          idx.sectionNormStarts[secIdx],
-          bestSim,
-          ci == cues.length - 1,
-        );
-        cursor = matchEnd;
-        matched++;
-        consecutiveMisses = 0;
-      } else {
-        results.add(CueMatch.unmatched);
-        consecutiveMisses++;
-        fushiDebugPrint(
-          '[sentenceAudioHighlight] matcher.miss sid=${cue.sentenceIndex} '
-          'cue="${_clip(cue.text, 24)}" consecutive=$consecutiveMisses',
-        );
-      }
-    }
-
-    fushiDebugPrint(
-      '[sentenceAudioHighlight] matcher done: matched=$matched/${cues.length} '
-      'rate=${(matched * 100 / cues.length).toStringAsFixed(1)}% '
-      'finalCursor=$cursor/$totalLen',
-    );
-
-    return MatchResult(
-      matches: results,
-      totalCues: cues.length,
-      matchedCues: matched,
-    );
-  }
-
-  static void _logHit(
-    int hitIndex,
-    AudioCue cue,
-    String nc,
-    String big,
-    int found,
-    int matchEnd,
-    int secIdx,
-    int secBase,
-    double score,
-    bool isLast,
-  ) {
-    if (hitIndex < 5 || isLast) {
-      final String snippet = big.substring(found, matchEnd);
+    for (final (int ci, int from, int to, int support) in raw.recoveries) {
       fushiDebugPrint(
-        '[sentenceAudioHighlight] matcher.hit#$hitIndex sid=${cue.sentenceIndex} '
-        'sec=$secIdx ns=${found - secBase} '
-        'score=${score.toStringAsFixed(3)} '
-        'cue="${_clip(cue.text, 24)}" '
-        'norm="${_clip(nc, 24)}" '
-        'big="${_clip(snippet, 24)}"',
+        '[sentenceAudioHighlight] matcher.recover cursor=$from -> $to '
+        'support=$support cue="${_clip(cues[ci].text, 24)}"',
       );
     }
-  }
-
-  // ---------- Dice 系数（bigram sliding window） ----------
-
-  /// Sliding-window Dice coefficient scan. For each candidate length in
-  /// [needle.length-1, needle.length, needle.length+1], slides across
-  /// [haystack] from [start] to [end], returning the best match.
-  ///
-  /// True O(window) per tryLen: incremental gram-map update AND incremental
-  /// match counting (no full recount per position).
-  static _SlidingDiceResult _slidingDice({
-    required String needle,
-    required String haystack,
-    required int start,
-    required int end,
-  }) {
-    double bestSim = 0;
-    int bestPos = -1;
-    int bestLen = needle.length;
-
-    final int nLen = needle.length;
-    final int n = (nLen < 5) ? 1 : 2;
-
-    // Build needle gram map once (shared across all tryLen variants with same n).
-    final Map<int, int> nGrams = <int, int>{};
-    for (int i = 0; i <= nLen - n; i++) {
-      final int key = n == 1
-          ? needle.codeUnitAt(i)
-          : (needle.codeUnitAt(i) << 16) | needle.codeUnitAt(i + 1);
-      nGrams[key] = (nGrams[key] ?? 0) + 1;
+    int hitIndex = 0;
+    int lastHit = -1;
+    for (int ci = 0; ci < matches.length; ci++) {
+      if (matches[ci].matched) lastHit = ci;
     }
-    for (final int tryLen in <int>[nLen, nLen - 1, nLen + 1]) {
-      if (tryLen <= 0) continue;
-      final int scanEnd = end - tryLen + 1;
-      if (scanEnd <= start) continue;
-
-      // Use same n decision as original _diceSimilarity: unigram if either < 5.
-      final int tn = (nLen < 5 || tryLen < 5) ? 1 : 2;
-      final int tNeedleGramCount = nLen - tn + 1;
-      final int candidateGramCount = tryLen - tn + 1;
-      if (tNeedleGramCount <= 0 || candidateGramCount <= 0) continue;
-      final double denom = (tNeedleGramCount + candidateGramCount).toDouble();
-
-      // If tn differs from n (edge case: needle=4, tryLen=5), rebuild needle grams.
-      Map<int, int> effectiveNGrams;
-      if (tn != n) {
-        effectiveNGrams = <int, int>{};
-        for (int i = 0; i <= nLen - tn; i++) {
-          final int key = tn == 1
-              ? needle.codeUnitAt(i)
-              : (needle.codeUnitAt(i) << 16) | needle.codeUnitAt(i + 1);
-          effectiveNGrams[key] = (effectiveNGrams[key] ?? 0) + 1;
-        }
-      } else {
-        effectiveNGrams = nGrams;
-      }
-
-      // Build initial candidate gram map for position [start].
-      final Map<int, int> cGrams = <int, int>{};
-      for (int i = start; i <= start + tryLen - tn; i++) {
-        final int key = tn == 1
-            ? haystack.codeUnitAt(i)
-            : (haystack.codeUnitAt(i) << 16) | haystack.codeUnitAt(i + 1);
-        cGrams[key] = (cGrams[key] ?? 0) + 1;
-      }
-
-      // Compute initial match count (full scan, only once).
-      int matches = 0;
-      for (final MapEntry<int, int> e in cGrams.entries) {
-        final int nCount = effectiveNGrams[e.key] ?? 0;
-        if (nCount > 0) {
-          matches += e.value < nCount ? e.value : nCount;
-        }
-      }
-
-      double sim = (matches * 2) / denom;
-      if (sim > bestSim) {
-        bestSim = sim;
-        bestPos = start;
-        bestLen = tryLen;
-      }
-      if (bestSim >= 1.0) break;
-
-      // Slide with incremental match update.
-      for (int pos = start + 1; pos < scanEnd; pos++) {
-        // Remove gram leaving the window (at pos-1).
-        final int outIdx = pos - 1;
-        final int outKey = tn == 1
-            ? haystack.codeUnitAt(outIdx)
-            : (haystack.codeUnitAt(outIdx) << 16) |
-                  haystack.codeUnitAt(outIdx + 1);
-        final int outOldCount = cGrams[outKey]!;
-        final int outNCount = effectiveNGrams[outKey] ?? 0;
-        // If this gram was contributing to matches, check if removing reduces it.
-        if (outNCount > 0 && outOldCount <= outNCount) {
-          matches--;
-        }
-        if (outOldCount <= 1) {
-          cGrams.remove(outKey);
-        } else {
-          cGrams[outKey] = outOldCount - 1;
-        }
-
-        // Add gram entering the window (at pos + tryLen - tn).
-        final int inIdx = pos + tryLen - tn;
-        final int inKey = tn == 1
-            ? haystack.codeUnitAt(inIdx)
-            : (haystack.codeUnitAt(inIdx) << 16) |
-                  haystack.codeUnitAt(inIdx + 1);
-        final int inOldCount = cGrams[inKey] ?? 0;
-        final int inNCount = effectiveNGrams[inKey] ?? 0;
-        // If adding this gram brings the candidate count to within needle range.
-        if (inNCount > 0 && inOldCount < inNCount) {
-          matches++;
-        }
-        cGrams[inKey] = inOldCount + 1;
-
-        sim = (matches * 2) / denom;
-        if (sim > bestSim) {
-          bestSim = sim;
-          bestPos = pos;
-          bestLen = tryLen;
-        }
-        if (bestSim >= 1.0) break;
-      }
-      if (bestSim >= 1.0) break;
-    }
-
-    return _SlidingDiceResult(bestSim, bestPos, bestLen);
-  }
-
-  // ---------- 起点检测 ----------
-
-  /// 前 [defaultProbeCount] 条 cue（跳过 `＊` 开头与短于 [defaultProbeMinLen] 的）
-  /// 各自在全书找候选位置——精确匹配取全部出现（上限几处），精确失败则做一次全书
-  /// 滚动 Dice，≥ [similarityThreshold] 才算——然后选**被最多条 cue 佐证**的位置：
-  /// 候选 p 的支持数 = 有候选落在 `[p, p + startClusterSpan]` 内的 cue 条数，取最大，
-  /// 同分取最早。任何候选若其后剩余正文不足 cue 总长 × [startMinRemainingRatio]
-  /// 则淘汰（BUG：ASR 片头的「株式会社KADOKAWA」只在书尾版权页精确命中，旧实现
-  /// 「任一条精确命中的最小偏移」就把游标钉到全书末尾，之后 8000 条 cue 全 miss、
-  /// 匹配率 0%；主循环的恢复只会向前 indexOf，回不来）。全部 miss 回到 0。
-  ///
-  /// 全书模糊扫描的代价：每条 O(全书长度)，最多 24 条，13 万字的书约几十毫秒，
-  /// 且本函数只在导入时跑一次（在 isolate 里）。
-  static int _findStart(
-    String big,
-    List<AudioCue> cues,
-    double similarityThreshold, [
-    List<String>? preNormCueTexts,
-  ]) {
-    final _ClusterAnchor? anchor = _clusterAnchor(
-      big: big,
-      cues: cues,
-      preNormCueTexts: preNormCueTexts,
-      fromCue: 0,
-      scanLimit: defaultProbeCount,
-      maxFuzzyProbes: defaultProbeCount,
-      fuzzyBudget: _FuzzyBudget(defaultProbeCount),
-      similarityThreshold: similarityThreshold,
-      minRemainingRatio: startMinRemainingRatio,
-      preferFrom: null,
-    );
-    return anchor?.pos ?? 0;
-  }
-
-  /// 起点检测与恢复扫描共用的「聚簇佐证」：从 [fromCue] 起最多扫 [scanLimit] 条
-  /// cue，凑 [defaultProbeCount] 条探测 cue（跳过 `＊` 开头与短于
-  /// [defaultProbeMinLen] 的），每条在全书找候选（精确取全部出现、上限 8 处；精确
-  /// 失败且模糊配额 [maxFuzzyProbes] 未用完则做一次全书滚动 Dice，≥
-  /// [similarityThreshold] 才算）。候选 p 的支持数 = 有候选落在
-  /// `[p, p + startClusterSpan]` 内的探测 cue 条数；余量不足（其后正文装不下
-  /// [fromCue] 起的 cue 总长 × [startMinRemainingRatio]）的候选淘汰。
-  ///
-  /// 选法：支持数最大者；同分时 [preferFrom] 为 null（起点）取最早，否则优先
-  /// `p >= preferFrom` 且离 [preferFrom] 最近——恢复时只有佐证**更多**的簇才会把
-  /// 游标往回搬。返回的位置再收敛：簇内每条探测 cue 的命中按 cue 序排成
-  /// (cue 序, 位置) 对，取**最长递增子序列**的首处——正文 cue 的命中天然按 cue 序
-  /// 单调递增，簇内乱序的那条（cue 序靠前却命中在后：片头人名 / 泛用短语在正文
-  /// 里的偶然出现）进不了链；「cue 序最靠前的探测 cue」会被这种撞中拽走，把簇里
-  /// 其余二十几条真正文甩到游标之前。
-  ///
-  /// 一条探测 cue 都没有候选返回 null。[fuzzyBudget] 是调用方整次匹配级的全书
-  /// 模糊扫描总预算（每次调用另受 [maxFuzzyProbes] 封顶）。
-  static _ClusterAnchor? _clusterAnchor({
-    required String big,
-    required List<AudioCue> cues,
-    required List<String>? preNormCueTexts,
-    required int fromCue,
-    required int scanLimit,
-    required int maxFuzzyProbes,
-    required _FuzzyBudget fuzzyBudget,
-    required double similarityThreshold,
-    required double minRemainingRatio,
-    required int? preferFrom,
-  }) {
-    String norm(int i) => preNormCueTexts != null
-        ? preNormCueTexts[i]
-        : _normalizeForMatch(cues[i].text);
-
-    // 每条探测 cue 的候选位置（cue 序保持）；[perCueExactUnique] 同序，标记该
-    // 条是否在全书恰好精确出现一次（模糊命中不算）。
-    final List<List<int>> perCue = <List<int>>[];
-    final List<bool> perCueExactUnique = <bool>[];
-    int fuzzyUsed = 0;
-    for (
-      int i = fromCue;
-      i < cues.length &&
-          i - fromCue < scanLimit &&
-          perCue.length < defaultProbeCount;
-      i++
-    ) {
-      final String raw = cues[i].text;
-      if (raw.startsWith('＊') || raw.startsWith('*')) {
-        continue;
-      }
-      final String nc = norm(i);
-      if (nc.length < defaultProbeMinLen) {
-        continue;
-      }
-      final List<int> found = <int>[];
-      int from = 0;
-      while (found.length < 8) {
-        final int at = big.indexOf(nc, from);
-        if (at < 0) break;
-        found.add(at);
-        from = at + 1;
-      }
-      final bool exactUnique = found.length == 1;
-      if (found.isEmpty &&
-          fuzzyUsed < maxFuzzyProbes &&
-          fuzzyBudget.remaining > 0) {
-        fuzzyUsed++;
-        fuzzyBudget.remaining--;
-        final _SlidingDiceResult r = _slidingDice(
-          needle: nc,
-          haystack: big,
-          start: 0,
-          end: big.length,
+    for (int ci = 0; ci < matches.length; ci++) {
+      final CueMatch m = matches[ci];
+      if (!m.matched) continue;
+      if (hitIndex < 5 || ci == lastHit) {
+        final int secBase = idx.sectionNormStarts[m.sectionIndex];
+        final String snippet = big.substring(
+          secBase + m.normCharStart,
+          secBase + m.normCharEnd,
         );
-        if (r.pos >= 0 && r.score >= similarityThreshold) found.add(r.pos);
+        fushiDebugPrint(
+          '[sentenceAudioHighlight] matcher.hit#$hitIndex '
+          'sid=${m.cueSentenceIndex} sec=${m.sectionIndex} '
+          'ns=${m.normCharStart} score=${m.score.toStringAsFixed(3)} '
+          'cue="${_clip(cues[ci].text, 24)}" '
+          'norm="${_clip(normCueTexts[ci], 24)}" '
+          'big="${_clip(snippet, 24)}"',
+        );
       }
-      if (found.isNotEmpty) {
-        perCue.add(found);
-        perCueExactUnique.add(exactUnique);
-      }
+      hitIndex++;
     }
-    if (perCue.isEmpty) return null;
-
-    // 余量检查：锚点之后剩下的正文得装得下剩余音频（[minRemainingRatio] 为 0
-    // 时不查）。
-    int minRemaining = 0;
-    if (minRemainingRatio > 0) {
-      int remainingCueLen = 0;
-      for (int i = fromCue; i < cues.length; i++) {
-        remainingCueLen += norm(i).length;
-      }
-      minRemaining = (remainingCueLen * minRemainingRatio).ceil();
-    }
-    // 淘汰后按探测 cue 分组保留（佐证计数与收敛都只看幸存候选：版权页那条精确
-    // 命中不能再以「簇内 cue 序最靠前」的身份把收敛后的位置拖到书尾）。
-    final List<List<int>> kept = <List<int>>[];
-    final List<bool> keptExactUnique = <bool>[];
-    for (int k = 0; k < perCue.length; k++) {
-      final List<int> f = <int>[
-        for (final int p in perCue[k])
-          if (big.length - p >= minRemaining) p,
-      ];
-      if (f.isEmpty) continue;
-      kept.add(f);
-      keptExactUnique.add(perCueExactUnique[k]);
-    }
-    final List<int> candidates = <int>[for (final List<int> f in kept) ...f]
-      ..sort();
-    if (candidates.isEmpty) return null;
-
-    int bestPos = candidates.first;
-    int bestSupport = -1;
-    for (final int p in candidates) {
-      int support = 0;
-      for (final List<int> f in kept) {
-        if (f.any((int q) => q >= p && q <= p + startClusterSpan)) support++;
-      }
-      if (support > bestSupport) {
-        bestSupport = support;
-        bestPos = p;
-      } else if (support == bestSupport &&
-          preferFrom != null &&
-          _closerAhead(preferFrom, p, bestPos)) {
-        bestPos = p;
-      }
-    }
-
-    // 收敛：簇内命中按 (cue 序, 位置) 取最长递增子序列，锚到链首。
-    final int refined = _monotoneChainStart(
-      kept,
-      bestPos,
-      bestPos + startClusterSpan,
+    fushiDebugPrint(
+      '[sentenceAudioHighlight] matcher done: matched=${raw.matched}/${cues.length} '
+      'rate=${(raw.matched * 100 / cues.length).toStringAsFixed(1)}% '
+      'finalCursor=${raw.finalCursor}/$totalLen',
     );
-    if (refined >= 0) bestPos = refined;
-    return _ClusterAnchor(
-      bestPos,
-      bestSupport,
-      kept.length,
-      allExactUnique: keptExactUnique.every((bool u) => u),
-    );
-  }
-
-  /// 簇 `[from, to]` 内各探测 cue（[kept] 按 cue 序）的命中位置，按 cue 序与位置
-  /// **同时**严格递增取最长子序列，返回链首位置；簇内没有命中返回 -1。
-  /// 每条探测 cue 的多处命中都参与（同一条只能入链一次），探测 ≤ 24 条 × ≤ 8 处，
-  /// O(n²) 足够。同长链取先枚举到的（位置更靠前）。
-  static int _monotoneChainStart(List<List<int>> kept, int from, int to) {
-    final List<(int, int)> items =
-        <(int, int)>[
-          for (int k = 0; k < kept.length; k++)
-            for (final int q in kept[k])
-              if (q >= from && q <= to) (k, q),
-        ]..sort(((int, int) a, (int, int) b) {
-          final int byCue = a.$1.compareTo(b.$1);
-          return byCue != 0 ? byCue : a.$2.compareTo(b.$2);
-        });
-    if (items.isEmpty) return -1;
-    final List<int> length = List<int>.filled(items.length, 1);
-    final List<int> previous = List<int>.filled(items.length, -1);
-    int bestEnd = 0;
-    for (int j = 0; j < items.length; j++) {
-      for (int i = 0; i < j; i++) {
-        if (items[i].$1 < items[j].$1 &&
-            items[i].$2 < items[j].$2 &&
-            length[i] + 1 > length[j]) {
-          length[j] = length[i] + 1;
-          previous[j] = i;
-        }
-      }
-      if (length[j] > length[bestEnd]) bestEnd = j;
-    }
-    int head = bestEnd;
-    while (previous[head] >= 0) {
-      head = previous[head];
-    }
-    return items[head].$2;
-  }
-
-  /// 同分候选取舍：[p] 是否比当前 [best] 更该选——先看是否在 [from] 之后，都在
-  /// （或都不在）则取离 [from] 更近者。
-  static bool _closerAhead(int from, int p, int best) {
-    final bool pAhead = p >= from;
-    final bool bestAhead = best >= from;
-    if (pAhead != bestAhead) return pAhead;
-    return (p - from).abs() < (best - from).abs();
   }
 
   static String _clip(String s, int n) {
@@ -1030,60 +531,6 @@ class EpubSrtMatcher {
       anyRuby ? _ReadingTrack.build(sections, normStarts, big.length) : null,
     );
   }
-
-  static int _sectionForOffset(List<int> starts, int offset) {
-    int lo = 0;
-    int hi = starts.length - 1;
-    int ans = 0;
-    while (lo <= hi) {
-      final int mid = (lo + hi) >> 1;
-      if (starts[mid] <= offset) {
-        ans = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    return ans;
-  }
-}
-
-/// [EpubSrtMatcher._clusterAnchor] 的结果：锚点在全书归一化串里的位置与佐证条数。
-class _ClusterAnchor {
-  const _ClusterAnchor(
-    this.pos,
-    this.support,
-    this.hittingProbes, {
-    required this.allExactUnique,
-  });
-
-  /// 收敛后的锚点（≥ 选出的簇起点）。
-  final int pos;
-
-  /// 落在选出的簇（收敛前的 `[簇起点, +startClusterSpan]`）内的探测 cue 条数。
-  final int support;
-
-  /// 在全书至少有一处候选（余量检查后）的探测 cue 条数；`support ==
-  /// hittingProbes` 即没有任何探测 cue 指向别处。
-  final int hittingProbes;
-
-  /// 有候选的探测 cue 是否每条都在全书恰好精确出现一次（模糊命中不算）。
-  final bool allExactUnique;
-}
-
-/// 整次匹配级的全书模糊扫描总预算（见 [EpubSrtMatcher.recoverFuzzyBudgetTotal]）。
-class _FuzzyBudget {
-  _FuzzyBudget(this.remaining);
-
-  int remaining;
-}
-
-class _SlidingDiceResult {
-  const _SlidingDiceResult(this.score, this.pos, this.len);
-
-  final double score;
-  final int pos;
-  final int len;
 }
 
 class _Index {
@@ -1131,27 +578,6 @@ class _ReadingTrack {
   /// 某段读音中间。
   final Int32List atomReadStart;
   final Int32List atomReadEnd;
-
-  /// 模糊命中的起点换回基底轨：落在某段读音中间时按**剩余部分是否过半**取整——
-  /// 过半取该 ruby 基底起点，不足一半取其基底终点（这段 ruby 不算进命中）。
-  ///
-  /// [toBaseStart] 一律向外扩：bigram Dice 不看顺序，窗口骑在两处相邻同读音 ruby
-  /// 之间（「…ーど|おいれんしるふ…」）也能凑出高分，向外扩会把只沾了两个尾字的
-  /// 前一处 ruby 整个算进来，与上一条 cue 的命中重叠（BUG-2928）。精确命中不走这里。
-  int nearestBaseStart(int p) {
-    final int r0 = atomReadStart[p];
-    if (r0 >= p) return toBaseStart[p];
-    final int r1 = atomReadEnd[p];
-    return (r1 - p) * 2 >= r1 - r0 ? toBaseStart[p] : toBaseEnd[p];
-  }
-
-  /// [nearestBaseStart] 的终点版：覆盖过半取该 ruby 基底终点，否则取其基底起点。
-  int nearestBaseEnd(int e) {
-    final int r0 = atomReadStart[e];
-    if (r0 >= e) return toBaseEnd[e];
-    final int r1 = atomReadEnd[e];
-    return (e - r0) * 2 >= r1 - r0 ? toBaseEnd[e] : toBaseStart[e];
-  }
 
   static _ReadingTrack build(
     List<EpubSection> sections,
@@ -1289,15 +715,15 @@ MatchResult _matchEntrypoint(_MatchRequest req) {
   final List<String> normCueTexts = <String>[
     for (final String t in req.cueTexts) EpubSrtMatcher._normalizeForMatch(t),
   ];
-  return EpubSrtMatcher._matchCore(
+  return EpubSrtMatcher._matchWindows(
     idx: EpubSrtMatcher._buildIndex(req.sections),
     sections: req.sections,
     cues: cues,
-    searchWindow: req.searchWindow,
+    windows: <int>[req.searchWindow],
     similarityThreshold: req.similarityThreshold,
     maxConsecutiveMisses: req.maxConsecutiveMisses,
-    preNormCueTexts: normCueTexts,
-  );
+    normCueTexts: normCueTexts,
+  ).single;
 }
 
 /// [EpubSrtMatcher.probeInIsolate] 的结果。
