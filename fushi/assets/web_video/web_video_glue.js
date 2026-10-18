@@ -223,7 +223,23 @@
     // 播放器按 resize 重新量容器、重新选码率。
     try { window.dispatchEvent(new Event('resize')); } catch (_) {}
     if (on) preferHighestQuality();
+    setAutoAdvanceGuard(on);
     return !!v;
+  }
+  // 站点自己的「自动连播」（YouTube autonav、网飞片尾倒计时进下一集）在 Fushi 里不该发生：
+  // 下一集由 Fushi 决定。藏起来的控件 click() 照样生效。
+  var autoAdvanceTimer = null;
+  function setAutoAdvanceGuard(on) {
+    if (autoAdvanceTimer) { clearInterval(autoAdvanceTimer); autoAdvanceTimer = null; }
+    if (!on) return;
+    autoAdvanceTimer = setInterval(function () {
+      try {
+        var yt = document.querySelector('.ytp-autonav-toggle-button[aria-checked="true"]');
+        if (yt) yt.click();
+        var nf = document.querySelector('[data-uia="watch-credits-seamless-button"]');
+        if (nf) nf.click();
+      } catch (_) {}
+    }, 1000);
   }
   // YouTube 自动画质还会看带宽历史等，铺满之后再经播放器 API 锁到可用的最高档（级别列表要等
   // 清单加载完才有，前 30 s 每 2 s 试一次）。其它站点不提供这类 API，靠容器铺满。

@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'package:media_kit_video/src/video_controller/platform_video_controller.dart';
+import 'package:media_kit_video/src/video_controller/external_video_controller.dart';
 
 import 'package:media_kit_video/src/video_controller/native_video_controller/native_video_controller.dart';
 import 'package:media_kit_video/src/video_controller/android_video_controller/android_video_controller.dart';
@@ -82,7 +83,13 @@ class VideoController {
       await completer.future;
 
       try {
-        if (NativeVideoController.supported) {
+        // FUSHI FORK: externally rendered players get no texture (and must not
+        // be asked for an mpv handle) — see external_video_controller.dart.
+        if (player.platform is ExternallyRenderedPlatformPlayer) {
+          final result = ExternalVideoController(player, configuration);
+          platform.complete(result);
+          notifier.value = result;
+        } else if (NativeVideoController.supported) {
           final result = await NativeVideoController.create(
             player,
             configuration,
