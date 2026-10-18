@@ -155,8 +155,6 @@ void main() {
         'lib/src/pages/implementations/video_fushi_page.dart': 1,
         // 词典查词高亮索引带（indexTape）构建时的码点遍历。
         'packages/fushi_dictionary/lib/src/language/language.dart': 1,
-        // 字幕富文本 span 的 grapheme 偏移区间计算。
-        'packages/fushi_audio/lib/src/parsers/subtitle_markup.dart': 1,
         // 复习卡面点词查词：点击位置的码元偏移折成字素下标（查词高亮定位），以及
         // 查词串的长度上限（100 字素）保护；是定位 / 校验不是记账。
         'lib/src/pages/implementations/srs/srs_card_lookup.dart': 2,
