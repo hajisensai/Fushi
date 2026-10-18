@@ -5,7 +5,7 @@
 //! `findNotes "<文件名>"` 对齐——**大小写不敏感的朴素子串**，不判文件名边界。
 //!
 //! 做法（与旧实现逐步一致，含命中顺序）：
-//! - 名字与正文都按 Dart `toLowerCase` 逐码点折叠（[dart_lower_table]，见生成脚本文件头），
+//! - 名字与正文都按 Dart `toLowerCase` 逐码点折叠（全 crate 共用的 [super::dart_lower]），
 //!   在 UTF-16 码元下标上工作；
 //! - 有扩展名的名字按「最后一个 `.` 起的后缀」分组，记下各组出现过的长度（插入序）；扫正文时
 //!   对每个后缀（插入序）找出全部出现处（允许重叠，升序），按每个长度回切子串查「折叠名 →
@@ -19,72 +19,10 @@
 
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
-use std::sync::OnceLock;
 
 use crate::{guard, hand_over_bytes, status};
 
-mod dart_lower_table;
-
-use dart_lower_table::DART_LOWER_PAIRS;
-
-/// BMP 直查表（128 KiB，首次使用时展开）；BMP 外走二分。
-fn bmp_lower_table() -> &'static [u16; 0x10000] {
-    static TABLE: OnceLock<Box<[u16; 0x10000]>> = OnceLock::new();
-    TABLE.get_or_init(|| {
-        let mut table = Box::new([0u16; 0x10000]);
-        for (cp, slot) in table.iter_mut().enumerate() {
-            *slot = cp as u16;
-        }
-        for &(cp, lower) in DART_LOWER_PAIRS.iter() {
-            if cp > 0xFFFF {
-                break;
-            }
-            table[cp as usize] = lower as u16;
-        }
-        table
-    })
-}
-
-/// 码点按 Dart `toLowerCase` 折叠（孤立代理码元原样）。
-pub fn dart_lower_code_point(cp: u32) -> u32 {
-    if cp <= 0xFFFF {
-        return u32::from(bmp_lower_table()[cp as usize]);
-    }
-    match DART_LOWER_PAIRS.binary_search_by_key(&cp, |&(from, _)| from) {
-        Ok(index) => DART_LOWER_PAIRS[index].1,
-        Err(_) => cp,
-    }
-}
-
-/// 把 UTF-16 码元按 Dart `String.toLowerCase` 折叠进 [out]（先清空）。长度不变：表保证
-/// BMP 内外不交叉。代理对按码点折叠，孤立代理原样。
-pub fn dart_lower_utf16_into(units: &[u16], out: &mut Vec<u16>) {
-    out.clear();
-    out.reserve(units.len());
-    let table = bmp_lower_table();
-    let len = units.len();
-    let mut i = 0;
-    while i < len {
-        let unit = units[i];
-        if (0xD800..=0xDBFF).contains(&unit) && i + 1 < len {
-            let low = units[i + 1];
-            if (0xDC00..=0xDFFF).contains(&low) {
-                let cp = 0x10000 + ((u32::from(unit) - 0xD800) << 10) + (u32::from(low) - 0xDC00);
-                let lower = dart_lower_code_point(cp) - 0x10000;
-                out.push(0xD800 + (lower >> 10) as u16);
-                out.push(0xDC00 + (lower & 0x3FF) as u16);
-                i += 2;
-                continue;
-            }
-        }
-        if (0xD800..=0xDFFF).contains(&unit) {
-            out.push(unit);
-        } else {
-            out.push(table[unit as usize]);
-        }
-        i += 1;
-    }
-}
+use super::dart_lower::dart_lower_utf16_into;
 
 /// FNV-1a over u16（查表键很短，SipHash 的抗碰撞开销不值）。
 #[derive(Default)]
@@ -444,32 +382,6 @@ mod tests {
         let mut out = Vec::new();
         scan.names_in(&u(text), &mut out);
         out.iter().map(|&i| names[i as usize].to_string()).collect()
-    }
-
-    #[test]
-    fn lower_table_matches_generator_digest() {
-        let mut hash: u32 = 0x811c9dc5;
-        for cp in 0..0x110000u32 {
-            let lower = if (0xD800..=0xDFFF).contains(&cp) {
-                cp
-            } else {
-                dart_lower_code_point(cp)
-            };
-            for b in lower.to_le_bytes() {
-                hash ^= u32::from(b);
-                hash = hash.wrapping_mul(0x01000193);
-            }
-        }
-        assert_eq!(hash, dart_lower_table::DART_LOWER_TABLE_FNV1A);
-    }
-
-    #[test]
-    fn dart_lowercase_is_simple_and_context_free() {
-        let mut out = Vec::new();
-        dart_lower_utf16_into(&u("ΣΑΣ İ ẞ ǅ \u{10400}"), &mut out);
-        assert_eq!(String::from_utf16(&out).unwrap(), "σασ i ß ǆ \u{10428}");
-        dart_lower_utf16_into(&[0x41, 0xD801, 0x42, 0xDC00], &mut out);
-        assert_eq!(out, vec![0x61, 0xD801, 0x62, 0xDC00]);
     }
 
     #[test]

@@ -191,7 +191,7 @@ WHATWG 算法（没有 `<template>` 内容文档、`<rb>` / `<rtc>` 不隐含结
 口径：原正则大量用先行断言，且 Dart `RegExp` 是逐 UTF-16 码元、`\s` 为 JS 空白集合、`\d` 只有 ASCII、
 不区分大小写走 JS Canonicalize（非 ASCII 永不折叠到 ASCII）——`regex` crate 在这些边界上不一致，所以
 `src/parse/media_name/js_regex.rs` 实现了本域用到的那部分 ECMAScript 回溯语义，`dart_str.rs` 复现
-Dart `trim` / `int.tryParse` / `toLowerCase`（逐码点简单映射，只用于与常量比较、不进输出）。JSON 语法与 `jsonDecode` 一致（重复键后者生效、
+Dart `trim` / `int.tryParse`，`toLowerCase` 用 crate 共用的冻结表（见下「Dart `toLowerCase` 口径」；只用于与常量比较、不进输出）。JSON 语法与 `jsonDecode` 一致（重复键后者生效、
 孤立代理照收等，见 `fribb.rs` 文件头）。
 
 回归：删旧实现前用旧 Dart（原文件副本）与新链路逐条对拍——本机视频库 1697 条真实路径（1698 个路径段）、
@@ -227,9 +227,8 @@ Fribb 全表（7.5 MB）+ 1 万份模糊 JSON，**0 处不一致**。冻结摘�
 `utf8.decode(allowMalformed: true)` 解码后判重——**开头的 UTF-8 BOM 被剥掉**（`\u{FEFF}info` 与
 `info` 是同一个键）；字节串在 Dart 里是 `Uint8List`，也满足 `is List<Object?>`，所以 `files` /
 `path` 写成字节串时按「元素全是整数的列表」处理；字节串长度让 `index + length` 溢出 i64 时
-报旧实现 catch-all 的「truncated or malformed bencode」。大小写折叠用
-`tool/gen_dart_lower_table.dart` 从 Dart SDK 冻结的逐码点表（Dart 是简单映射、不看上下文：
-词尾 Σ 照样折成 σ，U+0130 折成单个 `i`），测试对每个码点与 `String.toLowerCase` 比对。
+报旧实现 catch-all 的「truncated or malformed bencode」。大小写折叠用 crate 共用的 Dart
+`toLowerCase` 冻结表（见下「Dart `toLowerCase` 口径」），测试对每个码点与 `String.toLowerCase` 比对。
 
 SHA-1 用 RustCrypto `sha1` 0.10（MIT OR Apache-2.0）。
 
@@ -267,9 +266,9 @@ Anki 媒体引用扫描（真实牌组 30794 条笔记 / 9054 万 UTF-16 码元�
 | `fushi_engine/.../metadata/tmdb_episode_matcher.dart` | 四轮 × 来源 × 候选 × 标题² 逐对 `similarityNormalized` | 整池标题一次批量归一化 + 一次相似度矩阵，查表；匹配逻辑不变 |
 
 **逐位一致是硬约束**，按 Dart 语义复刻而不是按 Rust 习惯：字符串一律 UTF-16（`String.runes`
-解码规则、孤立代理照算）；长度比较用码元、编辑距离与分词用码点（原实现就是混用的）；`toLowerCase`
-/ `\s` / `trim()` / 分词字母判定是 `tool/gen_title_tables.dart` 从 Dart 运行时逐码点冻结的表
-（换 SDK 重生成会改口径）；`package:xml` 6.6 的事件语法、实体解码、嵌套校验、`int.tryParse`
+解码规则、孤立代理照算）；长度比较用码元、编辑距离与分词用码点（原实现就是混用的）；`\s` / `trim()` /
+分词字母判定是 `tool/gen_title_tables.dart` 从 Dart 运行时逐码点冻结的表（换 SDK 重生成会改口径），
+`toLowerCase` 用 crate 共用的冻结表（见下「Dart `toLowerCase` 口径」）；`package:xml` 6.6 的事件语法、实体解码、嵌套校验、`int.tryParse`
 （含 `0x` 前缀与 64 位回绕）、Dart UTF-8 解码器的报错文案与偏移、Dart `List.sort` 的不稳定
 双轴快排（两处排序有打平且后面截断，换稳定排序会换掉选中的标题）都逐步照抄。编辑距离用 Myers 位
 并行（≤64 码点），与 DP 随机对拍相等。唯一刻意差异：原实现在块尾把未见 `<` 的文本先吐成事件，
@@ -295,6 +294,21 @@ Anki 媒体引用扫描（真实牌组 30794 条笔记 / 9054 万 UTF-16 码元�
 | `normalize` | 101889 个标题 | 618 ms | 92 ms | 6.7× |
 | TMDB 分集匹配（批量归一化 + 相似度矩阵） | 1500 场景 / ≈35k 链接 | 35.0 s | 6.4 s | 5.4× |
 | `findByAnimeId`（异步 API，记录缓存未命中） | 25000 次 | 307 ms | 514 ms | 0.6×（变慢：每次未命中多一次 FFI 取记录 + 解码，≈20 µs/次） |
+
+## Dart `toLowerCase` 口径（全 crate 共用）
+
+凡是复刻 Dart `String.toLowerCase()` 的地方（Anki 媒体扫描、字幕段头 / 样式名、标题归一化与 AniDB
+目录、媒体文件名、弹幕关键字、EPUB / html5lib 标签名比较）都走 `src/parse/dart_lower.rs`，查同一张
+表 `src/parse/dart_lower/table.rs`。表由 `tool/gen_dart_lower_table.dart` 从**运行脚本的 Dart SDK**
+逐码点导出（`--check` 只比对；2026-10-19 在 Flutter 3.47.6 / Dart 3.13.5 下与入库表一致），其它生成器
+不再各自导出小写表。Dart VM 的 `toLowerCase` 是逐码点简单映射：不看上下文（词尾 Σ 照样折成 σ）、
+U+0130 折成单个 `i`、UTF-16 长度与下标不变，孤立代理原样。
+
+**不要用 Rust 的 `char::to_lowercase` / `str::to_lowercase`**：它是完整映射（U+0130 → `i` + U+0307），
+Unicode 版本也比 Dart VM 的表新——Rust 1.96 下有 465 个码点 Dart 原样保留、Rust 会折叠（切罗基文、
+格鲁吉亚 Mtavruli、拉丁扩展-D 新增字母、若干补充平面文字），测试
+`dart_lower::tests::rust_std_differs_only_where_dart_keeps_the_code_point` 钉住这一形态。换 SDK 后
+`--check` 不一致说明 Dart 的表变了，重生成会同时改变上述所有域的口径。
 
 ## 构建
 

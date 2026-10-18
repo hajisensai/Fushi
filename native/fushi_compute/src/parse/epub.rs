@@ -221,13 +221,10 @@ fn trim(s: &[u16]) -> &[u16] {
     &s[a..b]
 }
 
-/// `localName.toLowerCase()`（只用于与 ASCII 标签名比较）。
+/// `localName.toLowerCase()`（只用于与 ASCII 标签名比较）。按 Dart 冻结表折叠：Rust 的
+/// `to_lowercase` 把 U+0130 折成两个码点，`<İmg>` 就认不成 `img` 了。
 fn lower(name: &str) -> String {
-    if name.is_ascii() {
-        name.to_ascii_lowercase()
-    } else {
-        name.to_lowercase()
-    }
+    super::dart_lower::dart_lower_str(name)
 }
 
 fn utf16(s: &str) -> Vec<u16> {

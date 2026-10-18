@@ -11,9 +11,9 @@
 //!   （消息与 VM 一致）。
 //! - [round_to_int]：`double.round()`（NaN/Inf 抛 `UnsupportedError`，有限值饱和到 int64）。
 //! - [split_str]：`String.split(String)`（空串得到 `[""]`）。
-//! - [to_lower]：`String.toLowerCase()`（逐码点映射表，由生成器从 Dart SDK 导出）。
+//! - [to_lower]：`String.toLowerCase()`（crate 共用的冻结表，见 [crate::parse::dart_lower]）。
 
-use super::tables::LOWERCASE_MAP;
+use crate::parse::dart_lower::dart_lower_utf16;
 
 /// Dart 侧要按原类型重新抛出的异常（旧实现会从解析函数里抛出的那几种）。
 #[derive(Clone, Debug, PartialEq)]
@@ -188,53 +188,11 @@ pub fn ws_tokens(s: &[u16]) -> Vec<&[u16]> {
         .collect()
 }
 
-/// 单个码点的 Dart `toLowerCase()`。
+/// `String.toLowerCase()`（crate 共用的冻结表 [crate::parse::dart_lower]：逐码点映射，合法代理对
+/// 按码点查表，孤立代理原样）。映射不改变 UTF-16 长度，所以下标与原串一一对应。
 #[inline]
-pub fn lower_cp(cp: u32) -> u32 {
-    if cp < 0x80 {
-        return if (0x41..=0x5A).contains(&cp) {
-            cp + 32
-        } else {
-            cp
-        };
-    }
-    match LOWERCASE_MAP.binary_search_by_key(&cp, |&(from, _)| from) {
-        Ok(i) => LOWERCASE_MAP[i].1,
-        Err(_) => cp,
-    }
-}
-
-/// `String.toLowerCase()`：逐码点映射（合法代理对合成后查表，孤立代理原样）。生成器断言过
-/// 映射不改变 UTF-16 长度，所以下标与原串一一对应。
 pub fn to_lower(s: &[u16]) -> Vec<u16> {
-    let mut out = Vec::with_capacity(s.len());
-    let mut i = 0;
-    while i < s.len() {
-        let c = s[i];
-        if (0xD800..=0xDBFF).contains(&c)
-            && i + 1 < s.len()
-            && (0xDC00..=0xDFFF).contains(&s[i + 1])
-        {
-            let cp = 0x10000 + (((c as u32) - 0xD800) << 10) + ((s[i + 1] as u32) - 0xDC00);
-            let lc = lower_cp(cp);
-            if lc >= 0x10000 {
-                let v = lc - 0x10000;
-                out.push(0xD800 + (v >> 10) as u16);
-                out.push(0xDC00 + (v & 0x3FF) as u16);
-            } else {
-                out.push(lc as u16);
-            }
-            i += 2;
-            continue;
-        }
-        if (0xD800..=0xDFFF).contains(&c) {
-            out.push(c);
-        } else {
-            out.push(lower_cp(c as u32) as u16);
-        }
-        i += 1;
-    }
-    out
+    dart_lower_utf16(s)
 }
 
 /// `int.tryParse(source)`（radix 缺省）。

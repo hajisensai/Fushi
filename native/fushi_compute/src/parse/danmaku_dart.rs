@@ -256,19 +256,13 @@ pub fn units_eq_ascii(units: &[u16], ascii: &[u8]) -> bool {
 
 /// `s.toLowerCase() == keyword`（keyword 为小写 ASCII）。
 ///
-/// Dart VM 的 `toLowerCase` 逐字符映射；本机穷举 0..=0x10FFFF 实测只有 `A`–`Z`、
-/// U+0130 `İ`（→ `i`，单码元）与 U+212A 开尔文符号（→ `k`）会小写成 ASCII，
-/// 其余非 ASCII 字符的小写结果都不是 ASCII，不可能等于关键字。
+/// 按 crate 共用的 Dart `toLowerCase` 冻结表（[crate::parse::dart_lower]）逐码元折叠后比较。
+/// 关键字是 ASCII，而折成 ASCII 的只有 BMP 码元（`A`–`Z`、U+0130、U+212A，表的测试钉死），
+/// 代理码元原样、不可能相等，所以逐码元比较与整串 `toLowerCase` 后比较等价。
 pub fn lower_eq_ascii_keyword(s: &[u16], keyword: &[u8]) -> bool {
     s.len() == keyword.len()
         && s.iter().zip(keyword).all(|(&u, &k)| {
-            let lowered = match u {
-                0x41..=0x5A => u + 0x20,
-                0x0130 => b'i' as u16,
-                0x212A => b'k' as u16,
-                other => other,
-            };
-            lowered == u16::from(k)
+            crate::parse::dart_lower::dart_lower_code_point(u32::from(u)) == u32::from(k)
         })
 }
 

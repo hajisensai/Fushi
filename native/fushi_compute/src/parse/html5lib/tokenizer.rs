@@ -12,6 +12,7 @@ use std::rc::Rc;
 use super::dom::{AttrKey, AttrMap, Attrs, Ns};
 use super::entities::ENTITIES;
 use super::{ParseFailure, Res};
+use crate::parse::dart_lower::dart_lower_str;
 
 pub struct StartTag {
     pub name: String,
@@ -341,7 +342,7 @@ impl Tokenizer {
 
     fn token_is_appropriate(&self) -> bool {
         match &self.current {
-            Current::Tag { name, .. } => name.to_lowercase() == self.buffer.to_lowercase(),
+            Current::Tag { name, .. } => dart_lower_str(name) == dart_lower_str(&self.buffer),
             _ => false,
         }
     }
@@ -882,7 +883,7 @@ impl Tokenizer {
                 match data {
                     Some(c) if is_ws(data) || c == '/' || c == '>' => {
                         self.chars_token(c.to_string());
-                        self.state = if self.buffer.to_lowercase() == "script" {
+                        self.state = if dart_lower_str(&self.buffer) == "script" {
                             if_script
                         } else {
                             otherwise

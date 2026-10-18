@@ -12,6 +12,7 @@ use std::rc::Rc;
 use super::dom::{AttrKey, AttrMap, Dom, NodeId, NodeKind, Ns};
 use super::tokenizer::{ascii_lower, Doctype, StartTag, State, Token, Tokenizer};
 use super::{ParseFailure, Res};
+use crate::parse::dart_lower::dart_lower_str;
 
 fn state_error() -> ParseFailure {
     ParseFailure("StateError")
@@ -1574,7 +1575,7 @@ impl Parser {
             .contains(&public_id.as_str())
             || (starts_with_any(&public_id, XHTML_401) && system_id.is_none())
             || system_id.is_some_and(|s| {
-                s.to_lowercase() == "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd"
+                dart_lower_str(s) == "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd"
             })
         {
             self.compat_mode = CompatMode::Quirks;
