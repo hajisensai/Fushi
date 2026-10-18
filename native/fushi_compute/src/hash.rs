@@ -11,6 +11,7 @@
 //! [INVALID_ARGUMENT](crate::status::INVALID_ARGUMENT)，`free` 恒可调。
 
 use md4::{Digest, Md4};
+use sha1::Sha1;
 use sha2::Sha256;
 
 use crate::{guard, status};
@@ -280,6 +281,229 @@ pub unsafe extern "C" fn ffc_hash_crc32(crc: u32, data: *const u8, len: usize) -
     hasher.finalize()
 }
 
+/// 打包字符串表：第 `i` 项是 `data[offsets[i]..offsets[i + 1]]`（`offsets` 共 `n + 1` 个）。
+///
+/// # Safety
+/// `offsets` 至少 `n + 1` 个；`data` 覆盖 `offsets[n]` 字节。
+unsafe fn packed<'a>(data: *const u8, offsets: *const u64, n: usize) -> Option<Vec<&'a [u8]>> {
+    if offsets.is_null() {
+        return None;
+    }
+    let offsets = std::slice::from_raw_parts(offsets, n + 1);
+    let total = offsets[n] as usize;
+    let all = input(data, total)?;
+    let mut out = Vec::with_capacity(n);
+    for w in offsets.windows(2) {
+        let (a, b) = (w[0] as usize, w[1] as usize);
+        if a > b || b > total {
+            return None;
+        }
+        out.push(&all[a..b]);
+    }
+    Some(out)
+}
+
+/// 批量 RFC 9562 UUIDv5：第 `i` 个 = SHA-1(namespaces[16i..16i+16] ‖ name_i) 取前 16 字节，
+/// 置版本 5 与 RFC 变体位，写进 `out[16i..16i+16]`。名字是调用方给的 UTF-8 字节。
+///
+/// # Safety
+/// `namespaces` 至少 `16n` 字节；`names` / `offsets` 见 [packed]；`out` 至少 `16n` 字节可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_hash_uuid_v5_batch(
+    namespaces: *const u8,
+    names: *const u8,
+    offsets: *const u64,
+    n: usize,
+    out: *mut u8,
+) -> i32 {
+    guard(|| {
+        if n == 0 {
+            return status::OK;
+        }
+        if namespaces.is_null() || out.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let Some(items) = packed(names, offsets, n) else {
+            return status::INVALID_ARGUMENT;
+        };
+        let ns = std::slice::from_raw_parts(namespaces, 16 * n);
+        let out = std::slice::from_raw_parts_mut(out, 16 * n);
+        for (i, name) in items.iter().enumerate() {
+            let mut h = Sha1::new();
+            h.update(&ns[16 * i..16 * i + 16]);
+            h.update(name);
+            let d = h.finalize();
+            let b = &mut out[16 * i..16 * i + 16];
+            b.copy_from_slice(&d[..16]);
+            b[6] = (b[6] & 0x0f) | 0x50;
+            b[8] = (b[8] & 0x3f) | 0x80;
+        }
+        status::OK
+    })
+}
+
+/// 53 位确定性正整数：SHA-256 前 7 字节大端，取低 53 位，0 记作 1（Fushi SRS 的 `hash53`）。
+pub fn hash53(bytes: &[u8]) -> u64 {
+    let d = Sha256::digest(bytes);
+    let mut v = 0u64;
+    for &b in &d[..7] {
+        v = (v << 8) | b as u64;
+    }
+    v &= (1u64 << 53) - 1;
+    if v == 0 {
+        1
+    } else {
+        v
+    }
+}
+
+/// 批量 [hash53]：第 `i` 项写进 `out[i]`。
+///
+/// # Safety
+/// `data` / `offsets` 见 [packed]；`out` 至少 `n` 个可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_hash_hash53_batch(
+    data: *const u8,
+    offsets: *const u64,
+    n: usize,
+    out: *mut u64,
+) -> i32 {
+    guard(|| {
+        if n == 0 {
+            return status::OK;
+        }
+        if out.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let Some(items) = packed(data, offsets, n) else {
+            return status::INVALID_ARGUMENT;
+        };
+        let out = std::slice::from_raw_parts_mut(out, n);
+        for (slot, item) in out.iter_mut().zip(items) {
+            *slot = hash53(item);
+        }
+        status::OK
+    })
+}
+
+/// 摘要是否至少有 `bits` 个前导零位。
+fn leading_zero_bits(digest: &[u8], bits: u32) -> bool {
+    let mut remaining = i64::from(bits);
+    for &b in digest {
+        if remaining <= 0 {
+            return true;
+        }
+        if remaining >= 8 {
+            if b != 0 {
+                return false;
+            }
+            remaining -= 8;
+        } else {
+            return (b >> (8 - remaining)) == 0;
+        }
+    }
+    remaining <= 0
+}
+
+fn pow_digest(prefix: &[u8], nonce: &[u8]) -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update(prefix);
+    h.update(nonce);
+    h.finalize().into()
+}
+
+/// 十进制写进 `buf` 尾部，返回那一段。
+fn decimal(mut v: u64, buf: &mut [u8; 20]) -> &[u8] {
+    let mut i = buf.len();
+    loop {
+        i -= 1;
+        buf[i] = b'0' + (v % 10) as u8;
+        v /= 10;
+        if v == 0 {
+            break;
+        }
+    }
+    &buf[i..]
+}
+
+/// 工作量证明求解：从 0 起找最小的 nonce，使 SHA-256(prefix ‖ 十进制 ascii(nonce)) 至少有
+/// `bits` 个前导零位，写进 `*out_nonce`。`bits > 64` 返回 INVALID_ARGUMENT（解不完）。
+///
+/// # Safety
+/// `prefix` 至少 `len` 字节；`out_nonce` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_hash_pow_solve(
+    prefix: *const u8,
+    len: usize,
+    bits: u32,
+    out_nonce: *mut u64,
+) -> i32 {
+    guard(|| {
+        let Some(prefix) = input(prefix, len) else {
+            return status::NULL_ARGUMENT;
+        };
+        if out_nonce.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if bits > 64 {
+            return status::INVALID_ARGUMENT;
+        }
+        let mut base = Sha256::new();
+        base.update(prefix);
+        let mut digits = [0u8; 20];
+        for nonce in 0u64.. {
+            let mut h = base.clone();
+            h.update(decimal(nonce, &mut digits));
+            let d: [u8; 32] = h.finalize().into();
+            if leading_zero_bits(&d, bits) {
+                *out_nonce = nonce;
+                return status::OK;
+            }
+        }
+        status::INVALID_ARGUMENT
+    })
+}
+
+/// 工作量证明校验：SHA-256(prefix ‖ nonce) 是否至少有 `bits` 个前导零位。
+/// 返回 1 = 满足，0 = 不满足，负数 = 参数错误。nonce 的格式由调用方先校验。
+///
+/// # Safety
+/// `prefix` / `nonce` 分别至少 `len` / `nonce_len` 字节。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_hash_pow_check(
+    prefix: *const u8,
+    len: usize,
+    nonce: *const u8,
+    nonce_len: usize,
+    bits: u32,
+) -> i32 {
+    guard(|| {
+        let (Some(prefix), Some(nonce)) = (input(prefix, len), input(nonce, nonce_len)) else {
+            return status::NULL_ARGUMENT;
+        };
+        i32::from(leading_zero_bits(&pow_digest(prefix, nonce), bits))
+    })
+}
+
+/// 两段字节是否完全相同（长度不同即不同）：1 = 相同，0 = 不同，负数 = 参数错误。
+///
+/// # Safety
+/// `a` / `b` 分别至少 `a_len` / `b_len` 字节可读。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_hash_bytes_equal(
+    a: *const u8,
+    a_len: usize,
+    b: *const u8,
+    b_len: usize,
+) -> i32 {
+    guard(|| {
+        let (Some(a), Some(b)) = (input(a, a_len), input(b, b_len)) else {
+            return status::NULL_ARGUMENT;
+        };
+        i32::from(a == b)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,6 +552,49 @@ mod tests {
             )
         );
         assert_eq!(ed2k_zero(ED2K_CHUNK_SIZE + 1).1, None);
+    }
+
+    #[test]
+    fn uuid_v5_and_hash53_batches() {
+        // RFC 9562 附录 A.4：DNS 命名空间 + "www.example.com"。
+        let ns: [u8; 16] = [
+            0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4,
+            0x30, 0xc8,
+        ];
+        let name = b"www.example.com";
+        let offsets = [0u64, name.len() as u64];
+        let mut out = [0u8; 16];
+        let st = unsafe {
+            ffc_hash_uuid_v5_batch(ns.as_ptr(), name.as_ptr(), offsets.as_ptr(), 1, out.as_mut_ptr())
+        };
+        assert_eq!(st, status::OK);
+        assert_eq!(hex(&out), "2ed6657de927568b95e12665a8aea6a2");
+        // SHA-256("") = e3b0c44298fc1c…：前 7 字节 e3b0c44298fc1c 取低 53 位。
+        assert_eq!(hash53(b""), 0x00e3_b0c4_4298_fc1c & ((1 << 53) - 1));
+        let bad = [5u64, 1];
+        let mut o = [0u64; 1];
+        let st = unsafe { ffc_hash_hash53_batch(name.as_ptr(), bad.as_ptr(), 1, o.as_mut_ptr()) };
+        assert_eq!(st, status::INVALID_ARGUMENT);
+    }
+
+    #[test]
+    fn pow_solves_the_smallest_nonce() {
+        let prefix = b"fip1|test|";
+        let mut nonce = 0u64;
+        let st = unsafe { ffc_hash_pow_solve(prefix.as_ptr(), prefix.len(), 8, &mut nonce) };
+        assert_eq!(st, status::OK);
+        let mut digits = [0u8; 20];
+        for smaller in 0..nonce {
+            assert!(!leading_zero_bits(&pow_digest(prefix, decimal(smaller, &mut digits)), 8));
+        }
+        let text = nonce.to_string();
+        let ok = unsafe {
+            ffc_hash_pow_check(prefix.as_ptr(), prefix.len(), text.as_ptr(), text.len(), 8)
+        };
+        assert_eq!(ok, 1);
+        assert!(leading_zero_bits(&[0xff], 0));
+        assert!(!leading_zero_bits(&[0x7f], 2));
+        assert!(leading_zero_bits(&[0x3f], 2));
     }
 
     #[test]

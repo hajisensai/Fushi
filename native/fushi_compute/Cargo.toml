@@ -13,6 +13,7 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 [dependencies]
 crc32fast = "1"
 md4 = "0.10"
+sha1 = "0.10"
 sha2 = "0.10"
 # parse::epub：CSS url 正则（HTML 树构建是 parse::html5lib，package:html 的移植，无外部依赖）。
 regex = "1"
@@ -24,3 +25,8 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "unwind"
+
+# 构建脚本 / 过程宏不 strip：新 macOS 工具链上 cargo strip 出的 dylib（含过程宏）加载失败
+# （hajisensai/Fushi#2329）。产物本身的 strip 由各平台构建脚本决定（macOS 用 strip -x）。
+[profile.release.build-override]
+strip = false

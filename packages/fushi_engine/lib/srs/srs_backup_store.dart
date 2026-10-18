@@ -25,7 +25,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart' hide ZLibEncoder;
-import 'package:crypto/crypto.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
@@ -812,7 +812,7 @@ class SrsBackupStore {
           cached['sha256'] is String) {
         sha = cached['sha256']! as String;
       }
-      sha ??= (await sha256.bind(f.openRead()).first).toString();
+      sha ??= await ffcSha256File(f.path);
       if (cached is! Map || cached['sha256'] != sha) {
         index[key] = <String, Object?>{
           'size': st.size,
@@ -871,26 +871,29 @@ class SrsBackupStore {
   static Future<_Deflated> _deflateFile(File src, File dst) async {
     int size = 0;
     int crc = 0;
-    final _DigestCapture digest = _DigestCapture();
-    final ByteConversionSink sha = sha256.startChunkedConversion(digest);
-    final IOSink out = dst.openWrite();
+    final FfcSha256Hasher sha = FfcSha256Hasher.create();
     try {
-      await out.addStream(
-        src
-            .openRead()
-            .map((List<int> chunk) {
-              size += chunk.length;
-              crc = getCrc32(chunk, crc);
-              sha.add(chunk);
-              return chunk;
-            })
-            .transform(ZLibEncoder(raw: true)),
-      );
+      final IOSink out = dst.openWrite();
+      try {
+        await out.addStream(
+          src
+              .openRead()
+              .map((List<int> chunk) {
+                size += chunk.length;
+                crc = ffcCrc32(chunk, crc);
+                sha.add(chunk);
+                return chunk;
+              })
+              .transform(ZLibEncoder(raw: true)),
+        );
+      } finally {
+        await out.close();
+      }
+      return _Deflated(size: size, crc32: crc, sha256: sha.finishHex());
     } finally {
-      await out.close();
+      // 读 / 压缩 / 写任一步抛错都要释放原生上下文。
+      sha.close();
     }
-    sha.close();
-    return _Deflated(size: size, crc32: crc, sha256: digest.value.toString());
   }
 
   /// 写 zip：清单（内存里，小）+ 已经压好的条目（按块拷贝进 zip，不解压、不整份读入）。
@@ -1071,7 +1074,7 @@ class SrsBackupStore {
       );
     }
     final List<int> body = _content(ev);
-    if (sha256.convert(body).toString() != manifest.eventsSha256) {
+    if (ffcSha256Bytes(body) != manifest.eventsSha256) {
       throw const SrsBackupFormatException(
         SrsBackupInvalidReason.corrupt,
         'events sha256 mismatch',
@@ -1253,7 +1256,7 @@ class SrsBackupStore {
 
   static Future<String?> _sha256Of(File f) async {
     try {
-      return (await sha256.bind(f.openRead()).first).toString();
+      return await ffcSha256File(f.path);
     } on FileSystemException {
       return null;
     }
@@ -1294,17 +1297,4 @@ class _Deflated {
   final int size;
   final int crc32;
   final String sha256;
-}
-
-/// 接住分块 SHA-256 的结果。
-class _DigestCapture implements Sink<Digest> {
-  Digest? _value;
-
-  Digest get value => _value!;
-
-  @override
-  void add(Digest data) => _value = data;
-
-  @override
-  void close() {}
 }
