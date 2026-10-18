@@ -73,15 +73,27 @@ Future<void> _settleMediaAdd(
   WidgetTester tester,
   String addButtonKey, {
   int maxRounds = 400,
+}) => _settleUntil(
+  tester,
+  () =>
+      tester.widget<FushiOutlinedButton>(_key(addButtonKey)).onPressed != null,
+  '媒体写入（$addButtonKey 一直处于 busy）',
+  maxRounds: maxRounds,
+);
+
+/// 逐轮推进真异步，直到 [done] 成立；超过 [maxRounds] 轮直接失败。用于点完会触发
+/// 媒体 IO 的按钮之后：完成所需轮数取决于磁盘快慢，不能写死。
+Future<void> _settleUntil(
+  WidgetTester tester,
+  bool Function() done,
+  String what, {
+  int maxRounds = 400,
 }) async {
   for (int i = 0; i < maxRounds; i++) {
     await _settle(tester, rounds: 1);
-    final FushiOutlinedButton button = tester.widget<FushiOutlinedButton>(
-      _key(addButtonKey),
-    );
-    if (button.onPressed != null) return;
+    if (done()) return;
   }
-  fail('媒体写入在 $maxRounds 轮内没有完成（$addButtonKey 一直处于 busy）');
+  fail('$what 在 $maxRounds 轮内没有完成');
 }
 
 EditableText _editable(WidgetTester tester, String key) =>
@@ -537,7 +549,8 @@ void main() {
     expect(find.text('b.mp3'), findsOneWidget);
 
     await tester.tap(_key('srs-sound-play-ExpressionAudio-1'));
-    await _settle(tester);
+    // 播放前要先查文件在不在（真 IO），等播放器真被调用再断言。
+    await _settleUntil(tester, () => env.played.isNotEmpty, '播放 b.mp3');
     expect(env.played.single, endsWith('b.mp3'));
 
     await tester.tap(
