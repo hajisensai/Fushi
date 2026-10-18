@@ -1,6 +1,8 @@
 /// 批量操作的往返计数 / 逐条等价测试共用：内存库 + 语句计数 + 固定时钟 + 导入一批 Basic (and reversed) 笔记。
 library;
 
+import 'dart:io';
+
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -35,13 +37,31 @@ class BulkFixture {
   final CountingInterceptor counter;
 
   /// 打开内存库并导入 [notes] 条笔记（每条两张卡、分在 Lang 与 Lang::JP，每卡 3 条日志）。
+  ///
+  /// [background]：库开在临时文件上、走后台 isolate（与 app 同一种连接，语句真的跨 isolate
+  /// 往返、与别的异步任务交错）；默认内存库。
   static Future<BulkFixture> open({
     required int notes,
     String deviceId = 'dev',
+    bool background = false,
   }) async {
     final CountingInterceptor counter = CountingInterceptor();
+    final QueryExecutor executor;
+    if (background) {
+      final Directory tmp = Directory.systemTemp.createTempSync('srs_bulk_');
+      addTearDown(() {
+        try {
+          tmp.deleteSync(recursive: true);
+        } on FileSystemException {
+          // 句柄晚释放。
+        }
+      });
+      executor = NativeDatabase.createInBackground(File('${tmp.path}/b.db'));
+    } else {
+      executor = NativeDatabase.memory();
+    }
     final FushiDatabase db = FushiDatabase.forTesting(
-      NativeDatabase.memory().interceptWith(counter),
+      executor.interceptWith(counter),
     );
     addTearDown(db.close);
     final SrsDbStore store = await SrsDbStore.open(

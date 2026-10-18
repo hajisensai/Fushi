@@ -4,7 +4,8 @@
 // 记录先落库、先进发件箱，它的 ctx 还声称看见了尚未落库的记录。这里让长操作（导入攒批、更改笔记类型
 // 的多实体写）与零碎的本机写入（改旗标）并发，核对：本机写入者的修改记录按发件箱顺序排，序号严格递增。
 // 修前两处都会乱序：导入在攒批时就分配序号；writeEdits「读一个实体的现值、分配一个实体的序号」交替
-// 进行，中间夹着几百次往返。
+// 进行，中间夹着几百次往返。第一个用例在修前的代码上实测复现乱序（发件箱里序号 1028 排在 752 前）；
+// 第二个用例是独占区的性质守卫（修前那段时序在测试里不能稳定复现）。
 import 'dart:async';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -12,6 +13,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/srs_apkg_import_bench_test.dart' show benchApkg;
@@ -47,9 +49,12 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   test('导入攒批期间插进来的本机写入：发件箱顺序 = 序号顺序', () async {
-    final BulkFixture f = await BulkFixture.open(notes: 2);
+    final BulkFixture f = await BulkFixture.open(notes: 2, background: true);
     final SrsDbStore s = f.store;
-    final String card = (await s.allCardRows()).first.id;
+    // 每次写不同的卡：同一字段键上后写的会支配并删掉先写的，乱序就看不见了。
+    final List<String> cards = <String>[
+      for (final SrsCardCacheRow c in await s.allCardRows()) c.id,
+    ];
     final List<Future<void>> writes = <Future<void>>[];
     int flag = 0;
     await importAnkiPackage(
@@ -58,8 +63,16 @@ void main() {
       storeMedia: (String name, Uint8List b) async => name,
       options: kFullOptions,
       zstdDecompress: (Uint8List b) => null,
-      // 每导入 50 条笔记（攒批中途、还没落库）改一次旗标。
-      onProgress: (double _) => writes.add(s.setFlag(card, ++flag % 4)),
+      // 每导入 50 条笔记（攒批中途、本批还没落库）写一条本机记录。resolveConflict 不先读库，
+      // 当场分配序号——正好落在「本批已攒、未落库」的窗口里。
+      onProgress: (double _) => writes.add(
+        s.resolveConflict(
+          SrsEntityKind.card,
+          cards[flag++ % cards.length],
+          SrsFieldKeys.flag,
+          2,
+        ),
+      ),
     );
     await Future.wait(writes);
     expect(writes.length, greaterThan(3));
@@ -69,7 +82,7 @@ void main() {
   });
 
   test('更改笔记类型（多实体一次写）期间插进来的本机写入：发件箱顺序 = 序号顺序', () async {
-    final BulkFixture f = await BulkFixture.open(notes: 120);
+    final BulkFixture f = await BulkFixture.open(notes: 120, background: true);
     final SrsDbStore s = f.store;
     final List<String> cards = <String>[
       for (final SrsCardCacheRow c in await s.allCardRows()) c.id,
@@ -81,13 +94,30 @@ void main() {
       fieldMap: c.fieldMap,
       templateMap: c.templateMap,
     );
+    bool done = false;
+    unawaited(change.whenComplete(() => done = true));
     final List<Future<void>> writes = <Future<void>>[];
-    // 让更改笔记类型先跑起来（读现值的往返），再零零碎碎插写入。
-    for (int i = 0; i < 30; i++) {
+    // 更改笔记类型跑的整段时间里（读笔记、读现值、分配、落库）不停地插零碎写入。
+    // 每次写不同的卡（同一字段键上后写的会支配并删掉先写的，乱序就看不见了）。
+    const List<String> keys = <String>[
+      SrsFieldKeys.flag,
+      SrsFieldKeys.suspended,
+      SrsFieldKeys.buriedUntilDay,
+    ];
+    for (int i = 0; !done && i < cards.length * keys.length; i++) {
       await Future<void>.delayed(Duration.zero);
-      writes.add(s.setFlag(cards[i], 1));
+      final String key = keys[i ~/ cards.length];
+      writes.add(
+        s.editField(
+          SrsEntityKind.card,
+          cards[i % cards.length],
+          key,
+          key == SrsFieldKeys.suspended ? true : 2,
+        ),
+      );
     }
     await Future.wait(<Future<void>>[change, ...writes]);
+    expect(writes.length, greaterThan(5));
     final List<int> seqs = await outboxSeqs(f);
     expect(seqs.length, greaterThan(120));
     expectIncreasing(seqs);
