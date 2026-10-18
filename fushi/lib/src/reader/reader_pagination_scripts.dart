@@ -580,8 +580,8 @@ class ReaderPaginationScripts {
     return buf.toString();
   }
 
-  // JS `isMatchableChar`（白名单正则）的 Dart 影子：与 `AudioTextNormalizer.
-  // _isKeepable` 同集合。
+  // JS `isMatchableChar`（白名单正则）的 Dart 影子：与 `AudioTextNormalizer`
+  // 的白名单（Rust `native/fushi_compute/src/parse/fold.rs` 的 `is_keepable`）同集合。
   static bool _jsIsMatchableCodePoint(int c) {
     return (c >= 0x30 && c <= 0x39) ||
         (c >= 0x41 && c <= 0x5A) ||

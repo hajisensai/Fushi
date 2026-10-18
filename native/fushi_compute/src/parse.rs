@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 use crate::{guard, status};
 
 mod study_char_table;
+pub mod fold;
 
 use study_char_table::STUDY_CHAR_RANGES;
 
