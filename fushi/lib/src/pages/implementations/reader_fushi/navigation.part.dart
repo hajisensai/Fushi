@@ -561,7 +561,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// TODO-1128：把一个导航目标章号解析成真正拥有虚拟页的章号。开启「图片合并」
   /// (`mergeImagePages`) 后，被吸收进后续文本章的单图片章（[EpubSpreadMap.isAbsorbedImageChapter]）
   /// 没有自己的页——它的 `<img>` 直接内联注入到宿主文本章正文顶部（见
-  /// `webview.part.dart _injectMergedChapterImages`）。若裸导航直接落到被吸收章，会
+  /// `webview.part.dart _mergedChapterImagesHtml`）。若裸导航直接落到被吸收章，会
   /// 加载它自己的独立单图页（第 1 份）+ 宿主正文顶部又注入同图（第 2 份）=**图片重复**。
   /// 本 helper 把这类目标重定向到其宿主文本章（该章虚拟页拥有那张内联图）；其余章号原样
   /// 返回（幂等——宿主本身绝不会被吸收）。spread map 未就绪或合并关闭时 no-op。

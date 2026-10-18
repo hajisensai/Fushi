@@ -1,189 +1,119 @@
-class ReaderResourceSanitizer {
-  ReaderResourceSanitizer._();
+import 'dart:convert';
+import 'dart:typed_data';
 
-  static final RegExp _epubPropertyPattern = RegExp(
-    r'^([ \t]*)-epub-([^:;{}\r\n]+)[ \t]*:[ \t]*([^;{}\r\n]*)[ \t]*;',
-    multiLine: true,
-  );
+import 'package:fushi_compute/fushi_compute.dart';
 
-  // HTML5 void elements: the ONLY tags whose self-closing `/>` form is valid in
-  // text/html. Everything else that ships self-closed in XHTML must be expanded
-  // to a paired tag (see [_selfClosingElementPattern] / [sanitizeXhtml]).
-  static const Set<String> _voidElements = <String>{
-    'area',
-    'base',
-    'br',
-    'col',
-    'embed',
-    'hr',
-    'img',
-    'input',
-    'keygen',
-    'link',
-    'meta',
-    'param',
-    'source',
-    'track',
-    'wbr',
-  };
+/// 阅读器下发章节 HTML / 书内 CSS 前的清洗链。
+///
+/// 实现只有一份，在 `native/fushi_compute/src/parse/sanitize.rs`（经
+/// [ReaderSanitizeNative] 调用），输出与原 Dart 正则实现逐字节一致；这里只是门面。生产路径
+/// （`webview.part.dart`）走字节入口 [buildChapterHtmlBytes] / [sanitizeCssBytes]，整条链
+/// 一次 FFI。下面的 String 入口是同一份原生实现的单步视图，供测试与零散调用（String 先编成
+/// UTF-8 再过界，孤立代理会变成 U+FFFD——生产路径的输入是磁盘字节，不受影响）。
+///
+/// 各步语义（规则记在这里，正则 / 回溯等价性写在 Rust 侧）：
+///
+/// - **XHTML 自闭合**（[sanitizeXhtml]）：XHTML 当 text/html 下发时，HTML5 分词器忽略非 void
+///   元素的自闭合斜杠，`<tag …/>` 变成未闭合的开标签。BUG-079：`<script/>` / `<style/>` /
+///   `<title/>` 等 raw-text 元素吞掉后续全部内容、整页空白；BUG-737：`<a id="toc-N"/>` 经
+///   adoption agency 把后面整章正文包进 `<a>`，点按查词在 `closest('a')` 处放弃。所以把每个
+///   自闭合非 void 元素改写成显式成对标签（在 XHTML 里是同一个空元素），void 元素
+///   （`<br/>`、`<img/>`…）保留自闭合。属性里的引号串整段当一个 token，属性值内的字面 `/>`
+///   （`<a href="a/>b"/>`）不会被当成标签结尾。
+/// - **插图 lazy**（[markImagesLazy]，TODO-perf 跨章·图片）：阅读器 JS 给 `<img>` 挂 lazy 的
+///   那段跑在 `load` 之后，来不及影响本次加载，所以在生成 HTML 时就写 `loading="lazy"
+///   decoding="async"`。eager 例外与 JS 侧同款且更保守（Dart 侧 eager 集合是 JS 侧的超集）：
+///   纯图片章整章 eager（TODO-1349，分页几何要靠插图真实撑开）；`class` 含 `gaiji` 的内联小图
+///   参与文字排版几何；已显式写了 `loading=` 的标签尊重原书——合并前导插图自带
+///   `loading="eager"`（TODO-1339），因此不依赖与注入步的先后顺序。
+/// - **合并前导插图**（[injectImagesAfterBodyOpen]，TODO-1174）：插到 `<body…>` 之后（独立
+///   插图属于它引出的那章的开头）；没有 `<body>` 时前置到整篇之前。
+/// - **head 注入**（[injectReaderHead]）：`headStart` 紧跟 `<head>`（FOUC 遮罩必须先于书内 CSS
+///   生效），`headEnd` 紧贴 `</head>` 之前（阅读器样式在 `!important` 平局中胜出，阅读器
+///   viewport meta 排在书自带的之后——WebKit 取最后一个）。没有 `</head>` 时两段都放 `<head>`
+///   后；没有 `<head>` 时前置到整篇之前。
+/// - **CSS**（[sanitizeCss]）：行首的 `-epub-*` 前缀属性改写成标准 / `-webkit-` 写法，
+///   `-epub-writing-mode` 删掉（书写方向由阅读器统一控制）。
+abstract final class ReaderResourceSanitizer {
+  static ReaderSanitizeNative get _native => ReaderSanitizeNative.instance;
 
-  // XHTML served as text/html: the HTML5 tokenizer IGNORES the self-closing
-  // slash on every NON-void element, so `<tag .../>` becomes an unclosed
-  // `<tag>` open tag. Two ways this breaks Fushi:
-  //  • BUG-079: raw-text elements (`<script/>`, `<style/>`, `<title/>`, …) enter
-  //    their "raw text" content model and swallow everything up to the next
-  //    matching close tag — which never comes — blanking the whole page.
-  //  • BUG-737: an active formatting element, above all `<a id="toc-N"/>` (the
-  //    per-chapter anchor common in Japanese publisher EPUBs), stays open and,
-  //    via the HTML adoption-agency reconstruction, wraps ALL following prose in
-  //    an `<a>`. The reader's tap-lookup entry (`selectText`) then bails on
-  //    `elementFromPoint(x,y).closest('a')` → the whole chapter becomes
-  //    un-lookup-able (other, XML-aware readers parse `<a/>` as empty; repacking
-  //    the EPUB re-serializes it closed, which is why that "fixes" lookup).
-  // Fix once for the whole CLASS: rewrite every self-closing non-void element to
-  // an explicit paired tag, which in XHTML means exactly the same empty element.
-  // Void elements (<br/>, <img/>, …) keep their self-closing form.
-  // The attribute portion matches whole quoted strings ("…" / '…') as single
-  // tokens so a literal `/>` *inside* an attribute value (e.g.
-  // `<a href="a/>b"></a>`) is NOT mistaken for the tag's self-closing end — only
-  // a real trailing `/>` outside any quote triggers the rewrite. Unquoted chars
-  // exclude `>`/quotes.
-  static final RegExp _selfClosingElementPattern = RegExp(
-    r'<([a-zA-Z][a-zA-Z0-9:-]*)'
-    '\\b((?:"[^"]*"|\'[^\']*\'|[^>"\'])*?)\\s*/\\s*>',
-    caseSensitive: false,
-  );
+  /// 章节 HTML 整条链：[raw] 是磁盘上的原始字节（非 UTF-8 字节按 U+FFFD 容忍，
+  /// HBK-AUDIT-118），返回下发给 WebView 的最终 UTF-8 字节。顺序固定为 XHTML 自闭合 →
+  /// 插图 lazy（[eagerAll] 时跳过）→ 合并前导插图 [mergedImagesHtml] → head 注入。
+  /// 文档里 `</head>` 早于 `<head…>` 结束时抛 [RangeError]（与旧实现相同）。
+  static Uint8List buildChapterHtmlBytes(
+    Uint8List raw, {
+    required bool eagerAll,
+    required String mergedImagesHtml,
+    required String headStart,
+    required String headEnd,
+  }) {
+    return _native.chapterHtml(
+      raw,
+      steps:
+          ReaderSanitizeNative.stepXhtml |
+          (eagerAll ? 0 : ReaderSanitizeNative.stepLazyImages) |
+          ReaderSanitizeNative.stepBodyImages |
+          ReaderSanitizeNative.stepReaderHead,
+      images: _utf8(mergedImagesHtml),
+      headStart: _utf8(headStart),
+      headEnd: _utf8(headEnd),
+    );
+  }
 
-  static final RegExp _bodyOpenPattern =
-      RegExp(r'<body[^>]*>', caseSensitive: false);
+  /// 书内 CSS 整条链：原始字节进、最终 UTF-8 字节出（非 UTF-8 字节容忍，HBK-AUDIT-118）。
+  static Uint8List sanitizeCssBytes(Uint8List raw) => _native.css(raw);
 
-  // 属性部分与 [_selfClosingElementPattern] 同款：把整段引号串（"…" / '…'）当单个
-  // token，这样属性值里的字面 `>`（如 `alt="a>b"`）不会被误当成标签结束。
-  static final RegExp _imgTagPattern = RegExp(
-    '<img\\b((?:"[^"]*"|\'[^\']*\'|[^>"\'])*)>',
-    caseSensitive: false,
-  );
-  static final RegExp _loadingAttrPattern =
-      RegExp(r'\bloading\s*=', caseSensitive: false);
-  static final RegExp _gaijiClassPattern = RegExp(
-      r'''\bclass\s*=\s*(?:"[^"]*\bgaiji|'[^']*\bgaiji|gaiji)''',
-      caseSensitive: false);
+  /// 单步：自闭合非 void 元素展开成成对标签。
+  static String sanitizeXhtml(String html) =>
+      _step(html, ReaderSanitizeNative.stepXhtml);
 
-  /// TODO-perf（跨章·图片）：在**生成 HTML 时**就给正文插图标上 `loading="lazy"` /
-  /// `decoding="async"`。
-  ///
-  /// 阅读器 JS（`initialize` 里 TODO-1074 那段）本来就想给每张 `<img>` 挂 lazy，理由写的
-  /// 也正是「不再拖住 window.load」——但那段脚本是在 `onLoadStop`（即 `load` 事件**之后**）
-  /// 注入的，浏览器早已按标签里的原始属性把整章图片全部读盘+解码完毕。换句话说那行 lazy
-  /// 迟到了一整个加载周期，只是给一笔已经付掉的账贴了张标签。实测带插图的章 `nav.dcl`
-  /// 15~20ms 而 `nav.load` 687~717ms，遮罩全程盖在这段等待上。
-  ///
-  /// 属性只有写进 HTML 源码才能影响本次加载，所以判定上移到 Dart 侧。保持 eager 的例外与
-  /// JS 侧同款、且**更保守**（这里 eager 的集合是 JS 侧 eager 集合的超集，绝不会出现
-  /// 「Dart 挂了 lazy 而 JS 想要 eager」的倒挂）：
-  /// - [eagerAll] = true（纯图片章：整章就是几张整页插图，分页几何要靠它们真实撑开，见
-  ///   TODO-1349）→ 整章一律 eager，原样返回。
-  /// - `class` 含 `gaiji` 的内联小图参与文字排版几何，必须同步解码 → 跳过。
-  /// - 已显式写了 `loading=` 的标签 → 尊重原书，跳过。
-  ///
-  /// 合并注入的前导插图（`.fushi-merged-image`）不经过这里——调用点在
-  /// `_injectMergedChapterImages` **之前**，那些图天然保持 eager（TODO-1339）。
+  /// 单步：给 `<img>` 写 lazy / async；[eagerAll] 时原样返回。
   static String markImagesLazy(String html, {bool eagerAll = false}) {
     if (eagerAll) return html;
-    return html.replaceAllMapped(_imgTagPattern, (Match m) {
-      final String whole = m.group(0)!;
-      final String attrs = m.group(1) ?? '';
-      if (_loadingAttrPattern.hasMatch(attrs)) return whole;
-      if (_gaijiClassPattern.hasMatch(attrs)) return whole;
-      return '<img loading="lazy" decoding="async"$attrs>';
-    });
+    return _step(html, ReaderSanitizeNative.stepLazyImages);
   }
 
-  /// TODO-1174: insert [imagesHtml] immediately after the document's `<body>`
-  /// open tag, so merged single-image chapters render at the very *top* of the
-  /// absorbing text chapter's flow (a standalone illustration belongs to the
-  /// *beginning* of the chapter it introduces, not the tail of the previous
-  /// one). Returns [html] unchanged when [imagesHtml] is empty; when no `<body>`
-  /// open tag is present, prepends the images before the whole document.
+  /// 单步：[imagesHtml] 插到 `<body…>` 之后（前后各加一个换行）；为空时原样返回。
   static String injectImagesAfterBodyOpen(String html, String imagesHtml) {
     if (imagesHtml.isEmpty) return html;
-    final String block = '\n$imagesHtml\n';
-    final RegExpMatch? match = _bodyOpenPattern.firstMatch(html);
-    if (match != null) {
-      return '${html.substring(0, match.end)}$block${html.substring(match.end)}';
-    }
-    return '$block$html';
+    return _step(html, ReaderSanitizeNative.stepBodyImages, images: imagesHtml);
   }
 
-  static final RegExp _headOpenPattern =
-      RegExp('<head[^>]*>', caseSensitive: false);
-  static final RegExp _headClosePattern =
-      RegExp(r'</head\s*>', caseSensitive: false);
-
-  /// Injects the reader's head markup into a served chapter document:
-  /// [headStart] right after `<head>` (the FOUC cloak must apply before any
-  /// book CSS paints) and [headEnd] right before `</head>`, so reader styles
-  /// win `!important` ties against the book's CSS and a reader viewport meta
-  /// comes after any book-supplied one (WebKit applies the last viewport meta).
-  /// Without a `</head>` both go after `<head>`; without a `<head>` both are
-  /// prepended to the whole document.
+  /// 单步：阅读器 head 注入。
   static String injectReaderHead(
     String html, {
     required String headStart,
     required String headEnd,
+  }) => _step(
+    html,
+    ReaderSanitizeNative.stepReaderHead,
+    headStart: headStart,
+    headEnd: headEnd,
+  );
+
+  /// 单步：书内 CSS 改写。
+  static String sanitizeCss(String css) => utf8.decode(
+    _native.css(_utf8(css), flags: ReaderSanitizeNative.inputIsText),
+  );
+
+  static String _step(
+    String html,
+    int steps, {
+    String images = '',
+    String headStart = '',
+    String headEnd = '',
   }) {
-    final RegExpMatch? headOpen = _headOpenPattern.firstMatch(html);
-    final RegExpMatch? headClose = _headClosePattern.firstMatch(html);
-    if (headOpen != null && headClose != null) {
-      return '${html.substring(0, headOpen.end)}\n$headStart'
-          '${html.substring(headOpen.end, headClose.start)}\n$headEnd\n'
-          '${html.substring(headClose.start)}';
-    }
-    if (headOpen != null) {
-      return '${html.substring(0, headOpen.end)}\n$headStart\n$headEnd'
-          '${html.substring(headOpen.end)}';
-    }
-    return '$headStart\n$headEnd\n$html';
+    return utf8.decode(
+      _native.chapterHtml(
+        _utf8(html),
+        steps: steps | ReaderSanitizeNative.inputIsText,
+        images: _utf8(images),
+        headStart: _utf8(headStart),
+        headEnd: _utf8(headEnd),
+      ),
+    );
   }
 
-  /// Normalizes XHTML served as text/html so a self-closing NON-void element
-  /// (`<script/>` blanking the page — BUG-079; `<a id=".."/>` wrapping the whole
-  /// chapter's prose and killing tap-lookup — BUG-737) becomes an explicit
-  /// paired tag, i.e. the same empty element the XHTML author intended. Void
-  /// elements (`<br/>`, `<img/>`, …) keep their self-closing form. Returns the
-  /// input unchanged when no self-closing non-void element is present.
-  static String sanitizeXhtml(String html) {
-    return html.replaceAllMapped(_selfClosingElementPattern, (m) {
-      final String tag = m.group(1)!;
-      if (_voidElements.contains(tag.toLowerCase())) {
-        return m.group(0)!; // genuine void element — keep self-closing
-      }
-      final String attrs = m.group(2)!;
-      return '<$tag$attrs></$tag>';
-    });
-  }
-
-  static String sanitizeCss(String css) {
-    return css.replaceAllMapped(_epubPropertyPattern, (m) {
-      final String indent = m.group(1)!;
-      final String property = m.group(2)!.trim();
-      final String value = m.group(3)!.trim();
-
-      switch (property) {
-        case 'writing-mode':
-          return ''; // globally controlled by reader
-        case 'line-break':
-        case 'word-break':
-        case 'hyphens':
-          return '$indent-webkit-$property: $value;\n$indent$property: $value;';
-        case 'text-combine':
-          return '$indent-webkit-text-combine: $value;\n${indent}text-combine-upright: all;';
-        case 'text-emphasis-style':
-        case 'text-emphasis-color':
-          return '$indent-webkit-$property: $value;\n$indent$property: $value;';
-        default:
-          return '$indent$property: $value;';
-      }
-    });
-  }
+  static Uint8List _utf8(String s) => s.isEmpty ? Uint8List(0) : utf8.encode(s);
 }

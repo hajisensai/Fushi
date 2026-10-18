@@ -28,7 +28,7 @@ void main() {
   const String tinyPng =
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
-  // 复刻 webview.part.dart _injectMergedChapterImages 的注入形状：每张合并前导图是
+  // 复刻 webview.part.dart _mergedChapterImagesHtml 的注入形状：每张合并前导图是
   // `<div class="fushi-merged-image"><img class="block-img"></div>`，插在正文最前。
   const String html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
       '<body>'
