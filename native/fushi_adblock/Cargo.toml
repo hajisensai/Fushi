@@ -1,0 +1,30 @@
+[package]
+name = "fushi_adblock"
+version = "0.1.0"
+edition = "2021"
+publish = false
+# 本 crate 自身代码以 MPL-2.0 发布，与上游 adblock-rust（Brave，MPL-2.0）一致；见 README「许可」。
+license = "MPL-2.0"
+
+[lib]
+# rlib：给 native/fushi_ios_umbrella（iOS 伞形 staticlib，与 fushi_p2p / fushi_fsrs 共用一份 Rust std）当依赖用。
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+# 钉死精确版本：adblock-rust 的序列化格式「不保证跨 minor 兼容」，升级时 Dart 侧缓存键
+# （fadb_version）随本 crate 版本一起变，旧缓存自动作废重编。
+# 关掉默认的 single-thread：引擎改用 Mutex 正则缓存，成为 Send + Sync（Dart isolate 可能换 OS 线程调用）。
+# content-blocking：导出 Apple WKContentRuleList JSON，给不能逐请求拦截的 WKWebView 用。
+adblock = { version = "=0.13.3", default-features = false, features = [
+    "embedded-domain-resolver",
+    "full-regex-handling",
+    "content-blocking",
+] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"

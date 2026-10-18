@@ -65,8 +65,8 @@ tree_hash() {
 
 TORRENT=(native/fushi_torrent)
 P2P=(native/fushi_p2p)
-# iOS umbrella staticlib (fushi_p2p + fushi_fsrs in one crate, one Rust std).
-IOS_NATIVE=(native/fushi_ios_umbrella native/fushi_p2p native/fushi_fsrs)
+# iOS umbrella staticlib (fushi_p2p + fushi_fsrs + fushi_adblock in one crate, one Rust std).
+IOS_NATIVE=(native/fushi_ios_umbrella native/fushi_p2p native/fushi_fsrs native/fushi_adblock)
 MIHON=(third_party/m_extension_server third_party/jogamp tool/mihon)
 GALGAME=(native/galgame_hook)
 ANKI_SYNC=(native/fushi_anki_sync .github/actions/setup-fushi-anki-sync)

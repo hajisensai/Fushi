@@ -82,6 +82,9 @@ dependencies:
     path: ../packages/fushi_anki
   fushi_srs:
     path: ../packages/fushi_srs
+  # 网页广告 / 跟踪拦截（adblock-rust FFI + 过滤列表管理），WebView 接线在 lib/src/web_adblock/。
+  fushi_adblock:
+    path: ../packages/fushi_adblock
   fushi_audio:
     path: ../packages/fushi_audio
   fushi_platform:

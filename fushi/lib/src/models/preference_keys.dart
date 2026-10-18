@@ -622,6 +622,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 点按底栏时间切换（MD3 Expressive chrome），跨设备。
   'video_time_display_remaining',
   'video_youtube_quality_height',
+  // 网页广告拦截（lib/src/web_adblock/）：白名单站点（String，逗号 / 空白分隔的域名）、
+  // 总开关（bool，默认 true）、订阅的过滤列表（String，逗号分隔的列表 id，缺失 = 内置默认集）。
+  // 都是普通用户偏好，跨设备同步。
+  'web_adblock_allowlist',
+  'web_adblock_enabled',
+  'web_adblock_lists',
   'yomitan_api_key',
   'yomitan_api_port',
   'yomitan_api_server_enabled',

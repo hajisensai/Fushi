@@ -191,6 +191,10 @@ android {
         // 产出 prebuilt/android/<abi>/libfushi_fsrs.so 则随包；缺失时 SRS 原生内核
         // 判不可用，构建照常。
         main.jniLibs.srcDirs += '../../../native/fushi_fsrs/prebuilt/android'
+        // 网页广告拦截内核（adblock-rust，copy-if-present）：native/fushi_adblock/build_android_so.*
+        // 产出 prebuilt/android/<abi>/libfushi_adblock.so 则随包；缺失时网页广告拦截
+        // 判不可用（WebView 照常、只是不拦），构建照常。
+        main.jniLibs.srcDirs += '../../../native/fushi_adblock/prebuilt/android'
     }
 
     defaultConfig {
