@@ -504,7 +504,7 @@ fn anchored_int<'a>(tag: &'a [u16], prefix: &[u8]) -> Option<&'a [u16]> {
 }
 
 /// `^<prefix>&H([0-9a-fA-F]{1,8})&?$`（prefix 后紧跟 `&H`）：返回十六进制部分。
-fn anchored_color<'a>(tag: &'a [u16], p: usize) -> Option<&'a [u16]> {
+fn anchored_color(tag: &[u16], p: usize) -> Option<&[u16]> {
     if !has_ascii_at(tag, p, b"&H") {
         return None;
     }
@@ -644,6 +644,7 @@ fn valid_play_res(x: Option<f64>, y: Option<f64>) -> Option<(f64, f64)> {
 
 /// `\clip` / `\p` 绘图的门槛：`playResX == null || playResX <= 0` 才拒绝——写法与
 /// [valid_play_res] 相反，所以 NaN **通过**（原实现如此，结果里是 NaN 坐标）。
+#[allow(clippy::neg_cmp_op_on_partial_ord)] // NaN 必须通过，见上。
 fn drawing_play_res(x: Option<f64>, y: Option<f64>) -> Option<(f64, f64)> {
     match (x, y) {
         (Some(x), Some(y)) if !(x <= 0.0) && !(y <= 0.0) => Some((x, y)),

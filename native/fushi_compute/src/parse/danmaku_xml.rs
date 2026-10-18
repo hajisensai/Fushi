@@ -37,6 +37,9 @@ pub struct XmlDanmakuDoc {
 const LT: u16 = b'<' as u16;
 const GT: u16 = b'>' as u16;
 
+/// 码元区间 `(起点, 终点)`。
+type Span = (usize, usize);
+
 struct Cursor<'a> {
     s: &'a [u16],
 }
@@ -156,10 +159,9 @@ impl<'a> Cursor<'a> {
     fn attribute_value(&self, p: usize) -> Option<(usize, usize, usize)> {
         for quote in [b'"' as u16, b'\'' as u16] {
             if self.at(p, quote) {
-                return match self.find_unit(p + 1, quote) {
-                    Some(close) => Some((p + 1, close, close + 1)),
-                    None => None,
-                };
+                return self
+                    .find_unit(p + 1, quote)
+                    .map(|close| (p + 1, close, close + 1));
             }
         }
         let end = self.name(p)?;
@@ -168,7 +170,7 @@ impl<'a> Cursor<'a> {
 
     /// `attribute`：space nameToken (spaceOptional '=' spaceOptional attributeValue)?
     /// 返回 (名字区间, 值区间, 结束位置)；无赋值时值为空区间。
-    fn attribute(&self, p: usize) -> Option<((usize, usize), (usize, usize), usize)> {
+    fn attribute(&self, p: usize) -> Option<(Span, Span, usize)> {
         let name_start = self.space(p)?;
         let name_end = self.name(name_start)?;
         let a = self.space_optional(name_end);
@@ -442,13 +444,8 @@ pub fn decode_entities(raw: &[u16], out: &mut Vec<u16>) {
             }
         };
         match index {
-            Some(index) if start + 1 < index => {
-                if decode_entity(&raw[start + 1..index], out) {
-                    start = index + 1;
-                } else {
-                    out.push(amp);
-                    start += 1;
-                }
+            Some(index) if start + 1 < index && decode_entity(&raw[start + 1..index], out) => {
+                start = index + 1;
             }
             _ => {
                 out.push(amp);

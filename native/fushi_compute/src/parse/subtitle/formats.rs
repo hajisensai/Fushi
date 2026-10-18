@@ -551,6 +551,8 @@ pub fn parse_ass(content: &[u16], include_drawings: bool) -> DResult<AssResult> 
                     return None;
                 }
                 match double_try_parse(trim(parts[col as usize])) {
+                    // 刻意写成 !(v <= 0.0)：NaN 也通过（同旧 Dart 实现），不能改成 v > 0.0。
+                    #[allow(clippy::neg_cmp_op_on_partial_ord)]
                     Some(v) if !(v <= 0.0) => Some(v),
                     _ => None,
                 }

@@ -351,7 +351,10 @@ pub fn parse_decimal(s: &[u16]) -> f64 {
 /// 真除法，而不是写死常量（`black_box` 阻止常量折叠，折叠出来的是 Rust 的 0x7FF8...）。
 pub fn dart_nan() -> f64 {
     let z = std::hint::black_box(0.0f64);
-    z / z
+    // 0/0 就是要的值（硬件生成的 NaN），不是笔误。
+    #[allow(clippy::eq_op)]
+    let nan = z / z;
+    nan
 }
 
 /// `double.tryParse(source)`。
