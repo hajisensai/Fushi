@@ -77,12 +77,14 @@ final class CueMatchWindowResult {
 /// 原生库是硬依赖：库或符号缺失时 [instance] 抛 [FushiComputeUnavailableError]，
 /// 不退回任何 Dart 实现（这套算法只有 Rust 一份）。
 final class FushiComputeText {
-  FushiComputeText._(this._compute, this._cueMatch);
+  FushiComputeText._(this._compute, this._cueMatch, this._alignPositions);
 
   static const String cueMatchSymbol = 'ffc_text_cue_match';
+  static const String alignPositionsSymbol = 'ffc_text_align_positions';
 
   final FushiCompute _compute;
   final _CueMatchDart _cueMatch;
+  final _AlignPositionsDart _alignPositions;
 
   static FushiComputeText? _instance;
 
@@ -92,13 +94,99 @@ final class FushiComputeText {
 
   /// 绑定指定的已加载库（测试用）；缺符号时抛 [FushiComputeUnavailableError]。
   static FushiComputeText forLibrary(FushiCompute compute) {
-    if (!compute.providesSymbol(cueMatchSymbol)) {
-      throw compute.missingSymbols('text', 'missing $cueMatchSymbol');
+    for (final String symbol in <String>[
+      cueMatchSymbol,
+      alignPositionsSymbol,
+    ]) {
+      if (!compute.providesSymbol(symbol)) {
+        throw compute.missingSymbols('text', 'missing $symbol');
+      }
     }
     return FushiComputeText._(
       compute,
       compute.library.lookupFunction<_CueMatchC, _CueMatchDart>(cueMatchSymbol),
+      compute.library.lookupFunction<_AlignPositionsC, _AlignPositionsDart>(
+        alignPositionsSymbol,
+      ),
     );
+  }
+
+  /// 编辑距离位置对齐（有声书 cue 重切的前置步骤），整批一次调用。
+  ///
+  /// 第 k 对：[a] 是 cue 的归一化听写，[b] 是它命中的正文切片（都按 UTF-16 码元）。
+  /// 返回同序的映射，第 k 个长 `a[k].length + 1`：`map[i]` = `a[k][i]` 在 `b[k]` 里对应的
+  /// 位置（删除的字符指向下一个对应位置），`map[a.length] = b.length`，单调不减。
+  /// `a.length * b.length > maxCells` 的那一对退化为按比例线性映射。原生侧返回非 0
+  /// 状态码时抛 [StateError]。
+  List<Int32List> alignPositions(
+    List<String> a,
+    List<String> b, {
+    required int maxCells,
+  }) {
+    if (a.length != b.length) {
+      throw ArgumentError.value(b.length, 'b.length', 'must equal a.length');
+    }
+    final int count = a.length;
+    if (count == 0) return const <Int32List>[];
+    return using((Arena arena) {
+      final (Pointer<Uint16> aUnits, int aLen, Pointer<Int32> aOff) = _packed(
+        arena,
+        a,
+      );
+      final (Pointer<Uint16> bUnits, int bLen, Pointer<Int32> bOff) = _packed(
+        arena,
+        b,
+      );
+      final int outLen = aLen + count;
+      final Pointer<Int32> out = arena<Int32>(outLen);
+      final int code = _alignPositions(
+        aUnits,
+        aLen,
+        aOff,
+        bUnits,
+        bLen,
+        bOff,
+        count,
+        maxCells,
+        out,
+        outLen,
+      );
+      if (code != FfcStatus.ok) {
+        throw StateError('$alignPositionsSymbol failed with status $code');
+      }
+      final Int32List all = out.asTypedList(outLen);
+      final Int32List offsets = aOff.asTypedList(count + 1);
+      return <Int32List>[
+        for (int k = 0; k < count; k++)
+          Int32List.fromList(
+            all.sublist(offsets[k] + k, offsets[k + 1] + k + 1),
+          ),
+      ];
+    });
+  }
+
+  /// 把 [texts] 的码元首尾相接拷进原生内存，另给 `texts.length + 1` 项的起点偏移。
+  static (Pointer<Uint16>, int, Pointer<Int32>) _packed(
+    Arena arena,
+    List<String> texts,
+  ) {
+    int total = 0;
+    for (final String t in texts) {
+      total += t.length;
+    }
+    final Pointer<Uint16> units = arena<Uint16>(total == 0 ? 1 : total);
+    final Pointer<Int32> offsets = arena<Int32>(texts.length + 1);
+    final Uint16List u = units.asTypedList(total);
+    final Int32List o = offsets.asTypedList(texts.length + 1);
+    int at = 0;
+    for (int i = 0; i < texts.length; i++) {
+      o[i] = at;
+      final String t = texts[i];
+      u.setRange(at, at + t.length, t.codeUnits);
+      at += t.length;
+    }
+    o[texts.length] = at;
+    return (units, total, offsets);
   }
 
   /// 对 [windows] 各档搜索窗口跑一遍整本匹配（原生侧按线程并行），一次调用。
@@ -159,9 +247,9 @@ final class FushiComputeText {
       for (int i = 0; i < cueCount; i++) {
         offsets[i] = at;
         final String t = cueTexts[i];
-        for (int k = 0; k < t.length; k++) {
-          units[at + k] = t.codeUnitAt(k);
-        }
+        // 整段拷贝，不逐码元下标写：Dart 3.13.5 JIT 下逐个 `units[at + k] = …`
+        // 在「先跑过上百次小匹配、再匹配一整本书」时稳定访问冲突（AOT 不复现）。
+        units.setRange(at, at + t.length, t.codeUnits);
         at += t.length;
       }
       offsets[cueCount] = at;
@@ -214,6 +302,7 @@ final class FushiComputeText {
       if (code != FfcStatus.ok) {
         throw StateError('$cueMatchSymbol failed with status $code');
       }
+
       final Int32List stats = outStats.asTypedList(windowCount * 3);
       final Int32List recoverCounts = outRecoverCount.asTypedList(windowCount);
       final Int32List recover = outRecover.asTypedList(outLen * 4);
@@ -262,10 +351,7 @@ final class FushiComputeText {
 
   static Pointer<Uint16> _units(Arena arena, String s) {
     final Pointer<Uint16> p = arena<Uint16>(s.isEmpty ? 1 : s.length);
-    final Uint16List view = p.asTypedList(s.length);
-    for (int i = 0; i < s.length; i++) {
-      view[i] = s.codeUnitAt(i);
-    }
+    p.asTypedList(s.length).setRange(0, s.length, s.codeUnits);
     return p;
   }
 
@@ -331,4 +417,31 @@ typedef _CueMatchDart =
       Pointer<Int32>,
       Pointer<Int32>,
       Pointer<Int32>,
+    );
+
+typedef _AlignPositionsC =
+    Int32 Function(
+      Pointer<Uint16>,
+      Size,
+      Pointer<Int32>,
+      Pointer<Uint16>,
+      Size,
+      Pointer<Int32>,
+      Size,
+      Int64,
+      Pointer<Int32>,
+      Size,
+    );
+typedef _AlignPositionsDart =
+    int Function(
+      Pointer<Uint16>,
+      int,
+      Pointer<Int32>,
+      Pointer<Uint16>,
+      int,
+      Pointer<Int32>,
+      int,
+      int,
+      Pointer<Int32>,
+      int,
     );

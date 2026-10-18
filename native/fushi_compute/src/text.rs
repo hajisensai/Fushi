@@ -1012,6 +1012,144 @@ unsafe fn slice_or_empty<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
     }
 }
 
+// ── 有声书 cue 重切：模糊命中的位置对齐（`CueSentenceResegmenter._alignPositions`）──
+
+/// 编辑距离对齐：`map[i]` = `a[i]` 在 `b` 里对应的位置（删除的字符指向下一个对应位置），
+/// `map[a.len()] = b.len()`，单调不减。`a.len() * b.len() > max_cells` 时退化为按比例线性
+/// 映射 `round(i * m / n)`。与旧 Dart 实现同一套 DP 与回溯优先级（对角 → 删除 → 插入），
+/// 全是整数运算外加一次 `(i * m) as f64 / n` 的四舍五入（Dart `round` = 远离零）。
+///
+/// `dp` 是复用的工作区（调用方跨多次调用保留，省掉逐对分配）。
+pub fn align_positions(a: &[u16], b: &[u16], max_cells: i64, dp: &mut Vec<u32>, map: &mut [i32]) {
+    let n = a.len();
+    let m = b.len();
+    debug_assert_eq!(map.len(), n + 1);
+    map.fill(m as i32);
+    if n == 0 {
+        return;
+    }
+    if m == 0 {
+        map.fill(0);
+        return;
+    }
+    if (n as i64).saturating_mul(m as i64) > max_cells {
+        for (i, slot) in map.iter_mut().enumerate() {
+            *slot = ((i as i64 * m as i64) as f64 / n as f64).round() as i32;
+        }
+        return;
+    }
+    let w = m + 1;
+    dp.clear();
+    dp.resize((n + 1) * w, 0);
+    for i in 1..=n {
+        dp[i * w] = i as u32;
+    }
+    for j in 1..=m {
+        dp[j] = j as u32;
+    }
+    for i in 1..=n {
+        let ca = a[i - 1];
+        let (prev, cur) = dp.split_at_mut(i * w);
+        let prev = &prev[(i - 1) * w..];
+        for j in 1..=m {
+            let sub = prev[j - 1] + u32::from(ca != b[j - 1]);
+            let del = prev[j] + 1;
+            let ins = cur[j - 1] + 1;
+            cur[j] = sub.min(del.min(ins));
+        }
+    }
+    // 回溯：a[i-1] 与 b[j-1] 配对 → map[i-1] = j-1；a[i-1] 被删 → map[i-1] = j。
+    let mut i = n;
+    let mut j = m;
+    while i > 0 {
+        let cur = dp[i * w + j];
+        if j > 0 && cur == dp[(i - 1) * w + j - 1] + u32::from(a[i - 1] != b[j - 1]) {
+            map[i - 1] = (j - 1) as i32;
+            i -= 1;
+            j -= 1;
+        } else if cur == dp[(i - 1) * w + j] + 1 {
+            map[i - 1] = j as i32;
+            i -= 1;
+        } else {
+            j -= 1;
+        }
+    }
+}
+
+/// 一次对齐整本书的全部模糊命中 cue（`CueSentenceResegmenter` 的重切前置步骤）。
+///
+/// 第 k 对：`a = a_units[a_offsets[k]..a_offsets[k+1]]`（cue 的归一化听写，UTF-16 码元），
+/// `b = b_units[b_offsets[k]..b_offsets[k+1]]`（命中的正文切片）。两个偏移数组各
+/// `count + 1` 项、首项 0、单调不减。输出按对顺序拼接，第 k 对占 `a_len_k + 1` 个 i32，
+/// 起点 `a_offsets[k] + k`；`out_len` 必须恰为 `a_offsets[count] + count`，否则
+/// [INVALID_ARGUMENT](status::INVALID_ARGUMENT)。各对互不依赖，逐位等同逐条调用
+/// [align_positions]。
+///
+/// # Safety
+/// 各指针按上面的长度可读 / 可写（长度为 0 的可为 NULL）。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_text_align_positions(
+    a_units: *const u16,
+    a_units_len: usize,
+    a_offsets: *const i32,
+    b_units: *const u16,
+    b_units_len: usize,
+    b_offsets: *const i32,
+    count: usize,
+    max_cells: i64,
+    out: *mut i32,
+    out_len: usize,
+) -> i32 {
+    guard(|| {
+        if a_offsets.is_null() || b_offsets.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let a_off = std::slice::from_raw_parts(a_offsets, count + 1);
+        let b_off = std::slice::from_raw_parts(b_offsets, count + 1);
+        let a_all: &[u16] = if a_units_len == 0 {
+            &[]
+        } else if a_units.is_null() {
+            return status::NULL_ARGUMENT;
+        } else {
+            std::slice::from_raw_parts(a_units, a_units_len)
+        };
+        let b_all: &[u16] = if b_units_len == 0 {
+            &[]
+        } else if b_units.is_null() {
+            return status::NULL_ARGUMENT;
+        } else {
+            std::slice::from_raw_parts(b_units, b_units_len)
+        };
+        let valid = |off: &[i32], len: usize| {
+            off[0] == 0
+                && off.windows(2).all(|w| w[0] <= w[1])
+                && off[count] as i64 == len as i64
+        };
+        if !valid(a_off, a_all.len()) || !valid(b_off, b_all.len()) {
+            return status::INVALID_ARGUMENT;
+        }
+        if out_len != a_all.len() + count {
+            return status::INVALID_ARGUMENT;
+        }
+        if out_len > 0 && out.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let out: &mut [i32] = if out_len == 0 {
+            &mut []
+        } else {
+            std::slice::from_raw_parts_mut(out, out_len)
+        };
+        let mut dp: Vec<u32> = Vec::new();
+        for k in 0..count {
+            let a = &a_all[a_off[k] as usize..a_off[k + 1] as usize];
+            let b = &b_all[b_off[k] as usize..b_off[k + 1] as usize];
+            let at = a_off[k] as usize + k;
+            align_positions(a, b, max_cells, &mut dp, &mut out[at..at + a.len() + 1]);
+        }
+        status::OK
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1118,5 +1256,46 @@ mod tests {
             )
         };
         assert_eq!(code, status::INVALID_ARGUMENT);
+    }
+
+    #[test]
+    fn align_positions_batch_matches_single_and_edges() {
+        let u = |t: &str| t.encode_utf16().collect::<Vec<u16>>();
+        let mut dp = Vec::new();
+        let mut map = vec![0i32; 4];
+        align_positions(&u("あいう"), &u(""), 400_000, &mut dp, &mut map);
+        assert_eq!(map, vec![0, 0, 0, 0]);
+        align_positions(&u("あいう"), &u("あいう"), 400_000, &mut dp, &mut map);
+        assert_eq!(map, vec![0, 1, 2, 3]);
+        let mut map = vec![0i32; 5];
+        align_positions(&u("ああああ"), &u("あ"), 400_000, &mut dp, &mut map);
+        assert_eq!(map, vec![0, 0, 0, 0, 1]);
+        // 超预算：按比例 round(i * m / n)。
+        let mut map = vec![0i32; 4];
+        align_positions(&u("abc"), &u("abcdefgh"), 1, &mut dp, &mut map);
+        assert_eq!(map, vec![0, 3, 5, 8]);
+
+        let a: Vec<u16> = [u("あい"), u(""), u("ab")].concat();
+        let b: Vec<u16> = [u("あう"), u("x"), u("")].concat();
+        let a_off = [0i32, 2, 2, 4];
+        let b_off = [0i32, 2, 3, 3];
+        let mut out = vec![-1i32; 4 + 3];
+        let st = unsafe {
+            ffc_text_align_positions(
+                a.as_ptr(), a.len(), a_off.as_ptr(),
+                b.as_ptr(), b.len(), b_off.as_ptr(),
+                3, 400_000, out.as_mut_ptr(), out.len(),
+            )
+        };
+        assert_eq!(st, status::OK);
+        assert_eq!(out, vec![0, 1, 2, 1, 0, 0, 0]);
+        let st = unsafe {
+            ffc_text_align_positions(
+                a.as_ptr(), a.len(), a_off.as_ptr(),
+                b.as_ptr(), b.len(), b_off.as_ptr(),
+                3, 400_000, out.as_mut_ptr(), out.len() - 1,
+            )
+        };
+        assert_eq!(st, status::INVALID_ARGUMENT);
     }
 }

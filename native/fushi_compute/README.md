@@ -87,6 +87,30 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
 | 内存 SHA-256 | 64 MiB | 1,173 ms | 43 ms | 27× |
 | 整文件 SHA-256（异步读，UI isolate 可用） | 256 MiB | 4,829 ms | 408 ms | 11.8× |
 
+## 文本域：有声书 cue 重切的位置对齐
+
+`ffc_text_align_positions(a_units, a_len, a_offsets, b_units, b_len, b_offsets, count, max_cells, out, out_len) -> i32`
+是 fushi_audio `CueSentenceResegmenter` 原先逐条 cue 调的编辑距离对齐 `_alignPositions`
+（DP + 回溯，`听写长 × 切片长 > maxAlignCells(400000)` 时按比例线性映射）。现在重切器在合缝之后
+把整本书全部模糊命中 cue（听写 ≠ 命中正文切片）攒成一批、一次调用；听写 = 切片的仍取恒等映射，
+不过 FFI。字符串按 UTF-16 码元（`String.codeUnitAt` 同口径），全整数运算外加一次
+`round(i * m / n)`，与旧实现逐值一致。Dart 侧 `FushiComputeText.alignPositions`。
+
+回归：`packages/fushi_compute/test/text_align_positions_test.dart`（旧实现对 580 对合成输入冻结的
+映射，含空串 / 代理对 / 超预算 / 预算 0）；`packages/fushi_audio/test/matching/cue_resegmenter_golden_test.dart`
+（160 个合成用例 × 两档 maxAlignCells 的整条重切输出，旧实现冻结）；真实书
+`cue_resegmenter_realdata_golden_test.dart`（`realdata` tag，不入 CI）。
+
+基准（`packages/fushi_audio/benchmark/align_positions_benchmark.dart`，AOT，真实书匹配后的全部模糊命中对，
+5 次中位数；2026-10-18，i5-12600KF / Windows 11，Dart 3.13.5）：
+
+| 书 | cue 数 | 模糊对 | 平均 DP 格 | 改动前（Dart，逐条） | 改动后（Rust，一批） | 倍数 |
+|---|---|---|---|---|---|---|
+| mt01 | 8597 | 83 | 291 | 0.300 ms | 0.148 ms | 2.0× |
+| mt04 | 7643 | 1976 | 581 | 14.962 ms | 6.938 ms | 2.2× |
+| mt16 | 9879 | 2027 | 473 | 13.116 ms | 6.214 ms | 2.1× |
+| ore | 6129 | 2159 | 829 | 21.285 ms | 9.343 ms | 2.3× |
+
 ## 构建
 
 | 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-18 实测） |
@@ -105,7 +129,7 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
   fushi_compute 加依赖时要同步更新 `native/fushi_ios_umbrella/Cargo.lock`（构建用 `--locked`）。
   因为三个 crate 编成一个 `.a`，iOS 上 fushi_p2p / fushi_fsrs 实际也随之变成必需。
 - `verify_abi.sh <二进制> [nm]` 递归抓 `packages/fushi_compute/lib/` 下所有 `'ffc_*'` 字面量，逐个核对
-  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 11。
+  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 13。
 
 ## CI
 
