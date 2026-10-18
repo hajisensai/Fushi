@@ -574,11 +574,17 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       setState(() => _failReason = t.video_load_failed_not_found);
       return;
     }
+    final Object? hostingPref = _appModel.prefsRepo.getPref(
+      kWebVideoHostingPrefKey,
+    );
+    // 没选过档：引擎能做底层合成时默认 4K 窗口档（画质最高，界面照样是 Fushi 的）；
+    // 选过的照用户的。
     _hosting =
         widget.hosting ??
-        webVideoHostingFromPref(
-          _appModel.prefsRepo.getPref(kWebVideoHostingPrefKey),
-        );
+        (hostingPref == null && await underlayCompositionSupported()
+            ? WebVideoHosting.windowed
+            : webVideoHostingFromPref(hostingPref));
+    if (!mounted) return;
     _shaderTier = webVideoShaderTierFromPref(
       _appModel.prefsRepo.getPref(kWebVideoShaderTierPrefKey),
     );

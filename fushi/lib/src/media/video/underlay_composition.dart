@@ -20,6 +20,21 @@ final ValueNotifier<bool> underlayCompositionActive = ValueNotifier<bool>(
 
 int _holders = 0;
 
+/// 引擎能否做底层合成（打了补丁的 flutter_windows.dll 导出了开关）。不改任何状态。
+Future<bool> underlayCompositionSupported() async {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) return false;
+  try {
+    return await kUnderlayCompositionChannel.invokeMethod<bool>(
+          'underlayCompositionSupported',
+        ) ??
+        false;
+  } on MissingPluginException {
+    return false;
+  } on PlatformException {
+    return false;
+  }
+}
+
 /// 请求开启：返回引擎是否支持（原版引擎 / 非 Windows → false，什么也不变）。
 /// 与 [releaseUnderlayComposition] 成对调用；按持有数计，换页交接（新页先 acquire、
 /// 旧页后 release）不会中途关掉。
