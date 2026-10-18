@@ -17,6 +17,8 @@ use std::sync::OnceLock;
 use crate::{guard, status};
 
 mod study_char_table;
+pub mod anidb;
+pub mod title_score;
 
 use study_char_table::STUDY_CHAR_RANGES;
 
