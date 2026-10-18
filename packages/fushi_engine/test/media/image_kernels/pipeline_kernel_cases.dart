@@ -1,4 +1,4 @@
-// 封面比对 / 大模型裁图 / TS 字幕解复用 回归用例：在确定性合成输入上跑公开 API，产出
+// 封面比对 / 大模型裁图 / TS 字幕解复用 / EPUB 跨页边缘比较 回归用例：在确定性合成输入上跑公开 API，产出
 // 摘要；测试比对 pipeline_kernel_vectors.dart 里钉住的值（由改用原生实现**之前**的纯
 // Dart 实现生成）。
 //
@@ -9,6 +9,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/leaderboard/cover_compare.dart';
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/manga/mokuro_geometry.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/mpegts_subtitle_demuxer.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
@@ -193,6 +194,88 @@ void _digestPackets(_Digest d, List<BitmapSubtitlePacket> packets) {
 }
 
 /// 用例名 → 产出摘要。
+/// EPUB 跨页边缘比较（`EpubEdgeMatcher.compareEdges`）的输入：左右两张图的编码字节与
+/// `stripWidth` / `sampleHeight`。全部用 PNG（无损），换解码器后分数必须逐位相同。
+Map<String, (Uint8List, Uint8List, int, int)> epubEdgeCaseInputs() {
+  Uint8List half(img.Image page, {required bool left}) {
+    final int w = page.width ~/ 2;
+    return img.encodePng(
+      img.copyCrop(
+        page,
+        x: left ? 0 : page.width - w,
+        y: 0,
+        width: w,
+        height: page.height,
+      ),
+    );
+  }
+
+  final Map<String, (Uint8List, Uint8List, int, int)> inputs =
+      <String, (Uint8List, Uint8List, int, int)>{};
+  for (int ch = 1; ch <= 4; ch++) {
+    // 同一张图切成左右两半：真跨页的形态。
+    final img.Image page = synthImage(400, 600, ch, 90 + ch);
+    inputs['spread/${ch}ch'] = (
+      half(page, left: true),
+      half(page, left: false),
+      3,
+      64,
+    );
+    // 两张无关的图。
+    inputs['unrelated/${ch}ch'] = (
+      img.encodePng(synthImage(210, 300, ch, 100 + ch)),
+      img.encodePng(synthImage(210, 300, ch, 110 + ch)),
+      3,
+      64,
+    );
+  }
+  final img.Image page = synthImage(500, 700, 3, 97);
+  final Uint8List l = half(page, left: true);
+  final Uint8List r = half(page, left: false);
+  for (final (int strip, int sample) in <(int, int)>[
+    (1, 64),
+    (8, 64),
+    (3, 16),
+    (3, 200),
+    (3, 1),
+  ]) {
+    inputs['spread/3ch/strip$strip/h$sample'] = (l, r, strip, sample);
+  }
+  // 两边高宽不同（各自按高缩放后宽度不同）。
+  inputs['mixed-size'] = (
+    img.encodePng(synthImage(300, 500, 3, 120)),
+    img.encodePng(synthImage(330, 640, 4, 121)),
+    3,
+    64,
+  );
+  // 比 sampleHeight 矮：放大。
+  inputs['upscale'] = (
+    img.encodePng(synthImage(50, 20, 3, 122)),
+    img.encodePng(synthImage(60, 30, 3, 123)),
+    3,
+    64,
+  );
+  // 缩放后宽度 < stripWidth：越界的列跳过；一列都没有时为 0。
+  inputs['narrow'] = (
+    img.encodePng(synthImage(2, 300, 3, 124)),
+    img.encodePng(synthImage(3, 300, 3, 125)),
+    3,
+    64,
+  );
+  inputs['palette'] = (
+    img.encodePng(
+      img.quantize(synthImage(200, 280, 3, 126), numberOfColors: 16),
+    ),
+    img.encodePng(synthImage(200, 280, 3, 126)),
+    3,
+    64,
+  );
+  final Uint8List garbage = Uint8List.fromList(<int>[1, 2, 3, 4, 5, 6, 7, 8]);
+  inputs['garbage-left'] = (garbage, l, 3, 64);
+  inputs['garbage-right'] = (l, garbage, 3, 64);
+  return inputs;
+}
+
 Map<String, String Function()> pipelineKernelCases() {
   final Map<String, String Function()> cases = <String, String Function()>{};
 
@@ -401,6 +484,18 @@ Map<String, String Function()> pipelineKernelCases() {
     );
     return d.done();
   };
+  // ---- EPUB 跨页边缘比较 ----
+  for (final MapEntry<String, (Uint8List, Uint8List, int, int)> e
+      in epubEdgeCaseInputs().entries) {
+    cases['epub/edge/${e.key}'] = () {
+      final (Uint8List l, Uint8List r, int strip, int sample) = e.value;
+      // 与 EpubEdgeMatcher.compareEdges 相同：解码失败记 0.0。
+      final double score =
+          edgeSimilarityNative(l, r, stripWidth: strip, sampleHeight: sample) ??
+          0.0;
+      return score.toString();
+    };
+  }
   return cases;
 }
 

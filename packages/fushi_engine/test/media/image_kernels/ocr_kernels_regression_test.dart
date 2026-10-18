@@ -5,6 +5,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:fushi_compute/fushi_compute.dart';
 import 'package:test/test.dart';
@@ -23,7 +24,43 @@ void main() {
     expect(cases.keys.toSet(), kOcrKernelVectors.keys.toSet());
   });
 
-  for (final MapEntry<String, FutureOr<String> Function()> e in cases.entries) {
-    test(e.key, () async => expect(await e.value(), kOcrKernelVectors[e.key]));
+  // 按位比：Windows / macOS 用各自平台上旧实现生成的摘要；其它平台（Linux 等）没有按位基线，
+  // 分数经 `exp` 的用例只比可移植摘要。
+  String? exact(String key) {
+    if (Platform.isWindows) return kOcrKernelVectors[key];
+    if (Platform.isMacOS) {
+      return kOcrKernelVectorsMacosOverrides[key] ?? kOcrKernelVectors[key];
+    }
+    return kOcrKernelPortableVectors.containsKey(key)
+        ? null
+        : kOcrKernelVectors[key];
   }
+
+  for (final MapEntry<String, FutureOr<String> Function()> e in cases.entries) {
+    final String? want = exact(e.key);
+    if (want != null) {
+      test(e.key, () async {
+        ocrKernelQuantizeScores = false;
+        expect(await e.value(), want);
+      });
+    }
+    final String? portable = kOcrKernelPortableVectors[e.key];
+    if (portable != null) {
+      test('${e.key} (portable)', () async {
+        ocrKernelQuantizeScores = true;
+        try {
+          expect(await e.value(), portable);
+        } finally {
+          ocrKernelQuantizeScores = false;
+        }
+      });
+    }
+  }
+
+  test('platform-dependent cases are the same set in both tables', () {
+    expect(
+      kOcrKernelVectorsMacosOverrides.keys.toSet(),
+      kOcrKernelPortableVectors.keys.toSet(),
+    );
+  });
 }

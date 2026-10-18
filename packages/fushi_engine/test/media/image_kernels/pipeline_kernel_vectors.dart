@@ -1,4 +1,4 @@
-// 封面比对 / 大模型裁图 / TS 字幕解复用 回归向量：pipeline_kernel_cases.dart 每个用例的输出
+// 封面比对 / 大模型裁图 / TS 字幕解复用 / EPUB 跨页边缘比较 回归向量：pipeline_kernel_cases.dart 每个用例的输出
 // 摘要，2026-10-18 由改用原生实现**之前**的纯 Dart 实现生成（以 `/jpeg` 结尾的除外，见行内注释）。
 // 原生实现必须逐位复现。不要手改；用例或合成输入改了，就用旧实现重新生成。
 const Map<String, String> kPipelineKernelVectors = <String, String>{
@@ -133,4 +133,28 @@ const Map<String, String> kPipelineKernelVectors = <String, String>{
       'd0b32a76d379766df1eeb664b0db9ee5b785334542f5024602999e6ed75ea1ad',
   'ts/empty':
       '9d908ecfb6b256def8b49a7c504e6c889c4b0e41fe6ce3e01863dd7b61a20aa0',
+  // EPUB 跨页边缘比较：分数（double.toString，可逆），由搬进原生之前的
+  // EpubEdgeMatcher.compareEdges（package:image 解码 + copyResize + getPixel）生成。
+  // 1 通道灰度 PNG 是有意的行为变化：package:image 把它解成 1 通道，旧比较按 PixelUint8 读成
+  // (l, 0, 0)，只有 R 差、再被除以 3；原生解码把灰度展开成 (l, l, l)。下面两条等于旧实现对
+  // 同一张图先 convert 成 3 通道再比的结果（旧值 0.9211260893246188 / 0.8836737472766887）。
+  'epub/edge/spread/1ch': '0.7633782679738561',
+  'epub/edge/unrelated/1ch': '0.6510212418300649',
+  'epub/edge/spread/2ch': '0.7682802287581698',
+  'epub/edge/unrelated/2ch': '0.628880718954248',
+  'epub/edge/spread/3ch': '0.7401552287581699',
+  'epub/edge/unrelated/3ch': '0.6027301198257078',
+  'epub/edge/spread/4ch': '0.7425789760348582',
+  'epub/edge/unrelated/4ch': '0.6534381808278866',
+  'epub/edge/spread/3ch/strip1/h64': '0.9086601307189544',
+  'epub/edge/spread/3ch/strip8/h64': '0.6616421568627446',
+  'epub/edge/spread/3ch/strip3/h16': '0.6061002178649237',
+  'epub/edge/spread/3ch/strip3/h200': '0.9035294117647054',
+  'epub/edge/spread/3ch/strip3/h1': '0.0',
+  'epub/edge/mixed-size': '0.6652028867102395',
+  'epub/edge/upscale': '0.6901960784313728',
+  'epub/edge/narrow': '0.0',
+  'epub/edge/palette': '0.6616557734204793',
+  'epub/edge/garbage-left': '0.0',
+  'epub/edge/garbage-right': '0.0',
 };

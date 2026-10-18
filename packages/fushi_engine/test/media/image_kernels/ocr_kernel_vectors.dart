@@ -1,6 +1,10 @@
 // OCR 后段 / 分格排序回归向量：ocr_kernel_cases.dart 每个用例的输出摘要，2026-10-18 由改用
 // 原生实现（native/fushi_compute `ffc_ocr_*`）**之前**的纯 Dart 实现生成。原生实现必须逐位复现。
 // 不要手改；用例或合成输入改了，就用旧实现重新生成（见 ocr_kernel_cases.dart 末尾）。
+//
+// [kOcrKernelVectors] 是在 Windows x64 上生成的按位摘要。其中经 `exp` 的分数随平台 C 库末位
+// 不同，所以另有两张表（同样由旧纯 Dart 实现生成）：macOS arm64 上与之不同的按位摘要，以及
+// 把这些分数量化后跨平台通用的摘要（Windows 与 macOS 上旧实现生成的结果相同）。
 const Map<String, String> kOcrKernelVectors = <String, String>{
   'ctc/scored/t1-v3-k0':
       'e34b347ea36e7716a48e30aa0bd6d7e24f9266763a4b12a3ddfcb6d175293349',
@@ -202,4 +206,52 @@ const Map<String, String> kOcrKernelVectors = <String, String>{
       'dd21b1e320bf6133c0500336aad198d4e977d561f778721cc79e12d6b8cefe6e',
   'panels/order/80/ltr':
       'b51bdd2d40b1bf45cd2f9cf7dd4706526c3f20c8ccc4202fe7a699c798f747b9',
+};
+
+/// macOS arm64 上旧纯 Dart 实现的按位摘要（只列与 Windows 不同的用例：差在 `exp` 末位）。
+const Map<String, String> kOcrKernelVectorsMacosOverrides = <String, String>{
+  'ctc/detailed/t64-v37-k3/200x48':
+      'e61fa6079dcac01c56a7fdfa2d08cd342f307959bc6a07735f429d2a857e7d48',
+  'ctc/detailed/t64-v37-k3/30x60':
+      '8da9584fc46332db6a311cb370729cc05ffb451001209653a11cd0bb594ad383',
+  'ctc/detailed/t64-v37-k3/900x40':
+      'cbd110eec7241bc8c87ca8bab2ca02c26ec931280cbbc7975320258acf8f19ed',
+  'ctc/detailed/t80-v211-k3/200x48':
+      '9e66e3b3f8f95e8f45165a38d855c10ec28b52ae4d3480b4dc28ba4103b62967',
+  'ctc/detailed/t80-v211-k3/30x60':
+      '6387178cec70ab1994547bc25c1edf2cf4250b1f5eae8698b98a7ecb25e484b5',
+  'ctc/detailed/t80-v211-k3/900x40':
+      '3afa5387709ab1efda85ffcd7cee9b74ae58d5602073cc3945408b9d62ada3d7',
+  'rtdetr/raw/1200x1700-sq/0.02':
+      '45786e8f2b0312eedc5e56efb115b8388feec6bf81d7079bb52532b4abee2d63',
+  'rtdetr/raw/640x640-sq/0.02':
+      '9135048772c5f0ac99525e6c2290f9542a09a05ca9fd9aed79c2547f5a993e55',
+  'rtdetr/raw/2000x900-lb/0.3':
+      'a51ee4eb78013aec276b9eb8b98a31ceea21c3b4a26d8e1e52e072db08e4d0b9',
+  'rtdetr/raw/2000x900-lb/0.02':
+      '1bf7de8ac33370ec120da2acdf48cab0a5647f80adf19081791e6ef073361e6f',
+};
+
+/// 平台相关用例的可移植摘要：`ocrKernelQuantizeScores = true` 时的结果，所有平台都比。
+const Map<String, String> kOcrKernelPortableVectors = <String, String>{
+  'ctc/detailed/t64-v37-k3/200x48':
+      'e136f0e3b49cd3a580053e77271804b9d1798fbc498df814b1ba788c68d91336',
+  'ctc/detailed/t64-v37-k3/30x60':
+      '23e0639918785bb1a249d8b0481eca2a460edc6917b3bce34fa15fe973f128cb',
+  'ctc/detailed/t64-v37-k3/900x40':
+      '52fa7f7c97fbe9bd57537ae9a9f98a5e65ac8befbd6fd217f3a9ce8ef3f33eee',
+  'ctc/detailed/t80-v211-k3/200x48':
+      'ae8e79cb9f29427d5f0ef5932655027505fcd63c518e193a36ce5164c5aedd2f',
+  'ctc/detailed/t80-v211-k3/30x60':
+      '4cb8aca39df8c68dfd402ef31dfbb082a129f5d6bbbbef5d9ede03d174a2281c',
+  'ctc/detailed/t80-v211-k3/900x40':
+      '422e1eedf8089cba38d96b0a7c295b26c65d9035eb41443b22e9495291e834e7',
+  'rtdetr/raw/1200x1700-sq/0.02':
+      'bf7c438bc0b7571ecd9f7a002663031f5c637ec5eef4caff5e51c4702b585e2a',
+  'rtdetr/raw/640x640-sq/0.02':
+      '849587636ee3c0d2ba0b822a2be3c95389bfe148a18bfac4583c7885685bd4d9',
+  'rtdetr/raw/2000x900-lb/0.3':
+      'fd9006ea105208982eb6dcf7a60f2c952b77eb97774d8c449c2cbbcb13ed5cd8',
+  'rtdetr/raw/2000x900-lb/0.02':
+      '4b29a08f67fc090ac54af6206e886063a9c68636995b6aca453131f59b732d01',
 };

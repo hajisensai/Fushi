@@ -21,6 +21,15 @@ import 'synthetic_images.dart';
 
 String _sha(List<int> bytes) => sha256.convert(bytes).toString();
 
+/// 置 true 时，经超越函数（sigmoid / softmax 的 `exp`）得到的分数 / 置信度先量化到 2^-24
+/// 再进摘要，其余字段（框、索引、文字、计数）仍按位。
+///
+/// 为什么要有：`exp` 走各平台的 C 库，Windows（MSVC CRT）、macOS（libm）、Linux（glibc）的
+/// 结果末位可以不同——旧纯 Dart 实现在 macOS 上就和 Windows 生成的向量差在这些分数上（原生实现
+/// 在同一平台上与旧 Dart 逐位相同）。量化后的摘要（[kOcrKernelPortableVectors]）跨平台通用；
+/// 按位摘要只在生成过向量的平台上比。
+bool ocrKernelQuantizeScores = false;
+
 /// 摘要累加器：double 按位、int 按 64 位、字符串按 UTF-8 带长度。
 class _Digest {
   final BytesBuilder _b = BytesBuilder(copy: false);
@@ -33,6 +42,15 @@ class _Digest {
     }
     _scratch.setFloat64(0, v, Endian.little);
     _b.add(Uint8List.fromList(_scratch.buffer.asUint8List()));
+  }
+
+  /// 平台相关的分数：见 [ocrKernelQuantizeScores]。
+  void score(double? v) {
+    if (v == null || !ocrKernelQuantizeScores || !v.isFinite) {
+      f(v);
+      return;
+    }
+    i((v * 16777216).round());
   }
 
   void i(int v) {
@@ -146,7 +164,7 @@ void _digestPositioned(
   ({String text, double? confidence, List<OcrLineToken> tokens}) r,
 ) {
   d.s(r.text);
-  d.f(r.confidence);
+  d.score(r.confidence);
   d.i(r.tokens.length);
   for (final OcrLineToken t in r.tokens) {
     d.i(t.start);
@@ -172,7 +190,7 @@ void _digestDetailed(_Digest d, PpOcrLineRecognition r) {
     d.f(t.inputRight);
     d.f(t.left);
     d.f(t.right);
-    d.f(t.confidence);
+    d.score(t.confidence);
   }
 }
 
@@ -180,7 +198,7 @@ void _digestRaw(_Digest d, List<RawDetection> list) {
   d.i(list.length);
   for (final RawDetection r in list) {
     d.rect(r.rect);
-    d.f(r.score);
+    d.score(r.score);
     d.i(r.classId);
   }
 }
@@ -189,7 +207,7 @@ void _digestRegions(_Digest d, List<DetectedTextRegion> list) {
   d.i(list.length);
   for (final DetectedTextRegion r in list) {
     d.rect(r.rect);
-    d.f(r.score);
+    d.score(r.score);
     d.i(r.classId);
     d.i(r.insideBubble ? 1 : 0);
   }
