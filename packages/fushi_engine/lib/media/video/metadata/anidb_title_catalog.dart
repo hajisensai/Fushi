@@ -9,8 +9,10 @@
 /// 解析与索引在 Rust 计算内核里（`AniDbCatalogBuilderNative`，
 /// native/fushi_compute/src/parse/anidb/）：后台 isolate 把 gzip 解压出的每一块原样喂给
 /// 原生构建器（流式，不在 Dart 堆里留整份明文或 DOM），建好的目录驻留原生内存，句柄地址
-/// 交回调用 isolate 接管；搜索与按 id 取记录都是对该句柄的一次 FFI 调用，Dart 只把命中的
-/// 记录包成 [AniDbTitleRecord]。
+/// 交回调用 isolate 接管；搜索是对该句柄的一次 FFI 调用。记录对象（[AniDbTitleRecord]）
+/// 也在同一个后台 isolate 里一次物化：借出原生目录的扁平记录表（原生内存上的零拷贝视图，
+/// 一次 FFI），整表解码成按 id 的 Map 随句柄经 Isolate.exit 交回——按 id 取记录与搜索命中
+/// 取记录都只是一次 Map 查找，不逐条跨 FFI、也不在 UI isolate 上解码。
 library;
 
 import 'dart:io';
@@ -22,8 +24,7 @@ import 'package:fushi_compute/fushi_compute.dart'
         AniDbCatalogBuilderNative,
         AniDbCatalogNative,
         AniDbCatalogNativeError,
-        AniDbNativeSearchHit,
-        AniDbNativeTitle;
+        AniDbNativeSearchHit;
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
@@ -139,16 +140,16 @@ class AniDbTitleCatalog {
   final Duration downloadTimeout;
 
   AniDbCatalogNative? _catalog;
-  final Map<int, AniDbTitleRecord?> _recordCache = <int, AniDbTitleRecord?>{};
+  Map<int, AniDbTitleRecord> _recordsById = const <int, AniDbTitleRecord>{};
   DateTime? _nextRefreshAt;
   Future<_LoadedTitleCatalog>? _loadFuture;
   bool _closed = false;
 
   Future<AniDbTitleRecord?> findByAnimeId(int animeId) async {
     if (animeId <= 0) return null;
-    final AniDbCatalogNative catalog = await _records();
+    await _records();
     _ensureOpen();
-    return _record(catalog, animeId);
+    return _recordsById[animeId];
   }
 
   Future<List<AniDbTitleSearchResult>> search(
@@ -166,44 +167,20 @@ class AniDbTitleCatalog {
     final List<AniDbNativeSearchHit> hits =
         catalog.search(normalizedQuery, limit);
     return <AniDbTitleSearchResult>[
-      for (final AniDbNativeSearchHit hit in hits) _result(catalog, hit),
+      for (final AniDbNativeSearchHit hit in hits) _result(hit),
     ];
   }
 
-  AniDbTitleSearchResult _result(
-    AniDbCatalogNative catalog,
-    AniDbNativeSearchHit hit,
-  ) {
-    final AniDbTitleRecord record = _record(catalog, hit.animeId)!;
+  /// 同一份目录里同一 id 总是同一个 [AniDbTitleRecord]（搜索结果的 matchedTitle 与
+  /// record.titles 的元素是同一对象）。
+  AniDbTitleSearchResult _result(AniDbNativeSearchHit hit) {
+    final AniDbTitleRecord record = _recordsById[hit.animeId]!;
     return AniDbTitleSearchResult(
       record: record,
       matchedTitle: record.titles[hit.titleIndex],
       kind: AniDbTitleMatchKind.values[hit.kind],
       similarity: hit.similarity,
     );
-  }
-
-  /// 同一份目录里同一 id 总是返回同一个 [AniDbTitleRecord]（搜索结果的 matchedTitle
-  /// 与 record.titles 的元素是同一对象）。
-  AniDbTitleRecord? _record(AniDbCatalogNative catalog, int animeId) {
-    if (_recordCache.containsKey(animeId)) return _recordCache[animeId];
-    final List<AniDbNativeTitle>? titles = catalog.find(animeId);
-    final AniDbTitleRecord? record = titles == null
-        ? null
-        : AniDbTitleRecord(
-            animeId: animeId,
-            titles: <AniDbTitle>[
-              for (final AniDbNativeTitle t in titles)
-                AniDbTitle._catalog(
-                  value: t.value,
-                  type: t.type,
-                  language: t.language,
-                  normalizedValue: t.normalized,
-                ),
-            ],
-          );
-    _recordCache[animeId] = record;
-    return record;
   }
 
   Future<AniDbCatalogNative> _records() async {
@@ -222,11 +199,11 @@ class AniDbTitleCatalog {
       _ensureOpen();
       final AniDbCatalogNative catalog = loaded.parsed.catalog;
       if (!identical(_catalog, catalog)) {
-        // 换了一份目录：旧记录缓存作废，旧原生目录立即释放（所有调用都在本 isolate
+        // 换了一份目录：记录表跟着换，旧原生目录立即释放（所有调用都在本 isolate
         // 同步完成，不存在还在用旧句柄的 FFI 调用）。
         _catalog?.dispose();
-        _recordCache.clear();
         _catalog = catalog;
+        _recordsById = loaded.parsed.records;
       }
       _nextRefreshAt = loaded.nextRefreshAt;
       return catalog;
@@ -376,13 +353,13 @@ class AniDbTitleCatalog {
     final TransferableTypedData transferable = TransferableTypedData.fromList(
       <Uint8List>[body],
     );
-    final int address = await Isolate.run(
+    final _ParsedPayload payload = await Isolate.run(
       () => _parseTitleCatalogBytes(transferable),
       debugName: 'anidb-title-catalog',
     );
     return _DownloadedTitleCatalog(
       cacheBytes: body,
-      parsed: _ParsedTitleCatalog(AniDbCatalogNative.adopt(address)),
+      parsed: payload.adopt(),
     );
   }
 
@@ -395,11 +372,11 @@ class AniDbTitleCatalog {
     }
     // 文件在后台 isolate 里流式读取，UI isolate 不加载整份缓存。
     final String path = cacheFile.path;
-    final int address = await Isolate.run(
+    final _ParsedPayload payload = await Isolate.run(
       () => _parseTitleCatalogFile(path),
       debugName: 'anidb-title-catalog',
     );
-    return _ParsedTitleCatalog(AniDbCatalogNative.adopt(address));
+    return payload.adopt();
   }
 
   Future<void> _replaceAtomically(File target, List<int> bytes) async {
@@ -449,7 +426,7 @@ class AniDbTitleCatalog {
     _closed = true;
     _catalog?.dispose();
     _catalog = null;
-    _recordCache.clear();
+    _recordsById = const <int, AniDbTitleRecord>{};
     _nextRefreshAt = null;
     if (_ownsClient) _client.close();
   }
@@ -458,8 +435,8 @@ class AniDbTitleCatalog {
 bool _looksLikeGzip(List<int> bytes) =>
     bytes.length >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b;
 
-/// 后台 isolate 入口：解析刚下载的压缩体（或明文 XML），返回原生目录句柄地址。
-Future<int> _parseTitleCatalogBytes(TransferableTypedData transferable) {
+/// 后台 isolate 入口：解析刚下载的压缩体（或明文 XML），返回原生目录句柄地址与物化好的记录。
+Future<_ParsedPayload> _parseTitleCatalogBytes(TransferableTypedData transferable) {
   final Uint8List bytes = transferable.materialize().asUint8List();
   return _parseTitleCatalogSource(
     Stream<List<int>>.value(bytes),
@@ -467,8 +444,8 @@ Future<int> _parseTitleCatalogBytes(TransferableTypedData transferable) {
   );
 }
 
-/// 后台 isolate 入口：流式读取磁盘缓存（压缩或明文均可），返回原生目录句柄地址。
-Future<int> _parseTitleCatalogFile(String path) async {
+/// 后台 isolate 入口：流式读取磁盘缓存（压缩或明文均可），返回原生目录句柄地址与物化好的记录。
+Future<_ParsedPayload> _parseTitleCatalogFile(String path) async {
   final File file = File(path);
   final RandomAccessFile handle = await file.open();
   final List<int> magic;
@@ -484,8 +461,9 @@ Future<int> _parseTitleCatalogFile(String path) async {
 /// 解压 → 逐块喂给原生构建器（UTF-8 解码、XML 事件、记录、索引都在 Rust 里），
 /// 全程分块。异常一律收敛成 [AniDbTitleCatalogException] 且 `cause` 只带字符串：
 /// 它要跨 isolate 边界传回来。成功时返回目录句柄地址——原生内存是进程级的，地址
-/// 在接管它的 isolate 里依然有效；由调用方 [AniDbCatalogNative.adopt] 恰好接管一次。
-Future<int> _parseTitleCatalogSource(
+/// 在接管它的 isolate 里依然有效；由调用方 [_ParsedPayload.adopt] 恰好接管一次——以及
+/// 在本 isolate 里从记录表一次物化好的全部记录。
+Future<_ParsedPayload> _parseTitleCatalogSource(
   Stream<List<int>> source, {
   required bool isGzip,
 }) async {
@@ -527,15 +505,55 @@ Future<int> _parseTitleCatalogSource(
         'AniDB title catalog has an invalid expanded size',
       );
     }
+    final int address;
     try {
-      return builder.finish();
+      address = builder.finish();
     } on AniDbCatalogNativeError catch (error) {
       throw _catalogException(error);
+    }
+    try {
+      return _ParsedPayload(
+        address,
+        AniDbCatalogNative.borrow(address, _materializeRecords),
+      );
+    } catch (error) {
+      AniDbCatalogNative.adopt(address).dispose();
+      throw AniDbTitleCatalogException(
+        'Unable to parse the AniDB title catalog',
+        error.toString(),
+      );
     }
   } finally {
     builder.dispose();
   }
 }
+
+/// 把整张记录表解码成按 id 的 [AniDbTitleRecord]（一次 FFI 借出记录表，之后纯 Dart）。
+Map<int, AniDbTitleRecord> _materializeRecords(AniDbCatalogNative catalog) {
+  final Map<int, AniDbTitleRecord> records = <int, AniDbTitleRecord>{};
+  final int count = catalog.recordCount;
+  for (int i = 0; i < count; i++) {
+    final int animeId = catalog.animeIdAt(i);
+    records[animeId] = AniDbTitleRecord(
+      animeId: animeId,
+      titles: catalog.recordTitlesAt(i, _catalogTitle),
+    );
+  }
+  return records;
+}
+
+AniDbTitle _catalogTitle(
+  String value,
+  String type,
+  String language,
+  String normalized,
+) =>
+    AniDbTitle._catalog(
+      value: value,
+      type: type,
+      language: language,
+      normalizedValue: normalized,
+    );
 
 AniDbTitleCatalogException _catalogException(
   AniDbCatalogNativeError error,
@@ -574,11 +592,24 @@ AniDbTitleCatalogException _catalogException(
         ),
     };
 
+/// 后台 isolate 交回的解析产物：原生目录句柄地址 + 物化好的记录（经 Isolate.exit 原样移交）。
+class _ParsedPayload {
+  const _ParsedPayload(this.address, this.records);
+
+  final int address;
+  final Map<int, AniDbTitleRecord> records;
+
+  /// 在调用 isolate 里接管句柄（每份产物恰好一次）。
+  _ParsedTitleCatalog adopt() =>
+      _ParsedTitleCatalog(AniDbCatalogNative.adopt(address), records);
+}
+
 /// 后台 isolate 解析产物在调用 isolate 里接管后的形态。
 class _ParsedTitleCatalog {
-  const _ParsedTitleCatalog(this.catalog);
+  const _ParsedTitleCatalog(this.catalog, this.records);
 
   final AniDbCatalogNative catalog;
+  final Map<int, AniDbTitleRecord> records;
 }
 
 class _LoadedTitleCatalog {

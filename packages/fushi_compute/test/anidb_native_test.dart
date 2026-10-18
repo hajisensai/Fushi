@@ -121,6 +121,35 @@ void main() {
     catalog.dispose(); // 幂等
   });
 
+  test('record table: indexed access, interning, borrow does not own', () {
+    final int address = build(<List<int>>[utf8.encode(sample)]);
+    final List<String> seen = AniDbCatalogNative.borrow(address, (
+      AniDbCatalogNative c,
+    ) {
+      expect(c.recordCount, 2);
+      expect(() => c.dispose(), throwsStateError);
+      return <String>[
+        for (int i = 0; i < c.recordCount; i++)
+          '${c.animeIdAt(i)}: ${c.recordTitlesAt(i, (String v, String t, String l, String n) => '$v|$t|$l|$n').join(' / ')}',
+      ];
+    });
+    expect(seen, <String>[
+      '1: Seikai no Monshou|main|x-jat|seikai no monshou'
+          ' / Crest of the Stars|official|en|crest of the stars'
+          ' / Crest & Stars|syn|en|crest stars',
+      '2: 無職転生|main|ja|无职转生',
+    ]);
+    // 借用结束后句柄仍然有效，由 adopt 恰好接管一次。
+    final AniDbCatalogNative catalog = AniDbCatalogNative.adopt(address);
+    addTearDown(catalog.dispose);
+    final List<AniDbNativeTitle> one = catalog.find(1)!;
+    // type / language 去重：同值是同一实例。
+    expect(identical(one[1].language, one[2].language), isTrue);
+    expect(catalog.find(0), isNull);
+    expect(catalog.find(-1), isNull);
+    expect(catalog.find(1 << 40), isNull);
+  });
+
   group('anime XML DOM', () {
     test('tree view follows package:xml DOM accessors', () {
       final FfcXmlElement root = parseAniDbAnimeXml(

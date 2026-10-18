@@ -115,15 +115,20 @@ typedef _HandleBytesC =
     Int32 Function(Pointer<Void>, Pointer<Pointer<Uint8>>, Pointer<Size>);
 typedef _HandleBytesDart =
     int Function(Pointer<Void>, Pointer<Pointer<Uint8>>, Pointer<Size>);
-typedef _FindC =
+typedef _RecordTableC =
     Int32 Function(
       Pointer<Void>,
-      Int64,
+      Pointer<Size>,
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
     );
-typedef _FindDart =
-    int Function(Pointer<Void>, int, Pointer<Pointer<Uint8>>, Pointer<Size>);
+typedef _RecordTableDart =
+    int Function(
+      Pointer<Void>,
+      Pointer<Size>,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
 typedef _SearchC =
     Int32 Function(
       Pointer<Void>,
@@ -201,8 +206,8 @@ final class _AniDbNative {
       catalogIds = lib.lookupFunction<_HandleBytesC, _HandleBytesDart>(
         'ffc_parse_anidb_catalog_anime_ids',
       );
-      catalogFind = lib.lookupFunction<_FindC, _FindDart>(
-        'ffc_parse_anidb_catalog_find',
+      catalogRecordTable = lib.lookupFunction<_RecordTableC, _RecordTableDart>(
+        'ffc_parse_anidb_catalog_record_table',
         isLeaf: true,
       );
       catalogSearch = lib.lookupFunction<_SearchC, _SearchDart>(
@@ -233,7 +238,7 @@ final class _AniDbNative {
   late final Pointer<NativeFunction<_FreeHandleC>> catalogFreePointer;
   late final _FreeHandleDart catalogFree;
   late final _HandleBytesDart catalogIds;
-  late final _FindDart catalogFind;
+  late final _RecordTableDart catalogRecordTable;
   late final _SearchDart catalogSearch;
   late final _UnitsToBytesDart animeXml;
 
@@ -246,6 +251,9 @@ final class _AniDbNative {
   final Pointer<Uint32> u32Out = calloc<Uint32>();
   final Pointer<Pointer<Uint8>> bytesOut = calloc<Pointer<Uint8>>();
   final Pointer<Pointer<Void>> handleOut = calloc<Pointer<Void>>();
+
+  /// `ffc_parse_anidb_catalog_record_table` 的 7 个输出字。
+  final Pointer<Size> recordTableWords = calloc<Size>(7);
 
   Pointer<Uint16> _units = nullptr;
   int _unitsCapacity = 0;
@@ -639,9 +647,11 @@ typedef AniDbNativeTitle = ({
 /// 已建好的标题目录（原生内存）。不可变，只读查询；随本对象被 GC 时经 [NativeFinalizer]
 /// 释放，也可提前 [dispose]（之后任何查询都抛 [StateError]）。
 final class AniDbCatalogNative implements Finalizable {
-  AniDbCatalogNative._(this._n, this._handle) {
+  AniDbCatalogNative._(this._n, this._handle) : _owned = true {
     _n.catalogFinalizer.attach(this, _handle, detach: this);
   }
+
+  AniDbCatalogNative._borrowed(this._n, this._handle) : _owned = false;
 
   /// 接管 [AniDbCatalogBuilderNative.finish] 交出的句柄（通常来自后台 isolate）。
   /// 每个地址只能接管一次。
@@ -653,7 +663,25 @@ final class AniDbCatalogNative implements Finalizable {
     );
   }
 
+  /// 临时读 [address] 处的目录而**不接管**它（不挂 finalizer、不释放）；[body] 返回后这个
+  /// 借来的对象失效（之后任何查询都抛 [StateError]）。供后台 isolate 在把句柄交出去之前
+  /// 读记录表；接管仍由调用方 [AniDbCatalogNative.adopt] 恰好做一次。
+  static R borrow<R>(int address, R Function(AniDbCatalogNative catalog) body) {
+    if (address == 0) throw ArgumentError.value(address, 'address');
+    final AniDbCatalogNative catalog = AniDbCatalogNative._borrowed(
+      _AniDbNative.instance,
+      Pointer<Void>.fromAddress(address),
+    );
+    try {
+      return body(catalog);
+    } finally {
+      catalog._table = null;
+      catalog._handle = nullptr;
+    }
+  }
+
   final _AniDbNative _n;
+  final bool _owned;
   Pointer<Void> _handle;
 
   bool get isDisposed => _handle == nullptr;
@@ -679,24 +707,101 @@ final class AniDbCatalogNative implements Finalizable {
     ];
   }
 
-  /// [animeId] 的标题（没有该记录时 null）。
-  List<AniDbNativeTitle>? find(int animeId) {
+  _AniDbRecordTable? _table;
+
+  /// 目录的扁平记录表：原生内存上的零拷贝视图，首次取记录时一次 FFI 借出、之后按 id 二分
+  /// 纯 Dart 读取（不再逐条跨 FFI、不再在 Rust 侧逐条复制 + 编码）。视图只在本对象内部用、
+  /// 每次都先过 [_live]，[dispose] 后不会再被读到。
+  _AniDbRecordTable get _recordTable {
+    final Pointer<Void> handle = _live();
+    final _AniDbRecordTable? cached = _table;
+    if (cached != null) return cached;
+    final Pointer<Size> w = _n.recordTableWords;
     _check(
-      _n.catalogFind(_live(), animeId, _n.bytesOut, _n.sizeOut),
-      'ffc_parse_anidb_catalog_find',
+      _n.catalogRecordTable(handle, w, _n.bytesOut, _n.sizeOut),
+      'ffc_parse_anidb_catalog_record_table',
     );
-    if (_n.bytesOut.value == nullptr) return null;
-    final List<String> items = _decodeStringList(_n.takeBytes());
-    return <AniDbNativeTitle>[
-      for (int i = 0; i + 3 < items.length; i += 4)
-        (
-          value: items[i],
-          type: items[i + 1],
-          language: items[i + 2],
-          normalized: items[i + 3],
-        ),
-    ];
+    final List<String> strings = _decodeStringList(_n.takeBytes());
+    final int records = w[1];
+    final int titles = w[4];
+    final int units = w[6];
+    return _table = _AniDbRecordTable(
+      ids: records == 0
+          ? Int64List(0)
+          : Pointer<Int64>.fromAddress(w[0]).asTypedList(records),
+      titleStart: Pointer<Uint32>.fromAddress(w[2]).asTypedList(records + 1),
+      titles: titles == 0
+          ? Uint32List(0)
+          : Pointer<Uint32>.fromAddress(w[3]).asTypedList(6 * titles),
+      units: units == 0
+          ? Uint16List(0)
+          : Pointer<Uint16>.fromAddress(w[5]).asTypedList(units),
+      strings: strings,
+    );
   }
+
+  /// [animeId] 的标题，逐个交给 [make]（value / type / language / normalized）构造调用方
+  /// 自己的对象；没有该记录时 null。type / language 是去重后的同一批 [String] 实例；
+  /// normalized 与 value 相同时直接是 value 那个实例。
+  List<T>? recordTitles<T>(
+    int animeId,
+    T Function(String value, String type, String language, String normalized)
+    make,
+  ) {
+    final _AniDbRecordTable t = _recordTable;
+    final Int64List ids = t.ids;
+    int low = 0;
+    int high = ids.length;
+    while (low < high) {
+      final int middle = (low + high) >> 1;
+      if (ids[middle] < animeId) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    if (low >= ids.length || ids[low] != animeId) return null;
+    return recordTitlesAt(low, make);
+  }
+
+  /// 记录条数（记录按 anime id 升序编号 `0..recordCount-1`）。
+  int get recordCount => _recordTable.ids.length;
+
+  /// 第 [index] 条记录的 anime id。
+  int animeIdAt(int index) => _recordTable.ids[index];
+
+  /// 第 [index] 条记录的标题（见 [recordTitles]）。
+  List<T> recordTitlesAt<T>(
+    int index,
+    T Function(String value, String type, String language, String normalized)
+    make,
+  ) {
+    final _AniDbRecordTable t = _recordTable;
+    final int first = t.titleStart[index];
+    final int count = t.titleStart[index + 1] - first;
+    final Uint32List w = t.titles;
+    final Uint16List units = t.units;
+    final List<String> strings = t.strings;
+    return List<T>.generate(count, (int i) {
+      final int k = 6 * (first + i);
+      final int valueAt = w[k];
+      final int valueEnd = valueAt + w[k + 1];
+      final String value = String.fromCharCodes(units, valueAt, valueEnd);
+      final int normAt = w[k + 2];
+      final int normLength = w[k + 3];
+      final String normalized = normAt == valueAt && normLength == w[k + 1]
+          ? value
+          : String.fromCharCodes(units, normAt, normAt + normLength);
+      return make(value, strings[w[k + 4]], strings[w[k + 5]], normalized);
+    }, growable: false);
+  }
+
+  /// [animeId] 的标题（没有该记录时 null）。
+  List<AniDbNativeTitle>? find(int animeId) => recordTitles(
+    animeId,
+    (String value, String type, String language, String normalized) =>
+        (value: value, type: type, language: language, normalized: normalized),
+  );
 
   /// 搜索（[normalizedQuery] 必须是 [TitleScoreNative.normalize] 的输出）。
   List<AniDbNativeSearchHit> search(String normalizedQuery, int limit) {
@@ -734,10 +839,30 @@ final class AniDbCatalogNative implements Finalizable {
   /// 立即释放原生内存。
   void dispose() {
     if (_handle == nullptr) return;
+    if (!_owned)
+      throw StateError('A borrowed AniDB title catalog is not owned');
     _n.catalogFinalizer.detach(this);
+    _table = null;
     _n.catalogFree(_handle);
     _handle = nullptr;
   }
+}
+
+/// [AniDbCatalogNative] 借出的记录表视图（布局见 Rust `catalog::RecordTable`）。
+final class _AniDbRecordTable {
+  const _AniDbRecordTable({
+    required this.ids,
+    required this.titleStart,
+    required this.titles,
+    required this.units,
+    required this.strings,
+  });
+
+  final Int64List ids;
+  final Uint32List titleStart;
+  final Uint32List titles;
+  final Uint16List units;
+  final List<String> strings;
 }
 
 /// anime XML 解析失败。[kind]：1 禁止的 DOCTYPE/ENTITY 声明 / 2 解析失败（`XmlParserException`）

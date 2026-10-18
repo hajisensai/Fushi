@@ -82,10 +82,13 @@ pub struct Record {
     pub titles: Vec<Title>,
 }
 
+/// 构建中的一个标题：value / type / language。
+type RawTitle = (Vec<u16>, Vec<u16>, Vec<u16>);
+
 /// 收拢事件的构建器（原 `_TitleCatalogBuilder`）。
 #[derive(Default)]
 pub struct Builder {
-    titles_by_anime: HashMap<i64, Vec<(Vec<u16>, Vec<u16>, Vec<u16>)>>,
+    titles_by_anime: HashMap<i64, Vec<RawTitle>>,
     open: Vec<Vec<u16>>,
     root_seen: bool,
     record_count: usize,
@@ -524,18 +527,142 @@ struct Entry {
     first_rune: u32,
 }
 
+/// 每个标题在 [RecordTable::titles] 里占的 `u32` 个数：value 偏移 / 长度、normalized 偏移 /
+/// 长度、type 与 language 在 [RecordTable::strings] 里的下标。
+pub const TITLE_WORDS: usize = 6;
+
+/// 扁平记录表：全部记录的标题按记录顺序（anime id 升序）连续存放，字符串是 `units` 里的
+/// UTF-16 区间；type / language 去重进 `strings`（真实包里只有几十种）。normalized 与
+/// value 相同时两者指向同一区间。
+///
+/// 这是目录里唯一一份记录数据：搜索索引按 `titles` 的区间读 normalized；Dart 侧经
+/// `ffc_parse_anidb_catalog_record_table` 拿到这几个数组的指针，直接在原生内存上建
+/// 零拷贝视图、按 id 二分取记录，取记录不再逐次跨 FFI。
+#[derive(Default)]
+pub struct RecordTable {
+    /// 各记录的 anime id（升序、无重复）。
+    pub ids: Vec<i64>,
+    /// 记录 `i` 的标题是全局下标 `title_start[i]..title_start[i + 1]`（长度 `ids.len() + 1`）。
+    pub title_start: Vec<u32>,
+    /// 每个标题 [TITLE_WORDS] 个 `u32`。
+    pub titles: Vec<u32>,
+    pub units: Vec<u16>,
+    pub strings: Vec<Vec<u16>>,
+}
+
+impl RecordTable {
+    fn from_records(records: Vec<Record>) -> Self {
+        let mut table = RecordTable::default();
+        let mut interned: HashMap<Vec<u16>, u32> = HashMap::new();
+        let mut intern = |strings: &mut Vec<Vec<u16>>, s: Vec<u16>| -> u32 {
+            let next = strings.len() as u32;
+            *interned.entry(s).or_insert_with_key(|k| {
+                strings.push(k.clone());
+                next
+            })
+        };
+        table.ids.reserve(records.len());
+        table.title_start.reserve(records.len() + 1);
+        for record in records {
+            table.ids.push(record.anime_id);
+            table
+                .title_start
+                .push((table.titles.len() / TITLE_WORDS) as u32);
+            for title in record.titles {
+                let value = (table.units.len() as u32, title.value.len() as u32);
+                table.units.extend_from_slice(&title.value);
+                let norm = if title.normalized == title.value {
+                    value
+                } else {
+                    let span = (table.units.len() as u32, title.normalized.len() as u32);
+                    table.units.extend_from_slice(&title.normalized);
+                    span
+                };
+                let kind = intern(&mut table.strings, title.kind);
+                let language = intern(&mut table.strings, title.language);
+                table
+                    .titles
+                    .extend_from_slice(&[value.0, value.1, norm.0, norm.1, kind, language]);
+            }
+        }
+        table
+            .title_start
+            .push((table.titles.len() / TITLE_WORDS) as u32);
+        table
+    }
+
+    pub fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    pub fn title_count(&self) -> usize {
+        self.titles.len() / TITLE_WORDS
+    }
+
+    fn word(&self, title: usize, k: usize) -> usize {
+        self.titles[title * TITLE_WORDS + k] as usize
+    }
+
+    fn span(&self, title: usize, k: usize) -> &[u16] {
+        let offset = self.word(title, k);
+        &self.units[offset..offset + self.word(title, k + 1)]
+    }
+
+    /// 全局标题下标 `title` 的 value。
+    pub fn value(&self, title: usize) -> &[u16] {
+        self.span(title, 0)
+    }
+
+    pub fn normalized(&self, title: usize) -> &[u16] {
+        self.span(title, 2)
+    }
+
+    pub fn kind(&self, title: usize) -> &[u16] {
+        &self.strings[self.word(title, 4)]
+    }
+
+    pub fn language(&self, title: usize) -> &[u16] {
+        &self.strings[self.word(title, 5)]
+    }
+
+    /// 记录 `record` 的全局标题下标区间。
+    pub fn titles_of(&self, record: usize) -> std::ops::Range<usize> {
+        self.title_start[record] as usize..self.title_start[record + 1] as usize
+    }
+
+    /// 记录 `record` 还原成拥有所有权的 [Record]（测试与诊断用）。
+    pub fn record(&self, record: usize) -> Record {
+        Record {
+            anime_id: self.ids[record],
+            titles: self
+                .titles_of(record)
+                .map(|t| Title {
+                    value: self.value(t).to_vec(),
+                    kind: self.kind(t).to_vec(),
+                    language: self.language(t).to_vec(),
+                    normalized: self.normalized(t).to_vec(),
+                })
+                .collect(),
+        }
+    }
+}
+
 /// 标题目录 + 搜索索引。构建后不可变（`&self` 搜索、无内部可变性），可跨线程只读共享。
 pub struct Catalog {
-    records: Vec<Record>,
+    table: RecordTable,
     entries: Vec<Entry>,
-    units: Vec<u16>,
     rune_pool: Vec<u32>,
     token_pool: Vec<u32>,
     token_ids: HashMap<Vec<u32>, u32>,
     sorted: Vec<u32>,
     by_first_rune: HashMap<u32, Vec<u32>>,
     by_gram: HashMap<u64, Vec<u32>>,
-    type_priority: Vec<Vec<u8>>,
+    /// 按全局标题下标。
+    type_priority: Vec<u8>,
 }
 
 fn title_type_priority(kind: &[u16]) -> u8 {
@@ -587,7 +714,7 @@ pub fn normalized_grams(normalized_runes: &[u32]) -> Vec<u64> {
         push(key(offset));
         offset += stride;
     }
-    if (count - 1) % stride != 0 {
+    if !(count - 1).is_multiple_of(stride) {
         push(key(count - 1));
     }
     out
@@ -615,9 +742,8 @@ fn contains(haystack: &[u16], needle: &[u16]) -> bool {
 impl Catalog {
     pub fn new(records: Vec<Record>) -> Self {
         let mut catalog = Catalog {
-            records,
+            table: RecordTable::from_records(records),
             entries: Vec::new(),
-            units: Vec::new(),
             rune_pool: Vec::new(),
             token_pool: Vec::new(),
             token_ids: HashMap::new(),
@@ -632,22 +758,18 @@ impl Catalog {
 
     fn build_index(&mut self) {
         let mut token_ids: HashMap<Vec<u32>, u32> = HashMap::new();
-        for (ri, record) in self.records.iter().enumerate() {
-            self.type_priority.push(
-                record
-                    .titles
-                    .iter()
-                    .map(|t| title_type_priority(&t.kind))
-                    .collect(),
-            );
-            for (ti, title) in record.titles.iter().enumerate() {
-                let normalized = &title.normalized;
+        let table = &self.table;
+        self.type_priority = (0..table.title_count())
+            .map(|t| title_type_priority(table.kind(t)))
+            .collect();
+        for ri in 0..table.len() {
+            for (ti, t) in table.titles_of(ri).enumerate() {
+                let normalized = table.normalized(t);
                 if normalized.is_empty() {
                     continue;
                 }
                 let id = self.entries.len() as u32;
-                let norm = (self.units.len() as u32, normalized.len() as u32);
-                self.units.extend_from_slice(normalized);
+                let norm = (table.word(t, 2) as u32, normalized.len() as u32);
                 let rs = runes(normalized);
                 let runes_span = (self.rune_pool.len() as u32, rs.len() as u32);
                 self.rune_pool.extend_from_slice(&rs);
@@ -678,8 +800,8 @@ impl Catalog {
         let mut sorted: Vec<u32> = (0..self.entries.len() as u32).collect();
         {
             let entries = &self.entries;
-            let units = &self.units;
-            let records = &self.records;
+            let units = &self.table.units;
+            let ids = &self.table.ids;
             let norm = |e: u32| {
                 let (o, l) = entries[e as usize].norm;
                 &units[o as usize..(o + l) as usize]
@@ -690,8 +812,8 @@ impl Catalog {
                     std::cmp::Ordering::Less => -1,
                     std::cmp::Ordering::Greater => 1,
                     std::cmp::Ordering::Equal => {
-                        let ia = records[entries[a as usize].record as usize].anime_id;
-                        let ib = records[entries[b as usize].record as usize].anime_id;
+                        let ia = ids[entries[a as usize].record as usize];
+                        let ib = ids[entries[b as usize].record as usize];
                         ia.cmp(&ib) as i32
                     }
                 },
@@ -700,20 +822,26 @@ impl Catalog {
         self.sorted = sorted;
     }
 
-    pub fn records(&self) -> &[Record] {
-        &self.records
+    pub fn table(&self) -> &RecordTable {
+        &self.table
     }
 
-    pub fn find(&self, anime_id: i64) -> Option<&Record> {
-        self.records
-            .binary_search_by(|r| r.anime_id.cmp(&anime_id))
+    /// `anime_id` 的记录（测试与诊断用；Dart 侧直接读 [RecordTable]）。
+    pub fn find(&self, anime_id: i64) -> Option<Record> {
+        self.table
+            .ids
+            .binary_search(&anime_id)
             .ok()
-            .map(|i| &self.records[i])
+            .map(|i| self.table.record(i))
     }
 
     fn norm(&self, e: u32) -> &[u16] {
         let (o, l) = self.entries[e as usize].norm;
-        &self.units[o as usize..(o + l) as usize]
+        &self.table.units[o as usize..(o + l) as usize]
+    }
+
+    fn global_title(&self, r: &SearchResult) -> usize {
+        self.table.title_start[r.record as usize] as usize + r.title as usize
     }
 
     fn entry_runes(&self, e: u32) -> &[u32] {
@@ -885,8 +1013,8 @@ impl Catalog {
         if similarity != 0 {
             return similarity;
         }
-        let pl = self.type_priority[l.record as usize][l.title as usize];
-        let pr = self.type_priority[r.record as usize][r.title as usize];
+        let pl = self.type_priority[self.global_title(l)];
+        let pr = self.type_priority[self.global_title(r)];
         pl.cmp(&pr) as i32
     }
 
@@ -895,17 +1023,10 @@ impl Catalog {
         if within != 0 {
             return within.cmp(&0);
         }
-        let ll = self.records[l.record as usize].titles[l.title as usize]
-            .value
-            .len();
-        let rl = self.records[r.record as usize].titles[r.title as usize]
-            .value
-            .len();
-        ll.cmp(&rl).then_with(|| {
-            self.records[l.record as usize]
-                .anime_id
-                .cmp(&self.records[r.record as usize].anime_id)
-        })
+        let ll = self.table.value(self.global_title(l)).len();
+        let rl = self.table.value(self.global_title(r)).len();
+        ll.cmp(&rl)
+            .then_with(|| self.table.ids[l.record as usize].cmp(&self.table.ids[r.record as usize]))
     }
 
     fn rank(
@@ -989,7 +1110,7 @@ mod tests {
     #[test]
     fn parses_sample_like_dart_builder() {
         let catalog = parse(&[SAMPLE]).unwrap();
-        let ids: Vec<i64> = catalog.records().iter().map(|r| r.anime_id).collect();
+        let ids: Vec<i64> = catalog.table().ids.clone();
         assert_eq!(ids, vec![1, 16]);
         let r1 = catalog.find(1).unwrap();
         assert_eq!(r1.titles.len(), 3);
@@ -1012,12 +1133,16 @@ mod tests {
             }
             parser.close().unwrap();
             let catalog = parser.finish().unwrap();
-            assert_eq!(catalog.records().len(), whole.records().len());
-            for (a, b) in catalog.records().iter().zip(whole.records()) {
+            assert_eq!(catalog.table().len(), whole.table().len());
+            for i in 0..whole.table().len() {
+                let (a, b) = (catalog.table().record(i), whole.table().record(i));
                 assert_eq!(a.anime_id, b.anime_id);
                 assert_eq!(a.titles.len(), b.titles.len());
                 for (x, y) in a.titles.iter().zip(&b.titles) {
                     assert_eq!(x.value, y.value);
+                    assert_eq!(x.kind, y.kind);
+                    assert_eq!(x.language, y.language);
+                    assert_eq!(x.normalized, y.normalized);
                 }
             }
         }
