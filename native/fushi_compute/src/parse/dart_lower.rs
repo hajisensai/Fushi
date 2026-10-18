@@ -60,7 +60,22 @@ pub fn dart_lower_code_point(cp: u32) -> u32 {
 pub fn dart_lower_utf16_into(units: &[u16], out: &mut Vec<u16>) {
     out.clear();
     out.reserve(units.len());
+    // 快路径（媒体名几乎全是 ASCII，笔记正文几乎没有代理对）：整段先判一遍，命中就整段
+    // 无分支地映射——逐码元判代理再 push 的慢路径在 900 万码元上要 50 ms 以上。
+    if units.iter().all(|&u| u < 0x80) {
+        // Dart 对 ASCII 只折 A–Z（与表一致，见 ascii_fast_path_matches_table）。
+        out.extend(
+            units
+                .iter()
+                .map(|&u| u | (u16::from(u.wrapping_sub(b'A' as u16) < 26) << 5)),
+        );
+        return;
+    }
     let table = bmp_lower_table();
+    if !units.iter().any(|&u| (0xD800..=0xDFFF).contains(&u)) {
+        out.extend(units.iter().map(|&u| table[u as usize]));
+        return;
+    }
     let len = units.len();
     let mut i = 0;
     while i < len {
@@ -111,6 +126,29 @@ mod tests {
 
     fn u(s: &str) -> Vec<u16> {
         s.encode_utf16().collect()
+    }
+
+    #[test]
+    fn ascii_fast_path_matches_table() {
+        let table = bmp_lower_table();
+        let ascii: Vec<u16> = (0u16..0x80).collect();
+        let mut out = Vec::new();
+        dart_lower_utf16_into(&ascii, &mut out);
+        let expected: Vec<u16> = ascii.iter().map(|&u| table[u as usize]).collect();
+        assert_eq!(out, expected);
+        // 整个 BMP（不含代理）走表快路径，混入一个代理对走慢路径：逐码元结果相同。
+        let bmp: Vec<u16> = (0u16..=0xFFFF)
+            .filter(|u| !(0xD800..=0xDFFF).contains(u))
+            .collect();
+        dart_lower_utf16_into(&bmp, &mut out);
+        let fast = out.clone();
+        let mut mixed = bmp.clone();
+        mixed.extend([0xD801, 0xDC00]);
+        dart_lower_utf16_into(&mixed, &mut out);
+        assert_eq!(&out[..bmp.len()], fast.as_slice());
+        assert_eq!(&out[bmp.len()..], &[0xD801, 0xDC28]);
+        let expected: Vec<u16> = bmp.iter().map(|&u| table[u as usize]).collect();
+        assert_eq!(fast, expected);
     }
 
     #[test]

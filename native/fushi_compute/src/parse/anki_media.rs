@@ -17,103 +17,239 @@
 //! 批量接口：一次调用扫一批「组」（一组 = 一条笔记的全部字段，命中取并集），输出定长 u32
 //! 记录，避免逐字段 FFI 往返。
 
-use std::collections::HashMap;
-use std::hash::{BuildHasherDefault, Hasher};
-
 use crate::{guard, hand_over_bytes, status};
 
 use super::dart_lower::dart_lower_utf16_into;
 
-/// FNV-1a over u16（查表键很短，SipHash 的抗碰撞开销不值）。
-#[derive(Default)]
-struct Fnv(u64);
+/// 切片哈希（只用于本模块的开放寻址表；查表键很短，按 4 个码元一组乘法混合）。
+fn hash_units(units: &[u16]) -> u64 {
+    const K: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut h = (units.len() as u64).wrapping_mul(K);
+    let mut chunks = units.chunks_exact(4);
+    for c in &mut chunks {
+        let w = u64::from(c[0])
+            | (u64::from(c[1]) << 16)
+            | (u64::from(c[2]) << 32)
+            | (u64::from(c[3]) << 48);
+        h = (h ^ w).wrapping_mul(K).rotate_left(29);
+    }
+    let mut w = 0u64;
+    for (i, &u) in chunks.remainder().iter().enumerate() {
+        w |= u64::from(u) << (16 * i);
+    }
+    h = (h ^ w).wrapping_mul(K);
+    h ^= h >> 29;
+    h = h.wrapping_mul(K);
+    h ^ (h >> 32)
+}
 
-impl Hasher for Fnv {
-    fn finish(&self) -> u64 {
-        self.0
+/// 开放寻址（线性探测）的「切片 → 编号」表：键本身存在调用方的连续缓冲区里
+/// （`spans[id]` 是它在 `arena` 里的区间），表里只放编号，建表不为每个键单独分配。
+///
+/// 槽位 = `(哈希高 32 位 << 32) | (编号 + 1)`，0 = 空：探测时先比槽里的哈希片段，不同就不去
+/// 碰 `spans` / `arena`（22 万键时那两处是随机访存，建表耗时主要花在这类缓存缺失上）。
+struct SliceTable {
+    slots: Vec<u64>,
+    spans: Vec<(usize, usize)>,
+}
+
+impl SliceTable {
+    fn with_capacity(keys: usize) -> Self {
+        let slots = (keys.max(8) * 2).next_power_of_two();
+        SliceTable {
+            slots: vec![0; slots],
+            spans: Vec::with_capacity(keys),
+        }
     }
 
-    fn write(&mut self, bytes: &[u8]) {
-        let mut hash = if self.0 == 0 {
-            0xcbf29ce484222325
-        } else {
-            self.0
-        };
-        for &b in bytes {
-            hash ^= u64::from(b);
-            hash = hash.wrapping_mul(0x100000001b3);
+    fn len(&self) -> usize {
+        self.spans.len()
+    }
+
+    #[inline]
+    fn tag(hash: u64) -> u64 {
+        hash & 0xFFFF_FFFF_0000_0000
+    }
+
+    fn find(&self, arena: &[u16], key: &[u16], hash: u64) -> Option<u32> {
+        let mask = self.slots.len() - 1;
+        let tag = Self::tag(hash);
+        let mut at = hash as usize & mask;
+        loop {
+            let slot = self.slots[at];
+            if slot == 0 {
+                return None;
+            }
+            if slot & 0xFFFF_FFFF_0000_0000 == tag {
+                let id = (slot as u32 - 1) as usize;
+                let (start, len) = self.spans[id];
+                if arena[start..start + len] == *key {
+                    return Some(id as u32);
+                }
+            }
+            at = (at + 1) & mask;
         }
-        self.0 = hash;
+    }
+
+    /// 插入一个确定不在表里的键（区间指向 `arena`），返回新编号。
+    fn insert_new(&mut self, arena: &[u16], span: (usize, usize), hash: u64) -> u32 {
+        if (self.spans.len() + 1) * 2 > self.slots.len() {
+            self.grow(arena);
+        }
+        let id = self.spans.len() as u32;
+        self.spans.push(span);
+        self.place(id, hash);
+        id
+    }
+
+    fn place(&mut self, id: u32, hash: u64) {
+        let mask = self.slots.len() - 1;
+        let mut at = hash as usize & mask;
+        while self.slots[at] != 0 {
+            at = (at + 1) & mask;
+        }
+        self.slots[at] = Self::tag(hash) | u64::from(id + 1);
+    }
+
+    fn grow(&mut self, arena: &[u16]) {
+        self.slots = vec![0; self.slots.len() * 2];
+        for id in 0..self.spans.len() {
+            let (start, len) = self.spans[id];
+            self.place(id as u32, hash_units(&arena[start..start + len]));
+        }
     }
 }
 
-type FnvMap<K, V> = HashMap<K, V, BuildHasherDefault<Fnv>>;
-
 /// 一组媒体文件名的匹配器（对应旧 `MediaNameMatcher` 的构造）。
+///
+/// 布局按「少分配」设计：不同的折叠名首尾相接放在一块 `arena` 里，查表只存编号；每个折叠名
+/// 对应的原名下标是 CSR（`key_names[key_starts[k]..key_starts[k + 1]]`，插入序）。22 万个
+/// 名字的建表只做几次大块分配，释放也只有几块（逐键 `Box` + `Vec` 的旧布局建表比 Dart 慢一倍）。
 pub struct MediaNameMatcher {
     name_count: usize,
-    /// 折叠名 → 原名下标（插入序）。
-    by_lower: FnvMap<Box<[u16]>, Vec<u32>>,
+    arena: Vec<u16>,
+    /// 折叠名 → 键编号（键编号 = 首次出现序）。
+    keys: SliceTable,
+    key_starts: Vec<u32>,
+    key_names: Vec<u32>,
     /// （折叠后缀，含 `.`；出现过的长度，插入序去重）按首次出现排序。
     suffixes: Vec<(Box<[u16]>, Vec<usize>)>,
-    /// 没有扩展名的折叠名，插入序去重。
-    unanchored: Vec<Box<[u16]>>,
+    /// 没有扩展名的折叠名（键编号），插入序。
+    unanchored: Vec<u32>,
 }
 
 const DOT: u16 = b'.' as u16;
+const NO_KEY: u32 = u32::MAX;
 
 impl MediaNameMatcher {
     /// [names] 是原名的 UTF-16 码元（下标即交回调用方的名字下标）。
-    pub fn new<'a>(names: impl IntoIterator<Item = &'a [u16]>) -> Self {
-        let mut matcher = MediaNameMatcher {
-            name_count: 0,
-            by_lower: FnvMap::default(),
-            suffixes: Vec::new(),
-            unanchored: Vec::new(),
-        };
-        let mut suffix_slot: FnvMap<Box<[u16]>, usize> = FnvMap::default();
+    pub fn new(names: &[&[u16]]) -> Self {
+        let hint = names.len();
+        // 折叠不改长度：不同名字的总码元数不超过全部名字的总码元数，一次预留到位。
+        let mut arena: Vec<u16> = Vec::with_capacity(names.iter().map(|n| n.len()).sum());
+        let mut keys = SliceTable::with_capacity(hint);
+        let mut name_key: Vec<u32> = Vec::with_capacity(hint);
+        let mut suffixes: Vec<(Box<[u16]>, Vec<usize>)> = Vec::new();
+        // 后缀的查表键也在 `arena` 里（就是首个带它的键的尾段）；`seen_lengths[s]` 是长度位图。
+        let mut suffix_table = SliceTable::with_capacity(8);
+        let mut seen_lengths: Vec<Vec<u64>> = Vec::new();
+        let mut unanchored: Vec<u32> = Vec::new();
         let mut lower = Vec::new();
-        for (index, name) in names.into_iter().enumerate() {
-            matcher.name_count = index + 1;
+        for &name in names {
             dart_lower_utf16_into(name, &mut lower);
             if lower.is_empty() {
+                name_key.push(NO_KEY);
                 continue;
             }
-            let key: Box<[u16]> = lower.as_slice().into();
-            let fresh = !matcher.by_lower.contains_key(&key);
-            matcher
-                .by_lower
-                .entry(key.clone())
-                .or_default()
-                .push(index as u32);
+            let hash = hash_units(&lower);
+            if let Some(id) = keys.find(&arena, &lower, hash) {
+                // 同一折叠名再出现：后缀与长度都已记过，只多一个原名下标。
+                name_key.push(id);
+                continue;
+            }
+            let start = arena.len();
+            arena.extend_from_slice(&lower);
+            let id = keys.insert_new(&arena, (start, lower.len()), hash);
+            name_key.push(id);
             match lower.iter().rposition(|&u| u == DOT) {
-                None => {
-                    if fresh {
-                        matcher.unanchored.push(key);
-                    }
-                }
+                None => unanchored.push(id),
                 Some(dot) => {
-                    let suffix: Box<[u16]> = lower[dot..].into();
-                    let slot = match suffix_slot.get(&suffix) {
-                        Some(&slot) => slot,
+                    let suffix = &lower[dot..];
+                    let suffix_hash = hash_units(suffix);
+                    let slot = match suffix_table.find(&arena, suffix, suffix_hash) {
+                        Some(slot) => slot as usize,
                         None => {
-                            matcher.suffixes.push((suffix.clone(), Vec::new()));
-                            suffix_slot.insert(suffix, matcher.suffixes.len() - 1);
-                            matcher.suffixes.len() - 1
+                            suffix_table.insert_new(
+                                &arena,
+                                (start + dot, suffix.len()),
+                                suffix_hash,
+                            );
+                            suffixes.push((suffix.into(), Vec::new()));
+                            seen_lengths.push(Vec::new());
+                            suffixes.len() - 1
                         }
                     };
-                    let lengths = &mut matcher.suffixes[slot].1;
-                    if !lengths.contains(&lower.len()) {
-                        lengths.push(lower.len());
+                    let length = lower.len();
+                    let bits = &mut seen_lengths[slot];
+                    let word = length / 64;
+                    if bits.len() <= word {
+                        bits.resize(word + 1, 0);
+                    }
+                    let mask = 1u64 << (length % 64);
+                    if bits[word] & mask == 0 {
+                        bits[word] |= mask;
+                        suffixes[slot].1.push(length);
                     }
                 }
             }
         }
-        matcher
+        // CSR：每个键的原名下标，按名字下标升序（= 插入序）。
+        let key_count = keys.len();
+        let mut key_starts = vec![0u32; key_count + 1];
+        for &id in name_key.iter() {
+            if id != NO_KEY {
+                key_starts[id as usize + 1] += 1;
+            }
+        }
+        for k in 0..key_count {
+            key_starts[k + 1] += key_starts[k];
+        }
+        let mut fill: Vec<u32> = key_starts[..key_count].to_vec();
+        let mut key_names = vec![0u32; key_starts[key_count] as usize];
+        for (index, &id) in name_key.iter().enumerate() {
+            if id != NO_KEY {
+                let at = &mut fill[id as usize];
+                key_names[*at as usize] = index as u32;
+                *at += 1;
+            }
+        }
+        MediaNameMatcher {
+            name_count: name_key.len(),
+            arena,
+            keys,
+            key_starts,
+            key_names,
+            suffixes,
+            unanchored,
+        }
     }
 
     pub fn name_count(&self) -> usize {
         self.name_count
+    }
+
+    fn key_of(&self, lowered: &[u16]) -> Option<u32> {
+        self.keys.find(&self.arena, lowered, hash_units(lowered))
+    }
+
+    fn names_of(&self, key: u32) -> &[u32] {
+        let k = key as usize;
+        &self.key_names[self.key_starts[k] as usize..self.key_starts[k + 1] as usize]
+    }
+
+    fn key_units(&self, key: u32) -> &[u16] {
+        let (start, len) = self.keys.spans[key as usize];
+        &self.arena[start..start + len]
     }
 }
 
@@ -143,11 +279,11 @@ impl<'m> Scan<'m> {
         self.group += 1;
     }
 
-    fn hit(&mut self, indices: &[u32], out: &mut Vec<u32>) {
+    fn hit(stamp: &mut [u32], group: u32, indices: &[u32], out: &mut Vec<u32>) {
         for &index in indices {
-            let slot = &mut self.stamp[index as usize];
-            if *slot != self.group {
-                *slot = self.group;
+            let slot = &mut stamp[index as usize];
+            if *slot != group {
+                *slot = group;
                 out.push(index);
             }
         }
@@ -159,8 +295,9 @@ impl<'m> Scan<'m> {
             return;
         }
         let matcher = self.matcher;
-        let mut lower = std::mem::take(&mut self.lower);
-        dart_lower_utf16_into(text, &mut lower);
+        let group = self.group;
+        dart_lower_utf16_into(text, &mut self.lower);
+        let lower = &self.lower;
         self.dots.clear();
         self.dots.extend(
             lower
@@ -169,11 +306,10 @@ impl<'m> Scan<'m> {
                 .filter(|(_, &u)| u == DOT)
                 .map(|(i, _)| i),
         );
-        let dots = std::mem::take(&mut self.dots);
         for (suffix, lengths) in matcher.suffixes.iter() {
             // 后缀都以 `.` 开头：出现处必落在某个 `.` 上，按升序过一遍 = 旧实现的
             // `indexOf(suffix, at + 1)` 循环（允许重叠）。
-            for &at in dots.iter() {
+            for &at in self.dots.iter() {
                 let end = at + suffix.len();
                 if end > lower.len() || lower[at..end] != **suffix {
                     continue;
@@ -182,20 +318,17 @@ impl<'m> Scan<'m> {
                     if length > end {
                         continue;
                     }
-                    if let Some(indices) = matcher.by_lower.get(&lower[end - length..end]) {
-                        self.hit(indices, out);
+                    if let Some(key) = matcher.key_of(&lower[end - length..end]) {
+                        Self::hit(&mut self.stamp, group, matcher.names_of(key), out);
                     }
                 }
             }
         }
-        for name in matcher.unanchored.iter() {
-            if contains(&lower, name) {
-                let indices = &matcher.by_lower[name];
-                self.hit(indices, out);
+        for &key in matcher.unanchored.iter() {
+            if contains(lower, matcher.key_units(key)) {
+                Self::hit(&mut self.stamp, group, matcher.names_of(key), out);
             }
         }
-        self.dots = dots;
-        self.lower = lower;
     }
 }
 
@@ -259,7 +392,7 @@ pub unsafe extern "C" fn ffc_parse_anki_matcher_new(
                 None => return status::INVALID_ARGUMENT,
             }
         }
-        *out = Box::into_raw(Box::new(MediaNameMatcher::new(names)));
+        *out = Box::into_raw(Box::new(MediaNameMatcher::new(&names)));
         status::OK
     })
 }
@@ -376,7 +509,8 @@ mod tests {
 
     fn names_in(names: &[&str], text: &str) -> Vec<String> {
         let encoded: Vec<Vec<u16>> = names.iter().map(|n| u(n)).collect();
-        let matcher = MediaNameMatcher::new(encoded.iter().map(|v| v.as_slice()));
+        let slices: Vec<&[u16]> = encoded.iter().map(|v| v.as_slice()).collect();
+        let matcher = MediaNameMatcher::new(&slices);
         let mut scan = Scan::new(&matcher);
         scan.begin_group();
         let mut out = Vec::new();
