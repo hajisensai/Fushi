@@ -24,7 +24,9 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   /// 本机有没有小窗可用：桌面恒有（主窗自己变形）；移动端取决于系统画中画，
   /// 只有 Android 有、且要 API 26+（见 [AndroidPictureInPicture.isSupported]）。
   bool get _miniWindowAvailable =>
-      isDesktopPlatform || _pictureInPictureSupported;
+      // 网页档没有小窗：站点画面是 WebView2 子窗口，主窗缩成小窗塞不下站点布局，
+      // 系统画中画也拿不到这条画面。
+      !_webMode && (isDesktopPlatform || _pictureInPictureSupported);
 
   /// 当前画面宽高比；尺寸还没解析出来时退回 16:9（两个平台的小窗几何都要它，
   /// 且都不接受 0 / NaN）。
@@ -90,8 +92,9 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   /// 系统画中画进出的唯一写入点。
   void _handlePictureInPictureChanged(bool active) {
     if (!mounted) return;
-    final VideoMiniSurface next =
-        active ? VideoMiniSurface.pictureInPicture : VideoMiniSurface.none;
+    final VideoMiniSurface next = active
+        ? VideoMiniSurface.pictureInPicture
+        : VideoMiniSurface.none;
     if (_miniSurface.value == next) return;
     _miniSurface.value = next;
     // 密度档随表面变，控制条 theme / 字幕避让都要按新几何重算一帧。
@@ -385,7 +388,8 @@ extension _VideoMiniWindow on _VideoFushiPageState {
           _videoControlEditMode,
         ]),
         builder: (BuildContext context, _) {
-          final bool interactive = !_immersiveLocked.value &&
+          final bool interactive =
+              !_immersiveLocked.value &&
               _videoSidePanel.value == null &&
               !_episodeListVisible.value &&
               !_videoControlEditMode.value;
@@ -411,7 +415,7 @@ extension _VideoMiniWindow on _VideoFushiPageState {
                 hitTestHeight: 12 * _videoUiScale,
                 onSeekFraction: interactive
                     ? (double fraction) =>
-                        unawaited(_seekToProgressFraction(fraction))
+                          unawaited(_seekToProgressFraction(fraction))
                     : null,
               );
             },

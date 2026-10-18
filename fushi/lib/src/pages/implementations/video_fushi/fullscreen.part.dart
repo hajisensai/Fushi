@@ -70,6 +70,9 @@ extension _VideoFullscreen on _VideoFushiPageState {
       await _exitVideoMiniWindow();
       if (!mounted || !context.mounted) return;
     }
+    // 网页档：站点画面是 WebView2 子窗口，不会跟进新推的全屏路由——只做窗口全屏，
+    // 页面本身铺满（见 web_source.part.dart）。
+    if (_webMode) return _toggleWebWindowFullscreen();
     return isFullscreen(context)
         ? _exitVideoFullscreen(context)
         : _pushNeutralizedVideoFullscreen(context);
@@ -425,7 +428,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
     return Builder(
       builder: (BuildContext buttonContext) {
         return _chromeIconButton(
-          icon: isFullscreen(buttonContext)
+          icon: isFullscreen(buttonContext) || _webWindowFullscreen
               ? Icons.fullscreen_exit
               : Icons.fullscreen,
           desktop: desktop,

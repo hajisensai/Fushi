@@ -1,7 +1,6 @@
 // 网页视频的 media_kit 播放器后端：页面上报 → player.state / stream；动作 → 页面 JS；
 // 以及最关键的一条——原生的 Video + MaterialDesktopVideoControls 能原封不动地跑在它上面
 // （VideoController 走外部渲染分支，不碰 mpv 句柄）。
-import 'dart:async';
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';

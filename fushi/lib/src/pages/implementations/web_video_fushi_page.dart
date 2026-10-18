@@ -20,7 +20,6 @@ import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show fushiTopBarActionsBudget;
 import 'package:fushi/src/focus/panel_focus_scope.dart';
-import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
@@ -32,8 +31,9 @@ import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
-import 'package:fushi/src/media/video/underlay_composition.dart';
-import 'package:fushi/src/media/video/web_video_controls.dart';
+import 'package:fushi/src/media/video/web_video_session.dart';
+import 'package:fushi/src/media/video/underlay_composition.dart'
+    show underlayCompositionSupported;
 import 'package:fushi/src/media/video/web_video_shaders.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
@@ -59,7 +59,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart'
     show statTodayKey;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
-    show resolveVideoLookupAnchorCue, subtitleLookupTerm;
+    show VideoFushiPage, resolveVideoLookupAnchorCue, subtitleLookupTerm;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
@@ -81,16 +81,6 @@ import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-
-/// JS→Dart 单一 handler 名（glue 的 `HANDLER`），载荷按 `type` 分派。
-const String kWebVideoJsHandler = 'fushiWebVideo';
-
-/// WebView2 持焦时截获视频快捷键交回 Dart 的桥 handler 名。
-const String kWebVideoKeyBridgeHandler = 'fushiWebVideoKeys';
-
-/// 流媒体书断点写库的最小位置（与视频页远端分支 `_persistRemotePosition` 的 BUG-996 阈值
-/// 同口径）：播放头不足 5 秒不算「看过」，不覆盖已有进度。
-const int kWebVideoMinPersistPositionMs = 5000;
 
 /// 内置网页播放器（Windows）：在 WebView2 里由站点自己的播放器播放（Netflix / YouTube /
 /// TVer / B 站……），Fushi 只做「围绕视频」的那一层——字幕列表面板、画面字幕叠层逐词查词、
@@ -130,33 +120,13 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
   /// 传 false 只在 fork 将来有 HWND 窗口宿主模式（不经捕获）时才有意义。
   final bool softwareDrm;
 
-  /// 可捕获 WebView2 环境单例：`--disable-direct-composition`。fork 的显示链路本身就是 WGC 捕获，
-  /// Chromium 把 DRM 视频放进 DComp overlay 时纹理里是黑的（真机：默认环境视频区纯黑、加该参数
-  /// 清晰可见）。environment 级参数不能运行期切换，且同 user data folder 的多个 env 参数必须逐字
-  /// 一致，故用独立目录（独立 cookie 罐：站点登录在网页播放器里做一次即可）。
-  static Future<WebViewEnvironment>? _capturableEnv;
+  /// 可捕获（内置档）WebView2 环境：与原生播放器页的网页档共用同一份单例（同一 user data
+  /// folder 只能有一套浏览器参数），实现见 [webVideoCapturableEnvironment]。
+  static String capturableUserDataFolder() =>
+      webVideoCapturableUserDataFolder();
 
-  /// 目录：测试 runner 给了 `FUSHI_WEBVIEW2_USER_DATA_FOLDER` 就放它旁边（隔离），否则
-  /// `%LOCALAPPDATA%\Fushi\WebVideoWebView2`（与 runner 的 OverlayUserDataFolder 命名法一致）。
-  static String capturableUserDataFolder() {
-    final String? testFolder =
-        Platform.environment['FUSHI_WEBVIEW2_USER_DATA_FOLDER'];
-    if (testFolder != null && testFolder.isNotEmpty) {
-      return '$testFolder-webvideo';
-    }
-    final String base = Platform.environment['LOCALAPPDATA'] ?? '.';
-    return '$base\\Fushi\\WebVideoWebView2';
-  }
-
-  static Future<WebViewEnvironment> capturableEnvironment() {
-    return _capturableEnv ??= WebViewEnvironment.create(
-      settings: WebViewEnvironmentSettings(
-        userDataFolder: capturableUserDataFolder(),
-        additionalBrowserArguments:
-            '--autoplay-policy=no-user-gesture-required --disable-direct-composition',
-      ),
-    );
-  }
+  static Future<WebViewEnvironment> capturableEnvironment() =>
+      webVideoCapturableEnvironment();
 
   /// 打开本页的唯一入口：路由层包 [FushiAppUiScaleNeutralizer]（WebView2 是平台纹理，
   /// 落在缩放画布里会被栅格化再放大 → 糊；与 `VideoFushiPage.neutralized` 同理）。
@@ -174,32 +144,11 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     ),
   );
 
-  /// 窗口宿主档（4K）环境：**不带** `--disable-direct-composition`（硬件 PlayReady 的受保护输出
-  /// 要走 DComp overlay），带 fork 的窗口宿主哨兵；浏览器参数与可捕获环境不同 → 必须独立 user
-  /// data folder（同目录的环境参数必须逐字一致）→ 独立 cookie 罐，登录态由页面从内置档复制。
-  static Future<WebViewEnvironment>? _windowedEnv;
+  /// 窗口宿主档（4K）环境：同上，见 [webVideoWindowedEnvironment]。
+  static String windowedUserDataFolder() => webVideoWindowedUserDataFolder();
 
-  static String windowedUserDataFolder() {
-    // 硬件 PlayReady（MF CDM）要求 profile 住在 %LOCALAPPDATA% 下：真机实测 profile 放在仓库目录
-    // （itest 隔离根）时 Netflix 报 D7702-1003，同一份代码 profile 挪到 LOCALAPPDATA 即起播；
-    // 生产默认路径本来就在 LOCALAPPDATA（capturableUserDataFolder），itest 用此覆盖指到
-    // LOCALAPPDATA 下的独立测试目录（不碰用户真实 profile）。
-    final String? override =
-        Platform.environment['FUSHI_WEB_VIDEO_4K_USER_DATA_FOLDER'];
-    if (override != null && override.isNotEmpty) return override;
-    return '${capturableUserDataFolder()}-4k';
-  }
-
-  static Future<WebViewEnvironment> windowedEnvironment() {
-    return _windowedEnv ??= WebViewEnvironment.create(
-      settings: WebViewEnvironmentSettings(
-        userDataFolder: windowedUserDataFolder(),
-        additionalBrowserArguments:
-            '--autoplay-policy=no-user-gesture-required '
-            '$kWebVideoWindowedHostingSentinel',
-      ),
-    );
-  }
+  static Future<WebViewEnvironment> windowedEnvironment() =>
+      webVideoWindowedEnvironment();
 
   /// 集成测试钩子（debug/profile only，assert 注册；与 `HomePage.debugSelectTab` 同范式）：
   /// 离屏 / 非焦点下焦点驱动偶发不触发，真机验证用这些直达读状态 / 开列表 / seek。
@@ -293,17 +242,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 画不到它上面，字幕层走页面 DOM、查词走顶层窗口、制卡只入队。
   WebVideoHosting _hosting = WebVideoHosting.builtin;
   bool get _windowed => _hosting == WebVideoHosting.windowed;
-
-  /// 底层合成已开（underlay_composition.dart）：窗口宿主档的 WebView2 垫在 Flutter 下面，
-  /// Flutter 字幕层 / 弹窗查词 / 控件照常画在画面上；只剩画面帧捕获不到（制卡仍入队）。
-  bool _underlay = false;
-
-  /// 只能走页面 DOM 字幕层 + 顶层查词窗口：窗口宿主档且引擎不支持底层合成。
-  bool get _domOverlay => _windowed && !_underlay;
-
-  /// 底层合成下 WebView2 子窗口当前是否收输入：有视频在播交给 Flutter（关），
-  /// 登录 / 选人等站点页面留给 WebView（开）。null = 还没同步过。
-  bool? _webInputEnabled;
 
   /// 软件 DRM 垫片只在可捕获的内置档有意义；窗口宿主档就是为硬件 DRM 开的。
   bool get _softwareDrm => widget.softwareDrm && !_windowed;
@@ -531,7 +469,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       return true;
     }());
     _mineStopRequested = true;
-    if (_underlay) unawaited(releaseUnderlayComposition());
     if (_ownsGlobalLookupOnHidden &&
         identical(
           GlobalLookupController.instance.onHidden,
@@ -575,49 +512,29 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       setState(() => _failReason = t.video_load_failed_not_found);
       return;
     }
-    final Object? hostingPref = _appModel.prefsRepo.getPref(
-      kWebVideoHostingPrefKey,
-    );
-    // 没选过档：引擎能做底层合成时默认 4K 窗口档（画质最高，界面照样是 Fushi 的）；
-    // 选过的照用户的。
     _hosting =
         widget.hosting ??
-        (hostingPref == null && await underlayCompositionSupported()
-            ? WebVideoHosting.windowed
-            : webVideoHostingFromPref(hostingPref));
-    if (!mounted) return;
+        webVideoHostingFromPref(
+          _appModel.prefsRepo.getPref(kWebVideoHostingPrefKey),
+        );
     _shaderTier = webVideoShaderTierFromPref(
       _appModel.prefsRepo.getPref(kWebVideoShaderTierPrefKey),
     );
     if (_windowed) {
-      _underlay = await acquireUnderlayComposition();
-      if (!mounted) {
-        // dispose 已在 await 期间跑过（那时 _underlay 还是 false），这份由这里归还。
-        if (_underlay) unawaited(releaseUnderlayComposition());
-        return;
-      }
-    }
-    if (_domOverlay) {
       // TODO-1233 预留的钩子：顶层查词窗口被用户真正关掉 → 恢复因查词暂停的播放
       //（与内置档弹窗关闭时的 BUG-072 语义一致）。dispose 归还原值。
       _prevGlobalLookupOnHidden = GlobalLookupController.instance.onHidden;
       GlobalLookupController.instance.onHidden = _onGlobalLookupHidden;
       _ownsGlobalLookupOnHidden = true;
     }
-    final List<String> assets = <String>[
-      // 垫片必须排第一：站点脚本一跑就会抓走原始 EME 函数引用。
-      if (_softwareDrm) kWebVideoEmeShimAsset,
-      ...webVideoBridgeAssetsForHost(uri.host),
-      kWebVideoAdaptersAsset,
-      kWebVideoProvidersAsset,
-      kWebVideoGlueAsset,
-      if (_domOverlay) kWebVideoDomSubtitlesAsset,
-    ];
-    final List<String> sources = <String>[];
-    for (final String asset in assets) {
-      sources.add(await rootBundle.loadString(asset));
-    }
-    sources.add(_keyBridgeScript());
+    // 注入脚本 / 环境 / cookie 与原生播放器页的网页档同一套实现（web_video_session.dart）。
+    final UnmodifiableListView<UserScript> scripts =
+        await loadWebVideoUserScripts(
+          host: uri.host,
+          softwareDrm: _softwareDrm,
+          domOverlay: _windowed,
+          keyBridgeScript: webVideoKeyBridgeScript(_appModel.shortcutRegistry),
+        );
     _env = _windowed
         ? await WebVideoFushiPage.windowedEnvironment()
         : await WebVideoFushiPage.capturableEnvironment();
@@ -628,36 +545,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     unawaited(_refreshMinePending());
     setState(() {
       _row = row;
-      _userScripts = UnmodifiableListView<UserScript>(<UserScript>[
-        for (final String src in sources)
-          UserScript(
-            source: src,
-            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-          ),
-      ]);
+      _userScripts = scripts;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _seedWarmPopup());
-  }
-
-  /// WebView2 持焦期间截获视频作用域全部键盘绑定（token 直接取注册表序列化形式，
-  /// 用户改绑后重开本页即生效），交回 [_onKeyToken] 走同一份动作表。
-  String _keyBridgeScript() {
-    final Set<String> tokens = <String>{};
-    for (final ShortcutAction action in <ShortcutAction>{
-      ...ShortcutAction.actionsForScope(ShortcutScope.video),
-      ShortcutAction.globalBack,
-    }) {
-      for (final InputBinding b
-          in _appModel.shortcutRegistry.bindingsFor(action).keyboardBindings) {
-        tokens.add(b.serialize());
-      }
-    }
-    return webViewKeyBridgeScript(
-      handlerName: kWebVideoKeyBridgeHandler,
-      keys: tokens.toList(growable: false),
-      forwardRepeats: false,
-      stopPropagation: true,
-    );
   }
 
   void _seedWarmPopup() {
@@ -711,7 +601,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final int? pos = _state?.positionMs;
     if (pos != null) _controller.updateCueForPosition(pos);
     // 窗口宿主档：页面 DOM 字幕层从 store 重读同一轨（live 轨边看边长也要跟）。
-    if (_domOverlay) unawaited(_syncDomSubtitleTrack());
+    if (_windowed) unawaited(_syncDomSubtitleTrack());
     if (changed && mounted) setState(() {});
   }
 
@@ -725,8 +615,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _videoKey = state.videoKey;
       _activeTrackKey = null;
       _reselectTrack();
-      // 站内换集（SPA）可能换了 video 元素：重新标记要铺满的那个。
-      if (_underlay && state.hasVideo) unawaited(_setVideoOnly(true));
     }
     final int? pos = state.positionMs;
     if (pos != null) {
@@ -745,32 +633,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _fullscreen = state.fullscreen;
       if (mounted) setState(() {});
     }
-    _syncWebInput();
     _maybeAutoRunMineQueue();
   }
-
-  /// 底层合成：有视频在播时 WebView2 子窗口不收输入（命中测试跳过它，点击 / 滚轮 / 触摸
-  /// 落到上面的 Flutter），站点控制条也藏起来——操作全归 Fushi；没视频（登录、选人、
-  /// 详情页）时还给 WebView。
-  void _syncWebInput() {
-    final Object? viewId = _viewId;
-    if (!_underlay || viewId == null) return;
-    final bool enabled = !(_state?.hasVideo ?? false);
-    if (_webInputEnabled == enabled) return;
-    _webInputEnabled = enabled;
-    unawaited(
-      MethodChannel(
-        '$kWebVideoPlatformViewChannelPrefix$viewId',
-      ).invokeMethod<bool>(kWebVideoSetWindowedInputEnabledMethod, enabled),
-    );
-    if (!enabled) unawaited(_setPlayerChromeHidden(true));
-    unawaited(_setVideoOnly(!enabled));
-  }
-
-  /// 底层合成：页面只留画面（最大的 video 铺满视口，其余元素隐藏）——侧栏 / 评论 / 推荐
-  /// 这些站点 UI 不该出现在 Fushi 播放器里。
-  Future<void> _setVideoOnly(bool on) =>
-      _js('window.__fushiWebVideo.setVideoOnly($on)');
 
   void _onKeyToken(List<dynamic> args) {
     if (args.isEmpty) return;
@@ -817,13 +681,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _js('window.__fushiWebVideo.setNativeSubtitlesHidden($hidden)');
   Future<void> _setPlayerChromeHidden(bool hidden) =>
       _js('window.__fushiWebVideo.setPlayerChromeHidden($hidden)');
-
-  /// 底层合成档的音量（站点音量键藏了，Fushi 控制栏持有这份状态推给页面）。
-  double _volume = 1;
-  bool _muted = false;
-
-  Future<void> _applyVolume() =>
-      _js('window.__fushiWebVideo.setVolume($_volume, $_muted)');
 
   Future<void> _seekRelative(int deltaMs) {
     final int pos = _state?.positionMs ?? 0;
@@ -1253,7 +1110,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       positionMs: _controller.positionMs ?? 0,
       delayMs: _controller.miningDelayMs,
     );
-    if (_domOverlay) {
+    if (_windowed) {
       // Flutter 弹窗会被 WebView2 子窗口盖住：列表面板点词也走顶层查词窗口（无屏幕锚点 →
       // 回落光标定位）。
       await GlobalLookupController.instance.lookupText(
@@ -1333,7 +1190,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   /// DOM 字幕层的样式 / 悬停查词 / 延迟 / 显隐一次同步（页面加载完、切换显隐、调轴后）。
   Future<void> _syncDomSubtitles() async {
-    if (!_domOverlay) return;
+    if (!_windowed) return;
     final String font = jsonEncode(_appModel.subtitleFontFamily);
     await _js(
       'window.__fushiDomSubs && ('
@@ -1351,47 +1208,38 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   Future<void> _copyLoginCookiesFromBuiltin(Uri uri) async {
     final WebViewEnvironment? to = _env;
     if (to == null) return;
-    try {
-      final WebViewEnvironment from =
-          await WebVideoFushiPage.capturableEnvironment();
-      final WebUri url = WebUri('${uri.scheme}://${uri.host}/');
-      final List<Cookie> cookies = await CookieManager.instance(
-        webViewEnvironment: from,
-      ).getCookies(url: url);
-      final CookieManager dst = CookieManager.instance(webViewEnvironment: to);
-      for (final Cookie c in cookies) {
-        await dst.setCookie(
-          url: url,
-          name: c.name,
-          value: c.value.toString(),
-          domain: c.domain,
-          path: c.path ?? '/',
-          // 会话 cookie 不带 expires（fork 已把 CDP 的秒转成毫秒、会话回 null）。
-          expiresDate: c.isSessionOnly == true ? null : c.expiresDate,
-          isSecure: c.isSecure,
-          isHttpOnly: c.isHttpOnly,
-        );
-      }
-    } catch (e) {
-      ErrorLogService.instance.log('web_video', 'cookie copy: $e');
-    }
+    await copyWebVideoLoginCookies(uri: uri, to: to);
   }
 
-  /// 切宿主档 / 交接制卡：同一本书原地重开本页。
+  /// 切宿主档 / 交接制卡：同一本书原地重开。
+  ///
+  /// 切到 4K 窗口档且引擎能做底层合成时，交给原生播放器页（[VideoFushiPage] 的网页档：
+  /// 站点画面垫在原生控件下面，控件与本地视频完全同一套）；否则（内置档 / 原版引擎上的
+  /// 窗口档）原地重开本页。
   Future<void> _reopen({
     required WebVideoHosting hosting,
     bool autoRunMineQueue = false,
   }) async {
     if (!mounted) return;
+    final bool nativePage =
+        hosting == WebVideoHosting.windowed &&
+        !autoRunMineQueue &&
+        await underlayCompositionSupported();
+    if (!context.mounted) return;
     await Navigator.of(context).pushReplacement(
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => WebVideoFushiPage.neutralized(
-          bookUid: widget.bookUid,
-          repo: widget.repo,
-          hosting: hosting,
-          autoRunMineQueue: autoRunMineQueue,
-        ),
+        builder: (_) => nativePage
+            ? VideoFushiPage.neutralized(
+                bookUid: widget.bookUid,
+                repo: widget.repo,
+              )
+            : WebVideoFushiPage.neutralized(
+                bookUid: widget.bookUid,
+                repo: widget.repo,
+                hosting: hosting,
+                autoRunMineQueue: autoRunMineQueue,
+              ),
       ),
     );
   }
@@ -1769,17 +1617,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           // 画在 Scaffold 底色上，整页黑底会让它变成黑条（标题按 onSurface 取色，
           // 浅色主题下黑字压黑底看不见）。M3E：顶栏是与原生播放器同一套深色浮动
           // 胶囊，整页黑底，胶囊浮在画面上方的黑带里。
-          // 底层合成：画面区下面不能有任何不透明底色（WebView2 子窗口垫在 Flutter 下面，
-          // 从透明像素处透出）；页底让开，顶栏条自己垫回原底色。
-          backgroundColor: _underlay
-              ? Colors.transparent
-              : (m3e ? Colors.black : cs.surface),
-          appBar: _fullscreen ? null : _buildOpaqueChromeBar(row, cs, m3e),
+          backgroundColor: m3e ? Colors.black : cs.surface,
+          appBar: _fullscreen ? null : _buildChromeBar(row: row, cs: cs),
           body: Row(
             children: <Widget>[
               Expanded(
                 child: ColoredBox(
-                  color: _underlay ? Colors.transparent : Colors.black,
+                  color: Colors.black,
                   child: Stack(
                     children: <Widget>[
                       Positioned.fill(
@@ -1788,16 +1632,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                           child: _buildWebView(row, scripts),
                         ),
                       ),
-                      // 底层合成下 WebView 不收输入：点画面 = 播放 / 暂停（字幕层在上，
-                      // 点字仍是查词）。
-                      if (_underlay)
-                        Positioned.fill(
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.translucent,
-                            onTap: () => unawaited(_togglePlay()),
-                          ),
-                        ),
-                      if (!_overlayHidden && !_domOverlay)
+                      if (!_overlayHidden && !_windowed)
                         Positioned.fill(
                           child: IgnorePointer(
                             ignoring: _controller.currentCue == null,
@@ -1812,9 +1647,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                             ),
                           ),
                         ),
-                      // 控制栏在字幕层之上：按钮不被字幕层挡；悬停检测不吃点击。
-                      if (_underlay && (_state?.hasVideo ?? false))
-                        Positioned.fill(child: _buildWebVideoControls()),
                     ],
                   ),
                 ),
@@ -1844,45 +1676,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   ///
   /// 胶囊排在画面**上方**的黑带里而不是压在画面上：窗口宿主档的 WebView2 自己绘制，
   /// Flutter 叠层画不到它上面（见 [_windowed]），浮在画面上的胶囊在那一档会被盖住。
-  /// 底层合成档的底部控制栏（与原生播放器同一套 M3E 部件，动作走站点播放器）。
-  Widget _buildWebVideoControls() => WebVideoControls(
-    playback: _controller,
-    rate: _state?.rate ?? 1,
-    volume: _volume,
-    muted: _muted,
-    fullscreen: _fullscreen,
-    onTogglePlay: () => unawaited(_togglePlay()),
-    onSeek: (int ms) => unawaited(_seekMs(ms)),
-    onSeekRelative: (int delta) => unawaited(_seekRelative(delta)),
-    onRate: (double r) => unawaited(_setRate(r)),
-    onVolume: (double v) {
-      setState(() {
-        _volume = v;
-        _muted = v == 0;
-      });
-      unawaited(_applyVolume());
-    },
-    onToggleMute: () {
-      setState(() => _muted = !_muted);
-      unawaited(_applyVolume());
-    },
-    onToggleFullscreen: () => unawaited(_toggleFullscreen()),
-  );
-
-  /// 就绪态的顶栏：底层合成下页底透明，顶栏条垫回原来由页底提供的底色。
-  PreferredSizeWidget _buildOpaqueChromeBar(
-    VideoBookRow row,
-    ColorScheme cs,
-    bool m3e,
-  ) {
-    final PreferredSizeWidget bar = _buildChromeBar(row: row, cs: cs);
-    if (!_underlay) return bar;
-    return PreferredSize(
-      preferredSize: bar.preferredSize,
-      child: ColoredBox(color: m3e ? Colors.black : cs.surface, child: bar),
-    );
-  }
-
   PreferredSizeWidget _buildChromeBar({
     VideoBookRow? row,
     required ColorScheme cs,
@@ -1902,14 +1695,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       if (t.videoKey == _videoKey && t.cues.isNotEmpty) t,
   ];
 
-  String _barTitle(VideoBookRow row) {
-    final String title = _state?.title.isNotEmpty == true
-        ? _state!.title
-        : row.title;
-    // 底层合成档（4K 窗口档）标出站点实际解码的分辨率：画质够不够一眼可见。
-    final int height = _state?.videoHeight ?? 0;
-    return _underlay && height > 0 ? '$title · ${height}p' : title;
-  }
+  String _barTitle(VideoBookRow row) =>
+      _state?.title.isNotEmpty == true ? _state!.title : row.title;
 
   List<PopupMenuEntry<WebVideoHosting>> _hostingMenuItems(
     BuildContext context,
@@ -2444,7 +2231,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         _web = controller;
         _viewId = controller.platform.id;
         unawaited(_applyShaderTier());
-        _syncWebInput();
         controller.addJavaScriptHandler(
           handlerName: kWebVideoJsHandler,
           callback: _onJsMessage,
@@ -2461,7 +2247,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         unawaited(_setNativeSubtitlesHidden(_hideNativeSubtitles));
         // BUG-2260：队列换集走 loadUrl 整页重载，上一份文档里的 chrome 隐藏 <style> 随之消失，
         // 之后每张卡都带控制条/分级提示。隐藏态归 Dart 所有，新文档就绪时按 _mineRunning 重挂。
-        unawaited(_setPlayerChromeHidden(_mineRunning || _underlay));
+        unawaited(_setPlayerChromeHidden(_mineRunning));
         unawaited(_js('window.__fushiWebVideo.replayCues()'));
         unawaited(_syncDomSubtitles());
       },

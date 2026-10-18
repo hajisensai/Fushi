@@ -84,6 +84,10 @@
       vw: v ? v.videoWidth : 0,
       vh: v ? v.videoHeight : 0,
       rate: v ? v.playbackRate : 1,
+      // 音量 / 静音 / 缓冲：原生播放器控件（media_kit player.state）的真相源是页面。
+      vol: v ? v.volume : 1,
+      muted: v ? !!v.muted : false,
+      buf: v ? (!!v.seeking || (!v.paused && v.readyState < 3)) : false,
       fs: !!document.fullscreenElement,
       title: document.title,
     };
@@ -279,7 +283,6 @@
     pause: function () { var v = video(); if (!v) return false; try { v.pause(); } catch (_) {} return true; },
     toggle: function () { var v = video(); if (!v) return false; return v.paused ? this.play() : this.pause(); },
     setRate: function (r) { var v = video(); if (!v) return 1; r = Math.min(4, Math.max(0.25, Number(r) || 1)); v.playbackRate = r; return v.playbackRate; },
-    setVolume: function (vol) { var v = video(); if (!v) return 0; v.volume = Math.min(1, Math.max(0, Number(vol))); return v.volume; },
     toggleMute: function () { var v = video(); if (!v) return false; v.muted = !v.muted; return v.muted; },
     replayCues: function () {
       try { window.postMessage({ __fushiNf: 'replayCues' }, '/'); } catch (_) {}
@@ -292,7 +295,7 @@
     setNativeSubtitlesHidden: setNativeSubtitlesHidden,
     setPlayerChromeHidden: setPlayerChromeHidden,
     setVideoOnly: setVideoOnly,
-    // 底层合成档的 Fushi 音量控件（站点自己的音量键被藏起来了）。
+    // 原生播放器的音量控件（站点自己的音量键被藏起来了）：音量 0–1 + 静音一次设定。
     setVolume: function (volume, muted) {
       var v = video();
       if (!v) return 'no-video';

@@ -8,15 +8,44 @@ import 'package:fushi_audio/fushi_audio.dart';
 
 void main() {
   group('shouldOpenInWebVideoPlayer', () {
-    test('总开关关着（2026-09-13 暂时砍掉内置网页播放器）：Windows 命中站点也不进', () {
-      expect(kWebVideoPlayerEnabled, isFalse);
+    // 2026-09-13 暂时砍掉过；底层合成（网页站点画面垫在原生播放器下面）落地后重新打开。
+    test('总开关开着：Windows 命中站点进网页播放后端，其它平台照旧', () {
+      expect(kWebVideoPlayerEnabled, isTrue);
       expect(
         shouldOpenInWebVideoPlayer(
           'https://www.netflix.com/watch/81236554',
           platform: TargetPlatform.windows,
         ),
+        isTrue,
+      );
+      expect(
+        shouldOpenInWebVideoPlayer(
+          'https://www.netflix.com/watch/81236554',
+          platform: TargetPlatform.android,
+        ),
         isFalse,
       );
+    });
+  });
+
+  group('web_video_glue.js 契约', () {
+    final String glue = File(
+      'assets/web_video/web_video_glue.js',
+    ).readAsStringSync();
+
+    test('snapshot() 上报音量 / 静音 / 缓冲（原生播放器控件的真相源）', () {
+      final int start = glue.indexOf('function snapshot()');
+      final int end = glue.indexOf('function same(', start);
+      expect(start, greaterThanOrEqualTo(0));
+      expect(end, greaterThan(start));
+      final String body = glue.substring(start, end);
+      for (final String field in <String>['vol:', 'muted:', 'buf:']) {
+        expect(body.contains(field), isTrue, reason: 'snapshot 缺 $field');
+      }
+    });
+
+    test('命令表里 setVolume 只定义一次（重复键后者覆盖前者，签名会悄悄变）', () {
+      expect(RegExp(r'\bsetVolume:').allMatches(glue).length, 1);
     });
   });
 
@@ -191,6 +220,9 @@ void main() {
             'rate': 1.5,
             'fs': true,
             'title': 'Netflix',
+            'vol': 0.4,
+            'muted': true,
+            'buf': true,
           });
       expect(s, isNotNull);
       expect(s!.isPlaying, isTrue);
@@ -199,6 +231,22 @@ void main() {
       expect(s.videoWidth, 1920);
       expect(s.rate, 1.5);
       expect(s.fullscreen, isTrue);
+      expect(s.volume, 0.4);
+      expect(s.muted, isTrue);
+      expect(s.buffering, isTrue);
+    });
+
+    test('音量越界钳到 0–1；旧 glue 没有音量 / 缓冲字段时取默认', () {
+      expect(
+        parseWebVideoStatePayload(<String, Object?>{'vol': 3})!.volume,
+        1.0,
+      );
+      final WebVideoPlaybackState legacy = parseWebVideoStatePayload(
+        <String, Object?>{'hasVideo': true, 't': 1},
+      )!;
+      expect(legacy.volume, isNull);
+      expect(legacy.muted, isFalse);
+      expect(legacy.buffering, isFalse);
     });
 
     test('无 video 时 paused 视为 true、position null；非 Map 回 null', () {

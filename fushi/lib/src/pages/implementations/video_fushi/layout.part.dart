@@ -163,7 +163,9 @@ extension _VideoLayout on _VideoFushiPageState {
             fit: videoFitModeToBoxFit(_videoFitMode),
             // letterbox/pillarbox 填充色固定纯黑（TODO-053）：cover 稳态下无外围，但
             // 视频解码前 / 极端比例残留边缘仍按播放器惯例用黑底，不跟随主题 surface。
-            fill: Colors.black,
+            // 网页档透明：站点画面在下面的 WebView2 子窗口里（底层合成），页面自己铺黑边
+            // （glue 的 video-only 样式给 <video> 垫黑底）。
+            fill: _webMode ? Colors.transparent : Colors.black,
             // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
             // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
             // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
@@ -1159,7 +1161,9 @@ extension _VideoLayout on _VideoFushiPageState {
                     builder: (BuildContext _, VideoMiniSurface surface, __) =>
                         FushiTabletopSplit(
                           enabled: surface == VideoMiniSurface.none,
-                          top: video,
+                          // 网页档：站点 WebView 垫在画面槽最底层（随字幕列表挤窄），
+                          // 见 web_source.part.dart。
+                          top: _webMode ? _wrapWebVideoSurface(video) : video,
                           bottomBuilder: (BuildContext _) =>
                               _videoTabletopPanel(controller),
                         ),

@@ -136,6 +136,9 @@ class WebVideoPlaybackState {
     required this.rate,
     required this.fullscreen,
     required this.title,
+    this.volume,
+    this.muted = false,
+    this.buffering = false,
   });
 
   final String href;
@@ -149,6 +152,15 @@ class WebVideoPlaybackState {
   final double rate;
   final bool fullscreen;
   final String title;
+
+  /// `<video>.volume`（0–1）；旧 glue / 无视频为 null。
+  final double? volume;
+
+  /// `<video>.muted`。
+  final bool muted;
+
+  /// 正在 seek 或在播但数据不够（`readyState < HAVE_FUTURE_DATA`）。
+  final bool buffering;
 
   bool get isPlaying => hasVideo && !paused;
 }
@@ -202,6 +214,7 @@ WebVideoTrack? parseWebVideoTrackPayload(
 WebVideoPlaybackState? parseWebVideoStatePayload(Object? raw) {
   if (raw is! Map) return null;
   final Object? rate = raw['rate'];
+  final Object? vol = raw['vol'];
   return WebVideoPlaybackState(
     href: (raw['href'] ?? '').toString(),
     videoKey: (raw['videoKey'] ?? '').toString(),
@@ -214,6 +227,9 @@ WebVideoPlaybackState? parseWebVideoStatePayload(Object? raw) {
     rate: rate is num ? rate.toDouble() : 1.0,
     fullscreen: raw['fs'] == true,
     title: (raw['title'] ?? '').toString(),
+    volume: vol is num ? vol.toDouble().clamp(0.0, 1.0) : null,
+    muted: raw['muted'] == true,
+    buffering: raw['buf'] == true,
   );
 }
 

@@ -209,7 +209,8 @@ extension _VideoSidePanel on _VideoFushiPageState {
   List<_VideoSidePanelKind> _videoPanelSwitcherKinds() {
     return <_VideoSidePanelKind>[
       _VideoSidePanelKind.subtitle,
-      _VideoSidePanelKind.audio,
+      // 网页档的音轨归站点播放器，本页切不了。
+      if (!_webMode) _VideoSidePanelKind.audio,
       if (_hasChapters) _VideoSidePanelKind.chapters,
       if (_qualityCurrentLabel != null || _isYoutubeStream)
         _VideoSidePanelKind.quality,

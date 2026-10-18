@@ -189,6 +189,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     BuildContext context,
     VideoPlayerController controller,
   ) {
+    // 网页档：字幕轨来自站点（bridge 抓的整集轨 + DOM 采样 live 轨），见 web_source.part.dart。
+    if (_webMode) return _buildWebSubtitleTrackRows(context);
     // 选中行前景：M3E 交给面板列表主题（secondaryContainer 色块 +
     // onSecondaryContainer），Apple 照旧强调色。
     final Color? selectedFg = videoPanelSelectedForeground(context);
