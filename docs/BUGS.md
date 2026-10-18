@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3153 条。点号进各自文件。
+> 共 3156 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3526](bugs/BUG-3526-srs-local-seq-allocated-before-landing.md) | ✅ | ✅ | 复习：本机修改记录的序号在落库前分配，并发写入时发件箱乱序、因果上下文声称看见了不存在的记录 |
+| [BUG-3525](bugs/BUG-3525-srs-bulk-ops-per-item-roundtrips.md) | ✅ | ✅ | 复习：作用于多张卡 / 多条笔记的批量操作逐条往返，规模一大就慢（批量改卡、重置、换类型、导出、同步、恢复…） |
+| [BUG-3524](bugs/BUG-3524-srs-deck-delete-slow.md) | ✅ | ✅ | 复习：删除牌组奇慢无比（几千张卡几十秒），删除期间无任何反馈 |
 | [BUG-3523](bugs/BUG-3523-srs-legacy-lapis-migration-drops-fields.md) | ✅ | ✅ | 旧 Lapis 迁到 Fushi 卡片时部分字段内容没跟过去，导入 / 改名的 Lapis 无法一键迁移 |
 | [BUG-3522](bugs/BUG-3522-srs-apkg-import-slow-blocking.md) | ✅ | ✅ | 复习：Anki 包导入慢且阻塞在模态对话框里，不能后台导入 |
 | [BUG-3521](bugs/BUG-3521-srs-deck-create-slow-list-stale.md) | ✅ | ✅ | 复习：新建牌组慢、列表不立即出现新牌组 |
