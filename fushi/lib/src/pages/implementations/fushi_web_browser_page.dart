@@ -15,6 +15,8 @@ import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/manga/web/web_comic_reader_launch.dart';
 import 'package:fushi/src/media/manga/web/web_comic_scan.dart';
 import 'package:fushi/src/media/manga/web/web_comic_scanner.dart';
+import 'package:fushi/src/media/novel/web/web_novel_gate.dart';
+import 'package:fushi/src/media/novel/web/web_novel_reader_launch.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
@@ -49,6 +51,9 @@ import 'package:fushi/src/webview/webview_death_guard.dart';
 /// - **网页漫画**（附加动作）：「用 Fushi 阅读本章」扫当前页的漫画图交给漫画
 ///   阅读器。只在 [webComicReaderActionAvailable]（`onlineMangaSource` 合规门）
 ///   为真时出现——iOS 上浏览器照常可用，只是没有这项动作，也不预置漫画站；
+/// - **网页小说**（附加动作）：「用 Fushi 阅读（小说）」把当前页整页 HTML 交给 Rust
+///   提取正文、并进连载会话，预览确认后进书架并在阅读器打开（读到末尾自动拉下一章）。
+///   只在 [webNovelReaderActionAvailable]（`onlineNovelSource` 合规门）为真时出现；
 /// - **广告 / 跟踪拦截**：[applyAdblockTo]（Rust adblock 引擎，设置 › 系统里的
 ///   开关、订阅列表与白名单现读生效；iOS / macOS 的规则在 WebView 创建时固化）。
 ///
@@ -102,6 +107,10 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       ? WebComicScanDriver()
       : null;
   bool _scanning = false;
+
+  /// 网页小说动作（合规门关时整条能力不装）。
+  final bool _novelAvailable = webNovelReaderActionAvailable();
+  bool _extractingNovel = false;
 
   /// 广告拦截接线：环境就绪时建一次，WebView 重建（死亡守卫）也沿用同一份，
   /// 让 cosmetic 的 JS handler 与按 href 记的例外集始终是同一个对象。
@@ -323,6 +332,43 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     }
   }
 
+  // ── 网页小说 ─────────────────────────────────────────────────────────
+
+  Future<void> _readNovelInFushi() async {
+    final InAppWebViewController? controller = _controller;
+    final Uri? url = _currentUrl;
+    if (!_novelAvailable ||
+        controller == null ||
+        url == null ||
+        _extractingNovel) {
+      return;
+    }
+    setState(() => _extractingNovel = true);
+    FushiToast.show(msg: t.novel_web_extract_running);
+    try {
+      await readWebNovelPageInFushi(
+        context: context,
+        ref: ref,
+        controller: controller,
+        pageUrl: url,
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'FushiWebBrowserPage.readNovel',
+        error,
+        stack,
+      );
+      if (mounted) {
+        FushiToast.show(
+          msg: t.novel_web_extract_failed(error: '$error'),
+          severity: ToastSeverity.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _extractingNovel = false);
+    }
+  }
+
   Future<void> _toggleAdFilter() async {
     final bool next = !_appModel.prefsRepo.webComicAdFilter;
     await _appModel.prefsRepo.setWebComicAdFilter(next);
@@ -499,6 +545,19 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   List<List<FushiToolbarItem>> _actionGroups() {
     final bool web = !_showSites && _controller != null;
     return <List<FushiToolbarItem>>[
+      // 小说动作排最前：动作按给出顺序定优先级，宽度不够时它最后收进「⋯」。
+      if (_novelAvailable)
+        <FushiToolbarItem>[
+          FushiToolbarItem(
+            key: const ValueKey<String>('web-browser-read-novel'),
+            icon: FushiIcons.books,
+            label: t.novel_web_read_page,
+            selected: _extractingNovel,
+            onPressed: web && _currentUrl != null && !_extractingNovel
+                ? () => unawaited(_readNovelInFushi())
+                : null,
+          ),
+        ],
       <FushiToolbarItem>[
         FushiToolbarItem(
           key: const ValueKey<String>('web-browser-lookup'),

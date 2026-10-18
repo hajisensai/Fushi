@@ -514,6 +514,51 @@ void main() {
       );
     });
 
+    test('网页小说（浏览器上的「用 Fushi 阅读（小说）」与追更）由 onlineNovelSource 门控，'
+        '通用浏览器本身不过门', () {
+      // 判据只写在 webNovelReaderActionAvailable 一处（web_novel_gate.dart）；浏览器页
+      // 的动作、开书前补「下一章」占位、阅读器的按需取章都只问它，不写 Platform.isIOS。
+      final String gate = compactCode(
+        read('lib/src/media/novel/web/web_novel_gate.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolwebNovelReaderActionAvailable()=>'
+          'StoreRestrictedCapability.onlineNovelSource.isAvailable;',
+        ),
+      );
+      final String browser = compactCode(
+        read('lib/src/pages/implementations/fushi_web_browser_page.dart'),
+      );
+      expect(
+        browser,
+        contains('finalbool_novelAvailable=webNovelReaderActionAvailable();'),
+        reason: '小说动作整条只在合规门开时装。',
+      );
+      expect(
+        browser,
+        contains('if(_novelAvailable)<FushiToolbarItem>['),
+        reason: '工具栏上的「用 Fushi 阅读（小说）」由同一个判据决定出不出现。',
+      );
+      expect(browser, contains('if(!_novelAvailable||'));
+      expect(browser, isNot(contains('Platform.isIOS')));
+      final String library = compactCode(
+        read('lib/src/media/novel/web/web_novel_library.dart'),
+      );
+      expect(
+        library,
+        contains('if(row==null||!webNovelReaderActionAvailable())returnnull;'),
+        reason: '快照会随备份恢复到 iOS：开书不得因此联网取下一章。',
+      );
+      expect(
+        library,
+        contains('if(!webNovelReaderActionAvailable())returnfalse;'),
+        reason: '开书前补「下一章」占位同样过门。',
+      );
+      expect(library, isNot(contains('Platform.isIOS')));
+    });
+
     test('视频在线源三段（Aniyomi，浏览模块）由 onlineVideoSource 门控', () {
       // 判据只写在 video_online_sources_gate.dart 一处（合规门 + 运行时平台门），
       // 浏览页只问它——这条边界失效是静默的（本地与 CI 全绿、上架才被拒）。
