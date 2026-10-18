@@ -15,6 +15,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataMediaKind;
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/media/video/video_subtitle_source.dart'
+    show SubtitleSource;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show VideoSubtitleBackfillReport;
 import 'package:path/path.dart' as p;
@@ -28,12 +30,15 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
 /// [service] 为 null（下载 / 字幕运行时还没起来）或没配任何字幕来源时回
 /// `unavailable`。[language] 是这次显式要的字幕语言（硬过滤），null 时用
 /// [seriesLanguage] 查到的每系列记忆，再没有就按服务的全局链。
+///
+/// [embeddedSelectionBlocks] 见 [libraryVideoSubtitleTarget]。
 Future<VideoSubtitleBackfillReport?> backfillLibraryVideoSubtitle({
   required FushiDatabase database,
   required VideoSubtitleBackfillService? service,
   required String videoId,
   String? language,
   String? Function(String seriesKey)? seriesLanguage,
+  bool embeddedSelectionBlocks = true,
 }) async {
   final VideoBookRow? book = await database.getVideoBookByBookUid(videoId);
   if (book == null) return null;
@@ -49,6 +54,7 @@ Future<VideoSubtitleBackfillReport?> backfillLibraryVideoSubtitle({
         book,
         explicitLanguage: language,
         seriesLanguage: seriesLanguage,
+        embeddedSelectionBlocks: embeddedSelectionBlocks,
       );
   final SubtitleBackfillTarget? target = built.target;
   if (target == null) {
@@ -68,12 +74,18 @@ Future<VideoSubtitleBackfillReport?> backfillLibraryVideoSubtitle({
 
 /// 库里一个视频 → 补字幕目标（身份取自已落库的刮削结论）。拿不出可信身份时
 /// target 为 null，reason 说明为什么。
+///
+/// [embeddedSelectionBlocks] 为 false 时，库里存的内嵌轨选择（`embedded:<n>`）不算
+/// 「已有字幕」：下载后缺字幕重试用它——那一集本该由下载流水线装上 sidecar，内嵌轨
+/// 只是没有 sidecar 时的退路（实测 Crunchyroll 片源的第 0 条内嵌轨是英文）。
+/// `off:` 与外挂文件路径无论如何都挡住。
 Future<({SubtitleBackfillTarget? target, String? reason})>
 libraryVideoSubtitleTarget(
   FushiDatabase database,
   VideoBookRow book, {
   String? explicitLanguage,
   String? Function(String seriesKey)? seriesLanguage,
+  bool embeddedSelectionBlocks = true,
 }) async {
   if (book.videoPath.trim().isEmpty) {
     return (target: null, reason: 'video has no local file');
@@ -137,7 +149,10 @@ libraryVideoSubtitleTarget(
     target: SubtitleBackfillTarget(
       bookUid: book.bookUid,
       videoPath: book.videoPath,
-      hasExistingSubtitle: book.subtitleSource?.trim().isNotEmpty == true,
+      hasExistingSubtitle: subtitleSourceBlocksBackfill(
+        book.subtitleSource,
+        embeddedSelectionBlocks: embeddedSelectionBlocks,
+      ),
       media: identityMediaReference(
         providerId: primary.provider,
         kind: work.mediaType == 'movie'
@@ -159,6 +174,20 @@ libraryVideoSubtitleTarget(
     ),
     reason: null,
   );
+}
+
+/// 库里存的主字幕源是否算「已有字幕」、挡住补字幕。null / 空不挡；`off:`（用户
+/// 显式关闭）与外挂文件路径挡；内嵌轨选择按 [embeddedSelectionBlocks]。
+bool subtitleSourceBlocksBackfill(
+  String? subtitleSource, {
+  bool embeddedSelectionBlocks = true,
+}) {
+  final String source = subtitleSource?.trim() ?? '';
+  if (source.isEmpty) return false;
+  if (SubtitleSource.isEmbeddedPersisted(source)) {
+    return embeddedSelectionBlocks;
+  }
+  return true;
 }
 
 /// 作品的 provider 身份行 → `externalIds`（provider 归一成小写）。同一 provider
