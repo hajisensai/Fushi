@@ -3120,6 +3120,9 @@ class AppModel with ChangeNotifier {
       // fsrs-rs（BSD-3-Clause，open-spaced-repetition）与 ruzstd（MIT，Anki 新格式包解压）。
       'fsrs-rs',
       'ruzstd',
+      // 计算内核 native/fushi_compute 静态链进的 JPEG 编码器（片段帧 / 卡图出 JPEG）：
+      // (MIT OR Apache-2.0) AND IJG，IJG 要求随发行物写明基于 IJG 的工作。
+      'jpeg-encoder',
     ];
 
     for (String packageName in packageNames) {
