@@ -150,10 +150,10 @@ TtsBookPlan buildTtsBookPlanSync(
     }
     final List<({bool endsParagraph, bool sceneBreakAfter})> marks =
         ttsSentenceBoundaryMarks(
-          sentences: raw,
-          blockEnds: input.blockEnds,
-          sceneBreaks: input.sceneBreaks,
-        );
+      sentences: raw,
+      blockEnds: input.blockEnds,
+      sceneBreaks: input.sceneBreaks,
+    );
     for (int k = 0; k < marks.length; k++) {
       final TtsPlanSentence s = out[chapterFirst + k];
       out[chapterFirst + k] = TtsPlanSentence(
@@ -186,13 +186,8 @@ List<({bool endsParagraph, bool sceneBreakAfter})> ttsSentenceBoundaryMarks({
   // 各句区间升序、边界列表升序：两个游标单调前移，整章线性。
   int b = 0;
   int s = 0;
-  bool advance(
-    List<int> sorted,
-    int cursor,
-    int from,
-    int to,
-    void Function(int) save,
-  ) {
+  bool advance(List<int> sorted, int cursor, int from, int to,
+      void Function(int) save) {
     while (cursor < sorted.length && sorted[cursor] < from) {
       cursor++;
     }
@@ -206,8 +201,10 @@ List<({bool endsParagraph, bool sceneBreakAfter})> ttsSentenceBoundaryMarks({
     final int from = sentences[k].end;
     final bool last = k + 1 == sentences.length;
     final int to = last ? 1 << 40 : sentences[k + 1].start;
-    final bool paragraph = advance(blockEnds, b, from, to, (int c) => b = c);
-    final bool scene = advance(sceneBreaks, s, from, to, (int c) => s = c);
+    final bool paragraph =
+        advance(blockEnds, b, from, to, (int c) => b = c);
+    final bool scene =
+        advance(sceneBreaks, s, from, to, (int c) => s = c);
     out.add((endsParagraph: paragraph, sceneBreakAfter: !last && scene));
   }
   return out;
@@ -253,13 +250,11 @@ TtsBookPlan mergeShortTtsSentences(
   final List<TtsPlanSentence> out = <TtsPlanSentence>[];
   for (final TtsPlanSentence s in plan.sentences) {
     final TtsPlanSentence? last = out.isEmpty ? null : out.last;
-    final bool canMerge =
-        last != null &&
+    final bool canMerge = last != null &&
         last.section == s.section &&
         !last.endsParagraph &&
         !last.sceneBreakAfter &&
-        (last.spokenText.length < minLength ||
-            s.spokenText.length < minLength) &&
+        (last.spokenText.length < minLength || s.spokenText.length < minLength) &&
         last.spokenText.length + s.spokenText.length <= maxLength;
     if (!canMerge) {
       out.add(s);

@@ -336,9 +336,8 @@ _Link? _bestMatch(
   ]..sort(((_Candidate, int) a, (_Candidate, int) b) {
       final int diff = a.$2.compareTo(b.$2);
       if (diff != 0) return diff;
-      final int season = a.$1.episode.seasonNumber.compareTo(
-        b.$1.episode.seasonNumber,
-      );
+      final int season =
+          a.$1.episode.seasonNumber.compareTo(b.$1.episode.seasonNumber);
       return season != 0
           ? season
           : a.$1.episode.episodeNumber.compareTo(b.$1.episode.episodeNumber);

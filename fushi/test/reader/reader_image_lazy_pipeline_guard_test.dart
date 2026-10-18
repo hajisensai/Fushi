@@ -39,37 +39,24 @@ void main() {
       final int endIdx = src.indexOf('String? _chapterFilePath(', injectIdx);
       expect(endIdx, greaterThan(injectIdx));
       final String body = stripLineComments(src.substring(injectIdx, endIdx));
-      expect(
-        body.contains('class="fushi-merged-image"'),
-        isTrue,
-        reason: 'JS 侧靠这个 marker 放行，两端接线必须一致',
-      );
-      expect(
-        body.contains('loading="eager"'),
-        isTrue,
-        reason:
-            '注入的前导插图必须显式 eager —— 否则 eager 只由调用顺序保证，'
-            '谁调换顺序 TODO-1339 就复活而三条 JS 守卫全绿',
-      );
+      expect(body.contains('class="fushi-merged-image"'), isTrue,
+          reason: 'JS 侧靠这个 marker 放行，两端接线必须一致');
+      expect(body.contains('loading="eager"'), isTrue,
+          reason: '注入的前导插图必须显式 eager —— 否则 eager 只由调用顺序保证，'
+              '谁调换顺序 TODO-1339 就复活而三条 JS 守卫全绿');
     });
 
     test('markImagesLazy 跳过显式 loading="eager"（顺序无关的另一半）', () {
-      const String merged =
-          '<body><div class="fushi-merged-image">'
+      const String merged = '<body><div class="fushi-merged-image">'
           '<img src="hoshi://a.png" class="block-img" loading="eager"/>'
           '</div><p>本文</p><img src="b.png"/></body>';
       final String out = ReaderResourceSanitizer.markImagesLazy(merged);
       // 前导插图原样保留 eager；正文普通插图仍挂 lazy（不回退 TODO-1074）。
       expect(out, contains('class="block-img" loading="eager"'));
       expect(
-        out,
-        isNot(contains('loading="lazy" decoding="async" src="hoshi:')),
-      );
-      expect(
-        'loading="lazy"'.allMatches(out).length,
-        1,
-        reason: '只有正文那张普通插图该被挂 lazy',
-      );
+          out, isNot(contains('loading="lazy" decoding="async" src="hoshi:')));
+      expect('loading="lazy"'.allMatches(out).length, 1,
+          reason: '只有正文那张普通插图该被挂 lazy');
     });
 
     test('合并插图与 lazy 标记接在同一条原生链里', () {
@@ -145,9 +132,7 @@ void main() {
     test('纯图片章：eagerAll 下一个 lazy 都不加', () {
       const String html = '<body><img src="p1.png"/><img src="p2.png"/></body>';
       expect(
-        ReaderResourceSanitizer.markImagesLazy(html, eagerAll: true),
-        html,
-      );
+          ReaderResourceSanitizer.markImagesLazy(html, eagerAll: true), html);
     });
 
     test('gaiji 内联小图无论哪条路径都不挂 lazy（参与文字排版几何）', () {
@@ -161,46 +146,32 @@ void main() {
       final String src = webviewSrc();
       // 窗口=方法体（花括号配对），不再是 `idx + 1800`：该方法体实测 1483 字符，
       // 旧窗口越过方法末尾 317 字符读进下一个方法，两条配额断言可能命中错对象。
-      final String body = methodBody(
-        src,
-        'void _prefetchAdjacentChapterImages(',
-      );
-      expect(
-        body.contains('_kImagePrefetchMaxCount'),
-        isTrue,
-        reason: '预热必须有张数上限',
-      );
-      expect(
-        body.contains('_kImagePrefetchMaxBytes'),
-        isTrue,
-        reason: '预热必须有字节上限（整页插图书的内存压力是实打实的）',
-      );
+      final String body =
+          methodBody(src, 'void _prefetchAdjacentChapterImages(');
+      expect(body.contains('_kImagePrefetchMaxCount'), isTrue,
+          reason: '预热必须有张数上限');
+      expect(body.contains('_kImagePrefetchMaxBytes'), isTrue,
+          reason: '预热必须有字节上限（整页插图书的内存压力是实打实的）');
     });
 
     test('预热跟随阅读方向，而不是写死 +1', () {
       final File navFile = File(
         'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
       );
-      final String src = navFile.readAsStringSync().replaceAll(
-        RegExp(r'\s+'),
-        ' ',
-      );
+      final String src =
+          navFile.readAsStringSync().replaceAll(RegExp(r'\s+'), ' ');
       // 格式无关：src 已折叠空白，但 tall style 折行会补出尾逗号
       // （`...direction, )`），判据只钉「预热实参是 当前章 + 方向」。
       expect(
-        RegExp(
-          r'_prefetchAdjacentChapterImages\(\s*_currentChapter\s*\+\s*_chapterAdvanceDirection\s*,?\s*\)',
-        ).hasMatch(src),
-        isTrue,
-        reason: '倒着读时必须预热上一章，而不是刚离开的那一章',
-      );
+          RegExp(r'_prefetchAdjacentChapterImages\(\s*_currentChapter\s*\+\s*_chapterAdvanceDirection\s*,?\s*\)')
+              .hasMatch(src),
+          isTrue,
+          reason: '倒着读时必须预热上一章，而不是刚离开的那一章');
       expect(
-        src.contains(
-          '_chapterAdvanceDirection = chapter > _currentChapter ? 1 : -1;',
-        ),
-        isTrue,
-        reason: '方向必须在唯一的导航采样点 _beginNavigation 更新',
-      );
+          src.contains(
+              '_chapterAdvanceDirection = chapter > _currentChapter ? 1 : -1;'),
+          isTrue,
+          reason: '方向必须在唯一的导航采样点 _beginNavigation 更新');
     });
   });
 }

@@ -76,7 +76,10 @@ class AniDbVideoMetadataProvider
                     titleCatalog == null &&
                     now == null &&
                     sleep == null))
-            ? _sharedRequestGates.putIfAbsent(apiUrl, _AniDbRequestGate.new)
+            ? _sharedRequestGates.putIfAbsent(
+                apiUrl,
+                _AniDbRequestGate.new,
+              )
             : _AniDbRequestGate(),
         apiRequestInterval = apiRequestInterval < _minimumRequestInterval
             ? _minimumRequestInterval
@@ -126,10 +129,8 @@ class AniDbVideoMetadataProvider
   /// 且没被 AniDB 明确拒绝过）。不看封禁——封禁是另一种「暂时不可用」。
   bool get _hasHttpClientIdentity =>
       !_closed &&
-      AniDbAppClientIdentity(
-        name: _clientName,
-        version: _clientVersion,
-      ).isUsable &&
+      AniDbAppClientIdentity(name: _clientName, version: _clientVersion)
+          .isUsable &&
       httpIdentityRejection == null;
 
   String get _httpIdentityKey => '$_clientName/${_clientVersion ?? ''}';
@@ -191,7 +192,9 @@ class AniDbVideoMetadataProvider
       // 不是「没搜到」：折成网络异常，resolver 才会记 providerUnavailable 并
       // 继续问链上的 TMDB 兜底，而不是整批作品 failed（AniDB 成默认主源后这条
       // 是升级即触发的退化）。
-      throw VideoMetadataNetworkException('AniDB 标题目录不可用：${error.message}');
+      throw VideoMetadataNetworkException(
+        'AniDB 标题目录不可用：${error.message}',
+      );
     }
     return <VideoMetadataWork>[
       for (final AniDbTitleSearchResult match in matches)
@@ -287,8 +290,7 @@ class AniDbVideoMetadataProvider
       );
     }
     return List<VideoMetadataEpisode>.unmodifiable(
-      seasonNumber == 0 ? anime.specials : anime.episodes,
-    );
+        seasonNumber == 0 ? anime.specials : anime.episodes);
   }
 
   Future<_AniDbAnime?> _anime(int animeId) async {
@@ -326,10 +328,8 @@ class AniDbVideoMetadataProvider
         final bool fresh =
             _now().difference((await cacheFile.stat()).modified) <
                 _animeCacheTtl;
-        final _AniDbAnime? parsed = _parseAnime(
-          animeId,
-          await cacheFile.readAsString(),
-        );
+        final _AniDbAnime? parsed =
+            _parseAnime(animeId, await cacheFile.readAsString());
         if (parsed != null && (fresh || !isHttpApiAvailable)) return parsed;
         stale = parsed;
       } on Object {
@@ -870,7 +870,10 @@ class AniDbVideoMetadataProvider
       // compatibility fallback for cached/test fixtures.
       final List<AniDbTitle> titles = directTitles.isNotEmpty
           ? directTitles
-          : _parseTitles(element.getElement('titles'), allowMissingType: true);
+          : _parseTitles(
+              element.getElement('titles'),
+              allowMissingType: true,
+            );
       final AniDbTitleRecord record = AniDbTitleRecord(
         animeId: episodeId ?? episodeNumber,
         titles: titles.isEmpty

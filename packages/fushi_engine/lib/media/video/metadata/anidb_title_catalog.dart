@@ -477,10 +477,8 @@ Future<int> _parseTitleCatalogFile(String path) async {
   } finally {
     await handle.close();
   }
-  return _parseTitleCatalogSource(
-    file.openRead(),
-    isGzip: _looksLikeGzip(magic),
-  );
+  return _parseTitleCatalogSource(file.openRead(),
+      isGzip: _looksLikeGzip(magic));
 }
 
 /// 解压 → 逐块喂给原生构建器（UTF-8 解码、XML 事件、记录、索引都在 Rust 里），

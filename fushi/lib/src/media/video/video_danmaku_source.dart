@@ -41,10 +41,8 @@ String? findDanmakuSidecar(String videoPath) {
   } on FileSystemException {
     return null;
   }
-  final String? picked = pickDanmakuSidecar(
-    p.basenameWithoutExtension(videoPath),
-    files,
-  );
+  final String? picked =
+      pickDanmakuSidecar(p.basenameWithoutExtension(videoPath), files);
   return picked == null ? null : p.normalize(p.join(dir.path, picked));
 }
 
@@ -73,10 +71,10 @@ Future<VideoDanmakuLoadResult> loadDanmakuSidecarFile(
     // 均可跨 isolate 传输，`_parseDanmakuContent` 是无闭包捕获的顶层纯函数。
     final String content = await readTextWithEncoding(file);
     final String ext = p.extension(file.path).toLowerCase();
-    final List<VideoDanmakuItem> items = await compute(_parseDanmakuContent, (
-      content,
-      ext == '.json',
-    ));
+    final List<VideoDanmakuItem> items = await compute(
+      _parseDanmakuContent,
+      (content, ext == '.json'),
+    );
     return VideoDanmakuLoadResult(items: items, sourcePath: file.path);
   } catch (e) {
     return VideoDanmakuLoadResult(

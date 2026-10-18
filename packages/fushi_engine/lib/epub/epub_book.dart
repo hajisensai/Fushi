@@ -135,9 +135,7 @@ class EpubBook {
   EpubPlainTextWithRuby chapterPlainTextWithRuby(int index) {
     if (index < 0 || index >= chapters.length) {
       return const EpubPlainTextWithRuby(
-        text: '',
-        rubies: <EpubRubyAnnotation>[],
-      );
+          text: '', rubies: <EpubRubyAnnotation>[]);
     }
     final EpubChapterScan scan = _scanChapter(
       index,
@@ -324,18 +322,16 @@ class EpubBook {
     }) {
       final String? key = normalizeEpubImageKey(resolvedSrc);
       if (key == null || !seen.add(key)) return;
-      built.add(
-        EpubImageRef(
-          chapterIndex: chapterIndex,
-          orderInBook: built.length,
-          src: resolvedSrc,
-          revealKey: key,
-          normCharOffset: normCharOffset,
-          charOffset: charOffset,
-          leadingAnchorIds: leadingAnchorIds,
-          sharesLineWithText: sharesLineWithText,
-        ),
-      );
+      built.add(EpubImageRef(
+        chapterIndex: chapterIndex,
+        orderInBook: built.length,
+        src: resolvedSrc,
+        revealKey: key,
+        normCharOffset: normCharOffset,
+        charOffset: charOffset,
+        leadingAnchorIds: leadingAnchorIds,
+        sharesLineWithText: sharesLineWithText,
+      ));
     }
 
     // The cover precedes every chapter, so it can never be "not read yet".
@@ -393,8 +389,7 @@ class EpubBook {
     if (!uri.path.startsWith('/epub/')) return null;
 
     final String epubPath = _canonicalEpubPath(
-      _decodeHrefPath(uri.path.substring('/epub/'.length)),
-    );
+        _decodeHrefPath(uri.path.substring('/epub/'.length)));
     final String? fragment = uri.fragment.isNotEmpty ? uri.fragment : null;
 
     for (int i = 0; i < chapters.length; i++) {
@@ -574,30 +569,30 @@ class EpubImageRef {
   /// On-disk form for the illustration index cache
   /// (`epub_image_index_cache.dart`). Short keys: a long novel lists hundreds.
   Map<String, Object> toJson() => <String, Object>{
-    'c': chapterIndex,
-    'o': orderInBook,
-    's': src,
-    'k': revealKey,
-    'n': normCharOffset,
-    'a': charOffset,
-    if (leadingAnchorIds.isNotEmpty) 'l': leadingAnchorIds,
-    if (sharesLineWithText) 't': true,
-  };
+        'c': chapterIndex,
+        'o': orderInBook,
+        's': src,
+        'k': revealKey,
+        'n': normCharOffset,
+        'a': charOffset,
+        if (leadingAnchorIds.isNotEmpty) 'l': leadingAnchorIds,
+        if (sharesLineWithText) 't': true,
+      };
 
   /// Inverse of [toJson]. Throws [FormatException] / [TypeError] on a
   /// malformed entry; the cache reader treats that as a miss.
   static EpubImageRef fromJson(Map<String, dynamic> json) => EpubImageRef(
-    chapterIndex: json['c'] as int,
-    orderInBook: json['o'] as int,
-    src: json['s'] as String,
-    revealKey: json['k'] as String,
-    normCharOffset: json['n'] as int,
-    charOffset: json['a'] as int,
-    leadingAnchorIds: List<String>.unmodifiable(
-      (json['l'] as List<dynamic>? ?? const <dynamic>[]).cast<String>(),
-    ),
-    sharesLineWithText: json['t'] == true,
-  );
+        chapterIndex: json['c'] as int,
+        orderInBook: json['o'] as int,
+        src: json['s'] as String,
+        revealKey: json['k'] as String,
+        normCharOffset: json['n'] as int,
+        charOffset: json['a'] as int,
+        leadingAnchorIds: List<String>.unmodifiable(
+          (json['l'] as List<dynamic>? ?? const <dynamic>[]).cast<String>(),
+        ),
+        sharesLineWithText: json['t'] == true,
+      );
 }
 
 /// BUG-898: normalizes an epub-root-relative image href to the shared
@@ -677,8 +672,8 @@ class EpubChapter {
     this.linear = true,
     this.spreadProperty,
     this.isNav = false,
-  }) : _eagerHtml = html,
-       _filePath = null;
+  })  : _eagerHtml = html,
+        _filePath = null;
 
   /// TODO-296: lazy constructor — chapter XHTML is read + decoded from
   /// [filePath] on first [html] access and cached, instead of slurping every
@@ -696,8 +691,8 @@ class EpubChapter {
     this.linear = true,
     this.spreadProperty,
     this.isNav = false,
-  }) : _eagerHtml = null,
-       _filePath = filePath;
+  })  : _eagerHtml = null,
+        _filePath = filePath;
 
   final String id;
   final String href;

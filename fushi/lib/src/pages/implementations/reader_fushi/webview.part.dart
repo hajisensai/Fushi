@@ -3050,7 +3050,9 @@ updateLive: function(patch) {
         generation == _lyricsLoadGeneration;
   }
 
-  Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
+  Future<void> _onChapterLoadComplete(
+    InAppWebViewController controller,
+  ) async {
     // BUG-1280（平台分叉守卫）：spread 独立文档绝不注入正文引擎。
     //
     // `_loadSpreadPage` 传给 `loadData` 的 baseUrl 与 `_chapterUrl(_currentChapter)`
