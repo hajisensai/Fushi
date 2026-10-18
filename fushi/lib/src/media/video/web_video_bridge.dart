@@ -139,6 +139,7 @@ class WebVideoPlaybackState {
     this.volume,
     this.muted = false,
     this.buffering = false,
+    this.ad = false,
   });
 
   final String href;
@@ -161,6 +162,10 @@ class WebVideoPlaybackState {
 
   /// 正在 seek 或在播但数据不够（`readyState < HAVE_FUTURE_DATA`）。
   final bool buffering;
+
+  /// 站点正在放广告（YouTube `ad-showing`）：位置 / 时长 / 倍速 / 静音都是广告的，
+  /// 不是正片的。
+  final bool ad;
 
   bool get isPlaying => hasVideo && !paused;
 }
@@ -230,6 +235,7 @@ WebVideoPlaybackState? parseWebVideoStatePayload(Object? raw) {
     volume: vol is num ? vol.toDouble().clamp(0.0, 1.0) : null,
     muted: raw['muted'] == true,
     buffering: raw['buf'] == true,
+    ad: raw['ad'] == true,
   );
 }
 

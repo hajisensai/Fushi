@@ -68,6 +68,33 @@
     if (!flushTimer) flushTimer = setTimeout(flushTracks, 250);
   };
 
+  // ── 广告（YouTube 片头 / 中插）：能跳就点「跳过」，不能跳就静音 16 倍速放完，结束后还原
+  // 静音与倍速。广告期间快照带 ad: true，Dart 侧盖黑屏、不把广告的时间轴当正片。──
+  function adShowing() {
+    if (location.hostname.indexOf('youtube.com') < 0) return false;
+    var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+    return !!(p && p.classList && p.classList.contains('ad-showing'));
+  }
+  var adRestore = null;
+  function handleAds() {
+    var v = video();
+    var ad = adShowing();
+    if (ad && v) {
+      if (!adRestore) adRestore = { muted: !!v.muted, rate: v.playbackRate || 1 };
+      try {
+        var skip = document.querySelector(
+          '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern');
+        if (skip) skip.click();
+      } catch (_) {}
+      try { v.muted = true; } catch (_) {}
+      try { if (v.playbackRate < 16) v.playbackRate = 16; } catch (_) {}
+    } else if (!ad && adRestore) {
+      try { if (v) { v.muted = adRestore.muted; v.playbackRate = adRestore.rate; } } catch (_) {}
+      adRestore = null;
+    }
+  }
+  try { setInterval(handleAds, 300); } catch (_) {}
+
   // ── 播放态轮询（与扩展面板同为轮询，站点播放器不保证派发 timeupdate）──
   var last = null;
   function snapshot() {
@@ -90,6 +117,7 @@
       buf: v ? (!!v.seeking || (!v.paused && v.readyState < 3)) : false,
       fs: !!document.fullscreenElement,
       title: document.title,
+      ad: adShowing(),
     };
   }
   function same(a, b) {

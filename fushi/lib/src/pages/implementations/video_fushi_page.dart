@@ -2081,6 +2081,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 站点页面里当前有没有 `<video>`（网页档返回条上的「在播放器里看」）。
   bool _webPageHasVideo = false;
 
+  /// 站点正在放广告（glue 在跳 / 快进）：播放器档盖黑屏，快照不进播放器状态。
+  bool _webAdShowing = false;
+
   /// 用户对这一集（videoKey）点了「回到网页」/「在播放器里看」；换集即失效。
   String? _webBrowseVideoKey;
   String? _webForcePlayerKey;
@@ -2092,6 +2095,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 起任何一集时为 null。正在落库的那一集记在 [_webBindingEpisodeUrl]。
   String? _webBoundEpisodeUrl;
   String? _webBindingEpisodeUrl;
+
+  /// 网页档工具条的地址栏（没在编辑时跟着当前地址走）。
+  final TextEditingController _webAddressController = TextEditingController();
+  final FocusNode _webAddressFocus = FocusNode(debugLabel: 'video-web-address');
 
   /// 站点当前视频身份（glue 的 `videoKey`；SPA 换集即变）与它名下的字幕轨。
   String _webVideoKey = '';
@@ -7265,6 +7272,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 键盘 / 系统返回 / 手柄三条输入通道共用同一份语义，不再各写一份。
   Future<void> _handleBackOrExit() async {
     if (_dismissTopForegroundLayer()) return;
+    // 网页档一级一级往外退：播放器档 → 网页 → 站内上一页 → … → 关掉本页。
+    if (await _webBackStep()) return;
+    if (!mounted) return;
+    _exitVideoPage();
+  }
+
+  void _exitVideoPage() {
     final NavigatorState nav = Navigator.of(context);
     final VideoPlayerController? controller = _controller;
     final int? remotePositionMs = controller?.positionMs;
@@ -11185,6 +11199,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         foreground: cs.onSecondaryContainer,
       );
     }
+    // 网页档（站点页面）：顶栏实色、页面从顶栏下沿开始——工具条不能被窗口按钮压住。
+    if (_webMode && !_webPlayerMode) return fushiTitleBarColorsOn(cs.surface);
     final bool videoShown =
         !_failed &&
         !_missingResource &&

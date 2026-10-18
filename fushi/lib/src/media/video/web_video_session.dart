@@ -201,6 +201,55 @@ bool webVideoIsWatchPage(String href) {
   return true;
 }
 
+/// 网页档工具条（后退 / 前进 / 刷新 / 地址栏）要的导航态。
+@immutable
+class WebVideoNavState {
+  const WebVideoNavState({
+    this.url = '',
+    this.canGoBack = false,
+    this.canGoForward = false,
+    this.loading = false,
+  });
+
+  final String url;
+  final bool canGoBack;
+  final bool canGoForward;
+  final bool loading;
+
+  WebVideoNavState copyWith({
+    String? url,
+    bool? canGoBack,
+    bool? canGoForward,
+    bool? loading,
+  }) => WebVideoNavState(
+    url: url ?? this.url,
+    canGoBack: canGoBack ?? this.canGoBack,
+    canGoForward: canGoForward ?? this.canGoForward,
+    loading: loading ?? this.loading,
+  );
+}
+
+/// 地址栏输入 → 要打开的地址：像网址的补 `https://`；不像网址的（没有点、带空格）当
+/// 搜索词交给 Google。空串返回 null。
+String? webVideoAddressBarTarget(String input) {
+  final String s = input.trim();
+  if (s.isEmpty) return null;
+  final bool looksLikeUrl =
+      s.contains('://') || (!s.contains(' ') && s.contains('.'));
+  if (looksLikeUrl) {
+    final String withScheme = s.contains('://') ? s : 'https://$s';
+    final Uri? uri = Uri.tryParse(withScheme);
+    if (uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.host.isNotEmpty) {
+      return uri.toString();
+    }
+  }
+  return Uri.https('www.google.com', '/search', <String, String>{
+    'q': s,
+  }).toString();
+}
+
 // ── 会话（原生播放器页的网页档）──────────────────────────────────────────────
 
 /// 一本网页站流媒体书在原生播放器页里的宿主会话：窗口宿主档 + 底层合成。
@@ -244,6 +293,11 @@ class WebVideoSession {
   /// 当前是不是播放器档（页面只留画面、输入归 Flutter）；否则是网页档（整页可点）。
   bool get playerMode => _playerMode;
   bool _playerMode = false;
+
+  /// 工具条的导航态（地址 / 能否后退前进 / 是否在加载）。
+  final ValueNotifier<WebVideoNavState> nav = ValueNotifier<WebVideoNavState>(
+    const WebVideoNavState(),
+  );
 
   /// WebView2 子窗口当前是否收输入；null = 新建的 WebView 还没同步过。
   bool? _inputEnabled;
@@ -294,6 +348,55 @@ class WebVideoSession {
     if (web == null || _disposed) return null;
     final Object? r = await web.evaluateJavascript(source: source);
     return r?.toString();
+  }
+
+  /// 站内后退一步；没有可退的历史返回 false（调用方再往外退一级）。
+  Future<bool> goBack() async {
+    final InAppWebViewController? web = _web;
+    if (web == null || _disposed) return false;
+    if (!await web.canGoBack()) return false;
+    await web.goBack();
+    return true;
+  }
+
+  Future<void> goForward() async {
+    final InAppWebViewController? web = _web;
+    if (web == null || _disposed) return;
+    if (await web.canGoForward()) await web.goForward();
+  }
+
+  Future<void> reloadOrStop() async {
+    final InAppWebViewController? web = _web;
+    if (web == null || _disposed) return;
+    if (nav.value.loading) {
+      await web.stopLoading();
+    } else {
+      await web.reload();
+    }
+  }
+
+  Future<void> loadUrl(String url) async {
+    final InAppWebViewController? web = _web;
+    if (web == null || _disposed) return;
+    await web.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+  }
+
+  Future<void> _refreshHistory(String? url) async {
+    final InAppWebViewController? web = _web;
+    if (web == null || _disposed) return;
+    final bool back = await web.canGoBack();
+    final bool forward = await web.canGoForward();
+    if (_disposed) return;
+    nav.value = nav.value.copyWith(
+      url: url,
+      canGoBack: back,
+      canGoForward: forward,
+    );
+  }
+
+  void _onLoading(bool loading, String? url) {
+    if (_disposed) return;
+    nav.value = nav.value.copyWith(loading: loading, url: url);
   }
 
   /// 已采到的字幕轨整轨重投（换了书身份后 cue 的 bookKey 要跟着换）。
@@ -394,6 +497,7 @@ class WebVideoSession {
 
   void dispose() {
     _disposed = true;
+    nav.dispose();
     _web = null;
     _viewId = null;
     onTrack = null;
@@ -440,8 +544,16 @@ class _WebVideoSurfaceState extends State<WebVideoSurface> {
           supportZoom: false,
         ),
         onWebViewCreated: session._onWebViewCreated,
-        onLoadStop: (InAppWebViewController _, WebUri? __) =>
-            session._onLoadStop(),
+        onLoadStart: (InAppWebViewController _, WebUri? url) =>
+            session._onLoading(true, url?.toString()),
+        onLoadStop: (InAppWebViewController _, WebUri? url) {
+          session._onLoading(false, url?.toString());
+          unawaited(session._refreshHistory(url?.toString()));
+          session._onLoadStop();
+        },
+        onUpdateVisitedHistory:
+            (InAppWebViewController _, WebUri? url, bool? __) =>
+                unawaited(session._refreshHistory(url?.toString())),
         onWebContentProcessDidTerminate: (InAppWebViewController _) =>
             unawaited(_deathGuard.handleWebContentTerminated()),
         onRenderProcessGone:

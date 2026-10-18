@@ -458,6 +458,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
       _reportSurfaceSize();
       _reportWidgetPosition();
     });
+    _trackWidgetPosition();
 
     _cursorSubscription = _controller._cursor.listen((cursor) {
       setState(() {
@@ -645,6 +646,40 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
         box.size, widget.scaleFactor ?? View.of(context).devicePixelRatio));
   }
 
+  /// 只换位置不换尺寸的变化（路由转场滑入 / 缩放、Stack 里 top 变了但高度凑巧
+  /// 不变、外层滚动）没有 SizeChangedLayoutNotification。窗口宿主档的 WebView2 是
+  /// 真子窗口，位置停在首帧报的那个点上就和 Flutter 画面错开——首帧恰在转场动画
+  /// 中途，整页就一直偏下一截。每帧画完比一次全局位置，变了才下发；
+  /// addPostFrameCallback 本身不请求帧，静止时零开销。
+  Offset? _lastReportedPosition;
+  double? _lastReportedScale;
+
+  void _trackWidgetPosition() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _reportWidgetPositionIfChanged();
+      _trackWidgetPosition();
+    });
+  }
+
+  void _reportWidgetPositionIfChanged() {
+    if (!_controller.value.isInitialized) return;
+    final BuildContext? context = _key.currentContext;
+    final RenderBox? box = context?.findRenderObject() as RenderBox?;
+    if (context == null || box == null || !box.attached || !box.hasSize) {
+      return;
+    }
+    final Offset position = box.localToGlobal(Offset.zero);
+    final double scale =
+        widget.scaleFactor ?? View.of(context).devicePixelRatio;
+    if (position == _lastReportedPosition && scale == _lastReportedScale) {
+      return;
+    }
+    _lastReportedPosition = position;
+    _lastReportedScale = scale;
+    unawaited(_controller._setPosition(position, scale));
+  }
+
   void _reportWidgetPosition() async {
     await _controller.ready;
     if (!mounted) return;
@@ -652,8 +687,11 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
     final RenderBox? box = context?.findRenderObject() as RenderBox?;
     if (context == null || box == null || !box.attached) return;
     final Offset position = box.localToGlobal(Offset.zero);
-    unawaited(_controller._setPosition(
-        position, widget.scaleFactor ?? View.of(context).devicePixelRatio));
+    final double scale =
+        widget.scaleFactor ?? View.of(context).devicePixelRatio;
+    _lastReportedPosition = position;
+    _lastReportedScale = scale;
+    unawaited(_controller._setPosition(position, scale));
   }
 
   @override

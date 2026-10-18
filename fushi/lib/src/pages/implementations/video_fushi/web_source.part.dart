@@ -2,7 +2,7 @@ part of '../video_fushi_page.dart';
 
 /// 网页档没有站点视频时，顶部返回条的高度（站点页面让在它下面，返回钮不压在 WebView 上——
 /// 收输入的 WebView2 子窗口会先于 Flutter 吃掉落在它矩形里的点击）。
-const double _kVideoWebPageBarHeight = 56;
+const double _kVideoWebPageBarHeight = 52;
 
 /// 网页档（站点视频，[VideoPlayerController.isWebBackend]）能服务的控制条按钮：逐帧 /
 /// 截图 / 片段导出 / 音轨 / 章节 / 弹幕都要 libmpv 或本地媒体文件，一律不画。纯函数，
@@ -161,6 +161,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     controller.setSecondaryDelayMs(_secondaryDelayMs);
     controller.onPositionWrite = _persistWebPosition;
     _titleNotifier.value = row.title;
+    session.nav.addListener(_syncWebAddress);
     _rebuild(() {
       _webSession = session;
       _webPlatform = platform;
@@ -199,6 +200,9 @@ extension _VideoWebSource on _VideoFushiPageState {
   void _onWebState(WebVideoPlaybackState state) {
     final WebVideoSession? session = _webSession;
     if (!mounted || session == null) return;
+    if (state.ad != _webAdShowing) _rebuild(() => _webAdShowing = state.ad);
+    // 广告的位置 / 时长 / 16 倍速 / 静音不是正片的：不进播放器状态（也就不会写进度）。
+    if (state.ad) return;
     _webPlatform?.applySnapshot(
       state,
       volume: state.volume,
@@ -447,6 +451,8 @@ extension _VideoWebSource on _VideoFushiPageState {
       scope: ShortcutScope.video,
     );
     if (action == null) return;
+    // 网页档里 Esc 归站点自己（关站内弹窗 / 菜单），不当成「退一级」。
+    if (action == ShortcutAction.globalBack && !_webPlayerMode) return;
     final VideoPlayerController? controller = _controller;
     if (controller == null) {
       if (action == ShortcutAction.globalBack) _handleVideoEscapeAction();
@@ -488,6 +494,19 @@ extension _VideoWebSource on _VideoFushiPageState {
           top: hasVideo ? 0 : _kVideoWebPageBarHeight,
           child: WebVideoSurface(key: _webSurfaceKey, session: session),
         ),
+        if (hasVideo && _webAdShowing)
+          Positioned.fill(
+            child: ColoredBox(
+              key: const ValueKey<String>('video-web-ad-cover'),
+              color: Colors.black,
+              child: Center(
+                child: Text(
+                  t.web_video_ad_skipping,
+                  style: const TextStyle(color: Colors.white70, fontSize: 16),
+                ),
+              ),
+            ),
+          ),
         if (hasVideo)
           Positioned.fill(child: video)
         else
@@ -502,45 +521,127 @@ extension _VideoWebSource on _VideoFushiPageState {
     );
   }
 
-  /// 网页档（登录 / 选人 / 详情 / 选集）上方的返回条：返回走与播放器返回钮同一条
-  /// [_handleBackOrExit]；页面里有视频时右侧给「在播放器里看」。
+  /// 网页档（登录 / 选人 / 详情 / 选集）上方的浏览器工具条：后退（一级一级往外退，与
+  /// 返回键同一条 [_handleBackOrExit]）/ 前进 / 刷新（加载中是停止）/ 地址栏（网址或搜索词）
+  /// / 页面里有视频时的「在播放器里看」/ 关闭本页。
   Widget _buildWebPageBar() {
     final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final WebVideoSession? session = _webSession;
+    if (session == null) return const SizedBox.shrink();
     return ColoredBox(
-      color: theme.colorScheme.surface,
+      color: cs.surface,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Row(
-          children: <Widget>[
-            FushiIconButtonControl(
-              key: const ValueKey<String>('video-web-page-back'),
-              tooltip: t.back,
-              icon: const FushiIcon(FushiIcons.back),
-              onPressed: () => unawaited(_handleBackOrExit()),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ValueListenableBuilder<String?>(
-                valueListenable: _titleNotifier,
-                builder: (BuildContext _, String? title, Widget? __) => Text(
-                  title ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: ValueListenableBuilder<WebVideoNavState>(
+          valueListenable: session.nav,
+          builder: (BuildContext _, WebVideoNavState nav, Widget? __) => Row(
+            children: <Widget>[
+              FushiIconButtonControl(
+                key: const ValueKey<String>('video-web-nav-back'),
+                tooltip: t.back,
+                icon: const FushiIcon(FushiIcons.back),
+                onPressed: () => unawaited(_handleBackOrExit()),
+              ),
+              FushiIconButtonControl(
+                key: const ValueKey<String>('video-web-nav-forward'),
+                tooltip: t.web_video_nav_forward,
+                icon: const Icon(Icons.arrow_forward),
+                onPressed: nav.canGoForward
+                    ? () => unawaited(session.goForward())
+                    : null,
+              ),
+              FushiIconButtonControl(
+                key: const ValueKey<String>('video-web-nav-reload'),
+                tooltip: nav.loading ? t.web_video_nav_close : t.refresh,
+                icon: Icon(nav.loading ? Icons.close : Icons.refresh),
+                onPressed: () => unawaited(session.reloadOrStop()),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  key: const ValueKey<String>('video-web-address'),
+                  controller: _webAddressController,
+                  focusNode: _webAddressFocus,
+                  keyboardType: TextInputType.url,
+                  textInputAction: TextInputAction.go,
+                  style: theme.textTheme.bodyMedium,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    filled: true,
+                    fillColor: cs.surfaceContainerHighest,
+                    hintText: t.web_video_address_hint,
+                    prefixIcon: Icon(
+                      nav.url.startsWith('https://')
+                          ? Icons.lock_outline
+                          : Icons.public,
+                      size: 18,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onTap: () => _webAddressController.selection = TextSelection(
+                    baseOffset: 0,
+                    extentOffset: _webAddressController.text.length,
+                  ),
+                  onSubmitted: _submitWebAddress,
                 ),
               ),
-            ),
-            if (_webPageHasVideo)
-              FilledButton.tonalIcon(
-                key: const ValueKey<String>('video-web-player-open'),
-                onPressed: () => _setWebPlayerMode(true),
-                icon: const Icon(Icons.play_circle_outline),
-                label: Text(t.web_video_player_open),
+              const SizedBox(width: 8),
+              if (_webPageHasVideo) ...<Widget>[
+                FilledButton.tonalIcon(
+                  key: const ValueKey<String>('video-web-player-open'),
+                  onPressed: () => _setWebPlayerMode(true),
+                  icon: const Icon(Icons.play_circle_outline),
+                  label: Text(t.web_video_player_open),
+                ),
+                const SizedBox(width: 4),
+              ],
+              FushiIconButtonControl(
+                key: const ValueKey<String>('video-web-nav-close'),
+                tooltip: t.web_video_nav_close,
+                icon: const Icon(Icons.close),
+                onPressed: _exitVideoPage,
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  /// 地址栏没在编辑时跟着当前页面地址（[WebVideoSession.nav] 的监听者）。
+  void _syncWebAddress() {
+    final WebVideoSession? session = _webSession;
+    if (session == null || _webAddressFocus.hasFocus) return;
+    final String url = session.nav.value.url;
+    if (_webAddressController.text != url) _webAddressController.text = url;
+  }
+
+  void _submitWebAddress(String input) {
+    final String? target = webVideoAddressBarTarget(input);
+    final WebVideoSession? session = _webSession;
+    if (target == null || session == null) return;
+    _webAddressFocus.unfocus();
+    unawaited(session.loadUrl(target));
+  }
+
+  /// 返回键在网页档里的一级：播放器档先退回网页；网页有站内历史就后退一页。都没有
+  /// 返回 false（调用方关掉本页）。
+  Future<bool> _webBackStep() async {
+    final WebVideoSession? session = _webSession;
+    if (session == null) return false;
+    if (_webPlayerMode) {
+      _setWebPlayerMode(false);
+      return true;
+    }
+    return session.goBack();
   }
 
   /// 网页档制卡（[_onMineEntryImpl] 分流到这里）：**只入队**（schema v90 `web_mine_queue`），
@@ -598,6 +699,8 @@ extension _VideoWebSource on _VideoFushiPageState {
       unawaited(WindowCaptionChannel.setFullscreen(false));
     }
     _webSession?.dispose();
+    _webAddressController.dispose();
+    _webAddressFocus.dispose();
     if (_webUnderlayHeld) {
       _webUnderlayHeld = false;
       unawaited(releaseUnderlayComposition());
