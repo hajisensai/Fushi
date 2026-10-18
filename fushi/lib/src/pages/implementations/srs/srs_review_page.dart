@@ -40,10 +40,12 @@ import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -243,6 +245,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         final SrsCardDetail? detail = await store.cardDetail(id);
         if (detail == null) return null;
         final SrsRenderedCard? rendered = await store.renderCard(id);
+        // 卡面预处理（媒体改写、抽样式、样式哈希）趁出题间隙算好，换卡时全命中。
+        if (rendered != null) {
+          srsWarmCardFace(
+            css: rendered.css,
+            bodies: <String>[
+              rendered.question,
+              rendered.answer,
+              ?rendered.fushiCardDefinitions,
+            ],
+          );
+        }
         return _PrefetchedCard(
           detail: detail,
           rendered: rendered,
@@ -971,9 +984,33 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             onPressed: () => unawaited(_onCardAction(_CardAction.deleteNote)),
           ),
           ?_appearanceItem,
+          ?_designSkinItem,
           _hideHardEasyItem,
           ..._audioSettingItems(),
         ];
+
+  /// 「卡面跟随设计系统」开关（只对非 Fushi 卡片显示：Fushi 卡片本身就按设计系统画）。
+  /// 勾选态 = 覆盖开着；写进卡面外观偏好，当前卡面经外观监听原地换主题、立即生效。
+  FushiToolbarItem? get _designSkinItem {
+    final SrsCardDetail? detail = _detail;
+    if (detail == null ||
+        detail.noteType.builtinKey == kSrsBuiltinFushiCardKey) {
+      return null;
+    }
+    final SrsCardAppearance a = ref.watch(srsCardAppearanceProvider);
+    return FushiToolbarItem(
+      key: const ValueKey<String>('srs_review_design_skin'),
+      icon: FushiIcons.appearance,
+      label: t.srs_card_appearance_design_skin,
+      selected: a.designSkin,
+      onPressed: () => srsRunLogged(
+        'SrsReview.designSkin',
+        () => ref
+            .read(appProvider)
+            .setSrsCardAppearance(a.copyWith(designSkin: !a.designSkin)),
+      ),
+    );
+  }
 
   /// 评分栏只留「重来 / 良好」的开关（对齐 AnkiDroid 的 hideHardAndEasy；键盘 2/4
   /// 照样有效）。勾选态 = 已隐藏；点了立即生效、写进按 profile 的偏好。
@@ -1286,19 +1323,47 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
                 switchOutCurve: FushiMotion.exit,
                 child: _showingAnswer
                     ? _buildRatingRow(context)
-                    : SizedBox(
-                        key: const ValueKey<String>('srs-show-answer-row'),
-                        width: double.infinity,
-                        child: FushiFilledButton(
-                          key: const ValueKey<String>('srs-show-answer'),
-                          onPressed: _busy ? null : _showAnswer,
-                          child: Text(t.srs_review_show_answer),
-                        ),
-                      ),
+                    : _buildShowAnswer(context),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 底栏按钮的设计系统高度：MD3 = M3E 中号按钮（56），Apple = 50（大于 HIG 44 的 iOS
+  /// 大按钮档）；两者都 ≥ 48dp 命中区。
+  static const double _kBarButtonHeightApple = 50;
+
+  /// 「显示答案」：设计系统主按钮（MD3 = M3E 中号胶囊 + 按压变形，Apple = 强调色胶囊），
+  /// 不再通栏铺满——居中、宽度封顶，与评分按钮同高，翻面时两者原地交替。
+  Widget _buildShowAnswer(BuildContext context) {
+    final bool apple = isGlassDesign(context);
+    return Center(
+      key: const ValueKey<String>('srs-show-answer-row'),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 220, maxWidth: 420),
+        child: FushiPressScale(
+          enabled: !_busy,
+          child: SizedBox(
+            width: double.infinity,
+            child: FushiFilledButton.icon(
+              key: const ValueKey<String>('srs-show-answer'),
+              onPressed: _busy ? null : _showAnswer,
+              size: FushiButtonSize.m,
+              style: apple
+                  ? const ButtonStyle(
+                      minimumSize: WidgetStatePropertyAll<Size>(
+                        Size(_kBarButtonHeightApple, _kBarButtonHeightApple),
+                      ),
+                    )
+                  : null,
+              icon: const FushiIcon(FushiIcons.visibility),
+              label: Text(t.srs_review_show_answer),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1318,34 +1383,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       );
     }
 
-    Widget button(int rating, String label, FushiCardTone tone) => Expanded(
-      child: FushiCard(
+    Widget button(int rating, String label, SrsRatingTone tone) => Expanded(
+      child: SrsRatingButton(
         key: ValueKey<String>('srs-rate-$rating'),
         tone: tone,
-        padding: EdgeInsets.symmetric(
-          vertical: tokens.spacing.gap * 1.5,
-          horizontal: tokens.spacing.gap,
-        ),
-        onTap: _busy ? null : () => _rate(rating),
-        child: FushiTooltip(
-          message: '$label ($rating)',
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                interval(rating),
-                style: context.fushiType.labelMedium,
-                maxLines: 1,
-              ),
-              Text(
-                label,
-                style: context.fushiType.labelLargeEmphasized,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
+        interval: interval(rating),
+        label: label,
+        tooltip: '$label ($rating)',
+        onPressed: _busy ? null : () => _rate(rating),
       ),
     );
 
@@ -1358,11 +1403,139 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       ),
       spacing: tokens.spacing.gap,
       children: <Widget>[
-        button(1, t.srs_rating_again, FushiCardTone.error),
-        if (!twoButtons) button(2, t.srs_rating_hard, FushiCardTone.neutral),
-        button(3, t.srs_rating_good, FushiCardTone.primary),
-        if (!twoButtons) button(4, t.srs_rating_easy, FushiCardTone.tertiary),
+        button(1, t.srs_rating_again, SrsRatingTone.again),
+        if (!twoButtons) button(2, t.srs_rating_hard, SrsRatingTone.hard),
+        button(3, t.srs_rating_good, SrsRatingTone.good),
+        if (!twoButtons) button(4, t.srs_rating_easy, SrsRatingTone.easy),
       ],
+    );
+  }
+}
+
+/// 评分按钮的语义色调。
+enum SrsRatingTone { again, hard, good, easy }
+
+/// 评分按钮配色：MD3 = M3E 色调按钮（重来 errorContainer、困难 surfaceContainerHighest、
+/// 良好 primary 实心、简单 tertiaryContainer）；Apple = 系统实色胶囊（良好 = 强调色底，
+/// 其余 = 语义色 16% 底 + 语义色字，同 iOS `.bordered` 着色）。
+@visibleForTesting
+({Color background, Color foreground}) srsRatingColors(
+  SrsRatingTone tone,
+  ColorScheme cs, {
+  required bool apple,
+}) {
+  if (apple) {
+    final Color accent = switch (tone) {
+      SrsRatingTone.again => cs.error,
+      SrsRatingTone.hard => cs.onSurfaceVariant,
+      SrsRatingTone.good => cs.primary,
+      SrsRatingTone.easy => cs.tertiary,
+    };
+    return tone == SrsRatingTone.good
+        ? (background: cs.primary, foreground: cs.onPrimary)
+        : (background: accent.withValues(alpha: 0.16), foreground: accent);
+  }
+  return switch (tone) {
+    SrsRatingTone.again => (
+      background: cs.errorContainer,
+      foreground: cs.onErrorContainer,
+    ),
+    SrsRatingTone.hard => (
+      background: cs.surfaceContainerHighest,
+      foreground: cs.onSurface,
+    ),
+    SrsRatingTone.good => (background: cs.primary, foreground: cs.onPrimary),
+    SrsRatingTone.easy => (
+      background: cs.tertiaryContainer,
+      foreground: cs.onTertiaryContainer,
+    ),
+  };
+}
+
+/// 一颗评分按钮：上行间隔预览、下行评分名。MD3 = M3E 中号色调按钮（56 高，按压变形）；
+/// Apple = 实色胶囊（[FushiPlainButton] 底，按下变淡）。两套都包 [FushiPressScale]，
+/// 命中区 ≥ 48dp，内容随系统字号增高不截断。
+class SrsRatingButton extends StatelessWidget {
+  const SrsRatingButton({
+    super.key,
+    required this.tone,
+    required this.interval,
+    required this.label,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final SrsRatingTone tone;
+  final String interval;
+  final String label;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool apple = isGlassDesign(context);
+    final ({Color background, Color foreground}) c = srsRatingColors(
+      tone,
+      Theme.of(context).colorScheme,
+      apple: apple,
+    );
+    Widget content(Color fg) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (interval.isNotEmpty)
+          Text(
+            interval,
+            style: context.fushiType.labelMedium.copyWith(
+              color: fg.withValues(alpha: 0.8),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        Text(
+          label,
+          style: context.fushiType.labelLargeEmphasized.copyWith(color: fg),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+    final Widget button = apple
+        ? FushiPlainButton(
+            onPressed: onPressed,
+            semanticLabel: tooltip,
+            borderRadius: BorderRadius.circular(
+              _SrsReviewPageState._kBarButtonHeightApple / 2,
+            ),
+            fill: c.background,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: _SrsReviewPageState._kBarButtonHeightApple,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Center(child: content(c.foreground)),
+              ),
+            ),
+          )
+        : FushiFilledButton(
+            onPressed: onPressed,
+            size: FushiButtonSize.m,
+            style: ButtonStyle(
+              backgroundColor: WidgetStatePropertyAll<Color>(c.background),
+              foregroundColor: WidgetStatePropertyAll<Color>(c.foreground),
+              // 两行内容：高度至少 56，系统字号放大时随内容长高（不截断）。
+              maximumSize: const WidgetStatePropertyAll<Size>(
+                Size(double.infinity, double.infinity),
+              ),
+              padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+                EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              ),
+            ),
+            child: content(c.foreground),
+          );
+    return FushiPressScale(
+      enabled: onPressed != null,
+      child: FushiTooltip(message: tooltip, child: button),
     );
   }
 }
