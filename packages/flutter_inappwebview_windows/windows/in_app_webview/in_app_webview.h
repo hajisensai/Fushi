@@ -261,6 +261,8 @@ namespace flutter_inappwebview_plugin
     EventRegistrationToken newWindowRequestedToken_ = {};
     EventRegistrationToken windowCloseRequestedToken_ = {};
     EventRegistrationToken permissionRequestedToken_ = {};
+    // ProcessFailed：主渲染进程 / 浏览器进程退出时转成 onRenderProcessGone（宿主据此重建表面）。
+    EventRegistrationToken processFailedToken_ = {};
     // DOMContentLoaded 注册在 ICoreWebView2_2 接口上，析构时需重新 QueryInterface 该接口才能 remove。
     EventRegistrationToken domContentLoadedToken_ = {};
     // CursorChanged 注册在 webViewCompositionController 上。
