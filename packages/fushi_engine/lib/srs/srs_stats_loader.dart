@@ -48,30 +48,37 @@ class SrsStatsIndex {
     };
   }
 
-  /// 命中 Anki 搜索语法的卡；语法不支持 / 不合法时抛 [SrsSearchUnsupported]。
+  /// 搜索求值对象（有笔记与笔记类型的卡），第一次筛选时建，之后的筛选复用。
+  late final List<SrsCardSearchSubject> _subjects = () {
+    final int today = day.dayIndexOf(nowMs);
+    final Map<String, String> deckNames = <String, String>{};
+    return <SrsCardSearchSubject>[
+      for (final SrsCardCacheRow c in cards)
+        if (notes[c.noteId] case final SrsNoteView n)
+          if (noteTypes[n.noteTypeId] case final SrsNoteTypeView t)
+            SrsCardSearchSubject(
+              note: n,
+              noteType: t,
+              card: c,
+              deckName: deckNames[c.deckId] ??= tree[c.deckId] == null
+                  ? ''
+                  : tree.fullName(c.deckId),
+              day: day,
+              nowMs: nowMs,
+              todayDayIndex: today,
+            ),
+    ];
+  }();
+
+  late final SrsSearchCorpus _corpus = SrsSearchCorpus(_subjects);
+
+  /// 命中 Anki 搜索语法的卡；语法不支持 / 不合法、原生内核不可用时抛 [SrsSearchUnsupported]。
   Set<String> cardIdsMatching(String query) {
     final SrsSearchNode node = parseAnkiSearch(query);
-    final int today = day.dayIndexOf(nowMs);
-    final Set<String> out = <String>{};
-    for (final SrsCardCacheRow c in cards) {
-      final SrsNoteView? n = notes[c.noteId];
-      if (n == null) continue;
-      final SrsNoteTypeView? t = noteTypes[n.noteTypeId];
-      if (t == null) continue;
-      final SrsCardSearchSubject subject = SrsCardSearchSubject(
-        note: n,
-        noteType: t,
-        card: c,
-        deckName: tree[c.deckId] == null ? '' : tree.fullName(c.deckId),
-        day: day,
-        nowMs: nowMs,
-        todayDayIndex: today,
-      );
-      if (matchesAnkiSearch(node, subject)) {
-        out.add(c.id);
-      }
-    }
-    return out;
+    return <String>{
+      for (final int i in _corpus.match(node, query: query))
+        _subjects[i].card.id,
+    };
   }
 }
 

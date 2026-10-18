@@ -105,6 +105,12 @@ class _Snapshot {
   final int nowMs;
   final int today;
 
+  /// 搜索求值对象（本请求第一次搜索时建，同一请求里的多次搜索复用）。
+  List<_CardSubject>? subjects;
+
+  /// noteId → 首字段的查重规范形（本请求第一次查重时批量算）。
+  Map<String, String>? firstFieldNorms;
+
   String deckName(String deckId) =>
       tree[deckId] == null ? '' : tree.fullName(deckId);
 }
@@ -183,6 +189,9 @@ class SrsAnkiConnectHandler {
   final SrsAnkiMediaPolicy Function()? _mediaPolicy;
   final SrsAnkiHostResolver? _resolveHost;
   final SrsAnkiUrlFetcher? _fetchUrl;
+
+  /// noteId → (首字段原文, 查重规范形)：跨请求复用，原文没变的笔记不重算（每次加卡都要扫全集合）。
+  Map<String, (String, String)> _dupeNorms = <String, (String, String)>{};
 
   /// 支持的动作（`apiReflect` 据此回答；不在表里的一律 `unsupported action`）。
   static const List<String> supportedActions = <String>[
@@ -680,31 +689,36 @@ class SrsAnkiConnectHandler {
 
   // ---------------------------------------------------------------- 搜索
 
-  static SrsSearchNode _parse(String query) {
-    try {
-      return parseAnkiSearch(query);
-    } on SrsSearchUnsupported catch (e) {
-      throw _AcError(
-        e.kind == SrsSearchErrorKind.unsupported
-            ? 'unsupported search syntax: ${e.reason} [${e.query}]'
-            : 'invalid search: ${e.reason} [${e.query}]',
-      );
-    }
-  }
+  static _AcError _searchError(SrsSearchUnsupported e) =>
+      _AcError(switch (e.kind) {
+        SrsSearchErrorKind.unsupported =>
+          'unsupported search syntax: ${e.reason} [${e.query}]',
+        SrsSearchErrorKind.syntax => 'invalid search: ${e.reason} [${e.query}]',
+        SrsSearchErrorKind.unavailable => 'search unavailable: ${e.reason}',
+      });
 
   List<_CardSubject> _matchCards(_Snapshot s, String query) {
-    final SrsSearchNode node = _parse(query);
-    final List<_CardSubject> out = <_CardSubject>[];
-    for (final SrsNoteView n in s.notes) {
-      final SrsNoteTypeView? t = s.typeById[n.noteTypeId];
-      if (t == null) continue;
-      for (final SrsCardCacheRow c
-          in s.cardsByNote[n.id] ?? const <SrsCardCacheRow>[]) {
-        final _CardSubject subj = _CardSubject(s, n, t, c, _num);
-        if (matchesAnkiSearch(node, subj)) out.add(subj);
+    try {
+      final SrsSearchNode node = parseAnkiSearch(query);
+      final List<_CardSubject> subjects = s.subjects ??= <_CardSubject>[
+        for (final SrsNoteView n in s.notes)
+          if (s.typeById[n.noteTypeId] case final SrsNoteTypeView t)
+            for (final SrsCardCacheRow c
+                in s.cardsByNote[n.id] ?? const <SrsCardCacheRow>[])
+              _CardSubject(s, n, t, c, _num),
+      ];
+      // 原生语料与请求同生命周期：用完立即释放，不等 GC（Yomitan 会频繁 findNotes）。
+      final SrsSearchCorpus corpus = SrsSearchCorpus(subjects);
+      try {
+        return <_CardSubject>[
+          for (final int i in corpus.match(node, query: query)) subjects[i],
+        ];
+      } finally {
+        corpus.dispose();
       }
+    } on SrsSearchUnsupported catch (e) {
+      throw _searchError(e);
     }
-    return out;
   }
 
   List<int> _findNotes(_Snapshot s, String query) {
@@ -720,9 +734,50 @@ class SrsAnkiConnectHandler {
 
   // ---------------------------------------------------------------- 加卡与查重
 
-  /// 判重比较用的首字段：先按样式去重规范形（内联样式与引用行同值），再去 HTML。
-  static String _norm(String field) =>
-      ankiSearchStripHtml(srsDedupStyles(field).html).trim();
+  /// 判重比较用的首字段：先按样式去重规范形（内联样式与引用行同值），再去 HTML、trim
+  /// （原生内核 `ffsrs_search_dupe_norm_batch`）。
+  static String _norm(String field) {
+    try {
+      return srsDupeNormBatch(<String>[field]).single;
+    } on SrsSearchUnsupported catch (e) {
+      throw _searchError(e);
+    }
+  }
+
+  /// 全部笔记首字段的规范形；原文没变的沿用上一次的结果，其余一次批量算完。
+  Map<String, String> _firstFieldNorms(_Snapshot s) {
+    final Map<String, String>? cached = s.firstFieldNorms;
+    if (cached != null) return cached;
+    final Map<String, (String, String)> next = <String, (String, String)>{};
+    final List<String> pendingIds = <String>[];
+    final List<String> pendingRaw = <String>[];
+    for (final SrsNoteView n in s.notes) {
+      final SrsNoteTypeView? t = s.typeById[n.noteTypeId];
+      if (t == null || t.fields.isEmpty) continue;
+      final String raw = n.field(t.fields.first.id);
+      final (String, String)? old = _dupeNorms[n.id];
+      if (old != null && old.$1 == raw) {
+        next[n.id] = old;
+      } else {
+        pendingIds.add(n.id);
+        pendingRaw.add(raw);
+      }
+    }
+    final List<String> norms;
+    try {
+      norms = srsDupeNormBatch(pendingRaw);
+    } on SrsSearchUnsupported catch (e) {
+      throw _searchError(e);
+    }
+    for (int i = 0; i < pendingIds.length; i++) {
+      next[pendingIds[i]] = (pendingRaw[i], norms[i]);
+    }
+    _dupeNorms = next;
+    return s.firstFieldNorms = <String, String>{
+      for (final MapEntry<String, (String, String)> e in next.entries)
+        e.key: e.value.$2,
+    };
+  }
 
   /// 能加返回 null，不能加返回 AnkiConnect 的错误串。
   String? _tryPrepare(_Snapshot s, Object? raw) {
@@ -861,11 +916,11 @@ class SrsAnkiConnectHandler {
       }
       dids = checkChildren ? s.tree.subtree(did).toSet() : <String>{did};
     }
+    final Map<String, String> norms = _firstFieldNorms(s);
     for (final SrsNoteView n in s.notes) {
       if (!checkAllModels && n.noteTypeId != type.id) continue;
-      final SrsNoteTypeView? t = s.typeById[n.noteTypeId];
-      if (t == null || t.fields.isEmpty) continue;
-      if (_norm(n.field(t.fields.first.id)) != first) continue;
+      final String? norm = norms[n.id];
+      if (norm == null || norm != first) continue;
       if (dids == null) return 2;
       for (final SrsCardCacheRow c
           in s.cardsByNote[n.id] ?? const <SrsCardCacheRow>[]) {

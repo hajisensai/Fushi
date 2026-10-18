@@ -1,7 +1,16 @@
 // Anki 搜索语法子集：解析（照 rslib search/parser.rs 的用例）、求值（照
-// sqlwriter.rs 的语义）、Yomitan 查重实际发出的查询串、不支持语法明确报错。
+// sqlwriter.rs 的语义；原生内核 native/fushi_fsrs/src/search.rs）、Yomitan 查重实际发出的
+// 查询串、不支持语法明确报错。求值要真实原生库，加载失败直接判红。
+@TestOn('vm')
+library;
+
+import 'package:fushi_srs/src/ffi/fushi_fsrs_library.dart';
 import 'package:fushi_srs/src/search/anki_search.dart';
 import 'package:test/test.dart';
+
+import 'search_test_support.dart';
+
+final FushiFsrs _lib = requireSearchLibrary();
 
 class _Card implements SrsSearchSubject {
   _Card({
@@ -31,6 +40,8 @@ class _Card implements SrsSearchSubject {
     this.editedDayIndex = 100,
   });
 
+  @override
+  Object get noteKey => this;
   @override
   final String deckName;
   @override
@@ -81,16 +92,9 @@ class _Card implements SrsSearchSubject {
   final int editedDayIndex;
 }
 
-bool m(String query, _Card card) =>
-    matchesAnkiSearch(parseAnkiSearch(query), card);
-
-Matcher throwsSearch(SrsSearchErrorKind kind) => throwsA(
-  isA<SrsSearchUnsupported>().having(
-    (SrsSearchUnsupported e) => e.kind,
-    'kind',
-    kind,
-  ),
-);
+bool m(String query, _Card card) => SrsSearchCorpus(<SrsSearchSubject>[
+  card,
+], library: _lib).match(parseAnkiSearch(query), query: query).isNotEmpty;
 
 void main() {
   final _Card taberu = _Card(
@@ -589,6 +593,11 @@ void main() {
         () => parseAnkiSearch('prop:d=x'),
         throwsSearch(SrsSearchErrorKind.syntax),
       );
+      expect(
+        () => parseAnkiSearch('prop:s>${'1' * 400}'),
+        throwsSearch(SrsSearchErrorKind.syntax),
+        reason: '溢出成无穷大的小数交不给求值内核（JSON 表示不了）',
+      );
     });
 
     test('re: 全字段正则（不锚定、默认不区分大小写、看原文）', () {
@@ -598,8 +607,9 @@ void main() {
       expect(m('re:<b>', c), isTrue, reason: 're: 搜原文，不去 HTML');
       expect(m('re:^capital', c), isFalse, reason: '不是多行模式：^ 只锚整串开头');
       expect(
-        () => parseAnkiSearch('re:(abc'),
+        () => m('re:(abc', c),
         throwsSearch(SrsSearchErrorKind.syntax),
+        reason: '正则由 Rust regex 编译判定，不合法 = 语法错误',
       );
     });
 

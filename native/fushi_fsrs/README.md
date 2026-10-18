@@ -16,6 +16,11 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 | `ffsrs_zstd_decompress(const u8*, usize, usize* out_len) -> u8*` | zstd 解码（.apkg 新格式），失败返回 NULL |
 | `ffsrs_free_bytes(u8*, usize)` | 释放解码缓冲区 |
 | `ffsrs_abi_version() -> i32` | ABI 版本（当前 1）；Dart 侧不一致即判不可用 |
+| `ffsrs_search_corpus_new(const u8* text, usize, const u32* layout, usize, char** err) -> Corpus*` | Anki 搜索语料：一批卡的字段名 / 值、标签、笔记类型 / 牌组 / 模板名（UTF-8 拼接 + u32 布局，见 `src/search.rs` `Corpus::new`）；失败返回 NULL 并在 `err`（可空）写错误串 |
+| `ffsrs_search_corpus_free(Corpus*)` | 释放语料（Dart 侧挂在 `NativeFinalizer` 上） |
+| `ffsrs_search_corpus_set_ints / _set_floats(Corpus*, i32 col, const i64*/const f64*, usize n) -> i32` | 卡片数值列（状态位、id、日序号、间隔、到期、复习 / 遗忘次数；稳定性 / 难度，NaN = 无），查询用到才传；成功 0 |
+| `ffsrs_search_corpus_match(const Corpus*, const char* query, u8* out, usize n) -> char*` | 整批求值一条搜索（语法树 JSON，由 Dart 解析器产出）：`out[i]` 写 1 / 0；返回 `{"ok":命中数}` / `{"error","kind":"syntax"\|"internal","at"}` |
+| `ffsrs_search_dupe_norm_batch(const u8*, usize, const u32* offs, usize n, usize* out_len) -> u8*` | AnkiConnect 查重的首字段规范形（样式去重 → 去 HTML → trim），批量；返回 `[u32 LE 偏移 × (n+1)][UTF-8]`，用 `ffsrs_free_bytes` 释放 |
 
 响应恒为 `{"ok": …}` 或 `{"error": "…"}`；panic 一律接住转成 error，不越过 FFI。每个 op 带
 `algorithm`（`"fsrs6"` 21 参 / `"fsrs7"` 34 参），`params` 空或缺省 = 该算法默认参数；elapsed
@@ -23,6 +28,16 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 `memory_state_from_sm2` / `retrievability` / `next_interval` / `evaluate` / `evaluate_tss`。
 `ffsrs_compute_parameters` 的请求是 `{"algorithm", "items": [[{"rating","deltaT"},…],…], "cardIds"?}`，
 取消后返回 `{"error":"cancelled"}`。
+
+### Anki 搜索（`src/search.rs`）
+
+浏览页搜索、统计页筛选、AnkiConnect `findNotes` / `findCards` / 查重的逐卡求值只有这一份实现
+（Dart 侧只剩解析器 `packages/fushi_srs/lib/src/search/search_parser.dart`，入口
+`SrsSearchCorpus` / `srsDupeNormBatch`）。正则与去 HTML 用 `regex` crate——与 Anki 桌面版 rslib 是同一个
+引擎，`re:` 的语义以它为准（与旧 Dart `RegExp` 的差异逐条钉在
+`packages/fushi_srs/test/search/search_engine_differences_test.dart`）。语料按快照装一次，拼接后的字段
+文本、去 HTML 后的字段值惰性缓存；同一条笔记的文本条件只算一次。删旧 Dart 实现前用它生成的固定向量
+（5416 条搜索式 × 230 张卡、1500 条查重输入）见 `search_parity_test.dart`，Rust 版逐位一致。
 
 逐张走 `ffsrs_call` 的固定开销（Dart 编码请求 + serde 解析参数 + FFI 往返）约 25～30 µs/次，建模型本身
 不到 1 µs；成批的计算一律走专门的批量符号，卡片数据用 f32 数组传。基准
@@ -56,7 +71,8 @@ native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）；iOS �
 - `target/`、`prebuilt/` 不入库。访问 crates.io / GitHub（fsrs-rs 是钉 rev 的 git 依赖）不稳时设
   `CARGO_HTTP_PROXY`。
 - 体积（release，`opt-level="z"` + fat LTO + strip，2026-10-14 本机实测）：Windows x64 DLL
-  806,912 B；Android arm64-v8a 936,848 B（NEEDED 只有 libc / libm / libdl）。
+  806,912 B；Android arm64-v8a 936,848 B（NEEDED 只有 libc / libm / libdl）。2026-10-18 加 Anki 搜索
+  （`regex` crate 默认特性：Unicode 表 + 字面量 / DFA 加速）后 Windows x64 DLL 2,149,376 B。
 
 ### iOS：伞形静态库
 
@@ -64,7 +80,7 @@ native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）；iOS �
 同时 `-force_load` 进 Runner 会撞重复符号（`rust_eh_personality`、`__rdl_alloc` …），不
 `-force_load` 又会被当无用成员整个丢掉。所以 iOS 走 `native/fushi_ios_umbrella`：一个 crate
 依赖两个 path crate、re-export 两边，编成**一个** staticlib，std 只有一份，同时导出
-`fp2p_*`（12 个）与 `ffsrs_*`（7 个）。为此 `native/fushi_p2p/Cargo.toml` 的 crate-type 加了
+`fp2p_*`（12 个）与 `ffsrs_*`（13 个）。为此 `native/fushi_p2p/Cargo.toml` 的 crate-type 加了
 `rlib`（只用来被伞形 crate 依赖，其余平台产物不变）。伞形 crate 的 `Cargo.lock` 以两个 crate
 各自的锁文件合并为种子再解析：fushi_p2p 那边的版本全部保持；fushi_fsrs 那边有 7 个
 semver 兼容的小版本被统一到 fushi_p2p 锁的版本（libc、serde_json、syn 3.x、unicode-ident、
@@ -121,6 +137,11 @@ FUSHI_FSRS_LIB=<绝对路径>/fushi_fsrs.dll dart test test/ffi_fsrs_engine_test
 记忆状态、SM-2 换算、可提取度衰减、两种算法在合成数据上的参数优化、从另一个 isolate 在进度
 > 0 后取消、外样本 / 训练集内评估、zstd 解码（预生成帧）与坏帧返回 null。库缺失时整组 skip。
 Rust 侧单元测试：`cargo test --release`（本目录）。
+
+`packages/fushi_srs/test/search/`、`packages/fushi_engine/test/srs/`（浏览 / 统计 / AnkiConnect）与主应用
+`fushi/test/srs/srs_browse_page_test.dart` 的搜索测试同样要真实库，但**加载失败直接判红、不 skip**：搜索没有
+Dart 回退，skip 会把「搜索整个不可用」显示成绿。CI 的包测试与主应用单测（`main.yml` 的 build / unit-tests、
+`release.yml` 的 tests 矩阵）先编 Linux `.so` 再经 `FUSHI_FSRS_LIB` 指过去；本地跑这些测试同样要设它。
 
 ## 许可
 

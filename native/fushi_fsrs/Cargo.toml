@@ -18,6 +18,8 @@ fsrs = { git = "https://github.com/open-spaced-repetition/fsrs-rs", rev = "0a573
 ruzstd = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Anki 搜索的正则与去 HTML（search.rs）：与 Anki 桌面版 rslib 同一个正则引擎，`re:` 语义以它为准。
+regex = "1"
 
 [profile.release]
 opt-level = "z"

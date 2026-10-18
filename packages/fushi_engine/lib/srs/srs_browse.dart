@@ -74,6 +74,9 @@ class SrsCardSearchSubject implements SrsSearchSubject {
       : ankiStripHtml(note.field(noteType.fields.first.id)).trim();
 
   @override
+  Object get noteKey => note.id;
+
+  @override
   String get noteTypeName => noteType.name;
 
   @override
@@ -265,9 +268,18 @@ class SrsBrowseItem {
 class SrsBrowseSnapshot {
   SrsBrowseSnapshot._(this.cards, this.noteTypes);
 
+  /// 由现成的求值对象建快照（基准 / 测试用；生产走 [load]）。
+  factory SrsBrowseSnapshot.fromCards(
+    List<SrsCardSearchSubject> cards,
+    List<SrsNoteTypeView> noteTypes,
+  ) => SrsBrowseSnapshot._(cards, noteTypes);
+
   /// 未删除笔记的全部可见卡片（按笔记创建时刻、卡片序号）。
   final List<SrsCardSearchSubject> cards;
   final List<SrsNoteTypeView> noteTypes;
+
+  /// 搜索语料（第一次非空搜索时装进原生内核，快照内的后续搜索复用）。
+  late final SrsSearchCorpus _corpus = SrsSearchCorpus(cards);
 
   static Future<SrsBrowseSnapshot> load(SrsDbStore store) async {
     final List<SrsNoteTypeView> types = await store.noteTypes();
@@ -327,8 +339,7 @@ class SrsBrowseSnapshot {
   }) {
     final SrsSearchNode node = parseAnkiSearch(query);
     final List<SrsCardSearchSubject> hits = <SrsCardSearchSubject>[
-      for (final SrsCardSearchSubject c in cards)
-        if (matchesAnkiSearch(node, c)) c,
+      for (final int i in _corpus.match(node, query: query)) cards[i],
     ];
     final List<SrsBrowseItem> items;
     if (mode == SrsBrowseMode.cards) {

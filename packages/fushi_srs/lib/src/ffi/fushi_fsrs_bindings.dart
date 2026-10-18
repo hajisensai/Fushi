@@ -54,6 +54,72 @@ typedef _ZstdDart =
     );
 typedef _FreeBytesC = ffi.Void Function(ffi.Pointer<ffi.Uint8>, ffi.Size);
 typedef _FreeBytesDart = void Function(ffi.Pointer<ffi.Uint8>, int);
+typedef _CorpusNewC =
+    ffi.Pointer<ffi.Void> Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _CorpusNewDart =
+    ffi.Pointer<ffi.Void> Function(
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      int,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _CorpusFreeC = ffi.Void Function(ffi.Pointer<ffi.Void>);
+typedef _CorpusFreeDart = void Function(ffi.Pointer<ffi.Void>);
+typedef _SetIntsC =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Int32,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+    );
+typedef _SetIntsDart =
+    int Function(ffi.Pointer<ffi.Void>, int, ffi.Pointer<ffi.Int64>, int);
+typedef _SetFloatsC =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Int32,
+      ffi.Pointer<ffi.Double>,
+      ffi.Size,
+    );
+typedef _SetFloatsDart =
+    int Function(ffi.Pointer<ffi.Void>, int, ffi.Pointer<ffi.Double>, int);
+typedef _MatchC =
+    ffi.Pointer<ffi.Char> Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Char>,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+    );
+typedef _MatchDart =
+    ffi.Pointer<ffi.Char> Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Char>,
+      ffi.Pointer<ffi.Uint8>,
+      int,
+    );
+typedef _DupeNormC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Size>,
+    );
+typedef _DupeNormDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      int,
+      ffi.Pointer<ffi.Size>,
+    );
 typedef _AbiVersionC = ffi.Int32 Function();
 typedef _AbiVersionDart = int Function();
 
@@ -79,7 +145,27 @@ class FushiFsrsBindings {
       ),
       ffsrs_abi_version = lib.lookupFunction<_AbiVersionC, _AbiVersionDart>(
         'ffsrs_abi_version',
-      );
+      ),
+      ffsrs_search_corpus_new = lib.lookupFunction<_CorpusNewC, _CorpusNewDart>(
+        'ffsrs_search_corpus_new',
+      ),
+      ffsrs_search_corpus_free_ptr = lib
+          .lookup<ffi.NativeFunction<_CorpusFreeC>>('ffsrs_search_corpus_free'),
+      ffsrs_search_corpus_set_ints = lib
+          .lookupFunction<_SetIntsC, _SetIntsDart>(
+            'ffsrs_search_corpus_set_ints',
+          ),
+      ffsrs_search_corpus_set_floats = lib
+          .lookupFunction<_SetFloatsC, _SetFloatsDart>(
+            'ffsrs_search_corpus_set_floats',
+          ),
+      ffsrs_search_corpus_match = lib.lookupFunction<_MatchC, _MatchDart>(
+        'ffsrs_search_corpus_match',
+      ),
+      ffsrs_search_dupe_norm_batch = lib
+          .lookupFunction<_DupeNormC, _DupeNormDart>(
+            'ffsrs_search_dupe_norm_batch',
+          );
 
   /// 请求 JSON → 响应 JSON（`{"ok":…}` / `{"error":"…"}`）。
   final ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char> request)
@@ -121,4 +207,65 @@ class FushiFsrsBindings {
   final void Function(ffi.Pointer<ffi.Uint8> ptr, int len) ffsrs_free_bytes;
 
   final int Function() ffsrs_abi_version;
+
+  /// Anki 搜索语料（native/fushi_fsrs/src/search.rs `Corpus::new` 的布局）：失败返回 nullptr，
+  /// 并在 [errorOut]（可为 nullptr）写一条由 [ffsrs_free_string] 释放的错误串。
+  final ffi.Pointer<ffi.Void> Function(
+    ffi.Pointer<ffi.Uint8> text,
+    int textLen,
+    ffi.Pointer<ffi.Uint32> layout,
+    int layoutLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> errorOut,
+  )
+  ffsrs_search_corpus_new;
+
+  /// `ffsrs_search_corpus_free` 的函数指针（[searchCorpusFinalizer] 用）。
+  final ffi.Pointer<ffi.NativeFunction<_CorpusFreeC>>
+  ffsrs_search_corpus_free_ptr;
+
+  late final void Function(ffi.Pointer<ffi.Void> corpus)
+  ffsrs_search_corpus_free = ffsrs_search_corpus_free_ptr
+      .asFunction<_CorpusFreeDart>();
+
+  /// 语料对象被回收时释放原生句柄。
+  late final ffi.NativeFinalizer searchCorpusFinalizer = ffi.NativeFinalizer(
+    ffsrs_search_corpus_free_ptr.cast(),
+  );
+
+  /// 设整数列 / 小数列（长度 = 卡数）；成功 0，失败 -1。
+  final int Function(
+    ffi.Pointer<ffi.Void> corpus,
+    int column,
+    ffi.Pointer<ffi.Int64> data,
+    int n,
+  )
+  ffsrs_search_corpus_set_ints;
+
+  final int Function(
+    ffi.Pointer<ffi.Void> corpus,
+    int column,
+    ffi.Pointer<ffi.Double> data,
+    int n,
+  )
+  ffsrs_search_corpus_set_floats;
+
+  /// 整批求值：[out] 长 [n]（= 卡数），返回 `{"ok":命中数}` / `{"error","kind","at"}`，
+  /// 由 [ffsrs_free_string] 释放。
+  final ffi.Pointer<ffi.Char> Function(
+    ffi.Pointer<ffi.Void> corpus,
+    ffi.Pointer<ffi.Char> query,
+    ffi.Pointer<ffi.Uint8> out,
+    int n,
+  )
+  ffsrs_search_corpus_match;
+
+  /// AnkiConnect 查重规范形，批量；返回 `[u32 LE 偏移 × (n+1)][UTF-8]`，由 [ffsrs_free_bytes] 释放。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Uint8> text,
+    int textLen,
+    ffi.Pointer<ffi.Uint32> offsets,
+    int n,
+    ffi.Pointer<ffi.Size> outLen,
+  )
+  ffsrs_search_dupe_norm_batch;
 }

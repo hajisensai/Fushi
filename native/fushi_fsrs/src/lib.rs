@@ -11,7 +11,12 @@
 //!
 //! 导出符号（与 packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart 的 lookup 名一一对应）：
 //!   ffsrs_call / ffsrs_compute_parameters / ffsrs_retrievability_batch / ffsrs_free_string /
-//!   ffsrs_zstd_decompress / ffsrs_free_bytes / ffsrs_abi_version
+//!   ffsrs_zstd_decompress / ffsrs_free_bytes / ffsrs_abi_version /
+//!   ffsrs_search_corpus_new / ffsrs_search_corpus_free / ffsrs_search_corpus_set_ints /
+//!   ffsrs_search_corpus_set_floats / ffsrs_search_corpus_match / ffsrs_search_dupe_norm_batch
+//!   （Anki 搜索的逐卡求值与查重规范形，见 search.rs）
+
+pub mod search;
 
 use std::ffi::{c_char, CStr, CString};
 use std::io::Read;
@@ -503,6 +508,154 @@ pub fn zstd_decompress(input: &[u8]) -> Result<Vec<u8>, String> {
 pub extern "C" fn ffsrs_free_bytes(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
         unsafe { drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len))) };
+    }
+}
+
+// ---------------------------------------------------------------- Anki 搜索（search.rs）
+
+fn set_error(error_out: *mut *mut c_char, message: &str) {
+    if !error_out.is_null() {
+        let text = CString::new(message.replace('\0', " ")).unwrap_or_default();
+        unsafe { *error_out = text.into_raw() };
+    }
+}
+
+/// 建一批卡的搜索语料（布局见 `search::Corpus::new`）。失败返回空指针，并在 `error_out`
+/// （可空）写一条用 [ffsrs_free_string] 释放的错误串。句柄用 [ffsrs_search_corpus_free] 释放。
+#[no_mangle]
+pub extern "C" fn ffsrs_search_corpus_new(
+    text: *const u8,
+    text_len: usize,
+    layout: *const u32,
+    layout_len: usize,
+    error_out: *mut *mut c_char,
+) -> *mut search::Corpus {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<search::Corpus, String> {
+        if (text.is_null() && text_len > 0) || layout.is_null() {
+            return Err("null buffer".into());
+        }
+        let text: &[u8] = if text_len == 0 { &[] } else { unsafe { std::slice::from_raw_parts(text, text_len) } };
+        let layout = unsafe { std::slice::from_raw_parts(layout, layout_len) };
+        search::Corpus::new(text, layout)
+    }));
+    match outcome.unwrap_or_else(|_| Err("panic in fushi_fsrs".into())) {
+        Ok(corpus) => Box::into_raw(Box::new(corpus)),
+        Err(e) => {
+            set_error(error_out, &e);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn ffsrs_search_corpus_free(corpus: *mut search::Corpus) {
+    if !corpus.is_null() {
+        unsafe { drop(Box::from_raw(corpus)) };
+    }
+}
+
+/// 设整数列（`search::IntColumn`），`n` 必须等于卡数。成功 0，失败 -1。
+#[no_mangle]
+pub extern "C" fn ffsrs_search_corpus_set_ints(
+    corpus: *mut search::Corpus,
+    column: i32,
+    data: *const i64,
+    n: usize,
+) -> i32 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
+        if corpus.is_null() || (data.is_null() && n > 0) || column < 0 {
+            return Err("null".into());
+        }
+        let data: &[i64] = if n == 0 { &[] } else { unsafe { std::slice::from_raw_parts(data, n) } };
+        unsafe { &mut *corpus }.set_ints(column as usize, data)
+    }));
+    if matches!(outcome, Ok(Ok(()))) { 0 } else { -1 }
+}
+
+/// 设小数列（`search::FloatColumn`，NaN = 没有值），`n` 必须等于卡数。成功 0，失败 -1。
+#[no_mangle]
+pub extern "C" fn ffsrs_search_corpus_set_floats(
+    corpus: *mut search::Corpus,
+    column: i32,
+    data: *const f64,
+    n: usize,
+) -> i32 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
+        if corpus.is_null() || (data.is_null() && n > 0) || column < 0 {
+            return Err("null".into());
+        }
+        let data: &[f64] = if n == 0 { &[] } else { unsafe { std::slice::from_raw_parts(data, n) } };
+        unsafe { &mut *corpus }.set_floats(column as usize, data)
+    }));
+    if matches!(outcome, Ok(Ok(()))) { 0 } else { -1 }
+}
+
+/// 对整批卡求值一条搜索（`query` 是语法树 JSON，见 `search::Node`）：`out[i]` 写 1 / 0，
+/// `n` 必须等于卡数。返回 `{"ok":命中数}` 或 `{"error","kind":"syntax"|"internal","at"}`，
+/// 由 [ffsrs_free_string] 释放。
+#[no_mangle]
+pub extern "C" fn ffsrs_search_corpus_match(
+    corpus: *const search::Corpus,
+    query: *const c_char,
+    out: *mut u8,
+    n: usize,
+) -> *mut c_char {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<usize, search::SearchError> {
+        let internal = |m: &str| search::SearchError { kind: "internal", reason: m.into(), at: String::new() };
+        if corpus.is_null() || query.is_null() || (out.is_null() && n > 0) {
+            return Err(internal("null"));
+        }
+        let query = unsafe { CStr::from_ptr(query) }.to_str().map_err(|_| internal("query is not UTF-8"))?;
+        let out: &mut [u8] = if n == 0 { &mut [] } else { unsafe { std::slice::from_raw_parts_mut(out, n) } };
+        unsafe { &*corpus }.search(query, out)
+    }));
+    let value = match outcome {
+        Ok(Ok(hits)) => json!({ "ok": hits }),
+        Ok(Err(e)) => json!({ "error": e.reason, "kind": e.kind, "at": e.at }),
+        Err(_) => json!({ "error": "panic in fushi_fsrs", "kind": "internal", "at": "" }),
+    };
+    CString::new(value.to_string()).unwrap().into_raw()
+}
+
+/// AnkiConnect 查重的首字段规范形（样式去重 → 去 HTML → trim），批量：输入第 i 个串 =
+/// `text[offs[i]..offs[i+1]]`（`offs` 长 n+1）。成功返回 `[u32 LE 偏移 × (n+1)][UTF-8 结果]`
+/// 并写 `out_len`，用 [ffsrs_free_bytes] 释放；失败返回空指针。
+#[no_mangle]
+pub extern "C" fn ffsrs_search_dupe_norm_batch(
+    text: *const u8,
+    text_len: usize,
+    offs: *const u32,
+    n: usize,
+    out_len: *mut usize,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Option<Vec<u8>> {
+        if (text.is_null() && text_len > 0) || offs.is_null() || out_len.is_null() {
+            return None;
+        }
+        let text: &[u8] = if text_len == 0 { &[] } else { unsafe { std::slice::from_raw_parts(text, text_len) } };
+        let text = std::str::from_utf8(text).ok()?;
+        let offs = unsafe { std::slice::from_raw_parts(offs, n + 1) };
+        let mut header = Vec::with_capacity((n + 1) * 4);
+        let mut body = String::new();
+        header.extend_from_slice(&0u32.to_le_bytes());
+        for w in offs.windows(2) {
+            let (a, b) = (w[0] as usize, w[1] as usize);
+            if a > b || !text.is_char_boundary(a) || !text.is_char_boundary(b) || b > text.len() {
+                return None;
+            }
+            body.push_str(&search::dupe_norm(&text[a..b]));
+            header.extend_from_slice(&u32::try_from(body.len()).ok()?.to_le_bytes());
+        }
+        header.extend_from_slice(body.as_bytes());
+        Some(header)
+    }));
+    match outcome.ok().flatten() {
+        Some(bytes) => {
+            let boxed = bytes.into_boxed_slice();
+            unsafe { *out_len = boxed.len() };
+            Box::into_raw(boxed) as *mut u8
+        }
+        None => std::ptr::null_mut(),
     }
 }
 
