@@ -1016,13 +1016,12 @@ class EpubSrtMatcher {
   }
 
   static _Index _buildIndex(List<EpubSection> sections) {
-    final StringBuffer buf = StringBuffer();
-    final List<int> normStarts = <int>[];
-    for (final EpubSection s in sections) {
-      normStarts.add(buf.length);
-      AudioTextNormalizer.appendNormalized(buf, s.text);
-    }
-    final String big = _foldSmallKana(buf.toString());
+    final ({String text, List<int> starts}) joined =
+        AudioTextNormalizer.normalizeConcat(<String>[
+          for (final EpubSection s in sections) s.text,
+        ]);
+    final List<int> normStarts = joined.starts;
+    final String big = _foldSmallKana(joined.text);
     final bool anyRuby = sections.any((EpubSection s) => s.rubies.isNotEmpty);
     return _Index(
       big,

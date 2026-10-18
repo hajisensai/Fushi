@@ -69,7 +69,7 @@ int _atLeastOne(int count) => count < 1 ? 1 : count;
 /// 这是切句**唯一**的运行时实现：没有 Dart 回退。原生库或符号缺失时 [instance]
 /// 抛 [FushiComputeUnavailableError]。
 ///
-/// 原生缓冲区每次调用现分配、返回前释放：整书计划跑在一次性的后台 isolate 里，
+/// 原生缓冲区每次调用现分配（一整块）、返回前释放：整书计划跑在一次性的后台 isolate 里，
 /// 挂在 isolate 静态字段上的暂存区随 isolate 退出就泄漏了（原生内存不归 GC 管）。
 final class TtsSplitNative {
   TtsSplitNative._(this._split);
@@ -106,25 +106,44 @@ final class TtsSplitNative {
     required int maxLength,
   }) {
     if (maxLength < 8) throw ArgumentError.value(maxLength, 'maxLength');
-    return using((Arena arena) {
-      final int length = text.length;
-      final Pointer<Uint16> textPtr = arena<Uint16>(_atLeastOne(length));
+    final int length = text.length;
+    int readingsLength = 0;
+    for (final TtsSplitRuby ruby in rubies) {
+      readingsLength += ruby.reading.length;
+    }
+    final int breakCount = blockEnds.length + sceneBreaks.length;
+    // 句数不超过原子数（≤ 码元数），池不超过原文 + 全部读音：这个容量一次就够。
+    final int recordCapacity = length;
+    final int poolCapacity = length + readingsLength;
+
+    // 全部输入 / 输出区一次分配、按偏移切开（短章逐次调用时，8 次 malloc + 8 次 free
+    // 比旧 Dart 整次切句还贵）。8 字节字段排在前、4 字节记录其次、UTF-16 区在后，
+    // 各区自然对齐；每区至少 1 个元素（asTypedList 不收 nullptr）。
+    final int rubyAt = 0;
+    final int breakAt = rubyAt + _atLeastOne(rubies.length * 4) * 8;
+    final int countAt = breakAt + _atLeastOne(breakCount) * 8;
+    final int poolLengthAt = countAt + 8;
+    final int recordAt = poolLengthAt + 8;
+    final int textAt = recordAt + _atLeastOne(recordCapacity * 4) * 4;
+    final int readingAt = textAt + _atLeastOne(length) * 2;
+    final int poolAt = readingAt + _atLeastOne(readingsLength) * 2;
+    final int totalBytes = poolAt + _atLeastOne(poolCapacity) * 2;
+    final Pointer<Uint8> block = malloc<Uint8>(totalBytes);
+    try {
+      final Pointer<Int64> rubyPtr = (block + rubyAt).cast<Int64>();
+      final Pointer<Int64> breakPtr = (block + breakAt).cast<Int64>();
+      final Pointer<Size> countPtr = (block + countAt).cast<Size>();
+      final Pointer<Size> poolLengthPtr = (block + poolLengthAt).cast<Size>();
+      final Pointer<Int32> recordPtr = (block + recordAt).cast<Int32>();
+      final Pointer<Uint16> textPtr = (block + textAt).cast<Uint16>();
+      final Pointer<Uint16> readingPtr = (block + readingAt).cast<Uint16>();
+      final Pointer<Uint16> poolPtr = (block + poolAt).cast<Uint16>();
+
       final Uint16List textUnits = textPtr.asTypedList(length);
       for (int i = 0; i < length; i++) {
         textUnits[i] = text.codeUnitAt(i);
       }
-
-      int readingsLength = 0;
-      for (final TtsSplitRuby ruby in rubies) {
-        readingsLength += ruby.reading.length;
-      }
-      final Pointer<Int64> rubyPtr = arena<Int64>(
-        _atLeastOne(rubies.length * 4),
-      );
       final Int64List rubyFields = rubyPtr.asTypedList(rubies.length * 4);
-      final Pointer<Uint16> readingPtr = arena<Uint16>(
-        _atLeastOne(readingsLength),
-      );
       final Uint16List readingUnits = readingPtr.asTypedList(readingsLength);
       int readingCursor = 0;
       for (int k = 0; k < rubies.length; k++) {
@@ -138,22 +157,10 @@ final class TtsSplitNative {
           readingUnits[readingCursor++] = reading.codeUnitAt(i);
         }
       }
-
-      final int breakCount = blockEnds.length + sceneBreaks.length;
-      final Pointer<Int64> breakPtr = arena<Int64>(_atLeastOne(breakCount));
       final Int64List breakValues = breakPtr.asTypedList(breakCount);
       breakValues.setAll(0, blockEnds);
       breakValues.setAll(blockEnds.length, sceneBreaks);
 
-      // 句数不超过原子数（≤ 码元数），池不超过原文 + 全部读音：这个容量一次就够。
-      final int recordCapacity = length;
-      final int poolCapacity = length + readingsLength;
-      final Pointer<Int32> recordPtr = arena<Int32>(
-        _atLeastOne(recordCapacity * 4),
-      );
-      final Pointer<Uint16> poolPtr = arena<Uint16>(_atLeastOne(poolCapacity));
-      final Pointer<Size> countPtr = arena<Size>();
-      final Pointer<Size> poolLengthPtr = arena<Size>();
       final int status = _split(
         textPtr,
         length,
@@ -198,6 +205,8 @@ final class TtsSplitNative {
                 ),
         );
       }, growable: false);
-    }, malloc);
+    } finally {
+      malloc.free(block);
+    }
   }
 }

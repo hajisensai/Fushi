@@ -43,4 +43,32 @@ void main() {
     expect(small.starts, <int>[0, 2, 2], reason: '先前返回的 starts 不能被复用区改写');
     expect(fold.fold('ﾝ'), 'ん');
   });
+
+  test('foldStudy：归一化 + 学习单位坐标一次算完，U+0000 分隔的节点各自断词', () {
+    final AudioTextFoldNative fold = AudioTextFoldNative.instance;
+    final ({String text, Uint32List offsets, Uint32List ends, int total}) r =
+        fold.foldStudy('ア、ab c');
+    expect(r.text, 'あabc');
+    expect(r.offsets, <int>[0, 1, 1, 2]);
+    expect(r.ends, <int>[1, 1, 2, 3]);
+    expect(r.total, 3);
+    final ({String text, Uint32List offsets, Uint32List ends, int total})
+    nodes = fold.foldStudy('ab\u0000cd\u0000猫𠮷');
+    expect(nodes.text, 'abcd猫𠮷');
+    expect(nodes.offsets, <int>[0, 0, 1, 1, 2, 3, 3]);
+    expect(nodes.ends, <int>[0, 1, 1, 2, 3, 4, 4]);
+    expect(nodes.total, 4);
+    final ({String text, Uint32List offsets, Uint32List ends, int total})
+    empty = fold.foldStudy('');
+    expect(empty.text, '');
+    expect(empty.offsets, isEmpty);
+    expect(empty.ends, isEmpty);
+    expect(empty.total, 0);
+    final ({String text, Uint32List offsets, Uint32List ends, int total}) big =
+        fold.foldStudy('ア、' * 5000);
+    expect(big.text, 'あ' * 5000);
+    expect(big.total, 5000);
+    expect(big.ends.last, 5000);
+    expect(r.offsets, <int>[0, 1, 1, 2], reason: '先前返回的列表不能被复用区改写');
+  });
 }

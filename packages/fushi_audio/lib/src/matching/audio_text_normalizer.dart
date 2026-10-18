@@ -18,9 +18,21 @@ class AudioTextNormalizer {
   /// 归一化文本：剥掉非白名单字符，大小写统一，片假名转平假名。
   static String normalize(String s) => AudioTextFoldNative.instance.fold(s);
 
-  /// 将 [s] 归一化后追加到 [buf]，用于拼接多段文本后统一处理。
+  /// 将 [s] 归一化后追加到 [buf]，用于拼接多段文本后统一处理。逐段调用时每段多一次
+  /// 字符串拷贝；整批拼接用 [normalizeConcat]。
   static void appendNormalized(StringBuffer buf, String s) {
     buf.write(normalize(s));
+  }
+
+  /// [pieces] 各自归一化后首尾相接（等于逐段 [appendNormalized] 进同一个 buffer），以及每段
+  /// 在结果里的起点（`starts[k]` = 第 k 段之前所有段归一化后的总长）。整批一次 FFI。
+  static ({String text, List<int> starts}) normalizeConcat(
+    List<String> pieces,
+  ) {
+    final ({String text, Uint32List pieceStarts}) r = AudioTextFoldNative
+        .instance
+        .foldConcat(pieces);
+    return (text: r.text, starts: r.pieceStarts);
   }
 
   /// 归一化并记下每个归一化字符在原文里的 **UTF-16 码元区间**，用于把匹配器

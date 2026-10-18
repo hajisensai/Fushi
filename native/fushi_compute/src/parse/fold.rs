@@ -19,6 +19,7 @@
 //! 码点只会原样保留或丢弃，所以输出码元数永远不超过输入码元数，且被保留码点的输出宽度
 //! 等于输入宽度。
 
+use crate::parse::{study_char_class, StudyCharClass};
 use crate::{guard, status};
 
 /// 半角片假名 U+FF66..U+FF9D → 全角片假名（索引 = 码点 - 0xFF66，56 项）。
@@ -175,6 +176,123 @@ pub unsafe extern "C" fn ffc_parse_fold_audio_utf16(
     })
 }
 
+/// 阅读器有声书坐标（原 Dart `ReaderAudioPositionIndex.fromChapterHtml` 的逐节点循环）：
+/// 一次走完 [fold_utf16] 的归一化，并给每个输出码元写它所在输入码点的**学习单位起点**
+/// （`offsets`）与**终点**（`ends`，起点 + 该码点是否收尾一个单位），返回输出码元数，
+/// 学习单位总数写进 `total`。
+///
+/// 学习单位按 [study_char_class] 分类、从右往左判收尾：每码点计 1 的码点自己收尾；
+/// 连续串的最后一个码点收尾（右边第一个非透明码点不是连续串，或到了文本末尾）；透明码点
+/// 不更新「右边的类别」。调用方把各 DOM 文本节点用 U+0000 连接后整段传进来：U+0000 是
+/// 断词码点、不在归一化白名单里，所以整段一次扫描与逐节点各扫一次（节点末尾右边按断词处理、
+/// 码点按节点各自 `runes` 解码）结果相同。
+pub fn fold_study_utf16(
+    units: &[u16],
+    out: &mut [u16],
+    offsets: &mut [u32],
+    ends: &mut [u32],
+) -> (usize, u32) {
+    let len = units.len();
+    // (码点, 宽度, 是否收尾)
+    let mut runes: Vec<(u32, u8, bool)> = Vec::with_capacity(len);
+    let mut i = 0usize;
+    while i < len {
+        let unit = u32::from(units[i]);
+        let mut cp = unit;
+        let mut width = 1u8;
+        if (0xD800..=0xDBFF).contains(&unit) && i + 1 < len {
+            let low = u32::from(units[i + 1]);
+            if (0xDC00..=0xDFFF).contains(&low) {
+                cp = 0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
+                width = 2;
+            }
+        }
+        runes.push((cp, width, false));
+        i += usize::from(width);
+    }
+    let mut next = StudyCharClass::Breaker;
+    for r in runes.iter_mut().rev() {
+        let class = study_char_class(r.0);
+        r.2 = match class {
+            StudyCharClass::PerCodePoint => true,
+            StudyCharClass::Word => next != StudyCharClass::Word,
+            _ => false,
+        };
+        if class != StudyCharClass::Transparent {
+            next = class;
+        }
+    }
+    let mut study = 0u32;
+    let mut n = 0usize;
+    for &(cp, _, end) in &runes {
+        let study_end = study + u32::from(end);
+        if let Some(folded) = fold_code_point(cp) {
+            if folded > 0xFFFF {
+                let v = folded - 0x10000;
+                out[n] = (0xD800 + (v >> 10)) as u16;
+                out[n + 1] = (0xDC00 + (v & 0x3FF)) as u16;
+                offsets[n] = study;
+                offsets[n + 1] = study;
+                ends[n] = study_end;
+                ends[n + 1] = study_end;
+                n += 2;
+            } else {
+                out[n] = folded as u16;
+                offsets[n] = study;
+                ends[n] = study_end;
+                n += 1;
+            }
+        }
+        study = study_end;
+    }
+    (n, study)
+}
+
+/// [fold_study_utf16] 的 C ABI：读 `units[0..len]`，写 `out` / `offsets` / `ends` 的前
+/// `*out_len` 项与学习单位总数 `*total`。三块输出容量 `cap` 必须 ≥ `len`（输出不比输入长），
+/// 否则返回 `BUFFER_TOO_SMALL`、不写任何东西。`len == 0` 时指针可为空。
+///
+/// # Safety
+/// `out_len` / `total` 非空可写；`len > 0` 时 `units` 指向 `len` 个可读 `u16`，`out` 指向
+/// `cap` 个可写 `u16`，`offsets` / `ends` 各指向 `cap` 个可写 `u32`；互不重叠。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_parse_fold_audio_study_utf16(
+    units: *const u16,
+    len: usize,
+    out: *mut u16,
+    offsets: *mut u32,
+    ends: *mut u32,
+    cap: usize,
+    out_len: *mut usize,
+    total: *mut u32,
+) -> i32 {
+    if out_len.is_null()
+        || total.is_null()
+        || (len > 0 && (units.is_null() || out.is_null() || offsets.is_null() || ends.is_null()))
+    {
+        return status::NULL_ARGUMENT;
+    }
+    if cap < len {
+        return status::BUFFER_TOO_SMALL;
+    }
+    guard(|| {
+        if len == 0 {
+            *out_len = 0;
+            *total = 0;
+            return status::OK;
+        }
+        let (n, study) = fold_study_utf16(
+            std::slice::from_raw_parts(units, len),
+            std::slice::from_raw_parts_mut(out, len),
+            std::slice::from_raw_parts_mut(offsets, len),
+            std::slice::from_raw_parts_mut(ends, len),
+        );
+        *out_len = n;
+        *total = study;
+        status::OK
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,6 +307,151 @@ mod tests {
             *hash ^= u32::from(b);
             *hash = hash.wrapping_mul(0x0100_0193);
         }
+    }
+
+    /// 原 Dart `ReaderAudioPositionIndex.fromChapterHtml` 的逐节点算法（每个文本节点各自
+    /// 解码、各自从右往左判收尾，节点末尾右边按断词）。
+    fn study_reference(nodes: &[Vec<u16>]) -> (Vec<u16>, Vec<u32>, Vec<u32>, u32) {
+        let (mut text, mut offsets, mut ends) = (Vec::new(), Vec::new(), Vec::new());
+        let mut study = 0u32;
+        for node in nodes {
+            let runes: Vec<u32> = char::decode_utf16(node.iter().copied())
+                .map(|r| r.map_or_else(|e| u32::from(e.unpaired_surrogate()), u32::from))
+                .collect();
+            let kinds: Vec<StudyCharClass> = runes.iter().map(|&c| study_char_class(c)).collect();
+            let mut is_end = vec![false; runes.len()];
+            let mut next = StudyCharClass::Breaker;
+            for k in (0..runes.len()).rev() {
+                is_end[k] = kinds[k] == StudyCharClass::PerCodePoint
+                    || (kinds[k] == StudyCharClass::Word && next != StudyCharClass::Word);
+                if kinds[k] != StudyCharClass::Transparent {
+                    next = kinds[k];
+                }
+            }
+            for (k, &cp) in runes.iter().enumerate() {
+                let end = study + u32::from(is_end[k]);
+                if let Some(f) = fold_code_point(cp) {
+                    if f > 0xFFFF {
+                        let v = f - 0x10000;
+                        text.push((0xD800 + (v >> 10)) as u16);
+                        text.push((0xDC00 + (v & 0x3FF)) as u16);
+                        offsets.extend([study, study]);
+                        ends.extend([end, end]);
+                    } else {
+                        text.push(f as u16);
+                        offsets.push(study);
+                        ends.push(end);
+                    }
+                }
+                study = end;
+            }
+        }
+        (text, offsets, ends, study)
+    }
+
+    #[test]
+    fn separator_is_a_breaker() {
+        assert_eq!(study_char_class(0), StudyCharClass::Breaker);
+        assert_eq!(fold_code_point(0), None);
+    }
+
+    #[test]
+    fn fold_study_matches_per_node_reference() {
+        let alphabet: Vec<u16> = "漢字かなカナｶﾅabcXYZ１２ ,。、'\u{301}\u{200d}é"
+            .encode_utf16()
+            .chain([
+                0xD842, 0xDFB7, 0xD800, 0xDC00, 0xD83D, 0xDE00, 0x0E01, 0x0E31,
+            ])
+            .collect();
+        let mut seed = 0x2545_F491_4F6C_DD1Du64;
+        let mut rand = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for _ in 0..3000 {
+            let node_count = rand() % 6;
+            let nodes: Vec<Vec<u16>> = (0..node_count)
+                .map(|_| {
+                    let n = rand() % 12;
+                    (0..n)
+                        .map(|_| alphabet[(rand() % alphabet.len() as u64) as usize])
+                        .collect()
+                })
+                .collect();
+            let mut joined: Vec<u16> = Vec::new();
+            for (k, node) in nodes.iter().enumerate() {
+                if k > 0 {
+                    joined.push(0);
+                }
+                joined.extend_from_slice(node);
+            }
+            let (text, offsets, ends, total) = study_reference(&nodes);
+            let mut out = vec![0u16; joined.len()];
+            let mut o = vec![0u32; joined.len()];
+            let mut e = vec![0u32; joined.len()];
+            let (n, study) = fold_study_utf16(&joined, &mut out, &mut o, &mut e);
+            assert_eq!(&out[..n], &text[..], "{nodes:?}");
+            assert_eq!(&o[..n], &offsets[..], "{nodes:?}");
+            assert_eq!(&e[..n], &ends[..], "{nodes:?}");
+            assert_eq!(study, total, "{nodes:?}");
+            let mut plain = vec![0u16; joined.len()];
+            assert_eq!(fold_utf16(&joined, &mut plain, None), n);
+            assert_eq!(&plain[..n], &out[..n]);
+        }
+    }
+
+    #[test]
+    fn fold_study_ffi_entry_point() {
+        let units: Vec<u16> = "ア、ab c".encode_utf16().collect();
+        let mut out = vec![0u16; units.len()];
+        let mut o = vec![0u32; units.len()];
+        let mut e = vec![0u32; units.len()];
+        let (mut n, mut total) = (99usize, 99u32);
+        let rc = unsafe {
+            ffc_parse_fold_audio_study_utf16(
+                units.as_ptr(),
+                units.len(),
+                out.as_mut_ptr(),
+                o.as_mut_ptr(),
+                e.as_mut_ptr(),
+                units.len(),
+                &mut n,
+                &mut total,
+            )
+        };
+        assert_eq!(rc, status::OK);
+        assert_eq!(&out[..n], &[0x3042, b'a' as u16, b'b' as u16, b'c' as u16]);
+        assert_eq!(&o[..n], &[0, 1, 1, 2]);
+        assert_eq!(&e[..n], &[1, 1, 2, 3]);
+        assert_eq!(total, 3);
+        let rc = unsafe {
+            ffc_parse_fold_audio_study_utf16(
+                units.as_ptr(),
+                units.len(),
+                out.as_mut_ptr(),
+                o.as_mut_ptr(),
+                e.as_mut_ptr(),
+                units.len() - 1,
+                &mut n,
+                &mut total,
+            )
+        };
+        assert_eq!(rc, status::BUFFER_TOO_SMALL);
+        let rc = unsafe {
+            ffc_parse_fold_audio_study_utf16(
+                std::ptr::null(),
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                0,
+                &mut n,
+                &mut total,
+            )
+        };
+        assert_eq!((rc, n, total), (status::OK, 0, 0));
     }
 
     #[test]
