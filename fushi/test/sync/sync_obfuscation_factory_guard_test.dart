@@ -53,19 +53,20 @@ void _guardSourceFiles() {
         final src = File(
           'lib/src/sync/sync_obfuscator.dart',
         ).readAsStringSync();
-        // 计划要求：不引入加密库、不用 base64。整块 / 流式 XOR 在 native/fushi_compute
-        // （ffc_crypto_sync_xor）；只有 Range 路径留 Dart（FFI 拷进拷出比字长循环慢，见类
-        // 注释），keystream 只能有那一份 Range 用的 Dart 副本。
+        // 计划要求：不引入加密库、不用 base64。文件 → 文件的混淆 / 还原在 native/fushi_compute
+        // （ffc_crypto_sync_*_file）；内存里的字节（封面 / Range）留 Dart（FFI 拷进拷出比字长
+        // 循环慢，见类注释），keystream 只能有那一份 Dart 副本。
         expect(
           src.contains('package:fushi_compute/fushi_compute.dart'),
           isTrue,
         );
-        expect(src.contains('FushiComputeCrypto.instance.syncXor'), isTrue);
+        expect(src.contains('syncObfuscateFile'), isTrue);
+        expect(src.contains('syncDeobfuscateFile'), isTrue);
         expect(src.contains('_keystream'), isFalse);
         expect(
           RegExp(r'sha256\.convert').allMatches(src).length,
           1,
-          reason: 'only the Range-path keystream copy may live in Dart',
+          reason: 'only one in-memory keystream copy may live in Dart',
         );
         expect(src.contains('package:encrypt'), isFalse);
         expect(src.contains('package:pointycastle'), isFalse);

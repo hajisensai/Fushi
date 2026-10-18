@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:ffi';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -14,14 +16,17 @@ abstract final class FfcCryptoStatus {
 
   /// ECDSA 验签不通过。
   static const int p256SignatureInvalid = -22;
+
+  /// 云同步文件混淆 / 还原时读写文件失败。
+  static const int syncIoError = -30;
 }
 
 typedef _CbcEncryptC =
     Int32 Function(Pointer<Uint8>, Size, Pointer<Uint8>, Pointer<Uint8>, Size);
 typedef _CbcEncryptDart =
     int Function(Pointer<Uint8>, int, Pointer<Uint8>, Pointer<Uint8>, int);
-typedef _SyncXorC = Int32 Function(Pointer<Uint8>, Size, Uint64);
-typedef _SyncXorDart = int Function(Pointer<Uint8>, int, int);
+typedef _SyncFileC = Int32 Function(Pointer<Uint8>, Size, Pointer<Uint8>, Size);
+typedef _SyncFileDart = int Function(Pointer<Uint8>, int, Pointer<Uint8>, int);
 typedef _P256PublicKeyC = Int32 Function(Pointer<Uint8>, Pointer<Uint8>);
 typedef _P256PublicKeyDart = int Function(Pointer<Uint8>, Pointer<Uint8>);
 typedef _P256SignC =
@@ -93,10 +98,14 @@ final class FushiComputeCrypto {
         'ffc_crypto_aes_cbc_encrypt',
         isLeaf: true,
       ),
-      _syncXor = lib.library.lookupFunction<_SyncXorC, _SyncXorDart>(
-        'ffc_crypto_sync_xor',
-        isLeaf: true,
-      ),
+      _syncObfuscateFile = lib.library
+          .lookupFunction<_SyncFileC, _SyncFileDart>(
+            'ffc_crypto_sync_obfuscate_file',
+          ),
+      _syncDeobfuscateFile = lib.library
+          .lookupFunction<_SyncFileC, _SyncFileDart>(
+            'ffc_crypto_sync_deobfuscate_file',
+          ),
       _p256PublicKey = lib.library
           .lookupFunction<_P256PublicKeyC, _P256PublicKeyDart>(
             'ffc_crypto_p256_public_key',
@@ -117,7 +126,8 @@ final class FushiComputeCrypto {
   final _EcbDecryptDart _ecbDecrypt;
   final _CbcPkcs7Dart _cbcPkcs7;
   final _CbcEncryptDart _cbcEncrypt;
-  final _SyncXorDart _syncXor;
+  final _SyncFileDart _syncObfuscateFile;
+  final _SyncFileDart _syncDeobfuscateFile;
   final _P256PublicKeyDart _p256PublicKey;
   final _P256SignDart _p256Sign;
   final _P256SignDart _p256Verify;
@@ -245,20 +255,45 @@ final class FushiComputeCrypto {
     return Uint8List.fromList(view);
   }
 
-  /// 云同步「防扫盘」混淆的字节变换（混淆 = 还原，同一操作）：返回
-  /// `chunk[i] ^ keystream[(bodyOffset + i) % 32]`，keystream = SHA-256("hibiki")。
-  /// [bodyOffset] 是正文（不含魔数）里的全局偏移。
-  Uint8List syncXor(List<int> chunk, int bodyOffset) {
-    if (bodyOffset < 0) {
-      throw ArgumentError.value(bodyOffset, 'bodyOffset', 'negative');
+  /// 云同步「防扫盘」混淆整个文件：[destination] 写成 `魔数 + XOR(source)`（创建或截断，
+  /// 同 `File.openWrite()`），读、XOR、写全在 Rust 里流式完成，Dart 只传路径。
+  /// keystream = SHA-256("hibiki")，魔数 `HBKOBF 01 00`，都**永远不能改**。
+  ///
+  /// 同步阻塞调用：在后台 isolate 里跑（`Isolate.run`）。读写失败抛 [FileSystemException]。
+  void syncObfuscateFile(String source, String destination) =>
+      _syncFile(_syncObfuscateFile, 'obfuscate', source, destination);
+
+  /// 还原 [syncObfuscateFile] 的产物：[source] 带魔数则去头 XOR 写到 [destination]，
+  /// 不带魔数（旧明文 / 短于魔数）原样复制。其余同 [syncObfuscateFile]。
+  void syncDeobfuscateFile(String source, String destination) =>
+      _syncFile(_syncDeobfuscateFile, 'deobfuscate', source, destination);
+
+  void _syncFile(
+    _SyncFileDart fn,
+    String op,
+    String source,
+    String destination,
+  ) {
+    final List<int> src = utf8.encode(source);
+    final List<int> dst = utf8.encode(destination);
+    if (src.isEmpty || dst.isEmpty) {
+      throw ArgumentError('empty path');
     }
-    final int length = chunk.length;
-    if (length == 0) return Uint8List(0);
-    final Pointer<Uint8> buf = _scratchFor(length);
-    final Uint8List view = buf.asTypedList(length)..setAll(0, chunk);
-    final int code = _syncXor(buf, length, bodyOffset);
-    if (code != FfcStatus.ok) throw StateError('ffc_crypto_sync_xor: $code');
-    return Uint8List.fromList(view);
+    final Pointer<Uint8> buf = malloc<Uint8>(src.length + dst.length);
+    try {
+      buf.asTypedList(src.length + dst.length)
+        ..setAll(0, src)
+        ..setAll(src.length, dst);
+      final int code = fn(buf, src.length, buf + src.length, dst.length);
+      if (code == FfcCryptoStatus.syncIoError) {
+        throw FileSystemException('sync $op failed', '$source -> $destination');
+      }
+      if (code != FfcStatus.ok) {
+        throw StateError('ffc_crypto_sync_${op}_file: $code');
+      }
+    } finally {
+      malloc.free(buf);
+    }
   }
 
   /// P-256 公钥：32 字节大端私钥标量 → 65 字节未压缩点 `04‖x‖y`。

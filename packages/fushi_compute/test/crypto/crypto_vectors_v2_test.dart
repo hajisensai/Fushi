@@ -1,4 +1,4 @@
-// 加密域第二批：云同步 XOR 混淆与 P-256 ECDSA 的原生内核，与删除前的 Dart / pointycastle
+// 加密域第二批：云同步文件混淆（整段文件 → 文件）与 P-256 ECDSA 的原生内核，与删除前的 Dart / pointycastle
 // 实现逐字节一致（固定向量 crypto_vectors_v2.json）。
 //
 // 这里只验原生原语；带魔数 / 分块状态的 SyncObfuscator、带 SPKI / base64url 的
@@ -47,53 +47,67 @@ void main() {
       expect(_sha(data), v['input_sha256']);
     });
 
-    test('whole body from offset 0 (behind the 8-byte magic)', () {
-      final Uint8List out = Uint8List(8 + data.length)
-        ..setAll(0, const <int>[0x48, 0x42, 0x4B, 0x4F, 0x42, 0x46, 0x01, 0x00])
-        ..setAll(8, crypto.syncXor(data, 0));
+    late Directory dir;
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('ffc_sync_vec_');
+    });
+    tearDown(() async {
+      await dir.delete(recursive: true);
+    });
+
+    Uint8List run(void Function(String, String) op, List<int> input) {
+      final File src = File('${dir.path}/in')..writeAsBytesSync(input);
+      final File dst = File('${dir.path}/out');
+      op(src.path, dst.path);
+      return dst.readAsBytesSync();
+    }
+
+    test('obfuscate file = magic + XOR, matches the frozen bytes', () {
+      final Uint8List out = run(crypto.syncObfuscateFile, data);
+      expect(out.sublist(0, 8), const <int>[
+        0x48, 0x42, 0x4B, 0x4F, 0x42, 0x46, 0x01, 0x00, //
+      ]);
       expect(_sha(out), v['obfuscated_sha256']);
+      expect(run(crypto.syncDeobfuscateFile, out), data);
     });
 
-    test('random access at arbitrary body offsets', () {
-      final Uint8List obfuscated = Uint8List.fromList(crypto.syncXor(data, 0));
-      final Map<String, Object?> at =
-          v['body_at_offset_1000000_plus']! as Map<String, Object?>;
-      for (final MapEntry<String, Object?> e in at.entries) {
-        final int off = int.parse(e.key);
-        final int len = (data.length - off).clamp(0, 5003);
-        // 旧向量：把正文偏移 off 起的一段当作偏移 1000000 + off 来还原。
-        expect(
-          _sha(
-            crypto.syncXor(
-              Uint8List.sublistView(obfuscated, off, off + len),
-              1000000 + off,
-            ),
-          ),
-          e.value,
-          reason: 'offset $off',
+    test('multi-chunk file: the frozen prefix is unchanged, round-trips', () {
+      // 3 MiB 多（跨 Rust 的 1 MiB 读块）：前 100003 字节就是冻结输入，其混淆前缀必须
+      // 与冻结向量一致（位置绑定、与读块无关）。
+      final Uint8List big = Uint8List(3 * 1024 * 1024 + 5)
+        ..setAll(0, data)
+        ..setAll(
+          data.length,
+          pseudoRandomBytes(3 * 1024 * 1024 + 5 - data.length, 7),
         );
-      }
-    });
-
-    test('XOR is involutive and chunking-independent', () {
-      final Uint8List whole = crypto.syncXor(data, 0);
-      final List<int> pieced = <int>[];
-      int offset = 0;
-      for (final int size in const <int>[1, 7, 8, 31, 33, 4096, 65536]) {
-        pieced.addAll(
-          crypto.syncXor(
-            Uint8List.sublistView(data, offset, offset + size),
-            offset,
-          ),
-        );
-        offset += size;
-      }
-      pieced.addAll(
-        crypto.syncXor(Uint8List.sublistView(data, offset), offset),
+      final Uint8List out = run(crypto.syncObfuscateFile, big);
+      expect(out.length, big.length + 8);
+      expect(
+        _sha(Uint8List.sublistView(out, 0, 8 + data.length)),
+        v['obfuscated_sha256'],
       );
-      expect(pieced, whole);
-      expect(crypto.syncXor(whole, 0), data);
-      expect(crypto.syncXor(const <int>[], 5), isEmpty);
+      expect(run(crypto.syncDeobfuscateFile, out), big);
+    });
+
+    test('deobfuscate copies legacy plaintext (no magic / short) as is', () {
+      expect(run(crypto.syncDeobfuscateFile, data), data);
+      expect(run(crypto.syncDeobfuscateFile, const <int>[1, 2, 3]), const <int>[
+        1,
+        2,
+        3,
+      ]);
+      expect(run(crypto.syncDeobfuscateFile, const <int>[]), isEmpty);
+      expect(run(crypto.syncObfuscateFile, const <int>[]).length, 8);
+    });
+
+    test('I/O failure surfaces as FileSystemException', () {
+      expect(
+        () => crypto.syncDeobfuscateFile(
+          '${dir.path}/missing',
+          '${dir.path}/out',
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
     });
   });
 

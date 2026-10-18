@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show sha256;
@@ -19,15 +21,19 @@ import 'package:fushi_compute/fushi_compute.dart';
 ///   判定「混淆 vs 旧明文」，实现**混读向后兼容**：现有 Drive 明文（无魔数）原样读出
 ///   并能正常导入，新上传带魔数混淆，逐步重传即可全部变混淆，无需一键全重传。
 /// - 文件名不混淆（同步协议靠文件名做对比/增量/冲突/删除），所以混淆零影响同步协议。
-/// - **整块 / 流式两条路径的 XOR 在 native/fushi_compute**（`ffc_crypto_sync_xor`），按块
-///   一次 FFI。**Range 随机访问路径（[deobfuscateBodyAt]）留在 Dart**：它是纯内存带宽
-///   操作，FFI 只能借原生暂存区拷进拷出（`TypedData.address` 只给 `@Native` 静态绑定，
-///   本包按路径动态加载；`asTypedList(finalizer:)` 免拷出在 Dart 3.13.5 AOT 下循环分配
-///   必崩），实测比这里的 64 位字长循环慢（2026-10-19 Windows AOT，64 KiB / 1 MiB / 8 MiB
-///   分块各 3 轮：Dart 520～1870 MB/s、FFI 550～1280 MB/s，9 组里 8 组 Dart 更快），按
-///   「边界加粗后仍不比 Dart 快就不搬」留下。
-///   两份 keystream 都是 SHA-256("hibiki")，回归向量
-///   `fushi/test/sync/sync_obfuscator_vectors_test.dart` 同时钉住两条路径。
+/// - **文件 → 文件的混淆 / 还原整段在 native/fushi_compute**（[obfuscateFile] /
+///   [deobfuscateFile] → `ffc_crypto_sync_obfuscate_file` / `_deobfuscate_file`）：Rust
+///   流式读、XOR、写，Dart 只传路径，后台 isolate 里跑。2026-10-19 Windows AOT 端到端
+///   （含 FFI 与 isolate 启动）：4 MiB 15 ms vs 原 Dart 流式 45 ms、256 MiB 534 ms vs
+///   1686 ms（Dart 为 64 位字长循环）。
+/// - **内存里的字节（封面 [obfuscateBytes] / [deobfuscateBytes]、Range 流播
+///   [deobfuscateBodyAt]）留在 Dart**：数据已在 Dart 堆上，FFI 只能借原生暂存区拷进拷出
+///   （`TypedData.address` 只给 `@Native` 静态绑定，本包按路径动态加载；
+///   `asTypedList(finalizer:)` 免拷出在 Dart 3.13.5 AOT 下循环分配必崩），实测比这里的
+///   64 位字长循环慢（64 KiB / 1 MiB / 8 MiB 分块各 3 轮：Dart 520～1870 MB/s、FFI
+///   550～1280 MB/s，9 组里 8 组 Dart 更快），按「边界加粗后仍不比 Dart 快就不搬」留下。
+///   Dart 与 Rust 两份 keystream / 魔数同值，回归向量
+///   `fushi/test/sync/sync_obfuscator_vectors_test.dart` 同时钉住两侧。
 ///   已同步到云端的文件靠这份 keystream 解开，**永远不能改**。
 ///
 /// **A2（JSON 正文混淆）是 follow-up**，本类只服务 content 字节 + cover 字节，不碰
@@ -60,7 +66,7 @@ class SyncObfuscator {
   static Uint8List obfuscateBytes(Uint8List plain) {
     final out = Uint8List(magicHeaderLength + plain.length);
     out.setRange(0, magicHeaderLength, magicHeader);
-    out.setRange(magicHeaderLength, out.length, _xor(plain, 0));
+    out.setRange(magicHeaderLength, out.length, deobfuscateBodyAt(plain, 0));
     return out;
   }
 
@@ -69,7 +75,7 @@ class SyncObfuscator {
     if (!hasMagicHeader(data)) {
       return data; // 旧明文（或短于 header）：原样透传。
     }
-    return _xor(Uint8List.sublistView(data, magicHeaderLength), 0);
+    return deobfuscateBodyAt(Uint8List.sublistView(data, magicHeaderLength), 0);
   }
 
   /// 判定 [data] 是否以 [magicHeader] 开头（即是否为本混淆器的产物）。
@@ -91,7 +97,7 @@ class SyncObfuscator {
   /// 流播时这里跑在 UI isolate 上、每秒过几 MB，所以按 64 位字长 XOR（循环次数降到
   /// 逐字节的 1/8）：从 [bodyOffset] 的相位起，keystream 每 8 字节一个字、4 个字一周期
   /// （32 字节周期是 8 的倍数，`8w mod 32 == 8(w & 3)`）；不足 8 字节的尾巴逐字节补。
-  /// 为什么不走 FFI 见类注释。
+  /// 整块 API 也用它。为什么不走 FFI 见类注释。
   static Uint8List deobfuscateBodyAt(List<int> chunk, int bodyOffset) {
     if (bodyOffset < 0) {
       throw ArgumentError.value(bodyOffset, 'bodyOffset', 'negative');
@@ -112,7 +118,7 @@ class SyncObfuscator {
     return out;
   }
 
-  /// Range 路径的 keystream：SHA-256("hibiki")，与 `ffc_crypto_sync_xor` 同一份。
+  /// Range 路径的 keystream：SHA-256("hibiki")，与 native/fushi_compute `sync_xor.rs` 同一份。
   static final Uint8List _rangeKeyBytes = Uint8List.fromList(
     sha256.convert(utf8.encode('hibiki')).bytes,
   );
@@ -130,68 +136,26 @@ class SyncObfuscator {
         return rotated.buffer.asUint64List();
       });
 
-  /// 正文偏移 [bodyOffset] 起的一段字节与 keystream XOR（混淆 = 还原）。
-  static Uint8List _xor(List<int> bytes, int bodyOffset) =>
-      FushiComputeCrypto.instance.syncXor(bytes, bodyOffset);
+  // ── 文件 API（content / 大文件 / 资产包，整段在 Rust） ─────────────────
 
-  // ── 流式 API（content / 大文件 / 资产包） ─────────────────────────────
-
-  /// 流式混淆：先发 [magicHeader]，再对每个分块逐字节 XOR（维护全局偏移）。
-  ///
-  /// 全局偏移与分块边界无关，所以反混淆端可用**任意**分块还原。
-  static Stream<List<int>> obfuscateStream(Stream<List<int>> source) async* {
-    yield Uint8List.fromList(magicHeader);
-    var offset = 0;
-    await for (final chunk in source) {
-      final out = _xor(chunk, offset);
-      offset += chunk.length;
-      yield out;
-    }
+  /// 把 [source] 混淆写到 [destination]（`magicHeader + XOR(source)`，创建或截断）。
+  /// 读、XOR、写都在 Rust 里流式完成，在后台 isolate 跑，不占调用方 isolate。
+  /// 读写失败抛 [FileSystemException]。
+  static Future<void> obfuscateFile(File source, File destination) {
+    final String src = source.path;
+    final String dst = destination.path;
+    return Isolate.run(
+      () => FushiComputeCrypto.instance.syncObfuscateFile(src, dst),
+    );
   }
 
-  /// 流式反混淆：缓冲前 [magicHeaderLength] 字节判定 header。
-  ///
-  /// - 带魔数：丢弃 header，对其后字节按全局偏移 XOR 还原。
-  /// - 无魔数（旧明文 / 短于 header）：**原样透传**全部字节（混读向后兼容）。
-  static Stream<List<int>> deobfuscateStream(Stream<List<int>> source) async* {
-    final head = BytesBuilder(copy: false);
-    var headerDecided = false;
-    var obfuscated = false;
-    var offset = 0;
-
-    Uint8List xorBody(List<int> bytes) {
-      final out = _xor(bytes, offset);
-      offset += bytes.length;
-      return out;
-    }
-
-    await for (final chunk in source) {
-      if (headerDecided) {
-        // header 已判定，按既定模式处理后续分块。
-        yield obfuscated ? xorBody(chunk) : Uint8List.fromList(chunk);
-        continue;
-      }
-      head.add(chunk);
-      if (head.length < magicHeaderLength) {
-        continue; // 还凑不齐 header，继续缓冲。
-      }
-      final buffered = head.toBytes();
-      headerDecided = true;
-      if (hasMagicHeader(buffered)) {
-        obfuscated = true;
-        final body = buffered.sublist(magicHeaderLength);
-        if (body.isNotEmpty) yield xorBody(body);
-      } else {
-        // 旧明文：把缓冲的全部字节原样吐出。
-        obfuscated = false;
-        yield buffered;
-      }
-    }
-
-    // 流结束但 header 始终没凑齐（数据短于 header）：必是旧明文，原样透传。
-    if (!headerDecided) {
-      final buffered = head.toBytes();
-      if (buffered.isNotEmpty) yield buffered;
-    }
+  /// 把 [source] 还原到 [destination]（创建或截断）：带魔数则去头 XOR，**无魔数（旧明文 /
+  /// 短于 header）原样复制**（混读向后兼容）。其余同 [obfuscateFile]。
+  static Future<void> deobfuscateFile(File source, File destination) {
+    final String src = source.path;
+    final String dst = destination.path;
+    return Isolate.run(
+      () => FushiComputeCrypto.instance.syncDeobfuscateFile(src, dst),
+    );
   }
 }

@@ -29,11 +29,11 @@ grep -rhoE --include='*.dart' "'ffc_[a-z0-9_]+'" "$BINDINGS_DIR" | tr -d "'" | s
 expected_count="$(wc -l < "$work/expected.txt" | tr -d ' ')"
 echo "ffc_* symbols looked up by the Dart bindings: $expected_count"
 # 扫描规模哨兵：正则被绑定文件的格式改写打断时，期望集会塌成 0 条，「全都导出了」恒真。
-# 下界是「已知必有」的符号数（当前 21：ffc_abi_version、ffc_free_bytes、9 个 ffc_hash_* 与 10 个 ffc_crypto_*）；新增域符号
+# 下界是「已知必有」的符号数（当前 22：ffc_abi_version、ffc_free_bytes、9 个 ffc_hash_* 与 11 个 ffc_crypto_*）；新增域符号
 # 会自动进期望集、不必改这里，但下界应随之调高，免得某个域的绑定整体漏扫还判通过。
 # 真删符号是破坏性 ABI 变更（ffc_abi_version 同时要升），应当同时改这里。
-if [[ "$expected_count" -lt 21 ]]; then
-  echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 ffc_* 名（<21），正则失效或绑定被大改，不能当通过。" >&2
+if [[ "$expected_count" -lt 22 ]]; then
+  echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 ffc_* 名（<22），正则失效或绑定被大改，不能当通过。" >&2
   exit 1
 fi
 

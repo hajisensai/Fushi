@@ -1,5 +1,5 @@
-// SyncObfuscator 的 XOR 搬进 native/fushi_compute 后，整块 / 流式 / Range 随机访问三条路径的
-// 产物与删除前的 Dart 实现逐字节一致——已同步到云端的文件必须照常解开。向量由旧实现生成：
+// SyncObfuscator 的文件 → 文件路径搬进 native/fushi_compute、内存路径（整块 / Range）留 Dart 后，
+// 三条路径的产物都与删除前的 Dart 实现逐字节一致——已同步到云端的文件必须照常解开。向量由旧实现生成：
 // packages/fushi_compute/test/crypto/crypto_vectors_v2.json（sync_obfuscator 段）。
 import 'dart:convert';
 import 'dart:io';
@@ -24,22 +24,18 @@ Uint8List _pseudoRandomBytes(int length, int seed) {
 
 String _sha(List<int> b) => sha256.convert(b).toString();
 
-Future<Uint8List> _collect(Stream<List<int>> s) async {
-  final BytesBuilder b = BytesBuilder(copy: false);
-  await for (final List<int> chunk in s) {
-    b.add(chunk);
-  }
-  return b.takeBytes();
-}
-
-Stream<List<int>> _chunked(Uint8List data, List<int> sizes) async* {
-  int offset = 0;
-  int i = 0;
-  while (offset < data.length) {
-    final int size = sizes[i++ % sizes.length];
-    final int end = offset + size > data.length ? data.length : offset + size;
-    yield Uint8List.sublistView(data, offset, end);
-    offset = end;
+Future<Uint8List> _viaFiles(
+  List<int> data,
+  Future<void> Function(File source, File destination) op,
+) async {
+  final Directory dir = await Directory.systemTemp.createTemp('sync_obf_vec_');
+  try {
+    final File src = File('${dir.path}/in')..writeAsBytesSync(data);
+    final File dst = File('${dir.path}/out');
+    await op(src, dst);
+    return dst.readAsBytesSync();
+  } finally {
+    await dir.delete(recursive: true);
   }
 }
 
@@ -64,24 +60,14 @@ void main() {
     expect(SyncObfuscator.deobfuscateBytes(obf), data);
   });
 
-  test('obfuscateStream (any chunking) matches the old bytes', () async {
-    for (final List<int> sizes in const <List<int>>[
-      <int>[1, 7, 8, 31, 33],
-      <int>[65536],
-      <int>[5, 4096, 3],
-    ]) {
-      final Uint8List obf = await _collect(
-        SyncObfuscator.obfuscateStream(_chunked(data, sizes)),
-      );
-      expect(_sha(obf), v['obfuscated_sha256'], reason: '$sizes');
-      final Uint8List back = await _collect(
-        SyncObfuscator.deobfuscateStream(
-          _chunked(obf, sizes.reversed.toList()),
-        ),
-      );
-      expect(back, data, reason: '$sizes');
-    }
-  });
+  test(
+    'obfuscateFile / deobfuscateFile (native) match the old bytes',
+    () async {
+      final Uint8List obf = await _viaFiles(data, SyncObfuscator.obfuscateFile);
+      expect(_sha(obf), v['obfuscated_sha256']);
+      expect(await _viaFiles(obf, SyncObfuscator.deobfuscateFile), data);
+    },
+  );
 
   test('deobfuscateBodyAt matches the old bytes at arbitrary offsets', () {
     final Uint8List obf = SyncObfuscator.obfuscateBytes(data);
