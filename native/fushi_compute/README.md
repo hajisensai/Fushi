@@ -113,6 +113,21 @@ pointycastle / basic_utils（pointycastle 仍经 dartssh2 等第三方包间接�
 `RUSTFLAGS` / `CARGO_ENCODED_RUSTFLAGS` 环境变量时会**整个忽略**配置里的 rustflags，那时要在变量里
 自己带 `--cfg aes_armv8`。
 
+基准（XOR 与 ECDSA，2026-10-19，i5-12600KF / Windows 11，AOT；旧实现从删除前的代码原样拷进仓库外的
+临时脚本，pointycastle 3.9.1；本机同时有其它会话占 CPU，数字有噪声）：
+
+| 场景 | 旧（Dart） | 新（Rust，含 FFI 拷入拷出） |
+|---|---|---|
+| 同步 XOR 整块 / 流式路径（旧为逐字节循环），64 KiB～8 MiB 分块 | 150～196 MB/s | 390～750 MB/s（2.5～4×） |
+| 同步 XOR Range 路径（旧为 64 位字长循环），同上 | 570～980 MB/s | 同上，**大致持平到 0.6×** |
+| ECDSA 签名（RFC 6979） | 22.7 ms | 0.92 ms（25×） |
+| ECDSA 验签 | 40.2 ms | 0.89 ms（45×） |
+| 私钥 → 公钥点 | 25.4 ms | 0.47 ms（54×） |
+
+XOR 是纯内存带宽操作：Rust 内核本身远快于 Dart，但 FFI 必须把数据拷进原生暂存区再拷回 Dart 堆，
+比旧 Range 路径（拷一次 + 原地字长 XOR）多一趟内存，所以在流播 Range 路径上没有提速、大分块时略慢。
+同一份脚本核对了签名与旧实现逐字节相同。
+
 ## 构建
 
 | 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-18 实测） |
