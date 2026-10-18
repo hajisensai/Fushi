@@ -199,8 +199,10 @@ typedef _PngToJpegDart =
 /// `package:image` `PixelUint8` 的 r/g/b/a 读法（见 image.rs）。
 ///
 /// 输入经 malloc 拷进原生内存（不用 leaf 调用直接传 Dart 堆指针：几十毫秒的 leaf 调用会
-/// 挡住整个 isolate group 的 GC 安全点）；输出缓冲由原生内存承载、挂 finalizer 交给 Dart，
-/// 不再拷回。
+/// 挡住整个 isolate group 的 GC 安全点）；输出写进 malloc 缓冲后拷回 Dart 堆再释放。
+/// 不把原生内存挂 finalizer 直接交出去：这些函数大多跑在 `Isolate.run` 里，结果经
+/// `Isolate.exit` 原样移交给调用方 isolate，而工作 isolate 退出时会跑掉它名下的 finalizer，
+/// 调用方拿到的就是已释放的内存（实测：同一张字幕位图每次合成出的内容指纹都不同）。
 class FushiComputeImage {
   FushiComputeImage._(FushiCompute lib)
     : _resize = lib.library.lookupFunction<_ResizeC, _ResizeDart>(
@@ -280,13 +282,18 @@ class FushiComputeImage {
     return ptr;
   }
 
-  /// 原生内存承载的输出缓冲：指针给原生写，列表交给 Dart（GC 时 finalizer 释放）。
-  static ({Pointer<Uint8> ptr, Uint8List list}) _ownedBytes(int length) {
-    final Pointer<Uint8> ptr = malloc<Uint8>(length);
-    return (
-      ptr: ptr,
-      list: ptr.asTypedList(length, finalizer: malloc.nativeFree),
-    );
+  /// 跑 [call] 往一块 [length] 字节的原生缓冲里写，结果拷回 Dart 堆（见类注释）。
+  static Uint8List _intoDart(
+    int length,
+    void Function(Pointer<Uint8> out) call,
+  ) {
+    final Pointer<Uint8> ptr = malloc<Uint8>(length == 0 ? 1 : length);
+    try {
+      call(ptr);
+      return Uint8List.fromList(ptr.asTypedList(length));
+    } finally {
+      malloc.free(ptr);
+    }
   }
 
   static void _checkPixels(
@@ -331,9 +338,7 @@ class FushiComputeImage {
     if (dstWidth <= 0 || dstHeight <= 0) {
       throw ArgumentError('invalid target size ${dstWidth}x$dstHeight');
     }
-    final ({Pointer<Uint8> ptr, Uint8List list}) out = _ownedBytes(
-      dstWidth * dstHeight * channels,
-    );
+    final int outLen = dstWidth * dstHeight * channels;
     if (interpolation == FfcInterpolation.nearest &&
         dstHeight < cropHeight &&
         channels != 2) {
@@ -351,53 +356,57 @@ class FushiComputeImage {
               (cropY + (y * dy).toInt()) * stride + cropX * channels;
           view.setRange(y * rowBytes, (y + 1) * rowBytes, pixels, start);
         }
-        _check(
-          'ffc_image_resize',
-          _resize(
-            rows,
-            view.length,
-            rowBytes,
-            channels,
-            0,
-            0,
-            cropWidth,
-            dstHeight,
-            out.ptr,
-            out.list.length,
-            dstWidth,
-            dstHeight,
-            interpolation.code,
+        return _intoDart(
+          outLen,
+          (Pointer<Uint8> out) => _check(
+            'ffc_image_resize',
+            _resize(
+              rows,
+              view.length,
+              rowBytes,
+              channels,
+              0,
+              0,
+              cropWidth,
+              dstHeight,
+              out,
+              outLen,
+              dstWidth,
+              dstHeight,
+              interpolation.code,
+            ),
           ),
         );
       } finally {
         malloc.free(rows);
       }
-      return out.list;
     }
     final Pointer<Uint8> src = _copyIn(pixels);
     try {
-      _check(
-        'ffc_image_resize',
-        _resize(
-          src,
-          pixels.length,
-          stride,
-          channels,
-          cropX,
-          cropY,
-          cropWidth,
-          cropHeight,
-          out.ptr,
-          out.list.length,
-          dstWidth,
-          dstHeight,
-          interpolation.code,
+      return _intoDart(
+        outLen,
+        (Pointer<Uint8> out) => _check(
+          'ffc_image_resize',
+          _resize(
+            src,
+            pixels.length,
+            stride,
+            channels,
+            cropX,
+            cropY,
+            cropWidth,
+            cropHeight,
+            out,
+            outLen,
+            dstWidth,
+            dstHeight,
+            interpolation.code,
+          ),
         ),
       );
     } finally {
       malloc.free(src);
     }
-    return out.list;
   }
 
   /// 缩放后转 CHW float32 模型输入：`out[c][y][x] = (v / 255 - mean[c]) / std[c]`，
@@ -440,7 +449,6 @@ class FushiComputeImage {
     }
     final int n = 3 * chh * pw;
     final Pointer<Float> outPtr = malloc<Float>(n);
-    final Float32List out = outPtr.asTypedList(n, finalizer: malloc.nativeFree);
     final Pointer<Uint8> src = _copyIn(pixels);
     final Pointer<Double> norm = malloc<Double>(6);
     try {
@@ -474,11 +482,12 @@ class FushiComputeImage {
           n,
         ),
       );
+      return Float32List.fromList(outPtr.asTypedList(n));
     } finally {
       malloc.free(src);
       malloc.free(norm);
+      malloc.free(outPtr);
     }
-    return out;
   }
 
   /// 行紧排的 3 / 4 通道像素 → RGBA8888（3 通道补 a = 255）。
@@ -487,27 +496,19 @@ class FushiComputeImage {
       throw ArgumentError.value(channels, 'channels', 'must be 3 or 4');
     }
     _checkPixels(pixels, width * channels, channels, 0, 0, width, height);
-    final ({Pointer<Uint8> ptr, Uint8List list}) out = _ownedBytes(
-      width * height * 4,
-    );
+    final int outLen = width * height * 4;
     final Pointer<Uint8> src = _copyIn(pixels);
     try {
-      _check(
-        'ffc_image_to_rgba8',
-        _toRgba(
-          src,
-          pixels.length,
-          channels,
-          width,
-          height,
-          out.ptr,
-          out.list.length,
+      return _intoDart(
+        outLen,
+        (Pointer<Uint8> out) => _check(
+          'ffc_image_to_rgba8',
+          _toRgba(src, pixels.length, channels, width, height, out, outLen),
         ),
       );
     } finally {
       malloc.free(src);
     }
-    return out.list;
   }
 
   /// 就地给 RGBA8888 缓冲 [rgba] 打码。[rects] 每项是已夹进图像的像素范围

@@ -103,6 +103,9 @@ typedef _ComposeDart =
 /// 位图字幕的 DVB 像素串（测量 / 区域渲染，`ffc_image_dvb_*`）与黑底合成
 /// （`ffc_image_compose_indexed`）。只有原生这一份实现；库或符号缺失抛
 /// [FushiComputeUnavailableError]。PGS / VobSub 的 RLE 解码实测搬过来不到 2 倍，留在 Dart。
+///
+/// 输出写进 arena 缓冲后拷回 Dart 堆：渲染跑在 `Isolate.run` 里、结果经 `Isolate.exit`
+/// 移交，挂 finalizer 的原生内存会在工作 isolate 退出时被释放（见 `FushiComputeImage`）。
 class FushiComputeBitmapSubtitle {
   FushiComputeBitmapSubtitle._(FushiCompute lib)
     : _dvbSize = lib.library.lookupFunction<_DvbSizeC, _DvbSizeDart>(
@@ -159,15 +162,6 @@ class FushiComputeBitmapSubtitle {
     return ptr;
   }
 
-  /// 原生内存承载、GC 时释放的输出缓冲（不清零：内核会整块写满）。
-  static ({Pointer<Uint8> ptr, Uint8List list}) _owned(int length) {
-    final Pointer<Uint8> ptr = malloc<Uint8>(length == 0 ? 1 : length);
-    return (
-      ptr: ptr,
-      list: ptr.asTypedList(length, finalizer: malloc.nativeFree),
-    );
-  }
-
   /// DVB 对象两场像素串实际覆盖的宽高。
   ({int width, int height}) dvbObjectSize(Uint8List top, Uint8List? bottom) =>
       using((Arena arena) {
@@ -196,8 +190,9 @@ class FushiComputeBitmapSubtitle {
     if (width < 0 || height < 0) {
       throw ArgumentError('invalid region ${width}x$height');
     }
-    final ({Pointer<Uint8> ptr, Uint8List list}) out = _owned(width * height);
-    using((Arena arena) {
+    final int outLen = width * height;
+    return using((Arena arena) {
+      final Pointer<Uint8> out = arena<Uint8>(outLen == 0 ? 1 : outLen);
       final Pointer<_DvbObject> objs = arena<_DvbObject>(
         objects.isEmpty ? 1 : objects.length,
       );
@@ -221,12 +216,13 @@ class FushiComputeBitmapSubtitle {
           background,
           objs,
           objects.length,
-          out.ptr,
-          out.list.length,
+          out,
+          outLen,
         ),
       );
+      // 拷回 Dart 堆：原生内存不挂 finalizer 交出（见类注释）。
+      return Uint8List.fromList(out.asTypedList(outLen));
     });
-    return out.list;
   }
 
   /// 把 [layers] 合成到 [canvasWidth] × [canvasHeight]、原点在 ([originX], [originY])
@@ -241,10 +237,9 @@ class FushiComputeBitmapSubtitle {
     if (canvasWidth <= 0 || canvasHeight <= 0) {
       throw ArgumentError('invalid canvas ${canvasWidth}x$canvasHeight');
     }
-    final ({Pointer<Uint8> ptr, Uint8List list}) out = _owned(
-      canvasWidth * canvasHeight * 4,
-    );
-    using((Arena arena) {
+    final int outLen = canvasWidth * canvasHeight * 4;
+    return using((Arena arena) {
+      final Pointer<Uint8> out = arena<Uint8>(outLen);
       final Pointer<_Layer> ls = arena<_Layer>(
         layers.isEmpty ? 1 : layers.length,
       );
@@ -276,11 +271,12 @@ class FushiComputeBitmapSubtitle {
           originY,
           canvasWidth,
           canvasHeight,
-          out.ptr,
-          out.list.length,
+          out,
+          outLen,
         ),
       );
+      // 拷回 Dart 堆：原生内存不挂 finalizer 交出（见类注释）。
+      return Uint8List.fromList(out.asTypedList(outLen));
     });
-    return out.list;
   }
 }
