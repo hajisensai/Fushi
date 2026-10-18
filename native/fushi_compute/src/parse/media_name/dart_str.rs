@@ -42,30 +42,12 @@ pub fn trim_right(s: &[u16]) -> &[u16] {
     &s[..end]
 }
 
-/// Dart `toLowerCase()`（VM 实现，实测逐码点 1:1、不改长度、无 Final_Sigma 上下文：
-/// U+0130 → `i`、U+212A → `k`）。只用于与常量表 / ASCII 正则比较，结果从不进输出。
-/// 合法代理对按码点映射；孤立代理原样保留。
+/// Dart `toLowerCase()`：crate 共用的冻结表（[crate::parse::dart_lower]；逐码点 1:1、不改长度、
+/// 无 Final_Sigma 上下文：U+0130 → `i`、U+212A → `k`；孤立代理原样）。只用于与常量表 / ASCII
+/// 正则比较，结果从不进输出。
+#[inline]
 pub fn to_lower(s: &[u16]) -> Vec<u16> {
-    let mut out = Vec::with_capacity(s.len());
-    for decoded in char::decode_utf16(s.iter().copied()) {
-        match decoded {
-            Ok(c) => {
-                let mapped = if c == '\u{130}' {
-                    'i'
-                } else {
-                    let mut lower = c.to_lowercase();
-                    match (lower.next(), lower.next()) {
-                        (Some(single), None) => single,
-                        _ => c,
-                    }
-                };
-                let mut buf = [0u16; 2];
-                out.extend_from_slice(mapped.encode_utf16(&mut buf));
-            }
-            Err(e) => out.push(e.unpaired_surrogate()),
-        }
-    }
-    out
+    crate::parse::dart_lower::dart_lower_utf16(s)
 }
 
 /// Dart `contains(String)`（空 needle 恒真）。

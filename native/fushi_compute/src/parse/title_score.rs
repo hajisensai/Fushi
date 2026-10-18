@@ -17,9 +17,12 @@ use std::sync::OnceLock;
 
 use crate::{guard, hand_over_bytes, status};
 
+// 生成文件按生成器原样入库（`--check` 逐字比对），不让 rustfmt 重排。
+#[rustfmt::skip]
 mod title_tables;
 
-use title_tables::{DECORATION, LOWER, TRAD_TO_SIMP, WORD_RANGES, WS_REGEX, WS_TRIM};
+use super::dart_lower::dart_lower_code_point;
+use title_tables::{DECORATION, TRAD_TO_SIMP, WORD_RANGES, WS_REGEX, WS_TRIM};
 
 const F_DECORATION: u8 = 1;
 const F_WS_REGEX: u8 = 2;
@@ -29,8 +32,6 @@ const F_WORD: u8 = 8;
 struct BmpTables {
     /// 繁→简（恒等映射为默认）。
     simplify: Box<[u16]>,
-    /// 小写（BMP 内的码点 → 小写码点，可能落到补充平面）。
-    lower: Box<[u32]>,
     flags: Box<[u8]>,
 }
 
@@ -39,15 +40,8 @@ fn bmp() -> &'static BmpTables {
     TABLES.get_or_init(|| {
         // 堆上建表（Dart isolate 线程的栈不保证放得下 256 KiB 的数组临时量）。
         let mut simplify: Vec<u16> = (0..0x10000u32).map(|u| u as u16).collect();
-        let mut lower: Vec<u32> = (0..0x10000u32).collect();
         for &(from, to) in TRAD_TO_SIMP.iter() {
             simplify[from as usize] = to;
-        }
-        for &(from, to) in LOWER.iter() {
-            if from > 0xFFFF {
-                break;
-            }
-            lower[from as usize] = to;
         }
         let mut flags: Vec<u8> = vec![0u8; 0x10000];
         for &u in DECORATION.iter() {
@@ -69,7 +63,6 @@ fn bmp() -> &'static BmpTables {
         }
         BmpTables {
             simplify: simplify.into_boxed_slice(),
-            lower: lower.into_boxed_slice(),
             flags: flags.into_boxed_slice(),
         }
     })
@@ -89,15 +82,10 @@ fn search_ranges(ranges: &[(u32, u32)], cp: u32) -> bool {
         .is_ok()
 }
 
-/// Dart `String.toLowerCase` 对单个码点的结果（生成表实测全是 1:1、上下文无关）。
+/// Dart `String.toLowerCase` 对单个码点的结果（crate 共用的冻结表，1:1、上下文无关）。
+#[inline]
 pub fn dart_lower(cp: u32) -> u32 {
-    if cp <= 0xFFFF {
-        return bmp().lower[cp as usize];
-    }
-    match LOWER.binary_search_by(|&(from, _)| from.cmp(&cp)) {
-        Ok(index) => LOWER[index].1,
-        Err(_) => cp,
-    }
+    dart_lower_code_point(cp)
 }
 
 /// Dart `trim()` 的空白（码元）。
@@ -945,9 +933,6 @@ mod tests {
         }
         for &c in DECORATION.iter() {
             h = fnv(h, c.into());
-        }
-        for &(a, b) in LOWER.iter() {
-            h = fnv(fnv(h, a), b);
         }
         for &c in WS_REGEX.iter() {
             h = fnv(h, c.into());

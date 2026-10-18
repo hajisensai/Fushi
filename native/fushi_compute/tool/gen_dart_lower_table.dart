@@ -1,5 +1,7 @@
-// 生成 native/fushi_compute/src/parse/anki_media/dart_lower_table.rs：Dart `String.toLowerCase`
-// 的逐码点映射表（Anki 媒体引用扫描 `ffc_parse_anki_*` 的大小写折叠口径）。
+// 生成 native/fushi_compute/src/parse/dart_lower/table.rs：Dart `String.toLowerCase` 的逐码点
+// 映射表。这是 crate 里**唯一**的 toLowerCase 口径（`src/parse/dart_lower.rs`），Anki 媒体引用
+// 扫描、字幕、标题打分 / AniDB 目录、媒体文件名、弹幕、EPUB、html5lib 都经它折叠；别的生成器
+// 不再各自导出小写表。
 //
 // 用法（仓库根）：
 //   dart native/fushi_compute/tool/gen_dart_lower_table.dart          重新生成
@@ -7,16 +9,19 @@
 //
 // 为什么不用 Rust 的 `to_lowercase`：Dart VM 的 toLowerCase 是**逐码点的简单映射**（不看上下文：
 // 词尾 Σ 照样折成 σ；U+0130 折成单个 `i`，长度不变），Rust 的 `str::to_lowercase` 是完整映射
-// （U+0130 → `i` + U+0307、词尾 σ → ς），Unicode 版本也未必相同。旧 Dart 实现
-// （`MediaNameMatcher`，packages/fushi_anki/lib/src/anki_media_dedup.dart）在折叠后的码元下标上
+// （U+0130 → `i` + U+0307、词尾 σ → ς），Unicode 版本也比 Dart VM 的表新（Rust 1.96 下有 465 个
+// 码点 Dart 原样保留、Rust 会折叠）。旧 Dart 实现（如 `MediaNameMatcher`）在折叠后的码元下标上
 // 切子串查表，口径必须逐码点一致，所以直接冻结运行本脚本的 Dart SDK 的映射。
+//
+// 换 SDK 后先跑 `--check`：不一致说明 Dart 的大小写表变了，重生成会改变所有消费方的口径
+// （匹配 / 归一化 / 去重结果），没打算改口径就别重生成。2026-10-19 在 Dart 3.13.5
+// （Flutter 3.47.6）下 `--check` 与入库表一致。
 //
 // 表的不变式（脚本断言）：每个码点折成恰好一个码点，且 BMP 内外不交叉（UTF-16 长度不变）。
 // 孤立代理码元不在表里，原样保留（与 Dart 一致）。
 import 'dart:io';
 
-const String _outPath =
-    'native/fushi_compute/src/parse/anki_media/dart_lower_table.rs';
+const String _outPath = 'native/fushi_compute/src/parse/dart_lower/table.rs';
 
 void main(List<String> args) {
   final bool check = args.contains('--check');

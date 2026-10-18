@@ -7,10 +7,9 @@
 //   dart native/fushi_compute/tool/gen_title_tables.dart --check  只比对，不一致退出 1
 //
 // **繁简映射与装饰符号只在这里定义一次**（运行时只有 Rust 查表）。其余几张表是把 Dart
-// 运行时语义（`String.toLowerCase`、`RegExp(r'\s')`、`String.trim()`、原 Dart 实现里的
-// `_isWordChar`）逐码点冻结下来，让 Rust 侧与原 Dart 实现逐位一致：
-//   - LOWER：`String.fromCharCode(cp).toLowerCase()` 与原值不同的码点（实测全是 1:1、
-//     与上下文无关——整串小写 == 逐码点小写，含希腊文 Σ）。
+// 运行时语义（`RegExp(r'\s')`、`String.trim()`、原 Dart 实现里的 `_isWordChar`）逐码点
+// 冻结下来，让 Rust 侧与原 Dart 实现逐位一致（`String.toLowerCase` 用 crate 共用的
+// `src/parse/dart_lower.rs`，表由 tool/gen_dart_lower_table.dart 生成，这里不再另导一份）：
 //   - WS_REGEX / WS_TRIM：非 unicode 模式 `\s` 与 `trim()` 的空白集合（二者差一个 U+0085）。
 //   - WORD_RANGES：分词的「字母/数字」判定（ASCII 字母数字、罗马数字区、CJK，以及
 //     `toLowerCase() != toUpperCase() || \p{L}|\p{N}` 的其它码点）。
@@ -701,27 +700,6 @@ String _render() {
   for (final int c in decoration) {
     out.writeln('    ${_hex(c)},');
     digest = _fnv(digest, c);
-  }
-  out
-    ..writeln('];')
-    ..writeln();
-
-  final List<MapEntry<int, int>> lower = <MapEntry<int, int>>[];
-  for (int cp = 0; cp <= 0x10FFFF; cp++) {
-    final String s = String.fromCharCode(cp);
-    final String l = s.toLowerCase();
-    if (l == s) continue;
-    final List<int> runes = l.runes.toList();
-    if (runes.length != 1) {
-      throw StateError('toLowerCase(U+${cp.toRadixString(16)}) is not 1:1');
-    }
-    lower.add(MapEntry<int, int>(cp, runes.single));
-  }
-  out.writeln('/// `String.toLowerCase` 会改变的码点 → 小写码点（按键升序）。');
-  out.writeln('pub(super) static LOWER: [(u32, u32); ${lower.length}] = [');
-  for (final MapEntry<int, int> e in lower) {
-    out.writeln('    (${_hex(e.key)}, ${_hex(e.value)}),');
-    digest = _fnv(_fnv(digest, e.key), e.value);
   }
   out
     ..writeln('];')

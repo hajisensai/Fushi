@@ -20,6 +20,7 @@ pub mod anidb;
 pub mod anki_media;
 pub mod bencode;
 pub mod danmaku;
+pub mod dart_lower;
 pub mod epub;
 pub mod fold;
 pub mod fribb;
