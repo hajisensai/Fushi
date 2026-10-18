@@ -1836,6 +1836,18 @@ namespace flutter_inappwebview_plugin
     failedLog(webViewController->put_Bounds(bounds));
   }
 
+  bool InAppWebView::setWindowedInputEnabled(bool enabled)
+  {
+    HWND child = nullptr;
+    if (surface_ || !webViewController ||
+      !succeededOrLog(webViewController->get_ParentWindow(&child)) || !child) {
+      return false;
+    }
+    // 禁用的子窗口不参与命中测试，整棵子树（含 WebView2 浏览器进程建的 HWND）一起跳过。
+    ::EnableWindow(child, enabled ? TRUE : FALSE);
+    return true;
+  }
+
   void InAppWebView::setSurfaceSize(size_t width, size_t height,
     float capture_scale_factor, float device_scale_factor)
   {

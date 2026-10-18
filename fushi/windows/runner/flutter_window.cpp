@@ -4447,6 +4447,17 @@ void FlutterWindow::RegisterHdrOutputChannel() {
               enabled, static_cast<float>(sdr_white_nits))));
           return;
         }
+        if (method == "underlayCompositionSupported") {
+          result->Success(flutter::EncodableValue(
+              ResolveViewSetUnderlayComposition() != nullptr));
+          return;
+        }
+        if (method == "setUnderlayComposition") {
+          const bool* enabled = std::get_if<bool>(call.arguments());
+          result->Success(flutter::EncodableValue(
+              SetUnderlayComposition(enabled != nullptr && *enabled)));
+          return;
+        }
         result->NotImplemented();
       });
 }
@@ -4481,6 +4492,40 @@ bool FlutterWindow::SetCompositorHdrOutput(bool enabled,
       view != nullptr && set_hdr_output(view, enabled, sdr_white_nits);
   compositor_hdr_output_on_ = enabled && on;
   return on;
+}
+
+// Underlay composition (ci/patches/flutter-engine): Flutter presents through a
+// topmost DComp visual, so a windowed WebView2 child of the view (hardware
+// PlayReady) shows through transparent pixels under the Flutter UI.
+FlutterWindow::ViewSetUnderlayCompositionFn
+FlutterWindow::ResolveViewSetUnderlayComposition() {
+  static const ViewSetUnderlayCompositionFn fn = [] {
+    HMODULE engine = ::GetModuleHandleW(L"flutter_windows.dll");
+    return engine == nullptr
+               ? nullptr
+               : reinterpret_cast<ViewSetUnderlayCompositionFn>(::GetProcAddress(
+                     engine, "FlutterDesktopViewSetUnderlayComposition"));
+  }();
+  return fn;
+}
+
+bool FlutterWindow::SetUnderlayComposition(bool enabled) {
+  const ViewSetUnderlayCompositionFn set_underlay =
+      ResolveViewSetUnderlayComposition();
+  if (set_underlay == nullptr || !flutter_controller_) {
+    return false;
+  }
+  FlutterDesktopPluginRegistrarRef registrar =
+      flutter_controller_->engine()->GetRegistrarForPlugin(
+          "FushiUnderlayComposition");
+  FlutterDesktopViewRef view =
+      registrar != nullptr ? FlutterDesktopPluginRegistrarGetView(registrar)
+                           : nullptr;
+  if (view == nullptr) {
+    return false;
+  }
+  set_underlay(view, enabled);
+  return true;
 }
 
 void FlutterWindow::RegisterMagpieChannel() {

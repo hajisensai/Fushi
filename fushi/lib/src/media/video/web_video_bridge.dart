@@ -16,7 +16,7 @@ import 'package:fushi/src/media/video/url_stream_video.dart';
 /// mpv 页（由其失败路径提示），导入对话框提示「暂已停用」。页面 / 桥接 / 宿主档代码
 /// 原样保留，翻回 `true` 即恢复；[isWebVideoPlayerEligible] 仍独立成立，守卫测试
 /// 继续钉住平台 / 站点判据不漂移。
-const bool kWebVideoPlayerEnabled = false;
+const bool kWebVideoPlayerEnabled = true;
 
 /// 一本流媒体书**按平台与站点判据**是否够格进内置网页播放器（不含总开关）。
 ///

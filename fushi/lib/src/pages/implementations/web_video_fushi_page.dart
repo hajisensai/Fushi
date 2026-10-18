@@ -32,6 +32,7 @@ import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
+import 'package:fushi/src/media/video/underlay_composition.dart';
 import 'package:fushi/src/media/video/web_video_shaders.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
@@ -292,6 +293,17 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   WebVideoHosting _hosting = WebVideoHosting.builtin;
   bool get _windowed => _hosting == WebVideoHosting.windowed;
 
+  /// 底层合成已开（underlay_composition.dart）：窗口宿主档的 WebView2 垫在 Flutter 下面，
+  /// Flutter 字幕层 / 弹窗查词 / 控件照常画在画面上；只剩画面帧捕获不到（制卡仍入队）。
+  bool _underlay = false;
+
+  /// 只能走页面 DOM 字幕层 + 顶层查词窗口：窗口宿主档且引擎不支持底层合成。
+  bool get _domOverlay => _windowed && !_underlay;
+
+  /// 底层合成下 WebView2 子窗口当前是否收输入：有视频在播交给 Flutter（关），
+  /// 登录 / 选人等站点页面留给 WebView（开）。null = 还没同步过。
+  bool? _webInputEnabled;
+
   /// 软件 DRM 垫片只在可捕获的内置档有意义；窗口宿主档就是为硬件 DRM 开的。
   bool get _softwareDrm => widget.softwareDrm && !_windowed;
 
@@ -518,6 +530,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       return true;
     }());
     _mineStopRequested = true;
+    if (_underlay) unawaited(releaseUnderlayComposition());
     if (_ownsGlobalLookupOnHidden &&
         identical(
           GlobalLookupController.instance.onHidden,
@@ -570,6 +583,14 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _appModel.prefsRepo.getPref(kWebVideoShaderTierPrefKey),
     );
     if (_windowed) {
+      _underlay = await acquireUnderlayComposition();
+      if (!mounted) {
+        // dispose 已在 await 期间跑过（那时 _underlay 还是 false），这份由这里归还。
+        if (_underlay) unawaited(releaseUnderlayComposition());
+        return;
+      }
+    }
+    if (_domOverlay) {
       // TODO-1233 预留的钩子：顶层查词窗口被用户真正关掉 → 恢复因查词暂停的播放
       //（与内置档弹窗关闭时的 BUG-072 语义一致）。dispose 归还原值。
       _prevGlobalLookupOnHidden = GlobalLookupController.instance.onHidden;
@@ -583,7 +604,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       kWebVideoAdaptersAsset,
       kWebVideoProvidersAsset,
       kWebVideoGlueAsset,
-      if (_windowed) kWebVideoDomSubtitlesAsset,
+      if (_domOverlay) kWebVideoDomSubtitlesAsset,
     ];
     final List<String> sources = <String>[];
     for (final String asset in assets) {
@@ -683,7 +704,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final int? pos = _state?.positionMs;
     if (pos != null) _controller.updateCueForPosition(pos);
     // 窗口宿主档：页面 DOM 字幕层从 store 重读同一轨（live 轨边看边长也要跟）。
-    if (_windowed) unawaited(_syncDomSubtitleTrack());
+    if (_domOverlay) unawaited(_syncDomSubtitleTrack());
     if (changed && mounted) setState(() {});
   }
 
@@ -715,7 +736,25 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _fullscreen = state.fullscreen;
       if (mounted) setState(() {});
     }
+    _syncWebInput();
     _maybeAutoRunMineQueue();
+  }
+
+  /// 底层合成：有视频在播时 WebView2 子窗口不收输入（命中测试跳过它，点击 / 滚轮 / 触摸
+  /// 落到上面的 Flutter），站点控制条也藏起来——操作全归 Fushi；没视频（登录、选人、
+  /// 详情页）时还给 WebView。
+  void _syncWebInput() {
+    final Object? viewId = _viewId;
+    if (!_underlay || viewId == null) return;
+    final bool enabled = !(_state?.hasVideo ?? false);
+    if (_webInputEnabled == enabled) return;
+    _webInputEnabled = enabled;
+    unawaited(
+      MethodChannel(
+        '$kWebVideoPlatformViewChannelPrefix$viewId',
+      ).invokeMethod<bool>(kWebVideoSetWindowedInputEnabledMethod, enabled),
+    );
+    if (!enabled) unawaited(_setPlayerChromeHidden(true));
   }
 
   void _onKeyToken(List<dynamic> args) {
@@ -1192,7 +1231,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       positionMs: _controller.positionMs ?? 0,
       delayMs: _controller.miningDelayMs,
     );
-    if (_windowed) {
+    if (_domOverlay) {
       // Flutter 弹窗会被 WebView2 子窗口盖住：列表面板点词也走顶层查词窗口（无屏幕锚点 →
       // 回落光标定位）。
       await GlobalLookupController.instance.lookupText(
@@ -1272,7 +1311,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   /// DOM 字幕层的样式 / 悬停查词 / 延迟 / 显隐一次同步（页面加载完、切换显隐、调轴后）。
   Future<void> _syncDomSubtitles() async {
-    if (!_windowed) return;
+    if (!_domOverlay) return;
     final String font = jsonEncode(_appModel.subtitleFontFamily);
     await _js(
       'window.__fushiDomSubs && ('
@@ -1708,13 +1747,17 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           // 画在 Scaffold 底色上，整页黑底会让它变成黑条（标题按 onSurface 取色，
           // 浅色主题下黑字压黑底看不见）。M3E：顶栏是与原生播放器同一套深色浮动
           // 胶囊，整页黑底，胶囊浮在画面上方的黑带里。
-          backgroundColor: m3e ? Colors.black : cs.surface,
-          appBar: _fullscreen ? null : _buildChromeBar(row: row, cs: cs),
+          // 底层合成：画面区下面不能有任何不透明底色（WebView2 子窗口垫在 Flutter 下面，
+          // 从透明像素处透出）；页底让开，顶栏条自己垫回原底色。
+          backgroundColor: _underlay
+              ? Colors.transparent
+              : (m3e ? Colors.black : cs.surface),
+          appBar: _fullscreen ? null : _buildOpaqueChromeBar(row, cs, m3e),
           body: Row(
             children: <Widget>[
               Expanded(
                 child: ColoredBox(
-                  color: Colors.black,
+                  color: _underlay ? Colors.transparent : Colors.black,
                   child: Stack(
                     children: <Widget>[
                       Positioned.fill(
@@ -1723,7 +1766,16 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                           child: _buildWebView(row, scripts),
                         ),
                       ),
-                      if (!_overlayHidden && !_windowed)
+                      // 底层合成下 WebView 不收输入：点画面 = 播放 / 暂停（字幕层在上，
+                      // 点字仍是查词）。
+                      if (_underlay)
+                        Positioned.fill(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onTap: () => unawaited(_togglePlay()),
+                          ),
+                        ),
+                      if (!_overlayHidden && !_domOverlay)
                         Positioned.fill(
                           child: IgnorePointer(
                             ignoring: _controller.currentCue == null,
@@ -1767,6 +1819,20 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   ///
   /// 胶囊排在画面**上方**的黑带里而不是压在画面上：窗口宿主档的 WebView2 自己绘制，
   /// Flutter 叠层画不到它上面（见 [_windowed]），浮在画面上的胶囊在那一档会被盖住。
+  /// 就绪态的顶栏：底层合成下页底透明，顶栏条垫回原来由页底提供的底色。
+  PreferredSizeWidget _buildOpaqueChromeBar(
+    VideoBookRow row,
+    ColorScheme cs,
+    bool m3e,
+  ) {
+    final PreferredSizeWidget bar = _buildChromeBar(row: row, cs: cs);
+    if (!_underlay) return bar;
+    return PreferredSize(
+      preferredSize: bar.preferredSize,
+      child: ColoredBox(color: m3e ? Colors.black : cs.surface, child: bar),
+    );
+  }
+
   PreferredSizeWidget _buildChromeBar({
     VideoBookRow? row,
     required ColorScheme cs,
@@ -2322,6 +2388,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         _web = controller;
         _viewId = controller.platform.id;
         unawaited(_applyShaderTier());
+        _syncWebInput();
         controller.addJavaScriptHandler(
           handlerName: kWebVideoJsHandler,
           callback: _onJsMessage,
@@ -2338,7 +2405,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         unawaited(_setNativeSubtitlesHidden(_hideNativeSubtitles));
         // BUG-2260：队列换集走 loadUrl 整页重载，上一份文档里的 chrome 隐藏 <style> 随之消失，
         // 之后每张卡都带控制条/分级提示。隐藏态归 Dart 所有，新文档就绪时按 _mineRunning 重挂。
-        unawaited(_setPlayerChromeHidden(_mineRunning));
+        unawaited(_setPlayerChromeHidden(_mineRunning || _underlay));
         unawaited(_js('window.__fushiWebVideo.replayCues()'));
         unawaited(_syncDomSubtitles());
       },
