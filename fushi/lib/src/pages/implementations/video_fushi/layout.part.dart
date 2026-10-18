@@ -655,9 +655,11 @@ extension _VideoLayout on _VideoFushiPageState {
                                   appModel.videoSecondarySubtitleObscureMode ==
                                   VideoSubtitleObscureMode.hide,
                               // 遮蔽态「悬停 / 点击显形」总闸（默认开）：关掉后模糊 /
-                              // 隐藏不再被悬停或点击临时揭开，主 / 副字幕同时生效。
+                              // 隐藏不再被悬停或点击临时揭开。主 / 副字幕分开配置。
                               obscureRevealOnInteraction:
                                   appModel.videoSubtitleObscureReveal,
+                              secondaryObscureRevealOnInteraction:
+                                  appModel.videoSecondarySubtitleObscureReveal,
                               // BUG-2235：查词浮层还开着就算「用户在看」，遮蔽让位到
                               // 关栈为止——否则浮层顶栏「重播本句」一起播，刚让位的
                               // 字幕在重播那几秒又被遮回去（用户正对着浮层核对原句）。

@@ -7891,6 +7891,8 @@
   "video_setting_secondary_delay_follow": "Primärem folgen",
   "video_setting_secondary_subtitle_obscure": "Sekundären Untertitel verbergen",
   "video_setting_secondary_subtitle_obscure_hint": "Den sekundären (Übersetzungs-)Untertitel weichzeichnen oder ausblenden",
+  "video_setting_secondary_subtitle_obscure_reveal": "Secondary: reveal when paused or hovered",
+  "video_setting_secondary_subtitle_obscure_reveal_hint": "Same as the primary subtitle switch, but for the secondary (translation) subtitle. Turn it off to keep the translation obscured even while the primary subtitle is revealed.",
   "video_setting_seek_seconds": "Spulschritt (Sekunden)",
   "video_setting_shortcuts_hint": "Tastatur- und Gamepad-Kurzbefehle des Players anzeigen und anpassen",
   "video_setting_slim_progress_bar": "Schmale Fortschrittsleiste unten",

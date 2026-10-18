@@ -7891,6 +7891,8 @@
   "video_setting_secondary_delay_follow": "Следовать за основными",
   "video_setting_secondary_subtitle_obscure": "Скрыть вторичные субтитры",
   "video_setting_secondary_subtitle_obscure_hint": "Размыть или скрыть вторичные (переводные) субтитры",
+  "video_setting_secondary_subtitle_obscure_reveal": "Secondary: reveal when paused or hovered",
+  "video_setting_secondary_subtitle_obscure_reveal_hint": "Same as the primary subtitle switch, but for the secondary (translation) subtitle. Turn it off to keep the translation obscured even while the primary subtitle is revealed.",
   "video_setting_seek_seconds": "Шаг перемотки (с)",
   "video_setting_shortcuts_hint": "Просмотр и настройка сочетаний клавиш клавиатуры и геймпада для плеера",
   "video_setting_slim_progress_bar": "Тонкая полоса прогресса внизу",

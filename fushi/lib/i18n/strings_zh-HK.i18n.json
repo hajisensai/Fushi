@@ -7891,6 +7891,8 @@
   "video_setting_secondary_delay_follow": "跟隨主字幕",
   "video_setting_secondary_subtitle_obscure": "副字幕遮蔽",
   "video_setting_secondary_subtitle_obscure_hint": "模糊或隱藏副字幕（翻譯參考軌）",
+  "video_setting_secondary_subtitle_obscure_reveal": "Secondary: reveal when paused or hovered",
+  "video_setting_secondary_subtitle_obscure_reveal_hint": "Same as the primary subtitle switch, but for the secondary (translation) subtitle. Turn it off to keep the translation obscured even while the primary subtitle is revealed.",
   "video_setting_seek_seconds": "快進／快退步長（秒）",
   "video_setting_shortcuts_hint": "查看並自訂播放器的鍵盤 / 手掣快捷鍵",
   "video_setting_slim_progress_bar": "底部細進度條",

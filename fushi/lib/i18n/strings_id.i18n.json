@@ -7891,6 +7891,8 @@
   "video_setting_secondary_delay_follow": "Ikuti primer",
   "video_setting_secondary_subtitle_obscure": "Samarkan subtitle sekunder",
   "video_setting_secondary_subtitle_obscure_hint": "Buramkan atau sembunyikan subtitle sekunder (terjemahan)",
+  "video_setting_secondary_subtitle_obscure_reveal": "Secondary: reveal when paused or hovered",
+  "video_setting_secondary_subtitle_obscure_reveal_hint": "Same as the primary subtitle switch, but for the secondary (translation) subtitle. Turn it off to keep the translation obscured even while the primary subtitle is revealed.",
   "video_setting_seek_seconds": "Detik lompatan",
   "video_setting_shortcuts_hint": "Lihat dan sesuaikan pintasan keyboard dan gamepad pemutar",
   "video_setting_slim_progress_bar": "Bilah progres tipis di bawah",
