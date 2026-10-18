@@ -188,7 +188,7 @@ Future<void> openSrsImport(BuildContext context, WidgetRef ref) async {
   await writeSrsImportOptions(prefs, options);
   if (!context.mounted) return;
 
-  // 后台导入（BUG-3520）：排进 app 级队列立即返回，不再用模态进度框挡住页面；进度在牌组
+  // 后台导入（BUG-3522）：排进 app 级队列立即返回，不再用模态进度框挡住页面；进度在牌组
   // 列表顶上的任务条里，完成 / 失败由控制器弹全局提示，牌组列表随之重读。
   final SrsImportTask? task = await startSrsBackgroundImport(
     ref,

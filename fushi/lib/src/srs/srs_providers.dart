@@ -297,7 +297,7 @@ List<SrsDeckSummary> srsVisibleDecks(
 ///
 /// 只读牌组行：同步冲突数是另一个 provider（[srsConflictCountProvider]）。以前两者合在一个
 /// Future 里，新建 / 改名牌组后列表要等冲突扫描（读回并解析全部修改记录）跑完才换成新数据，
-/// 新牌组迟迟不出现（BUG-3519）。
+/// 新牌组迟迟不出现（BUG-3521）。
 final FutureProvider<SrsDeckListData?> srsDeckListProvider =
     FutureProvider<SrsDeckListData?>((Ref ref) async {
       ref.watch(srsRevisionProvider);

@@ -1,4 +1,4 @@
-## BUG-3520 · 复习：Anki 包导入慢且阻塞在模态对话框里，不能后台导入
+## BUG-3522 · 复习：Anki 包导入慢且阻塞在模态对话框里，不能后台导入
 - **报告**：2026-10-18（用户：卡组导入慢，现在可能是同步导入，做成可以后台的）
 - **真实性**：✅ 真 bug。基准 `packages/fushi_engine/test/srs/apkg/srs_apkg_import_bench_test.dart`
   （库开在临时文件上、`createInBackground`，与 app 同一种连接）：修前 1500 条笔记（3000 卡 / 9000 条 revlog）**58.2 s**，
