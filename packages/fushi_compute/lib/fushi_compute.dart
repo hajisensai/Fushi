@@ -2,4 +2,5 @@
 /// 库或该域的符号缺失时对应 API 返回 null，由调用方退回 Dart 实现。
 library;
 
+export 'src/font/fushi_font.dart';
 export 'src/fushi_compute_library.dart';

@@ -11,6 +11,8 @@ license = "GPL-3.0-only"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+# WOFF2 解码用（font.rs）：纯 Rust、BSD-3-Clause / MIT，五端交叉编译不需要 C 工具链。
+brotli-decompressor = "6.1.0"
 
 [profile.release]
 # 计算内核吃 CPU：取 3（不是 fushi_fsrs 的 "z"），体积换速度。

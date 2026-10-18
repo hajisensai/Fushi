@@ -4,7 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:fushi/src/models/woff2_decoder.dart';
+import 'package:fushi_compute/fushi_compute.dart' show FushiFont;
 
 /// [clearVerticalBaselineFlag] 的结果：下发的字节与（WOFF2 解码成 sfnt 时的）新 MIME。
 typedef VerticalBaselineFontResult = ({Uint8List data, String? mime});
@@ -214,7 +214,7 @@ bool _sfntHeadFlagSet(ByteData src, int length, int start) {
   }
   if (tag == _wOF2) {
     // WOFF2 的 head 永远在压缩流里，只能解码后看；没设这一位就原样下发 WOFF2。
-    final Uint8List? sfnt = Woff2Decoder.toSfnt(data);
+    final Uint8List? sfnt = FushiFont.instance.woff2ToSfnt(data);
     if (sfnt == null) return (data: data, mime: null);
     final Uint8List? out = _patchSfnt(sfnt, 0, wholeFontChecksum: true);
     if (out == null) return (data: data, mime: null);

@@ -18,6 +18,11 @@ abstract final class FfcStatus {
   static const int panic = -100;
 }
 
+/// 原生库（或某个域的符号）不可用。原生库是硬依赖，各域 API 遇到它直接抛，不退回 Dart。
+class FushiComputeUnavailableError extends StateError {
+  FushiComputeUnavailableError(super.message);
+}
+
 typedef _AbiVersionC = Int32 Function();
 typedef _AbiVersionDart = int Function();
 typedef _FreeBytesC = Void Function(Pointer<Uint8>, Size);
