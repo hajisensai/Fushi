@@ -462,6 +462,61 @@ void main() {
       );
     });
 
+    test('网页漫画（浏览器上的「用 Fushi 阅读本章」）由 onlineMangaSource 门控，'
+        '通用浏览器本身不过门', () {
+      // 判据只写在 webComicReaderActionAvailable 一处；浏览器页、临时入口与运行时
+      // 适配器都只问它 / 同一道门，不写 Platform.isIOS。
+      final String launch = compactCode(
+        read('lib/src/media/manga/web/web_comic_reader_launch.dart'),
+      );
+      expect(
+        launch,
+        contains(
+          'boolwebComicReaderActionAvailable()=>'
+          'StoreRestrictedCapability.onlineMangaSource.isAvailable;',
+        ),
+      );
+      final String browser = compactCode(
+        read('lib/src/pages/implementations/fushi_web_browser_page.dart'),
+      );
+      expect(
+        browser,
+        contains(
+          'finalWebComicScanDriver?_scanDriver=webComicReaderActionAvailable()'
+          '?WebComicScanDriver():null;',
+        ),
+        reason: '扫图执行器整条只在合规门开时装；「阅读本章」按钮由它是否为 null 决定。',
+      );
+      expect(
+        browser,
+        contains(
+          'final bool canRead = _scanDriver != null'.replaceAll(' ', ''),
+        ),
+      );
+      expect(
+        browser,
+        contains(
+          'presets:webBrowserPresetSites(mangaAvailable:'
+          'webComicReaderActionAvailable(),),',
+        ),
+        reason: 'iOS 上不预置任何漫画站。',
+      );
+      expect(browser, isNot(contains('Platform.isIOS')));
+      expect(
+        compactCode(
+          read('lib/src/media/manga/web/web_comic_runtime_adapter.dart'),
+        ),
+        contains(
+          'boolgetisSupportedOnThisPlatform=>'
+          'StoreRestrictedCapability.onlineMangaSource.isAvailable;',
+        ),
+      );
+      expect(
+        compactCode(read('lib/src/pages/implementations/browse_page.dart')),
+        contains('webComicReaderActionAvailable())FushiIconButton('),
+      );
+    });
+
     test('视频在线源三段（Aniyomi，浏览模块）由 onlineVideoSource 门控', () {
       // 判据只写在 video_online_sources_gate.dart 一处（合规门 + 运行时平台门），
       // 浏览页只问它——这条边界失效是静默的（本地与 CI 全绿、上架才被拒）。
