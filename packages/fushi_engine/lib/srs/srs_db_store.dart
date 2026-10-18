@@ -2656,11 +2656,20 @@ class SrsDbStore implements SrsSyncReplica {
       db.srsNotesCache,
     )..where((n) => n.profileUid.equals(profileUid))).get();
     final List<SrsCardCacheRow> cards = await allCardRows();
+    // 整表一次批量派生（hash53 在 native/fushi_compute 里算）。
+    final List<String> noteIds = <String>[
+      for (final SrsNoteCacheRow n in notes) n.id,
+    ];
+    final List<String> cardIds = <String>[
+      for (final SrsCardCacheRow c in cards) c.id,
+    ];
+    final List<int> noteNums = SrsIds.ankiNumericIds(noteIds);
+    final List<int> cardNums = SrsIds.ankiNumericIds(cardIds);
     _ankiNoteIndex = <int, String>{
-      for (final SrsNoteCacheRow n in notes) SrsIds.ankiNumericId(n.id): n.id,
+      for (int i = 0; i < noteIds.length; i++) noteNums[i]: noteIds[i],
     };
     _ankiCardIndex = <int, String>{
-      for (final SrsCardCacheRow c in cards) SrsIds.ankiNumericId(c.id): c.id,
+      for (int i = 0; i < cardIds.length; i++) cardNums[i]: cardIds[i],
     };
   }
 

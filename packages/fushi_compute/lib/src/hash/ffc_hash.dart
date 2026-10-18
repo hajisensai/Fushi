@@ -19,6 +19,35 @@ typedef _Sha256FinishC = Int32 Function(Pointer<Void>, Pointer<Uint8>);
 typedef _Sha256FinishDart = int Function(Pointer<Void>, Pointer<Uint8>);
 typedef _Crc32C = Uint32 Function(Uint32, Pointer<Uint8>, Size);
 typedef _Crc32Dart = int Function(int, Pointer<Uint8>, int);
+typedef _BatchC =
+    Int32 Function(Pointer<Uint8>, Pointer<Uint64>, Size, Pointer<Uint64>);
+typedef _BatchDart =
+    int Function(Pointer<Uint8>, Pointer<Uint64>, int, Pointer<Uint64>);
+typedef _UuidBatchC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Pointer<Uint8>,
+      Pointer<Uint64>,
+      Size,
+      Pointer<Uint8>,
+    );
+typedef _UuidBatchDart =
+    int Function(
+      Pointer<Uint8>,
+      Pointer<Uint8>,
+      Pointer<Uint64>,
+      int,
+      Pointer<Uint8>,
+    );
+typedef _PowSolveC =
+    Int32 Function(Pointer<Uint8>, Size, Uint32, Pointer<Uint64>);
+typedef _PowSolveDart = int Function(Pointer<Uint8>, int, int, Pointer<Uint64>);
+typedef _PowCheckC =
+    Int32 Function(Pointer<Uint8>, Size, Pointer<Uint8>, Size, Uint32);
+typedef _PowCheckDart =
+    int Function(Pointer<Uint8>, int, Pointer<Uint8>, int, int);
+typedef _EqualC = Int32 Function(Pointer<Uint8>, Size, Pointer<Uint8>, Size);
+typedef _EqualDart = int Function(Pointer<Uint8>, int, Pointer<Uint8>, int);
 typedef _FreeC = Void Function(Pointer<Void>);
 typedef _FreeDart = void Function(Pointer<Void>);
 
@@ -48,6 +77,26 @@ final class _HashBindings {
       crc32 = lib.lookupFunction<_Crc32C, _Crc32Dart>(
         'ffc_hash_crc32',
         isLeaf: true,
+      ),
+      uuidV5Batch = lib.lookupFunction<_UuidBatchC, _UuidBatchDart>(
+        'ffc_hash_uuid_v5_batch',
+        isLeaf: true,
+      ),
+      hash53Batch = lib.lookupFunction<_BatchC, _BatchDart>(
+        'ffc_hash_hash53_batch',
+        isLeaf: true,
+      ),
+      // 求解要跑约 2^bits 次 SHA-256，不设叶子调用以免长时间挡住 GC。
+      powSolve = lib.lookupFunction<_PowSolveC, _PowSolveDart>(
+        'ffc_hash_pow_solve',
+      ),
+      powCheck = lib.lookupFunction<_PowCheckC, _PowCheckDart>(
+        'ffc_hash_pow_check',
+        isLeaf: true,
+      ),
+      bytesEqual = lib.lookupFunction<_EqualC, _EqualDart>(
+        'ffc_hash_bytes_equal',
+        isLeaf: true,
       );
 
   final _NewDart ed2kNew;
@@ -59,6 +108,11 @@ final class _HashBindings {
   final _Sha256FinishDart sha256Finish;
   final _FreeDart sha256Free;
   final _Crc32Dart crc32;
+  final _UuidBatchDart uuidV5Batch;
+  final _BatchDart hash53Batch;
+  final _PowSolveDart powSolve;
+  final _PowCheckDart powCheck;
+  final _EqualDart bytesEqual;
 
   static final Expando<_HashBindings> _cache = Expando<_HashBindings>();
 
@@ -319,4 +373,192 @@ String _hex(Uint8List bytes, int start, int end) {
       ..write(digits[bytes[i] & 15]);
   }
   return out.toString();
+}
+
+/// 把若干字节串打包成「连续数据 + n+1 个偏移」放进原生内存，跑 [body]，然后释放。
+T _withPacked<T>(
+  List<List<int>> items,
+  T Function(Pointer<Uint8> data, Pointer<Uint64> offsets) body,
+) {
+  int total = 0;
+  for (final List<int> item in items) {
+    total += item.length;
+  }
+  final Pointer<Uint8> data = malloc<Uint8>(max(total, 1));
+  final Pointer<Uint64> offsets = malloc<Uint64>(items.length + 1);
+  try {
+    final Uint8List dataView = data.asTypedList(max(total, 1));
+    final Uint64List offsetView = offsets.asTypedList(items.length + 1);
+    int at = 0;
+    for (int i = 0; i < items.length; i++) {
+      offsetView[i] = at;
+      dataView.setRange(at, at + items[i].length, items[i]);
+      at += items[i].length;
+    }
+    offsetView[items.length] = at;
+    return body(data, offsets);
+  } finally {
+    malloc.free(data);
+    malloc.free(offsets);
+  }
+}
+
+/// 批量 RFC 9562 UUIDv5（SHA-1）：第 i 个以 `namespaces[16i..16i+16]` 为命名空间、
+/// [names] 第 i 项（UTF-8 字节）为名字，返回 16n 字节（已置版本 / 变体位）。
+/// 一次 FFI 调用算完整批；单个也走这里（n = 1）。库不可用抛 [FushiComputeUnavailableError]。
+Uint8List ffcUuidV5Batch(
+  Uint8List namespaces,
+  List<List<int>> names, {
+  FushiCompute? library,
+}) {
+  if (namespaces.length != 16 * names.length) {
+    throw ArgumentError.value(
+      namespaces.length,
+      'namespaces',
+      'must be 16 bytes per name (${names.length} names)',
+    );
+  }
+  if (names.isEmpty) return Uint8List(0);
+  final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
+  final Pointer<Uint8> ns = malloc<Uint8>(namespaces.length);
+  final Pointer<Uint8> out = malloc<Uint8>(namespaces.length);
+  try {
+    ns.asTypedList(namespaces.length).setAll(0, namespaces);
+    _withPacked<void>(names, (Pointer<Uint8> data, Pointer<Uint64> offsets) {
+      FfcStreamingHash._checkStatus(
+        b.uuidV5Batch(ns, data, offsets, names.length, out),
+      );
+    });
+    return Uint8List.fromList(out.asTypedList(namespaces.length));
+  } finally {
+    malloc.free(ns);
+    malloc.free(out);
+  }
+}
+
+/// 工作量证明求解：最小的 nonce 使 SHA-256([prefix] ‖ 十进制 nonce) 至少有 [bits] 个前导零位。
+/// 一次 FFI 调用解完（CPU 密集，调用方放后台 isolate）。[bits] 不超过 64。
+int ffcPowSolve(List<int> prefix, int bits, {FushiCompute? library}) {
+  final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
+  final Pointer<Uint8> p = malloc<Uint8>(max(prefix.length, 1));
+  final Pointer<Uint64> nonce = malloc<Uint64>();
+  try {
+    p.asTypedList(max(prefix.length, 1)).setAll(0, prefix);
+    FfcStreamingHash._checkStatus(b.powSolve(p, prefix.length, bits, nonce));
+    return nonce.value;
+  } finally {
+    malloc.free(p);
+    malloc.free(nonce);
+  }
+}
+
+/// 工作量证明校验：SHA-256([prefix] ‖ [nonce]) 是否至少有 [bits] 个前导零位。
+bool ffcPowCheck(
+  List<int> prefix,
+  List<int> nonce,
+  int bits, {
+  FushiCompute? library,
+}) {
+  final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
+  return _withPacked<bool>(<List<int>>[prefix, nonce], (
+    Pointer<Uint8> data,
+    Pointer<Uint64> offsets,
+  ) {
+    final int status = b.powCheck(
+      data,
+      prefix.length,
+      data + prefix.length,
+      nonce.length,
+      bits,
+    );
+    if (status < 0) FfcStreamingHash._checkStatus(status);
+    return status == 1;
+  });
+}
+
+const int _equalSlice = 1 << 20;
+Pointer<Uint8> _equalScratch = nullptr;
+
+/// 两段字节是否完全相同（长度不同即不同）。按 1 MiB 一段拷进原生暂存区比较。
+bool ffcBytesEqual(List<int> a, List<int> b, {FushiCompute? library}) {
+  final _HashBindings bind = _HashBindings.of(
+    library ?? FushiCompute.require(),
+  );
+  if (a.length != b.length) return false;
+  if (_equalScratch == nullptr) _equalScratch = malloc<Uint8>(2 * _equalSlice);
+  final Pointer<Uint8> right = _equalScratch + _equalSlice;
+  final Uint8List leftView = _equalScratch.asTypedList(_equalSlice);
+  final Uint8List rightView = right.asTypedList(_equalSlice);
+  for (int offset = 0; offset < a.length; offset += _equalSlice) {
+    final int n = min(a.length - offset, _equalSlice);
+    leftView.setRange(0, n, a, offset);
+    rightView.setRange(0, n, b, offset);
+    final int status = bind.bytesEqual(_equalScratch, n, right, n);
+    if (status < 0) FfcStreamingHash._checkStatus(status);
+    if (status == 0) return false;
+  }
+  return true;
+}
+
+/// 单个 UUIDv5 / hash53 的暂存区：一次调用不做任何 malloc（单个调用点很多，FFI 之外的
+/// 分配会比哈希本身还贵）。每个 isolate 一份，按需增长。
+Pointer<Uint8> _singleScratch = nullptr;
+int _singleScratchSize = 0;
+final Pointer<Uint64> _singleOffsets = malloc<Uint64>(2);
+final Pointer<Uint8> _singleNamespace = malloc<Uint8>(32);
+final Pointer<Uint64> _singleOut = malloc<Uint64>(1);
+
+Pointer<Uint8> _singleInput(List<int> bytes) {
+  if (_singleScratchSize < bytes.length || _singleScratch == nullptr) {
+    if (_singleScratch != nullptr) malloc.free(_singleScratch);
+    _singleScratchSize = max(256, bytes.length);
+    _singleScratch = malloc<Uint8>(_singleScratchSize);
+  }
+  _singleScratch
+      .asTypedList(_singleScratchSize)
+      .setRange(0, bytes.length, bytes);
+  _singleOffsets[0] = 0;
+  _singleOffsets[1] = bytes.length;
+  return _singleScratch;
+}
+
+/// 单个 UUIDv5：[namespace] 16 字节、[name] 为 UTF-8 字节，返回 16 字节（已置版本 / 变体位）。
+/// 与 [ffcUuidV5Batch] 同一个 Rust 函数（n = 1），只是不分配。
+Uint8List ffcUuidV5(
+  Uint8List namespace,
+  List<int> name, {
+  FushiCompute? library,
+}) {
+  if (namespace.length != 16) {
+    throw ArgumentError.value(
+      namespace.length,
+      'namespace',
+      'must be 16 bytes',
+    );
+  }
+  final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
+  final Pointer<Uint8> data = _singleInput(name);
+  final Uint8List ns = _singleNamespace.asTypedList(32);
+  ns.setRange(0, 16, namespace);
+  FfcStreamingHash._checkStatus(
+    b.uuidV5Batch(
+      _singleNamespace,
+      data,
+      _singleOffsets,
+      1,
+      _singleNamespace + 16,
+    ),
+  );
+  return Uint8List.fromList(Uint8List.sublistView(ns, 16, 32));
+}
+
+/// 53 位确定性正整数（SHA-256 前 7 字节大端取低 53 位，0 记作 1）：`ffc_hash_hash53_batch`
+/// 的 n = 1，不分配。库不可用抛 [FushiComputeUnavailableError]。
+int ffcHash53(List<int> bytes, {FushiCompute? library}) {
+  final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
+  final Pointer<Uint8> data = _singleInput(bytes);
+  FfcStreamingHash._checkStatus(
+    b.hash53Batch(data, _singleOffsets, 1, _singleOut),
+  );
+  return _singleOut.value;
 }
