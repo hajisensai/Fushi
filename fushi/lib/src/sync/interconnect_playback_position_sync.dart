@@ -90,12 +90,47 @@ class InterconnectPlaybackPositionSync {
     PlaybackPositionKind.audiobook => _backend.remoteAudiobookPosition(key),
   };
 
+  /// 「已发出、尚未确认」推送位置的 dimension（BUG-3519）。
+  String get pendingDimension => '${dimension}_pending';
+
   /// 上次两端达成一致的位置（毫秒）；没有基线返回 null。
   Future<int?> baseline(String key) => _db.getSyncBaseline(key, dimension);
 
-  /// 记下两端此刻达成一致的位置。
-  Future<void> recordBaseline(String key, int positionMs) =>
-      _db.setSyncBaseline(key, dimension, positionMs < 0 ? 0 : positionMs);
+  /// 三方判定的唯一入口：sweep 与冲突弹窗都走这里，不各自读基线。
+  ///
+  /// 与书籍版 `InterconnectBookProgressSync.decide` 同理（BUG-3519）：PUT 在 host
+  /// 端已提交、客户端却超时时基线没推进，下一轮会把 host 上本机自己的写入误判成
+  /// 对端改动。推送前记下的「待确认」位置若正是 host 当前位置，先提升为基线。
+  Future<BookProgressSyncAction> decide(
+    String key, {
+    required PlaybackPosition local,
+    required PlaybackPosition remote,
+  }) async {
+    int? base = await baseline(key);
+    final int? pending = await _db.getSyncBaseline(key, pendingDimension);
+    if (pending != null &&
+        remote.updatedAtMs > 0 &&
+        pending == remote.positionMs &&
+        base != remote.positionMs) {
+      await recordBaseline(key, pending);
+      base = pending;
+    }
+    return resolvePlaybackPositionThreeWay(
+      local: local,
+      remote: remote,
+      basePositionMs: base,
+    );
+  }
+
+  /// 记下两端此刻达成一致的位置；同时作废「待确认」推送。
+  Future<void> recordBaseline(String key, int positionMs) async {
+    await _db.setSyncBaseline(key, dimension, positionMs < 0 ? 0 : positionMs);
+    await _db.deleteSyncBaseline(key, pendingDimension);
+  }
+
+  /// 推送前记下「待确认」位置（见 [decide]）。
+  Future<void> _recordPending(String key, int positionMs) => _db
+      .setSyncBaseline(key, pendingDimension, positionMs < 0 ? 0 : positionMs);
 
   /// 本端胜出：推给 host（时间戳不新于 host 时抬到 host + 1，见类头），本端只对齐
   /// 时间戳 pref，记基线。返回两端对齐后的位置。
@@ -123,6 +158,7 @@ class InterconnectPlaybackPositionSync {
       positionMs: local.positionMs,
       updatedAtMs: ts,
     );
+    await _recordPending(key, agreed.positionMs);
     await _putRemote(key, agreed);
     if (ts != local.updatedAtMs) {
       await _db.setPrefTyped<int>(_localAtPrefKey(key), ts);
@@ -142,6 +178,7 @@ class InterconnectPlaybackPositionSync {
   /// host 端 PUT 仍是 LWW：若 host 已存更新的戳而拒收，基线停在本端位置，下一轮
   /// sweep 判「只 host 动了」→ [applyRemote]，与 host 的 LWW 结论一致。
   Future<void> reportLive(String key, PlaybackPosition live) async {
+    await _recordPending(key, live.positionMs);
     await _putRemote(key, live);
     await recordBaseline(key, live.positionMs);
   }
