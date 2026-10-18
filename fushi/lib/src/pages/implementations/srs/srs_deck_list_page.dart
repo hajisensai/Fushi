@@ -16,6 +16,7 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_backups_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
@@ -192,6 +193,15 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       onPressed: () => srsRunLogged(
         'SrsDeckList.historyImport',
         () => openSrsMinedHistoryImport(context, ref),
+      ),
+    ),
+    FushiToolbarItem(
+      key: const ValueKey<String>('srs_anki_migrate'),
+      icon: FushiIcons.moveFile,
+      label: t.srs_anki_migrate,
+      onPressed: () => srsRunLogged(
+        'SrsDeckList.ankiMigrate',
+        () => _push<void>((_) => const SrsAnkiMigrationPage()),
       ),
     ),
     FushiToolbarItem(
