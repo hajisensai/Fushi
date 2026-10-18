@@ -44,10 +44,12 @@ Int32List _params({int maxMisses = 20}) {
 
 void main() {
   final String path = _libraryPath();
-  final FushiCompute? lib = FushiCompute.tryLoad(libraryPath: path);
-  if (lib == null) {
+  final FushiCompute lib;
+  try {
+    lib = FushiCompute.load(libraryPath: path);
+  } on FushiComputeUnavailableError catch (e) {
     test('fushi_compute native library is required', () {
-      fail('native library not found at $path (set $kFushiComputeLibEnv)');
+      fail('native library not usable at $path: $e');
     });
     return;
   }
