@@ -87,6 +87,43 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
 | 内存 SHA-256 | 64 MiB | 1,173 ms | 43 ms | 27× |
 | 整文件 SHA-256（异步读，UI isolate 可用） | 256 MiB | 4,829 ms | 408 ms | 11.8× |
 
+## 解析域：视频文件名 / 字幕时间轴 / Fribb 映射
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_parse_filename_parse_batch(units, units_len, lens, count, ext_units, ext_units_len, ext_lens, ext_count, current_year, u8** out, usize* out_len) -> i32` | 一批名字（UTF-16 池 + 每条长度）按 anitomy 式规则解析；扩展名表与「今年」由调用方给（结果与运行日期无关、可冻结向量） |
+| `ffc_parse_filename_candidates_batch(同上) -> i32` | 一批完整路径 → 有序候选（父目录名优先，跳过 Downloads / 新建文件夹 / 盘符等非标题目录），每条带 `inputIndex` |
+| `ffc_parse_filename_trailing_season_batch(units, units_len, lens, count, i32* out) -> i32` | 「标题尾部裸数字季号」判定，每条输出 季号 + 标题区间（无 = -1） |
+| `ffc_parse_subtiming_summarize(const u16*, usize, …) -> i32` | srt / vtt 的 `起 --> 止` 与 ass/ssa `Dialogue:` 扫描，给 cue 数 / 最早起点 / 最晚终点 |
+| `ffc_parse_fribb_entries(const u8*, usize, u8** out, usize* out_len, i32* err_kind, usize* err_offset) -> i32` | Fribb `anime-list-full.json` 一遍扫描 + 按 anidb_id 归并；非法 JSON / 顶层非数组分别报错 |
+
+| 调用方 | 之前（纯 Dart） | 现在 |
+|---|---|---|
+| `fushi_engine/lib/media/video/scraper/filename_parser.dart` `FilenameParser`（`parse` / `parseAll` / `candidatesForPath` / `takeTrailingNumericSeason`） | 几十条 `RegExp` 规则引擎 | `MediaNameNative`；批量一次 FFI，Dart 只剩结果对象适配 |
+| `fushi_engine/lib/media/video/subtitle/subtitle_timing_check.dart` `summarizeSubtitleTiming` | 两条正则 + `_parseClock` | `SubtitleTimingNative` |
+| `fushi_engine/lib/media/video/metadata/anime_identity_mapping.dart`、`discovery/anime_tmdb_cross_reference.dart` | `jsonDecode` 整表 + `fromRows` 归并 | `animeIdentityEntriesFromJsonUtf8` → `FribbNative`，Dart 只建三张索引 |
+
+口径：原正则大量用先行断言，且 Dart `RegExp` 是逐 UTF-16 码元、`\s` 为 JS 空白集合、`\d` 只有 ASCII、
+不区分大小写走 JS Canonicalize（非 ASCII 永不折叠到 ASCII）——`regex` crate 在这些边界上不一致，所以
+`src/parse/media_name/js_regex.rs` 实现了本域用到的那部分 ECMAScript 回溯语义，`dart_str.rs` 复现
+Dart `trim` / `int.tryParse` / `toLowerCase`（逐码点简单映射，只用于与常量比较、不进输出）。JSON 语法与 `jsonDecode` 一致（重复键后者生效、
+孤立代理照收等，见 `fribb.rs` 文件头）。
+
+回归：删旧实现前用旧 Dart（原文件副本）与新链路逐条对拍——本机视频库 1697 条真实路径（1698 个路径段）、
+10 万条按真实词表拼的模糊名 + 2.5 万条模糊路径、76 个真实字幕文件（2534 万码元）+ 10 万条模糊时间轴、
+Fribb 全表（7.5 MB）+ 1 万份模糊 JSON，**0 处不一致**。冻结摘要与代表样例在
+`packages/fushi_engine/test/media/video/native_media_parse_vectors_test.dart`（语料生成器
+`native_parse_corpus.dart`，固定种子：2 万名字 / 5 千路径 / 2 万字幕 / 5 千 Fribb 文档）。
+
+基准（AOT，2026-10-19，i5-12600KF / Windows 11，同一进程 5 轮取最好；旧 Dart vs Rust + FFI 含结果重建）：
+
+| 输入 | 旧 Dart | Rust + FFI |
+|---|---|---|
+| 文件名 1698 个真实路径段 | 60.6 ms | 32.1 ms（批量） |
+| 文件名 21698 条（真实 + 模糊） | 1,938 ms | 887 ms（批量）/ 1,339 ms（逐条调 `parse`） |
+| 字幕时间轴 76 个文件 / 2534 万码元 | 7,390 ms | 2,738 ms |
+| Fribb 全表 7.5 MB（含 `utf8.encode` 49.5 ms） | 278 ms | 198 ms（FFI + 记录解码本体 102 ms，余为 Dart 重建条目对象） |
+
 ## 构建
 
 | 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-18 实测） |

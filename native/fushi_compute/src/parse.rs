@@ -18,6 +18,10 @@ use crate::{guard, status};
 
 mod study_char_table;
 
+pub mod fribb;
+pub mod media_name;
+pub mod subtitle_timing;
+
 use study_char_table::STUDY_CHAR_RANGES;
 
 /// 码点的字数分类（值与 Dart 侧 `StudyCharClass` 一致）。
