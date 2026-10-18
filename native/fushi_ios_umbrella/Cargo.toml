@@ -26,3 +26,10 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "unwind"
+
+# 编译期依赖（过程宏、build script）不 strip：新工具链的 macOS（实测 macOS 27.2 / Xcode 27.1 /
+# rustc 1.95）上，cargo strip 出来的 Mach-O dylib 加载即报「mis-aligned LINKEDIT string pool」，
+# 过程宏 dylib 坏掉后 rustc 报 E0463「can't find crate」，iOS / macOS / 在 Mac 上交叉编 Android
+# 都编不过。最终产物的 macOS strip 见 build_macos_dylib.sh。
+[profile.release.build-override]
+strip = false
