@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 // BUG-835：extractFfmpegFailureReason 的正准实现在 ffmpeg_backend.dart（与
 // FfmpegBackend 同层），直接从这里取，不再经 video_clip_exporter 转口。
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/utils/misc/synchronized_video_exporter.dart'
     show missingMuxedVideoAndAudio;
@@ -588,11 +589,10 @@ const List<String> _clipVideoCodecArgs = <String>[
 ///
 /// [pngBytes] 解码失败（损坏/空）返回 null，调用方据此回退（记日志 + toast）。
 /// [quality] 为 JPEG 质量（1-100），静态文本卡片用高质量避免文字边缘锯齿。
-Uint8List? encodeClipTextFrameAsJpg(Uint8List pngBytes, {int quality = 98}) {
-  final img.Image? decoded = img.decodeImage(pngBytes);
-  if (decoded == null) return null;
-  return img.encodeJpg(decoded, quality: quality);
-}
+///
+/// 解码 + 编码在原生内核（[encodePngAsJpeg]，一帧约 70 ms，纯 Dart 时约 700 ms）。
+Uint8List? encodeClipTextFrameAsJpg(Uint8List pngBytes, {int quality = 98}) =>
+    encodePngAsJpeg(pngBytes, quality: quality);
 
 /// [encodeClipTextFrameAsJpg] 的后台 isolate 版本（TODO-1167 / BUG-552，安卓导出片段
 /// 视频 ANR/OOM 根因修复）。

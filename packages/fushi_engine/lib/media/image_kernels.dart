@@ -176,3 +176,11 @@ uint8Pixels(img.Image image) {
     height: ready.height,
   );
 }
+
+/// PNG 字节 → JPEG 字节（4:4:4，[quality] 1..100，忽略 alpha），解码与编码都在原生内核。
+///
+/// PNG 解出的像素与 `img.decodePng` 逐字节相同；JPEG 编码器换成了 `jpeg-encoder`，字节与
+/// `img.encodeJpg` 不同，同质量下 PSNR 相同（2026-10-18 实测 1080×1920 文本帧 q98：
+/// 49.04 vs 49.05 dB，体积 +0.5%）。只认 PNG：其它格式（或坏字节）返回 null。
+Uint8List? encodePngAsJpeg(Uint8List png, {required int quality}) =>
+    FushiComputeImage.instance.pngToJpeg(png, quality: quality);

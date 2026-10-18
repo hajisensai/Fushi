@@ -31,6 +31,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:fushi_engine/media/cover_file_writer.dart';
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath, kPlaylistManifestExtensions;
 import 'package:fushi_engine/media/video/scraper/sidecar_scanner.dart';
@@ -314,10 +315,7 @@ Future<String?> _downloadVideoCoverToPathUnlocked({
       return null;
     }
     await File(outputPath).parent.create(recursive: true);
-    await writeCoverBytesAtomically(
-      bytes: res.bodyBytes,
-      destPath: outputPath,
-    );
+    await writeCoverBytesAtomically(bytes: res.bodyBytes, destPath: outputPath);
     return outputPath;
   } catch (_) {
     return null;
@@ -422,18 +420,18 @@ Future<String?> _extractVideoCoverUnlocked({
     outputPath: outputPath,
     candidateSeconds: coverFrameCandidateSeconds(atSeconds),
     diagnosticOnly: diagnosticOnly,
-    grab: ({
-      required String outputPath,
-      required double atSeconds,
-      required bool diagnosticOnly,
-    }) =>
-        extractVideoFrameViaFfmpeg(
-      inputPath: videoPath,
-      outputPath: outputPath,
-      atSeconds: atSeconds,
-      tlsPinSha256: tlsPinSha256,
-      diagnosticOnly: diagnosticOnly,
-    ),
+    grab:
+        ({
+          required String outputPath,
+          required double atSeconds,
+          required bool diagnosticOnly,
+        }) => extractVideoFrameViaFfmpeg(
+          inputPath: videoPath,
+          outputPath: outputPath,
+          atSeconds: atSeconds,
+          tlsPinSha256: tlsPinSha256,
+          diagnosticOnly: diagnosticOnly,
+        ),
   );
 }
 
@@ -462,18 +460,31 @@ bool isNearlyBlackFrame(Uint8List bytes) {
   if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
     return false;
   }
-  final img.Image sample = decoded.width > 64
-      ? img.copyResize(
-          decoded,
-          width: 64,
-          interpolation: img.Interpolation.average,
-        )
-      : decoded;
+  final img.Image sample;
+  if (decoded.width > 64) {
+    // 同 copyResize(width: 64)：高按转正后的宽高比四舍五入；缩成 0 行就没有可统计的像素。
+    final img.Image oriented =
+        decoded.exif.imageIfd.hasOrientation &&
+            decoded.exif.imageIfd.orientation != 1
+        ? img.bakeOrientation(decoded)
+        : decoded;
+    final int height = (64 * (oriented.height / oriented.width)).round();
+    if (height <= 0) return false;
+    sample = resizeImageExact(
+      oriented,
+      width: 64,
+      height: height,
+      interpolation: img.Interpolation.average,
+    );
+  } else {
+    sample = decoded;
+  }
   double sum = 0;
   double sumSquares = 0;
   int count = 0;
   for (final img.Pixel pixel in sample) {
-    final double luma = 255 *
+    final double luma =
+        255 *
         (0.299 * pixel.rNormalized +
             0.587 * pixel.gNormalized +
             0.114 * pixel.bNormalized);
@@ -495,18 +506,19 @@ const List<double> kCoverFrameFallbackSeconds = <double>[30, 90, 240];
 /// 纯函数：封面抽帧的候选时刻序列——先 [atSeconds]，再 [kCoverFrameFallbackSeconds]
 /// 里更晚的时刻（升序）。
 List<double> coverFrameCandidateSeconds(double atSeconds) => <double>[
-      atSeconds,
-      ...kCoverFrameFallbackSeconds.where((double s) => s > atSeconds),
-    ];
+  atSeconds,
+  ...kCoverFrameFallbackSeconds.where((double s) => s > atSeconds),
+];
 
 /// 单帧抓取函数：把 [atSeconds] 处的一帧写到 [outputPath]，成功返回 [outputPath]、
 /// 拿不到帧（seek 越界 / ffmpeg 失败）返回 null，绝不抛。生产实现是
 /// [extractVideoFrameViaFfmpeg]；测试注入替身。
-typedef CoverFrameGrabber = Future<String?> Function({
-  required String outputPath,
-  required double atSeconds,
-  required bool diagnosticOnly,
-});
+typedef CoverFrameGrabber =
+    Future<String?> Function({
+      required String outputPath,
+      required double atSeconds,
+      required bool diagnosticOnly,
+    });
 
 /// 黑帧判定函数（生产实现在后台 isolate 跑 [isNearlyBlackFrame]）。
 typedef CoverBlackFrameDetector = Future<bool> Function(Uint8List bytes);
@@ -609,11 +621,12 @@ Future<String?> copyFolderCoverForAudio({
 
 /// 视频封面抽取器签名（[extractVideoCover] 的形状）。仅供 [extractPlaylistCover]
 /// 注入测试替身，生产路径默认走 [extractVideoCover]。
-typedef VideoCoverExtractor = Future<String?> Function({
-  required String videoPath,
-  required String bookUid,
-  double atSeconds,
-});
+typedef VideoCoverExtractor =
+    Future<String?> Function({
+      required String videoPath,
+      required String bookUid,
+      double atSeconds,
+    });
 
 /// 播放列表封面：依次尝试 [episodePaths] 里的各集，返回**首个成功**抽到封面的绝对
 /// 路径；全部失败（首集缺失 / 远端占位 / 无可抽帧）返回 null。
@@ -639,8 +652,11 @@ Future<String?> extractPlaylistCover({
     if (path.isEmpty) continue;
     if (attempts >= maxAttempts) break;
     attempts++;
-    final String? cover =
-        await extract(videoPath: path, bookUid: bookUid, atSeconds: atSeconds);
+    final String? cover = await extract(
+      videoPath: path,
+      bookUid: bookUid,
+      atSeconds: atSeconds,
+    );
     if (cover != null) return cover;
   }
   return null;

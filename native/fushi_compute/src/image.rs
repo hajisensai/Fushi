@@ -1,4 +1,5 @@
-//! `ffc_image_*`：图像域的纯算术内核（缩放 / 归一化成模型输入 / 马赛克 / dHash）。
+//! `ffc_image_*`：图像域的纯算术内核（缩放 / 归一化成模型输入 / 马赛克 / dHash / 位图字幕合成）
+//! 与有声书片段导出的 PNG → JPEG 重编码。
 //!
 //! 这些操作只有这一份实现（Dart 侧经 `packages/fushi_compute` 绑定、
 //! `packages/fushi_engine/lib/media/image_kernels.dart` 适配，没有 Dart 回退）。它们逐条复刻
@@ -14,7 +15,11 @@
 //! 调色板图由 Dart 侧先 `convert` 成 uint8，未转正的 EXIF 方向先 `bakeOrientation`
 //! （`copyResize` 自己也这么做），多帧图由 Dart 侧逐帧调用。
 //!
-//! 解码 / 编码（JPEG / PNG）**不在本模块**，仍由 Dart 的 `package:image` 做。2026-10-18 实测
+//! 例外是有声书片段导出的「PNG → JPEG」逐帧重编码（`ffc_image_png_to_jpeg`，见文件末段）：PNG
+//! 无损、8 位图解出的像素与 `package:image` 逐字节相同；JPEG 编码换成 `jpeg-encoder`，字节不同、
+//! 同质量下画质不降。
+//!
+//! 其余解码（JPEG 等有损格式）**不在本模块**，仍由 Dart 的 `package:image` 做。2026-10-18 实测
 //! （真书漫画页 1350×1920 / 2000×2844 JPEG）：`zune-jpeg` 0.4 与 `jpeg-decoder` 0.3 解出的
 //! RGB 与 `package:image` 有 3.5～4.8% 的通道值差 ±1（最大 1），dHash 不变，但 RT-DETR 输入
 //! 张量有约 4% 的元素差 1/255，检测框 / OCR 结果无法保证逐位不变；解码因此不搬，以免同一张
@@ -1172,6 +1177,126 @@ pub unsafe extern "C" fn ffc_image_compose_indexed(
                 }
             }
         }
+        status::OK
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PNG 解码 / JPEG 编码（有声书片段导出的逐帧重编码）。
+//
+// PNG 是无损格式：8 位图解出的像素与 `package:image` `decodePng` 逐字节相同（回归测试比对）。
+// JPEG 编码换成 `jpeg-encoder`：字节与 `package:image` `encodeJpg` 不同，同质量参数、
+// 同 4:4:4 采样下实测画质不降（PSNR / 体积见 PR 说明）。
+// ---------------------------------------------------------------------------
+
+/// 解 PNG 成 RGBA8888（调色板 / 灰度 / 16 位一律展开或截成 8 位 RGBA），写宽高。
+fn png_decode_rgba(data: &[u8]) -> Result<(Vec<u8>, u32, u32), i32> {
+    let mut dec = png::Decoder::new(std::io::Cursor::new(data));
+    dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = dec.read_info().map_err(|_| status::BAD_INPUT)?;
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let frame = reader.next_frame(&mut buf).map_err(|_| status::BAD_INPUT)?;
+    let (w, h) = (frame.width, frame.height);
+    let n = w as usize * h as usize;
+    let src = &buf[..frame.buffer_size()];
+    let rgba = match frame.color_type {
+        png::ColorType::Rgba => src.to_vec(),
+        png::ColorType::Rgb => {
+            let mut out = Vec::with_capacity(n * 4);
+            for p in src.chunks_exact(3) {
+                out.extend_from_slice(&[p[0], p[1], p[2], 255]);
+            }
+            out
+        }
+        png::ColorType::Grayscale => {
+            let mut out = Vec::with_capacity(n * 4);
+            for &l in src {
+                out.extend_from_slice(&[l, l, l, 255]);
+            }
+            out
+        }
+        png::ColorType::GrayscaleAlpha => {
+            let mut out = Vec::with_capacity(n * 4);
+            for p in src.chunks_exact(2) {
+                out.extend_from_slice(&[p[0], p[0], p[0], p[1]]);
+            }
+            out
+        }
+        png::ColorType::Indexed => return Err(status::BAD_INPUT), // EXPAND 后不会出现
+    };
+    if rgba.len() != n * 4 {
+        return Err(status::BAD_INPUT);
+    }
+    Ok((rgba, w, h))
+}
+
+/// PNG → RGBA8888，经 `out_ptr` / `out_len` 交出（[crate::ffc_free_bytes] 释放），
+/// `out_size` 写 `[width, height]`。解不开返回 [status::BAD_INPUT]。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写；`out_size` 可写 2 个 u32。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_png_decode_rgba(
+    png_data: *const u8,
+    png_len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+    out_size: *mut u32,
+) -> i32 {
+    guard(|| {
+        if png_data.is_null() || out_ptr.is_null() || out_len.is_null() || out_size.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        match png_decode_rgba(slice(png_data, png_len)) {
+            Ok((rgba, w, h)) => {
+                let size = slice_mut(out_size, 2);
+                size[0] = w;
+                size[1] = h;
+                crate::hand_over_bytes(rgba, out_ptr, out_len);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// PNG → JPEG（4:4:4、`quality` 1..=100，忽略 alpha，同 `encodeJpg(decodePng(...))`
+/// 的通道取法），经 `out_ptr` / `out_len` 交出。解不开返回 [status::BAD_INPUT]。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_png_to_jpeg(
+    png_data: *const u8,
+    png_len: usize,
+    quality: u32,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if png_data.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if !(1..=100).contains(&quality) {
+            return status::INVALID_ARGUMENT;
+        }
+        let (rgba, w, h) = match png_decode_rgba(slice(png_data, png_len)) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        if w == 0 || h == 0 || w > u16::MAX as u32 || h > u16::MAX as u32 {
+            return status::INVALID_ARGUMENT;
+        }
+        let mut jpeg = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut jpeg, quality as u8);
+        enc.set_sampling_factor(jpeg_encoder::SamplingFactor::F_1_1);
+        if enc
+            .encode(&rgba, w as u16, h as u16, jpeg_encoder::ColorType::Rgba)
+            .is_err()
+        {
+            return status::BAD_INPUT;
+        }
+        crate::hand_over_bytes(jpeg, out_ptr, out_len);
         status::OK
     })
 }

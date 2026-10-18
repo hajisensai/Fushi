@@ -158,6 +158,39 @@ typedef _DhashC =
 typedef _DhashDart =
     int Function(Pointer<Uint8>, int, int, int, int, int, Pointer<Uint8>);
 
+typedef _PngDecodeC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+      Pointer<Uint32>,
+    );
+typedef _PngDecodeDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+      Pointer<Uint32>,
+    );
+typedef _PngToJpegC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _PngToJpegDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+
 /// native/fushi_compute 图像域（`ffc_image_*`）的绑定：原始像素缓冲进、原始缓冲出，
 /// 不依赖 `package:image`（img.Image 的适配在调用方，见 fushi_engine
 /// `media/image_kernels.dart`）。
@@ -184,13 +217,23 @@ class FushiComputeImage {
       ),
       _dhash = lib.library.lookupFunction<_DhashC, _DhashDart>(
         'ffc_image_dhash',
-      );
+      ),
+      _pngDecode = lib.library.lookupFunction<_PngDecodeC, _PngDecodeDart>(
+        'ffc_image_png_decode_rgba',
+      ),
+      _pngToJpeg = lib.library.lookupFunction<_PngToJpegC, _PngToJpegDart>(
+        'ffc_image_png_to_jpeg',
+      ),
+      _lib = lib;
 
   final _ResizeDart _resize;
   final _ResizeChwDart _resizeChw;
   final _ToRgbaDart _toRgba;
   final _MosaicDart _mosaic;
   final _DhashDart _dhash;
+  final _PngDecodeDart _pngDecode;
+  final _PngToJpegDart _pngToJpeg;
+  final FushiCompute _lib;
 
   /// 图像域用到的全部符号；缺任何一个都视为库不可用。
   static const List<String> symbols = <String>[
@@ -199,6 +242,8 @@ class FushiComputeImage {
     'ffc_image_to_rgba8',
     'ffc_image_mosaic_rgba8',
     'ffc_image_dhash',
+    'ffc_image_png_decode_rgba',
+    'ffc_image_png_to_jpeg',
   ];
 
   static FushiComputeImage? _instance;
@@ -482,9 +527,11 @@ class FushiComputeImage {
     }
     if (blockSize <= 0) throw ArgumentError.value(blockSize, 'blockSize');
     if (rects.isEmpty) return;
-    // 只搬被碰到的块所在的行带：网格锚在图像原点，带的上沿取块边界，带内网格与整图一致。
-    int bandTop = height;
-    int bandBottom = 0;
+    // 只搬被碰到的块所在的矩形带：网格锚在图像原点，带的左 / 上沿取块边界，右 / 下沿取块
+    // 边界或图像边，带内网格与整图一致（被图像边截断的块在带里同样被截断）。
+    int bandLeft = width, bandTop = height, bandRight = 0, bandBottom = 0;
+    int alignedEnd(int end, int limit) =>
+        math.min(limit, ((end - 1) ~/ blockSize + 1) * blockSize);
     for (final ({int x0, int y0, int x1, int y1}) r in rects) {
       if (r.x0 < 0 || r.y0 < 0 || r.x1 > width || r.y1 > height) {
         throw ArgumentError('mosaic rect $r outside ${width}x$height');
@@ -492,41 +539,36 @@ class FushiComputeImage {
       if (r.x1 <= r.x0 || r.y1 <= r.y0) {
         throw ArgumentError('empty mosaic rect $r');
       }
+      bandLeft = math.min(bandLeft, r.x0 ~/ blockSize * blockSize);
       bandTop = math.min(bandTop, r.y0 ~/ blockSize * blockSize);
-      bandBottom = math.max(
-        bandBottom,
-        math.min(height, ((r.y1 - 1) ~/ blockSize + 1) * blockSize),
-      );
+      bandRight = math.max(bandRight, alignedEnd(r.x1, width));
+      bandBottom = math.max(bandBottom, alignedEnd(r.y1, height));
     }
-    final int start = bandTop * width * 4;
-    final int bandBytes = (bandBottom - bandTop) * width * 4;
-    final Uint8List band = Uint8List.sublistView(
-      rgba,
-      start,
-      start + bandBytes,
-    );
-    final Pointer<Uint8> buf = _copyIn(band);
+    final int bw = bandRight - bandLeft;
+    final int bh = bandBottom - bandTop;
+    final int rowBytes = bw * 4;
+    final Pointer<Uint8> buf = malloc<Uint8>(rowBytes * bh);
     final Pointer<Int32> r = malloc<Int32>(rects.length * 4);
     try {
+      final Uint8List view = buf.asTypedList(rowBytes * bh);
+      for (int y = 0; y < bh; y++) {
+        final int from = ((bandTop + y) * width + bandLeft) * 4;
+        view.setRange(y * rowBytes, (y + 1) * rowBytes, rgba, from);
+      }
       for (int i = 0; i < rects.length; i++) {
-        r[i * 4] = rects[i].x0;
+        r[i * 4] = rects[i].x0 - bandLeft;
         r[i * 4 + 1] = rects[i].y0 - bandTop;
-        r[i * 4 + 2] = rects[i].x1;
+        r[i * 4 + 2] = rects[i].x1 - bandLeft;
         r[i * 4 + 3] = rects[i].y1 - bandTop;
       }
       _check(
         'ffc_image_mosaic_rgba8',
-        _mosaic(
-          buf,
-          bandBytes,
-          width,
-          bandBottom - bandTop,
-          blockSize,
-          r,
-          rects.length,
-        ),
+        _mosaic(buf, view.length, bw, bh, blockSize, r, rects.length),
       );
-      band.setAll(0, buf.asTypedList(bandBytes));
+      for (int y = 0; y < bh; y++) {
+        final int to = ((bandTop + y) * width + bandLeft) * 4;
+        rgba.setRange(to, to + rowBytes, view, y * rowBytes);
+      }
     } finally {
       malloc.free(buf);
       malloc.free(r);
@@ -553,6 +595,60 @@ class FushiComputeImage {
     } finally {
       malloc.free(src);
       malloc.free(out);
+    }
+  }
+
+  /// 把原生交出的缓冲拷成 Dart 字节并释放。
+  Uint8List _takeBytes(Pointer<Pointer<Uint8>> ptr, Pointer<Size> len) {
+    final Pointer<Uint8> data = ptr.value;
+    final int n = len.value;
+    try {
+      return Uint8List.fromList(data.asTypedList(n));
+    } finally {
+      _lib.freeBytes(data, n);
+    }
+  }
+
+  /// PNG → RGBA8888（调色板 / 灰度 / 16 位展开或截成 8 位）；解不开返回 null。
+  ({Uint8List rgba, int width, int height})? decodePngRgba(Uint8List png) {
+    final Pointer<Uint8> src = _copyIn(png);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    final Pointer<Uint32> size = malloc<Uint32>(2);
+    try {
+      final int status = _pngDecode(src, png.length, outPtr, outLen, size);
+      if (status == FfcStatus.badInput) return null;
+      _check('ffc_image_png_decode_rgba', status);
+      return (
+        rgba: _takeBytes(outPtr, outLen),
+        width: size[0],
+        height: size[1],
+      );
+    } finally {
+      malloc.free(src);
+      malloc.free(outPtr);
+      malloc.free(outLen);
+      malloc.free(size);
+    }
+  }
+
+  /// PNG → JPEG（4:4:4，[quality] 1..100，忽略 alpha）；解不开返回 null。
+  Uint8List? pngToJpeg(Uint8List png, {required int quality}) {
+    if (quality < 1 || quality > 100) {
+      throw ArgumentError.value(quality, 'quality', 'must be 1..100');
+    }
+    final Pointer<Uint8> src = _copyIn(png);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      final int status = _pngToJpeg(src, png.length, quality, outPtr, outLen);
+      if (status == FfcStatus.badInput) return null;
+      _check('ffc_image_png_to_jpeg', status);
+      return _takeBytes(outPtr, outLen);
+    } finally {
+      malloc.free(src);
+      malloc.free(outPtr);
+      malloc.free(outLen);
     }
   }
 }
