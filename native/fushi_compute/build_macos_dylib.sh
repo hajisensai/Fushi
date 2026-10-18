@@ -20,10 +20,13 @@ target=aarch64-apple-darwin
 cd "$SCRIPT_DIR"
 # 只出 cdylib：Cargo.toml 同时声明了 staticlib / rlib（iOS 伞形库用），这里不必为它们再跑一遍 fat LTO。
 echo "==> cargo rustc --release --lib --target $target --crate-type cdylib (MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET)"
-# strip 交给下面的 /usr/bin/strip -x，不用 Cargo.toml 的 strip = true：实测（macOS 27.2 + 当前
-# Xcode，2026-10-18）只要设了 MACOSX_DEPLOYMENT_TARGET，rustc 自己 strip 出来的 dylib 会被 dyld
-# 以「mis-aligned LINKEDIT string pool」拒绝加载（文件、符号、install name 都正常，只有 dlopen 失败）；
-# 不 strip 再手动 strip -x 的同一份产物加载正常、体积相同。下面的 dlopen 冒烟兜住这类回归。
+# strip 交给下面的 /usr/bin/strip -x，不用 Cargo.toml 的 strip = true：cargo strip 在 Apple 目标上
+# 调 rust-objcopy，它重排 LINKEDIT 时不补齐——间接符号表项数为奇数时字符串表只对齐到 4。用 SDK 27
+# 及以上链接的 dylib，macOS 27 的 dyld 会以「mis-aligned LINKEDIT string pool」拒绝加载（文件、
+# 符号、install name 都正常；与部署目标无关，部署目标只是会改变间接符号个数、碰巧翻转奇偶）。
+# Apple 的 strip 会补齐；写绝对路径，免得 PATH 上的 llvm-strip / GNU strip 顶替。
+# verify_abi.sh 的 LINKEDIT 对齐检查与 runner 系统无关地兜住这类回归；下面的 dlopen 冒烟
+# 只有在 macOS 27 + SDK 27 上才测得出这一个问题。
 CARGO_PROFILE_RELEASE_STRIP=false cargo rustc --release --lib --target "$target" --crate-type cdylib
 built="target/$target/release/libfushi_compute.dylib"
 [[ -f "$built" ]] || { echo "missing $built" >&2; exit 1; }
@@ -31,7 +34,7 @@ built="target/$target/release/libfushi_compute.dylib"
 mkdir -p "$OUT_DIR"
 out="$OUT_DIR/libfushi_compute.dylib"
 cp -f "$built" "$out"
-strip -x "$out"
+/usr/bin/strip -x "$out"
 install_name_tool -id "@rpath/libfushi_compute.dylib" "$out"
 # 产物必须真能被 dyld 加载并返回 ABI 版本：符号核对（verify_abi.sh）查不出 LINKEDIT 损坏。
 if command -v python3 >/dev/null 2>&1; then

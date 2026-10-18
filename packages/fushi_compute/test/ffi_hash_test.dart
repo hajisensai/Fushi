@@ -212,4 +212,43 @@ void main() {
       expect(await ffcSha256File(file.path), expected);
     },
   );
+
+  test('ffcBytesEqual compares across 1 MiB slices', () {
+    final Uint8List a = Uint8List(3 * (1 << 20) + 5);
+    _fill(a, 0, a.length);
+    final Uint8List b = Uint8List.fromList(a);
+    expect(ffcBytesEqual(a, b), isTrue);
+    expect(ffcBytesEqual(<int>[], <int>[]), isTrue);
+    b[b.length - 1] ^= 1;
+    expect(ffcBytesEqual(a, b), isFalse);
+    expect(ffcBytesEqual(a, Uint8List.sublistView(a, 1)), isFalse);
+  });
+
+  test('uuidV5 single and batch agree with RFC 9562 A.4', () {
+    final Uint8List dns = Uint8List.fromList(<int>[
+      0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, //
+      0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
+    ]);
+    final List<int> name = 'www.example.com'.codeUnits;
+    const String expected = '2ed6657de927568b95e12665a8aea6a2';
+    String hex(List<int> b) =>
+        b.map((int x) => x.toRadixString(16).padLeft(2, '0')).join();
+    expect(hex(ffcUuidV5(dns, name)), expected);
+    final Uint8List both = ffcUuidV5Batch(
+      Uint8List.fromList(<int>[...dns, ...dns]),
+      <List<int>>[name, name],
+    );
+    expect(hex(both), expected * 2);
+    // SHA-256("") 前 7 字节 e3b0c44298fc1c 的低 53 位。
+    expect(ffcHash53(<int>[]), 0x00e3b0c44298fc1c & 0x1FFFFFFFFFFFFF);
+  });
+
+  test('PoW solve returns the smallest nonce and check agrees', () {
+    final List<int> prefix = 'fip1|test-install|'.codeUnits;
+    // 与删除前的纯 Dart 求解一致（fushi_engine install_identity_test 冻结了同一组值）。
+    expect(ffcPowSolve(prefix, 8), 148);
+    expect(ffcPowCheck(prefix, '148'.codeUnits, 8), isTrue);
+    expect(ffcPowCheck(prefix, '147'.codeUnits, 8), isFalse);
+    expect(ffcPowCheck(prefix, '0'.codeUnits, 0), isTrue);
+  });
 }

@@ -10,7 +10,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 /// Fushi SRS 固定命名空间。冻结：改它等于让所有确定性 ID 重生成。
 const String srsNamespace = '6f1c8a2e-4b7d-5e3f-9a10-2d4c6e8f0b13';
@@ -38,16 +38,27 @@ String _formatUuid(List<int> bytes) {
   return sb.toString();
 }
 
-/// RFC 9562 UUIDv5（SHA-1，名字按 UTF-8）。
-String uuidV5(String namespace, String name) {
-  final List<int> digest = sha1.convert(<int>[
-    ..._uuidBytes(namespace),
-    ...utf8.encode(name),
-  ]).bytes;
-  final List<int> b = digest.sublist(0, 16);
-  b[6] = (b[6] & 0x0f) | 0x50;
-  b[8] = (b[8] & 0x3f) | 0x80;
-  return _formatUuid(b);
+/// RFC 9562 UUIDv5（SHA-1，名字按 UTF-8）。SHA-1 在 native/fushi_compute 里算；
+/// 一次要派生很多个时用 [uuidV5Batch]（一次 FFI 调用）。
+String uuidV5(String namespace, String name) =>
+    _formatUuid(ffcUuidV5(_uuidBytes(namespace), utf8.encode(name)));
+
+/// 批量 [uuidV5]：每项 (命名空间 UUID, 名字)，结果按顺序对应。
+List<String> uuidV5Batch(List<(String, String)> items) {
+  if (items.isEmpty) return <String>[];
+  final Uint8List namespaces = Uint8List(16 * items.length);
+  final Map<String, Uint8List> parsed = <String, Uint8List>{};
+  for (int i = 0; i < items.length; i++) {
+    final Uint8List ns = parsed[items[i].$1] ??= _uuidBytes(items[i].$1);
+    namespaces.setRange(16 * i, 16 * i + 16, ns);
+  }
+  final Uint8List out = ffcUuidV5Batch(namespaces, <List<int>>[
+    for (final (String, String) item in items) utf8.encode(item.$2),
+  ]);
+  return <String>[
+    for (int i = 0; i < items.length; i++)
+      _formatUuid(Uint8List.sublistView(out, 16 * i, 16 * i + 16)),
+  ];
 }
 
 /// RFC 9562 UUIDv7（毫秒时间戳 + 随机）。[nowMs] 注入便于测试。
@@ -68,16 +79,15 @@ String uuidV7({int? nowMs, Random? random}) {
 
 const int _max53 = 0x1FFFFFFFFFFFFF;
 
-/// 由字符串确定性派生 53 位正整数（Anki 的数字 id / ankiNum）。
-int hash53(String input) {
-  final List<int> d = sha256.convert(utf8.encode(input)).bytes;
-  int v = 0;
-  for (int i = 0; i < 7; i++) {
-    v = (v << 8) | d[i];
-  }
-  v &= _max53;
-  return v == 0 ? 1 : v;
-}
+/// 由字符串确定性派生 53 位正整数（Anki 的数字 id / ankiNum）：SHA-256 前 7 字节大端取低
+/// 53 位，0 记作 1，在 native/fushi_compute 里算。
+int hash53(String input) => ffcHash53(utf8.encode(input));
+
+/// 批量 [hash53]。逐个走 [ffcHash53]：单次调用不分配、每个约 0.7 µs，实测比先打包再一次
+/// FFI 调用更快（打包要先攒下整批字符串与字节，GC 压力比哈希本身还大）。
+List<int> hash53Batch(List<String> inputs) => <int>[
+  for (final String s in inputs) ffcHash53(utf8.encode(s)),
+];
 
 /// 新建时随机的 53 位正整数（Fushi 新建的笔记类型 / 字段 / 模板的 ankiNum）。
 int randomAnkiNum({Random? random}) {
@@ -171,6 +181,12 @@ abstract final class SrsIds {
   static String importedRevlog(String cardId, int ankiRevlogId) =>
       uuidV5(cardId, 'anki-revlog/$ankiRevlogId');
 
+  /// 批量 [importedRevlog]（apkg 导入一张卡的整批 revlog，一次 FFI 调用）。
+  static List<String> importedRevlogs(String cardId, List<int> ankiRevlogIds) =>
+      uuidV5Batch(<(String, String)>[
+        for (final int id in ankiRevlogIds) (cardId, 'anki-revlog/$id'),
+      ]);
+
   /// 导入锚点：UUIDv5(cardId, anki-anchor/<T>)。
   static String importAnchor(String cardId, int anchorMs) =>
       uuidV5(cardId, 'anki-anchor/$anchorMs');
@@ -186,4 +202,8 @@ abstract final class SrsIds {
 
   /// 导出到 Anki 的笔记 / 卡片数字 id。
   static int ankiNumericId(String uuid) => hash53('anki-id/$uuid');
+
+  /// 批量 [ankiNumericId]（重建本机数字索引用，见 [hash53Batch]）。
+  static List<int> ankiNumericIds(List<String> uuids) =>
+      hash53Batch(<String>[for (final String u in uuids) 'anki-id/$u']);
 }
