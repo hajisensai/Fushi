@@ -25,13 +25,12 @@ import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
 import 'package:crypto/crypto.dart';
-import 'package:image/image.dart' as img;
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_reply_json.dart';
-import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/ocr_line_layout.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
@@ -1188,69 +1187,27 @@ OcrRect _polygonBounds(List<List<double>> polygon) {
 
 /// 解码整页并裁出 [boxes]（坐标系为 [pageWidth]×[pageHeight]），各编码成 PNG。
 /// 解码失败或框落在图外的位置为 null。顶层函数：给 `Isolate.run` 用。
+///
+/// 整条在原生内核（`ffc_image_ai_crops`）：按 EXIF 转正解码（旧的 package:image JPEG 解码器
+/// 同样在解码时转正），外扩 [kMangaAiOcrCropPadding]；长边超过 [kMangaAiOcrMaxCropSide] 时
+/// 均值缩小，短边不足 [kMangaAiOcrMinCropSide] 时整数倍立方放大（`copyResize` cubic 的逐位
+/// 复刻）。像素与旧实现一致；PNG 由 Rust 编码器写，压缩流与 `img.encodePng` 不同。
 List<Uint8List?> cropMangaAiOcrBlocks(
   Uint8List imageBytes, {
   required double pageWidth,
   required double pageHeight,
   required List<MokuroRect> boxes,
-}) {
-  // 原生解码（按 EXIF 转正：旧的 package:image JPEG 解码器同样在解码时转正）。
-  final img.Image? decoded = decodeImageNative(imageBytes);
-  if (decoded == null) {
-    return List<Uint8List?>.filled(boxes.length, null);
-  }
-  final double sx = pageWidth > 0 ? decoded.width / pageWidth : 1;
-  final double sy = pageHeight > 0 ? decoded.height / pageHeight : 1;
-  return <Uint8List?>[
-    for (final MokuroRect box in boxes) _cropOne(decoded, box, sx, sy),
-  ];
-}
-
-Uint8List? _cropOne(img.Image page, MokuroRect box, double sx, double sy) {
-  final int left = math.max(
-    0,
-    (box.left * sx).floor() - kMangaAiOcrCropPadding,
-  );
-  final int top = math.max(0, (box.top * sy).floor() - kMangaAiOcrCropPadding);
-  final int right = math.min(
-    page.width,
-    (box.right * sx).ceil() + kMangaAiOcrCropPadding,
-  );
-  final int bottom = math.min(
-    page.height,
-    (box.bottom * sy).ceil() + kMangaAiOcrCropPadding,
-  );
-  if (right - left < 2 || bottom - top < 2) return null;
-  img.Image crop = img.copyCrop(
-    page,
-    x: left,
-    y: top,
-    width: right - left,
-    height: bottom - top,
-  );
-  final int shortSide = math.min(crop.width, crop.height);
-  final int longSide = math.max(crop.width, crop.height);
-  if (longSide > kMangaAiOcrMaxCropSide) {
-    final double scale = kMangaAiOcrMaxCropSide / longSide;
-    crop = img.copyResize(
-      crop,
-      width: math.max(1, (crop.width * scale).round()),
-      height: math.max(1, (crop.height * scale).round()),
-      interpolation: img.Interpolation.average,
-    );
-  } else if (shortSide < kMangaAiOcrMinCropSide) {
-    final int factor = math.min(
-      (kMangaAiOcrMinCropSide / math.max(1, shortSide)).ceil(),
-      math.max(1, kMangaAiOcrMaxCropSide ~/ longSide),
-    );
-    if (factor > 1) {
-      crop = img.copyResize(
-        crop,
-        width: crop.width * factor,
-        height: crop.height * factor,
-        interpolation: img.Interpolation.cubic,
-      );
-    }
-  }
-  return Uint8List.fromList(img.encodePng(crop));
-}
+}) =>
+    FushiComputeImage.instance.aiCrops(
+      imageBytes,
+      pageWidth: pageWidth,
+      pageHeight: pageHeight,
+      boxes: <({double left, double top, double right, double bottom})>[
+        for (final MokuroRect b in boxes)
+          (left: b.left, top: b.top, right: b.right, bottom: b.bottom),
+      ],
+      padding: kMangaAiOcrCropPadding,
+      maxSide: kMangaAiOcrMaxCropSide,
+      minSide: kMangaAiOcrMinCropSide,
+    ) ??
+    List<Uint8List?>.filled(boxes.length, null);

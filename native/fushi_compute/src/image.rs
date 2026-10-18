@@ -1750,6 +1750,375 @@ fn db_components(prob: &[f32], w: usize, h: usize, thresh: f64, box_thresh: f64)
     out
 }
 
+// ---------------------------------------------------------------------------
+// 封面比对特征（`fushi_engine/lib/leaderboard/cover_compare.dart`）。
+// ---------------------------------------------------------------------------
+
+/// 比对网格边长（`kCoverCompareGrid`）。
+const COVER_GRID: usize = 32;
+
+/// `coverSignatureOfImage`：按面积平均缩成 32×32 灰度（BT.601，0–1），空格子取同行左侧
+/// 最近的非空格。逐像素累加顺序与旧 Dart 循环相同（行主序）。
+fn cover_grid(v: &View) -> [f64; COVER_GRID * COVER_GRID] {
+    const N: usize = COVER_GRID;
+    let mut sum = [0f64; N * N];
+    let mut count = [0i32; N * N];
+    for y in 0..v.h {
+        let row = (y * N / v.h) * N;
+        for x in 0..v.w {
+            let cell = row + x * N / v.w;
+            let p = v.rgba(x, y);
+            sum[cell] += 0.299 * (p[0] as f64 / 255.0)
+                + 0.587 * (p[1] as f64 / 255.0)
+                + 0.114 * (p[2] as f64 / 255.0);
+            count[cell] += 1;
+        }
+    }
+    let mut grid = [0f64; N * N];
+    for y in 0..N {
+        let mut last = 0.0;
+        for x in 0..N {
+            let i = y * N + x;
+            if count[i] > 0 {
+                last = sum[i] / count[i] as f64;
+            }
+            grid[i] = last;
+        }
+    }
+    grid
+}
+
+/// 解码（按 EXIF 转正）并算封面比对特征，写进 `out_grid`（32×32 个 f64，行优先）。解不开或
+/// 宽高为 0 返回 [status::BAD_INPUT]。
+///
+/// # Safety
+/// 指针按给定长度可读；`out_grid` 可写 1024 个 f64。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_cover_signature(
+    data: *const u8,
+    len: usize,
+    out_grid: *mut f64,
+) -> i32 {
+    guard(|| {
+        if data.is_null() || out_grid.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let d = match decode_image(slice(data, len), true) {
+            Ok(d) => d,
+            Err(code) => return code,
+        };
+        let stride = d.width as usize * d.channels as usize;
+        let view = match View::new(&d.pixels, stride, d.channels, 0, 0, d.width, d.height) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        slice_mut(out_grid, COVER_GRID * COVER_GRID).copy_from_slice(&cover_grid(&view));
+        status::OK
+    })
+}
+
+/// `_detail`：减去 9×8 粗格（dHash 的格子划分）均值后的残差。
+fn cover_detail(g: &[f64]) -> Vec<f64> {
+    const N: usize = COVER_GRID;
+    let mut sum = [0f64; 72];
+    let mut count = [0i32; 72];
+    let cell_of = |x: usize, y: usize| (y * 8 / N) * 9 + x * 9 / N;
+    for y in 0..N {
+        for x in 0..N {
+            let c = cell_of(x, y);
+            sum[c] += g[y * N + x];
+            count[c] += 1;
+        }
+    }
+    let mut out = vec![0f64; N * N];
+    for y in 0..N {
+        for x in 0..N {
+            let c = cell_of(x, y);
+            out[y * N + x] = g[y * N + x] - sum[c] / count[c] as f64;
+        }
+    }
+    out
+}
+
+/// `_ncc`：归一化互相关；两边都平坦时按均值是否接近给 1 / 0，只有一边平坦给 0。
+fn cover_ncc(a: &[f64], b: &[f64]) -> f64 {
+    const FLAT_VARIANCE: f64 = 1e-6;
+    let mut ma = 0.0;
+    let mut mb = 0.0;
+    for i in 0..a.len() {
+        ma += a[i];
+        mb += b[i];
+    }
+    ma /= a.len() as f64;
+    mb /= b.len() as f64;
+    let (mut sab, mut saa, mut sbb) = (0.0, 0.0, 0.0);
+    for i in 0..a.len() {
+        let da = a[i] - ma;
+        let db = b[i] - mb;
+        sab += da * db;
+        saa += da * da;
+        sbb += db * db;
+    }
+    let flat_a = saa / (a.len() as f64) < FLAT_VARIANCE;
+    let flat_b = sbb / (b.len() as f64) < FLAT_VARIANCE;
+    if flat_a && flat_b {
+        return if (ma - mb).abs() < 0.05 { 1.0 } else { 0.0 };
+    }
+    if flat_a || flat_b {
+        return 0.0;
+    }
+    sab / (saa * sbb).sqrt()
+}
+
+/// `compareCoverSignatures`：两份 32×32 特征的整体 NCC 与细节 NCC，写 `out = [ncc, detail]`。
+///
+/// # Safety
+/// `a` / `b` 可读 1024 个 f64；`out` 可写 2 个 f64。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_cover_compare(
+    a: *const f64,
+    b: *const f64,
+    out: *mut f64,
+) -> i32 {
+    guard(|| {
+        if a.is_null() || b.is_null() || out.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let a = slice(a, COVER_GRID * COVER_GRID);
+        let b = slice(b, COVER_GRID * COVER_GRID);
+        let out = slice_mut(out, 2);
+        out[0] = cover_ncc(a, b);
+        out[1] = cover_ncc(&cover_detail(a), &cover_detail(b));
+        status::OK
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 交给大模型的文字块裁图（`fushi_engine/lib/ocr/manga_ai_ocr_refiner.dart`
+// `cropMangaAiOcrBlocks`）：外扩、长边超限均值缩小 / 短边不足立方放大，编成 PNG。
+// ---------------------------------------------------------------------------
+
+/// `getPixelCubic` 里的一维三次插值（`package:image` 的写法）。第一层的四个输入是整数通道值，
+/// Dart 在 int 上算的中间式在这里以整值 f64 计算，结果相同（量级远小于 2^53）。
+#[inline(always)]
+fn cubic(dx: f64, ipp: f64, icp: f64, inp: f64, iap: f64) -> f64 {
+    icp + 0.5
+        * (dx * (-ipp + inp)
+            + dx * dx * (2.0 * ipp - 5.0 * icp + 4.0 * inp - iap)
+            + dx * dx * dx * (-ipp + 3.0 * icp - 3.0 * inp + iap))
+}
+
+/// `copyResize(src, width: dw, height: dh, interpolation: cubic)`：逐位复刻
+/// `Image.getPixelCubic`，包括它对越界邻点的取法（上一行 / 左一列越界时有的取中心像素、
+/// 有的取 `Pixel.undefined` 即全 0）与 `getColor` 的「先截断再夹进 [0, 255]」。
+fn resize_cubic(src: &View, dw: usize, dh: usize) -> Vec<u8> {
+    let ch = src.ch;
+    let mut dst = vec![0u8; dw * dh * ch];
+    let (w, h) = (src.w as i64, src.h as i64);
+    let dx_step = src.w as f64 / dw as f64;
+    let dy_step = src.h as f64 / dh as f64;
+    let s = |xx: i64, yy: i64| {
+        let p = src.rgba_safe(xx, yy);
+        [p[0] as f64, p[1] as f64, p[2] as f64, p[3] as f64]
+    };
+    for y in 0..dh {
+        let fy = y as f64 * dy_step;
+        let yi = fy as i64; // fy >= 0
+        let (py, ny, ay) = (yi - 1, yi + 1, yi + 2);
+        let dy = fy - yi as f64;
+        for x in 0..dw {
+            let fx = x as f64 * dx_step;
+            let xi = fx as i64;
+            let (px, nx, ax) = (xi - 1, xi + 1, xi + 2);
+            let dx = fx - xi as f64;
+            let icc = s(xi, yi);
+            let ipp = if px < 0 || py < 0 { icc } else { s(px, py) };
+            let icp = if px < 0 { icc } else { s(xi, py) };
+            let inp = if py < 0 || nx >= w { icc } else { s(nx, py) };
+            let iap = if ax >= w || py < 0 { icc } else { s(ax, py) };
+            let ipc = if px < 0 { icc } else { s(px, yi) };
+            let inc = if nx >= w { icc } else { s(nx, yi) };
+            let iac = if ax >= w { icc } else { s(ax, yi) };
+            let ipn = if px < 0 || ny >= h { icc } else { s(px, ny) };
+            let icn = if ny >= h { icc } else { s(xi, ny) };
+            let inn = if nx >= w || ny >= h { icc } else { s(nx, ny) };
+            let ian = if ax >= w || ny >= h { icc } else { s(ax, ny) };
+            let ipa = if px < 0 || ay >= h { icc } else { s(px, ay) };
+            let ica = if ay >= h { icc } else { s(xi, ay) };
+            let ina = if nx >= w || ay >= h { icc } else { s(nx, ay) };
+            let iaa = if ax >= w || ay >= h { icc } else { s(ax, ay) };
+            let o = (y * dw + x) * ch;
+            for c in 0..ch {
+                let ip = cubic(dx, ipp[c], icp[c], inp[c], iap[c]);
+                let ic = cubic(dx, ipc[c], icc[c], inc[c], iac[c]);
+                let in_ = cubic(dx, ipn[c], icn[c], inn[c], ian[c]);
+                let ia = cubic(dx, ipa[c], ica[c], ina[c], iaa[c]);
+                let v = cubic(dy, ip, ic, in_, ia) as i64; // toInt：截断
+                dst[o + c] = v.clamp(0, 255) as u8;
+            }
+        }
+    }
+    dst
+}
+
+fn encode_png(pixels: &[u8], w: u32, h: u32, ch: usize) -> Result<Vec<u8>, i32> {
+    use image::ImageEncoder;
+    let color = if ch == 4 {
+        image::ExtendedColorType::Rgba8
+    } else {
+        image::ExtendedColorType::Rgb8
+    };
+    let mut out = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut out)
+        .write_image(pixels, w, h, color)
+        .map_err(|_| status::BAD_INPUT)?;
+    Ok(out)
+}
+
+fn copy_view(v: &View) -> Vec<u8> {
+    let mut out = Vec::with_capacity(v.w * v.h * v.ch);
+    for y in 0..v.h {
+        let o = v.offset(0, y);
+        out.extend_from_slice(&v.data[o..o + v.w * v.ch]);
+    }
+    out
+}
+
+/// 一块的裁图；框落在图外 / 退化返回 `Ok(None)`，坐标非有限返回 [status::INVALID_ARGUMENT]
+/// （旧实现在 `floor()` / `ceil()` 上抛 `UnsupportedError`）。
+#[allow(clippy::too_many_arguments)]
+fn ai_crop_one(
+    page: &View,
+    b: &[f64],
+    sx: f64,
+    sy: f64,
+    padding: i64,
+    max_side: i64,
+    min_side: i64,
+) -> Result<Option<Vec<u8>>, i32> {
+    let edges = [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy];
+    if edges.iter().any(|v| !v.is_finite()) {
+        return Err(status::INVALID_ARGUMENT);
+    }
+    let (pw, ph) = (page.w as i64, page.h as i64);
+    let left = 0i64.max((edges[0].floor() as i64).wrapping_sub(padding));
+    let top = 0i64.max((edges[1].floor() as i64).wrapping_sub(padding));
+    let right = pw.min((edges[2].ceil() as i64).wrapping_add(padding));
+    let bottom = ph.min((edges[3].ceil() as i64).wrapping_add(padding));
+    if right.wrapping_sub(left) < 2 || bottom.wrapping_sub(top) < 2 {
+        return Ok(None);
+    }
+    let (cw, chh) = ((right - left) as usize, (bottom - top) as usize);
+    let crop = View {
+        data: page.data,
+        stride: page.stride,
+        ch: page.ch,
+        x0: page.x0 + left as usize,
+        y0: page.y0 + top as usize,
+        w: cw,
+        h: chh,
+    };
+    let short = cw.min(chh) as i64;
+    let long = cw.max(chh) as i64;
+    let (pixels, ow, oh) = if long > max_side {
+        let scale = max_side as f64 / long as f64;
+        let ow = 1i64.max(crate::dart::round(cw as f64 * scale)) as usize;
+        let oh = 1i64.max(crate::dart::round(chh as f64 * scale)) as usize;
+        let mut dst = vec![0u8; ow * oh * crop.ch];
+        resize_into(&crop, &mut dst, ow, oh, INTERP_AVERAGE);
+        (dst, ow, oh)
+    } else if short < min_side {
+        let up = (min_side as f64 / 1i64.max(short) as f64).ceil() as i64;
+        let factor = up.min(1i64.max(max_side / long));
+        if factor > 1 {
+            let (ow, oh) = (cw * factor as usize, chh * factor as usize);
+            (resize_cubic(&crop, ow, oh), ow, oh)
+        } else {
+            (copy_view(&crop), cw, chh)
+        }
+    } else {
+        (copy_view(&crop), cw, chh)
+    };
+    encode_png(&pixels, ow as u32, oh as u32, crop.ch).map(Some)
+}
+
+/// 解码整页（按 EXIF 转正）并裁出每个框（[boxes] 每条 4 个 f64：ltrb，坐标系为
+/// `page_w × page_h`；`<= 0` 时按解码尺寸），各编码成 PNG。结果序列化成每块
+/// `[u32 len][len 字节]`（本机字节序），`len == u32::MAX` 表示该块裁不出（null），经
+/// `out_ptr` / `out_len` 交出（[crate::ffc_free_bytes] 释放）。整页解不开返回
+/// [status::BAD_INPUT]；某个框坐标换算后非有限返回 [status::INVALID_ARGUMENT]。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn ffc_image_ai_crops(
+    data: *const u8,
+    len: usize,
+    page_w: f64,
+    page_h: f64,
+    boxes: *const f64,
+    box_count: usize,
+    padding: i32,
+    max_side: i32,
+    min_side: i32,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if data.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if box_count > 0 && boxes.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if max_side <= 0 || min_side <= 0 {
+            return status::INVALID_ARGUMENT;
+        }
+        let d = match decode_image(slice(data, len), true) {
+            Ok(d) => d,
+            Err(code) => return code,
+        };
+        let stride = d.width as usize * d.channels as usize;
+        let page = match View::new(&d.pixels, stride, d.channels, 0, 0, d.width, d.height) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        let sx = if page_w > 0.0 {
+            d.width as f64 / page_w
+        } else {
+            1.0
+        };
+        let sy = if page_h > 0.0 {
+            d.height as f64 / page_h
+        } else {
+            1.0
+        };
+        let boxes = slice(boxes, box_count * 4);
+        let mut out = Vec::new();
+        for b in boxes.chunks_exact(4) {
+            match ai_crop_one(
+                &page,
+                b,
+                sx,
+                sy,
+                padding as i64,
+                max_side as i64,
+                min_side as i64,
+            ) {
+                Ok(Some(png)) => {
+                    out.extend_from_slice(&(png.len() as u32).to_ne_bytes());
+                    out.extend_from_slice(&png);
+                }
+                Ok(None) => out.extend_from_slice(&u32::MAX.to_ne_bytes()),
+                Err(code) => return code,
+            }
+        }
+        crate::hand_over_bytes(out, out_ptr, out_len);
+        status::OK
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

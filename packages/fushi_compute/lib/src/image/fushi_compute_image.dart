@@ -215,6 +215,41 @@ typedef _DbDart =
       Pointer<Size>,
     );
 
+typedef _CoverSigC = Int32 Function(Pointer<Uint8>, Size, Pointer<Double>);
+typedef _CoverSigDart = int Function(Pointer<Uint8>, int, Pointer<Double>);
+typedef _CoverCmpC =
+    Int32 Function(Pointer<Double>, Pointer<Double>, Pointer<Double>);
+typedef _CoverCmpDart =
+    int Function(Pointer<Double>, Pointer<Double>, Pointer<Double>);
+typedef _AiCropsC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Double,
+      Double,
+      Pointer<Double>,
+      Size,
+      Int32,
+      Int32,
+      Int32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _AiCropsDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      double,
+      double,
+      Pointer<Double>,
+      int,
+      int,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+
 /// 解码出的图像格式（与 image.rs 的 `FORMAT_*` 一致）。
 enum FfcImageFormat { jpeg, png, gif, webp, bmp, tiff, tga, ico, pnm }
 
@@ -287,6 +322,15 @@ class FushiComputeImage {
       _db = lib.library.lookupFunction<_DbC, _DbDart>(
         'ffc_image_db_components',
       ),
+      _coverSig = lib.library.lookupFunction<_CoverSigC, _CoverSigDart>(
+        'ffc_image_cover_signature',
+      ),
+      _coverCmp = lib.library.lookupFunction<_CoverCmpC, _CoverCmpDart>(
+        'ffc_image_cover_compare',
+      ),
+      _aiCrops = lib.library.lookupFunction<_AiCropsC, _AiCropsDart>(
+        'ffc_image_ai_crops',
+      ),
       _lib = lib;
 
   final _ResizeDart _resize;
@@ -299,6 +343,9 @@ class FushiComputeImage {
   final _ToJpegDart _toJpeg;
   final _EdgeDart _edge;
   final _DbDart _db;
+  final _CoverSigDart _coverSig;
+  final _CoverCmpDart _coverCmp;
+  final _AiCropsDart _aiCrops;
   final FushiCompute _lib;
 
   static FushiComputeImage? _instance;
@@ -778,6 +825,9 @@ class FushiComputeImage {
       final int bytes = outLen.value;
       final Pointer<Uint8> data = outPtr.value;
       try {
+        // 没有连通域时原生交出的是空切片的悬空指针（只按 1 字节对齐）：`cast<Double>()`
+        // 的 asTypedList 即便长度 0 也查 8 字节对齐，会抛 ArgumentError。
+        if (bytes == 0) return const <FfcDbComponent>[];
         final Float64List v = data.cast<Double>().asTypedList(bytes ~/ 8);
         return <FfcDbComponent>[
           for (int i = 0; i + 11 <= v.length; i += 11)
@@ -799,6 +849,111 @@ class FushiComputeImage {
         _lib.freeBytes(data, bytes);
       }
     } finally {
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
+  /// 封面比对网格边长（image.rs `COVER_GRID`）。
+  static const int coverGrid = 32;
+
+  /// 解码（按 EXIF 转正）并算封面比对特征：按面积平均缩成 32×32 灰度（BT.601，0–1，行优先），
+  /// 空格子取同行左侧最近的非空格（`cover_compare.dart` 的口径）。解不开返回 null。
+  Float64List? coverSignature(Uint8List bytes) {
+    final Pointer<Uint8> src = _copyIn(bytes);
+    final Pointer<Double> out = malloc<Double>(coverGrid * coverGrid);
+    try {
+      final int status = _coverSig(src, bytes.length, out);
+      if (status == FfcStatus.badInput) return null;
+      _check('ffc_image_cover_signature', status);
+      return Float64List.fromList(out.asTypedList(coverGrid * coverGrid));
+    } finally {
+      malloc.free(out);
+    }
+  }
+
+  /// 两份封面特征（各 32×32）的整体 NCC 与「去掉 9×8 粗格均值后」的细节 NCC。
+  ({double ncc, double detailNcc}) compareCoverSignatures(
+    Float64List a,
+    Float64List b,
+  ) {
+    const int n = coverGrid * coverGrid;
+    if (a.length != n || b.length != n) {
+      throw ArgumentError('cover signatures must have $n values');
+    }
+    final Pointer<Double> pa = malloc<Double>(n * 2 + 2);
+    try {
+      final Pointer<Double> pb = pa + n;
+      final Pointer<Double> out = pa + n * 2;
+      pa.asTypedList(n).setAll(0, a);
+      pb.asTypedList(n).setAll(0, b);
+      _check('ffc_image_cover_compare', _coverCmp(pa, pb, out));
+      return (ncc: out[0], detailNcc: out[1]);
+    } finally {
+      malloc.free(pa);
+    }
+  }
+
+  /// 解码整页（按 EXIF 转正）并裁出 [boxes]（每条 ltrb，坐标系为 [pageWidth]×[pageHeight]，
+  /// `<= 0` 时按解码尺寸）：外扩 [padding]，长边超过 [maxSide] 均值缩小、短边不足 [minSide]
+  /// 立方放大（`package:image` 的 cubic 逐位复刻），各编码成 PNG。裁不出的块为 null；整页解
+  /// 不开返回 null。坐标换算后非有限抛 [UnsupportedError]（同旧 `floor()` / `ceil()`）。
+  List<Uint8List?>? aiCrops(
+    Uint8List bytes, {
+    required double pageWidth,
+    required double pageHeight,
+    required List<({double left, double top, double right, double bottom})>
+    boxes,
+    required int padding,
+    required int maxSide,
+    required int minSide,
+  }) {
+    final Pointer<Uint8> src = _copyIn(bytes);
+    final Pointer<Double> rects = malloc<Double>(math.max(1, boxes.length * 4));
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      for (int i = 0; i < boxes.length; i++) {
+        rects[i * 4] = boxes[i].left;
+        rects[i * 4 + 1] = boxes[i].top;
+        rects[i * 4 + 2] = boxes[i].right;
+        rects[i * 4 + 3] = boxes[i].bottom;
+      }
+      final int status = _aiCrops(
+        src,
+        bytes.length,
+        pageWidth,
+        pageHeight,
+        rects,
+        boxes.length,
+        padding,
+        maxSide,
+        minSide,
+        outPtr,
+        outLen,
+      );
+      if (status == FfcStatus.badInput) return null;
+      if (status == FfcStatus.invalidArgument) {
+        throw UnsupportedError('Infinity or NaN toInt');
+      }
+      _check('ffc_image_ai_crops', status);
+      final Uint8List blob = _takeBytes(outPtr, outLen);
+      final ByteData view = ByteData.sublistView(blob);
+      final List<Uint8List?> crops = <Uint8List?>[];
+      int o = 0;
+      for (int i = 0; i < boxes.length; i++) {
+        final int n = view.getUint32(o, Endian.host);
+        o += 4;
+        if (n == 0xFFFFFFFF) {
+          crops.add(null);
+          continue;
+        }
+        crops.add(Uint8List.sublistView(blob, o, o + n));
+        o += n;
+      }
+      return crops;
+    } finally {
+      malloc.free(rects);
       malloc.free(outPtr);
       malloc.free(outLen);
     }

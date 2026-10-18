@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/text_detector.dart'
@@ -172,78 +173,31 @@ abstract interface class PanelDetector {
   Future<void> close();
 }
 
-/// 先按置信度执行贪心 NMS，再将结果分行。
+/// 先按置信度执行贪心 NMS，再将结果分行（原生 `ffc_ocr_order_panels`：夹进 [0, 1]、去零
+/// 面积、NMS、按中心 y 分行、行内按阅读方向排序）。
 List<PanelRect> orderPanelRects(
   Iterable<PanelRect> input, {
   required PanelReadingDirection direction,
 }) {
-  final List<PanelRect> candidates =
-      input
-          .map((PanelRect rect) => rect.clamp())
-          .where((PanelRect rect) => rect.area > 0)
-          .toList()
-        ..sort((PanelRect a, PanelRect b) => b.score.compareTo(a.score));
-  final List<PanelRect> kept = <PanelRect>[];
-  for (final PanelRect candidate in candidates) {
-    if (kept.any(
-      (PanelRect existing) => existing.iou(candidate) >= kPanelNmsIouThreshold,
-    )) {
-      continue;
-    }
-    kept.add(candidate);
-  }
-  kept.sort((PanelRect a, PanelRect b) => a.centerY.compareTo(b.centerY));
-  final List<List<PanelRect>> rows = <List<PanelRect>>[];
-  for (final PanelRect panel in kept) {
-    List<PanelRect>? row;
-    for (final List<PanelRect> candidate in rows) {
-      final double rowY =
-          candidate
-              .map((PanelRect item) => item.centerY)
-              .reduce((double a, double b) => a + b) /
-          candidate.length;
-      final double tolerance = math.max(
-        0.035,
-        math.max(
-              panel.height,
-              candidate
-                  .map((PanelRect item) => item.height)
-                  .reduce((double a, double b) => math.max(a, b)),
-            ) *
-            0.5,
-      );
-      if ((rowY - panel.centerY).abs() <= tolerance) {
-        row = candidate;
-        break;
-      }
-    }
-    if (row == null) {
-      row = <PanelRect>[];
-      rows.add(row);
-    }
-    row.add(panel);
-  }
-  rows.sort(
-    (List<PanelRect> a, List<PanelRect> b) =>
-        _rowCenterPanels(a).compareTo(_rowCenterPanels(b)),
+  final List<PanelRect> rects = input.toList();
+  final List<int> order = FushiComputeOcr.instance.orderPanels(
+    <({double left, double top, double right, double bottom, double score})>[
+      for (final PanelRect r in rects)
+        (
+          left: r.left,
+          top: r.top,
+          right: r.right,
+          bottom: r.bottom,
+          score: r.score,
+        ),
+    ],
+    iouThreshold: kPanelNmsIouThreshold,
+    rtl: direction == PanelReadingDirection.rtl,
   );
-  for (final List<PanelRect> row in rows) {
-    row.sort(
-      (PanelRect a, PanelRect b) => direction == PanelReadingDirection.rtl
-          ? b.centerX.compareTo(a.centerX)
-          : a.centerX.compareTo(b.centerX),
-    );
-  }
-  return List<PanelRect>.unmodifiable(
-    rows.expand((List<PanelRect> row) => row),
-  );
+  return List<PanelRect>.unmodifiable(<PanelRect>[
+    for (final int i in order) rects[i].clamp(),
+  ]);
 }
-
-double _rowCenterPanels(List<PanelRect> row) =>
-    row
-        .map((PanelRect panel) => panel.centerY)
-        .reduce((double a, double b) => a + b) /
-    row.length;
 
 /// 将覆盖大部分页面的单框拆成非重叠阅读锚点。
 List<PanelRect> splitLargePanel(

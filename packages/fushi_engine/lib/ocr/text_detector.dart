@@ -26,6 +26,7 @@ library;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:image/image.dart' as img;
 
 import 'package:fushi_engine/media/image_kernels.dart';
@@ -155,15 +156,27 @@ class RawDetection {
   final int classId;
 }
 
-double _sigmoid(double x) => 1 / (1 + math.exp(-x));
+FfcLetterbox _letterbox(LetterboxTransform t) => (
+  scaleX: t.scaleX,
+  scaleY: t.scaleY,
+  padX: t.padX,
+  padY: t.padY,
+  srcWidth: t.srcWidth,
+  srcHeight: t.srcHeight,
+  dstWidth: t.dstWidth,
+  dstHeight: t.dstHeight,
+);
 
-/// 解码 RT-DETR 输出。
+OcrRect _rectOf(FfcDetection d) =>
+    OcrRect(left: d.left, top: d.top, right: d.right, bottom: d.bottom);
+
+/// 解码 RT-DETR 输出（原生 `ffc_ocr_rtdetr_decode`）。
 ///
 /// [logits]：[numQueries, numClasses]（batch=1 已扁平），**未过 sigmoid**；
 /// [boxes]：[numQueries, 4] cxcywh，相对模型输入归一化 0..1。
 /// 语义对齐 `RTDetrImageProcessor.post_process_object_detection`
 /// （use_focal_loss：sigmoid + 按 (query, class) 过阈值），再经 [transform]
-/// 反变换回原图。
+/// 反变换回原图（夹进原图、去掉零面积）。
 List<RawDetection> decodeRtdetrOutputs({
   required Float32List logits,
   required Float32List boxes,
@@ -171,34 +184,17 @@ List<RawDetection> decodeRtdetrOutputs({
   int numQueries = 300,
   int numClasses = 3,
   double scoreThreshold = 0.3,
-}) {
-  assert(logits.length == numQueries * numClasses);
-  assert(boxes.length == numQueries * 4);
-  final List<RawDetection> detections = <RawDetection>[];
-  for (int q = 0; q < numQueries; q++) {
-    for (int c = 0; c < numClasses; c++) {
-      final double score = _sigmoid(logits[q * numClasses + c]);
-      if (score < scoreThreshold) {
-        continue;
-      }
-      final double cx = boxes[q * 4] * transform.dstWidth;
-      final double cy = boxes[q * 4 + 1] * transform.dstHeight;
-      final double w = boxes[q * 4 + 2] * transform.dstWidth;
-      final double h = boxes[q * 4 + 3] * transform.dstHeight;
-      final OcrRect rect = OcrRect(
-        left: transform.inverseX(cx - w / 2),
-        top: transform.inverseY(cy - h / 2),
-        right: transform.inverseX(cx + w / 2),
-        bottom: transform.inverseY(cy + h / 2),
-      ).clamp(transform.srcWidth.toDouble(), transform.srcHeight.toDouble());
-      if (rect.area <= 0) {
-        continue;
-      }
-      detections.add(RawDetection(rect: rect, score: score, classId: c));
-    }
-  }
-  return detections;
-}
+}) => <RawDetection>[
+  for (final FfcDetection d in FushiComputeOcr.instance.rtdetrDecode(
+    logits: logits,
+    boxes: boxes,
+    queries: numQueries,
+    classes: numClasses,
+    transform: _letterbox(transform),
+    scoreThreshold: scoreThreshold,
+  ))
+    RawDetection(rect: _rectOf(d), score: d.score, classId: d.tag),
+];
 
 /// `labels` 输出按会话实现可能是 float32（flutter_onnxruntime 插件把一切读成
 /// float）也可能是 int64 / int32（服务端 FFI 会话按 ORT 报的元素类型原样返回）。
@@ -212,7 +208,8 @@ List<num> _labelValues(OcrTensor labels) {
   return values;
 }
 
-/// 解码已经在 ONNX 图内完成 sigmoid/top-k/xyxy 转换的 RT-DETR 输出。
+/// 解码已经在 ONNX 图内完成 sigmoid/top-k/xyxy 转换的 RT-DETR 输出（几何在原生
+/// `ffc_ocr_rtdetr_decode_processed`，类别按 `labels[i].round()`）。
 List<RawDetection> decodeProcessedRtdetrOutputs({
   required Float32List scores,
   required List<num> labels,
@@ -226,27 +223,19 @@ List<RawDetection> decodeProcessedRtdetrOutputs({
       'scores=${scores.length}, labels=${labels.length}, boxes=${boxes.length}',
     );
   }
-  final List<RawDetection> detections = <RawDetection>[];
-  for (int i = 0; i < scores.length; i++) {
-    final double score = scores[i];
-    if (score < scoreThreshold) {
-      continue;
-    }
-    final int boxOffset = i * 4;
-    final OcrRect rect = OcrRect(
-      left: transform.inverseX(boxes[boxOffset]),
-      top: transform.inverseY(boxes[boxOffset + 1]),
-      right: transform.inverseX(boxes[boxOffset + 2]),
-      bottom: transform.inverseY(boxes[boxOffset + 3]),
-    ).clamp(transform.srcWidth.toDouble(), transform.srcHeight.toDouble());
-    if (rect.area <= 0) {
-      continue;
-    }
-    detections.add(
-      RawDetection(rect: rect, score: score, classId: labels[i].round()),
-    );
-  }
-  return detections;
+  return <RawDetection>[
+    for (final FfcDetection d in FushiComputeOcr.instance.rtdetrDecodeProcessed(
+      scores: scores,
+      boxes: boxes,
+      transform: _letterbox(transform),
+      scoreThreshold: scoreThreshold,
+    ))
+      RawDetection(
+        rect: _rectOf(d),
+        score: d.score,
+        classId: labels[d.tag].round(),
+      ),
+  ];
 }
 
 /// NMS 分组：气泡（0 类）一组，文字（1/2 类）一组。
@@ -255,39 +244,39 @@ List<RawDetection> decodeProcessedRtdetrOutputs({
 /// 都过线时会产出两个 **rect 完全相同** 的检测；若按 classId 分组，两者互不抑制，
 /// 同一块文字会被识别两次、写进 manga.json 两次（实测 mihon 下载的扉页人物名栏）。
 /// 内/外只是同一块文字的属性，不是两种物体——所以文字两类共用一组，高分者带着
-/// 自己的 classId 存活。气泡与其中的文字天然套叠，仍分组保留。
+/// 自己的 classId 存活。气泡与其中的文字天然套叠，仍分组保留。（原生实现同此分组。）
 int nmsGroupOf(int classId) => classId == kDetClassBubble ? 0 : 1;
 
-/// 分组贪心 NMS：按分数降序，同组内 IoU >= [iouThreshold] 的低分框剔除。
-/// 低 IoU 的内框留到识别后判重：几何包含不能保证父块读全小字号正文，
+/// 分组贪心 NMS（原生 `ffc_ocr_class_aware_nms`）：按分数降序，同组内 IoU >= [iouThreshold]
+/// 的低分框剔除。低 IoU 的内框留到识别后判重：几何包含不能保证父块读全小字号正文，
 /// 横排切行的振假名过滤也可能删掉正文，因此这里不按包含关系删除。
 List<RawDetection> applyClassAwareNms(
   List<RawDetection> detections, {
   double iouThreshold = 0.7,
 }) {
-  final List<RawDetection> sorted = List<RawDetection>.from(detections)
-    ..sort((RawDetection a, RawDetection b) => b.score.compareTo(a.score));
-  final List<RawDetection> kept = <RawDetection>[];
-  for (final RawDetection candidate in sorted) {
-    bool suppressed = false;
-    for (final RawDetection keep in kept) {
-      if (nmsGroupOf(keep.classId) != nmsGroupOf(candidate.classId)) {
-        continue;
-      }
-      if (keep.rect.iou(candidate.rect) >= iouThreshold) {
-        suppressed = true;
-        break;
-      }
-    }
-    if (!suppressed) {
-      kept.add(candidate);
-    }
-  }
-  return kept;
+  final List<int> kept = FushiComputeOcr.instance.classAwareNms(<FfcDetection>[
+    for (final RawDetection d in detections)
+      (
+        left: d.rect.left,
+        top: d.rect.top,
+        right: d.rect.right,
+        bottom: d.rect.bottom,
+        score: d.score,
+        tag: d.classId,
+      ),
+  ], iouThreshold: iouThreshold);
+  return <RawDetection>[for (final int i in kept) detections[i]];
 }
+
+({double left, double top, double right, double bottom}) _ltrb(OcrRect r) =>
+    (left: r.left, top: r.top, right: r.right, bottom: r.bottom);
+
+bool _isText(RawDetection d) =>
+    d.classId == kDetClassTextBubble || d.classId == kDetClassTextFree;
 
 /// 把原始检测拆成 文字块（1/2 类，带内/外判定）+ 气泡（0 类）。
 /// [weakDetections] 是没过正式阈值的弱检测，只取其中的文字类给补检当候选。
+/// 内/外判定（文字框中心是否落在某个气泡框内）在原生 `ffc_ocr_inside_bubbles`。
 PageDetections buildPageDetections(
   List<RawDetection> detections, {
   List<RawDetection> weakDetections = const <RawDetection>[],
@@ -296,37 +285,37 @@ PageDetections buildPageDetections(
     for (final RawDetection d in detections)
       if (d.classId == kDetClassBubble) d.rect,
   ];
-  final List<DetectedTextRegion> textRegions = <DetectedTextRegion>[];
-  for (final RawDetection d in detections) {
-    if (d.classId != kDetClassTextBubble && d.classId != kDetClassTextFree) {
-      continue;
-    }
-    final bool inside = bubbles.any(
-      (OcrRect b) => b.containsPoint(d.rect.centerX, d.rect.centerY),
-    );
-    textRegions.add(
-      DetectedTextRegion(
-        rect: d.rect,
-        score: d.score,
-        classId: d.classId,
-        insideBubble: inside,
-      ),
-    );
-  }
+  final List<RawDetection> texts = detections.where(_isText).toList();
+  final List<RawDetection> weakTexts = weakDetections.where(_isText).toList();
+  final List<({double left, double top, double right, double bottom})>
+  bubbleRects = bubbles.map(_ltrb).toList();
+  final List<bool> inside = FushiComputeOcr.instance.insideBubbles(
+    bubbleRects,
+    texts.map((RawDetection d) => _ltrb(d.rect)).toList(),
+  );
+  final List<bool> weakInside = FushiComputeOcr.instance.insideBubbles(
+    bubbleRects,
+    weakTexts.map((RawDetection d) => _ltrb(d.rect)).toList(),
+  );
   return PageDetections(
-    textRegions: textRegions,
+    textRegions: <DetectedTextRegion>[
+      for (int i = 0; i < texts.length; i++)
+        DetectedTextRegion(
+          rect: texts[i].rect,
+          score: texts[i].score,
+          classId: texts[i].classId,
+          insideBubble: inside[i],
+        ),
+    ],
     bubbles: bubbles,
     weakTextRegions: <DetectedTextRegion>[
-      for (final RawDetection d in weakDetections)
-        if (d.classId == kDetClassTextBubble || d.classId == kDetClassTextFree)
-          DetectedTextRegion(
-            rect: d.rect,
-            score: d.score,
-            classId: d.classId,
-            insideBubble: bubbles.any(
-              (OcrRect b) => b.containsPoint(d.rect.centerX, d.rect.centerY),
-            ),
-          ),
+      for (int i = 0; i < weakTexts.length; i++)
+        DetectedTextRegion(
+          rect: weakTexts[i].rect,
+          score: weakTexts[i].score,
+          classId: weakTexts[i].classId,
+          insideBubble: weakInside[i],
+        ),
     ],
   );
 }

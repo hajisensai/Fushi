@@ -17,6 +17,7 @@ library;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:image/image.dart' as img;
 
 import 'package:fushi_engine/media/image_kernels.dart';
@@ -171,8 +172,9 @@ ctcGreedyDecodePositioned(
   return (text: decoded.text, confidence: decoded.confidence, tokens: tokens);
 }
 
-/// 贪心 CTC 的唯一实现：逐帧 argmax、合并相邻重复、去 blank；[onRun] 在每个
-/// 吐字 run 结束时给出它在输出文本里的 UTF-16 区间与起止帧（止帧不含）。
+/// 贪心 CTC 的唯一实现（原生 `ffc_ocr_ctc_greedy`）：逐帧 argmax、合并相邻重复、去 blank；
+/// [onRun] 在每个吐字 run 结束时给出它在输出文本里的 UTF-16 区间与起止帧（止帧不含）。
+/// 置信度取各 run 首帧置信度的最小值（只在吐字帧上算 softmax 分母）。
 ({String text, double? confidence}) _ctcGreedyDecodeRuns(
   Float32List logits,
   int frames,
@@ -181,43 +183,22 @@ ctcGreedyDecodePositioned(
   void Function(int start, int end, int frameStart, int frameEnd)? onRun,
 }) {
   assert(logits.length == frames * vocabSize);
+  final List<FfcCtcRun> runs = FushiComputeOcr.instance.ctcGreedy(
+    logits,
+    frames,
+    vocabSize,
+    detailed: false,
+  )!;
   final StringBuffer out = StringBuffer();
   double? minConfidence;
-  int previous = -1;
-  int runFrameStart = 0;
-  int runTextStart = 0;
-  for (int t = 0; t < frames; t++) {
-    final int base = t * vocabSize;
-    int best = 0;
-    double bestScore = logits[base];
-    for (int v = 1; v < vocabSize; v++) {
-      final double s = logits[base + v];
-      if (s > bestScore) {
-        bestScore = s;
-        best = v;
-      }
+  for (final FfcCtcRun run in runs) {
+    final int start = out.length;
+    out.write(vocab[run.token]);
+    final double confidence = run.firstConfidence;
+    if (minConfidence == null || confidence < minConfidence) {
+      minConfidence = confidence;
     }
-    if (best != previous) {
-      if (previous > 0) onRun?.call(runTextStart, out.length, runFrameStart, t);
-      if (best != 0) {
-        runFrameStart = t;
-        runTextStart = out.length;
-        out.write(vocab[best]);
-        final double confidence = _ppOcrFrameConfidence(
-          logits,
-          base,
-          vocabSize,
-          best,
-        );
-        if (minConfidence == null || confidence < minConfidence) {
-          minConfidence = confidence;
-        }
-      }
-    }
-    previous = best;
-  }
-  if (previous > 0) {
-    onRun?.call(runTextStart, out.length, runFrameStart, frames);
+    onRun?.call(start, out.length, run.frameStart, run.frameEnd);
   }
   return (text: out.toString(), confidence: minConfidence);
 }
@@ -344,19 +325,22 @@ _PpOcrDecodedOutput _decodePpOcrDetailed({
   required int contentWidth,
   required int inputWidth,
 }) {
+  // 详细口径要求整个张量都是有限值（原生里查，查不过返回 null）。
+  final List<FfcCtcRun>? runs = FushiComputeOcr.instance.ctcGreedy(
+    data,
+    frames,
+    vocabSize,
+    detailed: true,
+  );
+  if (runs == null) {
+    throw StateError('PP-OCR rec output data contains a non-finite value');
+  }
   final StringBuffer text = StringBuffer();
   final List<PpOcrCtcToken> tokens = <PpOcrCtcToken>[];
-  int previous = -1;
-  int? runToken;
-  int runStart = 0;
-  double confidenceSum = 0;
-  int confidenceCount = 0;
-
-  void finishRun(int endExclusive) {
-    final int? tokenId = runToken;
-    if (tokenId == null) return;
-    final double inputLeft = runStart / frames * inputWidth;
-    final double inputRight = endExclusive / frames * inputWidth;
+  for (final FfcCtcRun run in runs) {
+    final int tokenId = run.token;
+    final double inputLeft = run.frameStart / frames * inputWidth;
+    final double inputRight = run.frameEnd / frames * inputWidth;
     final double validInputLeft = math.max(0.0, inputLeft);
     final double validInputRight = math.min(
       contentWidth.toDouble(),
@@ -369,94 +353,23 @@ _PpOcrDecodedOutput _decodePpOcrDetailed({
         inputCenter >= 0 &&
         inputCenter < contentWidth &&
         validInputRight > validInputLeft;
-    final double? left = hasPosition
-        ? validInputLeft / contentWidth * lineWidth
-        : null;
-    final double? right = hasPosition
-        ? validInputRight / contentWidth * lineWidth
-        : null;
-    final double confidence = confidenceCount == 0
-        ? 0
-        : confidenceSum / confidenceCount;
     tokens.add(
       PpOcrCtcToken(
         tokenId: tokenId,
         text: vocab[tokenId],
-        frameStart: runStart,
-        frameEndExclusive: endExclusive,
+        frameStart: run.frameStart,
+        frameEndExclusive: run.frameEnd,
         inputLeft: inputLeft,
         inputRight: inputRight,
-        left: left,
-        right: right,
-        confidence: confidence,
+        left: hasPosition ? validInputLeft / contentWidth * lineWidth : null,
+        right: hasPosition ? validInputRight / contentWidth * lineWidth : null,
+        // Mean argmax probability over the run's frames.
+        confidence: run.meanConfidence,
       ),
     );
     text.write(vocab[tokenId]);
-    runToken = null;
-    confidenceSum = 0;
-    confidenceCount = 0;
   }
-
-  for (int t = 0; t < frames; t++) {
-    final int base = t * vocabSize;
-    int best = 0;
-    double bestScore = data[base];
-    for (int v = 1; v < vocabSize; v++) {
-      final double score = data[base + v];
-      if (score > bestScore) {
-        bestScore = score;
-        best = v;
-      }
-    }
-    final double confidence = _ppOcrFrameConfidence(
-      data,
-      base,
-      vocabSize,
-      best,
-    );
-    if (best == 0 || best != previous) {
-      finishRun(t);
-    }
-    if (best != 0) {
-      if (runToken == null) {
-        runToken = best;
-        runStart = t;
-      }
-      confidenceSum += confidence;
-      confidenceCount++;
-    }
-    previous = best;
-  }
-  finishRun(frames);
   return _PpOcrDecodedOutput(text.toString(), tokens);
-}
-
-double _ppOcrFrameConfidence(
-  Float32List data,
-  int base,
-  int vocabSize,
-  int best,
-) {
-  double sum = 0;
-  bool probabilityRow = true;
-  for (int v = 0; v < vocabSize; v++) {
-    final double value = data[base + v];
-    sum += value;
-    if (value < -1e-5 || value > 1.00001) probabilityRow = false;
-  }
-  if (probabilityRow && (sum - 1).abs() <= 0.02) {
-    return data[base + best].clamp(0.0, 1.0);
-  }
-
-  // PP-OCR exports normally contain probabilities, but accepting logits here
-  // keeps the detailed API correct for equivalent ONNX exports.  Subtracting
-  // the row maximum avoids overflow in exp() for large logits.
-  final double rowMax = data[base + best];
-  double denominator = 0;
-  for (int v = 0; v < vocabSize; v++) {
-    denominator += math.exp(data[base + v] - rowMax);
-  }
-  return 1 / denominator;
 }
 
 ({Float32List data, int frames, int vocabSize}) _validatePpOcrOutput(
@@ -493,11 +406,7 @@ double _ppOcrFrameConfidence(
       'expected $expectedLength for shape $shape',
     );
   }
-  for (final double value in data) {
-    if (!value.isFinite) {
-      throw StateError('PP-OCR rec output data contains a non-finite value');
-    }
-  }
+  // 非有限值由 [_decodePpOcrDetailed] 在原生里查（同一条 StateError）。
   return (data: data, frames: frames, vocabSize: vocabSize);
 }
 
