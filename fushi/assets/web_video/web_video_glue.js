@@ -172,6 +172,80 @@
     return !!hidden;
   }
 
+  // 底层合成（Flutter 画在 WebView 上面，界面全归 Fushi）：页面只留画面——最大的 <video>
+  // 固定铺满视口、按比例黑边，其余元素一律 visibility:hidden（不动布局，站点脚本照常跑）。
+  var VIDEO_ONLY_ID = 'fushi-video-only-style';
+  var VIDEO_ONLY_ATTR = 'data-fushi-video-only';
+  // 视频的祖先链（不含 html/body）也铺满视口：站点播放器按容器尺寸选码率（YouTube 自动画质、
+  // 网飞阶梯），容器还是原来那块小框就只给 720p。
+  var VIDEO_CHAIN_ATTR = 'data-fushi-video-chain';
+  var VIDEO_ONLY_CSS =
+    '[' + VIDEO_CHAIN_ATTR + '] { position: fixed !important; inset: 0 !important; left: 0 !important;' +
+    ' top: 0 !important; width: 100vw !important; height: 100vh !important; max-width: none !important;' +
+    ' max-height: none !important; min-width: 0 !important; min-height: 0 !important;' +
+    ' transform: none !important; margin: 0 !important; padding: 0 !important; }' +
+    'html, body { background: #000 !important; overflow: hidden !important; }' +
+    'body * { visibility: hidden !important; }' +
+    'video[' + VIDEO_ONLY_ATTR + '] { visibility: visible !important; position: fixed !important;' +
+    ' inset: 0 !important; left: 0 !important; top: 0 !important; width: 100vw !important;' +
+    ' height: 100vh !important; max-width: none !important; max-height: none !important;' +
+    ' object-fit: contain !important; transform: none !important; margin: 0 !important;' +
+    ' z-index: 2147483647 !important; background: #000 !important; }';
+  function mainVideo() {
+    var vs = document.querySelectorAll('video');
+    var best = null;
+    for (var i = 0; i < vs.length; i++) {
+      if (!best || vs[i].videoWidth * vs[i].videoHeight > best.videoWidth * best.videoHeight) best = vs[i];
+    }
+    return best;
+  }
+  function setVideoOnly(on) {
+    var marked = document.querySelectorAll('video[' + VIDEO_ONLY_ATTR + ']');
+    var v = on ? mainVideo() : null;
+    for (var i = 0; i < marked.length; i++) {
+      if (marked[i] !== v) marked[i].removeAttribute(VIDEO_ONLY_ATTR);
+    }
+    if (v) v.setAttribute(VIDEO_ONLY_ATTR, '');
+    var chain = document.querySelectorAll('[' + VIDEO_CHAIN_ATTR + ']');
+    for (var c = 0; c < chain.length; c++) chain[c].removeAttribute(VIDEO_CHAIN_ATTR);
+    for (var p = v && v.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+      p.setAttribute(VIDEO_CHAIN_ATTR, '');
+    }
+    var el = document.getElementById(VIDEO_ONLY_ID);
+    if (on && !el) {
+      el = document.createElement('style');
+      el.id = VIDEO_ONLY_ID;
+      el.textContent = VIDEO_ONLY_CSS;
+      (document.head || document.documentElement).appendChild(el);
+    } else if (!on && el) {
+      el.remove();
+    }
+    // 播放器按 resize 重新量容器、重新选码率。
+    try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+    if (on) preferHighestQuality();
+    return !!v;
+  }
+  // YouTube 自动画质还会看带宽历史等，铺满之后再经播放器 API 锁到可用的最高档（级别列表要等
+  // 清单加载完才有，前 30 s 每 2 s 试一次）。其它站点不提供这类 API，靠容器铺满。
+  var qualityTimer = null;
+  function preferHighestQuality() {
+    if (location.hostname.indexOf('youtube.com') < 0) return;
+    var tries = 0;
+    if (qualityTimer) clearInterval(qualityTimer);
+    qualityTimer = setInterval(function () {
+      tries++;
+      var p = document.getElementById('movie_player');
+      try {
+        var levels = p && p.getAvailableQualityLevels ? p.getAvailableQualityLevels() : [];
+        if (levels && levels.length) {
+          if (p.getPlaybackQuality() !== levels[0]) p.setPlaybackQualityRange(levels[0], levels[0]);
+          else { clearInterval(qualityTimer); qualityTimer = null; return; }
+        }
+      } catch (_) {}
+      if (tries >= 15) { clearInterval(qualityTimer); qualityTimer = null; }
+    }, 2000);
+  }
+
   // ── Dart → 页面命令 ──
   window.__fushiWebVideo = {
     seek: function (ms) {
@@ -201,6 +275,15 @@
     },
     setNativeSubtitlesHidden: setNativeSubtitlesHidden,
     setPlayerChromeHidden: setPlayerChromeHidden,
+    setVideoOnly: setVideoOnly,
+    // 底层合成档的 Fushi 音量控件（站点自己的音量键被藏起来了）。
+    setVolume: function (volume, muted) {
+      var v = video();
+      if (!v) return 'no-video';
+      v.volume = Math.max(0, Math.min(1, Number(volume) || 0));
+      v.muted = !!muted;
+      return 'ok';
+    },
     state: function () { var s = snapshot(); last = s; return JSON.stringify(s); },
   };
 })();

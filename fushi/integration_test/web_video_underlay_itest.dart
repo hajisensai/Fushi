@@ -16,7 +16,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -26,6 +25,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:fushi/src/media/video/underlay_composition.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/web_video_controls.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart'
     show kWebVideoPlayerEnabled;
 import 'package:fushi/src/media/video/web_video_hosting.dart';
@@ -122,11 +122,7 @@ void main() {
       underlay = underlayCompositionActive.value;
     }
     debugPrint('[underlay-itest] underlay active=$underlay');
-    expect(
-      underlay,
-      isTrue,
-      reason: '打了补丁的引擎应接受底层合成（原版引擎上恒 false）',
-    );
+    expect(underlay, isTrue, reason: '打了补丁的引擎应接受底层合成（原版引擎上恒 false）');
 
     final WebVideoDebugSnapshot? playing = await _waitFor(
       tester,
@@ -138,7 +134,8 @@ void main() {
     final String? page = await WebVideoFushiPage.debugEvalJs?.call(
       "(() => { const v = document.querySelector('video'); return JSON.stringify("
       '{href: location.href.slice(0, 80), vw: v && v.videoWidth, vh: v && v.videoHeight, '
-      "domSubs: !!document.getElementById('fushi-dom-subtitle')}); })()",
+      "domSubs: !!document.getElementById('fushi-dom-subtitle'), "
+      "videoOnly: !!document.getElementById('fushi-video-only-style')}); })()",
     );
     debugPrint('[underlay-itest] playing=$playing page=$page');
     expect(playing, isNotNull, reason: '视频应在 90s 内起播');
@@ -146,6 +143,17 @@ void main() {
       page?.contains('"domSubs":true') ?? false,
       isFalse,
       reason: '底层合成下不该再注入 DOM 字幕层（字幕归 Flutter）',
+    );
+    expect(
+      page?.contains('"videoOnly":true') ?? false,
+      isTrue,
+      reason: '底层合成下页面只留画面（侧栏 / 评论等站点 UI 隐藏）',
+    );
+
+    expect(
+      find.byType(WebVideoControls),
+      findsOneWidget,
+      reason: '底层合成档播放时应挂上 Fushi 底部控制栏',
     );
 
     final ObserveShot frame = await captureFlutterFrame(
@@ -159,6 +167,17 @@ void main() {
     for (int i = 0; i < 80; i++) {
       await tester.pump(const Duration(milliseconds: 500));
     }
+    // 铺满后站点按全屏尺寸重新选码率：停留结束时实际解码高度应高于 720（窗口 2560x1440）。
+    final String? dims = await WebVideoFushiPage.debugEvalJs?.call(
+      "(() => { const v = document.querySelector('video'); "
+      "return v ? String(v.videoHeight) : '0'; })()",
+    );
+    debugPrint('[underlay-itest] decoded height after hold=$dims');
+    expect(
+      int.tryParse((dims ?? '0').replaceAll('"', '')) ?? 0,
+      greaterThan(720),
+      reason: '铺满后应升到高于 720p 的码率',
+    );
     final WebVideoDebugSnapshot after = WebVideoFushiPage.debugSnapshot!();
     debugPrint('[underlay-itest] HOLD end; after=$after');
     expect(

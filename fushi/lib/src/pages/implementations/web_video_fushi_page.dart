@@ -33,6 +33,7 @@ import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/underlay_composition.dart';
+import 'package:fushi/src/media/video/web_video_controls.dart';
 import 'package:fushi/src/media/video/web_video_shaders.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
@@ -724,6 +725,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _videoKey = state.videoKey;
       _activeTrackKey = null;
       _reselectTrack();
+      // 站内换集（SPA）可能换了 video 元素：重新标记要铺满的那个。
+      if (_underlay && state.hasVideo) unawaited(_setVideoOnly(true));
     }
     final int? pos = state.positionMs;
     if (pos != null) {
@@ -761,7 +764,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       ).invokeMethod<bool>(kWebVideoSetWindowedInputEnabledMethod, enabled),
     );
     if (!enabled) unawaited(_setPlayerChromeHidden(true));
+    unawaited(_setVideoOnly(!enabled));
   }
+
+  /// 底层合成：页面只留画面（最大的 video 铺满视口，其余元素隐藏）——侧栏 / 评论 / 推荐
+  /// 这些站点 UI 不该出现在 Fushi 播放器里。
+  Future<void> _setVideoOnly(bool on) =>
+      _js('window.__fushiWebVideo.setVideoOnly($on)');
 
   void _onKeyToken(List<dynamic> args) {
     if (args.isEmpty) return;
@@ -808,6 +817,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _js('window.__fushiWebVideo.setNativeSubtitlesHidden($hidden)');
   Future<void> _setPlayerChromeHidden(bool hidden) =>
       _js('window.__fushiWebVideo.setPlayerChromeHidden($hidden)');
+
+  /// 底层合成档的音量（站点音量键藏了，Fushi 控制栏持有这份状态推给页面）。
+  double _volume = 1;
+  bool _muted = false;
+
+  Future<void> _applyVolume() =>
+      _js('window.__fushiWebVideo.setVolume($_volume, $_muted)');
 
   Future<void> _seekRelative(int deltaMs) {
     final int pos = _state?.positionMs ?? 0;
@@ -1796,6 +1812,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                             ),
                           ),
                         ),
+                      // 控制栏在字幕层之上：按钮不被字幕层挡；悬停检测不吃点击。
+                      if (_underlay && (_state?.hasVideo ?? false))
+                        Positioned.fill(child: _buildWebVideoControls()),
                     ],
                   ),
                 ),
@@ -1825,6 +1844,31 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   ///
   /// 胶囊排在画面**上方**的黑带里而不是压在画面上：窗口宿主档的 WebView2 自己绘制，
   /// Flutter 叠层画不到它上面（见 [_windowed]），浮在画面上的胶囊在那一档会被盖住。
+  /// 底层合成档的底部控制栏（与原生播放器同一套 M3E 部件，动作走站点播放器）。
+  Widget _buildWebVideoControls() => WebVideoControls(
+    playback: _controller,
+    rate: _state?.rate ?? 1,
+    volume: _volume,
+    muted: _muted,
+    fullscreen: _fullscreen,
+    onTogglePlay: () => unawaited(_togglePlay()),
+    onSeek: (int ms) => unawaited(_seekMs(ms)),
+    onSeekRelative: (int delta) => unawaited(_seekRelative(delta)),
+    onRate: (double r) => unawaited(_setRate(r)),
+    onVolume: (double v) {
+      setState(() {
+        _volume = v;
+        _muted = v == 0;
+      });
+      unawaited(_applyVolume());
+    },
+    onToggleMute: () {
+      setState(() => _muted = !_muted);
+      unawaited(_applyVolume());
+    },
+    onToggleFullscreen: () => unawaited(_toggleFullscreen()),
+  );
+
   /// 就绪态的顶栏：底层合成下页底透明，顶栏条垫回原来由页底提供的底色。
   PreferredSizeWidget _buildOpaqueChromeBar(
     VideoBookRow row,
@@ -1858,8 +1902,14 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       if (t.videoKey == _videoKey && t.cues.isNotEmpty) t,
   ];
 
-  String _barTitle(VideoBookRow row) =>
-      _state?.title.isNotEmpty == true ? _state!.title : row.title;
+  String _barTitle(VideoBookRow row) {
+    final String title = _state?.title.isNotEmpty == true
+        ? _state!.title
+        : row.title;
+    // 底层合成档（4K 窗口档）标出站点实际解码的分辨率：画质够不够一眼可见。
+    final int height = _state?.videoHeight ?? 0;
+    return _underlay && height > 0 ? '$title · ${height}p' : title;
+  }
 
   List<PopupMenuEntry<WebVideoHosting>> _hostingMenuItems(
     BuildContext context,
