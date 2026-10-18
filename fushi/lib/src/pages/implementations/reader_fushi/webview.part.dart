@@ -187,7 +187,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
     if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
       return _forbidden('path traversal blocked: $epubPath');
     }
-    final LnReaderOnlineChapterLoader? onlineChapters = _onlineChapterLoader;
+    final OnlineNovelChapterLoader? onlineChapters = _onlineChapterLoader;
     if (onlineChapters != null) {
       await _ensureOnlineChapter(onlineChapters, filePath);
     }
@@ -284,12 +284,12 @@ extension _ReaderWebView on _ReaderFushiPageState {
     );
   }
 
-  /// 在线小说书：WebView 要的章节还是占位页就先经插件取正文写回解压树（按需
-  /// 取章，见 [LnReaderOnlineChapterLoader]）。换成正文后丢掉这一章的 sanitize
+  /// 在线小说书 / 网页小说书：WebView 要的章节还是占位页就先取正文写回解压树
+  /// （按需取章，见 [OnlineNovelChapterLoader]）。换成正文后丢掉这一章的 sanitize
   /// 缓存与 [EpubChapter] 的正文缓存，否则会继续下发 / 计数占位页。取不到（断网
   /// / 站点挂了 / 插件被删）时照常下发占位页，并提示原因——重进这一章会再取。
   Future<void> _ensureOnlineChapter(
-    LnReaderOnlineChapterLoader loader,
+    OnlineNovelChapterLoader loader,
     String filePath,
   ) async {
     try {
