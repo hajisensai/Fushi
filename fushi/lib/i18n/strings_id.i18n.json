@@ -8361,6 +8361,8 @@
   "web_video_mine_queued": "Masuk antrean pembuatan kartu ($count menunggu)",
   "web_video_mine_switch_builtin": "Beralih ke mode bawaan untuk membuat $count kartu yang antre",
   "web_video_no_tracks": "Belum ada subtitel yang ditangkap",
+  "web_video_page_show": "Back to web page",
+  "web_video_player_open": "Watch in player",
   "web_video_player_unavailable": "Pemutar halaman web bawaan dinonaktifkan sementara; alamat ini belum dapat diputar di dalam aplikasi.",
   "web_video_track_live": "Teks langsung (diambil dari halaman)",
   "web_video_track_menu": "Trek subtitel",

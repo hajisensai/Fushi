@@ -8361,6 +8361,8 @@
   "web_video_mine_queued": "أُضيف إلى قائمة انتظار إنشاء البطاقات ($count معلّقة)",
   "web_video_mine_switch_builtin": "التبديل إلى الوضع المدمج لإنشاء $count بطاقة منتظرة",
   "web_video_no_tracks": "لم يتم التقاط أي ترجمة بعد",
+  "web_video_page_show": "Back to web page",
+  "web_video_player_open": "Watch in player",
   "web_video_player_unavailable": "مشغّل صفحات الويب المدمج معطّل مؤقتًا؛ لا يمكن تشغيل هذا العنوان داخل التطبيق حاليًا.",
   "web_video_track_live": "ترجمة مباشرة (مأخوذة من الصفحة)",
   "web_video_track_menu": "مسار الترجمة",

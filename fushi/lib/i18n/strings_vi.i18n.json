@@ -8361,6 +8361,8 @@
   "web_video_mine_queued": "Đã xếp hàng để tạo thẻ ($count đang chờ)",
   "web_video_mine_switch_builtin": "Chuyển sang chế độ tích hợp để tạo $count thẻ đang chờ",
   "web_video_no_tracks": "Chưa bắt được phụ đề nào",
+  "web_video_page_show": "Back to web page",
+  "web_video_player_open": "Watch in player",
   "web_video_player_unavailable": "Trình phát trang web tích hợp tạm thời bị tắt; hiện chưa thể phát địa chỉ này trong ứng dụng.",
   "web_video_track_live": "Phụ đề trực tiếp (lấy từ trang)",
   "web_video_track_menu": "Rãnh phụ đề",

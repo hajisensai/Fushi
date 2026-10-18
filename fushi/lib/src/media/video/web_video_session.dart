@@ -180,6 +180,27 @@ Future<void> copyWebVideoLoginCookies({
   }
 }
 
+/// 页面地址是不是「正在看某一集」的播放页（自动进播放器档的判据）：Netflix 的
+/// `/watch/<id>`、YouTube 的 `/watch` `/shorts` `/live` `/embed` 与 youtu.be 短链。浏览 /
+/// 详情页上的预告片、悬停预览也是 `<video>`，但不算——那里用户是在选集。其它站点没有可靠的
+/// 地址形状，有视频就算（与改动前一致）。
+bool webVideoIsWatchPage(String href) {
+  final Uri? uri = Uri.tryParse(href);
+  if (uri == null) return false;
+  final String host = uri.host.toLowerCase();
+  bool on(String domain) => host == domain || host.endsWith('.$domain');
+  final String path = uri.path;
+  if (on('netflix.com')) return path.startsWith('/watch/');
+  if (on('youtu.be')) return path.length > 1;
+  if (on('youtube.com')) {
+    return path == '/watch' ||
+        path.startsWith('/shorts/') ||
+        path.startsWith('/live/') ||
+        path.startsWith('/embed/');
+  }
+  return true;
+}
+
 // ── 会话（原生播放器页的网页档）──────────────────────────────────────────────
 
 /// 一本网页站流媒体书在原生播放器页里的宿主会话：窗口宿主档 + 底层合成。
@@ -220,9 +241,9 @@ class WebVideoSession {
   WebVideoPlaybackState? get lastState => _lastState;
   WebVideoPlaybackState? _lastState;
 
-  /// 页面里当前有没有 <video>（决定输入归谁、页面是否只留画面）。
-  bool get hasVideo => _hasVideo;
-  bool _hasVideo = false;
+  /// 当前是不是播放器档（页面只留画面、输入归 Flutter）；否则是网页档（整页可点）。
+  bool get playerMode => _playerMode;
+  bool _playerMode = false;
 
   /// WebView2 子窗口当前是否收输入；null = 新建的 WebView 还没同步过。
   bool? _inputEnabled;
@@ -284,20 +305,25 @@ class WebVideoSession {
   Future<void> setNativeSubtitlesHidden(bool hidden) =>
       evaluate('window.__fushiWebVideo.setNativeSubtitlesHidden($hidden)');
 
-  /// 底层合成下的输入归属：有视频时 WebView2 子窗口不收输入（命中测试跳过它，点击 / 滚轮 /
-  /// 触摸落到上面的 Flutter 播放器），站点控制条藏起来、页面只留画面；没视频（登录、选人、
-  /// 详情页）时还给 WebView。站内换集（SPA）可能换了 video 元素：[videoChanged] 时重新标记。
-  void syncInput({required bool hasVideo, bool videoChanged = false}) {
-    final bool changed = hasVideo != _hasVideo;
-    _hasVideo = hasVideo;
+  /// 底层合成下的输入归属：播放器档时 WebView2 子窗口不收输入（命中测试跳过它，点击 / 滚轮 /
+  /// 触摸落到上面的 Flutter 播放器），站点控制条藏起来、页面只留画面；网页档（登录、选人、
+  /// 详情 / 选集页，或用户点了「回到网页」）时还给 WebView、整页原样。站内换集（SPA）可能换了
+  /// video 元素：[videoChanged] 时重新标记。
+  void syncInput({required bool playerMode, bool videoChanged = false}) {
+    final bool changed = playerMode != _playerMode;
+    _playerMode = playerMode;
     _applyInputEnabled();
-    if (changed || (videoChanged && hasVideo)) _applyPageMode();
+    if (changed || (videoChanged && playerMode)) _applyPageMode();
   }
+
+  /// 退出站点自己的元素全屏（网页档里点了站点的全屏钮 → 换成本页的播放器档 + 窗口全屏）。
+  Future<void> exitPageFullscreen() =>
+      evaluate('document.fullscreenElement&&document.exitFullscreen()');
 
   void _applyInputEnabled() {
     final Object? viewId = _viewId;
     if (viewId == null || _disposed) return;
-    final bool enabled = !_hasVideo;
+    final bool enabled = !_playerMode;
     if (_inputEnabled == enabled) return;
     _inputEnabled = enabled;
     unawaited(
@@ -310,11 +336,11 @@ class WebVideoSession {
     );
   }
 
-  /// 页面模式（只留画面 + 藏站点控制条）跟随 [_hasVideo]；`<style>` 属于当前文档，
+  /// 页面模式（只留画面 + 藏站点控制条）跟随 [_playerMode]；`<style>` 属于当前文档，
   /// 整页导航后要重挂（[_onLoadStop]）。
   void _applyPageMode() {
-    unawaited(setPlayerChromeHidden(_hasVideo));
-    unawaited(setVideoOnly(_hasVideo));
+    unawaited(setPlayerChromeHidden(_playerMode));
+    unawaited(setVideoOnly(_playerMode));
   }
 
   void _onWebViewCreated(InAppWebViewController controller) {
@@ -340,7 +366,7 @@ class WebVideoSession {
     // 字幕由 Fushi 叠层画，站点自己的字幕藏起来（visibility，DOM 采样 live 轨照读）。
     unawaited(setNativeSubtitlesHidden(true));
     unawaited(evaluate('window.__fushiWebVideo.replayCues()'));
-    if (_hasVideo) _applyPageMode();
+    if (_playerMode) _applyPageMode();
   }
 
   Future<Object?> _onJsMessage(List<dynamic> args) async {

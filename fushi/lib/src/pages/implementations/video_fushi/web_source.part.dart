@@ -195,7 +195,15 @@ extension _VideoWebSource on _VideoFushiPageState {
       _webActiveTrackKey = null;
       _reselectWebTrack();
     }
-    session.syncInput(hasVideo: state.hasVideo, videoChanged: videoChanged);
+    // 站点自己的全屏钮（网页档里点的）= 「我要看了」：换成播放器档 + 窗口全屏。
+    if (state.fullscreen && state.hasVideo && !_webPlayerModeFor(state)) {
+      _webForcePlayerKey = state.videoKey;
+      _webBrowseVideoKey = null;
+      unawaited(session.exitPageFullscreen());
+      if (!_webWindowFullscreen) unawaited(_toggleWebWindowFullscreen());
+    }
+    final bool playerMode = _webPlayerModeFor(state);
+    session.syncInput(playerMode: playerMode, videoChanged: videoChanged);
     final VideoPlayerController? controller = _controller;
     if (controller != null) _syncVolumeDisplay(controller.volume);
     // 标题后缀站点实际解码的分辨率：4K 档画质够不够一眼可见。
@@ -204,13 +212,69 @@ extension _VideoWebSource on _VideoFushiPageState {
         ? '$base · ${state.videoHeight}p'
         : base;
     if (_titleNotifier.value != title) _titleNotifier.value = title;
-    if (state.hasVideo != _webHasVideo) {
-      _rebuild(() => _webHasVideo = state.hasVideo);
-      // 有了视频：WebView 不再收输入，键盘焦点收回播放器。
-      if (state.hasVideo) {
+    if (playerMode != _webPlayerMode || state.hasVideo != _webPageHasVideo) {
+      _rebuild(() {
+        _webPlayerMode = playerMode;
+        _webPageHasVideo = state.hasVideo;
+      });
+      // 进了播放器档：WebView 不再收输入，键盘焦点收回播放器。
+      if (playerMode) {
         _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
       }
     }
+  }
+
+  /// 这份快照该不该是播放器档：没视频一定不是；用户对**这一集**点过「回到网页」/「在播放器里
+  /// 看」以用户为准（换一集即失效——在网页里点了另一集，就自动进播放器）；否则看地址是不是
+  /// 播放页（[webVideoIsWatchPage]：Netflix 浏览页的预告片不算）。
+  bool _webPlayerModeFor(WebVideoPlaybackState state) {
+    if (!state.hasVideo) return false;
+    if (_webBrowseVideoKey == state.videoKey) return false;
+    if (_webForcePlayerKey == state.videoKey) return true;
+    return webVideoIsWatchPage(state.href);
+  }
+
+  /// 「回到网页」/「在播放器里看」：只改这一集的档位，同一个 WebView 原地切（不重载、不断播）。
+  void _setWebPlayerMode(bool on) {
+    final WebVideoSession? session = _webSession;
+    final WebVideoPlaybackState? state = session?.lastState;
+    if (session == null || state == null) return;
+    if (on) {
+      _webForcePlayerKey = state.videoKey;
+      _webBrowseVideoKey = null;
+    } else {
+      _webBrowseVideoKey = state.videoKey;
+      _webForcePlayerKey = null;
+      // 网页档要在窗口里选集：窗口全屏一起退掉。
+      if (_webWindowFullscreen) unawaited(_toggleWebWindowFullscreen());
+    }
+    _onWebState(state);
+  }
+
+  /// 播放器档右上组头部的「回到网页」：与原盘「主菜单」同一个挂法（随控制条显隐、窄屏收进「⋯」）。
+  List<VideoBarEntry> _webPageBarEntries({required bool desktop}) {
+    void run() => _setWebPlayerMode(false);
+    return <VideoBarEntry>[
+      VideoBarEntry(
+        priority: 87,
+        menuAction: VideoBarMenuAction(
+          icon: Icons.web,
+          label: t.web_video_page_show,
+          onSelected: run,
+        ),
+        child: FushiTooltip(
+          message: t.web_video_page_show,
+          child: KeyedSubtree(
+            key: const ValueKey<String>('video-web-page-show'),
+            child: _chromeIconButton(
+              icon: Icons.web,
+              desktop: desktop,
+              onPressed: run,
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   void _onWebTrack(WebVideoTrack track) {
@@ -329,7 +393,7 @@ extension _VideoWebSource on _VideoFushiPageState {
   Widget _wrapWebVideoSurface(Widget video) {
     final WebVideoSession? session = _webSession;
     if (session == null) return video;
-    final bool hasVideo = _webHasVideo;
+    final bool hasVideo = _webPlayerMode;
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
@@ -354,8 +418,8 @@ extension _VideoWebSource on _VideoFushiPageState {
     );
   }
 
-  /// 站点页面（登录 / 选人 / 详情）上方的返回条：唯一的 Fushi 控件，走与播放器返回钮同一条
-  /// [_handleBackOrExit]。
+  /// 网页档（登录 / 选人 / 详情 / 选集）上方的返回条：返回走与播放器返回钮同一条
+  /// [_handleBackOrExit]；页面里有视频时右侧给「在播放器里看」。
   Widget _buildWebPageBar() {
     final ThemeData theme = Theme.of(context);
     return ColoredBox(
@@ -382,6 +446,13 @@ extension _VideoWebSource on _VideoFushiPageState {
                 ),
               ),
             ),
+            if (_webPageHasVideo)
+              FilledButton.tonalIcon(
+                key: const ValueKey<String>('video-web-player-open'),
+                onPressed: () => _setWebPlayerMode(true),
+                icon: const Icon(Icons.play_circle_outline),
+                label: Text(t.web_video_player_open),
+              ),
           ],
         ),
       ),

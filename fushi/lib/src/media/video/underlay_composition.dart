@@ -5,7 +5,10 @@
 //
 // 透出来的前提是视频区下面没有任何不透明的 Flutter 底色：页面自己让开，外层标题栏
 // 框架（盖着整个 Navigator 的 surface 底色）听 [underlayCompositionActive]。
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 /// 与 HDR 输出同一条 runner 通道（`underlayCompositionSupported` / `setUnderlayComposition`）。
@@ -64,6 +67,9 @@ Future<void> releaseUnderlayComposition() async {
   if (_holders == 0) return;
   _holders--;
   if (_holders > 0) return;
+  await _afterBuildPhase();
+  // 等待期间又有页 acquire（换页交接）：这份已经不是最后一份。
+  if (_holders > 0) return;
   underlayCompositionActive.value = false;
   try {
     await kUnderlayCompositionChannel.invokeMethod<bool>(
@@ -75,4 +81,17 @@ Future<void> releaseUnderlayComposition() async {
   } on PlatformException {
     // 同上。
   }
+}
+
+/// 页面 dispose 里归还时树是锁着的（`finalizeTree` 卸载 inactive element）：此刻改
+/// [underlayCompositionActive] 会让标题栏的 ValueListenableBuilder 标脏失败（断言，release
+/// 下是标题栏停在透明底）。在帧的 build 阶段里就等这一帧画完再通知。
+Future<void> _afterBuildPhase() {
+  final SchedulerBinding binding = SchedulerBinding.instance;
+  if (binding.schedulerPhase != SchedulerPhase.persistentCallbacks) {
+    return Future<void>.value();
+  }
+  final Completer<void> done = Completer<void>();
+  binding.addPostFrameCallback((Duration _) => done.complete());
+  return done.future;
 }

@@ -8361,6 +8361,8 @@
   "web_video_mine_queued": "En cola para crear tarjetas ($count pendientes)",
   "web_video_mine_switch_builtin": "Cambiar al modo integrado para crear $count tarjetas en cola",
   "web_video_no_tracks": "Aún no se han capturado subtítulos",
+  "web_video_page_show": "Back to web page",
+  "web_video_player_open": "Watch in player",
   "web_video_player_unavailable": "El reproductor de páginas web integrado está desactivado temporalmente; por ahora esta dirección no se puede reproducir dentro de la app.",
   "web_video_track_live": "Subtítulos en vivo (capturados de la página)",
   "web_video_track_menu": "Pista de subtítulos",

@@ -1543,7 +1543,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   bool get debugIsWebBackend => _controller?.isWebBackend ?? false;
 
   @override
-  bool get debugWebHasVideo => _webHasVideo;
+  bool get debugWebHasVideo => _webPlayerMode;
 
   @override
   int get debugWebVideoHeight => _webSession?.lastState?.videoHeight ?? 0;
@@ -2065,9 +2065,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 本页持有一份底层合成（[acquireUnderlayComposition]），dispose 归还。
   bool _webUnderlayHeld = false;
 
-  /// 站点页面里当前有没有 `<video>`：没有（登录 / 选人 / 详情页）时 WebView 收输入、
-  /// 播放器控件不挂，只留顶部返回条。
-  bool _webHasVideo = false;
+  /// 播放器档（[_webPlayerModeFor]）：否则是网页档——WebView 收输入、整页原样，播放器控件
+  /// 不挂，只留顶部返回条。
+  bool _webPlayerMode = false;
+
+  /// 站点页面里当前有没有 `<video>`（网页档返回条上的「在播放器里看」）。
+  bool _webPageHasVideo = false;
+
+  /// 用户对这一集（videoKey）点了「回到网页」/「在播放器里看」；换集即失效。
+  String? _webBrowseVideoKey;
+  String? _webForcePlayerKey;
 
   /// 站点当前视频身份（glue 的 `videoKey`；SPA 换集即变）与它名下的字幕轨。
   String _webVideoKey = '';
@@ -9153,6 +9160,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final List<VideoBarEntry> disc =
         lastTopRightSegment && controller.isBlurayNavigationSession
         ? _discNavigationBarEntries(desktop: desktop)
+        : lastTopRightSegment && _webMode
+        ? _webPageBarEntries(desktop: desktop)
         : const <VideoBarEntry>[];
     if (items.isEmpty && folded.isEmpty && disc.isEmpty) {
       return const SizedBox.shrink();
@@ -11162,7 +11171,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         videoController != null &&
         _videoReadyToShow &&
         // 网页档没视频时顶上是站点页面自己（登录 / 选人），不是黑底画面。
-        (!_webMode || _webHasVideo);
+        (!_webMode || _webPlayerMode);
     return videoShown ? fushiTitleBarColorsOn(Colors.black) : null;
   }
 
