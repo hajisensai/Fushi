@@ -614,7 +614,7 @@ class _ProfileRow extends StatelessWidget {
           ),
         ]),
         trailing: profile.probablyOpen
-            ? Tooltip(
+            ? FushiTooltip(
                 message: t.srs_anki_migrate_open_warning,
                 child: const FushiIcon(FushiIcons.warning),
               )
