@@ -22,7 +22,8 @@ cd "$SCRIPT_DIR"
 echo "==> cargo rustc --release --lib --target $target --crate-type cdylib (MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET)"
 # CARGO_PROFILE_RELEASE_STRIP=false：cargo（rustc）strip 出来的 dylib 在新工具链的 macOS 上加载即报
 # 「mis-aligned LINKEDIT string pool」（实测 macOS 27.2 / Xcode 27.1 / rustc 1.95），verify_abi.sh 的
-# 符号核对查不出来。改由下面 Xcode 的 strip -x 去本地符号，体积与 cargo strip 相当。
+# 符号核对查不出来。改由下面 Apple 的 /usr/bin/strip -x 去本地符号（它会补齐对齐；写绝对路径免得 PATH 上的
+# llvm-strip 顶替），体积与 cargo strip 相当。verify_abi.sh 另有与 runner 系统无关的 LINKEDIT 对齐检查。
 CARGO_PROFILE_RELEASE_STRIP=false cargo rustc --release --lib --target "$target" --crate-type cdylib
 built="target/$target/release/libfushi_p2p.dylib"
 [[ -f "$built" ]] || { echo "missing $built" >&2; exit 1; }
@@ -30,7 +31,7 @@ built="target/$target/release/libfushi_p2p.dylib"
 mkdir -p "$OUT_DIR"
 out="$OUT_DIR/libfushi_p2p.dylib"
 cp -f "$built" "$out"
-strip -x "$out"
+/usr/bin/strip -x "$out"
 install_name_tool -id "@rpath/libfushi_p2p.dylib" "$out"
 # 真加载一次：坏掉的 LINKEDIT 只有 dlopen 才暴露（nm / otool 照样读得出符号）。
 python3 -c 'import ctypes, sys; ctypes.CDLL(sys.argv[1])' "$out" || {
