@@ -11,7 +11,23 @@ abstract final class FfcCryptoStatus {
 
   /// 所有 unit key 都解不出合法 TS。
   static const int aacsNoMatchingKey = -21;
+
+  /// ECDSA 验签不通过。
+  static const int p256SignatureInvalid = -22;
 }
+
+typedef _CbcEncryptC =
+    Int32 Function(Pointer<Uint8>, Size, Pointer<Uint8>, Pointer<Uint8>, Size);
+typedef _CbcEncryptDart =
+    int Function(Pointer<Uint8>, int, Pointer<Uint8>, Pointer<Uint8>, int);
+typedef _SyncXorC = Int32 Function(Pointer<Uint8>, Size, Uint64);
+typedef _SyncXorDart = int Function(Pointer<Uint8>, int, int);
+typedef _P256PublicKeyC = Int32 Function(Pointer<Uint8>, Pointer<Uint8>);
+typedef _P256PublicKeyDart = int Function(Pointer<Uint8>, Pointer<Uint8>);
+typedef _P256SignC =
+    Int32 Function(Pointer<Uint8>, Pointer<Uint8>, Size, Pointer<Uint8>);
+typedef _P256SignDart =
+    int Function(Pointer<Uint8>, Pointer<Uint8>, int, Pointer<Uint8>);
 
 typedef _AacsOpenC =
     Int32 Function(Pointer<Uint8>, Size, Pointer<Pointer<Void>>);
@@ -43,7 +59,7 @@ typedef _CbcPkcs7Dart =
       Pointer<Size>,
     );
 
-/// fushi_compute 的加密域（AES / AACS）。
+/// fushi_compute 的加密域（AES / AACS / 云同步混淆 / P-256 ECDSA）。
 ///
 /// 原生库是硬依赖：库或本域符号缺失时 [instance] 抛 [FushiComputeUnavailableError]，
 /// 没有 Dart 回退。
@@ -72,6 +88,27 @@ final class FushiComputeCrypto {
       _cbcPkcs7 = lib.library.lookupFunction<_CbcPkcs7C, _CbcPkcs7Dart>(
         'ffc_crypto_aes_cbc_pkcs7_decrypt',
         isLeaf: true,
+      ),
+      _cbcEncrypt = lib.library.lookupFunction<_CbcEncryptC, _CbcEncryptDart>(
+        'ffc_crypto_aes_cbc_encrypt',
+        isLeaf: true,
+      ),
+      _syncXor = lib.library.lookupFunction<_SyncXorC, _SyncXorDart>(
+        'ffc_crypto_sync_xor',
+        isLeaf: true,
+      ),
+      _p256PublicKey = lib.library
+          .lookupFunction<_P256PublicKeyC, _P256PublicKeyDart>(
+            'ffc_crypto_p256_public_key',
+            isLeaf: true,
+          ),
+      _p256Sign = lib.library.lookupFunction<_P256SignC, _P256SignDart>(
+        'ffc_crypto_p256_sign_sha256',
+        isLeaf: true,
+      ),
+      _p256Verify = lib.library.lookupFunction<_P256SignC, _P256SignDart>(
+        'ffc_crypto_p256_verify_sha256',
+        isLeaf: true,
       );
 
   final _AacsOpenDart _aacsOpen;
@@ -79,6 +116,11 @@ final class FushiComputeCrypto {
   final _AacsDecryptDart _aacsDecrypt;
   final _EcbDecryptDart _ecbDecrypt;
   final _CbcPkcs7Dart _cbcPkcs7;
+  final _CbcEncryptDart _cbcEncrypt;
+  final _SyncXorDart _syncXor;
+  final _P256PublicKeyDart _p256PublicKey;
+  final _P256SignDart _p256Sign;
+  final _P256SignDart _p256Verify;
 
   // 本 isolate 的原生暂存区（只增不减，随 isolate 存活；调用全是同步的，不会并发复用）。
   Pointer<Uint8> _scratch = nullptr;
@@ -86,8 +128,13 @@ final class FushiComputeCrypto {
   final Pointer<Size> _outLen = malloc<Size>();
   final Pointer<Uint8> _keyBuf = malloc<Uint8>(32);
   final Pointer<Uint8> _ivBuf = malloc<Uint8>(16);
+  // P-256：私钥 32 / 公钥点 65 / 签名 64 字节。
+  final Pointer<Uint8> _scalarBuf = malloc<Uint8>(32);
+  final Pointer<Uint8> _pointBuf = malloc<Uint8>(65);
+  final Pointer<Uint8> _sigBuf = malloc<Uint8>(64);
 
   Pointer<Uint8> _scratchFor(int length) {
+    if (length == 0) length = 1;
     if (length > _scratchLength) {
       if (_scratch != nullptr) malloc.free(_scratch);
       _scratch = malloc<Uint8>(length);
@@ -170,6 +217,120 @@ final class FushiComputeCrypto {
       throw StateError('ffc_crypto_aes_cbc_pkcs7_decrypt: $code');
     }
     return Uint8List.fromList(Uint8List.sublistView(view, 0, _outLen.value));
+  }
+
+  /// AES-CBC 加密（不填充；[data] 长度须为 16 的倍数，key 16 / 24 / 32 字节）。
+  /// 生产路径只解密，这个给测试造密文。
+  Uint8List aesCbcEncryptNoPadding(
+    Uint8List data,
+    Uint8List key,
+    Uint8List iv,
+  ) {
+    if (key.length != 16 && key.length != 24 && key.length != 32) {
+      throw ArgumentError('Key length not 128/192/256 bits.');
+    }
+    if (iv.length != 16 || data.length % 16 != 0) {
+      throw ArgumentError('IV must be 16 bytes and data whole blocks');
+    }
+    if (data.isEmpty) return Uint8List(0);
+    _keyBuf.asTypedList(key.length).setAll(0, key);
+    _ivBuf.asTypedList(16).setAll(0, iv);
+    final Pointer<Uint8> buf = _scratchFor(data.length);
+    final Uint8List view = buf.asTypedList(data.length)..setAll(0, data);
+    final int code = _cbcEncrypt(_keyBuf, key.length, _ivBuf, buf, data.length);
+    _keyBuf.asTypedList(32).fillRange(0, 32, 0);
+    if (code != FfcStatus.ok) {
+      throw StateError('ffc_crypto_aes_cbc_encrypt: $code');
+    }
+    return Uint8List.fromList(view);
+  }
+
+  /// 云同步「防扫盘」混淆的字节变换（混淆 = 还原，同一操作）：返回
+  /// `chunk[i] ^ keystream[(bodyOffset + i) % 32]`，keystream = SHA-256("hibiki")。
+  /// [bodyOffset] 是正文（不含魔数）里的全局偏移。
+  Uint8List syncXor(List<int> chunk, int bodyOffset) {
+    if (bodyOffset < 0) {
+      throw ArgumentError.value(bodyOffset, 'bodyOffset', 'negative');
+    }
+    final int length = chunk.length;
+    if (length == 0) return Uint8List(0);
+    final Pointer<Uint8> buf = _scratchFor(length);
+    final Uint8List view = buf.asTypedList(length)..setAll(0, chunk);
+    final int code = _syncXor(buf, length, bodyOffset);
+    if (code != FfcStatus.ok) throw StateError('ffc_crypto_sync_xor: $code');
+    return Uint8List.fromList(view);
+  }
+
+  /// P-256 公钥：32 字节大端私钥标量 → 65 字节未压缩点 `04‖x‖y`。
+  /// 长度不对或标量不在 [1, n-1] 抛 [ArgumentError]。
+  Uint8List p256PublicKey(Uint8List privateKey) {
+    _loadScalar(privateKey);
+    final int code = _p256PublicKey(_scalarBuf, _pointBuf);
+    _scalarBuf.asTypedList(32).fillRange(0, 32, 0);
+    if (code == FfcStatus.invalidArgument) {
+      throw ArgumentError.value(
+        privateKey,
+        'privateKey',
+        'scalar out of range',
+      );
+    }
+    if (code != FfcStatus.ok) {
+      throw StateError('ffc_crypto_p256_public_key: $code');
+    }
+    return Uint8List.fromList(_pointBuf.asTypedList(65));
+  }
+
+  /// ECDSA/SHA-256 签 [message]（RFC 6979 确定性 k，不做 low-s 归一），返回 P1363
+  /// `r‖s` 64 字节。
+  Uint8List p256SignSha256(Uint8List privateKey, List<int> message) {
+    _loadScalar(privateKey);
+    final Pointer<Uint8> msg = _scratchFor(message.length);
+    if (message.isNotEmpty) msg.asTypedList(message.length).setAll(0, message);
+    final int code = _p256Sign(_scalarBuf, msg, message.length, _sigBuf);
+    _scalarBuf.asTypedList(32).fillRange(0, 32, 0);
+    if (code == FfcStatus.invalidArgument) {
+      throw ArgumentError.value(
+        privateKey,
+        'privateKey',
+        'scalar out of range',
+      );
+    }
+    if (code != FfcStatus.ok) {
+      throw StateError('ffc_crypto_p256_sign_sha256: $code');
+    }
+    return Uint8List.fromList(_sigBuf.asTypedList(64));
+  }
+
+  /// 用 65 字节未压缩点 [publicPoint] 验 [message] 的 P1363 签名 [signature]（64 字节）。
+  /// 签名不对 / 点不在曲线上 / 长度不对都返回 false，不抛。
+  bool p256VerifySha256(
+    Uint8List publicPoint,
+    List<int> message,
+    Uint8List signature,
+  ) {
+    if (publicPoint.length != 65 || signature.length != 64) return false;
+    _pointBuf.asTypedList(65).setAll(0, publicPoint);
+    _sigBuf.asTypedList(64).setAll(0, signature);
+    final Pointer<Uint8> msg = _scratchFor(message.length);
+    if (message.isNotEmpty) msg.asTypedList(message.length).setAll(0, message);
+    final int code = _p256Verify(_pointBuf, msg, message.length, _sigBuf);
+    if (code == FfcStatus.ok) return true;
+    if (code == FfcCryptoStatus.p256SignatureInvalid ||
+        code == FfcStatus.badInput) {
+      return false;
+    }
+    throw StateError('ffc_crypto_p256_verify_sha256: $code');
+  }
+
+  void _loadScalar(Uint8List privateKey) {
+    if (privateKey.length != 32) {
+      throw ArgumentError.value(
+        privateKey.length,
+        'privateKey',
+        'must be 32 bytes',
+      );
+    }
+    _scalarBuf.asTypedList(32).setAll(0, privateKey);
   }
 
   /// 建一个 AACS 内容解码器（每个 unit key 16 字节，至少一个）。

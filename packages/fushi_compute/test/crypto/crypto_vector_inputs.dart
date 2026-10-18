@@ -2,10 +2,12 @@
 //
 // 期望输出（crypto_vectors.json）是删掉 pointycastle 解密实现之前，用原 Dart 实现
 // （AacsContentDecoder.decryptUnit / decryptHlsSegment）对这些输入跑出来的：每个结果的
-// SHA-256 与异常形态。这里只用 pointycastle 的**加密**方向造密文。
+// SHA-256 与异常形态。密文用 fushi_compute 的 AES-CBC 加密方向现造（仓库已不依赖
+// pointycastle）；密文本身的 SHA-256 也冻结在向量里（当时由 pointycastle 加密得到），
+// 所以加密方向同样被钉死。
 import 'dart:typed_data';
 
-import 'package:pointycastle/export.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 const int kAacsUnit = 6144;
 
@@ -43,26 +45,20 @@ Uint8List plainAacsUnit(int seed, {bool encryptedFlag = true}) {
 
 /// 用 [unitKey] 按 AACS 1 aligned-unit 格式加密 [plain]。
 Uint8List encryptAacsUnit(Uint8List unitKey, Uint8List plain) {
-  final Uint8List contentKey = Uint8List(16);
-  (AESEngine()..init(true, KeyParameter(unitKey))).processBlock(
-    plain,
-    0,
-    contentKey,
-    0,
+  final FushiComputeCrypto crypto = FushiComputeCrypto.instance;
+  // AES-ECB 单块 = 零 IV 的 CBC 单块。
+  final Uint8List contentKey = crypto.aesCbcEncryptNoPadding(
+    plain.sublist(0, 16),
+    unitKey,
+    Uint8List(16),
   );
   for (int i = 0; i < 16; i++) {
     contentKey[i] ^= plain[i];
   }
-  final CBCBlockCipher cbc = CBCBlockCipher(AESEngine())
-    ..init(
-      true,
-      ParametersWithIV<KeyParameter>(KeyParameter(contentKey), _aacsIv),
-    );
-  final Uint8List out = Uint8List.fromList(plain);
-  for (int offset = 16; offset < kAacsUnit; offset += 16) {
-    cbc.processBlock(plain, offset, out, offset);
-  }
-  return out;
+  return Uint8List.fromList(plain)..setAll(
+    16,
+    crypto.aesCbcEncryptNoPadding(plain.sublist(16), contentKey, _aacsIv),
+  );
 }
 
 /// AACS 向量用的 unit key（解码器按此顺序拿到 k0 / k1 / k2；k3 不在盘里）。
@@ -106,27 +102,16 @@ Uint8List aacsMixedStream() {
 
 /// 用 PKCS7 加密一段 HLS 分片。
 Uint8List encryptHlsSegment(Uint8List plain, Uint8List key, Uint8List iv) {
-  final PaddedBlockCipher cipher =
-      PaddedBlockCipherImpl(PKCS7Padding(), CBCBlockCipher(AESEngine()))..init(
-        true,
-        PaddedBlockCipherParameters<CipherParameters, CipherParameters?>(
-          ParametersWithIV<KeyParameter>(KeyParameter(key), iv),
-          null,
-        ),
-      );
-  return cipher.process(plain);
+  final int pad = 16 - plain.length % 16;
+  final Uint8List padded = Uint8List(plain.length + pad)
+    ..setAll(0, plain)
+    ..fillRange(plain.length, plain.length + pad, pad);
+  return encryptCbcRaw(padded, key, iv);
 }
 
 /// 不加填充地 CBC 加密（造坏填充用；[plain] 长度须为 16 的倍数）。
-Uint8List encryptCbcRaw(Uint8List plain, Uint8List key, Uint8List iv) {
-  final CBCBlockCipher cbc = CBCBlockCipher(AESEngine())
-    ..init(true, ParametersWithIV<KeyParameter>(KeyParameter(key), iv));
-  final Uint8List out = Uint8List(plain.length);
-  for (int offset = 0; offset < plain.length; offset += 16) {
-    cbc.processBlock(plain, offset, out, offset);
-  }
-  return out;
-}
+Uint8List encryptCbcRaw(Uint8List plain, Uint8List key, Uint8List iv) =>
+    FushiComputeCrypto.instance.aesCbcEncryptNoPadding(plain, key, iv);
 
 /// 一个 HLS 向量：输入 + 参数。
 final class HlsVectorInput {

@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_content_decoder.dart';
-import 'package:pointycastle/export.dart';
 
 void main() {
   final firstKey = Uint8List.fromList(List.generate(16, (i) => i));
@@ -39,9 +39,15 @@ void main() {
     keyFile[16] = 1;
     keyFile[17] = 1;
     header.setUint16(32, 2);
-    final aes = AESEngine()..init(true, KeyParameter(vuk));
-    aes.processBlock(firstKey, 0, keyFile, 80);
-    aes.processBlock(secondKey, 0, keyFile, 128);
+    final crypto = FushiComputeCrypto.instance;
+    keyFile.setAll(
+      80,
+      crypto.aesCbcEncryptNoPadding(firstKey, vuk, Uint8List(16)),
+    );
+    keyFile.setAll(
+      128,
+      crypto.aesCbcEncryptNoPadding(secondKey, vuk, Uint8List(16)),
+    );
     final decoder = AacsContentDecoder.fromVolumeUniqueKey(
       unitKeyFile: keyFile,
       volumeUniqueKey: vuk,
@@ -109,12 +115,10 @@ Uint8List _encryptedUnit(Uint8List key) {
   for (var offset = 0; offset < unit.length; offset += 192) {
     unit[offset] |= 0x40;
   }
-  final blockKey = Uint8List(16);
-  (AESEngine()..init(true, KeyParameter(key))).processBlock(
-    unit,
-    0,
-    blockKey,
-    0,
+  final blockKey = FushiComputeCrypto.instance.aesCbcEncryptNoPadding(
+    unit.sublist(0, 16),
+    key,
+    Uint8List(16),
   );
   for (var i = 0; i < 16; i++) {
     blockKey[i] ^= unit[i];
@@ -137,10 +141,13 @@ Uint8List _encryptedUnit(Uint8List key) {
     0x0f,
     0x78,
   ]);
-  final cipher = CBCBlockCipher(AESEngine())
-    ..init(true, ParametersWithIV(KeyParameter(blockKey), iv));
-  for (var offset = 16; offset < unit.length; offset += 16) {
-    cipher.processBlock(unit, offset, unit, offset);
-  }
+  unit.setAll(
+    16,
+    FushiComputeCrypto.instance.aesCbcEncryptNoPadding(
+      unit.sublist(16),
+      blockKey,
+      iv,
+    ),
+  );
   return unit;
 }

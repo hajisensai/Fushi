@@ -14,6 +14,8 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 # AES（运行时检测 AES-NI / ARMv8 AES）+ CBC，Apache-2.0 OR MIT。
 aes = { version = "0.8", features = ["zeroize"] }
 cbc = "0.1"
+# P-256 ECDSA（RFC 6979 确定性 k），Apache-2.0 OR MIT。
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 crc32fast = "1"
 md4 = "0.10"
 sha2 = "0.10"

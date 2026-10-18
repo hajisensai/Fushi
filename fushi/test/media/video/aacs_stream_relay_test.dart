@@ -10,7 +10,7 @@ import 'package:fushi_engine/media/video/bluray/aacs_content_decoder.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_stream_relay.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart';
-import 'package:pointycastle/export.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 void main() {
   late Directory directory;
@@ -388,7 +388,10 @@ Uint8List _keyFile(Uint8List key, Uint8List vuk) {
     ..setUint32(0, 32)
     ..setUint16(32, 1);
   file[17] = 1;
-  (AESEngine()..init(true, KeyParameter(vuk))).processBlock(key, 0, file, 80);
+  file.setAll(
+    80,
+    FushiComputeCrypto.instance.aesCbcEncryptNoPadding(key, vuk, Uint8List(16)),
+  );
   return file;
 }
 
@@ -408,12 +411,10 @@ Uint8List _encryptedUnit(Uint8List key, int seed) {
   for (var offset = 0; offset < unit.length; offset += 192) {
     unit[offset] |= 0x40;
   }
-  final blockKey = Uint8List(16);
-  (AESEngine()..init(true, KeyParameter(key))).processBlock(
-    unit,
-    0,
-    blockKey,
-    0,
+  final blockKey = FushiComputeCrypto.instance.aesCbcEncryptNoPadding(
+    unit.sublist(0, 16),
+    key,
+    Uint8List(16),
   );
   for (var i = 0; i < 16; i++) {
     blockKey[i] ^= unit[i];
@@ -436,10 +437,13 @@ Uint8List _encryptedUnit(Uint8List key, int seed) {
     0x0f,
     0x78,
   ]);
-  final cipher = CBCBlockCipher(AESEngine())
-    ..init(true, ParametersWithIV(KeyParameter(blockKey), iv));
-  for (var offset = 16; offset < unit.length; offset += 16) {
-    cipher.processBlock(unit, offset, unit, offset);
-  }
+  unit.setAll(
+    16,
+    FushiComputeCrypto.instance.aesCbcEncryptNoPadding(
+      unit.sublist(16),
+      blockKey,
+      iv,
+    ),
+  );
   return unit;
 }

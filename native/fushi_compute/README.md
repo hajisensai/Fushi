@@ -87,6 +87,32 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
 | 内存 SHA-256 | 64 MiB | 1,173 ms | 43 ms | 27× |
 | 整文件 SHA-256（异步读，UI isolate 可用） | 256 MiB | 4,829 ms | 408 ms | 11.8× |
 
+## 加密域（`ffc_crypto_*`，`src/crypto.rs` + `src/crypto/`）
+
+| 符号 | 作用 | 调用方 |
+|---|---|---|
+| `ffc_crypto_aacs_open / _decrypt_units / _close` | AACS 1 内容解密：求单元密钥 + CBC + 0x47 校验 + 清 CPI + 多 key 轮换重试，一次处理一批 6144 字节单元 | `fushi_engine/.../aacs_content_decoder.dart`（relay 每 32 单元一次） |
+| `ffc_crypto_aes128_ecb_decrypt` | unit key 表解密 | 同上 `fromVolumeUniqueKey` |
+| `ffc_crypto_aes_cbc_pkcs7_decrypt` | AES-128/192/256-CBC + PKCS7，原地 | HLS 分片（`anime_episode_downloader.dart`）、comico 根 URL |
+| `ffc_crypto_aes_cbc_encrypt` | AES-CBC 加密（不填充） | 只给测试造密文 |
+| `ffc_crypto_sync_xor` | 云同步「防扫盘」XOR（keystream = SHA-256("hibiki")，**永远不能改**，云端旧文件靠它解开） | `fushi/lib/src/sync/sync_obfuscator.dart` 整块 / 流式 / Range 三条路径 |
+| `ffc_crypto_p256_public_key / _sign_sha256 / _verify_sha256` | P-256 ECDSA/SHA-256，RFC 6979 确定性 k，P1363 `r‖s`，不做 low-s 归一 | `LeaderboardIdentity`（排行榜账户 / 安装身份）、`InterconnectDeviceKey`、host 自签 TLS 证书（`fushi_tls_identity.dart`，DER 在 Dart 拼） |
+
+依赖：RustCrypto `aes` 0.8 / `cbc` 0.1 / `p256` 0.13（Apache-2.0 OR MIT）。仓库因此不再直接依赖
+pointycastle / basic_utils（pointycastle 仍经 dartssh2 等第三方包间接进 lock）。
+
+一致性：删 Dart 实现前用旧实现（pointycastle 3.9.1 / basic_utils 5.7.0 / Dart XOR）冻结向量
+`packages/fushi_compute/test/crypto/crypto_vectors.json`（AACS / HLS）与 `crypto_vectors_v2.json`
+（XOR、ECDSA 签名与验签边角、证书 TBS 与 PKCS#8 PEM）。旧实现的两处边角原样保留：空 HLS 分片旧版抛
+`RangeError`（pointycastle 越界），现为 `ArgumentError`；验签收混合编码点（`06`/`07` 前缀，不核对 y 奇偶）
+由 Dart 侧改写成 `04` 再交原生。证书签名值不同（旧实现 k 随机，现为 RFC 6979），TBS 与 PEM 版式逐字节相同。
+
+**ARMv8 AES**：aes 0.8 在 aarch64 上要 `--cfg aes_armv8` 才用硬件指令（Linux / Android / Apple 运行时
+检测），否则退回软件实现（结果相同、慢数倍）。本目录与 `native/fushi_ios_umbrella` 各有一份
+`.cargo/config.toml` 带上它；cargo 按**工作目录**找配置（构建脚本都 `cd` 到各自目录），且设了
+`RUSTFLAGS` / `CARGO_ENCODED_RUSTFLAGS` 环境变量时会**整个忽略**配置里的 rustflags，那时要在变量里
+自己带 `--cfg aes_armv8`。
+
 ## 构建
 
 | 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-18 实测） |
@@ -105,7 +131,7 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
   fushi_compute 加依赖时要同步更新 `native/fushi_ios_umbrella/Cargo.lock`（构建用 `--locked`）。
   因为三个 crate 编成一个 `.a`，iOS 上 fushi_p2p / fushi_fsrs 实际也随之变成必需。
 - `verify_abi.sh <二进制> [nm]` 递归抓 `packages/fushi_compute/lib/` 下所有 `'ffc_*'` 字面量，逐个核对
-  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 11。
+  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 21。
 
 ## CI
 

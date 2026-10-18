@@ -21,8 +21,11 @@ void main() {
     test('all cloud/remote backends are wrapped in ObfuscatingSyncBackend', () {
       for (final type in cloudTypes) {
         final backend = resolveSyncBackend(type);
-        expect(backend, isA<ObfuscatingSyncBackend>(),
-            reason: 'cloud backend must be obfuscation-wrapped (anti-scan)');
+        expect(
+          backend,
+          isA<ObfuscatingSyncBackend>(),
+          reason: 'cloud backend must be obfuscation-wrapped (anti-scan)',
+        );
       }
     });
 
@@ -43,17 +46,27 @@ void main() {
 }
 
 void _guardSourceFiles() {
-  group('source guard: obfuscator uses crypto hash, no base64/encrypt lib', () {
-    test('sync_obfuscator.dart uses crypto, no encryption lib / base64', () {
-      final src = File('lib/src/sync/sync_obfuscator.dart').readAsStringSync();
-      // 计划要求：用现有 crypto hash 依赖，不引入加密库、不用 base64。
-      expect(src.contains('package:crypto/crypto.dart'), isTrue);
-      expect(src.contains('package:encrypt'), isFalse);
-      expect(src.contains('package:pointycastle'), isFalse);
-      expect(src.contains('base64Encode'), isFalse);
-      expect(src.contains('base64Decode'), isFalse);
-      expect(src.contains('magicHeader'), isTrue);
-    });
+  group('source guard: obfuscator XOR is native, no base64/encrypt lib', () {
+    test(
+      'sync_obfuscator.dart uses fushi_compute, no encryption lib / base64',
+      () {
+        final src = File(
+          'lib/src/sync/sync_obfuscator.dart',
+        ).readAsStringSync();
+        // 计划要求：不引入加密库、不用 base64。XOR（含 keystream）只在 native/fushi_compute
+        // 一份（ffc_crypto_sync_xor），Dart 不另留一份。
+        expect(
+          src.contains('package:fushi_compute/fushi_compute.dart'),
+          isTrue,
+        );
+        expect(src.contains('_keystream'), isFalse);
+        expect(src.contains('package:encrypt'), isFalse);
+        expect(src.contains('package:pointycastle'), isFalse);
+        expect(src.contains('base64Encode'), isFalse);
+        expect(src.contains('base64Decode'), isFalse);
+        expect(src.contains('magicHeader'), isTrue);
+      },
+    );
   });
 
   group('source guard: concrete backends untouched (only factory wraps)', () {
@@ -69,10 +82,16 @@ void _guardSourceFiles() {
       ];
       for (final path in backendFiles) {
         final src = File(path).readAsStringSync();
-        expect(src.contains('obfuscating_sync_backend.dart'), isFalse,
-            reason: 'backend file must not import the decorator');
-        expect(src.contains('SyncObfuscator'), isFalse,
-            reason: 'backend file must not reference the obfuscator');
+        expect(
+          src.contains('obfuscating_sync_backend.dart'),
+          isFalse,
+          reason: 'backend file must not import the decorator',
+        );
+        expect(
+          src.contains('SyncObfuscator'),
+          isFalse,
+          reason: 'backend file must not reference the obfuscator',
+        );
       }
     });
   });

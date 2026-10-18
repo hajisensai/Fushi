@@ -35,6 +35,7 @@ void main() {
     final List<String> units = (expected['units']! as List<Object?>)
         .cast<String>();
     final Uint8List stream = aacsMixedStream();
+    expect(_sha(stream), expected['ciphertext_sha256'], reason: 'ciphertext');
     final AacsNativeDecoder decoder = FushiComputeCrypto.instance.openAacs(
       aacsKeys().sublist(0, 3),
     );
@@ -111,8 +112,10 @@ void main() {
         vectors['hls']! as Map<String, Object?>;
     for (final HlsVectorInput input in hlsVectorInputs()) {
       test(input.name, () {
-        final Map<String, Object?> want =
-            expected[input.name]! as Map<String, Object?>;
+        final Map<String, Object?> want = Map<String, Object?>.of(
+          expected[input.name]! as Map<String, Object?>,
+        );
+        expect(_sha(input.data), want.remove('input_sha256'), reason: 'input');
         Object? got;
         try {
           final Uint8List out = FushiComputeCrypto.instance.aesCbcPkcs7Decrypt(

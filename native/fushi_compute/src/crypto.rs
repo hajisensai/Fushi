@@ -5,9 +5,16 @@
 //! CBC 用 `cbc`。输出与原 Dart 实现逐字节一致，由
 //! packages/fushi_compute/test/crypto/ 的固定向量钉死。
 //!
+//! 子模块：[sync_xor]（云同步「防扫盘」XOR 混淆）、[ecdsa]（P-256 ECDSA/SHA-256，
+//! RFC 6979 确定性 k）。
+//!
 //! 返回码在 [crate::status] 之外另有本域的：
 //! - [AACS_CLEAR_UNIT_INVALID]：未加密单元（首字节高两位为 0）的 TS 同步字节不对；
-//! - [AACS_NO_MATCHING_KEY]：所有 unit key 都解不出合法 TS（盘密钥不符 / 不支持的保护）。
+//! - [AACS_NO_MATCHING_KEY]：所有 unit key 都解不出合法 TS（盘密钥不符 / 不支持的保护）；
+//! - [ecdsa::P256_SIGNATURE_INVALID]：验签不通过。
+
+pub mod ecdsa;
+pub mod sync_xor;
 
 use aes::cipher::{
     block_padding::{NoPadding, Pkcs7},
@@ -255,6 +262,56 @@ pub unsafe extern "C" fn ffc_crypto_aes_cbc_pkcs7_decrypt(
                 status::OK
             }
             None => status::BAD_INPUT,
+        }
+    })
+}
+
+/// AES-CBC 原地加密（不填充；`len` 为 16 的倍数，key 16 / 24 / 32 字节）。
+/// 生产路径只解密；这个给测试造密文（仓库不再依赖 pointycastle）。
+///
+/// # Safety
+/// `key` `key_len` 字节、`iv` 16 字节可读；`data` `len` 字节可读写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_crypto_aes_cbc_encrypt(
+    key: *const u8,
+    key_len: usize,
+    iv: *const u8,
+    data: *mut u8,
+    len: usize,
+) -> i32 {
+    use aes::cipher::BlockEncryptMut;
+    guard(|| {
+        if key.is_null() || iv.is_null() || (data.is_null() && len != 0) {
+            return status::NULL_ARGUMENT;
+        }
+        if len % 16 != 0 {
+            return status::INVALID_ARGUMENT;
+        }
+        if len == 0 {
+            return status::OK;
+        }
+        let key = std::slice::from_raw_parts(key, key_len);
+        let iv = std::slice::from_raw_parts(iv, 16);
+        let data = std::slice::from_raw_parts_mut(data, len);
+        macro_rules! enc {
+            ($c:ty) => {
+                cbc::Encryptor::<$c>::new_from_slices(key, iv)
+                    .map(|e| {
+                        let _ = e.encrypt_padded_mut::<NoPadding>(data, len);
+                    })
+                    .is_ok()
+            };
+        }
+        let ok = match key_len {
+            16 => enc!(Aes128),
+            24 => enc!(Aes192),
+            32 => enc!(Aes256),
+            _ => false,
+        };
+        if ok {
+            status::OK
+        } else {
+            status::INVALID_ARGUMENT
         }
     })
 }

@@ -1,7 +1,6 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 /// 云盘同步「防扫盘」轻量字节混淆器（TODO-623 A1）。
 ///
@@ -18,32 +17,33 @@ import 'package:crypto/crypto.dart';
 ///   判定「混淆 vs 旧明文」，实现**混读向后兼容**：现有 Drive 明文（无魔数）原样读出
 ///   并能正常导入，新上传带魔数混淆，逐步重传即可全部变混淆，无需一键全重传。
 /// - 文件名不混淆（同步协议靠文件名做对比/增量/冲突/删除），所以混淆零影响同步协议。
+/// - **XOR 本身在 native/fushi_compute**（`ffc_crypto_sync_xor`，keystream 也只在那里定义）：
+///   整块 / 流式 / Range 随机访问三条路径都调它，按块一次 FFI。这里只管魔数与分块状态。
+///   已同步到云端的文件靠那份 keystream 解开，**永远不能改**。
 ///
 /// **A2（JSON 正文混淆）是 follow-up**，本类只服务 content 字节 + cover 字节，不碰
 /// progress / statistics / audioBook 等 JSON（A2 会破坏第三方 ッツ 互通，待用户答复）。
 class SyncObfuscator {
   SyncObfuscator._();
 
-  /// 固定混淆密钥种子。常量、入库、人人可见——这是「防扫盘」不是「防破解」。
-  static const String _keySeed = 'hibiki';
-
   /// 8 字节固定魔数：`HBKOBF` + 版本号 `0x01` + 保留 `0x00`。
   ///
   /// 选 8 字节是为了让旧明文「碰巧以这 8 字节开头」的概率可忽略；epub(zip) 头是
   /// `PK\x03\x04`、PNG 头是 `\x89PNG`、JPEG 头是 `\xFF\xD8` —— 都与本魔数不同，
   /// 故旧明文不会被误判为混淆产物。
-  static final Uint8List magicHeader =
-      Uint8List.fromList(<int>[0x48, 0x42, 0x4B, 0x4F, 0x42, 0x46, 0x01, 0x00]);
+  static final Uint8List magicHeader = Uint8List.fromList(<int>[
+    0x48,
+    0x42,
+    0x4B,
+    0x4F,
+    0x42,
+    0x46,
+    0x01,
+    0x00,
+  ]);
 
   /// magic header 字节数。
   static int get magicHeaderLength => magicHeader.length;
-
-  /// 32 字节循环 keystream（`SHA-256("hibiki")`），懒加载缓存。
-  static final Uint8List _keystream =
-      Uint8List.fromList(sha256.convert(utf8.encode(_keySeed)).bytes);
-
-  /// keystream 周期（SHA-256 = 32 字节）。
-  static int get _period => _keystream.length;
 
   // ── 整块 API（cover 等小数据） ────────────────────────────────────────
 
@@ -51,9 +51,7 @@ class SyncObfuscator {
   static Uint8List obfuscateBytes(Uint8List plain) {
     final out = Uint8List(magicHeaderLength + plain.length);
     out.setRange(0, magicHeaderLength, magicHeader);
-    for (var i = 0; i < plain.length; i++) {
-      out[magicHeaderLength + i] = plain[i] ^ _keystream[i % _period];
-    }
+    out.setRange(magicHeaderLength, out.length, _xor(plain, 0));
     return out;
   }
 
@@ -62,12 +60,7 @@ class SyncObfuscator {
     if (!hasMagicHeader(data)) {
       return data; // 旧明文（或短于 header）：原样透传。
     }
-    final bodyLen = data.length - magicHeaderLength;
-    final out = Uint8List(bodyLen);
-    for (var i = 0; i < bodyLen; i++) {
-      out[i] = data[magicHeaderLength + i] ^ _keystream[i % _period];
-    }
-    return out;
+    return _xor(Uint8List.sublistView(data, magicHeaderLength), 0);
   }
 
   /// 判定 [data] 是否以 [magicHeader] 开头（即是否为本混淆器的产物）。
@@ -85,37 +78,12 @@ class SyncObfuscator {
   ///
   /// keystream 与位置绑定、与分块无关，所以任意偏移起的一段都能单独还原——这正是
   /// 云盘视频不下载、按 `Range` 流播（seek 到中间）所需的能力。
-  ///
-  /// 流播时这里跑在 UI isolate 上、每秒过几 MB，所以按 64 位字长 XOR（循环次数降到
-  /// 逐字节的 1/8）：从 [bodyOffset] 的相位起，keystream 每 8 字节一个字、4 个字一周期
-  /// （32 字节周期是 8 的倍数，`8w mod 32 == 8(w & 3)`）；不足 8 字节的尾巴逐字节补。
-  static Uint8List deobfuscateBodyAt(List<int> chunk, int bodyOffset) {
-    final int length = chunk.length;
-    final out = Uint8List(length)..setRange(0, length, chunk);
-    final int phase = bodyOffset % _period;
-    final Uint64List key = _keystreamWordsAtPhase[phase];
-    final int words = length >> 3;
-    // 新分配的 Uint8List 从 0 偏移起，8 字节对齐，可以直接开 64 位视图。
-    final Uint64List outWords = out.buffer.asUint64List(0, words);
-    for (var w = 0; w < words; w++) {
-      outWords[w] ^= key[w & 3];
-    }
-    for (var i = words << 3; i < length; i++) {
-      out[i] ^= _keystream[(phase + i) % _period];
-    }
-    return out;
-  }
+  static Uint8List deobfuscateBodyAt(List<int> chunk, int bodyOffset) =>
+      _xor(chunk, bodyOffset);
 
-  /// keystream 的 32 种相位旋转，各以 4 个 64 位字存放：
-  /// `_keystreamWordsAtPhase[s]` 的字节 `j` = `_keystream[(s + j) % 32]`。
-  static final List<Uint64List> _keystreamWordsAtPhase =
-      List<Uint64List>.generate(_period, (int phase) {
-    final rotated = Uint8List(_period);
-    for (var j = 0; j < _period; j++) {
-      rotated[j] = _keystream[(phase + j) % _period];
-    }
-    return rotated.buffer.asUint64List();
-  });
+  /// 正文偏移 [bodyOffset] 起的一段字节与 keystream XOR（混淆 = 还原）。
+  static Uint8List _xor(List<int> bytes, int bodyOffset) =>
+      FushiComputeCrypto.instance.syncXor(bytes, bodyOffset);
 
   // ── 流式 API（content / 大文件 / 资产包） ─────────────────────────────
 
@@ -126,10 +94,7 @@ class SyncObfuscator {
     yield Uint8List.fromList(magicHeader);
     var offset = 0;
     await for (final chunk in source) {
-      final out = Uint8List(chunk.length);
-      for (var i = 0; i < chunk.length; i++) {
-        out[i] = chunk[i] ^ _keystream[(offset + i) % _period];
-      }
+      final out = _xor(chunk, offset);
       offset += chunk.length;
       yield out;
     }
@@ -146,10 +111,7 @@ class SyncObfuscator {
     var offset = 0;
 
     Uint8List xorBody(List<int> bytes) {
-      final out = Uint8List(bytes.length);
-      for (var i = 0; i < bytes.length; i++) {
-        out[i] = bytes[i] ^ _keystream[(offset + i) % _period];
-      }
+      final out = _xor(bytes, offset);
       offset += bytes.length;
       return out;
     }

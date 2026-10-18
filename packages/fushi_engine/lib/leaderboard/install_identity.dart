@@ -30,7 +30,6 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
-import 'package:pointycastle/export.dart' show ECCurve_secp256r1;
 
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_signing.dart';
@@ -54,7 +53,7 @@ const String kInstallTimeHeader = 'X-Fushi-Install-Time';
 const String kInstallSigHeader = 'X-Fushi-Install-Sig';
 const String kInstallPowHeader = 'X-Fushi-Install-Pow';
 
-final BigInt _n = ECCurve_secp256r1().n;
+final BigInt _n = kP256Order;
 
 Uint8List _hmacSha256(List<int> key, List<int> message) =>
     Uint8List.fromList(crypto.Hmac(crypto.sha256, key).convert(message).bytes);
