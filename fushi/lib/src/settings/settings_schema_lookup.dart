@@ -6,6 +6,8 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show
+        kLookupPopupDefaultHeight,
+        kLookupPopupDefaultWidth,
         kLookupPopupMaxHeight,
         kLookupPopupMaxWidth,
         kLookupPopupMinHeight,
@@ -809,7 +811,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupMaxWidth(value);
               settingsContext.refresh();
             },
-            defaultValue: 400,
+            defaultValue: kLookupPopupDefaultWidth,
           ),
           SettingsSliderItem(
             id: 'lookup.popup_max_height',
@@ -830,7 +832,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupMaxHeight(value);
               settingsContext.refresh();
             },
-            defaultValue: 360,
+            defaultValue: kLookupPopupDefaultHeight,
           ),
           // 宽高滑杆写的是「上限」，实际尺寸还要按当前屏幕 / 停靠 / 竖排夹一次：
           // 预览用宿主同一个 resolvePopupRect 画出小说里弹窗的真实落点与尺寸。
@@ -884,7 +886,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setOverlayLookupMaxWidth(value);
               settingsContext.refresh();
             },
-            defaultValue: 400,
+            defaultValue: kLookupPopupDefaultWidth,
           ),
           SettingsSliderItem(
             id: 'lookup.overlay_lookup_max_height',
@@ -903,7 +905,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setOverlayLookupMaxHeight(value);
               settingsContext.refresh();
             },
-            defaultValue: 360,
+            defaultValue: kLookupPopupDefaultHeight,
           ),
           // 弹窗尺寸精细化：浏览器扩展弹窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
           // 关闭时跟随 app 内最大宽高（extensionPopupEffectiveSize 解析，经 theme 下发）。
@@ -939,7 +941,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setExtensionPopupMaxWidth(value);
               settingsContext.refresh();
             },
-            defaultValue: 400,
+            defaultValue: kLookupPopupDefaultWidth,
           ),
           SettingsSliderItem(
             id: 'lookup.extension_popup_max_height',
@@ -958,7 +960,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setExtensionPopupMaxHeight(value);
               settingsContext.refresh();
             },
-            defaultValue: 360,
+            defaultValue: kLookupPopupDefaultHeight,
           ),
           // 墨水屏「瞬时滚动」+ 两个步长旋钮。同时经 ReaderPlacement 出现在阅读器快捷
           // 设置的查词段（墨水屏用户是在书里查词时才发现步长不合手，不该为此退出阅读器

@@ -45,6 +45,8 @@ import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart'
     show GameStreamVideoSettings;
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart'
+    show kLookupPopupDefaultHeight, kLookupPopupDefaultWidth;
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
     show MediaServerVersionMemory, mediaServerVersionMemory;
@@ -1125,7 +1127,7 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  final double defaultPopupMaxWidth = 400;
+  final double defaultPopupMaxWidth = kLookupPopupDefaultWidth;
 
   double get popupMaxWidth =>
       getPref('popup_max_width', defaultValue: defaultPopupMaxWidth) as double;
@@ -1135,7 +1137,7 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  final double defaultPopupMaxHeight = 360;
+  final double defaultPopupMaxHeight = kLookupPopupDefaultHeight;
 
   double get popupMaxHeight =>
       getPref('popup_max_height', defaultValue: defaultPopupMaxHeight)

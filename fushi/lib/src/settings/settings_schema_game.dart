@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart'
+    show kLookupPopupDefaultHeight, kLookupPopupDefaultWidth;
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -191,8 +193,8 @@ SettingsDestination buildGameDestination() {
             titleReadout: true,
             title: t.gal_card_lookup_max_width,
             icon: FushiIcons.swap,
-            // 读取默认 = PreferencesRepository.defaultPopupMaxWidth（实例字段，400）。
-            defaultValue: 400.0,
+            // 读取默认 = PreferencesRepository.defaultPopupMaxWidth。
+            defaultValue: kLookupPopupDefaultWidth,
             min: 250,
             max: 2000,
             divisions: 175,
@@ -212,8 +214,8 @@ SettingsDestination buildGameDestination() {
             titleReadout: true,
             title: t.gal_card_lookup_max_height,
             icon: Icons.height_outlined,
-            // 读取默认 = PreferencesRepository.defaultPopupMaxHeight（实例字段，360）。
-            defaultValue: 360.0,
+            // 读取默认 = PreferencesRepository.defaultPopupMaxHeight。
+            defaultValue: kLookupPopupDefaultHeight,
             min: 200,
             max: 1600,
             divisions: 140,
