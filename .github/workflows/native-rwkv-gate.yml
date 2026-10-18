@@ -1,0 +1,110 @@
+# RWKV-Instant 原生推理库（native/fushi_rwkv，Rust，AGPL-3.0-or-later）的 **PR 阶段门**。
+#
+# ── 门住什么 ──────────────────────────────────────────────────────────────────────
+#   tests/parity.rs  与上游实现对拍：tests/fixtures/*.json 是 tools/oracle 把上游
+#                    kuma3-anki-core 的 rslib/src/rwkv 原样编译后产出的黄金值（f32 / int8），
+#                    外加上游 Python 测试写死的两个数、批量 vs 逐条回放逐位相同、快照续跑等。
+#   tests/c_abi.rs   只走 frwkv_* extern 函数的往返与错误路径。
+#   三种 CPU 内核各跑一遍：x86_64（AVX2+FMA / 标量）、aarch64 Linux（NEON + 批量查询，
+#   即 Android / iOS 走的路径）、macOS arm64（Accelerate cblas_sgemm）。夹具在 x86_64-windows
+#   生成，另两种内核的求和顺序不同，靠测试里的容差吸收（见 tests/common/mod.rs）。
+#   cross-check：其余随包目标（armv7 / x86_64 Android、iOS）只做 cargo check，确保按目标
+#   条件编译的内核都能编过。
+#
+# ── 不负责什么 ────────────────────────────────────────────────────────────────────
+#   * 不构建 / 不上传各平台产物，不碰发布路径（随包是后续任务）；不跑 tools/oracle。
+#   * 权重（~11 MB）不入库：fetch_model.sh 按钉死 URL 下载并校验 SHA-256，actions/cache 按哈希缓存。
+#     权重缺失时测试直接失败（不会静默跳过）。
+#
+# ── 退出码纪律 ────────────────────────────────────────────────────────────────────
+# `shell: bash` + `set -euo pipefail`，无 `continue-on-error`；缓存未命中只会变慢。
+name: native-rwkv-gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'native/fushi_rwkv/**'
+      # 门自己改了也要跑一遍。
+      - '.github/workflows/native-rwkv-gate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  RWKV_MODEL_SHA256: 749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec
+
+jobs:
+  rust-tests:
+    name: cargo test --release (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+          - name: macos-arm64
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      # 工具链钉法与 native-fsrs-gate.yml 一致（Rust 1.95.0）。
+      - name: Set up Rust (fushi_rwkv)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+      - name: Cache Rust build (fushi_rwkv)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_rwkv -> target
+          key: fushi-rwkv-tests-${{ matrix.name }}
+      - name: Cache RWKV weights
+        uses: actions/cache@v4
+        with:
+          path: native/fushi_rwkv/model
+          key: fushi-rwkv-model-${{ env.RWKV_MODEL_SHA256 }}
+      - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_rwkv/fetch_model.sh
+      - name: cargo test --release (fushi_rwkv)
+        shell: bash
+        working-directory: native/fushi_rwkv
+        run: |
+          set -euo pipefail
+          cargo test --release --locked -- --nocapture
+
+  cross-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Rust (fushi_rwkv, cross targets)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,aarch64-apple-ios
+      - name: Cache Rust build (fushi_rwkv cross-check)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_rwkv -> target
+          key: fushi-rwkv-cross-check
+      - name: cargo check per target (no linking)
+        shell: bash
+        working-directory: native/fushi_rwkv
+        run: |
+          set -euo pipefail
+          for target in aarch64-linux-android armv7-linux-androideabi x86_64-linux-android aarch64-apple-ios; do
+            echo "::group::$target"
+            cargo check --release --locked --lib --target "$target"
+            echo "::endgroup::"
+          done
