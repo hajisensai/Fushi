@@ -27,6 +27,7 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/manga/mokuro_geometry.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
@@ -149,89 +150,44 @@ List<PpTextLine> ppDetPostprocess(
   double unclipRatio = kPpDetUnclipRatio,
 }) {
   assert(prob.length == width * height);
-  final Int32List label = Int32List(width * height); // 0 = 未访问/背景
   final List<PpTextLine> lines = <PpTextLine>[];
-  final Int32List stack = Int32List(width * height);
-  int nextLabel = 0;
-  // 4 连通洪泛：未访问且过阈值的邻居压栈并打标；返回新栈顶。
-  int push(int q, int sp) {
-    if (label[q] == 0 && prob[q] > thresh) {
-      label[q] = nextLabel;
-      stack[sp] = q;
-      return sp + 1;
-    }
-    return sp;
-  }
-
-  for (int start = 0; start < prob.length; start++) {
-    if (label[start] != 0 || prob[start] <= thresh) {
-      continue;
-    }
-    nextLabel++;
-    int sp = push(start, 0);
-    int minX = width, minY = height, maxX = -1, maxY = -1;
-    double sum = 0;
-    int count = 0;
-    // 像素坐标的一、二阶矩（求主轴角）；以种子点为原点，避免大坐标平方的精度损失。
-    final int ox = start % width;
-    final int oy = start ~/ width;
-    double mx = 0, my = 0, mxx = 0, myy = 0, mxy = 0;
-    while (sp > 0) {
-      final int p = stack[--sp];
-      final int px = p % width;
-      final int py = p ~/ width;
-      sum += prob[p];
-      count++;
-      final double rx = (px - ox).toDouble();
-      final double ry = (py - oy).toDouble();
-      mx += rx;
-      my += ry;
-      mxx += rx * rx;
-      myy += ry * ry;
-      mxy += rx * ry;
-      if (px < minX) minX = px;
-      if (px > maxX) maxX = px;
-      if (py < minY) minY = py;
-      if (py > maxY) maxY = py;
-      if (px > 0) sp = push(p - 1, sp);
-      if (px < width - 1) sp = push(p + 1, sp);
-      if (py > 0) sp = push(p - width, sp);
-      if (py < height - 1) sp = push(p + width, sp);
-    }
-    final double score = sum / count;
-    if (score < boxThresh) {
-      continue;
-    }
+  // 洪泛（4 连通、栈序与旧 Dart 实现相同，浮点累加顺序因此相同）+ 均值 / 宽高过滤在原生
+  // 内核里；这里只把每个域的原始矩换成行框与主轴（结果与旧实现逐位相同）。
+  for (final FfcDbComponent c in FushiComputeImage.instance.dbComponents(
+    prob,
+    width,
+    height,
+    thresh: thresh,
+    boxThresh: boxThresh,
+  )) {
+    final double score = c.sum / c.count;
     // 外接矩形（右/下含端点，+1 成为半开区间宽高）。
-    final double w = (maxX - minX + 1).toDouble();
-    final double h = (maxY - minY + 1).toDouble();
-    if (w < 2 || h < 2) {
-      continue;
-    }
+    final double w = (c.maxX - c.minX + 1).toDouble();
+    final double h = (c.maxY - c.minY + 1).toDouble();
     // Clipper 偏移距离 area * ratio / perimeter，对轴对齐矩形四边等距外扩即精确解。
     // 面积用连通域真实像素数而不是 w*h：轴对齐时两者恒等，倾斜行的外接矩形面积
     // 虚大（12° 倾斜实测 d 从 58 涨到 101），会把邻行吞进来让识别串行。
-    final double d = count * unclipRatio / (2 * (w + h));
+    final double d = c.count * unclipRatio / (2 * (w + h));
     final ({double angle, double elongation}) axis = _principalAxis(
-      count,
-      mx,
-      my,
-      mxx,
-      myy,
-      mxy,
+      c.count,
+      c.mx,
+      c.my,
+      c.mxx,
+      c.myy,
+      c.mxy,
     );
     lines.add(
       PpTextLine(
         rect: OcrRect(
-          left: minX - d,
-          top: minY - d,
-          right: maxX + 1 + d,
-          bottom: maxY + 1 + d,
+          left: c.minX - d,
+          top: c.minY - d,
+          right: c.maxX + 1 + d,
+          bottom: c.maxY + 1 + d,
         ).clamp(width.toDouble(), height.toDouble()),
         score: score,
         axisAngle: axis.angle,
         elongation: axis.elongation,
-        pixelCount: count,
+        pixelCount: c.count,
       ),
     );
   }

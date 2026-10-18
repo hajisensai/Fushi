@@ -31,6 +31,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_reply_json.dart';
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/ocr_line_layout.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
@@ -1193,7 +1194,8 @@ List<Uint8List?> cropMangaAiOcrBlocks(
   required double pageHeight,
   required List<MokuroRect> boxes,
 }) {
-  final img.Image? decoded = img.decodeImage(imageBytes);
+  // 原生解码（按 EXIF 转正：旧的 package:image JPEG 解码器同样在解码时转正）。
+  final img.Image? decoded = decodeImageNative(imageBytes);
   if (decoded == null) {
     return List<Uint8List?>.filled(boxes.length, null);
   }

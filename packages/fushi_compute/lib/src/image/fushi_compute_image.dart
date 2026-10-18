@@ -136,23 +136,27 @@ typedef _DhashC =
 typedef _DhashDart =
     int Function(Pointer<Uint8>, int, int, int, int, int, Pointer<Uint8>);
 
-typedef _PngDecodeC =
+typedef _DecodeC =
     Int32 Function(
       Pointer<Uint8>,
       Size,
+      Int32,
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
       Pointer<Uint32>,
     );
-typedef _PngDecodeDart =
+typedef _DecodeDart =
     int Function(
       Pointer<Uint8>,
+      int,
       int,
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
       Pointer<Uint32>,
     );
-typedef _PngToJpegC =
+typedef _ProbeC = Int32 Function(Pointer<Uint8>, Size, Int32, Pointer<Uint32>);
+typedef _ProbeDart = int Function(Pointer<Uint8>, int, int, Pointer<Uint32>);
+typedef _ToJpegC =
     Int32 Function(
       Pointer<Uint8>,
       Size,
@@ -160,7 +164,7 @@ typedef _PngToJpegC =
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
     );
-typedef _PngToJpegDart =
+typedef _ToJpegDart =
     int Function(
       Pointer<Uint8>,
       int,
@@ -168,6 +172,76 @@ typedef _PngToJpegDart =
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
     );
+typedef _EdgeC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Uint32,
+      Pointer<Double>,
+    );
+typedef _EdgeDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      Pointer<Uint8>,
+      int,
+      int,
+      int,
+      Pointer<Double>,
+    );
+typedef _DbC =
+    Int32 Function(
+      Pointer<Float>,
+      Size,
+      Uint32,
+      Uint32,
+      Double,
+      Double,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _DbDart =
+    int Function(
+      Pointer<Float>,
+      int,
+      int,
+      int,
+      double,
+      double,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+
+/// 解码出的图像格式（与 image.rs 的 `FORMAT_*` 一致）。
+enum FfcImageFormat { jpeg, png, gif, webp, bmp, tiff, tga, ico, pnm }
+
+/// [FushiComputeImage.decode] 的结果：行紧排 uint8，[channels] 为 3（RGB）或 4（RGBA）。
+typedef FfcDecodedImage = ({
+  Uint8List pixels,
+  int width,
+  int height,
+  int channels,
+  FfcImageFormat format,
+});
+
+/// DB 连通域记录（`ffc_image_db_components`）：外接矩形（含端点）、像素数、概率和，
+/// 以种子点为原点的一、二阶矩。
+typedef FfcDbComponent = ({
+  int minX,
+  int minY,
+  int maxX,
+  int maxY,
+  int count,
+  double sum,
+  double mx,
+  double my,
+  double mxx,
+  double myy,
+  double mxy,
+});
 
 /// native/fushi_compute 图像域（`ffc_image_*`）的绑定：原始像素缓冲进、原始缓冲出，
 /// 不依赖 `package:image`（img.Image 的适配在调用方，见 fushi_engine
@@ -198,11 +272,20 @@ class FushiComputeImage {
       _dhash = lib.library.lookupFunction<_DhashC, _DhashDart>(
         'ffc_image_dhash',
       ),
-      _pngDecode = lib.library.lookupFunction<_PngDecodeC, _PngDecodeDart>(
-        'ffc_image_png_decode_rgba',
+      _decode = lib.library.lookupFunction<_DecodeC, _DecodeDart>(
+        'ffc_image_decode',
       ),
-      _pngToJpeg = lib.library.lookupFunction<_PngToJpegC, _PngToJpegDart>(
-        'ffc_image_png_to_jpeg',
+      _probe = lib.library.lookupFunction<_ProbeC, _ProbeDart>(
+        'ffc_image_probe',
+      ),
+      _toJpeg = lib.library.lookupFunction<_ToJpegC, _ToJpegDart>(
+        'ffc_image_to_jpeg',
+      ),
+      _edge = lib.library.lookupFunction<_EdgeC, _EdgeDart>(
+        'ffc_image_edge_similarity',
+      ),
+      _db = lib.library.lookupFunction<_DbC, _DbDart>(
+        'ffc_image_db_components',
       ),
       _lib = lib;
 
@@ -211,8 +294,11 @@ class FushiComputeImage {
   final _ToRgbaDart _toRgba;
   final _MosaicDart _mosaic;
   final _DhashDart _dhash;
-  final _PngDecodeDart _pngDecode;
-  final _PngToJpegDart _pngToJpeg;
+  final _DecodeDart _decode;
+  final _ProbeDart _probe;
+  final _ToJpegDart _toJpeg;
+  final _EdgeDart _edge;
+  final _DbDart _db;
   final FushiCompute _lib;
 
   static FushiComputeImage? _instance;
@@ -557,41 +643,161 @@ class FushiComputeImage {
     }
   }
 
-  /// PNG → RGBA8888（调色板 / 灰度 / 16 位展开或截成 8 位）；解不开返回 null。
-  ({Uint8List rgba, int width, int height})? decodePngRgba(Uint8List png) {
-    final Pointer<Uint8> src = _copyIn(png);
+  /// 解码（JPEG / PNG / GIF / WebP / BMP / TIFF / TGA / ICO / PNM，多帧取首帧）成 uint8
+  /// RGB（不透明）或 RGBA；[orient] 时按 EXIF 方向转正。认不出 / 解不开返回 null。
+  FfcDecodedImage? decode(Uint8List bytes, {bool orient = true}) {
+    final Pointer<Uint8> src = _copyIn(bytes);
     final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
     final Pointer<Size> outLen = malloc<Size>();
-    final Pointer<Uint32> size = malloc<Uint32>(2);
+    final Pointer<Uint32> meta = malloc<Uint32>(4);
     try {
-      final int status = _pngDecode(src, png.length, outPtr, outLen, size);
+      final int status = _decode(
+        src,
+        bytes.length,
+        orient ? 1 : 0,
+        outPtr,
+        outLen,
+        meta,
+      );
       if (status == FfcStatus.badInput) return null;
-      _check('ffc_image_png_decode_rgba', status);
+      _check('ffc_image_decode', status);
       return (
-        rgba: _takeBytes(outPtr, outLen),
-        width: size[0],
-        height: size[1],
+        pixels: _takeBytes(outPtr, outLen),
+        width: meta[0],
+        height: meta[1],
+        channels: meta[2],
+        format: FfcImageFormat.values[meta[3] - 1],
       );
     } finally {
       malloc.free(outPtr);
       malloc.free(outLen);
-      malloc.free(size);
+      malloc.free(meta);
     }
   }
 
-  /// PNG → JPEG（4:4:4，[quality] 1..100，忽略 alpha）；解不开返回 null。
-  Uint8List? pngToJpeg(Uint8List png, {required int quality}) {
+  /// 只读头的宽高（[orient] 时按 EXIF 方向换算）与格式；认不出返回 null。
+  ({int width, int height, FfcImageFormat format})? probe(
+    Uint8List bytes, {
+    bool orient = true,
+  }) {
+    final Pointer<Uint8> src = _copyIn(bytes);
+    final Pointer<Uint32> meta = malloc<Uint32>(3);
+    try {
+      final int status = _probe(src, bytes.length, orient ? 1 : 0, meta);
+      if (status == FfcStatus.badInput) return null;
+      _check('ffc_image_probe', status);
+      return (
+        width: meta[0],
+        height: meta[1],
+        format: FfcImageFormat.values[meta[2] - 1],
+      );
+    } finally {
+      malloc.free(meta);
+    }
+  }
+
+  /// 解码（转正）后编码成 JPEG（4:4:4，[quality] 1..100，忽略 alpha）；解不开返回 null。
+  Uint8List? toJpeg(Uint8List bytes, {required int quality}) {
     if (quality < 1 || quality > 100) {
       throw ArgumentError.value(quality, 'quality', 'must be 1..100');
     }
-    final Pointer<Uint8> src = _copyIn(png);
+    final Pointer<Uint8> src = _copyIn(bytes);
     final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
     final Pointer<Size> outLen = malloc<Size>();
     try {
-      final int status = _pngToJpeg(src, png.length, quality, outPtr, outLen);
+      final int status = _toJpeg(src, bytes.length, quality, outPtr, outLen);
       if (status == FfcStatus.badInput) return null;
-      _check('ffc_image_png_to_jpeg', status);
+      _check('ffc_image_to_jpeg', status);
       return _takeBytes(outPtr, outLen);
+    } finally {
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
+  /// 两张图（编码字节）左图右缘与右图左缘的相似度（`EpubEdgeMatcher.compareEdges`）；
+  /// 任一张解不开返回 null。
+  double? edgeSimilarity(
+    Uint8List left,
+    Uint8List right, {
+    required int stripWidth,
+    required int sampleHeight,
+  }) {
+    if (stripWidth < 0 || sampleHeight <= 0) {
+      throw ArgumentError('invalid strip $stripWidth / height $sampleHeight');
+    }
+    // 两份输入不能共用一块暂存区：右图单独 malloc。
+    final Pointer<Uint8> l = _copyIn(left);
+    final Pointer<Uint8> r = malloc<Uint8>(right.isEmpty ? 1 : right.length);
+    final Pointer<Double> out = malloc<Double>();
+    try {
+      r.asTypedList(right.length).setAll(0, right);
+      final int status = _edge(
+        l,
+        left.length,
+        r,
+        right.length,
+        stripWidth,
+        sampleHeight,
+        out,
+      );
+      if (status == FfcStatus.badInput) return null;
+      _check('ffc_image_edge_similarity', status);
+      return out.value;
+    } finally {
+      malloc.free(r);
+      malloc.free(out);
+    }
+  }
+
+  /// DB 概率图连通域（4 连通、`> thresh`），滤掉均值 `< boxThresh` 与外接矩形宽 / 高
+  /// `< 2` 的域，按扫描序返回（`ppDetPostprocess` 的洪泛部分）。
+  List<FfcDbComponent> dbComponents(
+    Float32List prob,
+    int width,
+    int height, {
+    required double thresh,
+    required double boxThresh,
+  }) {
+    if (width <= 0 || height <= 0 || prob.length != width * height) {
+      throw ArgumentError(
+        'prob has ${prob.length} values, expected ${width}x$height',
+      );
+    }
+    final Pointer<Float> src = NativeScratch.input
+        .reserve(prob.length * 4)
+        .cast();
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      src.asTypedList(prob.length).setAll(0, prob);
+      _check(
+        'ffc_image_db_components',
+        _db(src, prob.length, width, height, thresh, boxThresh, outPtr, outLen),
+      );
+      final int bytes = outLen.value;
+      final Pointer<Uint8> data = outPtr.value;
+      try {
+        final Float64List v = data.cast<Double>().asTypedList(bytes ~/ 8);
+        return <FfcDbComponent>[
+          for (int i = 0; i + 11 <= v.length; i += 11)
+            (
+              minX: v[i].toInt(),
+              minY: v[i + 1].toInt(),
+              maxX: v[i + 2].toInt(),
+              maxY: v[i + 3].toInt(),
+              count: v[i + 4].toInt(),
+              sum: v[i + 5],
+              mx: v[i + 6],
+              my: v[i + 7],
+              mxx: v[i + 8],
+              myy: v[i + 9],
+              mxy: v[i + 10],
+            ),
+        ];
+      } finally {
+        _lib.freeBytes(data, bytes);
+      }
     } finally {
       malloc.free(outPtr);
       malloc.free(outLen);

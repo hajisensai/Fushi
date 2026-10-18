@@ -59,6 +59,23 @@ final class _DvbObject extends Struct {
   external int y;
 }
 
+typedef _PgsC =
+    Int32 Function(Pointer<Uint8>, Size, Uint32, Uint32, Pointer<Uint8>, Size);
+typedef _PgsDart =
+    int Function(Pointer<Uint8>, int, int, int, Pointer<Uint8>, int);
+typedef _DvdC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Uint32,
+      Uint32,
+      Uint32,
+      Pointer<Uint8>,
+      Size,
+    );
+typedef _DvdDart =
+    int Function(Pointer<Uint8>, int, int, int, int, int, Pointer<Uint8>, int);
 typedef _DvbSizeC =
     Int32 Function(Pointer<Uint8>, Size, Pointer<Uint8>, Size, Pointer<Uint32>);
 typedef _DvbSizeDart =
@@ -101,13 +118,19 @@ typedef _ComposeDart =
 
 /// 位图字幕的 DVB 像素串（测量 / 区域渲染，`ffc_image_dvb_*`）与黑底合成
 /// （`ffc_image_compose_indexed`）。只有原生这一份实现；库或符号缺失抛
-/// [FushiComputeUnavailableError]。PGS / VobSub 的 RLE 解码实测搬过来不到 2 倍，留在 Dart。
+/// [FushiComputeUnavailableError]。PGS / VobSub 的 RLE 解码也在这里（单份实现）。
 ///
 /// 输出写进 arena 缓冲后拷回 Dart 堆：渲染跑在 `Isolate.run` 里、结果经 `Isolate.exit`
 /// 移交，挂 finalizer 的原生内存会在工作 isolate 退出时被释放（见 `FushiComputeImage`）。
 class FushiComputeBitmapSubtitle {
   FushiComputeBitmapSubtitle._(FushiCompute lib)
-    : _dvbSize = lib.library.lookupFunction<_DvbSizeC, _DvbSizeDart>(
+    : _pgs = lib.library.lookupFunction<_PgsC, _PgsDart>(
+        'ffc_image_pgs_rle_decode',
+      ),
+      _dvd = lib.library.lookupFunction<_DvdC, _DvdDart>(
+        'ffc_image_dvd_rle_decode',
+      ),
+      _dvbSize = lib.library.lookupFunction<_DvbSizeC, _DvbSizeDart>(
         'ffc_image_dvb_object_size',
       ),
       _dvbRender = lib.library.lookupFunction<_DvbRenderC, _DvbRenderDart>(
@@ -117,6 +140,8 @@ class FushiComputeBitmapSubtitle {
         'ffc_image_compose_indexed',
       );
 
+  final _PgsDart _pgs;
+  final _DvdDart _dvd;
   final _DvbSizeDart _dvbSize;
   final _DvbRenderDart _dvbRender;
   final _ComposeDart _compose;
@@ -146,6 +171,56 @@ class FushiComputeBitmapSubtitle {
     final Pointer<Uint8> ptr = arena<Uint8>(bytes.isEmpty ? 1 : bytes.length);
     ptr.asTypedList(bytes.length).setAll(0, bytes);
     return ptr;
+  }
+
+  /// PGS RLE → [width] × [height] 调色板索引平面（数据不足时余下为 0）。
+  Uint8List decodePgsRle(Uint8List rle, int width, int height) {
+    if (width <= 0 || height <= 0) {
+      throw ArgumentError('invalid size ${width}x$height');
+    }
+    final int outLen = width * height;
+    return using((Arena arena) {
+      final Pointer<Uint8> out = NativeScratch.output.reserve(outLen);
+      out.asTypedList(outLen).fillRange(0, outLen, 0);
+      _check(
+        'ffc_image_pgs_rle_decode',
+        _pgs(_copyIn(rle, arena), rle.length, width, height, out, outLen),
+      );
+      return Uint8List.fromList(out.asTypedList(outLen));
+    });
+  }
+
+  /// VobSub SPU 两场 2 bit RLE → [width] × [height] 索引平面（0..3）。
+  Uint8List decodeDvdRle(
+    Uint8List packet, {
+    required int width,
+    required int height,
+    required int topFieldOffset,
+    required int bottomFieldOffset,
+  }) {
+    if (width <= 0 || height <= 0) return Uint8List(0);
+    if (topFieldOffset < 0 || bottomFieldOffset < 0) {
+      throw ArgumentError('negative field offset');
+    }
+    final int outLen = width * height;
+    return using((Arena arena) {
+      final Pointer<Uint8> out = NativeScratch.output.reserve(outLen);
+      out.asTypedList(outLen).fillRange(0, outLen, 0);
+      _check(
+        'ffc_image_dvd_rle_decode',
+        _dvd(
+          _copyIn(packet, arena),
+          packet.length,
+          width,
+          height,
+          topFieldOffset,
+          bottomFieldOffset,
+          out,
+          outLen,
+        ),
+      );
+      return Uint8List.fromList(out.asTypedList(outLen));
+    });
   }
 
   /// DVB 对象两场像素串实际覆盖的宽高。

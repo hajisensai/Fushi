@@ -13,6 +13,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:fushi_anki/fushi_anki_core.dart' show MiningMosaicRegion;
+import 'package:fushi_compute/fushi_compute.dart' show FfcImageFormat;
 import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/image_mosaic.dart';
 import 'package:image/image.dart' as img;
@@ -51,23 +52,11 @@ class MangaPageCropResult {
 ({int width, int height})? mangaPageOrientedSize(Uint8List bytes) {
   if (bytes.isEmpty) return null;
   try {
-    final img.Decoder? decoder = img.findDecoderForData(bytes);
-    if (decoder == null) return null;
-    if (decoder is img.JpegDecoder) {
-      final img.DecodeInfo? info = decoder.startDecode(bytes);
-      if (info != null && info.width > 0 && info.height > 0) {
-        final int? orientation = img.decodeJpgExif(bytes)?.imageIfd.orientation;
-        final bool swapped =
-            orientation != null && orientation >= 5 && orientation <= 8;
-        return swapped
-            ? (width: info.height, height: info.width)
-            : (width: info.width, height: info.height);
-      }
-    }
-    final img.Image? decoded = img.decodeImage(bytes);
-    if (decoded == null) return null;
-    final img.Image oriented = img.bakeOrientation(decoded);
-    return (width: oriented.width, height: oriented.height);
+    // 原生只读头：宽高 + EXIF 方向（5..8 宽高互换），各格式都不解整图。
+    final ({int width, int height, FfcImageFormat format})? info =
+        probeImageNative(bytes);
+    if (info == null) return null;
+    return (width: info.width, height: info.height);
   } catch (_) {
     // 嗅探解码器本身就可能对损坏字节抛（GIF 头越界等），与解码失败同一处理。
     return null;
@@ -123,16 +112,11 @@ MangaPageCropResult? cropMangaPage(
 }) {
   if (bytes.isEmpty) return null;
   try {
-    final img.ImageFormat format = img.findFormatForData(bytes);
-    final img.Image? decoded = img.decodeImage(bytes);
-    if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
-      return null;
-    }
-    // 分镜检测与 OCR 都在 bake 之后的图上给坐标，这里必须同一坐标系。
-    final img.Image page = applyMosaicToImage(
-      img.bakeOrientation(decoded),
-      mosaic,
-    );
+    // 原生解码（已转正）：分镜检测与 OCR 都在转正后的图上给坐标，这里必须同一坐标系。
+    final ({img.Image image, FfcImageFormat format})? decoded =
+        decodeImageWithFormat(bytes);
+    if (decoded == null) return null;
+    final img.Image page = applyMosaicToImage(decoded.image, mosaic);
     final ({int x, int y, int width, int height}) rect = mangaCropPixelRect(
       pageWidth: page.width,
       pageHeight: page.height,
@@ -163,7 +147,7 @@ MangaPageCropResult? cropMangaPage(
         height: rect.height,
       );
     }
-    final MangaCropEncoding encoding = format == img.ImageFormat.png
+    final MangaCropEncoding encoding = decoded.format == FfcImageFormat.png
         ? MangaCropEncoding.png
         : MangaCropEncoding.jpeg;
     final Uint8List encoded = switch (encoding) {

@@ -23,14 +23,10 @@ const int kCoverHashMaxDistance = 10;
 
 /// 图片字节（JPEG / PNG / WebP 等 `image` 包能解的格式）的 dHash；解不开返回 null。
 String? coverDHash(Uint8List bytes) {
-  img.Image? decoded;
-  try {
-    decoded = img.decodeImage(bytes);
-  } on Object {
-    // 损坏 / 过短的字节在嗅探解码器时会抛 RangeError 等，统一按「解不开」处理。
-    decoded = null;
-  }
-  if (decoded == null || decoded.width < 1 || decoded.height < 1) return null;
+  // 原生解码，按 EXIF 方向转正（旧的 package:image JPEG 解码器在解码时同样转正，Worker
+  // 侧对拍向量 cover_portrait_exif6.jpg 钉着这个口径）。
+  final img.Image? decoded = decodeImageNative(bytes);
+  if (decoded == null) return null;
   return coverDHashOfImage(decoded);
 }
 

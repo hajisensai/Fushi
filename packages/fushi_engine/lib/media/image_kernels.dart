@@ -177,10 +177,62 @@ uint8Pixels(img.Image image) {
   );
 }
 
-/// PNG 字节 → JPEG 字节（4:4:4，[quality] 1..100，忽略 alpha），解码与编码都在原生内核。
+/// 编码图片字节 → JPEG 字节（4:4:4，[quality] 1..100，忽略 alpha），解码与编码都在原生
+/// 内核。JPEG 编码器是 `jpeg-encoder`：字节与 `img.encodeJpg` 不同，同质量下 PSNR 相同
+/// （2026-10-18 实测 1080×1920 文本帧 q98：49.04 vs 49.05 dB，体积 +0.5%）。坏字节返回 null。
+Uint8List? encodeImageAsJpeg(Uint8List bytes, {required int quality}) =>
+    FushiComputeImage.instance.toJpeg(bytes, quality: quality);
+
+/// 原生解码（见 [decodeImageNative]）连同识别出的格式。
+({img.Image image, FfcImageFormat format})? decodeImageWithFormat(
+  Uint8List bytes, {
+  bool orient = true,
+}) {
+  final FfcDecodedImage? d = FushiComputeImage.instance.decode(
+    bytes,
+    orient: orient,
+  );
+  if (d == null) return null;
+  return (
+    image: img.Image.fromBytes(
+      width: d.width,
+      height: d.height,
+      bytes: d.pixels.buffer,
+      bytesOffset: d.pixels.offsetInBytes,
+      numChannels: d.channels,
+    ),
+    format: d.format,
+  );
+}
+
+/// 图片字节 → uint8 RGB / RGBA 的 `img.Image`（原生内核；`img.decodeImage` 在本仓图像管线里
+/// 的唯一替代）。
 ///
-/// PNG 解出的像素与 `img.decodePng` 逐字节相同；JPEG 编码器换成了 `jpeg-encoder`，字节与
-/// `img.encodeJpg` 不同，同质量下 PSNR 相同（2026-10-18 实测 1080×1920 文本帧 q98：
-/// 49.04 vs 49.05 dB，体积 +0.5%）。只认 PNG：其它格式（或坏字节）返回 null。
-Uint8List? encodePngAsJpeg(Uint8List png, {required int quality}) =>
-    FushiComputeImage.instance.pngToJpeg(png, quality: quality);
+/// - [orient]（默认）时按 EXIF 方向转正，结果不再带方向标记（等价于旧的
+///   `bakeOrientation(decodeImage(...))`）。
+/// - 灰度展开成 RGB、16 位截成 8 位、调色板展开，多帧格式只取首帧。
+/// - JPEG 的像素与旧的 `package:image` 解码有 ±1 的差（3.5～4.8% 的通道值），下游影响见
+///   PR #2330；PNG 等无损格式逐字节相同。
+/// - 认得 JPEG / PNG / GIF / WebP / BMP / TIFF / TGA / ICO / PNM；认不出或坏字节返回 null。
+img.Image? decodeImageNative(Uint8List bytes, {bool orient = true}) =>
+    decodeImageWithFormat(bytes, orient: orient)?.image;
+
+/// 只读文件头的宽高（[orient] 时按 EXIF 方向换算）与格式；认不出返回 null。
+({int width, int height, FfcImageFormat format})? probeImageNative(
+  Uint8List bytes, {
+  bool orient = true,
+}) => FushiComputeImage.instance.probe(bytes, orient: orient);
+
+/// 两张图（编码字节）左图右缘与右图左缘的相似度（0..1，`EpubEdgeMatcher` 用）；任一张解不开
+/// 返回 null。解码、按高 [sampleHeight] 最近邻缩放与逐像素比较都在原生内核。
+double? edgeSimilarityNative(
+  Uint8List left,
+  Uint8List right, {
+  required int stripWidth,
+  required int sampleHeight,
+}) => FushiComputeImage.instance.edgeSimilarity(
+  left,
+  right,
+  stripWidth: stripWidth,
+  sampleHeight: sampleHeight,
+);

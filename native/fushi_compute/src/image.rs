@@ -1,5 +1,5 @@
-//! `ffc_image_*`：图像域的纯算术内核（缩放 / 归一化成模型输入 / 马赛克 / dHash / 位图字幕合成）
-//! 与有声书片段导出的 PNG → JPEG 重编码。
+//! `ffc_image_*`：图像域（解码 / 缩放 / 归一化成模型输入 / 马赛克 / dHash / DB 后处理 / 位图字幕
+//! RLE 与合成 / EPUB 跨页边缘比较 / JPEG 编码）。
 //!
 //! 这些操作只有这一份实现（Dart 侧经 `packages/fushi_compute` 绑定、
 //! `packages/fushi_engine/lib/media/image_kernels.dart` 适配，没有 Dart 回退）。它们逐条复刻
@@ -15,15 +15,14 @@
 //! 调色板图由 Dart 侧先 `convert` 成 uint8，未转正的 EXIF 方向先 `bakeOrientation`
 //! （`copyResize` 自己也这么做），多帧图由 Dart 侧逐帧调用。
 //!
-//! 例外是有声书片段导出的「PNG → JPEG」逐帧重编码（`ffc_image_png_to_jpeg`，见文件末段）：PNG
-//! 无损、8 位图解出的像素与 `package:image` 逐字节相同；JPEG 编码换成 `jpeg-encoder`，字节不同、
-//! 同质量下画质不降。
+//! 解码也在本模块（`ffc_image_decode` / `ffc_image_probe`，`image` crate，纯 Rust；见文件后段
+//! 「解码 / JPEG 编码」一节）：PNG 等无损格式与旧的 `package:image` 逐字节相同；JPEG 换成
+//! zune-jpeg 后与旧解码有差。2026-10-18 实测：真书漫画页 / 截图 / 封面最大差 1（3.5～5% 的通道值），
+//! 强色度边缘的 4:2:0 图上 `package:image` 自己偏离 libjpeg 更多（样本上差到 67），zune-jpeg 与
+//! libjpeg 最多差 3。下游 OCR / 分镜 / dHash 的变化量见 PR #2330。
 //!
-//! 其余解码（JPEG 等有损格式）**不在本模块**，仍由 Dart 的 `package:image` 做。2026-10-18 实测
-//! （真书漫画页 1350×1920 / 2000×2844 JPEG）：`zune-jpeg` 0.4 与 `jpeg-decoder` 0.3 解出的
-//! RGB 与 `package:image` 有 3.5～4.8% 的通道值差 ±1（最大 1），dHash 不变，但 RT-DETR 输入
-//! 张量有约 4% 的元素差 1/255，检测框 / OCR 结果无法保证逐位不变；解码因此不搬，以免同一张
-//! 图在不同路径上得出不同的 OCR 缓存与分镜框。
+//! 这些函数结果都在 f64 / 整数上与旧 Dart 实现逐位一致的前提是**同一份解码像素**；
+//! DB 后处理（`ffc_image_db_components`）只回传原始矩，含超越函数的派生量仍在 Dart 算。
 
 use crate::{guard, status};
 
@@ -714,9 +713,166 @@ fn dhash(v: &View) -> u64 {
 }
 
 // ---------------------------------------------------------------------------
-// 位图字幕：DVB 像素串（测量 / 区域渲染）与黑底合成。逐位复刻
+// 位图字幕：PGS / VobSub RLE 解码、DVB 像素串（测量 / 区域渲染）与黑底合成。逐位复刻
 // packages/fushi_engine/lib/media/video/bitmap_subtitle/ 里原先的 Dart 实现。
 // ---------------------------------------------------------------------------
+
+/// `decodePgsRle`：PGS RLE → `width × height` 调色板索引平面（调用方已校验尺寸并给好
+/// 清零的 [out]）；数据不足时余下像素保持 0。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_pgs_rle_decode(
+    rle: *const u8,
+    rle_len: usize,
+    width: u32,
+    height: u32,
+    out: *mut u8,
+    out_len: usize,
+) -> i32 {
+    guard(|| {
+        if (rle.is_null() && rle_len > 0) || out.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let (w, h) = (width as usize, height as usize);
+        if w == 0 || h == 0 {
+            return status::INVALID_ARGUMENT;
+        }
+        if out_len < w * h {
+            return status::BUFFER_TOO_SMALL;
+        }
+        pgs_rle_decode(slice(rle, rle_len), w, h, slice_mut(out, w * h));
+        status::OK
+    })
+}
+
+fn pgs_rle_decode(rle: &[u8], w: usize, h: usize, out: &mut [u8]) {
+    let (mut i, mut x, mut y) = (0usize, 0usize, 0usize);
+    while i < rle.len() && y < h {
+        let mut color = rle[i];
+        i += 1;
+        let mut run = 1usize;
+        if color == 0 {
+            if i >= rle.len() {
+                break;
+            }
+            let flag = rle[i];
+            i += 1;
+            if flag == 0 {
+                x = 0;
+                y += 1;
+                continue;
+            }
+            run = (flag & 0x3F) as usize;
+            if flag & 0x40 != 0 {
+                if i >= rle.len() {
+                    break;
+                }
+                run = (run << 8) | rle[i] as usize;
+                i += 1;
+            }
+            if flag & 0x80 != 0 {
+                if i >= rle.len() {
+                    break;
+                }
+                color = rle[i];
+                i += 1;
+            }
+        }
+        let end = if x + run > w { w } else { x + run };
+        if color != 0 && end > x {
+            out[y * w + x..y * w + end].fill(color);
+        }
+        x = end;
+    }
+}
+
+/// `decodeDvdSubtitleRle`：SPU 两场 2 bit RLE → `width × height` 索引平面（0..3）。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写；[out] 已清零。
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn ffc_image_dvd_rle_decode(
+    packet: *const u8,
+    packet_len: usize,
+    width: u32,
+    height: u32,
+    top_field_offset: u32,
+    bottom_field_offset: u32,
+    out: *mut u8,
+    out_len: usize,
+) -> i32 {
+    guard(|| {
+        if (packet.is_null() && packet_len > 0) || out.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let (w, h) = (width as usize, height as usize);
+        if w == 0 || h == 0 {
+            return status::INVALID_ARGUMENT;
+        }
+        if out_len < w * h {
+            return status::BUFFER_TOO_SMALL;
+        }
+        dvd_rle_decode(
+            slice(packet, packet_len),
+            w,
+            h,
+            [top_field_offset as usize, bottom_field_offset as usize],
+            slice_mut(out, w * h),
+        );
+        status::OK
+    })
+}
+
+fn dvd_rle_decode(packet: &[u8], w: usize, h: usize, offsets: [usize; 2], out: &mut [u8]) {
+    for (field, &offset) in offsets.iter().enumerate() {
+        // `_NibbleReader`：以半字节计位置，越界读 0。
+        let mut pos = offset * 2;
+        let exhausted = |pos: usize| (pos >> 1) >= packet.len();
+        let next = |pos: &mut usize| -> usize {
+            let byte = *pos >> 1;
+            let v = if byte >= packet.len() {
+                0
+            } else if (*pos).is_multiple_of(2) {
+                (packet[byte] >> 4) as usize
+            } else {
+                (packet[byte] & 0x0F) as usize
+            };
+            *pos += 1;
+            v
+        };
+        let mut y = field;
+        while y < h {
+            let mut x = 0usize;
+            while x < w {
+                if exhausted(pos) {
+                    return;
+                }
+                let mut v = 0usize;
+                let mut t = 1usize;
+                while v < t && t <= 0x40 {
+                    v = (v << 4) | next(&mut pos);
+                    t <<= 2;
+                }
+                let color = (v & 3) as u8;
+                let mut run = if v < 4 { w - x } else { v >> 2 };
+                if run > w - x {
+                    run = w - x;
+                }
+                if color != 0 {
+                    out[y * w + x..y * w + x + run].fill(color);
+                }
+                x += run;
+            }
+            if !pos.is_multiple_of(2) {
+                pos += 1;
+            }
+            y += 2;
+        }
+    }
+}
 
 /// DVB 像素串的位读取器（`_BitReader`）：越界读 0。
 struct BitReader<'a> {
@@ -1182,77 +1338,119 @@ pub unsafe extern "C" fn ffc_image_compose_indexed(
 }
 
 // ---------------------------------------------------------------------------
-// PNG 解码 / JPEG 编码（有声书片段导出的逐帧重编码）。
+// 解码 / JPEG 编码。
 //
-// PNG 是无损格式：8 位图解出的像素与 `package:image` `decodePng` 逐字节相同（回归测试比对）。
-// JPEG 编码换成 `jpeg-encoder`：字节与 `package:image` `encodeJpg` 不同，同质量参数、
-// 同 4:4:4 采样下实测画质不降（PSNR / 体积见 PR 说明）。
+// 解码统一走 `image` crate（纯 Rust：JPEG = zune-jpeg、PNG、GIF、WebP、BMP、TIFF、TGA、ICO、
+// PNM）。输出一律是行紧排的 uint8：有 alpha 的 RGBA，否则 RGB（灰度展开成 RGB，16 位截成
+// 8 位），多帧格式只取首帧。`orient != 0` 时按 EXIF 方向转正（同 `bakeOrientation`）。
+//
+// 与旧的 `package:image` 解码相比：PNG 等无损格式逐字节相同；JPEG 的 IDCT / 上采样实现不同，
+// 实测 3.5～4.8% 的通道值差 ±1（最大 1），下游影响见 PR 说明。`package:image` 能解而这里不能的：
+// PSD、EXR、PVR（漫画 / 截图 / 封面管线里见不到）。
+//
+// JPEG 编码换成 `jpeg-encoder`（4:4:4、同质量参数），字节与 `encodeJpg` 不同、画质不降。
 // ---------------------------------------------------------------------------
 
-/// 解 PNG 成 RGBA8888（调色板 / 灰度 / 16 位一律展开或截成 8 位 RGBA），写宽高。
-fn png_decode_rgba(data: &[u8]) -> Result<(Vec<u8>, u32, u32), i32> {
-    let mut dec = png::Decoder::new(std::io::Cursor::new(data));
-    dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = dec.read_info().map_err(|_| status::BAD_INPUT)?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
-    let frame = reader.next_frame(&mut buf).map_err(|_| status::BAD_INPUT)?;
-    let (w, h) = (frame.width, frame.height);
-    let n = w as usize * h as usize;
-    let src = &buf[..frame.buffer_size()];
-    let rgba = match frame.color_type {
-        png::ColorType::Rgba => src.to_vec(),
-        png::ColorType::Rgb => {
-            let mut out = Vec::with_capacity(n * 4);
-            for p in src.chunks_exact(3) {
-                out.extend_from_slice(&[p[0], p[1], p[2], 255]);
-            }
-            out
-        }
-        png::ColorType::Grayscale => {
-            let mut out = Vec::with_capacity(n * 4);
-            for &l in src {
-                out.extend_from_slice(&[l, l, l, 255]);
-            }
-            out
-        }
-        png::ColorType::GrayscaleAlpha => {
-            let mut out = Vec::with_capacity(n * 4);
-            for p in src.chunks_exact(2) {
-                out.extend_from_slice(&[p[0], p[0], p[0], p[1]]);
-            }
-            out
-        }
-        png::ColorType::Indexed => return Err(status::BAD_INPUT), // EXPAND 后不会出现
-    };
-    if rgba.len() != n * 4 {
-        return Err(status::BAD_INPUT);
-    }
-    Ok((rgba, w, h))
+/// 解码结果的格式代码（Dart 侧 `FfcImageFormat`）。
+pub const FORMAT_JPEG: u32 = 1;
+pub const FORMAT_PNG: u32 = 2;
+pub const FORMAT_GIF: u32 = 3;
+pub const FORMAT_WEBP: u32 = 4;
+pub const FORMAT_BMP: u32 = 5;
+pub const FORMAT_TIFF: u32 = 6;
+pub const FORMAT_TGA: u32 = 7;
+pub const FORMAT_ICO: u32 = 8;
+pub const FORMAT_PNM: u32 = 9;
+
+fn format_code(f: image::ImageFormat) -> Option<u32> {
+    use image::ImageFormat as F;
+    Some(match f {
+        F::Jpeg => FORMAT_JPEG,
+        F::Png => FORMAT_PNG,
+        F::Gif => FORMAT_GIF,
+        F::WebP => FORMAT_WEBP,
+        F::Bmp => FORMAT_BMP,
+        F::Tiff => FORMAT_TIFF,
+        F::Tga => FORMAT_TGA,
+        F::Ico => FORMAT_ICO,
+        F::Pnm => FORMAT_PNM,
+        _ => return None,
+    })
 }
 
-/// PNG → RGBA8888，经 `out_ptr` / `out_len` 交出（[crate::ffc_free_bytes] 释放），
-/// `out_size` 写 `[width, height]`。解不开返回 [status::BAD_INPUT]。
+struct Decoded {
+    pixels: Vec<u8>,
+    width: u32,
+    height: u32,
+    channels: u32,
+    format: u32,
+}
+
+fn open_decoder(
+    data: &[u8],
+) -> Result<(impl image::ImageDecoder + '_, u32), i32> {
+    // TGA 没有文件头魔数，猜不出格式时按 TGA 试（其头部校验会拒掉别的字节）。
+    let format = image::guess_format(data).unwrap_or(image::ImageFormat::Tga);
+    let code = format_code(format).ok_or(status::BAD_INPUT)?;
+    let reader = image::ImageReader::with_format(std::io::Cursor::new(data), format);
+    let decoder = reader.into_decoder().map_err(|_| status::BAD_INPUT)?;
+    Ok((decoder, code))
+}
+
+fn decode_image(data: &[u8], orient: bool) -> Result<Decoded, i32> {
+    use image::ImageDecoder;
+    let (mut decoder, format) = open_decoder(data)?;
+    let orientation = if orient {
+        decoder
+            .orientation()
+            .unwrap_or(image::metadata::Orientation::NoTransforms)
+    } else {
+        image::metadata::Orientation::NoTransforms
+    };
+    let mut img = image::DynamicImage::from_decoder(decoder).map_err(|_| status::BAD_INPUT)?;
+    img.apply_orientation(orientation);
+    let (width, height) = (img.width(), img.height());
+    if width == 0 || height == 0 {
+        return Err(status::BAD_INPUT);
+    }
+    let (pixels, channels) = if img.color().has_alpha() {
+        (img.into_rgba8().into_raw(), 4)
+    } else {
+        (img.into_rgb8().into_raw(), 3)
+    };
+    Ok(Decoded {
+        pixels,
+        width,
+        height,
+        channels,
+        format,
+    })
+}
+
+/// 解码成 uint8 RGB / RGBA（见本节说明），像素经 `out_ptr` / `out_len` 交出（
+/// [crate::ffc_free_bytes] 释放），`out_meta` 写 `[width, height, channels, format]`。
+/// 认不出 / 解不开返回 [status::BAD_INPUT]。
 ///
 /// # Safety
-/// 指针按给定长度可读 / 可写；`out_size` 可写 2 个 u32。
+/// 指针按给定长度可读 / 可写；`out_meta` 可写 4 个 u32。
 #[no_mangle]
-pub unsafe extern "C" fn ffc_image_png_decode_rgba(
-    png_data: *const u8,
-    png_len: usize,
+pub unsafe extern "C" fn ffc_image_decode(
+    data: *const u8,
+    len: usize,
+    orient: i32,
     out_ptr: *mut *mut u8,
     out_len: *mut usize,
-    out_size: *mut u32,
+    out_meta: *mut u32,
 ) -> i32 {
     guard(|| {
-        if png_data.is_null() || out_ptr.is_null() || out_len.is_null() || out_size.is_null() {
+        if data.is_null() || out_ptr.is_null() || out_len.is_null() || out_meta.is_null() {
             return status::NULL_ARGUMENT;
         }
-        match png_decode_rgba(slice(png_data, png_len)) {
-            Ok((rgba, w, h)) => {
-                let size = slice_mut(out_size, 2);
-                size[0] = w;
-                size[1] = h;
-                crate::hand_over_bytes(rgba, out_ptr, out_len);
+        match decode_image(slice(data, len), orient != 0) {
+            Ok(d) => {
+                let meta = slice_mut(out_meta, 4);
+                meta.copy_from_slice(&[d.width, d.height, d.channels, d.format]);
+                crate::hand_over_bytes(d.pixels, out_ptr, out_len);
                 status::OK
             }
             Err(code) => code,
@@ -1260,38 +1458,82 @@ pub unsafe extern "C" fn ffc_image_png_decode_rgba(
     })
 }
 
-/// PNG → JPEG（4:4:4、`quality` 1..=100，忽略 alpha，同 `encodeJpg(decodePng(...))`
-/// 的通道取法），经 `out_ptr` / `out_len` 交出。解不开返回 [status::BAD_INPUT]。
+/// 只读头：宽高（`orient != 0` 时按 EXIF 方向换算，5～8 宽高互换）与格式，写
+/// `out_meta = [width, height, format]`。认不出返回 [status::BAD_INPUT]。
+///
+/// # Safety
+/// 指针按给定长度可读；`out_meta` 可写 3 个 u32。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_probe(
+    data: *const u8,
+    len: usize,
+    orient: i32,
+    out_meta: *mut u32,
+) -> i32 {
+    guard(|| {
+        use image::ImageDecoder;
+        if data.is_null() || out_meta.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let (mut decoder, format) = match open_decoder(slice(data, len)) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        let (mut w, mut h) = decoder.dimensions();
+        if orient != 0 {
+            use image::metadata::Orientation as O;
+            if matches!(
+                decoder.orientation(),
+                Ok(O::Rotate90 | O::Rotate270 | O::Rotate90FlipH | O::Rotate270FlipH)
+            ) {
+                std::mem::swap(&mut w, &mut h);
+            }
+        }
+        if w == 0 || h == 0 {
+            return status::BAD_INPUT;
+        }
+        slice_mut(out_meta, 3).copy_from_slice(&[w, h, format]);
+        status::OK
+    })
+}
+
+/// 解码（转正 EXIF 方向）后编码成 JPEG（4:4:4，`quality` 1..=100，忽略 alpha，同
+/// `encodeJpg` 的通道取法），经 `out_ptr` / `out_len` 交出。解不开返回 [status::BAD_INPUT]。
 ///
 /// # Safety
 /// 指针按给定长度可读 / 可写。
 #[no_mangle]
-pub unsafe extern "C" fn ffc_image_png_to_jpeg(
-    png_data: *const u8,
-    png_len: usize,
+pub unsafe extern "C" fn ffc_image_to_jpeg(
+    data: *const u8,
+    len: usize,
     quality: u32,
     out_ptr: *mut *mut u8,
     out_len: *mut usize,
 ) -> i32 {
     guard(|| {
-        if png_data.is_null() || out_ptr.is_null() || out_len.is_null() {
+        if data.is_null() || out_ptr.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
         if !(1..=100).contains(&quality) {
             return status::INVALID_ARGUMENT;
         }
-        let (rgba, w, h) = match png_decode_rgba(slice(png_data, png_len)) {
+        let d = match decode_image(slice(data, len), true) {
             Ok(v) => v,
             Err(code) => return code,
         };
-        if w == 0 || h == 0 || w > u16::MAX as u32 || h > u16::MAX as u32 {
+        if d.width > u16::MAX as u32 || d.height > u16::MAX as u32 {
             return status::INVALID_ARGUMENT;
         }
+        let color = if d.channels == 4 {
+            jpeg_encoder::ColorType::Rgba
+        } else {
+            jpeg_encoder::ColorType::Rgb
+        };
         let mut jpeg = Vec::new();
         let mut enc = jpeg_encoder::Encoder::new(&mut jpeg, quality as u8);
         enc.set_sampling_factor(jpeg_encoder::SamplingFactor::F_1_1);
         if enc
-            .encode(&rgba, w as u16, h as u16, jpeg_encoder::ColorType::Rgba)
+            .encode(&d.pixels, d.width as u16, d.height as u16, color)
             .is_err()
         {
             return status::BAD_INPUT;
@@ -1299,6 +1541,213 @@ pub unsafe extern "C" fn ffc_image_png_to_jpeg(
         crate::hand_over_bytes(jpeg, out_ptr, out_len);
         status::OK
     })
+}
+
+/// `EpubEdgeMatcher.compareEdges`：两张图各自解码（转正）、最近邻缩到高 [sample_height]
+/// （宽按比例四舍五入，同 `copyResize(height:)`），比较左图右缘与右图左缘各 [strip_width]
+/// 列的 RGB 差，写 `out = 1 - 平均差`（0..1；没有可比像素时写 0）。任一张解不开返回
+/// [status::BAD_INPUT]。
+///
+/// # Safety
+/// 指针按给定长度可读；`out` 可写一个 f64。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_edge_similarity(
+    left: *const u8,
+    left_len: usize,
+    right: *const u8,
+    right_len: usize,
+    strip_width: u32,
+    sample_height: u32,
+    out: *mut f64,
+) -> i32 {
+    guard(|| {
+        if left.is_null() || right.is_null() || out.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if sample_height == 0 {
+            return status::INVALID_ARGUMENT;
+        }
+        let l = match decode_image(slice(left, left_len), true) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        let r = match decode_image(slice(right, right_len), true) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        let sh = sample_height as usize;
+        let shrink = |d: &Decoded| -> Vec<u8> {
+            // copyResize(height: h)：width = round(h * (src.width / src.height))。
+            let w = (sh as f64 * (d.width as f64 / d.height as f64)).round() as usize;
+            if w == 0 {
+                return Vec::new();
+            }
+            let v = View::new(
+                &d.pixels,
+                d.width as usize * d.channels as usize,
+                d.channels,
+                0,
+                0,
+                d.width,
+                d.height,
+            )
+            .expect("decoded image view");
+            let mut dst = vec![0u8; w * sh * d.channels as usize];
+            resize_into(&v, &mut dst, w, sh, INTERP_NEAREST);
+            dst
+        };
+        let (lp, rp) = (shrink(&l), shrink(&r));
+        let lw = lp.len() / (sh * l.channels as usize);
+        let rw = rp.len() / (sh * r.channels as usize);
+        let (lc, rc) = (l.channels as usize, r.channels as usize);
+        let mut total = 0f64;
+        let mut count = 0usize;
+        for y in 0..sh {
+            for dx in 0..strip_width as usize {
+                if lw < 1 + dx || dx >= rw {
+                    continue;
+                }
+                let lx = lw - 1 - dx;
+                let a = &lp[(y * lw + lx) * lc..(y * lw + lx) * lc + 3];
+                let b = &rp[(y * rw + dx) * rc..(y * rw + dx) * rc + 3];
+                let dr = (a[0] as i32 - b[0] as i32).abs() as f64;
+                let dg = (a[1] as i32 - b[1] as i32).abs() as f64;
+                let db = (a[2] as i32 - b[2] as i32).abs() as f64;
+                total += (dr + dg + db) / (3.0 * 255.0);
+                count += 1;
+            }
+        }
+        *out = if count == 0 { 0.0 } else { 1.0 - total / count as f64 };
+        status::OK
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PP-OCR DB 后处理的洪泛（`ppDetPostprocess`）。按与旧 Dart 实现相同的栈序洪泛，各域的浮点
+// 累加顺序因此相同；主轴角等含超越函数的派生量不在这里算，只回传原始矩，由 Dart 同一段代码
+// 求（避免两边 libm 末位差）。
+// ---------------------------------------------------------------------------
+
+/// DB 连通域每条记录的 f64 个数：
+/// `[minX, minY, maxX, maxY, count, sum, mx, my, mxx, myy, mxy]`。
+pub const DB_RECORD_FIELDS: usize = 11;
+
+/// 概率图 [prob]（`width × height` 行主序）按 `> thresh` 4 连通分域，滤掉均值
+/// `< box_thresh` 或外接矩形宽 / 高 `< 2` 的域，其余每域一条 [DB_RECORD_FIELDS] 个 f64 的
+/// 记录（扫描序），经 `out_ptr` / `out_len`（字节数）交出，用 [crate::ffc_free_bytes] 释放。
+///
+/// # Safety
+/// 指针按给定长度可读；`out_ptr` / `out_len` 可写。
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn ffc_image_db_components(
+    prob: *const f32,
+    len: usize,
+    width: u32,
+    height: u32,
+    thresh: f64,
+    box_thresh: f64,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if prob.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let (w, h) = (width as usize, height as usize);
+        if w == 0 || h == 0 || len != w * h {
+            return status::INVALID_ARGUMENT;
+        }
+        let records = db_components(slice(prob, len), w, h, thresh, box_thresh);
+        let mut bytes = Vec::with_capacity(records.len() * 8);
+        for v in records {
+            bytes.extend_from_slice(&v.to_ne_bytes());
+        }
+        crate::hand_over_bytes(bytes, out_ptr, out_len);
+        status::OK
+    })
+}
+
+fn db_components(prob: &[f32], w: usize, h: usize, thresh: f64, box_thresh: f64) -> Vec<f64> {
+    let n = w * h;
+    // Dart 版用 Int32List 打域号；这里只需要「是否已访问」，栈序不变。
+    let mut seen = vec![false; n];
+    let mut stack: Vec<u32> = Vec::with_capacity(1024);
+    let mut out = Vec::new();
+    let above = |q: usize| prob[q] as f64 > thresh;
+    for start in 0..n {
+        if seen[start] || !above(start) {
+            continue;
+        }
+        seen[start] = true;
+        stack.push(start as u32);
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (w as i64, h as i64, -1i64, -1i64);
+        let mut sum = 0f64;
+        let mut count = 0i64;
+        let ox = (start % w) as i64;
+        let oy = (start / w) as i64;
+        let (mut mx, mut my, mut mxx, mut myy, mut mxy) = (0f64, 0f64, 0f64, 0f64, 0f64);
+        while let Some(p) = stack.pop() {
+            let p = p as usize;
+            let px = (p % w) as i64;
+            let py = (p / w) as i64;
+            sum += prob[p] as f64;
+            count += 1;
+            let rx = (px - ox) as f64;
+            let ry = (py - oy) as f64;
+            mx += rx;
+            my += ry;
+            mxx += rx * rx;
+            myy += ry * ry;
+            mxy += rx * ry;
+            min_x = min_x.min(px);
+            max_x = max_x.max(px);
+            min_y = min_y.min(py);
+            max_y = max_y.max(py);
+            // 压栈顺序与 Dart 相同：左、右、上、下。
+            let mut push = |q: usize| {
+                if !seen[q] && above(q) {
+                    seen[q] = true;
+                    stack.push(q as u32);
+                }
+            };
+            if px > 0 {
+                push(p - 1);
+            }
+            if px < w as i64 - 1 {
+                push(p + 1);
+            }
+            if py > 0 {
+                push(p - w);
+            }
+            if py < h as i64 - 1 {
+                push(p + w);
+            }
+        }
+        let score = sum / count as f64;
+        if score < box_thresh {
+            continue;
+        }
+        let bw = (max_x - min_x + 1) as f64;
+        let bh = (max_y - min_y + 1) as f64;
+        if bw < 2.0 || bh < 2.0 {
+            continue;
+        }
+        out.extend_from_slice(&[
+            min_x as f64,
+            min_y as f64,
+            max_x as f64,
+            max_y as f64,
+            count as f64,
+            sum,
+            mx,
+            my,
+            mxx,
+            myy,
+            mxy,
+        ]);
+    }
+    out
 }
 
 #[cfg(test)]

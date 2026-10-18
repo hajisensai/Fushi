@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/text_detector.dart'
     show LetterboxTransform, computeLetterbox, kDetInputSize, rtdetrPreprocess;
@@ -139,9 +140,10 @@ PreprocessedPanelPage preprocessPanelImage(img.Image page) {
 /// 吞掉异常之外的任何东西，也不做 IO。
 PreprocessedPanelPage? preprocessPanelPageBytes(Uint8List bytes) {
   try {
-    final img.Image? decoded = img.decodeImage(bytes);
+    // 原生解码，已按 EXIF 方向转正。
+    final img.Image? decoded = decodeImageNative(bytes);
     if (decoded == null) return null;
-    return preprocessPanelImage(img.bakeOrientation(decoded));
+    return preprocessPanelImage(decoded);
   } on Object {
     return null;
   }

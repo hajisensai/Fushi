@@ -451,12 +451,8 @@ const double kNearlyBlackLumaStdDev = 10;
 bool isNearlyBlackFrame(Uint8List bytes) {
   // `decodeImage` 对残缺字节不是返回 null 而是抛（实测 GIF 探测越界 RangeError）；
   // 「解码不出」在这里的语义就是「不判黑」，完整性由 [publishStagedCoverFile] 判。
-  final img.Image? decoded;
-  try {
-    decoded = img.decodeImage(bytes);
-  } on Object {
-    return false;
-  }
+  // 原生解码，按 EXIF 方向转正（旧的 package:image JPEG 解码器同样在解码时转正）。
+  final img.Image? decoded = decodeImageNative(bytes);
   if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
     return false;
   }

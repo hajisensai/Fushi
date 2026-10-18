@@ -589,9 +589,9 @@ const List<String> _clipVideoCodecArgs = <String>[
 /// [pngBytes] 解码失败（损坏/空）返回 null，调用方据此回退（记日志 + toast）。
 /// [quality] 为 JPEG 质量（1-100），静态文本卡片用高质量避免文字边缘锯齿。
 ///
-/// 解码 + 编码在原生内核（[encodePngAsJpeg]，一帧约 70 ms，纯 Dart 时约 700 ms）。
+/// 解码 + 编码在原生内核（[encodeImageAsJpeg]，一帧约 70 ms，纯 Dart 时约 700 ms）。
 Uint8List? encodeClipTextFrameAsJpg(Uint8List pngBytes, {int quality = 98}) =>
-    encodePngAsJpeg(pngBytes, quality: quality);
+    encodeImageAsJpeg(pngBytes, quality: quality);
 
 /// [encodeClipTextFrameAsJpg] 的后台 isolate 版本（TODO-1167 / BUG-552，安卓导出片段
 /// 视频 ANR/OOM 根因修复）。

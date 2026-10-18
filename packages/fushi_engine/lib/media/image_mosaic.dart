@@ -14,6 +14,7 @@ import 'dart:typed_data';
 
 import 'package:fushi_anki/fushi_anki_core.dart' show MiningMosaicRegion;
 import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:image/image.dart' as img;
 
 /// 马赛克块边长占图像长边的比例：长边 1920 → 40px 一块，糊到看不出细节，又能看出
@@ -142,16 +143,12 @@ MosaicEncodedImage? mosaicEncodedImage(
 }) {
   if (bytes.isEmpty) return null;
   try {
-    final img.ImageFormat format = img.findFormatForData(bytes);
-    final img.Image? decoded = img.decodeImage(bytes);
-    if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
-      return null;
-    }
-    final img.Image out = applyMosaicToImage(
-      img.bakeOrientation(decoded),
-      regions,
-    );
-    final bool png = format == img.ImageFormat.png;
+    // 原生解码（已转正，与漫画裁切同一坐标系）。
+    final ({img.Image image, FfcImageFormat format})? decoded =
+        decodeImageWithFormat(bytes);
+    if (decoded == null) return null;
+    final img.Image out = applyMosaicToImage(decoded.image, regions);
+    final bool png = decoded.format == FfcImageFormat.png;
     return MosaicEncodedImage(
       bytes: png
           ? img.encodePng(out)

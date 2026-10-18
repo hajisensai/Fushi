@@ -2,6 +2,9 @@
 // （package:image 4.3.0 的 copyResize / copyCrop / compositeImage / getPixel 循环、
 // applyMosaicRgba / coverDHashOfImage / ppDetPostprocess 的 Dart 版）跑
 // image_kernel_cases.dart 得到的摘要。原生内核必须逐位复现它们；不要重新生成来「修」红。
+//
+// 例外：标了「由 Rust 解码生成」的几条（输入是 JPEG 字节，结果取决于解码器）在 2026-10-18
+// JPEG 解码搬进 Rust 后用新实现重新生成；纯算术内核与 PNG 输入的条目不受影响、未改动。
 const Map<String, String> kImageKernelVectors = <String, String>{
   'resize/nearest/1ch/97x61->40x33':
       '318bf2f64ca0fef805856fa384009f72f2e42403c196dbeaa2772881feaa1be5',
@@ -243,14 +246,18 @@ const Map<String, String> kImageKernelVectors = <String, String>{
   'dhash/2ch/31x17': 'e7de983b77e7dcb9',
   'dhash/3ch/5x4': '22008a002a00a200',
   'dhash/3ch/9x8': '75e7debc7be7ce5d',
+  // 由 Rust 解码生成（JPEG 输入）；与旧 Dart 解码的差异见 PR #2330。
   'crop/jpg/panel':
-      '763f0c3d2ecff99ff6541f5443d5d6367278a6221e2095184847a0ae81b43d40',
+      '011010107e46b25d36de8d7ebd1dc16d042fe42a46531435a55ef00f43fefbd5',
+  // 由 Rust 解码生成（JPEG 输入）；与旧 Dart 解码的差异见 PR #2330。
   'crop/jpg/full-nosize':
-      '498640e98d5f2a89f4cbfaae941d7cef6ba1e98619e1d005e9e3058fe0f3646e',
+      '609d1a8ec055aebf35a135d33a98d008e1697466e4329526c340e93e88f854fc',
   'crop/png/mosaic':
       '20f16c2351587d0160346cdd2f92965a47297b662b0763793d8ce5f7079e59bc',
+  // 由 Rust 解码生成（JPEG 输入）；与旧 Dart 解码的差异见 PR #2330。
   'mosaic/encoded/jpg':
-      'f4b09cb56a2c3410fd507727fdb67b4ccca9064819a6ae0f934979e9217907f4',
+      'acfac142cd89651a880e1b79ead2b7e269d44c951f313a453148b9d186808157',
+  // 由 Rust 解码生成（JPEG 输入）；与旧 Dart 解码的差异见 PR #2330。
   'panel/bytes/jpg':
-      'a79f8f4ef7e951e4c6790182f631e8b164f345890eb975cb85e9cf6bc04b7bda',
+      '19c76e7c12cda1167fbae595af72358ea93fe698d42428c1c4285ae0812228b0',
 };
