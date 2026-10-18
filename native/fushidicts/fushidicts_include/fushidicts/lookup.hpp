@@ -26,6 +26,11 @@ struct LookupOptions {
   std::optional<std::string> frequency_dictionary;
   LookupFrequencyOrder frequency_order = LookupFrequencyOrder::Auto;
   std::optional<std::string> primary_reading;
+  // false：跳过截断之后的 pitch 富化与释义解压（materialize）。比较器只读 freq，
+  // 两者都发生在 partial_sort + resize 之后，所以结果集合、顺序、matched / reading
+  // 逐字不变；返回的 glossary 只剩压缩指针、glossary 文本为空、pitches 为空。
+  // 只给只要匹配长度 / 读音的调用方（分词，见 tokenize.hpp）用。
+  bool materialize = true;
 };
 
 class Lookup {

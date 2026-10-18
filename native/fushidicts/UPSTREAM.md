@@ -103,6 +103,7 @@
 - **自研多语言文本处理器**（`fushidicts_src/text_processor/text_processor.cpp`）：P1 Unicode 小写（`to_lower`）/ P2 阿拉伯语 harakat + 组合记号删除（`harakat`/`combining`）/ P3 预合成拉丁去变音（`precompos`）。上游 `text_processor` 此前为空（仅日英归一化骨架）。
 - **自研 kanji 导入**：`fushidicts_src/importer.cpp` 上游 541 行 → Hibiki **1367 行**（+826），新增 kanji bank 写盘（`write_kanji`）+ `query_kanji` + `add_kanji_dict`。
 - **多格式导入**（上游主线没有）：`fushidicts_src/mdx/`（MDX）、`fushidicts_src/stardict/`（StarDict）、`fushidicts_src/popup_json.cpp`（弹窗 JSON）、`fushidicts_src/scan/`（词边界感知扫描，对齐 Yomitan searchResolution）、`fushidicts_src/util/`。
+- **批量分词 + 弹窗 JSON 选项**（2026-10-18，上游没有）：`fushidicts_src/tokenize.cpp`（`fushidicts_include/fushidicts/tokenize.hpp`）——Dart `JapaneseLanguage.textToWords` 的逐位置最长匹配循环搬进原生，一次 FFI 切完整段（UTF-16 码元口径、句柄内匹配长度 LRU）；`LookupOptions::materialize=false` 跳过截断后的 pitch 富化与释义解压（只给分词用）。`popup_json.cpp` 加 `build_popup_json(results, PopupJsonOptions)`（词头预算 / 隐藏词典 / 词典顺序 / 变形说明译文），Dart 版 `buildPopupJsonFromLookup` 已删；旧 2 参重载保留给 JNI，输出不变。新 FFI 导出 `fushidicts_tokenize` / `fushidicts_match_length` / `fushidicts_lookup_with_popup` / `fushidicts_set_popup_translations`（+ 对应 free），删掉 Dart 已不再调用的 `fushidicts_lookup_popup_json`。守卫：`tests/tokenize_batch_test.cpp`、`tests/popup_json_vectors_test.cpp`（旧 Dart 实现生成的逐字节向量）、`tests/popup_json_options_test.cpp`。
 - **安全上限**：导入/查询期的资源/尺寸上限加固。
 - **FFI / JNI 桥**：`fushidicts_ffi.cpp`（Dart FFI）+ `fushidicts_jni.cpp`（Android JNI）。**不用上游 `c-bindings` 分支**。
   - 注意：`score` / `get_freq_value(s)_for_dict` / `Dictionary` 均为引擎内部符号，FFI/JNI 桥与 Dart binding 均未暴露——本批三处改动**不影响 FFI 签名**。

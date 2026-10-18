@@ -14,6 +14,7 @@
 #include "fushidicts/lookup.hpp"
 #include "fushidicts/query.hpp"
 #include "fushidicts/popup_json.hpp"
+#include "fushidicts/tokenize.hpp"
 #include <zstd.h>
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -434,6 +435,12 @@ int32_t fushidicts_probe_dict_content(const char* dir) {
 struct FushidictsHandle {
   DictionaryQuery query;
   Deinflector deinflector;
+  // 分词的匹配长度缓存。结果依赖词典集合与变形表，所以 add_*_dict /
+  // load_transforms 都要清空它（见 tokenize.hpp）。
+  MatchLengthCache match_cache;
+  // 弹窗 JSON 的变形名 / 语法说明译文（英文原文 → 界面语言），由 Dart 侧在
+  // TransformDescriptionCatalog 变化后推下来；空表 = 不翻译。
+  PopupTranslations popup_translations;
 };
 
 FUSHI_EXPORT
@@ -455,35 +462,45 @@ void fushidicts_destroy(void* handle) {
 FUSHI_EXPORT
 void fushidicts_add_term_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_term_dict", [&]() {
-    static_cast<FushidictsHandle*>(handle)->query.add_term_dict(path);
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    h->query.add_term_dict(path);
+    h->match_cache.clear();
   });
 }
 
 FUSHI_EXPORT
 void fushidicts_add_freq_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_freq_dict", [&]() {
-    static_cast<FushidictsHandle*>(handle)->query.add_freq_dict(path);
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    h->query.add_freq_dict(path);
+    h->match_cache.clear();
   });
 }
 
 FUSHI_EXPORT
 void fushidicts_add_pitch_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_pitch_dict", [&]() {
-    static_cast<FushidictsHandle*>(handle)->query.add_pitch_dict(path);
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    h->query.add_pitch_dict(path);
+    h->match_cache.clear();
   });
 }
 
 FUSHI_EXPORT
 void fushidicts_add_kanji_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_kanji_dict", [&]() {
-    static_cast<FushidictsHandle*>(handle)->query.add_kanji_dict(path);
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    h->query.add_kanji_dict(path);
+    h->match_cache.clear();
   });
 }
 
 FUSHI_EXPORT
 void fushidicts_load_transforms(void* handle, const char* json) {
   ffi_guard_void("fushidicts_load_transforms", [&]() {
-    static_cast<FushidictsHandle*>(handle)->deinflector.load_transforms_json(json);
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    h->deinflector.load_transforms_json(json);
+    h->match_cache.clear();
   });
 }
 
@@ -731,25 +748,153 @@ void fushidicts_free_media(FfiMediaFile* r) {
   });
 }
 
-// ── popup JSON (single source of truth for both FFI and JNI) ───────
+FUSHI_EXPORT
+void fushidicts_free_string(char* s) {
+  ffi_guard_void("fushidicts_free_string", [&]() { free(s); });
+}
+
+// ── 查词 + 弹窗 JSON（一次调用） ──────────────────────────────────────
+//
+// app 内弹窗 / 浏览器扩展 / 无头服务端的唯一弹窗数据出口：一次 lookup，同时返回
+// 结构化结果（Dart 侧制卡 / DictionaryEntry 用）和按用户设置拼好的弹窗 JSON
+// （词头预算 BUG-1472、隐藏词典、词典顺序 BUG-2579、变形说明译文 BUG-2038）。
+// 以前弹窗 JSON 在 Dart 里逐字段 jsonEncode 拼，现在与 Android 系统划词弹窗走
+// 同一份 build_popup_json。
+
+struct FfiLookupPopupResult {
+  FfiLookupResults results;
+  char* popup_json;
+};
+
+static std::vector<std::string> read_string_array(const char* const* items, int32_t count) {
+  std::vector<std::string> out;
+  if (!items || count <= 0) return out;
+  out.reserve(static_cast<size_t>(count));
+  for (int32_t i = 0; i < count; i++) {
+    out.emplace_back(items[i] ? items[i] : "");
+  }
+  return out;
+}
 
 FUSHI_EXPORT
-char* fushidicts_lookup_popup_json(void* handle, const char* text,
-                                   int32_t max_results, int32_t scan_length,
-                                   int32_t max_terms) {
-  return ffi_guard("fushidicts_lookup_popup_json", [&]() -> char* {
+void fushidicts_set_popup_translations(void* handle, const char* const* keys, const char* const* values,
+                                       int32_t count) {
+  ffi_guard_void("fushidicts_set_popup_translations", [&]() {
     auto* h = static_cast<FushidictsHandle*>(handle);
-    Lookup lookup(h->query, h->deinflector);
-    auto results = lookup.lookup(text, max_results,
-                                 static_cast<size_t>(scan_length));
-    std::string json = build_popup_json(results, max_terms);
-    return dup(json);
+    PopupTranslations translations;
+    if (keys && values) {
+      for (int32_t i = 0; i < count; i++) {
+        if (!keys[i]) continue;
+        translations[keys[i]] = values[i] ? values[i] : "";
+      }
+    }
+    h->popup_translations = std::move(translations);
   });
 }
 
 FUSHI_EXPORT
-void fushidicts_free_string(char* s) {
-  ffi_guard_void("fushidicts_free_string", [&]() { free(s); });
+FfiLookupPopupResult fushidicts_lookup_with_popup(void* handle, const char* text, int32_t max_results,
+                                                  int32_t scan_length, int32_t max_terms,
+                                                  const char* const* hidden_dicts, int32_t hidden_count,
+                                                  const char* const* dictionary_order, int32_t order_count) {
+  return ffi_guard("fushidicts_lookup_with_popup", [&]() -> FfiLookupPopupResult {
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    Lookup lookup(h->query, h->deinflector);
+    auto results = lookup.lookup(text, max_results, static_cast<size_t>(scan_length));
+    PopupJsonOptions options;
+    options.max_terms = max_terms;
+    for (auto& name : read_string_array(hidden_dicts, hidden_count)) {
+      options.hidden.insert(std::move(name));
+    }
+    options.dictionary_order = read_string_array(dictionary_order, order_count);
+    options.translations = &h->popup_translations;
+    FfiLookupPopupResult r{};
+    r.popup_json = dup(build_popup_json(results, options));
+    r.results = marshal_lookup_results(results);
+    return r;
+  });
+}
+
+FUSHI_EXPORT
+void fushidicts_free_lookup_popup_result(FfiLookupPopupResult* r) {
+  ffi_guard_void("fushidicts_free_lookup_popup_result", [&]() {
+    if (!r) return;
+    fushidicts_free_lookup_results(&r->results);
+    free(r->popup_json);
+    r->popup_json = nullptr;
+  });
+}
+
+// ── 分词 ──────────────────────────────────────────────────────────────
+//
+// 一次调用切完整段文本（Dart `JapaneseLanguage.textToWords` 以前是逐位置各调一次
+// fushidicts_lookup 并把整条结果连释义一起搬过 FFI）。lengths[i] = 第 i 段的
+// UTF-16 码元数；readings 仅 with_readings 时非空（与 lengths 等长）。语义见
+// tokenize.hpp。
+
+struct FfiTokenizeResult {
+  int32_t* lengths;
+  char** readings;
+  int32_t count;
+};
+
+FUSHI_EXPORT
+FfiTokenizeResult fushidicts_tokenize(void* handle, const char* text, int32_t scan_length, int32_t with_readings) {
+  return ffi_guard("fushidicts_tokenize", [&]() -> FfiTokenizeResult {
+    FfiTokenizeResult r{};
+    if (!text) return r;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    Lookup lookup(h->query, h->deinflector);
+    TokenizeOutput out =
+        tokenize(lookup, text, static_cast<size_t>(scan_length), with_readings != 0, &h->match_cache);
+    r.count = static_cast<int32_t>(out.lengths.size());
+    int32_t length_count = r.count;
+    r.lengths = alloc_array<int32_t>(length_count);
+    if (length_count != r.count) {
+      r.count = 0;
+      return r;
+    }
+    for (int32_t i = 0; i < r.count; i++) r.lengths[i] = out.lengths[i];
+    if (with_readings != 0) {
+      int32_t reading_count = r.count;
+      r.readings = alloc_array<char*>(reading_count);
+      if (reading_count != r.count) {
+        free(r.lengths);
+        r.lengths = nullptr;
+        r.count = 0;
+        return r;
+      }
+      for (int32_t i = 0; i < r.count; i++) r.readings[i] = dup(out.readings[i]);
+    }
+    return r;
+  });
+}
+
+FUSHI_EXPORT
+void fushidicts_free_tokenize_result(FfiTokenizeResult* r) {
+  ffi_guard_void("fushidicts_free_tokenize_result", [&]() {
+    if (!r) return;
+    if (r->readings) {
+      for (int32_t i = 0; i < r->count; i++) free(r->readings[i]);
+    }
+    free(r->readings);
+    free(r->lengths);
+    r->readings = nullptr;
+    r->lengths = nullptr;
+    r->count = 0;
+  });
+}
+
+// 文本开头的最长匹配长度（UTF-16 码元；0 = 未命中）。wordFromIndex /
+// getWordRange / 高亮预估这些单点调用用，与分词共用同一个缓存。
+FUSHI_EXPORT
+int32_t fushidicts_match_length(void* handle, const char* text, int32_t scan_length) {
+  return ffi_guard("fushidicts_match_length", [&]() -> int32_t {
+    if (!text) return 0;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    Lookup lookup(h->query, h->deinflector);
+    return match_length_utf16(lookup, text, static_cast<size_t>(scan_length), &h->match_cache);
+  });
 }
 
 // ── zstd 文件解压 ────────────────────────────────────────────────────

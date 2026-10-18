@@ -1,15 +1,53 @@
 #include "fushidicts/popup_json.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <map>
 #include <set>
-#include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
-static void json_escape(std::ostringstream& os, const std::string& s) {
+// 弹窗 JSON 的输出缓冲：直接往 std::string 追加（一次查词的 JSON 常有 200 KB 上下，
+// std::ostringstream 的逐字符 sentry / locale 开销在这里是可测的）。只支持本文件用到的
+// 几种写入；整数按十进制输出，与 ostream << int 逐字节相同。
+namespace {
+class JsonOut {
+ public:
+  JsonOut& operator<<(char c) {
+    buf_.push_back(c);
+    return *this;
+  }
+  JsonOut& operator<<(const char* s) {
+    buf_.append(s);
+    return *this;
+  }
+  JsonOut& operator<<(const std::string& s) {
+    buf_.append(s);
+    return *this;
+  }
+  JsonOut& operator<<(int v) {
+    buf_.append(std::to_string(v));
+    return *this;
+  }
+  void append(const char* data, size_t n) { buf_.append(data, n); }
+  std::string str() { return std::move(buf_); }
+
+ private:
+  std::string buf_;
+};
+}  // namespace
+
+static void json_escape(JsonOut& os, const std::string& s) {
   os << '"';
-  for (char c : s) {
+  const char* data = s.data();
+  size_t run = 0;  // 尚未写出的、无需转义的连续字节的起点
+  for (size_t i = 0; i < s.size(); i++) {
+    const char c = data[i];
+    const unsigned char uc = static_cast<unsigned char>(c);
+    if (c != '"' && c != '\\' && uc >= 0x20) continue;
+    os.append(data + run, i - run);
+    run = i + 1;
     switch (c) {
       case '"': os << "\\\""; break;
       case '\\': os << "\\\\"; break;
@@ -18,47 +56,59 @@ static void json_escape(std::ostringstream& os, const std::string& s) {
       case '\n': os << "\\n"; break;
       case '\r': os << "\\r"; break;
       case '\t': os << "\\t"; break;
-      default:
-        if (static_cast<unsigned char>(c) < 0x20) {
-          char buf[8];
-          snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned char>(c));
-          os << buf;
-        } else {
-          os << c;
-        }
+      default: {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "\\u%04x", uc);
+        os << buf;
+      }
     }
   }
+  os.append(data + run, s.size() - run);
   os << '"';
+}
+
+// 显示边界的变形名 / 语法说明本地化（Dart `TransformDescriptionCatalog.localize`
+// 的镜像）：查不到原样返回；空表 = 不翻译。
+static const std::string& localize(const PopupTranslations* translations,
+                                   const std::string& text) {
+  if (translations == nullptr || translations->empty() || text.empty()) {
+    return text;
+  }
+  auto it = translations->find(text);
+  return it == translations->end() ? text : it->second;
 }
 
 // 词形变化链 → 弹窗的 `deinflectionTrace` 数组。
 //
 // 与 Dart 侧 buildDeinflectionTags（fushi_dictionary/lib/src/language/language.dart）
-// 逐字段对齐——两条弹窗路径必须给出同一份 JSON，parity 由 Dart 侧的
-// dictionary_popup_webview_test 锁住。语义详见该函数的文档注释：
+// 逐字段对齐——弹窗 JSON（本文件）与 extra 路径（buildLookupEntriesJson）必须给出
+// 同一份变形标签，parity 由 tests/popup_json_vectors_test.cpp（parity_taberu）与 Dart
+// 侧的 dictionary_popup_webview_test 两头锁住。语义详见该函数的文档注释：
 //   * trace 的压栈顺序是**剥离顺序**（最外层的变形最先被剥），显示要的是**接续
 //     顺序**，所以整体反转：`当たっていた` 的 trace `[-た, -いる, -て]` 显示成
 //     `-て « -いる « -た`。
 //   * trace 为空而 matched != deinflected，说明这是 lookup.cpp 里的**文本变体归一**
 //     （colour→color 一类），它不经过任何变形规则，故没有语法说明，只回落成一条
 //     `matched → deinflected`。这条分支不能删。
-static void write_deinflection_tags(std::ostringstream& os,
+static void write_deinflection_tags(JsonOut& os,
                                     const std::string& matched,
                                     const std::string& deinflected,
-                                    const std::vector<TransformGroup>& trace) {
+                                    const std::vector<TransformGroup>& trace,
+                                    const PopupTranslations* translations) {
   os << '[';
   if (!trace.empty()) {
     for (size_t i = trace.size(); i-- > 0;) {
       if (i + 1 != trace.size()) os << ',';
       os << R"({"name":)";
-      json_escape(os, trace[i].name);
+      json_escape(os, localize(translations, trace[i].name));
       os << R"(,"description":)";
-      json_escape(os, trace[i].description);
+      json_escape(os, localize(translations, trace[i].description));
       os << '}';
     }
   } else if (matched != deinflected && !deinflected.empty()) {
     os << R"({"name":)";
-    json_escape(os, matched + " \xe2\x86\x92 " + deinflected);
+    const std::string fallback = matched + " \xe2\x86\x92 " + deinflected;
+    json_escape(os, localize(translations, fallback));
     os << R"(,"description":""})";
   }
   os << ']';
@@ -66,6 +116,15 @@ static void write_deinflection_tags(std::ostringstream& os,
 
 std::string build_popup_json(const std::vector<LookupResult>& results,
                              int max_terms) {
+  PopupJsonOptions options;
+  options.max_terms = max_terms;
+  options.budget_counts_glossaries = true;
+  return build_popup_json(results, options);
+}
+
+std::string build_popup_json(const std::vector<LookupResult>& results,
+                             const PopupJsonOptions& options) {
+  const int max_terms = options.max_terms;
   struct GroupData {
     std::string expression;
     std::string reading;
@@ -110,12 +169,23 @@ std::string build_popup_json(const std::vector<LookupResult>& results,
 
   for (const auto& r : results) {
     const std::string reading = resolved_reading(r);
+    const std::string key = r.term.expression + "\n" +
+                            (reading.empty() ? r.term.expression : reading);
+    // BUG-1472：预算的单位是词头（表记 + 有效读音），不是注释行——新词头只在还有
+    // 预算时才能建卡；已有的词头继续收它后续结果行的注释。
+    if (!options.budget_counts_glossaries && groups.find(key) == groups.end() &&
+        static_cast<int>(group_order.size()) >= max_terms) {
+      goto done;
+    }
     for (const auto& g : r.term.glossaries) {
-      if (entry_count >= max_terms) goto done;
-      entry_count++;
+      // 被用户关掉的词典在源头就不进 popupJson：不建卡、不占词头预算、也不并入
+      // 频率 / 音调（这些只随可见释义一起合并）。
+      if (options.hidden.contains(g.dict_name)) continue;
+      if (options.budget_counts_glossaries) {
+        if (entry_count >= max_terms) goto done;
+        entry_count++;
+      }
 
-      std::string key = r.term.expression + "\n" +
-                        (reading.empty() ? r.term.expression : reading);
       auto it = groups.find(key);
       if (it == groups.end()) {
         group_order.push_back(key);
@@ -188,7 +258,7 @@ std::string build_popup_json(const std::vector<LookupResult>& results,
       if (!m.empty() && (m[0] == '[' || m[0] == '{')) {
         content_json = m;
       } else {
-        std::ostringstream oss;
+        JsonOut oss;
         json_escape(oss, m);
         content_json = oss.str();
       }
@@ -198,11 +268,17 @@ std::string build_popup_json(const std::vector<LookupResult>& results,
   }
 done:
 
-  std::ostringstream os;
+  // 同一词典名在顺序表里出现多次时取最后一次（与 Dart 侧 map 字面量覆盖语义一致）。
+  std::unordered_map<std::string, size_t> dictionary_rank;
+  for (size_t i = 0; i < options.dictionary_order.size(); i++) {
+    dictionary_rank[options.dictionary_order[i]] = i;
+  }
+
+  JsonOut os;
   os << '[';
   for (size_t i = 0; i < group_order.size(); i++) {
     if (i > 0) os << ',';
-    const auto& gd = groups[group_order[i]];
+    auto& gd = groups[group_order[i]];
 
     os << R"({"expression":)";
     json_escape(os, gd.expression);
@@ -211,7 +287,24 @@ done:
     os << R"(,"matched":)";
     json_escape(os, gd.matched);
     os << R"(,"rules":[],"deinflectionTrace":)";
-    write_deinflection_tags(os, gd.matched, gd.deinflected, gd.trace);
+    write_deinflection_tags(os, gd.matched, gd.deinflected, gd.trace,
+                            options.translations);
+
+    // BUG-2579：词典顺序按整张卡排（一张卡由多条结果行拼成：显式读音的 Yomitan
+    // 行 + 空读音的 MDX 行），稳定排序——同词典多条释义、不在顺序表里的词典都保持
+    // 原相对顺序，未知词典排最后。
+    if (!dictionary_rank.empty() && gd.glossaries.size() > 1) {
+      const size_t unknown_rank = options.dictionary_order.size();
+      auto rank_of = [&](const std::string& dict) {
+        auto rank_it = dictionary_rank.find(dict);
+        return rank_it == dictionary_rank.end() ? unknown_rank : rank_it->second;
+      };
+      std::stable_sort(gd.glossaries.begin(), gd.glossaries.end(),
+                       [&](const GroupData::Glossary& a,
+                           const GroupData::Glossary& b) {
+                         return rank_of(a.dictionary) < rank_of(b.dictionary);
+                       });
+    }
 
     os << R"(,"glossaries":[)";
     for (size_t j = 0; j < gd.glossaries.size(); j++) {
@@ -285,7 +378,7 @@ done:
 
 std::string build_styles_json(DictionaryQuery& query) {
   auto styles = query.get_styles();
-  std::ostringstream os;
+  JsonOut os;
   os << '{';
   for (size_t i = 0; i < styles.size(); i++) {
     if (i > 0) os << ',';

@@ -14,6 +14,7 @@ import '../ffi/fushidicts_ffi_bindings.dart';
 import 'transform_asset_loader_stub.dart'
     if (dart.library.ui) 'transform_asset_loader_flutter.dart';
 import 'fushidicts_models.dart';
+import '../language/transform_description_i18n.dart';
 
 export 'fushidicts_models.dart';
 
@@ -139,6 +140,61 @@ FushiKanjiResult _convertKanji(FfiKanjiResult ffi) {
     dictName: _utf8OrEmpty(ffi.dictName),
   );
 }
+
+List<FushiLookupResult> _convertLookupResults(FfiLookupResults r) {
+  final results = <FushiLookupResult>[];
+  for (int i = 0; i < r.count; i++) {
+    final src = r.results[i];
+    final trace = <FushiTransformGroup>[];
+    for (int j = 0; j < src.traceCount; j++) {
+      trace.add(
+        FushiTransformGroup(
+          name: _utf8OrEmpty(src.trace[j].name),
+          description: _utf8OrEmpty(src.trace[j].description),
+        ),
+      );
+    }
+    results.add(
+      FushiLookupResult(
+        matched: _utf8OrEmpty(src.matched),
+        deinflected: _utf8OrEmpty(src.deinflected),
+        trace: trace,
+        term: _convertTerm(src.term),
+        preprocessorSteps: src.preprocessorSteps,
+      ),
+    );
+  }
+  return results;
+}
+
+/// 一组 Dart 字符串 → 原生 `const char* const*` 数组（calloc 分配，用完 [free]）。
+class _NativeStrings {
+  _NativeStrings(Iterable<String> values) {
+    final List<String> list = values.toList(growable: false);
+    count = list.length;
+    array = calloc<Pointer<Utf8>>(count == 0 ? 1 : count);
+    for (int i = 0; i < count; i++) {
+      array[i] = list[i].toNativeUtf8(allocator: calloc);
+    }
+  }
+
+  late final int count;
+  late final Pointer<Pointer<Utf8>> array;
+
+  void free() {
+    for (int i = 0; i < count; i++) {
+      calloc.free(array[i]);
+    }
+    calloc.free(array);
+  }
+}
+
+/// [FushiDicts.lookupWithPopup] 的结果：结构化结果（制卡 / DictionaryEntry 用）与
+/// 原生拼好的弹窗 JSON。
+typedef FushiLookupWithPopup = ({
+  List<FushiLookupResult> results,
+  String popupJson,
+});
 
 // ── main wrapper class ──────────────────────────────────────────────
 
@@ -721,25 +777,7 @@ class FushiDicts {
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;
       try {
-        final results = <FushiLookupResult>[];
-        for (int i = 0; i < r.count; i++) {
-          final src = r.results[i];
-          final trace = <FushiTransformGroup>[];
-          for (int j = 0; j < src.traceCount; j++) {
-            trace.add(FushiTransformGroup(
-              name: _utf8OrEmpty(src.trace[j].name),
-              description: _utf8OrEmpty(src.trace[j].description),
-            ));
-          }
-          results.add(FushiLookupResult(
-            matched: _utf8OrEmpty(src.matched),
-            deinflected: _utf8OrEmpty(src.deinflected),
-            trace: trace,
-            term: _convertTerm(src.term),
-            preprocessorSteps: src.preprocessorSteps,
-          ));
-        }
-        return results;
+        return _convertLookupResults(r);
       } finally {
         _bindings!.freeLookupResults(rPtr);
         calloc.free(rPtr);
@@ -751,28 +789,167 @@ class FushiDicts {
     }
   }
 
-  // ── popup JSON (single source of truth — same C++ as JNI) ───────
-  String lookupPopupJson(
+  // ── lookup + popup JSON（一次 FFI） ─────────────────────────────
+  //
+  // 弹窗 JSON 的唯一实现在 C++ `build_popup_json`（popup_json.cpp），与 Android 系统
+  // 划词弹窗同一份：按词头分组（表记 + 有效读音，BUG-2753 空读音并卡）、词头预算
+  // （BUG-1472）、隐藏词典在源头剔除、卡内按 [dictionaryOrder] 稳定排序（BUG-2579）、
+  // 频率 / 音调去重、变形标签按 [TransformDescriptionCatalog] 译成界面语言（BUG-2038，
+  // 只在这条显示路径翻译；持久化的 entry extra 仍是英文原文）。
+  FushiLookupWithPopup lookupWithPopup(
     String text, {
-    int maxResults = defaultMaxResults,
+    required int maxResults,
+    required int maxTerms,
+    Set<String> hiddenDictionaries = const <String>{},
+    List<String> dictionaryOrder = const <String>[],
     int scanLength = defaultScanLength,
-    int maxTerms = 100,
+  }) {
+    _syncPopupTranslations();
+    final tp = text.toNativeUtf8(allocator: calloc);
+    final _NativeStrings hidden = _NativeStrings(hiddenDictionaries);
+    final _NativeStrings order = _NativeStrings(dictionaryOrder);
+    try {
+      final r = _bindings!.lookupWithPopup(
+        _handle!,
+        tp,
+        maxResults,
+        scanLength,
+        maxTerms,
+        hidden.array,
+        hidden.count,
+        order.array,
+        order.count,
+      );
+      final rPtr = calloc<FfiLookupPopupResult>();
+      rPtr.ref = r;
+      try {
+        final List<FushiLookupResult> results = _convertLookupResults(
+          r.results,
+        );
+        // nullptr 只出现在原生异常 / 分配失败的兜底分支：按「无可显示结果」处理。
+        // 容错解码：词典数据可能含非法 UTF-8 字节（非标准编码导入的词典）。
+        final String popupJson = r.popupJson == nullptr
+            ? '[]'
+            : _utf8OrEmpty(r.popupJson);
+        return (results: results, popupJson: popupJson);
+      } finally {
+        _bindings!.freeLookupPopupResult(rPtr);
+        calloc.free(rPtr);
+      }
+    } finally {
+      calloc.free(tp);
+      hidden.free();
+      order.free();
+    }
+  }
+
+  /// 本实例最后一次推给原生的 [TransformDescriptionCatalog] 代次（-1 = 从未推过）。
+  int _pushedCatalogGeneration = -1;
+
+  void _syncPopupTranslations() {
+    final int generation = TransformDescriptionCatalog.generation;
+    if (generation == _pushedCatalogGeneration) return;
+    final Map<String, String> table = TransformDescriptionCatalog.translations;
+    final _NativeStrings keys = _NativeStrings(table.keys);
+    final _NativeStrings values = _NativeStrings(table.values);
+    try {
+      _bindings!.setPopupTranslations(
+        _handle!,
+        keys.array,
+        values.array,
+        keys.count,
+      );
+    } finally {
+      keys.free();
+      values.free();
+    }
+    _pushedCatalogGeneration = generation;
+  }
+
+  // ── tokenize（最长匹配分词，一次 FFI 切完整段） ────────────────────
+  //
+  // 语义见 native tokenize.hpp：与此前 Dart 逐位置 `lookup(maxResults: 1)` 循环逐位
+  // 一致——命中切首条结果的 matched 长度，未命中切一个 UTF-16 码元。返回每段的
+  // UTF-16 码元数，总和 = [text].length。匹配长度缓存在原生句柄里，随词典集合重建
+  // 而失效。
+
+  /// [text] 的分词长度（UTF-16 码元）。原生调用失败时返回 null。
+  List<int>? tokenizeLengths(String text) =>
+      _tokenize(text, withReadings: false)?.lengths;
+
+  /// 分词 + 每段读音（每段再查一次 `lookup(段, 1)` 的首条读音，未命中为空串）。
+  ({List<int> lengths, List<String> readings})? tokenizeWithReadings(
+    String text,
+  ) => _tokenize(text, withReadings: true);
+
+  ({List<int> lengths, List<String> readings})? _tokenize(
+    String text, {
+    required bool withReadings,
   }) {
     final tp = text.toNativeUtf8(allocator: calloc);
     try {
-      final ptr = _bindings!
-          .lookupPopupJson(_handle!, tp, maxResults, scanLength, maxTerms);
-      if (ptr == nullptr) return '[]';
+      final r = _bindings!.tokenize(
+        _handle!,
+        tp,
+        defaultScanLength,
+        withReadings ? 1 : 0,
+      );
+      final rPtr = calloc<FfiTokenizeResult>();
+      rPtr.ref = r;
       try {
-        // 容错解码：词典 popupJson 数据可能含非法 UTF-8 字节（非标准编码导入的
-        // 词典），严格 toDartString 会抛 FormatException 让整个查词失败。
-        return _utf8OrEmpty(ptr);
+        final List<int> lengths = <int>[
+          for (int i = 0; i < r.count; i++) r.lengths[i],
+        ];
+        int total = 0;
+        for (final int l in lengths) {
+          total += l;
+        }
+        // 原生闸门吞掉异常后返回 0 段：长度对不上原文就视为失败，交给调用方回落。
+        if (total != text.length) return null;
+        final List<String> readings = <String>[
+          if (withReadings && r.readings != nullptr)
+            for (int i = 0; i < r.count; i++) _utf8OrEmpty(r.readings[i]),
+        ];
+        if (withReadings && readings.length != lengths.length) return null;
+        return (lengths: lengths, readings: readings);
       } finally {
-        _bindings!.freeString(ptr);
+        _bindings!.freeTokenizeResult(rPtr);
+        calloc.free(rPtr);
       }
     } finally {
       calloc.free(tp);
     }
+  }
+
+  /// [text] 开头的最长匹配长度（UTF-16 码元；0 = 未命中）。
+  ///
+  /// 引擎只看前 [defaultScanLength] + 1 个码点（见 tokenize.hpp），这里先按码点截好
+  /// 再编码——wordFromIndex 一类调用传进来的是整段余文，没必要整段转 UTF-8。
+  int matchedLength(String text) {
+    final tp = scanWindowOf(text).toNativeUtf8(allocator: calloc);
+    try {
+      return _bindings!.matchLength(_handle!, tp, defaultScanLength);
+    } finally {
+      calloc.free(tp);
+    }
+  }
+
+  /// [text] 的前 [defaultScanLength] + 1 个码点（引擎结果只依赖这一段）。
+  @visibleForTesting
+  static String scanWindowOf(String text) {
+    int units = 0;
+    int codePoints = 0;
+    while (units < text.length && codePoints <= defaultScanLength) {
+      final int unit = text.codeUnitAt(units);
+      final bool surrogatePair =
+          unit >= 0xD800 &&
+          unit <= 0xDBFF &&
+          units + 1 < text.length &&
+          (text.codeUnitAt(units + 1) & 0xFC00) == 0xDC00;
+      units += surrogatePair ? 2 : 1;
+      codePoints++;
+    }
+    return units == text.length ? text : text.substring(0, units);
   }
 
   // ── styles ──────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_term_status_bridge.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 import 'package:fushi_anki/fushi_anki_core.dart'
     show fushiAnkiConnectCompatInstanceId;
 import 'package:fushi_core/fushi_core.dart';
@@ -212,8 +213,7 @@ void main() {
       server = FushiApiServer(
         port: 0,
         lookupService: _NoLookup(),
-        tokenizer: (String t) => <String>[t],
-        readingResolver: (String w) => '',
+        tokenizer: (String t) => <TokenizedSegment>[(text: t, reading: '')],
         srsApiProvider: () => api,
       );
       await server.start();
@@ -297,8 +297,7 @@ void main() {
       final FushiApiServer server = FushiApiServer(
         port: 0,
         lookupService: _NoLookup(),
-        tokenizer: (String t) => <String>[t],
-        readingResolver: (String w) => '',
+        tokenizer: (String t) => <TokenizedSegment>[(text: t, reading: '')],
         ankiConnectEndpoint: app.srsAnkiConnectEndpoint,
       );
       await server.start();

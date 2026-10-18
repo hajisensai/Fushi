@@ -57,11 +57,11 @@ class DictionaryRepository {
     maxBytes: searchCacheMaxBytes,
     sizeOf: estimateDictionarySearchResultBytes,
   );
-  final LruCache<String, List<FushiLookupResult>> _ffiLookupCache =
-      LruCache<String, List<FushiLookupResult>>(
+  final LruCache<String, FfiLookupCacheEntry> _ffiLookupCache =
+      LruCache<String, FfiLookupCacheEntry>(
     2000,
     maxBytes: ffiLookupCacheMaxBytes,
-    sizeOf: estimateFushiLookupResultsBytes,
+    sizeOf: estimateFfiLookupCacheEntryBytes,
   );
   final LruCache<String, DictionaryPopupCacheEntry> _popupSearchCache =
       LruCache<String, DictionaryPopupCacheEntry>(
@@ -516,13 +516,33 @@ class DictionaryRepository {
   /// [cacheKey] 由 `buildFfiLookupCacheKey` 生成，**含引擎结果上限**——不是裸
   /// searchTerm。上限进了键，load-more 的更大上限才不会命中上一轮的短结果集。
   List<FushiLookupResult>? getCachedFfiLookup(String cacheKey) =>
-      _ffiLookupCache[cacheKey];
+      _ffiLookupCache[cacheKey]?.results;
 
-  void cacheFfiLookup(String cacheKey, List<FushiLookupResult> results) {
+  /// 与 [getCachedFfiLookup] 同一条缓存里、随结果一起由原生拼好的弹窗 JSON。
+  ///
+  /// 弹窗 JSON 依赖隐藏词典 / 词典顺序 / 变形说明译文，[popupSignature]
+  /// （`buildPopupJsonSignature`）对不上就返回 null——调用方重新走一次原生
+  /// `lookupWithPopup`，不会把旧设置下拼的 JSON 交给弹窗。
+  String? getCachedFfiPopupJson(String cacheKey, String popupSignature) {
+    final FfiLookupCacheEntry? entry = _ffiLookupCache[cacheKey];
+    if (entry == null || entry.popupSignature != popupSignature) return null;
+    return entry.popupJson;
+  }
+
+  void cacheFfiLookup(
+    String cacheKey,
+    List<FushiLookupResult> results, {
+    String? popupJson,
+    String popupSignature = '',
+  }) {
     _ffiLookupCache.maxBytes = _isLowMemory()
         ? ffiLookupCacheMaxBytesLowMemory
         : ffiLookupCacheMaxBytes;
-    _ffiLookupCache[cacheKey] = results;
+    _ffiLookupCache[cacheKey] = (
+      results: results,
+      popupJson: popupJson,
+      popupSignature: popupSignature,
+    );
   }
 
   DictionaryPopupCacheEntry? getCachedPopupSearch(String cacheKey) =>
@@ -684,6 +704,14 @@ const int _kObjectOverheadBytes = 64;
 
 typedef DictionaryPopupCacheEntry = ({String popupJson, int bestLength});
 
+/// FFI 查词缓存的一条：结构化结果 + 同一次原生调用拼好的弹窗 JSON（可空：只缓存了
+/// 结果）+ 拼 JSON 时的设置签名（见 [DictionaryRepository.getCachedFfiPopupJson]）。
+typedef FfiLookupCacheEntry = ({
+  List<FushiLookupResult> results,
+  String? popupJson,
+  String popupSignature,
+});
+
 int estimateDictionaryPopupCacheEntryBytes(DictionaryPopupCacheEntry entry) =>
     entry.popupJson.length * 2 + _kObjectOverheadBytes;
 
@@ -713,6 +741,12 @@ int estimateDictionarySearchResultBytes(DictionarySearchResult result) {
   }
   return chars * 2 + overhead;
 }
+
+/// [FfiLookupCacheEntry] 的常驻字节数：结果列表 + 弹窗 JSON（UTF-16 每字符 2 字节）。
+int estimateFfiLookupCacheEntryBytes(FfiLookupCacheEntry entry) =>
+    estimateFushiLookupResultsBytes(entry.results) +
+    (entry.popupJson?.length ?? 0) * 2 +
+    entry.popupSignature.length * 2;
 
 /// 粗估一次 FFI lookup 结果列表（[FushiLookupResult]，已 marshal 成 Dart
 /// 对象）的常驻字节数：把所有可得字符串长度按 UTF-16 累加 + 对象开销。

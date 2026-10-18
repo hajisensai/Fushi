@@ -1,7 +1,7 @@
 // BUG-1525：浏览器扩展查词的 popupOnly 快路径不得先物化完整 DictionaryEntry。
 //
 // FFI 原始结果缓存命中后，useCache:false 仍会重新构造全部 DictionaryEntry 并再次
-// buildPopupJsonFromLookup；复杂词首查后每次仍有可感知延迟。词典与排序设置的变更路径
+// 生成弹窗 JSON；复杂词首查后每次仍有可感知延迟。词典与排序设置的变更路径
 // 已统一 clearDictionaryResultsCache，因此扩展专用本机 HTTP 查询应保持 useCache:true。
 import 'dart:io';
 
@@ -53,8 +53,13 @@ void main() {
     final String fastPath = source.substring(start, end);
     expect(fastPath, contains('getCachedPopupSearch'));
     expect(fastPath, contains('getCachedFfiLookup'));
-    expect(fastPath, contains('buildPopupJsonFromLookup'));
-    expect(fastPath, isNot(contains('buildResultFromLookup')),
-        reason: 'popupOnly 不能再为每条 glossary 构造完整 DictionaryEntry/extra');
+    // FFI 缓存命中时连同一次原生调用拼好的弹窗 JSON 一起复用（签名对不上才重查）。
+    expect(fastPath, contains('getCachedFfiPopupJson'));
+    expect(fastPath, contains('lookupWithPopup'));
+    expect(
+      fastPath,
+      isNot(contains('buildResultFromLookup')),
+      reason: 'popupOnly 不能再为每条 glossary 构造完整 DictionaryEntry/extra',
+    );
   });
 }

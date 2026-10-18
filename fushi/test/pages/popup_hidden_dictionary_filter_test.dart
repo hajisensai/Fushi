@@ -133,46 +133,74 @@ void main() {
     // 驱动——app 内 WebView 注入了，浏览器扩展走的 HTTP 路径从来不下发它，于是
     // 被关掉的词典在扩展弹窗里照旧出释义、还一并写进 Anki 卡片。只要过滤留在
     // 生成器里，任何新宿主（不经 JS 注入的）都自动正确。
-    final String lang = File(
-      '../packages/fushi_dictionary/lib/src/language/language.dart',
+    //
+    // 生成器现在是原生 C++ build_popup_json（popup_json.cpp），Dart 只剩
+    // FushiDicts.lookupWithPopup 这一个入口；行为级断言在
+    // native/fushidicts/tests/popup_json_options_test.cpp（隐藏词典不建卡、不占预算）。
+    final String engine = File(
+      '../packages/fushi_dictionary/lib/src/engine/fushidicts.dart',
     ).readAsStringSync();
-
-    // 断言字面量：'required Set<String> hiddenDictionaries'
-    // 必填（不是可选带默认值）——可选参数等于允许调用点漏传。
+    final int wrapperAt = engine.indexOf(
+      'FushiLookupWithPopup lookupWithPopup(',
+    );
     expect(
-      lang.contains('required Set<String> hiddenDictionaries'),
-      isTrue,
-      reason: 'buildPopupJsonFromLookup must take the hidden set as a REQUIRED '
-          'parameter so no host can silently skip the filter',
+      wrapperAt,
+      greaterThanOrEqualTo(0),
+      reason: '弹窗 JSON 的 Dart 入口必须是 FushiDicts.lookupWithPopup',
+    );
+    final int wrapperEnd = engine.indexOf('\n  }\n', wrapperAt);
+    final String wrapper = engine.substring(wrapperAt, wrapperEnd);
+    // 断言字面量：'Set<String> hiddenDictionaries'——隐藏集合是入口参数，并原样交给原生。
+    expect(wrapper, contains('Set<String> hiddenDictionaries'));
+    expect(
+      wrapper,
+      contains('_NativeStrings(hiddenDictionaries)'),
+      reason: '隐藏集合必须传进原生 lookupWithPopup，不能在 Dart 侧吞掉',
     );
 
-    final int builderAt = lang.indexOf('String buildPopupJsonFromLookup(');
+    final String cpp = File(
+      '../native/fushidicts/fushidicts_src/popup_json.cpp',
+    ).readAsStringSync();
+    final int builderAt = cpp.indexOf(
+      'std::string build_popup_json(const std::vector<LookupResult>& results,\n'
+      '                             const PopupJsonOptions& options) {',
+    );
     expect(builderAt, greaterThanOrEqualTo(0));
-    // 锚点用正则而不是整串字面量：循环头会折行，中间还可能套一层排序包装
-    // （PR#1085 的 _glossariesInDictionaryOrder 就是）。要钉的是「遍历
-    // r.term.glossaries 的那个循环」，不是它当天的格式。
     final RegExpMatch? loopMatch = RegExp(
-      r'for \(final g\s+in\s+[^)]*r\.term\.glossaries[^{]*\{',
-      dotAll: true,
-    ).firstMatch(lang.substring(builderAt));
-    expect(loopMatch, isNotNull,
-        reason: 'buildPopupJsonFromLookup 里必须有遍历 r.term.glossaries 的循环');
+      r'for \(const auto& g : r\.term\.glossaries\) \{',
+    ).firstMatch(cpp.substring(builderAt));
+    expect(
+      loopMatch,
+      isNotNull,
+      reason: 'build_popup_json 里必须有遍历 r.term.glossaries 的循环',
+    );
     final int glossaryLoop = builderAt + loopMatch!.end;
 
-    // 断言字面量：'if (hiddenDictionaries.contains(g.dictName)) continue;'
-    // 必须 continue 整个 glossary 迭代，而不是只跳 groupGlossaries.add——
-    // 只有隐藏词典释义的词头不该撑起空卡片，也不该占 maximumTerms 词头预算。
-    final int skipAt = lang.indexOf(
-        'if (hiddenDictionaries.contains(g.dictName)) continue;', glossaryLoop);
-    expect(skipAt, greaterThan(glossaryLoop),
-        reason: 'hidden dictionaries must be skipped at the top of the '
-            'glossary loop inside buildPopupJsonFromLookup');
-
-    final int groupCreate =
-        lang.indexOf('if (!groupExpression.containsKey(key)) {', glossaryLoop);
-    expect(groupCreate, greaterThan(skipAt),
-        reason: 'the skip must precede group creation, otherwise a headword '
-            'whose only glossaries are hidden still renders an empty card');
+    // 断言字面量：'if (options.hidden.contains(g.dict_name)) continue;'
+    // 必须 continue 整个 glossary 迭代：只有隐藏词典释义的词头不该撑起空卡片，
+    // 也不该占 maximumTerms 词头预算。
+    final int skipAt = cpp.indexOf(
+      'if (options.hidden.contains(g.dict_name)) continue;',
+      glossaryLoop,
+    );
+    expect(
+      skipAt,
+      greaterThan(glossaryLoop),
+      reason:
+          'hidden dictionaries must be skipped at the top of the '
+          'glossary loop inside build_popup_json',
+    );
+    final int groupCreate = cpp.indexOf(
+      'if (it == groups.end()) {',
+      glossaryLoop,
+    );
+    expect(
+      groupCreate,
+      greaterThan(skipAt),
+      reason:
+          'the skip must precede group creation, otherwise a headword '
+          'whose only glossaries are hidden still renders an empty card',
+    );
   });
 }
 

@@ -6,7 +6,7 @@
 ///
 /// `engine/fushidicts.dart`（FFI 引擎封装）也在这里：变形表的 rootBundle 读取经条件
 /// import 只在 Flutter 宿主选中，纯 Dart 宿主改用 `FushiDicts.preloadTransformsFrom`。
-/// 查词结果构建（`buildResultFromLookup` / `buildPopupJsonFromLookup`）在
+/// 查词结果构建（`buildResultFromLookup`；弹窗 JSON 在原生 `build_popup_json`）在
 /// `language/language.dart`（已零 Flutter；`Language` 抽象类搬到 `language_base.dart`）。
 ///
 /// 不在这里的：`engine/dictionary.dart` / `language/language_base.dart`（material）、`formats/*`

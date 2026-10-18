@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -49,28 +47,8 @@ void main() {
     );
   });
 
-  test('popup JSON follows managed dictionary order', () {
-    final List<dynamic> decoded =
-        jsonDecode(
-              buildPopupJsonFromLookup(
-                results: nativeOldOrder,
-                maximumTerms: 10,
-                hiddenDictionaries: const <String>{},
-                dictionaryOrder: managedOrder,
-              ),
-            )
-            as List<dynamic>;
-    final List<dynamic> glossaries =
-        (decoded.single as Map<String, dynamic>)['glossaries'] as List<dynamic>;
-
-    expect(
-      glossaries.map(
-        (dynamic item) =>
-            (item as Map<String, dynamic>)['dictionary'] as String,
-      ),
-      managedOrder,
-    );
-  });
+  // 弹窗 JSON 的词典顺序（含 BUG-2579 跨行）由原生 build_popup_json 负责，用例在
+  // native/fushidicts/tests/popup_json_options_test.cpp。
 
   // BUG-2579：引擎只合并 (expression, reading) 完全相同的行，MDX 这类 simple dict
   // 读音恒空，与 Yomitan 的显式读音行是两条结果；Dart 侧按词头把它们拼成同一张卡
@@ -144,33 +122,6 @@ void main() {
         <String>['しんどい/明鏡', 'しんどい/MDX辞典', 'しんどい/大辞林', 'しんど/大辞林'],
       );
       expect(result.headwordCount, 2);
-    });
-
-    test('popup JSON keeps MDX where the management page put it', () {
-      final List<dynamic> decoded =
-          jsonDecode(
-                buildPopupJsonFromLookup(
-                  results: rows,
-                  maximumTerms: 10,
-                  hiddenDictionaries: const <String>{},
-                  dictionaryOrder: mixedOrder,
-                ),
-              )
-              as List<dynamic>;
-
-      expect(decoded.length, 2, reason: '空读音的 MDX 行归入 しんどい 卡，不另开卡');
-      final Map<String, dynamic> shindoi =
-          decoded.first as Map<String, dynamic>;
-      expect(shindoi['expression'], 'しんどい');
-      expect(
-        (shindoi['glossaries'] as List<dynamic>).map(
-          (dynamic item) =>
-              (item as Map<String, dynamic>)['dictionary'] as String,
-        ),
-        mixedOrder,
-      );
-      final Map<String, dynamic> shindo = decoded.last as Map<String, dynamic>;
-      expect(shindo['expression'], 'しんど');
     });
   });
 }

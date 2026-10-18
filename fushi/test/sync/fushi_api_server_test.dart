@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
 class _FakeLookup implements FushiRemoteLookupService {
   @override
@@ -60,10 +61,10 @@ void main() {
 
   test('termEntries returns Yomitan shape', () async {
     server = FushiApiServer(
-        port: 0,
-        lookupService: _FakeLookup(),
-        tokenizer: (t) => [t],
-        readingResolver: (w) => '');
+      port: 0,
+      lookupService: _FakeLookup(),
+      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+    );
     await server.start();
     final int port = server.port;
 
@@ -77,15 +78,15 @@ void main() {
 
   test('termEntries with array term returns array', () async {
     server = FushiApiServer(
-        port: 0,
-        lookupService: _FakeLookup(),
-        tokenizer: (t) => [t],
-        readingResolver: (w) => '');
+      port: 0,
+      lookupService: _FakeLookup(),
+      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+    );
     await server.start();
     final int port = server.port;
 
     final resp = await _post(port, '/termEntries', {
-      'term': ['わかる', 'xxx']
+      'term': ['わかる', 'xxx'],
     });
     final body = jsonDecode(await resp.transform(utf8.decoder).join());
     expect(body, isA<List>());
@@ -95,10 +96,10 @@ void main() {
 
   test('serverVersion is constant', () async {
     server = FushiApiServer(
-        port: 0,
-        lookupService: _FakeLookup(),
-        tokenizer: (t) => [t],
-        readingResolver: (w) => '');
+      port: 0,
+      lookupService: _FakeLookup(),
+      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+    );
     await server.start();
     final int port = server.port;
     final resp = await _post(port, '/serverVersion', null);
@@ -108,10 +109,10 @@ void main() {
 
   test('GET method rejected with 405', () async {
     server = FushiApiServer(
-        port: 0,
-        lookupService: _FakeLookup(),
-        tokenizer: (t) => [t],
-        readingResolver: (w) => '');
+      port: 0,
+      lookupService: _FakeLookup(),
+      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+    );
     await server.start();
     final int port = server.port;
     final client = HttpClient();
@@ -122,11 +123,11 @@ void main() {
 
   test('api key enforced when set', () async {
     server = FushiApiServer(
-        port: 0,
-        lookupService: _FakeLookup(),
-        apiKey: 'secret',
-        tokenizer: (t) => [t],
-        readingResolver: (w) => '');
+      port: 0,
+      lookupService: _FakeLookup(),
+      apiKey: 'secret',
+      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+    );
     await server.start();
     final int port = server.port;
 
@@ -140,11 +141,11 @@ void main() {
 
   test('api key accepts compatible token locations', () async {
     server = FushiApiServer(
-        port: 0,
-        lookupService: _FakeLookup(),
-        apiKey: 'secret',
-        tokenizer: (t) => [t],
-        readingResolver: (w) => '');
+      port: 0,
+      lookupService: _FakeLookup(),
+      apiKey: 'secret',
+      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+    );
     await server.start();
     final int port = server.port;
 
@@ -190,10 +191,10 @@ void main() {
         port: 0,
         lookupService: _FakeLookup(),
         apiKey: 'secret',
-        tokenizer: (t) => [t],
-        readingResolver: (w) => '');
-    await server.start();
-    final int port = server.port;
+        tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+      );
+      await server.start();
+      final int port = server.port;
 
     for (final String name in <String>[
       'fushiApiKey',
@@ -224,10 +225,10 @@ void main() {
 
   test('yomitanVersion is constant', () async {
     server = FushiApiServer(
-        port: 0,
-        lookupService: _FakeLookup(),
-        tokenizer: (t) => [t],
-        readingResolver: (w) => '');
+      port: 0,
+      lookupService: _FakeLookup(),
+      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+    );
     await server.start();
     final int port = server.port;
     final resp = await _post(port, '/yomitanVersion', null);
@@ -237,10 +238,14 @@ void main() {
 
   test('tokenize returns 2D content with readings', () async {
     server = FushiApiServer(
-        port: 0,
-        lookupService: _FakeLookup(),
-        tokenizer: (t) => ['日本語', 'は', '難しい'],
-        readingResolver: (w) => w == '日本語' ? 'にほんご' : '');
+      port: 0,
+      lookupService: _FakeLookup(),
+      tokenizer: (t) => <TokenizedSegment>[
+        (text: '日本語', reading: 'にほんご'),
+        (text: 'は', reading: ''),
+        (text: '難しい', reading: ''),
+      ],
+    );
     await server.start();
     final int port = server.port;
     final resp = await _post(port, '/tokenize', {'text': '日本語は難しい'});
@@ -256,14 +261,14 @@ void main() {
 
   test('tokenize with array text returns array of results', () async {
     server = FushiApiServer(
-        port: 0,
-        lookupService: _FakeLookup(),
-        tokenizer: (t) => [t],
-        readingResolver: (w) => '');
+      port: 0,
+      lookupService: _FakeLookup(),
+      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+    );
     await server.start();
     final int port = server.port;
     final resp = await _post(port, '/tokenize', {
-      'text': ['あ', 'い']
+      'text': ['あ', 'い'],
     });
     final body = jsonDecode(await resp.transform(utf8.decoder).join());
     expect(body, isA<List>());

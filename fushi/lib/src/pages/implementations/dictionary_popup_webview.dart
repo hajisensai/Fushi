@@ -3613,7 +3613,7 @@ JSON.stringify((function(){
     for (final entry in entries) {
       // BUG-791：空读音按 Yomitan 约定等价于「读音同表记」。分组前归一，
       // 免得同一个假名词（reading 有的显式给、有的留空）被拆成两张卡。
-      // 与 buildPopupJsonFromLookup 的 key 逻辑保持一致。
+      // 与原生弹窗 JSON（C++ build_popup_json）的 key 逻辑保持一致。
       final String effectiveReading =
           entry.reading.isEmpty ? entry.word : entry.reading;
       final key = '${entry.word}\n$effectiveReading';

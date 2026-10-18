@@ -6,7 +6,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 /// BUG-2997 守卫：被用户关掉（隐藏）的词典在 `entries` 与 `popupJson` 两条出口上必须
 /// 同口径过滤。
 ///
-/// 此前只有 [buildPopupJsonFromLookup] 过滤隐藏词典，[buildResultFromLookup] 不过滤：
+/// 此前只有弹窗 JSON 生成器（现为原生 build_popup_json）过滤隐藏词典，[buildResultFromLookup] 不过滤：
 /// 一个只命中隐藏词典的词，宿主按 `entries.isNotEmpty` 判「有结果」去等 WebView
 /// 渲染，页面拿到的 popupJson 却是 `[]`，于是画出页面自己的「No results」（彩色
 /// emoji 放大镜），且弹窗按最大宽高铺成一大块空面板（真实空结果本该走 Flutter 的
@@ -57,15 +57,13 @@ void main() {
       maximumTerms: 10,
       hiddenDictionaries: hidden,
     );
-    final String popupJson = buildPopupJsonFromLookup(
-      results: results,
-      maximumTerms: 10,
-      hiddenDictionaries: hidden,
+    // popupJson 一侧（原生 build_popup_json 对同一输入出 `[]`）见
+    // native/fushidicts/tests/popup_json_options_test.cpp 的 hidden-only。
+    expect(
+      result.entries,
+      isEmpty,
+      reason: 'entries 与 popupJson 必须同口径：宿主据 entries 判有无结果',
     );
-
-    expect(jsonDecode(popupJson), isEmpty);
-    expect(result.entries, isEmpty,
-        reason: 'entries 与 popupJson 必须同口径：宿主据 entries 判有无结果');
     expect(result.bestLength, 0, reason: '隐藏词典的匹配不贡献高亮长度');
   });
 
