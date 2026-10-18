@@ -11,7 +11,8 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 |---|---|
 | `ffsrs_call(const char*) -> char*` | 请求 JSON → 响应 JSON，按 `op` 分派（见下） |
 | `ffsrs_compute_parameters(const char*, AtomicI32* cancel, AtomicI64* progress[2]) -> char*` | 参数优化，阻塞；`cancel` 写非 0 即取消，`progress` 持续写 `[已处理, 总数]`，两者可空 |
-| `ffsrs_free_string(char*)` | 释放上面两个返回的串 |
+| `ffsrs_retrievability_batch(const char* model, const float* s, const float* d, const float* sf, const float* elapsed, usize n, float* out) -> char*` | 同一组参数下批量算可提取度（统计页）：`model` 是 `{"algorithm","params"}`，四个输入数组与 `out` 长度均为 `n`，`sf` 可空（取 `s`）；返回 `{"ok":n}` / `{"error"}`，结果与逐张调 `retrievability` op 逐位一致 |
+| `ffsrs_free_string(char*)` | 释放上面三个返回的串 |
 | `ffsrs_zstd_decompress(const u8*, usize, usize* out_len) -> u8*` | zstd 解码（.apkg 新格式），失败返回 NULL |
 | `ffsrs_free_bytes(u8*, usize)` | 释放解码缓冲区 |
 | `ffsrs_abi_version() -> i32` | ABI 版本（当前 1）；Dart 侧不一致即判不可用 |
@@ -22,6 +23,11 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 `memory_state_from_sm2` / `retrievability` / `next_interval` / `evaluate` / `evaluate_tss`。
 `ffsrs_compute_parameters` 的请求是 `{"algorithm", "items": [[{"rating","deltaT"},…],…], "cardIds"?}`，
 取消后返回 `{"error":"cancelled"}`。
+
+逐张走 `ffsrs_call` 的固定开销（Dart 编码请求 + serde 解析参数 + FFI 往返）约 25～30 µs/次，建模型本身
+不到 1 µs；成批的计算一律走专门的批量符号，卡片数据用 f32 数组传。基准
+`packages/fushi_srs/benchmark/fsrs_ffi_bench.dart`（2026-10-18 本机 Windows x64，5 万张卡）：逐张
+`retrievability` FSRS-7 1529 ms / FSRS-6 1242 ms，`ffsrs_retrievability_batch` 19 ms / 16 ms。
 
 Dart 侧：`FushiFsrs`（`fushi_fsrs_library.dart`，定位 + ABI 核对，库缺失返回 null、永不抛）、
 `FushiFsrsBindings`（lookup 名写成字符串字面量，`verify_abi.sh` 从这里抓期望符号集）、
@@ -58,7 +64,7 @@ native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）；iOS �
 同时 `-force_load` 进 Runner 会撞重复符号（`rust_eh_personality`、`__rdl_alloc` …），不
 `-force_load` 又会被当无用成员整个丢掉。所以 iOS 走 `native/fushi_ios_umbrella`：一个 crate
 依赖两个 path crate、re-export 两边，编成**一个** staticlib，std 只有一份，同时导出
-`fp2p_*`（12 个）与 `ffsrs_*`（6 个）。为此 `native/fushi_p2p/Cargo.toml` 的 crate-type 加了
+`fp2p_*`（12 个）与 `ffsrs_*`（7 个）。为此 `native/fushi_p2p/Cargo.toml` 的 crate-type 加了
 `rlib`（只用来被伞形 crate 依赖，其余平台产物不变）。伞形 crate 的 `Cargo.lock` 以两个 crate
 各自的锁文件合并为种子再解析：fushi_p2p 那边的版本全部保持；fushi_fsrs 那边有 7 个
 semver 兼容的小版本被统一到 fushi_p2p 锁的版本（libc、serde_json、syn 3.x、unicode-ident、
@@ -66,7 +72,7 @@ zerocopy 等）。
 
 本机（Windows）只能验证到「伞形 crate 编得过、fat LTO 后归档里两组符号都在」：
 `cargo build --release --target x86_64-pc-windows-msvc` 出的 `fushi_ios_umbrella.lib` 用
-llvm-nm 核对，12 个 `fp2p_*` + 6 个 `ffsrs_*` 全是 `T`。真 iOS 链接只能在 macOS 上验。
+llvm-nm 核对，12 个 `fp2p_*` + 7 个 `ffsrs_*` 全是 `T`（2026-10-18 加 `ffsrs_retrievability_batch` 后复核）。真 iOS 链接只能在 macOS 上验。
 
 `native/fushi_fsrs/build_ios_staticlib.sh` 仍保留：只出单独的 `libfushi_fsrs.a` 与
 `FUSHI_FSRS_LDFLAGS`，供「只要 SRS 不要 P2P」的实验构建；**不能**与 fushi_p2p 的单独 .a 同时接。

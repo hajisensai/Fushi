@@ -18,6 +18,26 @@ typedef _ComputeC =
       ffi.Pointer<ffi.Int32>,
       ffi.Pointer<ffi.Int64>,
     );
+typedef _BatchC =
+    ffi.Pointer<ffi.Char> Function(
+      ffi.Pointer<ffi.Char>,
+      ffi.Pointer<ffi.Float>,
+      ffi.Pointer<ffi.Float>,
+      ffi.Pointer<ffi.Float>,
+      ffi.Pointer<ffi.Float>,
+      ffi.Size,
+      ffi.Pointer<ffi.Float>,
+    );
+typedef _BatchDart =
+    ffi.Pointer<ffi.Char> Function(
+      ffi.Pointer<ffi.Char>,
+      ffi.Pointer<ffi.Float>,
+      ffi.Pointer<ffi.Float>,
+      ffi.Pointer<ffi.Float>,
+      ffi.Pointer<ffi.Float>,
+      int,
+      ffi.Pointer<ffi.Float>,
+    );
 typedef _FreeStringC = ffi.Void Function(ffi.Pointer<ffi.Char>);
 typedef _FreeStringDart = void Function(ffi.Pointer<ffi.Char>);
 typedef _ZstdC =
@@ -45,6 +65,9 @@ class FushiFsrsBindings {
       ffsrs_compute_parameters = lib.lookupFunction<_ComputeC, _ComputeC>(
         'ffsrs_compute_parameters',
       ),
+      ffsrs_retrievability_batch = lib.lookupFunction<_BatchC, _BatchDart>(
+        'ffsrs_retrievability_batch',
+      ),
       ffsrs_free_string = lib.lookupFunction<_FreeStringC, _FreeStringDart>(
         'ffsrs_free_string',
       ),
@@ -70,6 +93,20 @@ class FushiFsrsBindings {
     ffi.Pointer<ffi.Int64> progress,
   )
   ffsrs_compute_parameters;
+
+  /// 同一组参数下批量算可提取度：[model] 是 `{"algorithm","params"}` JSON，
+  /// [s] / [d] / [elapsed] / [out] 长度均为 [n]，[sf] 可为 nullptr（取 [s]）。
+  /// 返回 `{"ok":n}` / `{"error":"…"}`，由 [ffsrs_free_string] 释放。
+  final ffi.Pointer<ffi.Char> Function(
+    ffi.Pointer<ffi.Char> model,
+    ffi.Pointer<ffi.Float> s,
+    ffi.Pointer<ffi.Float> d,
+    ffi.Pointer<ffi.Float> sf,
+    ffi.Pointer<ffi.Float> elapsed,
+    int n,
+    ffi.Pointer<ffi.Float> out,
+  )
+  ffsrs_retrievability_batch;
 
   final void Function(ffi.Pointer<ffi.Char> ptr) ffsrs_free_string;
 

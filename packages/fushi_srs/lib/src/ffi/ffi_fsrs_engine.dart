@@ -16,7 +16,7 @@ import 'fushi_fsrs_library.dart';
 /// 外样本评估请放后台 isolate：别的 isolate 用 [FfiFsrsEngine.tryCreate] 自己再建一个
 /// 引擎（同一个库，各 isolate 各自 open），取消 / 进度通道用
 /// [NativeSrsOptimizerControl.fromAddress] 共享。
-class FfiFsrsEngine implements FsrsEngine {
+class FfiFsrsEngine implements FsrsBatchEngine {
   FfiFsrsEngine(this.library);
 
   /// 按 [FushiFsrs] 的定位规则加载原生库并建引擎；库不可用返回 null（不抛）。
@@ -153,6 +153,51 @@ class FfiFsrsEngine implements FsrsEngine {
       throw SrsFsrsException('bad retrievability response: $result');
     }
     return result.toDouble();
+  }
+
+  @override
+  List<double> retrievabilityBatch({
+    required SrsAlgorithm algorithm,
+    required List<double> params,
+    required List<SrsMemory> memories,
+    required List<double> elapsedDays,
+  }) {
+    final int n = memories.length;
+    if (elapsedDays.length != n) {
+      throw ArgumentError('memories and elapsedDays differ in length');
+    }
+    final Pointer<Char> model = _encode(<String, Object?>{
+      'algorithm': algorithm.wire,
+      'params': params,
+    }).toNativeUtf8().cast<Char>();
+    // 五段 f32 连续放在一块：s | d | sf | elapsed | out。
+    final int slots = n == 0 ? 1 : n;
+    final Pointer<Float> buf = calloc<Float>(slots * 5);
+    try {
+      final Float32List view = buf.asTypedList(slots * 5);
+      for (int i = 0; i < n; i++) {
+        final SrsMemory m = memories[i];
+        view[i] = m.stability;
+        view[slots + i] = m.difficulty;
+        view[2 * slots + i] = m.stabilityFast;
+        view[3 * slots + i] = elapsedDays[i];
+      }
+      _decodeResponse(
+        _b.ffsrs_retrievability_batch(
+          model,
+          buf,
+          buf + slots,
+          buf + 2 * slots,
+          buf + 3 * slots,
+          n,
+          buf + 4 * slots,
+        ),
+      );
+      return List<double>.of(view.sublist(4 * slots, 4 * slots + n));
+    } finally {
+      calloc.free(buf);
+      calloc.free(model);
+    }
   }
 
   /// 参数优化（阻塞）。

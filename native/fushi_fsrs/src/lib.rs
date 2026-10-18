@@ -10,7 +10,7 @@
 //! - 响应恒为 `{"ok": <结果>}` 或 `{"error": "<原因>"}`；任何 panic 都被接住转成 error，不越过 FFI 边界。
 //!
 //! 导出符号（与 packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart 的 lookup 名一一对应）：
-//!   ffsrs_call / ffsrs_compute_parameters / ffsrs_free_string /
+//!   ffsrs_call / ffsrs_compute_parameters / ffsrs_retrievability_batch / ffsrs_free_string /
 //!   ffsrs_zstd_decompress / ffsrs_free_bytes / ffsrs_abi_version
 
 use std::ffi::{c_char, CStr, CString};
@@ -404,6 +404,60 @@ fn spawn_watcher(
     })
 }
 
+/// 批量可提取度：同一组参数下一次算完一整批卡（统计页）。
+///
+/// 逐张走 [ffsrs_call] 时，每张卡都要做一遍请求编码与参数解析，这部分开销占了大头
+/// （2 万张卡约 0.5 s）。这里参数只解析一次、模型只建一次，卡片数据走 f32 数组。
+///
+/// - `model`：`{"algorithm", "params"}` JSON，字段含义同 [ffsrs_call]；
+/// - `s` / `d` / `elapsed`：长度为 `n` 的 f32 数组（stability、difficulty、距上次复习的小数天）；
+/// - `sf`：FSRS-7 快速稳定性分量，长度 `n`；可为空指针，等同于逐张取 `s`；
+/// - `out`：调用方分配、长度 `n` 的 f32 数组，逐张写入结果。
+///
+/// 返回 `{"ok": n}` 或 `{"error": "…"}`，必须用 [ffsrs_free_string] 释放；出错时 `out` 的内容未定义。
+/// 结果与逐张调 `retrievability` op 逐位一致。
+#[no_mangle]
+pub extern "C" fn ffsrs_retrievability_batch(
+    model: *const c_char,
+    s: *const f32,
+    d: *const f32,
+    sf: *const f32,
+    elapsed: *const f32,
+    n: usize,
+    out: *mut f32,
+) -> *mut c_char {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Value, String> {
+        let req = read_request(model)?;
+        let algorithm = Algorithm::parse(str_field(&req, "algorithm")?)?;
+        let model = build_model(algorithm, req.get("params"))?;
+        if n == 0 {
+            return Ok(json!(0));
+        }
+        if s.is_null() || d.is_null() || elapsed.is_null() || out.is_null() {
+            return Err("null buffer".into());
+        }
+        let (s, d, elapsed, out) = unsafe {
+            (
+                std::slice::from_raw_parts(s, n),
+                std::slice::from_raw_parts(d, n),
+                std::slice::from_raw_parts(elapsed, n),
+                std::slice::from_raw_parts_mut(out, n),
+            )
+        };
+        let sf = (!sf.is_null()).then(|| unsafe { std::slice::from_raw_parts(sf, n) });
+        for i in 0..n {
+            let memory = Memory {
+                s: s[i],
+                d: d[i],
+                sf: sf.map(|v| v[i]),
+            };
+            out[i] = model.current_retrievability(memory.to_fsrs(), elapsed[i]);
+        }
+        Ok(json!(n))
+    }));
+    respond(outcome.unwrap_or_else(|_| Err("panic in fushi_fsrs".into())))
+}
+
 /// 释放 [ffsrs_call] / [ffsrs_compute_parameters] 返回的字符串。
 #[no_mangle]
 pub extern "C" fn ffsrs_free_string(ptr: *mut c_char) {
@@ -511,6 +565,67 @@ mod tests {
         let a = call(json!({"op":"next_states","algorithm":"fsrs7","desiredRetention":0.9,"elapsedDays":0.1,"memory":mem}));
         let b = call(json!({"op":"next_states","algorithm":"fsrs7","desiredRetention":0.9,"elapsedDays":0.9,"memory":mem}));
         assert_ne!(a["ok"]["good"]["memory"]["s"], b["ok"]["good"]["memory"]["s"]);
+    }
+
+    #[test]
+    fn retrievability_batch_matches_single_calls() {
+        for alg in ["fsrs6", "fsrs7"] {
+            let s: Vec<f32> = (0..200).map(|i| 0.5 + (i % 50) as f32 * 3.7).collect();
+            let d: Vec<f32> = (0..200).map(|i| 1.0 + (i % 9) as f32).collect();
+            let sf: Vec<f32> = s.iter().map(|v| v * 0.6).collect();
+            let e: Vec<f32> = (0..200).map(|i| (i % 40) as f32 * 0.33).collect();
+            let mut out = vec![0f32; s.len()];
+            let model = CString::new(json!({"algorithm": alg}).to_string()).unwrap();
+            let resp = ffsrs_retrievability_batch(
+                model.as_ptr(),
+                s.as_ptr(),
+                d.as_ptr(),
+                sf.as_ptr(),
+                e.as_ptr(),
+                s.len(),
+                out.as_mut_ptr(),
+            );
+            let text = unsafe { CStr::from_ptr(resp) }.to_str().unwrap().to_string();
+            ffsrs_free_string(resp);
+            assert_eq!(text, format!("{{\"ok\":{}}}", s.len()), "{alg}");
+            for i in 0..s.len() {
+                let one = call(json!({"op":"retrievability","algorithm":alg,
+                    "memory":{"s":s[i],"d":d[i],"sf":sf[i]},"elapsedDays":e[i]}));
+                assert_eq!(one["ok"].as_f64().unwrap() as f32, out[i], "{alg} #{i}");
+            }
+        }
+    }
+
+    #[test]
+    fn retrievability_batch_rejects_bad_input() {
+        let mut out = [0f32; 1];
+        let one = [1f32];
+        let model = CString::new(json!({"algorithm":"fsrs7","params":[1.0]}).to_string()).unwrap();
+        let resp = ffsrs_retrievability_batch(
+            model.as_ptr(),
+            one.as_ptr(),
+            one.as_ptr(),
+            std::ptr::null(),
+            one.as_ptr(),
+            1,
+            out.as_mut_ptr(),
+        );
+        let text = unsafe { CStr::from_ptr(resp) }.to_str().unwrap().to_string();
+        ffsrs_free_string(resp);
+        assert!(text.contains("error"), "{text}");
+        let model = CString::new(json!({"algorithm":"fsrs7"}).to_string()).unwrap();
+        let resp = ffsrs_retrievability_batch(
+            model.as_ptr(),
+            std::ptr::null(),
+            one.as_ptr(),
+            std::ptr::null(),
+            one.as_ptr(),
+            1,
+            out.as_mut_ptr(),
+        );
+        let text = unsafe { CStr::from_ptr(resp) }.to_str().unwrap().to_string();
+        ffsrs_free_string(resp);
+        assert!(text.contains("null buffer"), "{text}");
     }
 
     #[test]
