@@ -78,13 +78,12 @@ dependencies:
     path: ../packages/fushi_cli
   fushi_engine:
     path: ../packages/fushi_engine
-  # native/fushi_compute（Rust 计算内核）的 FFI 绑定：WOFF2 解码等。
-  fushi_compute:
-    path: ../packages/fushi_compute
   fushi_anki:
     path: ../packages/fushi_anki
   fushi_srs:
     path: ../packages/fushi_srs
+  fushi_compute:
+    path: ../packages/fushi_compute
   fushi_audio:
     path: ../packages/fushi_audio
   fushi_platform:

@@ -1,7 +1,7 @@
 // WOFF2 → sfnt（ffc_font_woff2_to_sfnt）：回归向量逐字节一致 + 结构合法 + 坏输入。
 //
-// 原生库是硬依赖：找不到库就失败，不 skip。库定位：环境变量 FUSHI_COMPUTE_LIB，缺省用
-// native/fushi_compute/prebuilt/<平台>/ 下构建脚本的产物。
+// 原生库是硬依赖：找不到库就失败（FushiComputeUnavailableError），不 skip。测试宿主下
+// 加载器自动向上找 native/fushi_compute/prebuilt/<平台>/；FUSHI_COMPUTE_LIB 可覆盖。
 //
 // 回归向量（woff2_vectors.json）的 sfnt 哈希来自已删除的纯 Dart 解码器，Rust 输出在删除前
 // 逐份比对过。大字体语料不入库：设 FUSHI_WOFF2_CORPUS 指向语料目录才会额外比对。
@@ -17,32 +17,6 @@ import 'package:fushi_compute/fushi_compute.dart';
 import 'package:test/test.dart';
 
 const String _fontDir = 'test/font';
-
-String _libraryPath() {
-  final String? env = Platform.environment[kFushiComputeLibEnv];
-  if (env != null && env.isNotEmpty) return env;
-  final String sep = Platform.pathSeparator;
-  final String root = '..$sep..${sep}native${sep}fushi_compute${sep}prebuilt';
-  final String rel = Platform.isWindows
-      ? '$root${sep}windows-x64${sep}fushi_compute.dll'
-      : Platform.isMacOS
-      ? '$root${sep}macos${sep}libfushi_compute.dylib'
-      : '$root${sep}linux-x64${sep}libfushi_compute.so';
-  return File(rel).absolute.path;
-}
-
-FushiFont _loadFont() {
-  final String path = _libraryPath();
-  final FushiCompute? lib = FushiCompute.tryLoad(libraryPath: path);
-  if (lib == null) {
-    fail(
-      'fushi_compute native library not found at $path. It is a hard '
-      'dependency: build native/fushi_compute (cargo build --release) and set '
-      '$kFushiComputeLibEnv.',
-    );
-  }
-  return FushiFont.of(lib);
-}
 
 class _Vector {
   _Vector(this.path, this.woff2Sha256, this.sfntSha256);
@@ -127,7 +101,7 @@ void _expectStructurallyValid(Uint8List sfnt, String name) {
 }
 
 void main() {
-  final FushiFont font = _loadFont();
+  final FushiFont font = FushiFont.instance;
 
   group('committed regression vectors', () {
     for (final _Vector v in _vectors('committed', _fontDir + '/fixtures')) {

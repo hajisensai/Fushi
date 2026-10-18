@@ -183,7 +183,13 @@ void main() {
       // SRS 排程内核（fsrs-rs）：三个 app 随包 + 服务端随包；verify_abi.sh 读 Dart 绑定。
       'native/fushi_fsrs/src/lib.rs': all,
       'packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart': all,
-      // iOS 伞形静态库（fushi_p2p + fushi_fsrs 合一）只有 iOS job 编。
+      // 计算内核（硬依赖）：同 fushi_fsrs，三个 app 随包 + 服务端随包；verify_abi.sh 递归读
+      // packages/fushi_compute/lib 下各域的 Dart 绑定。
+      'native/fushi_compute/src/lib.rs': all,
+      'native/fushi_compute/build_linux_so.sh': all,
+      'packages/fushi_compute/lib/src/fushi_compute_library.dart': all,
+      'packages/fushi_compute/lib/src/hash/ffc_hash.dart': all,
+      // iOS 伞形静态库（fushi_p2p + fushi_fsrs + fushi_compute 合一）只有 iOS job 编。
       'native/fushi_ios_umbrella/src/lib.rs': <String>{'ios'},
       // fushidicts 编进三个 app，也随无头服务端包（linux-server 编 .so + 冒烟）。
       'native/fushidicts/src/fushidicts.cpp': all,
@@ -248,6 +254,7 @@ void main() {
       '.github/actions/native-store-names/names.sh': all,
       '.github/actions/native-artifact-store/action.yml': all,
       '.github/actions/provide-baked-secrets/action.yml': apps,
+      '.github/actions/setup-fushi-compute/action.yml': apps,
       '.github/scripts/verify_torrent_abi.sh': <String>{'macos', 'server'},
     };
     final List<String> wrong = <String>[

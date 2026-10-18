@@ -202,6 +202,22 @@ if(EXISTS "${FUSHI_FSRS_DLL}")
     COMPONENT Runtime)
 endif()
 
+# === 计算内核（哈希 / 图像 / 文本，**硬依赖**）===
+# native/fushi_compute/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_compute.dll，
+# 随包到 exe 同级（Dart 侧 packages/fushi_compute 的 FushiCompute 按 exe 同级定位）。
+# 与上面几个 copy-if-present 不同：没有 Dart 回退实现，缺库时在配置期直接失败（任何配置都是，
+# Debug 也不例外）。新 worktree 由 tool/bootstrap.ps1 编好它。
+set(FUSHI_COMPUTE_DLL
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_compute/prebuilt/windows-x64/fushi_compute.dll")
+if(NOT EXISTS "${FUSHI_COMPUTE_DLL}")
+  message(FATAL_ERROR
+    "fushi_compute is a required native dependency, but ${FUSHI_COMPUTE_DLL} is missing. "
+    "Build it first: powershell -ExecutionPolicy Bypass -File native/fushi_compute/build_windows_dll.ps1 "
+    "(needs Rust/cargo; tool/bootstrap.ps1 runs it for new worktrees).")
+endif()
+install(FILES "${FUSHI_COMPUTE_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
 # Debug builds may intentionally omit the expensive libtorrent prebuild so UI
 # work stays lightweight. A Profile/Release bundle, however, must never be
 # produced while advertising an embedded backend that cannot open at runtime.

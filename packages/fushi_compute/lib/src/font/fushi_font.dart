@@ -17,48 +17,35 @@ typedef _Woff2ToSfntDart =
 
 /// `ffc_font_*`：字体容器解码（native/fushi_compute/src/font.rs）。
 ///
-/// 原生库是硬依赖（各平台随包）：库或符号缺失时 [instance] / [FushiFont.of] 抛
+/// 原生库是硬依赖：库不可用或缺字体域符号时 [instance] / [FushiFont.of] 抛
 /// [FushiComputeUnavailableError]，不退回任何 Dart 实现——WOFF2 解码只有 Rust 这一份。
-class FushiFont {
-  FushiFont._(this._lib, this._woff2ToSfnt);
+final class FushiFont {
+  FushiFont._(this._compute, this._woff2ToSfnt);
 
-  /// 解码符号名。
-  static const String woff2ToSfntSymbol = 'ffc_font_woff2_to_sfnt';
-
-  final FushiCompute _lib;
+  final FushiCompute _compute;
   final _Woff2ToSfntDart _woff2ToSfnt;
 
-  static FushiFont? _default;
+  static final Expando<FushiFont> _cache = Expando<FushiFont>();
 
-  /// 默认库（[FushiCompute.instance]）上的绑定；每个 isolate 各自加载一次。
-  static FushiFont get instance {
-    final FushiFont? cached = _default;
+  /// 默认库（[FushiCompute.require]）上的绑定；每个 isolate 各自加载一次。
+  static FushiFont get instance => FushiFont.of(FushiCompute.require());
+
+  /// 绑定到指定的已加载库。缺字体域符号（库比绑定旧）抛 [FushiComputeUnavailableError]。
+  ///
+  /// lookup 名写成字符串字面量：`native/fushi_compute/verify_abi.sh` 从这里抓期望符号集。
+  factory FushiFont.of(FushiCompute compute) {
+    final FushiFont? cached = _cache[compute];
     if (cached != null) return cached;
-    final FushiCompute? lib = FushiCompute.instance;
-    if (lib == null) {
-      throw FushiComputeUnavailableError(
-        'fushi_compute native library not found (needed for WOFF2 decoding); '
-        'set $kFushiComputeLibEnv or ship ${FushiCompute.defaultLibraryName()} '
-        'with the app',
+    try {
+      return _cache[compute] = FushiFont._(
+        compute,
+        compute.library.lookupFunction<_Woff2ToSfntC, _Woff2ToSfntDart>(
+          'ffc_font_woff2_to_sfnt',
+        ),
       );
+    } on ArgumentError catch (e) {
+      throw compute.missingSymbols('font', e.message ?? e);
     }
-    return _default = FushiFont.of(lib);
-  }
-
-  /// 绑定到指定的已加载库（测试 / harness）。库里没有 [woff2ToSfntSymbol] 时抛 [FushiComputeUnavailableError]。
-  factory FushiFont.of(FushiCompute lib) {
-    if (!lib.providesSymbol(woff2ToSfntSymbol)) {
-      throw FushiComputeUnavailableError(
-        'fushi_compute library ${lib.libraryPath ?? '(process)'} does not '
-        'export $woff2ToSfntSymbol; rebuild native/fushi_compute',
-      );
-    }
-    return FushiFont._(
-      lib,
-      lib.library.lookupFunction<_Woff2ToSfntC, _Woff2ToSfntDart>(
-        woff2ToSfntSymbol,
-      ),
-    );
   }
 
   /// WOFF2 → 裸 sfnt（Flutter `FontLoader` / 阅读器下发用）。
@@ -75,14 +62,14 @@ class FushiFont {
       final int status = _woff2ToSfnt(input, len, outPtr, outLen);
       if (status == FfcStatus.badInput) return null;
       if (status != FfcStatus.ok) {
-        throw StateError('$woff2ToSfntSymbol failed with status $status');
+        throw StateError('ffc_font_woff2_to_sfnt failed with status $status');
       }
       final int n = outLen.value;
       final Pointer<Uint8> out = outPtr.value;
       try {
         return Uint8List.fromList(out.asTypedList(n));
       } finally {
-        _lib.freeBytes(out, n);
+        _compute.freeBytes(out, n);
       }
     } finally {
       malloc.free(input);
