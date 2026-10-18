@@ -85,6 +85,8 @@ dependencies:
     path: ../packages/fushi_anki
   fushi_srs:
     path: ../packages/fushi_srs
+  fushi_compute:
+    path: ../packages/fushi_compute
   fushi_audio:
     path: ../packages/fushi_audio
   fushi_platform:

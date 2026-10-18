@@ -14,6 +14,9 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 # AES（运行时检测 AES-NI / ARMv8 AES）+ CBC，Apache-2.0 OR MIT。
 aes = { version = "0.8", features = ["zeroize"] }
 cbc = "0.1"
+crc32fast = "1"
+md4 = "0.10"
+sha2 = "0.10"
 
 [profile.release]
 # 计算内核吃 CPU：取 3（不是 fushi_fsrs 的 "z"），体积换速度。

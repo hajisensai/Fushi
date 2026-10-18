@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -74,8 +75,9 @@ class _OpenedArchive {
 class _ArchiveImageIndex {
   _ArchiveImageIndex(List<ArchiveFile> images) {
     for (final ArchiveFile image in images) {
-      final String normalized =
-          MangaArchiveImporter._normalizeArchiveName(image.name);
+      final String normalized = MangaArchiveImporter._normalizeArchiveName(
+        image.name,
+      );
       (exact[normalized] ??= <ArchiveFile>[]).add(image);
       (folded[normalized.toLowerCase()] ??= <ArchiveFile>[]).add(image);
     }
@@ -119,11 +121,11 @@ class MangaSevenZipExtractor {
   MangaSevenZipExtractor({
     DiscoveryProcessRunner? runProcess,
     String? sevenZipOverride,
-  })  : _runProcess = runProcess ?? Process.run,
-        _locator = DiscoveryArchiveExtractor(
-          runProcess: runProcess,
-          sevenZipOverride: sevenZipOverride,
-        );
+  }) : _runProcess = runProcess ?? Process.run,
+       _locator = DiscoveryArchiveExtractor(
+         runProcess: runProcess,
+         sevenZipOverride: sevenZipOverride,
+       );
 
   final DiscoveryProcessRunner _runProcess;
   final DiscoveryArchiveExtractor _locator;
@@ -200,8 +202,9 @@ class MangaSevenZipExtractor {
       }
       final String attributes = fields['Attributes'] ?? '';
       if (attributes.toUpperCase().contains('D')) continue;
-      final String extension =
-          p.posix.extension(entryPath.replaceAll('\\', '/')).toLowerCase();
+      final String extension = p.posix
+          .extension(entryPath.replaceAll('\\', '/'))
+          .toLowerCase();
       if (!kMangaImageExtensions.contains(extension)) continue;
       final int? size = int.tryParse(fields['Size'] ?? '');
       if (size == null || size < 0) {
@@ -495,7 +498,7 @@ abstract final class MangaArchiveImporter {
       if (content.length > _maximumMokuroBytes) continue;
       // 清单 JSON 也做 CRC：坏清单会让页匹配整体失败，早点当「不是候选」跳过。
       final int? expectedCrc = entry.crc32;
-      if (expectedCrc != null && getCrc32(content) != expectedCrc) continue;
+      if (expectedCrc != null && ffcCrc32(content) != expectedCrc) continue;
       final String normalizedName = _normalizeArchiveName(entry.name);
       final List<String> nameSegments = normalizedName.split('/');
       if (nameSegments.any(
@@ -743,12 +746,10 @@ abstract final class MangaArchiveImporter {
   static List<int> _verifiedContent(ArchiveFile entry) {
     final Object? content = entry.content;
     if (content is! List<int>) {
-      throw MangaImportException(
-        'Could not extract manga page: ${entry.name}',
-      );
+      throw MangaImportException('Could not extract manga page: ${entry.name}');
     }
     final int? expected = entry.crc32;
-    if (expected != null && getCrc32(content) != expected) {
+    if (expected != null && ffcCrc32(content) != expected) {
       throw MangaImportException(
         'Corrupt manga archive entry (CRC mismatch): ${entry.name}',
       );

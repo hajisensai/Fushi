@@ -15,6 +15,9 @@ environment:
 dependencies:
   fushi_core:
     path: ../fushi_core
+  # Rust 计算内核（硬依赖）：EPUB 打包的 CRC-32。
+  fushi_compute:
+    path: ../fushi_compute
   xml: ^6.3.0
   meta: ^1.9.0
   # subtitle_markup.dart 用 package:characters 做字素簇切分；此前靠传递依赖

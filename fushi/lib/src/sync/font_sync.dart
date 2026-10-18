@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:path/path.dart' as p;
 
@@ -72,9 +72,9 @@ class FontSyncService {
     required FontSyncLocal local,
     required Directory tempDir,
     this.maxFileBytes = kFontSyncMaxFileBytes,
-  })  : _store = store,
-        _local = local,
-        _tempDir = tempDir;
+  }) : _store = store,
+       _local = local,
+       _tempDir = tempDir;
 
   final SyncAssetStore _store;
   final FontSyncLocal _local;
@@ -160,8 +160,9 @@ class FontSyncService {
     }
 
     final FontCatalogState local = await _local.readState();
-    final Map<String, String> localPathByAsset =
-        await _localFilesByAssetName(local);
+    final Map<String, String> localPathByAsset = await _localFilesByAssetName(
+      local,
+    );
 
     // 远端字体 id → 本机落地后的 (name, path)。下载失败的字体不进这张表，指向它们
     // 的用途行随之丢掉，不会留下一个指向不存在文件的条目。
@@ -237,7 +238,9 @@ class FontSyncService {
     final String target = p.join(root.path, 'synced-${entry.name}');
     final File staging = File(
       p.join(
-          _tempDir.path, 'font-sync-${DateTime.now().microsecondsSinceEpoch}'),
+        _tempDir.path,
+        'font-sync-${DateTime.now().microsecondsSinceEpoch}',
+      ),
     );
     try {
       await _store.getAsset(entry.id, staging);
@@ -258,7 +261,7 @@ class FontSyncService {
 
 /// 字体文件的远端资产名：`<sha256 hex>.<小写扩展名>`。
 Future<String> fontAssetNameFor(File file) async {
-  final Digest digest = await sha256.bind(file.openRead()).first;
+  final String digest = await ffcSha256File(file.path);
   final String ext = p.extension(file.path).toLowerCase();
   return '$digest$ext';
 }
@@ -279,7 +282,7 @@ FontCatalogState mergeRemoteFontConfig({
 }) {
   final List<FontCatalogEntry> fonts = <FontCatalogEntry>[...local.fonts];
   final Set<String> ids = <String>{
-    for (final FontCatalogEntry f in fonts) f.id
+    for (final FontCatalogEntry f in fonts) f.id,
   };
   final Map<String, String> idByIdentity = <String, String>{
     for (final FontCatalogEntry f in fonts) f.identity: f.id,
@@ -297,17 +300,21 @@ FontCatalogState mergeRemoteFontConfig({
   final Map<String, String> localIdByRemoteId = <String, String>{};
   for (final MapEntry<String, ({String name, String? path})> remote
       in remoteFonts.entries) {
-    final String identity =
-        FontCatalogEntry.identityOf(remote.value.name, remote.value.path);
+    final String identity = FontCatalogEntry.identityOf(
+      remote.value.name,
+      remote.value.path,
+    );
     String? id = idByIdentity[identity];
     if (id == null) {
       id = reserveId();
       idByIdentity[identity] = id;
-      fonts.add(FontCatalogEntry(
-        id: id,
-        name: remote.value.name,
-        path: remote.value.path,
-      ));
+      fonts.add(
+        FontCatalogEntry(
+          id: id,
+          name: remote.value.name,
+          path: remote.value.path,
+        ),
+      );
     }
     localIdByRemoteId[remote.key] = id;
   }

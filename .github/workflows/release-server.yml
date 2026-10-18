@@ -29,7 +29,7 @@
 # lib/ 里随包：sqlite3（dart build native asset）、内置 torrent 引擎（Linux 静态链
 # libtorrent 的 .so；Windows 是 vcpkg 出的 DLL + 3 个运行时 DLL）、onnxruntime 1.22.0
 # CPU 版、互联 P2P 隧道 fushi_p2p（Rust/iroh，只依赖 libc）、SRS 排程内核 fushi_fsrs
-# （Rust/fsrs-rs，只依赖 libc）。目标机不需要任何
+# （Rust/fsrs-rs，只依赖 libc）、计算内核 fushi_compute（Rust，只依赖 libc，硬依赖）。目标机不需要任何
 # libtorrent / ssl 运行库（README「安装」）。
 name: release-server
 
@@ -259,6 +259,19 @@ jobs:
           set -euo pipefail
           bash native/fushi_fsrs/build_linux_so.sh
           bash native/fushi_fsrs/verify_abi.sh native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so nm
+      # 计算内核（哈希 / 图像 / 文本）.so：**硬依赖**，服务端按 bin/../lib/libfushi_compute.so
+      # 定位。同 fushi_fsrs：只依赖 glibc，构建失败即 job 失败。
+      - name: Cache Rust build (fushi_compute)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_compute -> target
+          key: fushi-compute-linux-x64-ubuntu22
+      - name: Build fushi_compute (Linux x64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_compute/build_linux_so.sh
+          bash native/fushi_compute/verify_abi.sh native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so nm
       - name: Build fushi_server bundle
         shell: bash
         run: |
@@ -268,6 +281,7 @@ jobs:
           cp native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so build/fushi_server_linux/bundle/lib/
           cp native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so build/fushi_server_linux/bundle/lib/
           cp native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so build/fushi_server_linux/bundle/lib/
+          cp native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so build/fushi_server_linux/bundle/lib/
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/ort.tgz" \
             "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
           tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
@@ -392,6 +406,21 @@ jobs:
             echo "::error::fushi_fsrs tests were skipped: $FUSHI_FSRS_LIB did not load"
             exit 1
           fi
+      # 同上：拿 bundle 里那一份 .so 跑 packages/fushi_compute 的整个 test 目录，断言没有 skip。
+      - name: fushi_compute FFI tests against the bundled .so
+        shell: bash
+        working-directory: packages/fushi_compute
+        env:
+          FUSHI_COMPUTE_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushi_compute.so
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_COMPUTE_LIB" || { echo "::error::$FUSHI_COMPUTE_LIB missing"; exit 1; }
+          dart pub get
+          dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_compute_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_compute_test.log"; then
+            echo "::error::fushi_compute tests were skipped: $FUSHI_COMPUTE_LIB did not load"
+            exit 1
+          fi
       - name: Package
         shell: bash
         env:
@@ -494,6 +523,18 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File native/fushi_fsrs/build_windows_dll.ps1
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_fsrs) failed" }
+      # 计算内核（哈希 / 图像 / 文本）DLL：**硬依赖**，服务端按 bin/../lib/fushi_compute.dll 定位。
+      # 失败即 job 失败。
+      - name: Cache Rust build (fushi_compute)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_compute -> target
+          key: fushi-compute-windows-x64
+      - name: Build fushi_compute DLL
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_compute/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_compute) failed" }
       - name: Build fushi_server bundle
         shell: pwsh
         run: |
@@ -504,6 +545,7 @@ jobs:
           Copy-Item native/fushi_torrent/prebuilt/windows-x64/*.dll $lib -Force
           Copy-Item native/fushi_p2p/prebuilt/windows-x64/fushi_p2p.dll $lib -Force
           Copy-Item native/fushi_fsrs/prebuilt/windows-x64/fushi_fsrs.dll $lib -Force
+          Copy-Item native/fushi_compute/prebuilt/windows-x64/fushi_compute.dll $lib -Force
           $zip = "$env:RUNNER_TEMP/ort.zip"
           Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/onnxruntime-win-x64-$env:ORT_VERSION.zip" -OutFile $zip
           Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP/ort" -Force
@@ -575,6 +617,21 @@ jobs:
           dart test test/ffi_fsrs_engine_test.dart --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_fsrs_test.log"
           if grep -q 'native library not found' "$RUNNER_TEMP/fushi_fsrs_test.log"; then
             echo "::error::fushi_fsrs tests were skipped: $FUSHI_FSRS_LIB did not load"
+            exit 1
+          fi
+      # 同上：拿 bundle 里那一份 DLL 跑 packages/fushi_compute 的整个 test 目录，断言没有 skip。
+      - name: fushi_compute FFI tests against the bundled DLL
+        shell: bash
+        working-directory: packages/fushi_compute
+        env:
+          FUSHI_COMPUTE_LIB: ${{ github.workspace }}\build\fushi_server_win\bundle\lib\fushi_compute.dll
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_COMPUTE_LIB" || { echo "::error::$FUSHI_COMPUTE_LIB missing"; exit 1; }
+          dart pub get
+          dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_compute_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_compute_test.log"; then
+            echo "::error::fushi_compute tests were skipped: $FUSHI_COMPUTE_LIB did not load"
             exit 1
           fi
       - name: Package

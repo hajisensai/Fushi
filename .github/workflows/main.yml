@@ -37,6 +37,9 @@ on:
       - '.github/workflows/main.yml'
       - '.github/actions/provide-baked-secrets/**'
       - '.github/actions/pdfium-hook-cache/**'
+      - '.github/actions/setup-fushi-compute/**'
+      # setup-fushi-compute 从这里读 Rust / cargo-ndk 钉版。
+      - '.github/actions/native-store-names/names.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       - '!packages/fushi_server/**'
@@ -157,6 +160,14 @@ jobs:
       run: flutter analyze
 
     # 主应用单测不在这个 job 里跑了：见下面的 unit-tests 矩阵（按文件分 4 片并行）。
+
+    # 计算内核 fushi_compute 是硬依赖：包测试（fushi_compute / fushi_engine）要 Linux .so
+    # （导出 FUSHI_COMPUTE_LIB），下面的 Android release 验证构建（android-arm64）要 arm64-v8a .so，
+    # 否则 build.gradle 的 checkFushiComputeNative 让构建失败。
+    - name: Build fushi_compute (Linux .so + Android arm64-v8a)
+      uses: ./.github/actions/setup-fushi-compute
+      with:
+        android-abis: arm64-v8a
 
     - name: Run package tests
       run: |
@@ -370,6 +381,9 @@ jobs:
     # goldens were generated); Linux CI font/raster rendering differs and would
     # always mismatch, so exclude them here. They still run on a plain local
     # `flutter test`. See fushi/dart_test.yaml.
+    # 计算内核 fushi_compute 是硬依赖：先编 Linux .so 并导出 FUSHI_COMPUTE_LIB 给 flutter_tester。
+    - name: Build fushi_compute (Linux .so)
+      uses: ./.github/actions/setup-fushi-compute
     - name: Run unit tests (main app, file shard ${{ matrix.shard }}/4)
       working-directory: fushi
       run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden
