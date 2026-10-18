@@ -8,58 +8,49 @@ import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
 
+/// 内置过滤列表目录（Rust 给，进程内只取一次）。
+final List<AdblockCatalogEntry> _catalog = AdblockCore.catalog();
+
 /// 「系统 › 网页广告拦截」分组：总开关、订阅列表、立即更新、白名单。
 ///
-/// 行的值都是偏好（经 AppModel 读写）；状态副标题读 [WebAdblockService]，经
-/// [SettingsSection.liveListenable] 订阅它，加载 / 更新进度只重建本分组。
+/// 状态全在 Rust 核心里（订阅集、开关、白名单、列表缓存），这里**只渲染**
+/// [WebAdblockService.snapshot]、把用户操作转成命令；经 [SettingsSection.liveListenable]
+/// 订阅服务，快照一变只重建本分组。
 SettingsSection buildWebAdblockSection() {
+  WebAdblockService service(SettingsContext c) =>
+      c.ref.read(webAdblockServiceProvider);
+  bool enabled(SettingsContext c) => service(c).snapshot.enabled;
   return SettingsSection(
     id: 'system.section.web_adblock',
     presentation: SettingsSectionPresentation.collapsed,
     title: t.web_adblock_section_title,
-    liveListenable: (SettingsContext c) =>
-        c.ref.read(webAdblockServiceProvider),
+    liveListenable: service,
     items: <SettingsItem>[
       SettingsSwitchItem(
         id: 'system.web_adblock_enabled',
         title: t.web_adblock_enabled,
         subtitle: t.web_adblock_enabled_hint,
-        subtitleBuilder: (SettingsContext c) =>
-            c.ref.read(webAdblockServiceProvider).isNativeAvailable
-            ? null
-            : t.web_adblock_unavailable,
         icon: FushiIcons.block,
         defaultValue: true,
-        value: (SettingsContext c) => c.appModel.webAdblockEnabled,
+        value: enabled,
         onChanged: (SettingsContext c, bool value) async {
-          await c.appModel.setWebAdblockEnabled(value);
-          if (value) {
-            unawaited(c.ref.read(webAdblockServiceProvider).ensureLoaded());
-          }
+          await service(c).setEnabled(value);
           c.refresh();
         },
       ),
-      for (final AdblockFilterList list in kDefaultAdblockFilterLists)
+      for (final AdblockCatalogEntry list in _catalog)
         SettingsSwitchItem(
           id: 'system.web_adblock_list.${list.id}',
           // 列表官方名，不翻译。
           title: list.title,
-          subtitle: list.url.host,
+          subtitle: list.host,
           icon: FushiIcons.filterList,
           defaultValue: list.defaultEnabled,
-          visible: (SettingsContext c) => c.appModel.webAdblockEnabled,
+          visible: enabled,
           value: (SettingsContext c) =>
-              c.appModel.webAdblockListIds.contains(list.id),
+              service(c).snapshot.isListEnabled(list.id),
           onChanged: (SettingsContext c, bool value) async {
-            final List<String> ids = <String>[
-              for (final AdblockFilterList l in kDefaultAdblockFilterLists)
-                if (l.id == list.id
-                    ? value
-                    : c.appModel.webAdblockListIds.contains(l.id))
-                  l.id,
-            ];
-            await c.appModel.setWebAdblockListIds(ids);
-            unawaited(c.ref.read(webAdblockServiceProvider).reload());
+            unawaited(service(c).setListEnabled(list.id, value));
             c.refresh();
           },
         ),
@@ -67,16 +58,15 @@ SettingsSection buildWebAdblockSection() {
         id: 'system.web_adblock_update_now',
         title: t.web_adblock_update_now,
         icon: FushiIcons.refresh,
-        visible: (SettingsContext c) => c.appModel.webAdblockEnabled,
-        subtitleBuilder: _statusSubtitle,
+        visible: enabled,
+        subtitleBuilder: (SettingsContext c) =>
+            _statusSubtitle(service(c).snapshot),
         cli: SettingsCliAction(
           run: (SettingsContext c, Map<String, String> _) async =>
-              c.ref.read(webAdblockServiceProvider).updateNow(),
+              service(c).updateNow(),
         ),
         onTap: (SettingsContext c) async {
-          final bool ok = await c.ref
-              .read(webAdblockServiceProvider)
-              .updateNow();
+          final bool ok = await service(c).updateNow();
           final BuildContext ctx = c.context;
           if (!ctx.mounted) return;
           ScaffoldMessenger.of(ctx).showSnackBar(
@@ -95,27 +85,24 @@ SettingsSection buildWebAdblockSection() {
         icon: FushiIcons.verified,
         placeholder: 'example.com, example.org',
         keyboardType: TextInputType.url,
-        visible: (SettingsContext c) => c.appModel.webAdblockEnabled,
-        value: (SettingsContext c) => c.appModel.webAdblockAllowlist,
-        onChanged: (SettingsContext c, String value) =>
-            c.appModel.setWebAdblockAllowlist(value.trim()),
+        visible: enabled,
+        value: (SettingsContext c) => service(c).snapshot.allowlist,
+        onChanged: (SettingsContext c, String value) async =>
+            service(c).setAllowlist(value.trim()),
       ),
     ],
   );
 }
 
-String? _statusSubtitle(SettingsContext c) {
-  final WebAdblockService service = c.ref.read(webAdblockServiceProvider);
-  switch (service.status) {
-    case WebAdblockStatus.unavailable:
-      return t.web_adblock_unavailable;
-    case WebAdblockStatus.loading:
+String _statusSubtitle(AdblockSnapshot s) {
+  switch (s.status) {
+    case AdblockEngineStatus.loading:
       return t.web_adblock_status_loading;
-    case WebAdblockStatus.failed:
+    case AdblockEngineStatus.failed:
       return t.web_adblock_status_failed;
-    case WebAdblockStatus.idle:
-    case WebAdblockStatus.ready:
-      final DateTime? at = service.lastUpdatedAt;
+    case AdblockEngineStatus.idle:
+    case AdblockEngineStatus.ready:
+      final DateTime? at = s.lastUpdatedAt;
       if (at == null) return t.web_adblock_status_never;
       return t.web_adblock_status_updated(time: _formatLocal(at));
   }

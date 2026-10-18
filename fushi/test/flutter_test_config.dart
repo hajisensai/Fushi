@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'helpers/fake_inappwebview_platform.dart';
 import 'helpers/fake_video_specs_probe.dart';
 import 'package:fushi/src/engine_bindings.dart';
+import 'package:fushi_web_core/testing.dart';
 
 /// Suite-wide setup for all tests under `test/`.
 ///
@@ -34,6 +35,9 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   installInMemorySharedPreferences();
   installToleranceGoldenComparator();
   installFakeVideoSpecsProbe();
+  // 网页内容核心（fushi_web_core）是硬依赖：指向本仓刚编好的原生库（或 FUSHI_WEB_CORE_LIB）。
+  // 找不到不在这里报错——用到它的测试第一次加载时抛 FushiWebCoreLibraryMissing，照常失败。
+  useDevFushiWebCoreLibrary();
   await testMain();
 }
 

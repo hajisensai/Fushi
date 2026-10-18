@@ -8367,7 +8367,6 @@
   "web_adblock_status_loading": "Loading filter lists…",
   "web_adblock_status_never": "Filter lists not downloaded yet",
   "web_adblock_status_updated": "Filter lists updated $time",
-  "web_adblock_unavailable": "The ad blocking engine is not included in this build",
   "web_adblock_update_done": "Filter lists updated",
   "web_adblock_update_failed": "Failed to update filter lists",
   "web_adblock_update_now": "Update filter lists now",

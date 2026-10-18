@@ -1,32 +1,42 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
 
-/// WebView 接线读的拦截策略（app 侧是 `WebAdblockService`，测试注入假实现）。
+/// WebView 接线读的拦截策略（app 侧是 `WebAdblockService`——Rust 胖核心的薄壳；测试可注入
+/// 假实现）。
 ///
-/// 每次请求 / 每次 JS 回调都**现读**：引擎晚于 WebView 就绪、用户中途关开关、改白名单，
-/// 已开着的页面下一次请求就生效（contentBlockers 例外：它在 WebView 创建时固化）。
+/// 总开关、白名单、引擎就绪与否全在实现方（Rust）判：接线只把请求原样交过去，**每次都现问**，
+/// 引擎晚于 WebView 就绪、用户中途关开关、改白名单，已开着的页面下一次请求就生效
+/// （contentBlockers 例外：它在 WebView 创建时固化）。
 abstract interface class WebAdblockPolicy {
-  /// 总开关开着且引擎已就绪。
+  /// 总开关开着且引擎已就绪（只在 contentBlockers 平台创建 WebView 时用）。
   bool get isActive;
 
-  /// 当前引擎；未就绪 / 不可用为 null。
-  AdblockMatcher? get matcher;
+  /// 逐请求判定。[pageUrl] 是顶层页面（白名单按它判）。
+  AdblockDecision check(
+    String url, {
+    String? sourceUrl,
+    Uri? pageUrl,
+    AdblockRequestType type = AdblockRequestType.other,
+  });
 
-  /// [pageUrl] 所在站点是否在用户白名单里（白名单站点完全不拦）。
-  bool isAllowlisted(Uri? pageUrl);
+  /// 页面 cosmetic 载荷（JSON 文本，原样交给页内 JS）；未激活 / 白名单为 null。
+  String? cosmeticPayload(String href, {Uri? pageUrl});
 
-  /// 给不能逐请求拦截的平台的 WebKit 内容拦截规则（原始 JSON 形态）；没有就空。
+  /// 通用 hide 选择器载荷（JSON 数组文本，原样交给页内 JS）；[classes] / [ids] 是页内 JS
+  /// 收集的换行分隔原文。未激活 / 白名单为 null。
+  String? genericPayload(
+    String href, {
+    Uri? pageUrl,
+    required String classes,
+    required String ids,
+  });
+
+  /// 给不能逐请求拦截的平台的 WebKit 内容拦截规则（Rust 已筛选、截断）；没有就空。
   List<Map<String, Object?>> get contentBlockingRules;
 }
-
-/// 交给 `contentBlockers` 的规则条数上限。真实默认四份列表导出约 16.7 万条
-/// （2026-10 实测），超过 WKContentRuleList 的单表上限（iOS 15+ 15 万、更早 5 万），
-/// 编译也慢；取 5 万保守值。截断时**只丢拦截规则、保留全部例外规则**（少拦，不误拦）。
-const int kWebAdblockMaxContentBlockers = 50000;
 
 /// 页面被拦截的子资源的应答。
 final WebResourceResponse _blockedResponse = WebResourceResponse(
@@ -38,13 +48,15 @@ final WebResourceResponse _blockedResponse = WebResourceResponse(
 );
 
 /// documentStart 注入的 cosmetic 引导脚本：向 Dart 取本页的隐藏选择器 / scriptlet，
-/// 再用 MutationObserver 收集页面上出现的 class / id，分批取通用（generic）隐藏选择器。
+/// 再用 MutationObserver 收集页面上出现的 class / id，分批（换行拼接）取通用（generic）隐藏
+/// 选择器。两个 handler 回的都是 Rust 直接产出的 JSON 文本，这里 `JSON.parse`——Dart 侧不解码、
+/// 不重组。
 /// 选择器逐条 `insertRule`：一条非法选择器只丢它自己，不连坐整张样式表。
 const String kWebAdblockCosmeticScript = r'''
 (function () {
   if (window.__fushiAdblockInstalled) return;
   window.__fushiAdblockInstalled = true;
-  var STYLE_ID = 'fushi-web-core-style';
+  var STYLE_ID = 'fushi-adblock-style';
   var seen = Object.create(null);
   var href = location.href;
   function root() { return document.head || document.documentElement; }
@@ -107,8 +119,14 @@ const String kWebAdblockCosmeticScript = r'''
     function flush() {
       timer = 0;
       if (!classes.length && !ids.length) return;
-      var payload = { href: href, classes: classes.splice(0), ids: ids.splice(0) };
-      call('fushiAdblockGeneric', payload).then(appendCss, function () {});
+      var payload = {
+        href: href,
+        classes: classes.splice(0).join('\n'),
+        ids: ids.splice(0).join('\n')
+      };
+      call('fushiAdblockGeneric', payload).then(function (raw) {
+        if (raw) appendCss(JSON.parse(raw));
+      }, function () {});
     }
     function schedule() { if (!timer) timer = setTimeout(flush, 120); }
     function start() {
@@ -128,8 +146,9 @@ const String kWebAdblockCosmeticScript = r'''
     if (document.documentElement) start();
     else document.addEventListener('readystatechange', start, { once: true });
   }
-  call('fushiAdblockCosmetic', href).then(function (r) {
-    if (!r) return;
+  call('fushiAdblockCosmetic', href).then(function (raw) {
+    if (!raw) return;
+    var r = JSON.parse(raw);
     appendCss(r.hideSelectors);
     if (r.injectedScript) {
       try {
@@ -149,7 +168,7 @@ const String kWebAdblockCosmeticHandler = 'fushiAdblockCosmetic';
 const String kWebAdblockGenericHandler = 'fushiAdblockGeneric';
 
 /// UserScript 分组名：调用方要整体移除时用 `removeUserScriptsByGroupName`。
-const String kWebAdblockUserScriptGroup = 'fushi_web_core';
+const String kWebAdblockUserScriptGroup = 'fushi_adblock';
 
 /// 原始 `shouldInterceptRequest` 回调签名（与 InAppWebView 的参数同型）。
 typedef WebAdblockInterceptCallback =
@@ -198,9 +217,6 @@ class WebAdblockWiring {
   Uri? _pageUrl;
   int _blockedCount = 0;
 
-  /// 每个 href 最近一次 cosmetic 结果的例外集（generic 选择器要扣掉它们）。
-  final Map<String, List<String>> _exceptionsByHref = <String, List<String>>{};
-
   /// 本 WebView 累计拦下的请求数（给 UI 角标 / 调试用）。
   int get blockedCount => _blockedCount;
 
@@ -227,41 +243,27 @@ class WebAdblockWiring {
     return interceptForAdblock(request);
   }
 
-  /// 纯判定部分（不依赖 controller，便于测试）：该拦返回替身 / 空应答，否则 null。
+  /// 纯判定部分（不依赖 controller，便于测试）：该拦返回空应答，否则 null。
+  /// 开关 / 白名单 / 引擎就绪由策略（Rust）判；这里只滤掉不该问的请求。
   WebResourceResponse? interceptForAdblock(WebResourceRequest request) {
-    if (!_policy.isActive) return null;
-    final AdblockMatcher? matcher = _policy.matcher;
-    if (matcher == null) return null;
     // 顶层导航不拦：拦了只会得到一张白页，ABP 语义里 document 也默认放行。
     if (request.isForMainFrame ?? false) return null;
     final String url = request.url.toString();
+    // data: / blob: / 本地虚拟域名这类请求不过 FFI（漫画站的 data: 图片可能有几百 KB）。
     if (!url.startsWith('http://') &&
         !url.startsWith('https://') &&
         !url.startsWith('ws://') &&
         !url.startsWith('wss://')) {
       return null;
     }
-    if (_policy.isAllowlisted(_pageUrl)) return null;
-    final String? source = _sourceUrlFor(request);
-    final AdblockRequestType type = inferAdblockRequestType(request);
-    final AdblockDecision decision = matcher.check(
+    final AdblockDecision decision = _policy.check(
       url,
-      sourceUrl: source,
-      type: type,
+      sourceUrl: _sourceUrlFor(request),
+      pageUrl: _pageUrl,
+      type: inferAdblockRequestType(request),
     );
     if (!decision.shouldBlock) return null;
     _blockedCount++;
-    if (decision == AdblockDecision.redirect) {
-      final AdblockCheckResult detail = matcher.checkDetailed(
-        url,
-        sourceUrl: source,
-        type: type,
-      );
-      final WebResourceResponse? replacement = _responseFromDataUrl(
-        detail.redirect,
-      );
-      if (replacement != null) return replacement;
-    }
     return _blockedResponse;
   }
 
@@ -299,51 +301,28 @@ class WebAdblockWiring {
   /// 接到 `onUpdateVisitedHistory`（SPA 改 URL 不触发 onLoadStart）。
   void onUpdateVisitedHistory(WebUri? url) => onLoadStart(url);
 
-  /// `fushiAdblockCosmetic` handler 的实现：`href` → `{hideSelectors, injectedScript,
-  /// generichide}`；未激活 / 白名单返回 null（JS 侧什么也不做）。
-  Map<String, Object?>? cosmeticFor(Object? hrefArg) {
-    if (!_policy.isActive || hrefArg is! String) return null;
-    final AdblockMatcher? matcher = _policy.matcher;
-    if (matcher == null) return null;
-    if (_policy.isAllowlisted(_pageUrl ?? Uri.tryParse(hrefArg))) return null;
-    final AdblockCosmeticResources res = matcher.cosmetic(hrefArg);
-    _rememberExceptions(hrefArg, res.exceptions);
-    return <String, Object?>{
-      'hideSelectors': res.hideSelectors,
-      'injectedScript': res.injectedScript,
-      'generichide': res.generichide,
-    };
+  /// `fushiAdblockCosmetic` handler 的实现：`href` → Rust 产出的 JSON 文本
+  /// （`{hideSelectors, injectedScript, generichide}`），原样回给 JS；未激活 / 白名单返回
+  /// null（JS 侧什么也不做）。
+  String? cosmeticFor(Object? hrefArg) {
+    if (hrefArg is! String || hrefArg.isEmpty) return null;
+    return _policy.cosmeticPayload(hrefArg, pageUrl: _pageUrl);
   }
 
-  /// `fushiAdblockGeneric` handler 的实现：`{href, classes, ids}` → 选择器数组。
-  List<String> genericSelectorsFor(Object? payload) {
-    if (!_policy.isActive || payload is! Map) return const <String>[];
-    final AdblockMatcher? matcher = _policy.matcher;
-    if (matcher == null) return const <String>[];
+  /// `fushiAdblockGeneric` handler 的实现：`{href, classes, ids}`（classes / ids 是 JS 侧
+  /// 换行拼好的整批原文）→ Rust 产出的选择器 JSON 数组文本；没有就 null。
+  String? genericSelectorsFor(Object? payload) {
+    if (payload is! Map) return null;
     final Object? href = payload['href'];
-    if (_policy.isAllowlisted(
-      _pageUrl ?? (href is String ? Uri.tryParse(href) : null),
-    )) {
-      return const <String>[];
-    }
-    List<String> strings(Object? v) =>
-        v is List ? v.whereType<String>().toList() : const <String>[];
-    final List<String> exceptions = href is String
-        ? (_exceptionsByHref[href] ??
-              _rememberExceptions(href, matcher.cosmetic(href).exceptions))
-        : const <String>[];
-    return matcher.genericSelectors(
-      classes: strings(payload['classes']),
-      ids: strings(payload['ids']),
-      exceptions: exceptions,
+    final Object? classes = payload['classes'];
+    final Object? ids = payload['ids'];
+    if (href is! String || href.isEmpty) return null;
+    return _policy.genericPayload(
+      href,
+      pageUrl: _pageUrl,
+      classes: classes is String ? classes : '',
+      ids: ids is String ? ids : '',
     );
-  }
-
-  List<String> _rememberExceptions(String href, List<String> exceptions) {
-    if (_exceptionsByHref.length >= 16) {
-      _exceptionsByHref.remove(_exceptionsByHref.keys.first);
-    }
-    return _exceptionsByHref[href] = exceptions;
   }
 }
 
@@ -364,7 +343,6 @@ WebAdblockWiring applyAdblockTo(
   required WebAdblockPolicy policy,
   WebAdblockInterceptCallback? shouldInterceptRequest,
   WebAdblockNetworkMode? mode,
-  int maxContentBlockers = kWebAdblockMaxContentBlockers,
 }) {
   final WebAdblockNetworkMode resolved = mode ?? currentWebAdblockNetworkMode;
   final InAppWebViewSettings out = settings.copy();
@@ -375,10 +353,7 @@ WebAdblockWiring applyAdblockTo(
       if (policy.isActive) {
         out.contentBlockers = <ContentBlocker>[
           ...?out.contentBlockers,
-          ...contentBlockersFromRules(
-            policy.contentBlockingRules,
-            maxRules: maxContentBlockers,
-          ),
+          ...contentBlockersFromRules(policy.contentBlockingRules),
         ];
       }
     case WebAdblockNetworkMode.cosmeticOnly:
@@ -400,35 +375,18 @@ WebAdblockWiring applyAdblockTo(
   );
 }
 
-/// adblock-rust 导出的 WebKit 规则 → InAppWebView 的 [ContentBlocker]。
+/// Rust 核心导出的 WebKit 规则 → InAppWebView 的 [ContentBlocker]（一条对一条）。
 ///
-/// - 只保留 `block` 与 `ignore-previous-rules`：cosmetic 隐藏五端统一走 UserScript，
-///   `css-display-none` 再进规则表只是重复占名额；`block-cookies` / `make-https` 不属于广告拦截。
-/// - `resource-type` 里插件枚举不认识的值（`popup` 等）丢掉；**全部**不认识的规则整条丢弃
-///   ——留个空数组等于「匹配所有类型」，会把规则放大。
-/// - 总数超过 [maxRules] 时只截拦截规则，例外规则全留（顺序：拦截在前、例外在后）。
+/// 筛选与截断（只留 `block` / `ignore-previous-rules`、丢插件不认识的 resource-type、
+/// `if-*` / `unless-*` 互斥、5 万条上限只截拦截规则）都已在 Rust
+/// `adblock::content_blocking::export` 做完；这里只做插件对象映射，映射不了的（理论上不会
+/// 出现）跳过。
 List<ContentBlocker> contentBlockersFromRules(
-  List<Map<String, Object?>> rules, {
-  int maxRules = kWebAdblockMaxContentBlockers,
-}) {
-  final List<ContentBlocker> blocks = <ContentBlocker>[];
-  final List<ContentBlocker> ignores = <ContentBlocker>[];
-  for (final Map<String, Object?> rule in rules) {
-    final ContentBlocker? blocker = _toContentBlocker(rule);
-    if (blocker == null) continue;
-    if (blocker.action.type == ContentBlockerActionType.IGNORE_PREVIOUS_RULES) {
-      ignores.add(blocker);
-    } else {
-      blocks.add(blocker);
-    }
-  }
-  final int keptIgnores = ignores.length > maxRules ? maxRules : ignores.length;
-  final int blockBudget = maxRules - keptIgnores;
-  return <ContentBlocker>[
-    ...blocks.take(blockBudget < 0 ? 0 : blockBudget),
-    ...ignores.take(keptIgnores),
-  ];
-}
+  List<Map<String, Object?>> rules,
+) => <ContentBlocker>[
+  for (final Map<String, Object?> rule in rules)
+    if (_toContentBlocker(rule) case final ContentBlocker blocker) blocker,
+];
 
 ContentBlocker? _toContentBlocker(Map<String, Object?> rule) {
   final Object? action = rule['action'];
@@ -587,31 +545,4 @@ AdblockRequestType inferAdblockRequestType(WebResourceRequest request) {
   final String scheme = request.url.scheme;
   if (scheme == 'ws' || scheme == 'wss') return AdblockRequestType.websocket;
   return AdblockRequestType.other;
-}
-
-/// `data:<mime>;base64,<payload>` → 200 应答；解析失败返回 null（调用方退回空应答）。
-WebResourceResponse? _responseFromDataUrl(String? dataUrl) {
-  if (dataUrl == null || !dataUrl.startsWith('data:')) return null;
-  final int comma = dataUrl.indexOf(',');
-  if (comma < 0) return null;
-  final String meta = dataUrl.substring(5, comma);
-  final String payload = dataUrl.substring(comma + 1);
-  final bool isBase64 = meta.endsWith(';base64');
-  final String mime = (isBase64 ? meta.substring(0, meta.length - 7) : meta)
-      .split(';')
-      .first;
-  try {
-    final Uint8List bytes = isBase64
-        ? base64Decode(payload)
-        : Uint8List.fromList(utf8.encode(Uri.decodeComponent(payload)));
-    return WebResourceResponse(
-      contentType: mime.isEmpty ? 'text/plain' : mime,
-      contentEncoding: 'utf-8',
-      data: bytes,
-      statusCode: 200,
-      reasonPhrase: 'OK',
-    );
-  } on FormatException {
-    return null;
-  }
 }

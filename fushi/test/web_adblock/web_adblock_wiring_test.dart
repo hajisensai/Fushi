@@ -1,61 +1,13 @@
-// applyAdblockTo 接线 helper 的最小演示 + 测试：假 AdblockMatcher 注入，不加载原生库。
-//
-// 覆盖：平台模式判定、逐请求拦截（含与页面原有拦截器组合、顶层导航不拦、白名单、
-// redirect 替身）、contentBlockers 转换（动作过滤、未知资源类型、截断只丢拦截规则）、
-// cosmetic 两个 JS handler、资源类型推断、白名单解析。
-import 'dart:convert';
+// applyAdblockTo 接线 helper 的测试。判定本身在 Rust（见 web_adblock_service_test 与 Rust 单测）；
+// 这里用记录调用的假策略钉接线自己的职责：平台模式、哪些请求交给策略（顶层导航 / 非 http 不交）、
+// 来源与类型怎么推断、页面原有拦截器先跑、cosmetic 两个 JS handler 把 Rust 的 JSON 原样回给 JS、
+// contentBlockers 的插件对象映射。
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
-import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi/src/web_adblock/web_adblock_wiring.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
-
-class _FakeMatcher implements AdblockMatcher {
-  final List<({String url, String? source, AdblockRequestType type})> checks =
-      <({String url, String? source, AdblockRequestType type})>[];
-
-  @override
-  AdblockDecision check(
-    String url, {
-    String? sourceUrl,
-    AdblockRequestType type = AdblockRequestType.other,
-  }) {
-    checks.add((url: url, source: sourceUrl, type: type));
-    if (url.contains('redirect.test')) return AdblockDecision.redirect;
-    if (url.contains('ads.')) return AdblockDecision.block;
-    return AdblockDecision.allow;
-  }
-
-  @override
-  AdblockCheckResult checkDetailed(
-    String url, {
-    String? sourceUrl,
-    AdblockRequestType type = AdblockRequestType.other,
-  }) => AdblockCheckResult(
-    decision: check(url, sourceUrl: sourceUrl, type: type),
-    redirect:
-        'data:application/javascript;base64,${base64Encode(utf8.encode('(function(){})();'))}',
-  );
-
-  @override
-  AdblockCosmeticResources cosmetic(String url) => AdblockCosmeticResources(
-    hideSelectors: <String>['.site-ad'],
-    exceptions: <String>['.keep-me'],
-    generichide: url.contains('nogeneric'),
-  );
-
-  @override
-  List<String> genericSelectors({
-    Iterable<String> classes = const <String>[],
-    Iterable<String> ids = const <String>[],
-    Iterable<String> exceptions = const <String>[],
-  }) => <String>[
-    for (final String c in classes)
-      if (!exceptions.contains('.$c')) '.$c',
-  ];
-}
 
 class _FakePolicy implements WebAdblockPolicy {
   _FakePolicy({
@@ -64,19 +16,41 @@ class _FakePolicy implements WebAdblockPolicy {
   });
 
   bool active;
-  Set<String> allow = <String>{};
-  final _FakeMatcher fake = _FakeMatcher();
   final List<Map<String, Object?>> rules;
+  final List<({String url, String? source, Uri? page, AdblockRequestType type})>
+  checks =
+      <({String url, String? source, Uri? page, AdblockRequestType type})>[];
+  final List<({String href, Uri? page, String classes, String ids})> generic =
+      <({String href, Uri? page, String classes, String ids})>[];
 
   @override
   bool get isActive => active;
 
   @override
-  AdblockMatcher? get matcher => fake;
+  AdblockDecision check(
+    String url, {
+    String? sourceUrl,
+    Uri? pageUrl,
+    AdblockRequestType type = AdblockRequestType.other,
+  }) {
+    checks.add((url: url, source: sourceUrl, page: pageUrl, type: type));
+    return url.contains('ads.') ? AdblockDecision.block : AdblockDecision.allow;
+  }
 
   @override
-  bool isAllowlisted(Uri? pageUrl) =>
-      pageUrl != null && webAdblockHostAllowlisted(pageUrl.host, allow);
+  String? cosmeticPayload(String href, {Uri? pageUrl}) =>
+      '{"hideSelectors":[".site-ad"],"injectedScript":"","generichide":false}';
+
+  @override
+  String? genericPayload(
+    String href, {
+    Uri? pageUrl,
+    required String classes,
+    required String ids,
+  }) {
+    generic.add((href: href, page: pageUrl, classes: classes, ids: ids));
+    return '[".banner"]';
+  }
 
   @override
   List<Map<String, Object?>> get contentBlockingRules => rules;
@@ -152,8 +126,9 @@ void main() {
       );
       expect(blocked, isNotNull);
       expect(blocked!.statusCode, 403);
-      expect(policy.fake.checks.last.source, 'https://news.test/article');
-      expect(policy.fake.checks.last.type, AdblockRequestType.script);
+      expect(policy.checks.last.source, 'https://news.test/article');
+      expect(policy.checks.last.page, Uri.parse('https://news.test/article'));
+      expect(policy.checks.last.type, AdblockRequestType.script);
 
       expect(w.interceptForAdblock(_req('https://cdn.test/app.js')), isNull);
       expect(w.blockedCount, 1);
@@ -177,10 +152,7 @@ void main() {
         isNotNull, // http 照常判定（fushi.local 由页面原有拦截器先接走，见下一条）
       );
       expect(w.interceptForAdblock(_req('data:text/plain,ads.')), isNull);
-      expect(
-        policy.fake.checks.where((c) => c.url.startsWith('data:')),
-        isEmpty,
-      );
+      expect(policy.checks.where((c) => c.url.startsWith('data:')), isEmpty);
     });
 
     test('page interceptor runs first; adblock only sees the rest', () async {
@@ -207,42 +179,28 @@ void main() {
       expect(seenByPage, hasLength(3));
     });
 
-    test('inactive policy / allowlisted page pass everything through', () {
+    test('every request asks the policy with the current top-level page', () {
       final _FakePolicy policy = _FakePolicy(active: false);
       final WebAdblockWiring w = applyAdblockTo(
         InAppWebViewSettings(),
         policy: policy,
         mode: WebAdblockNetworkMode.perRequest,
       )..onLoadStart(WebUri('https://shop.example.org/'));
-      expect(w.interceptForAdblock(_req('https://ads.example.com/a')), isNull);
-
-      policy
-        ..active = true
-        ..allow = parseWebAdblockAllowlist(
-          'https://example.org/path, foo.test',
-        );
-      expect(w.interceptForAdblock(_req('https://ads.example.com/a')), isNull);
-      expect(w.cosmeticFor('https://shop.example.org/'), isNull);
-
-      w.onUpdateVisitedHistory(WebUri('https://elsewhere.test/'));
+      // 开关 / 白名单 / 引擎就绪由策略（Rust）判，接线不预先短路。
       expect(
         w.interceptForAdblock(_req('https://ads.example.com/a')),
         isNotNull,
       );
-    });
-
-    test('redirect decision serves the decoded replacement body', () {
-      final WebAdblockWiring w = applyAdblockTo(
-        InAppWebViewSettings(),
-        policy: _FakePolicy(),
-        mode: WebAdblockNetworkMode.perRequest,
+      expect(policy.checks.last.page, Uri.parse('https://shop.example.org/'));
+      w.onUpdateVisitedHistory(WebUri('https://elsewhere.test/'));
+      w.interceptForAdblock(
+        _req(
+          'https://cdn.test/a',
+          headers: <String, String>{'Referer': 'https://frame.test/'},
+        ),
       );
-      final WebResourceResponse? r = w.interceptForAdblock(
-        _req('https://redirect.test/ad.js'),
-      );
-      expect(r!.statusCode, 200);
-      expect(r.contentType, 'application/javascript');
-      expect(utf8.decode(r.data!), '(function(){})();');
+      expect(policy.checks.last.page, Uri.parse('https://elsewhere.test/'));
+      expect(policy.checks.last.source, 'https://frame.test/');
     });
   });
 
@@ -253,6 +211,7 @@ void main() {
     setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.iOS);
     tearDown(() => debugDefaultTargetPlatformOverride = null);
 
+    // Rust 核心（adblock::content_blocking::export）筛选后的形状。
     final List<Map<String, Object?>> rules = <Map<String, Object?>>[
       <String, Object?>{
         'trigger': <String, Object?>{'url-filter': 'ads\\.example\\.com'},
@@ -260,24 +219,11 @@ void main() {
       },
       <String, Object?>{
         'trigger': <String, Object?>{
-          'url-filter': 'popup\\.test',
-          'resource-type': <String>['popup'],
-        },
-        'action': <String, Object?>{'type': 'block'},
-      },
-      <String, Object?>{
-        'trigger': <String, Object?>{
           'url-filter': 'img\\.test',
-          'resource-type': <String>['image', 'popup'],
+          'resource-type': <String>['image'],
+          'load-type': <String>['third-party'],
         },
         'action': <String, Object?>{'type': 'block'},
-      },
-      <String, Object?>{
-        'trigger': <String, Object?>{'url-filter': '.*'},
-        'action': <String, Object?>{
-          'type': 'css-display-none',
-          'selector': '.ad',
-        },
       },
       <String, Object?>{
         'trigger': <String, Object?>{'url-filter': 'ok\\.test'},
@@ -285,7 +231,7 @@ void main() {
       },
     ];
 
-    test('converts rules: keeps block/ignore, drops css & popup-only', () {
+    test('maps the Rust-filtered rules one to one', () {
       final WebAdblockWiring w = applyAdblockTo(
         InAppWebViewSettings(),
         policy: _FakePolicy(rules: rules),
@@ -299,19 +245,9 @@ void main() {
       expect(cbs[1].trigger.resourceType, <ContentBlockerTriggerResourceType>[
         ContentBlockerTriggerResourceType.IMAGE,
       ]);
-      expect(
-        cbs.last.action.type,
-        ContentBlockerActionType.IGNORE_PREVIOUS_RULES,
-      );
-    });
-
-    test('truncation drops block rules first, keeps exceptions', () {
-      final List<ContentBlocker> cbs = contentBlockersFromRules(
-        rules,
-        maxRules: 2,
-      );
-      expect(cbs, hasLength(2));
-      expect(cbs.first.action.type, ContentBlockerActionType.BLOCK);
+      expect(cbs[1].trigger.loadType, <ContentBlockerTriggerLoadType>[
+        ContentBlockerTriggerLoadType.THIRD_PARTY,
+      ]);
       expect(
         cbs.last.action.type,
         ContentBlockerActionType.IGNORE_PREVIOUS_RULES,
@@ -329,30 +265,33 @@ void main() {
   });
 
   group('cosmetic handlers', () {
-    test('page resources and generic selectors minus exceptions', () {
+    test('hand the Rust JSON text straight back to the page', () {
+      final _FakePolicy policy = _FakePolicy();
       final WebAdblockWiring w = applyAdblockTo(
         InAppWebViewSettings(),
-        policy: _FakePolicy(),
+        policy: policy,
         mode: WebAdblockNetworkMode.cosmeticOnly,
-      );
-      final Map<String, Object?>? c = w.cosmeticFor('https://site.test/');
-      expect(c!['hideSelectors'], <String>['.site-ad']);
-      expect(c['generichide'], isFalse);
+      )..onLoadStart(WebUri('https://site.test/'));
+      expect(w.cosmeticFor('https://site.test/'), contains('.site-ad'));
       expect(
         w.genericSelectorsFor(<String, Object?>{
-          'href': 'https://site.test/',
-          'classes': <String>['banner', 'keep-me'],
-          'ids': <String>[],
+          'href': 'https://frame.test/',
+          'classes': 'banner\nkeep-me',
+          'ids': '',
         }),
-        <String>['.banner'],
+        '[".banner"]',
       );
+      expect(policy.generic.single.classes, 'banner\nkeep-me');
+      expect(policy.generic.single.page, Uri.parse('https://site.test/'));
       expect(w.cosmeticFor(42), isNull);
-      expect(w.genericSelectorsFor('bad'), isEmpty);
+      expect(w.genericSelectorsFor('bad'), isNull);
       expect(
         kWebAdblockCosmeticScript,
         allOf(
           contains(kWebAdblockCosmeticHandler),
           contains(kWebAdblockGenericHandler),
+          contains('JSON.parse'),
+          contains(".join('\\n')"),
         ),
       );
     });
@@ -393,15 +332,6 @@ void main() {
       inferAdblockRequestType(_req('https://a.test/api')),
       AdblockRequestType.other,
     );
-  });
-
-  test('allowlist parsing', () {
-    final Set<String> a = parseWebAdblockAllowlist(
-      ' https://Example.com/path , *.foo.test;bar.test:8080\n.baz.test ',
-    );
-    expect(a, <String>{'example.com', 'foo.test', 'bar.test', 'baz.test'});
-    expect(webAdblockHostAllowlisted('www.example.com', a), isTrue);
-    expect(webAdblockHostAllowlisted('notexample.com', a), isFalse);
   });
 }
 

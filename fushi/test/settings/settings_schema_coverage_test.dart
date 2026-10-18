@@ -26,6 +26,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/web_adblock/web_adblock_service.dart';
+import 'package:fushi_web_core/fushi_web_core.dart';
 
 import '../../integration_test/helpers/effect_probes.dart';
 import '../../integration_test/helpers/focus_driver.dart';
@@ -45,9 +47,10 @@ const String _kFloatingBallSceneButtons =
 
 const Map<String, String> kCoveredElsewhere = <String, String>{
   // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
-  // 没有 WebView。总开关与订阅列表经 WebAdblockService 的现读闭包生效，由
-  // web_adblock_service_test（开关 / 白名单现读、订阅集决定下载哪些列表）与
-  // web_adblock_wiring_test（策略关闭时一律放行）咬住。
+  // 没有 WebView。总开关、订阅集、白名单都是 Rust 核心（fushi_web_core）的状态，行改动经
+  // WebAdblockService 转成命令，由 web_adblock_service_test（开关 / 白名单下一次请求即生效、
+  // 订阅集决定下载哪些列表、状态跨实例落盘）与 web_adblock_wiring_test（每次请求都交给策略）
+  // 咬住；规则本身在 native/fushi_web_core 的 cargo 单测。
   'system/Block ads and trackers on web pages':
       'test/web_adblock/web_adblock_service_test.dart + test/web_adblock/web_adblock_wiring_test.dart',
   'system/EasyList': 'test/web_adblock/web_adblock_service_test.dart',
@@ -1551,6 +1554,10 @@ void main() {
       final ValueNotifier<SettingsDestination?> destNotifier =
           ValueNotifier<SettingsDestination?>(null);
       addTearDown(destNotifier.dispose);
+      final Directory adblockDir = Directory.systemTemp.createTempSync(
+        'coverage_adblock_',
+      );
+      addTearDown(() => adblockDir.deleteSync(recursive: true));
       List<SettingsDestination> destinations = const <SettingsDestination>[];
 
       await tester.pumpWidget(
@@ -1558,6 +1565,16 @@ void main() {
           overrides: <Override>[
             appProvider.overrideWith((Ref ref) => appModel),
             platformServicesProvider.overrideWithValue(platformServices),
+            // 网页广告拦截的状态在 Rust 核心里、落在数据目录下；本 harness 的 AppModel 没走
+            // initialise()（没有数据目录），给它一个临时目录，下载一律离线失败（不联网）。
+            webAdblockServiceProvider.overrideWith(
+              (Ref ref) => WebAdblockService(
+                dataDir: () => adblockDir,
+                fetcher:
+                    (Uri url, {String? etag, String? lastModified}) async =>
+                        const AdblockFetchResponse(statusCode: 503),
+              ),
+            ),
           ],
           child: MaterialApp(
             theme: ThemeData(

@@ -8367,7 +8367,6 @@
   "web_adblock_status_loading": "正在加载过滤列表…",
   "web_adblock_status_never": "过滤列表尚未下载",
   "web_adblock_status_updated": "过滤列表更新于 $time",
-  "web_adblock_unavailable": "此版本未包含广告拦截引擎",
   "web_adblock_update_done": "过滤列表已更新",
   "web_adblock_update_failed": "过滤列表更新失败",
   "web_adblock_update_now": "立即更新过滤列表",

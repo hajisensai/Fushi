@@ -4,8 +4,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_web_core/fushi_web_core.dart'
-    show AdblockFilterList, kDefaultAdblockFilterLists;
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/srs/srs_backup_retention.dart';
 import 'package:fushi_engine/profile/profile_document.dart'
@@ -2164,48 +2162,6 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setUsageStatsEnabled(bool value) async {
     await setPref('usage_stats_enabled', value);
-    notifyListeners();
-  }
-
-  // ── 网页广告拦截（lib/src/web_adblock/）────────────────────────────────
-
-  /// 应用内网页浏览（InAppWebView）是否拦截广告 / 跟踪器。默认开。
-  bool get webAdblockEnabled =>
-      getPref('web_adblock_enabled', defaultValue: true) as bool;
-
-  Future<void> setWebAdblockEnabled(bool value) async {
-    await setPref('web_adblock_enabled', value);
-    notifyListeners();
-  }
-
-  /// 订阅的过滤列表 id（[kDefaultAdblockFilterLists] 的 id）。键缺失 = 内置默认集
-  /// （`defaultEnabled` 的那些）；用户全取消后存空串 = 一个都不订。
-  List<String> get webAdblockListIds {
-    final Object? raw = getPref('web_adblock_lists');
-    if (raw is! String) {
-      return <String>[
-        for (final AdblockFilterList l in kDefaultAdblockFilterLists)
-          if (l.defaultEnabled) l.id,
-      ];
-    }
-    return raw
-        .split(',')
-        .map((String s) => s.trim())
-        .where((String s) => s.isNotEmpty)
-        .toList();
-  }
-
-  Future<void> setWebAdblockListIds(List<String> ids) async {
-    await setPref('web_adblock_lists', ids.join(','));
-    notifyListeners();
-  }
-
-  /// 白名单站点原文（逗号 / 空白分隔的域名，含子域名）。解析见 `parseWebAdblockAllowlist`。
-  String get webAdblockAllowlist =>
-      getPref('web_adblock_allowlist', defaultValue: '') as String;
-
-  Future<void> setWebAdblockAllowlist(String value) async {
-    await setPref('web_adblock_allowlist', value);
     notifyListeners();
   }
 

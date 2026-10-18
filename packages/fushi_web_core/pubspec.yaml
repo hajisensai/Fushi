@@ -1,8 +1,8 @@
 name: fushi_web_core
 resolution: workspace
 description: >-
-  网页广告 / 跟踪拦截：Brave adblock-rust（native/fushi_web_core 的 C ABI）的纯 Dart FFI
-  绑定 + 过滤列表下载 / 缓存 / 引擎序列化缓存。不依赖 Flutter / 插件；WebView 接线在 app 侧。
+  网页内容计算核心（native/fushi_web_core 的 C ABI）的纯 Dart FFI 绑定：广告 / 跟踪拦截
+  （订阅、缓存、引擎全在 Rust）与网页漫画章末广告页识别。不依赖 Flutter / 插件；WebView 接线在 app 侧。
 publish_to: none
 
 environment:

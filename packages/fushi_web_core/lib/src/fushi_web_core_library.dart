@@ -1,5 +1,7 @@
-import 'dart:ffi';
+import 'dart:convert';
+import 'dart:ffi' as ffi;
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
@@ -8,34 +10,79 @@ import 'ffi/fushi_web_core_bindings.dart';
 /// 环境变量：显式指定原生库绝对路径（测试 / harness / 手工部署）。
 const String kFushiWebCoreLibEnv = 'FUSHI_WEB_CORE_LIB';
 
-/// 已加载的 fushi_web_core 原生库。
-///
-/// 库缺失是**正常部署形态**（某平台没随包、没装 Rust 的开发机、CI 测试机没编），所以加载
-/// 失败不抛，而是 [tryLoad] 返回 null / [isAvailable] 为 false —— 广告拦截能力判不可用，
-/// WebView 照常工作（只是不拦）。加载规则与 `packages/fushi_p2p` 的 `FushiP2p` 同一套。
+/// 原生库加载失败。它是**硬依赖**：发布包里缺库是构建 / 打包错误，不是一种能力降级，
+/// 所以没有「判不可用、照常运行」的分支——上层拿到这个异常就该如实报错。
+class FushiWebCoreLibraryMissing extends StateError {
+  FushiWebCoreLibraryMissing(this.tried)
+    : super(
+        'fushi_web_core native library not found (tried: ${tried.join(', ')}). '
+        'Build native/fushi_web_core (cargo build --release, or the platform '
+        'build_*.{sh,ps1}) or set $kFushiWebCoreLibEnv.',
+      );
+
+  final List<String> tried;
+}
+
+/// 已加载的 fushi_web_core 原生库（网页内容计算核心：广告拦截 + 漫画章末广告页识别）。
 class FushiWebCoreLibrary {
   FushiWebCoreLibrary._(this.bindings, this.libraryPath);
 
-  /// 底层 FFI 绑定（高级封装之外的逃生口）。
   final FushiWebCoreBindings bindings;
 
-  /// 实际加载的路径；按系统搜索路径裸名加载 / iOS 进程内静态链接时为裸名或 null。
+  /// 实际加载的路径；iOS 进程内静态链接 / 系统搜索路径裸名时为 null 或裸名。
+  /// 后台 isolate 用它重新加载同一份库。
   final String? libraryPath;
 
-  static bool _defaultResolved = false;
-  static FushiWebCoreLibrary? _default;
+  /// 测试 / harness 覆盖：设了就作为第一候选（优先于环境变量）。
+  static String? overridePath;
 
-  /// 按默认规则加载一次并缓存（见 [libraryCandidates]）。
-  static FushiWebCoreLibrary? get instance {
-    if (!_defaultResolved) {
-      _default = tryLoad();
-      _defaultResolved = true;
-    }
-    return _default;
+  static final Map<String?, FushiWebCoreLibrary> _loaded =
+      <String?, FushiWebCoreLibrary>{};
+
+  /// 按默认规则加载一次并缓存；找不到抛 [FushiWebCoreLibraryMissing]。
+  static FushiWebCoreLibrary get instance => load();
+
+  /// 加载（同一 [libraryPath] 在本 isolate 只加载一次）。找不到抛
+  /// [FushiWebCoreLibraryMissing]。
+  static FushiWebCoreLibrary load({String? libraryPath}) {
+    final String? key = libraryPath ?? overridePath;
+    final FushiWebCoreLibrary? cached = _loaded[key];
+    if (cached != null) return cached;
+    final FushiWebCoreLibrary lib = _open(key);
+    _loaded[key] = lib;
+    return lib;
   }
 
-  /// 默认规则下原生库是否可用。永不抛。
-  static bool get isAvailable => instance != null;
+  static FushiWebCoreLibrary _open(String? explicit) {
+    if (Platform.isIOS) {
+      // iOS 以静态库（伞形库 native/fushi_ios_umbrella）链进主二进制。
+      try {
+        return FushiWebCoreLibrary._(
+          FushiWebCoreBindings(ffi.DynamicLibrary.process()),
+          null,
+        );
+      } on ArgumentError {
+        throw FushiWebCoreLibraryMissing(const <String>['<process>']);
+      }
+    }
+    final List<String> tried = <String>[];
+    for (final String candidate in libraryCandidates(libraryPath: explicit)) {
+      tried.add(candidate);
+      final bool isBareName =
+          !candidate.contains('/') &&
+          !candidate.contains(Platform.pathSeparator);
+      if (!isBareName && !File(candidate).existsSync()) continue;
+      try {
+        return FushiWebCoreLibrary._(
+          FushiWebCoreBindings(ffi.DynamicLibrary.open(candidate)),
+          candidate,
+        );
+      } on ArgumentError {
+        continue; // 打不开 / 缺符号（架构不符、旧版本）：试下一个。
+      }
+    }
+    throw FushiWebCoreLibraryMissing(tried);
+  }
 
   /// 当前平台的裸库名。
   static String defaultLibraryName() {
@@ -45,15 +92,12 @@ class FushiWebCoreLibrary {
   }
 
   /// 候选路径，按优先级：
-  /// 1. 显式 [libraryPath]；
+  /// 1. 显式 [libraryPath]（或 [overridePath]）；
   /// 2. 环境变量 `FUSHI_WEB_CORE_LIB`；
   /// 3. 可执行文件同级（Windows 桌面包）；
   /// 4. `bin/../lib/<name>`（`dart build cli` 形态的 bundle）；
   /// 5. 裸名（系统搜索路径）。Android 从 APK 的 native lib 目录、macOS 从
-  ///    `Contents/Frameworks`（Runner 的 `@executable_path/../Frameworks` rpath）、
-  ///    Linux 桌面从 `bundle/lib/`（`$ORIGIN/lib`）加载都走这条。
-  ///
-  /// iOS 不走候选：静态库（伞形库 native/fushi_ios_umbrella）链进主二进制，见 [tryLoad]。
+  ///    `Contents/Frameworks`、Linux 桌面从 `bundle/lib/`（`$ORIGIN/lib`）加载都走这条。
   static List<String> libraryCandidates({
     String? libraryPath,
     Map<String, String>? environment,
@@ -74,46 +118,48 @@ class FushiWebCoreLibrary {
     ];
   }
 
-  /// 按 [libraryCandidates] 顺序加载原生库；全部失败返回 null（不抛）。
-  /// [environment] / [executablePath] 仅供测试覆盖定位输入。
-  static FushiWebCoreLibrary? tryLoad({
-    String? libraryPath,
-    Map<String, String>? environment,
-    String? executablePath,
-  }) {
-    if (Platform.isIOS) {
-      // iOS 以静态库（伞形库）链进主二进制；没链进去时 lookup 抛 ArgumentError → null。
-      return _bind(DynamicLibrary.process(), null);
-    }
-    for (final String candidate in libraryCandidates(
-      libraryPath: libraryPath,
-      environment: environment,
-      executablePath: executablePath,
-    )) {
-      final bool isBareName =
-          !candidate.contains('/') &&
-          !candidate.contains(Platform.pathSeparator);
-      if (!isBareName && !File(candidate).existsSync()) continue;
-      final DynamicLibrary lib;
-      try {
-        lib = DynamicLibrary.open(candidate);
-      } on ArgumentError {
-        continue; // 打不开（架构不符 / 依赖缺失 / 系统路径没有）：试下一个。
-      }
-      final FushiWebCoreLibrary? loaded = _bind(lib, candidate);
-      if (loaded != null) return loaded;
-    }
-    return null;
-  }
-
-  static FushiWebCoreLibrary? _bind(DynamicLibrary lib, String? path) {
-    try {
-      return FushiWebCoreLibrary._(FushiWebCoreBindings(lib), path);
-    } on ArgumentError {
-      return null; // 缺符号：不是这个库 / 版本太老。
-    }
-  }
-
-  /// 原生库版本串（= native/fushi_web_core 的 crate 版本；序列化缓存键的一部分）。
+  /// 原生库版本串（= native/fushi_web_core 的 crate 版本）。
   String version() => bindings.fwc_version().cast<Utf8>().toDartString();
+
+  /// 本线程最近一次失败的原因（取完即释放）。
+  String? lastError() {
+    final ffi.Pointer<ffi.Char> p = bindings.fwc_last_error();
+    if (p == ffi.nullptr) return null;
+    try {
+      return p.cast<Utf8>().toDartString();
+    } finally {
+      bindings.fwc_string_free(p);
+    }
+  }
+
+  /// 调一个「`(…, out_len) -> ptr`」形态的原生函数，把结果**拷一次**进 Dart 堆并立即释放
+  /// 原生缓冲。长度 0 / NULL 返回 null。
+  Uint8List? takeBytes(
+    ffi.Pointer<ffi.Uint8> Function(ffi.Pointer<ffi.Size> outLen) call,
+  ) {
+    final ffi.Pointer<ffi.Size> outLen = calloc<ffi.Size>();
+    try {
+      final ffi.Pointer<ffi.Uint8> ptr = call(outLen);
+      final int len = outLen.value;
+      if (ptr == ffi.nullptr || len == 0) return null;
+      try {
+        return Uint8List.fromList(ptr.asTypedList(len));
+      } finally {
+        bindings.fwc_bytes_free(ptr, len);
+      }
+    } finally {
+      calloc.free(outLen);
+    }
+  }
+
+  /// [takeBytes] 后按 JSON 解码；NULL 时抛 [StateError]（带 `fwc_last_error` 原因）。
+  Object? takeJson(
+    ffi.Pointer<ffi.Uint8> Function(ffi.Pointer<ffi.Size> outLen) call,
+  ) {
+    final Uint8List? bytes = takeBytes(call);
+    if (bytes == null) {
+      throw StateError(lastError() ?? 'fushi_web_core returned no data');
+    }
+    return const Utf8Decoder().fuse(const JsonDecoder()).convert(bytes);
+  }
 }

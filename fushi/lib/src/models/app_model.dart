@@ -9739,17 +9739,6 @@ class AppModel with ChangeNotifier {
   Future<void> setUsageStatsEnabled(bool value) =>
       prefsRepo.setUsageStatsEnabled(value);
 
-  /// 网页广告拦截（lib/src/web_adblock/）。
-  bool get webAdblockEnabled => prefsRepo.webAdblockEnabled;
-  Future<void> setWebAdblockEnabled(bool value) =>
-      prefsRepo.setWebAdblockEnabled(value);
-  List<String> get webAdblockListIds => prefsRepo.webAdblockListIds;
-  Future<void> setWebAdblockListIds(List<String> ids) =>
-      prefsRepo.setWebAdblockListIds(ids);
-  String get webAdblockAllowlist => prefsRepo.webAdblockAllowlist;
-  Future<void> setWebAdblockAllowlist(String value) =>
-      prefsRepo.setWebAdblockAllowlist(value);
-
   bool get updateBetaChannel => prefsRepo.updateBetaChannel;
   Future<void> setUpdateBetaChannel(bool value) =>
       prefsRepo.setUpdateBetaChannel(value);
