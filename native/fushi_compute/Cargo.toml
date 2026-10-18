@@ -11,6 +11,9 @@ license = "GPL-3.0-only"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+# AES（运行时检测 AES-NI / ARMv8 AES）+ CBC，Apache-2.0 OR MIT。
+aes = { version = "0.8", features = ["zeroize"] }
+cbc = "0.1"
 
 [profile.release]
 # 计算内核吃 CPU：取 3（不是 fushi_fsrs 的 "z"），体积换速度。

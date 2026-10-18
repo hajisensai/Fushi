@@ -78,6 +78,9 @@ dependencies:
     path: ../packages/fushi_cli
   fushi_engine:
     path: ../packages/fushi_engine
+  # Rust 计算内核（native/fushi_compute）的 FFI 绑定：HLS 分片 AES 解密走它（硬依赖）。
+  fushi_compute:
+    path: ../packages/fushi_compute
   fushi_anki:
     path: ../packages/fushi_anki
   fushi_srs:

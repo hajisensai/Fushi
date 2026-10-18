@@ -1,0 +1,129 @@
+{
+  "generator": "pointycastle 3.9.1 AacsContentDecoder.decryptUnit / decryptHlsSegment (pre-native)",
+  "aacs_mixed": {
+    "units": [
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "FormatException: AACS content decryption failed: disc key mismatch or unsupported protection",
+      "ok",
+      "ok",
+      "FormatException: Invalid unencrypted Blu-ray transport unit",
+      "ok",
+      "FormatException: AACS content decryption failed: disc key mismatch or unsupported protection",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "FormatException: AACS content decryption failed: disc key mismatch or unsupported protection",
+      "FormatException: AACS content decryption failed: disc key mismatch or unsupported protection",
+      "ok",
+      "ok",
+      "ok",
+      "FormatException: AACS content decryption failed: disc key mismatch or unsupported protection",
+      "ok",
+      "ok",
+      "FormatException: Invalid unencrypted Blu-ray transport unit",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "FormatException: AACS content decryption failed: disc key mismatch or unsupported protection",
+      "ok",
+      "ok",
+      "ok",
+      "ok"
+    ],
+    "sha256": "cc4f5f56d9e00a78dd2dbf77146f95d5ae931f86d33551acb3b2fee941faae2d"
+  },
+  "aes128_ecb": {
+    "sha256": "e22b11de682fa34fb166777bc2c6026b937e20ae69e58cc230514fca133f2e24"
+  },
+  "hls": {
+    "pkcs7_len_1": {
+      "length": 1,
+      "sha256": "98722e2ebed8ed3d3652e11e4181f0dccc1ce7d192d8f1db370af8ec4a4e174a"
+    },
+    "pkcs7_len_15": {
+      "length": 15,
+      "sha256": "5470ac6f87be5f81a546cb220f45d3463014b303b5d798f6eaa38151aa17475d"
+    },
+    "pkcs7_len_16": {
+      "length": 16,
+      "sha256": "fded0c2d0bfe141e7bc4230713ab451366448dd4267be216dcaf92b0fa73b564"
+    },
+    "pkcs7_len_17": {
+      "length": 17,
+      "sha256": "ed88594fc710fd7991e675f1fed076149df24cc2d4317b2baa376c220d953505"
+    },
+    "pkcs7_len_31": {
+      "length": 31,
+      "sha256": "be75b675fe1d34f92ea26a23d0219b2aff98a89703a34ef8420b3363de78944a"
+    },
+    "pkcs7_len_32": {
+      "length": 32,
+      "sha256": "fd709b2c57dc4354851e693d15098b1f85c95809468071ea02860374bc9c9193"
+    },
+    "pkcs7_len_1000": {
+      "length": 1000,
+      "sha256": "93fd0b8306471c2e750a4d6312ab1a5d2e716a08489ab05b30936fbfcb08073e"
+    },
+    "pkcs7_len_4096": {
+      "length": 4096,
+      "sha256": "e9fa1b19114ba511b148a3cc93a446494b9649fcd4e479a108ef944608b2a1bb"
+    },
+    "pkcs7_len_65543": {
+      "length": 65543,
+      "sha256": "205b333ebdcf14a47c40e99ebe6853084548718ed970dbee87a64e67379fedfb"
+    },
+    "pkcs7_len_2097152": {
+      "length": 2097152,
+      "sha256": "b323ca47a8c6dc5310d77e508865bbbd0b3c74d4ff9706bf1cb8ff8f8d2c2d7b"
+    },
+    "aes192": {
+      "length": 5000,
+      "sha256": "88af48d25f4f0687d3543c85b2f695d40e6515068863c32503206a8147fec55f"
+    },
+    "aes256": {
+      "length": 5000,
+      "sha256": "9485a58f110482da2bc2fdf04cde063eeb8773b60bec9c45b4a743f4d7a714c4"
+    },
+    "bad_pad_zero": {
+      "error": "ArgumentError: Invalid or corrupted pad block"
+    },
+    "bad_pad_17": {
+      "error": "ArgumentError: Invalid or corrupted pad block"
+    },
+    "bad_pad_mixed": {
+      "error": "ArgumentError: Invalid or corrupted pad block"
+    },
+    "pad_full_block": {
+      "length": 48,
+      "sha256": "ee4c958a535ed946ba8dc985231b2c3b8489f05f1027534d645cb8856e701c4a"
+    },
+    "wrong_key": {
+      "error": "ArgumentError: Invalid or corrupted pad block"
+    },
+    "unaligned_33": {
+      "error": "ArgumentError: Input data length must be a multiple of cipher's block size"
+    },
+    "empty_input": {
+      "error": "RangeError: Value not in range"
+    },
+    "key_15": {
+      "error": "ArgumentError: Key length not 128/192/256 bits."
+    },
+    "iv_15": {
+      "error": "ArgumentError: Initialization vector must be the same length as block size"
+    }
+  }
+}

@@ -1,0 +1,275 @@
+import 'dart:ffi';
+import 'dart:typed_data';
+
+import 'package:ffi/ffi.dart';
+import 'package:fushi_compute/src/fushi_compute_library.dart';
+
+/// `ffc_crypto_*` 的本域状态码（native/fushi_compute/src/crypto.rs）。
+abstract final class FfcCryptoStatus {
+  /// 未加密单元的 TS 同步字节不对。
+  static const int aacsClearUnitInvalid = -20;
+
+  /// 所有 unit key 都解不出合法 TS。
+  static const int aacsNoMatchingKey = -21;
+}
+
+typedef _AacsOpenC =
+    Int32 Function(Pointer<Uint8>, Size, Pointer<Pointer<Void>>);
+typedef _AacsOpenDart =
+    int Function(Pointer<Uint8>, int, Pointer<Pointer<Void>>);
+typedef _AacsCloseC = Void Function(Pointer<Void>);
+typedef _AacsDecryptC =
+    Int32 Function(Pointer<Void>, Pointer<Uint8>, Size, Pointer<Size>);
+typedef _AacsDecryptDart =
+    int Function(Pointer<Void>, Pointer<Uint8>, int, Pointer<Size>);
+typedef _EcbDecryptC = Int32 Function(Pointer<Uint8>, Pointer<Uint8>, Size);
+typedef _EcbDecryptDart = int Function(Pointer<Uint8>, Pointer<Uint8>, int);
+typedef _CbcPkcs7C =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Pointer<Uint8>,
+      Pointer<Uint8>,
+      Size,
+      Pointer<Size>,
+    );
+typedef _CbcPkcs7Dart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      Pointer<Uint8>,
+      Pointer<Uint8>,
+      int,
+      Pointer<Size>,
+    );
+
+/// 原生库（或本域需要的符号）加载不了。
+///
+/// 临时定义在本域：平台接线 PR 会在 `fushi_compute_library.dart` 提供同名的统一类型，
+/// rebase 时删掉这里、改用那边的。
+final class FushiComputeUnavailableError extends StateError {
+  FushiComputeUnavailableError(super.message);
+}
+
+/// fushi_compute 的加密域（AES / AACS）。
+///
+/// 原生库是硬依赖：库或本域符号缺失时 [instance] 抛 [FushiComputeUnavailableError]，
+/// 没有 Dart 回退。
+/// 数据经本 isolate 一块复用的原生暂存区进出（拷入 → 原地解 → 拷出，一次 memcpy 往返，
+/// 实测相对 AES 可忽略）：`TypedData.address` 零拷贝只对 `@Native` 静态绑定可用，而本包
+/// 按路径动态加载。单次调用处理一个 relay 块（32 单元）或一个 HLS 分片。
+final class FushiComputeCrypto {
+  FushiComputeCrypto._(FushiCompute lib)
+    : _aacsOpen = lib.library.lookupFunction<_AacsOpenC, _AacsOpenDart>(
+        'ffc_crypto_aacs_open',
+      ),
+      _aacsClose = NativeFinalizer(
+        lib.library
+            .lookup<NativeFunction<_AacsCloseC>>('ffc_crypto_aacs_close')
+            .cast(),
+      ),
+      _aacsDecrypt = lib.library
+          .lookupFunction<_AacsDecryptC, _AacsDecryptDart>(
+            'ffc_crypto_aacs_decrypt_units',
+            isLeaf: true,
+          ),
+      _ecbDecrypt = lib.library.lookupFunction<_EcbDecryptC, _EcbDecryptDart>(
+        'ffc_crypto_aes128_ecb_decrypt',
+        isLeaf: true,
+      ),
+      _cbcPkcs7 = lib.library.lookupFunction<_CbcPkcs7C, _CbcPkcs7Dart>(
+        'ffc_crypto_aes_cbc_pkcs7_decrypt',
+        isLeaf: true,
+      );
+
+  final _AacsOpenDart _aacsOpen;
+  final NativeFinalizer _aacsClose;
+  final _AacsDecryptDart _aacsDecrypt;
+  final _EcbDecryptDart _ecbDecrypt;
+  final _CbcPkcs7Dart _cbcPkcs7;
+
+  // 本 isolate 的原生暂存区（只增不减，随 isolate 存活；调用全是同步的，不会并发复用）。
+  Pointer<Uint8> _scratch = nullptr;
+  int _scratchLength = 0;
+  final Pointer<Size> _outLen = malloc<Size>();
+  final Pointer<Uint8> _keyBuf = malloc<Uint8>(32);
+  final Pointer<Uint8> _ivBuf = malloc<Uint8>(16);
+
+  Pointer<Uint8> _scratchFor(int length) {
+    if (length > _scratchLength) {
+      if (_scratch != nullptr) malloc.free(_scratch);
+      _scratch = malloc<Uint8>(length);
+      _scratchLength = length;
+    }
+    return _scratch;
+  }
+
+  static FushiComputeCrypto? _instance;
+
+  /// 本 isolate 的加密域绑定（首次访问时 lookup）。
+  static FushiComputeCrypto get instance => _instance ??= _load();
+
+  static FushiComputeCrypto _load() {
+    final FushiCompute? lib = FushiCompute.instance;
+    if (lib == null) {
+      throw FushiComputeUnavailableError(
+        'fushi_compute native library is not loadable '
+        '(${FushiCompute.defaultLibraryName()}; set $kFushiComputeLibEnv)',
+      );
+    }
+    for (final String symbol in const <String>[
+      'ffc_crypto_aacs_open',
+      'ffc_crypto_aacs_close',
+      'ffc_crypto_aacs_decrypt_units',
+      'ffc_crypto_aes128_ecb_decrypt',
+      'ffc_crypto_aes_cbc_pkcs7_decrypt',
+    ]) {
+      if (!lib.providesSymbol(symbol)) {
+        throw FushiComputeUnavailableError(
+          'fushi_compute at ${lib.libraryPath} lacks $symbol (stale build)',
+        );
+      }
+    }
+    return FushiComputeCrypto._(lib);
+  }
+
+  /// AES-128 ECB 原地解 [data]（长度须为 16 的倍数）。
+  void aes128EcbDecryptInPlace(Uint8List key, Uint8List data) {
+    if (key.length != 16) {
+      throw ArgumentError.value(key.length, 'key', 'AES-128 needs 16 bytes');
+    }
+    if (data.length % 16 != 0) {
+      throw ArgumentError.value(data.length, 'data', 'not a multiple of 16');
+    }
+    if (data.isEmpty) return;
+    _keyBuf.asTypedList(16).setAll(0, key);
+    final Pointer<Uint8> buf = _scratchFor(data.length);
+    final Uint8List view = buf.asTypedList(data.length)..setAll(0, data);
+    final int code = _ecbDecrypt(_keyBuf, buf, data.length);
+    _keyBuf.asTypedList(32).fillRange(0, 32, 0);
+    if (code != FfcStatus.ok) {
+      throw StateError('ffc_crypto_aes128_ecb_decrypt: $code');
+    }
+    data.setAll(0, view);
+  }
+
+  /// AES-CBC + PKCS7 解密 [data]（key 16 / 24 / 32 字节，[iv] 16 字节）。
+  ///
+  /// 异常形态与原 pointycastle `PaddedBlockCipherImpl` 一致：长度不是块长整数倍、
+  /// key / IV 长度非法、填充非法都抛 [ArgumentError]。
+  Uint8List aesCbcPkcs7Decrypt(Uint8List data, Uint8List key, Uint8List iv) {
+    if (key.length != 16 && key.length != 24 && key.length != 32) {
+      throw ArgumentError('Key length not 128/192/256 bits.');
+    }
+    if (iv.length != 16) {
+      throw ArgumentError(
+        'Initialization vector must be the same length as block size',
+      );
+    }
+    // 空输入：pointycastle 在这里抛的是 RangeError（它自己的越界 bug），这里统一成
+    // ArgumentError；两者对调用方都是「这个分片解不了」。
+    if (data.isEmpty || data.length % 16 != 0) {
+      throw ArgumentError(
+        "Input data length must be a multiple of cipher's block size",
+      );
+    }
+    _keyBuf.asTypedList(key.length).setAll(0, key);
+    _ivBuf.asTypedList(16).setAll(0, iv);
+    final Pointer<Uint8> buf = _scratchFor(data.length);
+    final Uint8List view = buf.asTypedList(data.length)..setAll(0, data);
+    final int code = _cbcPkcs7(
+      _keyBuf,
+      key.length,
+      _ivBuf,
+      buf,
+      data.length,
+      _outLen,
+    );
+    _keyBuf.asTypedList(32).fillRange(0, 32, 0);
+    if (code == FfcStatus.badInput) {
+      throw ArgumentError('Invalid or corrupted pad block');
+    }
+    if (code != FfcStatus.ok) {
+      throw StateError('ffc_crypto_aes_cbc_pkcs7_decrypt: $code');
+    }
+    return Uint8List.fromList(Uint8List.sublistView(view, 0, _outLen.value));
+  }
+
+  /// 建一个 AACS 内容解码器（每个 unit key 16 字节，至少一个）。
+  AacsNativeDecoder openAacs(List<Uint8List> unitKeys) {
+    if (unitKeys.isEmpty) {
+      throw ArgumentError.value(unitKeys, 'unitKeys', 'empty');
+    }
+    final Uint8List packed = Uint8List(unitKeys.length * 16);
+    for (int i = 0; i < unitKeys.length; i++) {
+      if (unitKeys[i].length != 16) {
+        throw ArgumentError.value(unitKeys[i].length, 'unitKeys[$i]');
+      }
+      packed.setAll(i * 16, unitKeys[i]);
+    }
+    final Pointer<Uint8> keys = malloc<Uint8>(packed.length);
+    final Pointer<Pointer<Void>> handle = calloc<Pointer<Void>>();
+    try {
+      keys.asTypedList(packed.length).setAll(0, packed);
+      final int code = _aacsOpen(keys, unitKeys.length, handle);
+      if (code != FfcStatus.ok) throw StateError('ffc_crypto_aacs_open: $code');
+      return AacsNativeDecoder._(this, handle.value);
+    } finally {
+      keys.asTypedList(packed.length).fillRange(0, packed.length, 0);
+      packed.fillRange(0, packed.length, 0);
+      malloc.free(keys);
+      calloc.free(handle);
+    }
+  }
+}
+
+/// [AacsNativeDecoder.decryptUnits] 的结果。
+final class AacsUnitsResult {
+  const AacsUnitsResult(this.status, this.unitsDone);
+
+  /// [FfcStatus.ok] 或 [FfcCryptoStatus] 的错误码。
+  final int status;
+
+  /// 成功解完的单元数；失败时等于失败单元的下标（该单元及其后保持原样）。
+  final int unitsDone;
+
+  bool get ok => status == FfcStatus.ok;
+}
+
+/// 原生侧持有 unit key 与「上次命中的 key」的 AACS 解码器。随 Dart 对象回收释放。
+final class AacsNativeDecoder implements Finalizable {
+  AacsNativeDecoder._(this._crypto, this._handle) : _done = malloc<Size>() {
+    _crypto._aacsClose.attach(this, _handle, detach: this);
+    _doneFinalizer.attach(this, _done.cast(), detach: this);
+  }
+
+  static final NativeFinalizer _doneFinalizer = NativeFinalizer(
+    malloc.nativeFree,
+  );
+
+  final FushiComputeCrypto _crypto;
+  final Pointer<Void> _handle;
+  final Pointer<Size> _done;
+
+  /// 单元长度。
+  static const int unitLength = 6144;
+
+  /// 原地解 [units]（长度须为 6144 的正整数倍），一次 FFI 调用处理全部单元。
+  AacsUnitsResult decryptUnits(Uint8List units) {
+    if (units.isEmpty || units.length % unitLength != 0) {
+      throw ArgumentError.value(units.length, 'units', 'not whole AACS units');
+    }
+    final Pointer<Uint8> buf = _crypto._scratchFor(units.length);
+    final Uint8List view = buf.asTypedList(units.length)..setAll(0, units);
+    final int code = _crypto._aacsDecrypt(_handle, buf, units.length, _done);
+    if (code != FfcStatus.ok &&
+        code != FfcCryptoStatus.aacsClearUnitInvalid &&
+        code != FfcCryptoStatus.aacsNoMatchingKey) {
+      throw StateError('ffc_crypto_aacs_decrypt_units: $code');
+    }
+    final int done = _done.value;
+    // 只拷回成功的单元：失败单元及其后保持调用方原样。
+    if (done > 0) units.setRange(0, done * unitLength, view);
+    return AacsUnitsResult(code, done);
+  }
+}

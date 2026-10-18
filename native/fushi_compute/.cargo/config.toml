@@ -1,0 +1,6 @@
+# aes 0.8 在 aarch64 上要 `--cfg aes_armv8` 才用 ARMv8 AES 指令（Linux / Android / Apple
+# 运行时检测），否则退回软件实现（结果相同，慢数倍）。cargo 按**工作目录**找本文件：
+# 在 native/fushi_compute 下构建才生效；从别处构建（iOS 伞形库）或设了 RUSTFLAGS 环境
+# 变量时要自行带上同一个 cfg。
+[target.'cfg(target_arch = "aarch64")']
+rustflags = ["--cfg", "aes_armv8"]

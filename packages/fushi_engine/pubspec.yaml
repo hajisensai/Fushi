@@ -33,6 +33,9 @@ dependencies:
   # Fushi SRS 纯 Dart 内核（含 native/fushi_fsrs 的 FFI，原生库缺失时排程能力判不可用）。
   fushi_srs:
     path: ../fushi_srs
+  # Rust 计算内核（native/fushi_compute）的 FFI 绑定：AACS 内容解密走它（硬依赖）。
+  fushi_compute:
+    path: ../fushi_compute
   # 与 fushi/pubspec.yaml 钉同一 sha（OCR 与 ASR 共用 OnnxSessionFactory 抽象）。
   fushi_asr_core:
     git:

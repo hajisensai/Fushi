@@ -254,11 +254,8 @@ final class AacsStreamRelay {
           ((end - position) ~/ unitLength + 1) * unitLength,
         );
         final Uint8List chunk = await _readExactly(input, chunkLength);
-        for (int offset = 0; offset < chunkLength; offset += unitLength) {
-          decoder.decryptUnit(
-            Uint8List.sublistView(chunk, offset, offset + unitLength),
-          );
-        }
+        // One native call per chunk (fushi_compute), not one per unit.
+        decoder.decryptUnits(chunk);
         yield Uint8List.sublistView(
           chunk,
           max(0, start - position),
