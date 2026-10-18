@@ -51,5 +51,10 @@ import 'package:fushi_compute/fushi_compute.dart';
 /// **故意不同**的实现——那边把标签替换成**空格**再统一折叠（Anki 字段 HTML 里
 /// `<br>` / 块级标签承担换行分词，直接删空会把相邻词粘连）；而字幕行内标签
 /// 紧贴正文，替换成空格反而会在日文句中引入假空格。两份实现不强并。
-String stripHtmlTags(String text) =>
-    SubtitleParseNative.instance.stripHtmlTags(text);
+///
+/// 没有 `<` 的行（逐行调用里的绝大多数，如 LRC 去掉时间标签后的正文）两条规则都不可能
+/// 命中，结果就是 `trim()`：直接返回，不为它跨一次 FFI（每行 ~1 µs 的固定开销比旧正则
+/// 的不命中路径还贵）。
+String stripHtmlTags(String text) => text.contains('<')
+    ? SubtitleParseNative.instance.stripHtmlTags(text)
+    : text.trim();

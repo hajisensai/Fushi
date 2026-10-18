@@ -184,4 +184,62 @@ void main() {
     AudioTextNormalizer.appendNormalized(buf, 'ＵＰ');
     expect(buf.toString(), 'xあいup');
   });
+
+  test('normalizeConcat 等价于逐段 appendNormalized，段起点按段前总长', () {
+    final List<String> pieces = <String>[
+      'アイ、',
+      '',
+      '。',
+      'ＵＰ',
+      // 相邻段首尾的孤立代理不能拼成一个代理对（逐段 runes 解码的口径）。
+      String.fromCharCodes(<int>[0x6F22, 0xD842]),
+      String.fromCharCodes(<int>[0xDFB7, 0x5B57]),
+      '𠮷',
+      '',
+    ];
+    final StringBuffer buf = StringBuffer();
+    final List<int> starts = <int>[];
+    for (final String p in pieces) {
+      starts.add(buf.length);
+      AudioTextNormalizer.appendNormalized(buf, p);
+    }
+    final ({String text, List<int> starts}) joined =
+        AudioTextNormalizer.normalizeConcat(pieces);
+    expect(joined.text, buf.toString());
+    expect(joined.text, 'あいup漢字𠮷');
+    expect(joined.starts, starts);
+    expect(AudioTextNormalizer.normalizeConcat(<String>[]).text, '');
+    expect(AudioTextNormalizer.normalizeConcat(<String>['', '']).starts, <int>[
+      0,
+      0,
+    ]);
+    // 固定种子的随机段：与逐段拼接逐码元一致。
+    int seed = 20261019;
+    const String alphabet = 'ア、aZ１ｶﾞ漢 。\u0301';
+    for (int round = 0; round < 300; round++) {
+      final List<String> ps = <String>[
+        for (int k = 0; k < round % 7; k++)
+          String.fromCharCodes(<int>[
+            for (int i = 0; i < (k * 5 + round) % 9; i++)
+              () {
+                seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+                final int r = seed % (alphabet.length + 3);
+                return r < alphabet.length
+                    ? alphabet.codeUnitAt(r)
+                    : <int>[0xD842, 0xDFB7, 0xDC00][r - alphabet.length];
+              }(),
+          ]),
+      ];
+      final StringBuffer b = StringBuffer();
+      final List<int> st = <int>[];
+      for (final String p in ps) {
+        st.add(b.length);
+        AudioTextNormalizer.appendNormalized(b, p);
+      }
+      final ({String text, List<int> starts}) j =
+          AudioTextNormalizer.normalizeConcat(ps);
+      expect(j.text, b.toString(), reason: '$ps');
+      expect(j.starts, st, reason: '$ps');
+    }
+  });
 }

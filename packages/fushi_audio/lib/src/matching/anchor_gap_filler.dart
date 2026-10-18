@@ -127,13 +127,12 @@ class AnchorGapFiller {
   }) {
     if (cues.isEmpty || result.matches.length != cues.length) return result;
     // 与 EpubSrtMatcher._buildIndex 同一口径：逐节归一化拼接。
-    final StringBuffer buf = StringBuffer();
-    final List<int> sectionStarts = <int>[];
-    for (final EpubSection s in sections) {
-      sectionStarts.add(buf.length);
-      AudioTextNormalizer.appendNormalized(buf, s.text);
-    }
-    final String big = buf.toString();
+    final ({String text, List<int> starts}) joined =
+        AudioTextNormalizer.normalizeConcat(<String>[
+          for (final EpubSection s in sections) s.text,
+        ]);
+    final List<int> sectionStarts = joined.starts;
+    final String big = joined.text;
     if (big.isEmpty) return result;
 
     final _Ctx c = _Ctx(
