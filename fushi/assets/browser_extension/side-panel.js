@@ -858,7 +858,8 @@
     return new Promise(function (resolve) {
       if (!Number.isInteger(currentTabId)) return resolve(null);
       try {
-        chrome.tabs.sendMessage(currentTabId, message, function (response) {
+        // 只问顶层 frame：内嵌 UI frame（asbplayer 对话框，按需注入）里没有视频，抢答会把列表清空。
+        chrome.tabs.sendMessage(currentTabId, message, { frameId: 0 }, function (response) {
           try { if (chrome.runtime.lastError) return resolve(null); } catch (_) { return resolve(null); }
           resolve(response || null);
         });

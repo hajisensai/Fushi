@@ -67,25 +67,35 @@
     try {
       if (track && (track.isNoneTrack || track.isForcedNarrative)) return; // 跳过 [None]/强制窄轨
       var picked = pickTrackUrl(track);
-      if (!picked || seenTimedTextUrls[picked.url]) return;
+      if (!picked) return;
+      fetchTimedText(videoId, { lang: langOf(track), trackId: trackIdOf(track), label: trackLabelOf(track) }, picked.url, picked.format);
+    } catch (_) {}
+  }
+
+  // 整轨下载（清单通道与播放器状态通道共用）。formatHint 缺省时按正文开头判格式，判不出按 TTML
+  //（播放器状态里的下载地址是 IMSC 1.1，asbplayer 记作 nfimsc）。
+  function fetchTimedText(videoId, meta, url, formatHint) {
+    try {
+      if (!url || seenTimedTextUrls[url]) return;
       // BUG-1728：去重标记先占坑防并发清单重复抓取，但失败必须在 .catch 里撤销——旧代码把
       // 标记写死在 fetch 前且失败纯静默，一次网络/CORS 失败 = 该 URL 本页永不重试，用户只剩
       // DOM 实时采集轨，还完全不知道整轨链路挂了。
-      seenTimedTextUrls[picked.url] = 1;
-      var lang = langOf(track);
-      var trackId = trackIdOf(track);
-      var label = trackLabelOf(track);
+      seenTimedTextUrls[url] = 1;
+      var lang = meta.lang;
+      var trackId = meta.trackId;
+      var label = meta.label;
       // BUG-1728：裸 fetch、**不带 credentials**。字幕在跨源 CDN（*.oca.nflxvideo.net），
       // credentials:'include' 要求响应 ACAO 是精确 origin；CDN 回 `*` 时整个请求被 CORS 拒掉
       // → 整轨抓取静默失败。字幕 URL 自带鉴权参数、不需要 cookie（asbplayer 同款裸 fetch）。
-      fetch(picked.url)
+      fetch(url)
         .then(function (r) {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.text();
         })
         .then(function (text) {
           if (!text) return;
-          var payload = { __fushiNf: 'cues', videoId: videoId, lang: lang, trackId: trackId, label: label, format: picked.format, text: text };
+          var format = formatHint || subtitleFormatOf(text) || 'ttml';
+          var payload = { __fushiNf: 'cues', videoId: videoId, lang: lang, trackId: trackId, label: label, format: format, text: text };
           cueArchive.push(payload);
           if (cueArchive.length > CUE_ARCHIVE_MAX) cueArchive.shift();
           postCuesMessage(payload);
@@ -93,8 +103,8 @@
         .catch(function (e) {
           // 撤去重标记：切轨/切集清单重放时同一 URL 可重试。保持 best-effort 不外抛，
           // 只留一条诊断（旧代码零日志，用户端无从判断整轨为何消失）。
-          delete seenTimedTextUrls[picked.url];
-          try { console.warn('[Fushi][TODO-1219] timedtext fetch failed:', picked.url, e); } catch (_) {}
+          delete seenTimedTextUrls[url];
+          try { console.warn('[Fushi][TODO-1219] timedtext fetch failed:', url, e); } catch (_) {}
           postCuesFailed(videoId, lang, trackId, e && e.message ? e.message : e);
         });
     } catch (_) {}
@@ -253,6 +263,165 @@
     };
   }
 
+  // ── 播放器状态通道（2026-10 起的主数据源） ──
+  // 清单钩子（MSL 不经主世界 JSON.parse）和正文嗅探（播放器的字幕下载不再经主世界 XHR/fetch 原型）
+  // 实测都零命中，菜单里只剩「这个视频还没有字幕轨」；同页 asbplayer 照常拿到轨。它现在的做法是：
+  // 轨清单取播放器 API getTimedTextTrackList()，下载地址从正片会话的播放器状态里按**结构**找
+  // （type==='timedtext' 且带 urls[] 的对象，不依赖混淆后的属性路径）。这里同判据：
+  //   · 全部文字轨先作「待加载」占位投给隔离世界（{__fushiNf:'tracks'}），菜单 / 侧边栏立刻能列出；
+  //   · 状态里已有地址的轨（当前显示的那条，或用户在网飞里切过的）直接整轨下载；
+  //   · 用户选中仍无地址的占位轨（{__fushiNf:'fetchTrack'}）→ 临时把网飞字幕切到那条让播放器下发
+  //     地址，拿到后切回原轨（asbplayer fetchDataForLanguage 同款）。
+  function nfWatchSessionId() {
+    try {
+      var vp = window.netflix.appContext.state.playerApp.getAPI().videoPlayer;
+      var ids = vp.getAllPlayerSessionIds() || [];
+      for (var i = ids.length - 1; i >= 0; i--) {
+        if (String(ids[i]).indexOf('watch') === 0) return String(ids[i]);
+      }
+    } catch (_) {}
+    return null;
+  }
+  // 会话状态里 trackId → 下载地址。时序上 timedtext 对象在会话根下约 12 层，深度 20 封顶留余量。
+  function stateTimedTextUrls(sessionId) {
+    var urls = Object.create(null);
+    var root = null;
+    try {
+      root = window.netflix.appContext.state.playerApp.getState().videoPlayer
+        .cadmiumPlayerRepository.playersById[sessionId];
+    } catch (_) { root = null; }
+    if (!root || typeof root !== 'object') return urls;
+    var seen = typeof WeakSet === 'function' ? new WeakSet() : null;
+    var seenList = seen ? null : [];
+    var stack = [{ node: root, depth: 0 }];
+    while (stack.length) {
+      var top = stack.pop();
+      var node = top.node;
+      if (node === null || typeof node !== 'object' || top.depth > 20) continue;
+      if (seen) { if (seen.has(node)) continue; seen.add(node); }
+      else { if (seenList.indexOf(node) >= 0) continue; seenList.push(node); }
+      if ((typeof ArrayBuffer !== 'undefined') && (node instanceof ArrayBuffer || ArrayBuffer.isView(node))) continue;
+      try {
+        if (node.type === 'timedtext' && typeof node.trackId === 'string' && Array.isArray(node.urls) &&
+            node.urls.length && node.urls[0] && typeof node.urls[0].url === 'string' && !urls[node.trackId]) {
+          urls[node.trackId] = node.urls[0].url;
+        }
+      } catch (_) {}
+      var keys;
+      try { keys = Array.isArray(node) ? null : Object.keys(node); } catch (_) { continue; }
+      var n = keys ? keys.length : node.length;
+      for (var i = 0; i < n; i++) {
+        var v;
+        try { v = keys ? node[keys[i]] : node[i]; } catch (_) { continue; }
+        if (v !== null && typeof v === 'object') stack.push({ node: v, depth: top.depth + 1 });
+      }
+    }
+    return urls;
+  }
+  // 可读文字轨（跳过「关」、强制窄轨与图片字幕——后者解析不出文字）。
+  function textTrackMetaOf(t) {
+    if (!t || t.isNoneTrack || t.isForcedNarrative || t.isImageBased) return null;
+    var lang = t.bcp47 || t.language;
+    if (!lang) return null;
+    return { lang: String(lang), trackId: String(t.trackId || ''), label: String(t.displayName || '') };
+  }
+  function textTracksOf(p) {
+    var out = [];
+    var list = null;
+    try { list = p && p.getTimedTextTrackList ? p.getTimedTextTrackList() : null; } catch (_) { list = null; }
+    if (!list || !list.length) return out;
+    for (var i = 0; i < list.length; i++) {
+      var meta = textTrackMetaOf(list[i]);
+      if (meta && meta.trackId) out.push({ meta: meta, track: list[i] });
+    }
+    return out;
+  }
+  var lastTracksPayload = null;
+  var lastTracksSig = '';
+  var stateWalkBurst = 0; // 轨清单 / 当前轨变化后接连几拍都扫状态（地址常比切轨晚到）
+  var stateTicks = 0;
+  function harvestPlayerState() {
+    try {
+      var videoId = currentVideoId();
+      if (!videoId) return;
+      var sid = nfWatchSessionId();
+      if (!sid) return;
+      var p = nfPlayer();
+      var tracks = textTracksOf(p);
+      if (!tracks.length) return;
+      var active = currentTextTrack().trackId;
+      var sig = videoId + '|' + active + '|' + tracks.map(function (t) { return t.meta.trackId; }).join(',');
+      if (sig !== lastTracksSig) {
+        lastTracksSig = sig;
+        stateWalkBurst = 5;
+        lastTracksPayload = { __fushiNf: 'tracks', videoId: videoId, tracks: tracks.map(function (t) { return t.meta; }) };
+        postCuesMessage(lastTracksPayload);
+      }
+      stateTicks++;
+      if (stateWalkBurst > 0) stateWalkBurst--;
+      else if (stateTicks % 8 !== 0) return; // 平时约 16 s 才扫一次，不每拍遍历整棵状态
+      var urls = stateTimedTextUrls(sid);
+      for (var i = 0; i < tracks.length; i++) {
+        var url = urls[tracks[i].meta.trackId];
+        if (url) fetchTimedText(videoId, tracks[i].meta, url, null);
+      }
+    } catch (_) {}
+  }
+  if (typeof setInterval === 'function') {
+    try { setInterval(harvestPlayerState, 2000); } catch (_) {}
+  }
+
+  // 按需取一条还没有地址的轨。串行：同时切两条轨会互相把对方切回去。
+  var fetchTrackChain = null;
+  function nfFetchTrack(trackId) {
+    var videoId = currentVideoId();
+    var p = nfPlayer();
+    var sid = nfWatchSessionId();
+    var tracks = textTracksOf(p);
+    var hit = null;
+    for (var i = 0; i < tracks.length; i++) if (tracks[i].meta.trackId === trackId) hit = tracks[i];
+    if (!p || !sid || !hit) {
+      postCuesFailed(videoId, hit ? hit.meta.lang : 'und', trackId, 'track not found');
+      return Promise.resolve();
+    }
+    var known = stateTimedTextUrls(sid)[trackId];
+    if (known) {
+      // 地址已在（之前取过），去重标记可能还在：撤掉让这次真下载一遍。
+      delete seenTimedTextUrls[known];
+      fetchTimedText(videoId, hit.meta, known, null);
+      return Promise.resolve();
+    }
+    var prev = null;
+    try { prev = p.getTimedTextTrack(); } catch (_) { prev = null; }
+    function revert() {
+      if (!prev) return Promise.resolve();
+      try { return Promise.resolve(p.setTimedTextTrack(prev)).catch(function () {}); } catch (_) { return Promise.resolve(); }
+    }
+    return Promise.resolve()
+      .then(function () { return p.setTimedTextTrack(hit.track); })
+      .then(function () {
+        // 轮询地址（计次封顶而不是按墙钟：40 × 250 ms ≈ 10 s）。
+        return new Promise(function (resolve) {
+          var tries = 0;
+          (function poll() {
+            var url = stateTimedTextUrls(sid)[trackId];
+            if (url || ++tries >= 40) { resolve(url || null); return; }
+            setTimeout(poll, 250);
+          })();
+        });
+      })
+      .then(function (url) {
+        return revert().then(function () {
+          if (url) fetchTimedText(videoId, hit.meta, url, null);
+          else postCuesFailed(videoId, hit.meta.lang, trackId, 'timedtext url never appeared');
+        });
+      }, function (e) {
+        return revert().then(function () {
+          postCuesFailed(videoId, hit.meta.lang, trackId, e && e.message ? e.message : e);
+        });
+      });
+  }
+
   // TODO-1217：player.seek(ms) **返回 ≠ 视频真正重定位完成**。若调完就立刻回 seekDone，content 侧
   // seekTo 会在 Netflix 实际跳转**前**就 resolve → 先 play/录、Netflix 随后才跳 → 用户看到「跳过去又
   // 秒挑回来」的二次跳动。故这里 seek 后轮询 getCurrentTime 逼近目标 ms 再回 seekDone（带超时兜底，
@@ -279,7 +448,17 @@
     if (!d) return;
     if (d.__fushiNf === 'replayCues') {
       // content.js（隔离世界）接收端就绪：重放全部已存档 cue，消除注入时序竞态。
+      if (lastTracksPayload) postCuesMessage(lastTracksPayload);
       for (var i = 0; i < cueArchive.length; i++) postCuesMessage(cueArchive[i]);
+      return;
+    }
+    if (d.__fushiNf === 'fetchTrack') {
+      var trackId = String(d.trackId || '');
+      if (!trackId) return;
+      var prevChain = fetchTrackChain || Promise.resolve();
+      var next = prevChain.catch(function () {}).then(function () { return nfFetchTrack(trackId); });
+      fetchTrackChain = next;
+      next.catch(function () {}).then(function () { if (fetchTrackChain === next) fetchTrackChain = null; });
       return;
     }
     if (d.__fushiNf !== 'seek') return;
