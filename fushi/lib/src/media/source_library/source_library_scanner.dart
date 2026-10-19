@@ -58,6 +58,7 @@ import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
+import 'package:fushi_engine/media/manga/manga_archive_probe.dart';
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart'
@@ -76,6 +77,7 @@ import 'package:fushi/src/media/source_library/sftp_stream_source.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
+import 'package:fushi_engine/media/source_library/book_library_prune.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath, sourceEntryBasename;
@@ -298,6 +300,139 @@ class _MangaVolumeTally {
           '$stack');
     }
   }
+}
+
+/// 一次漫画来源扫描的**卷身份**上下文：来源扫描索引（源相对路径 → 书 uid，外加
+/// 「不是漫画」的负向表）+ 本轮在场的源 + 远端条目元数据。
+///
+/// 与无头服务端同一张索引、同一个偏好键（`media_source_scan_index_<sourceId>`，引擎
+/// [BookSourceIndex]），同一个重复判据（[isDuplicateSourceBook]）。
+class _MangaSourceIdentity {
+  _MangaSourceIdentity._({
+    required this.db,
+    required this.sourceId,
+    required this.rootPath,
+    required this.isLocal,
+    required this.index,
+    required Map<String, SourceFileEntry> entryByPath,
+  }) : _entryByPath = entryByPath;
+
+  /// 读索引、丢掉指向已不在库的书的条目，并按本轮计划算出在场的源。
+  static Future<_MangaSourceIdentity> load({
+    required FushiDatabase db,
+    required SourceLibraryRow source,
+    required bool isLocal,
+    required ScanPlan plan,
+    required List<SourceFileEntry> entries,
+  }) async {
+    final BookSourceIndex index = await BookSourceIndex.load(db, source.id);
+    index.retainUids(<String>{
+      for (final BookSourceRow row in await loadBookSourceRows(db))
+        if (row.uid.isNotEmpty) row.uid,
+    });
+    final _MangaSourceIdentity identity = _MangaSourceIdentity._(
+      db: db,
+      sourceId: source.id,
+      rootPath: source.rootPath,
+      isLocal: isLocal,
+      index: index,
+      entryByPath: <String, SourceFileEntry>{
+        for (final SourceFileEntry entry in entries)
+          if (!entry.isDirectory) entry.path: entry,
+      },
+    );
+    identity.present.addAll(<String>[
+      for (final ScanMangaItem item in plan.mangas)
+        identity.relOf(item.mokuroPath),
+      for (final ScanMangaArchiveItem item in plan.mangaArchives)
+        identity.relOf(item.archivePath),
+      for (final ScanMangaFolderItem item in plan.mangaFolders)
+        identity.relOf(item.folderPath),
+    ]);
+    // 文件删了 / 改名了，旧的「不是漫画」结论随之作废。
+    index.retainRejected(identity.present);
+    return identity;
+  }
+
+  final FushiDatabase db;
+  final int sourceId;
+  final String rootPath;
+  final bool isLocal;
+  final BookSourceIndex index;
+  final Map<String, SourceFileEntry> _entryByPath;
+
+  /// 本轮计划里的全部卷（索引键形态）。
+  final Set<String> present = <String>{};
+
+  /// 卷路径的索引键：本地按宿主路径语义，远端（正斜杠路径 / `https://` href）按
+  /// [p.url]——与 [planScanFromFileList] 归卷时用的路径语义一致。
+  String relOf(String path) => isLocal
+      ? bookSourceRelPath(rootPath, path)
+      : p.url.relative(p.url.normalize(path), from: p.url.normalize(rootPath));
+
+  /// 卷 [path] 的内容指纹：本地现场 stat（字节数 + 修改时刻），远端取列目录给的
+  /// 元数据（ETag / 大小 / 修改时刻）。拿不到时为 null，负向表就不缓存它。
+  String? fingerprintOf(String path) => isLocal
+      ? localSourceContentFingerprint(path)
+      : _entryByPath[path]?.contentFingerprint;
+
+  bool isIndexed(String path) => index.uidOf(relOf(path)) != null;
+
+  bool isRejected(String path) =>
+      index.isRejected(relOf(path), fingerprintOf(path));
+
+  void reject(String path) => index.reject(relOf(path), fingerprintOf(path));
+
+  /// 卷 [path]（拟用标题 [title]）该用的重复处理策略；null = 不导入。
+  ///
+  /// 标题没被占 → [DuplicatePolicy.skip]（与导入器的判定是同一件事，万一并发撞上
+  /// 仍按重复跳过）；被本来源另一个在场的文件占着 → [DuplicatePolicy.suffix]；是本
+  /// 来源自己的旧行 → 认领后返回 null；被手动导入 / 别的来源的书占着 → null。
+  Future<DuplicatePolicy?> policyFor(String path, String title) async {
+    final String rel = relOf(path);
+    final SourceDuplicateVerdict verdict = await isDuplicateSourceBook(
+      db: db,
+      index: index,
+      sourceId: sourceId,
+      rel: rel,
+      proposedTitle: title,
+      format: BookFormat.manga,
+      presentRels: present,
+      // app 的来源扫描从来都写 sourceId：无来源的同名行是手动导入的书。
+      claimUnsourcedRows: false,
+    );
+    switch (verdict.kind) {
+      case SourceDuplicateKind.none:
+        return const DuplicatePolicy.skip();
+      case SourceDuplicateKind.otherSourceFile:
+        return const DuplicatePolicy.suffix();
+      case SourceDuplicateKind.sameSource:
+        final String? uid = await adoptExistingBookForSource(
+          db: db,
+          sourceId: sourceId,
+          proposedTitle: title,
+          format: BookFormat.manga,
+        );
+        if (uid != null) index.put(rel, uid);
+        debugPrint('SourceLibraryScanner manga already imported: $title ($path)');
+        return null;
+      case SourceDuplicateKind.foreign:
+        debugPrint('SourceLibraryScanner skip duplicate manga $title ($path)');
+        return null;
+    }
+  }
+
+  /// 卷 [path] 导入成了书 [bookKey]：登记进索引。
+  Future<void> record(String path, String bookKey) async {
+    final String? uid = await bookUidForKey(db, bookKey);
+    if (uid != null) index.put(relOf(path), uid);
+  }
+}
+
+/// `.mokuro` 顶层对象（不是对象时为空表），供 [MangaImporter.deriveMokuroTitle]。
+Map<String, Object?> _decodeMokuroRoot(String json) {
+  final Object? raw = jsonDecode(json);
+  return raw is Map ? raw.cast<String, Object?>() : <String, Object?>{};
 }
 
 /// One pending pure-image manga folder scanned from a local manga source.
@@ -849,7 +984,7 @@ class SourceLibraryScanner {
           }
         case SourceLibraryKind.manga:
           final _MangaVolumeTally manga =
-              await _importManga(plan, source.id, files);
+              await _importManga(plan, source, files, entries);
           mediaCount = manga.imported;
           // 与视频分支同语义（BUG-2570）：部分卷失败不作废整批。
           if (manga.failedPaths.isNotEmpty) {
@@ -1044,162 +1179,31 @@ class SourceLibraryScanner {
     }
   }
 
-  /// Imports every `.mokuro` or local pure-image manga volume in the plan;
-  /// returns the count newly inserted.
+  /// 漫画来源扫描：逐卷导入 `.mokuro` 卷、单文件卷与纯页图卷，返回逐卷结局。
   ///
-  /// 纯页图目录标题固定取目录名，和 mokuro 一样可稳定重推净化后的标题身份 key；
-  /// 两条路径都显式传 [DuplicatePolicy.skip]，重扫不会生成 `X (2)`。
+  /// **重复判据 = 标题 + 来源路径**（引擎 [isDuplicateSourceBook]，与无头服务端同一
+  /// 份）。每个源在来源扫描索引（[BookSourceIndex]）里记下「源相对路径 → 书 uid」：
+  /// - 索引里已有 → 已导入，跳过（不开包、不下载）；
+  /// - 标题被本来源另一个仍在场的文件占着 → 是另一卷，按 [DuplicatePolicy.suffix]
+  ///   换名另导。此前只看标题，`系列A/Vol 1.cbz` 之后的 `系列B/Vol 1.cbz`、同目录的
+  ///   `Vol 1.pdf` 都被静默跳过；
+  /// - 标题被本来源一本没人认领的旧行占着（升级前扫进来的）→ 认领它，不再导入；
+  /// - 被手动导入 / 别的来源的书占着 → 按重复跳过（BUG-443 的「重扫不生成 `X (2)`」
+  ///   语义不变）。
   ///
-  /// BUG-443 范式（对齐 [_importBooks] / `_importVideos`）：`skipIfExists: true`
-  /// 让已导入卷（含同批同标题）抛 [DuplicateImportCancelledException]，逐卷捕获
-  /// 静默跳过（不计数、不算错误）。
+  /// 单文件卷里扩展名二义的 `.zip` / `.epub` 在后台 isolate 开包定性
+  /// （[looksLikeImageArchiveInBackground]）；判「不是漫画」的连同内容指纹记进索引的
+  /// 负向表，指纹不变就不再开包 / 下载重判。
   ///
   /// 其它导入异常（坏 JSON / 缺图 / 坏包）**逐卷**收进 [_MangaVolumeTally]，其余卷
   /// 照常入库，由 [scan] 汇总成一条 lastScanError（与视频分支 BUG-2570 同语义）。
-  /// 此前任何一卷抛错都会中止整个来源，排在它后面的卷全都不入库，界面只剩一条
-  /// 错误、看不出其余卷为什么也没了。
   ///
-  /// 网络 transport 走 [_importMangaRemote]（整卷镜像下载后仍复用本导入器）。
-  /// `.mokuro` 页图仍由导入器按 manifest 解析；纯页图目录则由
-  /// [planScanFromFileList] 先归成卷，再交给同一个落库内核。
+  /// 网络 transport 走 [_importMangaRemote]（整卷镜像下载后仍复用本地导入器）。
   Future<_MangaVolumeTally> _importManga(
     ScanPlan plan,
-    int sourceId,
+    SourceLibraryRow source,
     SourceFileSystem fs,
-  ) async {
-    if (!fs.isLocal) {
-      return _importMangaRemote(plan, sourceId, fs);
-    }
-    final _MangaVolumeTally tally = _MangaVolumeTally();
-    for (final ScanMangaItem item in plan.mangas) {
-      await tally.attempt(item.mokuroPath, () async {
-        // 标题缺省由导入器从 mokuro 顶层 title/volume 派生，再退化文件名。
-        await MangaImporter.importFromMokuroPath(
-          db: _db,
-          mokuroPath: item.mokuroPath,
-          sourceId: sourceId,
-          // 后台扫描无人值守：命中重复即抛 DuplicateImportCancelledException
-          // 由 attempt 静默跳过（与 book 分支同一态，BUG-443 语义不变）。
-          policy: const DuplicatePolicy.skip(),
-        );
-        return true;
-      });
-    }
-    // 单文件卷先按标题身份预检（与远端分支、导入器 resolveDuplicateTitle 同一个
-    // sanitizeTtuFilename 键），命中就不开包：导入器的去重判定在**解压完整包之后**
-    // 才发生（importArchive → importFromImageFolder；EPUB 还要先整本解析一次定性，
-    // PDF 要先拷进书目录），不预检的话每次重扫都把库里每一卷 zip/cbz 整包解压到
-    // 临时目录再丢掉。卷标题恒为文件名去扩展名，预检与导入器判定是同一件事。
-    final Set<String> existingTitleKeys = plan.mangaArchives.isEmpty
-        ? <String>{}
-        : (await _db.getEpubBookMetas())
-            .map((EpubBookMeta b) => sanitizeTtuFilename(b.title))
-            .toSet();
-    for (final ScanMangaArchiveItem item in plan.mangaArchives) {
-      final String title = p.basenameWithoutExtension(item.archivePath);
-      if (existingTitleKeys.contains(sanitizeTtuFilename(title))) {
-        debugPrint('SourceLibraryScanner skip duplicate manga '
-            '$title (${item.archivePath})');
-        continue;
-      }
-      await tally.attempt(item.archivePath, () async {
-        final bool imported = await _importMangaCarrierFile(
-          localPath: item.archivePath,
-          title: title,
-          sourceId: sourceId,
-        );
-        if (imported) existingTitleKeys.add(sanitizeTtuFilename(title));
-        return imported;
-      });
-    }
-    for (final ScanMangaFolderItem item in plan.mangaFolders) {
-      await tally.attempt(item.folderPath, () async {
-        await MangaImporter.importFromImageFolder(
-          db: _db,
-          imageDirPath: item.folderPath,
-          title: p.basename(item.folderPath),
-          sourceId: sourceId,
-          policy: const DuplicatePolicy.skip(),
-        );
-        return true;
-      });
-    }
-    return tally;
-  }
-
-  /// 把一个本地单文件漫画卷（[kScanMangaCarrierExtensions]）导入漫画库。
-  ///
-  /// 载体身份交给与手动导入同一份 [classifyImportCarrier] 判定，不在扫描器里另立
-  /// 规则：`.cbz` / `.rar` / `.cbr` / `.cb7` 直接是压缩包卷；`.zip` / `.epub` 开包
-  /// 确认装的是页图（[MangaArchiveImporter.looksLikeImageArchive]，词典包一票否决、
-  /// 文字 EPUB 不算）；`.pdf` 逐页栅格化成漫画（[importMangaFromPdf]）。
-  ///
-  /// 返回 false 表示「扩展名对得上但内容不是漫画」（词典 `.zip`、文字 `.epub`）：
-  /// 漫画来源里混进这种文件不算导入失败，跳过即可，与其它非漫画文件同样处理。
-  Future<bool> _importMangaCarrierFile({
-    required String localPath,
-    required String title,
-    required int sourceId,
-  }) async {
-    final ImportCarrier carrier = classifyImportCarrier(
-      localPath,
-      // 扫描规划阶段已经只收文件，目录分支不可达。
-      isDirectory: (String _) => false,
-      isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
-      directoryHasPageImages: (String _) => false,
-      directoryCarrierFileCount: (String _) => 0,
-      directoryMokuroFileCount: (String _) => 0,
-    );
-    switch (carrier) {
-      case ImportCarrier.mangaArchive:
-        await MangaArchiveImporter.importArchive(
-          db: _db,
-          archivePath: localPath,
-          title: title,
-          sourceId: sourceId,
-          policy: const DuplicatePolicy.skip(),
-          sevenZipExtractor: _mangaSevenZipExtractor,
-        );
-        return true;
-      case ImportCarrier.pdf:
-        await importMangaFromPdf(
-          db: _db,
-          pdfPath: localPath,
-          fileName: p.basename(localPath),
-          title: title,
-          sourceId: sourceId,
-          policy: const DuplicatePolicy.skip(),
-        );
-        return true;
-      case ImportCarrier.mangaFolder:
-      case ImportCarrier.mangaBatchFolder:
-      case ImportCarrier.mangaMokuro:
-      case ImportCarrier.epub:
-      case ImportCarrier.text:
-        debugPrint('SourceLibraryScanner skip non-manga file in manga source '
-            '($carrier): $localPath');
-        return false;
-    }
-  }
-
-  /// 网络漫画来源整卷下载导入。
-  ///
-  /// 一卷 mokuro 漫画 = `.mokuro` + 同级页图，体量远超一次「顺手下载」，所以先用
-  /// 远端 `.mokuro`（小文本）派生标题做**去重预检**——重扫已入库的卷零页图流量；
-  /// 未命中才把该卷页图按 payload 相对路径镜像到本地临时目录（保留子目录布局），
-  /// 交给既有 [MangaImporter.importFromMokuroPath]：导入器只吃本地路径，落库时
-  /// 仍是恒复制进书目录，产物与本地导入逐字节同构。预检与导入器用同一套身份
-  /// （[MangaImporter.deriveMokuroTitle] + [sanitizeTtuFilename]，见
-  /// resolveDuplicateTitle），不是第二套判重规则。
-  ///
-  /// 缺页 / 坏 JSON 与本地语义一致：抛 [MangaImportException] 冒泡记进
-  /// lastScanError。WebDAV 的 href 分段是百分号编码的，查表键与镜像文件名统一
-  /// 用解码后的相对路径（来源库条目路径本就是解码态，取末段用
-  /// [sourceEntryBasename]）。
-  Future<_MangaVolumeTally> _importMangaRemote(
-    ScanPlan plan,
-    int sourceId,
-    SourceFileSystem fs,
+    List<SourceFileEntry> entries,
   ) async {
     final _MangaVolumeTally tally = _MangaVolumeTally();
     if (plan.mangas.isEmpty &&
@@ -1207,65 +1211,210 @@ class SourceLibraryScanner {
         plan.mangaFolders.isEmpty) {
       return tally;
     }
-    final List<EpubBookMeta> existingBooks = await _db.getEpubBookMetas();
-    final Set<String> existingTitleKeys = existingBooks
-        .map((EpubBookMeta b) => sanitizeTtuFilename(b.title))
-        .toSet();
+    final _MangaSourceIdentity identity = await _MangaSourceIdentity.load(
+      db: _db,
+      source: source,
+      isLocal: fs.isLocal,
+      plan: plan,
+      entries: entries,
+    );
+    try {
+      if (fs.isLocal) {
+        await _importMangaLocal(plan, identity, tally);
+      } else {
+        await _importMangaRemote(plan, identity, fs, tally);
+      }
+    } finally {
+      await identity.index.save(_db);
+    }
+    return tally;
+  }
+
+  /// 本地漫画来源逐卷导入（判据见 [_importManga]）。
+  Future<void> _importMangaLocal(
+    ScanPlan plan,
+    _MangaSourceIdentity id,
+    _MangaVolumeTally tally,
+  ) async {
+    for (final ScanMangaItem item in plan.mangas) {
+      final String path = item.mokuroPath;
+      await tally.attempt(path, () async {
+        if (id.isIndexed(path)) return false;
+        // 标题与导入器同一派生（mokuro 顶层 title/volume，再退化文件名），显式传给
+        // 导入器，判据与落库用的是同一个标题。
+        final String title = MangaImporter.deriveMokuroTitle(
+          _decodeMokuroRoot(await File(path).readAsString()),
+          p.basename(path),
+        );
+        final DuplicatePolicy? policy = await id.policyFor(path, title);
+        if (policy == null) return false;
+        final String bookKey = await MangaImporter.importFromMokuroPath(
+          db: _db,
+          mokuroPath: path,
+          title: title,
+          sourceId: id.sourceId,
+          policy: policy,
+        );
+        await id.record(path, bookKey);
+        return true;
+      });
+    }
+    for (final ScanMangaArchiveItem item in plan.mangaArchives) {
+      final String path = item.archivePath;
+      await tally.attempt(path, () async {
+        // 先查索引 / 负向表 / 重复判据（都只读库），全部放行才开包：已在库的卷每次
+        // 重扫都整包解压一遍、文字 EPUB 每次整本解析一遍，正是这几步要挡掉的。
+        if (id.isIndexed(path) || id.isRejected(path)) return false;
+        final String title = p.basenameWithoutExtension(path);
+        final DuplicatePolicy? policy = await id.policyFor(path, title);
+        if (policy == null) return false;
+        final String? bookKey = await _importMangaCarrierFile(
+          localPath: path,
+          title: title,
+          sourceId: id.sourceId,
+          policy: policy,
+        );
+        if (bookKey == null) {
+          id.reject(path);
+          return false;
+        }
+        await id.record(path, bookKey);
+        return true;
+      });
+    }
+    for (final ScanMangaFolderItem item in plan.mangaFolders) {
+      final String path = item.folderPath;
+      await tally.attempt(path, () async {
+        if (id.isIndexed(path)) return false;
+        final String title = p.basename(path);
+        final DuplicatePolicy? policy = await id.policyFor(path, title);
+        if (policy == null) return false;
+        final String bookKey = await MangaImporter.importFromImageFolder(
+          db: _db,
+          imageDirPath: path,
+          title: title,
+          sourceId: id.sourceId,
+          policy: policy,
+        );
+        await id.record(path, bookKey);
+        return true;
+      });
+    }
+  }
+
+  /// 把一个本地单文件漫画卷（[kScanMangaCarrierExtensions]）导入漫画库，返回书 key。
+  ///
+  /// 载体身份交给与手动导入同一份 [classifyImportCarrier] 判定，不在扫描器里另立
+  /// 规则：`.cbz` / `.rar` / `.cbr` / `.cb7` 直接是压缩包卷；`.zip` / `.epub` 开包
+  /// 确认装的是页图（[MangaArchiveImporter.looksLikeImageArchive]，词典包一票否决、
+  /// 文字 EPUB 不算）——这一步在后台 isolate 里跑（[looksLikeImageArchiveInBackground]），
+  /// 文字 EPUB 的定性要整本解析一次，不能压在 UI isolate 上；`.pdf` 逐页栅格化成漫画
+  /// （[importMangaFromPdf]）。
+  ///
+  /// 返回 null 表示「扩展名对得上但内容不是漫画」（词典 `.zip`、文字 `.epub`）：
+  /// 漫画来源里混进这种文件不算导入失败，跳过即可，与其它非漫画文件同样处理。
+  Future<String?> _importMangaCarrierFile({
+    required String localPath,
+    required String title,
+    required int sourceId,
+    required DuplicatePolicy policy,
+  }) async {
+    final bool isImageArchive = mangaArchiveNeedsContentProbe(localPath) &&
+        await looksLikeImageArchiveInBackground(localPath);
+    final ImportCarrier carrier = classifyImportCarrier(
+      localPath,
+      // 扫描规划阶段已经只收文件，目录分支不可达。
+      isDirectory: (String _) => false,
+      // 只对二义扩展名问它，答案已在后台 isolate 里算好。
+      isImageArchive: (String _) => isImageArchive,
+      directoryHasPageImages: (String _) => false,
+      directoryCarrierFileCount: (String _) => 0,
+      directoryMokuroFileCount: (String _) => 0,
+    );
+    switch (carrier) {
+      case ImportCarrier.mangaArchive:
+        return MangaArchiveImporter.importArchive(
+          db: _db,
+          archivePath: localPath,
+          title: title,
+          sourceId: sourceId,
+          policy: policy,
+          sevenZipExtractor: _mangaSevenZipExtractor,
+        );
+      case ImportCarrier.pdf:
+        return importMangaFromPdf(
+          db: _db,
+          pdfPath: localPath,
+          fileName: p.basename(localPath),
+          title: title,
+          sourceId: sourceId,
+          policy: policy,
+        );
+      case ImportCarrier.mangaFolder:
+      case ImportCarrier.mangaBatchFolder:
+      case ImportCarrier.mangaMokuro:
+      case ImportCarrier.epub:
+      case ImportCarrier.text:
+        debugPrint('SourceLibraryScanner skip non-manga file in manga source '
+            '($carrier): $localPath');
+        return null;
+    }
+  }
+
+  /// 网络漫画来源整卷下载导入。
+  ///
+  /// 一卷漫画体量远超一次「顺手下载」，所以下载前先过与本地同一套判据
+  /// （[_MangaSourceIdentity]：来源索引、负向表、标题 + 来源路径的重复判据）——重扫
+  /// 已入库的卷、判过不是漫画且没变过的包都零下载。`.mokuro` 卷先读远端小文本派生
+  /// 标题（[MangaImporter.deriveMokuroTitle]）再判。放行才把该卷镜像到本地临时目录，
+  /// 交给本地导入器：导入器只吃本地路径，落库时仍是恒复制进书目录，产物与本地导入
+  /// 逐字节同构。
+  ///
+  /// 缺页 / 坏 JSON 与本地语义一致：抛 [MangaImportException] 记为该卷失败。WebDAV
+  /// 的 href 分段是百分号编码的，查表键与镜像文件名统一用解码后的相对路径（来源库
+  /// 条目路径本就是解码态，取末段用 [sourceEntryBasename]）。
+  Future<void> _importMangaRemote(
+    ScanPlan plan,
+    _MangaSourceIdentity id,
+    SourceFileSystem fs,
+    _MangaVolumeTally tally,
+  ) async {
     for (final ScanMangaItem item in plan.mangas) {
       await tally.attempt(
         item.mokuroPath,
-        () => _importRemoteMokuroVolume(
-          item: item,
-          sourceId: sourceId,
-          fs: fs,
-          existingTitleKeys: existingTitleKeys,
-        ),
+        () => _importRemoteMokuroVolume(item: item, id: id, fs: fs),
       );
     }
     for (final ScanMangaArchiveItem item in plan.mangaArchives) {
       await tally.attempt(
         item.archivePath,
-        () => _importRemoteMangaCarrier(
-          item: item,
-          sourceId: sourceId,
-          fs: fs,
-          existingTitleKeys: existingTitleKeys,
-        ),
+        () => _importRemoteMangaCarrier(item: item, id: id, fs: fs),
       );
     }
     for (final ScanMangaFolderItem item in plan.mangaFolders) {
       await tally.attempt(
         item.folderPath,
-        () => _importRemoteMangaFolder(
-          item: item,
-          sourceId: sourceId,
-          fs: fs,
-          existingTitleKeys: existingTitleKeys,
-        ),
+        () => _importRemoteMangaFolder(item: item, id: id, fs: fs),
       );
     }
-    return tally;
   }
 
-  /// 远端一卷 `.mokuro`：先按标题预检，未命中才镜像页图并交本地导入器。
-  /// 返回 false = 已在库，未下载。
+  /// 远端一卷 `.mokuro`：先过判据，放行才镜像页图并交本地导入器。
+  /// 返回 false = 已在库 / 按重复跳过，未下载页图。
   Future<bool> _importRemoteMokuroVolume({
     required ScanMangaItem item,
-    required int sourceId,
+    required _MangaSourceIdentity id,
     required SourceFileSystem fs,
-    required Set<String> existingTitleKeys,
   }) async {
+    if (id.isIndexed(item.mokuroPath)) return false;
     final String mokuroName = sourceEntryBasename(item.mokuroPath);
     final String jsonStr = await fs.readText(item.mokuroPath);
-    final Object? rawRoot = jsonDecode(jsonStr);
-    final Map<String, Object?> root =
-        rawRoot is Map ? rawRoot.cast<String, Object?>() : <String, Object?>{};
-    final String title = MangaImporter.deriveMokuroTitle(root, mokuroName);
-    if (existingTitleKeys.contains(sanitizeTtuFilename(title))) {
-      debugPrint('SourceLibraryScanner skip duplicate manga '
-          '$title (${item.mokuroPath})');
-      return false;
-    }
+    final String title = MangaImporter.deriveMokuroTitle(
+      _decodeMokuroRoot(jsonStr),
+      mokuroName,
+    );
+    final DuplicatePolicy? policy = await id.policyFor(item.mokuroPath, title);
+    if (policy == null) return false;
     final MokuroPayload payload = parseMokuro(jsonStr);
     if (payload.images.isEmpty) {
       throw const MangaImportException('Mokuro file has no pages');
@@ -1345,14 +1494,14 @@ class SourceLibraryScanner {
       }
       final String localMokuro = p.join(tmp.path, mokuroName);
       await File(localMokuro).writeAsString(jsonStr, flush: true);
-      await MangaImporter.importFromMokuroPath(
+      final String bookKey = await MangaImporter.importFromMokuroPath(
         db: _db,
         mokuroPath: localMokuro,
-        sourceId: sourceId,
-        policy: const DuplicatePolicy.skip(),
+        title: title,
+        sourceId: id.sourceId,
+        policy: policy,
       );
-      // 同批第二卷同标题也要被预检拦住（对齐 resolveDuplicateTitle 的同批语义）。
-      existingTitleKeys.add(sanitizeTtuFilename(title));
+      await id.record(item.mokuroPath, bookKey);
       return true;
     } finally {
       try {
@@ -1361,41 +1510,45 @@ class SourceLibraryScanner {
     }
   }
 
-  /// 远端一个单文件漫画卷：先按标题预检，未命中才把包（连同包旁的 `.mokuro`
-  /// sidecar）下载到临时目录，再走与本地同一个 [_importMangaCarrierFile]。
+  /// 远端一个单文件漫画卷：先过判据（含负向表：判过不是漫画、远端指纹没变的包不再
+  /// 下载），放行才把包（连同包旁的 `.mokuro` sidecar）下载到临时目录，再走与本地
+  /// 同一个 [_importMangaCarrierFile]。
   ///
   /// sidecar 必须一起下：压缩包导入器按「包旁同名文件」找 OCR 文字层，只下包的话
   /// 远端来源导进来的卷永远没有文字。下载保留原文件名，所以包与 sidecar 在临时
-  /// 目录里的相对关系与远端一致。返回 false = 已在库或内容不是漫画。
+  /// 目录里的相对关系与远端一致。返回 false = 已在库 / 按重复跳过 / 内容不是漫画。
   Future<bool> _importRemoteMangaCarrier({
     required ScanMangaArchiveItem item,
-    required int sourceId,
+    required _MangaSourceIdentity id,
     required SourceFileSystem fs,
-    required Set<String> existingTitleKeys,
   }) async {
-    final String archiveName = sourceEntryBasename(item.archivePath);
-    final String title = p.basenameWithoutExtension(archiveName);
-    if (existingTitleKeys.contains(sanitizeTtuFilename(title))) {
-      debugPrint('SourceLibraryScanner skip duplicate manga '
-          '$title (${item.archivePath})');
-      return false;
-    }
+    final String path = item.archivePath;
+    if (id.isIndexed(path) || id.isRejected(path)) return false;
+    final String title =
+        p.basenameWithoutExtension(sourceEntryBasename(path));
+    final DuplicatePolicy? policy = await id.policyFor(path, title);
+    if (policy == null) return false;
     final Directory tmp =
         Directory.systemTemp.createTempSync('m1c_scan_manga_archive_');
     try {
-      final String localArchive =
-          await fs.copyToLocal(item.archivePath, tmp.path);
+      final String localArchive = await fs.copyToLocal(path, tmp.path);
       final String? sidecar = item.mokuroSidecarPath;
       if (sidecar != null) {
         await fs.copyToLocal(sidecar, tmp.path);
       }
-      final bool imported = await _importMangaCarrierFile(
+      final String? bookKey = await _importMangaCarrierFile(
         localPath: localArchive,
         title: title,
-        sourceId: sourceId,
+        sourceId: id.sourceId,
+        policy: policy,
       );
-      if (imported) existingTitleKeys.add(sanitizeTtuFilename(title));
-      return imported;
+      if (bookKey == null) {
+        // 指纹取远端列目录给的元数据：下次列出来没变就不再下载这个包。
+        id.reject(path);
+        return false;
+      }
+      await id.record(path, bookKey);
+      return true;
     } finally {
       try {
         tmp.deleteSync(recursive: true);
@@ -1403,20 +1556,17 @@ class SourceLibraryScanner {
     }
   }
 
-  /// 远端一卷纯页图目录：标题与本地同口径（卷目录名，解码态末段），先预检再
-  /// 下载，重扫零页图流量。返回 false = 已在库，未下载。
+  /// 远端一卷纯页图目录：标题与本地同口径（卷目录名，解码态末段），先过判据再
+  /// 下载，重扫零页图流量。返回 false = 已在库 / 按重复跳过，未下载。
   Future<bool> _importRemoteMangaFolder({
     required ScanMangaFolderItem item,
-    required int sourceId,
+    required _MangaSourceIdentity id,
     required SourceFileSystem fs,
-    required Set<String> existingTitleKeys,
   }) async {
+    if (id.isIndexed(item.folderPath)) return false;
     final String title = sourceEntryBasename(item.folderPath);
-    if (existingTitleKeys.contains(sanitizeTtuFilename(title))) {
-      debugPrint('SourceLibraryScanner skip duplicate manga '
-          '$title (${item.folderPath})');
-      return false;
-    }
+    final DuplicatePolicy? policy = await id.policyFor(item.folderPath, title);
+    if (policy == null) return false;
     final Directory tmp =
         Directory.systemTemp.createTempSync('m1c_scan_manga_folder_');
     try {
@@ -1425,14 +1575,14 @@ class SourceLibraryScanner {
       await _mirrorRemoteMangaPages(fs, item.folderPath, volumeDir);
       // 页序 / 宽高 / 缺页判据全部交给本地导入器对镜像目录再枚举一次
       // （enumerateMangaPages），与本地散图卷同一口径，不另写一套。
-      await MangaImporter.importFromImageFolder(
+      final String bookKey = await MangaImporter.importFromImageFolder(
         db: _db,
         imageDirPath: volumeDir.path,
         title: title,
-        sourceId: sourceId,
-        policy: const DuplicatePolicy.skip(),
+        sourceId: id.sourceId,
+        policy: policy,
       );
-      existingTitleKeys.add(sanitizeTtuFilename(title));
+      await id.record(item.folderPath, bookKey);
       return true;
     } finally {
       try {

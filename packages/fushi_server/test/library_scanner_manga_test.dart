@@ -284,6 +284,71 @@ void main() {
     expect(await db.getAllEpubBooks(), hasLength(1));
   });
 
+  test('不同系列目录下同名的 Vol 1.cbz 是两卷：第二卷换名入库，重扫不再导入', () async {
+    writePagesZip(p.join(libraryRoot.path, 'SeriesA', 'Vol 1.cbz'), <String>['001.png']);
+    writePagesZip(p.join(libraryRoot.path, 'SeriesB', 'Vol 1.cbz'), <String>['001.png', '002.png']);
+
+    final ScanSummary first = await scan();
+
+    expect(first.errors, isEmpty);
+    expect(first.mangaAdded, 2, reason: '此前只按标题判重复，SeriesB 的第 1 卷被静默跳过');
+    final List<EpubBookRow> books = await db.getAllEpubBooks();
+    expect(books, hasLength(2));
+    expect(books.map((EpubBookRow b) => b.title), contains('Vol 1'));
+
+    final ScanSummary second = await scan();
+    expect(second.errors, isEmpty);
+    expect(second.mangaAdded, 0);
+    expect(second.mangaSkipped, 2);
+    expect(await db.getAllEpubBooks(), hasLength(2));
+  });
+
+  test('判过「不是漫画」的 .zip 内容不变就不再开包；内容变了才重判', () async {
+    List<int> dictZip() {
+      final Archive archive = Archive();
+      for (final String name in <String>['index.json', 'term_bank_1.json']) {
+        final List<int> bytes = utf8.encode(name == 'index.json' ? '{"title":"d"}' : '[]');
+        archive.addFile(ArchiveFile(name, bytes.length, bytes));
+      }
+      return ZipEncoder().encode(archive)!;
+    }
+
+    List<int> pagesZip() {
+      final Archive archive = Archive();
+      final List<int> png = _minimalPng();
+      archive.addFile(ArchiveFile('001.png', png.length, png));
+      return ZipEncoder().encode(archive)!;
+    }
+
+    final File zip = File(p.join(libraryRoot.path, 'vol.zip'));
+    final List<int> dict = dictZip();
+    final List<int> pages = pagesZip();
+    // 末尾补零让两份字节数相同（EOCD 从尾部回扫，尾随填充不影响读包）：换内容后
+    // 字节数与修改时刻都还原，指纹不变——这正是「只要指纹不变就不重判」的边界。
+    final int size = dict.length > pages.length ? dict.length : pages.length;
+    List<int> padded(List<int> bytes) => <int>[...bytes, ...List<int>.filled(size - bytes.length, 0)];
+    zip.writeAsBytesSync(padded(dict));
+    final DateTime mtime = DateTime(2026, 1, 2, 3, 4, 5);
+    zip.setLastModifiedSync(mtime);
+
+    final ScanSummary first = await scan();
+    expect(first.errors, isEmpty);
+    expect(first.mangaAdded, 0);
+
+    // 同字节数、同修改时刻地换成页图包：负向结果命中，不开包，所以不会入库。
+    zip.writeAsBytesSync(padded(pages));
+    zip.setLastModifiedSync(mtime);
+    final ScanSummary second = await scan();
+    expect(second.errors, isEmpty);
+    expect(second.mangaAdded, 0, reason: '指纹没变就不该再开包重判');
+
+    // 修改时刻一变（文件真被换过）就重判，这次是漫画。
+    zip.setLastModifiedSync(mtime.add(const Duration(minutes: 1)));
+    final ScanSummary third = await scan();
+    expect(third.errors, isEmpty);
+    expect(third.mangaAdded, 1);
+  });
+
   test('漫画根里的词典 .zip 不是漫画：跳过、不报错', () async {
     final Archive archive = Archive();
     for (final String name in <String>['index.json', 'term_bank_1.json']) {

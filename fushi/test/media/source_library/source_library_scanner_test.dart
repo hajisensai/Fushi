@@ -23,6 +23,7 @@ import 'package:image/image.dart' as img;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
@@ -1838,6 +1839,112 @@ Attributes = A
       expect(again.error, isNull);
       expect(again.importedMediaCount, 0);
       expect(await db.getAllEpubBooks(), hasLength(1));
+    });
+
+    test('同一来源下同名的 Vol 1.cbz（不同系列目录）是两卷：都入库，重扫不再导入', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      for (final String series in <String>['SeriesA', 'SeriesB']) {
+        File(p.join(tmp.path, series, 'Vol 1.cbz'))
+          ..parent.createSync(recursive: true)
+          ..writeAsBytesSync(pagesZip(<String>['001.png']));
+      }
+      final SourceLibraryRow source = await mangaSource(db);
+
+      final SourceScanSummary first =
+          await SourceLibraryScanner(db).scan(source);
+
+      expect(first.error, isNull);
+      expect(first.importedMediaCount, 2,
+          reason: '此前只按标题判重复，SeriesB 的第 1 卷被静默跳过');
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(2));
+      expect(books.map((EpubBookRow b) => b.title), contains('Vol 1'));
+      expect(books.every((EpubBookRow b) => b.sourceId == source.id), isTrue);
+
+      final SourceScanSummary again = await SourceLibraryScanner(db)
+          .scan((await db.getMediaSourceById(source.id))!);
+      expect(again.error, isNull);
+      expect(again.importedMediaCount, 0);
+      expect(await db.getAllEpubBooks(), hasLength(2));
+    });
+
+    test('手动导入的同名漫画不被来源抢走：来源卷按重复跳过、手动那本仍无来源', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory manual = Directory(p.join(tmp.path, '..',
+          '${p.basename(tmp.path)}_manual', 'Vol 1'))
+        ..createSync(recursive: true);
+      addTearDown(() => manual.parent.deleteSync(recursive: true));
+      File(p.join(manual.path, '001.png'))
+          .writeAsBytesSync(img.encodePng(img.Image(width: 20, height: 40)));
+      await MangaImporter.importFromImageFolder(
+        db: db,
+        imageDirPath: manual.path,
+        title: 'Vol 1',
+      );
+      File(p.join(tmp.path, 'Vol 1.cbz'))
+          .writeAsBytesSync(pagesZip(<String>['001.png']));
+      final SourceLibraryRow source = await mangaSource(db);
+
+      final SourceScanSummary summary =
+          await SourceLibraryScanner(db).scan(source);
+
+      expect(summary.error, isNull);
+      expect(summary.importedMediaCount, 0);
+      final EpubBookRow book = (await db.getAllEpubBooks()).single;
+      expect(book.sourceId, isNull, reason: '手动导入的书不能被某个来源认领走');
+    });
+
+    test('判过「不是漫画」的 .zip 内容不变就不再开包；内容变了才重判', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Uint8List dict = _encodeArchive(<ArchiveFile>[
+        _textFile('index.json', '{"title":"d","revision":"1"}'),
+        _textFile('term_bank_1.json', '[]'),
+      ]);
+      final Uint8List pages = pagesZip(<String>['001.png']);
+      // 尾部补零让两份字节数相同（EOCD 从尾部回扫，尾随填充不影响读包）。换内容后
+      // 字节数与修改时刻都还原 → 指纹不变 → 不该重判。
+      final int size = dict.length > pages.length ? dict.length : pages.length;
+      List<int> padded(Uint8List bytes) =>
+          <int>[...bytes, ...List<int>.filled(size - bytes.length, 0)];
+      final File zip = File(p.join(tmp.path, 'vol.zip'))
+        ..writeAsBytesSync(padded(dict));
+      final DateTime mtime = DateTime(2026, 1, 2, 3, 4, 5);
+      zip.setLastModifiedSync(mtime);
+      final SourceLibraryRow source = await mangaSource(db);
+      Future<SourceScanSummary> rescan() async => SourceLibraryScanner(db)
+          .scan((await db.getMediaSourceById(source.id))!);
+
+      final SourceScanSummary first = await rescan();
+      expect(first.error, isNull);
+      expect(first.importedMediaCount, 0);
+
+      zip.writeAsBytesSync(padded(pages));
+      zip.setLastModifiedSync(mtime);
+      final SourceScanSummary second = await rescan();
+      expect(second.error, isNull);
+      expect(second.importedMediaCount, 0, reason: '指纹没变就不该再开包重判');
+
+      zip.setLastModifiedSync(mtime.add(const Duration(minutes: 1)));
+      final SourceScanSummary third = await rescan();
+      expect(third.error, isNull);
+      expect(third.importedMediaCount, 1, reason: '文件被换过（修改时刻变了）必须重判');
+    });
+
+    test('载体定性不在调用方 isolate 上同步开包（只经后台 isolate 入口）', () {
+      final String src = File(
+        p.join('lib', 'src', 'media', 'source_library',
+            'source_library_scanner.dart'),
+      ).readAsLinesSync().where((String line) {
+        final String t = line.trimLeft();
+        return !t.startsWith('//');
+      }).join('\n');
+      // 直接调用与 tear-off（`isImageArchive: MangaArchiveImporter.looks…`）都算。
+      expect(src, isNot(contains('MangaArchiveImporter.looksLikeImageArchive')),
+          reason: '同步判定会在 UI isolate 上整本解析文字 EPUB');
+      expect(src, contains('looksLikeImageArchiveInBackground('));
     });
 
     test('漫画来源里的词典 .zip / 文字 .epub 不是漫画：跳过且不算错误', () async {
