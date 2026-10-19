@@ -52,9 +52,11 @@ class MediaPrivacySnapshot {
     // 判定与排行榜 / 追踪都按 bookKey 问：成员键先归一到 bookKey，否则私密合集里
     // 的书一本都命不中（fail-open）。
     final Map<String, String> bookKeyByUid = <String, String>{
-      for (final TypedResult r in await (db.selectOnly(
-        db.epubBooks,
-      )..addColumns(<Expression<Object>>[db.epubBooks.uid, db.epubBooks.bookKey])).get())
+      for (final TypedResult r
+          in await (db.selectOnly(db.epubBooks)..addColumns(
+                <Expression<Object>>[db.epubBooks.uid, db.epubBooks.bookKey],
+              ))
+              .get())
         if (r.read(db.epubBooks.uid) case final String uid when uid.isNotEmpty)
           uid: r.read(db.epubBooks.bookKey)!,
     };

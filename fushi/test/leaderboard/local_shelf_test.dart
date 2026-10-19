@@ -989,6 +989,23 @@ void main() {
       expect(byKey(shelf).keys, <String>['book:Open']);
     });
 
+    test('书：私密合集成员按真实路径的 uid 键入合集（v83）同样被跳过', () async {
+      await book('UidMember', completedAt: DateTime(2026, 9, 3, 12));
+      await book('Open', completedAt: DateTime(2026, 9, 3, 12));
+      final String uid = (await db.getEpubBook('UidMember'))!.uid;
+      expect(uid, isNot('UidMember'), reason: 'insertEpubBook 应自动生成 uid');
+      final int c = await db.createMediaCollection('秘');
+      // 生产路径（书架「加入合集」/ 批量组合）落的是 uid，不是 bookKey。
+      await db.addToCollection(c, MediaKind.epub, uid);
+      await db.setMediaPrivate(
+        TagHostKind.collection,
+        collectionTagEntryKey(c),
+        true,
+      );
+      final LocalShelf shelf = await buildLocalShelf(db, profileId: profile);
+      expect(byKey(shelf).keys, <String>['book:Open']);
+    });
+
     test('视频单位：合集内任一成员私密 → 整个单位跳过', () async {
       await video('e1', completedAt: DateTime(2026, 8, 1, 12));
       await video('e2', completedAt: DateTime(2026, 8, 5, 12));
@@ -1072,6 +1089,21 @@ void main() {
         <String>['game:gp'],
       );
       await db.setMediaPrivate(TagHostKind.game, 'gp', true);
+      expect((await buildLocalShelf(db, profileId: profile)).entries, isEmpty);
+
+      // 游戏也能进合集：本身取消私密、但在私密合集里 → 仍跳过。
+      await db.setMediaPrivate(TagHostKind.game, 'gp', false);
+      final int c = await db.createMediaCollection('秘游');
+      await db.addToCollection(c, MediaKind.game, 'gp');
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        <String>['game:gp'],
+      );
+      await db.setMediaPrivate(
+        TagHostKind.collection,
+        collectionTagEntryKey(c),
+        true,
+      );
       expect((await buildLocalShelf(db, profileId: profile)).entries, isEmpty);
     });
   });
