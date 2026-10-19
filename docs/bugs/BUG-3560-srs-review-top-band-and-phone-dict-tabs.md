@@ -1,4 +1,4 @@
-## BUG-3543 · srs-review-top-band-and-phone-dict-tabs
+## BUG-3560 · srs-review-top-band-and-phone-dict-tabs
 - **报告**：2026-10-19（用户：群反馈，iPhone 复习页截图）——手机卡片背面「全部释义」里几十部词典平铺成一大片 pill，要求改成查词弹窗那样的可折叠样式；往下滑时顶栏收起了但顶上留一条白色空带不收；右上角封面被截断。
 - **真实性**：✅ 真问题，三处：
   - 空带：`FushiPageScaffold` 收起页头只做位移 + 淡出、让位高度恒定（`fushi_floating_page_chrome.dart` 的 BUG-2975 设计），复习页又在卡面外套了固定 `Padding(top: 状态栏 + 页头)`（`srs_review_page.dart` body builder），页头收起后那段让位留成空带。原生 Fushi 卡面本是 Flutter `SingleChildScrollView`，完全能滚到页头底下，被「卡面是 WebView」的整体让位一并处理了。
