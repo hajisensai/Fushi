@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/sync/deletion_disclosure.dart';
@@ -117,7 +118,7 @@ Future<void> showCollectionContextDialog({
           // 私密：整个合集（全部成员，书或视频）不上传排行榜、不推 Bangumi。
           DialogListAction(
             label: t.media_privacy_action,
-            icon: Icons.lock_outline,
+            icon: FushiIcons.lock,
             onPressed: () => closeThen(
               () => unawaited(
                 showMediaPrivacyDialog(
