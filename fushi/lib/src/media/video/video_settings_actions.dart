@@ -398,6 +398,18 @@ Future<void> setVideoRespectAssStyleDual(
   }
 }
 
+Future<void> setYoutubeQualityTargetHeightDual(
+  SettingsContext context,
+  int height,
+) async {
+  final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  if (host?.onYoutubeQualityChanged != null) {
+    await host!.onYoutubeQualityChanged!(height);
+  } else {
+    await context.appModel.setYoutubeQualityTargetHeight(height);
+  }
+}
+
 Future<void> setVideoFitModeDual(
   SettingsContext context,
   VideoFitMode mode,

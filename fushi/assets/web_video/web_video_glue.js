@@ -66,6 +66,9 @@
       var key = keys[i];
       var parts = splitTrackKey(key);
       var cues = store[key] || [];
+      // 按需加载的占位轨（providers 的 fushiLazyTracks，空 cue）只给浏览器扩展的菜单列轨用；
+      // app 有自己的站点轨清单与加载态，投个空轨过去会被当成「已加载、0 句」。
+      if (!cues.length && window.fushiLazyTracks && window.fushiLazyTracks[key]) continue;
       post({
         type: 'track',
         key: key,
@@ -534,7 +537,9 @@
     }
     return changed;
   }
-  function setVideoOnly(on) {
+  // [targetHeight]：YouTube 画质目标（见 applyQualityTarget），省略 = 沿用当前目标（自愈重入）。
+  function setVideoOnly(on, targetHeight) {
+    if (targetHeight !== undefined) qualityTargetHeight = normalizeQualityTarget(targetHeight);
     videoOnlyOn = !!on;
     var v = on ? mainVideo() : null;
     markVideoOnly(v);
@@ -549,7 +554,7 @@
     }
     // 播放器按 resize 重新量容器、重新选码率。
     try { window.dispatchEvent(new Event('resize')); } catch (_) {}
-    if (on) preferHighestQuality();
+    if (on) applyQualityTarget();
     setAutoAdvanceGuard(on);
     return !!v;
   }
@@ -577,10 +582,34 @@
       } catch (_) {}
     }, 1000);
   }
-  // YouTube 自动画质还会看带宽历史等，铺满之后再经播放器 API 锁到可用的最高档（级别列表要等
-  // 清单加载完才有，前 30 s 每 2 s 试一次）。其它站点不提供这类 API，靠容器铺满。
+  // YouTube 画质目标：Fushi 设置「YouTube 画质」（与 mpv 路径同一个偏好）。0 = 自动 = 可用的
+  // 最高档；非 0 = 不超过该高度的最高档（全都高于目标时取最低档）。
+  var qualityTargetHeight = 0;
+  var YT_QUALITY_HEIGHT = {
+    highres: 4320, hd2880: 2880, hd2160: 2160, hd1440: 1440, hd1080: 1080,
+    hd720: 720, large: 480, medium: 360, small: 240, tiny: 144
+  };
+  function normalizeQualityTarget(h) {
+    var n = Math.round(Number(h) || 0);
+    return n > 0 ? n : 0;
+  }
+  function pickYoutubeQuality(levels, target) {
+    var known = [];
+    for (var i = 0; i < (levels || []).length; i++) {
+      if (YT_QUALITY_HEIGHT[levels[i]]) known.push(levels[i]);
+    }
+    if (!known.length) return null;
+    known.sort(function (a, b) { return YT_QUALITY_HEIGHT[b] - YT_QUALITY_HEIGHT[a]; });
+    if (!(target > 0)) return known[0];
+    for (var k = 0; k < known.length; k++) {
+      if (YT_QUALITY_HEIGHT[known[k]] <= target) return known[k];
+    }
+    return known[known.length - 1];
+  }
+  // YouTube 自动画质还会看带宽历史等，铺满之后再经播放器 API 锁到目标档（级别列表要等清单加载
+  // 完才有，前 30 s 每 2 s 试一次）。其它站点不提供这类 API，靠容器铺满。
   var qualityTimer = null;
-  function preferHighestQuality() {
+  function applyQualityTarget() {
     if (location.hostname.indexOf('youtube.com') < 0) return;
     var tries = 0;
     if (qualityTimer) clearInterval(qualityTimer);
@@ -589,8 +618,9 @@
       var p = document.getElementById('movie_player');
       try {
         var levels = p && p.getAvailableQualityLevels ? p.getAvailableQualityLevels() : [];
-        if (levels && levels.length) {
-          if (p.getPlaybackQuality() !== levels[0]) p.setPlaybackQualityRange(levels[0], levels[0]);
+        var want = pickYoutubeQuality(levels, qualityTargetHeight);
+        if (want) {
+          if (p.getPlaybackQuality() !== want) p.setPlaybackQualityRange(want, want);
           else { clearInterval(qualityTimer); qualityTimer = null; return; }
         }
       } catch (_) {}
@@ -666,6 +696,12 @@
     setNativeSubtitlesHidden: setNativeSubtitlesHidden,
     setPlayerChromeHidden: setPlayerChromeHidden,
     setVideoOnly: setVideoOnly,
+    // 播放中改「YouTube 画质」：记下目标，播放器档里当场重选。
+    setQualityTarget: function (h) {
+      qualityTargetHeight = normalizeQualityTarget(h);
+      if (videoOnlyOn) applyQualityTarget();
+      return 'ok';
+    },
     selectNetflixTrack: selectNetflixTrack,
     selectNetflixAudioTrack: selectNetflixAudioTrack,
     fetchNetflixMetadata: fetchNetflixMetadata,

@@ -465,7 +465,9 @@ function loadSidePanel(storedSettings, tabReply, lookupReply) {
         return {
           query(_q, cb) { cb([{ id: 7, title: '测试页' }]); },
           get(_id, cb) { cb({ id: 7, title: '测试页' }); },
-          sendMessage(_tabId, message, cb) {
+          // chrome.tabs.sendMessage(tabId, message, options?, callback?)：侧边栏带 {frameId:0}。
+          sendMessage(_tabId, message, opts, cb) {
+            if (typeof opts === 'function') cb = opts;
             tabMessages.push(message);
             if (cb) cb(tabReply ? tabReply(message) : undefined);
           },

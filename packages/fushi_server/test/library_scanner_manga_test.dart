@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
@@ -231,6 +232,138 @@ void main() {
     expect(summary.errors.single, contains('Broken.mokuro'));
     expect(summary.mangaAdded, 1);
     expect((await db.getAllEpubBooks()).single.title, 'good');
+  });
+
+  void writePagesZip(String path, List<String> entries) {
+    final Archive archive = Archive();
+    for (final String name in entries) {
+      final List<int> png = _minimalPng();
+      archive.addFile(ArchiveFile(name, png.length, png));
+    }
+    File(path)
+      ..parent.createSync(recursive: true)
+      ..writeAsBytesSync(ZipEncoder().encode(archive)!);
+  }
+
+  test('单文件卷 .cbz / .zip 逐卷入库（此前服务端漫画根完全不认压缩包）', () async {
+    final String series = p.join(libraryRoot.path, 'Veil');
+    writePagesZip(p.join(series, 'Veil（1）オレンジの体温.zip'), <String>['001.png']);
+    writePagesZip(p.join(series, 'Veil（2）凪いだノワール.cbz'), <String>['001.png', '002.png']);
+    // 系列目录里的封面不是一卷。
+    _writePage(series, 'cover.jpg');
+
+    final ScanSummary summary = await scan();
+
+    expect(summary.errors, isEmpty);
+    expect(summary.mangaAdded, 2);
+    final List<EpubBookRow> books = await db.getAllEpubBooks();
+    expect(books.map((EpubBookRow b) => b.title).toSet(),
+        <String>{'Veil（1）オレンジの体温', 'Veil（2）凪いだノワール'});
+    for (final EpubBookRow book in books) {
+      await expectMangaArtifacts(book);
+    }
+
+    final ScanSummary second = await scan();
+    expect(second.errors, isEmpty);
+    expect(second.mangaAdded, 0);
+    expect(second.mangaSkipped, 2);
+  });
+
+  test('已在来源索引里的 .zip 卷重扫不再开包定性', () async {
+    final File zip = File(p.join(libraryRoot.path, 'vol-1.zip'));
+    writePagesZip(zip.path, <String>['001.png']);
+    expect((await scan()).mangaAdded, 1);
+
+    // 换成打不开的字节：重扫若仍先开包定性，会判「不是漫画」直接跳过，这一卷就不再
+    // 被记为在场。
+    zip.writeAsBytesSync(<int>[1, 2, 3, 4, 5]);
+    final ScanSummary second = await scan();
+
+    expect(second.errors, isEmpty);
+    expect(second.mangaSkipped, 1);
+    expect(await db.getAllEpubBooks(), hasLength(1));
+  });
+
+  test('不同系列目录下同名的 Vol 1.cbz 是两卷：第二卷换名入库，重扫不再导入', () async {
+    writePagesZip(p.join(libraryRoot.path, 'SeriesA', 'Vol 1.cbz'), <String>['001.png']);
+    writePagesZip(p.join(libraryRoot.path, 'SeriesB', 'Vol 1.cbz'), <String>['001.png', '002.png']);
+
+    final ScanSummary first = await scan();
+
+    expect(first.errors, isEmpty);
+    expect(first.mangaAdded, 2, reason: '此前只按标题判重复，SeriesB 的第 1 卷被静默跳过');
+    final List<EpubBookRow> books = await db.getAllEpubBooks();
+    expect(books, hasLength(2));
+    expect(books.map((EpubBookRow b) => b.title), contains('Vol 1'));
+
+    final ScanSummary second = await scan();
+    expect(second.errors, isEmpty);
+    expect(second.mangaAdded, 0);
+    expect(second.mangaSkipped, 2);
+    expect(await db.getAllEpubBooks(), hasLength(2));
+  });
+
+  test('判过「不是漫画」的 .zip 内容不变就不再开包；内容变了才重判', () async {
+    List<int> dictZip() {
+      final Archive archive = Archive();
+      for (final String name in <String>['index.json', 'term_bank_1.json']) {
+        final List<int> bytes = utf8.encode(name == 'index.json' ? '{"title":"d"}' : '[]');
+        archive.addFile(ArchiveFile(name, bytes.length, bytes));
+      }
+      return ZipEncoder().encode(archive)!;
+    }
+
+    List<int> pagesZip() {
+      final Archive archive = Archive();
+      final List<int> png = _minimalPng();
+      archive.addFile(ArchiveFile('001.png', png.length, png));
+      return ZipEncoder().encode(archive)!;
+    }
+
+    final File zip = File(p.join(libraryRoot.path, 'vol.zip'));
+    final List<int> dict = dictZip();
+    final List<int> pages = pagesZip();
+    // 末尾补零让两份字节数相同（EOCD 从尾部回扫，尾随填充不影响读包）：换内容后
+    // 字节数与修改时刻都还原，指纹不变——这正是「只要指纹不变就不重判」的边界。
+    final int size = dict.length > pages.length ? dict.length : pages.length;
+    List<int> padded(List<int> bytes) => <int>[...bytes, ...List<int>.filled(size - bytes.length, 0)];
+    zip.writeAsBytesSync(padded(dict));
+    final DateTime mtime = DateTime(2026, 1, 2, 3, 4, 5);
+    zip.setLastModifiedSync(mtime);
+
+    final ScanSummary first = await scan();
+    expect(first.errors, isEmpty);
+    expect(first.mangaAdded, 0);
+
+    // 同字节数、同修改时刻地换成页图包：负向结果命中，不开包，所以不会入库。
+    zip.writeAsBytesSync(padded(pages));
+    zip.setLastModifiedSync(mtime);
+    final ScanSummary second = await scan();
+    expect(second.errors, isEmpty);
+    expect(second.mangaAdded, 0, reason: '指纹没变就不该再开包重判');
+
+    // 修改时刻一变（文件真被换过）就重判，这次是漫画。
+    zip.setLastModifiedSync(mtime.add(const Duration(minutes: 1)));
+    final ScanSummary third = await scan();
+    expect(third.errors, isEmpty);
+    expect(third.mangaAdded, 1);
+  });
+
+  test('漫画根里的词典 .zip 不是漫画：跳过、不报错', () async {
+    final Archive archive = Archive();
+    for (final String name in <String>['index.json', 'term_bank_1.json']) {
+      final List<int> bytes = utf8.encode(name == 'index.json' ? '{"title":"d"}' : '[]');
+      archive.addFile(ArchiveFile(name, bytes.length, bytes));
+    }
+    final List<int> png = _minimalPng();
+    archive.addFile(ArchiveFile('img/a.png', png.length, png));
+    File(p.join(libraryRoot.path, 'dict.zip')).writeAsBytesSync(ZipEncoder().encode(archive)!);
+
+    final ScanSummary summary = await scan();
+
+    expect(summary.errors, isEmpty);
+    expect(summary.mangaAdded, 0);
+    expect(await db.getAllEpubBooks(), isEmpty);
   });
 
   test('空根：0 卷、无错误', () async {

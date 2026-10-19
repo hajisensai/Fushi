@@ -120,10 +120,9 @@ SettingsDestination buildVideoDestination() {
             ],
             selected: (SettingsContext settingsContext) =>
                 settingsContext.appModel.youtubeQualityTargetHeight,
+            // 播放中经页面回调：网页档（Windows 上 YouTube 走站点播放器）当场重选画质。
             onChanged: (SettingsContext settingsContext, int height) async {
-              await settingsContext.appModel.setYoutubeQualityTargetHeight(
-                height,
-              );
+              await setYoutubeQualityTargetHeightDual(settingsContext, height);
             },
             defaultValue: 0,
           ),

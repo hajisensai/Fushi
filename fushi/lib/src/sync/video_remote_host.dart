@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/sync/video_remote_service.dart';
@@ -108,6 +109,46 @@ final class VideoRemoteSubtitleOption {
   };
 }
 
+/// One video of the computer's library, as the phone's on-demand picker lists
+/// it. Library identity and display text only, never media paths.
+final class VideoRemoteLibraryItem {
+  const VideoRemoteLibraryItem({
+    required this.bookUid,
+    required this.title,
+    this.collection,
+    this.positionMs = 0,
+    this.lastPlayedAt,
+  });
+  final String bookUid;
+  final String title;
+
+  /// Title of the collection the video plays in (its episode list), if any.
+  final String? collection;
+  final int positionMs;
+  final int? lastPlayedAt;
+  Map<String, Object?> toJson() => <String, Object?>{
+    'bookUid': bookUid,
+    'title': title,
+    if (collection != null) 'collection': collection,
+    'positionMs': positionMs,
+    if (lastPlayedAt != null) 'lastPlayedAt': lastPlayedAt,
+  };
+}
+
+/// App-owned access to the computer's video library for on-demand playback
+/// (`library` / `openVideo`). Unlike [VideoRemotePlaybackBinding] it does not
+/// depend on a video page being open: the phone uses it to start one.
+final class VideoRemoteLibrary {
+  const VideoRemoteLibrary({required this.list, required this.open});
+
+  /// The library in display order (most recently played first).
+  final Future<List<VideoRemoteLibraryItem>> Function() list;
+
+  /// Closes the open video page through its normal exit and opens [bookUid].
+  /// Fails with a [VideoRemoteException] (`video_missing` / `host_busy`).
+  final Future<void> Function(String bookUid) open;
+}
+
 /// App-owned callbacks; the HTTP layer never sees media paths or widget state.
 final class VideoRemotePlaybackBinding {
   const VideoRemotePlaybackBinding({
@@ -194,15 +235,18 @@ final class VideoRemoteHost implements VideoRemoteService {
   VideoRemoteHost({
     required FavoriteSentenceRepository Function() favorites,
     Stream<String?> Function()? favoriteChanges,
+    VideoRemoteLibrary? library,
     DateTime Function()? now,
   }) : _favorites = favorites,
        _favoriteChanges = favoriteChanges,
+       _library = library,
        _now = now ?? DateTime.now {
     _core = VideoRemoteSessionCore(now: _now, onLeaseExpired: _expireLookup);
   }
   final FavoriteSentenceRepository Function() _favorites;
   final Stream<String?> Function()? _favoriteChanges;
   StreamSubscription<String?>? _favoriteSubscription;
+  final VideoRemoteLibrary? _library;
   final DateTime Function() _now;
   late final VideoRemoteSessionCore _core;
   VideoRemotePlaybackBinding? _binding;
@@ -322,7 +366,10 @@ final class VideoRemoteHost implements VideoRemoteService {
     // Public library identity only, never local paths or signed media URLs.
     'identity': _binding?.bookUid() ?? '', 'cueCount': _cues.length,
     'sectionIndex': _binding?.sectionIndex(),
-    'capabilities': _binding?.capabilities ?? const <String>[],
+    'capabilities': <String>[
+      ...?_binding?.capabilities,
+      if (_library != null) videoRemoteCapabilityOpenVideo,
+    ],
     ...?_binding?.state(),
   };
 
@@ -416,6 +463,9 @@ final class VideoRemoteHost implements VideoRemoteService {
     }
     if (operation == 'playbackOptions') {
       return _playbackOptions(body);
+    }
+    if (operation == 'library') {
+      return _listLibrary(body);
     }
     if (operation == 'mineStatus') {
       _RemoteMineTask? task = _tasks[body['taskId']];
@@ -543,6 +593,20 @@ final class VideoRemoteHost implements VideoRemoteService {
       await binding.openFavorite(favorite);
       _refresh();
       _publish();
+      return <String, Object?>{'ok': true};
+    }
+    if (operation == 'openVideo') {
+      final VideoRemoteLibrary? library = _library;
+      if (library == null) {
+        throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+      }
+      final Object? bookUid = body['bookUid'];
+      if (bookUid is! String || bookUid.isEmpty) {
+        throw const VideoRemoteException(400, 'invalid_argument');
+      }
+      // The outgoing page's lookup pause ends with the page; never resume it.
+      _lookup = null;
+      await library.open(bookUid);
       return <String, Object?>{'ok': true};
     }
     if (operation == 'lookupContext') {
@@ -972,6 +1036,34 @@ final class VideoRemoteHost implements VideoRemoteService {
           favorite.sectionIndex == _binding?.sectionIndex()) &&
       (favorite.normCharOffset == null ||
           favorite.normCharOffset == cue.startMs);
+
+  Future<Map<String, Object?>> _listLibrary(Map<String, dynamic> body) async {
+    final VideoRemoteLibrary? library = _library;
+    if (library == null) {
+      throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+    }
+    final String query = body['query']?.toString() ?? '';
+    final List<VideoRemoteLibraryItem> all = filterByMediaSearch(
+      await library.list(),
+      query,
+      (VideoRemoteLibraryItem item) => <String>[
+        item.title,
+        if (item.collection != null) item.collection!,
+      ],
+    );
+    final int offset = _integer(body, 'offset', 0).clamp(0, all.length);
+    final int limit = _integer(body, 'limit', 100).clamp(1, 200);
+    return <String, Object?>{
+      'total': all.length,
+      'offset': offset,
+      'currentBookUid': _binding?.bookUid(),
+      'items': all
+          .skip(offset)
+          .take(limit)
+          .map((VideoRemoteLibraryItem item) => item.toJson())
+          .toList(),
+    };
+  }
 
   Future<Map<String, Object?>> _listFavorites(Map<String, dynamic> body) async {
     final String query = (body['query']?.toString() ?? '').toLowerCase();
