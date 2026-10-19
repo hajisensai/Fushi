@@ -603,6 +603,92 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
       mergeRemoteTagClocks(TagHostKind.video, videoBookUid,
           remoteAddedAt: remoteAddedAt, remoteTombstones: remoteTombstones);
 
+  // ── media_privacy_flags（v122 作品级私密标记）─────────────────────
+
+  /// 把宿主设为 / 取消私密：只推进对应那只时钟（[at] 缺省取当前时刻），另一只原样
+  /// 保留，互联合并才能按 LWW 裁决并发的设 / 取消。
+  Future<void> setMediaPrivate(
+    TagHostKind kind,
+    String entryKey,
+    bool private, {
+    int? at,
+  }) =>
+      transaction(() async {
+        final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+        final MediaPrivacyClock current = await mediaPrivacyClock(
+          kind,
+          entryKey,
+        );
+        await into(mediaPrivacyFlags).insertOnConflictUpdate(
+          MediaPrivacyFlagsCompanion.insert(
+            mediaKind: kind.dbValue,
+            entryKey: entryKey,
+            privateAt: Value(private ? now : current.privateAt),
+            clearedAt: Value(private ? current.clearedAt : now),
+          ),
+        );
+      });
+
+  /// 宿主当前的私密时钟（没有行 = 两只戳都为 null）。
+  Future<MediaPrivacyClock> mediaPrivacyClock(
+    TagHostKind kind,
+    String entryKey,
+  ) async {
+    final MediaPrivacyFlagRow? row = await (select(mediaPrivacyFlags)
+          ..where((t) =>
+              t.mediaKind.equals(kind.dbValue) & t.entryKey.equals(entryKey)))
+        .getSingleOrNull();
+    return (privateAt: row?.privateAt, clearedAt: row?.clearedAt);
+  }
+
+  Future<bool> isMediaPrivate(TagHostKind kind, String entryKey) async =>
+      isPrivateByClock(await mediaPrivacyClock(kind, entryKey));
+
+  /// 某宿主种类当前是私密的全部 entryKey（一趟批查）。
+  Future<Set<String>> privateEntryKeys(TagHostKind kind) async => <String>{
+        for (final MapEntry<String, MediaPrivacyClock> e
+            in (await allPrivacyClocksForKind(kind)).entries)
+          if (isPrivateByClock(e.value)) e.key,
+      };
+
+  /// 某宿主种类全部私密时钟（含已取消的），供互联标签同步构建本机清单。
+  Future<Map<String, MediaPrivacyClock>> allPrivacyClocksForKind(
+    TagHostKind kind,
+  ) async {
+    final List<MediaPrivacyFlagRow> rows = await (select(mediaPrivacyFlags)
+          ..where((t) => t.mediaKind.equals(kind.dbValue)))
+        .get();
+    return <String, MediaPrivacyClock>{
+      for (final MediaPrivacyFlagRow r in rows)
+        r.entryKey: (privateAt: r.privateAt, clearedAt: r.clearedAt),
+    };
+  }
+
+  /// 把对端私密时钟并入宿主（逐戳取大）。**只在合并结果与本机不同时写库**，返回
+  /// 是否改了：理由同 [mergeRemoteTagClocks]（表变更观察者会被无变化的写自激）。
+  Future<bool> mergeRemotePrivacyClock(
+    TagHostKind kind,
+    String entryKey,
+    MediaPrivacyClock remote,
+  ) =>
+      transaction(() async {
+        final MediaPrivacyClock local = await mediaPrivacyClock(
+          kind,
+          entryKey,
+        );
+        final MediaPrivacyClock merged = mergePrivacyClocks(local, remote);
+        if (merged == local) return false;
+        await into(mediaPrivacyFlags).insertOnConflictUpdate(
+          MediaPrivacyFlagsCompanion.insert(
+            mediaKind: kind.dbValue,
+            entryKey: entryKey,
+            privateAt: Value(merged.privateAt),
+            clearedAt: Value(merged.clearedAt),
+          ),
+        );
+        return true;
+      });
+
   Future<int?> _tagIdByName(String name) async {
     final BookTagRow? row = await (select(bookTags)
           ..where((t) => t.name.equals(name))

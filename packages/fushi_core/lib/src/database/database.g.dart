@@ -61227,6 +61227,333 @@ class SrsSentBatchesCompanion extends UpdateCompanion<SrsSentBatchRow> {
   }
 }
 
+class $MediaPrivacyFlagsTable extends MediaPrivacyFlags
+    with TableInfo<$MediaPrivacyFlagsTable, MediaPrivacyFlagRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaPrivacyFlagsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entryKeyMeta = const VerificationMeta(
+    'entryKey',
+  );
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+    'entry_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _privateAtMeta = const VerificationMeta(
+    'privateAt',
+  );
+  @override
+  late final GeneratedColumn<int> privateAt = GeneratedColumn<int>(
+    'private_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _clearedAtMeta = const VerificationMeta(
+    'clearedAt',
+  );
+  @override
+  late final GeneratedColumn<int> clearedAt = GeneratedColumn<int>(
+    'cleared_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    mediaKind,
+    entryKey,
+    privateAt,
+    clearedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_privacy_flags';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaPrivacyFlagRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKindMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(
+        _entryKeyMeta,
+        entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('private_at')) {
+      context.handle(
+        _privateAtMeta,
+        privateAt.isAcceptableOrUnknown(data['private_at']!, _privateAtMeta),
+      );
+    }
+    if (data.containsKey('cleared_at')) {
+      context.handle(
+        _clearedAtMeta,
+        clearedAt.isAcceptableOrUnknown(data['cleared_at']!, _clearedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaKind, entryKey};
+  @override
+  MediaPrivacyFlagRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaPrivacyFlagRow(
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
+      entryKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entry_key'],
+      )!,
+      privateAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}private_at'],
+      ),
+      clearedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cleared_at'],
+      ),
+    );
+  }
+
+  @override
+  $MediaPrivacyFlagsTable createAlias(String alias) {
+    return $MediaPrivacyFlagsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaPrivacyFlagRow extends DataClass
+    implements Insertable<MediaPrivacyFlagRow> {
+  final String mediaKind;
+  final String entryKey;
+
+  /// 最近一次设为私密的毫秒戳；NULL = 从没设过。
+  final int? privateAt;
+
+  /// 最近一次取消私密的毫秒戳；NULL = 从没取消过。
+  final int? clearedAt;
+  const MediaPrivacyFlagRow({
+    required this.mediaKind,
+    required this.entryKey,
+    this.privateAt,
+    this.clearedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_kind'] = Variable<String>(mediaKind);
+    map['entry_key'] = Variable<String>(entryKey);
+    if (!nullToAbsent || privateAt != null) {
+      map['private_at'] = Variable<int>(privateAt);
+    }
+    if (!nullToAbsent || clearedAt != null) {
+      map['cleared_at'] = Variable<int>(clearedAt);
+    }
+    return map;
+  }
+
+  MediaPrivacyFlagsCompanion toCompanion(bool nullToAbsent) {
+    return MediaPrivacyFlagsCompanion(
+      mediaKind: Value(mediaKind),
+      entryKey: Value(entryKey),
+      privateAt: privateAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(privateAt),
+      clearedAt: clearedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(clearedAt),
+    );
+  }
+
+  factory MediaPrivacyFlagRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaPrivacyFlagRow(
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      privateAt: serializer.fromJson<int?>(json['privateAt']),
+      clearedAt: serializer.fromJson<int?>(json['clearedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaKind': serializer.toJson<String>(mediaKind),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'privateAt': serializer.toJson<int?>(privateAt),
+      'clearedAt': serializer.toJson<int?>(clearedAt),
+    };
+  }
+
+  MediaPrivacyFlagRow copyWith({
+    String? mediaKind,
+    String? entryKey,
+    Value<int?> privateAt = const Value.absent(),
+    Value<int?> clearedAt = const Value.absent(),
+  }) => MediaPrivacyFlagRow(
+    mediaKind: mediaKind ?? this.mediaKind,
+    entryKey: entryKey ?? this.entryKey,
+    privateAt: privateAt.present ? privateAt.value : this.privateAt,
+    clearedAt: clearedAt.present ? clearedAt.value : this.clearedAt,
+  );
+  MediaPrivacyFlagRow copyWithCompanion(MediaPrivacyFlagsCompanion data) {
+    return MediaPrivacyFlagRow(
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      privateAt: data.privateAt.present ? data.privateAt.value : this.privateAt,
+      clearedAt: data.clearedAt.present ? data.clearedAt.value : this.clearedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaPrivacyFlagRow(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('privateAt: $privateAt, ')
+          ..write('clearedAt: $clearedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(mediaKind, entryKey, privateAt, clearedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaPrivacyFlagRow &&
+          other.mediaKind == this.mediaKind &&
+          other.entryKey == this.entryKey &&
+          other.privateAt == this.privateAt &&
+          other.clearedAt == this.clearedAt);
+}
+
+class MediaPrivacyFlagsCompanion extends UpdateCompanion<MediaPrivacyFlagRow> {
+  final Value<String> mediaKind;
+  final Value<String> entryKey;
+  final Value<int?> privateAt;
+  final Value<int?> clearedAt;
+  final Value<int> rowid;
+  const MediaPrivacyFlagsCompanion({
+    this.mediaKind = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.privateAt = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MediaPrivacyFlagsCompanion.insert({
+    required String mediaKind,
+    required String entryKey,
+    this.privateAt = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : mediaKind = Value(mediaKind),
+       entryKey = Value(entryKey);
+  static Insertable<MediaPrivacyFlagRow> custom({
+    Expression<String>? mediaKind,
+    Expression<String>? entryKey,
+    Expression<int>? privateAt,
+    Expression<int>? clearedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaKind != null) 'media_kind': mediaKind,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (privateAt != null) 'private_at': privateAt,
+      if (clearedAt != null) 'cleared_at': clearedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MediaPrivacyFlagsCompanion copyWith({
+    Value<String>? mediaKind,
+    Value<String>? entryKey,
+    Value<int?>? privateAt,
+    Value<int?>? clearedAt,
+    Value<int>? rowid,
+  }) {
+    return MediaPrivacyFlagsCompanion(
+      mediaKind: mediaKind ?? this.mediaKind,
+      entryKey: entryKey ?? this.entryKey,
+      privateAt: privateAt ?? this.privateAt,
+      clearedAt: clearedAt ?? this.clearedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (privateAt.present) {
+      map['private_at'] = Variable<int>(privateAt.value);
+    }
+    if (clearedAt.present) {
+      map['cleared_at'] = Variable<int>(clearedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaPrivacyFlagsCompanion(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('privateAt: $privateAt, ')
+          ..write('clearedAt: $clearedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -61408,6 +61735,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $VideoSubtitleGlossariesTable videoSubtitleGlossaries =
       $VideoSubtitleGlossariesTable(this);
   late final $SrsSentBatchesTable srsSentBatches = $SrsSentBatchesTable(this);
+  late final $MediaPrivacyFlagsTable mediaPrivacyFlags =
+      $MediaPrivacyFlagsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -61513,6 +61842,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     srsCardsCache,
     videoSubtitleGlossaries,
     srsSentBatches,
+    mediaPrivacyFlags,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -104720,6 +105050,200 @@ typedef $$SrsSentBatchesTableProcessedTableManager =
       SrsSentBatchRow,
       PrefetchHooks Function()
     >;
+typedef $$MediaPrivacyFlagsTableCreateCompanionBuilder =
+    MediaPrivacyFlagsCompanion Function({
+      required String mediaKind,
+      required String entryKey,
+      Value<int?> privateAt,
+      Value<int?> clearedAt,
+      Value<int> rowid,
+    });
+typedef $$MediaPrivacyFlagsTableUpdateCompanionBuilder =
+    MediaPrivacyFlagsCompanion Function({
+      Value<String> mediaKind,
+      Value<String> entryKey,
+      Value<int?> privateAt,
+      Value<int?> clearedAt,
+      Value<int> rowid,
+    });
+
+class $$MediaPrivacyFlagsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaPrivacyFlagsTable> {
+  $$MediaPrivacyFlagsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get privateAt => $composableBuilder(
+    column: $table.privateAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaPrivacyFlagsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaPrivacyFlagsTable> {
+  $$MediaPrivacyFlagsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get privateAt => $composableBuilder(
+    column: $table.privateAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaPrivacyFlagsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaPrivacyFlagsTable> {
+  $$MediaPrivacyFlagsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<int> get privateAt =>
+      $composableBuilder(column: $table.privateAt, builder: (column) => column);
+
+  GeneratedColumn<int> get clearedAt =>
+      $composableBuilder(column: $table.clearedAt, builder: (column) => column);
+}
+
+class $$MediaPrivacyFlagsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaPrivacyFlagsTable,
+          MediaPrivacyFlagRow,
+          $$MediaPrivacyFlagsTableFilterComposer,
+          $$MediaPrivacyFlagsTableOrderingComposer,
+          $$MediaPrivacyFlagsTableAnnotationComposer,
+          $$MediaPrivacyFlagsTableCreateCompanionBuilder,
+          $$MediaPrivacyFlagsTableUpdateCompanionBuilder,
+          (
+            MediaPrivacyFlagRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaPrivacyFlagsTable,
+              MediaPrivacyFlagRow
+            >,
+          ),
+          MediaPrivacyFlagRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaPrivacyFlagsTableTableManager(
+    _$FushiDatabase db,
+    $MediaPrivacyFlagsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaPrivacyFlagsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaPrivacyFlagsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaPrivacyFlagsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> mediaKind = const Value.absent(),
+                Value<String> entryKey = const Value.absent(),
+                Value<int?> privateAt = const Value.absent(),
+                Value<int?> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaPrivacyFlagsCompanion(
+                mediaKind: mediaKind,
+                entryKey: entryKey,
+                privateAt: privateAt,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String mediaKind,
+                required String entryKey,
+                Value<int?> privateAt = const Value.absent(),
+                Value<int?> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaPrivacyFlagsCompanion.insert(
+                mediaKind: mediaKind,
+                entryKey: entryKey,
+                privateAt: privateAt,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaPrivacyFlagsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaPrivacyFlagsTable,
+      MediaPrivacyFlagRow,
+      $$MediaPrivacyFlagsTableFilterComposer,
+      $$MediaPrivacyFlagsTableOrderingComposer,
+      $$MediaPrivacyFlagsTableAnnotationComposer,
+      $$MediaPrivacyFlagsTableCreateCompanionBuilder,
+      $$MediaPrivacyFlagsTableUpdateCompanionBuilder,
+      (
+        MediaPrivacyFlagRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MediaPrivacyFlagsTable,
+          MediaPrivacyFlagRow
+        >,
+      ),
+      MediaPrivacyFlagRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -104975,4 +105499,6 @@ class $FushiDatabaseManager {
       );
   $$SrsSentBatchesTableTableManager get srsSentBatches =>
       $$SrsSentBatchesTableTableManager(_db, _db.srsSentBatches);
+  $$MediaPrivacyFlagsTableTableManager get mediaPrivacyFlags =>
+      $$MediaPrivacyFlagsTableTableManager(_db, _db.mediaPrivacyFlags);
 }
