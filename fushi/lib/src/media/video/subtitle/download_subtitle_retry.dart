@@ -11,6 +11,8 @@
 /// `placed`，确定不必再找的标 `skipped`，其余只刷新尝试时刻与原因等下一轮。
 library;
 
+import 'dart:async';
+
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
@@ -26,12 +28,30 @@ const Duration kDownloadSubtitleRetryWindow = Duration(days: 14);
 /// 同一行两次尝试之间至少隔多久：字幕站按天更新，频繁重搜只是滥用来源站。
 const Duration kDownloadSubtitleRetryInterval = Duration(hours: 6);
 
+/// 多久看一眼有没有退避到期的行（每行自带 [kDownloadSubtitleRetryInterval] 退避，
+/// 这个周期只决定发现到期行的延迟）。
+const Duration kDownloadSubtitleRetryPollPeriod = Duration(minutes: 30);
+
+/// 起一个重试循环：**立刻跑一轮**，此后每 [period] 再跑一轮。
+///
+/// 首轮不能等满一个周期：移动端 app 很少连续在前台停留 30 分钟，`Timer.periodic`
+/// 的首轮几乎永远触发不到，到期的行就一直没人看。立刻跑一轮不会多打来源站——
+/// 退避没到期的行根本不会被查出来。
+Timer startDownloadSubtitleRetryLoop(
+  void Function() runOnce, {
+  Duration period = kDownloadSubtitleRetryPollPeriod,
+}) {
+  runOnce();
+  return Timer.periodic(period, (_) => runOnce());
+}
+
 /// 一轮重试的结果计数（日志与测试用）。
 class DownloadSubtitleRetryReport {
   const DownloadSubtitleRetryReport({
     this.attempted = 0,
     this.installed = 0,
     this.settled = 0,
+    this.unmatched = 0,
   });
 
   /// 本轮真正交给补字幕服务的行数。
@@ -40,8 +60,13 @@ class DownloadSubtitleRetryReport {
   /// 其中装上了字幕的行数。
   final int installed;
 
-  /// 确定不必再找、标成 `skipped` 的行数（视频已离库 / 已有字幕）。
+  /// 确定不必再找、标成 `skipped` 的行数（库里那一集已经有字幕）。
   final int settled;
+
+  /// 按任务记下的最终路径在库里找不到视频的行数。**不终结**：路径对不上不等于
+  /// 视频离库（见 [retryUnavailableDownloadSubtitles]），只记原因、等下一轮，
+  /// 超出 [kDownloadSubtitleRetryWindow] 后自然不再被查出来。
+  final int unmatched;
 }
 
 /// 跑一轮重试。[backfill] 按库内视频 id 补字幕，视频不存在返回 null；生产装配是
@@ -75,6 +100,7 @@ Future<DownloadSubtitleRetryReport> retryUnavailableDownloadSubtitles({
   int attempted = 0;
   int installed = 0;
   int settled = 0;
+  int unmatched = 0;
   for (final (
         :VideoDownloadJobSubtitleRow subtitle,
         :VideoDownloadJobFileRow file,
@@ -82,18 +108,28 @@ Future<DownloadSubtitleRetryReport> retryUnavailableDownloadSubtitles({
       in rows) {
     final String? bookUid =
         bookUidByPath[p.canonicalize(file.finalAbsolutePath!)];
+    final int at = nowMs;
+    // 路径对不上**不是**「视频已离库」的证据：下载内容改名 / 移动
+    // （`AppModel.downloadRelocateService` → `VideoBookRepository.migrateMediaPaths`）
+    // 只改写库里的 `video_books.video_path`，任务行的 `finalAbsolutePath` 原样不动；
+    // 数据根迁移同理（`video_path` 按 documentsRooted 改写，`finalAbsolutePath` 按
+    // 外部路径声明不改，见 path_rebase_coverage.dart）。任务行也没有记下导入时的
+    // bookUid，没有别的身份可认。所以只记原因、留在 unavailable 等下一轮；真离库的
+    // 行在重试窗口过后自然不再被查出来。
     final VideoSubtitleBackfillReport? report = bookUid == null
         ? null
         : await backfill(bookUid);
     if (bookUid != null) attempted++;
-    final int at = nowMs;
     if (report == null) {
-      settled++;
+      unmatched++;
       await database.updateVideoDownloadJobSubtitle(
         subtitle.subtitleId,
         VideoDownloadJobSubtitlesCompanion(
-          status: const Value<String>(VideoDownloadJobSubtitleStatus.skipped),
-          error: const Value<String?>('video is no longer in the library'),
+          error: Value<String?>(
+            bookUid == null
+                ? 'no library video at the downloaded path'
+                : 'library video disappeared before the retry',
+          ),
           updatedAt: Value<int>(at),
         ),
       );
@@ -111,17 +147,17 @@ Future<DownloadSubtitleRetryReport> retryUnavailableDownloadSubtitles({
           updatedAt: Value<int>(at),
         ),
       );
-      // 补字幕服务只落 sidecar、不碰库。库里若还是空 / 内嵌轨选择，下次起播会先
-      // 恢复那条内嵌轨、根本不去探 sidecar——把主字幕源指向新装的文件，等于补完
-      // 下载流水线当初装上字幕时会做的那一步。`off:` / 外挂路径是用户的选择，不动。
+      // 补字幕服务只落 sidecar、不碰库。库里主字幕源还是空（无偏好）时指向新装的
+      // 文件，等于补完下载流水线当初装上字幕时会做的那一步。非空一律不动：
+      // `off:` / 外挂路径 / `embedded:<n>` 都只由用户在播放器里选源时写入
+      // （`_selectSubtitleSource` / `_selectSubtitleOff`；导入与下载只写路径或 null，
+      // 起播自动选轨不落库），覆盖它就是改掉用户的选择。新 sidecar 照样落在视频
+      // 旁边，字幕菜单里能直接选到。
       final String? installedPath = report.installedPath;
       final VideoBookRow? book = await database.getVideoBookByBookUid(bookUid!);
       if (installedPath != null &&
           book != null &&
-          !subtitleSourceBlocksBackfill(
-            book.subtitleSource,
-            embeddedSelectionBlocks: false,
-          )) {
+          !subtitleSourceBlocksBackfill(book.subtitleSource)) {
         await database.updateVideoBookSubtitleSource(bookUid, installedPath);
       }
       continue;
@@ -156,5 +192,6 @@ Future<DownloadSubtitleRetryReport> retryUnavailableDownloadSubtitles({
     attempted: attempted,
     installed: installed,
     settled: settled,
+    unmatched: unmatched,
   );
 }

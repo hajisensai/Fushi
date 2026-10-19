@@ -5,10 +5,12 @@
 /// 自动选片 / 只认已完成任务），以及每种补字幕结局怎样改写这一行。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/subtitle/download_subtitle_retry.dart';
 import 'package:fushi/src/media/video/subtitle/library_video_subtitle_backfill.dart'
@@ -44,6 +46,7 @@ void main() {
     int createdAgo = 24 * hour,
     int updatedAgo = 7 * hour,
     bool inLibrary = true,
+    String? libraryVideoPath,
     String? bookSubtitleSource,
   }) async {
     final File video = File(p.join(tmp.path, '$name.mkv'))
@@ -101,7 +104,7 @@ void main() {
         VideoBooksCompanion.insert(
           bookUid: 'video/$name',
           title: name,
-          videoPath: video.path,
+          videoPath: libraryVideoPath ?? video.path,
           subtitleSource: Value<String?>(bookSubtitleSource),
         ),
       );
@@ -165,9 +168,10 @@ void main() {
     expect(after.error, isNull);
   });
 
-  test('装上后主字幕源：空 / 内嵌轨选择改指新 sidecar；off: 与外挂路径不动', () async {
+  // `embedded:<n>` 只由用户在播放器字幕菜单里选源时写入（起播自动选轨不落库），
+  // 改指新 sidecar 等于覆盖用户的选择；新 sidecar 落在视频旁边，菜单里能直接选。
+  test('装上后主字幕源：只有空（无偏好）改指新 sidecar；内嵌轨 / off: / 外挂路径不动', () async {
     await seedEpisode('none');
-    // E03 实况：Crunchyroll 片源只有多语内嵌轨，库里存着英文的 embedded:0。
     await seedEpisode('embedded', bookSubtitleSource: 'embedded:0');
     await seedEpisode('off', bookSubtitleSource: 'off:');
     final String handPicked = p.join(tmp.path, 'hand.en.srt');
@@ -184,7 +188,7 @@ void main() {
     );
 
     expect(await bookSource('none'), p.join(tmp.path, 'none.ja.srt'));
-    expect(await bookSource('embedded'), p.join(tmp.path, 'embedded.ja.srt'));
+    expect(await bookSource('embedded'), 'embedded:0', reason: '用户选的内嵌轨');
     expect(await bookSource('off'), 'off:', reason: '用户显式关闭字幕');
     expect(await bookSource('file'), handPicked, reason: '用户选的外挂文件');
   });
@@ -248,8 +252,15 @@ void main() {
     expect(calls, 1, reason: '退避到期再试');
   });
 
-  test('视频已离库 / 已有字幕 → skipped，不再重试', () async {
+  // 路径对不上不等于离库：下载内容改名 / 移动（migrateMediaPaths）与数据根迁移
+  // 只改写库里的 video_path，任务行的 finalAbsolutePath 不动。此前直接标 skipped
+  // （"video is no longer in the library"），挪过目录的分集就永远不再补字幕。
+  test('库里按下载路径找不到视频 → 留在 unavailable 记原因，不终结；已有字幕 → skipped', () async {
     await seedEpisode('gone', inLibrary: false);
+    await seedEpisode(
+      'moved',
+      libraryVideoPath: p.join(tmp.path, 'relocated', 'moved.mkv'),
+    );
     await seedEpisode('hand');
 
     final List<String> asked = <String>[];
@@ -265,9 +276,47 @@ void main() {
           now: now,
         );
 
-    expect(asked, <String>['video/hand'], reason: '不在库里的视频不去搜');
-    expect(report.settled, 2);
-    expect((await row('gone')).status, VideoDownloadJobSubtitleStatus.skipped);
+    expect(asked, <String>['video/hand'], reason: '找不到库内视频就不去搜');
+    expect(report.settled, 1);
+    expect(report.unmatched, 2);
+    for (final String name in <String>['gone', 'moved']) {
+      final VideoDownloadJobSubtitleRow after = await row(name);
+      expect(after.status, VideoDownloadJobSubtitleStatus.unavailable);
+      expect(after.updatedAt, nowMs, reason: '刷新尝试时刻，按退避等下一轮');
+      expect(after.error, 'no library video at the downloaded path');
+    }
     expect((await row('hand')).status, VideoDownloadJobSubtitleStatus.skipped);
+
+    // 退避到期后照样再看一轮（库路径修好了就能接上），而不是被终结。
+    int calls = 0;
+    await retryUnavailableDownloadSubtitles(
+      database: db,
+      backfill: (String _) async {
+        calls++;
+        return const VideoSubtitleBackfillReport(outcome: 'noCandidate');
+      },
+      now: now.add(kDownloadSubtitleRetryInterval),
+    );
+    expect(
+      (await row('moved')).updatedAt,
+      now.add(kDownloadSubtitleRetryInterval).millisecondsSinceEpoch,
+    );
+    expect(calls, 0);
+  });
+
+  // 移动端很少连续前台 30 分钟：只靠 Timer.periodic 的首轮，到期的行基本没人看。
+  test('重试循环起来就先跑一轮，此后按周期再跑', () {
+    fakeAsync((FakeAsync async) {
+      int runs = 0;
+      final Timer timer = startDownloadSubtitleRetryLoop(() => runs++);
+      expect(runs, 1, reason: '不等满第一个周期');
+      async.elapse(kDownloadSubtitleRetryPollPeriod);
+      expect(runs, 2);
+      async.elapse(kDownloadSubtitleRetryPollPeriod * 2);
+      expect(runs, 4);
+      timer.cancel();
+      async.elapse(kDownloadSubtitleRetryPollPeriod);
+      expect(runs, 4);
+    });
   });
 }

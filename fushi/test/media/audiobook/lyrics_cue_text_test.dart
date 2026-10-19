@@ -145,6 +145,18 @@ void main() {
       expect(line('<p>前だ。</p><p>――誰だ</p>', '誰だ'), '――誰だ');
     });
 
+    // PR #2315 审查：段落之间夹一段只有符号的段落（场景分隔「◇」）时，前后两行
+    // 曾共用缝隙里第一个段落边界当切点，下一行显示成「◇「誰だ」」。前一行止于
+    // 第一个段落边界、后一行起于最后一个，中间整段符号谁都不认领。
+    test('symbol-only paragraph between two lines is claimed by neither', () {
+      const String body = '<p>前だ。</p><p>◇</p><p>「誰だ」</p>';
+      expect(line(body, '前だ'), '前だ。');
+      expect(line(body, '誰だ'), '「誰だ」');
+      const String stars = '<p>前だ。</p><p>＊＊＊</p><p>――誰だ</p>';
+      expect(line(stars, '前だ'), '前だ。');
+      expect(line(stars, '誰だ'), '――誰だ');
+    });
+
     test('other symbols: 〝〟 quotes, ・ and full-width dash', () {
       expect(line('〝誰だ〟と問う', '誰だ'), '〝誰だ〟');
       expect(line('前だ・次だ', '前だ'), '前だ・');
