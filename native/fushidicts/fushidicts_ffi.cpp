@@ -772,6 +772,12 @@ void fushidicts_free_string(char* s) {
 // fushidicts_lookup 并把整条结果连释义一起搬过 FFI）。lengths[i] = 第 i 段的
 // UTF-16 码元数；readings 仅 with_readings 时非空（与 lengths 等长）。语义见
 // tokenize.hpp。
+//
+// [text] 不是 C 串：长度由 [text_bytes]（UTF-8 字节数，不含任何结尾 NUL）给出，
+// 原生按这段带长视图处理整段。HBK-AUDIT-007：以前只收 `const char*` 再隐式构造
+// std::string，Dart 字符串里合法的 U+0000（OCR / 网页文本 / 字幕都可能带）会让原生
+// 只切到第一个 NUL 为止，Dart 侧发现各段总长 ≠ 原文后把**整段**降级成逐码元、读音
+// 全空——连 NUL 之前本来能切对的词一起丢了。text_bytes < 0 视为非法输入，回空结果。
 
 struct FfiTokenizeResult {
   int32_t* lengths;
@@ -780,14 +786,17 @@ struct FfiTokenizeResult {
 };
 
 FUSHI_EXPORT
-FfiTokenizeResult fushidicts_tokenize(void* handle, const char* text, int32_t scan_length, int32_t with_readings) {
+FfiTokenizeResult fushidicts_tokenize(void* handle, const char* text, int32_t text_bytes, int32_t scan_length,
+                                      int32_t with_readings) {
   return ffi_guard("fushidicts_tokenize", [&]() -> FfiTokenizeResult {
     FfiTokenizeResult r{};
-    if (!text) return r;
+    if (!text || text_bytes < 0) return r;
     auto* h = static_cast<FushidictsHandle*>(handle);
     Lookup lookup(h->query, h->deinflector);
+    // 显式长度构造：内嵌 NUL 是正文的一部分，不是终止符。
+    const std::string text_utf8(text, static_cast<size_t>(text_bytes));
     TokenizeOutput out =
-        tokenize(lookup, text, static_cast<size_t>(scan_length), with_readings != 0, &h->match_cache);
+        tokenize(lookup, text_utf8, static_cast<size_t>(scan_length), with_readings != 0, &h->match_cache);
     r.count = static_cast<int32_t>(out.lengths.size());
     int32_t length_count = r.count;
     r.lengths = alloc_array<int32_t>(length_count);

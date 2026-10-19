@@ -795,11 +795,18 @@ class FushiDicts {
     String text, {
     required bool withReadings,
   }) {
-    final tp = text.toNativeUtf8(allocator: calloc);
+    // 带长传入（HBK-AUDIT-007）：`toNativeUtf8` 产出的是 C 串，原生按 NUL 定界会在
+    // 正文里的 U+0000 处截断，切出来的总长对不上原文、整段被下面的闸门判失败。
+    // `utf8.encode` 与 `toNativeUtf8` 同口径（孤立代理 → U+FFFD），只是不再靠 NUL。
+    final Uint8List bytes = utf8.encode(text);
+    // 至少分配 1 字节：空串也传一个有效指针，原生侧 nullptr 只表示非法调用。
+    final Pointer<Uint8> tp = calloc<Uint8>(bytes.isEmpty ? 1 : bytes.length);
     try {
+      tp.asTypedList(bytes.length).setAll(0, bytes);
       final r = _bindings!.tokenize(
         _handle!,
         tp,
+        bytes.length,
         defaultScanLength,
         withReadings ? 1 : 0,
       );

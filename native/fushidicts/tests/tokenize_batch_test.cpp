@@ -218,6 +218,10 @@ int main(int argc, char** argv) {
       "\xEF\xBF\xBD\xEF\xBF\xBD日本",
       "食べさせられたくなかった食べ物",
       "　全角\tタブ\n改行",
+      // HBK-AUDIT-007：内嵌 U+0000 时窗口实现与整段参考实现逐段一致（NUL 前后整词的
+      // 绝对切分由 tokenize_ffi_nul_test 钉死，参考实现与被测共用 lookup，抓不到 lookup 自身的错）。
+      std::string("日本語\0日本語", sizeof("日本語\0日本語") - 1),
+      std::string("\0は難しい\0\0です\0", sizeof("\0は難しい\0\0です\0") - 1),
   };
   for (const std::string& text : fixed) expect_same(lk, cache, text);
 

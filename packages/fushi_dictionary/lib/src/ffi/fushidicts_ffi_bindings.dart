@@ -235,10 +235,12 @@ typedef _LookupPopupJsonDart = Pointer<Utf8> Function(Pointer<Void> handle,
 
 typedef _FreeStringDart = void Function(Pointer<Utf8> s);
 
+// [text] 是带长 UTF-8 缓冲（[textBytes] 字节，不靠结尾 NUL 定界）：Dart 字符串里
+// 合法的 U+0000 是正文的一部分（HBK-AUDIT-007）。
 typedef _TokenizeNative = FfiTokenizeResult Function(Pointer<Void> handle,
-    Pointer<Utf8> text, Int32 scanLength, Int32 withReadings);
+    Pointer<Uint8> text, Int32 textBytes, Int32 scanLength, Int32 withReadings);
 typedef _TokenizeDart = FfiTokenizeResult Function(Pointer<Void> handle,
-    Pointer<Utf8> text, int scanLength, int withReadings);
+    Pointer<Uint8> text, int textBytes, int scanLength, int withReadings);
 
 typedef _FreeTokenizeResultDart = void Function(Pointer<FfiTokenizeResult> r);
 
