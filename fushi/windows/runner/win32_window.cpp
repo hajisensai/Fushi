@@ -566,7 +566,7 @@ void Win32Window::FillSurfaceBackdrop() {
   // content instead of a colour flash. Everything else (interactive resize,
   // theme pushes) has no snapshot and keeps the cheap brush fill.
   // BUG-2964: never on a see-through surface — GDI writes alpha 0, so the
-  // snapshot would be added onto the Mica / HDR picture as a ghost frame.
+  // snapshot would be added onto the Mica material as a ghost frame.
   bool painted = false;
   if (transition_snapshot_ != nullptr &&
       !fushi::MainSurfaceSeeThrough(main_surface_state())) {
@@ -605,14 +605,6 @@ void Win32Window::SetSystemBackdrop(bool enabled) {
     return;
   }
   system_backdrop_ = enabled;
-  FillSurfaceBackdrop();
-}
-
-void Win32Window::SetVideoPassthrough(bool enabled) {
-  if (video_passthrough_ == enabled) {
-    return;
-  }
-  video_passthrough_ = enabled;
   FillSurfaceBackdrop();
 }
 

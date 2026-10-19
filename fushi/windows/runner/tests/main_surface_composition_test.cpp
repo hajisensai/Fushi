@@ -31,10 +31,8 @@ bool SameMargins(const MARGINS& a, int left, int right, int top, int bottom) {
 int main() {
   bool ok = true;
 
-  const MainSurfaceState plain{false, false};
-  const MainSurfaceState mica{true, false};
-  const MainSurfaceState passthrough{false, true};
-  const MainSurfaceState mica_and_passthrough{true, true};
+  const MainSurfaceState plain{false};
+  const MainSurfaceState mica{true};
 
   // Plain window keeps window_manager's hidden-title-bar shadow (1 px top).
   ok &= Expect(SameMargins(MainFrameMargins(plain), 0, 0, 1, 0),
@@ -46,35 +44,6 @@ int main() {
   ok &= Expect(SameMargins(MainFrameMargins(mica), -1, -1, -1, -1),
                "Mica extends the frame over the whole client area");
   ok &= Expect(MainSurfaceSeeThrough(mica), "Mica surface is see-through");
-
-  // BUG-2964: the HDR passthrough must not extend the frame into the client
-  // area at all — measured, the 1 px top shadow margin draws an opaque
-  // DWMWA_CAPTION_COLOR line over client row 0 of the video.
-  ok &= Expect(SameMargins(MainFrameMargins(passthrough), 0, 0, 0, 0),
-               "passthrough keeps the frame out of the client area");
-  ok &= Expect(MainSurfaceSeeThrough(passthrough),
-               "passthrough surface is see-through (black GDI fill)");
-
-  // Passthrough wins over Mica: Mica's glass would fill the video hole.
-  ok &= Expect(SameMargins(MainFrameMargins(mica_and_passthrough), 0, 0, 0, 0),
-               "passthrough overrides Mica's glass margins");
-  ok &= Expect(MainSurfaceSeeThrough(mica_and_passthrough),
-               "Mica + passthrough surface is see-through");
-
-  // The DWM shadow under client row 0 is only removed while the frame is
-  // off-screen: passthrough AND runner fullscreen. Windowed keeps the frame.
-  const MainSurfaceState passthrough_fullscreen{false, true, true};
-  const MainSurfaceState plain_fullscreen{false, false, true};
-  ok &= Expect(fushi::MainSurfaceNcRenderingDisabled(passthrough_fullscreen),
-               "passthrough fullscreen drops DWM non-client rendering");
-  ok &= Expect(!fushi::MainSurfaceNcRenderingDisabled(passthrough),
-               "windowed passthrough keeps the DWM frame");
-  ok &= Expect(!fushi::MainSurfaceNcRenderingDisabled(plain_fullscreen),
-               "SDR fullscreen keeps the DWM frame");
-  ok &= Expect(!fushi::MainSurfaceNcRenderingDisabled(plain),
-               "plain window keeps the DWM frame");
-  ok &= Expect(SameMargins(MainFrameMargins(passthrough_fullscreen), 0, 0, 0, 0),
-               "passthrough fullscreen keeps the frame out of the client area");
 
   if (!ok) {
     return 1;

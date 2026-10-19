@@ -226,7 +226,7 @@ SettingsDestination buildVideoDestination() {
           SettingsSegmentedItem<VideoHdrOutputMode>(
             id: 'video.playback.hdr_output',
             title: t.video_setting_hdr_output,
-            subtitle: t.video_setting_hdr_output_hint,
+            subtitle: t.video_setting_hdr_output_mode_hint,
             icon: Icons.hdr_on_outlined,
             dropdown: true,
             visible: (_) => isWindowsPlatform,

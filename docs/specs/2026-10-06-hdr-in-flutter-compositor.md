@@ -55,11 +55,17 @@ Windows「SDR 内容亮度」，HDR 片源按绝对亮度出，面板峰值以�
 ## 回退与边界
 
 - 原版引擎（没有 `FlutterDesktopViewSetHdrOutput` 导出）、Impeller、ANGLE 缺扩展、软件渲染：
-  一律报告不支持，走原来的宿主窗直通（行为不变）。
-- **Dolby Vision Profile 5** 仍走宿主窗：Windows 随包 libmpv 的 gl_video 没有 DV 重整补丁
-  （`textureRendererReshapesDolbyVision` 在 Windows 为 false），只有 gpu-next 能出正确颜色。
-  宿主窗因此还不能删；要彻底去掉它，需要给 Windows libmpv 也打上 `mpv-gl-dovi-p5.patch`
-  （macOS / iOS / Android 已有）。
+  一律报告不支持，视频留在 8-bit SDR 纹理里（HDR 片源由 mpv 色调映射）。
+- **宿主窗已删除（2026-10-18）**。它原本只剩两个用途：上面这些不支持场景的退路，和
+  Dolby Vision Profile 5（Windows 的 gl_video 当时没有 DV 重整，只有 gpu-next 颜色正确）。
+  Windows libmpv 改打 `tool/bluray/platforms/patches/mpv-gl-dovi-p5.patch`（`-dovi1` 归档，
+  与 macOS / iOS / Android 同一份补丁）后，`tool/bluray/verify_dovi_p5.py` 实测 d3d11va
+  零拷贝 / 拷回 / 软解下 P5 与 libplacebo 平均误差 0.36/255（旧归档 114），DV 不再需要它；
+  发布构建一律带补丁引擎，退路只服务原版引擎的开发构建，于是 runner 的
+  `HdrVideoHostWindow`、主窗 blur-behind 挖洞、`MainSurfaceState.video_passthrough` /
+  全屏关 NC 渲染、media_kit 的 `VideoController.hidden` 一并删除，HDR 只有一个窗口。
+  P8.1（HDR10 基础层 + RPU）在 gl_video 下显示基础层、忽略 RPU，与只认 HDR10 的播放器一致；
+  gpu-next 会按 RPU 重整，这一点是有意接受的差别。
 - 未在真实 HDR 显示模式下验证（本机桌面是 SDR，按约定不替用户切显示器 HDR）。HDR 模式下
   的数值链与 SDR 模式只差 `compositorHdrTarget` 的分支，单测覆盖；首次在 HDR 显示器上用时
   请留意界面白与视频参考白的相对亮度。

@@ -50,19 +50,18 @@ extension _VideoSubtitleLanguage on _VideoFushiPageState {
 /// also stay in the main shell: they sit between `build` and [_buildVideoBody] and
 /// are not part of this contiguous render-tree run (cutting them would require
 /// splitting a non-contiguous subset).
-/// 字幕 / 弹幕这类画在视频平面上的图形层：HDR 直通时按显示器的 SDR 白电平压到
+/// 字幕 / 弹幕这类画在视频平面上的图形层：HDR 输出时按显示器的 SDR 白电平压到
 /// HDR 图形白（[hdrGraphicsWhiteScale]），与 mpv 输出的画面同一亮度基准；其余情况
-/// 原样。只重建滤镜一层，[child] 不随直通状态 / 显示器信息重建。
+/// 原样。只重建滤镜一层，[child] 不随 HDR 输出状态 / 显示器信息重建。
 Widget _hdrGraphicsWhiteLevel(VideoPlayerController controller, Widget child) {
   return ListenableBuilder(
     listenable: Listenable.merge(<Listenable>[
-      controller.hdrHostActive,
       controller.hdrCompositorActive,
       controller.hdrDisplayInfo,
     ]),
     builder: (BuildContext _, Widget? subtree) => HdrGraphicsWhiteLevel(
       linearScale: hdrGraphicsWhiteScale(
-        hostActive: controller.hdrOutputActive,
+        outputActive: controller.hdrOutputActive,
         display: controller.hdrDisplayInfo.value,
       ),
       child: subtree!,
@@ -70,9 +69,6 @@ Widget _hdrGraphicsWhiteLevel(VideoPlayerController controller, Widget child) {
     child: child,
   );
 }
-
-/// 无播放器时 [ValueListenableBuilder] 的常量占位（HDR 宿主窗恒未激活）。
-final ValueNotifier<bool> _kHdrHostInactive = ValueNotifier<bool>(false);
 
 extension _VideoLayout on _VideoFushiPageState {
   /// 视频本体：media_kit [Video] + 可点字幕 overlay。查词浮层栈不在这里渲染——它走
@@ -115,76 +111,71 @@ extension _VideoLayout on _VideoFushiPageState {
             controller.videoHeight,
           ),
           fit: videoFitModeToBoxFit(_videoFitMode),
-          // HDR 直通：把 Video 的物理像素矩形喂给 runner 宿主窗（非 HDR 时只是记着，
-          // 进入直通那一刻就有正确矩形可用）。
-          child: HdrHostRectReporter(
-            onRect: controller.reportHdrHostRect,
-            child: Video(
-              controller: videoController,
-              // BUG-2544：**由本页接管**「切后台暂停 / 回前台续播」，故显式关掉 media_kit
-              // 自带的那套。media_kit 的默认值是 `pauseUponEnteringBackgroundMode: true` +
-              // `resumeUponEnteringForegroundMode: false`（video_texture.dart 的构造器默认
-              // 参数），即**暂停了却永远不恢复**——用户报「视频切屏会暂停，切回来没续上」
-              // 就是这条不对称链：它在 `paused`/`detached` 里 pause 并把「暂停前在播」的标记
-              // 记在自己的私有字段上，回前台那一支被 `resumeUponEnteringForegroundMode`
-              // 默认 false 直接跳过，而标记本身只在恢复分支里清，外面谁也读不到。
-              // 不选「只把 resume 打开」而选整套接管，有三个理由：
-              //  ① 全屏路由另起一个 [Video]（[fullscreen.part.dart]）而窗口侧这棵仍挂载，
-              //     两个 VideoState 各自是 observer、各自持一份标记，暂停/恢复要靠两边
-              //     恰好只有一个抢到 `state.playing == true` 才不打架；
-              //  ② 恢复必须排在 [_refreshDecodeAfterResumeIfNeeded] 的重建 seek **之后**
-              //     （BUG-1863），而第三方 observer 的通知顺序不是本页能定的；
-              //  ③ 查词浮层那条暂停（[_pausedForLookup]）是本页的「单一恢复真相源」，
-              //     后台恢复必须和它互斥，判据得在本页可读、可测。
-              // 接管后的实现见 [_VideoFushiPageState.didChangeAppLifecycleState] 的
-              // `paused` 分支与 [_resumeAfterBackgroundIfNeeded]。
-              pauseUponEnteringBackgroundMode: false,
-              // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
-              // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
-              // 快捷键（见 [_focusOwnership]）。
-              focusNode: _videoFocusNode,
-              // 禁用 media_kit 内置 SubtitleView（TODO-080/092，BUG-190）：字幕统一由
-              // [VideoSubtitleOverlay] 单层承载（cue 同步 + 逐字查词）。SubtitleView 默认
-              // visible:true，会把 libmpv 解析的字幕渲染成一整块不可点 Text（白字 +
-              // 0xaa000000 半透明黑底），叠在可点 overlay 之上 → 点字幕穿透到 media_kit
-              // 自己的手势层（落句首词/点不到句中/呼出键盘，080-3）、随字幕轨异步刷新时有
-              // 时无（080-1 随机透明）、横竖屏 Video 子树重建时残留黑底（092）。这里显式
-              // visible:false 让 video_texture.dart 的 `if(...visible && ...)` 不渲染
-              // SubtitleView；窗口与全屏共享 videoViewParametersNotifier，全屏路由侧再显式
-              // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
-              subtitleViewConfiguration: const SubtitleViewConfiguration(
-                visible: false,
-              ),
-              // 窗口模式画面缩放/比例由用户偏好 [_videoFitMode] 决定（TODO-152 子B），
-              // 新安装默认 [VideoFitMode.contain] → `BoxFit.contain` 保持比例完整适应；
-              // 已有用户偏好 [cover]/[fill] 会按持久化值恢复；
-              // 不会被新安装初始值覆盖。
-              // 根因背景：media_kit 默认 `BoxFit.contain` 在「媒体框宽高比 ≠ 视频宽高比」时
-              // 两侧补黑。桌面虽有窗口比例锁（[_syncWindowAspectRatioLock] → window_manager
-              // `setAspectRatio`），但其 Windows 实现只在用户**拖动窗口边框**时（WM_SIZING）
-              // 约束比例、不矫正当前窗口尺寸 → 非全屏非最大化的当前窗口若比例不等于视频，
-              // contain 仍留黑边（平台限制）。用户改选 [VideoFitMode.cover] 即铺满并裁切
-              // 超出边缘（比例锁稳态下窗口贴合视频比例 → cover≈contain 几乎不裁）；
-              // [VideoFitMode.fill] 则拉伸填满。
-              // 字幕是独立 overlay 层（[VideoSubtitleOverlay]，不在 [Video] 内）不受裁切影响。
-              // 全屏路由的 Video 在其 builder 内读同一 [_videoFitMode] 换算，跟随同偏好。
-              fit: videoFitModeToBoxFit(_videoFitMode),
-              // letterbox/pillarbox 填充色固定纯黑（TODO-053）：cover 稳态下无外围，但
-              // 视频解码前 / 极端比例残留边缘仍按播放器惯例用黑底，不跟随主题 surface。
-              fill: Colors.black,
-              // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
-              // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
-              // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
-              controls: (VideoState state) =>
-                  _buildVideoControls(state, controller),
-              // BUG-221: 替换 media_kit 默认全屏方向回调，禁止移动端退全屏时
-              // `setPreferredOrientations([])` 弹回竖屏。自建全屏路由（[_pushNeutralizedVideoFullscreen]）
-              // 经 `state.widget.onEnterFullscreen`/`onExitFullscreen` 取的就是这俩，故窗口侧设
-              // 一次即覆盖全部全屏方向行为。移动端门控在 helper 内（只锁横屏，永不放开方向）；
-              // 桌面转调 media_kit 默认回调，保留「全屏 = OS 窗口真全屏」（不碰设备方向）。
-              onEnterFullscreen: _enterVideoNativeFullscreen,
-              onExitFullscreen: _exitVideoNativeFullscreen,
+          child: Video(
+            controller: videoController,
+            // BUG-2544：**由本页接管**「切后台暂停 / 回前台续播」，故显式关掉 media_kit
+            // 自带的那套。media_kit 的默认值是 `pauseUponEnteringBackgroundMode: true` +
+            // `resumeUponEnteringForegroundMode: false`（video_texture.dart 的构造器默认
+            // 参数），即**暂停了却永远不恢复**——用户报「视频切屏会暂停，切回来没续上」
+            // 就是这条不对称链：它在 `paused`/`detached` 里 pause 并把「暂停前在播」的标记
+            // 记在自己的私有字段上，回前台那一支被 `resumeUponEnteringForegroundMode`
+            // 默认 false 直接跳过，而标记本身只在恢复分支里清，外面谁也读不到。
+            // 不选「只把 resume 打开」而选整套接管，有三个理由：
+            //  ① 全屏路由另起一个 [Video]（[fullscreen.part.dart]）而窗口侧这棵仍挂载，
+            //     两个 VideoState 各自是 observer、各自持一份标记，暂停/恢复要靠两边
+            //     恰好只有一个抢到 `state.playing == true` 才不打架；
+            //  ② 恢复必须排在 [_refreshDecodeAfterResumeIfNeeded] 的重建 seek **之后**
+            //     （BUG-1863），而第三方 observer 的通知顺序不是本页能定的；
+            //  ③ 查词浮层那条暂停（[_pausedForLookup]）是本页的「单一恢复真相源」，
+            //     后台恢复必须和它互斥，判据得在本页可读、可测。
+            // 接管后的实现见 [_VideoFushiPageState.didChangeAppLifecycleState] 的
+            // `paused` 分支与 [_resumeAfterBackgroundIfNeeded]。
+            pauseUponEnteringBackgroundMode: false,
+            // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
+            // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
+            // 快捷键（见 [_focusOwnership]）。
+            focusNode: _videoFocusNode,
+            // 禁用 media_kit 内置 SubtitleView（TODO-080/092，BUG-190）：字幕统一由
+            // [VideoSubtitleOverlay] 单层承载（cue 同步 + 逐字查词）。SubtitleView 默认
+            // visible:true，会把 libmpv 解析的字幕渲染成一整块不可点 Text（白字 +
+            // 0xaa000000 半透明黑底），叠在可点 overlay 之上 → 点字幕穿透到 media_kit
+            // 自己的手势层（落句首词/点不到句中/呼出键盘，080-3）、随字幕轨异步刷新时有
+            // 时无（080-1 随机透明）、横竖屏 Video 子树重建时残留黑底（092）。这里显式
+            // visible:false 让 video_texture.dart 的 `if(...visible && ...)` 不渲染
+            // SubtitleView；窗口与全屏共享 videoViewParametersNotifier，全屏路由侧再显式
+            // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
+            subtitleViewConfiguration: const SubtitleViewConfiguration(
+              visible: false,
             ),
+            // 窗口模式画面缩放/比例由用户偏好 [_videoFitMode] 决定（TODO-152 子B），
+            // 新安装默认 [VideoFitMode.contain] → `BoxFit.contain` 保持比例完整适应；
+            // 已有用户偏好 [cover]/[fill] 会按持久化值恢复；
+            // 不会被新安装初始值覆盖。
+            // 根因背景：media_kit 默认 `BoxFit.contain` 在「媒体框宽高比 ≠ 视频宽高比」时
+            // 两侧补黑。桌面虽有窗口比例锁（[_syncWindowAspectRatioLock] → window_manager
+            // `setAspectRatio`），但其 Windows 实现只在用户**拖动窗口边框**时（WM_SIZING）
+            // 约束比例、不矫正当前窗口尺寸 → 非全屏非最大化的当前窗口若比例不等于视频，
+            // contain 仍留黑边（平台限制）。用户改选 [VideoFitMode.cover] 即铺满并裁切
+            // 超出边缘（比例锁稳态下窗口贴合视频比例 → cover≈contain 几乎不裁）；
+            // [VideoFitMode.fill] 则拉伸填满。
+            // 字幕是独立 overlay 层（[VideoSubtitleOverlay]，不在 [Video] 内）不受裁切影响。
+            // 全屏路由的 Video 在其 builder 内读同一 [_videoFitMode] 换算，跟随同偏好。
+            fit: videoFitModeToBoxFit(_videoFitMode),
+            // letterbox/pillarbox 填充色固定纯黑（TODO-053）：cover 稳态下无外围，但
+            // 视频解码前 / 极端比例残留边缘仍按播放器惯例用黑底，不跟随主题 surface。
+            fill: Colors.black,
+            // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
+            // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
+            // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
+            controls: (VideoState state) =>
+                _buildVideoControls(state, controller),
+            // BUG-221: 替换 media_kit 默认全屏方向回调，禁止移动端退全屏时
+            // `setPreferredOrientations([])` 弹回竖屏。自建全屏路由（[_pushNeutralizedVideoFullscreen]）
+            // 经 `state.widget.onEnterFullscreen`/`onExitFullscreen` 取的就是这俩，故窗口侧设
+            // 一次即覆盖全部全屏方向行为。移动端门控在 helper 内（只锁横屏，永不放开方向）；
+            // 桌面转调 media_kit 默认回调，保留「全屏 = OS 窗口真全屏」（不碰设备方向）。
+            onEnterFullscreen: _enterVideoNativeFullscreen,
+            onExitFullscreen: _exitVideoNativeFullscreen,
           ),
         ),
       ),
