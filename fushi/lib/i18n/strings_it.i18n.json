@@ -2516,6 +2516,7 @@
   "floating_ball_ocr_empty": "Nessun testo riconosciuto",
   "floating_ball_ocr_failed": "OCR dello schermo non riuscito",
   "floating_ball_ocr_language_missing": "Windows has no Japanese text recognizer. Add Japanese (with Optical character recognition) under Settings → Time & language → Language & region",
+  "floating_ball_ocr_launch_blocked": "Fushi couldn't open the screen capture prompt. Allow Fushi to show pop-up windows while running in the background in system settings, then try again.",
   "floating_ball_ocr_model_unavailable": "Il modello OCR di sistema non è ancora pronto",
   "floating_ball_ocr_notification": "OCR dello schermo in corso",
   "floating_ball_ocr_pick_hint": "Tocca il testo per cercarlo",
