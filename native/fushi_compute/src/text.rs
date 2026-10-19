@@ -619,6 +619,9 @@ fn match_window(book: &Book, cues: &Cues, p: &Params, search_window: i64) -> Win
     let mut recover_budget: i64 = p.recover_fuzzy_budget_total;
     let mut last_hit: i64 = -1;
     let mut last_hit_abs: i64 = -1;
+    // 自上一条命中（或恢复重锚）以来 miss 掉的 cue 的归一化字数（短 cue 领先上限，
+    // 见快速通道）。
+    let mut missed_since_hit: i64 = 0;
 
     for ci in 0..n {
         let nc = cues.text(ci);
@@ -658,6 +661,7 @@ fn match_window(book: &Book, cues: &Cues, p: &Params, search_window: i64) -> Win
                 {
                     recoveries.push([ci as i32, cursor as i32, a.pos as i32, a.support as i32]);
                     cursor = a.pos;
+                    missed_since_hit = 0;
                     last_hit = -1;
                     last_hit_abs = -1;
                 }
@@ -706,10 +710,17 @@ fn match_window(book: &Book, cues: &Cues, p: &Params, search_window: i64) -> Win
             let mut match_end: i64 = -1;
             let mut hit = false;
             if let Some(f) = find_within(big, nc, search_from as usize, window_end as usize) {
-                // 超短 cue 的精确命中只认紧邻游标的位置（「一」撞上「第一章」会把
-                // 游标拽走）。
-                let too_far = nc.len() <= p.short_cue_max_len
-                    && (f as i64) > cursor + p.short_cue_max_advance;
+                // 短 cue（不足 probe_min_len 字）的精确命中只认靠近游标的位置（「一」
+                // 撞上「第一章」会把游标拽走）。一两个字的只能紧邻游标；三到五字的
+                // （BUG-3519：「すげえ」撞上 170 字后的「すげえよなあ」）上限再加上
+                // 自上一条命中以来 miss 掉的 cue 字数——前面有 cue 模糊没过线时游标
+                // 停在原地，本句真实位置就在那几句之后。
+                let max_advance = if nc.len() <= p.short_cue_max_len {
+                    p.short_cue_max_advance
+                } else {
+                    p.short_cue_max_advance + missed_since_hit
+                };
+                let too_far = nc.len() < p.probe_min_len && (f as i64) > cursor + max_advance;
                 found = f as i64;
                 match_end = found + nc_len;
                 hit = !too_far;
@@ -745,6 +756,7 @@ fn match_window(book: &Book, cues: &Cues, p: &Params, search_window: i64) -> Win
                 cursor = match_end;
                 matched += 1;
                 misses = 0;
+                missed_since_hit = 0;
                 continue;
             }
         }
@@ -798,9 +810,11 @@ fn match_window(book: &Book, cues: &Cues, p: &Params, search_window: i64) -> Win
             cursor = match_end;
             matched += 1;
             misses = 0;
+            missed_since_hit = 0;
         } else {
             hits.push(UNMATCHED);
             misses += 1;
+            missed_since_hit += nc_len;
         }
     }
 
