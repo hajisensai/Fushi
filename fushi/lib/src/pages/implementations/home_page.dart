@@ -3920,7 +3920,7 @@ class _StandaloneDictionaryRoute extends StatelessWidget {
 /// MD3 窄窗（[compact]）：模块名已在底部导航上，外壳不再在内容上方占一整行重复
 /// 标题。叠放浮动工具区的库页本来就不按行摆这条标题（窄窗也不叠，见
 /// `_floatingTitleOverlay`），剩下按行摆的只有查词——2026-10-18 只删了查词页自己
-/// 的页头，外壳这行还在（用户 2026-10-19 截图「顶部标题怎么还有」，BUG-3566）。
+/// 的页头，外壳这行还在（用户 2026-10-19 截图「顶部标题怎么还有」，BUG-3569）。
 /// Apple（[apple]）保留 iOS 根页大标题（搜索中照常折叠）。
 @visibleForTesting
 String? homeShellTitleFor(
