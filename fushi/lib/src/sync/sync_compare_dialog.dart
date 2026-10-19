@@ -537,15 +537,10 @@ Future<_LiveProgressRow?> _fetchLiveProgress(
   try {
     final RemoteBookProgress remote = await sync.remoteProgress(book);
     final RemoteBookProgress local = await sync.localProgress(book);
-    final BookProgressBaseline? base = await sync.baseline(book);
     return _LiveProgressRow(
       local: local,
       remote: remote,
-      action: resolveBookProgressThreeWay(
-        local: local,
-        remote: remote,
-        base: base,
-      ),
+      action: await sync.decide(book, local: local, remote: remote),
     );
   } catch (e) {
     developer.log(

@@ -44,8 +44,9 @@ const String kLegacySyncRootFolderName = 'hibiki-data';
 /// （如 `hibiki-database`）；Google Drive 的不透明 ID 无斜杠也不可能整串等于
 /// 旧根名，天然不受影响。
 bool syncFolderIdEmbedsLegacyRoot(String folderId) {
-  final RegExp segment =
-      RegExp('(^|/)${RegExp.escape(kLegacySyncRootFolderName)}(/|\$)');
+  final RegExp segment = RegExp(
+    '(^|/)${RegExp.escape(kLegacySyncRootFolderName)}(/|\$)',
+  );
   return segment.hasMatch(folderId);
 }
 
@@ -68,11 +69,31 @@ class AsyncMutex {
   }
 }
 
+/// 文件夹里以 [prefix] 开头的同步文件；有多份时取文件名时间戳最新的那份。
+///
+/// 三件套文件名都是 `<类型>_1_6_<时间戳毫秒>_…`。正常只有一份（写入按 fileId
+/// 原地改名），但列举最终一致 / 快照过期时写入方看不到旧文件就会新建，留下多份。
+/// 旧实现取「列表第一个」，后端返回顺序不定，同一文件夹会时而读到旧进度——
+/// 读到旧的那份时自动同步会把本机进度倒退回去（BUG-3519）。解析不出时间戳的
+/// 视为最旧；时间戳相同保留列表中先出现的。
 SyncFileRef? findSyncFileByPrefix(List<SyncFileRef> files, String prefix) {
-  for (final f in files) {
-    if (f.name.startsWith(prefix)) return f;
+  SyncFileRef? best;
+  int bestTs = -1;
+  for (final SyncFileRef f in files) {
+    if (!f.name.startsWith(prefix)) continue;
+    final int ts = _syncFileTimestamp(f.name) ?? -1;
+    if (best == null || ts > bestTs) {
+      best = f;
+      bestTs = ts;
+    }
   }
-  return null;
+  return best;
+}
+
+int? _syncFileTimestamp(String fileName) {
+  final List<String> parts = fileName.split('_');
+  if (parts.length < 4) return null;
+  return int.tryParse(parts[3]);
 }
 
 /// 按文件扩展名猜测同步上传的 Content-Type（各云端后端共用的薄 shim）。
@@ -118,8 +139,8 @@ mixin SyncFolderCache {
   }) {
     rootFolderIdCache =
         (rootFolderId == null || syncFolderIdEmbedsLegacyRoot(rootFolderId))
-            ? null
-            : normalizeFolderId(rootFolderId);
+        ? null
+        : normalizeFolderId(rootFolderId);
     if (titleToFolderId != null) {
       titleToFolderId.forEach((String title, String id) {
         if (syncFolderIdEmbedsLegacyRoot(id)) return;
