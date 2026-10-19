@@ -334,7 +334,10 @@ mixin _LocalLibraryHostAudiobooks
     }
     // 读-比较-写在同步状态窄锁内（与 [putBookProgress] 同纪律）：两个对端并发上报
     // 不会互相用旧值盖掉对方；不用 _runExclusive，免得排在本机整轮同步后面超时。
-    await _runSyncStateExclusive(() async {
+    // 同时放进一个 DB 事务（BUG-3537）：本机出站同步落地在事务里比较后写入，这里
+    // 的读-比较-写也须原子，否则出站落地插在「读 current」与「写 winner」之间会被
+    // 按旧 current 算出的 winner 盖掉。
+    await _runSyncStateExclusive(() => _db.transaction(() async {
       final ({int positionMs, int updatedAtMs}) current =
           await getAudiobookPosition(bookKey);
       // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
@@ -354,6 +357,6 @@ mixin _LocalLibraryHostAudiobooks
           audiobookPositionPrefKey(bookKey), winner.positionMs);
       await _db.setPrefTyped<int>(
           audiobookPositionAtPrefKey(bookKey), winner.updatedAtMs);
-    });
+    }));
   }
 }

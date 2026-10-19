@@ -422,7 +422,13 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 几分钟），对端这条单行 PUT 排在后面拿不到响应头，15s 判超时——而 host 等锁
     // 放开后照样落库，对端便漏记「已对齐」，下一轮误报进度冲突。读-比较-写整段在
     // 锁内，两个对端并发上报不会互相用旧值盖掉对方。
-    await _runSyncStateExclusive(() async {
+    //
+    // 锁只串住对端之间；本机出站同步（云导入 / 互联 client 落地）与本机阅读器不拿
+    // 这把锁，前者改用 `upsertReaderPositionIfUnchanged` 在事务里比较后写入
+    // （BUG-3537）。这里的读-比较-写也放进同一个 DB 事务，两边才互不插队：否则
+    // 出站落地正好写在本端「读 current」与「写 winner」之间时，会被这里按旧的
+    // current 算出的 winner 盖掉。
+    await _runSyncStateExclusive(() => _db.transaction(() async {
       final RemoteBookProgress current = await getBookProgress(bookKey);
       final RemoteBookProgress winner =
           resolveBookProgressSync(local: current, remote: incoming);
@@ -439,7 +445,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         charOffset: Value(winner.charOffset),
         updatedAt: Value(winner.updatedAtMs),
       ));
-    });
+    }));
   }
 
   /// 按 [id]（downloadId：bookKey 或 title）单查书封面磁盘路径（对称

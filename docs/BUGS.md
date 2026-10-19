@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3166 条。点号进各自文件。
+> 共 3167 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3537](bugs/BUG-3537-outbound-progress-landing-overwrites-host-put.md) | ✅ | ✅ | 出站同步落地无条件写本地进度，盖掉刚到的互联对端 PUT（进度倒退） |
 | [BUG-3536](bugs/BUG-3536-subtitle-null-text-color-follows-theme.md) | ✅ | ✅ | 关掉「尊重字幕自带样式」后字幕文字色随 App 主题忽白忽黑 |
 | [BUG-3535](bugs/BUG-3535-opds-cover-401-missing-headers.md) | ✅ | ✅ | OPDS：私有目录（Komga）封面无凭据请求回 401，发现页封面全是占位 |
 | [BUG-3534](bugs/BUG-3534-signin-bad-code-error-off-screen.md) | ✅ | ✅ | signin-bad-code-error-off-screen |

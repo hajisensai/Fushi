@@ -30,11 +30,15 @@ import 'subtitle_parity_corpus.dart';
 /// Dart 实现对同一语料逐项重新实测：六项里 strip / srt / vtt / ass / sweep 与原表一致，
 /// `markup` 原先钉的 `9e8c3c547a4312bb` 不是旧实现的实测值（旧实现实测 `9d8ad6ef76adc21f`），
 /// 已改为实测值。
+///
+/// srt / vtt 两项（两表相同，语料无 NaN）在 #2313 / BUG-3532 改为多行以 `\N` 连接后，用
+/// 「旧 Dart 实现 + 该修复」（PR #2313 head 2014749e8a 的 Dart 解析器）对同一语料重新求得，
+/// 与 Rust 新实现逐位一致。
 const Map<String, String> _oldDartDigestsX64 = <String, String>{
   'markup': '72e2b157fcf311f9',
   'strip': 'e9e4cddfbe457903',
-  'srt': '83417cc5f677979e',
-  'vtt': 'a205570d14cc5fc9',
+  'srt': '2e3b607c005744f8',
+  'vtt': 'e2c1d167d1f85118',
   'ass': '1d369fcf6f54ae6f',
   'sweep': '85c965485af1d588',
 };
@@ -42,8 +46,8 @@ const Map<String, String> _oldDartDigestsX64 = <String, String>{
 const Map<String, String> _oldDartDigestsArm64 = <String, String>{
   'markup': '9d8ad6ef76adc21f',
   'strip': 'e9e4cddfbe457903',
-  'srt': '83417cc5f677979e',
-  'vtt': 'a205570d14cc5fc9',
+  'srt': '2e3b607c005744f8',
+  'vtt': 'e2c1d167d1f85118',
   'ass': '71665138dee47163',
   'sweep': '85c965485af1d588',
 };

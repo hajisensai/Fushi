@@ -26,7 +26,6 @@ const LyricsHtmlTheme _theme = LyricsHtmlTheme(
   alignStart: true,
   contextBlurPx: 0,
   rowRadius: 16,
-  hoverFill: Color(0x14000000),
 );
 
 Future<ReaderSettings> _settings() async {

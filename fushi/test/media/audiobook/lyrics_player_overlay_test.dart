@@ -311,7 +311,6 @@ void main() {
       alignStart: true,
       contextBlurPx: 0,
       rowRadius: 16,
-      hoverFill: Color(0x14FFFFFF),
     );
     final ({Map<String, String> vars, List<String> bodyClasses}) v =
         LyricsModeHtml.themeVars(theme);

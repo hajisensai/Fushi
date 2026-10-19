@@ -527,20 +527,26 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   PathRebaseColumn(
       'VideoDownloadJobFiles',
       'finalAbsolutePath',
-      PathRebaseKind.externalUserPath,
-      '用户选择的 MediaSource 内最终视频绝对路径；MediaSources.rootPath 同样明确不随应用数据根改写。'),
+      PathRebaseKind.documentsRooted,
+      '下载保存根内的最终视频绝对路径（原位做种），是任务与 VideoBooks.videoPath 的唯一纽带。'
+          '默认下载根 <documents>/anime_downloads/content 在搬移白名单里：文件与 videoPath '
+          '一起被搬/改写，这列不改写就与库行失配；用户自选的外部下载根不在作用域内，'
+          'DocumentsPathRebaser 按「位于被搬移顶层项下才改写」天然跳过。'),
   PathRebaseColumn('VideoDownloadJobSubtitles', 'originalFileName',
       PathRebaseKind.notAPath, 'provider 返回的原始字幕文件名，不是绝对路径。'),
   PathRebaseColumn(
       'VideoDownloadJobSubtitles',
       'stagedPath',
-      PathRebaseKind.externalUserPath,
-      '新任务暂存文件与视频 sidecar 同目录；legacy 导入要求保留原路径语义，均不随应用数据根改写。'),
+      PathRebaseKind.documentsRooted,
+      '新任务暂存文件与视频 sidecar 同目录：视频在默认下载根（<documents>/anime_downloads）'
+          '下时随数据根一起搬走，必须同步改写；外部下载根 / legacy 外部原路径不在搬移作用域内，'
+          '按作用域判据原样保留。'),
   PathRebaseColumn(
       'VideoDownloadJobSubtitles',
       'finalPath',
-      PathRebaseKind.externalUserPath,
-      '安装在用户 MediaSource 中的字幕 sidecar 绝对路径，不随应用数据根改写。'),
+      PathRebaseKind.documentsRooted,
+      '与视频同目录的字幕 sidecar 绝对路径；与 finalAbsolutePath 同判据——位于被搬移的'
+          '默认下载根下才改写，外部下载根原样保留。'),
   PathRebaseColumn('VideoDownloadSubscriptions', 'resourceProvider',
       PathRebaseKind.notAPath, '资源 provider/实例身份，不是路径。'),
   PathRebaseColumn('VideoDownloadSubscriptions', 'coverUrl',
