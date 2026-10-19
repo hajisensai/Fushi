@@ -128,7 +128,7 @@ extension _ReaderMining on _ReaderFushiPageState {
             Directory.systemTemp.createTempSync('fushi_mine_sentence_audio_');
         // 句子音频容器与视频制卡保持同一平台规则：iOS 用 `.m4a`，让 AnkiMobile
         // 把 localhost URL 当作可下载音频；桌面/Android 继续用 `.aac`（adts），避免
-        // 桌面 ffmpeg-min 缺 mp4/ipod/m4a muxer 时 exit -22（BUG-460 / BUG-644）。
+        // 旧桌面 ffmpeg-min 缺 mp4/ipod/m4a muxer 时 exit -22（BUG-460 / BUG-644；统一 FFmpeg 已含）。
         final String outputPath = p.join(
           sentenceAudioTempDir.path,
           'sentence.${immersionMiningAudioExtension()}',
