@@ -31,6 +31,7 @@
           <h2 id="connTitle" data-i18n="opt_connTitle_heading">正在检测…</h2>
           <p id="connDetail" data-i18n="opt_connDetail_text">确认 Fushi 的查词与字幕服务状态。</p>
           <code id="connEndpoint">127.0.0.1:19633</code>
+          <button class="text-button connection-restore" id="connRestoreAuto" type="button" hidden data-i18n="opt_reset_button">恢复自动配置</button>
         </section>
         <nav class="section-nav" id="sectionNav" aria-label="设置分区" data-i18n-aria-label="opt_section_nav_aria_label">
           <a class="section-link" href="#sec-lookup"><span class="nav-icon msr-slot" data-fushi-icon="search" data-fushi-icon-size="24" aria-hidden="true"></span><span data-i18n="opt_group_lookup">查词</span></a>
@@ -724,6 +725,7 @@
   <script src="glass-select.js"></script>
   <script src="subtitle-style.js"></script>
   <script src="fushi-defaults.js"></script>
+  <script src="auto-config.js"></script>
   <script src="popup-size.js"></script>
   <script src="video-shortcuts.js"></script>
   <script src="connection-diagnostics.js"></script>

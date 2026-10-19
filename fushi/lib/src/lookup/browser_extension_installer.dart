@@ -246,8 +246,9 @@ Future<bool> rewriteBrowserExtensionServerConfig(
     if (!dir.existsSync()) continue;
     final File defaults = File(p.join(dir.path, _kDefaultsFileName));
     if (!defaults.existsSync()) continue;
-    if (await rewriteBrowserExtensionDefaultsFile(defaults, serverConfig))
+    if (await rewriteBrowserExtensionDefaultsFile(defaults, serverConfig)) {
       changed = true;
+    }
   }
   return changed;
 }
