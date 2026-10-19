@@ -44,6 +44,27 @@ void main() {
     expect(fold.fold('ﾝ'), 'ん');
   });
 
+  test('foldBatch：逐项等于 fold（空段 / 全被丢弃的段 / 段首尾孤立代理 / 补充平面）', () {
+    final AudioTextFoldNative fold = AudioTextFoldNative.instance;
+    final List<String> pieces = <String>[
+      '',
+      'ア、ab C',
+      '、。！',
+      '\uD842', // 孤立高代理在段尾：不能和下一段的低代理拼成 𠮷
+      '\uDFB7猫',
+      '𠮷',
+      'ｶﾀｶﾅ１２３',
+      '',
+      '\u0000x\u0000',
+      for (int i = 0; i < 200; i++) 'ガ' * (i % 5) + '、' * (i % 3) + 'z',
+    ];
+    expect(fold.foldBatch(pieces), <String>[
+      for (final String p in pieces) fold.fold(p),
+    ]);
+    expect(fold.foldBatch(const <String>[]), isEmpty);
+    expect(fold.foldBatch(const <String>['', '']), <String>['', '']);
+  });
+
   test('foldStudy：归一化 + 学习单位坐标一次算完，U+0000 分隔的节点各自断词', () {
     final AudioTextFoldNative fold = AudioTextFoldNative.instance;
     final ({String text, Uint32List offsets, Uint32List ends, int total}) r =

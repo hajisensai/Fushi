@@ -252,4 +252,20 @@ final class AudioTextFoldNative implements Finalizable {
       pieceStarts: pieceStarts,
     );
   }
+
+  /// 多段文本各自归一化（第 k 项逐码元等于 `fold(pieces[k])`），整批一次 FFI：与
+  /// [foldConcat] 同一次原生调用（段间 U+0000 隔开，循环在 Rust），再按段起点切回各段。
+  /// 有声书重切的 ASR token、TTS 计划的句与间隙都按这个粒度归一化，逐项调 [fold] 会每项
+  /// 跨一次 FFI。
+  List<String> foldBatch(List<String> pieces) {
+    final int count = pieces.length;
+    if (count == 0) return <String>[];
+    final ({String text, Uint32List pieceStarts}) r = foldConcat(pieces);
+    final String text = r.text;
+    final Uint32List starts = r.pieceStarts;
+    return <String>[
+      for (int k = 0; k < count; k++)
+        text.substring(starts[k], k + 1 < count ? starts[k + 1] : text.length),
+    ];
+  }
 }

@@ -16,7 +16,14 @@ class AudioTextNormalizer {
   AudioTextNormalizer._();
 
   /// 归一化文本：剥掉非白名单字符，大小写统一，片假名转平假名。
+  ///
+  /// 单条一次 FFI：一批文本（token / 句子 / cue）要归一化时用 [normalizeBatch] 或
+  /// [normalizeConcat]，不要在循环里逐条调本函数。
   static String normalize(String s) => AudioTextFoldNative.instance.fold(s);
+
+  /// [pieces] 各自归一化（第 k 项等于 `normalize(pieces[k])`），整批一次 FFI。
+  static List<String> normalizeBatch(List<String> pieces) =>
+      AudioTextFoldNative.instance.foldBatch(pieces);
 
   /// 将 [s] 归一化后追加到 [buf]，用于拼接多段文本后统一处理。逐段调用时每段多一次
   /// 字符串拷贝；整批拼接用 [normalizeConcat]。

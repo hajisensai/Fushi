@@ -114,25 +114,35 @@ TtsBookPlan buildTtsBookPlanSync(
     if (input.text.trim().isEmpty) continue;
     final ReaderAudioPositionIndex index =
         ReaderAudioPositionIndex.fromChapterHtml(book.chapters[section].html);
-    int rawCursor = 0;
-    int normCursor = 0;
     final int chapterFirst = out.length;
     final List<({int start, int end})> raw = <({int start, int end})>[];
-    for (final TtsTextSegment seg in splitTtsText(
+    final List<TtsTextSegment> segments = splitTtsText(
       input,
       maxLength: maxLength,
-    )) {
-      normCursor += AudioTextNormalizer.normalize(
-        input.text.substring(rawCursor, seg.start),
-      ).length;
-      final int matchStart = normCursor;
-      normCursor += AudioTextNormalizer.normalize(seg.text).length;
+    );
+    // 每句之前的间隙与句子本身各占一段，整章一次归一化（一次 FFI）：第 j 段的起点就是
+    // 前 j 段归一化长度之和，即逐段累加出来的归一化偏移。
+    final List<String> pieces = <String>[];
+    int rawCursor = 0;
+    for (final TtsTextSegment seg in segments) {
+      pieces
+        ..add(input.text.substring(rawCursor, seg.start))
+        ..add(seg.text);
       rawCursor = seg.end;
+    }
+    final ({String text, List<int> starts}) norm =
+        AudioTextNormalizer.normalizeConcat(pieces);
+    for (int i = 0; i < segments.length; i++) {
+      final TtsTextSegment seg = segments[i];
+      final int matchStart = norm.starts[2 * i + 1];
+      final int matchEnd = 2 * i + 2 < pieces.length
+          ? norm.starts[2 * i + 2]
+          : norm.text.length;
       // 整句没有可匹配字符（纯标点 / 符号）：阅读器高亮不到，也不值得读。
-      if (normCursor == matchStart) continue;
+      if (matchEnd == matchStart) continue;
       final ({int offset, int length})? study = index.studyRangeForFragment(
         matchableStart: matchStart,
-        matchableEnd: normCursor,
+        matchableEnd: matchEnd,
       );
       out.add(
         TtsPlanSentence(
@@ -141,7 +151,7 @@ TtsBookPlan buildTtsBookPlanSync(
           text: seg.text,
           spokenText: applyTtsPronunciation(seg.spokenText, pronunciation),
           matchStart: matchStart,
-          matchEnd: normCursor,
+          matchEnd: matchEnd,
           studyStart: study?.offset ?? 0,
           studyEnd: (study?.offset ?? 0) + (study?.length ?? 0),
         ),

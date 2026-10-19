@@ -749,13 +749,24 @@ class CueSentenceResegmenter {
     final List<String> read = <String>[];
     final Map<int, (List<String>, String, String)> prepared =
         <int, (List<String>, String, String)>{};
+    // 整本书所有锚点 cue 的 token 一次归一化（一次 FFI，循环在 Rust），再按 cue 切回。
+    final List<int> anchors = <int>[];
+    final List<String> rawTokens = <String>[];
     for (int k = 0; k < cues.length; k++) {
       if (!eligible(k)) continue;
+      anchors.add(k);
+      rawTokens.addAll(cues[k].tokenTiming!.tokens);
+    }
+    final List<String> normAll = AudioTextNormalizer.normalizeBatch(rawTokens);
+    int tokenCursor = 0;
+    for (final int k in anchors) {
       final CueMatch m = matches[k];
-      final List<String> normTokens = <String>[
-        for (final String t in cues[k].tokenTiming!.tokens)
-          AudioTextNormalizer.normalize(t),
-      ];
+      final int tokenCount = cues[k].tokenTiming!.length;
+      final List<String> normTokens = normAll.sublist(
+        tokenCursor,
+        tokenCursor + tokenCount,
+      );
+      tokenCursor += tokenCount;
       final String cueNorm = normTokens.join();
       final String slice = gapsFor(
         m.sectionIndex,
