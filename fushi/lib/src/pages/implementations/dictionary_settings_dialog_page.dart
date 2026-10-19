@@ -18,8 +18,13 @@ import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dar
     show aiFailureText;
 import 'package:fushi/src/pages/implementations/dict_style_preview.dart';
 import 'package:fushi/src/pages/implementations/dict_style_visual_editor.dart';
+import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
+    show buildInAppPopupThemeVariablesJs;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isEinkTheme;
+import 'package:fushi/src/utils/popup_theme_css.dart' show popupCardSurface;
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/src/models/audio_source_list_edit.dart';
 import 'package:fushi/utils.dart';
@@ -1281,15 +1286,29 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
           _scopeCssToDictionary(buildPerDictionaryStyleCss(rules, name), name),
       ].join('\n'),
     );
-    // 预览框：MD3 = 页面底 + outline 细边框；Apple = 分组圆角 + 物理 1px
+    // 预览框：MD3 = M3E 卡片圆角 + outline 细边框；Apple = 分组圆角 + 物理 1px
     // separator 细线（Apple 内容层不画 MD3 那种实描边框，只用分隔线色勾边界）。
+    //
+    // 预览文档与 app 内弹窗同一套主题注入（设计系统 class + --md-* 令牌），玻璃宿主下
+    // 文档透明，所以框底色必须是真弹窗卡面同源的颜色（与 DictionaryPopupWebView 首帧
+    // 底色同一判据），而不是页面底色——否则预览里的 M3E 卡片色块 / Apple 淡染压在
+    // 另一种底上，和真弹窗对不上。
     final bool glass = isGlassDesign(context);
+    final ThemeData theme = Theme.of(context);
     final BorderRadius previewRadius = glass
         ? FushiAppleMetrics.of(context).groupBorderRadius
         : FushiM3eShape.cardRadius;
+    final Color previewSurface = _appModel.overrideDictionaryColor == null &&
+            glass &&
+            !isEinkTheme(context)
+        ? appleColorsOf(context).secondaryGroupedBackground
+        : popupCardSurface(
+            scheme: theme.colorScheme,
+            override: _appModel.overrideDictionaryColor,
+          );
     final Widget preview = DecoratedBox(
       decoration: BoxDecoration(
-        color: tokens.surfaces.page,
+        color: previewSurface,
         borderRadius: previewRadius,
         border: Border.all(
           color: glass
@@ -1309,6 +1328,11 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
             ) ??
             DictStylePreview(
               css: previewCss,
+              // 只在走真预览时才算：测试注入 previewBuilder 时 AppModel 是裸 fake。
+              themeVariablesJs: buildInAppPopupThemeVariablesJs(
+                appModel: _appModel,
+                theme: theme,
+              ),
               highlightPart: _draft.selectedPart,
               onPickPart: (DictStylePart part) =>
                   setState(() => _draft.selectedPart = part),

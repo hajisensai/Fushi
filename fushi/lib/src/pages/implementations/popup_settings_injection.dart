@@ -73,6 +73,23 @@ class PopupSettingsOptions {
   final bool sentenceDraftEnabled;
 }
 
+/// app 内弹窗口径的主题注入段（设计系统 class + `data-theme` + 全部 CSS 变量）。
+///
+/// 给不走 [buildPopupStaticSettingsJs] 整套设置、却要与真弹窗**同一外观**的表面用
+/// ——词典样式编辑器的实时预览（`DictStylePreview`）。只注 `data-theme` 的话预览
+/// 拿不到 `html.fushi-m3e` / `html.fushi-glass-host.fushi-apple` 与 `--md-*` 令牌，
+/// 画的是早已不用的基础层样式，用户照着它调完、真弹窗是另一个样子。
+String buildInAppPopupThemeVariablesJs({
+  required AppModel appModel,
+  required ThemeData theme,
+}) =>
+    _themeVariablesJs(
+      appModel: appModel,
+      theme: theme,
+      globalLookup: false,
+      mobileExternal: false,
+    );
+
 /// Builds the theme-derived CSS custom properties + `data-theme` (+ the
 /// `global-lookup` document class when [globalLookup]). Shared by both paths so
 /// the WebView surfaces follow the app ColorScheme identically.
