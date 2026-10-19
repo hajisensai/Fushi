@@ -228,7 +228,7 @@ void main() {
   });
 
   testWidgets(
-      'BUG-3571: kanji section rows of a mixed dictionary offer no collapse '
+      'BUG-3573: kanji section rows of a mixed dictionary offer no collapse '
       'control (it would edit the term part)', (WidgetTester tester) async {
     await _pumpPage(
       tester,

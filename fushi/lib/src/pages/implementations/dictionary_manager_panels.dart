@@ -104,7 +104,7 @@ class DictionaryManagerDetail extends StatelessWidget {
   final ValueChanged<bool> onEnabledChanged;
   /// null = 不给折叠控件。折叠管的是查词弹窗里这本的**释义**；「汉字」分区里的行
   /// （纯 kanji 词典 / 混合词典的汉字部分）对应的是汉字卡，汉字卡不折叠——在那里给
-  /// 这个控件，改的其实是混合词典术语部分的折叠状态（BUG-3571）。
+  /// 这个控件，改的其实是混合词典术语部分的折叠状态（BUG-3573）。
   final ValueChanged<DictionaryCollapseState>? onCollapseChanged;
   final VoidCallback onRename;
   final VoidCallback onLanguage;

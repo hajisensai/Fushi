@@ -60,7 +60,7 @@ List<CtlRoute> buildDictionaryCtlRoutes(DesktopCtlContext context) {
       final String? displayName = call.optString('displayName');
       final bool resetDisplayName = call.optBool('resetDisplayName') ?? false;
       final String? language = call.optString('language');
-      // 混合词典的汉字部分（BUG-3571）：「汉字」分区里的开关与位置，与上面两项互不影响。
+      // 混合词典的汉字部分（BUG-3573）：「汉字」分区里的开关与位置，与上面两项互不影响。
       final bool? kanjiEnabled = call.optBool('kanjiEnabled');
       final int? kanjiPosition = call.optInt('kanjiPosition');
       ctlCheckKanjiPartParams(
@@ -108,7 +108,7 @@ List<CtlRoute> buildDictionaryCtlRoutes(DesktopCtlContext context) {
       if (position != null) {
         if (position < 1) throw const CtlFailure.badRequest('position 从 1 起算');
         // 与词典管理页 `_reorderDictionaries` 同语义：同类型分区内移动后整组改 order。
-        // 「汉字」分区还含混合词典的汉字部分（BUG-3571），位置要按该分区数、写入
+        // 「汉字」分区还含混合词典的汉字部分（BUG-3573），位置要按该分区数、写入
         // 走分区专用的 updateKanjiSectionOrder，否则纯 kanji 词典的 order 与混合
         // 词典的 kanjiOrder 各排各的。
         final List<Dictionary> reordered = ctlReorderDictionaries(

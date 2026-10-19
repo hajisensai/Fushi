@@ -757,7 +757,7 @@ void main() {
     });
 
     test(
-        'BUG-3571: 混合词典汉字部分的开关 / 位置跟 profile 走，'
+        'BUG-3573: 混合词典汉字部分的开关 / 位置跟 profile 走，'
         'metadataJson 其余安装事实保持 live 值', () async {
       final db = await _openDb();
       final repo = _repo(db);

@@ -51,7 +51,7 @@ void main() {
       expect(b.kanji, <String>['t2', 'k1']);
     });
 
-    test('BUG-3571：混合词典的术语部分与汉字部分各按自己的开关装载', () {
+    test('BUG-3573：混合词典的术语部分与汉字部分各按自己的开关装载', () {
       // 术语部分关、汉字部分开：只进汉字桶（以前服务端按整本 hidden，整本都不装）。
       final b1 = bucketDictPaths(<DictPathEntry>[
         e('term', 'mixed', hidden: true, metadata: const <String, String>{'hasKanji': 'true'}),

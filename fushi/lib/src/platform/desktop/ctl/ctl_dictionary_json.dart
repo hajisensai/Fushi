@@ -18,7 +18,7 @@ import 'package:fushi/src/creator/fields/pitch_accent_field.dart'
 /// 一本词典给 CLI 的投影。`enabled` 与词典管理页的开关同一判据
 /// （[Dictionary.isHidden] 对日语）。
 ///
-/// 混合词典（term + 内附汉字，BUG-3571）另带汉字部分的两项：`kanjiEnabled`
+/// 混合词典（term + 内附汉字，BUG-3573）另带汉字部分的两项：`kanjiEnabled`
 /// （「汉字」分区里的开关，[Dictionary.isKanjiPartHidden]）与 `kanjiOrder`
 /// （在「汉字」分区的排序键，[Dictionary.kanjiSectionOrder]；用户没在汉字分区排过时
 /// 等于术语 `order`）。纯 kanji 词典的汉字分区开关 / 位置就是 `enabled` / `order`。
@@ -106,7 +106,7 @@ List<Dictionary> ctlReorderDictionaries(
   return clone;
 }
 
-/// 校验 `PUT /api/admin/dictionaries/:name` 的汉字部分参数（BUG-3571）。
+/// 校验 `PUT /api/admin/dictionaries/:name` 的汉字部分参数（BUG-3573）。
 ///
 /// - `kanjiEnabled` 只对混合词典有意义：纯 kanji 词典的开关就是 `enabled`，纯术语
 ///   词典没有汉字部分——给了就 400，而不是静默写一个没人读的键。

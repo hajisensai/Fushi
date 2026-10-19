@@ -156,7 +156,7 @@ void main() {
 
     expect(source, contains('BatchActionBar('));
     expect(source, contains('Future<bool> _batchSetEnabled(bool enabled)'));
-    // 批量启停逐本走「按所在分区写目标态」（BUG-3571：「汉字」分区里混合词典只写
+    // 批量启停逐本走「按所在分区写目标态」（BUG-3573：「汉字」分区里混合词典只写
     // 汉字部分的开关），两条写入都必须是幂等的目标态 setter。
     expect(source, contains('await _writeEnabledInSection(dictionary, enabled)'));
     expect(source, contains('appModel.setDictionaryHidden(dictionary, !enabled)'));

@@ -150,7 +150,7 @@ void main() {
     expect(ctlDictionaryJson(term)['enabled'], isTrue);
   });
 
-  group('BUG-3571：混合词典的汉字部分', () {
+  group('BUG-3573：混合词典的汉字部分', () {
     final Dictionary mixed = Dictionary(
       name: 'mixed',
       formatKey: 'yomichan',

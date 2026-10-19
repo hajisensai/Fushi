@@ -160,7 +160,7 @@ class ServerDictionaryHost {
       ..sort((DictionaryMetaRow a, DictionaryMetaRow b) => a.order.compareTo(b.order));
     // 分桶规则与 app 同一份（fushi_dictionary 的 bucketDictPaths / dictPathEntryOf）：
     // 混合词典的术语部分按 hiddenLanguages、汉字部分按 kanjiHidden 各自判定，汉字桶按
-    // 「汉字」分区顺序（kanjiOrder）装载（BUG-3571）。
+    // 「汉字」分区顺序（kanjiOrder）装载（BUG-3573）。
     final List<DictPathEntry> entries = <DictPathEntry>[];
     final List<String> termOrder = <String>[];
     final Set<String> hidden = <String>{};

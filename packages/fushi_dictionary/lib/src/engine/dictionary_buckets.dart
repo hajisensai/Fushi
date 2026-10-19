@@ -3,7 +3,7 @@
 /// 纯 Dart（零 Flutter）：app（`AppModel` 的引擎装载）与无头服务端
 /// （`fushi_server` 的 `ServerDictionaryHost`）共用这一份，经
 /// `fushi_dictionary_core.dart` 导出。两边以前各写一份分桶规则，混合词典的汉字
-/// 部分有了独立开关后服务端那份就落后了（仍按整本 hidden 装载，BUG-3571）。
+/// 部分有了独立开关后服务端那份就落后了（仍按整本 hidden 装载，BUG-3573）。
 library;
 
 enum DictionaryType { term, frequency, pitch, kanji }

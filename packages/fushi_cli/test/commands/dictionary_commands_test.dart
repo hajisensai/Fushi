@@ -97,7 +97,7 @@ void main() {
       );
     });
 
-    test('BUG-3571：kanji-enable / kanji-disable / kanji-order 只动汉字部分', () {
+    test('BUG-3573：kanji-enable / kanji-disable / kanji-order 只动汉字部分', () {
       final CtlRequestSpec on = _build('dict', 'kanji-enable', <String>['現代新国語辞典']);
       expect(on.method, 'PUT');
       expect(
