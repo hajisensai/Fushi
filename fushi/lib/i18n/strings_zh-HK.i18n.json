@@ -44,6 +44,8 @@
   "ai_feature_manga_ocr_summary": "用視覺大模型重讀漫畫文字框裡的字。在「漫畫 OCR」設定裡選了模式才會開啟；裁出的文字框會上傳給該供應商並由其計費。",
   "ai_feature_overrides_count": "${n} 項已單獨指定",
   "ai_feature_overrides_none": "全部跟隨預設提供商",
+  "ai_feature_subtitle_proofread": "字幕校對",
+  "ai_feature_subtitle_proofread_summary": "校對語音識別生成的日語字幕：先整理作品專名表，再修正聽錯的台詞。只會把識別出的文字與專名表發給該供應商（不發音訊與畫面），並由其計費。",
   "ai_feature_unset": "未指定",
   "ai_feature_video_identify": "影片作品識別",
   "ai_feature_video_identify_assist_summary": "刮削出現多個候選或查無結果時，讓 AI 選出對應作品或給出可搜尋的正式標題",

@@ -44,6 +44,139 @@ const Duration kAiChatRetryBaseDelay = Duration(seconds: 2);
 /// 直接报失败——那不是抖动，是额度没了。
 const Duration kAiChatMaxRetryWait = Duration(seconds: 60);
 
+/// 一次应答报告的 token 用量。
+///
+/// 每个字段都可空：null = 这家没报这一项（**不是 0**）。四项互不重叠——
+/// [inputTokens] 是**没走缓存**的输入：
+/// - Anthropic：`input_tokens` / `output_tokens` / `cache_read_input_tokens` /
+///   `cache_creation_input_tokens`，本来就分开报；
+/// - OpenAI 兼容：`prompt_tokens` 含命中缓存的部分，有
+///   `prompt_tokens_details.cached_tokens`（OpenAI）或 `prompt_cache_hit_tokens`
+///   （DeepSeek）时减掉它记进 [cacheReadTokens]；都没有时 [inputTokens] 就是
+///   `prompt_tokens`、[cacheReadTokens] 为 null。没有「缓存写入」的概念，
+///   [cacheWriteTokens] 恒 null；
+/// - Gemini：`usageMetadata.promptTokenCount` 同样含 `cachedContentTokenCount`，
+///   照上面减；[outputTokens] = `candidatesTokenCount` + `thoughtsTokenCount`
+///   （思考按输出计费）。
+class AiChatUsage {
+  const AiChatUsage({
+    this.inputTokens,
+    this.outputTokens,
+    this.cacheReadTokens,
+    this.cacheWriteTokens,
+  });
+
+  factory AiChatUsage.fromJson(Map<String, Object?> json) => AiChatUsage(
+    inputTokens: _jsonInt(json['input']),
+    outputTokens: _jsonInt(json['output']),
+    cacheReadTokens: _jsonInt(json['cacheRead']),
+    cacheWriteTokens: _jsonInt(json['cacheWrite']),
+  );
+
+  final int? inputTokens;
+  final int? outputTokens;
+  final int? cacheReadTokens;
+  final int? cacheWriteTokens;
+
+  /// 四项全为 null（应答里有 usage 段但一个认得的字段都没有）。
+  bool get isEmpty =>
+      inputTokens == null &&
+      outputTokens == null &&
+      cacheReadTokens == null &&
+      cacheWriteTokens == null;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    if (inputTokens != null) 'input': inputTokens,
+    if (outputTokens != null) 'output': outputTokens,
+    if (cacheReadTokens != null) 'cacheRead': cacheReadTokens,
+    if (cacheWriteTokens != null) 'cacheWrite': cacheWriteTokens,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is AiChatUsage &&
+      other.inputTokens == inputTokens &&
+      other.outputTokens == outputTokens &&
+      other.cacheReadTokens == cacheReadTokens &&
+      other.cacheWriteTokens == cacheWriteTokens;
+
+  @override
+  int get hashCode =>
+      Object.hash(inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens);
+
+  @override
+  String toString() => 'AiChatUsage(${toJson()})';
+}
+
+int? _jsonInt(Object? value) => switch (value) {
+  final int v when v >= 0 => v,
+  final double v when v.isFinite && v >= 0 => v.round(),
+  _ => null,
+};
+
+/// [AiChatClient.completeWithUsage] 的结果：正文 + 用量（取不到为 null）。
+class AiChatCompletion {
+  const AiChatCompletion({required this.text, this.usage});
+
+  final String text;
+  final AiChatUsage? usage;
+}
+
+/// 按协议从应答体里取用量；没有 usage 段或一个认得的字段都没有时为 null。
+AiChatUsage? parseAiChatUsage(
+  AiWireProtocol protocol,
+  Map<Object?, Object?> body,
+) {
+  final AiChatUsage usage;
+  switch (protocol) {
+    case AiWireProtocol.anthropicMessages:
+      final Object? u = body['usage'];
+      if (u is! Map) return null;
+      usage = AiChatUsage(
+        inputTokens: _jsonInt(u['input_tokens']),
+        outputTokens: _jsonInt(u['output_tokens']),
+        cacheReadTokens: _jsonInt(u['cache_read_input_tokens']),
+        cacheWriteTokens: _jsonInt(u['cache_creation_input_tokens']),
+      );
+    case AiWireProtocol.openAiCompatible:
+      final Object? u = body['usage'];
+      if (u is! Map) return null;
+      final int? prompt = _jsonInt(u['prompt_tokens']);
+      final Object? details = u['prompt_tokens_details'];
+      final int? cached =
+          (details is Map ? _jsonInt(details['cached_tokens']) : null) ??
+          _jsonInt(u['prompt_cache_hit_tokens']);
+      usage = AiChatUsage(
+        inputTokens: prompt == null
+            ? _jsonInt(u['prompt_cache_miss_tokens'])
+            : cached == null
+            ? prompt
+            : (prompt - cached).clamp(0, prompt),
+        outputTokens: _jsonInt(u['completion_tokens']),
+        cacheReadTokens: cached,
+      );
+    case AiWireProtocol.geminiGenerateContent:
+      final Object? u = body['usageMetadata'];
+      if (u is! Map) return null;
+      final int? prompt = _jsonInt(u['promptTokenCount']);
+      final int? cached = _jsonInt(u['cachedContentTokenCount']);
+      final int? candidates = _jsonInt(u['candidatesTokenCount']);
+      final int? thoughts = _jsonInt(u['thoughtsTokenCount']);
+      usage = AiChatUsage(
+        inputTokens: prompt == null
+            ? null
+            : cached == null
+            ? prompt
+            : (prompt - cached).clamp(0, prompt),
+        outputTokens: candidates == null && thoughts == null
+            ? null
+            : (candidates ?? 0) + (thoughts ?? 0),
+        cacheReadTokens: cached,
+      );
+  }
+  return usage.isEmpty ? null : usage;
+}
+
 /// 调用失败。[message] 是**已脱敏**的短文案，可以直接进 UI——绝不含 API Key、
 /// 完整 URL 或响应体原文（后两者都可能回显凭据）。
 class AiChatFailure implements Exception {
@@ -166,7 +299,23 @@ class AiChatClient {
   /// 并发在途的其它请求一起避让，不接着撞墙。要等超过 [kAiChatMaxRetryWait]、或
   /// 客户端已 [close]，不再重试、原样抛出（还在排队时被关抛 `cancelled`）。
   /// 鉴权 / 4xx / 坏回复重试也一样，直接抛。
+  ///
+  /// 只要正文的调用方用这个；要记账（token 用量）的用 [completeWithUsage]。
   Future<String> complete({
+    required AiProviderConfig provider,
+    required List<AiChatMessage> messages,
+    int maxTokens = 2048,
+  }) async => (await completeWithUsage(
+    provider: provider,
+    messages: messages,
+    maxTokens: maxTokens,
+  )).text;
+
+  /// 同 [complete]，另外带回这次应答报告的 token 用量（[AiChatCompletion.usage]）。
+  ///
+  /// 失败语义与 [complete] 完全一致（空正文同样抛 `empty_response`）。应答里没有
+  /// 用量字段时 `usage` 为 null——**不是 0**：费用统计要把它当「未知」单独计数。
+  Future<AiChatCompletion> completeWithUsage({
     required AiProviderConfig provider,
     required List<AiChatMessage> messages,
     int maxTokens = 2048,
@@ -186,7 +335,10 @@ class AiChatClient {
     if (text == null || text.trim().isEmpty) {
       throw const AiChatFailure('empty_response');
     }
-    return text;
+    return AiChatCompletion(
+      text: text,
+      usage: parseAiChatUsage(provider.protocol, body),
+    );
   }
 
   /// 「测试连接」：对**所配模型**发一次最小 chat 请求。

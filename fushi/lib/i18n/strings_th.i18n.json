@@ -44,6 +44,8 @@
   "ai_feature_manga_ocr_summary": "A vision model re-reads the text inside manga text boxes. Off until you pick a mode in Manga OCR settings; cropped text boxes are uploaded to this provider and billed by it.",
   "ai_feature_overrides_count": "${n} set individually",
   "ai_feature_overrides_none": "All features use the default provider",
+  "ai_feature_subtitle_proofread": "Subtitle proofreading",
+  "ai_feature_subtitle_proofread_summary": "Fixes speech-recognition Japanese subtitles: builds a name list for the work, then corrects misheard lines. Only the recognized text and the name list are sent to this provider (no audio or video) and billed by it.",
   "ai_feature_unset": "ยังไม่ได้ตั้ง",
   "ai_feature_video_identify": "การระบุวิดีโอ",
   "ai_feature_video_identify_assist_summary": "เมื่อการดึงข้อมูลพบผู้สมัครหลายรายการหรือไม่พบเลย ให้ AI เลือกผลงานที่ตรงกันหรือแนะนำชื่อเรื่องสำหรับค้นหา",

@@ -44,6 +44,8 @@
   "ai_feature_manga_ocr_summary": "漫画の文字枠の中の文字を画像対応モデルで読み直します。「漫画 OCR」設定でモードを選ぶまでは無効です。切り出した文字枠がこのプロバイダーに送信され、その料金が発生します。",
   "ai_feature_overrides_count": "${n} 件を個別に指定",
   "ai_feature_overrides_none": "すべての機能が既定のプロバイダーを使用",
+  "ai_feature_subtitle_proofread": "字幕の校正",
+  "ai_feature_subtitle_proofread_summary": "音声認識で作った日本語字幕を校正します。作品の固有名詞表を作ってから、聞き違えた台詞を直します。このプロバイダーに送るのは認識したテキストと固有名詞表だけで（音声・映像は送りません）、料金はプロバイダーが請求します。",
   "ai_feature_unset": "未設定",
   "ai_feature_video_identify": "動画作品の識別",
   "ai_feature_video_identify_assist_summary": "スクレイピングで候補が複数見つかったり何も見つからなかったりしたとき、AI に該当作品を選ばせるか、検索用のタイトルを提案させます",

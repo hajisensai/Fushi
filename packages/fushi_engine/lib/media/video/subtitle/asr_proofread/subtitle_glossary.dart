@@ -27,7 +27,8 @@ class SubtitleGlossaryEntry {
         kind: (json['kind'] as String? ?? '').trim(),
         misrecognitions: <String>[
           for (final Object? m
-              in (json['misrecognitions'] as List<Object?>? ?? const <Object?>[]))
+              in (json['misrecognitions'] as List<Object?>? ??
+                  const <Object?>[]))
             if (m is String && m.trim().isNotEmpty) m.trim(),
         ],
         note: (json['note'] as String? ?? '').trim(),

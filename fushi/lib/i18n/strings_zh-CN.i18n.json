@@ -44,6 +44,8 @@
   "ai_feature_manga_ocr_summary": "用视觉大模型重读漫画文字框里的字。在「漫画 OCR」设置里选了档位才会开启；裁出的文字框会上传给该提供商并由其计费。",
   "ai_feature_overrides_count": "${n} 项已单独指定",
   "ai_feature_overrides_none": "全部跟随默认提供商",
+  "ai_feature_subtitle_proofread": "字幕校对",
+  "ai_feature_subtitle_proofread_summary": "校对语音识别生成的日语字幕：先整理作品专名表，再修正听错的台词。只会把识别出的文字与专名表发给该提供商（不发音频与画面），并由其计费。",
   "ai_feature_unset": "未指定",
   "ai_feature_video_identify": "视频作品识别",
   "ai_feature_video_identify_assist_summary": "刮削出现多个候选或查无结果时，让 AI 选出对应作品或给出可搜的正式标题",
