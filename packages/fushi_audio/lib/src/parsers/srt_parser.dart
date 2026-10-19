@@ -78,7 +78,8 @@ class SrtParser {
   ///
   /// 实现在 Rust（`ffc_parse_subtitle_srt`，native/fushi_compute/src/parse/subtitle/
   /// formats.rs）：去 BOM → 统一换行 → 按空行切块 → 找含 `-->` 的时间行
-  /// （`HH:MM:SS,mmm`，也接受 `.`）→ 其后各行去空后以空格连接 → [stripHtmlTags] →
+  /// （`HH:MM:SS,mmm`，也接受 `.`）→ 其后各行去空后以 ASS 硬换行 `\N` 连接（#2312：
+  /// 渲染层按原行分行，plainText 里仍是空格）→ [stripHtmlTags] →
   /// [parseSubtitleMarkup]，正文为空的块丢弃。时间码小时位越界照旧抛 `FormatException`。
   static List<AudioCue> parseString({
     required String content,

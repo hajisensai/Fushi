@@ -666,11 +666,7 @@ extension _VideoLayout on _VideoFushiPageState {
                                   subtitleScreenScaleFactor(
                                     MediaQuery.sizeOf(context),
                                   ),
-                              textColor: _subtitleStyle.resolveTextColor(
-                                _subtitleTextColor(
-                                  _videoChromeColorScheme(context),
-                                ),
-                              ),
+                              textColor: _subtitleStyle.resolveTextColor(),
                               fontWeight: _subtitleStyle.resolveFontWeight(
                                 _videoUiScale,
                               ),
