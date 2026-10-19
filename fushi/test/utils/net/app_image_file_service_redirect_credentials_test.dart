@@ -1,4 +1,4 @@
-/// BUG-3520 / BUG-3521：封面请求带私有目录凭据头（OPDS 的 `X-API-Key`、Basic）
+/// BUG-3535 / BUG-3521：封面请求带私有目录凭据头（OPDS 的 `X-API-Key`、Basic）
 /// 时，重定向的凭据边界。
 ///
 /// 走真实 loopback `HttpServer`（两个端口 = 两个 origin）：`dart:io` 自动跟随

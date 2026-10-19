@@ -1,4 +1,4 @@
-## BUG-3520 · signin-bad-code-error-off-screen
+## BUG-3534 · signin-bad-code-error-off-screen
 - **报告**：2026-10-18（用户：验证码不对没有提醒）
 - **真实性**：✅ 真 bug（展示位置问题）。服务端 `consumeCode` 正确回 400 `bad_code`，客户端也映射成「验证码不对。」，但 `fushi/lib/src/pages/implementations/leaderboard/leaderboard_sign_in_page.dart` 把它放进页面底部唯一的 `_error` 行——在公开数据清单与同意勾选之后、离验证码框很远，手机上处于屏幕外，用户看不到。
 - **[x] ① 已修复** — `bad_code` / `code_expired` / `too_many_attempts`（`kLeaderboardCodeErrorCodes`）改挂到验证码输入框的 `errorText`，验证码一改即清；其余错误仍走底部行。提交 `fix(leaderboard): email code body and code-field error`。

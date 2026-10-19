@@ -1,4 +1,4 @@
-## BUG-3519 · 双语 SRT / VTT 多行字幕在屏上并成一排
+## BUG-3532 · 双语 SRT / VTT 多行字幕在屏上并成一排
 - **报告**：2026-10-18（GitHub issue #2312，用户：「双语字幕没换行，会并成一排显示，其它播放器正常」）
 - **真实性**：✅ 真 bug。根因 `packages/fushi_audio/lib/src/parsers/srt_parser.dart:117`（修复前）
   与 `packages/fushi_audio/lib/src/parsers/vtt_parser.dart:132`（修复前）：时间行之后的多行文本

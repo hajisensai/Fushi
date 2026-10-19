@@ -313,7 +313,7 @@ SettingsActionItem _opdsTest() => _action(
         _requireOpds(c, args['id']!),
       );
       // 探测打通了另一条地址（用户填的是服务端根 / 网页地址）：与设置页同样
-      // 写回配置，下次不必再探测（BUG-3519）。
+      // 写回配置，下次不必再探测（BUG-3526）。
       final Uri? resolved = outcome.resolvedUrl;
       if (resolved != null) {
         await c.appModel.persistOpdsCatalogUrl(args['id']!, resolved);

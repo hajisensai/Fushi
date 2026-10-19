@@ -74,7 +74,7 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
     this.onCatalogUrlResolved,
   }) : _client = client ?? createAppHttpIoClient();
 
-  /// 用户填的地址不是目录、而按已知端点探测打通了另一条时回调（BUG-3519），
+  /// 用户填的地址不是目录、而按已知端点探测打通了另一条时回调（BUG-3526），
   /// 由装配方把打通的地址写回配置——下次冷启动不必再探测一遍。
   final void Function(Uri resolved)? onCatalogUrlResolved;
 
@@ -233,7 +233,7 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
               sizeBytes: link.sizeBytes,
               dateText: entry.updatedText,
               coverUrl: entry.coverHref,
-              // 私有目录的封面同样要凭据（Komga 无凭据回 401，BUG-3520）；
+              // 私有目录的封面同样要凭据（Komga 无凭据回 401，BUG-3535）；
               // 与下载同一个同源判据，跨 origin 的封面（CDN）拿到的是空表。
               coverHeaders: entry.coverHref == null
                   ? null
@@ -518,7 +518,7 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
     return config.credentialHeadersFor(uri);
   }
 
-  /// 取根目录，必要时按已知端点探测（BUG-3519）。返回打通的根地址与该页 feed。
+  /// 取根目录，必要时按已知端点探测（BUG-3526）。返回打通的根地址与该页 feed。
   ///
   /// 只有「地址不对」类失败（404、网页、读不出 OPDS）才继续试下一个候选；
   /// 401/403/超时/连不上都是**这台服务器本身**的结论，原样抛出——在一台密码
@@ -570,7 +570,7 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
 /// 实现收敛到引擎的 [isSameHttpOrigin]（重定向剥凭据用的是同一个）。
 bool isSameOpdsOrigin(Uri a, Uri b) => isSameHttpOrigin(a, b);
 
-/// 目录地址返回的是网页而不是 OPDS feed（BUG-3519）。
+/// 目录地址返回的是网页而不是 OPDS feed（BUG-3526）。
 ///
 /// 单独成型是为了让设置页的连接测试给出**本地化**的明确结论（「这是网页，
 /// 不是 OPDS 目录地址」），而不是一句英文的「not a readable OPDS catalog」。

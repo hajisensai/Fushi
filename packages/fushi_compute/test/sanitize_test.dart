@@ -9,7 +9,7 @@
 // 期望值：代表样例的逐字输出，以及两组语料（模糊用例、BMP 每个码点放进所有判定位置）的
 // 输出摘要。另外对全部真书章节与 CSS 逐文件比过 SHA-1（不入库），全部一致。
 //
-// 第 2 步原是 markImagesLazy；BUG-3519 改成「去掉 <img> 的 loading 属性」（插图一律
+// 第 2 步原是 markImagesLazy；BUG-3533 改成「去掉 <img> 的 loading 属性」（插图一律
 // eager）。新语义的参考实现是 PR #2316 的 Dart 正则（下面的 [refStripImageLoading]），
 // 先在两组语料上逐字核对原生第 2 步与之一致，再按它重冻含第 2 步的摘要。
 @TestOn('vm')
@@ -179,7 +179,7 @@ final class Fnv {
   void mark(int b) => add(<int>[b]);
 }
 
-/// 旧实现的摘要（见文件头；含第 2 步的 op 按 BUG-3519 的参考实现重冻）。
+/// 旧实现的摘要（见文件头；含第 2 步的 op 按 BUG-3533 的参考实现重冻）。
 const int _oldFuzzDigest = 0x41ce6c44;
 const int _oldCodePointDigest = 0x6c6cae2a;
 
@@ -305,7 +305,7 @@ const List<(String, String)> _cssSamples = <(String, String)>[
 
 ReaderSanitizeNative get _native => ReaderSanitizeNative.instance;
 
-/// 第 2 步的参考实现：PR #2316（BUG-3519）里 `stripImageLoadingAttributes` 的 Dart 正则，
+/// 第 2 步的参考实现：PR #2316（BUG-3533）里 `stripImageLoadingAttributes` 的 Dart 正则，
 /// 原样搬来当测试预言机（生产没有 Dart 实现）。
 final RegExp _refImgTag = RegExp(
   '<img\\b((?:"[^"]*"|\'[^\']*\'|[^>"\'])*)>',

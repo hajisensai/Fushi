@@ -116,7 +116,7 @@ void main() {
       expect(trio.audioBook, isNull);
     });
 
-    // BUG-3519：多份同前缀文件时取时间戳最新的那份（旧律「取第一个」随后端
+    // BUG-3528：多份同前缀文件时取时间戳最新的那份（旧律「取第一个」随后端
     // 返回顺序时而读到旧进度）；快照与逐本列举仍须同律。
     test('同一文件夹下多个同前缀文件时取最新——与 findSyncFileByPrefix 同律', () {
       final RemoteListingBuilder b = RemoteListingBuilder();

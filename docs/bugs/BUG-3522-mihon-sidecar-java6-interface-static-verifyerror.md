@@ -1,4 +1,4 @@
-## BUG-3519 · 桌面 sidecar 加载 keiyoushi Komga 扩展 VerifyError（dex2jar 产出 Java 6 类不能 invokestatic 接口方法），整个扩展装不上
+## BUG-3522 · 桌面 sidecar 加载 keiyoushi Komga 扩展 VerifyError（dex2jar 产出 Java 6 类不能 invokestatic 接口方法），整个扩展装不上
 - **报告**：2026-10-19（用户：桌面端装 keiyoushi Komga 1.6.73 失败，sidecar 栈 `java.lang.VerifyError: Illegal type at constant pool entry 552 in class eu.kanade.tachiyomi.extension.all.komga.Komga`，`Komga.r(MultiSelectListPreference;Komga;)V @61: invokestatic`）
 - **真实性**：✅ 真 bug。dex2jar 把每个类都写成 major 50（Java 6），`third_party/m_extension_server/upstream_src/server/src/main/kotlin/mextensionserver/util/BytecodeEditor.kt:195` 的 `visit(version, …)` 原样透传。DEX 没有这条上限，当下扩展编出的两类东西在 52 以下非法：
   - 对 InterfaceMethodref 的 invokestatic / invokespecial（JVMS 4.9.1）——宿主 kotlinx-coroutines 1.11 把 `Job.cancel$default` 编成接口静态方法，Komga 常量池 #552 正是它；同形的还有一批扩展的 `invokeSuspend` 续体；

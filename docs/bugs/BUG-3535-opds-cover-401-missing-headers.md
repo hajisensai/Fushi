@@ -1,4 +1,4 @@
-## BUG-3520 · OPDS：私有目录（Komga）封面无凭据请求回 401，发现页封面全是占位
+## BUG-3535 · OPDS：私有目录（Komga）封面无凭据请求回 401，发现页封面全是占位
 - **报告**：2026-10-19（用户：OPDS 发现源接 Komga；真 Komga 1.29.1 实测证实）
 - **真实性**：✅ 真 bug。Komga 的 thumbnail 链接无凭据回 401 `application/opds-authentication+json`（真机实测）。下载链路已带 `Authorization`（`DiscoveryHttpPayload.headers`），但封面没有：`DiscoveryResourceItem` 没有封面请求头字段，`fushi/lib/src/pages/implementations/media_discovery_page.dart` 的 `_buildResourceLeading`（基线 `ae55190552` 第 1240 行）用 `AppCachedHttpImage(cover)` 不传 headers（组件本身支持）。
 - **[x] ① 已修复** — 提交 `073fafc0fc`（`pr/opds-komga`）。`DiscoveryResourceItem.coverHeaders`（引擎模型）；OPDS 源按与下载同一个同源判据填（`OpdsServerConfig.credentialHeadersFor`，跨 origin 的封面 = 空表）；发现页经 `discoveryCoverImage` 传给 `AppCachedHttpImage`。

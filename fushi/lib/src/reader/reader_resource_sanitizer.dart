@@ -20,7 +20,7 @@ import 'package:fushi_compute/fushi_compute.dart';
 ///   自闭合非 void 元素改写成显式成对标签（在 XHTML 里是同一个空元素），void 元素
 ///   （`<br/>`、`<img/>`…）保留自闭合。属性里的引号串整段当一个 token，属性值内的字面 `/>`
 ///   （`<a href="a/>b"/>`）不会被当成标签结尾。
-/// - **插图不懒加载**（[stripImageLoadingAttributes]，BUG-3519）：去掉正文 `<img>` 的
+/// - **插图不懒加载**（[stripImageLoadingAttributes]，BUG-3533）：去掉正文 `<img>` 的
 ///   `loading` 属性（连原书自带的 `loading="lazy"` 一起），所有插图按浏览器默认（eager）
 ///   加载。分页 / 连续 / VN 的章节几何（maxScroll、章首章末落点、跨章判定、VN 屏切分）都要靠
 ///   每张图的真实尺寸：懒图在离视口远的分页列 / 脱离文档的 VN 源树里永不加载、保持 0 尺寸，

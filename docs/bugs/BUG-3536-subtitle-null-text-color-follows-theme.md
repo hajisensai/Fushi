@@ -1,4 +1,4 @@
-## BUG-3520 · 关掉「尊重字幕自带样式」后字幕文字色随 App 主题忽白忽黑
+## BUG-3536 · 关掉「尊重字幕自带样式」后字幕文字色随 App 主题忽白忽黑
 - **报告**：2026-10-18（GitHub issue #2312，用户：「字幕开启忽视自带格式后字体异常，会一会白一会黑」）
 - **真实性**：✅ 真 bug（触发条件：持久化的字幕样式 `textColor` 为 null，即 TODO-051 之前落盘的旧
   数据）。根因 `fushi/lib/src/pages/implementations/video_fushi_page.dart:1487`（修复前）

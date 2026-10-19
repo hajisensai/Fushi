@@ -182,7 +182,7 @@ class AppImageFileService extends FileService {
     final http.Client client = createAppHttpIoClient();
     try {
       // 重定向逐跳手动跟随：封面请求可能带私有目录的凭据头（OPDS 的
-      // `X-API-Key`，BUG-3520 / BUG-3521），而 dart:io 自动跟随跨 origin 只剥
+      // `X-API-Key`，BUG-3535 / BUG-3521），而 dart:io 自动跟随跨 origin 只剥
       // `Authorization` / `Cookie`，其它凭据头会被原样转发给 302 指向的 CDN。
       Uri current = Uri.parse(url);
       Map<String, String> currentHeaders = headers ?? const <String, String>{};

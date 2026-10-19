@@ -1,4 +1,4 @@
-## BUG-3519 · Windows 触控板滚动查词弹窗松手即停（无惯性）
+## BUG-3525 · Windows 触控板滚动查词弹窗松手即停（无惯性）
 - **报告**：2026-10-19（用户：「win笔记本触摸板查词弹窗滚动卡卡的，浏览器扩展里面的查词弹窗就不卡」，附录屏：前半段 YouTube 上的扩展弹窗顺滑，后半段漫画阅读器 app 内弹窗）
 - **真实性**：✅ 真 bug（代码路径推断，未在真机触控板上复现）。app 内弹窗是 WebView2 离屏渲染贴纹理，触控板两指滚动经 `packages/flutter_inappwebview_windows/lib/src/in_app_webview/custom_platform_view.dart` 的 Listener 把 PointerPanZoomUpdate 的 `panDelta` 合成滚轮交给页面。Windows 引擎的 DirectManipulation 在惯性阶段（`during_inertia_`）**不发** PanZoomUpdate（Flutter 自家 Scrollable 靠 PanZoomEnd 的速度自己起 ballistic），而该 Listener 没接 `onPointerPanZoomEnd`、也不续惯性 → 松手即急停，只滚手指实际走过的距离。浏览器扩展里是同一份 `popup.js` 的 wheel 监听，但 Chromium 会把系统惯性继续作为精确滚轮发给页面，所以顺。BUG-3345 备注里已记录过这处缺口。
 - **[x] ① 已修复** — `trackpad_gesture_router.dart` 新增 `TrackpadFling`（Flutter 在 Windows 上的默认滚动物理 `ClampingScrollSimulation`，速度按 `kMinFlingVelocity`/`kMaxFlingVelocity` 门限与截断）；`custom_platform_view.dart` 用 `VelocityTracker.withKind(trackpad)` 采样 PanZoom 累计平移，`onPointerPanZoomEnd` 起惯性、Ticker 逐帧经原滚轮通道 `setScrollDelta` 补发；新手势 / 按下 / 鼠标滚轮 / `PointerScrollInertiaCancelEvent` / dispose 立即停；捏合不续惯性。阅读器分页对连续惯性滚轮流已有 BUG-1745 的手势闸门，不会一甩连翻。

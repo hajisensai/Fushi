@@ -1,11 +1,11 @@
-/// OPDS 发现源对真实 Komga 1.29.1 的兼容契约（BUG-3519 / 3520 / 3521）。
+/// OPDS 发现源对真实 Komga 1.29.1 的兼容契约（BUG-3526 / 3520 / 3521）。
 ///
 /// fixture `test/fixtures/opds/komga/` 是从真 Komga 1.29.1 抓下来的原始响应
 /// （v1.2 根目录 / 系列页、v2 根目录 / 系列页），不是手写的「理想 OPDS」——
 /// 本文件钉的几条行为恰恰都是理想 feed 里不会出现的服务端方言：
 /// - 根地址回 200 HTML、带结尾斜杠回 404，只有 `/opds/v2/catalog`、
-///   `/opds/v1.2/catalog` 是目录（BUG-3519）；
-/// - 封面无凭据回 401（BUG-3520）；
+///   `/opds/v1.2/catalog` 是目录（BUG-3526）；
+/// - 封面无凭据回 401（BUG-3535）；
 /// - API key 只认 `X-API-Key` 头（BUG-3521）；
 /// - v1.2 的 acquisition 一律标 `application/zip`；v2 作者放在 `contributor`。
 library;
@@ -91,7 +91,7 @@ class _FakeKomga {
 }
 
 void main() {
-  group('BUG-3519 目录地址探测', () {
+  group('BUG-3526 目录地址探测', () {
     test('候选：原样地址打头，去结尾斜杠其次，再是根与各级前缀上的已知端点', () {
       final List<String> fromRoot = opdsCatalogUrlCandidates(
         Uri.parse('$_host/'),
@@ -346,7 +346,7 @@ void main() {
     });
   });
 
-  group('BUG-3520 封面凭据', () {
+  group('BUG-3535 封面凭据', () {
     test('同源封面带凭据头，跨源封面不带', () async {
       final MockClient client = MockClient(
         (http.Request request) async => http.Response(

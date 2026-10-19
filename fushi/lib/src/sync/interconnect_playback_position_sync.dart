@@ -90,7 +90,7 @@ class InterconnectPlaybackPositionSync {
     PlaybackPositionKind.audiobook => _backend.remoteAudiobookPosition(key),
   };
 
-  /// 「已发出、尚未确认」推送位置的 dimension（BUG-3519）。
+  /// 「已发出、尚未确认」推送位置的 dimension（BUG-3528）。
   String get pendingDimension => '${dimension}_pending';
 
   /// 上次两端达成一致的位置（毫秒）；没有基线返回 null。
@@ -98,7 +98,7 @@ class InterconnectPlaybackPositionSync {
 
   /// 三方判定的唯一入口：sweep 与冲突弹窗都走这里，不各自读基线。
   ///
-  /// 与书籍版 `InterconnectBookProgressSync.decide` 同理（BUG-3519）：PUT 在 host
+  /// 与书籍版 `InterconnectBookProgressSync.decide` 同理（BUG-3528）：PUT 在 host
   /// 端已提交、客户端却超时时基线没推进，下一轮会把 host 上本机自己的写入误判成
   /// 对端改动。推送前记下的「待确认」位置若正是 host 当前位置，先提升为基线。
   Future<BookProgressSyncAction> decide(

@@ -1,5 +1,5 @@
 ## BUG-3520 · 桌面 sidecar 来源偏好写到 %LOCALAPPDATA%\Tachidesk\settings，不在 Fushi 数据根；已有值永远盖不过 Drift 快照
-- **报告**：2026-10-19（用户：排查 BUG-3519 时发现 sidecar 来源偏好不在 Fushi 数据根里）
+- **报告**：2026-10-19（用户：排查 BUG-3522 时发现 sidecar 来源偏好不在 Fushi 数据根里）
 - **真实性**：✅ 真 bug，两层：
   - **存储根**：宿主把 `<数据库目录>/mihon` 作为第二个参数传给 sidecar（`fushi/lib/src/media/manga/mihon/desktop_mihon_runtime.dart` `_start`），`third_party/m_extension_server/upstream_src/server/src/main/kotlin/mextensionserver/Main.kt:64` 把它写进系统属性 `ts.server.rootDir`；而 `upstream_src/AndroidCompat/Config/src/main/java/xyz/nulldev/ts/config/ApplicationRootDir.kt:14-19` 读的是 `suwayomi.tachidesk.config.server.rootDir`，读不到就回退 AppDirs 的 `Tachidesk` 目录。`settings/source_*.xml`（`JavaSharedPreferences`）、`android-compat/`、`server.conf` 全部落到 `%LOCALAPPDATA%\Tachidesk`——所有 Fushi 安装 / 数据根（含 `FUSHI_TEST_ROOT`）共用一份，还和 Suwayomi 共用同一个目录（本机该目录里就有 Suwayomi 的 `database.mv.db` / `server.conf`，后者此前也被并进 sidecar 配置）。
   - **快照语义**：`upstream_src/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt:743` `if (prefs.contains(key)) continue`——JVM 存储里只要已有这个键，宿主每次请求带来的 Drift 快照就永远写不进去：别的数据根 / Suwayomi 留下的值、备份还原后的值都赢不过磁盘上的旧值。（另：据 `JavaSharedPreferences` 实现，字符串集合存成 `key.0…key.size`，`contains(key)` 恒为 false，集合类偏好反而每次都被快照覆盖、扩展自己写的集合值活不过下一次请求。）

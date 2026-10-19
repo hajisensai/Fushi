@@ -1,4 +1,4 @@
-## BUG-3519 · OPDS：填服务器根地址/网页地址/带结尾斜杠时报「不是可读的 OPDS 目录」或 404，Komga 只认 /opds/v2/catalog
+## BUG-3526 · OPDS：填服务器根地址/网页地址/带结尾斜杠时报「不是可读的 OPDS 目录」或 404，Komga 只认 /opds/v2/catalog
 - **报告**：2026-10-19（用户：OPDS 发现源接 Komga 连不上；在真 Komga 1.29.1 上实测证实）
 - **真实性**：✅ 真 bug。真 Komga 1.29.1 实测：`http://host:25600`(/) 回 200 `text/html`（Web UI），Fushi 报 invalidResponse「not a readable OPDS catalog」；`/opds`、`/opds/v1.2`、`/opds/v2`、`/api/v1/opds`、带结尾斜杠的 `/opds/v1.2/catalog/` 一律 404；只有 `/opds/v1.2/catalog` 与 `/opds/v2/catalog` 200。根因：`fushi/lib/src/media/discovery/sources/opds_discovery_source.dart` 的 `browse` 原样用 `config.catalogUrl`（基线 `ae55190552` 第 131 行），HTML 在 `_loadFeed`（:294）被当 Atom 送进 `parseOpdsAtomFeed`，`opds_atom_parser.dart:54` 抛 FormatException，:310 收成一句英文报错；没有任何端点探测，`discovery_opds_url_hint` 也只示例 BookOrbit 形态。
 - **[x] ① 已修复** — 提交 `073fafc0fc`（`pr/opds-komga`）。

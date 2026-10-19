@@ -168,7 +168,7 @@ class EpubSrtMatcher {
   static const int shortCueMaxLen = 2;
 
   /// 不足 [defaultProbeMinLen] 字的短 cue 同受此限，但可再加上自上一条命中
-  /// 以来 miss 掉的 cue 的字数（BUG-3519，见 native `text.rs` 快速通道）。
+  /// 以来 miss 掉的 cue 的字数（BUG-3530，见 native `text.rs` 快速通道）。
   static const int shortCueMaxAdvance = 16;
 
   /// 前一条 cue 的尾巴允许被下一条「吃回去」的最大字数（BUG-2204）。ASR 字幕的

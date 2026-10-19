@@ -10,7 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 可以同时启用，共用一行会互相污染冲突判定。assetKey 用互联 wire 键 `bookKey`。
 const String kInterconnectBookProgressDimension = 'progress_live';
 
-/// 「已发出、尚未确认」的推送位置（BUG-3519）。值形态同基线（[BookProgressBaseline]
+/// 「已发出、尚未确认」的推送位置（BUG-3528）。值形态同基线（[BookProgressBaseline]
 /// 编码）；推送成功并记下基线后删除。见 [InterconnectBookProgressSync.decide]。
 const String kInterconnectBookProgressPendingDimension = 'progress_live_pending';
 
@@ -58,7 +58,7 @@ class InterconnectBookProgressSync {
 
   /// 三方判定的唯一入口：sweep 与冲突弹窗都走这里，不各自读基线。
   ///
-  /// 「写入落地、确认丢失」（BUG-3519）：host 慢时 PUT 在 host 端已经提交，客户端
+  /// 「写入落地、确认丢失」（BUG-3528）：host 慢时 PUT 在 host 端已经提交，客户端
   /// 却等到超时，[pushLocal] 在记基线之前就抛了，基线停在更早的位置。之后本机
   /// 接着读，下一轮两端都偏离旧基线——host 那份其实是本机自己的写入——被判成
   /// 冲突。所以推送前先记一条「待确认」位置；这里发现 host 正停在它上面，说明
@@ -122,7 +122,7 @@ class InterconnectBookProgressSync {
       updatedAtMs: ts,
     );
     // 先记「待确认」再发：PUT 超时而 host 已提交时，下一轮 [decide] 靠它认出
-    // host 上那份是本机自己的写入（BUG-3519）。
+    // host 上那份是本机自己的写入（BUG-3528）。
     await _db.setSyncBaseline(
       book.bookKey,
       kInterconnectBookProgressPendingDimension,

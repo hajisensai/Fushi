@@ -1,5 +1,5 @@
-/// OPDS Komga 兼容的 UI 侧契约：连接测试的本地化结论（BUG-3519 / 3521）与
-/// 发现页封面 provider 携带凭据头（BUG-3520）。
+/// OPDS Komga 兼容的 UI 侧契约：连接测试的本地化结论（BUG-3526 / 3521）与
+/// 发现页封面 provider 携带凭据头（BUG-3535）。
 library;
 
 import 'dart:io';
@@ -79,7 +79,7 @@ void main() {
   });
 
   group('发现页封面 provider', () {
-    test('源给的凭据头原样交给图片加载器（BUG-3520）', () {
+    test('源给的凭据头原样交给图片加载器（BUG-3535）', () {
       final AppCachedHttpImage image = discoveryCoverImage(
         'http://localhost:25600/opds/v2/books/1/thumbnail',
         const <String, String>{'X-API-Key': 'k'},

@@ -236,7 +236,7 @@ const List<String> kKnownOpdsCatalogPaths = <String>[
 /// 反代前缀最多往上回溯几层（`/a/b/c` → `/a/b/c`、`/a/b`、`/a`、根）。
 const int _kMaxPrefixDepth = 3;
 
-/// 把用户填的地址展开成**按优先级排列**的候选目录地址（BUG-3519）。
+/// 把用户填的地址展开成**按优先级排列**的候选目录地址（BUG-3526）。
 ///
 /// 第一条恒为用户原样填的地址（填对了就零额外请求）；其后是去掉结尾斜杠的
 /// 形态（Komga 对 `/opds/v1.2/catalog/` 回 404），再往后是 [kKnownOpdsCatalogPaths]

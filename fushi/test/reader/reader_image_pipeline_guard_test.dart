@@ -5,7 +5,7 @@ import '../helpers/source_guard.dart';
 
 /// 章节 HTML 流水线里与插图有关的两件事：
 ///   1. 生成章节 HTML 时去掉 `<img>` 的 `loading` 属性（分页几何要计入每张插图的真实
-///      尺寸，懒图在远列永不加载会把章节算短、提前跨章，BUG-3519）。清洗链整条在原生侧
+///      尺寸，懒图在远列永不加载会把章节算短、提前跨章，BUG-3533）。清洗链整条在原生侧
 ///      一次 FFI（`native/fushi_compute/src/parse/sanitize.rs`），生产入口
 ///      `buildChapterHtmlBytes` 必须**无条件**带上这一步——不得按章节类型挑着跳过。
 ///   2. 预热下一章插图（承担不懒加载后的首开读图开销）有配额、跟随阅读方向。

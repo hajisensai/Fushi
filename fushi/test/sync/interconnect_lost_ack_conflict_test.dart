@@ -11,7 +11,7 @@ import 'package:fushi/src/sync/sync_utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 
-/// BUG-3519：互联推送「写入已落地、确认丢失」被误判成冲突。
+/// BUG-3528：互联推送「写入已落地、确认丢失」被误判成冲突。
 ///
 /// 实测时间线（手机 → 电脑 host）：15:39 读到第 87 页，15:40 sweep 推给 host，
 /// 手机端 15 秒超时，host 却已经提交；手机没推进基线。16:34 读到第 131 页，

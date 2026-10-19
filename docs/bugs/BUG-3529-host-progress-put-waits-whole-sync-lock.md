@@ -1,4 +1,4 @@
-## BUG-3519 · 互联 host 的书进度 PUT 排在本机整轮自动同步后面，对端超时却已落库 → 下一轮误报进度冲突
+## BUG-3529 · 互联 host 的书进度 PUT 排在本机整轮自动同步后面，对端超时却已落库 → 下一轮误报进度冲突
 - **报告**：2026-10-18（用户：手机读到 87 页推给电脑，电脑写进去了、手机 15 秒判超时；16:34 读到 131 页后下一轮同步弹进度冲突。要求根本性修复）
 - **真实性**：✅ 真 bug。手机错误日志原文 `15:40:16 live book progress "志乃と恋 ２ [e11812e5]": TimeoutException after 0:00:15 … PUT …/progress`（13:08 同书同样一条）。host 端 `putBookProgress`（`packages/fushi_engine/lib/sync/local_library_host_service/books.part.dart:430`，修前）把写库包在 `_runExclusive` 里，而 app 注入的是 `runExclusiveWithSync`（`fushi/lib/src/models/app_model.dart:793`）——**整轮自动同步**的互斥，本机跑一轮（含 Google Drive 等云备份）可以持有几分钟。对端这条单行 PUT 排在后面拿不到响应头，15 s 判超时；host 放锁后照样落库，对端便没记下「已对齐」，下一轮两边都离开旧基线 → 冲突。BUG-2717 当年只把聚合 / 合集两个对端写挪到窄锁，进度写漏了；同文件里视频 / 有声书位置写不拿任何锁（所以只有书进度出这个症状），但三者都是「锁外读、锁内（或无锁）写」，并发对端上报存在用旧值互盖的 TOCTOU。
   - 排除项：host 鉴权有 token 缓存，不逐请求打库（`fushi_sync_server/auth.part.dart` `_peerTokens`）；电脑端今天无主线程卡死记录（`%LOCALAPPDATA%/Fushi/crashdumps/hang_watchdog.log` 为空），整卷 OCR 推理在后台 isolate + 插件 worker 线程；同时段手机对 `192.168.1.30` 的 `/api/ping` 仍在 2 s 内通过——host 能应答，只是排锁的那类请求超时。

@@ -37,7 +37,7 @@ class DiscoveryProbeOutcome {
   /// 成功时根目录的条目数 / 有声书库数。
   final int? count;
 
-  /// OPDS：用户填的地址不是目录、按已知端点探测打通的那条（BUG-3519）；
+  /// OPDS：用户填的地址不是目录、按已知端点探测打通的那条（BUG-3526）；
   /// 原地址本身可用时为 null。调用方负责写回配置。
   ///
   /// 不进 [toJson]：Kavita 的目录地址路径里带 API key，控制通道的结论输出
@@ -87,7 +87,7 @@ Future<DiscoveryProbeOutcome> probeOpdsServer(OpdsServerConfig config) async {
 /// OPDS 连接测试失败的给人看的结论。
 ///
 /// 两种最常见的配错单独给本地化说明，其余沿用脱敏后的协议层原因：
-/// - 地址是网页（Komga 根地址回 200 HTML，BUG-3519）；
+/// - 地址是网页（Komga 根地址回 200 HTML，BUG-3526）；
 /// - 凭据被拒（Komga 的账号是登录邮箱、API key 走单独字段，BUG-3521）。
 String opdsProbeFailureMessage(ExternalProviderFailure failure) {
   if (failure is OpdsWebPageFailure) return t.discovery_opds_test_web_page;

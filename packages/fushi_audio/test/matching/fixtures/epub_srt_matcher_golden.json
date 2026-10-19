@@ -1,5 +1,5 @@
 {
- "note": "EpubSrtMatcher 旧 Dart 实现（搬进 native/fushi_compute 前）在合成语料上的逐位输出；语料见 support/synthetic_match_corpus.dart。不要用新实现重新生成。BUG-3519（短 cue 领先上限）改了算法：种子 17/28/90/96/112/115/142 由「旧 Dart 实现 + 该修复」（PR #2333 head 7713ec450c）重算，其余种子未变。",
+ "note": "EpubSrtMatcher 旧 Dart 实现（搬进 native/fushi_compute 前）在合成语料上的逐位输出；语料见 support/synthetic_match_corpus.dart。不要用新实现重新生成。BUG-3530（短 cue 领先上限）改了算法：种子 17/28/90/96/112/115/142 由「旧 Dart 实现 + 该修复」（PR #2333 head 7713ec450c）重算，其余种子未变。",
  "cases": [
   {
    "seed": 0,

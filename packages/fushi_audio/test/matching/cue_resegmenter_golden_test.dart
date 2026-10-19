@@ -4,7 +4,7 @@
 // 在 160 个合成用例（support/synthetic_match_corpus.dart，cue 用
 // support/reseg_golden_support.dart 补确定性 token 时间）× 两档 maxAlignCells（默认
 // 400000 / 40，后者让大部分模糊命中走按比例退化分支）上生成，记规范化输出的 SHA-256。
-// BUG-3519 改了匹配器（重切的输入）：种子 96/112/142 的匹配结果随之变化，这三个种子的
+// BUG-3530 改了匹配器（重切的输入）：种子 96/112/142 的匹配结果随之变化，这三个种子的
 // 期望值按新匹配结果重算，重切算法本身未动。
 @TestOn('vm')
 library;

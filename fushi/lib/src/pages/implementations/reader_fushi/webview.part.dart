@@ -400,7 +400,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
   // natively in ONE FFI call (native/fushi_compute/src/parse/sanitize.rs, byte
   // for byte the old Dart regex pipeline): decode the raw chapter bytes
   // (UTF-8/BOM tolerant, HBK-AUDIT-118) -> normalize self-closing non-void
-  // elements (BUG-079 / BUG-737) -> strip body <img> loading attrs (BUG-3519)
+  // elements (BUG-079 / BUG-737) -> strip body <img> loading attrs (BUG-3533)
   // -> prepend merged leading illustrations -> inject the FOUC cloak + reader styleTag -> the
   // final UTF-8 bytes served to the WebView.
   Uint8List _buildSanitizedChapterHtmlBytes(
@@ -412,7 +412,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
     return ReaderResourceSanitizer.buildChapterHtmlBytes(
       rawData,
       // 正文插图一律按浏览器默认（eager）加载（连原书自带的 loading="lazy" 也去掉，
-      // BUG-3519）：分页 / 连续 / VN 的章节几何都要靠每张图的真实尺寸撑开，未加载的懒图
+      // BUG-3533）：分页 / 连续 / VN 的章节几何都要靠每张图的真实尺寸撑开，未加载的懒图
       // 是 0 尺寸、不占列，而分页的远列永远进不了懒加载视口——章节会被算短，还没翻到插图
       // 末尾就判「到章末」跨到下一章。跨章首开的读图开销由
       // [_prefetchAdjacentChapterImages] 预热下一章图片承担。守卫

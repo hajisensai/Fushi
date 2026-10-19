@@ -6384,7 +6384,7 @@ class AppModel with ChangeNotifier {
             OpdsDiscoverySource(
               config: server,
               // 用户填的是服务端根 / 网页地址、探测打通了真正的目录端点时
-              // 写回（BUG-3519）。只落偏好不重建注册表：本实例已在内存里记住
+              // 写回（BUG-3525）。只落偏好不重建注册表：本实例已在内存里记住
               // 打通的地址，重建只会打断正在进行的浏览。
               onCatalogUrlResolved: (Uri resolved) =>
                   unawaited(persistOpdsCatalogUrl(server.id, resolved)),
@@ -6451,7 +6451,7 @@ class AppModel with ChangeNotifier {
     await reloadDiscoverySources();
   }
 
-  /// OPDS 地址探测（BUG-3519）打通了另一条目录地址时的写回：只改那一台服务器
+  /// OPDS 地址探测（BUG-3525）打通了另一条目录地址时的写回：只改那一台服务器
   /// 的 `catalogUrl` 并落偏好；不重建注册表（同 [persistAudiobookshelfTokens]
   /// 的取舍——调用方就是正在跑请求的源实例，它已在内存里记住了打通的地址）。
   Future<void> persistOpdsCatalogUrl(String configId, Uri catalogUrl) =>

@@ -712,7 +712,7 @@ fn match_window(book: &Book, cues: &Cues, p: &Params, search_window: i64) -> Win
             if let Some(f) = find_within(big, nc, search_from as usize, window_end as usize) {
                 // 短 cue（不足 probe_min_len 字）的精确命中只认靠近游标的位置（「一」
                 // 撞上「第一章」会把游标拽走）。一两个字的只能紧邻游标；三到五字的
-                // （BUG-3519：「すげえ」撞上 170 字后的「すげえよなあ」）上限再加上
+                // （BUG-3530：「すげえ」撞上 170 字后的「すげえよなあ」）上限再加上
                 // 自上一条命中以来 miss 掉的 cue 字数——前面有 cue 模糊没过线时游标
                 // 停在原地，本句真实位置就在那几句之后。
                 let max_advance = if nc.len() <= p.short_cue_max_len {

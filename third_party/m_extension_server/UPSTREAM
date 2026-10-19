@@ -278,7 +278,7 @@ server-build.gradle.patch:
                                    owner is an interface (dex2jar writes a
                                    Methodref where an InterfaceMethodref is
                                    required); raise converted classes from
-                                   dex2jar's major 50 to exactly 52 (BUG-3519,
+                                   dex2jar's major 50 to exactly 52 (BUG-3522,
                                    see "Class file version" below)
   two upstream tests updated to match
 
@@ -361,7 +361,7 @@ Security boundary (must not be weakened)
 - Shutdown stays explicit: POST /stop, itself authenticated, with the host
   falling back to killing its own child only on timeout.
 
-Class file version (2026-10-19, BUG-3519)
+Class file version (2026-10-19, BUG-3522)
 -----------------------------------------
 dex2jar writes every class as major 50 (Java 6). DEX has no such ceiling, and
 two things current extensions compile to are illegal below major 52:

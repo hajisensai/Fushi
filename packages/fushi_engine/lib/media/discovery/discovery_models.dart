@@ -156,7 +156,7 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
 
   final String? coverUrl;
 
-  /// 取 [coverUrl] 时要附的请求头（私有目录的凭据，BUG-3520）；null / 空 = 匿名取。
+  /// 取 [coverUrl] 时要附的请求头（私有目录的凭据，BUG-3535）；null / 空 = 匿名取。
   ///
   /// 由源按「只给自己 origin」的规则填（OPDS 走 `OpdsServerConfig.credentialHeadersFor`），
   /// 消费方原样转交图片加载器，**不得**拿它去请求别的地址。只存在于内存里的

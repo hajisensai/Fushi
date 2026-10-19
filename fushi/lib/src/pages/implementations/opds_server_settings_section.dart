@@ -304,7 +304,7 @@ class _OpdsServerSettingsSectionState
       );
     }
     if (!mounted) return;
-    // 探测打通了另一条目录地址（用户填的是服务端根 / 网页地址，BUG-3519）：
+    // 探测打通了另一条目录地址（用户填的是服务端根 / 网页地址，BUG-3526）：
     // 写回草稿并立即落盘。只在草稿地址仍是测试时那一条时写——测试期间用户
     // 又改了地址，就以用户的新输入为准。
     final int index = _drafts.indexWhere((_OpdsDraft d) => d.id == draft.id);

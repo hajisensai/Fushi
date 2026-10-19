@@ -1,4 +1,4 @@
-## BUG-3519 · 互联进度推送「写入落地、确认丢失」被误判成冲突（远端是本机自己的旧写入）
+## BUG-3528 · 互联进度推送「写入落地、确认丢失」被误判成冲突（远端是本机自己的旧写入）
 - **报告**：2026-10-18（用户：手机同步弹「本地 vs 远端」冲突，漫画《志乃と恋 ２》本地 78.4%（131 页，16:34）、远端 52.1%（87 页，15:39），而电脑很久没开过这本书）
 - **真实性**：✅ 真 bug。证据：手机日志 `[2026-10-18 15:40:16] SyncRunReport.errors live book progress "志乃と恋 ２ [e11812e5]": TimeoutException after 0:00:15 … PUT /api/library/books/…/progress`；电脑 host 库后续确实存着这本书的进度——远端那条 15:39 / 87 页就是手机 15:40 那次「超时」推送，host 已提交、确认包丢失。
   - 根因 `fushi/lib/src/sync/interconnect_book_progress_sync.dart:83-87`（修复前）：`pushLocal` 先 `putRemoteBookProgress` 再 `recordBaseline`，PUT 超时抛出时基线停在旧位置；本机接着读到 131 页，下一轮 `resolveBookProgressThreeWay` 见本地、host 都偏离旧基线 → `conflict`。播放位置同理：`interconnect_playback_position_sync.dart` 的 `pushLocal` / `reportLive`。
