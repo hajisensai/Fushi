@@ -52,6 +52,30 @@ List<WebBrowserSite> _loadWebBrowserSites(AppModel appModel) =>
       ),
     );
 
+/// 浏览页上按一次「返回」（Android 系统返回 / iOS 侧滑 / 桌面 Esc）该做的那一步。
+enum WebBrowserBackStep {
+  /// 关掉最上面一层查词弹窗（弹窗栈在本页路由之内，没有自己的 PopScope）。
+  closeLookup,
+
+  /// 退一步网页历史。
+  webHistoryBack,
+
+  /// 离开浏览页（放行路由 pop）。
+  leavePage,
+}
+
+/// 返回的优先级：查词弹窗 → 网页历史 → 离开浏览页。弹窗开着时若直接退网页历史
+/// （或没有历史时整页 pop），弹窗会留在已经换掉的网页上 / 随浏览页一起被关掉。
+@visibleForTesting
+WebBrowserBackStep webBrowserBackStep({
+  required bool lookupOpen,
+  required bool canGoBack,
+}) {
+  if (lookupOpen) return WebBrowserBackStep.closeLookup;
+  if (canGoBack) return WebBrowserBackStep.webHistoryBack;
+  return WebBrowserBackStep.leavePage;
+}
+
 /// 推出全屏浏览页（[FushiWebBrowserPage]）。它是独立子页：盖住首页外壳的主导航
 /// 底栏 / 侧栏，网页独占整屏，退出回到入口页。
 Future<void> openFushiWebBrowser(BuildContext context, Uri url) =>
@@ -497,6 +521,23 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
 
   /// 左上 ✕：不经网页历史，直接离开浏览页（[Navigator.pop] 不受 [PopScope] 拦）。
   void _close() => Navigator.of(context).pop();
+
+  /// 返回被 [PopScope] 拦下时的那一步（判据见 [webBrowserBackStep]）。
+  void _onBackBlocked() {
+    switch (webBrowserBackStep(
+      lookupOpen: _lookup.isOpen,
+      canGoBack: _canGoBack,
+    )) {
+      case WebBrowserBackStep.closeLookup:
+        // 搜索期占位没有可见层时 closeTop 返回 false：整栈关掉，别让返回键落空。
+        if (!_lookup.closeTop()) _lookup.closeAll();
+      case WebBrowserBackStep.webHistoryBack:
+        final InAppWebViewController? controller = _controller;
+        if (controller != null) unawaited(controller.goBack());
+      case WebBrowserBackStep.leavePage:
+        break;
+    }
+  }
 
   // ── 站点书签 ─────────────────────────────────────────────────────────
 
@@ -982,13 +1023,22 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      // 系统返回 / 侧滑先退网页历史，退到头才离开浏览页。
-      canPop: !_canGoBack,
-      onPopInvokedWithResult: (bool didPop, Object? _) {
-        final InAppWebViewController? controller = _controller;
-        if (!didPop && controller != null) unawaited(controller.goBack());
-      },
+    // 查词弹窗开合要重算 PopScope：弹窗栈挂在本页路由之内、没有自己的 PopScope。
+    return ListenableBuilder(
+      listenable: _lookup,
+      builder: (BuildContext context, Widget? page) => PopScope(
+        // 系统返回 / 侧滑 / Esc：先关查词弹窗，再退网页历史，都退到头才离开浏览页。
+        canPop:
+            webBrowserBackStep(
+              lookupOpen: _lookup.isOpen,
+              canGoBack: _canGoBack,
+            ) ==
+            WebBrowserBackStep.leavePage,
+        onPopInvokedWithResult: (bool didPop, Object? _) {
+          if (!didPop) _onBackBlocked();
+        },
+        child: page!,
+      ),
       child: SrsCardLookupHost(
         controller: _lookup,
         child: FushiPageScaffold(

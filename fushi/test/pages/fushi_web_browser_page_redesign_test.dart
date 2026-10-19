@@ -65,6 +65,25 @@ void main() {
     });
   });
 
+  test('浏览页返回的优先级：查词弹窗 → 网页历史 → 离开浏览页', () {
+    // 弹窗栈挂在浏览页路由之内、没有自己的 PopScope：弹窗开着时返回若直接退
+    // 网页历史 / 整页 pop，弹窗会留在换掉的网页上，或随浏览页一起被关掉。
+    for (final bool canGoBack in <bool>[false, true]) {
+      expect(
+        webBrowserBackStep(lookupOpen: true, canGoBack: canGoBack),
+        WebBrowserBackStep.closeLookup,
+      );
+    }
+    expect(
+      webBrowserBackStep(lookupOpen: false, canGoBack: true),
+      WebBrowserBackStep.webHistoryBack,
+    );
+    expect(
+      webBrowserBackStep(lookupOpen: false, canGoBack: false),
+      WebBrowserBackStep.leavePage,
+    );
+  });
+
   group('浏览器：入口页 + 全屏浏览页', () {
     late FushiDatabase db;
     late AppModel appModel;
