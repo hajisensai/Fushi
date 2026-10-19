@@ -36,8 +36,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_home_rows_remote_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_home_rows_remote_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -84,23 +85,23 @@ void main() {
   });
 
   Widget buildApp(RemoteVideoClient client) => ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                section: VideoLibrarySection.home,
-                remoteVideoClientLoader: () async => client,
-              ),
-            ),
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            section: VideoLibrarySection.home,
+            remoteVideoClientLoader: () async => client,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   Future<void> sizeUp(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1400);
@@ -109,34 +110,41 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
-  testWidgets('「下一集」跨本地/远端合并选集：本机看到第 1 集，下一集指向 host 上的第 2 集',
-      (WidgetTester tester) async {
+  testWidgets('「下一集」跨本地/远端合并选集：本机看到第 1 集，下一集指向 host 上的第 2 集', (
+    WidgetTester tester,
+  ) async {
     await sizeUp(tester);
 
-    final int cid =
-        await db.createMediaCollection('MyShow', collectionType: 'collection');
+    final int cid = await db.createMediaCollection(
+      'MyShow',
+      collectionType: 'collection',
+    );
     // 本地第 1 集：有播放痕迹（未看完）→ latestPlayed = 0。
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/local-ep1'),
-      title: Value('Local Ep1'),
-      videoPath: Value('/abs/ep1.mp4'),
-      lastPositionMs: Value(60000),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/local-ep1'),
+        title: Value('Local Ep1'),
+        videoPath: Value('/abs/ep1.mp4'),
+        lastPositionMs: Value(60000),
+      ),
+    );
     await db.addToCollection(cid, MediaKind.video, 'video/local-ep1');
 
-    await tester.pumpWidget(buildApp(_ListFakeRemoteVideoClient(
-      <RemoteVideoInfo>[
-        const RemoteVideoInfo(
-          id: 'video/remote-ep2',
-          title: 'Remote Ep2',
-          collection: RemoteCollectionMembership(
-            collectionName: 'MyShow',
-            collectionType: 'collection',
-            sortIndex: 1,
+    await tester.pumpWidget(
+      buildApp(
+        _ListFakeRemoteVideoClient(<RemoteVideoInfo>[
+          const RemoteVideoInfo(
+            id: 'video/remote-ep2',
+            title: 'Remote Ep2',
+            collection: RemoteCollectionMembership(
+              collectionName: 'MyShow',
+              collectionType: 'collection',
+              sortIndex: 1,
+            ),
           ),
-        ),
-      ],
-    )));
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -151,60 +159,170 @@ void main() {
     );
   });
 
-  testWidgets('「最近添加」含 host 新入库的远端条目（host 下发 importedAt）',
-      (WidgetTester tester) async {
+  // BUG-3611：互联子端的「继续观看」此前把远端条目逐条平铺、只看 positionMs > 0——
+  // 同一合集看过的每一集（含早已看完的）各占一张卡。必须与本地同口径折成一张合集
+  // 卡，并落在 Next-Up 那一集上。
+  testWidgets('「继续观看」把同一合集的远端成员折成一张合集卡，看完的集不单独出现', (WidgetTester tester) async {
+    await sizeUp(tester);
+
+    final int cid = await db.createMediaCollection(
+      'Kon',
+      collectionType: 'collection',
+    );
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    RemoteVideoInfo ep(
+      int index, {
+      required int positionMs,
+      int? completedAt,
+      int at = 0,
+    }) => RemoteVideoInfo(
+      id: 'video/kon-ep${index + 1}',
+      title: 'Kon Ep${index + 1}',
+      durationMs: 24 * 60000,
+      positionMs: positionMs,
+      positionUpdatedAtMs: at,
+      completedAt: completedAt,
+      collection: RemoteCollectionMembership(
+        collectionName: 'Kon',
+        collectionType: 'collection',
+        sortIndex: index,
+      ),
+    );
+
+    await tester.pumpWidget(
+      buildApp(
+        _ListFakeRemoteVideoClient(<RemoteVideoInfo>[
+          // 第 1、2 集看完（一集打勾、一集进度到片尾区），第 3 集看到一半、最近。
+          ep(
+            0,
+            positionMs: 24 * 60000 - 2000,
+            completedAt: nowMs - 30000,
+            at: nowMs - 30000,
+          ),
+          ep(1, positionMs: 24 * 60000 - 5000, at: nowMs - 20000),
+          ep(2, positionMs: 5 * 60000, at: nowMs - 10000),
+          ep(3, positionMs: 0),
+          // 不在合集里的散片：一条看完（不进行），一条看到一半（进行）。
+          RemoteVideoInfo(
+            id: 'video/loose-done',
+            title: 'Loose Done',
+            durationMs: 24 * 60000,
+            positionMs: 24 * 60000 - 3000,
+            positionUpdatedAtMs: nowMs - 5000,
+          ),
+          RemoteVideoInfo(
+            id: 'video/loose-mid',
+            title: 'Loose Mid',
+            durationMs: 24 * 60000,
+            positionMs: 60000,
+            positionUpdatedAtMs: nowMs - 4000,
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(ValueKey<String>('home_video_continue_collection_$cid')),
+      findsOneWidget,
+      reason: '远端合集成员必须折成一张「继续观看」合集卡',
+    );
+    for (int i = 1; i <= 4; i++) {
+      expect(
+        find.byKey(
+          ValueKey<String>('home_video_continue_remote_video_kon-ep$i'),
+        ),
+        findsNothing,
+        reason: '合集成员不得再以逐集远端卡进「继续观看」（第 $i 集）',
+      );
+    }
+    expect(
+      find.text(t.video_home_continue_episode_number(n: 3)),
+      findsOneWidget,
+      reason: 'Next-Up 落在最近在看、未看完的第 3 集',
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('home_video_continue_remote_video_loose-done'),
+      ),
+      findsNothing,
+      reason: '已看完（进度到片尾区）的远端散片不进「继续观看」',
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('home_video_continue_remote_video_loose-mid'),
+      ),
+      findsOneWidget,
+      reason: '看到一半的远端散片照常进「继续观看」',
+    );
+  });
+
+  testWidgets('「最近添加」含 host 新入库的远端条目（host 下发 importedAt）', (
+    WidgetTester tester,
+  ) async {
     await sizeUp(tester);
 
     // 本机也有一条最近入库的散卡，确保整行本身会渲染。
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/local-new'),
-      title: const Value('Local New'),
-      videoPath: const Value('/abs/local-new.mp4'),
-      importedAt: Value(nowMs - 1000),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/local-new'),
+        title: const Value('Local New'),
+        videoPath: const Value('/abs/local-new.mp4'),
+        importedAt: Value(nowMs - 1000),
+      ),
+    );
 
-    await tester.pumpWidget(buildApp(_ListFakeRemoteVideoClient(
-      <RemoteVideoInfo>[
-        RemoteVideoInfo(
-          id: 'video/remote-new',
-          title: 'Remote New',
-          importedAt: nowMs,
-        ),
-      ],
-    )));
+    await tester.pumpWidget(
+      buildApp(
+        _ListFakeRemoteVideoClient(<RemoteVideoInfo>[
+          RemoteVideoInfo(
+            id: 'video/remote-new',
+            title: 'Remote New',
+            importedAt: nowMs,
+          ),
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(
       find.byKey(
-          const ValueKey<String>('home_video_recent_remote_video_remote-new')),
+        const ValueKey<String>('home_video_recent_remote_video_remote-new'),
+      ),
       findsOneWidget,
       reason: 'host 带了入库时刻 → 远端条目必须进「最近添加」',
     );
   });
 
-  testWidgets('旧 host 不带 importedAt → 远端不进「最近添加」（与改动前同行为）',
-      (WidgetTester tester) async {
+  testWidgets('旧 host 不带 importedAt → 远端不进「最近添加」（与改动前同行为）', (
+    WidgetTester tester,
+  ) async {
     await sizeUp(tester);
 
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/local-new'),
-      title: const Value('Local New'),
-      videoPath: const Value('/abs/local-new.mp4'),
-      importedAt: Value(nowMs - 1000),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/local-new'),
+        title: const Value('Local New'),
+        videoPath: const Value('/abs/local-new.mp4'),
+        importedAt: Value(nowMs - 1000),
+      ),
+    );
 
-    await tester.pumpWidget(buildApp(_ListFakeRemoteVideoClient(
-      <RemoteVideoInfo>[
-        const RemoteVideoInfo(id: 'video/remote-old', title: 'Remote Old'),
-      ],
-    )));
+    await tester.pumpWidget(
+      buildApp(
+        _ListFakeRemoteVideoClient(<RemoteVideoInfo>[
+          const RemoteVideoInfo(id: 'video/remote-old', title: 'Remote Old'),
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(
       find.byKey(
-          const ValueKey<String>('home_video_recent_remote_video_remote-old')),
+        const ValueKey<String>('home_video_recent_remote_video_remote-old'),
+      ),
       findsNothing,
       reason: '没有入库时刻就判不出「最近」，不能凭空造一个',
     );
@@ -213,12 +331,14 @@ void main() {
   // BUG-3508 审查跟进（视频同形缺口）：本端「从所有设备删除」过的视频，墓碑送达 host
   // 之前不能以远端条目复活；送达之后 host 清单里还有它 = host 删后重新导入的新条目。
   Future<void> seedDeletedRemote(int nowMs) async {
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/local-new'),
-      title: const Value('Local New'),
-      videoPath: const Value('/abs/local-new.mp4'),
-      importedAt: Value(nowMs - 1000),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/local-new'),
+        title: const Value('Local New'),
+        videoPath: const Value('/abs/local-new.mp4'),
+        importedAt: Value(nowMs - 1000),
+      ),
+    );
     await db.writeSyncDeletionTombstone(
       SyncTombstoneKind.video.dbValue,
       'video/remote-deleted',
@@ -227,21 +347,24 @@ void main() {
   }
 
   _ListFakeRemoteVideoClient deletedRemoteClient(
-          int nowMs, int deletedImportedAt) =>
-      _ListFakeRemoteVideoClient(<RemoteVideoInfo>[
-        RemoteVideoInfo(
-            id: 'video/remote-keep', title: 'Keep', importedAt: nowMs),
-        RemoteVideoInfo(
-            id: 'video/remote-deleted',
-            title: 'Deleted',
-            importedAt: deletedImportedAt),
-      ]);
+    int nowMs,
+    int deletedImportedAt,
+  ) => _ListFakeRemoteVideoClient(<RemoteVideoInfo>[
+    RemoteVideoInfo(id: 'video/remote-keep', title: 'Keep', importedAt: nowMs),
+    RemoteVideoInfo(
+      id: 'video/remote-deleted',
+      title: 'Deleted',
+      importedAt: deletedImportedAt,
+    ),
+  ]);
 
-  const ValueKey<String> deletedKey =
-      ValueKey<String>('home_video_recent_remote_video_remote-deleted');
+  const ValueKey<String> deletedKey = ValueKey<String>(
+    'home_video_recent_remote_video_remote-deleted',
+  );
 
-  testWidgets('未送达 host 的视频删除墓碑藏掉远端条目（不看 host importedAt）',
-      (WidgetTester tester) async {
+  testWidgets('未送达 host 的视频删除墓碑藏掉远端条目（不看 host importedAt）', (
+    WidgetTester tester,
+  ) async {
     await sizeUp(tester);
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
     await seedDeletedRemote(nowMs);
@@ -252,23 +375,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.byKey(
-          const ValueKey<String>('home_video_recent_remote_video_remote-keep')),
+        const ValueKey<String>('home_video_recent_remote_video_remote-keep'),
+      ),
       findsOneWidget,
     );
-    expect(find.byKey(deletedKey), findsNothing,
-        reason: '墓碑还没推给 host：清单里那份就是刚删的那条');
+    expect(
+      find.byKey(deletedKey),
+      findsNothing,
+      reason: '墓碑还没推给 host：清单里那份就是刚删的那条',
+    );
   });
 
-  testWidgets('墓碑已送达 host 后清单里还有它 = host 重新导入，照常显示',
-      (WidgetTester tester) async {
+  testWidgets('墓碑已送达 host 后清单里还有它 = host 重新导入，照常显示', (
+    WidgetTester tester,
+  ) async {
     await sizeUp(tester);
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
     await seedDeletedRemote(nowMs);
     await SyncRepository(db).setDeletionTombstonesPushBaselineMs(nowMs);
 
     // host importedAt 早于本端 deletedAt（host 时钟落后时就会这样）：旧判据会永久藏掉。
-    await tester
-        .pumpWidget(buildApp(deletedRemoteClient(nowMs, nowMs - 5000)));
+    await tester.pumpWidget(buildApp(deletedRemoteClient(nowMs, nowMs - 5000)));
     await tester.pumpAndSettle();
     expect(find.byKey(deletedKey), findsOneWidget);
   });
@@ -285,9 +412,10 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => _videos;
 
   @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id,
-          {int episodeIndex = 0}) async =>
-      const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
+    String id, {
+    int episodeIndex = 0,
+  }) async => const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
 
   @override
   Future<void> getRemoteVideoSubtitle(
@@ -311,8 +439,7 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putRemoteVideoPosition(

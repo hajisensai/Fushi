@@ -4724,49 +4724,56 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 「继续观看」横滚行：有进度未看完的条目/合集（本地散卡 + 合集 + 远端进度
   /// 条目），按最近观看倒序取前 15。全无候选返回 null 整行隐藏。
+  ///
+  /// 合集成员与「下一集」行同口径：本地行 + 远端占位合成一条稳定集序再选集
+  /// （BUG-3611）。此前远端占位不分组、只看 `positionMs > 0` 逐条进行——互联
+  /// 子端看过的每一集（含早已看完的）各占一张卡，同一部番在本行铺成一排。
   Widget? _buildContinueRow(
     List<VideoBookRow> filtered,
     List<RemoteVideoInfo> remoteVideos,
     double coverHeight,
   ) {
-    final Map<int, List<VideoBookRow>> membersByCollection =
-        <int, List<VideoBookRow>>{};
+    final Map<int, List<_VideoSlot>> grouped = <int, List<_VideoSlot>>{};
     final List<VideoBookRow> looseLocal = <VideoBookRow>[];
+    final List<RemoteVideoInfo> looseRemote = <RemoteVideoInfo>[];
     for (final VideoBookRow book in filtered) {
       if (_localExtraBookUids.contains(book.bookUid)) continue;
       final int? cid =
           _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
       if (cid != null && _collectionsById.containsKey(cid)) {
-        membersByCollection.putIfAbsent(cid, () => <VideoBookRow>[]).add(book);
+        grouped
+            .putIfAbsent(cid, () => <_VideoSlot>[])
+            .add(_VideoSlot(local: book));
       } else {
         looseLocal.add(book);
       }
     }
+    for (final RemoteVideoInfo video in remoteVideos) {
+      final int? cid = _remoteCollectionId(video);
+      if (cid != null && _collectionsById.containsKey(cid)) {
+        grouped
+            .putIfAbsent(cid, () => <_VideoSlot>[])
+            .add(_VideoSlot(remote: video));
+      } else {
+        looseRemote.add(video);
+      }
+    }
     final List<_VideoRowItem> items = <_VideoRowItem>[];
-    membersByCollection.forEach((int cid, List<VideoBookRow> members) {
-      members.sort((VideoBookRow a, VideoBookRow b) {
-        final int ia =
-            _memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ??
-            1 << 30;
-        final int ib =
-            _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
-            1 << 30;
-        return ia.compareTo(ib);
-      });
-      int completed = 0;
-      DateTime? lastWatched;
-      final List<VideoSeriesPlaybackState> states = _seriesPlaybackStates(
+    grouped.forEach((int cid, List<_VideoSlot> members) {
+      members.sort(
+        (_VideoSlot a, _VideoSlot b) =>
+            _slotSortIndex(a).compareTo(_slotSortIndex(b)),
+      );
+      final List<VideoSeriesPlaybackState> states = _slotPlaybackStates(
         members,
       );
+      int completed = 0;
+      int recentMs = 0;
       for (int i = 0; i < members.length; i++) {
-        final VideoBookRow m = members[i];
         // 手动标记或进度到片尾区都算看完（BUG-3491）。
         if (states[i].progress.countsAsWatched) completed++;
-        final DateTime? at =
-            _watchAtByUid[m.bookUid] ?? _legacyWatchAtByTitle[m.title];
-        if (at != null && (lastWatched == null || at.isAfter(lastWatched))) {
-          lastWatched = at;
-        }
+        final int watched = _slotWatchedAtMs(members[i]);
+        if (watched > recentMs) recentMs = watched;
       }
       // Next-Up 口径（[continueWatchingSeriesIndex]）：续播用户最后实际播放且尚未
       // 完成的那一集；那集已看完则落到紧接的下一集。不能退回序列中更早的未完成
@@ -4776,7 +4783,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       final MediaCollectionRow collection = _collectionsById[cid]!;
       items.add(
         _VideoRowItem(
-          recentMs: lastWatched?.millisecondsSinceEpoch ?? 0,
+          recentMs: recentMs,
           build: () => _buildContinueCollectionCard(
             collection,
             members,
@@ -4806,8 +4813,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ),
       );
     }
-    for (final RemoteVideoInfo video in remoteVideos) {
-      if (video.positionMs <= 0) continue;
+    for (final RemoteVideoInfo video in looseRemote) {
+      // 与本地散卡同口径：没进度、或已看完（打勾 / 进度到片尾区）不进本行
+      // （BUG-3611：此前远端只看 positionMs > 0，看完的散片也一直挂着）。
+      if (video.positionMs <= 0 ||
+          CollectionMemberProgress(
+            positionMs: video.positionMs,
+            completed: video.completedAt != null,
+            durationMs: video.durationMs,
+          ).isFinished) {
+        continue;
+      }
       items.add(
         _VideoRowItem(
           recentMs: video.positionUpdatedAtMs,
@@ -4826,27 +4842,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       items: items.take(15).toList(),
     );
   }
-
-  List<VideoSeriesPlaybackState> _seriesPlaybackStates(
-    List<VideoBookRow> members,
-  ) => <VideoSeriesPlaybackState>[
-    for (final VideoBookRow member in members)
-      VideoSeriesPlaybackState(
-        // BUG-1731：统计行只记本机播放；互联子端回灌的进度只落行级
-        // lastPlayedAt。取较大者，锚点才跟得上对端看到的集数。
-        lastWatchedAtMs: effectiveWatchedAtMs(
-          statsWatchedAtMs:
-              (_watchAtByUid[member.bookUid] ??
-                      _legacyWatchAtByTitle[member.title])
-                  ?.millisecondsSinceEpoch ??
-              0,
-          lastPlayedAt: member.lastPlayedAt,
-        ),
-        positionMs: member.lastPositionMs,
-        completed: member.completedAt != null,
-        durationMs: _knownDurationMs(member.bookUid),
-      ),
-  ];
 
   /// 播放器记下的片长（BUG-3491，见 video_duration_pref.dart）；没播过 → null。
   int? _knownDurationMs(String bookUid) => videoDurationMsFromPref(
@@ -4877,7 +4872,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   int _slotWatchedAtMs(_VideoSlot slot) {
     final VideoBookRow? local = slot.local;
     if (local != null) {
-      // BUG-1731：与 [_seriesPlaybackStates] 同口径——统计行缺失/陈旧时回落
+      // BUG-1731：统计行只记本机播放、缺失/陈旧时回落
       // 行级 lastPlayedAt（远端回灌只写它）。
       return effectiveWatchedAtMs(
         statsWatchedAtMs:
@@ -5511,14 +5506,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 继续观看行·合集卡：点击续播 Next-Up 一集（带合集上下文）；进度条 = 已看完
-  /// 成员 / 总数；集数角标 = 成员数。
+  /// 成员 / 总数；集数角标 = 成员数。成员含本地行与远端占位（BUG-3611），目标集
+  /// 只在 host 上时点卡流播、带云角标。
   Widget _buildContinueCollectionCard(
     MediaCollectionRow collection,
-    List<VideoBookRow> members,
+    List<_VideoSlot> members,
     double coverHeight,
     int completedCount,
     int currentIndex,
   ) {
+    final _VideoSlot target = members[currentIndex];
+    final VideoBookRow? targetLocal = target.local;
+    final RemoteVideoInfo? targetRemote = target.remote;
+    // 目标集还没开播（上一集看完落到的下一集）→「下一集 · 第 N 集」；
+    // 有进度 →「看到第 N 集 · 剩 M 分钟」。由成员自身状态决定，不另传标志。
+    final String secondaryText;
+    if (targetLocal != null) {
+      secondaryText = _isUnstarted(targetLocal)
+          ? t.video_home_next_episode_number(n: currentIndex + 1)
+          : _continueSecondaryText(
+              targetLocal,
+              episodeNumber: currentIndex + 1,
+            );
+    } else {
+      secondaryText =
+          targetRemote!.completedAt == null && targetRemote.positionMs <= 0
+          ? t.video_home_next_episode_number(n: currentIndex + 1)
+          : t.video_home_continue_episode_number(n: currentIndex + 1);
+    }
     return _buildRowMediaCard(
       cardKey: ValueKey<String>(
         'home_video_continue_collection_${collection.id}',
@@ -5534,29 +5549,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               MediaImageKind.backdrop,
             ],
           ) ??
-          _collectionRowCoverProvider(collection, members),
+          _collectionRowCoverProvider(collection, _localMembersOf(members)) ??
+          _slotCoverProvider(target),
       title: _workTitle(collection),
       coverHeight: coverHeight,
-      onTap: () {
-        if (members.isEmpty) return;
-        unawaited(
-          _open(members[currentIndex], playlistCollectionId: collection.id),
-        );
-      },
+      onTap: () => _openSlot(target, playlistCollectionId: collection.id),
       onLongPress: () => _showCollectionContextMenu(collection),
       tags: _collectionTagChips(collection.id),
-      progressFraction: members.isEmpty
-          ? null
-          : completedCount / members.length,
+      progressFraction: completedCount / members.length,
       episodeNumber: currentIndex + 1,
-      // 目标集还没开播（上一集看完落到的下一集）→「下一集 · 第 N 集」；
-      // 有进度 →「看到第 N 集 · 剩 M 分钟」。由成员自身状态决定，不另传标志。
-      secondaryText: _isUnstarted(members[currentIndex])
-          ? t.video_home_next_episode_number(n: currentIndex + 1)
-          : _continueSecondaryText(
-              members[currentIndex],
-              episodeNumber: currentIndex + 1,
-            ),
+      secondaryText: secondaryText,
+      cloudBadge: targetLocal == null,
     );
   }
 
