@@ -789,7 +789,6 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           children: <Widget>[
             if (_singleRowHeader) ...<Widget>[
               _buildPageHeader(context),
-              if (_games.isNotEmpty) _buildSortMenuAnchor(),
             ] else if (_games.isNotEmpty)
               _buildToolbar(context, allTags),
             if (_games.isNotEmpty) _buildTagFilterBar(allTags),
@@ -853,6 +852,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     return FushiPageHeader.customTitle(
       title: const SizedBox.shrink(),
       search: hasGames ? _headerSearch : null,
+      menuAnchor: hasGames ? _buildSortMenuAnchor() : null,
       actions: <Widget>[
         if (hasGames) ...<Widget>[
           FushiIconButton(
@@ -903,43 +903,36 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     );
   }
 
-  /// 「排序」菜单的零尺寸常驻锚点（贴在页头下沿右侧）：页头里的排序按钮可能
-  /// 被收进「⋯」，菜单挂在这里才总能打开。再点当前维度 = 翻转方向。
+  /// 「排序」菜单的零尺寸锚点（[FushiPageHeader.menuAnchor]，叠在页头动作组
+  /// 右下角）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开。
+  /// 再点当前维度 = 翻转方向。
   Widget _buildSortMenuAnchor() {
-    return Align(
-      alignment: AlignmentDirectional.topEnd,
-      child: Padding(
-        padding: EdgeInsetsDirectional.only(
-          end: FushiDesignTokens.of(context).spacing.page,
-        ),
-        child: FushiMenuAnchor(
-          controller: _sortMenu,
-          menuChildren: <Widget>[
-            for (final GalgameSortField field in GalgameSortField.values)
-              MenuItemButton(
-                key: ValueKey<String>('games_sort_${field.name}'),
-                autofocus: field == _view.sortField,
-                onPressed: () => _selectSortField(field),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(galgameSortFieldLabel(field)),
-                    if (field == _view.sortField) ...<Widget>[
-                      const SizedBox(width: 12),
-                      FushiIcon(
-                        _view.ascending
-                            ? FushiIcons.arrowUp
-                            : FushiIcons.arrowDown,
-                        size: 16,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-          ],
-          child: const SizedBox.shrink(),
-        ),
-      ),
+    return FushiMenuAnchor(
+      controller: _sortMenu,
+      menuChildren: <Widget>[
+        for (final GalgameSortField field in GalgameSortField.values)
+          MenuItemButton(
+            key: ValueKey<String>('games_sort_${field.name}'),
+            autofocus: field == _view.sortField,
+            onPressed: () => _selectSortField(field),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(galgameSortFieldLabel(field)),
+                if (field == _view.sortField) ...<Widget>[
+                  const SizedBox(width: 12),
+                  FushiIcon(
+                    _view.ascending
+                        ? FushiIcons.arrowUp
+                        : FushiIcons.arrowDown,
+                    size: 16,
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
+      child: const SizedBox.shrink(),
     );
   }
 
