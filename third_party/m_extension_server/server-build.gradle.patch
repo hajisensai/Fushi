@@ -42,8 +42,34 @@ index e105c56..9fe540c 100644
  
  // counts commit count on master
  val m_extension_serverRevision = runCatching {
+diff --git a/server/src/main/kotlin/mextensionserver/Main.kt b/server/src/main/kotlin/mextensionserver/Main.kt
+index 766df1a..6be1aa8 100644
+--- a/server/src/main/kotlin/mextensionserver/Main.kt
++++ b/server/src/main/kotlin/mextensionserver/Main.kt
+@@ -17,6 +17,7 @@ import org.kodein.di.DI
+ import org.kodein.di.conf.global
+ import xyz.nulldev.androidcompat.AndroidCompat
+ import xyz.nulldev.androidcompat.AndroidCompatInitializer
++import xyz.nulldev.ts.config.CONFIG_PREFIX
+ import xyz.nulldev.ts.config.ConfigKodeinModule
+ import java.net.CookieHandler
+ import java.net.CookieManager
+@@ -60,8 +61,11 @@ fun main(args: Array<String>) {
+ private fun initApplication(appDir: String?) {
+     logger.info("Running MExtensionServer ${BuildConfig.VERSION} revision ${BuildConfig.REVISION}")
+ 
+-    // Set custom app directory if provided
+-    appDir?.let { System.setProperty("ts.server.rootDir", it) }
++    // Set custom app directory if provided. ApplicationRootDir (settings/,
++    // android-compat/, server.conf) reads CONFIG_PREFIX.server.rootDir;
++    // "ts.server.rootDir" is read by nothing, so every data root fell back to
++    // the shared AppDirs "Tachidesk" directory.
++    appDir?.let { System.setProperty("$CONFIG_PREFIX.server.rootDir", it) }
+ 
+     startMainLooper()
+ 
 diff --git a/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt b/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt
-index f77332c..6b07a8a 100644
+index f77332c..9c0f468 100644
 --- a/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt
 +++ b/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt
 @@ -30,12 +30,14 @@ import mextensionserver.model.ChapterData
@@ -114,7 +140,77 @@ index f77332c..6b07a8a 100644
          }
      }
  
-@@ -851,7 +874,7 @@ object MihonInvoker {
+@@ -718,8 +741,11 @@ object MihonInvoker {
+                 is eu.kanade.tachiyomi.animesource.AnimeSource -> source.id
+                 else -> throw IllegalArgumentException("Unknown source type: ${source.javaClass}")
+             }
+-        val prefs = context.getSharedPreferences("source_$sourceId", 0)
+-        val editor = prefs.edit()
++        val snapshot =
++            HostPreferenceSnapshot(
++                preferences = context.getSharedPreferences("source_$sourceId", 0),
++                ledger = context.getSharedPreferences(HostPreferenceSnapshot.ledgerName(sourceId), 0),
++            )
+         for (prefMap in preferences) {
+             val rawKey = prefMap["key"] as? String ?: continue
+             if (rawKey == skipPreferenceKey) continue
+@@ -737,50 +763,12 @@ object MihonInvoker {
+                     rawKey
+                 }
+             // The app sends its persisted preference snapshot on every bridge
+-            // request. Use it to initialize a fresh JVM preference store, but
+-            // do not let an older snapshot overwrite a value that the source
+-            // has already normalized and persisted itself.
+-            if (prefs.contains(key)) continue
+-            when {
+-                prefMap.containsKey("checkBoxPreference") -> {
+-                    val checkBox = prefMap["checkBoxPreference"] as? Map<*, *>
+-                    val value = checkBox?.get("value") as? Boolean
+-                    if (value != null) {
+-                        editor.putBoolean(key, value)
+-                    }
+-                }
+-                prefMap.containsKey("switchPreferenceCompat") -> {
+-                    val switch = prefMap["switchPreferenceCompat"] as? Map<*, *>
+-                    val value = switch?.get("value") as? Boolean
+-                    if (value != null) {
+-                        editor.putBoolean(key, value)
+-                    }
+-                }
+-                prefMap.containsKey("editTextPreference") -> {
+-                    val editText = prefMap["editTextPreference"] as? Map<*, *>
+-                    val value = editText?.get("value") as? String
+-                    if (value != null) {
+-                        editor.putString(key, value)
+-                    }
+-                }
+-                prefMap.containsKey("listPreference") -> {
+-                    val list = prefMap["listPreference"] as? Map<*, *>
+-                    val valueIndex = list?.get("valueIndex") as? Int
+-                    val entryValues = list?.get("entryValues") as? List<String>
+-                    if (valueIndex != null && entryValues != null && valueIndex in entryValues.indices) {
+-                        editor.putString(key, entryValues[valueIndex])
+-                    }
+-                }
+-                prefMap.containsKey("multiSelectListPreference") -> {
+-                    val multiList = prefMap["multiSelectListPreference"] as? Map<*, *>
+-                    val values = multiList?.get("values") as? List<String>
+-                    if (values != null) {
+-                        editor.putStringSet(key, values.toSet())
+-                    }
+-                }
+-            }
++            // request; HostPreferenceSnapshot decides which values still have
++            // to reach the JVM store.
++            val value = HostPreferenceSnapshot.valueOf(prefMap) ?: continue
++            snapshot.offer(key, value)
+         }
+-        editor.apply()
++        snapshot.commit()
+     }
+ 
+     private fun convertFilterList(
+@@ -851,7 +839,7 @@ object MihonInvoker {
                                  }
                                  if (state is Filter.Text) {
                                      val text = state
@@ -159,9 +255,18 @@ index f3ec3c1..da50e07 100644
  
  data class JSortFilter(
 diff --git a/server/src/main/kotlin/mextensionserver/util/BytecodeEditor.kt b/server/src/main/kotlin/mextensionserver/util/BytecodeEditor.kt
-index 0a6fd9f..2a5adfe 100644
+index 0a6fd9f..f7df0f5 100644
 --- a/server/src/main/kotlin/mextensionserver/util/BytecodeEditor.kt
 +++ b/server/src/main/kotlin/mextensionserver/util/BytecodeEditor.kt
+@@ -192,7 +192,7 @@ object BytecodeEditor {
+                     interfaces: Array<out String>?,
+                 ) {
+                     logger.trace { "Visiting $name: $signature: $superName" }
+-                    super.visit(version, access, name, signature, superName, interfaces)
++                    super.visit(convertedClassVersion(version), access, name, signature, superName, interfaces)
+                 }
+ 
+                 // Modify method bytecode, for example
 @@ -289,15 +289,23 @@ object BytecodeEditor {
                                      pendingConstructions.removeLast()
                                  }
@@ -189,7 +294,34 @@ index 0a6fd9f..2a5adfe 100644
                              )
                          }
  
-@@ -434,6 +442,8 @@ object BytecodeEditor {
+@@ -358,6 +366,26 @@ object BytecodeEditor {
+         return pair.first to cw.toByteArray()
+     }
+ 
++    /**
++     * dex2jar labels every class it writes as Java 6 (major 50). DEX itself has
++     * no such ceiling: an extension compiled against a library whose interfaces
++     * carry static or default methods (current kotlinx-coroutines compiles
++     * `Job.cancel$default` as an interface static method) reaches them with
++     * invokestatic / invokespecial on an InterfaceMethodref, which JVMS 4.9.1
++     * forbids below major 52, so HotSpot rejects the whole class ("Illegal type
++     * at constant pool entry"). Java 8 is the lowest version that allows it.
++     *
++     * The bump is safe only because every class is rewritten with
++     * COMPUTE_FRAMES against the real hierarchy: from 51 on there is no
++     * fallback to the inference verifier, the StackMapTable must be right.
++     * Do not go above 52: from 53 on putfield/putstatic on a final field is
++     * only legal inside the initialiser, and DEX code is not bound by that.
++     */
++    internal fun convertedClassVersion(version: Int): Int {
++        val major = version and 0xFFFF
++        return if (major < Opcodes.V1_8) Opcodes.V1_8 else version
++    }
++
+     private fun write(pair: Pair<Path, ByteArray>) {
+         Files.write(
+             pair.first,
+@@ -434,6 +462,8 @@ object BytecodeEditor {
  
          fun superName(name: String): String? = classInfo(name)?.superName
  
