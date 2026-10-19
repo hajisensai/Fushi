@@ -224,6 +224,18 @@ class SrsDeckTree {
 
   String? parentOf(String id) => _parent[id];
 
+  /// 卡片的有效牌组：[deckId] 不在本树里（牌组在别的设备删了、或卡片的移动先于牌组同步到）
+  /// 时归到 [fallback]（默认牌组）。排程配置、浏览页 / 统计页的牌组名与 `deck:` 搜索共用
+  /// 这一判据（BUG-3617），不要各写一份。
+  String effectiveDeckOf(String deckId, {required String fallback}) =>
+      _byId.containsKey(deckId) ? deckId : fallback;
+
+  /// [effectiveDeckOf] 的全名；连 [fallback] 也不在树里时为空串。
+  String effectiveDeckNameOf(String deckId, {required String fallback}) {
+    final String id = effectiveDeckOf(deckId, fallback: fallback);
+    return _byId.containsKey(id) ? fullName(id) : '';
+  }
+
   /// 「父::子」全名。
   String fullName(String id) {
     final List<String> parts = <String>[];

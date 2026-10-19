@@ -6153,6 +6153,7 @@
   "srs_count_review": "Due",
   "srs_day_boundary_body": "Review days roll over at $hour:00, the same day boundary as the Statistics page (change it with the settings button on the Statistics page). Reviews done before that hour count toward the previous day.",
   "srs_day_boundary_title": "When does the day start",
+  "srs_deck_browse_cards": "Browse cards in this deck",
   "srs_deck_collapse": "Collapse subdecks",
   "srs_deck_delete": "Delete deck",
   "srs_deck_delete_confirm": "Delete \"$name\" and its subdecks? Their cards move to the parent deck (or the default deck).",

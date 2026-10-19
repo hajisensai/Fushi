@@ -23,9 +23,13 @@ class SrsStatsIndex {
     required this.noteTypes,
     required this.day,
     required this.nowMs,
+    this.defaultDeckId = '',
   });
 
   final SrsDeckTree tree;
+
+  /// 默认牌组：牌组已不存在的卡在搜索里归到它（BUG-3617）；空串 = 不归并。
+  final String defaultDeckId;
 
   /// 可见卡片缓存行。
   final List<SrsCardCacheRow> cards;
@@ -60,9 +64,10 @@ class SrsStatsIndex {
               note: n,
               noteType: t,
               card: c,
-              deckName: deckNames[c.deckId] ??= tree[c.deckId] == null
-                  ? ''
-                  : tree.fullName(c.deckId),
+              deckName: deckNames[c.deckId] ??= tree.effectiveDeckNameOf(
+                c.deckId,
+                fallback: defaultDeckId,
+              ),
               day: day,
               nowMs: nowMs,
               todayDayIndex: today,
@@ -141,7 +146,10 @@ Future<SrsStatsBundle> loadSrsStats(
       <String, SrsSchedulingConfig>{};
   SrsSchedulingConfig configOf(String deckId) =>
       configs.putIfAbsent(deckId, () {
-        final String id = tree[deckId] == null ? store.defaultDeckId : deckId;
+        final String id = tree.effectiveDeckOf(
+          deckId,
+          fallback: store.defaultDeckId,
+        );
         if (tree[id] == null) return const SrsSchedulingConfig();
         return tree.schedulingConfig(id, defaultsOf: engine?.defaultParams);
       });
@@ -265,6 +273,7 @@ Future<SrsStatsBundle> loadSrsStats(
       noteTypes: types,
       day: dayCtx,
       nowMs: now,
+      defaultDeckId: store.defaultDeckId,
     ),
   );
 }
