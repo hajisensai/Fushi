@@ -243,7 +243,7 @@ Future<String> _hlsDemuxerHelp() => _hlsDemuxerHelpText ??= () async {
 ///
 /// 问的是同一构建的 **ffprobe**：帮助文本写 stdout，而 [FfmpegBackend.run] 只收 stderr
 /// （ffmpeg 的日志 / 进度都在那），[FfmpegBackend.runProbe] 才收 stdout。ffprobe 与 ffmpeg
-/// 链同一个 libavformat——桌面捆绑的 ffmpeg-min 目录里两者成对，移动端 ffmpeg-kit 也是。
+/// 链同一个 libavformat——桌面捆绑的统一 FFmpeg 目录里两者成对，移动端 ffmpeg_kit_next_flutter 也是。
 Future<bool> ffmpegSupportsHlsSegmentExtensionOptions() async {
   final String help = await _hlsDemuxerHelp();
   return help.contains('allowed_segment_extensions') &&
@@ -295,8 +295,8 @@ String? ffmpegTlsPinArg(String? raw) {
 /// ——所以短音频段（每次都新开一条 googlevideo 连接、更常在 open 阶段撞上超时）依旧硬失败。
 /// 补 `-reconnect_on_network_error 1`：ffmpeg http 协议在 connect 阶段的 TCP/TLS 错误上
 /// 自动重连（配合已有的 `-reconnect_delay_max 5` 退避预算），正好命中 `-138` 这一类。
-/// 该选项 ffmpeg ≥4.3 即有，捆绑的 n7.1.5 已带；网络支持早在 ffmpeg-min recipe 编入
-/// （`--enable-network` + http/https/tcp/tls），**无需重编二进制**。remote-only、对本地
+/// 该选项 ffmpeg ≥4.3 即有，捆绑的 n7.1.5 已带；统一 FFmpeg 配方（旧 ffmpeg-min recipe 同）早已编入
+/// 网络支持（http/https/tcp/tls），**无需重编二进制**。remote-only、对本地
 /// 输入零影响。
 /// BUG-2625：[httpHeaders] 是**调用方在运行时拿到的**防盗链请求头（在线视频源扩展
 /// 声明的 Referer/User-Agent/Origin/Cookie、粘贴 URL 流用户自填的头）。它与
@@ -318,8 +318,8 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath,
       _FfmpegHttpHeaderArgs.from(httpHeaders, inputPath);
   final String? referer = headers.referer;
   return <String>[
-    // BUG-891：远端自签 Fushi 主机（自编 ffmpeg-kit `--enable-gnutls` + tls pin 补丁，
-    // 见 third_party/ffmpeg_kit_flutter/patches/）——把 host 的 TOFU 钉扎指纹下发给
+    // BUG-891：远端自签 Fushi 主机（统一 FFmpeg 的 tls pin 补丁，
+    // 见 tool/ffmpeg-unified/patches/ffmpeg/）——把 host 的 TOFU 钉扎指纹下发给
     // ffmpeg 的 TLS 层，握手后按证书 SHA-256 钉扎接受自签，非无条件放行。空 = 公网源
     // （YouTube 等有效证书）不钉扎，走 ffmpeg 默认。必须在 `-i` 前（TLS 输入选项）。
     if (pin != null && pin.isNotEmpty) ...<String>['-tls_pin_sha256', pin],
@@ -830,9 +830,8 @@ List<String> buildFfmpegClipArgs({
       // 尾随 '?'：越界音轨映射降级回退默认轨而非硬失败（BUG-345）。
       '0:a:$explicitAudio?',
     ],
-    // 有声书倍速制卡：滤镜放在编码器之前，对裁出的片段整体变速。桌面 ffmpeg-min 自
-    // 配方编入 atempo 起可用（tool/ffmpeg-min/build-ffmpeg-min.sh FILTERS），移动端
-    // 自编 ffmpeg-kit 是完整内建滤镜集，本就带。
+    // 有声书倍速制卡：滤镜放在编码器之前，对裁出的片段整体变速。桌面统一 FFmpeg
+    // 与移动端 ffmpeg_kit_next_flutter 都带 atempo（旧 ffmpeg-min 自配方编入 atempo 起即可用）。
     if (tempoFilter != null) ...<String>['-af', tempoFilter],
     '-c:a',
     'aac',
@@ -1254,13 +1253,11 @@ List<String> buildFfmpegClipGifArgs({
 ///   本负载是 16–48 帧的短片，延迟比压缩率重要，且静态链接体积约 3–5MB 对 5–9MB）。
 ///
 /// 三条分支的参数形态已在带 libsvtav1/libwebp 的真实 ffmpeg 上跑通（1080p30 源 4 秒窗，
-/// 480px·8fps：AVIF 36 KB / WebP 163 KB / GIF 471 KB）。**入库的 `ffmpeg-min` 已含这两个
-/// 编码器**（配方 `tool/ffmpeg-min/build-ffmpeg-min.sh` 的 `--enable-libsvtav1
-/// --enable-libwebp` + `ENCODERS` 含 `libsvtav1,libwebp_anim`；exe 由 `fdd5001ff` 重新
-/// vendor，`third_party/ffmpeg-min/windows/ffmpeg.exe -encoders` 可复核）——桌面端不会
-/// 产生注定失败的编码调用，**别为此再跑一次 `.github/workflows/ffmpeg-min.yml`**。
+/// 480px·8fps：AVIF 36 KB / WebP 163 KB / GIF 471 KB）。**统一 FFmpeg 已含这两个
+/// 编码器**（`tool/ffmpeg-unified/capabilities.json` 的编码器下限含 `libsvtav1`、
+/// `libwebp_anim`）——随包 ffmpeg 的桌面端不会产生注定失败的编码调用。
 /// 调用点按 [MiningAnimatedFormat.encodeAttempts] 降级回 GIF 的链路保留为兜底（用户
-/// 自带的外部 ffmpeg 可能缺编码器），不是当前入库 exe 的常态路径。
+/// 自带的外部 ffmpeg / Linux 系统 ffmpeg 可能缺编码器），不是随包 ffmpeg 的常态路径。
 ///
 /// `-2` 让高度按宽度等比且取偶（三种编码器都要求偶数维度）。`-ss`/`-t` 置于 `-i` 前做
 /// 快速输入定位（多 GB 剧集不从 0 解码）。时长 clamp 到 `(0, maxDurationMs]`。

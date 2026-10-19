@@ -170,6 +170,37 @@ component bundle and its single-source installer are installed under
 `<application>/bluray/bdj/`. See [bdj/README.md](bdj/README.md) for the pinned
 private JRE, hashes, source and license details.
 
+## Why this archive is built locally, not in CI
+
+The mobile and macOS FFmpeg are CI builds (`ffmpeg-unified-mobile.yml`); this
+Windows runtime is built on a developer machine, as every libmpv archive here
+has been. A CI job was evaluated (2026-10-19) and not added, because it could
+not deliver what it would be for - a reproducible, reviewable rebuild:
+
+* The build links MSYS2's rolling `mingw-w64-x86_64-*` packages (headers and
+  DLLs of ~90 libraries). MSYS2 has no dated snapshot repository; mirrors
+  carry the current versions, so a CI run builds against whatever MSYS2 ships
+  that day, not against the versions recorded here. Pinning would mean
+  re-hosting ~90 exact package files ourselves.
+* Even with identical inputs the archive is not byte-identical: FFmpeg embeds
+  its configure line (install prefix) in `avutil`, and the 7z carries
+  timestamps. A CI artifact could only be compared at manifest level, which
+  `native-runtime-manifest.json` / `native-dependency-packages.json` already
+  record for the committed archive.
+* `verify_dovi_p5.py` and `verify_menu_render.py` render through ANGLE on
+  D3D11; hosted Windows runners only offer WARP, so the render verifiers - the
+  checks that caught BUG-2691 / BUG-3296 - would be skipped or untrustworthy
+  there.
+
+What keeps the local build honest instead: `native-dependency-packages.json`
+records every MSYS2 package version in the closure plus the
+`fushi-unified-ffmpeg` entry (upstream commit, patched commit, SHA-256 of each
+applied patch, which `ffmpeg_unified_windows_runtime_guard_test.dart` compares
+with `tool/ffmpeg-unified/patches/ffmpeg`), `package_libmpv.py` refuses a
+source tree whose applied patches differ from the recipe, and
+`build_libmpv.ps1` runs every verifier below before an archive can be
+re-pinned. Revisit if MSYS2 gains dated snapshots.
+
 ## Verification
 
 * `tool/ffmpeg-unified/verify_ffmpeg_capabilities.py` runs the packaged

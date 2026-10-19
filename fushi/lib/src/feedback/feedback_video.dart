@@ -1,8 +1,8 @@
 // 反馈视频附件的本机准备：上传前转码成 720p（默认）或 1080p 的 H.264 + AAC mp4。
 //
 // 服务端（services/leaderboard 的 v0 槽位）只收 ≤ 50 MB 的 mp4 / webm / mov，每条反馈一个。
-// 转码走项目现成的 ffmpeg 后端（resolveFfmpegBackend：桌面捆绑的 ffmpeg-min、移动端自编
-// ffmpeg-kit，两边都编入了 libx264 + aac + mp4 muxer）；后端起不来 / 转码失败时**原样上传**，
+// 转码走项目现成的 ffmpeg 后端（resolveFfmpegBackend：桌面捆绑的统一 FFmpeg、移动端
+// ffmpeg_kit_next_flutter，两边都是全组件构建，含 libx264 + aac + mp4 muxer）；后端起不来 / 转码失败时**原样上传**，
 // 但原件同样要过格式与 50 MB 上限，过不了就明说「太大 / 不是视频」，不偷偷截断。
 //
 // 码率按时长自适应：720p 的 2 Mbps 下 50 MB 只装得下约 3 分钟，更长的录屏把视频码率压低到

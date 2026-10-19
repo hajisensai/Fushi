@@ -148,9 +148,9 @@ typedef StillFrameExtraction = ({String path, MiningStillFormat format});
 /// 把 `[startMs, endMs)` 抽成动图，按 [format] 自己声明的降级链（[MiningAnimatedFormat
 /// .encodeAttempts]）逐个尝试：首选用户所选格式，失败换 GIF 再试一次。
 ///
-/// 这不是「重试掩盖症状」——两次调用的**参数不同**，第二次是能力降级：移动端 ffmpeg-kit
-/// 与旧版捆绑 ffmpeg 没有 libsvtav1 / libwebp 编码器（见 `tool/ffmpeg-min/
-/// build-ffmpeg-min.sh`），首选格式必然失败而 GIF 恒可用。降级只做一级。
+/// 这不是「重试掩盖症状」——两次调用的**参数不同**，第二次是能力降级：旧 ffmpeg-min / 旧
+/// ffmpeg-kit 没有、而 Linux 系统 ffmpeg 或用户指定的外部 ffmpeg 可能没有 libsvtav1 /
+/// libwebp 编码器（统一 FFmpeg 已含），首选格式会失败而 GIF 恒可用。降级只做一级。
 ///
 /// **格式与编码参数成对**：每次尝试的 fps / 宽度 / 输出扩展名一律取自 `attempt` 自己
 /// （[MiningAnimatedFormat.capFps] / [MiningAnimatedFormat.capWidth] /
