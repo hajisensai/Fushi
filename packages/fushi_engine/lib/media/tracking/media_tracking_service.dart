@@ -992,6 +992,13 @@ class MediaTrackingService {
 
     Future<MediaTrackingMappingRow?> run() async {
       try {
+        // 被标成私密的作品不建自动映射：建映射要拿它的本地标题去 Bangumi 搜索。
+        // 不记 miss（取消私密后应立即可匹配），也不留重试（重试同样会搜）。
+        if (await _isAutoMappingKeyPrivate(key)) {
+          _autoMappingRetry.remove(key);
+          _autoMappingErrors.remove(key);
+          return null;
+        }
         final MediaTrackingMappingRow? result = await resolve();
         if (result == null) {
           _autoMappingMissAt[key] = DateTime.now().millisecondsSinceEpoch;
@@ -1024,6 +1031,17 @@ class MediaTrackingService {
     });
     _autoMappingInFlight[key] = future;
     return future;
+  }
+
+  /// [key] 形如 `<TrackingMediaType.value>:<mediaKey>`（见各 `_ensureAuto*Mapping`）。
+  Future<bool> _isAutoMappingKeyPrivate(String key) async {
+    final int colon = key.indexOf(':');
+    if (colon <= 0) return false;
+    return isTrackedMediaPrivate(
+      await _repository.loadPrivacy(),
+      key.substring(0, colon),
+      key.substring(colon + 1),
+    );
   }
 
   Future<void> _enqueueAndSync({

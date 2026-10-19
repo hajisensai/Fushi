@@ -152,6 +152,7 @@ void main() {
     final Map<String, String> original = noteFields('雨', dicts);
     final String id = await addNote(a, '雨', dicts);
     Future<void> sync(SrsDbStore s) => SrsSyncEngine(
+      directoryKey: 'test',
       directory: SrsAssetStoreDirectory(store: backend, profileUid: kProfile),
       replica: s,
     ).syncOnce();

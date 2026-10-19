@@ -60903,6 +60903,657 @@ class VideoSubtitleGlossariesCompanion
   }
 }
 
+class $SrsSentBatchesTable extends SrsSentBatches
+    with TableInfo<$SrsSentBatchesTable, SrsSentBatchRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrsSentBatchesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _writerIdMeta = const VerificationMeta(
+    'writerId',
+  );
+  @override
+  late final GeneratedColumn<String> writerId = GeneratedColumn<String>(
+    'writer_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _batchNoMeta = const VerificationMeta(
+    'batchNo',
+  );
+  @override
+  late final GeneratedColumn<int> batchNo = GeneratedColumn<int>(
+    'batch_no',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bytesMeta = const VerificationMeta('bytes');
+  @override
+  late final GeneratedColumn<Uint8List> bytes = GeneratedColumn<Uint8List>(
+    'bytes',
+    aliasedName,
+    false,
+    type: DriftSqlType.blob,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [profileUid, writerId, batchNo, bytes];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srs_sent_batches';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SrsSentBatchRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileUidMeta);
+    }
+    if (data.containsKey('writer_id')) {
+      context.handle(
+        _writerIdMeta,
+        writerId.isAcceptableOrUnknown(data['writer_id']!, _writerIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_writerIdMeta);
+    }
+    if (data.containsKey('batch_no')) {
+      context.handle(
+        _batchNoMeta,
+        batchNo.isAcceptableOrUnknown(data['batch_no']!, _batchNoMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_batchNoMeta);
+    }
+    if (data.containsKey('bytes')) {
+      context.handle(
+        _bytesMeta,
+        bytes.isAcceptableOrUnknown(data['bytes']!, _bytesMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bytesMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {profileUid, writerId, batchNo};
+  @override
+  SrsSentBatchRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrsSentBatchRow(
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
+      writerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}writer_id'],
+      )!,
+      batchNo: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}batch_no'],
+      )!,
+      bytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.blob,
+        data['${effectivePrefix}bytes'],
+      )!,
+    );
+  }
+
+  @override
+  $SrsSentBatchesTable createAlias(String alias) {
+    return $SrsSentBatchesTable(attachedDatabase, alias);
+  }
+}
+
+class SrsSentBatchRow extends DataClass implements Insertable<SrsSentBatchRow> {
+  final String profileUid;
+  final String writerId;
+
+  /// 批次号（写入者内从 1 起连续）。
+  final int batchNo;
+
+  /// 冻结后的批次文件字节（自校验格式，见 fushi_srs `SrsBatch`）。
+  final Uint8List bytes;
+  const SrsSentBatchRow({
+    required this.profileUid,
+    required this.writerId,
+    required this.batchNo,
+    required this.bytes,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['profile_uid'] = Variable<String>(profileUid);
+    map['writer_id'] = Variable<String>(writerId);
+    map['batch_no'] = Variable<int>(batchNo);
+    map['bytes'] = Variable<Uint8List>(bytes);
+    return map;
+  }
+
+  SrsSentBatchesCompanion toCompanion(bool nullToAbsent) {
+    return SrsSentBatchesCompanion(
+      profileUid: Value(profileUid),
+      writerId: Value(writerId),
+      batchNo: Value(batchNo),
+      bytes: Value(bytes),
+    );
+  }
+
+  factory SrsSentBatchRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrsSentBatchRow(
+      profileUid: serializer.fromJson<String>(json['profileUid']),
+      writerId: serializer.fromJson<String>(json['writerId']),
+      batchNo: serializer.fromJson<int>(json['batchNo']),
+      bytes: serializer.fromJson<Uint8List>(json['bytes']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'profileUid': serializer.toJson<String>(profileUid),
+      'writerId': serializer.toJson<String>(writerId),
+      'batchNo': serializer.toJson<int>(batchNo),
+      'bytes': serializer.toJson<Uint8List>(bytes),
+    };
+  }
+
+  SrsSentBatchRow copyWith({
+    String? profileUid,
+    String? writerId,
+    int? batchNo,
+    Uint8List? bytes,
+  }) => SrsSentBatchRow(
+    profileUid: profileUid ?? this.profileUid,
+    writerId: writerId ?? this.writerId,
+    batchNo: batchNo ?? this.batchNo,
+    bytes: bytes ?? this.bytes,
+  );
+  SrsSentBatchRow copyWithCompanion(SrsSentBatchesCompanion data) {
+    return SrsSentBatchRow(
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
+      writerId: data.writerId.present ? data.writerId.value : this.writerId,
+      batchNo: data.batchNo.present ? data.batchNo.value : this.batchNo,
+      bytes: data.bytes.present ? data.bytes.value : this.bytes,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsSentBatchRow(')
+          ..write('profileUid: $profileUid, ')
+          ..write('writerId: $writerId, ')
+          ..write('batchNo: $batchNo, ')
+          ..write('bytes: $bytes')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    profileUid,
+    writerId,
+    batchNo,
+    $driftBlobEquality.hash(bytes),
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrsSentBatchRow &&
+          other.profileUid == this.profileUid &&
+          other.writerId == this.writerId &&
+          other.batchNo == this.batchNo &&
+          $driftBlobEquality.equals(other.bytes, this.bytes));
+}
+
+class SrsSentBatchesCompanion extends UpdateCompanion<SrsSentBatchRow> {
+  final Value<String> profileUid;
+  final Value<String> writerId;
+  final Value<int> batchNo;
+  final Value<Uint8List> bytes;
+  final Value<int> rowid;
+  const SrsSentBatchesCompanion({
+    this.profileUid = const Value.absent(),
+    this.writerId = const Value.absent(),
+    this.batchNo = const Value.absent(),
+    this.bytes = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SrsSentBatchesCompanion.insert({
+    required String profileUid,
+    required String writerId,
+    required int batchNo,
+    required Uint8List bytes,
+    this.rowid = const Value.absent(),
+  }) : profileUid = Value(profileUid),
+       writerId = Value(writerId),
+       batchNo = Value(batchNo),
+       bytes = Value(bytes);
+  static Insertable<SrsSentBatchRow> custom({
+    Expression<String>? profileUid,
+    Expression<String>? writerId,
+    Expression<int>? batchNo,
+    Expression<Uint8List>? bytes,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (profileUid != null) 'profile_uid': profileUid,
+      if (writerId != null) 'writer_id': writerId,
+      if (batchNo != null) 'batch_no': batchNo,
+      if (bytes != null) 'bytes': bytes,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SrsSentBatchesCompanion copyWith({
+    Value<String>? profileUid,
+    Value<String>? writerId,
+    Value<int>? batchNo,
+    Value<Uint8List>? bytes,
+    Value<int>? rowid,
+  }) {
+    return SrsSentBatchesCompanion(
+      profileUid: profileUid ?? this.profileUid,
+      writerId: writerId ?? this.writerId,
+      batchNo: batchNo ?? this.batchNo,
+      bytes: bytes ?? this.bytes,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
+    if (writerId.present) {
+      map['writer_id'] = Variable<String>(writerId.value);
+    }
+    if (batchNo.present) {
+      map['batch_no'] = Variable<int>(batchNo.value);
+    }
+    if (bytes.present) {
+      map['bytes'] = Variable<Uint8List>(bytes.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsSentBatchesCompanion(')
+          ..write('profileUid: $profileUid, ')
+          ..write('writerId: $writerId, ')
+          ..write('batchNo: $batchNo, ')
+          ..write('bytes: $bytes, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MediaPrivacyFlagsTable extends MediaPrivacyFlags
+    with TableInfo<$MediaPrivacyFlagsTable, MediaPrivacyFlagRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaPrivacyFlagsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entryKeyMeta = const VerificationMeta(
+    'entryKey',
+  );
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+    'entry_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _privateAtMeta = const VerificationMeta(
+    'privateAt',
+  );
+  @override
+  late final GeneratedColumn<int> privateAt = GeneratedColumn<int>(
+    'private_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _clearedAtMeta = const VerificationMeta(
+    'clearedAt',
+  );
+  @override
+  late final GeneratedColumn<int> clearedAt = GeneratedColumn<int>(
+    'cleared_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    mediaKind,
+    entryKey,
+    privateAt,
+    clearedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_privacy_flags';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaPrivacyFlagRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKindMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(
+        _entryKeyMeta,
+        entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('private_at')) {
+      context.handle(
+        _privateAtMeta,
+        privateAt.isAcceptableOrUnknown(data['private_at']!, _privateAtMeta),
+      );
+    }
+    if (data.containsKey('cleared_at')) {
+      context.handle(
+        _clearedAtMeta,
+        clearedAt.isAcceptableOrUnknown(data['cleared_at']!, _clearedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaKind, entryKey};
+  @override
+  MediaPrivacyFlagRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaPrivacyFlagRow(
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
+      entryKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entry_key'],
+      )!,
+      privateAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}private_at'],
+      ),
+      clearedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cleared_at'],
+      ),
+    );
+  }
+
+  @override
+  $MediaPrivacyFlagsTable createAlias(String alias) {
+    return $MediaPrivacyFlagsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaPrivacyFlagRow extends DataClass
+    implements Insertable<MediaPrivacyFlagRow> {
+  final String mediaKind;
+  final String entryKey;
+
+  /// 最近一次设为私密的毫秒戳；NULL = 从没设过。
+  final int? privateAt;
+
+  /// 最近一次取消私密的毫秒戳；NULL = 从没取消过。
+  final int? clearedAt;
+  const MediaPrivacyFlagRow({
+    required this.mediaKind,
+    required this.entryKey,
+    this.privateAt,
+    this.clearedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_kind'] = Variable<String>(mediaKind);
+    map['entry_key'] = Variable<String>(entryKey);
+    if (!nullToAbsent || privateAt != null) {
+      map['private_at'] = Variable<int>(privateAt);
+    }
+    if (!nullToAbsent || clearedAt != null) {
+      map['cleared_at'] = Variable<int>(clearedAt);
+    }
+    return map;
+  }
+
+  MediaPrivacyFlagsCompanion toCompanion(bool nullToAbsent) {
+    return MediaPrivacyFlagsCompanion(
+      mediaKind: Value(mediaKind),
+      entryKey: Value(entryKey),
+      privateAt: privateAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(privateAt),
+      clearedAt: clearedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(clearedAt),
+    );
+  }
+
+  factory MediaPrivacyFlagRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaPrivacyFlagRow(
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      privateAt: serializer.fromJson<int?>(json['privateAt']),
+      clearedAt: serializer.fromJson<int?>(json['clearedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaKind': serializer.toJson<String>(mediaKind),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'privateAt': serializer.toJson<int?>(privateAt),
+      'clearedAt': serializer.toJson<int?>(clearedAt),
+    };
+  }
+
+  MediaPrivacyFlagRow copyWith({
+    String? mediaKind,
+    String? entryKey,
+    Value<int?> privateAt = const Value.absent(),
+    Value<int?> clearedAt = const Value.absent(),
+  }) => MediaPrivacyFlagRow(
+    mediaKind: mediaKind ?? this.mediaKind,
+    entryKey: entryKey ?? this.entryKey,
+    privateAt: privateAt.present ? privateAt.value : this.privateAt,
+    clearedAt: clearedAt.present ? clearedAt.value : this.clearedAt,
+  );
+  MediaPrivacyFlagRow copyWithCompanion(MediaPrivacyFlagsCompanion data) {
+    return MediaPrivacyFlagRow(
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      privateAt: data.privateAt.present ? data.privateAt.value : this.privateAt,
+      clearedAt: data.clearedAt.present ? data.clearedAt.value : this.clearedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaPrivacyFlagRow(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('privateAt: $privateAt, ')
+          ..write('clearedAt: $clearedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(mediaKind, entryKey, privateAt, clearedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaPrivacyFlagRow &&
+          other.mediaKind == this.mediaKind &&
+          other.entryKey == this.entryKey &&
+          other.privateAt == this.privateAt &&
+          other.clearedAt == this.clearedAt);
+}
+
+class MediaPrivacyFlagsCompanion extends UpdateCompanion<MediaPrivacyFlagRow> {
+  final Value<String> mediaKind;
+  final Value<String> entryKey;
+  final Value<int?> privateAt;
+  final Value<int?> clearedAt;
+  final Value<int> rowid;
+  const MediaPrivacyFlagsCompanion({
+    this.mediaKind = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.privateAt = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MediaPrivacyFlagsCompanion.insert({
+    required String mediaKind,
+    required String entryKey,
+    this.privateAt = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : mediaKind = Value(mediaKind),
+       entryKey = Value(entryKey);
+  static Insertable<MediaPrivacyFlagRow> custom({
+    Expression<String>? mediaKind,
+    Expression<String>? entryKey,
+    Expression<int>? privateAt,
+    Expression<int>? clearedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaKind != null) 'media_kind': mediaKind,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (privateAt != null) 'private_at': privateAt,
+      if (clearedAt != null) 'cleared_at': clearedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MediaPrivacyFlagsCompanion copyWith({
+    Value<String>? mediaKind,
+    Value<String>? entryKey,
+    Value<int?>? privateAt,
+    Value<int?>? clearedAt,
+    Value<int>? rowid,
+  }) {
+    return MediaPrivacyFlagsCompanion(
+      mediaKind: mediaKind ?? this.mediaKind,
+      entryKey: entryKey ?? this.entryKey,
+      privateAt: privateAt ?? this.privateAt,
+      clearedAt: clearedAt ?? this.clearedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (privateAt.present) {
+      map['private_at'] = Variable<int>(privateAt.value);
+    }
+    if (clearedAt.present) {
+      map['cleared_at'] = Variable<int>(clearedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaPrivacyFlagsCompanion(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('privateAt: $privateAt, ')
+          ..write('clearedAt: $clearedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -61083,6 +61734,9 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $SrsCardsCacheTable srsCardsCache = $SrsCardsCacheTable(this);
   late final $VideoSubtitleGlossariesTable videoSubtitleGlossaries =
       $VideoSubtitleGlossariesTable(this);
+  late final $SrsSentBatchesTable srsSentBatches = $SrsSentBatchesTable(this);
+  late final $MediaPrivacyFlagsTable mediaPrivacyFlags =
+      $MediaPrivacyFlagsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -61187,6 +61841,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     srsNotesCache,
     srsCardsCache,
     videoSubtitleGlossaries,
+    srsSentBatches,
+    mediaPrivacyFlags,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -104205,6 +104861,389 @@ typedef $$VideoSubtitleGlossariesTableProcessedTableManager =
       VideoSubtitleGlossaryRow,
       PrefetchHooks Function()
     >;
+typedef $$SrsSentBatchesTableCreateCompanionBuilder =
+    SrsSentBatchesCompanion Function({
+      required String profileUid,
+      required String writerId,
+      required int batchNo,
+      required Uint8List bytes,
+      Value<int> rowid,
+    });
+typedef $$SrsSentBatchesTableUpdateCompanionBuilder =
+    SrsSentBatchesCompanion Function({
+      Value<String> profileUid,
+      Value<String> writerId,
+      Value<int> batchNo,
+      Value<Uint8List> bytes,
+      Value<int> rowid,
+    });
+
+class $$SrsSentBatchesTableFilterComposer
+    extends Composer<_$FushiDatabase, $SrsSentBatchesTable> {
+  $$SrsSentBatchesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get writerId => $composableBuilder(
+    column: $table.writerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get batchNo => $composableBuilder(
+    column: $table.batchNo,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<Uint8List> get bytes => $composableBuilder(
+    column: $table.bytes,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SrsSentBatchesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $SrsSentBatchesTable> {
+  $$SrsSentBatchesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get writerId => $composableBuilder(
+    column: $table.writerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get batchNo => $composableBuilder(
+    column: $table.batchNo,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<Uint8List> get bytes => $composableBuilder(
+    column: $table.bytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SrsSentBatchesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $SrsSentBatchesTable> {
+  $$SrsSentBatchesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get writerId =>
+      $composableBuilder(column: $table.writerId, builder: (column) => column);
+
+  GeneratedColumn<int> get batchNo =>
+      $composableBuilder(column: $table.batchNo, builder: (column) => column);
+
+  GeneratedColumn<Uint8List> get bytes =>
+      $composableBuilder(column: $table.bytes, builder: (column) => column);
+}
+
+class $$SrsSentBatchesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $SrsSentBatchesTable,
+          SrsSentBatchRow,
+          $$SrsSentBatchesTableFilterComposer,
+          $$SrsSentBatchesTableOrderingComposer,
+          $$SrsSentBatchesTableAnnotationComposer,
+          $$SrsSentBatchesTableCreateCompanionBuilder,
+          $$SrsSentBatchesTableUpdateCompanionBuilder,
+          (
+            SrsSentBatchRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $SrsSentBatchesTable,
+              SrsSentBatchRow
+            >,
+          ),
+          SrsSentBatchRow,
+          PrefetchHooks Function()
+        > {
+  $$SrsSentBatchesTableTableManager(
+    _$FushiDatabase db,
+    $SrsSentBatchesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrsSentBatchesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrsSentBatchesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrsSentBatchesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> profileUid = const Value.absent(),
+                Value<String> writerId = const Value.absent(),
+                Value<int> batchNo = const Value.absent(),
+                Value<Uint8List> bytes = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsSentBatchesCompanion(
+                profileUid: profileUid,
+                writerId: writerId,
+                batchNo: batchNo,
+                bytes: bytes,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String profileUid,
+                required String writerId,
+                required int batchNo,
+                required Uint8List bytes,
+                Value<int> rowid = const Value.absent(),
+              }) => SrsSentBatchesCompanion.insert(
+                profileUid: profileUid,
+                writerId: writerId,
+                batchNo: batchNo,
+                bytes: bytes,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SrsSentBatchesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $SrsSentBatchesTable,
+      SrsSentBatchRow,
+      $$SrsSentBatchesTableFilterComposer,
+      $$SrsSentBatchesTableOrderingComposer,
+      $$SrsSentBatchesTableAnnotationComposer,
+      $$SrsSentBatchesTableCreateCompanionBuilder,
+      $$SrsSentBatchesTableUpdateCompanionBuilder,
+      (
+        SrsSentBatchRow,
+        BaseReferences<_$FushiDatabase, $SrsSentBatchesTable, SrsSentBatchRow>,
+      ),
+      SrsSentBatchRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MediaPrivacyFlagsTableCreateCompanionBuilder =
+    MediaPrivacyFlagsCompanion Function({
+      required String mediaKind,
+      required String entryKey,
+      Value<int?> privateAt,
+      Value<int?> clearedAt,
+      Value<int> rowid,
+    });
+typedef $$MediaPrivacyFlagsTableUpdateCompanionBuilder =
+    MediaPrivacyFlagsCompanion Function({
+      Value<String> mediaKind,
+      Value<String> entryKey,
+      Value<int?> privateAt,
+      Value<int?> clearedAt,
+      Value<int> rowid,
+    });
+
+class $$MediaPrivacyFlagsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaPrivacyFlagsTable> {
+  $$MediaPrivacyFlagsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get privateAt => $composableBuilder(
+    column: $table.privateAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaPrivacyFlagsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaPrivacyFlagsTable> {
+  $$MediaPrivacyFlagsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get privateAt => $composableBuilder(
+    column: $table.privateAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaPrivacyFlagsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaPrivacyFlagsTable> {
+  $$MediaPrivacyFlagsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<int> get privateAt =>
+      $composableBuilder(column: $table.privateAt, builder: (column) => column);
+
+  GeneratedColumn<int> get clearedAt =>
+      $composableBuilder(column: $table.clearedAt, builder: (column) => column);
+}
+
+class $$MediaPrivacyFlagsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaPrivacyFlagsTable,
+          MediaPrivacyFlagRow,
+          $$MediaPrivacyFlagsTableFilterComposer,
+          $$MediaPrivacyFlagsTableOrderingComposer,
+          $$MediaPrivacyFlagsTableAnnotationComposer,
+          $$MediaPrivacyFlagsTableCreateCompanionBuilder,
+          $$MediaPrivacyFlagsTableUpdateCompanionBuilder,
+          (
+            MediaPrivacyFlagRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaPrivacyFlagsTable,
+              MediaPrivacyFlagRow
+            >,
+          ),
+          MediaPrivacyFlagRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaPrivacyFlagsTableTableManager(
+    _$FushiDatabase db,
+    $MediaPrivacyFlagsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaPrivacyFlagsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaPrivacyFlagsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaPrivacyFlagsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> mediaKind = const Value.absent(),
+                Value<String> entryKey = const Value.absent(),
+                Value<int?> privateAt = const Value.absent(),
+                Value<int?> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaPrivacyFlagsCompanion(
+                mediaKind: mediaKind,
+                entryKey: entryKey,
+                privateAt: privateAt,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String mediaKind,
+                required String entryKey,
+                Value<int?> privateAt = const Value.absent(),
+                Value<int?> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaPrivacyFlagsCompanion.insert(
+                mediaKind: mediaKind,
+                entryKey: entryKey,
+                privateAt: privateAt,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaPrivacyFlagsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaPrivacyFlagsTable,
+      MediaPrivacyFlagRow,
+      $$MediaPrivacyFlagsTableFilterComposer,
+      $$MediaPrivacyFlagsTableOrderingComposer,
+      $$MediaPrivacyFlagsTableAnnotationComposer,
+      $$MediaPrivacyFlagsTableCreateCompanionBuilder,
+      $$MediaPrivacyFlagsTableUpdateCompanionBuilder,
+      (
+        MediaPrivacyFlagRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MediaPrivacyFlagsTable,
+          MediaPrivacyFlagRow
+        >,
+      ),
+      MediaPrivacyFlagRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -104458,4 +105497,8 @@ class $FushiDatabaseManager {
         _db,
         _db.videoSubtitleGlossaries,
       );
+  $$SrsSentBatchesTableTableManager get srsSentBatches =>
+      $$SrsSentBatchesTableTableManager(_db, _db.srsSentBatches);
+  $$MediaPrivacyFlagsTableTableManager get mediaPrivacyFlags =>
+      $$MediaPrivacyFlagsTableTableManager(_db, _db.mediaPrivacyFlags);
 }

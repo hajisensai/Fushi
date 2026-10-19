@@ -211,6 +211,9 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'media_collections': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'shelf_entries': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'tag_assignments': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  // v122 作品级私密标记：与 tag_assignments 同一套宿主逻辑外键，被裁剪内容的标记
+  // 一并收敛掉。
+  'media_privacy_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'book_tags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'book_tag_membership_tombstones': BackupTableRule.rowLevel(
     '_stripOrphanUserDataTables',
@@ -312,6 +315,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'srs_local_state': BackupTableRule.deviceLocal(),
   'srs_notes_cache': BackupTableRule.deviceLocal(),
   'srs_cards_cache': BackupTableRule.deviceLocal(),
+  // v121：本机已冻结批次留存（SRS 多目录同步），设备本地、恢复后清空。
+  'srs_sent_batches': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

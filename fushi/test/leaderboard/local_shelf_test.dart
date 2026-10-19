@@ -944,6 +944,170 @@ void main() {
     });
   });
 
+  group('私密作品', () {
+    test('书：标私密后不进 entries 但字数仍进 daily；取消后回来', () async {
+      await book('Secret', completedAt: DateTime(2026, 9, 3, 12));
+      await segment('book', 'Secret', date: '2026-09-01', chars: 100, ms: 60);
+
+      LocalShelf shelf = await buildLocalShelf(db, profileId: profile);
+      expect(byKey(shelf).keys, <String>['book:Secret']);
+
+      await db.setMediaPrivate(TagHostKind.epub, 'Secret', true);
+      shelf = await buildLocalShelf(db, profileId: profile);
+      expect(shelf.entries, isEmpty);
+      expect(
+        shelf.daily.map((DailyCharsUpload d) => '${d.date}=${d.chars}'),
+        <String>['2026-09-01=100'],
+      );
+
+      await db.setMediaPrivate(TagHostKind.epub, 'Secret', false);
+      shelf = await buildLocalShelf(db, profileId: profile);
+      expect(byKey(shelf).keys, <String>['book:Secret']);
+    });
+
+    test('书：属于私密合集的成员被跳过', () async {
+      await book('InPrivateColl', completedAt: DateTime(2026, 9, 3, 12));
+      await book('Open', completedAt: DateTime(2026, 9, 3, 12));
+      final int c = await db
+          .into(db.mediaCollections)
+          .insert(MediaCollectionsCompanion.insert(name: '秘', createdAt: 0));
+      await db
+          .into(db.mediaCollectionItems)
+          .insert(
+            MediaCollectionItemsCompanion.insert(
+              collectionId: c,
+              mediaType: MediaKind.epub.dbValue,
+              entryKey: 'InPrivateColl',
+            ),
+          );
+      await db.setMediaPrivate(
+        TagHostKind.collection,
+        collectionTagEntryKey(c),
+        true,
+      );
+      final LocalShelf shelf = await buildLocalShelf(db, profileId: profile);
+      expect(byKey(shelf).keys, <String>['book:Open']);
+    });
+
+    test('书：私密合集成员按真实路径的 uid 键入合集（v83）同样被跳过', () async {
+      await book('UidMember', completedAt: DateTime(2026, 9, 3, 12));
+      await book('Open', completedAt: DateTime(2026, 9, 3, 12));
+      final String uid = (await db.getEpubBook('UidMember'))!.uid;
+      expect(uid, isNot('UidMember'), reason: 'insertEpubBook 应自动生成 uid');
+      final int c = await db.createMediaCollection('秘');
+      // 生产路径（书架「加入合集」/ 批量组合）落的是 uid，不是 bookKey。
+      await db.addToCollection(c, MediaKind.epub, uid);
+      await db.setMediaPrivate(
+        TagHostKind.collection,
+        collectionTagEntryKey(c),
+        true,
+      );
+      final LocalShelf shelf = await buildLocalShelf(db, profileId: profile);
+      expect(byKey(shelf).keys, <String>['book:Open']);
+    });
+
+    test('视频单位：合集内任一成员私密 → 整个单位跳过', () async {
+      await video('e1', completedAt: DateTime(2026, 8, 1, 12));
+      await video('e2', completedAt: DateTime(2026, 8, 5, 12));
+      final int c = await db
+          .into(db.mediaCollections)
+          .insert(MediaCollectionsCompanion.insert(name: '剧', createdAt: 0));
+      for (final String uid in <String>['e1', 'e2']) {
+        await db
+            .into(db.mediaCollectionItems)
+            .insert(
+              MediaCollectionItemsCompanion.insert(
+                collectionId: c,
+                mediaType: 'video',
+                entryKey: uid,
+              ),
+            );
+      }
+      final int w = await db
+          .into(db.videoMetadataWorks)
+          .insert(
+            VideoMetadataWorksCompanion.insert(
+              collectionId: Value<int?>(c),
+              mediaType: 'tv',
+              title: 'Show',
+              updatedAt: 0,
+            ),
+          );
+      await db
+          .into(db.videoMetadataProviderIdentities)
+          .insert(
+            VideoMetadataProviderIdentitiesCompanion.insert(
+              identityKey: 'work:$w:anidb',
+              workId: Value<int?>(w),
+              provider: 'anidb',
+              externalId: '1',
+              updatedAt: 0,
+            ),
+          );
+      await segment('video', 'e1', date: '2026-08-01', chars: 30, ms: 1000);
+
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        <String>['video:c$c'],
+      );
+
+      await db.setMediaPrivate(TagHostKind.video, 'e2', true);
+      final LocalShelf shelf = await buildLocalShelf(db, profileId: profile);
+      expect(shelf.entries, isEmpty);
+      expect(
+        shelf.daily.map((DailyCharsUpload d) => '${d.date}=${d.chars}'),
+        <String>['2026-08-01=30'],
+      );
+    });
+
+    test('游戏：标私密后跳过', () async {
+      await db
+          .into(db.galgames)
+          .insert(
+            GalgamesCompanion.insert(
+              id: 'gp',
+              name: 'exe_gp',
+              exePath: 'C:/g/gp.exe',
+              workdir: 'C:/g',
+              addedAt: 0,
+              playStatus: const Value<int>(2),
+            ),
+          );
+      await db
+          .into(db.galgameSources)
+          .insert(
+            GalgameSourcesCompanion.insert(
+              gameId: 'gp',
+              source: 'bgm',
+              externalId: const Value<String?>('5'),
+              dataJson: jsonEncode(<String, Object?>{'name': 'G'}),
+              fetchedAt: 0,
+            ),
+          );
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        <String>['game:gp'],
+      );
+      await db.setMediaPrivate(TagHostKind.game, 'gp', true);
+      expect((await buildLocalShelf(db, profileId: profile)).entries, isEmpty);
+
+      // 游戏也能进合集：本身取消私密、但在私密合集里 → 仍跳过。
+      await db.setMediaPrivate(TagHostKind.game, 'gp', false);
+      final int c = await db.createMediaCollection('秘游');
+      await db.addToCollection(c, MediaKind.game, 'gp');
+      expect(
+        byKey(await buildLocalShelf(db, profileId: profile)).keys,
+        <String>['game:gp'],
+      );
+      await db.setMediaPrivate(
+        TagHostKind.collection,
+        collectionTagEntryKey(c),
+        true,
+      );
+      expect((await buildLocalShelf(db, profileId: profile)).entries, isEmpty);
+    });
+  });
+
   test('游戏：没有 bgm / vndb 身份（未刮削）的不上报，哪怕玩过或有自定义名', () async {
     Future<void> game(String id, {String? custom}) => db
         .into(db.galgames)

@@ -46,6 +46,7 @@ void main() {
       },
     );
     Future<void> events(SrsDbStore s) => SrsSyncEngine(
+      directoryKey: 'test',
       directory: SrsAssetStoreDirectory(store: backend, profileUid: kProfile),
       replica: s,
     ).syncOnce();

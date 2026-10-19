@@ -14,7 +14,13 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart'
     show srsNameProblemText;
+import 'package:fushi/src/pages/implementations/srs/srs_field_info_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.dart'
+    show srsFieldKindIcon;
+import 'package:fushi/src/srs/srs_field_catalog.dart';
+import 'package:fushi/src/srs/srs_visual_template.dart'
+    show srsVisualTemplateWithoutField;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -129,7 +135,7 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
           label: t.srs_note_types_term_field_none,
         ),
         for (final SrsFieldDef f in type.fields)
-          FushiChoiceOption<String>(value: f.id, label: f.name),
+          FushiChoiceOption<String>(value: f.id, label: _fieldTitle(f)),
       ],
     );
     if (id == null || id == (type.termFieldId ?? none)) return;
@@ -151,6 +157,33 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
         if (f.id != exceptId) f.name,
     ]),
   );
+
+  /// 字段行标题：已知字段显示人话名字并带上真实字段名（模板 / Anki 里认的是后者）。
+  static String _fieldTitle(SrsFieldDef f) {
+    final String display = srsFieldDisplayName(f);
+    return display == f.name ? f.name : '$display · ${f.name}';
+  }
+
+  /// 字段行副标题：说明（用户写的优先，其次内置说明）+ 内置字段标记。
+  static String? _fieldSubtitle(SrsFieldDef f, {required bool builtin}) {
+    final String description = srsFieldDisplayDescription(f);
+    final String text = <String>[
+      if (description.isNotEmpty) description,
+      if (builtin) t.srs_note_types_field_builtin,
+    ].join('\n');
+    return text.isEmpty ? null : text;
+  }
+
+  Future<void> _openField(SrsNoteTypeView type, SrsFieldDef field) async {
+    await Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) =>
+            SrsFieldInfoPage(noteTypeId: type.id, fieldId: field.id),
+      ),
+    );
+    if (mounted) await _reload();
+  }
 
   Future<void> _addField(SrsNoteTypeView type) async {
     final String? name = await showFushiTextInputDialog(
@@ -224,9 +257,15 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
           destructive: true,
         );
         if (!ok) return;
+        // 可视化模板的块与字段删除在同一次写入里落库：删不掉时模板也不动。
         _run(
           'SrsNoteTypeEditor.deleteField',
-          (SrsDbStore s) => s.deleteField(type.id, field.id),
+          (SrsDbStore s) => s.deleteField(
+            type.id,
+            field.id,
+            prepareTemplate: (SrsNoteTypeView fresh, SrsTemplateDef tpl) =>
+                srsVisualTemplateWithoutField(fresh, tpl, field.id),
+          ),
         );
     }
   }
@@ -236,7 +275,7 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
   Future<void> _openTemplate(
     SrsNoteTypeView type,
     String templateId, {
-    SrsTemplateEditorTab tab = SrsTemplateEditorTab.front,
+    SrsTemplateEditorTab tab = SrsTemplateEditorTab.visual,
   }) async {
     await Navigator.of(context).push<void>(
       adaptivePageRoute<void>(
@@ -379,6 +418,15 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
       return v is Map && v['name'] is String
           ? '${t.srs_note_types_fields} · ${v['name']}'
           : t.srs_note_types_fields;
+    }
+    if (reg.key.startsWith(SrsFieldKeys.fieldDescriptionPrefix)) {
+      final String id = reg.key.substring(
+        SrsFieldKeys.fieldDescriptionPrefix.length,
+      );
+      final SrsFieldDef? f = type.fieldById(id);
+      return f == null
+          ? t.srs_field_info_description
+          : '${t.srs_field_info_description} · ${f.name}';
     }
     if (reg.key.startsWith('tmplDef/')) {
       final Object? v = reg.value;
@@ -576,13 +624,18 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
                 key: ValueKey<String>(
                   'srs-note-type-field-${type.fields[i].name}',
                 ),
-                icon: FushiIcons.textFields,
-                title: type.fields[i].name,
+                icon: srsFieldKindIcon(srsFieldKind(type.fields[i])),
+                title: _fieldTitle(type.fields[i]),
                 renameLabel: t.srs_note_types_field_rename,
                 deleteLabel: t.srs_note_types_field_delete,
-                subtitle: store.isBuiltinField(type, type.fields[i].id)
-                    ? t.srs_note_types_field_builtin
-                    : null,
+                subtitle: _fieldSubtitle(
+                  type.fields[i],
+                  builtin: store.isBuiltinField(type, type.fields[i].id),
+                ),
+                onTap: () => srsRunLogged(
+                  'SrsNoteTypeEditor.openField',
+                  () => _openField(type, type.fields[i]),
+                ),
                 canMoveUp: i > 0,
                 canMoveDown: i < type.fields.length - 1,
                 canDelete:

@@ -2,8 +2,8 @@
 /// 在识别出的每个字上方铺一个透明可点区域，点字即查词。
 ///
 /// 起初只为图形字幕（PGS / VobSub / DVB，没有 Dart 文字）而设；现在按
-/// [VideoPauseOcrScope] 扩到所有视频（硬字幕、画面文字），Fushi 自绘的文字字幕在屏
-/// 时让位给它（见 [VideoPauseOcrScope.shouldRecognize]）。
+/// [VideoPauseOcrScope] 扩到所有视频（硬字幕、画面文字），见
+/// [VideoPauseOcrScope.shouldRecognize]。
 ///
 /// 识别与 AI 重读见 `graphic_subtitle_ocr.dart`；本层只负责「何时识别」与「摆在哪」。
 library;
@@ -21,6 +21,24 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// 识别触发的防抖：逐帧步进 / 连续 seek 时只识别停下来的那一帧。
 const Duration kGraphicSubtitleOcrSettleDelay = Duration(milliseconds: 250);
+
+/// 同一帧截帧失败（mpv `screenshot-raw` 无结果）后的重截退避。
+///
+/// 暂停态 seek / 跳句 / 逐帧步进后，mpv 先清掉当前帧，新帧解码显示前截帧必然失败；
+/// 网络流缓冲、4K / HEVC 长 GOP 时新帧会晚于 [kGraphicSubtitleOcrSettleDelay] 才出来。
+/// 帧键（位置 + 字幕轨）此时已经不变，不重截这一帧就再也不会识别（BUG-3561）。
+///
+/// 这是对外部时序的兼容层：media_kit 1.2.6 不暴露 mpv 的 `playback-restart` 事件，
+/// 而 `seeking` 属性观测会合并 yes→no 翻转（见 `VideoPlayerController` 的
+/// `_kSeekSettledAdvanceMs` 注释），拿不到可靠的「新帧已显示」信号。影响范围只有暂停
+/// OCR 截帧；帧一变（播放 / seek / 换轨）在途重截即作废。清理条件：播放器能给出
+/// 「新帧已显示」事件后，改成挂在那个事件上重截。
+const List<Duration> kGraphicSubtitleOcrCaptureRetryDelays = <Duration>[
+  Duration(milliseconds: 250),
+  Duration(milliseconds: 500),
+  Duration(seconds: 1),
+  Duration(seconds: 2),
+];
 
 /// 识别完成后的状态标记（「已识别 · 点字查词」/「这一帧没有字」）停留多久后淡出。
 ///
@@ -167,13 +185,10 @@ class _VideoGraphicSubtitleOcrOverlayState
   _FrameKey? _currentKey() {
     final VideoPlayerController c = widget.controller;
     if (c.isPlaying || !c.hasFirstFrame) return null;
+    // 网页播放后端没有 mpv，截帧恒为 null：识别不了，不截、不重截。
+    if (c.isWebBackend) return null;
     if (!widget.scope.shouldRecognize(
       graphicSubtitleActive: c.isPlayerRenderedSubtitleActive,
-      textCueOnScreen:
-          c.activeCues.isNotEmpty || c.secondaryActiveCues.isNotEmpty,
-      // 副字幕没有独立的加载态（由页面一次性 setSecondaryCues），只有内封主字幕的
-      // 后台抽取有加载窗口。
-      textCuesLoading: c.isSubtitleCuesLoading,
     )) {
       return null;
     }
@@ -213,7 +228,7 @@ class _VideoGraphicSubtitleOcrOverlayState
     _reset();
     _key = key;
     if (key == null) return;
-    _settle = Timer(kGraphicSubtitleOcrSettleDelay, _recognize);
+    _settle = Timer(kGraphicSubtitleOcrSettleDelay, () => _recognize());
   }
 
   /// 丢弃当前结果与在途识别（播放 / seek / 换轨）。
@@ -245,7 +260,8 @@ class _VideoGraphicSubtitleOcrOverlayState
     }
   }
 
-  Future<void> _recognize() async {
+  /// [attempt]：这一帧第几次重截（0 = 首次），见 [kGraphicSubtitleOcrCaptureRetryDelays]。
+  Future<void> _recognize({int attempt = 0}) async {
     final int generation = _generation;
     bool stale() => !mounted || generation != _generation;
     final bool graphic = widget.controller.isPlayerRenderedSubtitleActive;
@@ -253,7 +269,11 @@ class _VideoGraphicSubtitleOcrOverlayState
       final Uint8List? bytes =
           await (widget.captureFrame ??
               widget.controller.captureFrameWithSubtitles)();
-      if (bytes == null || stale()) return;
+      if (stale()) return;
+      if (bytes == null) {
+        _retryCapture(attempt);
+        return;
+      }
       _statusGraphic = graphic;
       _setStatus(GraphicSubtitlePauseOcrStatus.recognizing);
       final GraphicSubtitleOcrFrame? frame = await _recognizeBytes(
@@ -277,6 +297,25 @@ class _VideoGraphicSubtitleOcrOverlayState
       if (!stale()) _setStatus(GraphicSubtitlePauseOcrStatus.idle);
       if (mounted) widget.onError?.call(error, stack);
     }
+  }
+
+  /// 这一帧截帧没拿到图：按退避重截；重截机会用完就记一条错误（截帧失败本身不抛异常，
+  /// 不记就没有任何证据）。重截挂在 [_settle] 上，帧一变由 [_reset] 一起取消。
+  void _retryCapture(int attempt) {
+    if (attempt < kGraphicSubtitleOcrCaptureRetryDelays.length) {
+      _settle = Timer(
+        kGraphicSubtitleOcrCaptureRetryDelays[attempt],
+        () => _recognize(attempt: attempt + 1),
+      );
+      return;
+    }
+    widget.onError?.call(
+      StateError(
+        'pause OCR frame capture returned no image after '
+        '${attempt + 1} attempts',
+      ),
+      StackTrace.current,
+    );
   }
 
   Future<GraphicSubtitleOcrFrame?> _recognizeBytes(

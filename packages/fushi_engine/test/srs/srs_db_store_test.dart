@@ -143,7 +143,11 @@ void main() {
   Future<void> syncAll(List<SrsDbStore> stores) async {
     for (int round = 0; round < 3; round++) {
       for (final SrsDbStore s in stores) {
-        await SrsSyncEngine(directory: dir, replica: s).syncOnce();
+        await SrsSyncEngine(
+          directoryKey: 'test',
+          directory: dir,
+          replica: s,
+        ).syncOnce();
       }
     }
   }
@@ -384,7 +388,11 @@ void main() {
     );
     final String cardId = (await a.cardsOfNote(noteId)).single.id;
     await a.answer(cardId, 3);
-    await SrsSyncEngine(directory: dir, replica: a).syncOnce();
+    await SrsSyncEngine(
+      directoryKey: 'test',
+      directory: dir,
+      replica: a,
+    ).syncOnce();
     expect(await a.unpublishedEvents(), isEmpty);
     final String oldWriter = a.writerId;
     // 恢复备份：本机状态与缓存表被清空（backup_service 的 _srsDeviceLocalDiscardTables）。

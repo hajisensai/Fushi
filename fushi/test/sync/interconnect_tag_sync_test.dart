@@ -238,6 +238,89 @@ void main() {
     });
   });
 
+  group('作品私密标记', () {
+    test('TagManifestEntry JSON：privacy 两戳 / 仅 set / 缺省都往返；无 privacy 不出键', () {
+      TagManifestEntry roundtrip(TagManifestEntry e) =>
+          TagManifestEntry.fromJson(e.toJson());
+
+      final TagManifestEntry both = roundtrip(const TagManifestEntry(
+        kind: 'epub',
+        key: 'k',
+        privacy: (privateAt: 10, clearedAt: 20),
+      ));
+      expect(both.privacy, (privateAt: 10, clearedAt: 20));
+
+      const TagManifestEntry setOnly = TagManifestEntry(
+        kind: 'epub',
+        key: 'k',
+        privacy: (privateAt: 10, clearedAt: null),
+      );
+      expect(roundtrip(setOnly).privacy, (privateAt: 10, clearedAt: null));
+      expect(setOnly.toJson()['privacy'], <String, int>{'set': 10});
+
+      const TagManifestEntry none = TagManifestEntry(kind: 'epub', key: 'k');
+      expect(none.toJson().containsKey('privacy'), isFalse);
+      expect(roundtrip(none).privacy, isNull);
+    });
+
+    test('只有私密标记（无标签）的书也进清单；到对端后私密，之后清除也传回', () async {
+      final FushiDatabase a = memDb();
+      final FushiDatabase b = memDb();
+      await seedBook(a, 'novel');
+      await seedBook(b, 'novel');
+      await a.setMediaPrivate(TagHostKind.epub, 'novel', true, at: 1000);
+
+      final TagManifest manifestA = await loadLocalTagManifest(a);
+      final TagManifestEntry entry = manifestA.entries.singleWhere(
+          (TagManifestEntry e) => e.kind == TagHostKind.epub.dbValue);
+      expect(entry.addedAt, isEmpty);
+      expect(entry.tombstones, isEmpty);
+      expect(entry.privacy, (privateAt: 1000, clearedAt: null));
+
+      await syncPair(b, a);
+      expect(await b.isMediaPrivate(TagHostKind.epub, 'novel'), isTrue);
+
+      await b.setMediaPrivate(TagHostKind.epub, 'novel', false, at: 2000);
+      await syncPair(a, b);
+      expect(await a.isMediaPrivate(TagHostKind.epub, 'novel'), isFalse);
+      expect(await b.isMediaPrivate(TagHostKind.epub, 'novel'), isFalse);
+    });
+
+    test('戳相等：清除胜，两端都不私密', () async {
+      final FushiDatabase a = memDb();
+      final FushiDatabase b = memDb();
+      await seedBook(a, 'novel');
+      await seedBook(b, 'novel');
+      await a.setMediaPrivate(TagHostKind.epub, 'novel', true, at: 1500);
+      await b.setMediaPrivate(TagHostKind.epub, 'novel', false, at: 1500);
+
+      await syncPair(a, b);
+      await syncPair(b, a);
+      expect(await a.isMediaPrivate(TagHostKind.epub, 'novel'), isFalse);
+      expect(await b.isMediaPrivate(TagHostKind.epub, 'novel'), isFalse);
+    });
+
+    test('tagManifestCovers：本机私密戳比远端新 → false，合并后 → true', () async {
+      final FushiDatabase local = memDb();
+      final FushiDatabase remote = memDb();
+      await seedBook(local, 'novel');
+      await seedBook(remote, 'novel');
+      await remote.setMediaPrivate(TagHostKind.epub, 'novel', true, at: 1000);
+      await local.setMediaPrivate(TagHostKind.epub, 'novel', true, at: 1000);
+      await local.setMediaPrivate(TagHostKind.epub, 'novel', false, at: 3000);
+
+      final TagManifest localManifest = await loadLocalTagManifest(local);
+      expect(
+          tagManifestCovers(await loadLocalTagManifest(remote), localManifest),
+          isFalse);
+
+      await applyTagManifest(remote, localManifest);
+      expect(
+          tagManifestCovers(await loadLocalTagManifest(remote), localManifest),
+          isTrue);
+    });
+  });
+
   group('游戏跨设备身份', () {
     test('两台电脑各自入库的同一款游戏（id 不同）按 VNDB id 对号，标签双向一致', () async {
       final FushiDatabase host = memDb();
