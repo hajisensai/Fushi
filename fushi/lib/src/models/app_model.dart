@@ -716,6 +716,7 @@ class AppModel with ChangeNotifier {
       database: () => database,
       navigatorKey: navigatorKey,
       stopAudiobook: () => audiobookSession.stop(),
+      isMigrationReadonly: () => isMigrationReadonly,
     ),
   );
 

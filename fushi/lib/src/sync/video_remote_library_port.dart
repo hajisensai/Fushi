@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:fushi/src/anki/source_review_navigation.dart';
+import 'package:fushi/src/media/video/video_resource_check.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
@@ -17,10 +18,14 @@ import 'package:material_ui/material_ui.dart';
 /// [ExternalMediaNavigation.closeActive] 让正在开的视频页走它自己的退出流程（落进度、
 /// 退全屏、上报远端断点）再 push 新页，不会叠出第二个播放器，也不会在旧页写完前把它
 /// 摘掉。旧页关不掉（上面压着对话框等）就回 `host_busy`，不硬拆。
+///
+/// 一切「这次打不开」的判断（行不存在、文件缺失、迁移只读）都排在 closeActive 之前：
+/// 打不开就不能先把电脑上正在放的视频关掉。
 VideoRemoteLibrary createVideoRemoteLibrary({
   required FushiDatabase Function() database,
   required GlobalKey<NavigatorState> navigatorKey,
   required Future<void> Function() stopAudiobook,
+  required bool Function() isMigrationReadonly,
 }) {
   return VideoRemoteLibrary(
     list: () => listVideoRemoteLibrary(database()),
@@ -29,6 +34,7 @@ VideoRemoteLibrary createVideoRemoteLibrary({
         database: database(),
         navigatorKey: navigatorKey,
         stopAudiobook: stopAudiobook,
+        isMigrationReadonly: isMigrationReadonly,
         bookUid: bookUid,
       ),
     ),
@@ -76,11 +82,19 @@ Future<void> _open({
   required FushiDatabase database,
   required GlobalKey<NavigatorState> navigatorKey,
   required Future<void> Function() stopAudiobook,
+  required bool Function() isMigrationReadonly,
   required String bookUid,
 }) async {
+  // 迁移只读期间不开新页（新页会写进度），与卡片回看同一口径。
+  if (isMigrationReadonly()) {
+    throw const VideoRemoteException(409, 'host_busy');
+  }
   final VideoBookRepository repo = VideoBookRepository(database);
   final VideoBookRow? row = await repo.getByBookUid(bookUid);
   if (row == null) throw const VideoRemoteException(404, 'video_missing');
+  if (await isLocalVideoResourceMissing(row.videoPath)) {
+    throw const VideoRemoteException(404, 'video_missing');
+  }
   final NavigatorState? navigator = navigatorKey.currentState;
   if (navigator == null) throw const VideoRemoteException(409, 'host_busy');
   await DesktopLookupService.instance.bringMainWindowToFront();
