@@ -169,7 +169,7 @@ void main() {
       }
     });
 
-    test('所有视频：每次暂停都识别画面，与图形字幕在不在无关（BUG-3543）', () {
+    test('所有视频：每次暂停都识别画面，与图形字幕在不在无关（BUG-3560）', () {
       for (final bool graphic in <bool>[false, true]) {
         expect(
           VideoPauseOcrScope.all.shouldRecognize(

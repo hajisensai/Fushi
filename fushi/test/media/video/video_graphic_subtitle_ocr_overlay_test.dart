@@ -149,7 +149,7 @@ void main() {
     await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
   });
 
-  // BUG-3543：「所有视频」识别的是画面里烧进去的字，与文字字幕轨无关——以前文字字幕在屏 /
+  // BUG-3560：「所有视频」识别的是画面里烧进去的字，与文字字幕轨无关——以前文字字幕在屏 /
   // 还在抽取时整帧让位，暂停落在台词显示期间就静默不识别。
   testWidgets('所有视频档、文字字幕在屏：照样识别画面', (tester) async {
     final VideoPlayerController c = _pausedController(graphic: false);
@@ -212,7 +212,7 @@ void main() {
     await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
   });
 
-  group('BUG-3544 截帧失败（新帧还没显示）按退避重截同一帧', () {
+  group('BUG-3561 截帧失败（新帧还没显示）按退避重截同一帧', () {
     Future<void> pumpRetries(WidgetTester tester, int count) async {
       for (final Duration delay in kGraphicSubtitleOcrCaptureRetryDelays.take(
         count,

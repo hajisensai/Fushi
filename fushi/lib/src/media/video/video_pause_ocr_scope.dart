@@ -46,7 +46,7 @@ enum VideoPauseOcrScope {
   /// [all] 识别的是画面里烧进去的字（硬字幕、标题卡、招牌），与文字字幕轨无关：
   /// Fushi 自绘的文字字幕不在 libmpv 截帧里，OCR 本来就识别不到它。以前文字字幕
   /// 在屏 / 内封文字字幕还在抽取时整帧让位，暂停落在台词显示期间（想看这句时最常见）
-  /// 就静默不识别（BUG-3543，用户 2026-10-19：「字幕和 OCR 有什么关系，我要看的是
+  /// 就静默不识别（BUG-3560，用户 2026-10-19：「字幕和 OCR 有什么关系，我要看的是
   /// 视频里的文字」）。
   bool shouldRecognize({required bool graphicSubtitleActive}) => switch (this) {
     VideoPauseOcrScope.off => false,

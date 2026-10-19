@@ -26,7 +26,7 @@ const Duration kGraphicSubtitleOcrSettleDelay = Duration(milliseconds: 250);
 ///
 /// 暂停态 seek / 跳句 / 逐帧步进后，mpv 先清掉当前帧，新帧解码显示前截帧必然失败；
 /// 网络流缓冲、4K / HEVC 长 GOP 时新帧会晚于 [kGraphicSubtitleOcrSettleDelay] 才出来。
-/// 帧键（位置 + 字幕轨）此时已经不变，不重截这一帧就再也不会识别（BUG-3544）。
+/// 帧键（位置 + 字幕轨）此时已经不变，不重截这一帧就再也不会识别（BUG-3561）。
 ///
 /// 这是对外部时序的兼容层：media_kit 1.2.6 不暴露 mpv 的 `playback-restart` 事件，
 /// 而 `seeking` 属性观测会合并 yes→no 翻转（见 `VideoPlayerController` 的
