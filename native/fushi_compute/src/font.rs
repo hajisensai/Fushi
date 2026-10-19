@@ -955,21 +955,55 @@ mod tests {
         assert!(max < 64 << 10, "畸形输入触发了 {max} 字节的分配");
     }
 
+    /// 最小的合法 WOFF2：一张未变换的 `name` 表（`data`），Brotli 流用未压缩元块。
+    fn minimal_woff2(data: &[u8], len_field: Option<u32>, total_sfnt: u32) -> Vec<u8> {
+        assert!(data.len() < 128); // origLength 用 1 字节 UIntBase128
+        let stream = stored_brotli(data);
+        let len = 48 + 2 + stream.len();
+        let mut f = woff2_header(1, len, stream.len() as u32);
+        if let Some(l) = len_field {
+            f[8..12].copy_from_slice(&l.to_be_bytes());
+        }
+        f[16..20].copy_from_slice(&total_sfnt.to_be_bytes());
+        f.extend_from_slice(&[0x05, data.len() as u8]); // name，origLength
+        f.extend_from_slice(&stream);
+        assert_eq!(f.len(), len);
+        f
+    }
+
     #[test]
     fn header_length_and_total_sfnt_size_are_checked() {
-        let base = |len_field: u32, total_sfnt: u32| -> Vec<u8> {
-            let mut f = woff2_header(1, 0, 0);
-            f[8..12].copy_from_slice(&len_field.to_be_bytes());
-            f[16..20].copy_from_slice(&total_sfnt.to_be_bytes());
-            f.extend_from_slice(&[0x00, 0x00]); // cmap，origLength = 0
-            f
-        };
-        // length 与文件实际长度（50）不符。
-        assert_eq!(woff2_to_sfnt(&base(49, 4096)), Err(BadInput));
-        assert_eq!(woff2_to_sfnt(&base(u32::MAX, 4096)), Err(BadInput));
+        let data = [1u8, 2, 3, 4];
+        // 对照：头部字段都合法时能解出 sfnt（12 + 16 目录 + 4 字节表）。
+        let ok = woff2_to_sfnt(&minimal_woff2(&data, None, 4096))
+            .ok()
+            .map(|v| v.len());
+        assert_eq!(ok, Some(32));
+        let len = minimal_woff2(&data, None, 4096).len() as u32;
+        // length 与文件实际长度不符。
+        assert_eq!(
+            woff2_to_sfnt(&minimal_woff2(&data, Some(len - 1), 4096)),
+            Err(BadInput)
+        );
+        assert_eq!(
+            woff2_to_sfnt(&minimal_woff2(&data, Some(len + 1), 4096)),
+            Err(BadInput)
+        );
+        assert_eq!(
+            woff2_to_sfnt(&minimal_woff2(&data, Some(u32::MAX), 4096)),
+            Err(BadInput)
+        );
         // totalSfntSize 为 0 或超过上限。
-        assert_eq!(woff2_to_sfnt(&base(50, 0)), Err(BadInput));
-        assert_eq!(woff2_to_sfnt(&base(50, u32::MAX)), Err(BadInput));
+        assert_eq!(woff2_to_sfnt(&minimal_woff2(&data, None, 0)), Err(BadInput));
+        let over = (MAX_SFNT_SIZE + 1) as u32;
+        assert_eq!(
+            woff2_to_sfnt(&minimal_woff2(&data, None, over)),
+            Err(BadInput)
+        );
+        assert_eq!(
+            woff2_to_sfnt(&minimal_woff2(&data, None, u32::MAX)),
+            Err(BadInput)
+        );
     }
 
     /// 只含一个未压缩元块的 Brotli 流（WBITS=16，ISUNCOMPRESSED=1），再接一个空的末尾元块。
