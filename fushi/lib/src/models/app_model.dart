@@ -187,6 +187,7 @@ import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi/src/media/video/subtitle/download_subtitle_retry.dart';
 import 'package:fushi/src/media/video/subtitle/library_video_subtitle_backfill.dart';
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
@@ -5265,6 +5266,45 @@ class AppModel with ChangeNotifier {
   /// 用户改了字幕来源/语言后 `reloadVideoDownloadPipelineRuntime` 会一起重建。
   VideoSubtitleBackfillService? _videoSubtitleBackfillService;
 
+  /// 下载后缺字幕的定期重试（[retryUnavailableDownloadSubtitles]），与下载管线
+  /// 同起停。每行自带退避间隔，这里的周期只决定多久看一眼有没有到期的行。
+  Timer? _downloadSubtitleRetryTimer;
+  bool _downloadSubtitleRetryRunning = false;
+
+  /// 跑一轮下载后缺字幕重试。闸门与刮削后补字幕相同：偏好关了 / 没配任何在线
+  /// 字幕来源时整轮静默跳过；上一轮还没跑完就不叠加。
+  Future<void> _retryDownloadSubtitles() async {
+    if (_downloadSubtitleRetryRunning || !videoSubtitleBackfillAfterScrape) {
+      return;
+    }
+    final VideoSubtitleBackfillService? service = _videoSubtitleBackfillService;
+    if (service == null || service.registry.providers.isEmpty) return;
+    _downloadSubtitleRetryRunning = true;
+    try {
+      final DownloadSubtitleRetryReport report =
+          await retryUnavailableDownloadSubtitles(
+        database: database,
+        // 内嵌轨选择不挡：这些分集本该由下载流水线装上 sidecar。
+        backfill: (String videoId) => backfillLibraryVideoSubtitle(
+          database: database,
+          service: service,
+          videoId: videoId,
+          seriesLanguage: _seriesSubtitleLanguage,
+          embeddedSelectionBlocks: false,
+        ),
+        now: DateTime.now(),
+      );
+      if (report.attempted > 0) {
+        debugPrint('[subtitle-retry] attempted ${report.attempted}, '
+            'installed ${report.installed}, settled ${report.settled}');
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel._retryDownloadSubtitles', e, stack);
+    } finally {
+      _downloadSubtitleRetryRunning = false;
+    }
+  }
+
   VideoSourceScrapeCoordinator? _videoDownloadScrapeCoordinator;
   TorrentBackend? _videoDownloadBackend;
   String? _videoDownloadBackendCacheKey;
@@ -5938,6 +5978,12 @@ class AppModel with ChangeNotifier {
       resourceRegistry: resources,
       enqueue: pipeline.enqueue,
     )..start();
+    // 下载那一刻没搜到字幕的分集，过几小时再找（连载番字幕常晚一两天上传）。
+    _downloadSubtitleRetryTimer?.cancel();
+    _downloadSubtitleRetryTimer = Timer.periodic(
+      const Duration(minutes: 30),
+      (_) => unawaited(_retryDownloadSubtitles()),
+    );
     // BrowsePage may have rendered while this fire-and-forget runtime was
     // still starting. Publish the new service identity so its cached resource
     // dependencies are rebuilt instead of remaining permanently unavailable.
@@ -6069,6 +6115,8 @@ class AppModel with ChangeNotifier {
   Future<void> _disposeVideoDownloadPipelineRuntime({
     Duration? pipelineDrainTimeout,
   }) async {
+    _downloadSubtitleRetryTimer?.cancel();
+    _downloadSubtitleRetryTimer = null;
     final VideoDownloadJobsKeepAliveBinding? keepAlive =
         _videoDownloadKeepAlive;
     _videoDownloadKeepAlive = null;
