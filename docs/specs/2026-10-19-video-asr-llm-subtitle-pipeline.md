@@ -1,7 +1,7 @@
 # 视频日语字幕：多模型 ASR + LLM 校对管线接入方案
 
 - 日期：2026-10-19
-- 状态：方案（待审）
+- 状态：已实现（P0–P3 落地，P4 实测不落地）；实施记录与偏差见第 10 节
 - 范围：视频（动画为主）的日语字幕自动生成；有声书路径不变
 - 实验依据：本机离线基准 `C:\asr_bench`（脚本 `scripts/`，结论记录在 agent 记忆 `reference_ja_video_asr_benchmark_2026_10`），以及 2026-10-18～19 用同一套流程给《sin 七つの大罪》整部作品生成字幕的实跑
 
@@ -85,7 +85,7 @@
   - 进程统一经 `HelperProcessRegistry` 启动、登记、退出清理，与 ffmpeg 同一套。
   - 可执行文件与模型按清单固定版本和哈希下载，复用 `AsrModelStore` 的下载与缓存。
   - 驱动要求与现有 CUDA 13 判据一致（`gpu_acceleration.dart`：R580+、sm_75+）。
-- **其余平台**：保留现有 `AsrSlidingWindowSegmenter`（15 s / 3 s）。也可以把任务转给已配对的电脑（现有 `VideoRemoteJobKind.transcribe` 通道）。
+- **其余平台**：保留现有 `AsrSlidingWindowSegmenter`（15 s / 3 s）。也可以把任务转给已配对的电脑（host 任务 `kind=video_subtitle`；原稿写的 `VideoRemoteJobKind.transcribe` 是桌面 CLI 遥控本机播放器的任务，不是配对主机通道）。
 
 ### S2 识别稿
 
@@ -137,7 +137,9 @@
 | 其他桌面（无 N 卡、macOS） | 滑窗 | Parakeet（DirectML/CPU） | ✓ | 也可转给配对主机 |
 | Android / iOS | 滑窗或转给配对主机 | 同左 | ✓ | 本地 CPU 慢，默认建议转给主机 |
 
-附带修复：`packages/fushi_server/lib/src/host_bindings.dart` 的 `createServerAsrTranscriptionService` 把 `audioProfile` 写死为 `cleanSpeech`，导致服务端的视频转写永远走不到 Parakeet。改成由任务参数传入，视频默认 `mixedAudio`。
+附带修复：`packages/fushi_server/lib/src/host_bindings.dart` 的 `createServerAsrTranscriptionService` 把 `audioProfile` 写死为 `cleanSpeech`，导致服务端的视频转写永远走不到 Parakeet。改成由任务参数传入，视频默认 `mixedAudio`。（实施时发现 app 当 host 的装配点 `app_model.dart` 用的是同一个无参工厂，同样恒为 `cleanSpeech`，一并修了。）
+
+> 实施修订：audio.cpp v0.9.2 **没有 Linux CUDA 版 CLI**（Linux 只有 Vulkan / CPU 的 CLI，CUDA 只有 server 与 `.so`），所以 Linux 走 **Vulkan**。本机实测 Vulkan 与 CUDA 在同一块 286 s 音频上转写 2847 字只差 2 字、耗时约 2 倍。Windows 上非 NVIDIA 显卡也可在设置里显式选 Vulkan（AMD / Intel 未实测）。`auto`：Windows + 达 CUDA 门槛的 NVIDIA → CUDA；Linux + 检测到 GPU → Vulkan；其余走滑窗。
 
 ## 5. 任务模型
 
@@ -206,7 +208,45 @@
 ## 9. 风险与待定
 
 - **许可证**：MOSS-Transcribe-Diarize 权重、audio.cpp、Parakeet ja、faster-whisper-ja-760M 的许可证与再分发条件，接入前逐一确认。分发方式按「首次使用时下载」设计，不随安装包附带。
-- **CUDA 依赖**：audio.cpp 目前只用了 CUDA 13 构建；DirectML / Vulkan 版本是否可用未调研，决定了 MOSS 能否覆盖 AMD / Intel 显卡。
+- **CUDA 依赖**：已调研（见第 4 节修订）：audio.cpp 有 Vulkan 构建，本机 NVIDIA 上与 CUDA 结果几乎一致、耗时约 2 倍；AMD / Intel 显卡上未实测。
 - **角色名质量**：AniDB 角色名多为罗马音；MAL `name_kanji` 的覆盖率未统计。缺失时由百科页补，仍不足就靠用户编辑专名表。
 - **写法拿不准的情况**：例如《sin 七つの大罪》的爱称「レヴィー / レヴィ」，资料互相矛盾（插入歌名写「レヴィのレシピ」，台词发音是长音），程序无法判定。UI 要让用户一键改正后整作重跑 S4（只花 S4 的费用）。
 - **长期成本**：校对费用随提供商价格变化，任务开始前显示预估，结束后显示实际 usage。usage 缺失不能记为 0。
+
+## 10. 实施记录（2026-10-19）
+
+### 10.1 落地位置
+
+| 部分 | 位置 |
+|---|---|
+| 按给定分段识别、token 终点、多句长条拆分、MOSS / audio.cpp 运行器与清单 | 上游 hajisensai/fushi-subtitles#24（钉 `23dc8e8`，七处 git 依赖一起改） |
+| S0 / S3 / S4 / 歌曲判定 / 编排 / MOSS 识别器 / 平台判定 / host 任务 | `packages/fushi_engine/lib/media/video/subtitle/asr_proofread/` |
+| schema v119（`video_metadata_characters.original_name`、`video_subtitle_glossaries`） | `packages/fushi_core` |
+| app：生成面板、整季、专名表编辑页、设置「视频日语字幕」、远端视频走 host | `fushi/lib/src/media/video/subtitle/` |
+| CLI | `fushi_server subgen …` / `models pull moss` / `ctl jobs submit video_subtitle`；桌面 `fushi_cli video subtitle-gen` / `subtitle-glossary` |
+
+### 10.2 验收（Fushi 实现本身，12 集基准，AI = Sonnet，专名表由 S0 自动生成）
+
+| 组 | 读音 CER | 人名（K-ON 317 处） | 验收线 |
+|---|---|---|---|
+| A：MOSS 分段 + Parakeet + MOSS 候选 + AI 校对 + 写法统一 | 9.0% | 95.3%（≈302） | ≤ 9.0%、≥ 280：过 |
+| A 的识别稿（校对前） | 10.9% | 29.3% | ≤ 10.6%：**差 0.3**，见 10.4 |
+| B：滑窗 + AI 校对 + 写法统一 | 12.6% | 82.0% | 人名 ≥ 2.5× 基线（3.25×）、CER 不劣：过 |
+| C：滑窗不校对（现状基线） | 14.1% | 25.2% | — |
+| Python 原型同方案（双稿 + Sonnet） | 8.9% | 89.0% | 对照 |
+
+### 10.3 P4 结论：不落地
+
+同 12 集、同 Sonnet、同专名表，Python 原型对照：三稿 medoid + LLM 读音 8.8%、双稿 + LLM 8.9%（人名 87.4% vs 89.0%）。第三稿只贡献 0.1 个点，低于 0.4 的落地门槛。可行性记录：faster-whisper-ja-760M 的原始权重 `efwkjn/whisper-ja-760M`（whisper-large-v3-turbo 架构、裁剪词表 10240）可直接经 audio.cpp 的 `crisperwhisper` 加载器在 CUDA 上运行（输出按 BPE 片段带空格，需去空格），不需要 Python / CTranslate2；以后若要第三稿，走这条路。
+
+### 10.4 与原方案的偏差
+
+- **tokens sidecar 不写到视频旁**：没有消费方；拆分后的 token 时间（含新增的终点）留在任务目录 `final.json`。
+- **token 时间新增终点**：原 sidecar 只有起点，S5「切点不早于上一字结束」「最长停顿」全部退化；上游 CTC 解码现产出 token 终点（tokens.jsonl 可选字段 `e`，旧文件兼容）。
+- **角色日文名**：Jikan 的 `name_kanji` 只在 `/characters/{id}` 详情里，按主要角色、每作品 ≤ 8 次取；默认刮削主源是 AniDB（不走 MAL），所以多数作品的角色日文名仍为空，靠百科页与身份校验兜底。
+- **提示缓存**：原 `AiChatClient` 对 Anthropic 不发 `cache_control`；现规则 + 作品名 + 专名表作为可缓存 system 前缀，各批逐字相同。
+- **校对前 CER 差 0.3**：分段与原型完全一致，75% 段文本逐字相同，差异集中在唱段，推测为上游特征提取 / 数值精度差异（未验证），校对后基本抹平。
+- **服务端 GPU**：上游 FFI 后端的显存预算查询恒为 null，Parakeet 的 4 GB 门槛因此恒判 int8 + CPU；服务端装配层用 `nvidia-smi` 补了预算查询（根上应在上游 FFI 后端实现）。
+- **识别任务碰撞**：上游转录任务 id 只哈希「文件名 + 字节数」，16 kHz WAV 字节数只由时长决定，等长的两集会拿回对方的转录稿；抽出的音轨文件名改为按视频任务 id 区分。
+- **远端整季**：wire 上的远端视频不带 host 合集 id，远端合集按成员逐集提交 `videoId`，host 侧按作品键共用同一张专名表。
+- **未做真机端到端验证**：app 面板 / 播放器加载 / 远端 host 链路只有 widget 与 fake host 测试。
