@@ -119,8 +119,8 @@ class SrsCardAppearance {
   /// 例句注音常显（关 = 悬停 / 点按时显示）。
   final bool sentenceFurigana;
 
-  /// 手机精简背面：窄屏时多部词典改成页签、只显示一部，长主释义收到约半屏
-  /// （点「展开全文」看全）。关掉 = 窄屏也逐部列出、主释义全文。宽屏不受影响。
+  /// 手机精简背面：窄屏时长主释义收到约半屏（点「展开全文」看全）。关掉 = 主释义
+  /// 全文。宽屏不受影响。「全部释义」里的词典两种都是与查词弹窗同形的逐部折叠卡。
   final bool compactPhone;
 
   SrsCardAppearance copyWith({
