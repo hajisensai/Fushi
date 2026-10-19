@@ -3,11 +3,12 @@
     "name": "fushi-unified-ffmpeg",
     "version": "9.0.1",
     "upstream_commit": "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa",
-    "patched_commit": "03d0654614f492fc00051fedaab9ea9cd82e7c9e",
+    "patched_commit": "c0efa485e708f8b4d491e2c7cbb0bf3856f12895",
     "patches": {
       "0001-avformat-tls-add-tls_pin_sha256-certificate-pinning-.patch": "a3caf1c60ed2850dac6292f27d4982ee5e33b1db23a803e4cb7ab34b562161a3",
       "0002-avutil-log-primary-secondary-log-callback-for-in-pro.patch": "475ff899a336f659f2bcba38e415dcec0009b9cda193da23d621c23850533d77",
-      "0003-avcodec-videotoolbox-decode-10-bit-to-BGRA-on-iOS-fo.patch": "e86a681087a3eff29354eb43a5d79985ae155ff25f5fa745387a18345e7b2362"
+      "0003-avcodec-videotoolbox-decode-10-bit-to-BGRA-on-iOS-fo.patch": "e86a681087a3eff29354eb43a5d79985ae155ff25f5fa745387a18345e7b2362",
+      "0004-avformat-tls_openssl-verify-peers-with-the-Apple-sys.patch": "ed4ced5588ddcb6dd2f26b27fc6b8e9f599e81f100740f875b4fdf3677d6e3de"
     },
     "files": [
       "avcodec-63.dll",

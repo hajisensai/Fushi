@@ -106,11 +106,13 @@ get_filename_component(
 # Fushi patches); the archive also carries that FFmpeg's ffmpeg.exe / ffprobe.exe
 # on the same fbd*.dll, so card mining and playback share one FFmpeg and the
 # programs land beside fushi.exe through runtime-files.cmake.
-set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu1.7z")
+# `ffu2`: same build for the recipe's Apple-only patch 0004, plus the GPL
+# source notice in licenses/ffmpeg-unified/SOURCE.txt.
+set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2.7z")
 
 # Upstream source provenance; the committed patched archive is the build input.
 set(LIBMPV_URL "https://github.com/mpv-player/mpv/tree/36abaa32d00a7229ee206aae12dc0e97e7962dca")
-set(LIBMPV_MD5 "5de840423a4faa2cf0a2c96c030bc055")
+set(LIBMPV_MD5 "40cfbcb2574f6aceebc29f295f27795e")
 
 # Vendored archive (committed) + build-dir extraction target (TODO-1172).
 set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")

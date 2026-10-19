@@ -6,9 +6,9 @@ including upstream HDMV/BD-J navigation added on 2026-08-25. The previous
 2026-08-13 binary had neither `discnav` nor `disc-menu`; updating Flutter alone
 could not enable original menus.
 
-Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu1.7z` (42,941,899 bytes).
-SHA-256: `24a4828b189f262f16db8524bd6c0fefc05bd90f9a219c6fb571a9d2213135e2`.
-The `fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu1` suffix identifies this patched build; it is not an
+Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2.7z` (42,951,609 bytes).
+SHA-256: `9187cf8594bee5c90432ddbedd719dbca6e3d24c9741c17ecf71dfa0a5f147f1`.
+The `fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2` suffix identifies this patched build; it is not an
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
 
@@ -30,6 +30,15 @@ ran every verifier below on it: capability floor, `smoke-test.sh`,
 `probe_libmpv.py`, `verify_mkv_lace_dump.py` and `verify_dovi_p5.py` (P5 mean
 error 0.36 / 255 under all three hwdec modes, P8.1 base layer 0.27 - the same
 numbers as the `dovi1` archive).
+
+`ffu2` (2026-10-19): rebuilt for the recipe's patch 0004 (Apple-only system
+trust verification; `#ifdef __APPLE__`, so the Windows code is unchanged)
+so the archive matches the whole recipe patch set, and it now ships
+`licenses/ffmpeg-unified/SOURCE.txt` (GPL corresponding-source notice from
+`tool/ffmpeg-unified/source_notice.py`). Same MSYS2 package set; all
+verifiers passed again (P5 0.36 / 255, P8.1 0.27), plus
+`tool/ffmpeg-unified/https_trust_smoke.sh` (public HTTPS opens with
+`tls_verify=1`; self-signed / expired / wrong-host rejected by gnutls).
 
 `patches/mkv-laced-audio-timestamps.patch` (BUG-3499) fixes upstream
 `handle_block()` in `demux/demux_mkv.c`: when an audio track has no
