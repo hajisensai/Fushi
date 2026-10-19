@@ -72,8 +72,12 @@ void main() {
       expect(glue.contains('fushi-web-video-hide-advisory'), isTrue,
           reason: '常驻隐藏 style 必须有稳定 id（幂等注入）');
       final int styleAt = glue.indexOf('fushi-web-video-hide-advisory');
-      final String block = glue.substring(
-          styleAt, glue.indexOf('appendChild(advisoryStyle)', styleAt));
+      // document-start 时 <head>/<html> 可能还没有，glue 经 appendStyleEarly 挂（等根元素出现）。
+      final int appendAt =
+          glue.indexOf('appendStyleEarly(advisoryStyle)', styleAt);
+      expect(appendAt, greaterThan(styleAt),
+          reason: '常驻隐藏 style 必须经 appendStyleEarly 挂上（document-start 无 head 时不丢）');
+      final String block = glue.substring(styleAt, appendAt);
       expect(block.contains('display:none !important'), isTrue,
           reason: '常驻隐藏要用 display:none——分级提示不参与取词，摘出布局最干净');
     });

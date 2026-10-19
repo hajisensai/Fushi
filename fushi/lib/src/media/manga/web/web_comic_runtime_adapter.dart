@@ -68,6 +68,18 @@ class WebComicLibraryAdapter
   bool get isSupportedOnThisPlatform =>
       StoreRestrictedCapability.onlineMangaSource.isAvailable;
 
+  /// 合规门落在适配器自己的联网入口上（取页 / 取页字节 / 取封面）：网页漫画书可能随
+  /// 备份恢复或同步落到 iOS，阅读器与下载服务直接调这些方法，不经作品页的
+  /// [isSupportedOnThisPlatform] 判断。与 Mihon 在 iOS 上的表现一致：条目照常列出、
+  /// 已下载的章照常读，任何联网抓取都如实报「本平台不可用」。
+  void _ensureSupported() {
+    if (isSupportedOnThisPlatform) return;
+    throw const OnlineMangaUnavailable(
+      OnlineMangaUnavailableReason.platformUnsupported,
+      'Web comics are not available on this platform',
+    );
+  }
+
   @override
   Future<String?> sourceLabel(OnlineMangaLibraryEntry entry) async {
     final WebComicRuleSet rules = await _rules();
@@ -98,6 +110,7 @@ class WebComicLibraryAdapter
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
   }) async {
+    _ensureSupported();
     final WebComicChapterData? data = WebComicChapterData.fromRaw(chapter.raw);
     if (data == null) {
       throw OnlineMangaUnavailable(
@@ -217,6 +230,7 @@ class WebComicLibraryAdapter
 
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async {
+    _ensureSupported();
     if (page is! HttpMangaPageRef) {
       throw ArgumentError.value(page, 'page', 'not a web comic page reference');
     }
@@ -236,6 +250,7 @@ class WebComicLibraryAdapter
     OnlineMangaLibraryEntry entry,
     String url,
   ) async {
+    _ensureSupported();
     final Uri? pageUrl = Uri.tryParse(
       entry.series.raw['url']?.toString() ?? '',
     );

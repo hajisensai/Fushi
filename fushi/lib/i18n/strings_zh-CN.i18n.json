@@ -4879,6 +4879,7 @@
   "onboarding_feature_review_hint": "查词后一键制卡，并选择在哪里复习",
   "onboarding_feature_video": "视频",
   "onboarding_feature_video_hint": "字幕查词与制卡",
+  "onboarding_feature_web_basic_hint": "在 Fushi 里直接浏览网站，任何网页都能查词。",
   "onboarding_feature_web_hint": "在 Fushi 里直接浏览网站：视频站点用 Fushi 播放器看、网页漫画用 Fushi 阅读器读，任何网页都能查词；桌面端还可以装浏览器扩展。",
   "onboarding_features_modules_hint": "未勾选的页面不显示在导航栏，之后可在「设置 → 外观」改回。",
   "onboarding_features_modules_title": "库页",

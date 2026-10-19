@@ -4879,6 +4879,7 @@
   "onboarding_feature_review_hint": "Turn lookups into cards and choose where to review them",
   "onboarding_feature_video": "Video",
   "onboarding_feature_video_hint": "Untertitel nachschlagen und Karten erstellen",
+  "onboarding_feature_web_basic_hint": "Browse sites inside Fushi and look up words on any page.",
   "onboarding_feature_web_hint": "Browse sites inside Fushi: watch video sites in the Fushi player, read web comics in the Fushi reader, and look up words on any page. Desktop can also install the browser extension.",
   "onboarding_features_modules_hint": "Nicht angehakte Seiten werden in der Navigationsleiste ausgeblendet. Jederzeit änderbar unter Einstellungen → Erscheinungsbild.",
   "onboarding_features_modules_title": "Bibliotheksseiten",

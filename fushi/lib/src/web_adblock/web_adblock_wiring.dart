@@ -182,7 +182,7 @@ typedef WebAdblockInterceptCallback =
 ///
 /// ```dart
 /// final WebAdblockWiring adblock = applyAdblockTo(
-///   InAppWebViewSettings(javaScriptEnabled: true),
+///   mySettings, // 本页自己的 InAppWebViewSettings（javaScriptEnabled 等）
 ///   policy: ref.read(webAdblockServiceProvider),
 ///   shouldInterceptRequest: myExistingInterceptor, // 可选：本页已有的拦截器先跑
 /// );

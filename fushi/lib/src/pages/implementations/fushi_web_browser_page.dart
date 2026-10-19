@@ -31,6 +31,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -805,7 +806,7 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
                   icon: _scanning
                       ? const SizedBox.square(
                           dimension: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
                       : const FushiIcon(FushiIcons.manga),
                   label: Text(t.manga_web_read_chapter),

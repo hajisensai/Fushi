@@ -503,15 +503,30 @@ void main() {
         reason: 'iOS 上不预置任何漫画站。',
       );
       expect(browser, isNot(contains('Platform.isIOS')));
+      final String adapter = compactCode(
+        read('lib/src/media/manga/web/web_comic_runtime_adapter.dart'),
+      );
       expect(
-        compactCode(
-          read('lib/src/media/manga/web/web_comic_runtime_adapter.dart'),
-        ),
+        adapter,
         contains(
           'boolgetisSupportedOnThisPlatform=>'
           'StoreRestrictedCapability.onlineMangaSource.isAvailable;',
         ),
       );
+      // 阅读器（manga_fushi_page）与下载服务直接调适配器取页，不经作品页的
+      // isSupportedOnThisPlatform 判断；网页漫画书会随备份 / 同步落到 iOS，所以门
+      // 必须落在适配器自己的每个联网入口上。
+      expect(
+        adapter,
+        contains('void_ensureSupported(){if(isSupportedOnThisPlatform)return;'),
+      );
+      for (final String entry in <String>[
+        'requiredOnlineMangaChapterchapter,})async{_ensureSupported();',
+        'fetchChapterPage(OnlineMangaPageRefpage)async{_ensureSupported();',
+        'Stringurl,)async{_ensureSupported();',
+      ]) {
+        expect(adapter, contains(entry), reason: '网页漫画适配器的联网入口必须先过合规门：$entry');
+      }
     });
 
     test('网页小说（浏览器上的「用 Fushi 阅读（小说）」与追更）由 onlineNovelSource 门控，'
@@ -724,13 +739,14 @@ void main() {
             '第三方 WASM 源」这条能力接回来，必须先过 onlineMangaSource 合规门。',
       );
       final List<String> offenders = <String>[
-        for (final FileSystemEntity entity
-            in Directory('lib').listSync(recursive: true))
+        for (final FileSystemEntity entity in Directory(
+          'lib',
+        ).listSync(recursive: true))
           if (entity is File &&
               entity.path.endsWith('.dart') &&
-              entity
-                  .readAsStringSync()
-                  .contains('package:fushi/src/media/manga/aidoku/'))
+              entity.readAsStringSync().contains(
+                'package:fushi/src/media/manga/aidoku/',
+              ))
             entity.path,
       ];
       expect(offenders, isEmpty);
