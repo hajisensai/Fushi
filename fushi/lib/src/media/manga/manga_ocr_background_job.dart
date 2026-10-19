@@ -65,6 +65,7 @@ class MangaOcrBackgroundEvent {
     this.pageIndex,
     this.page,
     this.acceleration,
+    this.uploading = false,
   }) : resultPath = null,
        external = false,
        finished = false;
@@ -77,6 +78,7 @@ class MangaOcrBackgroundEvent {
   }) : pagesDone = pagesTotal,
        pageIndex = null,
        page = null,
+       uploading = false,
        finished = true;
 
   final int pagesDone;
@@ -86,6 +88,12 @@ class MangaOcrBackgroundEvent {
   final String? resultPath;
   final bool external;
   final bool finished;
+
+  /// true = 还在把页图传给已配对主机（远程引擎的第一阶段），[pagesDone] 是**已上传**
+  /// 页数而不是已识别页数；随后的识别阶段计数会从 0 重新数到 [pagesTotal]。
+  /// 显示进度的地方必须按它换文案，否则同一条「OCR x/y」会走两遍（BUG-3605）。
+  /// 其它引擎恒为 false。
+  final bool uploading;
 
   /// 本地 ONNX 引擎实际生效的推理加速状态；其它引擎为 null（BUG-1163）。
   final MangaOcrAcceleration? acceleration;

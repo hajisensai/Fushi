@@ -1261,6 +1261,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   int _wholeVolumeOcrDone = 0;
   int _wholeVolumeOcrTotal = 0;
 
+  /// 远程引擎还在上传页图（计数是已上传页数，不是已识别页数，BUG-3605）。
+  bool _wholeVolumeOcrUploading = false;
+
   /// 在线直读章的边看边识别（[MangaStreamPageOcr]）；只在直读章、自动触发时有。
   MangaStreamPageOcr? _streamOcr;
   bool _streamOcrStarting = false;
@@ -4295,6 +4298,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _wholeVolumeOcrRunning = true;
       _wholeVolumeOcrDone = snapshot?.pagesDone ?? 0;
       _wholeVolumeOcrTotal = snapshot?.pagesTotal ?? 0;
+      _wholeVolumeOcrUploading = snapshot?.uploading ?? false;
       _wholeVolumeOcrAcceleration = null;
       _wholeVolumeOcrDegradeNotified = false;
     });
@@ -4335,6 +4339,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     setState(() {
       _wholeVolumeOcrDone = event.pagesDone;
       _wholeVolumeOcrTotal = event.pagesTotal;
+      _wholeVolumeOcrUploading = event.uploading;
     });
     final int? pageIndex = event.pageIndex;
     final MokuroImage? page = event.page;
@@ -4399,6 +4404,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _volumeOcrRelayoutCandidate = isMangaOcrRelayoutCandidate(payload.ocr);
       _wholeVolumeOcrDone = event.pagesTotal;
       _wholeVolumeOcrTotal = event.pagesTotal;
+      _wholeVolumeOcrUploading = false;
       _wholeVolumeOcrRunning = false;
     });
     for (final int pageIndex in _loadedPageIndices()) {
@@ -4426,6 +4432,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _wholeVolumeOcrRunning = false;
         _wholeVolumeOcrDone = 0;
         _wholeVolumeOcrTotal = 0;
+        _wholeVolumeOcrUploading = false;
       });
     }
   }
@@ -6392,9 +6399,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!_chromeContentReady) return null;
     if (_wholeVolumeOcrRunning) {
       final MangaOcrAcceleration? accel = _wholeVolumeOcrAcceleration;
-      final String progress = _wholeVolumeOcrTotal > 0
-          ? 'OCR $_wholeVolumeOcrDone/$_wholeVolumeOcrTotal'
-          : 'OCR · ${t.manga_ocr_wizard_running}';
+      // 远程引擎先上传再识别，两段各自从 0 数到总页数：上传段换成上传文案，
+      // 免得同一条「OCR x/y」走完又从 0 再走一遍（BUG-3605）。
+      final String progress = _wholeVolumeOcrTotal <= 0
+          ? 'OCR · ${t.manga_ocr_wizard_running}'
+          : _wholeVolumeOcrUploading
+          ? 'OCR · ${t.manga_remote_ocr_uploading(done: _wholeVolumeOcrDone, total: _wholeVolumeOcrTotal)}'
+          : 'OCR $_wholeVolumeOcrDone/$_wholeVolumeOcrTotal';
       return MangaOcrProgressBadge(
         key: const ValueKey<String>('manga_ocr_acceleration_label'),
         text: accel == null ? progress : '$progress · ${accel.label}',

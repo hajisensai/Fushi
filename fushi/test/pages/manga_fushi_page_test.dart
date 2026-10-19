@@ -1160,6 +1160,122 @@ void main() {
     expect(find.text('OCR 1/2'), findsNothing, reason: 'HUD 进度随任务结束消失');
   });
 
+  testWidgets('BUG-3605：远程 OCR 的上传段与识别段分开显示，进度不会走两遍', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final _MangaTestAppModel appModel = _MangaTestAppModel(db);
+
+    final Directory bookDir = Directory.systemTemp.createTempSync(
+      'manga_ocr_remote_phase_',
+    );
+    addTearDown(() {
+      if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
+    });
+    File(p.join(bookDir.path, 'manga.json')).writeAsStringSync(_mangaJson());
+    Directory(p.join(bookDir.path, 'images')).createSync();
+    File(p.join(bookDir.path, 'images', 'p001.jpg')).writeAsBytesSync(<int>[1]);
+    File(p.join(bookDir.path, 'images', 'p002.jpg')).writeAsBytesSync(<int>[2]);
+
+    const String bookKey = 'ocr remote phase book';
+    final StreamController<MangaOcrBackgroundEvent> source =
+        StreamController<MangaOcrBackgroundEvent>();
+    final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+    registry.start(
+      job: MangaOcrBackgroundJob(
+        bookKey: bookKey,
+        managedDirectory: bookDir.path,
+        engine: MangaOcrEngineId.pairedHost,
+        events: source.stream,
+      ),
+      mangaJsonPath: p.join(bookDir.path, 'manga.json'),
+    );
+    // 上传段：已上传 1/2 页，host 还一页都没识别。
+    source.add(
+      const MangaOcrBackgroundEvent.progress(
+        pagesDone: 1,
+        pagesTotal: 2,
+        uploading: true,
+      ),
+    );
+
+    await tester.runAsync(() async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: bookKey,
+          title: 'ocr remote phase book',
+          epubPath: 'manga.json',
+          extractDir: bookDir.path,
+          chapterCount: 2,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+          format: const Value<String>('manga'),
+        ),
+      );
+      await tester.pumpWidget(
+        _harness(
+          appModel,
+          _item(bookKey),
+          bookKey,
+          extraOverrides: <Override>[
+            mangaOcrServiceProvider.overrideWithValue(
+              _FakeMangaOcrService(ready: true),
+            ),
+            mangaOcrJobRegistryProvider.overrideWithValue(registry),
+          ],
+        ),
+      );
+      for (int i = 0; i < 50; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+        if (find
+            .byKey(const ValueKey<String>('manga_content_ready'))
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump();
+    });
+    await tester.pump();
+
+    expect(
+      find.text('OCR · ${t.manga_remote_ocr_uploading(done: 1, total: 2)}'),
+      findsOneWidget,
+      reason: '上传段必须标成上传，不能冒充识别进度',
+    );
+    expect(
+      find.text('OCR 1/2'),
+      findsNothing,
+      reason: '上传计数不得显示成「OCR x/y」，否则识别段从 0 重数就像走了两遍',
+    );
+
+    // 识别段：host 识别了 1/2 页。
+    await tester.runAsync(() async {
+      source.add(
+        const MangaOcrBackgroundEvent.progress(pagesDone: 1, pagesTotal: 2),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump();
+    });
+    await tester.pump();
+    expect(find.text('OCR 1/2'), findsOneWidget);
+    expect(
+      find.text('OCR · ${t.manga_remote_ocr_uploading(done: 1, total: 2)}'),
+      findsNothing,
+    );
+
+    await tester.runAsync(() async {
+      await registry.cancel(bookKey);
+      await source.close();
+    });
+  });
+
   testWidgets('页码弹窗关闭动画期间不使用已 dispose 的输入控制器', (WidgetTester tester) async {
     int? selected;
     await tester.pumpWidget(

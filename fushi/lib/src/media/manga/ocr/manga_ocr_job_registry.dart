@@ -96,6 +96,7 @@ class MangaOcrRunningJob {
       MangaOcrBackgroundEvent.progress(
         pagesDone: last?.pagesDone ?? 0,
         pagesTotal: last?.pagesTotal ?? 0,
+        uploading: last?.uploading ?? false,
         pageIndex: update.pageIndex,
         page: update.page,
       ),
