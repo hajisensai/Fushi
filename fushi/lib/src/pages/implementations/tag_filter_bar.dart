@@ -656,8 +656,9 @@ enum FushiTagFilterBarPart {
   actions,
 
   /// 只出「排序（与筛选）」菜单的零尺寸常驻锚点（库页单行页头，2026-10-14）：
-  /// 排序按钮挪进页头动作后可能被收进「⋯」，菜单不能挂在按钮上——锚点常驻在
-  /// 页头下沿右侧，按钮（或 ⋯ 菜单里的那一项）经
+  /// 排序按钮挪进页头动作后可能被收进「⋯」，菜单不能挂在按钮上——锚点经
+  /// [FushiPageHeader.menuAnchor] 叠在页头动作组右下角（动作被外壳浮动工具栏
+  /// 代放时随那枚胶囊走），按钮（或 ⋯ 菜单里的那一项）经
   /// [FushiTagFilterBar.sortMenuController] 打开它。按钮由
   /// [libraryHeaderTagActions] 生成。
   sortMenuAnchor,

@@ -530,8 +530,21 @@ class WebVideoSession {
   /// 已采到的字幕轨整轨重投（换了书身份后 cue 的 bookKey 要跟着换）。
   Future<void> replayCues() => evaluate('window.__fushiWebVideo.replayCues()');
 
-  Future<void> setVideoOnly(bool on) =>
-      evaluate('window.__fushiWebVideo.setVideoOnly($on)');
+  /// YouTube 画质目标高度（设置「YouTube 画质」，0 = 自动 = 可用最高档）。每次进只留画面
+  /// 都随 [setVideoOnly] 带下去：整页导航后 glue 是新文档、状态从头来。
+  int qualityTargetHeight = 0;
+
+  Future<void> setVideoOnly(bool on) => evaluate(
+    'window.__fushiWebVideo.setVideoOnly($on, $qualityTargetHeight)',
+  );
+
+  /// 播放中改画质目标：记下（之后的 [setVideoOnly] 带它），并让页面当场重选。
+  Future<void> setQualityTarget(int height) {
+    qualityTargetHeight = height < 0 ? 0 : height;
+    return evaluate(
+      'window.__fushiWebVideo.setQualityTarget($qualityTargetHeight)',
+    );
+  }
 
   Future<void> setPlayerChromeHidden(bool hidden) =>
       evaluate('window.__fushiWebVideo.setPlayerChromeHidden($hidden)');

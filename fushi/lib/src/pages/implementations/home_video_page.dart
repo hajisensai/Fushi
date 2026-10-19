@@ -4285,7 +4285,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        if (!isCupertinoPlatform(context)) _buildPageHeader(),
+                        if (!isCupertinoPlatform(context))
+                          _buildPageHeader(allTags),
                         // 单行页头（2026-10-14）：搜索 / 筛选 / 多选 / 排序 /
                         // 管理标签并进页头动作，搜索点开整行换成搜索栏；筛选
                         // 维度收进「筛选」面板。下面只剩一行 chip：生效中的
@@ -4297,7 +4298,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                             _buildVideoSearchBar(allTags),
                             _buildTagFilterBar(allTags),
                           ] else ...<Widget>[
-                            _buildSortMenuAnchor(allTags),
                             _buildTagFilterBar(
                               allTags,
                               leadingChips: _activeFilterChips(),
@@ -6986,7 +6986,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 页头：视频入库与整库刮削已统一迁到「来源」视图；媒体库只保留库内管理动作。
-  Widget _buildPageHeader() {
+  Widget _buildPageHeader(List<BookTagRow> tags) {
+    // 排序菜单锚点跟着页头动作组走（与排序按钮同一处出现）。
+    final Widget? sortMenuAnchor =
+        widget.section != VideoLibrarySection.home &&
+            !isCupertinoPlatform(context)
+        ? _buildSortMenuAnchor(tags)
+        : null;
     final List<Widget> actions = <Widget>[
       if (widget.section == VideoLibrarySection.allVideos)
         FushiIconButton(
@@ -7108,12 +7114,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         title: navigation,
         actions: _selectionMode ? _selectionHeaderActions() : actions,
         search: _headerSearchForSection,
+        menuAnchor: sortMenuAnchor,
       );
     }
     return FushiPageHeader(
       title: t.nav_video,
       actions: actions,
       search: _headerSearchForSection,
+      menuAnchor: sortMenuAnchor,
     );
   }
 
@@ -7126,26 +7134,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       ? null
       : _headerSearch;
 
-  /// 「排序」菜单的零尺寸常驻锚点（贴在页头下沿右侧）：页头里的排序按钮可能
-  /// 被收进「⋯」，菜单挂在这里才总能打开。
+  /// 「排序」菜单的零尺寸锚点（[FushiPageHeader.menuAnchor]，叠在页头动作组
+  /// 右下角）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开。
   Widget _buildSortMenuAnchor(List<BookTagRow> tags) {
-    return Align(
-      alignment: AlignmentDirectional.topEnd,
-      child: Padding(
-        padding: EdgeInsetsDirectional.only(
-          end: FushiDesignTokens.of(context).spacing.page,
-        ),
-        child: FushiTagFilterBar(
-          tags: tags,
-          part: FushiTagFilterBarPart.sortMenuAnchor,
-          sortMenuController: _sortMenu,
-          onToggleFilter: _toggleFilter,
-          onReorder: _reorderTags,
-          sortMode: _sortMode,
-          sortModeLabel: _sortModeLabel,
-          onSortModeChanged: _setSortMode,
-        ),
-      ),
+    return FushiTagFilterBar(
+      tags: tags,
+      part: FushiTagFilterBarPart.sortMenuAnchor,
+      sortMenuController: _sortMenu,
+      onToggleFilter: _toggleFilter,
+      onReorder: _reorderTags,
+      sortMode: _sortMode,
+      sortModeLabel: _sortModeLabel,
+      onSortModeChanged: _setSortMode,
     );
   }
 

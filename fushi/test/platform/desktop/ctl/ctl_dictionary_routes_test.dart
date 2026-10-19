@@ -150,6 +150,73 @@ void main() {
     expect(ctlDictionaryJson(term)['enabled'], isTrue);
   });
 
+  group('BUG-3573：混合词典的汉字部分', () {
+    final Dictionary mixed = Dictionary(
+      name: 'mixed',
+      formatKey: 'yomichan',
+      order: 4,
+      metadata: const <String, String>{
+        kDictHasKanjiKey: 'true',
+        kDictKanjiHiddenKey: 'true',
+        kDictKanjiOrderKey: '0',
+      },
+      hiddenLanguages: const <String>[],
+    );
+    final Dictionary kanji = Dictionary(
+      name: 'kanjidic',
+      formatKey: 'yomichan',
+      order: 1,
+      type: DictionaryType.kanji,
+    );
+    final Dictionary term = Dictionary(
+      name: 'term',
+      formatKey: 'yomichan',
+      order: 0,
+    );
+
+    test('ctlDictionaryJson 带出汉字部分的开关与位置，普通词典不带', () {
+      final Map<String, Object?> json = ctlDictionaryJson(mixed);
+      expect(json['enabled'], isTrue, reason: '术语部分');
+      expect(json['kanjiEnabled'], isFalse, reason: '汉字部分独立开关');
+      expect(json['kanjiOrder'], 0);
+      expect(json['order'], 4);
+      expect(ctlDictionaryJson(term).containsKey('kanjiEnabled'), isFalse);
+      expect(ctlDictionaryJson(kanji).containsKey('kanjiEnabled'), isFalse);
+    });
+
+    test('ctlCheckKanjiPartParams：kanjiEnabled 只给混合词典，kanjiPosition 只给汉字分区成员',
+        () {
+      Matcher status(int code) => throwsA(
+            isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', code),
+          );
+      ctlCheckKanjiPartParams(mixed, kanjiEnabled: true, kanjiPosition: 1);
+      ctlCheckKanjiPartParams(kanji, kanjiPosition: 2);
+      expect(() => ctlCheckKanjiPartParams(kanji, kanjiEnabled: true), status(400));
+      expect(() => ctlCheckKanjiPartParams(term, kanjiEnabled: false), status(400));
+      expect(() => ctlCheckKanjiPartParams(term, kanjiPosition: 1), status(400));
+      expect(() => ctlCheckKanjiPartParams(mixed, kanjiPosition: 0), status(400));
+    });
+
+    test('在「汉字」分区里排序：成员与顺序取 kanjiSectionDictionariesOf', () {
+      final List<Dictionary> section =
+          kanjiSectionDictionariesOf(<Dictionary>[term, kanji, mixed]);
+      expect(section.map((Dictionary d) => d.name), <String>['mixed', 'kanjidic']);
+      final List<Dictionary> moved = ctlReorderDictionaries(
+        section,
+        mixed,
+        2,
+        section: DictionaryType.kanji,
+      );
+      expect(moved.map((Dictionary d) => d.name), <String>['kanjidic', 'mixed']);
+      expect(
+        () => ctlReorderDictionaries(section, term, 1,
+            section: DictionaryType.kanji),
+        throwsA(isA<CtlFailure>().having(
+            (CtlFailure f) => f.message, 'message', contains('kanji 分区'))),
+      );
+    });
+  });
+
   test('ctlSearchResultJson 投影词条并可截断释义', () {
     final DictionarySearchResult result = DictionarySearchResult(
       searchTerm: '食べる',
