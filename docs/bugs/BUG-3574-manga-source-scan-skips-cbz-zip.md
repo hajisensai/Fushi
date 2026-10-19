@@ -1,4 +1,4 @@
-## BUG-3573 · 漫画来源扫描跳过 .cbz / .zip 卷（显示 0 卷），漫画来源里的 .epub / .pdf 卷也被丢掉
+## BUG-3574 · 漫画来源扫描跳过 .cbz / .zip 卷（显示 0 卷），漫画来源里的 .epub / .pdf 卷也被丢掉
 - **报告**：2026-10-19（用户：外部用户反馈，`D:/MangaFushi/Veil/Veil（1）….zip` 等 7 个 zip 卷的漫画来源扫描结果「0 volumes」）
 - **真实性**：✅ 真 bug。根因三处：
   1. `fushi/lib/src/media/source_library/source_library_scanner.dart:117`（旧 `kScanMangaArchiveExtensions`）手抄了一份只有 `rar` / `cbr` / `cb7` 的白名单，与 `fushi/lib/src/media/import/import_carrier.dart:84` 的载体真相源 `kMangaCarrierFileExtensions` 漂移：`.cbz` / `.zip` 卷被静默跳过；漫画来源里的 `.epub` / `.pdf` 被分进 `books`，又在 manga 分支整个丢掉。手动导入同一批文件完全正常。

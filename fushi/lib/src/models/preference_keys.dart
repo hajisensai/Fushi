@@ -673,7 +673,7 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'media_source_secret_',
   // 书 / 漫画来源的扫描索引（后缀 = MediaSources.id，JSON：源相对路径 → 书 uid，
   // 外加「不是本类媒体」的负向表 源相对路径 → 内容指纹）。无头服务端书 / 漫画根扫描
-  // （BUG-2816）与 app 漫画来源扫描（BUG-3573）共用（引擎 book_library_prune.dart）；
+  // （BUG-2816）与 app 漫画来源扫描（BUG-3574）共用（引擎 book_library_prune.dart）；
   // 设备本地状态，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
   'media_source_scan_index_',
   'src:',
