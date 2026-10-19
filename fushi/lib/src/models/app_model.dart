@@ -197,6 +197,8 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinato
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_path_migration.dart'
+    show DownloadRelocation;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -6106,13 +6108,7 @@ class AppModel with ChangeNotifier {
     final TorrentBackend? backend = _videoDownloadBackend;
     if (backend == null) return null;
     final List<VideoDownloadPathMapping> mappings =
-        <VideoDownloadPathMapping>[];
-    for (final VideoDownloadBackendPathMappingConfig value
-        in prefsRepo.videoDownloadBackendPathMappings) {
-      if (value.backendProfileId == identity.profileId) {
-        mappings.add(value.toMapping());
-      }
-    }
+        downloadPathMappingsForProfile(identity.profileId);
     return VideoDownloadBackendBinding(
       backend: backend,
       identity: identity,
@@ -6153,18 +6149,34 @@ class AppModel with ChangeNotifier {
   /// TODO-1961-c+d：下载内容改名 / 移动（引擎侧动，做种不断；库路径同步迁移）。
   ///
   /// 后端工厂复用 [_torrentBackendFor]，所以内置引擎与外接 qb 两条路都走得通；
-  /// 库迁移走 [VideoBookRepository.migrateMediaPaths]。两步的原子性由
+  /// 库迁移走 [VideoBookRepository.applyDownloadRelocation]。两步的原子性由
   /// [DownloadRelocateService] 保证（引擎失败则库不动）。
+  ///
+  /// 后端坐标 ↔ 本机坐标走当前后端配置档的下载路径映射（BUG-3539），与下载
+  /// 流水线是同一份契约。
   DownloadRelocateService get downloadRelocateService =>
       DownloadRelocateService(
         backendFactory: () => _torrentBackendFor(
             effectiveTorrentConfig(prefsRepo.qbConnectionConfig)),
-        migrateLibraryPaths: ({
-          required String fromPath,
-          required String toPath,
-        }) =>
-            VideoBookRepository(database)
-                .migrateMediaPaths(fromPath: fromPath, toPath: toPath),
+        pathMappings: () async {
+          final VideoDownloadBackendIdentity identity =
+              await _currentVideoDownloadBackendIdentity(
+            effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
+          );
+          return downloadPathMappingsForProfile(identity.profileId);
+        },
+        applyRelocation: (DownloadRelocation relocation) =>
+            VideoBookRepository(database).applyDownloadRelocation(relocation),
+      );
+
+  /// 后端配置档 [profileId]（任务行 `backendProfileId`）的显式下载路径映射。
+  /// 任务的后端坐标只能用它**自己那台后端**的映射解释，不能用当前设置的。
+  List<VideoDownloadPathMapping> downloadPathMappingsForProfile(
+    String? profileId,
+  ) =>
+      videoDownloadPathMappingsForProfile(
+        prefsRepo.videoDownloadBackendPathMappings,
+        profileId,
       );
 
   /// 刷新 [_animeDownloadPlanIds]（resume 剪枝的真相源）并返回它。

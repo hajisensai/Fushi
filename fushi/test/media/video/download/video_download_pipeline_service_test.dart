@@ -104,6 +104,7 @@ void main() {
       database: environment.database,
       job: job,
       deleteFiles: false,
+      pathMappings: const <VideoDownloadPathMapping>[],
     );
     expect(await environment.database.getVideoDownloadJob(jobId), isNull);
   });
@@ -771,6 +772,12 @@ void main() {
 
     expect(backend.moveStoragePaths, <String>['/media']);
     expect(backend.renameFileCalls, 1);
+    // BUG-3540：整理把种子 moveStorage 到了来源根，任务记的后端保存位置必须
+    // 跟着换成来源根（后端坐标），否则 currentRelativePath 会拼回旧下载目录。
+    expect(
+      (await environment.database.getVideoDownloadJob(jobId))!.observedSavePath,
+      '/media',
+    );
   });
 
   test('organize validates observed path before backend storage side effects',
@@ -2591,11 +2598,86 @@ void main() {
       database: environment.database,
       job: job,
       deleteFiles: true,
+      pathMappings: const <VideoDownloadPathMapping>[],
     );
 
     expect(await outside.exists(), isTrue);
     expect(await inside.exists(), isFalse);
     expect(await environment.database.getVideoDownloadJob(jobId), isNull);
+  });
+
+  // BUG-3539：外接远端 qBittorrent 的 observedSavePath 是它那台机器上的路径，
+  // 任务删除必须经该配置档的路径映射换成本机路径再删，绝不把远端路径当本机路径。
+  group('delete resolves the backend save path through the path mapping', () {
+    const String remoteSavePath = '/fushi-remote-qb-test/downloads';
+
+    Future<({_PipelineEnvironment environment, File local, String jobId})>
+        seed() async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: _FakeTorrentBackend());
+      addTearDown(environment.close);
+      final Directory mounted =
+          Directory(p.join(environment.root.path, 'nas', 'downloads'));
+      await mounted.create(recursive: true);
+      final File local = File(p.join(mounted.path, 'Show S01E01.mkv'));
+      await local.writeAsString('payload');
+      const String jobId = 'remote-qb-delete-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+        observedSavePath: remoteSavePath,
+      );
+      await environment.insertBackendFile(
+        jobId: jobId,
+        name: 'Show S01E01.mkv',
+      );
+      return (environment: environment, local: local, jobId: jobId);
+    }
+
+    test('mapped remote save path deletes the local mount file', () async {
+      final seeded = await seed();
+      final VideoDownloadJobRow job =
+          (await seeded.environment.database.getVideoDownloadJob(
+        seeded.jobId,
+      ))!;
+      await deletePersistedVideoDownloadJob(
+        database: seeded.environment.database,
+        job: job,
+        deleteFiles: true,
+        pathMappings: <VideoDownloadPathMapping>[
+          VideoDownloadPathMapping(
+            remoteRoot: remoteSavePath,
+            localRoot: seeded.local.parent.path,
+          ),
+        ],
+      );
+      expect(await seeded.local.exists(), isFalse);
+      expect(
+        await seeded.environment.database.getVideoDownloadJob(seeded.jobId),
+        isNull,
+      );
+    });
+
+    test('unmapped remote save path is not interpreted as a local path',
+        () async {
+      final seeded = await seed();
+      final VideoDownloadJobRow job =
+          (await seeded.environment.database.getVideoDownloadJob(
+        seeded.jobId,
+      ))!;
+      await deletePersistedVideoDownloadJob(
+        database: seeded.environment.database,
+        job: job,
+        deleteFiles: true,
+        pathMappings: const <VideoDownloadPathMapping>[],
+      );
+      // 映射不到 → 这条兜底不走，本机文件不受牵连；任务行照样删除。
+      expect(await seeded.local.exists(), isTrue);
+      expect(
+        await seeded.environment.database.getVideoDownloadJob(seeded.jobId),
+        isNull,
+      );
+    });
   });
 
   // BUG-2949：一个任务的多集入库行走一次批量删除，全部消失、库外的行不受牵连。
@@ -2647,6 +2729,7 @@ void main() {
       database: environment.database,
       job: job,
       deleteFiles: true,
+      pathMappings: const <VideoDownloadPathMapping>[],
     );
 
     for (final String uid in episodeUids) {
@@ -2702,6 +2785,7 @@ void main() {
         database: environment.database,
         job: job,
         deleteFiles: true,
+        pathMappings: const <VideoDownloadPathMapping>[],
       ),
       throwsA(isA<VideoDownloadJobFilesNotDeleted>()),
     );

@@ -109,11 +109,11 @@ Future<DownloadSubtitleRetryReport> retryUnavailableDownloadSubtitles({
     final String? bookUid =
         bookUidByPath[p.canonicalize(file.finalAbsolutePath!)];
     final int at = nowMs;
-    // 路径对不上**不是**「视频已离库」的证据：下载内容改名 / 移动
-    // （`AppModel.downloadRelocateService` → `VideoBookRepository.migrateMediaPaths`）
-    // 只改写库里的 `video_books.video_path`，任务行的 `finalAbsolutePath` 原样不动；
-    // 数据根迁移同理（`video_path` 按 documentsRooted 改写，`finalAbsolutePath` 按
-    // 外部路径声明不改，见 path_rebase_coverage.dart）。任务行也没有记下导入时的
+    // 路径对不上**不是**「视频已离库」的证据：app 内的改名 / 移动
+    // （`AppModel.downloadRelocateService` →
+    // `VideoBookRepository.applyDownloadRelocation`）与数据根迁移会把
+    // `video_books.video_path` 与任务行 `finalAbsolutePath` 一起改写，但用户在
+    // app 外挪动文件、或库侧重扫改了路径时两者仍会分叉。任务行也没有记下导入时的
     // bookUid，没有别的身份可认。所以只记原因、留在 unavailable 等下一轮；真离库的
     // 行在重试窗口过后自然不再被查出来。
     final VideoSubtitleBackfillReport? report = bookUid == null
