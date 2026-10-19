@@ -10,6 +10,8 @@ import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
     show FushiM3eShape;
 import 'package:material_ui/material_ui.dart';
 
+import '../helpers/node_runtime.dart';
+
 /// 卡面「跟随设计系统」样式覆盖（[SrsCardAppearance.designSkin]）：
 /// - 开 / 关两态生成的外壳文档（关 = 零注入：主题样式、类名、外壳 HTML、下发脚本里都没有覆盖）；
 /// - 只作用于非 Fushi 卡片；MD3 / Apple 取各自的形状令牌与字体；
@@ -76,6 +78,11 @@ String _hex(Color c) =>
     '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
 
 void main() {
+  // 判定脚本的浏览器用例要 node + headless Chrome：本地缺时 skip 并写明原因，CI 上缺一律失败。
+  final NodeTestRuntime browserRuntime = NodeTestRuntime.probe(
+    needsChrome: true,
+  );
+
   group('偏好', () {
     test('默认开；JSON 往返；缺项按默认、坏值按默认', () {
       expect(const SrsCardAppearance().designSkin, isTrue);
@@ -84,8 +91,9 @@ void main() {
       expect(SrsCardAppearance.decode(off.encode()), off);
       expect(SrsCardAppearance.decode('{}').designSkin, isTrue);
       expect(
-        SrsCardAppearance.fromJson(const <String, Object?>{'designSkin': 'x'})
-            .designSkin,
+        SrsCardAppearance.fromJson(const <String, Object?>{
+          'designSkin': 'x',
+        }).designSkin,
         isTrue,
       );
       expect(off.copyWith(designSkin: true).designSkin, isTrue);
@@ -98,7 +106,10 @@ void main() {
       final ColorScheme cs = _theme().colorScheme;
       expect(d.themeCss, contains('--fushi-ds-bg:${_hex(cs.surface)};'));
       expect(d.themeCss, contains('--fushi-ds-fg:${_hex(cs.onSurface)};'));
-      expect(d.themeCss, contains('--fushi-ds-outline:${_hex(cs.outlineVariant)};'));
+      expect(
+        d.themeCss,
+        contains('--fushi-ds-outline:${_hex(cs.outlineVariant)};'),
+      );
       expect(d.themeCss, contains('--fushi-ds-link:${_hex(cs.primary)};'));
       expect(d.themeCss, contains('[data-fushi-ds~="panel"]'));
       expect(d.classes.split(' '), contains(kSrsDesignSkinClass));
@@ -160,7 +171,10 @@ void main() {
       final SrsCardFaceDocument d = _doc(skin: true, dark: true);
       final ColorScheme cs = _theme(dark: true).colorScheme;
       expect(d.themeCss, contains('--fushi-ds-bg:${_hex(cs.surface)};'));
-      expect(d.classes.split(' '), containsAll(<String>['nightMode', kSrsDesignSkinClass]));
+      expect(
+        d.classes.split(' '),
+        containsAll(<String>['nightMode', kSrsDesignSkinClass]),
+      );
     });
   });
 
@@ -217,11 +231,7 @@ void main() {
   test(
     '判定脚本在真实 Chrome 里：纸底 / 灰框 / 衬线换成设计系统，有彩色原样，关掉即复原',
     () async {
-      final String? node = _resolveNode();
-      if (node == null) {
-        markTestSkipped('node not found on PATH');
-        return;
-      }
+      final String node = browserRuntime.requireNode();
       final SrsCardFaceDocument light = _doc(skin: true);
       final SrsCardFaceDocument dark = _doc(skin: true, dark: true);
       final SrsCardFaceDocument off = _doc(skin: false);
@@ -271,10 +281,6 @@ void main() {
           'test/srs/srs_card_design_skin_harness.mjs',
           payload.path,
         ]).timeout(const Duration(seconds: 80));
-        if (result.exitCode == 77) {
-          markTestSkipped('Chrome unavailable: ${result.stdout}');
-          return;
-        }
         expect(
           result.exitCode,
           0,
@@ -288,21 +294,7 @@ void main() {
         temp.deleteSync(recursive: true);
       }
     },
+    skip: browserRuntime.skipReason,
     timeout: const Timeout(Duration(seconds: 90)),
   );
-}
-
-String? _resolveNode() {
-  for (final String name in Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node']) {
-    try {
-      if (Process.runSync(name, <String>['--version']).exitCode == 0) {
-        return name;
-      }
-    } on ProcessException {
-      // 试下一个可执行名。
-    }
-  }
-  return null;
 }

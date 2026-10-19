@@ -277,7 +277,7 @@ void main() {
   });
 
   group('AnkiMediaFolder', () {
-    test('只读单层文件名：路径穿越 / 绝对路径 / 子目录一律不读', () {
+    test('只读单层文件名：路径穿越 / 绝对路径 / 子目录一律不读', () async {
       final Directory media = Directory(
         p.join(tmp.path, 'p', 'collection.media'),
       )..createSync(recursive: true);
@@ -285,15 +285,15 @@ void main() {
       File(p.join(tmp.path, 'p', 'secret.txt')).writeAsStringSync('s');
       Directory(p.join(media.path, 'sub')).createSync();
       final AnkiMediaFolder f = AnkiMediaFolder(media);
-      expect(f.index(), <String, String>{'ok.png': 'ok.png'});
-      expect(f.read('ok.png'), <int>[7]);
-      expect(f.read('../secret.txt'), isNull);
-      expect(f.read(r'..\secret.txt'), isNull);
-      expect(f.read('..'), isNull);
-      expect(f.read(p.join(tmp.path, 'p', 'secret.txt')), isNull);
-      expect(f.read('missing.png'), isNull);
+      expect(await f.index(), <String, String>{'ok.png': 'ok.png'});
+      expect(await f.read('ok.png'), <int>[7]);
+      expect(await f.read('../secret.txt'), isNull);
+      expect(await f.read(r'..\secret.txt'), isNull);
+      expect(await f.read('..'), isNull);
+      expect(await f.read(p.join(tmp.path, 'p', 'secret.txt')), isNull);
+      expect(await f.read('missing.png'), isNull);
       expect(
-        AnkiMediaFolder(Directory(p.join(tmp.path, 'none'))).index(),
+        await AnkiMediaFolder(Directory(p.join(tmp.path, 'none'))).index(),
         isEmpty,
       );
       expect(isSafeAnkiMediaName('C:secret'), isFalse);

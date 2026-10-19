@@ -2,7 +2,11 @@
 // `oncanplay` → `play()`、`autoplay` 属性）也必须停下，只放行用户在卡面上的点按 / 按键。
 //
 // - 外壳脚本 [kSrsCardAutoplayGateScript] 在 node 里真的执行（最小 DOM 桩，跑的是生产常量本身）；
+// - 生产外壳在真实 headless Chrome（`--autoplay-policy=no-user-gesture-required`，即卡面在
+//   Windows / WebView2 上的实际策略）里跑：页面让媒体出声的每条路都被拦、用户点按照常出声；
 // - [SrsCardFaceSync] 把牌组开关随换卡下发（开关先于换卡），只改开关也会重放当前这一面。
+//
+// node / Chrome：本地缺时 skip 并写明原因，CI 上缺一律失败（见 test/helpers/node_runtime.dart）。
 import 'dart:convert';
 import 'dart:io';
 
@@ -11,8 +15,15 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../helpers/node_runtime.dart';
+
 void main() {
-  group('自动播放闸门脚本（node）', () {
+  final NodeTestRuntime nodeRuntime = NodeTestRuntime.probe();
+  final NodeTestRuntime browserRuntime = NodeTestRuntime.probe(
+    needsChrome: true,
+  );
+
+  group('自动播放闸门脚本（node）', skip: nodeRuntime.skipReason, () {
     /// 最小 DOM 桩：window 捕获监听、HTMLMediaElement 原型、MutationObserver 回调。
     /// `fire(type, trusted, handler)` 模拟一次事件派发：先跑 window 捕获监听，再在
     /// 同一次派发里跑目标上的处理函数（内联 onclick 等）。
@@ -79,9 +90,8 @@ $body
         final File script = File('${dir.path}/verify.js')
           ..writeAsStringSync(code);
         final ProcessResult result = await Process.run(
-          'node',
+          nodeRuntime.requireNode(),
           <String>[script.path],
-          runInShell: Platform.isWindows,
           stdoutEncoding: utf8,
           stderrEncoding: utf8,
         );
@@ -256,5 +266,45 @@ assert.deepEqual(log, ['native:VIDEO'], '只包一层');
       expect(at, greaterThanOrEqualTo(0));
       expect(at, lessThan(full.indexOf('__fushiSrsSetCard(')));
     });
+
+    test(
+      '真实 Chrome（不要手势即可自动播放）：关时页面出声的每条路都被拦，用户点按照常出声',
+      skip: browserRuntime.skipReason,
+      () async {
+        final String node = browserRuntime.requireNode();
+        final Directory temp = Directory.systemTemp.createTempSync(
+          'srs-autoplay-',
+        );
+        try {
+          final File payload = File('${temp.path}/payload.json')
+            ..writeAsStringSync(
+              jsonEncode(<String, String>{
+                // 生产外壳（闸门在卡片脚本之前装好）+ 生产的换卡调用（开关先于换卡）。
+                'shell': doc(autoplay: false).shellHtml,
+                'off': doc(autoplay: false).fullCardScript,
+                'on': doc(autoplay: true).fullCardScript,
+              }),
+            );
+          final ProcessResult result = await Process.run(
+            node,
+            <String>[
+              'test/srs/srs_card_autoplay_gate_harness.mjs',
+              payload.path,
+            ],
+            stdoutEncoding: utf8,
+            stderrEncoding: utf8,
+          ).timeout(const Duration(seconds: 80));
+          expect(
+            result.exitCode,
+            0,
+            reason: '${result.stdout}\n${result.stderr}',
+          );
+          expect(result.stdout, contains('PASS 26 browser checks'));
+        } finally {
+          temp.deleteSync(recursive: true);
+        }
+      },
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
   });
 }

@@ -430,6 +430,10 @@ class SrsDbStore implements SrsSyncReplica {
     return out;
   }
 
+  /// 一个实体的全部修改记录（只读；导入按记录时刻判断本机改动是否比来源新）。
+  Future<SrsEntityEdits> entityEdits(SrsEntityKind kind, String id) =>
+      _entityEdits(kind, id);
+
   Future<SrsEntityEdits> _entityEdits(SrsEntityKind kind, String id) async {
     final List<SrsFieldEditRow> rows =
         _RefreshPrefetch.current?.edits['${kind.wire}/$id'] ??
@@ -911,16 +915,44 @@ class SrsDbStore implements SrsSyncReplica {
   /// 导入攒的一批草稿（[newNoteDrafts] / [newEditDrafts] + 已定稿的日志等）落库：同 [importEvents]，
   /// 但修改记录的序号 / HLC 在这里、落库的同一个独占区里才分配——攒批期间（读包、解析、别的写入）
   /// 不占序号，落库顺序 = 序号顺序（BUG-3545，以前攒批时就分配，期间插进来的本机写入先落库）。
-  Future<void> importDrafts(List<SrsEventDraft> drafts) async {
-    if (drafts.isEmpty) return;
-    await runExclusive(() async {
+  ///
+  /// 返回这批身份记录里**落库前就已存在**的实体 ID（导入据此按实际新建数计数：攒批时以为是新
+  /// 笔记、落库时已被同步 / 别处建好的，不算「新增」）。
+  Future<Set<String>> importDrafts(List<SrsEventDraft> drafts) async {
+    if (drafts.isEmpty) return const <String>{};
+    return runExclusive(() async {
+      final Set<String> existed = await _existingEntityIds(<String>[
+        for (final SrsEventDraft d in drafts)
+          if (d case SrsReadyDraft(
+            event: SrsEntityEvent(:final SrsEntityRecord record),
+          ))
+            record.id,
+      ]);
       final List<SrsEventDraft> live = await _dropAuthoredInitials(drafts);
       _receiveAll(<SrsEvent>[
         for (final SrsEventDraft d in live)
           if (d case SrsReadyDraft(:final SrsEvent event)) event,
       ]);
       await _emit(_finalize(live));
+      return existed;
     });
+  }
+
+  /// [ids] 里已有身份记录的（按 ID 分块查）。
+  Future<Set<String>> _existingEntityIds(List<String> ids) async {
+    final Set<String> out = <String>{};
+    final $SrsEntitiesTable t = db.srsEntities;
+    for (final List<String> chunk in _chunks(ids)) {
+      final List<TypedResult> rows =
+          await (db.selectOnly(t)
+                ..addColumns(<Expression<Object>>[t.id])
+                ..where(t.id.isIn(chunk)))
+              .get();
+      for (final TypedResult r in rows) {
+        out.add(r.read(t.id)!);
+      }
+    }
+    return out;
   }
 
   /// 去掉「初值」草稿（[SrsEditDraft.initial]）里键已有修改记录的：一次按实体分块查出现有的
@@ -1940,12 +1972,7 @@ class SrsDbStore implements SrsSyncReplica {
     final SrsDeckTree tree = await deckTree();
     final List<String> sub = tree.subtree(deckId);
     final String target = tree.parentOf(deckId) ?? defaultDeckId;
-    final List<String> cards = <String>[
-      for (final SrsCardCacheRow c in await (db.select(
-        db.srsCardsCache,
-      )..where((c) => c.deckId.isIn(sub))).get())
-        c.id,
-    ];
+    final List<String> cards = await _cardIdsInDecks(sub);
     onProgress?.call(0, cards.length);
     for (int i = 0; i < cards.length; i += _deleteDeckChunk) {
       final List<String> chunk = cards.sublist(
@@ -1958,11 +1985,35 @@ class SrsDbStore implements SrsSyncReplica {
       );
       onProgress?.call(i + chunk.length, cards.length);
     }
+    // 收尾在一个独占区里：子树、目标牌组、子树里还剩的卡都**在这里重读**——分块期间别的写入
+    // （后台导入把卡放进这个子树、建了新的子牌组、挪走了父牌组）已经落库，按开头那份快照写删除
+    // 标记会把它们留在已删除的牌组下面。重读与写删除标记之间没有别的写入能插进来。
     await runExclusive(() async {
+      final SrsDeckTree now0 = await deckTree();
+      if (now0[deckId] == null) return; // 期间已被别处删掉
+      final List<String> subNow = now0.subtree(deckId);
+      final String targetNow = now0.parentOf(deckId) ?? defaultDeckId;
+      final List<String> late = await _cardIdsInDecks(subNow);
+      for (int i = 0; i < late.length; i += _deleteDeckChunk) {
+        await _editEach(
+          SrsEntityKind.card,
+          late.sublist(i, min(i + _deleteDeckChunk, late.length)),
+          SrsFieldKeys.cardDeck,
+          targetNow,
+        );
+      }
       final (int nowMs, _) = now();
-      await _editEach(SrsEntityKind.deck, sub, SrsFieldKeys.deleted, nowMs);
+      await _editEach(SrsEntityKind.deck, subNow, SrsFieldKeys.deleted, nowMs);
     });
   }
+
+  /// 缓存里归在 [deckIds] 这些牌组下的卡。
+  Future<List<String>> _cardIdsInDecks(List<String> deckIds) async => <String>[
+    for (final SrsCardCacheRow c in await (db.select(
+      db.srsCardsCache,
+    )..where((c) => c.deckId.isIn(deckIds))).get())
+      c.id,
+  ];
 
   /// 给 [ids] 每个实体的同一个字段键写同一个值（值没变的跳过）：现值一次预读，序号按 [ids] 的顺序
   /// 分配，一次落库。与逐个 `editField` 同结果。调用方已在独占区里。

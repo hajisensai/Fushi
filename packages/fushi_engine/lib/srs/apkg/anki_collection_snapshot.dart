@@ -6,10 +6,11 @@
 /// - [discoverAnkiProfiles]：在这些根下找集合。
 /// - [snapshotAnkiCollection]：把 `collection.anki2` 连同 `-wal` / `-journal` 拷进临时目录，
 ///   在**副本**上回放 WAL、做完整性检查。Anki 开着时集合可能处在 WAL 模式、最新的修改还没
-///   落进主文件，只拷主文件会丢掉这部分；拷贝前后比对大小与修改时刻，期间被写过就报
+///   落进主文件，只拷主文件会丢掉这部分。整组文件拷**两遍**、比对两份副本的内容哈希：
+///   期间被写过（哪怕大小与修改时刻都没变，例如 WAL 重置后原位覆盖）就报
 ///   [AnkiSnapshotFailure.changedDuringCopy]，不拿一份撕裂的快照去导入。
 ///
-/// 用户的 Anki 数据**只读**：原始集合只被 `File.copy` 读一遍，不打开、不加锁、不写；
+/// 用户的 Anki 数据**只读**：原始集合只被 `File.copy` 读（两遍），不打开、不加锁、不写；
 /// 媒体（[AnkiMediaFolder]）原位按名字读，不拷整个目录。
 library;
 
@@ -17,6 +18,8 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:fushi_compute/fushi_compute.dart' show ffcSha256FileSync;
+import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
@@ -301,54 +304,84 @@ class AnkiCollectionSnapshot {
   }
 }
 
-/// 拷贝前后比对的文件指纹。
-class _Fingerprint {
-  const _Fingerprint(this.size, this.modified);
-
-  final int size;
-  final DateTime modified;
-
-  @override
-  bool operator ==(Object other) =>
-      other is _Fingerprint && other.size == size && other.modified == modified;
-
-  @override
-  int get hashCode => Object.hash(size, modified);
-}
-
 /// 集合主文件之外需要一起拷的 SQLite 旁路文件（`-shm` 不拷：它只是 WAL 的内存索引，
 /// 打开时会从 WAL 重建）。
 const List<String> _sidecarSuffixes = <String>['-wal', '-journal'];
 
-Future<Map<String, _Fingerprint>> _fingerprints(File col) async {
-  final Map<String, _Fingerprint> out = <String, _Fingerprint>{};
-  for (final String suffix in <String>['', ..._sidecarSuffixes]) {
-    final File f = File('${col.path}$suffix');
-    final FileStat s = await f.stat();
-    if (s.type == FileSystemEntityType.notFound) continue;
-    out[suffix] = _Fingerprint(s.size, s.modified);
-  }
-  return out;
-}
+/// 现在存在的文件（主文件 `''` + 旁路后缀），按固定顺序。
+Future<List<String>> _presentSuffixes(File col) async => <String>[
+  for (final String suffix in <String>['', ..._sidecarSuffixes])
+    if (await File('${col.path}$suffix').exists()) suffix,
+];
 
-bool _sameFingerprints(
-  Map<String, _Fingerprint> a,
-  Map<String, _Fingerprint> b,
-) {
-  if (a.length != b.length) return false;
-  for (final MapEntry<String, _Fingerprint> e in a.entries) {
-    if (b[e.key] != e.value) return false;
+/// 把 [suffixes] 对应的原始文件逐个 `File.copy` 到 [target] 旁。
+///
+/// 只用 `File.copy`（Windows 上是 CopyFileEx）读原始文件：它以共享读 / 写 / 删除打开源文件，
+/// Anki 照常写、照常在关闭时删 `-wal`。自己 `open()` 原始文件读则不行——dart:io 的句柄不带
+/// FILE_SHARE_DELETE，持有期间 Anki 删不掉 `-wal` / `-journal`（实测 `del` 报「另一个程序
+/// 正在使用此文件」），所以第二遍读也走 `File.copy`，而不是直接对原始文件算哈希。
+Future<void> _copyAll(
+  File collection,
+  List<String> suffixes,
+  File target,
+) async {
+  for (final String suffix in suffixes) {
+    try {
+      await File('${collection.path}$suffix').copy('${target.path}$suffix');
+    } on PathNotFoundException catch (e) {
+      // 主文件不见了是 missing；旁路文件在两次检查之间消失 = Anki 刚 checkpoint / 关闭。
+      throw AnkiSnapshotException(
+        suffix.isEmpty
+            ? AnkiSnapshotFailure.missing
+            : AnkiSnapshotFailure.changedDuringCopy,
+        '$e',
+      );
+    } on FileSystemException catch (e) {
+      throw AnkiSnapshotException(AnkiSnapshotFailure.locked, '$e');
+    }
   }
-  return true;
 }
 
 /// 给 [collection]（用户的 `collection.anki2`）拍一份只读快照放进 [tempParent] 下的新目录。
 ///
 /// [mediaDir] 缺省取集合旁的 `collection.media`。
+///
+/// 一致性判据：整组文件（主文件 + `-wal` / `-journal`）先拷一遍作快照、再拷一遍作对照，
+/// 两遍之间文件集合不变、每个文件两份副本的 SHA-256 相同，才认快照。两份相同 ⇔ 第一遍读完
+/// 到第二遍开读之间没有任何改变内容的写入，且第一遍的每一段都等于那段时间里的内容——
+/// 即快照恰是原始文件组在某一时刻的状态。大小 + 修改时刻做不到这点：WAL 重置后原位覆盖时
+/// 大小不变，粗粒度时间戳的文件系统（FAT / exFAT / ext4 按 tick 记）上同一 tick 里的写入
+/// 修改时刻也不变，而 `quick_check` 只查 B 树结构，查不出跨事务拼起来的页。
 Future<AnkiCollectionSnapshot> snapshotAnkiCollection({
   required File collection,
   required Directory tempParent,
   Directory? mediaDir,
+}) => _snapshot(
+  collection: collection,
+  tempParent: tempParent,
+  mediaDir: mediaDir,
+  afterFirstCopy: null,
+);
+
+/// 测试入口：与 [snapshotAnkiCollection] 相同，只是在第一遍拷完、第二遍开拷之前调
+/// [afterFirstCopy]（模拟 Anki 恰在拷贝期间写入）。
+@visibleForTesting
+Future<AnkiCollectionSnapshot> debugSnapshotAnkiCollection({
+  required File collection,
+  required Directory tempParent,
+  required Future<void> Function() afterFirstCopy,
+}) => _snapshot(
+  collection: collection,
+  tempParent: tempParent,
+  mediaDir: null,
+  afterFirstCopy: afterFirstCopy,
+);
+
+Future<AnkiCollectionSnapshot> _snapshot({
+  required File collection,
+  required Directory tempParent,
+  required Directory? mediaDir,
+  required Future<void> Function()? afterFirstCopy,
 }) async {
   if (!await collection.exists()) {
     throw AnkiSnapshotException(
@@ -356,30 +389,33 @@ Future<AnkiCollectionSnapshot> snapshotAnkiCollection({
       'no collection at ${collection.path}',
     );
   }
-  final Map<String, _Fingerprint> before = await _fingerprints(collection);
+  final List<String> suffixes = await _presentSuffixes(collection);
   await tempParent.create(recursive: true);
   final Directory work = await tempParent.createTemp('fushi_anki_snapshot_');
   final File copy = File(p.join(work.path, ankiCollectionFileName));
+  final Directory verifyDir = Directory(p.join(work.path, 'verify'));
+  final File verify = File(p.join(verifyDir.path, ankiCollectionFileName));
   try {
-    for (final String suffix in before.keys) {
-      try {
-        await File('${collection.path}$suffix').copy('${copy.path}$suffix');
-      } on FileSystemException catch (e) {
-        throw AnkiSnapshotException(AnkiSnapshotFailure.locked, '$e');
-      }
-    }
-    final Map<String, _Fingerprint> after = await _fingerprints(collection);
-    if (!_sameFingerprints(before, after)) {
-      throw const AnkiSnapshotException(
+    await _copyAll(collection, suffixes, copy);
+    if (afterFirstCopy != null) await afterFirstCopy();
+    await verifyDir.create();
+    await _copyAll(collection, suffixes, verify);
+    final List<String> suffixesAfter = await _presentSuffixes(collection);
+    if (suffixesAfter.join('|') != suffixes.join('|')) {
+      throw AnkiSnapshotException(
         AnkiSnapshotFailure.changedDuringCopy,
-        'collection was modified while copying',
+        'collection files changed while copying: $suffixes -> $suffixesAfter',
       );
     }
-    // 回放 WAL + quick_check 在大集合上要几秒：放后台 isolate，不卡 UI 线程。
+    // 比对两遍副本 + 回放 WAL + quick_check 在大集合上要几秒：放后台 isolate，不卡 UI 线程。
+    // 哈希走 fushi_compute（每 1 MiB 一次 FFI），只读本快照自己的副本。
     final String copyPath = copy.path;
-    final AnkiCollectionStats stats = await Isolate.run(
-      () => _settleCopy(File(copyPath)),
-    );
+    final String verifyPath = verify.path;
+    final AnkiCollectionStats stats = await Isolate.run(() {
+      _checkCopiesIdentical(copyPath, verifyPath, suffixes);
+      Directory(p.dirname(verifyPath)).deleteSync(recursive: true);
+      return _settleCopy(File(copyPath));
+    });
     return AnkiCollectionSnapshot(
       collection: copy,
       mediaDir:
@@ -395,6 +431,22 @@ Future<AnkiCollectionSnapshot> snapshotAnkiCollection({
       // 同上：留给系统清理。
     }
     rethrow;
+  }
+}
+
+/// 两遍副本逐文件比对（先比长度，再比 SHA-256）；不同 = 拷贝期间原始集合被写过。
+void _checkCopiesIdentical(String copy, String verify, List<String> suffixes) {
+  for (final String suffix in suffixes) {
+    final File a = File('$copy$suffix');
+    final File b = File('$verify$suffix');
+    if (a.lengthSync() != b.lengthSync() ||
+        ffcSha256FileSync(a.path) != ffcSha256FileSync(b.path)) {
+      throw AnkiSnapshotException(
+        AnkiSnapshotFailure.changedDuringCopy,
+        'collection${suffix.isEmpty ? '' : ' $suffix'} was modified while '
+        'copying',
+      );
+    }
   }
 }
 
@@ -451,10 +503,19 @@ class AnkiMediaFolder {
   final Directory directory;
 
   /// 目录里的文件名 → 条目名（就是文件名本身）。目录不存在时为空。
-  Map<String, String> index() {
-    if (!directory.existsSync()) return <String, String>{};
+  ///
+  /// 在后台 isolate 里枚举：`collection.media` 常有几万个文件，导入任务跑在 UI isolate，
+  /// 同步枚举会一次卡住若干帧；结果经 `Isolate.exit` 交回，不复制。
+  Future<Map<String, String>> index() {
+    final String path = directory.path;
+    return Isolate.run(() => _listMediaFolder(path));
+  }
+
+  static Map<String, String> _listMediaFolder(String path) {
+    final Directory dir = Directory(path);
+    if (!dir.existsSync()) return <String, String>{};
     final Map<String, String> out = <String, String>{};
-    for (final FileSystemEntity e in directory.listSync(followLinks: false)) {
+    for (final FileSystemEntity e in dir.listSync(followLinks: false)) {
       if (e is! File) continue;
       final String name = p.basename(e.path);
       out[name] = name;
@@ -464,11 +525,13 @@ class AnkiMediaFolder {
 
   /// 读一个媒体文件。名字必须是单层文件名：带路径分隔符、`.` / `..`、NUL 的一律不读
   /// （字段里的引用来自来源集合，不能让它读到媒体目录以外的文件）。
-  Uint8List? read(String entry) {
+  ///
+  /// 异步读（导入跑在 UI isolate，同步读大媒体会卡帧）。
+  Future<Uint8List?> read(String entry) async {
     if (!isSafeAnkiMediaName(entry)) return null;
     final File f = File(p.join(directory.path, entry));
-    if (!f.existsSync()) return null;
-    return f.readAsBytesSync();
+    if (!await f.exists()) return null;
+    return f.readAsBytes();
   }
 }
 
