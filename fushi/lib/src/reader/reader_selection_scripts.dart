@@ -1454,11 +1454,10 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       var fill = groupColor(name);
       if (!fill) return empty;
       var base = 'fushi-mark-' + name.replace(/^fushi-/, '') + '-' + tag + '-';
-      var defs = markDefs(base, cfg);
-      var clips = '';
+      var shared = markDefs(base, cfg);
+      var ink = '';
       var still = '';
       var animate = run.animate;
-      var out = '';
       list.forEach(function(l, i) {
         var line = geom[i];
         var hline = lineGeom(l, hostOrigin);
@@ -1469,8 +1468,10 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
           rnd: markRng(markHash(name + ':' + cfg.style + ':' + Math.round(line.u0) + ':' + Math.round(line.vc)))
         };
         var shape = MARKERS[cfg.style](line, c);
-        defs += c.defs.join('');
-        still += shape;
+        // 滤镜 / 纹理按 id 全文档引用，只写进第一张；每行自己的 defs 跟着自己那张。
+        var defs = (i === 0 ? shared : '') + c.defs.join('');
+        var open = markOpen(line);
+        still += open + '<defs>' + defs + '</defs>' + shape + '</svg>';
         var isNew = false;
         if (animate && cfg.kind === 'favorite') {
           isNew = isFresh(l.v
@@ -1481,7 +1482,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
         } else {
           isNew = animate;
         }
-        if (!isNew) { out += shape; return; }
+        if (!isNew) { ink += open + '<defs>' + defs + '</defs>' + shape + '</svg>'; return; }
         var em = line.em, len = line.u1 - line.u0 + em * 2, dur = cfg.sweep.base + (len / em) * cfg.sweep.perEm;
         var delay = run.delay;
         var cid = base + i + 'c';
@@ -1490,33 +1491,32 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
             '<animate attributeName="height" from="0" to="' + fx(len) + '"'
           : '<rect x="' + fx(line.u0 - em) + '" y="' + fx(line.vc - em * 3) + '" width="0" height="' + fx(em * 6) + '">' +
             '<animate attributeName="width" from="0" to="' + fx(len) + '"';
-        clips += '<clipPath id="' + cid + '" clipPathUnits="userSpaceOnUse">' + rect + ' begin="' + fx(delay) + 's" dur="' +
+        var clip = '<clipPath id="' + cid + '" clipPathUnits="userSpaceOnUse">' + rect + ' begin="' + fx(delay) + 's" dur="' +
           fx(dur) + 's" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.3 0.6 0.4 1"/></rect></clipPath>';
-        out += '<g clip-path="url(#' + cid + ')">' + shape + '</g>';
+        ink += open + '<defs>' + defs + clip + '</defs><g clip-path="url(#' + cid + ')">' + shape + '</g></svg>';
         run.delay = delay + dur + cfg.sweep.gap;
       });
-      // svg 的盒子就是这组笔划的包围盒，viewBox 与盒子同位同大，路径坐标仍是所在层的局部坐标。
-      // BUG-3506：曾经是定在层原点的 1×1 svg 靠 overflow:visible 把笔划全画在盒外，WebKit 竖排下
-      // 算不对这块溢出区的重绘范围——DOM 已换成新一句、屏上停在旧笔划（翻页重建才补上），竖排滚动
-      // 更是整张不画。包围盒按 markBand 的上限放宽：沿行 ±2em（笔头斜切、收笔外延），跨行 ±3.5em
-      // （粗细倍数上限 2 × 自然粗细上限 1.45em / 2 + 盖住振假名 0.6em + 抖动、滤镜外扩），与落笔
-      // clip 矩形（沿行 ±1em、跨行 ±3em）同口径且更宽，不会裁到笔划。
-      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      geom.forEach(function(g) {
-        var a = g.u0 - g.em * 2, b = g.u1 + g.em * 2, lo = g.vc - g.em * 3.5, hi = g.vc + g.em * 3.5;
-        // 横排 (x, y) = (u, v)，竖排 (x, y) = (-v, u)（同 markPoint）。
-        var xs = g.v ? [-hi, -lo] : [a, b], ys = g.v ? [a, b] : [lo, hi];
-        x0 = Math.min(x0, xs[0]); x1 = Math.max(x1, xs[1]); y0 = Math.min(y0, ys[0]); y1 = Math.max(y1, ys[1]);
-      });
-      x0 = Math.floor(x0); y0 = Math.floor(y0); x1 = Math.ceil(x1); y1 = Math.ceil(y1);
+      return { ink: ink, still: still };
+    };
+    // 一行笔划自己的 svg 开标签：盒子就是这一行笔划的包围盒，viewBox 与盒子同位同大，路径坐标仍是所在层
+    // 的局部坐标。
+    // BUG-3506：曾经是定在层原点的 1×1 svg 靠 overflow:visible 把笔划全画在盒外，WebKit 竖排下
+    // 算不对这块溢出区的重绘范围——DOM 已换成新一句、屏上停在旧笔划（翻页重建才补上），竖排滚动
+    // 更是整张不画。包围盒按 markBand 的上限放宽：沿行 ±2em（笔头斜切、收笔外延），跨行 ±3.5em
+    // （粗细倍数上限 2 × 自然粗细上限 1.45em / 2 + 盖住振假名 0.6em + 抖动、滤镜外扩），与落笔
+    // clip 矩形（沿行 ±1em、跨行 ±3em）同口径且更宽，不会裁到笔划。
+    // 一行一张而不是一组一张：WebKit 竖排里落笔动画（SMIL 驱动的 clipPath）的重绘区按 svg 盒子左右
+    // 镜像——整组一张时跨三栏的句子第一栏与第三栏的重绘互换，最后播的第三栏动画播完屏上只剩右侧一窄条，
+    // 整层重建才补全（BUG-3571）。盒子以本行为中心，镜像后仍落在本行上。
+    var markOpen = function(g) {
+      var a = g.u0 - g.em * 2, b = g.u1 + g.em * 2, lo = g.vc - g.em * 3.5, hi = g.vc + g.em * 3.5;
+      // 横排 (x, y) = (u, v)，竖排 (x, y) = (-v, u)（同 markPoint）。
+      var x0 = Math.floor(g.v ? -hi : a), x1 = Math.ceil(g.v ? -lo : b);
+      var y0 = Math.floor(g.v ? a : lo), y1 = Math.ceil(g.v ? b : hi);
       var box = fx(x0) + ' ' + fx(y0) + ' ' + fx(x1 - x0) + ' ' + fx(y1 - y0);
-      var open = '<svg xmlns="http://www.w3.org/2000/svg" class="fushi-mark-ink" width="' + fx(x1 - x0) + '" height="' +
+      return '<svg xmlns="http://www.w3.org/2000/svg" class="fushi-mark-ink" width="' + fx(x1 - x0) + '" height="' +
         fx(y1 - y0) + '" viewBox="' + box + '" aria-hidden="true" style="left:' + fx(x0) + 'px !important;top:' + fx(y0) +
         'px !important;width:' + fx(x1 - x0) + 'px !important;height:' + fx(y1 - y0) + 'px !important">';
-      return {
-        ink: open + '<defs>' + defs + clips + '</defs>' + out + '</svg>',
-        still: open + '<defs>' + defs + '</defs>' + still + '</svg>'
-      };
     };
     var paintGroup = function(group, reg, mark) {
       var pieces = [];
