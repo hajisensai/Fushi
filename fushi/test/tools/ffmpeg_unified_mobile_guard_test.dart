@@ -621,6 +621,44 @@ void main() {
         contains("'System trust rejected the certificate'"),
         reason: '坏证书必须被补丁 0004 的校验器拒绝，而不是碰巧失败',
       );
+      expect(
+        macos,
+        isNot(contains('badssl.com')),
+        reason: '负向用例由脚本在本地起 openssl s_server，不再依赖外部站点',
+      );
+    });
+
+    test('信任冒烟：负向用例本地封闭、正向用例区分「网络不可达」与「校验失败」', () {
+      final String smoke = File(
+        '../tool/ffmpeg-unified/https_trust_smoke.sh',
+      ).readAsStringSync();
+      // 负向：自签 / 错主机名 / 过期证书全在脚本里现生成，127.0.0.1 上的 s_server 提供。
+      expect(smoke, isNot(contains('badssl.com')));
+      expect(smoke, contains('openssl s_server'));
+      expect(smoke, contains('subjectAltName = DNS:wrong.host.invalid'));
+      expect(
+        smoke,
+        contains('-startdate "\$3" -enddate "\$4"'),
+        reason: '过期证书须真的回填过去的有效期',
+      );
+      expect(
+        smoke,
+        contains('-http_proxy ""'),
+        reason: '本地用例绝不能经代理离开 127.0.0.1',
+      );
+      // 对照组：同一套本地 CA 的合法证书必须能打开，否则错主机名 / 过期的失败不说明问题。
+      expect(smoke, contains('D. control'));
+      // 正向：先 tls_verify=0 判可达，不可达单独退出 3，不能被当成校验失败或通过。
+      expect(smoke, contains('-tls_verify 0'));
+      expect(smoke, contains('NETWORK UNREACHABLE'));
+      expect(smoke, contains('exit 3'));
+      // 正向源钉在固定提交上的固定文件，内容不会随分支变化或消失。
+      expect(
+        RegExp(
+          r'raw\.githubusercontent\.com/hajisensai/Fushi/[0-9a-f]{40}/',
+        ).hasMatch(smoke),
+        isTrue,
+      );
     });
   });
 

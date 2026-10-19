@@ -38,7 +38,9 @@ so the archive matches the whole recipe patch set, and it now ships
 `tool/ffmpeg-unified/source_notice.py`). Same MSYS2 package set; all
 verifiers passed again (P5 0.36 / 255, P8.1 0.27), plus
 `tool/ffmpeg-unified/https_trust_smoke.sh` (public HTTPS opens with
-`tls_verify=1`; self-signed / expired / wrong-host rejected by gnutls).
+`tls_verify=1`; self-signed / expired / wrong-host rejected by gnutls; since
+fix/ffmpeg-https-smoke-hermetic the negative cases run against local
+`openssl s_server` certificates, re-run on this archive: PASS).
 
 `patches/mkv-laced-audio-timestamps.patch` (BUG-3499) fixes upstream
 `handle_block()` in `demux/demux_mkv.c`: when an audio track has no

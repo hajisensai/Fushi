@@ -1398,6 +1398,19 @@ class _AppleSliverBackdrop extends StatelessWidget {
   }
 }
 
+/// 本页该不该画隐含返回键：与 [AppBar] 同一判据，看**本页所在路由**
+/// （[ModalRoute.impliesAppBarDismissal]：下面还有路由，或登记了本地历史）。
+///
+/// 不能用 `Navigator.canPop()`：它问的是整个导航栈，弹出菜单 / 对话框 / 底部弹层
+/// 这些压在本页之上的弹出路由也算数。根页（首页外壳里的 tab）在「⋯」菜单打开
+/// 期间一重建就凭空长出返回键（用户 2026-10-19 截图：浏览器页点「⋯」左上角
+/// 出现返回）。没有路由的裸组件场景才退回问导航器。
+bool fushiRouteImpliesBack(BuildContext context) {
+  final ModalRoute<Object?>? route = ModalRoute.of(context);
+  if (route != null) return route.impliesAppBarDismissal;
+  return Navigator.maybeOf(context)?.canPop() ?? false;
+}
+
 /// 页头（[FushiPageHeader.route]）的返回键：Apple 是 44 的圆形玻璃钮
 /// （SF chevron，与玻璃顶栏的隐含返回键同一形态），MD3 是 `arrow_back`
 /// 图标按钮（48 命中盒，与脚手架默认返回键同口径）。[onPressed] 为 null 时
@@ -1410,11 +1423,8 @@ class FushiRouteBackButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final VoidCallback? explicit = onPressed;
-    if (explicit == null) {
-      final NavigatorState? navigator = Navigator.maybeOf(context);
-      if (navigator == null || !navigator.canPop()) {
-        return const SizedBox.shrink();
-      }
+    if (explicit == null && !fushiRouteImpliesBack(context)) {
+      return const SizedBox.shrink();
     }
     final VoidCallback handler =
         explicit ?? () => Navigator.of(context).maybePop();
