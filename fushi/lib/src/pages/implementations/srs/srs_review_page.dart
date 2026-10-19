@@ -1145,8 +1145,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             : null,
         body: Builder(
           builder: (BuildContext context) => Padding(
-            // 正文从浮动页头底下开始：卡面是 WebView（不能滚到页头下面），整体让位。
-            padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+            // 正文从浮动页头底下开始：整面 WebView 的卡面滚不到页头下面，整体让位。
+            // 原生 Fushi 卡面例外：铺到页头底下、把让位高度当滚动内边距（见
+            // [SrsFushiCardView.topInset]），往下翻页头收起后不留一条空带。
+            padding: EdgeInsets.only(
+              top: _cardScrollsUnderHeader
+                  ? 0
+                  : MediaQuery.paddingOf(context).top,
+            ),
             child: AnimatedSwitcher(
               duration: fushiMotionDuration(context, FushiMotion.medium),
               switchInCurve: FushiMotion.enter,
@@ -1169,6 +1175,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       ),
     );
   }
+
+  /// 当前显示的是原生 Fushi 卡面（Flutter 滚动，能滚到浮动页头底下）。
+  bool get _cardScrollsUnderHeader =>
+      !_loading &&
+      _error == null &&
+      !_finished &&
+      (_store?.canSchedule ?? false) &&
+      _detail != null &&
+      _rendered?.fushiCardDefinitions != null;
 
   Widget _buildBody(BuildContext context) {
     if (_loading) return const FushiLoadingView();
@@ -1301,6 +1316,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
                             face: face,
                             fields: rendered!.fields,
                             definitionsHtml: rendered.fushiCardDefinitions!,
+                            topInset: media.padding.top,
                           ),
                         )
                       : faceBuilder(context, face),

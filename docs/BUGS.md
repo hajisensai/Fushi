@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3191 条。点号进各自文件。
+> 共 3192 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3562](bugs/BUG-3562-srs-review-top-band-and-phone-dict-tabs.md) | ✅ | ✅ | srs-review-top-band-and-phone-dict-tabs |
 | [BUG-3561](bugs/BUG-3561-video-pause-ocr-capture-null-never-retried.md) | ✅ | ✅ | video-pause-ocr-capture-null-never-retried |
 | [BUG-3560](bugs/BUG-3560-video-pause-ocr-all-skips-when-text-subtitle-on-screen.md) | ✅ | ✅ | video-pause-ocr-all-skips-when-text-subtitle-on-screen |
 | [BUG-3559](bugs/BUG-3559-srs-lapis-backfill-count-full-scan.md) | ✅ | ✅ | 复习：旧 Lapis 补迁角标每次全量物化 Fushi 卡片笔记且逐条重建内置笔记类型，1 万条笔记打开笔记类型页要 60 秒以上 |
