@@ -18,6 +18,9 @@ import 'package:args/args.dart';
 const int kExitOk = 0;
 const int kExitFailure = 1;
 const int kExitUsage = 64;
+
+/// 输入数据格式不对（EX_DATAERR）。
+const int kExitDataError = 65;
 const int kExitNoInput = 66;
 const int kExitUnavailable = 69;
 const int kExitConflict = 75;

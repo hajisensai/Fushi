@@ -597,6 +597,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：AJATT 日语字幕库（kitsunekko 镜像）是否参与字幕搜索。
   // 零配置源，没有 key 门控；默认开是因为它是没填 Jimaku/OpenSubtitles key 的
   // 用户唯一能用的源。
+  // bool（默认 false）：用户是否已看过「AI 校对会发送什么」说明；设备本地。
+  'video_subtitle_ai_consented',
+  // bool（默认 false）：生成日语字幕时是否 AI 校对；设备本地（计费同意）。
+  'video_subtitle_ai_proofread',
   'video_subtitle_ajatt_enabled',
   // bool（默认 true）：远端（互联 host）视频上导入 / 重定时得到的字幕，是否自动上传到
   // host 并设为该集默认字幕（所有 peer 都会看到）。关掉则字幕只在本机生效。
@@ -610,11 +614,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （手机上列表旁的查词弹窗太扁，多数人只拿列表跳转，群反馈 GbN9MoKDCQ）。
   'video_subtitle_list_tap_lookup',
   'video_subtitle_list_width',
+  // string（默认 auto）：生成日语字幕的 MOSS 后端 auto/cuda/vulkan/cpu；设备本地。
+  'video_subtitle_moss_backend',
   'video_subtitle_obscure_hide',
   // bool（默认 true）：遮蔽（模糊 / 隐藏）态是否允许悬停 / 点击临时显形。关掉后
   // 遮蔽在整句期间恒定生效，不被误触破功。
   'video_subtitle_obscure_reveal',
   'video_subtitle_opensubtitles_config',
+  // string（默认 auto）：生成日语字幕的分段方式 auto/moss/window；设备本地。
+  'video_subtitle_segmenter',
   'video_subtitle_style',
   // string：SubDL（subdl.com）API key（用户在站点 panel 免费生成）。搜索必须带 key。
   'video_subtitle_subdl_api_key',

@@ -20,10 +20,20 @@ import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/asr_host/gpu_acceleration.dart';
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart';
 export 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart'
     show FushiAsrFfmpegBackend;
+export 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart'
+    show MossBackendDecision, MossProvisionStatus, MossUnavailableCode;
+export 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart'
+    show
+        MossBackendPreference,
+        VideoSubtitleRecognizerChoice,
+        VideoSubtitleSegmenterMode;
 
 /// 在后台转录 isolate 里建 ONNX 会话工厂。
 ///
@@ -160,19 +170,67 @@ Future<void> saveAsrModelCatalog(AsrModelCatalog catalog) async {
 ///   并走无 VAD 滑窗——2026-10-15 在 8 集动画上读音 CER 20.7% → 13.9%。
 asr.AsrTranscriptionService createAsrTranscriptionService({
   asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.cleanSpeech,
-}) =>
-    asr.AsrTranscriptionService(
-      audioProfile: audioProfile,
-      backend: fushiAsrBackend(),
-      // 根 isolate 的装载器（plan 探测 EP、进程内路径装载）先确保 GPU 环境已
-      // 激活（CUDA 注册）；后台 isolate 共享同一个插件实例，注册是进程级的，不必
-      // 再来一遍。
-      loader: asr.AsrEngineLoader(
-        factory: GpuAwareOnnxSessionFactory(buildFushiOnnxFactory()),
-      ),
-      pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
-      openStore: openAsrModelStore,
-    );
+}) => asr.AsrTranscriptionService(
+  audioProfile: audioProfile,
+  backend: fushiAsrBackend(),
+  // 根 isolate 的装载器（plan 探测 EP、进程内路径装载）先确保 GPU 环境已
+  // 激活（CUDA 注册）；后台 isolate 共享同一个插件实例，注册是进程级的，不必
+  // 再来一遍。
+  loader: asr.AsrEngineLoader(
+    factory: GpuAwareOnnxSessionFactory(buildFushiOnnxFactory()),
+  ),
+  pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
+  openStore: openAsrModelStore,
+);
+
+/// MOSS / `nvidia-smi` 等外部子进程的启动器：一律经 [HelperProcessRegistry]
+/// 登记（app 退出 / 应用内更新前统一终止，与 ffmpeg 同一套）。
+Future<Process> appAsrProcessStarter(
+  String executable,
+  List<String> arguments,
+) => HelperProcessRegistry.instance.start(executable, arguments);
+
+/// 视频字幕管线挑识别器的 app 装配：ASR 服务工厂与 [createAsrTranscriptionService]
+/// 同一份，子进程走 [appAsrProcessStarter]。判定规则见
+/// [resolveVideoSubtitleRecognizer]（不在这里下载；[VideoSubtitleSegmenterMode.moss]
+/// 而 MOSS 不可用时抛 `VideoSubtitleRecognizeFailure`）。
+Future<VideoSubtitleRecognizerChoice> resolveAppVideoSubtitleRecognizer({
+  required VideoSubtitleSegmenterMode mode,
+  MossBackendPreference mossBackend = MossBackendPreference.auto,
+}) => resolveVideoSubtitleRecognizer(
+  mode: mode,
+  mossBackend: mossBackend,
+  serviceFactory: (asr.AsrAudioProfile profile) =>
+      createAsrTranscriptionService(audioProfile: profile),
+  startProcess: appAsrProcessStarter,
+);
+
+/// 本机 MOSS（audio.cpp 运行库 + 权重）在 [backend] 偏好下的就绪状态。
+Future<MossProvisionStatus> appMossProvisionStatus(
+  MossBackendPreference backend,
+) => mossProvisionStatus(backend: backend, startProcess: appAsrProcessStarter);
+
+/// 下载并装好 MOSS。**以 Stream 正常结束为「可用」**：下载器的 `done` 事件早于
+/// sha256 校验与解压。
+///
+/// 出站走 [installAsrHostBindings] 装进 `asr.asrHttpClientFactory` 的
+/// `createAppHttpClient`（代理策略 + 局域网直连闸门）：上游 `ModelFileDownloader`
+/// 不传 client 时用的就是 `createAsrHttpClient()`，即这个装配点，所以这里不另传。
+Stream<asr.ModelDownloadEvent> appEnsureMossProvisioned(
+  MossBackendPreference backend, {
+  asr.AsrCancellationToken? cancellation,
+}) => ensureMossProvisioned(
+  backend: backend,
+  startProcess: appAsrProcessStarter,
+  cancellation: cancellation,
+);
+
+/// 本机全部 MOSS 文件（所有后端的运行库 + 权重）占的字节：删除确认框写清会释放
+/// 多少。数据根由 [installAsrHostBindings] 装的 `asrSupportRootResolver` 决定。
+Future<int> appMossProvisionedDiskBytes() => mossProvisionedDiskBytes();
+
+/// 删除本机全部 MOSS 运行库与权重，返回释放的字节数（之后下载会整套重下）。
+Future<int> appDeleteMossProvisioned() => deleteMossProvisioned();
 
 /// 打开某语言当前模型包的磁盘目录。
 ///

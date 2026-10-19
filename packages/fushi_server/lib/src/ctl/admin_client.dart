@@ -179,6 +179,25 @@ class AdminClient {
     },
   );
 
+  /// 把 [file] 作请求体流式发出（不整读进内存）：host 任务输入动辄几百 MB 到 GB。
+  /// 请求体写出阶段不受 [timeout] 约束（[_send] 只对建连与等响应计时），所以大文件
+  /// 跨网上传不会被 30/60 s 超时切断。
+  Future<Object?> sendFile(
+    String method,
+    String path, {
+    required File file,
+    Map<String, String>? query,
+  }) => _send(
+    method,
+    path,
+    query: query,
+    write: (HttpClientRequest request) async {
+      request.headers.contentType = ContentType.binary;
+      request.contentLength = await file.length();
+      await request.addStream(file.openRead());
+    },
+  );
+
   Future<Object?> _send(
     String method,
     String path, {

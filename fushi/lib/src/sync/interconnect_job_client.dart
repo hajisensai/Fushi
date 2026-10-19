@@ -124,41 +124,87 @@ class InterconnectJobClient {
     );
     final String? fallbackToken = await _repo.getFushiClientToken();
     for (final FushiClientUrl candidate in candidates) {
-      final Uri? uri = _uri(candidate.url, '/api/capabilities');
-      if (uri == null) continue;
-      final String? token = interconnectTokenFor(candidate, fallbackToken);
-      if (token == null) continue;
-      final (http.Client client, bool closeAfter) = _clientFor(
-        candidate.url,
-        fingerprint: candidate.fingerprintSha256,
+      final HostJobTarget? target = await _capabilitiesOf(
+        candidate,
+        fallbackToken,
       );
-      try {
-        final http.Response response = await client
-            .get(uri, headers: _headers(token))
-            .timeout(_probeTimeout);
-        if (response.statusCode != 200) continue;
-        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        if (decoded is! Map) continue;
-        final Object? jobs = decoded['jobs'];
-        if (jobs is! Map) continue;
-        final List<String> kinds =
-            (jobs['kinds'] as List?)?.map((Object? e) => '$e').toList() ??
-                const <String>[];
-        if (!kinds.contains(kind)) continue;
-        return HostJobTarget(
-          baseUrl: candidate.url,
-          deviceName: candidate.deviceName,
-          kinds: kinds,
-          capability: Map<String, Object?>.from(jobs),
-          fingerprintSha256: candidate.fingerprintSha256,
-        );
-      } catch (_) {
-        continue;
-      } finally {
-        if (closeAfter) client.close();
-      }
+      if (target != null && target.supports(kind)) return target;
     }
     return null;
+  }
+
+  /// 读**某一台** host 的任务能力：[baseUrl] 是互联当前连着的地址（P2P 时是本地
+  /// 转发口，按持久地址认回那一条配对记录）。返回的 [HostJobTarget.kinds] 可能不含
+  /// 调用方要的 kind（老 host）——由调用方区分「连不上」（null）与「版本不支持」。
+  ///
+  /// 「在这台 host 的视频上跑任务」必须打到放视频的那台：[probe] 挑的是第一台支持
+  /// 该 kind 的 host，多台 host 时可能是另一台，那边根本没有这个视频 id。
+  Future<HostJobTarget?> probeHost(String baseUrl) async {
+    final String wanted = _normalized(interconnectPersistedUrl(baseUrl));
+    final List<FushiClientUrl> matching = <FushiClientUrl>[
+      for (final FushiClientUrl u in await _repo.getFushiClientUrls())
+        if (u.enabled && _normalized(u.url) == wanted) u,
+    ];
+    final String? fallbackToken = await _repo.getFushiClientToken();
+    for (final FushiClientUrl candidate in await rankInterconnectCandidates(
+      matching,
+    )) {
+      final HostJobTarget? target = await _capabilitiesOf(
+        candidate,
+        fallbackToken,
+      );
+      if (target != null) return target;
+    }
+    return null;
+  }
+
+  static String _normalized(String url) {
+    try {
+      return WebDavOps.normalizeUrl(url);
+    } catch (_) {
+      return url.trim();
+    }
+  }
+
+  /// `GET /api/capabilities` 的 `jobs` 段；连不上 / 不认识的应答返回 null。
+  Future<HostJobTarget?> _capabilitiesOf(
+    FushiClientUrl candidate,
+    String? fallbackToken,
+  ) async {
+    final Uri? uri = _uri(candidate.url, '/api/capabilities');
+    if (uri == null) return null;
+    final String? token = interconnectTokenFor(candidate, fallbackToken);
+    if (token == null) return null;
+    final (http.Client client, bool closeAfter) = _clientFor(
+      candidate.url,
+      fingerprint: candidate.fingerprintSha256,
+    );
+    try {
+      final http.Response response = await client
+          .get(uri, headers: _headers(token))
+          .timeout(_probeTimeout);
+      if (response.statusCode != 200) return null;
+      final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! Map) return null;
+      final Object? jobs = decoded['jobs'];
+      final List<String> kinds = jobs is Map
+          ? (jobs['kinds'] as List?)?.map((Object? e) => '$e').toList() ??
+                const <String>[]
+          : const <String>[];
+      return HostJobTarget(
+        baseUrl: candidate.url,
+        deviceName: candidate.deviceName,
+        kinds: kinds,
+        capability: jobs is Map
+            ? Map<String, Object?>.from(jobs)
+            : const <String, Object?>{},
+        fingerprintSha256: candidate.fingerprintSha256,
+      );
+    } catch (_) {
+      return null;
+    } finally {
+      if (closeAfter) client.close();
+    }
   }
 
   /// 跑一个任务：上传 [inputs]（文件名 = 上传名），轮询到终态，把产物下载到

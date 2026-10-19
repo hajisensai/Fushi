@@ -34303,6 +34303,17 @@ class $VideoMetadataCharactersTable extends VideoMetadataCharacters
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _originalNameMeta = const VerificationMeta(
+    'originalName',
+  );
+  @override
+  late final GeneratedColumn<String> originalName = GeneratedColumn<String>(
+    'original_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _descriptionMeta = const VerificationMeta(
     'description',
   );
@@ -34351,6 +34362,7 @@ class $VideoMetadataCharactersTable extends VideoMetadataCharacters
   List<GeneratedColumn> get $columns => [
     characterKey,
     name,
+    originalName,
     description,
     imageUrl,
     imagePath,
@@ -34386,6 +34398,15 @@ class $VideoMetadataCharactersTable extends VideoMetadataCharacters
       );
     } else if (isInserting) {
       context.missing(_nameMeta);
+    }
+    if (data.containsKey('original_name')) {
+      context.handle(
+        _originalNameMeta,
+        originalName.isAcceptableOrUnknown(
+          data['original_name']!,
+          _originalNameMeta,
+        ),
+      );
     }
     if (data.containsKey('description')) {
       context.handle(
@@ -34436,6 +34457,10 @@ class $VideoMetadataCharactersTable extends VideoMetadataCharacters
         DriftSqlType.string,
         data['${effectivePrefix}name'],
       )!,
+      originalName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}original_name'],
+      ),
       description: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}description'],
@@ -34465,6 +34490,11 @@ class VideoMetadataCharacterRow extends DataClass
     implements Insertable<VideoMetadataCharacterRow> {
   final String characterKey;
   final String name;
+
+  /// v119：角色日文原名（MAL `/characters/{id}` 的 `name_kanji`）。[name] 是刮削源
+  /// 的显示名（AniDB / MAL 多为罗马音）；视频字幕 AI 校对的专名表要的是日文写法。
+  /// NULL = 源没给 / 没取（AniDB anime XML 不带角色日文名）。
+  final String? originalName;
   final String? description;
   final String? imageUrl;
   final String? imagePath;
@@ -34472,6 +34502,7 @@ class VideoMetadataCharacterRow extends DataClass
   const VideoMetadataCharacterRow({
     required this.characterKey,
     required this.name,
+    this.originalName,
     this.description,
     this.imageUrl,
     this.imagePath,
@@ -34482,6 +34513,9 @@ class VideoMetadataCharacterRow extends DataClass
     final map = <String, Expression>{};
     map['character_key'] = Variable<String>(characterKey);
     map['name'] = Variable<String>(name);
+    if (!nullToAbsent || originalName != null) {
+      map['original_name'] = Variable<String>(originalName);
+    }
     if (!nullToAbsent || description != null) {
       map['description'] = Variable<String>(description);
     }
@@ -34499,6 +34533,9 @@ class VideoMetadataCharacterRow extends DataClass
     return VideoMetadataCharactersCompanion(
       characterKey: Value(characterKey),
       name: Value(name),
+      originalName: originalName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalName),
       description: description == null && nullToAbsent
           ? const Value.absent()
           : Value(description),
@@ -34520,6 +34557,7 @@ class VideoMetadataCharacterRow extends DataClass
     return VideoMetadataCharacterRow(
       characterKey: serializer.fromJson<String>(json['characterKey']),
       name: serializer.fromJson<String>(json['name']),
+      originalName: serializer.fromJson<String?>(json['originalName']),
       description: serializer.fromJson<String?>(json['description']),
       imageUrl: serializer.fromJson<String?>(json['imageUrl']),
       imagePath: serializer.fromJson<String?>(json['imagePath']),
@@ -34532,6 +34570,7 @@ class VideoMetadataCharacterRow extends DataClass
     return <String, dynamic>{
       'characterKey': serializer.toJson<String>(characterKey),
       'name': serializer.toJson<String>(name),
+      'originalName': serializer.toJson<String?>(originalName),
       'description': serializer.toJson<String?>(description),
       'imageUrl': serializer.toJson<String?>(imageUrl),
       'imagePath': serializer.toJson<String?>(imagePath),
@@ -34542,6 +34581,7 @@ class VideoMetadataCharacterRow extends DataClass
   VideoMetadataCharacterRow copyWith({
     String? characterKey,
     String? name,
+    Value<String?> originalName = const Value.absent(),
     Value<String?> description = const Value.absent(),
     Value<String?> imageUrl = const Value.absent(),
     Value<String?> imagePath = const Value.absent(),
@@ -34549,6 +34589,7 @@ class VideoMetadataCharacterRow extends DataClass
   }) => VideoMetadataCharacterRow(
     characterKey: characterKey ?? this.characterKey,
     name: name ?? this.name,
+    originalName: originalName.present ? originalName.value : this.originalName,
     description: description.present ? description.value : this.description,
     imageUrl: imageUrl.present ? imageUrl.value : this.imageUrl,
     imagePath: imagePath.present ? imagePath.value : this.imagePath,
@@ -34562,6 +34603,9 @@ class VideoMetadataCharacterRow extends DataClass
           ? data.characterKey.value
           : this.characterKey,
       name: data.name.present ? data.name.value : this.name,
+      originalName: data.originalName.present
+          ? data.originalName.value
+          : this.originalName,
       description: data.description.present
           ? data.description.value
           : this.description,
@@ -34576,6 +34620,7 @@ class VideoMetadataCharacterRow extends DataClass
     return (StringBuffer('VideoMetadataCharacterRow(')
           ..write('characterKey: $characterKey, ')
           ..write('name: $name, ')
+          ..write('originalName: $originalName, ')
           ..write('description: $description, ')
           ..write('imageUrl: $imageUrl, ')
           ..write('imagePath: $imagePath, ')
@@ -34588,6 +34633,7 @@ class VideoMetadataCharacterRow extends DataClass
   int get hashCode => Object.hash(
     characterKey,
     name,
+    originalName,
     description,
     imageUrl,
     imagePath,
@@ -34599,6 +34645,7 @@ class VideoMetadataCharacterRow extends DataClass
       (other is VideoMetadataCharacterRow &&
           other.characterKey == this.characterKey &&
           other.name == this.name &&
+          other.originalName == this.originalName &&
           other.description == this.description &&
           other.imageUrl == this.imageUrl &&
           other.imagePath == this.imagePath &&
@@ -34609,6 +34656,7 @@ class VideoMetadataCharactersCompanion
     extends UpdateCompanion<VideoMetadataCharacterRow> {
   final Value<String> characterKey;
   final Value<String> name;
+  final Value<String?> originalName;
   final Value<String?> description;
   final Value<String?> imageUrl;
   final Value<String?> imagePath;
@@ -34617,6 +34665,7 @@ class VideoMetadataCharactersCompanion
   const VideoMetadataCharactersCompanion({
     this.characterKey = const Value.absent(),
     this.name = const Value.absent(),
+    this.originalName = const Value.absent(),
     this.description = const Value.absent(),
     this.imageUrl = const Value.absent(),
     this.imagePath = const Value.absent(),
@@ -34626,6 +34675,7 @@ class VideoMetadataCharactersCompanion
   VideoMetadataCharactersCompanion.insert({
     required String characterKey,
     required String name,
+    this.originalName = const Value.absent(),
     this.description = const Value.absent(),
     this.imageUrl = const Value.absent(),
     this.imagePath = const Value.absent(),
@@ -34637,6 +34687,7 @@ class VideoMetadataCharactersCompanion
   static Insertable<VideoMetadataCharacterRow> custom({
     Expression<String>? characterKey,
     Expression<String>? name,
+    Expression<String>? originalName,
     Expression<String>? description,
     Expression<String>? imageUrl,
     Expression<String>? imagePath,
@@ -34646,6 +34697,7 @@ class VideoMetadataCharactersCompanion
     return RawValuesInsertable({
       if (characterKey != null) 'character_key': characterKey,
       if (name != null) 'name': name,
+      if (originalName != null) 'original_name': originalName,
       if (description != null) 'description': description,
       if (imageUrl != null) 'image_url': imageUrl,
       if (imagePath != null) 'image_path': imagePath,
@@ -34657,6 +34709,7 @@ class VideoMetadataCharactersCompanion
   VideoMetadataCharactersCompanion copyWith({
     Value<String>? characterKey,
     Value<String>? name,
+    Value<String?>? originalName,
     Value<String?>? description,
     Value<String?>? imageUrl,
     Value<String?>? imagePath,
@@ -34666,6 +34719,7 @@ class VideoMetadataCharactersCompanion
     return VideoMetadataCharactersCompanion(
       characterKey: characterKey ?? this.characterKey,
       name: name ?? this.name,
+      originalName: originalName ?? this.originalName,
       description: description ?? this.description,
       imageUrl: imageUrl ?? this.imageUrl,
       imagePath: imagePath ?? this.imagePath,
@@ -34682,6 +34736,9 @@ class VideoMetadataCharactersCompanion
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
+    }
+    if (originalName.present) {
+      map['original_name'] = Variable<String>(originalName.value);
     }
     if (description.present) {
       map['description'] = Variable<String>(description.value);
@@ -34706,6 +34763,7 @@ class VideoMetadataCharactersCompanion
     return (StringBuffer('VideoMetadataCharactersCompanion(')
           ..write('characterKey: $characterKey, ')
           ..write('name: $name, ')
+          ..write('originalName: $originalName, ')
           ..write('description: $description, ')
           ..write('imageUrl: $imageUrl, ')
           ..write('imagePath: $imagePath, ')
@@ -60446,6 +60504,405 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
   }
 }
 
+class $VideoSubtitleGlossariesTable extends VideoSubtitleGlossaries
+    with TableInfo<$VideoSubtitleGlossariesTable, VideoSubtitleGlossaryRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoSubtitleGlossariesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _workKeyMeta = const VerificationMeta(
+    'workKey',
+  );
+  @override
+  late final GeneratedColumn<String> workKey = GeneratedColumn<String>(
+    'work_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _glossaryJsonMeta = const VerificationMeta(
+    'glossaryJson',
+  );
+  @override
+  late final GeneratedColumn<String> glossaryJson = GeneratedColumn<String>(
+    'glossary_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceFingerprintMeta = const VerificationMeta(
+    'sourceFingerprint',
+  );
+  @override
+  late final GeneratedColumn<String> sourceFingerprint =
+      GeneratedColumn<String>(
+        'source_fingerprint',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(''),
+      );
+  static const VerificationMeta _userEditedAtMeta = const VerificationMeta(
+    'userEditedAt',
+  );
+  @override
+  late final GeneratedColumn<int> userEditedAt = GeneratedColumn<int>(
+    'user_edited_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    workKey,
+    glossaryJson,
+    sourceFingerprint,
+    userEditedAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_subtitle_glossaries';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<VideoSubtitleGlossaryRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('work_key')) {
+      context.handle(
+        _workKeyMeta,
+        workKey.isAcceptableOrUnknown(data['work_key']!, _workKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_workKeyMeta);
+    }
+    if (data.containsKey('glossary_json')) {
+      context.handle(
+        _glossaryJsonMeta,
+        glossaryJson.isAcceptableOrUnknown(
+          data['glossary_json']!,
+          _glossaryJsonMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_glossaryJsonMeta);
+    }
+    if (data.containsKey('source_fingerprint')) {
+      context.handle(
+        _sourceFingerprintMeta,
+        sourceFingerprint.isAcceptableOrUnknown(
+          data['source_fingerprint']!,
+          _sourceFingerprintMeta,
+        ),
+      );
+    }
+    if (data.containsKey('user_edited_at')) {
+      context.handle(
+        _userEditedAtMeta,
+        userEditedAt.isAcceptableOrUnknown(
+          data['user_edited_at']!,
+          _userEditedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {workKey};
+  @override
+  VideoSubtitleGlossaryRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoSubtitleGlossaryRow(
+      workKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}work_key'],
+      )!,
+      glossaryJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}glossary_json'],
+      )!,
+      sourceFingerprint: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_fingerprint'],
+      )!,
+      userEditedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}user_edited_at'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $VideoSubtitleGlossariesTable createAlias(String alias) {
+    return $VideoSubtitleGlossariesTable(attachedDatabase, alias);
+  }
+}
+
+class VideoSubtitleGlossaryRow extends DataClass
+    implements Insertable<VideoSubtitleGlossaryRow> {
+  final String workKey;
+  final String glossaryJson;
+
+  /// 生成时所用资料的指纹（与 JSON 里的 `sourceFingerprint` 同值）；'' = 纯手填。
+  final String sourceFingerprint;
+
+  /// 用户最近一次编辑的时刻（毫秒）；NULL = 没编辑过。
+  final int? userEditedAt;
+  final int updatedAt;
+  const VideoSubtitleGlossaryRow({
+    required this.workKey,
+    required this.glossaryJson,
+    required this.sourceFingerprint,
+    this.userEditedAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['work_key'] = Variable<String>(workKey);
+    map['glossary_json'] = Variable<String>(glossaryJson);
+    map['source_fingerprint'] = Variable<String>(sourceFingerprint);
+    if (!nullToAbsent || userEditedAt != null) {
+      map['user_edited_at'] = Variable<int>(userEditedAt);
+    }
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  VideoSubtitleGlossariesCompanion toCompanion(bool nullToAbsent) {
+    return VideoSubtitleGlossariesCompanion(
+      workKey: Value(workKey),
+      glossaryJson: Value(glossaryJson),
+      sourceFingerprint: Value(sourceFingerprint),
+      userEditedAt: userEditedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(userEditedAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory VideoSubtitleGlossaryRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoSubtitleGlossaryRow(
+      workKey: serializer.fromJson<String>(json['workKey']),
+      glossaryJson: serializer.fromJson<String>(json['glossaryJson']),
+      sourceFingerprint: serializer.fromJson<String>(json['sourceFingerprint']),
+      userEditedAt: serializer.fromJson<int?>(json['userEditedAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'workKey': serializer.toJson<String>(workKey),
+      'glossaryJson': serializer.toJson<String>(glossaryJson),
+      'sourceFingerprint': serializer.toJson<String>(sourceFingerprint),
+      'userEditedAt': serializer.toJson<int?>(userEditedAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  VideoSubtitleGlossaryRow copyWith({
+    String? workKey,
+    String? glossaryJson,
+    String? sourceFingerprint,
+    Value<int?> userEditedAt = const Value.absent(),
+    int? updatedAt,
+  }) => VideoSubtitleGlossaryRow(
+    workKey: workKey ?? this.workKey,
+    glossaryJson: glossaryJson ?? this.glossaryJson,
+    sourceFingerprint: sourceFingerprint ?? this.sourceFingerprint,
+    userEditedAt: userEditedAt.present ? userEditedAt.value : this.userEditedAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  VideoSubtitleGlossaryRow copyWithCompanion(
+    VideoSubtitleGlossariesCompanion data,
+  ) {
+    return VideoSubtitleGlossaryRow(
+      workKey: data.workKey.present ? data.workKey.value : this.workKey,
+      glossaryJson: data.glossaryJson.present
+          ? data.glossaryJson.value
+          : this.glossaryJson,
+      sourceFingerprint: data.sourceFingerprint.present
+          ? data.sourceFingerprint.value
+          : this.sourceFingerprint,
+      userEditedAt: data.userEditedAt.present
+          ? data.userEditedAt.value
+          : this.userEditedAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoSubtitleGlossaryRow(')
+          ..write('workKey: $workKey, ')
+          ..write('glossaryJson: $glossaryJson, ')
+          ..write('sourceFingerprint: $sourceFingerprint, ')
+          ..write('userEditedAt: $userEditedAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    workKey,
+    glossaryJson,
+    sourceFingerprint,
+    userEditedAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoSubtitleGlossaryRow &&
+          other.workKey == this.workKey &&
+          other.glossaryJson == this.glossaryJson &&
+          other.sourceFingerprint == this.sourceFingerprint &&
+          other.userEditedAt == this.userEditedAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class VideoSubtitleGlossariesCompanion
+    extends UpdateCompanion<VideoSubtitleGlossaryRow> {
+  final Value<String> workKey;
+  final Value<String> glossaryJson;
+  final Value<String> sourceFingerprint;
+  final Value<int?> userEditedAt;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const VideoSubtitleGlossariesCompanion({
+    this.workKey = const Value.absent(),
+    this.glossaryJson = const Value.absent(),
+    this.sourceFingerprint = const Value.absent(),
+    this.userEditedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  VideoSubtitleGlossariesCompanion.insert({
+    required String workKey,
+    required String glossaryJson,
+    this.sourceFingerprint = const Value.absent(),
+    this.userEditedAt = const Value.absent(),
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : workKey = Value(workKey),
+       glossaryJson = Value(glossaryJson),
+       updatedAt = Value(updatedAt);
+  static Insertable<VideoSubtitleGlossaryRow> custom({
+    Expression<String>? workKey,
+    Expression<String>? glossaryJson,
+    Expression<String>? sourceFingerprint,
+    Expression<int>? userEditedAt,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (workKey != null) 'work_key': workKey,
+      if (glossaryJson != null) 'glossary_json': glossaryJson,
+      if (sourceFingerprint != null) 'source_fingerprint': sourceFingerprint,
+      if (userEditedAt != null) 'user_edited_at': userEditedAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  VideoSubtitleGlossariesCompanion copyWith({
+    Value<String>? workKey,
+    Value<String>? glossaryJson,
+    Value<String>? sourceFingerprint,
+    Value<int?>? userEditedAt,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return VideoSubtitleGlossariesCompanion(
+      workKey: workKey ?? this.workKey,
+      glossaryJson: glossaryJson ?? this.glossaryJson,
+      sourceFingerprint: sourceFingerprint ?? this.sourceFingerprint,
+      userEditedAt: userEditedAt ?? this.userEditedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (workKey.present) {
+      map['work_key'] = Variable<String>(workKey.value);
+    }
+    if (glossaryJson.present) {
+      map['glossary_json'] = Variable<String>(glossaryJson.value);
+    }
+    if (sourceFingerprint.present) {
+      map['source_fingerprint'] = Variable<String>(sourceFingerprint.value);
+    }
+    if (userEditedAt.present) {
+      map['user_edited_at'] = Variable<int>(userEditedAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoSubtitleGlossariesCompanion(')
+          ..write('workKey: $workKey, ')
+          ..write('glossaryJson: $glossaryJson, ')
+          ..write('sourceFingerprint: $sourceFingerprint, ')
+          ..write('userEditedAt: $userEditedAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -60624,6 +61081,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $SrsLocalStateTable srsLocalState = $SrsLocalStateTable(this);
   late final $SrsNotesCacheTable srsNotesCache = $SrsNotesCacheTable(this);
   late final $SrsCardsCacheTable srsCardsCache = $SrsCardsCacheTable(this);
+  late final $VideoSubtitleGlossariesTable videoSubtitleGlossaries =
+      $VideoSubtitleGlossariesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -60727,6 +61186,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     srsLocalState,
     srsNotesCache,
     srsCardsCache,
+    videoSubtitleGlossaries,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -85796,6 +86256,7 @@ typedef $$VideoMetadataCharactersTableCreateCompanionBuilder =
     VideoMetadataCharactersCompanion Function({
       required String characterKey,
       required String name,
+      Value<String?> originalName,
       Value<String?> description,
       Value<String?> imageUrl,
       Value<String?> imagePath,
@@ -85806,6 +86267,7 @@ typedef $$VideoMetadataCharactersTableUpdateCompanionBuilder =
     VideoMetadataCharactersCompanion Function({
       Value<String> characterKey,
       Value<String> name,
+      Value<String?> originalName,
       Value<String?> description,
       Value<String?> imageUrl,
       Value<String?> imagePath,
@@ -85941,6 +86403,11 @@ class $$VideoMetadataCharactersTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get originalName => $composableBuilder(
+    column: $table.originalName,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get description => $composableBuilder(
     column: $table.description,
     builder: (column) => ColumnFilters(column),
@@ -86060,6 +86527,11 @@ class $$VideoMetadataCharactersTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get originalName => $composableBuilder(
+    column: $table.originalName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get description => $composableBuilder(
     column: $table.description,
     builder: (column) => ColumnOrderings(column),
@@ -86097,6 +86569,11 @@ class $$VideoMetadataCharactersTableAnnotationComposer
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get originalName => $composableBuilder(
+    column: $table.originalName,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get description => $composableBuilder(
     column: $table.description,
@@ -86239,6 +86716,7 @@ class $$VideoMetadataCharactersTableTableManager
               ({
                 Value<String> characterKey = const Value.absent(),
                 Value<String> name = const Value.absent(),
+                Value<String?> originalName = const Value.absent(),
                 Value<String?> description = const Value.absent(),
                 Value<String?> imageUrl = const Value.absent(),
                 Value<String?> imagePath = const Value.absent(),
@@ -86247,6 +86725,7 @@ class $$VideoMetadataCharactersTableTableManager
               }) => VideoMetadataCharactersCompanion(
                 characterKey: characterKey,
                 name: name,
+                originalName: originalName,
                 description: description,
                 imageUrl: imageUrl,
                 imagePath: imagePath,
@@ -86257,6 +86736,7 @@ class $$VideoMetadataCharactersTableTableManager
               ({
                 required String characterKey,
                 required String name,
+                Value<String?> originalName = const Value.absent(),
                 Value<String?> description = const Value.absent(),
                 Value<String?> imageUrl = const Value.absent(),
                 Value<String?> imagePath = const Value.absent(),
@@ -86265,6 +86745,7 @@ class $$VideoMetadataCharactersTableTableManager
               }) => VideoMetadataCharactersCompanion.insert(
                 characterKey: characterKey,
                 name: name,
+                originalName: originalName,
                 description: description,
                 imageUrl: imageUrl,
                 imagePath: imagePath,
@@ -103499,6 +103980,231 @@ typedef $$SrsCardsCacheTableProcessedTableManager =
       SrsCardCacheRow,
       PrefetchHooks Function()
     >;
+typedef $$VideoSubtitleGlossariesTableCreateCompanionBuilder =
+    VideoSubtitleGlossariesCompanion Function({
+      required String workKey,
+      required String glossaryJson,
+      Value<String> sourceFingerprint,
+      Value<int?> userEditedAt,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$VideoSubtitleGlossariesTableUpdateCompanionBuilder =
+    VideoSubtitleGlossariesCompanion Function({
+      Value<String> workKey,
+      Value<String> glossaryJson,
+      Value<String> sourceFingerprint,
+      Value<int?> userEditedAt,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$VideoSubtitleGlossariesTableFilterComposer
+    extends Composer<_$FushiDatabase, $VideoSubtitleGlossariesTable> {
+  $$VideoSubtitleGlossariesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get workKey => $composableBuilder(
+    column: $table.workKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get glossaryJson => $composableBuilder(
+    column: $table.glossaryJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceFingerprint => $composableBuilder(
+    column: $table.sourceFingerprint,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get userEditedAt => $composableBuilder(
+    column: $table.userEditedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$VideoSubtitleGlossariesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $VideoSubtitleGlossariesTable> {
+  $$VideoSubtitleGlossariesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get workKey => $composableBuilder(
+    column: $table.workKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get glossaryJson => $composableBuilder(
+    column: $table.glossaryJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceFingerprint => $composableBuilder(
+    column: $table.sourceFingerprint,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get userEditedAt => $composableBuilder(
+    column: $table.userEditedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$VideoSubtitleGlossariesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $VideoSubtitleGlossariesTable> {
+  $$VideoSubtitleGlossariesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get workKey =>
+      $composableBuilder(column: $table.workKey, builder: (column) => column);
+
+  GeneratedColumn<String> get glossaryJson => $composableBuilder(
+    column: $table.glossaryJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sourceFingerprint => $composableBuilder(
+    column: $table.sourceFingerprint,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get userEditedAt => $composableBuilder(
+    column: $table.userEditedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$VideoSubtitleGlossariesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $VideoSubtitleGlossariesTable,
+          VideoSubtitleGlossaryRow,
+          $$VideoSubtitleGlossariesTableFilterComposer,
+          $$VideoSubtitleGlossariesTableOrderingComposer,
+          $$VideoSubtitleGlossariesTableAnnotationComposer,
+          $$VideoSubtitleGlossariesTableCreateCompanionBuilder,
+          $$VideoSubtitleGlossariesTableUpdateCompanionBuilder,
+          (
+            VideoSubtitleGlossaryRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $VideoSubtitleGlossariesTable,
+              VideoSubtitleGlossaryRow
+            >,
+          ),
+          VideoSubtitleGlossaryRow,
+          PrefetchHooks Function()
+        > {
+  $$VideoSubtitleGlossariesTableTableManager(
+    _$FushiDatabase db,
+    $VideoSubtitleGlossariesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoSubtitleGlossariesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$VideoSubtitleGlossariesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$VideoSubtitleGlossariesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> workKey = const Value.absent(),
+                Value<String> glossaryJson = const Value.absent(),
+                Value<String> sourceFingerprint = const Value.absent(),
+                Value<int?> userEditedAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => VideoSubtitleGlossariesCompanion(
+                workKey: workKey,
+                glossaryJson: glossaryJson,
+                sourceFingerprint: sourceFingerprint,
+                userEditedAt: userEditedAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String workKey,
+                required String glossaryJson,
+                Value<String> sourceFingerprint = const Value.absent(),
+                Value<int?> userEditedAt = const Value.absent(),
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => VideoSubtitleGlossariesCompanion.insert(
+                workKey: workKey,
+                glossaryJson: glossaryJson,
+                sourceFingerprint: sourceFingerprint,
+                userEditedAt: userEditedAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$VideoSubtitleGlossariesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $VideoSubtitleGlossariesTable,
+      VideoSubtitleGlossaryRow,
+      $$VideoSubtitleGlossariesTableFilterComposer,
+      $$VideoSubtitleGlossariesTableOrderingComposer,
+      $$VideoSubtitleGlossariesTableAnnotationComposer,
+      $$VideoSubtitleGlossariesTableCreateCompanionBuilder,
+      $$VideoSubtitleGlossariesTableUpdateCompanionBuilder,
+      (
+        VideoSubtitleGlossaryRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $VideoSubtitleGlossariesTable,
+          VideoSubtitleGlossaryRow
+        >,
+      ),
+      VideoSubtitleGlossaryRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -103747,4 +104453,9 @@ class $FushiDatabaseManager {
       $$SrsNotesCacheTableTableManager(_db, _db.srsNotesCache);
   $$SrsCardsCacheTableTableManager get srsCardsCache =>
       $$SrsCardsCacheTableTableManager(_db, _db.srsCardsCache);
+  $$VideoSubtitleGlossariesTableTableManager get videoSubtitleGlossaries =>
+      $$VideoSubtitleGlossariesTableTableManager(
+        _db,
+        _db.videoSubtitleGlossaries,
+      );
 }
