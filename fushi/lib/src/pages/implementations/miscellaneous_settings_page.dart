@@ -199,6 +199,7 @@ class _MiscellaneousSettingsBodyState
       context,
       File(pickedPath),
       aspectRatio: 1,
+      maxDimension: appIconSourceMaxPixels,
     );
     if (cropped == null) return;
     final String iconPath = cropped.path;
