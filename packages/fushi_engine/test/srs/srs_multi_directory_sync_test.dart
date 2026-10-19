@@ -87,6 +87,63 @@ void main() {
     expect(expressionOf(await hostOnly.note(later)), '霧');
   });
 
+  test(
+    '转发：已知事件只有 S 变小时才进发件箱（observeServerTimes / applyRemote，forward 开关）',
+    () async {
+      final SrsDbStore source = await device('source');
+      final SrsDbStore relay = await device('relay');
+      await addNote(source, '霜');
+      expect((await syncTo(source, cloudRoot, 'cloud')).error, isNull);
+      expect((await syncTo(relay, cloudRoot, 'cloud')).error, isNull);
+      final Set<String> mine = <String>{
+        for (final SrsEvent e in await relay.unpublishedEvents()) e.id,
+      };
+      final Map<String, int> known = await relay.exportServerTimes();
+      final List<SrsEvent> remote = <SrsEvent>[
+        for (final SrsEvent e in await relay.exportAll())
+          if (!mine.contains(e.id) && known.containsKey(e.id)) e,
+      ];
+      expect(remote.length, greaterThanOrEqualTo(3));
+      Future<Set<String>> outbox() async => <String>{
+        for (final SrsEvent e in await relay.unpublishedEvents())
+          if (!mine.contains(e.id)) e.id,
+      };
+      final SrsEvent a = remote[0], b = remote[1], c = remote[2];
+
+      // S 不变 / 变大：不进发件箱（即使 forward）。
+      await relay.observeServerTimes(<String, int>{
+        a.id: known[a.id]!,
+        b.id: known[b.id]! + 1000,
+      }, forward: true);
+      expect(await outbox(), isEmpty);
+      // S 变小但没开 forward：只记 S，不进发件箱。
+      await relay.observeServerTimes(<String, int>{a.id: known[a.id]! - 1000});
+      expect(await outbox(), isEmpty);
+      expect(
+        (await relay.knownServerTimes(<String>[a.id]))[a.id],
+        known[a.id]! - 1000,
+      );
+      // S 变小且 forward：进发件箱。
+      await relay.observeServerTimes(<String, int>{
+        b.id: known[b.id]! - 1000,
+      }, forward: true);
+      expect(await outbox(), <String>{b.id});
+      // applyRemote：已在本机的事件，批次 S 更小且 forward 才转发；更大的不转发。
+      await relay.applyRemote(
+        <SrsEvent>[a],
+        serverTimeMs: known[a.id]! + 5000,
+        forward: true,
+      );
+      expect(await outbox(), <String>{b.id});
+      await relay.applyRemote(
+        <SrsEvent>[c],
+        serverTimeMs: known[c.id]! - 1000,
+        forward: true,
+      );
+      expect(await outbox(), <String>{b.id, c.id});
+    },
+  );
+
   test('按目录的进度与批次留存跨重新打开保留；两个目录都确认后不再留存', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     SrsDbStore s = await device('a', db: db);
