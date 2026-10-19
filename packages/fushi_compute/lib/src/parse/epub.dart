@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../fushi_compute_library.dart';
+import '../native_scratch.dart';
 
 typedef _ScanC =
     Int32 Function(
@@ -98,15 +99,17 @@ final class EpubChapterScan {
 
 /// EPUB 章节 XHTML 的 DOM 派生量（`ffc_parse_epub_chapter`）。唯一实现在 Rust，没有
 /// Dart 回退；原生库或符号缺失时 [instance] 抛 [FushiComputeUnavailableError]。
-final class EpubChapterScanner {
-  EpubChapterScanner._(this._scan, this._freeUnits)
-    : _outPtr = calloc<Pointer<Uint16>>(),
-      _outLen = calloc<Size>();
+final class EpubChapterScanner implements Finalizable {
+  EpubChapterScanner._(this._scan, this._freeUnits);
 
   final _ScanDart _scan;
   final _FreeUnitsDart _freeUnits;
-  final Pointer<Pointer<Uint16>> _outPtr;
-  final Pointer<Size> _outLen;
+
+  /// 固定输出槽：outPtr（指针）+ outLen（size_t），由 [NativeScratch] 持有、isolate 退出时释放。
+  final NativeScratch _slots = NativeScratch.fixed(16);
+  Pointer<Pointer<Uint16>> get _outPtr =>
+      _slots.pointer.cast<Pointer<Uint16>>();
+  Pointer<Size> get _outLen => (_slots.pointer + 8).cast<Size>();
 
   static EpubChapterScanner? _instance;
 

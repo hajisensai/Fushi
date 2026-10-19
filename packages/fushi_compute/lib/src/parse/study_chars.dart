@@ -1,9 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
-import 'package:ffi/ffi.dart';
-
 import '../fushi_compute_library.dart';
+import '../native_scratch.dart';
 
 typedef _ClassOfC = Uint8 Function(Uint32);
 typedef _ClassOfDart = int Function(int);
@@ -18,18 +17,17 @@ typedef _CountUtf16Dart =
 /// 这是该口径**唯一**的运行时实现：没有 Dart 回退。原生库或符号缺失时 [instance]
 /// 抛 [FushiComputeUnavailableError]（说明缺什么、怎么指定库），不返回 null、不静默算出别的数。
 ///
-/// 每个 isolate 各持一份实例与一块复用的原生暂存区（随 isolate 生命周期，不释放）。
-final class StudyCharsNative {
-  StudyCharsNative._(this._classOf, this._countUtf16)
-    : _count = calloc<Uint64>(),
-      _inWord = calloc<Uint8>();
+/// 每个 isolate 各持一份实例与一块复用的原生暂存区（[NativeScratch]：随 isolate 存活，
+/// 退出时由 finalizer 释放）。
+final class StudyCharsNative implements Finalizable {
+  StudyCharsNative._(this._classOf, this._countUtf16);
 
   final _ClassOfDart _classOf;
   final _CountUtf16Dart _countUtf16;
-  final Pointer<Uint64> _count;
-  final Pointer<Uint8> _inWord;
-  Pointer<Uint16> _buffer = nullptr;
-  int _capacity = 0;
+
+  /// 固定槽：count（u64）+ inWord（u8）。
+  final NativeScratch _slots = NativeScratch.fixed(16);
+  final NativeScratch _buffer = NativeScratch(minCapacity: 2048);
 
   static StudyCharsNative? _instance;
 
@@ -66,27 +64,21 @@ final class StudyCharsNative {
   ({int count, bool inWord}) add(String text, int count, bool inWord) {
     final int length = text.length;
     if (length == 0) return (count: count, inWord: inWord);
-    if (length > _capacity) {
-      if (_buffer != nullptr) calloc.free(_buffer);
-      int capacity = _capacity == 0 ? 1024 : _capacity;
-      while (capacity < length) {
-        capacity *= 2;
-      }
-      _buffer = calloc<Uint16>(capacity);
-      _capacity = capacity;
-    }
-    final Uint16List units = _buffer.asTypedList(length);
+    final Pointer<Uint16> buffer = _buffer.reserve(length * 2).cast<Uint16>();
+    final Uint16List units = buffer.asTypedList(length);
     for (int i = 0; i < length; i++) {
       units[i] = text.codeUnitAt(i);
     }
-    _count.value = count;
-    _inWord.value = inWord ? 1 : 0;
-    final int status = _countUtf16(_buffer, length, _count, _inWord);
+    final Pointer<Uint64> countSlot = _slots.pointer.cast<Uint64>();
+    final Pointer<Uint8> inWordSlot = _slots.pointer + 8;
+    countSlot.value = count;
+    inWordSlot.value = inWord ? 1 : 0;
+    final int status = _countUtf16(buffer, length, countSlot, inWordSlot);
     if (status != FfcStatus.ok) {
       throw StateError(
         'ffc_parse_study_chars_utf16 failed with status $status',
       );
     }
-    return (count: _count.value, inWord: _inWord.value != 0);
+    return (count: countSlot.value, inWord: inWordSlot.value != 0);
   }
 }

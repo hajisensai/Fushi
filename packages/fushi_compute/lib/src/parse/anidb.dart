@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../fushi_compute_library.dart';
+import '../native_scratch.dart';
 
 // 视频刮削标题归一化 / 相似度（`ffc_parse_title_*`，native/fushi_compute/src/parse/title_score.rs）
 // 与 AniDB 标题目录 / anime XML 解析（`ffc_parse_anidb_*`，src/parse/anidb.rs）的绑定。
@@ -149,7 +150,7 @@ typedef _SearchDart =
     );
 
 /// 本 isolate 的符号表与暂存区。
-final class _AniDbNative {
+final class _AniDbNative implements Finalizable {
   _AniDbNative._(this.compute) {
     final DynamicLibrary lib = compute.library;
     // lookup 名写成字符串字面量：verify_abi.sh 从绑定源码抓期望符号集。
@@ -246,50 +247,31 @@ final class _AniDbNative {
     catalogFreePointer.cast(),
   );
 
-  final Pointer<Size> sizeOut = calloc<Size>();
-  final Pointer<Double> doubleOut = calloc<Double>();
-  final Pointer<Uint32> u32Out = calloc<Uint32>();
-  final Pointer<Pointer<Uint8>> bytesOut = calloc<Pointer<Uint8>>();
-  final Pointer<Pointer<Void>> handleOut = calloc<Pointer<Void>>();
+  /// 固定输出槽（一块定长内存按 8 字节切）：size / double / u32 / bytes 指针 / 句柄 +
+  /// `ffc_parse_anidb_catalog_record_table` 的 7 个输出字。由 [NativeScratch] 持有，
+  /// isolate 退出时释放。
+  final NativeScratch _slots = NativeScratch.fixed(8 * 12);
+  Pointer<Size> get sizeOut => _slots.pointer.cast<Size>();
+  Pointer<Double> get doubleOut => (_slots.pointer + 8).cast<Double>();
+  Pointer<Uint32> get u32Out => (_slots.pointer + 16).cast<Uint32>();
+  Pointer<Pointer<Uint8>> get bytesOut =>
+      (_slots.pointer + 24).cast<Pointer<Uint8>>();
+  Pointer<Pointer<Void>> get handleOut =>
+      (_slots.pointer + 32).cast<Pointer<Void>>();
+  Pointer<Size> get recordTableWords => (_slots.pointer + 40).cast<Size>();
 
-  /// `ffc_parse_anidb_catalog_record_table` 的 7 个输出字。
-  final Pointer<Size> recordTableWords = calloc<Size>(7);
-
-  Pointer<Uint16> _units = nullptr;
-  int _unitsCapacity = 0;
-  Pointer<Uint16> _out = nullptr;
-  int _outCapacity = 0;
+  final NativeScratch _units = NativeScratch(minCapacity: 2048);
+  final NativeScratch _out = NativeScratch(minCapacity: 2048);
 
   static _AniDbNative? _instance;
   static _AniDbNative get instance =>
       _instance ??= _AniDbNative._(FushiCompute.require());
 
   /// 至少 [length] 个码元的输入暂存区。
-  Pointer<Uint16> units(int length) {
-    if (length > _unitsCapacity) {
-      if (_units != nullptr) calloc.free(_units);
-      int capacity = _unitsCapacity == 0 ? 1024 : _unitsCapacity;
-      while (capacity < length) {
-        capacity *= 2;
-      }
-      _units = calloc<Uint16>(capacity);
-      _unitsCapacity = capacity;
-    }
-    return _units;
-  }
+  Pointer<Uint16> units(int length) => _units.reserve(length * 2).cast();
 
-  Pointer<Uint16> output(int length) {
-    if (length > _outCapacity) {
-      if (_out != nullptr) calloc.free(_out);
-      int capacity = _outCapacity == 0 ? 1024 : _outCapacity;
-      while (capacity < length) {
-        capacity *= 2;
-      }
-      _out = calloc<Uint16>(capacity);
-      _outCapacity = capacity;
-    }
-    return _out;
-  }
+  /// 至少 [length] 个码元的输出暂存区。
+  Pointer<Uint16> output(int length) => _out.reserve(length * 2).cast();
 
   /// 把 [text] 写进 [target] 的 [offset] 处。
   static void write(Pointer<Uint16> target, int offset, String text) {
@@ -502,15 +484,18 @@ abstract final class TitleScoreNative {
   }
 }
 
-/// 一批字符串打包进原生内存：拼接的码元 + `count + 1` 个偏移。用完 [free]。
-final class _PackedStrings {
+/// 一批字符串打包进原生内存：拼接的码元 + `count + 1` 个偏移。用完 [free]（漏调也随对象
+/// 回收经 [NativeScratch] 释放）。
+final class _PackedStrings implements Finalizable {
   _PackedStrings(List<String> items) : count = items.length {
     int total = 0;
     for (final String s in items) {
       total += s.length;
     }
-    units = calloc<Uint16>(total == 0 ? 1 : total);
-    offsets = calloc<Uint32>(count + 1);
+    _units = NativeScratch.fixed((total == 0 ? 1 : total) * 2);
+    _offsets = NativeScratch.fixed((count + 1) * 4);
+    units = _units.pointer.cast<Uint16>();
+    offsets = _offsets.pointer.cast<Uint32>();
     int cursor = 0;
     for (int i = 0; i < count; i++) {
       offsets[i] = cursor;
@@ -521,12 +506,14 @@ final class _PackedStrings {
   }
 
   final int count;
+  late final NativeScratch _units;
+  late final NativeScratch _offsets;
   late final Pointer<Uint16> units;
   late final Pointer<Uint32> offsets;
 
   void free() {
-    calloc.free(units);
-    calloc.free(offsets);
+    _units.release();
+    _offsets.release();
   }
 }
 
@@ -552,7 +539,7 @@ final class AniDbCatalogNativeError implements Exception {
 }
 
 /// 流式喂入解压后标题包的构建器。用完必须 [dispose]（成功 [finish] 之后也要）。
-final class AniDbCatalogBuilderNative {
+final class AniDbCatalogBuilderNative implements Finalizable {
   AniDbCatalogBuilderNative() : _n = _AniDbNative.instance {
     _handle = _n.builderNew();
     if (_handle == nullptr) {
@@ -562,8 +549,9 @@ final class AniDbCatalogBuilderNative {
 
   final _AniDbNative _n;
   late Pointer<Void> _handle;
-  Pointer<Uint8> _chunk = nullptr;
-  int _chunkCapacity = 0;
+
+  /// 喂入块的暂存区（[NativeScratch]：[dispose] 立即归还，漏调也随对象回收释放）。
+  final NativeScratch _chunk = NativeScratch();
 
   AniDbCatalogNativeError _error() {
     _check(
@@ -587,14 +575,10 @@ final class AniDbCatalogBuilderNative {
   void add(List<int> chunk) {
     final int length = chunk.length;
     if (length == 0) return;
-    if (length > _chunkCapacity) {
-      if (_chunk != nullptr) calloc.free(_chunk);
-      _chunk = calloc<Uint8>(length);
-      _chunkCapacity = length;
-    }
-    _chunk.asTypedList(length).setAll(0, chunk);
+    final Pointer<Uint8> buffer = _chunk.reserve(length);
+    buffer.asTypedList(length).setAll(0, chunk);
     _status(
-      _n.builderFeed(_handle, _chunk, length),
+      _n.builderFeed(_handle, buffer, length),
       'ffc_parse_anidb_catalog_builder_feed',
     );
   }
@@ -619,11 +603,7 @@ final class AniDbCatalogBuilderNative {
       _n.builderFree(_handle);
       _handle = nullptr;
     }
-    if (_chunk != nullptr) {
-      calloc.free(_chunk);
-      _chunk = nullptr;
-      _chunkCapacity = 0;
-    }
+    _chunk.release();
   }
 }
 

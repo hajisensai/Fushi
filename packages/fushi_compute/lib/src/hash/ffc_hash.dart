@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../fushi_compute_library.dart';
+import '../native_scratch.dart';
 
 typedef _NewC = Pointer<Void> Function();
 typedef _NewDart = Pointer<Void> Function();
@@ -132,16 +133,17 @@ final class _HashBindings {
 ///
 /// 调用方把数据写进 [buffer]（例如 `RandomAccessFile.readInto(hasher.buffer)`），
 /// 再 [update] 实际写入的字节数，省掉一次 Dart → 原生的拷贝。用完必须 [close]
-/// （放在 `finally` 里）；[close] 幂等。
-sealed class FfcStreamingHash {
+/// （放在 `finally` 里）；[close] 幂等。输入缓冲区由 [NativeScratch] 持有：忘了 [close]
+/// 也会随对象回收 / isolate 退出释放（上下文仍要 [close]）。
+sealed class FfcStreamingHash implements Finalizable {
   FfcStreamingHash._(this._ctx, int bufferSize)
-    : _buffer = malloc<Uint8>(bufferSize),
+    : _bufferOwner = NativeScratch.fixed(bufferSize),
       bufferSize = bufferSize {
-    buffer = _buffer.asTypedList(bufferSize);
+    buffer = _bufferOwner.pointer.asTypedList(bufferSize);
   }
 
   Pointer<Void> _ctx;
-  final Pointer<Uint8> _buffer;
+  final NativeScratch _bufferOwner;
 
   /// [buffer] 的长度。
   final int bufferSize;
@@ -159,7 +161,7 @@ sealed class FfcStreamingHash {
   void update(int length) {
     RangeError.checkValueInInterval(length, 0, bufferSize, 'length');
     _checkUsable();
-    _checkStatus(_update(_ctx, _buffer, length));
+    _checkStatus(_update(_ctx, _bufferOwner.pointer, length));
   }
 
   /// 追加任意 Dart 字节（经 [buffer] 分段拷贝）；读文件时优先直接 readInto [buffer]。
@@ -189,7 +191,7 @@ sealed class FfcStreamingHash {
     if (_closed) return;
     _free(_ctx);
     _ctx = nullptr;
-    malloc.free(_buffer);
+    _bufferOwner.release();
   }
 }
 
@@ -285,9 +287,10 @@ final class FfcSha256Hasher extends FfcStreamingHash {
   }
 }
 
-/// CRC-32 的分段大小 = 拷贝用暂存区大小（每个 isolate 一块，按需分配一次）。
+/// CRC-32 的分段大小 = 拷贝用暂存区大小（每个 isolate 一块，首次使用时分配，isolate
+/// 退出时经 [NativeScratch] 的 finalizer 释放）。
 const int _crcSlice = 1 << 20;
-Pointer<Uint8> _crcScratch = nullptr;
+final NativeScratch _crcScratch = NativeScratch.fixed(_crcSlice);
 
 /// CRC-32（IEEE，zip 用的那个）：在 [crc]（上一段结果，首段 0）之上续算 [bytes]。
 /// 与 `package:archive` 的 `getCrc32(bytes, crc)` 同语义，可分段链式调用。
@@ -295,13 +298,13 @@ Pointer<Uint8> _crcScratch = nullptr;
 /// 库不可用抛 [FushiComputeUnavailableError]。
 int ffcCrc32(List<int> bytes, [int crc = 0, FushiCompute? library]) {
   final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
-  if (_crcScratch == nullptr) _crcScratch = malloc<Uint8>(_crcSlice);
-  final Uint8List scratch = _crcScratch.asTypedList(_crcSlice);
+  final Pointer<Uint8> ptr = _crcScratch.pointer;
+  final Uint8List scratch = ptr.asTypedList(_crcSlice);
   int value = crc & 0xffffffff;
   for (int offset = 0; offset < bytes.length; offset += _crcSlice) {
     final int n = min(bytes.length - offset, _crcSlice);
     scratch.setRange(0, n, bytes, offset);
-    value = b.crc32(value, _crcScratch, n);
+    value = b.crc32(value, ptr, n);
   }
   return value;
 }
@@ -477,7 +480,7 @@ bool ffcPowCheck(
 }
 
 const int _equalSlice = 1 << 20;
-Pointer<Uint8> _equalScratch = nullptr;
+final NativeScratch _equalScratch = NativeScratch.fixed(2 * _equalSlice);
 
 /// 两段字节是否完全相同（长度不同即不同）。按 1 MiB 一段拷进原生暂存区比较。
 bool ffcBytesEqual(List<int> a, List<int> b, {FushiCompute? library}) {
@@ -485,15 +488,15 @@ bool ffcBytesEqual(List<int> a, List<int> b, {FushiCompute? library}) {
     library ?? FushiCompute.require(),
   );
   if (a.length != b.length) return false;
-  if (_equalScratch == nullptr) _equalScratch = malloc<Uint8>(2 * _equalSlice);
-  final Pointer<Uint8> right = _equalScratch + _equalSlice;
-  final Uint8List leftView = _equalScratch.asTypedList(_equalSlice);
+  final Pointer<Uint8> left = _equalScratch.pointer;
+  final Pointer<Uint8> right = left + _equalSlice;
+  final Uint8List leftView = left.asTypedList(_equalSlice);
   final Uint8List rightView = right.asTypedList(_equalSlice);
   for (int offset = 0; offset < a.length; offset += _equalSlice) {
     final int n = min(a.length - offset, _equalSlice);
     leftView.setRange(0, n, a, offset);
     rightView.setRange(0, n, b, offset);
-    final int status = bind.bytesEqual(_equalScratch, n, right, n);
+    final int status = bind.bytesEqual(left, n, right, n);
     if (status < 0) FfcStreamingHash._checkStatus(status);
     if (status == 0) return false;
   }
@@ -501,25 +504,22 @@ bool ffcBytesEqual(List<int> a, List<int> b, {FushiCompute? library}) {
 }
 
 /// 单个 UUIDv5 / hash53 的暂存区：一次调用不做任何 malloc（单个调用点很多，FFI 之外的
-/// 分配会比哈希本身还贵）。每个 isolate 一份，按需增长。
-Pointer<Uint8> _singleScratch = nullptr;
-int _singleScratchSize = 0;
-final Pointer<Uint64> _singleOffsets = malloc<Uint64>(2);
-final Pointer<Uint8> _singleNamespace = malloc<Uint8>(32);
-final Pointer<Uint64> _singleOut = malloc<Uint64>(1);
+/// 分配会比哈希本身还贵）。每个 isolate 一份，按需增长；isolate 退出时经 [NativeScratch]
+/// 的 finalizer 释放。
+final NativeScratch _singleScratch = NativeScratch(minCapacity: 256);
+
+/// 固定槽：offsets（2 × u64）、namespace + 输出（32 B）、hash53 输出（1 × u64）。
+final NativeScratch _singleSlots = NativeScratch.fixed(16 + 32 + 8);
+final Pointer<Uint64> _singleOffsets = _singleSlots.pointer.cast<Uint64>();
+final Pointer<Uint8> _singleNamespace = _singleSlots.pointer + 16;
+final Pointer<Uint64> _singleOut = (_singleSlots.pointer + 48).cast<Uint64>();
 
 Pointer<Uint8> _singleInput(List<int> bytes) {
-  if (_singleScratchSize < bytes.length || _singleScratch == nullptr) {
-    if (_singleScratch != nullptr) malloc.free(_singleScratch);
-    _singleScratchSize = max(256, bytes.length);
-    _singleScratch = malloc<Uint8>(_singleScratchSize);
-  }
-  _singleScratch
-      .asTypedList(_singleScratchSize)
-      .setRange(0, bytes.length, bytes);
+  final Pointer<Uint8> data = _singleScratch.reserve(bytes.length);
+  data.asTypedList(bytes.length).setRange(0, bytes.length, bytes);
   _singleOffsets[0] = 0;
   _singleOffsets[1] = bytes.length;
-  return _singleScratch;
+  return data;
 }
 
 /// 单个 UUIDv5：[namespace] 16 字节、[name] 为 UTF-8 字节，返回 16 字节（已置版本 / 变体位）。

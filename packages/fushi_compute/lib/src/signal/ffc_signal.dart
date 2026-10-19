@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../fushi_compute_library.dart';
+import '../native_scratch.dart';
 
 typedef _XcorrC =
     Int32 Function(
@@ -304,41 +305,46 @@ Float64List ffcParseRmsLog(
 
 /// 一条 dB 能量包络的线性振幅副本（原生内存，随对象被 GC 释放），用于反复降采样成
 /// 不同宽度的波形桶：`10^(dB/20)` 只在构造时算一遍。
-final class FfcEnergyEnvelope {
-  FfcEnergyEnvelope._(this._b, this._amp, this._view);
+///
+/// 振幅数组由 [NativeScratch] owner 持有、finalizer 挂在 owner 上；本类实现 [Finalizable]，
+/// 实例方法执行期间 `this`（进而 owner）一直保活。不能只把裸地址交给原生侧而让 owner 在
+/// 最后一次 Dart 引用之后被判不可达（一次性 `fromDb(...).downsample(...)` 就是这条路径，
+/// HBK-AUDIT-002）。
+final class FfcEnergyEnvelope implements Finalizable {
+  FfcEnergyEnvelope._(this._b, this._amp, this.length);
 
   /// 由 dB 序列（越大越响）建包络。库不可用抛 [FushiComputeUnavailableError]。
   factory FfcEnergyEnvelope.fromDb(List<double> db, {FushiCompute? library}) {
     final _SignalBindings b = _SignalBindings.of(library);
     final int n = db.length;
-    final Pointer<Double> amp = malloc<Double>(n == 0 ? 1 : n);
-    final Float64List view = amp.asTypedList(n, finalizer: malloc.nativeFree);
-    view.setAll(0, db);
-    _check(b.dbToAmp(amp, amp, n), 'ffc_signal_db_to_amplitude');
-    return FfcEnergyEnvelope._(b, amp, view);
+    final NativeScratch amp = NativeScratch.fixed((n == 0 ? 1 : n) * 8);
+    final Pointer<Double> ptr = amp.pointer.cast<Double>();
+    ptr.asTypedList(n).setAll(0, db);
+    _check(b.dbToAmp(ptr, ptr, n), 'ffc_signal_db_to_amplitude');
+    return FfcEnergyEnvelope._(b, amp, n);
   }
 
   final _SignalBindings _b;
-  final Pointer<Double> _amp;
 
-  /// 持有 [_amp] 的 finalizer；对象活着内存就不会被释放。
-  final Float64List _view;
+  /// 线性振幅（[length] 个 f64）的 owner。
+  final NativeScratch _amp;
 
   /// 帧数。
-  int get length => _view.length;
+  final int length;
 
   /// 降到 [targetBuckets] 个 0..1 波形桶：每桶取区间线性振幅峰值，再以最小桶峰值为
   /// 地基、第 [percentile]（夹到 0..1）分位为上限线性归一化；全同值时全 0。
   /// [targetBuckets] >= 帧数时每帧一桶；空包络或 [targetBuckets] <= 0 返回空列表。
   Float64List downsample(int targetBuckets, {double percentile = 0.99}) {
-    final int n = _view.length;
+    final int n = length;
     if (n == 0 || targetBuckets <= 0) return Float64List(0);
     final int count = targetBuckets >= n ? n : targetBuckets;
+    final Pointer<Double> amp = _amp.pointer.cast<Double>();
     return using((Arena arena) {
       final Pointer<Double> out = arena<Double>(count);
       final Pointer<Size> outLen = arena<Size>();
       _check(
-        _b.downsample(_amp, n, targetBuckets, percentile, out, count, outLen),
+        _b.downsample(amp, n, targetBuckets, percentile, out, count, outLen),
         'ffc_signal_downsample_peaks',
       );
       return Float64List.fromList(out.asTypedList(outLen.value));

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:fushi_compute/src/fushi_compute_library.dart';
+import 'package:fushi_compute/src/native_scratch.dart';
 
 /// `ffc_crypto_*` 的本域状态码（native/fushi_compute/src/crypto.rs）。
 abstract final class FfcCryptoStatus {
@@ -76,7 +77,10 @@ typedef _CbcPkcs7Dart =
 /// 数据经本 isolate 一块复用的原生暂存区进出（拷入 → 原地解 → 拷出，一次 memcpy 往返，
 /// 实测相对 AES 可忽略）：`TypedData.address` 零拷贝只对 `@Native` 静态绑定可用，而本包
 /// 按路径动态加载。单次调用处理一个 relay 块（32 单元）或一个 HLS 分片。
-final class FushiComputeCrypto {
+///
+/// 暂存区与固定槽都由 [NativeScratch] 持有：AACS relay 每次起一个短命 isolate，退出时由
+/// finalizer 释放，不留下外部分配（HBK-AUDIT-004）。
+final class FushiComputeCrypto implements Finalizable {
   FushiComputeCrypto._(FushiCompute lib)
     : _aacsOpen = lib.library.lookupFunction<_AacsOpenC, _AacsOpenDart>(
         'ffc_crypto_aacs_open',
@@ -137,26 +141,26 @@ final class FushiComputeCrypto {
   final _P256SignDart _p256Sign;
   final _P256SignDart _p256Verify;
 
-  // 本 isolate 的原生暂存区（只增不减，随 isolate 存活；调用全是同步的，不会并发复用）。
-  Pointer<Uint8> _scratch = nullptr;
-  int _scratchLength = 0;
-  final Pointer<Size> _outLen = malloc<Size>();
-  final Pointer<Uint8> _keyBuf = malloc<Uint8>(32);
-  final Pointer<Uint8> _ivBuf = malloc<Uint8>(16);
-  // P-256：私钥 32 / 公钥点 65 / 签名 64 字节。
-  final Pointer<Uint8> _scalarBuf = malloc<Uint8>(32);
-  final Pointer<Uint8> _pointBuf = malloc<Uint8>(65);
-  final Pointer<Uint8> _sigBuf = malloc<Uint8>(64);
+  // 本 isolate 的原生暂存区（随 isolate 存活；调用全是同步的，不会并发复用）。
+  final NativeScratch _scratch = NativeScratch();
 
-  Pointer<Uint8> _scratchFor(int length) {
-    if (length == 0) length = 1;
-    if (length > _scratchLength) {
-      if (_scratch != nullptr) malloc.free(_scratch);
-      _scratch = malloc<Uint8>(length);
-      _scratchLength = length;
-    }
-    return _scratch;
-  }
+  // 固定槽，一块定长内存按偏移切：outLen 8 / key 32 / IV 16 / P-256 私钥 32 / 公钥点 65 /
+  // 签名 64 字节。
+  final NativeScratch _slots = NativeScratch.fixed(_sigAt + 64);
+  static const int _keyAt = 8;
+  static const int _ivAt = _keyAt + 32;
+  static const int _scalarAt = _ivAt + 16;
+  static const int _pointAt = _scalarAt + 32;
+  static const int _sigAt = _pointAt + 65;
+
+  Pointer<Size> get _outLen => _slots.pointer.cast<Size>();
+  Pointer<Uint8> get _keyBuf => _slots.pointer + _keyAt;
+  Pointer<Uint8> get _ivBuf => _slots.pointer + _ivAt;
+  Pointer<Uint8> get _scalarBuf => _slots.pointer + _scalarAt;
+  Pointer<Uint8> get _pointBuf => _slots.pointer + _pointAt;
+  Pointer<Uint8> get _sigBuf => _slots.pointer + _sigAt;
+
+  Pointer<Uint8> _scratchFor(int length) => _scratch.reserve(length);
 
   static FushiComputeCrypto? _instance;
 
@@ -416,18 +420,15 @@ final class AacsUnitsResult {
 
 /// 原生侧持有 unit key 与「上次命中的 key」的 AACS 解码器。随 Dart 对象回收释放。
 final class AacsNativeDecoder implements Finalizable {
-  AacsNativeDecoder._(this._crypto, this._handle) : _done = malloc<Size>() {
+  AacsNativeDecoder._(this._crypto, this._handle) {
     _crypto._aacsClose.attach(this, _handle, detach: this);
-    _doneFinalizer.attach(this, _done.cast(), detach: this);
   }
-
-  static final NativeFinalizer _doneFinalizer = NativeFinalizer(
-    malloc.nativeFree,
-  );
 
   final FushiComputeCrypto _crypto;
   final Pointer<Void> _handle;
-  final Pointer<Size> _done;
+
+  /// 「解完单元数」输出槽。
+  final NativeScratch _done = NativeScratch.fixed(8);
 
   /// 单元长度。
   static const int unitLength = 6144;
@@ -439,14 +440,15 @@ final class AacsNativeDecoder implements Finalizable {
     }
     final Pointer<Uint8> buf = _crypto._scratchFor(units.length);
     final Uint8List view = buf.asTypedList(units.length)..setAll(0, units);
-    final int code = _crypto._aacsDecrypt(_handle, buf, units.length, _done);
+    final Pointer<Size> doneOut = _done.pointer.cast<Size>();
+    final int code = _crypto._aacsDecrypt(_handle, buf, units.length, doneOut);
     if (code != FfcStatus.ok &&
         code != FfcCryptoStatus.aacsClearUnitInvalid &&
         code != FfcCryptoStatus.aacsNoMatchingKey &&
         code != FfcCryptoStatus.aacsUnitCorrupt) {
       throw StateError('ffc_crypto_aacs_decrypt_units: $code');
     }
-    final int done = _done.value;
+    final int done = doneOut.value;
     // 只拷回成功的单元：失败单元及其后保持调用方原样。
     if (done > 0) units.setRange(0, done * unitLength, view);
     return AacsUnitsResult(code, done);

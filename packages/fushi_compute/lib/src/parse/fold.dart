@@ -1,9 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
-import 'package:ffi/ffi.dart';
-
 import '../fushi_compute_library.dart';
+import '../native_scratch.dart';
 
 typedef _FoldUtf16C =
     Int32 Function(
@@ -54,21 +53,30 @@ typedef _FoldStudyUtf16Dart =
 /// 这是该口径**唯一**的 Dart 侧运行时实现：没有 Dart 回退。原生库或符号缺失时
 /// [instance] 抛 [FushiComputeUnavailableError]。
 ///
-/// 每个 isolate 各持一份实例与一组复用的原生暂存区（随 isolate 生命周期，不释放）。
-final class AudioTextFoldNative {
-  AudioTextFoldNative._(this._foldUtf16, this._foldStudyUtf16)
-    : _outLen = calloc<Size>(),
-      _total = calloc<Uint32>();
+/// 每个 isolate 各持一份实例与一组复用的原生暂存区（[NativeScratch]：随 isolate 存活，
+/// isolate 退出时由 finalizer 释放——字幕重匹配、TTS 等短命 worker 不留下外部分配）。
+final class AudioTextFoldNative implements Finalizable {
+  AudioTextFoldNative._(this._foldUtf16, this._foldStudyUtf16);
 
   final _FoldUtf16Dart _foldUtf16;
   final _FoldStudyUtf16Dart _foldStudyUtf16;
-  final Pointer<Size> _outLen;
-  final Pointer<Uint32> _total;
+
+  /// 固定槽：outLen（size_t）+ total（u32）。
+  final NativeScratch _slots = NativeScratch.fixed(16);
+  final NativeScratch _inputScratch = NativeScratch(minCapacity: 2048);
+  final NativeScratch _outputScratch = NativeScratch(minCapacity: 2048);
+  final NativeScratch _startsScratch = NativeScratch(minCapacity: 4096);
+  final NativeScratch _endsScratch = NativeScratch(minCapacity: 4096);
+
+  // 本次调用的缓冲（[_ensureCapacity] 之后有效；下一次 [_ensureCapacity] 可能换块）。
   Pointer<Uint16> _input = nullptr;
   Pointer<Uint16> _output = nullptr;
   Pointer<Uint32> _starts = nullptr;
   Pointer<Uint32> _ends = nullptr;
   int _capacity = 0;
+
+  Pointer<Size> get _outLen => _slots.pointer.cast<Size>();
+  Pointer<Uint32> get _total => (_slots.pointer + 8).cast<Uint32>();
 
   static AudioTextFoldNative? _instance;
 
@@ -94,24 +102,13 @@ final class AudioTextFoldNative {
     }
   }
 
+  /// 四块缓冲都至少 [length] 个元素（原生侧保证输出不比输入长，容量传 [length] 即可）。
   void _ensureCapacity(int length) {
-    if (length <= _capacity) return;
-    if (_capacity > 0) {
-      calloc
-        ..free(_input)
-        ..free(_output)
-        ..free(_starts)
-        ..free(_ends);
-    }
-    int capacity = _capacity == 0 ? 1024 : _capacity;
-    while (capacity < length) {
-      capacity *= 2;
-    }
-    _input = calloc<Uint16>(capacity);
-    _output = calloc<Uint16>(capacity);
-    _starts = calloc<Uint32>(capacity);
-    _ends = calloc<Uint32>(capacity);
-    _capacity = capacity;
+    _input = _inputScratch.reserve(length * 2).cast<Uint16>();
+    _output = _outputScratch.reserve(length * 2).cast<Uint16>();
+    _starts = _startsScratch.reserve(length * 4).cast<Uint32>();
+    _ends = _endsScratch.reserve(length * 4).cast<Uint32>();
+    _capacity = length;
   }
 
   void _copyIn(String text) {

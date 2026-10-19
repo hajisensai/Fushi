@@ -1,9 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
-import 'package:ffi/ffi.dart';
-
 import '../fushi_compute_library.dart';
+import '../native_scratch.dart';
 
 typedef _BatchC =
     Int32 Function(
@@ -76,12 +75,14 @@ final class FfcParsedName {
 typedef FfcTrailingSeason = ({int season, int titleStart, int titleEnd});
 
 /// 原生库暂存区：一组字符串按 UTF-16 码元连续写进一块原生内存 + 各自长度。
-/// 每个 isolate 各持一份（随 isolate 生命周期，不释放）。
-final class Utf16BatchBuffer {
+/// 每个 isolate 各持一份（[NativeScratch]：随 isolate 存活，退出时由 finalizer 释放）。
+final class Utf16BatchBuffer implements Finalizable {
+  final NativeScratch _units = NativeScratch(minCapacity: 512);
+  final NativeScratch _lens = NativeScratch(minCapacity: 1024);
+
+  /// 最近一次 [fill] 写入的码元 / 长度数组（下一次 [fill] 前有效）。
   Pointer<Uint16> units = nullptr;
   Pointer<Uint32> lens = nullptr;
-  int _unitCapacity = 0;
-  int _lenCapacity = 0;
 
   /// 已写入的码元总数 / 字符串个数。
   int unitCount = 0;
@@ -93,18 +94,10 @@ final class Utf16BatchBuffer {
     for (final String value in values) {
       total += value.length;
     }
-    if (total > _unitCapacity) {
-      if (units != nullptr) calloc.free(units);
-      _unitCapacity = _grow(_unitCapacity, total);
-      units = calloc<Uint16>(_unitCapacity);
-    }
-    if (values.length > _lenCapacity) {
-      if (lens != nullptr) calloc.free(lens);
-      _lenCapacity = _grow(_lenCapacity, values.length);
-      lens = calloc<Uint32>(_lenCapacity);
-    }
-    final Uint16List unitView = units.asTypedList(_unitCapacity);
-    final Uint32List lenView = lens.asTypedList(_lenCapacity);
+    units = _units.reserve(total * 2).cast<Uint16>();
+    lens = _lens.reserve(values.length * 4).cast<Uint32>();
+    final Uint16List unitView = units.asTypedList(total);
+    final Uint32List lenView = lens.asTypedList(values.length);
     int offset = 0;
     for (int i = 0; i < values.length; i++) {
       final String value = values[i];
@@ -118,14 +111,6 @@ final class Utf16BatchBuffer {
     unitCount = total;
     count = values.length;
   }
-
-  static int _grow(int current, int needed) {
-    int capacity = current == 0 ? 256 : current;
-    while (capacity < needed) {
-      capacity *= 2;
-    }
-    return capacity;
-  }
 }
 
 /// 视频文件名 / 目录名解析的原生实现（`native/fushi_compute/src/parse/media_name.rs` 的
@@ -133,7 +118,7 @@ final class Utf16BatchBuffer {
 /// 缺失时 [instance] 抛 [FushiComputeUnavailableError]。
 ///
 /// 接口一律批量：一次 FFI 调用解析一组字符串，结果是定长记录 + UTF-16 池一次交回。
-final class MediaNameNative {
+final class MediaNameNative implements Finalizable {
   MediaNameNative._(
     this._compute,
     this._parse,
@@ -147,10 +132,12 @@ final class MediaNameNative {
   final _TrailingSeasonDart _trailing;
   final Utf16BatchBuffer _input = Utf16BatchBuffer();
   final Utf16BatchBuffer _extensions = Utf16BatchBuffer();
-  final Pointer<Pointer<Uint8>> _outPtr = calloc<Pointer<Uint8>>();
-  final Pointer<Size> _outLen = calloc<Size>();
-  Pointer<Int32> _seasonOut = nullptr;
-  int _seasonCapacity = 0;
+
+  /// 固定输出槽：outPtr（指针）+ outLen（size_t）。
+  final NativeScratch _slots = NativeScratch.fixed(16);
+  Pointer<Pointer<Uint8>> get _outPtr => _slots.pointer.cast<Pointer<Uint8>>();
+  Pointer<Size> get _outLen => (_slots.pointer + 8).cast<Size>();
+  final NativeScratch _seasonOut = NativeScratch(minCapacity: 1024);
   Object? _extensionsKey;
 
   static MediaNameNative? _instance;
@@ -212,24 +199,20 @@ final class MediaNameNative {
     if (texts.isEmpty) return const <FfcTrailingSeason?>[];
     _input.fill(texts);
     final int needed = texts.length * 3;
-    if (needed > _seasonCapacity) {
-      if (_seasonOut != nullptr) calloc.free(_seasonOut);
-      _seasonCapacity = Utf16BatchBuffer._grow(_seasonCapacity, needed);
-      _seasonOut = calloc<Int32>(_seasonCapacity);
-    }
+    final Pointer<Int32> seasonOut = _seasonOut.reserve(needed * 4).cast();
     final int status = _trailing(
       _input.units,
       _input.unitCount,
       _input.lens,
       _input.count,
-      _seasonOut,
+      seasonOut,
     );
     if (status != FfcStatus.ok) {
       throw StateError(
         'ffc_parse_filename_trailing_season_batch failed with status $status',
       );
     }
-    final Int32List out = _seasonOut.asTypedList(needed);
+    final Int32List out = seasonOut.asTypedList(needed);
     return <FfcTrailingSeason?>[
       for (int i = 0; i < texts.length; i++)
         out[i * 3] < 0

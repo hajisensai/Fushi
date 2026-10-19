@@ -1,9 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
-import 'package:ffi/ffi.dart';
-
 import '../fushi_compute_library.dart';
+import '../native_scratch.dart';
 
 typedef _ParseC =
     Int32 Function(
@@ -62,8 +61,8 @@ typedef _ParseMarkupDart =
 /// 拿回结果字节块（[SubtitleNativeResult]）；把结果解码成 `AudioCue` / `SubtitleMarkup`
 /// 的是 packages/fushi_audio（本包不依赖它）。
 ///
-/// 每个 isolate 各持一份实例与一块复用的输入暂存区。
-final class SubtitleParseNative {
+/// 每个 isolate 各持一份实例与一块复用的输入暂存区（[NativeScratch]，isolate 退出时释放）。
+final class SubtitleParseNative implements Finalizable {
   SubtitleParseNative._(
     this._compute,
     this._srt,
@@ -71,8 +70,7 @@ final class SubtitleParseNative {
     this._ass,
     this._markup,
     this._strip,
-  ) : _outPtr = calloc<Pointer<Uint8>>(),
-      _outLen = calloc<Size>();
+  );
 
   final FushiCompute _compute;
   final _ParseDart _srt;
@@ -80,10 +78,13 @@ final class SubtitleParseNative {
   final _ParseAssDart _ass;
   final _ParseMarkupDart _markup;
   final _ParseDart _strip;
-  final Pointer<Pointer<Uint8>> _outPtr;
-  final Pointer<Size> _outLen;
-  Pointer<Uint16> _buffer = nullptr;
-  int _capacity = 0;
+
+  /// 固定输出槽：outPtr（指针）+ outLen（size_t）。
+  final NativeScratch _slots = NativeScratch.fixed(16);
+  Pointer<Pointer<Uint8>> get _outPtr => _slots.pointer.cast<Pointer<Uint8>>();
+  Pointer<Size> get _outLen => (_slots.pointer + 8).cast<Size>();
+
+  final NativeScratch _buffer = NativeScratch(minCapacity: 2048);
 
   /// 暂存区超过这么多码元时用完即释放（大文件只在后台 isolate 里解析一次）。
   static const int _retainCapacity = 1 << 16;
@@ -184,27 +185,15 @@ final class SubtitleParseNative {
     int Function(Pointer<Uint16> units, int length) invoke,
   ) {
     final int length = text.length;
-    if (length > _capacity) {
-      if (_buffer != nullptr) calloc.free(_buffer);
-      int capacity = _capacity == 0 ? 1024 : _capacity;
-      while (capacity < length) {
-        capacity *= 2;
-      }
-      _buffer = calloc<Uint16>(capacity);
-      _capacity = capacity;
-    }
+    final Pointer<Uint16> buffer = _buffer.reserve(length * 2).cast<Uint16>();
     if (length > 0) {
-      final Uint16List units = _buffer.asTypedList(length);
+      final Uint16List units = buffer.asTypedList(length);
       for (int i = 0; i < length; i++) {
         units[i] = text.codeUnitAt(i);
       }
     }
-    final int status = invoke(_buffer, length);
-    if (_capacity > _retainCapacity) {
-      calloc.free(_buffer);
-      _buffer = nullptr;
-      _capacity = 0;
-    }
+    final int status = invoke(buffer, length);
+    if (_buffer.capacity > _retainCapacity * 2) _buffer.release();
     if (status != FfcStatus.ok) {
       throw StateError('ffc_parse_subtitle_* failed with status $status');
     }

@@ -1,9 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
-import 'package:ffi/ffi.dart';
-
 import '../fushi_compute_library.dart';
+import '../native_scratch.dart';
 
 typedef _ChapterC =
     Int32 Function(
@@ -60,10 +59,8 @@ typedef _CssDart =
 /// 输入是磁盘上的原始字节（宽松 UTF-8 解码在原生侧做，规则同 Dart
 /// `utf8.decode(allowMalformed: true)`），输出是最终下发给 WebView 的 UTF-8 字节；整条链只跨
 /// 一次 FFI 边界。每个 isolate 各持一份实例。
-final class ReaderSanitizeNative {
-  ReaderSanitizeNative._(this._chapter, this._css, this._freeBytes)
-    : _outPtr = calloc<Pointer<Uint8>>(),
-      _outLen = calloc<Size>();
+final class ReaderSanitizeNative implements Finalizable {
+  ReaderSanitizeNative._(this._chapter, this._css, this._freeBytes);
 
   /// 自闭合非 void 元素展开成成对标签（BUG-079 / BUG-737）。
   static const int stepXhtml = 1;
@@ -88,8 +85,11 @@ final class ReaderSanitizeNative {
   final _ChapterDart _chapter;
   final _CssDart _css;
   final void Function(Pointer<Uint8>, int) _freeBytes;
-  final Pointer<Pointer<Uint8>> _outPtr;
-  final Pointer<Size> _outLen;
+
+  /// 固定输出槽：outPtr（指针）+ outLen（size_t）。
+  final NativeScratch _slots = NativeScratch.fixed(16);
+  Pointer<Pointer<Uint8>> get _outPtr => _slots.pointer.cast<Pointer<Uint8>>();
+  Pointer<Size> get _outLen => (_slots.pointer + 8).cast<Size>();
 
   static ReaderSanitizeNative? _instance;
 
@@ -117,22 +117,11 @@ final class ReaderSanitizeNative {
   }
 
   /// 复用的原生输入暂存区（FFI 不能借用 Dart 堆上的 `Uint8List`：`.address` 只对
-  /// `@Native` 叶子函数可用，本库走 `DynamicLibrary`）。按需翻倍扩容，随 isolate 生命周期。
-  Pointer<Uint8> _scratch = nullptr;
-  int _capacity = 0;
+  /// `@Native` 叶子函数可用，本库走 `DynamicLibrary`）。按需倍增，随 isolate 存活、退出时由
+  /// [NativeScratch] 的 finalizer 释放。
+  final NativeScratch _scratch = NativeScratch();
 
-  Pointer<Uint8> _reserve(int length) {
-    if (length > _capacity || _scratch == nullptr) {
-      if (_scratch != nullptr) malloc.free(_scratch);
-      int capacity = _capacity == 0 ? 64 * 1024 : _capacity;
-      while (capacity < length) {
-        capacity *= 2;
-      }
-      _scratch = malloc<Uint8>(capacity);
-      _capacity = capacity;
-    }
-    return _scratch;
-  }
+  Pointer<Uint8> _reserve(int length) => _scratch.reserve(length);
 
   /// 章节 HTML 链：按 [steps]（`step*` 位或，可另或上 [inputIsText]）依次处理 [input]。
   /// [images] / [headStart] / [headEnd] 是已编码的 UTF-8 串。`</head>` 早于 `<head…>` 结束时
