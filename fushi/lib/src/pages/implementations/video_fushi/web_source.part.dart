@@ -133,7 +133,7 @@ extension _VideoWebSource on _VideoFushiPageState {
           _webPlatform?.applyCommandFailed(command),
       onTrackFailed: _onWebTrackFailed,
       onNetflixMetadata: _onWebNetflixMetadata,
-    );
+    )..qualityTargetHeight = appModel.youtubeQualityTargetHeight;
     final VideoPlayerController controller = VideoPlayerController();
     final WebVideoPlatformPlayer platform = WebVideoPlatformPlayer(
       evaluate: session.evaluate,

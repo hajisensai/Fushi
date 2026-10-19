@@ -10457,6 +10457,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     await appModel.setVideoHdrOutputMode(mode);
   }
 
+  /// 「YouTube 画质」目标：落盘；网页档（Windows 上 YouTube 走站点播放器）当场下发给站点
+  /// 播放器重选档位。mpv 路径播放中换档走画质侧栏，这里的目标对下次打开生效。
+  Future<void> _setYoutubeQualityTargetHeight(int height) async {
+    await appModel.setYoutubeQualityTargetHeight(height);
+    await _webSession?.setQualityTarget(height);
+  }
+
   /// Persist + apply a new 9-slot control button layout (TODO-274/312 phase 2).
   /// This is the single write path the quick-settings editor calls; it stores
   /// the v3 layout (same pref key, auto-migrating old v1/v2 blobs). Keep the
@@ -11073,6 +11080,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onLockWindowAspectRatioChanged: _setLockWindowAspectRatio,
       onVideoFitModeChanged: _setVideoFitMode,
       onHdrOutputModeChanged: _setVideoHdrOutputMode,
+      onYoutubeQualityChanged: _setYoutubeQualityTargetHeight,
       onImmersiveModeChanged: appModel.setVideoImmersiveMode,
       onDanmakuEnabledChanged: _setVideoDanmakuEnabled,
       onDanmakuOnlineEnabledChanged: _setVideoDanmakuOnlineEnabled,
