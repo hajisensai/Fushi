@@ -26,8 +26,17 @@ import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/utils.dart';
 
-/// 一个导入任务的状态。
-enum SrsImportTaskStatus { queued, running, done, failed }
+/// 一个导入任务的状态。[cancelled] 只会从 [queued] 进入：运行中的导入引擎侧还没有
+/// 停止信号（批与批之间检查），不能半途叫停，界面也不提供运行中取消。
+enum SrsImportTaskStatus { queued, running, done, failed, cancelled }
+
+/// 排队中的任务被用户取消（[SrsImportTask.result] 以它结束；一行都没写过库）。
+class SrsImportCancelledException implements Exception {
+  const SrsImportCancelledException();
+
+  @override
+  String toString() => 'SrsImportCancelledException';
+}
 
 /// 执行一次导入（测试注入假实现；缺省 [importAnkiPackageFile]，媒体落 [SrsMediaStore]）。
 typedef SrsAnkiImportRunner =
@@ -95,7 +104,11 @@ class SrsImportTask {
 
   bool get isFinished =>
       _status == SrsImportTaskStatus.done ||
-      _status == SrsImportTaskStatus.failed;
+      _status == SrsImportTaskStatus.failed ||
+      _status == SrsImportTaskStatus.cancelled;
+
+  /// 能不能取消：只有还没开始跑的（排队中）。
+  bool get canCancel => _status == SrsImportTaskStatus.queued;
 }
 
 /// 后台导入的串行队列（app 级，见库注释）。
@@ -174,6 +187,23 @@ class SrsImportController extends ChangeNotifier {
     return task;
   }
 
+  /// 取消一个排队中的任务（任务条上的「取消」）：它不会再开始跑，收尾（删临时包 / 丢快照）
+  /// 照常执行，[SrsImportTask.result] 以 [SrsImportCancelledException] 结束。行留在任务条上
+  /// 显示「已取消」，由用户关掉。运行中 / 已结束的任务返回 false、什么也不做——运行中的导入
+  /// 已经在写库，引擎侧没有批间停止信号前不能谎称取消。
+  Future<bool> cancel(SrsImportTask task) async {
+    if (!task.canCancel || !_tasks.contains(task)) return false;
+    // 先改状态：_pump 只挑 queued 的任务，改完它就不会再被拿去跑。
+    task._status = SrsImportTaskStatus.cancelled;
+    _notify();
+    await _runCleanup(task);
+    task.error = const SrsImportCancelledException();
+    task._done.completeError(const SrsImportCancelledException());
+    _notify();
+    _reportFinished(task);
+    return true;
+  }
+
   /// 从列表里移除一个已结束的任务（任务条上的「关闭」）。
   void dismiss(SrsImportTask task) {
     if (!task.isFinished) return;
@@ -215,14 +245,7 @@ class SrsImportController extends ChangeNotifier {
       errorStack = stack;
     }
     // 收尾（删临时包 / 丢快照）做完才算任务结束：result 完成时临时文件已不在。
-    final Future<void> Function()? cleanup = task._cleanup;
-    if (cleanup != null) {
-      try {
-        await cleanup();
-      } catch (e, stack) {
-        ErrorLogService.instance.log('SrsImportController.cleanup', e, stack);
-      }
-    }
+    await _runCleanup(task);
     if (report != null) {
       task.report = report;
       task._status = SrsImportTaskStatus.done;
@@ -236,7 +259,30 @@ class SrsImportController extends ChangeNotifier {
     if (!_disposed) {
       _onDataChanged();
       _notify();
-      _onFinished?.call(task);
+    }
+    _reportFinished(task);
+  }
+
+  Future<void> _runCleanup(SrsImportTask task) async {
+    final Future<void> Function()? cleanup = task._cleanup;
+    if (cleanup == null) return;
+    try {
+      await cleanup();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsImportController.cleanup', e, stack);
+    }
+  }
+
+  /// 通知外部「任务结束了」（全局提示）。这是控制器之外的回调：它抛异常不能顺着 [_run]
+  /// 冒到 [_pump] 里把整条队列停掉（后面排队的导入永远不开始），所以在这里隔离——记进
+  /// 错误日志，队列照常往下走。
+  void _reportFinished(SrsImportTask task) {
+    final void Function(SrsImportTask task)? onFinished = _onFinished;
+    if (_disposed || onFinished == null) return;
+    try {
+      onFinished(task);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsImportController.onFinished', e, stack);
     }
   }
 
@@ -253,6 +299,8 @@ class SrsImportController extends ChangeNotifier {
 
 /// 一个任务结束时的全局提示（离开了牌组列表也看得到）。
 void showSrsImportFinishedToast(SrsImportTask task) {
+  // 取消是用户刚在任务条上点的，行本身就显示「已取消」，不再另弹提示。
+  if (task.status == SrsImportTaskStatus.cancelled) return;
   if (task.status == SrsImportTaskStatus.done) {
     FushiToast.show(
       msg: t.srs_import_task_done(

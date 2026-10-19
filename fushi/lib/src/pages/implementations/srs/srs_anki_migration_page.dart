@@ -298,7 +298,8 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage> {
       // 控制器已记日志并弹过全局失败提示；这里只补详细原因。
       failure = e;
     }
-    if (!mounted) return;
+    // 排队时被用户在任务条上取消：没写过库，也不是失败，不弹原因框。
+    if (!mounted || failure is SrsImportCancelledException) return;
     if (failure != null) {
       await showFushiConfirmDialog(
         context: context,

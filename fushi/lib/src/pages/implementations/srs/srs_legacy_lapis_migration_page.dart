@@ -52,6 +52,9 @@ class SrsLegacyLapisMigrationPage extends ConsumerStatefulWidget {
 class _SrsLegacyLapisMigrationPageState
     extends ConsumerState<SrsLegacyLapisMigrationPage> {
   bool _loading = true;
+
+  /// 复习库打不开（模块关着 / 打开失败）：不再转圈，显示说明与「重试」。
+  bool _unavailable = false;
   bool _busy = false;
   SrsNoteTypeView? _fushiCard;
   List<SrsLegacyLapisMigrationPreview> _previews =
@@ -67,7 +70,15 @@ class _SrsLegacyLapisMigrationPageState
   Future<void> _reload() async {
     try {
       final SrsDbStore? store = await readSrsStore(ref);
-      if (store == null) return;
+      if (store == null) {
+        if (mounted) {
+          setState(() {
+            _unavailable = true;
+            _loading = false;
+          });
+        }
+        return;
+      }
       final SrsNoteTypeView? fushi = await store.noteType(
         store.fushiCardNoteTypeId,
       );
@@ -84,11 +95,18 @@ class _SrsLegacyLapisMigrationPageState
         _fushiCard = fushi;
         _previews = previews;
         _backfill = backfill;
+        _unavailable = false;
         _loading = false;
       });
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsLegacyLapisMigration.load', e, stack);
-      if (mounted) setState(() => _loading = false);
+      // 读失败不能显示成「没有可迁移的」：同样给说明与「重试」。
+      if (mounted) {
+        setState(() {
+          _unavailable = true;
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -98,12 +116,17 @@ class _SrsLegacyLapisMigrationPageState
   ) async {
     if (_busy) return;
     setState(() => _busy = true);
+    // 刷新信号先取出来：写库途中用户可能已经返回（本页销毁后不能再碰 ref），写成功了其它页面
+    // （牌组列表 / 笔记类型 / 浏览）照样要重读。
+    final StateController<int> revision = ref.read(
+      srsRevisionProvider.notifier,
+    );
     try {
       final SrsDbStore? store = await readSrsStore(ref);
       if (store == null) throw StateError('srs store unavailable');
       final String done = await body(store);
+      revision.state++;
       if (!mounted) return;
-      bumpSrsRevision(ref);
       FushiToast.show(msg: done, severity: ToastSeverity.success);
     } catch (e, stack) {
       ErrorLogService.instance.log(where, e, stack);
@@ -111,6 +134,16 @@ class _SrsLegacyLapisMigrationPageState
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+    if (mounted) await _reload();
+  }
+
+  /// 「重试」：让复习库重新打开后重读。
+  Future<void> _retry() async {
+    ref.invalidate(srsStoreProvider);
+    setState(() {
+      _loading = true;
+      _unavailable = false;
+    });
     await _reload();
   }
 
@@ -206,6 +239,25 @@ class _SrsLegacyLapisMigrationPageState
         key: ValueKey<String>('srs-lapis-migration-loading'),
         bottom: false,
         child: FushiLoadingView(),
+      );
+    } else if (_unavailable) {
+      child = SafeArea(
+        key: const ValueKey<String>('srs-lapis-migration-unavailable'),
+        bottom: false,
+        child: Center(
+          child: FushiPlaceholderMessage(
+            icon: FushiIcons.error,
+            tone: FushiPlaceholderTone.error,
+            message: t.error_load_failed,
+            action: FushiFilledButton.tonalIcon(
+              key: const ValueKey<String>('srs-lapis-migration-retry'),
+              onPressed: () =>
+                  srsRunLogged('SrsLegacyLapisMigration.retry', _retry),
+              icon: const FushiIcon(FushiIcons.refresh),
+              label: Text(t.retry),
+            ),
+          ),
+        ),
       );
     } else {
       child = KeyedSubtree(
@@ -352,7 +404,9 @@ class _SrsLegacyLapisMigrationPageState
           if (lost.isNotEmpty)
             _note(
               context,
-              t.srs_lapis_migration_lost(fields: lost.join('、')),
+              t.srs_lapis_migration_lost(
+                fields: lost.join(t.srs_list_separator),
+              ),
               key: ValueKey<String>('srs-lapis-migration-lost-$id'),
               error: true,
             ),
@@ -405,7 +459,7 @@ class _SrsLegacyLapisMigrationPageState
             title: Text(t.srs_lapis_migration_backfill_title),
             subtitle: Text(t.srs_lapis_migration_backfill_summary(n: p.notes)),
           ),
-          _note(context, counts.join('、')),
+          _note(context, counts.join(t.srs_list_separator)),
           _buttons(context, <Widget>[
             FushiFilledButton.tonalIcon(
               key: const ValueKey<String>('srs-lapis-migration-backfill-apply'),

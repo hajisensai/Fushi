@@ -1474,11 +1474,18 @@ class SrsRatingButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     final ({Color background, Color foreground}) c = srsRatingColors(
       tone,
-      Theme.of(context).colorScheme,
+      scheme,
       apple: apple,
     );
+    // MD3 禁用态（M3 规范：容器 onSurface 12%、内容 onSurface 38%）：评分色只给可点的按钮，
+    // 否则禁用的按钮看起来和可点的一模一样。内容文字自带颜色，不读按钮的 foregroundColor，
+    // 所以这里按同一判据给文字也换成禁用色。
+    final bool enabled = onPressed != null;
+    final Color disabledBackground = scheme.onSurface.withValues(alpha: 0.12);
+    final Color disabledForeground = scheme.onSurface.withValues(alpha: 0.38);
     Widget content(Color fg) => Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -1521,8 +1528,18 @@ class SrsRatingButton extends StatelessWidget {
             onPressed: onPressed,
             size: FushiButtonSize.m,
             style: ButtonStyle(
-              backgroundColor: WidgetStatePropertyAll<Color>(c.background),
-              foregroundColor: WidgetStatePropertyAll<Color>(c.foreground),
+              backgroundColor: WidgetStateProperty.resolveWith<Color>(
+                (Set<WidgetState> states) =>
+                    states.contains(WidgetState.disabled)
+                    ? disabledBackground
+                    : c.background,
+              ),
+              foregroundColor: WidgetStateProperty.resolveWith<Color>(
+                (Set<WidgetState> states) =>
+                    states.contains(WidgetState.disabled)
+                    ? disabledForeground
+                    : c.foreground,
+              ),
               // 两行内容：高度至少 56，系统字号放大时随内容长高（不截断）。
               maximumSize: const WidgetStatePropertyAll<Size>(
                 Size(double.infinity, double.infinity),
@@ -1531,7 +1548,7 @@ class SrsRatingButton extends StatelessWidget {
                 EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               ),
             ),
-            child: content(c.foreground),
+            child: content(enabled ? c.foreground : disabledForeground),
           );
     return FushiPressScale(
       enabled: onPressed != null,

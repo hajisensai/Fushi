@@ -3,7 +3,10 @@
 // - 后台导入控制器：串行、进度、完成 / 失败回调、完成后让牌组列表重读、迁移用的临时包结束后删除。
 // - 任务条（MD3 / Apple）：运行中显示进度条，结束后显示结果与「关闭」。
 // - 牌组列表：新建牌组后列表只等牌组行重读，不等同步冲突扫描（冲突数是另一个 provider）。
-// - 删牌组（BUG-3543）：删除进行中行变成「正在删除」+ 进度条且不可点，删完立即从列表消失。
+// - 删牌组（BUG-3543）：删除进行中行变成「正在删除」+ 进度条且不可点，删完立即从列表消失；
+//   删除由 app 级控制器跑完，途中牌组列表页被销毁（切走复习 tab）删除照样做完、列表照样重读。
+// - 取消：排队中的导入可以取消（不再开始跑、收尾照做、result 以取消异常结束）；运行中的不能。
+// - 完成回调抛异常不能停掉后面排队的导入。
 //
 // 数据库读写一律放 tester.runAsync（fake zone 里 await 真异步会挂死）。
 import 'dart:async';
@@ -230,6 +233,136 @@ void main() {
       await expectLater(task.result, throwsStateError);
       await Future<void>.delayed(Duration.zero);
       expect(pkg.existsSync(), isFalse);
+    });
+
+    test('取消：排队中的任务不再开始跑、收尾照做、result 以取消结束；运行中的不能取消', () async {
+      final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore();
+      addTearDown(db.close);
+      final _FakeRunner runner = _FakeRunner();
+      int dataChanged = 0;
+      final List<SrsImportTask> finished = <SrsImportTask>[];
+      final SrsImportController c = SrsImportController(
+        onDataChanged: () => dataChanged++,
+        onFinished: finished.add,
+        runner: runner.call,
+      );
+      addTearDown(c.dispose);
+      final SrsImportTask a = c.enqueue(
+        store: store,
+        media: SrsMediaStore(tmp),
+        file: File('${tmp.path}/a.apkg'),
+      );
+      final File pkg = File('${tmp.path}/b.colpkg')
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+      final SrsImportTask b = c.enqueue(
+        store: store,
+        media: SrsMediaStore(tmp),
+        file: pkg,
+        deleteFileWhenDone: true,
+      );
+      final SrsImportTask third = c.enqueue(
+        store: store,
+        media: SrsMediaStore(tmp),
+        file: File('${tmp.path}/c.apkg'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(a.status, SrsImportTaskStatus.running);
+      expect(a.canCancel, isFalse);
+      expect(b.canCancel, isTrue);
+
+      expect(await c.cancel(a), isFalse, reason: '运行中的导入已在写库，不能谎称取消');
+      expect(a.status, SrsImportTaskStatus.running);
+
+      expect(await c.cancel(b), isTrue);
+      expect(b.status, SrsImportTaskStatus.cancelled);
+      expect(b.isFinished, isTrue);
+      expect(b.canCancel, isFalse);
+      await expectLater(b.result, throwsA(isA<SrsImportCancelledException>()));
+      expect(pkg.existsSync(), isFalse, reason: '取消也执行收尾（删临时包）');
+      expect(finished, <SrsImportTask>[b]);
+      expect(dataChanged, 0, reason: '没写过库，不必重读');
+      expect(await c.cancel(b), isFalse, reason: '已结束的再取消什么也不做');
+
+      runner.calls.single.done.complete(_report(1));
+      await a.result;
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.calls, hasLength(2), reason: '取消的 b 被跳过，接着跑第三个');
+      expect(runner.calls.last.file.path, endsWith('c.apkg'));
+      expect(third.status, SrsImportTaskStatus.running);
+      runner.calls.last.done.complete(_report(2));
+      await third.result;
+
+      c.dismiss(b);
+      expect(c.tasks, isNot(contains(b)));
+    });
+
+    test('完成回调抛异常：记日志，后面排队的导入照常开始', () async {
+      final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore();
+      addTearDown(db.close);
+      final _FakeRunner runner = _FakeRunner();
+      int calls = 0;
+      final SrsImportController c = SrsImportController(
+        onDataChanged: () {},
+        onFinished: (SrsImportTask task) {
+          calls++;
+          throw StateError('toast exploded');
+        },
+        runner: runner.call,
+      );
+      addTearDown(c.dispose);
+      final SrsImportTask a = c.enqueue(
+        store: store,
+        media: SrsMediaStore(tmp),
+        file: File('${tmp.path}/a.apkg'),
+      );
+      final SrsImportTask b = c.enqueue(
+        store: store,
+        media: SrsMediaStore(tmp),
+        file: File('${tmp.path}/b.apkg'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      runner.calls.single.done.complete(_report(1));
+      expect((await a.result).notesAdded, 1);
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, 1);
+      expect(b.status, SrsImportTaskStatus.running, reason: '队列没被回调异常停住');
+      expect(runner.calls, hasLength(2));
+      runner.calls.last.done.complete(_report(2));
+      expect((await b.result).notesAdded, 2);
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, 2);
+      expect(c.busy, isFalse);
+    });
+  });
+
+  group('SrsDeckDeleteController', () {
+    test('删完让列表重读；失败也重读并撤掉删除中；同一牌组不重复删', () async {
+      final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore();
+      addTearDown(db.close);
+      int dataChanged = 0;
+      final SrsDeckDeleteController c = SrsDeckDeleteController(
+        onDataChanged: () => dataChanged++,
+      );
+      addTearDown(c.dispose);
+      final String deck = await store.createDeck('Old');
+
+      final Future<void> deleting = c.delete(store, deck);
+      expect(c.isDeleting(deck), isTrue);
+      expect(c.deleting.keys, <String>[deck]);
+      await c.delete(store, deck); // 已经在删：直接返回
+      await deleting;
+      expect(dataChanged, 1);
+      expect(c.isDeleting(deck), isTrue, reason: '列表重读掉它之前保持删除中');
+      c.pruneDeleted(<String>[store.defaultDeckId]);
+      expect(c.deleting, isEmpty);
+
+      await expectLater(
+        c.delete(store, store.defaultDeckId),
+        throwsStateError,
+        reason: '默认牌组不可删',
+      );
+      expect(c.isDeleting(store.defaultDeckId), isFalse);
+      expect(dataChanged, 2);
     });
   });
 
@@ -478,6 +611,222 @@ void main() {
       expect(find.text('Importing Kanji.apkg…'), findsOneWidget);
       runner.calls.single.done.complete(_report(1));
       await _settle(tester);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('[$ds] 任务条：排队中的任务有「取消」，点了显示「已取消」与「关闭」；运行中的没有取消', (
+      WidgetTester tester,
+    ) async {
+      final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
+        openSrsTestStore,
+      ))!;
+      addTearDown(() => tester.runAsync(db.close));
+      final _FakeRunner runner = _FakeRunner();
+      final SrsImportController c = SrsImportController(
+        onDataChanged: () {},
+        runner: runner.call,
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        _app(
+          apple: apple,
+          overrides: <Override>[
+            srsImportControllerProvider.overrideWithValue(c),
+          ],
+          home: const Scaffold(body: SrsImportTasksBar()),
+        ),
+      );
+      final SrsImportTask a = c.enqueue(
+        store: store,
+        media: SrsMediaStore(tmp),
+        file: File('${tmp.path}/A.apkg'),
+      );
+      final SrsImportTask b = c.enqueue(
+        store: store,
+        media: SrsMediaStore(tmp),
+        file: File('${tmp.path}/B.apkg'),
+      );
+      await _settle(tester);
+      expect(
+        find.byKey(ValueKey<String>('srs-import-task-cancel-${a.id}')),
+        findsNothing,
+        reason: '运行中的导入没有取消',
+      );
+      final Finder cancel = find.byKey(
+        ValueKey<String>('srs-import-task-cancel-${b.id}'),
+      );
+      expect(cancel, findsOneWidget);
+      expect(find.text('Waiting to import B.apkg'), findsOneWidget);
+
+      await tester.tap(cancel);
+      await _settle(tester);
+      expect(b.status, SrsImportTaskStatus.cancelled);
+      expect(find.text('Cancelled import of B.apkg'), findsOneWidget);
+      expect(cancel, findsNothing);
+      expect(
+        find.byKey(ValueKey<String>('srs-import-task-dismiss-${b.id}')),
+        findsOneWidget,
+      );
+
+      runner.calls.single.done.complete(_report(1));
+      await _settle(tester);
+      expect(runner.calls, hasLength(1), reason: '取消的任务没有被拿去跑');
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('[$ds] 删牌组途中牌组列表页被销毁（切走复习 tab）：删除照样做完、无异常、列表重读', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(1100, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
+        () async {
+          final FushiDatabase db = FushiDatabase.forTesting(
+            NativeDatabase.createInBackground(File('${tmp.path}/srs.db')),
+          );
+          return (
+            db,
+            await SrsDbStore.open(
+              db: db,
+              profileUid: kSrsTestProfile,
+              deviceId: 'dev',
+              engine: const SrsTestEngine(),
+            ),
+          );
+        },
+      ))!;
+      addTearDown(() => tester.runAsync(db.close));
+      final String deck = (await tester.runAsync(() async {
+        final String deck = await store.createDeck('Old');
+        for (int i = 0; i < 3; i++) {
+          await store.createNote(
+            noteTypeId: store.lapisNoteTypeId,
+            fieldsById: <String, String>{
+              (await store.noteType(store.lapisNoteTypeId))!.fields.first.id:
+                  'w$i',
+            },
+            deckId: deck,
+          );
+        }
+        return deck;
+      }))!;
+      final SrsImportController imports = SrsImportController(
+        onDataChanged: () {},
+      );
+      addTearDown(imports.dispose);
+      // 容器比页面活得久（app 根容器）：页面换下去，删牌组控制器还在。
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          appProvider.overrideWith(
+            (Ref ref) => AppModel(testPlatformServices()),
+          ),
+          srsStoreProvider.overrideWith((Ref ref) async => store),
+          srsConflictCountProvider.overrideWith((Ref ref) async => 0),
+          srsImportControllerProvider.overrideWithValue(imports),
+          srsCardFaceBuilderProvider.overrideWithValue(
+            (BuildContext context, SrsCardFace face) =>
+                SrsPlainCardFace(face: face),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final ValueNotifier<bool> showPage = ValueNotifier<bool>(true);
+      addTearDown(showPage.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: TranslationProvider(
+            child: MaterialApp(
+              theme: buildFushiThemeData(
+                scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+                textTheme: Typography.material2021().black,
+                designSystem: apple
+                    ? FushiDesignSystem.cupertino
+                    : FushiDesignSystem.material,
+                glass: FushiGlassMaterial.off,
+                glassDesign: apple,
+              ),
+              builder: (BuildContext context, Widget? child) =>
+                  FushiGlassScope(child: child!),
+              home: ValueListenableBuilder<bool>(
+                valueListenable: showPage,
+                builder: (BuildContext context, bool show, Widget? _) => show
+                    ? const SrsDeckListPage()
+                    : const Scaffold(body: Text('elsewhere')),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester);
+      final int revisionBefore = container.read(srsRevisionProvider);
+      expect(find.byKey(ValueKey<String>('srs-deck-$deck')), findsOneWidget);
+
+      await tester.tap(find.text('Old'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.srs_deck_delete).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.srs_deck_delete).last);
+      for (int i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+      final SrsDeckDeleteController deleter = container.read(
+        srsDeckDeleteControllerProvider,
+      );
+      expect(deleter.isDeleting(deck), isTrue);
+      expect(
+        find.byKey(ValueKey<String>('srs-deck-deleting-$deck')),
+        findsOneWidget,
+      );
+
+      // 删除还在进行（库在后台 isolate，没推进）：切走，页面销毁。
+      showPage.value = false;
+      await tester.pump();
+      expect(find.byType(SrsDeckListPage), findsNothing);
+
+      // 推进后台库直到删完：进度写入、重读都发生在页面销毁之后。循环里不碰 store——删除的
+      // 独占区在 fake zone 里，runAsync 里读库会排在它后面等不到释放（挂死）；控制器在
+      // deleteDeck 返回后才让列表重读，重读信号一到就说明独占区已释放。
+      for (
+        int i = 0;
+        i < 400 && container.read(srsRevisionProvider) == revisionBefore;
+        i++
+      ) {
+        await _settle(tester, rounds: 1);
+      }
+      expect(tester.takeException(), isNull);
+      expect(
+        container.read(srsRevisionProvider),
+        greaterThan(revisionBefore),
+        reason: '页面不在也让列表重读',
+      );
+      final List<SrsCardCacheRow> cards = (await tester.runAsync(
+        store.allCardRows,
+      ))!;
+      expect(cards, hasLength(3));
+      expect(
+        cards.every((SrsCardCacheRow x) => x.deckId == store.defaultDeckId),
+        isTrue,
+        reason: '删除没有停在一半：卡都移到了默认牌组',
+      );
+      final SrsDeckListData list = (await tester.runAsync<SrsDeckListData?>(
+        () => container.read(srsDeckListProvider.future),
+      ))!;
+      expect(
+        list.decks.map((SrsDeckSummary d) => d.deck.id),
+        isNot(contains(deck)),
+        reason: '列表缓存里没有已删的牌组',
+      );
+
+      // 回到复习 tab：牌组不在、也不再显示删除中。
+      showPage.value = true;
+      await _settle(tester);
+      expect(find.byKey(ValueKey<String>('srs-deck-$deck')), findsNothing);
+      expect(find.textContaining(t.srs_deck_deleting), findsNothing);
+      expect(deleter.deleting, isEmpty);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
     });

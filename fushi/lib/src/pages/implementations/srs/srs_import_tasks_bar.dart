@@ -1,12 +1,16 @@
 /// 牌组列表顶上（列表第一项）的后台导入任务条（BUG-3541）：每个排队 / 运行中 / 刚结束的导入一行。
 ///
-/// - 运行中：名字 + 进度条（还没进度时为不定态）；
+/// - 排队中：名字 + 不定态进度条，右侧「取消」（还没开始写库，取消后不会再跑）；
+/// - 运行中：名字 + 进度条（还没进度时为不定态）；没有取消（引擎侧还没有批间停止信号）；
+/// - 已取消：单独的终态，右侧「关闭」；
 /// - 完成：点一下看导入报告，右侧「关闭」；
 /// - 失败：点一下看失败原因，右侧「关闭」。
 ///
 /// 卡片走 [FushiCard]（MD3 / Apple 两套设计系统各自分派）；行的出现 / 消失与状态切换都是
 /// 尺寸 + 透明度动画，时长取 [fushiMotionDuration]（墨水屏与「减弱动态效果」归零）。
 library;
+
+import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -48,6 +52,7 @@ class SrsImportTasksBar extends ConsumerWidget {
                   task: task,
                   first: i == 0,
                   onDismiss: () => controller.dismiss(task),
+                  onCancel: () => unawaited(controller.cancel(task)),
                 ),
             ],
           ),
@@ -61,6 +66,7 @@ class _TaskRow extends StatefulWidget {
   const _TaskRow({
     required this.task,
     required this.onDismiss,
+    required this.onCancel,
     required this.first,
     super.key,
   });
@@ -68,6 +74,9 @@ class _TaskRow extends StatefulWidget {
   final SrsImportTask task;
   final bool first;
   final VoidCallback onDismiss;
+
+  /// 取消排队中的任务（只在 [SrsImportTask.canCancel] 时显示按钮）。
+  final VoidCallback onCancel;
 
   @override
   State<_TaskRow> createState() => _TaskRowState();
@@ -78,6 +87,12 @@ class _TaskRowState extends State<_TaskRow>
   /// 进场：尺寸 + 透明度从 0 展开（与牌组列表行进场同一套时长）。
   late final AnimationController _enter = AnimationController(vsync: this);
 
+  /// 进场曲线：只建一次（建在 build 里会每帧往 [_enter] 上多挂一个监听且永不释放）。
+  late final CurvedAnimation _curved = CurvedAnimation(
+    parent: _enter,
+    curve: FushiMotion.enter,
+  );
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -87,6 +102,7 @@ class _TaskRowState extends State<_TaskRow>
 
   @override
   void dispose() {
+    _curved.dispose();
     _enter.dispose();
     super.dispose();
   }
@@ -104,6 +120,7 @@ class _TaskRowState extends State<_TaskRow>
         }
       case SrsImportTaskStatus.queued:
       case SrsImportTaskStatus.running:
+      case SrsImportTaskStatus.cancelled:
         break;
     }
   }
@@ -112,10 +129,7 @@ class _TaskRowState extends State<_TaskRow>
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsImportTask task = widget.task;
-    final Animation<double> curved = CurvedAnimation(
-      parent: _enter,
-      curve: FushiMotion.enter,
-    );
+    final Animation<double> curved = _curved;
     final Duration switchDuration = fushiMotionDuration(
       context,
       FushiMotion.short,
@@ -134,12 +148,16 @@ class _TaskRowState extends State<_TaskRow>
       SrsImportTaskStatus.failed => t.srs_import_task_failed(
         name: task.displayName,
       ),
+      SrsImportTaskStatus.cancelled => t.srs_import_task_cancelled(
+        name: task.displayName,
+      ),
     };
     final IconData icon = switch (task.status) {
       SrsImportTaskStatus.queued ||
       SrsImportTaskStatus.running => FushiIcons.importFile,
       SrsImportTaskStatus.done => FushiIcons.success,
       SrsImportTaskStatus.failed => FushiIcons.error,
+      SrsImportTaskStatus.cancelled => FushiIcons.block,
     };
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Color? iconColor = switch (task.status) {
@@ -157,7 +175,11 @@ class _TaskRowState extends State<_TaskRow>
           padding: EdgeInsets.only(top: widget.first ? 0 : tokens.spacing.gap),
           child: FushiCard(
             key: ValueKey<String>('srs-import-task-${task.id}'),
-            onTap: task.isFinished ? _open : null,
+            onTap:
+                task.status == SrsImportTaskStatus.done ||
+                    task.status == SrsImportTaskStatus.failed
+                ? _open
+                : null,
             padding: EdgeInsets.symmetric(
               horizontal: tokens.spacing.gap * 1.5,
               vertical: tokens.spacing.gap,
@@ -224,13 +246,31 @@ class _TaskRowState extends State<_TaskRow>
                     ],
                   ),
                 ),
-                if (task.isFinished)
-                  FushiIconButton(
-                    key: ValueKey<String>('srs-import-task-dismiss-${task.id}'),
-                    icon: FushiIcons.close,
-                    tooltip: t.srs_import_task_dismiss,
-                    onTap: widget.onDismiss,
-                  ),
+                // 排队中 → 取消；结束 → 关闭。两者互斥，切换时淡入淡出。
+                AnimatedSwitcher(
+                  duration: switchDuration,
+                  switchInCurve: FushiMotion.enter,
+                  switchOutCurve: FushiMotion.exit,
+                  child: task.canCancel
+                      ? FushiIconButton(
+                          key: ValueKey<String>(
+                            'srs-import-task-cancel-${task.id}',
+                          ),
+                          icon: FushiIcons.cancel,
+                          tooltip: t.srs_import_task_cancel,
+                          onTap: widget.onCancel,
+                        )
+                      : task.isFinished
+                      ? FushiIconButton(
+                          key: ValueKey<String>(
+                            'srs-import-task-dismiss-${task.id}',
+                          ),
+                          icon: FushiIcons.close,
+                          tooltip: t.srs_import_task_dismiss,
+                          onTap: widget.onDismiss,
+                        )
+                      : const SizedBox.shrink(),
+                ),
               ],
             ),
           ),

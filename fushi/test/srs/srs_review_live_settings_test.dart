@@ -254,10 +254,26 @@ void main() {
       '飲む',
       extra: <String, String>{'ExpressionAudio': '[sound:drink.mp3]'},
     );
+    await _addLapis(
+      tester,
+      store,
+      '見る',
+      extra: <String, String>{'ExpressionAudio': '[sound:see.mp3]'},
+    );
     final List<SrsCardFace> faces = <SrsCardFace>[];
     final _RecordingAudio audio = _RecordingAudio();
     await _pumpReview(tester, store: store, faces: faces, audio: audio);
     expect(faces.last.autoplayMedia, isTrue, reason: '没设过 = 自动播（同 Anki）');
+
+    // 对照：开关开着时翻面确实自动播 [sound:]（词汇卡出题面不含音频，答案面才有）。
+    // 不成立的话，下面关掉后的 isEmpty 什么也证明不了。
+    await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+    await _settle(tester);
+    expect(audio.played, isNotEmpty, reason: '对照：开关开着时翻面自动播');
+    await tester.tap(find.byKey(const ValueKey<String>('srs-rate-3')));
+    await _settle(tester);
+    final String secondCard = faces.last.cardId;
+    expect(secondCard, isNot(faces.first.cardId), reason: '换到了第二张');
 
     await _openDeckSettings(tester);
     final Finder autoplay = find.byKey(
@@ -284,7 +300,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('srs-rate-3')));
     await _settle(tester);
     expect(faces.last.showingAnswer, isFalse);
-    expect(faces.last.cardId, isNot(faces.first.cardId), reason: '换到了下一张');
+    expect(faces.last.cardId, isNot(secondCard), reason: '换到了下一张');
     expect(faces.last.autoplayMedia, isFalse);
     await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
     await _settle(tester);

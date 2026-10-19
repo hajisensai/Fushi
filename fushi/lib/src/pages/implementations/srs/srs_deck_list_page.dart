@@ -57,37 +57,6 @@ class SrsDeckListPage extends ConsumerStatefulWidget {
 }
 
 class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
-  /// 正在删的牌组 → 进度（0–1；null = 还不知道总数）。删完、重读的列表里已经没有它之后才移除
-  /// （否则旧数据里的行会先「复原」一下再消失）。
-  final Map<String, ValueNotifier<double?>> _deleting =
-      <String, ValueNotifier<double?>>{};
-
-  /// 已经删完、等列表重读的牌组。
-  final Set<String> _deleted = <String>{};
-
-  @override
-  void dispose() {
-    for (final ValueNotifier<double?> n in _deleting.values) {
-      n.dispose();
-    }
-    super.dispose();
-  }
-
-  /// 重读回来的列表里已经没有的、删完的牌组：撤掉删除中状态。
-  void _pruneDeleted(SrsDeckListData? data) {
-    if (data == null || _deleted.isEmpty) return;
-    final Set<String> present = <String>{
-      for (final SrsDeckSummary d in data.decks) d.deck.id,
-    };
-    for (final String id in _deleted.toList()) {
-      if (present.contains(id)) continue;
-      _deleted.remove(id);
-      // 本帧里旧行可能还挂着监听：下一帧再释放。
-      final ValueNotifier<double?>? n = _deleting.remove(id);
-      WidgetsBinding.instance.addPostFrameCallback((_) => n?.dispose());
-    }
-  }
-
   /// Anki 一键迁移完成后：迁进来的笔记里有旧 Lapis（或此前迁移漏掉的字段）时，
   /// 顺手问一句要不要迁到 Fushi 卡片。[context] 是迁移页的。
   Future<void> _offerLegacyLapisMigration(
@@ -187,26 +156,15 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       destructive: true,
     );
     if (!confirmed || !mounted) return;
+    // 控制器先取出来：删除途中本页可能被销毁（复习 tab 不常驻），之后不能再碰 ref。
+    final SrsDeckDeleteController deleter = ref.read(
+      srsDeckDeleteControllerProvider,
+    );
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null || !mounted) return;
-    // 删除按块进行（BUG-3543）：行里显示进度、不可点，界面其余部分照常可用；删完重读列表。
-    final String id = deck.deck.id;
-    final ValueNotifier<double?> progress = ValueNotifier<double?>(null);
-    setState(() => _deleting[id] = progress);
-    try {
-      await store.deleteDeck(
-        id,
-        onProgress: (int done, int total) {
-          if (total > 0) progress.value = done / total;
-        },
-      );
-      if (mounted) setState(() => _deleted.add(id));
-    } catch (_) {
-      if (mounted) setState(() => _deleting.remove(id)?.dispose());
-      rethrow;
-    } finally {
-      if (mounted) bumpSrsRevision(ref);
-    }
+    if (store == null) return;
+    // 删除按块进行（BUG-3543）：行里显示进度、不可点，界面其余部分照常可用。删除由 app 级
+    // 控制器跑完并让列表重读，与本页在不在无关。
+    await deleter.delete(store, deck.deck.id);
   }
 
   /// 收起 / 展开子牌组：写进牌组本身（Anki deck collapsed），随同步到其它设备。
@@ -333,9 +291,13 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
                   ? 'error'
                   : 'list',
             ),
-            // 后台导入任务增减时重建（任务条在列表最前，见 [_DeckList.showImportTasks]）。
+            // 后台导入任务增减（任务条在列表最前，见 [_DeckList.showImportTasks]）与删牌组
+            // 开始 / 结束时重建。
             child: ListenableBuilder(
-              listenable: ref.watch(srsImportControllerProvider),
+              listenable: Listenable.merge(<Listenable>[
+                ref.watch(srsImportControllerProvider),
+                ref.watch(srsDeckDeleteControllerProvider),
+              ]),
               builder: (BuildContext context, Widget? _) =>
                   _buildBody(context, data),
             ),
@@ -454,10 +416,17 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (list == null) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
     }
-    _pruneDeleted(list);
+    final SrsDeckDeleteController deleter = ref.read(
+      srsDeckDeleteControllerProvider,
+    );
+    // 删完、重读的列表里已经没有它之后才撤掉删除中状态（否则旧数据里的行会先「复原」一下
+    // 再消失）。
+    deleter.pruneDeleted(<String>[
+      for (final SrsDeckSummary d in list.decks) d.deck.id,
+    ]);
     return _DeckList(
       data: list,
-      deleting: _deleting,
+      deleting: deleter.deleting,
       showImportTasks: ref.read(srsImportControllerProvider).tasks.isNotEmpty,
       onOpen: (SrsDeckSummary d) =>
           srsRunLogged('SrsDeckList.review', () => _openReview(d)),
