@@ -65,7 +65,12 @@ void main() {
     final String source = readVideoFushiSource();
 
     // 播放器画面外围（letterbox/pillarbox）按播放器惯例固定纯黑，不跟随主题 surface。
-    expect(source, contains('fill: Colors.black,'));
+    // 唯一例外是网页档（底层合成）：站点画面在 Flutter 下面，Video 必须透明才透得出来，
+    // 黑边由页面里的 <video> 自己垫（web_video_glue.js 的 video-only 样式）。
+    expect(
+      source,
+      contains('fill: _webMode ? Colors.transparent : Colors.black,'),
+    );
     expect(
       source,
       isNot(contains('fill: Theme.of(context).colorScheme.surface')),

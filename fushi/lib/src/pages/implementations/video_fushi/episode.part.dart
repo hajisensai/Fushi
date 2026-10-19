@@ -114,6 +114,13 @@ extension _VideoEpisode on _VideoFushiPageState {
     // 倒计时 overlay，避免它停在旧目标上。
     _cancelAutoAdvanceCountdown();
 
+    // 网页档（站点视频）：剧集来自站点（Netflix metadata），换集 = 同一个 WebView 导航到那一集
+    // 的播放页；落书 / 进度 / 字幕身份由 [_onWebState] 按新地址接上。
+    if (_webMode) {
+      _switchWebEpisode(index);
+      return;
+    }
+
     // TODO-885: 远端播放列表换集——本端无 VideoBooks 行，先把当前集精确位置落按集
     // prefs（_persistRemotePosition 用 _currentEpisode），再按 episodeIndex 向 host
     // 重新建流（_loadRemoteEpisode 内 ++_episodeLoadSeq 取代慢路径旧集）。
@@ -317,9 +324,10 @@ extension _VideoEpisode on _VideoFushiPageState {
   /// 结果按输入身份 memo（见 [_episodePanelEntriesMemo]）：面板常驻在树里、页面
   /// 每次 setState 都重建它，不 memo 就是每帧对全部 N 集重跑正则 + 重建 provider。
   List<VideoEpisodeEntry> _episodePanelEntries() {
-    final RemoteCoverFetcher? fetcher = remoteCoverFetcherFor(
-      widget.remoteClient ?? _resolvedStreamClient,
-    );
+    // 网页档的剧集剧照来自站点公开 CDN（Netflix metadata），用站点取图器。
+    final RemoteCoverFetcher? fetcher = _webMode
+        ? const WebVideoCoverFetcher()
+        : remoteCoverFetcherFor(widget.remoteClient ?? _resolvedStreamClient);
     final List<VideoEpisodeEntry>? memo = _episodePanelEntriesMemo;
     if (memo != null &&
         identical(_episodePanelEntriesEpisodes, _episodes) &&

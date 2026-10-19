@@ -633,6 +633,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 点按底栏时间切换（MD3 Expressive chrome），跨设备。
   'video_time_display_remaining',
   'video_youtube_quality_height',
+  // string（JSON 数组，空串 = 用预置站点）：app 内浏览器的站点书签（web_browser_sites.dart）。
+  'web_browser_sites',
+  // bool（默认 true）：网页漫画章末二维码广告页剔除（判定在 native/fushi_web_core 的 comic_ad）。
+  'web_comic_ad_filter',
   'yomitan_api_key',
   'yomitan_api_port',
   'yomitan_api_server_enabled',

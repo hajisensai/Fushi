@@ -1,0 +1,29 @@
+name: fushi_web_core Linux library
+description: >-
+  Builds native/fushi_web_core for linux-x64 (release) and verifies its C ABI. The Dart
+  package packages/fushi_web_core treats the library as a hard dependency (no "native
+  library unavailable" fallback, tests fail instead of skipping), so every Linux job that
+  runs fushi/ or packages/ unit tests needs this .so. Producer jobs call this action and
+  upload `native/fushi_web_core/prebuilt/linux-x64/` as the `fushi-web-core-linux-x64`
+  artifact; test jobs download it and point FUSHI_WEB_CORE_LIB at it.
+  Not in the native artifact store on purpose: a cold build is ~3 minutes and rust-cache
+  makes the warm one ~30 s (same reasoning as the other fushi_web_core build steps).
+runs:
+  using: composite
+  steps:
+    # Toolchain pin matches native-web-core-gate.yml / names.sh P2P_RUST.
+    - name: Set up Rust (fushi_web_core, linux-x64)
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: '1.95.0'
+    - name: Cache Rust build (fushi_web_core, linux-x64)
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: native/fushi_web_core -> target
+        key: fushi-web-core-linux-x64
+    - name: Build fushi_web_core (linux-x64 .so)
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash native/fushi_web_core/build_linux_so.sh
+        bash native/fushi_web_core/verify_abi.sh native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so nm

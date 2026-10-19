@@ -248,8 +248,9 @@ const Map<String, HomeTab> kCtlNavigationNames = <String, HomeTab>{
   'lookup': HomeTab.dictionaries,
   'srs': HomeTab.srs,
   'review': HomeTab.srs,
-  'browser-extension': HomeTab.browserExtension,
-  'extension': HomeTab.browserExtension,
+  'web': HomeTab.web,
+  'browser-extension': HomeTab.web,
+  'extension': HomeTab.web,
   'settings': HomeTab.settings,
 };
 
@@ -263,7 +264,7 @@ String ctlNavigationName(HomeTab tab) => switch (tab) {
   HomeTab.dictionaries => 'dictionaries',
   HomeTab.srs => 'srs',
   HomeTab.games => 'games',
-  HomeTab.browserExtension => 'browser-extension',
+  HomeTab.web => 'web',
   HomeTab.settings => 'settings',
 };
 

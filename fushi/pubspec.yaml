@@ -83,6 +83,9 @@ dependencies:
     path: ../packages/fushi_srs
   fushi_compute:
     path: ../packages/fushi_compute
+  # 网页广告 / 跟踪拦截（adblock-rust FFI + 过滤列表管理），WebView 接线在 lib/src/web_adblock/。
+  fushi_web_core:
+    path: ../packages/fushi_web_core
   fushi_audio:
     path: ../packages/fushi_audio
   fushi_platform:
@@ -249,6 +252,8 @@ flutter:
     # 内置网页播放器（WebView2 站点播放）主世界胶水；站点 bridge / 字幕 provider 复用
     # 上面的扩展镜像（同一份文件，见 lib/src/media/video/web_video_bridge.dart）。
     - assets/web_video/
+    # 网页漫画：注入漫画站章节页的扫图脚本 + 站点规则（lib/src/media/manga/web/）。
+    - assets/web_comic/
     - assets/gamepad/xbox/
     - assets/gamepad/playstation/
     - assets/gamepad/switch/

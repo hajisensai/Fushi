@@ -17,7 +17,7 @@ import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -154,7 +154,36 @@ import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart'
-    show shouldOpenInWebVideoPlayer;
+    show
+        WebVideoPlaybackState,
+        WebVideoSeekDone,
+        WebVideoSiteTrack,
+        WebVideoTrack,
+        chooseWebVideoTrackKey,
+        kWebVideoLiveTrackLang,
+        pickWebVideoSiteTrackForLanguage,
+        shouldOpenInWebVideoPlayer;
+import 'package:fushi/src/media/video/underlay_composition.dart'
+    show
+        acquireUnderlayComposition,
+        releaseUnderlayComposition,
+        underlayCompositionSupported;
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/media/video/web_video_hosting.dart'
+    show
+        WebVideoHosting,
+        WebVideoLookupRequest,
+        kWebVideoHostingPrefKey,
+        webVideoHostingFromPref;
+import 'package:fushi/src/media/video/netflix_metadata.dart';
+import 'package:fushi/src/media/video/web_video_platform_player.dart';
+import 'package:fushi/src/media/video/web_video_session.dart';
+import 'package:fushi_engine/sync/immersion_mine_payload.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show RemoteMineResult;
+import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/media/video/youtube_range_relay.dart'
     show relayYoutubeStreamUrl;
 import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart'
@@ -170,7 +199,8 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
         YoutubeVideoVariant,
         YoutubeVariantSet,
         resolveYoutubeVideoVariants,
-        isYoutubeUrl;
+        isYoutubeUrl,
+        youtubeVideoIdOrNull;
 import 'package:fushi/src/media/video/video_resource_check.dart';
 import 'package:fushi/src/media/video/video_long_press_speed_badge.dart';
 import 'package:fushi/src/media/video/video_double_tap_center_action.dart';
@@ -330,7 +360,7 @@ import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/video_mine_queue.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/mining/web_mine_queue_store.dart'
-    show decodeWebMineFields;
+    show WebMineQueueStore, decodeWebMineFields;
 import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
@@ -393,6 +423,7 @@ part 'video_fushi/layout.part.dart';
 part 'video_fushi/playback_remote.part.dart';
 part 'video_fushi/remote_control.part.dart';
 part 'video_fushi/advanced_mining.part.dart';
+part 'video_fushi/web_source.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -628,6 +659,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.initialSubtitleListVisible = false,
     this.initialFullscreen = false,
     this.openBlurayMenu = false,
+    this.webSite,
     super.key,
   }) : remoteInfo = null,
        remoteClient = null,
@@ -650,6 +682,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        remoteClient = client,
        initialFullscreen = false,
        openBlurayMenu = false,
+       webSite = null,
        playlistCollectionId = null;
 
   final String bookUid;
@@ -684,6 +717,10 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// Open the disc-authored menu, without loading the representative title.
   final bool openBlurayMenu;
 
+  /// 「在线源 › 网站」的站点入口：不读库，按 [webVideoSiteRow] 的伪书在网页档打开站点；
+  /// 播起某一集时这一集才落库、本页身份换成它（web_source.part.dart `_bindWebEpisode`）。
+  final WebVideoSite? webSite;
+
   /// 打开视频播放页的**唯一入口**：在路由层用 [FushiAppUiScaleNeutralizer] 把整页中和
   /// （与阅读器 [ReaderFushiSource.buildLaunchPage] 同范式）。
   ///
@@ -704,6 +741,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     bool initialSubtitleListVisible = false,
     bool initialFullscreen = false,
     bool openBlurayMenu = false,
+    WebVideoSite? webSite,
   }) => FushiAppUiScaleNeutralizer(
     child: VideoFushiPage(
       bookUid: bookUid,
@@ -717,6 +755,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       initialSubtitleListVisible: initialSubtitleListVisible,
       initialFullscreen: initialFullscreen,
       openBlurayMenu: openBlurayMenu,
+      webSite: webSite,
     ),
   );
 
@@ -1043,6 +1082,15 @@ abstract class VideoFushiTestHooks {
   /// BUG-2691：当前片源是否被识别为需要 DV 重整（libmpv colormatrix 或服务器元数据）
   /// 且本平台画不对——Windows 纹理路径自带重整后恒为 false。
   bool get debugDolbyVisionColorsUnsupported;
+
+  /// 网页站点后端（底层合成，见 video_fushi/web_source.part.dart）：controller 是否跑在
+  /// 站点视频上、页面里有没有 `<video>`、站点上报的解码高度。
+  bool get debugIsWebBackend;
+  bool get debugWebHasVideo;
+  int get debugWebVideoHeight;
+
+  /// 在站点页面里求值（取证：页面只留画面的 style 在不在、`<video>` 实际解码尺寸）。
+  Future<String?> debugWebEvalJs(String js);
 }
 
 // TODO-314：字幕跳转列表不再走 overlay 面板系统，改 push-aside（[_subtitleListVisible]
@@ -1545,6 +1593,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int? get debugPositionMs => _controller?.positionMs;
 
   @override
+  bool get debugIsWebBackend => _controller?.isWebBackend ?? false;
+
+  @override
+  bool get debugWebHasVideo => _webPlayerMode;
+
+  @override
+  int get debugWebVideoHeight => _webSession?.lastState?.videoHeight ?? 0;
+
+  @override
+  Future<String?> debugWebEvalJs(String js) async =>
+      _webSession?.evaluateRaw(js);
+
+  @override
   Future<void> debugSelectRemoteEmbeddedSubtitle(int streamIndex) async {
     final VideoPlayerController? controller = _controller;
     final RemoteVideoEmbeddedSubtitleTrack? track =
@@ -2045,6 +2106,112 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 在途的后台制卡任务。离开页面时先等它们暂存完，再统一写入。
   final List<Future<void>> _backgroundMineJobs = <Future<void>>[];
 
+  // ── 网页站点后端（Netflix / YouTube 页……，底层合成；方法见 web_source.part.dart）──
+
+  /// 网页档会话：非 null = 本页的片源是站点视频（[VideoPlayerController.isWebBackend]），
+  /// 站点画面由垫在 Flutter 下面的 WebView2 子窗口自己画，控件 / 字幕 / 查词照常是本页的。
+  WebVideoSession? _webSession;
+
+  /// 网页档的 media_kit 播放器后端（页面快照 → player.state）。
+  WebVideoPlatformPlayer? _webPlatform;
+
+  /// 本页持有一份底层合成（[acquireUnderlayComposition]），dispose 归还。
+  bool _webUnderlayHeld = false;
+
+  /// 播放器档（[_webPlayerModeFor]）：否则是网页档——WebView 收输入、整页原样，播放器控件
+  /// 不挂，只留顶部返回条。
+  bool _webPlayerMode = false;
+
+  /// 站点页面里当前有没有 `<video>`（网页档返回条上的「在播放器里看」）。
+  bool _webPageHasVideo = false;
+
+  /// 站点正在放广告（glue 在跳 / 快进）：播放器档盖黑屏，快照不进播放器状态。
+  bool _webAdShowing = false;
+
+  /// 用户对这一集（videoKey）点了「回到网页」/「在播放器里看」；换集即失效。
+  String? _webBrowseVideoKey;
+  String? _webForcePlayerKey;
+
+  /// 网页档里播起的那一集落成的书（站点入口打开 / 站内换了集）；null = 仍是打开时那本。
+  String? _webEpisodeBookUid;
+
+  /// [_activeBookUid] 此刻代表的那一集的规范地址（[webVideoEpisodeUrl]）；站点入口还没播
+  /// 起任何一集时为 null。正在落库的那一集记在 [_webBindingEpisodeUrl]。
+  String? _webBoundEpisodeUrl;
+  String? _webBindingEpisodeUrl;
+
+  /// 这一集的书名 / 封面已补全（或补全失败不再重试）的那一集；补全进行中不重入。
+  String? _webEpisodeMetaDoneUrl;
+  bool _webEpisodeMetaBusy = false;
+
+  /// 网页档工具条的地址栏（没在编辑时跟着当前地址走）。
+  final TextEditingController _webAddressController = TextEditingController();
+  final FocusNode _webAddressFocus = FocusNode(debugLabel: 'video-web-address');
+
+  /// 工具条的「关闭」：这一次返回不再一级一级退，直接关掉本页。
+  bool _webClosing = false;
+
+  /// 「从浏览器导入登录」的登记（[BrowserCookieImportGate]）与上一批已写入的内容签名
+  /// （扩展每分钟心跳都会再送一次，内容没变就不刷新页面）。
+  BrowserCookieImportRequestHandle? _webLoginImport;
+  String? _webLoginImportSignature;
+
+  /// 站点当前视频身份（glue 的 `videoKey`；SPA 换集即变）与它名下的字幕轨。
+  String _webVideoKey = '';
+  final Map<String, WebVideoTrack> _webTracks = <String, WebVideoTrack>{};
+  String? _webActiveTrackKey;
+
+  /// 用户在字幕面板选了「关闭」：不再自动挑轨。
+  bool _webSubtitlesOff = false;
+
+  /// 站点播放器自己的字幕轨清单（Netflix）与它当前开着的轨；用户 / 默认选轨请求的那条在采到
+  /// 整轨前记在 [_webPendingTrackKey]（`videoKey|lang`），采到即选中；每集只替用户自动开一次。
+  List<WebVideoSiteTrack> _webSiteTracks = const <WebVideoSiteTrack>[];
+  String _webSiteTrackCurrent = '';
+  String? _webPendingTrackKey;
+  String? _webSiteTrackAutoVideoKey;
+
+  /// 待采整轨的确定失败判据（P2-1）：请求那一刻 live 轨已有的 cue 数。站点已切到所请求的轨、
+  /// live 轨在那之后又长出新 cue（= 播放器已在显示这条轨的文字，文件早已下完），整轨却没截到
+  /// → 截获失败，面板显示失败而不是永远「加载中」。bridge 的抓取失败回执同样落到这里。
+  int _webPendingLiveCueCount = 0;
+  final Set<String> _webFailedTrackKeys = <String>{};
+
+  /// 用户亲手选过字幕轨 / 音轨（面板点选）：此后不再按语言偏好替用户改（P1-5）。站点会把用户的
+  /// 选择带到下一集，所以整个页面会话有效。
+  bool _webSubtitleUserChosen = false;
+  bool _webAudioUserChosen = false;
+  String? _webAudioAutoVideoKey;
+
+  /// 当前选中的是站点的图片字幕：Fushi 叠层画不了，站点自己的字幕层要显示出来。
+  bool _webSiteImageTrackShown = false;
+
+  /// 已经为哪一个打断 / 错误状态（`videoKey#blocker`）提示过：同一次打断只提示一次。
+  String _webBlockerNotified = '';
+
+  /// Netflix metadata（剧集 / 片头片尾标记）：按播放 id 缓存（同一部剧各集共用一份）；在途请求
+  /// 记 id 防重。
+  final Map<String, NetflixTitleMetadata> _webNetflixMeta =
+      <String, NetflixTitleMetadata>{};
+  final Set<String> _webNetflixMetaRequested = <String>{};
+
+  /// 剧集面板（[_episodes]）里每一集对应的站点播放地址。
+  List<String> _webEpisodeUrls = const <String>[];
+
+  /// 网页档的全屏 = 窗口全屏（不推全屏路由：WebView2 子窗口不会跟着进新路由）。
+  bool _webWindowFullscreen = false;
+  bool _webWindowFullscreenTransitioning = false;
+
+  /// 网页档制卡只入队（硬件 DRM 画面截不到、没有本地媒体源），由内置档逐句重放落卡。
+  late final WebMineQueueStore _webMineQueue = WebMineQueueStore(
+    appModel.database,
+  );
+
+  /// 站点 WebView 的稳定身份：视频区 Stack 里有无 `<video>` 两种布局之间不重建它。
+  final GlobalKey _webSurfaceKey = GlobalKey(debugLabel: 'video-web-surface');
+
+  bool get _webMode => _webSession != null;
+
   /// 本页所在的 [ProviderContainer]，在 [didChangeDependencies]（element 仍 active）
   /// 时抓住。**不能**在 [dispose] 里或跨 async gap 之后 `ref.read`：那时 element 已经
   /// deactivated，debug 抛「Looking up a deactivated widget's ancestor is unsafe」、
@@ -2306,7 +2473,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   bool _discMenuChromeFocused = false;
   List<SubtitleTrack>? _discLastSubtitleTracks;
   int _discSubtitleTracksRevision = 0;
-  String get _activeBookUid => _discBookUid ?? widget.bookUid;
+  String get _activeBookUid =>
+      _discBookUid ?? _webEpisodeBookUid ?? widget.bookUid;
   bool get _discLearningBlocked =>
       _controller?.isBlurayNavigationSession == true &&
       (_controller!.discMenuActive || !_controller!.discTitleReady);
@@ -2567,7 +2735,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   Future<AdvancedMiningSections> buildAdvancedMiningSections({
     required String matched,
-  }) => _buildAdvancedMiningSectionsImpl();
+  }) => _webMode
+      // 网页档没有可抽帧 / 裁音的本地媒体（dump-cache），高级制卡分区一个都给不出。
+      ? Future<AdvancedMiningSections>.value(AdvancedMiningSections.none)
+      : _buildAdvancedMiningSectionsImpl();
 
   /// TODO-382「+句」可撤销（视频车道）：弹窗点「清空已加句子」清掉本会话累积的全部草稿
   /// 句，回传清空后的句数（恒 0）。不动字幕列表「选入词卡」的 cue 选择集（两套独立机制）。
@@ -3575,7 +3746,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       await _initRemote();
       return;
     }
-    final VideoBookRow? row = await widget.repo.getByBookUid(_activeBookUid);
+    final WebVideoSite? site = widget.webSite;
+    final VideoBookRow? row = site != null
+        ? webVideoSiteRow(site)
+        : await widget.repo.getByBookUid(_activeBookUid);
     if (row == null) {
       if (mounted) {
         setState(() {
@@ -3650,24 +3824,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         await _initRemote();
         return;
       }
-      // 网页视频站（Netflix / YouTube 页 / TVer……）在 Windows 上交给内置网页播放器：
-      // 站点自己的播放器播，Fushi 复用字幕面板 / 查词 / 进度登记。在这里分流而非各
-      // push 点：书架 / 首页 / 合集 / 作品页 / app 外打开 8 处入口全部自动覆盖。
-      // media_kit controller 尚未 load，pushReplacement 代价只是本页一次空 build。
+      // 网页视频站（Netflix / YouTube 页 / TVer……）在 Windows 上由站点自己的播放器播：
+      // 引擎能做底层合成时**就在本页**播（站点画面垫在原生控件下面，控件 / 字幕 / 查词
+      // 与本地视频同一套），否则交给内置网页播放器页。在这里分流而非各 push 点：书架 /
+      // 首页 / 合集 / 作品页 / app 外打开 8 处入口全部自动覆盖。见 web_source.part.dart。
       if (!_sourceReviewActive && shouldOpenInWebVideoPlayer(row.videoPath)) {
-        final BuildContext pageContext = context;
-        if (!pageContext.mounted) return;
-        unawaited(
-          Navigator.of(pageContext).pushReplacement(
-            adaptivePageRoute<void>(
-              context: pageContext,
-              builder: (_) => WebVideoFushiPage.neutralized(
-                bookUid: _activeBookUid,
-                repo: widget.repo,
-              ),
-            ),
-          ),
-        );
+        await _openWebSource(row);
         return;
       }
       // TODO-1307：把「正在连接视频流…」阶段反馈提前到 buildStreamVideoLaunch（YouTube 快
@@ -5898,6 +6060,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
     // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。
     _releaseHandedOverNativeFullscreen();
+    // 网页档：退窗口全屏、拆会话、归还底层合成（见 web_source.part.dart）。
+    _disposeWebSource();
     if (Platform.isWindows) {
       WindowsImeSpaceChannel.clearHandler(this);
       // Abnormal route teardown must never leave the app frame hidden. The
@@ -7131,6 +7295,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) =>
       _onMineEntryImpl(fields);
 
+  /// mixin 的纯字段制卡 / 覆盖（不带视频媒体）。网页档没有锚点 cue 时的退路：extension
+  /// 里调不到 `super`，经这两个转发器。
+  Future<MinePopupResult> _mineFieldsOnly(Map<String, String> fields) =>
+      super.onMineEntry(fields);
+
+  Future<MinePopupResult> _updateFieldsOnly(
+    int noteId,
+    Map<String, String> fields,
+  ) => super.onUpdateEntry(noteId, fields);
+
   @override
   Future<QueuedOverwriteReply> onQueueOverwrite(Map<String, String> fields) =>
       _onQueueOverwriteImpl(fields);
@@ -7189,6 +7363,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 键盘 / 系统返回 / 手柄三条输入通道共用同一份语义，不再各写一份。
   Future<void> _handleBackOrExit() async {
     if (_dismissTopForegroundLayer()) return;
+    // 网页档一级一级往外退：播放器档 → 网页 → 站内上一页 → … → 关掉本页（同步判定，
+    // 退出路径不 await，BUG-2119）。
+    if (_webBackStep()) return;
     final NavigatorState nav = Navigator.of(context);
     final VideoPlayerController? controller = _controller;
     final int? remotePositionMs = controller?.positionMs;
@@ -7268,6 +7445,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (controlsContext != null && fullscreen && controlsContext.mounted) {
         await _exitVideoFullscreen(controlsContext);
       }
+      if (_webWindowFullscreen) await _toggleWebWindowFullscreen();
       if (!mounted) return true;
       if (!route.isCurrent) return false;
       await _watchTracker?.stop();
@@ -7415,6 +7593,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     VideoPlayerController controller, {
     required VideoActionInput input,
   }) {
+    // 网页档（站点视频）：截图 / 逐帧 / 小窗 / 着色器对比 / 章节都要 libmpv，诚实 no-op。
+    final bool web = controller.isWebBackend;
+    void unsupported() {}
     return VideoPlayerShortcutActions(
       togglePlayPause: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.playOrPause()),
@@ -7465,9 +7646,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _keepControlsAliveIfVisible();
         unawaited(controller.seekRelative(_asbSeekMs));
       }),
-      toggleShaderCompare: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(_toggleShaderCompare()),
-      ),
+      toggleShaderCompare: web
+          ? unsupported
+          : () => _runWhenImmersiveAllowsShortcuts(
+              () => unawaited(_toggleShaderCompare()),
+            ),
       volumeUp: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_adjustVolume(_volumeStep)),
       ),
@@ -7488,18 +7671,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 开 / 再按恢复。键盘（_handleHoldSpeedKey）与手柄（_handleHoldSpeedGamepadEdge）
       // 有松开沿，都不经此表（BUG-3330）。
       toggleHoldSpeed: () => _runWhenImmersiveAllowsShortcuts(_toggleHoldSpeed),
-      previousFrame: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(controller.frameStep(forward: false)),
-      ),
-      nextFrame: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(controller.frameStep(forward: true)),
-      ),
-      screenshot: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(_saveScreenshot(withSubtitles: false)),
-      ),
-      screenshotSubtitled: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(_saveScreenshot(withSubtitles: true)),
-      ),
+      previousFrame: web
+          ? unsupported
+          : () => _runWhenImmersiveAllowsShortcuts(
+              () => unawaited(controller.frameStep(forward: false)),
+            ),
+      nextFrame: web
+          ? unsupported
+          : () => _runWhenImmersiveAllowsShortcuts(
+              () => unawaited(controller.frameStep(forward: true)),
+            ),
+      screenshot: web
+          ? unsupported
+          : () => _runWhenImmersiveAllowsShortcuts(
+              () => unawaited(_saveScreenshot(withSubtitles: false)),
+            ),
+      screenshotSubtitled: web
+          ? unsupported
+          : () => _runWhenImmersiveAllowsShortcuts(
+              () => unawaited(_saveScreenshot(withSubtitles: true)),
+            ),
       toggleFullscreen: () => _runWhenImmersiveAllowsShortcuts(() {
         final BuildContext? ctx = _videoControlsContext;
         if (ctx != null && ctx.mounted) {
@@ -7508,9 +7699,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       }),
       // 'W' = 进/出小窗模式（桌面无边框置顶小窗 / Android 系统画中画）。沉浸锁下
       // 与其它视频键同待遇（锁着就不响应），见 [_runWhenImmersiveAllowsShortcuts]。
-      toggleMiniWindow: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(_toggleVideoMiniWindow()),
-      ),
+      toggleMiniWindow: web
+          ? unsupported
+          : () => _runWhenImmersiveAllowsShortcuts(
+              () => unawaited(_toggleVideoMiniWindow()),
+            ),
       // 'Shift+M' = 小窗里唤出 / 收起那套自绘 chrome（顶部拖动带 + 退出钮、居中三键）。
       // 非小窗档 [_toggleMiniChrome] 自己早退，不需要在这里再判一次。
       toggleMiniChrome: () =>
@@ -7556,14 +7749,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
       // 无章节时 controller no-op。与跳句同范式（BUG-2030）：只续命、不唤起；章节**面板**
       // 里点条目仍 poke（那是指针交互，见 [_buildChapterSidePanel]）。
-      previousChapter: () => _runWhenImmersiveAllowsShortcuts(() {
-        _keepControlsAliveIfVisible();
-        unawaited(controller.previousChapter());
-      }),
-      nextChapter: () => _runWhenImmersiveAllowsShortcuts(() {
-        _keepControlsAliveIfVisible();
-        unawaited(controller.nextChapter());
-      }),
+      previousChapter: web
+          ? unsupported
+          : () => _runWhenImmersiveAllowsShortcuts(() {
+              _keepControlsAliveIfVisible();
+              unawaited(controller.previousChapter());
+            }),
+      nextChapter: web
+          ? unsupported
+          : () => _runWhenImmersiveAllowsShortcuts(() {
+              _keepControlsAliveIfVisible();
+              unawaited(controller.nextChapter());
+            }),
       // 字幕对轴/匹配（用户请求）：Shift+A 一键弹波形对轴放大视图；z/x 整体平移字幕延迟
       // ±_kSubtitleDelayNudgeMs（走 _setDelayMs 写穿 delayMs 落盘 + OSD）。都过沉浸门控，
       // 与顶部快速设置面板同源、零第二套状态。TODO-2837：z/x 保持只调**主字幕轨**；
@@ -7616,6 +7813,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 走同一份 [_dismissTopForegroundLayer]（BUG-3423）。
   void _handleVideoEscapeAction() {
     if (_dismissTopForegroundLayer()) return;
+    // 网页档的全屏是窗口全屏（无全屏路由），同一级「退全屏」。
+    if (_webWindowFullscreen) {
+      unawaited(_toggleWebWindowFullscreen());
+      return;
+    }
     final BuildContext? ctx = _videoControlsContext;
     if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
       unawaited(_exitVideoFullscreen(ctx));
@@ -8946,6 +9148,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return _customActionBindings.actionAt(customSlot) != null ||
           customSlot == _customActionBindings.firstUnboundSlotIndex;
     }
+    // 网页档（站点视频）：逐帧 / 截图 / 片段导出 / 音轨都要 libmpv 或本地媒体，按钮不画。
+    if (_webMode &&
+        !videoWebBackendSupportsControlItem(
+          item,
+          hasSiteAudioTracks: _controller?.audioTracks.isNotEmpty ?? false,
+        )) {
+      return false;
+    }
     switch (item) {
       case VideoControlItem.previousEpisode:
       case VideoControlItem.nextEpisode:
@@ -9078,6 +9288,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final List<VideoBarEntry> disc =
         lastTopRightSegment && controller.isBlurayNavigationSession
         ? _discNavigationBarEntries(desktop: desktop)
+        : lastTopRightSegment && _webMode
+        ? _webPageBarEntries(desktop: desktop)
         : const <VideoBarEntry>[];
     if (items.isEmpty && folded.isEmpty && disc.isEmpty) {
       return const SizedBox.shrink();
@@ -10710,6 +10922,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     List<settings_dest.VideoGroup> groups =
         VideoQuickSettingsSheet.settingsGroups,
   }) {
+    // 网页档：着色器 / mpv / 弹幕都作用在 libmpv 或本地文件上，站点视频用不上。
+    if (_webMode) groups = videoWebBackendSettingsGroups(groups);
     return VideoQuickSettingsSheet(
       appModel: appModel,
       ref: ref,
@@ -11087,12 +11301,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         foreground: cs.onSecondaryContainer,
       );
     }
+    // 网页档（站点页面）：顶栏实色、页面从顶栏下沿开始——工具条不能被窗口按钮压住。
+    if (_webMode && !_webPlayerMode) return fushiTitleBarColorsOn(cs.surface);
     final bool videoShown =
         !_failed &&
         !_missingResource &&
         controller != null &&
         videoController != null &&
-        _videoReadyToShow;
+        _videoReadyToShow &&
+        // 网页档没视频时顶上是站点页面自己（登录 / 选人），不是黑底画面。
+        (!_webMode || _webPlayerMode);
     return videoShown ? fushiTitleBarColorsOn(Colors.black) : null;
   }
 
@@ -11127,7 +11345,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             _buildVideoBody(controller, videoController),
           );
     return Scaffold(
-      backgroundColor: cs.surface,
+      // 网页档（底层合成）：站点画面是垫在 Flutter 下面的 WebView2 子窗口，从透明像素处
+      // 透出来——页底不能有任何不透明底色（加载 / 失败态自己垫底）。
+      backgroundColor: _webMode ? Colors.transparent : cs.surface,
       body: Column(
         children: <Widget>[
           // 全局悬浮球的场景按钮（零尺寸，见 [_buildVideoFloatingBallScene]）。
@@ -11867,30 +12087,34 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         t.video_subtitle_list,
         _toggleSubtitleJumpList,
       ),
-      item(
-        Icons.audiotrack,
-        t.video_audio_track,
-        () => _showAudioTrackMenu(controller),
-      ),
+      if (!controller.isWebBackend)
+        item(
+          Icons.audiotrack,
+          t.video_audio_track,
+          () => _showAudioTrackMenu(controller),
+        ),
       // TODO-1158/1159：HLS master（多档码率）或 YouTube 流（懒解析多档）才给画质入口。
       if (_hasQualityMenu)
         item(Icons.high_quality, t.video_quality, _showQualityMenu),
       const PopupMenuDivider(),
-      item(
-        Icons.photo_camera_outlined,
-        t.video_screenshot,
-        () => unawaited(_saveScreenshot()),
-      ),
-      item(
-        Icons.subtitles_outlined,
-        t.video_screenshot_subtitled,
-        () => unawaited(_saveScreenshot(withSubtitles: true)),
-      ),
-      item(
-        Icons.movie_creation_outlined,
-        t.video_clip_export,
-        () => unawaited(_toggleClipExport()),
-      ),
+      // 截图 / 片段导出要 libmpv 帧或本地文件：网页档（硬件 DRM 画面）不给。
+      if (!controller.isWebBackend) ...<PopupMenuEntry<VoidCallback>>[
+        item(
+          Icons.photo_camera_outlined,
+          t.video_screenshot,
+          () => unawaited(_saveScreenshot()),
+        ),
+        item(
+          Icons.subtitles_outlined,
+          t.video_screenshot_subtitled,
+          () => unawaited(_saveScreenshot(withSubtitles: true)),
+        ),
+        item(
+          Icons.movie_creation_outlined,
+          t.video_clip_export,
+          () => unawaited(_toggleClipExport()),
+        ),
+      ],
       item(Icons.lock_outline, t.video_menu_lock, _toggleImmersiveLock),
       // 设置入口（TODO-389）：右键菜单补一项打开视频设置侧栏，与桌面右侧 rail 的
       // `VideoControlButton.settings` 走同一个 [_showPlayerSettings]（→

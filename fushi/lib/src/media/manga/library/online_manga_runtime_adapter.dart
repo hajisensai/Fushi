@@ -129,7 +129,8 @@ class MihonMangaPageRef extends OnlineMangaPageRef {
   String? get sourceUrl => page.resolvedUrl;
 }
 
-/// 源补丁（quirk）产出的裸 https 页：URL 自带签名，只需 Referer（BUG-2514）。
+/// 裸 http(s) 页：源补丁（quirk）产出的签名 URL（BUG-2514），以及网页漫画
+/// （[OnlineMangaRuntimeKind.web]）扫出来的图。
 ///
 /// 与 [MihonMangaPageRef] 的区别是**不经**扩展的 OkHttp——这些页根本不是扩展
 /// 解析出来的，扩展对它们一无所知。
@@ -138,12 +139,17 @@ class HttpMangaPageRef extends OnlineMangaPageRef {
     required super.index,
     required this.url,
     required this.referer,
+    this.headers = const <String, String>{},
   });
 
   final String url;
 
-  /// 源站 baseUrl（不带尾斜杠），作为 Referer。
+  /// 源站 baseUrl（不带尾斜杠），作为 Referer。空串 = 不带 Referer。
   final String referer;
+
+  /// 额外请求头（网页漫画：同站 Cookie、扫图 WebView 的 User-Agent、站点规则
+  /// 要求的头）。quirk 页不用，恒为空。
+  final Map<String, String> headers;
 
   @override
   String? get sourceUrl => url;

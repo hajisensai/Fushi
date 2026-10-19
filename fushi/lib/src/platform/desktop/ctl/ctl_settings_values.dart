@@ -92,11 +92,15 @@ int indexOfCtlSettingOption(
   throw CtlFailure.badRequest('「$raw」不是可选值；可选：${tokens.join(' | ')}');
 }
 
-/// 模块 id：接受枚举名（大小写无关，`browserExtension` / `browser-extension` /
+/// 模块 id：接受枚举名（大小写无关，`web` / `browser-extension` /
 /// `browser_extension` 都行）或持久化键（`module_downloads_enabled`）。
+///
+/// `browserExtension` 是 [ModuleId.web] 改名前的枚举名（2026-10-19 浏览器扩展页升级
+/// 为「网页」模块），脚本里写旧名照样认。
 ModuleId? parseCtlModuleId(String raw) {
   final String needle = raw.trim();
   final String folded = needle.replaceAll(RegExp(r'[-_]'), '').toLowerCase();
+  if (folded == 'browserextension') return ModuleId.web;
   for (final ModuleId id in ModuleId.values) {
     if (id.prefKey == needle) return id;
     if (id.name.toLowerCase() == folded) return id;

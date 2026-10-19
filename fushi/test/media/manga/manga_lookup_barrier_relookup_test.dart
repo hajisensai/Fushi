@@ -169,7 +169,8 @@ void main() {
         code,
         'void onDismissBarrierHover(PointerHoverEvent event)',
       );
-      expect(body, contains('HardwareKeyboard.instance.isShiftPressed'));
+      // 门控键跟设置「悬停查词按键」走（默认 Shift）。
+      expect(body, contains('hoverLookupModifier.isPressed()'));
       expect(body, contains('window.__mangaBarrierHoverAt('));
     });
 

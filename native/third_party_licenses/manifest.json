@@ -85,6 +85,13 @@
           "native/third_party_licenses/texts/crates/OpenByteDev-dlopen2-cc80e4a0/LICENSE"
         ]
       },
+      "flatbuffers@25.12.19": {
+        "upstream": "https://github.com/google/flatbuffers/tree/7e163021e59cca4f8e1e35a7c828b5c6b7915953",
+        "texts": [
+          "native/third_party_licenses/texts/crates/google-flatbuffers-7e163021/LICENSE"
+        ],
+        "note": "the crate lives in rust/flatbuffers of the flatbuffers repo and ships no LICENSE; the repo-root Apache-2.0 LICENSE at the published commit (.cargo_vcs_info.json sha1) covers it"
+      },
       "fluent-langneg@0.13.1": {
         "upstream": "https://github.com/projectfluent/fluent-langneg-rs/tree/7fdc590466ea63ca2367ac10fb1b881fe561f1a8",
         "texts": [

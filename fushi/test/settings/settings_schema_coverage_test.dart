@@ -26,6 +26,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/web_adblock/web_adblock_service.dart';
+import 'package:fushi_web_core/fushi_web_core.dart';
 
 import '../../integration_test/helpers/effect_probes.dart';
 import '../../integration_test/helpers/focus_driver.dart';
@@ -44,6 +46,17 @@ const String _kFloatingBallSceneButtons =
     '各场景的勾选互不影响 / 勾选了但页面此刻没提供的专属按钮跳过';
 
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
+  // 没有 WebView。总开关、订阅集、白名单都是 Rust 核心（fushi_web_core）的状态，行改动经
+  // WebAdblockService 转成命令，由 web_adblock_service_test（开关 / 白名单下一次请求即生效、
+  // 订阅集决定下载哪些列表、状态跨实例落盘）与 web_adblock_wiring_test（每次请求都交给策略）
+  // 咬住；规则本身在 native/fushi_web_core 的 cargo 单测。
+  'system/Block ads and trackers on web pages':
+      'test/web_adblock/web_adblock_service_test.dart + test/web_adblock/web_adblock_wiring_test.dart',
+  'system/EasyList': 'test/web_adblock/web_adblock_service_test.dart',
+  'system/EasyPrivacy': 'test/web_adblock/web_adblock_service_test.dart',
+  'system/AdGuard Chinese': 'test/web_adblock/web_adblock_service_test.dart',
+  'system/AdGuard Japanese': 'test/web_adblock/web_adblock_service_test.dart',
   // 悬浮球「显示按钮文字」：生效点在悬浮球展开态（应用内球 / 系统球原生面），
   // 设置页 harness 里没有展开的悬浮球。行为由 floating_ball_labels_test 咬住。
   'floatingBall/Show button labels':
@@ -1117,6 +1130,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 行为测试 test/media/video/video_subtitle_hover_lookup_test.dart 覆盖。
   'lookup/Look up on hover':
       'test/media/video/video_subtitle_hover_lookup_test.dart',
+  // 悬停查词按键（Shift / Ctrl / Alt）。change/persist/restore 经 DB 由本测试守；值域与
+  // 下发给 WebView 的全局名由 test/lookup/hover_lookup_modifier_test.dart 咬住，各入口
+  // 改读这一个设置由源码守卫咬住（阅读器 / 歌词 / 漫画 / 字幕列表）。真按键需要真 OS
+  // 修饰键 + 真 WebView，widget 层跑不到。
+  'lookup/Hover lookup key':
+      'test/lookup/hover_lookup_modifier_test.dart + '
+      'test/media/audiobook/lyrics_mode_html_test.dart + '
+      'test/reader/reader_host_hover_lookup_test.dart',
   // 悬停查词的收尾：离开字幕与浮层即自动关浮层 + 续播。change/persist/restore 经 DB 由
   // 本测试守；运行时的判据与接线（barrier hover 的离开臂、浮层 MouseRegion、关栈汇聚点
   // 复位）由专项测试咬住——真效果需要真播放器 + 真 WebView 浮层 + 真 OS hover，widget
@@ -1543,6 +1564,10 @@ void main() {
       final ValueNotifier<SettingsDestination?> destNotifier =
           ValueNotifier<SettingsDestination?>(null);
       addTearDown(destNotifier.dispose);
+      final Directory adblockDir = Directory.systemTemp.createTempSync(
+        'coverage_adblock_',
+      );
+      addTearDown(() => adblockDir.deleteSync(recursive: true));
       List<SettingsDestination> destinations = const <SettingsDestination>[];
 
       await tester.pumpWidget(
@@ -1550,6 +1575,16 @@ void main() {
           overrides: <Override>[
             appProvider.overrideWith((Ref ref) => appModel),
             platformServicesProvider.overrideWithValue(platformServices),
+            // 网页广告拦截的状态在 Rust 核心里、落在数据目录下；本 harness 的 AppModel 没走
+            // initialise()（没有数据目录），给它一个临时目录，下载一律离线失败（不联网）。
+            webAdblockServiceProvider.overrideWith(
+              (Ref ref) => WebAdblockService(
+                dataDir: () => adblockDir,
+                fetcher:
+                    (Uri url, {String? etag, String? lastModified}) async =>
+                        const AdblockFetchResponse(statusCode: 503),
+              ),
+            ),
           ],
           child: MaterialApp(
             theme: ThemeData(

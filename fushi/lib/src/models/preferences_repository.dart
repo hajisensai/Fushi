@@ -4754,6 +4754,25 @@ class PreferencesRepository extends ChangeNotifier
   /// 漫画阅读器顶栏是否悬浮（默认开，与 EPUB 阅读器「点空白隐藏控制栏」同默认）。
   /// 悬浮 = 顶栏不占布局、默认收起、点页面中央 / 顶边悬停唤出并自动收起；
   /// 关 = 顶栏常驻并占 48px 布局高，页图在它下方排布。
+  /// 网页漫画：章末二维码广告页剔除（`lib/src/media/manga/web/`）。默认开。
+  bool get webComicAdFilter =>
+      getPref('web_comic_ad_filter', defaultValue: true) as bool;
+
+  Future<void> setWebComicAdFilter(bool value) async {
+    await setPref('web_comic_ad_filter', value);
+    notifyListeners();
+  }
+
+  /// app 内浏览器的站点书签（JSON 数组，见 `web_browser_sites.dart`）。空串 =
+  /// 从没改过，用预置站点。
+  String get webBrowserSitesJson =>
+      getPref('web_browser_sites', defaultValue: '') as String;
+
+  Future<void> setWebBrowserSitesJson(String value) async {
+    await setPref('web_browser_sites', value);
+    notifyListeners();
+  }
+
   bool get mangaChromeFloating =>
       getPref('manga_chrome_floating', defaultValue: true) as bool;
 

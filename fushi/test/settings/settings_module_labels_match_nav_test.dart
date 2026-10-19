@@ -38,7 +38,7 @@ void main() {
     ModuleId.browse: 'system.module_downloads',
     ModuleId.lookup: 'system.module_lookup',
     ModuleId.srs: 'system.module_srs',
-    ModuleId.browserExtension: 'system.module_browser_extension',
+    ModuleId.web: 'system.module_browser_extension',
     ModuleId.listening: 'system.module_listening',
     ModuleId.cardCreation: 'system.module_card_creation',
     ModuleId.services: 'system.module_services',

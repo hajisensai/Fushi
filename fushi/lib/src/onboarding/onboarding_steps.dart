@@ -40,7 +40,7 @@ enum OnboardingFeature {
   lookup,
 
   /// 浏览器扩展 tab（模块，仅桌面提供勾选；同时门控扩展安装引导步骤）。
-  browserExtension,
+  web,
 
   /// 听书：有声书播放/导入、语音转录、悬浮歌词（模块）。
   listening,
@@ -105,7 +105,7 @@ OnboardingFeature? onboardingFeatureOfModule(ModuleId module) =>
       // 复习不出方格：开关由「复习方式」一步写入（选 Fushi 复习 = 开、选 Anki = 关，
       // 见 [OnboardingReviewMethod]），不让用户在两个地方回答同一个问题。
       ModuleId.srs => null,
-      ModuleId.browserExtension => OnboardingFeature.browserExtension,
+      ModuleId.web => OnboardingFeature.web,
       ModuleId.listening => OnboardingFeature.listening,
       ModuleId.cardCreation => OnboardingFeature.cardCreation,
       ModuleId.services => OnboardingFeature.services,
@@ -271,7 +271,7 @@ enum OnboardingStepId {
 ///   也不出 [OnboardingStepId.firstAnkiCard]；
 /// - [OnboardingFeature.sync] 关 → 不出 [OnboardingStepId.backup] /
 ///   [OnboardingStepId.interconnect]；
-/// - [OnboardingFeature.browserExtension] 关 → 不出扩展安装引导（原有行为）；
+/// - [OnboardingFeature.web] 关 → 不出扩展安装引导（原有行为）；
 /// - [OnboardingFeature.lookup] 关 → 不出 [OnboardingStepId.globalLookup]。
 ///   只砍**应用外**全局取词（它与 `ShortcutScope.globalExternal` 同属 lookup
 ///   模块，关掉时连系统热键都不该装）；[OnboardingStepId.clickLookup] 教的是
@@ -330,8 +330,7 @@ List<OnboardingStepId> onboardingStepSequence({
       OnboardingStepId.backup,
     if (syncModuleOn && selected.contains(OnboardingFeature.interconnect))
       OnboardingStepId.interconnect,
-    if (browserExtensionAvailable &&
-        selected.contains(OnboardingFeature.browserExtension))
+    if (browserExtensionAvailable && selected.contains(OnboardingFeature.web))
       OnboardingStepId.browserExtension,
     if (selected.contains(OnboardingFeature.fonts)) OnboardingStepId.fonts,
     if (resourcesSelected) OnboardingStepId.clickLookup,

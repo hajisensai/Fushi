@@ -5,6 +5,8 @@
 //   · 把 JS 载荷解析成页面可用的 [WebVideoTrack] / [WebVideoPlaybackState]（坏载荷回 null，不抛）；
 //   · 按 host 决定注入哪几个站点 bridge（**逐条对齐扩展 manifest.json 的 matches**，别在两处各写一份）；
 //   · 默认字幕轨选择（[chooseWebVideoTrackKey]）。
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
@@ -16,7 +18,7 @@ import 'package:fushi/src/media/video/url_stream_video.dart';
 /// mpv 页（由其失败路径提示），导入对话框提示「暂已停用」。页面 / 桥接 / 宿主档代码
 /// 原样保留，翻回 `true` 即恢复；[isWebVideoPlayerEligible] 仍独立成立，守卫测试
 /// 继续钉住平台 / 站点判据不漂移。
-const bool kWebVideoPlayerEnabled = false;
+const bool kWebVideoPlayerEnabled = true;
 
 /// 一本流媒体书**按平台与站点判据**是否够格进内置网页播放器（不含总开关）。
 ///
@@ -66,6 +68,10 @@ const String kWebVideoYoutubeBridgeAsset =
     'assets/browser_extension/youtube-bridge.js';
 const String kWebVideoGlueAsset = 'assets/web_video/web_video_glue.js';
 
+/// 网页档 Shift 悬停查词（站点页面上的任意文字，投 `{type:'pageLookup'}`）。
+const String kWebVideoPageLookupAsset =
+    'assets/web_video/web_video_page_lookup.js';
+
 /// 软件 DRM 档 EME 垫片（拒 PlayReady、Widevine 降软件级），仅制卡 / 增强环境用；须与
 /// [kWebVideoChromeUserAgent] 配对，否则 Netflix 被拒后不试 Widevine。
 const String kWebVideoEmeShimAsset = 'assets/web_video/web_video_eme_shim.js';
@@ -86,6 +92,41 @@ bool _hostMatches(String host, String pattern) {
   if (p.startsWith('www.')) return h == p;
   return h == p || h.endsWith('.$p');
 }
+
+/// 全部站点 bridge 及各自的站点覆盖，**顺序即注入顺序**（[webVideoBridgeAssetsForHost] 与
+/// [webVideoHostGuardedBridgeSource] 同源）。
+const List<(String asset, List<String> hosts)> kWebVideoSiteBridges =
+    <(String, List<String>)>[
+      (kWebVideoNetflixBridgeAsset, kWebVideoNetflixHosts),
+      (kWebVideoYoutubeBridgeAsset, kWebVideoYoutubeHosts),
+      (kWebVideoStreamBridgeAsset, kWebVideoStreamBridgeHosts),
+    ];
+
+/// 页面里判断当前 host 是否属于 [hosts] 的 JS 表达式（与 [_hostMatches] 同一规则：`www.` 开头的
+/// 条目要求完全相等，其余按「等于或以 `.<条目>` 结尾」）。
+String webVideoHostMatchJs(List<String> hosts) {
+  final List<String> terms = <String>[
+    for (final String raw in hosts)
+      if (raw.toLowerCase().startsWith('www.'))
+        'h===${jsonEncode(raw.toLowerCase())}'
+      else
+        '(h===${jsonEncode(raw.toLowerCase())}||'
+            'h.slice(-${raw.length + 1})===${jsonEncode('.${raw.toLowerCase()}')})',
+  ];
+  return '(function(h){return ${terms.isEmpty ? 'false' : terms.join('||')};})'
+      '(String(location.hostname).toLowerCase())';
+}
+
+/// 把站点 bridge 包成「只在它自己的站点上执行」：WebView 的 document-start 脚本在建 WebView 时
+/// 就定死了，按起始页 host 选 bridge 的话，用户在网页档里换到别的站（YouTube → Netflix）就一个
+/// bridge 都没有。所以全部注入、各自按**当前文档**的 host 自判。用块而不是函数包裹：bridge 的顶层
+/// 声明（如 stream-bridge 的 UMD 全局）要保持全局可见。
+String webVideoHostGuardedBridgeSource(String source, List<String> hosts) =>
+    'if (${webVideoHostMatchJs(hosts)}) {\n$source\n}\n';
+
+/// 宿主要求「页面一开始就藏起站点自己的字幕」时，排在 glue 之前的一行开关（glue 装载即读）。
+const String kWebVideoHideNativeSubtitlesPrelude =
+    'window.__fushiHideNativeSubtitlesAtStart = true;';
 
 /// 按 [host] 决定要注入的站点 bridge 资产，**顺序即注入顺序**，全部在 adapters/providers
 /// 之前（bridge 必须先注册 `replayCues` 监听，providers 装载时才会请求重放）。不命中任何
@@ -112,6 +153,7 @@ class WebVideoTrack {
     required this.videoKey,
     required this.lang,
     required this.cues,
+    this.siteTrackId = '',
   });
 
   final String key;
@@ -119,7 +161,110 @@ class WebVideoTrack {
   final String lang;
   final List<AudioCue> cues;
 
+  /// 站点播放器里的轨 id（[WebVideoSiteTrack.id]）；只有 Netflix 的整轨带，其它为空。
+  final String siteTrackId;
+
   bool get isLive => lang == kWebVideoLiveTrackLang;
+}
+
+/// 站点播放器里可切换的一条字幕轨（还没采到 cue；选中后由站点自己下载、bridge 截下整轨）。
+@immutable
+class WebVideoSiteTrack {
+  const WebVideoSiteTrack({
+    required this.id,
+    required this.lang,
+    required this.name,
+    this.type = '',
+    this.imageBased = false,
+  });
+
+  final String id;
+
+  /// BCP 47。
+  final String lang;
+
+  /// 站点的显示名（「日本語」「English [CC]」）；没有为空。
+  final String name;
+
+  /// 站点的轨类型（Netflix `trackType`：`PRIMARY` / `ASSISTIVE`（CC、口述影像）…）；没有为空。
+  final String type;
+
+  /// 图片字幕：截不到文字、不能查词，只能让站点自己画。
+  final bool imageBased;
+
+  /// 辅助轨（CC / SDH 字幕、口述影像音轨）：按语言自动选轨时排在普通轨后面。
+  bool get isAssistive => type.toUpperCase() == 'ASSISTIVE';
+
+  /// 这条站点轨采到的整轨在 store 里的 key（与 subtitle-providers 的 `lang~trackId` 同形）。
+  String storeKey(String videoKey) => '$videoKey|$lang~$id';
+
+  @override
+  bool operator ==(Object other) =>
+      other is WebVideoSiteTrack &&
+      other.id == id &&
+      other.lang == lang &&
+      other.name == name &&
+      other.type == type &&
+      other.imageBased == imageBased;
+
+  @override
+  int get hashCode => Object.hash(id, lang, name, type, imageBased);
+}
+
+/// 按语言偏好在站点轨里挑一条（P1-5 默认轨）：语言码精确 > 前缀（`ja` 命中 `ja-JP`）；同等匹配下
+/// 普通轨优先于辅助轨（CC / 口述影像），可查词的文字轨优先于图片轨。没有偏好或没有匹配返回 null。
+WebVideoSiteTrack? pickWebVideoSiteTrackForLanguage(
+  List<WebVideoSiteTrack> tracks,
+  String? preferredLanguage,
+) {
+  final String pref = (preferredLanguage ?? '').trim().toLowerCase();
+  if (pref.isEmpty) return null;
+  int rank(WebVideoSiteTrack t) {
+    final String l = t.lang.toLowerCase();
+    final int match = l == pref ? 0 : (l.startsWith('$pref-') ? 1 : -1);
+    if (match < 0) return -1;
+    return match * 4 + (t.isAssistive ? 2 : 0) + (t.imageBased ? 1 : 0);
+  }
+
+  WebVideoSiteTrack? best;
+  int bestRank = 1 << 30;
+  for (final WebVideoSiteTrack t in tracks) {
+    final int r = rank(t);
+    if (r >= 0 && r < bestRank) {
+      best = t;
+      bestRank = r;
+    }
+  }
+  return best;
+}
+
+/// glue `nftt` / `nfat`：每轨一行 `id\tlang\tname\ttype\timage(1/0)`（后两列旧 glue 没有），
+/// 末行 `#当前轨 id`。坏行跳过。
+List<WebVideoSiteTrack> parseWebVideoSiteTracks(Object? raw) {
+  if (raw is! String || raw.isEmpty) return const <WebVideoSiteTrack>[];
+  final List<WebVideoSiteTrack> out = <WebVideoSiteTrack>[];
+  for (final String line in raw.split('\n')) {
+    if (line.isEmpty || line.startsWith('#')) continue;
+    final List<String> parts = line.split('\t');
+    if (parts.length < 2 || parts[0].isEmpty || parts[1].isEmpty) continue;
+    out.add(
+      WebVideoSiteTrack(
+        id: parts[0],
+        lang: parts[1],
+        name: parts.length > 2 ? parts[2] : '',
+        type: parts.length > 3 ? parts[3] : '',
+        imageBased: parts.length > 4 && parts[4] == '1',
+      ),
+    );
+  }
+  return out;
+}
+
+String parseWebVideoSiteTrackCurrent(Object? raw) {
+  if (raw is! String) return '';
+  final int i = raw.lastIndexOf('\n#');
+  if (i >= 0) return raw.substring(i + 2);
+  return raw.startsWith('#') ? raw.substring(1) : '';
 }
 
 /// 页面 JS 轮询上报的播放态快照。
@@ -136,6 +281,17 @@ class WebVideoPlaybackState {
     required this.rate,
     required this.fullscreen,
     required this.title,
+    this.volume,
+    this.muted = false,
+    this.buffering = false,
+    this.ad = false,
+    this.videoTitle = '',
+    this.imageUrl = '',
+    this.siteTracks = const <WebVideoSiteTrack>[],
+    this.siteTrackCurrent = '',
+    this.siteAudioTracks = const <WebVideoSiteTrack>[],
+    this.siteAudioTrackCurrent = '',
+    this.blocker = '',
   });
 
   final String href;
@@ -149,6 +305,49 @@ class WebVideoPlaybackState {
   final double rate;
   final bool fullscreen;
   final String title;
+
+  /// `<video>.volume`（0–1）；旧 glue / 无视频为 null。
+  final double? volume;
+
+  /// `<video>.muted`。
+  final bool muted;
+
+  /// 正在 seek 或在播但数据不够（`readyState < HAVE_FUTURE_DATA`）。
+  final bool buffering;
+
+  /// 站点正在放广告（YouTube `ad-showing`）：位置 / 时长 / 倍速 / 静音都是广告的，
+  /// 不是正片的。
+  final bool ad;
+
+  /// 站点播放器给的这一集真名（YouTube 播放器数据 / Netflix 播放器标题 / og:title）；
+  /// 取不到为空。
+  final String videoTitle;
+
+  /// 页面的 og:image（封面候选）；没有为空。
+  final String imageUrl;
+
+  /// 站点播放器自己的文字字幕轨（目前只有 Netflix：采集是被动的，要让播放器切到某条轨它才
+  /// 下载那条字幕，见 glue 的 `netflixTextTracks`）；其它站点为空。
+  final List<WebVideoSiteTrack> siteTracks;
+
+  /// 站点播放器当前开着的轨 id（[WebVideoSiteTrack.id]）；字幕关着为空。
+  final String siteTrackCurrent;
+
+  /// 站点播放器的音轨（目前只有 Netflix，glue 的 `nfat`）；其它站点为空。
+  final List<WebVideoSiteTrack> siteAudioTracks;
+
+  /// 当前音轨 id。
+  final String siteAudioTrackCurrent;
+
+  /// 播放被站点弹层打断（glue 的 `blk`）：'' 正常；`interrupt`「还在看吗？」；`error` /
+  /// `error:<码>` 播放错误。非空时播放器档让位给网页档，让用户在站点页面上处理。
+  final String blocker;
+
+  bool get isBlocked => blocker.isNotEmpty;
+
+  /// 错误码（`error:M7375` → `M7375`）；不是错误或没有码为空。
+  String get blockerErrorCode =>
+      blocker.startsWith('error:') ? blocker.substring(6) : '';
 
   bool get isPlaying => hasVideo && !paused;
 }
@@ -174,8 +373,15 @@ WebVideoTrack? parseWebVideoTrackPayload(
   final int sep = key.indexOf('|');
   final String videoKey =
       (raw['videoKey'] ?? (sep >= 0 ? key.substring(0, sep) : key)).toString();
+  // 语言段可能是 `lang~trackId`（Netflix 同语言多轨）：glue 已拆好就用它的，否则这里拆。
+  final String segment = sep >= 0 ? key.substring(sep + 1) : 'und';
+  final int tilde = segment.indexOf('~');
   final String lang =
-      (raw['lang'] ?? (sep >= 0 ? key.substring(sep + 1) : 'und')).toString();
+      (raw['lang'] ?? (tilde >= 0 ? segment.substring(0, tilde) : segment))
+          .toString();
+  final String siteTrackId =
+      (raw['trackId'] ?? (tilde >= 0 ? segment.substring(tilde + 1) : ''))
+          .toString();
   final List<AudioCue> cues = <AudioCue>[];
   for (final Object? item in rawCues) {
     if (item is! Map) continue;
@@ -195,13 +401,20 @@ WebVideoTrack? parseWebVideoTrackPayload(
         ..audioFileIndex = 0,
     );
   }
-  return WebVideoTrack(key: key, videoKey: videoKey, lang: lang, cues: cues);
+  return WebVideoTrack(
+    key: key,
+    videoKey: videoKey,
+    lang: lang,
+    cues: cues,
+    siteTrackId: siteTrackId,
+  );
 }
 
 /// 解析 `{type:'state', ...}`（字段名见 glue 的 `snapshot()`）。坏形状回 null。
 WebVideoPlaybackState? parseWebVideoStatePayload(Object? raw) {
   if (raw is! Map) return null;
   final Object? rate = raw['rate'];
+  final Object? vol = raw['vol'];
   return WebVideoPlaybackState(
     href: (raw['href'] ?? '').toString(),
     videoKey: (raw['videoKey'] ?? '').toString(),
@@ -214,7 +427,46 @@ WebVideoPlaybackState? parseWebVideoStatePayload(Object? raw) {
     rate: rate is num ? rate.toDouble() : 1.0,
     fullscreen: raw['fs'] == true,
     title: (raw['title'] ?? '').toString(),
+    volume: vol is num ? vol.toDouble().clamp(0.0, 1.0) : null,
+    muted: raw['muted'] == true,
+    buffering: raw['buf'] == true,
+    ad: raw['ad'] == true,
+    videoTitle: (raw['vtitle'] ?? '').toString().trim(),
+    imageUrl: (raw['vimg'] ?? '').toString().trim(),
+    siteTracks: parseWebVideoSiteTracks(raw['nftt']),
+    siteTrackCurrent: parseWebVideoSiteTrackCurrent(raw['nftt']),
+    siteAudioTracks: parseWebVideoSiteTracks(raw['nfat']),
+    siteAudioTrackCurrent: parseWebVideoSiteTrackCurrent(raw['nfat']),
+    blocker: (raw['blk'] ?? '').toString(),
   );
+}
+
+/// glue 的 seek 回执 `{type:'seekDone', ok, err, id}`。
+@immutable
+class WebVideoSeekDone {
+  const WebVideoSeekDone({required this.ok, required this.err, this.id});
+
+  final bool ok;
+  final String err;
+
+  /// 发起这次 seek 时带的序号（[WebVideoPlatformPlayer] 只认最后一次的回执）；旧 glue 为 null。
+  final int? id;
+}
+
+WebVideoSeekDone? parseWebVideoSeekDonePayload(Object? raw) {
+  if (raw is! Map) return null;
+  return WebVideoSeekDone(
+    ok: raw['ok'] == true,
+    err: (raw['err'] ?? '').toString(),
+    id: _asInt(raw['id']),
+  );
+}
+
+/// glue 的整轨抓取失败回执 `{type:'trackFailed', key, err}`：返回失败轨的 store key。
+String? parseWebVideoTrackFailedKey(Object? raw) {
+  if (raw is! Map) return null;
+  final String key = (raw['key'] ?? '').toString();
+  return key.isEmpty ? null : key;
 }
 
 /// 选当前视频要显示的字幕轨。规则（消除「用户什么都没选就没字幕」这一特殊情况）：

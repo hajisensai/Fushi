@@ -542,7 +542,7 @@ jobs:
           name: ${{ steps.native_store.outputs.p2p }}
           path: native\fushi_p2p\prebuilt\windows-x64
       # SRS 排程内核（fsrs-rs）DLL：产物落 native/fushi_fsrs/prebuilt/windows-x64/，由
-      # fushi/windows/CMakeLists.txt 的 copy-if-present 随包。失败口径同 fushi_p2p：**构建失败
+      # fushi/windows/CMakeLists.txt 随包（Release 缺库构建失败）。失败口径同 fushi_p2p：**构建失败
       # 即 job 失败**；出包后下面还会核对 bundle 里确有这个 DLL。不进原生产物持久库（与
       # build-multiplatform.yml windows job 的 fushi_fsrs 同一口径），只靠 rust-cache；工具链
       # 版本与 fushi_p2p 同源。fushi_p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
@@ -561,6 +561,26 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File native/fushi_fsrs/build_windows_dll.ps1
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_fsrs) failed" }
+      # 网页内容核心（fushi_web_core，硬依赖）DLL：产物落 native/fushi_web_core/prebuilt/windows-x64/，由
+      # fushi/windows/CMakeLists.txt 随包（Release 缺库构建失败）。失败口径同 fushi_p2p：**构建失败
+      # 即 job 失败**；出包后下面还会核对 bundle 里确有这个 DLL。不进原生产物持久库（与
+      # build-multiplatform.yml windows job 的 fushi_web_core 同一口径），只靠 rust-cache；工具链
+      # 版本与 fushi_p2p 同源。fushi_p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
+      - name: Set up Rust (fushi_web_core)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
+          targets: x86_64-pc-windows-msvc
+      - name: Cache Rust build (fushi_web_core)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_web_core -> target
+          key: fushi-web-core-windows-x64
+      - name: Build fushi_web_core DLL
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_web_core/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_web_core) failed" }
       # 计算内核（哈希 / 图像 / 文本）DLL：**硬依赖**——产物落 native/fushi_compute/prebuilt/windows-x64/，
       # 缺了 fushi/windows/CMakeLists.txt 在配置期就让构建失败；构建失败即 job 失败，出包后再核对。
       # 不进原生产物持久库，只靠 rust-cache；Rust 已由 fushi_fsrs 那组无条件装好。
@@ -637,6 +657,15 @@ jobs:
           $dll = "fushi\build\windows\x64\runner\Release\fushi_fsrs.dll"
           if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
             throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_fsrs/prebuilt/windows-x64"
+          }
+          Get-Item -LiteralPath $dll | Select-Object FullName, Length
+      # 同上：fushi_web_core 出包后再核对一次 bundle 里确有。
+      - name: Verify fushi_web_core is in the Windows bundle
+        shell: pwsh
+        run: |
+          $dll = "fushi\build\windows\x64\runner\Release\fushi_web_core.dll"
+          if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
+            throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_web_core/prebuilt/windows-x64"
           }
           Get-Item -LiteralPath $dll | Select-Object FullName, Length
       - name: Verify fushi_compute is in the Windows bundle
@@ -1608,6 +1637,27 @@ jobs:
           set -euo pipefail
           bash native/fushi_fsrs/build_macos_dylib.sh
           bash native/fushi_fsrs/verify_abi.sh native/fushi_fsrs/prebuilt/macos/libfushi_fsrs.dylib nm
+      # 网页内容核心（fushi_web_core，硬依赖）arm64 dylib：Runner 的「Bundle fushi_web_core dylib」构建阶段
+      # （fushi/macos/bundle_fushi_web_core.sh）拷进 Contents/Frameworks（Release 缺库失败），之后由下面
+      # 的 Developer ID 签名循环随其它 Mach-O 一起签。失败口径同 p2p：构建失败即 job 失败；
+      # 出包后再核对。不进原生产物持久库（与 build-multiplatform.yml macos job 同一口径），
+      # 工具链版本与 fushi_p2p 同源；p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
+      - name: Set up Rust (fushi_web_core, macOS targets)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
+          targets: aarch64-apple-darwin
+      - name: Cache Rust build (fushi_web_core)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_web_core -> target
+          key: fushi-web-core-macos
+      - name: Build fushi_web_core (macOS arm64 dylib)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_web_core/build_macos_dylib.sh
+          bash native/fushi_web_core/verify_abi.sh native/fushi_web_core/prebuilt/macos/libfushi_web_core.dylib nm
       # 计算内核（哈希 / 图像 / 文本）arm64 dylib：**硬依赖**——Runner 的「Bundle fushi_compute
       # dylib」构建阶段（fushi/macos/bundle_fushi_compute.sh）拷进 Contents/Frameworks，缺库时
       # 那个阶段直接让 xcodebuild 失败；之后由下面的 Developer ID 签名循环随其它 Mach-O 一起签。
@@ -1734,6 +1784,16 @@ jobs:
           archs="$(lipo -archs "$dylib")"
           if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
           bash native/fushi_fsrs/verify_abi.sh "$dylib" nm
+      - name: Verify fushi_web_core is in the macOS bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_web_core.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_web_core dylib' phase did not copy it"; exit 1; }
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_web_core.dylib"
+          archs="$(lipo -archs "$dylib")"
+          if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
+          bash native/fushi_web_core/verify_abi.sh "$dylib" nm
       - name: Verify fushi_compute is in the macOS bundle
         shell: bash
         run: |
@@ -2595,7 +2655,7 @@ jobs:
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       # 静态库 + -force_load 的失败形态是「链接成功、符号被 dead-strip / strip 掉」，
       # Release 配置下 dead-strip 与 strip 都开着，所以查的是真正要发出去的 Runner。
-      - name: Verify fushi_p2p + fushi_fsrs + fushi_compute symbols are linked into Runner (iOS release)
+      - name: Verify fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core symbols are linked into Runner (iOS release)
         if: github.event.inputs.testflight_only != 'true'
         shell: bash
         run: |
@@ -2603,6 +2663,7 @@ jobs:
           bash native/fushi_p2p/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
           bash native/fushi_fsrs/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
           bash native/fushi_compute/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
+          bash native/fushi_web_core/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
       # 只在上面那道 Release Runner 符号核对真跑过之后才存（testflight_only 的 run 不走它）。
       - name: Save iOS umbrella staticlib to native artifact store
         if: steps.ios_native_store.outputs.hit != 'true' && github.event.inputs.testflight_only != 'true'
@@ -2876,7 +2937,7 @@ jobs:
           --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
-      - name: Verify fushi_p2p + fushi_fsrs + fushi_compute symbols are linked into Runner (App Store archive)
+      - name: Verify fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core symbols are linked into Runner (App Store archive)
         if: steps.signing.outputs.testflight == 'true'
         shell: bash
         run: |
@@ -2885,6 +2946,7 @@ jobs:
           bash native/fushi_p2p/verify_abi.sh "$runner" nm
           bash native/fushi_fsrs/verify_abi.sh "$runner" nm
           bash native/fushi_compute/verify_abi.sh "$runner" nm
+          bash native/fushi_web_core/verify_abi.sh "$runner" nm
       # TestFlight 上传是不可回收的外发，搬到下面的 `testflight` job：正式 / 测试版
       # dispatch 在那里等审批，这里只把签名 IPA 交给它。artifact 名刻意不叫
       # desktop-artifacts-*：publish job 按那个前缀收 Release 资产，App Store 签名包

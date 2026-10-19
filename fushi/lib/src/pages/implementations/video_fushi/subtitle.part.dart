@@ -189,6 +189,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     BuildContext context,
     VideoPlayerController controller,
   ) {
+    // 网页档：字幕轨来自站点（bridge 抓的整集轨 + DOM 采样 live 轨），见 web_source.part.dart。
+    if (_webMode) return _buildWebSubtitleTrackRows(context);
     // 选中行前景：M3E 交给面板列表主题（secondaryContainer 色块 +
     // onSecondaryContainer），Apple 照旧强调色。
     final Color? selectedFg = videoPanelSelectedForeground(context);
@@ -3692,6 +3694,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
                             // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
                             hoverAutoLookupEnabled:
                                 ReaderFushiSource.instance.hoverAutoLookup,
+                            hoverLookupModifier:
+                                ReaderFushiSource.instance.hoverLookupModifier,
                             onClose: _closeSubtitleJumpList,
                             colorScheme: cs,
                             title: t.video_subtitle_list,

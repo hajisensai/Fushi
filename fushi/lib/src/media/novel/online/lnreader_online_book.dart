@@ -20,6 +20,7 @@ import 'package:fushi/src/media/novel/online/lnreader_epub_assembler.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/novel_online_sources_gate.dart';
+import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 在线小说书的重启安全描述符，存在 `EpubBooks.sourceMetadata`。
@@ -278,7 +279,9 @@ class LnReaderOnlineLibrary {
       bodyFor: (LnReaderChapter chapter) {
         final int? oldIndex = oldIndexByPath[chapter.path];
         final ({String body, List<LnReaderEpubImage> images})? loaded =
-            oldIndex == null ? null : _readLoadedChapter(extractDir, oldIndex);
+            oldIndex == null
+            ? null
+            : readLnReaderLoadedChapter(extractDir, oldIndex);
         return loaded ??
             (
               body: lnReaderPendingChapterBody(pendingText),
@@ -371,8 +374,8 @@ File lnReaderOnlineChapterFile(String extractDir, int index) =>
     File(p.join(extractDir, 'OEBPS', 'chapter-${index + 1}.xhtml'));
 
 /// 读一章已取过的正文（`<section>` 内部）与它引用的插图；占位章 / 读不到返回
-/// null。
-({String body, List<LnReaderEpubImage> images})? _readLoadedChapter(
+/// null。在线书与网页小说书就地重建解压树时用它把已取过的章原样搬过去。
+({String body, List<LnReaderEpubImage> images})? readLnReaderLoadedChapter(
   String extractDir,
   int index,
 ) {
@@ -448,7 +451,7 @@ LnReaderOnlineChapterLoader? lnReaderOnlineChapterLoaderFor({
 ///
 /// 同一章并发请求只取一次；不同章串行取（网文站普遍限流，并发只换来 429）。
 /// 取完一章顺手预取下一章，顺序阅读翻到下一章时不用等网络。
-class LnReaderOnlineChapterLoader {
+class LnReaderOnlineChapterLoader implements OnlineNovelChapterLoader {
   LnReaderOnlineChapterLoader({
     required this.manager,
     required this.database,
@@ -484,6 +487,7 @@ class LnReaderOnlineChapterLoader {
   }
 
   /// [filePath] 对应的章（0 基）；不是本书的正文文件返回 null。
+  @override
   int? chapterIndexForFile(String filePath) {
     final String relative = p
         .relative(p.normalize(filePath), from: p.normalize(extractDir))
@@ -500,6 +504,7 @@ class LnReaderOnlineChapterLoader {
   /// 确保 [filePath] 这一章已有正文。返回 true = 占位页换成正文之后调用方还
   /// 没确认过（本次亲手取的，或后台预取的；调用方据此丢掉缓存）；不是本书正文
   /// 文件 / 早已确认过返回 false。取不到抛出。
+  @override
   Future<bool> ensureLoaded(String filePath) async {
     final int? index = chapterIndexForFile(filePath);
     if (index == null) return false;

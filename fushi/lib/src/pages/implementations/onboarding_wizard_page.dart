@@ -13,6 +13,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart'
     show hasAnyNavigationModule;
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
@@ -205,10 +206,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// （BUG-2107），套那个模板会把「没拿到路径」说成「下载失败」。
   String? _packPickError;
 
-  // 平台判据只有 [ModuleId.availableOn] 一份（见 [_moduleAvailable]），这里不再
-  // 单独写第二遍 `DesktopLookupService.isDesktop`。
+  // 扩展安装引导要「浏览器」模块在本平台存在（[ModuleId.availableOn]）且本平台能装
+  // 扩展（[browserExtensionSupportedOn]）——模块 2026-10-19 起五端都有，扩展仍只在桌面。
   bool get _browserExtensionAvailable =>
-      _moduleAvailable(ModuleId.browserExtension);
+      _moduleAvailable(ModuleId.web) &&
+      browserExtensionSupportedOn(isDesktop: DesktopLookupService.isDesktop);
 
   /// 当前真正有应用外查词入口的平台。Windows / macOS 用系统级热键；Android 用
   /// 系统文本选择菜单 / 分享入口。其它平台不能因为都叫 desktop/mobile 就展示
@@ -1603,8 +1605,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     switch (feature) {
       case OnboardingFeature.books:
         return FushiIcons.books;
-      case OnboardingFeature.browserExtension:
-        return FushiIcons.browserExtension;
+      case OnboardingFeature.web:
+        return FushiIcons.globe;
       case OnboardingFeature.manga:
         return FushiIcons.manga;
       case OnboardingFeature.video:
@@ -1645,8 +1647,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     switch (feature) {
       case OnboardingFeature.books:
         return t.onboarding_feature_books;
-      case OnboardingFeature.browserExtension:
-        return t.module_extension_label;
+      case OnboardingFeature.web:
+        return t.nav_web;
       case OnboardingFeature.manga:
         return t.onboarding_feature_manga;
       case OnboardingFeature.video:
@@ -1688,8 +1690,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     switch (feature) {
       case OnboardingFeature.books:
         return t.onboarding_feature_books_hint;
-      case OnboardingFeature.browserExtension:
-        return t.onboarding_feature_extension_hint;
+      case OnboardingFeature.web:
+        // 浏览器模块五端都有，但网页漫画 / 小说导入是在线源能力（App Store 合规门），
+        // 门关着的平台（iOS）只介绍浏览 + 查词，不宣传不存在的能力。
+        return StoreRestrictedCapability.onlineMangaSource.isAvailable
+            ? t.onboarding_feature_web_hint
+            : t.onboarding_feature_web_basic_hint;
       case OnboardingFeature.manga:
         return t.onboarding_feature_manga_hint;
       case OnboardingFeature.video:
