@@ -1290,50 +1290,64 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
     // 文档透明，所以框底色必须是真弹窗卡面同源的颜色（与 DictionaryPopupWebView 首帧
     // 底色同一判据），而不是页面底色——否则预览里的 M3E 卡片色块 / Apple 淡染压在
     // 另一种底上，和真弹窗对不上。
-    final bool glass = isGlassDesign(context);
-    final ThemeData theme = Theme.of(context);
-    final BorderRadius previewRadius = glass
-        ? FushiAppleMetrics.of(context).groupBorderRadius
-        : FushiM3eShape.cardRadius;
-    final Color previewSurface = _appModel.overrideDictionaryColor == null &&
-            glass &&
-            !isEinkTheme(context)
-        ? appleColorsOf(context).secondaryGroupedBackground
-        : popupCardSurface(
-            scheme: theme.colorScheme,
-            override: _appModel.overrideDictionaryColor,
-          );
-    final Widget preview = DecoratedBox(
-      decoration: BoxDecoration(
-        color: previewSurface,
-        borderRadius: previewRadius,
-        border: Border.all(
-          color: glass
-              ? appleColorsOf(context).separator
-              : tokens.surfaces.outline,
-          width: glass ? fushiHairline(context) : 1,
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: previewRadius,
-        child: widget.previewBuilder?.call(
-              context,
-              previewCss,
-              _draft.selectedPart,
-              (DictStylePart part) =>
-                  setState(() => _draft.selectedPart = part),
-            ) ??
-            DictStylePreview(
-              css: previewCss,
-              // 只在走真预览时才算：测试注入 previewBuilder 时 AppModel 是裸 fake。
-              themeVariablesJs: buildInAppPopupThemeVariablesJs(
-                appModel: _appModel,
-                theme: theme,
+    //
+    // 主题与底色必须出自同一处：阅读器开着时它往 AppModel 上挂了弹窗覆盖主题 +
+    // 卡面色（纸色亮暗，可能与 app 亮暗相反），真弹窗两样一起用；预览只拿其中一样
+    // （app 深色主题注入 + 浅色纸卡面）就成了白框里的深色卡片、两侧露出底色条带。
+    // 所以整块预览罩在「覆盖主题 ?? app 主题」下，框色 / 描边 / 注入段都从它取。
+    final ThemeData popupTheme =
+        _appModel.overrideDictionaryTheme ?? Theme.of(context);
+    final Widget preview = Theme(
+      data: popupTheme,
+      child: Builder(
+        builder: (BuildContext context) {
+          final bool glass = isGlassDesign(context);
+          final BorderRadius previewRadius = glass
+              ? FushiAppleMetrics.of(context).groupBorderRadius
+              : FushiM3eShape.cardRadius;
+          final Color previewSurface =
+              _appModel.overrideDictionaryColor == null &&
+                      glass &&
+                      !isEinkTheme(context)
+                  ? appleColorsOf(context).secondaryGroupedBackground
+                  : popupCardSurface(
+                      scheme: popupTheme.colorScheme,
+                      override: _appModel.overrideDictionaryColor,
+                    );
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              color: previewSurface,
+              borderRadius: previewRadius,
+              border: Border.all(
+                color: glass
+                    ? appleColorsOf(context).separator
+                    : FushiDesignTokens.of(context).surfaces.outline,
+                width: glass ? fushiHairline(context) : 1,
               ),
-              highlightPart: _draft.selectedPart,
-              onPickPart: (DictStylePart part) =>
-                  setState(() => _draft.selectedPart = part),
             ),
+            child: ClipRRect(
+              borderRadius: previewRadius,
+              child: widget.previewBuilder?.call(
+                    context,
+                    previewCss,
+                    _draft.selectedPart,
+                    (DictStylePart part) =>
+                        setState(() => _draft.selectedPart = part),
+                  ) ??
+                  DictStylePreview(
+                    css: previewCss,
+                    // 只在走真预览时才算：测试注入 previewBuilder 时 AppModel 是裸 fake。
+                    themeVariablesJs: buildInAppPopupThemeVariablesJs(
+                      appModel: _appModel,
+                      theme: popupTheme,
+                    ),
+                    highlightPart: _draft.selectedPart,
+                    onPickPart: (DictStylePart part) =>
+                        setState(() => _draft.selectedPart = part),
+                  ),
+            ),
+          );
+        },
       ),
     );
     final Widget hint = Row(
