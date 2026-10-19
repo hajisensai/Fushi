@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
+import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
@@ -3102,35 +3103,11 @@ class AppModel with ChangeNotifier {
   );
 
   /// Injects licenses to be displayed in the licenses page that aren't
-  /// pre-included by Flutter upon compilation but are included as assets.
+  /// pre-included by Flutter upon compilation but are included as assets:
+  /// every `assets/licenses/*.txt` plus the generated native-dependency
+  /// bundle `assets/licenses/native/` (see `asset_licenses.dart`).
   Future<void> injectAssetLicenses() async {
-    final packageNames = [
-      'ebook-reader',
-      // TODO-1368/BUG-691: "Hibiki Symbols" = renamed 3-glyph subset of
-      // DejaVu Sans 2.37, embedded as a data: URI @font-face in popup.css.
-      'dejavu-fonts',
-      // Windows galgame overlay toolbar: reduced official Google font subset.
-      'material-symbols-rounded',
-      // 内置 AnkiConnect 插件包（assets/anki/，GPLv3，新手引导一键安装用）。
-      'anki-connect',
-      // galgame 校准 OCR 的 NFKC 映射表（gal_lookup_ocr_unicode.dart）由
-      // Unicode Character Database 生成，Unicode License V3 要求随附许可。
-      'unicode-data',
-      // 复习（SRS）排程内核 native/fushi_fsrs 静态链进的两个 Rust crate：
-      // fsrs-rs（BSD-3-Clause，open-spaced-repetition）与 ruzstd（MIT，Anki 新格式包解压）。
-      'fsrs-rs',
-      'ruzstd',
-    ];
-
-    for (String packageName in packageNames) {
-      String licenseText =
-          await rootBundle.loadString('assets/licenses/$packageName.txt');
-      LicenseRegistry.addLicense(
-        () => Stream<LicenseEntry>.value(
-          LicenseEntryWithLineBreaks(<String>[packageName], licenseText),
-        ),
-      );
-    }
+    registerAssetLicenses(rootBundle);
   }
 
   /// TODO-1260：启动期对**数据根**做 IO 的关键 await 的超时上限。旧代码这些 await 若

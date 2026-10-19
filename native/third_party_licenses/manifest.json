@@ -1,0 +1,601 @@
+{
+  "$comment": [
+    "Hand-maintained input of fushi/tool/native_licenses.dart (run: cd fushi && dart run tool/native_licenses.dart).",
+    "rust: target triples each native/<crate>/Cargo.lock ships for, plus optional prepare steps; every native/*/Cargo.lock is discovered automatically.",
+    "cxx: C/C++ libraries without package-manager metadata. texts point at the vendored original, or at a verbatim upstream copy in native/third_party_licenses/texts/.",
+    "spdx/: SPDX standard texts, used only for crates that ship no license file."
+  ],
+  "rust": {
+    "defaultTargets": [
+      "x86_64-pc-windows-msvc",
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-linux-android",
+      "armv7-linux-androideabi",
+      "x86_64-linux-android",
+      "aarch64-apple-ios",
+      "aarch64-apple-ios-sim",
+      "x86_64-apple-ios"
+    ],
+    "crates": {
+      "fushi_anki_sync": {
+        "targets": [
+          "x86_64-pc-windows-msvc",
+          "aarch64-apple-darwin",
+          "x86_64-unknown-linux-gnu"
+        ],
+        "prepare": {
+          "ifMissing": ".anki-src",
+          "command": [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--branch",
+            "26.09.3",
+            "https://github.com/ankitects/anki",
+            ".anki-src"
+          ]
+        }
+      },
+      "fushi_ios_umbrella": {
+        "targets": [
+          "aarch64-apple-ios",
+          "aarch64-apple-ios-sim",
+          "x86_64-apple-ios"
+        ]
+      }
+    }
+  },
+  "cxx": [
+    {
+      "name": "hoshidicts",
+      "version": "fork of Manhhao/hoshidicts @ 8993838",
+      "license": "GPL-3.0",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/hoshidicts-LICENSE.txt"
+      ],
+      "note": "Upstream of the dictionary engine (deep fork). Text: upstream LICENSE."
+    },
+    {
+      "name": "glaze",
+      "version": "7.5.0",
+      "license": "MIT",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/glaze/LICENSE"
+      ]
+    },
+    {
+      "name": "zstd",
+      "version": "1.6.0",
+      "license": "BSD-3-Clause OR GPL-2.0-only",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/zstd/LICENSE"
+      ],
+      "note": "Dual-licensed; distributed under the BSD option (LICENSE), the GPLv2 option (COPYING) is not used."
+    },
+    {
+      "name": "libdeflate",
+      "version": "1.25",
+      "license": "MIT",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/libdeflate/COPYING"
+      ]
+    },
+    {
+      "name": "unordered_dense",
+      "version": "4.8.1",
+      "license": "MIT",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/unordered_dense/LICENSE"
+      ]
+    },
+    {
+      "name": "utf8proc",
+      "version": "2.11.3",
+      "license": "MIT AND Unicode-DFS-2015",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/utf8proc/LICENSE.md"
+      ]
+    },
+    {
+      "name": "utfcpp",
+      "version": "4.0.9",
+      "license": "BSL-1.0",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/utfcpp/LICENSE"
+      ],
+      "note": "Header-only."
+    },
+    {
+      "name": "xxHash",
+      "version": "0.8.3",
+      "license": "BSD-2-Clause",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/xxHash/LICENSE"
+      ],
+      "note": "Header-only (xxh3.h); the GPLv2 xxhsum CLI is not shipped."
+    },
+    {
+      "name": "kanji-processor",
+      "version": "452cc2db",
+      "license": "MIT",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/kanji-processor-LICENSE.txt"
+      ],
+      "note": "Variant-kanji table generated into fushidicts_src/text_processor/kanji_standardization_data.*."
+    },
+    {
+      "name": "libtorrent",
+      "version": "2.0.11",
+      "license": "BSD-3-Clause",
+      "component": "native/fushi_torrent",
+      "platforms": [
+        "android",
+        "macos",
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libtorrent-2.0.11-COPYING"
+      ],
+      "note": "vcpkg overlay port native/fushi_torrent/vcpkg-ports/libtorrent; text: vcpkg share/libtorrent/copyright."
+    },
+    {
+      "name": "Boost",
+      "version": "1.91.0",
+      "license": "BSL-1.0",
+      "component": "native/fushi_torrent",
+      "platforms": [
+        "android",
+        "macos",
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/boost-1.91.0-LICENSE_1_0.txt"
+      ],
+      "note": "asio, chrono, config, crc, date-time, iterator, logic, multi-index, multiprecision, pool, random, scope-exit, system, variant and their header dependencies (vcpkg)."
+    },
+    {
+      "name": "OpenSSL",
+      "version": "3.6.3",
+      "license": "Apache-2.0",
+      "component": "native/fushi_torrent",
+      "platforms": [
+        "android",
+        "macos",
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/openssl-3.6.3-LICENSE.txt"
+      ],
+      "note": "Windows: libssl-3-x64.dll / libcrypto-3-x64.dll; Android / macOS: statically linked."
+    },
+    {
+      "name": "libiconv",
+      "version": "1.19",
+      "license": "LGPL-2.1-or-later",
+      "component": "native/fushi_torrent",
+      "platforms": [
+        "android",
+        "macos",
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libiconv-1.19-copyright"
+      ],
+      "note": "Default iconv feature of the vcpkg libtorrent port; listed conservatively, whether it ends up linked on each platform is unverified."
+    },
+    {
+      "name": "LunaHook (LunaTranslator)",
+      "version": "10.16.1.2",
+      "license": "GPL-3.0",
+      "component": "native/galgame_hook",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/galgame_hook/third_party/lunahook/LICENSE"
+      ],
+      "note": "Prebuilt LunaHook32/64.dll and LunaHost32/64.dll, loaded by the galgame helper."
+    },
+    {
+      "name": "MinHook",
+      "version": "1.3.4",
+      "license": "BSD-2-Clause",
+      "component": "native/galgame_hook",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/galgame_hook/third_party/minhook/LICENSE.txt"
+      ],
+      "note": "Includes the Hacker Disassembler Engine (HDE) notice."
+    },
+    {
+      "name": "Locale-Emulator-Core",
+      "version": "ae7160dc",
+      "license": "LGPL-3.0",
+      "component": "native/galgame_hook",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/galgame_hook/third_party/locale_emulator/LICENSE-LGPL.txt",
+        "native/galgame_hook/third_party/locale_emulator/LICENSE-GPL.txt"
+      ],
+      "note": "LoaderDll.dll / LocaleEmulator.dll in voice_hook/x86."
+    },
+    {
+      "name": "FFmpeg (ffmpeg-min)",
+      "version": "n7.1.5",
+      "license": "GPL-2.0-or-later",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/ffmpeg-7.1.5-LICENSE.md",
+        "native/third_party_licenses/texts/ffmpeg-COPYING.GPLv2"
+      ],
+      "note": "ffmpeg / ffprobe executables built with --enable-gpl (libx264), without --enable-version3 / --enable-nonfree."
+    },
+    {
+      "name": "x264",
+      "version": "stable",
+      "license": "GPL-2.0-or-later",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/x264-COPYING"
+      ]
+    },
+    {
+      "name": "SVT-AV1",
+      "version": "2.3.0",
+      "license": "BSD-3-Clause-Clear",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/svt-av1-2.3.0-LICENSE.md",
+        "native/third_party_licenses/texts/svt-av1-2.3.0-PATENTS.md"
+      ]
+    },
+    {
+      "name": "libwebp",
+      "version": "1.5.0",
+      "license": "BSD-3-Clause",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libwebp-1.5.0-COPYING",
+        "native/third_party_licenses/texts/libwebp-1.5.0-PATENTS"
+      ]
+    },
+    {
+      "name": "dav1d",
+      "version": "1.5.1",
+      "license": "BSD-2-Clause",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/dav1d-1.5.1-COPYING"
+      ]
+    },
+    {
+      "name": "libvpx",
+      "version": "1.15.0",
+      "license": "BSD-3-Clause",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libvpx-1.15.0-LICENSE",
+        "native/third_party_licenses/texts/libvpx-1.15.0-PATENTS"
+      ]
+    },
+    {
+      "name": "Opus",
+      "version": "1.5.2",
+      "license": "BSD-3-Clause",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/opus-1.5.2-COPYING"
+      ]
+    },
+    {
+      "name": "libxml2",
+      "version": "2.13.8",
+      "license": "MIT",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libxml2-2.13.8-Copyright"
+      ]
+    },
+    {
+      "name": "zlib",
+      "version": "1.3.1",
+      "license": "Zlib",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/zlib-LICENSE"
+      ],
+      "note": "Windows build takes zlib from MSYS2; version follows the MSYS2 package at build time."
+    },
+    {
+      "name": "mingw-w64 winpthreads",
+      "version": "MSYS2",
+      "license": "MIT AND BSD-3-Clause",
+      "component": "third_party/ffmpeg-min, third_party/libplacebo-win",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/winpthreads-COPYING"
+      ],
+      "note": "MinGW runtime statically folded into ffmpeg.exe / ffprobe.exe / libplacebo-360.dll."
+    },
+    {
+      "name": "FFmpegKit (FFmpeg)",
+      "version": "6.0",
+      "license": "GPL-3.0",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "third_party/ffmpeg_kit_flutter/LICENSE-GPLv3.txt",
+        "native/third_party_licenses/texts/ffmpeg-6.0-LICENSE.md"
+      ],
+      "note": "Self-built ffmpeg-kit 6.0 with --enable-gpl (x264, libvpx, opus, dav1d, libxml2, openssl)."
+    },
+    {
+      "name": "x264",
+      "version": "ffmpeg-kit 6.0",
+      "license": "GPL-2.0-or-later",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/x264-COPYING"
+      ]
+    },
+    {
+      "name": "libvpx",
+      "version": "ffmpeg-kit 6.0",
+      "license": "BSD-3-Clause",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libvpx-1.15.0-LICENSE",
+        "native/third_party_licenses/texts/libvpx-1.15.0-PATENTS"
+      ],
+      "note": "License text taken from libvpx 1.15.0; the version pinned by ffmpeg-kit 6.0 scripts may differ."
+    },
+    {
+      "name": "Opus",
+      "version": "ffmpeg-kit 6.0",
+      "license": "BSD-3-Clause",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/opus-1.5.2-COPYING"
+      ],
+      "note": "License text taken from Opus 1.5.2."
+    },
+    {
+      "name": "dav1d",
+      "version": "ffmpeg-kit 6.0",
+      "license": "BSD-2-Clause",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/dav1d-1.5.1-COPYING"
+      ],
+      "note": "License text taken from dav1d 1.5.1."
+    },
+    {
+      "name": "libxml2",
+      "version": "ffmpeg-kit 6.0",
+      "license": "MIT",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libxml2-2.13.8-Copyright"
+      ],
+      "note": "License text taken from libxml2 2.13.8."
+    },
+    {
+      "name": "OpenSSL",
+      "version": "ffmpeg-kit 6.0",
+      "license": "Apache-2.0",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/openssl-3.6.3-LICENSE.txt"
+      ],
+      "note": "License text taken from OpenSSL 3.6.3 (OpenSSL 3.x is Apache-2.0)."
+    },
+    {
+      "name": "libplacebo",
+      "version": "7.360.1",
+      "license": "LGPL-2.1-or-later",
+      "component": "third_party/libplacebo-win",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "third_party/libplacebo-win/LICENSE.libplacebo"
+      ],
+      "note": "libplacebo-360.dll, loaded at runtime by the inappwebview Windows fork."
+    },
+    {
+      "name": "shaderc",
+      "version": "MSYS2 2026.3",
+      "license": "Apache-2.0",
+      "component": "third_party/libplacebo-win",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/shaderc-LICENSE"
+      ],
+      "note": "Statically linked into libplacebo-360.dll."
+    },
+    {
+      "name": "glslang",
+      "version": "MSYS2 (via shaderc)",
+      "license": "BSD-3-Clause AND MIT AND Apache-2.0",
+      "component": "third_party/libplacebo-win",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/glslang-LICENSE.txt"
+      ],
+      "note": "Statically linked into libplacebo-360.dll."
+    },
+    {
+      "name": "SPIRV-Tools",
+      "version": "MSYS2 (via shaderc)",
+      "license": "Apache-2.0",
+      "component": "third_party/libplacebo-win",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/spirv-tools-LICENSE"
+      ],
+      "note": "Statically linked into libplacebo-360.dll."
+    },
+    {
+      "name": "SPIRV-Cross",
+      "version": "MSYS2 1.4.357.0",
+      "license": "Apache-2.0",
+      "component": "third_party/libplacebo-win",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/spirv-cross-LICENSE"
+      ],
+      "note": "Statically linked into libplacebo-360.dll."
+    }
+  ]
+}
