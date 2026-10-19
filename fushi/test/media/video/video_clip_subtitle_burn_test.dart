@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 
-/// `ffmpeg-min`（n7.1.x，`--disable-everything` + 白名单）`-filters` 的真实开头，
+/// 旧 `ffmpeg-min`（n7.1.x，`--disable-everything` + 白名单）`-filters` 的真实开头，
 /// 取自**加 overlay 重编之前**入库的那版二进制（28 个 filter）。flag 列是 **3 位**
 /// （`T..` / `..C`），且没有 overlay——这正是 BUG-2202 的起点事实。表头那几行是
 /// 图例，不能被当成 filter 解析出来。
@@ -60,7 +60,7 @@ ClipBurnCue _cue(int a, int b, [String p = 'c.png']) =>
 
 void main() {
   group('parseFfmpegFilterNames', () {
-    test('reads the 3-flag ffmpeg-min listing and skips the legend', () {
+    test('reads the 3-flag (old ffmpeg-min) listing and skips the legend', () {
       final Set<String> names = parseFfmpegFilterNames(_kFiltersMinReal);
 
       expect(names, contains('scale'));
@@ -91,7 +91,7 @@ void main() {
 
   group('ffmpegCanBurnClipSubtitles', () {
     test('a whitelist build without overlay cannot burn', () {
-      // 语料是**重编之前**入库 ffmpeg-min 的真实输出（28 个 filter，没有 overlay）
+      // 语料是**重编之前**入库的旧 ffmpeg-min 的真实输出（28 个 filter，没有 overlay）
       // ——这正是 BUG-2202 的起点事实。二进制现已重编（29 个 filter，含 overlay），
       // 但这条负向用例照旧有效：用户可以用 `FUSHI_FFMPEG` 指到自己的精简构建，
       // 那时必须干净地判「不能烧」而不是拼一条注定失败的命令。

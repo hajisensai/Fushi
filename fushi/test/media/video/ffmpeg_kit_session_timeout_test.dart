@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:ffmpeg_kit_flutter/return_code.dart';
-import 'package:ffmpeg_kit_flutter/session.dart';
+import 'package:ffmpeg_kit_next_flutter/return_code.dart';
+import 'package:ffmpeg_kit_next_flutter/session.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/ffmpeg_kit_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';

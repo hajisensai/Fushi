@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:convert' show utf8;
@@ -3637,6 +3638,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     mediaKeys: <String>{book.bookUid},
                     title: book.title,
                   ),
+                ),
+              );
+            },
+          ),
+          // 私密：不上传排行榜、不推 Bangumi。整部剧要藏就标在合集上。
+          DialogListAction(
+            label: t.media_privacy_action,
+            icon: FushiIcons.lock,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(
+                showMediaPrivacyDialog(
+                  context,
+                  db: appModelNoUpdate.database,
+                  kind: TagHostKind.video,
+                  entryKey: book.bookUid,
+                  title: book.title,
                 ),
               );
             },

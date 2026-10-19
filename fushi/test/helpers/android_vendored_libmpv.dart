@@ -9,14 +9,25 @@ import 'package:flutter_test/flutter_test.dart';
 const String androidLibmpvVendorDirectory =
     '../third_party/media_kit_libs_android_video/android/native/bluray-menu-v1';
 
+/// The unified FFmpeg AAR libmpv.so links (DT_NEEDED libavcodec.so, ...).
+const String androidUnifiedFfmpegAar =
+    '../third_party/ffmpeg_kit_next_flutter/android/libs/ffmpeg-kit-next.aar';
+
 /// Checks actual packaged bytes independently of artifact naming conventions.
-Iterable<({String abi, String contents})> verifiedAndroidLibmpv() sync* {
+///
+/// [contents] is libmpv.so; [codec] is the unified FFmpeg's libavcodec.so for
+/// the same ABI from the FFmpegKitNext AAR (libmpv carries no FFmpeg itself).
+Iterable<({String abi, String contents, String codec})>
+    verifiedAndroidLibmpv() sync* {
+  // Flutter has no 32-bit x86 target; the unified FFmpeg ships these three.
   const Map<String, int> machines = <String, int>{
     'arm64-v8a': 183,
     'armeabi-v7a': 40,
     'x86_64': 62,
-    'x86': 3,
   };
+  final Archive aar = ZipDecoder().decodeBytes(
+    File(androidUnifiedFfmpegAar).readAsBytesSync(),
+  );
   final Map<String, Object?> manifest =
       (jsonDecode(
                 File(
@@ -76,11 +87,26 @@ Iterable<({String abi, String contents})> verifiedAndroidLibmpv() sync* {
     }
     final List<int> mpv =
         archive.findFile('lib/$abi/libmpv.so')!.content as List<int>;
-    yield (abi: abi, contents: latin1.decode(mpv, allowInvalid: true));
+    final ArchiveFile? codec = aar.findFile('jni/$abi/libavcodec.so');
+    expect(codec, isNotNull, reason: '$abi: unified FFmpeg libavcodec.so');
+    // 16 KB page alignment is a 64-bit requirement (16 KB-page devices run no
+    // 32-bit code); FFmpegKitNext links arm64 / x86_64 with max-page-size=16384.
+    _verifyElf(codec!.content as List<int>, entry.value, '$abi/libavcodec.so',
+        require16kPages: entry.value != 40);
+    yield (
+      abi: abi,
+      contents: latin1.decode(mpv, allowInvalid: true),
+      codec: latin1.decode(codec.content as List<int>, allowInvalid: true),
+    );
   }
 }
 
-void _verifyElf(List<int> bytes, int machine, String what) {
+void _verifyElf(
+  List<int> bytes,
+  int machine,
+  String what, {
+  bool require16kPages = true,
+}) {
   expect(bytes.take(4), <int>[0x7f, 0x45, 0x4c, 0x46], reason: what);
   expect(bytes[5], 1, reason: '$what must be little-endian');
   final Uint8List view = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
@@ -101,7 +127,9 @@ void _verifyElf(List<int> bytes, int machine, String what) {
     final int alignment = is64
         ? data.getUint64(header + 48, Endian.little)
         : data.getUint32(header + 28, Endian.little);
-    expect(alignment, greaterThanOrEqualTo(16384), reason: '$what LOAD $i');
+    if (require16kPages) {
+      expect(alignment, greaterThanOrEqualTo(16384), reason: '$what LOAD $i');
+    }
   }
   expect(loadCount, greaterThan(0), reason: what);
 }

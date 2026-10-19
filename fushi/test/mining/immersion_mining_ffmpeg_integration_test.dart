@@ -148,14 +148,14 @@ void main() {
       expect(cap.audioBytes!.length, greaterThan(100));
       // TODO-1217: the clip audio container is platform-aware. iOS produces an
       // MP4/M4A ('ftyp' box at offset 4); desktop/Android produce raw ADTS AAC
-      // (the desktop ffmpeg-min has no ipod muxer), whose first frame starts
+      // (the old desktop ffmpeg-min had no ipod muxer; the container choice is kept as the existing contract), whose first frame starts
       // with the 12-bit 0xFFF sync word.
       if (immersionMiningAudioExtension() == 'm4a') {
         expect(String.fromCharCodes(cap.audioBytes!.skip(4).take(4)), 'ftyp');
       } else {
         expect(cap.audioBytes![0], 0xFF,
             reason: 'desktop/Android clip audio must be ADTS AAC (.aac), the '
-                'only container the bundled ffmpeg-min can mux (TODO-1217).');
+                'container chosen since the old ffmpeg-min could only mux adts (TODO-1217).');
         expect(cap.audioBytes![1] & 0xF0, 0xF0,
             reason: 'ADTS sync word high nibble.');
       }

@@ -211,6 +211,9 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'media_collections': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'shelf_entries': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'tag_assignments': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  // v122 作品级私密标记：与 tag_assignments 同一套宿主逻辑外键，被裁剪内容的标记
+  // 一并收敛掉。
+  'media_privacy_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'book_tags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'book_tag_membership_tombstones': BackupTableRule.rowLevel(
     '_stripOrphanUserDataTables',

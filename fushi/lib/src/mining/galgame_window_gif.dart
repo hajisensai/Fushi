@@ -226,8 +226,8 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
     final String inputPattern = p.join(tempDir.path, kGalAnimationFramePattern);
 
     // 首选用户所选格式；失败则降级 GIF 再试一次。这不是「重试掩盖症状」——两次调用
-    // 的**参数不同**，第二次是能力降级：捆绑 ffmpeg 若来自旧版本包，没有 libsvtav1 /
-    // libwebp 编码器（见 tool/ffmpeg-min/build-ffmpeg-min.sh），首选格式必然失败而
+    // 的**参数不同**，第二次是能力降级：Linux 系统 ffmpeg / 用户指定的外部 ffmpeg 若没有
+    // libsvtav1 / libwebp 编码器（统一 FFmpeg 已含，旧 ffmpeg-min 没有），首选格式必然失败而
     // GIF 恒可用。链本身由格式自己声明（见 [MiningAnimatedFormat.encodeAttempts]），
     // 与视频/Netflix 侧同一处真相源；本函数的输入是 PNG 帧序列、跑的是另一套 ffmpeg
     // 参数，故只共用链而不共用抽取函数。
@@ -299,8 +299,8 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
 /// 维度，故非 GIF 分支用 `-2`（等比且取偶）而非 `-1`。
 ///
 /// 三条分支的参数形态已在带 libsvtav1/libwebp 的真实 ffmpeg 上验证可产出非空文件
-/// （见 `tool/ffmpeg-min/smoke-test.sh` 的同款命令）。**但入库的 ffmpeg-min 尚未含这两个
-/// 编码器**——须重跑 `.github/workflows/ffmpeg-min.yml` 并重新 vendor exe，在那之前
+/// （见 `tool/ffmpeg-unified/smoke-test.sh`）。统一 FFmpeg 已含这两个编码器
+/// （`tool/ffmpeg-unified/capabilities.json`）；在没有它们的外部 ffmpeg（Linux 系统 ffmpeg 等）上，
 /// AVIF/WebP 会走 [captureWindowGifBytes] 的降级路径落回 GIF。
 List<String> buildGalWindowAnimatedArgs({
   required MiningAnimatedFormat format,

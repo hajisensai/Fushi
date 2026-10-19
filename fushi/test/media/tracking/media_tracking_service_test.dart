@@ -1046,6 +1046,46 @@ void main() {
     );
   });
 
+  test('私密书无映射时 recordBookProgress 不向 Bangumi 搜索；公开书会搜（对照）', () async {
+    Future<void> seed(String key) => db.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: key,
+            title: 'Title $key',
+            epubPath: '/tmp/$key.epub',
+            extractDir: '/tmp/$key',
+            chapterCount: 10,
+            chaptersJson: '[]',
+            importedAt: 1,
+          ),
+        );
+    await seed('secret');
+    await seed('open');
+    await db.setMediaPrivate(TagHostKind.epub, 'secret', true);
+
+    await service.recordBookProgress(
+      bookKey: 'secret',
+      completedChapterCount: 3,
+      completed: false,
+    );
+    await service.syncNow();
+    expect(api.searches, isEmpty, reason: '私密作品的标题不得发往 Bangumi');
+    expect(
+      await repository.findMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'secret',
+      ),
+      isNull,
+    );
+    expect(await repository.pendingCount(), 0);
+
+    await service.recordBookProgress(
+      bookKey: 'open',
+      completedChapterCount: 3,
+      completed: false,
+    );
+    expect(api.searches, isNotEmpty, reason: '对照：公开书照常自动映射搜索');
+  });
+
   test(
       'PDF auto mapping reports one volume only after completion and is idempotent',
       () async {

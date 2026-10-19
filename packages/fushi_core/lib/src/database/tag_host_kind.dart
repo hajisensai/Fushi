@@ -28,3 +28,25 @@ typedef TagClockSet = ({
   Map<String, int> addedAt,
   Map<String, int> tombstones,
 });
+
+/// 一个宿主的「私密」标记时钟（[MediaPrivacyFlags] 一行；互联标签同步清单条目上的
+/// `privacy` 载荷）。两只戳都为 null = 从没标过。
+typedef MediaPrivacyClock = ({int? privateAt, int? clearedAt});
+
+/// 私密 ⇔ 设为私密的戳比取消的戳新（相等取消胜，与标签墓碑同口径）。
+bool isPrivateByClock(MediaPrivacyClock clock) {
+  final int? set = clock.privateAt;
+  if (set == null) return false;
+  final int? cleared = clock.clearedAt;
+  return cleared == null || set > cleared;
+}
+
+/// 两只私密时钟逐戳取大（LWW 合并；重放幂等、与顺序无关）。
+MediaPrivacyClock mergePrivacyClocks(
+    MediaPrivacyClock a, MediaPrivacyClock b) {
+  int? maxOf(int? x, int? y) => x == null ? y : (y == null || x >= y ? x : y);
+  return (
+    privateAt: maxOf(a.privateAt, b.privateAt),
+    clearedAt: maxOf(a.clearedAt, b.clearedAt),
+  );
+}

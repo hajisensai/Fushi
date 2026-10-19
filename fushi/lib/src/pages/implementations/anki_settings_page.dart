@@ -95,9 +95,9 @@ class AnkiSettingsBody extends ConsumerStatefulWidget {
   ConsumerState<AnkiSettingsBody> createState() => _AnkiSettingsBodyState();
 }
 
-/// 片段格式选项的文案。五端随包 ffmpeg 都带 libvpx-vp9 + libopus（桌面 ffmpeg-min、
-/// Android AAR、iOS xcframework），两档 WebM 在各端都能内嵌；AV1 只有桌面有 SVT-AV1，
-/// 移动端按 [MiningClipFormat.encodeAttempts] 降级 VP9——文案本身已写明「仅桌面端」。
+/// 片段格式选项的文案。五端随包的统一 FFmpeg（tool/ffmpeg-unified）都带 libvpx-vp9 +
+/// SVT-AV1 + libopus，三档在各端都编得出；[MiningClipFormat.encodeAttempts] 的降级只给
+/// 用户自带的外部 ffmpeg 兜底。
 @visibleForTesting
 String miningClipFormatLabel(MiningClipFormat format) => switch (format) {
   MiningClipFormat.webmVp9 => t.mining_clip_format_webm_vp9,

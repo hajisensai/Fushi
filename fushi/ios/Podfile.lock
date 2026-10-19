@@ -58,7 +58,7 @@ PODS:
     - Flutter
   - external_path (2.0.1):
     - Flutter
-  - ffmpeg_kit_flutter (6.0.3):
+  - ffmpeg_kit_next_flutter (9.0.0):
     - Flutter
   - file_picker (0.0.1):
     - DKImagePickerController/PhotoGallery
@@ -178,7 +178,7 @@ DEPENDENCIES:
   - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
   - external_app_launcher (from `.symlinks/plugins/external_app_launcher/ios`)
   - external_path (from `.symlinks/plugins/external_path/ios`)
-  - ffmpeg_kit_flutter (from `.symlinks/plugins/ffmpeg_kit_flutter/ios`)
+  - ffmpeg_kit_next_flutter (from `.symlinks/plugins/ffmpeg_kit_next_flutter/ios`)
   - file_picker (from `.symlinks/plugins/file_picker/ios`)
   - Flutter (from `Flutter`)
   - flutter_archive (from `.symlinks/plugins/flutter_archive/ios`)
@@ -244,8 +244,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/external_app_launcher/ios"
   external_path:
     :path: ".symlinks/plugins/external_path/ios"
-  ffmpeg_kit_flutter:
-    :path: ".symlinks/plugins/ffmpeg_kit_flutter/ios"
+  ffmpeg_kit_next_flutter:
+    :path: ".symlinks/plugins/ffmpeg_kit_next_flutter/ios"
   file_picker:
     :path: ".symlinks/plugins/file_picker/ios"
   Flutter:
@@ -314,7 +314,7 @@ SPEC CHECKSUMS:
   DKPhotoGallery: b3834fecb755ee09a593d7c9e389d8b5d6deed60
   external_app_launcher: 3411245965270a74040a3de17e27bd02b8abb905
   external_path: fd37c654b69a1336e33a2403f48383ae6100e443
-  ffmpeg_kit_flutter: aa48194ef36cfedca6ac6524acc7c56c3e5e087a
+  ffmpeg_kit_next_flutter: 4688ccaa59340170d3d0d6726c1217b8b92bde24
   file_picker: a0560bc09d61de87f12d246fc47d2119e6ef37be
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_archive: 6eb3c5273c448b55cd5e87421cc72976de255322

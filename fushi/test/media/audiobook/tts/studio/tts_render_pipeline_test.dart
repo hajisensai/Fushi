@@ -206,7 +206,7 @@ void main() {
       );
     });
 
-    test('m4a 显式 -f mp4（ffmpeg-min 没有 ipod 封装器）', () {
+    test('m4a 显式 -f mp4（旧 ffmpeg-min 没有 ipod 封装器，显式写法保留）', () {
       final List<String> args = buildTtsChapterEncodeArgs(
         listPath: 'l.ffconcat',
         outputPath: 'o.m4a',
@@ -368,7 +368,7 @@ void main() {
     });
   });
 
-  // 真 ffmpeg 冒烟：只在显式给了 FUSHI_FFMPEG（如 third_party/ffmpeg-min）时跑，
+  // 真 ffmpeg 冒烟：只在显式给了 FUSHI_FFMPEG（如随包统一 FFmpeg 的 ffmpeg 可执行文件）时跑，
   // 不依赖 CI 机器碰巧装没装 ffmpeg。
   final String? ffmpeg = Platform.environment['FUSHI_FFMPEG'];
   test('ffmpeg 冒烟：两段 WAV（无扩展名后缀 .audio）→ m4a，时长 ≈ 时长之和', () async {

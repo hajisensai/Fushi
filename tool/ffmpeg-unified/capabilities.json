@@ -1,0 +1,34 @@
+{
+  "_comment": "Components card mining / export / ASR / live transcode require from the unified FFmpeg on EVERY platform. Builds are full component sets (no --disable-everything); this list is the floor that verify_ffmpeg_capabilities.py and the guard tests check. Names are as printed by `ffmpeg -encoders/-muxers/...`.",
+  "encoders": [
+    "libx264", "libvpx-vp9", "libsvtav1", "libwebp", "libwebp_anim",
+    "gif", "mjpeg", "png", "aac", "libopus", "flac", "pcm_s16le",
+    "mov_text", "subrip", "ass", "ssa", "webvtt"
+  ],
+  "decoders": [
+    "h264", "hevc", "libdav1d", "vp9", "vp8", "mpeg4", "mpeg2video",
+    "aac", "ac3", "eac3", "opus", "vorbis", "flac", "mp3", "truehd", "dca",
+    "ass", "ssa", "subrip", "webvtt", "mov_text", "text", "sami", "microdvd",
+    "mjpeg", "png", "webp"
+  ],
+  "muxers": [
+    "gif", "adts", "image2", "mjpeg", "mov", "mp4", "ipod", "avif", "webp",
+    "webm", "matroska", "srt", "ass", "webvtt", "null", "mpegts", "sup",
+    "flac", "s16le", "wav"
+  ],
+  "demuxers": [
+    "matroska", "mov", "mpegts", "hls", "dash", "concat", "ffmetadata",
+    "image2", "image2pipe", "srt", "ass", "webvtt", "aac", "mp3", "flac",
+    "wav", "ogg"
+  ],
+  "filters": [
+    "scale", "fps", "split", "palettegen", "paletteuse", "format",
+    "aformat", "aresample", "setpts", "asetpts", "select", "aselect",
+    "trim", "atrim", "pad", "crop", "asetnsamples", "astats", "ametadata",
+    "overlay", "atempo", "loudnorm", "ebur128", "volume", "alimiter",
+    "apad", "anullsrc"
+  ],
+  "protocols": ["file", "pipe", "http", "https", "tcp", "tls", "crypto"],
+  "bsfs": ["aac_adtstoasc", "h264_mp4toannexb", "hevc_mp4toannexb"],
+  "tls_options": ["tls_pin_sha256"]
+}
