@@ -196,12 +196,45 @@ List<OnlineMangaChapter> mergeWebComicChapters(
 }
 
 /// 浏览器里的一条 cookie（与平台 WebView 的 Cookie 类型解耦，便于测试）。
-typedef WebComicCookie = ({String name, String value, String? domain});
-
-/// 给 [imageUrl] 拼 `Cookie` 头：只带**作用域覆盖图片 host** 的条目——章节页所在
-/// 站点的 cookie 才可能对它有效，第三方 CDN / 统计域的 cookie 一概不带。
 ///
-/// host-only cookie（浏览器不报 domain）的作用域是 [pageUrl] 的 host 本身。
+/// [domain] / [path] / [secure] 平台报不报不一定（Android 的 CookieManager 只给
+/// name=value），未知时为 null，匹配规则见 [webComicCookieHeader]。
+class WebComicCookie {
+  const WebComicCookie({
+    required this.name,
+    required this.value,
+    this.domain,
+    this.path,
+    this.secure,
+  });
+
+  final String name;
+  final String value;
+  final String? domain;
+  final String? path;
+  final bool? secure;
+}
+
+/// RFC 6265 §5.1.4 的 path-match：[cookiePath] 为空 / 未知按 `/`。
+bool webComicCookiePathMatches(String requestPath, String? cookiePath) {
+  final String request = requestPath.isEmpty ? '/' : requestPath;
+  final String cookie = (cookiePath == null || cookiePath.isEmpty)
+      ? '/'
+      : cookiePath;
+  if (request == cookie) return true;
+  if (!request.startsWith(cookie)) return false;
+  return cookie.endsWith('/') || request[cookie.length] == '/';
+}
+
+/// 给 [imageUrl] 拼 `Cookie` 头，按 RFC 6265 的发送规则逐条筛（cookie 来自章节页
+/// [pageUrl] 所在站点，图片地址是页面给的不可信数据）：
+///
+/// - 域：只带**作用域覆盖图片 host** 的条目，第三方 CDN / 统计域一概不带；host-only
+///   cookie（浏览器不报 domain）的作用域是 [pageUrl] 的 host 本身；
+/// - 路径：按 [webComicCookiePathMatches] 对图片路径做 path-match；
+/// - Secure：明文 http 的图片不带 Secure cookie；平台没报 Secure 时，页面是 https
+///   就当它可能是 Secure，同样不降级到 http 发送。
+///
 /// 同名取第一条。没有可带的返回 null。
 String? webComicCookieHeader({
   required Uri imageUrl,
@@ -222,6 +255,12 @@ String? webComicCookieHeader({
         ? host == domain
         : MangaCookie.hostMatchesDomain(host, domain);
     if (!applies) continue;
+    if (!webComicCookiePathMatches(imageUrl.path, cookie.path)) continue;
+    if (imageUrl.scheme != 'https') {
+      final bool maybeSecure =
+          cookie.secure ?? (pageUrl.scheme.toLowerCase() == 'https');
+      if (maybeSecure) continue;
+    }
     picked[name] = cookie.value;
   }
   if (picked.isEmpty) return null;

@@ -1197,6 +1197,10 @@ class _RecordingAudio implements SrsCardAudioOutput {
   final List<Completer<bool>> _open = <Completer<bool>>[];
   int stops = 0;
 
+  /// 路径即文件名：[played] 记的仍是卡面上的音频名。
+  @override
+  Future<String?> resolve(String name) => Future<String?>.value(name);
+
   @override
   Future<bool> playToEnd(String name) {
     played.add(name);

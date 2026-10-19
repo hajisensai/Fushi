@@ -121,15 +121,23 @@ fn verdict_or_undecodable(f: impl FnOnce() -> ComicAdVerdict) -> ComicAdVerdict 
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or(ComicAdVerdict::Undecodable)
 }
 
-/// 批量判定：`images[i]` 的结论写进返回值第 i 项。多张图用最多 4 个作用域线程并行（解码峰值
-/// 内存 ≈ 4 张 RGB 图；手机上也可接受），
-/// 整批只跨一次 FFI。
+/// 同时解码的张数上限。单张解码峰值上限约 280 MB（见 [`decode::MAX_DECODE_PIXELS`]）：
+/// 桌面 4 张 ≈ 1.1 GB 可接受；手机（Android / iOS，常见 4–8 GB 内存、后台进程易被杀）只并行
+/// 2 张 ≈ 560 MB。正常漫画页 ≈ 4 MP，实际占用远低于上限。
+const MAX_PARALLEL_DECODES: usize = if cfg!(any(target_os = "android", target_os = "ios")) {
+    2
+} else {
+    4
+};
+
+/// 批量判定：`images[i]` 的结论写进返回值第 i 项。多张图用最多 [`MAX_PARALLEL_DECODES`] 个
+/// 作用域线程并行，整批只跨一次 FFI。
 pub fn detect_batch(images: &[&[u8]], rules: &ComicAdRules) -> Vec<ComicAdVerdict> {
     let workers = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
         .min(images.len())
-        .clamp(1, 4);
+        .clamp(1, MAX_PARALLEL_DECODES);
     if workers <= 1 {
         return images.iter().map(|b| analyze_isolated(b, rules)).collect();
     }

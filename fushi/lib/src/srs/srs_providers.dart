@@ -14,7 +14,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:flutter/foundation.dart'
+    show ChangeNotifier, ValueListenable, ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -229,19 +230,105 @@ void bumpSrsRevision(WidgetRef ref) {
   ref.read(srsRevisionProvider.notifier).state++;
 }
 
-/// 牌组列表数据（牌组行 + 待处理的同步冲突数 + 待裁决笔记数）。
+/// 删牌组的执行与进度（BUG-3543 的分块删除）：app 级，不随牌组列表页销毁。
+///
+/// 以前进度 notifier 与「删完重读」都挂在牌组列表页的 State 上；复习 tab 不常驻，删除途中
+/// 切走 tab 页面就被销毁——debug 下往已销毁的 notifier 写进度抛断言、从分块循环里冒出来
+/// 把删除停在一半；release 下 `if (mounted)` 把重读跳过，列表缓存里一直留着已删的牌组。
+/// 现在删除由本控制器跑完：进度 notifier 归控制器所有，页面只订阅；删完（或失败）一律让
+/// 列表重读，与页面在不在无关。
+class SrsDeckDeleteController extends ChangeNotifier {
+  SrsDeckDeleteController({required void Function() onDataChanged})
+    : _onDataChanged = onDataChanged;
+
+  final void Function() _onDataChanged;
+
+  /// 正在删（或已删完、列表还没重读掉它）的牌组 → 进度（0–1；null = 还不知道总数）。
+  final Map<String, ValueNotifier<double?>> _deleting =
+      <String, ValueNotifier<double?>>{};
+
+  /// 已经删完、等列表重读的牌组。
+  final Set<String> _deleted = <String>{};
+  bool _disposed = false;
+
+  /// 正在删的牌组及其进度（子牌组随父牌组一起显示删除中，由页面按层级查）。
+  Map<String, ValueListenable<double?>> get deleting =>
+      Map<String, ValueListenable<double?>>.unmodifiable(_deleting);
+
+  /// 这个牌组是否在删（删完、等重读的也算：行保持删除中，直到列表里没有它）。
+  bool isDeleting(String deckId) => _deleting.containsKey(deckId);
+
+  /// 删一个牌组（连同子牌组，见 `SrsDbStore.deleteDeck`）。同一个牌组已经在删时直接返回。
+  /// 失败原样抛出（调用方记日志）；成功或失败都让列表重读（失败也可能已提交了前几块）。
+  Future<void> delete(SrsDbStore store, String deckId) async {
+    if (_disposed || _deleting.containsKey(deckId)) return;
+    final ValueNotifier<double?> progress = ValueNotifier<double?>(null);
+    _deleting[deckId] = progress;
+    _notify();
+    try {
+      await store.deleteDeck(
+        deckId,
+        onProgress: (int done, int total) {
+          if (!_disposed && total > 0) progress.value = done / total;
+        },
+      );
+      _deleted.add(deckId);
+    } catch (_) {
+      if (identical(_deleting[deckId], progress)) {
+        _deleting.remove(deckId);
+        progress.dispose();
+      }
+      _notify();
+      rethrow;
+    } finally {
+      if (!_disposed) _onDataChanged();
+    }
+  }
+
+  /// 重读回来的列表里已经没有的、删完的牌组：撤掉删除中状态。不发通知——由正在用这份新
+  /// 列表建界面的页面调用，它这一帧本来就按新列表画（列表里没有这些行）。
+  void pruneDeleted(Iterable<String> presentDeckIds) {
+    if (_deleted.isEmpty) return;
+    final Set<String> present = presentDeckIds.toSet();
+    for (final String id in _deleted.toList()) {
+      if (present.contains(id)) continue;
+      _deleted.remove(id);
+      // 旧行若还挂着监听，卸载时对已销毁的 notifier 调 removeListener 是允许的。
+      _deleting.remove(id)?.dispose();
+    }
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    for (final ValueNotifier<double?> n in _deleting.values) {
+      n.dispose();
+    }
+    _deleting.clear();
+    super.dispose();
+  }
+}
+
+/// 进程内唯一的删牌组控制器（根容器里常驻，不随页面销毁）。
+final Provider<SrsDeckDeleteController> srsDeckDeleteControllerProvider =
+    Provider<SrsDeckDeleteController>((Ref ref) {
+      final SrsDeckDeleteController c = SrsDeckDeleteController(
+        onDataChanged: () => ref.read(srsRevisionProvider.notifier).state++,
+      );
+      ref.onDispose(c.dispose);
+      return c;
+    });
+
+/// 牌组列表数据（牌组行）。同步冲突数另见 [srsConflictCountProvider]。
 class SrsDeckListData {
-  const SrsDeckListData({
-    required this.store,
-    required this.decks,
-    required this.conflictCount,
-  });
+  const SrsDeckListData({required this.store, required this.decks});
 
   final SrsDbStore store;
   final List<SrsDeckSummary> decks;
-
-  /// 同步冲突（标志 / 设置类）+ 待裁决笔记，合计。
-  final int conflictCount;
 
   int get totalCards => _sumRoots((SrsDeckSummary d) => d.totalCards);
 
@@ -301,6 +388,10 @@ List<SrsDeckSummary> srsVisibleDecks(
 }
 
 /// 牌组列表（订阅 [srsRevisionProvider]，写操作后自动重读）。模块关着时为 null。
+///
+/// 只读牌组行：同步冲突数是另一个 provider（[srsConflictCountProvider]）。以前两者合在一个
+/// Future 里，新建 / 改名牌组后列表要等冲突扫描（读回并解析全部修改记录）跑完才换成新数据，
+/// 新牌组迟迟不出现（BUG-3548）。
 final FutureProvider<SrsDeckListData?> srsDeckListProvider =
     FutureProvider<SrsDeckListData?>((Ref ref) async {
       ref.watch(srsRevisionProvider);
@@ -310,14 +401,21 @@ final FutureProvider<SrsDeckListData?> srsDeckListProvider =
         await store.deckSummaries(),
         defaultDeckId: store.defaultDeckId,
       );
-      final int conflicts = (await store.syncConflicts()).length;
-      final int pending = (await store.notesPendingDecision()).length;
-      return SrsDeckListData(
-        store: store,
-        decks: decks,
-        conflictCount: conflicts + pending,
-      );
+      return SrsDeckListData(store: store, decks: decks);
     });
+
+/// 待处理的同步冲突（标志 / 设置类）+ 待裁决笔记，合计（牌组列表顶栏的冲突角标）。
+/// 订阅 [srsRevisionProvider]；与牌组列表各自重读，互不等待。模块关着时为 0。
+final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
+  Ref ref,
+) async {
+  ref.watch(srsRevisionProvider);
+  final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+  if (store == null) return 0;
+  final int conflicts = (await store.syncConflicts()).length;
+  final int pending = (await store.notesPendingDecision()).length;
+  return conflicts + pending;
+});
 
 /// 等 store 就绪（页面动作里用）。模块关着 / 打开失败时返回 null。
 Future<SrsDbStore?> readSrsStore(WidgetRef ref) async {

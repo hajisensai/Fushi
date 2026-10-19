@@ -28,6 +28,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
+import 'package:fushi/src/webview/web_payload_limits.dart';
 
 /// JS→Dart 单一 handler 名（glue 的 `HANDLER`），载荷按 `type` 分派。
 const String kWebVideoJsHandler = 'fushiWebVideo';
@@ -584,14 +585,22 @@ class WebVideoSession {
     _applyInputEnabled();
     controller.addJavaScriptHandler(
       handlerName: kWebVideoJsHandler,
-      callback: _onJsMessage,
+      callback: limitWebPayload(
+        kWebVideoJsHandler,
+        kWebPayloadLargeMaxChars,
+        _onJsMessage,
+      ),
     );
     controller.addJavaScriptHandler(
       handlerName: kWebVideoKeyBridgeHandler,
-      callback: (List<dynamic> args) {
-        if (args.isNotEmpty) onKeyToken?.call(args.first.toString());
-        return null;
-      },
+      callback: limitWebPayload(
+        kWebVideoKeyBridgeHandler,
+        kWebPayloadTinyMaxChars,
+        (List<dynamic> args) {
+          if (args.isNotEmpty) onKeyToken?.call(args.first.toString());
+          return null;
+        },
+      ),
     );
   }
 
@@ -621,7 +630,10 @@ class WebVideoSession {
         final WebVideoLookupRequest? request = parseWebVideoLookupPayload(msg);
         if (request != null) onPageLookup?.call(request);
       case 'state':
-        final WebVideoPlaybackState? state = parseWebVideoStatePayload(msg);
+        final WebVideoPlaybackState? state = parseWebVideoStatePayload(
+          msg,
+          webViewUrl: nav.value.url,
+        );
         if (state != null) {
           _lastState = state;
           onState?.call(state);

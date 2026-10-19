@@ -144,3 +144,21 @@ fn a_panicking_image_is_undecodable_not_a_failed_batch() {
         ComicAdVerdict::Ad
     );
 }
+
+#[test]
+fn oversized_dimensions_are_rejected_before_decoding() {
+    // 一张 8000×8000（64 MP）的灰度 PNG：文件很小，灰度解码缓冲只要 64 MB（在 max_alloc
+    // 以内，挡不住），可 to_rgb8 还要再拷 192 MB。只能靠头部尺寸检查在解码前拒绝。
+    let img = image::GrayImage::new(8000, 8000);
+    let mut png = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    assert!(decode::decode_rgb8(&png).is_none());
+    // 上限以内的照常解码。
+    let small = image::RgbImage::new(64, 64);
+    let mut png = Vec::new();
+    small
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    assert!(decode::decode_rgb8(&png).is_some());
+}

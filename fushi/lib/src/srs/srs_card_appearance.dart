@@ -73,6 +73,7 @@ class SrsCardAppearance {
     this.frontFrequency = false,
     this.sentenceFurigana = false,
     this.compactPhone = true,
+    this.designSkin = true,
   });
 
   /// 字号缩放的取值范围（正文 / 词条 / 行距共用夹取）。
@@ -123,6 +124,15 @@ class SrsCardAppearance {
   /// 全文。宽屏不受影响。「全部释义」里的词典两种都是与查词弹窗同形的逐部折叠卡。
   final bool compactPhone;
 
+  /// 其它卡片类型（Anki 导入牌组、Lapis、用户自建）跟随设计系统：开 = 用当前设计系统
+  /// （MD3 = M3E 色板与形状令牌，Apple = iOS 系统样式）覆盖模板的外观类样式（底色、边框、
+  /// 圆角、文字 / 链接颜色、字体），布局与内容不动；关 = 模板原样渲染、零注入
+  /// （见 srs_card_design_skin.dart）。内置 Fushi 卡片本身就按设计系统画，不受它影响。
+  ///
+  /// 默认开：判定只换中性色（纸底、灰框、黑灰字），承载语义的有彩色原样保留，绝大多数牌组
+  /// 开着只会更协调；个别依赖整页配色的牌组可在外观页 / 复习页 ⋯ 里关掉。
+  final bool designSkin;
+
   SrsCardAppearance copyWith({
     double? textScale,
     double? termScale,
@@ -140,6 +150,7 @@ class SrsCardAppearance {
     bool? frontFrequency,
     bool? sentenceFurigana,
     bool? compactPhone,
+    bool? designSkin,
   }) => SrsCardAppearance(
     textScale: textScale ?? this.textScale,
     termScale: termScale ?? this.termScale,
@@ -157,6 +168,7 @@ class SrsCardAppearance {
     frontFrequency: frontFrequency ?? this.frontFrequency,
     sentenceFurigana: sentenceFurigana ?? this.sentenceFurigana,
     compactPhone: compactPhone ?? this.compactPhone,
+    designSkin: designSkin ?? this.designSkin,
   );
 
   static double _num(Object? v, double fallback, double min, double max) =>
@@ -201,6 +213,7 @@ class SrsCardAppearance {
       frontFrequency: _bool(json['frontFrequency'], d.frontFrequency),
       sentenceFurigana: _bool(json['sentenceFurigana'], d.sentenceFurigana),
       compactPhone: _bool(json['compactPhone'], d.compactPhone),
+      designSkin: _bool(json['designSkin'], d.designSkin),
     );
   }
 
@@ -231,6 +244,7 @@ class SrsCardAppearance {
     'frontFrequency': frontFrequency,
     'sentenceFurigana': sentenceFurigana,
     'compactPhone': compactPhone,
+    'designSkin': designSkin,
   };
 
   String encode() => jsonEncode(toJson());
@@ -298,7 +312,8 @@ ColorScheme srsCardColorScheme(SrsCardAppearance a, ColorScheme appScheme) =>
       )
     : appScheme;
 
-String _cssColorValue(Color c) {
+/// 颜色 → CSS 值（不透明 `#rrggbb`，否则 `rgba()`）。
+String srsCardCssColor(Color c) {
   final int argb = c.toARGB32();
   final int r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = argb & 0xFF;
   final int alpha = (argb >> 24) & 0xFF;
@@ -404,7 +419,7 @@ String srsCardAppearanceCss({
     tokens,
     dark: dark,
   ).forEach(
-    (String name, Color c) => vars.write('$name:${_cssColorValue(c)};'),
+    (String name, Color c) => vars.write('$name:${srsCardCssColor(c)};'),
   );
   srsCardShapeVars(
     tokens,

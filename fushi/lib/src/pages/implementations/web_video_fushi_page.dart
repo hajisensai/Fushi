@@ -81,6 +81,7 @@ import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/webview/web_payload_limits.dart';
 
 /// 内置网页播放器（Windows）：在 WebView2 里由站点自己的播放器播放（Netflix / YouTube /
 /// TVer / B 站……），Fushi 只做「围绕视频」的那一层——字幕列表面板、画面字幕叠层逐词查词、
@@ -292,6 +293,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   String? _activeTrackKey;
   String _videoKey = '';
   WebVideoPlaybackState? _state;
+
+  /// WebView 自己报的当前地址（导航回调给的，可信）；页面上报的 href 对它核主机。
+  String? _webViewUrl;
 
   /// M3E 顶栏胶囊的显隐（[VideoM3eChromeSlide] 的输入）：本页顶栏只随全屏整体卸载，
   /// 挂载即可见；每次（重新）挂载都从上方弹入。
@@ -606,7 +610,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   }
 
   void _onState(Map<dynamic, dynamic> msg) {
-    final WebVideoPlaybackState? state = parseWebVideoStatePayload(msg);
+    final WebVideoPlaybackState? state = parseWebVideoStatePayload(
+      msg,
+      webViewUrl: _webViewUrl,
+    );
     if (state == null) return;
     final bool videoChanged = state.videoKey != _videoKey;
     final bool fullscreenChanged = state.fullscreen != _fullscreen;
@@ -2236,17 +2243,29 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         unawaited(_applyShaderTier());
         controller.addJavaScriptHandler(
           handlerName: kWebVideoJsHandler,
-          callback: _onJsMessage,
+          callback: limitWebPayload(
+            kWebVideoJsHandler,
+            kWebPayloadLargeMaxChars,
+            _onJsMessage,
+          ),
         );
         controller.addJavaScriptHandler(
           handlerName: kWebVideoKeyBridgeHandler,
-          callback: (List<dynamic> args) {
-            _onKeyToken(args);
-            return null;
-          },
+          callback: limitWebPayload(
+            kWebVideoKeyBridgeHandler,
+            kWebPayloadTinyMaxChars,
+            (List<dynamic> args) {
+              _onKeyToken(args);
+              return null;
+            },
+          ),
         );
       },
+      onUpdateVisitedHistory:
+          (InAppWebViewController _, WebUri? url, bool? __) =>
+              _webViewUrl = url?.toString() ?? _webViewUrl,
       onLoadStop: (InAppWebViewController controller, WebUri? url) {
+        _webViewUrl = url?.toString() ?? _webViewUrl;
         unawaited(_setNativeSubtitlesHidden(_hideNativeSubtitles));
         // BUG-2260：队列换集走 loadUrl 整页重载，上一份文档里的 chrome 隐藏 <style> 随之消失，
         // 之后每张卡都带控制条/分级提示。隐藏态归 Dart 所有，新文档就绪时按 _mineRunning 重挂。

@@ -56,9 +56,9 @@ class _WebHubPageState extends State<WebHubPage> {
       if (webHubSectionAvailable(section)) section,
   ];
 
-  /// null = 本平台一个子页都没有（漫画 / 通用浏览子页接入前的移动端）。
-  late WebHubSection? _section = _sections.firstOrNull;
-  late final Set<WebHubSection> _visited = <WebHubSection>{?_section};
+  /// 通用浏览子页五端都有（[webHubSectionAvailable] 恒为 true），所以至少有一个子页。
+  late WebHubSection _section = _sections.first;
+  late final Set<WebHubSection> _visited = <WebHubSection>{_section};
 
   void _select(WebHubSection value) {
     if (value == _section) return;
@@ -85,7 +85,7 @@ class _WebHubPageState extends State<WebHubPage> {
             label: _label(section),
           ),
       ],
-      selected: _section!,
+      selected: _section,
       onChanged: _select,
       focusIdPrefix: 'web-hub-tab',
     );
@@ -110,17 +110,6 @@ class _WebHubPageState extends State<WebHubPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_section == null) {
-      return Scaffold(
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            FushiPageHeader(title: t.nav_web),
-            Expanded(child: Center(child: Text(t.web_hub_empty))),
-          ],
-        ),
-      );
-    }
     final Widget? navigation = _navigation();
     return Stack(
       children: <Widget>[
