@@ -432,6 +432,14 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.externalUserPath,
       'Fushi 生成的 NFO/图片在用户媒体来源目录中的规范绝对路径；不得随应用数据根改写。'),
 
+  // ── video_subtitle_glossaries（schema v119，视频字幕 AI 校对专名表）──
+  PathRebaseColumn('VideoSubtitleGlossaries', 'glossaryJson',
+      PathRebaseKind.notAPath,
+      '专名表 JSON（正式写法 / 读音 / 误写 / 备注 + 指纹与时刻），不含本机路径。'),
+  PathRebaseColumn('VideoSubtitleGlossaries', 'sourceFingerprint',
+      PathRebaseKind.notAPath,
+      '生成专名表所用资料的摘要指纹（撞正则是因为 source），不是路径。'),
+
   // ── video_metadata_extras（schema v69 本地/在线附加内容）──────────
   PathRebaseColumn('VideoMetadataExtras', 'sourceKind', PathRebaseKind.notAPath,
       '附加内容来源枚举（local/online），不是路径。'),

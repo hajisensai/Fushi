@@ -35,8 +35,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 ///    只剩第一条；`name` 保留原文。
 /// 5. credits：apply 把 `roleName ?? character.name ?? ''` 写进 `roleName` 列，
 ///    所以原本 null 的 roleName 读回变成角色名；按 (person, kind, roleName) 去重。
-///    `VideoMetadataPerson.id` / `VideoMetadataCharacter.id` 没列，读回 null；
-///    `VideoMetadataCharacter.originalName` 没列，读回 null。人物 / 角色的 ids
+///    `VideoMetadataPerson.id` / `VideoMetadataCharacter.id` 没列，读回 null
+///    （`VideoMetadataCharacter.originalName` 自 v119 有列，照读）。人物 / 角色的 ids
 ///    是跨作品累积合并的（`_mergeEntityIdentities`），可能比当初这一部作品给
 ///    的多。
 /// 6. images：`likes` / `seasonNumber` / `episodeNumber` 没列，读回 null；
@@ -268,6 +268,7 @@ Future<VideoMetadataCharacter?> _loadCharacter(
   if (row == null) return null;
   return VideoMetadataCharacter(
     name: row.name,
+    originalName: row.originalName,
     description: row.description,
     imageUrl: row.imageUrl,
     ids: (await db.getVideoMetadataProviderIdentities(
