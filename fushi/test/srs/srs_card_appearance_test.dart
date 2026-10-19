@@ -292,6 +292,9 @@ void main() {
             colorSource: SrsCardColorSource.custom,
             customAccent: 0xFFB3261E,
             showPicture: false,
+            // 设计系统样式覆盖另有专门测试（srs_card_design_skin_test.dart）；这里只看
+            // Fushi 卡片专属的外观不外漏。
+            designSkin: false,
           ),
           labels: _labels,
           mediaUrlPrefix: 'https://srs.local/media/',

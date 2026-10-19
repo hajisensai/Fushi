@@ -3,12 +3,13 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi_engine/srs/srs_builtin_migration.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_change_note_type_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_page.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -80,11 +81,13 @@ Future<void> srsMigrateNotesToFushiCard(
 /// 「迁移到 Fushi 卡片」对话框的选择。
 enum SrsMigrateChoice { migrate, adjust }
 
-/// Lapis → Fushi 卡片 一键迁移（笔记类型管理页 Lapis 那一行、浏览页批量操作共用）。
+/// 旧 Lapis 变体 → Fushi 卡片 一键迁移（浏览页批量操作；笔记类型页走迁移页）。
 ///
-/// [noteIds] 为 null = 当前全部 Lapis 笔记。先确认数量（「迁移」直接按预设映射写入；
-/// 「调整映射…」打开更改笔记类型页，目标与映射已预填）。映射按字段键直映（见
-/// srs_builtin_migration.dart），复习历史经前身链接随迁。返回 true = 已迁移。
+/// [noteIds] 为 null = 打开「迁移旧 Lapis 到新模板」页（[openSrsLegacyLapisMigrationPage]：
+/// 全部变体逐个预演 + 遗漏字段补迁），返回 false（页内自己刷新）。给了 [noteIds]：它们必须同属
+/// 一种受支持的 Lapis 变体（内置 / 导入 / 改过名，见 [srsDetectLapisVariant]），先确认数量
+/// （「迁移」按语义映射写入并逐条补同语义的空字段；「调整映射…」打开更改笔记类型页，目标与
+/// 映射已预填）。复习历史经前身链接随迁。返回 true = 已迁移。
 Future<bool> showSrsMigrateToFushiCardFlow(
   BuildContext context, {
   List<String>? noteIds,
@@ -101,7 +104,11 @@ Future<bool> showSrsMigrateToFushiCardFlow(
     return false;
   }
   if (store == null || !context.mounted) return false;
-  final List<String> ids = noteIds ?? await store.lapisNoteIds();
+  if (noteIds == null) {
+    await openSrsLegacyLapisMigrationPage(context);
+    return false;
+  }
+  final List<String> ids = noteIds;
   if (ids.isEmpty) {
     FushiToast.show(msg: t.srs_migrate_fushi_none);
     return false;
@@ -113,7 +120,7 @@ Future<bool> showSrsMigrateToFushiCardFlow(
     FushiToast.show(msg: t.srs_migrate_fushi_not_lapis);
     return false;
   }
-  if (from.id != store.lapisNoteTypeId) {
+  if (srsDetectLapisVariant(from) == null) {
     FushiToast.show(msg: t.srs_migrate_fushi_not_lapis);
     return false;
   }
@@ -149,18 +156,18 @@ Future<bool> showSrsMigrateToFushiCardFlow(
   );
   if (choice == null || !context.mounted) return false;
   if (choice == SrsMigrateChoice.adjust) {
-    final SrsBuiltinMigrationMaps maps = await store.lapisToFushiCardMaps(ids);
-    if (!context.mounted) return false;
+    final SrsNoteTypeView? to = await store.noteType(store.fushiCardNoteTypeId);
+    if (to == null || !context.mounted) return false;
     return showSrsChangeNoteTypeFlow(
       context,
       ids,
-      initialTargetId: store.fushiCardNoteTypeId,
-      initialFieldMap: maps.fieldMap,
-      initialTemplateMap: maps.templateMap,
+      initialTargetId: to.id,
+      initialFieldMap: srsLapisFieldPlan(store.profileUid, from, to).fieldMap,
+      initialTemplateMap: srsLapisTemplateMap(from, to),
     );
   }
   try {
-    final int n = await store.migrateToFushiCard(ids);
+    final int n = await store.migrateLegacyLapis(from.id, noteIds: ids);
     container.read(srsRevisionProvider.notifier).state++;
     FushiToast.show(
       msg: t.srs_migrate_fushi_done(n: n),

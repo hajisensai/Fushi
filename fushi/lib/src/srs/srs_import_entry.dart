@@ -1,7 +1,8 @@
 /// 复习牌组列表的「导入」/「导出（.apkg）」/「从制卡历史导入」三个入口。
 ///
 /// - 导入：选 .apkg / .colpkg → 选项（对齐 Anki 导入页，见
-///   srs_import_options_dialog.dart；记住上次的选择）→ 进度 →
+///   srs_import_options_dialog.dart；记住上次的选择）→ 排进后台导入队列
+///   （srs_import_task.dart；牌组列表顶上的任务条显示进度）→ 任务条「查看报告」看
 ///   导入报告（[srsImportReportLines] 把 `SrsImportReport` 的各项翻成人话）。媒体经
 ///   [SrsMediaStore] 按内容哈希落盘。新格式包而排程内核不可用时报「需要排程内核」。
 /// - 导出：`exportAnkiPackage` → 桌面「另存为」/ 移动端系统分享；范围里有 FSRS-7
@@ -32,6 +33,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_import_options_dialog.dart';
+import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mined_history_import.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -186,92 +188,72 @@ Future<void> openSrsImport(BuildContext context, WidgetRef ref) async {
   await writeSrsImportOptions(prefs, options);
   if (!context.mounted) return;
 
-  final ValueNotifier<double> progress = ValueNotifier<double>(0);
-  final NavigatorState navigator = Navigator.of(context, rootNavigator: true);
-  unawaited(
-    showAppDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext dialogContext) => PopScope(
-        canPop: false,
-        child: FushiAlertDialog(
-          title: Text(t.srs_import_running),
-          content: ValueListenableBuilder<double>(
-            valueListenable: progress,
-            builder: (BuildContext context, double value, Widget? _) =>
-                FushiLinearProgressIndicator(value: value <= 0 ? null : value),
-          ),
-        ),
+  // 后台导入（BUG-3549）：排进 app 级队列立即返回，不再用模态进度框挡住页面；进度在牌组
+  // 列表顶上的任务条里，完成 / 失败由控制器弹全局提示，牌组列表随之重读。
+  final SrsImportTask? task = await startSrsBackgroundImport(
+    ref,
+    file: File(path),
+    options: options,
+  );
+  if (task == null) {
+    FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    return;
+  }
+  FushiToast.show(msg: t.srs_import_background_started);
+}
+
+/// 导入失败原因 → 给人看的一句话。
+String srsImportFailureMessage(Object failure) =>
+    failure is SrsImportException &&
+        failure.code == SrsImportException.needsKernel
+    ? t.srs_import_needs_kernel
+    : t.srs_import_failed(
+        error: failure is SrsImportException ? failure.message : '$failure',
+      );
+
+/// 导入报告对话框（任务条「查看报告」）。
+Future<void> showSrsImportReportDialog(
+  BuildContext context,
+  SrsImportReport report,
+) => showAppDialog<void>(
+  context: context,
+  builder: (BuildContext dialogContext) => FushiAlertDialog(
+    icon: const FushiDialogHeroIcon(icon: FushiIcons.importFile),
+    title: Text(t.srs_import_report_title),
+    content: SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (final String line in srsImportReportLines(report))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(line),
+            ),
+        ],
       ),
     ),
-  );
-  SrsImportReport? report;
-  Object? failure;
-  try {
-    report = await runSrsAnkiImport(
-      store: store,
-      media: media,
-      file: File(path),
-      options: options,
-      onProgress: (double p) => progress.value = p.clamp(0.0, 1.0),
-    );
-  } catch (e, stack) {
-    ErrorLogService.instance.log('openSrsImport', e, stack);
-    failure = e;
-  } finally {
-    if (navigator.mounted) navigator.pop();
-    progress.dispose();
-  }
-  bumpSrsRevision(ref);
-  if (!context.mounted) return;
-  if (failure != null) {
-    final String message =
-        failure is SrsImportException &&
-            failure.code == SrsImportException.needsKernel
-        ? t.srs_import_needs_kernel
-        : t.srs_import_failed(
-            error: failure is SrsImportException ? failure.message : '$failure',
-          );
-    await showFushiConfirmDialog(
+    actions: <Widget>[
+      FushiDialogAction(
+        label: t.dialog_ok,
+        kind: FushiDialogActionKind.primary,
+        autofocus: true,
+        onPressed: () => Navigator.of(dialogContext).pop(),
+      ),
+    ],
+  ),
+);
+
+/// 导入失败对话框（任务条上点失败的任务）。
+Future<void> showSrsImportFailureDialog(BuildContext context, Object failure) =>
+    showFushiConfirmDialog(
       context: context,
       title: t.srs_import_pick_title,
-      message: message,
+      message: srsImportFailureMessage(failure),
       icon: FushiIcons.error,
       confirmLabel: t.dialog_ok,
       cancelLabel: t.cancel,
     );
-    return;
-  }
-  final SrsImportReport done = report!;
-  await showAppDialog<void>(
-    context: context,
-    builder: (BuildContext dialogContext) => FushiAlertDialog(
-      icon: const FushiDialogHeroIcon(icon: FushiIcons.importFile),
-      title: Text(t.srs_import_report_title),
-      content: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            for (final String line in srsImportReportLines(done))
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Text(line),
-              ),
-          ],
-        ),
-      ),
-      actions: <Widget>[
-        FushiDialogAction(
-          label: t.dialog_ok,
-          kind: FushiDialogActionKind.primary,
-          autofocus: true,
-          onPressed: () => Navigator.of(dialogContext).pop(),
-        ),
-      ],
-    ),
-  );
-}
 
 /// 牌组列表 ⋯「导出（.apkg）」：导出全部牌组（Anki 与 Fushi 自己的「导入」都能吃）。
 Future<void> openSrsExport(BuildContext context, WidgetRef ref) async {
