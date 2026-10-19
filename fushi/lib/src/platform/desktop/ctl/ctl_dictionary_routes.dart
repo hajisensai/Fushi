@@ -60,6 +60,14 @@ List<CtlRoute> buildDictionaryCtlRoutes(DesktopCtlContext context) {
       final String? displayName = call.optString('displayName');
       final bool resetDisplayName = call.optBool('resetDisplayName') ?? false;
       final String? language = call.optString('language');
+      // 混合词典的汉字部分（BUG-3571）：「汉字」分区里的开关与位置，与上面两项互不影响。
+      final bool? kanjiEnabled = call.optBool('kanjiEnabled');
+      final int? kanjiPosition = call.optInt('kanjiPosition');
+      ctlCheckKanjiPartParams(
+        target,
+        kanjiEnabled: kanjiEnabled,
+        kanjiPosition: kanjiPosition,
+      );
       if (displayName != null && resetDisplayName) {
         throw const CtlFailure.badRequest(
           'displayName 与 resetDisplayName 不能同时给',
@@ -69,9 +77,12 @@ List<CtlRoute> buildDictionaryCtlRoutes(DesktopCtlContext context) {
           position == null &&
           displayName == null &&
           !resetDisplayName &&
-          language == null) {
+          language == null &&
+          kanjiEnabled == null &&
+          kanjiPosition == null) {
         throw const CtlFailure.badRequest(
-          '至少给 enabled / position / displayName / resetDisplayName / language 之一',
+          '至少给 enabled / position / kanjiEnabled / kanjiPosition / '
+          'displayName / resetDisplayName / language 之一',
         );
       }
       if (displayName != null || resetDisplayName) {
@@ -110,6 +121,26 @@ List<CtlRoute> buildDictionaryCtlRoutes(DesktopCtlContext context) {
         } else {
           await model.updateDictionaryOrder(reordered);
         }
+      }
+      if (kanjiEnabled != null) {
+        // 词典管理页「汉字」分区开关同一入口（只写 kanjiHidden，术语部分不动）。
+        await model.setDictionaryKanjiPartHidden(
+          resolveCtlDictionary(model.dictionaries, target.name),
+          !kanjiEnabled,
+        );
+      }
+      if (kanjiPosition != null) {
+        // 「汉字」分区重排同一入口：混合词典只写 kanjiOrder，纯 kanji 词典写 order。
+        final Dictionary current =
+            resolveCtlDictionary(model.dictionaries, target.name);
+        await model.updateKanjiSectionOrder(
+          ctlReorderDictionaries(
+            model.kanjiSectionDictionaries,
+            current,
+            kanjiPosition,
+            section: DictionaryType.kanji,
+          ),
+        );
       }
       // `model.dictionaries` 借出的是拷贝、提交成功后才发布新状态：回的必须是
       // 提交后重新取的那本，而不是改之前借出的 [target]。

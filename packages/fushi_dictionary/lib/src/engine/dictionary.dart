@@ -1,8 +1,9 @@
 import 'dart:convert';
 
 import '../language/language_base.dart';
+import 'dictionary_buckets.dart';
 
-enum DictionaryType { term, frequency, pitch, kanji }
+export 'dictionary_buckets.dart';
 
 /// 一本词典在某个语言下的折叠三态（BUG-2158）。
 ///
@@ -51,23 +52,6 @@ const String kDictTypeProbeVersion = '1';
 /// 词典不必每次启动再读一遍。
 const String kDictSourceProbeKey = 'sourceProbe';
 
-/// [Dictionary.metadata]：这本 term 词典的 zip 里还带了 kanji_bank（混合词典，如
-/// 附汉字表的国語辞典），值恒为 `'true'`。导入时由 native 的 kanji 计数决定，启动
-/// 期类型自愈也会补上。带这个键的 term 词典同时进汉字桶。
-const String kDictHasKanjiKey = 'hasKanji';
-
-/// [Dictionary.metadata]：混合词典的**汉字部分**被用户在「汉字」分区关掉（`'true'`）。
-///
-/// 混合词典在词典管理里同时出现在「术语」与「汉字」两个分区（与 Hoshi Reader 一致），
-/// 两边的开关与排序各管各的：术语部分走 [Dictionary.hiddenLanguages] /
-/// [Dictionary.order]，汉字部分走这个键与 [kDictKanjiOrderKey]。共用一份状态的话，
-/// 在汉字分区里拖一下就会把它在术语分区的位置一起改掉。
-const String kDictKanjiHiddenKey = 'kanjiHidden';
-
-/// [Dictionary.metadata]：混合词典的汉字部分在「汉字」分区里的位置（十进制整数串）。
-/// 缺省时退回 [Dictionary.order]。见 [kDictKanjiHiddenKey]。
-const String kDictKanjiOrderKey = 'kanjiOrder';
-
 /// [previous] 里混合词典汉字部分的用户设置（[kDictKanjiHiddenKey] /
 /// [kDictKanjiOrderKey]）。重导 / 在线更新时 metadata 按新包整份重建，这两项属于
 /// 用户设置，要从旧记录带过去（与 hiddenLanguages / order 的继承同理）。
@@ -75,19 +59,6 @@ Map<String, String> kanjiPartSettingsOf(Dictionary? previous) {
   if (previous == null) return const <String, String>{};
   return kanjiPartSettingsIn(previous.metadata);
 }
-
-/// 混合词典汉字部分用户设置的键（[kDictKanjiHiddenKey] / [kDictKanjiOrderKey]）。
-const List<String> kDictKanjiPartSettingKeys = <String>[
-  kDictKanjiHiddenKey,
-  kDictKanjiOrderKey,
-];
-
-/// [metadata] 里混合词典汉字部分的用户设置（只取 [kDictKanjiPartSettingKeys]）。
-Map<String, String> kanjiPartSettingsIn(Map<String, String> metadata) =>
-    <String, String>{
-      for (final String key in kDictKanjiPartSettingKeys)
-        if (metadata[key] != null) key: metadata[key]!,
-    };
 
 /// 「汉字」分区的成员与顺序的唯一推导处：纯 kanji 词典 + 混合词典的汉字部分，按
 /// [Dictionary.kanjiSectionOrder] 稳定排序（同序按 [dictionaries] 里的先后）。
@@ -278,8 +249,7 @@ class Dictionary {
   }
 
   /// term 词典里还带着汉字条目（混合词典，见 [kDictHasKanjiKey]）。
-  bool get hasEmbeddedKanji =>
-      type == DictionaryType.term && metadata[kDictHasKanjiKey] == 'true';
+  bool get hasEmbeddedKanji => hasEmbeddedKanjiIn(type, metadata);
 
   /// 出现在「汉字」分区：纯 kanji 词典，或混合词典的汉字部分。
   bool get isInKanjiSection =>
@@ -287,13 +257,11 @@ class Dictionary {
 
   /// 混合词典的汉字部分是否被关掉（见 [kDictKanjiHiddenKey]）。纯 kanji 词典的
   /// 开关仍是 [isHidden]。
-  bool get isKanjiPartHidden => metadata[kDictKanjiHiddenKey] == 'true';
+  bool get isKanjiPartHidden => isKanjiPartHiddenIn(metadata);
 
   /// 在「汉字」分区里的排序键：混合词典取 [kDictKanjiOrderKey]（缺省退回 [order]），
   /// 纯 kanji 词典就是 [order]。
-  int get kanjiSectionOrder => hasEmbeddedKanji
-      ? int.tryParse(metadata[kDictKanjiOrderKey] ?? '') ?? order
-      : order;
+  int get kanjiSectionOrder => kanjiSectionOrderIn(type, metadata, order);
 
   /// 这本词典在「汉字」分区里是否启用（决定它是否进引擎的汉字桶）。
   bool isKanjiSectionEnabled(Language language) =>

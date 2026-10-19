@@ -35,38 +35,6 @@ const String kDictionarySearchHistoryKey = 'dictionary_media_type';
 /// 查词输入上限（与 app 的 `kMaxLookupInputChars` 同值）：超长串先截断再清洗。
 const int kServerMaxLookupInputChars = 2000;
 
-/// 一条词典在引擎分桶时需要的信息（与 app 的 `DictPathEntry` 同形）。
-typedef ServerDictPathEntry = ({String type, String path, bool exists, bool hidden, bool hasKanji});
-
-/// 把词典分桶成引擎要的四组路径（与 app 的 `bucketDictPaths` 同一规则）：
-/// 隐藏的词典（四种类型）一律不进引擎——隐藏的 term 若进桶，引擎在结果过滤之前就按
-/// 最长匹配截断，会把可见词典的结果挤掉（BUG-3454）；不存在的目录跳过；含汉字记录的 term 词典
-/// （metadata `hasKanji`）同时进 kanji 桶。
-({List<String> term, List<String> freq, List<String> pitch, List<String> kanji}) bucketServerDictPaths(
-  List<ServerDictPathEntry> entries,
-) {
-  final List<String> term = <String>[];
-  final List<String> freq = <String>[];
-  final List<String> pitch = <String>[];
-  final List<String> kanji = <String>[];
-  for (final ServerDictPathEntry e in entries) {
-    if (!e.exists) continue;
-    switch (e.type) {
-      case 'kanji':
-        if (!e.hidden) kanji.add(e.path);
-      case 'frequency':
-        if (!e.hidden) freq.add(e.path);
-      case 'pitch':
-        if (!e.hidden) pitch.add(e.path);
-      default:
-        if (e.hidden) continue;
-        term.add(e.path);
-        if (e.hasKanji) kanji.add(e.path);
-    }
-  }
-  return (term: term, freq: freq, pitch: pitch, kanji: kanji);
-}
-
 /// 查词前的查询串清洗（app `normalizeSearchTerm` 的服务端版）：截断 → 换行折空格 →
 /// emoji 换空格 → 首尾标点 / 符号剥离 → 孤立代理项换空格，顺序固定。
 ///
@@ -190,7 +158,10 @@ class ServerDictionaryHost {
     if (!_available) return;
     final List<DictionaryMetaRow> rows = await db.getAllDictionaryMetadata()
       ..sort((DictionaryMetaRow a, DictionaryMetaRow b) => a.order.compareTo(b.order));
-    final List<ServerDictPathEntry> entries = <ServerDictPathEntry>[];
+    // 分桶规则与 app 同一份（fushi_dictionary 的 bucketDictPaths / dictPathEntryOf）：
+    // 混合词典的术语部分按 hiddenLanguages、汉字部分按 kanjiHidden 各自判定，汉字桶按
+    // 「汉字」分区顺序（kanjiOrder）装载（BUG-3571）。
+    final List<DictPathEntry> entries = <DictPathEntry>[];
     final List<String> termOrder = <String>[];
     final Set<String> hidden = <String>{};
     for (final DictionaryMetaRow r in rows) {
@@ -198,15 +169,16 @@ class ServerDictionaryHost {
       final bool isHidden = _decodeStringList(r.hiddenLanguagesJson).contains('ja');
       if (isHidden) hidden.add(r.name);
       if (r.type == 'term') termOrder.add(r.name);
-      entries.add((
-        type: r.type,
+      entries.add(dictPathEntryOf(
+        type: dictionaryTypeFromName(r.type),
         path: dir,
         exists: Directory(dir).existsSync(),
         hidden: isHidden,
-        hasKanji: _decodeStringMap(r.metadataJson)['hasKanji'] == 'true',
+        metadata: _decodeStringMap(r.metadataJson),
+        order: r.order,
       ));
     }
-    final b = bucketServerDictPaths(entries);
+    final b = bucketDictPaths(entries);
     FushiDicts.initializeTyped(termPaths: b.term, freqPaths: b.freq, pitchPaths: b.pitch, kanjiPaths: b.kanji);
     _snapshot = _DictionarySnapshot(termOrder: termOrder, hidden: hidden);
     _loadedCount = b.term.length + b.freq.length + b.pitch.length + b.kanji.length;

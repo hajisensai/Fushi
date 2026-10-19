@@ -17,22 +17,67 @@ import 'package:test/test.dart';
 /// 端到端需要 libfushidicts_ffi：设 `FUSHI_DICTS_LIB=<.so 绝对路径>`（CI 的 linux-server
 /// job 用随包那份），没有时整组 skip 并说明原因。
 void main() {
-  group('bucketServerDictPaths（与 app bucketDictPaths 同规则）', () {
+  group('bucketDictPaths（服务端与 app 共用 fushi_dictionary 同一份）', () {
+    DictPathEntry e(
+      String type,
+      String path, {
+      bool exists = true,
+      bool hidden = false,
+      Map<String, String> metadata = const <String, String>{},
+      int order = 0,
+    }) =>
+        dictPathEntryOf(
+          type: dictionaryTypeFromName(type),
+          path: path,
+          exists: exists,
+          hidden: hidden,
+          metadata: metadata,
+          order: order,
+        );
+
     test('隐藏的词典四种类型都不进桶（BUG-3454）；不存在的目录跳过；hasKanji 双桶', () {
-      final b = bucketServerDictPaths(<ServerDictPathEntry>[
-        (type: 'term', path: 't1', exists: true, hidden: true, hasKanji: false),
-        (type: 'term', path: 't2', exists: true, hidden: false, hasKanji: true),
-        (type: 'term', path: 'gone', exists: false, hidden: false, hasKanji: false),
-        (type: 'frequency', path: 'f1', exists: true, hidden: true, hasKanji: false),
-        (type: 'frequency', path: 'f2', exists: true, hidden: false, hasKanji: false),
-        (type: 'pitch', path: 'p1', exists: true, hidden: false, hasKanji: false),
-        (type: 'kanji', path: 'k1', exists: true, hidden: false, hasKanji: false),
-        (type: 'term', path: 'mixedHidden', exists: true, hidden: true, hasKanji: true),
+      final b = bucketDictPaths(<DictPathEntry>[
+        e('term', 't1', hidden: true),
+        e('term', 't2', metadata: const <String, String>{'hasKanji': 'true'}, order: 1),
+        e('term', 'gone', exists: false),
+        e('frequency', 'f1', hidden: true),
+        e('frequency', 'f2'),
+        e('pitch', 'p1'),
+        e('kanji', 'k1', order: 2),
       ]);
       expect(b.term, <String>['t2']);
       expect(b.freq, <String>['f2']);
       expect(b.pitch, <String>['p1']);
       expect(b.kanji, <String>['t2', 'k1']);
+    });
+
+    test('BUG-3571：混合词典的术语部分与汉字部分各按自己的开关装载', () {
+      // 术语部分关、汉字部分开：只进汉字桶（以前服务端按整本 hidden，整本都不装）。
+      final b1 = bucketDictPaths(<DictPathEntry>[
+        e('term', 'mixed', hidden: true, metadata: const <String, String>{'hasKanji': 'true'}),
+      ]);
+      expect(b1.term, isEmpty);
+      expect(b1.kanji, <String>['mixed']);
+
+      // 术语部分开、汉字部分关：只进术语桶。
+      final b2 = bucketDictPaths(<DictPathEntry>[
+        e('term', 'mixed', metadata: const <String, String>{'hasKanji': 'true', 'kanjiHidden': 'true'}),
+      ]);
+      expect(b2.term, <String>['mixed']);
+      expect(b2.kanji, isEmpty);
+    });
+
+    test('汉字桶按「汉字」分区顺序（kanjiOrder，缺省退回 order）', () {
+      final b = bucketDictPaths(<DictPathEntry>[
+        e('term', 'mixed', metadata: const <String, String>{'hasKanji': 'true', 'kanjiOrder': '0'}, order: 5),
+        e('kanji', 'KANJIDIC', order: 1),
+      ]);
+      expect(b.kanji, <String>['mixed', 'KANJIDIC']);
+    });
+
+    test('未知类型名按术语词典装', () {
+      expect(dictionaryTypeFromName('???'), DictionaryType.term);
+      expect(dictionaryTypeFromName('kanji'), DictionaryType.kanji);
     });
   });
 

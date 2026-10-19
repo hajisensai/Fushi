@@ -1960,8 +1960,8 @@ class _DictionaryDialogPageState extends BasePageState {
         : Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              // 折叠管的是查词弹窗里这本的释义；汉字卡不折叠，汉字部分不给这个钮。
-              if (!_isKanjiPart(dictionary))
+              // 折叠管的是查词弹窗里这本的释义；汉字卡不折叠，「汉字」分区不给这个钮。
+              if (_hasCollapseControl(dictionary))
                 _buildDictionaryCollapseButton(dictionary),
               _buildDictionaryVisibilityButton(dictionary, enabled),
             ],
@@ -2353,8 +2353,10 @@ class _DictionaryDialogPageState extends BasePageState {
       showHeader: showHeader,
       onEnabledChanged: (bool enabled) =>
           _setDictionaryEnabled(dictionary, enabled),
-      onCollapseChanged: (DictionaryCollapseState state) =>
-          _setCollapseState(dictionary, state),
+      onCollapseChanged: _hasCollapseControl(dictionary)
+          ? (DictionaryCollapseState state) =>
+              _setCollapseState(dictionary, state)
+          : null,
       onRename: () => _renameDictionary(dictionary),
       onLanguage: () => _showDictionaryLanguageDialog(dictionary),
       // TODO-839：每本词典都给「更新」（消除「这本能更新那本不能」的断层），按
@@ -2626,6 +2628,12 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 这一行所在的分区：汉字部分算「汉字」，其余按词典自身类型。
   DictionaryType _sectionTypeOf(Dictionary dictionary) =>
       _isKanjiPart(dictionary) ? DictionaryType.kanji : dictionary.type;
+
+  /// 这一行给不给「折叠」控件（行内按钮与详情里的分段同一判据）：折叠只作用于查词
+  /// 弹窗里的释义，「汉字」分区的行对应汉字卡（不折叠），在那里给控件改的会是混合
+  /// 词典术语部分的状态。
+  bool _hasCollapseControl(Dictionary dictionary) =>
+      _sectionTypeOf(dictionary) != DictionaryType.kanji;
 
   String _sectionTypeLabel(Dictionary dictionary) => _isKanjiPart(dictionary)
       ? '${_typeLabel(DictionaryType.kanji)} · ${t.dict_mixed_kanji_part}'

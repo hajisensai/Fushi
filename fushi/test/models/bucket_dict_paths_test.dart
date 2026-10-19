@@ -1,8 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-/// [bucketDictPaths] 是 FFI 引擎词典分桶的单一真相（同步 _rebuildDictPathsCache 与
+/// [bucketDictPaths]（fushi_dictionary，app 与无头服务端共用）是 FFI 引擎词典分桶的单一真相（app 同步 _rebuildDictPathsCache 与
 /// 异步 _rebuildDictPathsCacheAsync 共用）。此前分桶 switch 在两处逐字复制、无法单测
 /// （依赖真词典 + 真目录 + FFI）。本测试钉死分桶规则：隐藏的词典四种类型一律不进桶
 /// （BUG-177/TODO-094/BUG-3454）；不存在的目录跳过。
