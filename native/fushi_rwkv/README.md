@@ -51,6 +51,10 @@ RWKV-Instant 不给间隔，只给 **R（回忆概率）**：
 不可信（只接受 reset / restore / free）。一个 runtime 不是线程安全的，调用方串行化；model 可共享。
 线程数不影响数值（上游的并行全是逐行 map，没有跨线程浮点归约；测试核对 0/1/3 线程逐位相同）。
 
+`frwkv_last_error` 存在**调用线程**的 thread-local 里。Dart isolate 只在一段同步执行内固定在
+同一个 OS 线程上，回到事件循环（`await`）后可能换线程：返回码 < 0 时必须在**同一段同步代码里、
+不经任何 `await`** 紧接着取 `frwkv_last_error`，否则可能拿到别的线程的旧错误或 NULL。
+
 ### `FrwkvReview`（80 字节，`#[repr(C)]`，8 字节对齐）
 
 ```c

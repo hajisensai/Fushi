@@ -15,7 +15,8 @@
 //!   全量回放可能是几百万条复习。
 //! - 所有 `extern "C"` 函数都 `catch_unwind`，panic 不越过 FFI 边界；回放途中 panic
 //!   的 runtime 标记为 poisoned（之后只接受 reset / restore / free）。
-//! - 错误信息：返回码 < 0 时，[frwkv_last_error] 取本线程最近一次错误的可读文本。
+//! - 错误信息：返回码 < 0 时，[frwkv_last_error] 取本线程最近一次错误的可读文本
+//!   （thread-local：Dart 侧须在同一段同步代码里紧接着取，中间不能 `await`）。
 //! - 一个 runtime 不是线程安全的：同一 runtime 的调用由调用方串行化；model 句柄可共享。
 //!
 //! 导出符号：
@@ -751,6 +752,9 @@ pub unsafe extern "C" fn frwkv_runtime_stats(
 }
 
 /// 本线程最近一次失败的可读错误（UTF-8，新分配，用 [frwkv_free_string] 释放）；没有则空指针。
+///
+/// 错误存在调用线程的 thread-local 里：Dart isolate 回到事件循环（`await`）后可能换 OS 线程，
+/// 所以必须在失败调用之后的同一段同步代码里（中间没有 `await`）取它。
 #[no_mangle]
 pub extern "C" fn frwkv_last_error() -> *mut c_char {
     catch_unwind(|| {
