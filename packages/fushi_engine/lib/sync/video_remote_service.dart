@@ -50,6 +50,20 @@ const Set<String> videoRemoteOperations = <String>{
   // [videoRemoteCapabilityEpisodes] / [videoRemoteCapabilitySubtitleTracks]
   // answer it; older hosts reject the path as an unknown operation.
   'playbackOptions',
+  // On-demand playback ([videoRemoteCapabilityOpenVideo]): pick a video from
+  // the computer's library on the phone and have the computer play it, with
+  // or without a video page already open.
+  //
+  // * `library` — `{query?, offset?, limit?}` -> `{total, offset, items:
+  //   [{bookUid, title, collection?, positionMs, lastPlayedAt?}],
+  //   currentBookUid}`. Read only; `query` filters by title / collection.
+  // * `openVideo` — `{bookUid, requestId}`: closes the open video page (its
+  //   normal exit, position saved) and opens [bookUid]. Answers before the
+  //   new page is playing; its session reaches the phone through the state
+  //   journal. Errors: `404 video_missing`, `409 host_busy` (the computer is
+  //   showing something that cannot be closed from the phone, e.g. a dialog).
+  'library',
+  'openVideo',
   'disconnect',
 };
 
@@ -82,6 +96,10 @@ const Set<String> videoRemoteCommandActions = <String>{
 const String videoRemoteCapabilityVolume = 'volume';
 const String videoRemoteCapabilityEpisodes = 'episodes';
 const String videoRemoteCapabilitySubtitleTracks = 'subtitleTracks';
+
+/// Host-level capability (present with or without an open video): the host
+/// answers `library` / `openVideo`.
+const String videoRemoteCapabilityOpenVideo = 'openVideo';
 
 /// Error code for a known action the current player cannot perform.
 const String videoRemoteActionUnsupported = 'action_unsupported';

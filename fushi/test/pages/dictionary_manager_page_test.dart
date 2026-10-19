@@ -35,6 +35,9 @@ class _FakeAppModel extends AppModel {
   @override
   List<Dictionary> get kanjiDictionaries => _ofType(DictionaryType.kanji);
   @override
+  List<Dictionary> get kanjiSectionDictionaries =>
+      kanjiSectionDictionariesOf(_sorted());
+  @override
   List<Dictionary> get freqDictionaries => _ofType(DictionaryType.frequency);
   @override
   List<Dictionary> get pitchDictionaries => _ofType(DictionaryType.pitch);
@@ -221,6 +224,52 @@ void main() {
       model.dictionaries.first.isHidden(JapaneseLanguage.instance),
       isTrue,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'BUG-3573: kanji section rows of a mixed dictionary offer no collapse '
+      'control (it would edit the term part)', (WidgetTester tester) async {
+    await _pumpPage(
+      tester,
+      size: const Size(1280, 800),
+      dictionaries: <Dictionary>[
+        Dictionary(
+          name: 'Mixed',
+          formatKey: 'yomichan',
+          order: 0,
+          metadata: const <String, String>{kDictHasKanjiKey: 'true'},
+        ),
+        Dictionary(
+          name: 'KANJIDIC',
+          formatKey: 'yomichan',
+          order: 1,
+          type: DictionaryType.kanji,
+        ),
+      ],
+    );
+    const ValueKey<String> collapseKey =
+        ValueKey<String>('dict-detail-collapse-Mixed');
+    const ValueKey<String> rowCollapseKey =
+        ValueKey<String>('dict-row-collapse-Mixed');
+
+    // 「术语」分区：混合词典的术语部分照常有折叠控件（行内钮 + 详情分段）。
+    expect(find.byKey(rowCollapseKey), findsOneWidget);
+    await tester.tap(find.text('Mixed'));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey<String>('dict-detail-Mixed')),
+        findsOneWidget);
+    expect(find.byKey(collapseKey), findsOneWidget);
+
+    // 「汉字」分区：同一本的汉字部分不给折叠控件（汉字卡不折叠）。切分区时详情
+    // 侧板仍停在这本（再点一下行会把详情收起），此时它按「汉字」分区的上下文渲染。
+    await tester.tap(find.textContaining(t.dictionary_section_kanji));
+    await _settle(tester);
+    expect(find.byKey(const ValueKey<String>('dict-detail-Mixed')),
+        findsOneWidget);
+    expect(find.byKey(collapseKey), findsNothing);
+    expect(find.byKey(rowCollapseKey), findsNothing,
+        reason: '行内折叠钮与详情同一判据');
     expect(tester.takeException(), isNull);
   });
 
