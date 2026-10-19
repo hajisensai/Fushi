@@ -212,6 +212,8 @@ void scenario_add_dict_during_tokenize(const std::string& ja_json, const std::st
   std::atomic<bool> stop{false};
   std::atomic<int> started{0};
   std::atomic<long> reads{0};
+  // 出错的 worker 会提前退出；等待循环据此结束，变异 / 回归下测试是红而不是挂住。
+  std::atomic<int> alive{kWorkers};
   std::vector<std::thread> workers;
   for (int w = 0; w < kWorkers; w++) {
     workers.emplace_back([&, w]() {
@@ -224,6 +226,7 @@ void scenario_add_dict_during_tokenize(const std::string& ja_json, const std::st
           break;
         }
       }
+      alive.fetch_sub(1);
       fushidicts_release(h);
     });
   }
@@ -234,7 +237,7 @@ void scenario_add_dict_during_tokenize(const std::string& ja_json, const std::st
   }
   // 加完之后再让 worker 至少各跑一轮，确认看到的是新集合。
   const long reads_after_add = reads.load();
-  while (reads.load() < reads_after_add + kWorkers) std::this_thread::yield();
+  while (alive.load() == kWorkers && reads.load() < reads_after_add + kWorkers) std::this_thread::yield();
   stop.store(true);
   for (std::thread& t : workers) t.join();
   const std::vector<int32_t> final_got = tokenize_lengths(h, text);

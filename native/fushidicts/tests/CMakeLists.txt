@@ -204,6 +204,8 @@ endif()
 add_test(NAME handle_lifecycle_concurrency_test
          COMMAND handle_lifecycle_concurrency_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+# 并发回归（锁丢了、退役语义退回直接 delete）常表现为崩溃或死等，给一个有界超时。
+set_tests_properties(handle_lifecycle_concurrency_test PROPERTIES TIMEOUT 120)
 
 # BUG-3261：汉字 + 假名混写（棚にあげる → 棚に上げる）经读音通路命中。
 add_executable(ja_mixed_orthography_lookup_test
