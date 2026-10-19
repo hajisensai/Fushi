@@ -42,19 +42,15 @@ enum VideoPauseOcrScope {
   /// 暂停的这一帧该不该识别。
   ///
   /// [graphicSubtitleActive]：libmpv 正在自绘字幕轨（画面里的字幕没有 Dart 文字）。
-  /// [textCueOnScreen]：Fushi 自绘的文字字幕此刻在屏——主字幕**或**副字幕（BUG-1592
-  /// 支持「主字幕关、只开副字幕」）。它本身就能点字查词，是这一刻的权威文本；OCR 的
-  /// 可点框叠在它上面会抢走点击、查到画面里的另一段字，所以让位。
-  /// [textCuesLoading]：内封文字字幕还在后台抽取，这一帧有没有文字字幕还不知道——
-  /// 先不识别，免得抽取完成后字幕盖在已铺好的 OCR 框下面。
-  bool shouldRecognize({
-    required bool graphicSubtitleActive,
-    required bool textCueOnScreen,
-    required bool textCuesLoading,
-  }) => switch (this) {
+  ///
+  /// [all] 识别的是画面里烧进去的字（硬字幕、标题卡、招牌），与文字字幕轨无关：
+  /// Fushi 自绘的文字字幕不在 libmpv 截帧里，OCR 本来就识别不到它。以前文字字幕
+  /// 在屏 / 内封文字字幕还在抽取时整帧让位，暂停落在台词显示期间（想看这句时最常见）
+  /// 就静默不识别（BUG-3543，用户 2026-10-19：「字幕和 OCR 有什么关系，我要看的是
+  /// 视频里的文字」）。
+  bool shouldRecognize({required bool graphicSubtitleActive}) => switch (this) {
     VideoPauseOcrScope.off => false,
     VideoPauseOcrScope.graphicSubtitles => graphicSubtitleActive,
-    VideoPauseOcrScope.all =>
-      graphicSubtitleActive || (!textCueOnScreen && !textCuesLoading),
+    VideoPauseOcrScope.all => true,
   };
 }

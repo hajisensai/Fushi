@@ -169,82 +169,37 @@ void main() {
       }
     });
 
-    test('所有视频：图形字幕必识别；文字字幕在屏时让位，没有时识别画面', () {
-      const VideoPauseOcrScope s = VideoPauseOcrScope.all;
-      expect(
-        s.shouldRecognize(
-          graphicSubtitleActive: true,
-          textCueOnScreen: false,
-          textCuesLoading: false,
-        ),
-        isTrue,
-      );
-      expect(
-        s.shouldRecognize(
-          graphicSubtitleActive: false,
-          textCueOnScreen: false,
-          textCuesLoading: false,
-        ),
-        isTrue,
-      );
-      expect(
-        s.shouldRecognize(
-          graphicSubtitleActive: false,
-          textCueOnScreen: true,
-          textCuesLoading: false,
-        ),
-        isFalse,
-      );
-    });
-
-    test('所有视频：内封文字字幕还在抽取时先不识别画面，图形字幕不受影响', () {
-      const VideoPauseOcrScope s = VideoPauseOcrScope.all;
-      expect(
-        s.shouldRecognize(
-          graphicSubtitleActive: false,
-          textCueOnScreen: false,
-          textCuesLoading: true,
-        ),
-        isFalse,
-      );
-      expect(
-        s.shouldRecognize(
-          graphicSubtitleActive: true,
-          textCueOnScreen: false,
-          textCuesLoading: true,
-        ),
-        isTrue,
-      );
-    });
-
-    test('仅图片字幕 = 扩大前的行为；关闭则一律不识别', () {
-      for (final bool text in <bool>[false, true]) {
+    test('所有视频：每次暂停都识别画面，与图形字幕在不在无关（BUG-3543）', () {
+      for (final bool graphic in <bool>[false, true]) {
         expect(
-          VideoPauseOcrScope.graphicSubtitles.shouldRecognize(
-            graphicSubtitleActive: true,
-            textCueOnScreen: text,
-            textCuesLoading: false,
+          VideoPauseOcrScope.all.shouldRecognize(
+            graphicSubtitleActive: graphic,
           ),
           isTrue,
         );
+      }
+    });
+
+    test('仅图片字幕 = 扩大前的行为；关闭则一律不识别', () {
+      expect(
+        VideoPauseOcrScope.graphicSubtitles.shouldRecognize(
+          graphicSubtitleActive: true,
+        ),
+        isTrue,
+      );
+      expect(
+        VideoPauseOcrScope.graphicSubtitles.shouldRecognize(
+          graphicSubtitleActive: false,
+        ),
+        isFalse,
+      );
+      for (final bool graphic in <bool>[false, true]) {
         expect(
-          VideoPauseOcrScope.graphicSubtitles.shouldRecognize(
-            graphicSubtitleActive: false,
-            textCueOnScreen: text,
-            textCuesLoading: false,
+          VideoPauseOcrScope.off.shouldRecognize(
+            graphicSubtitleActive: graphic,
           ),
           isFalse,
         );
-        for (final bool graphic in <bool>[false, true]) {
-          expect(
-            VideoPauseOcrScope.off.shouldRecognize(
-              graphicSubtitleActive: graphic,
-              textCueOnScreen: text,
-              textCuesLoading: false,
-            ),
-            isFalse,
-          );
-        }
       }
     });
   });

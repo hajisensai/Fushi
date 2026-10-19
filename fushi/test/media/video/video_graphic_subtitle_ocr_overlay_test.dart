@@ -141,33 +141,53 @@ void main() {
     await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
   });
 
-  testWidgets('所有视频档但文字字幕在屏：不识别（不与字幕查词抢点击）', (tester) async {
+  // BUG-3543：「所有视频」识别的是画面里烧进去的字，与文字字幕轨无关——以前文字字幕在屏 /
+  // 还在抽取时整帧让位，暂停落在台词显示期间就静默不识别。
+  testWidgets('所有视频档、文字字幕在屏：照样识别画面', (tester) async {
     final VideoPlayerController c = _pausedController(graphic: false);
     addTearDown(c.dispose);
     c.setCues(<AudioCue>[_textCue('テキスト字幕')]);
     // 活动集由位置刷新求出（setCues 只复位）；走与播放时同一条路径让这条 cue 在屏。
     c.debugUpdateCueForPosition(5000);
+    expect(c.activeCues, isNotEmpty, reason: '前提：文字字幕在屏');
     final _Probe probe = _Probe();
     await tester.pumpWidget(_overlay(c, probe, scope: VideoPauseOcrScope.all));
-    await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
-    expect(probe.captures, 0);
-    expect(_hitBoxes, findsNothing);
+    await tester.pump(kGraphicSubtitleOcrSettleDelay);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(probe.captures, 1);
+    expect(_hitBoxes, findsNWidgets(_frame.chars.length));
+    await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
   });
 
-  testWidgets('所有视频档、主字幕关只开副字幕：不识别（BUG-1592 副字幕查词不被 OCR 盖住）', (tester) async {
+  testWidgets('所有视频档、只开副字幕且在屏：照样识别画面', (tester) async {
     final VideoPlayerController c = _pausedController(graphic: false);
     addTearDown(c.dispose);
     c.setSecondaryCues(<AudioCue>[_textCue('副字幕テキスト')]);
     c.debugUpdateCueForPosition(5000);
-    expect(c.cues, isEmpty, reason: '前提：主字幕关着');
+    expect(c.secondaryActiveCues, isNotEmpty, reason: '前提：副字幕在屏');
     final _Probe probe = _Probe();
     await tester.pumpWidget(_overlay(c, probe, scope: VideoPauseOcrScope.all));
-    await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
-    expect(probe.captures, 0);
-    expect(_hitBoxes, findsNothing);
+    await tester.pump(kGraphicSubtitleOcrSettleDelay);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(probe.captures, 1);
+    expect(_hitBoxes, findsNWidgets(_frame.chars.length));
+    await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
   });
 
-  testWidgets('已识别出可点区域后再开副字幕：OCR 结果立即撤掉', (tester) async {
+  testWidgets('所有视频档、内封文字字幕还在抽取：不等抽取，照样识别画面', (tester) async {
+    final VideoPlayerController c = _pausedController(graphic: false);
+    addTearDown(c.dispose);
+    c.debugSetSubtitleCuesLoadingForTesting(true);
+    final _Probe probe = _Probe();
+    await tester.pumpWidget(_overlay(c, probe, scope: VideoPauseOcrScope.all));
+    await tester.pump(kGraphicSubtitleOcrSettleDelay);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(probe.captures, 1);
+    expect(_hitBoxes, findsNWidgets(_frame.chars.length));
+    await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+  });
+
+  testWidgets('已识别出可点区域后副字幕出现：OCR 结果保留、不重识别', (tester) async {
     final VideoPlayerController c = _pausedController(graphic: false);
     addTearDown(c.dispose);
     final _Probe probe = _Probe();
@@ -178,8 +198,9 @@ void main() {
 
     c.setSecondaryCues(<AudioCue>[_textCue('副字幕テキスト')]);
     c.debugUpdateCueForPosition(5000);
-    await tester.pump();
-    expect(_hitBoxes, findsNothing, reason: '副字幕出现后不能再有整帧 OCR 区域压在它上面');
+    await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
+    expect(_hitBoxes, findsNWidgets(_frame.chars.length));
+    expect(probe.captures, 1, reason: '同一帧（位置与字幕轨都没变）不该重识别');
     await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
   });
 

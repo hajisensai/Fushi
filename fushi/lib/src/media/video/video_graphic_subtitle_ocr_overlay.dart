@@ -2,8 +2,8 @@
 /// 在识别出的每个字上方铺一个透明可点区域，点字即查词。
 ///
 /// 起初只为图形字幕（PGS / VobSub / DVB，没有 Dart 文字）而设；现在按
-/// [VideoPauseOcrScope] 扩到所有视频（硬字幕、画面文字），Fushi 自绘的文字字幕在屏
-/// 时让位给它（见 [VideoPauseOcrScope.shouldRecognize]）。
+/// [VideoPauseOcrScope] 扩到所有视频（硬字幕、画面文字），见
+/// [VideoPauseOcrScope.shouldRecognize]。
 ///
 /// 识别与 AI 重读见 `graphic_subtitle_ocr.dart`；本层只负责「何时识别」与「摆在哪」。
 library;
@@ -169,11 +169,6 @@ class _VideoGraphicSubtitleOcrOverlayState
     if (c.isPlaying || !c.hasFirstFrame) return null;
     if (!widget.scope.shouldRecognize(
       graphicSubtitleActive: c.isPlayerRenderedSubtitleActive,
-      textCueOnScreen:
-          c.activeCues.isNotEmpty || c.secondaryActiveCues.isNotEmpty,
-      // 副字幕没有独立的加载态（由页面一次性 setSecondaryCues），只有内封主字幕的
-      // 后台抽取有加载窗口。
-      textCuesLoading: c.isSubtitleCuesLoading,
     )) {
       return null;
     }

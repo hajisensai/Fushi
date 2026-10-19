@@ -7902,7 +7902,7 @@
   "video_setting_pause_ocr_scope": "暂停时识别画面文字",
   "video_setting_pause_ocr_scope_all": "所有视频",
   "video_setting_pause_ocr_scope_graphic": "仅图片字幕",
-  "video_setting_pause_ocr_scope_hint": "暂停时对画面做文字识别，识别出的字可直接点按查词。画面上已有 Fushi 显示的文字字幕时以字幕为准。",
+  "video_setting_pause_ocr_scope_hint": "暂停时对画面做文字识别，识别出的字可直接点按查词。与是否显示文字字幕无关。",
   "video_setting_pause_ocr_scope_off": "关闭",
   "video_setting_picture_fit": "画面缩放",
   "video_setting_picture_fit_contain": "适应",
