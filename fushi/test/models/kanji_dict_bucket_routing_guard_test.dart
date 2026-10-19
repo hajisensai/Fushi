@@ -59,16 +59,21 @@ void main() {
   group('kanji bucket split (sync + async path-cache rebuild)', () {
     // 分桶逻辑收口到顶层 bucketDictPaths（同步/异步两方法共用）；kanji 仍进自己的桶、
     // 不 fall through 到 term，rebuild 方法把该桶 (b.kanji) 传给 initializeTyped。
+    // bucketDictPaths 已搬进 fushi_dictionary（c93f413，与无头服务端共用）；app_model 只调用它。
     test('bucketDictPaths 把 kanji 收进独立桶（不并进 term，TODO-094 S4）', () {
-      final String body = bodyOf(appModel, 'bucketDictPaths(');
+      final File f = File(
+          '../packages/fushi_dictionary/lib/src/engine/dictionary_buckets.dart');
+      expect(f.existsSync(), isTrue,
+          reason: 'dictionary_buckets.dart not found at ${f.absolute.path}');
+      final String body = bodyOf(f.readAsStringSync(), '\nbucketDictPaths(');
       expect(
           body.contains('case DictionaryType.kanji:') &&
               body.contains('kanji.add('),
           isTrue,
           reason: 'bucketDictPaths 的 kanji case 必须加进独立 kanji 桶');
       expect(
-          body.contains('case DictionaryType.term:\n'
-              '        case DictionaryType.kanji:'),
+          RegExp(r'case DictionaryType\.term:\s*case DictionaryType\.kanji:')
+              .hasMatch(body),
           isFalse,
           reason:
               'kanji must not fall through to the term case (pre-S4 behaviour)');
