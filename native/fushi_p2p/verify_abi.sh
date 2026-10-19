@@ -76,9 +76,9 @@ if [[ "$(file -b "$BIN")" == Mach-O*64-bit* ]] || { [[ "$(file -b "$BIN")" == Ma
     sdk_major="${sdk%%.*}"
     detail="$BIN 的 LINKEDIT 表没有按 8 字节对齐：$(echo "$misaligned" | tr '\n' ' ')（链接 SDK ${sdk:-未知}）"
     if [[ "$sdk_major" =~ ^[0-9]+$ ]] && (( sdk_major < 27 )); then
-      echo "::warning title=Mach-O LINKEDIT misaligned (SDK < 27)::$detail——这个 SDK 链出的二进制 macOS 27 的 dyld 不校验，照常加载；升到 SDK 27 链接时会变成错误，那时要换成会补齐的 strip（Xcode 27 的 /usr/bin/strip）。" >&2
+      echo "::warning title=Mach-O LINKEDIT misaligned (SDK < 27)::${detail}——这个 SDK 链出的二进制 macOS 27 的 dyld 不校验，照常加载；升到 SDK 27 链接时会变成错误，那时要换成会补齐的 strip（Xcode 27 的 /usr/bin/strip）。" >&2
     else
-      echo "::error title=Mach-O LINKEDIT misaligned::$detail——macOS 27 的 dyld 会拒绝加载（mis-aligned LINKEDIT string pool）。多半是 rust-objcopy strip 过：macOS 产物关掉 cargo strip（CARGO_PROFILE_RELEASE_STRIP=false），改用 /usr/bin/strip -x，并确认产物对齐。" >&2
+      echo "::error title=Mach-O LINKEDIT misaligned::${detail}——macOS 27 的 dyld 会拒绝加载（mis-aligned LINKEDIT string pool）。多半是 rust-objcopy strip 过：macOS 产物关掉 cargo strip（CARGO_PROFILE_RELEASE_STRIP=false），改用 /usr/bin/strip -x，并确认产物对齐。" >&2
       exit 1
     fi
   else
