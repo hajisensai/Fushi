@@ -33,10 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3167 条。点号进各自文件。
+> 共 3171 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3541](bugs/BUG-3541-data-root-move-embedded-fast-resume-stale-save-path.md) | ✅ | ✅ | 数据根迁移后内置引擎 fast-resume 里的 save_path 仍指向旧目录，种子指向已搬空的位置 |
+| [BUG-3540](bugs/BUG-3540-download-job-records-stale-after-move.md) | ✅ | ✅ | 移动/改名/整理后下载任务行的保存位置与相对路径不跟着更新 |
+| [BUG-3539](bugs/BUG-3539-download-remote-qb-backend-path-as-local.md) | ✅ | ✅ | 外接远端 qBittorrent：改名/移动、任务删除与打开位置把后端坐标的保存路径当本机路径用 |
+| [BUG-3538](bugs/BUG-3538-download-relocate-subtitle-remapped-not-moved.md) | ✅ | ✅ | 移动下载后库里外挂字幕路径被改到没有字幕文件的新位置 |
 | [BUG-3537](bugs/BUG-3537-outbound-progress-landing-overwrites-host-put.md) | ✅ | ✅ | 出站同步落地无条件写本地进度，盖掉刚到的互联对端 PUT（进度倒退） |
 | [BUG-3536](bugs/BUG-3536-subtitle-null-text-color-follows-theme.md) | ✅ | ✅ | 关掉「尊重字幕自带样式」后字幕文字色随 App 主题忽白忽黑 |
 | [BUG-3535](bugs/BUG-3535-opds-cover-401-missing-headers.md) | ✅ | ✅ | OPDS：私有目录（Komga）封面无凭据请求回 401，发现页封面全是占位 |

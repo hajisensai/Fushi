@@ -137,6 +137,8 @@ import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/torrent_fast_resume.dart'
+    show kEmbeddedTorrentFastResumeDirName;
 import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
 import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi_engine/media/torrent/public_trackers.dart';
@@ -197,6 +199,8 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinato
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_path_migration.dart'
+    show DownloadRelocation;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -5395,6 +5399,23 @@ class AppModel with ChangeNotifier {
   /// **不**跟用户配置的下载根走。
   String? _embeddedTorrentResumeDir;
 
+  /// 数据根迁移前已经释放内置引擎（见 [releaseEmbeddedTorrentForDataRootMove]）。
+  bool _embeddedTorrentReleasedForDataRootMove = false;
+
+  /// BUG-3541：数据根迁移搬文件**之前**停下内置 torrent 引擎。
+  ///
+  /// 引擎握着下载内容的文件句柄（Windows 上目录 rename 会因此失败），也会把
+  /// resume 按**旧绝对路径**落到旧 resume 目录。这里先强制落一次 resume（让迁移器
+  /// 改写的是最新状态），再关 session，并禁止本进程再懒建——迁移成功后进程重启，
+  /// 新进程按改写过的 resume 恢复。
+  void releaseEmbeddedTorrentForDataRootMove() {
+    _embeddedTorrentReleasedForDataRootMove = true;
+    _animeDownloadService?.stop();
+    _stopTorrentNetworkMonitor();
+    _embeddedTorrentHost?.dispose(keepIds: _animeDownloadPlanIds);
+    _embeddedTorrentHost = null;
+  }
+
   /// 当前仍存在的计划 id 集合（= infohash）。resume 剪枝的真相源：不在这个集合
   /// 里的 `.resume` 文件一律删，否则用户删掉的任务会在下次启动复活成一个 UI 里
   /// 看不见、却在后台做种的种子。每轮 tick 与启动时刷新。
@@ -5415,6 +5436,9 @@ class AppModel with ChangeNotifier {
   EmbeddedTorrentHost? _ensureEmbeddedTorrentHost() {
     final EmbeddedTorrentHost? existing = _embeddedTorrentHost;
     if (existing != null) return existing;
+    // 数据根迁移已把引擎停下、resume 交给迁移器改写（BUG-3541）：本进程随后
+    // 重启，不得再懒建一个按旧路径落盘的 session。
+    if (_embeddedTorrentReleasedForDataRootMove) return null;
     final TorrentSaveRoots? roots = _embeddedTorrentSaveRoots;
     final String? resumeDir = _embeddedTorrentResumeDir;
     if (roots == null || resumeDir == null || !_supportsEmbeddedTorrent()) {
@@ -5650,7 +5674,8 @@ class AppModel with ChangeNotifier {
       configuredRoot: configuredRoot,
       history: decodeSaveRootHistory(prefsRepo.downloadSaveRootHistory),
     );
-    _embeddedTorrentResumeDir = path.join(baseDir.path, 'resume');
+    _embeddedTorrentResumeDir =
+        path.join(baseDir.path, kEmbeddedTorrentFastResumeDirName);
 
     // schema v78 cut-over 必须先于两个 JSON service 的首次 tick。每个 JSON 文件
     // 事务提交后才归档；崩溃重放依靠稳定 legacy id 幂等，不移动字幕 staging。
@@ -6137,13 +6162,7 @@ class AppModel with ChangeNotifier {
     final TorrentBackend? backend = _videoDownloadBackend;
     if (backend == null) return null;
     final List<VideoDownloadPathMapping> mappings =
-        <VideoDownloadPathMapping>[];
-    for (final VideoDownloadBackendPathMappingConfig value
-        in prefsRepo.videoDownloadBackendPathMappings) {
-      if (value.backendProfileId == identity.profileId) {
-        mappings.add(value.toMapping());
-      }
-    }
+        downloadPathMappingsForProfile(identity.profileId);
     return VideoDownloadBackendBinding(
       backend: backend,
       identity: identity,
@@ -6184,18 +6203,34 @@ class AppModel with ChangeNotifier {
   /// TODO-1961-c+d：下载内容改名 / 移动（引擎侧动，做种不断；库路径同步迁移）。
   ///
   /// 后端工厂复用 [_torrentBackendFor]，所以内置引擎与外接 qb 两条路都走得通；
-  /// 库迁移走 [VideoBookRepository.migrateMediaPaths]。两步的原子性由
+  /// 库迁移走 [VideoBookRepository.applyDownloadRelocation]。两步的原子性由
   /// [DownloadRelocateService] 保证（引擎失败则库不动）。
+  ///
+  /// 后端坐标 ↔ 本机坐标走当前后端配置档的下载路径映射（BUG-3539），与下载
+  /// 流水线是同一份契约。
   DownloadRelocateService get downloadRelocateService =>
       DownloadRelocateService(
         backendFactory: () => _torrentBackendFor(
             effectiveTorrentConfig(prefsRepo.qbConnectionConfig)),
-        migrateLibraryPaths: ({
-          required String fromPath,
-          required String toPath,
-        }) =>
-            VideoBookRepository(database)
-                .migrateMediaPaths(fromPath: fromPath, toPath: toPath),
+        pathMappings: () async {
+          final VideoDownloadBackendIdentity identity =
+              await _currentVideoDownloadBackendIdentity(
+            effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
+          );
+          return downloadPathMappingsForProfile(identity.profileId);
+        },
+        applyRelocation: (DownloadRelocation relocation) =>
+            VideoBookRepository(database).applyDownloadRelocation(relocation),
+      );
+
+  /// 后端配置档 [profileId]（任务行 `backendProfileId`）的显式下载路径映射。
+  /// 任务的后端坐标只能用它**自己那台后端**的映射解释，不能用当前设置的。
+  List<VideoDownloadPathMapping> downloadPathMappingsForProfile(
+    String? profileId,
+  ) =>
+      videoDownloadPathMappingsForProfile(
+        prefsRepo.videoDownloadBackendPathMappings,
+        profileId,
       );
 
   /// 刷新 [_animeDownloadPlanIds]（resume 剪枝的真相源）并返回它。
