@@ -260,14 +260,26 @@ server-build.gradle.patch:
                                    authenticated APK inspection route;
                                    version string 1.0.4.10 -> 1.0.5.0 (upstream
                                    forgot to bump it when tagging v1.0.5.0)
+  .../Main.kt                      the <appDir> argument sets
+                                   suwayomi.tachidesk.config.server.rootDir,
+                                   the property ApplicationRootDir reads
+                                   (upstream set "ts.server.rootDir", read by
+                                   nothing, so settings/, android-compat/ and
+                                   server.conf of every Fushi data root landed
+                                   in the shared AppDirs "Tachidesk" directory,
+                                   the one Suwayomi uses too; BUG-3520)
   .../impl/MihonInvoker.kt         preserve the catalogue identity
                                    (url/title/...) that legacy detail parsers
-                                   drop; chapters cross the bridge as JChapter
+                                   drop; chapters cross the bridge as JChapter;
+                                   applyPreferences writes the host snapshot
+                                   through HostPreferenceSnapshot (see below)
   .../model/DataBody.kt            JGroupFilter.stateString
   .../util/BytecodeEditor.kt       emit INVOKEINTERFACE when the replacement
                                    owner is an interface (dex2jar writes a
                                    Methodref where an InterfaceMethodref is
-                                   required)
+                                   required); raise converted classes from
+                                   dex2jar's major 50 to exactly 52 (BUG-3519,
+                                   see "Class file version" below)
   two upstream tests updated to match
 
 overlay/ (full-file replacements):
@@ -285,7 +297,11 @@ overlay/ (full-file replacements):
                                                 the extension's own client,
                                                 buffered with a hard ceiling
   .../controller/SourceDataHandler.kt           new: clear per-source
-                                                preferences, cookies and cache
+                                                preferences (and their host
+                                                snapshot ledger), cookies and
+                                                cache
+  .../impl/HostPreferenceSnapshot.kt            new: host preference snapshot
+                                                rule (see below)
   .../AppModule.kt                              ProtoBuf registered in the
                                                 Injekt container next to Json
   .../network/interceptor/CloudflareInterceptor.kt
@@ -334,8 +350,9 @@ Security boundary (must not be weakened)
   the size, not the destination: the URL is chosen by the source site, exactly
   as in upstream's own /image/<uuid> page path, which is inherent to Mihon's
   "the site tells the client where the image is" contract.
-- The upstream process identity is retained: Main.kt, ServerWindow.kt and
-  MExtensionServerLoader are untouched; MihonImageProxy has a response-lifetime
+- The upstream process identity is retained: ServerWindow.kt and
+  MExtensionServerLoader are untouched, Main.kt only has the one-line rootDir
+  property fix (argument contract, port handling and lifecycle unchanged); MihonImageProxy has a response-lifetime
   overlay described above. The Fushi
   host only ever terminates the Process handle it started (never a port or
   process-name scan). The upstream wire key __mangatan_bridge_context__ is
@@ -343,3 +360,47 @@ Security boundary (must not be weakened)
   fushiMihonBridge.
 - Shutdown stays explicit: POST /stop, itself authenticated, with the host
   falling back to killing its own child only on timeout.
+
+Class file version (2026-10-19, BUG-3519)
+-----------------------------------------
+dex2jar writes every class as major 50 (Java 6). DEX has no such ceiling, and
+two things current extensions compile to are illegal below major 52:
+  - invokestatic / invokespecial on an InterfaceMethodref (JVMS 4.9.1):
+    current kotlinx-coroutines compiles e.g. `Job.cancel$default` as an
+    interface static method, so a coroutine-using extension class fails
+    verification with "Illegal type at constant pool entry N" (keiyoushi Komga
+    1.6.73: Komga.r(...); MangaFire, BatCave, InfinityScans, MangaCloud,
+    SpyFakku, Ono, SoftKomik, ComX: their invokeSuspend continuations);
+  - non-abstract (default) methods in an interface: ClassFormatError "Method
+    x in class y has illegal modifiers: 0x1" (yuzono Jellyfin 16.32, Stremio
+    16.11, YFantasy 16.3, Hanime 14.24).
+BytecodeEditor.transform therefore writes major 52 for anything below it.
+Not higher: from 53 on putfield/putstatic on a final field is only legal in
+the initialiser, which DEX code does not obey. 52 drops the JVM's silent
+fallback to the inference verifier, so it relies on the StackMapTable that
+ClassWriter.COMPUTE_FRAMES (with ClassReader.SKIP_FRAMES and the
+ClassHierarchy-backed getCommonSuperClass, which reads class bytes and never
+loads a class) already rebuilds for every class. Measured over the whole
+keiyoushi index (1400 APKs) and yuzono anime repo (250 APKs) by converting
+each APK with PackageTools.dex2jar and linking every class
+(Class.getDeclaredMethods, which verifies without initialising): before, 13
+APKs had classes HotSpot rejects; after, none -- no class that verified at
+50 fails at 52. Pinned by ConvertedClassVersionTest.
+
+Host preference snapshot (2026-10-19, BUG-3520)
+-----------------------------------------------
+Fushi's database (Drift manga_source_preferences) is the host's record of a
+source's preferences and travels with every bridge request. Upstream wrote a
+snapshot value only when the JVM store did not contain the key yet, so a
+value already on disk -- from another data root that shared the Tachidesk
+directory, from Suwayomi, from before a backup restore -- could never be
+replaced. overlay/.../impl/HostPreferenceSnapshot.kt writes a snapshot value
+whenever it differs from the snapshot value last written for that key,
+recorded in a ledger store `source_<id>_fushi_host_snapshot` next to the
+source store: a database change always reaches the extension, a value the
+extension wrote itself after the last database change survives the same
+snapshot arriving again. SourceDataHandler clears the ledger with the store.
+Nothing is imported from the old shared Tachidesk directory: it may belong
+to Suwayomi, may carry another data root's values (the bug being fixed), and
+everything the user set in Fushi is already in the database snapshot. The
+directory is left untouched.

@@ -1,0 +1,16 @@
+## BUG-3520 · 桌面 sidecar 来源偏好写到 %LOCALAPPDATA%\Tachidesk\settings，不在 Fushi 数据根；已有值永远盖不过 Drift 快照
+- **报告**：2026-10-19（用户：排查 BUG-3519 时发现 sidecar 来源偏好不在 Fushi 数据根里）
+- **真实性**：✅ 真 bug，两层：
+  - **存储根**：宿主把 `<数据库目录>/mihon` 作为第二个参数传给 sidecar（`fushi/lib/src/media/manga/mihon/desktop_mihon_runtime.dart` `_start`），`third_party/m_extension_server/upstream_src/server/src/main/kotlin/mextensionserver/Main.kt:64` 把它写进系统属性 `ts.server.rootDir`；而 `upstream_src/AndroidCompat/Config/src/main/java/xyz/nulldev/ts/config/ApplicationRootDir.kt:14-19` 读的是 `suwayomi.tachidesk.config.server.rootDir`，读不到就回退 AppDirs 的 `Tachidesk` 目录。`settings/source_*.xml`（`JavaSharedPreferences`）、`android-compat/`、`server.conf` 全部落到 `%LOCALAPPDATA%\Tachidesk`——所有 Fushi 安装 / 数据根（含 `FUSHI_TEST_ROOT`）共用一份，还和 Suwayomi 共用同一个目录（本机该目录里就有 Suwayomi 的 `database.mv.db` / `server.conf`，后者此前也被并进 sidecar 配置）。
+  - **快照语义**：`upstream_src/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt:743` `if (prefs.contains(key)) continue`——JVM 存储里只要已有这个键，宿主每次请求带来的 Drift 快照就永远写不进去：别的数据根 / Suwayomi 留下的值、备份还原后的值都赢不过磁盘上的旧值。（另：据 `JavaSharedPreferences` 实现，字符串集合存成 `key.0…key.size`，`contains(key)` 恒为 false，集合类偏好反而每次都被快照覆盖、扩展自己写的集合值活不过下一次请求。）
+  - **Android**：无对应的存储根问题——`MihonPreferenceBridge.kt` 用的是 app 私有 `SharedPreferences("source_<id>")`，按安装隔离。语义上它每次请求都无条件把快照写回（`applyValue` 不判存在），即 Drift 永远赢，扩展在两次设置之间自己写的同键值会被下一次请求盖回；本次未改（无 Robolectric 测试装置、无真机验证），记为两端语义差异。
+- **[x] ① 已修复** —
+  - `Main.kt`（经 `server-build.gradle.patch`）：`<appDir>` 写进 `"$CONFIG_PREFIX.server.rootDir"`，即 ApplicationRootDir 真正读的键。sidecar 状态从此落在 `<数据库目录>/mihon/settings/`、`android-compat/` 下，跟随数据根与 `FUSHI_TEST_ROOT`。
+  - 快照语义改为「Drift 变了就写」：新增 overlay `mextensionserver/impl/HostPreferenceSnapshot.kt`，每个键记下「上次写进去的快照值」（台账存储 `source_<id>_fushi_host_snapshot`，与来源存储同目录），快照值与台账不同才写入并更新台账。Drift 一变（还原备份、换数据根、用户在 Fushi 改设置）一定送达扩展；扩展在上次 Drift 变化之后自己写的值（规范化、刷新 token、`library_list` 这类缓存）不会被每次请求重复带来的同一份快照盖掉。`MihonInvoker.applyPreferences` 改走它；`SourceDataHandler`（清除来源数据）连台账一起清。
+  - **迁移**：不从旧 `Tachidesk` 目录导入，也不删它。该目录可能属于 Suwayomi，可能装着别的数据根的值（本 bug 本身）；用户在 Fushi 里设过的偏好都在 Drift（`setPreference` 返回的整屏快照每次都整批落库），新存储首个请求就由快照填满；丢的只是扩展自己缓存的值，扩展会自己重建。
+- **[x] ② 已加自动化测试** —
+  - `third_party/m_extension_server/overlay/server/src/test/kotlin/mextensionserver/impl/HostPreferenceSnapshotTest.kt`：新存储收到全部类型的快照值且文件落在给定根的 `settings/` 下；存储里预先有旧值时快照能覆盖（旧 :743 的失败形态）；扩展自己写的值在同一份快照再来时保留；Drift 值变化后覆盖扩展写的值；无效条目忽略。
+  - `fushi/test/build/mihon_vendored_server_guard_test.dart` 新增「sidecar 的 `<appDir>` 写进 ApplicationRootDir 真正读的系统属性」：钉住 ApplicationRootDir 读的键与补丁里 Main.kt 的那一行；overlay 新文件清单加 `HostPreferenceSnapshot.kt`。
+  - 未加运行时 smoke：sidecar 启动时不建任何目录（`android-compat/` 要到加载扩展才建），CI 的 `verify_desktop_runtime` 没有扩展 APK 可加载，启动期没有可核的落盘信号。
+- **验证**：修复后 sidecar 跑真 Komga：偏好写在临时数据根 `settings/source_4508733312114627536.xml`，台账在同目录；Komga 扩展自己写的 `library_list` 保留；`%LOCALAPPDATA%\Tachidesk\settings` 前后文件清单 / 大小 / 时间完全一致。
+- **备注**：Android 真机未验（Android 侧未改）。
