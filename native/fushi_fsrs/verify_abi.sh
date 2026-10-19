@@ -50,4 +50,29 @@ if [[ -n "$missing" ]]; then
   echo "::error title=fushi_fsrs C ABI symbols missing::$BIN 没有导出：$(echo "$missing" | tr '\n' ' ')" >&2
   exit 1
 fi
+# Mach-O LINKEDIT 对齐：64 位 Mach-O 的 LINKEDIT 各表（符号表、字符串表、间接符号表、重定位、
+# chained fixups / 导出 trie / 代码签名等）起点必须按 8 字节对齐。rust-objcopy（cargo 的
+# strip = true / "debuginfo" 在 Apple 目标上调用它）重排 LINKEDIT 时不补齐：间接符号表
+# 项数（每项 4 字节）为奇数时，紧跟其后的字符串表只对齐到 4。用 SDK 27 及以上链接的
+# 二进制，macOS 27 的 dyld 会以「mis-aligned LINKEDIT string pool」拒绝加载；SDK 更旧的
+# 不校验，所以 CI runner 上 dlopen 照样成功——只有这条静态检查与 runner 系统 / SDK 无关。
+# Apple 的 /usr/bin/strip 和 ld 的输出都已补齐。静态库（ar）的成员会被重新链接，不查。
+if [[ "$(file -b "$BIN")" == Mach-O*64-bit* ]] || { [[ "$(file -b "$BIN")" == Mach-O\ universal* ]]; }; then
+  misaligned="$(otool -l "$BIN" | awk '
+    $1 == "cmd" { cmd = $2; pending = ""; next }
+    # 「<名>off <偏移>」后面紧跟它的大小 / 个数；大小为 0 的表不占空间，不查。
+    cmd ~ /^LC_(SYMTAB|DYSYMTAB|DYLD_INFO|DYLD_INFO_ONLY|DYLD_CHAINED_FIXUPS|DYLD_EXPORTS_TRIE|FUNCTION_STARTS|DATA_IN_CODE|CODE_SIGNATURE)$/ {
+      if (pending != "") {
+        if ($2 + 0 > 0 && pendingval % 8 != 0) printf "%s.%s=%d (mod 8 = %d)\n", cmd, pending, pendingval, pendingval % 8
+        pending = ""
+      }
+      if ($1 ~ /off$/ && $1 != "tocoff" && $1 != "modtaboff" && $1 != "extrefsymoff") { pending = $1; pendingval = $2 + 0 }
+    }')"
+  if [[ -n "$misaligned" ]]; then
+    echo "::error title=Mach-O LINKEDIT misaligned::$BIN 的 LINKEDIT 表没有按 8 字节对齐：$(echo "$misaligned" | tr '\n' ' ')——macOS 27 的 dyld 会拒绝加载（mis-aligned LINKEDIT string pool）。多半是 rust-objcopy strip 过：macOS 产物关掉 cargo strip（CARGO_PROFILE_RELEASE_STRIP=false），改用 /usr/bin/strip -x。" >&2
+    exit 1
+  fi
+  echo "OK: Mach-O LINKEDIT offsets are 8-byte aligned in $BIN"
+fi
+
 echo "OK: all $expected_count ffsrs_* symbols exported by $BIN"
