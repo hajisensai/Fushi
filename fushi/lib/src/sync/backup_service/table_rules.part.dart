@@ -312,7 +312,7 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'srs_local_state': BackupTableRule.deviceLocal(),
   'srs_notes_cache': BackupTableRule.deviceLocal(),
   'srs_cards_cache': BackupTableRule.deviceLocal(),
-  // v120：本机已冻结批次留存（SRS 多目录同步），设备本地、恢复后清空。
+  // v121：本机已冻结批次留存（SRS 多目录同步），设备本地、恢复后清空。
   'srs_sent_batches': BackupTableRule.deviceLocal(),
 };
 

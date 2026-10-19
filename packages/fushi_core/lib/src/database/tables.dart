@@ -3432,7 +3432,7 @@ class SrsLocalState extends Table {
   Set<Column> get primaryKey => {profileUid};
 }
 
-/// v120：本机已冻结批次的留存（不同步、不进备份）。一台设备可以同时用几个同步目录
+/// v121：本机已冻结批次的留存（不同步、不进备份）。一台设备可以同时用几个同步目录
 /// （云盘、互联 host、本机作 host 时自己的目录），同一个批次要逐字节相同地传到每一个；
 /// 留存到最近同步过的所有目录都确认收到为止（fushi_srs 的 `SrsSyncEngine`）。
 @DataClassName('SrsSentBatchRow')

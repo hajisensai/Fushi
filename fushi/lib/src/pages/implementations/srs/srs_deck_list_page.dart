@@ -9,17 +9,22 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_backups_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
@@ -29,7 +34,10 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart';
+import 'package:fushi/src/srs/srs_import_task.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -49,6 +57,27 @@ class SrsDeckListPage extends ConsumerStatefulWidget {
 }
 
 class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
+  /// Anki 一键迁移完成后：迁进来的笔记里有旧 Lapis（或此前迁移漏掉的字段）时，
+  /// 顺手问一句要不要迁到 Fushi 卡片。[context] 是迁移页的。
+  Future<void> _offerLegacyLapisMigration(
+    BuildContext context,
+    SrsImportReport report,
+  ) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null || !context.mounted) return;
+    final ({int migratable, int backfill}) pending = await store
+        .legacyLapisPendingCounts();
+    final int n = pending.migratable + pending.backfill;
+    if (n == 0 || !context.mounted) return;
+    final bool go = await showFushiConfirmDialog(
+      context: context,
+      title: t.srs_lapis_migration_title,
+      message: t.srs_lapis_migration_entry_summary(n: n),
+      confirmLabel: t.srs_lapis_migration_migrate,
+    );
+    if (go && context.mounted) await openSrsLegacyLapisMigrationPage(context);
+  }
+
   Future<T?> _push<T>(Widget Function(BuildContext context) builder) async {
     final T? result = await Navigator.of(
       context,
@@ -127,10 +156,15 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       destructive: true,
     );
     if (!confirmed || !mounted) return;
+    // 控制器先取出来：删除途中本页可能被销毁（复习 tab 不常驻），之后不能再碰 ref。
+    final SrsDeckDeleteController deleter = ref.read(
+      srsDeckDeleteControllerProvider,
+    );
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return;
-    await store.deleteDeck(deck.deck.id);
-    if (mounted) bumpSrsRevision(ref);
+    // 删除按块进行（BUG-3543）：行里显示进度、不可点，界面其余部分照常可用。删除由 app 级
+    // 控制器跑完并让列表重读，与本页在不在无关。
+    await deleter.delete(store, deck.deck.id);
   }
 
   /// 收起 / 展开子牌组：写进牌组本身（Anki deck collapsed），随同步到其它设备。
@@ -195,6 +229,17 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       ),
     ),
     FushiToolbarItem(
+      key: const ValueKey<String>('srs_anki_migrate'),
+      icon: FushiIcons.moveFile,
+      label: t.srs_anki_migrate,
+      onPressed: () => srsRunLogged(
+        'SrsDeckList.ankiMigrate',
+        () => _push<void>(
+          (_) => SrsAnkiMigrationPage(onMigrated: _offerLegacyLapisMigration),
+        ),
+      ),
+    ),
+    FushiToolbarItem(
       key: const ValueKey<String>('srs_export_apkg'),
       icon: FushiIcons.upload,
       label: t.srs_export_apkg,
@@ -227,7 +272,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   @override
   Widget build(BuildContext context) {
     final AsyncValue<SrsDeckListData?> data = ref.watch(srsDeckListProvider);
-    final int conflicts = data.valueOrNull?.conflictCount ?? 0;
+    final int conflicts = ref.watch(srsConflictCountProvider).valueOrNull ?? 0;
     final bool apple = isGlassDesign(context);
     return FushiPageScaffold(
       title: t.nav_srs,
@@ -246,7 +291,16 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
                   ? 'error'
                   : 'list',
             ),
-            child: _buildBody(context, data),
+            // 后台导入任务增减（任务条在列表最前，见 [_DeckList.showImportTasks]）与删牌组
+            // 开始 / 结束时重建。
+            child: ListenableBuilder(
+              listenable: Listenable.merge(<Listenable>[
+                ref.watch(srsImportControllerProvider),
+                ref.watch(srsDeckDeleteControllerProvider),
+              ]),
+              builder: (BuildContext context, Widget? _) =>
+                  _buildBody(context, data),
+            ),
           ),
         ),
       ),
@@ -362,8 +416,18 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (list == null) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
     }
+    final SrsDeckDeleteController deleter = ref.read(
+      srsDeckDeleteControllerProvider,
+    );
+    // 删完、重读的列表里已经没有它之后才撤掉删除中状态（否则旧数据里的行会先「复原」一下
+    // 再消失）。
+    deleter.pruneDeleted(<String>[
+      for (final SrsDeckSummary d in list.decks) d.deck.id,
+    ]);
     return _DeckList(
       data: list,
+      deleting: deleter.deleting,
+      showImportTasks: ref.read(srsImportControllerProvider).tasks.isNotEmpty,
       onOpen: (SrsDeckSummary d) =>
           srsRunLogged('SrsDeckList.review', () => _openReview(d)),
       onAction: _onDeckAction,
@@ -376,13 +440,21 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
 class _DeckList extends StatefulWidget {
   const _DeckList({
     required this.data,
+    required this.deleting,
     required this.onOpen,
     required this.onAction,
     required this.onAddFirst,
     required this.onSetCollapsed,
+    required this.showImportTasks,
   });
 
   final SrsDeckListData data;
+
+  /// 正在删的牌组（及其进度）；子牌组随父牌组一起显示删除中。
+  final Map<String, ValueListenable<double?>> deleting;
+
+  /// 有后台导入任务（排队 / 运行中 / 结束未关）：列表最前显示任务条。
+  final bool showImportTasks;
   final void Function(SrsDeckSummary deck) onOpen;
   final void Function(SrsDeckSummary deck, _DeckAction action) onAction;
   final VoidCallback onAddFirst;
@@ -449,6 +521,9 @@ class _DeckListState extends State<_DeckList> {
     ];
     final int visibleCount = visible.where((bool v) => v).length;
     final List<Widget> items = <Widget>[
+      // 后台导入任务（BUG-3549）：有任务时排在最前。
+      if (widget.showImportTasks)
+        const SrsImportTasksBar(key: ValueKey<String>('srs-import-tasks')),
       if (!widget.data.store.canSchedule)
         FushiCard(
           key: const ValueKey<String>('srs-engine-missing'),
@@ -487,6 +562,18 @@ class _DeckListState extends State<_DeckList> {
           ),
         ),
     ];
+    // 删除中的牌组连同它的子牌组一起显示删除中（子牌组随父牌组一并删除）。
+    ValueListenable<double?>? deletingOf(SrsDeckSummary d) {
+      String? id = d.deck.id;
+      int guard = 0;
+      while (id != null && guard++ < 64) {
+        final ValueListenable<double?>? p = widget.deleting[id];
+        if (p != null) return p;
+        id = byId[id]?.parentId;
+      }
+      return null;
+    }
+
     final int firstDeckItem = items.length;
     int shown = 0;
     for (int i = 0; i < decks.length; i++) {
@@ -499,6 +586,7 @@ class _DeckListState extends State<_DeckList> {
           visible: visible[i],
           child: _DeckRow(
             deck: d,
+            deleting: deletingOf(d),
             index: index,
             count: visibleCount,
             isDefault: d.deck.id == widget.data.store.defaultDeckId,
@@ -612,6 +700,7 @@ class _DeckRevealState extends State<_DeckReveal>
 class _DeckRow extends StatelessWidget {
   const _DeckRow({
     required this.deck,
+    required this.deleting,
     required this.index,
     required this.count,
     required this.isDefault,
@@ -624,6 +713,9 @@ class _DeckRow extends StatelessWidget {
   });
 
   final SrsDeckSummary deck;
+
+  /// 非 null = 正在删除（本牌组或祖先）：行变淡、不可点 / 不进焦点，副标题换成进度条。
+  final ValueListenable<double?>? deleting;
   final int index;
   final int count;
   final bool isDefault;
@@ -711,10 +803,62 @@ class _DeckRow extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (BuildContext context, BoxConstraints constraints) =>
-        _buildRow(context, compact: constraints.maxWidth < compactBelow),
-  );
+  Widget build(BuildContext context) {
+    final bool busy = deleting != null;
+    return ExcludeFocus(
+      excluding: busy,
+      child: IgnorePointer(
+        ignoring: busy,
+        child: AnimatedOpacity(
+          opacity: busy ? 0.6 : 1,
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) =>
+                _buildRow(
+                  context,
+                  compact: constraints.maxWidth < compactBelow,
+                ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 删除中的副标题：「正在删除…」+ 进度条（总数未知时不定进度）。展开 / 收起带尺寸与淡入淡出。
+  Widget? _subtitle(BuildContext context, String? note) {
+    final ValueListenable<double?>? progress = deleting;
+    final Widget? body = progress == null
+        ? (note == null ? null : Text(note))
+        : Column(
+            key: ValueKey<String>('srs-deck-deleting-${deck.deck.id}'),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            spacing: FushiDesignTokens.of(context).spacing.gap / 2,
+            children: <Widget>[
+              Text(t.srs_deck_deleting),
+              ValueListenableBuilder<double?>(
+                valueListenable: progress,
+                builder: (BuildContext context, double? value, Widget? _) =>
+                    FushiLinearProgressIndicator(
+                      value: value,
+                      semanticsLabel: t.srs_deck_deleting,
+                    ),
+              ),
+            ],
+          );
+    if (body == null && note == null && progress == null) return null;
+    return FushiAnimatedSize(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      child: AnimatedSwitcher(
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        switchInCurve: FushiMotion.enter,
+        switchOutCurve: FushiMotion.exit,
+        child: body ?? const SizedBox.shrink(),
+      ),
+    );
+  }
 
   List<PopupMenuEntry<_DeckAction>> _menuItems() =>
       <PopupMenuEntry<_DeckAction>>[
@@ -820,7 +964,7 @@ class _DeckRow extends StatelessWidget {
                           message: deck.fullName,
                           child: Text(deck.deck.name),
                         ),
-                  subtitle: note == null ? null : Text(note),
+                  subtitle: _subtitle(context, note),
                   trailing: compact
                       ? SrsCountTriple(
                           dense: true,

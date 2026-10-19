@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
@@ -237,6 +238,22 @@ const SrsAnkiImportOptions kFullOptions = SrsAnkiImportOptions(
   withScheduling: true,
   withDeckConfigs: true,
 );
+
+/// 第一次校验预设参数时抛异常（模拟建牌组途中失败 / 被杀），之后正常。
+class _FailFirstValidate extends FakeFsrsEngine {
+  _FailFirstValidate();
+
+  bool failed = false;
+
+  @override
+  String? validateParams(SrsAlgorithm a, List<double> p) {
+    if (!failed) {
+      failed = true;
+      throw StateError('interrupted while mapping decks');
+    }
+    return null;
+  }
+}
 
 /// 旧格式包：[models] 换笔记类型、[patch] 再改集合（例如笔记 mod / 字段）。
 Uint8List customApkg(
@@ -1040,6 +1057,62 @@ void main() {
       expect(await run(newer, SrsImportUpdateCondition.never), 'local edit');
     });
 
+    test('更新笔记时已有卡片：本机在来源卡片之后挪过牌组 / 暂停过的不改回（BUG-3554）', () async {
+      final String n1 = SrsIds.note(kProfile, 'g1');
+      final String nt = basicNt(kProfile);
+      final String c11 = SrsIds.card(n1, SrsIds.template(nt, 333), 0);
+      final String c12 = SrsIds.card(
+        n1,
+        SrsIds.templateByName(nt, 'Card 2'),
+        0,
+      );
+      final int localEditAt = t + 60000;
+      // 笔记内容在来源里更新（较新），卡片的牌组 / 暂停状态没变；卡片 mod 早于 / 晚于本机改动。
+      Uint8List withCardMod(int cardModMs) => customApkg(
+        t,
+        patch: (Database db) {
+          db.execute(
+            "UPDATE notes SET mod = ?, flds = ? WHERE guid = 'g1'",
+            <Object?>[
+              (localEditAt + 3600000) ~/ 1000,
+              '猫<img src="a.png">\x1fneko',
+            ],
+          );
+          db.execute('UPDATE cards SET mod = ? WHERE id IN (11, 12)', <Object?>[
+            cardModMs ~/ 1000,
+          ]);
+        },
+      );
+
+      Future<(String, bool)> run(int cardModMs) async {
+        t = ms(2026, 10, 14, 12);
+        final SrsDbStore s = await seeded();
+        t = localEditAt;
+        await s.moveCard(c11, s.defaultDeckId);
+        await s.setSuspended(c12, true);
+        t += 7200000;
+        await importInto(
+          s,
+          withCardMod(cardModMs),
+          options: kFullOptions.copyWith(
+            updateNotes: SrsImportUpdateCondition.ifNewer,
+          ),
+        );
+        return (
+          (await s.cardRow(c11))!.deckId,
+          (await s.cardRow(c12))!.suspended,
+        );
+      }
+
+      final String jp = srsImportedDeckId(kProfile, 'Lang::JP');
+      final (String deckOld, bool suspOld) = await run(localEditAt - 30000);
+      expect(deckOld, isNot(jp), reason: '本机挪牌组比来源卡片新：不改回');
+      expect(suspOld, isTrue, reason: '本机暂停比来源卡片新：不取消暂停');
+      final (String deckNew, bool suspNew) = await run(localEditAt + 3600000);
+      expect(deckNew, jp, reason: '来源卡片更新：按来源');
+      expect(suspNew, isFalse);
+    });
+
     test('更新笔记模板：较新时按来源 mod 比；总是 / 从不', () async {
       final String nt = basicNt(kProfile);
       final String tpl = SrsIds.template(nt, 333);
@@ -1534,5 +1607,110 @@ void main() {
       expect(back.autoplayAudio, isFalse);
       expect(back.replayQuestionAudio, isFalse);
     });
+  });
+
+  test('叫停：两批之间停下抛 SrsImportStopped，已落库的是完整笔记；重导补齐、不重复', () async {
+    final SrsDbStore s = await openTestStore(
+      profileUid: kProfile,
+      deviceId: 'a',
+      now: () => t,
+    );
+    int checks = 0;
+    await expectLater(
+      importAnkiPackage(
+        store: s,
+        bytes: legacyApkg(t),
+        storeMedia: storeMedia,
+        options: kFullOptions,
+        zstdDecompress: (Uint8List b) => null,
+        // 第一次检查在笔记之前（不停），第二次在第一条笔记落库之后（停）。
+        shouldStop: () => ++checks >= 2,
+      ),
+      throwsA(isA<SrsImportStopped>()),
+    );
+    expect(await s.entityIds(SrsEntityKind.note), hasLength(1));
+
+    final SrsImportReport rep = await importInto(s, legacyApkg(t));
+    expect(rep.notesAdded, 2);
+    expect(await s.entityIds(SrsEntityKind.note), hasLength(3));
+  });
+
+  test('建牌组途中失败：牌组与它的设置同一事务，重导时设置照样写上（BUG-3552）', () async {
+    final _FailFirstValidate engine = _FailFirstValidate();
+    final SrsDbStore s = await SrsDbStore.open(
+      db: FushiDatabase.forTesting(NativeDatabase.memory()),
+      profileUid: kProfile,
+      deviceId: 'a',
+      engine: engine,
+      trustedClock: SrsTrustedClock(
+        wallClockMs: () => t,
+        monotonicMs: () => t,
+        bootId: 'boot-a',
+      ),
+      fallbackRolloverHour: () => 4,
+    );
+    await expectLater(importInto(s, legacyApkg(t)), throwsStateError);
+    // 失败那一刻 Lang 的设置还没算完：牌组本身也不应已落库（否则重导不再算新建）。
+    expect(
+      (await s.deckTree()).decks.where((SrsDeckView d) => d.name == 'Lang'),
+      isEmpty,
+    );
+
+    await importInto(s, legacyApkg(t));
+    final SrsDeckTree tree = await s.deckTree();
+    final SrsDeckView lang = tree.decks.firstWhere(
+      (SrsDeckView d) => d.name == 'Lang',
+    );
+    expect(lang.ownParams, isTrue);
+    expect(lang.desiredRetention, 0.85);
+    expect(lang.fsrs6!.params, fsrs6Params);
+  });
+
+  test('报告按实际新建计数：攒批期间同一条笔记已落库的不算新增（BUG-3553）', () async {
+    final SrsDbStore s = await openTestStore(
+      profileUid: kProfile,
+      deviceId: 'a',
+      now: () => t,
+    );
+    // 夹具 3 条 + 60 条 Basic 笔记；进度在第 50 条时回调。
+    final Uint8List pkg = customApkg(
+      t,
+      patch: (Database db) => insertNotes(db, <FxNote>[
+        for (int i = 0; i < 60; i++)
+          FxNote(
+            id: ms(2026, 3, 1) + i,
+            guid: 'x$i',
+            mid: kBasic,
+            fields: <String>['w$i', 'm$i'],
+            cards: <FxCard>[FxCard(id: 1000 + i, ord: 0, did: kDeckLang)],
+          ),
+      ]),
+    );
+    Future<String>? sameNote;
+    final SrsImportReport rep = await importAnkiPackage(
+      store: s,
+      bytes: pkg,
+      storeMedia: storeMedia,
+      options: kFullOptions,
+      zstdDecompress: (Uint8List b) => null,
+      onProgress: (double p) {
+        // 导入已读过「本机已有哪些笔记」、x59 还没攒进本批：同一 guid 的笔记此刻落库
+        // （同步应用了对端迁移的同一条笔记）。
+        if (sameNote == null && p < 1) {
+          sameNote = s.createNote(
+            noteTypeId: basicNt(kProfile),
+            fieldsById: <String, String>{
+              SrsIds.field(basicNt(kProfile), 111): 'w59',
+            },
+            guid: 'x59',
+          );
+        }
+      },
+    );
+    await sameNote;
+    expect(sameNote, isNotNull, reason: '进度回调触发过');
+    expect(await s.entityIds(SrsEntityKind.note), hasLength(63));
+    expect(rep.notesAdded, 62, reason: 'x59 落库时已存在，不算新增');
+    expect(rep.cardsAdded, 5 + 59);
   });
 }

@@ -4,12 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
-/// v120（原定 v119，后因并行合入的视频字幕 AI 校对占用 v119 而顺延）：
+/// v121（原定 v119，先后因并行合入的视频字幕 AI 校对（v119）与 SRS 批量修复的索引步（v120）占用而顺延）：
 /// SRS 多目录同步的「本机已冻结批次留存」`srs_sent_batches`
 /// （profile_uid / writer_id / batch_no / bytes，三列主键）。
 ///
 /// 设备本地：不进备份、恢复后清空。迁移只做 `createTable`，`_tableExists`
-/// 守卫幂等：v119 库升级后表存在且列形状、主键正确；表已存在（fresh createAll /
+/// 守卫幂等：v120 库升级后表存在且列形状、主键正确；表已存在（fresh createAll /
 /// 重复升级）时既有行原样保留、不抛异常。
 void main() {
   Future<String> createDbAt(Directory directory) async {
@@ -35,7 +35,7 @@ void main() {
 
   test('fresh database has srs_sent_batches', () async {
     final Directory directory = Directory.systemTemp.createTempSync(
-      'srssent120fresh',
+      'srssent121fresh',
     );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = await createDbAt(directory);
@@ -50,31 +50,31 @@ void main() {
   });
 
   test(
-    'v119 → v120 creates srs_sent_batches with the expected columns',
+    'v120 → v121 creates srs_sent_batches with the expected columns',
     () async {
       final Directory directory = Directory.systemTemp.createTempSync(
-        'srssent120',
+        'srssent121',
       );
       addTearDown(() => directory.deleteSync(recursive: true));
       final String path = await createDbAt(directory);
 
-      // 退回 v119 形态：没有这张表。
+      // 退回 v120 形态：没有这张表。
       final sqlite.Database raw = sqlite.sqlite3.open(path);
       raw.execute('DROP TABLE srs_sent_batches');
-      raw.execute('PRAGMA user_version = 119');
+      raw.execute('PRAGMA user_version = 120');
       raw.dispose();
 
       final FushiDatabase migrated = FushiDatabase.atFile(
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 120);
+      expect(migrated.schemaVersion, 121);
       await migrated.customSelect('SELECT 1').get();
       await migrated.close();
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 120);
+      expect(probe.select('PRAGMA user_version').first.values.first, 121);
       final Map<String, sqlite.Row> columns = columnsOf(probe);
       expect(columns.keys.toSet(), <String>{
         'profile_uid',
@@ -98,21 +98,21 @@ void main() {
   );
 
   test(
-    'v120 step is idempotent when srs_sent_batches already exists',
+    'v121 step is idempotent when srs_sent_batches already exists',
     () async {
       final Directory directory = Directory.systemTemp.createTempSync(
-        'srssent120idem',
+        'srssent121idem',
       );
       addTearDown(() => directory.deleteSync(recursive: true));
       final String path = await createDbAt(directory);
 
-      // 表已在（fresh createAll / 重复升级），只把版本号退回 119。
+      // 表已在（fresh createAll / 重复升级），只把版本号退回 120。
       final sqlite.Database raw = sqlite.sqlite3.open(path);
       raw.execute(
         'INSERT INTO srs_sent_batches (profile_uid, writer_id, batch_no, '
         "bytes) VALUES ('p', 'w', 1, x'0102')",
       );
-      raw.execute('PRAGMA user_version = 119');
+      raw.execute('PRAGMA user_version = 120');
       raw.dispose();
 
       final FushiDatabase migrated = FushiDatabase.atFile(
