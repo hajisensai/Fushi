@@ -33,3 +33,12 @@ panic = "unwind"
 # 都编不过。最终产物的 macOS strip 见 build_macos_dylib.sh。
 [profile.release.build-override]
 strip = false
+# 与 native/fushi_fsrs/Cargo.toml 同：Anki 搜索的热路径按速度编（依赖的 profile 在这里不生效）。
+[profile.release.package.fushi_fsrs]
+opt-level = 3
+[profile.release.package.regex-automata]
+opt-level = 3
+[profile.release.package.memchr]
+opt-level = 3
+[profile.release.package.aho-corasick]
+opt-level = 3

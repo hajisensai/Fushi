@@ -18,6 +18,8 @@ fsrs = { git = "https://github.com/open-spaced-repetition/fsrs-rs", rev = "0a573
 ruzstd = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Anki 搜索的正则与去 HTML（search.rs）：与 Anki 桌面版 rslib 同一个正则引擎，`re:` 语义以它为准。
+regex = "1"
 
 [profile.release]
 opt-level = "z"
@@ -32,3 +34,14 @@ panic = "unwind"
 # 都编不过。最终产物的 macOS strip 见 build_macos_dylib.sh。
 [profile.release.build-override]
 strip = false
+# Anki 搜索的热路径（正则引擎、子串查找、去 HTML 扫描）按速度编：整体仍是 "z"，只这几个包开 3。
+# 10 万张卡实测正则扫原文快约 2 倍，DLL 多约 230 KB（Windows x64）。
+# iOS 伞形 crate（native/fushi_ios_umbrella/Cargo.toml）有同样的一段：依赖的 profile 不生效，那边要自己写。
+[profile.release.package.fushi_fsrs]
+opt-level = 3
+[profile.release.package.regex-automata]
+opt-level = 3
+[profile.release.package.memchr]
+opt-level = 3
+[profile.release.package.aho-corasick]
+opt-level = 3

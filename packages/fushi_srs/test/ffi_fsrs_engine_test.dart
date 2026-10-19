@@ -320,6 +320,63 @@ void main() {
     });
 
     for (final SrsAlgorithm a in SrsAlgorithm.values) {
+      test('retrievabilityBatch equals per-card calls (${a.wire})', () {
+        final List<double> params = e.defaultParams(a);
+        final List<SrsMemory> memories = <SrsMemory>[
+          for (int i = 0; i < 300; i++)
+            SrsMemory(
+              stability: 0.3 + (i % 70) * 2.9,
+              difficulty: 1 + (i % 10) * 0.9,
+              stabilityFast: i.isEven ? null : 0.2 + (i % 13) * 0.7,
+            ),
+        ];
+        final List<double> elapsed = <double>[
+          for (int i = 0; i < 300; i++) (i % 47) * 0.37,
+        ];
+        final List<double> batch = e.retrievabilityBatch(
+          algorithm: a,
+          params: params,
+          memories: memories,
+          elapsedDays: elapsed,
+        );
+        expect(batch, hasLength(300));
+        for (int i = 0; i < 300; i++) {
+          expect(
+            batch[i],
+            e.retrievability(
+              algorithm: a,
+              params: params,
+              memory: memories[i],
+              elapsedDays: elapsed[i],
+            ),
+            reason: 'card $i',
+          );
+        }
+      });
+    }
+
+    test('retrievabilityBatch: empty input and bad params', () {
+      expect(
+        e.retrievabilityBatch(
+          algorithm: SrsAlgorithm.fsrs7,
+          params: const <double>[],
+          memories: const <SrsMemory>[],
+          elapsedDays: const <double>[],
+        ),
+        isEmpty,
+      );
+      expect(
+        () => e.retrievabilityBatch(
+          algorithm: SrsAlgorithm.fsrs7,
+          params: const <double>[1, 2],
+          memories: const <SrsMemory>[SrsMemory(stability: 1, difficulty: 5)],
+          elapsedDays: const <double>[1],
+        ),
+        throwsA(isA<SrsFsrsException>()),
+      );
+    });
+
+    for (final SrsAlgorithm a in SrsAlgorithm.values) {
       test('computeParameters on synthetic data (${a.wire})', () {
         final NativeSrsOptimizerControl control = NativeSrsOptimizerControl();
         addTearDown(control.dispose);
