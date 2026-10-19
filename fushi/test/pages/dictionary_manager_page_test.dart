@@ -250,22 +250,26 @@ void main() {
     );
     const ValueKey<String> collapseKey =
         ValueKey<String>('dict-detail-collapse-Mixed');
+    const ValueKey<String> rowCollapseKey =
+        ValueKey<String>('dict-row-collapse-Mixed');
 
-    // 「术语」分区：混合词典的术语部分照常有折叠控件。
+    // 「术语」分区：混合词典的术语部分照常有折叠控件（行内钮 + 详情分段）。
+    expect(find.byKey(rowCollapseKey), findsOneWidget);
     await tester.tap(find.text('Mixed'));
     await _settle(tester);
     expect(find.byKey(const ValueKey<String>('dict-detail-Mixed')),
         findsOneWidget);
     expect(find.byKey(collapseKey), findsOneWidget);
 
-    // 「汉字」分区：同一本的汉字部分不给折叠控件（汉字卡不折叠）。
+    // 「汉字」分区：同一本的汉字部分不给折叠控件（汉字卡不折叠）。切分区时详情
+    // 侧板仍停在这本（再点一下行会把详情收起），此时它按「汉字」分区的上下文渲染。
     await tester.tap(find.textContaining(t.dictionary_section_kanji));
-    await _settle(tester);
-    await tester.tap(find.text('Mixed'));
     await _settle(tester);
     expect(find.byKey(const ValueKey<String>('dict-detail-Mixed')),
         findsOneWidget);
     expect(find.byKey(collapseKey), findsNothing);
+    expect(find.byKey(rowCollapseKey), findsNothing,
+        reason: '行内折叠钮与详情同一判据');
     expect(tester.takeException(), isNull);
   });
 
