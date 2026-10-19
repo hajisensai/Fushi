@@ -178,7 +178,7 @@ class LyricsCueTextResolver {
   static int _headStart(_Chapter chapter, int normStart) {
     final int gapTo = chapter.norm.starts[normStart];
     final int gapFrom = normStart > 0 ? chapter.norm.ends[normStart - 1] : 0;
-    int i = _gapSplit(chapter, gapFrom, gapTo);
+    int i = _gapSplit(chapter, gapFrom, gapTo, forNextLine: true);
     while (i < gapTo && _isBlank(chapter.text.codeUnitAt(i))) {
       i++;
     }
@@ -193,22 +193,35 @@ class LyricsCueTextResolver {
     final int gapTo = normEnd < chapter.norm.text.length
         ? chapter.norm.starts[normEnd]
         : chapter.text.length;
-    return _gapSplit(chapter, gapFrom, gapTo);
+    return _gapSplit(chapter, gapFrom, gapTo, forNextLine: false);
   }
 
   /// 两个有读音的字之间那段缝隙 `[gapFrom, gapTo)`（只含标点 / 符号 / 空白，
-  /// 归一化把它们全剥了）归前后两行的切点：前一行认领切点之前、后一行认领
-  /// 切点之后，所以前后两条 cue 各算各的也不会丢字或重复。
+  /// 归一化把它们全剥了）归前后两行的切点：前一行认领切点之前
+  /// （[forNextLine] = false 求的切点）、后一行认领切点之后（[forNextLine] =
+  /// true 求的切点）。
   ///
-  /// 优先切在段落边界（章纯文本不含段落分隔符，边界记在 `blockEnds`）；其次切在
-  /// 第一个空白处；再次切在第一个开括号前；都没有则整段归前一行（句末的
-  /// 「。――」「……」、句中的「、」）。不按白名单逐个收标点：此前白名单漏了
-  /// 破折号，补到「――」就停，后面的闭引号也跟着丢。
-  static int _gapSplit(_Chapter chapter, int gapFrom, int gapTo) {
+  /// 优先切在段落边界（章纯文本不含段落分隔符，边界记在 `blockEnds`）：前一行
+  /// 止于缝隙里**第一个**段落边界，后一行起于**最后一个**——缝隙里夹着整段只有
+  /// 符号的段落（场景分隔「◇」「＊＊＊」）时两边都不认领它，下一行不会变成
+  /// 「◇「誰だ」」。缝隙里只有一个段落边界时两个切点重合，不丢字也不重复。
+  /// 没有段落边界时两行共用同一个切点：第一个空白处；其次第一个开括号前；都
+  /// 没有则整段归前一行（句末的「。――」「……」、句中的「、」）。不按白名单逐个
+  /// 收标点：此前白名单漏了破折号，补到「――」就停，后面的闭引号也跟着丢。
+  static int _gapSplit(
+    _Chapter chapter,
+    int gapFrom,
+    int gapTo, {
+    required bool forNextLine,
+  }) {
+    int? split;
     for (final int e in chapter.blockEnds) {
       if (e > gapTo) break;
-      if (e >= gapFrom) return e;
+      if (e < gapFrom) continue;
+      split = e;
+      if (!forNextLine) break;
     }
+    if (split != null) return split;
     final String text = chapter.text;
     for (int i = gapFrom; i < gapTo; i++) {
       final int c = text.codeUnitAt(i);
