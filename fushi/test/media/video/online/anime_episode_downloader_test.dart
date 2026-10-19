@@ -13,7 +13,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/net/hls_relay_normalizer.dart'
     show kTransportStreamPacketLength;
 import 'package:path/path.dart' as p;
-import 'package:pointycastle/export.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 /// 浏览阶段 2b：在线视频源一集的整片下载（直链 / HLS 分片 + AES-128 + 图片伪装
 /// 前缀 + 断点续传 + 取消）。HLS 与直链都打本机回环 HttpServer，ffmpeg 转封装注入假件。
@@ -828,16 +828,13 @@ void main() {
   });
 }
 
+/// AES-CBC + PKCS7 加密（测试造密文）。
 Uint8List _encrypt(Uint8List plain, Uint8List key, Uint8List iv) {
-  final PaddedBlockCipher cipher =
-      PaddedBlockCipherImpl(PKCS7Padding(), CBCBlockCipher(AESEngine()))..init(
-        true,
-        PaddedBlockCipherParameters<CipherParameters, CipherParameters?>(
-          ParametersWithIV<KeyParameter>(KeyParameter(key), iv),
-          null,
-        ),
-      );
-  return cipher.process(plain);
+  final int pad = 16 - plain.length % 16;
+  final Uint8List padded = Uint8List(plain.length + pad)
+    ..setAll(0, plain)
+    ..fillRange(plain.length, plain.length + pad, pad);
+  return FushiComputeCrypto.instance.aesCbcEncryptNoPadding(padded, key, iv);
 }
 
 /// MPEG-TS 包：每包 0x47 起头，包内不出现假同步字节。

@@ -5,6 +5,7 @@
 library;
 
 import 'package:fushi/src/mining/metadata/adapters/bangumi_adapter.dart';
+import 'package:fushi/src/mining/metadata/adapters/dlsite_adapter.dart';
 import 'package:fushi/src/mining/metadata/adapters/vndb_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
@@ -49,6 +50,7 @@ class GalgameMetadataService {
               GalgameMetadataSource.bgm:
                   BangumiMetadataAdapter(accessToken: bangumiAccessToken),
               GalgameMetadataSource.vndb: VndbMetadataAdapter(),
+              GalgameMetadataSource.dlsite: DlsiteMetadataAdapter(),
             };
 
   final Map<GalgameMetadataSource, GalgameMetadataAdapter> _adapters;

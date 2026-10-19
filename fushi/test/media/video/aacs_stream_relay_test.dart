@@ -5,12 +5,13 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_content_decoder.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_stream_relay.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart';
-import 'package:pointycastle/export.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 void main() {
   late Directory directory;
@@ -219,6 +220,38 @@ void main() {
   );
 
   test(
+    'a damaged unit after decrypted ones is logged as data corruption',
+    () async {
+      // The first units decrypted with this key, so a later unit no key
+      // decodes is damaged data, not a KEYDB problem. Strict policy stays:
+      // the body is cut, and the log names the file and the unit offset.
+      final previous = engineLog;
+      final logged = <String>[];
+      engineLog = _CapturingLogSink(logged);
+      addTearDown(() => engineLog = previous);
+      final damaged = _encryptedUnit(key, 2)..[192 + 4 - 16] ^= 1;
+      final output = await file.open(mode: FileMode.writeOnlyAppend);
+      await output.setPosition(2 * 6144);
+      await output.writeFrom(damaged);
+      await output.close();
+      await expectLater(() async {
+        final response = await request(range: 'bytes=12288-18431');
+        await response.drain<void>();
+      }(), throwsA(isA<HttpException>()));
+      // The report crosses an isolate port; it may land after the socket dies.
+      for (var i = 0; i < 100 && logged.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(logged, [
+        'AacsStreamRelay: Corrupt Blu-ray stream data in fixture.m2ts at byte '
+            '12288 (aligned unit 2): earlier units of this stream decrypted '
+            'with the disc key but this one does not decode; the disc or its '
+            'copy is damaged',
+      ]);
+    },
+  );
+
+  test(
     'invalid ranges, guessed routes and unsupported methods are rejected',
     () async {
       for (final range in [
@@ -252,13 +285,39 @@ void main() {
   );
 
   test('wrong keys and incomplete stream fail during open', () async {
+    // Nothing has decrypted yet: the first unit failing may be a wrong key.
     await expectLater(
       AacsStreamRelay.open(
         streamPath: file.path,
         unitKeyFile: _keyFile(key, vuk),
         volumeUniqueKey: Uint8List(16),
       ),
-      throwsStateError,
+      throwsA(
+        isA<AacsUnitDecryptException>()
+            .having(
+              (e) => e.failure,
+              'failure',
+              AacsUnitFailure.keyMismatchOrCorrupt,
+            )
+            .having((e) => e.streamName, 'streamName', 'fixture.m2ts')
+            .having((e) => e.unitOffset, 'unitOffset', 0),
+      ),
+    );
+    // A zero-filled first unit (read error) is reported as damaged data.
+    final zeroed = File('${directory.path}/zeroed.m2ts');
+    await zeroed.writeAsBytes(Uint8List(2 * 6144));
+    await expectLater(
+      AacsStreamRelay.open(
+        streamPath: zeroed.path,
+        unitKeyFile: _keyFile(key, vuk),
+        volumeUniqueKey: vuk,
+      ),
+      throwsA(
+        isA<AacsUnitDecryptException>()
+            .having((e) => e.failure, 'failure', AacsUnitFailure.corruptData)
+            .having((e) => e.zeroFilled, 'zeroFilled', isTrue)
+            .having((e) => e.streamName, 'streamName', 'zeroed.m2ts'),
+      ),
     );
     await file.writeAsBytes([1, 2, 3]);
     await expectLater(
@@ -329,16 +388,24 @@ void main() {
         volumeUniqueKey: vuk,
       );
       final emitted = <int>[];
+      final reported = <AacsUnitDecryptException>[];
+      final damaged = isA<AacsUnitDecryptException>()
+          .having((e) => e.failure, 'failure', AacsUnitFailure.corruptData)
+          .having((e) => e.zeroFilled, 'zeroFilled', isTrue)
+          .having((e) => e.unitOffset, 'unitOffset', 6144)
+          .having((e) => e.streamName, 'streamName', 'fixture.m2ts');
       await expectLater(
         AacsStreamRelay.decryptedRange(
           file,
           decoder,
           0,
           expected.length - 1,
+          onDecryptFailure: reported.add,
         ).forEach(emitted.addAll),
-        throwsFormatException,
+        throwsA(damaged),
       );
       expect(emitted, isEmpty);
+      expect(reported, [damaged]);
     },
   );
 
@@ -388,7 +455,10 @@ Uint8List _keyFile(Uint8List key, Uint8List vuk) {
     ..setUint32(0, 32)
     ..setUint16(32, 1);
   file[17] = 1;
-  (AESEngine()..init(true, KeyParameter(vuk))).processBlock(key, 0, file, 80);
+  file.setAll(
+    80,
+    FushiComputeCrypto.instance.aesCbcEncryptNoPadding(key, vuk, Uint8List(16)),
+  );
   return file;
 }
 
@@ -408,12 +478,10 @@ Uint8List _encryptedUnit(Uint8List key, int seed) {
   for (var offset = 0; offset < unit.length; offset += 192) {
     unit[offset] |= 0x40;
   }
-  final blockKey = Uint8List(16);
-  (AESEngine()..init(true, KeyParameter(key))).processBlock(
-    unit,
-    0,
-    blockKey,
-    0,
+  final blockKey = FushiComputeCrypto.instance.aesCbcEncryptNoPadding(
+    unit.sublist(0, 16),
+    key,
+    Uint8List(16),
   );
   for (var i = 0; i < 16; i++) {
     blockKey[i] ^= unit[i];
@@ -436,10 +504,30 @@ Uint8List _encryptedUnit(Uint8List key, int seed) {
     0x0f,
     0x78,
   ]);
-  final cipher = CBCBlockCipher(AESEngine())
-    ..init(true, ParametersWithIV(KeyParameter(blockKey), iv));
-  for (var offset = 16; offset < unit.length; offset += 16) {
-    cipher.processBlock(unit, offset, unit, offset);
-  }
+  unit.setAll(
+    16,
+    FushiComputeCrypto.instance.aesCbcEncryptNoPadding(
+      unit.sublist(16),
+      blockKey,
+      iv,
+    ),
+  );
   return unit;
+}
+
+final class _CapturingLogSink implements EngineLogSink {
+  _CapturingLogSink(this.lines);
+
+  final List<String> lines;
+
+  @override
+  void log(String source, Object error, [StackTrace? stack]) =>
+      lines.add('$source: $error');
+
+  @override
+  void logDiagnostic(String source, Object info) => lines.add('$source: $info');
+
+  @override
+  void logFatal(String source, Object error, [StackTrace? stack]) =>
+      lines.add('FATAL $source: $error');
 }

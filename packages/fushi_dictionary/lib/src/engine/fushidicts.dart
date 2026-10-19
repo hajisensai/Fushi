@@ -775,6 +775,99 @@ class FushiDicts {
     }
   }
 
+  // ── tokenize（最长匹配分词，一次 FFI 切完整段） ────────────────────
+  //
+  // 语义见 native tokenize.hpp：与此前 Dart 逐位置 `lookup(maxResults: 1)` 循环逐位
+  // 一致——命中切首条结果的 matched 长度，未命中切一个 UTF-16 码元。返回每段的
+  // UTF-16 码元数，总和 = [text].length。匹配长度缓存在原生句柄里，随词典集合重建
+  // 而失效。
+
+  /// [text] 的分词长度（UTF-16 码元）。原生调用失败时返回 null。
+  List<int>? tokenizeLengths(String text) =>
+      _tokenize(text, withReadings: false)?.lengths;
+
+  /// 分词 + 每段读音（每段再查一次 `lookup(段, 1)` 的首条读音，未命中为空串）。
+  ({List<int> lengths, List<String> readings})? tokenizeWithReadings(
+    String text,
+  ) => _tokenize(text, withReadings: true);
+
+  ({List<int> lengths, List<String> readings})? _tokenize(
+    String text, {
+    required bool withReadings,
+  }) {
+    // 带长传入（HBK-AUDIT-007）：`toNativeUtf8` 产出的是 C 串，原生按 NUL 定界会在
+    // 正文里的 U+0000 处截断，切出来的总长对不上原文、整段被下面的闸门判失败。
+    // `utf8.encode` 与 `toNativeUtf8` 同口径（孤立代理 → U+FFFD），只是不再靠 NUL。
+    final Uint8List bytes = utf8.encode(text);
+    // 至少分配 1 字节：空串也传一个有效指针，原生侧 nullptr 只表示非法调用。
+    final Pointer<Uint8> tp = calloc<Uint8>(bytes.isEmpty ? 1 : bytes.length);
+    try {
+      tp.asTypedList(bytes.length).setAll(0, bytes);
+      final r = _bindings!.tokenize(
+        _handle!,
+        tp,
+        bytes.length,
+        defaultScanLength,
+        withReadings ? 1 : 0,
+      );
+      final rPtr = calloc<FfiTokenizeResult>();
+      rPtr.ref = r;
+      try {
+        final List<int> lengths = <int>[
+          for (int i = 0; i < r.count; i++) r.lengths[i],
+        ];
+        int total = 0;
+        for (final int l in lengths) {
+          total += l;
+        }
+        // 原生闸门吞掉异常后返回 0 段：长度对不上原文就视为失败，交给调用方回落。
+        if (total != text.length) return null;
+        final List<String> readings = <String>[
+          if (withReadings && r.readings != nullptr)
+            for (int i = 0; i < r.count; i++) _utf8OrEmpty(r.readings[i]),
+        ];
+        if (withReadings && readings.length != lengths.length) return null;
+        return (lengths: lengths, readings: readings);
+      } finally {
+        _bindings!.freeTokenizeResult(rPtr);
+        calloc.free(rPtr);
+      }
+    } finally {
+      calloc.free(tp);
+    }
+  }
+
+  /// [text] 开头的最长匹配长度（UTF-16 码元；0 = 未命中）。
+  ///
+  /// 引擎只看前 [defaultScanLength] + 1 个码点（见 tokenize.hpp），这里先按码点截好
+  /// 再编码——wordFromIndex 一类调用传进来的是整段余文，没必要整段转 UTF-8。
+  int matchedLength(String text) {
+    final tp = scanWindowOf(text).toNativeUtf8(allocator: calloc);
+    try {
+      return _bindings!.matchLength(_handle!, tp, defaultScanLength);
+    } finally {
+      calloc.free(tp);
+    }
+  }
+
+  /// [text] 的前 [defaultScanLength] + 1 个码点（引擎结果只依赖这一段）。
+  @visibleForTesting
+  static String scanWindowOf(String text) {
+    int units = 0;
+    int codePoints = 0;
+    while (units < text.length && codePoints <= defaultScanLength) {
+      final int unit = text.codeUnitAt(units);
+      final bool surrogatePair =
+          unit >= 0xD800 &&
+          unit <= 0xDBFF &&
+          units + 1 < text.length &&
+          (text.codeUnitAt(units + 1) & 0xFC00) == 0xDC00;
+      units += surrogatePair ? 2 : 1;
+      codePoints++;
+    }
+    return units == text.length ? text : text.substring(0, units);
+  }
+
   // ── styles ──────────────────────────────────────────────────────
   List<FushiDictStyle> getStyles() {
     final r = _bindings!.getStyles(_handle!);

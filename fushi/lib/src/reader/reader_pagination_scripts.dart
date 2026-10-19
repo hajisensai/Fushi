@@ -580,8 +580,8 @@ class ReaderPaginationScripts {
     return buf.toString();
   }
 
-  // JS `isMatchableChar`（白名单正则）的 Dart 影子：与 `AudioTextNormalizer.
-  // _isKeepable` 同集合。
+  // JS `isMatchableChar`（白名单正则）的 Dart 影子：与 `AudioTextNormalizer`
+  // 的白名单（Rust `native/fushi_compute/src/parse/fold.rs` 的 `is_keepable`）同集合。
   static bool _jsIsMatchableCodePoint(int c) {
     return (c >= 0x30 && c <= 0x39) ||
         (c >= 0x41 && c <= 0x5A) ||
@@ -1204,26 +1204,12 @@ window.__fushiInstallShell = function(C) {
       this.setPagePosition(context, this.alignToPage(context, anchor));
     }
   },
-  // TODO-1349（续·用户复诉「文字少也会去到最开头」）：把仍标记 loading="lazy" 的图强制翻成
-  // eager 触发 load。往前翻到「文字少+图片」章的章末时，尾部整页插图仍是 lazy（非纯图片章
-  // __fushiImageOnlyChapter=false），离屏 → 永不 load → 0 尺寸被 buildPaginationMetrics
-  // 排除（分页 maxScroll 塌缩到章首）/ 被 scrollToChapterEnd 可见性判据跳过（连续停章首），
-  // 且懒图 __imgReanchorProgress 重锚永不触发（尾图永不进视口 = 鸡生蛋）。这里在章末恢复时
-  // 强制 load 打破鸡生蛋，图尺寸解析后走既有 load 回调重锚（分页 scrollToProgressPaged /
-  // 连续 scrollToChapterEnd）落到含真实尾图几何的章末。仅往前翻到章末(restoreProgress>=0.99)
-  // 触发，正向阅读 / 精确 char 锚不动 → 不回退 TODO-1074 懒加载；幂等（无 lazy 则 no-op）。
-  forceLoadPendingImages: function() {
-    var imgs = document.querySelectorAll('img[loading="lazy"]');
-    for (var i = 0; i < imgs.length; i++) {
-      imgs[i].setAttribute('loading', 'eager');
-    }
-  },
   // ── 迟到图片的语义重锚（TODO-1229 案B 的一般化 · BUG-1140 第二轮）─────────
   //
   // 恢复落点由「章内**语义锚**」定义：精确字符偏移（restoreToCharOffset）、粗粒度
   // progress（restoreProgress —— progressStops 同样是字符域）、或 fragment 目标元素。
   // 这三种锚本身与图片是否已 decode 无关，但把锚**换算成 scroll** 的那一步依赖当下
-  // 几何：锚之前若有尚未 load 的懒图（0×0），换算结果就少了那些图的高度。图片随后
+  // 几何：锚之前若有尚未 load 的图（0×0），换算结果就少了那些图的高度。图片随后
   // load、几何后移，冻结的 scroll 便指向别的内容——用户看到的位置漂了，随后
   // onReaderScroll 还会把这个漂掉的读数落库。
   //
@@ -1236,7 +1222,7 @@ window.__fushiInstallShell = function(C) {
   // 揭示（有声书跟读 highlightSentenceAudioCue → revealElement、跨插图暂停
   // __fushiRevealTarget、搜索命中）一旦把视口带到新目标，目标就换了——分页 scrollToRange /
   // 连续 scrollToTarget 在这里登记 {target}（Range 或元素），替换恢复锚。否则跟读翻过几页后
-  // 前方懒图才 load，重锚把视口拽回开章那页（横排听书「插图位置闪一下、图被跳过」）；跨图
+  // 前方的图才 load，重锚把视口拽回开章那页（横排听书「插图位置闪一下、图被跳过」）；跨图
   // 暂停时滚到尚未 load 的插图（0 尺寸占位），load 后又对齐回那张图而不是停在错页。
   registerImageLateAnchor: function(anchor) {
     this.clearImageLateAnchor();
@@ -1249,7 +1235,7 @@ window.__fushiInstallShell = function(C) {
     } else if (anchor.fragment) {
       this.__imgReanchorFragment = anchor.fragment;
     } else if (anchor.target) {
-      // Range 是活的（DOM 变动后边界自动跟随，懒图 load 被包进 .block-img-wrapper 后仍选中
+      // Range 是活的（DOM 变动后边界自动跟随，迟到的图 load 被包进 .block-img-wrapper 后仍选中
       // 那张图），复制一份避免与调用方共用（搜索把同一个 Range 交给了 CSS.highlights）。
       this.__imgReanchorTarget = typeof anchor.target.cloneRange === 'function'
         ? anchor.target.cloneRange() : anchor.target;
@@ -2217,9 +2203,7 @@ window.__fushiInstallShell = function(C) {
   /// 大图（含 svg 封面）加 `blurred` 类（CSS 盖 24px 模糊），并装一次性点击监听揭开。
   /// 揭开（移除 `blurred`）连同「吞掉本次放大」由 webview.part.dart 的点击派发处统一
   /// 处理（见 `_fushiRevealBlurredImage`），这里只负责加类 + 标记可揭开。
-  /// TODO-1339 测试钩子：暴露共享图片初始化脚本，让 live-WebView 集成测试能证明
-  /// 图片合并注入的前导插图（`.fushi-merged-image`）保持 eager（不被挂 lazy），
-  /// 从而 firstContentEdge 计入全部前导图、章首锚不跳过第一张。
+  /// 测试钩子：暴露共享图片初始化脚本，供 live-WebView 测试直接注入。
   @visibleForTesting
   static String initImagesScriptForTesting() => _sharedInitImages();
 
@@ -2237,7 +2221,7 @@ window.__fushiInstallShell = function(C) {
     }
   }
   // TODO-1367：暴露给有声书桥接（audiobook_bridge）——音频跟随读过某张图时把它的稳定
-  // reveal key 登记进本活集，日后该图（含尚未 load 的懒图）真正 load 走 _fushiBlurImage
+  // reveal key 登记进本活集，日后该图（含尚未 load 的图）真正 load 走 _fushiBlurImage
   // 时命中 key 跳过遮罩，与点击 / 手柄揭开同一套「已揭开不再遮罩」真相源（会话内存活集）。
   if (C.blurImages) {
     window.__fushiMarkImageRevealed = function(key) {
@@ -2331,19 +2315,13 @@ $blurFn
       $blurSvgCall
     }
   });
-  // TODO-1074（根因 A）：首屏可见性/restore 不再被「所有 <img> 都 decode 完」整页阻塞。
-  // 旧实现给每个未完成的 <img> 挂 img.onload 才 resolve，Promise.all 揭开 restore 前要等
-  // 最大图读盘+全分辨率解码 → 图片章首屏/换章卡（文字章几乎无 <img> 故快）。
-  // 现在：
-  //   · 每个 <img> 加 loading="lazy"（视口外不预取解码，不再拖住 window.load）+
-  //     decoding="async"（解码离主线程，不阻塞首帧）。gaiji 内联小图除外——它们参与文字
-  //     排版几何，必须 eager 同步，lazy 会让占位撑不开破坏 metrics。
-  //   · 已 decode 完（complete && naturalWidth>0）的图仍同步分类 block-img 并即刻 resolve。
-  //   · 未完成的图**立即 resolve**（不再 gate restore），block-img 归类推迟到它真正 onload
-  //     时补做（懒图滚进视口才 load，普通图 decode 完），补做后失效 paginationMetrics 强制
-  //     下次 paginate 用纳入真实图尺寸的几何重建（与 TODO-627 首帧那次失效同源）。
+  // TODO-1074（根因 A）：restore 不再被「所有 <img> 都 decode 完」阻塞——
+  // decoding="async" 让解码离主线程；已完成的图同步分类 block-img，未完成的图不 gate
+  // restore，等它 load 后补做归类并失效 paginationMetrics、按语义锚重锚。
+  // 不加 loading="lazy"：章节几何要计入每张图的真实尺寸，分页远列的懒图永远进不了
+  // 视口、保持 0 尺寸，章节被算短，还没翻完插图就会跨到下一章。
   // 竖排 SVG 封面（<svg><image>）走上面 querySelectorAll('svg') 的同步分支（尺寸取
-  // 属性/viewBox，无需 onload），本改动不触及 → BUG-025 行为不变。
+  // 属性/viewBox，无需 onload）→ BUG-025 行为不变。
   function _fushiClassifyBlockImg(img) {
     var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
     if (isGaiji) return false;
@@ -2359,51 +2337,24 @@ $blurFn
     }
     return false;
   }
-  // TODO-1349：纯图片章（正文无任何可匹配文本、仅由整页封面/插图构成）的所有 <img> 都是
-  // 结构性内容。若挂 loading="lazy"，离屏图（分页远列 / 连续模式下方）永不进视口懒加载
-  // margin → 永不 load → 保持 0 尺寸 → 被 buildPaginationMetrics 的 first/lastContentEdge
-  // 排除 → 章末落点 maxScroll(contentLastPageScroll) 塌缩到章首 → 往前翻到本章停在封面（第
-  // 一张图）而非最后一张图（用户报「从目录往前翻会去到封面」在分页模式的根因；连续模式另由
-  // scrollToChapterEnd 覆盖，两墙互补）。与 gaiji / 合并前导插图同理保持 eager：无条件 load、
-  // 真实撑开尺寸，metrics 计入全部图。readerRegex 单字符匹配（无 /g，test 无状态）在首个可匹配
-  // 字符即短路 → 文本章几乎零开销、只对纯图片章全扫（文本极少）。图文混排章仍 lazy（不回退
-  // TODO-1074 懒加载优化）；非图片章（有文本）完全 no-op（向后兼容）。
-  var __fushiImageOnlyChapter =
-      !window.fushiReader.readerRegex.test(document.body.textContent || '');
   Array.from(document.querySelectorAll('img')).forEach(function(img) {
-    var isGaiji = img.classList.contains('gaiji') || img.classList.contains('gaiji-line');
-    // TODO-1339：图片合并（前导插图折进后随文本章）注入的插图（`.fushi-merged-image`
-    // 内，webview.part.dart _injectMergedChapterImages）是章首**结构性**内容——章首落点
-    // (restoreProgress/restoreToCharOffset <=0 走 minScroll) 依赖 buildPaginationMetrics
-    // 的 firstContentEdge，而 firstContentEdge 只计入**有非零尺寸**的媒体（0 尺寸被跳过）。
-    // 若给这些前导插图挂 loading="lazy"，离屏（离首个文本落点较远的**第一张**）永不进入
-    // 懒加载视口 margin → 永不 load → 保持 0 尺寸 → 被 firstContentEdge 排除 → 章首锚落到
-    // 最近的已加载图（**最后一张**）跳过第一张 =「两张连续图只有最后一张合并进章节」。
-    // 故与 gaiji 同理保持 eager：无条件 load、真实撑开尺寸，firstContentEdge 计入全部前导图，
-    // 章首锚落到第一张。仅影响合并书的少量前导插图，不回退 TODO-1074 普通图懒加载。
-    var isMergedLeadImg = img.closest && img.closest('.fushi-merged-image');
-    // gaiji 内联小图参与文字几何：保持 eager 同步解码，不加 lazy。
-    // TODO-1349：纯图片章的图同理 eager（见上 __fushiImageOnlyChapter 长注释）。
-    if (!isGaiji && !isMergedLeadImg && !__fushiImageOnlyChapter) {
-      img.setAttribute('loading', 'lazy');
-    }
     img.setAttribute('decoding', 'async');
     if (img.complete && img.naturalWidth > 0) {
       _fushiClassifyBlockImg(img);
     } else {
       // 未完成：restore 不等它。真正 load 后补做 block-img 归类并失效 metrics。
       img.addEventListener('load', function() {
-        if (_fushiClassifyBlockImg(img)) {
-          var r = window.fushiReader;
-          if (r && r.paginationMetrics !== undefined) r.paginationMetrics = null;
-          // TODO-1229 案B / BUG-1140 第二轮：懒加载 block 图 load 后整章几何后移，冻结的
-          // restore scrollTop 错位（Chromium 只在 scrollTop=0 自愈）。按本次恢复登记的
-          // **语义锚**（char / progress / fragment）重算一次落点，终态与「图片本来就在」
-          // 等价。属程序化滚动，不污染 TODO-798 userDriven 因果门；有用户输入
-          // （paginate 已 clearImageLateAnchor）则不动。三种锚的分派见 reapplyImageLateAnchor。
-          if (r && typeof r.reapplyImageLateAnchor === 'function') {
-            r.reapplyImageLateAnchor();
-          }
+        _fushiClassifyBlockImg(img);
+        // 任何图 load 都会改变章节几何（不只是 block 图），缓存的 metrics 一律作废。
+        var r = window.fushiReader;
+        if (r && r.paginationMetrics !== undefined) r.paginationMetrics = null;
+        // TODO-1229 案B / BUG-1140 第二轮：迟到的图 load 后整章几何后移，冻结的
+        // restore scrollTop 错位（Chromium 只在 scrollTop=0 自愈）。按本次恢复登记的
+        // **语义锚**（char / progress / fragment）重算一次落点，终态与「图片本来就在」
+        // 等价。属程序化滚动，不污染 TODO-798 userDriven 因果门；有用户输入
+        // （paginate 已 clearImageLateAnchor）则不动。三种锚的分派见 reapplyImageLateAnchor。
+        if (r && typeof r.reapplyImageLateAnchor === 'function') {
+          r.reapplyImageLateAnchor();
         }
       });
     }
@@ -3093,18 +3044,10 @@ $kReaderPageTurnJs
     this._invalidateGeometryReanchor();
     await document.fonts.ready;
     var context = this.getScrollContext();
-    // TODO-1349（续）：往前翻到章末(>=0.99)先强制 load 仍 lazy 的尾图（打破「尾图离屏永不
-    // load → maxScroll 塌缩 → 停章首 → 尾图永不进视口」鸡生蛋，见 forceLoadPendingImages）；
-    // 图 load 后 __imgReanchorProgress 回调按含真实尾图几何的 maxScroll 重锚。
-    if (progress >= 0.99) this.forceLoadPendingImages();
     this.scrollToProgressPaged(context, progress);
-    // BUG-1140 第二轮：登记本次 progress 落点供懒图 load 后语义重锚，**含中段**。
-    // 旧实现只登记章首(0)/章末(>=0.99)，理由是「中段重锚到粗 progress 反更差」——那成立
-    // 的前提是恢复时几何已终态（initialize 挂在 window.load，图片必已 decode），中段重锚
-    // 只会把已经正确的位置白抖一下。把 loading="lazy" 写进 HTML 源码之后这个前提没了：
-    // 恢复跑在图片 decode 之前，中段落点同样会被随后 load 的图顶走。progressStops 是字符域，
-    // 按同一 progress 重算 = 落回同一批字符所在页，严格优于停在漂掉的 scroll 上。
-    // 任一用户翻页(paginate)清资格。
+    // BUG-1140 第二轮：登记本次 progress 落点供迟到的图 load 后语义重锚，**含中段**。
+    // progressStops 是字符域，按同一 progress 重算 = 落回同一批字符所在页，严格优于停在
+    // 被图片顶走的 scroll 上。任一用户翻页(paginate)清资格。
     this.registerImageLateAnchor({progress: progress});
     var pos = this.getPagePosition(context);
     this._settleAndNotify(context, pos);
@@ -3727,7 +3670,7 @@ $kSentenceAudioRubyGapJs
   // reveal 分支）武装 _reanchorClearedAt 让 B-3 窗覆盖这条平滑滚动的落定尾沿，从源头消除二次
   // 反弹——动画保留，闪烁靠 settle 窗治住。分页模式 reveal（scrollToRange）走另一路不受影响。
   scrollToTarget: function(target) {
-    // BUG-2744：跟读 / 跨图 / 搜索揭示的目标替换恢复锚，迟到懒图 load 后按它重对齐，
+    // BUG-2744：跟读 / 跨图 / 搜索揭示的目标替换恢复锚，迟到的图 load 后按它重对齐，
     // 而不是把视口拽回开章落点（与分页 scrollToRange 同一不变量）。
     this.registerImageLateAnchor({target: target});
     var rect = this.getRect(target);
@@ -3931,11 +3874,9 @@ $kSentenceAudioRubyGapJs
     // scrollToProgressContinuous 只走文本节点而在图片章停回章首（封面）。双发一次
     // 再确认对齐（防恢复后自发 reflow 把落点冲回，与 scrollToChapterStart 同构）。
     if (progress >= 0.99) {
-      // TODO-1349（续）：登记章末重锚资格 + 强制 load 尾部懒图（打破鸡生蛋，见
-      // forceLoadPendingImages）。16ms 双发太快等不到图 load，故尾图 load 后由
-      // _sharedInitImages 的 load 回调重锚 scrollToChapterEnd（连续分支）落到含尾图的真实章末。
+      // 登记章末重锚资格：尾图若迟到，load 后由 _sharedInitImages 的 load 回调重锚
+      // scrollToChapterEnd（连续分支）落到含尾图的真实章末。
       this.registerImageLateAnchor({progress: progress});
-      this.forceLoadPendingImages();
       this.scrollToChapterEnd();
       setTimeout(function() {
         self.scrollToChapterEnd();

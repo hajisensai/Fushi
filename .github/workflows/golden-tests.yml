@@ -83,6 +83,9 @@ jobs:
             echo "::error title=Golden test outside test/goldens::这些文件带 golden 标签但不在 test/goldens 下，本 workflow 不会跑到它们：$stray"
             exit 1
           fi
+      # 计算内核 fushi_compute 是硬依赖：先编 Windows DLL、导出 FUSHI_COMPUTE_LIB 给 flutter_tester。
+      - name: Build fushi_compute (Windows DLL)
+        uses: ./.github/actions/setup-fushi-compute
       - name: Run golden tests
         working-directory: fushi
         run: flutter test --no-pub --tags golden test/goldens

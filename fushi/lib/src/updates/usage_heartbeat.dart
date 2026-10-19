@@ -126,9 +126,7 @@ class UsageHeartbeat {
        _now = now;
 
   /// 生产装配：发往 Fushi 自己的统计端点，版本取运行中代码的构建版本（没注入时退回
-  /// [executableVersion]，即 `PackageInfo.version`）。版本解析收在这里而不是调用方：
-  /// `AppModel` 是复习模块门的消费端，不得自己读构建版本
-  /// （`test/build/prerelease_only_capability_guard_test.dart`）。
+  /// [executableVersion]，即 `PackageInfo.version`）。版本解析收在这里而不是调用方。
   factory UsageHeartbeat.forFushi({
     required PreferencesRepository prefs,
     required String executableVersion,

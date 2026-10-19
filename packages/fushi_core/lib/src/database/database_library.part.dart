@@ -1561,6 +1561,28 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         ),
       );
 
+  /// 「比较后写入」（BUG-3537）：仅当 `bookUid` 的本地行时间戳仍等于
+  /// [expectedUpdatedAt] 时才 upsert [pos]，返回是否写入。无行按 0 比较（与
+  /// 同步层把「无记录」读成 0 时间戳的口径一致）。
+  ///
+  /// 出站同步（云导入 / 互联 client 落地）在「读本地 → 等网络 → 写本地」之间会被
+  /// 别的写者插队：本机作为互联 host 时对端的进度 PUT（只持同步状态窄锁，不再排在
+  /// 整轮同步锁后）、本机阅读器自己存进度。决策时读到的时间戳若已被改写，说明
+  /// 本地有了更新的事实，旧决策作废——放弃这次落地，交给下一轮重新判定，绝不能
+  /// 用决策时的旧值盖掉。重读与写入在同一个事务里：drift 在事务进行中把事务外
+  /// 的语句排到其后，中间不会再有写者插进来。
+  Future<bool> upsertReaderPositionIfUnchanged(
+    ReaderPositionsCompanion pos, {
+    required int expectedUpdatedAt,
+  }) =>
+      transaction(() async {
+        final ReaderPositionRow? current =
+            await getReaderPosition(pos.bookUid.value);
+        if ((current?.updatedAt ?? 0) != expectedUpdatedAt) return false;
+        await upsertReaderPosition(pos);
+        return true;
+      });
+
   Future<int> deleteReaderPosition(String bookUid) =>
       (delete(readerPositions)..where((t) => t.bookUid.equals(bookUid))).go();
 }

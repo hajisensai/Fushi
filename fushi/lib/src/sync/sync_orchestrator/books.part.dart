@@ -152,12 +152,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       try {
         final RemoteBookProgress remote = await sync.remoteProgress(book);
         final RemoteBookProgress local = await sync.localProgress(book);
-        final BookProgressBaseline? base = await sync.baseline(book);
-        final BookProgressSyncAction action = resolveBookProgressThreeWay(
-          local: local,
-          remote: remote,
-          base: base,
-        );
+        final BookProgressSyncAction action =
+            await sync.decide(book, local: local, remote: remote);
         switch (action) {
           case BookProgressSyncAction.synced:
             // BUG-686: a host-newer progress pull lands in reader_positions but
@@ -170,8 +166,10 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           case BookProgressSyncAction.pushLocal:
             await sync.pushLocal(book, local: local, remote: remote);
           case BookProgressSyncAction.applyRemote:
-            await sync.applyRemote(book, remote);
-            report.localBookProgressPulled++;
+            // BUG-3537：判定后本地被改写则不落地（比较后写入），不计「已拉取」。
+            if (await sync.applyRemote(book, remote, local: local)) {
+              report.localBookProgressPulled++;
+            }
           case BookProgressSyncAction.conflict:
             report.conflicts.add(SyncConflict(
               assetKey: book.bookKey,
@@ -216,18 +214,15 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       try {
         final PlaybackPosition local = await sync.localPosition(key);
         final PlaybackPosition host = await readHost(key);
-        final BookProgressSyncAction action = resolvePlaybackPositionThreeWay(
-          local: local,
-          remote: host,
-          basePositionMs: await sync.baseline(key),
-        );
+        final BookProgressSyncAction action =
+            await sync.decide(key, local: local, remote: host);
         switch (action) {
           case BookProgressSyncAction.synced:
             await sync.alignSynced(key, local: local, remote: host);
           case BookProgressSyncAction.pushLocal:
             await sync.pushLocal(key, local: local, remote: host);
           case BookProgressSyncAction.applyRemote:
-            await sync.applyRemote(key, host);
+            await sync.applyRemote(key, host, local: local);
           case BookProgressSyncAction.conflict:
             report.conflicts.add(SyncConflict(
               assetKey: key,

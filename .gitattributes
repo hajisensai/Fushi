@@ -16,6 +16,10 @@
 # 逐字节一致才能在升级时直接 diff 出本仓改动（见该目录 UPSTREAM.md），不做清理。
 packages/flutter_inappwebview_linux/** -whitespace
 
+# 第三方许可原文逐字保留（上游文件自带行尾空白 / 末尾空行 / 形似冲突标记的 ==== 下划线），见 native/third_party_licenses/manifest.json。
+native/third_party_licenses/** -whitespace conflict-marker-size=200
+fushi/assets/licenses/native/** -whitespace conflict-marker-size=200
+
 # 二进制文件不做行尾转换
 *.bmp   binary
 *.png   binary

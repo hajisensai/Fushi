@@ -1,0 +1,12 @@
+# 与 native/fushi_compute/.cargo/config.toml 一致：aes 0.8 在 aarch64 上要 `--cfg aes_armv8`
+# 才用 ARMv8 AES 指令（Apple 平台运行时检测），否则 fushi_compute 的 AACS / HLS / 漫画 AES
+# 退回软件实现（结果相同，慢数倍）。伞形库从本目录构建（build_ios_staticlib.sh 会 cd 过来），
+# 所以 fushi_compute 目录下那份配置在这里不生效，要单独写一份。
+#
+# 注意：设了 RUSTFLAGS 环境变量（或 CARGO_ENCODED_RUSTFLAGS）时 cargo 会**整个忽略**这里的
+# rustflags，要在那个变量里自己带上 `--cfg aes_armv8`。
+[target.aarch64-apple-ios]
+rustflags = ["--cfg", "aes_armv8"]
+
+[target.aarch64-apple-ios-sim]
+rustflags = ["--cfg", "aes_armv8"]

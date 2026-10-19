@@ -198,7 +198,7 @@ class CollectionDetailHero extends StatelessWidget {
               ? content
               : Stack(
                   children: <Widget>[
-                    Positioned.fill(child: _buildBackdrop()),
+                    Positioned.fill(child: _buildBackdrop(artBand: !wide)),
                     content,
                   ],
                 ),
@@ -208,7 +208,8 @@ class CollectionDetailHero extends StatelessWidget {
   }
 
   /// 大背景：fanart 轻模糊 / 封面重模糊垫底（key 区分两条路，测试据此断言）。
-  Widget _buildBackdrop() {
+  /// [artBand]：窄式居中 hero 才传 true（见 [MediaDetailBackdrop.artBand]）。
+  Widget _buildBackdrop({required bool artBand}) {
     final ImageProvider? backdrop = this.backdrop;
     if (backdrop != null) {
       return KeyedSubtree(
@@ -217,6 +218,7 @@ class CollectionDetailHero extends StatelessWidget {
           image: backdrop,
           imageKey: backdropIndex,
           blurSigma: kCollectionHeroBackdropBlur,
+          artBand: artBand,
         ),
       );
     }

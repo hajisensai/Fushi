@@ -84,15 +84,8 @@ class Win32Window {
   // backdrop show through. Does not touch DWM itself; FlutterWindow owns that.
   void SetSystemBackdrop(bool enabled);
 
-  // BUG-2964: same surface rule while the HDR video passthrough is live (the
-  // libmpv host window behind this one must show through the video hole, and
-  // a theme-coloured GDI fill would be added onto the picture). Does not touch
-  // DWM itself; FlutterWindow owns that (see main_surface_composition.h).
-  void SetVideoPassthrough(bool enabled);
-
   fushi::MainSurfaceState main_surface_state() const {
-    return fushi::MainSurfaceState{system_backdrop_, video_passthrough_,
-                                   fullscreen_};
+    return fushi::MainSurfaceState{system_backdrop_};
   }
 
   // BUG-1933: flash-free fullscreen, owned by the runner. window_manager's
@@ -202,10 +195,6 @@ class Win32Window {
   // True while FlutterWindow has a DWM system backdrop applied; see
   // SetSystemBackdrop.
   bool system_backdrop_ = false;
-
-  // True while the HDR video passthrough host is live; see
-  // SetVideoPassthrough.
-  bool video_passthrough_ = false;
 
   // BUG-1933: captures the window's current on-screen client pixels into
   // |transition_snapshot_| (screen BitBlt; fails soft to no snapshot). While a

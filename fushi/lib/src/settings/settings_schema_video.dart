@@ -226,7 +226,7 @@ SettingsDestination buildVideoDestination() {
           SettingsSegmentedItem<VideoHdrOutputMode>(
             id: 'video.playback.hdr_output',
             title: t.video_setting_hdr_output,
-            subtitle: t.video_setting_hdr_output_hint,
+            subtitle: t.video_setting_hdr_output_mode_hint,
             icon: Icons.hdr_on_outlined,
             dropdown: true,
             visible: (_) => isWindowsPlatform,
@@ -1165,8 +1165,8 @@ SettingsDestination buildVideoDestination() {
           ),
           // 从遮蔽模式里拆出来的独立开关（默认开 = 历史行为）：遮蔽模式管「遮什么」
           // （模糊 / 隐藏），本开关管「能不能临时看一眼」。关掉后遮蔽在整句期间恒定
-          // 生效，不被路过的鼠标或误触揭开。主 / 副字幕共用一个开关（是「显形这个
-          // 行为」的总闸，不是逐层设置）。
+          // 生效，不被路过的鼠标或误触揭开。主 / 副字幕分开配置（用户 2026-10-19：
+          // 常见用法是主字幕暂停时显形、副字幕翻译始终遮住），副字幕那条紧随其后。
           SettingsSwitchItem(
             id: 'video.subtitle.obscure_reveal',
             title: t.video_setting_subtitle_obscure_reveal,
@@ -1181,6 +1181,27 @@ SettingsDestination buildVideoDestination() {
                 settingsContext.appModel.videoSubtitleObscureReveal,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await setVideoSubtitleObscureRevealDual(settingsContext, value);
+              settingsContext.refresh();
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'video.secondary_subtitle.obscure_reveal',
+            title: t.video_setting_secondary_subtitle_obscure_reveal,
+            subtitle: t.video_setting_secondary_subtitle_obscure_reveal_hint,
+            icon: Icons.visibility_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 56,
+              section: t.section_video_subtitle_behavior,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSecondarySubtitleObscureReveal,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await setVideoSecondarySubtitleObscureRevealDual(
+                settingsContext,
+                value,
+              );
               settingsContext.refresh();
             },
             defaultValue: true,

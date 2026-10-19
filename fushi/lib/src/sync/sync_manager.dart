@@ -4,6 +4,8 @@ import 'dart:math';
 
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show audiobookPositionAtPrefKey;
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi/src/sync/position_converter.dart';
@@ -315,6 +317,12 @@ class SyncManager {
 
     // v82：子表键 = 书稳定 uid（wire/assetKey 仍是 title 派生键，不动）。
     final localPosition = await _db.getReaderPosition(book.uid);
+    // BUG-3537：有声书断点随本书进度方向一起导入，它的「决策时快照」就在这里取，
+    // 落地时据此比较后写入（中间可能有互联对端 PUT 进更新的断点）。
+    final int audiobookStamp = syncAudioBook
+        ? await _db.getPrefTyped<int>(
+            audiobookPositionAtPrefKey(book.bookKey), 0)
+        : 0;
     final chapters = parseChaptersJson(book.chaptersJson);
 
     // HBK-AUDIT-047: compute the local progress fraction so a timestamp tie
@@ -413,6 +421,9 @@ class SyncManager {
         return await _handleImport(
           book: book,
           assetKey: assetKey,
+          // BUG-3537：决策所依据的本地时间戳（无行 = 0）。落地时比较后写入。
+          expectedLocalUpdatedAt: localPosition?.updatedAt ?? 0,
+          expectedAudiobookStamp: audiobookStamp,
           folderId: folderId,
           chapters: chapters,
           progressFileId: progressFileId,
@@ -566,6 +577,8 @@ class SyncManager {
   Future<SyncBookResult> _handleImport({
     required EpubBookRow book,
     required String assetKey,
+    required int expectedLocalUpdatedAt,
+    required int expectedAudiobookStamp,
     required String folderId,
     required List<ChapterCharInfo> chapters,
     required String? progressFileId,
@@ -600,12 +613,23 @@ class SyncManager {
             exploredCharCount: remoteProgress.exploredCharCount,
             chapters: chapters,
           );
-    await _db.upsertReaderPosition(ReaderPositionsCompanion(
-      bookUid: Value(book.uid),
-      sectionIndex: Value(pos.sectionIndex),
-      normCharOffset: Value(pos.normCharOffset),
-      updatedAt: Value(remoteProgress.lastBookmarkModified),
-    ));
+    // BUG-3537：比较后写入。决策（_syncBookOnce 读本地）与这里之间隔着网络
+    // `getProgressFile`；这期间本机作为互联 host 可能已落下对端 PUT 的更新进度
+    // （host PUT 只持同步状态窄锁，不再排在整轮同步锁后），本机阅读器也可能刚存过
+    // 进度。本地时间戳一变，这次导入的决策就作废：放弃落地、不记基线，下一轮按
+    // 新的本地事实重新判定——绝不能用远端旧值盖掉它。
+    final bool landed = await _db.upsertReaderPositionIfUnchanged(
+      ReaderPositionsCompanion(
+        bookUid: Value(book.uid),
+        sectionIndex: Value(pos.sectionIndex),
+        normCharOffset: Value(pos.normCharOffset),
+        updatedAt: Value(remoteProgress.lastBookmarkModified),
+      ),
+      expectedUpdatedAt: expectedLocalUpdatedAt,
+    );
+    if (!landed) {
+      return SyncBookResult(direction: SyncResult.skipped, title: book.title);
+    }
 
     // BUG-201: the authoritative progress transfer is the upsert above — after
     // it, local.updatedAt == remoteProgress.lastBookmarkModified == the remote
@@ -633,7 +657,12 @@ class SyncManager {
     if (syncAudioBook && audioBookFileId != null) {
       final remoteAudio = await _backend.getAudioBookFile(audioBookFileId);
       final posMs = (remoteAudio.playbackPositionSec * 1000).round();
-      await _repo.setAudiobookPosition(book.bookKey, posMs);
+      // BUG-3537：同上，比较后写入——断点时间戳已被别的写者推进就放弃。
+      await _db.runIfIntPrefUnchanged(
+        stampKey: audiobookPositionAtPrefKey(book.bookKey),
+        expectedStamp: expectedAudiobookStamp,
+        write: () => _repo.setAudiobookPosition(book.bookKey, posMs),
+      );
     }
 
     return SyncBookResult(

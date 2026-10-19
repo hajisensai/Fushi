@@ -32,6 +32,10 @@
   只搬运密钥，不跑 pub get / bootstrap。WorktreeCreate 钩子用此开关，避免在
   worktree 创建时同步阻塞数分钟；需要 flutter test 前再手动 tool/bootstrap.ps1。
 
+.PARAMETER SkipNativeCompute
+  透传给 tool/bootstrap.ps1：不编 native/fushi_compute（Rust 计算内核，app 与 flutter test 的
+  硬依赖，需要 cargo）。跳过后 flutter build / test 之前必须手动跑它的 build_* 脚本。
+
 .PARAMETER SkipCacheSeed
   不从兄弟 worktree 复制 flutter test 的增量编译缓存(见下方「预热 flutter test
   编译缓存」一节)。默认会在 bootstrap 之后做这一步。
@@ -42,7 +46,7 @@
   pwsh -File tool/setup_worktree.ps1 -SkipBootstrap # 只搬密钥(秒级)
 #>
 [CmdletBinding()]
-param([switch]$SkipBootstrap, [switch]$SkipCacheSeed)
+param([switch]$SkipBootstrap, [switch]$SkipCacheSeed, [switch]$SkipNativeCompute)
 
 $ErrorActionPreference = "Stop"
 
@@ -131,7 +135,7 @@ if (-not (Test-Path $bootstrap)) { throw "找不到 $bootstrap" }
 $bootstrapError = $null
 Push-Location $here
 try {
-    & $bootstrap
+    & $bootstrap -SkipNativeCompute:$SkipNativeCompute
 }
 catch {
     # 先记下，预热照做再抛：bootstrap 若死在 apply-patches，那时 pub get 已经成功，

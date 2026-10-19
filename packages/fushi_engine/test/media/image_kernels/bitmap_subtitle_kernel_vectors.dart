@@ -1,0 +1,87 @@
+// 生成于 2026-10-18：位图字幕的 RLE 解码 / DVB 像素串 / 黑底合成改用 native/fushi_compute
+// 之前，用当时的纯 Dart 实现跑 bitmap_subtitle_kernel_cases.dart 得到的摘要。原生内核必须
+// 逐位复现它们；不要重新生成来「修」红。
+const Map<String, String> kBitmapSubtitleKernelVectors = <String, String>{
+  'pgs/rle/1x1/full':
+      '6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d',
+  'pgs/rle/1x1/cut':
+      '7a4a4b50f5121ed5310ece45a7eeb7af5545af63ee2ae52add4f37788f075b1d',
+  'pgs/rle/37x5/full':
+      '171994e90fda6f1633aa7cb9d02013403ab9d04e56295ebe91bf819d6ba2478f',
+  'pgs/rle/37x5/cut':
+      '5f092642399ab87edaa6e676246c63feddc89f06033caac0b4d1f69067d0c544',
+  'pgs/rle/640x48/full':
+      '004d057fdb2f60c5e7f34e1f05fecf377e9d1bba39e257e9a70b5c7421ec1b73',
+  'pgs/rle/640x48/cut':
+      '429fb631e5a52be35d366b214b08eaaf464f5f8aa49abae0584e7125649fe56f',
+  'pgs/rle/1500x120/full':
+      '36676abbcf5a6013986e40a7ac2e839d3825b45249766a9227b555f084451a99',
+  'pgs/rle/1500x120/cut':
+      'ea2afda49ffb5a8a1ec48e27c619247db3e762372be49e08df33606c99fc37ab',
+  'pgs/rle/empty':
+      '6db65fd59fd356f6729140571b5bcd6bb3b83492a16e1bf0a3884442fc3c8a0e',
+  'dvd/rle/16x4/32':
+      '3ba2ea657aca0e26fed24fa34303492a895d0c1c78cca428139341f3b97129ed',
+  'dvd/rle/720x60/6000':
+      'f9d68284208e4635f1895a6851d22c445720a7c4aec35269e19c60bf23fa6e2d',
+  'dvd/rle/333x101/900':
+      'ba5290e9fa2d4c572077fad5f33fb84da1ccb2c46aafda0a39866408246b6526',
+  'dvb/size/0': '742x3',
+  'dvb/region/0/2':
+      'c5d340d238ea356825d284d3722f5dc815f3789110727e1063428608c2ecf0f0',
+  'dvb/region/0/4':
+      'd43a6fdbe8c28c90d6150097c76a3c5bc8441a856e00c54dd582bc8b3c80dfc7',
+  'dvb/region/0/8':
+      '7d14ffbb0352168ac7fc2d8da2b5a85fa504d3183cba0b8c7c01f1917adfe947',
+  'dvb/size/1': '219x4',
+  'dvb/region/1/2':
+      '01f6d2f1d095f590cb8d2314ef081e65e6ed79df4d99a81041d0aa4c699e0e33',
+  'dvb/region/1/4':
+      '7c80c6280a64b2c94a4ea5135e64778cbd8b3370d3456be18bdceeea081d8918',
+  'dvb/region/1/8':
+      'd2760a4de6678510e9012e91b56cf66ffe54783075a3eb83251d295fa8686a71',
+  'dvb/size/2': '880x4',
+  'dvb/region/2/2':
+      '3254a05e06a86e882ae586db5434f15729cee0bca0be77a3656bd5d9c39f1793',
+  'dvb/region/2/4':
+      'c6922e56aefe26c74772376df4ddda7b300523c9b545b9aa852d19a20cc342ce',
+  'dvb/region/2/8':
+      'c64a9f2db05fa7c51eb9f25a10c46d5a738e06ec49133fb75b2aefa1b2bff287',
+  'dvb/size/3': '14x2',
+  'dvb/region/3/2':
+      '1a23d3d4593173f07f2a25dae0fe6acebb8af8b977544da8d513336812aef729',
+  'dvb/region/3/4':
+      '149ea919c6eab670b5705f8c61731662fd37915435f9b2500ce2b98038096d1d',
+  'dvb/region/3/8':
+      '3ed8078a02cac42ffb07ee8c1882b8de3d94df61aa916c047d1251e0ce3eb325',
+  'dvb/size/4': '101x8',
+  'dvb/region/4/2':
+      '31828a211631b65e53e4f8b3bf875c7c78934a61753b6d6673b14e27b3ce5ea5',
+  'dvb/region/4/4':
+      'e1436e96fdfc2a13ccdf0ae0cd5cb60ef63bfa511f86935798f438dfa4a607a7',
+  'dvb/region/4/8':
+      '8d8190bbda2ec0143faecd57730b013cf71edfe5e06f914d007f0dc98bde5b9f',
+  'dvb/size/5': '39x4',
+  'dvb/region/5/2':
+      '1c47c7ba0bf523441fb2c17f319df0831e26784ebdd5f4ddd8c68b9acec7b77b',
+  'dvb/region/5/4':
+      'aafb025b3f3deae4a5a54f7373df3743c01eb80cc9eeca227ccf12b06aaeb9ec',
+  'dvb/region/5/8':
+      '3fd3f4d1dbaeb5b22c39ab96121144f22c2843c6a99df144dd65ba64a7bd01c3',
+  'compose/0':
+      '257x87:84efa4e1f704d707c8a595cc7ac94e51c784ba43f386bdde6e0df2430c127b9a',
+  'compose/1':
+      '139x46:d8c266d192519787f7c754003379940e5b889f0f85a44e5a6f357a07b2f73282',
+  'compose/2':
+      '91x48:4b6727cde8e0f27f18c4ed1e8e2a1114c1aca32cbe59a7d2f6666c44ccfa3ce9',
+  'compose/3':
+      '623x145:3cdf70e70bb2759494926dd4d88a1cbaf717df9ae5c9263084a17120d4a5064b',
+  'compose/4':
+      '412x107:0a0c389a4d6fd2522f9c9c982ead97279abc6fdba33b58e5e1550753fbedd677',
+  'compose/5':
+      '96x43:84cf85820bb00a80b9409dfc27c3fedd01907984292a2f85c8500c39331a18b3',
+  'compose/6':
+      '403x193:ceca855a25768d1c8340b4dfd7dec944ebc00b66f4fd03a881f9842c45edcd64',
+  'compose/7':
+      '327x114:531af747848b6dcb7f1d3e7b3a02d5204a4841904a9e5c853f496dfa35309c06',
+};

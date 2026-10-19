@@ -8,7 +8,7 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 import '../event_store.dart';
 import '../field_edit.dart' show srsCanonicalJson;
@@ -34,7 +34,7 @@ Uint8List _encode(Map<String, Object?> header, List<int> body) {
     ...header,
     'fv': srsSyncFormatVersion,
     'len': body.length,
-    'sha256': sha256.convert(body).toString(),
+    'sha256': ffcSha256Bytes(body),
   };
   final BytesBuilder b = BytesBuilder(copy: false)
     ..add(utf8.encode(srsCanonicalJson(h)))
@@ -57,7 +57,7 @@ Uint8List _encode(Map<String, Object?> header, List<int> body) {
   final Object? len = header['len'];
   final Uint8List body = Uint8List.sublistView(bytes, nl + 1);
   if (len is! int || body.length != len) return null;
-  if (sha256.convert(body).toString() != header['sha256']) return null;
+  if (ffcSha256Bytes(body) != header['sha256']) return null;
   return (header.cast<String, Object?>(), body);
 }
 

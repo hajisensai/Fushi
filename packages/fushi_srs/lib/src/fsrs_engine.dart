@@ -194,3 +194,46 @@ abstract interface class FsrsEngine {
     required List<List<SrsFsrsReview>> items,
   });
 }
+
+/// 能一次算完一批卡可提取度的引擎（[FfiFsrsEngine]）。单独成接口，测试替身照旧只实现
+/// [FsrsEngine]，经 [srsRetrievabilityBatch] 退回逐张调用。
+abstract interface class FsrsBatchEngine implements FsrsEngine {
+  /// 同一组参数下逐张的可提取度，与逐张调 [FsrsEngine.retrievability] 结果一致。
+  /// [memories] 与 [elapsedDays] 等长。
+  List<double> retrievabilityBatch({
+    required SrsAlgorithm algorithm,
+    required List<double> params,
+    required List<SrsMemory> memories,
+    required List<double> elapsedDays,
+  });
+}
+
+/// 批量可提取度：[engine] 支持批量就一次调用，否则逐张调用。
+List<double> srsRetrievabilityBatch(
+  FsrsEngine engine, {
+  required SrsAlgorithm algorithm,
+  required List<double> params,
+  required List<SrsMemory> memories,
+  required List<double> elapsedDays,
+}) {
+  if (memories.length != elapsedDays.length) {
+    throw ArgumentError('memories and elapsedDays differ in length');
+  }
+  if (engine is FsrsBatchEngine) {
+    return engine.retrievabilityBatch(
+      algorithm: algorithm,
+      params: params,
+      memories: memories,
+      elapsedDays: elapsedDays,
+    );
+  }
+  return <double>[
+    for (int i = 0; i < memories.length; i++)
+      engine.retrievability(
+        algorithm: algorithm,
+        params: params,
+        memory: memories[i],
+        elapsedDays: elapsedDays[i],
+      ),
+  ];
+}

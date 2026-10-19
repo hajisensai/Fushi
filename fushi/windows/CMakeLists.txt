@@ -139,8 +139,9 @@ endif()
 # isolate 里抛异常，而那个 worker 的 execute() 没有 try/catch（pdfrx_engine 的
 # worker.dart），回包 SendPort.send 永不执行 → 主 isolate 的 await 永不完成。
 #
-# sqlite3.dll 掩盖过这个缺口：它同时由 sqlite3_flutter_libs 走 PLUGIN_BUNDLED_LIBRARIES
-# 装进 bundle，所以 native-assets 这条通道从来没通过也看不出来。
+# sqlite3.dll 曾掩盖过这个缺口：它当时同时由 sqlite3_flutter_libs 走
+# PLUGIN_BUNDLED_LIBRARIES 装进 bundle，所以 native-assets 这条通道从来没通过也看不出来。
+# 该插件已移除，sqlite3.dll 现在也只经这条 native-assets 通道进 bundle。
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"
    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
@@ -201,6 +202,22 @@ if(EXISTS "${FUSHI_FSRS_DLL}")
   install(FILES "${FUSHI_FSRS_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# === 计算内核（哈希 / 图像 / 文本，**硬依赖**）===
+# native/fushi_compute/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_compute.dll，
+# 随包到 exe 同级（Dart 侧 packages/fushi_compute 的 FushiCompute 按 exe 同级定位）。
+# 与上面几个 copy-if-present 不同：没有 Dart 回退实现，缺库时在配置期直接失败（任何配置都是，
+# Debug 也不例外）。新 worktree 由 tool/bootstrap.ps1 编好它。
+set(FUSHI_COMPUTE_DLL
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_compute/prebuilt/windows-x64/fushi_compute.dll")
+if(NOT EXISTS "${FUSHI_COMPUTE_DLL}")
+  message(FATAL_ERROR
+    "fushi_compute is a required native dependency, but ${FUSHI_COMPUTE_DLL} is missing. "
+    "Build it first: powershell -ExecutionPolicy Bypass -File native/fushi_compute/build_windows_dll.ps1 "
+    "(needs Rust/cargo; tool/bootstrap.ps1 runs it for new worktrees).")
+endif()
+install(FILES "${FUSHI_COMPUTE_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
 
 # Debug builds may intentionally omit the expensive libtorrent prebuild so UI
 # work stays lightweight. A Profile/Release bundle, however, must never be

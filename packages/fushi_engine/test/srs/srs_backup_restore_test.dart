@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -688,6 +689,12 @@ void main() {
         .where((String n) => n != 'index.json')
         .toList();
     expect(pooled, hasLength(2), reason: '两份备份共用同一份媒体');
+    // 池文件名 = 内容 SHA-256（native/fushi_compute 算）；与 package:crypto 对拍，
+    // 保证改 Rust 前写下的池 / 清单仍按同一个名字找得到。
+    expect(pooled.toSet(), <String>{
+      crypto.sha256.convert(<int>[1, 2, 3]).toString(),
+      crypto.sha256.convert(<int>[4, 5]).toString(),
+    });
     expect(b2.totalBytes, greaterThan(b2.fileBytes));
 
     final File exported = await bs.exportSelfContained(

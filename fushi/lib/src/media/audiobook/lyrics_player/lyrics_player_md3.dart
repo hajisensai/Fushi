@@ -415,7 +415,6 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
       alignStart: true,
       contextBlurPx: 0,
       rowRadius: 16,
-      hoverFill: cs.onSurface.withValues(alpha: 0.08),
       // 已读句再退一档（M3E：读过的退到背景、要读的更清楚）。
       pastOpacityFactor: 0.7,
     );

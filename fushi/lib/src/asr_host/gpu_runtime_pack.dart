@@ -26,11 +26,10 @@
 library;
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:path/path.dart' as p;
 
@@ -424,29 +423,32 @@ class GpuRuntimeStore {
   ) async {
     final File target = File(p.join(dir.path, m.fileName));
     final File part = File('${target.path}.part');
-    final _DigestSink digestSink = _DigestSink();
-    final ByteConversionSink hasher = sha256.startChunkedConversion(digestSink);
+    final FfcSha256Hasher hasher = FfcSha256Hasher.create();
     final IOSink out = part.openWrite();
     int size = 0;
+    final String digest;
     try {
-      final Stream<List<int>> raw = deflated.openRead();
-      final Stream<List<int>> data = method == 8
-          ? raw.transform(ZLibDecoder(raw: true))
-          : raw;
-      await for (final List<int> chunk in data) {
-        size += chunk.length;
-        hasher.add(chunk);
-        out.add(chunk);
+      try {
+        final Stream<List<int>> raw = deflated.openRead();
+        final Stream<List<int>> data = method == 8
+            ? raw.transform(ZLibDecoder(raw: true))
+            : raw;
+        await for (final List<int> chunk in data) {
+          size += chunk.length;
+          hasher.add(chunk);
+          out.add(chunk);
+        }
+      } on FormatException catch (error) {
+        await out.close();
+        await _deleteQuietly(part);
+        await _deleteQuietly(deflated);
+        throw GpuRuntimeCorruptException('${m.path} 解压失败：$error');
       }
-    } on FormatException catch (error) {
       await out.close();
-      await _deleteQuietly(part);
-      await _deleteQuietly(deflated);
-      throw GpuRuntimeCorruptException('${m.path} 解压失败：$error');
+      digest = hasher.finishHex();
+    } finally {
+      hasher.close();
     }
-    await out.close();
-    hasher.close();
-    final String digest = digestSink.value.toString();
     if (size != m.bytes || digest != m.sha256) {
       await _deleteQuietly(part);
       await _deleteQuietly(deflated);
@@ -483,14 +485,6 @@ Future<void> _deleteQuietly(File f) async {
   } on FileSystemException {
     // 删不掉的残留下次安装会覆盖。
   }
-}
-
-class _DigestSink implements Sink<Digest> {
-  late Digest value;
-  @override
-  void add(Digest data) => value = data;
-  @override
-  void close() {}
 }
 
 /// 中央目录里的一个条目。

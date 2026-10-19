@@ -544,9 +544,9 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
       final files = list.files?.map(_toSyncFileRef).toList() ?? [];
       return SyncFileTrio(
-        progress: _findByPrefix(files, 'progress_'),
-        statistics: _findByPrefix(files, 'statistics_'),
-        audioBook: _findByPrefix(files, 'audioBook_'),
+        progress: findSyncFileByPrefix(files, 'progress_'),
+        statistics: findSyncFileByPrefix(files, 'statistics_'),
+        audioBook: findSyncFileByPrefix(files, 'audioBook_'),
       );
     });
   }
@@ -865,11 +865,4 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
   static SyncFileRef _toSyncFileRef(drive.File f) =>
       SyncFileRef(id: f.id!, name: f.name!);
-
-  static SyncFileRef? _findByPrefix(List<SyncFileRef> files, String prefix) {
-    for (final f in files) {
-      if (f.name.startsWith(prefix)) return f;
-    }
-    return null;
-  }
 }

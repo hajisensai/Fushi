@@ -12,6 +12,8 @@
 /// 全部纯函数，不碰磁盘/网络/DB；时长由调用方提供（ffprobe 或刮削 runtime）。
 library;
 
+import 'package:fushi_compute/fushi_compute.dart';
+
 /// 视频时长的来源——决定容差，因为两者精度差一个量级。
 enum VideoDurationSource {
   /// ffprobe / `ffmpeg -i` 探到的真实容器时长。精确到秒。
@@ -170,76 +172,24 @@ SubtitleTimingCheck checkSubtitleTiming(
 ///
 /// 为什么不复用 `parseSubtitleContentAsync`：那条路要 bookUid、要建 cue 行、走
 /// isolate，为了拿两个数字把整套 DB 语义拖进来。这里要的只是「最后一句结束在
-/// 哪」，一次正则扫描就够，而且是纯函数、能在任何地方单测。
+/// 哪」，一次扫描就够，而且是纯函数、能在任何地方单测。
 ///
 /// 覆盖三种真实格式的时间轴写法：
 /// - srt：`00:01:02,345 --> 00:01:05,678`
 /// - vtt：`00:01:02.345 --> 00:01:05.678`（也允许省略小时的 `01:02.345`）
-/// - ass/ssa：`Dialogue: 0,0:01:02.34,0:01:05.67,Default,...`
+/// - ass/ssa：`Dialogue: 0,0:01:02.34,0:01:05.67,Default,...`（只在前两种一条都没有时扫）
+///
+/// 扫描本体在 Rust（`native/fushi_compute/src/parse/subtitle_timing.rs`，原 Dart 正则与
+/// `_parseClock` 的逐条照搬），原生库是硬依赖。
 SubtitleTimingSummary summarizeSubtitleTiming(String content) {
-  if (content.trim().isEmpty) return SubtitleTimingSummary.empty;
-  int count = 0;
-  int? first;
-  int last = 0;
-
-  void record(int startMs, int endMs) {
-    count++;
-    if (first == null || startMs < first!) first = startMs;
-    if (endMs > last) last = endMs;
-  }
-
-  for (final RegExpMatch match in _arrowTiming.allMatches(content)) {
-    final int? start = _parseClock(match.group(1)!);
-    final int? end = _parseClock(match.group(2)!);
-    if (start == null || end == null) continue;
-    record(start, end);
-  }
-  if (count == 0) {
-    for (final RegExpMatch match in _assDialogue.allMatches(content)) {
-      final int? start = _parseClock(match.group(1)!);
-      final int? end = _parseClock(match.group(2)!);
-      if (start == null || end == null) continue;
-      record(start, end);
-    }
-  }
-  if (count == 0) return SubtitleTimingSummary.empty;
+  final ({int cueCount, int firstStartMs, int lastEndMs}) r =
+      SubtitleTimingNative.instance.summarize(content);
+  if (r.cueCount == 0) return SubtitleTimingSummary.empty;
   return SubtitleTimingSummary(
-    cueCount: count,
-    firstStartMs: first ?? 0,
-    lastEndMs: last,
+    cueCount: r.cueCount,
+    firstStartMs: r.firstStartMs,
+    lastEndMs: r.lastEndMs,
   );
-}
-
-/// srt / vtt 的 `起 --> 止`。小时段可选（vtt 允许 `MM:SS.mmm`）。
-final RegExp _arrowTiming = RegExp(
-  r'(\d{1,3}:[0-5]?\d:[0-5]?\d[.,]\d{1,3}|[0-5]?\d:[0-5]?\d[.,]\d{1,3})'
-  r'\s*-->\s*'
-  r'(\d{1,3}:[0-5]?\d:[0-5]?\d[.,]\d{1,3}|[0-5]?\d:[0-5]?\d[.,]\d{1,3})',
-);
-
-/// ass/ssa 的 `Dialogue: <layer>,<start>,<end>,...`（首字段是层号，不是时间）。
-final RegExp _assDialogue = RegExp(
-  r'^\s*Dialogue\s*:[^,]*,\s*'
-  r'(\d{1,3}:[0-5]?\d:[0-5]?\d[.,]\d{1,3})\s*,\s*'
-  r'(\d{1,3}:[0-5]?\d:[0-5]?\d[.,]\d{1,3})\s*,',
-  multiLine: true,
-);
-
-/// `[HH:]MM:SS[.,]mmm` → 毫秒。小数位不足 3 位按左对齐补零（ass 的 `.34` = 340ms）。
-int? _parseClock(String raw) {
-  final List<String> head = raw.split(RegExp(r'[.,]'));
-  if (head.length != 2) return null;
-  final List<String> parts = head[0].split(':');
-  if (parts.length < 2 || parts.length > 3) return null;
-  final List<int?> nums = parts.map(int.tryParse).toList();
-  if (nums.any((int? v) => v == null)) return null;
-  final int hours = parts.length == 3 ? nums[0]! : 0;
-  final int minutes = parts.length == 3 ? nums[1]! : nums[0]!;
-  final int seconds = parts.length == 3 ? nums[2]! : nums[1]!;
-  final String fractionRaw = head[1].padRight(3, '0').substring(0, 3);
-  final int? fraction = int.tryParse(fractionRaw);
-  if (fraction == null) return null;
-  return ((hours * 60 + minutes) * 60 + seconds) * 1000 + fraction;
 }
 
 String _mmss(int ms) {
