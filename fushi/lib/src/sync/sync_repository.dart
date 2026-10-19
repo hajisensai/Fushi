@@ -1794,6 +1794,12 @@ class SyncRepository {
     // 漫画 OCR 大模型档位：开了就是「上传漫画页 + 按量计费」，这种同意只对点它的
     // 那台设备成立，漂过去会让另一台配了 AI 的设备静默开始上传。
     'manga_ocr_ai_mode',
+    // 视频日语字幕的 AI 校对开关与「会发送什么」的同意：与上一条同理，只对点它的
+    // 那台设备成立。分段方式 / MOSS 后端取决于这台机器的显卡，换设备没有意义。
+    'video_subtitle_ai_proofread',
+    'video_subtitle_ai_consented',
+    'video_subtitle_segmenter',
+    'video_subtitle_moss_backend',
     // 已删除的「查词自动按句意挑词条」开关（2026-10-09 移除）：存量值仍是
     // 设备本地的计费同意，留在清单里免得旧备份把它漂到别的设备。
     'lookup_ai_context_auto',

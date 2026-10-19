@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-共享核心模块：定义 Drift SQLite 数据库 schema（当前 schemaVersion=118；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照。v82：ReaderPositions/Bookmarks/BookCustomCss/RevealedImages 书键从 bookKey 切稳定 uid；v90：网页播放器自动制卡队列 `web_mine_queue`；v114：收藏词上下文；v115：排行榜 isbn / completedAt；v116：设备端待发制卡队列 `pending_mine_queue`；v117：Fushi SRS——`profiles.uid` 全局身份 + 八张 `srs_*` 表；v118：`epub_books` / `srt_books` / `video_books` 加 `localAddedAt`——本机开始拥有的时刻，与原始入库时刻 `importedAt` 拆开，删除墓碑仲裁与首页「最近添加」读它，设备本地不进 wire）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
+共享核心模块：定义 Drift SQLite 数据库 schema（当前 schemaVersion=119；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照。v82：ReaderPositions/Bookmarks/BookCustomCss/RevealedImages 书键从 bookKey 切稳定 uid；v90：网页播放器自动制卡队列 `web_mine_queue`；v114：收藏词上下文；v115：排行榜 isbn / completedAt；v116：设备端待发制卡队列 `pending_mine_queue`；v117：Fushi SRS——`profiles.uid` 全局身份 + 八张 `srs_*` 表；v118：`epub_books` / `srt_books` / `video_books` 加 `localAddedAt`——本机开始拥有的时刻，与原始入库时刻 `importedAt` 拆开，删除墓碑仲裁与首页「最近添加」读它，设备本地不进 wire；v119：`video_metadata_characters.originalName`（角色日文原名）+ 视频字幕 AI 校对作品级专名表 `video_subtitle_glossaries`）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
 
 ## 入口与启动
 
@@ -26,7 +26,7 @@
 
 ## 数据模型
 
-98 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
+99 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
 
 | 分组 | 表名 |
 |------|------|
@@ -45,7 +45,7 @@
 | 标签 | `BookTags`, `TagAssignments`（v77 五张映射表合一，宿主逻辑外键） |
 | Profile | `Profiles`, `ProfileSettings`, `MediaTypeProfiles`, `BookProfiles` |
 | 同步基线 | `SyncBaselines` |
-| 视频 | `VideoBooks`, `VideoWatchStatistics`, `VideoHourlyLogs` |
+| 视频 | `VideoBooks`, `VideoWatchStatistics`, `VideoHourlyLogs`, `VideoSubtitleGlossaries`（v119 字幕 AI 校对专名表，随备份「视频」类别，不进合并导入） |
 | 收藏/制卡 | `FavoriteWords`, `MiningStatistics`, `MinedSentences`, `LookupMiningCounters`, `WebMineQueue`, `PendingMineQueue`（后两张设备本地） |
 | 合集/系列 | `MediaCollections`, `MediaCollectionItems`, `CollectionBookAliases`, `Series`, `ShelfEntries` |
 | 互联 | `FushiPairedPeers` |

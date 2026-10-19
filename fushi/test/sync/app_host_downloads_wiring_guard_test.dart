@@ -23,6 +23,11 @@ void main() {
     expect(src, contains('hostJobsFactory: () async {'));
     expect(src, contains('AsrHostJobRunner('),
         reason: '通用任务面至少要挂 ASR runner，否则 /api/jobs 的 kinds 为空');
+    expect(src, contains('VideoSubtitleHostJobRunner('),
+        reason: '视频字幕管线任务（kind video_subtitle）app 与 fushi_server 两端都要挂，'
+            '少挂一端对端就看不到「在电脑上生成字幕」');
+    expect(src, contains('resolveAppVideoSubtitleRecognizer('),
+        reason: 'host 任务挑识别器必须走 asr_host.dart 的同一份装配（子进程登记表）');
   });
 
   test('FushiSyncServerController 把三面传给 FushiSyncServer', () {

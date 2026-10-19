@@ -22,8 +22,10 @@ cd "$SCRIPT_DIR"
 echo "==> cargo rustc --release --lib --target $target --crate-type cdylib (MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET)"
 # CARGO_PROFILE_RELEASE_STRIP=false：cargo（rustc）strip 出来的 dylib 在新工具链的 macOS 上加载即报
 # 「mis-aligned LINKEDIT string pool」（实测 macOS 27.2 / Xcode 27.1 / rustc 1.95），verify_abi.sh 的
-# 符号核对查不出来。改由下面 Apple 的 /usr/bin/strip -x 去本地符号（它会补齐对齐；写绝对路径免得 PATH 上的
-# llvm-strip 顶替），体积与 cargo strip 相当。verify_abi.sh 另有与 runner 系统无关的 LINKEDIT 对齐检查。
+# 符号核对查不出来。改由下面 Apple 的 /usr/bin/strip -x 去本地符号（Xcode 27 的实测会补齐，更旧 Xcode 的
+# 不保证——2026-10-19 macos-latest 出包 stroff mod 8 = 4；写绝对路径免得 PATH 上的 llvm-strip 顶替），
+# 体积与 cargo strip 相当。verify_abi.sh 按二进制自己记录的链接 SDK 判 LINKEDIT 对齐：SDK ≥ 27
+# （dyld 会校验）未对齐即红，更旧 SDK 只告警。
 CARGO_PROFILE_RELEASE_STRIP=false cargo rustc --release --lib --target "$target" --crate-type cdylib
 built="target/$target/release/libfushi_fsrs.dylib"
 [[ -f "$built" ]] || { echo "missing $built" >&2; exit 1; }

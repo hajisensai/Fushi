@@ -15,11 +15,17 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart' show FushiDicts;
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
+import 'package:fushi_asr_core/asr_core.dart' as asr show AsrAudioProfile;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show videoSubtitleJobsRootUnder;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
@@ -37,6 +43,7 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_server/src/anki_landing.dart';
+import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/assistant_host.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
@@ -219,8 +226,20 @@ class HeadlessHost {
       jobRoot: paths.hostJobs,
       runners: <HostJobRunner>[
         AsrHostJobRunner(
-          serviceFactory: createServerAsrTranscriptionService,
+          serviceFactory: (asr.AsrAudioProfile profile) =>
+              createServerAsrTranscriptionService(audioProfile: profile),
           resolveVideoPath: _resolveVideoPath,
+        ),
+        // 视频日语字幕管线（MOSS / 滑窗识别 + AI 校对 + 导出）。AI 用配置 `ai:` 段那一家
+        // （ServerAiSettings 把字幕校对指给它）；管线缓存与 `subgen` 命令共用一个根。
+        VideoSubtitleHostJobRunner(
+          resolveRecognizer: (VideoSubtitleSegmenterMode mode, MossBackendPreference mossBackend) =>
+              resolveServerVideoSubtitleRecognizer(mode: mode, mossBackend: mossBackend),
+          pipelineJobsRoot: videoSubtitleJobsRootUnder(paths.support),
+          database: () => db,
+          resolveVideoPath: _resolveVideoPath,
+          aiSettings: () => ServerAiSettings(() => config.ai),
+          mossStatus: (MossBackendPreference backend) => mossProvisionStatus(backend: backend),
         ),
       ],
     );

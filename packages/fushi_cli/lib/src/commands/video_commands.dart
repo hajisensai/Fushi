@@ -3,6 +3,7 @@ import 'package:args/args.dart';
 import '../ctl_commands.dart';
 import 'settings_ops_commands.dart' show videoSettingsOpsCommands;
 import 'video_player_commands.dart';
+import 'video_subtitle_commands.dart';
 
 /// video 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_video_routes.dart`）：
 /// 视频库刮削（作品列表 / 重刮 / 回答待确认 / 手动候选 / 手动指定身份）、视频发现
@@ -10,7 +11,7 @@ import 'video_player_commands.dart';
 const List<CtlCommandGroup> videoCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'video',
-    summary: '视频库刮削与确认、视频发现下载、播放页控制（音轨 / 字幕 / 制卡 / 片段）',
+    summary: '视频库刮削与确认、视频发现下载、播放页控制（音轨 / 字幕 / 制卡 / 片段）、生成日语字幕',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'works',
@@ -89,6 +90,7 @@ const List<CtlCommandGroup> videoCommandGroups = <CtlCommandGroup>[
         render: _renderGet,
       ),
       ...videoPlayerCommands,
+      ...videoSubtitleCommands,
       ...videoSettingsOpsCommands,
     ],
   ),

@@ -55,6 +55,8 @@ import 'package:fushi_engine/ai/ai_key_rotation.dart'
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart'
+    show MossBackendPreference, VideoSubtitleSegmenterMode;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
@@ -2768,6 +2770,63 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoSubtitleBackfillAfterScrape(bool enabled) async {
     await setPref('video_subtitle_backfill_after_scrape', enabled);
+    notifyListeners();
+  }
+
+  /// 生成日语字幕时是否用 AI 校对（spec `2026-10-19-video-asr-llm-subtitle-pipeline`
+  /// 第 7 节：**默认关**）。设备本地：开着就是「把 ASR 文本与专名表发给所选
+  /// 提供商并按量计费」，这种同意只对点它的那台设备成立。
+  bool get videoSubtitleAiProofread =>
+      getPref('video_subtitle_ai_proofread', defaultValue: false) as bool;
+
+  Future<void> setVideoSubtitleAiProofread(bool enabled) async {
+    await setPref('video_subtitle_ai_proofread', enabled);
+    notifyListeners();
+  }
+
+  /// 用户是否已看过并同意「AI 校对会发送什么」的说明（首次开启 AI 校对时弹一次；
+  /// CLI 用 `--consent-ai` 写同一个键）。设备本地，理由同上。
+  bool get videoSubtitleAiConsented =>
+      getPref('video_subtitle_ai_consented', defaultValue: false) as bool;
+
+  Future<void> setVideoSubtitleAiConsented(bool consented) async {
+    await setPref('video_subtitle_ai_consented', consented);
+    notifyListeners();
+  }
+
+  /// 生成日语字幕的分段方式（`VideoSubtitleSegmenterMode.name`：auto / moss /
+  /// window）；不认识的值按 auto。设备本地：能不能跑 MOSS 取决于这台机器的显卡。
+  VideoSubtitleSegmenterMode get videoSubtitleSegmenter {
+    final String raw =
+        getPref('video_subtitle_segmenter', defaultValue: 'auto') as String;
+    return VideoSubtitleSegmenterMode.values.firstWhere(
+      (VideoSubtitleSegmenterMode m) => m.name == raw,
+      orElse: () => VideoSubtitleSegmenterMode.auto,
+    );
+  }
+
+  Future<void> setVideoSubtitleSegmenter(
+    VideoSubtitleSegmenterMode mode,
+  ) async {
+    await setPref('video_subtitle_segmenter', mode.name);
+    notifyListeners();
+  }
+
+  /// MOSS（audio.cpp）的推理后端偏好（`MossBackendPreference.name`：auto / cuda /
+  /// vulkan / cpu）；不认识的值按 auto。设备本地，理由同上。
+  MossBackendPreference get videoSubtitleMossBackend {
+    final String raw =
+        getPref('video_subtitle_moss_backend', defaultValue: 'auto') as String;
+    return MossBackendPreference.values.firstWhere(
+      (MossBackendPreference b) => b.name == raw,
+      orElse: () => MossBackendPreference.auto,
+    );
+  }
+
+  Future<void> setVideoSubtitleMossBackend(
+    MossBackendPreference backend,
+  ) async {
+    await setPref('video_subtitle_moss_backend', backend.name);
     notifyListeners();
   }
 

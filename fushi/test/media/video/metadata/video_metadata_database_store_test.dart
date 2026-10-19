@@ -568,6 +568,7 @@ void main() {
                     ),
                     character: VideoMetadataCharacter(
                       name: 'Hero',
+                      originalName: '主人公',
                       description: 'Character description',
                       ids: const <VideoMetadataId>[
                         VideoMetadataId(type: 'tmdb', value: 'character-1'),
@@ -617,6 +618,7 @@ void main() {
     final VideoMetadataCharacterRow character =
         (await database.getVideoMetadataCharacter(credit.characterKey!))!;
     expect(character.description, 'Character description');
+    expect(character.originalName, '主人公', reason: 'v119 起角色日文原名落列');
   });
 
   test('人物 / 角色重复写入只补空不抹掉已有照片与简介（BUG-2612）', () async {
@@ -630,7 +632,11 @@ void main() {
           ],
           credits: credits,
         );
-    VideoMetadataCredit credit({String? photo, String? characterImage}) =>
+    VideoMetadataCredit credit({
+      String? photo,
+      String? characterImage,
+      String? characterKanji,
+    }) =>
         VideoMetadataCredit(
           kind: VideoMetadataCreditKind.voiceActor,
           person: VideoMetadataPerson(
@@ -643,6 +649,7 @@ void main() {
           ),
           character: VideoMetadataCharacter(
             name: 'Hero',
+            originalName: characterKanji,
             imageUrl: characterImage,
             ids: const <VideoMetadataId>[
               VideoMetadataId(type: 'mal', value: 'c1'),
@@ -655,7 +662,9 @@ void main() {
       localWork,
       work(<VideoMetadataCredit>[
         credit(
-            photo: 'https://img/p1.jpg', characterImage: 'https://img/c1.jpg'),
+            photo: 'https://img/p1.jpg',
+            characterImage: 'https://img/c1.jpg',
+            characterKanji: '主人公'),
       ]),
     );
     // 第二轮同一人同一角色但没带图（AniDB 职员 / NFO 回灌 / 占位归 null）。
@@ -672,6 +681,8 @@ void main() {
     final VideoMetadataCharacterRow character =
         (await database.getVideoMetadataCharacter(creditRow.characterKey!))!;
     expect(character.imageUrl, 'https://img/c1.jpg');
+    // 第二轮没取到日文名（MAL 只给主要角色取详情 / 详情被限流）不冲掉第一轮的。
+    expect(character.originalName, '主人公');
 
     // 带了新图则照常更新。
     await store.apply(
