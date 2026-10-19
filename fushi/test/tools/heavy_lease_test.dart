@@ -156,6 +156,63 @@ void main() {
     b.release();
   });
 
+  // A session started with a larger FUSHI_HEAVY_SLOTS holds slots past our
+  // count; they are not ours to take, but they book memory all the same.
+  test(
+    'a slot held past this process\'s slot count still books the budget',
+    () async {
+      final String? dart = _dartExecutable();
+      if (dart == null) {
+        markTestSkipped('no dart executable to hold a slot in a child');
+        return;
+      }
+      final Directory state = Directory('${tmp.path}/state')
+        ..createSync(recursive: true);
+      File('${state.path}/slot-5.json').writeAsStringSync(
+        '{"pid":1,"startedAt":1,"label":"wide session","cwd":"","capMb":24576}',
+      );
+      final File holder = File('${tmp.path}/hold.dart')
+        ..writeAsStringSync(_holdLockScript);
+      final Process child = await Process.start(dart, <String>[
+        holder.path,
+        '${state.path}/slot-5.lock',
+      ]);
+      try {
+        await child.stdout
+            .transform(const SystemEncoding().decoder)
+            .firstWhere((String l) => l.contains('locked'))
+            .timeout(const Duration(seconds: 60));
+        expect(readHeavyHolders(state, 2).map((HeavyHolder h) => h.slot), <int>[
+          5,
+        ]);
+        await expectLater(
+          take(2, kind: HeavyKind.test),
+          throwsA(
+            isA<HeavyLeaseTimeout>().having(
+              (HeavyLeaseTimeout e) => e.message,
+              'message',
+              allOf(
+                contains('24576 MB booked + 12288 MB > 32768 MB'),
+                contains('wide session'),
+              ),
+            ),
+          ),
+        );
+        // An analyze fits next to it, in one of our own slots.
+        final HeavyLease a = await take(2);
+        expect(a.slot, 0);
+        a.release();
+      } finally {
+        await child.stdin.close();
+        await child.exitCode.timeout(const Duration(seconds: 30));
+      }
+      final HeavyLease t = await take(2, kind: HeavyKind.test);
+      expect(t.slot, 0);
+      t.release();
+    },
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
+
   test(
     'build/-writers of one worktree run one at a time; analyze does not',
     () async {

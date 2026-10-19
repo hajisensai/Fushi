@@ -126,7 +126,13 @@ void _status() {
   final int slots = heavySlotCount(m);
   final Directory dir = heavyStateDir()..createSync(recursive: true);
   final List<HeavyHolder> holders = readHeavyHolders(dir, slots);
-  stdout.writeln('heavy: ${holders.length}/$slots slots busy (${dir.path})');
+  final int ours = holders.where((HeavyHolder h) => h.slot < slots).length;
+  final int beyond = holders.length - ours;
+  stdout.writeln(
+    'heavy: $ours/$slots slots busy'
+    '${beyond > 0 ? ' (+$beyond past this slot count, booked below)' : ''}'
+    ' (${dir.path})',
+  );
   final int? budget = heavyBudgetMb(m);
   if (budget != null) {
     final int booked = holders.fold(

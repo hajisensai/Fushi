@@ -86,6 +86,35 @@ void main() {
       expect(kind(<String>[]), HeavyKind.other);
     });
 
+    // Wrapped in heavy.dart these tools take no lease of their own and their
+    // Job Object nests inside the wrapper's, so the wrapper books and caps
+    // for them: exactly their own ceiling, neither the generic 16 GB nor
+    // less than pre_push_check --parallel needs.
+    test('lease-taking repo tools are booked at their own ceiling', () {
+      int cap(List<String> argv) => classifyHeavyCommand(argv).capMb;
+      final int test = heavyNeedFor(HeavyKind.test).capMb;
+      final int analyze = heavyNeedFor(HeavyKind.analyze).capMb;
+      expect(cap(<String>['dart', 'tool/pre_push_check.dart']), test);
+      expect(
+        cap(<String>['dart', 'run', r'tool\pre_push_check.dart', '--parallel']),
+        test + analyze,
+      );
+      expect(prePushCheckCapMb(parallel: true), test + analyze);
+      expect(
+        cap(<String>['dart.exe', 'tool/flutter_test_failures.dart', '--x=1']),
+        test,
+      );
+      final HeavyNeed ftf = classifyHeavyCommand(<String>[
+        'dart',
+        'tool/flutter_test_failures.dart',
+      ]);
+      expect(ftf.kind, HeavyKind.test);
+      expect(ftf.worktreeExclusive, isTrue);
+      // Any other dart script / `dart run` of one stays as before.
+      expect(kind(<String>['dart', 'tool/i18n_sync.dart']), HeavyKind.other);
+      expect(kind(<String>['dart', 'run', 'slang']), HeavyKind.build);
+    });
+
     test('only analyze may share a worktree; every kind has a ceiling', () {
       for (final HeavyKind k in HeavyKind.values) {
         final HeavyNeed n = heavyNeedFor(k);

@@ -89,6 +89,10 @@ HeavyNeed classifyHeavyCommand(List<String> argv) {
   if (exe == 'flutter' || exe == 'dart' || exe == 'fvm') {
     // `fvm flutter test` / `fvm dart analyze`: classify the inner tool.
     if (exe == 'fvm' && rest.isNotEmpty) return classifyHeavyCommand(rest);
+    if (exe == 'dart') {
+      final HeavyNeed? leased = _leasedDartTool(rest);
+      if (leased != null) return leased;
+    }
     switch (verb) {
       case 'test':
         return _test;
@@ -106,6 +110,43 @@ HeavyNeed classifyHeavyCommand(List<String> argv) {
   final String line = argv.join(' ').toLowerCase();
   if (line.contains('run_windows_itest')) return _build;
   return _other;
+}
+
+/// The memory ceiling pre_push_check gives its own tree: one test batch, plus
+/// an analyze when `--parallel` runs it alongside.
+int prePushCheckCapMb({required bool parallel}) =>
+    _test.capMb + (parallel ? _analyze.capMb : 0);
+
+/// The need of a repo tool that takes the heavy lease itself
+/// (`dart [run] tool/pre_push_check.dart ...`,
+/// `dart [run] tool/flutter_test_failures.dart ...`), or null for any other
+/// dart command.
+///
+/// Wrapped in tool/heavy.dart such a tool sees the wrapper's lease and takes
+/// none of its own, and its own Job Object nests inside the wrapper's, whose
+/// ceiling then binds the whole tree. So the wrapper must book and cap
+/// exactly what the tool would have: classifying it as "other" (16 GB)
+/// over-booked flutter_test_failures (12 GB) and under-capped
+/// `pre_push_check --parallel` (20 GB).
+HeavyNeed? _leasedDartTool(List<String> rest) {
+  final List<String> positional =
+      rest.where((String a) => !a.startsWith('-')).toList();
+  if (positional.isEmpty) return null;
+  final String script =
+      positional.first.toLowerCase() == 'run' && positional.length > 1
+          ? positional[1]
+          : positional.first;
+  switch (_base(script)) {
+    case 'pre_push_check':
+      return HeavyNeed(
+        kind: HeavyKind.test,
+        capMb: prePushCheckCapMb(parallel: rest.contains('--parallel')),
+        worktreeExclusive: true,
+      );
+    case 'flutter_test_failures':
+      return _test;
+  }
+  return null;
 }
 
 /// Test-runner processes a `flutter test` gets when the caller did not pick
