@@ -26,10 +26,10 @@ void main() {
   });
 
   Map<String, String> env(int slots, {int? budgetMb}) => <String, String>{
-        'FUSHI_HEAVY_DIR': '${tmp.path}/state',
-        'FUSHI_HEAVY_SLOTS': '$slots',
-        if (budgetMb != null) 'FUSHI_HEAVY_BUDGET_MB': '$budgetMb',
-      };
+    'FUSHI_HEAVY_DIR': '${tmp.path}/state',
+    'FUSHI_HEAVY_SLOTS': '$slots',
+    if (budgetMb != null) 'FUSHI_HEAVY_BUDGET_MB': '$budgetMb',
+  };
 
   Future<HeavyLease> take(
     int slots, {
@@ -38,17 +38,23 @@ void main() {
     MemorySnapshot memory = roomy,
     int? budgetMb,
     Duration? waitMax = const Duration(seconds: 1),
-  }) =>
-      acquireHeavyLease(
-        need: heavyNeedFor(kind),
-        label: 'lease-${kind.name}',
-        worktreeRoot: worktree,
-        waitMax: waitMax,
-        environment: env(slots, budgetMb: budgetMb),
-        readMemory: () => memory,
-        poll: const Duration(milliseconds: 50),
-        log: (_) {},
-      );
+  }) async {
+    final HeavyLease lease = await acquireHeavyLease(
+      need: heavyNeedFor(kind),
+      label: 'lease-${kind.name}',
+      worktreeRoot: worktree,
+      waitMax: waitMax,
+      environment: env(slots, budgetMb: budgetMb),
+      readMemory: () => memory,
+      poll: const Duration(milliseconds: 50),
+      log: (_) {},
+    );
+    // Slots held in this process stay marked in-process until released; a
+    // test failing before its own release() must not leak them into the
+    // following tests (release() is idempotent).
+    addTearDown(lease.release);
+    return lease;
+  }
 
   test(
     'a full machine refuses (never "runs anyway") and names the holder',
