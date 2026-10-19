@@ -30,3 +30,5 @@
 - **备注**：没有流水线实例时的「库侧删视频 → 对账任务」路径（`reconcileVideoDownloadJobsAfterLocalDelete`
   的 pipeline==null 分支）拿不到核对过身份的绑定，按「仅同机」解释；远端任务在这种情况下只按
   `finalAbsolutePath` 精确删，`observedSavePath` 兜底不走（安全方向）。
+  变异实测：任务删除改回拿 `observedSavePath` 当本机根 → 映射删除用例红；relocate 映射不到时把远端路径当本机
+  路径 → 「远端 qB 没配映射」用例红。

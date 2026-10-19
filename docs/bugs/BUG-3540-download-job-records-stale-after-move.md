@@ -22,7 +22,6 @@
   「source and observed roots can use different backend path mappings」追加断言整理后
   `observedSavePath == '/media'`。
 - **备注**：数据根迁移时 `observed_save_path` 仍按 `externalUserPath` 不改写（`path_rebase_coverage.dart`）。
-  这里有一个**未处理**的相邻问题：内置引擎默认下载根 `<documents>/anime_downloads/content` 随数据根搬走，
-  但 resume 文件由 native `ht_load_resume_dir`（`native/fushi_torrent/fushi_torrent_ffi.cpp` 的
-  `lt::read_resume_data` → `add_torrent`）原样读回旧的绝对 save_path，种子会指向已搬空的旧目录。只改任务行
-  这一列而不改引擎 resume 会制造新的不一致，需单独立项（改 resume 的 save_path 或启动时按数据根重定位）。
+  修本条时发现的相邻问题——内置引擎 fast-resume 里的绝对 save_path 不随数据根改写——已单独立为 BUG-3541 并修复。
+  变异实测：去掉整理后的 `_recordObservedSavePath` → pipeline 用例红；去掉 relocation 写 `observed_save_path` →
+  job_path_relocate 移动用例红。

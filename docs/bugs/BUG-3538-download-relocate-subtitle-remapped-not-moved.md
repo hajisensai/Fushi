@@ -21,3 +21,4 @@
   「MovedMediaFiles / remapVideoBookPaths」组与「同机移动：逐文件登记…」。
 - **备注**：库侧只是不再把字幕改错；字幕文件本身仍留在旧目录（与引擎行为一致，播放可用）。是否让 Fushi 在
   移动时把自己下载的 sidecar 一起搬走是产品决定，未做。
+  变异实测：`MovedMediaFiles.newPathFor` 退回「同目录即跟着搬」的前缀语义 → 3 条 sidecar 用例全红。
