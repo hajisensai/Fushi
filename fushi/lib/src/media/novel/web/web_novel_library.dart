@@ -21,7 +21,7 @@ import 'package:fushi/src/media/novel/online/lnreader_book_download.dart'
     show lnReaderSafeFileName, removeLnReaderImageReference;
 import 'package:fushi/src/media/novel/online/lnreader_epub_assembler.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart'
-    show LnReaderFetchBridge, isLnReaderBlockedHost;
+    show LnReaderFetchBridge, guardLnReaderConnections, isLnReaderBlockedHost;
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart'
     show
         kLnReaderPendingChapterAttribute,
@@ -319,9 +319,11 @@ class WebNovelLibrary {
 }
 
 /// 生产取图：带页面 Referer 与该站 cookie（与浏览器同一份），走全局代理；重定向
-/// 手动跟、每一跳过本机 / 内网判据（正文图 URL 是页面给的不可信数据）。
+/// 手动跟、每一跳过本机判据（正文图 URL 是页面给的不可信数据）。
 Future<Uint8List?> fetchWebNovelImage(Uri url, {required Uri referer}) async {
   final HttpClient client = createAppHttpClient();
+  // 名字层判据挡不住解析到本机的外部域名：建连接时按解析后的地址再判一次。
+  guardLnReaderConnections(client);
   try {
     List<WebComicCookie> cookies = const <WebComicCookie>[];
     try {

@@ -110,6 +110,17 @@ pub fn analyze(bytes: &[u8], rules: &ComicAdRules) -> ComicAdAnalysis {
     }
 }
 
+/// 单张判定，panic 隔离在这一张图上：解码器（第三方 `image` crate）碰到畸形字节若 panic，
+/// 这张记为 [`ComicAdVerdict::Undecodable`]（按正文保留），整批照常返回——判广告只许漏判、
+/// 不许因为一张坏图让整章打不开。
+fn analyze_isolated(bytes: &[u8], rules: &ComicAdRules) -> ComicAdVerdict {
+    verdict_or_undecodable(|| analyze(bytes, rules).verdict)
+}
+
+fn verdict_or_undecodable(f: impl FnOnce() -> ComicAdVerdict) -> ComicAdVerdict {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or(ComicAdVerdict::Undecodable)
+}
+
 /// 批量判定：`images[i]` 的结论写进返回值第 i 项。多张图用最多 4 个作用域线程并行（解码峰值
 /// 内存 ≈ 4 张 RGB 图；手机上也可接受），
 /// 整批只跨一次 FFI。
@@ -120,7 +131,7 @@ pub fn detect_batch(images: &[&[u8]], rules: &ComicAdRules) -> Vec<ComicAdVerdic
         .min(images.len())
         .clamp(1, 4);
     if workers <= 1 {
-        return images.iter().map(|b| analyze(b, rules).verdict).collect();
+        return images.iter().map(|b| analyze_isolated(b, rules)).collect();
     }
     let mut out = vec![ComicAdVerdict::Undecodable; images.len()];
     let next = std::sync::atomic::AtomicUsize::new(0);
@@ -132,7 +143,7 @@ pub fn detect_batch(images: &[&[u8]], rules: &ComicAdRules) -> Vec<ComicAdVerdic
                 if i >= images.len() {
                     break;
                 }
-                let verdict = analyze(images[i], rules).verdict;
+                let verdict = analyze_isolated(images[i], rules);
                 if let Ok(mut guard) = results.lock() {
                     guard[i] = verdict;
                 }

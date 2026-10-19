@@ -502,7 +502,7 @@ impl AdblockCore {
                 if same {
                     Ok(Some((key.clone(), None)))
                 } else {
-                    self.load_engine(key, present)
+                    self.load_engine_isolated(key, present)
                         .map(|r| Some((key.clone(), Some(r))))
                 }
             }
@@ -567,6 +567,28 @@ impl AdblockCore {
         st.sync_planned.clear();
         self.persist(&st);
         self.snapshot_locked(&st)
+    }
+
+    /// [`Self::load_engine`] 的 panic 隔离版：第三方 adblock 的反序列化 / 编译若 panic，按
+    /// 普通失败（`Err`）走 [`Self::finish_sync`] 的收尾，`syncing` 照常复位——否则 FFI 边界的
+    /// `catch_unwind` 虽拦住了 panic，同步状态却永远卡在「加载中」。磁盘上这把键的缓存件可能
+    /// 正是 panic 的来源，一并删掉，下次冷编译而不是每次启动都复现。
+    fn load_engine_isolated(
+        &self,
+        key: &str,
+        present: &[String],
+    ) -> Result<(Engine, bool), String> {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.load_engine(key, present)
+        })) {
+            Ok(result) => result,
+            Err(_) => {
+                let engine_dir = self.engine_dir();
+                let _ = fs::remove_file(engine_dir.join(format!("{key}.dat")));
+                let _ = fs::remove_file(engine_dir.join(format!("{key}.cb.json")));
+                Err("filter engine build panicked".into())
+            }
+        }
     }
 
     /// 反序列化缓存或编译；需要时补出 WebKit 规则。返回 (引擎, 是否来自缓存)。

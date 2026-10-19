@@ -80,4 +80,18 @@ void main() {
     expect(result.pageUrl, page);
     expect(result.title, 'site.example');
   });
+
+  test('脚本报的 pageUrl 换了主机时不采信，退回 WebView 自己的地址', () {
+    final WebComicScanResult result = normalizeWebComicScan(<String, Object?>{
+      'pageUrl': 'https://victim.example/account',
+      'images': <Object?>[
+        <String, Object?>{'url': 'img/1.jpg'},
+      ],
+    }, fallbackPageUrl: page)!;
+    expect(result.pageUrl, page);
+    expect(
+      result.images.single.url,
+      'https://site.example/comic/1/chapter/img/1.jpg',
+    );
+  });
 }

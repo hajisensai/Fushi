@@ -70,7 +70,9 @@ class WebComicScanThresholds {
 
 /// 把脚本回传的原始 map 归一化成 [WebComicScanResult]；形状不对返回 null。
 ///
-/// - 相对 URL 按 [base]（脚本报的 `pageUrl`，缺失时用 [fallbackPageUrl]）解析；
+/// - 相对 URL 按 [base] 解析：脚本报的 `pageUrl` 只在与 [fallbackPageUrl]（WebView 自己的
+///   当前地址）同一主机时采信，否则用 [fallbackPageUrl]——页面脚本完全受站点控制，报一个别的
+///   站的地址就能让取图带上那个站的 cookie、把章节并进别的作品；
 /// - 只留 http(s)（`data:` / `blob:` 取不回字节）；
 /// - 按绝对 URL 去重、保留首次出现的顺序；
 /// - 报了原图尺寸且长边小于阈值的丢掉，没报尺寸的保留（API / 规则取图本来就没有）。
@@ -80,7 +82,12 @@ WebComicScanResult? normalizeWebComicScan(
   WebComicScanThresholds thresholds = const WebComicScanThresholds(),
 }) {
   if (raw is! Map) return null;
-  final Uri base = _httpUri(raw['pageUrl']?.toString()) ?? fallbackPageUrl;
+  final Uri? reported = _httpUri(raw['pageUrl']?.toString());
+  final Uri base =
+      reported != null &&
+          reported.host.toLowerCase() == fallbackPageUrl.host.toLowerCase()
+      ? reported
+      : fallbackPageUrl;
   final Object? rawImages = raw['images'];
   final List<WebComicScannedImage> images = <WebComicScannedImage>[];
   final Set<String> seen = <String>{};

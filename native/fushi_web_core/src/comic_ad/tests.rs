@@ -130,3 +130,17 @@ fn c_abi_batch_roundtrip() {
     assert_eq!(unsafe { ffi::fwc_comic_ad_candidate_start(30, &rules) }, 20);
     assert_eq!(unsafe { ffi::fwc_comic_ad_candidate_start(2, &rules) }, 2);
 }
+
+#[test]
+fn a_panicking_image_is_undecodable_not_a_failed_batch() {
+    // 解码器在畸形字节上 panic 时，那一张按 Undecodable（按正文保留），不是整批失败。
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let verdict = super::verdict_or_undecodable(|| panic!("decoder blew up"));
+    std::panic::set_hook(prev);
+    assert_eq!(verdict, ComicAdVerdict::Undecodable);
+    assert_eq!(
+        super::verdict_or_undecodable(|| ComicAdVerdict::Ad),
+        ComicAdVerdict::Ad
+    );
+}

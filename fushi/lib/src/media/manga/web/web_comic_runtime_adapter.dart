@@ -7,6 +7,8 @@ import 'package:fushi/src/media/manga/web/web_comic_chapter.dart';
 import 'package:fushi/src/media/manga/web/web_comic_scan.dart';
 import 'package:fushi/src/media/manga/web/web_comic_scanner.dart';
 import 'package:fushi/src/media/manga/web/web_comic_site_rule.dart';
+import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart'
+    show guardLnReaderConnections, isLnReaderBlockedHost;
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -296,25 +298,61 @@ List<HttpMangaPageRef> buildWebComicPageRefs({
   ];
 }
 
-/// 生产取图：应用代理出口的 [HttpClient]，非 2xx / 不是图片一律抛。
+/// 单张漫画页 / 封面的体积上限：远超任何真实漫画页，挡住恶意站点的无限流把内存撑爆。
+const int kWebComicImageMaxBytes = 40 * 1024 * 1024;
+
+/// 生产取图。图片 URL、Referer 都来自网页扫描结果（不可信数据），所以：重定向手动跟、
+/// 每一跳只许 http(s) 且过本机判据（与网页小说取图同一把 [isLnReaderBlockedHost]）；
+/// Cookie 只随第一跳发往扫描时的站点，不跟着跳转带去别处；响应体按
+/// [kWebComicImageMaxBytes] 截断报错，整段读取有超时。
 Future<Uint8List> webComicHttpGet(Uri url, Map<String, String> headers) async {
   final HttpClient client = createAppHttpClient();
+  // 名字层判据挡不住解析到本机的外部域名（*.nip.io / DNS rebinding）：建连接时按解析后的
+  // 地址再判一次。
+  guardLnReaderConnections(client);
   try {
-    final HttpClientRequest request = await client.getUrl(url);
-    request.headers.set(HttpHeaders.acceptHeader, 'image/*,*/*;q=0.8');
-    headers.forEach(request.headers.set);
-    final HttpClientResponse response = await request.close().timeout(
-      const Duration(seconds: 60),
-    );
-    final BytesBuilder builder = BytesBuilder(copy: false);
-    await response.forEach(builder.add);
-    final Uint8List bytes = builder.takeBytes();
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException('HTTP ${response.statusCode}', uri: url);
+    Uri uri = url;
+    late HttpClientResponse response;
+    for (int hop = 0; ; hop++) {
+      if ((uri.scheme != 'http' && uri.scheme != 'https') ||
+          isLnReaderBlockedHost(uri.host)) {
+        throw HttpException('Refusing to fetch this address', uri: uri);
+      }
+      final HttpClientRequest request = await client
+          .getUrl(uri)
+          .timeout(const Duration(seconds: 30));
+      request.followRedirects = false;
+      request.headers.set(HttpHeaders.acceptHeader, 'image/*,*/*;q=0.8');
+      headers.forEach((String name, String value) {
+        if (hop > 0 && name.toLowerCase() == 'cookie') return;
+        request.headers.set(name, value);
+      });
+      response = await request.close().timeout(const Duration(seconds: 60));
+      final String? location = response.headers.value(
+        HttpHeaders.locationHeader,
+      );
+      if (!response.isRedirect || location == null) break;
+      await response.drain<void>();
+      if (hop >= 5) throw HttpException('Too many redirects', uri: uri);
+      uri = uri.resolve(location);
     }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      await response.drain<void>();
+      throw HttpException('HTTP ${response.statusCode}', uri: uri);
+    }
+    final BytesBuilder builder = BytesBuilder(copy: false);
+    await for (final List<int> chunk in response.timeout(
+      const Duration(seconds: 60),
+    )) {
+      builder.add(chunk);
+      if (builder.length > kWebComicImageMaxBytes) {
+        throw HttpException('Image is too large', uri: uri);
+      }
+    }
+    final Uint8List bytes = builder.takeBytes();
     if (!looksLikeWebComicImage(bytes)) {
       // 防盗链 / 验证页返回的是 HTML，交给阅读器只会是一张坏图。
-      throw HttpException('Response is not an image', uri: url);
+      throw HttpException('Response is not an image', uri: uri);
     }
     return bytes;
   } finally {
