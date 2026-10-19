@@ -170,19 +170,18 @@ Future<void> saveAsrModelCatalog(AsrModelCatalog catalog) async {
 ///   并走无 VAD 滑窗——2026-10-15 在 8 集动画上读音 CER 20.7% → 13.9%。
 asr.AsrTranscriptionService createAsrTranscriptionService({
   asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.cleanSpeech,
-}) =>
-    asr.AsrTranscriptionService(
-      audioProfile: audioProfile,
-      backend: fushiAsrBackend(),
-      // 根 isolate 的装载器（plan 探测 EP、进程内路径装载）先确保 GPU 环境已
-      // 激活（CUDA 注册）；后台 isolate 共享同一个插件实例，注册是进程级的，不必
-      // 再来一遍。
-      loader: asr.AsrEngineLoader(
-        factory: GpuAwareOnnxSessionFactory(buildFushiOnnxFactory()),
-      ),
-      pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
-      openStore: openAsrModelStore,
-    );
+}) => asr.AsrTranscriptionService(
+  audioProfile: audioProfile,
+  backend: fushiAsrBackend(),
+  // 根 isolate 的装载器（plan 探测 EP、进程内路径装载）先确保 GPU 环境已
+  // 激活（CUDA 注册）；后台 isolate 共享同一个插件实例，注册是进程级的，不必
+  // 再来一遍。
+  loader: asr.AsrEngineLoader(
+    factory: GpuAwareOnnxSessionFactory(buildFushiOnnxFactory()),
+  ),
+  pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
+  openStore: openAsrModelStore,
+);
 
 /// MOSS / `nvidia-smi` 等外部子进程的启动器：一律经 [HelperProcessRegistry]
 /// 登记（app 退出 / 应用内更新前统一终止，与 ffmpeg 同一套）。
@@ -225,6 +224,13 @@ Stream<asr.ModelDownloadEvent> appEnsureMossProvisioned(
   startProcess: appAsrProcessStarter,
   cancellation: cancellation,
 );
+
+/// 本机全部 MOSS 文件（所有后端的运行库 + 权重）占的字节：删除确认框写清会释放
+/// 多少。数据根由 [installAsrHostBindings] 装的 `asrSupportRootResolver` 决定。
+Future<int> appMossProvisionedDiskBytes() => mossProvisionedDiskBytes();
+
+/// 删除本机全部 MOSS 运行库与权重，返回释放的字节数（之后下载会整套重下）。
+Future<int> appDeleteMossProvisioned() => deleteMossProvisioned();
 
 /// 打开某语言当前模型包的磁盘目录。
 ///

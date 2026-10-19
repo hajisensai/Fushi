@@ -84,6 +84,12 @@ class ReadyModels implements VideoSubtitleAsrModelPort, VideoSubtitleMossPort {
   @override
   Stream<ModelDownloadEvent> ensure(MossBackendPreference backend) =>
       const Stream<ModelDownloadEvent>.empty();
+
+  @override
+  Future<int> diskBytes() async => 0;
+
+  @override
+  Future<int> delete() async => 0;
 }
 
 AiProviderConfig testProvider() => AiProviderConfig(

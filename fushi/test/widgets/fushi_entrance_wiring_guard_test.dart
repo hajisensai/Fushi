@@ -100,6 +100,7 @@ void main() {
       // 2026-10-19 视频日语字幕管线：生成面板（单集 / 整季）与专名表编辑页。
       'lib/src/media/video/subtitle/video_subtitle_generate_sheet.dart',
       'lib/src/media/video/subtitle/video_subtitle_glossary_page.dart',
+      'lib/src/media/video/subtitle/remote_video_subtitle_sheet.dart',
     ]) {
       final String src = read(path);
       expect(src, contains('FushiEntranceScope('), reason: path);

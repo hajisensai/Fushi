@@ -133,6 +133,10 @@ class _VideoSubtitleMossSettingsRowState
   ModelDownloadEvent? _download;
   String? _error;
 
+  /// 本机已落盘的 MOSS 文件字节（所有后端 + 权重）；0 = 没有可删的。
+  int _diskBytes = 0;
+  bool _deleting = false;
+
   @override
   void initState() {
     super.initState();
@@ -150,7 +154,13 @@ class _VideoSubtitleMossSettingsRowState
       final VideoSubtitleMossState state = await widget.port.status(
         widget.backend,
       );
-      if (mounted) setState(() => _state = state);
+      final int disk = await widget.port.diskBytes();
+      if (mounted) {
+        setState(() {
+          _state = state;
+          _diskBytes = disk;
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
     }
@@ -175,6 +185,34 @@ class _VideoSubtitleMossSettingsRowState
       if (mounted) setState(() => _error = '$error');
     } finally {
       if (mounted) setState(() => _download = null);
+      await _refresh();
+    }
+  }
+
+  /// 删除：确认框写清会释放多少，删完重新读状态。
+  Future<void> _delete() async {
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: t.video_subtitle_ai_moss_delete,
+      message: t.video_subtitle_ai_moss_delete_confirm(
+        size: FushiByteFormat.bytes(_diskBytes),
+      ),
+      confirmLabel: t.video_subtitle_ai_moss_delete,
+      cancelLabel: t.cancel,
+      icon: FushiIcons.delete,
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    setState(() {
+      _deleting = true;
+      _error = null;
+    });
+    try {
+      await widget.port.delete();
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
+    } finally {
+      if (mounted) setState(() => _deleting = false);
       await _refresh();
     }
   }
@@ -223,6 +261,19 @@ class _VideoSubtitleMossSettingsRowState
                 )
               : null,
         ),
+        // 删除：盘上有任何 MOSS 文件就给（含别的后端的运行库、下了一半的残留）。
+        if (_diskBytes > 0 && download == null)
+          AdaptiveSettingsRow(
+            key: const ValueKey<String>('video-subtitle-moss-files-delete-row'),
+            title: t.video_subtitle_ai_moss_delete,
+            subtitle: FushiByteFormat.bytes(_diskBytes),
+            icon: FushiIcons.delete,
+            trailing: FushiTextButton(
+              key: const ValueKey<String>('video-subtitle-moss-files-delete'),
+              onPressed: _deleting ? null : () => unawaited(_delete()),
+              child: Text(t.video_subtitle_ai_moss_delete),
+            ),
+          ),
         if (download != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),

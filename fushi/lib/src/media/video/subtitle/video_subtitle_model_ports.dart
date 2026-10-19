@@ -25,7 +25,9 @@ import 'package:fushi/src/asr_host/asr_host.dart'
         createAsrTranscriptionService,
         MossProvisionStatus,
         MossUnavailableCode,
+        appDeleteMossProvisioned,
         appEnsureMossProvisioned,
+        appMossProvisionedDiskBytes,
         appMossProvisionStatus;
 
 /// 视频用的日语识别模型：是否已下载 + 下载。
@@ -107,6 +109,12 @@ abstract interface class VideoSubtitleMossPort {
 
   /// 下载缺失的运行库与权重；事件流结束 = 下载完。失败以异常结束流。
   Stream<ModelDownloadEvent> ensure(MossBackendPreference backend);
+
+  /// 本机已落盘的全部 MOSS 文件（所有后端的运行库 + 权重）占的字节。
+  Future<int> diskBytes();
+
+  /// 删除本机全部 MOSS 运行库与权重，返回释放的字节数。
+  Future<int> delete();
 }
 
 /// 生产实现：转调 `asr_host.dart` 的 MOSS 装配。
@@ -132,4 +140,10 @@ class AppVideoSubtitleMossPort implements VideoSubtitleMossPort {
   @override
   Stream<ModelDownloadEvent> ensure(MossBackendPreference backend) =>
       appEnsureMossProvisioned(backend);
+
+  @override
+  Future<int> diskBytes() => appMossProvisionedDiskBytes();
+
+  @override
+  Future<int> delete() => appDeleteMossProvisioned();
 }

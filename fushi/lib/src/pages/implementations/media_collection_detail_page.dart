@@ -85,6 +85,13 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dar
     show PrefsRepoVideoSubtitleGeneratePrefs, showVideoSubtitleGenerateSheet;
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
     show pushAiSettingsPage;
+import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dart'
+    show
+        RemoteVideoSubtitleEpisode,
+        RemoteVideoSubtitleTarget,
+        appRemoteVideoSubtitleService;
+import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_sheet.dart'
+    show showRemoteVideoSubtitleSheet;
 
 /// 统一合集 Phase 4：合集详情页（Jellyfin 式）。playlist 合集 = 有序剧集列表：点某集从
 /// 该集开始播放（带剧集面板 / 上下集 / 连播，调用方经 playlistCollectionId 打开播放器）；
@@ -1088,6 +1095,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       context,
       listen: false,
     ).read(appProvider);
+    // 成员全在对端：整季交给放视频的 host 跑（逐集 videoId 任务，host 侧同一作品键
+    // 共用一张专名表）；本机有成员时在本机跑，只在对端的集列为跳过。
+    if (_members.isEmpty && _remoteMembers.isNotEmpty) {
+      await _generateRemoteSeasonJaSubtitles(appModel);
+      return;
+    }
     final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
     final AppVideoSubtitleTarget target = await service.resolveCollection(
       widget.collection.id,
@@ -1099,6 +1112,29 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       target: target,
       prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
       openAiSettings: pushAiSettingsPage,
+    );
+  }
+
+  Future<void> _generateRemoteSeasonJaSubtitles(AppModel appModel) async {
+    bool hasJapanese(RemoteVideoInfo m) =>
+        m.subtitleFileName?.toLowerCase().endsWith('.ja.srt') ?? false;
+    await showRemoteVideoSubtitleSheet(
+      context: context,
+      service: appRemoteVideoSubtitleService(appModel),
+      target: RemoteVideoSubtitleTarget(
+        title: _canonicalWork?.title ?? _name,
+        wholeSeason: true,
+        episodes: <RemoteVideoSubtitleEpisode>[
+          for (final RemoteVideoInfo m in _remoteMembers)
+            if (!hasJapanese(m))
+              RemoteVideoSubtitleEpisode(videoId: m.id, title: m.title),
+        ],
+        skippedExisting: <String>[
+          for (final RemoteVideoInfo m in _remoteMembers)
+            if (hasJapanese(m)) m.title,
+        ],
+      ),
+      prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
     );
   }
 
@@ -2653,12 +2689,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       ),
       // 整季生成日语字幕（ASR + 可选 AI 校对）：要本机视频文件与本机 ONNX 运行时；
       // 只在对端的集由面板列出跳过原因，不在这里藏入口。
-      if (isAsrSupported)
+      // 只在对端的合集交给 host 跑（不需要本机 ASR）。
+      if (isAsrSupported || widget.remote != null)
         action(
           _CollectionManageAction.generateJaSubtitles,
           FushiIcons.ai,
           t.video_subtitle_ai_season_title,
-          enabled: _members.isNotEmpty,
+          enabled: _members.isNotEmpty || _remoteMembers.isNotEmpty,
         ),
       action(
         _CollectionManageAction.renameEpisodes,

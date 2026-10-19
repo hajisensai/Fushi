@@ -334,3 +334,35 @@ Stream<asr.ModelDownloadEvent> ensureMossProvisioned({
   final asr.MossModelStore model = await asr.MossModelStore.open();
   yield* model.ensure(downloader: downloader);
 }
+
+/// 本机已落盘的全部 MOSS 文件（每个平台 × 后端的运行库目录 + 权重目录）占的字节。
+///
+/// 删除前给用户看「会释放多少」用：用户可能切过后端（CUDA 装了又换 Vulkan），只量
+/// 当前后端的那份会少报。
+Future<int> mossProvisionedDiskBytes() async {
+  int total = 0;
+  for (final Directory dir in await _mossProvisionedDirs()) {
+    if (dir.existsSync()) total += await asr.measureDirectoryBytes(dir);
+  }
+  return total;
+}
+
+/// 删除本机全部 MOSS 运行库（所有后端）与权重，返回释放的字节数。删除后
+/// [mossProvisionStatus] 报未就绪、[ensureMossProvisioned] 会整套重下。
+///
+/// 正在跑的 MOSS 任务由调用方先停：本函数不判断有没有进程在用这些文件（Windows 上
+/// 被占用的文件删不掉，异常原样抛出，已删掉的部分不回滚——重下即恢复）。
+Future<int> deleteMossProvisioned() async {
+  int freed = 0;
+  for (final asr.AudioCppRuntimePack pack in asr.kAudioCppRuntimePacks) {
+    freed += await (await asr.AudioCppRuntimeStore.open(pack)).deleteAll();
+  }
+  freed += await (await asr.MossModelStore.open()).deleteAll();
+  return freed;
+}
+
+Future<List<Directory>> _mossProvisionedDirs() async => <Directory>[
+  for (final asr.AudioCppRuntimePack pack in asr.kAudioCppRuntimePacks)
+    (await asr.AudioCppRuntimeStore.open(pack)).dir,
+  (await asr.MossModelStore.open()).dir,
+];
