@@ -31,18 +31,24 @@ def universal(slices):
     return struct.pack(">2I", 0xCAFEBABE, len(slices)) + table + body
 
 
-def archive_fixture(path, dependency="/usr/lib/libSystem.B.dylib", arm_only=False):
+UNIFIED_AVCODEC = "@rpath/libavcodec.framework/libavcodec"
+
+
+def archive_fixture(path, dependency=None, extra_x86=False, extra=()):
+    """macOS arm64 libmpv archive; Mpv links the unified FFmpeg by default."""
     with tarfile.open(path, "w:gz") as archive:
-        for framework in ("Mpv", "Bluray", "Placebo", "Avcodec"):
-            info = {"AvailableLibraries": [{"LibraryIdentifier": "macos-arm64_x86_64",
+        for framework in ("Mpv", "Bluray", "Placebo", *extra):
+            info = {"AvailableLibraries": [{"LibraryIdentifier": "macos-arm64",
                     "LibraryPath": f"{framework}.framework", "SupportedPlatform": "macos",
-                    "SupportedArchitectures": ["arm64", "x86_64"]}]}
+                    "SupportedArchitectures": ["arm64"]}]}
             root = f"bundle/{framework}.xcframework"
-            slices = [(0x0100000C, thin(0x0100000C, dependency))]
-            if not arm_only:
-                slices.append((0x01000007, thin(0x01000007, dependency)))
+            dep = dependency or (UNIFIED_AVCODEC if framework == "Mpv"
+                                 else "/usr/lib/libSystem.B.dylib")
+            slices = [(0x0100000C, thin(0x0100000C, dep))]
+            if extra_x86:
+                slices.append((0x01000007, thin(0x01000007, dep)))
             files = {root + "/Info.plist": plistlib.dumps(info),
-                     root + f"/macos-arm64_x86_64/{framework}.framework/Versions/A/{framework}": universal(slices)}
+                     root + f"/macos-arm64/{framework}.framework/Versions/A/{framework}": universal(slices)}
             for name, data in files.items():
                 member = tarfile.TarInfo(name)
                 member.size = len(data)
@@ -53,12 +59,29 @@ class DarwinArchiveTest(unittest.TestCase):
     def test_checks_actual_slices_instead_of_trusting_plist(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "frameworks.tar.gz"
-            archive_fixture(path, arm_only=True)
+            # The plist claims arm64 only, the binary also carries x86_64.
+            archive_fixture(path, extra_x86=True)
             with self.assertRaisesRegex(ValueError, "wrong architectures"):
+                verify_archive(path, "macos")
+
+    def test_rejects_packaged_ffmpeg(self):
+        # Unified FFmpeg: a private Avcodec inside libmpv is a second FFmpeg.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "frameworks.tar.gz"
+            archive_fixture(path, extra=("Avcodec",))
+            with self.assertRaisesRegex(ValueError, "FFmpeg packaged inside libmpv"):
+                verify_archive(path, "macos")
+
+    def test_requires_mpv_to_link_the_unified_ffmpeg(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "frameworks.tar.gz"
+            archive_fixture(path, dependency="/usr/lib/libSystem.B.dylib")
+            with self.assertRaisesRegex(ValueError, "does not link the unified FFmpeg"):
                 verify_archive(path, "macos")
 
     def test_rejects_unbundled_and_build_machine_dependencies(self):
         for dependency in ("@rpath/Missing.framework/Missing", "@rpath/Bluray.framework/wrong",
+                           "@rpath/libfoo.framework/libfoo",
                            "/nix/store/build/libcodec.dylib"):
             with self.subTest(dependency=dependency), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / "frameworks.tar.gz"
@@ -89,7 +112,7 @@ class DarwinArchiveTest(unittest.TestCase):
             path = Path(directory) / "frameworks.tar.gz"
             archive_fixture(path)
             report = verify_archive(path, "macos")
-            self.assertEqual(len(report["frameworks"]), 4)
+            self.assertEqual(len(report["frameworks"]), 3)
             self.assertFalse(report["device_menu_rendering_tested"])
 
     def test_rejects_truncated_universal_slice(self):

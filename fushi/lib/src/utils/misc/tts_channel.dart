@@ -370,8 +370,8 @@ class TtsChannel {
   /// 同契约）；视频制卡的句子音频在 Android 上早已直接走 ffmpeg。统一到 ffmpeg 后
   /// ①② 一次消除：ffmpeg 天然支持任意输入容器/编码（`.m4b/.opus/.flac/HE-AAC` 都能
   /// 解），不再依赖设备 MediaCodec / 手写 MP4 box 解析器。输出仍是 `.aac`（adts 容器）
-  /// ——这是桌面 ffmpeg-min 极简构建唯一能 mux 的音频容器（BUG-460，无 mp4/ipod/m4a
-  /// muxer），全平台统一不改。桌面行为逐字节不变（同一函数）。
+  /// ——这是旧桌面 ffmpeg-min 极简构建唯一能 mux 的音频容器（BUG-460，无 mp4/ipod/m4a
+  /// muxer；统一 FFmpeg 已含），全平台统一不改（既有输出契约，兼容外部 ffmpeg）。桌面行为逐字节不变（同一函数）。
   Future<String?> extractAudioSegment({
     required String inputPath,
     required int startMs,

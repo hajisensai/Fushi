@@ -1,0 +1,141 @@
+/*
+ * Original FFmpeg source:
+ * Derived from FFmpeg source file fftools/thread_queue.h.
+ *
+ * FFmpegKitNext modifications:
+ * Copyright (c) 2026 Taner Sener
+ *
+ * This modified file is part of FFmpegKitNext.
+ * It is derived from FFmpeg's fftools/thread_queue.h at tag n9.0.1.
+ *
+ * The original FFmpeg source is licensed under the GNU Lesser General
+ * Public License version 2.1 or later. FFmpegKitNext distributes this
+ * modified file under the GNU Lesser General Public License version 3 or
+ * later, as permitted by that original "or later" license.
+ *
+ * This file is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This file is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with FFmpegKitNext. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+/*
+ * Modification history:
+ *
+ * ffmpeg-kit changes by Taner Sener
+ *
+ * 08.2026
+ * --------------------------------------------------------
+ * - FFmpeg 9.0.1 changes migrated
+ * - FFmpegKitNext integration updates preserved, including wrapper API,
+ *   callbacks, cancellation and thread/session-local execution where applicable
+ *
+ * 07.2026
+ * --------------------------------------------------------
+ * - FFmpeg 8.1.2 changes migrated
+ * - Files moved under apple/src/fftools using upstream filenames
+ * - FFmpegKitNext integration updates preserved, including wrapper API,
+ *   callbacks, cancellation and thread/session-local execution where applicable
+ *
+ * 06.2026
+ * --------------------------------------------------------
+ * - FFmpeg 7.1.5 changes migrated
+ * - FFmpegKitNext integration updates preserved, including wrapper API,
+ *   callbacks, cancellation and thread/session-local execution where applicable
+ *
+ * ffmpeg-kit changes by ARTHENICA LTD
+ *
+ * 07.2023
+ * --------------------------------------------------------
+ * - FFmpeg 6.0 changes migrated
+ */
+
+#ifndef FFTOOLS_THREAD_QUEUE_H
+#define FFTOOLS_THREAD_QUEUE_H
+
+#include <string.h>
+
+enum ThreadQueueType {
+    THREAD_QUEUE_FRAMES,
+    THREAD_QUEUE_PACKETS,
+};
+
+enum ThreadQueueFlags {
+    /* When set, tq_receive() will return AVERROR(EAGAIN) instead of blocking
+     * when the queue is empty or choked. */
+    THREAD_QUEUE_FLAG_NO_BLOCK = (1 << 0),
+};
+
+typedef struct ThreadQueue ThreadQueue;
+
+/**
+ * Allocate a queue for sending data between threads.
+ *
+ * @param nb_streams number of streams for which a distinct EOF state is
+ *                   maintained
+ * @param queue_size number of items that can be stored in the queue without
+ *                   blocking
+ */
+ThreadQueue *tq_alloc(unsigned int nb_streams, size_t queue_size,
+                      enum ThreadQueueType type);
+void         tq_free(ThreadQueue **tq);
+
+/**
+ * Send an item for the given stream to the queue.
+ *
+ * @param data the item to send, its contents will be moved using the callback
+ *             provided to tq_alloc(); on failure the item will be left
+ *             untouched
+ * @return
+ * - 0 the item was successfully sent
+ * - AVERROR(ENOMEM) could not allocate an item for writing to the FIFO
+ * - AVERROR(EINVAL) the sending side has previously been marked as finished
+ * - AVERROR_EOF the receiving side has marked the given stream as finished
+ */
+int tq_send(ThreadQueue *tq, unsigned int stream_idx, void *data);
+/**
+ * Mark the given stream finished from the sending side.
+ */
+void tq_send_finish(ThreadQueue *tq, unsigned int stream_idx);
+
+/**
+ * Prevent further reads from the thread queue until it is unchoked. Threads
+ * attempting to read from the queue will block, similar to when the queue is
+ * empty.
+ *
+ * @param choked 1 to choke, 0 to unchoke
+ */
+void tq_choke(ThreadQueue *tq, int choked);
+
+/**
+ * Read the next item from the queue.
+ *
+ * @param stream_idx the index of the stream that was processed or -1 will be
+ *                   written here
+ * @param data the data item will be written here on success using the
+ *             callback provided to tq_alloc()
+ * @param flags combination of THREAD_QUEUE_FLAG_*
+ *
+ * @return
+ * - 0 a data item was successfully read; *stream_idx contains a non-negative
+ *   stream index
+ * - AVERROR_EOF When *stream_idx is non-negative, this signals that the sending
+ *   side has marked the given stream as finished. This will happen at most once
+ *   for each stream. When *stream_idx is -1, all streams are done.
+ */
+int tq_receive(ThreadQueue *tq, int *stream_idx, void *data, int flags);
+
+/**
+ * Mark the given stream finished from the receiving side.
+ */
+void tq_receive_finish(ThreadQueue *tq, unsigned int stream_idx);
+
+#endif // FFTOOLS_THREAD_QUEUE_H

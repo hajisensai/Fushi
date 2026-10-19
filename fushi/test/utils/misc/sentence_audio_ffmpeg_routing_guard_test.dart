@@ -20,7 +20,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// same contract as the desktop CLI backend) eliminates #1/#2 — ffmpeg decodes
 /// any container/codec. The output suffix still must be selected by platform:
 /// iOS AnkiMobile needs `.m4a`, while desktop/Android keep `.aac` for the
-/// bundled ffmpeg-min adts-only muxer (BUG-460 / BUG-644).
+/// adts container (chosen for the old adts-only ffmpeg-min muxer, BUG-460 /
+/// BUG-644; kept as the existing contract).
 void main() {
   String libFile(String relative) =>
       File(relative).readAsStringSync().replaceAll('\r\n', '\n');
@@ -63,14 +64,15 @@ void main() {
           reason: 'Book/audiobook sentence audio must derive its container '
               'from immersionMiningAudioExtension() too. iOS AnkiMobile leaves '
               'raw .aac localhost URLs as visible text, while desktop '
-              'ffmpeg-min still needs .aac/adts (BUG-460 / BUG-644).');
+              'keeps .aac/adts (old ffmpeg-min limit, BUG-460 / BUG-644).');
       expect(source.contains("'sentence.aac'"), isFalse,
           reason: 'Do not hardcode .aac for book sentence audio: iOS '
               'AnkiMobile leaves the localhost URL visible instead of '
               'embedding playable media (BUG-644).');
       expect(source.contains("'sentence.m4a'"), isFalse,
-          reason: 'Do not switch book sentence audio to .m4a: the bundled '
-              'desktop ffmpeg-min cannot mux it (BUG-460).');
+          reason: 'Do not switch book sentence audio to .m4a: the old desktop '
+              'ffmpeg-min could not mux it (BUG-460); the platform-aware '
+              'helper is the existing contract.');
     });
 
     test(
@@ -83,9 +85,9 @@ void main() {
       // TODO-1217 regression fix: the container extension is now chosen at
       // runtime by immersionMiningAudioExtension() — iOS gets `.m4a` (AnkiMobile
       // only auto-downloads media-recognized URLs; ffmpeg-kit has the ipod
-      // muxer), desktop/Android get `.aac` (the desktop bundled ffmpeg-min has
-      // NO ipod/mp4 muxer, so a hardcoded `.m4a` exits -22 → null audio →
-      // silent Netflix/YouTube/in-app cards). Hardcoding either suffix breaks
+      // muxer), desktop/Android get `.aac` (the old desktop ffmpeg-min had
+      // NO ipod/mp4 muxer, so a hardcoded `.m4a` exited -22 → null audio →
+      // silent Netflix/YouTube/in-app cards; the unified FFmpeg has them). Hardcoding either suffix breaks
       // one platform; the engine must go through the helper, never a literal.
       final String engine =
           libFile('lib/src/mining/immersion_mining_engine.dart');
@@ -95,11 +97,11 @@ void main() {
               r"'$tempDir/immersion_audio.${immersionMiningAudioExtension()}'"),
           reason: 'Immersion sentence audio must derive its container from '
               'immersionMiningAudioExtension() (iOS m4a / desktop+Android aac), '
-              'never a hardcoded suffix — a literal .m4a exits -22 on the '
-              'desktop ffmpeg-min build (TODO-1217).');
+              'never a hardcoded suffix — a literal .m4a exited -22 on the '
+              'old desktop ffmpeg-min build (TODO-1217).');
       expect(engine.contains("immersion_audio.m4a'"), isFalse,
           reason: 'Do not hardcode .m4a for immersion sentence audio: the '
-              'bundled desktop ffmpeg-min cannot mux it (no ipod muxer) → '
+              'old desktop ffmpeg-min could not mux it (no ipod muxer) → '
               'exit -22 → silent cards (TODO-1217/BUG-460).');
       expect(engine.contains("immersion_audio.aac'"), isFalse,
           reason: 'Do not hardcode .aac either: iOS AnkiMobile leaves a raw '

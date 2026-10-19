@@ -67,15 +67,17 @@ List<DarwinLibmpvSlice> _verifyDarwinLibmpv(String platform) {
     final String identifier = file.name
         .split('Mpv.xcframework/')[1]
         .split('/')[0];
-    final String codecName = file.name
-        .replaceFirst('Mpv.xcframework', 'Avcodec.xcframework')
-        .replaceFirst('Mpv.framework', 'Avcodec.framework')
-        .replaceFirst(RegExp(r'/Mpv$'), '/Avcodec');
-    final ArchiveFile? codecFile = archive.findFile(codecName);
-    expect(codecFile, isNotNull, reason: '$platform/$identifier Avcodec');
+    // Unified FFmpeg (tool/ffmpeg-unified): libmpv carries no FFmpeg of its
+    // own; Mpv links @rpath/libavcodec.framework, shipped once by the FFmpeg
+    // side of the app. The codec bytes come from that same build.
+    expect(
+      archive.files.any((ArchiveFile f) => f.name.contains('Avcodec.xcframework')),
+      isFalse,
+      reason: '$platform libmpv archive must not package its own FFmpeg',
+    );
     final Map<String, Uint8List> mpv = _machoSlices(file.content as List<int>);
     final Map<String, Uint8List> codec = _machoSlices(
-      codecFile!.content as List<int>,
+      _unifiedLibavcodec(platform, identifier),
     );
     expect(codec.keys.toSet(), mpv.keys.toSet());
     final String variant = identifier.contains('simulator')
@@ -96,10 +98,36 @@ List<DarwinLibmpvSlice> _verifyDarwinLibmpv(String platform) {
     result.map((DarwinLibmpvSlice slice) => slice.identity).toList()..sort(),
     platform == 'ios'
         ? <String>['device:arm64', 'simulator:arm64', 'simulator:x86_64']
-        : <String>['desktop:arm64', 'desktop:x86_64'],
+        // Fushi ships Apple Silicon only on macOS.
+        : <String>['desktop:arm64'],
     reason: '$platform must contain every supported CPU slice exactly once',
   );
   return result;
+}
+
+/// The unified FFmpeg's libavcodec for the libmpv slice [identifier]:
+/// iOS from the FFmpegKitNext plugin's xcframework, macOS from the unified
+/// layout archive media_kit_libs_macos_video bundles into Contents/Frameworks.
+List<int> _unifiedLibavcodec(String platform, String identifier) {
+  if (platform == 'ios') {
+    final File f = File(
+      '../third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/'
+      'Frameworks/libavcodec.xcframework/$identifier/libavcodec.framework/libavcodec',
+    );
+    expect(f.existsSync(), isTrue, reason: 'unified FFmpeg slice ${f.path}');
+    return f.readAsBytesSync();
+  }
+  final Archive layout = TarDecoder().decodeBytes(
+    GZipDecoder().decodeBytes(
+      File('../third_party/media_kit_libs_macos_video/native/'
+              'ffmpeg-unified-macos.tar.gz')
+          .readAsBytesSync(),
+    ),
+  );
+  final ArchiveFile? f =
+      layout.findFile('Frameworks/libavcodec.framework/Versions/A/libavcodec');
+  expect(f, isNotNull, reason: 'unified FFmpeg macOS libavcodec');
+  return f!.content as List<int>;
 }
 
 Map<String, Uint8List> _machoSlices(List<int> bytes) {

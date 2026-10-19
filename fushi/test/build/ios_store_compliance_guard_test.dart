@@ -553,7 +553,7 @@ void main() {
       );
       expect(
         browser,
-        contains('if(_novelAvailable)<FushiToolbarItem>['),
+        contains('if(_novelAvailable)FushiToolbarItem('),
         reason: '工具栏上的「用 Fushi 阅读（小说）」由同一个判据决定出不出现。',
       );
       expect(browser, contains('if(!_novelAvailable||'));

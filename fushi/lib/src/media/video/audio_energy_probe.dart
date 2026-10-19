@@ -84,11 +84,12 @@ const int _kEnvelopeOutputFrameSeconds = 6;
 ///   选项），裁的是已解码音频时长。
 /// - `-vn`：丢弃视频流（TODO-1244 回归修复）。**必须**加——否则没有 `-map 0:a`（越界/无
 ///   显式音轨的默认回退路径）时，ffmpeg 会把输入的视频流也映射进 `-f null -` 输出，并试图
-///   用 null 复用器的默认视频编码器 `wrapped_avframe` 编码它。桌面发布捆绑的**最小
+///   用 null 复用器的默认视频编码器 `wrapped_avframe` 编码它。旧桌面捆绑的**最小
 ///   ffmpeg-min**（TODO-1214，编码器白名单只留 libx264/pcm）**没有** `wrapped_avframe`
 ///   → 整条命令在打开输出阶段 `Encoder not found` 硬失败 → 零逐帧 RMS 行 → 空包络 →
-///   **对轴界面波形完全不显示**。`-vn` 只喂音频给 astats，与最小 ffmpeg 兼容，且省掉无谓的
-///   视频解码/编码（本就只要音频能量）。全量 ffmpeg 有 `wrapped_avframe` 也不受影响。
+///   **对轴界面波形完全不显示**。`-vn` 只喂音频给 astats，且省掉无谓的
+///   视频解码/编码（本就只要音频能量）。统一 FFmpeg 为全量构建、有 `wrapped_avframe`，
+///   不加 `-vn` 也不会失败；`-vn` 仍保留（省视频解码，兼容系统 ffmpeg）。
 /// - 末尾再一个 `asetnsamples=n=<rate*[_kEnvelopeOutputFrameSeconds]>:p=0`：`ametadata`
 ///   已经逐小块记完，**再把音频拼回大帧**才交给编码器 / null 复用器：6 万个 20ms 小帧
 ///   逐帧过 pcm 编码器与 null 复用器的开销比 astats 本身还大，拼成 6s 一帧后 20 分钟只剩
@@ -128,8 +129,9 @@ List<String> buildFfmpegPcmEnvelopeArgs({
     args.addAll(<String>['-t', '$limitSeconds']);
   }
   // TODO-1244 回归修复：丢弃视频流。没有 `-map 0:a` 时若不加 `-vn`，ffmpeg 会把视频流也
-  // 送进 `-f null -`，用 null 复用器的默认视频编码器 wrapped_avframe 编码——桌面捆绑的最小
-  // ffmpeg-min 无此编码器，整条命令 `Encoder not found` 硬失败→空包络→波形不显示。只要音频。
+  // 送进 `-f null -`，用 null 复用器的默认视频编码器 wrapped_avframe 编码——旧桌面捆绑的最小
+  // ffmpeg-min 无此编码器，整条命令 `Encoder not found` 硬失败→空包络→波形不显示（统一
+  // FFmpeg 已有该编码器）。只要音频，`-vn` 保留。
   args.add('-vn');
   // 逐帧行写文件（移动端日志通道不可靠，见文件头）；不给路径则沿旧行为打 stderr。
   final String printTarget = metadataFilePath == null

@@ -148,9 +148,10 @@ void main() {
         audioStreamIndex: 1,
       );
 
-      // libx264 + mp4 muxer are exactly what tool/ffmpeg-min provisioned for
-      // clip export (TODO-1257); this path guarantees a muxable container even
-      // when -c copy can't hold the source codecs.
+      // libx264 + mp4 muxer are exactly what clip export needs (the old
+      // tool/ffmpeg-min provisioned them for TODO-1257; the unified FFmpeg
+      // has them); this path guarantees a muxable container even when
+      // -c copy can't hold the source codecs.
       expect(
           args,
           containsAllInOrder(<String>[
@@ -191,7 +192,9 @@ void main() {
     test(
         'falls back to re-encode when stream-copy fails, then succeeds '
         '(BUG-917)', () async {
-      // Root cause: the bundled ffmpeg-min can only mux mp4/mov for video+audio.
+      // Root cause (old ffmpeg-min): the bundled build could only mux mp4/mov for
+      // video+audio; the unified FFmpeg has more muxers, but the fallback stays
+      // for sources whose codecs don't fit mp4.
       // When -c copy into .mp4 fails (codec not mp4-compatible), the exporter
       // must retry with libx264 + aac rather than surfacing exit -22.
       final Directory dir =
@@ -932,7 +935,8 @@ Filters:
 
     test('skips burning entirely when the ffmpeg has no overlay filter',
         () async {
-      // 这是**当前发行版**的状态：随包 ffmpeg-min 还没重编，没有 overlay。
+      // 旧 ffmpeg-min 时代的状态：没有 overlay（统一 FFmpeg 已有；此用例模拟
+      // Linux 系统 ffmpeg / 用户指定的外部 ffmpeg 缺 overlay）。
       // 此时必须安静地退回无字幕导出，而不是拼一条注定失败的命令。
       final Directory dir =
           Directory.systemTemp.createTempSync('fushi_clip_burn_none');
@@ -1080,7 +1084,7 @@ Conversion failed!
     test(
         'BUG-2604: AV1 on a hwaccel-only av1 decoder surfaces the root cause, '
         'not the generic trailer', () {
-      // 入库 ffmpeg-min（缺 libdav1d）对 AV1 源截帧的**逐字** stderr：根因在
+      // 旧入库 ffmpeg-min（缺 libdav1d）对 AV1 源截帧的**逐字** stderr：根因在
       // `Stream mapping:` 之后第一行，随后是解码错误率 → exit 69 的级联，尾行只有
       // 一句 `Conversion failed!`。用户日志里原本只剩 `stderr=Conversion failed!`。
       const String av1Stderr = '''
