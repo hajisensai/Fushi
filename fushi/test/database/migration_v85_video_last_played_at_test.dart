@@ -94,8 +94,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 120);
-    expect(db.schemaVersion, 120);
+    expect(version.read<int>('user_version'), 121);
+    expect(db.schemaVersion, 121);
 
     final List<VideoBookRow> rows = await db.select(db.videoBooks).get();
     expect(rows, hasLength(4), reason: '迁移丢一行就是丢一部视频的观看记录');

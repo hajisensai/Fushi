@@ -199,6 +199,7 @@ class SrsDbStore implements SrsSyncReplica {
     final bool hadLocalState = await s._loadLocal();
     // 老版本存的本机状态没有纪元：当场落盘，否则每次打开都是新纪元、指纹每次都「变了」。
     if (hadLocalState && s._epochMissing) await s._saveLocal();
+    await s._migrateLegacyFrozenBatch();
     if (!hadLocalState && await s._hasAnyEvent()) {
       // 有事件却没有本机状态：覆盖恢复了备份（本机状态与缓存不进备份，恢复时清空）。
       // 换新化身、重新发布、重建缓存；绝不沿用备份来源设备的写入者身份。
@@ -299,24 +300,38 @@ class SrsDbStore implements SrsSyncReplica {
     final Map<String, Object?> sync =
         (j['sync'] as Map?)?.cast<String, Object?>() ??
         const <String, Object?>{};
+    final Object? dirs = sync['dirs'];
+    int next = (sync['next'] as int?) ?? 1;
+    // 旧版本（不分目录记账）：冻结中、还没确认上传的批次那时存在本机状态里，且 next 还停在它的号上。
+    // 搬进留存表（同号同字节，之后照常传到每个目录），next 越过它。
+    _legacyFrozen = sync['frozen'] is String
+        ? base64Decode(sync['frozen']! as String)
+        : null;
+    final SrsBatch? frozen = _legacyFrozen == null
+        ? null
+        : SrsBatch.decode(_legacyFrozen!);
+    if (frozen != null && frozen.no >= next) next = frozen.no + 1;
     _sync = SrsSyncLocalState(
       writerId: writer,
-      nextBatchNo: (sync['next'] as int?) ?? 1,
+      nextBatchNo: next,
       cursors: Map<String, int>.of(
         ((sync['cursors'] as Map?) ?? const <String, int>{})
             .cast<String, int>(),
       ),
-      frozenBatch: sync['frozen'] is String
-          ? base64Decode(sync['frozen']! as String)
-          : null,
-      frozenEventIds: List<String>.of(
-        ((sync['frozenIds'] as List?) ?? const <String>[]).cast<String>(),
-      ),
-      lastSnapshotBatch: (sync['snap'] as int?) ?? 0,
-      bootstrapped: sync['boot'] == true,
       lastBatchServerTime: Map<String, int>.of(
         ((sync['lastS'] as Map?) ?? const <String, int>{}).cast<String, int>(),
       ),
+      directories: <String, SrsDirectoryState>{
+        if (dirs is Map)
+          for (final MapEntry<String, Object?> e
+              in dirs.cast<String, Object?>().entries)
+            e.key: SrsDirectoryState.fromJson(
+              (e.value! as Map).cast<String, Object?>(),
+            ),
+      },
+      // 有过本机状态、却没有按目录的记账：来自旧版本（见 SrsSyncLocalState.legacyDirectories）。
+      legacyDirectories:
+          sync['legacyDirs'] == true || (row != null && dirs is! Map),
     );
     _writer = SrsEditWriter(
       writerId: writer,
@@ -349,6 +364,31 @@ class SrsDbStore implements SrsSyncReplica {
 
   Hlc _rehome(Hlc h, String writer) => Hlc(h.physical, h.counter, writer);
 
+  /// 旧版本本机状态里的冻结批次（[_loadLocal] 读出，[_migrateLegacyFrozenBatch] 搬进留存表）。
+  Uint8List? _legacyFrozen;
+
+  Future<void> _migrateLegacyFrozenBatch() async {
+    final Uint8List? bytes = _legacyFrozen;
+    _legacyFrozen = null;
+    if (bytes == null) return;
+    final SrsBatch? b = SrsBatch.decode(bytes);
+    await db.transaction(() async {
+      if (b != null && b.writerId == _sync.writerId) {
+        await db
+            .into(db.srsSentBatches)
+            .insertOnConflictUpdate(
+              SrsSentBatchesCompanion.insert(
+                profileUid: profileUid,
+                writerId: b.writerId,
+                batchNo: b.no,
+                bytes: bytes,
+              ),
+            );
+      }
+      await _saveLocal();
+    });
+  }
+
   Future<void> _saveLocal() async {
     final Map<String, Object?> j = <String, Object?>{
       'incarnation': _incarnation,
@@ -363,12 +403,13 @@ class SrsDbStore implements SrsSyncReplica {
       'sync': <String, Object?>{
         'next': _sync.nextBatchNo,
         'cursors': _sync.cursors,
-        if (_sync.frozenBatch != null)
-          'frozen': base64Encode(_sync.frozenBatch!),
-        'frozenIds': _sync.frozenEventIds,
-        'snap': _sync.lastSnapshotBatch,
-        'boot': _sync.bootstrapped,
         'lastS': _sync.lastBatchServerTime,
+        'dirs': <String, Object?>{
+          for (final MapEntry<String, SrsDirectoryState> e
+              in _sync.directories.entries)
+            e.key: e.value.toJson(),
+        },
+        if (_sync.legacyDirectories) 'legacyDirs': true,
       },
     };
     await db
@@ -461,8 +502,13 @@ class SrsDbStore implements SrsSyncReplica {
   /// 较早的（[srsMergeServerTime]），给了 outboxSeq 就覆盖（重新入队）。旧行按 ID 分块一次预读，
   /// 写入合成一个 Drift batch（以前每条事件「先查再写」两次往返，应用一批对端事件 / 恢复后重新入队
   /// 全部事件都是几万次往返，BUG-3543）。
-  Future<void> _upsertEventLocal(List<(String, int?, int?)> items) async {
-    if (items.isEmpty) return;
+  ///
+  /// 返回本机**原先已有**这条事件的发布元信息、且服务器时刻因此变小（含从未知变已知）的事件 ID：
+  /// 多目录转发据此把更小的 S 带给只看得到转发的设备（见 [applyRemote] / [observeServerTimes]）。
+  Future<Set<String>> _upsertEventLocal(
+    List<(String, int?, int?)> items,
+  ) async {
+    if (items.isEmpty) return <String>{};
     final Map<String, SrsEventLocalRow> old = <String, SrsEventLocalRow>{};
     for (final List<String> chunk in _chunks(<String>{
       for (final (String id, int? _, int? _) in items) id,
@@ -500,7 +546,14 @@ class SrsDbStore implements SrsSyncReplica {
         );
       }
     }
-    if (inserts.isEmpty && updates.isEmpty) return;
+    final Set<String> lowered = <String>{
+      for (final MapEntry<String, (int?, Value<int?>)> e in updates.entries)
+        if (e.value.$1 case final int after
+            when old[e.key]!.serverTime == null ||
+                after < old[e.key]!.serverTime!)
+          e.key,
+    };
+    if (inserts.isEmpty && updates.isEmpty) return lowered;
     final int receivedAt = DateTime.now().millisecondsSinceEpoch;
     await db.batch((Batch b) {
       if (inserts.isNotEmpty) {
@@ -526,6 +579,7 @@ class SrsDbStore implements SrsSyncReplica {
         );
       }
     });
+    return lowered;
   }
 
   /// 笔记字段值里的内联样式换成共享样式引用（表示层，见库注释）。只动 `f/<fieldId>` 的字符串值；
@@ -3217,16 +3271,98 @@ class SrsDbStore implements SrsSyncReplica {
   }
 
   @override
-  Future<void> markPublished(List<String> eventIds) => runExclusive(() async {
-    for (int i = 0; i < eventIds.length; i += 500) {
-      await (db.update(db.srsEventLocal)..where(
-            (t) => t.eventId.isIn(
-              eventIds.sublist(i, min(i + 500, eventIds.length)),
+  Future<void> freezeBatch(
+    SrsSyncLocalState state,
+    int no,
+    Uint8List bytes,
+    List<String> eventIds,
+  ) => runExclusive(
+    () => _transactionOrReload(() async {
+      await db
+          .into(db.srsSentBatches)
+          .insertOnConflictUpdate(
+            SrsSentBatchesCompanion.insert(
+              profileUid: profileUid,
+              writerId: state.writerId,
+              batchNo: no,
+              bytes: bytes,
             ),
-          ))
-          .write(const SrsEventLocalCompanion(outboxSeq: Value<int?>(null)));
+          );
+      for (int i = 0; i < eventIds.length; i += 500) {
+        await (db.update(db.srsEventLocal)..where(
+              (t) => t.eventId.isIn(
+                eventIds.sublist(i, min(i + 500, eventIds.length)),
+              ),
+            ))
+            .write(const SrsEventLocalCompanion(outboxSeq: Value<int?>(null)));
+      }
+      await saveSyncState(state);
+    }),
+  );
+
+  @override
+  Future<Uint8List?> sentBatch(String writerId, int no) async =>
+      (await (db.select(db.srsSentBatches)..where(
+                (t) =>
+                    t.profileUid.equals(profileUid) &
+                    t.writerId.equals(writerId) &
+                    t.batchNo.equals(no),
+              ))
+              .getSingleOrNull())
+          ?.bytes;
+
+  @override
+  Future<List<int>> sentBatchNos(String writerId) async {
+    final Expression<int> no = db.srsSentBatches.batchNo;
+    final List<TypedResult> rows =
+        await (db.selectOnly(db.srsSentBatches)
+              ..addColumns(<Expression<Object>>[no])
+              ..where(
+                db.srsSentBatches.profileUid.equals(profileUid) &
+                    db.srsSentBatches.writerId.equals(writerId),
+              )
+              ..orderBy(<OrderingTerm>[OrderingTerm.asc(no)]))
+            .get();
+    return <int>[for (final TypedResult r in rows) r.read(no)!];
+  }
+
+  @override
+  Future<void> dropSentBatches(String writerId, {int? throughNo}) =>
+      runExclusive(() async {
+        await (db.delete(db.srsSentBatches)..where(
+              (t) =>
+                  t.profileUid.equals(profileUid) &
+                  t.writerId.equals(writerId) &
+                  (throughNo == null
+                      ? const Constant<bool>(true)
+                      : t.batchNo.isSmallerOrEqualValue(throughNo)),
+            ))
+            .go();
+      });
+
+  @override
+  Future<Map<String, int>> knownServerTimes(List<String> eventIds) async {
+    final Map<String, int> out = <String, int>{};
+    for (final List<String> chunk in _chunks(eventIds)) {
+      for (final SrsEventLocalRow r
+          in await (db.select(
+                db.srsEventLocal,
+              )..where((t) => t.eventId.isIn(chunk) & t.serverTime.isNotNull()))
+              .get()) {
+        out[r.eventId] = r.serverTime!;
+      }
     }
-  });
+    return out;
+  }
+
+  /// 转发（见 [SrsSyncReplica.applyRemote]）：[ids] 按给定顺序进本机发件箱，随本机批次带去别的目录。
+  /// 调用方在独占区与写事务里。
+  Future<void> _enqueueForward(List<String> ids) async {
+    if (ids.isEmpty) return;
+    await _upsertEventLocal(<(String, int?, int?)>[
+      for (final String id in ids) (id, null, ++_outboxSeq),
+    ]);
+  }
 
   /// 重新入队：按给定顺序续发件箱序号，一个 batch 写回（以前每条事件「先查再写」两次往返，
   /// 恢复备份后整库重新入队就是几万次往返）。
@@ -3243,57 +3379,81 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 应用一批对端事件：与逐条落库同结果（[_storeLocalBatch]：按序在内存视图上判定），服务器时刻
   /// 成批合并（[_upsertEventLocal]），一个事务、一次缓存刷新。以前每条事件「先查再写」四五次往返。
+  ///
+  /// [forward] 为真时，新落地的与 S 因此变小的事件进本机发件箱（多目录转发）。
   @override
-  Future<void> applyRemote(List<SrsEvent> events, {int? serverTimeMs}) =>
-      runExclusive(() async {
-        final (int nowMs, _) = now();
-        final List<SrsEvent> mine = <SrsEvent>[
-          for (final SrsEvent e in events)
-            if (e is! SrsEntityEvent || e.record.profileUid == profileUid) e,
-        ];
-        await _transactionOrReload(() async {
-          await _storeLocalBatch(mine);
-          await _upsertEventLocal(<(String, int?, int?)>[
-            for (final SrsEvent e in mine) (e.id, serverTimeMs, null),
-          ]);
-          for (final SrsEvent e in mine) {
-            final Hlc? h = switch (e) {
-              SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
-              SrsLogEvent(:final SrsReviewLog log) => log.hlc,
-              _ => null,
-            };
-            if (h != null) {
-              _clock.receive(
-                h,
-                serverTimeMs: serverTimeMs,
-                trustedNowMs: nowMs,
-              );
-            }
-          }
-          await _flushCaches();
-          await _saveLocal();
-        });
-      });
+  Future<void> applyRemote(
+    List<SrsEvent> events, {
+    int? serverTimeMs,
+    bool forward = false,
+  }) => runExclusive(() async {
+    final (int nowMs, _) = now();
+    final List<SrsEvent> mine = <SrsEvent>[
+      for (final SrsEvent e in events)
+        if (e is! SrsEntityEvent || e.record.profileUid == profileUid) e,
+    ];
+    await _transactionOrReload(() async {
+      final Set<String> landed = (await _storeLocalBatch(mine)).toSet();
+      final Set<String> lowered = await _upsertEventLocal(
+        <(String, int?, int?)>[
+          for (final SrsEvent e in mine) (e.id, serverTimeMs, null),
+        ],
+      );
+      if (forward) {
+        final Set<String> seen = <String>{};
+        await _enqueueForward(<String>[
+          for (final SrsEvent e in mine)
+            if ((landed.contains(e.id) || lowered.contains(e.id)) &&
+                seen.add(e.id))
+              e.id,
+        ]);
+      }
+      for (final SrsEvent e in mine) {
+        final Hlc? h = switch (e) {
+          SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
+          SrsLogEvent(:final SrsReviewLog log) => log.hlc,
+          _ => null,
+        };
+        if (h != null) {
+          _clock.receive(h, serverTimeMs: serverTimeMs, trustedNowMs: nowMs);
+        }
+      }
+      await _flushCaches();
+      await _saveLocal();
+    });
+  });
 
+  /// [forward] 为真时，已在本机、S 因此变小的事件进本机发件箱（多目录转发）。
   @override
-  Future<void> observeServerTimes(Map<String, int> times) =>
-      runExclusive(() async {
-        await _transactionOrReload(() async {
-          await _upsertEventLocal(<(String, int?, int?)>[
-            for (final MapEntry<String, int> e in times.entries)
-              (e.key, e.value, null),
-          ]);
-          // S 变化可能改变排序：相关卡片的「最后一条有效日志」要重算。
-          for (final List<String> chunk in _chunks(times.keys)) {
-            for (final SrsReviewLogRow r in await (db.select(
-              db.srsReviewLogs,
-            )..where((t) => t.id.isIn(chunk))).get()) {
-              _dirtyCards.add(r.cardId);
-            }
-          }
-          await _flushCaches();
-        });
-      });
+  Future<void> observeServerTimes(
+    Map<String, int> times, {
+    bool forward = false,
+  }) => runExclusive(() async {
+    await _transactionOrReload(() async {
+      final Set<String> lowered = await _upsertEventLocal(
+        <(String, int?, int?)>[
+          for (final MapEntry<String, int> e in times.entries)
+            (e.key, e.value, null),
+        ],
+      );
+      if (forward && lowered.isNotEmpty) {
+        await _enqueueForward(<String>[
+          for (final String id in times.keys)
+            if (lowered.contains(id)) id,
+        ]);
+        await _saveLocal();
+      }
+      // S 变化可能改变排序：相关卡片的「最后一条有效日志」要重算。
+      for (final List<String> chunk in _chunks(times.keys)) {
+        for (final SrsReviewLogRow r in await (db.select(
+          db.srsReviewLogs,
+        )..where((t) => t.id.isIn(chunk))).get()) {
+          _dirtyCards.add(r.cardId);
+        }
+      }
+      await _flushCaches();
+    });
+  });
 
   /// 一个写事务；失败（回滚）时从库里重读本机状态再抛出。事务回滚不回滚内存：落库前已分配的
   /// 序号 / 已并进因果上下文的 dot、推进过的时钟与发件箱序号、攒下的影响面都要丢掉，否则
@@ -3511,6 +3671,10 @@ class SrsDbStore implements SrsSyncReplica {
     _styleCursor = 0;
     await (db.delete(
       db.srsEventLocal,
+    )..where((t) => t.profileUid.equals(profileUid))).go();
+    // 旧写入者的批次流随恢复作废（新化身全部重新发布），留存的旧批次不再传。
+    await (db.delete(
+      db.srsSentBatches,
     )..where((t) => t.profileUid.equals(profileUid))).go();
     await requeue(<String>[for (final SrsEvent e in await exportAll()) e.id]);
     await rebuildCaches();

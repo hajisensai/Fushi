@@ -57,7 +57,7 @@ void main() {
         isMainProcess: false,
       );
       addTearDown(migrated.close);
-      expect(migrated.schemaVersion, 120);
+      expect(migrated.schemaVersion, 121);
 
       // 存量行默认成漫画，分片读按生态各取各的。
       final List<MangaExtensionStoreRow> mangaStores = await migrated

@@ -12,6 +12,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -22,6 +23,7 @@ import 'package:fushi_anki/fushi_anki_core.dart'
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -31,12 +33,14 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier;
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_backup.dart';
+import 'package:fushi/src/srs/srs_directory_key.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 
 /// 模块开着时的常驻装配（见文件头）；关着时为 null。
@@ -118,6 +122,9 @@ class SrsAppRuntime {
           db: app.database,
           body: (SyncBackend backend) => body(backend),
         ),
+    directoryKeyOf: (SyncAssetStore backend) =>
+        srsDirectoryKeyOf(backend, SyncRepository(app.database)),
+    localDirectories: _localDirectories,
     onDataChanged: _bumpRevision,
     onNotice: _showSyncNotice,
     readMediaRoot: () async => (await _readMedia())?.root,
@@ -147,6 +154,30 @@ class SrsAppRuntime {
     await sync.syncWithBackend(backend);
   }
 
+  /// 本机开着互联服务时，客户端经互联写进来的同步目录（host 自己不是任何一条通道的客户端，
+  /// 不在这里同步，它的复习数据就到不了连它的设备、也读不到它们的）。目录身份与客户端看到的
+  /// hostId 相同（host 的 hostId 就是本机设备 id）。
+  Future<List<SrsLocalDirectory>> _localDirectories() async {
+    final Directory? root = app.syncServerController.clientSyncRoot;
+    if (root == null) return const <SrsLocalDirectory>[];
+    final String hostId = await SyncRepository(
+      app.database,
+    ).getOrCreateDeviceId();
+    return <SrsLocalDirectory>[
+      SrsLocalDirectory(
+        directoryKey: srsInterconnectDirectoryKey(hostId),
+        store: LocalDirectoryAssetStore(root),
+      ),
+    ];
+  }
+
+  StreamSubscription<String>? _hostWrites;
+
+  /// 已配对设备往本机 host 的 SRS 目录写了文件（只看 SRS 命名空间，书 / 视频等同步不触发）。
+  void _onHostClientWrite(String relativePath) {
+    if (srsIsHostSrsPath(relativePath)) sync.notifyLocalDirectoryWritten();
+  }
+
   /// AnkiConnect 兼容端点的本实例 id（防自环）。
   final String instanceId = srsAnkiConnectNewInstanceId();
 
@@ -168,6 +199,9 @@ class SrsAppRuntime {
     srsActiveReviewSessions.addListener(_onReviewSessionsChanged);
     _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
     optimizer.start();
+    _hostWrites = app.syncServerController.clientSyncWrites.listen(
+      _onHostClientWrite,
+    );
     _reviewSessions = srsActiveReviewSessions.value;
     // 启动时看一次：上次退出前的改动还没备份、且已满间隔就补一份。
     backup.onDataChanged();
@@ -181,6 +215,8 @@ class SrsAppRuntime {
     _lifecycle?.dispose();
     _lifecycle = null;
     optimizer.dispose();
+    unawaited(_hostWrites?.cancel());
+    _hostWrites = null;
     sync.dispose();
     if (identical(syncChannelPostRunHook, _postRunHook)) {
       syncChannelPostRunHook = null;

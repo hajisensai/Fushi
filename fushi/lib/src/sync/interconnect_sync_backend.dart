@@ -330,6 +330,17 @@ class InterconnectSyncBackend extends SyncBackend
   /// 下发给 ffmpeg 的 `-tls_pin_sha256` 以按指纹接受自签流。http 主机 / 未解析 = null。
   String? get activeFingerprintSha256 => _activeFingerprint;
 
+  /// 已选定的那台 host 的身份（[_ensureResolved] 写）。
+  String? _activeHostIdentity;
+
+  /// 当前会话所连 host 的稳定身份：配对时记下的 hostId（同一台 host 的局域网 / 公网 / P2P
+  /// 地址共用它）；老条目没有 hostId 时退到所连地址。复习（SRS）同步按它区分同步目录
+  /// （`fushi/lib/src/srs/srs_directory_key.dart`）。
+  Future<String> connectedHostIdentity() async {
+    await _ensureResolved();
+    return _activeHostIdentity!;
+  }
+
   // ── Auth ──────────────────────────────────────────────────────────
 
   @override
@@ -466,6 +477,7 @@ class InterconnectSyncBackend extends SyncBackend
       clearCache();
     }
     _registerPinnedNativeOrigin(normalized, chosen.fingerprintSha256);
+    _activeHostIdentity = chosen.hostId ?? normalized;
     _sessionResolved = true;
     final SyncRepository? repo = _learnRepo;
     if (repo != null) {
