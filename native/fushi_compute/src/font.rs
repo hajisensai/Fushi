@@ -13,7 +13,6 @@
 //! 不支持字体集合（flavor `ttcf`）：报 [status::BAD_INPUT]（Dart 版同样解不出）。
 
 use std::collections::BTreeMap;
-use std::io::Read;
 
 use crate::{guard, hand_over_bytes, status};
 
@@ -36,11 +35,51 @@ const KNOWN_TAGS: [&[u8; 4]; 63] = [
     b"Silf", b"Glat", b"Gloc",
 ];
 
+/// 解压后表数据流总长、以及输出 sfnt 的大小上限：128 MiB。
+///
+/// 依据：Google woff2 参考实现（Chrome / Firefox 经 OTS 调它解 WOFF2）的输出缓冲默认上限就是
+/// `kDefaultMaxSize = 128 * 1024 * 1024`（`include/woff2/output.h`）；真实 CJK 单字重字体的
+/// sfnt 在 13～22 MB 量级（Windows 11 自带 yumin 13 MB、NotoSansSC-VF 17 MB、simsunb 21 MB），
+/// 留 6 倍以上余量。超限一律 [BadInput]，不再按表目录里的声明值去分配。
+const MAX_SFNT_SIZE: usize = 128 << 20;
+
+/// 声明的解压体长度 / WOFF2 文件长度的上限，同参考实现 `kMaxPlausibleCompressionRatio = 100`
+/// （`src/woff2_dec.cc`）。几十字节的畸形文件因此最多只能声明几 KB 的解压体。
+const MAX_COMPRESSION_RATIO: u64 = 100;
+
+/// 单个简单字形的点数上限：TrueType `endPtsOfContours` 是 uint16，超过 65536 个点不可表示。
+/// 同时给每字形复用的 [Scratch] 定了界（≤ 65536 × 12 B），它们因此可以走普通分配。
+const MAX_GLYPH_POINTS: i32 = 65536;
+
 /// 输入无法解析。
 #[derive(Debug, PartialEq, Eq)]
 pub struct BadInput;
 
 type R<T> = Result<T, BadInput>;
+
+/// 可失败地预留容量：分配失败报 [BadInput]，不走会 abort 整个进程的 `handle_alloc_error`。
+fn try_with_capacity<T>(n: usize) -> R<Vec<T>> {
+    let mut v = Vec::new();
+    v.try_reserve_exact(n).map_err(|_| BadInput)?;
+    Ok(v)
+}
+
+/// 可失败地复制一段字节。
+fn try_copy(data: &[u8]) -> R<Vec<u8>> {
+    let mut v = try_with_capacity(data.len())?;
+    v.extend_from_slice(data);
+    Ok(v)
+}
+
+/// 往输出缓冲追加至多 `extra` 字节前调用：总长受 [MAX_SFNT_SIZE] 约束，并可失败地预留容量，
+/// 之后的 `extend` / `push` 不会再触发不可失败的扩容。
+fn reserve_out(out: &mut Vec<u8>, extra: usize) -> R<()> {
+    let total = out.len().checked_add(extra).ok_or(BadInput)?;
+    if total > MAX_SFNT_SIZE {
+        return Err(BadInput);
+    }
+    out.try_reserve(extra).map_err(|_| BadInput)
+}
 
 /// 顺序大端读取器（越界一律 [BadInput]）。
 struct Reader<'a> {
@@ -136,17 +175,27 @@ pub fn woff2_to_sfnt(bytes: &[u8]) -> R<Vec<u8>> {
     if flavor == TTCF {
         return Err(BadInput);
     }
-    r.u32()?; // length
+    // length 必须等于文件实际长度（同参考实现 / OTS 的 reported_length 校验）。
+    if u64::from(r.u32()?) != bytes.len() as u64 {
+        return Err(BadInput);
+    }
     let num_tables = r.u16()?;
     if num_tables == 0 {
         return Err(BadInput);
     }
     r.u16()?; // reserved
-    r.u32()?; // totalSfntSize
+
+    // totalSfntSize 只作合理性检查（输出按实际表重组，可能与它不同，例如一律写长 loca）。
+    let total_sfnt_size = u64::from(r.u32()?);
+    if total_sfnt_size == 0 || total_sfnt_size > MAX_SFNT_SIZE as u64 {
+        return Err(BadInput);
+    }
     let total_compressed = r.u32()? as usize;
     r.take(2 + 2 + 4 * 5)?; // major, minor, meta*3, priv*2
 
-    let mut entries: Vec<Entry> = Vec::with_capacity(num_tables as usize);
+    let mut entries: Vec<Entry> = try_with_capacity(num_tables as usize)?;
+    // 表流总长：逐项 checked 累加并随时对上限，先校验、后分配。
+    let mut expected: u64 = 0;
     for _ in 0..num_tables {
         let flags = r.u8()?;
         let tag_index = (flags & 0x3F) as usize;
@@ -163,16 +212,25 @@ pub fn woff2_to_sfnt(bytes: &[u8]) -> R<Vec<u8>> {
             _ => false,
         };
         let stream_len = if transformed { r.base128()? } else { orig_len };
+        expected = expected
+            .checked_add(u64::from(stream_len))
+            .ok_or(BadInput)?;
+        if expected > MAX_SFNT_SIZE as u64 {
+            return Err(BadInput);
+        }
         entries.push(Entry {
             tag,
             transformed,
             stream_len: stream_len as usize,
         });
     }
+    if expected > MAX_COMPRESSION_RATIO.saturating_mul(bytes.len() as u64) {
+        return Err(BadInput);
+    }
 
     let comp = r.take(total_compressed)?;
-    let expected: usize = entries.iter().map(|e| e.stream_len).sum();
-    let decoded = brotli_decode(comp, expected)?;
+    // 上面已保证 expected ≤ MAX_SFNT_SIZE，转 usize 不会截断。
+    let decoded = brotli_decode(comp, expected as usize)?;
 
     let mut out: BTreeMap<u32, Vec<u8>> = BTreeMap::new();
     let mut glyf: Option<(&[u8], bool)> = None;
@@ -190,12 +248,12 @@ pub fn woff2_to_sfnt(bytes: &[u8]) -> R<Vec<u8>> {
             LOCA => {
                 // 变换过的 loca 由 glyf 重建。
                 if !e.transformed {
-                    out.insert(e.tag, data.to_vec());
+                    out.insert(e.tag, try_copy(data)?);
                 }
             }
             HMTX if e.transformed => hmtx = Some(data), // 等 glyf 出 xMin 再重建
             _ => {
-                out.insert(e.tag, data.to_vec());
+                out.insert(e.tag, try_copy(data)?);
             }
         }
     }
@@ -215,7 +273,7 @@ pub fn woff2_to_sfnt(bytes: &[u8]) -> R<Vec<u8>> {
                 }
             }
         } else {
-            out.insert(GLYF, data.to_vec());
+            out.insert(GLYF, try_copy(data)?);
         }
     }
 
@@ -229,28 +287,23 @@ pub fn woff2_to_sfnt(bytes: &[u8]) -> R<Vec<u8>> {
         out.insert(HMTX, rebuilt);
     }
 
-    Ok(build_sfnt(flavor, &out))
+    build_sfnt(flavor, &out)
 }
 
+/// 把 Brotli 流解进恰好 `expected` 字节的缓冲区（调用方已把 `expected` 限在
+/// [MAX_SFNT_SIZE] 内）。解压体必须与表目录声明的总长**完全一致**（同参考实现
+/// `Woff2Uncompress` 的 `uncompressed_size != dst_size` 判据）：流比声明的长就是
+/// NeedsMoreOutput，直接拒，不再按真实长度无上限地流式解下去（解压炸弹）。
 fn brotli_decode(comp: &[u8], expected: usize) -> R<Vec<u8>> {
-    // 常规路径：表流总长已知，直接解进预分配缓冲区（比流式 Read 少一层 64 KiB 中转，
-    // CJK 字体实测快 10%～15%）。
-    let mut out = vec![0u8; expected];
+    let mut out: Vec<u8> = try_with_capacity(expected)?;
+    out.resize(expected, 0);
     let info = brotli_decompressor::brotli_decode(comp, &mut out);
     match info.result {
-        brotli_decompressor::BrotliResult::ResultSuccess => {
-            out.truncate(info.decoded_size);
-            return Ok(out);
+        brotli_decompressor::BrotliResult::ResultSuccess if info.decoded_size == expected => {
+            Ok(out)
         }
-        brotli_decompressor::BrotliResult::NeedsMoreOutput => {} // 流比表目录声明的长：走流式
-        _ => return Err(BadInput),
+        _ => Err(BadInput),
     }
-    drop(out);
-    let mut decoded = Vec::with_capacity(expected);
-    brotli_decompressor::Decompressor::new(comp, 1 << 16)
-        .read_to_end(&mut decoded)
-        .map_err(|_| BadInput)?;
-    Ok(decoded)
 }
 
 struct GlyfResult {
@@ -295,10 +348,12 @@ fn reconstruct_glyf(data: &[u8]) -> R<GlyfResult> {
     let bitmap_len = ((num_glyphs + 31) >> 5) << 2;
     let bbox_bitmap = bbox_stream.take(bitmap_len)?;
 
-    let mut glyf: Vec<u8> = Vec::with_capacity(data.len() + data.len() / 2);
-    let mut loca: Vec<u8> = Vec::with_capacity((num_glyphs + 1) * 4);
+    // 初始容量只是提示；之后每个字形写入前都经 reserve_out 可失败地预留、并对总上限。
+    let mut glyf: Vec<u8> = try_with_capacity((data.len() + data.len() / 2).min(MAX_SFNT_SIZE))?;
+    // num_glyphs ≤ 65535：loca / x_mins 一次预留到位，循环里不再扩容。
+    let mut loca: Vec<u8> = try_with_capacity((num_glyphs + 1) * 4)?;
     loca.extend_from_slice(&0u32.to_be_bytes());
-    let mut x_mins: Vec<i32> = Vec::with_capacity(num_glyphs);
+    let mut x_mins: Vec<i32> = try_with_capacity(num_glyphs)?;
     let mut scratch = Scratch::default();
 
     for i in 0..num_glyphs {
@@ -333,7 +388,7 @@ fn reconstruct_glyf(data: &[u8]) -> R<GlyfResult> {
         };
         x_mins.push(x_min);
         if (glyf.len() - start) % 2 == 1 {
-            glyf.push(0); // 2 字节对齐
+            glyf.push(0); // 2 字节对齐（这 1 字节已含在字形函数的 reserve_out 里）
         }
         let off = u32::try_from(glyf.len()).map_err(|_| BadInput)?;
         loca.extend_from_slice(&off.to_be_bytes());
@@ -342,6 +397,7 @@ fn reconstruct_glyf(data: &[u8]) -> R<GlyfResult> {
 }
 
 /// 简单字形复用的临时缓冲区（CJK 字体几万个字形，别每个字形重新分配）。
+/// 长度受 [MAX_GLYPH_POINTS] 约束，单字形最多约 1 MB，走普通分配。
 #[derive(Default)]
 struct Scratch {
     end_pts: Vec<i32>,
@@ -367,7 +423,11 @@ fn simple_glyph(
     s.end_pts.clear();
     let mut total: i32 = 0;
     for _ in 0..nc {
+        // nc ≤ 32767、每项 ≤ 65535，i32 不会溢出；超过 uint16 能表示的点数直接拒。
         total += n_points.read255()? as i32;
+        if total > MAX_GLYPH_POINTS {
+            return Err(BadInput);
+        }
         s.end_pts.push(total - 1);
     }
 
@@ -398,18 +458,7 @@ fn simple_glyph(
         (x0, y0, x1, y1)
     };
 
-    put_i16(out, nc);
-    put_i16(out, x_min);
-    put_i16(out, y_min);
-    put_i16(out, x_max);
-    put_i16(out, y_max);
-    for &e in &s.end_pts {
-        put_u16(out, e);
-    }
-    put_u16(out, instr_len as i32);
-    out.extend_from_slice(instr);
-
-    // 按标准 TrueType 形式重编 flag + 坐标（带 REPEAT）。
+    // 按标准 TrueType 形式重编 flag + 坐标（带 REPEAT），先进 scratch，算出本字形大小再写。
     s.flags.clear();
     s.xs.clear();
     s.ys.clear();
@@ -449,6 +498,22 @@ fn simple_glyph(
             *first |= 0x40; // OVERLAP_SIMPLE
         }
     }
+
+    // 头 10 + endPts + instrLen 2 + 指令 + flag（RLE 后不超过原长）+ 坐标 + 对齐填充 1。
+    reserve_out(
+        out,
+        10 + 2 * s.end_pts.len() + 2 + instr.len() + s.flags.len() + s.xs.len() + s.ys.len() + 1,
+    )?;
+    put_i16(out, nc);
+    put_i16(out, x_min);
+    put_i16(out, y_min);
+    put_i16(out, x_max);
+    put_i16(out, y_max);
+    for &e in &s.end_pts {
+        put_u16(out, e);
+    }
+    put_u16(out, instr_len as i32);
+    out.extend_from_slice(instr);
     run_length_flags(&s.flags, out);
     out.extend_from_slice(&s.xs);
     out.extend_from_slice(&s.ys);
@@ -504,6 +569,9 @@ fn composite_glyph(
         (0, 0, 0, 0)
     };
 
+    // 头 10 + 组件记录 + （指令长 2 + 指令）+ 对齐填充 1。
+    let instr_part = if have_instr { 2 + instr.len() } else { 0 };
+    reserve_out(out, 10 + comp.len() + instr_part + 1)?;
     put_i16(out, -1);
     put_i16(out, x_min);
     put_i16(out, y_min);
@@ -607,21 +675,22 @@ fn reconstruct_hmtx(data: &[u8], n_hmetrics: usize, x_mins: &[i32]) -> R<Vec<u8>
     let no_lsb = flags & 0x01 != 0;
     let no_mono_lsb = flags & 0x02 != 0;
 
-    let mut advances = Vec::with_capacity(n_hmetrics);
+    // 全部长度都受 num_glyphs（≤ 65535）约束，一次预留到位。
+    let mut advances: Vec<u16> = try_with_capacity(n_hmetrics)?;
     for _ in 0..n_hmetrics {
         advances.push(r.u16()?);
     }
-    let mut lsbs = Vec::with_capacity(n_hmetrics);
+    let mut lsbs: Vec<i32> = try_with_capacity(n_hmetrics)?;
     for &x_min in x_mins.iter().take(n_hmetrics) {
         lsbs.push(if no_lsb { x_min } else { r.i16()? as i32 });
     }
     let mono = num_glyphs - n_hmetrics;
-    let mut mono_lsbs = Vec::with_capacity(mono);
+    let mut mono_lsbs: Vec<i32> = try_with_capacity(mono)?;
     for &x_min in &x_mins[n_hmetrics..] {
         mono_lsbs.push(if no_mono_lsb { x_min } else { r.i16()? as i32 });
     }
 
-    let mut out = Vec::with_capacity(n_hmetrics * 4 + mono * 2);
+    let mut out: Vec<u8> = try_with_capacity(n_hmetrics * 4 + mono * 2)?;
     for i in 0..n_hmetrics {
         out.extend_from_slice(&advances[i].to_be_bytes());
         put_i16(&mut out, lsbs[i]);
@@ -650,16 +719,29 @@ fn checksum(data: &[u8]) -> u32 {
 
 /// 按标签升序写表目录、每张表 4 字节对齐，重算 `head.checkSumAdjustment`。
 /// 目录里的表校验和取自写入前的表数据（含原 checkSumAdjustment），与 Dart 版一致。
-fn build_sfnt(flavor: u32, tables: &BTreeMap<u32, Vec<u8>>) -> Vec<u8> {
+/// 总长 checked 累加并受 [MAX_SFNT_SIZE] 约束（因此表偏移 / 长度写成 u32 不会截断），
+/// 输出缓冲可失败地分配。
+fn build_sfnt(flavor: u32, tables: &BTreeMap<u32, Vec<u8>>) -> R<Vec<u8>> {
     let n = tables.len();
-    let mut offset = 12 + 16 * n;
-    let mut offsets = Vec::with_capacity(n);
+    let mut offset = 16usize
+        .checked_mul(n)
+        .and_then(|d| d.checked_add(12))
+        .ok_or(BadInput)?;
+    let mut offsets: Vec<usize> = try_with_capacity(n)?;
     for data in tables.values() {
         offsets.push(offset);
-        offset = (offset + data.len() + 3) & !3;
+        offset = offset
+            .checked_add(data.len())
+            .and_then(|e| e.checked_add(3))
+            .ok_or(BadInput)?
+            & !3;
+        if offset > MAX_SFNT_SIZE {
+            return Err(BadInput);
+        }
     }
     let total = offset;
-    let mut out = vec![0u8; total];
+    let mut out: Vec<u8> = try_with_capacity(total)?;
+    out.resize(total, 0);
 
     let mut max_pow2 = 1usize;
     while max_pow2 * 2 <= n {
@@ -693,7 +775,7 @@ fn build_sfnt(flavor: u32, tables: &BTreeMap<u32, Vec<u8>>) -> Vec<u8> {
             out[h + 8..h + 12].copy_from_slice(&0xB1B0_AFBAu32.wrapping_sub(sum).to_be_bytes());
         }
     }
-    out
+    Ok(out)
 }
 
 /// WOFF2 → sfnt。成功时 `*out_ptr` / `*out_len` 指向本库分配的 sfnt，调用方用
@@ -757,6 +839,204 @@ pub unsafe extern "C" fn ffc_font_table_checksum(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
+
+    /// 记录「当前线程」请求过的最大单次分配（含 try_reserve 的尝试），用来证明畸形输入不会
+    /// 按声明值触发巨量分配。按线程记，测试并行跑互不干扰。
+    struct MaxRequestAlloc;
+
+    thread_local! {
+        static MAX_REQUEST: Cell<usize> = const { Cell::new(0) };
+    }
+
+    fn note(size: usize) {
+        // try_with：线程析构阶段 TLS 已销毁时静默跳过。
+        let _ = MAX_REQUEST.try_with(|m| m.set(m.get().max(size)));
+    }
+
+    unsafe impl GlobalAlloc for MaxRequestAlloc {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            note(layout.size());
+            System.alloc(layout)
+        }
+        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+            note(layout.size());
+            System.alloc_zeroed(layout)
+        }
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            note(new_size);
+            System.realloc(ptr, layout, new_size)
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            System.dealloc(ptr, layout)
+        }
+    }
+
+    #[global_allocator]
+    static ALLOC: MaxRequestAlloc = MaxRequestAlloc;
+
+    /// 跑 `f`，返回它的结果与期间当前线程最大的单次分配请求。
+    fn max_request_during<T>(f: impl FnOnce() -> T) -> (T, usize) {
+        MAX_REQUEST.with(|m| m.set(0));
+        let v = f();
+        (v, MAX_REQUEST.with(|m| m.get()))
+    }
+
+    /// 48 字节 WOFF2 头（length 填文件真实长度，totalSfntSize 取一个合法的小值）。
+    fn woff2_header(num_tables: u16, file_len: usize, total_compressed: u32) -> Vec<u8> {
+        let mut h = Vec::new();
+        h.extend_from_slice(&SIGNATURE.to_be_bytes());
+        h.extend_from_slice(&0x0001_0000u32.to_be_bytes()); // flavor：TrueType
+        h.extend_from_slice(&(file_len as u32).to_be_bytes());
+        h.extend_from_slice(&num_tables.to_be_bytes());
+        h.extend_from_slice(&0u16.to_be_bytes()); // reserved
+        h.extend_from_slice(&4096u32.to_be_bytes()); // totalSfntSize
+        h.extend_from_slice(&total_compressed.to_be_bytes());
+        h.extend_from_slice(&[0; 24]); // major, minor, meta*3, priv*2
+        assert_eq!(h.len(), 48);
+        h
+    }
+
+    /// 一条已知标签（cmap）、未变换的表目录项，origLength = u32::MAX（UIntBase128 5 字节）。
+    const HUGE_ENTRY: [u8; 6] = [0x00, 0x8F, 0xFF, 0xFF, 0xFF, 0x7F];
+
+    #[test]
+    fn tiny_file_declaring_4gib_is_rejected_without_huge_allocation() {
+        // 54 B：头 48 + 1 条目录项 6，声明约 4 GiB 的解压体，压缩体长度 0。
+        let mut f = woff2_header(1, 54, 0);
+        f.extend_from_slice(&HUGE_ENTRY);
+        assert_eq!(f.len(), 54);
+        let (r, max) = max_request_during(|| woff2_to_sfnt(&f));
+        assert_eq!(r, Err(BadInput));
+        assert!(max < 64 << 10, "畸形输入触发了 {max} 字节的分配");
+        let mut p = std::ptr::null_mut();
+        let mut n = 0usize;
+        let st = unsafe { ffc_font_woff2_to_sfnt(f.as_ptr(), f.len(), &mut p, &mut n) };
+        assert_eq!(st, status::BAD_INPUT);
+    }
+
+    #[test]
+    fn repeated_directory_entries_are_rejected_without_huge_allocation() {
+        // 65535 条重复的 cmap 目录项，每条声明 4 GiB，总声明约 281 TB（usize 求和会溢出 32 位）。
+        let n = u16::MAX as usize;
+        let len = 48 + 6 * n;
+        let mut f = woff2_header(u16::MAX, len, 0);
+        for _ in 0..n {
+            f.extend_from_slice(&HUGE_ENTRY);
+        }
+        let (r, max) = max_request_during(|| woff2_to_sfnt(&f));
+        assert_eq!(r, Err(BadInput));
+        // 只允许按表数预留目录项（65535 × 24 B ≈ 1.5 MB），不允许按声明长度分配。
+        assert!(max < 4 << 20, "畸形输入触发了 {max} 字节的分配");
+
+        // 每条都在上限内、但总和超过 MAX_SFNT_SIZE：同样在分配前被拒。
+        // 33 条 × 4 MiB（UIntBase128 = 0x82 0x80 0x80 0x00）。
+        let k = 33usize;
+        let len = 48 + 5 * k;
+        let mut g = woff2_header(k as u16, len, 0);
+        for _ in 0..k {
+            g.extend_from_slice(&[0x00, 0x82, 0x80, 0x80, 0x00]);
+        }
+        let (r, max) = max_request_during(|| woff2_to_sfnt(&g));
+        assert_eq!(r, Err(BadInput));
+        assert!(max < 64 << 10, "畸形输入触发了 {max} 字节的分配");
+    }
+
+    #[test]
+    fn implausible_compression_ratio_is_rejected_before_allocation() {
+        // 声明 1 MiB（远低于 MAX_SFNT_SIZE），但文件只有 53 B：比值 > 100。
+        let mut f = woff2_header(1, 53, 0);
+        f.extend_from_slice(&[0x00, 0xC0, 0x80, 0x00]); // cmap，origLength = 1 MiB
+        f.push(0); // 凑 53 B
+        assert_eq!(f.len(), 53);
+        let (r, max) = max_request_during(|| woff2_to_sfnt(&f));
+        assert_eq!(r, Err(BadInput));
+        assert!(max < 64 << 10, "畸形输入触发了 {max} 字节的分配");
+    }
+
+    #[test]
+    fn header_length_and_total_sfnt_size_are_checked() {
+        let base = |len_field: u32, total_sfnt: u32| -> Vec<u8> {
+            let mut f = woff2_header(1, 0, 0);
+            f[8..12].copy_from_slice(&len_field.to_be_bytes());
+            f[16..20].copy_from_slice(&total_sfnt.to_be_bytes());
+            f.extend_from_slice(&[0x00, 0x00]); // cmap，origLength = 0
+            f
+        };
+        // length 与文件实际长度（50）不符。
+        assert_eq!(woff2_to_sfnt(&base(49, 4096)), Err(BadInput));
+        assert_eq!(woff2_to_sfnt(&base(u32::MAX, 4096)), Err(BadInput));
+        // totalSfntSize 为 0 或超过上限。
+        assert_eq!(woff2_to_sfnt(&base(50, 0)), Err(BadInput));
+        assert_eq!(woff2_to_sfnt(&base(50, u32::MAX)), Err(BadInput));
+    }
+
+    /// 只含一个未压缩元块的 Brotli 流（WBITS=16，ISUNCOMPRESSED=1），再接一个空的末尾元块。
+    fn stored_brotli(data: &[u8]) -> Vec<u8> {
+        assert!(!data.is_empty() && data.len() <= 1 << 16);
+        let hdr: u32 = (((data.len() - 1) as u32) << 4) | (1 << 20);
+        let mut s = hdr.to_le_bytes()[..3].to_vec();
+        s.extend_from_slice(data);
+        s.push(0x03); // ISLAST=1, ISLASTEMPTY=1
+        s
+    }
+
+    #[test]
+    fn brotli_output_must_match_declared_length_exactly() {
+        let data: Vec<u8> = (0u8..10).collect();
+        let s = stored_brotli(&data);
+        assert_eq!(brotli_decode(&s, 10), Ok(data));
+        // 流比表目录声明的长：以前会退到无上限的流式解码，现在直接拒。
+        assert_eq!(brotli_decode(&s, 9), Err(BadInput));
+        // 流比声明的短。
+        assert_eq!(brotli_decode(&s, 11), Err(BadInput));
+    }
+
+    #[test]
+    fn simple_glyph_with_more_points_than_uint16_can_index_is_rejected() {
+        // 1 个字形、2 条轮廓：65535 + 2 = 65537 个点，超过 endPtsOfContours（uint16）的表示范围。
+        let points = 65537usize;
+        let n_contour = 2i16.to_be_bytes().to_vec();
+        let n_points = vec![253, 0xFF, 0xFF, 2];
+        let flags = vec![0u8; points]; // f=0：每点从 glyph 流读 1 字节 dy
+        let mut glyph = vec![1u8; points];
+        glyph.push(0); // instructionLength = 0
+        let bbox = vec![0u8; 4]; // bboxBitmap：1 个字形 → 4 字节，无显式 bbox
+        let streams: [&[u8]; 7] = [&n_contour, &n_points, &flags, &glyph, &[], &bbox, &[]];
+        let mut d = Vec::new();
+        d.extend_from_slice(&0u16.to_be_bytes()); // reserved
+        d.extend_from_slice(&0u16.to_be_bytes()); // optionFlags
+        d.extend_from_slice(&1u16.to_be_bytes()); // numGlyphs
+        d.extend_from_slice(&0u16.to_be_bytes()); // indexFormat
+        for s in &streams {
+            d.extend_from_slice(&(s.len() as u32).to_be_bytes());
+        }
+        for s in &streams {
+            d.extend_from_slice(s);
+        }
+        assert!(reconstruct_glyf(&d).is_err());
+
+        // 对照：65536 个点（65534 + 2）合法，能重建出 1 个字形。
+        let n_points = vec![253, 0xFF, 0xFE, 2];
+        let flags = vec![0u8; points - 1];
+        let mut glyph = vec![1u8; points - 1];
+        glyph.push(0);
+        let streams: [&[u8]; 7] = [&n_contour, &n_points, &flags, &glyph, &[], &bbox, &[]];
+        let mut d = Vec::new();
+        d.extend_from_slice(&[0, 0, 0, 0, 0, 1, 0, 0]);
+        for s in &streams {
+            d.extend_from_slice(&(s.len() as u32).to_be_bytes());
+        }
+        for s in &streams {
+            d.extend_from_slice(s);
+        }
+        let Ok(g) = reconstruct_glyf(&d) else {
+            panic!("65536 个点应当可重建");
+        };
+        assert_eq!(g.x_mins.len(), 1);
+        assert_eq!(g.loca.len(), 8);
+    }
 
     #[test]
     fn hmtx_omitted_lsbs_come_from_xmin() {
