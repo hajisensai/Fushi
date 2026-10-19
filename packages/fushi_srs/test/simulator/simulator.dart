@@ -12,22 +12,34 @@ const int kDay = 24 * 60 * kMinute;
 
 /// 模拟的一台设备。
 class SimDevice {
-  SimDevice(this.world, this.id, this.skewMs) {
+  SimDevice(this.world, this.id, this.skewMs, {List<String>? uses})
+    : uses = uses ?? <String>[world.dirs.keys.first] {
     replica = SrsMemoryReplica(deviceId: id, trustedNow: now);
-    engine = SrsSyncEngine(
-      directory: world.dir,
-      replica: replica,
-      options: const SrsSyncOptions(snapshotEveryBatches: 3),
-    );
+    engines = <String, SrsSyncEngine>{
+      for (final String key in this.uses)
+        key: SrsSyncEngine(
+          directory: world.dirs[key]!,
+          directoryKey: key,
+          replica: replica,
+          options: world.options,
+        ),
+    };
   }
 
   final SimWorld world;
   final String id;
+
+  /// 这台设备用的同步目录（按 [SimWorld.dirs] 的键）。
+  final List<String> uses;
   int skewMs;
   bool anchored = false;
   late SrsMemoryReplica replica;
-  late SrsSyncEngine engine;
+  late Map<String, SrsSyncEngine> engines;
   SrsBackup? savedBackup;
+  int _turn = 0;
+
+  /// 唯一目录的引擎（单目录用例用）。
+  SrsSyncEngine get engine => engines.values.single;
 
   (int, SrsTimeSource) now() => anchored
       ? (world.trueNow, SrsTimeSource.anchored)
@@ -41,8 +53,11 @@ class SimDevice {
     newId: (int ms) => world.nextId('log'),
   );
 
-  Future<SrsSyncReport> sync() async {
-    final SrsSyncReport r = await engine.syncOnce();
+  /// 同步一个目录：多目录设备按顺序轮流（生产里各通道也是各自触发、互不等待）。
+  Future<SrsSyncReport> sync() => syncDir(uses[_turn++ % uses.length]);
+
+  Future<SrsSyncReport> syncDir(String key) async {
+    final SrsSyncReport r = await engines[key]!.syncOnce();
     if (r.error == null) anchored = true;
     return r;
   }
@@ -87,35 +102,64 @@ const FakeFsrsEngine _engine = FakeFsrsEngine();
 
 /// 模拟世界：真实时间、云盘目录、设备、全部修改记录的台账。
 class SimWorld {
-  SimWorld({Random? random}) {
-    dir = MemorySyncDirectory(serverNow: () => trueNow, random: random);
+  SimWorld({
+    Random? random,
+    int directories = 1,
+    this.options = const SrsSyncOptions(snapshotEveryBatches: 3),
+  }) {
+    for (int i = 0; i < directories; i++) {
+      dirs['dir$i'] = MemorySyncDirectory(
+        serverNow: () => trueNow,
+        random: random,
+      );
+    }
   }
 
   int trueNow = kStart;
-  late final MemorySyncDirectory dir;
+
+  /// 同步目录（云盘、互联 host……）：设备各用其中一部分。
+  final Map<String, MemorySyncDirectory> dirs =
+      <String, MemorySyncDirectory>{};
+  final SrsSyncOptions options;
   final Map<String, SimDevice> devices = <String, SimDevice>{};
   final List<SrsFieldEdit> ledger = <SrsFieldEdit>[];
   int _ids = 0;
 
+  /// 第一个目录（单目录用例用）。
+  MemorySyncDirectory get dir => dirs.values.first;
+
+  set listDelay(double v) {
+    for (final MemorySyncDirectory d in dirs.values) {
+      d.listDelay = v;
+    }
+  }
+
   String nextId(String p) => '$p-${(_ids++).toString().padLeft(6, '0')}';
 
-  SimDevice add(String id, {int skewMs = 0}) =>
-      devices[id] = SimDevice(this, id, skewMs);
+  SimDevice add(String id, {int skewMs = 0, List<String>? uses}) =>
+      devices[id] = SimDevice(this, id, skewMs, uses: uses);
 
-  /// 全部设备反复同步，直到没有任何发布 / 应用（没有列表延迟时最多几轮）。
+  /// 全部设备反复同步（每轮每台设备把它用的目录各同步一次），直到没有任何发布 / 应用。
   Future<void> quiesce({int maxRounds = 12}) async {
-    final double delay = dir.listDelay;
-    dir.listDelay = 0;
+    final Map<String, double> delays = <String, double>{
+      for (final MapEntry<String, MemorySyncDirectory> e in dirs.entries)
+        e.key: e.value.listDelay,
+    };
+    listDelay = 0;
     int quiet = 0;
     for (int round = 0; round < maxRounds && quiet < 2; round++) {
       int activity = 0;
       for (final SimDevice d in devices.values) {
-        final SrsSyncReport r = await d.sync();
-        activity += r.published + r.applied;
+        for (final String key in d.uses) {
+          final SrsSyncReport r = await d.syncDir(key);
+          activity += r.published + r.applied;
+        }
       }
       quiet = activity == 0 ? quiet + 1 : 0;
     }
-    dir.listDelay = delay;
+    for (final MapEntry<String, double> e in delays.entries) {
+      dirs[e.key]!.listDelay = e.value;
+    }
   }
 
   /// 五条断言；返回违反项（空 = 通过）。
@@ -273,18 +317,48 @@ List<SimOp> generateOps(int seed, {int steps = 60, int devices = 3}) {
   return ops;
 }
 
-/// 跑一组操作，返回违反项。
+/// 多目录拓扑：第 i 台设备用哪些目录（目录号）。
+typedef SimTopology = List<List<int>>;
+
+/// 云盘设备 d0、两边都连的桥 d1、只连互联 host 的 d2（经 d1 才能互通）。
+const SimTopology kBridgeTopology = <List<int>>[
+  <int>[0],
+  <int>[0, 1],
+  <int>[1],
+];
+
+/// 三台设备都连两个目录（云盘 + 互联同时开着）。
+const SimTopology kDualTopology = <List<int>>[
+  <int>[0, 1],
+  <int>[0, 1],
+  <int>[0, 1],
+];
+
+/// 跑一组操作，返回违反项。[topology] 为 null 时所有设备共用一个目录。
 Future<List<String>> runOps(
   List<SimOp> ops, {
   int devices = 3,
   int seed = 0,
   double listDelay = 0.2,
+  SimTopology? topology,
 }) async {
   final Random r = Random(seed);
-  final SimWorld w = SimWorld(random: r);
-  w.dir.listDelay = listDelay;
+  int dirCount = 1;
+  for (final List<int> u in topology ?? const <List<int>>[]) {
+    for (final int d in u) {
+      if (d + 1 > dirCount) dirCount = d + 1;
+    }
+  }
+  final SimWorld w = SimWorld(random: r, directories: dirCount);
+  w.listDelay = listDelay;
   for (int i = 0; i < devices; i++) {
-    w.add('d$i', skewMs: kSkews[(seed + i) % kSkews.length]);
+    w.add(
+      'd$i',
+      skewMs: kSkews[(seed + i) % kSkews.length],
+      uses: topology == null
+          ? null
+          : <String>[for (final int d in topology[i]) 'dir$d'],
+    );
   }
   String noteId(int n) => 'note-$n';
   String cardId(int c) => 'card-$c';
@@ -345,6 +419,7 @@ Future<List<SimOp>> shrink(
   List<SimOp> ops, {
   required int seed,
   int devices = 3,
+  SimTopology? topology,
 }) async {
   List<SimOp> cur = List<SimOp>.of(ops);
   bool progress = true;
@@ -352,7 +427,12 @@ Future<List<SimOp>> shrink(
     progress = false;
     for (int i = 0; i < cur.length; i++) {
       final List<SimOp> trial = List<SimOp>.of(cur)..removeAt(i);
-      if ((await runOps(trial, devices: devices, seed: seed)).isNotEmpty) {
+      if ((await runOps(
+        trial,
+        devices: devices,
+        seed: seed,
+        topology: topology,
+      )).isNotEmpty) {
         cur = trial;
         progress = true;
         break;

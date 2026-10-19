@@ -812,6 +812,7 @@ void _requireOneVideoMetadataOwner({
   SrsLocalState,
   SrsNotesCache,
   SrsCardsCache,
+  SrsSentBatches,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -845,7 +846,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 118;
+  int get schemaVersion => 119;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2302,6 +2303,15 @@ class FushiDatabase extends _$FushiDatabase
                 await m.addColumn(videoBooks, videoBooks.localAddedAt);
               }
               await _backfillLocalAddedAt('video_books');
+            }
+          }
+          if (from < 119) {
+            // v119（Fushi SRS 多目录同步）：srs_sent_batches——本机已冻结批次的留存，
+            // 同一批次逐字节相同地传到每个同步目录（云盘 / 互联 host / 本机 host 目录），
+            // 到最近同步过的目录都确认为止。设备本地、不进备份、无外键；存量库没有
+            // 留存可迁（旧版本冻结中的批次由 SrsDbStore 读本机状态时搬进来）。
+            if (!await _tableExists('srs_sent_batches')) {
+              await m.createTable(srsSentBatches);
             }
           }
         },

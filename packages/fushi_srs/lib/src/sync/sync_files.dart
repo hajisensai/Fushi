@@ -84,20 +84,31 @@ class SrsBatch {
     required this.no,
     required this.serverTimeMs,
     required this.events,
+    this.knownServerTimes = const <String, int>{},
   });
 
   final String writerId;
   final int no;
 
-  /// 发布时的服务器时间 S（带外元数据，只在信封里，不改任何事件）。
+  /// 发布时的服务器时间 S（带外元数据，只在信封里，不改任何事件）。只作用于**首次发布**的事件。
   final int serverTimeMs;
   final List<SrsEvent> events;
+
+  /// 批次里早已发布过、写入者冻结时已知 S 的事件（转发、重新发布）→ 那个 S。
+  /// 这些事件不取信封的 S：转发的那份可能是某些设备唯一能看到的一份，信封 S 是转发时刻，
+  /// 用它会让只看得到转发的设备算出与别人不同的 S(e)（排序键随之不同，不收敛）。
+  final Map<String, int> knownServerTimes;
+
+  /// 事件 [eventId] 在本批次里的 S。
+  int serverTimeOf(String eventId) =>
+      knownServerTimes[eventId] ?? serverTimeMs;
 
   Uint8List encode() => _encode(<String, Object?>{
     'magic': srsBatchMagic,
     'writer': writerId,
     'no': no,
     's': serverTimeMs,
+    if (knownServerTimes.isNotEmpty) 'fs': knownServerTimes,
   }, _eventsBody(events));
 
   static SrsBatch? decode(Uint8List bytes) {
@@ -109,6 +120,13 @@ class SrsBatch {
       no: h['no']! as int,
       serverTimeMs: h['s']! as int,
       events: _parseEvents(utf8.decode(body)),
+      knownServerTimes: <String, int>{
+        for (final MapEntry<String, Object?> e
+            in ((h['fs'] as Map?) ?? const <String, Object?>{})
+                .cast<String, Object?>()
+                .entries)
+          e.key: e.value! as int,
+      },
     );
   }
 }

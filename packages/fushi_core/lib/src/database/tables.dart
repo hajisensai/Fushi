@@ -3427,6 +3427,24 @@ class SrsLocalState extends Table {
   Set<Column> get primaryKey => {profileUid};
 }
 
+/// v119：本机已冻结批次的留存（不同步、不进备份）。一台设备可以同时用几个同步目录
+/// （云盘、互联 host、本机作 host 时自己的目录），同一个批次要逐字节相同地传到每一个；
+/// 留存到最近同步过的所有目录都确认收到为止（fushi_srs 的 `SrsSyncEngine`）。
+@DataClassName('SrsSentBatchRow')
+class SrsSentBatches extends Table {
+  TextColumn get profileUid => text()();
+  TextColumn get writerId => text()();
+
+  /// 批次号（写入者内从 1 起连续）。
+  IntColumn get batchNo => integer()();
+
+  /// 冻结后的批次文件字节（自校验格式，见 fushi_srs `SrsBatch`）。
+  BlobColumn get bytes => blob()();
+
+  @override
+  Set<Column> get primaryKey => {profileUid, writerId, batchNo};
+}
+
 /// 笔记缓存（本机可重建，不同步）。
 @DataClassName('SrsNoteCacheRow')
 class SrsNotesCache extends Table {

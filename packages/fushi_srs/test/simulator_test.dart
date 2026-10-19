@@ -275,7 +275,10 @@ void main() {
 
   group('HBK-AUDIT-009：cursor 不越过缺口', () {
     test('b+1 不可见时停在 b', () async {
-      final SimWorld w = SimWorld();
+      // 不写快照：这里只看批次的缺口规则（有覆盖缺口的快照时见下一条）。
+      final SimWorld w = SimWorld(
+        options: const SrsSyncOptions(snapshotEveryBatches: 100),
+      );
       final SimDevice a = w.add('a');
       final SimDevice b = w.add('b');
       // b 先同步一次成为活跃对端，a 才不会在它读完之前清理批次。
@@ -293,6 +296,25 @@ void main() {
       w.dir.files[aw]![srsBatchName(2)] = hidden;
       await b.sync();
       expect(b.replica.syncState.cursors[aw], 3);
+    });
+
+    test('b+1 不在、但有覆盖到更后面的快照：读快照，不卡在 b', () async {
+      // 写入者在这个目录里用快照补齐过（本机留存不够）时，缺口之后不会再有那几批。
+      final SimWorld w = SimWorld();
+      final SimDevice a = w.add('a');
+      final SimDevice b = w.add('b');
+      await a.sync();
+      await b.sync();
+      for (int i = 0; i < 3; i++) {
+        a.edit('n', 'f/x$i', 'v');
+        await a.sync();
+      }
+      final String aw = a.replica.writerId;
+      expect(w.dir.files[aw]!.keys, contains(srsSnapshotName(3)));
+      w.dir.files[aw]!.remove(srsBatchName(2));
+      await b.sync();
+      expect(b.replica.syncState.cursors[aw], 3);
+      expect(b.replica.store.digest(), a.replica.store.digest());
     });
 
     test('截断的批次视为不存在', () async {
@@ -395,6 +417,169 @@ void main() {
       });
     }
   });
+
+  group('多目录（云盘 + 互联 host）', () {
+    test('同一批次传到每个目录；轮流同步不来回换化身', () async {
+      final SimWorld w = SimWorld(directories: 2);
+      final SimDevice a = w.add('a', uses: <String>['dir0', 'dir1']);
+      final SimDevice b = w.add('b', uses: <String>['dir1']);
+      final SimDevice c = w.add('c', uses: <String>['dir0']);
+      final String writer = a.replica.writerId;
+      for (int i = 0; i < 4; i++) {
+        a.edit('n', 'f/x', 'v$i');
+        expect((await a.syncDir('dir0')).reincarnated, isFalse);
+        expect((await a.syncDir('dir1')).reincarnated, isFalse);
+        await b.sync();
+        await c.sync();
+        expect(b.replica.store.digest(), a.replica.store.digest());
+        expect(c.replica.store.digest(), a.replica.store.digest());
+      }
+      expect(a.replica.writerId, writer);
+      expect(w.dirs['dir0']!.files[writer]!.keys, contains(srsBatchName(4)));
+      expect(w.dirs['dir1']!.files[writer]!.keys, contains(srsBatchName(4)));
+    });
+
+    test('桥：只连云盘与只连 host 的设备经两边都连的设备互通（含桥接之前的历史）', () async {
+      final SimWorld w = SimWorld(directories: 2);
+      final SimDevice cloud = w.add('cloud', uses: <String>['dir0']);
+      final SimDevice phone = w.add('phone', uses: <String>['dir1']);
+      cloud.edit('n1', 'f/x', 'from-cloud');
+      phone.edit('n2', 'f/x', 'from-phone');
+      await cloud.sync();
+      await phone.sync();
+      // 桥在两边都已有数据之后才加入。
+      w.add('bridge', uses: <String>['dir0', 'dir1']);
+      await w.quiesce();
+      expect(w.check(), isEmpty);
+      // 之后的增量经转发接上。
+      cloud.edit('n1', 'f/x', 'later-cloud');
+      phone.edit('n3', 'f/x', 'later-phone');
+      await w.quiesce();
+      expect(w.check(), isEmpty);
+      expect(
+        phone.replica.store.editsOf(SrsEntityKind.note, 'n1')['f/x']!.live
+            .single
+            .value,
+        'later-cloud',
+      );
+    });
+
+    test('落后得比本机留存还久的目录用快照补齐', () async {
+      final SimWorld w = SimWorld(
+        directories: 2,
+        options: const SrsSyncOptions(
+          snapshotEveryBatches: 100,
+          maxSentBatches: 2,
+        ),
+      );
+      final SimDevice a = w.add('a', uses: <String>['dir0', 'dir1']);
+      final SimDevice b = w.add('b', uses: <String>['dir1']);
+      await a.syncDir('dir1');
+      for (int i = 0; i < 6; i++) {
+        a.edit('n', 'f/x$i', 'v');
+        await a.syncDir('dir0');
+      }
+      final SrsSyncReport r = await a.syncDir('dir1');
+      expect(r.snapshotWritten, isTrue);
+      await b.sync();
+      expect(b.replica.store.digest(), a.replica.store.digest());
+    });
+
+    test('还没传过的目录：补齐，不换化身', () async {
+      final SimWorld w = SimWorld(directories: 2);
+      final SimDevice a = w.add('a', uses: <String>['dir0', 'dir1']);
+      a.edit('n', 'f/x', 'v');
+      await a.syncDir('dir0');
+      final String writer = a.replica.writerId;
+      final SrsSyncReport r = await a.syncDir('dir1');
+      expect(r.reincarnated, isFalse);
+      expect(a.replica.writerId, writer);
+      // 从没同步过的目录不拖住本机留存：第 1 批已不再留存，用快照补齐。
+      expect(r.snapshotWritten, isTrue);
+      final SimDevice b = w.add('b', uses: <String>['dir1']);
+      await b.sync();
+      expect(b.replica.store.digest(), a.replica.store.digest());
+    });
+
+    test('同步过的目录拖住留存：之后的批次逐批补传，不写快照', () async {
+      final SimWorld w = SimWorld(
+        directories: 2,
+        options: const SrsSyncOptions(snapshotEveryBatches: 100),
+      );
+      final SimDevice a = w.add('a', uses: <String>['dir0', 'dir1']);
+      await a.syncDir('dir0');
+      await a.syncDir('dir1');
+      for (int i = 0; i < 3; i++) {
+        a.edit('n', 'f/x$i', 'v');
+        await a.syncDir('dir0');
+      }
+      final SrsSyncReport r = await a.syncDir('dir1');
+      expect(r.snapshotWritten, isFalse);
+      final String writer = a.replica.writerId;
+      expect(w.dirs['dir1']!.files[writer]!.keys, contains(srsBatchName(3)));
+    });
+
+    test('在某个目录里被当作退役清理过：换新化身', () async {
+      final SimWorld w = SimWorld(directories: 2);
+      final SimDevice a = w.add('a', uses: <String>['dir0', 'dir1']);
+      a.edit('n', 'f/x', 'v');
+      await a.syncDir('dir0');
+      await a.syncDir('dir1');
+      final String old = a.replica.writerId;
+      w.dirs['dir1']!.files.remove(old);
+      final SrsSyncReport r = await a.syncDir('dir1');
+      expect(r.reincarnated, isTrue);
+      expect(a.replica.writerId, isNot(old));
+    });
+
+    test('旧版本的本机状态（不分目录记账）：找不到本写入者的目录按退役处理', () async {
+      final SimWorld w = SimWorld(directories: 2);
+      final SimDevice a = w.add('a', uses: <String>['dir0', 'dir1']);
+      a.edit('n', 'f/x', 'v');
+      await a.syncDir('dir0');
+      final SrsSyncLocalState st = a.replica.syncState
+        ..directories.clear()
+        ..legacyDirectories = true;
+      await a.replica.saveSyncState(st);
+      final String old = a.replica.writerId;
+      expect((await a.syncDir('dir0')).reincarnated, isFalse);
+      expect((await a.syncDir('dir1')).reincarnated, isTrue);
+      expect(a.replica.writerId, isNot(old));
+      expect(a.replica.syncState.legacyDirectories, isFalse);
+      final SimDevice b = w.add('b', uses: <String>['dir1']);
+      await w.quiesce();
+      expect(b.replica.store.digest(), a.replica.store.digest());
+    });
+  });
+
+  for (final (String name, SimTopology topology) in <(String, SimTopology)>[
+    ('桥接拓扑', kBridgeTopology),
+    ('三台都连两个目录', kDualTopology),
+  ]) {
+    group('随机模拟（固定种子，$name）', () {
+      for (int seed = 1; seed <= 60; seed++) {
+        test('seed $seed', () async {
+          final List<SimOp> ops = generateOps(seed);
+          final List<String> problems = await runOps(
+            ops,
+            seed: seed,
+            topology: topology,
+          );
+          if (problems.isNotEmpty) {
+            final List<SimOp> minimal = await shrink(
+              ops,
+              seed: seed,
+              topology: topology,
+            );
+            fail(
+              'seed $seed: $problems\n'
+              'minimal repro (${minimal.length} ops): $minimal',
+            );
+          }
+        });
+      }
+    });
+  }
 
   test('目录：探针文件写在写入者自己的目录', () async {
     final MemorySyncDirectory dir = MemorySyncDirectory(serverNow: () => 1);
