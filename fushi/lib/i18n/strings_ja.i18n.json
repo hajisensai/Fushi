@@ -7963,7 +7963,7 @@
   "video_setting_pause_ocr_scope": "一時停止時に画面の文字を認識",
   "video_setting_pause_ocr_scope_all": "すべての動画",
   "video_setting_pause_ocr_scope_graphic": "画像字幕のみ",
-  "video_setting_pause_ocr_scope_hint": "一時停止した画面の文字を OCR で認識し、タップで辞書を引けるようにします。Fushi が表示しているテキスト字幕がある場合はそちらを優先します。",
+  "video_setting_pause_ocr_scope_hint": "一時停止した画面の文字を OCR で認識し、タップで辞書を引けるようにします。テキスト字幕の有無には影響されません。",
   "video_setting_pause_ocr_scope_off": "オフ",
   "video_setting_picture_fit": "画面のスケーリング",
   "video_setting_picture_fit_contain": "全体を表示",
