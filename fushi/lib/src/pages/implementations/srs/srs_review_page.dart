@@ -105,6 +105,10 @@ class SrsReviewPage extends ConsumerStatefulWidget {
   final String deckId;
   final String deckName;
 
+  /// 集成测试探针：打开首张卡的各阶段（null = 不记）。
+  @visibleForTesting
+  static void Function(String phase)? debugPhase;
+
   @override
   ConsumerState<SrsReviewPage> createState() => _SrsReviewPageState();
 }
@@ -208,6 +212,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       return;
     }
     _store = store;
+    SrsReviewPage.debugPhase?.call('store');
     await _loadNext();
   }
 
@@ -319,14 +324,18 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         unawaited(_completeShown(id, _shownGeneration));
         return;
       }
+      SrsReviewPage.debugPhase?.call('nextCard');
       await _refreshCounts();
+      SrsReviewPage.debugPhase?.call('counts');
       final SrsCardDetail? detail = await store.cardDetail(id);
       final SrsRenderedCard? rendered = await store.renderCard(id);
+      SrsReviewPage.debugPhase?.call('render');
       final SrsDeckView? audioOwner = await _audioOwnerOf(store, detail);
       final SrsDayContext day = await store.dayContext();
       final SrsAnswerPreview? preview = store.canSchedule
           ? await store.preview(id)
           : null;
+      SrsReviewPage.debugPhase?.call('preview');
       if (!mounted) return;
       _show(
         detail,
@@ -355,6 +364,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     required SrsDeckView? audioOwner,
   }) {
     _shownGeneration++;
+    SrsReviewPage.debugPhase?.call('show');
     // 换卡：上一张卡上查的词弹窗收起。
     _lookup.closeAll();
     setState(() {
