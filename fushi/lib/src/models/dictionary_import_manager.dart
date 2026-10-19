@@ -350,6 +350,9 @@ class DictionaryImportManager {
           metadata: <String, String>{
             ...readSourceMetadataFromIndex(finalDir),
             if (result.kanjiCount > 0) 'hasKanji': 'true',
+            // 混合词典汉字部分的开关 / 位置是用户设置，重导与在线更新都继承。
+            if (result.kanjiCount > 0)
+              ...kanjiPartSettingsOf(preservedSettings),
             // 导入时 native 已经数过 term/kanji 记录，等于类型探测刚做完：直接落
             // 标记，启动期的自愈循环就不会再对这本做一次全表扫描。
             kDictTypeProbeKey: kDictTypeProbeVersion,
@@ -686,6 +689,7 @@ class DictionaryImportManager {
         metadata: <String, String>{
           ...metadata,
           if (result.kanjiCount > 0) 'hasKanji': 'true',
+          if (result.kanjiCount > 0) ...kanjiPartSettingsOf(preservedSettings),
           // 同目录导入路径：native 刚数完记录，探测标记直接落库（见另一处注释）。
           kDictTypeProbeKey: kDictTypeProbeVersion,
         },

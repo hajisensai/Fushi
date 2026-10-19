@@ -30,30 +30,36 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
       final File jsTest = File(
         'test/lookup/browser_extension_shadow_dom_lookup_bug1012_test.js',
       );
-      expect(jsTest.existsSync(), isTrue,
-          reason: 'behavior harness ${jsTest.path} must exist');
-
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'behavior harness ${jsTest.path} must exist',
       );
+
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'BUG-1012 shadow-DOM lookup behavior test failed.\n'
+        reason:
+            'BUG-1012 shadow-DOM lookup behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
-      expect(result.stdout.toString(), contains('all assertions passed'),
-          reason: 'behavior harness must reach its success marker');
+      expect(
+        result.stdout.toString(),
+        contains('all assertions passed'),
+        reason: 'behavior harness must reach its success marker',
+      );
     },
   );
 
@@ -62,24 +68,45 @@ void main() {
       final String src = File(path).readAsStringSync();
 
       // 穿透 helper 必须存在并沿 element.shadowRoot 下钻。
-      expect(src.contains('deepElementFromPoint'), isTrue,
-          reason: '[$path] 必须有 deepElementFromPoint 穿透 shadow DOM');
-      expect(src.contains('element.shadowRoot'), isTrue,
-          reason: '[$path] deepElementFromPoint 必须沿 element.shadowRoot 下钻');
-      expect(src.contains('shadowRoot.elementFromPoint'), isTrue,
-          reason: '[$path] 必须在 shadowRoot 上继续 elementFromPoint 下探内部文字');
+      expect(
+        src.contains('deepElementFromPoint'),
+        isTrue,
+        reason: '[$path] 必须有 deepElementFromPoint 穿透 shadow DOM',
+      );
+      expect(
+        src.contains('element.shadowRoot'),
+        isTrue,
+        reason: '[$path] deepElementFromPoint 必须沿 element.shadowRoot 下钻',
+      );
+      expect(
+        src.contains('shadowRoot.elementFromPoint'),
+        isTrue,
+        reason: '[$path] 必须在 shadowRoot 上继续 elementFromPoint 下探内部文字',
+      );
 
       // getCaretRange 必须在 caret 命中文本节点时才直采，否则继续下探（不再直接返回宿主 range）。
-      expect(src.contains('pos.offsetNode.nodeType === Node.TEXT_NODE'), isTrue,
-          reason: '[$path] caret 只在命中文本节点时采纳，命中元素（shadow 宿主）须继续下探');
+      expect(
+        src.contains('pos.offsetNode.nodeType === Node.TEXT_NODE'),
+        isTrue,
+        reason: '[$path] caret 只在命中文本节点时采纳，命中元素（shadow 宿主）须继续下探',
+      );
 
       // getCaretRange 必须调用穿透 helper 与逐字几何命中。
       final int caretRangeIdx = src.indexOf('getCaretRange(x, y)');
-      final int deepCallIdx = src.indexOf('this.deepElementFromPoint(x, y)');
-      expect(caretRangeIdx >= 0 && deepCallIdx > caretRangeIdx, isTrue,
-          reason: '[$path] getCaretRange 必须调用 deepElementFromPoint');
-      expect(src.contains('this.charRangeInContainer('), isTrue,
-          reason: '[$path] getCaretRange 必须用 charRangeInContainer 逐字几何命中');
+      // 从 getCaretRange 起往后找：表单控件取词的 formControlAt 排在它前面也调用穿透 helper。
+      final int deepCallIdx = caretRangeIdx < 0
+          ? -1
+          : src.indexOf('this.deepElementFromPoint(x, y)', caretRangeIdx);
+      expect(
+        caretRangeIdx >= 0 && deepCallIdx > caretRangeIdx,
+        isTrue,
+        reason: '[$path] getCaretRange 必须调用 deepElementFromPoint',
+      );
+      expect(
+        src.contains('this.charRangeInContainer('),
+        isTrue,
+        reason: '[$path] getCaretRange 必须用 charRangeInContainer 逐字几何命中',
+      );
     }
   });
 
@@ -94,8 +121,9 @@ void main() {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

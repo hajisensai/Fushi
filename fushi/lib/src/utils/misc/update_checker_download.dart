@@ -857,8 +857,8 @@ Future<File> _downloadCandidateSingle({
     expectedSize: asset.sizeBytes ?? metadata?.sizeBytes,
     expectedSha256: asset.sha256Digest,
     resumeState: resumeState,
-    firstByteTimeout: _kFirstByteTimeout,
-    bodyTimeout: _kPerAttemptTimeout,
+    firstByteTimeout: _dlTimeouts.firstByte,
+    bodyTimeout: _dlTimeouts.body,
     onMeta: (ResumableDownloadMetaInfo info) {
       resumeOutcome = info.resumeOutcome;
       if (info.resumeOutcome == DownloadResumeOutcome.restartedFromZero) {
@@ -1004,7 +1004,7 @@ Future<File?> _downloadSegmented({
   };
   final UpdateDownloadResponse probe;
   try {
-    probe = await openUrl(uri, probeHeaders).timeout(_kFirstByteTimeout);
+    probe = await openUrl(uri, probeHeaders).timeout(_dlTimeouts.firstByte);
   } catch (_) {
     // 探针失败：让调用方走单线程（其错误处理/换源更完整），不在此吞掉换源职责。
     return null;
@@ -1238,7 +1238,7 @@ Future<int> _runSegmentRequest({
   final UpdateDownloadResponse response = await openUrl(
     uri,
     headers,
-  ).timeout(_kFirstByteTimeout);
+  ).timeout(_dlTimeouts.firstByte);
   if (response.statusCode == HttpStatus.ok) {
     await response.stream.drain<void>();
     throw const _SegmentRangeUnsupported();
@@ -1255,7 +1255,7 @@ Future<int> _runSegmentRequest({
   var written = appendOffset;
   try {
     await for (final List<int> chunk in response.stream.timeout(
-      _kPerAttemptTimeout,
+      _dlTimeouts.body,
     )) {
       sink.add(chunk);
       written += chunk.length;
