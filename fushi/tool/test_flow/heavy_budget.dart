@@ -8,11 +8,18 @@
 // processes every 30 s (all waiters saw "2 busy" and started together), ran
 // anyway after 30 min, and only pre_push_check used it.
 //
-// There is no memory admission (removed 2026-10-03, owner's call): waiting
-// for "available RAM above a reserve" kept agents queued for many minutes on
-// a busy desktop while a slot sat free, and every other agent queued behind
-// them. Concurrency is bounded by the slot count alone; a runaway run is
-// still stopped by its tree's memory ceiling ([HeavyNeed.capMb]).
+// There is no live-memory admission (removed 2026-10-03, owner's call):
+// waiting for "available RAM above a reserve" kept agents queued for many
+// minutes on a busy desktop while a slot sat free, and every other agent
+// queued behind them.
+//
+// Instead (2026-10-19, owner's call) runs are booked against a fixed budget:
+// the memory ceilings ([HeavyNeed.capMb]) of the runs holding slots plus the
+// next one's may not exceed [defaultHeavyBudgetMb] (half the RAM). Three
+// slots with 12-16 GB ceilings used to promise up to 48 GB on a 64 GB
+// desktop already running a dozen agent sessions, and the commit limit ran
+// out under everyone. The booking reads only the holders' declared ceilings,
+// never the live free memory, so a busy desktop cannot stall it.
 
 /// What kind of work a wrapped command is; decides its cost.
 enum HeavyKind { test, analyze, build, other }
@@ -113,10 +120,7 @@ List<String> withDefaultTestConcurrency(List<String> argv) {
   if (argv.isEmpty) return argv;
   final String exe = _base(argv.first);
   if (exe == 'fvm') {
-    return <String>[
-      argv.first,
-      ...withDefaultTestConcurrency(argv.sublist(1)),
-    ];
+    return <String>[argv.first, ...withDefaultTestConcurrency(argv.sublist(1))];
   }
   if (exe != 'flutter') return argv;
   final int verb = argv.indexWhere((String a) => !a.startsWith('-'), 1);
@@ -141,6 +145,30 @@ List<String> withDefaultTestConcurrency(List<String> argv) {
 int defaultHeavySlots(int totalPhysMb) =>
     (totalPhysMb ~/ (20 * 1024)).clamp(1, 4);
 
+/// The memory the heavy runs' ceilings may book together: half the RAM in
+/// whole GB (64 GB -> 32 GB: two test runs and an analyze, or a build and a
+/// test; never three test runs).
+int defaultHeavyBudgetMb(int totalPhysMb) =>
+    ((totalPhysMb / 1024).round() ~/ 2) * 1024;
+
+/// What a holder that recorded no ceiling (an older checkout's tool) is
+/// booked at: the largest ceiling of any kind.
+const int kUnknownHolderCapMb = 16384;
+
+/// Why a run with a [needMb] ceiling may not start next to holders booked at
+/// [heldCapsMb] within [budgetMb], or null when it fits. A run on an idle
+/// machine always starts, even one whose ceiling alone exceeds the budget.
+String? heavyBudgetBlocker({
+  required int needMb,
+  required List<int> heldCapsMb,
+  required int budgetMb,
+}) {
+  if (heldCapsMb.isEmpty) return null;
+  final int booked = heldCapsMb.fold(0, (int a, int b) => a + b);
+  if (booked + needMb <= budgetMb) return null;
+  return 'memory budget: $booked MB booked + $needMb MB > $budgetMb MB';
+}
+
 /// A reading of the machine's memory, in MB. [availCommitMb] is commit
 /// limit minus commit charge (Windows); null where the OS has no such notion.
 class MemorySnapshot {
@@ -163,6 +191,7 @@ class HeavyHolder {
     required this.startedAtMs,
     required this.label,
     required this.cwd,
+    this.capMb,
   });
 
   final int slot;
@@ -171,11 +200,18 @@ class HeavyHolder {
   final String label;
   final String cwd;
 
+  /// The memory ceiling the holder booked; null when it recorded none.
+  final int? capMb;
+
+  /// What this holder counts against the budget.
+  int get bookedMb => capMb ?? kUnknownHolderCapMb;
+
   Map<String, Object> toJson() => <String, Object>{
         'pid': pid,
         'startedAt': startedAtMs,
         'label': label,
         'cwd': cwd,
+        if (capMb != null) 'capMb': capMb!,
       };
 
   static HeavyHolder? fromJson(int slot, Object? json) {
@@ -189,6 +225,7 @@ class HeavyHolder {
       startedAtMs: at,
       label: '${json['label'] ?? ''}',
       cwd: '${json['cwd'] ?? ''}',
+      capMb: json['capMb'] is int ? json['capMb'] as int : null,
     );
   }
 }

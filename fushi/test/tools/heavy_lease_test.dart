@@ -25,9 +25,10 @@ void main() {
     }
   });
 
-  Map<String, String> env(int slots) => <String, String>{
+  Map<String, String> env(int slots, {int? budgetMb}) => <String, String>{
         'FUSHI_HEAVY_DIR': '${tmp.path}/state',
         'FUSHI_HEAVY_SLOTS': '$slots',
+        if (budgetMb != null) 'FUSHI_HEAVY_BUDGET_MB': '$budgetMb',
       };
 
   Future<HeavyLease> take(
@@ -35,6 +36,7 @@ void main() {
     HeavyKind kind = HeavyKind.analyze,
     String? worktree,
     MemorySnapshot memory = roomy,
+    int? budgetMb,
     Duration? waitMax = const Duration(seconds: 1),
   }) =>
       acquireHeavyLease(
@@ -42,7 +44,7 @@ void main() {
         label: 'lease-${kind.name}',
         worktreeRoot: worktree,
         waitMax: waitMax,
-        environment: env(slots),
+        environment: env(slots, budgetMb: budgetMb),
         readMemory: () => memory,
         poll: const Duration(milliseconds: 50),
         log: (_) {},
@@ -92,7 +94,7 @@ void main() {
   // waiting for "available RAM above a reserve".
   test('a free slot is taken at once however little memory is free', () async {
     const MemorySnapshot starved = MemorySnapshot(
-      totalPhysMb: 32 * 1024,
+      totalPhysMb: 64 * 1024,
       availPhysMb: 600,
       availCommitMb: 300,
     );
@@ -102,6 +104,49 @@ void main() {
     expect(a.waited, lessThan(const Duration(seconds: 1)));
     expect(b.waited, lessThan(const Duration(seconds: 1)));
     a.release();
+    b.release();
+  });
+
+  // 2026-10-19 (owner's call): free slots are not enough, the holders'
+  // ceilings plus the next one's must fit half the RAM (64 GB -> 32 GB).
+  test(
+    'a free slot waits while the ceilings would overbook the budget',
+    () async {
+      final HeavyLease t1 = await take(4, kind: HeavyKind.test);
+      final HeavyLease t2 = await take(4, kind: HeavyKind.test);
+      await expectLater(
+        take(4, kind: HeavyKind.test),
+        throwsA(
+          isA<HeavyLeaseTimeout>().having(
+            (HeavyLeaseTimeout e) => e.message,
+            'message',
+            allOf(
+              contains('memory budget: 24576 MB booked + 12288 MB > 32768 MB'),
+              contains('lease-test'),
+            ),
+          ),
+        ),
+      );
+      // An analyze still fits next to the two test runs.
+      final HeavyLease a = await take(4, kind: HeavyKind.analyze);
+      expect(
+        readHeavyHolders(
+          Directory('${tmp.path}/state'),
+          4,
+        ).map((HeavyHolder h) => h.bookedMb).fold(0, (int s, int m) => s + m),
+        32768,
+      );
+      a.release();
+      t2.release();
+      final HeavyLease t3 = await take(4, kind: HeavyKind.test);
+      t3.release();
+      t1.release();
+    },
+  );
+
+  test('a lone run starts even when its ceiling exceeds the budget', () async {
+    final HeavyLease b = await take(2, kind: HeavyKind.build, budgetMb: 4096);
+    expect(b.slot, 0);
     b.release();
   });
 
@@ -247,8 +292,10 @@ void main() {
     const int priorityClass = 0x20; // JOB_OBJECT_LIMIT_PRIORITY_CLASS
     const int jobMemory = 0x200; // JOB_OBJECT_LIMIT_JOB_MEMORY
     const int killOnClose = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-    expect(heavyJobLimitFlags(memoryCap: true),
-        priorityClass | jobMemory | killOnClose);
+    expect(
+      heavyJobLimitFlags(memoryCap: true),
+      priorityClass | jobMemory | killOnClose,
+    );
     expect(heavyJobLimitFlags(memoryCap: false), priorityClass | killOnClose);
   });
 }
