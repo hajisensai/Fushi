@@ -511,8 +511,7 @@ crate 的 AES 指令，跳过）。
 
 - macOS 坑：本机 Mac（macOS 27.2）上 rustc 自带 strip（`strip = true`）+ `MACOSX_DEPLOYMENT_TARGET` 出的
   dylib dlopen 报 `mis-aligned LINKEDIT string pool`，`verify_abi.sh` 查不出来；所以
-  `build_macos_dylib.sh` 关掉 cargo strip、本地符号交给链接器 `-Wl,-x`、install name 链接时定（事后的
-  `/usr/bin/strip -x` 在 runner 上同样不补齐，2026-10-19 develop 出包被它拦过），并用 python ctypes 调 `ffc_abi_version`
+  `build_macos_dylib.sh` 关掉 cargo strip、改用 `strip -x`，并用 python ctypes 调 `ffc_abi_version`
   冒烟。`Cargo.toml` 另设 `[profile.release.build-override] strip = false`：同一工具链上被 strip 的
   构建脚本 / 过程宏也会坏（hajisensai/Fushi#2329）。fushi_fsrs / fushi_p2p 用的是旧写法，可能同样受影响（未验证）。
 - 伞形库：`pub extern crate fushi_compute;`（不用 glob 重导出，`ABI_VERSION` 会与 fushi_fsrs 撞名）；
