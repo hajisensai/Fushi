@@ -32,6 +32,8 @@ void main() {
     required EngineHookGalAudioSource engine,
     Duration settleMax = const Duration(seconds: 2),
     Duration settleInterval = const Duration(milliseconds: 5),
+    Duration settleWindow = const Duration(milliseconds: 6000),
+    Duration settleQuietStop = const Duration(milliseconds: 2000),
     GalLoopbackSourceFactory? loopbackSourceFactory,
   }) =>
       GalHookSessionController(
@@ -56,6 +58,8 @@ void main() {
         textPollInterval: const Duration(milliseconds: 5),
         utteranceSettleInterval: settleInterval,
         utteranceSettleMax: settleMax,
+        utteranceSettleWindow: settleWindow,
+        utteranceSettleQuietStop: settleQuietStop,
         endpointListenable: endpoints,
         endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
       );
@@ -427,6 +431,115 @@ void main() {
     expect(service.entries.single.fallbackReason, 'manual_recapture_recording');
     expect(engine.callsFor(654321), callsAfterRecaptureStart,
         reason: '收敛必须已经退出，不再继续抓 PCM');
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('长句语音越过无条件收敛窗后仍在变长就继续收，不再截在窗口处', () async {
+    // 用户报：句子长的卡音频被截、短的完整。旧收敛到 6s 无条件收手（native 前向窗口
+    // 也是 ts+6000），流式提交的引擎在那之后的段永远进不了缓存。这里把窗口缩成 30ms：
+    // 语音每次 grab 多 10ms、持续 60 次（≈300ms，10 倍于窗口）。
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    const int kStep = 882; // 10ms @ 44.1kHz 单声道 16bit
+    final List<int> steps = <int>[
+      for (int i = 1; i <= 60; i++) i * kStep,
+    ];
+    final _GrowingEngine engine = _GrowingEngine(
+      stepsByTs: <int, List<int>>{777000: steps},
+      lines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 3,
+          timestampMs: 777000,
+          text: '長い長い独白の台詞',
+          threadId: 5,
+          hookName: 'Streaming',
+        ),
+      ],
+    );
+    final GalHookSessionController controller = buildController(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+      settleMax: const Duration(seconds: 5),
+      settleWindow: const Duration(milliseconds: 30),
+      settleQuietStop: const Duration(milliseconds: 300),
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
+    );
+    await controller.selectTextThread(5);
+    for (int i = 0; i < 40 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    final String lineId = service.entries.single.id;
+
+    final Stopwatch settled = Stopwatch()..start();
+    await controller.awaitLineAudioSettledForTest(lineId);
+    settled.stop();
+    expect(service.entries.single.audioDurationMs, 600,
+        reason: '越过无条件窗后只要还在变长就必须继续收到整句');
+    expect(settled.elapsed, lessThan(const Duration(seconds: 4)),
+        reason: '整句收完、静默满 quietStop 就收手，不能对每句都轮询到上限');
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('制卡时做一次封口 grab：收敛已收手后才进环的后半句也要进卡', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    // 首取与收敛的那一次 grab 都停在 200ms（收敛据此静默收手），之后环里才出现后半句（500ms）。
+    final _GrowingEngine engine = _GrowingEngine(
+      stepsByTs: <int, List<int>>{
+        888000: <int>[17640, 17640, kHalfSecondBytes],
+      },
+      lines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 4,
+          timestampMs: 888000,
+          text: '間を置いてから続く台詞',
+          threadId: 5,
+          hookName: 'Streaming',
+        ),
+      ],
+    );
+    final GalHookSessionController controller = buildController(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+      settleMax: const Duration(seconds: 5),
+      settleWindow: const Duration(milliseconds: 5),
+      // 极短静默门：收敛只来得及做一次 grab（仍是 200ms）就收手，后半句只有制卡那次能取到。
+      settleQuietStop: const Duration(milliseconds: 1),
+      settleInterval: const Duration(milliseconds: 20),
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
+    );
+    await controller.selectTextThread(5);
+    for (int i = 0; i < 40 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    final TexthookerLineEntry line = service.entries.single;
+    await controller.awaitLineAudioSettledForTest(line.id);
+    expect(service.entries.single.audioDurationMs, 200,
+        reason: '前提：收敛停在 200ms');
+
+    await controller.captureAudioBytes(
+      lineId: line.id,
+      sentence: line.text,
+      outputExtension: 'wav',
+    );
+    expect(engine.endBoundsFor(888000).last, isNull,
+        reason: '没有下一句时封口 grab 不带上界，取到 native 前向上限');
+    final GalTrackPreview? preview =
+        await controller.exportLineAudioPreview(line.id);
+    expect(preview?.durationMs, 500,
+        reason: '制卡时刻环里已有的后半句必须进卡与缓存');
 
     await controller.close();
     endpoints.dispose();

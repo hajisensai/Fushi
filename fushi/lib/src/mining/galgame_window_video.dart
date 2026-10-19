@@ -283,6 +283,26 @@ int fallbackGalWindowVideoFromTick({
   return math.max(0, toTickMs - window);
 }
 
+/// 纯函数：片段终点。没有音频时就是 [toTickMs]（下一句到达 / 制卡时刻）；有音频时收到
+/// `fromTickMs + 音频时长 + 1 秒`，不晚于 [toTickMs]。
+///
+/// 混流时音频从片段第 0 秒开始放。终点若仍是「制卡时刻」，在一句上停 20 秒再制卡就得到
+/// 20 秒的片段，声音几秒就放完、剩下十几秒是静止画面——卡上看到的是「显示十几秒、
+/// 音频几秒就没了」，像是音频被截断。片段的长度应当跟随这句语音，而不是跟随玩家停留
+/// 了多久。音频比 `toTickMs - fromTickMs` 还长时由 [planGalWindowVideoFrames] 把最后
+/// 一帧拉长覆盖。
+int galWindowVideoEndTick({
+  required int fromTickMs,
+  required int toTickMs,
+  required int? audioDurationMs,
+}) {
+  if (audioDurationMs == null || audioDurationMs <= 0) return toTickMs;
+  return math.min(
+    toTickMs,
+    fromTickMs + audioDurationMs + kGalWindowVideoFallbackTailMs,
+  );
+}
+
 /// galgame「视频片段」封面：把会话录制导出的 JPEG 帧（[export]，按 tick 升序）按真实
 /// 时间轴拼成 [format] 的片段（首选编不出来按 [MiningClipFormat.encodeAttempts] 降级），
 /// 并把句子音频 [audioBytes]（已封装的 AAC/m4a 容器字节，扩展名 [audioExtension]）
@@ -335,7 +355,11 @@ Future<GalWindowVideoClip?> buildGalWindowVideoClip({
     final List<GalWindowVideoFrameEntry> plan = planGalWindowVideoFrames(
       frames: export.frames,
       fromTickMs: from,
-      toTickMs: to,
+      toTickMs: galWindowVideoEndTick(
+        fromTickMs: from,
+        toTickMs: to,
+        audioDurationMs: audioDurationMs,
+      ),
       audioDurationMs: audioDurationMs,
     );
     if (plan.length < 2) {
