@@ -1145,7 +1145,14 @@ extension _VideoLayout on _VideoFushiPageState {
     // TODO-638 后续视觉升级：字幕列表继续 push-aside；剧集列表改成视频底部的横向
     // overlay rail（[_episodeOverlayPanel]），以画面本身作沉浸式背景。两者仍互斥，
     // 所以剧集轨道出现时字幕侧栏宽度必为 0。
-    return ListenableBuilder(
+    //
+    // 折叠屏桌面姿态（半开平放、横向折痕）：整块播放区——画面、字幕侧栏、选集横轨
+    // 及其点外关闭层——都留在折痕上方，下半屏常驻播放面板。切分必须包在这一整块
+    // 外面：只切画面那一格时，横轨的 opaque 关闭层（Positioned.fill）与贴底的横轨会
+    // 铺到下半屏面板上，横轨开着时点面板只会关横轨；字幕侧栏也会整列跨过折痕。
+    // 窗口与全屏两处 Video 都经这里，一处接线；小窗 / 画中画不切分（系统或小窗
+    // chrome 接管）。
+    final Widget playbackArea = ListenableBuilder(
       listenable: Listenable.merge(<Listenable>[
         _subtitleListVisible,
         _episodeListVisible,
@@ -1159,21 +1166,7 @@ extension _VideoLayout on _VideoFushiPageState {
             Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                // 折叠屏桌面姿态（半开平放、横向折痕）：画面连同控件 / 字幕留在折痕
-                // 上方，下半屏常驻播放面板。窗口与全屏两处 Video 都经这里，一处接线。
-                // 小窗 / 画中画不切分（系统或小窗 chrome 接管）。
-                Expanded(
-                  child: ValueListenableBuilder<VideoMiniSurface>(
-                    valueListenable: _miniSurface,
-                    builder: (BuildContext _, VideoMiniSurface surface, __) =>
-                        FushiTabletopSplit(
-                          enabled: surface == VideoMiniSurface.none,
-                          top: video,
-                          bottomBuilder: (BuildContext _) =>
-                              _videoTabletopPanel(controller),
-                        ),
-                  ),
-                ),
+                Expanded(child: video),
                 _subtitleJumpSidePanel(controller, visible),
               ],
             ),
@@ -1192,6 +1185,15 @@ extension _VideoLayout on _VideoFushiPageState {
           ],
         );
       },
+    );
+    return ValueListenableBuilder<VideoMiniSurface>(
+      valueListenable: _miniSurface,
+      builder: (BuildContext _, VideoMiniSurface surface, __) =>
+          FushiTabletopSplit(
+            enabled: surface == VideoMiniSurface.none,
+            top: playbackArea,
+            bottomBuilder: (BuildContext _) => _videoTabletopPanel(controller),
+          ),
     );
   }
 
