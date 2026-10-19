@@ -151,6 +151,32 @@ class _PreparedNote {
   final List<String> tags;
 }
 
+/// 解析好、还没查重的候选笔记：要写的内容加查重选项（AnkiConnect `options`）。
+class _NoteCandidate {
+  _NoteCandidate({
+    required this.note,
+    required this.allowDuplicate,
+    required this.deckScope,
+    required this.scopeDeckName,
+    required this.checkChildren,
+    required this.checkAllModels,
+  });
+
+  final _PreparedNote note;
+  final bool allowDuplicate;
+  final bool deckScope;
+  final String? scopeDeckName;
+  final bool checkChildren;
+  final bool checkAllModels;
+
+  /// 查重比较用的首字段原文（笔记类型字段顺序第一个）；笔记类型没有字段时为 null——直接判空，
+  /// 不必规范化。
+  String? get firstFieldRaw {
+    final List<SrsFieldDef> fields = note.type.fields;
+    return fields.isEmpty ? null : (note.fieldsById[fields.first.id] ?? '');
+  }
+}
+
 class SrsAnkiConnectHandler {
   SrsAnkiConnectHandler({
     required Future<SrsDbStore> Function() store,
@@ -164,7 +190,9 @@ class SrsAnkiConnectHandler {
     SrsAnkiMediaPolicy Function()? mediaPolicy,
     SrsAnkiHostResolver? resolveHost,
     SrsAnkiUrlFetcher? fetchUrl,
+    List<String> Function(List<String> fields)? dupeNormBatch,
   }) : _store = store,
+       _dupeNormBatch = dupeNormBatch ?? srsDupeNormBatch,
        _apiKey = apiKey,
        _profileName = profileName,
        _onSync = onSync,
@@ -189,6 +217,9 @@ class SrsAnkiConnectHandler {
   final SrsAnkiMediaPolicy Function()? _mediaPolicy;
   final SrsAnkiHostResolver? _resolveHost;
   final SrsAnkiUrlFetcher? _fetchUrl;
+
+  /// 查重规范形的批量内核（缺省 [srsDupeNormBatch]，一批一次 FFI）；测试可包一层计调用次数。
+  final List<String> Function(List<String> fields) _dupeNormBatch;
 
   /// noteId → (首字段原文, 查重规范形)：跨请求复用，原文没变的笔记不重算（每次加卡都要扫全集合）。
   Map<String, (String, String)> _dupeNorms = <String, (String, String)>{};
@@ -388,14 +419,14 @@ class SrsAnkiConnectHandler {
       case 'canAddNotes':
         final _Snapshot s = await _snapshot();
         return <bool>[
-          for (final Object? n in _requireList(p, 'notes'))
-            _tryPrepare(s, n) == null,
+          for (final String? err in _tryPrepareAll(s, _requireList(p, 'notes')))
+            err == null,
         ];
       case 'canAddNotesWithErrorDetail':
         final _Snapshot s = await _snapshot();
         return <Map<String, Object?>>[
-          for (final Object? n in _requireList(p, 'notes'))
-            switch (_tryPrepare(s, n)) {
+          for (final String? err in _tryPrepareAll(s, _requireList(p, 'notes')))
+            switch (err) {
               null => <String, Object?>{'canAdd': true},
               final String err => <String, Object?>{
                 'canAdd': false,
@@ -736,11 +767,12 @@ class SrsAnkiConnectHandler {
 
   // ---------------------------------------------------------------- 加卡与查重
 
-  /// 判重比较用的首字段：先按样式去重规范形（内联样式与引用行同值），再去 HTML、trim
-  /// （原生内核 `ffsrs_search_dupe_norm_batch`）。
-  static String _norm(String field) {
+  /// 判重比较用的首字段，整批：先按样式去重规范形（内联样式与引用行同值），再去 HTML、trim
+  /// （原生内核 `ffsrs_search_dupe_norm_batch`，一批一次 FFI；空批不调）。
+  List<String> _normAll(List<String> fields) {
+    if (fields.isEmpty) return const <String>[];
     try {
-      return srsDupeNormBatch(<String>[field]).single;
+      return _dupeNormBatch(fields);
     } on SrsSearchUnsupported catch (e) {
       throw _searchError(e);
     }
@@ -765,12 +797,7 @@ class SrsAnkiConnectHandler {
         pendingRaw.add(raw);
       }
     }
-    final List<String> norms;
-    try {
-      norms = srsDupeNormBatch(pendingRaw);
-    } on SrsSearchUnsupported catch (e) {
-      throw _searchError(e);
-    }
+    final List<String> norms = _normAll(pendingRaw);
     for (int i = 0; i < pendingIds.length; i++) {
       next[pendingIds[i]] = (pendingRaw[i], norms[i]);
     }
@@ -781,18 +808,88 @@ class SrsAnkiConnectHandler {
     };
   }
 
-  /// 能加返回 null，不能加返回 AnkiConnect 的错误串。
-  String? _tryPrepare(_Snapshot s, Object? raw) {
-    try {
-      _prepare(s, _asNoteMap(raw));
-      return null;
-    } on _AcError catch (e) {
-      return e.message;
-    }
-  }
+  /// 一批候选笔记各自能不能加：能加为 null，不能加为 AnkiConnect 的错误串，按输入顺序。
+  List<String?> _tryPrepareAll(_Snapshot s, List<Object?> raws) => <String?>[
+    for (final Object r in _prepareAll(s, raws))
+      r is _AcError ? r.message : null,
+  ];
 
   /// AnkiConnect `createNote` + `isNoteDuplicateOrEmptyInScope`（不写库、不存媒体）。
-  _PreparedNote _prepare(_Snapshot s, Map<String, Object?> note) {
+  _PreparedNote _prepare(_Snapshot s, Map<String, Object?> note) =>
+      switch (_prepareAll(s, <Object?>[note]).single) {
+        final _AcError e => throw e,
+        final Object r => r as _PreparedNote,
+      };
+
+  /// 一批候选笔记逐个 [_prepare]，结果按输入顺序：[_PreparedNote] 或 [_AcError]。语义与逐条做
+  /// 相同，只是候选首字段的查重规范形先收齐、整批一次算完（一次 FFI），不在候选循环里逐条跨边界。
+  List<Object> _prepareAll(_Snapshot s, List<Object?> raws) {
+    final List<Object> out = <Object>[];
+    final List<int> pendingAt = <int>[];
+    final List<String> pendingRaw = <String>[];
+    for (final Object? raw in raws) {
+      try {
+        final _NoteCandidate c = _parseNote(s, _asNoteMap(raw));
+        final String? first = c.firstFieldRaw;
+        if (first != null) {
+          pendingAt.add(out.length);
+          pendingRaw.add(first);
+        }
+        out.add(c);
+      } on _AcError catch (e) {
+        out.add(e);
+      }
+    }
+    final Map<int, String> normAt = <int, String>{};
+    try {
+      final List<String> norms = _normAll(pendingRaw);
+      for (int k = 0; k < pendingAt.length; k++) {
+        normAt[pendingAt[k]] = norms[k];
+      }
+    } on _AcError catch (e) {
+      // 内核不可用：逐条做时每个要规范化的候选都会报同一个错。
+      for (final int i in pendingAt) {
+        out[i] = e;
+      }
+    }
+    for (int i = 0; i < out.length; i++) {
+      final Object c = out[i];
+      if (c is! _NoteCandidate) continue;
+      try {
+        out[i] = _checkCandidate(s, c, normAt[i]);
+      } on _AcError catch (e) {
+        out[i] = e;
+      }
+    }
+    return out;
+  }
+
+  /// 空 / 重复判定（[firstNorm] = 首字段的查重规范形，笔记类型没有字段时为 null）。
+  _PreparedNote _checkCandidate(
+    _Snapshot s,
+    _NoteCandidate c,
+    String? firstNorm,
+  ) {
+    switch (_dupeOrEmpty(
+      s,
+      type: c.note.type,
+      deckId: c.note.deckId,
+      firstNorm: firstNorm,
+      deckScope: c.deckScope,
+      scopeDeckName: c.scopeDeckName,
+      checkChildren: c.checkChildren,
+      checkAllModels: c.checkAllModels,
+    )) {
+      case 1:
+        throw const _AcError(kSrsAnkiEmptyError);
+      case 2:
+        if (!c.allowDuplicate) throw const _AcError(kSrsAnkiDuplicateError);
+    }
+    return c.note;
+  }
+
+  /// 按名字解析一条候选笔记（模型 / 牌组 / 字段 / 标签 / 查重选项），不查重。
+  _NoteCandidate _parseNote(_Snapshot s, Map<String, Object?> note) {
     final Object? modelName = note['modelName'];
     final SrsNoteTypeView? type = modelName is String
         ? _modelByName(s.types, modelName)
@@ -871,43 +968,35 @@ class SrsAnkiConnectHandler {
       checkChildren = true;
     }
 
-    switch (_dupeOrEmpty(
-      s,
-      type: type,
-      deckId: deckId,
-      fieldsById: byId,
+    return _NoteCandidate(
+      note: _PreparedNote(
+        type: type,
+        deckId: deckId,
+        fieldsById: byId,
+        tags: tags,
+      ),
+      allowDuplicate: allowDuplicate,
       deckScope: scope == 'deck',
       scopeDeckName: scopeDeck,
       checkChildren: checkChildren,
       checkAllModels: checkAllModels,
-    )) {
-      case 1:
-        throw const _AcError(kSrsAnkiEmptyError);
-      case 2:
-        if (!allowDuplicate) throw const _AcError(kSrsAnkiDuplicateError);
-    }
-    return _PreparedNote(
-      type: type,
-      deckId: deckId,
-      fieldsById: byId,
-      tags: tags,
     );
   }
 
-  /// 1 = 第一个字段为空；2 = 重复；0 = 都不是。查重 = 笔记类型字段顺序第一个字段去 HTML 后相等。
+  /// 1 = 第一个字段为空；2 = 重复；0 = 都不是。查重 = 笔记类型字段顺序第一个字段去 HTML 后相等
+  /// （[firstNorm] 是调用方整批算好的规范形；笔记类型没有字段时为 null）。
   int _dupeOrEmpty(
     _Snapshot s, {
     required SrsNoteTypeView type,
     required String deckId,
-    required Map<String, String> fieldsById,
+    required String? firstNorm,
     required bool deckScope,
     required String? scopeDeckName,
     required bool checkChildren,
     required bool checkAllModels,
   }) {
-    if (type.fields.isEmpty) return 1;
-    final String first = _norm(fieldsById[type.fields.first.id] ?? '');
-    if (first.isEmpty) return 1;
+    final String? first = firstNorm;
+    if (type.fields.isEmpty || first == null || first.isEmpty) return 1;
     Set<String>? dids;
     if (deckScope) {
       String did = deckId;
