@@ -2,7 +2,8 @@
 //!
 //! ABI 约定（Dart 侧见 packages/fushi_compute）：
 //! - 导出符号一律 `ffc_<域>_<动作>`，`#[no_mangle] pub extern "C"`；每个域一个模块文件
-//!   （`hash.rs` / `image.rs` / `text.rs` / `signal.rs`），互不依赖。
+//!   （`font.rs` / `galcal.rs` / `hash.rs` / `image.rs` / `ocr.rs` / `signal.rs` / `text.rs` / `ts.rs`），互不依赖；
+//!   `dart.rs` 是共用的 Dart 数值语义复刻（`max` / `min` / `clamp` / `compareTo` / `List.sort`）。
 //! - 数据走原始缓冲区（指针 + 长度），不走 JSON：这些接口按块 / 像素 / 字符批量调用，
 //!   编码开销会吃掉收益（fushi_fsrs 实测逐次 JSON 往返 25～30 µs）。
 //! - 能由调用方分配输出就由调用方分配；必须由 Rust 分配的缓冲区用 [ffc_free_bytes] 释放。
@@ -16,11 +17,15 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+pub mod dart;
 pub mod font;
+pub mod galcal;
 pub mod hash;
 pub mod image;
+pub mod ocr;
 pub mod signal;
 pub mod text;
+pub mod ts;
 
 /// C ABI 版本。Dart 侧加载时比对，不一致抛带原因的加载异常。
 pub const ABI_VERSION: i32 = 1;

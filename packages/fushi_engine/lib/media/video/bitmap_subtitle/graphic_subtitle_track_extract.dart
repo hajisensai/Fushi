@@ -27,6 +27,7 @@ import 'dart:typed_data';
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_input.dart';
+import 'package:fushi_engine/media/video/bitmap_subtitle/mpegts_subtitle_demuxer.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 
@@ -335,25 +336,110 @@ BitmapSubtitleTrackHeader? readGraphicSubtitleTrackHeader(
 /// 在后台 isolate 解码抽轨载荷（[extractGraphicSubtitleTrack] 的产物；不存在 / 读不了 /
 /// 认不出视为空）：边抽边识别时每隔几秒重读一次增长中的文件，解码不该占 UI 线程。
 /// [complete] 为假 = 抽轨还在写，尾部没收完的包不交出。
+///
+/// 经 TS 承载的编码（VobSub / DVB）**增量**解复用：同一路径的会话记住解析到哪，下次只读、
+/// 只解析新写出的字节（[MpegTsSubtitleDemuxSession]，交出的包与每次从头重解整个文件逐包
+/// 相同）；cue 仍按攒下的全部包整轨解码。`complete` 那次读完后会话即释放。PGS 仍整文件重读。
 Future<List<BitmapSubtitleCue>> readGraphicSubtitleTrackInBackground(
   String payloadPath, {
   bool complete = false,
 }) async {
   try {
     final File payload = File(payloadPath);
-    if (!await payload.exists()) return const <BitmapSubtitleCue>[];
-    final Uint8List bytes = await payload.readAsBytes();
+    if (!await payload.exists()) {
+      _dropTsSession(payloadPath);
+      return const <BitmapSubtitleCue>[];
+    }
     final BitmapSubtitleTrackHeader? header = readGraphicSubtitleTrackHeader(
       payloadPath,
-      bytes,
+      await _readPrefix(payload, 2),
     );
     if (header == null) return const <BitmapSubtitleCue>[];
+    if (header.codec == BitmapSubtitleCodec.pgs) {
+      final Uint8List bytes = await payload.readAsBytes();
+      return await Isolate.run(
+        () => decodeBitmapSubtitlePayload(bytes, header, complete: complete),
+      );
+    }
+    final List<BitmapSubtitlePacket> packets = await _readTsPackets(
+      payloadPath,
+      complete: complete,
+    );
     return await Isolate.run(
-      () => decodeBitmapSubtitlePayload(bytes, header, complete: complete),
+      () => decodeBitmapSubtitlePackets(packets, header),
     );
   } on FileSystemException {
+    _dropTsSession(payloadPath);
     return const <BitmapSubtitleCue>[];
   }
+}
+
+Future<Uint8List> _readPrefix(File file, int length) async {
+  final RandomAccessFile raf = await file.open();
+  try {
+    return await raf.read(length);
+  } finally {
+    await raf.close();
+  }
+}
+
+/// 同时在增量解复用的抽轨文件上限：边抽边识别同一时刻只有一两条轨，留几条给切换回来的轨。
+const int _kMaxTsSessions = 4;
+
+/// 路径 → 增量解复用会话（插入序即最近使用序）。
+final Map<String, _TsSessionSlot> _tsSessions = <String, _TsSessionSlot>{};
+
+class _TsSessionSlot {
+  _TsSessionSlot() : session = MpegTsSubtitleDemuxSession();
+
+  final MpegTsSubtitleDemuxSession session;
+
+  /// 同一会话的读取串行化（原生句柄不能被两个 isolate 同时用）。
+  Future<void> tail = Future<void>.value();
+}
+
+void _dropTsSession(String path) => _tsSessions.remove(path)?.session.close();
+
+Future<List<BitmapSubtitlePacket>> _readTsPackets(
+  String path, {
+  required bool complete,
+}) {
+  _TsSessionSlot? slot = _tsSessions.remove(path);
+  if (slot == null) {
+    slot = _TsSessionSlot();
+    while (_tsSessions.length >= _kMaxTsSessions) {
+      _dropTsSession(_tsSessions.keys.first);
+    }
+  }
+  _tsSessions[path] = slot; // 挪到最近使用的位置
+  final _TsSessionSlot current = slot;
+  final Future<List<BitmapSubtitlePacket>> run = current.tail.then((_) async {
+    if (current.session.completed) {
+      // 上一轮已收尾的会话（同一路径又被读）：从头再解一遍。
+      _replaceSession(path, current);
+      return _readTsPackets(path, complete: complete);
+    }
+    try {
+      await current.session.readMore(path, complete: complete);
+    } on StateError {
+      // 文件比已解析的位置还短：抽轨重来了，换新会话从头解。
+      _replaceSession(path, current);
+      return _readTsPackets(path, complete: complete);
+    }
+    final List<BitmapSubtitlePacket> all = List<BitmapSubtitlePacket>.of(
+      current.session.packets,
+    );
+    if (complete) _replaceSession(path, current);
+    return all;
+  });
+  current.tail = run.then<void>((_) {}, onError: (Object _) {});
+  return run;
+}
+
+/// 释放 [slot] 的会话；它还占着 [path] 的位置时一并移除。
+void _replaceSession(String path, _TsSessionSlot slot) {
+  if (identical(_tsSessions[path], slot)) _tsSessions.remove(path);
+  slot.session.close();
 }
 
 /// [readGraphicSubtitleTrackInBackground] 的历史名（PGS 时代载荷恒为 `.sup`）。

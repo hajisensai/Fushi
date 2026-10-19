@@ -22,6 +22,7 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:image/image.dart' as img;
 
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
@@ -129,7 +130,9 @@ class DvdSubtitleCue implements BitmapSubtitleCue {
     bottomFieldOffset: _bottomFieldOffset,
   );
 
-  img.Image _renderCanvas(int padding) => composeBitmapSubtitleImage(
+  img.Image _renderCanvas(int padding) => _render(padding).toImage();
+
+  BitmapSubtitleImage _render(int padding) => composeBitmapSubtitleRgba(
     bounds: area,
     padding: padding,
     layers: <BitmapSubtitleLayer>[
@@ -146,8 +149,7 @@ class DvdSubtitleCue implements BitmapSubtitleCue {
   );
 
   @override
-  BitmapSubtitleImage renderRgba({int padding = 16}) =>
-      bitmapSubtitleImageOf(_renderCanvas(padding));
+  BitmapSubtitleImage renderRgba({int padding = 16}) => _render(padding);
 
   @override
   Uint8List renderPng({int padding = 16}) =>
@@ -380,56 +382,10 @@ Uint8List decodeDvdSubtitleRle(
   required int height,
   required int topFieldOffset,
   required int bottomFieldOffset,
-}) {
-  final Uint8List out = Uint8List(width > 0 && height > 0 ? width * height : 0);
-  if (out.isEmpty) return out;
-  for (int field = 0; field < 2; field++) {
-    final _NibbleReader r = _NibbleReader(
-      packet,
-      field == 0 ? topFieldOffset : bottomFieldOffset,
-    );
-    for (int y = field; y < height; y += 2) {
-      int x = 0;
-      while (x < width) {
-        if (r.exhausted) return out;
-        int v = 0;
-        for (int t = 1; v < t && t <= 0x40; t <<= 2) {
-          v = (v << 4) | r.next();
-        }
-        final int color = v & 3;
-        int run = v < 4 ? width - x : v >> 2;
-        if (run > width - x) run = width - x;
-        if (color != 0) {
-          out.fillRange(y * width + x, y * width + x + run, color);
-        }
-        x += run;
-      }
-      r.alignToByte();
-    }
-  }
-  return out;
-}
-
-class _NibbleReader {
-  _NibbleReader(this._data, int byteOffset) : _pos = byteOffset * 2;
-
-  final Uint8List _data;
-  int _pos;
-
-  bool get exhausted => (_pos >> 1) >= _data.length;
-
-  int next() {
-    final int byte = _pos >> 1;
-    if (byte >= _data.length) {
-      _pos++;
-      return 0;
-    }
-    final int v = _pos.isEven ? _data[byte] >> 4 : _data[byte] & 0x0F;
-    _pos++;
-    return v;
-  }
-
-  void alignToByte() {
-    if (_pos.isOdd) _pos++;
-  }
-}
+}) => FushiComputeBitmapSubtitle.instance.decodeDvdRle(
+  packet,
+  width: width,
+  height: height,
+  topFieldOffset: topFieldOffset,
+  bottomFieldOffset: bottomFieldOffset,
+);

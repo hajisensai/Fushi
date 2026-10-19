@@ -16,6 +16,8 @@ memchr = { version = "2.7", default-features = false, features = ["std"] }
 # WOFF2 解码用（font.rs）：纯 Rust、BSD-3-Clause / MIT，五端交叉编译不需要 C 工具链。
 brotli-decompressor = "6.1.0"
 crc32fast = "1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff", "tga", "ico", "pnm"] }
+jpeg-encoder = "0.6"
 md4 = "0.10"
 sha1 = "0.10"
 sha2 = "0.10"
