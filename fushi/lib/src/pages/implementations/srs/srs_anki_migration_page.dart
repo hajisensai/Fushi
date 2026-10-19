@@ -280,12 +280,16 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage> {
         .read(srsImportControllerProvider)
         .enqueueJob(
           displayName: displayName,
-          job: (void Function(double progress) onProgress) =>
-              runSrsAnkiMigration(
+          job:
+              (
+                void Function(double progress) onProgress,
+                bool Function() shouldStop,
+              ) => runSrsAnkiMigration(
                 store: store,
                 media: lockedMedia,
                 source: source,
                 onProgress: onProgress,
+                shouldStop: shouldStop,
               ),
           cleanup: cleanup,
         );

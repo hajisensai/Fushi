@@ -31,6 +31,15 @@ export 'package:fushi_engine/srs/apkg/srs_anki_package.dart'
 export 'package:fushi_engine/srs/apkg/srs_import_options.dart';
 export 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 
+/// 导入被调用方叫停（`shouldStop` 在两批之间返回 true）。已落库的批保留：每批只含完整的
+/// 笔记（一条笔记的事件不会跨批），且导入幂等，重新导入同一份来源会补齐剩下的。
+class SrsImportStopped implements Exception {
+  const SrsImportStopped();
+
+  @override
+  String toString() => 'SrsImportStopped';
+}
+
 /// 媒体落盘回调：返回存储后的文件名（例如按内容哈希改名），字段里的引用按它改写。
 typedef SrsImportMediaSink =
     Future<String> Function(String name, Uint8List bytes);
@@ -49,6 +58,7 @@ Future<SrsImportReport> importAnkiPackage({
   SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
   void Function(double progress)? onProgress,
   SrsZstdDecoder? zstdDecompress,
+  bool Function()? shouldStop,
 }) async {
   // 解 zip、解 zstd、解出集合 SQLite 是纯 CPU 活（几十 MB 的包要几百毫秒到数秒）：放后台
   // isolate，不卡 UI 帧；结果经 Isolate.exit 交回，不复制（BUG-3549）。
@@ -67,6 +77,7 @@ Future<SrsImportReport> importAnkiPackage({
     storeMedia: storeMedia,
     options: options,
     onProgress: onProgress,
+    shouldStop: shouldStop,
   );
 }
 
@@ -81,6 +92,7 @@ Future<SrsImportReport> importAnkiCollectionSnapshot({
   required SrsImportMediaSink storeMedia,
   SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
   void Function(double progress)? onProgress,
+  bool Function()? shouldStop,
 }) async {
   final AnkiMediaFolder media = AnkiMediaFolder(snapshot.mediaDir);
   final SrsAnkiPackage pkg = SrsAnkiPackage.fromCollectionFolder(
@@ -97,6 +109,7 @@ Future<SrsImportReport> importAnkiCollectionSnapshot({
     storeMedia: storeMedia,
     options: options,
     onProgress: onProgress,
+    shouldStop: shouldStop,
   );
 }
 
@@ -107,6 +120,7 @@ Future<SrsImportReport> _importOpened({
   required SrsImportMediaSink storeMedia,
   required SrsAnkiImportOptions options,
   required void Function(double progress)? onProgress,
+  bool Function()? shouldStop,
 }) async {
   try {
     final _Importer imp = _Importer(
@@ -116,6 +130,7 @@ Future<SrsImportReport> _importOpened({
       storeMedia: storeMedia,
       options: options,
       onProgress: onProgress,
+      shouldStop: shouldStop,
     );
     return await imp.run();
   } finally {
@@ -134,6 +149,7 @@ Future<SrsImportReport> importAnkiPackageFile({
   SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
   void Function(double progress)? onProgress,
   SrsZstdDecoder? zstdDecompress,
+  bool Function()? shouldStop,
 }) async => importAnkiPackage(
   store: store,
   bytes: await file.readAsBytes(),
@@ -141,6 +157,7 @@ Future<SrsImportReport> importAnkiPackageFile({
   options: options,
   onProgress: onProgress,
   zstdDecompress: zstdDecompress,
+  shouldStop: shouldStop,
 );
 
 /// 一个来源笔记类型映射到本机的结果。
@@ -238,6 +255,7 @@ class _Importer {
     required this.storeMedia,
     required this.options,
     required this.onProgress,
+    this.shouldStop,
   }) : srcDay = SrsDayContext(
          utcOffsetMin: col.utcOffsetMin,
          rolloverHour: col.rolloverHour,
@@ -249,6 +267,17 @@ class _Importer {
   final SrsImportMediaSink storeMedia;
   final SrsAnkiImportOptions options;
   final void Function(double progress)? onProgress;
+
+  /// 调用方叫停（后台导入任务被取消）：两批之间检查，见 [_stopIfAsked]。
+  final bool Function()? shouldStop;
+
+  /// 叫停了就把已攒的（都是完整的笔记）落库、补上前身链接，再抛 [SrsImportStopped]。
+  Future<void> _stopIfAsked() async {
+    if (!(shouldStop?.call() ?? false)) return;
+    await _flush(force: true);
+    if (_historyLinks.isNotEmpty) await store.writeEdits(_historyLinks);
+    throw const SrsImportStopped();
+  }
 
   /// 来源集合的「今天」口径（日志里的 utcOffset / 翻日也取它，保证多台设备导出同一份内容）。
   final SrsDayContext srcDay;
@@ -303,6 +332,7 @@ class _Importer {
       _nts[nt.id] = await _mapNoteType(nt);
     }
     await _mapDecks();
+    await _stopIfAsked();
     await _importNotes();
     if (!options.withScheduling) {
       report.reviewLogsSkipped =
@@ -996,6 +1026,7 @@ class _Importer {
         done++;
         if (done % 50 == 0) onProgress?.call(done / total);
         await _flush();
+        await _stopIfAsked();
       }
     } finally {
       cardsOf.close();

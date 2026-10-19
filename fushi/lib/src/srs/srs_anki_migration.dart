@@ -56,6 +56,7 @@ Future<SrsImportReport> runSrsAnkiMigration({
   required SrsAnkiMigrationSource source,
   SrsAnkiImportOptions options = kSrsAnkiMigrationOptions,
   void Function(double progress)? onProgress,
+  bool Function()? shouldStop,
 }) {
   Future<String> storeMedia(String name, Uint8List bytes) =>
       media.store(name, bytes);
@@ -67,6 +68,7 @@ Future<SrsImportReport> runSrsAnkiMigration({
         storeMedia: storeMedia,
         options: options,
         onProgress: onProgress,
+        shouldStop: shouldStop,
       ),
     SrsAnkiMigrationFromPackage(:final File file) => importAnkiPackageFile(
       store: store,
@@ -74,6 +76,7 @@ Future<SrsImportReport> runSrsAnkiMigration({
       storeMedia: storeMedia,
       options: options,
       onProgress: onProgress,
+      shouldStop: shouldStop,
     ),
   };
 }

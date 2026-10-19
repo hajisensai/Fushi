@@ -6214,6 +6214,7 @@
   "srs_import_task_failed": "导入 $name 失败，点按查看原因。",
   "srs_import_task_queued": "等待导入 $name",
   "srs_import_task_running": "正在导入 $name…",
+  "srs_import_task_stopping": "正在停止导入 $name…（已导入的笔记会保留）",
   "srs_import_update_always": "始终",
   "srs_import_update_if_newer": "较新时",
   "srs_import_update_never": "从不",

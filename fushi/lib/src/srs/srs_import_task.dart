@@ -26,11 +26,11 @@ import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/utils.dart';
 
-/// 一个导入任务的状态。[cancelled] 只会从 [queued] 进入：运行中的导入引擎侧还没有
-/// 停止信号（批与批之间检查），不能半途叫停，界面也不提供运行中取消。
+/// 一个导入任务的状态。[cancelled]：排队中被取消（一行没写），或运行中被叫停（引擎在两批
+/// 之间停下，已落库的完整笔记保留，重导同一份来源幂等补齐）。
 enum SrsImportTaskStatus { queued, running, done, failed, cancelled }
 
-/// 排队中的任务被用户取消（[SrsImportTask.result] 以它结束；一行都没写过库）。
+/// 任务被用户取消（[SrsImportTask.result] 以它结束）。
 class SrsImportCancelledException implements Exception {
   const SrsImportCancelledException();
 
@@ -46,6 +46,7 @@ typedef SrsAnkiImportRunner =
       required File file,
       required SrsAnkiImportOptions options,
       required void Function(double progress) onProgress,
+      required bool Function() shouldStop,
     });
 
 Future<SrsImportReport> _defaultRunner({
@@ -54,17 +55,23 @@ Future<SrsImportReport> _defaultRunner({
   required File file,
   required SrsAnkiImportOptions options,
   required void Function(double progress) onProgress,
+  required bool Function() shouldStop,
 }) => importAnkiPackageFile(
   store: store,
   file: file,
   storeMedia: (String name, Uint8List bytes) => media.store(name, bytes),
   options: options,
   onProgress: onProgress,
+  shouldStop: shouldStop,
 );
 
 /// 一次导入的执行体：只管写库并上报进度（store / 媒体目录在入队时已锁定进闭包）。
+/// [shouldStop] 返回 true 时应在两批之间停下并抛 [SrsImportStopped]。
 typedef SrsImportJob =
-    Future<SrsImportReport> Function(void Function(double progress) onProgress);
+    Future<SrsImportReport> Function(
+      void Function(double progress) onProgress,
+      bool Function() shouldStop,
+    );
 
 /// 一个后台导入任务。
 class SrsImportTask {
@@ -107,8 +114,15 @@ class SrsImportTask {
       _status == SrsImportTaskStatus.failed ||
       _status == SrsImportTaskStatus.cancelled;
 
-  /// 能不能取消：只有还没开始跑的（排队中）。
-  bool get canCancel => _status == SrsImportTaskStatus.queued;
+  bool _stopRequested = false;
+
+  /// 运行中已请求停止、引擎还没在批间停下。
+  bool get stopping => _status == SrsImportTaskStatus.running && _stopRequested;
+
+  /// 能不能取消：排队中，或运行中且还没请求过停止。
+  bool get canCancel =>
+      _status == SrsImportTaskStatus.queued ||
+      (_status == SrsImportTaskStatus.running && !_stopRequested);
 }
 
 /// 后台导入的串行队列（app 级，见库注释）。
@@ -147,13 +161,18 @@ class SrsImportController extends ChangeNotifier {
   }) {
     return enqueueJob(
       displayName: displayName ?? file.uri.pathSegments.last,
-      job: (void Function(double progress) onProgress) => _runner(
-        store: store,
-        media: media,
-        file: file,
-        options: options,
-        onProgress: onProgress,
-      ),
+      job:
+          (
+            void Function(double progress) onProgress,
+            bool Function() shouldStop,
+          ) => _runner(
+            store: store,
+            media: media,
+            file: file,
+            options: options,
+            onProgress: onProgress,
+            shouldStop: shouldStop,
+          ),
       cleanup: deleteFileWhenDone
           ? () async {
               try {
@@ -187,12 +206,19 @@ class SrsImportController extends ChangeNotifier {
     return task;
   }
 
-  /// 取消一个排队中的任务（任务条上的「取消」）：它不会再开始跑，收尾（删临时包 / 丢快照）
-  /// 照常执行，[SrsImportTask.result] 以 [SrsImportCancelledException] 结束。行留在任务条上
-  /// 显示「已取消」，由用户关掉。运行中 / 已结束的任务返回 false、什么也不做——运行中的导入
-  /// 已经在写库，引擎侧没有批间停止信号前不能谎称取消。
+  /// 取消一个任务（任务条上的「取消」），[SrsImportTask.result] 以
+  /// [SrsImportCancelledException] 结束，行留在任务条上显示「已取消」，由用户关掉。
+  /// - 排队中：不再开始跑，收尾（删临时包 / 丢快照）照常执行。
+  /// - 运行中：请求停止（[SrsImportTask.stopping]），引擎在两批之间停下（已落库的完整
+  ///   笔记保留），之后照常收尾、列表重读。返回时任务可能还没停下。
+  /// 已结束 / 已请求过停止的返回 false。
   Future<bool> cancel(SrsImportTask task) async {
     if (!task.canCancel || !_tasks.contains(task)) return false;
+    if (task._status == SrsImportTaskStatus.running) {
+      task._stopRequested = true;
+      _notify();
+      return true;
+    }
     // 先改状态：_pump 只挑 queued 的任务，改完它就不会再被拿去跑。
     task._status = SrsImportTaskStatus.cancelled;
     _notify();
@@ -235,10 +261,13 @@ class SrsImportController extends ChangeNotifier {
     SrsImportReport? report;
     Object? error;
     StackTrace? errorStack;
+    bool stopped = false;
     try {
       report = await task._job((double p) {
         if (!_disposed) task.progress.value = p.clamp(0.0, 1.0);
-      });
+      }, () => task._stopRequested);
+    } on SrsImportStopped {
+      stopped = true;
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsImportController', e, stack);
       error = e;
@@ -246,7 +275,11 @@ class SrsImportController extends ChangeNotifier {
     }
     // 收尾（删临时包 / 丢快照）做完才算任务结束：result 完成时临时文件已不在。
     await _runCleanup(task);
-    if (report != null) {
+    if (stopped) {
+      task.error = const SrsImportCancelledException();
+      task._status = SrsImportTaskStatus.cancelled;
+      task._done.completeError(const SrsImportCancelledException());
+    } else if (report != null) {
       task.report = report;
       task._status = SrsImportTaskStatus.done;
       task._done.complete(report);
@@ -255,7 +288,7 @@ class SrsImportController extends ChangeNotifier {
       task._status = SrsImportTaskStatus.failed;
       task._done.completeError(error!, errorStack);
     }
-    // 失败也可能已写入一部分批次：一样让列表重读。
+    // 失败 / 叫停也可能已写入一部分批次：一样让列表重读。
     if (!_disposed) {
       _onDataChanged();
       _notify();

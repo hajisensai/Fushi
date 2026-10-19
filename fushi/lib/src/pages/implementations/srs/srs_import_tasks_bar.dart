@@ -75,7 +75,7 @@ class _TaskRow extends StatefulWidget {
   final bool first;
   final VoidCallback onDismiss;
 
-  /// 取消排队中的任务（只在 [SrsImportTask.canCancel] 时显示按钮）。
+  /// 取消排队中 / 运行中的任务（只在 [SrsImportTask.canCancel] 时显示按钮）。
   final VoidCallback onCancel;
 
   @override
@@ -138,6 +138,8 @@ class _TaskRowState extends State<_TaskRow>
       SrsImportTaskStatus.queued => t.srs_import_task_queued(
         name: task.displayName,
       ),
+      SrsImportTaskStatus.running when task.stopping =>
+        t.srs_import_task_stopping(name: task.displayName),
       SrsImportTaskStatus.running => t.srs_import_task_running(
         name: task.displayName,
       ),
@@ -246,7 +248,7 @@ class _TaskRowState extends State<_TaskRow>
                     ],
                   ),
                 ),
-                // 排队中 → 取消；结束 → 关闭。两者互斥，切换时淡入淡出。
+                // 排队中 / 运行中 → 取消；结束 → 关闭。两者互斥，切换时淡入淡出。
                 AnimatedSwitcher(
                   duration: switchDuration,
                   switchInCurve: FushiMotion.enter,

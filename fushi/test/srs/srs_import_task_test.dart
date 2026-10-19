@@ -47,18 +47,20 @@ class _FakeRunner {
     required File file,
     required SrsAnkiImportOptions options,
     required void Function(double progress) onProgress,
+    required bool Function() shouldStop,
   }) {
-    final _Pending p = _Pending(file, onProgress);
+    final _Pending p = _Pending(file, onProgress, shouldStop);
     calls.add(p);
     return p.done.future;
   }
 }
 
 class _Pending {
-  _Pending(this.file, this.onProgress);
+  _Pending(this.file, this.onProgress, this.shouldStop);
 
   final File file;
   final void Function(double progress) onProgress;
+  final bool Function() shouldStop;
   final Completer<SrsImportReport> done = Completer<SrsImportReport>();
 }
 
@@ -120,7 +122,7 @@ void main() {
       final Completer<SrsImportReport> okJob = Completer<SrsImportReport>();
       final SrsImportTask ok = c.enqueueJob(
         displayName: 'User 1',
-        job: (void Function(double progress) onProgress) {
+        job: (void Function(double progress) onProgress, _) {
           onProgress(0.5);
           return okJob.future;
         },
@@ -128,7 +130,7 @@ void main() {
       );
       final SrsImportTask bad = c.enqueueJob(
         displayName: 'User 2',
-        job: (void Function(double progress) onProgress) =>
+        job: (void Function(double progress) onProgress, _) =>
             Future<SrsImportReport>.error(StateError('boom')),
         cleanup: () async => order.add('cleanup-bad'),
       );
@@ -267,11 +269,8 @@ void main() {
       );
       await Future<void>.delayed(Duration.zero);
       expect(a.status, SrsImportTaskStatus.running);
-      expect(a.canCancel, isFalse);
+      expect(a.canCancel, isTrue);
       expect(b.canCancel, isTrue);
-
-      expect(await c.cancel(a), isFalse, reason: '运行中的导入已在写库，不能谎称取消');
-      expect(a.status, SrsImportTaskStatus.running);
 
       expect(await c.cancel(b), isTrue);
       expect(b.status, SrsImportTaskStatus.cancelled);
@@ -294,6 +293,55 @@ void main() {
 
       c.dismiss(b);
       expect(c.tasks, isNot(contains(b)));
+    });
+
+    test('运行中取消：请求停止，引擎在批间停下后任务进入已取消、列表重读、接着跑下一个', () async {
+      final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore();
+      addTearDown(db.close);
+      final _FakeRunner runner = _FakeRunner();
+      int dataChanged = 0;
+      final List<SrsImportTask> finished = <SrsImportTask>[];
+      final SrsImportController c = SrsImportController(
+        onDataChanged: () => dataChanged++,
+        onFinished: finished.add,
+        runner: runner.call,
+      );
+      addTearDown(c.dispose);
+      final SrsImportTask a = c.enqueue(
+        store: store,
+        media: SrsMediaStore(tmp),
+        file: File('${tmp.path}/a.apkg'),
+      );
+      final SrsImportTask next = c.enqueue(
+        store: store,
+        media: SrsMediaStore(tmp),
+        file: File('${tmp.path}/b.apkg'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(a.status, SrsImportTaskStatus.running);
+      expect(runner.calls.single.shouldStop(), isFalse);
+
+      expect(await c.cancel(a), isTrue);
+      expect(a.stopping, isTrue, reason: '请求了停止，引擎还没停下');
+      expect(a.status, SrsImportTaskStatus.running);
+      expect(a.canCancel, isFalse, reason: '已请求停止，不再显示取消');
+      expect(await c.cancel(a), isFalse);
+      expect(runner.calls.single.shouldStop(), isTrue, reason: '停止信号传到了引擎');
+
+      // 引擎在两批之间停下。
+      runner.calls.single.done.completeError(const SrsImportStopped());
+      await expectLater(a.result, throwsA(isA<SrsImportCancelledException>()));
+      expect(a.status, SrsImportTaskStatus.cancelled);
+      expect(a.isFinished, isTrue);
+      expect(dataChanged, 1, reason: '叫停前已落库的批要让列表重读');
+      expect(finished, <SrsImportTask>[a]);
+
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.calls, hasLength(2), reason: '接着跑下一个');
+      expect(next.status, SrsImportTaskStatus.running);
+      expect(runner.calls.last.shouldStop(), isFalse, reason: '停止信号只属于被取消的任务');
+      runner.calls.last.done.complete(_report(1));
+      await next.result;
     });
 
     test('完成回调抛异常：记日志，后面排队的导入照常开始', () async {
@@ -615,66 +663,84 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
     });
 
-    testWidgets('[$ds] 任务条：排队中的任务有「取消」，点了显示「已取消」与「关闭」；运行中的没有取消', (
-      WidgetTester tester,
-    ) async {
-      final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
-        openSrsTestStore,
-      ))!;
-      addTearDown(() => tester.runAsync(db.close));
-      final _FakeRunner runner = _FakeRunner();
-      final SrsImportController c = SrsImportController(
-        onDataChanged: () {},
-        runner: runner.call,
-      );
-      addTearDown(c.dispose);
-      await tester.pumpWidget(
-        _app(
-          apple: apple,
-          overrides: <Override>[
-            srsImportControllerProvider.overrideWithValue(c),
-          ],
-          home: const Scaffold(body: SrsImportTasksBar()),
-        ),
-      );
-      final SrsImportTask a = c.enqueue(
-        store: store,
-        media: SrsMediaStore(tmp),
-        file: File('${tmp.path}/A.apkg'),
-      );
-      final SrsImportTask b = c.enqueue(
-        store: store,
-        media: SrsMediaStore(tmp),
-        file: File('${tmp.path}/B.apkg'),
-      );
-      await _settle(tester);
-      expect(
-        find.byKey(ValueKey<String>('srs-import-task-cancel-${a.id}')),
-        findsNothing,
-        reason: '运行中的导入没有取消',
-      );
-      final Finder cancel = find.byKey(
-        ValueKey<String>('srs-import-task-cancel-${b.id}'),
-      );
-      expect(cancel, findsOneWidget);
-      expect(find.text('Waiting to import B.apkg'), findsOneWidget);
+    testWidgets(
+      '[$ds] 任务条：排队中 / 运行中都有「取消」；排队中点了即「已取消」，运行中点了先「正在停止」、引擎停下后「已取消」',
+      (WidgetTester tester) async {
+        final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
+          openSrsTestStore,
+        ))!;
+        addTearDown(() => tester.runAsync(db.close));
+        final _FakeRunner runner = _FakeRunner();
+        final SrsImportController c = SrsImportController(
+          onDataChanged: () {},
+          runner: runner.call,
+        );
+        addTearDown(c.dispose);
+        await tester.pumpWidget(
+          _app(
+            apple: apple,
+            overrides: <Override>[
+              srsImportControllerProvider.overrideWithValue(c),
+            ],
+            home: const Scaffold(body: SrsImportTasksBar()),
+          ),
+        );
+        final SrsImportTask a = c.enqueue(
+          store: store,
+          media: SrsMediaStore(tmp),
+          file: File('${tmp.path}/A.apkg'),
+        );
+        final SrsImportTask b = c.enqueue(
+          store: store,
+          media: SrsMediaStore(tmp),
+          file: File('${tmp.path}/B.apkg'),
+        );
+        await _settle(tester);
+        final Finder cancelA = find.byKey(
+          ValueKey<String>('srs-import-task-cancel-${a.id}'),
+        );
+        expect(cancelA, findsOneWidget, reason: '运行中的导入也能取消');
+        final Finder cancel = find.byKey(
+          ValueKey<String>('srs-import-task-cancel-${b.id}'),
+        );
+        expect(cancel, findsOneWidget);
+        expect(find.text('Waiting to import B.apkg'), findsOneWidget);
 
-      await tester.tap(cancel);
-      await _settle(tester);
-      expect(b.status, SrsImportTaskStatus.cancelled);
-      expect(find.text('Cancelled import of B.apkg'), findsOneWidget);
-      expect(cancel, findsNothing);
-      expect(
-        find.byKey(ValueKey<String>('srs-import-task-dismiss-${b.id}')),
-        findsOneWidget,
-      );
+        await tester.tap(cancel);
+        await _settle(tester);
+        expect(b.status, SrsImportTaskStatus.cancelled);
+        expect(find.text('Cancelled import of B.apkg'), findsOneWidget);
+        expect(cancel, findsNothing);
+        expect(
+          find.byKey(ValueKey<String>('srs-import-task-dismiss-${b.id}')),
+          findsOneWidget,
+        );
 
-      runner.calls.single.done.complete(_report(1));
-      await _settle(tester);
-      expect(runner.calls, hasLength(1), reason: '取消的任务没有被拿去跑');
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(const Duration(seconds: 1));
-    });
+        // 运行中的 A：点取消 → 正在停止（取消按钮收起），引擎在批间停下 → 已取消。
+        await tester.tap(cancelA);
+        await _settle(tester);
+        expect(a.stopping, isTrue);
+        expect(cancelA, findsNothing);
+        expect(
+          find.text(
+            'Stopping import of A.apkg… (already imported notes are kept)',
+          ),
+          findsOneWidget,
+        );
+        expect(runner.calls.single.shouldStop(), isTrue);
+        runner.calls.single.done.completeError(const SrsImportStopped());
+        await _settle(tester);
+        expect(a.status, SrsImportTaskStatus.cancelled);
+        expect(find.text('Cancelled import of A.apkg'), findsOneWidget);
+        expect(
+          find.byKey(ValueKey<String>('srs-import-task-dismiss-${a.id}')),
+          findsOneWidget,
+        );
+        expect(runner.calls, hasLength(1), reason: '取消的 B 没有被拿去跑');
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 1));
+      },
+    );
 
     testWidgets('[$ds] 删牌组途中牌组列表页被销毁（切走复习 tab）：删除照样做完、无异常、列表重读', (
       WidgetTester tester,
