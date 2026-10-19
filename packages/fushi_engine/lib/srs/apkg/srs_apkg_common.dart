@@ -57,6 +57,11 @@ String _unescape(String s) {
 
 /// 一段 HTML（字段值 / 模板）引用的本地媒体文件名（已反转义）。
 Set<String> srsMediaRefsIn(String html, {bool includeStatic = false}) {
+  // 快速判断：标签引用必含「<」、音频引用必含「[sound:」（纯文本字段占多数，迁移时要
+  // 扫几十万个字段）。
+  if (!includeStatic && !html.contains('<') && !html.contains('[sound:')) {
+    return <String>{};
+  }
   final Set<String> out = <String>{};
   for (final RegExpMatch m in _htmlMediaRef.allMatches(html)) {
     final String raw = m.group(1) ?? m.group(2) ?? m.group(3) ?? '';

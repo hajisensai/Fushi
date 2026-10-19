@@ -49,9 +49,18 @@ import 'package:fushi/utils.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 
 /// 行内菜单动作。
-enum _DeckAction { addChild, rename, move, settings, delete }
+enum _DeckAction { addChild, rename, move, moveUp, moveDown, settings, delete }
 
 enum _ImportSource { anki, file, minedHistory }
+
+/// [deckId] 的同级（含自己），按列表顺序（列表是先序、同级已按 [SrsDeckView.compareSiblings] 排好）。
+List<SrsDeckSummary> _siblingsOf(
+  List<SrsDeckSummary> decks,
+  SrsDeckSummary deck,
+) => <SrsDeckSummary>[
+  for (final SrsDeckSummary d in decks)
+    if (d.parentId == deck.parentId) d,
+];
 
 /// [rootId] 及其全部子孙牌组的 id（「移动到…」排除目标、拖放判据共用）。
 @visibleForTesting
@@ -207,6 +216,10 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         srsRunLogged('SrsDeckList.rename', () => _rename(deck));
       case _DeckAction.move:
         srsRunLogged('SrsDeckList.move', () => _pickMoveTarget(deck));
+      case _DeckAction.moveUp:
+        srsRunLogged('SrsDeckList.moveUp', () => _shift(deck, -1));
+      case _DeckAction.moveDown:
+        srsRunLogged('SrsDeckList.moveDown', () => _shift(deck, 1));
       case _DeckAction.settings:
         srsRunLogged(
           'SrsDeckList.settings',
@@ -269,13 +282,18 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     },
   );
 
-  /// 牌组拖放 / 「移动到…」落地：拒绝时说明原因，成功后列表重读。
-  Future<void> _moveDeck(SrsDeckSummary deck, String? parentId) async {
+  /// 牌组拖放 / 「移动到… / 上移 / 下移」落地：拒绝时说明原因，成功后列表重读。
+  Future<void> _placeDeck(
+    SrsDeckSummary deck,
+    String? parentId, {
+    String? beforeId,
+  }) async {
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return;
-    final SrsDeckMoveResult result = await store.moveDeck(
+    final SrsDeckMoveResult result = await store.placeDeck(
       deck.deck.id,
-      parentId,
+      parentId: parentId,
+      beforeId: beforeId,
     );
     switch (result) {
       case SrsDeckMoveResult.moved:
@@ -318,7 +336,24 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       ],
     );
     if (picked == null || !mounted) return;
-    await _moveDeck(deck, picked == topLevel ? null : picked);
+    await _placeDeck(deck, picked == topLevel ? null : picked);
+  }
+
+  /// 「上移 / 下移」：在同级里挪一位（[delta] = -1 / +1）。
+  Future<void> _shift(SrsDeckSummary deck, int delta) async {
+    final SrsDeckListData? data = ref.read(srsDeckListProvider).valueOrNull;
+    if (data == null) return;
+    final List<SrsDeckSummary> level = _siblingsOf(data.decks, deck);
+    final int i = level.indexWhere(
+      (SrsDeckSummary d) => d.deck.id == deck.deck.id,
+    );
+    final int to = i + delta;
+    if (i < 0 || to < 0 || to >= level.length) return;
+    // 上移 = 排到前一个前面；下移 = 排到后一个的后面（即再后一个前面，没有就排最后）。
+    final String? beforeId = delta < 0
+        ? level[to].deck.id
+        : (to + 1 < level.length ? level[to + 1].deck.id : null);
+    await _placeDeck(deck, deck.parentId, beforeId: beforeId);
   }
 
   /// 低优先级动作（MD3 顶栏的 [FushiFloatingTopBar.overflow]：宽度够平铺、不够收进「⋯」；
@@ -517,8 +552,11 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       onAction: _onDeckAction,
       onAddFirst: () => srsRunLogged('SrsDeckList.addFirst', _addNote),
       onSetCollapsed: _setCollapsed,
-      onMove: (SrsDeckSummary deck, String? parentId) =>
-          srsRunLogged('SrsDeckList.drop', () => _moveDeck(deck, parentId)),
+      onPlace: (SrsDeckSummary deck, String? parentId, String? beforeId) =>
+          srsRunLogged(
+            'SrsDeckList.drop',
+            () => _placeDeck(deck, parentId, beforeId: beforeId),
+          ),
     );
   }
 }
@@ -532,11 +570,11 @@ class _DeckList extends StatefulWidget {
     required this.onAddFirst,
     required this.onSetCollapsed,
     required this.showImportTasks,
-    required this.onMove,
+    required this.onPlace,
   });
 
-  /// 拖放落地：把牌组挪到 parentId 下（null = 顶层）。
-  final void Function(SrsDeckSummary deck, String? parentId) onMove;
+  /// 拖放落地（见 [_DeckPlace]）。
+  final _DeckPlace onPlace;
 
   final SrsDeckListData data;
 
@@ -673,6 +711,18 @@ class _DeckListState extends State<_DeckList> {
     }
 
     final int firstDeckItem = items.length;
+    // 每个牌组的前 / 后一个同级（列表是先序，同级已排好）：拖到行下缘、上移 / 下移用。
+    final Map<String, String> next = <String, String>{};
+    final Set<String> hasPrev = <String>{};
+    final Map<String?, String> lastOfLevel = <String?, String>{};
+    for (final SrsDeckSummary d in decks) {
+      final String? prev = lastOfLevel[d.parentId];
+      if (prev != null) {
+        next[prev] = d.deck.id;
+        hasPrev.add(d.deck.id);
+      }
+      lastOfLevel[d.parentId] = d.deck.id;
+    }
     int shown = 0;
     for (int i = 0; i < decks.length; i++) {
       final SrsDeckSummary d = decks[i];
@@ -689,7 +739,8 @@ class _DeckListState extends State<_DeckList> {
             enabled: deletingOf(d) == null,
             onDragStarted: () => _setDragging(d),
             onDragEnded: () => _setDragging(null),
-            onMove: widget.onMove,
+            onPlace: widget.onPlace,
+            nextSiblingId: next[d.deck.id],
             child: _DeckRow(
               deck: d,
               deleting: deletingOf(d),
@@ -702,6 +753,8 @@ class _DeckListState extends State<_DeckList> {
               onSetCollapsed: (bool c) => _setCollapsed(d, c),
               onOpen: widget.onOpen,
               onAction: widget.onAction,
+              canMoveUp: hasPrev.contains(d.deck.id),
+              canMoveDown: next.containsKey(d.deck.id),
             ),
           ),
         ),
@@ -746,7 +799,7 @@ class _DeckListState extends State<_DeckList> {
                 ? const SizedBox.shrink()
                 : _TopLevelDropZone(
                     key: const ValueKey<String>('srs-drop-top-level'),
-                    onMove: widget.onMove,
+                    onPlace: widget.onPlace,
                   ),
           ),
         ),
@@ -839,9 +892,15 @@ class _DeckRow extends StatelessWidget {
     required this.onSetCollapsed,
     required this.onOpen,
     required this.onAction,
+    required this.canMoveUp,
+    required this.canMoveDown,
   });
 
   final SrsDeckSummary deck;
+
+  /// 同级里前 / 后还有牌组（菜单「上移 / 下移」）。
+  final bool canMoveUp;
+  final bool canMoveDown;
 
   /// 非 null = 正在删除（本牌组或祖先）：行变淡、不可点 / 不进焦点，副标题换成进度条。
   final ValueListenable<double?>? deleting;
@@ -1003,6 +1062,16 @@ class _DeckRow extends StatelessWidget {
           value: _DeckAction.move,
           child: Text(t.srs_deck_move),
         ),
+        if (canMoveUp)
+          PopupMenuItem<_DeckAction>(
+            value: _DeckAction.moveUp,
+            child: Text(t.srs_deck_move_up),
+          ),
+        if (canMoveDown)
+          PopupMenuItem<_DeckAction>(
+            value: _DeckAction.moveDown,
+            child: Text(t.srs_deck_move_down),
+          ),
         PopupMenuItem<_DeckAction>(
           value: _DeckAction.settings,
           child: Text(t.srs_deck_settings),
@@ -1146,6 +1215,7 @@ class _DeviceDraggable<T extends Object> extends Draggable<T> {
     super.onDragStarted,
     super.onDragEnd,
     super.onDraggableCanceled,
+    super.dragAnchorStrategy,
   });
 
   final Set<PointerDeviceKind> devices;
@@ -1169,6 +1239,7 @@ class _DeviceLongPressDraggable<T extends Object>
     super.onDragStarted,
     super.onDragEnd,
     super.onDraggableCanceled,
+    super.dragAnchorStrategy,
   });
 
   final Set<PointerDeviceKind> devices;
@@ -1187,34 +1258,89 @@ class _DeviceLongPressDraggable<T extends Object>
         };
 }
 
-/// 牌组行的拖放外壳（Anki 拖放牌组同语义）：拖起本行；别的牌组拖到本行上 = 挪成本行的
-/// 子牌组。拖到它自己 / 它的子孙 / 它现在的父牌组上不接（不高亮）。
+/// 拖放落地：把 dragged 放到 parentId 下（null = 顶层）、排在 beforeId 前（null = 末尾）。
+typedef _DeckPlace =
+    void Function(SrsDeckSummary dragged, String? parentId, String? beforeId);
+
+/// 指针在行里的落点区：上 / 下缘 = 排到本行前 / 后（同级），中间 = 挪成本行的子牌组。
+enum _DropZone { before, into, after }
+
+/// 牌组行的拖放外壳（Anki 拖放 + 同级手动排序）：拖起本行；别的牌组拖到本行上——
+/// 上缘四分之一 = 排到本行前面，下缘四分之一 = 排到本行后面（都与本行同级），中间 =
+/// 挪成本行的子牌组。拖到自己 / 自己的子孙上不接（不高亮）。
 ///
 /// 鼠标：按下拖动即开始。触摸：宽屏长按开始；窄屏长按已是牌组菜单，触摸挪牌组走菜单
-/// 「移动到…」。
-class _DeckDragShell extends StatelessWidget {
+/// 「移动到… / 上移 / 下移」。
+class _DeckDragShell extends StatefulWidget {
   const _DeckDragShell({
     super.key,
     required this.deck,
     required this.decks,
+    required this.nextSiblingId,
     required this.enabled,
     required this.onDragStarted,
     required this.onDragEnded,
-    required this.onMove,
+    required this.onPlace,
     required this.child,
   });
 
   final SrsDeckSummary deck;
   final List<SrsDeckSummary> decks;
+
+  /// 同级里排在本行后面的那个（「排到本行后面」= 排到它前面；null = 本行是同级最后）。
+  final String? nextSiblingId;
   final bool enabled;
   final VoidCallback onDragStarted;
   final VoidCallback onDragEnded;
-  final void Function(SrsDeckSummary dragged, String? parentId) onMove;
+  final _DeckPlace onPlace;
   final Widget child;
 
+  @override
+  State<_DeckDragShell> createState() => _DeckDragShellState();
+}
+
+class _DeckDragShellState extends State<_DeckDragShell> {
+  _DropZone? _zone;
+
+  /// 被拖的牌组不能落到它自己或它的子孙上（任何区都不行）。
   bool _accepts(SrsDeckSummary dragged) =>
-      dragged.parentId != deck.deck.id &&
-      !srsDeckSubtreeIds(decks, dragged.deck.id).contains(deck.deck.id);
+      widget.enabled &&
+      !srsDeckSubtreeIds(
+        widget.decks,
+        dragged.deck.id,
+      ).contains(widget.deck.deck.id);
+
+  _DropZone _zoneAt(Offset global) {
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize || box.size.height <= 0) {
+      return _DropZone.into;
+    }
+    final double y = box.globalToLocal(global).dy / box.size.height;
+    if (y < 0.25) return _DropZone.before;
+    if (y > 0.75) return _DropZone.after;
+    return _DropZone.into;
+  }
+
+  void _setZone(_DropZone? zone) {
+    if (_zone == zone || !mounted) return;
+    setState(() => _zone = zone);
+  }
+
+  void _place(SrsDeckSummary dragged, _DropZone zone) {
+    final SrsDeckSummary row = widget.deck;
+    switch (zone) {
+      case _DropZone.into:
+        widget.onPlace(dragged, row.deck.id, null);
+      case _DropZone.before:
+        widget.onPlace(dragged, row.parentId, row.deck.id);
+      case _DropZone.after:
+        // 排到下一个同级前面；下一个就是被拖的自己时，相当于原地不动。
+        final String? next = widget.nextSiblingId == dragged.deck.id
+            ? null
+            : widget.nextSiblingId;
+        widget.onPlace(dragged, row.parentId, next);
+    }
+  }
 
   Widget _feedback(BuildContext context, double width) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -1236,7 +1362,7 @@ class _DeckDragShell extends StatelessWidget {
               FushiIcon(FushiIcons.folder, color: scheme.onSecondaryContainer),
               Expanded(
                 child: Text(
-                  deck.fullName,
+                  widget.deck.fullName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: scheme.onSecondaryContainer),
@@ -1249,6 +1375,20 @@ class _DeckDragShell extends StatelessWidget {
     );
   }
 
+  /// 落点指示：前 / 后 = 行上 / 下缘一条主色线（插入位置），中间 = 整行描边（成为子牌组）。
+  Decoration _indicator(ColorScheme scheme, FushiDesignTokens tokens) {
+    final BorderSide line = BorderSide(color: scheme.primary, width: 3);
+    return switch (_zone) {
+      null => const BoxDecoration(),
+      _DropZone.before => BoxDecoration(border: Border(top: line)),
+      _DropZone.after => BoxDecoration(border: Border(bottom: line)),
+      _DropZone.into => BoxDecoration(
+        border: Border.all(color: scheme.primary, width: 2),
+        borderRadius: BorderRadius.circular(tokens.radii.group),
+      ),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
@@ -1256,22 +1396,27 @@ class _DeckDragShell extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool compact = constraints.maxWidth < _DeckRow.compactBelow;
-        final Widget feedback = _feedback(
-          context,
-          constraints.maxWidth.isFinite
-              ? constraints.maxWidth.clamp(0, 360).toDouble()
-              : 360,
+        // 拖影挂在指针左上方一点（锚点是指针本身，见 [_pointerOf]）。
+        final Widget feedback = FractionalTranslation(
+          translation: const Offset(-0.1, -0.5),
+          child: _feedback(
+            context,
+            constraints.maxWidth.isFinite
+                ? constraints.maxWidth.clamp(0, 360).toDouble()
+                : 360,
+          ),
         );
-        final Widget dimmed = Opacity(opacity: 0.4, child: child);
-        Widget row = child;
-        if (enabled) {
+        final Widget dimmed = Opacity(opacity: 0.4, child: widget.child);
+        Widget row = widget.child;
+        if (widget.enabled) {
           row = _DeviceDraggable<SrsDeckSummary>(
             devices: const <PointerDeviceKind>{PointerDeviceKind.mouse},
-            data: deck,
+            data: widget.deck,
             feedback: feedback,
+            dragAnchorStrategy: pointerDragAnchorStrategy,
             childWhenDragging: dimmed,
-            onDragStarted: onDragStarted,
-            onDragEnd: (_) => onDragEnded(),
+            onDragStarted: widget.onDragStarted,
+            onDragEnd: (_) => widget.onDragEnded(),
             child: compact
                 ? row
                 : _DeviceLongPressDraggable<SrsDeckSummary>(
@@ -1279,20 +1424,28 @@ class _DeckDragShell extends StatelessWidget {
                       PointerDeviceKind.touch,
                       PointerDeviceKind.stylus,
                     },
-                    data: deck,
+                    data: widget.deck,
                     feedback: feedback,
+                    dragAnchorStrategy: pointerDragAnchorStrategy,
                     childWhenDragging: dimmed,
-                    onDragStarted: onDragStarted,
-                    onDragEnd: (_) => onDragEnded(),
+                    onDragStarted: widget.onDragStarted,
+                    onDragEnd: (_) => widget.onDragEnded(),
                     child: row,
                   ),
           );
         }
         return DragTarget<SrsDeckSummary>(
           onWillAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) =>
-              enabled && _accepts(d.data),
-          onAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) =>
-              onMove(d.data, deck.deck.id),
+              _accepts(d.data),
+          onMove: (DragTargetDetails<SrsDeckSummary> d) {
+            if (_accepts(d.data)) _setZone(_zoneAt(_pointerOf(d)));
+          },
+          onLeave: (_) => _setZone(null),
+          onAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) {
+            final _DropZone zone = _zone ?? _zoneAt(_pointerOf(d));
+            _setZone(null);
+            _place(d.data, zone);
+          },
           builder:
               (
                 BuildContext context,
@@ -1303,23 +1456,24 @@ class _DeckDragShell extends StatelessWidget {
                 curve: FushiMotion.standard,
                 foregroundDecoration: candidates.isEmpty
                     ? const BoxDecoration()
-                    : BoxDecoration(
-                        border: Border.all(color: scheme.primary, width: 2),
-                        borderRadius: BorderRadius.circular(tokens.radii.group),
-                      ),
+                    : _indicator(scheme, tokens),
                 child: row,
               ),
         );
       },
     );
   }
+
+  /// 拖起时用 [pointerDragAnchorStrategy]：[DragTargetDetails.offset] 就是指针位置
+  /// （拖影的视觉偏移另由 [FractionalTranslation] 做，不影响这里）。
+  Offset _pointerOf(DragTargetDetails<SrsDeckSummary> d) => d.offset;
 }
 
-/// 拖着子牌组时列表顶上出现的落点：放下 = 挪到顶层。
+/// 拖着子牌组时列表顶上出现的落点：放下 = 挪到顶层（末尾）。
 class _TopLevelDropZone extends StatelessWidget {
-  const _TopLevelDropZone({super.key, required this.onMove});
+  const _TopLevelDropZone({super.key, required this.onPlace});
 
-  final void Function(SrsDeckSummary dragged, String? parentId) onMove;
+  final _DeckPlace onPlace;
 
   @override
   Widget build(BuildContext context) {
@@ -1329,7 +1483,7 @@ class _TopLevelDropZone extends StatelessWidget {
       onWillAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) =>
           d.data.parentId != null,
       onAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) =>
-          onMove(d.data, null),
+          onPlace(d.data, null, null),
       builder:
           (
             BuildContext context,

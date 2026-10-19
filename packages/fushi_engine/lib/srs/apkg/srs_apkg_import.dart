@@ -8,6 +8,7 @@
 /// Anki 端在导出之后新增的 revlog 照常按来源规则导入。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -132,7 +133,7 @@ Future<SrsImportReport> _importOpened({
       onProgress: onProgress,
       shouldStop: shouldStop,
     );
-    return await imp.run();
+    return await store.bulkWrites(imp.run);
   } finally {
     await col.close();
   }
@@ -291,7 +292,26 @@ class _Importer {
   final Map<int, _NtMap> _nts = <int, _NtMap>{};
   final Map<int, String> _deckOf = <int, String>{};
   final Map<String, String> _mediaRenames = <String, String>{};
-  final Set<String> _mediaDone = <String>{};
+
+  /// 每个媒体条目只存一次：并发请求同一个名字共用同一个 future（预存与逐条导入可能
+  /// 同时要它；以前「先记已处理、再 await 存」会让并发的第二个请求拿到还没算出的名字）。
+  final Map<String, Future<String>> _mediaJobs = <String, Future<String>>{};
+
+  /// 预存媒体的并发度（见 [_prefetchMedia]）。
+  static const int _mediaConcurrency = 16;
+
+  /// 进度条分段：扫描引用 0 → [_scanShare]，预存媒体 → [_mediaShare]，其余归笔记导入。
+  /// 实测扫描约占 6%、媒体与笔记大致对半；没有要预存的媒体时媒体段长度为 0。
+  static const double _scanShare = 0.05;
+  double _mediaShare = 0;
+
+  /// [_prefetchMedia] 扫出的「有字段带共享样式或媒体引用」的笔记（Anki 笔记 id）；null =
+  /// 没扫过。不在其中的笔记逐条导入时字段原样用、不再扫一遍（含引用的字段只占约一成，
+  /// 而字段全文上亿字符，重扫一遍要好几秒）。
+  Set<int>? _notesWithRefs;
+
+  /// 扫描时连续占用 UI isolate 的上限（毫秒），到了就让出一次事件循环。
+  static const int _scanSliceMs = 8;
 
   /// 本批攒下的事件草稿：修改记录的序号在落库时（[SrsDbStore.importDrafts]）才分配。
   final List<SrsEventDraft> _pending = <SrsEventDraft>[];
@@ -328,7 +348,6 @@ class _Importer {
     );
     crtDay = srsDateToDay(crtDate.year, crtDate.month, crtDate.day);
     _readExt();
-
     for (final String name in pkg.mediaIndex.keys) {
       if (name.startsWith('_')) await _media(name);
     }
@@ -337,6 +356,7 @@ class _Importer {
     }
     await _mapDecks();
     await _stopIfAsked();
+    await _prefetchMedia();
     await _importNotes();
     if (!options.withScheduling) {
       report.reviewLogsSkipped =
@@ -394,9 +414,88 @@ class _Importer {
 
   // ------------------------------------------------------------------ 媒体
 
-  Future<String> _media(String name) async {
-    if (_mediaDone.contains(name)) return _mediaRenames[name] ?? name;
-    _mediaDone.add(name);
+  Future<String> _media(String name) => _mediaJobs[name] ??= _storeMedia(name);
+
+  /// 导入笔记前把笔记字段引用的媒体并发存好，逐条导入时 [_media] 直接命中。
+  ///
+  /// 以前每条笔记逐个 await 自己的媒体，4 万个媒体文件一个接一个读、写；并发
+  /// [_mediaConcurrency] 路后文件读写在 IO 线程池里重叠（实测从 Anki 迁移 1.5 万笔记 /
+  /// 4 万媒体：媒体阶段约 140 秒 → 约 30 秒，连同媒体存储不再逐文件 fsync，见
+  /// SrsMediaStore.store）。只是提前做、不改变存哪些：与 [_importNote] 同一批笔记（跳过
+  /// 笔记类型缺失 / 冲突的）、同一批字段、同一个引用判据；字段里带共享样式引用的留给
+  /// 逐条导入（样式展开后引用会变），漏掉的也照旧在逐条导入时补存。
+  Future<void> _prefetchMedia() async {
+    final List<String> names = <String>[];
+    final Set<String> seen = <String>{};
+    final Set<int> withRefs = <int>{};
+    // 导入跑在 UI isolate：逐行读，连续算满 [_scanSliceMs] 就让出一次事件循环（字段全文
+    // 上亿字符，一口气扫完要好几秒，期间界面不出帧）。
+    final PreparedStatement notes = col.db.prepare(
+      'SELECT id, mid, flds FROM notes',
+    );
+    final int total = max(
+      1,
+      col.db.select('SELECT count(*) AS n FROM notes').first['n'] as int,
+    );
+    final Stopwatch slice = Stopwatch()..start();
+    int scanned = 0;
+    try {
+      final IteratingCursor cur = notes.selectCursor();
+      while (cur.moveNext()) {
+        scanned++;
+        if (slice.elapsedMilliseconds >= _scanSliceMs) {
+          onProgress?.call(_scanShare * scanned / total);
+          await Future<void>.delayed(Duration.zero);
+          slice.reset();
+        }
+        final Row n = cur.current;
+        final _NtMap? nt = _nts[n['mid'] as int];
+        if (nt == null || nt.conflict != null) continue;
+        final List<String> raw = (n['flds'] as String).split('\x1f');
+        for (int i = 0; i < nt.fieldIds.length && i < raw.length; i++) {
+          final String html = raw[i];
+          if (srsStyleRefsIn(html).isNotEmpty) {
+            withRefs.add(n['id'] as int);
+            continue;
+          }
+          final Set<String> refs = srsMediaRefsIn(html);
+          if (refs.isEmpty) continue;
+          withRefs.add(n['id'] as int);
+          for (final String r in refs) {
+            if (pkg.mediaIndex.containsKey(r) && seen.add(r)) names.add(r);
+          }
+        }
+      }
+    } finally {
+      notes.close();
+    }
+    _notesWithRefs = withRefs;
+    _mediaShare = _scanShare;
+    if (names.isEmpty) return;
+    _mediaShare = 0.5;
+    int next = 0;
+    int done = 0;
+    Future<void> worker() async {
+      while (next < names.length) {
+        await _media(names[next++]);
+        done++;
+        // 进度与叫停每 50 个文件一次（真实集合上约几十毫秒一次，叫停仍即时）；叫停时
+        // 只存了媒体、还没写笔记，重导照常补齐。
+        if (done % 50 == 0) {
+          onProgress?.call(
+            _scanShare + (_mediaShare - _scanShare) * done / names.length,
+          );
+          await _stopIfAsked();
+        }
+      }
+    }
+
+    await Future.wait(<Future<void>>[
+      for (int i = 0; i < min(_mediaConcurrency, names.length); i++) worker(),
+    ]);
+  }
+
+  Future<String> _storeMedia(String name) async {
     final Uint8List? bytes = await pkg.mediaBytes(name);
     if (bytes == null) {
       report.mediaMissing.add(name);
@@ -406,6 +505,16 @@ class _Importer {
     report.mediaStored++;
     if (stored != name) _mediaRenames[name] = stored;
     return stored;
+  }
+
+  /// 笔记字段的 [_withMedia]：字段里既没有共享样式引用也没有媒体引用（绝大多数字段）时
+  /// 同步原样返回，不进异步流程——迁移 1.5 万笔记要处理 45 万个字段，逐个 await 本身就是
+  /// 秒级的开销。有引用时与 [_withMedia] 完全相同。
+  FutureOr<String> _fieldWithMedia(String html) {
+    if (srsStyleRefsIn(html).isEmpty && srsMediaRefsIn(html).isEmpty) {
+      return html;
+    }
+    return _withMedia(html);
   }
 
   Future<String> _withMedia(String html, {bool includeStatic = false}) async {
@@ -1062,7 +1171,9 @@ class _Importer {
           for (final Row r in cardsOf.select(<Object?>[n['id']])) _SrcCard(r),
         ], revlogOf);
         done++;
-        if (done % 50 == 0) onProgress?.call(done / total);
+        if (done % 50 == 0) {
+          onProgress?.call(_mediaShare + (1 - _mediaShare) * done / total);
+        }
         await _flush();
         await _stopIfAsked();
       }
@@ -1124,8 +1235,18 @@ class _Importer {
     }
     final List<String> raw = (n['flds'] as String).split('\x1f');
     final Map<String, String> fields = <String, String>{};
+    final bool hasRefs = _notesWithRefs?.contains(n['id'] as int) ?? true;
     for (int i = 0; i < nt.fieldIds.length; i++) {
-      fields[nt.fieldIds[i]] = i < raw.length ? await _withMedia(raw[i]) : '';
+      if (i >= raw.length) {
+        fields[nt.fieldIds[i]] = '';
+        continue;
+      }
+      if (!hasRefs) {
+        fields[nt.fieldIds[i]] = raw[i];
+        continue;
+      }
+      final FutureOr<String> v = _fieldWithMedia(raw[i]);
+      fields[nt.fieldIds[i]] = v is String ? v : await v;
     }
     final List<String> tags = (n['tags'] as String)
         .split(RegExp(r'\s+'))

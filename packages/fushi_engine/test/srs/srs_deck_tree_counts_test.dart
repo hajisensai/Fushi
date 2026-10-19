@@ -257,5 +257,72 @@ void main() {
       expect(await s.moveDeck(jp, 'no-such-deck'), SrsDeckMoveResult.missing);
       expect((await summaries(s)).keys.toList()..sort(), before);
     });
+
+    Future<List<String>> order(SrsDbStore s) async => <String>[
+      for (final SrsDeckSummary d in await s.deckSummaries())
+        if (d.deck.name != 'Default') d.fullName,
+    ];
+
+    test('同级手动排序：插到指定牌组前 / 末尾；子树跟着父牌组走；没排过时仍按名字', () async {
+      final SrsDbStore s = await open();
+      final String a = await s.createDeck('A');
+      final String b = await s.createDeck('B');
+      final String c = await s.createDeck('C');
+      await s.ensureDeckPath('B::x');
+      expect(await order(s), <String>['A', 'B', 'B::x', 'C']);
+
+      expect(
+        await s.placeDeck(c, parentId: null, beforeId: a),
+        SrsDeckMoveResult.moved,
+      );
+      expect(await order(s), <String>['C', 'A', 'B', 'B::x']);
+
+      // 同父下挪到末尾（下移到底 / 拖到最后一个后面）也要真写位置。
+      expect(await s.placeDeck(c, parentId: null), SrsDeckMoveResult.moved);
+      expect(await order(s), <String>['A', 'B', 'B::x', 'C']);
+
+      expect(
+        await s.placeDeck(b, parentId: null, beforeId: a),
+        SrsDeckMoveResult.moved,
+      );
+      expect(await order(s), <String>['B', 'B::x', 'A', 'C']);
+
+      // 原地不动：不写库。
+      expect(
+        await s.placeDeck(b, parentId: null, beforeId: a),
+        SrsDeckMoveResult.unchanged,
+      );
+      // beforeId 不是目标下的同级：拒绝。
+      expect(
+        await s.placeDeck(a, parentId: null, beforeId: 'nope'),
+        SrsDeckMoveResult.missing,
+      );
+    });
+
+    test('位置是界面状态：并发排序按最后修改生效，不进冲突记录；新建牌组排在手动排过的之后', () async {
+      expect(
+        srsFieldClassOf(SrsEntityKind.deck, SrsFieldKeys.deckPosition),
+        SrsFieldClass.viewState,
+      );
+      final SrsDbStore s = await open();
+      final String a = await s.createDeck('A');
+      await s.createDeck('B');
+      await s.placeDeck(a, parentId: null);
+      await s.createDeck('0-new');
+      expect(await order(s), <String>['B', 'A', '0-new']);
+    });
+
+    test('挪进别的父牌组且没指定位置：新同级都没排过时保持按名字，不给整组写位置', () async {
+      final SrsDbStore s = await open();
+      final String p = await s.createDeck('P');
+      await s.ensureDeckPath('P::b');
+      await s.ensureDeckPath('P::d');
+      final String c = await s.createDeck('c');
+      expect(await s.moveDeck(c, p), SrsDeckMoveResult.moved);
+      expect(await order(s), <String>['P', 'P::b', 'P::c', 'P::d']);
+      for (final SrsDeckSummary d in await s.deckSummaries()) {
+        expect(d.deck.position, isNull, reason: d.fullName);
+      }
+    });
   });
 }

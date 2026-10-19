@@ -402,7 +402,7 @@ void main() {
       await _unmount(tester);
     });
 
-    testWidgets('[$ds] 牌组拖放：鼠标拖到另一牌组上 = 挪成子牌组；拖着子牌组出现「移到顶层」落点', (
+    testWidgets('[$ds] 牌组拖放：拖到行中间 = 挪成子牌组、拖到行上缘 = 排到它前面；拖着子牌组出现「移到顶层」落点', (
       WidgetTester tester,
     ) async {
       final SrsDbStore store = await _openStore(tester);
@@ -454,6 +454,28 @@ void main() {
       expect(after, contains('Beta'));
       expect(after, isNot(contains('Alpha::Beta')));
       expect(zone, findsNothing);
+      expect(after.indexOf('Alpha'), lessThan(after.indexOf('Beta')));
+
+      // 拖到 Alpha 行的上缘 = 同级排到 Alpha 前面（不是挪成子牌组）。
+      final String alphaId = (await tester.runAsync(
+        store.deckSummaries,
+      ))!.firstWhere((SrsDeckSummary d) => d.fullName == 'Alpha').deck.id;
+      final Rect alphaRow = tester.getRect(
+        find.byKey(ValueKey<String>('srs-drag-$alphaId')),
+      );
+      g = await tester.startGesture(
+        tester.getCenter(find.text('Beta')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await g.moveBy(const Offset(0, -24));
+      await tester.pump();
+      await g.moveTo(Offset(alphaRow.center.dx, alphaRow.top + 3));
+      await tester.pump();
+      await g.up();
+      await _settle(tester);
+      final List<String> reordered = await names();
+      expect(reordered, isNot(contains('Alpha::Beta')));
+      expect(reordered.indexOf('Beta'), lessThan(reordered.indexOf('Alpha')));
       await _unmount(tester);
     });
 
