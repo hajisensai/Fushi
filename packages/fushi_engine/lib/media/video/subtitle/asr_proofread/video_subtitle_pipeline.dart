@@ -28,6 +28,7 @@ import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_clip_classifier.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_consistency_pass.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_display_split.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
@@ -74,8 +75,9 @@ class VideoSubtitleProgress {
       '${(fraction * 100).toStringAsFixed(0)}% $message)';
 }
 
-/// 长条拆分注入点（S5；上游 `asr_subtitles` 的拆分 API 接入前为 null = 不拆）。
-/// 只许改时间切分与文字分配，不许增删正文。
+/// 长条拆分注入点（S5）。生产默认 [splitSubtitleDraftCuesForDisplay]（全角标点 +
+/// 句末拆分，切点取 token 时间）；显式传 null = 不拆（测试用）。只许改时间切分与
+/// 文字分配，不许增删正文。
 typedef SubtitleDisplaySplitter =
     List<SubtitleDraftCue> Function(List<SubtitleDraftCue> cues);
 
@@ -166,6 +168,12 @@ class VideoSubtitleAiConfig {
   final bool regenerateGlossary;
 }
 
+/// 管线任务目录的根：`<数据根>/asr_jobs/video_subtitles`。app 前台、app 当 host、
+/// 无头服务端（任务与 `subgen` 命令）都用这一处，同一视频在哪条入口跑都续同一份
+/// 缓存。与上游转录任务目录（`<数据根>/asr_jobs/<sha1>`）同级不冲突。
+Directory videoSubtitleJobsRootUnder(Directory supportRoot) =>
+    Directory(p.join(supportRoot.path, 'asr_jobs', 'video_subtitles'));
+
 /// 任务目录名：`sha1(视频文件名 + '|' + 字节数)`（文件不存在按 0 字节）。
 String videoSubtitleJobId(String videoPath) {
   final File f = File(videoPath);
@@ -226,8 +234,9 @@ class VideoSubtitlePipeline {
     required this.recognizer,
     required this.jobsRoot,
     this.ai,
-    this.displaySplitter,
+    this.displaySplitter = splitSubtitleDraftCuesForDisplay,
     this.subtitleSuffix = 'ja',
+    this.exportDir,
     Future<int?> Function(String videoPath)? probeDurationMs,
     DateTime Function()? clock,
   }) : _probeDurationMs = probeDurationMs ?? probeVideoDurationMs,
@@ -242,18 +251,22 @@ class VideoSubtitlePipeline {
 
   /// 输出文件后缀：`<视频名>.<后缀>.srt`。
   final String subtitleSuffix;
+
+  /// 字幕写到哪个目录；null = 视频旁（播放页的 sidecar 探测直接加载）。给了就全部
+  /// 写进这个目录（CLI `--out-dir`：不碰视频目录），已有字幕的判定也看这个目录。
+  final Directory? exportDir;
   final Future<int?> Function(String videoPath) _probeDurationMs;
   final DateTime Function() _clock;
 
-  /// 目标字幕路径 `<目录>/<视频名>.<后缀>.srt`。
+  /// 目标字幕路径 `<目录>/<视频名>.<后缀>.srt`（目录见 [exportDir]）。
   String subtitlePathFor(String videoPath) => p.join(
-    p.dirname(videoPath),
+    exportDir?.path ?? p.dirname(videoPath),
     '${p.basenameWithoutExtension(videoPath)}.$subtitleSuffix.srt',
   );
 
   /// 同名字幕已存在时的退路 `<视频名>.<后缀>.asr.srt`。
   String asrSubtitlePathFor(String videoPath) => p.join(
-    p.dirname(videoPath),
+    exportDir?.path ?? p.dirname(videoPath),
     '${p.basenameWithoutExtension(videoPath)}.$subtitleSuffix.asr.srt',
   );
 

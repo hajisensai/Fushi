@@ -75,20 +75,28 @@ class SubtitleDraftCue {
       'tokenTiming': <String, Object?>{
         'tokens': tokenTiming!.tokens,
         'offsetsMs': tokenTiming!.offsetsMs,
+        // token 终点（sidecar 的 `e`）：显示拆分（S5）按它量停顿、定切点。
+        if (tokenTiming!.endOffsetsMs != null)
+          'endOffsetsMs': tokenTiming!.endOffsetsMs,
       },
   };
 
   static AsrCueTokenTiming? _timingFromJson(Map<Object?, Object?> json) {
     final Object? tokens = json['tokens'];
     final Object? offsets = json['offsetsMs'];
+    final Object? ends = json['endOffsetsMs'];
     if (tokens is! List ||
         offsets is! List ||
-        tokens.length != offsets.length) {
+        tokens.length != offsets.length ||
+        (ends != null && (ends is! List || ends.length != tokens.length))) {
       return null;
     }
     return AsrCueTokenTiming(
       tokens: <String>[for (final Object? t in tokens) '$t'],
       offsetsMs: <int>[for (final Object? o in offsets) (o as num).round()],
+      endOffsetsMs: ends is List
+          ? <int>[for (final Object? e in ends) (e as num).round()]
+          : null,
     );
   }
 }

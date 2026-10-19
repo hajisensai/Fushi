@@ -8,6 +8,7 @@
 /// fushi_server pair   ls | revoke <peerId>            [--config …]
 /// fushi_server admin  reset-token                     [--config …]
 /// fushi_server models pull|status --language ja        [--config …]
+/// fushi_server models pull moss [--moss-backend auto|cuda|vulkan|cpu]
 /// fushi_server transcribe <audio> --language ja [--out x.srt] [--config …]
 /// fushi_server ctl <action> …   （经 admin API 操作运行中的 serve，见 ctl_commands.dart）
 /// ```
@@ -19,6 +20,9 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart'
+    show MossBackendPreference;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart'
     show asrAudioProfileForJob, parseAsrAudioProfile;
@@ -84,6 +88,15 @@ ArgParser _buildParser() {
       'profile',
       help: '素材档位：cleanSpeech（有声书，默认）| mixedAudio（视频；同一语言可能是另一个模型包）',
       allowed: <String>['cleanSpeech', 'mixedAudio'],
+    )
+    ..addOption(
+      'moss-backend',
+      help: 'models pull moss / status：MOSS 的 audio.cpp 后端',
+      allowed: <String>[
+        for (final MossBackendPreference b in MossBackendPreference.values)
+          b.name,
+      ],
+      defaultsTo: 'auto',
     );
   parser.addCommand('transcribe')
     ..addOption('language', abbr: 'l', help: 'ASR 语言 tag', defaultsTo: 'ja')
@@ -106,7 +119,7 @@ void _usage(ArgParser parser) {
   stdout.writeln('fushi_server <command> [options]\n');
   stdout.writeln(
     'commands: init | serve | scan | status | pair ls|revoke <peerId> | '
-    'admin reset-token | models pull|status -l <lang> [--profile mixedAudio] | transcribe <audio> -l <lang> [--profile …] | '
+    'admin reset-token | models pull|status -l <lang> [--profile mixedAudio] | models pull moss [--moss-backend …] | transcribe <audio> -l <lang> [--profile …] | '
     'ctl <action>\n',
   );
   stdout.writeln(parser.usage);
@@ -514,6 +527,15 @@ Future<int> _models(ServerRuntime rt, ArgResults command) async {
             parseAsrAudioProfile(command['profile'] as String? ?? '') ??
             asr.AsrAudioProfile.cleanSpeech,
       );
+  final MossBackendPreference mossBackend = MossBackendPreference.values
+      .firstWhere(
+        (MossBackendPreference b) => b.name == command['moss-backend'],
+      );
+  if (sub == 'pull' &&
+      command.rest.length > 1 &&
+      command.rest[1].toLowerCase() == 'moss') {
+    return _pullMoss(mossBackend);
+  }
   if (sub == 'status') {
     for (final asr.AsrLanguage language in asr.AsrLanguage.registered) {
       final asr.AsrTranscribePlan plan = await service.plan(
@@ -526,6 +548,9 @@ Future<int> _models(ServerRuntime rt, ArgResults command) async {
         '${plan.modelStatus.obtainedBytes}/${plan.modelStatus.totalBytes} bytes',
       );
     }
+    stdout.writeln(
+      _mossStatusLine(await mossProvisionStatus(backend: mossBackend)),
+    );
     return 0;
   }
   if (sub == 'pull') {
@@ -555,9 +580,49 @@ Future<int> _models(ServerRuntime rt, ArgResults command) async {
     return 0;
   }
   stderr.writeln(
-    '用法: models status | models pull --language <tag> [--profile mixedAudio]',
+    '用法: models status | models pull --language <tag> [--profile mixedAudio] '
+    '| models pull moss [--moss-backend auto|cuda|vulkan|cpu]',
   );
   return 64;
+}
+
+/// `models status` 里 MOSS 那一行。
+String _mossStatusLine(MossProvisionStatus status) {
+  if (!status.supported) {
+    return 'moss unavailable  ${status.unavailableReason}';
+  }
+  return 'moss ${status.ready ? 'ready  ' : 'missing'} '
+      '${status.decision.backend!.cliValue} '
+      '${status.obtainedBytes}/${status.totalBytes} bytes'
+      '  runtime=${status.runtimeDir} model=${status.modelPath}';
+}
+
+/// `models pull moss`：运行库 + 权重（以 Stream 结束为准，见 ensureMossProvisioned）。
+Future<int> _pullMoss(MossBackendPreference backend) async {
+  final MossProvisionStatus before = await mossProvisionStatus(
+    backend: backend,
+  );
+  if (!before.supported) {
+    stderr.writeln('MOSS 在本机不可用：${before.unavailableReason}');
+    return 69;
+  }
+  if (before.ready) {
+    stdout.writeln('moss: 已就绪（${before.decision.backend!.cliValue}）');
+    return 0;
+  }
+  String last = '';
+  await for (final asr.ModelDownloadEvent e in ensureMossProvisioned(
+    backend: backend,
+  )) {
+    final String line =
+        '${e.fileName} ${e.receivedBytes}/${e.totalBytes}${e.done ? ' done' : ''}';
+    if (line != last) {
+      stdout.writeln(line);
+      last = line;
+    }
+  }
+  stdout.writeln('moss: 下载、校验、解压完成（${before.decision.backend!.cliValue}）');
+  return 0;
 }
 
 /// 离线直转：不经 HTTP，方便脚本与排障（与 `/api/jobs` 的 asr runner 同一条链路）。

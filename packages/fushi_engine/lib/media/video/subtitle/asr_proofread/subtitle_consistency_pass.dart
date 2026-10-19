@@ -35,6 +35,21 @@ const String kSubtitleConsistencyRules =
 
 {lines}''';
 
+/// [kSubtitleConsistencyRules] 里 `{lines}` 之前的部分（规则 + 作品名 + 专名表）：同一
+/// 作品各批逐字相同，是提示缓存的命中段。与 `{lines}` 之间原本隔一个空行，拆在
+/// 第一个换行上：`joinAiTextPrompt(前缀, 行)` 与整段模板替换的结果逐字相同。
+String buildConsistencyStablePrefix({
+  required String title,
+  required String glossaryText,
+}) {
+  const String marker = '\n{lines}';
+  final int at = kSubtitleConsistencyRules.indexOf(marker);
+  return kSubtitleConsistencyRules
+      .substring(0, at)
+      .replaceAll('{title}', title)
+      .replaceAll('{glossary}', glossaryText);
+}
+
 /// 片假名词（≥2 字，含长音）：同 `consistency.py` 的 `KATA`。
 final RegExp kSubtitleKatakanaRun = RegExp('[ァ-ヺー]{2,}');
 final RegExp _kKatakanaWord = RegExp(r'^[ァ-ヺー]{2,}$');
@@ -276,14 +291,18 @@ class SubtitleConsistencyPass {
         '  疑い: ${flagged[i]!.join('、')}',
       );
     }
-    final String prompt = kSubtitleConsistencyRules
-        .replaceAll('{title}', title)
-        .replaceAll('{glossary}', glossaryText)
-        .replaceAll('{lines}', lines.join('\n'));
+    final String prefix = buildConsistencyStablePrefix(
+      title: title,
+      glossaryText: glossaryText,
+    );
+    final String body = lines.join('\n');
     final Set<String> want = <String>{for (final int i in chunk) '$i'};
     for (int attempt = 0; attempt < maxAttempts; attempt++) {
       throwIfSubtitleCancelled(cancel);
-      final AiChatCompletion reply = await completer.complete(prompt);
+      final AiChatCompletion reply = await completer.complete(
+        body,
+        stablePrefix: prefix,
+      );
       usage.addCall(reply.usage);
       final Object? got = decodeLooseAiJson(reply.text);
       if (got is Map) {

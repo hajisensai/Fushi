@@ -12,6 +12,7 @@ import 'package:fushi_server/src/commands/media_server_commands.dart';
 import 'package:fushi_server/src/commands/stats_commands.dart';
 import 'package:fushi_server/src/commands/sync_commands.dart';
 import 'package:fushi_server/src/commands/tracking_commands.dart';
+import 'package:fushi_server/src/commands/subgen_commands.dart';
 import 'package:fushi_server/src/commands/subs_commands.dart';
 import 'package:fushi_server/src/commands/video_commands.dart';
 import 'package:fushi_server/src/commands/dict_commands.dart';
@@ -29,6 +30,7 @@ const List<CliModule> kCliModules = <CliModule>[
   MediaServerModule(),
   TrackingModule(),
   SubsCliModule(),
+  SubgenModule(),
   VideoCliModule(),
   DictCliModule(),
   LeaderboardModule(),

@@ -198,18 +198,23 @@ class SubtitleProofreader {
     final Set<String> want = <String>{
       for (int i = range.$1; i < range.$2; i++) '$i',
     };
-    final String prompt = buildProofreadBatchPrompt(
+    final String prefix = buildProofreadStablePrefix(
+      title: title,
+      glossaryText: glossaryText,
+    );
+    final String body = buildProofreadBatchBody(
       cues: cues,
       lo: range.$1,
       hi: range.$2,
-      title: title,
-      glossaryText: glossaryText,
       contextLines: contextLines,
     );
     Set<String> missing = want;
     for (int attempt = 0; attempt < maxAttempts; attempt++) {
       throwIfSubtitleCancelled(cancel);
-      final AiChatCompletion reply = await completer.complete(prompt);
+      final AiChatCompletion reply = await completer.complete(
+        body,
+        stablePrefix: prefix,
+      );
       usage.addCall(reply.usage);
       final Object? fix = decodeLooseAiJson(reply.text);
       if (fix is Map) {
@@ -274,7 +279,8 @@ class SubtitleProofreader {
   );
 }
 
-/// 一批的提示词（同 `llm_fix.py` 的 `batch_prompt`；候选稿按序号标注）。
+/// 一批的完整提示词（同 `llm_fix.py` 的 `batch_prompt`；候选稿按序号标注）=
+/// [buildProofreadStablePrefix] + [buildProofreadBatchBody]（[joinAiTextPrompt]）。
 String buildProofreadBatchPrompt({
   required List<SubtitleDraftCue> cues,
   required int lo,
@@ -282,6 +288,20 @@ String buildProofreadBatchPrompt({
   required String title,
   required String glossaryText,
   int contextLines = 3,
+}) => joinAiTextPrompt(
+  buildProofreadStablePrefix(title: title, glossaryText: glossaryText),
+  buildProofreadBatchBody(
+    cues: cues,
+    lo: lo,
+    hi: hi,
+    contextLines: contextLines,
+  ),
+);
+
+/// 同一作品各批逐字相同的前缀：规则 + 作品名 + 专名表（提示缓存的命中段）。
+String buildProofreadStablePrefix({
+  required String title,
+  required String glossaryText,
 }) {
   final List<String> lines = <String>[
     kSubtitleProofreadRules,
@@ -293,7 +313,17 @@ String buildProofreadBatchPrompt({
       ..add('固有名詞表:')
       ..add(glossaryText);
   }
-  lines.add('\n参考(直前の行、修正不要):');
+  return lines.join('\n');
+}
+
+/// 一批自己的内容：前后只读上下文 + 待校对的行。
+String buildProofreadBatchBody({
+  required List<SubtitleDraftCue> cues,
+  required int lo,
+  required int hi,
+  int contextLines = 3,
+}) {
+  final List<String> lines = <String>['\n参考(直前の行、修正不要):'];
   for (int i = lo - contextLines < 0 ? 0 : lo - contextLines; i < lo; i++) {
     lines.add('  [${formatProofreadTime(cues[i].startMs)}] ${cues[i].text}');
   }

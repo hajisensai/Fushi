@@ -372,10 +372,19 @@ class SubtitleGlossaryBuilder {
             '{lines}',
             subtitleGlossaryIdentitySample(episodeTexts).join('\n'),
           );
-    String prompt(String extraIdentity) => kSubtitleGlossaryPrompt
-        .replaceAll('{title}', context.japaneseTitle)
-        .replaceAll('{sources}', sources)
-        .replaceAll('{identity}', identity + extraIdentity);
+    // 生成 / 身份重做共用同一个前缀（规则 + 资料），只换本批的身份段。
+    final String generatePrefix =
+        _templateHead(kSubtitleGlossaryPrompt, '\n{identity}')
+            .replaceAll('{title}', context.japaneseTitle)
+            .replaceAll('{sources}', sources);
+    final String generateTail = _templateTail(
+      kSubtitleGlossaryPrompt,
+      '\n{identity}',
+    );
+    _Prompt prompt(String extraIdentity) => (
+      prefix: generatePrefix,
+      body: generateTail.replaceAll('{identity}', identity + extraIdentity),
+    );
 
     List<SubtitleGlossaryEntry> items = await _ask(prompt(''), usage, cancel);
 
@@ -418,16 +427,19 @@ class SubtitleGlossaryBuilder {
       final List<String> bad = subtitleGlossaryConflicts(items);
       if (bad.isEmpty) break;
       items = await _ask(
-        kSubtitleGlossaryRecheck
-            .replaceAll('{title}', context.japaneseTitle)
-            .replaceAll('{sources}', sources)
-            .replaceAll('{issues}', bad.join('\n'))
-            .replaceAll(
-              '{table}',
-              jsonEncode(<Map<String, Object?>>[
-                for (final SubtitleGlossaryEntry e in items) e.toJson(),
-              ]),
-            ),
+        (
+          prefix: _templateHead(kSubtitleGlossaryRecheck, '\n矛盾:')
+              .replaceAll('{title}', context.japaneseTitle)
+              .replaceAll('{sources}', sources),
+          body: _templateTail(kSubtitleGlossaryRecheck, '\n矛盾:')
+              .replaceAll('{issues}', bad.join('\n'))
+              .replaceAll(
+                '{table}',
+                jsonEncode(<Map<String, Object?>>[
+                  for (final SubtitleGlossaryEntry e in items) e.toJson(),
+                ]),
+              ),
+        ),
         usage,
         cancel,
       );
@@ -458,13 +470,16 @@ class SubtitleGlossaryBuilder {
 
   /// 问一次、解析成条目；解析不出（不是 JSON 数组 / 没有一条有效条目）重试。
   Future<List<SubtitleGlossaryEntry>> _ask(
-    String prompt,
+    _Prompt prompt,
     SubtitleAiUsageTally usage,
     SubtitleCancelToken cancel,
   ) async {
     for (int attempt = 0; attempt < maxParseAttempts; attempt++) {
       throwIfSubtitleCancelled(cancel);
-      final AiChatCompletion reply = await completer.complete(prompt);
+      final AiChatCompletion reply = await completer.complete(
+        prompt.body,
+        stablePrefix: prompt.prefix,
+      );
       usage.addCall(reply.usage);
       final List<SubtitleGlossaryEntry>? items = parseSubtitleGlossaryReply(
         reply.text,
@@ -477,6 +492,18 @@ class SubtitleGlossaryBuilder {
     );
   }
 }
+
+/// 一次 S0 请求：稳定前缀（规则 + 资料，同一作品的各次重做逐字相同）+ 本次内容。
+typedef _Prompt = ({String prefix, String body});
+
+/// 模板在 [marker] 之前的部分（[marker] 以换行开头：拆在那个换行上，
+/// `joinAiTextPrompt(head, tail)` 与原模板逐字相同）。
+String _templateHead(String template, String marker) =>
+    template.substring(0, template.indexOf(marker));
+
+/// 模板在 [marker] 开头那个换行之后的部分。
+String _templateTail(String template, String marker) =>
+    template.substring(template.indexOf(marker) + 1);
 
 /// 回复里的 JSON 数组 → 条目（同基准 `re.search(r"\[.*\]", ..., re.S)`）；不是数组
 /// 返回 null。`ja` 为空的条目丢弃，同一 `ja` 只留第一条。

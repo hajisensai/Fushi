@@ -9,7 +9,11 @@
 /// 启动器（宿主接 `HelperProcessRegistry`）。
 library;
 
+import 'dart:io';
+
 import 'package:fushi_asr_core/asr_core.dart' as asr;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_video_subtitle_recognizer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 
 /// 分段方式：自动（能用 MOSS 就用）/ 强制 MOSS / 强制滑窗。
@@ -25,6 +29,7 @@ class VideoSubtitleRecognizerChoice {
     required this.recognizer,
     this.mossBackend,
     this.mossUnavailableReason,
+    this.mossUnavailableCode,
   });
 
   final VideoSubtitleRecognizer recognizer;
@@ -35,6 +40,9 @@ class VideoSubtitleRecognizerChoice {
   /// 想用 MOSS（auto / moss）却没用上时的原因（驱动不达标、运行库没下载……）。
   final String? mossUnavailableReason;
 
+  /// [mossUnavailableReason] 的分类（UI 按它出文案）；同样只在没用上 MOSS 时有。
+  final MossUnavailableCode? mossUnavailableCode;
+
   bool get usesMoss => mossBackend != null;
 }
 
@@ -42,6 +50,17 @@ class VideoSubtitleRecognizerChoice {
 /// [VideoSubtitleRecognizeFailure]（用户显式要求的东西不能悄悄降级）；`auto` 下
 /// 不可用则退回滑窗并在 [VideoSubtitleRecognizerChoice.mossUnavailableReason]
 /// 里说明。
+///
+/// 判定顺序：后端（[decideMossBackend]：平台矩阵 + `nvidia-smi` / GPU 探测）→ 运行库
+/// 与权重是否已在磁盘上就绪。**这里不下载**：没下好就当不可用（原因
+/// [MossUnavailableCode.runtimeMissing] / [MossUnavailableCode.modelMissing]），
+/// 下载由调用方经 `ensureMossProvisioned` 显式触发。
+///
+/// - [startProcess]：MOSS / `nvidia-smi` 子进程的启动器，宿主接自己的子进程登记表；
+///   null = 引擎的 [engineAsrProcessStarter]（同一个 `HelperProcessRegistry`）。
+/// - [probes]：环境探测（测试注入）；null = 真实探测。
+/// - [mossCliPath] / [mossModelPath]：跳过下载目录、直接用本机已有的 audio.cpp CLI
+///   与 GGUF（CLI 排障 / 已手动部署时）；给了就只检查文件存在。
 Future<VideoSubtitleRecognizerChoice> resolveVideoSubtitleRecognizer({
   required VideoSubtitleSegmenterMode mode,
   MossBackendPreference mossBackend = MossBackendPreference.auto,
@@ -49,18 +68,97 @@ Future<VideoSubtitleRecognizerChoice> resolveVideoSubtitleRecognizer({
   serviceFactory,
   asr.AsrProcessStarter? startProcess,
   asr.AsrAccelerationPreference preference = asr.AsrAccelerationPreference.auto,
+  MossHostProbes? probes,
+  String? mossCliPath,
+  String? mossModelPath,
 }) async {
-  // MOSS 实现由后续提交接入；在那之前 auto 一律退回滑窗。
-  if (mode == VideoSubtitleSegmenterMode.moss) {
-    throw const VideoSubtitleRecognizeFailure('moss segmenter not available');
-  }
-  return VideoSubtitleRecognizerChoice(
+  VideoSubtitleRecognizerChoice sliding({
+    MossUnavailableCode? code,
+    String? reason,
+  }) => VideoSubtitleRecognizerChoice(
     recognizer: SlidingWindowVideoSubtitleRecognizer(
       serviceFactory: serviceFactory,
       preference: preference,
     ),
-    mossUnavailableReason: mode == VideoSubtitleSegmenterMode.auto
-        ? 'moss segmenter not available'
-        : null,
+    mossUnavailableReason: reason,
+    mossUnavailableCode: code,
+  );
+
+  if (mode == VideoSubtitleSegmenterMode.window) return sliding();
+  VideoSubtitleRecognizerChoice unavailable(
+    MossUnavailableCode code,
+    String reason,
+  ) {
+    if (mode == VideoSubtitleSegmenterMode.moss) {
+      throw VideoSubtitleRecognizeFailure('MOSS unavailable: $reason');
+    }
+    return sliding(code: code, reason: reason);
+  }
+
+  final asr.AsrProcessStarter starter = startProcess ?? engineAsrProcessStarter;
+  final MossBackendDecision decision = await decideMossBackend(
+    mossBackend,
+    probes: probes ?? MossHostProbes.system(startProcess: starter),
+  );
+  final asr.AudioCppRuntimePack? pack = decision.pack;
+  if (pack == null) {
+    return unavailable(
+      decision.code ?? MossUnavailableCode.unsupportedPlatform,
+      decision.reason ?? 'MOSS unavailable',
+    );
+  }
+  final String cli;
+  if (mossCliPath != null) {
+    if (!File(mossCliPath).existsSync()) {
+      return unavailable(
+        MossUnavailableCode.runtimeMissing,
+        'audiocpp_cli not found: $mossCliPath',
+      );
+    }
+    cli = mossCliPath;
+  } else {
+    final asr.AudioCppRuntimeStore runtime =
+        await asr.AudioCppRuntimeStore.open(pack, startProcess: starter);
+    if (!runtime.isReady) {
+      return unavailable(
+        MossUnavailableCode.runtimeMissing,
+        'audio.cpp ${pack.directoryName} is not installed '
+        '(${runtime.dir.path})',
+      );
+    }
+    cli = runtime.executable.path;
+  }
+  final String model;
+  if (mossModelPath != null) {
+    if (!File(mossModelPath).existsSync()) {
+      return unavailable(
+        MossUnavailableCode.modelMissing,
+        'MOSS model not found: $mossModelPath',
+      );
+    }
+    model = mossModelPath;
+  } else {
+    final asr.MossModelStore store = await asr.MossModelStore.open();
+    if (!store.isReady) {
+      return unavailable(
+        MossUnavailableCode.modelMissing,
+        'MOSS model ${store.file.fileName} is not downloaded '
+        '(${store.dir.path})',
+      );
+    }
+    model = store.modelFile.path;
+  }
+  return VideoSubtitleRecognizerChoice(
+    recognizer: MossVideoSubtitleRecognizer(
+      serviceFactory: serviceFactory,
+      preference: preference,
+      moss: asr.MossRunner(
+        cliPath: cli,
+        modelPath: model,
+        backend: pack.backend,
+        startProcess: starter,
+      ),
+    ),
+    mossBackend: pack.backend,
   );
 }

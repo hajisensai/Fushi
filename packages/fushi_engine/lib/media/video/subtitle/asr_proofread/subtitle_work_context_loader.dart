@@ -132,6 +132,30 @@ class SubtitleWorkContextLoader {
     return forBook(book.bookUid);
   }
 
+  /// 合集里的视频成员文件路径，按合集成员顺序（`getCollectionItems` 的顺序）；
+  /// 库里找不到行或路径为空的成员跳过。整季任务按它排队。
+  Future<List<String>> collectionVideoPaths(int collectionId) async {
+    final List<String> uids = await _memberBookUids(collectionId);
+    final Map<String, String> byUid = <String, String>{};
+    for (int i = 0; i < uids.length; i += _kInChunk) {
+      final List<String> chunk = uids.sublist(
+        i,
+        i + _kInChunk > uids.length ? uids.length : i + _kInChunk,
+      );
+      final List<VideoBookRow> rows = await (database.select(
+        database.videoBooks,
+      )..where(($VideoBooksTable t) => t.bookUid.isIn(chunk))).get();
+      for (final VideoBookRow row in rows) {
+        if (row.videoPath.trim().isNotEmpty) byUid[row.bookUid] = row.videoPath;
+      }
+    }
+    final Set<String> seen = <String>{};
+    return <String>[
+      for (final String uid in uids)
+        if (byUid[uid] != null && seen.add(byUid[uid]!)) byUid[uid]!,
+    ];
+  }
+
   Future<SubtitleWorkContext> _build({
     required String workKey,
     required String fallbackTitle,

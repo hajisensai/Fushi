@@ -221,22 +221,31 @@ class AiChatImage {
 
 /// 一条对话消息。
 class AiChatMessage {
-  const AiChatMessage.system(this.content)
+  /// [cacheable]：这段 system 是调用方保证**逐字稳定**的前缀（同一批任务的每次请求
+  /// 都一样），值得让提供商缓存。Anthropic 协议据此给这一块挂
+  /// `cache_control: {type: ephemeral}`（显式断点，Anthropic 不会自己缓存）；
+  /// OpenAI 兼容 / DeepSeek / Gemini 按请求前缀自动缓存，不需要标记——只要前缀稳定。
+  const AiChatMessage.system(this.content, {this.cacheable = false})
     : role = 'system',
       images = const <AiChatImage>[];
 
   /// [images] 只对 user 消息有意义：三家协议都只在用户回合收图。
   const AiChatMessage.user(this.content, {this.images = const <AiChatImage>[]})
-    : role = 'user';
+    : role = 'user',
+      cacheable = false;
   const AiChatMessage.assistant(this.content)
     : role = 'assistant',
-      images = const <AiChatImage>[];
+      images = const <AiChatImage>[],
+      cacheable = false;
 
   final String role;
   final String content;
 
   /// 附图；非空时按各协议的多模态形状发（文字段在图之后）。
   final List<AiChatImage> images;
+
+  /// 只对 system 消息有意义，见 [AiChatMessage.system]。
+  final bool cacheable;
 
   bool get isSystem => role == 'system';
 }
@@ -659,7 +668,7 @@ class AiChatClient {
     return <String, Object?>{
       'model': provider.model,
       'max_tokens': maxTokens,
-      if (system.isNotEmpty) 'system': system,
+      if (system.isNotEmpty) 'system': _anthropicSystem(messages, system),
       'messages': <Map<String, Object?>>[
         for (final AiChatMessage m in messages)
           if (!m.isSystem)
@@ -716,6 +725,36 @@ class AiChatClient {
       ],
       'generationConfig': <String, Object?>{'maxOutputTokens': maxTokens},
     };
+  }
+
+  /// Anthropic 的顶层 `system`：没有 [AiChatMessage.cacheable] 段时仍是纯字符串
+  /// （与以往逐字相同）；有时改成文本块数组，每条 system 一块，**最后一个**可缓存块
+  /// 挂 `cache_control: {type: ephemeral}`——缓存命中按前缀算，最后一个断点之前的
+  /// 全部内容都在缓存里，多挂只会占掉每次请求 4 个断点的名额。
+  ///
+  /// 低于模型的最小可缓存长度（512~4096 token，按模型）时 Anthropic 静默不缓存、
+  /// 不报错，所以这里不必判长度。
+  static Object _anthropicSystem(List<AiChatMessage> messages, String joined) {
+    final List<AiChatMessage> parts = <AiChatMessage>[
+      for (final AiChatMessage m in messages)
+        if (m.isSystem && m.content.isNotEmpty) m,
+    ];
+    final int lastCacheable = parts.lastIndexWhere(
+      (AiChatMessage m) => m.cacheable,
+    );
+    if (lastCacheable < 0) return joined;
+    return <Map<String, Object?>>[
+      for (int i = 0; i < parts.length; i++)
+        <String, Object?>{
+          'type': 'text',
+          // 与纯字符串形态同一口径：块之间原本以空行相接。
+          'text': i + 1 < parts.length
+              ? '${parts[i].content}\n\n'
+              : parts[i].content,
+          if (i == lastCacheable)
+            'cache_control': const <String, String>{'type': 'ephemeral'},
+        },
+    ];
   }
 
   static String _systemText(List<AiChatMessage> messages) => messages

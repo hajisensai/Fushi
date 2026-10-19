@@ -17,6 +17,7 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/audio/flac_encoder.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -101,6 +102,26 @@ asr.AsrTranscriptionService createServerAsrTranscriptionService({
         bootstrapArg: serverOrtLibraryPath ?? '',
       ),
       pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
+    );
+
+/// 视频字幕管线挑识别器的服务端装配（与 app 的 `resolveAppVideoSubtitleRecognizer`
+/// 对偶）：ASR 服务工厂是 [createServerAsrTranscriptionService]，子进程走引擎默认的
+/// `HelperProcessRegistry`。[mossCliPath] / [mossModelPath] 指向本机已有的
+/// audio.cpp CLI 与 GGUF 时跳过下载目录（`subgen --moss-cli/--moss-model`）。
+Future<VideoSubtitleRecognizerChoice> resolveServerVideoSubtitleRecognizer({
+  required VideoSubtitleSegmenterMode mode,
+  MossBackendPreference mossBackend = MossBackendPreference.auto,
+  asr.AsrAccelerationPreference preference = asr.AsrAccelerationPreference.auto,
+  String? mossCliPath,
+  String? mossModelPath,
+}) =>
+    resolveVideoSubtitleRecognizer(
+      mode: mode,
+      mossBackend: mossBackend,
+      serviceFactory: (asr.AsrAudioProfile profile) => createServerAsrTranscriptionService(audioProfile: profile),
+      preference: preference,
+      mossCliPath: mossCliPath,
+      mossModelPath: mossModelPath,
     );
 
 /// 配置显式路径优先；否则 bundle 布局里找随包的 onnxruntime；都没有返回 null

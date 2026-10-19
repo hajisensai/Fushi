@@ -40,6 +40,15 @@ const String kSubtitleClipPrompt =
 
 {clips}''';
 
+/// [kSubtitleClipPrompt] 里 `{clips}` 之前的部分（规则 + 作品名），拆在 `{clips}`
+/// 前的空行的第一个换行上：`joinAiTextPrompt(前缀, 片段)` 与整段替换逐字相同。
+String buildClipClassifyStablePrefix(String title) {
+  const String marker = '\n{clips}';
+  return kSubtitleClipPrompt
+      .substring(0, kSubtitleClipPrompt.indexOf(marker))
+      .replaceAll('{title}', title);
+}
+
 /// 判定结果与用量。
 class SubtitleClipClassification {
   const SubtitleClipClassification({required this.kinds, required this.usage});
@@ -76,13 +85,14 @@ class SubtitleClipClassifier {
     final String body = <String>[
       for (final String id in todo) 'id=$id\n${clips[id]!.join('\n')}',
     ].join('\n\n');
-    final String prompt = kSubtitleClipPrompt
-        .replaceAll('{title}', title)
-        .replaceAll('{clips}', body);
+    final String prefix = buildClipClassifyStablePrefix(title);
     final SubtitleAiUsageTally fresh = SubtitleAiUsageTally();
     for (int attempt = 0; attempt < maxAttempts; attempt++) {
       throwIfSubtitleCancelled(cancel);
-      final AiChatCompletion reply = await completer.complete(prompt);
+      final AiChatCompletion reply = await completer.complete(
+        body,
+        stablePrefix: prefix,
+      );
       fresh.addCall(reply.usage);
       final Object? got = decodeLooseAiJson(reply.text);
       if (got is! Map) continue;

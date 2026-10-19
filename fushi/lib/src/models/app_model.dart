@@ -205,7 +205,16 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
     show VideoSourceScrapeTaskController;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/asr_host/asr_host.dart'
-    show createAsrTranscriptionService, isAsrSupported;
+    show
+        MossBackendPreference,
+        VideoSubtitleSegmenterMode,
+        appMossProvisionStatus,
+        createAsrTranscriptionService,
+        isAsrSupported,
+        resolveAppVideoSubtitleRecognizer;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show videoSubtitleJobsRootUnder;
 import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
@@ -735,6 +744,26 @@ class AppModel with ChangeNotifier {
             serviceFactory: (AsrAudioProfile profile) =>
                 createAsrTranscriptionService(audioProfile: profile),
             resolveVideoPath: _resolveHostVideoPath,
+          ),
+          // 视频日语字幕管线（识别 + AI 校对 + 导出）：识别器挑选、AI 指派、作品
+          // 上下文与专名表都与视频页面板同一份装配；管线缓存与面板共用同一个根，
+          // 同一集从哪条入口跑都续同一份进度。
+          VideoSubtitleHostJobRunner(
+            resolveRecognizer: (
+              VideoSubtitleSegmenterMode mode,
+              MossBackendPreference mossBackend,
+            ) =>
+                resolveAppVideoSubtitleRecognizer(
+                  mode: mode,
+                  mossBackend: mossBackend,
+                ),
+            pipelineJobsRoot: videoSubtitleJobsRootUnder(
+              await AppPaths.supportRootDirectory(),
+            ),
+            database: () => database,
+            resolveVideoPath: _resolveHostVideoPath,
+            aiSettings: () => prefsRepo,
+            mossStatus: appMossProvisionStatus,
           ),
         ],
       );

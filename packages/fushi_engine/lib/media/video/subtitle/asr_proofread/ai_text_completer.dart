@@ -42,12 +42,32 @@ const String kSubtitleAiNotConfigured = 'provider_not_configured';
 /// 单轮问答。实现必须：成功返回正文与用量（取不到用量就是 null，不是 0）；
 /// 模型回了空正文时返回空 `text`（由调用方当一次不合格回复重试）；其余失败抛
 /// [SubtitleAiRequestFailure]，取消抛 [SubtitlePipelineCancelled]。
+///
+/// [stablePrefix]：提示词里**同一作品各批逐字相同**的那一段（规则 + 作品名 + 专名表），
+/// [prompt] 是本批内容。两段拼起来（[joinAiTextPrompt]）就是完整提示词——拆开只为
+/// 提示缓存：生产实现把前缀放 system（Anthropic 挂 `cache_control`），本批放 user。
+/// 空前缀 = 整段都是本批内容。
 abstract interface class AiTextCompleter {
-  Future<AiChatCompletion> complete(String prompt);
+  Future<AiChatCompletion> complete(String prompt, {String stablePrefix = ''});
 }
 
-/// 生产实现：一条 user 消息发给 [provider]。限频（`requestsPerMinute`）、key 轮换、
-/// 临时性失败的退避重试都在 [AiChatClient] 里，这里不再重试。
+/// 前缀与本批内容之间的分隔：拼回去与拆之前的整段提示词逐字相同（各阶段的拆法都
+/// 落在原提示词的一个换行上）。
+const String kAiTextPromptSeparator = '\n';
+
+/// [AiTextCompleter.complete] 两段的完整提示词（测试替身与费用预估按它算）。
+String joinAiTextPrompt(String stablePrefix, String prompt) =>
+    stablePrefix.isEmpty
+    ? prompt
+    : '$stablePrefix$kAiTextPromptSeparator$prompt';
+
+/// 生产实现：[AiTextCompleter.complete] 的稳定前缀作一条可缓存的 system 消息、本批
+/// 内容作 user 消息发给 [provider]。限频（`requestsPerMinute`）、key 轮换、临时性
+/// 失败的退避重试都在 [AiChatClient] 里，这里不再重试。
+///
+/// 缓存：Anthropic 不加标记就完全不缓存（基准实跑的费用大头是缓存读写，直连
+/// Anthropic 时没有它费用高出数倍），所以 system 标 [AiChatMessage.cacheable]；
+/// OpenAI 兼容 / DeepSeek / Gemini 按前缀自动缓存，前缀稳定即命中。
 class AiChatTextCompleter implements AiTextCompleter {
   AiChatTextCompleter({
     required this.client,
@@ -60,11 +80,18 @@ class AiChatTextCompleter implements AiTextCompleter {
   final int maxTokens;
 
   @override
-  Future<AiChatCompletion> complete(String prompt) async {
+  Future<AiChatCompletion> complete(
+    String prompt, {
+    String stablePrefix = '',
+  }) async {
     try {
       return await client.completeWithUsage(
         provider: provider,
-        messages: <AiChatMessage>[AiChatMessage.user(prompt)],
+        messages: <AiChatMessage>[
+          if (stablePrefix.isNotEmpty)
+            AiChatMessage.system(stablePrefix, cacheable: true),
+          AiChatMessage.user(prompt),
+        ],
         maxTokens: maxTokens,
       );
     } on AiChatFailure catch (failure) {
