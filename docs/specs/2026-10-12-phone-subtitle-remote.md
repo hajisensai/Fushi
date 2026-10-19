@@ -19,6 +19,17 @@
 跨视频回放或查词先在手机确认更换视频；目标页面继承全屏，按收藏的文本与
 字幕起点解析对应轨道延迟。来源已删除或主副轨存在歧义时明确报错。
 
+### 点播（2026-10-19）
+
+电脑上没开视频时也能遥控：手机遥控页顶栏的「点播」按钮（等待态的提示卡上也有
+「选个视频」）列出电脑的视频库——与电脑库页同一份条目，最近播放在前、没播过的
+按入库新→旧，带合集名与续播位置，可搜索（统一搜索口径，标题与合集名都可搜），
+每页 100 条滚到底续取。选中后电脑经卡片回看同一条媒体切换队列
+（`ExternalMediaNavigation`）让正在放的视频页走它自己的退出流程（落进度、退全屏），
+停掉后台有声书，再把主窗带到前台、按合集一集打开选中的视频；新视频的会话照常经
+事件流推给手机。选中的正是电脑上在放的那部时手机不发请求。电脑上有对话框压着
+视频页时不硬拆，回 `host_busy` 让用户先关掉。
+
 ## 协议与所有权
 
 引擎通过注入的 `VideoRemoteService` 提供能力 `videoRemoteControlV1`，没有
@@ -26,7 +37,9 @@
 只接受已配对设备凭据；控制者身份取自鉴权后的 token 摘要，不接受客户端自报身份。
 
 接口包括 snapshot、events、subtitles、command、lookupBegin/lookupEnd、
-mine/mineStatus、favorites/favoriteSet/favoritesRemove、openFavorite 与 disconnect。
+mine/mineStatus、favorites/favoriteSet/favoritesRemove、openFavorite、
+library/openVideo（点播，host 级能力 `openVideo`：不依赖已开着的视频页，快照的
+`capabilities` 没有它的旧电脑不显示入口）与 disconnect。
 手机固定选中的 host、凭据和证书指纹，不向其它电脑兜底：同一 host 的其它地址
 若指纹不符或是明文（本进程 P2P 转发口除外）直接拒连，报证书不一致。events 长轮询最多
 25 秒；正常播放位置最多每秒更新一次，显式播放操作及会话/轨道变化立即更新。
@@ -61,6 +74,10 @@ mine/mineStatus、favorites/favoriteSet/favoritesRemove、openFavorite 与 disco
 - `video_remote_engine_test.dart`：鉴权、吊销、租约、事件断档、请求去重与参数冲突。
 - `video_remote_host_test.dart`：暂停所有权、旧会话拒绝、副轨延迟、任务查询、真实 Drift 收藏落库。
 - `video_remote_client_test.dart`：固定设备、事件协议与远端错误保留。
+- `video_remote_host_open_video_test.dart`：点播能力声明、库清单排序 / 搜索 / 分页、
+  无视频页时开播、错误码透传；`video_remote_library_sheet_test.dart` 与
+  `video_remote_phone_lifecycle_test.dart` 的 on demand 组：手机选片发 `openVideo`、
+  选正在放的不发、旧电脑无入口。
 - `video_remote_control_itest.dart`：实际 Windows 播放器、焦点驱动全屏、真实 HTTP
   模拟手机操作、实际 ffmpeg 素材提取、隔离 FakeAnkiConnect 写卡与实际应用收藏数据库。
 

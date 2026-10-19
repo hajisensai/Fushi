@@ -17,6 +17,11 @@ import 'package:fushi/src/creator/fields/pitch_accent_field.dart'
 
 /// 一本词典给 CLI 的投影。`enabled` 与词典管理页的开关同一判据
 /// （[Dictionary.isHidden] 对日语）。
+///
+/// 混合词典（term + 内附汉字，BUG-3573）另带汉字部分的两项：`kanjiEnabled`
+/// （「汉字」分区里的开关，[Dictionary.isKanjiPartHidden]）与 `kanjiOrder`
+/// （在「汉字」分区的排序键，[Dictionary.kanjiSectionOrder]；用户没在汉字分区排过时
+/// 等于术语 `order`）。纯 kanji 词典的汉字分区开关 / 位置就是 `enabled` / `order`。
 Map<String, Object?> ctlDictionaryJson(Dictionary dictionary) =>
     <String, Object?>{
       'name': dictionary.name,
@@ -27,6 +32,10 @@ Map<String, Object?> ctlDictionaryJson(Dictionary dictionary) =>
       'format': dictionary.formatKey,
       'revision': dictionary.revision,
       'updatable': dictionary.isUpdatable,
+      if (dictionary.hasEmbeddedKanji) ...<String, Object?>{
+        'kanjiEnabled': !dictionary.isKanjiPartHidden,
+        'kanjiOrder': dictionary.kanjiSectionOrder,
+      },
       // 显示名 / 内容语言的用户覆盖（null = 没改过，走包内声明）。
       'customDisplayName': dictionary.displayName,
       'languageOverride': dictionary.languageOverride,
@@ -72,15 +81,21 @@ Dictionary resolveCtlDictionary(List<Dictionary> dictionaries, String query) {
 /// 把 [target] 移到同类型词典列表里的 [position]（1 起算，越界钳到两端），
 /// 返回重排后的整组（`order` 已按新下标改写）。与词典管理页 `_reorderDictionaries`
 /// 同一语义：只在同一类型分区内排序。
+///
+/// [section] 是分区名（报错用）；缺省按 [target] 自身类型。混合词典在「汉字」分区
+/// 排序时传 `kanji`。
 List<Dictionary> ctlReorderDictionaries(
   List<Dictionary> sameType,
   Dictionary target,
-  int position,
-) {
+  int position, {
+  DictionaryType? section,
+}) {
   final List<Dictionary> clone = List<Dictionary>.of(sameType);
   final int from = clone.indexOf(target);
   if (from < 0) {
-    throw CtlFailure.notFound('词典「${target.name}」不在 ${target.type.name} 分区里');
+    throw CtlFailure.notFound(
+      '词典「${target.name}」不在 ${(section ?? target.type).name} 分区里',
+    );
   }
   final Dictionary item = clone.removeAt(from);
   final int to = (position - 1).clamp(0, clone.length);
@@ -89,6 +104,36 @@ List<Dictionary> ctlReorderDictionaries(
     clone[i].order = i;
   }
   return clone;
+}
+
+/// 校验 `PUT /api/admin/dictionaries/:name` 的汉字部分参数（BUG-3573）。
+///
+/// - `kanjiEnabled` 只对混合词典有意义：纯 kanji 词典的开关就是 `enabled`，纯术语
+///   词典没有汉字部分——给了就 400，而不是静默写一个没人读的键。
+/// - `kanjiPosition`（1 起算）对「汉字」分区里的任何一本都可用（纯 kanji 词典与
+///   `position` 等价）。
+void ctlCheckKanjiPartParams(
+  Dictionary target, {
+  bool? kanjiEnabled,
+  int? kanjiPosition,
+}) {
+  if (kanjiEnabled != null && !target.hasEmbeddedKanji) {
+    throw CtlFailure.badRequest(
+      target.type == DictionaryType.kanji
+          ? '「${target.name}」是汉字词典，开关用 enabled'
+          : '「${target.name}」没有内附汉字部分，kanjiEnabled 不适用',
+    );
+  }
+  if (kanjiPosition != null) {
+    if (!target.isInKanjiSection) {
+      throw CtlFailure.badRequest(
+        '「${target.name}」不在「汉字」分区里，kanjiPosition 不适用',
+      );
+    }
+    if (kanjiPosition < 1) {
+      throw const CtlFailure.badRequest('kanjiPosition 从 1 起算');
+    }
+  }
 }
 
 /// 查词结果的结构化投影：词条 / 读音 / 词典 / 纯文本释义。

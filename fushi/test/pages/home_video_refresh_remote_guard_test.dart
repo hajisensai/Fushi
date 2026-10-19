@@ -107,7 +107,8 @@ void main() {
   // 「进影片页时自动列出」时，就彻底卡在空库上，正是用户报的「电脑版刷新不了」。
 
   test('页头有刷新按钮，且走的是下拉刷新同一条路径', () {
-    final int start = src.indexOf('Widget _buildPageHeader() {');
+    // 只锚到签名开头：参数表会随页头需求增减（#2379 加了 tags），守卫不管它。
+    final int start = src.indexOf('Widget _buildPageHeader(');
     expect(start, isNonNegative, reason: '找不到 _buildPageHeader');
     final int end = src.indexOf('\n  /// 长按 / 桌面右键远端视频卡', start);
     expect(end, greaterThan(start), reason: '_buildPageHeader 方法体定位失败');

@@ -72,6 +72,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     required this.onLockWindowAspectRatioChanged,
     required this.onVideoFitModeChanged,
     this.onHdrOutputModeChanged,
+    this.onYoutubeQualityChanged,
     required this.onImmersiveModeChanged,
     required this.controlLayout,
     this.onControlLayoutChanged,
@@ -213,6 +214,10 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   /// Windows HDR 直通 / 10-bit 输出模式（`video_hdr_output.dart`）：页面落盘 +
   /// 让播放器控制器当场重判是否切宿主窗。null = 无播放器场景走 AppModel 落盘。
   final Future<void> Function(VideoHdrOutputMode mode)? onHdrOutputModeChanged;
+
+  /// 「YouTube 画质」目标高度（0 = 自动）：页面落盘 + 网页档当场下发给站点播放器。
+  /// null = 无播放器场景走 AppModel 落盘（下次打开生效）。
+  final Future<void> Function(int height)? onYoutubeQualityChanged;
 
   // ── 控制条 9 槽位布局 ─────────────────────────────────────────────────────
   final VideoControlLayout Function() controlLayout;

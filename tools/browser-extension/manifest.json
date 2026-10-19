@@ -14,6 +14,13 @@
       "css": ["vendor/content.css"]
     },
     {
+      "matches": ["<all_urls>"],
+      "js": ["frame-gate.js"],
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true
+    },
+    {
       "matches": ["*://*.netflix.com/*"],
       "js": ["netflix-bridge.js"],
       "world": "MAIN",

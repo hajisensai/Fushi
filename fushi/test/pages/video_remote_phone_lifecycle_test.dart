@@ -159,6 +159,58 @@ void main() {
       await close(tester);
     });
 
+    testWidgets(
+      'on demand: picking a library video asks the computer to play it',
+      (WidgetTester tester) async {
+        host.capabilities = const <String>['openVideo'];
+        await open(tester);
+        expect(page(tester).canPickVideo, isTrue);
+        // 顶栏按宽度排布要在新按钮出现后的下一帧重新测宽。
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('video-remote-pick-video')),
+          findsOneWidget,
+        );
+        unawaited(page(tester).pickVideo());
+        await tester.pumpAndSettle();
+        expect(host.libraryQueries.single['offset'], 0);
+        expect(find.text('Other book'), findsOneWidget);
+        await tester.tap(find.text('Other book'));
+        await _wait(tester, () => host.openedVideos.isNotEmpty);
+        expect(host.openedVideos.single['bookUid'], 'other-book');
+        expect(host.openedVideos.single['requestId'], isA<String>());
+        await close(tester);
+      },
+    );
+
+    testWidgets('on demand: re-picking the playing video sends nothing', (
+      WidgetTester tester,
+    ) async {
+      host.capabilities = const <String>['openVideo'];
+      await open(tester);
+      unawaited(page(tester).pickVideo());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Shared book'));
+      await tester.pumpAndSettle();
+      await _flush(tester);
+      expect(host.openedVideos, isEmpty);
+      await close(tester);
+    });
+
+    testWidgets('on demand: an older computer shows no pick button', (
+      WidgetTester tester,
+    ) async {
+      await open(tester);
+      expect(page(tester).canPickVideo, isFalse);
+      expect(
+        find.byKey(const ValueKey<String>('video-remote-pick-video')),
+        findsNothing,
+      );
+      await page(tester).pickVideo();
+      expect(host.libraryQueries, isEmpty);
+      await close(tester);
+    });
+
     testWidgets('picking an episode sends the episode command', (
       WidgetTester tester,
     ) async {
@@ -653,6 +705,8 @@ final class _PhoneHost {
   final List<Map<String, dynamic>> mines = <Map<String, dynamic>>[];
   final List<String> ended = <String>[];
   final List<Map<String, dynamic>> contexts = <Map<String, dynamic>>[];
+  final List<Map<String, dynamic>> libraryQueries = <Map<String, dynamic>>[];
+  final List<Map<String, dynamic>> openedVideos = <Map<String, dynamic>>[];
   String? contextError;
 
   /// The next `lookupBegin` answers this error code (409) once.
@@ -762,6 +816,28 @@ final class _PhoneHost {
       case 'openFavorite':
         available = false;
         revision++;
+        return _response(<String, dynamic>{'ok': true});
+      case 'library':
+        libraryQueries.add(body);
+        return _response(<String, dynamic>{
+          'total': 2,
+          'offset': 0,
+          'currentBookUid': 'shared-book',
+          'items': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'bookUid': 'shared-book',
+              'title': 'Shared book',
+              'positionMs': 0,
+            },
+            <String, dynamic>{
+              'bookUid': 'other-book',
+              'title': 'Other book',
+              'positionMs': 0,
+            },
+          ],
+        });
+      case 'openVideo':
+        openedVideos.add(body);
         return _response(<String, dynamic>{'ok': true});
       case 'lookupBegin':
         lookups.add(body);
