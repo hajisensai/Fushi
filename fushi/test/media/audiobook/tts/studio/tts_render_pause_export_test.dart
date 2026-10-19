@@ -570,7 +570,7 @@ void main() {
     });
   });
 
-  // 真 ffmpeg 冒烟。FUSHI_FFMPEG：捆绑的 ffmpeg-min；FUSHI_FFMPEG_FULL：完整版
+  // 真 ffmpeg 冒烟。FUSHI_FFMPEG：捆绑的统一 FFmpeg（或旧最小构建）；FUSHI_FFMPEG_FULL：完整版
   // ffmpeg（有 loudnorm / ffmetadata / ipod）。都不设就跳过。
   final String? minFfmpeg = Platform.environment['FUSHI_FFMPEG'];
   final String? fullFfmpeg = Platform.environment['FUSHI_FFMPEG_FULL'];

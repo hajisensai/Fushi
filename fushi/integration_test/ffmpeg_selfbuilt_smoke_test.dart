@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter/ffprobe_kit.dart';
-import 'package:ffmpeg_kit_flutter/return_code.dart';
+import 'package:ffmpeg_kit_next_flutter/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_next_flutter/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_next_flutter/return_code.dart';
 
 /// 设备冒烟：证明「自编」ffmpeg-kit（arthenica 源码 NDK r25 重编最小变体）在 Android 16
 /// 上不仅能加载（修了 BUG-122 的 JNI_OnLoad 崩溃），而且原生 ffmpeg/ffprobe **真能执行**。

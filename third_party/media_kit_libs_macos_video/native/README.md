@@ -5,9 +5,11 @@ rebuilt on branch `fushi/mkv-lace` with `mkv-laced-audio-timestamps.patch` (BUG-
 audio without DefaultDuration, e.g. mkvmerge Opus, lost every lace frame after the first in dump-cache)
 and `recorder-video-dts.patch` (BUG-3500: Matroska video has no DTS, so dump-cache lost every B-frame).
 The exact source commit, Actions run, archive checksum, inspection and arm64 runtime probe
-are recorded in `provenance.json`. All frameworks contain arm64 and x86_64 slices.
-The bundle includes libbluray HDMV navigation, FFmpeg 6.1.6 full decoders, and the retained
-Dolby Vision profile 5 GL patch. No Java runtime/BD-J jar is included.
+are recorded in `provenance.json`. All frameworks are arm64-only (Fushi ships Apple Silicon only).
+The bundle includes libbluray HDMV navigation and the retained Dolby Vision profile 5 GL patch.
+It contains **no FFmpeg**: `Mpv.framework` links `@rpath/libav*.framework` from the unified FFmpeg
+(`ffmpeg-unified-macos.tar.gz` beside this file, built from `tool/ffmpeg-unified`), the same frameworks
+the bundled `ffmpeg` / `ffprobe` programs use for card mining. No Java runtime/BD-J jar is included.
 Original-disc menu rendering and Dolby Vision appearance have not been tested on a Mac.
 
 Rebuild with `tool/bluray/platforms/build_darwin.sh` from the repository root and

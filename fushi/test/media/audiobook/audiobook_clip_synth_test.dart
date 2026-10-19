@@ -120,10 +120,9 @@ void main() {
     });
   });
 
-  // BUG-543：移动端自编 ffmpeg-kit min 变体无 png decoder（有 mjpeg decoder），此前
+  // BUG-543：旧移动端自编 ffmpeg-kit min 变体无 png decoder（有 mjpeg decoder），此前
   // 合成命令喂 png 输入 → 帧解不出 → exit 1。根因守卫：命令必须走 image2 demuxer 且
-  // 图片输入为 JPEG（`.jpg`），绝不依赖 png 解码，保证两端（桌面 ffmpeg-min / 移动
-  // ffmpeg-kit min）都走已存在的 mjpeg decoder。
+  // 图片输入为 JPEG（`.jpg`）。统一 FFmpeg 已含 png decoder，JPEG 输入作为既有输出契约保留。
   group('buildFfmpegImageAudioToVideoArgs image input (BUG-543 png-free)', () {
     test('declares -f image2 demuxer before the image input', () {
       final List<String> args = buildFfmpegImageAudioToVideoArgs(

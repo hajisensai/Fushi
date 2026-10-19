@@ -357,9 +357,9 @@ extension _VideoClipExport on _VideoFushiPageState {
   }
 
   /// 片段导出的默认文件名：`<源名>_<起>-<止>.mp4`。扩展名恒 `.mp4`——绝不再跟随
-  /// 源容器（BUG-917：mkv/webm/avi/ts 源会让 ffmpeg 选中桌面精简 ffmpeg 白名单里
-  /// 不存在的 matroska/webm muxer → exit -22 EINVAL）。mp4 桌面 ffmpeg-min 能 mux，
-  /// 且任意播放器/浏览器通吃。
+  /// 源容器（BUG-917：mkv/webm/avi/ts 源会让 ffmpeg 选中旧桌面精简 ffmpeg-min 白名单里
+  /// 不存在的 matroska/webm muxer → exit -22 EINVAL；统一 FFmpeg 已含这些 muxer）。
+  /// mp4 任意播放器/浏览器通吃，故恒用 mp4。
   String _clipExportFileName({
     required String inputPath,
     required int startMs,
