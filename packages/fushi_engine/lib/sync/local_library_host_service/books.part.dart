@@ -425,7 +425,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     //
     // 锁只串住对端之间；本机出站同步（云导入 / 互联 client 落地）与本机阅读器不拿
     // 这把锁，前者改用 `upsertReaderPositionIfUnchanged` 在事务里比较后写入
-    // （BUG-3522）。这里的读-比较-写也放进同一个 DB 事务，两边才互不插队：否则
+    // （BUG-3537）。这里的读-比较-写也放进同一个 DB 事务，两边才互不插队：否则
     // 出站落地正好写在本端「读 current」与「写 winner」之间时，会被这里按旧的
     // current 算出的 winner 盖掉。
     await _runSyncStateExclusive(() => _db.transaction(() async {

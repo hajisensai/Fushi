@@ -17,7 +17,7 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 
-/// BUG-3522：本机落 `reader_positions` / 播放断点的出站写口（云导入、互联 client
+/// BUG-3537：本机落 `reader_positions` / 播放断点的出站写口（云导入、互联 client
 /// 落地）在「读本地 → 等网络 → 写本地」之间不持任何与 host PUT 共享的锁，且是
 /// 无条件写。BUG-3519 让 host 的进度 PUT 只拿同步状态窄锁之后，下面这条时间线
 /// 成立：电脑既当互联 host 又跑云同步 → 云导入判定后在等网络 → 手机 PUT 新进度

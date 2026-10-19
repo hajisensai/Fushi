@@ -130,7 +130,7 @@ class InterconnectBookProgressSync {
     );
     await _backend.putRemoteBookProgress(book.bookKey, agreed);
     if (ts != local.updatedAtMs) {
-      // 比较后写入（BUG-3522）：PUT 期间本地若已被改写（本机阅读器 / 本机作为
+      // 比较后写入（BUG-3537）：PUT 期间本地若已被改写（本机阅读器 / 本机作为
       // host 收到的对端 PUT），抬戳对齐作废——本地留着更新的那份，下一轮它偏离
       // 基线、照常再推。host 此刻确实停在 [agreed]，基线照记。
       await _upsertLocalIfUnchanged(book, agreed, expected: local);
@@ -141,7 +141,7 @@ class InterconnectBookProgressSync {
 
   /// host 胜出：落回本端 `reader_positions`，记基线。返回是否真的落地。
   ///
-  /// [local] 是判定时读到的本端进度。落地是「比较后写入」（BUG-3522）：判定与
+  /// [local] 是判定时读到的本端进度。落地是「比较后写入」（BUG-3537）：判定与
   /// 这里之间（sweep 里隔着 DB 往返，冲突弹窗里隔着用户思考），本地可能已被本机
   /// 阅读器或本机作为互联 host 收到的对端 PUT 写进更新的进度；时间戳一变，这次
   /// 判定作废——不落地、不记基线，交给下一轮按新的本地事实重新判定（届时两端都
@@ -176,7 +176,7 @@ class InterconnectBookProgressSync {
     bool localChanged = winner.updatedAtMs != local.updatedAtMs ||
         winner.charOffset != local.charOffset;
     if (localChanged) {
-      // 比较后写入（BUG-3522）：本地在判定后被改写就不对齐，下一轮再说。位置
+      // 比较后写入（BUG-3537）：本地在判定后被改写就不对齐，下一轮再说。位置
       // 一致这件事在判定时成立、host 也停在这个位置，基线照记。
       localChanged =
           await _upsertLocalIfUnchanged(book, winner, expected: local);
@@ -186,7 +186,7 @@ class InterconnectBookProgressSync {
   }
 
   /// 本端落地的唯一写口：仅当本地时间戳仍是判定时读到的 [expected] 才写
-  /// （[FushiDatabase.upsertReaderPositionIfUnchanged]，BUG-3522）。
+  /// （[FushiDatabase.upsertReaderPositionIfUnchanged]，BUG-3537）。
   Future<bool> _upsertLocalIfUnchanged(
     EpubBookRow book,
     RemoteBookProgress p, {

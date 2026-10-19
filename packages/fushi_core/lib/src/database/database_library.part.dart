@@ -1561,7 +1561,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         ),
       );
 
-  /// 「比较后写入」（BUG-3522）：仅当 `bookUid` 的本地行时间戳仍等于
+  /// 「比较后写入」（BUG-3537）：仅当 `bookUid` 的本地行时间戳仍等于
   /// [expectedUpdatedAt] 时才 upsert [pos]，返回是否写入。无行按 0 比较（与
   /// 同步层把「无记录」读成 0 时间戳的口径一致）。
   ///

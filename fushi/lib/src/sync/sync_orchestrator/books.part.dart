@@ -166,7 +166,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           case BookProgressSyncAction.pushLocal:
             await sync.pushLocal(book, local: local, remote: remote);
           case BookProgressSyncAction.applyRemote:
-            // BUG-3522：判定后本地被改写则不落地（比较后写入），不计「已拉取」。
+            // BUG-3537：判定后本地被改写则不落地（比较后写入），不计「已拉取」。
             if (await sync.applyRemote(book, remote, local: local)) {
               report.localBookProgressPulled++;
             }

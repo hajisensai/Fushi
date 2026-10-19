@@ -92,7 +92,7 @@ Future<int> applyPlaybackPositionDecisions(
           await v.sync.pushLocal(key, local: v.local, remote: v.remote);
           applied++;
         case SyncChoice.useRemote:
-          // BUG-3522：弹窗展示后本端断点又被改写（本机播放 / 对端 PUT）则不落地，
+          // BUG-3537：弹窗展示后本端断点又被改写（本机播放 / 对端 PUT）则不落地，
           // 这条仍算未解决，下一轮 sweep 按新事实重新判定。
           if (await v.sync.applyRemote(key, v.remote, local: v.local)) {
             applied++;

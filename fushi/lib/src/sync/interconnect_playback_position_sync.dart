@@ -161,7 +161,7 @@ class InterconnectPlaybackPositionSync {
     await _recordPending(key, agreed.positionMs);
     await _putRemote(key, agreed);
     if (ts != local.updatedAtMs) {
-      // 比较后写入（BUG-3522）：PUT 期间本端断点若已被改写，抬戳作废，本端留着
+      // 比较后写入（BUG-3537）：PUT 期间本端断点若已被改写，抬戳作废，本端留着
       // 更新的那份，下一轮照常再推；host 此刻停在 [agreed]，基线照记。
       await _db.runIfIntPrefUnchanged(
         stampKey: _localAtPrefKey(key),
@@ -191,7 +191,7 @@ class InterconnectPlaybackPositionSync {
 
   /// host 胜出：落回本端，记基线。返回是否真的落地。
   ///
-  /// [local] 是判定时读到的本端断点。落地是「比较后写入」（BUG-3522，与书籍版
+  /// [local] 是判定时读到的本端断点。落地是「比较后写入」（BUG-3537，与书籍版
   /// `InterconnectBookProgressSync.applyRemote` 同纪律）：判定前刚走过一次网络读
   /// host，这期间本机播放器或本机作为互联 host 收到的对端 PUT 可能已写进更新的
   /// 断点；本端时间戳一变就不落地、不记基线，交给下一轮重新判定。
@@ -220,7 +220,7 @@ class InterconnectPlaybackPositionSync {
     if (local.updatedAtMs > remote.updatedAtMs) {
       await _putRemote(key, local);
     } else if (remote.updatedAtMs > local.updatedAtMs) {
-      // 比较后写入（BUG-3522）：判定后本端被改写就不对齐。
+      // 比较后写入（BUG-3537）：判定后本端被改写就不对齐。
       localChanged = await _writeLocalIfUnchanged(key, remote, expected: local);
     }
     await recordBaseline(key, local.positionMs);
@@ -246,7 +246,7 @@ class InterconnectPlaybackPositionSync {
   };
 
   /// 本端落地的唯一写口：仅当本端时间戳 pref 仍是判定时读到的 [expected] 才写
-  /// （[FushiDatabase.runIfIntPrefUnchanged]，重读与写入同一事务，BUG-3522）。
+  /// （[FushiDatabase.runIfIntPrefUnchanged]，重读与写入同一事务，BUG-3537）。
   Future<bool> _writeLocalIfUnchanged(
     String key,
     PlaybackPosition p, {
