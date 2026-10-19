@@ -13,6 +13,8 @@
     "native/fushi_ios_umbrella/Cargo.toml": "33f5e93a736436937a7c25f1cf71d9699586a15b71b63be421f06d45d324b4e9",
     "native/fushi_p2p/Cargo.lock": "e50e51d44154f56bc3771a7278dbae39ba260f5d884fa68f9e98d0dd501be4e4",
     "native/fushi_p2p/Cargo.toml": "4c1cd272cf7d1ebbaa774a8cf9f17ae771bd6f36d2607fb3a4590447178d68a2",
+    "native/fushi_rwkv/Cargo.lock": "0fba229e5dbc8b5b90483324d5a9bf25e036564ab6c36567c37910a87845f8bf",
+    "native/fushi_rwkv/Cargo.toml": "e17eb62bd30af5e9a29caed568ecfb10c9e29c36fb9df026b1c763607e88fa76",
     "native/fushidicts/fushidicts_external/glaze/LICENSE": "5d49e66411a0807a7c8d6b911b9a26b59e940c71aebe561a3ad8b0b80ac4b7b6",
     "native/fushidicts/fushidicts_external/libdeflate/COPYING": "4ad69099cb4374836fd27583d9991e2838cd86b6e4666ab26b2d32582c91e73a",
     "native/fushidicts/fushidicts_external/unordered_dense/LICENSE": "4f5a62734899ec0ba85d3e8264a7ed1fcb4bcb8f0b4359c0afd627b6314ae599",
@@ -4730,7 +4732,8 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
-        "fushi_p2p"
+        "fushi_p2p",
+        "fushi_rwkv"
       ],
       "textSource": "package",
       "texts": [
@@ -5109,7 +5112,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_rwkv"
       ],
       "textSource": "package",
       "texts": [
@@ -5124,7 +5128,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_rwkv"
       ],
       "textSource": "package",
       "texts": [
@@ -5139,7 +5144,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_rwkv"
       ],
       "textSource": "package",
       "texts": [
@@ -5697,7 +5703,8 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_rwkv"
       ],
       "textSource": "package",
       "texts": [
@@ -6772,7 +6779,8 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_rwkv"
       ],
       "textSource": "package",
       "texts": [
@@ -11035,7 +11043,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_rwkv"
       ],
       "textSource": "package",
       "texts": [
@@ -11050,7 +11059,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_rwkv"
       ],
       "textSource": "package",
       "texts": [
@@ -13736,7 +13746,8 @@
       "license": "BSD-2-Clause OR Apache-2.0 OR MIT",
       "origin": [
         "fushi_compute",
-        "fushi_fsrs"
+        "fushi_fsrs",
+        "fushi_rwkv"
       ],
       "textSource": "package",
       "texts": [
