@@ -2009,8 +2009,8 @@ class BackupRestoreService {
     // 引擎常驻映射着每本词典的 hash.table / blobs.bin（native map_rd）；Windows 上
     // 只要 view 还活着，删资源根一律 ERROR_USER_MAPPED_FILE，整个恢复流程就断在
     // 这一行（BUG-1756）。恢复流程收尾必定重启 app（backupImportRestart），故这里
-    // 把引擎清空不需要再装回来。
-    FushiDicts.releaseAllMappings();
+    // 把引擎清空不需要再装回来。等后台借用（扩展分词）归还：之前映射不会解除。
+    await FushiDicts.releaseAllMappingsAndSettle();
     if (await targetRoot.exists()) {
       await targetRoot.delete(recursive: true);
     }

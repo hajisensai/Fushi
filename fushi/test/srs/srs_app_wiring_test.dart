@@ -213,7 +213,9 @@ void main() {
       server = FushiApiServer(
         port: 0,
         lookupService: _NoLookup(),
-        tokenizer: (String t) => <TokenizedSegment>[(text: t, reading: '')],
+        tokenizer: (List<String> ts) async => <List<TokenizedSegment>>[
+          for (final String t in ts) <TokenizedSegment>[(text: t, reading: '')],
+        ],
         srsApiProvider: () => api,
       );
       await server.start();
@@ -297,7 +299,9 @@ void main() {
       final FushiApiServer server = FushiApiServer(
         port: 0,
         lookupService: _NoLookup(),
-        tokenizer: (String t) => <TokenizedSegment>[(text: t, reading: '')],
+        tokenizer: (List<String> ts) async => <List<TokenizedSegment>>[
+          for (final String t in ts) <TokenizedSegment>[(text: t, reading: '')],
+        ],
         ankiConnectEndpoint: app.srsAnkiConnectEndpoint,
       );
       await server.start();

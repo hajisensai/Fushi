@@ -1009,26 +1009,22 @@ class FushiApiServer {
   Future<shelf.Response> _handleTokenize(shelf.Request request) async {
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     final dynamic text = body?['text'];
-    if (text is List) {
-      final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
-      for (int i = 0; i < text.length; i++) {
-        out.add(
-          buildYomitanTokenizeResponse(
-            text: text[i]?.toString() ?? '',
-            index: i,
-            tokenize: _tokenizer,
-          ),
-        );
-      }
-      return jsonRawResponse(jsonEncode(out));
-    }
-    return jsonResponse(
-      buildYomitanTokenizeResponse(
-        text: text?.toString() ?? '',
-        index: 0,
-        tokenize: _tokenizer,
-      ),
-    );
+    final List<String> texts = text is List
+        ? <String>[for (final dynamic t in text) t?.toString() ?? '']
+        : <String>[text?.toString() ?? ''];
+    // 整批一次交给分词器（后台 isolate 里切完，HBK-AUDIT-009），不在本 isolate 上逐条
+    // 同步切。
+    final List<List<TokenizedSegment>> tokenized = await _tokenizer(texts);
+    final List<Map<String, dynamic>> out = <Map<String, dynamic>>[
+      for (int i = 0; i < texts.length; i++)
+        buildYomitanTokenizeResponse(
+          text: texts[i],
+          index: i,
+          segments: tokenized[i],
+        ),
+    ];
+    if (text is List) return jsonRawResponse(jsonEncode(out));
+    return jsonResponse(out.single);
   }
 
   String _dictionaryLookupServerTiming({

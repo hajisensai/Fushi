@@ -163,7 +163,7 @@ class ServerDictionaryHost {
     _available = true;
     _unavailableReason = null;
     // 删 / 覆盖词典目录前释放映射（BUG-1756），与 app 的装配一致。
-    releaseDictionaryMappings = FushiDicts.releaseAllMappings;
+    releaseDictionaryMappings = FushiDicts.releaseAllMappingsAndSettle;
     await _preloadTransforms();
     await refresh();
     return true;

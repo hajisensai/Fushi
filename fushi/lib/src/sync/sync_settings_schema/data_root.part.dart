@@ -557,7 +557,10 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       debugPrint('DataRoot migrate: imageCache clear failed (best-effort): $e');
     }
     // 3) 释放词典 FFI 原生句柄（静态单例；打开数据根内的词典索引/资源文件）。
+    //    destroy 只是退役：被后台 isolate 借着的句柄（扩展分词）要等借用归还才真正
+    //    关掉文件，搬文件前等它。
     FushiDicts.disposeInstance();
+    await FushiDicts.whenBackgroundBorrowsSettled();
     // 4) WAL checkpoint(TRUNCATE) 落盘 + 关 DB（释放文件锁）。
     try {
       await appModel.database

@@ -63,7 +63,7 @@ void main() {
     server = FushiApiServer(
       port: 0,
       lookupService: _FakeLookup(),
-      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+      tokenizer: _echoTokenize,
     );
     await server.start();
     final int port = server.port;
@@ -80,7 +80,7 @@ void main() {
     server = FushiApiServer(
       port: 0,
       lookupService: _FakeLookup(),
-      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+      tokenizer: _echoTokenize,
     );
     await server.start();
     final int port = server.port;
@@ -98,7 +98,7 @@ void main() {
     server = FushiApiServer(
       port: 0,
       lookupService: _FakeLookup(),
-      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+      tokenizer: _echoTokenize,
     );
     await server.start();
     final int port = server.port;
@@ -111,7 +111,7 @@ void main() {
     server = FushiApiServer(
       port: 0,
       lookupService: _FakeLookup(),
-      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+      tokenizer: _echoTokenize,
     );
     await server.start();
     final int port = server.port;
@@ -126,7 +126,7 @@ void main() {
       port: 0,
       lookupService: _FakeLookup(),
       apiKey: 'secret',
-      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+      tokenizer: _echoTokenize,
     );
     await server.start();
     final int port = server.port;
@@ -144,7 +144,7 @@ void main() {
       port: 0,
       lookupService: _FakeLookup(),
       apiKey: 'secret',
-      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+      tokenizer: _echoTokenize,
     );
     await server.start();
     final int port = server.port;
@@ -191,7 +191,7 @@ void main() {
         port: 0,
         lookupService: _FakeLookup(),
         apiKey: 'secret',
-        tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+        tokenizer: _echoTokenize,
       );
       await server.start();
       final int port = server.port;
@@ -227,7 +227,7 @@ void main() {
     server = FushiApiServer(
       port: 0,
       lookupService: _FakeLookup(),
-      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+      tokenizer: _echoTokenize,
     );
     await server.start();
     final int port = server.port;
@@ -240,10 +240,13 @@ void main() {
     server = FushiApiServer(
       port: 0,
       lookupService: _FakeLookup(),
-      tokenizer: (t) => <TokenizedSegment>[
-        (text: '日本語', reading: 'にほんご'),
-        (text: 'は', reading: ''),
-        (text: '難しい', reading: ''),
+      tokenizer: (List<String> texts) async => <List<TokenizedSegment>>[
+        for (final String _ in texts)
+          <TokenizedSegment>[
+            (text: '日本語', reading: 'にほんご'),
+            (text: 'は', reading: ''),
+            (text: '難しい', reading: ''),
+          ],
       ],
     );
     await server.start();
@@ -260,10 +263,15 @@ void main() {
   });
 
   test('tokenize with array text returns array of results', () async {
+    // 整批一次交给分词器（后台 isolate 里切完，HBK-AUDIT-009），不逐条调用。
+    final List<List<String>> calls = <List<String>>[];
     server = FushiApiServer(
       port: 0,
       lookupService: _FakeLookup(),
-      tokenizer: (t) => <TokenizedSegment>[(text: t, reading: '')],
+      tokenizer: (List<String> texts) {
+        calls.add(texts);
+        return _echoTokenize(texts);
+      },
     );
     await server.start();
     final int port = server.port;
@@ -275,5 +283,14 @@ void main() {
     expect((body as List).length, 2);
     expect(body[0]['index'], 0);
     expect(body[1]['index'], 1);
+    expect(((body[1]['content'] as List)[0] as List)[0]['text'], 'い');
+    expect(calls, <List<String>>[
+      <String>['あ', 'い'],
+    ]);
   });
 }
+
+Future<List<List<TokenizedSegment>>> _echoTokenize(List<String> texts) async =>
+    <List<TokenizedSegment>>[
+      for (final String t in texts) <TokenizedSegment>[(text: t, reading: '')],
+    ];

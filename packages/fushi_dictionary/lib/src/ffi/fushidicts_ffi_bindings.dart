@@ -249,6 +249,8 @@ typedef _MatchLengthNative = Int32 Function(
 typedef _MatchLengthDart = int Function(
     Pointer<Void> handle, Pointer<Utf8> text, int scanLength);
 
+typedef _RetainDart = int Function(Pointer<Void> handle);
+
 // ── bindings class ──────────────────────────────────────────────────
 
 class FushidictsFfiBindings {
@@ -275,6 +277,10 @@ class FushidictsFfiBindings {
         'fushidicts_create');
     destroy = _lib.lookupFunction<Void Function(Pointer<Void>), _DestroyDart>(
         'fushidicts_destroy');
+    retain = _lib.lookupFunction<Int32 Function(Pointer<Void>), _RetainDart>(
+        'fushidicts_retain');
+    release = _lib.lookupFunction<Void Function(Pointer<Void>), _DestroyDart>(
+        'fushidicts_release');
     addTermDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
         'fushidicts_add_term_dict');
     addFreqDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
@@ -338,7 +344,14 @@ class FushidictsFfiBindings {
   late final _ProbeDictContentDart probeDictContent;
   late final _FreeImportResultDart freeImportResult;
   late final _CreateDart create;
+  /// `fushidicts_destroy` 是**退役**：还掉宿主的引用，在飞借用（[retain]）都还完才销毁。
   late final _DestroyDart destroy;
+
+  /// 借一个句柄引用（1 = 借到，0 = 已退役）。调用方必须自己仍持有一个引用。
+  late final _RetainDart retain;
+
+  /// 还一个 [retain] 借来的引用；最后一个归还时销毁句柄（解除文件映射）。
+  late final _DestroyDart release;
   late final _AddDictDart addTermDict;
   late final _AddDictDart addFreqDict;
   late final _AddDictDart addPitchDict;

@@ -57,7 +57,7 @@ Future<DictDirDeleteOutcome> deleteDictionaryDirectory(
   required FutureOr<void> Function() reloadEngine,
 }) async {
   if (!directory.existsSync()) return DictDirDeleteOutcome.absent;
-  releaseDictionaryMappings();
+  await releaseDictionaryMappings();
   return deleteDictionaryDirectoryCore(
     delete: () => directory.delete(recursive: true),
     quarantine: () => _quarantineDictionaryDirectory(directory),

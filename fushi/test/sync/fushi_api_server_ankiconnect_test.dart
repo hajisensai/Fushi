@@ -86,7 +86,9 @@ void main() {
       server = FushiApiServer(
         port: 0,
         lookupService: _NoLookup(),
-        tokenizer: (String t) => <TokenizedSegment>[(text: t, reading: '')],
+        tokenizer: (List<String> ts) async => <List<TokenizedSegment>>[
+          for (final String t in ts) <TokenizedSegment>[(text: t, reading: '')],
+        ],
         apiKey: apiKey,
         ankiConnectEndpoint: ac,
       );

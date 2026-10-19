@@ -46,7 +46,7 @@ mixin _LocalLibraryHostDictionaries
       // 装回必须走 finally：releaseAllMappings 之后引擎是空的，而
       // importDictionaryPackage 会因包损坏 / 磁盘满 / 权限抛出。写在 try 之后就被
       // 跳过 —— host 引擎永久空转，所有互联对端查词返回空，直到 host 重启。
-      releaseDictionaryMappings();
+      await releaseDictionaryMappings();
       try {
         await _packages.importDictionaryPackage(
           packageFile: packageFile,
