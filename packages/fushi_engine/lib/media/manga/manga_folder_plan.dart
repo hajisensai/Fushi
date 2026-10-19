@@ -1,16 +1,21 @@
-/// 漫画扫描根的**卷归组**规则：一棵目录树里哪些是 `.mokuro` 卷、哪些目录该当作
-/// 一卷纯页图导入。
+/// 漫画扫描根的**卷归组**规则：一棵目录树里哪些是 `.mokuro` 卷、哪些是单文件卷
+/// （`.cbz` / `.zip` / `.rar` …）、哪些目录该当作一卷纯页图导入。
 ///
 /// 这是 app 源库扫描（`SourceLibraryScanner`）与无头服务端库扫描
 /// （`fushi_server` 的 `LibraryScanner`）共用的唯一口径；两边各写一遍的话，
 /// 同一个目录在手机上算两卷、在服务端算一卷，客户端看到的书架就不再是同一个。
 ///
-/// 三条规则（与 app 手动「选择漫画文件夹」的语义一致）：
+/// 规则（与 app 手动「选择漫画文件夹」的语义一致）：
+/// - 扩展名在载体表里的文件（缺省 [kMangaArchiveFileExtensions]）各自是一卷；
+///   包旁精确同名的 `.mokuro`（[mangaArchiveMokuroSidecarPaths]）是那个 ZIP 容器卷
+///   的文字层，划给它，不再另算一卷——否则同一卷会以 mokuro 卷与压缩包卷各入库一次；
 /// - 根目录直接有页图：根本身是一卷；
 /// - 根目录没有页图：每个含页图的**直接**子目录是一卷，因此选择这些卷的上级目录
 ///   也能批量导入；更深的章节/图片子目录仍归属于这个直接子目录，不会拆成多本；
 /// - 候选目录与某个 `.mokuro` 所在目录存在祖先/后代关系时，以 manifest 为准，
-///   不再生成裸图卷——两种导入器都递归读页图，混用会把同一批图片重复消费。
+///   不再生成裸图卷——两种导入器都递归读页图，混用会把同一批图片重复消费；
+/// - 候选目录（或其子树）里躺着单文件卷时同样不再生成裸图卷：`系列/cover.jpg` +
+///   `系列/第1巻.cbz` 这种布局里，那几张散图是封面 / 目录图，不是一卷漫画。
 ///
 /// 「是页图」的判据是 [kMangaImageExtensions]（= `kImageExtensionsBase`），
 /// 与导入器 `enumerateMangaPages` 同源；这里只决定**哪个目录是一卷**，
@@ -19,6 +24,11 @@ library;
 
 import 'dart:io';
 
+import 'package:fushi_engine/media/manga/manga_archive_importer.dart'
+    show
+        kMangaArchiveFileExtensions,
+        kMangaZipContainerExtensions,
+        mangaArchiveMokuroSidecarPaths;
 import 'package:fushi_engine/media/manga/manga_importer.dart'
     show kMangaImageExtensions;
 import 'package:path/path.dart' as p;
@@ -31,16 +41,28 @@ class MangaFolderPlan {
   const MangaFolderPlan({
     required this.mokuroPaths,
     required this.imageFolders,
+    this.carrierPaths = const <String>[],
+    this.mokuroSidecars = const <String, String>{},
   });
 
-  /// 扫描根下所有 `.mokuro` 文件的完整路径，按小写字典序。
+  /// 应各自作为一卷导入的 `.mokuro` 文件完整路径，按小写字典序。已被某个单文件卷
+  /// 认领为 sidecar 的不在其中（见 [mokuroSidecars]）。
   final List<String> mokuroPaths;
 
   /// 应各自作为一卷导入的纯页图目录（完整路径），按小写字典序；标题惯例取
-  /// 目录 basename。已被某个 `.mokuro` 覆盖的目录不在其中。
+  /// 目录 basename。已被某个 `.mokuro` 或单文件卷覆盖的目录不在其中。
   final List<String> imageFolders;
 
-  bool get isEmpty => mokuroPaths.isEmpty && imageFolders.isEmpty;
+  /// 应各自作为一卷导入的单文件卷（压缩包 / 纯图 EPUB / 调用方追加的载体），
+  /// 按小写字典序。`.zip` / `.epub` 是否真装着页图要在导入时开包定性。
+  final List<String> carrierPaths;
+
+  /// 单文件卷 → 它旁边被认领的 `.mokuro` sidecar。本地导入器自己会在包旁找到
+  /// 它；网络来源要据此把 sidecar 与包一起下载，否则文字层在下载那步就丢了。
+  final Map<String, String> mokuroSidecars;
+
+  bool get isEmpty =>
+      mokuroPaths.isEmpty && imageFolders.isEmpty && carrierPaths.isEmpty;
 }
 
 /// 纯函数：把已枚举的文件列表归组成卷。无 IO。
@@ -53,20 +75,32 @@ class MangaFolderPlan {
 /// 是正斜杠的远端路径 / WebDAV 的 `https://` href，必须传 [p.url]：用宿主语义在
 /// Windows 上 normalize 会把分隔符换成反斜杠、把 URL 拆坏，归出来的卷目录就再也
 /// 对不上远端条目。
+///
+/// [carrierExtensions]（带点、小写）是「单文件即一卷」的扩展名表，缺省为导入器
+/// 能吃的 [kMangaArchiveFileExtensions]（无头服务端用它）；app 侧再加上它能栅格化
+/// 的 `.pdf`。
 MangaFolderPlan planMangaFolders({
   required String rootPath,
   required Iterable<String> filePaths,
   p.Context? context,
+  Set<String> carrierExtensions = kMangaArchiveFileExtensions,
 }) {
   final p.Context ctx = context ?? p.context;
   final String root = ctx.normalize(rootPath);
   bool rootHasImages = false;
   final Set<String> childFolders = <String>{};
-  final List<String> mokuroPaths = <String>[];
+  final List<String> allMokuroPaths = <String>[];
+  final List<String> carrierPaths = <String>[];
   for (final String path in filePaths) {
     final String ext = ctx.extension(path).toLowerCase();
     if (ext == kMokuroExtension) {
-      mokuroPaths.add(path);
+      allMokuroPaths.add(path);
+      continue;
+    }
+    if (carrierExtensions.contains(ext)) {
+      final String relative = ctx.relative(ctx.normalize(path), from: root);
+      if (ctx.split(relative).first == '..') continue;
+      carrierPaths.add(path);
       continue;
     }
     if (!kMangaImageExtensions.contains(ext)) continue;
@@ -79,22 +113,59 @@ MangaFolderPlan planMangaFolders({
       childFolders.add(ctx.join(root, segments.first));
     }
   }
-  mokuroPaths.sort(_compareIgnoreCase);
+  carrierPaths.sort(_compareIgnoreCase);
+
+  // 包旁 sidecar 划给 ZIP 容器卷。候选路径与导入器找 sidecar 用同一个函数，
+  // 「这里认领了」与「导入器真会读到」才是同一件事。
+  final Set<String> mokuroSet = allMokuroPaths.toSet();
+  final Map<String, String> mokuroSidecars = <String, String>{};
+  for (final String carrier in carrierPaths) {
+    if (!kMangaZipContainerExtensions.contains(
+      ctx.extension(carrier).toLowerCase(),
+    )) {
+      continue;
+    }
+    for (final String candidate in mangaArchiveMokuroSidecarPaths(
+      carrier,
+      context: ctx,
+    )) {
+      if (mokuroSet.remove(candidate)) {
+        mokuroSidecars[carrier] = candidate;
+        break;
+      }
+    }
+  }
+  final List<String> mokuroPaths = <String>[
+    for (final String path in allMokuroPaths)
+      if (mokuroSet.contains(path)) path,
+  ]..sort(_compareIgnoreCase);
 
   final List<String> candidates = rootHasImages
       ? <String>[root]
       : (childFolders.toList()..sort(_compareIgnoreCase));
   final List<String> imageFolders = <String>[];
   for (final String candidate in candidates) {
-    final bool claimedByMokuro = mokuroPaths.any((String mokuroPath) {
+    // 用全部 `.mokuro`（含 sidecar）判：sidecar 所在目录的页图同样属于那一卷。
+    final bool claimedByMokuro = allMokuroPaths.any((String mokuroPath) {
       final String mokuroDir = ctx.dirname(ctx.normalize(mokuroPath));
       return ctx.equals(mokuroDir, candidate) ||
           ctx.isWithin(mokuroDir, candidate) ||
           ctx.isWithin(candidate, mokuroDir);
     });
-    if (!claimedByMokuro) imageFolders.add(candidate);
+    if (claimedByMokuro) continue;
+    final bool claimedByCarrier = carrierPaths.any((String carrierPath) {
+      final String carrierDir = ctx.dirname(ctx.normalize(carrierPath));
+      return ctx.equals(carrierDir, candidate) ||
+          ctx.isWithin(candidate, carrierDir);
+    });
+    if (!claimedByCarrier) imageFolders.add(candidate);
   }
-  return MangaFolderPlan(mokuroPaths: mokuroPaths, imageFolders: imageFolders);
+  return MangaFolderPlan(
+    mokuroPaths: mokuroPaths,
+    imageFolders: imageFolders,
+    carrierPaths: carrierPaths,
+    mokuroSidecars: mokuroSidecars,
+  );
 }
 
 /// `dart:io` 便捷入口：递归枚举 [root] 下的文件（不跟符号链接；无权限/瞬时 IO

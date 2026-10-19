@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3196 条。点号进各自文件。
+> 共 3197 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3567](bugs/BUG-3567-manga-source-scan-skips-cbz-zip.md) | ✅ | ✅ | manga-source-scan-skips-cbz-zip |
 | [BUG-3566](bugs/BUG-3566-srs-host-not-in-srs-sync.md) | ✅ | ✅ | 互联 host 自己不参与复习（SRS）同步：立即同步提示没配置、对端看不到它的卡 |
 | [BUG-3565](bugs/BUG-3565-srs-multi-channel-shared-state.md) | ✅ | ✅ | 云盘 + 互联同时开着时复习同步状态全局一份：批次只到先跑的目录、另一个目录每轮换化身 |
 | [BUG-3564](bugs/BUG-3564-srs-template-preview-field-name-unescaped.md) | ✅ | ✅ | 复习模板预览：没有样例时的占位值 `(字段名)` 未转义，字段名里的 HTML 会在卡面 WebView 里生效 |

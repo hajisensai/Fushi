@@ -2,8 +2,9 @@
 ///
 /// 与 app 的 `SourceLibraryScanner` 走同一条入库路径（`VideoBookRepository` /
 /// `EpubImporter`），所以客户端经 `/api/library/videos` / `/books` 看到的行与
-/// 本机导入的一模一样。漫画根（kind=manga）走引擎 `MangaImporter`：`.mokuro`
-/// 卷与纯页图目录，卷归组规则与 app 共用引擎 `planMangaFolders`。
+/// 本机导入的一模一样。漫画根（kind=manga）走引擎 `MangaImporter` /
+/// `MangaArchiveImporter`：`.mokuro` 卷、单文件卷（cbz / zip / rar …）与纯页图目录，
+/// 卷归组规则与 app 共用引擎 `planMangaFolders`。
 ///
 /// 书 / 漫画根同样登记一行 `media_sources`（kind = book / manga），入库行带 `sourceId`，
 /// 并在来源扫描索引（引擎 `BookSourceIndex`）里记下「源相对路径 → 书 uid」——书 / 漫画
@@ -24,6 +25,7 @@ import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
+import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
@@ -442,12 +444,14 @@ class LibraryScanner {
     return scan;
   }
 
-  /// 漫画根：先逐个导入 `.mokuro` 卷，再把引擎归组出的纯页图卷目录逐个导入
-  /// （标题 = 目录名，与 app 源库扫描同口径）。重复卷按标题身份静默跳过；单卷
-  /// 失败只记错误，不中断整批。
+  /// 漫画根：先逐个导入 `.mokuro` 卷，再导入单文件卷（cbz / zip / rar / cbr / cb7 /
+  /// 纯图 EPUB），最后把引擎归组出的纯页图卷目录逐个导入（标题 = 文件名 / 目录名，
+  /// 与 app 源库扫描同口径）。重复卷按标题身份静默跳过；单卷失败只记错误，不中断整批。
   ///
-  /// cbz / cbr / pdf 本轮不做：压缩包导入器（`MangaArchiveImporter`）还在 app 侧
-  /// 且 rar/cb7 依赖外部 7-Zip；等它下沉进引擎再接。
+  /// 单文件卷走引擎 `MangaArchiveImporter`（rar / cbr / cb7 要 PATH 上有 7-Zip，缺了
+  /// 那一卷记错误）。包旁的 `book.mokuro` sidecar 已由归组划给包，导入器自己在包旁
+  /// 读它，不再另算一卷。`.zip` / `.epub` 先开包确认是页图包，词典包 / 文字书跳过。
+  /// PDF 不收：逐页栅格化在 app 侧（pdfium），服务端没有这条能力。
   Future<_BookScan> _scanManga(Directory dir, LibraryRootConfig root, ScanSummary summary) async {
     final _BookScan scan = await _beginBookScan(dir, root, SourceLibraryKind.manga);
     final int addedBefore = summary.mangaAdded;
@@ -464,6 +468,29 @@ class LibraryScanner {
         import: () => MangaImporter.importFromMokuroPath(
           db: db,
           mokuroPath: mokuroPath,
+          policy: const DuplicatePolicy.skip(),
+          sourceId: scan.source.id,
+        ),
+      );
+      if (!tracked) untracked++;
+    }
+    for (final String carrierPath in plan.carrierPaths) {
+      // `.zip` / `.epub` 与词典包 / 文字书同形：与手动导入同一判据开包定性。
+      final String ext = p.extension(carrierPath).toLowerCase();
+      if ((ext == '.zip' || ext == '.epub') && !MangaArchiveImporter.looksLikeImageArchive(carrierPath)) {
+        continue;
+      }
+      final bool tracked = await _importTracked(
+        scan,
+        dir,
+        carrierPath,
+        summary,
+        isManga: true,
+        format: BookFormat.manga,
+        import: () => MangaArchiveImporter.importArchive(
+          db: db,
+          archivePath: carrierPath,
+          title: p.basenameWithoutExtension(carrierPath),
           policy: const DuplicatePolicy.skip(),
           sourceId: scan.source.id,
         ),

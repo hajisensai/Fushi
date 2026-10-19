@@ -93,6 +93,48 @@ const Set<String> _kSevenZipMangaArchiveExtensions = <String>{
   '.cb7',
 };
 
+/// 走 `package:archive` ZIP 容器分支的扩展名（带点、小写）：只有这一路读包内 /
+/// 包旁的 `.mokuro` 文字层，7-Zip 分支不读（见 [MangaArchiveImporter.importArchive]）。
+const Set<String> kMangaZipContainerExtensions = <String>{
+  '.cbz',
+  '.zip',
+  '.epub',
+};
+
+/// [MangaArchiveImporter.importArchive] 能把它当「一整卷」导入的单文件扩展名
+/// （带点、小写）。app 的手动导入载体表、来源库扫描与无头服务端库扫描都从这里取，
+/// 不各自手抄——此前来源库扫描只抄了 `rar` / `cbr` / `cb7`，漫画来源里的
+/// `.cbz` / `.zip` 卷全被静默跳过。
+///
+/// `.zip` / `.epub` 光看扩展名分不清是不是页图包（词典包 / 文字书同形），批量
+/// 收录前必须先过 [MangaArchiveImporter.looksLikeImageArchive]。
+const Set<String> kMangaArchiveFileExtensions = <String>{
+  ...kMangaZipContainerExtensions,
+  ..._kSevenZipMangaArchiveExtensions,
+};
+
+/// [archivePath] 旁边可能的 `.mokuro` sidecar 路径：`book.mokuro`（换扩展名）与
+/// `book.cbz.mokuro`（追加扩展名，少数工具这么写），精确同名，不做模糊匹配——
+/// 否则一个批量目录会把第 1 卷绑到相邻第 2 卷的 manifest 上。
+///
+/// 只对 [kMangaZipContainerExtensions] 有意义。导入器自己按这份列表找 sidecar；
+/// 扫描规划层用同一份列表把这些 `.mokuro` 划给包、不再另当一卷导入，两边才不会
+/// 一边说「它属于包」一边又没读到它。[context] 给网络来源传 `p.url`。
+List<String> mangaArchiveMokuroSidecarPaths(
+  String archivePath, {
+  p.Context? context,
+}) {
+  final p.Context ctx = context ?? p.context;
+  final List<String> paths = <String>[];
+  for (final String candidate in <String>[
+    ctx.setExtension(archivePath, '.mokuro'),
+    '$archivePath.mokuro',
+  ]) {
+    if (!paths.contains(candidate)) paths.add(candidate);
+  }
+  return paths;
+}
+
 /// Yomitan/Yomichan 词典包的**结构**标记：包根下的数据库文件名前缀。
 ///
 /// 与 C++ 导入器 `native/fushidicts/fushidicts_src/importer.cpp` 的
@@ -532,10 +574,9 @@ abstract final class MangaArchiveImporter {
     // sidecars are considered, so a batch directory cannot bind vol. 1 to a
     // neighbouring vol. 2 manifest. Also accept `book.cbz.mokuro`, used by a
     // few tools that append rather than replace the extension.
-    final List<String> sidecarPaths = <String>[
-      p.setExtension(archivePath, '.mokuro'),
-      '$archivePath.mokuro',
-    ];
+    final List<String> sidecarPaths = mangaArchiveMokuroSidecarPaths(
+      archivePath,
+    );
     final Set<String> seenSidecars = <String>{};
     for (final String sidecarPath in sidecarPaths) {
       if (!seenSidecars.add(p.normalize(sidecarPath))) continue;

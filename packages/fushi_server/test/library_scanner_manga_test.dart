@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
@@ -231,6 +232,58 @@ void main() {
     expect(summary.errors.single, contains('Broken.mokuro'));
     expect(summary.mangaAdded, 1);
     expect((await db.getAllEpubBooks()).single.title, 'good');
+  });
+
+  void writePagesZip(String path, List<String> entries) {
+    final Archive archive = Archive();
+    for (final String name in entries) {
+      final List<int> png = _minimalPng();
+      archive.addFile(ArchiveFile(name, png.length, png));
+    }
+    File(path)
+      ..parent.createSync(recursive: true)
+      ..writeAsBytesSync(ZipEncoder().encode(archive)!);
+  }
+
+  test('单文件卷 .cbz / .zip 逐卷入库（此前服务端漫画根完全不认压缩包）', () async {
+    final String series = p.join(libraryRoot.path, 'Veil');
+    writePagesZip(p.join(series, 'Veil（1）オレンジの体温.zip'), <String>['001.png']);
+    writePagesZip(p.join(series, 'Veil（2）凪いだノワール.cbz'), <String>['001.png', '002.png']);
+    // 系列目录里的封面不是一卷。
+    _writePage(series, 'cover.jpg');
+
+    final ScanSummary summary = await scan();
+
+    expect(summary.errors, isEmpty);
+    expect(summary.mangaAdded, 2);
+    final List<EpubBookRow> books = await db.getAllEpubBooks();
+    expect(books.map((EpubBookRow b) => b.title).toSet(),
+        <String>{'Veil（1）オレンジの体温', 'Veil（2）凪いだノワール'});
+    for (final EpubBookRow book in books) {
+      await expectMangaArtifacts(book);
+    }
+
+    final ScanSummary second = await scan();
+    expect(second.errors, isEmpty);
+    expect(second.mangaAdded, 0);
+    expect(second.mangaSkipped, 2);
+  });
+
+  test('漫画根里的词典 .zip 不是漫画：跳过、不报错', () async {
+    final Archive archive = Archive();
+    for (final String name in <String>['index.json', 'term_bank_1.json']) {
+      final List<int> bytes = utf8.encode(name == 'index.json' ? '{"title":"d"}' : '[]');
+      archive.addFile(ArchiveFile(name, bytes.length, bytes));
+    }
+    final List<int> png = _minimalPng();
+    archive.addFile(ArchiveFile('img/a.png', png.length, png));
+    File(p.join(libraryRoot.path, 'dict.zip')).writeAsBytesSync(ZipEncoder().encode(archive)!);
+
+    final ScanSummary summary = await scan();
+
+    expect(summary.errors, isEmpty);
+    expect(summary.mangaAdded, 0);
+    expect(await db.getAllEpubBooks(), isEmpty);
   });
 
   test('空根：0 卷、无错误', () async {

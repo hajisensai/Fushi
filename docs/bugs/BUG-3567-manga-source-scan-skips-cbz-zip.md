@@ -1,0 +1,9 @@
+## BUG-3567 · manga-source-scan-skips-cbz-zip
+- **报告**：2026-10-19（用户：外部用户反馈，`D:/MangaFushi/Veil/Veil（1）….zip` 等 7 个 zip 卷的漫画来源扫描结果「0 volumes」）
+- **真实性**：✅ 真 bug。根因三处：
+  1. `fushi/lib/src/media/source_library/source_library_scanner.dart:117`（旧 `kScanMangaArchiveExtensions`）手抄了一份只有 `rar` / `cbr` / `cb7` 的白名单，与 `fushi/lib/src/media/import/import_carrier.dart:84` 的载体真相源 `kMangaCarrierFileExtensions` 漂移：`.cbz` / `.zip` 卷被静默跳过；漫画来源里的 `.epub` / `.pdf` 被分进 `books`，又在 manga 分支整个丢掉。手动导入同一批文件完全正常。
+  2. 同文件 `_importManga`：除重复之外的任何单卷异常都冒泡，中止整个来源，排在坏卷后面的卷全部不入库。
+  3. 无头服务端 `packages/fushi_server/lib/src/library_scanner.dart` `_scanManga` 完全不收单文件卷，注释给的理由（「压缩包导入器还在 app 侧」）早已过时——`MangaArchiveImporter` 已在 `fushi_engine`。
+- **[x] ① 已修复** — 单文件卷归组下沉进引擎 `planMangaFolders`（`carrierPaths` + 包旁 `.mokuro` sidecar 认领 `mokuroSidecars`，与载体同目录 / 祖先目录的散图不再成卷）；载体表 `kMangaArchiveFileExtensions` / sidecar 候选 `mangaArchiveMokuroSidecarPaths` 由引擎导出，导入器、app 手动导入载体表、app 来源扫描、服务端库扫描四处同源。app 扫描单文件卷经 `classifyImportCarrier`（与手动导入同一判据：`.zip` / `.epub` 开包定性，词典包 / 文字书跳过，`.pdf` 走 `importMangaFromPdf`）；逐卷失败汇总进 lastScanError（与视频分支 BUG-2570 同语义）；网络来源连同 sidecar 一起镜像。服务端漫画根收 cbz/zip/rar/cbr/cb7/纯图 EPUB（PDF 栅格化只在 app 侧，服务端不收）。提交见本分支 `worktree-fix-manga-source-zip-cbz`。
+- **[x] ② 已加自动化测试** — `fushi/test/media/source_library/source_library_scanner_test.dart`（用户实报布局 zip/cbz 入库 + 重扫去重、词典 zip / 文字 epub 跳过、坏包不中断、cbz+sidecar 只一卷、载体表同源、书籍来源不受影响、封面不成卷）；`fushi/test/media/manga/manga_folder_plan_test.dart`（引擎归组单文件卷 / sidecar / 让位规则）；`packages/fushi_server/test/library_scanner_manga_test.dart`（服务端 zip/cbz 入库、词典 zip 跳过）。
+- **备注**：同一位用户还报了「CBZ 里是 AVIF 页图不支持」——另一个独立问题：页图基集 `kImageExtensionsBase` 无 `.avif`，且 Rust `fushi_compute` 的 image crate 未开 AVIF 解码、`package:image` 4.3 也不支持，单补白名单只会把报错从「no images」换成「Could not decode manga page」。需要先定 AVIF 解码依赖（libdav1d C 库 vs 纯 Rust + MPL-2.0 容器解析）再另起一条修。
