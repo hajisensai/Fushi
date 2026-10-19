@@ -27,6 +27,7 @@ import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart' as pref_keys;
+import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 export 'package:fushi_engine/media/media_pref_keys.dart'
     show kReaderSourcePersistedKey;
 
@@ -1532,6 +1533,24 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   Future<void> setHoverAutoLookup({required bool value}) async {
     await setPreference<bool>(key: 'hover_auto_lookup', value: value);
+    onSettingsChangedLive?.call();
+  }
+
+  /// 悬停查词按住的键（默认 Shift，可改 Ctrl / Alt；见 [HoverLookupModifier]）。阅读器 /
+  /// 歌词 / 漫画 / 视频字幕 / 字幕列表 / 网页档站点页面共用。
+  HoverLookupModifier get hoverLookupModifier =>
+      HoverLookupModifier.fromStorage(
+        getPreference<String>(
+          key: kHoverLookupModifierPrefKey,
+          defaultValue: HoverLookupModifier.shift.storageKey,
+        ),
+      );
+
+  Future<void> setHoverLookupModifier(HoverLookupModifier value) async {
+    await setPreference<String>(
+      key: kHoverLookupModifierPrefKey,
+      value: value.storageKey,
+    );
     onSettingsChangedLive?.call();
   }
 

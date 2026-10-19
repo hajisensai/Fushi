@@ -179,6 +179,11 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'anidb_file_identities': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.videos,
   }),
+  // v119 视频字幕 AI 校对的作品级专名表：含用户手编条目（用户数据），随「视频」
+  // 类别出境。键是本机合集 / 作品 id，与 video_metadata_* 同样不进合并导入。
+  'video_subtitle_glossaries': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.videos,
+  }),
 
   // ── 游戏 ──
   'galgame_sources': BackupTableRule.rowLevel('_retainGames（FK cascade）'),
@@ -307,7 +312,7 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'srs_local_state': BackupTableRule.deviceLocal(),
   'srs_notes_cache': BackupTableRule.deviceLocal(),
   'srs_cards_cache': BackupTableRule.deviceLocal(),
-  // v119：本机已冻结批次留存（SRS 多目录同步），设备本地、恢复后清空。
+  // v120：本机已冻结批次留存（SRS 多目录同步），设备本地、恢复后清空。
   'srs_sent_batches': BackupTableRule.deviceLocal(),
 };
 

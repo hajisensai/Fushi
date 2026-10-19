@@ -467,6 +467,23 @@ namespace flutter_inappwebview_plugin
     channel->InvokeMethod("onCloseWindow", std::move(arguments));
   }
 
+  // WebView2 ProcessFailed → 跨平台 onRenderProcessGone（RenderProcessGoneDetail 只认 didCrash /
+  // rendererPriorityAtExit；Windows 没有 renderer 优先级，传 null）。processFailedKind 是附加诊断
+  // 字段（"render" / "browser"），Dart 侧 fromMap 忽略未知键。
+  void WebViewChannelDelegate::onRenderProcessGone(const bool& didCrash, const std::string& processFailedKind) const
+  {
+    if (!channel) {
+      return;
+    }
+
+    auto arguments = std::make_unique<flutter::EncodableValue>(flutter::EncodableMap{
+      {"didCrash", make_fl_value(didCrash)},
+      {"rendererPriorityAtExit", make_fl_value()},
+      {"processFailedKind", make_fl_value(processFailedKind)},
+      });
+    channel->InvokeMethod("onRenderProcessGone", std::move(arguments));
+  }
+
   void WebViewChannelDelegate::onPermissionRequest(const std::string& origin, const std::vector<int64_t>& resources, std::unique_ptr<PermissionRequestCallback> callback) const
   {
     if (!channel) {

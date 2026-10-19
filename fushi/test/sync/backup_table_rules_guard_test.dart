@@ -30,6 +30,7 @@ void main() {
     'video_metadata_people',
     'video_metadata_characters',
     'video_metadata_terms',
+    'video_subtitle_glossaries',
     'series',
     'media_tracking_mappings',
     'revealed_images',

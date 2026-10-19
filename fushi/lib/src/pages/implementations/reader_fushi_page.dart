@@ -24,6 +24,8 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
+import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
+import 'package:fushi/src/media/novel/web/web_novel_library.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
@@ -223,6 +225,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show GlassContainer, LiquidRoundedSuperellipse;
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 
 part 'reader_fushi/lyrics.part.dart';
 part 'reader_fushi/mining.part.dart';
@@ -1737,9 +1740,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   ReaderSettings? _settings;
   String? _extractDir;
 
-  /// 在线小说书（LNReader 在线阅读）的按需取章；普通书为 null。开书定位时按
-  /// 书行描述符建一次，拦截层读章节文件前经它把占位页换成正文。
-  LnReaderOnlineChapterLoader? _onlineChapterLoader;
+  /// 在线小说书（LNReader 在线阅读）/ 网页小说书（追更）的按需取章；普通书为
+  /// null。开书定位时按书行描述符建一次，拦截层读章节文件前经它把占位页换成正文。
+  OnlineNovelChapterLoader? _onlineChapterLoader;
 
   /// v82：本书子表键（= EpubBooks.uid，开书定位时一次解析存下，写库不再逐次
   /// resolve）。null = 书行缺失或旧行无 uid——reader_positions / revealed_images
@@ -2967,15 +2970,29 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       return;
     }
 
-    final EpubBookRow? bookRow = located.bookRow;
+    // 网页小说书：末章之后有下一章而 spine 还没有占位页时先就地补上（追更，
+    // 读到末尾就能拉下一章）；不是网页小说书原样返回。必须在解析 EPUB 之前。
+    final EpubBookRow? bookRow = await prepareWebNovelBookForReading(
+      database: db,
+      row: located.bookRow,
+      pendingText: t.novel_web_chapter_pending,
+      nextChapterTitle: t.novel_web_chapter_next,
+    );
+    if (!mounted) return;
     final String extractDir = located.extractDir;
     _extractDir = extractDir;
-    _onlineChapterLoader = lnReaderOnlineChapterLoaderFor(
-      row: bookRow,
-      extractDir: extractDir,
-      database: db,
-      manager: () => appModelNoUpdate.lnReaderManager,
-    );
+    _onlineChapterLoader =
+        lnReaderOnlineChapterLoaderFor(
+          row: bookRow,
+          extractDir: extractDir,
+          database: db,
+          manager: () => appModelNoUpdate.lnReaderManager,
+        ) ??
+        webNovelChapterLoaderFor(
+          row: bookRow,
+          extractDir: extractDir,
+          database: db,
+        );
     // v82：子表（阅读位置/揭图）键 = 书稳定 uid，一次解析存字段。空 uid（不应
     // 出现，v81 回填兜底）视同缺失——相关写入跳过，不拿 bookKey 兜底。
     // 正文语言：本书手动指定/导入回填的 dc:language > 全局默认内容语言。
@@ -4377,7 +4394,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         await web?.evaluateJavascript(
           source:
               'window.__hoverAutoLookup = $enabled;'
-              'window.__fushiHostHoverLookup = $hostHover;',
+              'window.__fushiHostHoverLookup = $hostHover;'
+              '${hoverLookupModifierJs(ReaderFushiSource.instance.hoverLookupModifier)}',
         );
       }
     } catch (e, stack) {
@@ -5280,7 +5298,8 @@ $liveConfigJs
   void _hostHoverLookupAt(Offset local, {required bool hoverAutoLookup}) {
     if (!_hostHoverGate.shouldLookup(
       local,
-      shiftPressed: HardwareKeyboard.instance.isShiftPressed,
+      shiftPressed: ReaderFushiSource.instance.hoverLookupModifier
+          .isPressed(),
       hoverAutoLookup: hoverAutoLookup,
     )) {
       return;

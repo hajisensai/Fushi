@@ -881,6 +881,9 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
           database: appModel.database,
           job: job,
           deleteFiles: deleteFiles,
+          pathMappings: appModel.downloadPathMappingsForProfile(
+            job.backendProfileId,
+          ),
         );
       }
     });

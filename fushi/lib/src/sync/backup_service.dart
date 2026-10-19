@@ -676,7 +676,7 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
 ///     清空后 SRS 引擎按「没有本机状态」换新化身（新写入者身份）重新开始。
 ///   - `srs_notes_cache` / `srs_cards_cache`：完全由事件推导，清空后由引擎重建，
 ///     不能沿用旧数据本体推导出的行。
-///   - `srs_sent_batches`（v119）：本机已冻结批次留存（多目录同步按批次号
+///   - `srs_sent_batches`（v120）：本机已冻结批次留存（多目录同步按批次号
 ///     补发用），与本机写入者身份 / seq 绑定；恢复后写入者换新化身，旧留存
 ///     对不上，清空。
 /// 这五张表没有外键，删除顺序无约束。

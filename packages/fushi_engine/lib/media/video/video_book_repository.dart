@@ -1,6 +1,7 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, Value;
+import 'package:drift/drift.dart'
+    show BooleanExpressionOperators, QueryRow, Value;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
@@ -590,52 +591,58 @@ class VideoBookRepository {
     );
   }
 
-  /// TODO-1961-d：把库里落在 [fromPath] 下的路径整体重映射到 [toPath]，
-  /// 返回实际改动的行数。
+  /// TODO-1961-d：引擎侧改名 / 移动成功之后，把 [relocation] 落进库与下载任务表，
+  /// 返回实际改动的**库行**数（UI 提示「迁移了几个条目」）。
   ///
   /// 引擎侧改名 / 移动（TODO-1961-c）之后必须**立刻**调这个 —— 两件事成对完成，
   /// 缺一即断：只改引擎 = 做种保住了但库里全是死路径；只改库 = 库对了但引擎按
   /// 旧路径读盘，做种当场断。
   ///
-  /// 三列（videoPath / subtitleSource / secondarySubtitleSource）各自判断，
-  /// 哨兵值（`embedded:<n>` / `off:`）与流媒体 URL 一律不动，规则见
-  /// [remapVideoBookPaths]。整批在一个事务里写，中途失败不会留下改了一半的库。
+  /// 判据是「文件是否真的被引擎搬走」（[DownloadRelocation.movedFiles] 逐文件
+  /// 全等），不是目录前缀：引擎只搬种子自己的文件，旁边的字幕 sidecar 原地不动，
+  /// 按前缀改会把字幕列指到一个没有文件的位置（BUG-3538）。三列各自判断，哨兵值
+  /// （`embedded:<n>` / `off:`）与流媒体 URL 一律不动，规则见 [remapVideoBookPaths]。
   ///
-  /// 同一事务里还改写下载任务表 `video_download_job_files.final_absolute_path`：
-  /// 任务与库行之间没有 id 级外键，唯一纽带就是这列与 `videoPath` 相等
-  /// （下载后补抓字幕、库侧删除时反查任务都按它）。只改库不改任务 = 纽带断开，
-  /// 补字幕永远对不上、删条目时找不到要 skip 的种子文件。只改 torrent 负载文件本身
-  /// 这一列（引擎真正搬动的东西），字幕 sidecar 不在 torrent 里、引擎不搬。
-  ///
-  /// 返回值仍是**库行**的改动数（UI 提示「迁移了几个条目」）。
-  Future<int> migrateMediaPaths({
-    required String fromPath,
-    required String toPath,
-  }) async {
-    if (fromPath.trim().isEmpty || toPath.trim().isEmpty) return 0;
-    final List<VideoBookRow> rows = await _db.allVideoBooks();
+  /// 同一事务里还改下载任务表（BUG-3540）——任务与库行之间没有 id 级外键，
+  /// 纽带全靠路径：
+  /// - `video_download_job_files.final_absolute_path`：被搬走的文件跟着改（下载后
+  ///   补抓字幕、库侧删除反查任务都按它与 `videoPath` 相等）；
+  /// - 该种子任务行的 `observed_save_path`（后端坐标）：移动后换成新保存位置；
+  /// - 改名文件的 `current_relative_path`：换成新的种子内相对路径。
+  /// 后两者不跟，任务删除 / 打开位置会把新相对路径拼回旧目录，指向不存在的文件。
+  Future<int> applyDownloadRelocation(DownloadRelocation relocation) async {
+    final MovedMediaFiles moved = relocation.movedFiles;
     final Map<String, VideoPathRemap> pending = <String, VideoPathRemap>{};
-    for (final VideoBookRow row in rows) {
-      final VideoPathRemap remap = remapVideoBookPaths(
-        videoPath: row.videoPath,
-        subtitleSource: row.subtitleSource,
-        secondarySubtitleSource: row.secondarySubtitleSource,
-        fromPath: fromPath,
-        toPath: toPath,
-      );
-      if (!remap.isEmpty) pending[row.bookUid] = remap;
+    if (!moved.isEmpty) {
+      for (final VideoBookRow row in await _db.allVideoBooks()) {
+        final VideoPathRemap remap = remapVideoBookPaths(
+          videoPath: row.videoPath,
+          subtitleSource: row.subtitleSource,
+          secondarySubtitleSource: row.secondarySubtitleSource,
+          moved: moved,
+        );
+        if (!remap.isEmpty) pending[row.bookUid] = remap;
+      }
     }
     final Map<int, String> pendingJobFiles = <int, String>{};
-    for (final VideoDownloadJobFileRow file
-        in await _db.select(_db.videoDownloadJobFiles).get()) {
-      final String? remapped = remapMediaPath(
-        file.finalAbsolutePath,
-        fromPath: fromPath,
-        toPath: toPath,
-      );
-      if (remapped != null) pendingJobFiles[file.id] = remapped;
+    if (!moved.isEmpty) {
+      for (final VideoDownloadJobFileRow file
+          in await _db.select(_db.videoDownloadJobFiles).get()) {
+        final String? remapped = moved.newPathFor(file.finalAbsolutePath);
+        if (remapped != null) pendingJobFiles[file.id] = remapped;
+      }
     }
-    if (pending.isEmpty && pendingJobFiles.isEmpty) return 0;
+    final String hash = relocation.infoHash.trim().toLowerCase();
+    final List<String> torrentJobIds = <String>[
+      if (hash.isNotEmpty)
+        for (final VideoDownloadJobRow job in await _db.getVideoDownloadJobs())
+          if (job.backendTaskId?.trim().toLowerCase() == hash ||
+              job.torrentHash?.trim().toLowerCase() == hash)
+            job.jobId,
+    ];
+    final String? newSavePath = relocation.newBackendSavePath?.trim();
+    final int? renamedIndex = relocation.renamedFileIndex;
+    final String? renamedPath = relocation.renamedRelativePath?.trim();
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
     await _db.transaction(() async {
       for (final MapEntry<int, String> entry in pendingJobFiles.entries) {
@@ -648,6 +655,35 @@ class VideoBookRepository {
             updatedAt: Value<int>(nowMs),
           ),
         );
+      }
+      for (final String jobId in torrentJobIds) {
+        if (newSavePath != null && newSavePath.isNotEmpty) {
+          await (_db.update(
+            _db.videoDownloadJobs,
+          )..where((tbl) => tbl.jobId.equals(jobId)))
+              .write(
+            VideoDownloadJobsCompanion(
+              observedSavePath: Value<String?>(newSavePath),
+              updatedAt: Value<int>(nowMs),
+            ),
+          );
+        }
+        if (renamedIndex != null &&
+            renamedPath != null &&
+            renamedPath.isNotEmpty) {
+          await (_db.update(_db.videoDownloadJobFiles)
+                ..where(
+                  (tbl) =>
+                      tbl.jobId.equals(jobId) &
+                      tbl.backendFileIndex.equals(renamedIndex),
+                ))
+              .write(
+            VideoDownloadJobFilesCompanion(
+              currentRelativePath: Value<String>(renamedPath),
+              updatedAt: Value<int>(nowMs),
+            ),
+          );
+        }
       }
       for (final MapEntry<String, VideoPathRemap> entry in pending.entries) {
         final VideoPathRemap remap = entry.value;

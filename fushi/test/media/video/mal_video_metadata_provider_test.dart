@@ -550,6 +550,125 @@ void main() {
     provider.close();
   });
 
+  group('main character kanji names (Jikan /characters/{id} name_kanji)', () {
+    // Jikan v4 `/anime/{id}/characters` 的角色对象没有 name_kanji（OpenAPI
+    // `anime_characters`：mal_id / url / images / name），只有 `/characters/{id}`
+    // 详情有。fixture 照真实形态：列表不带日文名，详情带。
+    Map<String, Object?> entry(int id, String name, String role,
+            {bool japaneseVoice = true}) =>
+        <String, Object?>{
+          'character': <String, Object?>{'mal_id': id, 'name': name},
+          'role': role,
+          'voice_actors': <Object?>[
+            <String, Object?>{
+              'language': japaneseVoice ? 'Japanese' : 'English',
+              'person': <String, Object?>{'mal_id': 100 + id, 'name': 'VA$id'},
+            },
+          ],
+        };
+
+    MalVideoMetadataProvider provider(
+      List<String> paths, {
+      int? maxDetails,
+      http.Response Function(String characterId)? detail,
+    }) =>
+        MalVideoMetadataProvider(
+          maxCharacterDetailFetches:
+              maxDetails ?? kMalMaxCharacterDetailFetches,
+          requestGate: MalVideoMetadataRequestGate(
+              interval: Duration.zero, sleep: (Duration _) async {}),
+          client: MockClient((http.Request request) async {
+            final String path = request.url.path;
+            paths.add(path);
+            if (path.endsWith('/full')) {
+              return response(<String, Object?>{
+                'data': <String, Object?>{
+                  'mal_id': 1,
+                  'title': 'K-On!',
+                  'type': 'TV'
+                },
+              });
+            }
+            if (path.endsWith('/anime/1/characters')) {
+              return response(<String, Object?>{
+                'data': <Object?>[
+                  entry(7, 'Hirasawa, Yui', 'Main'),
+                  entry(8, 'Akiyama, Mio', 'Main'),
+                  entry(9, 'Yamanaka, Sawako', 'Supporting'),
+                  entry(10, 'Dub Only', 'Main', japaneseVoice: false),
+                ],
+              });
+            }
+            final RegExpMatch? m =
+                RegExp(r'/v4/characters/(\d+)$').firstMatch(path);
+            if (m != null) {
+              if (detail != null) return detail(m.group(1)!);
+              return response(<String, Object?>{
+                'data': <String, Object?>{
+                  'mal_id': int.parse(m.group(1)!),
+                  'name': 'x',
+                  'name_kanji': '漢字${m.group(1)}',
+                },
+              });
+            }
+            return response(<String, Object?>{'data': <Object?>[]});
+          }),
+        );
+
+    String? kanjiOf(VideoMetadataWork work, String name) => work.credits
+        .firstWhere((VideoMetadataCredit c) => c.character?.name == name)
+        .character!
+        .originalName;
+
+    test('only Main characters with a Japanese voice get a detail request',
+        () async {
+      final List<String> paths = <String>[];
+      final MalVideoMetadataProvider mal = provider(paths);
+      final VideoMetadataWork work = (await mal.fetchWork(lookup))!;
+      expect(
+        paths.where((String p) => p.startsWith('/v4/characters/')).toList(),
+        <String>['/v4/characters/7', '/v4/characters/8'],
+      );
+      expect(kanjiOf(work, 'Hirasawa, Yui'), '漢字7');
+      expect(kanjiOf(work, 'Akiyama, Mio'), '漢字8');
+      expect(kanjiOf(work, 'Yamanaka, Sawako'), isNull,
+          reason: '配角不取详情（限流预算），留给专名表的百科资料补');
+      expect(hasIncompleteMalCredits(work), isFalse);
+      mal.close();
+    });
+
+    test('detail requests are capped per work', () async {
+      final List<String> paths = <String>[];
+      final MalVideoMetadataProvider mal = provider(paths, maxDetails: 1);
+      final VideoMetadataWork work = (await mal.fetchWork(lookup))!;
+      expect(
+        paths.where((String p) => p.startsWith('/v4/characters/')).toList(),
+        <String>['/v4/characters/7'],
+      );
+      expect(kanjiOf(work, 'Akiyama, Mio'), isNull);
+      mal.close();
+    });
+
+    test('a failing detail never costs the work or its credits', () async {
+      final List<String> paths = <String>[];
+      final MalVideoMetadataProvider mal = provider(
+        paths,
+        detail: (String id) => id == '7'
+            ? http.Response('Not Found', 404)
+            : response(<String, Object?>{
+                'data': <String, Object?>{'mal_id': 8, 'name_kanji': '秋山澪'},
+              }),
+      );
+      final VideoMetadataWork work = (await mal.fetchWork(lookup))!;
+      expect(kanjiOf(work, 'Hirasawa, Yui'), isNull, reason: '单个 404 跳过');
+      expect(kanjiOf(work, 'Akiyama, Mio'), '秋山澪', reason: '404 后继续取下一个');
+      expect(work.credits.length, 3, reason: '演职员表完整（只收日语声优）');
+      expect(hasIncompleteMalCredits(work), isFalse,
+          reason: '日文名是可选字段，不算演职员残缺');
+      mal.close();
+    });
+  });
+
   group('MAL airing status and end date', () {
     Future<VideoMetadataWork> fetch(Map<String, Object?> extra) async {
       final MalVideoMetadataProvider provider = MalVideoMetadataProvider(

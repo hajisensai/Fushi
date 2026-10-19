@@ -1817,8 +1817,8 @@ void main() {
       );
       expect(hoverBody, contains('_hitTestRows('),
           reason: 'hover 查词复用 RenderParagraph 反查（不为每次 hover 重排 TextPainter）');
-      expect(hoverBody, contains('isShiftPressed'),
-          reason: 'hover 查词门控需读 Shift 键状态');
+      expect(hoverBody, contains('hoverLookupModifier.isPressed()'),
+          reason: 'hover 查词门控读设置的查词键（默认 Shift）');
     });
 
     // Source guard（BUG-879 命中收窄 + BUG-916 偏左一格）：tap / hover / barrier 三路共用的

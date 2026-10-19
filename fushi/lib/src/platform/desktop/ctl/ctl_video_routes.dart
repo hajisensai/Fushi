@@ -47,6 +47,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_video_player_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_video_support.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_video_subtitle_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
 
 /// video 域控制通道路由（视频发现 / 刮削；CLI 侧命令见 `packages/fushi_cli/lib/src/commands/video_commands.dart`）。
@@ -87,6 +88,8 @@ List<CtlRoute> buildVideoCtlRoutes(DesktopCtlContext context) {
     CtlRoute.post('/api/admin/video/discovery/acquire', ctl.acquire),
     // ── 播放页（音量 / 音轨 / 字幕 / 字幕生成 / 制卡 / 片段 / 暂存队列） ──────
     ...buildVideoPlayerCtlRoutes(context),
+    // ── 生成日语字幕（ASR + AI 校对管线，不依赖视频页） ──────────────────
+    ...buildVideoSubtitleCtlRoutes(context),
   ];
 }
 

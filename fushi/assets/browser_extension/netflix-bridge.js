@@ -49,6 +49,19 @@
   function langOf(track) {
     return (track && (track.language || track.bcp47 || track.new_track_id)) || 'und';
   }
+  // 轨身份：同一语言常有「普通字幕」与「CC / SDH」两条轨，只按语言区分会互相覆盖。trackId 与
+  // 播放器 API 的 getTimedTextTrackList()[i].trackId 同值（清单里叫 new_track_id）。
+  function trackIdOf(track) {
+    return String((track && (track.new_track_id || track.trackId || track.id)) || '');
+  }
+  function trackLabelOf(track) {
+    return String((track && (track.languageDescription || track.displayName)) || '');
+  }
+  // 整轨抓取失败（网络 / CORS / 非 2xx）的确定性回执：消费端据此把「加载中」落成「失败」，
+  // 而不是永远等一份不会来的 cue。
+  function postCuesFailed(videoId, lang, trackId, err) {
+    postCuesMessage({ __fushiNf: 'cuesFailed', videoId: videoId, lang: lang, trackId: trackId, err: String(err || '') });
+  }
 
   function fetchCues(videoId, track) {
     try {
@@ -60,6 +73,8 @@
       // DOM 实时采集轨，还完全不知道整轨链路挂了。
       seenTimedTextUrls[picked.url] = 1;
       var lang = langOf(track);
+      var trackId = trackIdOf(track);
+      var label = trackLabelOf(track);
       // BUG-1728：裸 fetch、**不带 credentials**。字幕在跨源 CDN（*.oca.nflxvideo.net），
       // credentials:'include' 要求响应 ACAO 是精确 origin；CDN 回 `*` 时整个请求被 CORS 拒掉
       // → 整轨抓取静默失败。字幕 URL 自带鉴权参数、不需要 cookie（asbplayer 同款裸 fetch）。
@@ -70,7 +85,7 @@
         })
         .then(function (text) {
           if (!text) return;
-          var payload = { __fushiNf: 'cues', videoId: videoId, lang: lang, format: picked.format, text: text };
+          var payload = { __fushiNf: 'cues', videoId: videoId, lang: lang, trackId: trackId, label: label, format: picked.format, text: text };
           cueArchive.push(payload);
           if (cueArchive.length > CUE_ARCHIVE_MAX) cueArchive.shift();
           postCuesMessage(payload);
@@ -80,6 +95,7 @@
           // 只留一条诊断（旧代码零日志，用户端无从判断整轨为何消失）。
           delete seenTimedTextUrls[picked.url];
           try { console.warn('[Fushi][TODO-1219] timedtext fetch failed:', picked.url, e); } catch (_) {}
+          postCuesFailed(videoId, lang, trackId, e && e.message ? e.message : e);
         });
     } catch (_) {}
   }
@@ -127,13 +143,31 @@
     if (/<tt[\s>]/.test(h)) return 'ttml';
     return null;
   }
-  function currentTrackLang() {
+  // 正片播放器：Netflix 同页同时挂着多个播放器会话（浏览页的 billboard 预告、悬停预览、正片），
+  // 正片会话 id 以 'watch' 开头。只认它——没有正片会话就是没有（返回 null），绝不退化成「随便
+  // 最后一个」：那会把 seek / 暂停 / 选轨打到预告片播放器上，正片纹丝不动。
+  function nfPlayer() {
     try {
       var vp = window.netflix.appContext.state.playerApp.getAPI().videoPlayer;
-      var ids = vp.getAllPlayerSessionIds();
-      var t = vp.getVideoPlayerBySessionId(ids[ids.length - 1]).getTimedTextTrack();
-      return (t && (t.bcp47 || t.language)) || 'und';
-    } catch (_) { return 'und'; }
+      var ids = vp.getAllPlayerSessionIds() || [];
+      for (var i = ids.length - 1; i >= 0; i--) {
+        if (String(ids[i]).indexOf('watch') === 0) return vp.getVideoPlayerBySessionId(ids[i]) || null;
+      }
+    } catch (_) {}
+    return null;
+  }
+  // 主世界其它脚本（app 的 web_video_glue.js）共用同一个选会话判据，不各写一份。
+  window.fushiNetflixPlayer = nfPlayer;
+  function currentTextTrack() {
+    try {
+      var p = nfPlayer();
+      var t = p && p.getTimedTextTrack();
+      return {
+        lang: (t && (t.bcp47 || t.language)) || 'und',
+        trackId: String((t && t.trackId) || ''),
+        label: String((t && t.displayName) || ''),
+      };
+    } catch (_) { return { lang: 'und', trackId: '', label: '' }; }
   }
   function currentVideoId() {
     try {
@@ -151,7 +185,8 @@
       var key = bodyKey(url, text);
       if (seenSubtitleBodies[key]) return;
       seenSubtitleBodies[key] = 1;
-      var payload = { __fushiNf: 'cues', videoId: currentVideoId(), lang: currentTrackLang(), format: format, text: String(text) };
+      var cur = currentTextTrack();
+      var payload = { __fushiNf: 'cues', videoId: currentVideoId(), lang: cur.lang, trackId: cur.trackId, label: cur.label, format: format, text: String(text) };
       cueArchive.push(payload);
       if (cueArchive.length > CUE_ARCHIVE_MAX) cueArchive.shift();
       postCuesMessage(payload);
@@ -199,24 +234,41 @@
       return p;
     };
   }
+  // fetch 拿二进制再自己解码（与 XHR arraybuffer 同一判据：先解开头判格式，命中才整份解码）。
+  // Response.json() 不拦：TTML / WebVTT 都不是 JSON，能被 json() 成功解析的正文不可能是字幕。
+  // Worker 里的下载够不到（Worker 有自己的全局，主世界补丁不生效）——那种情况由消费端的确定性
+  // 失败判据兜底（播放器已在显示该轨文字、整轨却没截到 → 标失败）。
+  if (typeof Response !== 'undefined' && Response.prototype && Response.prototype.arrayBuffer) {
+    var respArrayBuffer = Response.prototype.arrayBuffer;
+    Response.prototype.arrayBuffer = function () {
+      var url = this.url;
+      var p = respArrayBuffer.apply(this, arguments);
+      try {
+        p.then(function (buf) {
+          if (!buf || buf.byteLength >= 4000000) return;
+          if (subtitleFormatOf(decodeBytes(buf, 4000))) sniffSubtitleBody(url, decodeBytes(buf, buf.byteLength));
+        }, function () {});
+      } catch (_) {}
+      return p;
+    };
+  }
 
   // TODO-1217：player.seek(ms) **返回 ≠ 视频真正重定位完成**。若调完就立刻回 seekDone，content 侧
   // seekTo 会在 Netflix 实际跳转**前**就 resolve → 先 play/录、Netflix 随后才跳 → 用户看到「跳过去又
   // 秒挑回来」的二次跳动。故这里 seek 后轮询 getCurrentTime 逼近目标 ms 再回 seekDone（带超时兜底，
   // 4s 不到位也放行，绝不卡死批量）。
+  // done(ok, err)：逼近目标 → ok；4 s 没到位 → ok=false（'timeout'），调用方据此记日志、放弃
+  // 「跳转在途」状态，不再把旧位置当成 seek 的结果死等。
   function nfSeek(ms, done) {
-    var vp = window.netflix.appContext.state.playerApp.getAPI().videoPlayer;
-    var ids = vp.getAllPlayerSessionIds();
-    if (!ids || !ids.length) throw new Error('no player session');
-    // 取最近的会话（看片会话通常是最后一个）。
-    var player = vp.getVideoPlayerBySessionId(ids[ids.length - 1]);
+    var player = nfPlayer();
+    if (!player) throw new Error('no watch player session');
     player.seek(ms);
     var deadline = Date.now() + 4000;
     (function poll() {
       var cur = null;
       try { cur = player.getCurrentTime(); } catch (_) { cur = null; }
-      if (cur != null && Math.abs(cur - ms) < 300) { done(); return; } // 已逼近目标：真重定位完成
-      if (Date.now() > deadline) { done(); return; } // 超时兜底：不卡死批量
+      if (cur != null && Math.abs(cur - ms) < 300) { done(true, ''); return; } // 已逼近目标：真重定位完成
+      if (Date.now() > deadline) { done(false, 'timeout'); return; } // 超时兜底：不卡死批量
       setTimeout(poll, 80);
     })();
   }
@@ -232,11 +284,12 @@
     }
     if (d.__fushiNf !== 'seek') return;
     var replied = false;
+    // id 原样回显：同时有多次 seek 在途（拖进度条）时，调用方只认最后一次的回执。
     var reply = function (ok, err) {
       if (replied) return; replied = true;
-      try { window.postMessage({ __fushiNf: 'seekDone', ok: ok, err: err || '' }, '/'); } catch (_) {}
+      try { window.postMessage({ __fushiNf: 'seekDone', ok: ok, err: err || '', id: d.id }, '/'); } catch (_) {}
     };
-    try { nfSeek(d.ms, function () { reply(true, ''); }); }
+    try { nfSeek(d.ms, reply); }
     catch (x) { reply(false, String(x)); }
   });
 })();

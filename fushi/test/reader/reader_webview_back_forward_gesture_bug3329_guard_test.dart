@@ -29,6 +29,14 @@ void main() {
   const Map<String, String> exempt = <String, String>{
     'lib/src/pages/implementations/web_video_fushi_page.dart':
         '浏览器类页面：历史就是用户的网页导航，后退手势合理',
+    'lib/src/media/video/web_video_session.dart':
+        '原生播放器页网页档的站点 WebView（Windows WebView2）：历史是用户在站点里的导航',
+    'lib/src/pages/implementations/fushi_web_browser_page.dart':
+        '浏览器模块（通用 app 内浏览器）：历史就是用户的网页导航，后退手势合理',
+    'lib/src/media/manga/web/web_comic_scanner.dart':
+        '网页漫画章节扫描用 HeadlessInAppWebView，不可见、无手势',
+    'lib/src/media/novel/web/web_novel_page_fetcher.dart':
+        '网页小说取页用 HeadlessInAppWebView，不可见、无手势',
     'lib/src/media/manga/cookie/cloudflare_challenge_page.dart':
         '浏览器类页面（站点验证），历史对应真实网页跳转',
     'lib/src/media/manga/mihon/mihon_web_login_page.dart':

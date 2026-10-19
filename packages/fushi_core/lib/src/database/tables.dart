@@ -1782,6 +1782,11 @@ class VideoMetadataPeople extends Table {
 class VideoMetadataCharacters extends Table {
   TextColumn get characterKey => text()();
   TextColumn get name => text()();
+
+  /// v119：角色日文原名（MAL `/characters/{id}` 的 `name_kanji`）。[name] 是刮削源
+  /// 的显示名（AniDB / MAL 多为罗马音）；视频字幕 AI 校对的专名表要的是日文写法。
+  /// NULL = 源没给 / 没取（AniDB anime XML 不带角色日文名）。
+  TextColumn get originalName => text().nullable()();
   TextColumn get description => text().nullable()();
   TextColumn get imageUrl => text().nullable()();
   TextColumn get imagePath => text().nullable()();
@@ -3427,7 +3432,7 @@ class SrsLocalState extends Table {
   Set<Column> get primaryKey => {profileUid};
 }
 
-/// v119：本机已冻结批次的留存（不同步、不进备份）。一台设备可以同时用几个同步目录
+/// v120：本机已冻结批次的留存（不同步、不进备份）。一台设备可以同时用几个同步目录
 /// （云盘、互联 host、本机作 host 时自己的目录），同一个批次要逐字节相同地传到每一个；
 /// 留存到最近同步过的所有目录都确认收到为止（fushi_srs 的 `SrsSyncEngine`）。
 @DataClassName('SrsSentBatchRow')
@@ -3504,4 +3509,33 @@ class SrsCardsCache extends Table {
 
   @override
   Set<Column> get primaryKey => {id};
+}
+
+// ── video_subtitle_glossaries（v119：视频字幕 AI 校对的作品级专名表）──────
+/// 视频字幕 AI 校对（docs/specs/2026-10-19-video-asr-llm-subtitle-pipeline.md
+/// 第 3 节 S0）的专名表：一部作品一行，各集共用。[glossaryJson] 是
+/// `SubtitleGlossary.encode()` 的产物（条目 + 来源指纹 + 生成 / 编辑时刻），
+/// 另把 [sourceFingerprint] / [userEditedAt] 上提成列，便于不解 JSON 判断「资料变了
+/// 要不要重新生成」「用户动过没有」。
+///
+/// [workKey] 是 `SubtitleWorkContext.workKey`：`collection:<合集 id>` /
+/// `work:<video_metadata_works.id>` / `folder:<sha1(目录)>` / `title:<sha1(标题)>`。
+/// 前两种是本机自增 id，不跨设备：表随备份走（用户手编的条目是用户数据），但不进
+/// live-sync / 合并导入。逻辑外键：合集 / 作品删掉后行不级联删除（重新刮削会换新
+/// 作品 id，留着的旧行只是无人引用；用户的手编内容不因一次删库重刮就丢）。
+@DataClassName('VideoSubtitleGlossaryRow')
+class VideoSubtitleGlossaries extends Table {
+  TextColumn get workKey => text()();
+  TextColumn get glossaryJson => text()();
+
+  /// 生成时所用资料的指纹（与 JSON 里的 `sourceFingerprint` 同值）；'' = 纯手填。
+  TextColumn get sourceFingerprint =>
+      text().withDefault(const Constant(''))();
+
+  /// 用户最近一次编辑的时刻（毫秒）；NULL = 没编辑过。
+  IntColumn get userEditedAt => integer().nullable()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{workKey};
 }

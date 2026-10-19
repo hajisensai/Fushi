@@ -71,8 +71,15 @@ enum ModuleId {
   /// 开，见 `onboarding_steps.dart` 的 `OnboardingReviewMethod`）。
   srs('module_srs_enabled'),
 
-  /// 浏览器扩展管理页与本机扩展服务。**仅桌面**。
-  browserExtension('module_browser_extension_enabled'),
+  /// 浏览器：app 内浏览网站（通用浏览、网页视频站点、网页漫画）+ 浏览器扩展管理页
+  /// 与本机扩展服务。**五端都有**；子页各自再按平台门控（见 `WebHubSection`，
+  /// 浏览器扩展只在桌面，见 [browserExtensionSupportedOn]）。
+  ///
+  /// 2026-10-19 由「浏览器扩展」模块升级而来（用户：app 内浏览取代扩展成为主路径，
+  /// 扩展降为次级子页；「改名成浏览器，这样就能重置一下这个开关」）：持久化键
+  /// **刻意换新** `module_web_enabled`，旧键 `module_browser_extension_enabled`
+  /// 不再读取——老用户关过扩展模块的，升级后这个新模块按出厂默认开。
+  web('module_web_enabled'),
 
   /// 听书：有声书播放/导入、语音转录（ASR）、悬浮歌词。
   listening('module_listening_enabled'),
@@ -128,14 +135,16 @@ enum ModuleId {
   }) => switch (this) {
     // 每个平台都有 games 模块，只是形态不同（见 [GamesModuleForm.on]）。
     ModuleId.games => true,
-    // 手机浏览器不支持加载未解压扩展，故按平台而非实验开关门控。
-    ModuleId.browserExtension => isDesktop,
     // 「浏览」装的是发现页、三域在线扩展源与通用 torrent / 磁力下载器，都不能进
     // App Store。判据不在这里写死，委托给合规边界的唯一真相源；各页签内的每个域
     // 仍各自再问对应的 [StoreRestrictedCapability]，两处若各判各的就会分头漂移。
     ModuleId.browse => StoreRestrictedCapability.downloads.availableOn(
       isIOS: isIOS,
     ),
+    // 通用 app 内浏览器不属于 App Store 受限能力（受限的在线漫画源动作由子页自己问
+    // [StoreRestrictedCapability.onlineMangaSource]）；浏览器扩展子页另按
+    // [browserExtensionSupportedOn] 只在桌面出现。
+    ModuleId.web => true,
     ModuleId.home ||
     ModuleId.books ||
     ModuleId.manga ||
@@ -165,7 +174,7 @@ enum ModuleId {
     ModuleId.games ||
     ModuleId.browse ||
     ModuleId.lookup ||
-    ModuleId.browserExtension ||
+    ModuleId.web ||
     ModuleId.listening ||
     ModuleId.cardCreation ||
     ModuleId.services ||
@@ -340,3 +349,10 @@ class ModuleVisibility {
   String toString() =>
       'ModuleVisibility(${enabled.map((ModuleId e) => e.name).join(', ')})';
 }
+
+/// 浏览器扩展（「浏览器」模块的次级子页、扩展安装引导、扩展副本刷新）在本平台是否
+/// 存在：手机浏览器不支持加载未解压扩展，故只在桌面。
+///
+/// 2026-10-19 前这条判据就是整个模块的 `availableOn`；模块改为五端都有后，扩展
+/// 相关的消费端一律问这里，不各自写 `isDesktop`。
+bool browserExtensionSupportedOn({required bool isDesktop}) => isDesktop;

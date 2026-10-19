@@ -102,7 +102,9 @@ void main() {
       server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
-        tokenizer: (String t) => <TokenizedSegment>[(text: t, reading: '')],
+        tokenizer: (List<String> ts) async => <List<TokenizedSegment>>[
+          for (final String t in ts) <TokenizedSegment>[(text: t, reading: '')],
+        ],
         extensionTestPageProvider: provider,
         apiKey: apiKey,
       );

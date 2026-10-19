@@ -165,6 +165,7 @@ class _FakeService extends AsrTranscriptionService {
   Future<String?> finishedSrtPath(
     List<String> audioPaths,
     AsrLanguage language,
+    {List<AsrSegmentSpan>? segments}
   ) async =>
       existingSrt;
 
@@ -172,11 +173,16 @@ class _FakeService extends AsrTranscriptionService {
   Future<AsrJobState?> existingState(
     List<String> audioPaths,
     AsrLanguage language,
+    {List<AsrSegmentSpan>? segments}
   ) async =>
       null;
 
   @override
-  Future<void> discard(List<String> audioPaths, AsrLanguage language) async {
+  Future<void> discard(
+    List<String> audioPaths,
+    AsrLanguage language, {
+    List<AsrSegmentSpan>? segments,
+  }) async {
     discardCalls++;
     existingSrt = null;
   }
@@ -187,6 +193,7 @@ class _FakeService extends AsrTranscriptionService {
     required AsrLanguage language,
     required AsrEncoderVariant variant,
     required AsrAccelerationPreference preference,
+    List<AsrSegmentSpan>? segments,
   }) async {
     lastStartLanguage = language;
     lastStartPreference = preference;

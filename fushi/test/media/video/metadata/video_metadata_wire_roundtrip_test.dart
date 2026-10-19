@@ -281,7 +281,7 @@ void main() {
       expect(backdrop.provider, VideoMetadataProviderKind.fanart);
 
       // credits：roleName 原件为 null，apply 用角色名回填；person/character 的
-      // id 没列，读回 null；character.originalName 没列，读回 null。
+      // id 没列，读回 null；character.originalName 自 v119 落列，原样读回。
       expect(loaded.credits.length, 1);
       final VideoMetadataCredit credit = loaded.credits.single;
       final VideoMetadataCredit original = work.credits.single;
@@ -309,7 +309,7 @@ void main() {
       expect(credit.character!.name, original.character!.name);
       expect(credit.character!.description, original.character!.description);
       expect(credit.character!.imageUrl, original.character!.imageUrl);
-      expect(credit.character!.originalName, isNull);
+      expect(credit.character!.originalName, '主人公');
       expect(credit.character!.ids, original.character!.ids);
 
       // extras：原件两条，其中一条没 remoteUrl，apply 只落在线附件。

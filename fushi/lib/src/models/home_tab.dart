@@ -19,6 +19,6 @@ enum HomeTab {
   /// 复习（Fushi 内置 SRS）。模块默认关闭，见 `ModuleId.srs`。
   srs,
   games,
-  browserExtension,
+  web,
   settings,
 }

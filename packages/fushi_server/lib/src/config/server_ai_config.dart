@@ -205,13 +205,16 @@ class ServerAiSettings implements AiSettingsSource {
     return provider == null ? const <AiProviderConfig>[] : <AiProviderConfig>[provider];
   }
 
-  /// 那一家只指派给「AI 下载」：服务端没有刮削 AI 识别 / 补字幕重排等其它 AI 功能的
-  /// 装配，不设默认提供商，免得以后新接一个功能时被静默带上。
+  /// 那一家只指派给「AI 下载」与「视频字幕 AI 校对」：服务端没有刮削 AI 识别 / 补字幕
+  /// 重排等其它 AI 功能的装配，不设默认提供商，免得以后新接一个功能时被静默带上。
   @override
   AiFeatureAssignments get aiFeatureAssignments => _config()?.provider() == null
       ? const AiFeatureAssignments()
       : const AiFeatureAssignments(
-          providerIdByFeature: <AiFeature, String>{AiFeature.acquire: kServerAiProviderId},
+          providerIdByFeature: <AiFeature, String>{
+            AiFeature.acquire: kServerAiProviderId,
+            AiFeature.subtitleProofread: kServerAiProviderId,
+          },
         );
 
   @override

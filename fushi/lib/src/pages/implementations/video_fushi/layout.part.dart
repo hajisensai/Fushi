@@ -163,7 +163,9 @@ extension _VideoLayout on _VideoFushiPageState {
             fit: videoFitModeToBoxFit(_videoFitMode),
             // letterbox/pillarbox 填充色固定纯黑（TODO-053）：cover 稳态下无外围，但
             // 视频解码前 / 极端比例残留边缘仍按播放器惯例用黑底，不跟随主题 surface。
-            fill: Colors.black,
+            // 网页档透明：站点画面在下面的 WebView2 子窗口里（底层合成），页面自己铺黑边
+            // （glue 的 video-only 样式给 <video> 垫黑底）。
+            fill: _webMode ? Colors.transparent : Colors.black,
             // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
             // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
             // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
@@ -413,21 +415,26 @@ extension _VideoLayout on _VideoFushiPageState {
       builder: (BuildContext context, _) {
         if (controller.isBlurayNavigationSession &&
             (controller.discMenuActive || !controller.discTitleReady)) {
-          _videoControlsContext = context;
           // Video only stores this node in its view parameters. The normal
           // AdaptiveVideoControls widget owns the actual Focus host, so the
           // authored-menu replacement must host it too. The outer shared
           // VideoControlsFocusGate keeps exactly one host across fullscreen.
-          return BlurayDiscMenuFocusHost(
-            focusNode: _videoFocusNode,
-            onAttached: _reclaimDiscMenuFocusAfterAttachment,
-            child: Stack(
-              children: <Widget>[
-                Positioned.fill(child: _buildDiscMenuSurface(controller)),
-                _buildDiscMenuChrome(controller),
-                _buildOsdOverlay(),
-              ],
-            ),
+          return _VideoControlsContextCapture(
+            onRelease: _releaseVideoControlsContext,
+            builder: (BuildContext captured) {
+              _videoControlsContext = captured;
+              return BlurayDiscMenuFocusHost(
+                focusNode: _videoFocusNode,
+                onAttached: _reclaimDiscMenuFocusAfterAttachment,
+                child: Stack(
+                  children: <Widget>[
+                    Positioned.fill(child: _buildDiscMenuSurface(controller)),
+                    _buildDiscMenuChrome(controller),
+                    _buildOsdOverlay(),
+                  ],
+                ),
+              );
+            },
           );
         }
         final VideoControlLayout layout = _controlLayoutNotifier.value;
@@ -514,7 +521,8 @@ extension _VideoLayout on _VideoFushiPageState {
                         // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
                         // InheritedWidget。全屏复用同一 builder，故全屏路由会重新捕获其子树 context。
                         Positioned.fill(
-                          child: Builder(
+                          child: _VideoControlsContextCapture(
+                            onRelease: _releaseVideoControlsContext,
                             builder: (BuildContext controlsContext) {
                               _videoControlsContext = controlsContext;
                               // 锁定 / 沉浸模式（TODO-101）：用 IgnorePointer 拦掉送往 media_kit
@@ -618,6 +626,9 @@ extension _VideoLayout on _VideoFushiPageState {
                               // 关闭退回 756a 的 Shift+悬停。视频与阅读器共享 instance。
                               hoverAutoLookupEnabled:
                                   ReaderFushiSource.instance.hoverAutoLookup,
+                              hoverLookupModifier: ReaderFushiSource
+                                  .instance
+                                  .hoverLookupModifier,
                               onHoverChanged: _handleSubtitleHover,
                               hitTester: _subtitleHitTester,
                               // 字级选词光标环（videoEnterCaret，手柄/键盘查词）。
@@ -1155,7 +1166,11 @@ extension _VideoLayout on _VideoFushiPageState {
             Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Expanded(child: video),
+                // 网页档：站点 WebView 垫在画面槽最底层（随字幕列表挤窄），
+                // 见 web_source.part.dart。
+                Expanded(
+                  child: _webMode ? _wrapWebVideoSurface(video) : video,
+                ),
                 _subtitleJumpSidePanel(controller, visible),
               ],
             ),
@@ -1430,4 +1445,35 @@ extension _VideoLayout on _VideoFushiPageState {
       ),
     );
   }
+}
+
+/// 捕获 [_VideoFushiPageState._videoControlsContext] 的那个子树节点：被移出树（网页档在
+/// 播放器档 / 网页之间切、原盘菜单换正片、全屏路由换宿主）时立刻交还引用。只靠
+/// `context.mounted` 不够——停用（deactivate）到真卸载之间 mounted 仍是 true，这一帧里
+/// 兄弟层读全屏态（[isFullscreen]）就是在停用节点上查祖先（「Looking up a deactivated
+/// widget's ancestor is unsafe」）。
+class _VideoControlsContextCapture extends StatefulWidget {
+  const _VideoControlsContextCapture({
+    required this.onRelease,
+    required this.builder,
+  });
+
+  final void Function(BuildContext context) onRelease;
+  final WidgetBuilder builder;
+
+  @override
+  State<_VideoControlsContextCapture> createState() =>
+      _VideoControlsContextCaptureState();
+}
+
+class _VideoControlsContextCaptureState
+    extends State<_VideoControlsContextCapture> {
+  @override
+  void deactivate() {
+    widget.onRelease(context);
+    super.deactivate();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
 }

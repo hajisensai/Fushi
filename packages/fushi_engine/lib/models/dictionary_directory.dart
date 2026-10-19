@@ -57,13 +57,16 @@ Future<DictDirDeleteOutcome> deleteDictionaryDirectory(
   required FutureOr<void> Function() reloadEngine,
 }) async {
   if (!directory.existsSync()) return DictDirDeleteOutcome.absent;
-  releaseDictionaryMappings();
-  return deleteDictionaryDirectoryCore(
-    delete: () => directory.delete(recursive: true),
-    quarantine: () => _quarantineDictionaryDirectory(directory),
-    sleep: (int ms) => Future<void>.delayed(Duration(milliseconds: ms)),
-    isWindows: Platform.isWindows,
-    reloadEngine: reloadEngine,
+  // 删除（含占用重试与隔离）整段在映射释放的作用域里：中途排下的引擎装载推迟到
+  // 作用域结束，不会把正在删的目录又映射回来。
+  return withDictionaryMappingsReleased(
+    () => deleteDictionaryDirectoryCore(
+      delete: () => directory.delete(recursive: true),
+      quarantine: () => _quarantineDictionaryDirectory(directory),
+      sleep: (int ms) => Future<void>.delayed(Duration(milliseconds: ms)),
+      isWindows: Platform.isWindows,
+      reloadEngine: reloadEngine,
+    ),
   );
 }
 

@@ -812,6 +812,7 @@ void _requireOneVideoMetadataOwner({
   SrsLocalState,
   SrsNotesCache,
   SrsCardsCache,
+  VideoSubtitleGlossaries,
   SrsSentBatches,
 ])
 class FushiDatabase extends _$FushiDatabase
@@ -846,7 +847,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 119;
+  int get schemaVersion => 120;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2306,10 +2307,32 @@ class FushiDatabase extends _$FushiDatabase
             }
           }
           if (from < 119) {
-            // v119（Fushi SRS 多目录同步）：srs_sent_batches——本机已冻结批次的留存，
-            // 同一批次逐字节相同地传到每个同步目录（云盘 / 互联 host / 本机 host 目录），
-            // 到最近同步过的目录都确认为止。设备本地、不进备份、无外键；存量库没有
-            // 留存可迁（旧版本冻结中的批次由 SrsDbStore 读本机状态时搬进来）。
+            // v119（视频字幕 AI 校对，docs/specs/2026-10-19-video-asr-llm-subtitle-
+            // pipeline.md 第 3 节 S0）：
+            // ① video_metadata_characters.original_name——角色日文原名（MAL
+            //   name_kanji）。存量行留 NULL，下次刮削补上（upsert 只补空）。
+            // ② video_subtitle_glossaries——作品级专名表（JSON + 来源指纹 +
+            //   userEditedAt）。
+            // 幂等守卫：表在阶梯上可能不存在（合成库）就跳过加列；mid-ladder 由
+            // createTable 按当前 Dart 定义建出的表已带列。
+            if (await _tableExists('video_metadata_characters') &&
+                !await _columnExists(
+                  'video_metadata_characters',
+                  'original_name',
+                )) {
+              await m.addColumn(
+                  videoMetadataCharacters, videoMetadataCharacters.originalName);
+            }
+            if (!await _tableExists('video_subtitle_glossaries')) {
+              await m.createTable(videoSubtitleGlossaries);
+            }
+          }
+          if (from < 120) {
+            // v120（Fushi SRS 多目录同步；原定 v119，被并行合入的视频字幕 AI 校对占用后顺延）：
+            // srs_sent_batches——本机已冻结批次的留存，同一批次逐字节相同地传到每个同步目录
+            // （云盘 / 互联 host / 本机 host 目录），到最近同步过的目录都确认为止。设备本地、
+            // 不进备份、无外键；存量库没有留存可迁（旧版本冻结中的批次由 SrsDbStore 读本机
+            // 状态时搬进来）。
             if (!await _tableExists('srs_sent_batches')) {
               await m.createTable(srsSentBatches);
             }

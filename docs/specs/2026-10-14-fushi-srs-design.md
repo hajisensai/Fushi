@@ -144,7 +144,7 @@ Yomitan 导出释义时每部词典内联一份 `<style>`，同一部词典的�
 | PR7 AnkiConnect | `fushi_engine/lib/srs/ankiconnect/`，挂在 Fushi API 根路径 | 完成；仅 SRS 开启时可用 |
 | 浏览页增强 | `fushi_engine/lib/srs/srs_browse.dart`（快照 + 搜索 + 排序 + 卡片 / 笔记模式；搜索求值对象与 AnkiConnect 共用）、`srs_browse_ops.dart`（批量操作，每个一个事件批次 + 撤销）、`fushi/lib/src/pages/implementations/srs/srs_browse_*.dart` | 完成；搜索子集补 `flag:` `card:` `edited:` `is:buried` `prop:ivl/due/reps/lapses/s/d` `re:` `字段:re:`（`rated:` `prop:ease/pos/r` `nc:` `dupe:` 等仍明确报不支持）；「更改笔记类型」只留了入口（`SrsBrowsePage.onChangeNoteType`） |
 | 第三期同步 | 协议 + `srs_asset_store_directory.dart`；七个后端的服务器时间；媒体按内容哈希同步（`srs_media_sync.dart`）；备份合并（铁律 E） | 完成 |
-| 多目录同步（2026-10-19） | 一台设备同时用云盘 + 互联、本机作 host 时自己的目录也参与：`fushi_srs` 引擎按目录记进度 + 本机批次留存（schema v119 `srs_sent_batches`）+ 转发；目录身份 `fushi/lib/src/srs/srs_directory_key.dart`；host 目录装配 `srs_app_runtime.dart` | 完成；见下文「多目录传输」。模拟器加桥接 / 双目录拓扑随机种子 |
+| 多目录同步（2026-10-19） | 一台设备同时用云盘 + 互联、本机作 host 时自己的目录也参与：`fushi_srs` 引擎按目录记进度 + 本机批次留存（schema v120 `srs_sent_batches`）+ 转发；目录身份 `fushi/lib/src/srs/srs_directory_key.dart`；host 目录装配 `srs_app_runtime.dart` | 完成；见下文「多目录传输」。模拟器加桥接 / 双目录拓扑随机种子 |
 
 ### 已知缺口（需要真机 / 外部条件，或留到下一期）
 

@@ -220,7 +220,7 @@ const List<String> _kSrsProfileTables = <String>[
   'srs_local_state',
   'srs_notes_cache',
   'srs_cards_cache',
-  // v119：本机已冻结批次留存。
+  // v120：本机已冻结批次留存。
   'srs_sent_batches',
 ];
 

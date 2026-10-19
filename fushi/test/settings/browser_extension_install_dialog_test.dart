@@ -7,6 +7,8 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/lookup/browser_default_detector.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
+import 'package:fushi/src/pages/implementations/web_hub_page.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/utils.dart';
 
 /// 浏览器扩展半自动安装引导（分步图文）的 widget 测试。
@@ -202,43 +204,18 @@ void main() {
       // （旧实现散在 home_page / main / settings_schema_appearance 四处，正是漂移
       // 的来源）。所以这里改成**断言新真相源的行为**——比扫字面量强，也不会因为
       // 下一次接线换写法而无辜变红。
+      // 2026-10-19 起扩展页是「浏览器」模块（五端都有）的次级子页，桌面限定的
+      // 判据收在 browserExtensionSupportedOn 一处；「浏览器」页与新手引导的扩展
+      // 步骤都问它。
       expect(
-        ModuleId.browserExtension.availableOn(
-          isWindows: false,
-          isDesktop: false,
-          isIOS: false,
-          isAndroid: false,
-        ),
+        browserExtensionSupportedOn(isDesktop: false),
         isFalse,
-        reason: '手机浏览器装不了未解压扩展，非桌面必须没有这个模块',
+        reason: '手机浏览器装不了未解压扩展，非桌面必须没有扩展子页',
       );
+      expect(browserExtensionSupportedOn(isDesktop: true), isTrue);
       expect(
-        ModuleId.browserExtension.availableOn(
-          isWindows: true,
-          isDesktop: true,
-          isIOS: false,
-          isAndroid: false,
-        ),
-        isTrue,
-      );
-      // 合成后的可见集合也必须一致（平台不可用时，pref 开着也不该出现）。
-      expect(
-        ModuleVisibility.all(
-          isWindows: false,
-          isDesktop: false,
-          isIOS: false,
-          isAndroid: false,
-        ).enabled,
-        isNot(contains(ModuleId.browserExtension)),
-      );
-      expect(
-        ModuleVisibility.all(
-          isWindows: false,
-          isDesktop: true,
-          isIOS: false,
-          isAndroid: false,
-        ).enabled,
-        contains(ModuleId.browserExtension),
+        webHubSectionAvailable(WebHubSection.browserExtension),
+        browserExtensionSupportedOn(isDesktop: DesktopLookupService.isDesktop),
       );
     });
 

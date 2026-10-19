@@ -123,6 +123,17 @@ void main() {
         // BUG-2767 切片 OCR 合并：重叠区重复行去重时按文本码点长度排序（长行先
         // 占位、短行若被包含就丢），比较器两侧各一处，是排序键不是学习计数。
         'packages/fushi_engine/lib/ocr/ocr_page_tiling.dart': 2,
+        // 视频字幕 AI 校对（spec 2026-10-19）：S4 片假名名字编辑距离 1 的长度比较
+        // （与基准 consistency.py 的 len() 同口径），是匹配判据不是学习计数。
+        'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/subtitle_consistency_pass.dart':
+            1,
+        // 专名表身份校验：人名分段长度、「≥2 字才算听到」「≥3 字高频词」的门槛，
+        // 是校验判据不是学习计数。
+        'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart':
+            4,
+        // 校对费用预估：按提示词 / 回复字符数估 token，是费用估算不是学习计数。
+        'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart':
+            2,
         // 排行榜昵称长度校验（与服务端「1–24 个码点」同口径），是表单校验不是记账。
         'lib/src/pages/implementations/leaderboard/leaderboard_account_page.dart':
             1,

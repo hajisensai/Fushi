@@ -115,6 +115,7 @@ import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/manga/web/web_comic_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/download/manga_download_auto_ocr.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
@@ -137,6 +138,8 @@ import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/torrent_fast_resume.dart'
+    show kEmbeddedTorrentFastResumeDirName;
 import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
 import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi_engine/media/torrent/public_trackers.dart';
@@ -197,6 +200,8 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinato
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_path_migration.dart'
+    show DownloadRelocation;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -207,7 +212,16 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
     show VideoSourceScrapeTaskController;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/asr_host/asr_host.dart'
-    show createAsrTranscriptionService, isAsrSupported;
+    show
+        MossBackendPreference,
+        VideoSubtitleSegmenterMode,
+        appMossProvisionStatus,
+        createAsrTranscriptionService,
+        isAsrSupported,
+        resolveAppVideoSubtitleRecognizer;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show videoSubtitleJobsRootUnder;
 import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
@@ -222,6 +236,7 @@ import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
+import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -733,8 +748,29 @@ class AppModel with ChangeNotifier {
         jobRoot: Directory(path.join(databaseDirectory.path, 'host_jobs')),
         runners: <HostJobRunner>[
           AsrHostJobRunner(
-            serviceFactory: createAsrTranscriptionService,
+            serviceFactory: (AsrAudioProfile profile) =>
+                createAsrTranscriptionService(audioProfile: profile),
             resolveVideoPath: _resolveHostVideoPath,
+          ),
+          // 视频日语字幕管线（识别 + AI 校对 + 导出）：识别器挑选、AI 指派、作品
+          // 上下文与专名表都与视频页面板同一份装配；管线缓存与面板共用同一个根，
+          // 同一集从哪条入口跑都续同一份进度。
+          VideoSubtitleHostJobRunner(
+            resolveRecognizer: (
+              VideoSubtitleSegmenterMode mode,
+              MossBackendPreference mossBackend,
+            ) =>
+                resolveAppVideoSubtitleRecognizer(
+                  mode: mode,
+                  mossBackend: mossBackend,
+                ),
+            pipelineJobsRoot: videoSubtitleJobsRootUnder(
+              await AppPaths.supportRootDirectory(),
+            ),
+            database: () => database,
+            resolveVideoPath: _resolveHostVideoPath,
+            aiSettings: () => prefsRepo,
+            mossStatus: appMossProvisionStatus,
           ),
         ],
       );
@@ -3586,7 +3622,7 @@ class AppModel with ChangeNotifier {
       // 助手，模块关掉后那个页面本身也不存在。关掉后不再刷新副本，也不再算内置指纹
       // （查词响应里的 `extensionBuild` 字段随之省略——扩展模块已关，没有消费者）。
       // 平台判据走 modules（browserExtension 仅桌面），与函数内既有的桌面早退同向。
-      if (modules.isEnabled(ModuleId.browserExtension)) {
+      if (modules.isEnabled(ModuleId.web)) {
         unawaited(
             refreshBrowserExtensionCopy().catchError((Object e, StackTrace s) {
           ErrorLogService.instance
@@ -5183,8 +5219,23 @@ class AppModel with ChangeNotifier {
           rootDirectory: interconnectMangaLibraryRoot,
           adapter: const InterconnectLibraryAdapter(),
         );
+      // 网页漫画同样不碰 [mihonManager]（不依赖任何扩展运行时）；iOS 上由
+      // 适配器的合规门回报不可用。
+      case OnlineMangaRuntimeKind.web:
+        return OnlineMangaLibraryService(
+          database: database,
+          rootDirectory: webComicLibraryRoot,
+          adapter: WebComicLibraryAdapter(
+            adFilterEnabled: () => prefsRepo.webComicAdFilter,
+          ),
+        );
     }
   }
+
+  /// 网页漫画书架条目的旧落盘根（只为 [OnlineMangaLibraryService] 的构造参数；
+  /// 新条目一律住 `fushi_books`，这里从不写东西）。目录名是持久化名，冻结。
+  Directory get webComicLibraryRoot =>
+      Directory(path.join(databaseDirectory.path, 'web_comic'));
 
   /// 互联漫画源书架条目的本地落盘根（占位 manga.json、封面、章节页缓存）。
   ///
@@ -5364,6 +5415,23 @@ class AppModel with ChangeNotifier {
   /// **不**跟用户配置的下载根走。
   String? _embeddedTorrentResumeDir;
 
+  /// 数据根迁移前已经释放内置引擎（见 [releaseEmbeddedTorrentForDataRootMove]）。
+  bool _embeddedTorrentReleasedForDataRootMove = false;
+
+  /// BUG-3541：数据根迁移搬文件**之前**停下内置 torrent 引擎。
+  ///
+  /// 引擎握着下载内容的文件句柄（Windows 上目录 rename 会因此失败），也会把
+  /// resume 按**旧绝对路径**落到旧 resume 目录。这里先强制落一次 resume（让迁移器
+  /// 改写的是最新状态），再关 session，并禁止本进程再懒建——迁移成功后进程重启，
+  /// 新进程按改写过的 resume 恢复。
+  void releaseEmbeddedTorrentForDataRootMove() {
+    _embeddedTorrentReleasedForDataRootMove = true;
+    _animeDownloadService?.stop();
+    _stopTorrentNetworkMonitor();
+    _embeddedTorrentHost?.dispose(keepIds: _animeDownloadPlanIds);
+    _embeddedTorrentHost = null;
+  }
+
   /// 当前仍存在的计划 id 集合（= infohash）。resume 剪枝的真相源：不在这个集合
   /// 里的 `.resume` 文件一律删，否则用户删掉的任务会在下次启动复活成一个 UI 里
   /// 看不见、却在后台做种的种子。每轮 tick 与启动时刷新。
@@ -5384,6 +5452,9 @@ class AppModel with ChangeNotifier {
   EmbeddedTorrentHost? _ensureEmbeddedTorrentHost() {
     final EmbeddedTorrentHost? existing = _embeddedTorrentHost;
     if (existing != null) return existing;
+    // 数据根迁移已把引擎停下、resume 交给迁移器改写（BUG-3541）：本进程随后
+    // 重启，不得再懒建一个按旧路径落盘的 session。
+    if (_embeddedTorrentReleasedForDataRootMove) return null;
     final TorrentSaveRoots? roots = _embeddedTorrentSaveRoots;
     final String? resumeDir = _embeddedTorrentResumeDir;
     if (roots == null || resumeDir == null || !_supportsEmbeddedTorrent()) {
@@ -5619,7 +5690,8 @@ class AppModel with ChangeNotifier {
       configuredRoot: configuredRoot,
       history: decodeSaveRootHistory(prefsRepo.downloadSaveRootHistory),
     );
-    _embeddedTorrentResumeDir = path.join(baseDir.path, 'resume');
+    _embeddedTorrentResumeDir =
+        path.join(baseDir.path, kEmbeddedTorrentFastResumeDirName);
 
     // schema v78 cut-over 必须先于两个 JSON service 的首次 tick。每个 JSON 文件
     // 事务提交后才归档；崩溃重放依靠稳定 legacy id 幂等，不移动字幕 staging。
@@ -6106,13 +6178,7 @@ class AppModel with ChangeNotifier {
     final TorrentBackend? backend = _videoDownloadBackend;
     if (backend == null) return null;
     final List<VideoDownloadPathMapping> mappings =
-        <VideoDownloadPathMapping>[];
-    for (final VideoDownloadBackendPathMappingConfig value
-        in prefsRepo.videoDownloadBackendPathMappings) {
-      if (value.backendProfileId == identity.profileId) {
-        mappings.add(value.toMapping());
-      }
-    }
+        downloadPathMappingsForProfile(identity.profileId);
     return VideoDownloadBackendBinding(
       backend: backend,
       identity: identity,
@@ -6153,18 +6219,34 @@ class AppModel with ChangeNotifier {
   /// TODO-1961-c+d：下载内容改名 / 移动（引擎侧动，做种不断；库路径同步迁移）。
   ///
   /// 后端工厂复用 [_torrentBackendFor]，所以内置引擎与外接 qb 两条路都走得通；
-  /// 库迁移走 [VideoBookRepository.migrateMediaPaths]。两步的原子性由
+  /// 库迁移走 [VideoBookRepository.applyDownloadRelocation]。两步的原子性由
   /// [DownloadRelocateService] 保证（引擎失败则库不动）。
+  ///
+  /// 后端坐标 ↔ 本机坐标走当前后端配置档的下载路径映射（BUG-3539），与下载
+  /// 流水线是同一份契约。
   DownloadRelocateService get downloadRelocateService =>
       DownloadRelocateService(
         backendFactory: () => _torrentBackendFor(
             effectiveTorrentConfig(prefsRepo.qbConnectionConfig)),
-        migrateLibraryPaths: ({
-          required String fromPath,
-          required String toPath,
-        }) =>
-            VideoBookRepository(database)
-                .migrateMediaPaths(fromPath: fromPath, toPath: toPath),
+        pathMappings: () async {
+          final VideoDownloadBackendIdentity identity =
+              await _currentVideoDownloadBackendIdentity(
+            effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
+          );
+          return downloadPathMappingsForProfile(identity.profileId);
+        },
+        applyRelocation: (DownloadRelocation relocation) =>
+            VideoBookRepository(database).applyDownloadRelocation(relocation),
+      );
+
+  /// 后端配置档 [profileId]（任务行 `backendProfileId`）的显式下载路径映射。
+  /// 任务的后端坐标只能用它**自己那台后端**的映射解释，不能用当前设置的。
+  List<VideoDownloadPathMapping> downloadPathMappingsForProfile(
+    String? profileId,
+  ) =>
+      videoDownloadPathMappingsForProfile(
+        prefsRepo.videoDownloadBackendPathMappings,
+        profileId,
       );
 
   /// 刷新 [_animeDownloadPlanIds]（resume 剪枝的真相源）并返回它。
@@ -9309,7 +9391,7 @@ class AppModel with ChangeNotifier {
       fontApi: BrowserExtensionFontCatalog(this),
       // 复习（SRS）扩展端点：模块开着时 SrsAppHost.current 非 null；关着时 404。
       srsApiProvider: () => SrsAppHost.current,
-      tokenizer: JapaneseLanguage.instance.textToWordsWithReadings,
+      tokenizer: JapaneseLanguage.instance.textsToWordsWithReadingsInBackground,
     )..ankiConnectEndpoint = _srsAnkiConnectEndpoint;
   }
 

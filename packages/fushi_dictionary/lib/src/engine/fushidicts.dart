@@ -8,6 +8,7 @@ import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:meta/meta.dart';
 
 import '../ffi/fushidicts_ffi_bindings.dart';
+import 'background_borrow.dart';
 // 变形表资源的读法按宿主分：Flutter app 走 rootBundle（`dart.library.ui` 分支），
 // 纯 Dart 宿主（无头服务端）落到 stub，改用 [FushiDicts.preloadTransformsFrom]
 // 自己读文件。本文件因此零 Flutter，可进 fushi_dictionary_core 子 barrel。
@@ -16,6 +17,8 @@ import 'transform_asset_loader_stub.dart'
 import 'fushidicts_models.dart';
 
 export 'fushidicts_models.dart';
+export 'background_borrow.dart'
+    show BackgroundBorrowLedger, borrowNativeHandle;
 
 // ── conversion helpers ──────────────────────────────────────────────
 
@@ -139,6 +142,14 @@ FushiKanjiResult _convertKanji(FfiKanjiResult ffi) {
     dictName: _utf8OrEmpty(ffi.dictName),
   );
 }
+
+/// [FushiDicts.tokenizeWithReadingsInBackground] 的后台 isolate debugName。
+@visibleForTesting
+const String kBackgroundTokenizeIsolateName = 'fushi-dict-tokenize';
+
+/// 最近一次后台分词实际跑在哪个 isolate 上（debugName）；只给测试观测用。
+@visibleForTesting
+String? debugLastBackgroundTokenizeIsolate;
 
 // ── main wrapper class ──────────────────────────────────────────────
 
@@ -380,6 +391,8 @@ class FushiDicts {
   static Future<void> loadPendingAsync() async {
     final _PendingDicts? pending = _pending;
     if (pending == null) return;
+    // 映射保持释放的作用域里不装（见 [withMappingsReleased]），待办留到作用域结束。
+    if (_mappingHolds > 0) return;
     _pending = null;
     final int generation = _generation;
 
@@ -429,6 +442,15 @@ class FushiDicts {
   static void _applyPendingIfAny() {
     final _PendingDicts? pending = _pending;
     if (pending == null) return;
+    if (_mappingHolds > 0) {
+      // 映射保持释放的作用域里（[withMappingsReleased]）：待办留到作用域结束。没有
+      // 实例时给一个空的，查词退化成空结果，与 [releaseAllMappings] 之后一致。
+      if (_instance == null) {
+        _applyTyped(const <String>[], const <String>[], const <String>[],
+            const <String>[]);
+      }
+      return;
+    }
     // 先清待办再装载：装载过程若抛异常，待办不该留在原地被下一次访问重放一遍
     // （同一份坏数据会把每一次查词都变成一次全量重建尝试）。
     _pending = null;
@@ -509,6 +531,42 @@ class FushiDicts {
     initializeTyped();
   }
 
+  /// 后台 isolate 对原生句柄的借用账本（[tokenizeWithReadingsInBackground]）。
+  static final BackgroundBorrowLedger _backgroundBorrows =
+      BackgroundBorrowLedger();
+
+  /// 此刻在飞的后台借用全部归还后完成。
+  ///
+  /// 原生句柄的 destroy 只是退役：被后台借着的旧句柄要等最后一个借用归还才销毁、
+  /// 解除文件映射。所以「dispose 之后马上搬词典文件」必须先等这里——否则后台分词
+  /// 恰好在跑时，Windows 上的映射还活着，搬 / 删照样撞 ERROR_USER_MAPPED_FILE
+  /// （BUG-1756）。删 / 覆盖词典文件用 [withMappingsReleased]，它已经等过了。
+  static Future<void> whenBackgroundBorrowsSettled() =>
+      _backgroundBorrows.settled();
+
+  /// 正在进行的 [withMappingsReleased] 作用域数（可嵌套）。大于 0 时待办不结算。
+  static int _mappingHolds = 0;
+
+  /// 在「词典文件映射保持释放」的作用域里跑 [body]：删 / 覆盖词典文件的入口一律用
+  /// 这个（BUG-1756）。
+  ///
+  /// 进入时 [releaseAllMappings]，再等在飞的后台借用归还（被借着的旧句柄此刻才销毁、
+  /// 解除映射），然后才跑 [body]。[body] 期间排下的待办（[scheduleTyped]，元数据
+  /// 写入逐本触发）只登记、不结算：释放与删除之间隔着好几个 await（等借用、异步
+  /// delete、Windows 上的占用重试），这时任何一次查词都会把待办装回引擎，正被删 /
+  /// 覆盖的文件又映射上。作用域结束后下一次用引擎时照常结算。[body] 里显式的
+  /// [initializeTyped]（删完装回剩余词典）不受影响——那是调用方明确要的装载。
+  static Future<T> withMappingsReleased<T>(Future<T> Function() body) async {
+    _mappingHolds++;
+    try {
+      releaseAllMappings();
+      await whenBackgroundBorrowsSettled();
+      return await body();
+    } finally {
+      _mappingHolds--;
+    }
+  }
+
   static Map<String, String> get dictionaryStyles {
     _applyPendingIfAny();
     return _stylesCache;
@@ -524,6 +582,12 @@ class FushiDicts {
     };
   }
 
+  /// 退役本实例的原生句柄。
+  ///
+  /// 原生 `fushidicts_destroy` 只还掉本实例持有的那个引用：后台 isolate 借着它的
+  /// 调用（[tokenizeWithReadingsInBackground]）照常跑完，最后一个借用归还时句柄才
+  /// 真正销毁。要确认文件映射已解除，等 [whenBackgroundBorrowsSettled]（删 / 覆盖
+  /// 词典文件用 [withMappingsReleased]）。
   void dispose() {
     if (_handle != null) {
       _bindings!.destroy(_handle!);
@@ -786,12 +850,90 @@ class FushiDicts {
   List<int>? tokenizeLengths(String text) =>
       _tokenize(text, withReadings: false)?.lengths;
 
-  /// 分词 + 每段读音（每段再查一次 `lookup(段, 1)` 的首条读音，未命中为空串）。
-  ({List<int> lengths, List<String> readings})? tokenizeWithReadings(
-    String text,
-  ) => _tokenize(text, withReadings: true);
-
   ({List<int> lengths, List<String> readings})? _tokenize(
+    String text, {
+    required bool withReadings,
+  }) =>
+      _tokenizeWith(_bindings!, _handle!, text, withReadings: withReadings);
+
+  /// 批量分词 + 每段读音（每段再查一次 `lookup(段, 1)` 的首条读音，未命中为空串），
+  /// 切分与 [tokenizeLengths] 逐位相同。原生分词（浏览器扩展整页分词实测约 177 ms）
+  /// 跑在一个后台 isolate 里，不占调用方（UI）isolate。
+  ///
+  /// 句柄生命周期：在本 isolate 上 `fushidicts_retain` 借一个引用、把地址交给后台、
+  /// 回来后在本 isolate 上 release（[borrowNativeHandle]）。期间词典重载照常
+  /// dispose 本实例——原生 destroy 只是退役，句柄要等这次借用归还才销毁，后台调用
+  /// 不会落到已释放的句柄上；查询与 add_*_dict 之间由句柄内的读写锁互斥。
+  ///
+  /// 返回与 [texts] 等长的列表，某段原生失败为 null（与同步路径同一闸门）；本实例已
+  /// dispose（借不到引用）时返回 null。
+  Future<List<({List<int> lengths, List<String> readings})?>?>
+      tokenizeWithReadingsInBackground(List<String> texts) {
+    final Pointer<Void>? handle = _handle;
+    if (handle == null) {
+      return Future<List<({List<int> lengths, List<String> readings})?>?>
+          .value();
+    }
+    final FushidictsFfiBindings bindings = _bindings!;
+    return borrowNativeHandle<
+        List<({List<int> lengths, List<String> readings})?>>(
+      ledger: _backgroundBorrows,
+      retain: () => bindings.retain(handle) == 1,
+      release: () => bindings.release(handle),
+      work: () => _runBorrowedTokenize(
+        handle.address,
+        FushidictsFfiBindings.libraryPathOverride,
+        texts,
+      ),
+    );
+  }
+
+  /// 单独成静态函数：交给 `Isolate.run` 的闭包只捕获地址 / 库路径 / 文本这三样
+  /// 可发送的值，不把实例（与它的 Pointer）拖过 isolate 边界。
+  static Future<List<({List<int> lengths, List<String> readings})?>>
+      _runBorrowedTokenize(
+    int address,
+    String? libraryPath,
+    List<String> texts,
+  ) async {
+    final ({
+      List<({List<int> lengths, List<String> readings})?> results,
+      String isolateName,
+    }) out = await Isolate.run(
+      () => _tokenizeBorrowedBatch(address, libraryPath, texts),
+      debugName: kBackgroundTokenizeIsolateName,
+    );
+    debugLastBackgroundTokenizeIsolate = out.isolateName;
+    return out.results;
+  }
+
+  /// 后台 isolate 的分词本体：按宿主给的库路径在本 isolate 重建绑定（绑定与
+  /// [FushidictsFfiBindings.libraryPathOverride] 都是 isolate 局部的），对借来的
+  /// 句柄地址逐段分词。
+  static ({
+    List<({List<int> lengths, List<String> readings})?> results,
+    String isolateName,
+  }) _tokenizeBorrowedBatch(
+    int address,
+    String? libraryPath,
+    List<String> texts,
+  ) {
+    FushidictsFfiBindings.libraryPathOverride = libraryPath;
+    final FushidictsFfiBindings bindings = FushidictsFfiBindings();
+    final Pointer<Void> handle = Pointer<Void>.fromAddress(address);
+    return (
+      results: <({List<int> lengths, List<String> readings})?>[
+        for (final String text in texts)
+          _tokenizeWith(bindings, handle, text, withReadings: true),
+      ],
+      isolateName: Isolate.current.debugName ?? '',
+    );
+  }
+
+  /// 同步路径（[tokenizeLengths]）与后台路径共用的一次原生分词（同一份封送与闸门）。
+  static ({List<int> lengths, List<String> readings})? _tokenizeWith(
+    FushidictsFfiBindings bindings,
+    Pointer<Void> handle,
     String text, {
     required bool withReadings,
   }) {
@@ -803,8 +945,8 @@ class FushiDicts {
     final Pointer<Uint8> tp = calloc<Uint8>(bytes.isEmpty ? 1 : bytes.length);
     try {
       tp.asTypedList(bytes.length).setAll(0, bytes);
-      final r = _bindings!.tokenize(
-        _handle!,
+      final r = bindings.tokenize(
+        handle,
         tp,
         bytes.length,
         defaultScanLength,
@@ -829,7 +971,7 @@ class FushiDicts {
         if (withReadings && readings.length != lengths.length) return null;
         return (lengths: lengths, readings: readings);
       } finally {
-        _bindings!.freeTokenizeResult(rPtr);
+        bindings.freeTokenizeResult(rPtr);
         calloc.free(rPtr);
       }
     } finally {

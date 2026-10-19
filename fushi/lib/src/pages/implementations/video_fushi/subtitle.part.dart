@@ -189,6 +189,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     BuildContext context,
     VideoPlayerController controller,
   ) {
+    // 网页档：字幕轨来自站点（bridge 抓的整集轨 + DOM 采样 live 轨），见 web_source.part.dart。
+    if (_webMode) return _buildWebSubtitleTrackRows(context);
     // 选中行前景：M3E 交给面板列表主题（secondaryContainer 色块 +
     // onSecondaryContainer），Apple 照旧强调色。
     final Color? selectedFg = videoPanelSelectedForeground(context);
@@ -234,6 +236,30 @@ extension _VideoSubtitle on _VideoFushiPageState {
           onTap: _subtitleLoadingShown
               ? null
               : () => unawaited(_generateSubtitleWithSpeechModel(controller)),
+        ),
+      // 生成日语字幕（ASR + 可选 AI 校对管线）：本机视频在本机跑，产物写在视频文件旁
+      // （`<视频名>.ja.srt`）；互联远端视频在放视频的那台 host 上跑（host 任务
+      // `video_subtitle`，老 host 面板里说明不支持），取回 SRT 当本机外挂字幕加载。
+      // 其它远端 / 流（YouTube、媒体服务器）没有能跑任务的 host，入口不出现；上一行
+      // 「语音转写（不校对）」照常可用。蓝光走盘结构、没有单个视频文件，同样不出现。
+      if ((_currentVideoPath != null &&
+              !_isRemote &&
+              _discBookUid == null &&
+              isAsrSupported) ||
+          (_isRemote && _remoteHostVideoTarget() != null))
+        FushiListTileControl(
+          key: const ValueKey<String>('video-subtitle-ai-generate'),
+          leading: const FushiIcon(FushiIcons.ai),
+          title: Text(t.video_subtitle_ai_title),
+          subtitle: Text(t.video_subtitle_ai_entry_hint),
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () => unawaited(
+                  _isRemote
+                      ? _openRemoteJapaneseSubtitlePipeline(controller)
+                      : _openJapaneseSubtitlePipeline(controller),
+                ),
         ),
       if (_canResolveSubtitleTimingAudio && isAsrSupported)
         FushiListTileControl(
@@ -2736,6 +2762,145 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
   }
 
+  /// 「生成日语字幕」面板（[showVideoSubtitleGenerateSheet]）：编排全在
+  /// [AppVideoSubtitleService]（与合集页整季、桌面 CLI 同一个服务），这里只解析当前这
+  /// 一集的目标，并在任务结束后把产物切成当前字幕（面板关掉了也照样切）。
+  Future<void> _openJapaneseSubtitlePipeline(
+    VideoPlayerController controller,
+  ) async {
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null || _isRemote) return;
+    final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
+    final AppVideoSubtitleTarget target;
+    try {
+      target = await service.resolveBook(_activeBookUid, videoPath: videoPath);
+    } on AppVideoSubtitleTargetNotFound {
+      _showOsd(
+        t.video_subtitle_ai_no_local_episodes,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!context.mounted || _currentVideoPath != videoPath) return;
+    await showVideoSubtitleGenerateSheet(
+      context: context,
+      service: service,
+      target: target,
+      prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+      openAiSettings: pushAiSettingsPage,
+      onJobStarted: (AppVideoSubtitleJob job) =>
+          unawaited(_applyPipelineSubtitleWhenDone(controller, job, videoPath)),
+    );
+  }
+
+  /// 互联远端视频：在放视频的 host 上跑同一条管线（[RemoteVideoSubtitleService]），
+  /// AI 用 host 自己的指派；结束后取回的 SRT 走「远端视频加外挂字幕」同一条路加载。
+  /// host 播放列表从第 2 集起 host 任务认不到那一集的文件，直接说明。
+  Future<void> _openRemoteJapaneseSubtitlePipeline(
+    VideoPlayerController controller,
+  ) async {
+    final (InterconnectSyncBackend, String, int)? host =
+        _remoteHostVideoTarget();
+    if (host == null) return;
+    final (InterconnectSyncBackend _, String videoId, int episode) = host;
+    if (episode > 0) {
+      _showOsd(
+        t.video_subtitle_ai_remote_episode_unsupported,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final String title = _title ?? _effectiveRemoteInfo?.title ?? videoId;
+    await showRemoteVideoSubtitleSheet(
+      context: context,
+      service: appRemoteVideoSubtitleService(appModel),
+      target: RemoteVideoSubtitleTarget(
+        title: title,
+        episodes: <RemoteVideoSubtitleEpisode>[
+          RemoteVideoSubtitleEpisode(videoId: videoId, title: title),
+        ],
+      ),
+      prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+      onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
+        _applyRemotePipelineSubtitleWhenDone(controller, job, videoId),
+      ),
+    );
+  }
+
+  /// 远端任务结束后：页面还停在这一集就加载取回的 SRT（并入字幕轨列表、调轴归零）。
+  /// host 已经在它那边的视频旁写了字幕，这里不再上传回去。
+  Future<void> _applyRemotePipelineSubtitleWhenDone(
+    VideoPlayerController controller,
+    RemoteVideoSubtitleJob job,
+    String videoId,
+  ) async {
+    final int loadSeq = _episodeLoadSeq;
+    await job.done;
+    if (!mounted ||
+        !identical(_controller, controller) ||
+        _episodeLoadSeq != loadSeq ||
+        _effectiveRemoteInfo?.id != videoId ||
+        job.status != RemoteVideoSubtitleJobStatus.succeeded) {
+      return;
+    }
+    final RemoteVideoSubtitleEpisodeProgress? episode = job.episodes
+        .firstWhereOrNull(
+          (RemoteVideoSubtitleEpisodeProgress e) =>
+              e.episode.videoId == videoId,
+        );
+    final String? path = episode?.srt?.path;
+    if (path == null) {
+      final String? label = episode == null
+          ? null
+          : remoteVideoSubtitleEpisodeResultLabel(episode);
+      if (label != null) _showOsd(label, severity: ToastSeverity.warning);
+      return;
+    }
+    _registerImportedSubtitleSource(path);
+    if (await _applyRemoteSubtitle(controller, path)) {
+      if (!mounted) return;
+      await _setDelayMs(0);
+    }
+  }
+
+  /// 管线结束后：这一集导出了字幕且页面还停在这一集，就选中它（落库 + 加载 + 并入
+  /// 字幕轨列表）；跳过了（同名字幕都已存在 / 判为歌曲……）就说明原因。
+  Future<void> _applyPipelineSubtitleWhenDone(
+    VideoPlayerController controller,
+    AppVideoSubtitleJob job,
+    String videoPath,
+  ) async {
+    final int loadSeq = _episodeLoadSeq;
+    await job.done;
+    if (!mounted ||
+        !identical(_controller, controller) ||
+        _episodeLoadSeq != loadSeq ||
+        _currentVideoPath != videoPath ||
+        job.status != AppVideoSubtitleJobStatus.succeeded) {
+      return;
+    }
+    final VideoSubtitleEpisodeResult? result = job.result?.episodes
+        .firstWhereOrNull(
+          (VideoSubtitleEpisodeResult r) => p.equals(r.videoPath, videoPath),
+        );
+    if (result == null) return;
+    final String? output = result.outputPath;
+    if (!result.exported || output == null) {
+      _showOsd(
+        videoSubtitleEpisodeStatusLabel(result),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final bool applied = await _selectSubtitleSource(
+      controller,
+      SubtitleSource.external(externalPath: output, label: p.basename(output)),
+    );
+    if (!applied || !mounted) return;
+    _registerImportedSubtitleSource(output);
+    await _setDelayMs(0);
+  }
+
   /// ASR 只接单音轨文件；先抽当前所选音轨，避免双语盘识别到默认配音。
   ///
   /// [transcribe] 替换最后「把这条音轨转成 SRT」那一步：缺省弹转录弹层
@@ -3529,6 +3694,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
                             // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
                             hoverAutoLookupEnabled:
                                 ReaderFushiSource.instance.hoverAutoLookup,
+                            hoverLookupModifier:
+                                ReaderFushiSource.instance.hoverLookupModifier,
                             onClose: _closeSubtitleJumpList,
                             colorScheme: cs,
                             title: t.video_subtitle_list,

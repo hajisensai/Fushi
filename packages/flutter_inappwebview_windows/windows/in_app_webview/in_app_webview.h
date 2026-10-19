@@ -130,6 +130,9 @@ namespace flutter_inappwebview_plugin
     void setSurfaceSize(size_t width, size_t height, float capture_scale_factor,
       float device_scale_factor);
     void setPosition(size_t x, size_t y, float scale_factor);
+    // 窗口宿主模式：子 HWND 是否接收鼠标 / 触摸。关掉后（EnableWindow FALSE）命中测试跳过它，
+    // 输入落到下面的 Flutter 视图（底层合成：Flutter 层画在它上面）。composition 档返回 false。
+    bool setWindowedInputEnabled(bool enabled);
     void setCursorPos(double x, double y);
     void setPointerUpdate(int32_t pointer, InAppWebViewPointerEventKind eventKind,
       double x, double y, double size, double pressure);
@@ -258,6 +261,8 @@ namespace flutter_inappwebview_plugin
     EventRegistrationToken newWindowRequestedToken_ = {};
     EventRegistrationToken windowCloseRequestedToken_ = {};
     EventRegistrationToken permissionRequestedToken_ = {};
+    // ProcessFailed：主渲染进程 / 浏览器进程退出时转成 onRenderProcessGone（宿主据此重建表面）。
+    EventRegistrationToken processFailedToken_ = {};
     // DOMContentLoaded 注册在 ICoreWebView2_2 接口上，析构时需重新 QueryInterface 该接口才能 remove。
     EventRegistrationToken domContentLoadedToken_ = {};
     // CursorChanged 注册在 webViewCompositionController 上。

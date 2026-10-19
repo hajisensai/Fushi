@@ -252,8 +252,8 @@ void main() {
     expect(calls, 1, reason: '退避到期再试');
   });
 
-  // 路径对不上不等于离库：下载内容改名 / 移动（migrateMediaPaths）与数据根迁移
-  // 只改写库里的 video_path，任务行的 finalAbsolutePath 不动。此前直接标 skipped
+  // 路径对不上不等于离库：用户在 app 外挪动文件 / 库侧重扫改了 video_path 时，
+  // 任务行的 finalAbsolutePath 与库行会分叉。此前直接标 skipped
   // （"video is no longer in the library"），挪过目录的分集就永远不再补字幕。
   test('库里按下载路径找不到视频 → 留在 unavailable 记原因，不终结；已有字幕 → skipped', () async {
     await seedEpisode('gone', inLibrary: false);

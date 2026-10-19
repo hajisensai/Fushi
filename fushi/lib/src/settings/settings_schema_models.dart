@@ -14,6 +14,7 @@ import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_models_storage_section.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_settings.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -70,6 +71,9 @@ SettingsDestination buildModelsDestination() {
             visible: (_) => isAsrSupported,
             child: _buildAsrModelsDestination,
           ),
+          // 视频日语字幕（分段方式 / MOSS）：语音转录子页是模型管理正文独占的页，
+          // 不挂 schema 分组，所以单独一行。
+          videoSubtitleModelsNavigationItem(),
           SettingsNavigationItem(
             id: 'models.tts',
             title: t.models_tts_title,

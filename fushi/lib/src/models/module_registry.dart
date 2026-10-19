@@ -34,7 +34,7 @@ ModuleId? moduleOfHomeTab(HomeTab tab) => switch (tab) {
   HomeTab.dictionaries => ModuleId.lookup,
   HomeTab.srs => ModuleId.srs,
   HomeTab.games => ModuleId.games,
-  HomeTab.browserExtension => ModuleId.browserExtension,
+  HomeTab.web => ModuleId.web,
 };
 
 /// 某个顶层 tab 此刻是否可达。`_selectTab` / 任何「点了要跳过去」的入口渲染判据
@@ -53,7 +53,7 @@ HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
   ModuleId.lookup => HomeTab.dictionaries,
   ModuleId.srs => HomeTab.srs,
   ModuleId.games => HomeTab.games,
-  ModuleId.browserExtension => HomeTab.browserExtension,
+  ModuleId.web => HomeTab.web,
   ModuleId.listening ||
   ModuleId.cardCreation ||
   ModuleId.services ||

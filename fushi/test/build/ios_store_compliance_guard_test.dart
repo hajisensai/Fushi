@@ -462,6 +462,118 @@ void main() {
       );
     });
 
+    test('网页漫画（浏览器上的「用 Fushi 阅读本章」）由 onlineMangaSource 门控，'
+        '通用浏览器本身不过门', () {
+      // 判据只写在 webComicReaderActionAvailable 一处；浏览器页与运行时适配器
+      // 都只问它 / 同一道门，不写 Platform.isIOS。浏览器页的入口是「浏览器」模块
+      // （五端都有），所以门必须落在页内的漫画动作上，而不是入口上。
+      final String launch = compactCode(
+        read('lib/src/media/manga/web/web_comic_reader_launch.dart'),
+      );
+      expect(
+        launch,
+        contains(
+          'boolwebComicReaderActionAvailable()=>'
+          'StoreRestrictedCapability.onlineMangaSource.isAvailable;',
+        ),
+      );
+      final String browser = compactCode(
+        read('lib/src/pages/implementations/fushi_web_browser_page.dart'),
+      );
+      expect(
+        browser,
+        contains(
+          'finalWebComicScanDriver?_scanDriver=webComicReaderActionAvailable()'
+          '?WebComicScanDriver():null;',
+        ),
+        reason: '扫图执行器整条只在合规门开时装；「阅读本章」按钮由它是否为 null 决定。',
+      );
+      expect(
+        browser,
+        contains(
+          'final bool canRead = _scanDriver != null'.replaceAll(' ', ''),
+        ),
+      );
+      expect(
+        browser,
+        contains(
+          'presets:webBrowserPresetSites(mangaAvailable:'
+          'webComicReaderActionAvailable(),),',
+        ),
+        reason: 'iOS 上不预置任何漫画站。',
+      );
+      expect(browser, isNot(contains('Platform.isIOS')));
+      final String adapter = compactCode(
+        read('lib/src/media/manga/web/web_comic_runtime_adapter.dart'),
+      );
+      expect(
+        adapter,
+        contains(
+          'boolgetisSupportedOnThisPlatform=>'
+          'StoreRestrictedCapability.onlineMangaSource.isAvailable;',
+        ),
+      );
+      // 阅读器（manga_fushi_page）与下载服务直接调适配器取页，不经作品页的
+      // isSupportedOnThisPlatform 判断；网页漫画书会随备份 / 同步落到 iOS，所以门
+      // 必须落在适配器自己的每个联网入口上。
+      expect(
+        adapter,
+        contains('void_ensureSupported(){if(isSupportedOnThisPlatform)return;'),
+      );
+      for (final String entry in <String>[
+        'requiredOnlineMangaChapterchapter,})async{_ensureSupported();',
+        'fetchChapterPage(OnlineMangaPageRefpage)async{_ensureSupported();',
+        'Stringurl,)async{_ensureSupported();',
+      ]) {
+        expect(adapter, contains(entry), reason: '网页漫画适配器的联网入口必须先过合规门：$entry');
+      }
+    });
+
+    test('网页小说（浏览器上的「用 Fushi 阅读（小说）」与追更）由 onlineNovelSource 门控，'
+        '通用浏览器本身不过门', () {
+      // 判据只写在 webNovelReaderActionAvailable 一处（web_novel_gate.dart）；浏览器页
+      // 的动作、开书前补「下一章」占位、阅读器的按需取章都只问它，不写 Platform.isIOS。
+      final String gate = compactCode(
+        read('lib/src/media/novel/web/web_novel_gate.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolwebNovelReaderActionAvailable()=>'
+          'StoreRestrictedCapability.onlineNovelSource.isAvailable;',
+        ),
+      );
+      final String browser = compactCode(
+        read('lib/src/pages/implementations/fushi_web_browser_page.dart'),
+      );
+      expect(
+        browser,
+        contains('finalbool_novelAvailable=webNovelReaderActionAvailable();'),
+        reason: '小说动作整条只在合规门开时装。',
+      );
+      expect(
+        browser,
+        contains('if(_novelAvailable)<FushiToolbarItem>['),
+        reason: '工具栏上的「用 Fushi 阅读（小说）」由同一个判据决定出不出现。',
+      );
+      expect(browser, contains('if(!_novelAvailable||'));
+      expect(browser, isNot(contains('Platform.isIOS')));
+      final String library = compactCode(
+        read('lib/src/media/novel/web/web_novel_library.dart'),
+      );
+      expect(
+        library,
+        contains('if(row==null||!webNovelReaderActionAvailable())returnnull;'),
+        reason: '快照会随备份恢复到 iOS：开书不得因此联网取下一章。',
+      );
+      expect(
+        library,
+        contains('if(!webNovelReaderActionAvailable())returnfalse;'),
+        reason: '开书前补「下一章」占位同样过门。',
+      );
+      expect(library, isNot(contains('Platform.isIOS')));
+    });
+
     test('视频在线源三段（Aniyomi，浏览模块）由 onlineVideoSource 门控', () {
       // 判据只写在 video_online_sources_gate.dart 一处（合规门 + 运行时平台门），
       // 浏览页只问它——这条边界失效是静默的（本地与 CI 全绿、上架才被拒）。
@@ -627,13 +739,14 @@ void main() {
             '第三方 WASM 源」这条能力接回来，必须先过 onlineMangaSource 合规门。',
       );
       final List<String> offenders = <String>[
-        for (final FileSystemEntity entity
-            in Directory('lib').listSync(recursive: true))
+        for (final FileSystemEntity entity in Directory(
+          'lib',
+        ).listSync(recursive: true))
           if (entity is File &&
               entity.path.endsWith('.dart') &&
-              entity
-                  .readAsStringSync()
-                  .contains('package:fushi/src/media/manga/aidoku/'))
+              entity.readAsStringSync().contains(
+                'package:fushi/src/media/manga/aidoku/',
+              ))
             entity.path,
       ];
       expect(offenders, isEmpty);

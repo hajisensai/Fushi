@@ -938,6 +938,47 @@ namespace flutter_inappwebview_plugin
       }
     ).Get(), &windowCloseRequestedToken_));
 
+    // 进程失败：上游 Windows 实现从未接 ProcessFailed，主渲染进程 / 浏览器进程退出后 Dart 侧
+    // onRenderProcessGone 永不触发，WebView 停在死页面（黑屏回不来）。这里按 kind 转发：
+    // · RENDER_PROCESS_EXITED：主框架渲染进程没了，本 WebView 报废，宿主重建表面；
+    // · BROWSER_PROCESS_EXITED：整个浏览器进程（含环境）没了，宿主还要换新环境再重建。
+    // 其余 kind（iframe 渲染进程、GPU / 工具进程、无响应）WebView2 会自行恢复或不影响主页面，
+    // 不转发——转发了宿主会无谓重建、打断正常播放。
+    failedLog(webView->add_ProcessFailed(Callback<ICoreWebView2ProcessFailedEventHandler>(
+      [this, alive = alive_](ICoreWebView2* sender, ICoreWebView2ProcessFailedEventArgs* args)
+      {
+        if (!*alive || !channelDelegate) {
+          return S_OK;
+        }
+        COREWEBVIEW2_PROCESS_FAILED_KIND kind;
+        if (FAILED(args->get_ProcessFailedKind(&kind))) {
+          return S_OK;
+        }
+        std::string kindName;
+        if (kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED) {
+          kindName = "render";
+        }
+        else if (kind == COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED) {
+          kindName = "browser";
+        }
+        else {
+          return S_OK;
+        }
+        // 被正常终止（任务管理器结束 / 系统回收）不算崩溃；读不到原因（旧运行时）按崩溃处理。
+        bool didCrash = true;
+        wil::com_ptr<ICoreWebView2ProcessFailedEventArgs2> args2;
+        if (SUCCEEDED(args->QueryInterface(IID_PPV_ARGS(&args2)))) {
+          COREWEBVIEW2_PROCESS_FAILED_REASON reason;
+          if (SUCCEEDED(args2->get_Reason(&reason))) {
+            didCrash = reason != COREWEBVIEW2_PROCESS_FAILED_REASON_TERMINATED;
+          }
+        }
+        debugLog("ProcessFailed kind=" + kindName);
+        channelDelegate->onRenderProcessGone(didCrash, kindName);
+        return S_OK;
+      }
+    ).Get(), &processFailedToken_));
+
     failedLog(webView->add_PermissionRequested(Callback<ICoreWebView2PermissionRequestedEventHandler>(
       [this, alive = alive_](ICoreWebView2* sender, ICoreWebView2PermissionRequestedEventArgs* args)
       {
@@ -1836,6 +1877,18 @@ namespace flutter_inappwebview_plugin
     failedLog(webViewController->put_Bounds(bounds));
   }
 
+  bool InAppWebView::setWindowedInputEnabled(bool enabled)
+  {
+    HWND child = nullptr;
+    if (surface_ || !webViewController ||
+      !succeededOrLog(webViewController->get_ParentWindow(&child)) || !child) {
+      return false;
+    }
+    // 禁用的子窗口不参与命中测试，整棵子树（含 WebView2 浏览器进程建的 HWND）一起跳过。
+    ::EnableWindow(child, enabled ? TRUE : FALSE);
+    return true;
+  }
+
   void InAppWebView::setSurfaceSize(size_t width, size_t height,
     float capture_scale_factor, float device_scale_factor)
   {
@@ -2263,6 +2316,7 @@ namespace flutter_inappwebview_plugin
       failedLog(webView->remove_NewWindowRequested(newWindowRequestedToken_));
       failedLog(webView->remove_WindowCloseRequested(windowCloseRequestedToken_));
       failedLog(webView->remove_PermissionRequested(permissionRequestedToken_));
+      failedLog(webView->remove_ProcessFailed(processFailedToken_));
       // DOMContentLoaded 注册在 ICoreWebView2_2 接口上，需重新 QueryInterface 该接口才能 remove。
       wil::com_ptr<ICoreWebView2_2> webView2;
       if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView2)))) {
