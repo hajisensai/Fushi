@@ -1956,6 +1956,21 @@ class BackupService {
         'DELETE FROM book_tags WHERE id NOT IN ('
         'SELECT tag_id FROM tag_assignments)',
       );
+      // v121 私密标记：同一套宿主逻辑外键，同口径收敛（不随包导出别人看不到的
+      // 内容的标记）。
+      await db.customStatement(
+        'DELETE FROM media_privacy_flags WHERE '
+        "(media_kind = 'epub' AND entry_key NOT IN "
+        '(SELECT book_key FROM epub_books)) '
+        "OR (media_kind = 'srt' AND entry_key NOT IN "
+        '(SELECT uid FROM srt_books)) '
+        "OR (media_kind = 'video' AND entry_key NOT IN "
+        '(SELECT book_uid FROM video_books)) '
+        "OR (media_kind = 'collection' AND entry_key NOT IN "
+        '(SELECT CAST(id AS TEXT) FROM media_collections)) '
+        "OR (media_kind = 'game' AND entry_key NOT IN "
+        '(SELECT id FROM galgames))',
+      );
 
       // (3) Category-gated deletion tombstones.
       if (!includeBooks) {

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -108,6 +111,22 @@ Future<void> showCollectionContextDialog({
                 context: context,
                 collection: collection,
                 onChanged: onChanged,
+              ),
+            ),
+          ),
+          // 私密：整个合集（全部成员，书或视频）不上传排行榜、不推 Bangumi。
+          DialogListAction(
+            label: t.media_privacy_action,
+            icon: Icons.lock_outline,
+            onPressed: () => closeThen(
+              () => unawaited(
+                showMediaPrivacyDialog(
+                  context,
+                  db: db,
+                  kind: TagHostKind.collection,
+                  entryKey: collectionTagEntryKey(collection.id),
+                  title: collection.name,
+                ),
               ),
             ),
           ),

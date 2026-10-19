@@ -3521,3 +3521,33 @@ class VideoSubtitleGlossaries extends Table {
   @override
   Set<Column> get primaryKey => <Column>{workKey};
 }
+
+// ── media_privacy_flags（v121：作品级「私密」标记）──────────────────────
+/// 用户手动把一部作品标成私密：不上传排行榜、不推 Bangumi 进度（也不拿它的标题去
+/// Bangumi 搜自动映射）。外部分级（扩展 contentWarning / 刮削 contentRating / 游戏
+/// nsfw）只能模糊封面，本地书 / 本地漫画根本没有分级信号，所以要一个用户自己说了算
+/// 的开关。
+///
+/// 键与 [TagAssignments] 同一套逻辑外键（[mediaKind] = `TagHostKind.dbValue`，
+/// [entryKey]：epub=bookKey / video=bookUid / collection=合集 id 字符串 /
+/// game=Galgames.id），跨端身份换算也复用互联标签同步（标签清单条目上的可选
+/// `privacy` 字段）：只有一台设备是排行榜上传设备，在别的设备上标的私密必须到得了它。
+///
+/// 一行两只时钟（LWW）：[privateAt] = 最近一次设为私密，[clearedAt] = 最近一次取消；
+/// 私密 ⇔ privateAt 非空且（clearedAt 为空或 privateAt > clearedAt），相等取消胜
+/// （与标签墓碑同口径）。取消不删行——删了就分不清「取消过」和「从没标过」，对端
+/// 旧的私密戳会把它复活。宿主删除不级联：同 bookKey 重新导入仍是私密（宁可多藏）。
+@DataClassName('MediaPrivacyFlagRow')
+class MediaPrivacyFlags extends Table {
+  TextColumn get mediaKind => text()();
+  TextColumn get entryKey => text()();
+
+  /// 最近一次设为私密的毫秒戳；NULL = 从没设过。
+  IntColumn get privateAt => integer().nullable()();
+
+  /// 最近一次取消私密的毫秒戳；NULL = 从没取消过。
+  IntColumn get clearedAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
+}

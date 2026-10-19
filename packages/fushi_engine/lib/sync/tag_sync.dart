@@ -24,6 +24,11 @@ import 'package:fushi_engine/sync/sync_manifest_codec.dart';
 ///
 /// 只发布本机**存在**的宿主，只应用能解析到本机宿主的条目：本机没有的书 / 视频 /
 /// 游戏不落孤儿映射，等它到了本机后下一轮自然补上。
+///
+/// 条目上可选的 `privacy`（`{"set": 毫秒, "cleared": 毫秒}`，v121 起）搭载作品级私密
+/// 标记的两只时钟（`media_privacy_flags`），合并逐戳取大。只有一台设备是排行榜上传
+/// 设备，别处标的私密必须到得了它。加字段不升 [TagManifest.currentVersion]：旧版对端
+/// 只读已知字段、把它当没有；缺这个字段 = 没有私密知识，不是「取消私密」。
 class TagManifest implements CanonicalJsonManifest {
   const TagManifest({
     this.version = currentVersion,
@@ -119,6 +124,7 @@ class TagManifestEntry {
     this.aliases = const <String>[],
     this.addedAt = const <String, int>{},
     this.tombstones = const <String, int>{},
+    this.privacy,
   });
 
   factory TagManifestEntry.fromJson(Object? json) {
@@ -139,6 +145,7 @@ class TagManifestEntry {
       ],
       addedAt: _clockMap(map['added']),
       tombstones: _clockMap(map['removed']),
+      privacy: _privacyClock(map['privacy']),
     );
   }
 
@@ -157,6 +164,9 @@ class TagManifestEntry {
   /// 移除墓碑「名 → 移除毫秒戳」。
   final Map<String, int> tombstones;
 
+  /// 作品级私密标记的时钟；null = 本端对它没有私密知识（从没标过 / 旧版对端）。
+  final MediaPrivacyClock? privacy;
+
   Iterable<String> get allKeys => <String>[key, ...aliases];
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -165,7 +175,23 @@ class TagManifestEntry {
     if (aliases.isNotEmpty) 'aliases': aliases,
     'added': _sortedClock(addedAt),
     'removed': _sortedClock(tombstones),
+    if (privacy case final MediaPrivacyClock p)
+      'privacy': <String, int>{
+        if (p.privateAt != null) 'set': p.privateAt!,
+        if (p.clearedAt != null) 'cleared': p.clearedAt!,
+      },
   };
+
+  static int? _stamp(Object? raw) => raw is int && raw >= 0 ? raw : null;
+
+  /// 两只戳都缺 / 都非法时为 null（等同没有这个字段）。
+  static MediaPrivacyClock? _privacyClock(Object? raw) {
+    if (raw is! Map) return null;
+    final int? set = _stamp(raw['set']);
+    final int? cleared = _stamp(raw['cleared']);
+    if (set == null && cleared == null) return null;
+    return (privateAt: set, clearedAt: cleared);
+  }
 
   static Map<String, int> _clockMap(Object? raw) {
     if (raw is! Map) return const <String, int>{};
@@ -203,22 +229,30 @@ Future<TagManifest> loadLocalTagManifest(FushiDatabase db) async {
       await CollectionBookIdentityIndex.load(db);
   final List<TagManifestEntry> entries = <TagManifestEntry>[];
 
-  void addEntries(
+  Future<void> addEntries(
     TagHostKind kind,
     Map<String, TagClockSet> clocks,
     ({String key, List<String> aliases})? Function(String localKey) identify,
-  ) {
-    for (final MapEntry<String, TagClockSet> e in clocks.entries) {
-      if (e.value.addedAt.isEmpty && e.value.tombstones.isEmpty) continue;
-      final ({String key, List<String> aliases})? id = identify(e.key);
+  ) async {
+    final Map<String, MediaPrivacyClock> privacy = await db
+        .allPrivacyClocksForKind(kind);
+    for (final String localKey in <String>{...clocks.keys, ...privacy.keys}) {
+      final TagClockSet? tagClocks = clocks[localKey];
+      final MediaPrivacyClock? privacyClock = privacy[localKey];
+      final bool hasTags =
+          tagClocks != null &&
+          (tagClocks.addedAt.isNotEmpty || tagClocks.tombstones.isNotEmpty);
+      if (!hasTags && privacyClock == null) continue;
+      final ({String key, List<String> aliases})? id = identify(localKey);
       if (id == null) continue;
       entries.add(
         TagManifestEntry(
           kind: kind.dbValue,
           key: id.key,
           aliases: id.aliases,
-          addedAt: e.value.addedAt,
-          tombstones: e.value.tombstones,
+          addedAt: tagClocks?.addedAt ?? const <String, int>{},
+          tombstones: tagClocks?.tombstones ?? const <String, int>{},
+          privacy: privacyClock,
         ),
       );
     }
@@ -227,7 +261,7 @@ Future<TagManifest> loadLocalTagManifest(FushiDatabase db) async {
   final Set<String> bookKeys = <String>{
     for (final EpubBookRow b in await db.getAllEpubBooks()) b.bookKey,
   };
-  addEntries(
+  await addEntries(
     TagHostKind.epub,
     await db.allTagClocksForKind(TagHostKind.epub),
     (String bookKey) => bookKeys.contains(bookKey)
@@ -241,7 +275,7 @@ Future<TagManifest> loadLocalTagManifest(FushiDatabase db) async {
   final Set<String> srtUids = <String>{
     for (final SrtBookRow b in await db.getAllSrtBooks()) b.uid,
   };
-  addEntries(
+  await addEntries(
     TagHostKind.srt,
     await db.allTagClocksForKind(TagHostKind.srt),
     (String uid) =>
@@ -251,7 +285,7 @@ Future<TagManifest> loadLocalTagManifest(FushiDatabase db) async {
   final Set<String> videoUids = <String>{
     for (final VideoBookRow v in await db.allVideoBooks()) v.bookUid,
   };
-  addEntries(
+  await addEntries(
     TagHostKind.video,
     await db.allTagClocksForKind(TagHostKind.video),
     (String uid) =>
@@ -270,7 +304,7 @@ Future<TagManifest> loadLocalTagManifest(FushiDatabase db) async {
     if (!seenCollections.add(wire)) continue;
     collectionWireById[collectionTagEntryKey(c.id)] = wire;
   }
-  addEntries(
+  await addEntries(
     TagHostKind.collection,
     await db.allTagClocksForKind(TagHostKind.collection),
     (String entryKey) => switch (collectionWireById[entryKey]) {
@@ -282,7 +316,7 @@ Future<TagManifest> loadLocalTagManifest(FushiDatabase db) async {
   final Set<String> gameIds = <String>{
     for (final GalgameRow g in await db.getAllGalgames()) g.id,
   };
-  addEntries(
+  await addEntries(
     TagHostKind.game,
     await db.allTagClocksForKind(TagHostKind.game),
     (String gameId) =>
@@ -359,13 +393,18 @@ Future<int> applyTagManifest(FushiDatabase db, TagManifest remote) async {
       localKey = identities.games.resolve(e.allKeys);
     }
     if (kind == null || localKey == null) continue;
-    final bool didChange = await db.mergeRemoteTagClocks(
+    bool didChange = await db.mergeRemoteTagClocks(
       kind,
       localKey,
       remoteAddedAt: e.addedAt,
       remoteTombstones: e.tombstones,
       newTagColors: colors,
     );
+    if (e.privacy case final MediaPrivacyClock p) {
+      if (await db.mergeRemotePrivacyClock(kind, localKey, p)) {
+        didChange = true;
+      }
+    }
     if (didChange) changed++;
   }
   return changed;
@@ -402,6 +441,15 @@ bool tagManifestCovers(TagManifest remote, TagManifest local) {
         return false;
       }
     }
+    if (!_privacyCovers(r.privacy, l.privacy)) return false;
   }
   return true;
+}
+
+/// 远端私密时钟逐戳不比本机旧（本机没有私密知识时恒为 true）。
+bool _privacyCovers(MediaPrivacyClock? remote, MediaPrivacyClock? local) {
+  if (local == null) return true;
+  bool covers(int? r, int? l) => l == null || (r != null && r >= l);
+  return covers(remote?.privateAt, local.privateAt) &&
+      covers(remote?.clearedAt, local.clearedAt);
 }
