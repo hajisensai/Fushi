@@ -97,13 +97,19 @@ List<CtlRoute> buildDictionaryCtlRoutes(DesktopCtlContext context) {
       if (position != null) {
         if (position < 1) throw const CtlFailure.badRequest('position 从 1 起算');
         // 与词典管理页 `_reorderDictionaries` 同语义：同类型分区内移动后整组改 order。
-        await model.updateDictionaryOrder(
-          ctlReorderDictionaries(
-            _dictionariesOfType(model, target.type),
-            target,
-            position,
-          ),
+        // 「汉字」分区还含混合词典的汉字部分（BUG-3567），位置要按该分区数、写入
+        // 走分区专用的 updateKanjiSectionOrder，否则纯 kanji 词典的 order 与混合
+        // 词典的 kanjiOrder 各排各的。
+        final List<Dictionary> reordered = ctlReorderDictionaries(
+          _dictionariesOfType(model, target.type),
+          target,
+          position,
         );
+        if (target.type == DictionaryType.kanji) {
+          await model.updateKanjiSectionOrder(reordered);
+        } else {
+          await model.updateDictionaryOrder(reordered);
+        }
       }
       // `model.dictionaries` 借出的是拷贝、提交成功后才发布新状态：回的必须是
       // 提交后重新取的那本，而不是改之前借出的 [target]。
@@ -925,7 +931,7 @@ PendingMiningAnkiRepository _pendingRepo(BaseAnkiRepository repo) {
 List<Dictionary> _dictionariesOfType(AppModel model, DictionaryType type) =>
     switch (type) {
       DictionaryType.term => model.termDictionaries,
-      DictionaryType.kanji => model.kanjiDictionaries,
+      DictionaryType.kanji => model.kanjiSectionDictionaries,
       DictionaryType.frequency => model.freqDictionaries,
       DictionaryType.pitch => model.pitchDictionaries,
     };

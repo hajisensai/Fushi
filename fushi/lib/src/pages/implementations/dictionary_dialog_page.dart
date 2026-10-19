@@ -889,7 +889,7 @@ class _DictionaryDialogPageState extends BasePageState {
       title: t.dialog_title_dictionary_delete(
         name: dictionary.effectiveDisplayName,
       ),
-      content: t.dialog_content_dictionary_delete,
+      content: _deleteConfirmContent(<Dictionary>[dictionary]),
       confirmLabel: t.dialog_delete,
       run: () => appModel.deleteDictionary(dictionary),
       progressName: dictionary.effectiveDisplayName,
@@ -2567,6 +2567,14 @@ class _DictionaryDialogPageState extends BasePageState {
         }
       });
 
+  /// 删除确认正文。「汉字」分区里的混合词典行只是整本词典的汉字部分，删除却是
+  /// 整本删（术语词条一起没了），确认框必须说清楚并指向只关汉字部分的开关。
+  String _deleteConfirmContent(List<Dictionary> targets) =>
+      targets.any(_isKanjiPart)
+          ? '${t.dialog_content_dictionary_delete}\n\n'
+              '${t.dict_mixed_kanji_part_delete_note}'
+          : t.dialog_content_dictionary_delete;
+
   /// 批量删除：一次确认，逐本走与单本删除同一条 [AppModel.deleteDictionary]
   /// （同一进度页 / 失败提示），删完退出多选。
   Future<void> _batchDelete() {
@@ -2574,7 +2582,7 @@ class _DictionaryDialogPageState extends BasePageState {
     if (targets.isEmpty) return Future<void>.value();
     return _showDictionaryActionConfirmDialog(
       title: t.dict_batch_delete_title(n: targets.length),
-      content: t.dialog_content_dictionary_delete,
+      content: _deleteConfirmContent(targets),
       confirmLabel: t.dialog_delete,
       run: () async {
         for (final Dictionary dictionary in targets) {

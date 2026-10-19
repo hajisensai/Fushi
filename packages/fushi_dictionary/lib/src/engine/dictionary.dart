@@ -73,14 +73,21 @@ const String kDictKanjiOrderKey = 'kanjiOrder';
 /// 用户设置，要从旧记录带过去（与 hiddenLanguages / order 的继承同理）。
 Map<String, String> kanjiPartSettingsOf(Dictionary? previous) {
   if (previous == null) return const <String, String>{};
-  return <String, String>{
-    for (final String key in const <String>[
-      kDictKanjiHiddenKey,
-      kDictKanjiOrderKey,
-    ])
-      if (previous.metadata[key] != null) key: previous.metadata[key]!,
-  };
+  return kanjiPartSettingsIn(previous.metadata);
 }
+
+/// 混合词典汉字部分用户设置的键（[kDictKanjiHiddenKey] / [kDictKanjiOrderKey]）。
+const List<String> kDictKanjiPartSettingKeys = <String>[
+  kDictKanjiHiddenKey,
+  kDictKanjiOrderKey,
+];
+
+/// [metadata] 里混合词典汉字部分的用户设置（只取 [kDictKanjiPartSettingKeys]）。
+Map<String, String> kanjiPartSettingsIn(Map<String, String> metadata) =>
+    <String, String>{
+      for (final String key in kDictKanjiPartSettingKeys)
+        if (metadata[key] != null) key: metadata[key]!,
+    };
 
 /// 「汉字」分区的成员与顺序的唯一推导处：纯 kanji 词典 + 混合词典的汉字部分，按
 /// [Dictionary.kanjiSectionOrder] 稳定排序（同序按 [dictionaries] 里的先后）。
