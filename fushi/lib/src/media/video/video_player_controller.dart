@@ -4795,6 +4795,13 @@ class VideoPlayerController extends ChangeNotifier
     _setSubtitleCuesLoading(loading);
   }
 
+  /// 测试可见：模拟网页播放后端（[isWebBackend]；widget 测试起不了 WebView2）。
+  @visibleForTesting
+  void debugSetWebBackendForTesting(bool web) {
+    _webBackend = web;
+    notifyListeners();
+  }
+
   @visibleForTesting
   void debugSetSubtitleEndHoldHooksForTesting({
     bool Function()? isPlaying,

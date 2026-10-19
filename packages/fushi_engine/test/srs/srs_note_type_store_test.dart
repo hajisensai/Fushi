@@ -163,6 +163,85 @@ void main() {
       );
     });
 
+    test('字段说明：独立键，一台改说明一台改名不冲突；克隆带上；说明没变不写记录；导出 .apkg 带上', () async {
+      final SrsDbStore a = await device('a');
+      final SrsDbStore b = await device('b');
+      final String nt = await a.createStockNoteType(
+        SrsStockNoteType.basic,
+        '问答',
+      );
+      final SrsNoteTypeView v0 = await type(a, nt);
+      final String front = v0.fields[0].id;
+      final String back = v0.fields[1].id;
+      await a.setFieldDescription(nt, back, '  中文释义  ');
+      expect((await type(a, nt)).fieldById(back)!.description, '中文释义');
+      final String key = SrsFieldKeys.fieldDescription(back);
+      expect(
+        ((await type(a, nt)).edits.value(SrsFieldKeys.fieldDef(back))! as Map)
+            .containsKey('description'),
+        isFalse,
+        reason: '说明不写进字段定义',
+      );
+      final String before = (await type(
+        a,
+        nt,
+      )).edits[key]!.live.map((SrsFieldEdit e) => e.id).join();
+      await a.setFieldDescription(nt, back, '中文释义');
+      expect(
+        (await type(
+          a,
+          nt,
+        )).edits[key]!.live.map((SrsFieldEdit e) => e.id).join(),
+        before,
+        reason: '没变不写',
+      );
+      await syncAll(<SrsDbStore>[a, b]);
+      // 离线并发：a 改说明、b 改名 → 合并后两样都在，没有待裁决的冲突。
+      await a.setFieldDescription(nt, back, '中文释义（新）');
+      await b.renameField(nt, back, 'Meaning');
+      await syncAll(<SrsDbStore>[a, b]);
+      for (final SrsDbStore s in <SrsDbStore>[a, b]) {
+        final SrsNoteTypeView v = await type(s, nt);
+        expect(v.fieldById(back)!.name, 'Meaning');
+        expect(v.fieldById(back)!.description, '中文释义（新）');
+        expect(v.edits.conflicted, isEmpty);
+      }
+
+      final String clone = await a.cloneNoteType(nt, '问答 副本');
+      expect(
+        (await type(a, clone)).fields
+            .firstWhere((SrsFieldDef f) => f.name == 'Meaning')
+            .description,
+        '中文释义（新）',
+      );
+
+      await a.createNote(
+        noteTypeId: nt,
+        fieldsById: <String, String>{front: 'Q', back: 'A'},
+      );
+      final SrsAnkiPackage p = SrsAnkiPackage.open(
+        await exportAnkiPackage(store: a),
+        zstd: (Uint8List b) => null,
+      );
+      final SrsAnkiCollection col = await SrsAnkiCollection.open(
+        p.collectionBytes,
+      );
+      try {
+        final SrsAnkiNoteType exported = col.noteTypes.values.firstWhere(
+          (SrsAnkiNoteType x) => x.name == '问答',
+        );
+        expect(
+          exported.fields
+              .firstWhere((SrsAnkiField f) => f.name == 'Meaning')
+              .description,
+          '中文释义（新）',
+          reason: '导出时写进 Anki 的字段说明，再读回来一致',
+        );
+      } finally {
+        await col.close();
+      }
+    });
+
     test('两台设备离线各加一个字段，合并后两个都在（按项合并，铁律 D）', () async {
       final SrsDbStore a = await device('a');
       final SrsDbStore b = await device('b');

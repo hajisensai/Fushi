@@ -181,6 +181,15 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
             SrsFieldKeys.fieldDef(f.id),
             f.toValue(),
           ),
+        // 克隆带过来的字段说明（独立键，见 [SrsFieldKeys.fieldDescription]）。
+        for (final SrsFieldDef f in nt.fields)
+          if (f.description.isNotEmpty)
+            SrsEditSpec(
+              SrsEntityKind.noteType,
+              nt.id,
+              SrsFieldKeys.fieldDescription(f.id),
+              f.description,
+            ),
         for (final SrsTemplateDef tpl in nt.templates)
           SrsEditSpec(
             SrsEntityKind.noteType,
@@ -337,6 +346,28 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
         noteTypeId,
         SrsFieldKeys.fieldDef(fieldId),
         f.copyWith(name: name.trim()).toValue(),
+      ),
+    ]);
+  }
+
+  /// 改字段说明：写独立的说明键（[SrsFieldKeys.fieldDescription]），不动字段定义。
+  /// 说明没变时不写记录；清空写空串（与「从没写过」可区分，导入不会把它复活）。
+  Future<void> setFieldDescription(
+    String noteTypeId,
+    String fieldId,
+    String description,
+  ) async {
+    final SrsNoteTypeView t = await _requireType(noteTypeId);
+    final SrsFieldDef? f = t.fieldById(fieldId);
+    if (f == null) throw ArgumentError.value(fieldId, 'fieldId');
+    final String next = description.trim();
+    if (next == f.description) return;
+    await writeEdits(<SrsEditSpec>[
+      SrsEditSpec(
+        SrsEntityKind.noteType,
+        noteTypeId,
+        SrsFieldKeys.fieldDescription(fieldId),
+        next,
       ),
     ]);
   }

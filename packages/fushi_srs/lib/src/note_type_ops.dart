@@ -224,6 +224,7 @@ SrsNewNoteType srsCloneNoteType({
       name: source.fields[i].name,
       ord: i,
       ankiNum: n,
+      description: source.fields[i].description,
     );
     oldToNew[source.fields[i].id] = f.id;
     fields.add(f);

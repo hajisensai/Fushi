@@ -10,12 +10,14 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_change_note_type_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_info_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_type_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_visual_template.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -272,6 +274,7 @@ void main() {
         page: SrsTemplateEditorPage(
           noteTypeId: nt,
           templateId: v.templates.single.id,
+          initialTab: SrsTemplateEditorTab.front,
         ),
       );
       final Finder face = find.byKey(
@@ -308,6 +311,161 @@ void main() {
         '{{fld:${v.fields[1].id}}}',
         reason: '模板有错误时不写库',
       );
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 模板编辑器可视化页：代码模板 → 按字段生成 → 预览 → 删块 → 保存写库且能读回布局', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      await _db(
+        tester,
+        () => store.createNote(
+          noteTypeId: nt,
+          fieldsById: <String, String>{
+            v.fields[0].id: '猫',
+            v.fields[1].id: 'cat',
+          },
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsTemplateEditorPage(
+          noteTypeId: nt,
+          templateId: v.templates.single.id,
+        ),
+      );
+      // 默认打开可视化页；现有模板是代码写的 → 先给「转成可视化」。
+      expect(
+        find.byKey(const ValueKey<String>('srs-visual-convert')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-visual-generate')),
+      );
+      await _settle(tester);
+      // 模板已有内容 → 确认替换。
+      await tester.tap(find.text(t.srs_visual_generate).last);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-visual-block-b1')),
+        findsOneWidget,
+      );
+      final Finder question = find.byKey(
+        const ValueKey<String>('srs-face-question'),
+      );
+      expect((tester.widget(question) as Text).data, '猫', reason: '正面放词条');
+
+      // 换到背面：重复正面 + 分隔线 + 其余字段（未知字段带字段名小标题）。
+      await tester.tap(find.text(t.srs_note_types_side_back).first);
+      await _settle(tester);
+      final Finder answer = find.byKey(
+        const ValueKey<String>('srs-face-answer'),
+      );
+      expect((tester.widget(answer) as Text).data, contains('cat'));
+      final Finder del = find.byKey(
+        const ValueKey<String>('srs-visual-delete-b3'),
+      );
+      await tester.ensureVisible(del);
+      await tester.tap(del);
+      await _settle(tester);
+      expect((tester.widget(answer) as Text).data, isNot(contains('cat')));
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_template_save')).first,
+      );
+      await _settle(tester);
+      final SrsTemplateDef saved = (await _db(
+        tester,
+        () => store.noteType(nt),
+      ))!.templates.single;
+      expect(saved.front, startsWith(kSrsVisualMarkerPrefix));
+      expect(saved.front, contains('{{fld:${v.fields[0].id}}}'));
+      expect(saved.back, isNot(contains('fld:${v.fields[1].id}')));
+      final List<SrsVisualBlock> back = srsParseVisualMarker(saved.back)!;
+      expect(back.map((SrsVisualBlock b) => b.kind), <SrsVisualBlockKind>[
+        SrsVisualBlockKind.frontSide,
+        SrsVisualBlockKind.divider,
+      ]);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 字段说明：内置字段显示人话名字与内置说明；自建字段写说明保存写库、编辑页字段行显示', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsFieldInfoPage(
+          noteTypeId: store.lapisNoteTypeId,
+          fieldId: srsLapisFieldId(store.profileUid, 'ExpressionReading'),
+        ),
+      );
+      expect(find.text(t.srs_field_info_expression_reading_name), findsWidgets);
+      expect(
+        find.text(t.srs_field_info_raw_name(name: 'ExpressionReading')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('srs-field-info-builtin-description'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(t.srs_field_info_mining(slot: t.handlebar_reading)),
+        findsOneWidget,
+        reason: '制卡时自动填入读音',
+      );
+      await _unmount(tester);
+
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsFieldInfoPage(noteTypeId: nt, fieldId: v.fields[1].id),
+      );
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('srs-field-info-description-input'),
+          ),
+          matching: find.byType(EditableText),
+        ),
+        '中文释义',
+      );
+      await _settle(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-field-info-save')).first,
+      );
+      await _settle(tester);
+      expect(
+        (await _db(tester, () => store.noteType(nt)))!.fields[1].description,
+        '中文释义',
+      );
+      await _unmount(tester);
+
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsNoteTypeEditorPage(noteTypeId: nt),
+      );
+      expect(find.textContaining('中文释义'), findsOneWidget);
       await _unmount(tester);
     });
 
