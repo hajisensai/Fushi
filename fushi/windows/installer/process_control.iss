@@ -66,6 +66,8 @@ function FushiCloseHandle(hObject: THandle): Boolean;
   external 'CloseHandle@kernel32.dll stdcall';
 function FushiGetCurrentProcessId(): Cardinal;
   external 'GetCurrentProcessId@kernel32.dll stdcall';
+function FushiProcessIdToSessionId(dwProcessId: Cardinal; var pSessionId: Cardinal): Boolean;
+  external 'ProcessIdToSessionId@kernel32.dll stdcall';
 function FushiEnumWindows(lpEnumFunc: Longword; lParam: Longint): Boolean;
   external 'EnumWindows@user32.dll stdcall';
 function FushiGetWindowThreadProcessId(hWnd: HWND; var lpdwProcessId: Cardinal): Cardinal;
@@ -194,6 +196,26 @@ begin
   end;
 end;
 
+{ BUG-3567：只碰**本安装器所在登录会话**里的进程。应用内更新在安装目录不可写时会经
+  UAC 提权跑本安装器；管理员令牌能 OpenProcess(TERMINATE) 别的用户（快速切换用户 /
+  远程桌面的其它会话）的进程，按镜像名 / 镜像路径扫全机就会把他们正开着的 Fushi 连同
+  未落盘的数据一起结束。普通权限下这些进程本来就打不开，所以过滤对非提权安装没有行为
+  变化。查不到会话号的进程一律当作别的会话、不碰。 }
+function FushiInOwnSession(const Pid: Cardinal): Boolean;
+var
+  OwnSession: Cardinal;
+  Session: Cardinal;
+begin
+  Result := False;
+  OwnSession := 0;
+  Session := 0;
+  if not FushiProcessIdToSessionId(FushiGetCurrentProcessId(), OwnSession) then
+    Exit;
+  if not FushiProcessIdToSessionId(Pid, Session) then
+    Exit;
+  Result := Session = OwnSession;
+end;
+
 function FushiIsUpdateLauncherImage(const LowerName: String): Boolean;
 begin
   Result := Pos(FushiUpdateLauncherImagePrefix, LowerName) = 1;
@@ -210,7 +232,8 @@ begin
   SetArrayLength(Targets, 0);
   FushiSnapshotProcesses(Pids, ParentPids, Names);
   for I := 0 to GetArrayLength(Pids) - 1 do
-    if (Names[I] = 'fushi.exe') or (Names[I] = 'hibiki.exe') then
+    if ((Names[I] = 'fushi.exe') or (Names[I] = 'hibiki.exe')) and
+       FushiInOwnSession(Pids[I]) then
       FushiAppendPid(Targets, Pids[I]);
 end;
 
@@ -258,7 +281,8 @@ begin
   FushiSnapshotProcesses(Pids, ParentPids, Names);
   SetArrayLength(Targets, 0);
   for I := 0 to GetArrayLength(Pids) - 1 do
-    if (Names[I] = 'fushi.exe') or (Names[I] = 'hibiki.exe') then
+    if ((Names[I] = 'fushi.exe') or (Names[I] = 'hibiki.exe')) and
+       FushiInOwnSession(Pids[I]) then
       FushiAppendPid(Targets, Pids[I]);
   if GetArrayLength(Targets) = 0 then
     Exit;
@@ -303,6 +327,8 @@ begin
     if (Pids[I] = 0) or (Pids[I] = OwnPid) then
       Continue;
     if FushiIsUpdateLauncherImage(Names[I]) then
+      Continue;
+    if not FushiInOwnSession(Pids[I]) then
       Continue;
     Path := FushiProcessImagePath(Pids[I]);
     if Path = '' then
