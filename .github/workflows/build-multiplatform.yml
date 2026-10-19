@@ -161,7 +161,7 @@ jobs:
           windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tool/engine_overlay\.ps1$|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/(setup-fushi-anki-sync|flutter-engine-overlay)/)'
           macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/(fushi_anki_sync|fushi_torrent)/|packages/fushi_torrent/|\.github/scripts/verify_torrent_abi\.sh$|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
           ios_only='^(fushi/(ios|apple)/|native/fushi_ios_umbrella/|packages/[^/]+/(ios|darwin)/|third_party/([^/]+/(ios|darwin)/|[^/]*ios[^/]*/))'
-          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p|fushi_srs|fushi_compute)/|native/(fushi_torrent|fushi_p2p|fushi_fsrs|fushi_compute|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$)'
+          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p|fushi_srs|fushi_compute)/|native/(fushi_torrent|fushi_p2p|fushi_fsrs|fushi_compute|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$)'
 
           # route <output> <正则变量名...>：清单里任一路径命中这些正则之一即开。
           route() {
@@ -412,6 +412,14 @@ jobs:
         with:
           flutter-version: '3.47.6'
           cache: true
+      # 下面「Run fushidicts Dart tests」一步在 packages/fushi_dictionary 跑 flutter test（该包
+      # 声明 flutter 依赖，dart test 跑不了），flutter test 会跑 native-assets 构建钩子。今天
+      # fushi_dictionary 的依赖闭包里没有 pdfium_dart、钩子不下载 PDFium，但它与 app 同一个
+      # workspace 解析，闭包一变就会在全新 runner 上直连 GitHub 下载；与 server-gate.yml 同口径
+      # 先挂缓存（守卫 fushi/test/build/pdfium_hook_cache_guard_test.dart）。
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: test
       # 服务端是 pub workspace 成员；解析依赖仍要 Flutter SDK（fushi_anki / fushi_dictionary /
       # fushi_platform 尚声明 flutter），与 server-gate.yml 同一个入口解析整个 workspace。
       - name: Flutter pub get
@@ -738,6 +746,26 @@ jobs:
           rm -rf "$share/transforms"
           cp -a fushi/assets/transforms "$share/transforms"
           test -f "$share/transforms/manifest.json"
+      # 词典引擎的真原生 Dart 测试：后台分词借用句柄 / 重载与在飞分词并发 / 映射释放作用域
+      # （packages/fushi_dictionary，HBK-AUDIT-009）与服务端词典宿主的端到端查词
+      # （packages/fushi_server）。两组在没有 FUSHI_DICTS_LIB 时整组 skip、退出码 0——别的
+      # job 全都没有这份库，所以只有这里拿刚编好、随包的那一份真跑它们。skip 一律当失败：
+      # 库路径错了或加载不了，读成绿就等于没测。
+      - name: Run fushidicts Dart tests against the bundled .so (Linux)
+        shell: bash
+        env:
+          FUSHI_DICTS_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so
+          FUSHI_COMPUTE_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushi_compute.so
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_DICTS_LIB" || { echo "::error::.so not found at $FUSHI_DICTS_LIB"; exit 1; }
+          log="$RUNNER_TEMP/fushidicts_dart_tests.log"
+          (cd packages/fushi_dictionary && flutter test test/background_tokenize_native_test.dart --no-pub --reporter expanded) 2>&1 | tee "$log"
+          (cd packages/fushi_server && dart test test/dictionary_host_test.dart --reporter expanded) 2>&1 | tee -a "$log"
+          if grep -q 'Skip:' "$log"; then
+            echo "::error::fushidicts Dart tests were skipped: $FUSHI_DICTS_LIB did not load"
+            exit 1
+          fi
       - name: Smoke fushi_server with bundled native libs (Linux)
         shell: bash
         run: |

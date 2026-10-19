@@ -1,9 +1,13 @@
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <condition_variable>
+#include <mutex>
+#include <shared_mutex>  // std::shared_lock
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -432,13 +436,119 @@ int32_t fushidicts_probe_dict_content(const char* dir) {
 
 // ── query handle ────────────────────────────────────────────────────
 
+// 当前存活（尚未真正 delete）的句柄数；只给测试观测「退役后最后一次 release 才销毁、
+// 且只销毁一次」用（fushidicts_live_handle_count）。
+static std::atomic<int32_t> g_live_handles{0};
+
+// ── 句柄生命周期：引用计数 + 退役（HBK-AUDIT-009） ──────────────────────
+//
+// 句柄以前只有「宿主（Dart 主 isolate 的 FushiDicts 实例）独占、destroy 直接 delete」
+// 一种用法。后台 isolate 要拿同一个句柄的地址去分词时，这就成了释放后使用：词典重载
+// （_applyTyped / loadPendingAsync / releaseAllMappings）会在后台调用还在跑时把旧句柄
+// delete 掉，连同它的文件映射。
+//
+// 现在：
+//   * create 出来的句柄带 1 个引用（宿主的那一个）。
+//   * fushidicts_retain：借用方在**自己仍持有一个引用**（通常就是宿主实例还没
+//     destroy）时加一个引用；句柄已退役时拒绝（返回 0），借用方不得使用它。
+//   * fushidicts_release：还一个引用；最后一个引用归还时才真正 delete（解除映射）。
+//   * fushidicts_destroy = 退役：标记 retired 并还掉宿主的那个引用。在飞的借用照常
+//     跑完，最后一个 release 时销毁。借用期间重复 destroy 不会重复还引用；没有借用时
+//     第一次 destroy 就已销毁，宿主不得再碰这个地址（Dart 侧 dispose 后把句柄置空）。
+//
+// 读写锁 rw：查询类导出（query / lookup / tokenize / match_length …）取共享锁，彼此
+// 可以并发（查询路径只读，唯一的可变状态 match_cache 自带互斥）；改状态的
+// add_*_dict / load_transforms 取独占锁，不会与任何在飞查询交错（以前对此没有任何
+// 保证，add 时扩容 std::vector<Dictionary> 会让并发的遍历读到已释放的元素）。
+// 锁只在导出层取一次，导出之间不互相调用，不存在重入（这是硬前提：写者优先的锁下，
+// 同一线程重入共享锁会在有写者排队时自锁）。
+//
+// rw 不用 std::shared_mutex：libstdc++ 的实现是默认属性的 pthread_rwlock_t，glibc 默认
+// PTHREAD_RWLOCK_PREFER_READER_NP——只要还有读者持锁，新读者照样进，排队的写者一直等。
+// ≥2 个线程连续分词时读区间首尾相接，add_*_dict 永远拿不到独占锁（Linux GCC 下
+// handle_lifecycle_concurrency_test 场景 3 挂死在这里；libc++ / MSVC 的实现恰好不饿写者，
+// 所以只在 libstdc++ 平台——Linux 桌面 / 无头服务端——暴露）。改用下面这把写者优先锁：
+// 写者一排队新读者就等，在飞读者跑完后写者必然拿到锁；语义不再依赖各平台标准库的实现细节。
+//
+// 匿名命名空间（内部链接）：fushidicts_jni.cpp 有一个布局不同的同名结构体，两者的
+// 隐式成员函数若都以外部链接的弱符号导出，同进程里的两个 .so 可能被动态链接器解析到
+// 同一份实现上（ODR）。
+namespace {
+// 写者优先的读写锁（只实现 std::shared_lock / std::unique_lock 用到的 SharedMutex 子集）。
+// 写者只在加词典 / 变形表时出现，频率远低于查询，「写者连续排队饿读者」不是现实风险；
+// 反过来读者饿写者是现实的（见上）。
+class WriterPreferringSharedMutex {
+ public:
+  void lock_shared() {
+    std::unique_lock<std::mutex> guard(mutex_);
+    readers_cv_.wait(guard, [this]() { return !writer_active_ && waiting_writers_ == 0; });
+    ++active_readers_;
+  }
+
+  void unlock_shared() {
+    bool wake_writer = false;
+    {
+      std::lock_guard<std::mutex> guard(mutex_);
+      wake_writer = --active_readers_ == 0 && waiting_writers_ > 0;
+    }
+    if (wake_writer) writer_cv_.notify_one();
+  }
+
+  void lock() {
+    std::unique_lock<std::mutex> guard(mutex_);
+    ++waiting_writers_;
+    writer_cv_.wait(guard, [this]() { return !writer_active_ && active_readers_ == 0; });
+    --waiting_writers_;
+    writer_active_ = true;
+  }
+
+  void unlock() {
+    bool writers_waiting = false;
+    {
+      std::lock_guard<std::mutex> guard(mutex_);
+      writer_active_ = false;
+      writers_waiting = waiting_writers_ > 0;
+    }
+    // 有写者排队就交给下一个写者（读者的谓词仍被 waiting_writers_ 挡着）；否则放行全部读者。
+    if (writers_waiting) {
+      writer_cv_.notify_one();
+    } else {
+      readers_cv_.notify_all();
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  std::condition_variable readers_cv_;
+  std::condition_variable writer_cv_;
+  int32_t active_readers_ = 0;
+  int32_t waiting_writers_ = 0;
+  bool writer_active_ = false;
+};
+
 struct FushidictsHandle {
+  FushidictsHandle() { g_live_handles.fetch_add(1, std::memory_order_relaxed); }
+  ~FushidictsHandle() { g_live_handles.fetch_sub(1, std::memory_order_relaxed); }
+  FushidictsHandle(const FushidictsHandle&) = delete;
+  FushidictsHandle& operator=(const FushidictsHandle&) = delete;
+
   DictionaryQuery query;
   Deinflector deinflector;
   // 分词的匹配长度缓存。结果依赖词典集合与变形表，所以 add_*_dict /
   // load_transforms 都要清空它（见 tokenize.hpp）。
   MatchLengthCache match_cache;
+
+  WriterPreferringSharedMutex rw;
+  std::atomic<int32_t> refs{1};
+  std::atomic<bool> retired{false};
 };
+}  // namespace
+
+// 还一个引用；归零时销毁。acq_rel：最后一个归还者必须看见其它借用方的全部写入
+// （match_cache 等）之后才 delete。
+static void handle_release(FushidictsHandle* h) noexcept {
+  if (h->refs.fetch_sub(1, std::memory_order_acq_rel) == 1) delete h;
+}
 
 FUSHI_EXPORT
 void* fushidicts_create() {
@@ -448,8 +558,43 @@ void* fushidicts_create() {
 
 FUSHI_EXPORT
 void fushidicts_destroy(void* handle) {
-  ffi_guard_void("fushidicts_destroy",
-                 [&]() { delete static_cast<FushidictsHandle*>(handle); });
+  ffi_guard_void("fushidicts_destroy", [&]() {
+    if (!handle) return;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    // 退役只发生一次：借用期间的第二次 destroy 不再还宿主的引用（否则会把借用方的
+    // 引用还掉）。
+    if (h->retired.exchange(true, std::memory_order_acq_rel)) return;
+    handle_release(h);
+  });
+}
+
+// 借用一个引用。返回 1 = 借到，调用方用完必须 fushidicts_release；0 = 句柄已退役
+// （或 handle 为空），不得使用。前提：调用方此刻自己仍持有一个引用——对一个可能已经
+// 被最后一个 release 销毁的地址调 retain 本身就是释放后使用，这里查不出来。
+FUSHI_EXPORT
+int32_t fushidicts_retain(void* handle) {
+  return ffi_guard("fushidicts_retain", [&]() -> int32_t {
+    if (!handle) return 0;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    if (h->retired.load(std::memory_order_acquire)) return 0;
+    h->refs.fetch_add(1, std::memory_order_relaxed);
+    return 1;
+  });
+}
+
+FUSHI_EXPORT
+void fushidicts_release(void* handle) {
+  ffi_guard_void("fushidicts_release", [&]() {
+    if (!handle) return;
+    handle_release(static_cast<FushidictsHandle*>(handle));
+  });
+}
+
+FUSHI_EXPORT
+int32_t fushidicts_live_handle_count() {
+  return ffi_guard("fushidicts_live_handle_count", [&]() -> int32_t {
+    return g_live_handles.load(std::memory_order_relaxed);
+  });
 }
 
 // 四个 add_*_dict 是本轮崩溃的第一现场：一次性导入很多词典后，启动要连着走这里
@@ -460,6 +605,7 @@ FUSHI_EXPORT
 void fushidicts_add_term_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_term_dict", [&]() {
     auto* h = static_cast<FushidictsHandle*>(handle);
+    std::unique_lock lock(h->rw);
     h->query.add_term_dict(path);
     h->match_cache.clear();
   });
@@ -469,6 +615,7 @@ FUSHI_EXPORT
 void fushidicts_add_freq_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_freq_dict", [&]() {
     auto* h = static_cast<FushidictsHandle*>(handle);
+    std::unique_lock lock(h->rw);
     h->query.add_freq_dict(path);
     h->match_cache.clear();
   });
@@ -478,6 +625,7 @@ FUSHI_EXPORT
 void fushidicts_add_pitch_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_pitch_dict", [&]() {
     auto* h = static_cast<FushidictsHandle*>(handle);
+    std::unique_lock lock(h->rw);
     h->query.add_pitch_dict(path);
     h->match_cache.clear();
   });
@@ -487,6 +635,7 @@ FUSHI_EXPORT
 void fushidicts_add_kanji_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_kanji_dict", [&]() {
     auto* h = static_cast<FushidictsHandle*>(handle);
+    std::unique_lock lock(h->rw);
     h->query.add_kanji_dict(path);
     h->match_cache.clear();
   });
@@ -496,6 +645,7 @@ FUSHI_EXPORT
 void fushidicts_load_transforms(void* handle, const char* json) {
   ffi_guard_void("fushidicts_load_transforms", [&]() {
     auto* h = static_cast<FushidictsHandle*>(handle);
+    std::unique_lock lock(h->rw);
     h->deinflector.load_transforms_json(json);
     h->match_cache.clear();
   });
@@ -507,7 +657,9 @@ FUSHI_EXPORT
 FfiQueryResult fushidicts_query(void* handle, const char* expression) {
   return ffi_guard("fushidicts_query", [&]() -> FfiQueryResult {
     FfiQueryResult r{};
-    auto& q = static_cast<FushidictsHandle*>(handle)->query;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
+    auto& q = h->query;
     auto terms = q.query(expression);
     r.count = static_cast<int32_t>(terms.size());
     r.terms = alloc_array<FfiTermResult>(r.count);
@@ -535,7 +687,9 @@ FUSHI_EXPORT
 FfiKanjiResults fushidicts_query_kanji(void* handle, const char* character) {
   return ffi_guard("fushidicts_query_kanji", [&]() -> FfiKanjiResults {
     FfiKanjiResults r{};
-    auto& q = static_cast<FushidictsHandle*>(handle)->query;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
+    auto& q = h->query;
     auto kanji = q.query_kanji(character);
     r.count = static_cast<int32_t>(kanji.size());
     r.results = alloc_array<FfiKanjiResult>(r.count);
@@ -629,6 +783,7 @@ FUSHI_EXPORT
 FfiLookupResults fushidicts_lookup(void* handle, const char* text, int32_t max_results, int32_t scan_length) {
   return ffi_guard("fushidicts_lookup", [&]() -> FfiLookupResults {
     auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
     Lookup lookup(h->query, h->deinflector);
     auto results = lookup.lookup(text, max_results, static_cast<size_t>(scan_length));
     return marshal_lookup_results(results);
@@ -645,6 +800,7 @@ FfiLookupResults fushidicts_lookup_with_options(void* handle, const char* text, 
                                                 const char* primary_reading) {
   return ffi_guard("fushidicts_lookup_with_options", [&]() -> FfiLookupResults {
     auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
     Lookup lookup(h->query, h->deinflector);
     LookupOptions options;
     if (freq_dict && freq_dict[0] != '\0') {
@@ -688,7 +844,9 @@ FUSHI_EXPORT
 FfiDictStyles fushidicts_get_styles(void* handle) {
   return ffi_guard("fushidicts_get_styles", [&]() -> FfiDictStyles {
     FfiDictStyles r{};
-    auto& q = static_cast<FushidictsHandle*>(handle)->query;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
+    auto& q = h->query;
     auto styles = q.get_styles();
     r.count = static_cast<int32_t>(styles.size());
     r.items = alloc_array<FfiDictStyle>(r.count);
@@ -723,7 +881,9 @@ FUSHI_EXPORT
 FfiMediaFile fushidicts_get_media(void* handle, const char* dict_name, const char* media_path) {
   return ffi_guard("fushidicts_get_media", [&]() -> FfiMediaFile {
     FfiMediaFile r{};
-    auto& q = static_cast<FushidictsHandle*>(handle)->query;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
+    auto& q = h->query;
     auto data = q.get_media_file(dict_name, media_path);
     // size 与 data 同生共死：分配失败时 alloc_array 把 size 归零并返回 nullptr，
     // 于是「size>0 但 data==nullptr」这个状态压根构造不出来（Dart 侧对它另有一条
@@ -753,6 +913,7 @@ char* fushidicts_lookup_popup_json(void* handle, const char* text,
                                    int32_t max_terms) {
   return ffi_guard("fushidicts_lookup_popup_json", [&]() -> char* {
     auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
     Lookup lookup(h->query, h->deinflector);
     auto results = lookup.lookup(text, max_results,
                                  static_cast<size_t>(scan_length));
@@ -792,6 +953,7 @@ FfiTokenizeResult fushidicts_tokenize(void* handle, const char* text, int32_t te
     FfiTokenizeResult r{};
     if (!text || text_bytes < 0) return r;
     auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
     Lookup lookup(h->query, h->deinflector);
     // 显式长度构造：内嵌 NUL 是正文的一部分，不是终止符。
     const std::string text_utf8(text, static_cast<size_t>(text_bytes));
@@ -842,6 +1004,7 @@ int32_t fushidicts_match_length(void* handle, const char* text, int32_t scan_len
   return ffi_guard("fushidicts_match_length", [&]() -> int32_t {
     if (!text) return 0;
     auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
     Lookup lookup(h->query, h->deinflector);
     return match_length_utf16(lookup, text, static_cast<size_t>(scan_length), &h->match_cache);
   });

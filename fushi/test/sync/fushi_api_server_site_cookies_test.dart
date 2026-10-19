@@ -30,9 +30,11 @@ class _FakeLookup implements FushiRemoteLookupService {
   }) async => null;
 }
 
-List<TokenizedSegment> _noopTokenize(String text) => <TokenizedSegment>[
-  (text: text, reading: ''),
-];
+Future<List<List<TokenizedSegment>>> _noopTokenize(List<String> texts) async =>
+    <List<TokenizedSegment>>[
+      for (final String text in texts)
+        <TokenizedSegment>[(text: text, reading: '')],
+    ];
 
 Future<HttpClientResponse> _post(int port, String path, Object body) async {
   final HttpClient c = HttpClient();

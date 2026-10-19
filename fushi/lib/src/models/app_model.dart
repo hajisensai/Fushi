@@ -9375,7 +9375,7 @@ class AppModel with ChangeNotifier {
       fontApi: BrowserExtensionFontCatalog(this),
       // 复习（SRS）扩展端点：模块开着时 SrsAppHost.current 非 null；关着时 404。
       srsApiProvider: () => SrsAppHost.current,
-      tokenizer: JapaneseLanguage.instance.textToWordsWithReadings,
+      tokenizer: JapaneseLanguage.instance.textsToWordsWithReadingsInBackground,
     )..ankiConnectEndpoint = _srsAnkiConnectEndpoint;
   }
 
