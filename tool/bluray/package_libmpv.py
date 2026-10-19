@@ -12,6 +12,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import sys
 import subprocess
 from namespace_runtime import module_references, namespace_runtime
 
@@ -78,6 +79,9 @@ def unified_ffmpeg_provenance(closure, ffmpeg_prefix, ffmpeg_source, output):
     for name in ("COPYING.GPLv3", "COPYING.LGPLv3", "LICENSE.md"):
         if (ffmpeg_source / name).is_file():
             shutil.copy2(ffmpeg_source / name, license_dir / name)
+    # GPL corresponding-source notice (same text the mobile/macOS builds ship).
+    notice = subprocess.check_output([sys.executable, str(recipe_dir / "source_notice.py")], text=True)
+    (license_dir / "SOURCE.txt").write_bytes(notice.encode("utf-8"))
     return {
         "name": "fushi-unified-ffmpeg",
         "version": recipe["FFMPEG_VERSION"],

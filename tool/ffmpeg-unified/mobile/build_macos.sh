@@ -50,6 +50,13 @@ for prog in ffmpeg ffprobe; do
   codesign --force --sign - "${layout}/MacOS/${prog}"
 done
 for fw in "${layout}"/Frameworks/*.framework; do
+  # GPL corresponding-source notice (prepare_kit.sh wrote it from
+  # source_notice.py); the kit only puts it into ffmpegkit.framework, which the
+  # macOS layout does not ship.
+  res="${fw}/Versions/A/Resources"
+  [ -d "${res}" ] || res="${fw}/Resources"
+  mkdir -p "${res}"
+  cp "${KIT}/tools/source/SOURCE" "${res}/SOURCE"
   codesign --force --sign - "${fw}"
 done
 
@@ -58,6 +65,14 @@ python3 "${HERE}/../verify_ffmpeg_capabilities.py" \
   --ffmpeg "${layout}/MacOS/ffmpeg" --ffprobe "${layout}/MacOS/ffprobe"
 FFMPEG="${layout}/MacOS/ffmpeg" FFPROBE="${layout}/MacOS/ffprobe" \
   bash "${HERE}/../smoke-test.sh"
+# Public HTTPS with FFmpeg's default verification: must open through the macOS
+# system trust store (patch 0004) and must reject bad certificates through that
+# same verifier. OpenSSL's own default CA path points into this build machine,
+# so without patch 0004 the trusted case fails on every user's Mac.
+https_url="${FUSHI_HTTPS_SMOKE_URL:-https://raw.githubusercontent.com/${GITHUB_REPOSITORY:-hajisensai/Fushi}/${GITHUB_SHA:-develop}/tool/bluray/tests/dovi-p5.mkv}"
+bash "${HERE}/../https_trust_smoke.sh" "${layout}/MacOS/ffmpeg" "${https_url}" \
+  'System trust rejected the certificate' \
+  https://self-signed.badssl.com/ https://expired.badssl.com/ https://wrong.host.badssl.com/
 
 tar -C "${layout}" -czf "${OUT}/ffmpeg-unified-macos.tar.gz" Frameworks MacOS
 (cd "${bundle}" && zip -qry "${OUT}/ffmpeg-kit-next-macos-xcframeworks.zip" ./lib*.xcframework)

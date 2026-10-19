@@ -6,11 +6,22 @@
 
 The mobile binaries cannot run on the CI host, so this checks what the guard
 tests also pin: ABI/slice set, the embedded FFmpeg configure line, the version,
-and that every Fushi patch is present in the shipped code.
+every Fushi patch present in the shipped code, and the capability floor of
+../capabilities.json (the same list verify_ffmpeg_capabilities.py checks by
+running the desktop programs).
+
+Capability evidence: every component name in capabilities.json must occur as a
+NUL-delimited C string (b"\0name\0") in the library that registers it. The
+AVCodec / AVOutputFormat / AVInputFormat / AVFilter / URLProtocol / bitstream
+filter structs keep their short `name` even with --enable-small (only long
+names are stripped), and a component that is not compiled in leaves no such
+string (checked: libx265, libaom-av1, frei0r, zscale ... are absent from these
+builds while every capability name is present).
 """
 from __future__ import annotations
 
 import io
+import json
 import pathlib
 import re
 import sys
@@ -36,6 +47,31 @@ PATCH_MARKERS = (
 ANDROID_ONLY_MARKERS = (
     ("libavformat", b"Android system CA certificates", "patch 0001 Android CA loader"),
 )
+# Patch 0004: on Apple the OpenSSL backend verifies peers with the system trust
+# store (Security.framework); OpenSSL's own default CA path is the CI machine's.
+APPLE_ONLY_MARKERS = (
+    ("libavformat", b"System trust rejected the certificate", "patch 0004 Apple system trust"),
+    ("libavformat", b"/System/Library/Frameworks/Security.framework/Security",
+     "patch 0004: libavformat links Security.framework"),
+)
+# capabilities.json key -> library that registers that component class.
+CAPABILITY_LIBS = {
+    "encoders": "libavcodec", "decoders": "libavcodec", "bsfs": "libavcodec",
+    "muxers": "libavformat", "demuxers": "libavformat", "protocols": "libavformat",
+    "filters": "libavfilter",
+}
+
+
+def capabilities() -> dict:
+    return json.loads((HERE.parent / "capabilities.json").read_text(encoding="utf-8"))
+
+
+def check_capabilities(label: str, blobs: dict[str, bytes], failures: list[str]) -> None:
+    caps = capabilities()
+    for key, lib in CAPABILITY_LIBS.items():
+        for name in caps.get(key, []):
+            if b"\0" + name.encode() + b"\0" not in blobs[lib]:
+                failures.append(f"{label}: capability floor: {key[:-1]} {name!r} not in {lib}")
 
 
 def recipe_version() -> str:
@@ -70,10 +106,12 @@ def check_lib_blobs(platform: str, label: str, blobs: dict[str, bytes], failures
     version = recipe_version().encode()
     if version not in blobs["libavutil"] and version not in blobs["libavcodec"]:
         failures.append(f"{label}: FFmpeg version {recipe_version()} not found in libavutil/libavcodec")
-    markers = PATCH_MARKERS + (ANDROID_ONLY_MARKERS if platform == "android" else ())
+    markers = PATCH_MARKERS + (ANDROID_ONLY_MARKERS if platform == "android"
+                               else APPLE_ONLY_MARKERS)
     for lib, marker, meaning in markers:
         if marker not in blobs[lib]:
             failures.append(f"{label}: {meaning} missing from {lib}")
+    check_capabilities(label, blobs, failures)
 
 
 def verify_android(out: pathlib.Path) -> list[str]:

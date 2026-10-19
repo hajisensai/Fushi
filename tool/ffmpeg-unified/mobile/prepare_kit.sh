@@ -27,12 +27,35 @@ fi
 git -C "${KIT}" -c user.name=fushi -c user.email=fushi@localhost \
   am --quiet "${ROOT}"/patches/ffmpeg-kit-next/*.patch
 
+# GPL corresponding-source notice: every platform script copies
+# tools/source/SOURCE into the build (AAR res/raw/source.txt, ffmpegkit.framework
+# SOURCE). The stock text only points at the upstream wiki, which lacks Fushi's
+# patches; replace it with one naming the exact recipe commit.
+python3 "${ROOT}/source_notice.py" > "${KIT}/tools/source/SOURCE"
+grep -q 'tool/ffmpeg-unified' "${KIT}/tools/source/SOURCE" ||
+  { echo "prepare_kit: source notice not written" >&2; exit 4; }
+
 mkdir -p "${KIT}/src"
 bash "${ROOT}/prepare_ffmpeg_src.sh" "${KIT}/src/ffmpeg"
 
 for f in android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpegkit.c apple/src/FFmpegKitConfig.m; do
   grep -q 'av_log_fushi_set_primary_callback' "${KIT}/${f}" ||
     { echo "PATCH MISSING: primary log callback in ${f}" >&2; exit 4; }
+done
+# Kit patch 0001 hands every log line of a thread with globalSessionId == 0 to
+# libmpv. That is only correct because FFmpegKitNext copies the session id into
+# each fftools scheduler worker (demux / decode / filtergraph / encode / mux
+# threads, task_start() -> saveFFmpegContext()/loadFFmpegContext()); without
+# that, a session's filter output (astats, loudnorm, ametadata) would be routed
+# to libmpv instead of the session. Fail the build if upstream drops it.
+for f in android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpeg_context.c apple/src/ffmpeg_context.c; do
+  grep -q 'context->globalSessionId = globalSessionId' "${KIT}/${f}" &&
+    grep -q 'globalSessionId = context->globalSessionId' "${KIT}/${f}" ||
+    { echo "UPSTREAM CHANGED: ${f} no longer propagates globalSessionId to scheduler threads" >&2; exit 4; }
+done
+for f in android/ffmpeg-kit-next-android-lib/src/main/cpp/fftools/ffmpeg_sched.c apple/src/fftools/ffmpeg_sched.c; do
+  grep -q 'saveFFmpegContext(task)' "${KIT}/${f}" ||
+    { echo "UPSTREAM CHANGED: ${f} spawns scheduler threads without saveFFmpegContext" >&2; exit 4; }
 done
 grep -q 'FUSHI_FFMPEG_PROGRAMS' "${KIT}/scripts/apple/ffmpeg.sh" ||
   { echo "PATCH MISSING: macOS ffmpeg/ffprobe programs" >&2; exit 4; }

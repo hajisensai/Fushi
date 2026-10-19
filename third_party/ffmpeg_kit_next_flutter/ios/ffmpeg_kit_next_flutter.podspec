@@ -41,7 +41,9 @@ Pod::Spec.new do |s|
     'ffmpeg_kit_next_flutter/Frameworks/libswscale.xcframework',
   ]
   # System frameworks / libraries FFmpeg links (VideoToolbox decode,
-  # AudioToolbox, zlib, bzip2, iconv).
-  s.frameworks = 'Foundation', 'CoreFoundation', 'CoreMedia', 'CoreVideo', 'AudioToolbox', 'VideoToolbox'
+  # AudioToolbox, zlib, bzip2, iconv). Security: libavformat verifies TLS peers
+  # with the system trust store (SecTrust; patches/ffmpeg/0004), because
+  # OpenSSL's own default CA path points into the CI build machine.
+  s.frameworks = 'Foundation', 'CoreFoundation', 'CoreMedia', 'CoreVideo', 'AudioToolbox', 'VideoToolbox', 'Security'
   s.libraries  = 'c++', 'z', 'bz2', 'iconv'
 end
