@@ -693,6 +693,12 @@ class _Importer {
               srsCanonicalJson(want.toValue())) {
         edits[SrsFieldKeys.fieldDef(id)] = want.toValue();
       }
+      // 字段说明：本地从没写过（没有这个键的记录）才取 Anki 里的；本地写过（含主动清空）
+      // 一律保留，导入不覆盖也不复活。
+      final String descKey = SrsFieldKeys.fieldDescription(id);
+      if (f.description.isNotEmpty && view.edits[descKey] == null) {
+        edits[descKey] = f.description;
+      }
     }
 
     for (final SrsAnkiTemplate t in src.templates) {
