@@ -9234,13 +9234,7 @@ class AppModel with ChangeNotifier {
       fontApi: BrowserExtensionFontCatalog(this),
       // 复习（SRS）扩展端点：模块开着时 SrsAppHost.current 非 null；关着时 404。
       srsApiProvider: () => SrsAppHost.current,
-      tokenizer: JapaneseLanguage.instance.textToWords,
-      readingResolver: (String w) {
-        if (!FushiDicts.isInitialized) return '';
-        final List<FushiLookupResult> r =
-            FushiDicts.instance.lookup(w, maxResults: 1);
-        return r.isEmpty ? '' : r.first.term.reading;
-      },
+      tokenizer: JapaneseLanguage.instance.textToWordsWithReadings,
     )..ankiConnectEndpoint = _srsAnkiConnectEndpoint;
   }
 
