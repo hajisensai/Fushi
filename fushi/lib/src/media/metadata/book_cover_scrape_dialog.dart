@@ -5,14 +5,17 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
+import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
 import 'package:fushi/src/media/metadata/scrape_cover_preview.dart';
 import 'package:fushi/src/media/metadata/scrape_failure_view.dart';
 import 'package:fushi/utils.dart';
 
-/// 书籍 / 漫画「在线匹配封面」弹窗（统一刮削 P1b）。
+/// 书籍 / 漫画 / 有声书「在线匹配封面」弹窗（统一刮削 P1b）。
 ///
-/// 搜 Bangumi 书籍条目（[BookMetadataScraper]，`filter.type=[1]`），选中候选后下载其封面
+/// 两个源用分段切换（[BookScrapeSource]）：Bangumi 书籍条目（`filter.type=[1]`）与 DLsite
+/// 音声 / 漫画 / 小说作品。默认 Bangumi——DLsite 的搜索含成人向作品，不混进普通书搜索；
+/// 预填词里认得出 DLsite 编号时默认切到 DLsite 并只填编号（直取）。选中候选后下载其封面
 /// 到临时文件并经 `Navigator.pop(file)` 返回给调用方（书籍编辑对话框把它当作新的封面
 /// override，走既有 `setOverrideThumbnailFromMediaItem` 落地——不新增任何存储路径）。
 ///
@@ -45,9 +48,19 @@ class BookCoverScrapeDialog extends StatefulWidget {
   State<BookCoverScrapeDialog> createState() => _BookCoverScrapeDialogState();
 }
 
+/// 纯函数：弹窗的初始源与搜索词。预填词里带 DLsite 编号 → (DLsite, 编号)；否则
+/// (Bangumi, 原词)。
+(BookScrapeSource, String) bookScrapeInitialState(String initialQuery) {
+  final DlsiteWorkId? id = DlsiteWorkId.findIn(initialQuery);
+  return id == null
+      ? (BookScrapeSource.bangumi, initialQuery)
+      : (BookScrapeSource.dlsite, id.value);
+}
+
 class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   late final TextEditingController _queryCtrl;
   late final BookMetadataScraper _scraper;
+  late BookScrapeSource _source;
 
   List<BookScrapeCandidate> _results = const <BookScrapeCandidate>[];
   bool _searching = false;
@@ -63,7 +76,11 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   @override
   void initState() {
     super.initState();
-    _queryCtrl = TextEditingController(text: widget.initialQuery);
+    final (BookScrapeSource source, String query) = bookScrapeInitialState(
+      widget.initialQuery,
+    );
+    _source = source;
+    _queryCtrl = TextEditingController(text: query);
     _scraper = widget.scraperOverride ?? BookMetadataScraper();
     // 首帧后按预填标题自动搜一次。
     WidgetsBinding.instance.addPostFrameCallback((_) => _search());
@@ -118,6 +135,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   /// 搜索）；纯数字既可能是 id 也可能是书名（如《1984》）——搜索 + id 直取并列，
   /// 直取命中置顶、按 subjectId 去重；其余走关键词搜索。
   Future<List<BookScrapeCandidate>> _resolveCandidates(String keyword) async {
+    if (_source == BookScrapeSource.dlsite) return _resolveDlsite(keyword);
     final String? mappedSubjectId = parseBangumiSubjectUrl(keyword);
     if (mappedSubjectId != null) {
       final BookScrapeCandidate? candidate =
@@ -149,6 +167,33 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       ];
     }
     return _scraper.search(keyword);
+  }
+
+  /// DLsite：贴作品页 URL / 编号 → 直取；其余按名搜音声 / 漫画 / 小说。
+  Future<List<BookScrapeCandidate>> _resolveDlsite(String keyword) async {
+    final DlsiteWorkId? id =
+        DlsiteWorkId.tryParse(keyword) ??
+        (keyword.contains('dlsite.com') ? DlsiteWorkId.findIn(keyword) : null);
+    if (id != null) {
+      final BookScrapeCandidate? candidate = await _scraper.fetchDlsiteById(
+        id.value,
+      );
+      return candidate == null
+          ? const <BookScrapeCandidate>[]
+          : <BookScrapeCandidate>[candidate];
+    }
+    return _scraper.searchDlsite(keyword);
+  }
+
+  void _selectSource(BookScrapeSource source) {
+    if (source == _source) return;
+    setState(() {
+      _source = source;
+      _results = const <BookScrapeCandidate>[];
+      _searched = false;
+      _searchFailure = null;
+    });
+    _search();
   }
 
   Future<void> _use(BookScrapeCandidate candidate) async {
@@ -189,6 +234,21 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            adaptiveSegmentedButton<BookScrapeSource>(
+              context: context,
+              segments: <ButtonSegment<BookScrapeSource>>[
+                for (final BookScrapeSource s in BookScrapeSource.values)
+                  ButtonSegment<BookScrapeSource>(
+                    value: s,
+                    label: Text(s.label),
+                  ),
+              ],
+              selected: <BookScrapeSource>{_source},
+              onSelectionChanged: (Set<BookScrapeSource> v) {
+                if (v.isNotEmpty && !_searching) _selectSource(v.first);
+              },
+            ),
+            const SizedBox(height: 8),
             Row(
               children: <Widget>[
                 Expanded(
@@ -259,7 +319,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     BookScrapeCandidate candidate,
   ) {
     final List<String> metaParts = <String>[
+      if (candidate.isAdult) 'R18',
       if (candidate.year != null) '${candidate.year}',
+      if (candidate.author != null) candidate.author!,
       if (candidate.originalTitle != null) candidate.originalTitle!,
     ];
     return Padding(

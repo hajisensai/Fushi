@@ -146,8 +146,9 @@ class GalgameCustomData {
 ///
 /// | 字段 | 优先级 |
 /// |---|---|
-/// | name / nameCn / summary / releaseDate / score / nsfw | bgm → vndb |
-/// | developer | **vndb → bgm** |
+/// | name / nameCn / summary / releaseDate / score | bgm → vndb → dlsite |
+/// | nsfw | 任一源为 true 即 true（DLsite 是商店分级），否则 bgm → vndb → dlsite |
+/// | developer | **vndb → bgm → dlsite** |
 /// | coverUrl | `custom.coverSource` 手选优先，否则 bgm → vndb |
 /// | rank | 仅 bgm |
 /// | averageHours | 仅 vndb |
@@ -161,6 +162,7 @@ GalgameMetadataDraft mergeDrafts(
 }) {
   final GalgameMetadataDraft? bgm = bySource[GalgameMetadataSource.bgm];
   final GalgameMetadataDraft? vndb = bySource[GalgameMetadataSource.vndb];
+  final GalgameMetadataDraft? dlsite = bySource[GalgameMetadataSource.dlsite];
 
   // 未来新增源时，未在上表点名的字段沿枚举声明顺序回退，无需改这里。
   final List<GalgameMetadataDraft> inOrder = <GalgameMetadataDraft>[
@@ -207,11 +209,18 @@ GalgameMetadataDraft mergeDrafts(
       ...overlay.tags,
     ]),
     // developer 是唯一反向优先的字段：vndb 的开发商数据比 bgm infobox 干净。
-    developer: overlay.developer ?? vndb?.developer ?? bgm?.developer,
+    developer: overlay.developer ??
+        vndb?.developer ??
+        bgm?.developer ??
+        dlsite?.developer,
     releaseDate: pick<String>((GalgameMetadataDraft d) => d.releaseDate),
     score: pick<double>((GalgameMetadataDraft d) => d.score),
     rank: bgm?.rank,
-    nsfw: overlay.nsfw ?? pick<bool>((GalgameMetadataDraft d) => d.nsfw),
+    // 任一源明确标成人向就算成人向：「隐藏 NSFW」漏放一部比多藏一部更糟。
+    nsfw: overlay.nsfw ??
+        (inOrder.any((GalgameMetadataDraft d) => d.nsfw == true)
+            ? true
+            : pick<bool>((GalgameMetadataDraft d) => d.nsfw)),
     averageHours: vndb?.averageHours,
     coverUrl: coverUrl,
   );
