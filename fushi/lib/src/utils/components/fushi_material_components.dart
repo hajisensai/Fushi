@@ -5260,11 +5260,11 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   /// 与 [FushiToolScaffold] 同名方法看着一样但**不能合并**：那边整条工具条
   /// 只有 44 高，它在外层用 `SizedBox.square(40)` 自己撑命中盒，塞不下 48。
   ///
-  /// [Navigator.maybeOf]：脚手架被用在没有 Navigator 的场景（裸组件测试 /
-  /// 嵌入式外壳）时只是没有返回键，不该整页抛异常。
+  /// 判据是 [fushiRouteImpliesBack]（本页路由，不是整个导航栈：弹出菜单压栈时
+  /// 根页不该长出返回键）；没有 Navigator 的场景（裸组件测试 / 嵌入式外壳）只是
+  /// 没有返回键，不该整页抛异常。
   Widget? _defaultLeading(BuildContext context) {
-    final NavigatorState? navigator = Navigator.maybeOf(context);
-    if (navigator == null || !navigator.canPop()) return null;
+    if (!fushiRouteImpliesBack(context)) return null;
     // Apple：返回键统一为导航栏的玻璃圆钮（SF chevron，44pt）。
     if (isGlassDesign(context)) return const FushiRouteBackButton();
     return FushiIconButton(
@@ -5462,7 +5462,7 @@ class FushiToolScaffold extends StatelessWidget {
   }
 
   Widget? _defaultLeading(BuildContext context) {
-    if (!Navigator.of(context).canPop()) return null;
+    if (!fushiRouteImpliesBack(context)) return null;
     // Apple：返回键统一为导航栏的玻璃圆钮（SF chevron，44pt）。
     if (isGlassDesign(context)) return const FushiRouteBackButton();
     return FushiIconButton(
