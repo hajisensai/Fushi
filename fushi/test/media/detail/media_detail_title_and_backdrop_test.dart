@@ -122,7 +122,11 @@ void main() {
           child: SizedBox(
             width: 400,
             height: 560,
-            child: MediaDetailBackdrop(image: MemoryImage(_png), blurSigma: 0),
+            child: MediaDetailBackdrop(
+              image: MemoryImage(_png),
+              blurSigma: 0,
+              artBand: true,
+            ),
           ),
         ),
       ),
@@ -144,6 +148,76 @@ void main() {
       isEmpty,
       reason: '单列 hero 文字居中，两栏用的起始侧底色只会把画面冲淡',
     );
+  });
+
+  // PR #2337 审查：画面带曾按容器 height > width 自动判定，两栏整页背景（竖屏大屏 /
+  // 桌面窄高窗）与宽式 hero 展开长简介后都高 > 宽，被误切成顶部一条带。判据改由
+  // 调用方显式给（artBand），没传就铺满。
+  testWidgets('未要求画面带时，竖长容器里露画面的 fanart 仍铺满', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 400,
+            height: 560,
+            child: MediaDetailBackdrop(image: MemoryImage(_png), blurSigma: 0),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.getSize(find.byType(Image)), const Size(400, 560));
+  });
+
+  testWidgets('宽式 hero 内容高于宽度时背景铺满，不切画面带', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(700, 2000);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MediaDetailHero(
+              title: _title,
+              backdrop: MemoryImage(_png),
+              backdropBlur: 0,
+              // 展开后的长简介：把 hero 撑到高 > 宽。
+              footer: const SizedBox(height: 1200),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final Size hero = tester.getSize(find.byType(MediaDetailBackdrop));
+    expect(hero.width, greaterThanOrEqualTo(kMediaDetailHeroWideMinWidth));
+    expect(hero.height, greaterThan(hero.width));
+    expect(tester.getSize(find.byType(Image)), hero);
+  });
+
+  testWidgets('窄式 hero 露画面时只占顶部画面带', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 2000);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MediaDetailHero(
+              title: _title,
+              backdrop: MemoryImage(_png),
+              backdropBlur: 0,
+              footer: const SizedBox(height: 800),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final Size hero = tester.getSize(find.byType(MediaDetailBackdrop));
+    expect(hero.height, greaterThan(hero.width));
+    expect(tester.getSize(find.byType(Image)), Size(hero.width, hero.width));
   });
 
   testWidgets('竖长容器里的模糊封面仍铺满（只在色彩垫底，不受画面带影响）', (WidgetTester tester) async {

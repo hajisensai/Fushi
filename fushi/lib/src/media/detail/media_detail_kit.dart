@@ -24,6 +24,7 @@ library;
 
 import 'dart:async';
 import 'dart:ui' as ui;
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
@@ -64,11 +65,22 @@ class MediaDetailBackdrop extends StatelessWidget {
     this.image,
     this.imageKey,
     this.blurSigma = 28,
+    this.artBand = false,
     super.key,
   });
 
   final ImageProvider? image;
   final Object? imageKey;
+
+  /// 露画面（[blurSigma] 为 0）时只把画面画在顶部一条与宽度等高的带里、带内渐隐
+  /// 到底色，而不是铺满整块。只给**窄式居中 hero**（手机单列：封面 + chip + 按钮
+  /// + 简介叠成一长条）传 true：横版 fanart 铺满竖长容器会被 cover 放大四五倍、
+  /// 再被起始侧底色冲成白雾（反馈「看不到背景插画」）。
+  ///
+  /// 判据由调用方按布局显式给出，不按容器宽高比猜：两栏整页背景在竖屏大屏 /
+  /// 桌面窄高窗里同样高 > 宽，宽式 hero 展开长简介后也会高 > 宽——按比例判会
+  /// 误切带，展开 / 收起简介时背景还会在两套画法之间跳变。
+  final bool artBand;
 
   /// 模糊强度。竖版封面垫底要重模糊（只留色彩）；横版 fanart 传 0 = 不模糊、
   /// 画面原样露出（BUG-3190：fanart 被 16 的模糊 + 72% 底色压成一片色雾，用户看
@@ -137,18 +149,20 @@ class MediaDetailBackdrop extends StatelessWidget {
     return IgnorePointer(
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          // 竖长容器（手机单列 hero：封面 + chip + 按钮 + 简介叠成一长条）里，
-          // 横版 fanart 铺满整块会被 cover 放大四五倍、只剩一块糊掉的局部，再叠
-          // 两栏用的起始侧底色，整张图被冲成一片白雾（反馈「看不到背景插画」）。
-          // 这里只把画面放进顶部一条与宽度等高的带里，带内渐隐到底色。
+          // 窄式居中 hero（[artBand]）只把画面放进顶部一条与宽度等高的带里，带内
+          // 渐隐到底色；hero 矮于宽度时带高取 hero 高，渐隐仍落到底边。
           final double width = constraints.maxWidth;
           final double height = constraints.maxHeight;
-          if (art != null &&
+          if (artBand &&
+              art != null &&
               showArt &&
               width.isFinite &&
-              height.isFinite &&
-              height > width) {
-            return _buildArtBand(art: art, base: base, bandHeight: width);
+              height.isFinite) {
+            return _buildArtBand(
+              art: art,
+              base: base,
+              bandHeight: math.min(width, height),
+            );
           }
           return _buildFull(
             context,
@@ -585,6 +599,7 @@ class MediaDetailHero extends StatelessWidget {
                 image: backdrop,
                 imageKey: backdropKey,
                 blurSigma: backdropBlur,
+                artBand: !wide,
               ),
             ),
             content,
