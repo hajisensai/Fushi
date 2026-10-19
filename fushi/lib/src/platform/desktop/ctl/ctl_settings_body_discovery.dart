@@ -214,6 +214,7 @@ Map<String, Object?> _opdsRecord(OpdsServerConfig s) => <String, Object?>{
   'url': s.catalogUrl.toString(),
   'username': s.username,
   'hasPassword': s.password.isNotEmpty,
+  'hasApiKey': s.apiKey.isNotEmpty,
   'enabled': s.enabled,
   'allowInsecureHttp': s.allowInsecureHttp,
 };
@@ -235,6 +236,7 @@ OpdsServerConfig _opdsFrom(
   catalogUrl: f.containsKey('url') ? _parseUrl(f['url']!) : base!.catalogUrl,
   username: f['username']?.trim() ?? base?.username ?? '',
   password: f['password'] ?? base?.password ?? '',
+  apiKey: f['api_key']?.trim() ?? base?.apiKey ?? '',
   enabled: _optBool(f, 'enabled') ?? base?.enabled ?? true,
   allowInsecureHttp:
       _optBool(f, 'allow_http') ?? base?.allowInsecureHttp ?? false,
@@ -243,10 +245,20 @@ OpdsServerConfig _opdsFrom(
 const List<SettingsCliParam> _opdsFields = <SettingsCliParam>[
   SettingsCliParam('url', help: '目录地址（如 https://host/opds）'),
   SettingsCliParam('name', help: '显示名；省略 = 用主机名', required: false),
-  SettingsCliParam('username', help: '账号（HTTP Basic）', required: false),
+  SettingsCliParam(
+    'username',
+    help: '账号（HTTP Basic；Komga 填登录邮箱）',
+    required: false,
+  ),
   SettingsCliParam(
     'password',
     help: '密码；空串 = 清除',
+    required: false,
+    secret: true,
+  ),
+  SettingsCliParam(
+    'api_key',
+    help: 'API key（经 X-API-Key 头发送，Komga 用）；空串 = 清除',
     required: false,
     secret: true,
   ),
@@ -296,8 +308,18 @@ SettingsActionItem _opdsTest() => _action(
   title: t.discovery_opds_test,
   cli: SettingsCliAction(
     params: const <SettingsCliParam>[_idParam],
-    run: (SettingsContext c, Map<String, String> args) async =>
-        (await probeOpdsServer(_requireOpds(c, args['id']!))).toJson(),
+    run: (SettingsContext c, Map<String, String> args) async {
+      final DiscoveryProbeOutcome outcome = await probeOpdsServer(
+        _requireOpds(c, args['id']!),
+      );
+      // 探测打通了另一条地址（用户填的是服务端根 / 网页地址）：与设置页同样
+      // 写回配置，下次不必再探测（BUG-3519）。
+      final Uri? resolved = outcome.resolvedUrl;
+      if (resolved != null) {
+        await c.appModel.persistOpdsCatalogUrl(args['id']!, resolved);
+      }
+      return outcome.toJson();
+    },
   ),
 );
 

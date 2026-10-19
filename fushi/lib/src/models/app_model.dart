@@ -6347,7 +6347,15 @@ class AppModel with ChangeNotifier {
       // 出现一个既在清单里又被排除的幽灵条目。
       if (isPreferencesReady)
         for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
-          if (server.enabled) OpdsDiscoverySource(config: server),
+          if (server.enabled)
+            OpdsDiscoverySource(
+              config: server,
+              // 用户填的是服务端根 / 网页地址、探测打通了真正的目录端点时
+              // 写回（BUG-3519）。只落偏好不重建注册表：本实例已在内存里记住
+              // 打通的地址，重建只会打断正在进行的浏览。
+              onCatalogUrlResolved: (Uri resolved) =>
+                  unawaited(persistOpdsCatalogUrl(server.id, resolved)),
+            ),
       // 用户自配的 AList / OpenList 站点：同上，一条配置 = 一个源实例。
       if (isPreferencesReady)
         for (final AListSiteConfig site in prefsRepo.discoveryAListSites)
@@ -6409,6 +6417,17 @@ class AppModel with ChangeNotifier {
     await prefsRepo.setDiscoveryAudiobookshelfServers(servers);
     await reloadDiscoverySources();
   }
+
+  /// OPDS 地址探测（BUG-3519）打通了另一条目录地址时的写回：只改那一台服务器
+  /// 的 `catalogUrl` 并落偏好；不重建注册表（同 [persistAudiobookshelfTokens]
+  /// 的取舍——调用方就是正在跑请求的源实例，它已在内存里记住了打通的地址）。
+  Future<void> persistOpdsCatalogUrl(String configId, Uri catalogUrl) =>
+      prefsRepo.setDiscoveryOpdsServers(<OpdsServerConfig>[
+        for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
+          server.id == configId
+              ? server.copyWith(catalogUrl: catalogUrl)
+              : server,
+      ]);
 
   /// 协议层刷新令牌后的持久化：refresh token 每次刷新都轮换，不写回的话下次冷
   /// 启动拿的是已作废的旧值，宽限期一过就只能重新登录。

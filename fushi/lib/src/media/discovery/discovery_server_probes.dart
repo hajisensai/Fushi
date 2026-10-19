@@ -26,6 +26,7 @@ class DiscoveryProbeOutcome {
     required this.ok,
     required this.message,
     this.count,
+    this.resolvedUrl,
   });
 
   final bool ok;
@@ -35,6 +36,13 @@ class DiscoveryProbeOutcome {
 
   /// 成功时根目录的条目数 / 有声书库数。
   final int? count;
+
+  /// OPDS：用户填的地址不是目录、按已知端点探测打通的那条（BUG-3519）；
+  /// 原地址本身可用时为 null。调用方负责写回配置。
+  ///
+  /// 不进 [toJson]：Kavita 的目录地址路径里带 API key，控制通道的结论输出
+  /// 不该顺手把它打出来。
+  final Uri? resolvedUrl;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'ok': ok,
@@ -55,19 +63,39 @@ Future<DiscoveryProbeOutcome> probeOpdsServer(OpdsServerConfig config) async {
       const DiscoveryRequest(kind: DiscoveryMediaKind.novel),
     );
     final int count = page.items.isEmpty ? 0 : page.items.single.entries.length;
+    final Uri? resolved = source.resolvedCatalogUrl;
+    final bool moved =
+        resolved != null && resolved.toString() != config.catalogUrl.toString();
     return DiscoveryProbeOutcome(
       ok: true,
-      message: t.discovery_opds_test_ok(count: count),
+      message: moved
+          ? t.discovery_opds_test_ok_resolved(count: count)
+          : t.discovery_opds_test_ok(count: count),
       count: count,
+      resolvedUrl: moved ? resolved : null,
     );
   } on ExternalProviderFailure catch (failure) {
     return DiscoveryProbeOutcome(
       ok: false,
-      message: t.discovery_opds_test_failed(reason: failure.message),
+      message: opdsProbeFailureMessage(failure),
     );
   } finally {
     source.close();
   }
+}
+
+/// OPDS 连接测试失败的给人看的结论。
+///
+/// 两种最常见的配错单独给本地化说明，其余沿用脱敏后的协议层原因：
+/// - 地址是网页（Komga 根地址回 200 HTML，BUG-3519）；
+/// - 凭据被拒（Komga 的账号是登录邮箱、API key 走单独字段，BUG-3521）。
+String opdsProbeFailureMessage(ExternalProviderFailure failure) {
+  if (failure is OpdsWebPageFailure) return t.discovery_opds_test_web_page;
+  if (failure.kind == ExternalProviderFailureKind.unauthorized ||
+      failure.kind == ExternalProviderFailureKind.forbidden) {
+    return t.discovery_opds_test_unauthorized;
+  }
+  return t.discovery_opds_test_failed(reason: failure.message);
 }
 
 /// AList 连接自检：真列一次根目录（游客 / 账号同一条 `fs/list`）。
