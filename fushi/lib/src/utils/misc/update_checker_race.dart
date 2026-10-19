@@ -9,6 +9,32 @@ part of 'update_checker.dart';
 /// 又不会误杀慢但可用的源。**只用于探针**；分段正式下载各段仍用 [_kPerAttemptTimeout]。
 const Duration _kFirstByteTimeout = Duration(seconds: 5);
 
+/// 更新下载链路（竞速探针、分段请求、单线程下载）实际使用的两档超时：建连到首字节
+/// [firstByte]、首字节之后每段 body 的 [body]。生产恒为 [standard]。
+///
+/// 只为测试注入而存在：fail-fast 守卫要证明「死候选按首字节超时判死、不吃满 body 超时」，
+/// 用真实 5s / 8s 只能拿墙钟阈值去量，机器一忙就伪红；注入毫秒级首字节超时 + 远大于它的
+/// body 超时后，断言「整轮不足一个 body 超时」就与机器快慢无关地区分两种实现。
+@immutable
+class UpdateDownloadTimeouts {
+  const UpdateDownloadTimeouts({required this.firstByte, required this.body});
+
+  static const UpdateDownloadTimeouts standard = UpdateDownloadTimeouts(
+    firstByte: _kFirstByteTimeout,
+    body: _kPerAttemptTimeout,
+  );
+
+  final Duration firstByte;
+  final Duration body;
+}
+
+/// 测试覆写 [UpdateDownloadTimeouts.standard]；生产代码不得赋值（null = 标准值）。
+@visibleForTesting
+UpdateDownloadTimeouts? debugUpdateDownloadTimeoutsOverride;
+
+UpdateDownloadTimeouts get _updateDownloadTimeouts =>
+    debugUpdateDownloadTimeoutsOverride ?? UpdateDownloadTimeouts.standard;
+
 /// 直连与镜像近乎同时返回 206 时的 tie-break 窗口（TODO-683）。最快候选是镜像时，再多
 /// 等本窗口看直连是否也到达；到了就优先选直连——与 [updateCheckUrls] / `net.dart` 把直连
 /// 恒放首位、视作最权威/最快的哲学一致（直连无镜像中转跳数、不受镜像共享 IP 限流，长下载
@@ -321,7 +347,7 @@ Future<List<String>?> raceSelectFastestCandidate({
       response = await openUrl(
         Uri.parse(url),
         headers,
-      ).timeout(_kFirstByteTimeout);
+      ).timeout(_updateDownloadTimeouts.firstByte);
     } catch (_) {
       // 探针失败（连不上 / 超时 / 非 206 前出错）：不参与胜出，留给串行回退处理。
       if (!isRelay) primaryProbeSettled();

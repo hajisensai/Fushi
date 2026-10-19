@@ -13,23 +13,47 @@ import 'package:fushi/src/utils/misc/update_checker.dart';
 // the first byte still gets 8s/segment (TODO-808: was 15s) so a slow-but-alive
 // source is not killed.
 // Direction 2: cancellation token, candidate loop breaks early at each boundary.
+//
+// Timing: these guards used to measure the real 5s / 8s timeouts against
+// wall-clock thresholds ("< 15s"), which went red under machine load (28-53s
+// observed). They now inject a tiny first-byte timeout and a huge body timeout
+// via [debugUpdateDownloadTimeoutsOverride]; "the whole run finishes before the
+// *real* 5s first-byte timeout" then separates fail-fast from a regression
+// (which waits >= one real 5s timeout or one injected 60s body timeout per
+// candidate) with a 25x margin instead of a tight wall-clock budget.
+const UpdateDownloadTimeouts _fastFirstByte = UpdateDownloadTimeouts(
+  firstByte: Duration(milliseconds: 100),
+  body: Duration(seconds: 60),
+);
+
 void main() {
-  group('Direction 1 serial fallback fail-fast (5s first byte, no 15s pileup)',
+  test('production fail-fast timeouts: 5s first byte, 8s per body segment',
       () {
+    expect(
+        UpdateDownloadTimeouts.standard.firstByte, const Duration(seconds: 5));
+    expect(UpdateDownloadTimeouts.standard.body, const Duration(seconds: 8));
+  });
+
+  group(
+      'Direction 1 serial fallback fail-fast '
+      '(first-byte timeout, no body pileup)', () {
     late Directory updatesDir;
 
     setUp(() async {
       updatesDir = await Directory.systemTemp.createTemp('fushi-update-ff');
+      debugUpdateDownloadTimeoutsOverride = _fastFirstByte;
     });
 
     tearDown(() async {
+      debugUpdateDownloadTimeoutsOverride = null;
       if (updatesDir.existsSync()) {
         await _deleteDirectoryWithRetry(updatesDir);
       }
     });
 
     test(
-      'all-dead (TCP up, never first byte): serial fallback < 15s (was 30s)',
+      'all-dead (TCP up, never first byte): '
+      'each candidate dies on the first-byte timeout',
       () async {
         final List<int> payload = _payload();
         final UpdateAsset asset = _asset(payload);
@@ -61,15 +85,17 @@ void main() {
         expect(openCount, 2, reason: 'each of 2 candidates requested once');
         expect(
           sw.elapsed,
-          lessThan(const Duration(seconds: 15)),
-          reason: 'serial fallback 5s first-byte: 2 candidates ~10s, under 30s',
+          lessThan(UpdateDownloadTimeouts.standard.firstByte),
+          reason: 'injected 100ms first-byte timeout: 2 dead candidates take '
+              '~0.2s; waiting on the real 5s constant or the 60s body timeout '
+              'means the serial fallback is not using the first-byte timeout',
         );
       },
-      timeout: const Timeout(Duration(seconds: 60)),
+      timeout: const Timeout(Duration(minutes: 3)),
     );
 
     test(
-      'segmented all-dead (connectionCount>1, race + probe) < 40s',
+      'segmented all-dead (connectionCount>1, race + probe) fails fast',
       () async {
         final List<int> payload = _payload();
         final UpdateAsset asset = _asset(payload);
@@ -97,15 +123,17 @@ void main() {
         expect(thrown, isNotNull);
         expect(
           sw.elapsed,
-          lessThan(const Duration(seconds: 40)),
-          reason: 'race + probe + single fallback all use 5s first-byte (~25s)',
+          lessThan(UpdateDownloadTimeouts.standard.firstByte),
+          reason: 'race + probe + single fallback all use the (injected 100ms) '
+              'first-byte timeout; any stage on the real 5s constant or the '
+              'body timeout blows this bound',
         );
       },
-      timeout: const Timeout(Duration(seconds: 90)),
+      timeout: const Timeout(Duration(minutes: 3)),
     );
 
     test(
-      'slow body not killed: first byte arrives, chunks 4s apart (< 8s), ok',
+      'slow body not killed: chunk gap > first-byte timeout, < body timeout',
       () async {
         final List<int> payload = _payload();
         final UpdateAsset asset = _asset(payload);
@@ -118,13 +146,15 @@ void main() {
           connectionCount: 1,
           minSegmentBytes: _minSeg,
           openUrl: (Uri _, Map<String, String> __) async =>
-              _slowBodyResponse(payload, gapMs: 4000),
+              _slowBodyResponse(payload, gapMs: 400),
         );
 
         expect(await file.readAsBytes(), payload,
-            reason: 'slow body (4s/chunk < 8s per-attempt) must not be killed');
+            reason: 'after the first byte only the body timeout applies: a '
+                '400ms chunk gap (> 100ms first-byte, < 60s body) must not be '
+                'killed');
       },
-      timeout: const Timeout(Duration(seconds: 60)),
+      timeout: const Timeout(Duration(minutes: 3)),
     );
   });
 
@@ -252,7 +282,7 @@ List<int> _payload() =>
     List<int>.generate(16, (int i) => (i * 11 + 3) & 0xFF, growable: false);
 
 // 200 full-file response: body in two chunks, gapMs apart (for the
-// "slow body but < 15s => not killed" guard).
+// "slow body but < body timeout => not killed" guard).
 UpdateDownloadResponse _slowBodyResponse(List<int> payload,
     {required int gapMs}) {
   final StreamController<List<int>> controller = StreamController<List<int>>();
