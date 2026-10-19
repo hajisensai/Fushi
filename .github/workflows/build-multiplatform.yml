@@ -738,6 +738,26 @@ jobs:
           rm -rf "$share/transforms"
           cp -a fushi/assets/transforms "$share/transforms"
           test -f "$share/transforms/manifest.json"
+      # 词典引擎的真原生 Dart 测试：后台分词借用句柄 / 重载与在飞分词并发 / 映射释放作用域
+      # （packages/fushi_dictionary，HBK-AUDIT-009）与服务端词典宿主的端到端查词
+      # （packages/fushi_server）。两组在没有 FUSHI_DICTS_LIB 时整组 skip、退出码 0——别的
+      # job 全都没有这份库，所以只有这里拿刚编好、随包的那一份真跑它们。skip 一律当失败：
+      # 库路径错了或加载不了，读成绿就等于没测。
+      - name: Run fushidicts Dart tests against the bundled .so (Linux)
+        shell: bash
+        env:
+          FUSHI_DICTS_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so
+          FUSHI_COMPUTE_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushi_compute.so
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_DICTS_LIB" || { echo "::error::.so not found at $FUSHI_DICTS_LIB"; exit 1; }
+          log="$RUNNER_TEMP/fushidicts_dart_tests.log"
+          (cd packages/fushi_dictionary && flutter test test/background_tokenize_native_test.dart --no-pub --reporter expanded) 2>&1 | tee "$log"
+          (cd packages/fushi_server && dart test test/dictionary_host_test.dart --reporter expanded) 2>&1 | tee -a "$log"
+          if grep -q 'Skip:' "$log"; then
+            echo "::error::fushidicts Dart tests were skipped: $FUSHI_DICTS_LIB did not load"
+            exit 1
+          fi
       - name: Smoke fushi_server with bundled native libs (Linux)
         shell: bash
         run: |
