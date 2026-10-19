@@ -6038,7 +6038,7 @@
   "srs_card_appearance_density_compact": "Compact",
   "srs_card_appearance_density_standard": "Standard",
   "srs_card_appearance_design_skin": "Match the design system",
-  "srs_card_appearance_design_skin_hint": "Restyle imported and custom card templates (background, frames, text and link colors, fonts) in the app's M3E or Apple style. The template's layout and content stay as designed. Off shows templates exactly as authored.",
+  "srs_card_appearance_design_skin_hint": "Restyle imported and custom card templates (background, frames, text and link colors, fonts) in the app's Material or Apple style. The template's layout and content stay as designed. Off shows templates exactly as authored.",
   "srs_card_appearance_dict_unified": "Unified dictionary style",
   "srs_card_appearance_dict_unified_hint": "Recolor each dictionary's own colors to match the card (Material). Off keeps the original dictionary style.",
   "srs_card_appearance_font": "Card font",
