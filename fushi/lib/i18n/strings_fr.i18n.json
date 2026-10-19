@@ -7180,7 +7180,7 @@
   "updates_system_notifications_hint": "Envoie aussi une notification système. La désactiver conserve le badge dans l'application.",
   "url": "URL",
   "usage_stats_enabled": "Partager les statistiques d’utilisation",
-  "usage_stats_enabled_hint": "Une fois par jour, envoie à fushi.moe un identifiant d’installation aléatoire, la version de l’app, la plateforme et le canal de mise à jour afin de compter les utilisateurs actifs. Aucune donnée de compte, de bibliothèque ou de lecture n’est incluse, et votre adresse IP n’est pas conservée. Si vous joignez les informations de l’appareil à un retour, l’identifiant d’installation est envoyé avec.",
+  "usage_stats_enabled_hint": "Une fois par jour, envoie à fushi.moe un identifiant d’installation dérivé de cet appareil (inchangé après réinstallation), la version de l’app, la plateforme et le canal de mise à jour afin de compter les utilisateurs actifs. Aucune donnée de compte, de bibliothèque ou de lecture n’est incluse, et votre adresse IP n’est pas conservée. Si vous joignez les informations de l’appareil à un retour, l’identifiant d’installation est envoyé avec.",
   "video_air_season_autumn": "Automne",
   "video_air_season_spring": "Printemps",
   "video_air_season_summer": "Été",

@@ -7180,7 +7180,7 @@
   "updates_system_notifications_hint": "Zusätzlich eine Systembenachrichtigung senden. Wenn ausgeschaltet, bleibt das Badge in der App erhalten.",
   "url": "URL",
   "usage_stats_enabled": "Nutzungsstatistiken teilen",
-  "usage_stats_enabled_hint": "Sendet einmal täglich eine zufällige Installations-ID, die App-Version, die Plattform und den Update-Kanal an fushi.moe, damit wir aktive Nutzer zählen können. Konto-, Bibliotheks- oder Lesedaten sind nicht enthalten, und deine IP-Adresse wird nicht gespeichert. Wenn du Feedback Geräteinformationen anhängst, wird die Installations-ID mitgesendet.",
+  "usage_stats_enabled_hint": "Sendet einmal täglich eine aus diesem Gerät abgeleitete Installations-ID (bleibt bei Neuinstallation gleich), die App-Version, die Plattform und den Update-Kanal an fushi.moe, damit wir aktive Nutzer zählen können. Konto-, Bibliotheks- oder Lesedaten sind nicht enthalten, und deine IP-Adresse wird nicht gespeichert. Wenn du Feedback Geräteinformationen anhängst, wird die Installations-ID mitgesendet.",
   "video_air_season_autumn": "Herbst",
   "video_air_season_spring": "Frühling",
   "video_air_season_summer": "Sommer",
