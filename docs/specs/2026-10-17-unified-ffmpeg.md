@@ -65,7 +65,7 @@ GPL 对应源码声明：`tool/ffmpeg-unified/source_notice.py` 生成，写明 
 
 2026-10-19 补丁 0004 之后全部重编：Android / iOS / macOS 来自 `ffmpeg-unified-mobile.yml` run 39225163967（`ci/ffmpeg-unified-mobile` 80acd319；三平台 `verify_mobile_outputs.py` / macOS `https_trust_smoke.sh` 通过，版本串 Android `n9.0.1-4-g79a6f40`、iOS `n9.0.1-4-g5907999`、macOS `n9.0.1-4-g326b7fb`）；Windows 本机重编为 `-dovi1-ffu2`（`n9.0.1-4-gc0efa48`）。libmpv（Android jar、Darwin tar）不需要重编：它们按名字动态链接 libav*，库的 ABI / 导出符号没变，只有 Apple 的 libavformat 多了 Security.framework 依赖。
 
-公网 HTTPS 信任冒烟：`tool/ffmpeg-unified/https_trust_smoke.sh`——受信任的公网 HTTPS 媒体文件必须在 `tls_verify=1` 下打开，自签 / 过期 / 主机名不符的 badssl.com 站点必须被拒且错误输出匹配预期校验器（macOS：`System trust rejected the certificate`，即补丁 0004）。macOS CI 构建（`build_macos.sh`）里跑；iOS 不能在 CI 上跑程序，由字节守卫钉住补丁标记与 Security.framework 链接。
+HTTPS 信任冒烟：`tool/ffmpeg-unified/https_trust_smoke.sh`。负向用例全部本地封闭：脚本现生成证书、用 `openssl s_server` 监听 127.0.0.1 随机端口——A 自签证书走系统信任，必须被拒且错误输出匹配预期校验器（macOS：`System trust rejected the certificate`，即补丁 0004）；B 本地 CA 签发但 SAN 不符、C 本地 CA 签发但已过期（都带 `-ca_file`）必须被拒；D 对照组（本地 CA、合法、名字对）必须能打开，否则 B / C 的失败不说明问题。正向用例 E 需要真实公网 CA 链：固定提交上的固定文件（raw.githubusercontent.com）必须在 `tls_verify=1` 下打开；先用 `tls_verify=0` 判可达，不可达以退出码 3 报 NETWORK UNREACHABLE（失败，不会被当成通过或校验失败）。macOS CI 构建（`build_macos.sh`）里跑；Windows 产物在本机 Git bash 下跑过；iOS 不能在 CI 上跑程序，由字节守卫钉住补丁标记与 Security.framework 链接。
 
 移动端能力下限：`mobile/verify_mobile_outputs.py`（CI）与 `fushi/test/tools/ffmpeg_unified_mobile_guard_test.dart` 都按 `capabilities.json` 逐项找组件短名（前后都是 NUL 的 C 字符串；`--enable-small` 只剥长名，没编进去的组件不会留下它）。
 
