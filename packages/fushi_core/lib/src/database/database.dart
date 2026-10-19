@@ -2305,7 +2305,7 @@ class FushiDatabase extends _$FushiDatabase
             }
           }
           if (from < 119) {
-            // v119（BUG-3524）：srs_field_edits 加前身链接的部分覆盖索引
+            // v119（BUG-3543）：srs_field_edits 加前身链接的部分覆盖索引
             // idx_srs_field_edits_history_from（见 _ensureSrsIndexes）。只加索引、不动数据；
             // 全部 IF NOT EXISTS，幂等。v117 之前的库在 v117 步已建表连同全部索引，这里再
             // 跑一次也无害；表在阶梯上不存在（合成库）则跳过。

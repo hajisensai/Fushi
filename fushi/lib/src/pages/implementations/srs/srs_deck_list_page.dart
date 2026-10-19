@@ -189,7 +189,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (!confirmed || !mounted) return;
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null || !mounted) return;
-    // 删除按块进行（BUG-3524）：行里显示进度、不可点，界面其余部分照常可用；删完重读列表。
+    // 删除按块进行（BUG-3543）：行里显示进度、不可点，界面其余部分照常可用；删完重读列表。
     final String id = deck.deck.id;
     final ValueNotifier<double?> progress = ValueNotifier<double?>(null);
     setState(() => _deleting[id] = progress);
@@ -552,7 +552,7 @@ class _DeckListState extends State<_DeckList> {
     ];
     final int visibleCount = visible.where((bool v) => v).length;
     final List<Widget> items = <Widget>[
-      // 后台导入任务（BUG-3522）：有任务时排在最前。
+      // 后台导入任务（BUG-3541）：有任务时排在最前。
       if (widget.showImportTasks)
         const SrsImportTasksBar(key: ValueKey<String>('srs-import-tasks')),
       if (!widget.data.store.canSchedule)

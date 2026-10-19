@@ -33,22 +33,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3156 条。点号进各自文件。
+> 共 3175 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3526](bugs/BUG-3526-srs-local-seq-allocated-before-landing.md) | ✅ | ✅ | 复习：本机修改记录的序号在落库前分配，并发写入时发件箱乱序、因果上下文声称看见了不存在的记录 |
-| [BUG-3525](bugs/BUG-3525-srs-bulk-ops-per-item-roundtrips.md) | ✅ | ✅ | 复习：作用于多张卡 / 多条笔记的批量操作逐条往返，规模一大就慢（批量改卡、重置、换类型、导出、同步、恢复…） |
-| [BUG-3524](bugs/BUG-3524-srs-deck-delete-slow.md) | ✅ | ✅ | 复习：删除牌组奇慢无比（几千张卡几十秒），删除期间无任何反馈 |
-| [BUG-3523](bugs/BUG-3523-srs-legacy-lapis-migration-drops-fields.md) | ✅ | ✅ | 旧 Lapis 迁到 Fushi 卡片时部分字段内容没跟过去，导入 / 改名的 Lapis 无法一键迁移 |
-| [BUG-3522](bugs/BUG-3522-srs-apkg-import-slow-blocking.md) | ✅ | ✅ | 复习：Anki 包导入慢且阻塞在模态对话框里，不能后台导入 |
-| [BUG-3521](bugs/BUG-3521-srs-deck-create-slow-list-stale.md) | ✅ | ✅ | 复习：新建牌组慢、列表不立即出现新牌组 |
-| [BUG-3520](bugs/BUG-3520-srs-review-deck-settings-not-live.md) | ✅ | ✅ | 复习中改牌组设置返回后不立即生效（间隔预览/计数/下一张仍按旧设置） |
-| [BUG-3519](bugs/BUG-3519-srs-autoplay-off-inline-media-still-plays.md) | ✅ | ✅ | SRS 牌组关了自动播放音频，卡面内嵌片段/音频仍自己播放，且时播时不播 |
-> 共 3167 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3545](bugs/BUG-3545-srs-local-seq-allocated-before-landing.md) | ✅ | ✅ | 复习：本机修改记录的序号在落库前分配，并发写入时发件箱乱序、因果上下文声称看见了不存在的记录 |
+| [BUG-3544](bugs/BUG-3544-srs-bulk-ops-per-item-roundtrips.md) | ✅ | ✅ | 复习：作用于多张卡 / 多条笔记的批量操作逐条往返，规模一大就慢（批量改卡、重置、换类型、导出、同步、恢复…） |
+| [BUG-3543](bugs/BUG-3543-srs-deck-delete-slow.md) | ✅ | ✅ | 复习：删除牌组奇慢无比（几千张卡几十秒），删除期间无任何反馈 |
+| [BUG-3542](bugs/BUG-3542-srs-legacy-lapis-migration-drops-fields.md) | ✅ | ✅ | 旧 Lapis 迁到 Fushi 卡片时部分字段内容没跟过去，导入 / 改名的 Lapis 无法一键迁移 |
+| [BUG-3541](bugs/BUG-3541-srs-apkg-import-slow-blocking.md) | ✅ | ✅ | 复习：Anki 包导入慢且阻塞在模态对话框里，不能后台导入 |
+| [BUG-3540](bugs/BUG-3540-srs-deck-create-slow-list-stale.md) | ✅ | ✅ | 复习：新建牌组慢、列表不立即出现新牌组 |
+| [BUG-3539](bugs/BUG-3539-srs-review-deck-settings-not-live.md) | ✅ | ✅ | 复习中改牌组设置返回后不立即生效（间隔预览/计数/下一张仍按旧设置） |
+| [BUG-3538](bugs/BUG-3538-srs-autoplay-off-inline-media-still-plays.md) | ✅ | ✅ | SRS 牌组关了自动播放音频，卡面内嵌片段/音频仍自己播放，且时播时不播 |
 | [BUG-3537](bugs/BUG-3537-outbound-progress-landing-overwrites-host-put.md) | ✅ | ✅ | 出站同步落地无条件写本地进度，盖掉刚到的互联对端 PUT（进度倒退） |
 | [BUG-3536](bugs/BUG-3536-subtitle-null-text-color-follows-theme.md) | ✅ | ✅ | 关掉「尊重字幕自带样式」后字幕文字色随 App 主题忽白忽黑 |
 | [BUG-3535](bugs/BUG-3535-opds-cover-401-missing-headers.md) | ✅ | ✅ | OPDS：私有目录（Komga）封面无凭据请求回 401，发现页封面全是占位 |

@@ -366,7 +366,7 @@ Future<void> _restoreLogs(
   };
   final List<SrsReviewLog> fixes = <SrsReviewLog>[];
   int cardsFixed = 0;
-  // 各卡历史按块一次预读（以前每张卡各查四五次，BUG-3524）。
+  // 各卡历史按块一次预读（以前每张卡各查四五次，BUG-3543）。
   final Map<String, SrsCardHistory> histories = await store.histories(cached);
   for (final String cardId in cached) {
     final List<SrsReviewLog> fix = srsPlanStateRestore(

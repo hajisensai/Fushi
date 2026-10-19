@@ -542,7 +542,7 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
     required Map<String, String?> fieldMap,
     required Map<String, String?> templateMap,
   }) async {
-    // 笔记与它们的卡各按块一次读（以前每条笔记各读两遍笔记、一遍卡，BUG-3524）。
+    // 笔记与它们的卡各按块一次读（以前每条笔记各读两遍笔记、一遍卡，BUG-3543）。
     final Map<String, SrsNoteView?> views = await notes(noteIds);
     final SrsNoteTypeView from = await _sourceTypeIn(noteIds, views);
     final SrsNoteTypeView to = await _requireType(targetTypeId);

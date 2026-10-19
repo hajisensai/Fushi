@@ -1,6 +1,6 @@
-## BUG-3524 · 复习：删除牌组奇慢无比（几千张卡几十秒），删除期间无任何反馈
+## BUG-3543 · 复习：删除牌组奇慢无比（几千张卡几十秒），删除期间无任何反馈
 - **报告**：2026-10-19（用户：删除牌组奇慢无比，不知道是不是和导入同类问题，类似的全部根本性修复）
-- **真实性**：✅ 真 bug，与 BUG-3522 同一根因族（逐条往返）。基准 `packages/fushi_engine/test/srs/srs_bulk_ops_bench_test.dart`
+- **真实性**：✅ 真 bug，与 BUG-3541 同一根因族（逐条往返）。基准 `packages/fushi_engine/test/srs/srs_bulk_ops_bench_test.dart`
   （临时文件库 + `createInBackground`，与 app 同一种连接）：修前 1500 条笔记 / 3000 张卡删父牌组 **33.3 s**，
   40519 次语句往返、**3002 个事务**。根因（修前行号，提交 9fda0951b2）：
   - `packages/fushi_engine/lib/srs/srs_db_store.dart:1623-1641`（`deleteDeck`）：子树里每张卡一次 `editField`，
@@ -29,5 +29,5 @@
 - **备注**：
   - 1 万条笔记仍需十几秒：剩下的是每张卡缓存行的历史重放与 JSON 解析（UI isolate 上按 200 张一块、块间是真实的跨 isolate
     往返，界面不冻结）。把整个副本搬进后台 isolate 需要改 `SrsDbStore` 的架构（写入者状态在主 isolate），未在本次做。
-  - 同类批量操作见 BUG-3525，序号分配与落库乱序见 BUG-3526。
+  - 同类批量操作见 BUG-3544，序号分配与落库乱序见 BUG-3545。
   - 未做设备肉眼复测（真实大牌组 + 删除时切页）。

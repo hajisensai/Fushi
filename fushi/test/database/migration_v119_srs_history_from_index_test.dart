@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
-/// v119（BUG-3524）：srs_field_edits 加前身链接的部分覆盖索引
+/// v119（BUG-3543）：srs_field_edits 加前身链接的部分覆盖索引
 /// `idx_srs_field_edits_history_from`。只加索引、不动数据；重跑幂等；新库 onCreate 也有。
 void main() {
   const String index = 'idx_srs_field_edits_history_from';

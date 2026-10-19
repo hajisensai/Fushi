@@ -1,4 +1,4 @@
-## BUG-3523 · 旧 Lapis 迁到 Fushi 卡片时部分字段内容没跟过去，导入 / 改名的 Lapis 无法一键迁移
+## BUG-3542 · 旧 Lapis 迁到 Fushi 卡片时部分字段内容没跟过去，导入 / 改名的 Lapis 无法一键迁移
 - **报告**：2026-10-18（用户：「旧 lapis 迁移做一下。咱们支持的那些 lapis 迁移到新模板，正好旧的有些比如有些用户的『来源』没迁移，顺便帮用户迁移一下」；澄清：「来源」只是举例，要通用地查出旧版迁移漏掉的字段并补回，不为「来源」写特判）
 - **真实性**：✅ 真 bug（沿代码路径确认，非个案）。
   - **丢字段**：Lapis → Fushi 卡片的预设映射对内置字段按字段键直映，其余**只认同名**（`packages/fushi_engine/lib/srs/srs_builtin_migration.dart` 旧版第 87–96 行「第二轮：剩下的按名字」，同名找不到就 `out[id] = null`）。用户在 Lapis 上自己加、与 Fushi 卡片某字段同义但不同名的字段（`来源` / `Source` / `出典` → MiscInfo，`例句翻译` → SentenceTranslation，`Word` / `Reading` / `Meaning` …）整列不迁；`srsPlanNoteTypeChange` 再把这些目标写成空串（`packages/fushi_srs/lib/src/note_type_ops.dart:425`）。主映射的内置字段为空、而同义的自加字段有内容时也一样丢（例：内置 MiscInfo 空、自加「来源」有出处）。

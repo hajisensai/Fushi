@@ -242,7 +242,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 插进别的写入，后分配的记录会先落库、先进发件箱（序号乱序），它的 ctx 还声称看见了尚未落库的
   /// 记录——同一字段上那条记录晚到时会被判为「被支配」而丢弃；中途崩溃时持久化的因果上下文里
   /// 还会留着永远不存在的 dot。以前逐条写的方法各自「await 读库 → 分配」，批量导入更是先攒一批
-  /// 已分配序号的事件再落库，都有这个窗口（BUG-3524）。
+  /// 已分配序号的事件再落库，都有这个窗口（BUG-3543）。
   ///
   /// 可重入：独占区里再调别的写方法直接执行（按 Zone 认）。在外面先开了数据库事务、再在事务里调
   /// 写方法的调用方（按时间点恢复）必须先进独占区再开事务，否则与排队等锁的写入互相等待。
@@ -449,7 +449,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// `(eventId, serverTime, outboxSeq)`，与按序逐条 upsert 同结果——服务器时刻取已知值与新值里
   /// 较早的（[srsMergeServerTime]），给了 outboxSeq 就覆盖（重新入队）。旧行按 ID 分块一次预读，
   /// 写入合成一个 Drift batch（以前每条事件「先查再写」两次往返，应用一批对端事件 / 恢复后重新入队
-  /// 全部事件都是几万次往返，BUG-3524）。
+  /// 全部事件都是几万次往返，BUG-3543）。
   Future<void> _upsertEventLocal(List<(String, int?, int?)> items) async {
     if (items.isEmpty) return;
     final Map<String, SrsEventLocalRow> old = <String, SrsEventLocalRow>{};
@@ -691,7 +691,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 每条真落库的事件修订号 +1（[changeFingerprint]）。返回真正新落的事件 ID（按序）。
   ///
   /// 以前每条事件「先查再写」各两三次往返（库在后台 isolate，每次往返都是一次跨 isolate 消息），
-  /// 导入一个几千条笔记的包、应用一批对端事件都要几万次往返（BUG-3522 / BUG-3524）。
+  /// 导入一个几千条笔记的包、应用一批对端事件都要几万次往返（BUG-3541 / BUG-3543）。
   Future<List<String>> _storeLocalBatch(List<SrsEvent> events) async {
     final Set<String> entityIds = <String>{};
     final Set<String> logIds = <String>{};
@@ -903,7 +903,7 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 导入攒的一批草稿（[newNoteDrafts] / [newEditDrafts] + 已定稿的日志等）落库：同 [importEvents]，
   /// 但修改记录的序号 / HLC 在这里、落库的同一个独占区里才分配——攒批期间（读包、解析、别的写入）
-  /// 不占序号，落库顺序 = 序号顺序（BUG-3524，以前攒批时就分配，期间插进来的本机写入先落库）。
+  /// 不占序号，落库顺序 = 序号顺序（BUG-3543，以前攒批时就分配，期间插进来的本机写入先落库）。
   Future<void> importDrafts(List<SrsEventDraft> drafts) async {
     if (drafts.isEmpty) return;
     await runExclusive(() async {
@@ -1029,7 +1029,7 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 一组笔记的物化视图（含已删除的；不存在的 ID 映射到 null；按输入顺序去重）。按 ID 分块
   /// 预读身份记录 / 修改记录 / 服务器时刻，每块几次往返——批量读笔记的地方（导出、改标签、
-  /// 更改笔记类型、旧 Lapis 迁移）不再每条笔记各查三次（BUG-3524）。
+  /// 更改笔记类型、旧 Lapis 迁移）不再每条笔记各查三次（BUG-3543）。
   Future<Map<String, SrsNoteView?>> notes(Iterable<String> ids) async {
     final Map<String, SrsNoteView?> out = <String, SrsNoteView?>{};
     for (final List<String> chunk in _chunks(ids.toSet())) {
@@ -1046,7 +1046,7 @@ class SrsDbStore implements SrsSyncReplica {
   }
 
   /// 牌组树：身份记录一次读、全部牌组的修改记录分块一次预读（以前每个牌组各查两次，
-  /// 导入几百个牌组的包时每建一个牌组都重读一遍整棵树，BUG-3524）。
+  /// 导入几百个牌组的包时每建一个牌组都重读一遍整棵树，BUG-3543）。
   Future<SrsDeckTree> deckTree() async {
     final List<SrsEntityRow> rows =
         await (db.select(db.srsEntities)..where(
@@ -1137,7 +1137,7 @@ class SrsDbStore implements SrsSyncReplica {
     final Set<String> refreshed = <String>{};
     // 分块：每块先把这些笔记 / 它们的卡（连同全部前身卡）要读的行一次预读进内存（Zone 里的
     // [_RefreshPrefetch]），逐条算，写入攒成一个 Drift batch。以前每条笔记、每张卡各自查身份记录 /
-    // 修改记录 / 服务器时刻 / 日志、各写一两条语句，一条笔记十几次往返（BUG-3522 / BUG-3524）。
+    // 修改记录 / 服务器时刻 / 日志、各写一两条语句，一条笔记十几次往返（BUG-3541 / BUG-3543）。
     for (int i = 0; i < notes.length; i += _refreshChunk) {
       final List<String> chunk = notes.sublist(
         i,
@@ -1158,7 +1158,7 @@ class SrsDbStore implements SrsSyncReplica {
     final List<String> queue = _dirtyCards.toList();
     _dirtyCards.clear();
     // 「前身 → 后继」一次读全（走 v119 的部分索引，只碰前身链接那几行；以前每张脏卡各扫
-    // 一遍修改记录表，随表长成平方级，BUG-3522）。
+    // 一遍修改记录表，随表长成平方级，BUG-3541）。
     final Map<String, List<String>> successors = queue.isEmpty
         ? const <String, List<String>>{}
         : await _successorIndex();
@@ -1401,7 +1401,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 条件用 v119 的部分覆盖索引 `idx_srs_field_edits_history_from` 的同一句 WHERE
   /// （[kSrsHistoryFromCondition]，字面量）；实体类型写成 `+entity_kind`，不让规划器改挑
   /// `(entity_kind, entity_id)` 索引去扫全部卡片修改记录。命中时只扫前身链接那几行，不随修改记录表
-  /// 增长——每次缓存刷新（每次评分、每次改卡）都要读一遍（BUG-3524，以前全表扫描）。
+  /// 增长——每次缓存刷新（每次评分、每次改卡）都要读一遍（BUG-3543，以前全表扫描）。
   Future<Map<String, List<String>>> _successorIndex() async {
     const String prefix = SrsFieldKeys.cardHistoryFromPrefix;
     final List<QueryRow> rows = await db
@@ -1617,7 +1617,7 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 一组卡各自的复习历史（同 [history]；按输入顺序去重）。按块预读整条血统的修改记录、日志与
   /// 服务器时刻（每块几次往返），批量重置 / 设置到期 / 撤销 / 立即重排 / 导出 / 优化器取数不再每张卡
-  /// 各查四五次（BUG-3524）。
+  /// 各查四五次（BUG-3543）。
   Future<Map<String, SrsCardHistory>> histories(
     Iterable<String> cardIds,
   ) async {
@@ -1783,7 +1783,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 值没变且无冲突的键不产生记录（与 [editFields] 同一规则）。
   ///
   /// 现值先按实体分块一次预读，序号再紧接着落库一次分配完（以前每个实体各查两次库，且「查一个
-  /// 实体、分配一个实体的序号」交替进行，分配与落库之间夹着几百次往返，BUG-3524）。
+  /// 实体、分配一个实体的序号」交替进行，分配与落库之间夹着几百次往返，BUG-3543）。
   Future<List<SrsFieldEdit>> writeEdits(
     List<SrsEditSpec> specs, {
     List<SrsEntityRecord> records = const <SrsEntityRecord>[],
@@ -1881,7 +1881,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 也是这样），删除标记在最后，再删一次即补齐。
   ///
   /// 以前每张卡一次 `editField`：各自读两次现值、一个事务、一次缓存刷新（含一次修改记录全表扫描）、
-  /// 一次存本机状态，几千张卡的牌组要几万次往返、几十秒（BUG-3524）。[onProgress] 按卡数报进度。
+  /// 一次存本机状态，几千张卡的牌组要几万次往返、几十秒（BUG-3543）。[onProgress] 按卡数报进度。
   Future<void> deleteDeck(String deckId, {SrsProgress? onProgress}) async {
     if (deckId == defaultDeckId) {
       throw StateError('the default deck cannot be deleted');
@@ -2310,7 +2310,7 @@ class SrsDbStore implements SrsSyncReplica {
   });
 
   /// 「立即重排整组」：给子树里每张复习卡写一条 reschedule 日志。牌组树只读一次、各卡历史分块
-  /// 一次预读（以前每张卡各读一遍历史、各读一遍整棵牌组树，BUG-3524）。
+  /// 一次预读（以前每张卡各读一遍历史、各读一遍整棵牌组树，BUG-3543）。
   Future<int> rescheduleDeck(String deckId) => runExclusive(() async {
     final SrsDeckTree tree = await deckTree();
     final List<String> sub = tree.subtree(deckId);
@@ -2851,7 +2851,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 被支配的记录落库时就删了，所以一个字段键上还留着 ≥ 2 条记录的才可能有冲突：先在库里
   /// （SQLite 侧 GROUP BY）挑出这些字段键，只把它们的记录读回来解析。以前把本 profile 全部修改
   /// 记录（含每条笔记的字段正文）整表读回 UI isolate 逐条 JSON 解析，牌组列表每次重读都付一遍
-  /// O(全部修改记录) 的代价（BUG-3521）。
+  /// O(全部修改记录) 的代价（BUG-3540）。
   Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts() async {
     final List<QueryRow> rows = await db
         .customSelect(
@@ -3047,7 +3047,7 @@ class SrsDbStore implements SrsSyncReplica {
   });
 
   /// 发件箱里的事件，按入箱顺序。事件正文按 ID 分块从四张事件表各一次读回（以前每条事件最多
-  /// 查四次，同步一次几万次往返，BUG-3524）。本机未发布的修改记录可能已被（本机更晚的）修改支配
+  /// 查四次，同步一次几万次往返，BUG-3543）。本机未发布的修改记录可能已被（本机更晚的）修改支配
   /// 而丢弃：它在本机已不存在，后一条记录的 ctx 覆盖它，无需再发——跳过。
   @override
   Future<List<SrsEvent>> unpublishedEvents() async {

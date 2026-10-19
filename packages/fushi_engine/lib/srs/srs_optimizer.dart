@@ -107,7 +107,7 @@ Future<SrsOptimizationInput?> srsPrepareOptimization(
       <(int, List<SrsFsrsReview>, int)>[];
   int count = 0;
   final List<String> cardIds = await store.cardIdsInDecks(scope);
-  // 各卡历史按块一次预读（以前每张卡各查四五次，BUG-3524）；分块取，内存里只留一块的历史。
+  // 各卡历史按块一次预读（以前每张卡各查四五次，BUG-3543）；分块取，内存里只留一块的历史。
   for (int start = 0; start < cardIds.length; start += 1000) {
     final List<String> part = cardIds.sublist(
       start,

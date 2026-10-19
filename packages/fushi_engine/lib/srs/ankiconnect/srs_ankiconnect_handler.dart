@@ -1250,7 +1250,7 @@ class SrsAnkiConnectHandler {
       'tags',
     ).split(RegExp(r'\s+')).where((String t) => t.isNotEmpty).toList();
     // 笔记按块一次预读、改动攒成一个批次写（以前每条笔记各查三次、各一个事务一次缓存刷新，
-    // BUG-3524）。中途遇到不存在的笔记：前面算好的照写再报错，与逐条写同结果。
+    // BUG-3543）。中途遇到不存在的笔记：前面算好的照写再报错，与逐条写同结果。
     final Map<String, List<String>> next = <String, List<String>>{};
     try {
       for (final Object r in await _notesByNums(
@@ -1318,7 +1318,7 @@ class SrsAnkiConnectHandler {
 
   Future<bool> _setSuspended(List<int> cards, bool value) async {
     final SrsDbStore store = await _store();
-    // 卡片缓存行一次读、改动攒成一个批次写（以前每张卡一个事务一次缓存刷新，BUG-3524）。
+    // 卡片缓存行一次读、改动攒成一个批次写（以前每张卡一个事务一次缓存刷新，BUG-3543）。
     // 中途遇到不存在的卡：前面的照写再报错，与逐张写同结果。
     final List<String?> ids = <String?>[
       for (final int n in cards) await store.cardIdForAnkiNumericId(n),

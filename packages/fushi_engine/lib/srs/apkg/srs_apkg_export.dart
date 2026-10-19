@@ -119,7 +119,7 @@ class _Exporter {
         if (!c.hidden && (scope == null || scope.contains(c.deckId))) c.noteId,
     };
     // 笔记、卡片历史各按块一次预读；卡按笔记先分好组（以前每条笔记各查三次、每张卡各查四五次，
-    // 每条笔记还把全部卡片行过滤一遍——平方级，BUG-3524）。
+    // 每条笔记还把全部卡片行过滤一遍——平方级，BUG-3543）。
     final List<SrsNoteView> notes = <SrsNoteView>[
       for (final SrsNoteView? n in (await store.notes(noteIds)).values)
         if (n != null && n.deletedAt == null) n,

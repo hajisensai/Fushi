@@ -1,6 +1,6 @@
 // 复习中从工具栏进牌组设置、改完回来，当前会话立即按新设置走：
-// - BUG-3520：评分按钮上的间隔预览（学习步长）、顶栏计数（每日上限）、标题（改名）现读；
-// - BUG-3519：自动播放开关同时管 `[sound:]`（宿主序列）与卡面页内媒体（SrsCardFace.autoplayMedia
+// - BUG-3539：评分按钮上的间隔预览（学习步长）、顶栏计数（每日上限）、标题（改名）现读；
+// - BUG-3538：自动播放开关同时管 `[sound:]`（宿主序列）与卡面页内媒体（SrsCardFace.autoplayMedia
 //   → 卡面闸门），关掉后翻面不再自动播。
 //
 // 走真实路径：复习页工具栏「牌组设置」→ SrsDeckSettingsPage 改值 → 保存返回。
@@ -183,7 +183,7 @@ String _againLabel(WidgetTester tester) {
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
-  testWidgets('BUG-3520：复习中改学习步长 / 每日上限 / 名字，回来立即生效', (
+  testWidgets('BUG-3539：复习中改学习步长 / 每日上限 / 名字，回来立即生效', (
     WidgetTester tester,
   ) async {
     final SrsDbStore store = await _openStore(tester);
@@ -238,7 +238,7 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('BUG-3519：复习中关掉自动播放，卡面页内媒体与 [sound:] 都立即停止自动播放', (
+  testWidgets('BUG-3538：复习中关掉自动播放，卡面页内媒体与 [sound:] 都立即停止自动播放', (
     WidgetTester tester,
   ) async {
     final SrsDbStore store = await _openStore(tester);

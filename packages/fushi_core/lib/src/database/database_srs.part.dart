@@ -77,7 +77,7 @@ mixin _FushiDbSrs on _$FushiDatabase {
       'CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_queue '
           'ON srs_cards_cache (profile_uid, deck_id, queue, due_day)',
       // v119：前身链接的部分覆盖索引（只含 historyFrom/ 那几行）。缓存刷新每次都要找「哪些卡继承了
-      // 这张卡的历史」，以前按无索引的 field_key 全表扫描修改记录表（BUG-3524）。
+      // 这张卡的历史」，以前按无索引的 field_key 全表扫描修改记录表（BUG-3543）。
       'CREATE INDEX IF NOT EXISTS idx_srs_field_edits_history_from '
           'ON srs_field_edits (field_key, entity_kind, entity_id) '
           'WHERE $kSrsHistoryFromCondition',
