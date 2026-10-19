@@ -14,8 +14,10 @@
 ///   也能批量导入；更深的章节/图片子目录仍归属于这个直接子目录，不会拆成多本；
 /// - 候选目录与某个 `.mokuro` 所在目录存在祖先/后代关系时，以 manifest 为准，
 ///   不再生成裸图卷——两种导入器都递归读页图，混用会把同一批图片重复消费；
-/// - 候选目录（或其子树）里躺着单文件卷时同样不再生成裸图卷：`系列/cover.jpg` +
-///   `系列/第1巻.cbz` 这种布局里，那几张散图是封面 / 目录图，不是一卷漫画。
+/// - 候选目录里每个含页图的目录（或其子树）都躺着单文件卷时同样不再生成裸图卷：
+///   `系列/cover.jpg` + `系列/第1巻.cbz` 这种布局里，那几张散图是封面 / 目录图，
+///   不是一卷漫画；但 `系列/ch01/*.jpg` + `系列/extra.cbz` 里 `ch01` 的子树没有包，
+///   那批图是真页，`系列` 照常成卷。
 ///
 /// 「是页图」的判据是 [kMangaImageExtensions]（= `kImageExtensionsBase`），
 /// 与导入器 `enumerateMangaPages` 同源；这里只决定**哪个目录是一卷**，
@@ -91,6 +93,8 @@ MangaFolderPlan planMangaFolders({
   final Set<String> childFolders = <String>{};
   final List<String> allMokuroPaths = <String>[];
   final List<String> carrierPaths = <String>[];
+  // 每张页图所在的目录（去重）；判「散图是不是单文件卷的封面」时逐目录看。
+  final Set<String> imageDirs = <String>{};
   for (final String path in filePaths) {
     final String ext = ctx.extension(path).toLowerCase();
     if (ext == kMokuroExtension) {
@@ -107,6 +111,7 @@ MangaFolderPlan planMangaFolders({
     final String relative = ctx.relative(ctx.normalize(path), from: root);
     final List<String> segments = ctx.split(relative);
     if (segments.isEmpty || segments.first == '..') continue;
+    imageDirs.add(ctx.dirname(ctx.normalize(path)));
     if (segments.length == 1) {
       rootHasImages = true;
     } else {
@@ -153,11 +158,24 @@ MangaFolderPlan planMangaFolders({
           ctx.isWithin(candidate, mokuroDir);
     });
     if (claimedByMokuro) continue;
-    final bool claimedByCarrier = carrierPaths.any((String carrierPath) {
-      final String carrierDir = ctx.dirname(ctx.normalize(carrierPath));
-      return ctx.equals(carrierDir, candidate) ||
-          ctx.isWithin(candidate, carrierDir);
-    });
+    // 散图让位给单文件卷，只在**每一个**含页图的目录自己（或其子树）都躺着单文件卷
+    // 时成立：`系列/cover.jpg` + `系列/第1巻.cbz` 里那张图是封面。只要有一个页图
+    // 目录的子树里没有任何单文件卷（`系列/ch01/*.jpg` + `系列/extra.cbz`），那批图
+    // 就是真正的页，这个候选仍成卷——否则一个散装章节目录会因为隔壁多了一个包而
+    // 被整卷静默丢掉。
+    final List<String> candidateImageDirs = <String>[
+      for (final String dir in imageDirs)
+        if (ctx.equals(dir, candidate) || ctx.isWithin(candidate, dir)) dir,
+    ];
+    final bool claimedByCarrier =
+        candidateImageDirs.isNotEmpty &&
+        candidateImageDirs.every(
+          (String imageDir) => carrierPaths.any((String carrierPath) {
+            final String carrierDir = ctx.dirname(ctx.normalize(carrierPath));
+            return ctx.equals(carrierDir, imageDir) ||
+                ctx.isWithin(imageDir, carrierDir);
+          }),
+        );
     if (!claimedByCarrier) imageFolders.add(candidate);
   }
   return MangaFolderPlan(

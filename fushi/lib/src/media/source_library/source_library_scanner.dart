@@ -1085,15 +1085,32 @@ class SourceLibraryScanner {
         return true;
       });
     }
+    // 单文件卷先按标题身份预检（与远端分支、导入器 resolveDuplicateTitle 同一个
+    // sanitizeTtuFilename 键），命中就不开包：导入器的去重判定在**解压完整包之后**
+    // 才发生（importArchive → importFromImageFolder；EPUB 还要先整本解析一次定性，
+    // PDF 要先拷进书目录），不预检的话每次重扫都把库里每一卷 zip/cbz 整包解压到
+    // 临时目录再丢掉。卷标题恒为文件名去扩展名，预检与导入器判定是同一件事。
+    final Set<String> existingTitleKeys = plan.mangaArchives.isEmpty
+        ? <String>{}
+        : (await _db.getEpubBookMetas())
+            .map((EpubBookMeta b) => sanitizeTtuFilename(b.title))
+            .toSet();
     for (final ScanMangaArchiveItem item in plan.mangaArchives) {
-      await tally.attempt(
-        item.archivePath,
-        () => _importMangaCarrierFile(
+      final String title = p.basenameWithoutExtension(item.archivePath);
+      if (existingTitleKeys.contains(sanitizeTtuFilename(title))) {
+        debugPrint('SourceLibraryScanner skip duplicate manga '
+            '$title (${item.archivePath})');
+        continue;
+      }
+      await tally.attempt(item.archivePath, () async {
+        final bool imported = await _importMangaCarrierFile(
           localPath: item.archivePath,
-          title: p.basenameWithoutExtension(item.archivePath),
+          title: title,
           sourceId: sourceId,
-        ),
-      );
+        );
+        if (imported) existingTitleKeys.add(sanitizeTtuFilename(title));
+        return imported;
+      });
     }
     for (final ScanMangaFolderItem item in plan.mangaFolders) {
       await tally.attempt(item.folderPath, () async {

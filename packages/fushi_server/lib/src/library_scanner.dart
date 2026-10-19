@@ -476,8 +476,12 @@ class LibraryScanner {
     }
     for (final String carrierPath in plan.carrierPaths) {
       // `.zip` / `.epub` 与词典包 / 文字书同形：与手动导入同一判据开包定性。
+      // 已在来源索引里的卷不再开包（纯图 EPUB 的定性要整本解析一次），由
+      // [_importTracked] 直接按索引跳过。
       final String ext = p.extension(carrierPath).toLowerCase();
-      if ((ext == '.zip' || ext == '.epub') && !MangaArchiveImporter.looksLikeImageArchive(carrierPath)) {
+      if ((ext == '.zip' || ext == '.epub') &&
+          scan.index.uidOf(bookSourceRelPath(dir.path, carrierPath)) == null &&
+          !MangaArchiveImporter.looksLikeImageArchive(carrierPath)) {
         continue;
       }
       final bool tracked = await _importTracked(

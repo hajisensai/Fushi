@@ -1820,6 +1820,26 @@ Attributes = A
       expect(await db.getAllEpubBooks(), hasLength(2));
     });
 
+    test('重扫已在库的单文件卷不再开包（标题预检先于解压）', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final File cbz = File(p.join(tmp.path, 'vol-1.cbz'))
+        ..writeAsBytesSync(pagesZip(<String>['001.png', '002.png']));
+      final SourceLibraryRow source = await mangaSource(db);
+      expect(
+          (await SourceLibraryScanner(db).scan(source)).importedMediaCount, 1);
+
+      // 把同名包换成打不开的字节：只要重扫还去开包（此前每次重扫都整包解压到
+      // 临时目录、解压完才由导入器判重复），这里就会冒出一条导入失败。
+      cbz.writeAsBytesSync(<int>[1, 2, 3, 4, 5]);
+      final SourceScanSummary again = await SourceLibraryScanner(db)
+          .scan((await db.getMediaSourceById(source.id))!);
+
+      expect(again.error, isNull);
+      expect(again.importedMediaCount, 0);
+      expect(await db.getAllEpubBooks(), hasLength(1));
+    });
+
     test('漫画来源里的词典 .zip / 文字 .epub 不是漫画：跳过且不算错误', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);

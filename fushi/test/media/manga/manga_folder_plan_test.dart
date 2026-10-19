@@ -87,6 +87,28 @@ void main() {
       expect(mixed.carrierPaths, <String>[p.join(root, 'packed', 'vol-2.cbz')]);
     });
 
+    test('散装章节子目录不因旁边多了一个包而整卷丢掉', () {
+      final String root = p.join('library', 'shelf');
+      final MangaFolderPlan plan = planMangaFolders(
+        rootPath: root,
+        filePaths: <String>[
+          // 系列 A：章节是散图子目录，旁边另有一个番外包 → A 仍是一卷散图，包另成一卷。
+          p.join(root, 'A', 'ch01', '001.jpg'),
+          p.join(root, 'A', 'ch02', '001.jpg'),
+          p.join(root, 'A', 'extra.cbz'),
+          // 系列 B：封面在系列目录、包在卷子目录 → 封面不是一卷。
+          p.join(root, 'B', 'cover.jpg'),
+          p.join(root, 'B', 'v1', 'v1.cbz'),
+        ],
+      );
+
+      expect(plan.imageFolders, <String>[p.join(root, 'A')]);
+      expect(plan.carrierPaths, <String>[
+        p.join(root, 'A', 'extra.cbz'),
+        p.join(root, 'B', 'v1', 'v1.cbz'),
+      ]);
+    });
+
     test('扫描根之外的载体被忽略', () {
       final String root = p.join('library', 'series');
       final MangaFolderPlan plan = planMangaFolders(

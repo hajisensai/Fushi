@@ -269,6 +269,21 @@ void main() {
     expect(second.mangaSkipped, 2);
   });
 
+  test('已在来源索引里的 .zip 卷重扫不再开包定性', () async {
+    final File zip = File(p.join(libraryRoot.path, 'vol-1.zip'));
+    writePagesZip(zip.path, <String>['001.png']);
+    expect((await scan()).mangaAdded, 1);
+
+    // 换成打不开的字节：重扫若仍先开包定性，会判「不是漫画」直接跳过，这一卷就不再
+    // 被记为在场。
+    zip.writeAsBytesSync(<int>[1, 2, 3, 4, 5]);
+    final ScanSummary second = await scan();
+
+    expect(second.errors, isEmpty);
+    expect(second.mangaSkipped, 1);
+    expect(await db.getAllEpubBooks(), hasLength(1));
+  });
+
   test('漫画根里的词典 .zip 不是漫画：跳过、不报错', () async {
     final Archive archive = Archive();
     for (final String name in <String>['index.json', 'term_bank_1.json']) {
