@@ -686,16 +686,8 @@ begin
     Log('WriteDataRootBootstrap: 写入失败，app 将使用默认数据位置');
 end;
 
-// Fushi 改名的旧名残留清理，全部放在 ssPostInstall（新文件已全部落地之后），
-// 不放 [InstallDelete]：后者在复制前执行，且 Inno 不会在安装失败/取消时回滚删除，
-// 于是任何一次中途失败的升级都会把「还剩个能跑的旧版」变成「一个可执行文件都没有」。
-// ssPostInstall 只有在文件复制成功后才会到达，删旧名二进制不再有这个窗口。
-//
-// 平台限制（如实记录）：Windows 不提供程序化「固定到任务栏」的公开接口，
-// 所以任务栏固定项这里只能删掉指向已消失的 hibiki.exe 的死链接，
-// 无法自动改指 fushi.exe、也无法重新固定；用户需要的话得手动再固定一次。
 { BUG-3567：提权的应用内更新把 Inno 日志写进安装目录（用户不可写，防链接重定向），
-  文件名带交接时刻。安装成功后只留本次这份（{log}），其余历次的删掉，不在安装目录堆积。 }
+  文件名带交接时刻。安装成功后只留本次这份（Inno 的 log 常量指向的那个），其余历次的删掉，不在安装目录堆积。 }
 procedure CleanupStaleElevatedInstallLogs();
 var
   FindRec: TFindRec;
@@ -715,6 +707,14 @@ begin
   end;
 end;
 
+// Fushi 改名的旧名残留清理，全部放在 ssPostInstall（新文件已全部落地之后），
+// 不放 [InstallDelete]：后者在复制前执行，且 Inno 不会在安装失败/取消时回滚删除，
+// 于是任何一次中途失败的升级都会把「还剩个能跑的旧版」变成「一个可执行文件都没有」。
+// ssPostInstall 只有在文件复制成功后才会到达，删旧名二进制不再有这个窗口。
+//
+// 平台限制（如实记录）：Windows 不提供程序化「固定到任务栏」的公开接口，
+// 所以任务栏固定项这里只能删掉指向已消失的 hibiki.exe 的死链接，
+// 无法自动改指 fushi.exe、也无法重新固定；用户需要的话得手动再固定一次。
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep <> ssPostInstall then
