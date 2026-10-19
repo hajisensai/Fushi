@@ -413,6 +413,23 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
                   style: tokens.type.metadata,
                 ),
               ],
+              // 提权安装（BUG-3567）没起来的两种可由用户处置的原因：UAC 被拒、
+              // 安装包没过 launcher 的锁定后哈希复核。字段由 update_launcher.cpp 写入。
+              if (record.extraFields['installerElevationDeclined'] == true) ...[
+                SizedBox(height: tokens.spacing.gap),
+                Text(
+                  t.update_install_elevation_declined,
+                  style: tokens.type.listSubtitle,
+                ),
+              ],
+              if (record.extraFields['installerIntegrityCheckFailed'] ==
+                  true) ...[
+                SizedBox(height: tokens.spacing.gap),
+                Text(
+                  t.update_install_integrity_failed,
+                  style: tokens.type.listSubtitle,
+                ),
+              ],
               if (record.launchError != null) ...[
                 SizedBox(height: tokens.spacing.gap / 2),
                 SelectableText(

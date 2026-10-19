@@ -617,7 +617,7 @@ add_executable(fushi_update_launcher WIN32
 )
 apply_standard_settings(fushi_update_launcher)
 target_compile_definitions(fushi_update_launcher PRIVATE "NOMINMAX")
-target_link_libraries(fushi_update_launcher PRIVATE shell32)
+target_link_libraries(fushi_update_launcher PRIVATE shell32 bcrypt)
 
 # BUG-2726: game-stream input regression (window-targeted input, SGRE native
 # gamepad channel, release-without-visibility). Unlike the gates above it is
