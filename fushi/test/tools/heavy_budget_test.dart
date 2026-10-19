@@ -86,6 +86,35 @@ void main() {
       expect(kind(<String>[]), HeavyKind.other);
     });
 
+    // Wrapped in heavy.dart these tools take no lease of their own and their
+    // Job Object nests inside the wrapper's, so the wrapper books and caps
+    // for them: exactly their own ceiling, neither the generic 16 GB nor
+    // less than pre_push_check --parallel needs.
+    test('lease-taking repo tools are booked at their own ceiling', () {
+      int cap(List<String> argv) => classifyHeavyCommand(argv).capMb;
+      final int test = heavyNeedFor(HeavyKind.test).capMb;
+      final int analyze = heavyNeedFor(HeavyKind.analyze).capMb;
+      expect(cap(<String>['dart', 'tool/pre_push_check.dart']), test);
+      expect(
+        cap(<String>['dart', 'run', r'tool\pre_push_check.dart', '--parallel']),
+        test + analyze,
+      );
+      expect(prePushCheckCapMb(parallel: true), test + analyze);
+      expect(
+        cap(<String>['dart.exe', 'tool/flutter_test_failures.dart', '--x=1']),
+        test,
+      );
+      final HeavyNeed ftf = classifyHeavyCommand(<String>[
+        'dart',
+        'tool/flutter_test_failures.dart',
+      ]);
+      expect(ftf.kind, HeavyKind.test);
+      expect(ftf.worktreeExclusive, isTrue);
+      // Any other dart script / `dart run` of one stays as before.
+      expect(kind(<String>['dart', 'tool/i18n_sync.dart']), HeavyKind.other);
+      expect(kind(<String>['dart', 'run', 'slang']), HeavyKind.build);
+    });
+
     test('only analyze may share a worktree; every kind has a ceiling', () {
       for (final HeavyKind k in HeavyKind.values) {
         final HeavyNeed n = heavyNeedFor(k);
@@ -102,6 +131,72 @@ void main() {
     expect(defaultHeavySlots(256 * 1024), 4);
   });
 
+  test('defaultHeavyBudgetMb: half the RAM in whole GB', () {
+    expect(defaultHeavyBudgetMb(65156), 32768);
+    expect(defaultHeavyBudgetMb(32 * 1024), 16384);
+    expect(defaultHeavyBudgetMb(8 * 1024), 4096);
+  });
+
+  // 2026-10-19 (owner's call): three 12-16 GB ceilings promised 48 GB on a
+  // 64 GB desktop full of agent sessions; the commit limit ran out.
+  test('heavyBudgetBlocker books the holders\' ceilings, not free RAM', () {
+    final int test = heavyNeedFor(HeavyKind.test).capMb;
+    final int analyze = heavyNeedFor(HeavyKind.analyze).capMb;
+    final int build = heavyNeedFor(HeavyKind.build).capMb;
+    const int budget = 32768;
+    // Idle machine: always starts, even past the budget on its own.
+    expect(
+      heavyBudgetBlocker(needMb: 40000, heldCapsMb: <int>[], budgetMb: budget),
+      isNull,
+    );
+    expect(
+      heavyBudgetBlocker(
+        needMb: analyze,
+        heldCapsMb: <int>[test, test],
+        budgetMb: budget,
+      ),
+      isNull,
+    );
+    expect(
+      heavyBudgetBlocker(
+        needMb: test,
+        heldCapsMb: <int>[build],
+        budgetMb: budget,
+      ),
+      isNull,
+    );
+    expect(
+      heavyBudgetBlocker(
+        needMb: test,
+        heldCapsMb: <int>[test, test],
+        budgetMb: budget,
+      ),
+      contains('memory budget: 24576 MB booked + 12288 MB > 32768 MB'),
+    );
+    expect(
+      heavyBudgetBlocker(
+        needMb: analyze,
+        heldCapsMb: <int>[build, test],
+        budgetMb: budget,
+      ),
+      isNotNull,
+    );
+  });
+
+  test('a holder without a recorded ceiling books the largest one', () {
+    final HeavyHolder? old = HeavyHolder.fromJson(0, <String, Object>{
+      'pid': 7,
+      'startedAt': 1,
+      'label': 'old',
+      'cwd': '',
+    });
+    expect(old?.capMb, isNull);
+    expect(old?.bookedMb, kUnknownHolderCapMb);
+    for (final HeavyKind k in HeavyKind.values) {
+      expect(heavyNeedFor(k).capMb, lessThanOrEqualTo(kUnknownHolderCapMb));
+    }
+  });
+
   test('HeavyHolder JSON round-trips and rejects junk', () {
     const HeavyHolder h = HeavyHolder(
       slot: 2,
@@ -112,6 +207,20 @@ void main() {
     );
     final HeavyHolder? back = HeavyHolder.fromJson(2, h.toJson());
     expect(back?.pid, 42);
+    expect(
+      HeavyHolder.fromJson(
+        2,
+        const HeavyHolder(
+          slot: 2,
+          pid: 42,
+          startedAtMs: 7,
+          label: 'flutter test',
+          cwd: 'D:/x',
+          capMb: 12288,
+        ).toJson(),
+      )?.bookedMb,
+      12288,
+    );
     // A holder written by an older checkout still carries needMb; it is read
     // as usual (the field is simply ignored now).
     expect(

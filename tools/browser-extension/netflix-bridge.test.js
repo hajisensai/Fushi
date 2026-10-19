@@ -40,7 +40,19 @@ function loadBridge(opts) {
     // 正片会话 id 以 'watch' 开头；预告 / billboard 会话排在它后面也不能被选中。
     sessionIds: opts.sessionIds || ['watch-81001', 'motion-billboard-1'],
   };
+  // 播放器状态通道桩：textTracks = getTimedTextTrackList()；stateUrls（trackId → url）按结构
+  // 埋进会话状态深处（与真播放器一样不在固定路径上）；setTimedTextTrack 可选「切过去就下发地址」。
+  player.textTracks = opts.textTracks || [];
+  player.stateUrls = opts.stateUrls || {};
+  player.setCalls = [];
   const watchPlayer = {
+    getTimedTextTrackList: () => player.textTracks,
+    setTimedTextTrack: (t) => {
+      player.setCalls.push(t && t.trackId);
+      player.track = t;
+      if (opts.urlOnSelect && t && opts.urlOnSelect[t.trackId]) player.stateUrls[t.trackId] = opts.urlOnSelect[t.trackId];
+      return Promise.resolve();
+    },
     getTimedTextTrack: () => player.track,
     getCurrentTime: () => player.time,
     seek: (ms) => { player.seeks.push(ms); if (!opts.seekNeverLands) player.time = ms; },
@@ -55,6 +67,19 @@ function loadBridge(opts) {
       appContext: {
         state: {
           playerApp: {
+            getState: () => ({
+              videoPlayer: {
+                cadmiumPlayerRepository: {
+                  playersById: {
+                    'watch-81001': {
+                      a: { b: { buffers: [new ArrayBuffer(8)], c: Object.keys(player.stateUrls).map((id) => ({
+                        d: { type: 'timedtext', trackId: id, urls: [{ url: player.stateUrls[id], cdnId: 1 }] },
+                      })) } },
+                    },
+                  },
+                },
+              },
+            }),
             getAPI: () => ({
               videoPlayer: {
                 getAllPlayerSessionIds: () => player.sessionIds,
@@ -69,6 +94,7 @@ function loadBridge(opts) {
   // BUG-1949：受控 XMLHttpRequest —— 桥在 document_start 给 prototype 打补丁，测试里构造实例、
   // 设好 responseType/responseText/response 后 send() → fire('load') 模拟播放器自下字幕文件。
   const xhrs = [];
+  const intervals = [];
   class FakeXhr {
     constructor() { this.listeners = {}; this.responseType = ''; this.responseText = ''; this.response = null; xhrs.push(this); }
     open(method, url) { this.method = method; this.url = String(url); }
@@ -90,6 +116,7 @@ function loadBridge(opts) {
     Uint8Array,
     Math,
     setTimeout: (fn) => { fn(); return 0; },
+    setInterval: (fn) => { intervals.push(fn); return 0; },
     Date: opts.Date || Date,
     // BUG-1728：记录 fetch 第二参（init）供「不带 credentials」断言；mock 响应带 ok/status
     //（实现按 r.ok 分流成功/失败）。
@@ -109,7 +136,8 @@ function loadBridge(opts) {
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(src, ctx, { filename: 'netflix-bridge.js' });
-  return { posted, listeners, fetched, ctx, windowObj, behavior, player, FakeXhr, FakeResponse, xhrs };
+  return { posted, listeners, fetched, ctx, windowObj, behavior, player, FakeXhr, FakeResponse, xhrs, intervals,
+    tick() { for (const fn of intervals) fn(); } };
 }
 
 const TTML_BODY = '<?xml version="1.0" encoding="utf-8"?>\n<tt ttp:contentProfiles="http://www.netflix.com/ns/ttml2/profiles/2023-1/nflx-tt.xml" xmlns="http://www.w3.org/ns/ttml">\n<body><div><p begin="00:00:01.000" end="00:00:02.000">こんにちは</p></div></body></tt>';
@@ -133,6 +161,12 @@ function makeManifest() {
       track('zh-Hans', 'https://cdn/zh.vtt'),
     ],
   };
+}
+
+// 按需取轨是 promise 链（每轮地址轮询 = 一次分片遍历 + 250 ms 间隔，harness 的 setTimeout 同步执行），
+// 链长随轮询次数变；一次宏任务把全部已排队微任务冲刷干净，不按固定拍数猜。
+function drainMicrotasks() {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 async function settle() {
@@ -432,4 +466,190 @@ test('清单轨抓取失败投 cuesFailed（带语言与 trackId），消费端�
   const ja = failed.find((m) => m.lang === 'ja');
   assert.strictEqual(ja.trackId, 'T:ja-1');
   assert.strictEqual(ja.videoId, '81001');
+});
+
+// ── 播放器状态通道（清单钩子与正文嗅探都零命中时的主数据源，asbplayer 同判据） ──
+const NF_TRACKS = [
+  { trackId: 'T:off', isNoneTrack: true },
+  { trackId: 'T:ja-cc', bcp47: 'ja', displayName: '日本語 [CC]', rawTrackType: 'CLOSEDCAPTIONS' },
+  { trackId: 'T:en', bcp47: 'en', displayName: 'English' },
+  { trackId: 'T:img', bcp47: 'zh', displayName: '中文', isImageBased: true },
+  { trackId: 'T:forced', bcp47: 'ja', displayName: '日本語(強制)', isForcedNarrative: true },
+];
+
+test('状态通道：轨清单投成 tracks 占位（跳过关/图片/强制轨），状态里已有地址的轨直接整轨下载', async () => {
+  const h = loadBridge({
+    track: NF_TRACKS[1],
+    textTracks: NF_TRACKS,
+    stateUrls: { 'T:ja-cc': 'https://cdn/ja-cc.imsc' },
+  });
+  h.tick();
+  await settle();
+  const tracksMsgs = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'tracks').map((p) => p.msg);
+  assert.strictEqual(tracksMsgs.length, 1);
+  assert.strictEqual(tracksMsgs[0].videoId, '81001');
+  assert.strictEqual(JSON.stringify(tracksMsgs[0].tracks.map((t) => t.trackId)), JSON.stringify(['T:ja-cc', 'T:en']));
+  assert.strictEqual(h.fetched.length, 1);
+  assert.strictEqual(h.fetched[0].url, 'https://cdn/ja-cc.imsc');
+  const cues = cuesPosted(h);
+  assert.strictEqual(cues.length, 1);
+  assert.strictEqual(cues[0].msg.lang, 'ja');
+  assert.strictEqual(cues[0].msg.trackId, 'T:ja-cc');
+  assert.strictEqual(cues[0].msg.label, '日本語 [CC]');
+  // 再来一拍：清单没变不重复投 tracks，同一地址不重复下载。
+  h.tick();
+  await settle();
+  assert.strictEqual(h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'tracks').length, 1);
+  assert.strictEqual(h.fetched.length, 1);
+  // replayCues 也重放轨清单（隔离世界晚就绪时不丢占位）。
+  h.posted.length = 0;
+  for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'replayCues' } });
+  assert.strictEqual(h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'tracks').length, 1);
+});
+
+test('状态通道：fetchTrack 取无地址的轨 = 临时切过去等地址 → 切回原轨 → 整轨下载', async () => {
+  const h = loadBridge({
+    track: NF_TRACKS[1],
+    textTracks: NF_TRACKS,
+    stateUrls: {},
+    urlOnSelect: { 'T:en': 'https://cdn/en.imsc' },
+  });
+  for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
+  await drainMicrotasks();
+  assert.strictEqual(JSON.stringify(h.player.setCalls), JSON.stringify(['T:en', 'T:ja-cc']), '切过去再切回原轨');
+  assert.strictEqual(h.fetched.length, 1);
+  assert.strictEqual(h.fetched[0].url, 'https://cdn/en.imsc');
+  const cues = cuesPosted(h);
+  assert.strictEqual(cues.length, 1);
+  assert.strictEqual(cues[0].msg.trackId, 'T:en');
+});
+
+test('状态通道：地址始终不来 → 切回原轨并投 cuesFailed（不无限等）', async () => {
+  const h = loadBridge({ track: NF_TRACKS[1], textTracks: NF_TRACKS, stateUrls: {} });
+  for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
+  await drainMicrotasks();
+  assert.strictEqual(JSON.stringify(h.player.setCalls), JSON.stringify(['T:en', 'T:ja-cc']));
+  const failed = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cuesFailed').map((p) => p.msg);
+  assert.strictEqual(failed.length, 1);
+  assert.strictEqual(failed[0].trackId, 'T:en');
+  assert.strictEqual(h.fetched.length, 0);
+});
+
+test('状态通道：页面数据不可信——状态成环 / getter 抛错 / urls 形状不对 / 播放器 API 缺方法时降级为 cuesFailed，不抛出', async () => {
+  const h = loadBridge({ track: NF_TRACKS[1], textTracks: NF_TRACKS, stateUrls: {} });
+  const cyc = { type: 'timedtext', trackId: 'T:en', urls: 'not-an-array' };
+  cyc.self = cyc;
+  const evil = {};
+  Object.defineProperty(evil, 'boom', { enumerable: true, get() { throw new Error('getter'); } });
+  const brokenPlayer = {
+    getTimedTextTrackList: () => NF_TRACKS,
+    getTimedTextTrack: () => NF_TRACKS[1],
+    // 网飞改版删了 setTimedTextTrack：临时切轨那步必然抛 TypeError。
+  };
+  h.windowObj.netflix = {
+    appContext: { state: { playerApp: {
+      getState: () => ({ videoPlayer: { cadmiumPlayerRepository: { playersById: { 'watch-81001': { cyc, evil, list: [cyc, null, 3] } } } } }),
+      getAPI: () => ({ videoPlayer: {
+        getAllPlayerSessionIds: () => ['watch-81001'],
+        getVideoPlayerBySessionId: () => brokenPlayer,
+      } }),
+    } } },
+  };
+  assert.doesNotThrow(() => { for (let i = 0; i < 10; i++) h.tick(); });
+  await settle();
+  assert.strictEqual(h.fetched.length, 0, '形状不对的 urls 不当成下载地址');
+  for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
+  await drainMicrotasks();
+  const failed = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cuesFailed').map((p) => p.msg);
+  assert.strictEqual(failed.length, 1);
+  assert.strictEqual(failed[0].trackId, 'T:en');
+  // 整个网飞对象消失（未登录页 / 改版）：拍子与按需取轨都静默降级。
+  delete h.windowObj.netflix;
+  assert.doesNotThrow(() => h.tick());
+  for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
+  await drainMicrotasks();
+  assert.strictEqual(h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cuesFailed').length, 2);
+});
+
+// ── 状态树节点预算（页面数据大小不由我们定：遍历分片、单次封顶） ──
+function useState(h, root) {
+  const api = h.windowObj.netflix.appContext.state.playerApp.getAPI;
+  h.windowObj.netflix = { appContext: { state: { playerApp: {
+    getState: () => ({ videoPlayer: { cadmiumPlayerRepository: { playersById: { 'watch-81001': root } } } }),
+    getAPI: api,
+  } } } };
+}
+
+test('状态通道：每拍只遍历一片（≤ 20000 节点），大状态分几拍走完、地址照样找到', async () => {
+  const h = loadBridge({ track: NF_TRACKS[1], textTracks: NF_TRACKS, stateUrls: {} });
+  let visits = 0;
+  const wide = [];
+  for (let i = 0; i < 50000; i++) {
+    const n = {};
+    Object.defineProperty(n, 'probe', { enumerable: true, get() { visits++; return 0; } });
+    wide.push(n);
+  }
+  // LIFO：wide 后压栈、先出栈，timedtext 所在的 x 排在 5 万个节点之后。
+  useState(h, { x: { y: { type: 'timedtext', trackId: 'T:ja-cc', urls: [{ url: 'https://cdn/ja-cc.imsc' }] } }, wide });
+  h.tick();
+  await settle();
+  assert.ok(visits > 0 && visits <= 20000, '第一拍只走一片：' + visits);
+  assert.strictEqual(h.fetched.length, 0, '一片走不到 5 万节点之后的地址');
+  h.tick();
+  h.tick();
+  await settle();
+  assert.strictEqual(visits, 50000, '三拍走完整棵树，每个节点只访问一次');
+  assert.strictEqual(h.fetched.length, 1);
+  assert.strictEqual(h.fetched[0].url, 'https://cdn/ja-cc.imsc');
+});
+
+test('状态通道：单次遍历超 1 000 000 节点即放弃并降级——只诊断一次，按需取轨不临时切轨、直接投 cuesFailed', async () => {
+  const h = loadBridge({ track: NF_TRACKS[1], textTracks: NF_TRACKS, stateUrls: {} });
+  const warns = [];
+  h.ctx.console = { warn: (...a) => warns.push(a.join(' ')), log() {}, error() {} };
+  const wide = new Array(1000005);
+  for (let i = 0; i < wide.length; i++) wide[i] = {};
+  useState(h, { x: { y: { type: 'timedtext', trackId: 'T:en', urls: [{ url: 'https://cdn/en.imsc' }] } }, wide });
+  for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
+  await drainMicrotasks();
+  assert.strictEqual(JSON.stringify(h.player.setCalls), '[]', '超预算不去切轨（切了也找不到地址）');
+  assert.strictEqual(h.fetched.length, 0, '放弃的遍历不会摸到排在后面的地址');
+  const failed = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cuesFailed').map((p) => p.msg);
+  assert.strictEqual(failed.length, 1);
+  assert.strictEqual(failed[0].err, 'player state too large');
+  assert.strictEqual(warns.filter((w) => w.includes('state channel degraded')).length, 1);
+  // 拍子里的遍历同样封顶、不抛，诊断不重复打。
+  assert.doesNotThrow(() => { for (let i = 0; i < 60; i++) h.tick(); });
+  assert.strictEqual(h.fetched.length, 0);
+  assert.strictEqual(warns.filter((w) => w.includes('state channel degraded')).length, 1);
+});
+
+test('轨身份三通道同源：清单条目 / 播放器当前轨 / 状态轨清单对同一条轨算出同一个 lang（bcp47 优先）', async () => {
+  // language 与 bcp47 不同的轨：旧实现清单通道取 language、状态通道取 bcp47，同一条轨落两个 key。
+  const track = { trackId: 'T:pt', bcp47: 'pt-BR', language: 'pt', displayName: 'Português (Brasil)' };
+  const h = loadBridge({ track, textTracks: [track], stateUrls: {} });
+  h.tick();
+  const placeholder = h.posted.find((p) => p.msg && p.msg.__fushiNf === 'tracks').msg.tracks[0];
+  vm.runInContext('JSON.parse(' + JSON.stringify(JSON.stringify({
+    movieId: 81001,
+    timedtexttracks: [{ new_track_id: 'T:pt', bcp47: 'pt-BR', language: 'pt', displayName: 'Português (Brasil)',
+      ttDownloadables: { 'webvtt-lssdh-ios8': { urls: [{ url: 'https://cdn/pt.vtt' }] } } }],
+  })) + ')', h.ctx);
+  await settle();
+  const manifestCue = cuesPosted(h).find((p) => p.msg.trackId === 'T:pt').msg;
+  assert.strictEqual(placeholder.lang, 'pt-BR');
+  assert.strictEqual(manifestCue.lang, placeholder.lang, '清单通道与状态通道同一个 lang');
+  assert.strictEqual(manifestCue.trackId, placeholder.trackId);
+  assert.strictEqual(manifestCue.label, placeholder.label);
+  // 正文嗅探取的是播放器当前轨，同样经共用函数。
+  const xhr = new h.FakeXhr();
+  xhr.open('GET', CDN_URL);
+  xhr.responseText = VTT_BODY;
+  xhr.send();
+  xhr.fire('load');
+  await settle();
+  const sniffed = cuesPosted(h).filter((p) => p.msg.text === VTT_BODY).map((p) => p.msg);
+  assert.strictEqual(sniffed.length, 1);
+  assert.strictEqual(sniffed[0].lang, 'pt-BR');
+  assert.strictEqual(sniffed[0].trackId, 'T:pt');
 });

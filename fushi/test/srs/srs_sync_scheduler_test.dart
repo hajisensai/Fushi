@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
@@ -296,44 +297,54 @@ void main() {
       expect((await store.loadSyncState()).directories, isEmpty);
     });
 
-    test('host 收到客户端写入：去抖后只跑一次本机目录，不跑通道', () async {
-      final List<String> keys = <String>[];
-      int channelRuns = 0;
-      final SrsSyncScheduler s = SrsSyncScheduler(
-        readStore: () async => store,
-        channels: (Future<void> Function(SyncAssetStore) body) async {
-          channelRuns++;
-          return 0;
-        },
-        directoryKeyOf: (SyncAssetStore b) async => 'cloud',
-        localDirectories: () async => <SrsLocalDirectory>[
-          SrsLocalDirectory(
-            directoryKey: 'interconnect:host',
-            store: LocalDirectoryAssetStore(root),
-          ),
-        ],
-        onDataChanged: () {},
-        onNotice: (SrsSyncNotice _) {},
-        hostWriteDebounce: const Duration(milliseconds: 30),
-        runner: (SyncAssetStore b, SrsDbStore st, String key) async {
-          keys.add(key);
-          return SrsSyncReport();
-        },
-      );
-      addTearDown(s.dispose);
-      for (int i = 0; i < 5; i++) {
+    // 去抖是墙钟定时器：用真实 delay 驱动时，机器一忙 5 ms 的间隔就会拉长到超过去抖窗口，
+    // 「去抖期间不跑」随负载随机失败。改用 fakeAsync 精确推进时间；runner 等依赖全是
+    // 内存里的 Future，flushMicrotasks 即可跑完一轮。
+    test('host 收到客户端写入：去抖后只跑一次本机目录，不跑通道', () {
+      fakeAsync((FakeAsync async) {
+        final List<String> keys = <String>[];
+        int channelRuns = 0;
+        final SrsSyncScheduler s = SrsSyncScheduler(
+          readStore: () async => store,
+          channels: (Future<void> Function(SyncAssetStore) body) async {
+            channelRuns++;
+            return 0;
+          },
+          directoryKeyOf: (SyncAssetStore b) async => 'cloud',
+          localDirectories: () async => <SrsLocalDirectory>[
+            SrsLocalDirectory(
+              directoryKey: 'interconnect:host',
+              store: LocalDirectoryAssetStore(root),
+            ),
+          ],
+          onDataChanged: () {},
+          onNotice: (SrsSyncNotice _) {},
+          hostWriteDebounce: const Duration(milliseconds: 30),
+          runner: (SyncAssetStore b, SrsDbStore st, String key) async {
+            keys.add(key);
+            return SrsSyncReport();
+          },
+        );
+        addTearDown(s.dispose);
+        for (int i = 0; i < 5; i++) {
+          s.notifyLocalDirectoryWritten();
+          async.elapse(const Duration(milliseconds: 5));
+        }
+        expect(keys, isEmpty, reason: '去抖期间不跑');
+        // 最后一次写入后已过 5 ms；再推 24 ms 正好差 1 ms 满 30 ms 去抖窗口。
+        async.elapse(const Duration(milliseconds: 24));
+        expect(keys, isEmpty, reason: '最后一次写入后还没满去抖窗口');
+        async.elapse(const Duration(milliseconds: 1));
+        async.flushMicrotasks();
+        expect(keys, <String>['interconnect:host']);
+        expect(channelRuns, 0);
+        // 销毁后再来的写入不再触发。
+        s.dispose();
         s.notifyLocalDirectoryWritten();
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
-      expect(keys, isEmpty, reason: '去抖期间不跑');
-      await Future<void>.delayed(const Duration(milliseconds: 120));
-      expect(keys, <String>['interconnect:host']);
-      expect(channelRuns, 0);
-      // 销毁后再来的写入不再触发。
-      s.dispose();
-      s.notifyLocalDirectoryWritten();
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-      expect(keys, hasLength(1));
+        async.elapse(const Duration(milliseconds: 80));
+        async.flushMicrotasks();
+        expect(keys, hasLength(1));
+      });
     });
 
     test('坏文件只记一次日志，不影响结果', () async {
