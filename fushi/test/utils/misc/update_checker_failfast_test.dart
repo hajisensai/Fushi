@@ -17,14 +17,19 @@ import 'package:fushi/src/utils/misc/update_checker.dart';
 // Timing: these guards used to measure the real 5s / 8s timeouts against
 // wall-clock thresholds ("< 15s"), which went red under machine load (28-53s
 // observed). They now inject a tiny first-byte timeout and a huge body timeout
-// via [debugUpdateDownloadTimeoutsOverride]; "the whole run finishes before the
-// *real* 5s first-byte timeout" then separates fail-fast from a regression
-// (which waits >= one real 5s timeout or one injected 60s body timeout per
-// candidate) with a 25x margin instead of a tight wall-clock budget.
+// via [debugUpdateDownloadTimeoutsOverride]. A regression (serial fallback
+// waiting on the body timeout, or on the real 5s/8s constants instead of the
+// injected first-byte timeout) waits >= 5s per dead candidate, so with two
+// candidates its elapsed time is >= 10s *by construction* -- load can only
+// make it slower. The fail-fast path costs 2 x 100ms plus I/O (~1s measured on
+// a loaded machine), so "< 10s" leaves ~9s for load instead of a tight budget.
 const UpdateDownloadTimeouts _fastFirstByte = UpdateDownloadTimeouts(
   firstByte: Duration(milliseconds: 100),
   body: Duration(seconds: 60),
 );
+
+/// Lower bound of any regressed run over the two dead candidates below.
+const Duration _regressionFloor = Duration(seconds: 10);
 
 void main() {
   test('production fail-fast timeouts: 5s first byte, 8s per body segment',
@@ -85,10 +90,10 @@ void main() {
         expect(openCount, 2, reason: 'each of 2 candidates requested once');
         expect(
           sw.elapsed,
-          lessThan(UpdateDownloadTimeouts.standard.firstByte),
+          lessThan(_regressionFloor),
           reason: 'injected 100ms first-byte timeout: 2 dead candidates take '
-              '~0.2s; waiting on the real 5s constant or the 60s body timeout '
-              'means the serial fallback is not using the first-byte timeout',
+              '~0.2s plus I/O; a fallback waiting on the real 5s/8s constants '
+              'or the 60s body timeout needs >= 10s by construction',
         );
       },
       timeout: const Timeout(Duration(minutes: 3)),
@@ -123,10 +128,10 @@ void main() {
         expect(thrown, isNotNull);
         expect(
           sw.elapsed,
-          lessThan(UpdateDownloadTimeouts.standard.firstByte),
+          lessThan(_regressionFloor),
           reason: 'race + probe + single fallback all use the (injected 100ms) '
-              'first-byte timeout; any stage on the real 5s constant or the '
-              'body timeout blows this bound',
+              'first-byte timeout; a fallback on the real constants or the '
+              'body timeout needs >= 10s by construction',
         );
       },
       timeout: const Timeout(Duration(minutes: 3)),
