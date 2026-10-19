@@ -27,6 +27,8 @@ import 'package:ftpconnect/ftpconnect.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/source_library/book_library_prune.dart'
+    show sourceContentFingerprint;
 import 'package:fushi_engine/media/video/external_video.dart'
     show sourceEntryBasename;
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -45,6 +47,8 @@ class SourceFileEntry {
     required this.path,
     required this.isDirectory,
     this.sizeBytes,
+    this.modifiedAt,
+    this.etag,
   });
 
   /// 条目 basename（不含父目录）。
@@ -59,6 +63,21 @@ class SourceFileEntry {
   /// 文件字节大小；目录或不可知时为 null。本地传输恒为 null（列目录不逐文件
   /// stat，见 [LocalSourceFileSystem.listFiles]）；远端传输由列目录响应顺带给出。
   final int? sizeBytes;
+
+  /// 修改时刻（UTC 毫秒），远端列目录响应顺带给出时才有（SFTP mtime / FTP MLSD·LIST
+  /// 时间 / WebDAV `getlastmodified` / AList `modified`）；本地传输恒为 null。
+  final int? modifiedAt;
+
+  /// WebDAV `getetag`（内容一变就必须变，RFC 4918 §15.6）；其它传输为 null。
+  final String? etag;
+
+  /// 远端条目的内容指纹（[sourceContentFingerprint]：ETag 优先，否则大小 + 修改时刻）；
+  /// 一样元数据都没有时为 null。本地条目不靠它，按需 stat（[localSourceContentFingerprint]）。
+  String? get contentFingerprint => sourceContentFingerprint(
+        sizeBytes: sizeBytes,
+        modifiedAt: modifiedAt,
+        etag: etag,
+      );
 }
 
 /// 来源库文件系统抽象：把「列目录 / 找 sidecar / 读文本 / 拉到本地」统一成
@@ -379,6 +398,10 @@ class NetworkSourceFileSystem implements SourceFileSystem {
             path: childPath,
             isDirectory: false,
             sizeBytes: e.attr.size,
+            // SFTP mtime 是秒。
+            modifiedAt: e.attr.modifyTime == null
+                ? null
+                : e.attr.modifyTime! * 1000,
           ));
         }
       }
@@ -497,6 +520,7 @@ class NetworkSourceFileSystem implements SourceFileSystem {
             path: childPath,
             isDirectory: false,
             sizeBytes: e.size,
+            modifiedAt: e.modifyTime?.toUtc().millisecondsSinceEpoch,
           ));
         }
       }
@@ -602,6 +626,8 @@ class NetworkSourceFileSystem implements SourceFileSystem {
             name: e.displayName,
             path: e.href,
             isDirectory: false,
+            modifiedAt: e.modifiedAt,
+            etag: e.etag,
           ));
         }
       }
@@ -708,6 +734,9 @@ class NetworkSourceFileSystem implements SourceFileSystem {
             path: url,
             isDirectory: false,
             sizeBytes: e.sizeBytes,
+            modifiedAt: DateTime.tryParse(e.modified ?? '')
+                ?.toUtc()
+                .millisecondsSinceEpoch,
           ));
         }
       }
