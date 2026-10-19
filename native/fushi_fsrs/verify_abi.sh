@@ -69,7 +69,7 @@ if [[ "$(file -b "$BIN")" == Mach-O*64-bit* ]] || { [[ "$(file -b "$BIN")" == Ma
       if ($1 ~ /off$/ && $1 != "tocoff" && $1 != "modtaboff" && $1 != "extrefsymoff") { pending = $1; pendingval = $2 + 0 }
     }')"
   if [[ -n "$misaligned" ]]; then
-    echo "::error title=Mach-O LINKEDIT misaligned::$BIN 的 LINKEDIT 表没有按 8 字节对齐：$(echo "$misaligned" | tr '\n' ' ')——macOS 27 的 dyld 会拒绝加载（mis-aligned LINKEDIT string pool）。多半是 rust-objcopy strip 过：macOS 产物关掉 cargo strip（CARGO_PROFILE_RELEASE_STRIP=false），改用 /usr/bin/strip -x。" >&2
+    echo "::error title=Mach-O LINKEDIT misaligned::$BIN 的 LINKEDIT 表没有按 8 字节对齐：$(echo "$misaligned" | tr '\n' ' ')——macOS 27 的 dyld 会拒绝加载（mis-aligned LINKEDIT string pool）。多半是链接后又被 strip 工具改写过（rust-objcopy 与 runner 上的 /usr/bin/strip 都不补齐）：关掉 cargo strip（CARGO_PROFILE_RELEASE_STRIP=false），本地符号交给链接器 -Wl,-x，不要再事后 strip。" >&2
     exit 1
   fi
   echo "OK: Mach-O LINKEDIT offsets are 8-byte aligned in $BIN"

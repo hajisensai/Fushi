@@ -20,22 +20,20 @@ target=aarch64-apple-darwin
 cd "$SCRIPT_DIR"
 # 只出 cdylib：Cargo.toml 同时声明了 staticlib / rlib（iOS 伞形库用），这里不必为它们再跑一遍 fat LTO。
 echo "==> cargo rustc --release --lib --target $target --crate-type cdylib (MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET)"
-# strip 交给下面的 /usr/bin/strip -x，不用 Cargo.toml 的 strip = true：cargo strip 在 Apple 目标上
-# 调 rust-objcopy，它重排 LINKEDIT 时不补齐——间接符号表项数为奇数时字符串表只对齐到 4。用 SDK 27
-# 及以上链接的 dylib，macOS 27 的 dyld 会以「mis-aligned LINKEDIT string pool」拒绝加载（文件、
-# 符号、install name 都正常；与部署目标无关，部署目标只是会改变间接符号个数、碰巧翻转奇偶）。
-# Apple 的 strip 会补齐；写绝对路径，免得 PATH 上的 llvm-strip / GNU strip 顶替。
-# verify_abi.sh 的 LINKEDIT 对齐检查与 runner 系统无关地兜住这类回归；下面的 dlopen 冒烟
-# 只有在 macOS 27 + SDK 27 上才测得出这一个问题。
-CARGO_PROFILE_RELEASE_STRIP=false cargo rustc --release --lib --target "$target" --crate-type cdylib
+# 本地符号由链接器去（-Wl,-x），install name 也在链接时定（-Wl,-install_name），产物不再经任何
+# 事后改写 LINKEDIT 的工具：cargo strip（rust-objcopy）重排 LINKEDIT 不补齐，间接符号表项数为奇数时
+# 字符串表只对齐到 4，macOS 27 的 dyld 以「mis-aligned LINKEDIT string pool」拒绝加载；改用
+# /usr/bin/strip -x 也不可靠——runner（macos-latest）的 strip 同样不补齐，fushi_fsrs 加进 regex 后
+# 字符串表偏移落在 4 (mod 8) 上，develop 的 macOS 出包因此被 verify_abi.sh 拦下。ld 自己产出的
+# LINKEDIT 按 8 字节布局。verify_abi.sh 的 LINKEDIT 对齐检查与 runner 系统无关地兜住这类回归。
+CARGO_PROFILE_RELEASE_STRIP=false cargo rustc --release --lib --target "$target" --crate-type cdylib -- \
+  -C link-arg=-Wl,-x -C link-arg=-Wl,-install_name,@rpath/libfushi_compute.dylib
 built="target/$target/release/libfushi_compute.dylib"
 [[ -f "$built" ]] || { echo "missing $built" >&2; exit 1; }
 
 mkdir -p "$OUT_DIR"
 out="$OUT_DIR/libfushi_compute.dylib"
 cp -f "$built" "$out"
-/usr/bin/strip -x "$out"
-install_name_tool -id "@rpath/libfushi_compute.dylib" "$out"
 # 产物必须真能被 dyld 加载并返回 ABI 版本：符号核对（verify_abi.sh）查不出 LINKEDIT 损坏。
 if command -v python3 >/dev/null 2>&1; then
   DYLIB_PATH="$out" python3 -c 'import ctypes, os; lib = ctypes.CDLL(os.environ["DYLIB_PATH"]); lib.ffc_abi_version.restype = ctypes.c_int32; v = lib.ffc_abi_version(); assert v == 1, v; print("dlopen ok: ffc_abi_version =", v)'

@@ -20,19 +20,20 @@ target=aarch64-apple-darwin
 cd "$SCRIPT_DIR"
 # 只出 cdylib：Cargo.toml 同时声明了 staticlib / rlib（iOS 伞形库用），这里不必为它们再跑一遍 fat LTO。
 echo "==> cargo rustc --release --lib --target $target --crate-type cdylib (MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET)"
-# CARGO_PROFILE_RELEASE_STRIP=false：cargo（rustc）strip 出来的 dylib 在新工具链的 macOS 上加载即报
-# 「mis-aligned LINKEDIT string pool」（实测 macOS 27.2 / Xcode 27.1 / rustc 1.95），verify_abi.sh 的
-# 符号核对查不出来。改由下面 Apple 的 /usr/bin/strip -x 去本地符号（它会补齐对齐；写绝对路径免得 PATH 上的
-# llvm-strip 顶替），体积与 cargo strip 相当。verify_abi.sh 另有与 runner 系统无关的 LINKEDIT 对齐检查。
-CARGO_PROFILE_RELEASE_STRIP=false cargo rustc --release --lib --target "$target" --crate-type cdylib
+# 本地符号由链接器去（-Wl,-x），install name 也在链接时定（-Wl,-install_name），产物不再经任何
+# 事后改写 LINKEDIT 的工具：cargo strip（rust-objcopy）重排 LINKEDIT 不补齐，间接符号表项数为奇数时
+# 字符串表只对齐到 4，macOS 27 的 dyld 以「mis-aligned LINKEDIT string pool」拒绝加载；改用
+# /usr/bin/strip -x 也不可靠——runner（macos-latest）的 strip 同样不补齐，fushi_fsrs 加进 regex 后
+# 字符串表偏移落在 4 (mod 8) 上，develop 的 macOS 出包因此被 verify_abi.sh 拦下。ld 自己产出的
+# LINKEDIT 按 8 字节布局。verify_abi.sh 的 LINKEDIT 对齐检查与 runner 系统无关地兜住这类回归。
+CARGO_PROFILE_RELEASE_STRIP=false cargo rustc --release --lib --target "$target" --crate-type cdylib -- \
+  -C link-arg=-Wl,-x -C link-arg=-Wl,-install_name,@rpath/libfushi_fsrs.dylib
 built="target/$target/release/libfushi_fsrs.dylib"
 [[ -f "$built" ]] || { echo "missing $built" >&2; exit 1; }
 
 mkdir -p "$OUT_DIR"
 out="$OUT_DIR/libfushi_fsrs.dylib"
 cp -f "$built" "$out"
-/usr/bin/strip -x "$out"
-install_name_tool -id "@rpath/libfushi_fsrs.dylib" "$out"
 # 真加载一次：坏掉的 LINKEDIT 只有 dlopen 才暴露（nm / otool 照样读得出符号）。
 python3 -c 'import ctypes, sys; ctypes.CDLL(sys.argv[1])' "$out" || {
   echo "dlopen failed: $out" >&2
