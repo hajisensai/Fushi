@@ -184,6 +184,28 @@ Map<String, String> srsEffectiveFieldMappings(
     f.id: stored?[f.id] ?? srsGuessFieldMapping(f.name) ?? '',
 };
 
+/// 制卡时字段实际用的映射（fieldId → 制卡占位符）：内置类型（[builtinKey] 非空）固定用各自的
+/// 默认映射（按字段键定位，不受改名影响）；其它类型走 [srsEffectiveFieldMappings]。
+/// 制卡与字段说明页（「制卡时自动填入什么」）共用这一处。
+Map<String, String> srsMiningFieldMappingsFor({
+  SrsNoteTypeView? type,
+  required String? builtinKey,
+  required String profileUid,
+  Map<String, String>? stored,
+}) {
+  final SrsBuiltinNoteTypeSpec? builtin = srsBuiltinNoteTypeSpec(builtinKey);
+  if (builtin != null) {
+    return <String, String>{
+      for (final MapEntry<String, String> e
+          in builtin.defaultFieldMappings.entries)
+        srsBuiltinFieldId(profileUid, builtin.key, e.key): e.value,
+    };
+  }
+  return type == null
+      ? const <String, String>{}
+      : srsEffectiveFieldMappings(type, stored);
+}
+
 /// 字段名归一：小写、去掉空白与常见分隔符（`Expression Audio` = `expression_audio`）。
 String _normalizeFieldName(String name) =>
     name.toLowerCase().replaceAll(RegExp(r'[\s_\-\.:/·・（）()\[\]【】「」]'), '');
@@ -448,22 +470,17 @@ class SrsMiner with AnkiNoteComposer {
 
   /// 笔记类型 → 渲染用的字段映射（键 = fieldId）。内置类型（Lapis、Fushi 卡片）固定用
   /// 各自的默认映射（按字段键定位，不受改名影响）；其它类型用按类型存的映射。
-  Map<String, String> _mappingFor(SrsNoteTypeView? type) {
-    final SrsBuiltinNoteTypeSpec? builtin = _isLapis(type)
-        ? srsBuiltinNoteTypeSpec(kSrsBuiltinLapisKey)
-        : srsBuiltinNoteTypeSpec(type!.builtinKey);
-    if (builtin != null) {
-      return <String, String>{
-        for (final MapEntry<String, String> e
-            in builtin.defaultFieldMappings.entries)
-          srsBuiltinFieldId(store.profileUid, builtin.key, e.key): e.value,
-      };
-    }
-    return srsEffectiveFieldMappings(
-      type!,
-      destination.fieldMappingsByType[type.id],
-    );
-  }
+  Map<String, String> _mappingFor(SrsNoteTypeView? type) => _isLapis(type)
+      ? srsMiningFieldMappingsFor(
+          builtinKey: kSrsBuiltinLapisKey,
+          profileUid: store.profileUid,
+        )
+      : srsMiningFieldMappingsFor(
+          type: type,
+          builtinKey: type!.builtinKey,
+          profileUid: store.profileUid,
+          stored: destination.fieldMappingsByType[type.id],
+        );
 
   /// 同一套渲染（媒体存进 [media]，字段键 = fieldId）。标签、紧凑释义等其余设置
   /// 沿用用户的制卡设置。

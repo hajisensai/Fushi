@@ -159,6 +159,67 @@ void main() {
       );
     });
 
+    test('字段说明：写入随字段定义同步到对端；改名不丢；说明没变不写记录；导出 .apkg 带上', () async {
+      final SrsDbStore a = await device('a');
+      final SrsDbStore b = await device('b');
+      final String nt = await a.createStockNoteType(
+        SrsStockNoteType.basic,
+        '问答',
+      );
+      final SrsNoteTypeView v0 = await type(a, nt);
+      final String front = v0.fields[0].id;
+      final String back = v0.fields[1].id;
+      await a.setFieldDescription(nt, back, '  中文释义  ');
+      expect((await type(a, nt)).fieldById(back)!.description, '中文释义');
+      final String key = SrsFieldKeys.fieldDef(back);
+      final String before = (await type(
+        a,
+        nt,
+      )).edits[key]!.live.map((SrsFieldEdit e) => e.id).join();
+      await a.setFieldDescription(nt, back, '中文释义');
+      expect(
+        (await type(
+          a,
+          nt,
+        )).edits[key]!.live.map((SrsFieldEdit e) => e.id).join(),
+        before,
+        reason: '没变不写',
+      );
+      await a.renameField(nt, back, 'Meaning');
+      final SrsFieldDef renamed = (await type(a, nt)).fieldById(back)!;
+      expect(renamed.name, 'Meaning');
+      expect(renamed.description, '中文释义');
+
+      await syncAll(<SrsDbStore>[a, b]);
+      expect((await type(b, nt)).fieldById(back)!.description, '中文释义');
+
+      await a.createNote(
+        noteTypeId: nt,
+        fieldsById: <String, String>{front: 'Q', back: 'A'},
+      );
+      final SrsAnkiPackage p = SrsAnkiPackage.open(
+        await exportAnkiPackage(store: a),
+        zstd: (Uint8List b) => null,
+      );
+      final SrsAnkiCollection col = await SrsAnkiCollection.open(
+        p.collectionBytes,
+      );
+      try {
+        final SrsAnkiNoteType exported = col.noteTypes.values.firstWhere(
+          (SrsAnkiNoteType x) => x.name == '问答',
+        );
+        expect(
+          exported.fields
+              .firstWhere((SrsAnkiField f) => f.name == 'Meaning')
+              .description,
+          '中文释义',
+          reason: '导出时写进 Anki 的字段说明，再读回来一致',
+        );
+      } finally {
+        await col.close();
+      }
+    });
+
     test('两台设备离线各加一个字段，合并后两个都在（按项合并，铁律 D）', () async {
       final SrsDbStore a = await device('a');
       final SrsDbStore b = await device('b');

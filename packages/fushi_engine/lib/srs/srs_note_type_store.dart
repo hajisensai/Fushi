@@ -317,6 +317,28 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
     ]);
   }
 
+  /// 改字段说明：同样只写字段定义这一项（说明是定义的一部分，随它合并 / 同步）。
+  /// 说明没变时不写记录。
+  Future<void> setFieldDescription(
+    String noteTypeId,
+    String fieldId,
+    String description,
+  ) async {
+    final SrsNoteTypeView t = await _requireType(noteTypeId);
+    final SrsFieldDef? f = t.fieldById(fieldId);
+    if (f == null) throw ArgumentError.value(fieldId, 'fieldId');
+    final String next = description.trim();
+    if (next == f.description) return;
+    await writeEdits(<SrsEditSpec>[
+      SrsEditSpec(
+        SrsEntityKind.noteType,
+        noteTypeId,
+        SrsFieldKeys.fieldDef(fieldId),
+        f.copyWith(description: next).toValue(),
+      ),
+    ]);
+  }
+
   /// 删字段：定义标删除，模板里对它的引用一起去掉（rslib 同语义）；笔记里残留的值读时忽略。
   /// 最后一个字段、内置字段不能删（抛 [StateError]）。
   Future<void> deleteField(String noteTypeId, String fieldId) async {

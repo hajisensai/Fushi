@@ -491,7 +491,7 @@ class _Exporter {
             'rtl': false,
             'font': 'Arial',
             'size': 20,
-            'description': '',
+            'description': t.fields[i].description,
             'plainText': false,
             'collapsed': false,
             'excludeFromSearch': false,

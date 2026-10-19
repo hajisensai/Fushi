@@ -587,6 +587,10 @@ class _Importer {
         name: keepLocal ? have.name : f.name,
         ord: keepLocal ? have.ord : f.ord,
         ankiNum: f.configId ?? have?.ankiNum,
+        // 本地写过说明就保留本地的；没写过才取 Anki 里的（一次导入不清掉用户写的说明）。
+        description: (have?.description ?? '').isNotEmpty
+            ? have!.description
+            : f.description,
       );
       if (have == null ||
           srsCanonicalJson(have.toValue()) !=

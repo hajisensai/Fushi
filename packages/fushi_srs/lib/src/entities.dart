@@ -66,6 +66,7 @@ class SrsFieldDef {
     required this.name,
     required this.ord,
     this.ankiNum,
+    this.description = '',
     this.deleted = false,
   });
 
@@ -75,13 +76,23 @@ class SrsFieldDef {
 
   /// Anki 的 Field.Config.id。按名字回退生成的字段后来带上 ankiNum 时，只把它记在这里当别名，ID 不换。
   final int? ankiNum;
+
+  /// 用户写的字段说明（这个字段装什么、在卡面哪里出现）；空串 = 没写。对应 Anki 的
+  /// Field.Config.description，随字段定义一起合并 / 同步 / 导入导出。
+  final String description;
   final bool deleted;
 
-  SrsFieldDef copyWith({String? name, int? ord, bool? deleted}) => SrsFieldDef(
+  SrsFieldDef copyWith({
+    String? name,
+    int? ord,
+    String? description,
+    bool? deleted,
+  }) => SrsFieldDef(
     id: id,
     name: name ?? this.name,
     ord: ord ?? this.ord,
     ankiNum: ankiNum,
+    description: description ?? this.description,
     deleted: deleted ?? this.deleted,
   );
 
@@ -89,6 +100,7 @@ class SrsFieldDef {
     'name': name,
     'ord': ord,
     if (ankiNum != null) 'ankiNum': ankiNum,
+    if (description.isNotEmpty) 'description': description,
     if (deleted) 'deleted': true,
   };
 
@@ -99,6 +111,7 @@ class SrsFieldDef {
       name: (m['name'] as String?) ?? '',
       ord: (m['ord'] as int?) ?? 0,
       ankiNum: m['ankiNum'] as int?,
+      description: (m['description'] as String?) ?? '',
       deleted: m['deleted'] == true,
     );
   }
