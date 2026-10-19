@@ -147,8 +147,9 @@ fn a_panicking_image_is_undecodable_not_a_failed_batch() {
 
 #[test]
 fn oversized_dimensions_are_rejected_before_decoding() {
-    // 一张 8000×8000（64 MP）的 PNG：文件很小，解码会要 ~256 MB。按头部尺寸直接拒绝。
-    let img = image::RgbImage::new(8000, 8000);
+    // 一张 8000×8000（64 MP）的灰度 PNG：文件很小，灰度解码缓冲只要 64 MB（在 max_alloc
+    // 以内，挡不住），可 to_rgb8 还要再拷 192 MB。只能靠头部尺寸检查在解码前拒绝。
+    let img = image::GrayImage::new(8000, 8000);
     let mut png = Vec::new();
     img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
         .unwrap();
