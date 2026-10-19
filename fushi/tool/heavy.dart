@@ -8,9 +8,10 @@
 //        dart run tool/heavy.dart -- flutter analyze --no-pub
 //        dart run tool/heavy.dart -- .\gradlew.bat :app:assembleRelease
 //
-// It queues first come, first served for a free slot (it never "runs anyway",
-// there is no memory admission, and unless --wait-max-min=N is given it never
-// gives up waiting), keeps one build/-writing run per worktree, gives a
+// It queues first come, first served for a free slot whose run's memory
+// ceiling fits the budget next to the holders' (half the RAM; it never "runs
+// anyway", never reads the live free memory, and unless --wait-max-min=N is
+// given it never gives up waiting), keeps one build/-writing run per worktree, gives a
 // `flutter test` without its own --concurrency a default of 4, and on
 // Windows runs the command
 // tree at below-normal priority under a memory ceiling, killing whatever the
@@ -125,7 +126,21 @@ void _status() {
   final int slots = heavySlotCount(m);
   final Directory dir = heavyStateDir()..createSync(recursive: true);
   final List<HeavyHolder> holders = readHeavyHolders(dir, slots);
-  stdout.writeln('heavy: ${holders.length}/$slots slots busy (${dir.path})');
+  final int ours = holders.where((HeavyHolder h) => h.slot < slots).length;
+  final int beyond = holders.length - ours;
+  stdout.writeln(
+    'heavy: $ours/$slots slots busy'
+    '${beyond > 0 ? ' (+$beyond past this slot count, booked below)' : ''}'
+    ' (${dir.path})',
+  );
+  final int? budget = heavyBudgetMb(m);
+  if (budget != null) {
+    final int booked = holders.fold(
+      0,
+      (int a, HeavyHolder h) => a + h.bookedMb,
+    );
+    stdout.writeln('  memory budget: $booked / $budget MB booked');
+  }
   if (m != null) {
     stdout.writeln(
       '  RAM available ${m.availPhysMb} / ${m.totalPhysMb} MB'
@@ -140,7 +155,7 @@ void _status() {
   }
   for (final HeavyHolder h in holders) {
     stdout.writeln(
-      '  slot ${h.slot}: pid ${h.pid}, ${h.label}, '
+      '  slot ${h.slot}: pid ${h.pid}, ${h.label}, ${h.bookedMb} MB, '
       '${((now - h.startedAtMs) / 60000).toStringAsFixed(1)} min, '
       '${h.cwd}',
     );

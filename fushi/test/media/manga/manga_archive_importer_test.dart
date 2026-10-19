@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:io' as io show ZLibEncoder;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -62,6 +63,263 @@ void main() {
       )),
     );
     expect(await db.getEpubBookMetas(), isEmpty, reason: '不落任何行');
+  });
+
+  group('zip extraction enforces limits on actually inflated bytes', () {
+    // 这组用例手工拼 zip（[_buildRawZip]），这样中央目录 / 本地头声明的大小、
+    // CRC、加密位都能随意谎报——`ZipEncoder` 只会写诚实的包。
+
+    test('a lying 512 MiB deflate bomb aborts at its declared size, '
+        'without inflating it into memory or leaving staging behind', () async {
+      // 声明 1000 字节，实际 inflate 出 512 MiB 全零（CRC 写的是真实内容的，
+      // 只有大小在撒谎）。旧实现按声明大小做预检（1000 字节轻松通过），再用
+      // `entry.content` 把整条 512 MiB 解进内存、写盘。
+      const int bombBytes = 512 * 1024 * 1024;
+      final Uint8List compressed = _deflateZeros(bombBytes);
+      final String path = p.join(root.path, 'bomb.cbz');
+      File(path).writeAsBytesSync(
+        _buildRawZip(<_RawZipEntry>[
+          _RawZipEntry(
+            '001.png',
+            compressed,
+            declaredSize: 1000,
+            crc: _crc32OfZeros(bombBytes),
+          ),
+        ]),
+      );
+      final Set<String> stagingBefore = _mangaStagingDirs();
+      final int rssBefore = ProcessInfo.currentRss;
+      final int peakBefore = ProcessInfo.maxRss;
+
+      Object? error;
+      try {
+        await MangaArchiveImporter.importArchive(db: db, archivePath: path);
+      } catch (e) {
+        error = e;
+      }
+
+      // 峰值 RSS 要么没刷新，要么只比导入前多出远小于炸弹体积的量（一个 inflate
+      // 分片的产出 + 读缓冲）。旧实现会在这里多出 ≥ 512 MiB。先断言内存再断言
+      // 报错文案，免得文案先红把内存这条断言遮住。
+      final int peakAfter = ProcessInfo.maxRss;
+      expect(
+        peakAfter <= peakBefore || peakAfter - rssBefore < 128 * 1024 * 1024,
+        isTrue,
+        reason:
+            'peak RSS grew from $rssBefore to $peakAfter (previous peak '
+            '$peakBefore) while rejecting the bomb',
+      );
+      expect(
+        _mangaStagingDirs().difference(stagingBefore),
+        isEmpty,
+        reason: '中止后 staging（含写了一半的页）必须删掉',
+      );
+      expect(
+        error,
+        isA<MangaImportException>().having(
+          (MangaImportException e) => e.message,
+          'message',
+          contains('expands beyond its declared 1000 bytes'),
+        ),
+      );
+      expect(await db.getAllEpubBooks(), isEmpty);
+    });
+
+    test(
+      'an entry that inflates to fewer bytes than declared is corrupt',
+      () async {
+        final Uint8List page = Uint8List.fromList(
+          List<int>.generate(1000, (int i) => i % 251),
+        );
+        final String path = p.join(root.path, 'short.cbz');
+        File(path).writeAsBytesSync(
+          _buildRawZip(<_RawZipEntry>[
+            _RawZipEntry(
+              '001.png',
+              _deflate(page),
+              declaredSize: 2000,
+              crc: getCrc32(page),
+            ),
+          ]),
+        );
+
+        await expectLater(
+          MangaArchiveImporter.importArchive(db: db, archivePath: path),
+          throwsA(
+            isA<MangaImportException>().having(
+              (MangaImportException e) => e.message,
+              'message',
+              contains('size mismatch: declares 2000 bytes, contains 1000'),
+            ),
+          ),
+        );
+        expect(await db.getAllEpubBooks(), isEmpty);
+      },
+    );
+
+    test('a deflated entry whose CRC does not match fails on CRC', () async {
+      final Uint8List page = Uint8List.fromList(
+        List<int>.generate(4096, (int i) => i % 253),
+      );
+      final String path = p.join(root.path, 'badcrc.cbz');
+      File(path).writeAsBytesSync(
+        _buildRawZip(<_RawZipEntry>[
+          _RawZipEntry(
+            '001.png',
+            _deflate(page),
+            declaredSize: page.length,
+            crc: getCrc32(page) ^ 0x1,
+          ),
+        ]),
+      );
+
+      await expectLater(
+        MangaArchiveImporter.importArchive(db: db, archivePath: path),
+        throwsA(
+          isA<MangaImportException>().having(
+            (MangaImportException e) => e.message,
+            'message',
+            contains('CRC mismatch'),
+          ),
+        ),
+      );
+    });
+
+    test('an honest entry above the per-entry limit is rejected', () async {
+      final Uint8List page = Uint8List(2 * 1024 * 1024);
+      final String path = p.join(root.path, 'huge_page.cbz');
+      File(path).writeAsBytesSync(
+        _buildRawZip(<_RawZipEntry>[
+          _RawZipEntry(
+            '001.png',
+            _deflate(page),
+            declaredSize: page.length,
+            crc: getCrc32(page),
+          ),
+        ]),
+      );
+      final Set<String> stagingBefore = _mangaStagingDirs();
+
+      await expectLater(
+        MangaArchiveImporter.importArchive(
+          db: db,
+          archivePath: path,
+          limits: const MangaArchiveExtractionLimits(
+            maxEntryBytes: 1024 * 1024,
+          ),
+        ),
+        throwsA(
+          isA<MangaImportException>().having(
+            (MangaImportException e) => e.message,
+            'message',
+            contains('Manga archive entry is too large: 001.png'),
+          ),
+        ),
+      );
+      expect(_mangaStagingDirs().difference(stagingBefore), isEmpty);
+      expect(await db.getAllEpubBooks(), isEmpty);
+    });
+
+    test('pages that together exceed the total limit are rejected', () async {
+      final Uint8List page = Uint8List(400 * 1024);
+      final String path = p.join(root.path, 'many_pages.cbz');
+      File(path).writeAsBytesSync(
+        _buildRawZip(<_RawZipEntry>[
+          for (int i = 1; i <= 3; i++)
+            _RawZipEntry(
+              '00$i.png',
+              _deflate(page),
+              declaredSize: page.length,
+              crc: getCrc32(page),
+            ),
+        ]),
+      );
+
+      await expectLater(
+        MangaArchiveImporter.importArchive(
+          db: db,
+          archivePath: path,
+          limits: const MangaArchiveExtractionLimits(
+            maxTotalBytes: 1024 * 1024,
+          ),
+        ),
+        throwsA(
+          isA<MangaImportException>().having(
+            (MangaImportException e) => e.message,
+            'message',
+            contains('Manga archive is too large'),
+          ),
+        ),
+      );
+      expect(await db.getAllEpubBooks(), isEmpty);
+    });
+
+    test('encrypted entries are reported as unsupported', () async {
+      final Uint8List page = Uint8List.fromList(
+        List<int>.generate(64, (int i) => i),
+      );
+      final String path = p.join(root.path, 'encrypted.cbz');
+      File(path).writeAsBytesSync(
+        _buildRawZip(<_RawZipEntry>[
+          _RawZipEntry(
+            '001.png',
+            page,
+            method: 0,
+            declaredSize: page.length,
+            crc: getCrc32(page),
+            flags: 0x1,
+          ),
+        ]),
+      );
+
+      await expectLater(
+        MangaArchiveImporter.importArchive(db: db, archivePath: path),
+        throwsA(
+          isA<MangaImportException>().having(
+            (MangaImportException e) => e.message,
+            'message',
+            contains('encrypted'),
+          ),
+        ),
+      );
+    });
+
+    test('a hand-built honest deflate + store archive still imports', () async {
+      final Uint8List png = Uint8List.fromList(
+        img.encodePng(img.Image(width: 40, height: 80)),
+      );
+      final String path = p.join(root.path, 'honest.cbz');
+      File(path).writeAsBytesSync(
+        _buildRawZip(<_RawZipEntry>[
+          _RawZipEntry(
+            '1.png',
+            _deflate(png),
+            declaredSize: png.length,
+            crc: getCrc32(png),
+          ),
+          _RawZipEntry(
+            '2.png',
+            png,
+            method: 0,
+            declaredSize: png.length,
+            crc: getCrc32(png),
+          ),
+        ]),
+      );
+
+      final String key = await MangaArchiveImporter.importArchive(
+        db: db,
+        archivePath: path,
+      );
+      final EpubBookRow row = (await db.getEpubBook(key))!;
+      for (final String name in <String>['1.png', '2.png']) {
+        expect(
+          File(p.join(row.extractDir, 'images', name)).readAsBytesSync(),
+          png,
+          reason: '$name must be written byte-for-byte',
+        );
+      }
+    });
   });
 
   test('CBZ images import in natural order', () async {
@@ -405,6 +663,127 @@ String _writeArchive(
   final String path = p.join(root.path, name);
   File(path).writeAsBytesSync(ZipEncoder().encode(archive)!);
   return path;
+}
+
+/// 系统临时目录里导入器的 staging 目录名（`fushi_manga_archive_*`）。
+Set<String> _mangaStagingDirs() => Directory.systemTemp
+    .listSync(followLinks: false)
+    .whereType<Directory>()
+    .map((Directory dir) => p.basename(dir.path))
+    .where((String name) => name.startsWith('fushi_manga_archive_'))
+    .toSet();
+
+/// raw deflate（zip method 8 的数据格式）。
+Uint8List _deflate(List<int> bytes) =>
+    Uint8List.fromList(io.ZLibEncoder(raw: true).convert(bytes));
+
+/// [length] 个零字节的 raw deflate，分块喂编码器，不在测试里先分配 [length] 字节。
+Uint8List _deflateZeros(int length) {
+  final BytesBuilder out = BytesBuilder(copy: false);
+  final ByteConversionSink encoder = io.ZLibEncoder(
+    raw: true,
+  ).startChunkedConversion(ByteConversionSink.withCallback(out.add));
+  final Uint8List zeros = Uint8List(1024 * 1024);
+  for (int done = 0; done < length; done += zeros.length) {
+    final int n = length - done < zeros.length ? length - done : zeros.length;
+    encoder.addSlice(zeros, 0, n, false);
+  }
+  encoder.close();
+  return out.takeBytes();
+}
+
+/// [length] 个零字节的 CRC-32（分块续算，同样不先分配 [length] 字节）。
+int _crc32OfZeros(int length) {
+  final Uint8List zeros = Uint8List(1024 * 1024);
+  int crc = 0;
+  for (int done = 0; done < length; done += zeros.length) {
+    final int n = length - done < zeros.length ? length - done : zeros.length;
+    crc = getCrc32(n == zeros.length ? zeros : Uint8List(n), crc);
+  }
+  return crc;
+}
+
+/// 手工拼的 zip 条目：[data] 是**已经按 [method] 编码好**的数据，
+/// [declaredSize] / [crc] / [flags] 原样写进本地头与中央目录（可以谎报）。
+class _RawZipEntry {
+  _RawZipEntry(
+    this.name,
+    this.data, {
+    required this.declaredSize,
+    required this.crc,
+    this.method = 8,
+    this.flags = 0,
+  });
+
+  final String name;
+  final Uint8List data;
+  final int declaredSize;
+  final int crc;
+  final int method;
+  final int flags;
+}
+
+Uint8List _buildRawZip(List<_RawZipEntry> entries) {
+  final BytesBuilder out = BytesBuilder(copy: false);
+  final List<int> offsets = <int>[];
+  Uint8List u16(int v) =>
+      (ByteData(2)..setUint16(0, v, Endian.little)).buffer.asUint8List();
+  Uint8List u32(int v) =>
+      (ByteData(4)..setUint32(0, v, Endian.little)).buffer.asUint8List();
+
+  for (final _RawZipEntry entry in entries) {
+    final List<int> name = utf8.encode(entry.name);
+    offsets.add(out.length);
+    out
+      ..add(u32(0x04034b50))
+      ..add(u16(20))
+      ..add(u16(entry.flags))
+      ..add(u16(entry.method))
+      ..add(u16(0))
+      ..add(u16(0x21))
+      ..add(u32(entry.crc))
+      ..add(u32(entry.data.length))
+      ..add(u32(entry.declaredSize))
+      ..add(u16(name.length))
+      ..add(u16(0))
+      ..add(name)
+      ..add(entry.data);
+  }
+  final int directoryOffset = out.length;
+  for (int i = 0; i < entries.length; i++) {
+    final _RawZipEntry entry = entries[i];
+    final List<int> name = utf8.encode(entry.name);
+    out
+      ..add(u32(0x02014b50))
+      ..add(u16(20))
+      ..add(u16(20))
+      ..add(u16(entry.flags))
+      ..add(u16(entry.method))
+      ..add(u16(0))
+      ..add(u16(0x21))
+      ..add(u32(entry.crc))
+      ..add(u32(entry.data.length))
+      ..add(u32(entry.declaredSize))
+      ..add(u16(name.length))
+      ..add(u16(0))
+      ..add(u16(0))
+      ..add(u16(0))
+      ..add(u16(0))
+      ..add(u32(0))
+      ..add(u32(offsets[i]))
+      ..add(name);
+  }
+  final int directorySize = out.length - directoryOffset;
+  out
+    ..add(u32(0x06054b50))
+    ..add(u16(0))
+    ..add(u16(0))
+    ..add(u16(entries.length))
+    ..add(u16(entries.length))
+    ..add(u32(directorySize))
+    ..add(u32(directoryOffset))
+    ..add(u16(0));
+  return out.takeBytes();
 }
 
 ArchiveFile _textEntry(String name, String value) {

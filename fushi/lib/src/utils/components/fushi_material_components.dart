@@ -3615,6 +3615,7 @@ class FushiPageHeader extends StatelessWidget {
     this.compact = false,
     this.titleRevealed,
     this.search,
+    this.menuAnchor,
   }) : titleWidget = null;
 
   /// 用任意组件占据页头主位。适合把分段导航直接放进页头动作同一行，避免再渲染
@@ -3627,6 +3628,7 @@ class FushiPageHeader extends StatelessWidget {
     this.padding,
     this.compact = false,
     this.search,
+    this.menuAnchor,
   }) : title = null,
        titleWidget = title,
        subtitle = null,
@@ -3657,6 +3659,7 @@ class FushiPageHeader extends StatelessWidget {
        compact = false,
        titleRevealed = null,
        search = null,
+       menuAnchor = null,
        leading = FushiRouteBackButton(key: backButtonKey, onPressed: onBack);
 
   final String? title;
@@ -3673,6 +3676,13 @@ class FushiPageHeader extends StatelessWidget {
   /// （[FushiHeaderSearchBar]）——在库页外壳里由外壳的浮动工具栏行换，独立
   /// 使用时由本页头这一行换。
   final FushiHeaderSearchController? search;
+
+  /// 跟着动作组走的零尺寸菜单锚点（库页「排序」菜单）：叠在动作组右下角，
+  /// 动作画在本行就随本行、登记进外壳浮动工具栏就随那枚胶囊
+  /// （[fushiHeaderActionsWithMenuAnchor]）。动作可能被收进 ⋯，菜单不能挂在
+  /// 某颗按钮上；但也不能锚在页头这一行——动作交给外壳时这一行只剩页签，
+  /// 菜单会弹在按钮下方老远的地方。
+  final Widget? menuAnchor;
 
   @override
   Widget build(BuildContext context) {
@@ -3853,6 +3863,7 @@ class FushiPageHeader extends StatelessWidget {
                 : null,
             shellActions: shellActions,
             search: search,
+            menuAnchor: menuAnchor,
           ),
           if (bottom != null)
             Padding(
@@ -3920,9 +3931,13 @@ class _FushiPageHeaderRow extends StatefulWidget {
     this.appleNavBarHeight,
     this.shellActions,
     this.search,
+    this.menuAnchor,
   });
 
   final FushiDesignTokens tokens;
+
+  /// 见 [FushiPageHeader.menuAnchor]。
+  final Widget? menuAnchor;
 
   /// 可展开搜索（见 [FushiPageHeader.search]）：动作交给外壳时随动作一起登记，
   /// 外壳的浮动工具栏行据此整行换成搜索栏；独立使用时本行自己换。
@@ -4000,6 +4015,7 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
       actions: FushiShellHeaderActions(
         actions: widget.actionItems,
         search: widget.search,
+        menuAnchor: widget.menuAnchor,
       ),
     );
   }
@@ -4136,34 +4152,37 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
           final List<Widget> resolvedItems = resolved.items;
           final bool expandLabels = resolved.expandLabels;
 
-          trailing = ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: (maxActionsWidth - navLeadingReserve).clamp(
-                0.0,
-                double.infinity,
+          trailing = fushiHeaderActionsWithMenuAnchor(
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: (maxActionsWidth - navLeadingReserve).clamp(
+                  0.0,
+                  double.infinity,
+                ),
               ),
-            ),
-            child: HorizontalDragScrollable(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                physics: const ClampingScrollPhysics(),
-                child: FushiHeaderLabelScope(
-                  expandLabels: expandLabels,
-                  child: widget.floatingActions
-                      ? fushiFloatingHeaderActionGroups(
-                          resolvedItems,
-                          _buildActionRow,
-                          expandLabels: expandLabels,
-                        )
-                      : widget.appleActions
-                      ? fushiAppleHeaderActionGroups(
-                          resolvedItems,
-                          expandLabels: expandLabels,
-                        )
-                      : _buildActionRow(resolvedItems),
+              child: HorizontalDragScrollable(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const ClampingScrollPhysics(),
+                  child: FushiHeaderLabelScope(
+                    expandLabels: expandLabels,
+                    child: widget.floatingActions
+                        ? fushiFloatingHeaderActionGroups(
+                            resolvedItems,
+                            _buildActionRow,
+                            expandLabels: expandLabels,
+                          )
+                        : widget.appleActions
+                        ? fushiAppleHeaderActionGroups(
+                            resolvedItems,
+                            expandLabels: expandLabels,
+                          )
+                        : _buildActionRow(resolvedItems),
+                  ),
                 ),
               ),
             ),
+            widget.menuAnchor,
           );
           children
             ..add(SizedBox(width: actionsGap))
@@ -4832,10 +4851,15 @@ class FushiShellHeaderActions extends StatefulWidget {
     required this.actions,
     this.appleFloating = false,
     this.search,
+    this.menuAnchor,
     super.key,
   });
 
   final List<Widget> actions;
+
+  /// 这份动作所属页头的菜单锚点（见 [FushiPageHeader.menuAnchor]）：叠在本
+  /// 动作组右下角，菜单从外壳浮动工具栏的胶囊下方弹出。
+  final Widget? menuAnchor;
 
   /// 这份动作所属页头的可展开搜索（见 [FushiPageHeader.search]）：库页外壳的
   /// 浮动工具栏行在它展开时整行换成搜索栏。
@@ -4856,6 +4880,13 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    return fushiHeaderActionsWithMenuAnchor(
+      _buildActions(context, apple),
+      widget.menuAnchor,
+    );
+  }
+
+  Widget _buildActions(BuildContext context, bool apple) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         // −16：Apple 工具栏胶囊两端的内边距与 MD3 按钮组胶囊内边距的余量。
@@ -4900,6 +4931,19 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
       },
     );
   }
+}
+
+/// 把零尺寸菜单锚点 [menuAnchor] 叠在动作组 [actions] 的右下角（RTL 为左下角）：
+/// 菜单从动作组下沿弹出，水平方向由 MenuAnchor 自己夹进屏幕。null 时原样返回。
+Widget fushiHeaderActionsWithMenuAnchor(Widget actions, Widget? menuAnchor) {
+  if (menuAnchor == null) return actions;
+  return Stack(
+    clipBehavior: Clip.none,
+    children: <Widget>[
+      actions,
+      PositionedDirectional(end: 0, bottom: 0, child: menuAnchor),
+    ],
+  );
 }
 
 /// 底部安全区（iOS home indicator / Android 手势条）的高度。
