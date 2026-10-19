@@ -5,8 +5,9 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <condition_variable>
 #include <mutex>
-#include <shared_mutex>
+#include <shared_mutex>  // std::shared_lock
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -459,12 +460,72 @@ static std::atomic<int32_t> g_live_handles{0};
 // 可以并发（查询路径只读，唯一的可变状态 match_cache 自带互斥）；改状态的
 // add_*_dict / load_transforms 取独占锁，不会与任何在飞查询交错（以前对此没有任何
 // 保证，add 时扩容 std::vector<Dictionary> 会让并发的遍历读到已释放的元素）。
-// 锁只在导出层取一次，导出之间不互相调用，不存在重入。
+// 锁只在导出层取一次，导出之间不互相调用，不存在重入（这是硬前提：写者优先的锁下，
+// 同一线程重入共享锁会在有写者排队时自锁）。
+//
+// rw 不用 std::shared_mutex：libstdc++ 的实现是默认属性的 pthread_rwlock_t，glibc 默认
+// PTHREAD_RWLOCK_PREFER_READER_NP——只要还有读者持锁，新读者照样进，排队的写者一直等。
+// ≥2 个线程连续分词时读区间首尾相接，add_*_dict 永远拿不到独占锁（Linux GCC 下
+// handle_lifecycle_concurrency_test 场景 3 挂死在这里；libc++ / MSVC 的实现恰好不饿写者，
+// 所以只在 libstdc++ 平台——Linux 桌面 / 无头服务端——暴露）。改用下面这把写者优先锁：
+// 写者一排队新读者就等，在飞读者跑完后写者必然拿到锁；语义不再依赖各平台标准库的实现细节。
 //
 // 匿名命名空间（内部链接）：fushidicts_jni.cpp 有一个布局不同的同名结构体，两者的
 // 隐式成员函数若都以外部链接的弱符号导出，同进程里的两个 .so 可能被动态链接器解析到
 // 同一份实现上（ODR）。
 namespace {
+// 写者优先的读写锁（只实现 std::shared_lock / std::unique_lock 用到的 SharedMutex 子集）。
+// 写者只在加词典 / 变形表时出现，频率远低于查询，「写者连续排队饿读者」不是现实风险；
+// 反过来读者饿写者是现实的（见上）。
+class WriterPreferringSharedMutex {
+ public:
+  void lock_shared() {
+    std::unique_lock<std::mutex> guard(mutex_);
+    readers_cv_.wait(guard, [this]() { return !writer_active_ && waiting_writers_ == 0; });
+    ++active_readers_;
+  }
+
+  void unlock_shared() {
+    bool wake_writer = false;
+    {
+      std::lock_guard<std::mutex> guard(mutex_);
+      wake_writer = --active_readers_ == 0 && waiting_writers_ > 0;
+    }
+    if (wake_writer) writer_cv_.notify_one();
+  }
+
+  void lock() {
+    std::unique_lock<std::mutex> guard(mutex_);
+    ++waiting_writers_;
+    writer_cv_.wait(guard, [this]() { return !writer_active_ && active_readers_ == 0; });
+    --waiting_writers_;
+    writer_active_ = true;
+  }
+
+  void unlock() {
+    bool writers_waiting = false;
+    {
+      std::lock_guard<std::mutex> guard(mutex_);
+      writer_active_ = false;
+      writers_waiting = waiting_writers_ > 0;
+    }
+    // 有写者排队就交给下一个写者（读者的谓词仍被 waiting_writers_ 挡着）；否则放行全部读者。
+    if (writers_waiting) {
+      writer_cv_.notify_one();
+    } else {
+      readers_cv_.notify_all();
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  std::condition_variable readers_cv_;
+  std::condition_variable writer_cv_;
+  int32_t active_readers_ = 0;
+  int32_t waiting_writers_ = 0;
+  bool writer_active_ = false;
+};
+
 struct FushidictsHandle {
   FushidictsHandle() { g_live_handles.fetch_add(1, std::memory_order_relaxed); }
   ~FushidictsHandle() { g_live_handles.fetch_sub(1, std::memory_order_relaxed); }
@@ -477,7 +538,7 @@ struct FushidictsHandle {
   // load_transforms 都要清空它（见 tokenize.hpp）。
   MatchLengthCache match_cache;
 
-  std::shared_mutex rw;
+  WriterPreferringSharedMutex rw;
   std::atomic<int32_t> refs{1};
   std::atomic<bool> retired{false};
 };

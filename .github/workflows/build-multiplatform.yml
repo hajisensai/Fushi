@@ -412,6 +412,14 @@ jobs:
         with:
           flutter-version: '3.47.6'
           cache: true
+      # 下面「Run fushidicts Dart tests」一步在 packages/fushi_dictionary 跑 flutter test（该包
+      # 声明 flutter 依赖，dart test 跑不了），flutter test 会跑 native-assets 构建钩子。今天
+      # fushi_dictionary 的依赖闭包里没有 pdfium_dart、钩子不下载 PDFium，但它与 app 同一个
+      # workspace 解析，闭包一变就会在全新 runner 上直连 GitHub 下载；与 server-gate.yml 同口径
+      # 先挂缓存（守卫 fushi/test/build/pdfium_hook_cache_guard_test.dart）。
+      - uses: ./.github/actions/pdfium-hook-cache
+        with:
+          purpose: test
       # 服务端是 pub workspace 成员；解析依赖仍要 Flutter SDK（fushi_anki / fushi_dictionary /
       # fushi_platform 尚声明 flutter），与 server-gate.yml 同一个入口解析整个 workspace。
       - name: Flutter pub get
