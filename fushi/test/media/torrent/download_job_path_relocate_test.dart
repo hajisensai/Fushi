@@ -286,6 +286,101 @@ void main() {
       if (tmp.existsSync()) tmp.deleteSync(recursive: true);
     });
 
+    // BUG-3542：observed_save_path 是后端坐标的保存根。内置引擎默认下载根在数据根
+    // 内，随根搬走后必须改写；远端 qBittorrent 坐标、用户外部下载根原样。
+    Future<Map<String, String?>> observedAfterRebase({
+      required String newDocs,
+      int runs = 1,
+    }) async {
+      const String remote = '/srv/qbittorrent/downloads';
+      final String external = p.join(tmp.path, 'external', 'downloads');
+      final FushiDatabase seed = FushiDatabase(oldSupport.path);
+      try {
+        await _seedJobFile(
+          seed,
+          jobId: 'job-embedded',
+          finalAbsolutePath: p.join(
+            oldDocs.path,
+            'anime_downloads',
+            'content',
+            'ep01.mkv',
+          ),
+          observedSavePath: p.join(oldDocs.path, 'anime_downloads', 'content'),
+        );
+        await _seedJobFile(
+          seed,
+          jobId: 'job-remote',
+          finalAbsolutePath: p.join(tmp.path, 'nas', 'ep02.mkv'),
+          observedSavePath: remote,
+        );
+        await _seedJobFile(
+          seed,
+          jobId: 'job-external',
+          finalAbsolutePath: p.join(external, 'ep03.mkv'),
+          observedSavePath: external,
+        );
+      } finally {
+        await seed.close();
+      }
+      for (int i = 0; i < runs; i++) {
+        await const DataRootMigrator().rebaseDatabasePathsForTesting(
+          dbDirectory: oldSupport.path,
+          oldDocumentsRoot: oldDocs.path,
+          newDocumentsRoot: newDocs,
+          newSupportRoot: oldSupport.path,
+          documentsScopeEntries: AppPaths.fushiOwnedDocumentsEntries,
+        );
+      }
+      final FushiDatabase post = FushiDatabase(oldSupport.path);
+      try {
+        return <String, String?>{
+          for (final String id in <String>[
+            'job-embedded',
+            'job-remote',
+            'job-external',
+          ])
+            id: (await post.getVideoDownloadJob(id))!.observedSavePath,
+          'remote': remote,
+          'external': external,
+        };
+      } finally {
+        await post.close();
+      }
+    }
+
+    test('任务 observed_save_path：内置默认根改到新根，远端坐标与外部根原样', () async {
+      final String newDocs = p.join(tmp.path, 'newroot', 'Documents');
+      final Map<String, String?> got = await observedAfterRebase(
+        newDocs: newDocs,
+      );
+      expect(
+        got['job-embedded'],
+        p.join(newDocs, 'anime_downloads', 'content'),
+        reason: '内置引擎默认下载根随数据根搬走，不改写就停在旧根',
+      );
+      expect(
+        got['job-remote'],
+        got['remote'],
+        reason: '远端 qBittorrent 坐标不在旧根下，不能被当本机路径改写',
+      );
+      expect(got['job-external'], got['external'], reason: '用户自选的外部下载根不随数据根走');
+    });
+
+    test('任务 observed_save_path：新根落在旧根内部时连跑两次也只改一次', () async {
+      final String newDocs = p.join(oldDocs.path, 'Fushi', 'data');
+      final Map<String, String?> got = await observedAfterRebase(
+        newDocs: newDocs,
+        runs: 2,
+      );
+      expect(
+        got['job-embedded'],
+        p.join(newDocs, 'anime_downloads', 'content'),
+        reason: '幂等：已改写路径首段是 Fushi（不在白名单），第二次跳过',
+      );
+      expect(got['job-remote'], got['remote']);
+      expect(got['job-external'], got['external']);
+    });
+
     test('默认下载根（数据根内）下的任务视频与字幕被 rebase，外部下载根不动', () async {
       final String inside = p.join(
         oldDocs.path,
