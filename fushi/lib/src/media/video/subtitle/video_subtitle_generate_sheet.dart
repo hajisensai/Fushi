@@ -289,10 +289,17 @@ class _VideoSubtitleGenerateSheetState
       return;
     }
     final MossBackendPreference backend = widget.prefs.mossBackend;
-    final VideoSubtitleMossProblem? problem = await _service.previewMossProblem(
-      mode: _segmenter,
-      mossBackend: backend,
-    );
+    VideoSubtitleMossProblem? problem;
+    try {
+      problem = await _service.previewMossProblem(
+        mode: _segmenter,
+        mossBackend: backend,
+      );
+    } catch (error, stack) {
+      // 只是预览：探测本身出错就不预告，开跑时识别器选择会照实报。
+      ErrorLogService.instance.log('video.subtitleMossPreview', error, stack);
+      problem = null;
+    }
     VideoSubtitleMossState? state;
     try {
       state = await _service.mossPort.status(backend);
@@ -314,8 +321,9 @@ class _VideoSubtitleGenerateSheetState
         _target,
       );
       if (mounted) setState(() => _estimate = estimate);
-    } catch (_) {
-      // 预估只是参考：读不出时长 / 缓存坏了就不显示，不拦用户。
+    } catch (error, stack) {
+      // 预估只是参考：读不出时长 / 缓存坏了就不显示，不拦用户（但留日志可查）。
+      ErrorLogService.instance.log('video.subtitleEstimate', error, stack);
       if (mounted) setState(() => _estimate = null);
     } finally {
       if (mounted) setState(() => _estimating = false);

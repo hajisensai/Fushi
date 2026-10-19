@@ -80,6 +80,7 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
     show
         AppVideoSubtitleService,
         AppVideoSubtitleTarget,
+        AppVideoSubtitleTargetNotFound,
         appVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
     show PrefsRepoVideoSubtitleGeneratePrefs, showVideoSubtitleGenerateSheet;
@@ -1102,9 +1103,18 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       return;
     }
     final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
-    final AppVideoSubtitleTarget target = await service.resolveCollection(
-      widget.collection.id,
-    );
+    final AppVideoSubtitleTarget target;
+    try {
+      target = await service.resolveCollection(widget.collection.id);
+    } on AppVideoSubtitleTargetNotFound {
+      // 合集在这期间被删掉了（与视频页单集入口同一处理）。
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.video_subtitle_ai_no_local_episodes,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (!mounted) return;
     await showVideoSubtitleGenerateSheet(
       context: context,

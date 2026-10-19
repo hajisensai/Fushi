@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipelin
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_context_loader.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_server/src/commands/command_io.dart';
 import 'package:fushi_server/src/commands/subgen_commands.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -282,6 +283,59 @@ void main() {
     // 整季跳过看的是 out-dir：那里没有 Show - 02.ja.srt，所以也处理了。
     expect(recognizer.seen, hasLength(3));
     expect(h.out.toString(), contains('exported'));
+  });
+
+  test('--glossary 坏文件 = 数据错误（65），在识别任何一集之前就退出', () async {
+    final File bad = File(p.join(h.tmp.path, 'bad.json'))
+      ..writeAsStringSync('{"entries": {"ja": "唯"}}');
+    expect(
+      await h.run(module(), <String>[
+        'subgen',
+        season.path,
+        '--no-ai',
+        '--glossary',
+        bad.path,
+      ]),
+      kExitDataError,
+    );
+    expect(h.err.toString(), contains('格式不对'));
+    expect(asked, isEmpty);
+    expect(recognizer.seen, isEmpty);
+
+    final File badField = File(p.join(h.tmp.path, 'bad_field.json'))
+      ..writeAsStringSync('[{"ja": 1}]');
+    expect(
+      await h.run(module(), <String>[
+        'subgen',
+        season.path,
+        '--no-ai',
+        '--glossary',
+        badField.path,
+      ]),
+      kExitDataError,
+    );
+    expect(h.err.toString(), contains('第 1 条'));
+    expect(recognizer.seen, isEmpty);
+  });
+
+  test('--glossary 配多部作品 = 用法错误（不把同一份表导进每一部）', () async {
+    final Directory other = Directory(p.join(h.tmp.path, 'Other'))
+      ..createSync(recursive: true);
+    File(p.join(other.path, 'Other - 01.mkv')).writeAsBytesSync(<int>[1]);
+    final File glossary = File(p.join(h.tmp.path, 'g.json'))
+      ..writeAsStringSync('[]');
+    expect(
+      await h.run(module(), <String>[
+        'subgen',
+        season.path,
+        other.path,
+        '--no-ai',
+        '--glossary',
+        glossary.path,
+      ]),
+      kExitUsage,
+    );
+    expect(recognizer.seen, isEmpty);
   });
 
   test('--glossary：导入成用户编辑的专名表、资料指纹按当前资料算（不再自动生成），校对用上它', () async {

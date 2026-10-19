@@ -50,6 +50,7 @@ import 'package:fushi_engine/media/video/video_local_files.dart'
     show isLocalVideoFilePath, localVideoFileCandidates;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/i18n/strings.g.dart' show t;
 import 'package:fushi/src/asr_host/asr_host.dart'
     show resolveAppVideoSubtitleRecognizer;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
@@ -442,11 +443,10 @@ class AppVideoSubtitleCostEstimate {
 const int kVideoSubtitleEstimateCuesPerMinute = 12;
 const int kVideoSubtitleEstimateCharsPerCue = 12;
 
-/// 视频字幕任务目录的根（`<数据根>/asr_jobs/video_subtitles`）。
-Future<Directory> defaultVideoSubtitleJobsRoot() async {
-  final Directory support = await AppPaths.supportRootDirectory();
-  return Directory(p.join(support.path, 'asr_jobs', 'video_subtitles'));
-}
+/// 视频字幕任务目录的根（`<数据根>/asr_jobs/video_subtitles`）。布局只在引擎的
+/// [videoSubtitleJobsRootUnder] 写一次（host 任务与服务端 CLI 共用）。
+Future<Directory> defaultVideoSubtitleJobsRoot() async =>
+    videoSubtitleJobsRootUnder(await AppPaths.supportRootDirectory());
 
 ({AiTextCompleter completer, void Function() close}) _defaultCompleter(
   AiProviderConfig provider,
@@ -1000,7 +1000,7 @@ class AppVideoSubtitleService {
           recognizerId ??= _recordedRecognizer(dir);
         }
         if (rerun.isEmpty) {
-          job.errorMessage = 'no episode has been proofread yet';
+          job.errorMessage = t.video_subtitle_ai_nothing_to_rerun;
           job._finish(AppVideoSubtitleJobStatus.failed);
           return;
         }

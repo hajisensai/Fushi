@@ -26,6 +26,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_p
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/i18n/strings.g.dart' show t;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/interconnect_job_client.dart';
@@ -405,7 +406,7 @@ class RemoteVideoSubtitleService {
       onDone: () {
         if (result.isCompleted) return;
         // 流没给结果就结束了（不该发生）：按失败收尾，不让任务挂住。
-        job.error = 'host job ended without a result';
+        job.error = t.video_subtitle_ai_remote_result_missing;
         job._finish(RemoteVideoSubtitleJobStatus.failed);
         result.complete(null);
       },

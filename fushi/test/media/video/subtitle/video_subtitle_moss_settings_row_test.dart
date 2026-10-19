@@ -12,13 +12,19 @@ class _Moss implements VideoSubtitleMossPort {
   int disk;
   int deletes = 0;
 
+  /// 非 null 时 status 抛这个错误。
+  String? statusFailure;
+
   @override
-  Future<VideoSubtitleMossState> status(MossBackendPreference backend) async =>
-      VideoSubtitleMossState(
-        ready: disk > 0,
-        totalBytes: 3000,
-        obtainedBytes: disk,
-      );
+  Future<VideoSubtitleMossState> status(MossBackendPreference backend) async {
+    final String? failure = statusFailure;
+    if (failure != null) throw StateError(failure);
+    return VideoSubtitleMossState(
+      ready: disk > 0,
+      totalBytes: 3000,
+      obtainedBytes: disk,
+    );
+  }
 
   @override
   Stream<ModelDownloadEvent> ensure(MossBackendPreference backend) =>
@@ -37,21 +43,43 @@ class _Moss implements VideoSubtitleMossPort {
 }
 
 void main() {
-  Future<void> pump(WidgetTester tester, _Moss moss) async {
+  Future<void> pump(
+    WidgetTester tester,
+    _Moss moss, {
+    MossBackendPreference backend = MossBackendPreference.auto,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: SingleChildScrollView(
-            child: VideoSubtitleMossSettingsRow(
-              backend: MossBackendPreference.auto,
-              port: moss,
-            ),
+            child: VideoSubtitleMossSettingsRow(backend: backend, port: moss),
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('读状态失败后再读成功：错误清掉、出现下载钮（不会一直停在错误上）', (WidgetTester tester) async {
+    final _Moss moss = _Moss(0)..statusFailure = 'probe exploded';
+    await pump(tester, moss);
+    expect(find.textContaining('probe exploded'), findsOneWidget);
+    final Finder download = find.byKey(
+      const ValueKey<String>('video-subtitle-moss-files-download'),
+    );
+    expect(download, findsNothing);
+
+    moss.statusFailure = null;
+    await pump(tester, moss, backend: MossBackendPreference.cuda);
+    expect(find.textContaining('probe exploded'), findsNothing);
+    expect(
+      find.text(
+        t.video_subtitle_ai_moss_missing(size: FushiByteFormat.bytes(3000)),
+      ),
+      findsOneWidget,
+    );
+    expect(download, findsOneWidget);
+  });
 
   testWidgets('盘上没有 MOSS 文件：不给删除', (WidgetTester tester) async {
     await pump(tester, _Moss(0));

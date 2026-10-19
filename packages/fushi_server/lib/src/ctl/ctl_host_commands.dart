@@ -386,7 +386,7 @@ Future<int> _submitJob(
     if (id == null) throw AdminApiException(1, '服务端没返回 jobId: $created');
     final String base = '$kHostProxy/jobs/${Uri.encodeComponent(id)}';
     err.writeln('任务 $id：上传 ${audio.path}…');
-    await client.sendBytes('PUT', '$base/input/audio', bytes: await audio.readAsBytes());
+    await client.sendFile('PUT', '$base/input/audio', file: audio);
     await client.post('$base/start');
     final bool wait = command['wait'] as bool || command['out'] != null;
     if (!wait) {
@@ -461,10 +461,10 @@ Future<int> _submitVideoSubtitleJob(
     final String base = '$kHostProxy/jobs/${Uri.encodeComponent(id)}';
     if (video != null) {
       err.writeln('任务 $id：上传 ${video.path}…');
-      await client.sendBytes(
+      await client.sendFile(
         'PUT',
         '$base/input/${Uri.encodeComponent(p.basename(video.path))}',
-        bytes: await video.readAsBytes(),
+        file: video,
       );
     }
     await client.post('$base/start');

@@ -223,13 +223,19 @@ List<SubtitleGlossaryEntry> parseSubgenGlossaryFile(String text) {
   if (list is! List) {
     throw const FormatException('专名表 JSON 要么是条目数组，要么是 {"entries": [...]}');
   }
-  return <SubtitleGlossaryEntry>[
-    for (final Object? e in list)
-      if (e is Map)
-        SubtitleGlossaryEntry.fromJson(
-          e.cast<String, Object?>(),
-        ).copyWith(userEdited: true),
-  ].where((SubtitleGlossaryEntry e) => e.ja.isNotEmpty).toList();
+  final List<SubtitleGlossaryEntry> entries = <SubtitleGlossaryEntry>[];
+  for (final (int i, Object? e) in list.indexed) {
+    if (e is! Map) continue;
+    final SubtitleGlossaryEntry entry;
+    try {
+      entry = SubtitleGlossaryEntry.fromJson(e.cast<String, Object?>());
+    } on TypeError catch (err) {
+      // 字段类型不对（如 ja 写成数字）：按数据错误报出是第几条，而不是带堆栈崩掉。
+      throw FormatException('专名表第 ${i + 1} 条字段类型不对：$err');
+    }
+    if (entry.ja.isNotEmpty) entries.add(entry.copyWith(userEdited: true));
+  }
+  return entries;
 }
 
 /// 没有刮削数据的视频平均每秒多少字（估费用用）：K-ON 基准 286 s 转写 2847 字
@@ -325,6 +331,27 @@ Future<int> runSubgen(
     return kExitNoInput;
   }
 
+  // --glossary 是「这一部作品」的专名表：先整份解析好（坏文件在做任何事之前就报
+  // 数据错误），并且只允许一部作品——多个目录会把同一份表导进每一部。
+  List<SubtitleGlossaryEntry>? glossaryEntries;
+  if (options.glossaryFile != null) {
+    if (groups.where((SubgenGroup g) => g.videos.isNotEmpty).length > 1) {
+      io.err.writeln('--glossary 只能用于一部作品；多个目录请分开运行');
+      return kExitUsage;
+    }
+    try {
+      glossaryEntries = parseSubgenGlossaryFile(
+        await File(options.glossaryFile!).readAsString(),
+      );
+    } on FileSystemException catch (e) {
+      io.err.writeln('读不了专名表 ${options.glossaryFile}: ${e.message}');
+      return kExitNoInput;
+    } on FormatException catch (e) {
+      io.err.writeln('专名表 ${options.glossaryFile} 格式不对：${e.message}');
+      return kExitDataError;
+    }
+  }
+
   AiProviderConfig? provider;
   if (options.ai) {
     final ServerAiSettings settings = ServerAiSettings(() => rt.config.ai);
@@ -387,14 +414,8 @@ Future<int> runSubgen(
       '作品: ${work.title}（${work.workKey}${work.hasScrapedData ? '，有刮削数据' : '，无刮削数据'}）'
       ' ${group.videos.length} 集${group.wholeSeason ? '（整季）' : ''}',
     );
-    if (options.glossaryFile != null && !options.dryRun) {
-      await _importGlossary(
-        options.glossaryFile!,
-        work,
-        glossaryStore,
-        sites,
-        io,
-      );
+    if (glossaryEntries != null && !options.dryRun) {
+      await _importGlossary(glossaryEntries, work, glossaryStore, sites, io);
     }
     final AiChatClient? client = provider == null || options.dryRun
         ? null
@@ -584,15 +605,12 @@ Future<SubtitleWorkContext> _workContext(
 
 /// `--glossary`：条目全部标成用户编辑，资料指纹按当前资料算（之后不会被自动重生成）。
 Future<void> _importGlossary(
-  String path,
+  List<SubtitleGlossaryEntry> entries,
   SubtitleWorkContext work,
   SubtitleGlossaryStore store,
   List<WebKnowledgeSite> sites,
   CommandIo io,
 ) async {
-  final List<SubtitleGlossaryEntry> entries = parseSubgenGlossaryFile(
-    await File(path).readAsString(),
-  );
   final int now = DateTime.now().millisecondsSinceEpoch;
   await store.save(
     work.workKey,

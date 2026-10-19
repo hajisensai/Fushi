@@ -7,6 +7,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart';
@@ -338,6 +339,38 @@ void main() {
       runner().contentTypeFor('a.srt'),
       startsWith('application/x-subrip'),
     );
+  });
+
+  test('capability 的 MOSS 状态缓存按首次探测时刻过期，轮询不会把它续命', () async {
+    DateTime now = DateTime(2026, 10, 19, 12);
+    int probes = 0;
+    final VideoSubtitleHostJobRunner r = VideoSubtitleHostJobRunner(
+      resolveRecognizer:
+          (VideoSubtitleSegmenterMode mode, MossBackendPreference b) async =>
+              VideoSubtitleRecognizerChoice(recognizer: recognizer),
+      pipelineJobsRoot: Directory(p.join(tmp.path, 'pipeline')),
+      mossStatus: (MossBackendPreference _) async {
+        probes++;
+        return const MossProvisionStatus(
+          decision: MossBackendDecision.unavailable(
+            MossUnavailableCode.noGpu,
+            'no gpu',
+          ),
+        );
+      },
+      mossStatusCacheTtl: const Duration(minutes: 1),
+      clock: () => now,
+    );
+    await r.capability();
+    expect(probes, 1);
+    // 每 30 秒轮询一次：第一次命中缓存；到 60 秒时缓存必须已经过期重探，
+    // 而不是被上一次命中刷新了时间戳。
+    now = now.add(const Duration(seconds: 30));
+    await r.capability();
+    expect(probes, 1);
+    now = now.add(const Duration(seconds: 30));
+    await r.capability();
+    expect(probes, 2);
   });
 
   test('总进度按阶段区间折算', () {

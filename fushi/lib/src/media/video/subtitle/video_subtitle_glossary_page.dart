@@ -107,16 +107,30 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
   }
 
   Future<void> _persist(List<SubtitleGlossaryEntry> next) async {
-    final SubtitleGlossary saved = await _service.saveGlossary(
-      widget.target.work,
-      next,
-      previous: _candidateMode ? null : _saved,
-    );
+    // 调用方都是 unawaited 的按钮回调：写库失败不接住就成了未捕获的 zone 错误，
+    // 用户看不到任何反馈、还以为改动已经存下。
+    final SubtitleGlossary saved;
+    try {
+      saved = await _service.saveGlossary(
+        widget.target.work,
+        next,
+        previous: _candidateMode ? null : _saved,
+      );
+    } on Object catch (e) {
+      if (mounted) {
+        setState(
+          () => _notice = t.video_subtitle_glossary_save_failed(reason: '$e'),
+        );
+      }
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _saved = saved;
       _entries = saved.entries;
       _candidateMode = false;
+      // 存下来之后，之前的保存失败提示 / 候选表横幅都已不再成立。
+      _notice = null;
     });
   }
 
@@ -511,13 +525,16 @@ class _EntryRow extends StatelessWidget {
                 onSelected: onAction,
                 itemBuilder: (BuildContext context) =>
                     <PopupMenuEntry<_EntryAction>>[
-                      PopupMenuItem<_EntryAction>(
+                      FushiPopupMenuItem<_EntryAction>(
                         value: _EntryAction.edit,
-                        child: Text(t.video_subtitle_glossary_edit),
+                        label: t.video_subtitle_glossary_edit,
+                        icon: FushiIcons.edit,
                       ),
-                      PopupMenuItem<_EntryAction>(
+                      FushiPopupMenuItem<_EntryAction>(
                         value: _EntryAction.delete,
-                        child: Text(t.video_subtitle_glossary_delete),
+                        label: t.video_subtitle_glossary_delete,
+                        icon: FushiIcons.delete,
+                        color: Theme.of(context).colorScheme.error,
                       ),
                     ],
               ),

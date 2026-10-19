@@ -209,8 +209,10 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     this.mossStatus,
     this.probeDurationMs,
     Duration mossStatusCacheTtl = const Duration(minutes: 1),
+    DateTime Function()? clock,
   }) : _chatClientFactory = chatClientFactory ?? AiChatClient.new,
-       _mossStatusTtl = mossStatusCacheTtl;
+       _mossStatusTtl = mossStatusCacheTtl,
+       _clock = clock ?? DateTime.now;
 
   final VideoSubtitleRecognizerResolver resolveRecognizer;
 
@@ -233,6 +235,9 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
   final Future<MossProvisionStatus> Function(MossBackendPreference backend)?
   mossStatus;
   final Duration _mossStatusTtl;
+
+  /// MOSS 状态缓存的时钟；测试注入。
+  final DateTime Function() _clock;
 
   /// 视频时长探测（null = ffprobe）；测试注入。
   final Future<int?> Function(String videoPath)? probeDurationMs;
@@ -259,12 +264,15 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     if (probe != null) {
       try {
         final (DateTime, MossProvisionStatus)? cached = _mossStatusCache;
-        final MossProvisionStatus status =
-            cached != null &&
-                DateTime.now().difference(cached.$1) < _mossStatusTtl
-            ? cached.$2
-            : await probe(MossBackendPreference.auto);
-        _mossStatusCache = (DateTime.now(), status);
+        // 时间戳只在真探测时写：命中缓存也刷新时间戳的话，轮询间隔小于 TTL 时
+        // 缓存永不过期，装好 MOSS 后对端会一直看到「未就绪」。
+        final MossProvisionStatus status;
+        if (cached != null && _clock().difference(cached.$1) < _mossStatusTtl) {
+          status = cached.$2;
+        } else {
+          status = await probe(MossBackendPreference.auto);
+          _mossStatusCache = (_clock(), status);
+        }
         moss.addAll(<String, Object?>{
           'supported': status.supported,
           'ready': status.ready,

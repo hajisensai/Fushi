@@ -131,7 +131,12 @@ class _VideoSubtitleMossSettingsRowState
     extends State<VideoSubtitleMossSettingsRow> {
   VideoSubtitleMossState? _state;
   ModelDownloadEvent? _download;
+
+  /// 下载 / 删除失败（一直显示到下一次操作或切后端）。
   String? _error;
+
+  /// 读状态失败；下一次读成功就清掉（否则首次读失败后整行停在错误上、也没有下载钮）。
+  String? _statusError;
 
   /// 本机已落盘的 MOSS 文件字节（所有后端 + 权重）；0 = 没有可删的。
   int _diskBytes = 0;
@@ -146,7 +151,10 @@ class _VideoSubtitleMossSettingsRowState
   @override
   void didUpdateWidget(VideoSubtitleMossSettingsRow oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.backend != widget.backend) unawaited(_refresh());
+    if (oldWidget.backend != widget.backend) {
+      _error = null;
+      unawaited(_refresh());
+    }
   }
 
   Future<void> _refresh() async {
@@ -159,10 +167,11 @@ class _VideoSubtitleMossSettingsRowState
         setState(() {
           _state = state;
           _diskBytes = disk;
+          _statusError = null;
         });
       }
     } catch (error) {
-      if (mounted) setState(() => _error = '$error');
+      if (mounted) setState(() => _statusError = '$error');
     }
   }
 
@@ -221,22 +230,23 @@ class _VideoSubtitleMossSettingsRowState
   Widget build(BuildContext context) {
     final VideoSubtitleMossState? state = _state;
     final ModelDownloadEvent? download = _download;
-    final String subtitle = _error != null
-        ? _error!
-        : state == null
-        ? t.video_subtitle_ai_moss_checking
-        : state.unavailableReason != null
-        ? videoSubtitleMossProblemText(
-            VideoSubtitleMossProblem(
-              code: state.unavailableCode,
-              reason: state.unavailableReason!,
-            ),
-          )
-        : state.ready
-        ? t.video_subtitle_ai_moss_ready
-        : t.video_subtitle_ai_moss_missing(
-            size: FushiByteFormat.bytes(state.remainingBytes),
-          );
+    final String? error = _error ?? _statusError;
+    final String subtitle =
+        error ??
+        (state == null
+            ? t.video_subtitle_ai_moss_checking
+            : state.unavailableReason != null
+            ? videoSubtitleMossProblemText(
+                VideoSubtitleMossProblem(
+                  code: state.unavailableCode,
+                  reason: state.unavailableReason!,
+                ),
+              )
+            : state.ready
+            ? t.video_subtitle_ai_moss_ready
+            : t.video_subtitle_ai_moss_missing(
+                size: FushiByteFormat.bytes(state.remainingBytes),
+              ));
     final bool canDownload =
         state != null &&
         !state.ready &&

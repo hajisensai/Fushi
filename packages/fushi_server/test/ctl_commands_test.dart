@@ -18,13 +18,16 @@ import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:test/test.dart';
 
 class _Seen {
-  _Seen(this.method, this.path, this.query, this.auth, this.body);
+  _Seen(this.method, this.path, this.query, this.auth, this.body, this.raw);
 
   final String method;
   final String path;
   final Map<String, String> query;
   final String? auth;
   final Object? body;
+
+  /// 原始请求体（上传类请求核对字节用）。
+  final List<int> raw;
 }
 
 class _FakeAdmin {
@@ -58,6 +61,7 @@ class _FakeAdmin {
           request.uri.queryParameters,
           request.headers.value(HttpHeaders.authorizationHeader),
           text.isEmpty ? null : jsonDecode(text),
+          raw,
         ),
       );
       request.response
@@ -426,6 +430,7 @@ void main() {
         'PUT /api/admin/host/jobs/j9/input/audio',
         'POST /api/admin/host/jobs/j9/start',
       ]);
+      expect(admin.seen[1].raw, <int>[1, 2, 3]);
       expect(admin.seen.first.body, <String, Object?>{
         'kind': 'asr',
         // 素材档位在本地按文件名定好再带过去（上传后的输入名没有扩展名）。
@@ -450,6 +455,8 @@ void main() {
         'PUT /api/admin/host/jobs/j7/input/ep01.mkv',
         'POST /api/admin/host/jobs/j7/start',
       ]);
+      // 视频按文件流式上传（不整读进内存），落到对端的字节与源文件逐字节一致。
+      expect(admin.seen[1].raw, <int>[1, 2, 3]);
       expect(admin.seen.first.body, <String, Object?>{
         'kind': 'video_subtitle',
         'params': <String, Object?>{

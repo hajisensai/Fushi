@@ -136,7 +136,9 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     HostJobTarget? host;
     try {
       host = await widget.service.probe();
-    } catch (_) {
+    } catch (error, stack) {
+      // 探测失败按「没有可用的电脑」显示，真实原因进日志。
+      ErrorLogService.instance.log('video.subtitleRemoteProbe', error, stack);
       host = null;
     }
     if (!mounted) return;
