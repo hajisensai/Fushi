@@ -514,8 +514,11 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   PathRebaseColumn(
       'VideoDownloadJobs',
       'observedSavePath',
-      PathRebaseKind.externalUserPath,
-      '下载后端报告的远端或用户外部保存根；由显式 remote→local 映射解释，不能随应用数据根改写。'),
+      PathRebaseKind.documentsRooted,
+      '下载后端报告的保存根（后端坐标）。内置引擎用默认下载根 <documents>/anime_downloads/content '
+          '时它就是数据根内的本机路径，随数据根搬走（resume 同步改写，BUG-3541），不改写就停在'
+          '旧根（BUG-3542）。外接远端 qBittorrent 的远端坐标、用户自选的外部下载根都不在旧根下，'
+          'DocumentsPathRebaser 按搬移作用域原样跳过；远端坐标仍由显式 remote→local 映射解释。'),
   PathRebaseColumn('VideoDownloadJobs', 'targetRelativeRoot',
       PathRebaseKind.notAPath, '受管来源内的相对整理根，不是绝对路径。'),
   PathRebaseColumn('VideoDownloadJobFiles', 'originalRelativePath',

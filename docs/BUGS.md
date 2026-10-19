@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3171 条。点号进各自文件。
+> 共 3172 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3542](bugs/BUG-3542-data-root-move-job-observed-save-path-stale.md) | ✅ | ✅ | 数据根迁移后下载任务 observed_save_path 仍指向旧默认下载根 |
 | [BUG-3541](bugs/BUG-3541-data-root-move-embedded-fast-resume-stale-save-path.md) | ✅ | ✅ | 数据根迁移后内置引擎 fast-resume 里的 save_path 仍指向旧目录，种子指向已搬空的位置 |
 | [BUG-3540](bugs/BUG-3540-download-job-records-stale-after-move.md) | ✅ | ✅ | 移动/改名/整理后下载任务行的保存位置与相对路径不跟着更新 |
 | [BUG-3539](bugs/BUG-3539-download-remote-qb-backend-path-as-local.md) | ✅ | ✅ | 外接远端 qBittorrent：改名/移动、任务删除与打开位置把后端坐标的保存路径当本机路径用 |
