@@ -37,8 +37,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3544](bugs/BUG-3544-srs-host-not-in-srs-sync.md) | ✅ | ✅ | 互联 host 自己不参与复习（SRS）同步：立即同步提示没配置、对端看不到它的卡 |
 | [BUG-3543](bugs/BUG-3543-srs-multi-channel-shared-state.md) | ✅ | ✅ | 云盘 + 互联同时开着时复习同步状态全局一份：批次只到先跑的目录、另一个目录每轮换化身 |
-| [BUG-3542](bugs/BUG-3542-srs-host-not-in-srs-sync.md) | ✅ | ✅ | 互联 host 自己不参与复习（SRS）同步：立即同步提示没配置、对端看不到它的卡 |
 | [BUG-3542](bugs/BUG-3542-data-root-move-job-observed-save-path-stale.md) | ✅ | ✅ | 数据根迁移后下载任务 observed_save_path 仍指向旧默认下载根 |
 | [BUG-3541](bugs/BUG-3541-data-root-move-embedded-fast-resume-stale-save-path.md) | ✅ | ✅ | 数据根迁移后内置引擎 fast-resume 里的 save_path 仍指向旧目录，种子指向已搬空的位置 |
 | [BUG-3540](bugs/BUG-3540-download-job-records-stale-after-move.md) | ✅ | ✅ | 移动/改名/整理后下载任务行的保存位置与相对路径不跟着更新 |
