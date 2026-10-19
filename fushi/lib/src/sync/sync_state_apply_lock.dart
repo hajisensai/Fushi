@@ -4,7 +4,8 @@ import 'package:fushi/src/sync/sync_utils.dart';
 /// （BUG-2717）。
 ///
 /// 两类写者共用它：
-/// - 本机作为互联 host 时，对端 PUT 聚合快照 / POST 合集清单的处理
+/// - 本机作为互联 host 时，对端 PUT 聚合快照 / POST 合集清单的处理，以及对端
+///   上报书进度 / 视频与有声书播放位置的读-比较-写
 ///   （`LocalLibraryHostService` 的 `runSyncStateExclusive`）；
 /// - 本机自己的出站同步（云 / 互联 client）把合并结果写回本地的那一步
 ///   （`AggregateSyncService.localApplyLock`、`SyncOrchestrator` 的合集落库段）。
