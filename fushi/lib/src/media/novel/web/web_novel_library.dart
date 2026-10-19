@@ -14,7 +14,7 @@ import 'package:fushi_web_core/fushi_web_core.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/web/web_comic_chapter.dart'
-    show WebComicCookie;
+    show webComicCookieHeader;
 import 'package:fushi/src/media/manga/web/web_comic_scanner.dart'
     show readWebComicCookies;
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart'
@@ -325,9 +325,16 @@ Future<Uint8List?> fetchWebNovelImage(Uri url, {required Uri referer}) async {
   // 名字层判据挡不住解析到本机的外部域名：建连接时按解析后的地址再判一次。
   guardLnReaderConnections(client);
   try {
-    List<WebComicCookie> cookies = const <WebComicCookie>[];
+    // Cookie 取正文页（[referer]）站点的，再按 RFC 6265 对图片地址筛：直接按图片
+    // URL 读 cookie 的话，页面放一张指向别的站的 <img>，Fushi 就会带着那个站的全部
+    // cookie 去请求（跨站请求伪造）。
+    String? cookieHeader;
     try {
-      cookies = await readWebComicCookies(url);
+      cookieHeader = webComicCookieHeader(
+        imageUrl: url,
+        pageUrl: referer,
+        cookies: await readWebComicCookies(referer),
+      );
     } on Object {
       // 读不到 cookie（平台没实现 / 环境未建）：不带 cookie 照取。
     }
@@ -346,11 +353,8 @@ Future<Uint8List?> fetchWebNovelImage(Uri url, {required Uri referer}) async {
         ..set(HttpHeaders.userAgentHeader, LnReaderFetchBridge.defaultUserAgent)
         ..set(HttpHeaders.acceptHeader, 'image/*,*/*;q=0.8')
         ..set(HttpHeaders.refererHeader, referer.toString());
-      if (cookies.isNotEmpty && hop == 0) {
-        request.headers.set(
-          HttpHeaders.cookieHeader,
-          cookies.map((WebComicCookie c) => '${c.name}=${c.value}').join('; '),
-        );
+      if (cookieHeader != null && hop == 0) {
+        request.headers.set(HttpHeaders.cookieHeader, cookieHeader);
       }
       response = await request.close().timeout(const Duration(seconds: 30));
       final String? location = response.headers.value(

@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/webview/untrusted_page_urls.dart';
 
 /// 内置网页播放器（app 内 WebView2 打开 Netflix / YouTube 页面并登录站点）的总开关。
 ///
@@ -411,12 +412,19 @@ WebVideoTrack? parseWebVideoTrackPayload(
 }
 
 /// 解析 `{type:'state', ...}`（字段名见 glue 的 `snapshot()`）。坏形状回 null。
-WebVideoPlaybackState? parseWebVideoStatePayload(Object? raw) {
+///
+/// 页面上报的 `href` / `vimg` 是不可信数据：`href` 经 [trustedPageHref] 与 WebView 自己
+/// 的地址 [webViewUrl] 对过主机才采信（它决定这一集落成哪本书），`vimg` 只收
+/// [safeRemoteImageUrl] 认可的 https 远端地址（它会被下载成封面）。
+WebVideoPlaybackState? parseWebVideoStatePayload(
+  Object? raw, {
+  String? webViewUrl,
+}) {
   if (raw is! Map) return null;
   final Object? rate = raw['rate'];
   final Object? vol = raw['vol'];
   return WebVideoPlaybackState(
-    href: (raw['href'] ?? '').toString(),
+    href: trustedPageHref((raw['href'] ?? '').toString(), webViewUrl),
     videoKey: (raw['videoKey'] ?? '').toString(),
     hasVideo: raw['hasVideo'] == true,
     positionMs: _asInt(raw['t']),
@@ -432,7 +440,8 @@ WebVideoPlaybackState? parseWebVideoStatePayload(Object? raw) {
     buffering: raw['buf'] == true,
     ad: raw['ad'] == true,
     videoTitle: (raw['vtitle'] ?? '').toString().trim(),
-    imageUrl: (raw['vimg'] ?? '').toString().trim(),
+    imageUrl:
+        safeRemoteImageUrl((raw['vimg'] ?? '').toString())?.toString() ?? '',
     siteTracks: parseWebVideoSiteTracks(raw['nftt']),
     siteTrackCurrent: parseWebVideoSiteTrackCurrent(raw['nftt']),
     siteAudioTracks: parseWebVideoSiteTracks(raw['nfat']),

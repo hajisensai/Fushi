@@ -10,9 +10,12 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart'
+    show guardLnReaderConnections;
 import 'package:fushi/src/media/video/video_player_controller.dart'
     show VideoChapter;
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
+import 'package:fushi/src/webview/untrusted_page_urls.dart';
 import 'package:fushi_engine/utils/net/app_http.dart' show createAppHttpClient;
 
 /// 一集。
@@ -92,6 +95,11 @@ class NetflixTitleMetadata {
   /// 播放 id 为 [watchId] 的那一集在 [episodes] 里的下标；不在为 -1。
   int indexOfEpisode(String watchId) =>
       episodes.indexWhere((NetflixEpisode e) => e.id == watchId);
+
+  /// 这份 metadata 是否真的描述 [watchId]：剧集里有这一集，或作品 id 就是它（电影、
+  /// 以及用作品 id 打开的播放页）。
+  bool describes(String watchId) =>
+      id == watchId || indexOfEpisode(watchId) >= 0;
 
   /// [watchId] 这一集（或电影本身）的标记。
   NetflixSkipMarkers markersFor(String watchId) {
@@ -291,22 +299,54 @@ class WebVideoCoverFetcher implements RemoteCoverFetcher {
   @override
   String get coverCacheNamespace => 'web_video_site';
 
+  /// 单张剧照的体积上限（真实剧照几百 KB）。
+  static const int maxBytes = 16 * 1024 * 1024;
+
+  /// 剧照地址来自站点 metadata（页面取回的原文，不可信）：只收 https 远端地址，建连接时
+  /// 按解析后的地址再拦本机，重定向手动跟、每跳同样校验，响应体有上限与读超时。
   @override
   Future<Uint8List> fetchRemoteCover(String coverUrl) async {
+    Uri? uri = safeRemoteImageUrl(coverUrl);
+    if (uri == null) {
+      throw ArgumentError.value(coverUrl, 'coverUrl', 'not a remote https URL');
+    }
     final HttpClient client = createAppHttpClient();
+    guardLnReaderConnections(client);
     try {
-      final HttpClientRequest request = await client.getUrl(
-        Uri.parse(coverUrl),
-      );
-      final HttpClientResponse response = await request.close();
+      late HttpClientResponse response;
+      for (int hop = 0; ; hop++) {
+        final HttpClientRequest request = await client
+            .getUrl(uri!)
+            .timeout(const Duration(seconds: 30));
+        request.followRedirects = false;
+        response = await request.close().timeout(const Duration(seconds: 30));
+        final String? location = response.headers.value(
+          HttpHeaders.locationHeader,
+        );
+        if (!response.isRedirect || location == null) break;
+        await response.drain<void>();
+        if (hop >= 5) throw HttpException('Too many redirects', uri: uri);
+        uri = safeRemoteImageUrl(uri.resolve(location).toString());
+        if (uri == null) {
+          throw HttpException('Redirected to a disallowed address');
+        }
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw HttpException('HTTP ${response.statusCode}', uri: request.uri);
+        await response.drain<void>();
+        throw HttpException('HTTP ${response.statusCode}', uri: uri);
       }
       final BytesBuilder bytes = BytesBuilder(copy: false);
-      await response.forEach(bytes.add);
+      await for (final List<int> chunk in response.timeout(
+        const Duration(seconds: 60),
+      )) {
+        bytes.add(chunk);
+        if (bytes.length > maxBytes) {
+          throw HttpException('Cover is too large', uri: uri);
+        }
+      }
       return bytes.takeBytes();
     } finally {
-      client.close();
+      client.close(force: true);
     }
   }
 }

@@ -2195,6 +2195,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       <String, NetflixTitleMetadata>{};
   final Set<String> _webNetflixMetaRequested = <String>{};
 
+  /// 已向站点要过、还没回执的 Netflix metadata id（回执只认这里面的）。
+  final Set<String> _webNetflixMetaInFlight = <String>{};
+
   /// 剧集面板（[_episodes]）里每一集对应的站点播放地址。
   List<String> _webEpisodeUrls = const <String>[];
 

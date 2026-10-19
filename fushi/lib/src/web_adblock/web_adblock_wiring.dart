@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
+import 'package:fushi/src/webview/web_payload_limits.dart';
 import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:fushi_web_core/fushi_web_core.dart';
 
@@ -284,13 +285,20 @@ class WebAdblockWiring {
   void onWebViewCreated(InAppWebViewController controller) {
     controller.addJavaScriptHandler(
       handlerName: kWebAdblockCosmeticHandler,
-      callback: (List<dynamic> args) =>
-          cosmeticFor(args.isEmpty ? null : args.first),
+      callback: limitWebPayload(
+        kWebAdblockCosmeticHandler,
+        kWebPayloadSmallMaxChars,
+        (List<dynamic> args) => cosmeticFor(args.isEmpty ? null : args.first),
+      ),
     );
     controller.addJavaScriptHandler(
       handlerName: kWebAdblockGenericHandler,
-      callback: (List<dynamic> args) =>
-          genericSelectorsFor(args.isEmpty ? null : args.first),
+      callback: limitWebPayload(
+        kWebAdblockGenericHandler,
+        kWebPayloadMediumMaxChars,
+        (List<dynamic> args) =>
+            genericSelectorsFor(args.isEmpty ? null : args.first),
+      ),
     );
   }
 

@@ -721,6 +721,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       return;
     }
     if (!state.hasVideo || !_webNetflixMetaRequested.add(watchId)) return;
+    _webNetflixMetaInFlight.add(watchId);
     unawaited(
       _webSession?.evaluate(
         'window.__fushiWebVideo.fetchNetflixMetadata(${jsonEncode(watchId)})',
@@ -729,8 +730,18 @@ extension _VideoWebSource on _VideoFushiPageState {
   }
 
   void _onWebNetflixMetadata(String movieId, String? text, String error) {
+    // 回执来自页面（不可信）：只认本页确实发出过、还没回的那个 id，且原文里真有这一集
+    // ——否则页面可以随手投一份伪造的剧集 / 剧照 / 片头标记给任意 id。
+    if (!_webNetflixMetaInFlight.remove(movieId)) return;
     if (!mounted || text == null) return;
     final NetflixTitleMetadata? meta = parseNetflixMetadata(text);
+    if (meta != null && !meta.describes(movieId)) {
+      ErrorLogService.instance.log(
+        'VideoFushi.web',
+        'netflix metadata $movieId: response does not contain that episode',
+      );
+      return;
+    }
     if (meta == null) {
       ErrorLogService.instance.log(
         'VideoFushi.web',
