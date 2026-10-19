@@ -443,8 +443,7 @@ Future<void> main(List<String> args) async {
     gate.job = joinHeavyJob(
         noLease
             ? null
-            : heavyNeedFor(HeavyKind.test).capMb +
-                (parallel ? heavyNeedFor(HeavyKind.analyze).capMb : 0),
+            : prePushCheckCapMb(parallel: parallel),
         log: stdout.writeln);
   }
   final String flutter = FlutterSdkExecutables.current().flutter();

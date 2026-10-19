@@ -14,6 +14,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show PreferencesRepository;
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_library_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_control_editor.dart'
     show showVideoRemoteControlEditor;
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_models.dart';
@@ -51,6 +52,7 @@ import 'package:fushi_engine/sync/video_remote_service.dart'
     show
         videoRemoteActionUnsupported,
         videoRemoteCapabilityEpisodes,
+        videoRemoteCapabilityOpenVideo,
         videoRemoteCapabilitySubtitleTracks,
         videoRemoteCapabilityVolume;
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
@@ -710,6 +712,34 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     for (final Object? item in _state['capabilities'] as List? ?? <Object?>[])
       item.toString(),
   };
+
+  /// 电脑能否点播（从它的视频库里选片让它播放）；不需要电脑上已开着视频。
+  bool get canPickVideo =>
+      capabilities.contains(videoRemoteCapabilityOpenVideo);
+
+  /// 点播：列出电脑的视频库，选中后让电脑关掉正在放的（照常落进度）、打开这一部。
+  /// 新视频的会话经事件流推过来，本页照常换到它的字幕。
+  Future<void> pickVideo() => _guard(() async {
+    if (!canPickVideo || !context.mounted) return;
+    // 正在查的词属于要被关掉的视频：先收起弹框、结束电脑上的查词上下文。
+    closeLookup();
+    final String? picked = await showVideoRemoteLibrarySheet(
+      context: context,
+      load: (String query, int offset) async => VideoRemoteLibraryPage.fromJson(
+        await _client.call('library', <String, dynamic>{
+          'query': query,
+          'offset': offset,
+          'limit': 100,
+        }),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    if (available && picked == _state['identity']) return;
+    await _client.call('openVideo', <String, dynamic>{
+      'bookUid': picked,
+      'requestId': _client.requestId(),
+    });
+  });
 
   /// 电脑当前作品的集数（单视频 / 旧版电脑为 0）。
   int get episodeCount => (_state['episodeCount'] as num?)?.toInt() ?? 0;
@@ -1706,6 +1736,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
             onRemoveFavorites: (Set<String> ids) =>
                 unawaited(removeFavorites(ids)),
             onRefresh: () => unawaited(reconnect()),
+            onPickVideo: canPickVideo ? () => unawaited(pickVideo()) : null,
             onSeek: available ? (Duration to) => unawaited(seekTo(to)) : null,
             onCustomizeControls: _prefs == null
                 ? null
@@ -1819,6 +1850,8 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
       return VideoRemoteNotice(
         kind: VideoRemoteNoticeKind.waiting,
         message: t.video_remote_waiting,
+        actionLabel: canPickVideo ? t.video_remote_library_pick : null,
+        onAction: canPickVideo ? () => unawaited(pickVideo()) : null,
       );
     }
     return null;
@@ -1965,6 +1998,10 @@ String videoRemoteErrorText(Object error) {
       return t.video_remote_error_requests_busy;
     case 'no_video':
       return t.video_remote_error_no_video;
+    case 'video_missing':
+      return t.video_remote_error_video_missing;
+    case 'host_busy':
+      return t.video_remote_error_host_busy;
     case 'remote_closed':
       return t.video_remote_error_remote_closed;
     case 'task_missing':

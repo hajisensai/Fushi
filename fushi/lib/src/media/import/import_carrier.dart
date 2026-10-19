@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
+import 'package:fushi_engine/media/manga/manga_archive_importer.dart'
+    show kMangaArchiveFileExtensions;
 
 /// 一个待导入路径的**载体身份**：它到底是哪种东西，因而该交给哪个 importer。
 ///
@@ -81,14 +83,12 @@ enum ImportCarrier {
 /// `.pdf` 在列是因为一卷扫描版漫画常常就是一份 PDF：逐页栅格化即页图。它的载体
 /// 身份仍是 [ImportCarrier.pdf]（书籍框据此走 `PdfImporter`），漫画侧的「能不能
 /// 变成漫画」由 [ImportCarrier.isMangaCapable] 单独回答，两边不打架。
+///
+/// 压缩包那一段取自引擎 [kMangaArchiveFileExtensions]（导入器真能吃的格式），与
+/// 无头服务端库扫描同源；这里只在它之上加 `.mokuro` 与 `.pdf`（PDF 栅格化在 app 侧）。
 const Set<String> kMangaCarrierFileExtensions = <String>{
   '.mokuro',
-  '.cbz',
-  '.cbr',
-  '.rar',
-  '.cb7',
-  '.zip',
-  '.epub',
+  ...kMangaArchiveFileExtensions,
   '.pdf',
 };
 
