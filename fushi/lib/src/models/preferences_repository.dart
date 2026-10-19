@@ -3058,6 +3058,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习页底部重播键的位置（SrsReviewReplayButton.wire）。默认 'off'。
+  String get srsReviewReplayButton =>
+      getPref('srs_review_replay_button', defaultValue: 'off') as String;
+
+  Future<void> setSrsReviewReplayButton(String wire) async {
+    await setPref('srs_review_replay_button', wire);
+    notifyListeners();
+  }
+
+  // 复习页评分按钮显示下次间隔。默认 true。
+  bool get srsReviewShowIntervals =>
+      getPref('srs_review_show_intervals', defaultValue: true) as bool;
+
+  Future<void> setSrsReviewShowIntervals(bool value) async {
+    await setPref('srs_review_show_intervals', value);
+    notifyListeners();
+  }
+
   // 复习页卡面缩放倍率。默认 1.0。
   double get srsReviewZoom =>
       (getPref('srs_review_zoom', defaultValue: 1.0) as num).toDouble();
