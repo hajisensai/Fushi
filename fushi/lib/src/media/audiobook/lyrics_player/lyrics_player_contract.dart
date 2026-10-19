@@ -310,7 +310,6 @@ class LyricsHtmlTheme {
     required this.alignStart,
     required this.contextBlurPx,
     required this.rowRadius,
-    required this.hoverFill,
     this.pastOpacityFactor = 1,
   });
 
@@ -351,11 +350,8 @@ class LyricsHtmlTheme {
   /// 非当前行的轻模糊（px，0 = 不模糊）。
   final double contextBlurPx;
 
-  /// 行悬停底块圆角（px）。
+  /// 行圆角（px）。
   final double rowRadius;
-
-  /// 行悬停底块颜色（含透明度）。
-  final Color hoverFill;
 
   @override
   bool operator ==(Object other) =>
@@ -372,7 +368,6 @@ class LyricsHtmlTheme {
       other.alignStart == alignStart &&
       other.contextBlurPx == contextBlurPx &&
       other.rowRadius == rowRadius &&
-      other.hoverFill == hoverFill &&
       other.pastOpacityFactor == pastOpacityFactor;
 
   @override
@@ -389,7 +384,6 @@ class LyricsHtmlTheme {
     alignStart,
     contextBlurPx,
     rowRadius,
-    hoverFill,
     pastOpacityFactor,
   );
 }
