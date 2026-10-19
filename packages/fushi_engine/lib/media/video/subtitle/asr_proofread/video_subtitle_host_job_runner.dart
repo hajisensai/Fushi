@@ -66,13 +66,24 @@ typedef VideoSubtitleRecognizerResolver =
 /// 任务以「暂停」结束（AI 请求失败、专名表校验没过）：缓存保留，处理后重新提交
 /// 即续。`toString` 就是给用户看的那句（host job 的 `error` 字段取它）。
 class VideoSubtitleJobPaused implements Exception {
-  const VideoSubtitleJobPaused(this.message);
+  const VideoSubtitleJobPaused(this.message, {this.usage});
 
   final String message;
+
+  /// 暂停前这次任务已经花掉的 AI 用量（也写进了 [message] 的尾巴：host job 只回传
+  /// 错误文本）。
+  final SubtitleAiUsageTally? usage;
 
   @override
   String toString() => message;
 }
+
+/// 「本次已调用 AI N 次…」的尾巴；用量未知（null）时为空串。
+String videoSubtitleSpentSuffix(SubtitleAiUsageTally? usage) => usage == null
+    ? ''
+    : '；本次已调用 AI ${usage.calls} 次，输入 ${usage.inputTokens} / 输出 '
+          '${usage.outputTokens} token'
+          '${usage.hasUnknown ? '（${usage.callsWithoutUsage} 次没带用量）' : ''}';
 
 /// 解析后的任务参数。
 class VideoSubtitleJobParams {
@@ -390,9 +401,15 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
       } on SubtitlePipelineCancelled {
         throw const HostJobCancelledException();
       } on SubtitleAiRequestFailure catch (e) {
-        throw VideoSubtitleJobPaused('暂停：AI 请求失败（${e.reason}）');
+        throw VideoSubtitleJobPaused(
+          '暂停：AI 请求失败（${e.reason}）${videoSubtitleSpentSuffix(e.usage)}',
+          usage: e.usage,
+        );
       } on SubtitleGlossaryValidationFailure catch (e) {
-        throw VideoSubtitleJobPaused('暂停：专名表校验没通过（$e）');
+        throw VideoSubtitleJobPaused(
+          '暂停：专名表校验没通过（$e）${videoSubtitleSpentSuffix(e.usage)}',
+          usage: e.usage,
+        );
       } on VideoSubtitleRecognizeFailure catch (e) {
         throw StateError(e.message);
       }
@@ -448,6 +465,11 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
           'reason': choice.mossUnavailableReason,
         },
       'glossaryRegenerated': result.glossaryRegenerated,
+      if (result.glossaryIdentityUnverified)
+        'glossaryIdentityWarning': <String, Object?>{
+          'heard': result.glossaryHeardNames,
+          'missing': result.glossaryMissingNames,
+        },
       if (result.glossary != null)
         'glossaryEntries': result.glossary!.entries.length,
       'usage': result.usage.toJson(),

@@ -134,6 +134,9 @@ class VideoSubtitlePipelineResult {
     required this.usage,
     this.glossary,
     this.glossaryRegenerated = false,
+    this.glossaryIdentityUnverified = false,
+    this.glossaryHeardNames = const <String>[],
+    this.glossaryMissingNames = const <String>[],
   });
 
   final List<VideoSubtitleEpisodeResult> episodes;
@@ -145,6 +148,12 @@ class VideoSubtitlePipelineResult {
   /// 本次用的专名表（AI 关闭 / 无需校对时为 null）。
   final SubtitleGlossary? glossary;
   final bool glossaryRegenerated;
+
+  /// 专名表的身份校验没过但作品身份来自刮削（只警告不拦，见
+  /// `SubtitleGlossaryBuildResult.identityUnverified`）；附听到 / 没听到的人名。
+  final bool glossaryIdentityUnverified;
+  final List<String> glossaryHeardNames;
+  final List<String> glossaryMissingNames;
 }
 
 /// AI 校对的装配：null = AI 关闭。
@@ -279,12 +288,46 @@ class VideoSubtitlePipeline {
   /// [SubtitlePipelineCancelled]；AI 请求失败抛 [SubtitleAiRequestFailure]；专名表
   /// 校验两次重做仍不过抛 [SubtitleGlossaryValidationFailure]。三者都保留已落盘
   /// 的产物，重跑即续。
+  ///
+  /// 失败时抛出的 [SubtitleAiRequestFailure] / [SubtitleGlossaryValidationFailure] 带着
+  /// 这次运行已经花掉的 AI 用量（`usage`）：各阶段自己的账在异常里丢了，这里经
+  /// [SubtitleAiSpendingCompleter] 另记一份，失败也如实上报，不显示成 0 次调用。
   Future<VideoSubtitlePipelineResult> run({
     required List<String> videoPaths,
     required SubtitleWorkContext work,
     bool wholeSeason = false,
     void Function(VideoSubtitleProgress progress)? onProgress,
     SubtitleCancelToken cancel = const SubtitleNeverCancel(),
+  }) async {
+    final VideoSubtitleAiConfig? config = ai;
+    final SubtitleAiSpendingCompleter? spending = config == null
+        ? null
+        : SubtitleAiSpendingCompleter(config.completer);
+    try {
+      return await _run(
+        videoPaths: videoPaths,
+        work: work,
+        wholeSeason: wholeSeason,
+        onProgress: onProgress,
+        cancel: cancel,
+        completer: spending,
+      );
+    } on SubtitleAiRequestFailure catch (e, stack) {
+      if (spending == null) rethrow;
+      Error.throwWithStackTrace(e.withUsage(spending.spent), stack);
+    } on SubtitleGlossaryValidationFailure catch (e, stack) {
+      if (spending == null) rethrow;
+      Error.throwWithStackTrace(e.withUsage(spending.spent), stack);
+    }
+  }
+
+  Future<VideoSubtitlePipelineResult> _run({
+    required List<String> videoPaths,
+    required SubtitleWorkContext work,
+    required bool wholeSeason,
+    required void Function(VideoSubtitleProgress progress)? onProgress,
+    required SubtitleCancelToken cancel,
+    required AiTextCompleter? completer,
   }) async {
     void report(
       VideoSubtitleStage stage,
@@ -324,6 +367,13 @@ class VideoSubtitlePipeline {
       final Directory dir = jobDirFor(video);
       await dir.create(recursive: true);
       final _JobState state = _JobState.load(dir);
+      // 校对 / 写法统一 / final 都是从某个识别器的稿派生的，缓存文件名里却没有识别
+      // 器：换了识别器（滑窗 → MOSS）而不作废它们，批缓存会按批起点把旧稿的修正
+      // 套到新稿的同号行上。识别稿本身按识别器分文件，留着。
+      final String? previousRecognizer = state.recognizerId;
+      if (previousRecognizer != null && previousRecognizer != recognizer.id) {
+        await resetVideoSubtitleJobFrom(dir, VideoSubtitleStage.proofread);
+      }
       final File draftsFile = File(
         p.join(dir.path, VideoSubtitleJobFiles.drafts(recognizer.id)),
       );
@@ -376,11 +426,16 @@ class VideoSubtitlePipeline {
     final VideoSubtitleAiConfig? aiConfig = ai;
     SubtitleGlossary? glossary;
     bool glossaryRegenerated = false;
+    SubtitleGlossaryBuildResult? glossaryBuild;
 
     // 已有 final.json 的集不再校对；它们记着的用量照样进总账。
     final List<_Episode> pending = <_Episode>[];
     for (final _Episode e in episodes) {
-      final _FinalCues? done = _readFinal(e.finalFile);
+      final _FinalCues? done = _readFinal(
+        e.finalFile,
+        recognizerId: recognizer.id,
+        proofread: aiConfig != null,
+      );
       if (done == null) {
         pending.add(e);
       } else {
@@ -402,7 +457,7 @@ class VideoSubtitlePipeline {
       );
       final SubtitleGlossaryBuildResult built =
           await SubtitleGlossaryBuilder(
-            completer: aiConfig.completer,
+            completer: completer!,
             webKnowledge: aiConfig.webKnowledge,
             clock: _clock,
           ).build(
@@ -418,6 +473,7 @@ class VideoSubtitlePipeline {
       usage.addTally(built.usage);
       glossary = built.glossary;
       glossaryRegenerated = built.regenerated;
+      glossaryBuild = built;
       if (built.regenerated) {
         await aiConfig.glossaryStore.save(work.workKey, built.glossary);
       }
@@ -434,7 +490,7 @@ class VideoSubtitlePipeline {
       }
       final SubtitleProofreadResult proofread =
           await SubtitleProofreader(
-            completer: aiConfig.completer,
+            completer: completer!,
             concurrency: aiConfig.proofreadConcurrency,
           ).proofread(
             cues: e.drafts,
@@ -462,7 +518,7 @@ class VideoSubtitlePipeline {
         index: e.index,
       );
       final SubtitleConsistencyResult consistent =
-          await SubtitleConsistencyPass(completer: aiConfig.completer).run(
+          await SubtitleConsistencyPass(completer: completer).run(
             cues: proofread.cues,
             title: work.japaneseTitle,
             glossary: glossary,
@@ -486,7 +542,7 @@ class VideoSubtitlePipeline {
       report(VideoSubtitleStage.songCheck, 0, 'classifying short clips');
       await jobsRoot.create(recursive: true);
       final SubtitleClipClassification classified =
-          await SubtitleClipClassifier(completer: aiConfig.completer).classify(
+          await SubtitleClipClassifier(completer: completer!).classify(
             clips: <String, List<String>>{
               for (final _Episode e in shorts)
                 e.jobId: <String>[
@@ -527,6 +583,10 @@ class VideoSubtitlePipeline {
               for (final SubtitleDraftCue c in e.finalCues!) c.toJson(),
             ],
             'usage': e.usage.toJson(),
+            // 这份 final 由哪个识别器的稿、有没有经过 AI 校对得来：先不校对跑一遍、
+            // 再开 AI 跑同一集时，不能把不校对的结果当成已完成直接导出。
+            'recognizer': recognizer.id,
+            'proofread': aiConfig != null,
           }),
         );
         usage.addTally(e.usage);
@@ -555,6 +615,9 @@ class VideoSubtitlePipeline {
       usage: usage,
       glossary: glossary,
       glossaryRegenerated: glossaryRegenerated,
+      glossaryIdentityUnverified: glossaryBuild?.identityUnverified ?? false,
+      glossaryHeardNames: glossaryBuild?.heardNames ?? const <String>[],
+      glossaryMissingNames: glossaryBuild?.missingNames ?? const <String>[],
     );
   }
 
@@ -629,11 +692,21 @@ class VideoSubtitlePipeline {
     }
   }
 
-  static _FinalCues? _readFinal(File f) {
+  /// 读 `final.json`；不是同一识别器、同一校对开关产出的（或旧格式没记这两项）
+  /// 当作没有——重做拆分与导出很便宜，校对的批缓存仍在 `proofread/` 里。
+  static _FinalCues? _readFinal(
+    File f, {
+    required String recognizerId,
+    required bool proofread,
+  }) {
     if (!f.existsSync()) return null;
     try {
       final Object? decoded = jsonDecode(f.readAsStringSync());
       if (decoded is! Map) return null;
+      if (decoded['recognizer'] != recognizerId ||
+          decoded['proofread'] != proofread) {
+        return null;
+      }
       final Object? u = decoded['usage'];
       return _FinalCues(
         cues: decodeSubtitleDraftCues(f.readAsStringSync()),

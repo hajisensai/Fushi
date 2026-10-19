@@ -50,6 +50,95 @@ void main() {
     expect(subtitleGlossaryCoveragePasses(right), isTrue);
   });
 
+  // 片假名高频词作第二证据。样本形状照 2026-10-19 基准：SPY×FAMILY 的识别稿里
+  // ロイド / アーニャ / フォージャー 各出现多次；K-ON 的表（唯 / 澪 / 律 / ムギ /
+  // ギー太 …）与它没有交集。
+  const String spyLike =
+      'ロイド、アーニャを頼む。アーニャ、ピーナッツ好き。ロイドさん、ヨルさん。'
+      'フォージャー家。アーニャ、ロイドと出かける。フォージャーさん。ボンド。ボンド！'
+      'ボンド、待て。フォージャー夫妻。';
+  const List<SubtitleGlossaryEntry> konLike = <SubtitleGlossaryEntry>[
+    SubtitleGlossaryEntry(ja: '平沢唯', reading: 'ひらさわゆい', kind: '人名'),
+    SubtitleGlossaryEntry(ja: '秋山澪', reading: 'あきやまみお', kind: '人名'),
+    SubtitleGlossaryEntry(ja: '田井中律', reading: 'たいなかりつ', kind: '人名'),
+    SubtitleGlossaryEntry(ja: '琴吹紬', reading: 'ことぶきつむぎ', kind: '人名'),
+    SubtitleGlossaryEntry(ja: '中野梓', reading: 'なかのあずさ', kind: '人名'),
+    SubtitleGlossaryEntry(ja: 'ムギ', reading: 'むぎ', kind: '愛称'),
+    SubtitleGlossaryEntry(ja: 'ギー太', reading: 'ぎーた', kind: '楽器名'),
+    SubtitleGlossaryEntry(ja: '放課後ティータイム', kind: 'バンド名'),
+  ];
+  const List<SubtitleGlossaryEntry> spyTable = <SubtitleGlossaryEntry>[
+    SubtitleGlossaryEntry(ja: 'ロイド・フォージャー', kind: '人名'),
+    SubtitleGlossaryEntry(ja: 'アーニャ・フォージャー', kind: '人名'),
+    SubtitleGlossaryEntry(ja: 'ヨル・フォージャー', kind: '人名'),
+    SubtitleGlossaryEntry(ja: 'フランキー・フランクリン', kind: '人名'),
+    SubtitleGlossaryEntry(ja: 'フィオナ・フロスト', kind: '人名'),
+    SubtitleGlossaryEntry(ja: 'ダミアン・デズモンド', kind: '人名'),
+  ];
+
+  test('片假名高频词：≥3 次的片假名词与表的写法 / 全名拆段对上 ≥2 个即作第二证据', () {
+    expect(
+      subtitleGlossaryFrequentKatakanaMatches(spyTable, spyLike)..sort(),
+      <String>['アーニャ', 'フォージャー', 'ロイド'],
+    );
+    // 人名覆盖率 3/6 = 50% 本就过；拿掉覆盖率看第二证据单独也过。
+    expect(subtitleGlossaryIdentityPasses(spyTable, spyLike), isTrue);
+    // ボンド 出现 3 次但表里没有：不算。
+    expect(
+      subtitleGlossaryFrequentKatakanaMatches(spyTable, spyLike),
+      isNot(contains('ボンド')),
+    );
+  });
+
+  test('跨作品负向：K-ON 的表校验 SPY×FAMILY 的识别稿仍判错作品', () {
+    expect(subtitleGlossaryFrequentKatakanaMatches(konLike, spyLike), isEmpty);
+    expect(subtitleGlossaryCoverage(konLike, spyLike).hit, isEmpty);
+    expect(subtitleGlossaryIdentityPasses(konLike, spyLike), isFalse);
+  });
+
+  test('敬称不当名字拆：「真野ちゃん」拆不出「ちゃん」（否则任何作品的稿都「听到」）', () {
+    final ({List<String> hit, List<String> miss}) c = subtitleGlossaryCoverage(
+      const <SubtitleGlossaryEntry>[
+        SubtitleGlossaryEntry(ja: '真野ちゃん', reading: 'まのちゃん', kind: '人名'),
+      ],
+      'ゆいちゃん、ムギちゃん、澪ちゃん',
+    );
+    expect(c.hit, isEmpty);
+  });
+
+  test('「汉字姓 + 假名名」全名：名单独出现也算听到（おにまい只列全名）；两个假名的名不拆', () {
+    const List<SubtitleGlossaryEntry> entries = <SubtitleGlossaryEntry>[
+      SubtitleGlossaryEntry(ja: '緒山みはり', reading: 'おやまみはり', kind: '人名'),
+      SubtitleGlossaryEntry(ja: '穂月かえで', reading: 'ほづきかえで', kind: '人名'),
+      SubtitleGlossaryEntry(ja: '室崎みよ', reading: 'むろさきみよ', kind: '人名'),
+    ];
+    final ({List<String> hit, List<String> miss}) c = subtitleGlossaryCoverage(
+      entries,
+      'ミハリ、起きて。かえでちゃんが来た。みよ',
+    );
+    expect(c.hit, <String>['緒山みはり', '穂月かえで']);
+    expect(c.miss, <String>['室崎みよ']);
+  });
+
+  test('外文全名按「・」分段：名单独出现也算听到（SPY×FAMILY 只列全名）', () {
+    final ({List<String> hit, List<String> miss}) c =
+        subtitleGlossaryCoverage(const <SubtitleGlossaryEntry>[
+          SubtitleGlossaryEntry(ja: 'ヨル・フォージャー', kind: '人名'),
+          SubtitleGlossaryEntry(ja: 'フィオナ・フロスト', kind: '人名'),
+        ], 'ヨルさん、おかえり。ヨル');
+    expect(c.hit, <String>['ヨル・フォージャー']);
+  });
+
+  test('矛盾校验：「フルネーム不明」是事实描述不算；「読み不明」「(不明)」「要確認」算', () {
+    List<String> bad(String kind) => subtitleGlossaryConflicts(
+      <SubtitleGlossaryEntry>[SubtitleGlossaryEntry(ja: '高木さん', kind: kind)],
+    );
+    expect(bad('人名(ヒロイン。フルネーム不明)'), isEmpty);
+    expect(bad('人名(読み不明)'), hasLength(1));
+    expect(bad('人名(不明)'), hasLength(1));
+    expect(bad('人名(要確認)'), hasLength(1));
+  });
+
   test('身份校验不过：带「没听到的名字 + 实际听到的片假名」重做一次即通过', () async {
     final FakeAiCompleter ai = FakeAiCompleter(
       (String prompt, int call) => call == 0 ? wrongTable : rightTable,
@@ -97,10 +186,36 @@ void main() {
               (SubtitleGlossaryValidationFailure f) => f.candidate.length,
               'candidate',
               40,
+            )
+            // 三次请求（生成 + 两次重做）都计费：失败也带出用量。
+            .having(
+              (SubtitleGlossaryValidationFailure f) => f.usage?.calls,
+              'usage.calls',
+              3,
             ),
       ),
     );
     expect(ai.calls, 3);
+  });
+
+  test('有刮削身份：覆盖率不达标只警告（identityUnverified），不重做、不抛错', () async {
+    final FakeAiCompleter ai = FakeAiCompleter(
+      (String prompt, int call) => wrongTable,
+    );
+    final SubtitleGlossaryBuildResult r =
+        await SubtitleGlossaryBuilder(completer: ai).build(
+          context: const SubtitleWorkContext(
+            workKey: 'collection:1',
+            title: 'sin 七つの大罪',
+            originalTitle: 'sin 七つの大罪',
+          ),
+          episodeTexts: spoken,
+        );
+    expect(ai.calls, 1, reason: '作品身份已由刮削确定，不拿「别的作品」去重做');
+    expect(r.identityUnverified, isTrue);
+    expect(r.heardNames, hasLength(2));
+    expect(r.missingNames, hasLength(38));
+    expect(r.regenerated, isTrue);
   });
 
   test('矛盾校验：互列为误写 → 带问题清单重做；重做后干净即通过', () async {

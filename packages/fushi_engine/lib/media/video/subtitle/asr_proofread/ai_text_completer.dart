@@ -21,12 +21,21 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipelin
 /// - 管线自己的：[kSubtitleAiReplyIncomplete]（重试 3 次回复仍没覆盖全部 id 或解析
 ///   不出）、[kSubtitleAiNotConfigured]（开了 AI 却没解析出提供商）。
 class SubtitleAiRequestFailure implements Exception {
-  const SubtitleAiRequestFailure(this.reason, {this.detail});
+  const SubtitleAiRequestFailure(this.reason, {this.detail, this.usage});
 
   final String reason;
 
   /// 排查用的补充（哪一批、缺哪些 id）；不含 AI 回复原文。
   final String? detail;
+
+  /// 失败之前这次运行已经花掉的 AI 用量（管线在抛出前补上，见
+  /// `VideoSubtitlePipeline.run`）；null = 抛出点不知道（单个阶段直接抛的）。失败不等于
+  /// 没花钱：S0 重做两次后才判失败时，三次请求的 token 都已计费。
+  final SubtitleAiUsageTally? usage;
+
+  /// 带上 [usage] 的副本。
+  SubtitleAiRequestFailure withUsage(SubtitleAiUsageTally usage) =>
+      SubtitleAiRequestFailure(reason, detail: detail, usage: usage);
 
   @override
   String toString() =>
@@ -60,6 +69,29 @@ String joinAiTextPrompt(String stablePrefix, String prompt) =>
     stablePrefix.isEmpty
     ? prompt
     : '$stablePrefix$kAiTextPromptSeparator$prompt';
+
+/// 记账包装：每次成功应答的用量都记进 [spent]（应答没带用量的记成未知调用），
+/// 不改变被包装者的任何行为。管线用它在失败时上报「这次运行已经花了多少」——
+/// 各阶段自己的用量账在失败时随异常一起丢掉了。
+class SubtitleAiSpendingCompleter implements AiTextCompleter {
+  SubtitleAiSpendingCompleter(this.inner);
+
+  final AiTextCompleter inner;
+  final SubtitleAiUsageTally spent = SubtitleAiUsageTally();
+
+  @override
+  Future<AiChatCompletion> complete(
+    String prompt, {
+    String stablePrefix = '',
+  }) async {
+    final AiChatCompletion reply = await inner.complete(
+      prompt,
+      stablePrefix: stablePrefix,
+    );
+    spent.addCall(reply.usage);
+    return reply;
+  }
+}
 
 /// 生产实现：[AiTextCompleter.complete] 的稳定前缀作一条可缓存的 system 消息、本批
 /// 内容作 user 消息发给 [provider]。限频（`requestsPerMinute`）、key 轮换、临时性

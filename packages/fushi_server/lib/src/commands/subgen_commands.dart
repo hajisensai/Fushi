@@ -31,6 +31,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -436,11 +437,23 @@ Future<int> runSubgen(
       watch.stop();
       io.err.writeln();
       total.addTally(result.usage);
+      if (result.glossaryIdentityUnverified) {
+        io.err.writeln(
+          '警告：专名表的人名大多没在识别稿里出现（作品身份来自刮削，照常校对）；'
+          '听到: ${result.glossaryHeardNames.join('、')}；'
+          '没听到: ${result.glossaryMissingNames.join('、')}',
+        );
+      }
       report.add(<String, Object?>{
         'work': work.title,
         'workKey': work.workKey,
         'seconds': watch.elapsedMilliseconds / 1000,
         'glossaryRegenerated': result.glossaryRegenerated,
+        if (result.glossaryIdentityUnverified)
+          'glossaryIdentityWarning': <String, Object?>{
+            'heard': result.glossaryHeardNames,
+            'missing': result.glossaryMissingNames,
+          },
         'usage': result.usage.toJson(),
         'episodes': <Map<String, Object?>>[
           for (final VideoSubtitleEpisodeResult e in result.episodes)
@@ -461,9 +474,41 @@ Future<int> runSubgen(
         '\n暂停：AI 请求失败（${e.reason}${e.detail == null ? '' : '：${e.detail}'}）；'
         '缓存已保留，处理后重跑即续',
       );
+      _reportFailedGroup(io, report, total, work, 'ai_request_failed', e.usage);
       failures++;
     } on SubtitleGlossaryValidationFailure catch (e) {
+      // 「停下让用户处理」：把最后一次生成的表落盘，用户改好后经 --glossary 喂回来。
+      final File candidate = File(
+        p.join(
+          jobsRoot.path,
+          'glossary_candidates',
+          '${sha1.convert(utf8.encode(work.workKey))}.json',
+        ),
+      );
+      await candidate.parent.create(recursive: true);
+      await candidate.writeAsString(
+        const JsonEncoder.withIndent(' ').convert(<Map<String, Object?>>[
+          for (final SubtitleGlossaryEntry entry in e.candidate) entry.toJson(),
+        ]),
+      );
       io.err.writeln('\n专名表校验没通过：$e；可用 --glossary 手工给一份，或先刮削作品');
+      io.err.writeln('  候选表已写到 ${candidate.path}（改好后 --glossary 它重跑）');
+      if (e.heardNames.isNotEmpty || e.missingNames.isNotEmpty) {
+        io.err.writeln('  听到的人名: ${e.heardNames.join('、')}');
+        io.err.writeln('  没听到的人名: ${e.missingNames.join('、')}');
+      }
+      if (e.conflicts.isNotEmpty) {
+        io.err.writeln('  矛盾: ${e.conflicts.join(' / ')}');
+      }
+      _reportFailedGroup(
+        io,
+        report,
+        total,
+        work,
+        'glossary_${e.problem.name}',
+        e.usage,
+        extra: <String, Object?>{'glossaryCandidate': candidate.path},
+      );
       failures++;
     } on VideoSubtitleRecognizeFailure catch (e) {
       io.err.writeln('\n识别失败：${e.message}');
@@ -488,6 +533,33 @@ Future<int> runSubgen(
     _printReport(io.out, report, total, dryRun: options.dryRun);
   }
   return failures == 0 ? kExitOk : kExitFailure;
+}
+
+/// 失败的一组照样进结果与总账：已经花掉的 AI 用量不能因为失败就显示成 0 次调用。
+void _reportFailedGroup(
+  CommandIo io,
+  List<Map<String, Object?>> report,
+  SubtitleAiUsageTally total,
+  SubtitleWorkContext work,
+  String failure,
+  SubtitleAiUsageTally? usage, {
+  Map<String, Object?> extra = const <String, Object?>{},
+}) {
+  if (usage != null) {
+    total.addTally(usage);
+    io.err.writeln(
+      '  失败前已调用 AI ${usage.calls} 次：输入 ${usage.inputTokens}、输出 '
+      '${usage.outputTokens} token${usage.hasUnknown ? '（${usage.callsWithoutUsage} 次没带用量）' : ''}',
+    );
+  }
+  report.add(<String, Object?>{
+    'work': work.title,
+    'workKey': work.workKey,
+    'failure': failure,
+    if (usage != null) 'usage': usage.toJson(),
+    ...extra,
+    'episodes': const <Object?>[],
+  });
 }
 
 Future<SubtitleWorkContext> _workContext(
@@ -639,6 +711,13 @@ void _printReport(
 }) {
   for (final Map<String, Object?> g in groups) {
     out.writeln('== ${g['work']}（${g['workKey']}）');
+    if (g['failure'] != null) {
+      final Object? u = g['usage'];
+      out.writeln(
+        '  失败：${g['failure']}'
+        '${u is Map ? '（已调用 AI ${u['calls']} 次）' : ''}',
+      );
+    }
     for (final Object? raw in g['episodes']! as List<Object?>) {
       final Map<String, Object?> e = (raw! as Map<Object?, Object?>).cast();
       final String name = p.basename('${e['video']}');

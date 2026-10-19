@@ -267,18 +267,15 @@ void main() {
             : '[{"ja":"唯","reading":"ゆい","kind":"人名"}]';
       });
       await SubtitleGlossaryBuilder(completer: ai).build(
-        context: const SubtitleWorkContext(
-          workKey: 'k',
-          title: 'けいおん!',
-          originalTitle: 'けいおん!',
-        ),
+        // 无刮削身份：只有这条路会做身份重做（有刮削时覆盖率低只警告）。
+        context: const SubtitleWorkContext(workKey: 'k', title: 'けいおん!'),
         episodeTexts: <List<String>>[
           <String>['唯ちゃん', 'ユイ'],
         ],
       );
       expect(ai.calls, 2);
       expect(ai.prefixes[0], ai.prefixes[1]);
-      expect(ai.prefixes[0], contains('日本語タイトル: けいおん!'));
+      expect(ai.prefixes[0], startsWith('日本のアニメ「けいおん!」'));
       expect(ai.prefixes[0], isNot(contains('唯ちゃん')));
       expect(ai.bodies[0], contains('唯ちゃん'));
       expect(ai.bodies[1], contains('前回作った表の人名はほとんど音声に出てこなかった'));

@@ -333,4 +333,44 @@ void main() {
     ).load(fallbackSubtitleWorkKey(title: 'けいおん!'));
     expect(saved!.entries.single.userEdited, isTrue);
   });
+
+  test('专名表校验失败：退出 1，结果里如实带出已花的 AI 用量（不是 0 次）、候选表路径', () async {
+    await configureAi();
+    final _WrongWork completer = _WrongWork();
+    expect(
+      await h.run(module(completer: completer), <String>[
+        'subgen',
+        p.join(season.path, 'Show - 01.mkv'),
+        '--out-dir',
+        p.join(h.tmp.path, 'out'),
+        '--json',
+      ]),
+      1,
+      reason: '${h.err}',
+    );
+    final Map<String, Object?> group =
+        ((h.json()['groups']! as List<Object?>).single!
+                as Map<Object?, Object?>)
+            .cast<String, Object?>();
+    expect(group['failure'], 'glossary_wrongWork');
+    expect((group['usage']! as Map<Object?, Object?>)['calls'], 3);
+    expect((group['usage']! as Map<Object?, Object?>)['input'], 21);
+    expect(File('${group['glossaryCandidate']}').existsSync(), isTrue);
+    expect((h.json()['usage']! as Map<Object?, Object?>)['calls'], 3);
+    expect(h.err.toString(), contains('失败前已调用 AI 3 次'));
+  });
+}
+
+/// 永远给一张与识别稿无关的表（无刮削路径 → 身份校验硬失败）。
+class _WrongWork extends _Completer {
+  @override
+  Future<AiChatCompletion> complete(
+    String prompt, {
+    String stablePrefix = '',
+  }) async => const AiChatCompletion(
+    text:
+        '[{"ja":"別人甲","kind":"人名"},{"ja":"別人乙","kind":"人名"},'
+        '{"ja":"別人丙","kind":"人名"},{"ja":"別人丁","kind":"人名"}]',
+    usage: AiChatUsage(inputTokens: 7, outputTokens: 3),
+  );
 }

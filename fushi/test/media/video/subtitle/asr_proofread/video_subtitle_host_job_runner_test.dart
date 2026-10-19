@@ -268,11 +268,23 @@ void main() {
     await expectLater(
       runner(settings: settings, client: failing).run(ctx),
       throwsA(
-        isA<VideoSubtitleJobPaused>().having(
-          (VideoSubtitleJobPaused e) => '$e',
-          'message',
-          '暂停：AI 请求失败（unauthorized）',
-        ),
+        isA<VideoSubtitleJobPaused>()
+            .having(
+              (VideoSubtitleJobPaused e) => '$e',
+              'message',
+              startsWith('暂停：AI 请求失败（unauthorized）'),
+            )
+            // 第一次请求就被拒：如实报「已调用 0 次」，而不是不报。
+            .having(
+              (VideoSubtitleJobPaused e) => '$e',
+              'message',
+              contains('本次已调用 AI 0 次'),
+            )
+            .having(
+              (VideoSubtitleJobPaused e) => e.usage?.calls,
+              'usage.calls',
+              0,
+            ),
       ),
     );
     expect(recognizer.calls, 1);

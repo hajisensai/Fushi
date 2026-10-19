@@ -23,6 +23,7 @@ import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/native_libs.dart';
 import 'package:fushi_server/src/ocr_session_factory.dart';
+import 'package:fushi_server/src/server_gpu_budget.dart';
 import 'package:fushi_server/src/server_log.dart';
 import 'package:fushi_server/src/server_paths.dart';
 
@@ -60,9 +61,14 @@ void installServerHostBindings({
 }
 
 /// 服务端 ASR 的 ONNX 工厂（顶层函数，供 isolate 后端）。
-asr.OnnxSessionFactory buildServerAsrOnnxFactory() => FfiOnnxSessionFactory(
-      logName: asr.kAsrLogName,
-      libraryPathOverride: serverOrtLibraryPath,
+///
+/// 外包一层 [ServerGpuBudgetOnnxFactory]：FFI 后端查不到显存预算，不补的话带显存
+/// 门槛的包（日语视频 Parakeet）有 N 卡也只会规划成 CPU int8（见 server_gpu_budget.dart）。
+asr.OnnxSessionFactory buildServerAsrOnnxFactory() => ServerGpuBudgetOnnxFactory(
+      FfiOnnxSessionFactory(
+        logName: asr.kAsrLogName,
+        libraryPathOverride: serverOrtLibraryPath,
+      ),
     );
 
 /// 启动前校验配置里的 ffmpeg / ffprobe 路径存在（存在性而已：能不能跑由引擎的

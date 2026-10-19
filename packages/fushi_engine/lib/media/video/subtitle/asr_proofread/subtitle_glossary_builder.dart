@@ -84,7 +84,72 @@ const String kSubtitleGlossaryRecheck =
 
 final RegExp _kKatakanaRun = RegExp('[ァ-ヺー]{2,}');
 final RegExp _kReadingNoise = RegExp(r'[\s・]');
-final RegExp _kUnverifiedKind = RegExp('要確認|不明|ASR');
+
+/// 「这条没核实」的注记（矛盾校验）。基准原样是 `要確認|不明|ASR`，但裸「不明」会把
+/// 描述事实的类别也打成矛盾：2026-10-19 基准验收《高木さん》的表写
+/// 「人名(ヒロイン。フルネーム不明)」——姓名本来就没公开，这不是待核实，两次重做
+/// 后仍判矛盾、整集停下。只认「表记 / 读音 / 详情不明」与独立的「(不明)」。
+final RegExp _kUnverifiedKind = RegExp(
+  '要確認|未確認|ASR|(?:表記|読み|正式表記|漢字|詳細)不明|^不明|[(（]不明[)）]',
+);
+
+/// 「汉字姓 + 假名名」形的全名（`緒山まひろ`）拆成两段。
+final RegExp _kKanjiFamilyKanaGiven = RegExp(
+  r'^([\p{Script=Han}々]{2,})([\p{Script=Hiragana}\p{Script=Katakana}ー]{2,})$',
+  unicode: true,
+);
+
+/// 外文名的分隔：`ロイド・フォージャー`、`Loid Forger`。
+final RegExp _kNameSeparators = RegExp(r'[・･\s　=＝]+');
+
+final RegExp _kAllHiragana = RegExp(
+  r'^[\p{Script=Hiragana}ー]+$',
+  unicode: true,
+);
+
+/// 全名拆出来的一段能不能单独当「听到」的证据：至少 2 个字；全是平假名的要 ≥3 个
+/// ——两个平假名的名字（`みよ` `まい`）在普通台词里到处都是，会让错作品的表也「听到」。
+bool _usableNamePart(String part) {
+  final int n = part.runes.length;
+  return n >= 2 &&
+      (n >= 3 || !_kAllHiragana.hasMatch(part)) &&
+      !_kHonorificParts.contains(part);
+}
+
+/// 「汉字 + 假名」交界拆出来的假名段若是敬称就不是名字：`真野ちゃん` 会拆出
+/// `ちゃん`，在任何作品的台词里都出现几百次（跨作品矩阵实测：高木さん的表配 K-ON
+/// 的稿，`ちゃん` 计了 207 次）。
+const Set<String> _kHonorificParts = <String>{
+  'ちゃん', 'チャン', 'くん', 'さん', 'さま', 'たん', 'ちん', 'せんせい', 'せんぱい', //
+  '先生', '先輩', '様', '君', '殿', '氏', '姉', '兄', 'たち', '達',
+};
+
+/// 一个人名条目在 ASR 文本里可能出现的写法：正式写法、读音（平 / 片假名）、已知
+/// 误写，以及全名拆出来的姓与名（同基准 `coverage` 之外的补充）。
+///
+/// 为什么拆：台词里叫的是名字不是全名。2026-10-19 基准验收，作品都是对的、表只列
+/// 全名时：《お兄ちゃんはおしまい！》（`緒山みはり` `穂月かえで` …）22 个人名只
+/// 「听到」2 个；《SPY×FAMILY》（`ヨル・フォージャー` …）21 个听到 3 个，都被判成
+/// 别的作品。拆两种：外文名按 `・` / 空白分段；「汉字姓 + 假名名」按文字种类的交界分。
+List<String> _personNameForms(SubtitleGlossaryEntry e) {
+  final String rd = e.reading.replaceAll(_kReadingNoise, '');
+  final List<String> parts = <String>[];
+  final List<String> segments = e.ja
+      .split(_kNameSeparators)
+      .where((String x) => x.isNotEmpty)
+      .toList();
+  if (segments.length > 1) parts.addAll(segments);
+  final RegExpMatch? split = _kKanjiFamilyKanaGiven.firstMatch(e.ja);
+  if (split != null) parts.addAll(<String>[split.group(1)!, split.group(2)!]);
+  return <String>[
+    e.ja,
+    rd,
+    _kata(rd),
+    ...e.misrecognitions,
+    for (final String part in parts)
+      if (_usableNamePart(part)) ...<String>[part, _kata(part)],
+  ];
+}
 
 String _kata(String s) => String.fromCharCodes(<int>[
   for (final int ch in s.runes)
@@ -101,13 +166,7 @@ String _kata(String s) => String.fromCharCodes(<int>[
   final List<String> miss = <String>[];
   for (final SubtitleGlossaryEntry e in entries) {
     if (!e.isPersonName) continue;
-    final String rd = e.reading.replaceAll(_kReadingNoise, '');
-    final List<String> forms = <String>[
-      e.ja,
-      rd,
-      _kata(rd),
-      ...e.misrecognitions,
-    ];
+    final List<String> forms = _personNameForms(e);
     final bool heard = forms.any(
       (String f) => f.runes.length >= 2 && spoken.contains(f),
     );
@@ -116,7 +175,69 @@ String _kata(String s) => String.fromCharCodes(<int>[
   return (hit: hit, miss: miss);
 }
 
-/// 身份校验是否通过（人名太少时不判，视为通过）。
+/// 第二证据的「高频」：一个片假名词在识别稿里至少出现这么多次。
+const int kSubtitleGlossaryKatakanaMinCount = 3;
+
+/// 第二证据的门槛：高频片假名词里至少这么多个能在表里对上（正式写法 / 读音 / 误写 /
+/// 全名拆段，见 [subtitleGlossaryFrequentKatakanaMatches]）。
+///
+/// 标定（2026-10-19 基准，8 部作品各一张 Fushi 自己生成的表 × 8 份识别稿，MOSS 与
+/// 滑窗两种稿各一遍，`fushi/test/.../subtitle_glossary_builder_test.dart` 有同构样本）：
+/// 对的作品配对能对上 0~6 个（K-ON 6/3、魔女の旅々 4/3、転生王女 3、小林さん 3/4、
+/// SPY×FAMILY 2；高木さん / 薬屋 / おにまい 0——这几集高频片假名词本来就少）；错作品
+/// 配对最多对上 1 个（K-ON 的表配 SPY×FAMILY 的稿：0）。取 2：错作品不会过，有片假名
+/// 人名 / 用语的作品多一条路过关；一个都对不上的仍只能靠人名覆盖率。
+const int kSubtitleGlossaryKatakanaMinMatches = 2;
+
+/// 识别稿里出现 ≥[kSubtitleGlossaryKatakanaMinCount] 次、且能在表里对上的片假名词：
+/// 与某个写法相等，或包含一个写法（`ムギちゃん` ⊃ `ムギ`），或（≥3 字时）被某个写法
+/// 包含（`フォージャー` ⊂ `ロイド・フォージャー`）。表的全部条目都参与（人名之外的作品
+/// 用语也是作品身份的证据）。
+List<String> subtitleGlossaryFrequentKatakanaMatches(
+  List<SubtitleGlossaryEntry> entries,
+  String spoken,
+) {
+  final Set<String> forms = <String>{
+    for (final SubtitleGlossaryEntry e in entries)
+      for (final String f in _personNameForms(e))
+        if (f.runes.length >= 2) f,
+  };
+  final Map<String, int> counts = <String, int>{};
+  for (final RegExpMatch m in _kKatakanaRun.allMatches(spoken)) {
+    counts.update(m.group(0)!, (int v) => v + 1, ifAbsent: () => 1);
+  }
+  return <String>[
+    for (final MapEntry<String, int> w in counts.entries)
+      if (w.value >= kSubtitleGlossaryKatakanaMinCount &&
+          forms.any(
+            (String f) =>
+                f == w.key ||
+                w.key.contains(f) ||
+                (w.key.runes.length >= 3 && f.contains(w.key)),
+          ))
+        w.key,
+  ];
+}
+
+/// 身份校验（无刮削路径的硬判据，有刮削时只用来出警告）：人名覆盖率
+/// （[subtitleGlossaryCoveragePasses]，同基准）或高频片假名词交集
+/// （[subtitleGlossaryFrequentKatakanaMatches] ≥ [kSubtitleGlossaryKatakanaMinMatches]）
+/// 任一成立即通过。
+///
+/// 曾试过「听到 ≥3 个人名且合计被叫到 ≥10 次」作第二条路，跨作品矩阵里被证伪：
+/// 拿 5 集 K-ON 的识别稿去校验别的作品的表，高木さん / 魔女の旅々 / おにまい / 薬屋
+/// 的表都会「通过」——表里难免有 `みよ` `ミナ` `試練` 这类与普通台词同形的写法，
+/// 稿子一长就累计出几十次。所以第二证据改看片假名高频词。
+bool subtitleGlossaryIdentityPasses(
+  List<SubtitleGlossaryEntry> entries,
+  String spoken,
+) =>
+    subtitleGlossaryCoveragePasses(subtitleGlossaryCoverage(entries, spoken)) ||
+    subtitleGlossaryFrequentKatakanaMatches(entries, spoken).length >=
+        kSubtitleGlossaryKatakanaMinMatches;
+
+/// 人名覆盖率是否达标：人名太少时不判（视为通过）；否则听到的占比达到
+/// [kSubtitleGlossaryCoverageThreshold]（同基准）。
 bool subtitleGlossaryCoveragePasses(({List<String> hit, List<String> miss}) c) {
   final int total = c.hit.length + c.miss.length;
   return total < kSubtitleGlossaryCoverageMinNames ||
@@ -263,9 +384,25 @@ class SubtitleGlossaryValidationFailure implements Exception {
     this.heardNames = const <String>[],
     this.missingNames = const <String>[],
     this.conflicts = const <String>[],
+    this.usage,
   });
 
   final SubtitleGlossaryProblem problem;
+
+  /// 判失败之前这次运行已花掉的 AI 用量（生成 + 重做的每一次都计费）；管线抛出前
+  /// 补上，null = 抛出点不知道。
+  final SubtitleAiUsageTally? usage;
+
+  /// 带上 [usage] 的副本。
+  SubtitleGlossaryValidationFailure withUsage(SubtitleAiUsageTally usage) =>
+      SubtitleGlossaryValidationFailure(
+        problem: problem,
+        candidate: candidate,
+        heardNames: heardNames,
+        missingNames: missingNames,
+        conflicts: conflicts,
+        usage: usage,
+      );
 
   /// 最后一次生成的表（未保存）：UI 可以拿它给用户改。
   final List<SubtitleGlossaryEntry> candidate;
@@ -296,6 +433,7 @@ class SubtitleGlossaryBuildResult {
     required this.usage,
     this.heardNames = const <String>[],
     this.missingNames = const <String>[],
+    this.identityUnverified = false,
   });
 
   /// 合并后的表（已含保留的 userEdited 条目）。[regenerated] 为 false 时就是已有表。
@@ -308,6 +446,11 @@ class SubtitleGlossaryBuildResult {
   /// 最终那张生成表的身份校验明细（没生成 / 没 ASR 文本时为空）。
   final List<String> heardNames;
   final List<String> missingNames;
+
+  /// 身份校验没过、但作品身份来自刮削（[SubtitleWorkContext.hasScrapedData]）：表照常
+  /// 用，只是这几集里表上的人大多没被叫到——UI / CLI 拿 [heardNames] /
+  /// [missingNames] 给用户看，不拦。无刮削路径校验不过直接抛错，不会走到这里。
+  final bool identityUnverified;
 }
 
 /// S0 专名表生成器。
@@ -394,11 +537,19 @@ class SubtitleGlossaryBuilder {
       hit: const <String>[],
       miss: const <String>[],
     );
-    if (spoken.isNotEmpty) {
+    // 身份校验存在的理由是「只给标题时 AI 可能查成同名的别的作品」。作品身份来自
+    // 刮削（日文原名 / AniDB 汉字标题 / 刮削角色）时那件事已经排除了：覆盖率低只说明
+    // 这几集里这些人没被叫到，降为警告（[SubtitleGlossaryBuildResult.identityUnverified]），
+    // 不重做、不抛错——拿「是别的作品」的反馈去重做，只会把对的表改坏。
+    bool identityUnverified = false;
+    if (spoken.isNotEmpty && context.hasScrapedData) {
+      coverage = subtitleGlossaryCoverage(items, spoken);
+      identityUnverified = !subtitleGlossaryIdentityPasses(items, spoken);
+    } else if (spoken.isNotEmpty) {
       bool passed = false;
       for (int round = 0; round < 2; round++) {
         coverage = subtitleGlossaryCoverage(items, spoken);
-        if (subtitleGlossaryCoveragePasses(coverage)) {
+        if (subtitleGlossaryIdentityPasses(items, spoken)) {
           passed = true;
           break;
         }
@@ -409,14 +560,13 @@ class SubtitleGlossaryBuilder {
       }
       if (!passed) {
         coverage = subtitleGlossaryCoverage(items, spoken);
-        final int total = coverage.hit.length + coverage.miss.length;
-        if (coverage.hit.length <
-            kSubtitleGlossaryCoverageThreshold * (total < 1 ? 1 : total)) {
+        if (!subtitleGlossaryIdentityPasses(items, spoken)) {
           throw SubtitleGlossaryValidationFailure(
             problem: SubtitleGlossaryProblem.wrongWork,
             candidate: items,
             heardNames: coverage.hit,
             missingNames: coverage.miss,
+            usage: usage,
           );
         }
       }
@@ -450,6 +600,7 @@ class SubtitleGlossaryBuilder {
         problem: SubtitleGlossaryProblem.conflicts,
         candidate: items,
         conflicts: left,
+        usage: usage,
       );
     }
     if (spoken.isNotEmpty) coverage = subtitleGlossaryCoverage(items, spoken);
@@ -465,6 +616,7 @@ class SubtitleGlossaryBuilder {
       usage: usage,
       heardNames: coverage.hit,
       missingNames: coverage.miss,
+      identityUnverified: identityUnverified,
     );
   }
 
