@@ -123,6 +123,7 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
     this.seeders,
     this.leechers,
     this.coverUrl,
+    this.coverHeaders,
     this.detailUrl,
     this.note,
     this.gameLocalization,
@@ -154,6 +155,13 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
   final int? leechers;
 
   final String? coverUrl;
+
+  /// 取 [coverUrl] 时要附的请求头（私有目录的凭据，BUG-3520）；null / 空 = 匿名取。
+  ///
+  /// 由源按「只给自己 origin」的规则填（OPDS 走 `OpdsServerConfig.credentialHeadersFor`），
+  /// 消费方原样转交图片加载器，**不得**拿它去请求别的地址。只存在于内存里的
+  /// 列表条目上：图片磁盘缓存只按 URL 记键，不落请求头。
+  final Map<String, String>? coverHeaders;
 
   /// 外部详情页（nyaa view 页、shinnku 条目页）；「在浏览器打开」动作用。
   final String? detailUrl;

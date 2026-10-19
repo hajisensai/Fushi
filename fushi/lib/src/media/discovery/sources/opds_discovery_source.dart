@@ -35,6 +35,7 @@ import 'package:fushi/src/media/discovery/sources/opds/opds_json_parser.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/redirect_headers.dart';
 
 /// 源 id 的前缀。持久化的「停用源清单」按 id 存，改前缀即断档。
 const String kOpdsSourceIdPrefix = 'opds-';
@@ -70,7 +71,12 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
     this.requestTimeout = kOpdsRequestTimeout,
     this.idleTimeout = kOpdsIdleTimeout,
     this.maxFeedBytes = kOpdsMaxFeedBytes,
+    this.onCatalogUrlResolved,
   }) : _client = client ?? createAppHttpIoClient();
+
+  /// 用户填的地址不是目录、而按已知端点探测打通了另一条时回调（BUG-3519），
+  /// 由装配方把打通的地址写回配置——下次冷启动不必再探测一遍。
+  final void Function(Uri resolved)? onCatalogUrlResolved;
 
   /// 单次请求总时限 / 块间静默上限 / 响应体字节上限。默认即同名常量；
   /// 参数化只为让「挂死的服务端」在测试里能在毫秒级复现，生产路径不传。
@@ -111,26 +117,45 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
   /// 而失败恰恰是最该重试的情形（同 AList 源 `_basePath` 的取舍）。
   _SearchProbe? _searchProbe;
 
+  /// 本会话里确认能读出目录的根地址；null = 还没打通过。
+  ///
+  /// 与 [_searchProbe] 同一取舍：只缓存**成功**结论，失败下次重探——一次网络
+  /// 抖动不该让本会话永远停在「不是 OPDS 地址」。
+  Uri? _resolvedCatalogUrl;
+
+  /// 本会话确认可用的目录根地址（还没成功取过根目录时为 null）。
+  Uri? get resolvedCatalogUrl => _resolvedCatalogUrl;
+
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
-        // 一台 OPDS 服务器可能同时供书和漫画；具体条目按 acquisition 链接的
-        // MIME 定域（见 OpdsFileType），而不是靠源声明去猜。
-        kinds: const <DiscoveryMediaKind>{
-          DiscoveryMediaKind.novel,
-          DiscoveryMediaKind.manga,
-        },
-        supportsSearch: true,
-        supportsBrowse: true,
-        supportsPaging: true,
-      );
+    // 一台 OPDS 服务器可能同时供书和漫画；具体条目按 acquisition 链接的
+    // MIME 定域（见 OpdsFileType），而不是靠源声明去猜。
+    kinds: const <DiscoveryMediaKind>{
+      DiscoveryMediaKind.novel,
+      DiscoveryMediaKind.manga,
+    },
+    supportsSearch: true,
+    supportsBrowse: true,
+    supportsPaging: true,
+  );
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> browse(
     DiscoveryRequest request,
   ) async {
-    final String feedPath = request.path ?? config.catalogUrl.toString();
-    final String pageUrl = await _urlForPage(feedPath, request.page);
-    final OpdsFeed feed = await _loadFeed(Uri.parse(pageUrl));
+    final String? path = request.path;
+    final String feedPath;
+    final OpdsFeed feed;
+    if (path == null && request.page <= 1) {
+      // 根目录第一页：顺带完成地址探测（用户可能填的是服务端根 / 网页地址）。
+      final (Uri root, OpdsFeed rootFeed) = await _loadRootFeed();
+      feedPath = root.toString();
+      feed = rootFeed;
+    } else {
+      feedPath = path ?? (await _loadRootFeed()).$1.toString();
+      final String pageUrl = await _urlForPage(feedPath, request.page);
+      feed = await _loadFeed(Uri.parse(pageUrl));
+    }
     _rememberNext(feedPath, request.page, feed.nextHref);
     return ProviderBatchResult<DiscoveryResultPage>.success(
       <DiscoveryResultPage>[_toPage(feed, request)],
@@ -197,7 +222,7 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
               payloadKind: DiscoveryPayloadKind.httpFile,
               payload: DiscoveryHttpPayload(
                 url: link.href,
-                headers: _headersFor(Uri.parse(link.href)),
+                headers: _headersFor(link.href),
                 // 下载队列不读 Content-Disposition，而 OPDS 直链普遍无扩展名
                 // （`/opds/download/1234`）。不在这里给出带扩展名的文件名，
                 // 落盘就是个无后缀文件，分类器一律判 unknownFileType——
@@ -208,6 +233,11 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
               sizeBytes: link.sizeBytes,
               dateText: entry.updatedText,
               coverUrl: entry.coverHref,
+              // 私有目录的封面同样要凭据（Komga 无凭据回 401，BUG-3520）；
+              // 与下载同一个同源判据，跨 origin 的封面（CDN）拿到的是空表。
+              coverHeaders: entry.coverHref == null
+                  ? null
+                  : _headersFor(entry.coverHref!),
               note: entry.author,
             ),
           );
@@ -302,6 +332,11 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
     } on ExternalProviderFailure {
       rethrow;
     } catch (_) {
+      // 解析不了且长得像网页：多半是填了服务端的网页地址（Komga 根地址回 200
+      // text/html）。单独一种失败，让 UI 能说清「这是网页不是 OPDS 地址」。
+      if (_looksLikeHtml(body, response.contentType)) {
+        throw OpdsWebPageFailure(providerId: id, operation: 'browse');
+      }
       // 解析异常一律收敛成脱敏失败：原始异常里可能带 feed 片段。
       throw ExternalProviderFailure(
         providerId: id,
@@ -318,7 +353,7 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
     final _SearchProbe? probed = _searchProbe;
     if (probed != null) return probed.template;
 
-    final OpdsFeed root = await _loadFeed(config.catalogUrl);
+    final OpdsFeed root = (await _loadRootFeed()).$2;
     if (root.searchTemplate != null) {
       _searchProbe = _SearchProbe(root.searchTemplate);
       return root.searchTemplate;
@@ -329,8 +364,10 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
       return null;
     }
     final Uri descriptionUri = Uri.parse(descriptionHref);
-    final _OpdsResponse response =
-        await _get(descriptionUri, operation: 'search');
+    final _OpdsResponse response = await _get(
+      descriptionUri,
+      operation: 'search',
+    );
     try {
       final String? template = parseOpenSearchTemplate(
         response.body,
@@ -347,20 +384,47 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
 
   Future<_OpdsResponse> _get(Uri uri, {required String operation}) async {
     final DateTime deadline = DateTime.now().add(requestTimeout);
-    final http.Request request = http.Request('GET', uri)
-      ..headers.addAll(<String, String>{
-        'Accept': 'application/atom+xml, $kOpdsJsonMediaType, '
-            'application/xml;q=0.8, */*;q=0.5',
-        ..._headersFor(uri),
-      });
-    final http.StreamedResponse response;
-    try {
-      response = await _client.send(request).timeout(requestTimeout);
-    } on TimeoutException {
-      throw _timedOut(operation);
+    // 重定向逐跳手动跟随，每跳按目标 origin 重算凭据头：`X-API-Key` 不在
+    // dart:io 自动跟随会剥的那张清单里（见 redirect_headers.dart），交给自动
+    // 跟随的话一个指向第三方的 302 就会把 API key 带出去。
+    Uri current = uri;
+    http.StreamedResponse response;
+    for (int hop = 0; ; hop++) {
+      final http.Request request = http.Request('GET', current)
+        ..followRedirects = false
+        ..headers.addAll(<String, String>{
+          'Accept':
+              'application/atom+xml, $kOpdsJsonMediaType, '
+              'application/xml;q=0.8, */*;q=0.5',
+          ..._headersFor(current.toString()),
+        });
+      try {
+        response = await _client.send(request).timeout(requestTimeout);
+      } on TimeoutException {
+        throw _timedOut(operation);
+      }
+      final String? location = response.headers['location'];
+      if (!isFollowableRedirectStatus(response.statusCode) ||
+          location == null ||
+          location.trim().isEmpty) {
+        break;
+      }
+      unawaited(response.stream.listen(null).cancel());
+      if (hop >= kMaxManualRedirects) {
+        throw ExternalProviderFailure(
+          providerId: id,
+          operation: operation,
+          kind: ExternalProviderFailureKind.invalidResponse,
+          message: 'too many redirects',
+          statusCode: response.statusCode,
+        );
+      }
+      current = current.resolve(location.trim());
     }
-    final ExternalProviderFailure? rejected =
-        _statusFailure(response.statusCode, operation);
+    final ExternalProviderFailure? rejected = _statusFailure(
+      response.statusCode,
+      operation,
+    );
     if (rejected != null) {
       // 不读的响应体会把连接一直挂着——显式取消订阅才是「关掉它」。
       unawaited(response.stream.listen(null).cancel());
@@ -380,33 +444,33 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
       switch (status) {
         200 => null,
         401 => ExternalProviderFailure(
-            providerId: id,
-            operation: operation,
-            kind: ExternalProviderFailureKind.unauthorized,
-            message: 'server rejected the configured credentials',
-            statusCode: status,
-          ),
+          providerId: id,
+          operation: operation,
+          kind: ExternalProviderFailureKind.unauthorized,
+          message: 'server rejected the configured credentials',
+          statusCode: status,
+        ),
         403 => ExternalProviderFailure(
-            providerId: id,
-            operation: operation,
-            kind: ExternalProviderFailureKind.forbidden,
-            message: 'server rejected the configured credentials',
-            statusCode: status,
-          ),
+          providerId: id,
+          operation: operation,
+          kind: ExternalProviderFailureKind.forbidden,
+          message: 'server rejected the configured credentials',
+          statusCode: status,
+        ),
         404 => ExternalProviderFailure(
-            providerId: id,
-            operation: operation,
-            kind: ExternalProviderFailureKind.notFound,
-            message: 'catalog endpoint not found',
-            statusCode: status,
-          ),
+          providerId: id,
+          operation: operation,
+          kind: ExternalProviderFailureKind.notFound,
+          message: 'catalog endpoint not found',
+          statusCode: status,
+        ),
         _ => ExternalProviderFailure(
-            providerId: id,
-            operation: operation,
-            kind: ExternalProviderFailureKind.unavailable,
-            message: 'http status $status',
-            statusCode: status,
-          ),
+          providerId: id,
+          operation: operation,
+          kind: ExternalProviderFailureKind.unavailable,
+          message: 'http status $status',
+          statusCode: status,
+        ),
       };
 
   /// 读响应体，三条边界同时管着：块间静默 [kOpdsIdleTimeout]、总时限
@@ -445,18 +509,57 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
         message: 'catalog request timed out',
       );
 
-  /// 只给**配置服务器自己的 origin** 附认证头。
+  /// 只给**配置服务器自己的 origin** 附认证头（Basic 与 `X-API-Key`）。
+  /// 判据唯一实现在 [OpdsServerConfig.credentialHeadersFor]；feed 请求、下载
+  /// payload 与封面三条链路都走这里。
+  Map<String, String> _headersFor(String target) {
+    final Uri? uri = Uri.tryParse(target);
+    if (uri == null) return const <String, String>{};
+    return config.credentialHeadersFor(uri);
+  }
+
+  /// 取根目录，必要时按已知端点探测（BUG-3519）。返回打通的根地址与该页 feed。
   ///
-  /// feed 里的链接可以指向任意主机（封面挂 CDN、下载重定向到对象存储都常见）。
-  /// 无差别附上 `Authorization` 会把用户的 OPDS 密码送给第三方主机——这与
-  /// 浏览器和 curl 的既定行为一致：凭据绑定 origin，不跟着链接走。
-  Map<String, String> _headersFor(Uri target) {
-    final String? header = config.authorizationHeader;
-    if (header == null) return const <String, String>{};
-    if (!isSameOpdsOrigin(config.catalogUrl, target)) {
-      return const <String, String>{};
+  /// 只有「地址不对」类失败（404、网页、读不出 OPDS）才继续试下一个候选；
+  /// 401/403/超时/连不上都是**这台服务器本身**的结论，原样抛出——在一台密码
+  /// 错了的服务器上挨个试十几条路径只会把同一个 401 拖慢十几倍。全部候选都
+  /// 不对时抛**用户原地址**的那个失败：它描述的是用户实际填的东西。
+  Future<(Uri, OpdsFeed)> _loadRootFeed() async {
+    final Uri? known = _resolvedCatalogUrl;
+    if (known != null) return (known, await _loadFeed(known));
+    ExternalProviderFailure? firstFailure;
+    for (final Uri candidate in opdsCatalogUrlCandidates(
+      config.catalogUrl,
+      apiKey: config.apiKey,
+    )) {
+      try {
+        final OpdsFeed feed = await _loadFeed(candidate);
+        _resolvedCatalogUrl = candidate;
+        if (candidate.toString() != config.catalogUrl.toString()) {
+          onCatalogUrlResolved?.call(candidate);
+        }
+        return (candidate, feed);
+      } on ExternalProviderFailure catch (failure) {
+        firstFailure ??= failure;
+        if (!_isWrongAddressFailure(failure)) rethrow;
+      }
     }
-    return <String, String>{'Authorization': header};
+    throw firstFailure!;
+  }
+
+  static bool _isWrongAddressFailure(ExternalProviderFailure failure) =>
+      failure.kind == ExternalProviderFailureKind.notFound ||
+      failure.kind == ExternalProviderFailureKind.invalidResponse;
+
+  /// 响应像网页：Content-Type 标 HTML，或正文以 `<!doctype html` / `<html` 开头。
+  static bool _looksLikeHtml(String body, String contentType) {
+    if (contentType.contains('text/html') ||
+        contentType.contains('application/xhtml')) {
+      return true;
+    }
+    final String head = (body.length > 64 ? body.substring(0, 64) : body)
+        .toLowerCase();
+    return head.startsWith('<!doctype html') || head.startsWith('<html');
   }
 
   @override
@@ -464,18 +567,21 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
 }
 
 /// 同源判据：scheme + host + 端口（含默认端口归一）全等。
-bool isSameOpdsOrigin(Uri a, Uri b) =>
-    a.scheme.toLowerCase() == b.scheme.toLowerCase() &&
-    a.host.toLowerCase() == b.host.toLowerCase() &&
-    _port(a) == _port(b);
+/// 实现收敛到引擎的 [isSameHttpOrigin]（重定向剥凭据用的是同一个）。
+bool isSameOpdsOrigin(Uri a, Uri b) => isSameHttpOrigin(a, b);
 
-int _port(Uri uri) {
-  if (uri.hasPort) return uri.port;
-  return switch (uri.scheme.toLowerCase()) {
-    'https' => 443,
-    'http' => 80,
-    _ => 0,
-  };
+/// 目录地址返回的是网页而不是 OPDS feed（BUG-3519）。
+///
+/// 单独成型是为了让设置页的连接测试给出**本地化**的明确结论（「这是网页，
+/// 不是 OPDS 目录地址」），而不是一句英文的「not a readable OPDS catalog」。
+class OpdsWebPageFailure extends ExternalProviderFailure {
+  const OpdsWebPageFailure({
+    required super.providerId,
+    required super.operation,
+  }) : super(
+         kind: ExternalProviderFailureKind.invalidResponse,
+         message: 'address serves a web page, not an OPDS catalog',
+       );
 }
 
 class _OpdsResponse {

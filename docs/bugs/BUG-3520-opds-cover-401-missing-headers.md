@@ -1,0 +1,8 @@
+## BUG-3520 · OPDS：私有目录（Komga）封面无凭据请求回 401，发现页封面全是占位
+- **报告**：2026-10-19（用户：OPDS 发现源接 Komga；真 Komga 1.29.1 实测证实）
+- **真实性**：✅ 真 bug。Komga 的 thumbnail 链接无凭据回 401 `application/opds-authentication+json`（真机实测）。下载链路已带 `Authorization`（`DiscoveryHttpPayload.headers`），但封面没有：`DiscoveryResourceItem` 没有封面请求头字段，`fushi/lib/src/pages/implementations/media_discovery_page.dart` 的 `_buildResourceLeading`（基线 `ae55190552` 第 1240 行）用 `AppCachedHttpImage(cover)` 不传 headers（组件本身支持）。
+- **[x] ① 已修复** — 提交 `073fafc0fc`（`pr/opds-komga`）。`DiscoveryResourceItem.coverHeaders`（引擎模型）；OPDS 源按与下载同一个同源判据填（`OpdsServerConfig.credentialHeadersFor`，跨 origin 的封面 = 空表）；发现页经 `discoveryCoverImage` 传给 `AppCachedHttpImage`。
+  - 缓存键核对：`CachedNetworkImageProvider` 的 `==` / `hashCode` 只看 `cacheKey ?? url`、scale、尺寸（`cached_network_image-3.4.1/.../cached_network_image_provider.dart:176-187`），磁盘缓存按 URL 记键、不落请求头——凭据不进键、不落盘；同 URL 带不带头是同一张图，不串号。
+  - 跨 origin 泄露核对：`dart:io` 自动跟随重定向只剥 SDK 清单里的 `authorization`/`cookie` 等（`dart-sdk/lib/_http/http_impl.dart` `shouldCopyHeaderOnRedirect`），`X-API-Key`（BUG-3521）不在其中会被原样转发。`AppImageFileService` 改为逐跳手动跟随，跨 origin 按 `kOriginBoundHeaderNames` 剥凭据（`packages/fushi_engine/lib/utils/net/redirect_headers.dart`），同 origin 保留；OPDS feed 请求与下载队列同样改为手动跟随。
+- **[x] ② 已加自动化测试** — `fushi/test/media/discovery/sources/opds_komga_compat_test.dart`（同源封面带头、跨源封面不带）；`fushi/test/media/discovery/opds_komga_ui_contract_test.dart`（provider 携带头、空表按匿名、缓存键不含凭据）；`fushi/test/utils/net/app_image_file_service_redirect_credentials_test.dart`（真 loopback 双端口：跨 origin 重定向剥 X-API-Key / Authorization、同 origin 保留）。
+- **备注**：真 Komga 端到端复测（带头 200 / 不带头 401）见 PR 描述。

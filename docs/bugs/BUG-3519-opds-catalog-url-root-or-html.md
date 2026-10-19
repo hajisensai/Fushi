@@ -1,0 +1,14 @@
+## BUG-3519 · OPDS：填服务器根地址/网页地址/带结尾斜杠时报「不是可读的 OPDS 目录」或 404，Komga 只认 /opds/v2/catalog
+- **报告**：2026-10-19（用户：OPDS 发现源接 Komga 连不上；在真 Komga 1.29.1 上实测证实）
+- **真实性**：✅ 真 bug。真 Komga 1.29.1 实测：`http://host:25600`(/) 回 200 `text/html`（Web UI），Fushi 报 invalidResponse「not a readable OPDS catalog」；`/opds`、`/opds/v1.2`、`/opds/v2`、`/api/v1/opds`、带结尾斜杠的 `/opds/v1.2/catalog/` 一律 404；只有 `/opds/v1.2/catalog` 与 `/opds/v2/catalog` 200。根因：`fushi/lib/src/media/discovery/sources/opds_discovery_source.dart` 的 `browse` 原样用 `config.catalogUrl`（基线 `ae55190552` 第 131 行），HTML 在 `_loadFeed`（:294）被当 Atom 送进 `parseOpdsAtomFeed`，`opds_atom_parser.dart:54` 抛 FormatException，:310 收成一句英文报错；没有任何端点探测，`discovery_opds_url_hint` 也只示例 BookOrbit 形态。
+- **[x] ① 已修复** — 提交 `073fafc0fc`（`pr/opds-komga`）。
+  - `opdsCatalogUrlCandidates`（`opds_server_config.dart`）：原样地址 → 去结尾斜杠 → 服务端根与各级路径前缀（反代子路径）上的已知端点。端点逐条核对官方出处：Komga `/opds/v2/catalog`、`/opds/v1.2/catalog`（komga.org/docs/guides/opds + 真机）；Calibre-Web `/opds`（`cps/opds.py` 路由）；Kavita `/api/opds/{apiKey}`（`OpdsController` + `BaseApiController` 路由，仅配了 API key 时拼）。
+  - `OpdsDiscoverySource._loadRootFeed`：根目录第一次取用时按候选探测，只有 404 / 读不出 OPDS / 网页三类「地址不对」才试下一条，401/403/超时/连不上原样抛（不在密码错的服务器上挨个试）；打通后会话内记住，并经 `onCatalogUrlResolved` → `AppModel.persistOpdsCatalogUrl` 写回配置（只落偏好、不重建注册表）。设置页「测试连接」与控制通道 `config run` 同样写回（`DiscoveryProbeOutcome.resolvedUrl`），设置页输入框随之显示新地址。
+  - 不在保存时盲目去结尾斜杠：没有依据说所有 OPDS 服务端把 `/x/` 与 `/x` 视为同一资源，只写回真打通的那条。
+  - 解析不了且像网页（Content-Type HTML 或正文以 `<!doctype html` / `<html` 开头）时抛 `OpdsWebPageFailure`，连接测试给本地化结论 `discovery_opds_test_web_page`；401/403 给 `discovery_opds_test_unauthorized`（Komga 填邮箱 / 用 API key）。嗅探仍优先：标成 text/html 的真 Atom feed 照常解析。
+  - `discovery_opds_url_hint` 各语言定点补 ` · Komga: http://host:25600/opds/v2/catalog`（保留原译文）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/discovery/sources/opds_komga_compat_test.dart`（假 Komga 按真机行为回话：四种地址形态均打通且写回一次、填对零额外请求、401 停在第一条、只有网页报 `OpdsWebPageFailure`、误标 text/html 的 feed 照常解析、候选生成）；`fushi/test/media/discovery/opds_komga_ui_contract_test.dart`（连接测试文案）。fixture 为真 Komga 1.29.1 抓包 `fushi/test/fixtures/opds/komga/`。
+- **同批附带修复**（同一真机排查中发现）：
+  - v1.2 acquisition 一律标 `application/zip`，不在 `OpdsFileType` 别名表（`opds_feed.dart:104`），扩展名 `.zip` 的漫画整条被滤掉。新增 `OpdsFileType.resolve`：具体 MIME → 末段扩展名（`.zip` 归 cbz）→ 通用 zip 容器按 cbz；两个解析器共用。测试同上文件「真 Komga feed 方言」组。
+  - v2 解析器只读 `metadata.author`，Komga 发 `metadata.contributor`，作者不显示。改为 author 优先、退回 contributor。测试同上。
+- **备注**：真 Komga 端到端复测见 PR 描述。

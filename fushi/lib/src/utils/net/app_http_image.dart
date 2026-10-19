@@ -8,6 +8,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/redirect_headers.dart';
 import 'package:fushi/src/utils/net/transient_fetch_retry.dart';
 
 /// 走应用代理出口的网络图片 provider（BUG-1715）。
@@ -180,10 +181,33 @@ class AppImageFileService extends FileService {
   }) async {
     final http.Client client = createAppHttpIoClient();
     try {
-      final http.Request request = http.Request('GET', Uri.parse(url));
-      if (headers != null) request.headers.addAll(headers);
-      final http.StreamedResponse response =
-          await client.send(request).timeout(kAppImageHeaderTimeout);
+      // 重定向逐跳手动跟随：封面请求可能带私有目录的凭据头（OPDS 的
+      // `X-API-Key`，BUG-3520 / BUG-3521），而 dart:io 自动跟随跨 origin 只剥
+      // `Authorization` / `Cookie`，其它凭据头会被原样转发给 302 指向的 CDN。
+      Uri current = Uri.parse(url);
+      Map<String, String> currentHeaders = headers ?? const <String, String>{};
+      http.Request request;
+      http.StreamedResponse response;
+      for (int hop = 0;; hop++) {
+        request = http.Request('GET', current)..followRedirects = false;
+        request.headers.addAll(currentHeaders);
+        response = await client.send(request).timeout(kAppImageHeaderTimeout);
+        final String? location = response.headers['location'];
+        if (!isFollowableRedirectStatus(response.statusCode) ||
+            location == null ||
+            location.trim().isEmpty ||
+            hop >= kMaxManualRedirects) {
+          break;
+        }
+        await response.stream.listen(null).cancel();
+        final Uri next = current.resolve(location.trim());
+        currentHeaders = headersForRedirectHop(
+          currentHeaders,
+          from: current,
+          to: next,
+        );
+        current = next;
+      }
       // CacheManager 仅消费 200/202 正文，304 与错误响应须主动释放连接。
       final bool hasImage =
           response.statusCode == 200 || response.statusCode == 202;
