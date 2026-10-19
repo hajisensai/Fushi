@@ -391,6 +391,8 @@ class FushiDicts {
   static Future<void> loadPendingAsync() async {
     final _PendingDicts? pending = _pending;
     if (pending == null) return;
+    // 映射保持释放的作用域里不装（见 [withMappingsReleased]），待办留到作用域结束。
+    if (_mappingHolds > 0) return;
     _pending = null;
     final int generation = _generation;
 
@@ -440,6 +442,15 @@ class FushiDicts {
   static void _applyPendingIfAny() {
     final _PendingDicts? pending = _pending;
     if (pending == null) return;
+    if (_mappingHolds > 0) {
+      // 映射保持释放的作用域里（[withMappingsReleased]）：待办留到作用域结束。没有
+      // 实例时给一个空的，查词退化成空结果，与 [releaseAllMappings] 之后一致。
+      if (_instance == null) {
+        _applyTyped(const <String>[], const <String>[], const <String>[],
+            const <String>[]);
+      }
+      return;
+    }
     // 先清待办再装载：装载过程若抛异常，待办不该留在原地被下一次访问重放一遍
     // （同一份坏数据会把每一次查词都变成一次全量重建尝试）。
     _pending = null;
@@ -527,17 +538,33 @@ class FushiDicts {
   /// 此刻在飞的后台借用全部归还后完成。
   ///
   /// 原生句柄的 destroy 只是退役：被后台借着的旧句柄要等最后一个借用归还才销毁、
-  /// 解除文件映射。所以「dispose / releaseAllMappings 之后马上删 / 搬词典文件」必须
-  /// 先等这里——否则后台分词恰好在跑时，Windows 上的映射还活着，删目录照样撞
-  /// ERROR_USER_MAPPED_FILE（BUG-1756）。
+  /// 解除文件映射。所以「dispose 之后马上搬词典文件」必须先等这里——否则后台分词
+  /// 恰好在跑时，Windows 上的映射还活着，搬 / 删照样撞 ERROR_USER_MAPPED_FILE
+  /// （BUG-1756）。删 / 覆盖词典文件用 [withMappingsReleased]，它已经等过了。
   static Future<void> whenBackgroundBorrowsSettled() =>
       _backgroundBorrows.settled();
 
-  /// [releaseAllMappings] + 等在飞的后台借用归还：返回时旧句柄都已销毁、映射都已
-  /// 解除，可以删词典目录。删 / 覆盖词典文件的入口一律用这个。
-  static Future<void> releaseAllMappingsAndSettle() async {
-    releaseAllMappings();
-    await whenBackgroundBorrowsSettled();
+  /// 正在进行的 [withMappingsReleased] 作用域数（可嵌套）。大于 0 时待办不结算。
+  static int _mappingHolds = 0;
+
+  /// 在「词典文件映射保持释放」的作用域里跑 [body]：删 / 覆盖词典文件的入口一律用
+  /// 这个（BUG-1756）。
+  ///
+  /// 进入时 [releaseAllMappings]，再等在飞的后台借用归还（被借着的旧句柄此刻才销毁、
+  /// 解除映射），然后才跑 [body]。[body] 期间排下的待办（[scheduleTyped]，元数据
+  /// 写入逐本触发）只登记、不结算：释放与删除之间隔着好几个 await（等借用、异步
+  /// delete、Windows 上的占用重试），这时任何一次查词都会把待办装回引擎，正被删 /
+  /// 覆盖的文件又映射上。作用域结束后下一次用引擎时照常结算。[body] 里显式的
+  /// [initializeTyped]（删完装回剩余词典）不受影响——那是调用方明确要的装载。
+  static Future<T> withMappingsReleased<T>(Future<T> Function() body) async {
+    _mappingHolds++;
+    try {
+      releaseAllMappings();
+      await whenBackgroundBorrowsSettled();
+      return await body();
+    } finally {
+      _mappingHolds--;
+    }
   }
 
   static Map<String, String> get dictionaryStyles {
@@ -559,7 +586,8 @@ class FushiDicts {
   ///
   /// 原生 `fushidicts_destroy` 只还掉本实例持有的那个引用：后台 isolate 借着它的
   /// 调用（[tokenizeWithReadingsInBackground]）照常跑完，最后一个借用归还时句柄才
-  /// 真正销毁。要确认文件映射已解除，等 [whenBackgroundBorrowsSettled]。
+  /// 真正销毁。要确认文件映射已解除，等 [whenBackgroundBorrowsSettled]（删 / 覆盖
+  /// 词典文件用 [withMappingsReleased]）。
   void dispose() {
     if (_handle != null) {
       _bindings!.destroy(_handle!);

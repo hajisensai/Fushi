@@ -273,7 +273,11 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
       documentsTopLevelIncludeNames:
           sharedDocumentsRoot ? AppPaths.fushiOwnedDocumentsEntries : null,
     );
-    await const DataRootMigrator().migrate(req);
+    // 搬文件整段在词典映射释放的作用域里：期间排下的引擎装载不结算，旧根里的词典
+    // 文件不会在搬移中途又被映射上（BUG-1756）。迁移成功 / 失败都以重启收尾。
+    await FushiDicts.withMappingsReleased(
+      () => const DataRootMigrator().migrate(req),
+    );
   } on DataRootMigrationException catch (e, stack) {
     // 迁移失败：旧数据已由引擎完整回滚保留、未写 pref。但 closeResources 在搬移前就
     // 已关掉 DB（_isInitialised=false），本进程无法原地恢复 → 切到失败态遮罩，由用户

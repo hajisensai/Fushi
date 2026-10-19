@@ -155,9 +155,30 @@ void main() {
         FushiDicts.initializeTyped(termPaths: <String>[dictDir]);
         final Future<Object?> again = FushiDicts.instance
             .tokenizeWithReadingsInBackground(<String>[text]);
-        await FushiDicts.releaseAllMappingsAndSettle();
-        mapped.writeAsBytesSync(bytes); // 映射已解除：覆盖写成功
+        await FushiDicts.withMappingsReleased(() async {
+          mapped.writeAsBytesSync(bytes); // 映射已解除：覆盖写成功
+        });
         await again;
+      });
+
+      test('作用域内排期 + 查词不会把词典装回引擎；作用域结束后照常结算', () async {
+        final File mapped = File('$dictDir/hash.table');
+        final List<int> bytes = mapped.readAsBytesSync();
+        FushiDicts.initializeTyped(termPaths: <String>[dictDir]);
+        final List<int> loaded = FushiDicts.instance.tokenizeLengths(text)!;
+        await FushiDicts.withMappingsReleased(() async {
+          // 元数据写入在删 / 覆盖途中排期，紧接着一次查词：以前这里就把词典装回来了。
+          FushiDicts.scheduleTyped(termPaths: <String>[dictDir]);
+          expect(
+            FushiDicts.instance.tokenizeLengths(text),
+            isNot(loaded),
+            reason: '作用域内引擎必须保持为空',
+          );
+          await Future<void>.delayed(Duration.zero);
+          mapped.writeAsBytesSync(bytes); // Windows：装回来的话这里撞 1224
+        });
+        expect(FushiDicts.hasPendingDicts, isTrue);
+        expect(FushiDicts.instance.tokenizeLengths(text), loaded);
       });
     },
     skip: haveLib ? false : '没有 fushidicts_ffi 动态库（设 FUSHI_DICTS_LIB 指向构建好的库）',

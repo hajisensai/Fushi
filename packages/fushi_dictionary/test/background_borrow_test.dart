@@ -176,7 +176,7 @@ void main() {
           work: () => oldGate.future,
         ),
       );
-      // releaseAllMappingsAndSettle 的形状：dispose 旧实例后等 settled。
+      // withMappingsReleased 的形状：dispose 旧实例后等 settled。
       oldHandle.destroy();
       final Future<void> settle = ledger.settled();
       // 等待期间新实例上又起了一次借用：它不该拖住这次释放。
