@@ -9,6 +9,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -241,6 +242,39 @@ void main() {
     expect(hex(both), expected * 2);
     // SHA-256("") 前 7 字节 e3b0c44298fc1c 的低 53 位。
     expect(ffcHash53(<int>[]), 0x00e3b0c44298fc1c & 0x1FFFFFFFFFFFFF);
+  });
+
+  test('ffcHash53Batch equals per-item ffcHash53 (ASCII / non-ASCII / '
+      'lone surrogates / prefix)', () {
+    final List<String> inputs = <String>[
+      '',
+      'a',
+      '6f1c8a2e-4b7d-5e3f-9a10-2d4c6e8f0b13',
+      '日本語',
+      'mixed-ascii-日本-tail',
+      '𠀋 supplementary',
+      'lone-high-\uD800',
+      '\uDC00lone-low',
+      'é',
+      '\u007f\u0080߿ࠀ￿',
+      // 一批长短交错的确定性串，盖住偏移累加。
+      for (int i = 0; i < 300; i++)
+        String.fromCharCodes(<int>[
+          for (int k = 0; k < i % 17; k++)
+            <int>[0x61, 0x3042, 0x7f, 0x80, 0x20000 >> 4, 0xD7FF][(i + k) % 6],
+        ]),
+    ];
+    expect(ffcHash53Batch(inputs), <int>[
+      for (final String s in inputs) ffcHash53(utf8.encode(s)),
+    ]);
+    expect(ffcHash53Batch(inputs, prefix: 'anki-id/'), <int>[
+      for (final String s in inputs) ffcHash53(utf8.encode('anki-id/$s')),
+    ]);
+    expect(ffcHash53Batch(const <String>[]), isEmpty);
+    expect(
+      () => ffcHash53Batch(<String>['x'], prefix: 'é'),
+      throwsArgumentError,
+    );
   });
 
   test('PoW solve returns the smallest nonce and check agrees', () {

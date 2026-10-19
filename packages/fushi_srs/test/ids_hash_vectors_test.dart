@@ -64,9 +64,11 @@ void main() {
       for (final int r in revlogs) SrsIds.importedRevlog(card, r),
     ]);
     expect(SrsIds.importedRevlogs(card, const <int>[]), isEmpty);
-    final List<String> ids = <String>[card, srsNamespace];
+    final List<String> ids = <String>[card, srsNamespace, '', '日本語', '\uD800'];
     expect(SrsIds.ankiNumericIds(ids), <int>[
       for (final String id in ids) SrsIds.ankiNumericId(id),
     ]);
+    expect(hash53Batch(ids), <int>[for (final String id in ids) hash53(id)]);
+    expect(hash53Batch(const <String>[]), isEmpty);
   });
 }

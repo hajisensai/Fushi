@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:math';
@@ -561,4 +562,79 @@ int ffcHash53(List<int> bytes, {FushiCompute? library}) {
     b.hash53Batch(data, _singleOffsets, 1, _singleOut),
   );
   return _singleOut.value;
+}
+
+/// 批量 [ffcHash53]：第 i 项 = `UTF-8([prefix]) ‖ UTF-8(inputs[i])` 的 hash53，结果按顺序对应
+/// （与逐个 `ffcHash53(utf8.encode(prefix + inputs[i]))` 逐值相同）。整批一次
+/// `ffc_hash_hash53_batch`，循环在 Rust 侧。
+///
+/// 字符串直接编码进一块原生内存（「连续数据 + n+1 个偏移」），不先攒一整批 Dart 字节数组：
+/// 纯 ASCII 的项（UUID 一类的 id 是绝大多数）逐码元写入，其余项才走 `utf8.encode`（孤立代理
+/// 与 `utf8.encode` 同样写成 U+FFFD）。[prefix] 必须是 ASCII——这样前缀与各项分别编码再拼接
+/// 才恒等于整串编码（`SrsIds.ankiNumericIds` 的 `anki-id/` 不必为每个 id 拼一次字符串）。
+/// 原生内存只活在本次调用内（try/finally 释放）。库不可用抛 [FushiComputeUnavailableError]。
+Uint64List ffcHash53Batch(
+  List<String> inputs, {
+  String prefix = '',
+  FushiCompute? library,
+}) {
+  for (int i = 0; i < prefix.length; i++) {
+    if (prefix.codeUnitAt(i) >= 0x80) {
+      throw ArgumentError.value(prefix, 'prefix', 'must be ASCII');
+    }
+  }
+  final int n = inputs.length;
+  if (n == 0) return Uint64List(0);
+  final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
+  // 第一遍：总字节数；非 ASCII 项编码一次留着第二遍用（ASCII 项字节数 = 码元数）。
+  final List<Uint8List?> encoded = List<Uint8List?>.filled(n, null);
+  int total = prefix.length * n;
+  for (int i = 0; i < n; i++) {
+    final String s = inputs[i];
+    bool ascii = true;
+    for (int k = 0; k < s.length; k++) {
+      if (s.codeUnitAt(k) >= 0x80) {
+        ascii = false;
+        break;
+      }
+    }
+    if (ascii) {
+      total += s.length;
+    } else {
+      final Uint8List bytes = utf8.encode(s);
+      encoded[i] = bytes;
+      total += bytes.length;
+    }
+  }
+  final Pointer<Uint8> data = malloc<Uint8>(max(total, 1));
+  final Pointer<Uint64> offsets = malloc<Uint64>(n + 1);
+  final Pointer<Uint64> out = malloc<Uint64>(n);
+  try {
+    final Uint8List dataView = data.asTypedList(max(total, 1));
+    final Uint64List offsetView = offsets.asTypedList(n + 1);
+    int at = 0;
+    for (int i = 0; i < n; i++) {
+      offsetView[i] = at;
+      for (int k = 0; k < prefix.length; k++) {
+        dataView[at++] = prefix.codeUnitAt(k);
+      }
+      final Uint8List? bytes = encoded[i];
+      if (bytes != null) {
+        dataView.setRange(at, at + bytes.length, bytes);
+        at += bytes.length;
+      } else {
+        final String s = inputs[i];
+        for (int k = 0; k < s.length; k++) {
+          dataView[at++] = s.codeUnitAt(k);
+        }
+      }
+    }
+    offsetView[n] = at;
+    FfcStreamingHash._checkStatus(b.hash53Batch(data, offsets, n, out));
+    return Uint64List.fromList(out.asTypedList(n));
+  } finally {
+    malloc.free(data);
+    malloc.free(offsets);
+    malloc.free(out);
+  }
 }

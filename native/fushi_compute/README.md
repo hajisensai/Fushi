@@ -91,8 +91,10 @@ ARMv8 SHA 扩展）。回归向量：`packages/fushi_compute/test/ffi_hash_test.
   Dart 只做 UUID 解析 / 格式化。单个调用走不分配的 `ffcUuidV5` / `ffcHash53`（`ffc_hash_*_batch`
   的 n = 1）；批量入口 `uuidV5Batch` / `SrsIds.importedRevlogs`（apkg 导入时整张卡的 revlog id，
   `srs_apkg_import.dart`）一次 FFI 调用；`hash53Batch` / `SrsIds.ankiNumericIds`（`srs_db_store.dart`
-  重建数字索引）逐个走 `ffcHash53`——实测比先打包再一次调用更快（打包要攒下整批字符串与字节，
-  GC 压力比哈希本身还大）。`fushi_srs` 因此依赖 `fushi_compute`（纯 Dart FFI，不违反「不依赖
+  重建数字索引）走 `ffcHash53Batch`，整批一次 FFI、循环在 Rust：字符串直接编码进一块原生内存
+  （ASCII 项逐码元写入，不先攒整批 Dart 字节数组；`anki-id/` 前缀打包时拼入，不为每个 id 拼串）。
+  原先逐个走 `ffcHash53`（HBK-AUDIT-008）；`hash53_batch_benchmark.dart` AOT 10 万个 id 端到端
+  （含编码 / 打包 / 拷回）24.7 → 11–13 ms。`fushi_srs` 因此依赖 `fushi_compute`（纯 Dart FFI，不违反「不依赖
   Flutter / 插件 / 数据库」）；`style_dedup.dart` 的 css SHA-1（小数据）仍用 `package:crypto`。
 - `fushi_srs/lib/src/sync/sync_files.dart` 批文件 body 摘要、`fushi_engine/lib/srs/srs_backup_store.dart`
   events body 摘要：`ffcSha256Bytes`。
@@ -108,7 +110,7 @@ AOT，中位数；本机同时跑着别的构建，绝对值有波动，比值�
 | `uuidV5` 单个（`SrsIds.importedRevlog` 等全部单点） | 10 万次 | 600 ms | 386 ms（同轮另一次 996 → 651 ms） |
 | `uuidV5` 批量（`SrsIds.importedRevlogs`，apkg 导入） | 10 万个 | 600 ms | 218 ms（996 → 344 ms） |
 | `hash53` 单个（`SrsIds.ankiNumericId`） | 10 万次 | 287 ms | 73 ms（392 → 66 ms） |
-| `hash53` 批量（`SrsIds.ankiNumericIds`，重建索引） | 10 万个 | 287 ms | 132 ms（392 → 137 ms） |
+| `hash53` 批量（`SrsIds.ankiNumericIds`，重建索引） | 10 万个 | 287 ms | 132 ms（392 → 137 ms）；改整批一次 FFI 后见上文 |
 | 安装 PoW 18 位（`solveInstallPow`） | `test-install`（nonce 97403） | 333 ms | 9 ms |
 | | 32 位 hex id（nonce 615991） | 3,120 ms | 87 ms |
 | SHA-256 body（同步批文件 / 备份 events） | 4 KiB × 16384 | 2,002 ms | 135 ms |

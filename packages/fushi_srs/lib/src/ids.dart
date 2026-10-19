@@ -83,11 +83,8 @@ const int _max53 = 0x1FFFFFFFFFFFFF;
 /// 53 位，0 记作 1，在 native/fushi_compute 里算。
 int hash53(String input) => ffcHash53(utf8.encode(input));
 
-/// 批量 [hash53]。逐个走 [ffcHash53]：单次调用不分配、每个约 0.7 µs，实测比先打包再一次
-/// FFI 调用更快（打包要先攒下整批字符串与字节，GC 压力比哈希本身还大）。
-List<int> hash53Batch(List<String> inputs) => <int>[
-  for (final String s in inputs) ffcHash53(utf8.encode(s)),
-];
+/// 批量 [hash53]：整批一次 FFI（[ffcHash53Batch]，Rust 侧循环），结果与逐个 [hash53] 逐值相同。
+List<int> hash53Batch(List<String> inputs) => ffcHash53Batch(inputs);
 
 /// 新建时随机的 53 位正整数（Fushi 新建的笔记类型 / 字段 / 模板的 ankiNum）。
 int randomAnkiNum({Random? random}) {
@@ -203,7 +200,8 @@ abstract final class SrsIds {
   /// 导出到 Anki 的笔记 / 卡片数字 id。
   static int ankiNumericId(String uuid) => hash53('anki-id/$uuid');
 
-  /// 批量 [ankiNumericId]（重建本机数字索引用，见 [hash53Batch]）。
+  /// 批量 [ankiNumericId]（重建本机数字索引用）：整批一次 FFI，`anki-id/` 前缀由原生打包时
+  /// 拼进去，不为每个 id 新建一个字符串。
   static List<int> ankiNumericIds(List<String> uuids) =>
-      hash53Batch(<String>[for (final String u in uuids) 'anki-id/$u']);
+      ffcHash53Batch(uuids, prefix: 'anki-id/');
 }
