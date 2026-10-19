@@ -38,11 +38,13 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -743,6 +745,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       _primary();
       return KeyEventResult.handled;
     }
+    if (key == LogicalKeyboardKey.keyR) {
+      // 重播音频（对齐 Anki 的 R）。
+      _replayAudio();
+      return KeyEventResult.handled;
+    }
     final int? rating = _ratingOfKey(key);
     if (rating != null && _showingAnswer) {
       _rate(rating);
@@ -790,6 +797,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         _zoomBy(-_kZoomStep);
       case 'Ctrl+Digit0' || 'Meta+Digit0':
         _setZoom(1);
+      case 'KeyR':
+        _replayAudio();
       default:
         final String digit = token.substring(token.length - 1);
         final int? rating = int.tryParse(digit);
@@ -952,6 +961,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
           ),
           ?_appearanceItem,
           _hideHardEasyItem,
+          FushiToolbarItem(
+            key: const ValueKey<String>('srs_review_layout'),
+            icon: FushiIcons.dashboardCustomize,
+            label: t.srs_review_layout_title,
+            onPressed: () => srsRunLogged(
+              'SrsReview.layout',
+              () => _focusOwnership.guardOverlay(
+                () => showSrsReviewLayoutSheet(context),
+              ),
+            ),
+          ),
           ..._audioSettingItems(),
         ];
 
@@ -1238,24 +1258,76 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
                 tokens.spacing.page,
                 tokens.spacing.gap * 1.5,
               ),
-              child: AnimatedSwitcher(
-                duration: fushiMotionDuration(context, FushiMotion.short),
-                switchInCurve: FushiMotion.enter,
-                switchOutCurve: FushiMotion.exit,
-                child: _showingAnswer
-                    ? _buildRatingRow(context)
-                    : SizedBox(
-                        key: const ValueKey<String>('srs-show-answer-row'),
-                        width: double.infinity,
-                        child: FushiFilledButton(
-                          key: const ValueKey<String>('srs-show-answer'),
-                          onPressed: _busy ? null : _showAnswer,
-                          child: Text(t.srs_review_show_answer),
+              child: _withBottomReplay(
+                context,
+                AnimatedSwitcher(
+                  duration: fushiMotionDuration(context, FushiMotion.short),
+                  switchInCurve: FushiMotion.enter,
+                  switchOutCurve: FushiMotion.exit,
+                  child: _showingAnswer
+                      ? _buildRatingRow(context)
+                      : SizedBox(
+                          key: const ValueKey<String>('srs-show-answer-row'),
+                          width: double.infinity,
+                          child: FushiFilledButton(
+                            key: const ValueKey<String>('srs-show-answer'),
+                            onPressed: _busy ? null : _showAnswer,
+                            child: Text(t.srs_review_show_answer),
+                          ),
                         ),
-                      ),
+                ),
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// 底部操作行一端的重播键（⋯「复习布局」里选左 / 右，默认不放）。翻面前后同一位置；
+  /// 这张卡没有可重播的音频时照样占位、只是不可点，评分按钮不会左右跳。
+  Widget _withBottomReplay(BuildContext context, Widget row) {
+    final SrsReviewReplayButton side = ref.watch(srsReviewReplayButtonProvider);
+    if (side == SrsReviewReplayButton.off || _detail == null) return row;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool canReplay = _replayNames(
+      includeQuestion: _replayIncludesQuestion,
+    ).isNotEmpty;
+    final Widget replay = SizedBox(
+      width: 56,
+      child: FushiCard(
+        key: const ValueKey<String>('srs-bottom-replay'),
+        tone: FushiCardTone.neutral,
+        padding: EdgeInsets.zero,
+        onTap: canReplay && !_busy ? _replayAudio : null,
+        child: FushiTooltip(
+          message: '${t.srs_review_replay_audio} (R)',
+          child: Center(
+            child: Icon(
+              FushiIcons.volumeUp,
+              semanticLabel: t.srs_review_replay_audio,
+              color: canReplay ? null : Theme.of(context).disabledColor,
+            ),
+          ),
+        ),
+      ),
+    );
+    // 与评分按钮 / 「显示答案」同高（命中区不低于 48）。
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          if (side == SrsReviewReplayButton.start) replay,
+          Expanded(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: kMinInteractiveDimension,
+              ),
+              child: Center(child: row),
+            ),
+          ),
+          if (side == SrsReviewReplayButton.end) replay,
         ],
       ),
     );
@@ -1276,36 +1348,54 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       );
     }
 
-    Widget button(int rating, String label, FushiCardTone tone) => Expanded(
-      child: FushiCard(
-        key: ValueKey<String>('srs-rate-$rating'),
-        tone: tone,
-        padding: EdgeInsets.symmetric(
-          vertical: tokens.spacing.gap * 1.5,
-          horizontal: tokens.spacing.gap,
-        ),
-        onTap: _busy ? null : () => _rate(rating),
-        child: FushiTooltip(
-          message: '$label ($rating)',
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                interval(rating),
-                style: context.fushiType.labelMedium,
-                maxLines: 1,
+    // 评价词是主体（大字粗体），间隔只是它的结果：小号、低对比的副标签。关掉间隔或
+    // 调度器给不出间隔（预览缺失）时整行不画，按钮随之变矮。
+    final bool showIntervals = ref.watch(srsReviewShowIntervalsProvider);
+    Widget button(int rating, String label, FushiCardTone tone) {
+      final String hint = showIntervals ? interval(rating) : '';
+      final TextStyle labelStyle = context.fushiType.labelLargeEmphasized;
+      return Expanded(
+        child: FushiCard(
+          key: ValueKey<String>('srs-rate-$rating'),
+          tone: tone,
+          padding: EdgeInsets.symmetric(
+            vertical: tokens.spacing.gap,
+            horizontal: tokens.spacing.gap,
+          ),
+          onTap: _busy ? null : () => _rate(rating),
+          child: FushiTooltip(
+            message: '$label ($rating)',
+            child: ConstrainedBox(
+              // 命中区不低于 48（加上内边距后整颗约 56）。
+              constraints: const BoxConstraints(
+                minHeight: kMinInteractiveDimension - 16,
               ),
-              Text(
-                label,
-                style: context.fushiType.labelLargeEmphasized,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Text(
+                    label,
+                    style: labelStyle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (hint.isNotEmpty)
+                    Text(
+                      hint,
+                      key: ValueKey<String>('srs-rate-$rating-interval'),
+                      style: context.fushiType.labelSmall.copyWith(
+                        color: labelStyle.color?.withValues(alpha: 0.62),
+                      ),
+                      maxLines: 1,
+                    ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
-      ),
-    );
+      );
+    }
 
     // 只留「重来 / 良好」时两颗各占半行（对齐 AnkiDroid：不留空位）；key 随模式变，
     // 外层 AnimatedSwitcher 借此在两种布局间淡入淡出。

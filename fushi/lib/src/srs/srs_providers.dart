@@ -28,6 +28,7 @@ import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -106,6 +107,21 @@ final Provider<List<String>> srsCardFontFamiliesProvider =
 final Provider<bool> srsReviewHideHardEasyProvider = Provider<bool>(
   (Ref ref) => ref.watch(
     appProvider.select((AppModel app) => app.srsReviewHideHardEasy),
+  ),
+);
+
+/// 复习页底部操作行一端的重播音频键（按 profile 偏好，默认不放）。
+final Provider<SrsReviewReplayButton> srsReviewReplayButtonProvider =
+    Provider<SrsReviewReplayButton>(
+      (Ref ref) => ref.watch(
+        appProvider.select((AppModel app) => app.srsReviewReplayButton),
+      ),
+    );
+
+/// 评分按钮是否显示下次间隔（按 profile 偏好，默认显示）。
+final Provider<bool> srsReviewShowIntervalsProvider = Provider<bool>(
+  (Ref ref) => ref.watch(
+    appProvider.select((AppModel app) => app.srsReviewShowIntervals),
   ),
 );
 

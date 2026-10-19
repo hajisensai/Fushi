@@ -223,6 +223,8 @@ const List<String> kSrsReviewBridgeKeys = <String>[
   'Numpad2',
   'Numpad3',
   'Numpad4',
+  // 重播音频（对齐 Anki 的 R）。
+  'KeyR',
   'Ctrl+KeyZ',
   'Meta+KeyZ',
   // 卡面缩放（Ctrl / ⌘ + 加号 / 减号 / 0）。
