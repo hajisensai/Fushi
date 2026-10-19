@@ -25,6 +25,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -136,6 +137,32 @@ class _HideHardEasyApp extends AppModel {
   @override
   Future<void> setSrsReviewHideHardEasy(bool value) async {
     hidden = value;
+    notifyListeners();
+  }
+}
+
+/// 复习布局两项偏好钉在内存里（测试里偏好层没初始化）。
+class _LayoutApp extends AppModel {
+  _LayoutApp() : super(testPlatformServices());
+
+  SrsReviewReplayButton replay = SrsReviewReplayButton.end;
+  bool intervals = true;
+
+  @override
+  SrsReviewReplayButton get srsReviewReplayButton => replay;
+
+  @override
+  Future<void> setSrsReviewReplayButton(SrsReviewReplayButton value) async {
+    replay = value;
+    notifyListeners();
+  }
+
+  @override
+  bool get srsReviewShowIntervals => intervals;
+
+  @override
+  Future<void> setSrsReviewShowIntervals(bool value) async {
+    intervals = value;
     notifyListeners();
   }
 }
@@ -976,6 +1003,174 @@ void main() {
         expect(audio.played, <String>['word.mp3', 'sent.mp3'], reason: mode);
         await _unmount(tester);
       }
+    });
+
+    testWidgets('复习布局：底部重播键放拇指那端、R 键重播、间隔副标签可关，⋯ 面板改了即生效', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await addWithAudio(tester, store);
+      final _RecordingAudio audio = _RecordingAudio();
+      final _LayoutApp app = _LayoutApp();
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        app: app,
+        size: const Size(390, 844),
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+        ],
+      );
+      final Finder replay = find.byKey(
+        const ValueKey<String>('srs-bottom-replay'),
+      );
+      // 翻面前后同一位置：「显示答案」行右端就有。
+      expect(replay, findsOneWidget);
+      expect(
+        tester.getCenter(replay).dx,
+        greaterThan(
+          tester
+              .getCenter(find.byKey(const ValueKey<String>('srs-show-answer')))
+              .dx,
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      expect(
+        tester.getCenter(replay).dx,
+        greaterThan(
+          tester.getCenter(find.byKey(const ValueKey<String>('srs-rate-4'))).dx,
+        ),
+      );
+      // 评分按钮：间隔 + 评价词两行；整颗不高过 64（M3E 中号按钮）。关掉间隔后只剩评价词。
+      int rateTexts() => find
+          .descendant(
+            of: find.byKey(const ValueKey<String>('srs-rate-3')),
+            matching: find.byType(Text),
+          )
+          .evaluate()
+          .length;
+      expect(rateTexts(), 2, reason: '间隔 + 评价词');
+      expect(
+        tester.getSize(find.byKey(const ValueKey<String>('srs-rate-3'))).height,
+        lessThanOrEqualTo(64),
+      );
+
+      audio.played.clear();
+      await tester.tap(replay);
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3', 'sent.mp3']);
+
+      audio.played.clear();
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3', 'sent.mp3'], reason: 'R 重播');
+
+      // ⋯「复习布局」：间隔关掉、重播键挪到左边，复习页立即跟着变。
+      Future<void> openLayout() async {
+        final Finder flat = find.byKey(
+          const ValueKey<String>('srs_review_layout'),
+        );
+        if (flat.evaluate().isNotEmpty) {
+          await tester.tap(flat.first);
+        } else {
+          await tester.tap(
+            find
+                .byKey(
+                  const ValueKey<String>('fushi_floating_toolbar_overflow'),
+                )
+                .first,
+          );
+          await _settle(tester);
+          await tester.tap(find.text(t.srs_review_layout_title).last);
+        }
+        await _settle(tester);
+      }
+
+      await openLayout();
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-review-layout-intervals')),
+          matching: find.byType(Switch),
+        ),
+      );
+      await _settle(tester);
+      expect(app.intervals, isFalse);
+      // 行宽放不下分段时设置行降级成菜单（设计系统行为）：先点开再选。
+      final Finder left = find.text(t.srs_review_layout_replay_start);
+      if (left.evaluate().isEmpty) {
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs-review-layout-replay')),
+        );
+        await _settle(tester);
+      }
+      await tester.tap(left.last);
+      await _settle(tester);
+      expect(app.replay, SrsReviewReplayButton.start);
+      await tester.tapAt(const Offset(195, 40));
+      await _settle(tester);
+      expect(rateTexts(), 1, reason: '间隔关掉后只剩评价词');
+      expect(
+        tester.getCenter(replay).dx,
+        lessThan(
+          tester.getCenter(find.byKey(const ValueKey<String>('srs-rate-1'))).dx,
+        ),
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('复习布局（Apple）：底部重播键与底栏按钮同高、放在选定那端、点了重播', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await addWithAudio(tester, store);
+      final _RecordingAudio audio = _RecordingAudio();
+      final _LayoutApp app = _LayoutApp()..replay = SrsReviewReplayButton.start;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: true,
+        app: app,
+        size: const Size(390, 844),
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+        ],
+      );
+      final Finder replay = find.byKey(
+        const ValueKey<String>('srs-bottom-replay'),
+      );
+      expect(replay, findsOneWidget);
+      final Finder showAnswer = find.byKey(
+        const ValueKey<String>('srs-show-answer'),
+      );
+      expect(
+        tester.getCenter(replay).dx,
+        lessThan(tester.getCenter(showAnswer).dx),
+      );
+      expect(
+        tester.getSize(replay).height,
+        moreOrLessEquals(tester.getSize(showAnswer).height, epsilon: 0.5),
+      );
+      expect(tester.getSize(replay).height, greaterThanOrEqualTo(48));
+      await tester.tap(showAnswer);
+      await _settle(tester);
+      expect(
+        tester.getSize(replay).height,
+        moreOrLessEquals(
+          tester
+              .getSize(find.byKey(const ValueKey<String>('srs-rate-1')))
+              .height,
+          epsilon: 0.5,
+        ),
+      );
+      audio.played.clear();
+      await tester.tap(replay);
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3', 'sent.mp3']);
+      await _unmount(tester);
     });
 
     testWidgets('评分换卡时打断还在播的序列', (WidgetTester tester) async {
