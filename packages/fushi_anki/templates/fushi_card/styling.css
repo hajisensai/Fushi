@@ -550,20 +550,21 @@
 .fc-pitch-num[data-type="odaka"] { background: var(--fc-pitch-odaka); }
 .fc-pitch-num[data-type="kifuku"] { background: var(--fc-pitch-kifuku); }
 
-/* 图片：窄屏是标题区右上角的紧凑方形缩略图（裁切填满），不挤占词条行；点按放大看全图 */
+/* 图片：窄屏是标题区右上角的紧凑缩略图，按原比例完整显示（书封等竖图不裁切），
+   限高限宽不挤占词条行；点按放大看全图 */
 .fc-picture {
   flex: 0 0 auto;
-  width: var(--fc-thumb);
-  height: var(--fc-thumb);
+  max-width: calc(var(--fc-thumb) * 1.5);
   margin: 0;
 }
 
 .fc-picture img {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: calc(var(--fc-thumb) * 1.4);
   border-radius: var(--fc-radius-small);
-  object-fit: cover;
   cursor: zoom-in;
   transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
 }
@@ -867,59 +868,6 @@
 
 .fc-clamp-toggle[hidden],
 .fushi-srs-full-gloss .fc-clamp-toggle {
-  display: none;
-}
-
-.fc-dict-tabs {
-  display: none;
-}
-
-.fc-tabs-on > .fc-gloss .fc-dict-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.fc-dict-tab {
-  min-height: 34px;
-  max-width: 100%;
-  padding: 0 12px;
-  border: 1px solid var(--fc-outline);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--fc-fg-muted);
-  font-family: var(--fc-font-ui);
-  font-size: 13px;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-
-.fc-dict-tab[aria-selected="true"] {
-  border-color: transparent;
-  background: var(--fc-secondary-container);
-  color: var(--fc-on-secondary-container);
-}
-
-@media (pointer: coarse) {
-  .fc-dict-tab {
-    min-height: 40px;
-  }
-}
-
-.fc-tabs-on .fc-dict:not(.fc-dict--active) {
-  display: none;
-}
-
-.fc-tabs-on .fc-dict--active {
-  border-radius: var(--fc-radius);
-  padding-top: calc(var(--fc-pad) - 4px);
-}
-
-.fc-tabs-on .fc-dict--active > .fc-dict-label {
   display: none;
 }
 

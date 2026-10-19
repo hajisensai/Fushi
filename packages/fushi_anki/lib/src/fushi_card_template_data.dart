@@ -301,9 +301,9 @@ const String kFushiCardBackTemplate = r'''<!--
     }
 
     /* ---------- 折叠与版式：随外观（全部释义默认展开）与卡面宽度更新 ----------
-       默认：主释义展开；「全部释义」收起（没有主释义时展开）。其中的词典分组：宽屏、只有一部
-       词典、或宿主要求「默认展开」时展开；窄屏收成一列词典名，点哪部开哪部（折叠层级更强），
-       但没有主释义时第一部照样展开。
+       默认：主释义展开；「全部释义」收起（没有主释义时展开）。其中的词典分组与查词弹窗同形：
+       宽屏、只有一部词典、或宿主要求「默认展开」时展开；窄屏收成一列可折叠的词典标题，
+       点哪部开哪部，但没有主释义时第一部照样展开。
        只在这两个条件真的变了时重排，用户手动开合过的不被覆盖。 */
     function applyLayout() {
       var expanded = hostHas("fushi-srs-gloss-expanded");
@@ -315,8 +315,7 @@ const String kFushiCardBackTemplate = r'''<!--
         aside.classList.toggle("fc-aside--sticky", wide && aside.offsetHeight < window.innerHeight - 48);
       }
       updateClamp();
-      var full = hostHas("fushi-srs-full-gloss");
-      var key = (expanded ? "e" : "c") + (wide ? "w" : "n") + (full ? "f" : "");
+      var key = (expanded ? "e" : "c") + (wide ? "w" : "n");
       if (root.__fcLayoutKey === key) return;
       root.__fcLayoutKey = key;
       var main = root.querySelector(".fc-gloss--main");
@@ -324,50 +323,11 @@ const String kFushiCardBackTemplate = r'''<!--
       if (more) {
         more.open = expanded || !main;
         var groups = more.querySelectorAll(".fc-dict");
-        var tabs = !wide && !full && groups.length > 1;
-        /* 页签模式下每部都展开（一次只显示选中的那部）；否则沿用逐部折叠：
-           没有主释义时第一部词典就是主释义，窄屏也展开它。 */
+        /* 没有主释义时第一部词典就是主释义，窄屏也展开它。 */
         groups.forEach(function (g, i) {
-          g.open = tabs || expanded || wide || groups.length === 1 || (i === 0 && !main);
-        });
-        setTabs(more, tabs);
-      }
-    }
-
-    /* ---------- 窄屏：词典页签 ----------
-       「全部释义」里每部词典一张卡、各自折叠时，二三十部词典光标题行就排出一千多像素。
-       窄屏改成页签：上方一排可换行的词典名 chip，下方只显示选中的那一部（默认第一部，
-       点 chip 切换，一次点按就看到任意一部的全文）。宽屏照旧逐部展开。 */
-    function setTabs(more, on) {
-      var dicts = more.querySelector(".fc-dicts");
-      if (!dicts) return;
-      var bar = more.querySelector(".fc-dict-tabs");
-      more.classList.toggle("fc-tabs-on", on);
-      if (!on) return;
-      var groups = Array.prototype.slice.call(dicts.querySelectorAll(":scope > .fc-dict"));
-      if (!bar) {
-        bar = document.createElement("div");
-        bar.className = "fc-dict-tabs";
-        bar.setAttribute("role", "tablist");
-        groups.forEach(function (g, i) {
-          var b = document.createElement("button");
-          b.type = "button";
-          b.className = "fc-dict-tab";
-          b.setAttribute("role", "tab");
-          b.textContent = g.getAttribute("data-fc-dict") || String(i + 1);
-          b.addEventListener("click", function () { select(i); });
-          bar.appendChild(b);
-        });
-        dicts.parentNode.insertBefore(bar, dicts);
-      }
-      function select(i) {
-        groups.forEach(function (g, j) {
-          g.classList.toggle("fc-dict--active", i === j);
-          bar.children[j].setAttribute("aria-selected", i === j ? "true" : "false");
+          g.open = expanded || wide || groups.length === 1 || (i === 0 && !main);
         });
       }
-      var current = groups.findIndex(function (g) { return g.classList.contains("fc-dict--active"); });
-      select(current < 0 ? 0 : current);
     }
 
     /* ---------- 窄屏：主释义过长时收到约半屏，一次点按看全文 ---------- */
@@ -984,20 +944,21 @@ const String kFushiCardStylingCss = r'''/*
 .fc-pitch-num[data-type="odaka"] { background: var(--fc-pitch-odaka); }
 .fc-pitch-num[data-type="kifuku"] { background: var(--fc-pitch-kifuku); }
 
-/* 图片：窄屏是标题区右上角的紧凑方形缩略图（裁切填满），不挤占词条行；点按放大看全图 */
+/* 图片：窄屏是标题区右上角的紧凑缩略图，按原比例完整显示（书封等竖图不裁切），
+   限高限宽不挤占词条行；点按放大看全图 */
 .fc-picture {
   flex: 0 0 auto;
-  width: var(--fc-thumb);
-  height: var(--fc-thumb);
+  max-width: calc(var(--fc-thumb) * 1.5);
   margin: 0;
 }
 
 .fc-picture img {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: calc(var(--fc-thumb) * 1.4);
   border-radius: var(--fc-radius-small);
-  object-fit: cover;
   cursor: zoom-in;
   transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
 }
@@ -1301,59 +1262,6 @@ const String kFushiCardStylingCss = r'''/*
 
 .fc-clamp-toggle[hidden],
 .fushi-srs-full-gloss .fc-clamp-toggle {
-  display: none;
-}
-
-.fc-dict-tabs {
-  display: none;
-}
-
-.fc-tabs-on > .fc-gloss .fc-dict-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.fc-dict-tab {
-  min-height: 34px;
-  max-width: 100%;
-  padding: 0 12px;
-  border: 1px solid var(--fc-outline);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--fc-fg-muted);
-  font-family: var(--fc-font-ui);
-  font-size: 13px;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-
-.fc-dict-tab[aria-selected="true"] {
-  border-color: transparent;
-  background: var(--fc-secondary-container);
-  color: var(--fc-on-secondary-container);
-}
-
-@media (pointer: coarse) {
-  .fc-dict-tab {
-    min-height: 40px;
-  }
-}
-
-.fc-tabs-on .fc-dict:not(.fc-dict--active) {
-  display: none;
-}
-
-.fc-tabs-on .fc-dict--active {
-  border-radius: var(--fc-radius);
-  padding-top: calc(var(--fc-pad) - 4px);
-}
-
-.fc-tabs-on .fc-dict--active > .fc-dict-label {
   display: none;
 }
 

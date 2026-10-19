@@ -163,6 +163,78 @@ void main() {
       );
     });
 
+    test('删字段带模板改写（prepareTemplate）：成功时改写与删除同一次落库；删不掉时模板与字段都不变', () async {
+      final SrsDbStore a = await device('a');
+      final String nt = await a.createStockNoteType(
+        SrsStockNoteType.basic,
+        '问答',
+      );
+      SrsNoteTypeView v = await type(a, nt);
+      final String front = v.fields[0].id;
+      final String back = v.fields[1].id;
+      final String tplId = v.templates.single.id;
+      Set<String> liveEditIds(SrsNoteTypeView x) => <String>{
+        for (final String k in x.edits.keys)
+          for (final SrsFieldEdit e in x.edits[k]!.live) e.id,
+      };
+      int calls = 0;
+      SrsTemplateDef rewrite(SrsNoteTypeView type, SrsTemplateDef tpl) {
+        calls++;
+        return tpl.copyWith(
+          front: '<!--rewritten-->${tpl.front}',
+          back: '<!--rewritten-->${tpl.back}',
+        );
+      }
+
+      // 成功：改写结果再剥掉被删字段的引用，一起落库。
+      final Set<String> editsBefore = liveEditIds(v);
+      await a.deleteField(nt, back, prepareTemplate: rewrite);
+      v = await type(a, nt);
+      expect(calls, 1);
+      expect(v.fieldById(back), isNull);
+      expect(v.templates.single.front, startsWith('<!--rewritten-->'));
+      expect(v.templates.single.back, startsWith('<!--rewritten-->'));
+      expect(v.templates.single.back, isNot(contains(back)));
+      expect(
+        liveEditIds(v).difference(editsBefore).length,
+        2,
+        reason: '字段删除标记 + 模板定义，同一批写入',
+      );
+
+      // 失败：只剩一个字段 → 抛错，改写从没被调用，模板与字段都原样。
+      final SrsTemplateDef tplBefore = v.templates.single;
+      final Set<String> editsBeforeFail = liveEditIds(v);
+      await expectLater(
+        a.deleteField(nt, front, prepareTemplate: rewrite),
+        throwsStateError,
+      );
+      v = await type(a, nt);
+      expect(calls, 1, reason: '校验先于改写');
+      expect(v.fieldById(front), isNotNull);
+      expect(v.templates.single.id, tplId);
+      expect(v.templates.single.front, tplBefore.front);
+      expect(v.templates.single.back, tplBefore.back);
+      expect(liveEditIds(v), editsBeforeFail, reason: '一条记录都不写');
+
+      // 内置字段同理。
+      final SrsNoteTypeView lapis = await type(a, a.lapisNoteTypeId);
+      final List<SrsTemplateDef> lapisTpls = lapis.templates;
+      await expectLater(
+        a.deleteField(
+          lapis.id,
+          srsLapisFieldId(kProfile, 'Sentence'),
+          prepareTemplate: rewrite,
+        ),
+        throwsStateError,
+      );
+      final SrsNoteTypeView lapisAfter = await type(a, lapis.id);
+      expect(
+        lapisAfter.templates.map((SrsTemplateDef x) => x.front),
+        lapisTpls.map((SrsTemplateDef x) => x.front),
+      );
+      expect(calls, 1);
+    });
+
     test('字段说明：独立键，一台改说明一台改名不冲突；克隆带上；说明没变不写记录；导出 .apkg 带上', () async {
       final SrsDbStore a = await device('a');
       final SrsDbStore b = await device('b');

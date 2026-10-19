@@ -16,6 +16,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show templateIdsToNames, templateNamesToIds;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/srs/srs_field_catalog.dart';
@@ -476,6 +478,38 @@ String? srsVisualDropField(
 }
 
 String _normalize(String s) => s.replaceAll('\r\n', '\n').trim();
+
+/// 删字段时一个模板（存储形态：`{{fld:<id>}}` 引用）的可视化改写：两面里可视化做的、没手改过的
+/// 一面去掉引用该字段的块整面重编（[srsVisualDropField]）；都不用改返回 null。
+///
+/// 作为 `SrsDbStore.deleteField` 的 `prepareTemplate` 传入：改写与字段删除同在一次写入里落库，
+/// 删不掉（内置字段 / 最后一个字段）时模板也不动。
+SrsTemplateDef? srsVisualTemplateWithoutField(
+  SrsNoteTypeView type,
+  SrsTemplateDef tpl,
+  String fieldId,
+) {
+  final SrsVisualCompileContext ctx = SrsVisualCompileContext.of(type);
+  final Map<String, String> idToName = ctx.fieldNameById;
+  final Map<String, String> nameToId = <String, String>{
+    for (final MapEntry<String, String> e in idToName.entries) e.value: e.key,
+  };
+  final String? front = srsVisualDropField(
+    templateIdsToNames(tpl.front, idToName),
+    fieldId,
+    ctx,
+  );
+  final String? back = srsVisualDropField(
+    templateIdsToNames(tpl.back, idToName),
+    fieldId,
+    ctx,
+  );
+  if (front == null && back == null) return null;
+  return tpl.copyWith(
+    front: front == null ? null : templateNamesToIds(front, nameToId),
+    back: back == null ? null : templateNamesToIds(back, nameToId),
+  );
+}
 
 /// 一面里下一个没用过的块 id。
 String srsNextVisualBlockId(Iterable<SrsVisualBlock> blocks) {

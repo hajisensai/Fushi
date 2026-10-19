@@ -65,6 +65,7 @@ void main() {
     Map<String, String>? fields,
     SrsCardAppearance appearance = const SrsCardAppearance(),
     bool apple = false,
+    double topInset = 0,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -113,6 +114,7 @@ void main() {
               ),
               fields: fields ?? _fields(),
               definitionsHtml: '<div class="fc-defs-only">defs</div>',
+              topInset: topInset,
             ),
           ),
         ),
@@ -344,6 +346,44 @@ void main() {
       find.descendant(of: click, matching: find.byType(AnimatedCrossFade)),
     );
     expect(after.crossFadeState, CrossFadeState.showSecond);
+  });
+
+  testWidgets('铺到浮动页头底下：页头高度只作滚动内边距，往下翻内容滚进页头底下', (WidgetTester tester) async {
+    const double inset = 120;
+    await pump(tester, answer: true, topInset: inset);
+    final Finder term = find.byKey(const ValueKey<String>('srs-fushi-term'));
+    final double top = tester.getTopLeft(term).dy;
+    // 开头的内容从页头下沿开始，不被盖住。
+    expect(top, greaterThanOrEqualTo(inset));
+    final Finder scroll = find.byKey(
+      const ValueKey<String>('srs-fushi-back-narrow'),
+    );
+    expect(
+      (tester.widget<SingleChildScrollView>(scroll).padding! as EdgeInsets).top,
+      inset,
+    );
+    // 卡面本身从顶端画起（没有固定让位），内容能滚到让位区里。
+    expect(tester.getTopLeft(scroll).dy, 0);
+    await tester.drag(scroll, const Offset(0, -100));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.getTopLeft(term).dy, lessThan(inset));
+  });
+
+  testWidgets('窄屏封面按原比例完整显示（不再裁成正方形）', (WidgetTester tester) async {
+    await pump(tester, answer: true);
+    final Finder pic = find.descendant(
+      of: find.byKey(const ValueKey<String>('srs-fushi-picture')),
+      matching: find.byType(Image),
+    );
+    await tester.runAsync(
+      () => precacheImage(tester.widget<Image>(pic).image, tester.element(pic)),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    final Size size = tester.getSize(pic);
+    // 样例图 320×200：宽高比保持 1.6，限在缩略图框（84 × 1.5 宽、84 × 1.4 高）内。
+    expect(size.width / size.height, closeTo(1.6, 0.02));
+    expect(size.width, lessThanOrEqualTo(84 * 1.5));
+    expect(size.height, lessThanOrEqualTo(84 * 1.4));
   });
 
   test('图片来源：光栅 data URI → 内存；SVG / 远程 / 无媒体库 → 不画', () {

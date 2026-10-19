@@ -457,6 +457,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：复习页底部评分栏只留「重来 / 良好」两个按钮（对齐 AnkiDroid
   // 的 hideHardAndEasy）；键盘 2/4 仍可评「困难 / 简单」。非凭据、跨设备。
   'srs_review_hide_hard_easy',
+  // String（SrsReviewReplayButton.wire：'off' | 'start' | 'end'，默认 'off'）：复习页
+  // 底部操作行一端放一颗重播音频键（手机刷卡时拇指在屏幕下方，够不到顶栏）。非凭据、跨设备。
+  'srs_review_replay_button',
+  // bool（默认 true）：评分按钮显示下次间隔（小号副标签，误按 / 排程异常一眼可见）。
+  // 非凭据、跨设备。
+  'srs_review_show_intervals',
   // double（默认 1.0，0.6–2.0）：复习页卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）。
   'srs_review_zoom',
   'startup_default_dictionary_tab',

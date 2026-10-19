@@ -28,7 +28,7 @@ import 'package:fushi/src/pages/implementations/anki_settings_page.dart'
     show ankiHandlebarLabel;
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart'
-    show SrsTemplatePreview, srsRenderTemplatePreview;
+    show SrsTemplatePreview, srsFieldPlaceholderHtml, srsRenderTemplatePreview;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.dart'
     show srsFieldKindIcon;
@@ -59,10 +59,13 @@ Map<String, String> srsFieldSpotlightValues({
     for (final SrsFieldDef f in type.fields)
       f.name: () {
         final String sample = sampleById[f.id] ?? '';
-        if (f.id != fieldId) return hasSample ? sample : '(${f.name})';
+        if (f.id != fieldId) {
+          return hasSample ? sample : srsFieldPlaceholderHtml(f.name);
+        }
         final String shown = sample.trim().isNotEmpty
             ? sample
-            : (srsKnownField(f.name)?.example ?? '(${srsFieldDisplayName(f)})');
+            : (srsKnownField(f.name)?.example ??
+                  srsFieldPlaceholderHtml(srsFieldDisplayName(f)));
         return srsFieldHighlightHtml(shown);
       }(),
   };

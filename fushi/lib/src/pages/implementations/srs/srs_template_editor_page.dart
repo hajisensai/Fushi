@@ -10,6 +10,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,6 +55,13 @@ class SrsTemplatePreview {
   final AnkiRenderedCard? card;
   final String? error;
 }
+
+/// 预览里没有样例内容时字段的占位值 `(字段名)`。字段名来自用户或导入的 Anki 牌组，
+/// 是不可信文本：占位值会作为字段**内容**进卡面 HTML，必须转义成纯文本，否则名字里的
+/// `<`、`&` 等会被当成标签（名字形如 `<img onerror=…>` 时还会在预览里执行）。
+/// 模板编辑器与字段说明页的预览共用这一处。
+String srsFieldPlaceholderHtml(String name) =>
+    '(${const HtmlEscape(HtmlEscapeMode.element).convert(name)})';
 
 /// 用名字形式的模板渲染一张示例卡。
 SrsTemplatePreview srsRenderTemplatePreview({
@@ -328,7 +336,9 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     final SrsNoteView? sample = _sample;
     return <String, String>{
       for (final SrsFieldDef f in type.fields)
-        f.name: sample == null ? '(${f.name})' : _sampleValues[f.id] ?? '',
+        f.name: sample == null
+            ? srsFieldPlaceholderHtml(f.name)
+            : _sampleValues[f.id] ?? '',
     };
   }
 
