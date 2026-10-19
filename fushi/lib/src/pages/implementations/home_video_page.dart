@@ -14,7 +14,8 @@ import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart'
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
-import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
+import 'package:fushi/src/pages/implementations/home_page.dart'
+    show HomeTab, homeShellTabNotifier;
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -380,6 +381,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 要等下拉刷新/重启才出现。订阅 videoBooks 表 → 集合一变（插入/删除）就 _refresh。
   StreamSubscription<List<String>>? _videoUidsSub;
 
+  /// BUG-3610：视频库**观看进度**变化监听（[VideoBookRepository.watchVideoWatchProgressChanged]）。
+  /// [_videoUidsSub] 按 uid 集合去重、刻意不管进度回写，而本页列表是一次性快照：
+  /// 从合集详情页 / 首页 / 别的入口播放后，或同步回灌对端进度后，库页卡片上的
+  /// 「看到第几集 / 进度条 / 继续观看」停在旧值，只有下拉刷新或重启才更新。改由
+  /// 数据层「进度变了」信号驱动重读，不靠每个入口各自记得通知本页。
+  StreamSubscription<void>? _watchProgressSub;
+  Timer? _watchProgressReloadDebounce;
+
+  /// 本页不在前台（上面压着详情页 / 播放页，或停在别的 tab）时到达的进度变化：
+  /// 只记一笔，等重新露出来（[didChangeDependencies] 的路由边沿 / [onTabActivated]）
+  /// 再重读一次——不在播放期间隔几秒就在后台重列整个书架。
+  bool _watchProgressStale = false;
+
+  /// 上一次看到的本页路由是否在栈顶（判「被盖住 → 又露出来」的边沿）。
+  bool _routeWasCurrent = true;
+
   /// 上一次已知的视频 uid 集合，用于对 [_videoUidsSub] 事件去重：仅集合变化才刷新，
   /// 封面自愈 / 进度回写等纯列更新（集合不变）跳过，避免写回→重刷环。null=尚未收到
   /// 首个事件（首事件仅登记基线，不刷——initState 已首载）。
@@ -653,6 +670,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _videoUidsSub = widget.repo.watchVideoBookUids().listen(
       _onVideoUidsChanged,
     );
+    // BUG-3610：订阅观看进度，任意入口播放 / 同步回灌写下进度后库页跟着更新。
+    _watchProgressSub = widget.repo.watchVideoWatchProgressChanged().listen(
+      _onWatchProgressChanged,
+    );
     // BUG-1699：订阅合集两张表，任意写入者（后台合集同步/备份导入/合集编辑）
     // 落库后自动重载折叠映射——远端占位卡与新同步的合集立即成组。
     _collectionTablesSub = appModelNoUpdate.database
@@ -710,6 +731,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     setState(() {
       _remoteFuture = _loadRemoteVideos();
     });
+    _reloadStaleWatchProgress();
     unawaited(_refreshVideoRemoteTargets());
     // 切回视频页**不再**重跑在线补刮 / 待确认清单（2026-10 切 tab 卡顿）：那一轮
     // 是「每个来源全库重列 + 逐文件 parseVideoFilename + 逐作品查规范身份」，全压在
@@ -718,6 +740,45 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // [_onVideoUidsChanged]（BUG-2199 的那条路径）、刮削结果落库走
     // [_onScrapePresentationChanged]、批次结束走 [_onScrapeTaskBusyChanged]。
     // 切 tab 本身不会让待确认数变化。
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // BUG-3610：本页路由被盖住（合集详情页 / 播放页）→ 又露出来的边沿，补做
+    // 被盖住期间推迟的进度重读。isCurrentOf 只依赖路由的 isCurrent 一项。
+    final bool current = ModalRoute.isCurrentOf(context) ?? true;
+    final bool returned = current && !_routeWasCurrent;
+    _routeWasCurrent = current;
+    if (returned) _reloadStaleWatchProgress();
+  }
+
+  /// 本页此刻是否真在用户眼前：路由在栈顶且视频 tab 是当前 tab。
+  bool get _isShowingWatchProgress =>
+      _routeWasCurrent && homeShellTabNotifier.value == HomeTab.video;
+
+  /// BUG-3610：观看进度变了。前台 → 防抖后走播放返回同一条窄刷新（书架列表 +
+  /// 最近观看两张表；进度只改这两处，见 [_refreshAfterPlayback]）；不在前台 →
+  /// 记一笔，露出来时再刷。
+  void _onWatchProgressChanged(void _) {
+    if (!mounted) return;
+    _watchProgressReloadDebounce?.cancel();
+    _watchProgressReloadDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      if (!_isShowingWatchProgress) {
+        _watchProgressStale = true;
+        return;
+      }
+      _watchProgressStale = false;
+      _refreshAfterPlayback();
+    });
+  }
+
+  /// 露出来时补做被推迟的进度重读（没有推迟的就什么都不做）。
+  void _reloadStaleWatchProgress() {
+    if (!mounted || !_watchProgressStale) return;
+    _watchProgressStale = false;
+    _refreshAfterPlayback();
   }
 
   @override
@@ -746,6 +807,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _subscriptionRowController.dispose();
     _videoUidsSub?.cancel();
     _videoUidsRefreshTimer?.cancel();
+    _watchProgressSub?.cancel();
+    _watchProgressReloadDebounce?.cancel();
     _collectionTablesSub?.cancel();
     _downloadSubscriptionsSub?.cancel();
     _legacySubscriptionStore?.revision.removeListener(
@@ -1055,8 +1118,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// → [_refresh] 覆盖，入口还有 [initState] 与下拉刷新（后者还会先清失败记账重试），
   /// 少跑这一次不会让任何条目永久漏掉。
   ///
-  /// 只给 [_open] 用。[_refresh] 的其余调用点（uid 集合变化、外部刷新信号、刮削表
-  /// 变化、导入、标签、删除、改名、设封面…）确实需要全量重算，不要把它们并过来。
+  /// 只给 [_open] 与观看进度信号（[_onWatchProgressChanged]，BUG-3610）用——后者
+  /// 就是「别的入口播放 / 同步回灌改了进度」，同样只动这两处。[_refresh] 的其余
+  /// 调用点（uid 集合变化、外部刷新信号、刮削表变化、导入、标签、删除、改名、
+  /// 设封面…）确实需要全量重算，不要把它们并过来。
   void _refreshAfterPlayback() {
     setState(() {
       // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。

@@ -450,6 +450,12 @@ class VideoBookRepository {
   /// 「用 Fushi 打开」/ 远端下载）落库后自动刷新（BUG-793）。
   Stream<List<String>> watchVideoBookUids() => _db.watchVideoBookUids();
 
+  /// 监听视频库观看进度（断点 / 时刻 / 看完标记 / 集指针 / 逐集进度）变化，供库页
+  /// 在任何入口播放、同步回灌写下进度后自动重读（BUG-3610，见
+  /// [FushiDatabase.watchVideoWatchProgressChanged]）。
+  Stream<void> watchVideoWatchProgressChanged() =>
+      _db.watchVideoWatchProgressChanged();
+
   /// 视频库书架展示用列表：在 [listAll] 基础上自愈被数据根迁移遗弃的封面绝对路径
   /// （[_repairMovedCoverPaths]）。**只给展示层用**——删除 GC（[collectReferencedAssetPaths]）
   /// 与去重（[findByVideoPath]）走纯 [listAll]，不引入 path_provider 依赖与写副作用。

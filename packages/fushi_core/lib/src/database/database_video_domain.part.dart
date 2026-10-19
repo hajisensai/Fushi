@@ -2883,6 +2883,77 @@ mixin _FushiDbVideoDomain
     return controller.stream;
   }
 
+  /// 监听视频库**观看进度**变化（BUG-3610）：video_books 任一行的断点
+  /// （`lastPositionMs`）、断点时刻（`lastPlayedAt`）、看完标记（`completedAt`）、
+  /// 集指针（`currentEpisode`）或逐集进度（`playlistJson`）变了才 emit（不带数据，
+  /// 消费方自行重读列表）。行增删也算变化（uid 集合本身就在签名里）。
+  ///
+  /// 库页列表是一次性快照，[watchVideoBookUids] 的消费方按 uid 集合去重、刻意忽略
+  /// 纯列更新——于是播放页（不论从库页、合集详情页、首页还是别的入口进入）写下的
+  /// 进度、同步回灌的对端进度都不会让库页重读，要下拉刷新或重启才看得到。这里在
+  /// 数据层把「进度变了」单独做成信号，与「集合变了」分开：封面回写、字幕源 /
+  /// 延迟等其余列的写入不改签名、不 emit，消费方不会因自愈回写陷入重刷环。
+  ///
+  /// 首次查询只登记基线、不 emit（消费方进页时已首载）。同 [watchVideoBookUids]
+  /// 用 [tableUpdates] + 手动 [StreamController]，不用 drift keyed `.watch()`
+  /// （BUG-834：取消订阅遗留 `Timer.run` 挂死 widget 测试）。
+  Stream<void> watchVideoWatchProgressChanged() {
+    Future<String> currentSignature() async {
+      final List<VideoBookRow> rows = await (select(videoBooks)
+            ..orderBy([(t) => OrderingTerm(expression: t.bookUid)]))
+          .get();
+      final StringBuffer buffer = StringBuffer();
+      for (final VideoBookRow row in rows) {
+        buffer
+          ..write(row.bookUid)
+          ..write('\u0001')
+          ..write(row.lastPositionMs)
+          ..write('\u0001')
+          ..write(row.lastPlayedAt)
+          ..write('\u0001')
+          ..write(row.completedAt?.millisecondsSinceEpoch)
+          ..write('\u0001')
+          ..write(row.currentEpisode)
+          ..write('\u0001')
+          ..write(row.playlistJson?.hashCode)
+          ..write('\u0002');
+      }
+      return buffer.toString();
+    }
+
+    late final StreamController<void> controller;
+    StreamSubscription<void>? updatesSub;
+    String? lastSignature;
+    // 串行化：连发的表级通知各查一次，按到达顺序比较，避免乱序落地把旧签名
+    // 当成「最新」而漏发一次变化。
+    Future<void> pending = Future<void>.value();
+    void check() {
+      pending = pending.then((_) async {
+        final String signature = await currentSignature();
+        if (controller.isClosed) return;
+        final String? previous = lastSignature;
+        lastSignature = signature;
+        if (previous != null && previous != signature) controller.add(null);
+      }).catchError((Object error, StackTrace stack) {
+        if (!controller.isClosed) controller.addError(error, stack);
+      });
+    }
+
+    controller = StreamController<void>(
+      onListen: () {
+        check();
+        updatesSub =
+            tableUpdates(TableUpdateQuery.onTable(videoBooks)).listen((_) {
+          check();
+        });
+      },
+      onCancel: () async {
+        await updatesSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
   /// 仅发出 video_books 表级更新通知，不改任何业务列。导入事务和 metadata apply
   /// 在写入多个关联表后可显式调用，让当前视频页统一重查；消费方仍按 uid 集合去重。
   void notifyVideoLibraryChanged() {
