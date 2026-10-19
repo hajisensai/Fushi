@@ -1802,6 +1802,8 @@
   "dict_language_title": "Idioma del contenido del diccionario",
   "dict_language_tooltip": "Idioma del contenido",
   "dict_manager_summary": "$n dictionaries · $m enabled",
+  "dict_mixed_kanji_part": "Kanji bundled with a term dictionary",
+  "dict_mixed_kanji_part_delete_note": "This kanji list is part of a term dictionary: deleting it removes the whole dictionary, term entries included. To hide only its kanji cards, turn it off here instead.",
   "dict_order_bottom_move": "Move to bottom",
   "dict_order_position_clamped": "Out of range — will move to position $n",
   "dict_order_position_label": "Position (1–$m)",

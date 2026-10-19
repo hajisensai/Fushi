@@ -12,7 +12,7 @@ const vm = require('node:vm');
 const ADAPTERS = path.join(__dirname, 'subtitle-adapters.js');
 const PROVIDERS = path.join(__dirname, 'subtitle-providers.js');
 
-function loadProviders() {
+function loadProviders(loc) {
   const posted = [];
   const notified = [];
   const listeners = {};
@@ -26,7 +26,7 @@ function loadProviders() {
     setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
     URL,
     Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
-    location: { hostname: 'www.youtube.com', pathname: '/watch', search: '?v=vid1', href: 'https://www.youtube.com/watch?v=vid1', origin: 'https://www.youtube.com' },
+    location: loc || { hostname: 'www.youtube.com', pathname: '/watch', search: '?v=vid1', href: 'https://www.youtube.com/watch?v=vid1', origin: 'https://www.youtube.com' },
     window: windowObj,
     document: {
       documentElement: { dataset: {} }, body: {}, fullscreenElement: null,
@@ -81,4 +81,27 @@ test('占位轨绝不当主路径：只有占位时 pickPrimaryCueTrack / fushiH
   h.send({ __fushiStream: 'tracks', videoKey: 'yt-vid1', tracks: [{ lang: 'ja (auto)' }] });
   assert.strictEqual(h.ctx.pickPrimaryCueTrack(h.windowObj.fushiEpisodeCues, 'yt-vid1', 'live', null), null);
   assert.strictEqual(h.ctx.fushiHasFullEpisodeTrack('yt-vid1'), false);
+});
+
+test('Netflix 状态通道轨清单 → 占位轨（key=vid|lang~trackId，带显示名）；选中发 __fushiNf fetchTrack；cue 到即清占位', () => {
+  const h = loadProviders({ hostname: 'www.netflix.com', pathname: '/watch/81001', search: '', href: 'https://www.netflix.com/watch/81001', origin: 'https://www.netflix.com' });
+  const store = h.windowObj.fushiEpisodeCues;
+  h.send({ __fushiNf: 'tracks', videoId: '81001', tracks: [
+    { lang: 'ja', trackId: 'T:ja-cc', label: '日本語 [CC]' },
+    { lang: 'en', trackId: 'T:en', label: 'English' },
+    { lang: 'xx' },
+  ] });
+  assert.strictEqual(JSON.stringify(store['81001|ja~T:ja-cc']), '[]');
+  assert.strictEqual(h.windowObj.fushiLazyTracks['81001|en~T:en'], true);
+  assert.strictEqual(h.windowObj.fushiTrackLabels['81001|ja~T:ja-cc'], '日本語 [CC]');
+  assert.deepStrictEqual(h.notified, ['81001|ja~T:ja-cc', '81001|en~T:en']);
+  assert.strictEqual(h.windowObj.fushiRequestLazyTrack('81001|en~T:en'), true);
+  const req = h.posted.find((m) => m && m.__fushiNf === 'fetchTrack');
+  assert.ok(req, 'Netflix 占位轨走 netflix-bridge 的 fetchTrack');
+  assert.strictEqual(req.trackId, 'T:en');
+  assert.strictEqual(h.posted.some((m) => m && m.__fushiStream === 'fetchTrack'), false);
+  h.send({ __fushiNf: 'cues', videoId: '81001', lang: 'en', trackId: 'T:en', label: 'English', format: 'webvtt',
+    text: 'WEBVTT\n\n00:01.000 --> 00:02.000\nhello\n' });
+  assert.strictEqual(store['81001|en~T:en'].length, 1);
+  assert.strictEqual(h.windowObj.fushiLazyTracks['81001|en~T:en'], undefined, '真 cue 到了不再是占位');
 });
