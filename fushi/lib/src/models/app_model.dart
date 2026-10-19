@@ -5987,10 +5987,10 @@ class AppModel with ChangeNotifier {
       enqueue: pipeline.enqueue,
     )..start();
     // 下载那一刻没搜到字幕的分集，过几小时再找（连载番字幕常晚一两天上传）。
+    // 起管线时立刻看一轮：移动端很少连续前台 30 分钟，只靠周期首轮基本触发不到。
     _downloadSubtitleRetryTimer?.cancel();
-    _downloadSubtitleRetryTimer = Timer.periodic(
-      const Duration(minutes: 30),
-      (_) => unawaited(_retryDownloadSubtitles()),
+    _downloadSubtitleRetryTimer = startDownloadSubtitleRetryLoop(
+      () => unawaited(_retryDownloadSubtitles()),
     );
     // BrowsePage may have rendered while this fire-and-forget runtime was
     // still starting. Publish the new service identity so its cached resource
