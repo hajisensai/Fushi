@@ -528,3 +528,39 @@ test('状态通道：地址始终不来 → 切回原轨并投 cuesFailed（不�
   assert.strictEqual(failed[0].trackId, 'T:en');
   assert.strictEqual(h.fetched.length, 0);
 });
+
+test('状态通道：页面数据不可信——状态成环 / getter 抛错 / urls 形状不对 / 播放器 API 缺方法时降级为 cuesFailed，不抛出', async () => {
+  const h = loadBridge({ track: NF_TRACKS[1], textTracks: NF_TRACKS, stateUrls: {} });
+  const cyc = { type: 'timedtext', trackId: 'T:en', urls: 'not-an-array' };
+  cyc.self = cyc;
+  const evil = {};
+  Object.defineProperty(evil, 'boom', { enumerable: true, get() { throw new Error('getter'); } });
+  const brokenPlayer = {
+    getTimedTextTrackList: () => NF_TRACKS,
+    getTimedTextTrack: () => NF_TRACKS[1],
+    // 网飞改版删了 setTimedTextTrack：临时切轨那步必然抛 TypeError。
+  };
+  h.windowObj.netflix = {
+    appContext: { state: { playerApp: {
+      getState: () => ({ videoPlayer: { cadmiumPlayerRepository: { playersById: { 'watch-81001': { cyc, evil, list: [cyc, null, 3] } } } } }),
+      getAPI: () => ({ videoPlayer: {
+        getAllPlayerSessionIds: () => ['watch-81001'],
+        getVideoPlayerBySessionId: () => brokenPlayer,
+      } }),
+    } } },
+  };
+  assert.doesNotThrow(() => { for (let i = 0; i < 10; i++) h.tick(); });
+  await settle();
+  assert.strictEqual(h.fetched.length, 0, '形状不对的 urls 不当成下载地址');
+  for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  const failed = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cuesFailed').map((p) => p.msg);
+  assert.strictEqual(failed.length, 1);
+  assert.strictEqual(failed[0].trackId, 'T:en');
+  // 整个网飞对象消失（未登录页 / 改版）：拍子与按需取轨都静默降级。
+  delete h.windowObj.netflix;
+  assert.doesNotThrow(() => h.tick());
+  for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.strictEqual(h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cuesFailed').length, 2);
+});
