@@ -59,6 +59,7 @@
 | [BUG-3521](bugs/BUG-3521-opds-komga-api-key.md) | ✅ | ✅ | OPDS：Komga 只认 X-API-Key 头，配置只有用户名/密码；Basic 用户名须为登录邮箱 |
 | [BUG-3520](bugs/BUG-3520-opds-cover-401-missing-headers.md) | ✅ | ✅ | OPDS：私有目录（Komga）封面无凭据请求回 401，发现页封面全是占位 |
 | [BUG-3519](bugs/BUG-3519-opds-catalog-url-root-or-html.md) | ✅ | ✅ | OPDS：填服务器根地址/网页地址/带结尾斜杠时报「不是可读的 OPDS 目录」或 404，Komga 只认 /opds/v2/catalog |
+| [BUG-3519](bugs/BUG-3519-pdf-reader-chrome-cannot-hide.md) | ✅ | ✅ | pdf-reader-chrome-cannot-hide |
 | [BUG-3518](bugs/BUG-3518-ios-audio-lane-page-bleed.md) | ✅ | ✅ | iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶 |
 | [BUG-3517](bugs/BUG-3517-video-chrome-double-click-fullscreen.md) | ✅ | ✅ | video-chrome-double-click-fullscreen |
 | [BUG-3516](bugs/BUG-3516-collection-member-touch-longpress-no-menu.md) | ✅ | ✅ | 合集详情页触屏长按成员只进多选，拿不到库页同一份卡片菜单 |
