@@ -204,16 +204,28 @@ class SrsCardAudioSequencer {
 /// 卡面 WebView 原先不看牌组开关：Windows（WebView2）照样自动出声，Android / iOS
 /// 默认要手势、开着自动播放也不出声——于是「关了还会播，而且时播时不播」。
 ///
-/// 机制：
-/// - 包一层 `HTMLMediaElement.prototype.play`：关闭时，不在用户输入事件的派发过程
-///   里的调用直接返回以 `NotAllowedError` 拒绝的 Promise（与浏览器自动播放策略同一
-///   形态，现有片段脚本的 `catch` 照常吞掉）。
-/// - 「在用户输入事件的派发过程里」：window 捕获阶段看到可信（`isTrusted`）的点按 /
-///   按键事件即置位，`setTimeout(0)` 在这次派发全部结束后复位——同一次点按里卡片
-///   脚本转手 `replay.click()`（Lapis「点例句重播」）照样放行，之后的 `canplay` /
-///   `ended` / 定时器都不算手势。
-/// - `autoplay` 属性不经 `play()`：关闭时 MutationObserver 把新插入的媒体元素上的
-///   `autoplay` 摘掉（观察回调是微任务，早于媒体数据就绪）；关闭那一刻也扫一遍现有内容。
+/// 机制（关闭时，页面能让媒体出声的入口逐个收口；任一入口漏掉 = 照样出声）：
+/// - 「用户手势」：window 捕获阶段看到可信（`isTrusted`）的点按 / 按键事件即置位，
+///   `setTimeout(0)` 在这次派发全部结束后复位——同一次点按里卡片脚本转手
+///   `replay.click()`（Lapis「点例句重播」）照样放行，之后的 `canplay` / `ended` /
+///   定时器都不算手势。原生播放控件的点按 / 按键由控件内部消化、页面监听看不到，
+///   改认「元素带 `controls` + 此刻有瞬时用户激活（`navigator.userActivation`）」。
+/// - `play()`：包一层 `HTMLMediaElement.prototype.play`，手势外的调用直接返回以
+///   `NotAllowedError` 拒绝的 Promise（与浏览器自动播放策略同一形态，现有片段脚本的
+///   `catch` 照常吞掉）。
+/// - `autoplay`：不经 `play()`，插入后再设也照样生效（BUG-3546 第一版只看
+///   childList，`el.autoplay = true` / `setAttribute('autoplay')` / 不进文档的
+///   `new Audio()` 都绕过去了）。手势外把 `autoplay` 属性 setter 与
+///   `setAttribute` / `setAttributeNS` / `toggleAttribute` 写 `autoplay` 一律吞掉（覆盖
+///   脱离文档的元素）；新插入节点（换卡 innerHTML、解析出来的 `autoplay` 属性）由
+///   MutationObserver 摘掉，关闭那一刻也扫一遍现有内容。
+/// - 兜底：文档与每个 shadow root（包 `attachShadow`，`play` 事件不穿出 shadow 边界）
+///   上捕获 `play` 事件，不在手势里、不是手势里 `play()` 放行过的元素、也不是用户点
+///   原生控件的开播，当场 `pause()`——不管它从哪条路来（例如 iframe 里另一套原型的
+///   `play.call(el)`）。脱离文档的元素没有事件可接，靠上面的 `play()` / `autoplay`
+///   收口；卡片里嵌的 iframe 自己的文档不在闸门内。
+/// - 宿主自己的 `[sound:]` 序列与重播走原生播放器（[SrsCardAudioSequencer]），不经
+///   页面媒体元素，不受闸门影响。
 /// - 开关由宿主经 `window.__fushiSrsSetAutoplay(bool)` 下发（换卡调用之前）。
 const String kSrsCardAutoplayGateScript = r'''
 (function(){
@@ -221,6 +233,12 @@ const String kSrsCardAutoplayGateScript = r'''
   var allowed = true;
   var gesture = false;
   var clearTimer = null;
+  var permitted = typeof WeakSet === 'function' ? new WeakSet() : null;
+  function isMedia(n){
+    return !!n && n.nodeType === 1 && (n.tagName === 'AUDIO' || n.tagName === 'VIDEO');
+  }
+  function blocked(){ return !allowed && !gesture; }
+  function permit(el){ if (permitted && isMedia(el)) permitted.add(el); }
   var kinds = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click',
     'dblclick', 'auxclick', 'touchstart', 'touchend', 'keydown', 'keyup'];
   function onGesture(e){
@@ -241,32 +259,93 @@ const String kSrsCardAutoplayGateScript = r'''
   if (proto && typeof proto.play === 'function') {
     var nativePlay = proto.play;
     proto.play = function(){
-      if (!allowed && !gesture) return Promise.reject(refusal());
+      if (blocked()) return Promise.reject(refusal());
+      permit(this);
       return nativePlay.apply(this, arguments);
     };
   }
+  var autoplayProp = proto && Object.getOwnPropertyDescriptor(proto, 'autoplay');
+  if (autoplayProp && autoplayProp.set && autoplayProp.configurable) {
+    Object.defineProperty(proto, 'autoplay', {
+      configurable: true,
+      enumerable: autoplayProp.enumerable,
+      get: autoplayProp.get,
+      set: function(v){ autoplayProp.set.call(this, blocked() ? false : v); }
+    });
+  }
+  function isAutoplayName(n){
+    return typeof n === 'string' && n.toLowerCase().replace(/^.*:/, '') === 'autoplay';
+  }
+  var elementProto = window.Element && window.Element.prototype;
+  function guardAttr(method, nameAt){
+    var native = elementProto && elementProto[method];
+    if (typeof native !== 'function') return;
+    elementProto[method] = function(){
+      if (blocked() && isMedia(this) && isAutoplayName(arguments[nameAt])) {
+        if (method !== 'toggleAttribute') return undefined;
+        // toggleAttribute 只放行「摘掉」。
+        if (arguments.length > 1 && arguments[1] !== false) return false;
+        if (!this.hasAttribute('autoplay')) return false;
+      }
+      return native.apply(this, arguments);
+    };
+  }
+  guardAttr('setAttribute', 0);
+  guardAttr('setAttributeNS', 1);
+  guardAttr('toggleAttribute', 0);
+  function unset(el){
+    el.removeAttribute('autoplay');
+    try { el.autoplay = false; } catch (e) {}
+  }
   function strip(node){
     if (!node || node.nodeType !== 1) return;
-    var tag = node.tagName;
-    if ((tag === 'AUDIO' || tag === 'VIDEO') && node.hasAttribute('autoplay')) {
-      node.removeAttribute('autoplay');
-      try { node.autoplay = false; } catch (e) {}
-    }
+    if (isMedia(node) && node.hasAttribute('autoplay')) unset(node);
     if (typeof node.querySelectorAll !== 'function') return;
     var list = node.querySelectorAll('audio[autoplay],video[autoplay]');
-    for (var j = 0; j < list.length; j++) {
-      list[j].removeAttribute('autoplay');
-      try { list[j].autoplay = false; } catch (e) {}
-    }
+    for (var j = 0; j < list.length; j++) unset(list[j]);
   }
-  if (window.MutationObserver && document.documentElement) {
-    new MutationObserver(function(records){
+  var observer = null;
+  var observeOpts = { childList: true, subtree: true };
+  if (window.MutationObserver) {
+    observer = new MutationObserver(function(records){
       if (allowed) return;
       for (var r = 0; r < records.length; r++) {
         var added = records[r].addedNodes || [];
         for (var k = 0; k < added.length; k++) strip(added[k]);
       }
-    }).observe(document.documentElement, { childList: true, subtree: true });
+    });
+    if (document.documentElement) observer.observe(document.documentElement, observeOpts);
+  }
+  // 原生播放控件：点按 / 按键由控件内部消化，页面的捕获监听一个也看不到（Chromium
+  // 实测），只剩「元素带控件 + 此刻有瞬时用户激活」可认。
+  function nativeControlsByUser(el){
+    var ua = window.navigator && window.navigator.userActivation;
+    return !!el.controls && !!ua && ua.isActive === true;
+  }
+  function onPlay(e){
+    var el = e && e.target;
+    if (!isMedia(el) || !blocked()) return;
+    if ((permitted && permitted.has(el)) || nativeControlsByUser(el)) return;
+    try { el.pause(); } catch (err) {}
+  }
+  function onStop(e){
+    if (permitted && e && isMedia(e.target)) permitted['delete'](e.target);
+  }
+  function watchRoot(root){
+    if (!root || typeof root.addEventListener !== 'function') return;
+    root.addEventListener('play', onPlay, true);
+    root.addEventListener('pause', onStop, true);
+    root.addEventListener('emptied', onStop, true);
+  }
+  watchRoot(document);
+  if (elementProto && typeof elementProto.attachShadow === 'function') {
+    var nativeAttachShadow = elementProto.attachShadow;
+    elementProto.attachShadow = function(){
+      var root = nativeAttachShadow.apply(this, arguments);
+      watchRoot(root);
+      if (observer) observer.observe(root, observeOpts);
+      return root;
+    };
   }
   window.__fushiSrsSetAutoplay = function(on){
     allowed = on !== false;

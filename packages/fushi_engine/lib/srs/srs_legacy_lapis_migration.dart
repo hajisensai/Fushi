@@ -22,6 +22,8 @@
 /// 也不碰**，重复执行不再写任何东西（幂等）。
 library;
 
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -218,6 +220,27 @@ SrsLapisVariantKind? srsDetectLapisVariant(SrsNoteTypeView t) {
   return null;
 }
 
+/// (profileUid, 内置 key) → 内置字段 fieldId → 内置字段名；不是内置 key 时为 null。
+final Map<(String, String?), Map<String, String>?> _builtinFieldNameCache =
+    <(String, String?), Map<String, String>?>{};
+
+/// 内置类型 [key] 的「fieldId → 内置字段名」（代码默认值，只由 profileUid 与 key 决定）。
+///
+/// 记忆化：[srsBuiltinNoteTypeForKey] 每次都要重算全部字段 ID 并把模板里的字段名逐个换成 ID，
+/// 一次零点几毫秒；补迁预演对每条笔记的每个目标字段各调一次，1 万条笔记几十秒（BUG 实测）。
+Map<String, String>? _builtinFieldNames(String profileUid, String? key) =>
+    _builtinFieldNameCache.putIfAbsent((profileUid, key), () {
+      final SrsBuiltinNoteType? builtin = srsBuiltinNoteTypeForKey(
+        profileUid,
+        key,
+      );
+      return builtin == null
+          ? null
+          : <String, String>{
+              for (final SrsFieldDef d in builtin.fields) d.id: d.name,
+            };
+    });
+
 /// 字段 [f]（属于类型 [t]）的语义槽；落不进任何槽返回 null。
 ///
 /// 内置类型的内置字段按 fieldId 认（用户改过名照样对上）；其余按名字。
@@ -226,20 +249,16 @@ SrsLapisFieldSlot? srsLapisFieldSlot(
   SrsNoteTypeView t,
   SrsFieldDef f,
 ) {
-  final SrsBuiltinNoteType? builtin = srsBuiltinNoteTypeForKey(
+  final String? builtinName = _builtinFieldNames(
     profileUid,
     t.builtinKey,
-  );
-  if (builtin != null) {
-    for (final SrsFieldDef d in builtin.fields) {
-      if (d.id == f.id) {
-        return _fushiKeyByNormalized.containsKey(
-              srsNormalizeLapisFieldName(d.name),
-            )
-            ? SrsLapisFieldSlot(d.name, SrsLapisFieldMatch.builtinKey)
-            : null;
-      }
-    }
+  )?[f.id];
+  if (builtinName != null) {
+    return _fushiKeyByNormalized.containsKey(
+          srsNormalizeLapisFieldName(builtinName),
+        )
+        ? SrsLapisFieldSlot(builtinName, SrsLapisFieldMatch.builtinKey)
+        : null;
   }
   final String n = srsNormalizeLapisFieldName(f.name);
   if (n.isEmpty) return null;
@@ -254,20 +273,16 @@ SrsLapisFieldSlot? srsLapisFieldSlot(
 
 /// 目标（内置 Fushi 卡片）字段 [f] 的字段键：内置字段按 fieldId；用户自己加的字段返回 null
 /// （它们只按同名接源字段，不参与语义槽，免得和内置字段抢同一个槽）。
-String? _targetKey(String profileUid, SrsNoteTypeView to, SrsFieldDef f) {
-  final SrsBuiltinNoteType? builtin = srsBuiltinNoteTypeForKey(
-    profileUid,
-    to.builtinKey,
-  );
-  if (builtin == null) return null;
-  for (final SrsFieldDef d in builtin.fields) {
-    if (d.id == f.id) return d.name;
-  }
-  return null;
-}
+String? _targetKey(String profileUid, SrsNoteTypeView to, SrsFieldDef f) =>
+    _builtinFieldNames(profileUid, to.builtinKey)?[f.id];
 
 bool _sameName(String a, String b) =>
     a.trim().toLowerCase() == b.trim().toLowerCase();
+
+/// 候选源字段 [c] 能不能补目标字段 [f]（[key] = [_targetKey] 的结果）：内置目标字段按语义槽，
+/// 用户自加的目标字段按同名。[srsPlanLapisFieldFill] 与补迁候选的 SQL 预筛共用这一条判据。
+bool _fillsTarget(String? key, SrsLapisFieldCandidate c, SrsFieldDef f) =>
+    key != null ? c.slot?.key == key : _sameName(c.field.name, f.name);
 
 /// 一个源字段候选（某个类型里的某个字段）。
 class SrsLapisFieldCandidate {
@@ -460,11 +475,7 @@ Map<String, String> srsPlanLapisFieldFill({
     if ((current[f.id] ?? '').trim().isNotEmpty) continue;
     final String? key = _targetKey(profileUid, target, f);
     final SrsLapisFieldValue? hit = usable
-        .where(
-          (SrsLapisFieldValue v) => key != null
-              ? v.candidate.slot?.key == key
-              : _sameName(v.candidate.field.name, f.name),
-        )
+        .where((SrsLapisFieldValue v) => _fillsTarget(key, v.candidate, f))
         .firstOrNull;
     if (hit != null) out[f.id] = hit.value;
   }
@@ -722,7 +733,21 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     final Map<String, Map<String, String>> fills =
         <String, Map<String, String>>{};
     if (owners.isEmpty) return SrsLapisBackfillPreview(fills: fills);
-    final List<String> ids = noteIds ?? await noteIdsOfType(to.id);
+    // 只物化 SQL 预筛出的候选（必要条件的超集，判定仍走下面同一套逐条逻辑）。以前把全部
+    // Fushi 卡片笔记的修改记录读回来逐条物化——内置 Lapis 永远在，owners 永不为空，笔记类型页
+    // 每打开一次都全量物化一遍。
+    final Set<String> candidates = await _lapisBackfillCandidates(
+      to,
+      owners,
+      noteIds: noteIds,
+    );
+    if (candidates.isEmpty) return SrsLapisBackfillPreview(fills: fills);
+    final List<String> ids = noteIds == null
+        ? candidates.toList()
+        : <String>[
+            for (final String id in noteIds)
+              if (candidates.contains(id)) id,
+          ];
     final Map<String, SrsNoteView?> views = await notes(ids);
     for (final String id in ids) {
       final SrsNoteView? n = views[id];
@@ -762,11 +787,103 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
         return p.notes;
       });
 
-  /// 迁移页入口的角标：可迁移的旧 Lapis 笔记数 + 需要补迁的笔记数。
+  /// 「遗漏字段补迁」的候选笔记：当前是 Fushi 卡片（[noteIds] 为 null 时按笔记缓存的当前类型；
+  /// 给了 [noteIds] 就只在这些里找，类型 / 删除状态留给调用方按物化结果判），且存在一对
+  /// （旧 Lapis 字段 c → 它能补的目标字段 t）满足：c 上有一条值为非空字符串的修改记录、t 上
+  /// 一条修改记录都没有。
+  ///
+  /// 这是 [previewLapisBackfill] 逐条判定的**必要条件**：要补 t，t 必须没写过（authored 判据：
+  /// 有任何修改记录就不补；没写过也就意味着 t 当前为空），且某个能补 t 的 c 物化后的值非空——
+  /// 物化值是 c 上某条修改记录的值，所以至少有一条记录的值是非空字符串（SQL 的 trim 只去空格，
+  /// 比 Dart 的 trim 宽，只会多放候选、不会漏）。候选里不满足的（并发冲突的赢家是空串等）由逐条
+  /// 判定刷掉，结果与全量物化逐条判完全相同。
+  ///
+  /// 一条语句：(c, t) 对与 [noteIds] 各作一个 JSON 参数传入（不受绑定参数个数上限约束），沿
+  /// `idx_srs_field_edits_entity (entity_kind, entity_id)` 逐条笔记探修改记录，只读回候选 ID。
+  Future<Set<String>> _lapisBackfillCandidates(
+    SrsNoteTypeView to,
+    Map<String, SrsLapisFieldCandidate> owners, {
+    List<String>? noteIds,
+  }) async {
+    final List<List<String>> pairs = <List<String>>[
+      for (final SrsLapisFieldCandidate c in owners.values)
+        for (final SrsFieldDef f in to.fields)
+          if (_fillsTarget(_targetKey(profileUid, to, f), c, f))
+            <String>[
+              SrsFieldKeys.noteField(c.field.id),
+              SrsFieldKeys.noteField(f.id),
+            ],
+    ];
+    if (pairs.isEmpty || (noteIds != null && noteIds.isEmpty)) {
+      return <String>{};
+    }
+    // pairs 物化成临时表；`e.field_key IN (SELECT src FROM pairs)` 让 SQLite 建临时索引 + 布隆
+    // 过滤，逐条修改记录 O(1) 判「是不是旧 Lapis 字段」，命中的才去配 pairs、探目标字段。CROSS JOIN
+    // 钉住连接顺序（笔记 → 它的修改记录 → pairs）：不钉时规划器会把 pairs 放进最内层、对每条修改
+    // 记录扫一遍全部 pairs，1 万条笔记慢 15 倍（实测 530ms vs 35ms）。
+    const String pairsCte =
+        'WITH pairs(src, dst) AS MATERIALIZED ('
+        "SELECT json_extract(value, '\$[0]'), json_extract(value, '\$[1]') "
+        'FROM json_each(?)) ';
+    const String hit =
+        'e.field_key IN (SELECT src FROM pairs) '
+        "AND json_type(e.json, '\$.v') = 'text' "
+        "AND trim(json_extract(e.json, '\$.v')) <> '' "
+        'AND NOT EXISTS (SELECT 1 FROM srs_field_edits d '
+        "WHERE d.entity_kind = 'note' AND d.entity_id = e.entity_id "
+        'AND d.field_key = p.dst)';
+    final List<QueryRow> rows = noteIds == null
+        ? await db
+              .customSelect(
+                '${pairsCte}SELECT DISTINCT n.id AS id FROM srs_notes_cache n '
+                "CROSS JOIN srs_field_edits e ON e.entity_kind = 'note' "
+                'AND e.entity_id = n.id '
+                'CROSS JOIN pairs p ON p.src = e.field_key '
+                'WHERE n.profile_uid = ? AND n.note_type_id = ? '
+                'AND n.deleted_at IS NULL AND $hit',
+                variables: <Variable<Object>>[
+                  Variable<String>(jsonEncode(pairs)),
+                  Variable<String>(profileUid),
+                  Variable<String>(to.id),
+                ],
+              )
+              .get()
+        : await db
+              .customSelect(
+                '${pairsCte}SELECT DISTINCT e.entity_id AS id '
+                'FROM json_each(?) ids '
+                "CROSS JOIN srs_field_edits e ON e.entity_kind = 'note' "
+                'AND e.entity_id = ids.value '
+                'CROSS JOIN pairs p ON p.src = e.field_key '
+                'WHERE $hit',
+                variables: <Variable<Object>>[
+                  Variable<String>(jsonEncode(pairs)),
+                  Variable<String>(jsonEncode(noteIds.toSet().toList())),
+                ],
+              )
+              .get();
+    return <String>{for (final QueryRow r in rows) r.read<String>('id')};
+  }
+
+  /// 迁移页入口的角标：可迁移的旧 Lapis 笔记数 + 需要补迁的笔记数。可迁移数按笔记缓存的当前
+  /// 类型在 SQL 里分组计数（不读回笔记 ID）；补迁数见 [previewLapisBackfill]（只物化候选）。
   Future<({int migratable, int backfill})> legacyLapisPendingCounts() async {
+    final Map<String, int> countByType = <String, int>{
+      for (final QueryRow r
+          in await db
+              .customSelect(
+                'SELECT note_type_id AS t, COUNT(*) AS c FROM srs_notes_cache '
+                'WHERE profile_uid = ? AND deleted_at IS NULL '
+                'GROUP BY note_type_id',
+                variables: <Variable<Object>>[Variable<String>(profileUid)],
+              )
+              .get())
+        r.read<String>('t'): r.read<int>('c'),
+    };
     int migratable = 0;
-    for (final SrsLegacyLapisSource s in await legacyLapisSources()) {
-      migratable += s.noteIds.length;
+    for (final SrsNoteTypeView t in await noteTypes()) {
+      if (srsDetectLapisVariant(t) == null) continue;
+      migratable += countByType[t.id] ?? 0;
     }
     return (
       migratable: migratable,
