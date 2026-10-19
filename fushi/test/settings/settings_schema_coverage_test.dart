@@ -419,9 +419,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 字幕——悬停（MouseRegion 的 onEnter/onExit）、点击、以及暂停 / 查词浮层触发的
   // 自动显形。harness 里没有真播放器、没有指针悬停、也没有查词浮层，无适用探针；
   // 由专项 widget 测试咬住四条显形来源与总闸的关系。
-  'video/Reveal when paused or hovered':
+  'video/Primary: reveal when paused or hovered':
       'test/media/video/video_subtitle_hide_hover_reveal_test.dart'
       '（悬停 / 点击 / 暂停 / 查词四条显形来源同属一个总闸）',
+  'video/Secondary: reveal when paused or hovered':
+      'test/media/video/video_subtitle_hide_hover_reveal_test.dart'
+      '（⑫ 主 / 副显形开关各管各的层）',
   // BUG-3314：暂停时识别画面文字的范围（所有视频 / 仅图片字幕 / 关闭）。写 prefsRepo
   // （changed=true），生效点在播放页暂停 OCR 覆盖层的识别门——要真播放器暂停、截帧
   // 与 OCR 引擎，harness 无适用探针；由专项测试咬住判据（图形字幕必识别、文字字幕在屏

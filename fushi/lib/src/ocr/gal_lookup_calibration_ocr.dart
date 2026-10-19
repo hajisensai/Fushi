@@ -17,6 +17,8 @@ import 'package:fushi/src/lookup/gal_lookup_calibration_image_fit.dart';
 import 'package:fushi/src/lookup/gal_lookup_calibration_preview.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_downloader.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';

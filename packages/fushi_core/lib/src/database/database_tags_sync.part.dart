@@ -1074,4 +1074,11 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
         dimension: Value(dimension),
         baseVersion: Value(baseVersion),
       ));
+
+  /// 删掉某资产某维度的基线行（无记录时无操作）。
+  Future<void> deleteSyncBaseline(String assetKey, String dimension) =>
+      (delete(syncBaselines)
+            ..where((t) =>
+                t.assetKey.equals(assetKey) & t.dimension.equals(dimension)))
+          .go();
 }

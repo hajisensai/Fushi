@@ -312,6 +312,85 @@ void main() {
       expect(await find('猫'), hasLength(1));
     });
 
+    test('canAddNotes(WithErrorDetail)：候选首字段整批一次规范化，结果与逐条请求一致', () async {
+      final List<List<String>> calls = <List<String>>[];
+      final AcHarness hc = await AcHarness.create(
+        dupeNormBatch: (List<String> fields) {
+          calls.add(List<String>.of(fields));
+          return srsDupeNormBatch(fields);
+        },
+      );
+      await hc.ok('createDeck', <String, Object?>{'deck': 'JP::Vocab'});
+      await hc.ok('addNote', <String, Object?>{
+        'note': yomitanNote('<b>猫</b>', deck: 'JP::Vocab'),
+      });
+      await hc.ok('addNote', <String, Object?>{'note': yomitanNote('犬')});
+      final List<Object?> notes = <Object?>[
+        yomitanStripped(yomitanNote('猫')), // 去 HTML 后重复
+        yomitanStripped(yomitanNote('  犬 ')), // trim 后重复
+        yomitanStripped(yomitanNote('鳥')), // 能加
+        yomitanStripped(yomitanNote('')), // 空
+        yomitanStripped(yomitanNote('<i></i>')), // 去 HTML 后空
+        yomitanStripped(yomitanNote('猫', deck: 'Other')), // 牌组不存在（不进规范化）
+        yomitanStripped(
+          yomitanNote('猫', deck: 'JP::Vocab', duplicateScope: 'deck'),
+        ), // 牌组范围内重复
+        yomitanStripped(
+          yomitanNote('犬', deck: 'JP::Vocab', duplicateScope: 'deck'),
+        ), // 重复的那条在别的牌组 → 能加
+        yomitanStripped(yomitanNote('猫', model: 'Nope')), // 模型不存在
+        'not a note', // 不是对象
+        yomitanStripped(yomitanNote('鳥')), // 同批里再来一条也能加（不和同批互判）
+      ];
+      // 逐条：每个候选单独一个请求（旧实现的口径：每条各自规范化一次）。
+      final List<Object?> single = <Object?>[
+        for (final Object? n in notes)
+          ((await hc.ok('canAddNotesWithErrorDetail', <String, Object?>{
+                    'notes': <Object?>[n],
+                  }))!
+                  as List)
+              .single,
+      ];
+      expect(single, <Object?>[
+        <String, Object?>{'canAdd': false, 'error': kSrsAnkiDuplicateError},
+        <String, Object?>{'canAdd': false, 'error': kSrsAnkiDuplicateError},
+        <String, Object?>{'canAdd': true},
+        <String, Object?>{'canAdd': false, 'error': kSrsAnkiEmptyError},
+        <String, Object?>{'canAdd': false, 'error': kSrsAnkiEmptyError},
+        <String, Object?>{
+          'canAdd': false,
+          'error': 'deck was not found: Other',
+        },
+        <String, Object?>{'canAdd': false, 'error': kSrsAnkiDuplicateError},
+        <String, Object?>{'canAdd': true},
+        <String, Object?>{
+          'canAdd': false,
+          'error': 'model was not found: Nope',
+        },
+        <String, Object?>{'canAdd': false, 'error': 'note must be an object'},
+        <String, Object?>{'canAdd': true},
+      ]);
+
+      calls.clear();
+      final List<Object?> batch =
+          (await hc.ok('canAddNotesWithErrorDetail', <String, Object?>{
+                'notes': notes,
+              }))!
+              as List;
+      expect(batch, single);
+      // 整个请求只跨一次 FFI：解析通过的 8 个候选首字段一批（库内旧笔记的规范形已缓存，不再算）。
+      expect(calls, <List<String>>[
+        <String>['猫', '  犬 ', '鳥', '', '<i></i>', '猫', '犬', '鳥'],
+      ]);
+
+      calls.clear();
+      expect(
+        await hc.ok('canAddNotes', <String, Object?>{'notes': notes}),
+        <bool>[for (final Object? d in single) (d! as Map)['canAdd']! as bool],
+      );
+      expect(calls, hasLength(1));
+    });
+
     test('查重范围：deck / deck-root / checkChildren / checkAllModels', () async {
       await h.ok('createDeck', <String, Object?>{'deck': 'JP::Vocab'});
       await h.ok('createDeck', <String, Object?>{'deck': 'JP::Grammar'});

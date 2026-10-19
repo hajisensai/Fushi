@@ -320,10 +320,8 @@ void main() {
 
     test('comment parser is real Dandanplay JSON parser, not a mocked core',
         () {
-      final List<VideoDanmakuItem> items = dandanplayCommentsToDanmaku(
-        <Map<String, dynamic>>[
-          <String, dynamic>{'p': '1.00,5,255,100', 'm': 'top'},
-        ],
+      final List<VideoDanmakuItem> items = parseDandanplayDanmakuJson(
+        '{"comments":[{"p":"1.00,5,255,100","m":"top"}]}',
         shiftMs: -500,
       );
 
@@ -331,6 +329,101 @@ void main() {
       expect(items.single.mode, VideoDanmakuMode.top);
       expect(items.single.colorArgb, 0xFF0000FF);
     });
+
+    // 在线弹幕解析与本地 sidecar 共用一份原生实现；旧实现（jsonDecode + 形状校验 +
+    // dandanplayCommentsToDanmaku）的状态分类必须原样保留。
+    test('online comments: malformed JSON lands in the catch branch', () async {
+      final DandanplayClient client = DandanplayClient(
+        httpClient: MockClient(
+          (_) async => http.Response('{"comments":[', 200),
+        ),
+      );
+
+      final DandanplayFetchResult result = await client.fetchCommentsForMatch(
+        const DandanplayMatch(episodeId: 42),
+      );
+
+      expect(result.status, DandanplayFetchStatus.serverError);
+      expect(result.items, isEmpty);
+      expect(result.error, isA<FormatException>());
+      final FormatException error = result.error! as FormatException;
+      expect(
+        error.message,
+        'Unexpected end of input',
+        reason: '与 jsonDecode 的 FormatException 文案、偏移一致',
+      );
+      expect(error.offset, 13);
+      expect(error.source, '{"comments":[');
+    });
+
+    test(
+      'online comments: wrong shape is serverError without an error object',
+      () async {
+        for (final String body in <String>[
+          '[]',
+          '{"comments":{}}',
+          '{"count":1}',
+          '"x"',
+        ]) {
+          final DandanplayClient client = DandanplayClient(
+            httpClient: MockClient((_) async => http.Response(body, 200)),
+          );
+
+          final DandanplayFetchResult result = await client
+              .fetchCommentsForMatch(const DandanplayMatch(episodeId: 42));
+
+          expect(
+            result.status,
+            DandanplayFetchStatus.serverError,
+            reason: body,
+          );
+          expect(result.error, isNull, reason: body);
+          expect(result.items, isEmpty, reason: body);
+        }
+      },
+    );
+
+    test(
+      'online comments: a non-finite number lands in the catch branch',
+      () async {
+        for (final (String body, double shift) in <(String, double)>[
+          ('{"comments":[{"m":"x","time":1,"color":1e400}]}', 0),
+          ('{"comments":[{"p":"Infinity,1,255","m":"x"}]}', 0),
+          ('{"comments":[]}', double.infinity),
+        ]) {
+          final DandanplayClient client = DandanplayClient(
+            httpClient: MockClient((_) async => http.Response(body, 200)),
+          );
+
+          final DandanplayFetchResult result = await client
+              .fetchCommentsForMatch(
+                DandanplayMatch(episodeId: 42, shiftSeconds: shift),
+              );
+
+          expect(
+            result.status,
+            DandanplayFetchStatus.serverError,
+            reason: body,
+          );
+          expect(result.error, isA<UnsupportedError>(), reason: body);
+          expect(
+            (result.error! as UnsupportedError).message,
+            'Infinity or NaN toInt',
+          );
+          expect(result.items, isEmpty, reason: body);
+        }
+        // 形状错误先于偏移换算：旧实现在形状校验处就返回，不抛。
+        final DandanplayClient shapeFirst = DandanplayClient(
+          httpClient: MockClient((_) async => http.Response('[]', 200)),
+        );
+        final DandanplayFetchResult result = await shapeFirst
+            .fetchCommentsForMatch(
+              const DandanplayMatch(episodeId: 42, shiftSeconds: double.nan),
+            );
+        expect(result.status, DandanplayFetchStatus.serverError);
+        expect(result.error, isNull);
+      },
+    );
 
     test('config base URL routes requests to a self-hosted mirror', () async {
       final File file = File(p.join(tempDir.path, 'Episode 05.mkv'));

@@ -74,7 +74,7 @@ bool _isBusy(SqliteException e) =>
 /// `data` is an mp3 (or opus when the file name ends in `.opus`) blob.
 ///
 /// Pure sqlite3 means one implementation covers Windows / macOS / Linux
-/// identically (sqlite3_flutter_libs provides the native library on all three).
+/// identically (package:sqlite3's build hook bundles the native library).
 class LocalAudioDb {
   const LocalAudioDb._();
 

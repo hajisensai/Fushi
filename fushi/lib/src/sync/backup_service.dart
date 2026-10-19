@@ -2334,14 +2334,13 @@ class BackupService {
       encoder.create(outputPath);
       try {
         final List<int> metaBytes = utf8.encode(metaJson);
-        encoder
-            .addArchiveFile(ArchiveFile(metaName, metaBytes.length, metaBytes));
+        encoder.addArchiveFile(nativeDeflatedArchiveFile(metaName, metaBytes));
         for (final MapEntry<String, String> entry
             in archivePathToSource.entries) {
           final File file = File(entry.value);
           if (!file.existsSync()) continue;
           final int size = file.lengthSync();
-          await encoder.addFile(file, entry.key, ZipFileEncoder.STORE);
+          addFileStored(encoder, file, entry.key);
           sendPort?.send(size);
         }
         encoder.closeSync();

@@ -273,7 +273,6 @@ void main() {
             alignStart: alignStart,
             contextBlurPx: 0,
             rowRadius: 16,
-            hoverFill: const Color(0x14FFFFFF),
           );
 
       test('vertical page caps the inline size and swaps cue spacing', () {

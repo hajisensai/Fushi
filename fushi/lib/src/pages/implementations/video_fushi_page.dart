@@ -95,6 +95,8 @@ import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
 import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
     show BlurayEncryptedStreamException;
 import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
+import 'package:fushi_engine/media/video/bluray/aacs_content_decoder.dart'
+    show AacsUnitDecryptException, AacsUnitFailure;
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:collection/collection.dart' show IterableExtension;
@@ -1536,7 +1538,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           fontSize: _videoControlTitleFontSize,
         );
 
-  Color _subtitleTextColor(ColorScheme cs) => cs.onSurface;
   Color _subtitleShadowColor(ColorScheme cs) => cs.shadow;
   // TODO-1059 方案A：字幕盒默认底色不再跟随主题 `surface`（浅色主题下近白 → 字幕
   // 背景泛白违和），改用固定半透明黑 [kDefaultSubtitleBackgroundColor]。仅当
@@ -10551,6 +10552,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _rebuild(() {});
   }
 
+  /// 副字幕「临时显形」开关，同 [_setVideoSubtitleObscureReveal]。
+  Future<void> _setVideoSecondarySubtitleObscureReveal(bool value) async {
+    await appModel.setVideoSecondarySubtitleObscureReveal(value);
+    if (!mounted) return;
+    _rebuild(() {});
+  }
+
   Future<void> _setVideoRespectAssStyle(bool value) async {
     await appModel.setVideoRespectAssStyle(value);
     if (!mounted) return;
@@ -10999,6 +11007,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onEnterSubtitleDelayBar: _enterSubtitleDelayBar,
       // TODO-1105：尊重 .ass 自带样式切换回调（持久化 + 重建让 overlay 即时生效）。
       onSubtitleObscureRevealChanged: _setVideoSubtitleObscureReveal,
+      onSecondarySubtitleObscureRevealChanged:
+          _setVideoSecondarySubtitleObscureReveal,
       onRespectAssStyleChanged: _setVideoRespectAssStyle,
       // 着色器/mpv 配置面板内嵌（不弹独立对话框）：着色器勾选 → 持久化启用集 +
       // 解析绝对路径 + 实时应用；mpv 配置即改即生效。
@@ -11471,6 +11481,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           t.video_bluray_config_invalid,
         AacsConfigurationError.missingConfiguration =>
           t.video_bluray_config_missing,
+      };
+    }
+    // 首个单元就解不开：数据坏了（全零 / 已被同一 key 解开过）直说是盘坏，只有无先例时
+    // 才提 KEYDB——那时数据本身分不清 key 错还是首单元坏，文案两种都说。
+    if (error is AacsUnitDecryptException) {
+      final String name = error.streamName ?? '';
+      final String offset = '${error.unitOffset}';
+      return switch (error.failure) {
+        AacsUnitFailure.corruptData => t.video_bluray_stream_corrupt(
+          name: name,
+          offset: offset,
+        ),
+        AacsUnitFailure.keyMismatchOrCorrupt =>
+          t.video_bluray_stream_undecryptable(name: name, offset: offset),
       };
     }
     // AACS 加密的蓝光码流：原因确定，libmpv 那边只会给黑屏不给错误。

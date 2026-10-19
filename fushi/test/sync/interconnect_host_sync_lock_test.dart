@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 
@@ -77,6 +78,67 @@ Future<void> _holdLock(
     await release.future;
   }));
   return acquired.future;
+}
+
+
+/// 进度 / 位置 PUT 的存在性闸门要求 host 已有该条目：书、视频、有声书各一行。
+Future<void> _seedProgressTargets(FushiDatabase db) async {
+  await db.insertEpubBook(EpubBooksCompanion.insert(
+    bookKey: 'book-a',
+    title: 'book-a',
+    epubPath: '/tmp/book-a.epub',
+    extractDir: '/tmp/book-a',
+    chapterCount: 3,
+    chaptersJson: '["ch1","ch2","ch3"]',
+    importedAt: 1700000000000,
+  ));
+  await db.upsertVideoBook(VideoBooksCompanion.insert(
+    bookUid: 'video/a',
+    title: 'Video A',
+    videoPath: '/tmp/video-a.mp4',
+  ));
+  await db.upsertAudiobook(AudiobooksCompanion.insert(
+    bookKey: 'book-a',
+    alignmentFormat: 'srt',
+    alignmentPath: '/tmp/book-a.srt',
+  ));
+}
+
+/// 三条对端进度 / 位置写（时间戳取当前时刻之前，避开 BUG-3367 的未来戳截断）。
+Map<String, Future<void> Function(LocalLibraryHostService host)> _progressPuts(
+  int at,
+) =>
+    <String, Future<void> Function(LocalLibraryHostService host)>{
+      'book progress': (LocalLibraryHostService host) => host.putBookProgress(
+            'book-a',
+            RemoteBookProgress(
+              sectionIndex: 2,
+              normCharOffset: 8700,
+              charOffset: 87,
+              updatedAtMs: at,
+            ),
+          ),
+      'video position': (LocalLibraryHostService host) =>
+          host.putVideoPosition('video/a', 125000, at),
+      'audiobook position': (LocalLibraryHostService host) =>
+          host.putAudiobookPosition('book-a', 64000, at),
+    };
+
+Future<bool> _progressLanded(
+  LocalLibraryHostService host,
+  String name,
+  int at,
+) async {
+  switch (name) {
+    case 'book progress':
+      final RemoteBookProgress p = await host.getBookProgress('book-a');
+      return p.normCharOffset == 8700 && p.updatedAtMs == at;
+    case 'video position':
+      return (await host.getVideoPosition('video/a')).positionMs == 125000;
+    case 'audiobook position':
+      return (await host.getAudiobookPosition('book-a')).positionMs == 64000;
+  }
+  throw ArgumentError(name);
 }
 
 void main() {
@@ -147,6 +209,45 @@ void main() {
       }
       expect(await _localChars(db), 300);
     });
+  });
+
+  group('对端进度 / 位置 PUT 不等 host 自己的整轮同步', () {
+    // 手机推进度 → 电脑正跑一轮自动同步（含云备份）→ PUT 排在整轮锁后面，手机
+    // 15s 判超时；电脑放锁后照样落库，手机却没记下「已对齐」，下一轮误报冲突。
+    final int at = DateTime.now().millisecondsSinceEpoch - 60000;
+    for (final MapEntry<String, Future<void> Function(LocalLibraryHostService)>
+        put in _progressPuts(at).entries) {
+      test('整轮同步锁被占住时，${put.key} PUT 立即落库', () async {
+        await _seedProgressTargets(db);
+        final LocalLibraryHostService host = _appWiredHost(db);
+        final Completer<void> release = Completer<void>();
+        await _holdLock(runExclusiveWithSync, release);
+        try {
+          await put.value(host).timeout(_prompt);
+          expect(await _progressLanded(host, put.key, at), isTrue);
+        } finally {
+          release.complete();
+        }
+      });
+
+      test('窄锁被本地落库占住时，${put.key} PUT 等它放锁再写', () async {
+        await _seedProgressTargets(db);
+        final LocalLibraryHostService host = _appWiredHost(db);
+        final Completer<void> release = Completer<void>();
+        await _holdLock(runExclusiveWithSyncStateApply, release);
+        bool done = false;
+        final Future<void> write = put.value(host).then((_) => done = true);
+        try {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          expect(done, isFalse, reason: '读-比较-写必须整段在窄锁内');
+        } finally {
+          // 窄锁是进程级单例：断言失败也得放锁，否则后续用例全被连带卡死。
+          release.complete();
+        }
+        await write.timeout(_prompt);
+        expect(await _progressLanded(host, put.key, at), isTrue);
+      });
+    }
   });
 
   group('对端写与本机落库仍互斥、不丢更新', () {

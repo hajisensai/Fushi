@@ -31,7 +31,6 @@ dependencies:
       ref: 0c5878a856be72c7439f166a3144c0c4c6a998a7
   archive: ^3.6.1
   async_zip: ^0.1.0
-  basic_utils: ^5.7.0
   audio_service: ^0.18.9
   audio_session: ^0.1.13
   cached_network_image: ^3.4.1
@@ -82,6 +81,8 @@ dependencies:
     path: ../packages/fushi_anki
   fushi_srs:
     path: ../packages/fushi_srs
+  fushi_compute:
+    path: ../packages/fushi_compute
   # 网页广告 / 跟踪拦截（adblock-rust FFI + 过滤列表管理），WebView 接线在 lib/src/web_adblock/。
   fushi_web_core:
     path: ../packages/fushi_web_core
@@ -123,7 +124,6 @@ dependencies:
   flutter_staggered_grid_view: ^0.7.0
   fluttertoast: ^8.2.1
   drift: ">=2.33.0 <2.34.0"
-  sqlite3_flutter_libs: ^0.5.28
   sqlite3: ">=3.4.0 <4.0.0"
   ffi: ^2.1.3
   gap: ^3.0.1
@@ -175,8 +175,6 @@ dependencies:
   ftpconnect: ^2.0.10
   dartssh2: ^2.9.0
   crypto: ^3.0.0
-  # BUG-2514：comico magazine_comic 根 URL 的 AES-CBC 解密（basic_utils 已带入，这里只是显式声明）。
-  pointycastle: ^3.9.1
   meta: ^1.9.0
   transparent_image: ^2.0.1
   url_launcher: ^6.0.20
@@ -189,7 +187,6 @@ dependencies:
   # lib/src/feedback/feedback_reply_background.dart）。桌面不用它（运行中定时检查）。
   workmanager: ^0.10.10
   record: 6.0.0
-  brotli: ^0.6.0
   bonsoir: ^7.1.1
   media_kit: ^1.2.6
   media_kit_video: ^2.0.1
@@ -262,6 +259,8 @@ flutter:
     - assets/gamepad/switch/
     - assets/fonts/
     - assets/licenses/
+    # 原生依赖（Rust crate + C/C++ 库）许可汇编，tool/native_licenses.dart 生成。
+    - assets/licenses/native/
     # 小说在线源（LNReader 插件）宿主：lnreader_libs.js 由 tool/lnreader/ 重建。
     - assets/lnreader/
     - assets/meta/

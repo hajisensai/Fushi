@@ -10,8 +10,7 @@ void main() {
     expect(s.textColor, const Color(0xFFFFFFFF));
     expect(s.shadowColor, const Color(0xE6000000));
     // 显式白/黑@0.9：resolve 时即便给了主题色也不被它覆盖。
-    expect(
-        s.resolveTextColor(const Color(0xFF112233)), const Color(0xFFFFFFFF));
+    expect(s.resolveTextColor(), const Color(0xFFFFFFFF));
     expect(
       s.resolveShadowColor(const Color(0xFF112233)),
       const Color(0xE6000000),
@@ -59,8 +58,11 @@ void main() {
     expect(s.resolveShadowThickness(0.01), closeTo(0.9, 1e-9));
   });
 
-  test('null color still means follow the active theme (legacy data)', () {
-    // 旧数据（TODO-051 前默认）持久化时颜色为 null = 跟随主题；resolve 仍回退主题色。
+  test('null text color resolves to fixed white; shadow/background use fallback',
+      () {
+    // 旧数据（TODO-051 前默认）持久化时颜色为 null。文字色**不再跟随主题**（#2312：
+    // 浅色主题下黑字压画面、主题随系统切换时字幕忽白忽黑），恒解析为固定白；
+    // 阴影 / 背景仍按调用方给的回退色。
     const VideoSubtitleStyle s = VideoSubtitleStyle(
       fontSize: 36,
       textColor: null,
@@ -73,15 +75,15 @@ void main() {
     );
     const Color themeColor = Color(0xFF112233);
 
-    expect(s.resolveTextColor(themeColor), themeColor);
+    expect(s.resolveTextColor(), kDefaultSubtitleTextColor);
     expect(s.resolveShadowColor(themeColor), themeColor);
     expect(s.resolveBackgroundColor(themeColor), themeColor);
   });
 
-  test('decode of pre-TODO-051 stored data keeps theme-following (back-compat)',
+  test('decode of pre-TODO-051 stored data keeps null; text resolves to white',
       () {
-    // 旧版本持久化的就是「跟随主题」的 defaults：textColor/shadowColor 为 null。
-    // 这类老 JSON 反序列化后颜色必须仍是 null（不被新白/黑默认污染），保住旧外观。
+    // 旧版本持久化的 defaults：textColor/shadowColor 为 null。反序列化后仍是 null
+    // （持久化值不被改写）；文字色解析为固定白（#2312），阴影仍跟随回退色。
     final VideoSubtitleStyle s = VideoSubtitleStyle.decode(
       '{"_v":2,"fontSize":36,"textColor":null,"shadowColor":null,'
       '"backgroundOpacity":0,"bottomPadding":75}',
@@ -89,7 +91,7 @@ void main() {
     expect(s.textColor, isNull);
     expect(s.shadowColor, isNull);
     const Color themeColor = Color(0xFF445566);
-    expect(s.resolveTextColor(themeColor), themeColor);
+    expect(s.resolveTextColor(), const Color(0xFFFFFFFF));
     expect(s.resolveShadowColor(themeColor), themeColor);
   });
 
@@ -102,8 +104,7 @@ void main() {
     expect(back.textColor, const Color(0xFFFFFFFF));
     expect(back.shadowColor, const Color(0xE6000000));
     // resolve 给主题色也不被覆盖（仍是显式白 / 黑@0.9）。
-    expect(back.resolveTextColor(const Color(0xFF112233)),
-        const Color(0xFFFFFFFF));
+    expect(back.resolveTextColor(), const Color(0xFFFFFFFF));
     expect(back.resolveShadowColor(const Color(0xFF112233)),
         const Color(0xE6000000));
   });

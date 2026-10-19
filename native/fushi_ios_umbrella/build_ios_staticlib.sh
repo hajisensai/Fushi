@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# iOS 伞形静态库 libfushi_ios_umbrella.a（fushi_p2p + fushi_fsrs + fushi_web_core 合一）+ 给
-# Runner 链接用的 xcconfig 片段。
+# iOS 伞形静态库 libfushi_ios_umbrella.a（fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core
+# 合一）+ 给 Runner 链接用的 xcconfig 片段。
 #
 # 为什么要伞形：每个 Rust staticlib 都带一整份 Rust std，libfushi_p2p.a / libfushi_fsrs.a /
-# libfushi_web_core.a 同时 -force_load 进 Runner 会撞重复符号。合成一个 crate 编译，std 只有
-# 一份，同时导出 fp2p_* / ffsrs_* / fwc_*（Dart 各侧都用 `DynamicLibrary.process()` 取符号）。
+# libfushi_compute.a / libfushi_web_core.a 同时 -force_load 进 Runner 会撞重复符号。合成一个
+# crate 编译，std 只有一份，同时导出 fp2p_* / ffsrs_* / ffc_* / fwc_*（Dart 各方都用
+# `DynamicLibrary.process()` 取符号）。
 #
 # 生成的 xcconfig 定义 FUSHI_IOS_NATIVE_LDFLAGS = -force_load <.a> + rustc 报的系统库。
 # fushi/ios 的 Flutter/{Debug,Release}.xcconfig `#include?` 这份 xcconfig，Runner 的
-# OTHER_LDFLAGS 用 $(FUSHI_IOS_NATIVE_LDFLAGS)。iOS 上**只**接这一份：fushi_p2p / fushi_fsrs
-# 各自的单独 .a 不能再同时接（同样会撞 std 重复符号）。
+# OTHER_LDFLAGS 用 $(FUSHI_IOS_NATIVE_LDFLAGS)。iOS 上**只**接这一份：fushi_p2p / fushi_fsrs /
+# fushi_compute 各自的单独 .a 不能再同时接（同样会撞 std 重复符号）。
 #
 # 用法: build_ios_staticlib.sh [device|simulator|all]   缺省 all
 #   device    : aarch64-apple-ios                        → prebuilt/ios/iphoneos/libfushi_ios_umbrella.a
@@ -61,20 +62,25 @@ build_target() {
   [[ -f "target/$target/release/$LIB" ]] || { echo "missing target/$target/release/$LIB" >&2; exit 1; }
 }
 
-# 归档必须同时导出各 Dart 绑定 lookup 的全部符号（期望集取自绑定文件的字面量）。
+# 归档必须同时导出各 Dart 绑定 lookup 的全部符号（期望集取自绑定的字面量）。
+# 每项 = 前缀:规模哨兵下界:绑定文件或目录（目录递归扫其中所有 .dart，fushi_compute 各域分文件）。
+# 下界与各 crate 自己的 verify_abi.sh 保持一致。
 verify_archive() {
-  local archive="$1" prefix bindings expected exported missing
+  local archive="$1" entry prefix rest min bindings expected exported missing
   # nm 的退出码不作数：rustc 的 compiler_builtins 成员是 bitcode，Xcode 自带 nm 的 LLVM 比
   # rustc 的旧时读不了（"Unknown attribute kind"）、整体退出 1，pipefail 下脚本会静默挂掉。
-  # 那些成员里没有 fp2p_* / ffsrs_*；真正的门是下面的「期望符号一个不缺」。
+  # 那些成员里没有 fp2p_* / ffsrs_* / ffc_*；真正的门是下面的「期望符号一个不缺」。
   exported="$({ nm -gU "$archive" 2>/dev/null || true; } | awk 'NF >= 2 { print $NF }' | sed 's/^_//' | sort -u)"
-  for pair in "fp2p:$SCRIPT_DIR/../../packages/fushi_p2p/lib/src/ffi/fushi_p2p_bindings.dart" \
-              "ffsrs:$SCRIPT_DIR/../../packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart" \
-              "fwc:$SCRIPT_DIR/../../packages/fushi_web_core/lib/src/ffi/fushi_web_core_bindings.dart"; do
-    prefix="${pair%%:*}"
-    bindings="${pair#*:}"
-    expected="$(grep -oE "'${prefix}_[a-z0-9_]+'" "$bindings" | tr -d "'" | sort -u)"
-    [[ "$(echo "$expected" | grep -c .)" -ge 6 ]] || { echo "::error::expected ${prefix}_* set collapsed (<6)" >&2; exit 1; }
+  for entry in "fp2p:6:$SCRIPT_DIR/../../packages/fushi_p2p/lib/src/ffi/fushi_p2p_bindings.dart" \
+               "ffsrs:6:$SCRIPT_DIR/../../packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart" \
+               "ffc:2:$SCRIPT_DIR/../../packages/fushi_compute/lib" \
+               "fwc:6:$SCRIPT_DIR/../../packages/fushi_web_core/lib/src/ffi/fushi_web_core_bindings.dart"; do
+    prefix="${entry%%:*}"
+    rest="${entry#*:}"
+    min="${rest%%:*}"
+    bindings="${rest#*:}"
+    expected="$({ grep -rhoE --include='*.dart' "'${prefix}_[a-z0-9_]+'" "$bindings" || true; } | tr -d "'" | sort -u)"
+    [[ "$(echo "$expected" | grep -c .)" -ge "$min" ]] || { echo "::error::expected ${prefix}_* set collapsed (<$min)" >&2; exit 1; }
     missing="$(comm -23 <(echo "$expected") <(echo "$exported"))"
     if [[ -n "$missing" ]]; then
       echo "::error title=iOS umbrella symbols missing::$archive 没有导出：$(echo "$missing" | tr '\n' ' ')" >&2

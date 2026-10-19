@@ -48,30 +48,37 @@ class SrsStatsIndex {
     };
   }
 
-  /// 命中 Anki 搜索语法的卡；语法不支持 / 不合法时抛 [SrsSearchUnsupported]。
+  /// 搜索求值对象（有笔记与笔记类型的卡），第一次筛选时建，之后的筛选复用。
+  late final List<SrsCardSearchSubject> _subjects = () {
+    final int today = day.dayIndexOf(nowMs);
+    final Map<String, String> deckNames = <String, String>{};
+    return <SrsCardSearchSubject>[
+      for (final SrsCardCacheRow c in cards)
+        if (notes[c.noteId] case final SrsNoteView n)
+          if (noteTypes[n.noteTypeId] case final SrsNoteTypeView t)
+            SrsCardSearchSubject(
+              note: n,
+              noteType: t,
+              card: c,
+              deckName: deckNames[c.deckId] ??= tree[c.deckId] == null
+                  ? ''
+                  : tree.fullName(c.deckId),
+              day: day,
+              nowMs: nowMs,
+              todayDayIndex: today,
+            ),
+    ];
+  }();
+
+  late final SrsSearchCorpus _corpus = SrsSearchCorpus(_subjects);
+
+  /// 命中 Anki 搜索语法的卡；语法不支持 / 不合法、原生内核不可用时抛 [SrsSearchUnsupported]。
   Set<String> cardIdsMatching(String query) {
     final SrsSearchNode node = parseAnkiSearch(query);
-    final int today = day.dayIndexOf(nowMs);
-    final Set<String> out = <String>{};
-    for (final SrsCardCacheRow c in cards) {
-      final SrsNoteView? n = notes[c.noteId];
-      if (n == null) continue;
-      final SrsNoteTypeView? t = noteTypes[n.noteTypeId];
-      if (t == null) continue;
-      final SrsCardSearchSubject subject = SrsCardSearchSubject(
-        note: n,
-        noteType: t,
-        card: c,
-        deckName: tree[c.deckId] == null ? '' : tree.fullName(c.deckId),
-        day: day,
-        nowMs: nowMs,
-        todayDayIndex: today,
-      );
-      if (matchesAnkiSearch(node, subject)) {
-        out.add(c.id);
-      }
-    }
-    return out;
+    return <String>{
+      for (final int i in _corpus.match(node, query: query))
+        _subjects[i].card.id,
+    };
   }
 }
 
@@ -153,32 +160,66 @@ Future<SrsStatsBundle> loadSrsStats(
     if (++processed % 1000 == 0) await Future<void>.delayed(Duration.zero);
   }
 
-  final List<SrsStatCard> cards = <SrsStatCard>[];
-  for (int i = 0; i < cardRows.length; i++) {
+  final int cardCount = cardRows.length;
+  final List<SrsStatCardState> states = List<SrsStatCardState>.filled(
+    cardCount,
+    SrsStatCardState.newCard,
+  );
+  final List<SrsMemory?> memories = List<SrsMemory?>.filled(cardCount, null);
+  final List<double?> retrievability = List<double?>.filled(cardCount, null);
+  // 可提取度按排程配置分组，每组一次批量调用（逐张走 FFI 时编码开销占大头）。
+  final Map<SrsSchedulingConfig, _RetrievabilityGroup> groups =
+      Map<SrsSchedulingConfig, _RetrievabilityGroup>.identity();
+  for (int i = 0; i < cardCount; i++) {
     final SrsCardCacheRow c = cardRows[i];
     final SrsStatCardState state = srsStatCardStateOf(c.queue, c.scheduledDays);
-    final SrsSchedulingConfig config = configOf(c.deckId);
     final SrsMemory? memory =
         memoryByCard[c.id] ??
         (c.stability != null && c.difficulty != null
             ? SrsMemory(stability: c.stability!, difficulty: c.difficulty!)
             : null);
-    double? r;
+    states[i] = state;
+    memories[i] = memory;
     if (engine != null &&
         memory != null &&
         state != SrsStatCardState.newCard &&
         c.lastReviewedAt != null) {
-      try {
-        r = engine.retrievability(
-          algorithm: config.algorithm,
-          params: config.params,
-          memory: memory,
-          elapsedDays: math.max(0, now - c.lastReviewedAt!) / 86400000,
-        );
-      } on SrsFsrsException {
-        r = null;
-      }
+      (groups[configOf(c.deckId)] ??= _RetrievabilityGroup()).add(
+        i,
+        memory,
+        math.max(0, now - c.lastReviewedAt!) / 86400000,
+      );
     }
+  }
+  if (engine != null) {
+    for (final MapEntry<SrsSchedulingConfig, _RetrievabilityGroup> e
+        in groups.entries) {
+      final _RetrievabilityGroup g = e.value;
+      try {
+        final List<double> r = srsRetrievabilityBatch(
+          engine,
+          algorithm: e.key.algorithm,
+          params: e.key.params,
+          memories: g.memories,
+          elapsedDays: g.elapsedDays,
+        );
+        for (int k = 0; k < r.length; k++) {
+          retrievability[g.indices[k]] = r[k];
+        }
+      } on SrsFsrsException {
+        // 整组参数不可用：这组卡的可提取度留空（与逐张失败时一致）。
+      }
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  final List<SrsStatCard> cards = <SrsStatCard>[];
+  for (int i = 0; i < cardCount; i++) {
+    final SrsCardCacheRow c = cardRows[i];
+    final SrsStatCardState state = states[i];
+    final SrsSchedulingConfig config = configOf(c.deckId);
+    final SrsMemory? memory = memories[i];
+    final double? r = retrievability[i];
     final SrsNoteCacheRow? n = noteCache[c.noteId];
     cards.add(
       SrsStatCard(
@@ -226,4 +267,17 @@ Future<SrsStatsBundle> loadSrsStats(
       nowMs: now,
     ),
   );
+}
+
+/// 同一排程配置下待算可提取度的卡：[indices] 是在卡片列表里的下标。
+class _RetrievabilityGroup {
+  final List<int> indices = <int>[];
+  final List<SrsMemory> memories = <SrsMemory>[];
+  final List<double> elapsedDays = <double>[];
+
+  void add(int index, SrsMemory memory, double elapsed) {
+    indices.add(index);
+    memories.add(memory);
+    elapsedDays.add(elapsed);
+  }
 }

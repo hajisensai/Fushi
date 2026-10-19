@@ -22,9 +22,7 @@ library;
 
 import 'package:flutter/foundation.dart';
 
-import 'package:fushi/src/models/prerelease_only_capability.dart';
 import 'package:fushi/src/models/store_compliance.dart';
-import 'package:fushi/src/utils/misc/build_version.dart';
 
 /// 一个可被用户整体关闭的功能模块。
 ///
@@ -71,9 +69,6 @@ enum ModuleId {
   /// .settleSrsMiningTargetInstallDefault` 一次性显式写成关（老用户不提醒：自己去设置
   /// 打开才看得到）。新手引导不提供它的方格，由「复习方式」一步写入（选 Fushi 复习 =
   /// 开，见 `onboarding_steps.dart` 的 `OnboardingReviewMethod`）。
-  ///
-  /// **正式版构建里不存在**（用户 2026-10-16 拍板「正式版屏蔽 SRS」）：只在
-  /// debug / beta 预发布与本地构建里提供，判据见 [PrereleaseOnlyCapability.srs]。
   srs('module_srs_enabled'),
 
   /// 浏览器：app 内浏览网站（通用浏览、网页视频站点、网页漫画）+ 浏览器扩展管理页
@@ -132,18 +127,11 @@ enum ModuleId {
   ///
   /// [isAndroid] 目前没有模块按它区分（串流接收端已覆盖全部平台，见
   /// [GamesModuleForm]）；保留它让调用方始终给出完整的平台元组。
-  ///
-  /// [buildVersionDefine] 是构建通道这条正交边界（见 [PrereleaseOnlyCapability]）
-  /// 的输入：构建期注入的 `FUSHI_BUILD_VERSION` 原值，缺省就取本构建的编译期常量，
-  /// 所以每个调用方（设置开关、新手引导、桌面控制通道、[ModuleVisibility.resolve]）
-  /// 不必各自读版本也一律生效；测试显式传值断言各通道的结论。与
-  /// `resolveCurrentAppVersion` 的 `runningCodeVersionDefine` 同一种注入形状。
   bool availableOn({
     required bool isWindows,
     required bool isDesktop,
     required bool isIOS,
     required bool isAndroid,
-    String buildVersionDefine = kFushiBuildVersionDefine,
   }) => switch (this) {
     // 每个平台都有 games 模块，只是形态不同（见 [GamesModuleForm.on]）。
     ModuleId.games => true,
@@ -152,11 +140,6 @@ enum ModuleId {
     // 仍各自再问对应的 [StoreRestrictedCapability]，两处若各判各的就会分头漂移。
     ModuleId.browse => StoreRestrictedCapability.downloads.availableOn(
       isIOS: isIOS,
-    ),
-    // 复习不是 App Store 受限能力（纯本地数据 + 用户自己的同步后端），五端都有；
-    // 但正式版构建里整体缺席。判据委托给构建通道的唯一真相源，这里不解析版本串。
-    ModuleId.srs => PrereleaseOnlyCapability.srs.availableFor(
-      buildVersion: normalizeFushiBuildVersion(buildVersionDefine),
     ),
     // 通用 app 内浏览器不属于 App Store 受限能力（受限的在线漫画源动作由子页自己问
     // [StoreRestrictedCapability.onlineMangaSource]）；浏览器扩展子页另按
@@ -167,6 +150,8 @@ enum ModuleId {
     ModuleId.manga ||
     ModuleId.video ||
     ModuleId.lookup ||
+    // 复习不是 App Store 受限能力（纯本地数据 + 用户自己的同步后端），五端都有。
+    ModuleId.srs ||
     ModuleId.listening ||
     ModuleId.cardCreation ||
     ModuleId.services ||
@@ -306,14 +291,12 @@ class ModuleVisibility {
     required bool isDesktop,
     required bool isIOS,
     required bool isAndroid,
-    String buildVersionDefine = kFushiBuildVersionDefine,
   }) => ModuleVisibility.resolve(
     prefOf: (ModuleId _) => true,
     isWindows: isWindows,
     isDesktop: isDesktop,
     isIOS: isIOS,
     isAndroid: isAndroid,
-    buildVersionDefine: buildVersionDefine,
   );
 
   /// 把「每个模块的 pref 真值」与平台判据合成为可见集合。
@@ -321,8 +304,7 @@ class ModuleVisibility {
   /// [prefOf] 只回答用户意愿（开关存的 bool）；平台可用性由
   /// [ModuleId.availableOn] 负责。调用方**不得**再自己叠平台条件 —— 那正是
   /// 旧实现里 `Platform.isWindows && appModel.moduleGamesEnabled` 抄两遍、
-  /// 漏一遍的成因。构建通道同理（正式版里复习不存在，即使 pref 开着）：
-  /// [buildVersionDefine] 缺省取本构建常量，原样转给 [ModuleId.availableOn]。
+  /// 漏一遍的成因。
   factory ModuleVisibility.resolve({
     required bool Function(ModuleId id) prefOf,
     required bool isWindows,
@@ -330,7 +312,6 @@ class ModuleVisibility {
     required bool isIOS,
     required bool isAndroid,
     List<ModuleId> order = const <ModuleId>[],
-    String buildVersionDefine = kFushiBuildVersionDefine,
   }) {
     final Set<ModuleId> enabled = <ModuleId>{};
     for (final ModuleId id in ModuleId.values) {
@@ -339,7 +320,6 @@ class ModuleVisibility {
         isDesktop: isDesktop,
         isIOS: isIOS,
         isAndroid: isAndroid,
-        buildVersionDefine: buildVersionDefine,
       )) {
         continue;
       }

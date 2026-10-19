@@ -33,10 +33,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
-import 'package:pointycastle/export.dart';
 
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteDownloadCancelled;
@@ -332,18 +332,12 @@ Uint8List hlsSequenceIv(int sequence) {
   return iv;
 }
 
-/// AES-128-CBC + PKCS7 解一个分片。
-Uint8List decryptHlsSegment(Uint8List data, Uint8List key, Uint8List iv) {
-  final PaddedBlockCipher cipher =
-      PaddedBlockCipherImpl(PKCS7Padding(), CBCBlockCipher(AESEngine()))..init(
-        false,
-        PaddedBlockCipherParameters<CipherParameters, CipherParameters?>(
-          ParametersWithIV<KeyParameter>(KeyParameter(key), iv),
-          null,
-        ),
-      );
-  return cipher.process(data);
-}
+/// AES-128-CBC + PKCS7 解一个分片（native/fushi_compute，整片一次 FFI 调用）。
+///
+/// 原生库是硬依赖：缺失时抛 [FushiComputeUnavailableError]。长度不是块长整数倍 /
+/// key、IV 长度非法 / 填充非法抛 [ArgumentError]（与原 pointycastle 实现同形态）。
+Uint8List decryptHlsSegment(Uint8List data, Uint8List key, Uint8List iv) =>
+    FushiComputeCrypto.instance.aesCbcPkcs7Decrypt(data, key, iv);
 
 /// 分片的真实媒体字节：图片伪装前缀剥掉（BUG-2609），其余原样。
 Uint8List unwrapHlsSegmentPayload(Uint8List bytes) {

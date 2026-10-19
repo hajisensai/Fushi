@@ -9,6 +9,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/browser_extension_test_page.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
 class _FakeLookup implements FushiRemoteLookupService {
   @override
@@ -101,8 +102,7 @@ void main() {
       server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
-        tokenizer: (String t) => <String>[t],
-        readingResolver: (String w) => '',
+        tokenizer: (String t) => <TokenizedSegment>[(text: t, reading: '')],
         extensionTestPageProvider: provider,
         apiKey: apiKey,
       );

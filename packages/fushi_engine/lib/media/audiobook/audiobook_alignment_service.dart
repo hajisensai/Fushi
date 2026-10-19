@@ -86,7 +86,7 @@ class AudiobookAlignmentMessages {
 /// （probe / matcher）与 [SasayakiRematch]（弹窗 probe / 重跑）五个调用点共用；
 /// 解析异常由各调用方按自身语义 try/catch，此处不吞。
 /// 把转录产物旁边的逐 token 时间 sidecar 挂到从同一份 SRT 解析出来的 [cues] 上，
-/// 供匹配后按正文句界重切（[resegmentCuesBySentence]）。
+/// 供匹配后按正文句界重切（[finalizeAlignedCues] 第 1 步）。
 ///
 /// 一条都没挂上时返回 false。**四种情况都算没挂**：不是转录产物、sidecar 缺失、
 /// sidecar 读不动、**行数与 cue 数不符**。
@@ -146,7 +146,8 @@ String preferredTranscriptExportPath(String srtPath) {
 ///
 /// 1. 有逐 token 时间 → 命中 cue 按正文句界重切（cue 列表与匹配结果一起换新）；
 /// 2. 字幕是设备端转录产物 → 命中 cue 的听写文本换成正文原文（阅读器按 cue 文本
-///    在 DOM 里重定位，听写差会让高亮漂移；未命中的保留听写）；
+///    在 DOM 里重定位，听写差会让高亮漂移；未命中的保留听写），再把句界吸到转录时
+///    写下的能量包络的真实停顿上（`CueEnergySnapper`）；
 /// 3. 匹配结果编进 cue；
 /// 4. 转录产物把对齐后的 cue 另写成 [kAsrAlignedTranscriptFileName]，供「导出
 ///    SRT」优先拷——之前替换后的文本只活在 DB 里，用户导出拿到的永远是没标点的
@@ -156,6 +157,13 @@ String preferredTranscriptExportPath(String srtPath) {
 ///    （人物介绍页念的「趣味」）会被它在 2000 字窗口里匹配到后文、游标一跳过去，
 ///    其后整本正文全部失配（春物 2 卷整本 Hoshi 口径覆盖 3% → 只放命中 99.7%）。
 ///    未命中的 cue 写进 [kAsrSpeechTranscriptFileName]，DB 里照旧全部保留。
+///
+/// 1–2 步（整书重切的打包 / 编辑距离对齐 FFI / 结果组装、换正文、读能量包络与吸附）
+/// 整段放在一个后台 isolate 里跑（与匹配器的 `EpubCueMatcher.matchInIsolate` 同一种
+/// `Isolate.run`；fushi_compute 在工作 isolate 里按同一套规则自行加载），大书不在 UI
+/// isolate 上卡帧。cue 与匹配结果是纯数据，拷过去、算完经 `Isolate.exit` 交回：返回的
+/// cue 是新对象，调用方一律用返回值（对话框据此换掉自己持有的列表内容）。两步都不需要
+/// （不是转录产物、没有 token 时间）时不派发，原列表原样返回。
 Future<({List<AudioCue> cues, MatchResult result})> finalizeAlignedCues({
   required List<EpubSection> sections,
   required List<AudioCue> cues,
@@ -163,34 +171,30 @@ Future<({List<AudioCue> cues, MatchResult result})> finalizeAlignedCues({
   required String subtitlePath,
   required bool hasTokenTiming,
 }) async {
-  if (hasTokenTiming) {
-    final CueResegmentResult resegmented = resegmentCuesBySentence(
-      sections: sections,
-      cues: cues,
-      result: result,
-    );
-    cues = resegmented.cues;
-    result = resegmented.result;
-  }
   final bool asrGenerated = AsrTranscriptionService.isAsrGeneratedSubtitlePath(
     subtitlePath,
   );
-  if (asrGenerated) {
-    replaceMatchedCueTextWithBookText(
-      sections: sections,
-      cues: cues,
-      result: result,
-    );
-    // 句界吸到真实停顿上：转录时顺手写下的能量包络（旧任务没有就跳过）。
-    final Int8List? energy = readAsrEnergyTimeline(
-      Directory(p.dirname(subtitlePath)),
-    );
-    if (energy != null) {
-      const CueEnergySnapper snapper = CueEnergySnapper();
-      final int moved = snapper.snap(cues, energy);
-      final int edges = snapper.refineEdges(cues, energy);
+  if (hasTokenTiming || asrGenerated) {
+    final AlignedCueComputation computed =
+        await _computeAlignedCuesInBackground(
+          AlignedCueRequest(
+            sections: sections,
+            cues: cues,
+            result: result,
+            subtitlePath: subtitlePath,
+            hasTokenTiming: hasTokenTiming,
+            asrGenerated: asrGenerated,
+          ),
+        );
+    debugLastAlignedCueIsolate = computed.isolateName;
+    cues = computed.cues;
+    result = computed.result;
+    final CueResegmentStats? stats = computed.resegmentStats;
+    if (stats != null) fushiDebugPrint('[fushi-import] resegment: $stats');
+    if (computed.snappedBoundaries != null) {
       fushiDebugPrint(
-        '[fushi-import] energy snap: $moved boundaries, $edges edges',
+        '[fushi-import] energy snap: ${computed.snappedBoundaries} '
+        'boundaries, ${computed.refinedEdges} edges',
       );
     }
   }
@@ -243,20 +247,114 @@ String serializeAudioCuesToSrt(List<AudioCue> cues) {
   return sb.toString();
 }
 
-/// 转录产物的命中 cue 按正文句界重切（见 `CueSentenceResegmenter`）；三个
-/// 匹配入口共用这一处，统计打进日志便于真机对照。
-CueResegmentResult resegmentCuesBySentence({
-  required List<EpubSection> sections,
-  required List<AudioCue> cues,
-  required MatchResult result,
-}) {
-  final CueResegmentResult out = const CueSentenceResegmenter().resegment(
-    sections: sections,
+/// [finalizeAlignedCues] 送进后台 isolate 的输入（全是可跨 isolate 拷贝的纯数据）。
+@visibleForTesting
+class AlignedCueRequest {
+  const AlignedCueRequest({
+    required this.sections,
+    required this.cues,
+    required this.result,
+    required this.subtitlePath,
+    required this.hasTokenTiming,
+    required this.asrGenerated,
+  });
+
+  final List<EpubSection> sections;
+  final List<AudioCue> cues;
+  final MatchResult result;
+
+  /// 转录产物 SRT 路径：能量包络在它的同目录。
+  final String subtitlePath;
+  final bool hasTokenTiming;
+  final bool asrGenerated;
+}
+
+/// 后台 isolate 算完交回的结果；日志由调用方 isolate 打（工作 isolate 里没有宿主装配的
+/// `fushiDebugPrint`）。
+@visibleForTesting
+class AlignedCueComputation {
+  const AlignedCueComputation({
+    required this.cues,
+    required this.result,
+    required this.isolateName,
+    this.resegmentStats,
+    this.snappedBoundaries,
+    this.refinedEdges,
+  });
+
+  final List<AudioCue> cues;
+  final MatchResult result;
+
+  /// 实际执行计算的 isolate 的 debugName（测试据此确认计算不在调用方 isolate 上）。
+  final String isolateName;
+
+  /// 做了重切时的统计。
+  final CueResegmentStats? resegmentStats;
+
+  /// 做了能量吸附时移动的句界数 / 修整的首尾数。
+  final int? snappedBoundaries;
+  final int? refinedEdges;
+}
+
+/// [finalizeAlignedCues] 的后台 isolate debugName。
+@visibleForTesting
+const String kAlignedCueIsolateName = 'fushi-aligned-cue-finish';
+
+/// 最近一次 [finalizeAlignedCues] 的重切 / 吸附实际在哪个 isolate 上跑（debugName）；
+/// 只给测试观测「计算经后台入口」用。
+@visibleForTesting
+String? debugLastAlignedCueIsolate;
+
+/// 单独成函数：交给 `Isolate.run` 的闭包只捕获 [request]，不把调用方的其它局部变量
+/// 一起拷过 isolate 边界。
+Future<AlignedCueComputation> _computeAlignedCuesInBackground(
+  AlignedCueRequest request,
+) => Isolate.run(
+  () => computeAlignedCues(request),
+  debugName: kAlignedCueIsolateName,
+);
+
+/// [finalizeAlignedCues] 第 1–2 步的计算本体（同步）：生产路径只在后台 isolate 里调它。
+/// 测试直接调用以对拍。
+@visibleForTesting
+AlignedCueComputation computeAlignedCues(AlignedCueRequest request) {
+  List<AudioCue> cues = request.cues;
+  MatchResult result = request.result;
+  CueResegmentStats? stats;
+  if (request.hasTokenTiming) {
+    // 转录产物的命中 cue 按正文句界重切（见 `CueSentenceResegmenter`）。
+    final CueResegmentResult resegmented = const CueSentenceResegmenter()
+        .resegment(sections: request.sections, cues: cues, result: result);
+    cues = resegmented.cues;
+    result = resegmented.result;
+    stats = resegmented.stats;
+  }
+  int? moved;
+  int? edges;
+  if (request.asrGenerated) {
+    replaceMatchedCueTextWithBookText(
+      sections: request.sections,
+      cues: cues,
+      result: result,
+    );
+    // 句界吸到真实停顿上：转录时顺手写下的能量包络（旧任务没有就跳过）。
+    final Int8List? energy = readAsrEnergyTimeline(
+      Directory(p.dirname(request.subtitlePath)),
+    );
+    if (energy != null) {
+      const CueEnergySnapper snapper = CueEnergySnapper();
+      moved = snapper.snap(cues, energy);
+      edges = snapper.refineEdges(cues, energy);
+    }
+  }
+  return AlignedCueComputation(
     cues: cues,
     result: result,
+    isolateName: Isolate.current.debugName ?? '',
+    resegmentStats: stats,
+    snappedBoundaries: moved,
+    refinedEdges: edges,
   );
-  fushiDebugPrint('[fushi-import] resegment: ${out.stats}');
-  return out;
 }
 
 List<EpubSection> epubSectionsFromExtractDir(String extractDir) {

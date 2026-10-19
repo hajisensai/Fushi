@@ -21,6 +21,7 @@ import 'package:fushi/src/srs/srs_fushi_card_fields.dart' show srsSoundNames;
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -62,6 +63,38 @@ Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
 }
 
 Finder _key(String k) => find.byKey(ValueKey<String>(k));
+
+/// 等一次「选图 / 粘贴 / 选音频」真正落地：字段编辑器把字节写进媒体目录（真 IO：
+/// exists → create → 写临时文件并 fsync → rename，每一步都要一轮 runAsync + pump 才能
+/// 往前走）后才把文件名写回字段、解除 busy、[addButtonKey] 按钮重新可点。磁盘慢时
+/// （CI 并发跑 suite、fsync 抖动）固定轮数会在写回前就点保存，字段里只剩旧值；所以按
+/// 可观察的完成信号等，超过上限直接失败，不静默往下走。
+Future<void> _settleMediaAdd(
+  WidgetTester tester,
+  String addButtonKey, {
+  int maxRounds = 400,
+}) => _settleUntil(
+  tester,
+  () =>
+      tester.widget<FushiOutlinedButton>(_key(addButtonKey)).onPressed != null,
+  '媒体写入（$addButtonKey 一直处于 busy）',
+  maxRounds: maxRounds,
+);
+
+/// 逐轮推进真异步，直到 [done] 成立；超过 [maxRounds] 轮直接失败。用于点完会触发
+/// 媒体 IO 的按钮之后：完成所需轮数取决于磁盘快慢，不能写死。
+Future<void> _settleUntil(
+  WidgetTester tester,
+  bool Function() done,
+  String what, {
+  int maxRounds = 400,
+}) async {
+  for (int i = 0; i < maxRounds; i++) {
+    await _settle(tester, rounds: 1);
+    if (done()) return;
+  }
+  fail('$what 在 $maxRounds 轮内没有完成');
+}
 
 EditableText _editable(WidgetTester tester, String key) =>
     tester.widget<EditableText>(
@@ -471,10 +504,10 @@ void main() {
         matching: find.byTooltip(t.srs_note_image_replace),
       ),
     );
-    await _settle(tester);
+    await _settleMediaAdd(tester, 'srs-image-paste-Picture');
     // 再粘贴一张（同内容去重，同一个文件名）。
     await tester.tap(_key('srs-image-paste-Picture'));
-    await _settle(tester);
+    await _settleMediaAdd(tester, 'srs-image-paste-Picture');
     expect(_key('srs-image-Picture-1'), findsOneWidget);
     await _save(tester);
 
@@ -516,7 +549,8 @@ void main() {
     expect(find.text('b.mp3'), findsOneWidget);
 
     await tester.tap(_key('srs-sound-play-ExpressionAudio-1'));
-    await _settle(tester);
+    // 播放前要先查文件在不在（真 IO），等播放器真被调用再断言。
+    await _settleUntil(tester, () => env.played.isNotEmpty, '播放 b.mp3');
     expect(env.played.single, endsWith('b.mp3'));
 
     await tester.tap(
@@ -528,7 +562,7 @@ void main() {
     await _settle(tester, rounds: 4);
     expect(find.text('a.mp3'), findsNothing);
     await tester.tap(_key('srs-sound-pick-ExpressionAudio'));
-    await _settle(tester);
+    await _settleMediaAdd(tester, 'srs-sound-pick-ExpressionAudio');
     await _save(tester);
     final String voiceName = SrsMediaStore.contentName('voice.MP3', voice);
     expect(

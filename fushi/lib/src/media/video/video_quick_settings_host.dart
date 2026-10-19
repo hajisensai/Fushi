@@ -60,6 +60,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.onEnterSubtitleDragAdjust,
     this.onEnterSubtitleDelayBar,
     this.onSubtitleObscureRevealChanged,
+    this.onSecondarySubtitleObscureRevealChanged,
     this.onRespectAssStyleChanged,
     required this.onAsbConfigChanged,
     required this.onMpvConfigChanged,
@@ -173,6 +174,10 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   /// 遮蔽态「悬停 / 点击临时显形」总闸的页面通道：写偏好 + 立刻重建 overlay。null =
   /// 无播放器场景（全局设置页），由 schema 直接写 [AppModel]。
   final Future<void> Function(bool value)? onSubtitleObscureRevealChanged;
+
+  /// 副字幕「临时显形」开关的页面通道，语义同 [onSubtitleObscureRevealChanged]。
+  final Future<void> Function(bool value)?
+      onSecondarySubtitleObscureRevealChanged;
   final Future<void> Function(bool value)? onRespectAssStyleChanged;
 
   // ── 手势/播放行为 JSON pref（页面持久化 + 即时生效）──────────────────────

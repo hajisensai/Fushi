@@ -17,6 +17,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
@@ -44,6 +45,7 @@ import 'package:fushi/src/mining/galgame_library_query.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/galgame_scrape_dialog.dart';
 import 'package:fushi/src/mining/galgame_scrape_controller.dart';
+import 'package:fushi/src/mining/metadata/adapters/dlsite_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/magpie_upscaling.dart';
 import 'package:fushi/src/mining/magpie_upscaling_prompt.dart';
@@ -488,10 +490,15 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           final GalgameEntry game = games[index];
           ScrapeBatchItemResult result;
           try {
-            final List<SourceCandidate> candidates =
-                (await controller.search(game.displayName)).candidates;
-            final SourceCandidate? candidate =
-                uniqueExactScrapeTitleMatch<SourceCandidate>(
+            // 名字 / 安装路径里认得出 DLsite 编号就按编号直取：编号是作品身份，
+            // 直取的唯一结果就是这一款，不需要再过标题精确匹配。
+            final DlsiteWorkId? dlsiteId = dlsiteWorkIdOfGalgame(game);
+            final List<SourceCandidate> candidates = (await controller
+                    .search(dlsiteId?.value ?? game.displayName))
+                .candidates;
+            final SourceCandidate? candidate = dlsiteId != null
+                ? (candidates.length == 1 ? candidates.single : null)
+                : uniqueExactScrapeTitleMatch<SourceCandidate>(
               query: game.displayName,
               candidates: candidates,
               titles: (SourceCandidate candidate) => <String>[

@@ -193,6 +193,10 @@ class ReaderContentStyles {
   /// 位置 = content-box 的中线（与 [columnWidthForColumns] 两栏几何同源：两栏等宽、
   /// 中间一个 column-gap，中线正好落在栏间隙中央）。阴影色取正文色按比例混入透明
   /// （深色主题自然变成浅色光晕），老 WebView 不支持 `color-mix` 时退回固定半透明黑。
+  ///
+  /// 阴影宽度 = 本次排版的栏间隙 [columnGapPx]（书本姿态加宽后的值同样适用）：阴影只
+  /// 落在两页之间的空白里，不叠到靠缝那一栏的正文上（固定 56px 时默认 22px 的栏间隙
+  /// 两侧各有 ~17px 渐变压字）。
   static String pageCreaseCss({
     required bool isVertical,
     required String shadeColor,
@@ -200,18 +204,19 @@ class ReaderContentStyles {
     required String marginBottomCss,
     required String marginLeftCss,
     required String marginRightCss,
+    required int columnGapPx,
   }) {
-    const int creaseWidthPx = 56;
+    final int creaseWidthPx = columnGapPx;
     final String direction = isVertical ? 'to bottom' : 'to right';
     final String placement = isVertical
         ? '''
   left: 0 !important; right: 0 !important;
   height: ${creaseWidthPx}px !important;
-  top: calc($marginTopCss + var(--chrome-top-inset, 0px) + (var(--reader-viewport-height, 100vh) - $marginTopCss - $marginBottomCss - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)) / 2 - ${creaseWidthPx ~/ 2}px) !important;'''
+  top: calc($marginTopCss + var(--chrome-top-inset, 0px) + (var(--reader-viewport-height, 100vh) - $marginTopCss - $marginBottomCss - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)) / 2 - ${creaseWidthPx / 2}px) !important;'''
         : '''
   top: 0 !important; bottom: 0 !important;
   width: ${creaseWidthPx}px !important;
-  left: calc($marginLeftCss + (var(--page-width, 100vw) - $marginLeftCss - $marginRightCss) / 2 - ${creaseWidthPx ~/ 2}px) !important;''';
+  left: calc($marginLeftCss + (var(--page-width, 100vw) - $marginLeftCss - $marginRightCss) / 2 - ${creaseWidthPx / 2}px) !important;''';
     String gradient(String soft, String deep) =>
         'linear-gradient($direction, transparent 0%, $soft 30%, $deep 50%, '
         '$soft 70%, transparent 100%)';
@@ -852,6 +857,7 @@ svg.block-img.blurred {
             marginBottomCss: marginBottomCss,
             marginLeftCss: marginLeftCss,
             marginRightCss: marginRightCss,
+            columnGapPx: columnGapPx,
           )
         : '';
 

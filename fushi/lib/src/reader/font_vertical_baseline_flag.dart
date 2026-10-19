@@ -4,7 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:fushi/src/models/woff2_decoder.dart';
+import 'package:fushi_compute/fushi_compute.dart' show FushiFont;
 
 /// [clearVerticalBaselineFlag] 的结果：下发的字节与（WOFF2 解码成 sfnt 时的）新 MIME。
 typedef VerticalBaselineFontResult = ({Uint8List data, String? mime});
@@ -214,7 +214,7 @@ bool _sfntHeadFlagSet(ByteData src, int length, int start) {
   }
   if (tag == _wOF2) {
     // WOFF2 的 head 永远在压缩流里，只能解码后看；没设这一位就原样下发 WOFF2。
-    final Uint8List? sfnt = Woff2Decoder.toSfnt(data);
+    final Uint8List? sfnt = FushiFont.instance.woff2ToSfnt(data);
     if (sfnt == null) return (data: data, mime: null);
     final Uint8List? out = _patchSfnt(sfnt, 0, wholeFontChecksum: true);
     if (out == null) return (data: data, mime: null);
@@ -261,10 +261,15 @@ Uint8List? _patchSfnt(
     if (wholeFontChecksum) dst.setUint32(offset + 8, 0);
     dst.setUint32(
       rec + 4,
-      _tableChecksum(out, offset, length, headTable: true),
+      FushiFont.instance.tableChecksum(
+        out,
+        offset: offset,
+        length: length,
+        headTable: true,
+      ),
     );
     if (wholeFontChecksum) {
-      final int sum = _tableChecksum(out, 0, out.length, headTable: false);
+      final int sum = FushiFont.instance.tableChecksum(out);
       dst.setUint32(offset + 8, (0xB1B0AFBA - sum) & 0xFFFFFFFF);
     }
     return out;
@@ -314,30 +319,14 @@ Uint8List? _patchWoff(Uint8List data) {
     dst.setUint16(offset + 16, flags & ~_flagBit);
     dst.setUint32(
       rec + 16,
-      _tableChecksum(out, offset, origLength, headTable: true),
+      FushiFont.instance.tableChecksum(
+        out,
+        offset: offset,
+        length: origLength,
+        headTable: true,
+      ),
     );
     return out;
   }
   return null;
-}
-
-/// OpenType 表校验和：按大端 uint32 求和（不足 4 字节补 0）。head 表计算时
-/// `checkSumAdjustment`（偏移 8）按 0 算。
-int _tableChecksum(
-  Uint8List data,
-  int offset,
-  int length, {
-  required bool headTable,
-}) {
-  int sum = 0;
-  final int end = offset + length;
-  for (int i = offset; i < end; i += 4) {
-    int word = 0;
-    for (int k = 0; k < 4; k++) {
-      word = (word << 8) | (i + k < end ? data[i + k] : 0);
-    }
-    if (headTable && i - offset == 8) word = 0;
-    sum = (sum + word) & 0xFFFFFFFF;
-  }
-  return sum;
 }

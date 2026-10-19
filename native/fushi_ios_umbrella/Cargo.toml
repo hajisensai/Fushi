@@ -4,14 +4,15 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 # 只是把三个 crate 打成一个归档；各自许可见 native/fushi_p2p（MIT OR Apache-2.0）、
-# native/fushi_fsrs（GPL-3.0-only；fsrs-rs BSD-3-Clause、ruzstd MIT）与 native/fushi_web_core
+# native/fushi_fsrs（GPL-3.0-only；fsrs-rs BSD-3-Clause、ruzstd MIT）、
+# native/fushi_compute（GPL-3.0-only；依赖只取 MIT / Apache-2.0 / BSD / Zlib）与 native/fushi_web_core
 # （MPL-2.0，含 Brave adblock-rust；MPL-2.0 允许作为「更大作品」的一部分与 GPL 代码合并分发）。
 license = "GPL-3.0-only"
 
-# iOS 伞形静态库：一个 staticlib 同时导出 fp2p_*（互联 P2P 隧道）、ffsrs_*（SRS 排程内核）与
-# fwc_*（网页广告拦截）。
+# iOS 伞形静态库：一个 staticlib 同时导出 fp2p_*（互联 P2P 隧道）、ffsrs_*（SRS 排程内核）、
+# ffc_*（计算内核：哈希 / 图像 / 文本）与 fwc_*（网页广告拦截）。
 #
-# 为什么不各链各的：每个 Rust staticlib 都自带一整份 std / core / alloc，两个 .a 同时
+# 为什么不各链各的：每个 Rust staticlib 都自带一整份 std / core / alloc，多个 .a 同时
 # -force_load 进 Runner 会撞重复符号；不 -force_load 又会被当无用成员丢掉。合成一个 crate
 # 编译，std 只有一份。见 native/fushi_fsrs/README.md「iOS」。
 [lib]
@@ -20,6 +21,7 @@ crate-type = ["staticlib"]
 [dependencies]
 fushi_p2p = { path = "../fushi_p2p" }
 fushi_fsrs = { path = "../fushi_fsrs" }
+fushi_compute = { path = "../fushi_compute" }
 fushi_web_core = { path = "../fushi_web_core" }
 
 [profile.release]
@@ -29,3 +31,28 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "unwind"
+
+# 编译期依赖（过程宏、build script）不 strip：新工具链的 macOS（实测 macOS 27.2 / Xcode 27.1 /
+# rustc 1.95）上，cargo strip 出来的 Mach-O dylib 加载即报「mis-aligned LINKEDIT string pool」，
+# 过程宏 dylib 坏掉后 rustc 报 E0463「can't find crate」，iOS / macOS / 在 Mac 上交叉编 Android
+# 都编不过。最终产物的 macOS strip 见 build_macos_dylib.sh。
+[profile.release.build-override]
+strip = false
+# 与 native/fushi_fsrs/Cargo.toml 同：Anki 搜索的热路径按速度编（依赖的 profile 在这里不生效）。
+[profile.release.package.fushi_fsrs]
+opt-level = 3
+[profile.release.package.regex-automata]
+opt-level = 3
+[profile.release.package.memchr]
+opt-level = 3
+[profile.release.package.aho-corasick]
+opt-level = 3
+# 计算内核吃 CPU，与它自己的 Cargo.toml 一致取 3（依赖 crate 的 [profile] 在这里不生效，
+# 只能由根 crate 按包覆盖）。注意 fat LTO 的合并后优化仍按根的 "s" 跑，这条只管 LTO 前
+# 的逐 crate 优化。
+[profile.release.package.fushi_compute]
+opt-level = 3
+
+# WOFF2 解码（fushi_compute/src/font.rs）的 Brotli 是热点，同样按 3 编。
+[profile.release.package.brotli-decompressor]
+opt-level = 3

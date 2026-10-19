@@ -74,6 +74,9 @@ class SrsCardSearchSubject implements SrsSearchSubject {
       : ankiStripHtml(note.field(noteType.fields.first.id)).trim();
 
   @override
+  Object get noteKey => note.id;
+
+  @override
   String get noteTypeName => noteType.name;
 
   @override
@@ -265,9 +268,22 @@ class SrsBrowseItem {
 class SrsBrowseSnapshot {
   SrsBrowseSnapshot._(this.cards, this.noteTypes);
 
+  /// 由现成的求值对象建快照（基准 / 测试用；生产走 [load]）。
+  factory SrsBrowseSnapshot.fromCards(
+    List<SrsCardSearchSubject> cards,
+    List<SrsNoteTypeView> noteTypes,
+  ) => SrsBrowseSnapshot._(cards, noteTypes);
+
   /// 未删除笔记的全部可见卡片（按笔记创建时刻、卡片序号）。
   final List<SrsCardSearchSubject> cards;
   final List<SrsNoteTypeView> noteTypes;
+
+  /// 搜索语料（第一次非空搜索时装进原生内核，快照内的后续搜索复用）。
+  SrsSearchCorpus? _corpusOrNull;
+  SrsSearchCorpus get _corpus => _corpusOrNull ??= SrsSearchCorpus(cards);
+
+  /// 释放搜索语料的原生内存（字段文本可达几百 MB）；之后不能再搜索。换快照时调。
+  void dispose() => _corpusOrNull?.dispose();
 
   static Future<SrsBrowseSnapshot> load(SrsDbStore store) async {
     final List<SrsNoteTypeView> types = await store.noteTypes();
@@ -320,6 +336,18 @@ class SrsBrowseSnapshot {
   }
 
   /// 按 Anki 搜索语法筛选、排序。查询不合法 / 不支持时抛 [SrsSearchUnsupported]。
+  /// 预先把 [query] 求值要的字段文本传进原生内核（文本量大时多 isolate 并行编码）：之后同一条
+  /// [query] 只剩求值。语法错误 / 内核不可用不在这里报（留给 [query] 抛，调用方只有一处要处理）。
+  Future<void> prepare(String query) async {
+    final SrsSearchNode node;
+    try {
+      node = parseAnkiSearch(query);
+      await _corpus.prepare(node, query: query);
+    } on SrsSearchUnsupported {
+      return;
+    }
+  }
+
   List<SrsBrowseItem> query({
     String query = '',
     SrsBrowseSort sort = const SrsBrowseSort(),
@@ -327,8 +355,7 @@ class SrsBrowseSnapshot {
   }) {
     final SrsSearchNode node = parseAnkiSearch(query);
     final List<SrsCardSearchSubject> hits = <SrsCardSearchSubject>[
-      for (final SrsCardSearchSubject c in cards)
-        if (matchesAnkiSearch(node, c)) c,
+      for (final int i in _corpus.match(node, query: query)) cards[i],
     ];
     final List<SrsBrowseItem> items;
     if (mode == SrsBrowseMode.cards) {

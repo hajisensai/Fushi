@@ -7,16 +7,14 @@
 ///
 /// ## 这是契约测试，不是实现测试
 ///
-/// 当前实现**没有**手写这套剥离逻辑：实测 Dart `HttpClient` 的
-/// `followRedirects` 自己就是这个语义（跨 origin 剥凭据、同 origin 保留）。
-/// 曾经在 `_openViaHttpClient` 里手写过一遍等价的重定向循环，变异测试证明它
-/// 与平台行为**逐字重合**（把 `followRedirects` 改回 true，这两条断言依然全绿），
-/// 于是删掉了——重复平台已经保证的东西只是多一份会漂移的代码。
+/// 它锁的是**结果**：跨 origin 不带凭据、同 origin 带。两条断言缺一不可——
+/// 只测「剥掉了」会让「同源也剥掉」这种把私有目录整个下不动的退化悄悄通过。
 ///
-/// 保留本文件的理由是它锁的是**结果**而不是实现：换成 `package:http` / dio
-/// （两者都会把 header 原样转发到重定向目标）会让第一条断言立刻变红。
-/// 两条断言缺一不可——只测「剥掉了」会让「同源也剥掉」这种把私有目录
-/// 整个下不动的退化悄悄通过。
+/// 曾经交给 Dart `HttpClient.followRedirects` 自动跟随（它跨 origin 会剥
+/// `Authorization` / `Cookie`）。但它只认 SDK 写死的那张清单：Komga 的
+/// `X-API-Key`（BUG-3521）不在其中，自动跟随会原样转发给第三方。所以
+/// `_openViaHttpClient` 改回逐跳手动跟随，`X-API-Key` 那两条断言正是钉这个的
+/// ——把 `followRedirects` 改回 true，跨 origin 那条会立刻变红。
 library;
 
 import 'dart:async';
@@ -77,10 +75,12 @@ void main() {
     addTearDown(() => target.close(force: true));
     unawaited(() async {
       await for (final HttpRequest request in target) {
-        received['authorization'] =
-            request.headers.value(HttpHeaders.authorizationHeader);
+        received['authorization'] = request.headers.value(
+          HttpHeaders.authorizationHeader,
+        );
         received['cookie'] = request.headers.value(HttpHeaders.cookieHeader);
         received['referer'] = request.headers.value('referer');
+        received['x-api-key'] = request.headers.value('x-api-key');
         request.response
           ..statusCode = 200
           ..headers.contentType = ContentType.binary
@@ -118,6 +118,7 @@ void main() {
       _item('http://127.0.0.1:${origin.port}/start', <String, String>{
         'Authorization': 'Basic c2VjcmV0',
         'Cookie': 'session=secret',
+        'X-API-Key': 'komga-key',
         'Referer': 'http://127.0.0.1:${origin.port}/',
       }),
       destinationDir: tempDir.path,
@@ -126,18 +127,30 @@ void main() {
     await _waitFor(
       () => queue.tasks.isNotEmpty && queue.tasks.single.isFinished,
     );
-    expect(queue.tasks.single.status, DiscoveryDownloadStatus.done,
-        reason: '下载本身必须成功——剥的是凭据，不是把请求打挂');
+    expect(
+      queue.tasks.single.status,
+      DiscoveryDownloadStatus.done,
+      reason: '下载本身必须成功——剥的是凭据，不是把请求打挂',
+    );
 
-    expect(received['authorization'], isNull,
-        reason: '用户的服务器密码绝不能被转发给第三方 origin');
+    expect(
+      received['authorization'],
+      isNull,
+      reason: '用户的服务器密码绝不能被转发给第三方 origin',
+    );
     expect(received['cookie'], isNull);
+    expect(
+      received['x-api-key'],
+      isNull,
+      reason: 'X-API-Key 不在 SDK 自动剥离清单里，必须由手动跟随剥掉（BUG-3521）',
+    );
     // Referer/UA 不是凭据，且恰恰是重定向后仍然需要的（防盗链）。
     expect(received['referer'], isNotNull, reason: '防盗链头不该被误伤');
   });
 
   test('同 origin 重定向保留 Authorization（否则私有目录根本下不动）', () async {
     String? seenAtFinal;
+    String? apiKeyAtFinal;
     final HttpServer server = await HttpServer.bind(
       InternetAddress.loopbackIPv4,
       0,
@@ -153,6 +166,7 @@ void main() {
           continue;
         }
         seenAtFinal = request.headers.value(HttpHeaders.authorizationHeader);
+        apiKeyAtFinal = request.headers.value('x-api-key');
         request.response
           ..statusCode = 200
           ..add(utf8.encode('epub-bytes'));
@@ -170,6 +184,7 @@ void main() {
     queue.enqueue(
       _item('http://127.0.0.1:${server.port}/start', <String, String>{
         'Authorization': 'Basic c2VjcmV0',
+        'X-API-Key': 'komga-key',
       }),
       destinationDir: tempDir.path,
     );
@@ -178,7 +193,11 @@ void main() {
       () => queue.tasks.isNotEmpty && queue.tasks.single.isFinished,
     );
     expect(queue.tasks.single.status, DiscoveryDownloadStatus.done);
-    expect(seenAtFinal, 'Basic c2VjcmV0',
-        reason: '同一台服务器内部的重定向必须继续带认证，否则私有 OPDS 目录下不动');
+    expect(apiKeyAtFinal, 'komga-key');
+    expect(
+      seenAtFinal,
+      'Basic c2VjcmV0',
+      reason: '同一台服务器内部的重定向必须继续带认证，否则私有 OPDS 目录下不动',
+    );
   });
 }

@@ -1,0 +1,489 @@
+BOOK synthetic chapters=234
+ch0 plain=e43450ab929d17c8/7 count=6 rubyText=true rubies=362881d299644abd/1 blockEnds=902ba3cda1883801/1 scene= imageOnly=true refs=../img/bg.png
+  anchors=p1=0
+ch1 plain=498afd4ec0f9ebcf/23 count=23 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=32ffcc09625b774c/4 scene=22 imageOnly=false refs=
+  anchors=
+ch2 plain=8bd662715d7bef95/7 count=7 rubyText=true rubies=3bb45d241a30cd35/3 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch3 plain=11edaa130ee77312/36 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=fc074d501302eb2b/1 scene= imageOnly=false refs=
+  anchors=
+ch4 plain=4f98320be4b1fde0/43 count=18 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=08b6d093217b813e/2 scene= imageOnly=false refs=
+  anchors=
+ch5 plain=9109e76c5ae052bd/53 count=13 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=98fbc42faedc0249/1 scene= imageOnly=false refs=
+  anchors=
+ch6 plain=58d61c510179858e/5 count=3 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=true refs=../image/p001.jpg|../image/p002.jpg
+  anchors=
+ch7 plain=3fbcfbb9d90aeeb4/5 count=5 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=3ecc5e014dd87224/2 scene= imageOnly=true refs=outside.png|a.png|../img/s1.png|x.png
+  anchors=
+ch8 plain=46c954e3c339e00e/9 count=9 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=e8f0bd346fb99d77/2 scene= imageOnly=false refs=
+  anchors=
+ch9 plain=7c1c2d647cd69b9c/8 count=8 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch10 plain=6fdd4ea7c8afdd3b/26 count=24 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=13c07e153eb9a792/4 scene=7 imageOnly=false refs=
+  anchors=a1=15,a2=20
+ch11 plain=174ca7a02d16e388/6 count=6 rubyText=true rubies=47eb9c0c46feb711/1 blockEnds=c1dfd96eea8cc2b6/1 scene= imageOnly=false refs=
+  anchors=
+ch12 plain=025a1b1e02a2c72e/8 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=6ae134b43899a324/7 scene=1,1,4,6 imageOnly=true refs=x.png
+  anchors=
+ch13 plain=a36968bbb0eb2c66/7 count=4 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=c0944c9aabfed9a9/3 scene= imageOnly=false refs=
+  anchors=b2=0
+ch14 plain=039f902f59d7b264/8 count=8 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=fe5dbbcea5ce7e29/1 scene= imageOnly=false refs=
+  anchors=
+ch15 plain=d73a022e794b2c54/8 count=6 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=3fbb60d439e81eb9/3 scene= imageOnly=false refs=
+  anchors=dup=2,dup=2
+ch16 plain=39cfa0b74df4a70f/67 count=18 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=f23209f72adf8344/5 scene= imageOnly=false refs=
+  anchors=
+ch17 plain=2d92bcbae302d7cf/14 count=11 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=cc8962643a589754/4 scene= imageOnly=true refs=../img/p1.png|gaiji.png|fig.png
+  anchors=s1=0,h1=0
+ch18 plain=c6d06096cd1ce633/17 count=17 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=17ba0791499db908/1 scene= imageOnly=false refs=
+  anchors=
+ch19 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch20 plain=e0690f73d01e53c3/6 count=3 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=c1dfd96eea8cc2b6/1 scene= imageOnly=false refs=
+  anchors=
+ch21 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch22 plain=bc11acf86f06fd35/60 count=24 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch23 plain=7d99578d75ee30f8/7 count=7 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=902ba3cda1883801/1 scene= imageOnly=false refs=
+  anchors=
+ch24 plain=7d3c35c29be1de8b/2 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da4b9237bacccdf1/1 scene= imageOnly=true refs=a.png|c.png|d.png|e.png
+  anchors=
+ch25 plain=46f8f7efe4e24610/18 count=11 rubyText=true rubies=daed5f56bd89e904/2 blockEnds=bd307a3ec329e10a/1 scene= imageOnly=false refs=
+  anchors=
+ch26 plain=06250b99a91fab80/42 count=10 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da4b9237bacccdf1/1 scene= imageOnly=false refs=fo.png|svgstyle.png
+  anchors=
+ch27 plain=4b844374f5612e83/21 count=17 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=133fc8617d816c3d/4 scene= imageOnly=false refs=sp ace.png
+  anchors=
+ch28 plain=208baebaef57298a/2 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da4b9237bacccdf1/1 scene= imageOnly=false refs=
+  anchors=
+ch29 plain=b172ed40d02bdb21/10 count=4 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=e52235e29f9f5b27/2 scene= imageOnly=false refs=
+  anchors=
+ch30 plain=2bce9489623d3cc5/6 count=6 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=1b6453892473a467/1 scene= imageOnly=false refs=
+  anchors=
+ch31 plain=aadcc856e4b19db6/7 count=7 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch32 plain=17acf9470b7fc33b/3 count=3 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch33 plain=4ee267ed9572aaf5/25 count=13 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=902ba3cda1883801/1 scene= imageOnly=false refs=
+  anchors=
+ch34 plain=59995af540120349/7 count=7 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch35 plain=6a5dcf99aaac3f7f/4 count=4 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=77de68daecd823ba/1 scene= imageOnly=false refs=
+  anchors=
+ch36 plain=01c1743ce7a7e822/3 count=3 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=f1=0
+ch37 plain=01c1743ce7a7e822/3 count=3 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch38 plain=8536ac5aacf75d57/7 count=7 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=1b6453892473a467/1 scene= imageOnly=false refs=
+  anchors=
+ch39 plain=a52524b0ad42a91f/11 count=11 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=d77ef210c86dad73/6 scene= imageOnly=false refs=
+  anchors=
+ch40 plain=948b9fb6d4b2f8c7/3 count=3 rubyText=true rubies=a342b747e48234da/2 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch41 plain=6b84ae10664188f3/4 count=4 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da4b9237bacccdf1/1 scene= imageOnly=false refs=
+  anchors=
+ch42 plain=0698feb4609f0a6a/10 count=10 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=155a8a47a1dcf51b/2 scene= imageOnly=false refs=
+  anchors=
+ch43 plain=5af3a4db12523a24/24 count=23 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=17ba0791499db908/1 scene= imageOnly=false refs=
+  anchors=
+ch44 plain=39bf2fd689321d98/7 count=7 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da4b9237bacccdf1/1 scene= imageOnly=false refs=
+  anchors=fo=1
+ch45 plain=12f9e6fa7ffc88cf/8 count=6 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=f441a7fb12eb66d3/2 scene= imageOnly=false refs=
+  anchors=
+ch46 plain=34e14ccf48b0a941/8 count=8 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch47 plain=08d7854716c9649c/6 count=6 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=b07139e9fea44296/2 scene= imageOnly=false refs=
+  anchors=s=0,d=2
+ch48 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=true refs=c.png|d.png
+  anchors=
+ch49 plain=3d5a15697e9ee27d/18 count=8 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=f1abd670358e036c/1 scene= imageOnly=false refs=
+  anchors=
+ch50 plain=b021d52a6267de47/19 count=14 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch51 plain=fd20702c73d1ea92/2 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da4b9237bacccdf1/1 scene= imageOnly=true refs=UP.PNG|svgimg.png
+  anchors=
+ch52 plain=1099accd3cdc5f54/30 count=6 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=head2.png
+  anchors=
+ch53 plain=93a053739fc50d90/11 count=6 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=17ba0791499db908/1 scene= imageOnly=false refs=
+  anchors=
+ch54 plain=cff6d291e1b8f803/4 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=b18615a006620a92/2 scene= imageOnly=false refs=
+  anchors=
+ch55 plain=226bff8845278d90/2 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=2219fecb861ae82b/2 scene= imageOnly=false refs=
+  anchors=
+ch56 plain=066bc1774e1144bb/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch57 plain=86f7e437faa5a7fc/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch58 plain=5f435eb30281de82/4 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch59 plain=c1d7ccbf2614a043/4 count=4 rubyText=true rubies=dda29ec53506d5f9/1 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch60 plain=da23614e02469a0d/2 count=1 rubyText=true rubies=c18d5f0ca171ce40/1 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch61 plain=86f7e437faa5a7fc/1 count=1 rubyText=true rubies=25eb6dc9a75ee932/1 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch62 plain=128ffb50647585c6/2 count=1 rubyText=true rubies=9f6ab480bc9e7432/1 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch63 plain=da23614e02469a0d/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch64 plain=a9993e364706816a/3 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch65 plain=405906c9d5be6ae5/5 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch66 plain=066bc1774e1144bb/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch67 plain=95cb0bfd2977c761/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch68 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch69 plain=95cb0bfd2977c761/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch70 plain=da23614e02469a0d/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da4b9237bacccdf1/1 scene= imageOnly=false refs=
+  anchors=
+ch71 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch72 plain=5f8459982f9f619f/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da4b9237bacccdf1/1 scene= imageOnly=false refs=
+  anchors=
+ch73 plain=267cd8ac7cd7140e/6 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=22cf745663fc286f/2 scene= imageOnly=false refs=
+  anchors=
+ch74 plain=8695664b4dd050f4/4 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=f10e95f0fbaf716f/2 scene= imageOnly=false refs=
+  anchors=
+ch75 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch76 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch77 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=true refs=b.jpg
+  anchors=
+ch78 plain=66b27417d37e024c/3 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch79 plain=ed686b3dc1d6df8c/20 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=91032ad7bbcb6cf7/1 scene= imageOnly=false refs=
+  anchors=
+ch80 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch81 plain=121509376bfa239a/4 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch82 plain=c63b19f1e4c8b5f7/9 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch83 plain=3e949019500deb13/11 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=17ba0791499db908/1 scene= imageOnly=false refs=
+  anchors=
+ch84 plain=b4b3e0a278988bc1/6 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch85 plain=9f8f7eec5dea5ac4/4 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch86 plain=a253ae6edd2b702a/3 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=77de68daecd823ba/1 scene= imageOnly=false refs=
+  anchors=
+ch87 plain=65c8f6cb0ed56693/9 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch88 plain=7cc882a76063527d/17 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch89 plain=6eeb3fecf98e6cb5/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch90 plain=f3edde780bce60b9/3 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch91 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch92 plain=c7fff82d4ff23862/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch93 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch94 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch95 plain=b8842969dc494592/10 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=442a0112fe67a02e/2 scene= imageOnly=false refs=
+  anchors=
+ch96 plain=1e9c30c464294de0/9 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=1a6d37f372d4c919/2 scene=0 imageOnly=false refs=
+  anchors=
+ch97 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch98 plain=95cb0bfd2977c761/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch99 plain=90283840d90de49b/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da4b9237bacccdf1/1 scene= imageOnly=false refs=
+  anchors=
+ch100 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch101 plain=ace334b9042881b3/32 count=6 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch102 plain=fe41b0971c1bbb7c/32 count=12 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch103 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch104 plain=7f73ebf2d5870137/21 count=3 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=472b07b9fcf2c245/1 scene= imageOnly=false refs=
+  anchors=
+ch105 plain=0bc2da1d788575d6/11 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch106 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch107 plain=ad782ecdac770fc6/3 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch108 plain=5f8459982f9f619f/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch109 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch110 plain=405906c9d5be6ae5/5 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch111 plain=395df8f7c51f0070/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch112 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch113 plain=7d41b8a01b3b9e2f/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene=0,2 imageOnly=false refs=
+  anchors=
+ch114 plain=e8354fba010f870c/50 count=8 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene=0,50 imageOnly=false refs=
+  anchors=
+ch115 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch116 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=true refs=x.png/
+  anchors=
+ch117 plain=32f28ea03b1b2012/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch118 plain=da23614e02469a0d/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch119 plain=03de6c570bfe24bf/5 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=4eaf330039d2cc96/5 scene= imageOnly=false refs=
+  anchors=
+ch120 plain=da23614e02469a0d/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=6ea87ee6f25f25d1/3 scene= imageOnly=false refs=
+  anchors=
+ch121 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=fa5836450376bf4b/2 scene= imageOnly=false refs=
+  anchors=
+ch122 plain=95cb0bfd2977c761/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=9d87b3117fda4a7d/3 scene=0,1 imageOnly=false refs=
+  anchors=
+ch123 plain=5f8459982f9f619f/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch124 plain=6b0d31c0d5632230/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch125 plain=7a81af3e591ac713/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch126 plain=e388e9e9e8cffe0a/6 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch127 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch128 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch129 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch130 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch131 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch132 plain=8b8a0662c8bdb6f1/10 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch133 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch134 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene=0 imageOnly=false refs=
+  anchors=
+ch135 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch136 plain=a9993e364706816a/3 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch137 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch138 plain=da23614e02469a0d/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch139 plain=435c3bd74740b005/22 count=4 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch140 plain=f8e6f6757678f891/10 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch141 plain=c343003b34d83f8e/18 count=4 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch142 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch143 plain=95cb0bfd2977c761/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch144 plain=e1f2c92fad8b583a/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch145 plain=7116abcdd2d3626e/3 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=77de68daecd823ba/1 scene= imageOnly=false refs=
+  anchors=
+ch146 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch147 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch148 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch149 plain=8efd86fb78a56a51/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch150 plain=18a10f57ac8a17ca/9 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=0ade7c2cf97f75d0/1 scene= imageOnly=false refs=
+  anchors=
+ch151 plain=405906c9d5be6ae5/5 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch152 plain=66b27417d37e024c/3 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch153 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch154 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch155 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=b6589fc6ab0dc82c/1 scene=0 imageOnly=false refs=
+  anchors=
+ch156 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=b6589fc6ab0dc82c/1 scene=0 imageOnly=false refs=
+  anchors=
+ch157 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=b6589fc6ab0dc82c/1 scene=0 imageOnly=false refs=
+  anchors=
+ch158 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=b6589fc6ab0dc82c/1 scene=0 imageOnly=false refs=
+  anchors=
+ch159 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=b6589fc6ab0dc82c/1 scene=0 imageOnly=false refs=
+  anchors=
+ch160 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=b6589fc6ab0dc82c/1 scene=0 imageOnly=false refs=
+  anchors=
+ch161 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=b6589fc6ab0dc82c/1 scene=0 imageOnly=false refs=
+  anchors=
+ch162 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch163 plain=ea194e5fe39c64a3/13 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=fe5dbbcea5ce7e29/1 scene= imageOnly=false refs=
+  anchors=
+ch164 plain=fbf5f2a2875b3bb6/4 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch165 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch166 plain=3c363836cf4e1666/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch167 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch168 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch169 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch170 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch171 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch172 plain=5f8459982f9f619f/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch173 plain=395df8f7c51f0070/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch174 plain=84a516841ba77a5b/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=fa5836450376bf4b/2 scene=0 imageOnly=false refs=
+  anchors=
+ch175 plain=66b27417d37e024c/3 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=1f02f98cf775a9e0/2 scene= imageOnly=false refs=
+  anchors=
+ch176 plain=40bd001563085fc3/3 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=77de68daecd823ba/1 scene= imageOnly=false refs=
+  anchors=
+ch177 plain=81fe8bfe87576c3e/4 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=1b6453892473a467/1 scene= imageOnly=false refs=
+  anchors=
+ch178 plain=ac3478d69a3c81fa/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch179 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch180 plain=3dde59ff3d79fc23/4 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch181 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch182 plain=150c70aa93d10379/6 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch183 plain=84a516841ba77a5b/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch184 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch185 plain=5f8459982f9f619f/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch186 plain=d9e83874d260f2f1/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch187 plain=5f358af8df65cf88/10 count=2 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=b1d5781111d84f7b/1 scene= imageOnly=false refs=
+  anchors=
+ch188 plain=372ea08cab33e71c/4 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch189 plain=533483ee096aa2c8/13 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=07a46cb0ad9672e9/2 scene= imageOnly=false refs=
+  anchors=
+ch190 plain=da23614e02469a0d/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=6ea87ee6f25f25d1/3 scene= imageOnly=false refs=
+  anchors=
+ch191 plain=da23614e02469a0d/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=2219fecb861ae82b/2 scene= imageOnly=false refs=
+  anchors=
+ch192 plain=6b0d31c0d5632230/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch193 plain=6b0d31c0d5632230/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch194 plain=84a516841ba77a5b/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch195 plain=7dae9a3f552f8ff5/13 count=3 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=bd307a3ec329e10a/1 scene= imageOnly=false refs=
+  anchors=
+ch196 plain=01ea9fa607881d18/15 count=4 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=f1abd670358e036c/1 scene=15 imageOnly=false refs=
+  anchors=
+ch197 plain=8c201a64f340dd90/7 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch198 plain=9bdb77276c1852e1/1 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch199 plain=9bdb77276c1852e1/1 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=356a192b7913b04c/1 scene= imageOnly=false refs=
+  anchors=
+ch200 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch201 plain=3dde59ff3d79fc23/4 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=7c986b215aa7c357/300 scene= imageOnly=false refs=
+  anchors=
+ch202 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch203 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch204 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch205 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch206 plain=37b75937d3c75dd3/6 count=3 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=c1dfd96eea8cc2b6/1 scene= imageOnly=false refs=
+  anchors=
+ch207 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=b6589fc6ab0dc82c/1 scene= imageOnly=false refs=
+  anchors=
+ch208 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch209 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch210 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch211 plain=11f6ad8ec52a2984/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch212 plain=95cb0bfd2977c761/1 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch213 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch214 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch215 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch216 plain=c4dd3c8cdd8d7c95/1 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch217 plain=7c4d33785daa5c23/1 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch218 plain=148ad7eb924ea204/2 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch219 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch220 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch221 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch222 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch223 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch224 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch225 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch226 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch227 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch228 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch229 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch230 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch231 plain=da39a3ee5e6b4b0d/0 count=0 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch232 plain=ec1963aacf322199/2 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+ch233 plain=e87e9830ac075ca8/3 count=1 rubyText=true rubies=da39a3ee5e6b4b0d/0 blockEnds=da39a3ee5e6b4b0d/0 scene= imageOnly=false refs=
+  anchors=
+img 6 0 OEBPS/image/p001.jpg k=OEBPS/image/p001.jpg off=0 norm=0 lead= line=true
+img 6 1 OEBPS/image/p002.jpg k=OEBPS/image/p002.jpg off=0 norm=0 lead= line=true
+img 7 2 OEBPS/text/outside.png k=OEBPS/text/outside.png off=0 norm=0 lead= line=false
+img 7 3 OEBPS/text/a.png k=OEBPS/text/a.png off=0 norm=0 lead= line=false
+img 7 4 OEBPS/img/s1.png k=OEBPS/img/s1.png off=0 norm=0 lead= line=true
+img 7 5 OEBPS/text/x.png k=OEBPS/text/x.png off=2 norm=4000 lead= line=true
+img 17 6 OEBPS/img/p1.png k=OEBPS/img/p1.png off=0 norm=0 lead=s1 line=false
+img 17 7 OEBPS/text/gaiji.png k=OEBPS/text/gaiji.png off=6 norm=5455 lead= line=true
+img 17 8 OEBPS/text/fig.png k=OEBPS/text/fig.png off=10 norm=9091 lead= line=false
+img 24 9 OEBPS/text/c.png k=OEBPS/text/c.png off=2 norm=10000 lead= line=true
+img 24 10 OEBPS/text/d.png k=OEBPS/text/d.png off=2 norm=10000 lead= line=true
+img 24 11 OEBPS/text/e.png k=OEBPS/text/e.png off=2 norm=10000 lead= line=true
+img 26 12 OEBPS/text/fo.png k=OEBPS/text/fo.png off=2 norm=2000 lead= line=true
+img 27 13 OEBPS/text/q.png k=OEBPS/text/q.png off=0 norm=0 lead= line=true
+img 27 14 OEBPS/text/sp ace.png k=OEBPS/text/sp ace.png off=13 norm=7647 lead= line=true
+img 51 15 OEBPS/text/UP.PNG k=OEBPS/text/UP.PNG off=2 norm=10000 lead= line=true
+img 51 16 OEBPS/text/svgimg.png k=OEBPS/text/svgimg.png off=2 norm=10000 lead= line=true
+img 52 17 OEBPS/text/body.png k=OEBPS/text/body.png off=0 norm=0 lead= line=true
+img 77 18 OEBPS/text/b.jpg k=OEBPS/text/b.jpg off=0 norm=0 lead=c/ line=false
+END

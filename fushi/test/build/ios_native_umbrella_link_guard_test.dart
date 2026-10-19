@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// BUG-3427 守卫：iOS Runner 必须链伞形 Rust 静态库 `native/fushi_ios_umbrella`
-/// （互联 P2P 的 `fp2p_*` + SRS 排程内核的 `ffsrs_*` 合一），CI 出包后必须两组符号都核对。
+/// （互联 P2P 的 `fp2p_*` + SRS 排程内核的 `ffsrs_*` + 计算内核的 `ffc_*` 合一），CI 出包后
+/// 必须三组符号都核对。
 ///
 /// 洞的形状：SRS 内核上线时 iOS 侧只做到「伞形库编得过」，Runner 仍只接 fushi_p2p
 /// 单独那份。iOS 上 Dart 用 `DynamicLibrary.process()` 找 `ffsrs_*`，找不到就静默判
@@ -13,7 +14,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// - `Flutter/{Debug,Release}.xcconfig` include 伞形库生成的 xcconfig，不再 include
 ///   fushi_p2p 单独那份（两份单独 .a 同时 `-force_load` 会撞重复的 Rust std 符号）；
 /// - Runner 的 `OTHER_LDFLAGS` 用 `$(FUSHI_IOS_NATIVE_LDFLAGS)`；
-/// - 两条出 iOS 包的 workflow 在 Runner 上同时跑 fushi_p2p 与 fushi_fsrs 的 verify_abi.sh。
+/// - 两条出 iOS 包的 workflow 在 Runner 上同时跑 fushi_p2p / fushi_fsrs / fushi_compute 的
+///   verify_abi.sh；
+/// - fushi_compute 是硬依赖：Runner 有一个在编译前跑 `check_fushi_compute.sh` 的构建阶段，
+///   伞形库缺失（`#include?` 静默缺席）或是不含 `ffc_*` 的旧件时让构建失败。
 void main() {
   // 测试 cwd 是 `fushi/`。
   String read(String path) {
@@ -78,7 +82,7 @@ void main() {
         reason: '$path：iOS 不能再链 fushi_p2p 单库',
       );
       // 凡是核对「app 产物」（iOS Runner、macOS bundle 里的 dylib）的 fp2p_* 步骤，都必须有
-      // 同参数的 ffsrs_* 核对；参数是 fushi_p2p 自己 prebuilt 产物的那几条不算。
+      // 同参数的 ffsrs_* 与 ffc_* 核对；参数是 fushi_p2p 自己 prebuilt 产物的那几条不算。
       final List<String> p2pChecks = <String>[
         for (final String line in workflow.split('\n'))
           if (line.contains('native/fushi_p2p/verify_abi.sh') &&
@@ -92,6 +96,11 @@ void main() {
           workflow,
           contains(check.replaceFirst('fushi_p2p/', 'fushi_fsrs/')),
           reason: '$path：「$check」只核对了 fp2p_*，缺 ffsrs_*',
+        );
+        expect(
+          workflow,
+          contains(check.replaceFirst('fushi_p2p/', 'fushi_compute/')),
+          reason: '$path：「$check」只核对了 fp2p_*，缺 ffc_*',
         );
       }
       // 网页广告拦截内核（fwc_*）同样静态链进 iOS Runner：只核对「iOS 产物」那几条
@@ -113,5 +122,31 @@ void main() {
         );
       }
     }
+  });
+
+  test('Runner 在编译前硬检查伞形库里有 fushi_compute（ffc_*）', () {
+    final String pbx = read('ios/Runner.xcodeproj/project.pbxproj');
+    expect(
+      pbx,
+      contains(r'shellScript = "/bin/bash \"$PROJECT_DIR/check_fushi_compute.sh\"\n";'),
+    );
+    // 必须挂在 Runner 的 buildPhases 里、且排在 Sources 之前（编译 / 链接之前就失败）。
+    final int target = pbx.indexOf('/* Runner */ = {\n\t\t\tisa = PBXNativeTarget;');
+    expect(target, greaterThanOrEqualTo(0), reason: '找不到 Runner 的 PBXNativeTarget');
+    final int phases = pbx.indexOf('buildPhases = (', target);
+    final int check = pbx.indexOf(
+      '/* Check fushi_compute (iOS umbrella) */,',
+      phases,
+    );
+    final int sources = pbx.indexOf('/* Sources */,', phases);
+    expect(phases, greaterThanOrEqualTo(0));
+    expect(check, greaterThan(phases), reason: '构建阶段没挂进 Runner');
+    expect(check, lessThan(sources), reason: '检查阶段必须在 Sources 之前');
+
+    final String script = read('ios/check_fushi_compute.sh');
+    expect(script, contains(r'prebuilt/ios/${sdk}/libfushi_ios_umbrella.a'));
+    expect(script, contains('FUSHI_IOS_NATIVE_LDFLAGS'));
+    expect(script, contains('_ffc_abi_version'));
+    expect(script, contains('exit 1'));
   });
 }

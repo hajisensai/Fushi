@@ -10,18 +10,20 @@ import 'dart:convert';
 
 import 'package:fushi_engine/media/torrent/torznab_client.dart'
     show isSafeExternalProviderEndpoint;
+import 'package:fushi_engine/utils/net/redirect_headers.dart';
 
 /// 一台 OPDS 服务器。
 class OpdsServerConfig {
   OpdsServerConfig({
     required this.id,
     required this.name,
-    required this.catalogUrl,
+    required Uri catalogUrl,
     this.username = '',
     this.password = '',
+    this.apiKey = '',
     this.enabled = true,
     this.allowInsecureHttp = false,
-  }) {
+  }) : catalogUrl = templatizeOpdsApiKey(catalogUrl, apiKey) {
     if (id.trim().isEmpty) {
       throw ArgumentError.value(id, 'id', 'OPDS server id must not be empty');
     }
@@ -52,10 +54,26 @@ class OpdsServerConfig {
   final String name;
 
   /// 目录根地址，例如 `https://books.example.com/api/v1/opds`。
+  ///
+  /// **恒不含 API key 明文**：路径里带 key 的端点（Kavita 的
+  /// `/api/opds/{apiKey}`）以占位段 [kOpdsApiKeyPlaceholder] 存放，构造时若路径段
+  /// 恰等于 [apiKey] 也会被收成占位段（见 [templatizeOpdsApiKey]）。只在发请求
+  /// 那一刻由 [expandOpdsApiKeyPlaceholder] 现拼。这样 key 只活在遮蔽存放的
+  /// [apiKey] 一处：控制通道 / 设置页 / 日志打出 `url` 不泄露 key，用户换 key 后
+  /// 地址跟着变，不会卡在一条拼着旧 key、恒 401 的已写回地址上。
   final Uri catalogUrl;
 
+  /// HTTP Basic 账号。Komga 的账号是**登录邮箱**（实测 `admin` 401、
+  /// `admin@example.org` 200）。
   final String username;
   final String password;
+
+  /// 可选的 API key，经 `X-API-Key` 头发送（BUG-3521）。
+  ///
+  /// Komga 1.29 的 API key 只认这个头：实测 `?apikey=`、Basic 里塞 key、
+  /// 路径带 key 全部 401。与 Basic 并存时两个头都发——服务端各取所需，
+  /// 不认识的头会被忽略。存储与 [password] 同一套遮蔽 + 隔离纪律。
+  final String apiKey;
 
   final bool enabled;
 
@@ -70,12 +88,29 @@ class OpdsServerConfig {
 
   /// HTTP Basic 认证头；没配用户名时返回 null（匿名目录）。
   ///
-  /// OPDS 生态事实上只用 Basic（BookOrbit 文档明写「认证类型选 Basic」，
-  /// Calibre-Web / Komga / Kavita 同）。
+  /// OPDS 生态主流是 Basic（BookOrbit 文档明写「认证类型选 Basic」，
+  /// Calibre-Web 同）；Komga 另有 API key（见 [apiKey]）。
   String? get authorizationHeader {
     if (username.trim().isEmpty) return null;
     final String token = base64Encode(utf8.encode('$username:$password'));
     return 'Basic $token';
+  }
+
+  /// 请求 [target] 时该附的凭据头：**只对目录自己的 origin** 给出。
+  ///
+  /// feed 里的链接可以指向任意主机（封面挂 CDN、下载重定向到对象存储都常见）。
+  /// 无差别附上凭据会把用户的密码 / API key 送给第三方主机——与浏览器和 curl
+  /// 的既定行为一致：凭据绑定 origin，不跟着链接走。下载、feed 请求与封面
+  /// 图片三条链路共用这一个判据。
+  Map<String, String> credentialHeadersFor(Uri target) {
+    if (!isSameHttpOrigin(catalogUrl, target)) return const <String, String>{};
+    final String? basic = authorizationHeader;
+    final String key = apiKey.trim();
+    if (basic == null && key.isEmpty) return const <String, String>{};
+    return <String, String>{
+      if (basic != null) 'Authorization': basic,
+      if (key.isNotEmpty) 'X-API-Key': key,
+    };
   }
 
   OpdsServerConfig copyWith({
@@ -83,20 +118,21 @@ class OpdsServerConfig {
     Uri? catalogUrl,
     String? username,
     String? password,
+    String? apiKey,
     bool? enabled,
     bool? allowInsecureHttp,
-  }) =>
-      OpdsServerConfig(
-        id: id,
-        name: name ?? this.name,
-        catalogUrl: catalogUrl ?? this.catalogUrl,
-        username: username ?? this.username,
-        password: password ?? this.password,
-        enabled: enabled ?? this.enabled,
-        allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
-      );
+  }) => OpdsServerConfig(
+    id: id,
+    name: name ?? this.name,
+    catalogUrl: catalogUrl ?? this.catalogUrl,
+    username: username ?? this.username,
+    password: password ?? this.password,
+    apiKey: apiKey ?? this.apiKey,
+    enabled: enabled ?? this.enabled,
+    allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
+  );
 
-  /// 密码在 JSON 里 base64 存放。
+  /// 密码与 API key 在 JSON 里 base64 存放。
   ///
   /// 说清楚：这是**遮蔽不是加密**——能解码回来的东西挡不住拿到设备的人。
   /// 本仓没有 secure storage，既有做法就是 `sync_repository.dart` 的
@@ -105,15 +141,15 @@ class OpdsServerConfig {
   /// `kCredentialPreferenceKeys`（绝不写日志、绝不进明文导出）与
   /// device-local 清单（绝不随备份/同步出设备）。
   Map<String, Object?> toJson() => <String, Object?>{
-        'id': id,
-        'name': name,
-        'url': catalogUrl.toString(),
-        'username': username,
-        if (password.isNotEmpty)
-          'passwordB64': base64Encode(utf8.encode(password)),
-        'enabled': enabled,
-        'allowInsecureHttp': allowInsecureHttp,
-      };
+    'id': id,
+    'name': name,
+    'url': catalogUrl.toString(),
+    'username': username,
+    if (password.isNotEmpty) 'passwordB64': base64Encode(utf8.encode(password)),
+    if (apiKey.isNotEmpty) 'apiKeyB64': base64Encode(utf8.encode(apiKey)),
+    'enabled': enabled,
+    'allowInsecureHttp': allowInsecureHttp,
+  };
 
   /// 解析一条配置；任何字段畸形都抛，由列表层逐条丢弃（见
   /// [decodeOpdsServerConfigs]）——一条坏记录不该让整份清单消失。
@@ -122,26 +158,31 @@ class OpdsServerConfig {
     if (url == null) {
       throw const FormatException('OPDS server entry has no usable url');
     }
-    final Object? rawPassword = json['passwordB64'];
-    String password = '';
-    if (rawPassword is String && rawPassword.isNotEmpty) {
-      try {
-        password = utf8.decode(base64Decode(rawPassword));
-      } on FormatException {
-        password = '';
-      }
-    }
+    final String password = _decodeSecret(json['passwordB64']);
+    // 旧版本写入的配置没有这个字段 → 空串（无 API key），形状向后兼容。
+    final String apiKey = _decodeSecret(json['apiKeyB64']).trim();
     return OpdsServerConfig(
       id: (json['id'] as String? ?? '').trim(),
       name: (json['name'] as String? ?? '').trim(),
       catalogUrl: url,
       username: (json['username'] as String? ?? '').trim(),
       password: password,
+      apiKey: apiKey,
       enabled: json['enabled'] is bool ? json['enabled']! as bool : true,
       allowInsecureHttp: json['allowInsecureHttp'] is bool
           ? json['allowInsecureHttp']! as bool
           : false,
     );
+  }
+}
+
+/// base64 遮蔽字段 → 明文；缺失或畸形一律空串（一条坏字段不该让整条配置丢失）。
+String _decodeSecret(Object? raw) {
+  if (raw is! String || raw.isEmpty) return '';
+  try {
+    return utf8.decode(base64Decode(raw));
+  } on FormatException {
+    return '';
   }
 }
 
@@ -180,3 +221,129 @@ List<OpdsServerConfig> decodeOpdsServerConfigs(String? raw) {
   }
   return configs;
 }
+
+/// 已知 OPDS 服务端的目录端点（相对服务端根 / 反代前缀）。
+///
+/// 每条都核对过官方出处，不是猜的：
+/// - Komga：`/opds/v2/catalog`、`/opds/v1.2/catalog`（komga.org/docs/guides/opds，
+///   且在真 Komga 1.29.1 上实测：根地址回 200 HTML，`/opds`、`/opds/v2`、带结尾
+///   斜杠的 `/opds/v1.2/catalog/` 一律 404，只有这两条 200）。v2 排前面：同一台
+///   Komga 的 v2 目录根直接列出近期书目，搜索也会返回书而不只是系列目录。
+/// - Calibre-Web：`/opds`（janeczku/calibre-web `cps/opds.py` 的路由
+///   `@opds.route("/opds")`）。
+/// - Kavita：`/api/opds/{apiKey}`（Kareadita/Kavita `OpdsController` 的
+///   `[HttpGet("{apiKey}")]` + `BaseApiController` 的 `[Route("api/[controller]")]`）。
+///   key 是路径的一部分，所以只在配了 API key 时才拼这一条。
+const List<String> kKnownOpdsCatalogPaths = <String>[
+  '/opds/v2/catalog',
+  '/opds/v1.2/catalog',
+  '/opds',
+];
+
+/// 目录地址里代表 API key 的占位路径段（Kavita：`/api/opds/{apiKey}`）。
+///
+/// 持久化、控制通道输出、写回的都是带占位段的地址；只在发请求那一刻由
+/// [expandOpdsApiKeyPlaceholder] 换成真 key。占位段经 `Uri` 编码后落盘为
+/// `%7BapiKey%7D`，`pathSegments` 解码回来仍是本字面量。
+const String kOpdsApiKeyPlaceholder = '{apiKey}';
+
+/// 把 [url] 路径里恰等于 [apiKey] 的段收成 [kOpdsApiKeyPlaceholder]。
+///
+/// 用户从 Kavita 网页上复制的 OPDS 地址、或旧版本探测写回的地址都是 key 明文
+/// 在路径里；收成占位段后 key 只剩遮蔽存放的那一份。[apiKey] 为空时原样返回
+/// （不知道哪段是 key，就不猜）。
+Uri templatizeOpdsApiKey(Uri url, String apiKey) {
+  final String key = apiKey.trim();
+  if (key.isEmpty) return url;
+  final List<String> segments = url.pathSegments;
+  if (!segments.contains(key)) return url;
+  return url.replace(
+    pathSegments: <String>[
+      for (final String segment in segments)
+        segment == key ? kOpdsApiKeyPlaceholder : segment,
+    ],
+  );
+}
+
+/// [templatizeOpdsApiKey] 的逆：把占位段换成当前 [apiKey]，供真正发请求用。
+///
+/// [apiKey] 为空时原样返回——占位段会被原样请求出去并以 404/401 失败，结论是
+/// 「这台服务器要 key 而你没配」，而不是悄悄换成别的地址。
+Uri expandOpdsApiKeyPlaceholder(Uri url, String apiKey) {
+  final String key = apiKey.trim();
+  if (key.isEmpty) return url;
+  final List<String> segments = url.pathSegments;
+  if (!segments.contains(kOpdsApiKeyPlaceholder)) return url;
+  return url.replace(
+    pathSegments: <String>[
+      for (final String segment in segments)
+        segment == kOpdsApiKeyPlaceholder ? key : segment,
+    ],
+  );
+}
+
+/// 反代前缀最多往上回溯几层（`/a/b/c` → `/a/b/c`、`/a/b`、`/a`、根）。
+const int _kMaxPrefixDepth = 3;
+
+/// 把用户填的地址展开成**按优先级排列**的候选目录地址（BUG-3526）。
+///
+/// 第一条恒为用户原样填的地址（填对了就零额外请求）；其后是去掉结尾斜杠的
+/// 形态（Komga 对 `/opds/v1.2/catalog/` 回 404），再往后是 [kKnownOpdsCatalogPaths]
+/// 拼在服务端根与各级路径前缀上（覆盖「只填了 `http://host:25600`」与
+/// 「Komga 挂在反代子路径 `/komga` 下」两种形态）。
+///
+/// **不**在保存时直接改写用户的地址：去结尾斜杠只是候选之一——没有官方依据
+/// 说所有 OPDS 服务端都把 `/x/` 与 `/x` 视为同一资源，盲改可能把一台原本
+/// 能用的服务器改坏。只有真打通的那条才写回配置。
+List<Uri> opdsCatalogUrlCandidates(Uri given, {String apiKey = ''}) {
+  final Uri base = given.removeFragment();
+  final List<Uri> candidates = <Uri>[base];
+  final String path = base.path;
+  String trimmed = path;
+  while (trimmed.endsWith('/')) {
+    trimmed = trimmed.substring(0, trimmed.length - 1);
+  }
+  if (trimmed != path && trimmed.isNotEmpty) {
+    candidates.add(base.replace(path: trimmed));
+  }
+  final List<String> segments = trimmed
+      .split('/')
+      .where((String segment) => segment.isNotEmpty)
+      .toList(growable: false);
+  // 根优先：「只填了服务端根」与「填了半截 /opds」都在第一轮命中；反代前缀
+  // 部署（`/komga/...`）再逐级加深。
+  final List<String> prefixes = <String>[
+    '',
+    for (
+      int depth = 1;
+      depth <= segments.length && depth <= _kMaxPrefixDepth;
+      depth++
+    )
+      '/${segments.take(depth).join('/')}',
+  ];
+  final String key = apiKey.trim();
+  for (final String prefix in prefixes) {
+    for (final String endpoint in kKnownOpdsCatalogPaths) {
+      candidates.add(_originUri(base, '$prefix$endpoint'));
+    }
+    // 候选里放的是**占位段**而不是 key 明文：打通后它会被写回配置、
+    // 经 `resolvedCatalogUrl` 交给调用方，都不该带 key（请求时才展开）。
+    if (key.isNotEmpty) {
+      candidates.add(
+        _originUri(base, '$prefix/api/opds/$kOpdsApiKeyPlaceholder'),
+      );
+    }
+  }
+  final Set<String> seen = <String>{};
+  return <Uri>[
+    for (final Uri candidate in candidates)
+      if (seen.add(candidate.toString())) candidate,
+  ];
+}
+
+Uri _originUri(Uri base, String path) => Uri(
+  scheme: base.scheme,
+  host: base.host,
+  port: base.hasPort ? base.port : null,
+  path: path,
+);
