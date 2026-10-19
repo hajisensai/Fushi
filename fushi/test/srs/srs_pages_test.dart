@@ -1121,6 +1121,58 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('复习布局（Apple）：底部重播键与底栏按钮同高、放在选定那端、点了重播', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await addWithAudio(tester, store);
+      final _RecordingAudio audio = _RecordingAudio();
+      final _LayoutApp app = _LayoutApp()..replay = SrsReviewReplayButton.start;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: true,
+        app: app,
+        size: const Size(390, 844),
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+        ],
+      );
+      final Finder replay = find.byKey(
+        const ValueKey<String>('srs-bottom-replay'),
+      );
+      expect(replay, findsOneWidget);
+      final Finder showAnswer = find.byKey(
+        const ValueKey<String>('srs-show-answer'),
+      );
+      expect(
+        tester.getCenter(replay).dx,
+        lessThan(tester.getCenter(showAnswer).dx),
+      );
+      expect(
+        tester.getSize(replay).height,
+        moreOrLessEquals(tester.getSize(showAnswer).height, epsilon: 0.5),
+      );
+      expect(tester.getSize(replay).height, greaterThanOrEqualTo(48));
+      await tester.tap(showAnswer);
+      await _settle(tester);
+      expect(
+        tester.getSize(replay).height,
+        moreOrLessEquals(
+          tester
+              .getSize(find.byKey(const ValueKey<String>('srs-rate-1')))
+              .height,
+          epsilon: 0.5,
+        ),
+      );
+      audio.played.clear();
+      await tester.tap(replay);
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3', 'sent.mp3']);
+      await _unmount(tester);
+    });
+
     testWidgets('评分换卡时打断还在播的序列', (WidgetTester tester) async {
       final SrsDbStore store = await _openStore(tester);
       await addWithAudio(tester, store);
