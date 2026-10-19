@@ -292,7 +292,7 @@ void main() {
         'lib/src/utils/misc/platform_updater.dart',
       ).readAsStringSync();
 
-      expect(source, contains('ensureWindowsInstallTargetWritable'));
+      expect(source, contains('probeWindowsInstallTargetWritable'));
       expect(source, contains('administrator'));
       expect(source, contains('user-writable'));
     });
@@ -412,7 +412,7 @@ void main() {
       expect(
           cmake,
           contains('target_link_libraries(fushi_update_launcher '
-              'PRIVATE shell32)'));
+              'PRIVATE shell32 bcrypt)'));
       expect(rootCmake, contains('fushi_update_launcher'));
     });
 
