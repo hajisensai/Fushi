@@ -171,6 +171,13 @@ class SrsAppRuntime {
     ];
   }
 
+  StreamSubscription<String>? _hostWrites;
+
+  /// 已配对设备往本机 host 的 SRS 目录写了文件（只看 SRS 命名空间，书 / 视频等同步不触发）。
+  void _onHostClientWrite(String relativePath) {
+    if (srsIsHostSrsPath(relativePath)) sync.notifyLocalDirectoryWritten();
+  }
+
   /// AnkiConnect 兼容端点的本实例 id（防自环）。
   final String instanceId = srsAnkiConnectNewInstanceId();
 
@@ -192,6 +199,9 @@ class SrsAppRuntime {
     srsActiveReviewSessions.addListener(_onReviewSessionsChanged);
     _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
     optimizer.start();
+    _hostWrites = app.syncServerController.clientSyncWrites.listen(
+      _onHostClientWrite,
+    );
     _reviewSessions = srsActiveReviewSessions.value;
     // 启动时看一次：上次退出前的改动还没备份、且已满间隔就补一份。
     backup.onDataChanged();
@@ -205,6 +215,8 @@ class SrsAppRuntime {
     _lifecycle?.dispose();
     _lifecycle = null;
     optimizer.dispose();
+    unawaited(_hostWrites?.cancel());
+    _hostWrites = null;
     sync.dispose();
     if (identical(syncChannelPostRunHook, _postRunHook)) {
       syncChannelPostRunHook = null;

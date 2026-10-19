@@ -7,6 +7,12 @@
 /// 3. 牌组列表「立即同步」/ AnkiConnect `sync` 动作（不节流）。
 /// 2、3 除各条通道外还跑本机直接读写的目录（[SrsLocalDirectory]：本机作为互联 host 时
 /// 客户端写进来的那块目录——host 自己不是任何一条通道的客户端）。
+/// 4. 本机作为互联 host、已配对设备往 SRS 目录写了文件（[notifyLocalDirectoryWritten]，去抖
+///    [kSrsHostWriteDebounce]）：只跑本机目录。host 自己经本机文件系统读写这块目录，不走互联，
+///    所以它的同步不会再触发自己；客户端也不因 host 同步而被触发——没有循环。
+///
+/// 目录身份拿不到（云盘账户还没认出来）时这一轮跳过该后端（报告 error =
+/// [kSrsSyncDirectoryIdentityUnavailable]），不把同一个目录当成新目录起步 / 重发。
 ///
 /// 每条通道 / 目录各跑一轮引擎，进度按目录记（[SrsSyncEngine.directoryKey]，身份见
 /// `srs_directory_key.dart`）：同一份本机数据同时经云盘与互联同步，每个目录都收到全部批次。
@@ -35,6 +41,14 @@ const int kSrsClockSkewWarnMs = 10 * 60 * 1000;
 
 /// [SrsSyncEngine] 报告「后端拿不到服务器时间」时的错误串（fushi_srs 的契约）。
 const String kSrsSyncServerTimeUnavailable = 'server time unavailable';
+
+/// 后端所指同步目录的稳定身份暂时拿不到（例如云盘账户还没认出来）：这一轮不同步它。
+const String kSrsSyncDirectoryIdentityUnavailable =
+    'directory identity unavailable';
+
+/// 已配对设备往本机 host 的 SRS 目录写入后，等这么久没有新写入再跑一次本机目录。
+/// 一轮客户端同步会连写探针 / 批次 / cursor 几个文件，去抖把它们并成一次。
+const Duration kSrsHostWriteDebounce = Duration(seconds: 3);
 
 /// 一次 SRS 同步（测试注入假实现）。[directoryKey] 是 [backend] 所指同步目录的稳定身份。
 typedef SrsSyncRunner =
@@ -99,7 +113,7 @@ class SrsSyncScheduler {
   SrsSyncScheduler({
     required Future<SrsDbStore?> Function() readStore,
     required SrsChannelRunner channels,
-    required Future<String> Function(SyncAssetStore backend) directoryKeyOf,
+    required Future<String?> Function(SyncAssetStore backend) directoryKeyOf,
     required void Function() onDataChanged,
     required void Function(SrsSyncNotice notice) onNotice,
     Future<List<SrsLocalDirectory>> Function()? localDirectories,
@@ -107,7 +121,9 @@ class SrsSyncScheduler {
     Future<Directory?> Function()? readMediaRoot,
     SrsMediaSyncRunner mediaRunner = srsDefaultMediaSyncRunner,
     DateTime Function()? clock,
-  }) : _readMediaRoot = readMediaRoot,
+    Duration hostWriteDebounce = kSrsHostWriteDebounce,
+  }) : _hostWriteDebounce = hostWriteDebounce,
+       _readMediaRoot = readMediaRoot,
        _mediaRunner = mediaRunner,
        _readStore = readStore,
        _channels = channels,
@@ -120,7 +136,12 @@ class SrsSyncScheduler {
 
   final Future<SrsDbStore?> Function() _readStore;
   final SrsChannelRunner _channels;
-  final Future<String> Function(SyncAssetStore backend) _directoryKeyOf;
+  final Future<String?> Function(SyncAssetStore backend) _directoryKeyOf;
+  final Duration _hostWriteDebounce;
+  Timer? _hostWriteTimer;
+
+  /// 坏文件只记一次日志（每轮都会再跳过同一个文件）。
+  final Set<String> _loggedSkipped = <String>{};
   final Future<List<SrsLocalDirectory>> Function()? _localDirectories;
   final void Function() _onDataChanged;
   final void Function(SrsSyncNotice notice) _onNotice;
@@ -136,7 +157,21 @@ class SrsSyncScheduler {
   /// 已经提示过的通知（测试读）。
   Set<SrsSyncNotice> get noticed => Set<SrsSyncNotice>.unmodifiable(_noticed);
 
-  void dispose() => _disposed = true;
+  void dispose() {
+    _disposed = true;
+    _hostWriteTimer?.cancel();
+    _hostWriteTimer = null;
+  }
+
+  /// 已配对设备往本机 host 的 SRS 目录写了文件：去抖后只跑本机目录（见文件头第 4 条）。
+  void notifyLocalDirectoryWritten() {
+    if (_disposed || _localDirectories == null) return;
+    _hostWriteTimer?.cancel();
+    _hostWriteTimer = Timer(_hostWriteDebounce, () {
+      _hostWriteTimer = null;
+      unawaited(syncLocalDirectories());
+    });
+  }
 
   /// 串行化：通道后置步骤（常规同步互斥锁里）、进复习 tab、「立即同步」、本机 host 目录可能同时触发，
   /// 而它们改的是同一份本机同步状态（同一个 SrsDbStore），一次只跑一个目录。
@@ -162,8 +197,21 @@ class SrsSyncScheduler {
     if (_disposed) return null;
     final SrsDbStore? store = await _readStore();
     if (store == null || _disposed) return null;
-    final String key = directoryKey ?? await _directoryKeyOf(backend);
+    final String? key = directoryKey ?? await _directoryKeyOf(backend);
+    if (key == null) {
+      // 同一个物理目录换了个身份就会被当成新目录（重新起步、可能全量重发）：宁可这轮不同步。
+      return SrsSyncReport()..error = kSrsSyncDirectoryIdentityUnavailable;
+    }
     final SrsSyncReport report = await _runner(backend, store, key);
+    for (final String f in report.skippedFiles) {
+      if (_loggedSkipped.add('$key|$f')) {
+        ErrorLogService.instance.log(
+          'SrsSyncScheduler.skippedFile',
+          StateError('SRS sync skipped a malformed file in $key: $f'),
+          StackTrace.current,
+        );
+      }
+    }
     final int? serverTime = report.serverTimeMs;
     if (serverTime != null) {
       await store.anchorTime(serverTime);
@@ -207,11 +255,17 @@ class SrsSyncScheduler {
   /// 返回跑过的目录数（0 = 没配置同步后端、本机也没开互联服务）。
   Future<int> syncNow() async {
     if (_disposed) return 0;
-    int ran = await _channels((SyncAssetStore backend) async {
+    final int ran = await _channels((SyncAssetStore backend) async {
       await syncWithBackend(backend);
     });
+    return ran + await syncLocalDirectories();
+  }
+
+  /// 只跑本机直接读写的目录（本机作为互联 host 时）。返回跑过的目录数。
+  Future<int> syncLocalDirectories() async {
     final Future<List<SrsLocalDirectory>> Function()? local = _localDirectories;
-    if (local == null || _disposed) return ran;
+    if (local == null || _disposed) return 0;
+    int ran = 0;
     for (final SrsLocalDirectory d in await local()) {
       try {
         await syncWithBackend(d.store, directoryKey: d.directoryKey);

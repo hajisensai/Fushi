@@ -1,7 +1,10 @@
 /// 同步文件格式（第三期「传输」）：批次、快照、cursor 文件一律自校验。
 ///
 /// 文件 = 一行 UTF-8 JSON 头 + '\n' + 正文。头含魔数、格式版本、writerId、编号、正文长度与 SHA-256。
-/// 长度不足、哈希不符（写到一半、传输截断）一律视为「这个文件还不存在」，下一轮再读。
+/// 长度不足、哈希不符（写到一半、传输截断）一律视为「这个文件还不存在」，下一轮再读（[SrsFileIncomplete]）。
+/// 校验通过、内容却解不出来（某台设备的 bug、版本不兼容的写入者）是另一回事：等多少轮都不会变好，
+/// 解码返回 [SrsFileMalformed] 而不是抛异常，同步引擎跳过它、记进报告（[SrsSyncReport.skippedFiles]），
+/// 不让一个坏文件拖垮整轮同步（BUG-3563 的 host 一侧：host 读的是所有已配对设备写进来的文件）。
 /// 全部走字节接口，开启「防扫盘混淆」时正文也会被 ObfuscatingSyncBackend 混淆。
 library;
 
@@ -43,6 +46,49 @@ Uint8List _encode(Map<String, Object?> header, List<int> body) {
   return b.takeBytes();
 }
 
+/// 解码结果：成功 / 还不完整（下一轮再读）/ 校验通过但内容坏了（跳过，别等）。
+sealed class SrsFileDecode<T> {
+  const SrsFileDecode();
+
+  /// 成功时的值，否则 null。
+  T? get valueOrNull => switch (this) {
+    SrsFileOk<T>(:final T value) => value,
+    _ => null,
+  };
+}
+
+final class SrsFileOk<T> extends SrsFileDecode<T> {
+  const SrsFileOk(this.value);
+  final T value;
+}
+
+/// 写到一半 / 传输截断 / 不是这种文件：视为「还不存在」。
+final class SrsFileIncomplete<T> extends SrsFileDecode<T> {
+  const SrsFileIncomplete();
+}
+
+/// 自校验通过，但头部字段或正文解不出来。[reason] 只用于日志。
+final class SrsFileMalformed<T> extends SrsFileDecode<T> {
+  const SrsFileMalformed(this.reason);
+  final String reason;
+}
+
+/// 自校验通过之后再解析：解析里任何类型 / 格式错误都收成 [SrsFileMalformed]。
+SrsFileDecode<T> _parseChecked<T>(
+  Uint8List bytes,
+  String magic,
+  T Function(Map<String, Object?> header, Uint8List body) parse,
+) {
+  final (Map<String, Object?>, Uint8List)? d = _decode(bytes, magic);
+  if (d == null) return SrsFileIncomplete<T>();
+  try {
+    return SrsFileOk<T>(parse(d.$1, d.$2));
+  } on Object catch (e) {
+    // TypeError / FormatException / RangeError / 事件 JSON 结构不对……都是内容坏了。
+    return SrsFileMalformed<T>('$magic: ${e.runtimeType}: $e');
+  }
+}
+
 /// 解出 (头, 正文)；校验不过返回 null。
 (Map<String, Object?>, Uint8List)? _decode(Uint8List bytes, String magic) {
   final int nl = bytes.indexOf(0x0a);
@@ -71,11 +117,21 @@ List<int> _eventsBody(Iterable<SrsEvent> events) {
   return utf8.encode(sb.toString());
 }
 
+/// 解析正文里的事件。只在 [_parseChecked] 里调：结构不对的事件在这里就抛出、被收成
+/// [SrsFileMalformed]——各 fromJson 里的 `cast` 是惰性的，类型错误要到第一次读字段才暴露，
+/// 所以每条事件当场规范编码一遍（与落库时同一操作），把错误留在解码这一层，不带进应用阶段。
 List<SrsEvent> _parseEvents(String text) => <SrsEvent>[
   for (final String line in const LineSplitter().convert(text))
-    if (line.isNotEmpty)
-      SrsEvent.fromJson((jsonDecode(line) as Map).cast<String, Object?>()),
+    if (line.isNotEmpty) _validated(_eventFromLine(line)),
 ];
+
+SrsEvent _eventFromLine(String line) =>
+    SrsEvent.fromJson((jsonDecode(line) as Map).cast<String, Object?>());
+
+SrsEvent _validated(SrsEvent e) {
+  e.canonical();
+  return e;
+}
 
 /// 一个批次：写入者的本机改动，冻结后不再改变。
 class SrsBatch {
@@ -110,10 +166,13 @@ class SrsBatch {
     if (knownServerTimes.isNotEmpty) 'fs': knownServerTimes,
   }, _eventsBody(events));
 
-  static SrsBatch? decode(Uint8List bytes) {
-    final (Map<String, Object?>, Uint8List)? d = _decode(bytes, srsBatchMagic);
-    if (d == null) return null;
-    final (Map<String, Object?> h, Uint8List body) = d;
+  /// 解码；不完整或内容坏了都返回 null（要区分两者用 [tryDecode]）。
+  static SrsBatch? decode(Uint8List bytes) => tryDecode(bytes).valueOrNull;
+
+  static SrsFileDecode<SrsBatch> tryDecode(Uint8List bytes) =>
+      _parseChecked(bytes, srsBatchMagic, _parse);
+
+  static SrsBatch _parse(Map<String, Object?> h, Uint8List body) {
     return SrsBatch(
       writerId: h['writer']! as String,
       no: h['no']! as int,
@@ -165,13 +224,13 @@ class SrsSnapshot {
     }, body.takeBytes());
   }
 
-  static SrsSnapshot? decode(Uint8List bytes) {
-    final (Map<String, Object?>, Uint8List)? d = _decode(
-      bytes,
-      srsSnapshotMagic,
-    );
-    if (d == null) return null;
-    final (Map<String, Object?> h, Uint8List body) = d;
+  /// 解码；不完整或内容坏了都返回 null（要区分两者用 [tryDecode]）。
+  static SrsSnapshot? decode(Uint8List bytes) => tryDecode(bytes).valueOrNull;
+
+  static SrsFileDecode<SrsSnapshot> tryDecode(Uint8List bytes) =>
+      _parseChecked(bytes, srsSnapshotMagic, _parse);
+
+  static SrsSnapshot _parse(Map<String, Object?> h, Uint8List body) {
     final int nl = body.indexOf(0x0a);
     final int timesLen = int.parse(utf8.decode(body.sublist(0, nl)));
     final Map<String, Object?> times =
@@ -181,7 +240,10 @@ class SrsSnapshot {
     return SrsSnapshot(
       writerId: h['writer']! as String,
       maxOwnBatch: h['no']! as int,
-      vv: (h['vv']! as Map).cast<String, int>(),
+      vv: <String, int>{
+        for (final MapEntry<Object?, Object?> e in (h['vv']! as Map).entries)
+          e.key! as String: e.value! as int,
+      },
       serverTimes: <String, int>{
         for (final MapEntry<String, Object?> e in times.entries)
           e.key: e.value! as int,
@@ -209,13 +271,20 @@ class SrsCursorFile {
     'at': updatedAtMs,
   }, utf8.encode(srsCanonicalJson(cursors)));
 
-  static SrsCursorFile? decode(Uint8List bytes) {
-    final (Map<String, Object?>, Uint8List)? d = _decode(bytes, srsCursorMagic);
-    if (d == null) return null;
-    final (Map<String, Object?> h, Uint8List body) = d;
+  /// 解码；不完整或内容坏了都返回 null（要区分两者用 [tryDecode]）。
+  static SrsCursorFile? decode(Uint8List bytes) => tryDecode(bytes).valueOrNull;
+
+  static SrsFileDecode<SrsCursorFile> tryDecode(Uint8List bytes) =>
+      _parseChecked(bytes, srsCursorMagic, _parse);
+
+  static SrsCursorFile _parse(Map<String, Object?> h, Uint8List body) {
     return SrsCursorFile(
       writerId: h['writer']! as String,
-      cursors: (jsonDecode(utf8.decode(body)) as Map).cast<String, int>(),
+      cursors: <String, int>{
+        for (final MapEntry<Object?, Object?> e
+            in (jsonDecode(utf8.decode(body)) as Map).entries)
+          e.key! as String: e.value! as int,
+      },
       updatedAtMs: h['at']! as int,
     );
   }

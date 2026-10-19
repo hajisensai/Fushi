@@ -340,6 +340,7 @@ Future<List<String>> runOps(
   int seed = 0,
   double listDelay = 0.2,
   SimTopology? topology,
+  SrsSyncOptions? options,
 }) async {
   final Random r = Random(seed);
   int dirCount = 1;
@@ -348,7 +349,9 @@ Future<List<String>> runOps(
       if (d + 1 > dirCount) dirCount = d + 1;
     }
   }
-  final SimWorld w = SimWorld(random: r, directories: dirCount);
+  final SimWorld w = options == null
+      ? SimWorld(random: r, directories: dirCount)
+      : SimWorld(random: r, directories: dirCount, options: options);
   w.listDelay = listDelay;
   for (int i = 0; i < devices; i++) {
     w.add(

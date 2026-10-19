@@ -583,6 +583,58 @@ void main() {
     });
   }
 
+  group('发件箱按 maxEventsPerBatch 切批', () {
+    test('一轮里多于上限的事件切成连续几批，对端逐批应用后收敛', () async {
+      final SimWorld w = SimWorld(
+        options: const SrsSyncOptions(
+          snapshotEveryBatches: 100,
+          maxEventsPerBatch: 2,
+        ),
+      );
+      final SimDevice a = w.add('a');
+      final SimDevice b = w.add('b');
+      for (int i = 0; i < 5; i++) {
+        a.edit('n$i', 'f/x', 'v$i');
+      }
+      await a.sync();
+      final String aw = a.replica.writerId;
+      final Iterable<int> nos = w.dir.files[aw]!.keys
+          .map(srsParseBatchName)
+          .whereType<int>();
+      expect(nos.length, greaterThanOrEqualTo(3));
+      for (final int n in nos) {
+        final SrsBatch batch = SrsBatch.decode(
+          w.dir.files[aw]![srsBatchName(n)]!,
+        )!;
+        expect(batch.events.length, lessThanOrEqualTo(2));
+      }
+      await b.sync();
+      expect(b.replica.store.digest(), a.replica.store.digest());
+    });
+
+    for (final (String name, SimTopology? topology) in <(String, SimTopology?)>[
+      ('单目录', null),
+      ('三台都连两个目录', kDualTopology),
+    ]) {
+      group('随机模拟（固定种子，每批 1 条，$name）', () {
+        for (int seed = 1; seed <= 30; seed++) {
+          test('seed $seed', () async {
+            final List<String> problems = await runOps(
+              generateOps(seed),
+              seed: seed,
+              topology: topology,
+              options: const SrsSyncOptions(
+                snapshotEveryBatches: 3,
+                maxEventsPerBatch: 1,
+              ),
+            );
+            expect(problems, isEmpty, reason: 'seed $seed');
+          });
+        }
+      });
+    }
+  });
+
   test('目录：探针文件写在写入者自己的目录', () async {
     final MemorySyncDirectory dir = MemorySyncDirectory(serverNow: () => 1);
     await dir.serverTime('w1');

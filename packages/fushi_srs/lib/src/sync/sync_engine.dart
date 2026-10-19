@@ -227,6 +227,11 @@ class SrsSyncReport {
 
   /// 这个目录起步时发现本机持有它缺的写入者的数据，把全部事件重新放进了发件箱。
   bool republished = false;
+
+  /// 本轮跳过的坏文件（自校验通过、内容却解不出来；`<写入者>/<文件名>: 原因`）。
+  /// 文件不删（不是本写入者的文件，也可能是更新版本写的），调用方记日志。
+  /// 坏批次之后的数据只能等它的写入者写出覆盖它的快照再接上，其它写入者照常同步。
+  final List<String> skippedFiles = <String>[];
   String? error;
 
   /// 本轮取到的服务器时间（探针文件的服务端修改时间）。调用方据此给可信时间校时（铁律 F 第一层）。
@@ -240,6 +245,7 @@ class SrsSyncOptions {
     this.retireAfterMs = 90 * 24 * 60 * 60 * 1000,
     this.retainSentForMs = 30 * 24 * 60 * 60 * 1000,
     this.maxSentBatches = 5000,
+    this.maxEventsPerBatch = 5000,
   });
 
   final int snapshotEveryBatches;
@@ -251,6 +257,11 @@ class SrsSyncOptions {
 
   /// 留存批次数上限：超出时丢最旧的，落后的目录同样用快照补齐。
   final int maxSentBatches;
+
+  /// 一个批次最多装多少条事件；发件箱更多时按序切成几批。全量重新发布（新目录起步、换化身、
+  /// 恢复备份）与大包导入一次进箱几万条：切开后单个文件有界，上传 / 读取中断时已确认的那几批不必重来，
+  /// 读方也逐批应用、不必一次解码整库。
+  final int maxEventsPerBatch;
 }
 
 /// 同步引擎：对**一个**目录跑一轮。
@@ -311,7 +322,10 @@ class SrsSyncEngine {
 
     await _freeze(st, s);
     await _upload(st, ds, report);
-    final Map<String, SrsCursorFile> peers = await _peerCursors(st.writerId);
+    final Map<String, SrsCursorFile> peers = await _peerCursors(
+      st.writerId,
+      report.skippedFiles,
+    );
     if (!ds.bootstrapped) await _bootstrap(st, ds, report);
     await _pull(st, ds, peers, s, report);
     final List<String> missing = _dataMissingHere(st, ds);
@@ -405,10 +419,27 @@ class SrsSyncEngine {
     return ds.confirmedThrough;
   }
 
-  /// 发件箱里的事件冻结成一个新批次（发布时的服务器时间 S 写进信封）。冻结后内容不再改变。
+  /// 发件箱里的事件按序冻结成新批次（每批至多 [SrsSyncOptions.maxEventsPerBatch] 条，发布时的服务器时间 S
+  /// 写进信封）。冻结后内容不再改变。
   Future<void> _freeze(SrsSyncLocalState st, int s) async {
-    final List<SrsEvent> pending = await replica.unpublishedEvents();
-    if (pending.isEmpty) return;
+    final List<SrsEvent> all = await replica.unpublishedEvents();
+    final int step = options.maxEventsPerBatch < 1
+        ? 1
+        : options.maxEventsPerBatch;
+    for (int i = 0; i < all.length; i += step) {
+      await _freezeOne(
+        st,
+        s,
+        all.sublist(i, i + step > all.length ? all.length : i + step),
+      );
+    }
+  }
+
+  Future<void> _freezeOne(
+    SrsSyncLocalState st,
+    int s,
+    List<SrsEvent> pending,
+  ) async {
     final int no = st.nextBatchNo;
     final List<String> ids = <String>[for (final SrsEvent e in pending) e.id];
     final Map<String, int> known = await replica.knownServerTimes(ids);
@@ -564,7 +595,10 @@ class SrsSyncEngine {
     SrsSyncReport report,
   ) async {
     for (final String w in await directory.listWriters()) {
-      final SrsSnapshot? snap = await _latestSnapshot(w);
+      final SrsSnapshot? snap = await _latestSnapshot(
+        w,
+        skipped: report.skippedFiles,
+      );
       if (snap == null) continue;
       await _applySnapshot(st, snap, report);
       for (final MapEntry<String, int> e in snap.vv.entries) {
@@ -574,9 +608,11 @@ class SrsSyncEngine {
     ds.bootstrapped = true;
   }
 
+  /// [skipped] 非空时，跳过的坏快照记进去（较旧的完好快照照常可用）。
   Future<SrsSnapshot?> _latestSnapshot(
     String writerId, {
     List<String>? files,
+    List<String>? skipped,
   }) async {
     final List<String>? names = files ?? await directory.listFiles(writerId);
     if (names == null) return null;
@@ -589,10 +625,15 @@ class SrsSyncEngine {
         writerId,
         srsSnapshotName(n),
       );
-      final SrsSnapshot? snap = bytes == null
-          ? null
-          : SrsSnapshot.decode(bytes);
-      if (snap != null) return snap;
+      if (bytes == null) continue;
+      switch (SrsSnapshot.tryDecode(bytes)) {
+        case SrsFileOk<SrsSnapshot>(:final SrsSnapshot value):
+          return value;
+        case SrsFileMalformed<SrsSnapshot>(:final String reason):
+          skipped?.add('$writerId/${srsSnapshotName(n)}: $reason');
+        case SrsFileIncomplete<SrsSnapshot>():
+          break;
+      }
     }
     return null;
   }
@@ -668,29 +709,49 @@ class SrsSyncEngine {
       bool snapshotTried = false;
       while (true) {
         // 严格按批次号顺序应用；b+1 还不可见（列表延迟、上传未完成）就停在 b，不跳过、不提前确认。
+        // b+1 在、但内容坏了（[SrsFileMalformed]）：同样不跳过（跳过 = 丢数据还谎报 cursor），
+        // 记进报告，改走下面的快照；没有覆盖它的快照就停在 b，等写入者写出新快照。
+        bool nextMalformed = false;
         while (present.contains(cursor + 1)) {
-          final Uint8List? bytes = await directory.read(
-            w,
-            srsBatchName(cursor + 1),
-          );
-          final SrsBatch? batch = bytes == null ? null : SrsBatch.decode(bytes);
-          if (batch == null || batch.writerId != w || batch.no != cursor + 1) {
-            break;
+          final String name = srsBatchName(cursor + 1);
+          final Uint8List? bytes = await directory.read(w, name);
+          if (bytes == null) break;
+          SrsBatch? batch;
+          switch (SrsBatch.tryDecode(bytes)) {
+            case SrsFileOk<SrsBatch>(:final SrsBatch value)
+                when value.writerId == w && value.no == cursor + 1:
+              batch = value;
+            case SrsFileOk<SrsBatch>(:final SrsBatch value):
+              report.skippedFiles.add(
+                '$w/$name: header says ${value.writerId}/${value.no}',
+              );
+              nextMalformed = true;
+            case SrsFileMalformed<SrsBatch>(:final String reason):
+              report.skippedFiles.add('$w/$name: $reason');
+              nextMalformed = true;
+            case SrsFileIncomplete<SrsBatch>():
+              // 写到一半：停在这里，下一轮再读。
+              batch = null;
           }
+          if (batch == null) break;
           await _applyBatch(batch, forward: forward);
           report.applied += batch.events.length;
           st.lastBatchServerTime[w] = batch.serverTimeMs;
           cursor = batch.no;
         }
-        // 下一批不在、但 W 有覆盖到更后面的快照：中间的批次已被快照覆盖并清理，或 W 在这个目录里
-        // 是用快照补齐的。读 W 的最新快照，再接着读之后的增量。
+        // 下一批不在（或坏了）、但 W 有覆盖到更后面的快照：中间的批次已被快照覆盖并清理，或 W 在这个
+        // 目录里是用快照补齐的。读 W 的最新快照，再接着读之后的增量。
         if (snapshotTried ||
-            present.contains(cursor + 1) ||
+            (present.contains(cursor + 1) && !nextMalformed) ||
             latestSnapshot <= cursor) {
           break;
         }
         snapshotTried = true;
-        final SrsSnapshot? snap = await _latestSnapshot(w, files: files);
+        final SrsSnapshot? snap = await _latestSnapshot(
+          w,
+          files: files,
+          skipped: report.skippedFiles,
+        );
         if (snap == null || snap.maxOwnBatch <= cursor) break;
         await _applySnapshot(st, snap, report);
         cursor = snap.maxOwnBatch;
@@ -745,15 +806,25 @@ class SrsSyncEngine {
     return true;
   }
 
-  Future<Map<String, SrsCursorFile>> _peerCursors(String self) async {
+  /// 坏的 cursor 文件按「没有 cursor 文件」处理（记进 [skipped]）：这个写入者不参与
+  /// 清理门（不会因为它被提前删掉谁的数据——本写入者只删已被自己快照覆盖的批次），也不会被当作退役删除。
+  Future<Map<String, SrsCursorFile>> _peerCursors(
+    String self,
+    List<String> skipped,
+  ) async {
     final Map<String, SrsCursorFile> out = <String, SrsCursorFile>{};
     for (final String w in await directory.listWriters()) {
       if (w == self) continue;
       final Uint8List? bytes = await directory.read(w, srsCursorName);
-      final SrsCursorFile? c = bytes == null
-          ? null
-          : SrsCursorFile.decode(bytes);
-      if (c != null) out[w] = c;
+      if (bytes == null) continue;
+      switch (SrsCursorFile.tryDecode(bytes)) {
+        case SrsFileOk<SrsCursorFile>(:final SrsCursorFile value):
+          out[w] = value;
+        case SrsFileMalformed<SrsCursorFile>(:final String reason):
+          skipped.add('$w/$srsCursorName: $reason');
+        case SrsFileIncomplete<SrsCursorFile>():
+          break;
+      }
     }
     return out;
   }

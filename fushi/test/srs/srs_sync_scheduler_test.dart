@@ -275,6 +275,84 @@ void main() {
       expect(store.trustedClock.isAnchored, isTrue);
     });
 
+    test('目录身份拿不到（云盘账户还没认出来）：这一轮不跑，不当成新目录', () async {
+      int runs = 0;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async => 0,
+        directoryKeyOf: (SyncAssetStore b) async => null,
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner: (SyncAssetStore b, SrsDbStore st, String key) async {
+          runs++;
+          return SrsSyncReport();
+        },
+      );
+      final SrsSyncReport? r = await s.syncWithBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      expect(r!.error, kSrsSyncDirectoryIdentityUnavailable);
+      expect(runs, 0);
+      expect((await store.loadSyncState()).directories, isEmpty);
+    });
+
+    test('host 收到客户端写入：去抖后只跑一次本机目录，不跑通道', () async {
+      final List<String> keys = <String>[];
+      int channelRuns = 0;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          channelRuns++;
+          return 0;
+        },
+        directoryKeyOf: (SyncAssetStore b) async => 'cloud',
+        localDirectories: () async => <SrsLocalDirectory>[
+          SrsLocalDirectory(
+            directoryKey: 'interconnect:host',
+            store: LocalDirectoryAssetStore(root),
+          ),
+        ],
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        hostWriteDebounce: const Duration(milliseconds: 30),
+        runner: (SyncAssetStore b, SrsDbStore st, String key) async {
+          keys.add(key);
+          return SrsSyncReport();
+        },
+      );
+      addTearDown(s.dispose);
+      for (int i = 0; i < 5; i++) {
+        s.notifyLocalDirectoryWritten();
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(keys, isEmpty, reason: '去抖期间不跑');
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(keys, <String>['interconnect:host']);
+      expect(channelRuns, 0);
+      // 销毁后再来的写入不再触发。
+      s.dispose();
+      s.notifyLocalDirectoryWritten();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(keys, hasLength(1));
+    });
+
+    test('坏文件只记一次日志，不影响结果', () async {
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async => 0,
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner: (SyncAssetStore b, SrsDbStore st, String key) async =>
+            SrsSyncReport()..skippedFiles.add('w#1/batch-0000000002: bad'),
+      );
+      final SrsSyncReport? r = await s.syncWithBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      expect(r!.error, isNull);
+      expect(r.skippedFiles, hasLength(1));
+    });
+
     test('同时触发的几轮依次跑，不交错改同一份本机同步状态', () async {
       int running = 0;
       int maxRunning = 0;
