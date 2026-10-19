@@ -135,7 +135,7 @@ ModuleVisibility _visibility({
       if (games) ModuleId.games,
       if (downloads) ModuleId.browse,
       if (lookup) ModuleId.lookup,
-      if (browserExtension) ModuleId.browserExtension,
+      if (browserExtension) ModuleId.web,
     });
 
 Future<_HomeShellAppModel> _pumpHome(

@@ -24,8 +24,9 @@ echo "==> cargo rustc --release --lib --target $target --crate-type cdylib (MACO
 # 调 rust-objcopy，它重排 LINKEDIT 时不补齐——间接符号表项数为奇数时字符串表只对齐到 4。用 SDK 27
 # 及以上链接的 dylib，macOS 27 的 dyld 会以「mis-aligned LINKEDIT string pool」拒绝加载（文件、
 # 符号、install name 都正常；与部署目标无关，部署目标只是会改变间接符号个数、碰巧翻转奇偶）。
-# Apple 的 strip 会补齐；写绝对路径，免得 PATH 上的 llvm-strip / GNU strip 顶替。
-# verify_abi.sh 的 LINKEDIT 对齐检查与 runner 系统无关地兜住这类回归；下面的 dlopen 冒烟
+# Xcode 27 的 Apple strip 实测会补齐，更旧 Xcode 的不保证（2026-10-19 macos-latest 出包 stroff
+# mod 8 = 4）；写绝对路径，免得 PATH 上的 llvm-strip / GNU strip 顶替。verify_abi.sh 按二进制
+# 记录的链接 SDK 判 LINKEDIT 对齐（SDK ≥ 27 未对齐即红、更旧只告警）；下面的 dlopen 冒烟
 # 只有在 macOS 27 + SDK 27 上才测得出这一个问题。
 CARGO_PROFILE_RELEASE_STRIP=false cargo rustc --release --lib --target "$target" --crate-type cdylib
 built="target/$target/release/libfushi_compute.dylib"

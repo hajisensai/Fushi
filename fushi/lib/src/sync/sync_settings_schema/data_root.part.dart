@@ -273,7 +273,11 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
       documentsTopLevelIncludeNames:
           sharedDocumentsRoot ? AppPaths.fushiOwnedDocumentsEntries : null,
     );
-    await const DataRootMigrator().migrate(req);
+    // 搬文件整段在词典映射释放的作用域里：期间排下的引擎装载不结算，旧根里的词典
+    // 文件不会在搬移中途又被映射上（BUG-1756）。迁移成功 / 失败都以重启收尾。
+    await FushiDicts.withMappingsReleased(
+      () => const DataRootMigrator().migrate(req),
+    );
   } on DataRootMigrationException catch (e, stack) {
     // 迁移失败：旧数据已由引擎完整回滚保留、未写 pref。但 closeResources 在搬移前就
     // 已关掉 DB（_isInitialised=false），本进程无法原地恢复 → 切到失败态遮罩，由用户
@@ -534,6 +538,12 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       debugPrint(
           'DataRoot migrate: audioHandler.stop failed/timeout (best-effort): $e');
     }
+    // 1.2) BUG-3541：停内置 torrent 引擎。它握着下载内容的文件句柄（不放 rename
+    //    会被占用锁住），且会按旧绝对路径往旧 resume 目录落盘。先强制落一次 resume、
+    //    关 session，迁移器随后在新根上改写 resume 里的 save_path；本进程不再懒建。
+    //    **不**做 best-effort：停不下引擎就不该搬文件（抛出 → 迁移在搬任何东西前
+    //    失败，旧根原样）。
+    appModel.releaseEmbeddedTorrentForDataRootMove();
     // 1.5) TODO-1212：释放页面级媒体播放器的文件句柄（视频主播放器 / 离屏缩略图
     //    取帧 Player）。有声书会话上面 stop() 已直接 await disposeAndRelease 释放；
     //    这些视频侧 leaf 播放器是页面级、没有进程级持有者，迁移路径够不到——经
@@ -557,7 +567,10 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       debugPrint('DataRoot migrate: imageCache clear failed (best-effort): $e');
     }
     // 3) 释放词典 FFI 原生句柄（静态单例；打开数据根内的词典索引/资源文件）。
+    //    destroy 只是退役：被后台 isolate 借着的句柄（扩展分词）要等借用归还才真正
+    //    关掉文件，搬文件前等它。
     FushiDicts.disposeInstance();
+    await FushiDicts.whenBackgroundBorrowsSettled();
     // 4) WAL checkpoint(TRUNCATE) 落盘 + 关 DB（释放文件锁）。
     try {
       await appModel.database

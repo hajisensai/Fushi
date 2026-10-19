@@ -14,7 +14,7 @@ void main() {
     ModuleId.games,
     ModuleId.browse,
     ModuleId.lookup,
-    ModuleId.browserExtension,
+    ModuleId.web,
   };
 
   group('顺序偏好编解码', () {
@@ -60,7 +60,7 @@ void main() {
         HomeTab.games,
         HomeTab.browse,
         HomeTab.dictionaries,
-        HomeTab.browserExtension,
+        HomeTab.web,
         HomeTab.settings,
       ]);
     });
@@ -80,7 +80,7 @@ void main() {
         HomeTab.manga,
         HomeTab.games,
         HomeTab.browse,
-        HomeTab.browserExtension,
+        HomeTab.web,
         HomeTab.settings,
       ]);
     });
@@ -126,7 +126,7 @@ void main() {
       final List<ModuleId> full = orderModules(const <ModuleId>[]);
       final List<ModuleId> visible = <ModuleId>[
         for (final ModuleId id in full)
-          if (allNav.contains(id) && id != ModuleId.browserExtension) id,
+          if (allNav.contains(id) && id != ModuleId.web) id,
       ];
       // 查词（visible 下标 6）拖到最前。
       final List<ModuleId> result = reorderVisibleModules(
@@ -137,10 +137,7 @@ void main() {
       );
       expect(result.length, ModuleId.values.length);
       expect(result.first, ModuleId.lookup);
-      expect(
-        result.indexOf(ModuleId.browserExtension),
-        full.indexOf(ModuleId.browserExtension),
-      );
+      expect(result.indexOf(ModuleId.web), full.indexOf(ModuleId.web));
       expect(result.indexOf(ModuleId.sync), full.indexOf(ModuleId.sync));
       expect(
         homeActiveTabs(ModuleVisibility(allNav, order: result)).take(3),

@@ -817,6 +817,7 @@ class VideoMetadataDatabaseStore {
         characters.add(VideoMetadataCharactersCompanion.insert(
           characterKey: characterKey,
           name: character.name,
+          originalName: Value<String?>(character.originalName),
           description: Value<String?>(character.description),
           imageUrl: Value<String?>(character.imageUrl),
           updatedAt: now,

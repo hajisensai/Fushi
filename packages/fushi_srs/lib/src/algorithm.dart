@@ -1,4 +1,8 @@
-/// 排程算法。只支持 FSRS-7 / FSRS-6（用户 2026-10-14 定，不做 RWKV）。
+/// 排程算法。目前只有 FSRS-7 / FSRS-6 两个枚举值。
+///
+/// RWKV-Instant：用户 2026-10-14 定「不做 RWKV」，2026-10-19 改为支持 RWKV-Instant
+/// （只做 Instant，不做 Curve）。原生推理库在 native/fushi_rwkv（AGPL-3.0-or-later），
+/// 排程接入等排程策略从 Dart 迁到 Rust 之后再做，届时再加枚举值。
 ///
 /// 持久化名是 [wire]，冻结；不认识的值（更新版本的 app 写来的）原样保留、不改写，
 /// 本机按 [srsLocalAlgorithmFallbackOrder] 取第一个能用的算法排程（铁律 F）。

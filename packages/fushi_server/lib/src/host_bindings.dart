@@ -17,11 +17,13 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/audio/flac_encoder.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/native_libs.dart';
 import 'package:fushi_server/src/ocr_session_factory.dart';
+import 'package:fushi_server/src/server_gpu_budget.dart';
 import 'package:fushi_server/src/server_log.dart';
 import 'package:fushi_server/src/server_paths.dart';
 
@@ -59,9 +61,14 @@ void installServerHostBindings({
 }
 
 /// 服务端 ASR 的 ONNX 工厂（顶层函数，供 isolate 后端）。
-asr.OnnxSessionFactory buildServerAsrOnnxFactory() => FfiOnnxSessionFactory(
-      logName: asr.kAsrLogName,
-      libraryPathOverride: serverOrtLibraryPath,
+///
+/// 外包一层 [ServerGpuBudgetOnnxFactory]：FFI 后端查不到显存预算，不补的话带显存
+/// 门槛的包（日语视频 Parakeet）有 N 卡也只会规划成 CPU int8（见 server_gpu_budget.dart）。
+asr.OnnxSessionFactory buildServerAsrOnnxFactory() => ServerGpuBudgetOnnxFactory(
+      FfiOnnxSessionFactory(
+        logName: asr.kAsrLogName,
+        libraryPathOverride: serverOrtLibraryPath,
+      ),
     );
 
 /// 启动前校验配置里的 ffmpeg / ffprobe 路径存在（存在性而已：能不能跑由引擎的
@@ -86,18 +93,41 @@ void serverAsrIsolateBootstrap(Object arg) {
 
 /// 与 app 的 `createAsrTranscriptionService()` 对偶：同一个 asr_core 服务，
 /// 后端换成 FFI ORT + 引擎 ffmpeg 转接。
-asr.AsrTranscriptionService createServerAsrTranscriptionService() =>
+///
+/// [audioProfile] 由调用方按素材给：有声书 / 纯音频是干净朗读（默认，能量门限
+/// 够用且免掉每 32 ms 一次 ONNX 前向），视频是 `mixedAudio`（Parakeet + 滑窗）。
+/// 缺省值与 app 那边一致——同一份算法在两端跑出不同行为比慢一点糟得多。
+asr.AsrTranscriptionService createServerAsrTranscriptionService({
+  asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.cleanSpeech,
+}) =>
     asr.AsrTranscriptionService(
-      // 与 app 的 createAsrTranscriptionService 取同一个档位：有声书是干净朗读，
-      // 能量门限够用且免掉每 32 ms 一次 ONNX 前向。混音素材要换 mixedAudio。
-      // 两处必须一致——同一份算法在两端跑出不同行为比慢一点糟得多。
-      audioProfile: asr.AsrAudioProfile.cleanSpeech,
+      audioProfile: audioProfile,
       backend: asr.AsrIsolateBackend(
         buildFactory: buildServerAsrOnnxFactory,
         bootstrap: serverAsrIsolateBootstrap,
         bootstrapArg: serverOrtLibraryPath ?? '',
       ),
       pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
+    );
+
+/// 视频字幕管线挑识别器的服务端装配（与 app 的 `resolveAppVideoSubtitleRecognizer`
+/// 对偶）：ASR 服务工厂是 [createServerAsrTranscriptionService]，子进程走引擎默认的
+/// `HelperProcessRegistry`。[mossCliPath] / [mossModelPath] 指向本机已有的
+/// audio.cpp CLI 与 GGUF 时跳过下载目录（`subgen --moss-cli/--moss-model`）。
+Future<VideoSubtitleRecognizerChoice> resolveServerVideoSubtitleRecognizer({
+  required VideoSubtitleSegmenterMode mode,
+  MossBackendPreference mossBackend = MossBackendPreference.auto,
+  asr.AsrAccelerationPreference preference = asr.AsrAccelerationPreference.auto,
+  String? mossCliPath,
+  String? mossModelPath,
+}) =>
+    resolveVideoSubtitleRecognizer(
+      mode: mode,
+      mossBackend: mossBackend,
+      serviceFactory: (asr.AsrAudioProfile profile) => createServerAsrTranscriptionService(audioProfile: profile),
+      preference: preference,
+      mossCliPath: mossCliPath,
+      mossModelPath: mossModelPath,
     );
 
 /// 配置显式路径优先；否则 bundle 布局里找随包的 onnxruntime；都没有返回 null

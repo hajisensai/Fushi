@@ -25,12 +25,13 @@ on:
       - 'fushi/**'
       - 'packages/**'
       # Android 构建真正用到的原生源码：fushidicts 走 build.gradle 的 CMake，
-      # torrent / p2p / fsrs / compute 在本 workflow 里编成 .so 进 jniLibs。
+      # torrent / p2p / fsrs / compute / web_core 在本 workflow 里编成 .so 进 jniLibs。
       - 'native/fushidicts/**'
       - 'native/fushi_torrent/**'
       - 'native/fushi_p2p/**'
       - 'native/fushi_fsrs/**'
       - 'native/fushi_compute/**'
+      - 'native/fushi_web_core/**'
       - 'ci/**'
       - 'third_party/**'
       - 'tool/check_release_policy.ps1'
@@ -45,6 +46,7 @@ on:
       - '.github/actions/native-store-names/**'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/setup-fushi-compute/**'
+      - '.github/actions/fushi-web-core-linux/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -720,6 +722,59 @@ jobs:
           esac
           bash native/fushi_fsrs/verify_abi.sh "$so" "$nm_bin"
         done
+    # 网页内容核心（fushi_web_core，硬依赖）的 Android .so：cargo-ndk 交叉编，产物落
+    # native/fushi_web_core/prebuilt/android/<abi>/，由 build.gradle 的 jniLibs 随包（release 构建缺库即失败）
+    # 随包。失败口径同 fushi_p2p：**构建失败即 job 失败**，不降级出一个悄悄少了网页广告拦截原生
+    # 库的包；出包后下面还会逐 ABI 核对 APK 里确有 libfushi_web_core.so。
+    # 工具链钉法与 fushi_p2p 同源（Rust / cargo-ndk 版本都从 native_store 读，与
+    # native-web-core-gate.yml 的 1.95.0 / 4.1.2 一致）；ABI 同样三个。fushi_web_core 不进原生产物
+    # 持久库（与 build-multiplatform.yml 各端的 fushi_web_core 步骤同一口径：冷编便宜），只靠
+    # rust-cache。fushi_p2p 持久库命中时它那组 Rust / cargo-ndk 安装步骤被跳过，所以这里
+    # 无条件再装一次（同版本，幂等）。
+    - name: Set up Rust (fushi_web_core, Android targets)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ steps.native_store.outputs.p2p_rust }}
+        targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+    - name: Cache Rust build (fushi_web_core)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: native/fushi_web_core -> target
+        key: fushi-web-core-android
+    - name: Install cargo-ndk (fushi_web_core)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-ndk@${{ steps.native_store.outputs.cargo_ndk }}
+    - name: Build fushi_web_core Android .so (cargo-ndk)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      timeout-minutes: 45
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash native/fushi_web_core/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+    # 每个 ABI 的 .so：ELF 架构对得上，且导出 Dart 绑定 lookup 的全部 fwc_* 符号。
+    - name: Verify fushi_web_core Android .so
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+        if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+        for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
+          abi="${pair%%:*}"; want="${pair#*:}"
+          so="native/fushi_web_core/prebuilt/android/$abi/libfushi_web_core.so"
+          test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+          machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+          echo "$abi: ELF machine = $machine"
+          case "$machine" in
+            *"$want"*) : ;;
+            *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
+          esac
+          bash native/fushi_web_core/verify_abi.sh "$so" "$nm_bin"
+        done
 
     # 计算内核（哈希 / 图像 / 文本，native/fushi_compute）的 Android .so：与上面 fushi_fsrs
     # 同一口径——cargo-ndk 三个 ABI 交叉编，产物落 native/fushi_compute/prebuilt/android/<abi>/，
@@ -959,6 +1014,36 @@ jobs:
               exit 1
             fi
             echo "ok: $apk lib/$abi/libfushi_fsrs.so"
+          done
+        done
+    # 同上，fushi_web_core（网页内容核心）也走 jniLibs：逐包、逐 ABI 核对
+    # APK 里确有 libfushi_web_core.so，把「编了但没进包」挡在发布前。判据与 here-string
+    # 理由（BUG-2804）同上一步。
+    - name: Verify fushi_web_core is packaged in every APK ABI
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(build/release-artifacts/fushi-*.apk)
+        if [ "${#apks[@]}" -eq 0 ]; then
+          echo "::error title=No APK to verify::build/release-artifacts has no fushi-*.apk"
+          exit 1
+        fi
+        for apk in "${apks[@]}"; do
+          listing="$(unzip -Z1 "$apk")"
+          abis="$(printf '%s\n' "$listing" | sed -n 's#^lib/\([^/]*\)/libflutter\.so$#\1#p' | sort -u)"
+          if [ -z "$abis" ]; then
+            echo "::error title=APK has no Flutter engine::$apk has no lib/<abi>/libflutter.so"
+            exit 1
+          fi
+          for abi in $abis; do
+            if ! grep -qx "lib/$abi/libfushi_web_core.so" <<< "$listing"; then
+              echo "::error title=fushi_web_core missing from APK::$apk lib/$abi/ has no libfushi_web_core.so"
+              exit 1
+            fi
+            echo "ok: $apk lib/$abi/libfushi_web_core.so"
           done
         done
 
@@ -1451,6 +1536,23 @@ jobs:
         echo "::error title=main sync failed::推 main 三次都被拒（有人同时在推 main）。请人工把 develop 合进 main。"
         exit 1
 
+  # 网页内容核心（native/fushi_web_core）Linux .so：packages/fushi_web_core 把原生库当硬依赖
+  # （没有「缺库判不可用」的分支，测试找不到库就失败、不 skip），所以 fushi/ 与 packages/ 的
+  # 单测 job 都要它。只编一次、以 workflow artifact 交给下游（artifact 不占 Actions 缓存配额）。
+  web-core-linux:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/fushi-web-core-linux
+    - uses: actions/upload-artifact@v7
+      with:
+        name: fushi-web-core-linux-x64
+        path: native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
+        if-no-files-found: error
+        retention-days: 3
+
   # TODO-fast-release: the analyze/unit/package suites that used to run as
   # sequential steps at the top of the `build` job (gating `flutter build apk`)
   # now live here as an INDEPENDENT job. It shares the same trigger as `build`
@@ -1486,6 +1588,9 @@ jobs:
       matrix:
         part: ['0', '1', '2', '3', checks]
     name: tests (${{ matrix.part }})
+    needs: web-core-linux
+    env:
+      FUSHI_WEB_CORE_LIB: ${{ github.workspace }}/native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
     steps:
     - uses: actions/checkout@v6
 
@@ -1520,6 +1625,12 @@ jobs:
       run: |
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
+
+    - name: Fetch fushi_web_core linux-x64 library (hard dependency of the unit tests)
+      uses: actions/download-artifact@v7
+      with:
+        name: fushi-web-core-linux-x64
+        path: native/fushi_web_core/prebuilt/linux-x64
 
     - name: Run dart analyze
       if: matrix.part == 'checks'

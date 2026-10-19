@@ -999,6 +999,7 @@ class _AiProviderSettingsSectionState
     AiFeature.mangaOcr => FushiIcons.ocr,
     AiFeature.audiobookCast => FushiIcons.voice,
     AiFeature.collectionOrder => FushiIcons.sort,
+    AiFeature.subtitleProofread => FushiIcons.edit,
   };
 
   // ---------------------------------------------------------------------------
@@ -1248,6 +1249,7 @@ class _AiProviderSettingsSectionState
     AiFeature.mangaOcr => t.ai_feature_manga_ocr,
     AiFeature.audiobookCast => t.ai_feature_audiobook_cast,
     AiFeature.collectionOrder => t.ai_feature_collection_order,
+    AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread,
   };
 
   String _featureSummary(AiFeature feature) => switch (feature) {
@@ -1261,6 +1263,7 @@ class _AiProviderSettingsSectionState
     AiFeature.mangaOcr => t.ai_feature_manga_ocr_summary,
     AiFeature.audiobookCast => t.ai_feature_audiobook_cast_summary,
     AiFeature.collectionOrder => t.ai_feature_collection_order_summary,
+    AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread_summary,
   };
 
   /// 协议名是 wire 事实（各家 API 文档里的原名），不翻译。

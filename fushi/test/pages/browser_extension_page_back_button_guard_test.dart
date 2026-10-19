@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 
 /// BUG-1748 守卫：`BrowserExtensionPage` 是**双身份页**——既是桌面顶层导航 tab
-/// （`HomeTab.browserExtension`，侧栏在旁边，不该出返回箭头），又被
+/// （`HomeTab.web`，侧栏在旁边，不该出返回箭头），又被
 /// `settings_schema_lookup.dart` 的 `SettingsNavigationItem` 裸 push 成全屏
 /// `MaterialPageRoute`（此时侧栏被整个盖住）。BUG-1658 把顶层 tab 页头统一成
 /// `FushiPageHeader` 大标题时只写了前一半，于是从设置进来的用户没有任何返回控件。

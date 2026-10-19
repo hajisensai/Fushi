@@ -19,6 +19,12 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
   /// 重读本视频的待制卡数（待写入 + 写入失败）。best-effort：未初始化的最小宿主
   /// （smoke / widget 测试没有 AppModel）直接当 0。
   Future<void> _refreshStagedMineCount() async {
+    // 网页档的待制卡是 web_mine_queue（等内置档重放），不是看完再制卡的暂存。
+    if (_webMode) {
+      final int pending = await _webMineQueue.pendingCount(_activeBookUid);
+      if (mounted) _stagedMineCount.value = pending;
+      return;
+    }
     try {
       final VideoMineQueue queue = await _videoMineQueue();
       final int count =
@@ -125,6 +131,8 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
       _backgroundMineJobs,
     );
     if (_stagedMineCount.value == 0 && inFlight.isEmpty) return;
+    // 网页档的角标数是重放队列（留给内置档），退页不提交任何东西。
+    if (_webMode) return;
     final String bookUid = _activeBookUid;
     final BaseAnkiRepository repo;
     try {
@@ -179,7 +187,12 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
                     customBorder: const StadiumBorder(),
                     canRequestFocus: false,
                     onTap: staged > 0
-                        ? () => unawaited(_openVideoMineQueue())
+                        ? () => unawaited(
+                            // 网页档：切到可捕获的内置档逐句重放落卡。
+                            _webMode
+                                ? _runWebMineQueue()
+                                : _openVideoMineQueue(),
+                          )
                         : null,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(

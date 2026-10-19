@@ -189,6 +189,14 @@ class FlutterWindow : public Win32Window {
   // Returns whether the view's HDR output is on afterwards.
   bool SetCompositorHdrOutput(bool enabled, float sdr_white_nits);
 
+  // Underlay composition (same channel: underlayCompositionSupported /
+  // setUnderlayComposition): the patched engine's
+  // FlutterDesktopViewSetUnderlayComposition, or null on a stock engine.
+  using ViewSetUnderlayCompositionFn = void (*)(FlutterDesktopViewRef, bool);
+  static ViewSetUnderlayCompositionFn ResolveViewSetUnderlayComposition();
+  // Returns false when the engine cannot do it (the request is then a no-op).
+  bool SetUnderlayComposition(bool enabled);
+
   // Magpie 缩放状态监听（仅 Windows）：Magpie 通过
   // RegisterWindowMessage(L"MagpieScalingChanged") 向所有顶层窗口广播缩放状态。
   // runner 收到后经此 channel 把 onScalingChanged 单向推给 Dart（见

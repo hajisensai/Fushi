@@ -1,10 +1,12 @@
-// 下载内容改名 / 移动、数据根迁移之后，下载任务表 `video_download_job_files.
-// final_absolute_path` 必须与库里 `video_books.video_path` 一起改写。
+// 下载内容改名 / 移动、数据根迁移之后，下载任务表必须与库里
+// `video_books` 一起改写。
 //
-// 任务与库行之间没有 id 级外键，唯一纽带就是这两列相等：下载后补抓字幕
-// （download_subtitle_retry.dart）、库侧删除反查任务
-// （video_download_pipeline_service.dart `_jobFilesMatching`）全靠它。以前两处
-// 源头只改库、不改任务，纽带一断，补字幕永远对不上、删条目找不到要 skip 的文件。
+// 任务与库行之间没有 id 级外键，纽带全靠路径：`final_absolute_path` 与
+// `video_path` 相等（下载后补抓字幕 download_subtitle_retry.dart、库侧删除反查任务
+// video_download_pipeline_service.dart `_jobFilesMatching` 全靠它），任务行的
+// `observed_save_path` + 文件行的 `current_relative_path` 拼出任务删除 / 打开位置
+// 用的路径（BUG-3540）。另外只改引擎真实搬动的文件：不在种子里的字幕 sidecar
+// 原地不动，库里的字幕列也不许被改到一个没有文件的位置（BUG-3538）。
 
 import 'dart:io';
 
@@ -16,11 +18,16 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/data_root_migrator.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:path/path.dart' as p;
 
-/// 只实现改名 / 移动两条路径的后端：恒成功。
+/// 只实现改名 / 移动 / 列文件三条路径的后端：恒成功。
 class _OkBackend implements TorrentBackend {
+  _OkBackend(this.files);
+
+  final List<TorrentFileEntry> files;
+
   @override
   Future<TorrentStorageResult> renameFile(
     String torrentId,
@@ -35,6 +42,9 @@ class _OkBackend implements TorrentBackend {
   ) async => TorrentStorageResult(ok: true, path: newSavePath);
 
   @override
+  Future<List<TorrentFileEntry>> listFiles(String torrentId) async => files;
+
+  @override
   void close() {}
 
   @override
@@ -45,6 +55,10 @@ Future<int> _seedJobFile(
   FushiDatabase db, {
   required String jobId,
   required String finalAbsolutePath,
+  String? torrentHash,
+  String? observedSavePath,
+  String? currentRelativePath,
+  int backendFileIndex = 0,
 }) async {
   await db.upsertVideoDownloadJob(
     VideoDownloadJobsCompanion.insert(
@@ -55,6 +69,9 @@ Future<int> _seedJobFile(
       title: 'Show',
       backendKind: 'embedded',
       fingerprint: 'fp-$jobId',
+      torrentHash: Value<String?>(torrentHash),
+      backendTaskId: Value<String?>(torrentHash),
+      observedSavePath: Value<String?>(observedSavePath),
       lifecycle: const Value<String>(VideoDownloadJobLifecycle.completed),
       stage: const Value<String>(VideoDownloadJobStage.scrape),
       createdAt: 1,
@@ -64,9 +81,10 @@ Future<int> _seedJobFile(
   await db.upsertVideoDownloadJobFile(
     VideoDownloadJobFilesCompanion.insert(
       jobId: jobId,
-      backendFileIndex: const Value<int?>(0),
-      originalRelativePath: p.basename(finalAbsolutePath),
-      currentRelativePath: p.basename(finalAbsolutePath),
+      backendFileIndex: Value<int?>(backendFileIndex),
+      originalRelativePath:
+          currentRelativePath ?? p.basename(finalAbsolutePath),
+      currentRelativePath: currentRelativePath ?? p.basename(finalAbsolutePath),
       finalAbsolutePath: Value<String?>(finalAbsolutePath),
       kind: const Value<String>('video'),
       status: const Value<String>(VideoDownloadJobFileStatus.imported),
@@ -80,79 +98,175 @@ Future<int> _seedJobFile(
 Future<String?> _jobPath(FushiDatabase db, String jobId) async =>
     (await db.getVideoDownloadJobFiles(jobId)).single.finalAbsolutePath;
 
-Future<String?> _bookPath(FushiDatabase db, String uid) async =>
-    (await db.allVideoBooks())
-        .firstWhere((VideoBookRow r) => r.bookUid == uid)
-        .videoPath;
+Future<VideoBookRow> _book(FushiDatabase db, String uid) async =>
+    (await db.allVideoBooks()).firstWhere((VideoBookRow r) => r.bookUid == uid);
 
 void main() {
-  group('改名 / 移动：DownloadRelocateService → migrateMediaPaths', () {
+  group('改名 / 移动：DownloadRelocateService → applyDownloadRelocation', () {
+    late Directory tmp;
     late FushiDatabase db;
-    late DownloadRelocateService service;
-    final String root = p.join(p.rootPrefix(p.current), 'dl', 'Show');
-    final String elsewhere = p.join(p.rootPrefix(p.current), 'other', 'x.mkv');
+    late String root;
+    late String elsewhere;
+
+    DownloadRelocateService serviceFor(List<TorrentFileEntry> files) =>
+        DownloadRelocateService(
+          backendFactory: () => _OkBackend(files),
+          pathMappings: () async => const <VideoDownloadPathMapping>[],
+          applyRelocation: VideoBookRepository(db).applyDownloadRelocation,
+        );
 
     setUp(() async {
+      tmp = Directory.systemTemp.createTempSync('fushi_jobreloc_');
+      // 内置引擎 / 同机后端：save_path 就是本机目录（真实存在 → 同机映射成立）。
+      root = p.join(tmp.path, 'dl');
+      Directory(p.join(root, 'Show')).createSync(recursive: true);
+      elsewhere = p.join(tmp.path, 'other', 'x.mkv');
       db = FushiDatabase.forTesting(NativeDatabase.memory());
-      service = DownloadRelocateService(
-        backendFactory: _OkBackend.new,
-        migrateLibraryPaths:
-            ({required String fromPath, required String toPath}) =>
-                VideoBookRepository(
-                  db,
-                ).migrateMediaPaths(fromPath: fromPath, toPath: toPath),
-      );
       await db.upsertVideoBook(
         VideoBooksCompanion.insert(
           bookUid: 'video/ep01',
           title: 'ep01',
-          videoPath: p.join(root, 'ep01.mkv'),
+          videoPath: p.join(root, 'Show', 'ep01.mkv'),
+          // Fushi 下载后放在视频旁的字幕：不在种子里，引擎不搬。
+          subtitleSource: Value<String?>(p.join(root, 'Show', 'ep01.zh.srt')),
+          // 种子里自带的字幕：引擎一起搬。
+          secondarySubtitleSource: Value<String?>(
+            p.join(root, 'Show', 'ep01.ja.ass'),
+          ),
         ),
       );
       await _seedJobFile(
         db,
         jobId: 'job-ep01',
-        finalAbsolutePath: p.join(root, 'ep01.mkv'),
+        finalAbsolutePath: p.join(root, 'Show', 'ep01.mkv'),
+        torrentHash: 'abc',
+        observedSavePath: root,
+        currentRelativePath: 'Show/ep01.mkv',
       );
       // 任务还在、库条目已被用户删掉：任务路径照样必须跟着走。
       await _seedJobFile(
         db,
         jobId: 'job-ep02',
-        finalAbsolutePath: p.join(root, 'ep02.mkv'),
+        finalAbsolutePath: p.join(root, 'Show', 'ep02.mkv'),
+        torrentHash: 'abc',
+        observedSavePath: root,
+        currentRelativePath: 'Show/ep02.mkv',
+        backendFileIndex: 1,
       );
-      await _seedJobFile(db, jobId: 'job-other', finalAbsolutePath: elsewhere);
+      await _seedJobFile(
+        db,
+        jobId: 'job-other',
+        finalAbsolutePath: elsewhere,
+        torrentHash: 'def',
+        observedSavePath: p.dirname(elsewhere),
+      );
     });
-    tearDown(() => db.close());
+    tearDown(() async {
+      await db.close();
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    });
 
-    test('改名单个文件：库行与对应任务行同步改写，其它任务不动', () async {
-      final RelocateOutcome outcome = await service.renameFile(
-        infoHash: 'abc',
-        fileIndex: 0,
-        currentRelativePath: 'ep01.mkv',
-        newRelativePath: 'Show - 01.mkv',
-        saveRoot: root,
-      );
+    test('改名单个文件：库行、任务文件路径与种子内相对路径同步改写，其它不动', () async {
+      final RelocateOutcome outcome =
+          await serviceFor(const <TorrentFileEntry>[]).renameFile(
+            infoHash: 'abc',
+            fileIndex: 0,
+            currentRelativePath: 'Show/ep01.mkv',
+            newRelativePath: 'Show/Show - 01.mkv',
+            backendSaveRoot: root,
+          );
       expect(outcome.status, RelocateStatus.success);
-      final String renamed = p.join(root, 'Show - 01.mkv');
-      expect(await _bookPath(db, 'video/ep01'), renamed);
+      final String renamed = p.join(root, 'Show', 'Show - 01.mkv');
+      final VideoBookRow book = await _book(db, 'video/ep01');
+      expect(book.videoPath, renamed);
+      expect(
+        book.subtitleSource,
+        p.join(root, 'Show', 'ep01.zh.srt'),
+        reason: '改名只动那一个文件，字幕原地不动',
+      );
       expect(await _jobPath(db, 'job-ep01'), renamed);
-      expect(await _jobPath(db, 'job-ep02'), p.join(root, 'ep02.mkv'));
+      expect(
+        (await db.getVideoDownloadJobFiles(
+          'job-ep01',
+        )).single.currentRelativePath,
+        'Show/Show - 01.mkv',
+        reason: 'BUG-3540：任务删除 / 打开位置按 save_path + 当前相对路径拼路径',
+      );
+      expect(
+        (await db.getVideoDownloadJobFiles(
+          'job-ep02',
+        )).single.currentRelativePath,
+        'Show/ep02.mkv',
+      );
+      expect(await _jobPath(db, 'job-ep02'), p.join(root, 'Show', 'ep02.mkv'));
       expect(await _jobPath(db, 'job-other'), elsewhere);
     });
 
-    test('移动整个保存根：根下全部任务行重映射，根外的不动', () async {
-      final String moved = p.join(p.rootPrefix(p.current), 'archive', 'Show');
-      final RelocateOutcome outcome = await service.moveTorrent(
-        infoHash: 'abc',
-        currentSaveRoot: root,
-        newSaveRoot: moved,
-      );
+    test('移动整个种子：只改种子自己的文件，sidecar 字幕不动，任务保存位置跟着换', () async {
+      final String moved = p.join(tmp.path, 'archive');
+      final RelocateOutcome outcome =
+          await serviceFor(<TorrentFileEntry>[
+            const TorrentFileEntry(
+              name: 'Show/ep01.mkv',
+              size: 1,
+              progress: 1,
+              index: 0,
+            ),
+            const TorrentFileEntry(
+              name: 'Show/ep02.mkv',
+              size: 1,
+              progress: 1,
+              index: 1,
+            ),
+            const TorrentFileEntry(
+              name: 'Show/ep01.ja.ass',
+              size: 1,
+              progress: 1,
+              index: 2,
+            ),
+          ]).moveTorrent(
+            infoHash: 'abc',
+            backendSaveRoot: root,
+            newLocalSaveRoot: moved,
+          );
       expect(outcome.status, RelocateStatus.success);
       expect(outcome.rowsMigrated, 1, reason: '返回值仍只计库行');
-      expect(await _bookPath(db, 'video/ep01'), p.join(moved, 'ep01.mkv'));
-      expect(await _jobPath(db, 'job-ep01'), p.join(moved, 'ep01.mkv'));
-      expect(await _jobPath(db, 'job-ep02'), p.join(moved, 'ep02.mkv'));
+
+      final VideoBookRow book = await _book(db, 'video/ep01');
+      expect(book.videoPath, p.join(moved, 'Show', 'ep01.mkv'));
+      expect(
+        book.subtitleSource,
+        p.join(root, 'Show', 'ep01.zh.srt'),
+        reason: 'BUG-3538：sidecar 不在种子里、引擎不搬，库不能改到没有文件的新位置',
+      );
+      expect(
+        book.secondarySubtitleSource,
+        p.join(moved, 'Show', 'ep01.ja.ass'),
+        reason: '种子自带的字幕被引擎一起搬走，库跟着改',
+      );
+
+      expect(await _jobPath(db, 'job-ep01'), p.join(moved, 'Show', 'ep01.mkv'));
+      expect(await _jobPath(db, 'job-ep02'), p.join(moved, 'Show', 'ep02.mkv'));
       expect(await _jobPath(db, 'job-other'), elsewhere);
+
+      final String? expectedRemote = videoDownloadLocalToRemote(
+        effectiveVideoDownloadPathMappings(
+          const <VideoDownloadPathMapping>[],
+          sameMachineAnchors: <String?>[root],
+        ),
+        moved,
+      );
+      for (final String jobId in <String>['job-ep01', 'job-ep02']) {
+        expect(
+          (await db.getVideoDownloadJob(jobId))!.observedSavePath,
+          expectedRemote,
+          reason: 'BUG-3540：任务记的后端保存位置必须换成移动后的位置',
+        );
+      }
+      expect(
+        (await db.getVideoDownloadJob('job-other'))!.observedSavePath,
+        p.dirname(elsewhere),
+      );
     });
   });
 
@@ -170,6 +284,101 @@ void main() {
     });
     tearDown(() {
       if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    });
+
+    // BUG-3542：observed_save_path 是后端坐标的保存根。内置引擎默认下载根在数据根
+    // 内，随根搬走后必须改写；远端 qBittorrent 坐标、用户外部下载根原样。
+    Future<Map<String, String?>> observedAfterRebase({
+      required String newDocs,
+      int runs = 1,
+    }) async {
+      const String remote = '/srv/qbittorrent/downloads';
+      final String external = p.join(tmp.path, 'external', 'downloads');
+      final FushiDatabase seed = FushiDatabase(oldSupport.path);
+      try {
+        await _seedJobFile(
+          seed,
+          jobId: 'job-embedded',
+          finalAbsolutePath: p.join(
+            oldDocs.path,
+            'anime_downloads',
+            'content',
+            'ep01.mkv',
+          ),
+          observedSavePath: p.join(oldDocs.path, 'anime_downloads', 'content'),
+        );
+        await _seedJobFile(
+          seed,
+          jobId: 'job-remote',
+          finalAbsolutePath: p.join(tmp.path, 'nas', 'ep02.mkv'),
+          observedSavePath: remote,
+        );
+        await _seedJobFile(
+          seed,
+          jobId: 'job-external',
+          finalAbsolutePath: p.join(external, 'ep03.mkv'),
+          observedSavePath: external,
+        );
+      } finally {
+        await seed.close();
+      }
+      for (int i = 0; i < runs; i++) {
+        await const DataRootMigrator().rebaseDatabasePathsForTesting(
+          dbDirectory: oldSupport.path,
+          oldDocumentsRoot: oldDocs.path,
+          newDocumentsRoot: newDocs,
+          newSupportRoot: oldSupport.path,
+          documentsScopeEntries: AppPaths.fushiOwnedDocumentsEntries,
+        );
+      }
+      final FushiDatabase post = FushiDatabase(oldSupport.path);
+      try {
+        return <String, String?>{
+          for (final String id in <String>[
+            'job-embedded',
+            'job-remote',
+            'job-external',
+          ])
+            id: (await post.getVideoDownloadJob(id))!.observedSavePath,
+          'remote': remote,
+          'external': external,
+        };
+      } finally {
+        await post.close();
+      }
+    }
+
+    test('任务 observed_save_path：内置默认根改到新根，远端坐标与外部根原样', () async {
+      final String newDocs = p.join(tmp.path, 'newroot', 'Documents');
+      final Map<String, String?> got = await observedAfterRebase(
+        newDocs: newDocs,
+      );
+      expect(
+        got['job-embedded'],
+        p.join(newDocs, 'anime_downloads', 'content'),
+        reason: '内置引擎默认下载根随数据根搬走，不改写就停在旧根',
+      );
+      expect(
+        got['job-remote'],
+        got['remote'],
+        reason: '远端 qBittorrent 坐标不在旧根下，不能被当本机路径改写',
+      );
+      expect(got['job-external'], got['external'], reason: '用户自选的外部下载根不随数据根走');
+    });
+
+    test('任务 observed_save_path：新根落在旧根内部时连跑两次也只改一次', () async {
+      final String newDocs = p.join(oldDocs.path, 'Fushi', 'data');
+      final Map<String, String?> got = await observedAfterRebase(
+        newDocs: newDocs,
+        runs: 2,
+      );
+      expect(
+        got['job-embedded'],
+        p.join(newDocs, 'anime_downloads', 'content'),
+        reason: '幂等：已改写路径首段是 Fushi（不在白名单），第二次跳过',
+      );
+      expect(got['job-remote'], got['remote']);
+      expect(got['job-external'], got['external']);
     });
 
     test('默认下载根（数据根内）下的任务视频与字幕被 rebase，外部下载根不动', () async {

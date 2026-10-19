@@ -8,6 +8,7 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -1625,158 +1626,79 @@ class GalCalibrationOcrEngine {
     }
   }
 
-  Future<List<GalCalibrationOcrLine>> read(
+  /// OCR one frozen capture inside the search selection [rect].
+  ///
+  /// Only the two ONNX `session.run` calls (detection, then each line's
+  /// recognition) stay on the calling isolate; they are asynchronous native /
+  /// method-channel calls. Everything pure — PNG decode, crops, edge padding,
+  /// det/rec pre/post-processing, CTC decoding and result assembly — runs in
+  /// three [Isolate.run] stages ([galCalibrationOcrPrepare],
+  /// [galCalibrationOcrPlan], [galCalibrationOcrDecode]), each returning plain
+  /// data (no `img.Image` crosses an isolate boundary).
+  ///
+  /// [isStale] is checked between stages and between line recognitions; once
+  /// it returns true the read stops and returns null (the result would be
+  /// discarded anyway). Without [isStale] the result is never null.
+  Future<List<GalCalibrationOcrLine>?> read(
     Uint8List pngBytes,
     GalLookupNormalizedRectV1 rect,
-    GalLookupReferenceClientV1 client,
-  ) async {
-    final img.Image? decoded = await compute(img.decodePng, pngBytes);
-    if (decoded == null ||
-        decoded.width != client.widthPx ||
-        decoded.height != client.heightPx) {
-      throw const FormatException('ocr_capture_decode_failed');
-    }
-    // The visible search selection is authoritative. Never silently scan
-    // names/buttons outside it to compensate for a clipped selection.
-    final GalLookupNormalizedRectV1 searchRect = rect;
-    final int left = (searchRect.left * decoded.width).floor().clamp(
-      0,
-      decoded.width - 1,
+    GalLookupReferenceClientV1 client, {
+    bool Function()? isStale,
+  }) async {
+    bool stale() => isStale?.call() ?? false;
+    final List<String?> stageIsolates = <String?>[];
+    debugLastGalCalibrationOcrStageIsolates = stageIsolates;
+    if (stale()) return null;
+    final GalCalibrationOcrDetectionPlan plan = await _prepareInBackground(
+      GalCalibrationOcrPrepareRequest(
+        pngBytes: pngBytes,
+        rect: rect,
+        clientWidth: client.widthPx,
+        clientHeight: client.heightPx,
+      ),
     );
-    final int top = (searchRect.top * decoded.height).floor().clamp(
-      0,
-      decoded.height - 1,
+    stageIsolates.add(plan.isolateName);
+    if (stale()) return null;
+    final OcrTensor prob = await detector.runDetection(
+      plan.detInput,
+      width: plan.detWidth,
+      height: plan.detHeight,
     );
-    final int right = (searchRect.right * decoded.width).ceil().clamp(
-      left + 1,
-      decoded.width,
+    if (stale()) return null;
+    final GalCalibrationOcrLinePlans lines = await _planInBackground(
+      plan.crop,
+      prob,
     );
-    final int bottom = (searchRect.bottom * decoded.height).ceil().clamp(
-      top + 1,
-      decoded.height,
-    );
-    final img.Image crop = img.copyCrop(
-      decoded,
-      x: left,
-      y: top,
-      width: right - left,
-      height: bottom - top,
-    );
-    final int detectorPadding = _ocrEdgePadding(
-      crop,
-      maxPadding: _kMaxDetectorCropPadding,
-    );
-    final ({img.Image image, int padding}) detectorInput =
-        _copyWithReplicatedEdge(crop, detectorPadding);
-    // Manga's median-thickness filter can delete a short dialogue row.
-    // Text matching below determines which detected rows belong to the Hook.
-    final List<({PpTextLine line, OcrRect unpaddedRect})> detected =
-        [
-            for (final PpTextLine paddedLine in await detector.detect(
-              detectorInput.image,
-            ))
-              if (_unpaddedDetectorRect(
-                    paddedLine.rect,
-                    detectorInput.padding,
-                  ).clamp(crop.width.toDouble(), crop.height.toDouble()).width >
-                  0)
-                (
-                  line: PpTextLine(
-                    rect: _unpaddedDetectorRect(
-                      paddedLine.rect,
-                      detectorInput.padding,
-                    ).clamp(crop.width.toDouble(), crop.height.toDouble()),
-                    score: paddedLine.score,
-                  ),
-                  unpaddedRect: _unpaddedDetectorRect(
-                    paddedLine.rect,
-                    detectorInput.padding,
-                  ),
-                ),
-          ]
-          ..removeWhere((({PpTextLine line, OcrRect unpaddedRect}) item) {
-            return item.line.vertical || item.line.rect.height <= 0;
-          })
-          ..sort(
-            (
-              ({PpTextLine line, OcrRect unpaddedRect}) a,
-              ({PpTextLine line, OcrRect unpaddedRect}) b,
-            ) => a.line.rect.centerY.compareTo(b.line.rect.centerY),
-          );
-    final List<GalCalibrationOcrLine> result = <GalCalibrationOcrLine>[];
-    for (final ({PpTextLine line, OcrRect unpaddedRect}) detectedLine
-        in detected) {
-      final PpTextLine line = detectedLine.line;
-      final int x = detectedLine.unpaddedRect.left.floor().clamp(
-        0,
-        crop.width - 1,
-      );
-      final int y = detectedLine.unpaddedRect.top.floor().clamp(
-        0,
-        crop.height - 1,
-      );
-      final int r = detectedLine.unpaddedRect.right.ceil().clamp(
-        x + 1,
-        crop.width,
-      );
-      final int b = detectedLine.unpaddedRect.bottom.ceil().clamp(
-        y + 1,
-        crop.height,
-      );
-      final img.Image lineCrop = img.copyCrop(
-        crop,
-        x: x,
-        y: y,
-        width: r - x,
-        height: b - y,
-      );
-      final int linePadding = _ocrEdgePadding(
-        lineCrop,
-        maxPadding: _kMaxRecognizerLinePadding,
-      );
-      final ({img.Image image, int padding}) lineInput =
-          _copyWithReplicatedEdge(lineCrop, linePadding);
-      final PpOcrLineRecognition recognition = await recognizer
-          .recognizeLineDetailed(lineInput.image);
-      final String text = recognition.text;
-      if (text.trim().isEmpty) continue;
-      result.add(
-        GalCalibrationOcrLine(
-          text: text,
-          rect: OcrRect(
-            left: left + line.rect.left,
-            top: top + line.rect.top,
-            right: left + line.rect.right,
-            bottom: top + line.rect.bottom,
-          ),
-          score: line.score,
-          tokens: <GalCalibrationOcrToken>[
-            for (final PpOcrCtcToken token in recognition.tokens)
-              GalCalibrationOcrToken(
-                token.text,
-                OcrRect(
-                  left:
-                      left +
-                      x +
-                      (token.left == null
-                          ? 0
-                          : token.left! - lineInput.padding),
-                  top: (top + y).toDouble(),
-                  right:
-                      left +
-                      x +
-                      (token.right == null
-                          ? 0
-                          : token.right! - lineInput.padding),
-                  bottom: (top + b).toDouble(),
-                ).clamp(decoded.width.toDouble(), decoded.height.toDouble()),
-                token.hasPosition ? token.confidence : 0,
+    stageIsolates.add(lines.isolateName);
+    if (stale()) return null;
+    final List<OcrTensor?> logits = <OcrTensor?>[];
+    for (final GalCalibrationOcrLinePlan line in lines.lines) {
+      final Float32List? input = line.recInput;
+      // No input = a zero-area line image: recognizeLineDetailed's empty
+      // recognition, which is skipped as blank text below.
+      logits.add(
+        input == null
+            ? null
+            : await recognizer.runRecognition(
+                input,
+                inputWidth: line.meta.inputWidth,
               ),
-          ],
-        ),
       );
+      if (stale()) return null;
     }
-    return result;
+    final GalCalibrationOcrDecoded decoded = await _decodeInBackground(
+      GalCalibrationOcrDecodeRequest(
+        geometry: plan.crop.geometry,
+        lines: <GalCalibrationOcrLineMeta>[
+          for (final GalCalibrationOcrLinePlan line in lines.lines) line.meta,
+        ],
+        logits: logits,
+        vocab: recognizer.vocab,
+      ),
+    );
+    stageIsolates.add(decoded.isolateName);
+    if (stale()) return null;
+    return decoded.lines;
   }
 
   Future<void> close() async {
@@ -1788,37 +1710,606 @@ class GalCalibrationOcrEngine {
   }
 }
 
+/// debugName of the background isolate running [galCalibrationOcrPrepare].
+@visibleForTesting
+const String kGalCalibrationOcrPrepareIsolateName =
+    'fushi-gal-calibration-ocr-prepare';
+
+/// debugName of the background isolate running [galCalibrationOcrPlan].
+@visibleForTesting
+const String kGalCalibrationOcrPlanIsolateName =
+    'fushi-gal-calibration-ocr-plan';
+
+/// debugName of the background isolate running [galCalibrationOcrDecode].
+@visibleForTesting
+const String kGalCalibrationOcrDecodeIsolateName =
+    'fushi-gal-calibration-ocr-decode';
+
+/// Isolate debugNames that actually executed the stages of the latest
+/// [GalCalibrationOcrEngine.read], in order (prepare, plan, decode; shorter if
+/// the read went stale). Only for tests observing that the pure computation
+/// left the calling isolate.
+@visibleForTesting
+List<String?> debugLastGalCalibrationOcrStageIsolates = const <String?>[];
+
+// Each launcher is a top-level function so the Isolate.run closure captures
+// only its plain-data arguments (never the engine and its sessions).
+Future<GalCalibrationOcrDetectionPlan> _prepareInBackground(
+  GalCalibrationOcrPrepareRequest request,
+) => Isolate.run(
+  () => galCalibrationOcrPrepare(request),
+  debugName: kGalCalibrationOcrPrepareIsolateName,
+);
+
+Future<GalCalibrationOcrLinePlans> _planInBackground(
+  GalCalibrationOcrCrop crop,
+  OcrTensor prob,
+) => Isolate.run(
+  () => galCalibrationOcrPlan(crop, prob),
+  debugName: kGalCalibrationOcrPlanIsolateName,
+);
+
+Future<GalCalibrationOcrDecoded> _decodeInBackground(
+  GalCalibrationOcrDecodeRequest request,
+) => Isolate.run(
+  () => galCalibrationOcrDecode(request),
+  debugName: kGalCalibrationOcrDecodeIsolateName,
+);
+
+/// Stage 1 input: the encoded capture and the selection, as plain data.
+@visibleForTesting
+class GalCalibrationOcrPrepareRequest {
+  const GalCalibrationOcrPrepareRequest({
+    required this.pngBytes,
+    required this.rect,
+    required this.clientWidth,
+    required this.clientHeight,
+  });
+
+  final Uint8List pngBytes;
+  final GalLookupNormalizedRectV1 rect;
+  final int clientWidth;
+  final int clientHeight;
+}
+
+/// Where the search-selection crop sits in the full capture.
+@visibleForTesting
+class GalCalibrationOcrCropGeometry {
+  const GalCalibrationOcrCropGeometry({
+    required this.imageWidth,
+    required this.imageHeight,
+    required this.left,
+    required this.top,
+  });
+
+  /// Decoded capture size (== the reference client size).
+  final int imageWidth;
+  final int imageHeight;
+
+  /// Crop origin in capture pixels.
+  final int left;
+  final int top;
+}
+
+/// The search-selection crop as tightly packed RGBA8 (stride = width * 4).
+@visibleForTesting
+class GalCalibrationOcrCrop {
+  const GalCalibrationOcrCrop({
+    required this.geometry,
+    required this.width,
+    required this.height,
+    required this.rgba,
+    required this.detectorPadding,
+  });
+
+  final GalCalibrationOcrCropGeometry geometry;
+  final int width;
+  final int height;
+  final Uint8List rgba;
+
+  /// Edge-replicated padding added around the crop for detection.
+  final int detectorPadding;
+}
+
+/// Stage 1 output: the detector input tensor plus the crop stage 2 needs.
+@visibleForTesting
+class GalCalibrationOcrDetectionPlan {
+  const GalCalibrationOcrDetectionPlan({
+    required this.crop,
+    required this.detInput,
+    required this.detWidth,
+    required this.detHeight,
+    required this.isolateName,
+  });
+
+  final GalCalibrationOcrCrop crop;
+
+  /// [ppDetPrepareInput] of the edge-padded crop: [1,3,detHeight,detWidth].
+  final Float32List detInput;
+  final int detWidth;
+  final int detHeight;
+
+  /// debugName of the isolate that computed this plan.
+  final String? isolateName;
+}
+
+/// Per-line data stages 2 and 3 share (no pixels, no tensors).
+@visibleForTesting
+class GalCalibrationOcrLineMeta {
+  const GalCalibrationOcrLineMeta({
+    required this.rect,
+    required this.score,
+    required this.x,
+    required this.y,
+    required this.bottom,
+    required this.padding,
+    required this.lineWidth,
+    required this.lineHeight,
+    required this.contentWidth,
+    required this.inputWidth,
+  });
+
+  /// Detected (unpadded, crop-clamped) line box in crop pixels.
+  final OcrRect rect;
+  final double score;
+
+  /// Integer line crop in crop pixels: left, top and bottom (exclusive).
+  final int x;
+  final int y;
+  final int bottom;
+
+  /// Edge padding around the line crop fed to the recognizer.
+  final int padding;
+
+  /// [PpRecDetailedInput] widths of the padded line image (all 0 when the line
+  /// image had no area and is not recognized).
+  final int lineWidth;
+  final int lineHeight;
+  final int contentWidth;
+  final int inputWidth;
+}
+
+/// One detected line ready for recognition.
+@visibleForTesting
+class GalCalibrationOcrLinePlan {
+  const GalCalibrationOcrLinePlan({required this.meta, required this.recInput});
+
+  final GalCalibrationOcrLineMeta meta;
+
+  /// [1,3,kPpRecHeight,meta.inputWidth] recognizer input; null when the padded
+  /// line image had no area.
+  final Float32List? recInput;
+}
+
+/// Stage 2 output: lines sorted top to bottom.
+@visibleForTesting
+class GalCalibrationOcrLinePlans {
+  const GalCalibrationOcrLinePlans({
+    required this.lines,
+    required this.isolateName,
+  });
+
+  final List<GalCalibrationOcrLinePlan> lines;
+  final String? isolateName;
+}
+
+/// Stage 3 input: line metadata, one recognizer output per line (null = not
+/// recognized), and the CTC vocabulary.
+@visibleForTesting
+class GalCalibrationOcrDecodeRequest {
+  const GalCalibrationOcrDecodeRequest({
+    required this.geometry,
+    required this.lines,
+    required this.logits,
+    required this.vocab,
+  });
+
+  final GalCalibrationOcrCropGeometry geometry;
+  final List<GalCalibrationOcrLineMeta> lines;
+  final List<OcrTensor?> logits;
+  final List<String> vocab;
+}
+
+/// Stage 3 output.
+@visibleForTesting
+class GalCalibrationOcrDecoded {
+  const GalCalibrationOcrDecoded({
+    required this.lines,
+    required this.isolateName,
+  });
+
+  final List<GalCalibrationOcrLine> lines;
+  final String? isolateName;
+}
+
+/// Stage 1 (pure, synchronous): native PNG decode → size check → crop to the
+/// search selection → edge-replicated padding → detector preprocessing.
+@visibleForTesting
+GalCalibrationOcrDetectionPlan galCalibrationOcrPrepare(
+  GalCalibrationOcrPrepareRequest request,
+) {
+  // Native decode with img.decodePng's pixel layout (channel count kept,
+  // palette expanded, orientation not applied); null for non-PNG bytes.
+  final img.Image? decoded = decodePngNative(request.pngBytes);
+  if (decoded == null ||
+      decoded.width != request.clientWidth ||
+      decoded.height != request.clientHeight) {
+    throw const FormatException('ocr_capture_decode_failed');
+  }
+  // The visible search selection is authoritative. Never silently scan
+  // names/buttons outside it to compensate for a clipped selection.
+  final GalLookupNormalizedRectV1 searchRect = request.rect;
+  final int left = (searchRect.left * decoded.width).floor().clamp(
+    0,
+    decoded.width - 1,
+  );
+  final int top = (searchRect.top * decoded.height).floor().clamp(
+    0,
+    decoded.height - 1,
+  );
+  final int right = (searchRect.right * decoded.width).ceil().clamp(
+    left + 1,
+    decoded.width,
+  );
+  final int bottom = (searchRect.bottom * decoded.height).ceil().clamp(
+    top + 1,
+    decoded.height,
+  );
+  final int width = right - left;
+  final int height = bottom - top;
+  final Uint8List rgba = _cropAsRgba(decoded, left, top, width, height);
+  final int detectorPadding = _ocrEdgePadding(
+    width,
+    height,
+    maxPadding: _kMaxDetectorCropPadding,
+  );
+  final img.Image detectorImage = _rgbaImage(
+    _replicateEdgeRgba(rgba, width, height, detectorPadding),
+    width + detectorPadding * 2,
+    height + detectorPadding * 2,
+  );
+  final ({Float32List data, int width, int height}) detInput =
+      ppDetPrepareInput(detectorImage);
+  return GalCalibrationOcrDetectionPlan(
+    crop: GalCalibrationOcrCrop(
+      geometry: GalCalibrationOcrCropGeometry(
+        imageWidth: decoded.width,
+        imageHeight: decoded.height,
+        left: left,
+        top: top,
+      ),
+      width: width,
+      height: height,
+      rgba: rgba,
+      detectorPadding: detectorPadding,
+    ),
+    detInput: detInput.data,
+    detWidth: detInput.width,
+    detHeight: detInput.height,
+    isolateName: Isolate.current.debugName,
+  );
+}
+
+/// Stage 2 (pure, synchronous): detector output → lines in the padded
+/// detector image ([ppDetDecodeOutput]) → [galCalibrationOcrPlanLines].
+@visibleForTesting
+GalCalibrationOcrLinePlans galCalibrationOcrPlan(
+  GalCalibrationOcrCrop crop,
+  OcrTensor prob,
+) => GalCalibrationOcrLinePlans(
+  lines: galCalibrationOcrPlanLines(
+    crop,
+    ppDetDecodeOutput(
+      prob,
+      sourceWidth: crop.width + crop.detectorPadding * 2,
+      sourceHeight: crop.height + crop.detectorPadding * 2,
+    ),
+  ),
+  isolateName: Isolate.current.debugName,
+);
+
+/// Detected lines ([paddedLines], padded-detector-image pixels) → unpadded,
+/// clamped, horizontal, top-to-bottom lines, each with its edge-padded line
+/// crop turned into recognizer input.
+@visibleForTesting
+List<GalCalibrationOcrLinePlan> galCalibrationOcrPlanLines(
+  GalCalibrationOcrCrop crop,
+  List<PpTextLine> paddedLines,
+) {
+  final int padding = crop.detectorPadding;
+  // Manga's median-thickness filter can delete a short dialogue row.
+  // Text matching below determines which detected rows belong to the Hook.
+  final List<({PpTextLine line, OcrRect unpaddedRect})> detected =
+      [
+          for (final PpTextLine paddedLine in paddedLines)
+            if (_unpaddedDetectorRect(
+                  paddedLine.rect,
+                  padding,
+                ).clamp(crop.width.toDouble(), crop.height.toDouble()).width >
+                0)
+              (
+                line: PpTextLine(
+                  rect: _unpaddedDetectorRect(
+                    paddedLine.rect,
+                    padding,
+                  ).clamp(crop.width.toDouble(), crop.height.toDouble()),
+                  score: paddedLine.score,
+                ),
+                unpaddedRect: _unpaddedDetectorRect(paddedLine.rect, padding),
+              ),
+        ]
+        ..removeWhere((({PpTextLine line, OcrRect unpaddedRect}) item) {
+          return item.line.vertical || item.line.rect.height <= 0;
+        })
+        ..sort(
+          (
+            ({PpTextLine line, OcrRect unpaddedRect}) a,
+            ({PpTextLine line, OcrRect unpaddedRect}) b,
+          ) => a.line.rect.centerY.compareTo(b.line.rect.centerY),
+        );
+  final List<GalCalibrationOcrLinePlan> plans = <GalCalibrationOcrLinePlan>[];
+  for (final ({PpTextLine line, OcrRect unpaddedRect}) detectedLine
+      in detected) {
+    final PpTextLine line = detectedLine.line;
+    final int x = detectedLine.unpaddedRect.left.floor().clamp(
+      0,
+      crop.width - 1,
+    );
+    final int y = detectedLine.unpaddedRect.top.floor().clamp(
+      0,
+      crop.height - 1,
+    );
+    final int r = detectedLine.unpaddedRect.right.ceil().clamp(
+      x + 1,
+      crop.width,
+    );
+    final int b = detectedLine.unpaddedRect.bottom.ceil().clamp(
+      y + 1,
+      crop.height,
+    );
+    final int lineWidth = r - x;
+    final int lineHeight = b - y;
+    final int linePadding = _ocrEdgePadding(
+      lineWidth,
+      lineHeight,
+      maxPadding: _kMaxRecognizerLinePadding,
+    );
+    final PpRecDetailedInput? input = ppRecPrepareDetailed(
+      _rgbaImage(
+        _replicateEdgeRgba(
+          _cropRgba(crop.rgba, crop.width, x, y, lineWidth, lineHeight),
+          lineWidth,
+          lineHeight,
+          linePadding,
+        ),
+        lineWidth + linePadding * 2,
+        lineHeight + linePadding * 2,
+      ),
+    );
+    plans.add(
+      GalCalibrationOcrLinePlan(
+        meta: GalCalibrationOcrLineMeta(
+          rect: line.rect,
+          score: line.score,
+          x: x,
+          y: y,
+          bottom: b,
+          padding: linePadding,
+          lineWidth: input?.lineWidth ?? 0,
+          lineHeight: input?.lineHeight ?? 0,
+          contentWidth: input?.contentWidth ?? 0,
+          inputWidth: input?.inputWidth ?? 0,
+        ),
+        recInput: input?.data,
+      ),
+    );
+  }
+  return plans;
+}
+
+/// Stage 3 (pure, synchronous): per line, validate + detailed CTC decode
+/// ([ppRecDecodeDetailed]) → [galCalibrationOcrLineOf].
+@visibleForTesting
+GalCalibrationOcrDecoded galCalibrationOcrDecode(
+  GalCalibrationOcrDecodeRequest request,
+) {
+  if (request.logits.length != request.lines.length) {
+    throw StateError(
+      'gal calibration OCR: ${request.logits.length} recognizer outputs for '
+      '${request.lines.length} lines',
+    );
+  }
+  final List<GalCalibrationOcrLine> result = <GalCalibrationOcrLine>[];
+  for (int i = 0; i < request.lines.length; i++) {
+    final GalCalibrationOcrLineMeta meta = request.lines[i];
+    final OcrTensor? logits = request.logits[i];
+    final PpOcrLineRecognition recognition = logits == null
+        ? const PpOcrLineRecognition.empty()
+        : ppRecDecodeDetailed(
+            logits,
+            request.vocab,
+            lineWidth: meta.lineWidth,
+            lineHeight: meta.lineHeight,
+            contentWidth: meta.contentWidth,
+            inputWidth: meta.inputWidth,
+          );
+    final GalCalibrationOcrLine? line = galCalibrationOcrLineOf(
+      request.geometry,
+      meta,
+      recognition,
+    );
+    if (line != null) result.add(line);
+  }
+  return GalCalibrationOcrDecoded(
+    lines: result,
+    isolateName: Isolate.current.debugName,
+  );
+}
+
+/// One recognized line → capture-pixel [GalCalibrationOcrLine]; null for blank
+/// text (not a calibration candidate).
+@visibleForTesting
+GalCalibrationOcrLine? galCalibrationOcrLineOf(
+  GalCalibrationOcrCropGeometry geometry,
+  GalCalibrationOcrLineMeta meta,
+  PpOcrLineRecognition recognition,
+) {
+  final String text = recognition.text;
+  if (text.trim().isEmpty) return null;
+  final int left = geometry.left;
+  final int top = geometry.top;
+  final int x = meta.x;
+  final int y = meta.y;
+  final int b = meta.bottom;
+  return GalCalibrationOcrLine(
+    text: text,
+    rect: OcrRect(
+      left: left + meta.rect.left,
+      top: top + meta.rect.top,
+      right: left + meta.rect.right,
+      bottom: top + meta.rect.bottom,
+    ),
+    score: meta.score,
+    tokens: <GalCalibrationOcrToken>[
+      for (final PpOcrCtcToken token in recognition.tokens)
+        GalCalibrationOcrToken(
+          token.text,
+          OcrRect(
+            left:
+                left +
+                x +
+                (token.left == null ? 0 : token.left! - meta.padding),
+            top: (top + y).toDouble(),
+            right:
+                left +
+                x +
+                (token.right == null ? 0 : token.right! - meta.padding),
+            bottom: (top + b).toDouble(),
+          ).clamp(
+            geometry.imageWidth.toDouble(),
+            geometry.imageHeight.toDouble(),
+          ),
+          token.hasPosition ? token.confidence : 0,
+        ),
+    ],
+  );
+}
+
 const int _kMaxDetectorCropPadding = 8;
 const int _kMaxRecognizerLinePadding = 4;
 
-int _ocrEdgePadding(img.Image image, {required int maxPadding}) {
-  final int shortest = math.min(image.width, image.height);
+int _ocrEdgePadding(int width, int height, {required int maxPadding}) {
+  final int shortest = math.min(width, height);
   return math.min(maxPadding, math.max(2, shortest ~/ 24));
+}
+
+/// The [width] × [height] region at ([x], [y]) of [image] as packed RGBA8.
+///
+/// Channels map exactly as `img.Pixel`'s r/g/b/a getters, which the former
+/// `copyCrop` + per-pixel `getPixel` / `setPixelRgba` copy read: 1 channel →
+/// (v, 0, 0, 255), 2 → (v, v, v, a), 3 → (r, g, b, 255), 4 → as stored.
+Uint8List _cropAsRgba(img.Image image, int x, int y, int width, int height) {
+  final Uint8List src = image.toUint8List();
+  final int stride = image.rowStride;
+  final int channels = image.numChannels;
+  final Uint8List out = Uint8List(width * height * 4);
+  for (int row = 0; row < height; row++) {
+    final int srcRow = (y + row) * stride + x * channels;
+    final int dstRow = row * width * 4;
+    if (channels == 4) {
+      out.setRange(dstRow, dstRow + width * 4, src, srcRow);
+      continue;
+    }
+    for (int col = 0; col < width; col++) {
+      final int s = srcRow + col * channels;
+      final int d = dstRow + col * 4;
+      switch (channels) {
+        case 1:
+          out[d] = src[s];
+          out[d + 3] = 255;
+        case 2:
+          out[d] = src[s];
+          out[d + 1] = src[s];
+          out[d + 2] = src[s];
+          out[d + 3] = src[s + 1];
+        default:
+          out[d] = src[s];
+          out[d + 1] = src[s + 1];
+          out[d + 2] = src[s + 2];
+          out[d + 3] = 255;
+      }
+    }
+  }
+  return out;
+}
+
+/// The [width] × [height] region at ([x], [y]) of packed RGBA8 [rgba] whose
+/// rows are [sourceWidth] pixels.
+Uint8List _cropRgba(
+  Uint8List rgba,
+  int sourceWidth,
+  int x,
+  int y,
+  int width,
+  int height,
+) {
+  final Uint8List out = Uint8List(width * height * 4);
+  for (int row = 0; row < height; row++) {
+    out.setRange(
+      row * width * 4,
+      (row + 1) * width * 4,
+      rgba,
+      ((y + row) * sourceWidth + x) * 4,
+    );
+  }
+  return out;
 }
 
 /// Adds a small synthetic context made only from the crop's own edge pixels.
 ///
 /// This is deliberately edge replication rather than an expanded source crop:
-/// the selected rectangle remains the only source of real pixels.
-({img.Image image, int padding}) _copyWithReplicatedEdge(
-  img.Image source,
+/// the selected rectangle remains the only source of real pixels. Output pixel
+/// (x, y) is source pixel ((x - padding).clamp(0, width - 1),
+/// (y - padding).clamp(0, height - 1)).
+Uint8List _replicateEdgeRgba(
+  Uint8List rgba,
+  int width,
+  int height,
   int padding,
 ) {
-  final img.Image result = img.Image(
-    width: source.width + padding * 2,
-    height: source.height + padding * 2,
-    numChannels: 4,
-  );
-  for (int y = 0; y < result.height; y++) {
-    final int sourceY = (y - padding).clamp(0, source.height - 1);
-    for (int x = 0; x < result.width; x++) {
-      final int sourceX = (x - padding).clamp(0, source.width - 1);
-      final img.Pixel pixel = source.getPixel(sourceX, sourceY);
-      result.setPixelRgba(x, y, pixel.r, pixel.g, pixel.b, pixel.a);
+  final int outWidth = width + padding * 2;
+  final int outHeight = height + padding * 2;
+  final Uint8List out = Uint8List(outWidth * outHeight * 4);
+  for (int y = 0; y < outHeight; y++) {
+    final int srcRow = (y - padding).clamp(0, height - 1) * width * 4;
+    final int lastPixel = srcRow + (width - 1) * 4;
+    final int dstRow = y * outWidth * 4;
+    out.setRange(
+      dstRow + padding * 4,
+      dstRow + (padding + width) * 4,
+      rgba,
+      srcRow,
+    );
+    for (int x = 0; x < padding; x++) {
+      final int leftPixel = dstRow + x * 4;
+      out.setRange(leftPixel, leftPixel + 4, rgba, srcRow);
+      final int rightPixel = dstRow + (padding + width + x) * 4;
+      out.setRange(rightPixel, rightPixel + 4, rgba, lastPixel);
     }
   }
-  return (image: result, padding: padding);
+  return out;
 }
+
+/// Packed RGBA8 → a 4-channel uint8 [img.Image] over the same bytes, for the
+/// shared preprocessing kernels.
+img.Image _rgbaImage(Uint8List rgba, int width, int height) =>
+    img.Image.fromBytes(
+      width: width,
+      height: height,
+      bytes: rgba.buffer,
+      bytesOffset: rgba.offsetInBytes,
+      numChannels: 4,
+    );
 
 OcrRect _unpaddedDetectorRect(OcrRect rect, int padding) => OcrRect(
   left: rect.left - padding,
@@ -1838,16 +2329,25 @@ class GalCalibrationOcrRunner {
   final OcrSessionFactory Function()? _factoryBuilder;
   bool _fitting = false;
 
+  /// [isStale] (e.g. a closed dialog's `() => !mounted`) is checked at every
+  /// stage and sample boundary; once true the fit stops and returns
+  /// [kGalCalibrationImageFitStale]. The sessions are closed either way.
   Future<GalCalibrationImageFit?> fit(
     GalLookupCalibrationDraft draft, {
     required GalCalibrationPreviewBuilder build,
+    bool Function()? isStale,
   }) async {
     if (_fitting) return const GalCalibrationImageFit(reason: 'ocr_busy');
     _fitting = true;
+    bool stale() => isStale?.call() ?? false;
+    const GalCalibrationImageFit staleFit = GalCalibrationImageFit(
+      reason: kGalCalibrationImageFitStale,
+    );
     GalCalibrationOcrEngine? engine;
     try {
       final GalCalibrationOcrModelStatus status = await models.status();
       if (!status.ready) return null;
+      if (stale()) return staleFit;
       engine = await GalCalibrationOcrEngine.create(
         directory: await models.directory(),
         factoryBuilder: _factoryBuilder,
@@ -1855,12 +2355,15 @@ class GalCalibrationOcrRunner {
       final List<GalCalibrationOcrAlignment> alignments =
           <GalCalibrationOcrAlignment>[];
       for (int i = 0; i < draft.samples.length; i++) {
+        if (stale()) return staleFit;
         final GalCalibrationSample sample = draft.samples[i];
-        final List<GalCalibrationOcrLine> lines = await engine.read(
+        final List<GalCalibrationOcrLine>? lines = await engine.read(
           sample.capture.pngBytes,
           draft.searchRect,
           sample.capture.referenceClient,
+          isStale: isStale,
         );
+        if (lines == null) return staleFit;
         if (lines.isEmpty) {
           return GalCalibrationImageFit(
             reason: 'ocr_lines_not_found',
@@ -1871,6 +2374,7 @@ class GalCalibrationOcrRunner {
           _alignCapturedLines,
           (text: sample.capture.sourceText, lines: lines),
         );
+        if (stale()) return staleFit;
         if (!alignment.accepted) {
           return GalCalibrationImageFit(
             reason: alignment.reason,
@@ -1879,7 +2383,12 @@ class GalCalibrationOcrRunner {
         }
         alignments.add(alignment);
       }
-      return await fitGalCalibrationOcrGrid(draft, alignments, build: build);
+      final GalCalibrationImageFit fitted = await fitGalCalibrationOcrGrid(
+        draft,
+        alignments,
+        build: build,
+      );
+      return stale() ? staleFit : fitted;
     } finally {
       // A fit owns both sessions, including error/closed-dialog paths. No
       // unbounded app-global native session cache or concurrent use/disposal.

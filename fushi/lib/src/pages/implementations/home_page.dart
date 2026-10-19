@@ -282,11 +282,11 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
         selectedIcon: FushiIcons.filled(FushiIcons.games),
         label: t.nav_game,
       );
-    case HomeTab.browserExtension:
+    case HomeTab.web:
       return AdaptiveNavItem(
-        icon: FushiIcons.browserExtension,
-        selectedIcon: FushiIcons.filled(FushiIcons.browserExtension),
-        label: t.nav_browser_extension,
+        icon: FushiIcons.globe,
+        selectedIcon: FushiIcons.filled(FushiIcons.globe),
+        label: t.nav_web,
       );
     case HomeTab.settings:
       return AdaptiveNavItem(
@@ -1735,11 +1735,8 @@ class _HomePageState extends BasePageState<HomePage>
     HomeTab.games ||
     HomeTab.browse ||
     HomeTab.dictionaries => homeNavItemFor(tab).label,
-    // 复习页自己画页头（标题 + 牌组动作），同浏览器扩展。
-    HomeTab.home ||
-    HomeTab.browserExtension ||
-    HomeTab.srs ||
-    HomeTab.settings => null,
+    // 复习页自己画页头（标题 + 牌组动作），同「网页」页（子页自己画页头）。
+    HomeTab.home || HomeTab.web || HomeTab.srs || HomeTab.settings => null,
   };
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
@@ -3580,7 +3577,7 @@ class _HomePageState extends BasePageState<HomePage>
         appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient
             ? GameStreamLibraryPage(services: _gameStreamLibraryServices)
             : const HomeGamePage(),
-      HomeTab.browserExtension => const BrowserExtensionPage(),
+      HomeTab.web => WebHubPage(videoRepo: _videoRepository),
       HomeTab.srs => const SrsDeckListPage(),
       HomeTab.settings =>
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统

@@ -71,7 +71,17 @@ enum AiFeature {
   /// 位置的成员——SP / OVA / 特别篇 / 总集篇、汉字卷号 / 上下卷 / 外传——由 AI 在
   /// 已有成员里决定插在哪。AI 只给下标排列，规则排得出的成员相对序由本地钉死；
   /// 自动路径只在用户没手动排过（`orderUpdatedAt == 0`）时落盘，绝不覆盖手动序。
-  collectionOrder;
+  collectionOrder,
+
+  /// 视频日语字幕 AI 校对（`media/video/subtitle/asr_proofread/`，spec
+  /// `2026-10-19-video-asr-llm-subtitle-pipeline`）：作品专名表（S0）、逐批校对
+  /// 语音识别稿（S3）、整作写法统一（S4）、短片段是否纯歌曲（S5）。
+  ///
+  /// 与 [mangaOcr] 同属「AI 只产出配置」边界的显式例外：模型输出就是字幕正文。
+  /// 补偿措施——只发 ASR 文本与专名表（不发音频 / 画面）；时间轴永远是本地识别
+  /// 的，AI 只改文字；回复必须覆盖整批全部 id 才落盘，缺 id / 解析失败重试，
+  /// 最终失败报错停下而不是静默保留原稿；已有同名字幕绝不覆盖。
+  subtitleProofread;
 
   /// 持久化键。[acquire] 钉在合并前的 `videoAcquire`，其余与枚举名一致；
   /// 改枚举名不能改这里，否则存量指派静默失效。

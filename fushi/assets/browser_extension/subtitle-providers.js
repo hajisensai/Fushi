@@ -518,12 +518,31 @@ function fushiFullTrackCueMatching(startMs, endMs) {
   }
   return null;
 }
+// 整轨 key 的语言段：Netflix 同一语言常有普通字幕与 CC / SDH 两条轨，只按语言会互相覆盖——带了
+// trackId（netflix-bridge）就拼成 `lang~trackId`，消费端按第一个 `~` 拆回语言与轨 id。
+function fushiFullTrackLangSegment(msg) {
+  const lang = String(msg.lang || 'und');
+  return msg.trackId ? lang + '~' + String(msg.trackId) : lang;
+}
+// 轨的站点显示名（「English [CC]」）：key → 名字。面板列轨时优先显示它，裸语言段只作兜底。
+const fushiTrackLabels = Object.create(null);
+window.fushiTrackLabels = fushiTrackLabels;
+function fushiOnFullEpisodeCuesFailed(msg) {
+  try {
+    const vid = String(msg.videoId || netflixVideoIdFromPath(location.pathname) || '');
+    const key = vid + '|' + fushiFullTrackLangSegment(msg);
+    if (typeof window.fushiSubtitlePanelOnTrackFailed === 'function') {
+      window.fushiSubtitlePanelOnTrackFailed(key, String(msg.err || ''));
+    }
+  } catch (_) {}
+}
 function fushiOnFullEpisodeCues(msg) {
   try {
     const cues = msg.format === 'ttml' ? parseTtml(msg.text) : parseWebVtt(msg.text);
     if (!cues || !cues.length) return;
     const vid = String(msg.videoId || netflixVideoIdFromPath(location.pathname) || '');
-    const key = vid + '|' + (msg.lang || 'und');
+    const key = vid + '|' + fushiFullTrackLangSegment(msg);
+    if (msg.label) fushiTrackLabels[key] = String(msg.label);
     fushiEpisodeCues[key] = cues;
     try {
       console.log('[Fushi][TODO-1219] full-episode cues intercepted:', key, cues.length, 'cues; first:', cues.slice(0, 3));
@@ -536,7 +555,9 @@ function fushiOnFullEpisodeCues(msg) {
   } catch (_) {}
 }
 window.addEventListener('message', (e) => {
-  if (e.source !== window || !e.data || e.data.__fushiNf !== 'cues') return;
+  if (e.source !== window || !e.data) return;
+  if (e.data.__fushiNf === 'cuesFailed') { fushiOnFullEpisodeCuesFailed(e.data); return; }
+  if (e.data.__fushiNf !== 'cues') return;
   fushiOnFullEpisodeCues(e.data);
 });
 // TODO-1219/1363（勾选面板要刷新 + 面板空列表的根因）：本脚本 document_idle 注入，主世界

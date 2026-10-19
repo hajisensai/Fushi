@@ -74,26 +74,42 @@ class JapaneseLanguage extends Language {
   }
 
   /// [textToWords] 的同一次切分，外加每段的读音（每段 `lookup(段, 1)` 的首条读音，
-  /// 未命中为空串）——浏览器扩展 yomitan `tokenize` 端点用。
-  List<({String text, String reading})> textToWordsWithReadings(String text) {
-    if (!FushiDicts.isInitialized || text.isEmpty) {
-      return <({String text, String reading})>[
-        for (final String c in text.split('')) (text: c, reading: ''),
+  /// 未命中为空串），批量、在后台 isolate 里跑——浏览器扩展 yomitan `tokenize` 端点用
+  /// （整页分词实测约 177 ms，同步做会把 UI isolate 卡住一整帧以上）。
+  ///
+  /// 返回与 [texts] 等长、按序对应的结果。引擎未就绪、实例已退役、某段原生失败时，
+  /// 该段退化成逐码元、读音为空（与此前同步版同一套降级）。
+  Future<List<List<({String text, String reading})>>>
+  textsToWordsWithReadingsInBackground(List<String> texts) async {
+    if (!FushiDicts.isInitialized || texts.every((String t) => t.isEmpty)) {
+      return <List<({String text, String reading})>>[
+        for (final String t in texts) _unsegmented(t),
       ];
     }
-    final ({List<int> lengths, List<String> readings})? r = FushiDicts.instance
-        .tokenizeWithReadings(text);
-    if (r == null) {
-      return <({String text, String reading})>[
-        for (final String c in text.split('')) (text: c, reading: ''),
-      ];
-    }
+    final List<({List<int> lengths, List<String> readings})?>? results =
+        await FushiDicts.instance.tokenizeWithReadingsInBackground(texts);
+    return <List<({String text, String reading})>>[
+      for (int i = 0; i < texts.length; i++)
+        _withReadings(texts[i], results?[i]),
+    ];
+  }
+
+  static List<({String text, String reading})> _withReadings(
+    String text,
+    ({List<int> lengths, List<String> readings})? r,
+  ) {
+    if (text.isEmpty || r == null) return _unsegmented(text);
     final List<String> words = _slice(text, r.lengths);
     return <({String text, String reading})>[
       for (int i = 0; i < words.length; i++)
         (text: words[i], reading: r.readings[i]),
     ];
   }
+
+  static List<({String text, String reading})> _unsegmented(String text) =>
+      <({String text, String reading})>[
+        for (final String c in text.split('')) (text: c, reading: ''),
+      ];
 
   static List<String> _slice(String text, List<int> lengths) {
     final List<String> words = <String>[];

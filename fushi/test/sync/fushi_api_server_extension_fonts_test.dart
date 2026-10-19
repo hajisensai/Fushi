@@ -68,7 +68,10 @@ class _FakeFontApi implements ExtensionFontApi {
   }
 }
 
-List<TokenizedSegment> _noopTokenize(String text) => const <TokenizedSegment>[];
+Future<List<List<TokenizedSegment>>> _noopTokenize(List<String> texts) async =>
+    <List<TokenizedSegment>>[
+      for (final String _ in texts) const <TokenizedSegment>[],
+    ];
 
 String _basic(String token) =>
     'Basic ${base64Encode(utf8.encode('fushi:$token'))}';

@@ -28,7 +28,9 @@ void main() {
   test('start then stop toggles isRunning and frees port', () async {
     final FushiApiServerManager mgr = FushiApiServerManager(
       lookupService: _FakeLookup(),
-      tokenizer: (String t) => <TokenizedSegment>[(text: t, reading: '')],
+      tokenizer: (List<String> ts) async => <List<TokenizedSegment>>[
+        for (final String t in ts) <TokenizedSegment>[(text: t, reading: '')],
+      ],
     );
 
     // Bind to an ephemeral port (0) so concurrent CI test isolates never
@@ -56,7 +58,9 @@ void main() {
 
   FushiApiServerManager makeManager() => FushiApiServerManager(
     lookupService: _FakeLookup(),
-    tokenizer: (String t) => <TokenizedSegment>[(text: t, reading: '')],
+    tokenizer: (List<String> ts) async => <List<TokenizedSegment>>[
+      for (final String t in ts) <TokenizedSegment>[(text: t, reading: '')],
+    ],
   );
 
   SrsAnkiConnectEndpoint makeEndpoint() => SrsAnkiConnectEndpoint(

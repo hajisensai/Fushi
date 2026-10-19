@@ -782,6 +782,12 @@ mixin _FushiDbVideoDomain
             ) =>
                 VideoMetadataCharactersCompanion.custom(
               name: excluded.name,
+              // v119：日文原名同样只补空——这一轮没取到（MAL 角色详情被限流 /
+              // 只给主要角色取）不能把上一轮取到的冲掉。
+              originalName: coalesce(<Expression<String>>[
+                excluded.originalName,
+                old.originalName,
+              ]),
               description: coalesce(<Expression<String>>[
                 excluded.description,
                 old.description,
@@ -3150,6 +3156,21 @@ mixin _FushiDbVideoDomain
           // 内容键统一小写：读侧按小写查，写侧不归一化就会同一哈希两行。
           row.copyWith(ed2k: Value(row.ed2k.value.toLowerCase())),
           mode: InsertMode.insertOrReplace);
+
+  // ── video_subtitle_glossaries（v119 视频字幕 AI 校对专名表）──────────
+
+  /// 按作品键取专名表行；没有返回 null。
+  Future<VideoSubtitleGlossaryRow?> getVideoSubtitleGlossary(String workKey) =>
+      (select(videoSubtitleGlossaries)
+            ..where(($VideoSubtitleGlossariesTable t) =>
+                t.workKey.equals(workKey)))
+          .getSingleOrNull();
+
+  /// 整行写入 / 覆盖一部作品的专名表（JSON 是整份快照，覆盖是有意的）。
+  Future<void> upsertVideoSubtitleGlossary(
+    VideoSubtitleGlossariesCompanion row,
+  ) =>
+      into(videoSubtitleGlossaries).insertOnConflictUpdate(row);
 }
 
 /// 一本视频书涉及的全部本地文件路径：主视频 + 播放列表里的每一集。

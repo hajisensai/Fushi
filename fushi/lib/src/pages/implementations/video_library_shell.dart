@@ -124,7 +124,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   VideoLibrarySection _section = VideoLibrarySection.home;
   VideoLibrarySection _localSection = VideoLibrarySection.home;
 
-  /// 「在线源」组上次停留的分区（来源 / 扩展），点组页签回到这里。
+  /// 「在线源」组上次停留的分区（来源 / 扩展），点组页签回到这里。网页视频站点
+  /// 2026-10-19 搬去「网页」模块（`WebHubPage`）。
   VideoLibrarySection _onlineSection = VideoLibrarySection.onlineSources;
   bool _mediaServersVisited = false;
   bool _sourcesVisited = false;

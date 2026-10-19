@@ -473,10 +473,15 @@ bool _hasUserFileSelection(Iterable<VideoDownloadJobFileRow> rows) => rows.any(
 /// job row is always removed, so a partial failure is reportable
 /// ([VideoDownloadJobFilesNotDeleted]) instead of leaving behind a job that
 /// repeats half of the deletion on every retry.
+///
+/// [pathMappings] 是该任务所属后端配置档（`job.backendProfileId`）的显式路径
+/// 映射（见 [videoDownloadPathMappingsForProfile]）；空 = 只在下载器与本机同视角
+/// 时解释 `observedSavePath`。
 Future<void> deletePersistedVideoDownloadJob({
   required FushiDatabase database,
   required VideoDownloadJobRow job,
   required bool deleteFiles,
+  required Iterable<VideoDownloadPathMapping> pathMappings,
 }) async {
   final List<String> undeleted = <String>[];
   if (deleteFiles) {
@@ -497,13 +502,25 @@ Future<void> deletePersistedVideoDownloadJob({
         if (subtitle.stagedPath?.trim().isNotEmpty == true)
           p.normalize(subtitle.stagedPath!.trim()),
     };
+    // `observedSavePath` 是**后端坐标**（外接远端 qBittorrent 报告的是它那台
+    // 机器上的路径），必须经路径映射换成本机路径才能拼出要删的文件；映射不到
+    // （远端且没配映射）就不走这条兜底，绝不把远端路径当本机路径删（BUG-3539）。
     final String observedSavePath = job.observedSavePath?.trim() ?? '';
-    if (observedSavePath.isNotEmpty) {
+    final String? localSaveRoot = observedSavePath.isEmpty
+        ? null
+        : videoDownloadRemoteToLocal(
+            effectiveVideoDownloadPathMappings(
+              pathMappings,
+              sameMachineAnchors: <String?>[observedSavePath],
+            ),
+            observedSavePath,
+          );
+    if (localSaveRoot != null) {
       for (final VideoDownloadJobFileRow file in files) {
         if (selective && !file.selected) continue;
         if (file.currentRelativePath.trim().isEmpty) continue;
         final String? resolved = resolveManagedPathWithinRoot(
-          root: observedSavePath,
+          root: localSaveRoot,
           relativePath: file.currentRelativePath,
         );
         if (resolved == null) {
@@ -667,10 +684,14 @@ Future<void> reconcileVideoDownloadJobsAfterLocalDelete({
             deleteBackendPayload: false,
           );
         } else {
+          // 没有流水线 = 拿不到核对过身份的后端绑定：只按同机视角解释任务的
+          // 后端保存位置，远端坐标不解释、不删（已整理文件仍按
+          // finalAbsolutePath 精确删除）。
           await deletePersistedVideoDownloadJob(
             database: database,
             job: job,
             deleteFiles: true,
+            pathMappings: const <VideoDownloadPathMapping>[],
           );
         }
       } else {
@@ -1608,24 +1629,53 @@ class VideoDownloadPipelineService {
       for (final subtitle in subtitles) subtitle.stagedPath,
     ];
 
+    // 快照里的 content/save path 与任务记的 observedSavePath 都是**后端坐标**：
+    // 外接远端 qBittorrent 报告的是它那台机器上的路径，必须经该任务配置档的
+    // 路径映射换成本机路径；映射不到的不进候选（不拿远端路径去本机盘上找，
+    // BUG-3539）。
+    List<VideoDownloadPathMapping> configured =
+        const <VideoDownloadPathMapping>[];
+    try {
+      final VideoDownloadBackendBinding? binding = await backendResolver(job);
+      _validateBackendBinding(job, binding);
+      configured = binding!.pathMappings;
+    } on Object {
+      // 后端离线 / 换了配置档：只按同机视角解释。
+    }
+    final String observed = job.observedSavePath?.trim() ?? '';
+    String? toLocal(String? remotePath) {
+      final String value = remotePath?.trim() ?? '';
+      if (value.isEmpty) return null;
+      return videoDownloadRemoteToLocal(
+        effectiveVideoDownloadPathMappings(
+          configured,
+          sameMachineAnchors: <String?>[value, observed],
+        ),
+        value,
+      );
+    }
+
     try {
       final TorrentSnapshot? snapshot = (await loadTaskSnapshots(
         <VideoDownloadJobRow>[job],
       ))[jobId];
       candidates
-        ..add(snapshot?.contentPath)
-        ..add(snapshot?.savePath);
+        ..add(toLocal(snapshot?.contentPath))
+        ..add(toLocal(snapshot?.savePath));
     } on Object {
       // The durable paths below still make the shortcut useful while the
       // configured torrent backend is offline.
     }
 
-    final String? savePath = job.observedSavePath?.trim();
-    if (savePath?.isNotEmpty == true) {
+    final String? savePath = toLocal(observed);
+    if (savePath != null) {
       candidates.addAll(<String?>[
         for (final file in files)
           if (file.currentRelativePath.trim().isNotEmpty)
-            p.join(savePath!, file.currentRelativePath),
+            resolveManagedPathWithinRoot(
+              root: savePath,
+              relativePath: file.currentRelativePath,
+            ),
         savePath,
       ]);
     }
@@ -1882,11 +1932,16 @@ class VideoDownloadPipelineService {
     final List<VideoDownloadJobFileRow> persistedFiles = await database
         .getVideoDownloadJobFiles(job.jobId);
     final bool selective = _hasUserFileSelection(persistedFiles);
+    // 只有核对过身份（同一配置档）的绑定，它的路径映射才能拿来解释本任务的
+    // 后端坐标；后端离线时退回「仅同机视角」，远端路径不解释、不删。
+    List<VideoDownloadPathMapping> pathMappings =
+        const <VideoDownloadPathMapping>[];
     if (torrentId.isNotEmpty) {
       try {
         final VideoDownloadBackendBinding? binding = await backendResolver(job);
         _validateBackendBinding(job, binding);
-        final TorrentBackend backend = binding!.backend;
+        pathMappings = binding!.pathMappings;
+        final TorrentBackend backend = binding.backend;
         if (backend is TorrentRemovalBackend) {
           // 选择下载任务共用整颗合集 torrent。后端 deleteFiles 会删除合集下
           // 全部文件；这里只移除后端任务，选中卷由下面的精确路径删除负责。
@@ -1921,6 +1976,7 @@ class VideoDownloadPipelineService {
         database: database,
         job: job,
         deleteFiles: deleteFiles,
+        pathMappings: pathMappings,
       );
     } finally {
       // The durable row is gone either way, including when files survived, so
@@ -2913,6 +2969,15 @@ class VideoDownloadPipelineService {
     List<VideoDownloadJobFileRow> rows = await database
         .getVideoDownloadJobFiles(job.jobId);
     if (await _organizedFilesExist(rows)) {
+      // 崩溃重放：上一轮整理已经落位（moveStorage 已成），但可能没来得及记下
+      // 新的后端保存位置。来源根在本机坐标里是确定的，经映射换回后端坐标补记。
+      final String? remoteSourceRoot = videoDownloadLocalToRemote(
+        _effectivePathMappings(binding, sourceRoot: source.rootPath),
+        source.rootPath,
+      );
+      if (remoteSourceRoot != null) {
+        await _recordObservedSavePath(job, remoteSourceRoot);
+      }
       await _markFilesOrganized(rows);
       await _advanceToSubtitle(job, rows);
       return;
@@ -2998,6 +3063,10 @@ class VideoDownloadPipelineService {
         result.error ?? 'Backend organization failed',
       );
     }
+    // 整理把种子 moveStorage 到了来源根：任务记的后端保存位置必须跟着换，否则
+    // `currentRelativePath`（已是来源根下的新相对路径）拼回旧下载目录，任务删除 /
+    // 打开位置都会指向一个不存在的地方（BUG-3540）。
+    await _recordObservedSavePath(job, planned.remoteSourceRoot);
     rows = await database.getVideoDownloadJobFiles(job.jobId);
     await _markFilesOrganized(rows);
     await _advanceToSubtitle(job, rows);
@@ -4550,32 +4619,15 @@ class VideoDownloadPipelineService {
     VideoDownloadBackendBinding binding, {
     String? observedSavePath,
     String? sourceRoot,
-  }) {
-    if (binding.pathMappings.isNotEmpty) return binding.pathMappings;
-    final List<VideoDownloadPathMapping> identities =
-        <VideoDownloadPathMapping>[];
-    final Set<String> anchors = <String>{};
-    void addAccessibleIdentity(String? path) {
-      if (path == null || path.trim().isEmpty) return;
-      final Directory directory = Directory(path);
-      if (!directory.existsSync()) return;
-      final String absolute = p.normalize(p.absolute(path));
-      final String anchor = p.rootPrefix(absolute);
-      final String root = anchor.isEmpty ? absolute : anchor;
-      final String key = Platform.isWindows ? root.toLowerCase() : root;
-      if (anchors.add(key)) {
-        identities.add(VideoDownloadPathMapping.identity(root));
-      }
-    }
-
-    // No explicit map means "same machine" only. Using the filesystem anchor
-    // (drive root or `/`) lets a local backend move from a download directory
-    // into a sibling managed source; anchoring at the source itself would
-    // incorrectly reject the observed download path.
-    addAccessibleIdentity(observedSavePath);
-    addAccessibleIdentity(sourceRoot);
-    return List<VideoDownloadPathMapping>.unmodifiable(identities);
-  }
+  }) =>
+      // No explicit map means "same machine" only. Using the filesystem anchor
+      // (drive root or `/`) lets a local backend move from a download directory
+      // into a sibling managed source; anchoring at the source itself would
+      // incorrectly reject the observed download path.
+      effectiveVideoDownloadPathMappings(
+        binding.pathMappings,
+        sameMachineAnchors: <String?>[observedSavePath, sourceRoot],
+      );
 
   Future<({VideoDownloadPathMapping mapping, String localPath})>
   _validateObservedSavePath(
@@ -4606,35 +4658,34 @@ class VideoDownloadPipelineService {
     return (mapping: mapping, localPath: p.normalize(p.absolute(localPath)));
   }
 
+  /// 记下任务在后端坐标里的当前保存位置（[remoteSavePath]）。
+  Future<void> _recordObservedSavePath(
+    VideoDownloadJobRow job,
+    String remoteSavePath,
+  ) async {
+    if (remoteSavePath.trim().isEmpty ||
+        job.observedSavePath?.trim() == remoteSavePath.trim()) {
+      return;
+    }
+    _ensureLeaseHeld();
+    await database.updateVideoDownloadJob(
+      job.jobId,
+      VideoDownloadJobsCompanion(
+        observedSavePath: Value<String?>(remoteSavePath),
+        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
   static VideoDownloadPathMapping? _mappingForRemotePath(
     Iterable<VideoDownloadPathMapping> mappings,
     String remotePath,
-  ) {
-    VideoDownloadPathMapping? selected;
-    for (final VideoDownloadPathMapping mapping in mappings) {
-      if (mapping.remoteToLocal(remotePath) == null) continue;
-      if (selected == null ||
-          mapping.remoteRoot.length > selected.remoteRoot.length) {
-        selected = mapping;
-      }
-    }
-    return selected;
-  }
+  ) => videoDownloadMappingForRemotePath(mappings, remotePath);
 
   static VideoDownloadPathMapping? _mappingForLocalPath(
     Iterable<VideoDownloadPathMapping> mappings,
     String localPath,
-  ) {
-    VideoDownloadPathMapping? selected;
-    for (final VideoDownloadPathMapping mapping in mappings) {
-      if (mapping.localToRemote(localPath) == null) continue;
-      if (selected == null ||
-          mapping.localRoot.length > selected.localRoot.length) {
-        selected = mapping;
-      }
-    }
-    return selected;
-  }
+  ) => videoDownloadMappingForLocalPath(mappings, localPath);
 
   static String? _resolveBackendFileLocalPath({
     required String remoteSavePath,

@@ -72,6 +72,7 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
   Future<Directory> jobDirFor(
     List<String> audioPaths,
     AsrLanguage language,
+    {List<AsrSegmentSpan>? segments}
   ) async {
     final Directory root = await _jobsRoot();
     return Directory(p.join(root.path, appleSpeechJobId(audioPaths, language)));
@@ -150,6 +151,7 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
   Future<AsrJobState?> existingState(
     List<String> audioPaths,
     AsrLanguage language,
+    {List<AsrSegmentSpan>? segments}
   ) async {
     final Directory dir = await jobDirFor(audioPaths, language);
     final File state = File(p.join(dir.path, AsrJobFiles.state));
@@ -170,6 +172,7 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
   Future<String?> finishedSrtPath(
     List<String> audioPaths,
     AsrLanguage language,
+    {List<AsrSegmentSpan>? segments}
   ) async {
     final AsrJobState? state = await existingState(audioPaths, language);
     if (state == null || !state.finished) return null;
@@ -179,7 +182,11 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
   }
 
   @override
-  Future<void> discard(List<String> audioPaths, AsrLanguage language) async {
+  Future<void> discard(
+    List<String> audioPaths,
+    AsrLanguage language, {
+    List<AsrSegmentSpan>? segments,
+  }) async {
     final Directory dir = await jobDirFor(audioPaths, language);
     if (dir.existsSync()) await dir.delete(recursive: true);
   }
@@ -190,7 +197,17 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
     required AsrLanguage language,
     required AsrEncoderVariant variant,
     required AsrAccelerationPreference preference,
+    List<AsrSegmentSpan>? segments,
   }) async {
+    // 系统语音识别自己切段，没有「按给定分段识别」这条路；视频字幕管线的
+    // MOSS 分段只走 ONNX 后端，误传进来要显式失败而不是悄悄忽略分段。
+    if (segments != null) {
+      throw ArgumentError.value(
+        segments,
+        'segments',
+        'Apple speech transcription does not support caller-given segments',
+      );
+    }
     final Directory dir = await jobDirFor(audioPaths, language);
     await dir.create(recursive: true);
     return AppleSpeechRunningTranscription(

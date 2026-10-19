@@ -93,7 +93,7 @@ void main() {
 
     test('extension guide needs both desktop capability and selection', () {
       final Set<OnboardingFeature> selected = <OnboardingFeature>{
-        OnboardingFeature.browserExtension,
+        OnboardingFeature.web,
       };
       expect(
         _steps(selected, browserExtensionAvailable: true),

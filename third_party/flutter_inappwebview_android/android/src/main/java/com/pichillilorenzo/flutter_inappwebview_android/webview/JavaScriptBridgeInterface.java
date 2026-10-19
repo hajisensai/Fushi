@@ -48,6 +48,14 @@ public class JavaScriptBridgeInterface {
     if (inAppWebView == null) {
       return;
     }
+    // Fushi patch: _callHandlerID comes from the page (any frame can reach this interface) and is
+    // concatenated into JavaScript evaluated in the top frame below. The bridge script only ever
+    // passes a setTimeout() handle, so anything that is not a plain integer is an injection attempt
+    // (e.g. '0]&&evil()//' from an ad iframe) and is dropped. See PATCHES.md.
+    if (handlerName == null || _callHandlerID == null || !_callHandlerID.matches("\\d{1,15}")) {
+      Log.w(LOG_TAG, "Dropping _callHandler with a non-numeric _callHandlerID");
+      return;
+    }
 
     // java.lang.RuntimeException: Methods marked with @UiThread must be executed on the main thread.
     // https://github.com/pichillilorenzo/flutter_inappwebview/issues/98

@@ -812,6 +812,7 @@ void _requireOneVideoMetadataOwner({
   SrsLocalState,
   SrsNotesCache,
   SrsCardsCache,
+  VideoSubtitleGlossaries,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -2302,6 +2303,27 @@ class FushiDatabase extends _$FushiDatabase
                 await m.addColumn(videoBooks, videoBooks.localAddedAt);
               }
               await _backfillLocalAddedAt('video_books');
+            }
+          }
+          if (from < 119) {
+            // v119（视频字幕 AI 校对，docs/specs/2026-10-19-video-asr-llm-subtitle-
+            // pipeline.md 第 3 节 S0）：
+            // ① video_metadata_characters.original_name——角色日文原名（MAL
+            //   name_kanji）。存量行留 NULL，下次刮削补上（upsert 只补空）。
+            // ② video_subtitle_glossaries——作品级专名表（JSON + 来源指纹 +
+            //   userEditedAt）。
+            // 幂等守卫：表在阶梯上可能不存在（合成库）就跳过加列；mid-ladder 由
+            // createTable 按当前 Dart 定义建出的表已带列。
+            if (await _tableExists('video_metadata_characters') &&
+                !await _columnExists(
+                  'video_metadata_characters',
+                  'original_name',
+                )) {
+              await m.addColumn(
+                  videoMetadataCharacters, videoMetadataCharacters.originalName);
+            }
+            if (!await _tableExists('video_subtitle_glossaries')) {
+              await m.createTable(videoSubtitleGlossaries);
             }
           }
           if (from < 120) {

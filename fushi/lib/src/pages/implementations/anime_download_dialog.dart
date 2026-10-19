@@ -1335,15 +1335,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     final RelocateOutcome outcome = choice.isMove
         ? await service.moveTorrent(
             infoHash: plan.id,
-            currentSaveRoot: snapshot.savePath,
-            newSaveRoot: choice.value,
+            backendSaveRoot: snapshot.savePath,
+            newLocalSaveRoot: choice.value,
           )
         : await service.renameFile(
             infoHash: plan.id,
             fileIndex: choice.fileIndex!,
             currentRelativePath: choice.currentRelativePath!,
             newRelativePath: choice.value,
-            saveRoot: snapshot.savePath,
+            backendSaveRoot: snapshot.savePath,
           );
     if (!mounted) return;
     switch (outcome.status) {

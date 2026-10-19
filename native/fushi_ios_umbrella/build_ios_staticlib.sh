@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# iOS 伞形静态库 libfushi_ios_umbrella.a（fushi_p2p + fushi_fsrs + fushi_compute 合一）+ 给
-# Runner 链接用的 xcconfig 片段。
+# iOS 伞形静态库 libfushi_ios_umbrella.a（fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core
+# 合一）+ 给 Runner 链接用的 xcconfig 片段。
 #
 # 为什么要伞形：每个 Rust staticlib 都带一整份 Rust std，libfushi_p2p.a / libfushi_fsrs.a /
-# libfushi_compute.a 同时 -force_load 进 Runner 会撞重复符号。合成一个 crate 编译，std 只有
-# 一份，同时导出 fp2p_* / ffsrs_* / ffc_*（Dart 各方都用 `DynamicLibrary.process()` 取符号）。
+# libfushi_compute.a / libfushi_web_core.a 同时 -force_load 进 Runner 会撞重复符号。合成一个
+# crate 编译，std 只有一份，同时导出 fp2p_* / ffsrs_* / ffc_* / fwc_*（Dart 各方都用
+# `DynamicLibrary.process()` 取符号）。
 #
 # 生成的 xcconfig 定义 FUSHI_IOS_NATIVE_LDFLAGS = -force_load <.a> + rustc 报的系统库。
 # fushi/ios 的 Flutter/{Debug,Release}.xcconfig `#include?` 这份 xcconfig，Runner 的
@@ -72,7 +73,8 @@ verify_archive() {
   exported="$({ nm -gU "$archive" 2>/dev/null || true; } | awk 'NF >= 2 { print $NF }' | sed 's/^_//' | sort -u)"
   for entry in "fp2p:6:$SCRIPT_DIR/../../packages/fushi_p2p/lib/src/ffi/fushi_p2p_bindings.dart" \
                "ffsrs:6:$SCRIPT_DIR/../../packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart" \
-               "ffc:2:$SCRIPT_DIR/../../packages/fushi_compute/lib"; do
+               "ffc:2:$SCRIPT_DIR/../../packages/fushi_compute/lib" \
+               "fwc:6:$SCRIPT_DIR/../../packages/fushi_web_core/lib/src/ffi/fushi_web_core_bindings.dart"; do
     prefix="${entry%%:*}"
     rest="${entry#*:}"
     min="${rest%%:*}"
