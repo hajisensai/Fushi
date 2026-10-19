@@ -131,3 +131,53 @@ class MediaPrivacySnapshot {
       _games.contains(gameId) ||
       _inPrivateCollection(MediaKind.game.dbValue, gameId);
 }
+
+/// [kind] / [entryKey] 宿主所在的、被标成私密的合集（按名字排序）。作品级私密开关
+/// 用它说明「这部作品因所在合集私密而私密」——那份私密只能到合集里取消，作品自己
+/// 的开关拨不掉它。合集本身（[TagHostKind.collection]）不会再被别的合集收容，恒空。
+///
+/// 判定口径与 [MediaPrivacySnapshot] 相同：EPUB 成员键 v83 起是 uid、旧行仍是
+/// bookKey，两种都认。
+Future<List<MediaCollectionRow>> privateCollectionsContaining(
+  FushiDatabase db,
+  TagHostKind kind,
+  String entryKey,
+) async {
+  final String? mediaType = switch (kind) {
+    TagHostKind.epub => MediaKind.epub.dbValue,
+    TagHostKind.srt => MediaKind.srt.dbValue,
+    TagHostKind.video => MediaKind.video.dbValue,
+    TagHostKind.game => MediaKind.game.dbValue,
+    TagHostKind.collection => null,
+  };
+  if (mediaType == null) return const <MediaCollectionRow>[];
+  final Set<String> privateIds = await db.privateEntryKeys(
+    TagHostKind.collection,
+  );
+  if (privateIds.isEmpty) return const <MediaCollectionRow>[];
+  final String? uid = kind == TagHostKind.epub
+      ? await db.resolveEpubBookUid(entryKey)
+      : null;
+  final Set<String> memberKeys = <String>{entryKey, ?uid};
+  final List<MediaCollectionItemRow> items =
+      await (db.select(db.mediaCollectionItems)..where(
+            (t) => t.mediaType.equals(mediaType) & t.entryKey.isIn(memberKeys),
+          ))
+          .get();
+  final List<MediaCollectionRow> result = <MediaCollectionRow>[];
+  final Set<int> seen = <int>{};
+  for (final MediaCollectionItemRow item in items) {
+    if (!seen.add(item.collectionId)) continue;
+    if (!privateIds.contains(collectionTagEntryKey(item.collectionId))) {
+      continue;
+    }
+    final MediaCollectionRow? row = await db.getMediaCollectionById(
+      item.collectionId,
+    );
+    if (row != null) result.add(row);
+  }
+  result.sort(
+    (MediaCollectionRow a, MediaCollectionRow b) => a.name.compareTo(b.name),
+  );
+  return result;
+}

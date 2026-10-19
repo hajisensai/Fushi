@@ -4,12 +4,17 @@
 /// 所以菜单只放一个固定的「私密」入口，当前状态在这里读、拨动即落库。私密的效果
 /// （不上传排行榜、不推 Bangumi）由 `fushi_engine/privacy/media_privacy.dart` 的
 /// 读取口径统一实现，这里只写 `media_privacy_flags`。
+///
+/// 开关显示的是**有效**状态：作品自己没标、但在私密合集里时也是私密的（排行榜 /
+/// Bangumi 照样跳过它），这时开关显示开且禁用，下面写明是哪个合集、要到合集里改——
+/// 只读作品自己那一行会把「实际私密」显示成「关」，用户以为它会被上传。
 library;
 
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/privacy/media_privacy.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -48,6 +53,10 @@ class MediaPrivacyDialog extends StatefulWidget {
 class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
   /// null = 还在读当前状态（开关禁用，不让用户在未知状态上拨）。
   bool? _private;
+
+  /// 收容本作品、且被标成私密的合集（null = 还在读）。非空时作品的私密来自合集，
+  /// 作品自己的开关拨不掉它。
+  List<MediaCollectionRow>? _privateCollections;
   bool _writing = false;
 
   @override
@@ -61,7 +70,17 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
       widget.kind,
       widget.entryKey,
     );
-    if (mounted) setState(() => _private = private);
+    final List<MediaCollectionRow> collections =
+        await privateCollectionsContaining(
+          widget.db,
+          widget.kind,
+          widget.entryKey,
+        );
+    if (!mounted) return;
+    setState(() {
+      _private = private;
+      _privateCollections = collections;
+    });
   }
 
   Future<void> _set(bool private) async {
@@ -90,7 +109,11 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final bool? private = _private;
+    final bool? own = _private;
+    final List<MediaCollectionRow>? collections = _privateCollections;
+    final bool loaded = own != null && collections != null;
+    final bool inherited = collections != null && collections.isNotEmpty;
+    final bool effective = (own ?? false) || inherited;
     return FushiAlertDialog(
       title: Text('${t.media_privacy_action} · ${widget.title}'),
       content: SizedBox(
@@ -102,15 +125,39 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
             children: <Widget>[
               FushiSwitchListTile(
                 key: const ValueKey<String>('media-privacy-switch'),
-                value: private ?? false,
-                onChanged: private == null || _writing
+                value: effective,
+                onChanged: !loaded || inherited || _writing
                     ? null
                     : (bool v) => unawaited(_set(v)),
                 contentPadding: EdgeInsets.zero,
                 secondary: FushiIcon(
-                  private ?? false ? FushiIcons.lock : FushiIcons.lockOpen,
+                  effective ? FushiIcons.lock : FushiIcons.lockOpen,
                 ),
                 title: Text(t.media_privacy_switch),
+              ),
+              AnimatedSize(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                curve: FushiMotion.standard,
+                alignment: Alignment.topCenter,
+                child: inherited
+                    ? Padding(
+                        key: const ValueKey<String>(
+                          'media-privacy-inherited-note',
+                        ),
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          t.media_privacy_inherited_note(
+                            collections: collections
+                                .map((MediaCollectionRow c) => c.name)
+                                .join(' / '),
+                          ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
+                      )
+                    : const SizedBox(width: double.infinity),
               ),
               Padding(
                 padding: const EdgeInsets.only(top: 8),
