@@ -103,6 +103,7 @@
 - **自研多语言文本处理器**（`fushidicts_src/text_processor/text_processor.cpp`）：P1 Unicode 小写（`to_lower`）/ P2 阿拉伯语 harakat + 组合记号删除（`harakat`/`combining`）/ P3 预合成拉丁去变音（`precompos`）。上游 `text_processor` 此前为空（仅日英归一化骨架）。
 - **自研 kanji 导入**：`fushidicts_src/importer.cpp` 上游 541 行 → Hibiki **1367 行**（+826），新增 kanji bank 写盘（`write_kanji`）+ `query_kanji` + `add_kanji_dict`。
 - **多格式导入**（上游主线没有）：`fushidicts_src/mdx/`（MDX）、`fushidicts_src/stardict/`（StarDict）、`fushidicts_src/popup_json.cpp`（弹窗 JSON）、`fushidicts_src/scan/`（词边界感知扫描，对齐 Yomitan searchResolution）、`fushidicts_src/util/`。
+- **批量分词**（2026-10-19，上游没有）：`fushidicts_src/tokenize.cpp`（`fushidicts_include/fushidicts/tokenize.hpp`）——Dart `JapaneseLanguage.textToWords` 的逐位置最长匹配循环搬进原生，一次 FFI 切完整段（UTF-16 码元口径、句柄内匹配长度 LRU，`add_*_dict` / `load_transforms` 时清空）；`LookupOptions::materialize=false` 跳过截断后的 pitch 富化与释义解压（只给分词用）。新 FFI 导出 `fushidicts_tokenize` / `fushidicts_free_tokenize_result` / `fushidicts_match_length`。守卫 `tests/tokenize_batch_test.cpp`（旧 Dart 循环转写的参考实现逐段比对）。弹窗 JSON 拼装曾试过搬进原生，端到端比 Dart 慢（多一次 ~200 KB UTF-8 解码），已退回，仍由 Dart `buildPopupJsonFromLookup` 拼。
 - **安全上限**：导入/查询期的资源/尺寸上限加固。
 - **FFI / JNI 桥**：`fushidicts_ffi.cpp`（Dart FFI）+ `fushidicts_jni.cpp`（Android JNI）。**不用上游 `c-bindings` 分支**。
   - 注意：`score` / `get_freq_value(s)_for_dict` / `Dictionary` 均为引擎内部符号，FFI/JNI 桥与 Dart binding 均未暴露——本批三处改动**不影响 FFI 签名**。

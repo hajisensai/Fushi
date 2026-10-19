@@ -162,6 +162,18 @@ add_test(NAME ja_kansai_ta_boundary_test
          COMMAND ja_kansai_ta_boundary_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
 
+# 批量分词：与旧 Dart 逐位置最长匹配循环（原样转写为参考实现）逐位一致（真 ja.json）。
+add_executable(tokenize_batch_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/tokenize_batch_test.cpp")
+target_link_libraries(tokenize_batch_test PRIVATE fushidicts)
+target_include_directories(tokenize_batch_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(tokenize_batch_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME tokenize_batch_test
+         COMMAND tokenize_batch_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
 # BUG-3261：汉字 + 假名混写（棚にあげる → 棚に上げる）经读音通路命中。
 add_executable(ja_mixed_orthography_lookup_test
     "${CMAKE_CURRENT_SOURCE_DIR}/ja_mixed_orthography_lookup_test.cpp")

@@ -14,6 +14,7 @@
 #include "fushidicts/lookup.hpp"
 #include "fushidicts/query.hpp"
 #include "fushidicts/popup_json.hpp"
+#include "fushidicts/tokenize.hpp"
 #include <zstd.h>
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -434,6 +435,9 @@ int32_t fushidicts_probe_dict_content(const char* dir) {
 struct FushidictsHandle {
   DictionaryQuery query;
   Deinflector deinflector;
+  // 分词的匹配长度缓存。结果依赖词典集合与变形表，所以 add_*_dict /
+  // load_transforms 都要清空它（见 tokenize.hpp）。
+  MatchLengthCache match_cache;
 };
 
 FUSHI_EXPORT
@@ -455,35 +459,45 @@ void fushidicts_destroy(void* handle) {
 FUSHI_EXPORT
 void fushidicts_add_term_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_term_dict", [&]() {
-    static_cast<FushidictsHandle*>(handle)->query.add_term_dict(path);
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    h->query.add_term_dict(path);
+    h->match_cache.clear();
   });
 }
 
 FUSHI_EXPORT
 void fushidicts_add_freq_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_freq_dict", [&]() {
-    static_cast<FushidictsHandle*>(handle)->query.add_freq_dict(path);
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    h->query.add_freq_dict(path);
+    h->match_cache.clear();
   });
 }
 
 FUSHI_EXPORT
 void fushidicts_add_pitch_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_pitch_dict", [&]() {
-    static_cast<FushidictsHandle*>(handle)->query.add_pitch_dict(path);
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    h->query.add_pitch_dict(path);
+    h->match_cache.clear();
   });
 }
 
 FUSHI_EXPORT
 void fushidicts_add_kanji_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_kanji_dict", [&]() {
-    static_cast<FushidictsHandle*>(handle)->query.add_kanji_dict(path);
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    h->query.add_kanji_dict(path);
+    h->match_cache.clear();
   });
 }
 
 FUSHI_EXPORT
 void fushidicts_load_transforms(void* handle, const char* json) {
   ffi_guard_void("fushidicts_load_transforms", [&]() {
-    static_cast<FushidictsHandle*>(handle)->deinflector.load_transforms_json(json);
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    h->deinflector.load_transforms_json(json);
+    h->match_cache.clear();
   });
 }
 
@@ -750,6 +764,78 @@ char* fushidicts_lookup_popup_json(void* handle, const char* text,
 FUSHI_EXPORT
 void fushidicts_free_string(char* s) {
   ffi_guard_void("fushidicts_free_string", [&]() { free(s); });
+}
+
+// ── 分词 ──────────────────────────────────────────────────────────────
+//
+// 一次调用切完整段文本（Dart `JapaneseLanguage.textToWords` 以前是逐位置各调一次
+// fushidicts_lookup 并把整条结果连释义一起搬过 FFI）。lengths[i] = 第 i 段的
+// UTF-16 码元数；readings 仅 with_readings 时非空（与 lengths 等长）。语义见
+// tokenize.hpp。
+
+struct FfiTokenizeResult {
+  int32_t* lengths;
+  char** readings;
+  int32_t count;
+};
+
+FUSHI_EXPORT
+FfiTokenizeResult fushidicts_tokenize(void* handle, const char* text, int32_t scan_length, int32_t with_readings) {
+  return ffi_guard("fushidicts_tokenize", [&]() -> FfiTokenizeResult {
+    FfiTokenizeResult r{};
+    if (!text) return r;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    Lookup lookup(h->query, h->deinflector);
+    TokenizeOutput out =
+        tokenize(lookup, text, static_cast<size_t>(scan_length), with_readings != 0, &h->match_cache);
+    r.count = static_cast<int32_t>(out.lengths.size());
+    int32_t length_count = r.count;
+    r.lengths = alloc_array<int32_t>(length_count);
+    if (length_count != r.count) {
+      r.count = 0;
+      return r;
+    }
+    for (int32_t i = 0; i < r.count; i++) r.lengths[i] = out.lengths[i];
+    if (with_readings != 0) {
+      int32_t reading_count = r.count;
+      r.readings = alloc_array<char*>(reading_count);
+      if (reading_count != r.count) {
+        free(r.lengths);
+        r.lengths = nullptr;
+        r.count = 0;
+        return r;
+      }
+      for (int32_t i = 0; i < r.count; i++) r.readings[i] = dup(out.readings[i]);
+    }
+    return r;
+  });
+}
+
+FUSHI_EXPORT
+void fushidicts_free_tokenize_result(FfiTokenizeResult* r) {
+  ffi_guard_void("fushidicts_free_tokenize_result", [&]() {
+    if (!r) return;
+    if (r->readings) {
+      for (int32_t i = 0; i < r->count; i++) free(r->readings[i]);
+    }
+    free(r->readings);
+    free(r->lengths);
+    r->readings = nullptr;
+    r->lengths = nullptr;
+    r->count = 0;
+  });
+}
+
+// 文本开头的最长匹配长度（UTF-16 码元；0 = 未命中）。wordFromIndex /
+// getWordRange / 高亮预估这些单点调用用，与分词共用同一个缓存。
+FUSHI_EXPORT
+int32_t fushidicts_match_length(void* handle, const char* text, int32_t scan_length) {
+  return ffi_guard("fushidicts_match_length", [&]() -> int32_t {
+    if (!text) return 0;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    Lookup lookup(h->query, h->deinflector);
+    return match_length_utf16(lookup, text, static_cast<size_t>(scan_length), &h->match_cache);
+  });
 }
 
 // ── zstd 文件解压 ────────────────────────────────────────────────────

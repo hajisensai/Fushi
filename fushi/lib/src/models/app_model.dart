@@ -9257,13 +9257,9 @@ class AppModel with ChangeNotifier {
       fontApi: BrowserExtensionFontCatalog(this),
       // 复习（SRS）扩展端点：模块开着时 SrsAppHost.current 非 null；关着时 404。
       srsApiProvider: () => SrsAppHost.current,
-      tokenizer: JapaneseLanguage.instance.textToWords,
-      readingResolver: (String w) {
-        if (!FushiDicts.isInitialized) return '';
-        final List<FushiLookupResult> r =
-            FushiDicts.instance.lookup(w, maxResults: 1);
-        return r.isEmpty ? '' : r.first.term.reading;
-      },
+      // 一次原生调用分完整段并带出每段读音（以前是分词后逐词再调一次无缓存的
+      // FFI lookup，连释义一起搬过来只为取 reading）。
+      tokenizer: JapaneseLanguage.instance.textToWordsWithReadings,
     )..ankiConnectEndpoint = _srsAnkiConnectEndpoint;
   }
 

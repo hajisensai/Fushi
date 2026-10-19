@@ -44,71 +44,63 @@ class JapaneseLanguage extends Language {
   final LinkedHashMap<DictionaryEntry, List<RubyTextData>?> segmentsCache =
       LinkedHashMap<DictionaryEntry, List<RubyTextData>?>();
 
-  static const int _maxMatchCache = 5000;
-  static final LinkedHashMap<String, int> _matchLengthCache =
-      LinkedHashMap<String, int>();
-
-  /// 匹配长度缓存的键：引擎只看查询串的前 [FushiDicts.defaultScanLength] 个
-  /// **码点**——候选前缀都在这个扫描窗口内，BUG-3212 的关西方言保护结构判定也只
-  /// 读窗口内的文本——所以键取的正是这段，结果只依赖键里的文本。
+  /// 文本开头的最长匹配长度（UTF-16 码元；0 = 未命中 / 引擎未就绪）。
   ///
-  /// 旧键是前 20 个 UTF-16 单元：全 BMP 文本时恰好盖住 16 个码点，但窗口里每多
-  /// 一个增补平面字（𠮷 这类，占两个单元）就少盖一个码点，两段只在键外不同的
-  /// 文本会共享同一个缓存值。按码点截断后两者对齐。
-  @visibleForTesting
-  static String matchLengthCacheKey(String text) {
-    int units = 0;
-    int codePoints = 0;
-    while (units < text.length && codePoints < FushiDicts.defaultScanLength) {
-      final int unit = text.codeUnitAt(units);
-      final bool surrogatePair =
-          unit >= 0xD800 &&
-          unit <= 0xDBFF &&
-          units + 1 < text.length &&
-          (text.codeUnitAt(units + 1) & 0xFC00) == 0xDC00;
-      units += surrogatePair ? 2 : 1;
-      codePoints++;
-    }
-    return units == text.length ? text : text.substring(0, units);
-  }
-
+  /// 原生 `fushidicts_match_length`，与 [textToWords] 共用句柄内的匹配长度缓存（键是
+  /// 引擎真正读到的扫描窗口，词典集合一变缓存随句柄重建；以前 Dart 侧的静态 LRU 从不
+  /// 失效，换词典后还在吐旧长度）。
   static int _lookupMatchedLength(String text) {
     if (!FushiDicts.isInitialized) return 0;
-    final String key = matchLengthCacheKey(text);
-    final cached = _matchLengthCache.remove(key);
-    if (cached != null) {
-      _matchLengthCache[key] = cached;
-      return cached;
-    }
-    final results = FushiDicts.instance.lookup(text, maxResults: 1);
-    final int len = results.isEmpty ? 0 : results.first.matched.length;
-    _matchLengthCache[key] = len;
-    while (_matchLengthCache.length > _maxMatchCache) {
-      _matchLengthCache.remove(_matchLengthCache.keys.first);
-    }
-    return len;
+    return FushiDicts.instance.matchedLength(text);
   }
 
   @override
   Future<void> prepareResources() async {}
 
+  /// 最长匹配分词：一次原生调用（`fushidicts_tokenize`）切完整段。
+  ///
+  /// 切分规则（原生 tokenize.hpp，与此前 Dart 逐位置循环逐位一致）：每个位置取引擎
+  /// 首条结果的 matched 长度，未命中切一个 **UTF-16 码元**——未命中的增补平面字因此
+  /// 被劈成两个半码元碎片（subtitle_word_sweep / texthooker 依赖这一点，BUG-3086）。
+  /// 各段按序拼回即原文。
   @override
   List<String> textToWords(String text) {
     if (!FushiDicts.isInitialized || text.isEmpty) {
       return text.split('').where((c) => c.isNotEmpty).toList();
     }
-    final words = <String>[];
+    final List<int>? lengths = FushiDicts.instance.tokenizeLengths(text);
+    if (lengths == null) return text.split('');
+    return _slice(text, lengths);
+  }
+
+  /// [textToWords] 的同一次切分，外加每段的读音（每段 `lookup(段, 1)` 的首条读音，
+  /// 未命中为空串）——浏览器扩展 yomitan `tokenize` 端点用。
+  List<({String text, String reading})> textToWordsWithReadings(String text) {
+    if (!FushiDicts.isInitialized || text.isEmpty) {
+      return <({String text, String reading})>[
+        for (final String c in text.split('')) (text: c, reading: ''),
+      ];
+    }
+    final ({List<int> lengths, List<String> readings})? r = FushiDicts.instance
+        .tokenizeWithReadings(text);
+    if (r == null) {
+      return <({String text, String reading})>[
+        for (final String c in text.split('')) (text: c, reading: ''),
+      ];
+    }
+    final List<String> words = _slice(text, r.lengths);
+    return <({String text, String reading})>[
+      for (int i = 0; i < words.length; i++)
+        (text: words[i], reading: r.readings[i]),
+    ];
+  }
+
+  static List<String> _slice(String text, List<int> lengths) {
+    final List<String> words = <String>[];
     int pos = 0;
-    while (pos < text.length) {
-      final sub = text.substring(pos);
-      final len = _lookupMatchedLength(sub);
-      if (len > 0) {
-        words.add(text.substring(pos, pos + len));
-        pos += len;
-      } else {
-        words.add(text[pos]);
-        pos++;
-      }
+    for (final int length in lengths) {
+      words.add(text.substring(pos, pos + length));
+      pos += length;
     }
     return words;
   }
