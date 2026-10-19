@@ -152,7 +152,12 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
       feedPath = root.toString();
       feed = rootFeed;
     } else {
-      feedPath = path ?? (await _loadRootFeed()).$1.toString();
+      // 根目录翻页只需要根**地址**做分页缓存的键与回走起点：已打通过就直接用，
+      // 不再为拿一个 URL 把根 feed 整页再请求一遍（否则每翻一页多一次请求）。
+      // 本会话还没打通过（跨会话恢复到第 N 页）才走一次探测。
+      feedPath =
+          path ??
+          (_resolvedCatalogUrl ?? (await _loadRootFeed()).$1).toString();
       final String pageUrl = await _urlForPage(feedPath, request.page);
       feed = await _loadFeed(Uri.parse(pageUrl));
     }
