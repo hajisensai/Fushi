@@ -244,7 +244,7 @@ Future<List<String>> listEpubSourceFiles(Directory root) async {
 }
 
 /// 枚举 [root] 下现存的书 / 漫画源（索引键形态，见 [bookSourceRelPath]）：书根是
-/// `.epub` 文件，漫画根是引擎归组出的 `.mokuro` 卷与纯页图卷目录——与扫描器导入的
+/// `.epub` 文件，漫画根是引擎归组出的 `.mokuro` 卷、单文件卷与纯页图卷目录——与扫描器导入的
 /// 口径逐一对应。
 Future<Set<String>> enumerateBookSourceRelPaths(
   Directory root, {
@@ -256,7 +256,13 @@ Future<Set<String>> enumerateBookSourceRelPaths(
       paths = await listEpubSourceFiles(root);
     case SourceLibraryKind.manga:
       final MangaFolderPlan plan = planMangaFoldersInDirectory(root);
-      paths = <String>[...plan.mokuroPaths, ...plan.imageFolders];
+      // 单文件卷（cbz / zip / rar …）同样是扫描器登记进索引的源；漏掉它们，
+      // 不带 foundRelPaths 的对账会把每一本压缩包卷都当成「源已不在」回收。
+      paths = <String>[
+        ...plan.mokuroPaths,
+        ...plan.carrierPaths,
+        ...plan.imageFolders,
+      ];
     case SourceLibraryKind.video:
       throw ArgumentError.value(kind, 'kind', 'video roots use video prune');
   }

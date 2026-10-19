@@ -350,4 +350,24 @@ void main() {
     );
     expect(bookSourceRelPath(libraryRoot.path, libraryRoot.path), '.');
   });
+
+  test('漫画根枚举含单文件卷（与扫描器登记进索引的源同口径）', () async {
+    final Directory series = Directory(p.join(libraryRoot.path, 'Veil'))
+      ..createSync();
+    File(p.join(series.path, 'v1.cbz')).writeAsBytesSync(<int>[0]);
+    File(p.join(series.path, 'v2.zip')).writeAsBytesSync(<int>[0]);
+    Directory(p.join(libraryRoot.path, 'm')).createSync();
+    File(p.join(libraryRoot.path, 'm', 'a.mokuro')).writeAsStringSync('{}');
+    final Directory loose = Directory(p.join(libraryRoot.path, 'loose'))
+      ..createSync();
+    File(p.join(loose.path, '001.png')).writeAsBytesSync(<int>[0]);
+
+    expect(
+      await enumerateBookSourceRelPaths(
+        libraryRoot,
+        kind: SourceLibraryKind.manga,
+      ),
+      <String>{'m/a.mokuro', 'Veil/v1.cbz', 'Veil/v2.zip', 'loose'},
+    );
+  });
 }
