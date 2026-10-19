@@ -5,5 +5,5 @@
   - 词典 pill：`compactPhone`（默认开）在窄屏触发 back.html 的页签模式 `setTabs`，把逐部折叠卡换成一排词典名 chip。
   - 封面：原生 `_MediaImage` 窄屏 84×84 `BoxFit.cover`、模板 `.fc-picture img { object-fit: cover }` 固定正方形裁切。
 - **[x] ① 已修复** — 原生卡面铺到页头底下，让位高度作滚动内边距（`SrsFushiCardView.topInset`，整面 WebView 卡面仍整体让位）；删掉窄屏页签模式，窄屏统一用与查词弹窗同形的逐部 `<details>` 折叠卡（`compactPhone` 只剩长主释义收起，文案同步）；窄屏封面两侧都改为按原比例完整显示（限宽 1.5×、限高 1.4× 缩略图边长）。分支 `pr/srs-mobile-card-collapsible`。
-- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_fushi_card_view_test.dart`：「铺到浮动页头底下」（滚动内边距 = topInset、卡面顶端无固定让位、下拉后内容进入让位区）与「窄屏封面按原比例完整显示」（320×200 样例保持 1.6 宽高比且在缩略图框内）。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_fushi_card_view_test.dart`：「铺到浮动页头底下」（滚动内边距 = topInset、卡面顶端无固定让位、下拉后内容进入让位区）与「窄屏封面按原比例完整显示」（320×200 样例保持 1.6 宽高比且在缩略图框内）；`fushi/test/srs/srs_review_native_card_inset_test.dart`：复习页接线层（MD3 原生卡面从顶端画起且 topInset = 页头让位、MD3 整面 WebView 卡面仍整体让位、Apple 竖排页头下 topInset = 0）。
 - **备注**：未在 iPhone 真机 / Mac WebKit 上复测，Chromium headless 下验过模板折叠卡。
