@@ -118,7 +118,7 @@ Block object keys:
   - furigana: field holds 漢字[かな] markup, show readings above kanji
   - kanji / kana: show only kanji / only the reading of such markup
   - hint: collapsed until tapped
-  - cloze: ${isCloze ? 'use for the cloze text field' : 'NOT available for this note type'}
+  - cloze: ${isCloze ? 'use for the cloze text field (the first field) on BOTH sides; on the back it reveals the answer, so do not rely on frontSide' : 'NOT available for this note type'}
 - "label": optional small caption above a field block (max $kAiSrsLabelMax chars)
 - "boxed": true/false, puts the block on a subtle tinted box
 - "hideWhenEmpty": true/false (default true)
@@ -258,6 +258,24 @@ List<SrsVisualBlock>? _parseSide(
         filter: filter,
         boxed: _bool(item['boxed']) ?? false,
         hideWhenEmpty: _bool(item['hideWhenEmpty']) ?? true,
+      ),
+    );
+  }
+  // 填空类型两面都得有填空块：正面没有就不出卡，背面没有（只靠「正面内容」）答案永远不
+  // 出现。缺了就在开头补一个（填空字段 = 第一个字段，与模板编辑器的插入字段同口径）。
+  if (isCloze &&
+      fields.isNotEmpty &&
+      out.isNotEmpty &&
+      !out.any((SrsVisualBlock x) => x.filter == SrsVisualFilter.cloze)) {
+    out.insert(
+      0,
+      SrsVisualBlock(
+        id: '',
+        kind: SrsVisualBlockKind.field,
+        fieldId: fields.first.id,
+        filter: SrsVisualFilter.cloze,
+        size: SrsVisualSize.title,
+        hideWhenEmpty: false,
       ),
     );
   }

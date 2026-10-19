@@ -271,6 +271,26 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       );
       if (!mounted) return null;
       if (s.isEmpty) return t.ai_assist_empty;
+      // 要替换的一面是代码写的（Anki 导入 / 手写）或在代码页手改过：与「按字段生成」一样
+      // 先确认，免得顺手保存就把原模板丢了。
+      bool replacesCode(TextEditingController c) {
+        if (c.text.trim().isEmpty) return false;
+        final SrsVisualSideState state = srsReadVisualSide(c.text, ctx);
+        return !state.isVisual || state.edited;
+      }
+
+      if ((s.front != null && replacesCode(_front)) ||
+          (s.back != null && replacesCode(_back))) {
+        final bool ok = await showFushiConfirmDialog(
+          context: context,
+          title: t.srs_visual_generate_confirm_title,
+          message: t.srs_visual_ai_replace_body,
+          confirmLabel: t.srs_visual_replace,
+          cancelLabel: t.cancel,
+          icon: FushiIcons.warning,
+        );
+        if (!ok || !mounted) return null;
+      }
       if (s.front != null) _setVisualSide(back: false, blocks: s.front!);
       if (s.back != null) _setVisualSide(back: true, blocks: s.back!);
       setState(() {
