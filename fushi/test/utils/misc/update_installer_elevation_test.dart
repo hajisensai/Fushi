@@ -470,7 +470,7 @@ void main() {
       final String script = File(
         'windows/installer/fushi.iss',
       ).readAsStringSync();
-      final String pattern =
+      const String pattern =
           r'{app}\' '$kWindowsElevatedInstallLogPrefix*.log';
       expect(script, contains('Type: files; Name: "$pattern"'));
       expect(script, contains("FindFirst(ExpandConstant('$pattern'), FindRec)"));
