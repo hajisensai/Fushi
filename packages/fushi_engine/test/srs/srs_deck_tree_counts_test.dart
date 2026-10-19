@@ -153,6 +153,20 @@ void main() {
       expect(picked.every((String d) => d == a1 || d == a2), isTrue);
     });
 
+    test('BUG-3575：单牌组计数（复习页用）与列表里同一牌组那一行逐项相同', () async {
+      // 今天学过 / 留在学习队列的卡都要算进去（newDone 与 learn 走的是另一条查询）。
+      for (int i = 0; i < 2; i++) {
+        await s.answer((await s.nextCard(a1))!, 4);
+      }
+      await s.answer((await s.nextCard(b1))!, 1);
+      String key(SrsDeckSummary d) =>
+          '${d.fullName} ${d.newCount}/${d.learnCount}/${d.reviewCount}/'
+          '${d.totalCards}/${d.newBudget.allowed}';
+      for (final SrsDeckSummary row in await s.deckSummaries()) {
+        expect(key((await s.deckSummary(row.deck.id))!), key(row));
+      }
+    });
+
     test('学习中的卡不受上限截断，逐层求和', () async {
       await limits(s, a, 0);
       // 学习中：Again 留在学习队列。

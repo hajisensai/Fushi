@@ -2502,27 +2502,108 @@ class SrsDbStore implements SrsSyncReplica {
     int days,
   ) async {
     final int from = day.dayStartMs(today - days + 1);
-    final List<SrsReviewLogRow> rows =
-        await (db.select(db.srsReviewLogs)..where(
-              (t) =>
-                  t.profileUid.equals(profileUid) &
-                  t.kind.equals(SrsLogKind.review) &
-                  t.occurredAt.isBiggerOrEqualValue(from),
-            ))
+    // 只取时刻列：整行带着几百字节的 json，一个月几千条日志全搬回来只为按天计数。
+    final $SrsReviewLogsTable t = db.srsReviewLogs;
+    final List<TypedResult> rows =
+        await (db.selectOnly(t)
+              ..addColumns(<Expression<Object>>[t.occurredAt])
+              ..where(
+                t.profileUid.equals(profileUid) &
+                    t.kind.equals(SrsLogKind.review) &
+                    t.occurredAt.isBiggerOrEqualValue(from),
+              ))
             .get();
     final Map<int, int> out = <int, int>{};
-    for (final SrsReviewLogRow r in rows) {
-      final int d = day.dayIndexOf(r.occurredAt);
+    for (final TypedResult r in rows) {
+      final int d = day.dayIndexOf(r.read(t.occurredAt)!);
       out[d] = (out[d] ?? 0) + 1;
     }
     return out;
   }
 
-  bool _isLive(SrsCardCacheRow c, int today) =>
-      !c.hidden &&
-      !c.suspended &&
-      c.scheduler == SrsScheduler.fushi &&
-      (c.buriedUntilDay == null || c.buriedUntilDay! <= today);
+  /// 卡「可出」的 SQL 条件：可见、未暂停、归 Fushi 排程、没埋或埋到期（绑定一个参数：今天）。
+  static const String _liveSql =
+      "hidden = 0 AND suspended = 0 AND scheduler = '${SrsScheduler.fushi}' "
+      'AND (buried_until_day IS NULL OR buried_until_day <= ?)';
+
+  /// `deck_id IN (?, ?, …)`；[decks] 为 null 时不限牌组。
+  static String _deckInSql(Iterable<String>? decks) => decks == null
+      ? ''
+      : ' AND deck_id IN (${List<String>.filled(decks.length, '?').join(', ')})';
+
+  /// 每个牌组**自己**（不含子牌组）的计数原料：在 SQL 里按牌组聚合，只回每个牌组一行。
+  ///
+  /// 以前把整张卡片缓存表的行（几万行）搬回 Dart 再逐张数，打开一个牌组要等一两秒；
+  /// 口径与逐张数相同：可出见 [_liveSql]，队列值不认识的按新卡（[SrsQueue.parse]）。
+  Future<Map<String, _DeckTally>> _deckTallies(
+    _CountContext ctx, {
+    Iterable<String>? decks,
+  }) async {
+    final List<String>? deckList = decks?.toList();
+    // 不限牌组时整张表都要数：`+profile_uid` 让 SQLite 顺序扫表，而不是沿只有 profile
+    // 一列有用的复合索引逐行回表（真实库 4.4 万张卡：40 ms 对 100 ms）。限定子树时
+    // (profile_uid, deck_id) 前缀有选择性，照常走索引。
+    final String profileCol = deckList == null ? '+profile_uid' : 'profile_uid';
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT deck_id, COUNT(*) AS total, '
+          "SUM(CASE WHEN $_liveSql AND queue NOT IN ('learning', 'relearning', 'review') "
+          'THEN 1 ELSE 0 END) AS new_avail, '
+          "SUM(CASE WHEN $_liveSql AND queue IN ('learning', 'relearning') "
+          'AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END) AS learn, '
+          "SUM(CASE WHEN $_liveSql AND queue = 'review' "
+          'AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) AS due '
+          'FROM srs_cards_cache WHERE $profileCol = ? AND hidden = 0'
+          '${_deckInSql(deckList)} GROUP BY deck_id',
+          variables: <Variable<Object>>[
+            Variable<int>(ctx.today),
+            Variable<int>(ctx.today),
+            Variable<int>(ctx.nowMs + 20 * 60000),
+            Variable<int>(ctx.today),
+            Variable<int>(ctx.today),
+            Variable<String>(profileUid),
+            for (final String d in deckList ?? const <String>[])
+              Variable<String>(d),
+          ],
+        )
+        .get();
+    final Map<String, _DeckTally> out = <String, _DeckTally>{
+      for (final QueryRow r in rows)
+        r.read<String>('deck_id'): _DeckTally()
+          ..total = r.read<int>('total')
+          ..newAvail = r.read<int>('new_avail')
+          ..learn = r.read<int>('learn')
+          ..due = r.read<int>('due'),
+    };
+    // 今天已学的新卡 / 已复习的卡只有当天那几十上百张：按主键查它们所在牌组补进各自的计数。
+    // `+profile_uid` 不可省：写成普通条件时 SQLite（库里没有 ANALYZE 统计）会改走
+    // profile 前缀索引把整个 profile 的卡逐行回表，一百来张卡查 200 多毫秒。
+    final Set<String> touched = <String>{
+      ...ctx.introducedToday,
+      ...ctx.reviewedToday,
+    };
+    for (final List<String> chunk in _chunks(touched)) {
+      final List<QueryRow> cards = await db
+          .customSelect(
+            'SELECT id, deck_id FROM srs_cards_cache '
+            'WHERE id IN (${List<String>.filled(chunk.length, '?').join(', ')}) '
+            'AND +profile_uid = ? AND hidden = 0',
+            variables: <Variable<Object>>[
+              for (final String id in chunk) Variable<String>(id),
+              Variable<String>(profileUid),
+            ],
+          )
+          .get();
+      for (final QueryRow c in cards) {
+        final String id = c.read<String>('id');
+        final _DeckTally? t = out[c.read<String>('deck_id')];
+        if (t == null) continue;
+        if (ctx.introducedToday.contains(id)) t.newDone++;
+        if (ctx.reviewedToday.contains(id)) t.reviewDone++;
+      }
+    }
+    return out;
+  }
 
   /// 计数用的一次性上下文：牌组树、「今天」、最近 30 天每天的复习数、今天已学的新卡 / 已复习的卡。
   Future<_CountContext> _countContext() async {
@@ -2567,7 +2648,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 于是会出现「子牌组都是 0、父牌组却有 50」（BUG-3502）。
   Map<String, _DeckCount> _countTree(
     _CountContext ctx,
-    Iterable<SrsCardCacheRow> cards, {
+    Map<String, _DeckTally> tallies, {
     String? root,
   }) {
     final SrsDeckTree tree = ctx.tree;
@@ -2576,25 +2657,8 @@ class SrsDbStore implements SrsSyncReplica {
         : tree.subtree(root);
     final Set<String> scope = ids.toSet();
     final Map<String, _DeckTally> own = <String, _DeckTally>{
-      for (final String id in ids) id: _DeckTally(),
+      for (final String id in ids) id: tallies[id] ?? _DeckTally(),
     };
-    for (final SrsCardCacheRow c in cards) {
-      final _DeckTally? t = own[c.deckId];
-      if (t == null || c.hidden) continue;
-      t.total++;
-      if (ctx.introducedToday.contains(c.id)) t.newDone++;
-      if (ctx.reviewedToday.contains(c.id)) t.reviewDone++;
-      if (!_isLive(c, ctx.today)) continue;
-      switch (SrsQueue.parse(c.queue)) {
-        case SrsQueue.newCard:
-          t.newAvail++;
-        case SrsQueue.learning:
-        case SrsQueue.relearning:
-          if ((c.dueAt ?? 0) <= ctx.nowMs + 20 * 60000) t.learn++;
-        case SrsQueue.review:
-          if ((c.dueDay ?? 0) <= ctx.today) t.due++;
-      }
-    }
     final Map<String, List<String>> children = <String, List<String>>{};
     final List<String> tops = <String>[];
     for (final String id in ids) {
@@ -2662,13 +2726,13 @@ class SrsDbStore implements SrsSyncReplica {
     totalCards: count.subtree.total,
   );
 
-  /// 牌组列表：每个牌组（含子树）的新卡 / 学习 / 到期数。卡片缓存只读一次。
+  /// 牌组列表：每个牌组（含子树）的新卡 / 学习 / 到期数。计数在 SQL 里按牌组聚合。
   Future<List<SrsDeckSummary>> deckSummaries() async {
     final _CountContext ctx = await _countContext();
-    final List<SrsCardCacheRow> cards = await (db.select(
-      db.srsCardsCache,
-    )..where((c) => c.profileUid.equals(profileUid))).get();
-    final Map<String, _DeckCount> counts = _countTree(ctx, cards);
+    final Map<String, _DeckCount> counts = _countTree(
+      ctx,
+      await _deckTallies(ctx),
+    );
     final List<SrsDeckSummary> out =
         <SrsDeckSummary>[
           for (final SrsDeckView d in ctx.tree.decks)
@@ -2678,6 +2742,22 @@ class SrsDbStore implements SrsSyncReplica {
               _treeOrderKey(a.fullName).compareTo(_treeOrderKey(b.fullName)),
         );
     return out;
+  }
+
+  /// 单个牌组（含子树）的计数，与 [deckSummaries] 里同一牌组的那一行相同：
+  /// 一个牌组的计数只取决于它自己的子树，祖先的上限不参与（见 [_countTree]）。
+  /// 复习页只要当前牌组这一行，不必把所有牌组都数一遍。
+  Future<SrsDeckSummary?> deckSummary(String deckId) async {
+    final _CountContext ctx = await _countContext();
+    final SrsDeckView? d = ctx.tree[deckId];
+    if (d == null) return null;
+    final List<String> sub = ctx.tree.subtree(deckId);
+    final Map<String, _DeckCount> counts = _countTree(
+      ctx,
+      await _deckTallies(ctx, decks: sub),
+      root: deckId,
+    );
+    return _summaryOf(d, ctx, counts[deckId]!);
   }
 
   /// 先序（父在前、子紧跟父）的排序键：按层级逐段比较，与 Anki 把「::」存成 \x1f 再排序同一口径。
@@ -2722,7 +2802,8 @@ class SrsDbStore implements SrsSyncReplica {
   }
 
   /// 下一张要复习的卡：到期的学习卡 → 到期复习卡（可提取度从低到高）→ 新卡（笔记创建时刻, cardId）。
-  /// 只查目标子树里可见的卡（一次过滤查询），不扫全表。
+  /// 计数按牌组在 SQL 里聚合，三类候选各由一条 `LIMIT 1` 查询在 SQL 里挑出，
+  /// 不把子树里几千上万张卡的行搬回 Dart。
   Future<String?> nextCard(
     String deckId, {
     Set<String> exclude = const <String>{},
@@ -2730,18 +2811,10 @@ class SrsDbStore implements SrsSyncReplica {
     final _CountContext ctx = await _countContext();
     final SrsDeckView? deck = ctx.tree[deckId];
     if (deck == null) return null;
-    final Set<String> sub = ctx.tree.subtree(deckId).toSet();
-    final List<SrsCardCacheRow> inSubtree =
-        await (db.select(db.srsCardsCache)..where(
-              (c) =>
-                  c.profileUid.equals(profileUid) &
-                  c.deckId.isIn(sub) &
-                  c.hidden.equals(false),
-            ))
-            .get();
+    final List<String> sub = ctx.tree.subtree(deckId);
     final Map<String, _DeckCount> counts = _countTree(
       ctx,
-      inSubtree,
+      await _deckTallies(ctx, decks: sub),
       root: deckId,
     );
     final _DeckCount sum = counts[deckId]!;
@@ -2760,63 +2833,74 @@ class SrsDbStore implements SrsSyncReplica {
     }
 
     final int nowMs = ctx.nowMs;
-    final List<SrsCardCacheRow> cards = <SrsCardCacheRow>[
-      for (final SrsCardCacheRow c in inSubtree)
-        if (_isLive(c, ctx.today) && !exclude.contains(c.id)) c,
-    ];
-    final List<SrsCardCacheRow> learning =
-        cards
-            .where(
-              (SrsCardCacheRow c) =>
-                  (c.queue == SrsQueue.learning.wire ||
-                      c.queue == SrsQueue.relearning.wire) &&
-                  (c.dueAt ?? 0) <= nowMs + 20 * 60000,
-            )
-            .toList()
-          ..sort(
-            (SrsCardCacheRow a, SrsCardCacheRow b) =>
-                (a.dueAt ?? 0).compareTo(b.dueAt ?? 0),
-          );
-    if (learning.isNotEmpty && (learning.first.dueAt ?? 0) <= nowMs) {
-      return learning.first.id;
-    }
-    if (sum.reviewCount > 0) {
-      final List<SrsCardCacheRow> due = cards
-          .where(
-            (SrsCardCacheRow c) =>
-                c.queue == SrsQueue.review.wire &&
-                (c.dueDay ?? 0) <= ctx.today &&
-                pathHasRoom(c.deckId, (_DeckCount x) => x.reviewRemaining),
+    final List<String> ex = exclude.toList();
+    // 子树里一条「可出 + 条件」的候选，按 [orderBy] 取第一张。
+    Future<(String, int?)?> pick(
+      Iterable<String> decks,
+      String condition,
+      String orderBy,
+      List<Variable<Object>> vars, {
+      List<Variable<Object>> orderVars = const <Variable<Object>>[],
+    }) async {
+      final List<String> deckList = decks.toList();
+      if (deckList.isEmpty) return null;
+      final String notIn = ex.isEmpty
+          ? ''
+          : ' AND id NOT IN (${List<String>.filled(ex.length, '?').join(', ')})';
+      final QueryRow? row = await db
+          .customSelect(
+            'SELECT id, due_at FROM srs_cards_cache '
+            'WHERE profile_uid = ? AND $_liveSql${_deckInSql(deckList)} '
+            'AND $condition$notIn ORDER BY $orderBy LIMIT 1',
+            variables: <Variable<Object>>[
+              Variable<String>(profileUid),
+              Variable<int>(ctx.today),
+              for (final String d in deckList) Variable<String>(d),
+              ...vars,
+              for (final String id in ex) Variable<String>(id),
+              ...orderVars,
+            ],
           )
-          .toList();
-      double r(SrsCardCacheRow c) {
-        final double s = c.stability ?? 1;
-        final double elapsed = c.lastReviewedAt == null
-            ? 0
-            : (nowMs - c.lastReviewedAt!) / 86400000;
-        // 复习排序只需单调近似：FSRS 遗忘曲线 R = (1 + t/(9S))^-1。
-        return 1 / (1 + elapsed / (9 * s));
-      }
+          .getSingleOrNull();
+      return row == null
+          ? null
+          : (row.read<String>('id'), row.read<int?>('due_at'));
+    }
 
-      due.sort((SrsCardCacheRow a, SrsCardCacheRow b) => r(a).compareTo(r(b)));
-      if (due.isNotEmpty) return due.first.id;
+    final (String, int?)? learning = await pick(
+      sub,
+      "queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ?",
+      'COALESCE(due_at, 0), id',
+      <Variable<Object>>[Variable<int>(nowMs + 20 * 60000)],
+    );
+    if (learning != null && (learning.$2 ?? 0) <= nowMs) return learning.$1;
+    if (sum.reviewCount > 0) {
+      // 复习排序只需单调近似：FSRS 遗忘曲线 R = (1 + t/(9S))^-1，可提取度低的先出。
+      final (String, int?)? due = await pick(
+        sub.where(
+          (String d) => pathHasRoom(d, (_DeckCount x) => x.reviewRemaining),
+        ),
+        "queue = 'review' AND COALESCE(due_day, 0) <= ?",
+        '1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 '
+            'ELSE (? - last_reviewed_at) / 86400000.0 END) '
+            '/ (9.0 * COALESCE(stability, 1.0))), id',
+        <Variable<Object>>[Variable<int>(ctx.today)],
+        orderVars: <Variable<Object>>[Variable<int>(nowMs)],
+      );
+      if (due != null) return due.$1;
     }
     if (sum.newCount > 0) {
-      SrsCardCacheRow? first;
-      for (final SrsCardCacheRow c in cards) {
-        if (c.queue != SrsQueue.newCard.wire) continue;
-        if (!pathHasRoom(c.deckId, (_DeckCount x) => x.newRemaining)) continue;
-        if (first == null ||
-            c.noteCreatedAt < first.noteCreatedAt ||
-            (c.noteCreatedAt == first.noteCreatedAt &&
-                c.id.compareTo(first.id) < 0)) {
-          first = c;
-        }
-      }
-      if (first != null) return first.id;
+      final (String, int?)? fresh = await pick(
+        sub.where(
+          (String d) => pathHasRoom(d, (_DeckCount x) => x.newRemaining),
+        ),
+        "queue = 'new'",
+        'note_created_at, id',
+        const <Variable<Object>>[],
+      );
+      if (fresh != null) return fresh.$1;
     }
-    if (learning.isNotEmpty) return learning.first.id;
-    return null;
+    return learning?.$1;
   }
 
   Future<SrsCardDetail?> cardDetail(String cardId) async {

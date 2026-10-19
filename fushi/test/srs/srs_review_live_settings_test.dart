@@ -7,6 +7,8 @@
 // 内存库 + 确定性假排程内核；widget 测试里没有 WebView，卡面换成纯文本实现并记下每次的 face。
 // 数据库读写一律放 tester.runAsync（fake zone 里 await 真异步会挂死）。
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -87,6 +89,8 @@ Future<void> _pumpReview(
   required SrsDbStore store,
   required List<SrsCardFace> faces,
   required _RecordingAudio audio,
+  Future<SrsDbStore?>? storeLoad,
+  bool settle = true,
 }) async {
   tester.view.physicalSize = const Size(1100, 900);
   tester.view.devicePixelRatio = 1;
@@ -96,7 +100,9 @@ Future<void> _pumpReview(
     ProviderScope(
       overrides: <Override>[
         appProvider.overrideWith((Ref ref) => app),
-        srsStoreProvider.overrideWith((Ref ref) async => store),
+        srsStoreProvider.overrideWith(
+          (Ref ref) => storeLoad ?? Future<SrsDbStore?>.value(store),
+        ),
         srsCardAudioOutputProvider.overrideWithValue(audio),
         srsCardFaceBuilderProvider.overrideWithValue((
           BuildContext context,
@@ -122,7 +128,7 @@ Future<void> _pumpReview(
       ),
     ),
   );
-  await _settle(tester);
+  if (settle) await _settle(tester);
 }
 
 Future<void> _unmount(WidgetTester tester) async {
@@ -182,6 +188,34 @@ String _againLabel(WidgetTester tester) {
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
+
+  testWidgets('BUG-3575：首张卡还没出来就离开复习页，卸载不抛错、之后到达的卡不再上屏', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _openStore(tester);
+    await _addLapis(tester, store, '食べる');
+    final Completer<SrsDbStore?> load = Completer<SrsDbStore?>();
+    final List<SrsCardFace> faces = <SrsCardFace>[];
+    final _RecordingAudio audio = _RecordingAudio();
+    await _pumpReview(
+      tester,
+      store: store,
+      faces: faces,
+      audio: audio,
+      storeLoad: load.future,
+      settle: false,
+    );
+    await tester.pump();
+    expect(faces, isEmpty, reason: '牌组还在加载');
+    // 用户等不及、直接返回：此前卸载时第一次初始化音频序列，ref.read 抛错、State 卡成僵尸。
+    await _unmount(tester);
+    expect(tester.takeException(), isNull);
+    load.complete(store);
+    await _settle(tester);
+    expect(tester.takeException(), isNull);
+    expect(faces, isEmpty, reason: '离开后到达的卡不应再显示');
+    expect(audio.played, isEmpty);
+  });
 
   testWidgets('BUG-3547：复习中改学习步长 / 每日上限 / 名字，回来立即生效', (
     WidgetTester tester,

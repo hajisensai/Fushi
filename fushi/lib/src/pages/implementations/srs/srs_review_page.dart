@@ -171,9 +171,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   final List<_UndoStep> _undo = <_UndoStep>[];
 
   /// 卡面音频的自动播放 / 重播序列（换卡、翻面、离开本页都会打断）。
-  late final SrsCardAudioSequencer _audio = SrsCardAudioSequencer(
-    ref.read(srsCardAudioOutputProvider),
-  );
+  ///
+  /// 在 [initState] 里建好：以前是惰性初始化，首张卡还没出来就离开本页时它第一次被读是在
+  /// [dispose] 里，`ref.read` 在卸载中抛错，`super.dispose()` 被跳过、State 永远 mounted。
+  late final SrsCardAudioSequencer _audio;
 
   /// 当前卡的音频设置来自哪个牌组（卡所在牌组的 own 祖先）；随换卡 / 改设置重读。
   SrsDeckView? _audioOwner;
@@ -181,6 +182,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   @override
   void initState() {
     super.initState();
+    _audio = SrsCardAudioSequencer(ref.read(srsCardAudioOutputProvider));
     // 正在复习：自动优化让路（在跑的那一轮立即取消，见 srs_optimization_scheduler.dart）。
     srsActiveReviewSessions.value++;
     unawaited(_start());
@@ -209,10 +211,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     await _loadNext();
   }
 
-  Future<SrsDeckSummary?> _deckSummary() async =>
-      (await _store!.deckSummaries())
-          .where((SrsDeckSummary s) => s.deck.id == widget.deckId)
-          .firstOrNull;
+  Future<SrsDeckSummary?> _deckSummary() => _store!.deckSummary(widget.deckId);
 
   void _applyCounts(SrsDeckSummary? sum) {
     _newCount = sum?.newCount ?? 0;
