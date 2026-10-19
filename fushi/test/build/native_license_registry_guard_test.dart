@@ -14,6 +14,8 @@ import '../../tool/native_licenses.dart';
 /// （数百个 crate）就这样一个都没进许可页。现在由 `tool/native_licenses.dart` 生成，
 /// 生成时把每个输入（`native/*/Cargo.lock`、`Cargo.toml`、手写清单与它引用的许可原文）
 /// 的指纹写进 `index.json`；这里只比指纹、不需要 cargo——改了依赖却没重跑生成就红。
+/// 清单 `prebuilt` 节登记 pub 包随带的预编译原生库（libmpv / onnxruntime / sqlite3 / pdfium 等），
+/// `rust.licenseTexts` 登记包内无许可文件的 crate 的上游原文，同样受指纹约束。
 void main() {
   final Directory repoRoot = Directory('..');
   final Directory outDir = Directory(kNativeLicenseAssetDir);
@@ -84,6 +86,71 @@ void main() {
     }
   });
 
+  test('手写清单的 cxx / prebuilt 条目字段完整', () {
+    final Map<String, dynamic> manifest =
+        jsonDecode(File('../$kNativeLicenseManifestPath').readAsStringSync())
+            as Map<String, dynamic>;
+    const Set<String> platforms = <String>{
+      'android',
+      'ios',
+      'macos',
+      'windows',
+      'linux',
+    };
+    for (final String section in kNativeLicenseManualSections) {
+      for (final dynamic raw in manifest[section] as List<dynamic>) {
+        final Map<String, dynamic> e = raw as Map<String, dynamic>;
+        final String id = '$section: ${e['component']} ${e['name']}';
+        for (final String field in <String>[
+          'name',
+          'version',
+          'license',
+          'component',
+        ]) {
+          expect(e[field], isA<String>(), reason: '$id 缺 $field');
+          expect(
+            (e[field] as String).trim(),
+            isNotEmpty,
+            reason: '$id 的 $field 为空',
+          );
+        }
+        expect(e['texts'] as List<dynamic>, isNotEmpty, reason: '$id 没有许可原文');
+        expect(
+          platforms,
+          containsAll(e['platforms'] as List<dynamic>),
+          reason: '$id 的 platforms 只能取 $platforms',
+        );
+        if (section == 'prebuilt') {
+          // 预编译二进制的版本 / 许可必须能追溯到产物来源（下载 URL 的 tag、配方、内嵌版本串）。
+          expect(e['source'], isA<String>(), reason: '$id 缺 source（版本与许可的证据）');
+        }
+      }
+    }
+  });
+
+  test('包内无许可文件的 crate：pendingUpstreamLicense 与条目一致（并列出待补原文的 crate）', () {
+    final Map<String, dynamic> index = readIndex();
+    final List<String> pending =
+        (index['pendingUpstreamLicense'] as List<dynamic>).cast<String>();
+    expect(
+      pending,
+      <String>[
+        for (final dynamic raw in index['components'] as List<dynamic>)
+          if ((raw as Map<String, dynamic>)['textSource'] == 'spdx-fallback')
+            '${raw['name']}@${raw['version']}',
+      ]..sort(),
+    );
+    // 不判红：这些 crate 仍附了 SPDX 标准文本，只是缺上游版权行。在输出里列出，提醒补原文
+    // （放进 native/third_party_licenses/texts/crates/ 并登记到清单 rust.licenseTexts）。
+    if (pending.isNotEmpty) {
+      // ignore: avoid_print
+      print(
+        '提示：${pending.length} 个 crate 包内没有许可文件、清单也未登记上游原文，'
+        '目前只附 SPDX 标准文本：\n  ${pending.join('\n  ')}',
+      );
+    }
+  });
+
   test('pubspec 登记了 assets/licenses/native/', () {
     expect(
       File('pubspec.yaml').readAsStringSync(),
@@ -124,7 +191,14 @@ void main() {
     expect(packages, containsAll(topLevel.map(assetLicensePackageName)));
     expect(
       packages,
-      containsAll(<String>['fsrs', 'ruzstd', 'iroh', 'libtorrent']),
+      containsAll(<String>[
+        'fsrs',
+        'ruzstd',
+        'iroh',
+        'libtorrent',
+        'mpv (libmpv)',
+        'FFmpeg',
+      ]),
     );
     expect(
       packages,

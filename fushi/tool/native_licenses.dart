@@ -9,8 +9,14 @@
 //
 // 输入：
 //   * `native/*/Cargo.lock`（自动发现：新加一个 Rust 原生模块，重跑即覆盖，无需改本工具）；
-//   * `native/third_party_licenses/manifest.json`（Rust 的目标平台 / 预备步骤配置 +
-//     C/C++ 库手写清单，许可原文路径指向 vendored 源码或 `native/third_party_licenses/texts/`）。
+//   * `native/third_party_licenses/manifest.json`：
+//     - `rust`：目标平台 / 预备步骤配置，以及 `licenseTexts`（crates.io 包内没有许可文件的
+//       crate，登记从上游对应提交取来的原文；没登记的退到 SPDX 标准文本并在产物
+//       `pendingUpstreamLicense` 与运行输出里列出）；
+//     - `cxx`：本仓 native 模块编进去的 C/C++ 库手写清单；
+//     - `prebuilt`：pub 包下载 / 打包进 app 的预编译原生库（libmpv 及其依赖、onnxruntime、
+//       sqlite3、pdfium 等）——Flutter `LicenseRegistry` 只收 pub 包自己的 LICENSE，不含这些；
+//     许可原文路径指向 vendored 源码或 `native/third_party_licenses/texts/`。
 //
 // Rust「随包」的判定：从每个 native crate 根出发，只沿 **normal** 依赖边走
 // （`cargo metadata` 的 `dep_kinds[].kind == null`），且按随包的 target triple
@@ -58,14 +64,58 @@ List<String> nativeLicenseInputPaths(Directory repoRoot) {
       ..add('native/$crate/Cargo.toml');
   }
   final Map<String, dynamic> manifest = _readManifest(repoRoot);
-  for (final dynamic raw in manifest['cxx'] as List<dynamic>) {
+  for (final String section in kNativeLicenseManualSections) {
+    for (final dynamic raw
+        in (manifest[section] as List<dynamic>?) ?? const <dynamic>[]) {
+      for (final dynamic text
+          in (raw as Map<String, dynamic>)['texts'] as List<dynamic>) {
+        paths.add(text as String);
+      }
+    }
+  }
+  for (final dynamic raw in _rustLicenseTexts(manifest).values) {
     for (final dynamic text
-        in (raw as Map<String, dynamic>)['texts'] as List<dynamic>) {
+        in ((raw as Map<String, dynamic>)['texts'] as List<dynamic>?) ??
+            const <dynamic>[]) {
       paths.add(text as String);
     }
   }
   return paths.toList()..sort();
 }
+
+/// 清单里手写条目的分节：`cxx` 是本仓 native 模块编进去的 C/C++ 库，`prebuilt` 是
+/// pub 包下载 / 打包进 app 的预编译原生库（Flutter `LicenseRegistry` 只收 pub 包自己的
+/// LICENSE，不含它们随带的二进制）。两节条目格式相同。
+const List<String> kNativeLicenseManualSections = <String>['cxx', 'prebuilt'];
+
+/// 清单 `rust.licenseTexts`：crates.io 包内没有许可文件的 crate，按 `name@version`
+/// 登记从上游仓库对应提交取来的许可原文（`texts`）；上游原文缺许可正文时
+/// `appendSpdx: true` 追加 SPDX 标准正文。
+Map<String, dynamic> _rustLicenseTexts(Map<String, dynamic> manifest) =>
+    ((manifest['rust'] as Map<String, dynamic>)['licenseTexts']
+        as Map<String, dynamic>?) ??
+    <String, dynamic>{};
+
+/// 读许可原文。个别上游文件不是 UTF-8（例如 Windows-1252 的弯引号），按 Windows-1252 兜底解码。
+String readNativeLicenseText(File file) {
+  final List<int> bytes = file.readAsBytesSync();
+  try {
+    return utf8.decode(bytes);
+  } on FormatException {
+    return String.fromCharCodes(<int>[
+      for (final int b in bytes)
+        b >= 0x80 && b < 0xA0 ? _cp1252High[b - 0x80] : b,
+    ]);
+  }
+}
+
+/// Windows-1252 的 0x80–0x9F（未定义的位置按 Latin-1 原样保留）。
+const List<int> _cp1252High = <int>[
+  0x20AC, 0x81, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, //
+  0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8D, 0x017D, 0x8F, //
+  0x90, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, //
+  0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x9D, 0x017E, 0x0178, //
+];
 
 /// `native/` 下带 `Cargo.lock` 的一级目录名（已排序）。
 List<String> discoverNativeCargoCrates(Directory repoRoot) {
@@ -79,12 +129,13 @@ List<String> discoverNativeCargoCrates(Directory repoRoot) {
 }
 
 /// 当前各输入文件的指纹。
-Map<String, String> computeNativeLicenseInputs(
-  Directory repoRoot,
-) => <String, String>{
-  for (final String p in nativeLicenseInputPaths(repoRoot))
-    p: nativeLicenseFingerprint(File('${repoRoot.path}/$p').readAsStringSync()),
-};
+Map<String, String> computeNativeLicenseInputs(Directory repoRoot) =>
+    <String, String>{
+      for (final String p in nativeLicenseInputPaths(repoRoot))
+        p: nativeLicenseFingerprint(
+          readNativeLicenseText(File('${repoRoot.path}/$p')),
+        ),
+    };
 
 Map<String, dynamic> _readManifest(Directory repoRoot) =>
     jsonDecode(
@@ -110,6 +161,8 @@ class _Component {
   final List<String> textHashes = <String>[];
   String textSource = 'package';
   String? note;
+  String? source;
+  List<String>? platforms;
 }
 
 final RegExp _licenseFileName = RegExp(
@@ -144,8 +197,10 @@ Future<void> main(List<String> args) async {
 
   final Map<String, String> texts = <String, String>{};
   final Map<String, _Component> components = <String, _Component>{};
-  final List<String> warnings = <String>[];
   final List<String> missingSpdx = <String>[];
+  final Map<String, dynamic> licenseTexts = _rustLicenseTexts(manifest);
+  final Set<String> usedLicenseTexts = <String>{};
+  final List<String> pendingUpstream = <String>[];
 
   String addText(String raw) {
     final String text = _normalizeText(raw);
@@ -235,30 +290,73 @@ Future<void> main(List<String> args) async {
       );
       components[key] = c;
       final List<File> files = _rustLicenseFiles(pkg);
-      if (files.isEmpty) {
+      if (files.isNotEmpty) {
+        for (final File f in files) {
+          c.textHashes.add(addText(readNativeLicenseText(f)));
+        }
+        continue;
+      }
+      // 包内没有许可文件：先找清单里登记的上游原文，没有才退到 SPDX 标准文本。
+      final String authors = (pkg['authors'] as List<dynamic>).join(', ');
+      final Map<String, dynamic>? upstream =
+          licenseTexts['$name@$version'] as Map<String, dynamic>?;
+      bool appendSpdx = true;
+      if (upstream != null) {
+        usedLicenseTexts.add('$name@$version');
+        final List<String> paths =
+            ((upstream['texts'] as List<dynamic>?) ?? const <dynamic>[])
+                .cast<String>();
+        for (final String t in paths) {
+          c.textHashes.add(
+            addText(readNativeLicenseText(File('${repoRoot.path}/$t'))),
+          );
+        }
+        appendSpdx = upstream['appendSpdx'] == true || paths.isEmpty;
+        c.textSource = paths.isEmpty
+            ? 'spdx'
+            : (appendSpdx ? 'upstream+spdx' : 'upstream');
+        c.note = <String>[
+          if (upstream['upstream'] != null && paths.isNotEmpty)
+            'crate 包内没有许可文件；原文取自上游 ${upstream['upstream']}',
+          if (upstream['note'] != null) upstream['note'] as String,
+          if (appendSpdx) '附 ${c.license} 的 SPDX 标准正文；crate 作者：$authors',
+        ].join('。');
+      } else {
         c.textSource = 'spdx-fallback';
         c.note =
             'crate 包内没有许可文件；以下是 ${c.license} 的标准文本，'
-            '版权人见 crate 作者：${(pkg['authors'] as List<dynamic>).join(', ')}';
-        warnings.add('$name $version（${c.license}）包内无许可文件，已用 SPDX 标准文本');
-        for (final String id in _spdxIds(c.license)) {
-          final File spdx = File(
-            '${repoRoot.path}/native/third_party_licenses/spdx/$id.txt',
+            '版权人见 crate 作者：$authors';
+        pendingUpstream.add('$name@$version');
+      }
+      if (!appendSpdx) continue;
+      for (final String id in _spdxIds(c.license)) {
+        final File spdx = File(
+          '${repoRoot.path}/native/third_party_licenses/spdx/$id.txt',
+        );
+        if (!spdx.existsSync()) {
+          missingSpdx.add(
+            '$name $version 需要 native/third_party_licenses/spdx/$id.txt',
           );
-          if (!spdx.existsSync()) {
-            missingSpdx.add(
-              '$name $version 需要 native/third_party_licenses/spdx/$id.txt',
-            );
-            continue;
-          }
-          c.textHashes.add(addText(spdx.readAsStringSync()));
+          continue;
         }
-      } else {
-        for (final File f in files) {
-          c.textHashes.add(addText(f.readAsStringSync()));
-        }
+        c.textHashes.add(addText(readNativeLicenseText(spdx)));
       }
     }
+  }
+
+  final List<String> staleLicenseTexts =
+      licenseTexts.keys
+          .where((String k) => !usedLicenseTexts.contains(k))
+          .toList()
+        ..sort();
+  if (staleLicenseTexts.isNotEmpty) {
+    stderr.writeln(
+      '清单 rust.licenseTexts 里这些条目没有对上任何「包内无许可文件」的 crate'
+      '（版本升了或 crate 已移除 / 新版本包内已带许可）；更新或删掉后重跑：\n'
+      '  ${staleLicenseTexts.join('\n  ')}',
+    );
+    exitCode = 1;
+    return;
   }
 
   if (missingSpdx.isNotEmpty) {
@@ -270,26 +368,38 @@ Future<void> main(List<String> args) async {
     return;
   }
 
-  for (final dynamic raw in manifest['cxx'] as List<dynamic>) {
-    final Map<String, dynamic> e = raw as Map<String, dynamic>;
-    final String name = e['name'] as String;
-    final _Component c = _Component(
-      name: name,
-      version: e['version'] as String,
-      license: e['license'] as String,
-      origin: <String>{e['component'] as String},
-    )..textSource = 'manifest';
-    c.note = e['note'] as String?;
-    for (final dynamic t in e['texts'] as List<dynamic>) {
-      final File f = File('${repoRoot.path}/$t');
-      if (!f.existsSync()) {
-        stderr.writeln('清单条目 $name 引用的许可原文不存在：$t');
+  for (final String section in kNativeLicenseManualSections) {
+    for (final dynamic raw
+        in (manifest[section] as List<dynamic>?) ?? const <dynamic>[]) {
+      final Map<String, dynamic> e = raw as Map<String, dynamic>;
+      final String name = e['name'] as String;
+      final String component = e['component'] as String;
+      final _Component c = _Component(
+        name: name,
+        version: e['version'] as String,
+        license: e['license'] as String,
+        origin: <String>{component},
+      )..textSource = 'manifest';
+      c.note = e['note'] as String?;
+      c.source = e['source'] as String?;
+      c.platforms = (e['platforms'] as List<dynamic>?)?.cast<String>();
+      for (final dynamic t in e['texts'] as List<dynamic>) {
+        final File f = File('${repoRoot.path}/$t');
+        if (!f.existsSync()) {
+          stderr.writeln('清单条目 $name 引用的许可原文不存在：$t');
+          exitCode = 1;
+          return;
+        }
+        c.textHashes.add(addText(readNativeLicenseText(f)));
+      }
+      final String key = '$section:$component:$name@${c.version}';
+      if (components.containsKey(key)) {
+        stderr.writeln('清单 $section 里有重复条目：$component $name ${c.version}');
         exitCode = 1;
         return;
       }
-      c.textHashes.add(addText(f.readAsStringSync()));
+      components[key] = c;
     }
-    components['cxx:$name@${c.version}'] = c;
   }
 
   // 按许可文本分组：一份文本一个文件，列出用它的全部组件名。
@@ -313,13 +423,18 @@ Future<void> main(List<String> args) async {
   final List<_Component> sorted = components.values.toList()
     ..sort((_Component a, _Component b) {
       final int n = a.name.toLowerCase().compareTo(b.name.toLowerCase());
-      return n != 0 ? n : a.version.compareTo(b.version);
+      if (n != 0) return n;
+      final int v = a.version.compareTo(b.version);
+      return v != 0 ? v : a.origin.join(',').compareTo(b.origin.join(','));
     });
   final Map<String, dynamic> index = <String, dynamic>{
     'schema': 1,
     'generatedBy': 'fushi/tool/native_licenses.dart',
     'regenerate': kNativeLicenseRegenerateCommand,
     'inputs': computeNativeLicenseInputs(repoRoot),
+    // 包内没有许可文件、清单 rust.licenseTexts 也还没登记上游原文的 crate：
+    // 目前只附 SPDX 标准文本（缺版权行）。补法见清单的 `$comment`。
+    'pendingUpstreamLicense': (pendingUpstream..sort()),
     'licenses': <Map<String, dynamic>>[
       for (final String h in hashes)
         <String, dynamic>{
@@ -339,7 +454,11 @@ Future<void> main(List<String> args) async {
           'license': c.license,
           'origin': (c.origin.toList()..sort()),
           'textSource': c.textSource,
-          'texts': <String>[for (final String h in c.textHashes) '$h.txt'],
+          'texts': <String>{
+            for (final String h in c.textHashes) '$h.txt',
+          }.toList(),
+          if (c.platforms != null) 'platforms': c.platforms,
+          if (c.source != null) 'source': c.source,
           if (c.note != null) 'note': c.note,
         },
     ],
@@ -348,15 +467,18 @@ Future<void> main(List<String> args) async {
     '${outDir.path}/$kNativeLicenseIndexName',
   ).writeAsStringSync('${const JsonEncoder.withIndent('  ').convert(index)}\n');
 
-  final int rustCount = components.keys
-      .where((String k) => k.startsWith('rust:'))
-      .length;
+  int count(String prefix) =>
+      components.keys.where((String k) => k.startsWith(prefix)).length;
   stdout.writeln(
-    '完成：Rust crate $rustCount 个、C/C++ 条目 '
-    '${components.length - rustCount} 个、去重后许可文本 ${hashes.length} 份。',
+    '完成：Rust crate ${count('rust:')} 个、C/C++ 条目 ${count('cxx:')} 个、'
+    'pub 包预编译库条目 ${count('prebuilt:')} 个、去重后许可文本 ${hashes.length} 份。',
   );
-  for (final String w in warnings) {
-    stdout.writeln('  警告：$w');
+  if (pendingUpstream.isNotEmpty) {
+    stdout.writeln(
+      '注意：${pendingUpstream.length} 个 crate 包内没有许可文件、只附了 SPDX 标准文本'
+      '（缺版权行）。从上游对应提交取原文放进 native/third_party_licenses/texts/crates/，'
+      '再登记到清单 rust.licenseTexts：\n  ${pendingUpstream.join('\n  ')}',
+    );
   }
 }
 
