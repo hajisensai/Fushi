@@ -24,13 +24,13 @@
       "sha256": "c71db382ecd9796df3049dee739a797463e15df5b16bb6bf79f745ef082711c6"
     },
     {
-      "name": "fushi-3.0.0-debug.20310-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.0.0-debug.20310-windows-setup.exe",
-      "releaseSequence": 20310,
-      "tag": "v3.0.0-debug.20310+f3b115e",
-      "version": "3.0.0-debug.20310",
-      "size": 285992040,
-      "sha256": "0bded7415ea1f5a2f1dd739ad515974997be73c184351ba2a371ea875cf9bb1c"
+      "name": "fushi-3.0.0-debug.20320-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.0.0-debug.20320-windows-setup.exe",
+      "releaseSequence": 20320,
+      "tag": "v3.0.0-debug.20320+604c5b7",
+      "version": "3.0.0-debug.20320",
+      "size": 286033544,
+      "sha256": "3caff9680f3324f4e7c1d485268e1b5fa4bac626e29f62519cde06a9795e79e2"
     },
     {
       "name": "hibiki-1.3.3-debug.10192-ec51ef7-debug.apk",
