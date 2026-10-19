@@ -85,6 +85,39 @@ class HostPreferenceSnapshotTest {
     }
 
     @Test
+    fun `ledger never stores the value in plaintext`() {
+        apply(
+            edit("Password", "hunter2-secret"),
+            multi("Tokens", listOf("tok-secret-a")),
+        )
+        val ledger = ledger()
+        val recorded = ledger.all.values.map { it.toString() }
+        assertEquals(2, recorded.size)
+        recorded.forEach { entry ->
+            assertFalse(entry.contains("hunter2-secret"), entry)
+            assertFalse(entry.contains("tok-secret-a"), entry)
+            assertTrue(entry.matches(Regex("sha256:[0-9a-f]{64}")), entry)
+        }
+        assertEquals(HostPreferenceSnapshot.fingerprint("hunter2-secret"), ledger.getString("Password", null))
+        // Equality is all the comparison needs: distinct types / values stay distinct.
+        assertFalse(HostPreferenceSnapshot.fingerprint("true") == HostPreferenceSnapshot.fingerprint(true))
+        assertFalse(HostPreferenceSnapshot.fingerprint("a") == HostPreferenceSnapshot.fingerprint("b"))
+    }
+
+    @Test
+    fun `plaintext ledger entry from before digests upgrades without overriding a source write`() {
+        // Ledger written by the previous build (plaintext record) plus a value
+        // the extension normalised itself afterwards.
+        store().edit().putString("Password", "pw-normalised").commit()
+        ledger().edit().putString("Password", "s:pw").commit()
+
+        apply(edit("Password", "pw"))
+
+        assertEquals("pw-normalised", store().getString("Password", null))
+        assertEquals(HostPreferenceSnapshot.fingerprint("pw"), ledger().getString("Password", null))
+    }
+
+    @Test
     fun `entries without a usable value are ignored`() {
         assertNull(HostPreferenceSnapshot.valueOf(mapOf("key" to "x")))
         assertNull(HostPreferenceSnapshot.valueOf(list("Sort", valueIndex = 5, entryValues = listOf("a"))))
@@ -95,11 +128,13 @@ class HostPreferenceSnapshotTest {
 
     private fun store(): SharedPreferences = JavaSharedPreferences("source_$SOURCE_ID")
 
+    private fun ledger(): SharedPreferences = JavaSharedPreferences(HostPreferenceSnapshot.ledgerName(SOURCE_ID))
+
     private fun apply(vararg entries: Map<String, Any?>) {
         val snapshot =
             HostPreferenceSnapshot(
                 preferences = store(),
-                ledger = JavaSharedPreferences(HostPreferenceSnapshot.ledgerName(SOURCE_ID)),
+                ledger = ledger(),
             )
         entries.forEach { entry ->
             val value = HostPreferenceSnapshot.valueOf(entry) ?: return@forEach

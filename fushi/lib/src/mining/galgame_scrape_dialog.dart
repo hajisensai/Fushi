@@ -90,13 +90,17 @@ String normalizeGalgameScrapeQuery(String input) {
 
 /// 纯函数：弹窗搜索框的预填词。
 ///
-/// 预填词（缺省 = 显示名）里带 DLsite 编号就只填编号；否则游戏 exe 路径（安装目录多以
-/// 编号命名）里能认出编号也填编号——编号命中即按 ID 直取，比拿显示名去搜准得多。
-/// 都没有时原样用预填词。
+/// 预填词里带 DLsite 编号就只填编号——编号命中即按 ID 直取，比拿名字去搜准得多。
+///
+/// 调用方**显式给了** [initialQuery]（详情页编辑框里用户手填的名字）时，那就是
+/// 用户要搜的词：里面没编号就原样用，**不**再去 exe 路径里找编号覆盖它。只有没给
+/// 预填词（缺省 = 显示名）时，才回退到游戏 exe 路径（安装目录多以编号命名）认编号。
 String galgameScrapeInitialQuery(GalgameEntry game, String? initialQuery) {
-  final String query = (initialQuery?.trim().isNotEmpty ?? false)
-      ? initialQuery!.trim()
-      : game.displayName;
+  final String explicit = initialQuery?.trim() ?? '';
+  if (explicit.isNotEmpty) {
+    return DlsiteWorkId.findIn(explicit)?.value ?? explicit;
+  }
+  final String query = game.displayName;
   final DlsiteWorkId? id =
       DlsiteWorkId.findIn(query) ?? DlsiteWorkId.findIn(game.exePath);
   return id?.value ?? query;
