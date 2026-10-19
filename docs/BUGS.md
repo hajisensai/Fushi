@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3192 条。点号进各自文件。
+> 共 3195 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3567](bugs/BUG-3567-web-browser-embedded-under-nav.md) | ✅ | ✅ | 浏览器嵌在模块页里：主导航底栏与「阅读本章」FAB 叠在网页上互相遮挡，顶部还有「浏览器」标题 |
+| [BUG-3566](bugs/BUG-3566-lookup-shell-title-md3-compact.md) | ✅ | ✅ | 查词页（MD3 手机）顶部仍有一整行「查词」大标题 |
+| [BUG-3565](bugs/BUG-3565-root-page-back-button-on-popup.md) | ✅ | ✅ | 根页打开弹出菜单 / 对话框后重建会凭空长出返回键（浏览器页点「⋯」左上角出现返回） |
 | [BUG-3562](bugs/BUG-3562-srs-review-top-band-and-phone-dict-tabs.md) | ✅ | ✅ | srs-review-top-band-and-phone-dict-tabs |
 | [BUG-3561](bugs/BUG-3561-video-pause-ocr-capture-null-never-retried.md) | ✅ | ✅ | video-pause-ocr-capture-null-never-retried |
 | [BUG-3560](bugs/BUG-3560-video-pause-ocr-all-skips-when-text-subtitle-on-screen.md) | ✅ | ✅ | video-pause-ocr-all-skips-when-text-subtitle-on-screen |
