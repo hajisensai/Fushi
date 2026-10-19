@@ -97,6 +97,7 @@ mixin _LocalLibraryHostVideos
     int? sizeBytes;
     bool hasSubtitle = false;
     String? subtitleFileName;
+    String? fileName;
 
     // 网络流（http(s) / rtsp …）与 `.strm` 流指针在本机没有媒体字节
     // （[lacksLocalMediaFile]）：`.strm` 的 stat 只会拿到一行地址的文本大小冒充
@@ -110,20 +111,31 @@ mixin _LocalLibraryHostVideos
         } catch (_) {
           // stat 失败：保守返回 null
         }
-        // 检查外挂字幕 sidecar（廉价：目录 listing 每目录只扫一次 + 纯字符串匹配）。
-        final String dir = p.dirname(videoPath);
-        final List<String>? dirFiles =
-            sidecarDirCache.putIfAbsent(dir, () => _listDirFileNames(dir));
-        final String? picked = dirFiles == null
-            ? null
-            : pickSidecar(
-                p.basenameWithoutExtension(videoPath),
-                dirFiles,
-                langCode: _videoSubtitleLangCode,
-              );
-        if (picked != null) {
+        // 只下发文件名（basename），目录结构留在 host（BUG-3613，见
+        // [RemoteVideoInfo.fileName]）。
+        fileName = p.basename(videoPath);
+        // host 用户为这一集选定 / 下载过的外挂字幕优先（BUG-3615，与
+        // [resolveVideoSubtitle] 同一判据）；没有才找同目录 sidecar（廉价：目录
+        // listing 每目录只扫一次 + 纯字符串匹配）。
+        final String? persisted = _persistedExternalSubtitlePath(row);
+        if (persisted != null) {
           hasSubtitle = true;
-          subtitleFileName = picked;
+          subtitleFileName = p.basename(persisted);
+        } else {
+          final String dir = p.dirname(videoPath);
+          final List<String>? dirFiles =
+              sidecarDirCache.putIfAbsent(dir, () => _listDirFileNames(dir));
+          final String? picked = dirFiles == null
+              ? null
+              : pickSidecar(
+                  p.basenameWithoutExtension(videoPath),
+                  dirFiles,
+                  langCode: _videoSubtitleLangCode,
+                );
+          if (picked != null) {
+            hasSubtitle = true;
+            subtitleFileName = picked;
+          }
         }
         // BUG-814：列表端点**不做**内嵌字幕轨 ffmpeg 探测。旧实现在此逐视频串行
         // spawn `ffmpeg -i`（每项超时基线 60s、大文件到 1200s、无缓存、每次 GET 全量
@@ -232,7 +244,33 @@ mixin _LocalLibraryHostVideos
       // 入库时刻下发：client 的「最近添加」行与合集组间序都按它排；不下发就只能
       // 给远端占位造假 importedAt，远端条目结构上进不了「最近添加」。
       importedAt: row.importedAt,
+      fileName: fileName,
     );
+  }
+
+  /// host 本机为 [row] 持久化的外挂字幕文件（`VideoBooks.subtitleSource`）；不是
+  /// 外挂字幕文件 / 文件已不在 / 行是多集播放列表 → null。
+  ///
+  /// 应用内「下载字幕」与手动导入的字幕拷在 `<appDocs>/video_subtitles/`，**不在**
+  /// 视频旁（[isImportedExternalSubtitlePath]），host 本机播放按这个持久化路径直接
+  /// 加载；只扫同目录 sidecar 的远端下发因此看不到它，client 只能再下一遍
+  /// （BUG-3615）。这里让远端与 host 本机播放读同一份选择。
+  ///
+  /// 多集播放列表行（`playlistJson` ≥2 条）的 `subtitleSource` 只属于当前集、换集
+  /// 时另有沿用规则，按集下标下发会把它错配到别的集上——这类行维持原来只看 sidecar。
+  /// 值来自 host 自己的 DB（不接受外部路径），扩展名再过一道字幕白名单。
+  String? _persistedExternalSubtitlePath(VideoBookRow row) {
+    final String? persisted = row.subtitleSource;
+    if (persisted == null || !isImportedExternalSubtitlePath(persisted)) {
+      return null;
+    }
+    if (_parsePlaylistEntries(row.playlistJson).length > 1) return null;
+    if (isNetworkOnlyVideoPath(persisted)) return null;
+    try {
+      return File(persisted).existsSync() ? persisted : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 把 [row] 的 `playlistJson` 解析成远端剧集列表（TODO-885）。坏 JSON / 单视频
@@ -300,6 +338,18 @@ mixin _LocalLibraryHostVideos
     return f.existsSync() ? f : null;
   }
 
+  /// 弹弹play 指纹（[VideoDanmakuKeyHost]，BUG-3614）：对 [resolveVideoFile] 反查到
+  /// 的真实文件现算——只读前 16 MiB，路径只来自 host 自己的 DB。
+  @override
+  Future<DandanplayFileKey?> videoDanmakuKey(
+    String id, {
+    int episodeIndex = 0,
+  }) async {
+    final File? file = await resolveVideoFile(id, episodeIndex: episodeIndex);
+    if (file == null) return null;
+    return dandanplayFileKeyOf(file);
+  }
+
   /// 按 [id] 查找对应视频的外挂字幕文件（sidecar）。
   ///
   /// 用 [langCode] 优先匹配带语言标记的字幕（如 `.ja.srt`）；内封字幕不在此列。
@@ -312,6 +362,14 @@ mixin _LocalLibraryHostVideos
   }) async {
     final String? videoPath = await _resolveEpisodeVideoPath(id, episodeIndex);
     if (videoPath == null || videoPath.isEmpty) return null;
+    // host 用户为这一集选定 / 下载过的外挂字幕优先（BUG-3615）：与 host 本机播放
+    // 读同一份 `subtitleSource`。只对单视频行生效（[_persistedExternalSubtitlePath]）。
+    if (episodeIndex == 0 && langCode.isEmpty) {
+      final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+      final String? persisted =
+          row == null ? null : _persistedExternalSubtitlePath(row);
+      if (persisted != null) return File(persisted);
+    }
     // 只碰同目录 sidecar：网络流地址（[isNetworkOnlyVideoPath]）没有本地目录可扫；
     // 本地 `.strm` 的同目录字幕是真实文件，照常可找。
     if (isNetworkOnlyVideoPath(videoPath)) return null;

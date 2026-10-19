@@ -9168,11 +9168,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.nextChapter:
       case VideoControlItem.chapterList:
         return _hasChapters;
-      // 弹幕只对本地文件加载（sidecar / Dandanplay 按文件 hash 匹配，见
-      // `_loadDanmakuForVideo`）；远端流没有本地路径 = 没有弹幕来源，与章节 / 选集
-      // 一样直接不渲染，免得放一个按了也不会有弹幕的开关。
+      // 弹幕来源是本地文件（sidecar / Dandanplay 按文件 hash 匹配），或能向 host
+      // 取文件指纹的互联远端流（BUG-3614，见 `_loadDanmakuForVideo`）；其余远端流
+      // 没有弹幕来源，与章节 / 选集一样直接不渲染，免得放一个按了也不会有弹幕的开关。
       case VideoControlItem.danmaku:
-        return _currentVideoPath != null;
+        return _hasDanmakuSource;
       case VideoControlItem.volume:
       case VideoControlItem.title:
       case VideoControlItem.positionIndicator:

@@ -22,6 +22,12 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/sync/remote_video_client.dart'
+    show RemoteVideoWorkMetadataFetch;
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
+    show VideoMetadataImage, VideoMetadataImageKind, VideoMetadataWork;
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteVideoInfo;
 import 'package:fushi_core/fushi_core.dart';
 
 /// Stable reference to a canonical video work. A work is owned by either a
@@ -473,20 +479,8 @@ class _StandaloneVideoWorkDetailState
   /// 2026-10 体验优化：term 的 `kind` 是存储值（genre / keyword / studio /
   /// country），不能直接拼进 UI。与合集详情页 `_buildWorkDetailsSection` 同一套
   /// 本地化标签；不认识的 kind 只显示值，不把原始 kind 漏给用户。
-  String _termChipText(String kind, List<String> names) {
-    final String? label = switch (kind) {
-      'genre' => t.video_work_genres,
-      'keyword' => t.video_work_keywords,
-      'studio' => t.video_work_studios,
-      'country' => t.video_work_countries,
-      _ => null,
-    };
-    final List<String> values = kind == 'country'
-        ? formatVideoCountriesForDisplay(names)
-        : names;
-    final String joined = values.join(' · ');
-    return label == null ? joined : '$label: $joined';
-  }
+  String _termChipText(String kind, List<String> names) =>
+      videoWorkTermChipText(kind, names);
 
   /// 与合集详情页同一份人物表（圆形头像横滑）：配音 / 演职人员分两条。此前这里
   /// 只画文字 Chip，照片无论刮到没刮到都不显示（BUG-2612）。
@@ -611,5 +605,194 @@ class _StandaloneVideoWorkDetailState
     } on Object {
       if (mounted) FushiToast.show(msg: t.video_load_failed_generic);
     }
+  }
+}
+
+/// 作品资料 term chip 文案（`kind` 是存储值 genre / keyword / studio / country，
+/// 不能直接拼进 UI）。本地独立作品页与远端独立作品页共用。
+String videoWorkTermChipText(String kind, List<String> names) {
+  final String? label = switch (kind) {
+    'genre' => t.video_work_genres,
+    'keyword' => t.video_work_keywords,
+    'studio' => t.video_work_studios,
+    'country' => t.video_work_countries,
+    _ => null,
+  };
+  final List<String> values = kind == 'country'
+      ? formatVideoCountriesForDisplay(names)
+      : names;
+  final String joined = values.join(' · ');
+  return label == null ? joined : '$label: $joined';
+}
+
+/// 远端（互联 host）独立视频的作品资料页（BUG-3613）。
+///
+/// 本地独立作品（电影 / 单集）在「剧集」库页点开是 [VideoWorkDetailPage]；远端
+/// 占位卡此前直接开播，看不到简介、年份。资料挂在 host 的视频行上，本机没有那一行
+/// （`video_metadata_works.book_uid` 外键指向 `video_books`），同步落不了库，所以
+/// 这里按需向 host 取这一部（[RemoteVideoWorkMetadataFetch]），不落本机库。
+/// host 没刮过 / 不支持 / 取失败时只剩标题与封面，与本地未刮削作品页同形。
+class RemoteVideoWorkDetailPage extends StatefulWidget {
+  const RemoteVideoWorkDetailPage({
+    required this.info,
+    required this.metadata,
+    required this.onPlay,
+    this.fallbackCover,
+    super.key,
+  });
+
+  /// 远端视频条目（标题 / 断点 / 封面回落）。
+  final RemoteVideoInfo info;
+
+  /// 取作品资料的来源（互联 host）。
+  final RemoteVideoWorkMetadataFetch metadata;
+
+  /// 主按钮：沿用库页远端流播入口。
+  final VoidCallback onPlay;
+
+  /// host 下发的远端封面（资料里没有封面图时用它）。
+  final ImageProvider? fallbackCover;
+
+  @override
+  State<RemoteVideoWorkDetailPage> createState() =>
+      _RemoteVideoWorkDetailPageState();
+}
+
+class _RemoteVideoWorkDetailPageState extends State<RemoteVideoWorkDetailPage> {
+  VideoMetadataWork? _work;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    VideoMetadataWork? work;
+    try {
+      work = await widget.metadata.remoteVideoWorkMetadata(widget.info.id);
+    } catch (e, st) {
+      // 取资料失败不挡播放：落到「只有标题 + 封面」的终态，诊断进日志。
+      ErrorLogService.instance.log(
+        'remote_video_work_detail',
+        'load failed: $e',
+        st,
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      _work = work;
+      _loading = false;
+    });
+  }
+
+  ImageProvider? _image(VideoMetadataImageKind kind) {
+    for (final VideoMetadataImage image
+        in _work?.images ?? const <VideoMetadataImage>[]) {
+      if (image.kind == kind && image.url.isNotEmpty) {
+        return AppCachedHttpImage(image.url);
+      }
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Scaffold(
+        appBar: FushiAppBar(),
+        body: const MediaDetailSkeleton(rows: 3),
+      );
+    }
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final VideoMetadataWork? work = _work;
+    final ImageProvider? poster =
+        _image(VideoMetadataImageKind.cover) ?? widget.fallbackCover;
+    final ImageProvider? fanart = _image(VideoMetadataImageKind.backdrop);
+    final String title = work?.title ?? widget.info.title;
+    final String? originalTitle = work?.originalTitle;
+    final String? status = work?.status?.trim();
+    final double? rating = work?.rating;
+    final int? runtime = work?.runtimeMinutes;
+    final List<(String, List<String>)> terms = <(String, List<String>)>[
+      if (work != null) ...<(String, List<String>)>[
+        ('genre', work.genres),
+        ('studio', work.studios),
+        ('country', work.countries),
+        ('keyword', work.keywords),
+      ],
+    ].where(((String, List<String>) e) => e.$2.isNotEmpty).toList();
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: FushiAppBar(),
+      body: FushiEntranceScope(
+        child: MediaDetailLayout(
+          backdrop: collectionHeroBackdropImage(
+            backdrop: fanart,
+            cover: poster,
+          ),
+          backdropBlur: collectionHeroBackdropBlur(backdrop: fanart),
+          bottomPadding: tokens.spacing.page,
+          header: CollectionDetailHero(
+            backdrop: fanart,
+            cover: poster,
+            title: title,
+            originalTitle: originalTitle == title ? null : originalTitle,
+            airDate: work?.premiered,
+            chips: <MediaDetailChip>[
+              if (work?.year case final int year)
+                MediaDetailChip('$year', icon: FushiIcons.calendar),
+              if (status != null && status.isNotEmpty)
+                MediaDetailChip(status, tone: MediaDetailChipTone.secondary),
+              if (rating != null && rating > 0)
+                MediaDetailChip(
+                  '★ ${rating.toStringAsFixed(1)}',
+                  tone: MediaDetailChipTone.primary,
+                ),
+              if (runtime != null && runtime > 0)
+                MediaDetailChip(
+                  t.video_runtime_minutes(n: runtime),
+                  icon: FushiIcons.timer,
+                ),
+            ],
+            summary: work?.plot,
+            playLabel: widget.info.positionMs > 0
+                ? t.video_continue_watching
+                : t.collection_play,
+            playButtonKey: const ValueKey<String>('remote-video-work-play'),
+            onPlay: widget.onPlay,
+          ),
+          slivers: <Widget>[
+            if (terms.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    tokens.spacing.section,
+                    tokens.spacing.page,
+                    0,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      MediaDetailSectionHeader(t.video_work_details),
+                      MediaDetailChipRow(
+                        chips: <MediaDetailChip>[
+                          for (final (String kind, List<String> names) in terms)
+                            MediaDetailChip(
+                              videoWorkTermChipText(kind, names),
+                              tone: MediaDetailChipTone.secondary,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -29,6 +29,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
+    show DandanplayFileKey;
 import 'package:fushi_engine/sync/graphic_subtitle_track_export.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
 import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';

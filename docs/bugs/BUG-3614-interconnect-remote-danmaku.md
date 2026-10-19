@@ -1,0 +1,19 @@
+## BUG-3614 · iPad 经互联流播没有弹幕，下载到本机才有
+- **报告**：2026-10-19（用户：应用内反馈 _sZllpFQWm）
+- **真实性**：✅ 真 bug。弹幕只有「本地文件」这一条来源：
+  - 远端起播时调 `_applyLoad(videoPath: null, ...)`（`video_fushi_page.dart` `_loadRemoteEpisode`），于是 `_loadDanmakuForVideo(null)` 在 `video_fushi/danmaku.part.dart` 开头的 `if (videoPath == null || ...) return;` 直接短路。
+  - 弹弹play 匹配要用文件名 + 前 16 MiB md5 + 字节数。client 本机没有文件，算不出来；host 也没有任何弹幕相关端点。也就是 host API 没提供、client 也没请求。
+  - 控制条的弹幕开关按 `_currentVideoPath != null` 隐藏。
+  - 下载到本机后有了本地路径，所以有弹幕。
+- **[x] ① 已修复**
+  - 指纹算法抽到引擎 `packages/fushi_engine/lib/media/video/dandanplay_file_key.dart`，app 的 `dandanplay_client.dart` re-export 它。
+  - host 新增可选能力 `VideoDanmakuKeyHost` 与端点 `GET /api/library/videos/<id>/danmakukey?episode=N`：用 host 自己 DB 反查到的文件现算指纹；老 host / 网络流返回 404。
+  - client 新增能力 `RemoteVideoDanmakuKeyFetch`，由 `InterconnectSyncBackend` 实现。播放页远端分支先向 host 取指纹，再走与本地相同的在线匹配（`_loadOnlineDanmaku` → `DandanplayClient.fetchBestDanmakuForKey`）。
+  - 选集记忆改为按「远端成员 id + 集下标」分开记。
+  - 控制条开关改按 `_hasDanmakuSource` 判断；手动匹配的初始关键词用 host 下发的文件名。
+  - 提交：待主会话拆分支后补。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_client_video_parity_test.dart`，真 HTTP 覆盖：
+  - host 下发的指纹与本机对同一文件算出的一致。
+  - client 用它请求弹弹play 的 body 与本地逐字段相同，并能取回弹幕。
+  - 网络流 / 未知 id 返回 404。
+- **备注**：待真机复测。host 视频旁的本地弹幕 sidecar 远端仍不下发，只走在线匹配。这与「下载到本机」时一致，下载也不带 sidecar。需要打开「弹幕在线匹配」开关。

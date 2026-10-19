@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3200 条。点号进各自文件。
+> 共 3203 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3615](bugs/BUG-3615-interconnect-remote-host-downloaded-subtitle.md) | ✅ | ✅ | iPad 经互联流播用不了电脑上已下载的字幕 |
+| [BUG-3614](bugs/BUG-3614-interconnect-remote-danmaku.md) | ✅ | ✅ | iPad 经互联流播没有弹幕，下载到本机才有 |
+| [BUG-3613](bugs/BUG-3613-interconnect-remote-season-and-detail.md) | ✅ | ✅ | iPad 经互联：刮削后剧集不分季、独立作品点开直接播放无资料页 |
 | [BUG-3570](bugs/BUG-3570-web-browser-embedded-under-nav.md) | ✅ | ✅ | 浏览器嵌在模块页里：主导航底栏与「阅读本章」FAB 叠在网页上互相遮挡，顶部还有「浏览器」标题 |
 | [BUG-3569](bugs/BUG-3569-lookup-shell-title-md3-compact.md) | ✅ | ✅ | 查词页（MD3 手机）顶部仍有一整行「查词」大标题 |
 | [BUG-3568](bugs/BUG-3568-root-page-back-button-on-popup.md) | ✅ | ✅ | 根页打开弹出菜单 / 对话框后重建会凭空长出返回键（浏览器页点「⋯」左上角出现返回） |

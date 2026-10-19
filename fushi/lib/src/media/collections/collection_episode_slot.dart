@@ -27,12 +27,13 @@ import 'package:fushi_core/fushi_core.dart'
 /// 能力边界与库页一致：远端槽只支持**流播 / 下载**，不参与任何写本地库的管理动作
 /// （改集名、批量字幕、补缺集、删除本体）——那些动作的调用方取 [local] 子集。
 class CollectionEpisodeSlot {
-  const CollectionEpisodeSlot.local(VideoBookRow this.local,
-      {this.remoteMirror})
-      : remote = null;
+  const CollectionEpisodeSlot.local(
+    VideoBookRow this.local, {
+    this.remoteMirror,
+  }) : remote = null;
   const CollectionEpisodeSlot.remote(RemoteVideoInfo this.remote)
-      : local = null,
-        remoteMirror = null;
+    : local = null,
+      remoteMirror = null;
 
   /// 本机视频行；null = 该集只在对端。
   final VideoBookRow? local;
@@ -60,9 +61,10 @@ class CollectionEpisodeSlot {
 
   String get title => local?.title ?? remote!.title;
 
-  /// 集号 / 分季解析的输入：本地用真实文件路径，远端只有 host 给的标题
-  /// （host 端标题默认就是文件名，解析不出时各调用方自有回落）。
-  String get filename => local?.videoPath ?? remote!.title;
+  /// 集号 / 分季解析的输入：本地用真实文件路径；远端用 host 下发的文件名
+  /// （[RemoteVideoInfo.parseName]：host 刮削后标题已是分集名，按标题解析季号会
+  /// 让几十集排成一列，BUG-3613；旧 host / 媒体服务器回落标题）。
+  String get filename => local?.videoPath ?? remote!.parseName;
 
   int get positionMs => local?.lastPositionMs ?? remote!.positionMs;
 
@@ -98,8 +100,8 @@ Future<List<CollectionEpisodeSlot>> loadCollectionEpisodeSlots({
   required int collectionId,
   Future<List<RemoteVideoInfo>> Function()? loadRemoteVideos,
 }) async {
-  final List<MediaCollectionItemRow> items =
-      await repository.getCollectionItems(collectionId);
+  final List<MediaCollectionItemRow> items = await repository
+      .getCollectionItems(collectionId);
   final List<String> videoKeys = <String>[
     for (final MediaCollectionItemRow item in items)
       if (item.mediaType == MediaKind.video.dbValue) item.entryKey,
@@ -109,8 +111,9 @@ Future<List<CollectionEpisodeSlot>> loadCollectionEpisodeSlots({
     final VideoBookRow? row = await repository.getByBookUid(key);
     if (row != null) localByUid[key] = row;
   }
-  final bool anyMissing =
-      videoKeys.any((String key) => !localByUid.containsKey(key));
+  final bool anyMissing = videoKeys.any(
+    (String key) => !localByUid.containsKey(key),
+  );
   Map<String, RemoteVideoInfo> remoteById = const <String, RemoteVideoInfo>{};
   // 全员本地时一次远端清单都不问：详情页是高频入口，没有缺口就没有理由付网络/缓存
   // 代价（有缓存也仍是一次 provider 往返）。
@@ -143,17 +146,16 @@ Future<List<CollectionEpisodeSlot>> loadCollectionEpisodeSlots({
   );
   final Map<String, RemoteVideoInfo> mirrorByLocalUid =
       <String, RemoteVideoInfo>{
-    for (final MapEntry<String, String> pair in localUidByRemoteId.entries)
-      pair.value: remoteById[pair.key]!,
-  };
+        for (final MapEntry<String, String> pair in localUidByRemoteId.entries)
+          pair.value: remoteById[pair.key]!,
+      };
   final List<CollectionEpisodeSlot> slots = <CollectionEpisodeSlot>[];
   for (final String key in videoKeys) {
     final VideoBookRow? local = localByUid[key];
     if (local != null) {
-      slots.add(CollectionEpisodeSlot.local(
-        local,
-        remoteMirror: mirrorByLocalUid[key],
-      ));
+      slots.add(
+        CollectionEpisodeSlot.local(local, remoteMirror: mirrorByLocalUid[key]),
+      );
       continue;
     }
     // 已并进本地同集的远端成员不再单独占槽。
@@ -198,10 +200,10 @@ typedef CollectionEpisodeIdentity = ({int season, int episode});
 /// 共用同一判据，两处的集数口径因此一致。
 ///
 /// 身份 = (季号, 集号)：本地从真实文件路径整批解析（与集卡序号同一个
-/// [parsedEpisodeNumbersOf]，季号走 [parseVideoPath] 的父目录回落），远端从标题
-/// 解析（媒体服务器标题是 `剧名 S01E02 集名`，互联 host 默认是文件名）。远端
-/// 标题不是路径，故走 [parseVideoFilename]——`Fate/Zero` 这种带斜杠的剧名不能被
-/// 当成目录切开。
+/// [parsedEpisodeNumbersOf]，季号走 [parseVideoPath] 的父目录回落），远端从
+/// [RemoteVideoInfo.parseName] 解析（互联 host 下发的文件名；媒体服务器 / 旧 host
+/// 回落标题，媒体服务器标题是 `剧名 S01E02 集名`）。它不是路径，故走
+/// [parseVideoFilename]——`Fate/Zero` 这种带斜杠的剧名不能被当成目录切开。
 ///
 /// 只配**两边各自唯一**的身份：同一身份在本地或远端出现多次（多版本、解析撞号）
 /// 时宁可不并，也不把两集错并成一集；解析不出集号的（PV / 特典 / 电影）一律不并。
@@ -223,20 +225,24 @@ Map<String, String> pairRemoteEpisodesWithLocal({
       episode: episode,
     );
     // 撞号 → 记 null（该身份作废），不按先来后到挑一个。
-    localByIdentity[identity] =
-        localByIdentity.containsKey(identity) ? null : local[i].bookUid;
+    localByIdentity[identity] = localByIdentity.containsKey(identity)
+        ? null
+        : local[i].bookUid;
   }
   if (localByIdentity.isEmpty) return const <String, String>{};
   final Map<CollectionEpisodeIdentity, String?> remoteByIdentity =
       <CollectionEpisodeIdentity, String?>{};
   for (final RemoteVideoInfo info in remote) {
-    final VideoNameInfo parsed = parseVideoFilename(info.title);
+    final VideoNameInfo parsed = parseVideoFilename(info.parseName);
     final int? episode = parsed.episode;
     if (episode == null) continue;
-    final CollectionEpisodeIdentity identity =
-        (season: parsed.season ?? 1, episode: episode);
-    remoteByIdentity[identity] =
-        remoteByIdentity.containsKey(identity) ? null : info.id;
+    final CollectionEpisodeIdentity identity = (
+      season: parsed.season ?? 1,
+      episode: episode,
+    );
+    remoteByIdentity[identity] = remoteByIdentity.containsKey(identity)
+        ? null
+        : info.id;
   }
   final Map<String, String> pairs = <String, String>{};
   remoteByIdentity.forEach((CollectionEpisodeIdentity identity, String? id) {
@@ -311,7 +317,8 @@ class CollectionRemoteContext {
     RemoteVideoInfo episode,
     List<RemoteVideoInfo> members,
     int index,
-  ) openEpisode;
+  )
+  openEpisode;
 
   /// 远端封面取数器（钉扎 HTTP 客户端）；null = 远端集只画占位图标。
   final RemoteCoverFetcher? coverFetcher;
@@ -322,7 +329,8 @@ class CollectionRemoteContext {
   final Future<void> Function(
     MediaCollectionRow collection,
     List<RemoteVideoInfo> members,
-  )? downloadMembers;
+  )?
+  downloadMembers;
 
   /// 7a：让 host 用户选定的身份在 host 上重刮本合集（候选搜索也打到 host）。
   /// null = 对端不支持远程刮削。
@@ -334,7 +342,7 @@ class CollectionRemoteContext {
   /// TMDB 备选排序（Shoko `PreferredAlternateOrderingID`）在 host 上选定并重刮。
   /// null = 对端不是互联 host。
   final Future<void> Function(MediaCollectionRow collection)?
-      chooseTmdbOrderingOnHost;
+  chooseTmdbOrderingOnHost;
 
   /// app 级互联下载管理器：详情页据它给**每一集**画下载进度 / 失败角标（任务键
   /// = 远端集 id = [CollectionEpisodeSlot.entryKey]，与库页远端占位卡同一张表）。

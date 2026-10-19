@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
+import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
+    show DandanplayFileKey;
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
@@ -2135,10 +2137,24 @@ class RemoteVideoInfo {
     this.tagTombstones = const <String, int>{},
     this.collection,
     this.importedAt,
+    this.fileName,
   });
 
   final String id;
   final String title;
+
+  /// host 视频文件的**文件名**（只取 basename，绝不带目录——目录结构仍留在 host）。
+  ///
+  /// host 刮削会把 `VideoBooks.title` 改写成分集标题（`video_metadata_database_store`
+  /// 的 `updateVideoBookTitle`），之后 [title] 不再是文件名：client 按标题解析季号 /
+  /// 集号（合集详情页分季、本地与远端同集归并）就全部落空，几十集挤成一列
+  /// （BUG-3613）。host 本机这些判据读的是文件路径，故把同一份输入的文件名下发，
+  /// 两端用同一判据。null = 旧 host / 网络流 / 非互联来源，调用方回落 [title]。
+  final String? fileName;
+
+  /// 季号 / 集号解析的输入：有文件名用文件名，否则回落标题（媒体服务器标题是
+  /// `剧名 S01E02 集名`，旧 host 标题默认即文件名）。
+  String get parseName => _isNonEmpty(fileName) ? fileName! : title;
   final int? sizeBytes;
   final bool hasSubtitle;
   final String? subtitleFileName;
@@ -2286,6 +2302,7 @@ class RemoteVideoInfo {
         if (tagsAddedAt.isNotEmpty) 'tagsAddedAt': tagsAddedAt,
         if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
         if (collection != null) 'collection': collection!.toJson(),
+        if (_isNonEmpty(fileName)) 'fileName': fileName,
       };
 
   RemoteVideoInfo copyWith({
@@ -2341,6 +2358,7 @@ class RemoteVideoInfo {
         tagTombstones: tagTombstones,
         collection: collection ?? this.collection,
         importedAt: importedAt,
+        fileName: fileName,
       );
 
   static RemoteVideoInfo fromJson(Map<String, Object?> json) {
@@ -2385,6 +2403,7 @@ class RemoteVideoInfo {
       // video.collection 恒 null → 首页收不到合集分组（全成散卡）、播放器也无从重建合集连播。
       // 对齐 RemoteBookInfo.fromJson。旧 host 无该字段 → fromJson 返 null（向后兼容）。
       collection: RemoteCollectionMembership.fromJson(json['collection']),
+      fileName: _jsonString(json['fileName']),
     );
   }
 }
@@ -2877,8 +2896,13 @@ abstract interface class TagSyncHost {
 /// 能力位 `liveLibrary.videoMetadata=false`，client 静默跳过。
 abstract interface class VideoMetadataHost {
   /// 7c：host 全部作品的刮削元数据（`VideoMetadataWorks` + 从属表反向装载）。
-  /// [since] 非 null 时只回 `updatedAt > since` 的作品。纯读。
-  Future<List<VideoMetadataWorkEntry>> listVideoMetadata({int? since});
+  /// [since] 非 null 时只回 `updatedAt > since` 的作品。[bookUid] 非 null 时只回
+  /// 该视频自己拥有的作品（独立电影 / 单集；client 远端资料页按需取，BUG-3613）。
+  /// 纯读。
+  Future<List<VideoMetadataWorkEntry>> listVideoMetadata({
+    int? since,
+    String? bookUid,
+  });
 
   /// 7a：在 host 上按 [query] 搜候选（host 自己的 provider 配置 / 主源选择 / 资料
   /// 语言）。[key] 用来定作品形态（电影 / 剧集）与来源设置；host 无刮削链或作品
@@ -2936,6 +2960,19 @@ abstract interface class VideoMetadataOrderingHost {
 /// server 用 `is` 探测——host 不实现就让 `GET/PUT /api/library/videos/<id>/playback`
 /// 落 404；client 上报是 best-effort（失败只记日志），本地 prefs 已持久化，对旧
 /// host 优雅降级（Never break userspace）。
+/// host 端「弹幕匹配指纹」的**可选**能力（BUG-3614）。
+///
+/// 弹幕（弹弹play）按文件名 + 前 16 MiB md5 + 字节数匹配，client 远端流播时本机
+/// 没有文件、算不出指纹，弹幕整条短路。host 用自己的文件算好下发，client 再自己
+/// 去问弹弹play——与「下载到本机再播」走同一条匹配。与 [VideoPlaybackSyncHost]
+/// 同范式：server 用 `is` 探测，不实现 → `/api/library/videos/<id>/danmakukey` 404，
+/// client 当作没有弹幕来源（与改动前相同）。
+abstract interface class VideoDanmakuKeyHost {
+  /// 视频 [id] 第 [episodeIndex] 集文件的弹弹play 指纹；视频未知 / 没有本地媒体
+  /// 文件（网络流、`.strm`）→ null。
+  Future<DandanplayFileKey?> videoDanmakuKey(String id, {int episodeIndex = 0});
+}
+
 abstract interface class VideoPlaybackSyncHost {
   /// 读 host 端视频 [id] 的播放偏好带戳状态。无带戳记录的字段回退行/系列级基底
   /// （时间戳 0）；id 未知返回全默认。
