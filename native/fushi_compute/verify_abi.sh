@@ -61,8 +61,12 @@ fi
 # strip = true / "debuginfo" 在 Apple 目标上调用它）重排 LINKEDIT 时不补齐：间接符号表
 # 项数（每项 4 字节）为奇数时，紧跟其后的字符串表只对齐到 4。用 SDK 27 及以上链接的
 # 二进制，macOS 27 的 dyld 会以「mis-aligned LINKEDIT string pool」拒绝加载；SDK 更旧的
-# 不校验，所以 CI runner 上 dlopen 照样成功——只有这条静态检查与 runner 系统 / SDK 无关。
-# Apple 的 /usr/bin/strip 和 ld 的输出都已补齐。静态库（ar）的成员会被重新链接，不查。
+# 不校验，所以 CI runner 上 dlopen 照样成功——这条静态检查读出二进制自己记录的链接 SDK，
+# 与 runner 系统无关地按 dyld 的真实规则判：SDK ≥ 27 时未对齐判红；更旧的 SDK 只告警
+# （dyld 不校验，判红就是把 runner 的 SDK 当成用户机器上的规则）。读不到 SDK 按红处理。
+# Xcode 27 的 /usr/bin/strip 会补齐（#2329 实测）；macos-latest runner 的 strip 与 ld 都
+# 不保证补齐（2026-10-19 develop 出包实测 fushi_fsrs stroff mod 8 = 4，所以不能只靠
+# 「strip 过就一定对齐」）。静态库（ar）的成员会被重新链接，不查。
 if [[ "$(file -b "$BIN")" == Mach-O*64-bit* ]] || { [[ "$(file -b "$BIN")" == Mach-O\ universal* ]]; }; then
   misaligned="$(otool -l "$BIN" | awk '
     $1 == "cmd" { cmd = $2; pending = ""; next }
@@ -75,10 +79,21 @@ if [[ "$(file -b "$BIN")" == Mach-O*64-bit* ]] || { [[ "$(file -b "$BIN")" == Ma
       if ($1 ~ /off$/ && $1 != "tocoff" && $1 != "modtaboff" && $1 != "extrefsymoff") { pending = $1; pendingval = $2 + 0 }
     }')"
   if [[ -n "$misaligned" ]]; then
-    echo "::error title=Mach-O LINKEDIT misaligned::$BIN 的 LINKEDIT 表没有按 8 字节对齐：$(echo "$misaligned" | tr '\n' ' ')——macOS 27 的 dyld 会拒绝加载（mis-aligned LINKEDIT string pool）。多半是 rust-objcopy strip 过：macOS 产物关掉 cargo strip（CARGO_PROFILE_RELEASE_STRIP=false），改用 /usr/bin/strip -x。" >&2
-    exit 1
+    # 链接 SDK：LC_BUILD_VERSION 的 sdk 字段（老格式 LC_VERSION_MIN_MACOSX 也带 sdk），取主版本号。
+    sdk="$(otool -l "$BIN" | awk '
+      $1 == "cmd" { cmd = $2; next }
+      (cmd == "LC_BUILD_VERSION" || cmd == "LC_VERSION_MIN_MACOSX") && $1 == "sdk" { print $2; exit }')"
+    sdk_major="${sdk%%.*}"
+    detail="$BIN 的 LINKEDIT 表没有按 8 字节对齐：$(echo "$misaligned" | tr '\n' ' ')（链接 SDK ${sdk:-未知}）"
+    if [[ "$sdk_major" =~ ^[0-9]+$ ]] && (( sdk_major < 27 )); then
+      echo "::warning title=Mach-O LINKEDIT misaligned (SDK < 27)::$detail——这个 SDK 链出的二进制 macOS 27 的 dyld 不校验，照常加载；升到 SDK 27 链接时会变成错误，那时要换成会补齐的 strip（Xcode 27 的 /usr/bin/strip）。" >&2
+    else
+      echo "::error title=Mach-O LINKEDIT misaligned::$detail——macOS 27 的 dyld 会拒绝加载（mis-aligned LINKEDIT string pool）。多半是 rust-objcopy strip 过：macOS 产物关掉 cargo strip（CARGO_PROFILE_RELEASE_STRIP=false），改用 /usr/bin/strip -x，并确认产物对齐。" >&2
+      exit 1
+    fi
+  else
+    echo "OK: Mach-O LINKEDIT offsets are 8-byte aligned in $BIN"
   fi
-  echo "OK: Mach-O LINKEDIT offsets are 8-byte aligned in $BIN"
 fi
 
 echo "OK: all $expected_count ffc_* symbols exported by $BIN"
