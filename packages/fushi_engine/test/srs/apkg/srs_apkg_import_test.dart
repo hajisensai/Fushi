@@ -1531,4 +1531,30 @@ void main() {
       expect(back.replayQuestionAudio, isFalse);
     });
   });
+
+  test('叫停：两批之间停下抛 SrsImportStopped，已落库的是完整笔记；重导补齐、不重复', () async {
+    final SrsDbStore s = await openTestStore(
+      profileUid: kProfile,
+      deviceId: 'a',
+      now: () => t,
+    );
+    int checks = 0;
+    await expectLater(
+      importAnkiPackage(
+        store: s,
+        bytes: legacyApkg(t),
+        storeMedia: storeMedia,
+        options: kFullOptions,
+        zstdDecompress: (Uint8List b) => null,
+        // 第一次检查在笔记之前（不停），第二次在第一条笔记落库之后（停）。
+        shouldStop: () => ++checks >= 2,
+      ),
+      throwsA(isA<SrsImportStopped>()),
+    );
+    expect(await s.entityIds(SrsEntityKind.note), hasLength(1));
+
+    final SrsImportReport rep = await importInto(s, legacyApkg(t));
+    expect(rep.notesAdded, 2);
+    expect(await s.entityIds(SrsEntityKind.note), hasLength(3));
+  });
 }

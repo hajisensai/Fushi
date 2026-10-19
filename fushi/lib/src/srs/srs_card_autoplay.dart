@@ -88,12 +88,20 @@ List<String> srsReplaySounds({
 }
 
 /// 卡面音频的播放出口（测试覆写）。
+///
+/// 解析与开播拆成两步（BUG-3546）：解析（找媒体库、查文件）是异步的，开播必须在
+/// [SrsCardAudioSequencer] 确认「这组还没被取代」之后**同步地**交给播放器——否则
+/// 换卡 / 翻面 / 关自动播放时的 [stop] 先到、还在解析中的那段随后照样开播。
 abstract class SrsCardAudioOutput {
-  /// 播媒体库里的 [name] 并等它播完。true = 自然播完，可以接着播下一段；
-  /// false = 没找到 / 没能开播 / 被别的播放打断（序列就此停下）。
-  Future<bool> playToEnd(String name);
+  /// 媒体库里 [name] 的本地路径；找不到返回 null（序列就此停下）。
+  Future<String?> resolve(String name);
 
-  /// 停掉正在播的音频。
+  /// 播 [path] 并等它播完。true = 自然播完，可以接着播下一段；false = 没能开播 /
+  /// 被别的播放或 [stop] 打断。实现必须在**返回 Future 之前**就把这次播放登记进
+  /// 播放器（之后的 [stop] 必须能取消它），中间不得先 await 别的东西。
+  Future<bool> playToEnd(String path);
+
+  /// 停掉正在播的音频（包括已登记、尚未真正出声的那一段）。
   Future<void> stop();
 }
 
@@ -104,19 +112,25 @@ class _DefaultSrsCardAudioOutput implements SrsCardAudioOutput {
   final Ref _ref;
 
   @override
-  Future<bool> playToEnd(String name) async {
+  Future<String?> resolve(String name) async {
     final SrsMediaStore? store = await _ref.read(srsMediaStoreProvider.future);
     final File? file = store?.resolve(name);
     if (file == null || !await file.exists()) {
       // 自动播放不弹 toast（每张卡都弹太吵）；手动点按钮时卡面自己会提示缺文件。
       ErrorLogService.instance.logDiagnostic(
-        'SrsCardAudio.playToEnd',
+        'SrsCardAudio.resolve',
         'media missing: $name',
       );
-      return false;
+      return null;
     }
-    return DesktopAudioPlayback.playFileToEnd(file.path);
+    return file.path;
   }
+
+  /// [DesktopAudioPlayback.playFileToEnd] 在第一个 await 之前就记下了激活代号并排进
+  /// 串行队列，随后的 [DesktopAudioPlayback.stop] 会让它放弃开播。
+  @override
+  Future<bool> playToEnd(String path) =>
+      DesktopAudioPlayback.playFileToEnd(path);
 
   @override
   Future<void> stop() => DesktopAudioPlayback.stop();
@@ -150,7 +164,12 @@ class SrsCardAudioSequencer {
     try {
       for (final String name in names) {
         if (generation != _generation) return;
-        final bool finished = await _output.playToEnd(name);
+        final String? path = await _output.resolve(name);
+        // 解析期间被取代（换卡 / 翻面 / 关了自动播放 / 离开复习页）：不再开播。
+        // 这一步必须紧挨着开播、中间没有 await，否则 cancel 的 stop 先到、
+        // 这段随后照样出声（BUG-3546）。
+        if (generation != _generation || path == null) return;
+        final bool finished = await _output.playToEnd(path);
         if (!finished) break;
       }
     } finally {
@@ -170,3 +189,92 @@ class SrsCardAudioSequencer {
     await _output.stop();
   }
 }
+
+// ------------------------------------------------------------------ 页内媒体闸门
+
+/// 卡面外壳里的「自动播放」闸门（BUG-3546）：牌组关了自动播放时，卡面页面**自己**
+/// 发起的播放一律拒绝，只放行用户在卡面上的点按 / 按键直接引起的播放。
+///
+/// 为什么需要：`[sound:]` 由宿主（[SrsCardAudioSequencer]）按牌组开关自动播，但卡面
+/// HTML 里还有页面自己出声的媒体——视频制卡的同步片段（`anki_note_composer.dart` 的
+/// `inlineVideoCoverHtml` / `inlineVideoWordAudioHtml` / `inlineVideoSentenceAudioHtml`：
+/// `oncanplay` 里 `play()`）、模板 / 字段里带 `autoplay` 属性的 `<audio>` / `<video>`。
+/// 它们约定由宿主在「关了自动播放」时拒绝无手势播放（Anki 的做法：关自动播放 =
+/// 恢复「播放需要用户手势」，`play()` 以 `NotAllowedError` 失败，片段脚本静默让出）。
+/// 卡面 WebView 原先不看牌组开关：Windows（WebView2）照样自动出声，Android / iOS
+/// 默认要手势、开着自动播放也不出声——于是「关了还会播，而且时播时不播」。
+///
+/// 机制：
+/// - 包一层 `HTMLMediaElement.prototype.play`：关闭时，不在用户输入事件的派发过程
+///   里的调用直接返回以 `NotAllowedError` 拒绝的 Promise（与浏览器自动播放策略同一
+///   形态，现有片段脚本的 `catch` 照常吞掉）。
+/// - 「在用户输入事件的派发过程里」：window 捕获阶段看到可信（`isTrusted`）的点按 /
+///   按键事件即置位，`setTimeout(0)` 在这次派发全部结束后复位——同一次点按里卡片
+///   脚本转手 `replay.click()`（Lapis「点例句重播」）照样放行，之后的 `canplay` /
+///   `ended` / 定时器都不算手势。
+/// - `autoplay` 属性不经 `play()`：关闭时 MutationObserver 把新插入的媒体元素上的
+///   `autoplay` 摘掉（观察回调是微任务，早于媒体数据就绪）；关闭那一刻也扫一遍现有内容。
+/// - 开关由宿主经 `window.__fushiSrsSetAutoplay(bool)` 下发（换卡调用之前）。
+const String kSrsCardAutoplayGateScript = r'''
+(function(){
+  if (window.__fushiSrsSetAutoplay) return;
+  var allowed = true;
+  var gesture = false;
+  var clearTimer = null;
+  var kinds = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click',
+    'dblclick', 'auxclick', 'touchstart', 'touchend', 'keydown', 'keyup'];
+  function onGesture(e){
+    if (!e || e.isTrusted !== true) return;
+    gesture = true;
+    if (clearTimer !== null) clearTimeout(clearTimer);
+    clearTimer = setTimeout(function(){ gesture = false; clearTimer = null; }, 0);
+  }
+  for (var i = 0; i < kinds.length; i++) {
+    window.addEventListener(kinds[i], onGesture, true);
+  }
+  function refusal(){
+    var msg = 'Autoplay is turned off for this deck';
+    try { return new DOMException(msg, 'NotAllowedError'); }
+    catch (e) { var err = new Error(msg); err.name = 'NotAllowedError'; return err; }
+  }
+  var proto = window.HTMLMediaElement && window.HTMLMediaElement.prototype;
+  if (proto && typeof proto.play === 'function') {
+    var nativePlay = proto.play;
+    proto.play = function(){
+      if (!allowed && !gesture) return Promise.reject(refusal());
+      return nativePlay.apply(this, arguments);
+    };
+  }
+  function strip(node){
+    if (!node || node.nodeType !== 1) return;
+    var tag = node.tagName;
+    if ((tag === 'AUDIO' || tag === 'VIDEO') && node.hasAttribute('autoplay')) {
+      node.removeAttribute('autoplay');
+      try { node.autoplay = false; } catch (e) {}
+    }
+    if (typeof node.querySelectorAll !== 'function') return;
+    var list = node.querySelectorAll('audio[autoplay],video[autoplay]');
+    for (var j = 0; j < list.length; j++) {
+      list[j].removeAttribute('autoplay');
+      try { list[j].autoplay = false; } catch (e) {}
+    }
+  }
+  if (window.MutationObserver && document.documentElement) {
+    new MutationObserver(function(records){
+      if (allowed) return;
+      for (var r = 0; r < records.length; r++) {
+        var added = records[r].addedNodes || [];
+        for (var k = 0; k < added.length; k++) strip(added[k]);
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
+  window.__fushiSrsSetAutoplay = function(on){
+    allowed = on !== false;
+    if (!allowed) strip(document.body || document.documentElement);
+  };
+})();
+''';
+
+/// 下发自动播放开关的调用（见 [kSrsCardAutoplayGateScript]）。
+String srsCardSetAutoplayScript({required bool autoplay}) =>
+    'if(window.__fushiSrsSetAutoplay)window.__fushiSrsSetAutoplay($autoplay);';

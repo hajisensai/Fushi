@@ -10,6 +10,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -18,6 +19,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'package:fushi_engine/srs/apkg/anki_collection_snapshot.dart';
 import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/apkg/srs_import_options.dart';
@@ -28,6 +30,15 @@ export 'package:fushi_engine/srs/apkg/srs_anki_package.dart'
     show SrsImportException, SrsZstdDecoder;
 export 'package:fushi_engine/srs/apkg/srs_import_options.dart';
 export 'package:fushi_engine/srs/apkg/srs_import_report.dart';
+
+/// 导入被调用方叫停（`shouldStop` 在两批之间返回 true）。已落库的批保留：每批只含完整的
+/// 笔记（一条笔记的事件不会跨批），且导入幂等，重新导入同一份来源会补齐剩下的。
+class SrsImportStopped implements Exception {
+  const SrsImportStopped();
+
+  @override
+  String toString() => 'SrsImportStopped';
+}
 
 /// 媒体落盘回调：返回存储后的文件名（例如按内容哈希改名），字段里的引用按它改写。
 typedef SrsImportMediaSink =
@@ -47,14 +58,70 @@ Future<SrsImportReport> importAnkiPackage({
   SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
   void Function(double progress)? onProgress,
   SrsZstdDecoder? zstdDecompress,
+  bool Function()? shouldStop,
 }) async {
-  final SrsAnkiPackage pkg = SrsAnkiPackage.open(
-    bytes,
-    zstd: zstdDecompress ?? FfiFsrsEngine.zstdDecompress,
+  // 解 zip、解 zstd、解出集合 SQLite 是纯 CPU 活（几十 MB 的包要几百毫秒到数秒）：放后台
+  // isolate，不卡 UI 帧；结果经 Isolate.exit 交回，不复制（BUG-3549）。
+  final SrsZstdDecoder zstd = zstdDecompress ?? _defaultZstd;
+  final SrsAnkiPackage pkg = await Isolate.run(
+    () => SrsAnkiPackage.open(bytes, zstd: zstd),
+    debugName: 'srs-apkg-open',
   );
   final SrsAnkiCollection col = await SrsAnkiCollection.open(
     pkg.collectionBytes,
   );
+  return _importOpened(
+    store: store,
+    pkg: pkg,
+    col: col,
+    storeMedia: storeMedia,
+    options: options,
+    onProgress: onProgress,
+    shouldStop: shouldStop,
+  );
+}
+
+/// 导入本机 Anki 用户数据目录里的集合（[snapshot] = 集合文件的只读快照 + 原位媒体目录，
+/// 见 [snapshotAnkiCollection]）。与 [importAnkiPackage] 走同一条导入路径、同一套 ID 派生：
+/// 先迁移一次、之后又导入同一份集合导出的 .colpkg 不会出重复。
+///
+/// 用户的 Anki 数据只读：集合读的是快照，媒体只按字段引用逐个读。
+Future<SrsImportReport> importAnkiCollectionSnapshot({
+  required SrsDbStore store,
+  required AnkiCollectionSnapshot snapshot,
+  required SrsImportMediaSink storeMedia,
+  SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
+  void Function(double progress)? onProgress,
+  bool Function()? shouldStop,
+}) async {
+  final AnkiMediaFolder media = AnkiMediaFolder(snapshot.mediaDir);
+  final SrsAnkiPackage pkg = SrsAnkiPackage.fromCollectionFolder(
+    mediaIndex: media.index(),
+    loadEntry: media.read,
+  );
+  final SrsAnkiCollection col = await SrsAnkiCollection.openFile(
+    snapshot.collection,
+  );
+  return _importOpened(
+    store: store,
+    pkg: pkg,
+    col: col,
+    storeMedia: storeMedia,
+    options: options,
+    onProgress: onProgress,
+    shouldStop: shouldStop,
+  );
+}
+
+Future<SrsImportReport> _importOpened({
+  required SrsDbStore store,
+  required SrsAnkiPackage pkg,
+  required SrsAnkiCollection col,
+  required SrsImportMediaSink storeMedia,
+  required SrsAnkiImportOptions options,
+  required void Function(double progress)? onProgress,
+  bool Function()? shouldStop,
+}) async {
   try {
     final _Importer imp = _Importer(
       store: store,
@@ -63,12 +130,16 @@ Future<SrsImportReport> importAnkiPackage({
       storeMedia: storeMedia,
       options: options,
       onProgress: onProgress,
+      shouldStop: shouldStop,
     );
     return await imp.run();
   } finally {
     await col.close();
   }
 }
+
+/// 缺省 zstd 解码（排程内核）。顶层函数：可随闭包送进后台 isolate。
+Uint8List? _defaultZstd(Uint8List data) => FfiFsrsEngine.zstdDecompress(data);
 
 /// 同 [importAnkiPackage]，从文件读。
 Future<SrsImportReport> importAnkiPackageFile({
@@ -78,6 +149,7 @@ Future<SrsImportReport> importAnkiPackageFile({
   SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
   void Function(double progress)? onProgress,
   SrsZstdDecoder? zstdDecompress,
+  bool Function()? shouldStop,
 }) async => importAnkiPackage(
   store: store,
   bytes: await file.readAsBytes(),
@@ -85,6 +157,7 @@ Future<SrsImportReport> importAnkiPackageFile({
   options: options,
   onProgress: onProgress,
   zstdDecompress: zstdDecompress,
+  shouldStop: shouldStop,
 );
 
 /// 一个来源笔记类型映射到本机的结果。
@@ -182,6 +255,7 @@ class _Importer {
     required this.storeMedia,
     required this.options,
     required this.onProgress,
+    this.shouldStop,
   }) : srcDay = SrsDayContext(
          utcOffsetMin: col.utcOffsetMin,
          rolloverHour: col.rolloverHour,
@@ -194,6 +268,17 @@ class _Importer {
   final SrsAnkiImportOptions options;
   final void Function(double progress)? onProgress;
 
+  /// 调用方叫停（后台导入任务被取消）：两批之间检查，见 [_stopIfAsked]。
+  final bool Function()? shouldStop;
+
+  /// 叫停了就把已攒的（都是完整的笔记）落库、补上前身链接，再抛 [SrsImportStopped]。
+  Future<void> _stopIfAsked() async {
+    if (!(shouldStop?.call() ?? false)) return;
+    await _flush(force: true);
+    if (_historyLinks.isNotEmpty) await store.writeEdits(_historyLinks);
+    throw const SrsImportStopped();
+  }
+
   /// 来源集合的「今天」口径（日志里的 utcOffset / 翻日也取它，保证多台设备导出同一份内容）。
   final SrsDayContext srcDay;
   late final int crtDay;
@@ -203,7 +288,9 @@ class _Importer {
   final Map<int, String> _deckOf = <int, String>{};
   final Map<String, String> _mediaRenames = <String, String>{};
   final Set<String> _mediaDone = <String>{};
-  final List<SrsEvent> _pending = <SrsEvent>[];
+
+  /// 本批攒下的事件草稿：修改记录的序号在落库时（[SrsDbStore.importDrafts]）才分配。
+  final List<SrsEventDraft> _pending = <SrsEventDraft>[];
 
   // fushi-ext
   bool _extSameProfile = false;
@@ -245,6 +332,7 @@ class _Importer {
       _nts[nt.id] = await _mapNoteType(nt);
     }
     await _mapDecks();
+    await _stopIfAsked();
     await _importNotes();
     if (!options.withScheduling) {
       report.reviewLogsSkipped =
@@ -925,6 +1013,8 @@ class _Importer {
     final PreparedStatement notes = col.db.prepare(
       'SELECT id, guid, mid, mod, tags, flds FROM notes ORDER BY id',
     );
+    // 本机已有哪些笔记：一次读出 ID 集合，新笔记不必逐条查库（绝大多数导入全是新笔记）。
+    _existingNotes = await store.entityIds(SrsEntityKind.note);
     try {
       final IteratingCursor cur = notes.selectCursor();
       int done = 0;
@@ -936,6 +1026,7 @@ class _Importer {
         done++;
         if (done % 50 == 0) onProgress?.call(done / total);
         await _flush();
+        await _stopIfAsked();
       }
     } finally {
       cardsOf.close();
@@ -944,11 +1035,18 @@ class _Importer {
     }
   }
 
+  /// 一批攒多少条事件再落库（一个事务 + 一次缓存刷新）。太小则事务与刷新次数多；太大则单个
+  /// 事务占住连接太久（后台导入时用户仍在用复习页，别的写入要排在事务后面）。
+  static const int _batchEvents = 1000;
+
+  /// 导入开始时本机已有的笔记 ID（见 [_importNotes]）。
+  Set<String> _existingNotes = const <String>{};
+
   Future<void> _flush({bool force = false}) async {
-    if (_pending.isEmpty || (!force && _pending.length < 500)) return;
-    final List<SrsEvent> batch = List<SrsEvent>.of(_pending);
+    if (_pending.isEmpty || (!force && _pending.length < _batchEvents)) return;
+    final List<SrsEventDraft> batch = List<SrsEventDraft>.of(_pending);
     _pending.clear();
-    await store.importEvents(batch);
+    await store.importDrafts(batch);
   }
 
   Future<void> _importNote(
@@ -985,7 +1083,9 @@ class _Importer {
         )
         .toList();
     final String noteId = SrsIds.note(profileUid, guid);
-    final SrsNoteView? existing = await store.note(noteId);
+    final SrsNoteView? existing = _existingNotes.contains(noteId)
+        ? await store.note(noteId)
+        : null;
     final String firstDeck = cards.isEmpty
         ? store.defaultDeckId
         : (_deckOf[cards.first.homeDeck] ?? store.defaultDeckId);
@@ -993,14 +1093,18 @@ class _Importer {
     final bool isNew = existing == null;
     bool update = false;
     if (isNew) {
-      await store.createNote(
-        noteTypeId: nt.id,
-        fieldsById: fields,
-        deckId: firstDeck,
-        tags: tags,
-        source: SrsSourceRef.fromJson(_extNotes[guid]),
-        guid: guid,
-        createdAt: n['id'] as int,
+      // 新笔记的事件攒进本批，与它的卡片标志、日志同一个事务落库（以前每条笔记各自
+      // 落两三次库、各刷新一遍缓存，见 BUG-3549）。
+      _pending.addAll(
+        store.newNoteDrafts(
+          noteTypeId: nt.id,
+          fieldsById: fields,
+          deckId: firstDeck,
+          tags: tags,
+          source: SrsSourceRef.fromJson(_extNotes[guid]),
+          guid: guid,
+          createdAt: n['id'] as int,
+        ),
       );
       report.notesAdded++;
       report.cardsAdded += cards.length;
@@ -1082,8 +1186,13 @@ class _Importer {
     final bool suspended = c.queue == -1;
     final bool withSuspend = options.withScheduling;
     if (isNew) {
-      if (deck != noteDeck) await store.moveCard(cardId, deck);
-      if (withSuspend && suspended) await store.setSuspended(cardId, true);
+      // 卡片随笔记在同一批里新建：修改记录直接攒进本批（本机没有这张卡的记录，不必读库判 no-op）。
+      _pending.addAll(
+        store.newEditDrafts(SrsEntityKind.card, cardId, <String, Object?>{
+          if (deck != noteDeck) SrsFieldKeys.cardDeck: deck,
+          if (withSuspend && suspended) SrsFieldKeys.suspended: true,
+        }),
+      );
       return;
     }
     final SrsCardCacheRow? row = await store.cardRow(cardId);
@@ -1122,7 +1231,7 @@ class _Importer {
       for (final SrsReviewLog l in extLogs) {
         final int? rid = _extRevlogIds[l.id];
         if (rid != null) extRevlogs.add(rid);
-        _pending.add(SrsLogEvent(_remapExtLog(l, cardId)));
+        _pending.add(SrsReadyDraft(SrsLogEvent(_remapExtLog(l, cardId))));
         report.fushiLogsRestored++;
       }
     }
@@ -1154,14 +1263,16 @@ class _Importer {
       }
       if (pkg.fushiExt != null) report.revlogsNotInExt++;
       _pending.add(
-        SrsLogEvent(
-          _revlogLog(
-            cardId,
-            r,
-            id: revlogIds[i],
-            reps: reps,
-            lapses: lapses,
-            lastRated: lastRated,
+        SrsReadyDraft(
+          SrsLogEvent(
+            _revlogLog(
+              cardId,
+              r,
+              id: revlogIds[i],
+              reps: reps,
+              lapses: lapses,
+              lastRated: lastRated,
+            ),
           ),
         ),
       );
@@ -1198,23 +1309,25 @@ class _Importer {
     final int t = d.anchorMs!;
     final SrsMemory? mem = _memoryOf(c.data);
     _pending.add(
-      SrsLogEvent(
-        SrsReviewLog(
-          id: SrsIds.importAnchor(cardId, t),
-          profileUid: profileUid,
-          cardId: cardId,
-          kind: SrsLogKind.importAnchor,
-          hlc: srsImportAnchorHlc(t),
-          occurredAt: t,
-          timeSource: SrsTimeSource.wall,
-          origin: SrsLogOrigin.anki,
-          reviewType: SrsReviewType.manual,
-          utcOffsetMin: srcDay.utcOffsetMin,
-          dayRolloverHour: srcDay.rolloverHour,
-          result: _cardState(c, lastRated, mem),
-          extra: mem == null
-              ? const <String, Object?>{}
-              : <String, Object?>{'memAlg': SrsAlgorithm.fsrs6.wire},
+      SrsReadyDraft(
+        SrsLogEvent(
+          SrsReviewLog(
+            id: SrsIds.importAnchor(cardId, t),
+            profileUid: profileUid,
+            cardId: cardId,
+            kind: SrsLogKind.importAnchor,
+            hlc: srsImportAnchorHlc(t),
+            occurredAt: t,
+            timeSource: SrsTimeSource.wall,
+            origin: SrsLogOrigin.anki,
+            reviewType: SrsReviewType.manual,
+            utcOffsetMin: srcDay.utcOffsetMin,
+            dayRolloverHour: srcDay.rolloverHour,
+            result: _cardState(c, lastRated, mem),
+            extra: mem == null
+                ? const <String, Object?>{}
+                : <String, Object?>{'memAlg': SrsAlgorithm.fsrs6.wire},
+          ),
         ),
       ),
     );
