@@ -1,6 +1,6 @@
 part of 'database.dart';
 
-/// 「卡片前身链接」修改记录（`historyFrom/<前身卡>`，更改笔记类型时写）的筛选条件：v119 的部分索引
+/// 「卡片前身链接」修改记录（`historyFrom/<前身卡>`，更改笔记类型时写）的筛选条件：v120 的部分索引
 /// `idx_srs_field_edits_history_from` 的 WHERE，fushi_engine `SrsDbStore` 找后继卡的查询也用这一句。
 ///
 /// 必须是字面量（不用绑定参数）、两处逐字相同：SQLite 只在查询的 WHERE 逐项包含部分索引的
@@ -76,7 +76,7 @@ mixin _FushiDbSrs on _$FushiDatabase {
           'ON srs_cards_cache (note_id)',
       'CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_queue '
           'ON srs_cards_cache (profile_uid, deck_id, queue, due_day)',
-      // v119：前身链接的部分覆盖索引（只含 historyFrom/ 那几行）。缓存刷新每次都要找「哪些卡继承了
+      // v120：前身链接的部分覆盖索引（只含 historyFrom/ 那几行）。缓存刷新每次都要找「哪些卡继承了
       // 这张卡的历史」，以前按无索引的 field_key 全表扫描修改记录表（BUG-3543）。
       'CREATE INDEX IF NOT EXISTS idx_srs_field_edits_history_from '
           'ON srs_field_edits (field_key, entity_kind, entity_id) '

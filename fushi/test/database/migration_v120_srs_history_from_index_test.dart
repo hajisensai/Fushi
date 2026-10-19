@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
-/// v119（BUG-3543）：srs_field_edits 加前身链接的部分覆盖索引
+/// v120（BUG-3543）：srs_field_edits 加前身链接的部分覆盖索引
 /// `idx_srs_field_edits_history_from`。只加索引、不动数据；重跑幂等；新库 onCreate 也有。
 void main() {
   const String index = 'idx_srs_field_edits_history_from';
@@ -18,9 +18,9 @@ void main() {
       row['name'] as String,
   };
 
-  test('v118 → v119 建部分索引，查询计划用它；已有的修改记录一行不动', () async {
+  test('v119 → v120 建部分索引，查询计划用它；已有的修改记录一行不动', () async {
     final Directory directory = Directory.systemTemp.createTempSync(
-      'srs_history_from_v119',
+      'srs_history_from_v120',
     );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = '${directory.path}/test.db';
@@ -28,7 +28,7 @@ void main() {
     await fresh.customSelect('SELECT 1').get();
     await fresh.close();
 
-    // 退回 v118 形态：去掉索引，放两行修改记录（一条前身链接、一条普通字段）。
+    // 退回 v119 形态：去掉索引，放两行修改记录（一条前身链接、一条普通字段）。
     final sqlite.Database raw = sqlite.sqlite3.open(path);
     expect(indexesOf(raw), contains(index), reason: '新库 onCreate 就有');
     raw.execute('DROP INDEX $index');
@@ -38,14 +38,14 @@ void main() {
       "VALUES ('e1', 'p', 'card', 'new-card', 'historyFrom/old-card', 'w', 1, '{}'), "
       "('e2', 'p', 'card', 'new-card', 'flag', 'w', 2, '{}')",
     );
-    raw.execute('PRAGMA user_version = 118');
+    raw.execute('PRAGMA user_version = 119');
     raw.dispose();
 
     final FushiDatabase migrated = FushiDatabase.atFile(
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 119);
+    expect(migrated.schemaVersion, 120);
     // 与 SrsDbStore 的后继查询同一句 WHERE：读出前身链接，且计划走部分索引（不全表扫描）。
     final List<QueryRow> rows = await migrated
         .customSelect(
@@ -71,15 +71,15 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 119);
+    expect(probe.select('PRAGMA user_version').first.values.first, 120);
     expect(indexesOf(probe), contains(index));
     expect(
       probe.select('SELECT COUNT(*) AS n FROM srs_field_edits').first['n'],
       2,
     );
 
-    // 重跑 v119 步（IF NOT EXISTS）：不报错、索引仍在。
-    probe.execute('PRAGMA user_version = 118');
+    // 重跑 v120 步（IF NOT EXISTS）：不报错、索引仍在。
+    probe.execute('PRAGMA user_version = 119');
     final FushiDatabase reopened = FushiDatabase.atFile(
       path,
       isMainProcess: false,
@@ -87,6 +87,6 @@ void main() {
     await reopened.customSelect('SELECT 1').get();
     await reopened.close();
     expect(indexesOf(probe), contains(index));
-    expect(probe.select('PRAGMA user_version').first.values.first, 119);
+    expect(probe.select('PRAGMA user_version').first.values.first, 120);
   });
 }
