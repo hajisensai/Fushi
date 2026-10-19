@@ -142,6 +142,15 @@ void main() {
       );
       expect(find.text('Example'), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('stub-webview')), findsNothing);
+      // 地址栏是网址键盘、不自动更正（搜索框默认的文本键盘会把网址改坏）。
+      final EditableText entry = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('web-browser-address')),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(entry.keyboardType, TextInputType.url);
+      expect(entry.autocorrect, isFalse);
     });
 
     testWidgets('点站点推全屏浏览页：地址栏 + 底部工具栏放得下、✕ 回入口页', (WidgetTester tester) async {
@@ -161,6 +170,8 @@ void main() {
         ),
       );
       expect(address.controller.text, 'https://example.com/');
+      expect(address.keyboardType, TextInputType.url);
+      expect(address.autocorrect, isFalse);
 
       final Finder toolbar = find.byKey(
         const ValueKey<String>('web-browser-toolbar'),

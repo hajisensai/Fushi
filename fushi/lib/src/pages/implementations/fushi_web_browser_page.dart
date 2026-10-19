@@ -146,6 +146,7 @@ class _FushiWebBrowserHomePageState
       controller: _address,
       focusNode: _addressFocus,
       hintText: t.web_browser_address_hint,
+      keyboardType: TextInputType.url,
       leading: const FushiSearchLeading(child: FushiIcon(FushiIcons.globe)),
       size: FushiSearchFieldSize.large,
       onClear: _address.clear,
@@ -158,7 +159,8 @@ class _FushiWebBrowserHomePageState
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool glass = isGlassDesign(context);
-    final String name = site.name.trim().isEmpty ? site.url.host : site.name;
+    final String trimmed = site.name.trim();
+    final String name = trimmed.isEmpty ? site.url.host : trimmed;
     final String initial = name.characters.first.toUpperCase();
     return FushiCard(
       key: ValueKey<String>('web-browser-site-${site.url}'),
@@ -812,6 +814,7 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         controller: _address,
         focusNode: _addressFocus,
         hintText: t.web_browser_address_hint,
+        keyboardType: TextInputType.url,
         size: FushiSearchFieldSize.large,
         leading: FushiSearchLeading(
           child: FushiIconButton(
