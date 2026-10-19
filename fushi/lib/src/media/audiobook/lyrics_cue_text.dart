@@ -59,26 +59,16 @@ class LyricsCueTextResolver {
         return LyricsCueText.plain(cue.text);
       }
       final int available = normalized.length - start;
-      // 句首开括号（「『（…）被归一化剥掉、落在匹配区间之外——往回补上，歌词行
-      // 才是「月が替わると…」而不是缺了左括号的半句。
-      final int from = first
-          ? _extendOpening(chapter.text, chapter.norm.starts[start])
-          : 0;
+      // 句首开括号 / 破折号（「『――…）被归一化剥掉、落在匹配区间之外——按
+      // [_gapSplit] 往回补上，歌词行才是「月が替わると…」而不是缺了左括号的半句。
+      final int from = first ? _headStart(chapter, start) : 0;
       if (remaining <= available) {
         final int end = start + remaining;
         if (!_isBoundary(normalized, end)) return LyricsCueText.plain(cue.text);
-        // 句末标点 / 闭括号（。」』！？…）同样被归一化剥掉：matcher 的区间止于最后
-        // 一个「有读音」的字，直接按它截取正文会让每行都丢掉句号（用户 2026-10-04
-        // 报「歌词模式没有标点」）。往后补到下一个有读音的字之前，只收收尾类标点，
-        // 不越过换行 / 空白 / 下一句的开括号。
-        final int limit = end < normalized.length
-            ? chapter.norm.starts[end]
-            : chapter.text.length;
-        final int to = _extendClosing(
-          chapter.text,
-          chapter.norm.ends[end - 1],
-          limit,
-        );
+        // 句末标点 / 闭括号 / 破折号（。」』！？…――）同样被归一化剥掉：matcher 的
+        // 区间止于最后一个「有读音」的字，直接按它截取正文会让每行都丢掉句号（用户
+        // 2026-10-04 报「歌词模式没有标点」）。往后补到 [_gapSplit] 的切点。
+        final int to = _tailEnd(chapter, end);
         _collectRubies(rubies, chapter, from, to, result.length);
         result.write(chapter.text.substring(from, to));
         return LyricsCueText(result.toString(), rubies);
@@ -132,12 +122,8 @@ class LyricsCueTextResolver {
       return null;
     }
     final String text = chapter.text;
-    int from = _extendClosing(
-      text,
-      chapter.norm.ends[gapStart - 1],
-      chapter.norm.starts[gapStart],
-    );
-    int to = _extendOpening(text, chapter.norm.starts[gapEnd]);
+    int from = _tailEnd(chapter, gapStart);
+    int to = _headStart(chapter, gapEnd);
     while (from < to && _isBlank(text.codeUnitAt(from))) {
       from++;
     }
@@ -186,30 +172,52 @@ class LyricsCueTextResolver {
     return value;
   }
 
-  /// 句首开括号：往回吞连续的开括号（不越过其它任何字符）。
-  static int _extendOpening(String text, int from) {
-    int i = from;
-    while (i > 0 && _kOpening.contains(text.codeUnitAt(i - 1))) {
-      i--;
-    }
-    return i;
-  }
-
-  /// 句末收尾标点：往后吞连续的句末标点 / 闭括号，止于 [limit]（下一个有读音的
-  /// 字）或第一个非收尾字符（换行、空白、开括号……）。
-  static int _extendClosing(String text, int to, int limit) {
-    int i = to;
-    while (i < limit && _kClosing.contains(text.codeUnitAt(i))) {
+  /// 从归一化下标 [normStart] 起的那条歌词行，在正文里的起点：往回认领它前面
+  /// 那段无读音缝隙里 [_gapSplit] 切点之后的部分（开括号、行首破折号……），
+  /// 再跳过行首空白。
+  static int _headStart(_Chapter chapter, int normStart) {
+    final int gapTo = chapter.norm.starts[normStart];
+    final int gapFrom = normStart > 0 ? chapter.norm.ends[normStart - 1] : 0;
+    int i = _gapSplit(chapter, gapFrom, gapTo);
+    while (i < gapTo && _isBlank(chapter.text.codeUnitAt(i))) {
       i++;
     }
     return i;
   }
 
-  static final Set<int> _kOpening = '「『（(［[｛{【〔〈《〖〘〚“‘'.codeUnits.toSet();
+  /// 止于归一化下标 [normEnd]（不含）的那条歌词行，在正文里的终点：往后认领
+  /// 它后面那段无读音缝隙里 [_gapSplit] 切点之前的部分（句末标点、闭括号、
+  /// 省略号、破折号……）。
+  static int _tailEnd(_Chapter chapter, int normEnd) {
+    final int gapFrom = chapter.norm.ends[normEnd - 1];
+    final int gapTo = normEnd < chapter.norm.text.length
+        ? chapter.norm.starts[normEnd]
+        : chapter.text.length;
+    return _gapSplit(chapter, gapFrom, gapTo);
+  }
 
-  static final Set<int> _kClosing = '。．｡.、，､,！!？?…‥」』）)］]｝}】〕〉》〗〙〛”’～〜：:；;♪'
-      .codeUnits
-      .toSet();
+  /// 两个有读音的字之间那段缝隙 `[gapFrom, gapTo)`（只含标点 / 符号 / 空白，
+  /// 归一化把它们全剥了）归前后两行的切点：前一行认领切点之前、后一行认领
+  /// 切点之后，所以前后两条 cue 各算各的也不会丢字或重复。
+  ///
+  /// 优先切在段落边界（章纯文本不含段落分隔符，边界记在 `blockEnds`）；其次切在
+  /// 第一个空白处；再次切在第一个开括号前；都没有则整段归前一行（句末的
+  /// 「。――」「……」、句中的「、」）。不按白名单逐个收标点：此前白名单漏了
+  /// 破折号，补到「――」就停，后面的闭引号也跟着丢。
+  static int _gapSplit(_Chapter chapter, int gapFrom, int gapTo) {
+    for (final int e in chapter.blockEnds) {
+      if (e > gapTo) break;
+      if (e >= gapFrom) return e;
+    }
+    final String text = chapter.text;
+    for (int i = gapFrom; i < gapTo; i++) {
+      final int c = text.codeUnitAt(i);
+      if (_isBlank(c) || _kOpening.contains(c)) return i;
+    }
+    return gapTo;
+  }
+
+  static final Set<int> _kOpening = '「『（(［[｛{【〔〈《〖〘〚“‘〝«‹'.codeUnits.toSet();
 
   static bool _isBoundary(String text, int offset) =>
       offset == text.length ||
@@ -222,6 +230,7 @@ class _Chapter {
     required this.text,
     required this.norm,
     required this.rubies,
+    required this.blockEnds,
   });
 
   factory _Chapter.parse(EpubBook book, int section) {
@@ -232,10 +241,14 @@ class _Chapter {
       text: chapter.text,
       norm: AudioTextNormalizer.normalizeWithOffsets(chapter.text),
       rubies: chapter.rubies,
+      blockEnds: chapter.blockEnds,
     );
   }
 
   final String text;
   final NormalizedTextWithOffsets norm;
   final List<EpubRubyAnnotation> rubies;
+
+  /// 段落边界（升序，章纯文本坐标）。
+  final List<int> blockEnds;
 }
