@@ -1728,32 +1728,16 @@ class _HomePageState extends BasePageState<HomePage>
   /// （书架 / 漫画 / 视频 / 游戏）与浏览、查词。桌面自绘控制条已不再显示
   /// 页面标题，这里是这些页面唯一的页面名。首页（仪表盘）、浏览器扩展与设置
   /// 自带标题或不需要，返回 null。
-  String? _shellTitleFor(HomeTab tab) {
-    // MD3 窄窗：模块名已在底部导航上，外壳不再在内容上方占一整行重复标题。
-    // 叠放浮动工具区的库页本来就不画（见 [_floatingTitleOverlay]）；剩下按行
-    // 摆标题条的只有查词——10-18 只删了查词页自己的页头，外壳这行还在（用户
-    // 2026-10-19 截图「顶部标题怎么还有」）。Apple 保留 iOS 根页大标题（搜索中
-    // 照常折叠）。
-    if (!_tabHasFloatingChrome(tab) &&
-        !isGlassDesign(context) &&
+  String? _shellTitleFor(HomeTab tab) => homeShellTitleFor(
+    tab,
+    apple: isGlassDesign(context),
+    compact:
         windowSizeClassReal(
-              MediaQuery.sizeOf(context).width,
-              FushiAppUiScale.of(context),
-            ) ==
-            WindowSizeClass.compact) {
-      return null;
-    }
-    return switch (tab) {
-      HomeTab.books ||
-      HomeTab.manga ||
-      HomeTab.video ||
-      HomeTab.games ||
-      HomeTab.browse ||
-      HomeTab.dictionaries => homeNavItemFor(tab).label,
-      // 复习页自己画页头（标题 + 牌组动作），同「网页」页（子页自己画页头）。
-      HomeTab.home || HomeTab.web || HomeTab.srs || HomeTab.settings => null,
-    };
-  }
+          MediaQuery.sizeOf(context).width,
+          FushiAppUiScale.of(context),
+        ) ==
+        WindowSizeClass.compact,
+  );
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
   /// [homeNavItemFor]，保证三处标签/选中图标一致。
@@ -3929,6 +3913,34 @@ class _StandaloneDictionaryRoute extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 首页外壳大标题条给 [tab] 画的页面名；null = 不画（标题行高度为 0）。
+///
+/// MD3 窄窗（[compact]）：模块名已在底部导航上，外壳不再在内容上方占一整行重复
+/// 标题。叠放浮动工具区的库页本来就不按行摆这条标题（窄窗也不叠，见
+/// `_floatingTitleOverlay`），剩下按行摆的只有查词——2026-10-18 只删了查词页自己
+/// 的页头，外壳这行还在（用户 2026-10-19 截图「顶部标题怎么还有」，BUG-3566）。
+/// Apple（[apple]）保留 iOS 根页大标题（搜索中照常折叠）。
+@visibleForTesting
+String? homeShellTitleFor(
+  HomeTab tab, {
+  required bool apple,
+  required bool compact,
+}) {
+  if (compact && !apple && !_HomePageState._tabHasFloatingChrome(tab)) {
+    return null;
+  }
+  return switch (tab) {
+    HomeTab.books ||
+    HomeTab.manga ||
+    HomeTab.video ||
+    HomeTab.games ||
+    HomeTab.browse ||
+    HomeTab.dictionaries => homeNavItemFor(tab).label,
+    // 复习页自己画页头（标题 + 牌组动作），同「网页」页（子页自己画页头）。
+    HomeTab.home || HomeTab.web || HomeTab.srs || HomeTab.settings => null,
+  };
 }
 
 /// 视频源后台补刮任务入口是否由外壳的栏 / 页头承载（承载时首页 body 不再画
