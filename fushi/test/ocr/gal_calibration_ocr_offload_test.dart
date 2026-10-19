@@ -518,6 +518,32 @@ void main() {
     },
   );
 
+  test('a recognizer output that does not fit the dictionary fails on the '
+      'first line, like the synchronous read did', () async {
+    // Recognition runs line by line and decoding is batched afterwards; the
+    // shape / vocabulary check must still stop the read at the first line
+    // instead of running every remaining line first.
+    final _RecSession rec = _RecSession();
+    final GalCalibrationOcrEngine engine = GalCalibrationOcrEngine.forTesting(
+      detector: PpOcrLineDetector(_DetSession()),
+      recognizer: PpOcrLineRecognizer(
+        rec,
+        vocab: _vocab.sublist(0, _vocab.length - 1),
+      ),
+    );
+    await expectLater(
+      engine.read(_png(), _selection, _client),
+      throwsA(
+        isA<StateError>().having(
+          (StateError e) => e.message,
+          'message',
+          contains('vocab mismatch'),
+        ),
+      ),
+    );
+    expect(rec.runs, 1);
+  });
+
   test('a capture whose size differs from the client still fails the same '
       'way', () async {
     await expectLater(

@@ -590,7 +590,10 @@ class PpOcrLineRecognizer {
 
   /// 只做推理：[data] 是 [1,3,[kPpRecHeight],[inputWidth]] 的输入张量
   /// （[ppRecPrepareDetailed] / [ppRecPreprocess]），返回唯一的输出（逐帧 logits）。
-  /// 输出个数不是 1 时抛 [StateError]。
+  /// 输出个数不是 1、或输出的形状 / 词表维度 / 长度 / 元素类型不对时抛
+  /// [StateError]——推理一返回就查（都是 O(1) 的元数据检查），不推迟到后处理：
+  /// 逐行推理、批量后处理的调用方（校准 OCR）要在第一行就停，而不是把剩下的行
+  /// 全推理完才发现模型不对。逐元素的有限值检查仍在 [ppRecDecodeDetailed]。
   Future<OcrTensor> runRecognition(
     Float32List data, {
     required int inputWidth,
@@ -610,7 +613,9 @@ class PpOcrLineRecognizer {
         'PP-OCR rec expected 1 output, got ${outputs.keys.toList()}',
       );
     }
-    return outputs.values.single;
+    final OcrTensor logits = outputs.values.single;
+    _validatePpOcrOutput(logits, vocab.length);
+    return logits;
   }
 
   Future<void> close() => _session.close();
