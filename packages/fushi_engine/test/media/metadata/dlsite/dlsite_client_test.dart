@@ -191,6 +191,45 @@ void main() {
   });
 
   group('DlsiteClient', () {
+    test('限速跨实例生效：两个实例并发打出的请求开始时刻也至少相隔一个间隔', () async {
+      DlsiteClient.resetRateLimitForTesting();
+      addTearDown(DlsiteClient.resetRateLimitForTesting);
+      const Duration interval = Duration(milliseconds: 120);
+      final List<DateTime> starts = <DateTime>[];
+      MockClient mock() => MockClient((http.Request req) async {
+        starts.add(DateTime.now());
+        return http.Response.bytes(
+          utf8.encode(_fixture('info_RJ01014447.json')),
+          200,
+        );
+      });
+      final DlsiteClient a = DlsiteClient(
+        minRequestInterval: interval,
+        client: mock(),
+      );
+      final DlsiteClient b = DlsiteClient(
+        minRequestInterval: interval,
+        client: mock(),
+      );
+      final DlsiteWorkId id = DlsiteWorkId.tryParse('RJ01014447')!;
+      await Future.wait(<Future<Object?>>[
+        a.fetchRating(id),
+        b.fetchRating(id),
+        a.fetchRating(id),
+        b.fetchRating(id),
+      ]);
+      expect(starts, hasLength(4));
+      starts.sort();
+      for (int i = 1; i < starts.length; i++) {
+        expect(
+          starts[i].difference(starts[i - 1]),
+          // 计时器粒度（Windows ~15ms）留一点余量；旧实现两实例同刻放行，差值是 0。
+          greaterThanOrEqualTo(interval - const Duration(milliseconds: 20)),
+          reason: '第 $i 个请求与上一个间隔不足',
+        );
+      }
+    });
+
     test('fetchWork 打 product.json（带 locale），withRating 再打评分端点', () async {
       final List<Uri> requested = <Uri>[];
       final DlsiteClient client = DlsiteClient(

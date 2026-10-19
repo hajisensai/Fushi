@@ -18,6 +18,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:meta/meta.dart';
 
 import 'package:fushi_engine/utils/net/app_http.dart';
 
@@ -471,10 +472,12 @@ class DlsiteClient {
   final Duration minRequestInterval;
   final Duration requestTimeout;
 
-  /// 所有实例共用的上次请求开始时刻（同一站点，节奏跨实例）。只存时刻不存 Future，
-  /// 理由同 `NyaaClient`：完成态 Future 记住创建 zone，fake-async 测试里会挂死。
+  /// 所有实例共用的「最近一个已占下的请求开始时刻」（同一站点，节奏跨实例）。
+  ///
+  /// 只存时刻不存 Future，理由同 `NyaaClient`：完成态 Future 记住创建 zone，
+  /// fake-async 测试里会挂死——所以**不能**用一条静态的 Future 队列尾巴去跨实例
+  /// 排队。跨实例的串行靠 [_reserveSlot] 在同一个同步段里「先占坑、再等」。
   static DateTime? _lastRequestStart;
-  Future<void>? _queueTail;
 
   static const Map<String, String> _headers = <String, String>{
     'Accept': 'application/json',
@@ -577,24 +580,32 @@ class DlsiteClient {
     return utf8.decode(res.bodyBytes, allowMalformed: true);
   }
 
-  Future<void> _reserveSlot() {
-    final Future<void> slot = _waitSlot(_queueTail);
-    _queueTail = slot;
-    return slot;
+  /// 排到下一个允许发请求的时刻再返回；并发调用（含**不同实例**）按到达顺序
+  /// 依次顺延 [minRequestInterval]。
+  ///
+  /// **先占坑、再等**：读 [_lastRequestStart]、算出自己的开始时刻、写回，三步在
+  /// 同一个同步段里完成（Dart 单线程，无 await 即不可打断），第二个并发调用看到
+  /// 的已是第一个占掉的那一格，自己顺延一格。旧实现是「读 last → 睡 → 写 last」，
+  /// 排队尾巴又是实例字段：两个实例并发时同时读到同一个 last、睡到同一时刻、一起
+  /// 发出，700ms 间隔形同虚设。同 `NyaaClient._waitForRequestSlot`。
+  Future<void> _reserveSlot() async {
+    // 不限速的实例（测试注入 zero）既不等也不占坑：它不该被别的实例的节奏拖住，
+    // 也不该把共享时刻改回「现在」、让限速实例的预约失效。
+    if (minRequestInterval <= Duration.zero) return;
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastRequestStart;
+    final DateTime start =
+        (last == null || now.difference(last) >= minRequestInterval)
+        ? now
+        : last.add(minRequestInterval);
+    _lastRequestStart = start;
+    final Duration wait = start.difference(now);
+    if (wait > Duration.zero) await Future<void>.delayed(wait);
   }
 
-  Future<void> _waitSlot(Future<void>? previous) async {
-    if (previous != null) await previous;
-    if (minRequestInterval > Duration.zero) {
-      final DateTime now = DateTime.now();
-      final DateTime? last = _lastRequestStart;
-      if (last != null) {
-        final Duration wait = minRequestInterval - now.difference(last);
-        if (wait > Duration.zero) await Future<void>.delayed(wait);
-      }
-    }
-    _lastRequestStart = DateTime.now();
-  }
+  /// 测试用：清空跨实例共享的节奏状态，避免用例之间互相顺延。
+  @visibleForTesting
+  static void resetRateLimitForTesting() => _lastRequestStart = null;
 
   /// 释放默认 HTTP client（注入的 client 由调用方管理）。
   void close() {
