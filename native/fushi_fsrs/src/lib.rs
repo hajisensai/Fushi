@@ -523,9 +523,13 @@ fn set_error(error_out: *mut *mut c_char, message: &str) {
 }
 
 /// FFI 句柄：语料加一把锁。Dart 侧可能在后台 isolate 上预先求值（[ffsrs_search_corpus_match]，
-/// 结果缓存在这里），同时 UI isolate 也可能调进来，所以每个入口都先拿锁。
+/// 结果缓存在这里，求值期间一直持锁），同时 UI isolate 也可能调进来，所以读写语料的入口都先拿锁。
+///
+/// 需求分析（[ffsrs_search_corpus_needs]）只看建语料时就定死的字段名表，单独存一份共享的只读
+/// 引用、不进锁：UI isolate 上新查询的第一步不会同步等后台那次完整搜索放锁。
 pub struct SearchCorpus {
     inner: Mutex<SearchState>,
+    field_names: Arc<search::FieldNames>,
 }
 
 struct SearchState {
@@ -570,6 +574,7 @@ pub extern "C" fn ffsrs_search_corpus_new(
     }));
     match outcome.unwrap_or_else(|_| Err("panic in fushi_fsrs".into())) {
         Ok(corpus) => Box::into_raw(Box::new(SearchCorpus {
+            field_names: corpus.field_names(),
             inner: Mutex::new(SearchState { corpus, last: None }),
         })),
         Err(e) => {
@@ -683,9 +688,10 @@ fn query_str<'a>(query: *const c_char) -> Result<&'a str, search::SearchError> {
     unsafe { CStr::from_ptr(query) }.to_str().map_err(|_| internal("query is not UTF-8"))
 }
 
-/// 一条搜索求值要的字段值（`search::Corpus::needs`）：返回 `{"ok":{"all":true}}` /
+/// 一条搜索求值要的字段值（`search::FieldNames::needs`）：返回 `{"ok":{"all":true}}` /
 /// `{"ok":{"all":false,"names":[字段名的字符串 id…]}}` 或与 [ffsrs_search_corpus_match]
-/// 同形的错误，由 [ffsrs_free_string] 释放。
+/// 同形的错误，由 [ffsrs_free_string] 释放。不拿语料锁（只读不可变的字段名表），后台
+/// [ffsrs_search_corpus_match] 正在求值时也立即返回。
 #[no_mangle]
 pub extern "C" fn ffsrs_search_corpus_needs(corpus: *const SearchCorpus, query: *const c_char) -> *mut c_char {
     let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<search::Needs, search::SearchError> {
@@ -693,7 +699,7 @@ pub extern "C" fn ffsrs_search_corpus_needs(corpus: *const SearchCorpus, query: 
         if corpus.is_null() {
             return Err(search::SearchError { kind: "internal", reason: "null".into(), at: String::new() });
         }
-        unsafe { &*corpus }.lock().corpus.needs(query)
+        unsafe { &*corpus }.field_names.needs(query)
     }));
     let value = match outcome {
         Ok(Ok(search::Needs::All)) => json!({ "ok": { "all": true } }),
@@ -928,5 +934,163 @@ mod tests {
         // 损坏的帧返回空指针，不 panic。
         let bad = [0x28u8, 0xb5, 0x2f, 0xfd, 0xff];
         assert!(ffsrs_zstd_decompress(bad.as_ptr(), bad.len(), &mut out_len).is_null());
+    }
+
+    // ------------------------------------------------------------ 搜索语料的锁（HBK-AUDIT-005）
+
+    fn take_string(p: *mut c_char) -> String {
+        assert!(!p.is_null());
+        let s = unsafe { CStr::from_ptr(p) }.to_str().unwrap().to_owned();
+        ffsrs_free_string(p);
+        s
+    }
+
+    /// 经 FFI 建一份语料：一个笔记类型（字段 Front、Glossary），n 条笔记各一张卡；`value(i)` 给第 i
+    /// 条笔记的两个字段值，按 Dart 补传全部字段的形状（同一笔记的字段紧挨着、隔 0x1f）一次挂上。
+    fn ffi_corpus(n: usize, value: impl Fn(usize) -> (String, String)) -> *mut SearchCorpus {
+        // 字符串表：0 "B"（笔记类型）、1 "Front"、2 "Glossary"、3 "D"（牌组）、4 "C"（模板）。
+        let names = "BFrontGlossaryDC";
+        let mut layout: Vec<u32> = vec![5, 1, 2, n as u32, 0, n as u32];
+        layout.extend_from_slice(&[0, 1, 6, 14, 15, 16]); // str_off
+        layout.extend_from_slice(&[0, 2]); // schema_off
+        layout.extend_from_slice(&[1, 2]); // schema_names
+        layout.extend(std::iter::repeat(0).take(n)); // note_type
+        layout.extend(std::iter::repeat(0).take(n)); // note_schema
+        layout.extend(std::iter::repeat(0).take(n + 1)); // note_tag_off
+        layout.extend(0..n as u32); // card_note
+        layout.extend(std::iter::repeat(3).take(n)); // card_deck
+        layout.extend(std::iter::repeat(4).take(n)); // card_tpl
+        let corpus = ffsrs_search_corpus_new(
+            names.as_ptr(),
+            names.len(),
+            layout.as_ptr(),
+            layout.len(),
+            std::ptr::null_mut(),
+        );
+        assert!(!corpus.is_null());
+        let (mut vals, mut fields, mut spans) = (String::new(), Vec::<u32>::new(), Vec::<u32>::new());
+        for i in 0..n {
+            let (front, gloss) = value(i);
+            for (k, v) in [front, gloss].iter().enumerate() {
+                if k > 0 {
+                    vals.push('\x1f');
+                }
+                spans.push(vals.len() as u32);
+                vals.push_str(v);
+                spans.push(vals.len() as u32);
+                fields.push((2 * i + k) as u32);
+            }
+        }
+        let chunk = ffsrs_search_chunk_new(vals.as_ptr(), vals.len());
+        assert_eq!(ffsrs_search_corpus_attach(corpus, chunk, fields.as_ptr(), fields.len(), spans.as_ptr()), 0);
+        corpus
+    }
+
+    fn corpus_needs_json(addr: usize, query: &Value) -> Value {
+        let q = CString::new(query.to_string()).unwrap();
+        let text = take_string(ffsrs_search_corpus_needs(addr as *const SearchCorpus, q.as_ptr()));
+        serde_json::from_str(&text).unwrap()
+    }
+
+    /// 对整批卡求值一条（每个 k 不同、不吃上一次的缓存）未限定字段的正则搜索（没有字面量前缀可借，
+    /// 要逐字节扫全部文本），返回命中数。
+    fn corpus_match_fresh(addr: usize, k: usize, out: &mut [u8]) -> u64 {
+        let q = CString::new(json!({"t":"re","v":format!(r"(\w+ ){{3}}w{k}x"),"at":"re:x"}).to_string()).unwrap();
+        let text = take_string(ffsrs_search_corpus_match(
+            addr as *const SearchCorpus,
+            q.as_ptr(),
+            out.as_mut_ptr(),
+            out.len(),
+        ));
+        let v: Value = serde_json::from_str(&text).unwrap();
+        v["ok"].as_u64().unwrap_or_else(|| panic!("match failed: {text}"))
+    }
+
+    /// 后台 isolate 上的 [ffsrs_search_corpus_match] 求值期间一直持着语料锁；这时 UI isolate 上
+    /// 新查询的需求分析必须立即返回，不能同步等那把锁（确定性：直接把锁攥住）。
+    #[test]
+    fn corpus_needs_does_not_take_the_lock_held_by_match() {
+        let corpus = ffi_corpus(3, |i| (format!("f{i}"), format!("g{i}")));
+        let addr = corpus as usize;
+        let held = unsafe { &*corpus }.lock();
+        let (tx, rx) = std::sync::mpsc::channel::<Value>();
+        let worker = thread::spawn(move || {
+            tx.send(corpus_needs_json(addr, &json!({"t":"field","f":"gloss*","v":"x"})))
+                .unwrap();
+        });
+        let got = rx.recv_timeout(Duration::from_secs(10));
+        drop(held);
+        worker.join().unwrap();
+        let needs = got.expect("ffsrs_search_corpus_needs blocked on the corpus lock");
+        assert_eq!(needs, json!({"ok":{"all":false,"names":[2]}}));
+        assert_eq!(
+            corpus_needs_json(addr, &json!({"t":"text","v":"x"})),
+            json!({"ok":{"all":true}})
+        );
+        // 不合法的查询照样报语法错误（与 match 同形）。
+        assert_eq!(
+            corpus_needs_json(addr, &json!({"t":"re","v":"(","at":"re:("}))["kind"],
+            json!("syntax")
+        );
+        ffsrs_search_corpus_free(corpus);
+    }
+
+    /// 两个线程：一个不停地对大语料做完整求值（每次都持锁到算完），另一个反复做需求分析；
+    /// 需求分析的最长等待必须远小于一次完整求值的耗时（等锁的话会被拖到同一量级）。
+    #[test]
+    fn corpus_needs_latency_stays_bounded_while_match_runs() {
+        let n = 20_000;
+        let corpus = ffi_corpus(n, |i| {
+            (
+                format!("front {i} ").repeat(60),
+                format!("<b>gloss</b> w{i}y ").repeat(60),
+            )
+        });
+        let addr = corpus as usize;
+        let mut out = vec![0u8; n];
+        let t0 = std::time::Instant::now();
+        assert_eq!(corpus_match_fresh(addr, 0, &mut out), 0);
+        let one = t0.elapsed();
+        assert!(
+            one >= Duration::from_millis(20),
+            "a single match ({one:?}) is too short to show lock waits"
+        );
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let running = Arc::new(AtomicBool::new(false));
+        let bg = {
+            let (stop, running) = (Arc::clone(&stop), Arc::clone(&running));
+            thread::spawn(move || {
+                let mut out = vec![0u8; n];
+                let mut rounds = 0usize;
+                while !stop.load(Ordering::Acquire) {
+                    running.store(true, Ordering::Release);
+                    corpus_match_fresh(addr, rounds + 1, &mut out);
+                    rounds += 1;
+                }
+                rounds
+            })
+        };
+        while !running.load(Ordering::Acquire) {
+            thread::yield_now();
+        }
+        let query = json!({"t":"field","f":"front","v":"x"});
+        let deadline = std::time::Instant::now() + one * 4;
+        let (mut worst, mut calls) = (Duration::ZERO, 0usize);
+        while std::time::Instant::now() < deadline {
+            let t = std::time::Instant::now();
+            assert_eq!(corpus_needs_json(addr, &query), json!({"ok":{"all":false,"names":[1]}}));
+            worst = worst.max(t.elapsed());
+            calls += 1;
+        }
+        stop.store(true, Ordering::Release);
+        let rounds = bg.join().unwrap();
+        ffsrs_search_corpus_free(corpus);
+        eprintln!("corpus_needs worst {worst:?} over {calls} calls; one match {one:?}; {rounds} background rounds");
+        assert!(rounds >= 2, "background match did not keep the lock busy ({rounds} rounds)");
+        assert!(
+            worst < one / 2,
+            "corpus_needs waited {worst:?} (one match = {one:?}, {calls} calls, {rounds} rounds)"
+        );
     }
 }

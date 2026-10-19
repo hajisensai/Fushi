@@ -6,6 +6,7 @@
 /// 惰性上传。逐卡跨 FFI 比 Dart 自己算还慢，所以只有这一个批量入口。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io' show Platform;
@@ -70,6 +71,13 @@ final class SrsSearchCorpus implements Finalizable {
 
   /// 正在用原生句柄的后台 isolate 数（[prepare] 的预求值）；期间 [dispose] 推迟释放。
   int _busy = 0;
+
+  /// 正在跑的后台预求值（结束时完成并清空）。原生侧求值期间一直持着语料锁，当前 isolate 上
+  /// 写语料（挂字段值 / 数值列）或求值都得等它放锁——[prepare] 先异步等它退场再做这些同步调用。
+  Future<void>? _background;
+
+  /// 是否还有后台预求值在用原生句柄（测试用：[prepare] 返回后应为 false）。
+  bool get backgroundBusy => _busy > 0;
 
   /// 每个字段排布的每个槽位是否已上传；[_allUploaded] = 全部字段已按笔记连续上传。
   late List<List<bool>> _slotUploaded;
@@ -229,20 +237,30 @@ final class SrsSearchCorpus implements Finalizable {
   /// 搜索的大头），量大时再在后台 isolate 上把这条查询求值一遍（去 HTML 等缓存与结果留在原生侧），
   /// 之后同一条查询的 [match] 只是取结果。查询不合法或原生内核不可用时抛 [SrsSearchUnsupported]
   /// （与 [match] 相同）；不调它直接 [match] 也对，只是全部在当前 isolate 上串行做。
+  ///
+  /// 上一条查询的后台预求值还没算完时又来一条（浏览页边打字边搜）：需求分析不拿语料锁，照常
+  /// 同步做；写语料之前、以及返回之前都先异步等后台那次退场——返回后调用方同步 [match] 时不会
+  /// 卡在当前 isolate 上等原生锁。
   Future<void> prepare(SrsSearchNode node, {String query = ''}) async {
     if (_disposed || node is SrsSearchAll || cards.isEmpty) return;
     final FushiFsrs lib = _lib(query);
     _ensureHandle(lib);
     final Object? needs = _needs(lib, node, query);
     final _UploadPlan? plan = _planFor(needs);
+    // 去 HTML、正则扫几百 MB 原文的那部分：大集合才值得开一个 isolate 预先求值。
+    final Map<String, Object?> n = (needs! as Map).cast<String, Object?>();
+    final bool text =
+        n['all'] == true || (n['names']! as List<Object?>).isNotEmpty;
+    final bool warm = text && cards.length >= _warmMinCards;
+    _Values? values;
+    List<int> cuts = const <int>[];
+    final List<_Encoded> encoded = <_Encoded>[];
     if (plan != null) {
-      final _Values values = _collect(_layout!, plan);
+      values = _collect(_layout!, plan);
       final int parts = values.chars < _parallelEncodeMinChars
           ? 1
           : Platform.numberOfProcessors.clamp(1, _maxEncodeIsolates);
-      final List<int> cuts = parts < 2
-          ? <int>[0, values.strings.length]
-          : values.cuts(parts);
+      cuts = parts < 2 ? <int>[0, values.strings.length] : values.cuts(parts);
       final int chunkNew = lib.bindings.ffsrs_search_chunk_new_ptr.address;
       final List<Future<_Encoded>> jobs = <Future<_Encoded>>[
         for (int k = 0; k + 1 < cuts.length; k++)
@@ -262,7 +280,6 @@ final class SrsSearchCorpus implements Finalizable {
                   chunkNew,
                 ),
       ];
-      final List<_Encoded> encoded = <_Encoded>[];
       Object? error;
       StackTrace? stack;
       for (final Future<_Encoded> j in jobs) {
@@ -273,28 +290,29 @@ final class SrsSearchCorpus implements Finalizable {
           stack ??= st;
         }
       }
-      if (error != null || _disposed) {
-        for (final _Encoded e in encoded) {
-          lib.bindings.ffsrs_search_chunk_free(
-            Pointer<Void>.fromAddress(e.chunk),
-          );
-        }
-        if (error != null) Error.throwWithStackTrace(error, stack!);
-        return;
+      if (error != null) {
+        _freeChunks(lib, encoded);
+        Error.throwWithStackTrace(error, stack!);
       }
-      _uploadValues(lib, values, encoded, cuts);
+    }
+    // 下面挂字段值、上传数值列、开后台预求值都要拿原生语料锁：先等别的查询的后台预求值退场。
+    // 从这里到 Isolate.run 之间没有 await，别的 prepare 插不进来另起一个后台求值。
+    if (!await _settleBackground()) {
+      _freeChunks(lib, encoded);
+      return;
+    }
+    if (plan != null) {
+      _uploadValues(lib, values!, encoded, cuts);
       _markUploaded(plan);
     }
-    // 去 HTML、正则扫几百 MB 原文的那部分：大集合才值得开一个 isolate 预先求值。
-    final Map<String, Object?> n = (needs! as Map).cast<String, Object?>();
-    final bool text =
-        n['all'] == true || (n['names']! as List<Object?>).isNotEmpty;
-    if (!text || cards.length < _warmMinCards) return;
+    if (!warm) return;
     _ensureColumns(lib, node);
     final int handle = _handle.address;
     final int matchFn = lib.bindings.ffsrs_search_corpus_match_ptr.address;
     final String json = jsonEncode(_nodeJson(node));
     final int count = cards.length;
+    final Completer<void> done = Completer<void>();
+    _background = done.future;
     _busy++;
     try {
       final int resp = await Isolate.run(
@@ -304,7 +322,27 @@ final class SrsSearchCorpus implements Finalizable {
       lib.bindings.ffsrs_free_string(Pointer<Char>.fromAddress(resp));
     } finally {
       _busy--;
+      if (identical(_background, done.future)) _background = null;
+      done.complete();
       if (_disposed && _busy == 0) _freeHandle();
+    }
+    // 等自己的预求值的期间，后来的查询可能又起了一个：同样等它退场再交还调用方。
+    await _settleBackground();
+  }
+
+  /// 等本语料上正在跑的后台预求值退场（异步等，不占当前 isolate）。返回 false = 等的期间已
+  /// [dispose]。
+  Future<bool> _settleBackground() async {
+    for (Future<void>? b = _background; b != null; b = _background) {
+      await b;
+    }
+    return !_disposed;
+  }
+
+  /// 丢弃编好但没挂进语料的文本块。
+  void _freeChunks(FushiFsrs lib, List<_Encoded> encoded) {
+    for (final _Encoded e in encoded) {
+      lib.bindings.ffsrs_search_chunk_free(Pointer<Void>.fromAddress(e.chunk));
     }
   }
 

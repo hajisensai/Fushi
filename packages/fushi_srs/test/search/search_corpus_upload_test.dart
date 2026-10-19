@@ -197,6 +197,35 @@ void main() {
     shared.dispose();
   });
 
+  test('上一条查询的后台预求值没算完又来一条：prepare 返回时后台已放锁，结果不串', () async {
+    final List<List<int>> want = serialAll();
+    final SrsSearchCorpus c = SrsSearchCorpus(cards, library: lib);
+    // 先让全部字段上传完：下一条未限定字段的查询不再编码，直接开后台预求值。
+    await c.prepare(parseAnkiSearch('食'), query: '食');
+    expect(c.backgroundBusy, isFalse);
+    const String slowQuery = 're:li>to eat';
+    final SrsSearchNode slowNode = parseAnkiSearch(slowQuery);
+    final Future<void> slow = c.prepare(slowNode, query: slowQuery);
+    await Future<void>.delayed(Duration.zero);
+    expect(c.backgroundBusy, isTrue, reason: '前一条查询的后台预求值此时应在跑（持着原生锁）');
+    // 浏览页随后的同步 match 依赖这条不变式：prepare 返回 = 没有后台求值占着语料锁。
+    // 只看状态 / 牌组的查询既不传字段也不开预求值，旧实现会立刻返回，留下后台持锁。
+    const String fastQuery = 'deck:Japanese tag:n5';
+    final SrsSearchNode fastNode = parseAnkiSearch(fastQuery);
+    await c.prepare(fastNode, query: fastQuery);
+    expect(c.backgroundBusy, isFalse, reason: 'prepare 返回前要等后台预求值退场');
+    expect(
+      c.match(fastNode, query: fastQuery),
+      want[_queries.indexOf(fastQuery)],
+    );
+    await slow;
+    expect(
+      c.match(slowNode, query: slowQuery),
+      want[_queries.indexOf(slowQuery)],
+    );
+    c.dispose();
+  });
+
   test('prepare 期间 dispose：等后台预求值结束再释放，不崩', () async {
     final SrsSearchCorpus c = SrsSearchCorpus(cards, library: lib);
     final Future<void> pending = c.prepare(parseAnkiSearch('食'), query: '食');

@@ -18,7 +18,7 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 | `ffsrs_abi_version() -> i32` | ABI 版本（当前 1）；Dart 侧不一致即判不可用 |
 | `ffsrs_search_corpus_new(const u8* text, usize, const u32* layout, usize, char** err) -> Corpus*` | Anki 搜索语料的结构：笔记类型 / 字段名 / 标签 / 牌组 / 模板名（UTF-8 拼接）与字段排布（u32 布局，见 `src/search.rs` `Corpus::new`），**不含字段值**；失败返回 NULL 并在 `err`（可空）写错误串。句柄内部带锁，可跨线程调用 |
 | `ffsrs_search_corpus_free(Corpus*)` | 释放语料（Dart 侧挂在 `NativeFinalizer` 上） |
-| `ffsrs_search_corpus_needs(const Corpus*, const char* query) -> char*` | 一条查询要哪些字段值：`{"ok":{"all":true}}`（未限定字段的文本 / `re:`）或 `{"ok":{"all":false,"names":[字段名 id…]}}`；查询不合法时与 match 同形报错 |
+| `ffsrs_search_corpus_needs(const Corpus*, const char* query) -> char*` | 一条查询要哪些字段值：`{"ok":{"all":true}}`（未限定字段的文本 / `re:`）或 `{"ok":{"all":false,"names":[字段名 id…]}}`；查询不合法时与 match 同形报错。只读建语料时定死的字段名表、**不拿语料锁**：另一线程上的 match 正在求值（持锁）时也立即返回 |
 | `ffsrs_search_chunk_new(const u8*, usize) -> Chunk*` / `ffsrs_search_chunk_free(Chunk*)` | 校验并拷下一块字段值文本（UTF-8），不碰语料，任意线程可调（Dart 在编码用的后台 isolate 里调） |
 | `ffsrs_search_corpus_attach(const Corpus*, Chunk*, const u32* fields, usize n, const u32* spans) -> i32` | 把文本块挂进语料：第 k 个值 = `chunk[spans[2k]..spans[2k+1]]`，属于字段 `fields[k]`；块的所有权无论成败都转走；成功 0 |
 | `ffsrs_search_corpus_set_ints / _set_floats(Corpus*, i32 col, const i64*/const f64*, usize n) -> i32` | 卡片数值列（状态位、id、日序号、间隔、到期、复习 / 遗忘次数；稳定性 / 难度，NaN = 无），查询用到才传；成功 0 |

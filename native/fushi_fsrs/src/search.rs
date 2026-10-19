@@ -10,6 +10,7 @@
 
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use regex::{Regex, RegexBuilder};
 use serde::Deserialize;
@@ -73,8 +74,8 @@ pub struct Corpus {
     card_note: Vec<u32>,
     card_deck: Vec<u32>,
     card_tpl: Vec<u32>,
-    /// 出现过的字段名（字符串 id，去重）。
-    field_names: Vec<u32>,
+    /// 出现过的字段名（去重）。建语料后不再变，与 FFI 句柄共享：需求分析不进语料锁。
+    field_names: Arc<FieldNames>,
     /// 字段值：分批上传的文本块与每个字段在块里的位置（`chunk == MISSING` = 还没传）。
     chunks: Vec<String>,
     /// 每块还被多少个字段引用；降到 0（全被后来的上传覆盖）就释放那块文本。
@@ -101,6 +102,40 @@ const MISSING: u32 = u32::MAX;
 pub enum Needs {
     All,
     Names(Vec<u32>),
+}
+
+/// 语料里出现过的字段名（字符串 id 升序去重，连同名字文本）。只由建语料时的结构决定，之后任何
+/// 上传都不改它，所以只读、可跨线程共享：[`FieldNames::needs`] 不碰字段值与惰性缓存，FFI 侧
+/// 不必为它去抢后台求值持着的语料锁。
+pub struct FieldNames {
+    ids: Vec<u32>,
+    names: Vec<String>,
+}
+
+impl FieldNames {
+    /// 名字被 [res] 中任一正则命中的字段名 id（升序）。
+    fn matching(&self, res: &[&Regex]) -> Vec<u32> {
+        self.ids
+            .iter()
+            .zip(&self.names)
+            .filter(|(_, name)| res.iter().any(|re| re.is_match(name)))
+            .map(|(&id, _)| id)
+            .collect()
+    }
+
+    /// 一条查询求值要的字段值（不看已经上传了哪些）。查询本身不合法时报错（与 [`Corpus::search`]
+    /// 同一个错误）。
+    pub fn needs(&self, query: &str) -> Result<Needs, SearchError> {
+        Ok(self.needs_of(&Corpus::parse(query)?))
+    }
+
+    fn needs_of(&self, compiled: &Compiled) -> Needs {
+        let mut name_res: Vec<&Regex> = Vec::new();
+        if collect_needs(compiled, &mut name_res) {
+            return Needs::All;
+        }
+        Needs::Names(self.matching(&name_res))
+    }
 }
 
 /// 搜索失败：`syntax` = 查询本身不合法（如正则写错），`internal` = 调用方给的数据不对。
@@ -201,9 +236,16 @@ impl Corpus {
             field_name.extend_from_slice(names);
             note_field_off.push(u32::try_from(field_name.len()).map_err(|_| "too many fields")?);
         }
-        let mut field_names: Vec<u32> = schema_names.clone();
-        field_names.sort_unstable();
-        field_names.dedup();
+        let mut name_ids: Vec<u32> = schema_names.clone();
+        name_ids.sort_unstable();
+        name_ids.dedup();
+        let field_names = Arc::new(FieldNames {
+            names: name_ids
+                .iter()
+                .map(|&i| text[str_off[i as usize] as usize..str_off[i as usize + 1] as usize].to_owned())
+                .collect(),
+            ids: name_ids,
+        });
         let n_fields = field_name.len();
         Ok(Corpus {
             text: text.to_owned(),
@@ -411,24 +453,14 @@ impl Corpus {
         compile(&node)
     }
 
-    /// 一条查询求值要的字段值（不看已经上传了哪些）。查询本身不合法时报错（与 [`Corpus::search`]
-    /// 同一个错误）。
+    /// 一条查询求值要的字段值（[`FieldNames::needs`]）。
     pub fn needs(&self, query: &str) -> Result<Needs, SearchError> {
-        Ok(self.needs_of(&Self::parse(query)?))
+        self.field_names.needs(query)
     }
 
-    fn needs_of(&self, compiled: &Compiled) -> Needs {
-        let mut name_res: Vec<&Regex> = Vec::new();
-        if collect_needs(compiled, &mut name_res) {
-            return Needs::All;
-        }
-        let names = self
-            .field_names
-            .iter()
-            .copied()
-            .filter(|&id| name_res.iter().any(|re| re.is_match(self.s(id))))
-            .collect();
-        Needs::Names(names)
+    /// 本语料的字段名表（只读，可以拿出去在语料锁外做需求分析）。
+    pub fn field_names(&self) -> Arc<FieldNames> {
+        Arc::clone(&self.field_names)
     }
 
     /// 字段名属于 [names] 的字段（全部字段时 [names] 为 None）。
@@ -444,7 +476,7 @@ impl Corpus {
             return Err(SearchError::internal("output length != card count"));
         }
         let compiled = Self::parse(query)?;
-        let fields = match self.needs_of(&compiled) {
+        let fields = match self.field_names.needs_of(&compiled) {
             Needs::All => self.needed_fields(None),
             Needs::Names(mut names) => {
                 names.sort_unstable();
@@ -472,13 +504,7 @@ impl Corpus {
         if name_res.is_empty() {
             return;
         }
-        let mut names: Vec<u32> = self
-            .field_names
-            .iter()
-            .copied()
-            .filter(|&id| name_res.iter().any(|re| re.is_match(self.s(id))))
-            .collect();
-        names.sort_unstable();
+        let names = self.field_names.matching(&name_res);
         let todo: Vec<usize> = self
             .needed_fields(Some(&names))
             .into_iter()
