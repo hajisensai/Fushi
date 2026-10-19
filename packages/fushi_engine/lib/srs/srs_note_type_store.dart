@@ -126,11 +126,35 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
   /// 这个字段里有内容的笔记数（删字段前的提示用）。
   Future<int> notesWithFieldContent(String noteTypeId, String fieldId) async {
     int n = 0;
-    for (final String id in await noteIdsOfType(noteTypeId)) {
-      final SrsNoteView? v = await note(id);
+    for (final SrsNoteView? v in (await notes(
+      await noteIdsOfType(noteTypeId),
+    )).values) {
       if (v != null && v.field(fieldId).trim().isNotEmpty) n++;
     }
     return n;
+  }
+
+  /// 一组笔记各自的卡片缓存行（按 noteId 分块一次读；没有卡的笔记映射到空表）。
+  Future<Map<String, List<SrsCardCacheRow>>> cardsOfNotes(
+    Iterable<String> noteIds,
+  ) async {
+    final List<String> ids = noteIds.toSet().toList();
+    final Map<String, List<SrsCardCacheRow>> out =
+        <String, List<SrsCardCacheRow>>{
+          for (final String id in ids) id: <SrsCardCacheRow>[],
+        };
+    for (int i = 0; i < ids.length; i += 500) {
+      final List<String> chunk = ids.sublist(
+        i,
+        i + 500 > ids.length ? ids.length : i + 500,
+      );
+      for (final SrsCardCacheRow c in await (db.select(
+        db.srsCardsCache,
+      )..where((x) => x.noteId.isIn(chunk))).get()) {
+        out[c.noteId]!.add(c);
+      }
+    }
+    return out;
   }
 
   /// 这个模板现在可见的卡数（删模板前的提示用：删了这些卡就不再出现）。
@@ -262,7 +286,7 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
       ]);
 
   /// 删除笔记类型与它的全部笔记（软删除，Anki 的语义）。内置类型抛 [StateError]。
-  Future<void> deleteNoteType(String id) async {
+  Future<void> deleteNoteType(String id) => runExclusive(() async {
     final SrsNoteTypeView t = await _requireType(id);
     if (!canDeleteNoteType(t)) {
       throw StateError('built-in note type cannot be deleted');
@@ -273,7 +297,7 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
         SrsEditSpec(SrsEntityKind.note, n, SrsFieldKeys.deleted, nowMs),
       SrsEditSpec(SrsEntityKind.noteType, id, SrsFieldKeys.deleted, nowMs),
     ]);
-  }
+  });
 
   // ------------------------------------------------------------------ 字段
 
@@ -510,11 +534,18 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
   // ------------------------------------------------------------------ 更改笔记类型
 
   /// 这些笔记的（共同）当前类型；不是同一个类型时抛 [ArgumentError]（与 Anki 一样一次只换一种源类型）。
-  Future<SrsNoteTypeView> sourceTypeOf(List<String> noteIds) async {
+  Future<SrsNoteTypeView> sourceTypeOf(List<String> noteIds) async =>
+      _sourceTypeIn(noteIds, await notes(noteIds));
+
+  /// [sourceTypeOf] 在一份已读好的笔记上判（笔记按块一次预读，不逐条查）。
+  Future<SrsNoteTypeView> _sourceTypeIn(
+    List<String> noteIds,
+    Map<String, SrsNoteView?> views,
+  ) async {
     if (noteIds.isEmpty) throw ArgumentError('no notes');
     String? typeId;
     for (final String id in noteIds) {
-      final SrsNoteView? n = await note(id);
+      final SrsNoteView? n = views[id];
       if (n == null) throw ArgumentError.value(id, 'noteId', 'not found');
       if (typeId != null && typeId != n.noteTypeId) {
         throw ArgumentError('notes have different note types');
@@ -533,11 +564,16 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
     required Map<String, String?> fieldMap,
     required Map<String, String?> templateMap,
   }) async {
-    final SrsNoteTypeView from = await sourceTypeOf(noteIds);
+    // 笔记与它们的卡各按块一次读（以前每条笔记各读两遍笔记、一遍卡，BUG-3543）。
+    final Map<String, SrsNoteView?> views = await notes(noteIds);
+    final SrsNoteTypeView from = await _sourceTypeIn(noteIds, views);
     final SrsNoteTypeView to = await _requireType(targetTypeId);
+    final Map<String, List<SrsCardCacheRow>> cards = await cardsOfNotes(
+      noteIds,
+    );
     final List<SrsNoteTypeChangePlan> plans = <SrsNoteTypeChangePlan>[];
     for (final String id in noteIds) {
-      final SrsNoteView n = (await note(id))!;
+      final SrsNoteView n = views[id]!;
       plans.add(
         srsPlanNoteTypeChange(
           note: n,
@@ -546,7 +582,7 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
           fieldMap: fieldMap,
           templateMap: templateMap,
           existingCards: <SrsExistingCard>[
-            for (final SrsCardCacheRow c in await cardsOfNote(id))
+            for (final SrsCardCacheRow c in cards[id]!)
               SrsExistingCard(
                 cardId: c.id,
                 templateId: c.templateId,
@@ -562,12 +598,13 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
 
   /// 执行更改笔记类型：一个事务写完全部笔记的类型键、字段值与新卡的前身链接。
   /// 复习日志一条不改；新卡的历史 = 自己 + 前身卡的日志（见 [SrsDbStore.history]）。
+  /// 预演与写入在同一个独占区里：算计划时读到的现值就是落库时的现值。
   Future<void> changeNoteType({
     required List<String> noteIds,
     required String targetTypeId,
     required Map<String, String?> fieldMap,
     required Map<String, String?> templateMap,
-  }) async {
+  }) => runExclusive(() async {
     final SrsNoteTypeChangePreview p = await previewNoteTypeChange(
       noteIds: noteIds,
       targetTypeId: targetTypeId,
@@ -599,5 +636,5 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
           ),
       ],
     ]);
-  }
+  });
 }

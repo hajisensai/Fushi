@@ -53,10 +53,18 @@ bool _isZstd(Uint8List b) =>
 /// fushi-ext 条目名（Fushi 导出时附带的完整日志与设置）。
 const String srsFushiExtEntry = 'fushi-ext';
 
+/// 按条目名取一个原始媒体文件（没有返回 null）。异步：本机 Anki 媒体目录的文件读不能卡 UI isolate。
+typedef SrsAnkiMediaEntryLoader = Future<Uint8List?> Function(String entry);
+
 /// 解开的包。
+///
+/// 两种来源：[open] 解 .apkg / .colpkg 压缩包；[fromCollectionFolder] 是本机 Anki
+/// 用户数据目录里的「活集合」（collection.anki2 的快照 + collection.media 平铺目录，
+/// 见 anki_collection_snapshot.dart）。导入流程只经 [mediaIndex] / [mediaBytes] /
+/// [fushiExt] / [latestFormat] 读来源，两种来源走同一条导入路径。
 class SrsAnkiPackage {
   SrsAnkiPackage._(
-    this._archive,
+    this._loadEntry,
     this._zstd,
     this.collectionBytes,
     this.latestFormat,
@@ -64,7 +72,26 @@ class SrsAnkiPackage {
     this.fushiExt,
   );
 
-  final Archive _archive;
+  /// 本机 Anki 用户数据目录里的集合：媒体是 `collection.media` 下的平铺文件
+  /// （[mediaIndex] 的条目名就是文件名本身），不压缩、没有 fushi-ext。
+  ///
+  /// 集合 SQLite 不经这里（[collectionBytes] 为空）：调用方直接打开快照文件，
+  /// 不把几百 MB 的集合读进内存再写回临时文件。
+  factory SrsAnkiPackage.fromCollectionFolder({
+    required Map<String, String> mediaIndex,
+    required SrsAnkiMediaEntryLoader loadEntry,
+  }) => SrsAnkiPackage._(
+    loadEntry,
+    _noZstd,
+    Uint8List(0),
+    false,
+    mediaIndex,
+    null,
+  );
+
+  static Uint8List? _noZstd(Uint8List data) => null;
+
+  final SrsAnkiMediaEntryLoader _loadEntry;
   final SrsZstdDecoder _zstd;
 
   /// 解压后的 SQLite 字节。
@@ -165,7 +192,18 @@ class SrsAnkiPackage {
       final Object? j = jsonDecode(utf8.decode(raw));
       if (j is Map) ext = j.cast<String, Object?>();
     }
-    return SrsAnkiPackage._(archive, zstd, collection, latest, media, ext);
+    ArchiveFile? entryFile(String entry) => archive.findFile(entry);
+    return SrsAnkiPackage._(
+      (String entry) async {
+        final ArchiveFile? f = entryFile(entry);
+        return f == null ? null : _bytesOf(f);
+      },
+      zstd,
+      collection,
+      latest,
+      media,
+      ext,
+    );
   }
 
   static Uint8List? _tryZstd(SrsZstdDecoder zstd, Uint8List data) {
@@ -177,12 +215,11 @@ class SrsAnkiPackage {
   }
 
   /// 包里的媒体文件（zstd 压缩的自动解压；没有返回 null）。
-  Uint8List? mediaBytes(String name) {
+  Future<Uint8List?> mediaBytes(String name) async {
     final String? entry = mediaIndex[name];
     if (entry == null) return null;
-    final ArchiveFile? f = _archive.findFile(entry);
-    if (f == null) return null;
-    final Uint8List raw = _bytesOf(f);
+    final Uint8List? raw = await _loadEntry(entry);
+    if (raw == null) return null;
     if (!_isZstd(raw)) return raw;
     final Uint8List? out = _tryZstd(_zstd, raw);
     if (out == null) {
@@ -336,10 +373,13 @@ class SrsAnkiPreset {
 
 /// 来源集合的元信息（笔记 / 卡片 / revlog 由导入流程按需流式读）。
 class SrsAnkiCollection {
-  SrsAnkiCollection._(this.db, this.file);
+  SrsAnkiCollection._(this.db, this.file, {this.deleteDirOnClose = true});
 
   final Database db;
   final File file;
+
+  /// [close] 时删掉 [file] 所在的临时目录（[open] 自己建的目录）。
+  final bool deleteDirOnClose;
 
   late final int crtSecs;
   late final int utcOffsetMin;
@@ -363,7 +403,22 @@ class SrsAnkiCollection {
       await dir.delete(recursive: true);
       throw SrsImportException(SrsImportException.corrupt, 'sqlite: $e');
     }
-    final SrsAnkiCollection c = SrsAnkiCollection._(db, f);
+    return _loaded(SrsAnkiCollection._(db, f));
+  }
+
+  /// 直接只读打开一份**调用方拥有的** SQLite 文件（本机集合的快照）。
+  /// [close] 不删文件，快照目录由调用方清理。
+  static Future<SrsAnkiCollection> openFile(File sqlite) async {
+    final Database db;
+    try {
+      db = openAnkiCollectionDb(sqlite.path);
+    } on Object catch (e) {
+      throw SrsImportException(SrsImportException.corrupt, 'sqlite: $e');
+    }
+    return _loaded(SrsAnkiCollection._(db, sqlite, deleteDirOnClose: false));
+  }
+
+  static Future<SrsAnkiCollection> _loaded(SrsAnkiCollection c) async {
     try {
       c._load();
     } on SrsImportException {
@@ -378,6 +433,7 @@ class SrsAnkiCollection {
 
   Future<void> close() async {
     db.close();
+    if (!deleteDirOnClose) return;
     try {
       await file.parent.delete(recursive: true);
     } on FileSystemException {
