@@ -117,7 +117,8 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
   /// 而失败恰恰是最该重试的情形（同 AList 源 `_basePath` 的取舍）。
   _SearchProbe? _searchProbe;
 
-  /// 本会话里确认能读出目录的根地址；null = 还没打通过。
+  /// 本会话里确认能读出目录的根地址；null = 还没打通过。路径里带 key 的端点
+  /// 存的是占位形态（[kOpdsApiKeyPlaceholder]），不含 key 明文。
   ///
   /// 与 [_searchProbe] 同一取舍：只缓存**成功**结论，失败下次重探——一次网络
   /// 抖动不该让本会话永远停在「不是 OPDS 地址」。
@@ -309,7 +310,12 @@ class OpdsDiscoverySource extends MediaDiscoverySource {
   }
 
   /// 抓一页 feed 并按响应体嗅探分流到 1.2 / 2.0 解析器。
-  Future<OpdsFeed> _loadFeed(Uri uri) async {
+  ///
+  /// [feedUri] 可能是带 API key 占位段的配置 / 候选地址（Kavita，见
+  /// [kOpdsApiKeyPlaceholder]）：只在这里展开成真 key 发请求，展开后的地址
+  /// 不外传——分页缓存键、`resolvedCatalogUrl`、写回回调拿到的都是占位形态。
+  Future<OpdsFeed> _loadFeed(Uri feedUri) async {
+    final Uri uri = expandOpdsApiKeyPlaceholder(feedUri, config.apiKey);
     final _OpdsResponse response = await _get(uri, operation: 'browse');
     final String body = response.body.trimLeft();
     if (body.isEmpty) {

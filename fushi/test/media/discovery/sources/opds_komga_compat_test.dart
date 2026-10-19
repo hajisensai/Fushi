@@ -129,12 +129,18 @@ void main() {
         ).any((Uri u) => u.path.startsWith('/api/opds/')),
         isFalse,
       );
+      // 候选里是占位段而不是 key 明文（打通后会被写回配置）。
+      final List<Uri> kavita = opdsCatalogUrlCandidates(
+        Uri.parse('https://k.example'),
+        apiKey: 'abc',
+      );
       expect(
-        opdsCatalogUrlCandidates(
-          Uri.parse('https://k.example'),
-          apiKey: 'abc',
-        ).map((Uri u) => u.toString()),
-        contains('https://k.example/api/opds/abc'),
+        kavita.map((Uri u) => u.pathSegments.join('/')),
+        contains('api/opds/$kOpdsApiKeyPlaceholder'),
+      );
+      expect(
+        kavita.map((Uri u) => u.toString()).join(' '),
+        isNot(contains('abc')),
       );
 
       // 去重：没有重复候选（每条都是一次真请求）。
@@ -343,6 +349,87 @@ void main() {
       expect(seen.first.$2['X-API-Key'], _apiKey);
       expect(seen.last.$1, 'https://mirror.example/catalog.json');
       expect(seen.last.$2.containsKey('X-API-Key'), isFalse);
+    });
+  });
+
+  group('Kavita：路径里带 key 的目录地址不落盘 key 明文', () {
+    const String kavitaHost = 'https://kavita.example';
+    const String oldKey = 'OLDKEY0123456789';
+    const String newKey = 'NEWKEY9876543210';
+
+    /// 只认 `/api/opds/<当前 key>` 的假 Kavita；其余一律 404。
+    MockClient fakeKavita(String acceptedKey, List<String> requested) =>
+        MockClient((http.Request request) async {
+          requested.add(request.url.path);
+          if (request.url.path == '/api/opds/$acceptedKey') {
+            return http.Response.bytes(
+              File('test/fixtures/opds/komga/v1root.xml').readAsBytesSync(),
+              200,
+              headers: <String, String>{'content-type': 'application/atom+xml'},
+            );
+          }
+          return http.Response('', 404);
+        });
+
+    test('探测打通后：请求带真 key，写回 / resolvedCatalogUrl 是占位形态', () async {
+      final List<String> requested = <String>[];
+      final List<Uri> written = <Uri>[];
+      final OpdsDiscoverySource source = OpdsDiscoverySource(
+        config: _config(kavitaHost, apiKey: oldKey),
+        client: fakeKavita(oldKey, requested),
+        onCatalogUrlResolved: written.add,
+      );
+      final ProviderBatchResult<DiscoveryResultPage> page = await source.browse(
+        const DiscoveryRequest(kind: DiscoveryMediaKind.manga),
+      );
+      expect(page.items.single.entries, isNotEmpty);
+      expect(requested.last, '/api/opds/$oldKey');
+      expect(written, hasLength(1));
+      expect(written.single.toString(), isNot(contains(oldKey)));
+      expect(written.single.pathSegments, <String>[
+        'api',
+        'opds',
+        kOpdsApiKeyPlaceholder,
+      ]);
+      expect(source.resolvedCatalogUrl.toString(), isNot(contains(oldKey)));
+    });
+
+    test('写回的占位地址换 key 后直接用新 key，不卡在旧 key 的 401/404', () async {
+      // 模拟上一轮写回后的持久化形态：地址是占位段，key 已换成新值。
+      final OpdsServerConfig persisted = OpdsServerConfig.fromJson(
+        _config(kavitaHost, apiKey: oldKey)
+            .copyWith(catalogUrl: Uri.parse('$kavitaHost/api/opds/$oldKey'))
+            .copyWith(apiKey: newKey)
+            .toJson(),
+      );
+      expect(persisted.catalogUrl.toString(), isNot(contains(oldKey)));
+      final List<String> requested = <String>[];
+      final OpdsDiscoverySource source = OpdsDiscoverySource(
+        config: persisted,
+        client: fakeKavita(newKey, requested),
+      );
+      await source.browse(
+        const DiscoveryRequest(kind: DiscoveryMediaKind.manga),
+      );
+      expect(requested, <String>['/api/opds/$newKey'], reason: '一次命中，不重探');
+    });
+
+    test('配置构造时把路径里等于 key 的段收成占位段（旧写回 / 用户粘贴的地址）', () {
+      final OpdsServerConfig pasted = _config(
+        '$kavitaHost/api/opds/$oldKey',
+        apiKey: oldKey,
+      );
+      expect(pasted.catalogUrl.toString(), isNot(contains(oldKey)));
+      expect(pasted.toJson()['url'], isNot(contains(oldKey)));
+      expect(
+        expandOpdsApiKeyPlaceholder(pasted.catalogUrl, oldKey).toString(),
+        '$kavitaHost/api/opds/$oldKey',
+      );
+      // 没配 key 时不猜哪段是 key：原样保留。
+      expect(
+        _config('$kavitaHost/api/opds/$oldKey').catalogUrl.toString(),
+        '$kavitaHost/api/opds/$oldKey',
+      );
     });
   });
 

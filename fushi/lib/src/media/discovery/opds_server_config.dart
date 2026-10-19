@@ -17,13 +17,13 @@ class OpdsServerConfig {
   OpdsServerConfig({
     required this.id,
     required this.name,
-    required this.catalogUrl,
+    required Uri catalogUrl,
     this.username = '',
     this.password = '',
     this.apiKey = '',
     this.enabled = true,
     this.allowInsecureHttp = false,
-  }) {
+  }) : catalogUrl = templatizeOpdsApiKey(catalogUrl, apiKey) {
     if (id.trim().isEmpty) {
       throw ArgumentError.value(id, 'id', 'OPDS server id must not be empty');
     }
@@ -54,6 +54,13 @@ class OpdsServerConfig {
   final String name;
 
   /// 目录根地址，例如 `https://books.example.com/api/v1/opds`。
+  ///
+  /// **恒不含 API key 明文**：路径里带 key 的端点（Kavita 的
+  /// `/api/opds/{apiKey}`）以占位段 [kOpdsApiKeyPlaceholder] 存放，构造时若路径段
+  /// 恰等于 [apiKey] 也会被收成占位段（见 [templatizeOpdsApiKey]）。只在发请求
+  /// 那一刻由 [expandOpdsApiKeyPlaceholder] 现拼。这样 key 只活在遮蔽存放的
+  /// [apiKey] 一处：控制通道 / 设置页 / 日志打出 `url` 不泄露 key，用户换 key 后
+  /// 地址跟着变，不会卡在一条拼着旧 key、恒 401 的已写回地址上。
   final Uri catalogUrl;
 
   /// HTTP Basic 账号。Komga 的账号是**登录邮箱**（实测 `admin` 401、
@@ -233,6 +240,48 @@ const List<String> kKnownOpdsCatalogPaths = <String>[
   '/opds',
 ];
 
+/// 目录地址里代表 API key 的占位路径段（Kavita：`/api/opds/{apiKey}`）。
+///
+/// 持久化、控制通道输出、写回的都是带占位段的地址；只在发请求那一刻由
+/// [expandOpdsApiKeyPlaceholder] 换成真 key。占位段经 `Uri` 编码后落盘为
+/// `%7BapiKey%7D`，`pathSegments` 解码回来仍是本字面量。
+const String kOpdsApiKeyPlaceholder = '{apiKey}';
+
+/// 把 [url] 路径里恰等于 [apiKey] 的段收成 [kOpdsApiKeyPlaceholder]。
+///
+/// 用户从 Kavita 网页上复制的 OPDS 地址、或旧版本探测写回的地址都是 key 明文
+/// 在路径里；收成占位段后 key 只剩遮蔽存放的那一份。[apiKey] 为空时原样返回
+/// （不知道哪段是 key，就不猜）。
+Uri templatizeOpdsApiKey(Uri url, String apiKey) {
+  final String key = apiKey.trim();
+  if (key.isEmpty) return url;
+  final List<String> segments = url.pathSegments;
+  if (!segments.contains(key)) return url;
+  return url.replace(
+    pathSegments: <String>[
+      for (final String segment in segments)
+        segment == key ? kOpdsApiKeyPlaceholder : segment,
+    ],
+  );
+}
+
+/// [templatizeOpdsApiKey] 的逆：把占位段换成当前 [apiKey]，供真正发请求用。
+///
+/// [apiKey] 为空时原样返回——占位段会被原样请求出去并以 404/401 失败，结论是
+/// 「这台服务器要 key 而你没配」，而不是悄悄换成别的地址。
+Uri expandOpdsApiKeyPlaceholder(Uri url, String apiKey) {
+  final String key = apiKey.trim();
+  if (key.isEmpty) return url;
+  final List<String> segments = url.pathSegments;
+  if (!segments.contains(kOpdsApiKeyPlaceholder)) return url;
+  return url.replace(
+    pathSegments: <String>[
+      for (final String segment in segments)
+        segment == kOpdsApiKeyPlaceholder ? key : segment,
+    ],
+  );
+}
+
 /// 反代前缀最多往上回溯几层（`/a/b/c` → `/a/b/c`、`/a/b`、`/a`、根）。
 const int _kMaxPrefixDepth = 3;
 
@@ -277,9 +326,11 @@ List<Uri> opdsCatalogUrlCandidates(Uri given, {String apiKey = ''}) {
     for (final String endpoint in kKnownOpdsCatalogPaths) {
       candidates.add(_originUri(base, '$prefix$endpoint'));
     }
+    // 候选里放的是**占位段**而不是 key 明文：打通后它会被写回配置、
+    // 经 `resolvedCatalogUrl` 交给调用方，都不该带 key（请求时才展开）。
     if (key.isNotEmpty) {
       candidates.add(
-        _originUri(base, '$prefix/api/opds/${Uri.encodeComponent(key)}'),
+        _originUri(base, '$prefix/api/opds/$kOpdsApiKeyPlaceholder'),
       );
     }
   }

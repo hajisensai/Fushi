@@ -40,8 +40,8 @@ class DiscoveryProbeOutcome {
   /// OPDS：用户填的地址不是目录、按已知端点探测打通的那条（BUG-3519）；
   /// 原地址本身可用时为 null。调用方负责写回配置。
   ///
-  /// 不进 [toJson]：Kavita 的目录地址路径里带 API key，控制通道的结论输出
-  /// 不该顺手把它打出来。
+  /// Kavita 这类路径里带 key 的端点，这里是占位形态（`kOpdsApiKeyPlaceholder`），
+  /// 不含 key 明文——写回配置、控制通道列表都只见占位段，请求时才展开。
   final Uri? resolvedUrl;
 
   Map<String, Object?> toJson() => <String, Object?>{
