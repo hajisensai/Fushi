@@ -281,6 +281,13 @@ void main() {
         isTrue,
         reason: '竖排应以完整气泡左右边界避让，横排应以整行上下边界避让',
       );
+      expect(
+        scripts.contains(
+          'glyphRect: mangaGroupRect ? this.getSelectionRect(x, y) : null',
+        ),
+        isTrue,
+        reason: 'BUG-3604：整句并集四周放不下弹窗时，宿主要退回贴被点字形定位',
+      );
       expect(scripts.contains('verticalWriting: verticalWriting'), isTrue);
       expect(
         scripts.contains("Number(mangaPage.getAttribute('data-page'))"),

@@ -3060,6 +3060,10 @@ window.fushiSelection = {
       sentence: mangaSentence !== null && mangaSentence !== ''
         ? mangaSentence : sentenceContext.sentence,
       rect: mangaGroupRect || this.getSelectionRect(x, y),
+      // BUG-3604: the sentence-group rect can fill (or, zoomed in, exceed) the
+      // whole viewport, leaving no room around it. Carry the tapped glyph too
+      // so the host can fall back to anchoring next to the word.
+      glyphRect: mangaGroupRect ? this.getSelectionRect(x, y) : null,
       audioCuePayload: window.fushiReader && window.fushiReader.cueIdAtDomPoint
         ? window.fushiReader.cueIdAtDomPoint(startNode, startOffset) : null,
       normalizedOffset: normalizedOffset,

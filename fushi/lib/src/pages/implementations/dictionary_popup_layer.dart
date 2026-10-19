@@ -266,6 +266,70 @@ Rect resolvePopupRect({
   );
 }
 
+/// BUG-3604：在「优先避让的大矩形」[preferred] 与「被点字形」[fallback] 之间选弹窗锚点。
+///
+/// 漫画把弹窗锚到整句 OCR 分组的并集矩形（[preferred]），为的是让弹窗落在气泡外、
+/// 不压住正在读的那句话。可分组矩形可以大到占满（放大后甚至超出）整屏：OCR 把一整张
+/// 资料表 / 一大段旁白并成一句时，并集上下（竖排是左右）都没有空间。
+/// [calcPopupPosition] 的「绝不覆盖选区」（BUG-098）此时只能把弹窗压到所剩空间——空间
+/// 为负就被压成 0 高 / 0 宽的一条，用户看到的是弹窗「跑到屏幕外」、只剩边角的拖拽把手。
+///
+/// 判据：按 [preferred] 摆出的弹窗被压到低于最小可用尺寸（[minPopupHeight] /
+/// [minPopupWidth]，各自再不超过当前最大尺寸与屏幕可用空间）即视为避让失败，改锚到
+/// [fallback]（被点的那个字）——字形矩形很小，四周总有空间，弹窗完整落在屏内、只是
+/// 可能盖住同一气泡里的其它字。避让成功时原样返回 [preferred]，既有行为不变。
+/// 底部固定模式忽略选区，不需要选。
+Rect choosePopupAnchorRect({
+  required Rect preferred,
+  required Rect? fallback,
+  required Size screen,
+  required bool bottomDocked,
+  required double maxWidth,
+  required double maxHeight,
+  double padding = 6.0,
+  double bottomReserve = 0.0,
+  double topReserve = 0.0,
+  bool verticalWriting = false,
+  double minPopupWidth = 200.0,
+  double minPopupHeight = 120.0,
+}) {
+  if (fallback == null || bottomDocked || fallback == preferred) {
+    return preferred;
+  }
+  final Rect placed = resolvePopupRect(
+    selectionRect: preferred,
+    screen: screen,
+    bottomDocked: false,
+    maxWidth: maxWidth,
+    maxHeight: maxHeight,
+    padding: padding,
+    bottomReserve: bottomReserve,
+    topReserve: topReserve,
+    verticalWriting: verticalWriting,
+  );
+  // 「放得下」的上限：屏幕本身（减边距与预留）或用户最大尺寸比最小阈值还小时，以它们
+  // 为准，免得小屏 / 小尺寸设置下把正常结果误判成避让失败。
+  final double horizontalInset = padding.clamp(0, screen.width / 2);
+  final double usableWidth = math.max(0, screen.width - horizontalInset * 2);
+  final double usableHeight = math.max(
+    0,
+    screen.height - bottomReserve - topReserve - padding * 2,
+  );
+  final double widthFloor = math.min(
+    minPopupWidth,
+    math.min(maxWidth, usableWidth),
+  );
+  final double heightFloor = math.min(
+    minPopupHeight,
+    math.min(maxHeight, usableHeight),
+  );
+  const double epsilon = 0.5;
+  final bool squeezed =
+      placed.width + epsilon < widthFloor ||
+      placed.height + epsilon < heightFloor;
+  return squeezed ? fallback : preferred;
+}
+
 /// BUG-1651：根据 WebView 内容高度与当前视口高度的差值，求下一帧弹窗总高度。
 ///
 /// `currentPopupHeight` 是包含 Flutter 顶栏/header 的外壳高度；JS 上报的两个值只属于
