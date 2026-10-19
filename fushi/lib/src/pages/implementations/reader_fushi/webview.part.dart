@@ -110,6 +110,27 @@ extension _ReaderWebView on _ReaderFushiPageState {
   Future<_ReaderResourceResponse> _readerResourcePayload(WebUri url) async {
     final String path = url.path;
 
+    // BUG-3606：竖排标点子集（随包资产，见 ReaderVerticalPunctuationFont）。只认这一个
+    // 固定路径，不按 URL 拼资产 key。正文与歌词 WebView 共用本拦截器。
+    if (path == ReaderVerticalPunctuationFont.urlPath) {
+      final ByteData asset = await rootBundle.load(
+        ReaderVerticalPunctuationFont.assetKey,
+      );
+      return _ReaderResourceResponse(
+        contentType: 'font/woff2',
+        statusCode: 200,
+        reasonPhrase: 'OK',
+        headers: <String, String>{
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'max-age=3600',
+        },
+        data: asset.buffer.asUint8List(
+          asset.offsetInBytes,
+          asset.lengthInBytes,
+        ),
+      );
+    }
+
     if (path.startsWith('/fonts/')) {
       final String raw = path.substring('/fonts/'.length);
       final String fontPath = Uri.decodeComponent(raw);

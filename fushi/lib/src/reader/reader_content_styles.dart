@@ -6,6 +6,7 @@ import 'package:fushi/src/models/cjk_font_families.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
 
 class ReaderLayoutDefaults {
   ReaderLayoutDefaults._();
@@ -600,8 +601,10 @@ body::after {
         ? '::selection { background-color: $nativeSelectionColor; }\n'
         : '';
 
-    final String resolvedFontFaces;
-    final String resolvedFontFamily;
+    final bool isVertical = settings.writingMode.startsWith('vertical');
+
+    String resolvedFontFaces;
+    String resolvedFontFamily;
     if (fontFaces != null && fontFamily != null) {
       resolvedFontFaces = fontFaces;
       resolvedFontFamily = _bodyFontFamily(fontFamily, contentLanguage);
@@ -614,8 +617,16 @@ body::after {
         contentLanguage,
       );
     }
-
-    final bool isVertical = settings.writingMode.startsWith('vertical');
+    // BUG-3606：竖排时标点子集排在链首，「」、。等一律取带 `vert` 的竖排字形——正文
+    // 字体缺 `vert` 时 Blink 不旋转、直接画横排字形，同页与 ー …… 方向不一致。横排不注入。
+    // 三种布局（翻页 / 滚动 / VN）共用这一份 resolvedFontFamily。
+    if (isVertical) {
+      resolvedFontFaces =
+          '${ReaderVerticalPunctuationFont.fontFace()}\n$resolvedFontFaces';
+      resolvedFontFamily = ReaderVerticalPunctuationFont.prependTo(
+        resolvedFontFamily,
+      );
+    }
     // CSS padding does not accept negative values; clamp to 0.
     final double mt = math.max(0, settings.marginTop);
     final double mb = math.max(0, settings.marginBottom);
