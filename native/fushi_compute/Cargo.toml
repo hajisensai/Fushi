@@ -15,6 +15,11 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 memchr = { version = "2.7", default-features = false, features = ["std"] }
 # WOFF2 解码用（font.rs）：纯 Rust、BSD-3-Clause / MIT，五端交叉编译不需要 C 工具链。
 brotli-decompressor = "6.1.0"
+# AES（运行时检测 AES-NI / ARMv8 AES）+ CBC，Apache-2.0 OR MIT。
+aes = { version = "0.8", features = ["zeroize"] }
+cbc = "0.1"
+# P-256 ECDSA（RFC 6979 确定性 k），Apache-2.0 OR MIT。
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 crc32fast = "1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff", "tga", "ico", "pnm"] }
 jpeg-encoder = "0.6"
@@ -23,6 +28,10 @@ sha1 = "0.10"
 sha2 = "0.10"
 # parse::epub：CSS url 正则（HTML 树构建是 parse::html5lib，package:html 的移植，无外部依赖）。
 regex = "1"
+
+[lints.rust]
+# aes_armv8 / aes_force_soft 是 aes 0.8 的 cfg；src/crypto.rs 用它们在 aarch64 丢 cfg 时 compile_error。
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(aes_armv8)", "cfg(aes_force_soft)"] }
 
 [profile.release]
 # 计算内核吃 CPU：取 3（不是 fushi_fsrs 的 "z"），体积换速度。

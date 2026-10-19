@@ -17,6 +17,7 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+pub mod crypto;
 pub mod dart;
 pub mod font;
 pub mod galcal;

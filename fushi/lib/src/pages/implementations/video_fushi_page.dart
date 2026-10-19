@@ -95,6 +95,8 @@ import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
 import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
     show BlurayEncryptedStreamException;
 import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
+import 'package:fushi_engine/media/video/bluray/aacs_content_decoder.dart'
+    show AacsUnitDecryptException, AacsUnitFailure;
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:collection/collection.dart' show IterableExtension;
@@ -11255,6 +11257,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           t.video_bluray_config_invalid,
         AacsConfigurationError.missingConfiguration =>
           t.video_bluray_config_missing,
+      };
+    }
+    // 首个单元就解不开：数据坏了（全零 / 已被同一 key 解开过）直说是盘坏，只有无先例时
+    // 才提 KEYDB——那时数据本身分不清 key 错还是首单元坏，文案两种都说。
+    if (error is AacsUnitDecryptException) {
+      final String name = error.streamName ?? '';
+      final String offset = '${error.unitOffset}';
+      return switch (error.failure) {
+        AacsUnitFailure.corruptData => t.video_bluray_stream_corrupt(
+          name: name,
+          offset: offset,
+        ),
+        AacsUnitFailure.keyMismatchOrCorrupt =>
+          t.video_bluray_stream_undecryptable(name: name, offset: offset),
       };
     }
     // AACS 加密的蓝光码流：原因确定，libmpv 那边只会给黑屏不给错误。

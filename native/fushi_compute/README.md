@@ -434,6 +434,60 @@ Unicode 版本也比 Dart VM 的表新——Rust 1.96 下有 465 个码点 Dart 
 `dart_lower::tests::rust_std_differs_only_where_dart_keeps_the_code_point` 钉住这一形态。换 SDK 后
 `--check` 不一致说明 Dart 的表变了，重生成会同时改变上述所有域的口径。
 
+## 加密域（`ffc_crypto_*`，`src/crypto.rs` + `src/crypto/`）
+
+| 符号 | 作用 | 调用方 |
+|---|---|---|
+| `ffc_crypto_aacs_open / _decrypt_units / _close` | AACS 1 内容解密：求单元密钥 + CBC + 0x47 校验 + 清 CPI + 多 key 轮换重试，一次处理一批 6144 字节单元；遇坏即停，失败码分三类：-20 标为未加密却不是合法 TS（全零单元落这里，数据坏）、-21 哪个 key 都解不开且还没解开过加密单元（key 不符或首单元坏，分不清）、-23 哪个 key 都解不开但此前已解开过加密单元 / 单元含整扇区全零（数据坏，不是 key） | `fushi_engine/.../aacs_content_decoder.dart`（relay 每 32 单元一次） |
+| `ffc_crypto_aes128_ecb_decrypt` | unit key 表解密 | 同上 `fromVolumeUniqueKey` |
+| `ffc_crypto_aes_cbc_pkcs7_decrypt` | AES-128/192/256-CBC + PKCS7，原地 | HLS 分片（`anime_episode_downloader.dart`）、comico 根 URL |
+| `ffc_crypto_aes_cbc_encrypt` | AES-CBC 加密（不填充） | 只给测试造密文 |
+| `ffc_crypto_sync_obfuscate_file / _deobfuscate_file(src, src_len, dst, dst_len)` | 云同步「防扫盘」混淆：文件 → 文件整段在 Rust 里流式读（1 MiB 块）、XOR、写（目标创建或截断）；还原时无魔数则原样复制。keystream = SHA-256("hibiki")、魔数 `HBKOBF 01 00`，**永远不能改**，云端旧文件靠它解开；读写失败返回 -30 | `fushi/lib/src/sync/sync_obfuscator.dart` `obfuscateFile` / `deobfuscateFile`（`Isolate.run`）← `ObfuscatingSyncBackend` 上传 / 下载临时文件。内存里的字节（封面、Range 流播）留 Dart，见下 |
+| `ffc_crypto_p256_public_key / _sign_sha256 / _verify_sha256` | P-256 ECDSA/SHA-256，RFC 6979 确定性 k，P1363 `r‖s`，不做 low-s 归一 | `LeaderboardIdentity`（排行榜账户 / 安装身份）、`InterconnectDeviceKey`、host 自签 TLS 证书（`fushi_tls_identity.dart`，DER 在 Dart 拼） |
+
+依赖：RustCrypto `aes` 0.8 / `cbc` 0.1 / `p256` 0.13（Apache-2.0 OR MIT）。仓库因此不再直接依赖
+pointycastle / basic_utils（pointycastle 仍经 dartssh2 等第三方包间接进 lock）。
+
+一致性：删 Dart 实现前用旧实现（pointycastle 3.9.1 / basic_utils 5.7.0 / Dart XOR）冻结向量
+`packages/fushi_compute/test/crypto/crypto_vectors.json`（AACS / HLS）与 `crypto_vectors_v2.json`
+（混淆、ECDSA 签名与验签边角、证书 TBS 与 PKCS#8 PEM）。旧实现的两处边角原样保留：空 HLS 分片旧版抛
+`RangeError`（pointycastle 越界），现为 `ArgumentError`；验签收混合编码点（`06`/`07` 前缀，不核对 y 奇偶）
+由 Dart 侧改写成 `04` 再交原生。证书签名值不同（旧实现 k 随机，现为 RFC 6979），TBS 与 PEM 版式逐字节相同。
+
+**ARMv8 AES**：aes 0.8 在 aarch64 上要 `--cfg aes_armv8` 才用硬件指令（Linux / Android / Apple 运行时
+检测），否则退回软件实现（结果相同、慢数倍）。本目录与 `native/fushi_ios_umbrella` 各有一份
+`.cargo/config.toml` 带上它；cargo 按**工作目录**找配置（构建脚本都 `cd` 到各自目录），且设了
+`RUSTFLAGS` / `CARGO_ENCODED_RUSTFLAGS` 环境变量时会**整个忽略**配置里的 rustflags，那时要在变量里
+自己带 `--cfg aes_armv8`。丢了 cfg 不再静默：`src/crypto.rs` 在 aarch64 且无 `aes_armv8`（也没显式
+`--cfg aes_force_soft`）时 `compile_error!`；`verify_abi.sh` 对 aarch64 的独立 `libfushi_compute.{so,dylib}`
+另反汇编核对必有 `aese`/`aesd` 指令（arm64-v8a 实测硬件版 288 条、软件版 0 条；伞形 `.a` / Runner 混着别的
+crate 的 AES 指令，跳过）。
+
+基准（云同步混淆与 ECDSA，2026-10-19，i5-12600KF / Windows 11，AOT；旧实现从删除前的代码原样拷进仓库外的
+临时脚本，pointycastle 3.9.1；本机同时有其它会话占 CPU，数字有噪声）。混淆的对照是**最好的 Dart 写法**
+（64 位字长 XOR 循环），不是删除前的逐字节循环：
+
+| 场景 | Dart（字长循环） | 本库 |
+|---|---|---|
+| 文件 → 文件混淆 64 KiB（`File.openRead` → XOR → `openWrite`；本库含 `Isolate.run`） | 2.84 ms | 1.31 ms（2.2×；同 isolate 直调 0.97 ms） |
+| 同上 4 MiB | 44.5 ms | 15.0 ms（3.0×） |
+| 同上 256 MiB | 1,686 ms | 534 ms（3.2×） |
+| 同上，旧形态「Dart 流式 + 每块一次 FFI XOR」 | — | 64 KiB 1.28 ms / 4 MiB 50.3 ms / 256 MiB 1,887 ms（不比字长 Dart 快，已删） |
+| 内存字节 XOR（封面整块、Range 流播），64 KiB / 1 MiB / 8 MiB 各 3 轮 | 520～1870 MB/s | 每块一次 FFI（拷入拷出）550～1280 MB/s，9 组里 8 组更慢 → **不搬，留 Dart** |
+| ECDSA 签名（RFC 6979） | 22.7 ms | 0.92 ms（25×） |
+| ECDSA 验签 | 40.2 ms | 0.89 ms（45×） |
+| 私钥 → 公钥点 | 25.4 ms | 0.47 ms（54×） |
+
+内存字节的 XOR 是纯内存带宽操作：Rust 内核本身远快于 Dart，但 FFI 必须把数据拷进原生暂存区再拷回 Dart 堆，
+比 Dart 字长循环（拷一次 + 原地 XOR）多一趟内存。试过的加粗办法都走不通：
+`TypedData.address` 免拷贝只给 `@Native` 静态绑定（本包按路径 `DynamicLibrary.open`，编译期即报错）；
+`Pointer.asTypedList(finalizer:)` 让 Rust 结果直接当 Dart 字节交出去、省掉拷出——Dart 3.13.5 AOT
+（Windows）下循环分配几次就访问违例崩溃（JIT 正常）；Range 数据来自 Dart 侧 HTTP 流，整段搬进 Rust 等于
+把网络栈搬过去；封面本来就是内存里的小数据。所以这两条按规则留在 Dart（`SyncObfuscator.obfuscateBytes` /
+`deobfuscateBytes` / `deobfuscateBodyAt`），keystream 在那里另有一份 SHA-256("hibiki")；
+`sync_obfuscator_vectors_test.dart` 与 `crypto_vectors_v2_test.dart` 用删除前的冻结向量同时钉住 Dart 与 Rust 两侧。
+同一份脚本核对了签名与旧实现逐字节相同。
+
 ## 构建
 
 | 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-19 实测，含 parse 域） |
@@ -454,6 +508,8 @@ Unicode 版本也比 Dart VM 的表新——Rust 1.96 下有 465 个码点 Dart 
   因为三个 crate 编成一个 `.a`，iOS 上 fushi_p2p / fushi_fsrs 实际也随之变成必需。
 - `verify_abi.sh <二进制> [nm]` 递归抓 `packages/fushi_compute/lib/` 下所有 `'ffc_*'` 字面量，逐个核对
   导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 27。
+
+  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 22。
 
 ## CI
 

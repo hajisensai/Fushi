@@ -10,7 +10,13 @@
  * The app registers it through fushi_aacs_set_disc_key() before opening the
  * disc; this module never reads configuration files, processes media key
  * blocks, talks to drives, removes bus encryption, or implements AACS 2/BD+.
- * Decryption matches AacsContentDecoder (aacs_content_decoder.dart) exactly.
+ * Encrypted units are decrypted like AacsContentDecoder (aacs_content_decoder.dart):
+ * same unit key derivation, CBC, TS sync check, CPI clearing and multi-key
+ * retry. Error handling differs on purpose: unencrypted units are passed
+ * through without checking their 0x47 sync bytes (libbluray's own
+ * _validate_unit() check then skips a bad unit), whereas AacsContentDecoder
+ * rejects such a unit and stops the stream. aacs_decrypt_unit() also reports
+ * only success/failure, without the decoder's corrupt-vs-key-mismatch split.
  *
  * Exported names and signatures are those of VideoLAN libaacs 0.11 (aacs.h).
  * aacs_init/aacs_open_device are intentionally absent, so libbluray uses the

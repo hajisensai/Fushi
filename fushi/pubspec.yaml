@@ -31,7 +31,6 @@ dependencies:
       ref: 0c5878a856be72c7439f166a3144c0c4c6a998a7
   archive: ^3.6.1
   async_zip: ^0.1.0
-  basic_utils: ^5.7.0
   audio_service: ^0.18.9
   audio_session: ^0.1.13
   cached_network_image: ^3.4.1
@@ -174,8 +173,6 @@ dependencies:
   ftpconnect: ^2.0.10
   dartssh2: ^2.9.0
   crypto: ^3.0.0
-  # BUG-2514：comico magazine_comic 根 URL 的 AES-CBC 解密（basic_utils 已带入，这里只是显式声明）。
-  pointycastle: ^3.9.1
   meta: ^1.9.0
   transparent_image: ^2.0.1
   url_launcher: ^6.0.20
