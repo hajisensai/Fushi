@@ -21,7 +21,6 @@ void main() {
       '../packages/fushi_engine/lib/epub/epub_importer.dart',
       'lib/src/pdf/pdf_importer.dart',
       '../packages/fushi_engine/lib/media/manga/manga_importer.dart',
-      'lib/src/media/source_library/source_library_scanner.dart',
       '../packages/fushi_engine/lib/stats/stat_facts.dart',
       'lib/src/pages/implementations/reader_fushi_history_page.dart',
       'lib/src/pages/implementations/reader_history/books.part.dart',
@@ -39,6 +38,26 @@ void main() {
         expect(src.contains('getEpubBookMetas()'), isTrue);
       });
     }
+
+    // 来源扫描的卷身份与重复判据已收进引擎（613d85a，与无头服务端共用）：批量读走
+    // loadBookSourceRows 的瘦投影，其余只按 bookKey 读单行，扫描器自己不再整表读。
+    test('source_library_scanner: bulk reads go through the thin loadBookSourceRows',
+        () {
+      final String src =
+          read('lib/src/media/source_library/source_library_scanner.dart');
+      expect(src.contains('getAllEpubBooks()'), isFalse,
+          reason: '来源扫描只要元数据列，不得整表全列读');
+      expect(src.contains('loadBookSourceRows(db)'), isTrue);
+      final String prune = read(
+          '../packages/fushi_engine/lib/media/source_library/book_library_prune.dart');
+      final int start =
+          prune.indexOf('Future<List<BookSourceRow>> loadBookSourceRows(');
+      expect(start, greaterThan(0));
+      final String body = prune.substring(start, prune.indexOf('\n}', start));
+      expect(body.contains('db.selectOnly('), isTrue,
+          reason: 'loadBookSourceRows 必须是列投影，不能整行读出 chaptersJson');
+      expect(body.contains('chaptersJson'), isFalse);
+    });
 
     test('reader_fushi_source: only the shelf materialiser reads full rows',
         () {

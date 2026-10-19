@@ -30,11 +30,19 @@ import '../helpers/source_guard.dart';
 void main() {
   late String appModel;
 
+  /// fushi_dictionary 的分桶源文件（剥过注释）：DictPathEntry 与 dictPathEntryOf 住在这里。
+  late String buckets;
+
   setUpAll(() {
     final File f = File('lib/src/models/app_model.dart');
     expect(f.existsSync(), isTrue,
         reason: 'app_model.dart not found at ${f.absolute.path}');
     appModel = f.readAsStringSync();
+    final File b = File(
+        '../packages/fushi_dictionary/lib/src/engine/dictionary_buckets.dart');
+    expect(b.existsSync(), isTrue,
+        reason: 'dictionary_buckets.dart not found at ${b.absolute.path}');
+    buckets = maskComments(b.readAsStringSync());
   });
 
   // 先剥注释再取函数体：本文件的判据全是「函数体里必须出现某字面量」，而这些
@@ -84,25 +92,40 @@ void main() {
               'router also registers it as a kanji dict');
     });
 
+    // DictPathEntry 与它的构造已搬进 fushi_dictionary（c93f413，与无头服务端共用）：
+    // app_model 的两条重建路径把整份 metadata 交给 dictPathEntryOf，hasKanji 在那里读。
     test('path-cache rebuild reads metadata[hasKanji] into DictPathEntry', () {
       for (final m in <String>[
         'void _rebuildDictPathsCache(',
         'Future<void> _rebuildDictPathsCacheAsync(',
       ]) {
         final String body = bodyOf(appModel, m);
-        expect(body.contains("metadata['hasKanji']"), isTrue,
-            reason: '$m must read metadata[hasKanji] so a mixed dictionary is '
-                'routed into the kanji bucket');
-        expect(body.contains('hasKanji:'), isTrue,
-            reason: '$m must populate the DictPathEntry.hasKanji field');
+        expect(
+            body.contains('dictPathEntryOf(') && body.contains('metadata:'),
+            isTrue,
+            reason: '$m must hand the dictionary metadata to dictPathEntryOf '
+                'so a mixed dictionary is routed into the kanji bucket');
       }
+      // 箭头函数：取签名到收尾的「\n);」（bodyOf 认的第一个「{」是命名参数表）。
+      final int at = buckets.indexOf('DictPathEntry dictPathEntryOf(');
+      expect(at, greaterThanOrEqualTo(0), reason: 'dictPathEntryOf not found');
+      final String ctor = buckets.substring(at, buckets.indexOf('\n);', at));
+      expect(ctor.contains('hasKanji: hasEmbeddedKanjiIn('), isTrue,
+          reason: 'dictPathEntryOf must populate DictPathEntry.hasKanji');
+      expect(buckets.contains("const String kDictHasKanjiKey = 'hasKanji';"),
+          isTrue);
+      expect(
+          RegExp(r'bool hasEmbeddedKanjiIn\([^)]*\)\s*=>[^;]*metadata\[kDictHasKanjiKey\]')
+              .hasMatch(buckets),
+          isTrue,
+          reason: 'hasEmbeddedKanjiIn must read metadata[hasKanji]');
     });
 
     test('DictPathEntry carries a hasKanji field', () {
-      final int idx = appModel.indexOf('typedef DictPathEntry = ({');
+      final int idx = buckets.indexOf('typedef DictPathEntry = ({');
       expect(idx, greaterThanOrEqualTo(0));
-      final int close = appModel.indexOf('});', idx);
-      final String decl = appModel.substring(idx, close);
+      final int close = buckets.indexOf('});', idx);
+      final String decl = buckets.substring(idx, close);
       expect(decl.contains('bool hasKanji'), isTrue,
           reason:
               'DictPathEntry must declare hasKanji for double-bucket route');

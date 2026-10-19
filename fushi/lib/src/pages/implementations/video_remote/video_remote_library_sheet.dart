@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart'
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -210,7 +211,7 @@ class _VideoRemoteLibrarySheetState extends State<VideoRemoteLibrarySheet> {
       if (_loading) {
         return const Padding(
           padding: EdgeInsets.all(24),
-          child: Center(child: CircularProgressIndicator()),
+          child: Center(child: FushiCircularProgressIndicator()),
         );
       }
       return Padding(
@@ -239,7 +240,7 @@ class _VideoRemoteLibrarySheetState extends State<VideoRemoteLibrarySheet> {
           if (i >= _items.length) {
             return const Padding(
               padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: FushiCircularProgressIndicator()),
             );
           }
           return _tile(context, _items[i]);
