@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:fushi_compute/fushi_compute.dart' show ffcSha256File;
 
 import 'package:fushi/src/mining/galgame_helper_installer.dart'
     show kGalgameHelperInstallDirectoryName;
@@ -100,6 +102,32 @@ String? _assetVersionStamp(Object? raw) {
   if (raw is! String) return null;
   final String trimmed = raw.trim();
   return trimmed.isEmpty ? null : trimmed;
+}
+
+/// 本进程**亲手**按发布方公布的 SHA-256 校验通过的更新包（BUG-3567）。
+///
+/// 安装包落在用户可写的 updates 目录，旁边的 `.meta.json` 同样可写，都不能当「这个文件
+/// 已校验」的凭据；只有下载引擎在本进程里刚核过的结论可信。下载完成（或复用已完成的
+/// 下载）且资产带有公布的哈希时由下载层登记；安装层据此决定能否把安装器经 UAC 提权，
+/// 并把这个哈希交给 launcher 在锁住文件后复核。进程内状态：重启后清空，届时重新下载 /
+/// 复用会再走一遍校验并重新登记。
+abstract final class UpdateDownloadTrust {
+  static final Map<String, String> _verified = <String, String>{};
+
+  static String _key(String path) => File(path).absolute.path.toLowerCase();
+
+  /// 下载层：[file] 已按 [sha256Digest]（发布方公布的值）校验通过。
+  static void recordVerified(File file, String sha256Digest) {
+    final String digest = sha256Digest.trim().toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(digest)) return;
+    _verified[_key(file.path)] = digest;
+  }
+
+  /// 安装层：[file] 在本进程里按公布哈希校验过的话返回那个哈希，否则 null。
+  static String? verifiedSha256For(File file) => _verified[_key(file.path)];
+
+  @visibleForTesting
+  static void debugReset() => _verified.clear();
 }
 
 /// 每平台的更新策略：选包（[selectAsset]）+ 安装（[apply]）。
@@ -369,6 +397,7 @@ class WindowsUpdater extends PlatformUpdater {
       file.path,
       targetVersion: version,
       handoffMarkerFile: WindowsUpdateHandoff.markerFile(file.parent),
+      expectedSha256: UpdateDownloadTrust.verifiedSha256For(file),
     );
   }
 }
@@ -507,6 +536,12 @@ const String kWindowsInstallerNoRelaunchSwitch = '/FUSHINORELAUNCH';
 /// launcher 的提权开关：用 UAC（`ShellExecuteExW` + `runas`）启动安装器。
 const String kWindowsUpdateLauncherElevateFlag = '--elevate';
 
+/// 提权时必带：安装包应有的 SHA-256（发布方公布的那个）。launcher 以「拒绝写 / 删 /
+/// 改名共享」打开安装包、在**持有该句柄**的状态下重算哈希，对得上才经 UAC 拉起，并一直
+/// 握着句柄到安装器结束——校验之后、提权执行之前，同用户的其它进程换不掉这个文件
+/// （安装包在用户可写的 updates 目录里，BUG-3567）。
+const String kWindowsUpdateLauncherInstallerSha256Flag = '--installer-sha256';
+
 const String kWindowsUpdateLauncherExecutable = 'fushi_update_launcher.exe';
 
 /// 「改名让路」在安装目录里留下的 launcher 残留名（`fushi.iss` 的
@@ -596,10 +631,16 @@ List<String> windowsUpdateLauncherArgs({
   required String installerPath,
   required List<String> installerArgs,
   String? appExecutablePath,
-  bool elevateInstaller = false,
+  String? elevatedInstallerSha256,
 }) =>
     <String>[
-      if (elevateInstaller) kWindowsUpdateLauncherElevateFlag,
+      // 非 null = 经 UAC 提权启动安装器；提权只接受带着已校验哈希的安装包，
+      // 所以两者绑成一个参数，不存在「提权但不带哈希」的组合。
+      if (elevatedInstallerSha256 != null) ...<String>[
+        kWindowsUpdateLauncherElevateFlag,
+        kWindowsUpdateLauncherInstallerSha256Flag,
+        _requireSha256Hex(elevatedInstallerSha256),
+      ],
       '--marker',
       markerPath,
       '--parent-pid',
@@ -613,6 +654,18 @@ List<String> windowsUpdateLauncherArgs({
       '--',
       ...installerArgs,
     ];
+
+String _requireSha256Hex(String value) {
+  final String normalized = value.trim().toLowerCase();
+  if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(normalized)) {
+    throw ArgumentError.value(
+      value,
+      'elevatedInstallerSha256',
+      'must be a 64-char hex SHA-256 digest',
+    );
+  }
+  return normalized;
+}
 
 /// launcher 副本的落地目录名（在 updates 目录下，**安装目录之外**）。
 const String kWindowsUpdateLauncherStageDirName = 'launcher';
@@ -746,7 +799,10 @@ class WindowsInstaller {
       List<String> args,
     )? startProcess,
     void Function(int code)? exitProcess,
-    Future<bool> Function(Directory dir)? probeInstallDirWritable,
+    Future<WindowsInstallDirWriteProbe> Function(Directory dir)?
+        probeInstallDirWritable,
+    String? expectedSha256,
+    Future<String> Function(File file)? hashFile,
   }) async {
     final DateTime Function() clock = now ?? DateTime.now;
     final String innoLogPath = windowsInstallerLogPath(installerPath);
@@ -775,6 +831,23 @@ class WindowsInstaller {
         } catch (_) {/* best-effort cleanup */}
         throw UpdateInstallerException(
             'downloaded file is not a Windows executable: $installerPath');
+      }
+      // BUG-3567：安装包放在用户可写的 updates 目录里，下载时的校验之后它仍可能被换掉
+      // （CLI `update download` 与 `update install` 之间可以隔任意久）。交接前按发布方
+      // 公布的哈希再核一次：对不上就删掉、不交接。
+      if (expectedSha256 != null) {
+        final String expected = expectedSha256.trim().toLowerCase();
+        final String actual =
+            (await (hashFile ?? _sha256OfInstaller)(installer)).toLowerCase();
+        if (actual != expected) {
+          try {
+            installer.deleteSync();
+          } catch (_) {/* best-effort cleanup */}
+          throw UpdateInstallerException(
+            'installer SHA-256 mismatch (expected $expected, got $actual): '
+            '$installerPath',
+          );
+        }
       }
     } catch (e, stack) {
       await _markLaunchFailed(handoffMarkerFile, e, clock(), stack);
@@ -832,17 +905,33 @@ class WindowsInstaller {
       // 不再让用户「以管理员身份重开 Fushi」——只把安装器本身经 UAC 提权，app 继续以
       // 普通权限运行。提权只能由 launcher 做（它在 app 退出后才拉起安装器），所以没有
       // launcher 的直启路径仍按旧行为报错。
+      //
+      // 只有「拒绝访问」才提权：磁盘满、受控文件夹访问、路径坏掉这类失败，管理员权限也
+      // 救不了，弹 UAC 只会让用户白点一次再看到同一个失败。提权还要求发布方公布了安装包
+      // 的 SHA-256：launcher 会在锁住文件后按它复核，拿不到就不提权执行（BUG-3567）。
       bool elevateInstaller = false;
-      final Future<bool> Function(Directory dir)? probeWritable =
-          probeInstallDirWritable ??
-              (Platform.isWindows ? isWindowsInstallTargetWritable : null);
-      if (probeWritable != null &&
-          !await probeWritable(Directory(targetInstallDir))) {
-        if (!useDelayedLauncher) {
+      final Future<WindowsInstallDirWriteProbe> Function(Directory dir)?
+          probeWritable = probeInstallDirWritable ??
+              (Platform.isWindows ? probeWindowsInstallTargetWritable : null);
+      final WindowsInstallDirWriteProbe writeProbe = probeWritable == null
+          ? WindowsInstallDirWriteProbe.writable
+          : await probeWritable(Directory(targetInstallDir));
+      if (writeProbe != WindowsInstallDirWriteProbe.writable) {
+        final String? cannotElevateReason =
+            writeProbe != WindowsInstallDirWriteProbe.accessDenied
+                ? 'the failure is not a permission problem'
+                : !useDelayedLauncher
+                    ? 'there is no update launcher to elevate the installer'
+                    : expectedSha256 == null
+                        ? 'the release did not publish a SHA-256 digest for '
+                            'the installer, so it cannot be verified before '
+                            'running it as administrator'
+                        : null;
+        if (cannotElevateReason != null) {
           throw UpdateInstallerException(
-            'Cannot write to installation directory: $targetInstallDir. '
-            'Close Fushi and run the installer as administrator, or reinstall '
-            'Fushi to a user-writable folder.',
+            'Cannot write to installation directory: $targetInstallDir '
+            '($cannotElevateReason). Close Fushi and run the installer as '
+            'administrator, or reinstall Fushi to a user-writable folder.',
           );
         }
         elevateInstaller = true;
@@ -925,7 +1014,7 @@ class WindowsInstaller {
               installerPath: installerPath,
               installerArgs: args,
               appExecutablePath: resolvedExecutablePath,
-              elevateInstaller: elevateInstaller,
+              elevatedInstallerSha256: elevateInstaller ? expectedSha256 : null,
             )
           : args;
       if (useDelayedLauncher &&
@@ -985,6 +1074,9 @@ class WindowsInstaller {
     await WindowsNativePreExit.prepareForExit(WindowsExitReason.update);
     (exitProcess ?? exit)(0);
   }
+
+  static Future<String> _sha256OfInstaller(File file) =>
+      ffcSha256File(file.path);
 
   static Future<List<int>> _readHeaderBytes(File file) async {
     final RandomAccessFile raf = await file.open();
@@ -1518,23 +1610,49 @@ String _normalizeWindowsPath(String path) {
       .toLowerCase();
 }
 
-/// 以当前进程权限实测 [installDir] 是否可写。不可写返回 false（原因写进日志），
-/// 由调用方决定是提权交接还是报错。
-Future<bool> isWindowsInstallTargetWritable(Directory installDir) async {
+/// [probeWindowsInstallTargetWritable] 的结论。
+enum WindowsInstallDirWriteProbe {
+  /// 当前权限能在安装目录里建文件。
+  writable,
+
+  /// `ERROR_ACCESS_DENIED`：权限不够（典型是 `C:\Program Files`），提权能解决。
+  accessDenied,
+
+  /// 其它失败（磁盘满、受控文件夹访问、路径无效…），提权解决不了。
+  failed,
+}
+
+/// Win32 `ERROR_ACCESS_DENIED`。
+const int _kWin32ErrorAccessDenied = 5;
+
+/// 以当前进程权限实测 [installDir] 是否可写（真建一个探针文件再删掉——ACL / 继承 /
+/// 拒绝项的组合只有让系统自己判最可靠）。失败原因写进日志，由调用方决定是提权交接
+/// 还是报错。
+Future<WindowsInstallDirWriteProbe> probeWindowsInstallTargetWritable(
+  Directory installDir,
+) async {
   final File probe = File(
     '${installDir.path}${Platform.pathSeparator}.fushi-update-write-test',
   );
   try {
     await installDir.create(recursive: true);
     await probe.writeAsString('fushi updater preflight', flush: true);
-    return true;
-  } catch (e) {
+    return WindowsInstallDirWriteProbe.writable;
+  } on FileSystemException catch (e) {
     ErrorLogService.instance.log(
       'WindowsInstaller.installDirNotWritable',
       'Cannot write to installation directory ${installDir.path} with the '
           'current privileges: $e',
     );
-    return false;
+    return e.osError?.errorCode == _kWin32ErrorAccessDenied
+        ? WindowsInstallDirWriteProbe.accessDenied
+        : WindowsInstallDirWriteProbe.failed;
+  } catch (e) {
+    ErrorLogService.instance.log(
+      'WindowsInstaller.installDirNotWritable',
+      'Cannot write to installation directory ${installDir.path}: $e',
+    );
+    return WindowsInstallDirWriteProbe.failed;
   } finally {
     try {
       if (await probe.exists()) await probe.delete();
