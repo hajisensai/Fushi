@@ -220,6 +220,7 @@ import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
+import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -731,7 +732,8 @@ class AppModel with ChangeNotifier {
         jobRoot: Directory(path.join(databaseDirectory.path, 'host_jobs')),
         runners: <HostJobRunner>[
           AsrHostJobRunner(
-            serviceFactory: createAsrTranscriptionService,
+            serviceFactory: (AsrAudioProfile profile) =>
+                createAsrTranscriptionService(audioProfile: profile),
             resolveVideoPath: _resolveHostVideoPath,
           ),
         ],

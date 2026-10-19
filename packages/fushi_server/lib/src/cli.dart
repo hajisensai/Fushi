@@ -20,6 +20,8 @@ import 'package:args/args.dart';
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/asr/asr_host_job_runner.dart'
+    show asrAudioProfileForJob, parseAsrAudioProfile;
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/admin_server.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
@@ -77,10 +79,20 @@ ArgParser _buildParser() {
   parser.addCommand('admin');
   parser.addCommand('models')
     ..addOption('language', abbr: 'l', help: 'ASR 语言 tag（ja / en / zh …）')
-    ..addOption('model', abbr: 'm', help: _kModelOptionHelp);
+    ..addOption('model', abbr: 'm', help: _kModelOptionHelp)
+    ..addOption(
+      'profile',
+      help: '素材档位：cleanSpeech（有声书，默认）| mixedAudio（视频；同一语言可能是另一个模型包）',
+      allowed: <String>['cleanSpeech', 'mixedAudio'],
+    );
   parser.addCommand('transcribe')
     ..addOption('language', abbr: 'l', help: 'ASR 语言 tag', defaultsTo: 'ja')
     ..addOption('model', abbr: 'm', help: _kModelOptionHelp)
+    ..addOption(
+      'profile',
+      help: '素材档位：cleanSpeech | mixedAudio；缺省按扩展名（视频 → mixedAudio）',
+      allowed: <String>['cleanSpeech', 'mixedAudio'],
+    )
     ..addOption('out', abbr: 'o', help: '输出 .srt 路径（默认与音频同名）')
     ..addFlag('cpu', negatable: false, help: '只用 CPU');
   parser.addCommand('ctl', buildCtlParser());
@@ -94,7 +106,7 @@ void _usage(ArgParser parser) {
   stdout.writeln('fushi_server <command> [options]\n');
   stdout.writeln(
     'commands: init | serve | scan | status | pair ls|revoke <peerId> | '
-    'admin reset-token | models pull|status -l <lang> | transcribe <audio> -l <lang> | '
+    'admin reset-token | models pull|status -l <lang> [--profile mixedAudio] | transcribe <audio> -l <lang> [--profile …] | '
     'ctl <action>\n',
   );
   stdout.writeln(parser.usage);
@@ -497,7 +509,11 @@ Future<int> _models(ServerRuntime rt, ArgResults command) async {
   final String sub = command.rest.isEmpty ? 'status' : command.rest.first;
   if (!_applyModelArg(command)) return 64;
   final asr.AsrTranscriptionService service =
-      createServerAsrTranscriptionService();
+      createServerAsrTranscriptionService(
+        audioProfile:
+            parseAsrAudioProfile(command['profile'] as String? ?? '') ??
+            asr.AsrAudioProfile.cleanSpeech,
+      );
   if (sub == 'status') {
     for (final asr.AsrLanguage language in asr.AsrLanguage.registered) {
       final asr.AsrTranscribePlan plan = await service.plan(
@@ -538,7 +554,9 @@ Future<int> _models(ServerRuntime rt, ArgResults command) async {
     stdout.writeln('${language.tag}: 下载完成');
     return 0;
   }
-  stderr.writeln('用法: models status | models pull --language <tag>');
+  stderr.writeln(
+    '用法: models status | models pull --language <tag> [--profile mixedAudio]',
+  );
   return 64;
 }
 
@@ -560,14 +578,19 @@ Future<int> _transcribe(ServerRuntime rt, ArgResults command) async {
       ? asr.AsrAccelerationPreference.cpuOnly
       : asr.AsrAccelerationPreference.auto;
   final asr.AsrTranscriptionService service =
-      createServerAsrTranscriptionService();
+      createServerAsrTranscriptionService(
+        audioProfile: asrAudioProfileForJob(
+          explicit: command['profile'] as String?,
+          path: audio,
+        ),
+      );
   final asr.AsrTranscribePlan plan = await service.plan(
     language: language,
     preference: preference,
   );
   if (!plan.modelReady) {
     stderr.writeln(
-      '${language.tag} 模型未下载：先跑 fushi_server models pull -l ${language.tag}',
+      '${language.tag} 模型未下载：先跑 fushi_server models pull -l ${language.tag} --profile ${service.audioProfile.name}',
     );
     return 69;
   }

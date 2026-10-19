@@ -11,6 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/anki_sync/anki_box_landing.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
+import 'package:fushi_engine/asr/asr_host_job_runner.dart' show parseAsrAudioProfile;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadPipelineActionRequired;
@@ -550,24 +551,33 @@ class AdminApi {
     // plan() 每种语言都要探一次 ORT provider；WebUI 2.5s 轮询下别每次都探。
     final bool fresh = DateTime.now().difference(_modelsCacheAt) < const Duration(seconds: 5);
     if (_modelsCache != null && fresh && _pulling.isEmpty) return _json(_modelsCache!);
-    final asr.AsrTranscriptionService service = createServerAsrTranscriptionService();
     final List<Object?> asrModels = <Object?>[];
-    for (final asr.AsrLanguage language in asr.AsrLanguage.registered) {
-      try {
-        final asr.AsrTranscribePlan plan =
-            await service.plan(language: language, preference: asr.AsrAccelerationPreference.auto);
-        asrModels.add(<String, Object?>{
-          'tag': language.tag,
-          'name': language.nativeName,
-          'ready': plan.modelReady,
-          'variant': plan.variant.name,
-          'provider': plan.expectedProvider.name,
-          'obtainedBytes': plan.modelStatus.obtainedBytes,
-          'totalBytes': plan.modelStatus.totalBytes,
-          'pulling': _pulling.contains(language.tag),
-        });
-      } catch (e) {
-        asrModels.add(<String, Object?>{'tag': language.tag, 'name': language.nativeName, 'error': '$e'});
+    for (final asr.AsrAudioProfile profile in asr.AsrAudioProfile.values) {
+      final asr.AsrTranscriptionService service =
+          createServerAsrTranscriptionService(audioProfile: profile);
+      for (final asr.AsrLanguage language in asr.AsrLanguage.registered) {
+        final String? key = _asrModelKey(language, profile);
+        if (key == null) continue;
+        final String name = profile == asr.AsrAudioProfile.cleanSpeech
+            ? language.nativeName
+            : '${language.nativeName} · video';
+        try {
+          final asr.AsrTranscribePlan plan =
+              await service.plan(language: language, preference: asr.AsrAccelerationPreference.auto);
+          asrModels.add(<String, Object?>{
+            'tag': key,
+            'name': name,
+            'profile': profile.name,
+            'ready': plan.modelReady,
+            'variant': plan.variant.name,
+            'provider': plan.expectedProvider.name,
+            'obtainedBytes': plan.modelStatus.obtainedBytes,
+            'totalBytes': plan.modelStatus.totalBytes,
+            'pulling': _pulling.contains(key),
+          });
+        } catch (e) {
+          asrModels.add(<String, Object?>{'tag': key, 'name': name, 'profile': profile.name, 'error': '$e'});
+        }
       }
     }
     final MangaOcrModelStatus? ocr = await ctx.host.ocrService?.modelStatus();
@@ -605,6 +615,16 @@ class AdminApi {
     });
   }
 
+  /// 模型行的键：有声书档就是语言 tag；视频档是 `<tag>@mixedAudio`，且只在该
+  /// 语言的视频包与有声书包不是同一个包时才单列（同一个包下一次就够了）。
+  static String? _asrModelKey(asr.AsrLanguage language, asr.AsrAudioProfile profile) {
+    if (profile == asr.AsrAudioProfile.cleanSpeech) return language.tag;
+    final String own = asr.asrModelPackFor(language, profile: profile).id;
+    final String clean =
+        asr.asrModelPackFor(language, profile: asr.AsrAudioProfile.cleanSpeech).id;
+    return own == clean ? null : '${language.tag}@${profile.name}';
+  }
+
   static String _ocrModelName(String key) => switch (key) {
         'manga_ctc' => '漫画 CTC（快速）',
         _ => key,
@@ -627,9 +647,15 @@ class AdminApi {
           if (ocr == null) throw StateError('ocr service unavailable: $which');
           await for (final MangaOcrDownloadEvent _ in ocr.downloadModels()) {}
         } else {
-          final asr.AsrLanguage? language = asr.AsrLanguage.fromTag(which);
+          // `<tag>` = 有声书档；`<tag>@mixedAudio` = 视频档（同一语言可能是另一个包）。
+          final List<String> parts = which.split('@');
+          final asr.AsrLanguage? language = asr.AsrLanguage.fromTag(parts.first);
           if (language == null) throw FormatException('unknown language $which');
-          final asr.AsrTranscriptionService service = createServerAsrTranscriptionService();
+          final asr.AsrAudioProfile profile = parts.length > 1
+              ? (parseAsrAudioProfile(parts[1]) ?? (throw FormatException('unknown profile $which')))
+              : asr.AsrAudioProfile.cleanSpeech;
+          final asr.AsrTranscriptionService service =
+              createServerAsrTranscriptionService(audioProfile: profile);
           final asr.AsrTranscribePlan plan =
               await service.plan(language: language, preference: asr.AsrAccelerationPreference.auto);
           await for (final asr.ModelDownloadEvent _

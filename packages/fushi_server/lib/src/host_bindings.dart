@@ -86,12 +86,15 @@ void serverAsrIsolateBootstrap(Object arg) {
 
 /// 与 app 的 `createAsrTranscriptionService()` 对偶：同一个 asr_core 服务，
 /// 后端换成 FFI ORT + 引擎 ffmpeg 转接。
-asr.AsrTranscriptionService createServerAsrTranscriptionService() =>
+///
+/// [audioProfile] 由调用方按素材给：有声书 / 纯音频是干净朗读（默认，能量门限
+/// 够用且免掉每 32 ms 一次 ONNX 前向），视频是 `mixedAudio`（Parakeet + 滑窗）。
+/// 缺省值与 app 那边一致——同一份算法在两端跑出不同行为比慢一点糟得多。
+asr.AsrTranscriptionService createServerAsrTranscriptionService({
+  asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.cleanSpeech,
+}) =>
     asr.AsrTranscriptionService(
-      // 与 app 的 createAsrTranscriptionService 取同一个档位：有声书是干净朗读，
-      // 能量门限够用且免掉每 32 ms 一次 ONNX 前向。混音素材要换 mixedAudio。
-      // 两处必须一致——同一份算法在两端跑出不同行为比慢一点糟得多。
-      audioProfile: asr.AsrAudioProfile.cleanSpeech,
+      audioProfile: audioProfile,
       backend: asr.AsrIsolateBackend(
         buildFactory: buildServerAsrOnnxFactory,
         bootstrap: serverAsrIsolateBootstrap,

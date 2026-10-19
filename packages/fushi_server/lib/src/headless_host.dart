@@ -15,6 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart' show FushiDicts;
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
+import 'package:fushi_asr_core/asr_core.dart' as asr show AsrAudioProfile;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
@@ -214,7 +215,8 @@ class HeadlessHost {
       jobRoot: paths.hostJobs,
       runners: <HostJobRunner>[
         AsrHostJobRunner(
-          serviceFactory: createServerAsrTranscriptionService,
+          serviceFactory: (asr.AsrAudioProfile profile) =>
+              createServerAsrTranscriptionService(audioProfile: profile),
           resolveVideoPath: _resolveVideoPath,
         ),
       ],

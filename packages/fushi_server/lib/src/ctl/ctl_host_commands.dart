@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:fushi_engine/asr/asr_host_job_runner.dart' show asrAudioProfileForJob;
 import 'package:fushi_server/src/ctl/admin_client.dart';
 
 /// admin 代理前缀。
@@ -65,6 +66,11 @@ void addCtlHostOptions(ArgParser parser) {
     ..addOption('after', help: 'assistant show：只要比这个 revision 新的视图')
     ..addFlag('wait', negatable: false, help: 'assistant show：长轮询等新视图；jobs submit：等任务结束')
     ..addOption('language', abbr: 'l', help: 'jobs submit asr：语言 tag', defaultsTo: 'ja')
+    ..addOption(
+      'profile',
+      help: 'jobs submit asr：cleanSpeech | mixedAudio（缺省按文件扩展名，视频 → mixedAudio）',
+      allowed: <String>['cleanSpeech', 'mixedAudio'],
+    )
     ..addOption('out', abbr: 'o', help: 'jobs submit / result：产物写到这里');
 }
 
@@ -84,7 +90,7 @@ const String kCtlHostUsage = '''
          | episode-group <bookUid> --episode-group <g>      （合集作品用 --collection 名 --collection-type 类型）
          | pending | sweep（补刮从未识别的作品） | ai-identify <pending id>
   activity | collections | tags | tombstones
-  jobs submit asr <音频> [-l ja] [-o x.srt] [--wait] | get <id> | result <id> [产物名] [-o 文件]
+  jobs submit asr <音频> [-l ja] [--profile cleanSpeech|mixedAudio] [-o x.srt] [--wait] | get <id> | result <id> [产物名] [-o 文件]
   assistant start --feature <f> | show <id> [--after n] [--wait] | act <id> '<json>' | stop <id>
   host <GET|POST|PUT|DELETE> <互联路径，如 library/books> ['<json>']   直调任意互联接口''';
 
@@ -348,7 +354,16 @@ Future<int> _submitJob(
       '$kHostProxy/jobs',
       body: <String, Object?>{
         'kind': 'asr',
-        'params': <String, Object?>{'language': command['language'] as String, 'input': 'audio'},
+        'params': <String, Object?>{
+          'language': command['language'] as String,
+          'input': 'audio',
+          // 上传后的输入名固定是 `audio`（无扩展名），服务端按扩展名判不出视频，
+          // 所以素材档位在这边按本地文件名定好再带过去。
+          'audioProfile': asrAudioProfileForJob(
+            explicit: command['profile'] as String?,
+            path: audio.path,
+          ).name,
+        },
       },
     );
     final String? id = created is Map ? created['jobId']?.toString() : null;
