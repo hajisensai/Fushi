@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3180 条。点号进各自文件。
+> 共 3181 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3551](bugs/BUG-3551-srs-delete-deck-late-cards-left-in-deleted-deck.md) | ✅ | ✅ | 复习：删牌组期间放进来的卡 / 新建的子牌组留在已删除的牌组下 |
 | [BUG-3550](bugs/BUG-3550-srs-legacy-lapis-migration-drops-fields.md) | ✅ | ✅ | 旧 Lapis 迁到 Fushi 卡片时部分字段内容没跟过去，导入 / 改名的 Lapis 无法一键迁移 |
 | [BUG-3549](bugs/BUG-3549-srs-apkg-import-slow-blocking.md) | ✅ | ✅ | 复习：Anki 包导入慢且阻塞在模态对话框里，不能后台导入 |
 | [BUG-3548](bugs/BUG-3548-srs-deck-create-slow-list-stale.md) | ✅ | ✅ | 复习：新建牌组慢、列表不立即出现新牌组 |

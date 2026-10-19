@@ -1940,12 +1940,7 @@ class SrsDbStore implements SrsSyncReplica {
     final SrsDeckTree tree = await deckTree();
     final List<String> sub = tree.subtree(deckId);
     final String target = tree.parentOf(deckId) ?? defaultDeckId;
-    final List<String> cards = <String>[
-      for (final SrsCardCacheRow c in await (db.select(
-        db.srsCardsCache,
-      )..where((c) => c.deckId.isIn(sub))).get())
-        c.id,
-    ];
+    final List<String> cards = await _cardIdsInDecks(sub);
     onProgress?.call(0, cards.length);
     for (int i = 0; i < cards.length; i += _deleteDeckChunk) {
       final List<String> chunk = cards.sublist(
@@ -1958,11 +1953,35 @@ class SrsDbStore implements SrsSyncReplica {
       );
       onProgress?.call(i + chunk.length, cards.length);
     }
+    // 收尾在一个独占区里：子树、目标牌组、子树里还剩的卡都**在这里重读**——分块期间别的写入
+    // （后台导入把卡放进这个子树、建了新的子牌组、挪走了父牌组）已经落库，按开头那份快照写删除
+    // 标记会把它们留在已删除的牌组下面。重读与写删除标记之间没有别的写入能插进来。
     await runExclusive(() async {
+      final SrsDeckTree now0 = await deckTree();
+      if (now0[deckId] == null) return; // 期间已被别处删掉
+      final List<String> subNow = now0.subtree(deckId);
+      final String targetNow = now0.parentOf(deckId) ?? defaultDeckId;
+      final List<String> late = await _cardIdsInDecks(subNow);
+      for (int i = 0; i < late.length; i += _deleteDeckChunk) {
+        await _editEach(
+          SrsEntityKind.card,
+          late.sublist(i, min(i + _deleteDeckChunk, late.length)),
+          SrsFieldKeys.cardDeck,
+          targetNow,
+        );
+      }
       final (int nowMs, _) = now();
-      await _editEach(SrsEntityKind.deck, sub, SrsFieldKeys.deleted, nowMs);
+      await _editEach(SrsEntityKind.deck, subNow, SrsFieldKeys.deleted, nowMs);
     });
   }
+
+  /// 缓存里归在 [deckIds] 这些牌组下的卡。
+  Future<List<String>> _cardIdsInDecks(List<String> deckIds) async => <String>[
+    for (final SrsCardCacheRow c in await (db.select(
+      db.srsCardsCache,
+    )..where((c) => c.deckId.isIn(deckIds))).get())
+      c.id,
+  ];
 
   /// 给 [ids] 每个实体的同一个字段键写同一个值（值没变的跳过）：现值一次预读，序号按 [ids] 的顺序
   /// 分配，一次落库。与逐个 `editField` 同结果。调用方已在独占区里。
