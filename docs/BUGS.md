@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3181 条。点号进各自文件。
+> 共 3184 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3554](bugs/BUG-3554-srs-reimport-reverts-user-card-moves.md) | ✅ | ✅ | 复习：重新导入 / 迁移 Anki 把用户在 Fushi 里挪过牌组 / 暂停过的卡改回 Anki 的状态 |
+| [BUG-3553](bugs/BUG-3553-srs-import-report-counts-unlanded-notes.md) | ✅ | ✅ | 复习：导入报告把落库时已存在的笔记也算作新增 |
+| [BUG-3552](bugs/BUG-3552-srs-import-deck-preset-not-atomic.md) | ✅ | ✅ | 复习：导入 Anki 包时牌组与牌组设置分两轮写，中途失败或被杀后设置永远不写 |
 | [BUG-3551](bugs/BUG-3551-srs-delete-deck-late-cards-left-in-deleted-deck.md) | ✅ | ✅ | 复习：删牌组期间放进来的卡 / 新建的子牌组留在已删除的牌组下 |
 | [BUG-3550](bugs/BUG-3550-srs-legacy-lapis-migration-drops-fields.md) | ✅ | ✅ | 旧 Lapis 迁到 Fushi 卡片时部分字段内容没跟过去，导入 / 改名的 Lapis 无法一键迁移 |
 | [BUG-3549](bugs/BUG-3549-srs-apkg-import-slow-blocking.md) | ✅ | ✅ | 复习：Anki 包导入慢且阻塞在模态对话框里，不能后台导入 |

@@ -189,6 +189,7 @@ class _SrcCard {
       did = r['did'] as int,
       odid = r['odid'] as int,
       ord = r['ord'] as int,
+      mod = (r['mod'] as int?) ?? 0,
       type = r['type'] as int,
       queue = r['queue'] as int,
       due = r['due'] as int,
@@ -203,6 +204,9 @@ class _SrcCard {
   final int did;
   final int odid;
   final int ord;
+
+  /// Anki 卡片修改时刻（秒）。
+  final int mod;
   final int type;
   final int queue;
   final int due;
@@ -787,6 +791,7 @@ class _Importer {
     SrsDeckTree tree = await store.deckTree();
     final Map<String, String> idByName = <String, String>{};
     final Set<String> created = <String>{};
+    final Set<int> reportedPresets = <int>{};
     for (final String full in ordered) {
       final List<String> parts = _parts(full);
       final String leaf = parts.last;
@@ -804,30 +809,42 @@ class _Importer {
         idByName[full] = found;
         continue;
       }
-      final String id = srsImportedDeckId(profileUid, full);
-      if (tree[id] != null) {
-        // 用户把先前导入的同名牌组改了名 / 挪了位置：不复用，另建一个。
-        idByName[full] = await store.createDeck(leaf, parentId: parent);
-      } else {
-        await store.importEvents(<SrsEvent>[
-          SrsEntityEvent(
-            SrsEntityRecord(
-              id: id,
-              profileUid: profileUid,
-              kind: SrsEntityKind.deck,
-              payload: const <String, Object?>{'createdAt': 0},
-            ),
-          ),
-        ]);
-        await store.editFields(SrsEntityKind.deck, id, <String, Object?>{
-          SrsFieldKeys.name: leaf,
-          if (parent != null) SrsFieldKeys.deckParent: parent,
-          // 先前导入过、后来被删：重新导入即恢复。
-          if (await _deckDeleted(id)) SrsFieldKeys.deleted: null,
-        });
-        idByName[full] = id;
-        created.add(full);
+      String id = srsImportedDeckId(profileUid, full);
+      // 用户把先前导入的同名牌组改了名 / 挪了位置：不复用，按 createDeck 的派生另建（或沿用
+      // 同全名的那个）。它不算本次「首次新建」，不带牌组设置（与以前相同）。
+      final bool renamedImport = tree[id] != null;
+      if (renamedImport) {
+        final String parentPath = parent == null || tree[parent] == null
+            ? ''
+            : '${tree.fullName(parent)}::';
+        id = SrsIds.deck(profileUid, '$parentPath$leaf');
       }
+      // 身份记录、名字 / 父牌组、牌组设置**同一个事务**落库（writeEdits）：以前先建牌组、全部
+      // 建完再另起一轮写设置，中间失败或被杀时牌组已在、重跑不再算「新建」，设置永远不写（BUG-3552）。
+      final Map<String, Object?> values = <String, Object?>{
+        SrsFieldKeys.name: leaf,
+        if (parent != null) SrsFieldKeys.deckParent: parent,
+        // 先前导入过（或同名建过）、后来被删：重新导入即恢复。
+        if (await _deckDeleted(id)) SrsFieldKeys.deleted: null,
+        if (!renamedImport)
+          ..._newDeckSettings(full, byName, created, reportedPresets),
+      };
+      await store.writeEdits(
+        <SrsEditSpec>[
+          for (final MapEntry<String, Object?> v in values.entries)
+            SrsEditSpec(SrsEntityKind.deck, id, v.key, v.value),
+        ],
+        records: <SrsEntityRecord>[
+          SrsEntityRecord(
+            id: id,
+            profileUid: profileUid,
+            kind: SrsEntityKind.deck,
+            payload: const <String, Object?>{'createdAt': 0},
+          ),
+        ],
+      );
+      idByName[full] = id;
+      if (!renamedImport) created.add(full);
       tree = await store.deckTree();
     }
 
@@ -843,14 +860,21 @@ class _Importer {
           if (created.contains(full) && byName[full] != null)
             byName[full]!.configId,
       }.where(col.presets.containsKey).length;
-      return;
     }
+  }
 
-    // 牌组设置：只在首次建牌组时写。
-    final Set<int> reportedPresets = <int>{};
-    for (final String full in ordered) {
-      if (!created.contains(full)) continue;
-      final SrsAnkiDeck? src = byName[full];
+  /// 首次建牌组 [full] 时随它一起写的设置（预设参数 / 继承方式 / 收起 / fushi-ext 的牌组键）。
+  /// [created] 是本次已新建的牌组全名（父牌组先于子牌组建）。不含牌组预设时什么也不写（新牌组用
+  /// 本机默认，同 Anki）。
+  Map<String, Object?> _newDeckSettings(
+    String full,
+    Map<String, SrsAnkiDeck> byName,
+    Set<String> created,
+    Set<int> reportedPresets,
+  ) {
+    final SrsAnkiDeck? src = byName[full];
+    final Map<String, Object?> values = <String, Object?>{};
+    if (options.withDeckConfigs) {
       final SrsAnkiPreset? preset = src == null
           ? null
           : col.presets[src.configId];
@@ -868,13 +892,15 @@ class _Importer {
           created.contains(parentName) &&
           parentSrc != null &&
           parentSrc.configId == preset.id;
-      final Map<String, Object?> values = preset == null
-          ? <String, Object?>{}
-          : _presetValues(
-              preset,
-              own: !inherit,
-              report: reportedPresets.add(preset.id),
-            );
+      if (preset != null) {
+        values.addAll(
+          _presetValues(
+            preset,
+            own: !inherit,
+            report: reportedPresets.add(preset.id),
+          ),
+        );
+      }
       if (parentName != null) {
         values[SrsFieldKeys.deckParamsMode] = inherit ? 'inherit' : 'own';
       }
@@ -888,10 +914,8 @@ class _Importer {
           if (ext.containsKey(k)) values[k] = ext[k];
         }
       }
-      if (values.isNotEmpty) {
-        await store.editFields(SrsEntityKind.deck, idByName[full]!, values);
-      }
     }
+    return values;
   }
 
   /// 身份记录已存在、却不在牌组树里 = 先前导入过、后来被删。
@@ -1004,8 +1028,8 @@ class _Importer {
       col.db.select('SELECT count(*) AS n FROM notes').first['n'] as int,
     );
     final PreparedStatement cardsOf = col.db.prepare(
-      'SELECT id, did, odid, ord, type, queue, due, odue, ivl, factor, reps, '
-      'lapses, data FROM cards WHERE nid = ? ORDER BY ord, id',
+      'SELECT id, did, odid, ord, mod, type, queue, due, odue, ivl, factor, '
+      'reps, lapses, data FROM cards WHERE nid = ? ORDER BY ord, id',
     );
     final PreparedStatement revlogOf = col.db.prepare(
       'SELECT id, ease, ivl, factor, time, type FROM revlog WHERE cid = ? ORDER BY id',
@@ -1042,11 +1066,28 @@ class _Importer {
   /// 导入开始时本机已有的笔记 ID（见 [_importNotes]）。
   Set<String> _existingNotes = const <String>{};
 
+  /// 本批里当作新笔记攒下的（noteId, 卡数）：落库后按实际是否新建计入报告（BUG-3553）。
+  final List<(String, int)> _pendingNewNotes = <(String, int)>[];
+
   Future<void> _flush({bool force = false}) async {
     if (_pending.isEmpty || (!force && _pending.length < _batchEvents)) return;
     final List<SrsEventDraft> batch = List<SrsEventDraft>.of(_pending);
+    final List<(String, int)> newNotes = List<(String, int)>.of(
+      _pendingNewNotes,
+    );
     _pending.clear();
-    await store.importDrafts(batch);
+    _pendingNewNotes.clear();
+    final Set<String> existed = await store.importDrafts(batch);
+    for (final (String noteId, int cards) in newNotes) {
+      if (existed.contains(noteId)) {
+        // 攒批期间同一条笔记已被同步 / 别处建好：初值里键已有记录的没落（见
+        // SrsEditDraft.initial），不算新增。
+        report.notesSkipped++;
+      } else {
+        report.notesAdded++;
+        report.cardsAdded += cards;
+      }
+    }
   }
 
   Future<void> _importNote(
@@ -1106,8 +1147,7 @@ class _Importer {
           createdAt: n['id'] as int,
         ),
       );
-      report.notesAdded++;
-      report.cardsAdded += cards.length;
+      _pendingNewNotes.add((noteId, cards.length));
     } else if (existing.noteTypeId != nt.id) {
       report.conflictNotes.add(
         SrsImportNoteIssue(
@@ -1197,8 +1237,22 @@ class _Importer {
     }
     final SrsCardCacheRow? row = await store.cardRow(cardId);
     if (row == null) return;
-    if (row.deckId != deck) await store.moveCard(cardId, deck);
-    if (withSuspend && row.suspended != suspended) {
+    // 本机在来源卡片最后修改之后改过的（用户在 Fushi 里挪过牌组 / 暂停过）不覆盖：按这个键的
+    // 修改记录时刻与 Anki 卡片 mod 比，新的赢（同 Anki 导入对已有卡片的「较新时更新」）。
+    // 以前笔记内容一更新就无条件改回 Anki 的牌组 / 暂停状态（BUG-3554）。
+    final SrsEntityEdits edits = await store.entityEdits(
+      SrsEntityKind.card,
+      cardId,
+    );
+    final int sourceMs = c.mod * 1000;
+    bool localNewer(String key) =>
+        _lastEditMs(edits, (String k) => k == key, 0) > sourceMs;
+    if (row.deckId != deck && !localNewer(SrsFieldKeys.cardDeck)) {
+      await store.moveCard(cardId, deck);
+    }
+    if (withSuspend &&
+        row.suspended != suspended &&
+        !localNewer(SrsFieldKeys.suspended)) {
       await store.setSuspended(cardId, suspended);
     }
   }

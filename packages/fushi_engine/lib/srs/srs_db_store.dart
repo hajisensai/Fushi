@@ -430,6 +430,10 @@ class SrsDbStore implements SrsSyncReplica {
     return out;
   }
 
+  /// 一个实体的全部修改记录（只读；导入按记录时刻判断本机改动是否比来源新）。
+  Future<SrsEntityEdits> entityEdits(SrsEntityKind kind, String id) =>
+      _entityEdits(kind, id);
+
   Future<SrsEntityEdits> _entityEdits(SrsEntityKind kind, String id) async {
     final List<SrsFieldEditRow> rows =
         _RefreshPrefetch.current?.edits['${kind.wire}/$id'] ??
@@ -911,16 +915,44 @@ class SrsDbStore implements SrsSyncReplica {
   /// 导入攒的一批草稿（[newNoteDrafts] / [newEditDrafts] + 已定稿的日志等）落库：同 [importEvents]，
   /// 但修改记录的序号 / HLC 在这里、落库的同一个独占区里才分配——攒批期间（读包、解析、别的写入）
   /// 不占序号，落库顺序 = 序号顺序（BUG-3545，以前攒批时就分配，期间插进来的本机写入先落库）。
-  Future<void> importDrafts(List<SrsEventDraft> drafts) async {
-    if (drafts.isEmpty) return;
-    await runExclusive(() async {
+  ///
+  /// 返回这批身份记录里**落库前就已存在**的实体 ID（导入据此按实际新建数计数：攒批时以为是新
+  /// 笔记、落库时已被同步 / 别处建好的，不算「新增」）。
+  Future<Set<String>> importDrafts(List<SrsEventDraft> drafts) async {
+    if (drafts.isEmpty) return const <String>{};
+    return runExclusive(() async {
+      final Set<String> existed = await _existingEntityIds(<String>[
+        for (final SrsEventDraft d in drafts)
+          if (d case SrsReadyDraft(
+            event: SrsEntityEvent(:final SrsEntityRecord record),
+          ))
+            record.id,
+      ]);
       final List<SrsEventDraft> live = await _dropAuthoredInitials(drafts);
       _receiveAll(<SrsEvent>[
         for (final SrsEventDraft d in live)
           if (d case SrsReadyDraft(:final SrsEvent event)) event,
       ]);
       await _emit(_finalize(live));
+      return existed;
     });
+  }
+
+  /// [ids] 里已有身份记录的（按 ID 分块查）。
+  Future<Set<String>> _existingEntityIds(List<String> ids) async {
+    final Set<String> out = <String>{};
+    final $SrsEntitiesTable t = db.srsEntities;
+    for (final List<String> chunk in _chunks(ids)) {
+      final List<TypedResult> rows =
+          await (db.selectOnly(t)
+                ..addColumns(<Expression<Object>>[t.id])
+                ..where(t.id.isIn(chunk)))
+              .get();
+      for (final TypedResult r in rows) {
+        out.add(r.read(t.id)!);
+      }
+    }
+    return out;
   }
 
   /// 去掉「初值」草稿（[SrsEditDraft.initial]）里键已有修改记录的：一次按实体分块查出现有的
