@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';

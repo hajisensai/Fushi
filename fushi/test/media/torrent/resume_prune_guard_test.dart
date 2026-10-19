@@ -24,6 +24,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:path/path.dart' as p;
 
+import '../../helpers/source_guard.dart';
+
 String _read(String relPath) => File(relPath).readAsStringSync();
 
 void main() {
@@ -148,8 +150,8 @@ void main() {
       expect(
           host.contains('int restoreFromResume(Set<String>? keepIds)'), true);
       expect(
-          host.contains(
-              'int? saveResumeSnapshot(Set<String>? keepIds, {bool force = false})'),
+          RegExp(r'int\? saveResumeSnapshot\(\s*Set<String>\? keepIds,')
+              .hasMatch(host),
           isTrue);
       expect(host.contains('void dispose({Set<String>? keepIds})'), isTrue,
           reason: 'dispose 的 keepIds 默认值若是空集合，退出时同样会删光 resume');
@@ -158,10 +160,9 @@ void main() {
     });
 
     test('保存/剪枝失败必须留痕，不许静默吞', () {
-      final int i = host.indexOf('int? saveResumeSnapshot(');
-      expect(i, greaterThanOrEqualTo(0));
-      final int end = host.indexOf('\n  }', i);
-      final String body = host.substring(i, end > i ? end : i + 2500);
+      // 窗口=方法体（花括号配对）：签名换行后 `\n  }) {` 会让「找下一个
+      // `\n  }`」在签名处就截断，窗口里一行方法体都没有。
+      final String body = methodBody(host, 'int? saveResumeSnapshot(');
       // 引擎不依赖 Flutter：debugPrint 经 fushi_core 的 fushiDebugPrint 装配点。
       expect(body.contains('fushiDebugPrint('), isTrue,
           reason: 'resume 长期写不进去 = 重启后所有下载蒸发，必须可见');

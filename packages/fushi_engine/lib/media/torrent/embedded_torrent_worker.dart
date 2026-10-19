@@ -342,17 +342,23 @@ class EmbeddedTorrentWorker {
       exits.close();
       return null;
     }
-    // 工作 isolate 在握手前就死掉（原生崩溃之外的意外）时 onExit 先到。
+    // ReceivePort 只能订阅一次：退出端口全程一个订阅，握手前通知握手失败
+    // （工作 isolate 在握手前就死掉时 onExit 先到），握手后交给 worker。
     final Completer<_Handshake?> shake = Completer<_Handshake?>();
-    final StreamSubscription<Object?> exitBeforeShake = exits.listen((_) {
-      if (!shake.isCompleted) shake.complete(null);
+    EmbeddedTorrentWorker? opened;
+    exits.listen((_) {
+      final EmbeddedTorrentWorker? worker = opened;
+      if (worker != null) {
+        worker._onExit();
+      } else if (!shake.isCompleted) {
+        shake.complete(null);
+      }
     });
     handshake.listen((Object? message) {
       if (!shake.isCompleted && message is _Handshake) shake.complete(message);
     });
     final _Handshake? reply = await shake.future;
     handshake.close();
-    await exitBeforeShake.cancel();
     final SendPort? requestPort = reply?.requestPort;
     if (reply == null || requestPort == null) {
       logs.close();
@@ -361,7 +367,7 @@ class EmbeddedTorrentWorker {
     }
     final ReceivePort responses = ReceivePort('embedded-torrent-response');
     requestPort.send(responses.sendPort);
-    final EmbeddedTorrentWorker worker = EmbeddedTorrentWorker._(
+    final EmbeddedTorrentWorker worker = opened = EmbeddedTorrentWorker._(
       isolate: isolate,
       requestPort: requestPort,
       responses: responses,
@@ -371,7 +377,6 @@ class EmbeddedTorrentWorker {
       hasRestoredAtOpen: reply.hasRestored,
     );
     responses.listen(worker._onResponse);
-    exits.listen((_) => worker._onExit());
     return worker;
   }
 
