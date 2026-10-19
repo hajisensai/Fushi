@@ -96,6 +96,8 @@ void main() {
           p.join(root, 'A', 'ch01', '001.jpg'),
           p.join(root, 'A', 'ch02', '001.jpg'),
           p.join(root, 'A', 'extra.cbz'),
+          // 包旁的封面单独看是「封面」，但 A 里还有没包认领的章节目录，A 仍成卷。
+          p.join(root, 'A', 'cover.jpg'),
           // 系列 B：封面在系列目录、包在卷子目录 → 封面不是一卷。
           p.join(root, 'B', 'cover.jpg'),
           p.join(root, 'B', 'v1', 'v1.cbz'),
