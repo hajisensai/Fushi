@@ -20,12 +20,11 @@ import 'package:fushi_compute/fushi_compute.dart';
 ///   自闭合非 void 元素改写成显式成对标签（在 XHTML 里是同一个空元素），void 元素
 ///   （`<br/>`、`<img/>`…）保留自闭合。属性里的引号串整段当一个 token，属性值内的字面 `/>`
 ///   （`<a href="a/>b"/>`）不会被当成标签结尾。
-/// - **插图 lazy**（[markImagesLazy]，TODO-perf 跨章·图片）：阅读器 JS 给 `<img>` 挂 lazy 的
-///   那段跑在 `load` 之后，来不及影响本次加载，所以在生成 HTML 时就写 `loading="lazy"
-///   decoding="async"`。eager 例外与 JS 侧同款且更保守（Dart 侧 eager 集合是 JS 侧的超集）：
-///   纯图片章整章 eager（TODO-1349，分页几何要靠插图真实撑开）；`class` 含 `gaiji` 的内联小图
-///   参与文字排版几何；已显式写了 `loading=` 的标签尊重原书——合并前导插图自带
-///   `loading="eager"`（TODO-1339），因此不依赖与注入步的先后顺序。
+/// - **插图不懒加载**（[stripImageLoadingAttributes]，BUG-3533）：去掉正文 `<img>` 的
+///   `loading` 属性（连原书自带的 `loading="lazy"` 一起），所有插图按浏览器默认（eager）
+///   加载。分页 / 连续 / VN 的章节几何（maxScroll、章首章末落点、跨章判定、VN 屏切分）都要靠
+///   每张图的真实尺寸：懒图在离视口远的分页列 / 脱离文档的 VN 源树里永不加载、保持 0 尺寸，
+///   章节被算短，插图还没看完就被判到章末跨章。跨章首开的读图开销由下一章插图预热承担。
 /// - **合并前导插图**（[injectImagesAfterBodyOpen]，TODO-1174）：插到 `<body…>` 之后（独立
 ///   插图属于它引出的那章的开头）；没有 `<body>` 时前置到整篇之前。
 /// - **head 注入**（[injectReaderHead]）：`headStart` 紧跟 `<head>`（FOUC 遮罩必须先于书内 CSS
@@ -39,11 +38,10 @@ abstract final class ReaderResourceSanitizer {
 
   /// 章节 HTML 整条链：[raw] 是磁盘上的原始字节（非 UTF-8 字节按 U+FFFD 容忍，
   /// HBK-AUDIT-118），返回下发给 WebView 的最终 UTF-8 字节。顺序固定为 XHTML 自闭合 →
-  /// 插图 lazy（[eagerAll] 时跳过）→ 合并前导插图 [mergedImagesHtml] → head 注入。
+  /// 去掉插图 `loading` 属性 → 合并前导插图 [mergedImagesHtml] → head 注入。
   /// 文档里 `</head>` 早于 `<head…>` 结束时抛 [RangeError]（与旧实现相同）。
   static Uint8List buildChapterHtmlBytes(
     Uint8List raw, {
-    required bool eagerAll,
     required String mergedImagesHtml,
     required String headStart,
     required String headEnd,
@@ -52,7 +50,7 @@ abstract final class ReaderResourceSanitizer {
       raw,
       steps:
           ReaderSanitizeNative.stepXhtml |
-          (eagerAll ? 0 : ReaderSanitizeNative.stepLazyImages) |
+          ReaderSanitizeNative.stepStripImageLoading |
           ReaderSanitizeNative.stepBodyImages |
           ReaderSanitizeNative.stepReaderHead,
       images: _utf8(mergedImagesHtml),
@@ -68,11 +66,9 @@ abstract final class ReaderResourceSanitizer {
   static String sanitizeXhtml(String html) =>
       _step(html, ReaderSanitizeNative.stepXhtml);
 
-  /// 单步：给 `<img>` 写 lazy / async；[eagerAll] 时原样返回。
-  static String markImagesLazy(String html, {bool eagerAll = false}) {
-    if (eagerAll) return html;
-    return _step(html, ReaderSanitizeNative.stepLazyImages);
-  }
+  /// 单步：去掉 `<img>` 的 `loading` 属性（引号内的字样不动，标签名大小写原样保留）。
+  static String stripImageLoadingAttributes(String html) =>
+      _step(html, ReaderSanitizeNative.stepStripImageLoading);
 
   /// 单步：[imagesHtml] 插到 `<body…>` 之后（前后各加一个换行）；为空时原样返回。
   static String injectImagesAfterBodyOpen(String html, String imagesHtml) {

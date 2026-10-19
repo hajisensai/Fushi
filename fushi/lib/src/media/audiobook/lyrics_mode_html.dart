@@ -69,7 +69,6 @@ class LyricsModeHtml {
       '--ly-self': theme.alignStart ? 'stretch' : 'auto',
       '--ly-ctx-blur': '${theme.contextBlurPx.toStringAsFixed(1)}px',
       '--ly-radius': '${theme.rowRadius.toStringAsFixed(1)}px',
-      '--ly-hover': _css(theme.hoverFill),
       '--ly-pill-bg': _css(current.withValues(alpha: 0.16)),
       '--ly-pill-fg': _css(current),
       '--ly-past-k': theme.pastOpacityFactor.clamp(0.0, 1.0).toStringAsFixed(3),
@@ -489,7 +488,6 @@ body.ly-reduce #ly-follow { transition: none !important; }
 .cue:not(.ly-vis) { transition: none !important; }
 body.ly-ctxblur .cue:not(.current) { filter: blur(var(--ly-ctx-blur, 0px)); }
 @media (hover: hover) {
-  body.ly-themed .cue:hover { background-color: var(--ly-hover, transparent); }
   body.ly-themed .cue:not(.current):hover { opacity: 0.84; }
 }
 /* 逐字扫过：当前行按播放进度从左到右点亮（未读部分 = 当前色 × 0.4）。.tx 是行内

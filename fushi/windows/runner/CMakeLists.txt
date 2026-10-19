@@ -38,7 +38,7 @@ add_executable(${BINARY_NAME} WIN32
   "global_mouse_trigger.cpp"
   "hang_watchdog.cpp"
   "hdr_desktop_capture.cpp"
-  "hdr_video_host_window.cpp"
+  "hdr_display_info.cpp"
   "hook_toolbar_window.cpp"
   "ime_association_guard.cpp"
   "ime_language_switch.cpp"

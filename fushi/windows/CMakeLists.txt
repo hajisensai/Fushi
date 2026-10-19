@@ -139,8 +139,9 @@ endif()
 # isolate 里抛异常，而那个 worker 的 execute() 没有 try/catch（pdfrx_engine 的
 # worker.dart），回包 SendPort.send 永不执行 → 主 isolate 的 await 永不完成。
 #
-# sqlite3.dll 掩盖过这个缺口：它同时由 sqlite3_flutter_libs 走 PLUGIN_BUNDLED_LIBRARIES
-# 装进 bundle，所以 native-assets 这条通道从来没通过也看不出来。
+# sqlite3.dll 曾掩盖过这个缺口：它当时同时由 sqlite3_flutter_libs 走
+# PLUGIN_BUNDLED_LIBRARIES 装进 bundle，所以 native-assets 这条通道从来没通过也看不出来。
+# 该插件已移除，sqlite3.dll 现在也只经这条 native-assets 通道进 bundle。
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"
    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"

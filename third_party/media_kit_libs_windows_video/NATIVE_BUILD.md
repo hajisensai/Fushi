@@ -6,9 +6,9 @@ including upstream HDMV/BD-J navigation added on 2026-08-25. The previous
 2026-08-13 binary had neither `discnav` nor `disc-menu`; updating Flutter alone
 could not enable original menus.
 
-Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1.7z` (45,377,913 bytes).
-SHA-256: `ed99f5667b6616ef962af31a6fc545301a6fe114ffccbf4d5178b922cf0951f4`.
-The `fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1` suffix identifies this patched build; it is not an
+Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1.7z` (45,379,793 bytes).
+SHA-256: `3e2fda6200dcef9ceb657c4b7350df387e764c7ccc1ad3cf63e671ee2dd8ae88`.
+The `fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1` suffix identifies this patched build; it is not an
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
 
@@ -46,6 +46,21 @@ This rebuild differs from the `lua1-mkvlace1` archive only in `libmpv-2.dll`,
 patches under `demux_patches`); the other 234 files are byte-identical (same
 MSYS2 package set). `verify_mkv_lace_dump.py` checks both fixes against the
 real library (`tests/laced-opus.mkv`, `tests/open-gop-hevc.mkv`).
+
+`tool/bluray/platforms/patches/mpv-gl-dovi-p5.patch` (BUG-2691, the same file
+Android / macOS / iOS ship) makes the texture renderer (`gl_video`, what
+`vo=libmpv` uses) reshape Dolby Vision profile 5: it reads the frame's
+`AV_FRAME_DATA_DOVI_METADATA` and ports libplacebo's RPU reshaping plus the
+IPT -> LMS -> RGB decode. Without it P5 shows inverted purple / green colours,
+which is why Windows used to switch DV sources to a separate `vo=gpu-next`
+host window. Profiles 7 / 8 are left alone and show their HDR10 base layer.
+The `-dovi1` rebuild differs from the `mkvdts1` archive only in
+`libmpv-2.dll`, `runtime-manifest.json` and `source-provenance.json` (which
+records the patch under `render_patches`). `verify_dovi_p5.py` renders
+`tests/dovi-p5.mkv` / `tests/dovi-p81.mkv` through the render API with
+d3d11va zero-copy, d3d11va-copy and software decoding and compares them with
+libplacebo's own rendering (measured: P5 mean error 0.36 / 255, the previous
+archive 114; P8.1 matches the base layer, 0.27).
 
 `patches/gpu-dumb-mode-hwdec-crop.patch` (BUG-3296) fixes upstream
 `pass_render_frame_dumb()` in `video/out/gpu/video.c`: the vo=gpu "dumb mode"

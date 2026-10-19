@@ -14,6 +14,23 @@ describe('注册（邮箱验证码）', () => {
     return { status: r.status, code: lastCode(env, email) };
   }
 
+  it('邮件正文吞掉换行后验证码也不和后面的数字粘连（通知栏 / 列表摘要）', async () => {
+    const env = makeEnv();
+    for (const [i, lang] of ['zh', 'en', 'ja'].entries()) {
+      const email = `digits${i}@example.com`;
+      const r = await call(env, 'POST', '/v1/email/code', {
+        body: { email, purpose: 'register', lang },
+        headers: { 'CF-Connecting-IP': nextIp() },
+        now: NOW,
+      });
+      expect(r.status).toBe(202);
+      const code = lastCode(env, email);
+      const flat = env.sent.at(-1).text.replace(/\s+/g, '');
+      expect(flat).toContain(code);
+      expect(flat).not.toMatch(new RegExp(`${code}\\d`));
+    }
+  });
+
   it('验证码注册 201；同一把钥匙重复注册返回同一账户 200（不再要验证码）', async () => {
     const env = makeEnv();
     const key = await newKey();

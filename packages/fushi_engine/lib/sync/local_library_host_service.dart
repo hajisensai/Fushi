@@ -262,7 +262,8 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   @override
   final Future<void> Function(Future<void> Function() body) _runExclusive;
 
-  /// 同步状态域（聚合快照折叠 / 合集清单合并）专用的**窄**互斥（BUG-2717）。
+  /// 同步状态域（聚合快照折叠 / 合集清单合并 / 对端进度与播放位置的读-比较-写）
+  /// 专用的**窄**互斥（BUG-2717）。
   ///
   /// 这两个对端写只是本机 DB 的读-改-写，唯一需要互斥的对象是「同一批表上的其它
   /// 本地 apply 步骤」——包括本机自己作为 client 出站同步时的聚合 / 合集落库。它们

@@ -7,14 +7,14 @@ part of '../reader_fushi_history_page.dart';
 /// 勾选框（仅 [localFilesSubtitle] 非 null 时渲染——书/PDF/漫画导入即拷贝进 app 目录、
 /// 原件路径根本没入库，只有显式登记了 app 目录之外的原始音频路径的有声书/字幕书才有
 /// 本机可删的原件）。副标题必须由调用方给出、如实说清删的是什么，不能回落到通用措辞。
-/// [rememberedChoices] 恢复两个选项的默认值；「记住这些选择」只保存默认值，不跳过
-/// 本确认框。
+/// [rememberedChoices] 是上次确认删除时两个选项的状态，用作本次默认值；确认后经
+/// [onPersistChoices] 写回本次状态（取消不写）。只决定默认值，不跳过本确认框。
 /// [showSyncScope]=false 时把同步勾选框换成 [DeleteScopeUnavailableNote] 说明行、恒
 /// keepLocalOnly——由调用方按 `hasDeletionPropagationChannel` 传入：本机一个同步通道
 /// 都没有时，那个勾选框兑现不了（TODO-2470 死角②）。取消返回 null。
 /// 漫画作品页「移出漫画书架」也用它（BUG-2513），删除确认的披露与传播语义两处一致。
 /// deleteStatistics 来自「同时删除统计数据」勾选（仅 [statisticsSubtitle] 非 null 时
-/// 渲染；恒从未勾开始、不进「记住这些选择」，与视频删除确认同一纪律）。
+/// 渲染；恒从未勾开始、不沿用上次状态，与视频删除确认同一纪律）。
 class ReaderHistoryDeleteDialog extends StatefulWidget {
   const ReaderHistoryDeleteDialog({
     required this.title,
@@ -44,7 +44,7 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
   /// 逐项披露真实删除范围；null 表示该入口暂未接入结构化披露。
   final DeletionDisclosure? disclosure;
   final DeletePromptRememberedChoices? rememberedChoices;
-  final Future<void> Function(DeletePromptRememberedChoices?)? onPersistChoices;
+  final Future<void> Function(DeletePromptRememberedChoices)? onPersistChoices;
 
   @override
   State<ReaderHistoryDeleteDialog> createState() =>
@@ -56,7 +56,6 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
   late bool _deleteLocalFiles;
   // 统计删除恒从未勾开始、不被记忆（见 [DeleteStatisticsRow]）。
   bool _deleteStatistics = false;
-  late bool _rememberChoices;
   bool _saving = false;
 
   @override
@@ -64,20 +63,17 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
     super.initState();
     _syncDelete = widget.rememberedChoices?.syncEverywhere ?? false;
     _deleteLocalFiles = widget.rememberedChoices?.deleteLocalFiles ?? false;
-    _rememberChoices = widget.rememberedChoices != null;
   }
 
   Future<void> _confirm() async {
     if (_saving) return;
     setState(() => _saving = true);
-    final DeletePromptRememberedChoices? choices = _rememberChoices
-        ? DeletePromptRememberedChoices(
-            syncEverywhere: _syncDelete,
-            deleteLocalFiles: _deleteLocalFiles,
-          )
-        : null;
     try {
-      await widget.onPersistChoices?.call(choices);
+      // 本次勾选状态即下次默认值；被隐藏的那一项保持加载来的旧值，不会被覆盖。
+      await widget.onPersistChoices?.call(DeletePromptRememberedChoices(
+        syncEverywhere: _syncDelete,
+        deleteLocalFiles: _deleteLocalFiles,
+      ));
     } catch (error, stackTrace) {
       debugPrint('Delete prompt preference write failed: $error\n$stackTrace');
     }
@@ -161,11 +157,6 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
                 value: _deleteStatistics,
                 subtitle: widget.statisticsSubtitle!,
                 onChanged: (bool v) => setState(() => _deleteStatistics = v),
-              ),
-            if (widget.showSyncScope || widget.localFilesSubtitle != null)
-              DeleteRememberChoicesRow(
-                value: _rememberChoices,
-                onChanged: (bool v) => setState(() => _rememberChoices = v),
               ),
           ],
         ),

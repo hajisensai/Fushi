@@ -4,6 +4,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart'
+    show kLookupPopupDefaultWidth;
 import 'package:fushi/src/lookup/ocr_block_sentence.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
     show resolveMineSentence;
@@ -500,11 +502,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   /// TODO-1352: 外部悬浮查词窗最大宽度 = 用户的 popupMaxWidth（与书内 / 首页查词弹窗
   /// 同一真值，取消旧的硬编码 480）。appModel 未初始化时（如 widget 测试直接渲染卡片、
-  /// prefsRepo 尚未装配）回退到默认 400（= PreferencesRepository.defaultPopupMaxWidth），
+  /// prefsRepo 尚未装配）回退到默认宽度（[kLookupPopupDefaultWidth]），
   /// 不触碰 prefsRepo 避免空解引用；生产路径仅在 isInitialised 后才有内容可查，回退窗口
   /// 无内容、观感无影响。
-  double get _externalPopupMaxWidth =>
-      appModel.isInitialised ? appModel.popupMaxWidth : 400.0;
+  double get _externalPopupMaxWidth => appModel.isInitialised
+      ? appModel.popupMaxWidth
+      : kLookupPopupDefaultWidth;
 
   /// TODO-872：anchorRect 为 null → 原 [Alignment.topCenter] 贴顶（**零变化**）；
   /// 非空 → 用 [computeFloatingLyricPopupRect] 算出贴被查字旁的矩形，[Positioned] 定位。

@@ -24,6 +24,7 @@ library;
 
 import 'dart:async';
 import 'dart:ui' as ui;
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
@@ -64,11 +65,22 @@ class MediaDetailBackdrop extends StatelessWidget {
     this.image,
     this.imageKey,
     this.blurSigma = 28,
+    this.artBand = false,
     super.key,
   });
 
   final ImageProvider? image;
   final Object? imageKey;
+
+  /// 露画面（[blurSigma] 为 0）时只把画面画在顶部一条与宽度等高的带里、带内渐隐
+  /// 到底色，而不是铺满整块。只给**窄式居中 hero**（手机单列：封面 + chip + 按钮
+  /// + 简介叠成一长条）传 true：横版 fanart 铺满竖长容器会被 cover 放大四五倍、
+  /// 再被起始侧底色冲成白雾（反馈「看不到背景插画」）。
+  ///
+  /// 判据由调用方按布局显式给出，不按容器宽高比猜：两栏整页背景在竖屏大屏 /
+  /// 桌面窄高窗里同样高 > 宽，宽式 hero 展开长简介后也会高 > 宽——按比例判会
+  /// 误切带，展开 / 收起简介时背景还会在两套画法之间跳变。
+  final bool artBand;
 
   /// 模糊强度。竖版封面垫底要重模糊（只留色彩）；横版 fanart 传 0 = 不模糊、
   /// 画面原样露出（BUG-3190：fanart 被 16 的模糊 + 72% 底色压成一片色雾，用户看
@@ -94,119 +106,199 @@ class MediaDetailBackdrop extends StatelessWidget {
     final ImageProvider? image = eink ? null : this.image;
     final Color base = cs.surface;
     final bool showArt = image != null && blurSigma <= 0;
-    return IgnorePointer(
-      child: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          ColoredBox(color: base),
-          if (image != null)
-            AnimatedSwitcher(
-              duration: motion.effectsSlow.duration,
-              // BUG-3355：默认 layoutBuilder 是 `Stack(alignment: center)`，子项拿到
-              // 的是**松**约束——Image 于是按自己的宽高比缩成「整高、居中」的一条
-              // 竖图（BoxFit.cover 在松约束下不生效），两栏详情页顶部就剩窗口中间
-              // 一块模糊竖条，用户看来是「莫名的毛玻璃」。背景必须铺满，交叉淡入
-              // 的新旧两层都撑满整块。
-              layoutBuilder: _expandedSwitcherLayout,
-              child: KeyedSubtree(
-                key: ValueKey<Object>(imageKey ?? image),
-                child: showArt
-                    ? Image(
-                        image: image,
-                        fit: BoxFit.cover,
-                        alignment: Alignment.topCenter,
-                        gaplessPlayback: true,
-                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                      )
-                    // ClipRect：模糊会把封面边缘的颜色向外晕开，ImageFiltered 默认
-                    // 不裁剪，晕出的部分落在 hero 底边之外、压在下方内容上，看起来
-                    // 就是 hero 底部一条带阴影的硬边（渐隐 scrim 只盖得住框内）。
-                    : ClipRect(
-                        child: ImageFiltered(
-                          imageFilter: ui.ImageFilter.blur(
-                            sigmaX: blurSigma,
-                            sigmaY: blurSigma,
-                            tileMode: TileMode.decal,
-                          ),
-                          child: Image(
-                            image: image,
-                            fit: BoxFit.cover,
-                            gaplessPlayback: true,
-                            errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                          ),
+    final Widget? art = image == null
+        ? null
+        : AnimatedSwitcher(
+            duration: motion.effectsSlow.duration,
+            // BUG-3355：默认 layoutBuilder 是 `Stack(alignment: center)`，子项拿到
+            // 的是**松**约束——Image 于是按自己的宽高比缩成「整高、居中」的一条
+            // 竖图（BoxFit.cover 在松约束下不生效），两栏详情页顶部就剩窗口中间
+            // 一块模糊竖条，用户看来是「莫名的毛玻璃」。背景必须铺满，交叉淡入
+            // 的新旧两层都撑满整块。
+            layoutBuilder: _expandedSwitcherLayout,
+            child: KeyedSubtree(
+              key: ValueKey<Object>(imageKey ?? image),
+              child: showArt
+                  ? Image(
+                      image: image,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.topCenter,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    )
+                  // ClipRect：模糊会把封面边缘的颜色向外晕开，ImageFiltered 默认
+                  // 不裁剪，晕出的部分落在 hero 底边之外、压在下方内容上，看起来
+                  // 就是 hero 底部一条带阴影的硬边（渐隐 scrim 只盖得住框内）。
+                  : ClipRect(
+                      child: ImageFiltered(
+                        imageFilter: ui.ImageFilter.blur(
+                          sigmaX: blurSigma,
+                          sigmaY: blurSigma,
+                          tileMode: TileMode.decal,
+                        ),
+                        child: Image(
+                          image: image,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
                         ),
                       ),
-              ),
-            ),
-          if (showArt) ...<Widget>[
-            // 露画面：起始侧一道底色把信息栏 / hero 文字托住，画面其余部分原样
-            // 露出；再自上而下落到底色，与下方内容无缝。
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: AlignmentDirectional.centerStart,
-                  end: AlignmentDirectional.centerEnd,
-                  stops: const <double>[0, 0.28, 0.6],
-                  colors: <Color>[
-                    base.withValues(alpha: 0.82),
-                    base.withValues(alpha: 0.45),
-                    base.withValues(alpha: 0),
-                  ],
-                ),
-              ),
-            ),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: const <double>[0, 0.45, 0.8, 1],
-                  colors: <Color>[
-                    base.withValues(alpha: 0.05),
-                    base.withValues(alpha: 0.35),
-                    base.withValues(alpha: 0.9),
-                    base,
-                  ],
-                ),
-              ),
-            ),
-          ] else if (!eink) ...<Widget>[
-            // 色晕：起始侧上角一团 primaryContainer（Apple 用强调色淡染），
-            // 让没有图 / 图很暗时 hero 也带主题色气质。
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: AlignmentDirectional.topStart,
-                  radius: 1.25,
-                  colors: <Color>[
-                    (apple ? cs.primary : cs.primaryContainer).withValues(
-                      alpha: apple ? 0.22 : 0.55,
                     ),
-                    (apple ? cs.primary : cs.primaryContainer).withValues(
-                      alpha: 0,
-                    ),
-                  ],
-                ),
-              ),
             ),
-            // 可读性 scrim：上半透出画面，底部完全落到页面底色，与下方内容无缝。
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: const <double>[0, 0.55, 1],
-                  colors: <Color>[
-                    base.withValues(alpha: image == null ? 0 : 0.30),
-                    base.withValues(alpha: image == null ? 0.2 : 0.72),
-                    base,
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
+          );
+    return IgnorePointer(
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          // 窄式居中 hero（[artBand]）只把画面放进顶部一条与宽度等高的带里，带内
+          // 渐隐到底色；hero 矮于宽度时带高取 hero 高，渐隐仍落到底边。
+          final double width = constraints.maxWidth;
+          final double height = constraints.maxHeight;
+          if (artBand &&
+              art != null &&
+              showArt &&
+              width.isFinite &&
+              height.isFinite) {
+            return _buildArtBand(
+              art: art,
+              base: base,
+              bandHeight: math.min(width, height),
+            );
+          }
+          return _buildFull(
+            context,
+            art: art,
+            base: base,
+            showArt: showArt,
+            eink: eink,
+            apple: apple,
+          );
+        },
       ),
+    );
+  }
+
+  Widget _buildArtBand({
+    required Widget art,
+    required Color base,
+    required double bandHeight,
+  }) {
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        ColoredBox(color: base),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: bandHeight,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              art,
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const <double>[0, 0.5, 1],
+                    colors: <Color>[
+                      base.withValues(alpha: 0.08),
+                      base.withValues(alpha: 0.4),
+                      base,
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFull(
+    BuildContext context, {
+    required Widget? art,
+    required Color base,
+    required bool showArt,
+    required bool eink,
+    required bool apple,
+  }) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final ImageProvider? image = art == null ? null : this.image;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        ColoredBox(color: base),
+        ?art,
+        if (showArt) ...<Widget>[
+          // 露画面：起始侧一道底色把信息栏 / hero 文字托住，画面其余部分原样
+          // 露出；再自上而下落到底色，与下方内容无缝。
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: AlignmentDirectional.centerStart,
+                end: AlignmentDirectional.centerEnd,
+                stops: const <double>[0, 0.28, 0.6],
+                colors: <Color>[
+                  base.withValues(alpha: 0.82),
+                  base.withValues(alpha: 0.45),
+                  base.withValues(alpha: 0),
+                ],
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: const <double>[0, 0.45, 0.8, 1],
+                colors: <Color>[
+                  base.withValues(alpha: 0.05),
+                  base.withValues(alpha: 0.35),
+                  base.withValues(alpha: 0.9),
+                  base,
+                ],
+              ),
+            ),
+          ),
+        ] else if (!eink) ...<Widget>[
+          // 色晕：起始侧上角一团 primaryContainer（Apple 用强调色淡染），
+          // 让没有图 / 图很暗时 hero 也带主题色气质。
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: AlignmentDirectional.topStart,
+                radius: 1.25,
+                colors: <Color>[
+                  (apple ? cs.primary : cs.primaryContainer).withValues(
+                    alpha: apple ? 0.22 : 0.55,
+                  ),
+                  (apple ? cs.primary : cs.primaryContainer).withValues(
+                    alpha: 0,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // 可读性 scrim：上半透出画面，底部完全落到页面底色，与下方内容无缝。
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: const <double>[0, 0.55, 1],
+                colors: <Color>[
+                  base.withValues(alpha: image == null ? 0 : 0.30),
+                  base.withValues(alpha: image == null ? 0.2 : 0.72),
+                  base,
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -507,6 +599,7 @@ class MediaDetailHero extends StatelessWidget {
                 image: backdrop,
                 imageKey: backdropKey,
                 blurSigma: backdropBlur,
+                artBand: !wide,
               ),
             ),
             content,
@@ -1003,7 +1096,7 @@ class _MediaDetailMoreButtonState extends State<MediaDetailMoreButton> {
 // 简介
 // ---------------------------------------------------------------------------
 
-/// 可展开简介：收起时 [collapsedLines] 行，超出才出「展开 / 收起」；展开用
+/// 可展开简介：收起时 [collapsedLines] 行，超出至少两行才出「展开 / 收起」；展开用
 /// spring（[AnimatedSize]）。点正文本身也能切换（[selectable] 时只能点按钮，
 /// 正文要留给选词）。
 class MediaDetailSynopsis extends StatefulWidget {
@@ -1043,9 +1136,10 @@ class _MediaDetailSynopsisState extends State<MediaDetailSynopsis> {
     );
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
+        // 只多出一行时不折叠：收起后只少一行，按钮按了像没反应，还白占一行。
         final TextPainter painter = TextPainter(
           text: TextSpan(text: text, style: style),
-          maxLines: widget.collapsedLines,
+          maxLines: widget.collapsedLines + 1,
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
         )..layout(maxWidth: constraints.maxWidth);

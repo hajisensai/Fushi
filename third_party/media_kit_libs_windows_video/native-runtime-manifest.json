@@ -945,9 +945,9 @@
   {
     "name": "libmpv-2.dll",
     "source_name": "libmpv-2.dll",
-    "source_sha256": "e9e502d6189efc6ad69a35ee55e6e35d2d6d4f1a57b96633cb405e56a0dc442f",
-    "sha256": "55f957e5fd1edc9fb15f48755c964c1bdc3e386af366c9b81622d4e92fae4774",
-    "bytes": 4556072,
+    "source_sha256": "aea428f54cc0b911fd325f2d413cda32c0786735470a5b25b3b6d09c04c698cb",
+    "sha256": "e2cbbca85f8e110b8369818fff5efd338311780a6366420ec0ff6cd39d0b1456",
+    "bytes": 4561816,
     "rewritten_references": 23,
     "imports_and_forwarders": [
       "ADVAPI32.dll",
@@ -1338,8 +1338,8 @@
       "fbdpango-1.0-0.dll",
       "fbdpangocairo-1.0-0.dll",
       "fbdxml2-16.dll",
-      "kernel32.dll",
       "KERNEL32.dll",
+      "kernel32.dll",
       "msvcrt.dll",
       "ntdll.dll",
       "USERENV.dll",

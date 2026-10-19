@@ -8,6 +8,10 @@
 // sanitizeCss，前面接 utf8.decode(allowMalformed: true)、后面接 utf8.encode）冻结了下面的
 // 期望值：代表样例的逐字输出，以及两组语料（模糊用例、BMP 每个码点放进所有判定位置）的
 // 输出摘要。另外对全部真书章节与 CSS 逐文件比过 SHA-1（不入库），全部一致。
+//
+// 第 2 步原是 markImagesLazy；BUG-3533 改成「去掉 <img> 的 loading 属性」（插图一律
+// eager）。新语义的参考实现是 PR #2316 的 Dart 正则（下面的 [refStripImageLoading]），
+// 先在两组语料上逐字核对原生第 2 步与之一致，再按它重冻含第 2 步的摘要。
 @TestOn('vm')
 library;
 
@@ -23,8 +27,8 @@ const String kHeadEnd =
     '<meta name="viewport" content="width=device-width">\n'
     '<style>html{font-family:"明朝"}</style>';
 const String kImages =
-    '<div class="fushi-merged-image"><img src="a.png" class="block-img" '
-    'loading="eager"/></div>';
+    '<div class="fushi-merged-image"><img src="a.png" class="block-img"/>'
+    '</div>';
 
 /// (步骤位, 插图串)：单步 + 生产的两种组合（普通章 / 纯图片章带合并插图）。
 const List<(int, String)> kOps = <(int, String)>[
@@ -175,9 +179,9 @@ final class Fnv {
   void mark(int b) => add(<int>[b]);
 }
 
-/// 旧实现的摘要（见文件头）。
-const int _oldFuzzDigest = 0xe0e1715c;
-const int _oldCodePointDigest = 0x66ee2ce4;
+/// 旧实现的摘要（见文件头；含第 2 步的 op 按 BUG-3533 的参考实现重冻）。
+const int _oldFuzzDigest = 0x41ce6c44;
+const int _oldCodePointDigest = 0x6c6cae2a;
 
 /// (输入, 步骤位, 插图串, 旧实现输出)。输入按磁盘字节（UTF-8 编码后）喂给链。
 const List<(String, int, String, String)>
@@ -203,29 +207,29 @@ _htmlSamples = <(String, int, String, String)>[
     '<!-- <a></a> --><![CDATA[<b></b>]]>',
   ),
   (
-    '<IMG SRC=a><img loading="eager"><img class="x gaiji-line" src=g>',
+    '<IMG SRC=a LOADING=lazy><img loading="eager"><img class="x gaiji-line" src=g>',
     2,
     '',
-    '<img loading="lazy" decoding="async" SRC=a><img loading="eager"><img class="x gaiji-line" src=g>',
+    '<IMG SRC=a><img><img class="x gaiji-line" src=g>',
   ),
   (
-    '<img class="xgaiji"><img xloading=1><imgx><img alt="a>b" src=c/>',
+    '<img xloading=1><imgx loading=lazy><img alt="a> loading=lazy" src=c/><img src=c\tloading = \'lazy\' />',
     2,
     '',
-    '<img loading="lazy" decoding="async" class="xgaiji"><img loading="lazy" decoding="async" xloading=1><imgx><img loading="lazy" decoding="async" alt="a>b" src=c/>',
+    '<img xloading=1><imgx loading=lazy><img alt="a> loading=lazy" src=c/><img src=c />',
   ),
   ('<img alt="unterminated', 2, '', '<img alt="unterminated'),
   (
     '<html><body class="a>b"><p>x</p></body></html>',
     4,
     kImages,
-    '<html><body class="a>\n<div class="fushi-merged-image"><img src="a.png" class="block-img" loading="eager"/></div>\nb"><p>x</p></body></html>',
+    '<html><body class="a>\n<div class="fushi-merged-image"><img src="a.png" class="block-img"/></div>\nb"><p>x</p></body></html>',
   ),
   (
     '<p>no body</p>',
     4,
     kImages,
-    '\n<div class="fushi-merged-image"><img src="a.png" class="block-img" loading="eager"/></div>\n<p>no body</p>',
+    '\n<div class="fushi-merged-image"><img src="a.png" class="block-img"/></div>\n<p>no body</p>',
   ),
   (
     '<html><head><title>t</title></head><body></body></html>',
@@ -261,13 +265,13 @@ _htmlSamples = <(String, int, String, String)>[
     '\u{feff}<?xml version="1.0"?><html><head/><body><a id="x"/><img src="p.png"/></body></html>',
     15,
     '',
-    '<?xml version="1.0"?><html><head>\n<style id="fushi-cloak">body{visibility:hidden!important}</style>\n<meta name="viewport" content="width=device-width">\n<style>html{font-family:"明朝"}</style>\n</head><body><a id="x"></a><img loading="lazy" decoding="async" src="p.png"/></body></html>',
+    '<?xml version="1.0"?><html><head>\n<style id="fushi-cloak">body{visibility:hidden!important}</style>\n<meta name="viewport" content="width=device-width">\n<style>html{font-family:"明朝"}</style>\n</head><body><a id="x"></a><img src="p.png"/></body></html>',
   ),
   (
     '<html><head></head><body><img src="p1.png"/></body></html>',
     13,
     kImages,
-    '<html><head>\n<style id="fushi-cloak">body{visibility:hidden!important}</style>\n<meta name="viewport" content="width=device-width">\n<style>html{font-family:"明朝"}</style>\n</head><body>\n<div class="fushi-merged-image"><img src="a.png" class="block-img" loading="eager"/></div>\n<img src="p1.png"/></body></html>',
+    '<html><head>\n<style id="fushi-cloak">body{visibility:hidden!important}</style>\n<meta name="viewport" content="width=device-width">\n<style>html{font-family:"明朝"}</style>\n</head><body>\n<div class="fushi-merged-image"><img src="a.png" class="block-img"/></div>\n<img src="p1.png"/></body></html>',
   ),
 ];
 
@@ -300,6 +304,29 @@ const List<(String, String)> _cssSamples = <(String, String)>[
 ];
 
 ReaderSanitizeNative get _native => ReaderSanitizeNative.instance;
+
+/// 第 2 步的参考实现：PR #2316（BUG-3533）里 `stripImageLoadingAttributes` 的 Dart 正则，
+/// 原样搬来当测试预言机（生产没有 Dart 实现）。
+final RegExp _refImgTag = RegExp(
+  '<img\\b((?:"[^"]*"|\'[^\']*\'|[^>"\'])*)>',
+  caseSensitive: false,
+);
+final RegExp _refLoadingAttr = RegExp(
+  '("[^"]*"|\'[^\']*\')|(\\s+loading\\s*=\\s*(?:"[^"]*"|\'[^\']*\'|[^\\s>"\']+))',
+  caseSensitive: false,
+);
+
+String refStripImageLoading(String html) {
+  return html.replaceAllMapped(_refImgTag, (Match m) {
+    final String attrs = m.group(1) ?? '';
+    final String stripped = attrs.replaceAllMapped(
+      _refLoadingAttr,
+      (Match a) => a.group(1) ?? '',
+    );
+    final String whole = m.group(0)!;
+    return stripped == attrs ? whole : '${whole.substring(0, 4)}$stripped>';
+  });
+}
 
 Uint8List _chain(List<int> bytes, int steps, String images) =>
     _native.chapterHtml(
@@ -354,6 +381,27 @@ void main() {
     for (final (String input, String expected) in _cssSamples) {
       expect(utf8.decode(_native.css(utf8.encode(input))), expected);
     }
+  });
+
+  test('step 2 matches the Dart reference on both corpora', () {
+    final Iterable<List<int>> corpus = <List<int>>[
+      ...fuzzCorpus(20000, utf8.encode),
+      for (int cp = 0; cp <= 0xFFFF; cp++)
+        if (cp < 0xD800 || cp > 0xDFFF)
+          utf8.encode(codePointComposite(String.fromCharCode(cp))),
+    ];
+    int checked = 0;
+    for (final List<int> bytes in corpus) {
+      // 解码（宽松 UTF-8、去磁盘字节开头一个 BOM）由第 0 步给出，它已由下面的旧摘要验过。
+      final String decoded = utf8.decode(_chain(bytes, 0, ''));
+      expect(
+        utf8.decode(_chain(bytes, 2, '')),
+        refStripImageLoading(decoded),
+        reason: 'input=$decoded',
+      );
+      checked++;
+    }
+    expect(checked, greaterThan(80000));
   });
 
   test('fuzz corpus digest matches the old Dart implementation', () {

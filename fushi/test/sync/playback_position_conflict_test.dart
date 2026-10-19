@@ -444,7 +444,7 @@ void main() {
         basePositionMs: await syncA.baseline('relay'),
       );
       expect(action, BookProgressSyncAction.applyRemote, reason: '顺序接力不是分叉');
-      await syncA.applyRemote('relay', remote);
+      await syncA.applyRemote('relay', remote, local: local);
       expect(
         await dbA.getPrefTyped<int>(videoRemotePositionPrefKey('relay'), 0),
         900,
@@ -464,13 +464,21 @@ void main() {
             kind: PlaybackPositionKind.video,
           );
 
-      await sync.applyRemote('v2', _pos(250000, 7000));
+      await sync.applyRemote(
+        'v2',
+        _pos(250000, 7000),
+        local: await sync.localPosition('v2'),
+      );
       final VideoBookRow row = (await db.getVideoBookByBookUid('v2'))!;
       expect(row.lastPositionMs, 250000);
       expect(row.lastPlayedAt, 7000);
       expect(await sync.baseline('v2'), 250000);
 
-      await sync.applyRemote('stream', _pos(90000, 8000));
+      await sync.applyRemote(
+        'stream',
+        _pos(90000, 8000),
+        local: await sync.localPosition('stream'),
+      );
       expect(await db.getVideoBookByBookUid('stream'), isNull);
       expect(
         await db.getPrefTyped<int>(videoRemotePositionPrefKey('stream'), 0),

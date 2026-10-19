@@ -517,6 +517,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.secondaryBlurEnabled = false,
     this.secondaryHidden = false,
     this.obscureRevealOnInteraction = true,
+    this.secondaryObscureRevealOnInteraction = true,
     this.lookupPopupVisible = false,
     this.fontSize = 36,
     this.textColor,
@@ -634,9 +635,13 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 点击（遮蔽态热区的 onTap），以及自动显形的暂停 / 查词浮层（`userIsReading`，见
   /// [_buildSubtitleLayer]）。只堵前两者会让开关半失效——用户关掉后照旧「一暂停字幕
   /// 就冒出来」。热区本身照常挂——它还负责拦掉落在盒面上的字符点击（隐藏
-  /// 态字符仍登记在查词表里，撤掉热区就成了「点不可见的字也能查词」）。主 / 副字幕共用
-  /// 本开关（用户诉求是「显形这个行为」的总闸，不是逐层设置）。
+  /// 态字符仍登记在查词表里，撤掉热区就成了「点不可见的字也能查词」）。本开关只管
+  /// **主字幕**层，副字幕层见 [secondaryObscureRevealOnInteraction]。
   final bool obscureRevealOnInteraction;
+
+  /// 副字幕层的「临时显形」开关，语义与门控来源同 [obscureRevealOnInteraction]。
+  /// 用户要求主 / 副分开配置（常见用法：主字幕暂停时显形，副字幕（翻译）始终遮住）。
+  final bool secondaryObscureRevealOnInteraction;
 
   /// 查词浮层栈此刻是否还有可见层（BUG-2235，页面侧 `_hasVisiblePopup` 的派生值）。
   ///
@@ -1185,6 +1190,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         oldWidget.obscureRevealOnInteraction) {
       _revealed = false;
       _tapRevealed = false;
+    }
+    if (!widget.secondaryObscureRevealOnInteraction &&
+        oldWidget.secondaryObscureRevealOnInteraction) {
       _secondaryRevealed = false;
       _secondaryTapRevealed = false;
     }
@@ -1200,6 +1208,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   bool _revealedFor({required bool isSecondary}) => isSecondary
       ? (_secondaryRevealed || _secondaryTapRevealed)
       : (_revealed || _tapRevealed);
+
+  /// 该层是否允许临时显形（主 / 副各自的开关）。
+  bool _revealOnInteractionFor({required bool isSecondary}) => isSecondary
+      ? widget.secondaryObscureRevealOnInteraction
+      : widget.obscureRevealOnInteraction;
 
   /// [byTap] 区分显形来源：true = 点击热区（移动端唯一通道，随活动集换轮失效），
   /// false = 桌面悬停（由 onExit 复位）。写错来源会让复位路径接不上（显形态锁死）。
@@ -1372,10 +1385,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 「重播本句」会起播，只看 isPlaying 会在重播期间把字幕遮回去）。
     //
     // BUG-2256：这条自动显形与悬停 / 点击显形是**同一种行为**（遮蔽让位给「用户想看
-    // 一眼」），因此归同一个总闸 [obscureRevealOnInteraction] 管。关掉总闸后遮蔽恒定
+    // 一眼」），因此归该层同一个显形开关管（主 [obscureRevealOnInteraction] / 副
+    // [secondaryObscureRevealOnInteraction]）。关掉后该层遮蔽恒定
     // 生效：暂停、查词浮层、悬停、点击都不再揭开——用户关它就是要「遮蔽始终保持」，
     // 只堵住悬停 / 点击而漏掉暂停等于开关半失效（用户报：隐藏了字幕，一暂停就冒出来）。
-    final bool userIsReading = widget.obscureRevealOnInteraction &&
+    final bool userIsReading =
+        _revealOnInteractionFor(isSecondary: isSecondary) &&
         (!widget.controller.isPlaying || widget.lookupPopupVisible);
     final bool obscureActive = !revealed && !userIsReading;
     final bool blurred = obscureBlurEnabled && obscureActive;
@@ -1997,7 +2012,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
               // 关掉「交互显形」时热区照挂、只是不显形：它的第二职责（拦掉落在盒面上的
               // 字符点击）与显形无关，撤掉会让隐藏态的不可见字符重新可点查词。
               onTap: () {
-                if (!widget.obscureRevealOnInteraction) return;
+                if (!_revealOnInteractionFor(isSecondary: isSecondary)) {
+                  return;
+                }
                 _setRevealed(true, isSecondary: isSecondary, byTap: true);
               },
             ),
@@ -2015,9 +2032,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final bool layerObscureEnabled =
         (isSecondary ? widget.secondaryBlurEnabled : widget.blurEnabled) ||
             (isSecondary ? widget.secondaryHidden : widget.subtitleHidden);
-    // 「交互显形」总闸关掉后，悬停不再显形（②③ 两个用途仍各按自己的条件挂）。
-    final bool hoverRevealEnabled =
-        layerObscureEnabled && widget.obscureRevealOnInteraction;
+    // 该层「交互显形」关掉后，悬停不再显形（②③ 两个用途仍各按自己的条件挂）。
+    final bool hoverRevealEnabled = layerObscureEnabled &&
+        _revealOnInteractionFor(isSecondary: isSecondary);
     final bool needHover = hoverRevealEnabled ||
         widget.onHoverChanged != null ||
         widget.onCharHover != null;
@@ -2517,7 +2534,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final int? fillArgb = ds?.colorArgb ?? cs?.primaryColorArgb;
     Color fill = fillArgb != null
         ? Color(fillArgb)
-        : (widget.textColor ?? Theme.of(context).colorScheme.onSurface);
+        : (widget.textColor ?? kDefaultSubtitleTextColor);
     final double? fillOp = ds?.fillOpacity;
     if (fillOp != null) fill = fill.withValues(alpha: fillOp);
     fill = _applyDynamicFill(TextStyle(color: fill), fill, markup, true,
@@ -2914,7 +2931,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         widget.fontFamily;
     final Color baseColor = (respect && cue?.primaryColorArgb != null)
         ? Color(cue!.primaryColorArgb!)
-        : (widget.textColor ?? Theme.of(context).colorScheme.onSurface);
+        : (widget.textColor ?? kDefaultSubtitleTextColor);
     // ASS 绝对字号（PlayRes 像素）按 显示区高 / PlayResY 缩放到播放尺寸（TODO-1246）；
     // cueStyle 无字号时回退用户统一样式（已含 subtitleScreenScaleFactor）。
     final double assFontScale = respect ? _assFontScale(markup) : 1.0;
