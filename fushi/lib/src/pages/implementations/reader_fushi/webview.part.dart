@@ -247,10 +247,9 @@ extension _ReaderWebView on _ReaderFushiPageState {
         _sanitizedCssCache.remove(_sanitizedCssCache.keys.first);
       }
       data = _sanitizedCssCache.putIfAbsent(filePath, () {
-        // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing.
-        final String cssText = utf8.decode(data, allowMalformed: true);
-        final String sanitized = ReaderResourceSanitizer.sanitizeCss(cssText);
-        return Uint8List.fromList(utf8.encode(sanitized));
+        // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing
+        // (decode + rewrite + encode run natively in one FFI call).
+        return ReaderResourceSanitizer.sanitizeCssBytes(data);
       });
     }
 
@@ -397,53 +396,53 @@ extension _ReaderWebView on _ReaderFushiPageState {
   }
 
   // BUG-270: the sanitize + style-inject pipeline, extracted from
-  // _interceptRequest so it can also run during prefetch. Decodes the raw
-  // chapter bytes (UTF-8/BOM tolerant, HBK-AUDIT-118), normalizes self-closing
-  // raw-text elements (BUG-079), injects the FOUC cloak + reader styleTag, and
-  // returns the final UTF-8 bytes served to the WebView.
+  // _interceptRequest so it can also run during prefetch. The whole chain runs
+  // natively in ONE FFI call (native/fushi_compute/src/parse/sanitize.rs, byte
+  // for byte the old Dart regex pipeline): decode the raw chapter bytes
+  // (UTF-8/BOM tolerant, HBK-AUDIT-118) -> normalize self-closing non-void
+  // elements (BUG-079 / BUG-737) -> mark body images lazy -> prepend merged
+  // leading illustrations -> inject the FOUC cloak + reader styleTag -> the
+  // final UTF-8 bytes served to the WebView.
   Uint8List _buildSanitizedChapterHtmlBytes(
     Uint8List rawData, {
     int chapterIndex = -1,
   }) {
-    String html = utf8.decode(rawData, allowMalformed: true);
-    html = ReaderResourceSanitizer.sanitizeXhtml(html);
-    // TODO-perf（跨章·图片）：离屏插图不该拖住 window.load —— 属性必须写进 HTML 源码
-    // 才对本次加载生效（JS 侧那次 lazy 跑在 load 之后，来不及，见 markImagesLazy）。
-    // 纯图片章整章 eager：它的分页几何要靠插图真实撑开（TODO-1349）。判据用 EpubBook
-    // 的 isImageOnlyChapter（比 JS 侧「正文无任何可匹配字符」宽松），保证这里 eager 的
-    // 集合是 JS 侧 eager 集合的超集，不会倒挂。合并注入的前导插图自带显式
-    // `loading="eager"`（见 [_injectMergedChapterImages]），故 TODO-1339 的 eager 不依赖
-    // 本行与注入行的先后顺序；守卫 `test/reader/reader_image_lazy_pipeline_guard_test.dart`。
-    html = ReaderResourceSanitizer.markImagesLazy(
-      html,
-      eagerAll: _isImageOnlyChapterCached(chapterIndex),
-    );
-    // TODO-1128 / TODO-1174: when this text chapter absorbs the preceding
-    // single-image chapters (merge-image on), prepend their <img> to the *start*
-    // of the flow before the reader style is injected, so the illustrations
-    // render inline at the top of the chapter they introduce instead of each
-    // taking their own virtual page. No-op on the common path.
-    html = _injectMergedChapterImages(html, chapterIndex);
-    final String styleTag = _buildStyleTag();
     const String hideUntilReady =
         '<style id="fushi-cloak">body{visibility:hidden!important}</style>';
-    // Cloak goes early (right after <head>) to hide FOUC. Reader style goes last
-    // (before </head>) so it wins over EPUB CSS in !important specificity ties.
-    // BUG-2639: the viewport meta is served with the document instead of only
-    // being added later by the shell's initialize(). Without it WKWebView lays
-    // the chapter out at the default 980 CSS px (scale 402/980 ≈ 0.41) until
-    // that JS runs; on a real iPhone the vertical scroll mode stayed stuck in
-    // that layout (text at 4/10 size, columns only 4/10 of the screen tall).
-    html = ReaderResourceSanitizer.injectReaderHead(
-      html,
+    return ReaderResourceSanitizer.buildChapterHtmlBytes(
+      rawData,
+      // TODO-perf（跨章·图片）：离屏插图不该拖住 window.load —— 属性必须写进 HTML 源码
+      // 才对本次加载生效（JS 侧那次 lazy 跑在 load 之后，来不及）。纯图片章整章 eager：
+      // 它的分页几何要靠插图真实撑开（TODO-1349）。判据用 EpubBook 的
+      // isImageOnlyChapter（比 JS 侧「正文无任何可匹配字符」宽松），保证这里 eager 的
+      // 集合是 JS 侧 eager 集合的超集，不会倒挂。守卫
+      // `test/reader/reader_image_lazy_pipeline_guard_test.dart`。
+      eagerAll: _isImageOnlyChapterCached(chapterIndex),
+      // TODO-1128 / TODO-1174: when this text chapter absorbs the preceding
+      // single-image chapters (merge-image on), their <img> go to the *start*
+      // of the flow, so the illustrations render inline at the top of the
+      // chapter they introduce instead of each taking their own virtual page.
+      // Empty on the common path. They carry an explicit `loading="eager"`
+      // (TODO-1339), so lazy marking skips them regardless of step order.
+      mergedImagesHtml: _mergedChapterImagesHtml(chapterIndex),
+      // Cloak goes early (right after <head>) to hide FOUC. Reader style goes
+      // last (before </head>) so it wins over EPUB CSS in !important
+      // specificity ties.
       headStart: hideUntilReady,
-      headEnd: '${ReaderPaginationScripts.readerViewportMetaTag}\n$styleTag',
+      // BUG-2639: the viewport meta is served with the document instead of
+      // only being added later by the shell's initialize(). Without it
+      // WKWebView lays the chapter out at the default 980 CSS px (scale
+      // 402/980 ≈ 0.41) until that JS runs; on a real iPhone the vertical
+      // scroll mode stayed stuck in that layout (text at 4/10 size, columns
+      // only 4/10 of the screen tall).
+      headEnd:
+          '${ReaderPaginationScripts.readerViewportMetaTag}\n'
+          '${_buildStyleTag()}',
     );
-    return Uint8List.fromList(utf8.encode(html));
   }
 
-  // TODO-1128 / TODO-1174: prepend the absorbed image-only chapters' images to
-  // the *start* of [html]'s <body> when the spread map records this text chapter
+  // TODO-1128 / TODO-1174: the absorbed image-only chapters' images to prepend
+  // to the *start* of the chapter's <body> when the spread map records this text chapter
   // as absorbing the images that precede it (merge-image on). Each absorbed
   // chapter contributes *all* of its image references (chapterImageSrcs covers
   // <img>, SVG <image>, and CSS background-image — TODO-1174 broadened the
@@ -453,16 +452,16 @@ extension _ReaderWebView on _ReaderFushiPageState {
   // chapter's own href, so a text chapter absorbing images from a different
   // directory still points at the right files (the served text chapter's baseURI
   // would otherwise mis-resolve them); already-absolute (data:/scheme) refs pass
-  // through untouched. The insertion position is a pure string op in
-  // ReaderResourceSanitizer.injectImagesAfterBodyOpen (unit-tested). No-op unless
+  // through untouched. The insertion itself happens in the native chain
+  // (ReaderResourceSanitizer.buildChapterHtmlBytes, unit-tested). Empty unless
   // merge is on and the chapter absorbs images.
-  String _injectMergedChapterImages(String html, int chapterIndex) {
-    if (chapterIndex < 0) return html;
+  String _mergedChapterImagesHtml(int chapterIndex) {
+    if (chapterIndex < 0) return '';
     final EpubBook? book = _book;
     final EpubSpreadMap? map = _spreadMap;
-    if (book == null || map == null) return html;
+    if (book == null || map == null) return '';
     final List<int> merged = map.mergedImagesForChapter(chapterIndex);
-    if (merged.isEmpty) return html;
+    if (merged.isEmpty) return '';
 
     final StringBuffer figures = StringBuffer();
     for (final int imageChapter in merged) {
@@ -481,8 +480,8 @@ extension _ReaderWebView on _ReaderFushiPageState {
         // **结构性**内容（firstContentEdge 只计入非零尺寸媒体，挂 lazy 会让章首锚跳过
         // 第一张）。JS 侧靠 `.fushi-merged-image` 放行，Dart 侧原本只靠「markImagesLazy
         // 排在本方法之前」这一条**调用顺序**——谁把两行调个个儿，守卫全绿而 bug 复活。
-        // 写成显式 loading 属性后 [ReaderResourceSanitizer.markImagesLazy] 的
-        // 「已有 loading= 就尊重原书」分支会跳过它们，顺序不再是正确性的承重墙。
+        // 写成显式 loading 属性后插图 lazy 步（[ReaderResourceSanitizer.markImagesLazy]
+        // 同款规则）的「已有 loading= 就尊重原书」分支会跳过它们，顺序不再是正确性的承重墙。
         figures.write(
           '<div class="fushi-merged-image">'
           '<img src="${htmlEscape.convert(absoluteUrl)}" class="block-img" '
@@ -491,12 +490,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
         );
       }
     }
-    if (figures.isEmpty) return html;
-
-    return ReaderResourceSanitizer.injectImagesAfterBodyOpen(
-      html,
-      figures.toString(),
-    );
+    return figures.toString();
   }
 
   // BUG-270: resolve the absolute on-disk path of chapter [index]'s XHTML, or

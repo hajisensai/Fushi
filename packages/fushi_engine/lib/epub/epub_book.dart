@@ -2,7 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi_engine/stats/study_char_count.dart';
+import 'package:fushi_compute/fushi_compute.dart'
+    show
+        EpubChapterScan,
+        EpubChapterScanner,
+        EpubScanImageHit,
+        EpubScanRequest,
+        EpubScanRuby;
 import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as html_dom;
@@ -60,7 +66,7 @@ class EpubBook {
   /// [chapterCharacterCount]），用于 [isImageOnlyChapter] 免解析短路。
   ///
   /// 方向安全性：该口径只数假名/汉字/字母数字（标点/空白剔除、振假名剥离），
-  /// 恒 ≤ [_chapterPlainTextFromBody] 的纯文本长度；因此
+  /// 恒 ≤ [chapterPlainText] 的纯文本长度；因此
   /// `hint > _imageChapterMaxTextChars` ⇒ 纯文本必超阈值 ⇒ 必非纯图片章，
   /// 无需读盘/解析。hint ≤ 阈值（含 0 占位）不能反推，回落全量解析。
   /// **只接受当前口径的计数**——旧口径可能计入振假名等而高估，破坏上述单向推理。
@@ -87,32 +93,63 @@ class EpubBook {
     return resources[normalizeHref(path)]?.mediaType ?? fallbackMimeType(path);
   }
 
-  // Uses package:html DOM parser — same parsing semantics as the WebView.
-  // Entities, nesting, malformed HTML are all handled by the parser, not regex.
-  // Must match JS isFurigana() in reader_pagination_scripts.dart: both sides
-  // drop <rt>/<rp>/<rtc> content but keep ruby base text.
+  /// 一章的原生扫描（`ffc_parse_epub_chapter`，见 package:fushi_compute）。HTML
+  /// 先经 [normalizeSelfClosingRawTextTags]，与 [parseChapterHtml] 同一预处理。
+  EpubChapterScan _scanChapter(
+    int index,
+    int request, {
+    List<String> wantedIds = const <String>[],
+  }) {
+    return EpubChapterScanner.instance.scan(
+      normalizeSelfClosingRawTextTags(chapters[index].html),
+      request,
+      wantedIds: wantedIds,
+    );
+  }
+
+  // 剥离规则与 JS isFurigana()（reader_pagination_scripts.dart）一致：两侧都丢
+  // <rt>/<rp>/<rtc> 内容、保留 ruby 基底。实现（HTML5 树构建 + 文本遍历）在 Rust：
+  // native/fushi_compute/src/parse/epub.rs。
   /// Plain text of chapter at [index], with ruby annotations stripped.
   /// Used by EpubSrtMatcher and sasayaki rematch for audiobook alignment.
   String chapterPlainText(int index) {
     if (index < 0 || index >= chapters.length) return '';
-    final html_dom.Document doc = parseChapterHtml(chapters[index].html);
-    return _chapterPlainTextFromBody(doc.body);
+    return _scanChapter(index, EpubScanRequest.text).text!;
+  }
+
+  /// 全书搜索的坐标系文本：body 内文本节点按文档序直接拼接，只跳过 `rt` / `rp`
+  /// 子树、**不折叠空白**——与阅读器 JS `scrollToSearchMatch()` 的 TreeWalker 同一
+  /// 坐标，命中偏移才能直接交给 WebView 定位。与 [chapterPlainText] 不是同一份文本。
+  String chapterSearchText(int index) {
+    if (index < 0 || index >= chapters.length) return '';
+    return _scanChapter(index, EpubScanRequest.searchText).searchText!;
   }
 
   /// [chapterPlainText] 的同一份纯文本，外加每处 ruby 的基底区间与读音
   /// （有声书匹配的「读音轨」：听写かな对正文漢字零重叠，出版社标好的振假名是
   /// 唯一零推断误差的读音来源）。
   ///
-  /// `text` 与 [chapterPlainText] **逐码元相同**（同一 DOM、同一空白折叠、同一
-  /// trim；守卫测试 `test/epub/epub_ruby_plain_text_test.dart`）——`fushi-cue://`
-  /// 偏移、阅读位置、统计水位全部建立在这份文本上，读音只能作旁路。
+  /// `text` 与 [chapterPlainText] **逐码元相同**（同一次遍历的同一份输出；守卫测试
+  /// `test/epub/epub_ruby_plain_text_test.dart`）——`fushi-cue://` 偏移、阅读位置、
+  /// 统计水位全部建立在这份文本上，读音只能作旁路。
   EpubPlainTextWithRuby chapterPlainTextWithRuby(int index) {
     if (index < 0 || index >= chapters.length) {
       return const EpubPlainTextWithRuby(
           text: '', rubies: <EpubRubyAnnotation>[]);
     }
-    final html_dom.Document doc = parseChapterHtml(chapters[index].html);
-    return _RubyPlainTextWalker.walk(doc.body);
+    final EpubChapterScan scan = _scanChapter(
+      index,
+      EpubScanRequest.text | EpubScanRequest.ruby,
+    );
+    return EpubPlainTextWithRuby(
+      text: scan.text!,
+      rubies: <EpubRubyAnnotation>[
+        for (final EpubScanRuby r in scan.rubies!)
+          EpubRubyAnnotation(start: r.start, end: r.end, reading: r.reading),
+      ],
+      blockEnds: scan.blockEnds!,
+      sceneBreaks: scan.sceneBreaks!,
+    );
   }
 
   /// BUG-2017：章节 XHTML 的**唯一** DOM 解析入口。
@@ -134,21 +171,22 @@ class EpubBook {
   /// TODO-1192: chapter [index] 的「实义字符数」——只数假名 / 汉字 / 叠字符 /
   /// 字母数字，剔除所有标点、括号（「」『』（）等）、全角/半角空白与全角符号，
   /// 与 hoshi/ttu `getCharacterCount`（`isNotJapaneseRegex`）口径一致（见
-  /// [countStudyChars]）。基于 [chapterPlainText]（振假名 `<rt>/<rp>/<rtc>` 已
+  /// `countStudyChars`）。基于 [chapterPlainText]（振假名 `<rt>/<rp>/<rtc>` 已
   /// 剥离故不计入），再过滤非实义字符。用于导入时落库的每章字数与阅读统计，让
   /// 「书的总字数 / 统计字数 / 阅读速度」贴近 hoshi，而不是含标点/括号/空白高约
   /// 10~20%。**不改** [chapterPlainText]（查词 / 对齐 / 搜索仍需完整文本）。
   int chapterCharacterCount(int index) {
-    return countStudyChars(chapterPlainText(index));
+    if (index < 0 || index >= chapters.length) return 0;
+    return _scanChapter(index, EpubScanRequest.text).studyChars!;
   }
 
-  /// 章 [index] 里每个锚点 id（[fragments]）之前的实义字符数（[countStudyChars]
+  /// 章 [index] 里每个锚点 id（[fragments]）之前的实义字符数（`countStudyChars`
   /// 口径），即该锚点在章内的字符偏移。一次 DOM 遍历按文档序累积文本、跳过
   /// `rt`/`rp`/`rtc`（与 [chapterPlainText] 同一剥离规则），走到带匹配 id 的元素
   /// 时记下此前累积文本的计数。找不到的 id 不出现在结果里；同一 id 重复出现取
   /// 首个。
   ///
-  /// 口径为什么要是 [countStudyChars]：阅读器 WebView 回报的章内位置 `charOffset`
+  /// 口径为什么要是 `countStudyChars`：阅读器 WebView 回报的章内位置 `charOffset`
   /// 与落库的 `char_offset` 都是这个口径（`reader_study_unit_script.dart`，有
   /// node 对拍守卫），所以这里算出的锚点偏移可以直接与运行时位置比较——「一个
   /// xhtml 装整卷、目录靠 `#anchor` 分节」的书，当前读到哪一节全靠这个比较。
@@ -156,53 +194,20 @@ class EpubBook {
     int index,
     Iterable<String> fragments,
   ) {
-    final Set<String> wanted = fragments.toSet()..remove('');
+    final List<String> wanted = (fragments.toSet()..remove('')).toList();
     final Map<String, int> offsets = <String, int>{};
     if (wanted.isEmpty || index < 0 || index >= chapters.length) {
       return offsets;
     }
-    final html_dom.Element? body = parseChapterHtml(chapters[index].html).body;
-    if (body == null) return offsets;
-    final StringBuffer prefix = StringBuffer();
-    void visit(html_dom.Node node) {
-      if (offsets.length == wanted.length) return;
-      if (node is html_dom.Text) {
-        prefix.write(node.data);
-        return;
-      }
-      if (node is html_dom.Element) {
-        final String tag = node.localName ?? '';
-        if (tag == 'rt' || tag == 'rp' || tag == 'rtc') return;
-        final String id = node.id;
-        if (wanted.contains(id) && !offsets.containsKey(id)) {
-          offsets[id] = countStudyChars(prefix.toString());
-        }
-      }
-      for (final html_dom.Node child in node.nodes) {
-        visit(child);
-      }
-    }
-
-    visit(body);
+    final EpubChapterScan scan = _scanChapter(
+      index,
+      EpubScanRequest.anchors,
+      wantedIds: wanted,
+    );
+    scan.anchorOffsets!.forEach((int i, int offset) {
+      offsets[wanted[i]] = offset;
+    });
     return offsets;
-  }
-
-  /// Whitespace-collapsed plain text of an already-parsed [body], with ruby
-  /// annotations (`<rt>`/`<rp>`/`<rtc>`) stripped. Mutates [body] by removing the
-  /// ruby nodes, so callers must pass a throwaway parsed document's body.
-  static final RegExp _whitespaceRun = RegExp(r'\s+');
-
-  static String _chapterPlainTextFromBody(html_dom.Element? body) {
-    _removeRubyAnnotations(body);
-    final String raw = body?.text ?? '';
-    return raw.replaceAll(_whitespaceRun, ' ').trim();
-  }
-
-  static void _removeRubyAnnotations(html_dom.Element? root) {
-    if (root == null) return;
-    root.querySelectorAll('rt, rp, rtc').forEach(
-          (el) => el.remove(),
-        );
   }
 
   /// TODO-1174: the largest whitespace-stripped plain-text length a chapter may
@@ -226,7 +231,7 @@ class EpubBook {
   /// (no `<img>` at all), and pages carrying a caption / page number beside the
   /// image — so those illustrations each kept their own page instead of merging.
   /// "Has an image" now counts `<img>`, SVG `<image>`, and CSS
-  /// `background-image` (see [_chapterImageRefs]); the count is relaxed from
+  /// `background-image` (see [chapterImageSrcs]); the count is relaxed from
   /// exactly one to one-or-more. The text threshold is the guardrail that keeps
   /// a real prose chapter from ever being absorbed.
   bool isImageOnlyChapter(int index) {
@@ -242,14 +247,18 @@ class EpubBook {
         hints[index] > _imageChapterMaxTextChars) {
       return _imageOnlyChapterMemo[index] = false;
     }
-    final html_dom.Document doc = parseChapterHtml(chapters[index].html);
-    final bool value = _chapterImageRefs(doc).isNotEmpty &&
-        _chapterPlainTextFromBody(doc.body).length <= _imageChapterMaxTextChars;
+    final EpubChapterScan scan = _scanChapter(
+      index,
+      EpubScanRequest.text | EpubScanRequest.imageRefs,
+    );
+    final bool value =
+        scan.imageRefs!.isNotEmpty &&
+        scan.text!.length <= _imageChapterMaxTextChars;
     return _imageOnlyChapterMemo[index] = value;
   }
 
   /// The first chapter-relative image reference of chapter [index] (see
-  /// [_chapterImageRefs] for the sources considered), or null when none. Used by
+  /// [chapterImageSrcs] for the sources considered), or null when none. Used by
   /// edge-matching and spread pairing, which need a single representative image.
   String? chapterImageSrc(int index) {
     final List<String> refs = chapterImageSrcs(index);
@@ -257,77 +266,22 @@ class EpubBook {
   }
 
   /// TODO-1174: every chapter-relative image reference of chapter [index], in
-  /// priority/DOM order (see [_chapterImageRefs]). The inline image-merge
+  /// priority order across the whole document (head included): HTML
+  /// `<img src>`, then SVG `<image xlink:href>` / `<image href>` (Japanese fixed
+  /// layout often wraps one JPEG in an SVG viewport with no `<img>`), then CSS
+  /// `background-image: url(...)` from inline `style=` attributes and `<style>`
+  /// blocks (best effort, not matched to an element — enough for the image-only
+  /// classifier). Empty / whitespace references are skipped. The inline image-merge
   /// renderer folds all of them into the absorbing prose chapter so a multi-image
   /// or SVG-`<image>` illustration page never loses an illustration when merged.
   List<String> chapterImageSrcs(int index) {
     if (index < 0 || index >= chapters.length) return const <String>[];
-    final html_dom.Document doc = parseChapterHtml(chapters[index].html);
-    return _chapterImageRefs(doc);
-  }
-
-  /// TODO-1174: every chapter-relative image reference in [doc], across the ways
-  /// a fixed-layout / illustration EPUB page can carry a full-page image, in
-  /// priority order: HTML `<img src>`, then SVG `<image xlink:href>` / `<image
-  /// href>` (Japanese fixed layout often wraps one JPEG in an SVG viewport with
-  /// no `<img>`), then CSS `background-image: url(...)` (inline `style=`
-  /// attributes and `<style>` blocks — best effort, not matched to a specific
-  /// element, which is enough for the image-only classifier). Empty/whitespace
-  /// references are skipped.
-  static List<String> _chapterImageRefs(html_dom.Document doc) {
-    final List<String> refs = <String>[];
-    for (final html_dom.Element img in doc.querySelectorAll('img')) {
-      final String ref = (img.attributes['src'] ?? '').trim();
-      if (ref.isNotEmpty) refs.add(ref);
-    }
-    for (final html_dom.Element image in doc.querySelectorAll('image')) {
-      final String? ref = svgImageHref(image);
-      if (ref != null && ref.isNotEmpty) refs.add(ref);
-    }
-    final StringBuffer css = StringBuffer();
-    for (final html_dom.Element styled in doc.querySelectorAll('[style]')) {
-      css.writeln(styled.attributes['style'] ?? '');
-    }
-    for (final html_dom.Element styleEl in doc.querySelectorAll('style')) {
-      css.writeln(styleEl.text);
-    }
-    for (final Match match
-        in backgroundImageUrlPattern.allMatches(css.toString())) {
-      final String ref = (match.group(1) ?? '').trim();
-      if (ref.isNotEmpty) refs.add(ref);
-    }
-    return refs;
-  }
-
-  /// Matches a CSS `background-image: url(...)` (or `background:` shorthand),
-  /// capturing the reference with surrounding quotes/whitespace stripped.
-  /// Public because [IllustrationProgressIndex] classifies the same
-  /// references element by element — one pattern, not two drifting copies.
-  static final RegExp backgroundImageUrlPattern = RegExp(
-    r'''background(?:-image)?\s*:[^;}]*url\(\s*['"]?([^'")]+?)['"]?\s*\)''',
-    caseSensitive: false,
-  );
-
-  /// Reads an SVG `<image>` reference (shared with
-  /// [IllustrationProgressIndex]). package:html stores a namespaced
-  /// `xlink:href` under an `AttributeName` key (not the plain String
-  /// `'xlink:href'`), so match on the attribute's *local* name `href` — this
-  /// covers both `xlink:href` (legacy, still the norm in Japanese fixed-layout
-  /// EPUB) and the un-prefixed SVG2 `href`.
-  static String? svgImageHref(html_dom.Element image) {
-    for (final MapEntry<Object, String> attr in image.attributes.entries) {
-      final String name = attr.key.toString();
-      if (name == 'href' || name == 'xlink:href' || name.endsWith(':href')) {
-        final String value = attr.value.trim();
-        if (value.isNotEmpty) return value;
-      }
-    }
-    return null;
+    return _scanChapter(index, EpubScanRequest.imageRefs).imageRefs!;
   }
 
   /// TODO-723 / BUG-2559: every illustration in the book, once each, in reading
-  /// order. Walks [chapters] in spine order; for each chapter parses its XHTML
-  /// with `package:html` and collects, in DOM order, every reference an
+  /// order. Walks [chapters] in spine order; for each chapter scans its XHTML
+  /// (native, `ffc_parse_epub_chapter`) and collects, in DOM order, every reference an
   /// illustration can arrive as — HTML `<img src>`, SVG `<image xlink:href>` /
   /// `<image href>` (Japanese fixed-layout books wrap covers and colour plates
   /// in an SVG viewport with no `<img>` at all), and inline
@@ -347,7 +301,10 @@ class EpubBook {
   /// scan instead of one per surface.
   ///
   /// Per-chapter parse failures skip that chapter rather than failing the whole
-  /// list. Built lazily and cached in [_images] (the illustration set does not
+  /// list. Ruby readings (`<rt>/<rp>/<rtc>`) are skipped when counting the offsets, the
+  /// same caliber [chapterCharacterCount] uses. [EpubImageRef.sharesLineWithText]
+  /// compares the image's nearest block-level ancestor's own inline text.
+  /// Built lazily and cached in [_images] (the illustration set does not
   /// change once a book is open).
   List<EpubImageRef> get images {
     final List<EpubImageRef>? cached = _images;
@@ -385,18 +342,19 @@ class EpubBook {
 
     for (int i = 0; i < chapters.length; i++) {
       final String chapterHref = chapters[i].href;
-      final html_dom.Document doc;
+      // 解析失败的一章跳过、不让整份列表失败（与旧实现相同）。
+      final EpubChapterScan scan;
       try {
-        doc = parseChapterHtml(chapters[i].html);
-      } catch (_) {
+        scan = _scanChapter(i, EpubScanRequest.images);
+      } on FormatException {
         continue;
       }
-      final _ChapterImageScan scan = _scanChapterImages(doc.body);
-      for (final _ChapterImageHit hit in scan.hits) {
+      final int totalChars = scan.imageTotalChars!;
+      for (final EpubScanImageHit hit in scan.imageHits!) {
         add(
           i,
           resolveImageHref(chapterHref, hit.src),
-          _normCharOffsetOf(hit.charsBefore, scan.totalChars),
+          _normCharOffsetOf(hit.charsBefore, totalChars),
           charOffset: hit.charsBefore,
           leadingAnchorIds: hit.leadingAnchorIds,
           sharesLineWithText: hit.sharesLineWithText,
@@ -417,150 +375,6 @@ class EpubBook {
   /// chapter. No-op once [images] is built.
   void adoptImages(List<EpubImageRef> images) {
     _images ??= List<EpubImageRef>.unmodifiable(images);
-  }
-
-  /// Walks one chapter body in document order, counting study characters as it
-  /// goes, and records how many preceded each image reference. Ruby readings
-  /// (`<rt>/<rp>/<rtc>`) are skipped so a heavily annotated chapter does not
-  /// push its illustrations' offsets past the text they sit in — the same
-  /// caliber [chapterCharacterCount] uses, so the offsets land on the same
-  /// ruler as a stored reader position.
-  static _ChapterImageScan _scanChapterImages(html_dom.Element? body) {
-    final List<_ChapterImageHit> hits = <_ChapterImageHit>[];
-    // One running counter over the concatenated text, not a per-node sum:
-    // [countStudyChars] counts a Latin run as one unit, so `<p>abc</p><p>def</p>`
-    // is 2 per node but 1 concatenated — and [chapterAnchorCharOffsets] (like the
-    // reader's reported position) counts the concatenated prefix. Summing per
-    // node drifts the image offsets past same-position anchors, one per such
-    // seam, which files an image that ends one section under the next heading.
-    final StudyCharCounter counter = StudyCharCounter();
-    int chars = 0;
-    // Ids of the elements opened since the last study character, in document
-    // order: at a given character count they are exactly the anchors that
-    // come *before* an image sitting at that same count.
-    List<String> idsAtCount = <String>[];
-
-    void visit(html_dom.Node node) {
-      if (node is html_dom.Text) {
-        counter.add(node.data);
-        if (counter.count > chars) {
-          chars = counter.count;
-          idsAtCount = <String>[];
-        }
-        return;
-      }
-      if (node is! html_dom.Element) return;
-      final String tag = (node.localName ?? '').toLowerCase();
-      if (tag == 'rt' || tag == 'rp' || tag == 'rtc') return;
-      final String id = node.id;
-      if (id.isNotEmpty) idsAtCount = <String>[...idsAtCount, id];
-      for (final String src in elementImageRefs(node, tag)) {
-        hits.add(_ChapterImageHit(
-          src: src,
-          charsBefore: chars,
-          leadingAnchorIds: idsAtCount,
-          sharesLineWithText: _sharesBlockWithText(node),
-        ));
-      }
-      for (final html_dom.Node child in node.nodes) {
-        visit(child);
-      }
-    }
-
-    if (body != null) visit(body);
-    return _ChapterImageScan(hits: hits, totalChars: chars);
-  }
-
-  /// Block-level tags that end the walk in [_sharesBlockWithText]: an image's
-  /// nearest one of these is the "line box" it is typeset in.
-  static const Set<String> _imageBlockTags = <String>{
-    'address',
-    'article',
-    'aside',
-    'blockquote',
-    'body',
-    'center',
-    'dd',
-    'div',
-    'dl',
-    'dt',
-    'figcaption',
-    'figure',
-    'footer',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'header',
-    'li',
-    'main',
-    'nav',
-    'ol',
-    'p',
-    'pre',
-    'section',
-    'table',
-    'td',
-    'th',
-    'tr',
-    'ul',
-  };
-
-  /// See [EpubImageRef.sharesLineWithText]: walks from [element] up to its
-  /// nearest block-level ancestor and reports whether that block's own inline
-  /// content holds any non-whitespace text outside ruby annotations. Nested
-  /// blocks are not descended into: `<body><img/><p>text</p></body>` puts the
-  /// image in a line of its own, `<p>「<img/>」</p>` does not.
-  static bool _sharesBlockWithText(html_dom.Element element) {
-    html_dom.Element? block = element;
-    while (block != null &&
-        !_imageBlockTags.contains((block.localName ?? '').toLowerCase())) {
-      block = block.parent;
-    }
-    if (block == null) return false;
-    bool hasText(html_dom.Node node) {
-      if (node is html_dom.Text) return node.data.trim().isNotEmpty;
-      if (node is html_dom.Element && !identical(node, block)) {
-        final String tag = (node.localName ?? '').toLowerCase();
-        if (tag == 'rt' || tag == 'rp' || tag == 'rtc') return false;
-        if (_imageBlockTags.contains(tag)) return false;
-      }
-      for (final html_dom.Node child in node.nodes) {
-        if (hasText(child)) return true;
-      }
-      return false;
-    }
-
-    return hasText(block);
-  }
-
-  /// The image references [element] itself carries (chapter-relative, in
-  /// priority order): `<img src>`, SVG `<image href|xlink:href>`, and inline
-  /// `style="background-image:url(...)"`.
-  ///
-  /// Only *inline* styles: a `<style>` block or an external stylesheet has no
-  /// DOM position, so a background declared there cannot be placed in the
-  /// reading order this scan produces. [_chapterImageRefs] still reads those
-  /// for the image-only-chapter classifier, which does not need positions.
-  static List<String> elementImageRefs(html_dom.Element element, String tag) {
-    final List<String> refs = <String>[];
-    if (tag == 'img') {
-      final String src = (element.attributes['src'] ?? '').trim();
-      if (src.isNotEmpty) refs.add(src);
-    } else if (tag == 'image') {
-      final String? href = svgImageHref(element);
-      if (href != null && href.isNotEmpty) refs.add(href);
-    }
-    final String style = (element.attributes['style'] ?? '').trim();
-    if (style.isNotEmpty) {
-      for (final Match match in backgroundImageUrlPattern.allMatches(style)) {
-        final String ref = (match.group(1) ?? '').trim();
-        if (ref.isNotEmpty) refs.add(ref);
-      }
-    }
-    return refs;
   }
 
   static int _normCharOffsetOf(int charsBefore, int totalChars) {
@@ -806,34 +620,6 @@ String? normalizeEpubImageKey(String href) {
   return s;
 }
 
-class _ChapterImageHit {
-  const _ChapterImageHit({
-    required this.src,
-    required this.charsBefore,
-    required this.leadingAnchorIds,
-    required this.sharesLineWithText,
-  });
-
-  /// The raw, chapter-relative reference (not yet resolved).
-  final String src;
-
-  /// Study characters that precede this image within its chapter.
-  final int charsBefore;
-
-  /// See [EpubImageRef.leadingAnchorIds].
-  final List<String> leadingAnchorIds;
-
-  /// See [EpubImageRef.sharesLineWithText].
-  final bool sharesLineWithText;
-}
-
-class _ChapterImageScan {
-  const _ChapterImageScan({required this.hits, required this.totalChars});
-
-  final List<_ChapterImageHit> hits;
-  final int totalChars;
-}
-
 /// [EpubBook.chapterPlainTextWithRuby] 的产物。
 class EpubPlainTextWithRuby {
   const EpubPlainTextWithRuby({
@@ -872,182 +658,6 @@ class EpubRubyAnnotation {
   final int start;
   final int end;
   final String reading;
-}
-
-/// 与 [EpubBook._chapterPlainTextFromBody] 等价的一次 DOM 遍历，顺手记下 ruby。
-///
-/// 等价性怎么保证：`Element.text` 就是按文档序拼接全部后代文本节点；这里同样按
-/// 文档序拼接、跳过 `rt`/`rp`/`rtc` 子树（对应 `_removeRubyAnnotations`），再做
-/// `\s+` → 一个空格的折叠——折叠用同一个 `RegExp(r'\s')` 逐码元判定——最后
-/// [String.trim]（与原实现同一调用），trim 掉的前导码元数从各区间里减掉。
-class _RubyPlainTextWalker {
-  _RubyPlainTextWalker._();
-
-  static final RegExp _whitespace = RegExp(r'\s');
-
-  final StringBuffer _out = StringBuffer();
-  final List<EpubRubyAnnotation> _rubies = <EpubRubyAnnotation>[];
-  bool _pendingSpace = false;
-
-  /// 当前所在 ruby 的基底起点（还没输出任何基底字符时为 -1）；不嵌套。
-  int _rubyStart = -2;
-  StringBuffer? _reading;
-
-  /// 块级元素（段落边界只认这些；`section`/`body` 之类的大容器不算段落）。
-  static const Set<String> _blockTags = <String>{
-    'p',
-    'div',
-    'li',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'blockquote',
-    'dd',
-    'dt',
-    'pre',
-  };
-
-  /// 场景分隔常用的符号（整块只由它们和空白组成时当场景分隔）。
-  static final RegExp _separatorOnly =
-      RegExp(r'^[\s◇◆♢♦◈＊*※・·〇○●◎□■☆★△▲▽▼─━―－\-=＝#＃~〜～†‡§]+$');
-
-  static const Set<String> _mediaTags = <String>{'img', 'image', 'svg', 'video'};
-
-  final List<int> _blockEnds = <int>[];
-  final List<int> _sceneBreaks = <int>[];
-
-  static EpubPlainTextWithRuby walk(html_dom.Element? body) {
-    final _RubyPlainTextWalker w = _RubyPlainTextWalker._();
-    if (body != null) w._visit(body);
-    final String raw = w._out.toString();
-    final String text = raw.trim();
-    final int shift = raw.length - raw.trimLeft().length;
-    final List<EpubRubyAnnotation> rubies = <EpubRubyAnnotation>[
-      for (final EpubRubyAnnotation r in w._rubies)
-        if (r.end - shift <= text.length && r.start - shift >= 0)
-          EpubRubyAnnotation(
-            start: r.start - shift,
-            end: r.end - shift,
-            reading: r.reading,
-          ),
-    ];
-    int clamp(int offset) => (offset - shift).clamp(0, text.length);
-    return EpubPlainTextWithRuby(
-      text: text,
-      rubies: rubies,
-      blockEnds: <int>[for (final int e in w._blockEnds) clamp(e)],
-      sceneBreaks: <int>[for (final int s in w._sceneBreaks) clamp(s)],
-    );
-  }
-
-  /// 块收尾：记段落边界；整块是空段落 / 纯分隔符时另记场景分隔。只读 [_out]，
-  /// 不写——纯文本必须与 [EpubBook.chapterPlainText] 逐码元相同。
-  void _closeBlock(html_dom.Element node, String tag, int start) {
-    final int end = _out.length;
-    _blockEnds.add(end);
-    if (end == start) {
-      // 只有 `<p>` 的空段落算分隔（空 `<div>` 多是排版容器）；带插图的不算。
-      if (tag == 'p' && !_hasMedia(node)) _sceneBreaks.add(end);
-    } else if (end - start <= _maxSeparatorBlock &&
-        _separatorOnly.hasMatch(
-          String.fromCharCodes(_units.sublist(start, end)),
-        )) {
-      _sceneBreaks.add(end);
-    }
-  }
-
-  /// 分隔块都很短；更长的块不必判（也省得为每个段落切子串）。
-  static const int _maxSeparatorBlock = 64;
-
-  /// 与 [_out] 同步的码元副本（StringBuffer 不能取子串）。
-  final List<int> _units = <int>[];
-
-  static bool _hasMedia(html_dom.Element node) {
-    for (final html_dom.Element child in node.children) {
-      if (_mediaTags.contains(child.localName) || _hasMedia(child)) return true;
-    }
-    return false;
-  }
-
-  void _visit(html_dom.Node node) {
-    if (node is html_dom.Text) {
-      _append(node.data);
-      return;
-    }
-    if (node is! html_dom.Element) {
-      for (final html_dom.Node child in node.nodes) {
-        _visit(child);
-      }
-      return;
-    }
-    final String tag = node.localName ?? '';
-    if (tag == 'rt' || tag == 'rp' || tag == 'rtc') {
-      // `<rtc>` 是读音容器（里面还是 `<rt>`），三者内容都不进正文。
-      if (_reading != null && tag != 'rp') {
-        for (final html_dom.Element rt in tag == 'rt'
-            ? <html_dom.Element>[node]
-            : node.querySelectorAll('rt')) {
-          _reading!.write(rt.text);
-        }
-      }
-      return;
-    }
-    if (tag == 'hr') {
-      _sceneBreaks.add(_out.length);
-      return;
-    }
-    final bool isRuby = tag == 'ruby' && _rubyStart == -2;
-    if (isRuby) {
-      _rubyStart = -1;
-      _reading = StringBuffer();
-    }
-    final bool isBlock = _blockTags.contains(tag);
-    final int blockStart = _out.length;
-    for (final html_dom.Node child in node.nodes) {
-      _visit(child);
-    }
-    if (isBlock) _closeBlock(node, tag, blockStart);
-    if (isRuby) {
-      final String reading =
-          _reading!.toString().replaceAll(_whitespaceRun, '').trim();
-      if (_rubyStart >= 0 && reading.isNotEmpty) {
-        _rubies.add(
-          EpubRubyAnnotation(
-            start: _rubyStart,
-            end: _out.length,
-            reading: reading,
-          ),
-        );
-      }
-      _rubyStart = -2;
-      _reading = null;
-    }
-  }
-
-  static final RegExp _whitespaceRun = RegExp(r'\s+');
-
-  void _append(String data) {
-    for (int i = 0; i < data.length; i++) {
-      final String ch = data[i];
-      if (_whitespace.hasMatch(ch)) {
-        _pendingSpace = true;
-        continue;
-      }
-      if (_pendingSpace) {
-        if (_out.isNotEmpty) {
-          _out.write(' ');
-          _units.add(0x20);
-        }
-        _pendingSpace = false;
-      }
-      if (_rubyStart == -1) _rubyStart = _out.length;
-      _out.write(ch);
-      _units.add(ch.codeUnitAt(0));
-    }
-  }
 }
 
 class EpubChapter {
@@ -1287,7 +897,7 @@ String _expandSelfClosingRawTextTag(String tag) {
 ///   比 hoshi 高约 10~20%）；
 /// - v2 = 第一版 `japaneseCharCount`，whitelist 与 ttu `isNotJapaneseRegex` 有残差；
 /// - v3 = whitelist 逐区间对齐 ttu 的正则；
-/// - v4 = 收敛到全仓唯一口径 [countStudyChars]（`package:fushi_engine/stats/study_char_count.dart`）。
+/// - v4 = 收敛到全仓唯一口径 `countStudyChars`（`package:fushi_engine/stats/study_char_count.dart`）。
 ///
 /// v3→v4 换掉的是**口径本身**，不只是残差：ttu 白名单只收 ASCII 字母数字 + 假名 +
 /// 汉字 + 全角字母数字 + 半角片假名，于是英语按字母计（虚高约 5 倍）、`café` 的 é

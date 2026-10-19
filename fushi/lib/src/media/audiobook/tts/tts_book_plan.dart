@@ -12,6 +12,7 @@ library;
 import 'dart:isolate';
 
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
 
@@ -209,149 +210,31 @@ List<({bool endsParagraph, bool sceneBreakAfter})> ttsSentenceBoundaryMarks({
   return out;
 }
 
-class TtsTextSegment {
-  const TtsTextSegment({
-    required this.start,
-    required this.end,
-    required this.text,
-    required this.spokenText,
-  });
-
-  /// 章内原文 UTF-16 区间。
-  final int start;
-  final int end;
-  final String text;
-  final String spokenText;
-}
-
-const String _sentenceEnders = '。！？!?…\n';
-const String _closers = '」』”’）)]】〉》»';
-
-/// 台词引号的收尾（同时也在 [_closers] 里，紧跟句末标点时照常并入上一句）。
-const String _quoteEnders = '」』';
-
-/// 软切点：句子超长时优先在这些字后断开（读起来仍自然）。
-const String _softBreaks = '、，,；;：:';
+/// 一句的原文区间（章内 UTF-16）、显示原文与合成文本。
+typedef TtsTextSegment = TtsSplitSegment;
 
 /// 按句末标点切句；块级元素边界与场景分隔（[EpubPlainTextWithRuby.blockEnds] /
 /// `sceneBreaks`）也是句界；ruby 底本是不可拆的整体（合成用读音，显示用底本）；
 /// 单句合成文本不超过 [maxLength]（超长句先在逗号类软切点断，再硬断）。
+///
+/// 整章一次交给原生内核（`native/fushi_compute/src/parse/tts_split.rs`，规则细节见
+/// 那里的模块注释）；这是唯一实现，没有 Dart 回退。
 List<TtsTextSegment> splitTtsText(
   EpubPlainTextWithRuby input, {
   required int maxLength,
 }) {
-  if (maxLength < 8) throw ArgumentError.value(maxLength, 'maxLength');
-  final String text = input.text;
-  final Map<int, EpubRubyAnnotation> rubyAt = <int, EpubRubyAnnotation>{};
-  int lastEnd = 0;
-  for (final EpubRubyAnnotation ruby in input.rubies) {
-    if (ruby.start < lastEnd ||
-        ruby.start < 0 ||
-        ruby.end > text.length ||
-        ruby.end <= ruby.start ||
-        ruby.reading.trim().isEmpty ||
-        ruby.reading.length > maxLength ~/ 2) {
-      continue;
-    }
-    rubyAt[ruby.start] = ruby;
-    lastEnd = ruby.end;
-  }
-
-  // 原子：一个码点或一整个 ruby。
-  final List<({int start, int end, String spoken})> atoms =
-      <({int start, int end, String spoken})>[];
-  int cursor = 0;
-  while (cursor < text.length) {
-    final EpubRubyAnnotation? ruby = rubyAt[cursor];
-    if (ruby != null) {
-      atoms.add((start: cursor, end: ruby.end, spoken: ruby.reading));
-      cursor = ruby.end;
-      continue;
-    }
-    final int unit = text.codeUnitAt(cursor);
-    final bool pair =
-        unit >= 0xD800 &&
-        unit <= 0xDBFF &&
-        cursor + 1 < text.length &&
-        (text.codeUnitAt(cursor + 1) & 0xFC00) == 0xDC00;
-    final int end = cursor + (pair ? 2 : 1);
-    atoms.add((start: cursor, end: end, spoken: text.substring(cursor, end)));
-    cursor = end;
-  }
-
-  final List<TtsTextSegment> result = <TtsTextSegment>[];
-  void emit(int from, int to) {
-    while (from < to && atoms[from].spoken.trim().isEmpty) {
-      from++;
-    }
-    while (to > from && atoms[to - 1].spoken.trim().isEmpty) {
-      to--;
-    }
-    if (to <= from) return;
-    final int start = atoms[from].start;
-    final int end = atoms[to - 1].end;
-    result.add(
-      TtsTextSegment(
-        start: start,
-        end: end,
-        text: text.substring(start, end),
-        spokenText: <String>[
-          for (int i = from; i < to; i++) atoms[i].spoken,
-        ].join(),
-      ),
-    );
-  }
-
-  // 块边界 / 场景分隔是硬句界：不带句末标点的标题、`◇◇◇` 这类分隔行不能和下一
-  // 段并成一句（否则分隔符被读出来，段落停顿也落不到正确位置）。
-  final List<int> hardBreaks = <int>{
-    ...input.blockEnds,
-    ...input.sceneBreaks,
-  }.toList()
-    ..sort();
-  int hb = 0;
-
-  int first = 0;
-  while (first < atoms.length) {
-    int i = first;
-    int spoken = 0;
-    int lastSoft = -1;
-    bool ended = false;
-    bool hardStop = false;
-    while (hb < hardBreaks.length && hardBreaks[hb] <= atoms[first].start) {
-      hb++;
-    }
-    final int nextBreak = hb < hardBreaks.length ? hardBreaks[hb] : 1 << 40;
-    while (i < atoms.length) {
-      if (i > first && atoms[i].start >= nextBreak) {
-        hardStop = true;
-        break;
-      }
-      final String original = text.substring(atoms[i].start, atoms[i].end);
-      if (ended &&
-          !_closers.contains(original) &&
-          !_sentenceEnders.contains(original)) {
-        break;
-      }
-      if (spoken + atoms[i].spoken.length > maxLength) break;
-      spoken += atoms[i].spoken.length;
-      i++;
-      // 引号收尾也是句界：台词末尾常不带句号（「……ないわー」「うるせ……」），
-      // 不在这里断就会把两个人的台词并成一句读。
-      if (_sentenceEnders.contains(original) ||
-          _quoteEnders.contains(original)) {
-        ended = true;
-      }
-      if (_softBreaks.contains(original)) lastSoft = i;
-    }
-    if (i == first) i = first + 1; // 单个原子就超长（畸形 ruby 已在上面过滤）。
-    final bool overflowed = !ended && !hardStop && i < atoms.length;
-    final int cut = overflowed && lastSoft > first ? lastSoft : i;
-    emit(first, cut);
-    first = cut;
-  }
-  return result;
+  return TtsSplitNative.instance.split(
+    input.text,
+    rubies: <TtsSplitRuby>[
+      for (final EpubRubyAnnotation ruby in input.rubies)
+        (start: ruby.start, end: ruby.end, reading: ruby.reading),
+    ],
+    blockEnds: input.blockEnds,
+    sceneBreaks: input.sceneBreaks,
+    maxLength: maxLength,
+  );
 }
+
 /// 朗读用：把同一段落里相邻的过短句子并成一次合成。
 ///
 /// 自建引擎每次请求有约 2 秒的固定开销（实测 GPT-SoVITS v5：7 字的句子 2.2 秒出声、

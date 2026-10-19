@@ -1,0 +1,480 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title/><script src="../js/kobo.js"/><style>p{background-image:url( "../img/bg.png" )}</style></head><body><p id="p1">本文<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>です。</p></body></html>
+=====
+<html><body><p>未閉じ<b>太字<i>斜体</b>まだ斜体</i>終わり<p>次の段落<div>ブロック</p>後</div></body></html>
+=====
+<body><ruby><rb>東京</rb><rp>（</rp><rt>とうきょう</rt><rp>）</rp></ruby><ruby>無<rtc><rt>む</rt></rtc></ruby><ruby>空</ruby><ruby><ruby>入れ子<rt>いれこ</rt></ruby><rt>外</rt></ruby><rt>外れrt</rt></body>
+=====
+<body><p>&amp;&lt;&gt;&quot;&nbsp;&copy &copy; &notit; &notin; &#x1F600; &#0; &#xD800; &#128; &#x110000; &bogus; &AMP</p></body>
+=====
+<body><p>改行&#13;CR
+LF
+CRLF	tab　全角空白&#x85;NEL&#xFEFF;BOM&#xA0;NBSP&#x2028;LS</p>
+  <p>   前後空白   </p></body>
+=====
+<body><script>var x = "<p>script text</p>";</script><style>.a{color:red}</style><!-- コメント --><p>本文</p><![CDATA[ cdata ]]><noscript>noscript文</noscript></body>
+=====
+<body><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10"><image width="10" height="10" xlink:href="../image/p001.jpg"/><image href=" ../image/p002.jpg "/><text>svg文字</text></svg></body>
+=====
+<body><image src="outside.png"/><img src="  a.png  "/><img src=""/><img/><div style="background-image: url('../img/s1.png'); color:red">背景</div><div style="BACKGROUND:#fff URL( x.png )">大文字</div></body>
+=====
+<body><template><p>テンプレート内</p></template><p>後ろ</p></body>
+=====
+<body><table><tr><td>セル</td></tr>浮いた文字<tr><td>二</td></tr></table></body>
+=====
+<body><p>段落<p>入れ子段落</p></p><div/>自閉じdiv後<br/>改行後<span id="a1"/>アンカー後<a id="a2"/>リンク後</body>
+=====
+<body><RUBY>大<RT>おお</RT></RUBY><P ID="UP">大文字タグ</P></body>
+=====
+<body><p>前</p><hr/><p></p><p>◇◇◇</p><p>　＊　</p><div></div><p><img src="x.png"/></p><p>後</p></body>
+=====
+<html><head><title>題</title></head><body><p>一</p></body><body id="b2"><p>二</p></body></html><p>html後</p>
+=====
+<html><head><meta charset="utf-8"/>頭の中の文字<link rel="stylesheet" href="a.css"/></head><body><p>本文</p></body></html>
+=====
+<body><math><mi>x</mi><mo>=</mo><mn>1</mn></math><p id="dup">一</p><p id="dup">二</p><rt id="rtid">読み</rt><p id="">空id</p></body>
+=====
+<body><p>abc</p><p>def</p><p>don't café naïve</p><p>𠮷野家 〇一二 ラーメン々</p><p>Ελληνικά русский العربية हिन्दी</p></body>
+=====
+<body><div id="s1"><img src="../img/p1.png"/><h2 id="h1">見出し</h2><p>本文一</p></div><p>「<img src="gaiji.png"/>」と言った。</p><figure><img src="fig.png"/><figcaption>図</figcaption></figure></body>
+=====
+<body>直下テキスト<span>スパン</span><p>段落</p>末尾テキスト</body>
+=====
+
+=====
+<p>bodyなし</p>
+=====
+<frameset><frame src="a.html"/></frameset>
+=====
+<body><select><option>選択肢</option></select><textarea>テキスト<p>エリア</p></textarea><title>bodyのtitle</title><xmp><b>xmp</b></xmp><plaintext><p>平文</p></body></html>
+=====
+<body><p>未閉じコメント<!-- ここから</p></body>
+=====
+<body><p>属性<img src=a.png alt="x" src="b.png"/><img src='c.png' / ><img src="d.png"style="background:url(e.png)"/></p></body>
+=====
+<body><p>&lt;rt&gt;は文字&lt;/rt&gt;<ruby>々<rp>(</rp><rt>のま</rt><rp>)</rp></ruby></p><ruby>空読み<rt>  </rt></ruby><ruby>多段<rt>た</rt><rt>だん</rt></ruby></body>
+=====
+<body><svg><foreignObject><p>異物</p><img src="fo.png"/></foreignObject><desc>説明</desc></svg><svg><style>.c{background-image:url(svgstyle.png)}</style></svg></body>
+=====
+<body><div style="background: url(&quot;q.png&quot;)">実体参照の引用符</div><div style="background-image:url()">空url</div><div style="background-image:url(  )">空白url</div><p style="x;background-image : url(  sp ace.png  ) ; y">空白入り</p></body>
+=====
+<body><p>&#x0D;&#x0A;&#9;&#x3000;前後&#x3000;</p></body>
+=====
+<body><p>&#x0;NUL&#0;</p><p>制御&#x1;&#x7F;&#x9F;</p></body>
+
+=====
+<body><a href="x">一<p>二<a href="y">三</a>四</p>五</a>六</body>
+=====
+<body><table><b>太字<tr><td>セル</td></tr>後</b></table>表後</body>
+=====
+<body><table><tr><td><select><option>選</option></table>後ろ</body>
+=====
+<html><head><template><p>頭テンプレート</p></template><noscript><p>頭noscript</p></noscript></head><body>本文</body></html>
+=====
+<body>先頭テキスト<frameset><frame/></frameset>後</body>
+=====
+<body><math><mi>x<svg><desc><p>深い</p></desc></svg></mi></math>後</body>
+=====
+<body><form id="f1">一<form id="f2">二</form>三</form></body>
+=====
+<body><nobr>一<nobr>二</nobr>三</body>
+=====
+<body><button>押す<p>段落</button>後<button>二<button>三</button></body>
+=====
+<body><ul><li>一<li>二<ul><li>入れ子</ul>三</ul><dl><dt>用語<dd>定義<dt>二</dl></body>
+=====
+<body><ruby>漢<rb>字</rb><rt>じ<rtc>外<rt>そと</rtc>後</ruby><ruby>甲<rp>(<rt>こう<rp>)</ruby></body>
+=====
+<body><p><b><i><u><s>多重</p>続き</b></body>
+=====
+<body><h1>見出し<h2>入れ子見出し</h1>後</body>
+=====
+<body><pre>
+先頭改行は捨てる
+	タブ</pre><textarea>
+テキストエリア</textarea><listing>
+リスティング</listing></body>
+=====
+<body><svg><title>題</title><foreignObject><div id="fo">中</div></foreignObject><font color="red">フォント</font>後</svg></body>
+=====
+<body><svg><p>svg中のp</p></svg><math><annotation-xml encoding="text/html"><p>注釈</p></annotation-xml></math></body>
+=====
+<body><table><caption>キャプション<td>暗黙</td></caption></table><colgroup><col/></colgroup></body>
+=====
+<body><div><span id="s"/>中身<div id="d"/>二</div><br>改行</br>後</body>
+=====
+<body><image xlink:href="a.png"/><svg><image xlink:href="b.png" href="c.png"/><image foo:href="d.png" xlink:href="e.png"/></svg></body>
+=====
+<body><p>&lt;!-- 偽コメント --&gt;<!--- 三連 ---><!-- -- 中 -- --><!---->空</p><?php echo 1; ?>PI後</body>
+=====
+<body><object><param name="a"/>オブジェクト</object><embed src="e.png"/><iframe>イフレーム<p>中</p></iframe></body>
+=====
+<body><p>大小 <ImG SrC="UP.PNG"/><IMAGE xlink:href="up2.png"/><Svg><IMAGE xlink:href="svgimg.png"/></Svg></p></body>
+=====
+<body style="background-image:url(body.png)"><html style="background:url(html2.png)"><head><style>a{background: url(head2.png)}</style></head></html>後</body>
+=====
+<body><p>一&#x1;二&#x0B;三&#x7F;四&#xFDD0;五&#xFFFE;六</p></body>
+=====
+<?xml version="1.0"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd"><html xml:lang="ja"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/></head><body class="p-text"><div class="main"><p>　「台詞」<br/></p></div></body></html>
+
+=====
+<template><p>内</p></template><p>外</p>
+=====
+<head><template><title>t</title></template></head><body>x
+=====
+<html><head><template>a</template><meta charset=utf-8></head>
+=====
+<body><template><td>cell</td></template></body>
+=====
+<ruby>漢<rb>か</rb><rb>ん<rt>x</rt><rtc>y<rt>z</rtc>w</ruby>
+=====
+<ruby><rb>a<rb>b<rp>(<rt>c<rp>)</ruby>
+=====
+<ruby>a<rt>b<rp>c<rt>d</ruby><rt>outside
+=====
+<p><ruby>x<rt>y</p>z
+=====
+<select><option>a<hr><option>b</select>
+=====
+<select><optgroup><option>a</optgroup><option>b<select>c
+=====
+<select><input>after
+=====
+<select><textarea>t</textarea>x
+=====
+<select><keygen>y
+=====
+<table><select><td>x</select></table>
+=====
+<table><tr><td><select><td>y</table>
+=====
+<p>a</br>b</p>
+=====
+</br>
+=====
+<svg><noscript>x</noscript><p>y</p></svg>
+=====
+<svg><desc><p>html</p></desc><title><b>t</b></title><foreignObject><div>d</div></foreignObject></svg>
+=====
+<math><mi><b>x</b></mi><mtext><mglyph/><malignmark/>t</mtext><annotation-xml encoding="text/html"><p>h</p></annotation-xml><annotation-xml encoding="TEXT/HTML"><div>d</div></annotation-xml><annotation-xml><svg><g/></svg></annotation-xml></math>
+=====
+<svg viewbox="0 0 1 1" xlink:href=a xml:lang=ja xmlns:xlink=x xmlns=y definitionurl=d><clippath/><foreignobject/><lineargradient gradientunits=u/></svg>
+=====
+<math definitionurl=d xlink:href=h><mi definitionurl=e xlink:title=t/></math>
+=====
+<svg><image xlink:href="a.jpg" href="b.jpg" id=c/></svg>
+=====
+<svg><font color=red>x</font><font>y</font><span>z</span></svg>
+=====
+<svg><![CDATA[<cdata> & stuff]]><p>after</svg>
+=====
+<![CDATA[not in html]]>
+=====
+<math><![CDATA[x]]y]]></math>
+=====
+<b><i><u>abc</b>def</i>ghi</u>
+=====
+<a href=1>one<p>two</a>three</p>
+=====
+<a><a>nested</a></a>
+=====
+<b><b><b><b>four</b></b></b></b>
+=====
+<b class=x><b class=x><b class=x><b class=x><p>ark</b>
+=====
+<table><b><tr><td>aaa</td></tr>bbb</table>ccc
+=====
+<table>text<tr>more<td>cell</td>after</tr></table>
+=====
+<table><caption>c<td>x</caption><col><colgroup><col></table>
+=====
+<table><tbody><tr><th>h<td>d</tbody><tfoot><tr><td>f</table>
+=====
+<table><form><input type=hidden><input type=text></form></table>
+=====
+<table><style>s</style><script>x</script></table>
+=====
+<table><table><tr><td>x</table>
+=====
+<table> <!--c--> <tr> </tr> x </table>
+=====
+<p><table><p>in quirks?</table>
+=====
+<!DOCTYPE html><p><table><p>no quirks</table>
+=====
+<frameset><frame><noframes>nf</noframes></frameset><p>x
+=====
+<body><frameset>y
+=====
+<p>a<frameset>z
+=====
+<frameset><frameset></frameset></frameset></html>after<!--c-->
+=====
+<plaintext><b>all text</b></plaintext>&amp;
+=====
+<xmp><b>x</b></xmp><iframe><b>y</b></iframe><noembed><i>z</i></noembed><noscript><u>w</u></noscript>
+=====
+<textarea>
+=====
+first newline dropped</textarea><pre>
+=====
+pre newline</pre><listing>
+=====
+
+=====
+two</listing>
+=====
+<pre>&#10;x</pre><textarea>&#10;y</textarea>
+=====
+<title>&amp;<b>t</b></title><style>&amp;<b></style>
+=====
+<script><!--<script>x</script>--></script>after
+=====
+<script><!--<script></script>y--></script>z
+=====
+<script><!-- a -- b --></script>
+=====
+<isindex prompt="P:" action=go name=n>
+=====
+<isindex>
+=====
+<form><isindex></form>
+=====
+<image src=x.png/>
+=====
+<button><button>b2</button>
+=====
+<nobr>a<nobr>b</nobr>
+=====
+<li>a<li>b<dd>c<dt>d<ul><li>e</ul>
+=====
+<dl><dt>a<div><dd>b</div></dl>
+=====
+<h1><h2>x</h1></h2>
+=====
+<p><h3>y</p>
+=====
+<applet><b>x</applet>y</b>
+=====
+<marquee><i>m</marquee>
+=====
+<object><p>o</object>
+=====
+<form><form>inner</form></form>x</form>
+=====
+<html a=1><html b=2 a=3><body c=4><body d=5 c=6>
+=====
+<head></head><head><title>x</title></head><link rel=a>
+=====
+<head><script>s</script></head><style>after head</style><body>
+=====
+</head><meta><title>t</title><base>x
+=====
+<!--a--><!DOCTYPE html><!--b--><html><!--c--><head><!--d--></head><!--e--><body><!--f--></body><!--g--></html><!--h-->
+=====
+</html>text after
+=====
+</body>  <p>x
+=====
+<br/><br></br><hr/>
+=====
+<input type=HIDDEN><frameset>
+=====
+<option>a<option>b<optgroup>c
+=====
+<rp>x<rt>y
+=====
+<span id=a>a<span id=b>b</span></span>
+=====
+&amp &copy &AElig &notit; &notin; &not &lt &gt; &nbsp; &Tab;&NewLine;x &#9;&#10;&#32;y
+=====
+&#0;&#128;&#129;&#13;&#x0d;&#xD800;&#xDFFF;&#x10FFFF;&#x110000;&#x7FFFFFFFFFFFFFFF;
+=====
+&#65&#x41&#X42;&#;&#x;&#xg;&#a
+=====
+<a href="&amp;&copy&notit;&not=1&nota&#65;&#x41">x</a>
+=====
+<a href=&amp;x&copy=1>y</a>
+=====
+<a title='&lt;b'>z</a><a title=&gt>w</a>
+=====
+<p id=a id=b ID=c Id=d>dup</p>
+=====
+<p a b c=1 d="2" e='3' f=4/>x
+=====
+<p "a"=1 'b'=2 <c=3 =d>x
+=====
+<p a=`b` c=d=e f=<g>x
+=====
+<div/><span/>t
+=====
+<p>NUL here:	</p>
+=====
+<!-- c --!> after
+=====
+<!---->x<!--->y<!-->z
+=====
+<!-- a --- b ---->
+=====
+<!--!-- x -->
+=====
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"><p><table>
+=====
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "x"><p><table>
+=====
+<!DOCTYPE html SYSTEM "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd"><p><table>
+=====
+<!DOCTYPE HTML PUBLIC "html"><p><table>
+=====
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "f"><p><table>
+=====
+<!DOCTYPE html bogus><p><table>
+=====
+<!DOCTYPE html><!DOCTYPE again><p>
+=====
+<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>T</title></head><body><p>x</p></body></html>
+=====
+<svg><p>breakout</p>after</svg>
+=====
+<svg><g><path/></g></svg>tail<svg><g></svg></g>
+=====
+<math><mi><svg><p>x</p></svg></mi></math>
+=====
+<svg><title><svg><desc>d</desc></svg></title></svg>
+=====
+<svg></foo><g></G></svg>
+=====
+<table><svg><g>x</g></svg></table>
+=====
+<table><tr><svg><td>x</td></svg></tr></table>
+=====
+<svg><table><tr><td>x</svg>
+=====
+<math><annotation-xml><svg><foreignObject><p>x</p></foreignObject></svg></annotation-xml></math>
+=====
+<b><table><td><i>x</table>y
+=====
+<a><table><a>z</table>
+=====
+<p><b><p>c</b></p>
+=====
+<div><b><div><i>x</div>y</b>z
+=====
+<b>1<p>2</b>3</p>
+=====
+<em><strong>a<div>b</em>c</strong>d</div>
+=====
+<b><b><b><b><b>5</b></b></b></b></b>
+=====
+<font color=red><font color=red><font color=red><font color=red>x
+=====
+<a><b><c><d><e><f><g><h><i>deep</a>
+=====
+<tr><td>x</td></tr>
+=====
+<td>orphan
+=====
+<caption>c</caption>
+=====
+<col><colgroup>
+=====
+<table><colgroup>x<col></colgroup>y</table>
+=====
+<table><tbody>t<tr>r</table>
+=====
+<html><body></body></html><p>after html
+=====
+<body></body>text
+=====
+<p>unclosed<div>block
+=====
+<ul><li><p>a<li>b</ul>
+=====
+<address><p>a<li>b</address>
+=====
+<menu><li>m</menu>
+=====
+<main><p>m</main>
+=====
+<section><figure><figcaption>c</figcaption></figure></section>
+=====
+﻿BOM at start<p>x
+=====
+CRLF
+CRLF
+CRCR<p a="v
+w"></p>
+=====
+NUL text<p x a =b > </p >
+=====
+<p>&#9223372036854775807;</p>
+=====
+<p>&#x7FFFFFFFFFFFFFFF;</p>
+=====
+<!doctype html><title>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</title>
+=====
+<div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>deep</div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div>
+=====
+<b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b><b>x</b></b></b>
+=====
+<table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table><table>x
+=====
+<svg><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g><g>x
+=====
+<select><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option><option></select>
+=====
+<p>𠀋&#x2000B;&#131083;</p>
+=====
+<p>   　</p>
+=====
+<script><!--<script><!--<script><!--<script></script>
+=====
+<style></style ><style></stylex></style>
+=====
+<textarea></textarea x=1></textarea>
+=====
+<title></TITLE>x
+=====
+<xmp></XMP >y
+=====
+
+=====
+ 
+=====
+
+
+=====
+<
+=====
+&
+=====
+</
+=====
+<!
+=====
+<!--
+=====
+<!DOCTYPE
+=====
+<p
+=====
+<p a
+=====
+<p a=
+=====
+<p a="x
+=====
+<p a='x
+=====
+<p a=x
+=====
+<p/
+=====
+</p
+=====
+<![CDATA[
+=====
+<svg><![CDATA[
+=====
+<svg><![CDATA[x]
+=====
+<svg><![CDATA[x]]

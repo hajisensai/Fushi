@@ -246,15 +246,203 @@ flutter_tester 有 94 个差 1 ULP，旧实现自己在两个宿主上也不一�
 互相关的累加次序要与旧实现一致，不能向量化重排，只跳过 `audio[i] ≤ 0` 的项（本来就不加）；
 降采样一次性调用基本持平（主要成本是 6 万次 `pow`，两边调的都是 CRT），收益在面板改宽度时不再重算。
 
+## 解析域：EPUB 章节 DOM 派生量（BUG-3433）
+
+`ffc_parse_epub_chapter`（`src/parse/epub.rs`，Dart 绑定 `EpubChapterScanner`）一次解析一章 XHTML，
+按请求位产出纯文本（ruby 剥离、`\s+` 折叠）+ 学习字数、ruby 读音轨（块尾 / 场景分隔）、目录锚点偏移、
+带位置的插图扫描、整份文档的图片引用、全书搜索坐标系文本。调用方是 `EpubBook` 的
+`chapterPlainText` / `chapterPlainTextWithRuby` / `chapterCharacterCount` / `chapterAnchorCharOffsets` /
+`isImageOnlyChapter` / `chapterImageSrcs` / `images` / `chapterSearchText`，原 Dart 遍历已删除。
+
+**建树是 `package:html` 0.15.6 的逐行移植**（`src/parse/html5lib/`），不是任何现行规范实现：学习统计、
+阅读位置、有声书 cue 偏移都建在这些数上，结果必须与旧实现逐码元相同，而 `package:html` 停在旧版
+WHATWG 算法（没有 `<template>` 内容文档、`<rb>` / `<rtc>` 不隐含结束、外来内容里调整过名字的属性排到
+属性表末尾……），html5ever 在畸形输入上与它分叉。旧实现 `parse()` 会抛异常的输入（数字字符引用超出
+64 位）返回 `BAD_INPUT`，Dart 侧抛 `FormatException`。唯一的已知差异（所有者 2026-10-19 接受）：
+畸形的超深嵌套上旧实现抛 `StackOverflowError`（阈值随运行时变：JIT 约 5000 层、AOT 约 1–2 万层），
+这里深树换到按深度定栈的线程上遍历，照常给出结果，不设人为深度上限；旧实现能算出结果的输入，结果相同。
+
+对拍（2026-10-19）：61 本真书 1923 章（無職転生 1–26 卷等）树转储逐字节相同、全部派生量相同；固定种子
+标签汤 / 突变语料约 30 万份的树转储与派生量都相同。回归向量（旧实现生成）：树级见 `src/parse/html5lib/tests.rs`，
+派生量级见 `packages/fushi_engine/test/epub/chapter_scan_vectors_test.dart`。
+
+| 项（55 本书 1649 章、2357 万 UTF-16 码元，整书一遍） | Dart DOM + Rust 字数（迁移前） | Rust | 倍数 |
+|---|---|---|---|
+| 纯文本 `chapterPlainText` | 5,986–6,261 ms | 2,767–3,085 ms | 2.0–2.2× |
+| 学习字数 `chapterCharacterCount` | 6,403–6,412 ms | 2,688–3,389 ms | 1.9–2.4× |
+| 插图索引 `images` | 4,492–4,589 ms | 2,746–2,986 ms | 1.5–1.6× |
+| 锚点偏移 `chapterAnchorCharOffsets` | 4,153–4,196 ms | 2,605–3,314 ms | 1.3–1.6× |
+
+基准脚本 `packages/fushi_engine/tool/bench/epub_chapter_scan_bench.dart`（Windows x64，同机交替跑两轮）。
+
+## 解析域：视频文件名 / 字幕时间轴 / Fribb 映射
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_parse_filename_parse_batch(units, units_len, lens, count, ext_units, ext_units_len, ext_lens, ext_count, current_year, u8** out, usize* out_len) -> i32` | 一批名字（UTF-16 池 + 每条长度）按 anitomy 式规则解析；扩展名表与「今年」由调用方给（结果与运行日期无关、可冻结向量） |
+| `ffc_parse_filename_candidates_batch(同上) -> i32` | 一批完整路径 → 有序候选（父目录名优先，跳过 Downloads / 新建文件夹 / 盘符等非标题目录），每条带 `inputIndex` |
+| `ffc_parse_filename_trailing_season_batch(units, units_len, lens, count, i32* out) -> i32` | 「标题尾部裸数字季号」判定，每条输出 季号 + 标题区间（无 = -1） |
+| `ffc_parse_subtiming_summarize(const u16*, usize, …) -> i32` | srt / vtt 的 `起 --> 止` 与 ass/ssa `Dialogue:` 扫描，给 cue 数 / 最早起点 / 最晚终点 |
+| `ffc_parse_fribb_entries(const u8*, usize, u8** out, usize* out_len, i32* err_kind, usize* err_offset) -> i32` | Fribb `anime-list-full.json` 一遍扫描 + 按 anidb_id 归并；非法 JSON / 顶层非数组分别报错 |
+
+| 调用方 | 之前（纯 Dart） | 现在 |
+|---|---|---|
+| `fushi_engine/lib/media/video/scraper/filename_parser.dart` `FilenameParser`（`parse` / `parseAll` / `candidatesForPath` / `takeTrailingNumericSeason`） | 几十条 `RegExp` 规则引擎 | `MediaNameNative`；批量一次 FFI，Dart 只剩结果对象适配 |
+| `fushi_engine/lib/media/video/subtitle/subtitle_timing_check.dart` `summarizeSubtitleTiming` | 两条正则 + `_parseClock` | `SubtitleTimingNative` |
+| `fushi_engine/lib/media/video/metadata/anime_identity_mapping.dart`、`discovery/anime_tmdb_cross_reference.dart` | `jsonDecode` 整表 + `fromRows` 归并 | `animeIdentityEntriesFromJsonUtf8` → `FribbNative`，Dart 只建三张索引 |
+
+口径：原正则大量用先行断言，且 Dart `RegExp` 是逐 UTF-16 码元、`\s` 为 JS 空白集合、`\d` 只有 ASCII、
+不区分大小写走 JS Canonicalize（非 ASCII 永不折叠到 ASCII）——`regex` crate 在这些边界上不一致，所以
+`src/parse/media_name/js_regex.rs` 实现了本域用到的那部分 ECMAScript 回溯语义，`dart_str.rs` 复现
+Dart `trim` / `int.tryParse`，`toLowerCase` 用 crate 共用的冻结表（见下「Dart `toLowerCase` 口径」；只用于与常量比较、不进输出）。JSON 语法与 `jsonDecode` 一致（重复键后者生效、
+孤立代理照收等，见 `fribb.rs` 文件头）。
+
+回归：删旧实现前用旧 Dart（原文件副本）与新链路逐条对拍——本机视频库 1697 条真实路径（1698 个路径段）、
+10 万条按真实词表拼的模糊名 + 2.5 万条模糊路径、76 个真实字幕文件（2534 万码元）+ 10 万条模糊时间轴、
+Fribb 全表（7.5 MB）+ 1 万份模糊 JSON，**0 处不一致**。冻结摘要与代表样例在
+`packages/fushi_engine/test/media/video/native_media_parse_vectors_test.dart`（语料生成器
+`native_parse_corpus.dart`，固定种子：2 万名字 / 5 千路径 / 2 万字幕 / 5 千 Fribb 文档）。
+
+基准（AOT，2026-10-19，i5-12600KF / Windows 11，同一进程 5 轮取最好；旧 Dart vs Rust + FFI 含结果重建）：
+
+| 输入 | 旧 Dart | Rust + FFI |
+|---|---|---|
+| 文件名 1698 个真实路径段 | 60.6 ms | 32.1 ms（批量） |
+| 文件名 21698 条（真实 + 模糊） | 1,938 ms | 887 ms（批量）/ 1,339 ms（逐条调 `parse`） |
+| 字幕时间轴 76 个文件 / 2534 万码元 | 7,390 ms | 2,738 ms |
+| Fribb 全表 7.5 MB（含 `utf8.encode` 49.5 ms） | 278 ms | 198 ms（FFI + 记录解码本体 102 ms，余为 Dart 重建条目对象） |
+
+## 解析域：种子元数据 bencode 与 Anki 媒体引用扫描
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_parse_bencode_inspect_torrent(const u8*, usize, u8** out, usize* out_len) -> i32` | 严格校验 .torrent 的 bencode、算 info hash（v1 SHA-1 / v2 SHA-256，取 `info` 值的原始字节）、读 name 与文件清单；结果是定长头 + 16 字节文件记录 + UTF-16 池（布局见 `src/parse/bencode.rs`），`ffc_free_bytes` 释放 |
+| `ffc_parse_anki_matcher_new(const u16*, usize, const u64* offsets, usize count, Matcher** out) -> i32` / `ffc_parse_anki_matcher_free(Matcher*)` | 用一批媒体文件名（UTF-16 池 + `count + 1` 个偏移）建匹配器；Dart 侧挂 `NativeFinalizer` |
+| `ffc_parse_anki_names_in(Matcher*, const u16*, usize, const u64* text_offsets, usize, const u64* group_offsets, usize, u8** out, usize* out_len) -> i32` | 一次扫一批「组」（一组 = 一条笔记的全部字段），输出 u32：组起点表 + 命中的名字下标 |
+| `ffc_parse_anki_lower_utf16(u16*, usize) -> i32` | 原地按 Dart `toLowerCase` 折叠（口径自检用） |
+
+| 调用方 | 之前（纯 Dart） | 现在 |
+|---|---|---|
+| `fushi_engine/lib/media/torrent/torrent_metainfo.dart` `inspectTorrentMetainfo` | `_BencodeReader` 建整棵值树 + `package:crypto` | `ffcInspectTorrentMetainfo`；Dart 只留空 / 超 16 MiB 入口检查、`expectedInfoHash` 比对、展示名 `trim()`，文件清单错误仍在 hash 比对之后抛 |
+| `fushi_anki/lib/src/anki_media_dedup.dart` `MediaNameMatcher` | 按扩展名锚定的多模式子串匹配 | `FfcMediaNameMatcher`；新增 `namesInEach`，`AnkiConnectRepository` 建对照表 / 删前复核都整批一次调用 |
+
+口径逐条照旧实现复现（Rust 模块注释里列了全部）：错误消息逐字一致；键按 Dart
+`utf8.decode(allowMalformed: true)` 解码后判重——**开头的 UTF-8 BOM 被剥掉**（`\u{FEFF}info` 与
+`info` 是同一个键）；字节串在 Dart 里是 `Uint8List`，也满足 `is List<Object?>`，所以 `files` /
+`path` 写成字节串时按「元素全是整数的列表」处理；字节串长度让 `index + length` 溢出 i64 时
+报旧实现 catch-all 的「truncated or malformed bencode」。大小写折叠用 crate 共用的 Dart
+`toLowerCase` 冻结表（见下「Dart `toLowerCase` 口径」），测试对每个码点与 `String.toLowerCase` 比对。
+
+SHA-1 用 RustCrypto `sha1` 0.10（MIT OR Apache-2.0）。
+
+回归：删旧实现前用旧 Dart 跑真实种子（libtorrent 测试集 + 本机下载的种子）、手写边界样本与
+模糊变异，以及本机真实 Anki 牌组（30794 条笔记、223572 个媒体名）全量对拍，0 处不一致；冻结的
+向量在 `packages/fushi_compute/test/{bencode_test,anki_media_test}.dart` 与
+`packages/fushi_engine/test/media/torrent/torrent_metainfo_native_test.dart`。
+
+基准（AOT，2026-10-18，i5-12600KF / Windows 11；旧 Dart vs Rust + FFI，含结果解码）：
+
+| 输入 | 字节 | 文件数 | 旧 Dart | Rust + FFI |
+|---|---|---|---|---|
+| 真实种子 | 542 KB | 290 | 13.80 ms | 0.91 ms |
+| libtorrent `large.torrent` | 100 KB | 1 | 1.95 ms | 0.09 ms |
+| `v2_multiple_files` | 97 KB | 0 | 0.03 ms | 0.03 ms |
+| 合成 2 万文件 | 1.38 MB | 20000 | 198.6 ms | 53.8 ms |
+| 合成 10 万文件 | 6.93 MB | 100000 | 880.1 ms | 395.4 ms（其中 FFI 本体 216.7 ms，余为 Dart 侧建文件清单对象） |
+
+Anki 媒体引用扫描（真实牌组 30794 条笔记 / 9054 万 UTF-16 码元，扫全部笔记；Rust 每批 100 条笔记一次 FFI）。
+建表是端到端（`MediaNameMatcher(names)`：Dart 侧打包 UTF-16 池 + 偏移、跨 FFI、Rust 建表），AOT，
+2026-10-19 同机同轮（i5-12600KF / Windows 11，机器上有其它会话在跑，绝对值有 ±30% 噪声，同轮相对关系稳定）：
+
+| 媒体名数 | 旧 Dart 建表 | 旧 Dart 扫描 | Rust 建表（改前 → 现在） | Rust 扫描（改前 → 现在） |
+|---|---|---|---|---|
+| 50 | 0.0 ms | 2,970–3,728 ms | 0.1 → 0.0 ms | 865 → 754 ms |
+| 2,000 | 1.1–1.2 ms | 6,873–9,024 ms | 2.6–3.0 → 0.6–0.7 ms | 1,278 → 856 ms |
+| 18,000 | 15.8–19.3 ms | 8,475–15,465 ms | 25.7–31.7 → 6.4–12.5 ms | 1,210 → 1,083 ms |
+| 223,572 | 248–297 ms | 15,994–22,784 ms | 327–349 → 100–137 ms | 2,198 → 1,537 ms |
+
+223,572 名建表的拆分（现在）：Dart 打包 UTF-16 池约 38 ms（逐码元写 `Pointer`，比堆上
+`Uint16List` + memcpy、`join` 后拷贝都快）、原生建表约 53 ms（其中 Dart `toLowerCase` 口径折叠
+约 15 ms、切片哈希约 10 ms）、其余 Dart 包装 < 10 ms。改前原生建表约 280 ms、释放约 55 ms：
+逐键 `Box<[u16]>` + `Vec<u32>` 再进 `HashMap`（每个名字 4～5 次分配，释放同样逐个）。现在
+不同的折叠名首尾相接放进一块预留好的缓冲区，查表是只存「哈希片段 | 编号」的开放寻址表，
+原名下标用 CSR 存，建表与释放都只有几块大分配；折叠对全 ASCII / 无代理对的段走整段无分支
+映射（扫描也因此变快）。真实牌组 × 6 组名单（含大小写重名、空名、无扩展名）与旧 Dart 逐条
+对拍命中集合与顺序，0 处不一致。
+
+## 解析域：视频标题打分 / AniDB 标题目录 / anime XML
+
+| 调用方 | 之前（纯 Dart） | 现在 |
+|---|---|---|
+| `fushi_engine/.../scraper/title_normalizer.dart`（`TitleNormalizer`，39 处调用） | 逐码点查繁简 Map + 正则折叠空白；`tokens` / Levenshtein DP | 只剩 FFI 外壳（`TitleScoreNative`，`src/parse/title_score.rs`）；另有批量入口 `normalizeAll` / `similarityNormalizedBatch` / `similarityNormalizedMatrix` |
+| `fushi_engine/.../metadata/anidb_title_catalog.dart` | 后台 isolate 里 `XmlEventDecoder` 流式事件 + Dart 建三张索引，Isolate.exit 交回整图 | 后台 isolate 把 gzip 解压块原样喂 `AniDbCatalogBuilderNative`；目录与索引驻留原生内存，句柄地址交回主 isolate `AniDbCatalogNative.adopt`（`NativeFinalizer` 兜底释放）；搜索一次 FFI。记录在同一后台 isolate 里一次物化：`AniDbCatalogNative.borrow` 借出扁平记录表（`ffc_parse_anidb_catalog_record_table`，原生内存上的零拷贝视图，type / language 去重），整表解码成按 id 的 Map 随句柄经 Isolate.exit 交回，`findByAnimeId` 与搜索命中取记录都是 Map 查找 |
+| `fushi_engine/.../metadata/anidb_video_metadata_provider.dart` | DOCTYPE 正则预检 + `XmlDocument.parse` | `parseAniDbAnimeXml`：原生解析成只读元素树，取值逻辑（`getElement` / `findElements` / `innerText`）仍在 Dart |
+| `fushi_engine/.../metadata/tmdb_episode_matcher.dart` | 四轮 × 来源 × 候选 × 标题² 逐对 `similarityNormalized` | 整池标题一次批量归一化 + 一次相似度矩阵，查表；匹配逻辑不变 |
+
+**逐位一致是硬约束**，按 Dart 语义复刻而不是按 Rust 习惯：字符串一律 UTF-16（`String.runes`
+解码规则、孤立代理照算）；长度比较用码元、编辑距离与分词用码点（原实现就是混用的）；`\s` / `trim()` /
+分词字母判定是 `tool/gen_title_tables.dart` 从 Dart 运行时逐码点冻结的表（换 SDK 重生成会改口径），
+`toLowerCase` 用 crate 共用的冻结表（见下「Dart `toLowerCase` 口径」）；`package:xml` 6.6 的事件语法、实体解码、嵌套校验、`int.tryParse`
+（含 `0x` 前缀与 64 位回绕）、Dart UTF-8 解码器的报错文案与偏移、Dart `List.sort` 的不稳定
+双轴快排（两处排序有打平且后面截断，换稳定排序会换掉选中的标题）都逐步照抄。编辑距离用 Myers 位
+并行（≤64 码点），与 DP 随机对拍相等。唯一刻意差异：原实现在块尾把未见 `<` 的文本先吐成事件，
+实体恰被 zlib 输出块切开时解不出来；这里等到 `<` 才吐（真实标题包上两者输出相同）。
+
+回归：`fushi/test/media/video/metadata/anidb_native_parity_test.dart`（合成 3000 部目录 /
+370 查询 / 3255 标题对 / 300 个分集匹配场景的输出摘要，由删除前的 Dart 实现冻结）、
+`packages/fushi_compute/test/{title_score,anidb_native}_test.dart`。迁移时另对真实每日标题包
+（17063 部 / 101889 标题、679 条查询的完整结果、8800 对相似度位模式）和 1500 个分集匹配场景做过
+全量对拍，完全一致；畸形包 68 例 × 明文 / gzip 结局（异常文案 + cause）、anime XML DOM 19 例一致。
+
+基准（2026-10-19 复测，本机仍有其它会话并发；JIT `dart run`；真实标题包 1.8 MB gzip /
+8.0 MB XML；同一台机器、同一轮先跑旧实现再跑新实现）：
+
+| 场景 | 规模 | 改动前（Dart） | 改动后（Rust 含 FFI） | 倍数 |
+|---|---|---|---|---|
+| 标题包首次加载（后台 isolate：解压 + 解析 + 建索引，3 次） | 17063 部 / 101889 标题 | 5.37 / 5.96 / 5.24 s | 0.93 / 0.81 / 0.90 s | ≈ 6× |
+| 精确搜索 p50 / p90 | 283 条 | 25 / 160 µs | 21 / 41 µs | 1.2× / 3.9× |
+| 前缀搜索 p50 / p90 / max | 58 条 | 141 µs / 11.3 / 61.6 ms | 44 µs / 1.5 / 3.4 ms | 3–18× |
+| 模糊搜索 p50 / p90 / max（UI isolate 上） | 330 条 | 33.6 / 99.1 / 381.7 ms | 2.8 / 9.1 / 39.1 ms | ≈ 10–12× |
+| `similarity`（含两次归一化） | 8800 对 | 237 ms | 83 ms | 2.9× |
+| `similarityNormalized`（逐对 FFI） | 8800 对 | 114 ms | 36 ms | 3.2× |
+| `normalize` | 101889 个标题 | 618 ms | 92 ms | 6.7× |
+| TMDB 分集匹配（批量归一化 + 相似度矩阵） | 1500 场景 / ≈35k 链接 | 35.0 s | 6.4 s | 5.4× |
+| `findByAnimeId`（异步 API，id 1..25000，见下） | 25000 次 | 稳态 10 / 12 ms（min / 中位） | 稳态 9 / 12–13 ms | ≈ 1×（两边都是 Map 查找） |
+
+`findByAnimeId` 那一行是 2026-10-19 加粗边界之后重测的（同一进程里两份目录各加载一次，交替各跑
+15 轮 id 1..25000、并交换先后顺序；首轮含 JIT 预热，谁先跑谁慢，不计）。加粗之前逐条
+`ffc_parse_anidb_catalog_find`：每条记录在 Rust 侧逐字段 clone + 编码字符串列表、Dart 侧再解码，
+首轮 25000 次 317–377 ms（同轮旧 Dart 47–55 ms，≈ 13 µs/条；拆开看纯 FFI 调用 25000 次只有
+≈ 1 ms，钱全花在逐条复制 / 编码 / 解码上）。现在改成：Rust 目录本身就存成扁平记录表（同时省掉
+原来每个标题 4 个 `Vec<u16>` 的堆分配，搜索索引直接读它的 normalized 区间），后台 isolate 一次
+FFI 借出、整表物化成 Dart 记录。代价是首次加载多了这一步物化：同轮 7 次加载中位数 加粗前
+739–925 ms → 加粗后 872–1016 ms（物化本身 36–130 ms，都在后台 isolate；旧 Dart 2911–3529 ms）。
+搜索不变（同轮 600 条：加粗前 399–443 ms / 加粗后 411–543 ms / 旧 Dart 3617–4069 ms，结果摘要三者一致）。
+
+## Dart `toLowerCase` 口径（全 crate 共用）
+
+凡是复刻 Dart `String.toLowerCase()` 的地方（Anki 媒体扫描、字幕段头 / 样式名、标题归一化与 AniDB
+目录、媒体文件名、弹幕关键字、EPUB / html5lib 标签名比较）都走 `src/parse/dart_lower.rs`，查同一张
+表 `src/parse/dart_lower/table.rs`。表由 `tool/gen_dart_lower_table.dart` 从**运行脚本的 Dart SDK**
+逐码点导出（`--check` 只比对；2026-10-19 在 Flutter 3.47.6 / Dart 3.13.5 下与入库表一致），其它生成器
+不再各自导出小写表。Dart VM 的 `toLowerCase` 是逐码点简单映射：不看上下文（词尾 Σ 照样折成 σ）、
+U+0130 折成单个 `i`、UTF-16 长度与下标不变，孤立代理原样。
+
+**不要用 Rust 的 `char::to_lowercase` / `str::to_lowercase`**：它是完整映射（U+0130 → `i` + U+0307），
+Unicode 版本也比 Dart VM 的表新——Rust 1.96 下有 465 个码点 Dart 原样保留、Rust 会折叠（切罗基文、
+格鲁吉亚 Mtavruli、拉丁扩展-D 新增字母、若干补充平面文字），测试
+`dart_lower::tests::rust_std_differs_only_where_dart_keeps_the_code_point` 钉住这一形态。换 SDK 后
+`--check` 不一致说明 Dart 的表变了，重生成会同时改变上述所有域的口径。
+
 ## 构建
 
-| 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-18 实测） |
+| 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-19 实测，含 parse 域） |
 |---|---|---|---|---|
-| Windows x64 | `powershell -ExecutionPolicy Bypass -File native/fushi_compute/build_windows_dll.ps1` | `prebuilt/windows-x64/fushi_compute.dll` | `fushi/windows/CMakeLists.txt` 拷到 exe 同级（缺则配置期 `FATAL_ERROR`）；服务端放 `bundle/lib/` | 156,672 B（依赖只有 KERNEL32 / VCRUNTIME140 / api-ms-win-crt） |
-| Android | `build_android_so.ps1 [-NdkRoot …] [-Abis …]` / `build_android_so.sh <ndk-root> [abi…]`（cargo-ndk，API 24） | `prebuilt/android/<abi>/libfushi_compute.so` | `fushi/android/app/build.gradle` 的 `jniLibs.srcDirs`；`preBuild` 上的 `checkFushiComputeNative` 按 Flutter 的 target-platform 逐 ABI 检查 | arm64-v8a 320,216 B / armeabi-v7a 226,912 B / x86_64 353,072 B（加 CRC-32 前测；NEEDED 只有 libc / libdl） |
+| Windows x64 | `powershell -ExecutionPolicy Bypass -File native/fushi_compute/build_windows_dll.ps1` | `prebuilt/windows-x64/fushi_compute.dll` | `fushi/windows/CMakeLists.txt` 拷到 exe 同级（缺则配置期 `FATAL_ERROR`）；服务端放 `bundle/lib/` | 1,888,256 B（依赖只有 KERNEL32 / VCRUNTIME140 / api-ms-win-crt） |
+| Android | `build_android_so.ps1 [-NdkRoot …] [-Abis …]` / `build_android_so.sh <ndk-root> [abi…]`（cargo-ndk，API 24） | `prebuilt/android/<abi>/libfushi_compute.so` | `fushi/android/app/build.gradle` 的 `jniLibs.srcDirs`；`preBuild` 上的 `checkFushiComputeNative` 按 Flutter 的 target-platform 逐 ABI 检查 | arm64-v8a 2,062,568 B / x86_64 2,291,104 B（NDK 28.2；armeabi-v7a 未重测；NEEDED 只有 libc / libdl） |
 | Linux x64 | `build_linux_so.sh` | `prebuilt/linux-x64/libfushi_compute.so` | `fushi/linux/CMakeLists.txt` 装进 `bundle/lib/`（缺则 `FATAL_ERROR`）；服务端放 `bundle/lib/` | 本机无 Linux，CI 出 |
-| macOS | `build_macos_dylib.sh`（只出 arm64，部署目标 13.4） | `prebuilt/macos/libfushi_compute.dylib`（install name `@rpath/…`） | Runner 构建阶段（`fushi/macos/bundle_fushi_compute.sh`）拷进 `Contents/Frameworks`，缺则 `exit 1` | 302,120 B |
-| iOS | `native/fushi_ios_umbrella/build_ios_staticlib.sh [device\|simulator\|all]` | 伞形 `libfushi_ios_umbrella.a`（fushi_p2p + fushi_fsrs + fushi_compute） | `-force_load` 链进 Runner；Runner 构建阶段 `fushi/ios/check_fushi_compute.sh` 在缺 `.a` / `FUSHI_IOS_NATIVE_LDFLAGS` 为空 / `.a` 不导出 `ffc_abi_version` 时失败 | device `.a` 16,526,192 B（三合一） |
+| macOS | `build_macos_dylib.sh`（只出 arm64，部署目标 13.4） | `prebuilt/macos/libfushi_compute.dylib`（install name `@rpath/…`） | Runner 构建阶段（`fushi/macos/bundle_fushi_compute.sh`）拷进 `Contents/Frameworks`，缺则 `exit 1` | 1,725,464 B |
+| iOS | `native/fushi_ios_umbrella/build_ios_staticlib.sh [device\|simulator\|all]` | 伞形 `libfushi_ios_umbrella.a`（fushi_p2p + fushi_fsrs + fushi_compute） | `-force_load` 链进 Runner；Runner 构建阶段 `fushi/ios/check_fushi_compute.sh` 在缺 `.a` / `FUSHI_IOS_NATIVE_LDFLAGS` 为空 / `.a` 不导出 `ffc_abi_version` 时失败 | device `.a` 16,526,192 B（三合一，2026-10-18 测、未含 parse 域） |
 
 - macOS 坑：本机 Mac（macOS 27.2）上 rustc 自带 strip（`strip = true`）+ `MACOSX_DEPLOYMENT_TARGET` 出的
   dylib dlopen 报 `mis-aligned LINKEDIT string pool`，`verify_abi.sh` 查不出来；所以
@@ -306,3 +494,5 @@ dart test                               # packages/fushi_compute 下（真 FFI�
 本 crate GPL-3.0-only（随 app）。依赖：`md4` / `sha1` / `sha2`（RustCrypto）、`crc32fast`，均 MIT OR Apache-2.0；
 `brotli-decompressor`（及其 `alloc-no-stdlib` / `alloc-stdlib`）BSD-3-Clause / MIT；都可链进
 GPL-3.0 的 app 本体；发版前确认 app 开源许可页带上它们的声明。
+`regex`（MIT OR Apache-2.0）同理。`src/parse/html5lib/` 移植自 `package:html`（MIT，原许可全文保留在
+`mod.rs` 头部），发版许可页同样要带上。

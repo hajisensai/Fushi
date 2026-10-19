@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -16,9 +17,10 @@ import '../helpers/source_guard.dart';
 ///
 /// 钉三件事：
 ///   1. 合并前导插图（TODO-1339）必须自带显式 `loading="eager"`，让「保持 eager」不再
-///      依赖 `markImagesLazy` 与 `_injectMergedChapterImages` 的**调用顺序**。
+///      依赖 lazy 标记与 `_mergedChapterImagesHtml` 注入的**先后顺序**。
 ///   2. `markImagesLazy` 尊重已有 `loading=`（第 1 条成立的另一半）。
-///   3. 调用顺序本身仍锁住（第二道防线：万一有人删了显式 eager，顺序还在）。
+///   3. 合并插图与 lazy 标记走同一条原生链 `buildChapterHtmlBytes`（顺序在原生侧固定为
+///      先 lazy 后注入），并且整条链的实际输出里前导插图保持 eager。
 void main() {
   final File webviewFile = File(
     'lib/src/pages/implementations/reader_fushi/webview.part.dart',
@@ -30,9 +32,9 @@ void main() {
   String stripLineComments(String s) => maskCommentsAndScriptLines(s);
 
   group('TODO-1339：合并前导插图的 eager 不再靠调用顺序', () {
-    test('_injectMergedChapterImages 注入的 <img> 自带 loading="eager"', () {
+    test('_mergedChapterImagesHtml 产出的 <img> 自带 loading="eager"', () {
       final String src = webviewSrc();
-      final int injectIdx = src.indexOf('String _injectMergedChapterImages(');
+      final int injectIdx = src.indexOf('String _mergedChapterImagesHtml(');
       expect(injectIdx, isNonNegative, reason: '合并注入方法必须存在');
       final int endIdx = src.indexOf('String? _chapterFilePath(', injectIdx);
       expect(endIdx, greaterThan(injectIdx));
@@ -57,22 +59,50 @@ void main() {
           reason: '只有正文那张普通插图该被挂 lazy');
     });
 
-    test('顺序仍锁住（第二道防线）：markImagesLazy 早于 _injectMergedChapterImages', () {
+    test('合并插图与 lazy 标记接在同一条原生链里', () {
       final String src = webviewSrc();
-      final int buildIdx =
-          src.indexOf('Uint8List _buildSanitizedChapterHtmlBytes(');
-      expect(buildIdx, isNonNegative);
-      final int endIdx =
-          src.indexOf('String _injectMergedChapterImages(', buildIdx);
-      expect(endIdx, greaterThan(buildIdx));
-      final String body = src.substring(buildIdx, endIdx);
-      final int lazyIdx =
-          body.indexOf('ReaderResourceSanitizer.markImagesLazy(');
-      final int injectIdx = body.indexOf('_injectMergedChapterImages(html');
-      expect(lazyIdx, isNonNegative, reason: 'Dart 侧 lazy 标记必须接在净化流水线里');
-      expect(injectIdx, isNonNegative);
-      expect(lazyIdx, lessThan(injectIdx),
-          reason: 'markImagesLazy 必须先于 _injectMergedChapterImages');
+      final String body = methodBody(
+        src,
+        'Uint8List _buildSanitizedChapterHtmlBytes(',
+      );
+      expect(
+        body.contains('ReaderResourceSanitizer.buildChapterHtmlBytes('),
+        isTrue,
+        reason: 'Dart 侧 lazy 标记必须接在净化流水线里',
+      );
+      expect(
+        body.contains('mergedImagesHtml: _mergedChapterImagesHtml('),
+        isTrue,
+        reason: '合并前导插图必须交给同一次原生调用注入（顺序由原生链固定）',
+      );
+    });
+
+    test('整条链：前导插图保持 eager、正文插图挂 lazy（第二道防线）', () {
+      const String merged =
+          '<div class="fushi-merged-image">'
+          '<img src="hoshi://a.png" class="block-img" loading="eager"/>'
+          '</div>';
+      final String out = utf8.decode(
+        ReaderResourceSanitizer.buildChapterHtmlBytes(
+          utf8.encode(
+            '<html><head></head><body><p>本文</p><img src="b.png"/></body></html>',
+          ),
+          eagerAll: false,
+          mergedImagesHtml: merged,
+          headStart: '',
+          headEnd: '',
+        ),
+      );
+      expect(out, contains('<body>\n$merged\n<p>'));
+      expect(
+        'loading="lazy"'.allMatches(out).length,
+        1,
+        reason: '只有正文那张普通插图该被挂 lazy',
+      );
+      expect(
+        out,
+        contains('<img loading="lazy" decoding="async" src="b.png"/>'),
+      );
     });
   });
 
@@ -83,14 +113,20 @@ void main() {
       // 实参一旦换行/多传一个参数就把 `eagerAll:` 挤出旧窗口凭空变红。锚点取 `(` 之后
       // 的第一个字符，enclosingCall 于是返回 markImagesLazy 这一层调用本身（而不是包在
       // 外面的那层）；再断 call.name 自证窗口锚对了对象。
-      const String anchor = 'ReaderResourceSanitizer.markImagesLazy(';
+      const String anchor = 'ReaderResourceSanitizer.buildChapterHtmlBytes(';
       final int lazyIdx = src.indexOf(anchor);
       expect(lazyIdx, isNonNegative);
       final EnclosingCall call = enclosingCall(src, lazyIdx + anchor.length);
-      expect(call.name, 'ReaderResourceSanitizer.markImagesLazy',
-          reason: '窗口必须正好是 markImagesLazy 这一层调用');
-      expect(call.text.contains('eagerAll: _isImageOnlyChapterCached('), isTrue,
-          reason: '纯图片章必须整章 eager，否则离屏图 0 尺寸 → maxScroll 塌缩');
+      expect(
+        call.name,
+        'ReaderResourceSanitizer.buildChapterHtmlBytes',
+        reason: '窗口必须正好是 buildChapterHtmlBytes 这一层调用',
+      );
+      expect(
+        call.text.contains('eagerAll: _isImageOnlyChapterCached('),
+        isTrue,
+        reason: '纯图片章必须整章 eager，否则离屏图 0 尺寸 → maxScroll 塌缩',
+      );
     });
 
     test('纯图片章：eagerAll 下一个 lazy 都不加', () {

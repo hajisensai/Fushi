@@ -33,7 +33,8 @@ dependencies:
   # Fushi SRS 纯 Dart 内核（含 native/fushi_fsrs 的 FFI，原生库缺失时排程能力判不可用）。
   fushi_srs:
     path: ../fushi_srs
-  # Rust 计算内核（native/fushi_compute，纯 Dart FFI；硬依赖，图像域等没有 Dart 回退）。
+  # Rust 计算内核（native/fushi_compute，纯 Dart FFI）。硬依赖、没有 Dart 回退：原生库或某域
+  # 符号缺失时调用即抛 FushiComputeUnavailableError。
   fushi_compute:
     path: ../fushi_compute
   # 与 fushi/pubspec.yaml 钉同一 sha（OCR 与 ASR 共用 OnnxSessionFactory 抽象）。

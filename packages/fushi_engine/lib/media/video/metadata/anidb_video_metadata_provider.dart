@@ -20,7 +20,9 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:xml/xml.dart';
+import 'package:fushi_compute/fushi_compute.dart'
+    show FfcXmlElement, FfcXmlParseError, parseAniDbAnimeXml;
+import 'package:xml/xml.dart' show XmlParserException, XmlTagException;
 
 /// AniDB 明确下发的封禁（HTTP 200 + `<error>banned</error>`）。
 ///
@@ -526,25 +528,16 @@ class AniDbVideoMetadataProvider
         'AniDB anime response is too large',
       );
     }
-    if (RegExp(
-      r'<!\s*(?:DOCTYPE|ENTITY)\b',
-      caseSensitive: false,
-    ).hasMatch(xml)) {
-      throw const VideoMetadataNetworkException(
-        'AniDB anime response contains a forbidden declaration',
-      );
-    }
-
-    final XmlDocument document;
+    // DOCTYPE / ENTITY 预检与 DOM 解析都在 Rust 计算内核里（parseAniDbAnimeXml，
+    // native/fushi_compute/src/parse/anidb/dom.rs），语义照原来的
+    // `<!\s*(?:DOCTYPE|ENTITY)\b` 预检 + `XmlDocument.parse`。
+    final FfcXmlElement root;
     try {
-      document = XmlDocument.parse(xml);
-    } on XmlParserException catch (error) {
-      throw VideoMetadataNetworkException(
-        'AniDB anime response contains invalid XML: $error',
-      );
+      root = parseAniDbAnimeXml(xml);
+    } on FfcXmlParseError catch (error) {
+      throw _xmlFailure(error, xml);
     }
-    final XmlElement root = document.rootElement;
-    if (root.name.local == 'error') {
+    if (root.localName == 'error') {
       final String message = root.innerText.trim();
       final String normalized = message.toLowerCase();
       if (normalized.contains('not found')) return null;
@@ -575,7 +568,7 @@ class AniDbVideoMetadataProvider
             : 'AniDB anime request failed: $message',
       );
     }
-    if (root.name.local != 'anime') {
+    if (root.localName != 'anime') {
       throw const VideoMetadataNetworkException(
         'AniDB anime response has an unexpected root element',
       );
@@ -612,22 +605,24 @@ class AniDbVideoMetadataProvider
     );
     // Shoko `CrossRef_AniDB_MAL`：AniDB 自己登记的 MAL 条目（resources type 2）。
     final List<int> malIds = <int>[
-      for (final XmlElement resource
+      for (final FfcXmlElement resource
           in root.getElement('resources')?.findElements('resource') ??
-              const <XmlElement>[])
+              const <FfcXmlElement>[])
         if ((resource.getAttribute('type') ?? '').trim() == '2')
-          for (final XmlElement entity
-              in resource.findElements('externalentity'))
-            for (final XmlElement identifier
-                in entity.findElements('identifier'))
+          for (final FfcXmlElement entity in resource.findElements(
+            'externalentity',
+          ))
+            for (final FfcXmlElement identifier in entity.findElements(
+              'identifier',
+            ))
               if (int.tryParse(identifier.innerText.trim()) case final int id
                   when id > 0)
                 id,
     ];
     final List<int> prequelIds = <int>[
-      for (final XmlElement related
+      for (final FfcXmlElement related
           in root.getElement('relatedanime')?.findElements('anime') ??
-              const <XmlElement>[])
+              const <FfcXmlElement>[])
         if ((related.getAttribute('type') ?? '').trim().toLowerCase() ==
             'prequel')
           if (int.tryParse((related.getAttribute('id') ?? '').trim())
@@ -642,9 +637,9 @@ class AniDbVideoMetadataProvider
       ..._parseCharacterCredits(root.getElement('characters')),
     ];
     final List<String> tags = <String>[
-      for (final XmlElement tag
+      for (final FfcXmlElement tag
           in root.getElement('tags')?.findElements('tag') ??
-              const <XmlElement>[])
+              const <FfcXmlElement>[])
         if (_text(tag.getElement('name')) case final String name) name,
     ];
     final String restricted =
@@ -821,12 +816,12 @@ class AniDbVideoMetadataProvider
   }
 
   List<AniDbTitle> _parseTitles(
-    XmlElement? parent, {
+    FfcXmlElement? parent, {
     bool allowMissingType = false,
   }) =>
       <AniDbTitle>[
-        for (final XmlElement element
-            in parent?.findElements('title') ?? const <XmlElement>[])
+        for (final FfcXmlElement element
+            in parent?.findElements('title') ?? const <FfcXmlElement>[])
           if (_text(element) case final String value)
             AniDbTitle(
               value: value,
@@ -848,7 +843,7 @@ class AniDbVideoMetadataProvider
   /// 片尾 / 预告 / 恶搞 / 其它）两边都不取——Shoko 也只把 Episode + Special
   /// 拿去和 TMDB 对。
   List<VideoMetadataEpisode> _parseEpisodes(
-    XmlElement? parent, {
+    FfcXmlElement? parent, {
     bool specials = false,
     Map<int, List<AniDbTitle>>? episodeTitles,
   }) {
@@ -856,8 +851,8 @@ class AniDbVideoMetadataProvider
         <int, VideoMetadataEpisode>{};
     final RegExp shape = specials ? RegExp(r'^S(\d+)$') : RegExp(r'^(\d+)$');
     final int seasonNumber = specials ? 0 : 1;
-    for (final XmlElement element
-        in parent?.findElements('episode') ?? const <XmlElement>[]) {
+    for (final FfcXmlElement element
+        in parent?.findElements('episode') ?? const <FfcXmlElement>[]) {
       final String epno = (_text(element.getElement('epno')) ?? '').trim();
       final RegExpMatch? numberMatch = shape.firstMatch(epno);
       if (numberMatch == null) continue;
@@ -892,7 +887,7 @@ class AniDbVideoMetadataProvider
             : titles,
       );
       final String? airDate = _date(_text(element.getElement('airdate')));
-      final XmlElement? ratingElement = element.getElement('rating');
+      final FfcXmlElement? ratingElement = element.getElement('rating');
       if (episodeId != null && episodeTitles != null) {
         episodeTitles.putIfAbsent(episodeId, () => titles);
       }
@@ -928,9 +923,9 @@ class AniDbVideoMetadataProvider
     return result;
   }
 
-  List<_AniDbCreator> _parseCreators(XmlElement? parent) => <_AniDbCreator>[
-        for (final XmlElement element
-            in parent?.findElements('name') ?? const <XmlElement>[])
+  List<_AniDbCreator> _parseCreators(FfcXmlElement? parent) => <_AniDbCreator>[
+        for (final FfcXmlElement element
+            in parent?.findElements('name') ?? const <FfcXmlElement>[])
           if (_text(element) case final String name)
             _AniDbCreator(
               id: int.tryParse(element.getAttribute('id') ?? ''),
@@ -963,10 +958,10 @@ class AniDbVideoMetadataProvider
     return credits;
   }
 
-  List<VideoMetadataCredit> _parseCharacterCredits(XmlElement? parent) {
+  List<VideoMetadataCredit> _parseCharacterCredits(FfcXmlElement? parent) {
     final List<VideoMetadataCredit> credits = <VideoMetadataCredit>[];
-    for (final XmlElement element
-        in parent?.findElements('character') ?? const <XmlElement>[]) {
+    for (final FfcXmlElement element
+        in parent?.findElements('character') ?? const <FfcXmlElement>[]) {
       final String? characterName = _text(element.getElement('name'));
       if (characterName == null) continue;
       final int? characterId = int.tryParse(element.getAttribute('id') ?? '');
@@ -980,7 +975,7 @@ class AniDbVideoMetadataProvider
             VideoMetadataId(type: 'anidb', value: '$characterId'),
         ],
       );
-      for (final XmlElement seiyuu in element.findElements('seiyuu')) {
+      for (final FfcXmlElement seiyuu in element.findElements('seiyuu')) {
         final String? personName = _text(seiyuu);
         if (personName == null) continue;
         final int? personId = int.tryParse(seiyuu.getAttribute('id') ?? '');
@@ -1007,13 +1002,13 @@ class AniDbVideoMetadataProvider
     return credits;
   }
 
-  _AniDbRating _parseRating(XmlElement? parent) {
+  _AniDbRating _parseRating(FfcXmlElement? parent) {
     for (final String name in const <String>[
       'permanent',
       'temporary',
       'review',
     ]) {
-      final XmlElement? element = parent?.getElement(name);
+      final FfcXmlElement? element = parent?.getElement(name);
       final double? value = _positiveDouble(_text(element));
       if (element != null && value != null) {
         return _AniDbRating(
@@ -1238,18 +1233,60 @@ class _AniDbRequestGate {
   }
 }
 
-String? _text(XmlElement? element) {
+/// 原生解析失败 → 与原 `XmlDocument.parse` 路径同类的异常：解析失败包成
+/// [VideoMetadataNetworkException]（文案里带 `XmlParserException` 的 toString，
+/// 行列号由 package:xml 按码元位置算）；闭合标签类错误照旧以 [XmlTagException]
+/// 原样抛出（原实现只接 `XmlParserException`，标签错误从这里漏出去）。
+Exception _xmlFailure(FfcXmlParseError error, String xml) {
+  switch (error.kind) {
+    case FfcXmlParseError.forbiddenDeclaration:
+      return const VideoMetadataNetworkException(
+        'AniDB anime response contains a forbidden declaration',
+      );
+    case FfcXmlParseError.mismatchClosingTag:
+      return XmlTagException.mismatchClosingTag(
+        error.expectedName,
+        error.actualName,
+        buffer: xml,
+        position: error.position,
+      );
+    case FfcXmlParseError.unexpectedClosingTag:
+      return XmlTagException.unexpectedClosingTag(
+        error.actualName,
+        buffer: xml,
+        position: error.position,
+      );
+    case FfcXmlParseError.missingClosingTag:
+      return XmlTagException.missingClosingTag(
+        error.expectedName,
+        buffer: xml,
+        position: error.position,
+      );
+    default:
+      final XmlParserException parser = XmlParserException(
+        error.message,
+        buffer: xml,
+        position: error.position,
+      );
+      return VideoMetadataNetworkException(
+        'AniDB anime response contains invalid XML: $parser',
+      );
+  }
+}
+
+String? _text(FfcXmlElement? element) {
   final String value = element?.innerText.trim() ?? '';
   return value.isEmpty ? null : value;
 }
 
-String _xmlLanguage(XmlElement element) => (element.getAttribute('xml:lang') ??
-        element.getAttribute(
-          'lang',
-          namespace: 'http://www.w3.org/XML/1998/namespace',
-        ) ??
-        '')
-    .trim();
+String _xmlLanguage(FfcXmlElement element) =>
+    (element.getAttribute('xml:lang') ??
+            element.getAttributeNs(
+              'lang',
+              'http://www.w3.org/XML/1998/namespace',
+            ) ??
+            '')
+        .trim();
 
 String? _date(String? value) {
   final String text = value?.trim() ?? '';

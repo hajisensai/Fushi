@@ -1,48 +1,38 @@
-import 'package:fushi_core/fushi_core.dart'
-    show
-        fullwidthAsciiToHalfwidth,
-        halfwidthKatakanaToFullwidth,
-        katakanaToHiragana;
+import 'dart:typed_data';
 
-/// 日文正文归一化工具。
+import 'package:fushi_compute/fushi_compute.dart' show AudioTextFoldNative;
+
+/// 日文正文归一化工具（有声书 / 阅读器匹配坐标系）。
 ///
-/// 白名单规则：只保留假名/汉字/CJK 扩展/字母数字，其余剥掉。
-/// `audiobook_bridge.dart` 的 JS `__fushiIsSkippable` 必须与此严格镜像。
-/// 值折叠（全角→ASCII / 半角片假名→全角 / 片假名→平假名）走 fushi_core 的
-/// 共享码点原语（`jp_codepoint_fold.dart`），与其它 normalizer 同源。
+/// 白名单规则：只保留假名/汉字/CJK 扩展/字母数字，其余剥掉；值折叠（全角→ASCII /
+/// 大写→小写 / 半角片假名→全角 / 片假名→平假名）。`audiobook_bridge.dart` 的 JS
+/// `__fushiIsSkippable` 与阅读器 JS `foldCodePoint` 必须与此严格镜像。
+///
+/// 实现只有一份：Rust 计算内核 `native/fushi_compute/src/parse/fold.rs`（经
+/// fushi_compute 的 [AudioTextFoldNative]，整段一次 FFI，不逐码点跨边界）。没有 Dart
+/// 回退：原生库缺失时抛 `FushiComputeUnavailableError`。逐码点口径由
+/// `test/matching/audio_text_normalizer_native_test.dart` 钉住旧 Dart 实现的摘要。
 class AudioTextNormalizer {
   AudioTextNormalizer._();
 
   /// 归一化文本：剥掉非白名单字符，大小写统一，片假名转平假名。
-  static String normalize(String s) {
-    final StringBuffer buf = StringBuffer();
-    appendNormalized(buf, s);
-    return buf.toString();
-  }
+  static String normalize(String s) => AudioTextFoldNative.instance.fold(s);
 
-  /// 将 [s] 归一化后追加到 [buf]，用于拼接多段文本后统一处理。
+  /// 将 [s] 归一化后追加到 [buf]，用于拼接多段文本后统一处理。逐段调用时每段多一次
+  /// 字符串拷贝；整批拼接用 [normalizeConcat]。
   static void appendNormalized(StringBuffer buf, String s) {
-    for (final int cp in s.runes) {
-      final int out = foldCodePoint(cp);
-      if (out < 0) continue;
-      buf.writeCharCode(out);
-    }
+    buf.write(normalize(s));
   }
 
-  /// 单码点折叠：不在白名单返回 -1；否则返回归一化后的码点。
-  /// [appendNormalized] 与 [normalizeWithOffsets] 共用，保证两者永不漂移。
-  static int foldCodePoint(int cp) {
-    if (!_isKeepable(cp)) return -1;
-    // 全角字母数字 → ASCII（共享原语整段平移；白名单已排除全角标点段，
-    // 与旧的分段平移逐码点等价）。
-    int out = fullwidthAsciiToHalfwidth(cp);
-    if (out >= 0x41 && out <= 0x5A) {
-      out += 0x20; // A-Z → a-z（含全角大写折成半角后的）
-    }
-    // 半角片假名 → 全角片假名（共享查表原语）。
-    out = halfwidthKatakanaToFullwidth(out);
-    // 片假名 → 平假名 (ァ-ヶ → ぁ-ゖ)
-    return katakanaToHiragana(out);
+  /// [pieces] 各自归一化后首尾相接（等于逐段 [appendNormalized] 进同一个 buffer），以及每段
+  /// 在结果里的起点（`starts[k]` = 第 k 段之前所有段归一化后的总长）。整批一次 FFI。
+  static ({String text, List<int> starts}) normalizeConcat(
+    List<String> pieces,
+  ) {
+    final ({String text, Uint32List pieceStarts}) r = AudioTextFoldNative
+        .instance
+        .foldConcat(pieces);
+    return (text: r.text, starts: r.pieceStarts);
   }
 
   /// 归一化并记下每个归一化字符在原文里的 **UTF-16 码元区间**，用于把匹配器
@@ -53,53 +43,18 @@ class AudioTextNormalizer {
   /// 及以后的星光面码点在归一化文本里也占两个码元，两个码元映到同一原文区间。
   /// 原文 `s.substring(starts[a], ends[b - 1])` 就是归一化区间 `[a, b)` 对应的原文。
   static NormalizedTextWithOffsets normalizeWithOffsets(String s) {
-    final StringBuffer buf = StringBuffer();
-    final List<int> starts = <int>[];
-    final List<int> ends = <int>[];
-    int unit = 0;
-    for (final int cp in s.runes) {
-      final int width = cp > 0xFFFF ? 2 : 1;
-      final int out = foldCodePoint(cp);
-      if (out >= 0) {
-        buf.writeCharCode(out);
-        final int outWidth = out > 0xFFFF ? 2 : 1;
-        for (int k = 0; k < outWidth; k++) {
-          starts.add(unit);
-          ends.add(unit + width);
-        }
-      }
-      unit += width;
+    final ({String text, Uint32List starts}) folded = AudioTextFoldNative
+        .instance
+        .foldWithStarts(s);
+    final String text = folded.text;
+    final Uint32List starts = folded.starts;
+    final Uint32List ends = Uint32List(starts.length);
+    for (int i = 0; i < starts.length; i++) {
+      // 被保留的码点输出宽度等于输入宽度：输出码元是代理 ⇔ 输入是补充平面码点。
+      final int unit = text.codeUnitAt(i);
+      ends[i] = starts[i] + (unit >= 0xD800 && unit <= 0xDFFF ? 2 : 1);
     }
-    return NormalizedTextWithOffsets(buf.toString(), starts, ends);
-  }
-
-  static bool _isKeepable(int c) {
-    return (c >= 0x30 && c <= 0x39) || // 0-9
-        (c >= 0x41 && c <= 0x5A) || // A-Z
-        (c >= 0x61 && c <= 0x7A) || // a-z
-        c == 0x3005 ||
-        c == 0x3006 ||
-        c == 0x3007 || // 々〆〇
-        (c >= 0x3041 && c <= 0x3096) || // ひらがな
-        (c >= 0x309D && c <= 0x309F) || // ゝゞゟ
-        (c >= 0x30A1 && c <= 0x30FA) || // カタカナ
-        (c >= 0x30FC && c <= 0x30FF) || // ーヽヾヿ
-        (c >= 0x3400 && c <= 0x4DBF) || // CJK 拡張 A
-        (c >= 0x4E00 && c <= 0x9FFF) || // CJK 統合漢字
-        c == 0x25CB ||
-        c == 0x25EF || // ○◯
-        c == 0x303B || // 〻
-        (c >= 0x2E80 && c <= 0x2EFF) || // CJK 部首補助
-        (c >= 0x2F00 && c <= 0x2FDF) || // 康煕部首
-        (c >= 0xF900 && c <= 0xFAFF) || // CJK 互換漢字
-        (c >= 0x20000 && c <= 0x2A6DF) || // CJK 拡張 B
-        (c >= 0x2A700 && c <= 0x2EBE0) || // CJK 拡張 C-F
-        (c >= 0x2F800 && c <= 0x2FA1F) || // CJK 互換漢字補助
-        (c >= 0x30000 && c <= 0x323AF) || // CJK 拡張 G-H
-        (c >= 0xFF10 && c <= 0xFF19) || // ０-９
-        (c >= 0xFF21 && c <= 0xFF3A) || // Ａ-Ｚ
-        (c >= 0xFF41 && c <= 0xFF5A) || // ａ-ｚ
-        (c >= 0xFF66 && c <= 0xFF9D); // 半角カタカナ
+    return NormalizedTextWithOffsets(text, starts, ends);
   }
 }
 

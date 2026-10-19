@@ -29,28 +29,32 @@
 ///   「合法」，否则内容组会把后面的正文「の話」一路吃光。整体不匹配 → 退回旧行为 `漢の話`。
 /// - **不许把自闭合当成有内容的开标签**：`a<rt/>b`（TTML / XHTML 派生字幕里真实存在）同理
 ///   → 退回旧行为 `ab`，而不是把 `b` 吞掉。
-final RegExp _rubyAnnotationPattern = RegExp(
-  r'<(?:rt|rp|rtc)\b(?:[^<>/]|/(?!>))*>'
-  r'(?:(?!</?(?:ruby|rt|rp|rtc)\b).)*(?:</(?:rt|rp|rtc)\s*>)?',
-  caseSensitive: false,
-  dotAll: true,
-);
+///
+/// 实现在 Rust（`ffc_parse_subtitle_strip_html_tags`，
+/// native/fushi_compute/src/parse/subtitle/markup.rs 的 `strip_html_tags`，逐条复刻原先的两条
+/// 正则：注音元素 `<(?:rt|rp|rtc)\b(?:[^<>/]|/(?!>))*>(?:(?!</?(?:ruby|rt|rp|rtc)\b).)*`
+/// `(?:</(?:rt|rp|rtc)\s*>)?`（忽略大小写、dotAll）与通用 `<[^>]+>`）。
+///
+/// 下面 [stripHtmlTags] 的取向说明仍然成立。
+library;
 
-/// `<...>` 形式的行内标签：HTML/VTT（`<i>`、`<b>`、`<ruby>`、`<c.className>`）
-/// 与增强 LRC 词级时间标签（`<MM:SS.xx>`）同形，统一按此模式剥离。
-final RegExp _inlineTagPattern = RegExp('<[^>]+>');
+import 'package:fushi_compute/fushi_compute.dart';
 
 /// 剥离字幕文本中的 `<...>` 行内标签：仅移除标签本身、保留标签内文本，
 /// 并去除首尾空白。例如 `<i>こんにちは</i>` → `こんにちは`。
 ///
 /// 例外是注音标注（`<rt>` / `<rp>` / `<rtc>`）：内容随标签一起丢弃，只留 ruby base
-/// （`<ruby>震<rt>ふる</rt></ruby>` → `震`），见 [_rubyAnnotationPattern]。
+/// （`<ruby>震<rt>ふる</rt></ruby>` → `震`）。增强 LRC 词级时间标签（`<MM:SS.xx>`）与
+/// HTML 标签同形，一并剥离。
 ///
 /// 注意：fushi_anki 的 `BaseAnkiRepository.previewFromFieldValue` 有一份
 /// **故意不同**的实现——那边把标签替换成**空格**再统一折叠（Anki 字段 HTML 里
 /// `<br>` / 块级标签承担换行分词，直接删空会把相邻词粘连）；而字幕行内标签
 /// 紧贴正文，替换成空格反而会在日文句中引入假空格。两份实现不强并。
-String stripHtmlTags(String text) => text
-    .replaceAll(_rubyAnnotationPattern, '')
-    .replaceAll(_inlineTagPattern, '')
-    .trim();
+///
+/// 没有 `<` 的行（逐行调用里的绝大多数，如 LRC 去掉时间标签后的正文）两条规则都不可能
+/// 命中，结果就是 `trim()`：直接返回，不为它跨一次 FFI（每行 ~1 µs 的固定开销比旧正则
+/// 的不命中路径还贵）。
+String stripHtmlTags(String text) => text.contains('<')
+    ? SubtitleParseNative.instance.stripHtmlTags(text)
+    : text.trim();

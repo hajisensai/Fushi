@@ -23,6 +23,7 @@ pub mod galcal;
 pub mod hash;
 pub mod image;
 pub mod ocr;
+pub mod parse;
 pub mod signal;
 pub mod text;
 pub mod ts;

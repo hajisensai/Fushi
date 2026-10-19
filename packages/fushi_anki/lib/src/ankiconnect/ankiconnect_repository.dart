@@ -1645,14 +1645,21 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       final Map<int, Map<String, String>> fields = await service.notesInfoMany(
         chunk,
       );
+      final List<int> read = <int>[];
       for (final int id in chunk) {
-        final Map<String, String>? noteFields = fields[id];
-        if (noteFields == null) {
+        if (fields.containsKey(id)) {
+          read.add(id);
+        } else {
           unread.add(id);
-          continue;
         }
-        for (final String name in matcher.namesInAll(noteFields.values)) {
-          (index[name] ??= <int>[]).add(id);
+      }
+      // 整批笔记一次原生调用扫完（逐条调用的 FFI 往返在十万字级字段上不划算）。
+      final List<Set<String>> names = matcher.namesInEach(<Iterable<String>>[
+        for (final int id in read) fields[id]!.values,
+      ]);
+      for (int i = 0; i < read.length; i++) {
+        for (final String name in names[i]) {
+          (index[name] ??= <int>[]).add(read[i]);
         }
       }
     }
@@ -1725,8 +1732,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     if (hits.any((int id) => !fields.containsKey(id))) return names.toSet();
     final MediaNameMatcher matcher = MediaNameMatcher(names);
     return <String>{
-      for (final Map<String, String> f in fields.values)
-        ...matcher.namesInAll(f.values),
+      for (final Set<String> hit in matcher.namesInEach(<Iterable<String>>[
+        for (final Map<String, String> f in fields.values) f.values,
+      ]))
+        ...hit,
     };
   }
 

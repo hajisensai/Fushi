@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:html/dom.dart' as html_dom;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
@@ -678,16 +677,29 @@ window.__fushiAnnotate = function(chapterHref) {
   ) async {
     if (query.isEmpty) return const <BookSearchResult>[];
 
-    final List<String> chapterHtmls = List<String>.generate(
-      book.chapters.length,
-      (i) => book.chapters[i].html,
-    );
-
+    // 每章搜索文本只算一次（后台 isolate、原生扫描），之后的查询直接复用。章节
+    // 正文可能被换掉（在线小说占位页 → 正文，`discardCachedHtml`），所以缓存按
+    // 每章 html 字符串的对象同一性校验，变了就整本重算。
+    final List<String> htmls = <String>[
+      for (final EpubChapter c in book.chapters) c.html,
+    ];
+    final _SearchTextCache? cached = _searchTextCache[book];
+    final List<String> texts;
+    if (cached != null && cached.matches(htmls)) {
+      texts = cached.texts;
+    } else {
+      texts = await compute(_buildSearchTexts, htmls);
+      _searchTextCache[book] = _SearchTextCache(htmls, texts);
+    }
     return compute(
       _searchIsolate,
-      _SearchParams(chapterHtmls: chapterHtmls, query: query),
+      _SearchParams(chapterTexts: texts, query: query),
     );
   }
+
+  /// [searchBook] 的每章搜索文本缓存（按书实例；书被回收即随之回收）。
+  static final Expando<_SearchTextCache> _searchTextCache =
+      Expando<_SearchTextCache>('audiobook-search-text');
 
   /// 通过 fushiReader.calculateProgress() 获取当前位置。
   static Future<ReaderViewportPos?> getViewportNormOffset(
@@ -753,10 +765,44 @@ window.__fushiAnnotate = function(chapterHref) {
 
 // ── 搜索 isolate ─────────────────────────────────────────────────────────────
 
+class _SearchTextCache {
+  _SearchTextCache(this.htmls, this.texts);
+
+  final List<String> htmls;
+  final List<String> texts;
+
+  bool matches(List<String> current) {
+    if (current.length != htmls.length) return false;
+    for (int i = 0; i < current.length; i++) {
+      if (!identical(current[i], htmls[i])) return false;
+    }
+    return true;
+  }
+}
+
 class _SearchParams {
-  const _SearchParams({required this.chapterHtmls, required this.query});
-  final List<String> chapterHtmls;
+  const _SearchParams({required this.chapterTexts, required this.query});
+  final List<String> chapterTexts;
   final String query;
+}
+
+/// 后台 isolate：每章的搜索坐标系文本（[EpubBook.chapterSearchText]）。
+List<String> _buildSearchTexts(List<String> chapterHtmls) {
+  final EpubBook book = EpubBook(
+    title: '',
+    chapters: <EpubChapter>[
+      for (int i = 0; i < chapterHtmls.length; i++)
+        EpubChapter(
+          id: '$i',
+          href: '$i',
+          mediaType: 'application/xhtml+xml',
+          html: chapterHtmls[i],
+        ),
+    ],
+  );
+  return <String>[
+    for (int i = 0; i < chapterHtmls.length; i++) book.chapterSearchText(i),
+  ];
 }
 
 List<BookSearchResult> _searchIsolate(_SearchParams params) {
@@ -768,8 +814,8 @@ List<BookSearchResult> _searchIsolate(_SearchParams params) {
 
   final List<BookSearchResult> results = <BookSearchResult>[];
 
-  for (int i = 0; i < params.chapterHtmls.length; i++) {
-    final String domText = _chapterDomText(params.chapterHtmls[i]);
+  for (int i = 0; i < params.chapterTexts.length; i++) {
+    final String domText = params.chapterTexts[i];
     final String haystack = domText.toLowerCase();
     int start = 0;
     while (true) {
@@ -806,35 +852,6 @@ List<BookSearchResult> _searchIsolate(_SearchParams params) {
   }
 
   return results;
-}
-
-/// Extract text matching JS TreeWalker output: concatenate text nodes,
-/// skip rt/rp content, NO whitespace folding. This produces the same
-/// coordinate space as JS scrollToSearchMatch().
-///
-/// BUG-2017：全书搜索必须与 [EpubBook.chapterPlainText] 共用同一个 DOM 解析入口
-/// [EpubBook.parseChapterHtml]。裸 HTML5 解析在 kobo 化 XHTML（head 里一行自闭合
-/// `<script src="…"/>`、全文无 `</script>`）上会把整个 `<body>` 吞成 script 文本
-/// → `doc.body` 为空 → 这类书全书搜索恒零结果。
-String _chapterDomText(String html) {
-  final html_dom.Document doc = EpubBook.parseChapterHtml(html);
-  final html_dom.Element? body = doc.body;
-  if (body == null) return '';
-  final StringBuffer buf = StringBuffer();
-  _collectTextNodes(body, buf);
-  return buf.toString();
-}
-
-void _collectTextNodes(html_dom.Node node, StringBuffer buf) {
-  if (node is html_dom.Element) {
-    final String tag = node.localName ?? '';
-    if (tag == 'rt' || tag == 'rp') return;
-    for (final html_dom.Node child in node.nodes) {
-      _collectTextNodes(child, buf);
-    }
-  } else if (node is html_dom.Text) {
-    buf.write(node.text);
-  }
 }
 
 // ── 数据类 ───────────────────────────────────────────────────────────────────

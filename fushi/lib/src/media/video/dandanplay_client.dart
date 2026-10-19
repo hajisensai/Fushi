@@ -397,8 +397,12 @@ class DandanplayClient {
           error: response.statusCode,
         );
       }
-      final dynamic decoded = jsonDecode(response.body);
-      if (decoded is! Map || decoded['comments'] is! List) {
+      // 语法错误抛 FormatException、数值非有限抛 UnsupportedError，都落到下面的 catch。
+      final List<VideoDanmakuItem>? items = dandanplayDanmakuFromResponseBody(
+        response.body,
+        shiftSeconds: match.shiftSeconds,
+      );
+      if (items == null) {
         return DandanplayFetchResult(
           status: DandanplayFetchStatus.serverError,
           match: match,
@@ -406,10 +410,7 @@ class DandanplayClient {
       }
       return DandanplayFetchResult(
         status: DandanplayFetchStatus.hit,
-        items: dandanplayCommentsToDanmaku(
-          decoded['comments'] as List<dynamic>,
-          shiftMs: (match.shiftSeconds * 1000).round(),
-        ),
+        items: items,
         match: match,
       );
     } catch (e) {

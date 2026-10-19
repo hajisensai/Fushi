@@ -1,10 +1,11 @@
 import 'dart:io';
 
+import 'package:fushi_compute/fushi_compute.dart';
+
 import '../audiobook/audiobook_model.dart';
 import 'cue_parse_dispatch.dart';
 import 'srt_parser.dart';
-import 'strip_html_tags.dart';
-import 'subtitle_markup.dart';
+import 'subtitle_native_decode.dart';
 import 'text_file_io.dart';
 
 /// 解析 WebVTT（.vtt）字幕文件，产出 [AudioCue] 列表。
@@ -73,143 +74,20 @@ class VttParser {
     );
   }
 
+  /// 实现在 Rust（`ffc_parse_subtitle_vtt`，native/fushi_compute/src/parse/subtitle/
+  /// formats.rs），特性见类注释；结果与旧 Dart 实现逐位一致（含小时 / 分钟位越界抛
+  /// `FormatException`）。
   static List<AudioCue> parseString({
     required String content,
     required String bookKey,
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
   }) {
-    final String stripped =
-        content.startsWith('\uFEFF') ? content.substring(1) : content;
-
-    final List<String> blocks = stripped
-        .replaceAll('\r\n', '\n')
-        .replaceAll('\r', '\n')
-        .split(RegExp(r'\n{2,}'));
-
-    final List<AudioCue> cues = [];
-    int sentenceIndex = 0;
-
-    for (final String block in blocks) {
-      final List<String> lines = block
-          .split('\n')
-          .map((l) => l.trim())
-          .where((l) => l.isNotEmpty)
-          .toList();
-
-      if (lines.isEmpty) {
-        continue;
-      }
-
-      // 跳过 WEBVTT 头和功能块
-      final String first = lines[0];
-      if (first.startsWith('WEBVTT') ||
-          first.startsWith('NOTE') ||
-          first.startsWith('STYLE') ||
-          first.startsWith('REGION')) {
-        continue;
-      }
-
-      // 找时间行（含 `-->`）；前面可能有 cue ID 行
-      String? timeLine;
-      int timeLineIdx = -1;
-      for (int i = 0; i < lines.length; i++) {
-        if (lines[i].contains('-->')) {
-          timeLine = lines[i];
-          timeLineIdx = i;
-          break;
-        }
-      }
-      if (timeLine == null) {
-        continue;
-      }
-
-      final (int, int)? times = _parseTimeLine(timeLine);
-      if (times == null) {
-        continue;
-      }
-
-      final String rawText =
-          lines.skip(timeLineIdx + 1).where((l) => l.isNotEmpty).join(' ');
-      // 先剥 VTT/HTML 行内标签（`<b>` / `<ruby>` / `<c.className>` 等，共享
-      // [stripHtmlTags]），再交 markup 解析 ASS override 块（两者正交）。
-      final SubtitleMarkup markup = parseSubtitleMarkup(stripHtmlTags(rawText));
-      final String text = markup.plainText;
-      if (text.isEmpty) {
-        continue;
-      }
-
-      cues.add(
-        AudioCue()
-          ..bookKey = bookKey
-          ..chapterHref = chapterHref
-          ..sentenceIndex = sentenceIndex
-          ..textFragmentId = '[data-cue-id="$sentenceIndex"]'
-          ..text = text
-          ..markup = markup
-          ..startMs = times.$1
-          ..endMs = times.$2
-          ..audioFileIndex = audioFileIndex,
-      );
-      sentenceIndex++;
-    }
-
-    return cues;
-  }
-
-  /// 解析 VTT 时间行，忽略 `-->` 后的位置指令。
-  static (int, int)? _parseTimeLine(String line) {
-    final List<String> parts = line.split('-->');
-    if (parts.length < 2) {
-      return null;
-    }
-    // 位置指令（如 `align:left`）以空白分隔在时间戳后，取第一个 token
-    final int? start =
-        _parseTimecodeToMs(parts[0].trim().split(_whitespaceRe).first);
-    final int? end =
-        _parseTimecodeToMs(parts[1].trim().split(_whitespaceRe).first);
-    if (start == null || end == null) {
-      return null;
-    }
-    return (start, end);
-  }
-
-  /// 将 VTT 时间码转换为毫秒。
-  ///
-  /// 支持 `HH:MM:SS.mmm`（含小时）和 `MM:SS.mmm`（不含小时）。
-  // 每条 cue 都要跑的正则只编译一次（以前逐次 `RegExp(...)`，每 cue 起止各两三次）。
-  static final RegExp _whitespaceRe = RegExp(r'\s+');
-  static final RegExp _fullTimecodeRe =
-      RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
-  static final RegExp _shortTimecodeRe = RegExp(r'^(\d+):(\d{2})\.(\d{1,3})$');
-
-  static int? _parseTimecodeToMs(String timecode) {
-    final String normalized = timecode.replaceAll(',', '.');
-
-    // HH:MM:SS.mmm
-    final RegExpMatch? full = _fullTimecodeRe.firstMatch(normalized);
-    if (full != null) {
-      final int fh = int.parse(full.group(1)!);
-      final int fm = int.parse(full.group(2)!);
-      final int fs = int.parse(full.group(3)!);
-      if (fm >= 60 || fs >= 60) return null;
-      return fh * 3600000 +
-          fm * 60000 +
-          fs * 1000 +
-          int.parse(full.group(4)!.padRight(3, '0'));
-    }
-
-    // MM:SS.mmm（无小时）
-    final RegExpMatch? short = _shortTimecodeRe.firstMatch(normalized);
-    if (short != null) {
-      final int sm = int.parse(short.group(1)!);
-      final int ss = int.parse(short.group(2)!);
-      if (ss >= 60) return null;
-      return sm * 60000 +
-          ss * 1000 +
-          int.parse(short.group(3)!.padRight(3, '0'));
-    }
-
-    return null;
+    return decodeSubtitleCues(
+      SubtitleParseNative.instance.parseVtt(content),
+      bookKey: bookKey,
+      chapterHref: chapterHref,
+      audioFileIndex: audioFileIndex,
+    );
   }
 }

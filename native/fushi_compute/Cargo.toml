@@ -21,6 +21,8 @@ jpeg-encoder = "0.6"
 md4 = "0.10"
 sha1 = "0.10"
 sha2 = "0.10"
+# parse::epub：CSS url 正则（HTML 树构建是 parse::html5lib，package:html 的移植，无外部依赖）。
+regex = "1"
 
 [profile.release]
 # 计算内核吃 CPU：取 3（不是 fushi_fsrs 的 "z"），体积换速度。

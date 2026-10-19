@@ -825,6 +825,7 @@ dependencies = [
  "jpeg-encoder",
  "md4",
  "memchr",
+ "regex",
  "sha1",
  "sha2 0.10.9",
 ]
