@@ -1,6 +1,6 @@
 /// 无损音频 → FLAC 的唯一编码入口：音频 CD 抓轨与 AIFF 有声书落盘共用。
 ///
-/// 只用随包 ffmpeg 的 `flac` 编码器 / 封装器（ffmpeg-min 与移动端 ffmpeg-kit 都带），
+/// 只用随包 ffmpeg 的 `flac` 编码器 / 封装器（桌面统一 FFmpeg 与移动端 ffmpeg_kit_next_flutter 都带），
 /// 输入是任何它能解的 PCM 容器（WAV / AIFF）。
 library;
 

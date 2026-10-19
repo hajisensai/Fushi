@@ -64,8 +64,8 @@ const Duration _kClipProbeTimeout = Duration(seconds: 30);
 
 /// 源视频的编码画像：从 `ffmpeg -hide_banner -i <file>` 的日志里解析出来。
 ///
-/// 为什么不用 ffprobe：随包的 ffmpeg-min 确实并排放着同一次 configure 编出的 ffprobe
-/// （`test/tools/ffmpeg_min_vendored_recipe_guard_test.dart` 守着），但那只覆盖**随包**
+/// 为什么不用 ffprobe：随包的统一 FFmpeg 确实并排放着同一次构建编出的 ffprobe
+/// （`tool/ffmpeg-unified/` 的配方产出），但那只覆盖**随包**
 /// 这一种情形——用户用 `FUSHI_FFMPEG` 指向自己的 ffmpeg、或回退到 PATH 上的 ffmpeg 时，
 /// 同目录未必有 ffprobe。`ffmpeg -i` 用的是 [resolveFfmpegExecutable] 解析出的那一个
 /// 二进制：只要这台机器裁得动片段，就一定探得到编码。仓库里也已有同款「解析 ffmpeg
@@ -277,7 +277,7 @@ List<String> buildClipVideoEncoderArgs({int? videoBitrateKbps}) {
 /// 之前的那个关键帧：重编码的视频靠 accurate seek 把请求点之前的帧全丢掉，copy 的音频
 /// 却是逐包原样带出，从关键帧起的那一截全在；随后 `-avoid_negative_ts make_zero`（重编码
 /// 路径必带，见 [buildFfmpegVideoClipExportArgs]）把这截负时间戳平移成正片内容。实测
-/// 随包 ffmpeg-min 裁一个关键帧间隔 1 s 的源、请求 3 s：产物 4.04 s，视频 start_time
+/// （旧）随包 ffmpeg-min 裁一个关键帧间隔 1 s 的源、请求 3 s：产物 4.04 s，视频 start_time
 /// 1.02 s、音频 0 s——开头一秒只有声音没画面。音频重编码（aac 192k，与整段重编码兜底
 /// 同参数）就精确切在请求点。视频 copy 时不受影响：那条路径不带 make_zero，前导由 mp4
 /// edit list 表达成「播放时跳过」（BUG-2011）。
@@ -561,8 +561,8 @@ List<String> buildFfmpegVideoClipExportArgs({
 ///
 /// 当 [buildFfmpegVideoClipExportArgs] 的 `-c copy` 因源编码装不进 mp4 容器而失败
 /// （vc1/wmv/mpeg2/rv/theora 视频、dts/truehd/pcm 音频等，或流复制不兼容）时用它兜底。
-/// 桌面精简 ffmpeg（`tool/ffmpeg-min`）为此专门编入 libx264（`--enable-gpl`，TODO-1257），
-/// mp4 muxer 也在白名单里；重编码后任何可解码的源都能落成通用可播的 .mp4，杜绝
+/// 桌面 ffmpeg 为此带 libx264（GPL 构建；旧 ffmpeg-min 于 TODO-1257 专门编入，统一 FFmpeg
+/// 全组件构建沿用），mp4 muxer 同样具备；重编码后任何可解码的源都能落成通用可播的 .mp4，杜绝
 /// 「输出跟随源容器 → matroska/webm muxer 缺失 → exit -22 EINVAL」（BUG-917/460）。
 ///
 /// TODO-2357：这里的 `libx264` **无平台分支**，而移动端 ffmpeg-kit 此前并未编入 x264
@@ -966,9 +966,9 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
 
     /// 跑完整一轮：快路径 `-c copy`（瞬时、无损，多数 h264/hevc + aac 源直接成功），
     /// 失败则重编码 libx264 + aac 兜底（源编码装不进 mp4：vc1/wmv/dts/pcm… 桌面
-    /// ffmpeg-min 专为此编入 libx264，TODO-1257；杜绝 BUG-917 的 exit -22）。
-    /// 输出恒 `.mp4`——绝不跟随源容器扩展名，否则 mkv/webm 源会选中 ffmpeg-min
-    /// 白名单里不存在的 matroska muxer。
+    /// ffmpeg 带 libx264（旧 ffmpeg-min 专为此编入，TODO-1257）；杜绝 BUG-917 的 exit -22）。
+    /// 输出恒 `.mp4`——绝不跟随源容器扩展名，否则 mkv/webm 源会选中旧 ffmpeg-min
+    /// 白名单里不存在的 matroska muxer（统一 FFmpeg 已含，恒 mp4 为既有契约）。
     Future<_ClipAttempt> attempt(List<String> subs) async {
       final FfmpegRunResult copyResult = await resolved.run(
         buildFfmpegVideoClipExportArgs(
@@ -1015,10 +1015,9 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     // movtext 编码器，缺它会直接 'Unknown encoder'。宁可导出一个没字幕的片段，也不
     // 能让「加字幕」这个增强把原本能成功的导出变成失败。
     //
-    // ⚠️ 这条降级会**静默**吞掉字幕，所以它掩盖过一次真 bug：随包的精简 ffmpeg 自己
+    // ⚠️ 这条降级会**静默**吞掉字幕，所以它掩盖过一次真 bug：旧随包的精简 ffmpeg-min 自己
     // 就漏编了 movtext（BUG-1058），桌面端每次导出都走到这里，用户只看到"导出成功但
-    // 没字幕"。入库二进制已重新 vendor 修好，且由
-    // fushi/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart 守住不再漂移；
+    // 没字幕"。统一 FFmpeg 为全组件构建，已含 movtext；
     // 降级本身保留，因为它要兜的是用户自带的第三方 ffmpeg，那个仍然不可控。
     // 失败原因照常写进错误日志（下方 ErrorLogService），排查时先看那条。
     if (!result.produced && subtitlePaths.isNotEmpty) {

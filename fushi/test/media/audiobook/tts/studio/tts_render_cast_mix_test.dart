@@ -325,7 +325,7 @@ void main() {
       );
     });
 
-    test('转码参数：PCM 装 mov（ffmpeg-min 没有 wav 封装器）', () {
+    test('转码参数：PCM 装 mov（旧 ffmpeg-min 没有 wav 封装器，此中间格式保留）', () {
       final List<String> args = buildTtsUniformTranscodeArgs(
         inputPath: 'in.audio',
         outputPath: 'out.mov',
@@ -339,7 +339,7 @@ void main() {
     });
   });
 
-  // 真 ffmpeg 冒烟：只在显式给了 FUSHI_FFMPEG（如 third_party/ffmpeg-min）时跑。
+  // 真 ffmpeg 冒烟：只在显式给了 FUSHI_FFMPEG（如随包统一 FFmpeg 的 ffmpeg 可执行文件）时跑。
   final String? ffmpeg = Platform.environment['FUSHI_FFMPEG'];
   test('ffmpeg 冒烟：48 kHz WAV 台词与 24 kHz MP3 混排一章，句首时刻不漂', () async {
     final Directory tmp = await Directory.systemTemp.createTemp(

@@ -284,9 +284,10 @@ void main() {
 
     // TODO-1244 回归守卫：波形抽取必须带 `-vn` 丢弃视频流。没有 `-map 0:a` 的默认回退路径
     // 下，若视频流也进 `-f null -`，ffmpeg 会用 null 复用器默认视频编码器 wrapped_avframe
-    // 编码它——桌面捆绑的最小 ffmpeg-min 无此编码器，整条命令 `Encoder not found` 硬失败→
-    // 空包络→「对轴界面波形完全不显示」。`-vn` 让最小 ffmpeg 也能只抽音频能量。
-    test('always drops video with -vn (no-map default path) — ffmpeg-min safe',
+    // 编码它——旧桌面捆绑的最小 ffmpeg-min 无此编码器，整条命令 `Encoder not found` 硬失败→
+    // 空包络→「对轴界面波形完全不显示」。统一 FFmpeg 已有该编码器；`-vn` 保留，
+    // 仍让最小构建的外部 ffmpeg 也能只抽音频能量。
+    test('always drops video with -vn (no-map default path) — minimal-build safe',
         () {
       // 无音轨参数 => 无 -map（默认轨回退路径），这正是最小 ffmpeg 会踩视频编码器的场景。
       final List<String> noMap =

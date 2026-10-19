@@ -30,9 +30,11 @@ on:
       - 'native/**'
       - 'ci/**'
       # 根 pubspec.yaml 的 dependency_overrides 把一批插件 path 指向 third_party/
-      # （ffmpeg_kit_flutter / flutter_inappwebview_android / media_kit_* /
+      # （ffmpeg_kit_next_flutter / flutter_inappwebview_android / media_kit_* /
       # flutter_onnxruntime …），改它们直接改变 Android 构建产物，以前却不触发本门。
       - 'third_party/**'
+      # 统一 FFmpeg 配方（版本 / 补丁 / 能力清单）：播放器与制卡共用，守卫在 fushi/test。
+      - 'tool/ffmpeg-unified/**'
       - 'tool/release_sequence.sh'
       - '.github/workflows/main.yml'
       - '.github/actions/provide-baked-secrets/**'

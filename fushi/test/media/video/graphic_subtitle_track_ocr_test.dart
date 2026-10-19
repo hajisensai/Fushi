@@ -21,6 +21,8 @@ import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
+import '../../helpers/unified_ffmpeg.dart';
+
 /// 记下 ffmpeg 参数；[writeSup] 时往输出路径（末参）写一份 `.sup`，否则写空壳。
 class _RecordingFfmpegBackend implements FfmpegBackend {
   _RecordingFfmpegBackend({required this.returnCode, required this.writeSup});
@@ -85,11 +87,12 @@ class _WatchedFfmpegBackend extends _RecordingFfmpegBackend
   }
 }
 
-/// 直接起入库的精简 ffmpeg 进程。
+/// 直接起随包统一 FFmpeg 的 ffmpeg / ffprobe 进程。
 class _BinaryFfmpegBackend implements FfmpegBackend {
-  _BinaryFfmpegBackend(this.executable);
+  _BinaryFfmpegBackend(this.executable, this.ffprobe);
 
   final String executable;
+  final String ffprobe;
 
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
@@ -102,11 +105,11 @@ class _BinaryFfmpegBackend implements FfmpegBackend {
     return FfmpegRunResult(returnCode: r.exitCode, output: '${r.stderr}');
   }
 
-  /// 同目录的 ffprobe（入库的 ffmpeg-min 两者成对）。
+  /// 同一份统一 FFmpeg 的 ffprobe（两者成对）。
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
     final ProcessResult r = await Process.run(
-      p.join(p.dirname(executable), 'ffprobe.exe'),
+      ffprobe,
       args,
     ).timeout(timeout);
     return FfmpegRunResult(returnCode: r.exitCode, output: '${r.stdout}');
@@ -472,14 +475,13 @@ void main() {
       expect(failures, <String>['input missing']);
     });
 
-    // 入库的桌面精简 ffmpeg 真跑一遍：缺 sup 封装器时这里报
+    // 随包统一 FFmpeg 真跑一遍：缺 sup 封装器时这里报
     // "Requested output format 'sup' is not known"。夹具是一条 PGS 轨的 mkv
     // （单测里的 _sup() 由完整 ffmpeg 封装，mkv 把起点归零：1s/1.5s/3s → 0/0.5/2s）。
-    final String windowsBinary = p.normalize(
-      '../third_party/ffmpeg-min/windows/ffmpeg.exe',
-    );
+    final UnifiedFfmpegForTests? unified =
+        resolveBundledUnifiedFfmpegForTests();
     test(
-      '入库的精简 ffmpeg 能把 mkv 里的 PGS 轨抽成 .sup',
+      '随包统一 FFmpeg 能把 mkv 里的 PGS 轨抽成 .sup',
       () async {
         final String out = p.join(dir.path, 'track.sup');
         final List<String> failures = <String>[];
@@ -488,7 +490,7 @@ void main() {
           streamIndex: 0,
           supPath: out,
           onFailure: failures.add,
-          backend: _BinaryFfmpegBackend(windowsBinary),
+          backend: _BinaryFfmpegBackend(unified!.ffmpeg, unified.ffprobe),
         );
         expect(ok, isTrue, reason: failures.join('\n'));
         final List<PgsCue> cues = PgsSubtitleParser.parse(
@@ -504,9 +506,9 @@ void main() {
           bottom: 202,
         ));
       },
-      skip: Platform.isWindows && File(windowsBinary).existsSync()
+      skip: unified != null
           ? false
-          : '只有 Windows 能跑入库的 ffmpeg-min/windows/ffmpeg.exe',
+          : '找不到随包统一 FFmpeg（ffmpeg + ffprobe）',
     );
   });
 

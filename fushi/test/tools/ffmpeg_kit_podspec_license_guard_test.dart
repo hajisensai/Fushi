@@ -1,6 +1,6 @@
 // 守卫：vendored podspec 的 `s.license` 必须能过 CocoaPods 的校验，且许可结论不许被降级。
 //
-// 背景（BUG-1373）：`third_party/ffmpeg_kit_flutter/ios/ffmpeg_kit_flutter.podspec`
+// 背景（BUG-1373）：`third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter.podspec`
 // 曾写 `s.license = { :file => '../LICENSE.GPLv3' }`。文件真实存在（35KB GPLv3 正文），
 // 但 cocoapods-core 的 `Specification::Linter#_validate_license` 是**按扩展名**判定
 // 许可文件类型的：
@@ -21,7 +21,7 @@
 // 本守卫做三件事：
 //   1. 扫全部 vendored podspec 的 `:file =>`，照抄上面那条正则判扩展名；
 //   2. 确认被指向的许可文件真的存在（防「改名过了校验但忘了 git mv」）；
-//   3. 钉住 ffmpeg_kit_flutter iOS 侧的许可结论仍是 **GPL-3.0**——本仓自编产物启用了
+//   3. 钉住 ffmpeg_kit_next_flutter iOS 侧的许可结论仍是 **GPL-3.0**——本仓自编产物启用了
 //      `--enable-gpl --enable-x264`，有效许可就是 GPLv3，任何「为了过校验顺手改回
 //      LGPLv3」都是合规倒退，不是修 bug。
 
@@ -49,11 +49,11 @@ String _extname(String path) {
   return base.substring(dot);
 }
 
-/// 从当前 cwd 向上找含 `third_party/ffmpeg_kit_flutter/pubspec.yaml` 的仓库根。
+/// 从当前 cwd 向上找含 `third_party/ffmpeg_kit_next_flutter/pubspec.yaml` 的仓库根。
 Directory _repoRoot() {
   Directory dir = Directory.current;
   for (int i = 0; i < 6; i++) {
-    if (File('${dir.path}/third_party/ffmpeg_kit_flutter/pubspec.yaml')
+    if (File('${dir.path}/third_party/ffmpeg_kit_next_flutter/pubspec.yaml')
         .existsSync()) {
       return dir;
     }
@@ -62,7 +62,7 @@ Directory _repoRoot() {
     dir = parent;
   }
   fail(
-    '找不到含 third_party/ffmpeg_kit_flutter/pubspec.yaml 的仓库根'
+    '找不到含 third_party/ffmpeg_kit_next_flutter/pubspec.yaml 的仓库根'
     '（从 ${Directory.current.path} 向上）',
   );
 }
@@ -127,9 +127,9 @@ void main() {
       }
     });
 
-    test('ffmpeg_kit_flutter iOS 侧许可结论仍是 GPL-3.0（--enable-gpl 的合规义务）', () {
+    test('ffmpeg_kit_next_flutter iOS 侧许可结论仍是 GPL-3.0（--enable-gpl 的合规义务）', () {
       final File podspec = File(
-        '${root.path}/third_party/ffmpeg_kit_flutter/ios/ffmpeg_kit_flutter.podspec',
+        '${root.path}/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter.podspec',
       );
       expect(podspec.existsSync(), isTrue, reason: '找不到 iOS podspec');
       final String source = podspec.readAsStringSync();
@@ -144,7 +144,7 @@ void main() {
         refs.single.contains('GPLv3'),
         isTrue,
         reason: 'iOS podspec 的许可文件从 GPLv3 改成了 "${refs.single}"。'
-            '本仓自编 ffmpeg-kit 启用了 --enable-gpl --enable-x264，'
+            '统一 FFmpeg（tool/ffmpeg-unified）启用了 --enable-gpl --enable-libx264，'
             '产物有效许可就是 GPLv3；降回 LGPLv3 是合规倒退，不是修构建',
       );
       expect(
@@ -163,8 +163,8 @@ void main() {
         heading,
         'GNU GENERAL PUBLIC LICENSE',
         reason: '${license.path} 抬头是 "$heading"，不是 GPL 正文。'
-            '若指到了 LGPL——包根的 LICENSE（LGPLv3 原件）是给 macOS podspec 用的'
-            '（macOS 走上游非 GPL 预编译包），iOS 侧自编产物是 GPLv3，别指错',
+            '若指到了 LGPL：包根的 LICENSE 是 FFmpegKitNext 的 LGPLv3 原件'
+            '——iOS 侧的统一 FFmpeg 产物是 GPLv3，别指错',
       );
     });
   });
