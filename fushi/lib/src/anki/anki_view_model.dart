@@ -7,6 +7,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi/src/anki/anki_auto_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
+import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
@@ -481,8 +482,10 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   bool get supportsDeckReposition => _repository.supportsDeckReposition;
 
   /// 与当前仓库绑定的重排编排器（无状态，随用随建）。
-  AnkiDeckRepositionRunner get deckRepositionRunner =>
-      AnkiDeckRepositionRunner(_repository);
+  AnkiDeckRepositionRunner get deckRepositionRunner => AnkiDeckRepositionRunner(
+        _repository,
+        snapshotFolder: repositionSnapshotFolderFor(_repository),
+      );
 
   /// 记住用户上次选的词频来源 / 词典 / 复合方式，下次打开弹窗直接复用。
   Future<void> setRepositionOptions({
@@ -665,18 +668,41 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
 /// **只有复习模块开着、且目标是 Fushi 复习时才包**：模块关着时链上根本没有这一层，
 /// 制卡行为与没有复习模块时逐字节一致（用户硬要求：关闭时零行为变化、零额外开销）。
 /// 包在待发队列**外面**：SRS 是本机写入，不该因为 Anki 连不上被冻进队列。
+///
+/// SRS 层外面再套一层「制卡后自动重排」：SRS 层的 [SrsMiningAnkiRepository.mineEntry]
+/// 直接写复习、不经过里层，里层那份（绑 Anki）根本看不到这次制卡。两份调度器各管
+/// 各的落卡处，不会对同一张卡重排两次：复习制卡只经过外层，待发队列补发给 Anki 的卡
+/// 只经过里层。
 BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
   if (!ref.watch(srsMiningToReviewProvider)) return repo;
   // 制卡写进复习后递增刷新信号：牌组列表与首页复习条的计数随之重读。
   final StateController<int> revision = ref.read(srsRevisionProvider.notifier);
-  return SrsMiningAnkiRepository(
-    inner: repo,
-    miner: () => _readSrsMiner(ref),
-    onCardsAdded: () => revision.state++,
-    // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。
-    openNote: (String noteId) async =>
-        await SrsAppHost.current?.openNote(noteId) ?? false,
+  return _withAutoReposition(
+    ref,
+    SrsMiningAnkiRepository(
+      inner: repo,
+      miner: () => _readSrsMiner(ref),
+      onCardsAdded: () => revision.state++,
+      // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。
+      openNote: (String noteId) async =>
+          await SrsAppHost.current?.openNote(noteId) ?? false,
+    ),
   );
+}
+
+/// [repo] 的重排快照目录名：装饰链里有 SRS 层（挖词目标 = Fushi 复习）时用复习的
+/// 目录，否则用 Anki 的（见 [AnkiDeckRepositionRunner.kSrsSnapshotFolder]）。
+String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
+  BaseAnkiRepository cur = repo;
+  while (true) {
+    if (cur is SrsMiningAnkiRepository) {
+      return AnkiDeckRepositionRunner.kSrsSnapshotFolder;
+    }
+    if (cur is! DelegatingAnkiRepository) {
+      return AnkiDeckRepositionRunner.kAnkiSnapshotFolder;
+    }
+    cur = cur.inner;
+  }
 }
 
 /// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕）。
@@ -750,7 +776,10 @@ AnkiAutoRepositionWiring withAnkiAutoReposition(
   required void Function(String message) showFailure,
 }) {
   final AnkiAutoRepositionScheduler scheduler = AnkiAutoRepositionScheduler(
-    runner: AnkiDeckRepositionRunner(repo),
+    runner: AnkiDeckRepositionRunner(
+      repo,
+      snapshotFolder: repositionSnapshotFolderFor(repo),
+    ),
     loadSettings: repo.loadSettings,
     // 文案在这一层渲染：调度器本身够不到 `t.*`（它要保持无 Flutter 依赖），
     // 在那边拼字面量等于让 17 种语言的用户都看英文。

@@ -432,12 +432,16 @@ class SrsCardFlags {
     required this.suspended,
     required this.buriedUntilDay,
     required this.flag,
+    this.newPosition,
   });
 
   final String deckId;
   final bool suspended;
   final int? buriedUntilDay;
   final int flag;
+
+  /// 新卡出卡位置（[SrsFieldKeys.cardNewPosition]）；null = 没排过。
+  final int? newPosition;
 
   /// [noteDeckId] 是笔记的首选牌组；卡片没有自己的 deck 修改记录时用它，再没有就用 [fallbackDeckId]（默认牌组）。
   /// 卡片的生成本身不写任何记录：两台设备各自为新模板生成同一张卡，初始 deckId 确定性相同。
@@ -453,5 +457,10 @@ class SrsCardFlags {
     suspended: edits.value(SrsFieldKeys.suspended) == true,
     buriedUntilDay: edits.value(SrsFieldKeys.buriedUntilDay) as int?,
     flag: (edits.value(SrsFieldKeys.flag) as int?) ?? 0,
+    newPosition: switch (edits.value(SrsFieldKeys.cardNewPosition)) {
+      final int v => v,
+      final num v => v.toInt(),
+      _ => null,
+    },
   );
 }

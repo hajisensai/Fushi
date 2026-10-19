@@ -128,8 +128,17 @@ class AnkiDeckRepositionRunner {
     this._repository, {
     AnkiFrequencyLookup lookup = defaultAnkiFrequencyLookup,
     Future<Directory> Function()? snapshotDirectory,
+    String snapshotFolder = kAnkiSnapshotFolder,
   })  : _lookup = lookup,
-        _snapshotDirectory = snapshotDirectory ?? _defaultSnapshotDirectory;
+        _snapshotDirectory = snapshotDirectory ??
+            (() => _defaultSnapshotDirectory(snapshotFolder));
+
+  /// 写 Anki 卡组的重排快照的目录名（`<supportRoot>/backups/<名字>/`）。
+  static const String kAnkiSnapshotFolder = 'anki_reposition';
+
+  /// 挖词目标 = Fushi 复习时的快照目录名。与 Anki 的分开：两边的牌组可能同名
+  /// （都有「Default」），而撤销按牌组名挑最近一份快照，混在一起会挑到另一边的。
+  static const String kSrsSnapshotFolder = 'srs_reposition';
 
   final BaseAnkiRepository _repository;
   final AnkiFrequencyLookup _lookup;
@@ -141,10 +150,9 @@ class AnkiDeckRepositionRunner {
 
   bool get isSupported => _repository.supportsDeckReposition;
 
-  static Future<Directory> _defaultSnapshotDirectory() async {
+  static Future<Directory> _defaultSnapshotDirectory(String folder) async {
     final Directory support = await AppPaths.supportRootDirectory();
-    final Directory dir =
-        Directory(p.join(support.path, 'backups', 'anki_reposition'));
+    final Directory dir = Directory(p.join(support.path, 'backups', folder));
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
   }
