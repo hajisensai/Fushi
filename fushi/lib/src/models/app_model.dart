@@ -7386,6 +7386,31 @@ class AppModel with ChangeNotifier {
     return until != null && DateTime.now().isBefore(until);
   }
 
+  /// 远端查词客户端：跨查词复用同一个实例，host 词典样式按 `stylesRevision` 指纹
+  /// 只整表下发一次（BUG-3612，复用 BUG-3425 的门控）。每次查词新建实例的话指纹
+  /// 缓存随实例丢掉，等于每次都整表重下。数据库或 http client 换了（恢复备份 /
+  /// dispose 后重建）就跟着重建，不把旧连接留在里面。
+  FushiRemoteLookupClient? _remoteDictionaryLookupClient;
+  FushiDatabase? _remoteDictionaryLookupDatabase;
+  http.Client? _remoteDictionaryLookupHttpClient;
+
+  FushiRemoteLookupClient get _remoteDictionaryLookup {
+    final http.Client httpClient = _remoteLookupClient;
+    final FushiRemoteLookupClient? cached = _remoteDictionaryLookupClient;
+    if (cached != null &&
+        identical(_remoteDictionaryLookupDatabase, _database) &&
+        identical(_remoteDictionaryLookupHttpClient, httpClient)) {
+      return cached;
+    }
+    _remoteDictionaryLookupDatabase = _database;
+    _remoteDictionaryLookupHttpClient = httpClient;
+    return _remoteDictionaryLookupClient = FushiRemoteLookupClient(
+      repo: SyncRepository(_database),
+      httpClient: httpClient,
+      trackDictionaryStyles: true,
+    );
+  }
+
   Future<DictionarySearchResult?> _searchRemoteDictionary({
     required String searchTerm,
     required bool searchWithWildcards,
@@ -7404,10 +7429,11 @@ class AppModel with ChangeNotifier {
       // await 必须收进 try：原实现直接 return 未 await 的 Future，catch 只能抓
       // 同步 throw，异步错误全部漏出成 uncaught（音频路径 lookupRemoteAudio 已
       // 修过同一处写法，词典路径此前遗留）。
-      final DictionarySearchResult? result = await FushiRemoteLookupClient(
-        repo: SyncRepository(_database),
-        httpClient: _remoteLookupClient,
-      ).searchDictionary(
+      // BUG-3612：结果由电脑查出，弹窗却在本机渲染、Glossary 也在本机导出——
+      // 客户端开着 `trackDictionaryStyles`，结果随附电脑的词典样式
+      // （[DictionarySearchResult.remoteDictionaryStyles]）。
+      final DictionarySearchResult? result =
+          await _remoteDictionaryLookup.searchDictionary(
         term: searchTerm,
         wildcards: searchWithWildcards,
         maximumTerms: maximumTerms,

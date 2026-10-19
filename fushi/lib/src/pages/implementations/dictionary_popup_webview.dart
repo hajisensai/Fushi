@@ -1756,8 +1756,12 @@ JSON.stringify((function(){
     // 输入 memo，同内容 ⇒ 同实例同 revision），combined 只在真要发时才拼一次。
     final PopupStaticSettingsJs staticSettings = _buildStaticSettings();
     // 结果来自别的设备时整表换成那台设备的词典样式（见 [_lastSentRemoteStyles]）。
+    // 两个来源：宿主注入的资源源（手机遥控 / 游戏串流，整个表面都是对端结果），或
+    // 结果自己带的 host 样式（BUG-3612：`AppModel` remote-first 查词——同一个表面
+    // 这次可能是电脑查的、下次是本机查的，只能按结果逐次判断）。
     final Map<String, String>? remoteStyles =
-        widget.resourceSource?.dictionaryStyles;
+        widget.resourceSource?.dictionaryStyles ??
+            widget.result.remoteDictionaryStyles;
     // 从远端来源换回本机：页面里还是远端样式，静态段（含本机样式）必须重发。
     if (remoteStyles == null && _lastSentRemoteStyles != null) {
       _lastSentStaticRevision = null;

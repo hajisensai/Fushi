@@ -78,7 +78,9 @@ class FushiRemoteLookupClient {
 
   /// BUG-3425：查词时是否按 `stylesRevision` 门控顺带取 host 的词典自带样式。
   ///
-  /// 只给**在本端渲染并导出远端结果**、且实例活过整个会话的调用方开（游戏串流）：
+  /// 只给**在本端渲染并导出远端结果**、且实例跨查词复用的调用方开（游戏串流、
+  /// `AppModel` 的 remote-first 查词，BUG-3612）。开着时返回的结果带上
+  /// [DictionarySearchResult.remoteDictionaryStyles]。
   /// 首查发空指纹，host 整表下发一次；之后带上缓存的指纹，host 只回指纹。每次
   /// 查词都新建实例的调用方开了等于每次整表重下，所以默认关、请求体不变。
   final bool _trackDictionaryStyles;
@@ -141,6 +143,11 @@ class FushiRemoteLookupClient {
     final DictionarySearchResult result =
         _parseDictionaryResult(Map<String, dynamic>.from(resultJson));
     result.popupJson = json['popupJson']?.toString();
+    // BUG-3612：结果在本端渲染 / 导出，随附 host 的词典样式，弹窗按结果判断用哪份
+    // （老 host 不认 `stylesRevision` 时为 null，弹窗照旧用本机样式）。
+    if (_trackDictionaryStyles) {
+      result.remoteDictionaryStyles = _hostDictionaryStyles;
+    }
     // BUG-1570：kanji-only 结果（单字命中汉字词典但无词条）也算有效结果——与本地
     // 路径的 kanjiOnly 分支同语义。瘦 client（本地无词典）此前会把它当「无结果」
     // 丢掉转本地兜底，而本地根本没有汉字词典。
