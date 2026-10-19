@@ -61,12 +61,6 @@ final class FloatingDictPluginRegistrant {
         }
         try {
             flutterEngine.getPlugins().add(
-                new eu.simonbinder.sqlite3_flutter_libs.Sqlite3FlutterLibsPlugin());
-        } catch (Exception e) {
-            Log.e(TAG, "Error registering plugin sqlite3_flutter_libs", e);
-        }
-        try {
-            flutterEngine.getPlugins().add(
                 new io.github.ponnamkarthik.toast.fluttertoast.FlutterToastPlugin());
         } catch (Exception e) {
             Log.e(TAG, "Error registering plugin fluttertoast", e);

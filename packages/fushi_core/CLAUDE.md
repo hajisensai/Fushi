@@ -20,7 +20,7 @@
 
 ## 关键依赖与配置
 
-- `drift: ">=2.33.0 <2.34.0"` + `sqlite3` -- ORM 与 SQLite 绑定。**本包零 Flutter**（pubspec 不声明 `sdk: flutter`，包测试用 `package:test`）；SQLite 原生库由消费方装配：app 在 `fushi/pubspec.yaml` 声明 `sqlite3_flutter_libs`，服务端走 `sqlite3` 的 native asset（`dart build cli`）。
+- `drift: ">=2.33.0 <2.34.0"` + `sqlite3` -- ORM 与 SQLite 绑定。**本包零 Flutter**（pubspec 不声明 `sdk: flutter`，包测试用 `package:test`）；SQLite 原生库由 `sqlite3` 3.x 的 build hook 作为 native asset 提供：app 随 `flutter build` 打包，服务端走 `dart build cli`；不要加 `sqlite3_flutter_libs`（只配 2.x，会多塞一份 SQLite）。
 - `path: ^1.8.2` -- 路径处理。
 - 代码生成：`drift_dev: ^2.23.0` + `build_runner`，生成 `database.g.dart`。
 
