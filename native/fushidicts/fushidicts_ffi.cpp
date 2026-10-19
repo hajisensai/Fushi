@@ -452,7 +452,8 @@ static std::atomic<int32_t> g_live_handles{0};
 //     destroy）时加一个引用；句柄已退役时拒绝（返回 0），借用方不得使用它。
 //   * fushidicts_release：还一个引用；最后一个引用归还时才真正 delete（解除映射）。
 //   * fushidicts_destroy = 退役：标记 retired 并还掉宿主的那个引用。在飞的借用照常
-//     跑完，最后一个 release 时销毁；重复 destroy 不会重复还引用。
+//     跑完，最后一个 release 时销毁。借用期间重复 destroy 不会重复还引用；没有借用时
+//     第一次 destroy 就已销毁，宿主不得再碰这个地址（Dart 侧 dispose 后把句柄置空）。
 //
 // 读写锁 rw：查询类导出（query / lookup / tokenize / match_length …）取共享锁，彼此
 // 可以并发（查询路径只读，唯一的可变状态 match_cache 自带互斥）；改状态的
@@ -493,7 +494,8 @@ void fushidicts_destroy(void* handle) {
   ffi_guard_void("fushidicts_destroy", [&]() {
     if (!handle) return;
     auto* h = static_cast<FushidictsHandle*>(handle);
-    // 退役只发生一次：第二次 destroy 不再还宿主的引用（否则会把借用方的引用还掉）。
+    // 退役只发生一次：借用期间的第二次 destroy 不再还宿主的引用（否则会把借用方的
+    // 引用还掉）。
     if (h->retired.exchange(true, std::memory_order_acq_rel)) return;
     handle_release(h);
   });

@@ -1015,6 +1015,11 @@ class FushiApiServer {
     // 整批一次交给分词器（后台 isolate 里切完，HBK-AUDIT-009），不在本 isolate 上逐条
     // 同步切。
     final List<List<TokenizedSegment>> tokenized = await _tokenizer(texts);
+    if (tokenized.length != texts.length) {
+      throw StateError(
+        'tokenizer returned ${tokenized.length} results for ${texts.length} texts',
+      );
+    }
     final List<Map<String, dynamic>> out = <Map<String, dynamic>>[
       for (int i = 0; i < texts.length; i++)
         buildYomitanTokenizeResponse(
