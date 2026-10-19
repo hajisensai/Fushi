@@ -2,8 +2,8 @@
 /// 交给 `video_clip_subtitle_burn.dart` 的 `overlay` 链烧进画面（BUG-2202）。
 ///
 /// 为什么整帧而不是「只画字那一小块 + 让 ffmpeg 定位」：定位、换行、描边、注音全在
-/// Dart 侧算完，filter 图里就零布局逻辑，`ffmpeg-min` 的 filter 白名单只需要 overlay
-/// 一个词。而且字号/描边/投影直接复用屏幕上那套 [VideoSubtitleStyle]，导出的字幕与
+/// Dart 侧算完，filter 图里就零布局逻辑，filter 图只需要 overlay
+/// 一个词（旧 ffmpeg-min 的 filter 白名单时代的设计，沿用）。而且字号/描边/投影直接复用屏幕上那套 [VideoSubtitleStyle]，导出的字幕与
 /// 用户看到的是同一套渲染，不是 libass 的另一套默认样式。
 ///
 /// 尺寸怎么对齐：屏幕上的字号是**逻辑像素**、量在视频显示区上；导出要落到视频的

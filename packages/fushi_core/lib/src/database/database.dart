@@ -814,6 +814,7 @@ void _requireOneVideoMetadataOwner({
   SrsCardsCache,
   VideoSubtitleGlossaries,
   SrsSentBatches,
+  MediaPrivacyFlags,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -847,7 +848,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 121;
+  int get schemaVersion => 122;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2345,6 +2346,13 @@ class FushiDatabase extends _$FushiDatabase
             // 状态时搬进来）。
             if (!await _tableExists('srs_sent_batches')) {
               await m.createTable(srsSentBatches);
+            }
+          }
+          if (from < 122) {
+            // v122：作品级「私密」标记表 media_privacy_flags（不上传排行榜、不推
+            // Bangumi）。纯新表、不动数据；幂等守卫同 v119。
+            if (!await _tableExists('media_privacy_flags')) {
+              await m.createTable(mediaPrivacyFlags);
             }
           }
         },

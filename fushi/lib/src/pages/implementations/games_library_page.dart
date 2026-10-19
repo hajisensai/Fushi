@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'dart:async';
@@ -1804,6 +1805,15 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       onScrape: () => unawaited(_scrapeGame(game)),
       onAddToCollection: () => unawaited(_addGameToCollection(game)),
       onEditTags: () => unawaited(_openTagPicker(game)),
+      onEditPrivacy: () => unawaited(
+        showMediaPrivacyDialog(
+          context,
+          db: _appModel.database,
+          kind: TagHostKind.game,
+          entryKey: game.id,
+          title: game.displayName,
+        ),
+      ),
       onEditUpscaling: () => unawaited(_editUpscalingMode(game)),
       onEditJapaneseLocale: () => unawaited(_editJapaneseLocaleMode(game)),
       onEditLanguage: () => unawaited(_editGameLanguage(game)),
@@ -2139,6 +2149,7 @@ class _GameCard extends StatelessWidget {
     required this.onScrape,
     required this.onAddToCollection,
     required this.onEditTags,
+    required this.onEditPrivacy,
     required this.onEditUpscaling,
     required this.onEditJapaneseLocale,
     required this.onEditLanguage,
@@ -2169,6 +2180,9 @@ class _GameCard extends StatelessWidget {
   final VoidCallback onScrape;
   final VoidCallback onAddToCollection;
   final VoidCallback onEditTags;
+
+  /// 打开这个游戏的「私密」开关（不上传排行榜、不推 Bangumi）。
+  final VoidCallback onEditPrivacy;
 
   /// 改这个游戏的窗口超分档位（Windows-only，见 [_menuItems]）。
   final VoidCallback onEditUpscaling;
@@ -2318,6 +2332,12 @@ class _GameCard extends StatelessWidget {
           danger: false,
         ),
         (
+          action: 'privacy',
+          label: t.media_privacy_action,
+          icon: FushiIcons.lock,
+          danger: false,
+        ),
+        (
           action: 'language',
           label: t.book_language_action,
           icon: FushiIcons.language,
@@ -2386,6 +2406,8 @@ class _GameCard extends StatelessWidget {
         onAddToCollection();
       case 'tags':
         onEditTags();
+      case 'privacy':
+        onEditPrivacy();
       case 'upscaling':
         onEditUpscaling();
       case 'japanese_locale':

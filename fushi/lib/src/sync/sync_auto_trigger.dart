@@ -1211,6 +1211,8 @@ void installCollectionsSyncWatcher({
         db.bookTags,
         db.tagAssignments,
         db.bookTagMembershipTombstones,
+        // 作品私密标记搭标签清单走（排行榜上传设备要尽快知道）。
+        db.mediaPrivacyFlags,
       ]))
       .listen((_) => _scheduleCollectionsSync(db));
 }

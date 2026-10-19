@@ -1025,7 +1025,15 @@ class FushiSearchField extends StatelessWidget {
     this.trailing = const <Widget>[],
     this.leading,
     this.autofocus = false,
+    this.keyboardType = TextInputType.text,
   });
+
+  /// 软键盘类型。地址栏传 [TextInputType.url]：移动端给出带「/」「.」的网址键盘，
+  /// 且不对网址做自动更正 / 首字母大写（[TextInputType.url] 下 autocorrect 关闭）。
+  /// 提交动作仍是 [TextInputAction.search]（见下方 BUG-2620 的说明）。
+  final TextInputType keyboardType;
+
+  bool get _autocorrect => keyboardType != TextInputType.url;
 
   /// 替换前置放大镜的控件（M3E search bar 的 leading：返回箭头 / 菜单钮）。
   /// 为空时是放大镜。会被包进 [FushiSearchLeading]，两套设计系统都仍认得出
@@ -1226,6 +1234,8 @@ class FushiSearchField extends StatelessWidget {
           ),
           contentPadding: const EdgeInsetsDirectional.only(end: 16),
         ),
+        keyboardType: keyboardType,
+        autocorrect: _autocorrect,
         textInputAction: TextInputAction.search,
         onEditingComplete: _finishSubmit,
         onChanged: onChanged,
@@ -1273,6 +1283,8 @@ class FushiSearchField extends StatelessWidget {
                   ? null
                   : Row(mainAxisSize: MainAxisSize.min, children: trailing),
             ),
+            keyboardType: keyboardType,
+            autocorrect: _autocorrect,
             textInputAction: TextInputAction.search,
             onEditingComplete: _finishSubmit,
             onChanged: onChanged,
@@ -1290,6 +1302,8 @@ class FushiSearchField extends StatelessWidget {
         focusNode: focusNode,
         autofocus: autofocus,
         placeholder: hintText,
+        keyboardType: keyboardType,
+        autocorrect: _autocorrect,
         prefix: Padding(
           padding: const EdgeInsets.only(left: 6, right: 2),
           child: leading ?? const MacosIcon(CupertinoIcons.search),
@@ -1352,6 +1366,8 @@ class FushiSearchField extends StatelessWidget {
               style: tokens.type.listTitle,
               textAlignVertical: TextAlignVertical.center,
               decoration: decoration,
+              keyboardType: keyboardType,
+              autocorrect: _autocorrect,
               // 搜索框的提交动作必须显式声明：不声明时软键盘/IME 给的是
               // 「完成」，而 `TextInputAction.done` 的默认收尾是 unfocus——焦点
               // 一掉，[FushiFocusRoot] 的修复链又会把它以编程方式还回来，桌面端
@@ -5304,11 +5320,11 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   /// 与 [FushiToolScaffold] 同名方法看着一样但**不能合并**：那边整条工具条
   /// 只有 44 高，它在外层用 `SizedBox.square(40)` 自己撑命中盒，塞不下 48。
   ///
-  /// [Navigator.maybeOf]：脚手架被用在没有 Navigator 的场景（裸组件测试 /
-  /// 嵌入式外壳）时只是没有返回键，不该整页抛异常。
+  /// 判据是 [fushiRouteImpliesBack]（本页路由，不是整个导航栈：弹出菜单压栈时
+  /// 根页不该长出返回键）；没有 Navigator 的场景（裸组件测试 / 嵌入式外壳）只是
+  /// 没有返回键，不该整页抛异常。
   Widget? _defaultLeading(BuildContext context) {
-    final NavigatorState? navigator = Navigator.maybeOf(context);
-    if (navigator == null || !navigator.canPop()) return null;
+    if (!fushiRouteImpliesBack(context)) return null;
     // Apple：返回键统一为导航栏的玻璃圆钮（SF chevron，44pt）。
     if (isGlassDesign(context)) return const FushiRouteBackButton();
     return FushiIconButton(
@@ -5506,7 +5522,7 @@ class FushiToolScaffold extends StatelessWidget {
   }
 
   Widget? _defaultLeading(BuildContext context) {
-    if (!Navigator.of(context).canPop()) return null;
+    if (!fushiRouteImpliesBack(context)) return null;
     // Apple：返回键统一为导航栏的玻璃圆钮（SF chevron，44pt）。
     if (isGlassDesign(context)) return const FushiRouteBackButton();
     return FushiIconButton(

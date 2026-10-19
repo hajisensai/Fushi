@@ -20,6 +20,7 @@ import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
+import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
@@ -3152,6 +3153,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.sell_outlined,
         onPressed: () => _openMediaTagPicker(
           MediaRef(kind: MediaKind.epub, entryKey: bookKey),
+        ),
+      ),
+      // 私密：不上传排行榜、不推 Bangumi（本地书 / 漫画没有外部分级可依）。
+      DialogListAction(
+        label: t.media_privacy_action,
+        icon: FushiIcons.lock,
+        onPressed: () => showMediaPrivacyDialog(
+          context,
+          db: appModel.database,
+          kind: TagHostKind.epub,
+          entryKey: bookKey,
+          title: item.title,
         ),
       ),
       DialogListAction(

@@ -66,6 +66,9 @@
       var key = keys[i];
       var parts = splitTrackKey(key);
       var cues = store[key] || [];
+      // 按需加载的占位轨（providers 的 fushiLazyTracks，空 cue）只给浏览器扩展的菜单列轨用；
+      // app 有自己的站点轨清单与加载态，投个空轨过去会被当成「已加载、0 句」。
+      if (!cues.length && window.fushiLazyTracks && window.fushiLazyTracks[key]) continue;
       post({
         type: 'track',
         key: key,

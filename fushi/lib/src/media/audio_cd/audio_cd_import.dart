@@ -76,7 +76,7 @@ Future<bool> importAudioCdIfPresent(
 }
 
 /// Windows 光驱要按扇区读，只有本机光驱能抓；macOS 挂载点每轨已是普通 AIFF 文件，
-/// 任何带随包 ffmpeg-min（含 aiff / flac）的桌面都能转。移动端没有光驱，不接管。
+/// 任何带随包统一 FFmpeg（含 aiff / flac）的桌面都能转。移动端没有光驱，不接管。
 bool _canRip(AudioCdLayout layout, String dir) => switch (layout) {
   AudioCdLayout.windowsCda => Platform.isWindows && isWindowsCdromPath(dir),
   AudioCdLayout.macCddafs =>

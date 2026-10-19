@@ -15,8 +15,9 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 /// 2026-10-19 用户拍板：app 内直接浏览网站（Netflix / YouTube 等站点在原生播放器页
 /// 里看）取代「装浏览器扩展」成为主路径，浏览器扩展降为本模块的次级子页。
 enum WebHubSection {
-  /// 通用 app 内浏览器（[FushiWebBrowserPage]）：五端都有，网页上查词；漫画站上的
-  /// 「用 Fushi 阅读本章」由页内自己按在线漫画源合规门控。
+  /// 通用 app 内浏览器：模块页里是入口（[FushiWebBrowserHomePage]，地址栏 + 站点），
+  /// 打开网址推全屏浏览页（[FushiWebBrowserPage]）。五端都有，网页上查词；漫画站上
+  /// 的「用 Fushi 阅读本章」由浏览页自己按在线漫画源合规门控。
   browse,
 
   /// 网页视频站点（[VideoWebSitesPage]），仅 Windows（[webVideoSitesAvailable]）。
@@ -93,7 +94,7 @@ class _WebHubPageState extends State<WebHubPage> {
 
   Widget _buildSection(WebHubSection section, Widget? navigation) =>
       switch (section) {
-        WebHubSection.browse => FushiWebBrowserPage(
+        WebHubSection.browse => FushiWebBrowserHomePage(
           key: const ValueKey<String>('web-hub-browse'),
           navigation: navigation,
         ),
