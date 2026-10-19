@@ -19,6 +19,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -419,6 +420,44 @@ final FutureProvider<SrsDeckListData?> srsDeckListProvider =
       );
       return SrsDeckListData(store: store, decks: decks);
     });
+
+/// 偏好：牌组列表顶部是否提醒「还有旧 Lapis 笔记可迁到 Fushi 卡片」（缺省 = 提醒）。
+const String kSrsLapisMigrationReminderPrefKey = 'srs_lapis_migration_reminder';
+
+/// 是否显示旧 Lapis 迁移提醒（读写偏好 [kSrsLapisMigrationReminderPrefKey]）。
+final StateProvider<bool> srsLapisMigrationReminderProvider =
+    StateProvider<bool>((Ref ref) {
+      final AppModel app = ref.read(appProvider);
+      // 偏好还没装好（启动早期 / 未初始化的测试 AppModel）：按缺省提醒。
+      if (!app.isPreferencesReady) return true;
+      return app.prefsRepo.getPref(
+            kSrsLapisMigrationReminderPrefKey,
+            defaultValue: true,
+          ) !=
+          false;
+    });
+
+/// 关掉旧 Lapis 迁移提醒（「不再提醒」）：立即生效并落偏好。
+Future<void> dismissSrsLapisMigrationReminder(WidgetRef ref) async {
+  ref.read(srsLapisMigrationReminderProvider.notifier).state = false;
+  final AppModel app = ref.read(appProvider);
+  if (!app.isPreferencesReady) return;
+  await app.prefsRepo.setPref(kSrsLapisMigrationReminderPrefKey, false);
+}
+
+/// 还能迁到 Fushi 卡片的旧 Lapis 笔记 + 可补迁遗漏字段的笔记，合计（牌组列表的迁移提醒）。
+/// 提醒关着时不算（不为看不见的提示扫库）。
+final FutureProvider<int> srsLegacyLapisPendingProvider = FutureProvider<int>((
+  Ref ref,
+) async {
+  ref.watch(srsRevisionProvider);
+  if (!ref.watch(srsLapisMigrationReminderProvider)) return 0;
+  final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+  if (store == null) return 0;
+  final ({int migratable, int backfill}) pending = await store
+      .legacyLapisPendingCounts();
+  return pending.migratable + pending.backfill;
+});
 
 /// 待处理的同步冲突（标志 / 设置类）+ 待裁决笔记，合计（牌组列表顶栏的冲突角标）。
 /// 订阅 [srsRevisionProvider]；与牌组列表各自重读，互不等待。模块关着时为 0。

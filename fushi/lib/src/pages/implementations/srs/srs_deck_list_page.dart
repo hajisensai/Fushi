@@ -427,6 +427,15 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     return _DeckList(
       data: list,
       deleting: deleter.deleting,
+      lapisPending: ref.watch(srsLegacyLapisPendingProvider).valueOrNull ?? 0,
+      onMigrateLapis: () => srsRunLogged(
+        'SrsDeckList.lapisMigration',
+        () => openSrsLegacyLapisMigrationPage(context),
+      ),
+      onDismissLapisReminder: () => srsRunLogged(
+        'SrsDeckList.lapisReminderDismiss',
+        () => dismissSrsLapisMigrationReminder(ref),
+      ),
       showImportTasks: ref.read(srsImportControllerProvider).tasks.isNotEmpty,
       onOpen: (SrsDeckSummary d) =>
           srsRunLogged('SrsDeckList.review', () => _openReview(d)),
@@ -446,6 +455,9 @@ class _DeckList extends StatefulWidget {
     required this.onAddFirst,
     required this.onSetCollapsed,
     required this.showImportTasks,
+    required this.lapisPending,
+    required this.onMigrateLapis,
+    required this.onDismissLapisReminder,
   });
 
   final SrsDeckListData data;
@@ -455,6 +467,12 @@ class _DeckList extends StatefulWidget {
 
   /// 有后台导入任务（排队 / 运行中 / 结束未关）：列表最前显示任务条。
   final bool showImportTasks;
+
+  /// 还能迁到 Fushi 卡片（或可补迁遗漏字段）的旧 Lapis 笔记数；> 0 时列表前显示迁移提醒
+  /// （提醒被「不再提醒」关掉时为 0，见 [srsLegacyLapisPendingProvider]）。
+  final int lapisPending;
+  final VoidCallback onMigrateLapis;
+  final VoidCallback onDismissLapisReminder;
   final void Function(SrsDeckSummary deck) onOpen;
   final void Function(SrsDeckSummary deck, _DeckAction action) onAction;
   final VoidCallback onAddFirst;
@@ -524,6 +542,56 @@ class _DeckListState extends State<_DeckList> {
       // 后台导入任务（BUG-3549）：有任务时排在最前。
       if (widget.showImportTasks)
         const SrsImportTasksBar(key: ValueKey<String>('srs-import-tasks')),
+      if (widget.lapisPending > 0)
+        FushiCard(
+          key: const ValueKey<String>('srs-lapis-migration-reminder'),
+          tone: FushiCardTone.primary,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              Row(
+                spacing: tokens.spacing.gap * 1.5,
+                children: <Widget>[
+                  const FushiIcon(FushiIcons.swap),
+                  Expanded(
+                    child: Text(
+                      t.srs_lapis_migration_reminder_title,
+                      style: context.fushiType.titleMediumEmphasized,
+                    ),
+                  ),
+                ],
+              ),
+              Text(t.srs_lapis_migration_entry_summary(n: widget.lapisPending)),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: <Widget>[
+                  FushiPressScale(
+                    child: FushiTextButton(
+                      key: const ValueKey<String>(
+                        'srs-lapis-migration-reminder-dismiss',
+                      ),
+                      onPressed: widget.onDismissLapisReminder,
+                      child: Text(t.srs_lapis_migration_reminder_dismiss),
+                    ),
+                  ),
+                  FushiPressScale(
+                    child: FushiFilledButton.icon(
+                      key: const ValueKey<String>(
+                        'srs-lapis-migration-reminder-open',
+                      ),
+                      onPressed: widget.onMigrateLapis,
+                      icon: const FushiIcon(FushiIcons.swap),
+                      label: Text(t.srs_lapis_migration_migrate),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       if (!widget.data.store.canSchedule)
         FushiCard(
           key: const ValueKey<String>('srs-engine-missing'),
