@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show ApplyInterceptor, QueryExecutor, QueryInterceptor;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
@@ -9,10 +10,33 @@ import 'package:material_ui/material_ui.dart';
 /// 私密对话框显示的是**有效**状态：作品自己没标、但在私密合集里时，排行榜 /
 /// Bangumi 照样当它私密。只读作品自己那一行会把它显示成「关」，用户以为它会被
 /// 上传——这里钉死：开关显示开且禁用，并写明是哪个合集。MD3 与 Apple 两套都验。
+/// 读私密表时按开关抛错：模拟首次读库失败，再放行验证重试。
+class _FailingPrivacyReads extends QueryInterceptor {
+  bool fail = true;
+
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    if (fail && statement.contains('media_privacy_flags')) {
+      throw StateError('disk I/O error');
+    }
+    return super.runSelect(executor, statement, args);
+  }
+}
+
 void main() {
   late FushiDatabase db;
+  late _FailingPrivacyReads interceptor;
 
-  setUp(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
+  setUp(() {
+    interceptor = _FailingPrivacyReads()..fail = false;
+    db = FushiDatabase.forTesting(
+      NativeDatabase.memory().interceptWith(interceptor),
+    );
+  });
   tearDown(() => db.close());
 
   Future<String> book(String key) async {
@@ -113,6 +137,48 @@ void main() {
       expect(tile.value, isFalse);
       expect(tile.onChanged, isNotNull);
       expect(inheritedNote, findsNothing);
+    });
+  }
+
+  for (final bool apple in <bool>[false, true]) {
+    final String system = apple ? 'Apple' : 'MD3';
+
+    testWidgets('$system：首次读库失败 → 开关保持禁用、明示读不到；重试成功后显示真实状态', (
+      WidgetTester tester,
+    ) async {
+      await tester.runAsync(() async {
+        await book('P');
+        await db.setMediaPrivate(TagHostKind.epub, 'P', true);
+      });
+      interceptor.fail = true;
+      await pumpDialog(tester, apple: apple, bookKey: 'P');
+
+      final Finder error = find.byKey(
+        const ValueKey<String>('media-privacy-load-error'),
+      );
+      expect(error, findsOneWidget);
+      expect(
+        find.textContaining(
+          t.media_privacy_load_failed(reason: '').trim().split(':').first,
+        ),
+        findsOneWidget,
+      );
+      // fail-closed：读不到时不能给出「公开、可改」的开关。
+      expect(switchTile(tester).onChanged, isNull);
+      expect(find.text(t.retry), findsOneWidget);
+
+      interceptor.fail = false;
+      await tester.tap(find.text(t.retry));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(error, findsNothing);
+      expect(find.text(t.retry), findsNothing);
+      final FushiSwitchListTile tile = switchTile(tester);
+      expect(tile.value, isTrue);
+      expect(tile.onChanged, isNotNull);
     });
   }
 }

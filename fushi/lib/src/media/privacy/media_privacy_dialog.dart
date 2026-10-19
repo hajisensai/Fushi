@@ -57,6 +57,10 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
   /// 收容本作品、且被标成私密的合集（null = 还在读）。非空时作品的私密来自合集，
   /// 作品自己的开关拨不掉它。
   List<MediaCollectionRow>? _privateCollections;
+
+  /// 读当前状态失败的原因（null = 没失败）。失败时 fail-closed：开关保持禁用，
+  /// 明示「读不到」并给重试——绝不当成「公开、可改」显示。
+  Object? _loadError;
   bool _writing = false;
 
   @override
@@ -66,21 +70,29 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
   }
 
   Future<void> _load() async {
-    final bool private = await widget.db.isMediaPrivate(
-      widget.kind,
-      widget.entryKey,
-    );
-    final List<MediaCollectionRow> collections =
-        await privateCollectionsContaining(
-          widget.db,
-          widget.kind,
-          widget.entryKey,
-        );
+    final bool private;
+    final List<MediaCollectionRow> collections;
+    try {
+      private = await widget.db.isMediaPrivate(widget.kind, widget.entryKey);
+      collections = await privateCollectionsContaining(
+        widget.db,
+        widget.kind,
+        widget.entryKey,
+      );
+    } on Object catch (error) {
+      if (mounted) setState(() => _loadError = error);
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _private = private;
       _privateCollections = collections;
     });
+  }
+
+  void _retryLoad() {
+    setState(() => _loadError = null);
+    unawaited(_load());
   }
 
   Future<void> _set(bool private) async {
@@ -159,6 +171,26 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
                       )
                     : const SizedBox(width: double.infinity),
               ),
+              AnimatedSize(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                curve: FushiMotion.standard,
+                alignment: Alignment.topCenter,
+                child: _loadError == null
+                    ? const SizedBox(width: double.infinity)
+                    : Padding(
+                        key: const ValueKey<String>('media-privacy-load-error'),
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          t.media_privacy_load_failed(
+                            reason: _loadError.toString(),
+                          ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                        ),
+                      ),
+              ),
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
@@ -171,6 +203,13 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
         ),
       ),
       actions: <Widget>[
+        if (_loadError != null)
+          adaptiveDialogAction(
+            context: context,
+            onPressed: _retryLoad,
+            isDefaultAction: true,
+            child: Text(t.retry),
+          ),
         adaptiveDialogAction(
           context: context,
           onPressed: () => Navigator.of(context).pop(),
