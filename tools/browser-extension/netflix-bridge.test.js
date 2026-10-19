@@ -40,7 +40,19 @@ function loadBridge(opts) {
     // 正片会话 id 以 'watch' 开头；预告 / billboard 会话排在它后面也不能被选中。
     sessionIds: opts.sessionIds || ['watch-81001', 'motion-billboard-1'],
   };
+  // 播放器状态通道桩：textTracks = getTimedTextTrackList()；stateUrls（trackId → url）按结构
+  // 埋进会话状态深处（与真播放器一样不在固定路径上）；setTimedTextTrack 可选「切过去就下发地址」。
+  player.textTracks = opts.textTracks || [];
+  player.stateUrls = opts.stateUrls || {};
+  player.setCalls = [];
   const watchPlayer = {
+    getTimedTextTrackList: () => player.textTracks,
+    setTimedTextTrack: (t) => {
+      player.setCalls.push(t && t.trackId);
+      player.track = t;
+      if (opts.urlOnSelect && t && opts.urlOnSelect[t.trackId]) player.stateUrls[t.trackId] = opts.urlOnSelect[t.trackId];
+      return Promise.resolve();
+    },
     getTimedTextTrack: () => player.track,
     getCurrentTime: () => player.time,
     seek: (ms) => { player.seeks.push(ms); if (!opts.seekNeverLands) player.time = ms; },
@@ -55,6 +67,19 @@ function loadBridge(opts) {
       appContext: {
         state: {
           playerApp: {
+            getState: () => ({
+              videoPlayer: {
+                cadmiumPlayerRepository: {
+                  playersById: {
+                    'watch-81001': {
+                      a: { b: { buffers: [new ArrayBuffer(8)], c: Object.keys(player.stateUrls).map((id) => ({
+                        d: { type: 'timedtext', trackId: id, urls: [{ url: player.stateUrls[id], cdnId: 1 }] },
+                      })) } },
+                    },
+                  },
+                },
+              },
+            }),
             getAPI: () => ({
               videoPlayer: {
                 getAllPlayerSessionIds: () => player.sessionIds,
@@ -69,6 +94,7 @@ function loadBridge(opts) {
   // BUG-1949：受控 XMLHttpRequest —— 桥在 document_start 给 prototype 打补丁，测试里构造实例、
   // 设好 responseType/responseText/response 后 send() → fire('load') 模拟播放器自下字幕文件。
   const xhrs = [];
+  const intervals = [];
   class FakeXhr {
     constructor() { this.listeners = {}; this.responseType = ''; this.responseText = ''; this.response = null; xhrs.push(this); }
     open(method, url) { this.method = method; this.url = String(url); }
@@ -90,6 +116,7 @@ function loadBridge(opts) {
     Uint8Array,
     Math,
     setTimeout: (fn) => { fn(); return 0; },
+    setInterval: (fn) => { intervals.push(fn); return 0; },
     Date: opts.Date || Date,
     // BUG-1728：记录 fetch 第二参（init）供「不带 credentials」断言；mock 响应带 ok/status
     //（实现按 r.ok 分流成功/失败）。
@@ -109,7 +136,8 @@ function loadBridge(opts) {
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(src, ctx, { filename: 'netflix-bridge.js' });
-  return { posted, listeners, fetched, ctx, windowObj, behavior, player, FakeXhr, FakeResponse, xhrs };
+  return { posted, listeners, fetched, ctx, windowObj, behavior, player, FakeXhr, FakeResponse, xhrs, intervals,
+    tick() { for (const fn of intervals) fn(); } };
 }
 
 const TTML_BODY = '<?xml version="1.0" encoding="utf-8"?>\n<tt ttp:contentProfiles="http://www.netflix.com/ns/ttml2/profiles/2023-1/nflx-tt.xml" xmlns="http://www.w3.org/ns/ttml">\n<body><div><p begin="00:00:01.000" end="00:00:02.000">こんにちは</p></div></body></tt>';
@@ -432,4 +460,71 @@ test('清单轨抓取失败投 cuesFailed（带语言与 trackId），消费端�
   const ja = failed.find((m) => m.lang === 'ja');
   assert.strictEqual(ja.trackId, 'T:ja-1');
   assert.strictEqual(ja.videoId, '81001');
+});
+
+// ── 播放器状态通道（清单钩子与正文嗅探都零命中时的主数据源，asbplayer 同判据） ──
+const NF_TRACKS = [
+  { trackId: 'T:off', isNoneTrack: true },
+  { trackId: 'T:ja-cc', bcp47: 'ja', displayName: '日本語 [CC]', rawTrackType: 'CLOSEDCAPTIONS' },
+  { trackId: 'T:en', bcp47: 'en', displayName: 'English' },
+  { trackId: 'T:img', bcp47: 'zh', displayName: '中文', isImageBased: true },
+  { trackId: 'T:forced', bcp47: 'ja', displayName: '日本語(強制)', isForcedNarrative: true },
+];
+
+test('状态通道：轨清单投成 tracks 占位（跳过关/图片/强制轨），状态里已有地址的轨直接整轨下载', async () => {
+  const h = loadBridge({
+    track: NF_TRACKS[1],
+    textTracks: NF_TRACKS,
+    stateUrls: { 'T:ja-cc': 'https://cdn/ja-cc.imsc' },
+  });
+  h.tick();
+  await settle();
+  const tracksMsgs = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'tracks').map((p) => p.msg);
+  assert.strictEqual(tracksMsgs.length, 1);
+  assert.strictEqual(tracksMsgs[0].videoId, '81001');
+  assert.strictEqual(JSON.stringify(tracksMsgs[0].tracks.map((t) => t.trackId)), JSON.stringify(['T:ja-cc', 'T:en']));
+  assert.strictEqual(h.fetched.length, 1);
+  assert.strictEqual(h.fetched[0].url, 'https://cdn/ja-cc.imsc');
+  const cues = cuesPosted(h);
+  assert.strictEqual(cues.length, 1);
+  assert.strictEqual(cues[0].msg.lang, 'ja');
+  assert.strictEqual(cues[0].msg.trackId, 'T:ja-cc');
+  assert.strictEqual(cues[0].msg.label, '日本語 [CC]');
+  // 再来一拍：清单没变不重复投 tracks，同一地址不重复下载。
+  h.tick();
+  await settle();
+  assert.strictEqual(h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'tracks').length, 1);
+  assert.strictEqual(h.fetched.length, 1);
+  // replayCues 也重放轨清单（隔离世界晚就绪时不丢占位）。
+  h.posted.length = 0;
+  for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'replayCues' } });
+  assert.strictEqual(h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'tracks').length, 1);
+});
+
+test('状态通道：fetchTrack 取无地址的轨 = 临时切过去等地址 → 切回原轨 → 整轨下载', async () => {
+  const h = loadBridge({
+    track: NF_TRACKS[1],
+    textTracks: NF_TRACKS,
+    stateUrls: {},
+    urlOnSelect: { 'T:en': 'https://cdn/en.imsc' },
+  });
+  for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.strictEqual(JSON.stringify(h.player.setCalls), JSON.stringify(['T:en', 'T:ja-cc']), '切过去再切回原轨');
+  assert.strictEqual(h.fetched.length, 1);
+  assert.strictEqual(h.fetched[0].url, 'https://cdn/en.imsc');
+  const cues = cuesPosted(h);
+  assert.strictEqual(cues.length, 1);
+  assert.strictEqual(cues[0].msg.trackId, 'T:en');
+});
+
+test('状态通道：地址始终不来 → 切回原轨并投 cuesFailed（不无限等）', async () => {
+  const h = loadBridge({ track: NF_TRACKS[1], textTracks: NF_TRACKS, stateUrls: {} });
+  for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.strictEqual(JSON.stringify(h.player.setCalls), JSON.stringify(['T:en', 'T:ja-cc']));
+  const failed = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cuesFailed').map((p) => p.msg);
+  assert.strictEqual(failed.length, 1);
+  assert.strictEqual(failed[0].trackId, 'T:en');
+  assert.strictEqual(h.fetched.length, 0);
 });
