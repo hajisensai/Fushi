@@ -400,6 +400,11 @@ recorded in a ledger store `source_<id>_fushi_host_snapshot` next to the
 source store: a database change always reaches the extension, a value the
 extension wrote itself after the last database change survives the same
 snapshot arriving again. SourceDataHandler clears the ledger with the store.
+The ledger records a SHA-256 digest of the type-tagged value
+("sha256:<hex>"), never the value itself: editText preferences are often
+passwords or tokens, and a plaintext ledger would be a second copy of them.
+A ledger entry still in the earlier plaintext form ("s:<value>") is
+recognised once and rewritten as a digest without touching the store.
 Nothing is imported from the old shared Tachidesk directory: it may belong
 to Suwayomi, may carry another data root's values (the bug being fixed), and
 everything the user set in Fushi is already in the database snapshot. The

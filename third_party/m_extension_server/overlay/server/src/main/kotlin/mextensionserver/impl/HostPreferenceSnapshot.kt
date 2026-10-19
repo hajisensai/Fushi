@@ -3,6 +3,7 @@ package mextensionserver.impl
 import android.content.SharedPreferences
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
+import java.security.MessageDigest
 
 /**
  * Writes the host's preference snapshot into a source's SharedPreferences.
@@ -24,6 +25,11 @@ import kotlinx.serialization.json.JsonPrimitive
  * value the extension wrote itself after the last database change survives
  * until the database changes again -- the same snapshot arriving with every
  * request must not undo it.
+ *
+ * The ledger records a SHA-256 digest of the typed value, never the value
+ * itself: an editText preference is often a password or token, and the ledger
+ * must not become a second plaintext copy of it. Comparison only needs
+ * equality, which the digest preserves.
  */
 internal class HostPreferenceSnapshot(
     private val preferences: SharedPreferences,
@@ -36,8 +42,16 @@ internal class HostPreferenceSnapshot(
         key: String,
         value: Any,
     ) {
-        val fingerprint = fingerprint(value) ?: return
-        if (ledger.getString(key, null) == fingerprint) return
+        val canonical = canonicalForm(value) ?: return
+        val fingerprint = digest(canonical)
+        val recorded = ledger.getString(key, null)
+        if (recorded == fingerprint) return
+        if (recorded == canonical) {
+            // Ledger entry written before digests: same value, so nothing to
+            // write to the store -- only replace the plaintext record.
+            ledgerEditor.putString(key, fingerprint)
+            return
+        }
         when (value) {
             is Boolean -> preferenceEditor.putBoolean(key, value)
             is String -> preferenceEditor.putString(key, value)
@@ -86,12 +100,26 @@ internal class HostPreferenceSnapshot(
                 else -> null
             }
 
-        internal fun fingerprint(value: Any): String? =
+        /** What the ledger records for [value]: a digest, never the value itself. */
+        internal fun fingerprint(value: Any): String? = canonicalForm(value)?.let(::digest)
+
+        /**
+         * Type-tagged canonical form of a snapshot value (also the pre-digest
+         * ledger format, recognised once so old ledgers upgrade in place).
+         */
+        private fun canonicalForm(value: Any): String? =
             when (value) {
                 is Boolean -> "b:$value"
                 is String -> "s:$value"
                 is Set<*> -> "m:" + JsonArray(value.filterIsInstance<String>().sorted().map(::JsonPrimitive))
                 else -> null
             }
+
+        private fun digest(canonical: String): String =
+            "sha256:" +
+                MessageDigest
+                    .getInstance("SHA-256")
+                    .digest(canonical.toByteArray(Charsets.UTF_8))
+                    .joinToString("") { "%02x".format(it) }
     }
 }
