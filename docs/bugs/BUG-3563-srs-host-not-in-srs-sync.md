@@ -1,6 +1,0 @@
-## BUG-3563 · 互联 host 自己不参与复习（SRS）同步：立即同步提示没配置、对端看不到它的卡
-- **报告**：2026-10-19（用户：复习数据经互联同步不过去，被连的那台点「立即同步」提示没有配置同步服务）
-- **真实性**：✅ 真 bug。SRS 同步只跑在「已认证的同步通道」上（`fushi/lib/src/sync/sync_auto_trigger.dart` `enabledSyncChannelBackends`：云备份后端 + 本机作为**客户端**连出去的互联），作为互联 host 的那台设备不是任何一条通道的客户端：`SrsSyncScheduler.syncNow` 跑过的通道数为 0（`fushi/lib/src/srs/srs_sync_scheduler.dart` 修复前 `syncNow` 只调 `_channels`），提示「没配置」；客户端经互联写进 host 磁盘 `<数据库目录>/sync-data/fushi-data/fushi-srs/` 的批次没人读，host 自己的卡也从不发布。实测（探针：起真互联 host，客户端按生产代码枚举通道跑 SRS 同步）：客户端 → host 目录一段是通的（host 磁盘出现 `fushi-srs/<profile>/<writer>/batch-*`），缺口在 host 一侧。
-- **[x] ① 已修复**（fd34aeda59 + 9913660568）— 本机开着互联服务时，SRS 调度器把 host 自己的同步目录当作一个同步目录（`SrsLocalDirectory`，`LocalDirectoryAssetStore` 直接读写 `FushiSyncServerController.clientSyncRoot`），目录身份与客户端看到的 hostId 相同（`srs_directory_key.dart` 的 `srsInterconnectDirectoryKey`；host 的 hostId 就是本机设备 id）；进复习 tab / 立即同步都会跑它，计入跑过的目录数。host 同时开着云备份时这是「一台设备多个目录」，依赖 BUG-3562 的多目录同步。
-- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_sync_scheduler_test.dart`「本机开着互联服务：host 自己的同步目录也参与（没有任何通道也算同步过）」：没有任何通道时 `syncNow()` 返回 1、host 目录里出现本写入者的批次、已校时。
-- **备注**：无头服务端（`fushi_server`）仍没有 SRS 装配（设计文档「已知缺口」）：客户端照常经它同步，服务端自己不读不写 SRS 数据。真机（两台设备互联）复测待补。
