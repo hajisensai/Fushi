@@ -219,6 +219,27 @@ void main() {
     },
   );
 
+  test(
+    'central-directory CRC mismatch is rejected (CRC computed natively)',
+    () async {
+      final Uint8List bytes = Uint8List.fromList(zip(database()));
+      final ByteData data = ByteData.sublistView(bytes);
+      for (int offset = 0; offset + 46 <= bytes.length; offset++) {
+        if (data.getUint32(offset, Endian.little) == 0x02014b50) {
+          final int crc = data.getUint32(offset + 16, Endian.little);
+          data.setUint32(offset + 16, crc ^ 1, Endian.little);
+          break;
+        }
+      }
+      aacsHttpClientFactory = () async =>
+          MockClient((request) async => http.Response.bytes(bytes, 200));
+      await expectLater(
+        loadAacsConfiguration(root.path),
+        failure(AacsConfigurationError.invalidConfiguration),
+      );
+    },
+  );
+
   test('redirects and server failures report networkFailure', () async {
     aacsHttpClientFactory = () async => MockClient(
       (request) async => http.Response(

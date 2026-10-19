@@ -7,6 +7,8 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart'
+    show kLookupPopupDefaultHeight, kLookupPopupDefaultWidth;
 
 FushiDatabase _testDb() {
   return FushiDatabase.forTesting(
@@ -145,12 +147,12 @@ void main() {
       expect(repo.dictionaryFontSize, 16.0);
     });
 
-    test('popupMaxWidth defaults to 400.0', () {
-      expect(repo.popupMaxWidth, 400.0);
+    test('popupMaxWidth defaults to kLookupPopupDefaultWidth', () {
+      expect(repo.popupMaxWidth, kLookupPopupDefaultWidth);
     });
 
-    test('popupMaxHeight defaults to 360.0', () {
-      expect(repo.popupMaxHeight, 360.0);
+    test('popupMaxHeight defaults to kLookupPopupDefaultHeight', () {
+      expect(repo.popupMaxHeight, kLookupPopupDefaultHeight);
     });
 
     test('popupInstantScroll defaults to false (smooth/animated scroll)', () {

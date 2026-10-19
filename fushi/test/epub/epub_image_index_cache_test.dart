@@ -153,41 +153,49 @@ void main() {
     final List<String> chapterPaths = <String>[
       for (int i = 0; i < 6; i++) chapterFile(i).path,
     ];
-    // 每个 isolate 各自从零构造书、各自写同一份缓存（插图册 / 歌词模式 / 书架插图库
-    // / 兄弟卷预览同时打开同一本书的形态）。
-    final List<List<String>> results = await Future.wait(<Future<List<String>>>[
-      for (int n = 0; n < 8; n++)
-        Isolate.run(() {
-          final EpubBook book = EpubBook(
-            title: 'T',
-            chapters: <EpubChapter>[
-              for (int i = 0; i < chapterPaths.length; i++)
-                EpubChapter.lazy(
-                  id: 'c$i',
-                  href: 'ch$i.xhtml',
-                  mediaType: 'application/xhtml+xml',
-                  filePath: chapterPaths[i],
-                ),
-            ],
-          );
-          final EpubImageIndexLoad load = loadEpubImagesWithCache(
-            book,
-            File(cachePath),
-          );
-          return <String>[
-            ...load.images.map((EpubImageRef r) => r.src),
-            // 只有 Windows 上「目标正被另一 isolate 读」时 rename 可能被拒，那只是
-            // 这一次没写进去；共用 .tmp 时的截断 / 互删在任何平台都会出现。
-            for (final EpubImageIndexCacheFailure f in load.failures)
-              if (f.stage != 'write' || !Platform.isWindows) 'FAIL ${f.error}',
-          ];
-        }),
-    ]);
     final List<String> expected = <String>[
       for (int i = 0; i < 6; i++) 'i$i.png',
     ];
-    for (final List<String> r in results) {
-      expect(r, expected);
+    // 每个 isolate 各自从零构造书、各自读写同一份缓存（插图册 / 歌词模式 / 书架插图库
+    // / 兄弟卷预览同时打开同一本书的形态）。每轮先删掉缓存，让先算完的 isolate 替换
+    // 文件时后到的正好在读——一轮撞上的概率不高（BUG-3519 修前单跑约三次红一次），
+    // 多跑几轮让读与换的竞态在修前几乎必现。
+    for (int round = 0; round < 12; round++) {
+      if (cache.existsSync()) cache.deleteSync();
+      final List<List<String>> results = await Future.wait(
+        <Future<List<String>>>[
+          for (int n = 0; n < 8; n++)
+            Isolate.run(() {
+              final EpubBook book = EpubBook(
+                title: 'T',
+                chapters: <EpubChapter>[
+                  for (int i = 0; i < chapterPaths.length; i++)
+                    EpubChapter.lazy(
+                      id: 'c$i',
+                      href: 'ch$i.xhtml',
+                      mediaType: 'application/xhtml+xml',
+                      filePath: chapterPaths[i],
+                    ),
+                ],
+              );
+              final EpubImageIndexLoad load = loadEpubImagesWithCache(
+                book,
+                File(cachePath),
+              );
+              return <String>[
+                ...load.images.map((EpubImageRef r) => r.src),
+                // 任何平台都不许有读写失败：共用 .tmp 会互相截断 / 互删；Windows 上读者开着
+                // 目标时 rename 被拒（errno 5）、替换进行中读者开目标被拒（errno 32，
+                // BUG-3519）——读与换必须互斥，不是「这次没写进去」。
+                for (final EpubImageIndexCacheFailure f in load.failures)
+                  'FAIL ${f.stage} ${f.error}',
+              ];
+            }),
+        ],
+      );
+      for (final List<String> r in results) {
+        expect(r, expected, reason: 'round $round');
+      }
     }
     expect(
       cache.parent.listSync().whereType<File>().where(

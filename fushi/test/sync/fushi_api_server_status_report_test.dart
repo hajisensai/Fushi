@@ -11,6 +11,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
 class _FakeLookup implements FushiRemoteLookupService {
   @override
@@ -29,8 +30,9 @@ class _FakeLookup implements FushiRemoteLookupService {
       null;
 }
 
-List<String> _noopTokenize(String text) => <String>[text];
-String _noopReading(String word) => '';
+List<TokenizedSegment> _noopTokenize(String text) => <TokenizedSegment>[
+  (text: text, reading: ''),
+];
 
 Future<HttpClientResponse> _postRaw(
   int port,
@@ -66,7 +68,6 @@ void main() {
         port: 0, // ephemeral
         lookupService: _FakeLookup(),
         tokenizer: _noopTokenize,
-        readingResolver: _noopReading,
         extensionBuildProvider: () => 'ffff0000ffff0000',
         onExtensionSeen: () => seenCount++,
         onExtensionReport: (String build, String? version) =>
@@ -102,7 +103,6 @@ void main() {
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: _noopTokenize,
-        readingResolver: _noopReading,
         appLocaleProvider: () => 'zh-CN',
       );
       await server.start();
@@ -162,7 +162,6 @@ void main() {
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: _noopTokenize,
-        readingResolver: _noopReading,
       );
       await server.start();
       final HttpClientResponse resp = await _postRaw(

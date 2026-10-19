@@ -7,8 +7,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/video/video_hdr_output.dart'
-    show hdrHostActiveGlobal;
 import 'package:fushi/src/platform/desktop/macos_traffic_lights.dart';
 import 'package:fushi/src/platform/macos_fullscreen_state.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
@@ -371,16 +369,8 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
       valueListenable: FushiDesktopTitleBar._contentFullscreen,
       builder: (BuildContext context, bool contentFullscreen, Widget? child) {
         final bool hideFrame = contentFullscreen;
-        // HDR 直通（video_hdr_output.dart）：这层 surface 底色盖着整个 Navigator，宿主
-        // 窗激活时必须让开，否则视频洞透不到主窗后方的 libmpv 宿主窗。
-        final Widget frame = ValueListenableBuilder<bool>(
-          valueListenable: hdrHostActiveGlobal,
-          builder: (BuildContext context, bool hdrHost, Widget? column) {
-            return ColoredBox(
-              color: hdrHost ? Colors.transparent : colors.surface,
-              child: column,
-            );
-          },
+        final Widget frame = ColoredBox(
+          color: colors.surface,
           // 叠放而不是竖排（2026-10-06「app 顶栏和主要界面没有融为一体」）：
           // 曾经是 Column[标题行, Expanded(页面)]——页面从 y = 32 才开始画，
           // 标题行是一条独立的带子，详情页的 fanart / 模糊背景在它下沿被一刀
@@ -477,17 +467,15 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
   }
 
   /// 顶栏本体。底色 / 前景优先取页面上报的 [FushiTitleBarColors]（阅读器纸色），
-  /// 没有上报时用根主题——顶栏自己的 surface 填充不随 HDR 让开，只有下方页面区
-  /// 才会透明。
+  /// 没有上报时用根主题。
   Widget _buildCaptionRow(
     BuildContext context,
     FushiTitleBarColors? page,
     Widget? _,
   ) {
     final ColorScheme colors = Theme.of(context).colorScheme;
-    // 标题行自带不透明底色、不听 hdrHostActiveGlobal：HDR 直通时下方页面区整层
-    // 透明，标题行若跟着透就能看见后面的窗口。页面上报色可能带透明度，先叠到
-    // surface 上再用——结果恒不透明，不靠上报方自觉。
+    // 页面上报色可能带透明度，先叠到 surface 上再用——结果恒不透明，不靠上报方
+    // 自觉。
     // 没有页面上报色 = 标题行浮在页面上、完全透明：页面背景（含详情页
     // fanart）从窗口顶端铺起，与下面的主界面是同一张，没有接缝。
     final Color captionFill = page == null

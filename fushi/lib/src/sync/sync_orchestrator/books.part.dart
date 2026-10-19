@@ -152,12 +152,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       try {
         final RemoteBookProgress remote = await sync.remoteProgress(book);
         final RemoteBookProgress local = await sync.localProgress(book);
-        final BookProgressBaseline? base = await sync.baseline(book);
-        final BookProgressSyncAction action = resolveBookProgressThreeWay(
-          local: local,
-          remote: remote,
-          base: base,
-        );
+        final BookProgressSyncAction action =
+            await sync.decide(book, local: local, remote: remote);
         switch (action) {
           case BookProgressSyncAction.synced:
             // BUG-686: a host-newer progress pull lands in reader_positions but
@@ -216,11 +212,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       try {
         final PlaybackPosition local = await sync.localPosition(key);
         final PlaybackPosition host = await readHost(key);
-        final BookProgressSyncAction action = resolvePlaybackPositionThreeWay(
-          local: local,
-          remote: host,
-          basePositionMs: await sync.baseline(key),
-        );
+        final BookProgressSyncAction action =
+            await sync.decide(key, local: local, remote: host);
         switch (action) {
           case BookProgressSyncAction.synced:
             await sync.alignSynced(key, local: local, remote: host);

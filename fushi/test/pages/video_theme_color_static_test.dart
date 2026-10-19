@@ -25,7 +25,9 @@ void main() {
     // 合并语料保持原顺序，剥离范围与原单文件等价。
     final String source = _withoutVideoSideActionRail(readVideoFushiSource());
 
-    expect(source, contains('_subtitleTextColor(ColorScheme'));
+    // #2312：字幕文字色画在视频画面上，不跟随 App 主题（旧数据 null 解析为固定白），
+    // 页面不得再从 ColorScheme 给它喂回退色。
+    expect(source, isNot(contains('_subtitleTextColor(')));
     expect(source, contains('_videoChromeColorScheme'));
     // UI 巡检 PR-4：标题前景改 chrome 固定近白（不随 colorScheme），签名去 cs 参。
     expect(source, contains('TextStyle _videoControlTitleStyle()'));

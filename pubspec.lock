@@ -121,14 +121,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.1.25"
-  basic_utils:
-    dependency: transitive
-    description:
-      name: basic_utils
-      sha256: "2064b21d3c41ed7654bc82cc476fd65542e04d60059b74d5eed490a4da08fc6c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "5.7.0"
   bonsoir:
     dependency: transitive
     description:
@@ -185,14 +177,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.1"
-  brotli:
-    dependency: transitive
-    description:
-      name: brotli
-      sha256: "7f891558ed779aab2bed874f0a36b8123f9ff3f19cf6efbee89e18ed294945ae"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.6.0"
   build:
     dependency: transitive
     description:
@@ -2239,14 +2223,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.5.2"
-  sqlite3_flutter_libs:
-    dependency: transitive
-    description:
-      name: sqlite3_flutter_libs
-      sha256: eeb9e3a45207649076b808f8a5a74d68770d0b7f26ccef6d5f43106eee5375ad
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.5.42"
   sqlparser:
     dependency: transitive
     description:

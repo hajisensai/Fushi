@@ -1,0 +1,3338 @@
+{
+  "$comment": [
+    "Hand-maintained input of fushi/tool/native_licenses.dart (run: cd fushi && dart run tool/native_licenses.dart).",
+    "rust: target triples each native/<crate>/Cargo.lock ships for, plus optional prepare steps; every native/*/Cargo.lock is discovered automatically.",
+    "rust.licenseTexts: for crates whose crates.io package ships no license file, \"name@version\" -> upstream original texts (from the commit in the crate's .cargo_vcs_info.json, stored under texts/crates/<owner>-<repo>-<sha8>/). appendSpdx adds the SPDX standard body when the upstream file has none. Crates without an entry fall back to spdx/ and are listed in the generated index (pendingUpstreamLicense).",
+    "cxx: C/C++ libraries compiled into this repo's native modules. texts point at the vendored original, or at a verbatim upstream copy in native/third_party_licenses/texts/.",
+    "prebuilt: native binaries that pub packages download or bundle into the app (Flutter's LicenseRegistry only collects each pub package's own LICENSE). Same fields as cxx plus source (evidence for version and license).",
+    "spdx/: SPDX standard texts, used only for crates that ship no license file."
+  ],
+  "rust": {
+    "defaultTargets": [
+      "x86_64-pc-windows-msvc",
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-linux-android",
+      "armv7-linux-androideabi",
+      "x86_64-linux-android",
+      "aarch64-apple-ios",
+      "aarch64-apple-ios-sim",
+      "x86_64-apple-ios"
+    ],
+    "crates": {
+      "fushi_anki_sync": {
+        "targets": [
+          "x86_64-pc-windows-msvc",
+          "aarch64-apple-darwin",
+          "x86_64-unknown-linux-gnu"
+        ],
+        "prepare": {
+          "ifMissing": ".anki-src",
+          "command": [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--branch",
+            "26.09.3",
+            "https://github.com/ankitects/anki",
+            ".anki-src"
+          ]
+        }
+      },
+      "fushi_ios_umbrella": {
+        "targets": [
+          "aarch64-apple-ios",
+          "aarch64-apple-ios-sim",
+          "x86_64-apple-ios"
+        ]
+      }
+    },
+    "licenseTexts": {
+      "alloc-stdlib@0.3.0": {
+        "upstream": "https://github.com/dropbox/rust-alloc-no-stdlib/tree/0a81fd6928ea3b33c8cd484aa4575d50ffb98012",
+        "texts": [
+          "native/third_party_licenses/texts/crates/dropbox-rust-alloc-no-stdlib-0a81fd69/LICENSE"
+        ],
+        "note": "alloc-stdlib lives in a subdirectory of the alloc-no-stdlib repo and its crate ships no LICENSE; the repo-root LICENSE at tag 0.3.0 covers both crates (byte-identical to the one inside alloc-no-stdlib 3.0.0)"
+      },
+      "block2@0.6.2": {
+        "upstream": "https://github.com/madsmtm/objc2/tree/b4167b582b2f75f9a1be75495c41b765344fd03c",
+        "texts": [
+          "native/third_party_licenses/texts/crates/madsmtm-objc2-b4167b58/LICENSE.md"
+        ],
+        "appendSpdx": true,
+        "note": "Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs"
+      },
+      "difflib@0.4.0": {
+        "upstream": "https://github.com/DimaKudosh/difflib/tree/6fd59b0c089e3baece7ac200b8220ce25d025e02",
+        "texts": [
+          "native/third_party_licenses/texts/crates/DimaKudosh-difflib-6fd59b0c/LICENSE"
+        ],
+        "note": "No .cargo_vcs_info.json and no tags upstream; commit is the one that set version 0.4.0. The copyright line upstream names Kevin B. Knapp, not the crate author"
+      },
+      "dispatch2@0.3.1": {
+        "upstream": "https://github.com/madsmtm/objc2/tree/8852b424193ca41602281b3d7540d7c8ed51e49a",
+        "texts": [
+          "native/third_party_licenses/texts/crates/madsmtm-objc2-8852b424/LICENSE.md"
+        ],
+        "appendSpdx": true,
+        "note": "Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs"
+      },
+      "dlopen2@0.8.2": {
+        "upstream": "https://github.com/OpenByteDev/dlopen2/tree/cc80e4a0a90d499b677fdf7743699b4b3a43a989",
+        "texts": [
+          "native/third_party_licenses/texts/crates/OpenByteDev-dlopen2-cc80e4a0/LICENSE"
+        ]
+      },
+      "fluent-langneg@0.13.1": {
+        "upstream": "https://github.com/projectfluent/fluent-langneg-rs/tree/7fdc590466ea63ca2367ac10fb1b881fe561f1a8",
+        "texts": [
+          "native/third_party_licenses/texts/crates/projectfluent-fluent-langneg-rs-7fdc5904/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/projectfluent-fluent-langneg-rs-7fdc5904/LICENSE-MIT"
+        ]
+      },
+      "htmlescape@0.3.1": {
+        "upstream": "https://github.com/veddan/rust-htmlescape",
+        "texts": [],
+        "note": "Upstream has never had a license file (checked every LICENSE*/COPYING* path in the repository history)"
+      },
+      "intl_pluralrules@7.0.2": {
+        "upstream": "https://github.com/zbraniecki/pluralrules/tree/d0715d5b7cca72e228d6e6c4de154bd30dfdd06a",
+        "texts": [
+          "native/third_party_licenses/texts/crates/zbraniecki-pluralrules-d0715d5b/intl_pluralrules/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/zbraniecki-pluralrules-d0715d5b/intl_pluralrules/LICENSE-MIT"
+        ]
+      },
+      "iroh-base@1.2.0": {
+        "upstream": "https://github.com/n0-computer/iroh/tree/17c0612f80f78f5288e97b818b1360ae6ea0a51a",
+        "texts": [
+          "native/third_party_licenses/texts/crates/n0-computer-iroh-17c0612f/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/n0-computer-iroh-17c0612f/LICENSE-MIT"
+        ]
+      },
+      "iroh-dns@1.3.0": {
+        "upstream": "https://github.com/n0-computer/iroh/tree/17c0612f80f78f5288e97b818b1360ae6ea0a51a",
+        "texts": [
+          "native/third_party_licenses/texts/crates/n0-computer-iroh-17c0612f/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/n0-computer-iroh-17c0612f/LICENSE-MIT"
+        ]
+      },
+      "iroh-mainline-address-lookup@0.5.0": {
+        "upstream": "https://github.com/n0-computer/iroh-address-lookups/tree/a0cc9dbfc292ba338216a5df42bceba87c5fe541",
+        "texts": [
+          "native/third_party_licenses/texts/crates/n0-computer-iroh-address-lookups-a0cc9dbf/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/n0-computer-iroh-address-lookups-a0cc9dbf/LICENSE-MIT"
+        ]
+      },
+      "jni@0.22.4": {
+        "upstream": "https://github.com/jni-rs/jni-rs/tree/5ae9458a4ec44c5318f37ddc7569c1d4ae8a69e7",
+        "texts": [
+          "native/third_party_licenses/texts/crates/jni-rs-jni-rs-5ae9458a/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/jni-rs-jni-rs-5ae9458a/LICENSE-MIT"
+        ]
+      },
+      "ndk-context@0.1.1": {
+        "upstream": "https://github.com/rust-windowing/android-ndk-rs/tree/10f2ba388fca20f7349996ebae26ccda7a6fda5c",
+        "texts": [
+          "native/third_party_licenses/texts/crates/rust-windowing-android-ndk-rs-10f2ba38/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/rust-windowing-android-ndk-rs-10f2ba38/LICENSE-MIT"
+        ]
+      },
+      "netwatch@0.19.3": {
+        "upstream": "https://github.com/n0-computer/net-tools/tree/0030e57fc70981895bb86212ff0f059cc41c8a4e",
+        "texts": [
+          "native/third_party_licenses/texts/crates/n0-computer-net-tools-0030e57f/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/n0-computer-net-tools-0030e57f/LICENSE-MIT"
+        ]
+      },
+      "objc2-core-foundation@0.3.2": {
+        "upstream": "https://github.com/madsmtm/objc2/tree/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+        "texts": [
+          "native/third_party_licenses/texts/crates/madsmtm-objc2-7b1abfd7/LICENSE.md"
+        ],
+        "appendSpdx": true,
+        "note": "Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs"
+      },
+      "objc2-core-wlan@0.3.2": {
+        "upstream": "https://github.com/madsmtm/objc2/tree/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+        "texts": [
+          "native/third_party_licenses/texts/crates/madsmtm-objc2-7b1abfd7/LICENSE.md"
+        ],
+        "appendSpdx": true,
+        "note": "Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs"
+      },
+      "objc2-encode@4.1.0": {
+        "upstream": "https://github.com/madsmtm/objc2/tree/8d214f5477365ffcbcbb7de058c86ed9a518efb7",
+        "texts": [
+          "native/third_party_licenses/texts/crates/madsmtm-objc2-8d214f54/LICENSE.md"
+        ],
+        "appendSpdx": true,
+        "note": "Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs"
+      },
+      "objc2-foundation@0.3.2": {
+        "upstream": "https://github.com/madsmtm/objc2/tree/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+        "texts": [
+          "native/third_party_licenses/texts/crates/madsmtm-objc2-7b1abfd7/LICENSE.md"
+        ],
+        "appendSpdx": true,
+        "note": "Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs"
+      },
+      "objc2-security-foundation@0.3.2": {
+        "upstream": "https://github.com/madsmtm/objc2/tree/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+        "texts": [
+          "native/third_party_licenses/texts/crates/madsmtm-objc2-7b1abfd7/LICENSE.md"
+        ],
+        "appendSpdx": true,
+        "note": "Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs"
+      },
+      "objc2-security@0.3.2": {
+        "upstream": "https://github.com/madsmtm/objc2/tree/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+        "texts": [
+          "native/third_party_licenses/texts/crates/madsmtm-objc2-7b1abfd7/LICENSE.md"
+        ],
+        "appendSpdx": true,
+        "note": "Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs"
+      },
+      "objc2-system-configuration@0.3.2": {
+        "upstream": "https://github.com/madsmtm/objc2/tree/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b",
+        "texts": [
+          "native/third_party_licenses/texts/crates/madsmtm-objc2-7b1abfd7/LICENSE.md"
+        ],
+        "appendSpdx": true,
+        "note": "Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs"
+      },
+      "objc2@0.6.4": {
+        "upstream": "https://github.com/madsmtm/objc2/tree/8852b424193ca41602281b3d7540d7c8ed51e49a",
+        "texts": [
+          "native/third_party_licenses/texts/crates/madsmtm-objc2-8852b424/LICENSE.md"
+        ],
+        "appendSpdx": true,
+        "note": "Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs"
+      },
+      "portmapper@0.19.3": {
+        "upstream": "https://github.com/n0-computer/net-tools/tree/0030e57fc70981895bb86212ff0f059cc41c8a4e",
+        "texts": [
+          "native/third_party_licenses/texts/crates/n0-computer-net-tools-0030e57f/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/n0-computer-net-tools-0030e57f/LICENSE-MIT"
+        ]
+      },
+      "priority-queue@2.7.0": {
+        "upstream": "https://github.com/garro95/priority-queue/tree/0c76fb8fe75e4457f16f8e6c8e86508d1a89ba1d",
+        "texts": [
+          "native/third_party_licenses/texts/crates/garro95-priority-queue-0c76fb8f/LGPL-3.0-or-later.txt",
+          "native/third_party_licenses/texts/crates/garro95-priority-queue-0c76fb8f/MPL-2.0.txt"
+        ],
+        "note": "Upstream ships only the standard LGPL-3.0 and MPL-2.0 texts, without a project copyright line"
+      },
+      "rustls-platform-verifier-android@0.2.0": {
+        "upstream": "https://github.com/rustls/rustls-platform-verifier/tree/252e25161a91af476cbea620e29d277592d27ec7",
+        "texts": [
+          "native/third_party_licenses/texts/crates/rustls-rustls-platform-verifier-252e2516/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/rustls-rustls-platform-verifier-252e2516/LICENSE-MIT"
+        ]
+      },
+      "unic-char-property@0.9.0": {
+        "upstream": "https://github.com/open-i18n/rust-unic/tree/5878605364af97a3358368a6eaef02104af2e016",
+        "texts": [
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-58786053/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-58786053/LICENSE-MIT",
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-58786053/COPYRIGHT.md"
+        ]
+      },
+      "unic-char-range@0.9.0": {
+        "upstream": "https://github.com/open-i18n/rust-unic/tree/5878605364af97a3358368a6eaef02104af2e016",
+        "texts": [
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-58786053/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-58786053/LICENSE-MIT",
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-58786053/COPYRIGHT.md"
+        ]
+      },
+      "unic-common@0.9.0": {
+        "upstream": "https://github.com/open-i18n/rust-unic/tree/5878605364af97a3358368a6eaef02104af2e016",
+        "texts": [
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-58786053/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-58786053/LICENSE-MIT",
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-58786053/COPYRIGHT.md"
+        ]
+      },
+      "unic-ucd-category@0.9.0": {
+        "upstream": "https://github.com/open-i18n/rust-unic/tree/8a6ce83063d90b91ae2ce59eddb803edd393fca9",
+        "texts": [
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-8a6ce830/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-8a6ce830/LICENSE-MIT",
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-8a6ce830/COPYRIGHT.md"
+        ]
+      },
+      "unic-ucd-version@0.9.0": {
+        "upstream": "https://github.com/open-i18n/rust-unic/tree/5878605364af97a3358368a6eaef02104af2e016",
+        "texts": [
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-58786053/LICENSE-APACHE",
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-58786053/LICENSE-MIT",
+          "native/third_party_licenses/texts/crates/open-i18n-rust-unic-58786053/COPYRIGHT.md"
+        ]
+      }
+    }
+  },
+  "cxx": [
+    {
+      "name": "hoshidicts",
+      "version": "fork of Manhhao/hoshidicts @ 8993838",
+      "license": "GPL-3.0",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/hoshidicts-LICENSE.txt"
+      ],
+      "note": "Upstream of the dictionary engine (deep fork). Text: upstream LICENSE."
+    },
+    {
+      "name": "glaze",
+      "version": "7.5.0",
+      "license": "MIT",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/glaze/LICENSE"
+      ]
+    },
+    {
+      "name": "zstd",
+      "version": "1.6.0",
+      "license": "BSD-3-Clause OR GPL-2.0-only",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/zstd/LICENSE"
+      ],
+      "note": "Dual-licensed; distributed under the BSD option (LICENSE), the GPLv2 option (COPYING) is not used."
+    },
+    {
+      "name": "libdeflate",
+      "version": "1.25",
+      "license": "MIT",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/libdeflate/COPYING"
+      ]
+    },
+    {
+      "name": "unordered_dense",
+      "version": "4.8.1",
+      "license": "MIT",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/unordered_dense/LICENSE"
+      ]
+    },
+    {
+      "name": "utf8proc",
+      "version": "2.11.3",
+      "license": "MIT AND Unicode-DFS-2015",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/utf8proc/LICENSE.md"
+      ]
+    },
+    {
+      "name": "utfcpp",
+      "version": "4.0.9",
+      "license": "BSL-1.0",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/utfcpp/LICENSE"
+      ],
+      "note": "Header-only."
+    },
+    {
+      "name": "xxHash",
+      "version": "0.8.3",
+      "license": "BSD-2-Clause",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_external/xxHash/LICENSE"
+      ],
+      "note": "Header-only (xxh3.h); the GPLv2 xxhsum CLI is not shipped."
+    },
+    {
+      "name": "kanji-processor",
+      "version": "452cc2db",
+      "license": "MIT",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/kanji-processor-LICENSE.txt"
+      ],
+      "note": "Variant-kanji table generated into fushidicts_src/text_processor/kanji_standardization_data.*."
+    },
+    {
+      "name": "libtorrent",
+      "version": "2.0.11",
+      "license": "BSD-3-Clause",
+      "component": "native/fushi_torrent",
+      "platforms": [
+        "android",
+        "macos",
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libtorrent-2.0.11-COPYING"
+      ],
+      "note": "vcpkg overlay port native/fushi_torrent/vcpkg-ports/libtorrent; text: vcpkg share/libtorrent/copyright."
+    },
+    {
+      "name": "Boost",
+      "version": "1.91.0",
+      "license": "BSL-1.0",
+      "component": "native/fushi_torrent",
+      "platforms": [
+        "android",
+        "macos",
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/boost-1.91.0-LICENSE_1_0.txt"
+      ],
+      "note": "asio, chrono, config, crc, date-time, iterator, logic, multi-index, multiprecision, pool, random, scope-exit, system, variant and their header dependencies (vcpkg)."
+    },
+    {
+      "name": "OpenSSL",
+      "version": "3.6.3",
+      "license": "Apache-2.0",
+      "component": "native/fushi_torrent",
+      "platforms": [
+        "android",
+        "macos",
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/openssl-3.6.3-LICENSE.txt"
+      ],
+      "note": "Windows: libssl-3-x64.dll / libcrypto-3-x64.dll; Android / macOS: statically linked."
+    },
+    {
+      "name": "libiconv",
+      "version": "1.19",
+      "license": "LGPL-2.1-or-later",
+      "component": "native/fushi_torrent",
+      "platforms": [
+        "android",
+        "macos",
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libiconv-1.19-copyright"
+      ],
+      "note": "Default iconv feature of the vcpkg libtorrent port; listed conservatively, whether it ends up linked on each platform is unverified."
+    },
+    {
+      "name": "LunaHook (LunaTranslator)",
+      "version": "10.16.1.2",
+      "license": "GPL-3.0",
+      "component": "native/galgame_hook",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/galgame_hook/third_party/lunahook/LICENSE"
+      ],
+      "note": "Prebuilt LunaHook32/64.dll and LunaHost32/64.dll, loaded by the galgame helper."
+    },
+    {
+      "name": "MinHook",
+      "version": "1.3.4",
+      "license": "BSD-2-Clause",
+      "component": "native/galgame_hook",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/galgame_hook/third_party/minhook/LICENSE.txt"
+      ],
+      "note": "Includes the Hacker Disassembler Engine (HDE) notice."
+    },
+    {
+      "name": "Locale-Emulator-Core",
+      "version": "ae7160dc",
+      "license": "LGPL-3.0",
+      "component": "native/galgame_hook",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/galgame_hook/third_party/locale_emulator/LICENSE-LGPL.txt",
+        "native/galgame_hook/third_party/locale_emulator/LICENSE-GPL.txt"
+      ],
+      "note": "LoaderDll.dll / LocaleEmulator.dll in voice_hook/x86."
+    },
+    {
+      "name": "FFmpeg (ffmpeg-min)",
+      "version": "n7.1.5",
+      "license": "GPL-2.0-or-later",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/ffmpeg-7.1.5-LICENSE.md",
+        "native/third_party_licenses/texts/ffmpeg-COPYING.GPLv2"
+      ],
+      "note": "ffmpeg / ffprobe executables built with --enable-gpl (libx264), without --enable-version3 / --enable-nonfree."
+    },
+    {
+      "name": "x264",
+      "version": "stable",
+      "license": "GPL-2.0-or-later",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/x264-COPYING"
+      ]
+    },
+    {
+      "name": "SVT-AV1",
+      "version": "2.3.0",
+      "license": "BSD-3-Clause-Clear",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/svt-av1-2.3.0-LICENSE.md",
+        "native/third_party_licenses/texts/svt-av1-2.3.0-PATENTS.md"
+      ]
+    },
+    {
+      "name": "libwebp",
+      "version": "1.5.0",
+      "license": "BSD-3-Clause",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libwebp-1.5.0-COPYING",
+        "native/third_party_licenses/texts/libwebp-1.5.0-PATENTS"
+      ]
+    },
+    {
+      "name": "dav1d",
+      "version": "1.5.1",
+      "license": "BSD-2-Clause",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/dav1d-1.5.1-COPYING"
+      ]
+    },
+    {
+      "name": "libvpx",
+      "version": "1.15.0",
+      "license": "BSD-3-Clause",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libvpx-1.15.0-LICENSE",
+        "native/third_party_licenses/texts/libvpx-1.15.0-PATENTS"
+      ]
+    },
+    {
+      "name": "Opus",
+      "version": "1.5.2",
+      "license": "BSD-3-Clause",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/opus-1.5.2-COPYING"
+      ]
+    },
+    {
+      "name": "libxml2",
+      "version": "2.13.8",
+      "license": "MIT",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libxml2-2.13.8-Copyright"
+      ]
+    },
+    {
+      "name": "zlib",
+      "version": "1.3.1",
+      "license": "Zlib",
+      "component": "third_party/ffmpeg-min",
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/zlib-LICENSE"
+      ],
+      "note": "Windows build takes zlib from MSYS2; version follows the MSYS2 package at build time."
+    },
+    {
+      "name": "mingw-w64 winpthreads",
+      "version": "MSYS2",
+      "license": "MIT AND BSD-3-Clause",
+      "component": "third_party/ffmpeg-min, third_party/libplacebo-win",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/winpthreads-COPYING"
+      ],
+      "note": "MinGW runtime statically folded into ffmpeg.exe / ffprobe.exe / libplacebo-360.dll."
+    },
+    {
+      "name": "FFmpegKit (FFmpeg)",
+      "version": "6.0",
+      "license": "GPL-3.0",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "third_party/ffmpeg_kit_flutter/LICENSE-GPLv3.txt",
+        "native/third_party_licenses/texts/ffmpeg-6.0-LICENSE.md"
+      ],
+      "note": "Self-built ffmpeg-kit 6.0 with --enable-gpl (x264, libvpx, opus, dav1d, libxml2, openssl)."
+    },
+    {
+      "name": "x264",
+      "version": "ffmpeg-kit 6.0",
+      "license": "GPL-2.0-or-later",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/x264-COPYING"
+      ]
+    },
+    {
+      "name": "libvpx",
+      "version": "ffmpeg-kit 6.0",
+      "license": "BSD-3-Clause",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libvpx-1.15.0-LICENSE",
+        "native/third_party_licenses/texts/libvpx-1.15.0-PATENTS"
+      ],
+      "note": "License text taken from libvpx 1.15.0; the version pinned by ffmpeg-kit 6.0 scripts may differ."
+    },
+    {
+      "name": "Opus",
+      "version": "ffmpeg-kit 6.0",
+      "license": "BSD-3-Clause",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/opus-1.5.2-COPYING"
+      ],
+      "note": "License text taken from Opus 1.5.2."
+    },
+    {
+      "name": "dav1d",
+      "version": "ffmpeg-kit 6.0",
+      "license": "BSD-2-Clause",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/dav1d-1.5.1-COPYING"
+      ],
+      "note": "License text taken from dav1d 1.5.1."
+    },
+    {
+      "name": "libxml2",
+      "version": "ffmpeg-kit 6.0",
+      "license": "MIT",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/libxml2-2.13.8-Copyright"
+      ],
+      "note": "License text taken from libxml2 2.13.8."
+    },
+    {
+      "name": "OpenSSL",
+      "version": "ffmpeg-kit 6.0",
+      "license": "Apache-2.0",
+      "component": "third_party/ffmpeg_kit_flutter",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/openssl-3.6.3-LICENSE.txt"
+      ],
+      "note": "License text taken from OpenSSL 3.6.3 (OpenSSL 3.x is Apache-2.0)."
+    },
+    {
+      "name": "libplacebo",
+      "version": "7.360.1",
+      "license": "LGPL-2.1-or-later",
+      "component": "third_party/libplacebo-win",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "third_party/libplacebo-win/LICENSE.libplacebo"
+      ],
+      "note": "libplacebo-360.dll, loaded at runtime by the inappwebview Windows fork."
+    },
+    {
+      "name": "shaderc",
+      "version": "MSYS2 2026.3",
+      "license": "Apache-2.0",
+      "component": "third_party/libplacebo-win",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/shaderc-LICENSE"
+      ],
+      "note": "Statically linked into libplacebo-360.dll."
+    },
+    {
+      "name": "glslang",
+      "version": "MSYS2 (via shaderc)",
+      "license": "BSD-3-Clause AND MIT AND Apache-2.0",
+      "component": "third_party/libplacebo-win",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/glslang-LICENSE.txt"
+      ],
+      "note": "Statically linked into libplacebo-360.dll."
+    },
+    {
+      "name": "SPIRV-Tools",
+      "version": "MSYS2 (via shaderc)",
+      "license": "Apache-2.0",
+      "component": "third_party/libplacebo-win",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/spirv-tools-LICENSE"
+      ],
+      "note": "Statically linked into libplacebo-360.dll."
+    },
+    {
+      "name": "SPIRV-Cross",
+      "version": "MSYS2 1.4.357.0",
+      "license": "Apache-2.0",
+      "component": "third_party/libplacebo-win",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/spirv-cross-LICENSE"
+      ],
+      "note": "Statically linked into libplacebo-360.dll."
+    }
+  ],
+  "prebuilt": [
+    {
+      "name": "mpv (libmpv)",
+      "version": "v0.41.0-1109-g36abaa32d (patched)",
+      "license": "GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/mpv-36abaa32/Copyright",
+        "native/third_party_licenses/texts/mpv-36abaa32/LICENSE.GPL",
+        "native/third_party_licenses/texts/mpv-36abaa32/LICENSE.LGPL"
+      ],
+      "source": "mpv commit 36abaa32d00a7229ee206aae12dc0e97e7962dca (native-source-provenance.json) plus patches/; version string embedded in libmpv-2.dll; texts: raw.githubusercontent.com/mpv-player/mpv/<commit>/",
+      "note": "libmpv-2.dll is built with the gpl feature (its embedded feature list contains \"gpl\"), so it is GPL-2.0-or-later; combined with FFmpeg the bundle as a whole is GPL-3.0-or-later."
+    },
+    {
+      "name": "aom",
+      "version": "3.15.0",
+      "license": "BSD-2-Clause AND LicenseRef-AOM-Patent-License-1.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/aom-3.15.0-1/LICENSE",
+        "native/third_party_licenses/texts/msys2/aom-3.15.0-1/PATENTS"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-aom 3.15.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libaom.dll."
+    },
+    {
+      "name": "brotli",
+      "version": "1.2.0",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/brotli-1.2.0-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-brotli 1.2.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libbrotlicommon.dll, libbrotlidec.dll, libbrotlienc.dll."
+    },
+    {
+      "name": "bzip2",
+      "version": "1.0.8",
+      "license": "bzip2-1.0.6",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/bzip2-1.0.8-4/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-bzip2 1.0.8-4 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libbz2-1.dll."
+    },
+    {
+      "name": "cairo",
+      "version": "1.18.4",
+      "license": "LGPL-2.1-only OR MPL-1.1",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/cairo-1.18.4-4/COPYING",
+        "native/third_party_licenses/texts/msys2/cairo-1.18.4-4/COPYING-LGPL-2.1",
+        "native/third_party_licenses/texts/msys2/cairo-1.18.4-4/COPYING-MPL-1.1"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-cairo 1.18.4-4 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libcairo-2.dll, libcairo-gobject-2.dll."
+    },
+    {
+      "name": "curl",
+      "version": "8.21.0",
+      "license": "curl",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/curl-8.21.0-2/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-curl 8.21.0-2 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libcurl-4.dll."
+    },
+    {
+      "name": "dav1d",
+      "version": "1.5.4",
+      "license": "BSD-2-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/dav1d-1.5.4-1/COPYING",
+        "native/third_party_licenses/texts/msys2/dav1d-1.5.4-1/PATENTS"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-dav1d 1.5.4-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libdav1d-7.dll."
+    },
+    {
+      "name": "expat",
+      "version": "2.8.3",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/expat-2.8.3-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-expat 2.8.3-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libexpat-1.dll."
+    },
+    {
+      "name": "FFmpeg",
+      "version": "9.0.1",
+      "license": "GPL-3.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/ffmpeg-9.0.1-3/LICENSE.md",
+        "native/third_party_licenses/texts/msys2/ffmpeg-9.0.1-3/COPYING.GPLv3"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-ffmpeg 9.0.1-3 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-ffmpeg-9.0.1-3.src.tar.zst",
+      "note": "DLLs: avcodec-63.dll, avdevice-63.dll, avfilter-12.dll, avformat-63.dll, avutil-61.dll, swresample-7.dll, swscale-10.dll. Built with --enable-gpl --enable-version3 and no --enable-nonfree (configure string embedded in avcodec-63.dll), so this binary is GPL-3.0-or-later. Links x264, x265, xvidcore and vid.stab (GPL) plus the LGPL/BSD libraries listed separately."
+    },
+    {
+      "name": "fontconfig",
+      "version": "2.18.3",
+      "license": "HPND-sell-variant AND MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/fontconfig-2.18.3-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-fontconfig 2.18.3-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libfontconfig-1.dll."
+    },
+    {
+      "name": "freetype",
+      "version": "2.14.3",
+      "license": "FTL OR GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/freetype-2.14.3-1/FTL.TXT",
+        "native/third_party_licenses/texts/msys2/freetype-2.14.3-1/GPLv2.TXT"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-freetype 2.14.3-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libfreetype-6.dll. Dual-licensed FTL / GPL-2.0-or-later; both texts included."
+    },
+    {
+      "name": "fribidi",
+      "version": "1.0.16",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/fribidi-1.0.16-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-fribidi 1.0.16-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libfribidi-0.dll."
+    },
+    {
+      "name": "GCC runtime libraries",
+      "version": "16.2.0",
+      "license": "GPL-3.0-or-later WITH GCC-exception-3.1",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/gcc-libs-16.2.0-3/COPYING.LIB",
+        "native/third_party_licenses/texts/msys2/gcc-libs-16.2.0-3/COPYING.RUNTIME",
+        "native/third_party_licenses/texts/msys2/gcc-libs-16.2.0-3/COPYING3",
+        "native/third_party_licenses/texts/msys2/gcc-libs-16.2.0-3/README"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-gcc-libs 16.2.0-3 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libgcc_s_seh-1.dll, libgomp-1.dll, libstdc++-6.dll. Under the GCC Runtime Library Exception."
+    },
+    {
+      "name": "gdk-pixbuf2",
+      "version": "2.44.7",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/gdk-pixbuf2-2.44.7-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-gdk-pixbuf2 2.44.7-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libgdk_pixbuf-2.0-0.dll."
+    },
+    {
+      "name": "gettext-runtime",
+      "version": "1.0",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/gettext-runtime-1.0-1/COPYING",
+        "native/third_party_licenses/texts/msys2/gettext-runtime-1.0-1/COPYING.LIB"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-gettext-runtime 1.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libintl-8.dll."
+    },
+    {
+      "name": "ggml",
+      "version": "0.22.0",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/ggml-0.22.0-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-ggml 0.22.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: ggml-0.dll, ggml-base-0.dll."
+    },
+    {
+      "name": "glib2",
+      "version": "2.88.3",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/glib2-2.88.3-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-glib2 2.88.3-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libgio-2.0-0.dll, libglib-2.0-0.dll, libgmodule-2.0-0.dll, libgobject-2.0-0.dll."
+    },
+    {
+      "name": "gmp",
+      "version": "6.3.0",
+      "license": "LGPL-3.0-or-later OR GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/gmp-6.3.0-2/COPYING.LESSERv3",
+        "native/third_party_licenses/texts/msys2/gmp-6.3.0-2/COPYINGv2",
+        "native/third_party_licenses/texts/msys2/gmp-6.3.0-2/COPYINGv3"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-gmp 6.3.0-2 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-gmp-6.3.0-2.src.tar.zst",
+      "note": "DLLs: libgmp-10.dll."
+    },
+    {
+      "name": "gnutls",
+      "version": "3.8.13",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/gnutls-3.8.13-3/COPYING.LESSERv2"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-gnutls 3.8.13-3 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-gnutls-3.8.13-3.src.tar.zst",
+      "note": "DLLs: libgnutls-30.dll."
+    },
+    {
+      "name": "graphite2",
+      "version": "1.3.15",
+      "license": "LGPL-2.1-or-later OR MPL-1.1 OR GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/graphite2-1.3.15-1/COPYING",
+        "native/third_party_licenses/texts/msys2/graphite2-1.3.15-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-graphite2 1.3.15-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libgraphite2.dll."
+    },
+    {
+      "name": "gsm",
+      "version": "1.0.24",
+      "license": "TU-Berlin-1.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/gsm-1.0.24-1/license.txt"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-gsm 1.0.24-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libgsm.dll."
+    },
+    {
+      "name": "harfbuzz",
+      "version": "14.4.0",
+      "license": "MIT-Modern-Variant",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/harfbuzz-14.4.0-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-harfbuzz 14.4.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libharfbuzz-0.dll."
+    },
+    {
+      "name": "highway",
+      "version": "1.4.0",
+      "license": "Apache-2.0 OR BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/highway-1.4.0-3/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-highway 1.4.0-3 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libhwy.dll."
+    },
+    {
+      "name": "jbigkit",
+      "version": "2.1",
+      "license": "GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/jbigkit-2.1-6/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-jbigkit 2.1-6 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libjbig-0.dll. GPL-2.0-or-later library, pulled in through libtiff."
+    },
+    {
+      "name": "lame",
+      "version": "3.100",
+      "license": "LGPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/lame-3.100-3/COPYING",
+        "native/third_party_licenses/texts/msys2/lame-3.100-3/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-lame 3.100-3 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-lame-3.100-3.src.tar.zst",
+      "note": "DLLs: libmp3lame-0.dll."
+    },
+    {
+      "name": "lcms2",
+      "version": "2.19.1",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/lcms2-2.19.1-1/LICENSE",
+        "native/third_party_licenses/texts/msys2/lcms2-2.19.1-1/LICENSE-fast_float"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-lcms2 2.19.1-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: liblcms2-2.dll. LICENSE-fast_float (GPL-3.0) covers the separate fast_float plugin, which is not in the shipped DLL closure; included because the package ships it."
+    },
+    {
+      "name": "lerc",
+      "version": "4.1.1",
+      "license": "Apache-2.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/lerc-4.1.1-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-lerc 4.1.1-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libLerc.dll."
+    },
+    {
+      "name": "libass",
+      "version": "0.17.5",
+      "license": "ISC",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libass-0.17.5-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libass 0.17.5-1 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-libass-0.17.5-1.src.tar.zst",
+      "note": "DLLs: libass-9.dll."
+    },
+    {
+      "name": "libbluray",
+      "version": "1.5.0",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libbluray-1.5.0-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libbluray 1.5.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libbluray-4.dll."
+    },
+    {
+      "name": "libcaca",
+      "version": "0.99.beta20",
+      "license": "WTFPL",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libcaca-0.99.beta20-8/COPYING",
+        "native/third_party_licenses/texts/msys2/libcaca-0.99.beta20-8/COPYING.GPL",
+        "native/third_party_licenses/texts/msys2/libcaca-0.99.beta20-8/COPYING.ISC",
+        "native/third_party_licenses/texts/msys2/libcaca-0.99.beta20-8/COPYING.LGPL"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libcaca 0.99.beta20-8 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-libcaca-0.99.beta20-8.src.tar.zst",
+      "note": "DLLs: libcaca-0.dll. COPYING is the WTFPL; upstream also ships COPYING.GPL / COPYING.LGPL / COPYING.ISC for individual files, all included."
+    },
+    {
+      "name": "libdatrie",
+      "version": "0.2.14",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libdatrie-0.2.14-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libdatrie 0.2.14-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libdatrie-1.dll."
+    },
+    {
+      "name": "libdeflate",
+      "version": "1.26",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libdeflate-1.26-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libdeflate 1.26-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libdeflate.dll."
+    },
+    {
+      "name": "libdovi",
+      "version": "3.4.0",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libdovi-3.4.0-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libdovi 3.4.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libdovi.dll. Rust library; its statically linked crate dependencies are not listed separately."
+    },
+    {
+      "name": "libffi",
+      "version": "3.8.0",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libffi-3.8.0-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libffi 3.8.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libffi-8.dll."
+    },
+    {
+      "name": "libgme",
+      "version": "0.6.5",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libgme-0.6.5-2/license.txt"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libgme 0.6.5-2 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libgme.dll."
+    },
+    {
+      "name": "libiconv",
+      "version": "1.19",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libiconv-1.19-1/COPYING",
+        "native/third_party_licenses/texts/msys2/libiconv-1.19-1/COPYING.LIB",
+        "native/third_party_licenses/texts/msys2/libiconv-1.19-1/README"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libiconv 1.19-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libiconv-2.dll."
+    },
+    {
+      "name": "libidn2",
+      "version": "2.3.8",
+      "license": "LGPL-3.0-or-later OR GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libidn2-2.3.8-4/COPYING.LESSERv3",
+        "native/third_party_licenses/texts/msys2/libidn2-2.3.8-4/COPYINGv2",
+        "native/third_party_licenses/texts/msys2/libidn2-2.3.8-4/COPYING.unicode"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libidn2 2.3.8-4 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-libidn2-2.3.8-4.src.tar.zst",
+      "note": "DLLs: libidn2-0.dll."
+    },
+    {
+      "name": "libjpeg-turbo",
+      "version": "3.2.0",
+      "license": "IJG AND BSD-3-Clause AND Zlib",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libjpeg-turbo-3.2.0-1/LICENSE.md",
+        "native/third_party_licenses/texts/msys2/libjpeg-turbo-3.2.0-1/README.ijg",
+        "native/third_party_licenses/texts/msys2/libjpeg-turbo-3.2.0-1/README.md",
+        "native/third_party_licenses/texts/msys2/libjpeg-turbo-3.2.0-1/jsimdext.inc"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libjpeg-turbo 3.2.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libjpeg-8.dll."
+    },
+    {
+      "name": "libjxl",
+      "version": "0.12.0",
+      "license": "BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libjxl-0.12.0-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libjxl 0.12.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libjxl.dll, libjxl_cms.dll, libjxl_threads.dll."
+    },
+    {
+      "name": "liblc3",
+      "version": "1.1.3",
+      "license": "Apache-2.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/liblc3-1.1.3-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-liblc3 1.1.3-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: liblc3-1.dll."
+    },
+    {
+      "name": "libmodplug",
+      "version": "0.8.9.0",
+      "license": "LicenseRef-Public-Domain",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libmodplug-0.8.9.0-5/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libmodplug 0.8.9.0-5 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libmodplug-1.dll."
+    },
+    {
+      "name": "libogg",
+      "version": "1.3.6",
+      "license": "BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libogg-1.3.6-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libogg 1.3.6-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libogg-0.dll."
+    },
+    {
+      "name": "libplacebo",
+      "version": "7.360.1",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libplacebo-7.360.1-2/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libplacebo 7.360.1-2 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libplacebo-360.dll."
+    },
+    {
+      "name": "libpng",
+      "version": "1.6.58",
+      "license": "libpng-2.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libpng-1.6.58-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libpng 1.6.58-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libpng16-16.dll."
+    },
+    {
+      "name": "libpsl",
+      "version": "0.21.5",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libpsl-0.21.5-3/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libpsl 0.21.5-3 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libpsl-5.dll."
+    },
+    {
+      "name": "librsvg",
+      "version": "2.62.3",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/librsvg-2.62.3-1/COPYING.LIB"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-librsvg 2.62.3-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: librsvg-2-2.dll. Rust library; its statically linked crate dependencies are not listed separately."
+    },
+    {
+      "name": "libsoxr",
+      "version": "0.1.3",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libsoxr-0.1.3-5/COPYING.LGPL",
+        "native/third_party_licenses/texts/msys2/libsoxr-0.1.3-5/LICENSE",
+        "native/third_party_licenses/texts/msys2/libsoxr-0.1.3-5/LICENSE-PFFFT"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libsoxr 0.1.3-5 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libsoxr.dll."
+    },
+    {
+      "name": "libssh",
+      "version": "0.12.2",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libssh-0.12.2-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libssh 0.12.2-1 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-libssh-0.12.2-1.src.tar.zst",
+      "note": "DLLs: libssh.dll."
+    },
+    {
+      "name": "libssh2",
+      "version": "1.11.1",
+      "license": "BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libssh2-1.11.1-2/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libssh2 1.11.1-2 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libssh2-1.dll."
+    },
+    {
+      "name": "libtasn1",
+      "version": "4.21.0",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libtasn1-4.21.0-1/COPYING",
+        "native/third_party_licenses/texts/msys2/libtasn1-4.21.0-1/COPYING.LESSERv2"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libtasn1 4.21.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libtasn1-6.dll."
+    },
+    {
+      "name": "libthai",
+      "version": "0.1.30",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libthai-0.1.30-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libthai 0.1.30-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libthai-0.dll."
+    },
+    {
+      "name": "libtheora",
+      "version": "1.2.0",
+      "license": "BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libtheora-1.2.0-1/COPYING",
+        "native/third_party_licenses/texts/msys2/libtheora-1.2.0-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libtheora 1.2.0-1 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-libtheora-1.2.0-1.src.tar.zst",
+      "note": "DLLs: libtheoradec-2.dll, libtheoraenc-2.dll."
+    },
+    {
+      "name": "libtiff",
+      "version": "4.7.2",
+      "license": "libtiff",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libtiff-4.7.2-1/LICENSE.md"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libtiff 4.7.2-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libtiff-6.dll."
+    },
+    {
+      "name": "libunibreak",
+      "version": "7.0",
+      "license": "Zlib",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libunibreak-7.0-1/LICENCE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libunibreak 7.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libunibreak-7.dll."
+    },
+    {
+      "name": "libunistring",
+      "version": "1.4.2",
+      "license": "LGPL-3.0-or-later OR GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libunistring-1.4.2-1/LICENSE",
+        "native/third_party_licenses/texts/msys2/libunistring-1.4.2-1/LICENSE.LIB"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libunistring 1.4.2-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libunistring-5.dll."
+    },
+    {
+      "name": "libva",
+      "version": "2.24.1",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libva-2.24.1-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libva 2.24.1-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libva.dll, libva_win32.dll."
+    },
+    {
+      "name": "libvorbis",
+      "version": "1.3.7",
+      "license": "BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libvorbis-1.3.7-3/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libvorbis 1.3.7-3 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-libvorbis-1.3.7-3.src.tar.zst",
+      "note": "DLLs: libvorbis-0.dll, libvorbisenc-2.dll."
+    },
+    {
+      "name": "libvpl",
+      "version": "2.17.0",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libvpl-2.17.0-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libvpl 2.17.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libvpl-2.dll."
+    },
+    {
+      "name": "libvpx",
+      "version": "1.16.0",
+      "license": "BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libvpx-1.16.0-1/LICENSE",
+        "native/third_party_licenses/texts/msys2/libvpx-1.16.0-1/PATENTS"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libvpx 1.16.0-1 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-libvpx-1.16.0-1.src.tar.zst",
+      "note": "DLLs: libvpx-1.dll."
+    },
+    {
+      "name": "libwebp",
+      "version": "1.6.0",
+      "license": "BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libwebp-1.6.0-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libwebp 1.6.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libsharpyuv-0.dll, libwebp-7.dll, libwebpmux-3.dll."
+    },
+    {
+      "name": "libwinpthread",
+      "version": "14.0.0.r302.gd7f3c5201",
+      "license": "MIT AND BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libwinpthread-14.0.0.r302.gd7f3c5201-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libwinpthread 14.0.0.r302.gd7f3c5201-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libwinpthread-1.dll."
+    },
+    {
+      "name": "x264",
+      "version": "0.165.r3222.b35605a",
+      "license": "GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libx264-0.165.r3222.b35605a-3/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libx264 0.165.r3222.b35605a-3 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-x264-0.165.r3222.b35605a-3.src.tar.zst",
+      "note": "DLLs: libx264-165.dll."
+    },
+    {
+      "name": "libxml2",
+      "version": "2.15.3",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/libxml2-2.15.3-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-libxml2 2.15.3-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libxml2-16.dll."
+    },
+    {
+      "name": "LuaJIT",
+      "version": "2.1.1785606157",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/luajit-2.1.1785606157-1/COPYRIGHT"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-luajit 2.1.1785606157-1 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-luajit-2.1.1785606157-1.src.tar.zst",
+      "note": "DLLs: lua51.dll."
+    },
+    {
+      "name": "nettle",
+      "version": "4.0",
+      "license": "LGPL-3.0-or-later OR GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/nettle-4.0-1/COPYING.LESSERv3",
+        "native/third_party_licenses/texts/msys2/nettle-4.0-1/COPYINGv2",
+        "native/third_party_licenses/texts/msys2/nettle-4.0-1/COPYINGv3"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-nettle 4.0-1 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-nettle-4.0-1.src.tar.zst",
+      "note": "DLLs: libhogweed-7.dll, libnettle-9.dll."
+    },
+    {
+      "name": "nghttp2",
+      "version": "1.70.0",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/nghttp2-1.70.0-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-nghttp2 1.70.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libnghttp2-14.dll."
+    },
+    {
+      "name": "nghttp3",
+      "version": "1.18.0",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/nghttp3-1.18.0-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-nghttp3 1.18.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libnghttp3-9.dll."
+    },
+    {
+      "name": "ngtcp2",
+      "version": "1.25.0",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/ngtcp2-1.25.0-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-ngtcp2 1.25.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libngtcp2-16.dll, libngtcp2_crypto_ossl-0.dll."
+    },
+    {
+      "name": "OpenAL Soft",
+      "version": "1.25.2",
+      "license": "LGPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/openal-1.25.2-1/COPYING",
+        "native/third_party_licenses/texts/msys2/openal-1.25.2-1/LICENSE-pffft"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-openal 1.25.2-1 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-openal-1.25.2-1.src.tar.zst",
+      "note": "DLLs: libopenal-1.dll. Upstream COPYING is the GNU LGPL v2 and the README calls it LGPL-licensed; the MSYS2 PKGBUILD declares GPL-2.0-or-later."
+    },
+    {
+      "name": "opencore-amr",
+      "version": "0.1.6",
+      "license": "Apache-2.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/opencore-amr-0.1.6-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-opencore-amr 0.1.6-1 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-opencore-amr-0.1.6-1.src.tar.zst",
+      "note": "DLLs: libopencore-amrnb-0.dll, libopencore-amrwb-0.dll."
+    },
+    {
+      "name": "openjpeg2",
+      "version": "2.5.4",
+      "license": "BSD-2-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/openjpeg2-2.5.4-2/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-openjpeg2 2.5.4-2 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libopenjp2-7.dll."
+    },
+    {
+      "name": "openssl",
+      "version": "3.6.4",
+      "license": "Apache-2.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/openssl-3.6.4-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-openssl 3.6.4-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libcrypto-3-x64.dll, libssl-3-x64.dll."
+    },
+    {
+      "name": "opus",
+      "version": "1.6.1",
+      "license": "BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/opus-1.6.1-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-opus 1.6.1-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libopus-0.dll."
+    },
+    {
+      "name": "p11-kit",
+      "version": "0.26.5",
+      "license": "BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/p11-kit-0.26.5-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-p11-kit 0.26.5-1 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-p11-kit-0.26.5-1.src.tar.zst",
+      "note": "DLLs: libp11-kit-0.dll."
+    },
+    {
+      "name": "pango",
+      "version": "1.58.2",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/pango-1.58.2-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-pango 1.58.2-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libpango-1.0-0.dll, libpangocairo-1.0-0.dll, libpangoft2-1.0-0.dll, libpangowin32-1.0-0.dll."
+    },
+    {
+      "name": "pcre2",
+      "version": "10.47",
+      "license": "BSD-3-Clause WITH PCRE2-exception",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/pcre2-10.47-1/COPYING",
+        "native/third_party_licenses/texts/msys2/pcre2-10.47-1/LICENCE.md"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-pcre2 10.47-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libpcre2-8-0.dll."
+    },
+    {
+      "name": "pixman",
+      "version": "0.46.4",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/pixman-0.46.4-3/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-pixman 0.46.4-3 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libpixman-1-0.dll."
+    },
+    {
+      "name": "rav1e",
+      "version": "0.8.1",
+      "license": "BSD-2-Clause AND LicenseRef-AOM-Patent-License-1.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/rav1e-0.8.1-1/LICENSE",
+        "native/third_party_licenses/texts/msys2/rav1e-0.8.1-1/PATENTS"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-rav1e 0.8.1-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: librav1e.dll. Rust library; its statically linked crate dependencies are not listed separately."
+    },
+    {
+      "name": "rtmpdump",
+      "version": "2.6",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/rtmpdump-2.6-2/librtmp-COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-rtmpdump 2.6-2 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-rtmpdump-2.6-2.src.tar.zst",
+      "note": "DLLs: librtmp-1.dll."
+    },
+    {
+      "name": "shaderc",
+      "version": "2026.3",
+      "license": "Apache-2.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/shaderc-2026.3-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-shaderc 2026.3-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libshaderc_shared.dll."
+    },
+    {
+      "name": "speex",
+      "version": "1.2.1",
+      "license": "BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/speex-1.2.1-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-speex 1.2.1-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libspeex-1.dll."
+    },
+    {
+      "name": "spirv-cross",
+      "version": "1~1.4.357.0",
+      "license": "Apache-2.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/spirv-cross-1~1.4.357.0-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-spirv-cross 1~1.4.357.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libspirv-cross-c-shared.dll."
+    },
+    {
+      "name": "srt",
+      "version": "1.5.7",
+      "license": "MPL-2.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/srt-1.5.7-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-srt 1.5.7-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libsrt.dll."
+    },
+    {
+      "name": "svt-av1",
+      "version": "4.2.0",
+      "license": "BSD-3-Clause-Clear AND LicenseRef-AOM-Patent-License-1.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/svt-av1-4.2.0-1/LICENSE",
+        "native/third_party_licenses/texts/msys2/svt-av1-4.2.0-1/PATENTS.md"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-svt-av1 4.2.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libSvtAv1Enc-4.dll."
+    },
+    {
+      "name": "vid.stab",
+      "version": "1.1.1",
+      "license": "GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/vid.stab-1.1.1-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-vid.stab 1.1.1-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libvidstab.dll."
+    },
+    {
+      "name": "vulkan-loader",
+      "version": "1~1.4.357.0",
+      "license": "Apache-2.0",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/vulkan-loader-1~1.4.357.0-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-vulkan-loader 1~1.4.357.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: vulkan-1.dll."
+    },
+    {
+      "name": "whisper.cpp",
+      "version": "1~1.9.3.r75.g978113305",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/whisper.cpp-1~1.9.3.r75.g978113305-1/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-whisper.cpp 1~1.9.3.r75.g978113305-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libwhisper-1.dll."
+    },
+    {
+      "name": "x265",
+      "version": "4.3",
+      "license": "GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/x265-4.3-1/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-x265 4.3-1 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-x265-4.3-1.src.tar.zst",
+      "note": "DLLs: libx265-217.dll."
+    },
+    {
+      "name": "xvidcore",
+      "version": "1.3.7",
+      "license": "GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/xvidcore-1.3.7-5/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-xvidcore 1.3.7-5 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-xvidcore-1.3.7-5.src.tar.zst",
+      "note": "DLLs: xvidcore.dll."
+    },
+    {
+      "name": "xz",
+      "version": "5.8.3",
+      "license": "0BSD",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/xz-5.8.3-1/COPYING",
+        "native/third_party_licenses/texts/msys2/xz-5.8.3-1/COPYING.0BSD",
+        "native/third_party_licenses/texts/msys2/xz-5.8.3-1/COPYING.GPLv2",
+        "native/third_party_licenses/texts/msys2/xz-5.8.3-1/COPYING.GPLv3",
+        "native/third_party_licenses/texts/msys2/xz-5.8.3-1/COPYING.LGPLv2.1"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-xz 5.8.3-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: liblzma-5.dll."
+    },
+    {
+      "name": "zimg",
+      "version": "3.0.6",
+      "license": "WTFPL",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/zimg-3.0.6-3/COPYING"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-zimg 3.0.6-3 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-zimg-3.0.6-3.src.tar.zst",
+      "note": "DLLs: libzimg-2.dll."
+    },
+    {
+      "name": "zlib",
+      "version": "1.3.2",
+      "license": "Zlib",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/zlib-1.3.2-2/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-zlib 1.3.2-2 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: zlib1.dll."
+    },
+    {
+      "name": "zstd",
+      "version": "1.5.7",
+      "license": "BSD-3-Clause OR GPL-2.0-only",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/zstd-1.5.7-2/LICENSE"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-zstd 1.5.7-2 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libzstd.dll. Dual-licensed; the package ships the BSD LICENSE."
+    },
+    {
+      "name": "zvbi",
+      "version": "0.2.44",
+      "license": "LGPL-2.1-or-later AND GPL-2.0-or-later AND BSD-2-Clause AND MIT",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/msys2/zvbi-0.2.44-2/COPYING.md"
+      ],
+      "source": "MSYS2 mingw-w64-x86_64-zvbi 0.2.44-2 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
+      "note": "DLLs: libzvbi-0.dll."
+    },
+    {
+      "name": "mpv (libmpv)",
+      "version": "36abaa32 (v0.41.0-dev)",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/mpv-36abaa32-Copyright",
+        "native/third_party_licenses/texts/media_kit_mobile/mpv-36abaa32-LICENSE.LGPL"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac buildscripts/include/depinfo.sh v_mpv; provenance.json mpv_commit; libmpv.so 内嵌 'Configuration: -Db_lundef=true -Dgpl=false -Dlibmpv=true -Dlua=lua ...'",
+      "note": "-Dgpl=false（LGPL 构建）；Fushi 补丁 5 个（provenance.json patches）。静态链入 libmpv.so（Android 每 ABI 只有 libmpv.so + libmediakitandroidhelper.so，readelf NEEDED 仅 libm/libandroid/libdl/libOpenSLES/libEGL/libc）。mpv Copyright 文件说明 -Dgpl=false 本身不构成 LGPL 授权，链接库可影响最终许可。"
+    },
+    {
+      "name": "FFmpeg",
+      "version": "6.1.6 (n6.1.6)",
+      "license": "LGPL-3.0-or-later",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/ffmpeg-6.1.6-LICENSE.md",
+        "native/third_party_licenses/texts/media_kit_mobile/ffmpeg-6.1.6-COPYING.LGPLv3",
+        "native/third_party_licenses/texts/media_kit_mobile/ffmpeg-6.1.6-COPYING.GPLv3",
+        "native/third_party_licenses/texts/media_kit_mobile/ffmpeg-6.1.6-COPYING.LGPLv2.1"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac depinfo.sh v_ffmpeg=6.1.6 + download-deps.sh 'git clone --branch n$v_ffmpeg'; libmpv.so 内嵌 'n6.1.6'、'Lavc60.31.102' 及 configure 串 '--disable-gpl --disable-nonfree --enable-version3 ... --enable-mbedtls --enable-libdav1d --enable-libxml2'",
+      "note": "无 --enable-gpl / --enable-nonfree，有 --enable-version3 → 按 LICENSE.md 为 LGPL v3。静态链入 libmpv.so（--enable-static --disable-shared）。补丁 patches/ffmpeg/dash_base_url_escape.patch。四 ABI 均验到同一 configure 串。"
+    },
+    {
+      "name": "libass",
+      "version": "0.17.1",
+      "license": "ISC",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/libass-0.17.1-COPYING"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac depinfo.sh v_libass=0.17.1; libmpv.so 内嵌 'commit: 0.17.1-0-ge8ad72accd3a...'",
+      "note": "静态链入 libmpv.so（Android 每 ABI 只有 libmpv.so + libmediakitandroidhelper.so，readelf NEEDED 仅 libm/libandroid/libdl/libOpenSLES/libEGL/libc）"
+    },
+    {
+      "name": "HarfBuzz",
+      "version": "7.2.0",
+      "license": "MIT-Modern-Variant",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/harfbuzz-7.2.0-COPYING"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac depinfo.sh v_harfbuzz=7.2.0（二进制只见 'HarfBuzz-ng %s'，版本只来自配方）",
+      "note": "静态链入 libmpv.so（Android 每 ABI 只有 libmpv.so + libmediakitandroidhelper.so，readelf NEEDED 仅 libm/libandroid/libdl/libOpenSLES/libEGL/libc）。SPDX 按 HarfBuzz COPYING 的 'Old MIT' 措辞取 MIT-Modern-Variant；COPYING 说明部分文件另有许可（见文本）。"
+    },
+    {
+      "name": "FriBidi",
+      "version": "1.0.12",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/fribidi-1.0.12-COPYING"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac depinfo.sh v_fribidi=1.0.12; libmpv.so 内嵌 'Shaper: FriBidi 1.0.12 (SIMPLE)'",
+      "note": "静态链入 libmpv.so（Android 每 ABI 只有 libmpv.so + libmediakitandroidhelper.so，readelf NEEDED 仅 libm/libandroid/libdl/libOpenSLES/libEGL/libc）"
+    },
+    {
+      "name": "FreeType",
+      "version": "2.13.0",
+      "license": "FTL OR GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/freetype-2.13.0-LICENSE.TXT",
+        "native/third_party_licenses/texts/media_kit_mobile/freetype-2.13.0-FTL.TXT",
+        "native/third_party_licenses/texts/media_kit_mobile/freetype-2.13.0-GPLv2.TXT"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac depinfo.sh v_freetype=2-13-0（git tag VER-2-13-0）；二进制只见 'Raster: FreeType %d.%d.%d'",
+      "note": "静态链入 libmpv.so（Android 每 ABI 只有 libmpv.so + libmediakitandroidhelper.so，readelf NEEDED 仅 libm/libandroid/libdl/libOpenSLES/libEGL/libc）。双许可，任选其一。"
+    },
+    {
+      "name": "Mbed TLS",
+      "version": "3.4.0",
+      "license": "Apache-2.0",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/mbedtls-3.4.0-LICENSE"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac depinfo.sh v_mbedtls=3.4.0（git tag v3.4.0）；v3.4.0 README 'License' 段与源文件 SPDX 为 Apache-2.0",
+      "note": "静态链入 libmpv.so（Android 每 ABI 只有 libmpv.so + libmediakitandroidhelper.so，readelf NEEDED 仅 libm/libandroid/libdl/libOpenSLES/libEGL/libc）（libmbedtls/x509/crypto 三个静态库）。补丁 patches/mbedtls/clang18-aes-target.patch。"
+    },
+    {
+      "name": "dav1d",
+      "version": "1.2.0",
+      "license": "BSD-2-Clause",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/dav1d-1.2.0-COPYING"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac depinfo.sh v_dav1d=1.2.0；libmpv.so 内嵌 '1.2.0-0-g676a864'",
+      "note": "静态链入 libmpv.so（Android 每 ABI 只有 libmpv.so + libmediakitandroidhelper.so，readelf NEEDED 仅 libm/libandroid/libdl/libOpenSLES/libEGL/libc）"
+    },
+    {
+      "name": "libxml2",
+      "version": "2.10.3",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/libxml2-2.10.3-Copyright"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac depinfo.sh v_libxml2=2.10.3（git tag v2.10.3）",
+      "note": "静态链入 libmpv.so（Android 每 ABI 只有 libmpv.so + libmediakitandroidhelper.so，readelf NEEDED 仅 libm/libandroid/libdl/libOpenSLES/libEGL/libc）（--with-minimum 配置）。FFmpeg（DASH）与 libbluray 共用。"
+    },
+    {
+      "name": "libbluray",
+      "version": "1.5.0",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/libbluray-1.5.0-COPYING"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac depinfo.sh v_libbluray=1.5.0，tarball https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz sha256 f676408e…（本地复核一致）；libmpv.so 内嵌 'libbluray version 1.5.0'",
+      "note": "静态链入 libmpv.so（Android 每 ABI 只有 libmpv.so + libmediakitandroidhelper.so，readelf NEEDED 仅 libm/libandroid/libdl/libOpenSLES/libEGL/libc）。-Dbdj_jar=disabled（不含 BD-J jar，tarball 里的 contrib/asm 不参与原生构建）。"
+    },
+    {
+      "name": "libudfread",
+      "version": "1.2.0",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/libudfread-1.2.0-COPYING"
+      ],
+      "source": "libbluray-1.5.0.tar.xz 内 contrib/libudfread（meson.build version: '1.2.0'）；libmpv.so 内嵌 'udfread LOG  : libudfread 1.2.0'",
+      "note": "静态链入 libmpv.so（Android 每 ABI 只有 libmpv.so + libmediakitandroidhelper.so，readelf NEEDED 仅 libm/libandroid/libdl/libOpenSLES/libEGL/libc）（随 libbluray 内嵌构建，提供 ISO/UDF 读取）。"
+    },
+    {
+      "name": "libplacebo",
+      "version": "7.360.1",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/libplacebo-7.360.1-LICENSE"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac depinfo.sh v_libplacebo=cee9b076（= tag v7.360.1 的提交，gh api repos/haasn/libplacebo/commits/v7.360.1）；libmpv.so 内嵌 'v7.360.1 (v7.360.1)'",
+      "note": "静态链入 libmpv.so（Android 每 ABI 只有 libmpv.so + libmediakitandroidhelper.so，readelf NEEDED 仅 libm/libandroid/libdl/libOpenSLES/libEGL/libc）。-Dopengl=enabled，vulkan/glslang/shaderc/lcms/libdovi=disabled，-Ddovi=enabled（内置 DoVi 解析，不链 libdovi；二进制含 'libplacebo compiled without LittleCMS 2 support!'）。"
+    },
+    {
+      "name": "fast_float",
+      "version": "97b54ca9 (libplacebo v7.360.1 submodule)",
+      "license": "MIT OR Apache-2.0 OR BSL-1.0",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/fast_float-97b54ca9-LICENSE-MIT",
+        "native/third_party_licenses/texts/media_kit_mobile/fast_float-97b54ca9-LICENSE-APACHE",
+        "native/third_party_licenses/texts/media_kit_mobile/fast_float-97b54ca9-LICENSE-BOOST"
+      ],
+      "source": "libplacebo v7.360.1 的 3rdparty/fast_float 子模块提交 97b54ca9e75f…（gh api repos/haasn/libplacebo/contents/3rdparty?ref=v7.360.1）",
+      "note": "header-only，编译进 libplacebo（C++ 数值解析），随之静态链入 libmpv.so。三选一许可。"
+    },
+    {
+      "name": "glad (generated OpenGL/EGL loader)",
+      "version": "73db193f (libplacebo v7.360.1 submodule)",
+      "license": "MIT AND Apache-2.0",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/glad-73db193f-LICENSE"
+      ],
+      "source": "libplacebo v7.360.1 的 3rdparty/glad 子模块提交 73db193f…；libmpv.so 内含 glad 加载器特征串 'libGLESv2.so.2'、'eglGetProcAddress' 及 694 个 gl* 函数名串",
+      "note": "存疑：glad LICENSE 写明生成器 MIT、生成代码依据的 Khronos 规范 Apache-2.0、EGL 头为 MIT 式；SPDX 表达式为近似。"
+    },
+    {
+      "name": "Lua",
+      "version": "5.2.4",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/lua-5.2.4-lua.h"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac depinfo.sh v_lua=5.2.4，tarball https://www.lua.org/ftp/lua-5.2.4.tar.gz sha256 b9e2e4aa…（本地复核一致）；libmpv.so 内嵌 '$LuaVersion: Lua 5.2.4  Copyright (C) 1994-2015 Lua.org, PUC-Rio $'",
+      "note": "静态链入 libmpv.so（Android 每 ABI 只有 libmpv.so + libmediakitandroidhelper.so，readelf NEEDED 仅 libm/libandroid/libdl/libOpenSLES/libEGL/libc）（liblua.a）。Lua 发行包无独立 LICENSE 文件，文本取自 src/lua.h 末尾许可注释块（第 420–444 行，逐字）。"
+    },
+    {
+      "name": "zlib (Android NDK sysroot libz.a)",
+      "version": "1.3.0.1",
+      "license": "Zlib",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/zlib-1.3.0.1-zlib.h"
+      ],
+      "source": "libmpv.so 内嵌 ' inflate 1.3.0.1 Copyright 1995-2023 Mark Adler ' / ' deflate 1.3.0.1 Copyright 1995-2023 Jean-loup Gailly and Mark Adler '；文本取自 https://android.googlesource.com/platform/external/zlib/+/refs/heads/main/zlib.h（main=f29fc757，ZLIB_VERSION \"1.3.0.1-motley\"）文件头注释",
+      "note": "配方未单独构建 zlib，NEEDED 无 libz.so → 由 NDK 27.3.13750724 sysroot 的 libz.a 静态链入。存疑：文本来自 AOSP main 而非与 r27d 精确对应的提交；AOSP 该目录 LICENSE 文件仍是 1.2.12 旧文案，故取 zlib.h 头注释。"
+    },
+    {
+      "name": "LLVM libc++ / libc++abi / libunwind (NDK static)",
+      "version": "NDK 27.3.13750724 (clang r522817, LLVM 18)",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/llvm-libcxx-18.1.0-LICENSE.TXT",
+        "native/third_party_licenses/texts/media_kit_mobile/llvm-libcxxabi-18.1.0-LICENSE.TXT",
+        "native/third_party_licenses/texts/media_kit_mobile/llvm-libunwind-18.1.0-LICENSE.TXT"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac scripts/libplacebo.sh 追加 'Libs.private: -lc++_static -lc++abi -lunwind'；README 'The C++ runtime is linked statically'；libmpv.so 含 std::__ndk1 符号串；本机 NDK r27 AndroidVersion.txt '18.0.1 based on r522817'",
+      "note": "存疑：文本取自 llvm-project tag llvmorg-18.1.0 的三份 LICENSE.TXT，NDK 的 r522817 是 LLVM 18 开发快照，版本为近似。LLVM-exception 免除二进制嵌入时的署名要求，是否登记由所有者决定。"
+    },
+    {
+      "name": "media-kit-android-helper (libmediakitandroidhelper.so)",
+      "version": "42054e5d",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_android_video",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/media-kit-android-helper-42054e5d-LICENSE"
+      ],
+      "source": "hajisensai/libmpv-android-video-build@3166982f43fac31c86dc4c66acd8ac3280600eac include/download-deps.sh 'git reset --hard 42054e5d479f…'；bundle_disc_menu.sh 从 https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-<abi>-ffmpeg6.1.6-dovi.jar 取 helper 并校验 md5",
+      "note": "独立 .so（每 ABI 一份）。存疑：随包 helper 是从旧 vendor jar 按 md5 取出的既有二进制，未从 42054e5d 重编复核；许可按该提交的 LICENSE。"
+    },
+    {
+      "name": "mpv (libmpv)",
+      "version": "36abaa32 (v0.41.0-dev)",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/mpv-36abaa32-Copyright",
+        "native/third_party_licenses/texts/media_kit_mobile/mpv-36abaa32-LICENSE.LGPL"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix mpv-menu.version=36abaa32…；provenance.json mpv_commit；Mpv 二进制内嵌 'mpv v0.41.0-UNKNOWN' 与 'Configuration: ... -Dgpl=false ... -Dlibbluray=enabled'",
+      "note": "Mpv.framework，-Dgpl=false；未启用 Lua（-Dauto_features=disabled，无 -Dlua）。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "FFmpeg",
+      "version": "6.1.6",
+      "license": "LGPL-3.0-or-later",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/ffmpeg-6.1.6-LICENSE.md",
+        "native/third_party_licenses/texts/media_kit_mobile/ffmpeg-6.1.6-COPYING.LGPLv3",
+        "native/third_party_licenses/texts/media_kit_mobile/ffmpeg-6.1.6-COPYING.GPLv3",
+        "native/third_party_licenses/texts/media_kit_mobile/ffmpeg-6.1.6-COPYING.LGPLv2.1"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix ffmpeg 6.1.6（https://ffmpeg.org/releases/ffmpeg-6.1.6.tar.xz）；nix/packages/mk-pkg-ffmpeg/meson.build:50 '--enable-version3'，:59 '# --enable-gpl' 被注释；Avcodec 二进制 configure 串含 --enable-version3 --enable-mbedtls --enable-libxml2 --enable-libdav1d --enable-videotoolbox --enable-audiotoolbox --enable-zlib，无 --enable-gpl/--enable-nonfree",
+      "note": "Avcodec/Avfilter/Avformat/Avutil/Swresample/Swscale 六个 framework。full 风味（encodersgpl 风味才加 --enable-gpl，未使用）。文本用 n6.1.6 tag（与 6.1.6 发行 tarball 同版本）。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "libass",
+      "version": "0.17.1",
+      "license": "ISC",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/libass-0.17.1-COPYING"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix libass 0.17.1",
+      "note": "Ass.framework。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "HarfBuzz",
+      "version": "8.1.1",
+      "license": "MIT-Modern-Variant",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/harfbuzz-8.1.1-COPYING"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix harfbuzz 8.1.1；Harfbuzz 二进制内嵌 '8.1.1'",
+      "note": "Harfbuzz.framework（-Dcoretext=enabled）。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "FriBidi",
+      "version": "1.0.13",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/fribidi-1.0.13-COPYING"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix fribidi 1.0.13；Ass 二进制内嵌 'Shaper: FriBidi 1.0.13'",
+      "note": "Fribidi.framework。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "FreeType",
+      "version": "2.13.2",
+      "license": "FTL OR GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/freetype-2.13.2-LICENSE.TXT",
+        "native/third_party_licenses/texts/media_kit_mobile/freetype-2.13.2-FTL.TXT",
+        "native/third_party_licenses/texts/media_kit_mobile/freetype-2.13.2-GPLv2.TXT"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix freetype 2.13.2（二进制无版本串，仅配方）",
+      "note": "Freetype.framework（依赖 Png16、Harfbuzz、系统 libz）。双许可。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "libpng",
+      "version": "1.6.40",
+      "license": "libpng-2.0",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/libpng-1.6.40-LICENSE"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix libpng 1.6.40（+ wrapdb 构建补丁 1.6.40-1）；Png16 二进制内嵌 ' libpng version 1.6.40 - June 21, 2023'",
+      "note": "Png16.framework，仅 Apple 有（FreeType PNG 支持）。LICENSE 同时含 PNG Reference Library License v2 与旧版 libpng 许可。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "Mbed TLS",
+      "version": "3.4.1",
+      "license": "Apache-2.0",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/mbedtls-3.4.1-LICENSE"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix mbedtls 3.4.1；Mbedcrypto 二进制内嵌 'mbed TLS 3.4.1'",
+      "note": "Mbedtls/Mbedx509/Mbedcrypto 三个 framework。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "dav1d",
+      "version": "1.2.1",
+      "license": "BSD-2-Clause",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/dav1d-1.2.1-COPYING"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix dav1d 1.2.1（tarball sha256 4e33eb61… 本地复核一致，COPYING 取自该 tarball）；Dav1d 二进制内嵌 '1.2.1'",
+      "note": "Dav1d.framework。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "libxml2",
+      "version": "2.11.5",
+      "license": "MIT",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/libxml2-2.11.5-Copyright"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix libxml2 2.11.5；Xml2 二进制内嵌 '21105'",
+      "note": "Xml2.framework（FFmpeg DASH）。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "libbluray",
+      "version": "1.5.0",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/libbluray-1.5.0-COPYING"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix libbluray 1.5.0（sha256 f676408e…）；Bluray 二进制内嵌 'libbluray version 1.5.0'",
+      "note": "Bluray.framework；-Dbdj_jar=disabled -Dfreetype=disabled -Dlibxml2=disabled -Dembed_udfread=true。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "libudfread",
+      "version": "1.2.0",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/libudfread-1.2.0-COPYING"
+      ],
+      "source": "libbluray-1.5.0 tarball contrib/libudfread；Bluray 二进制内嵌 'libudfread 1.2.0'",
+      "note": "embed_udfread=true，编进 Bluray.framework。"
+    },
+    {
+      "name": "libplacebo",
+      "version": "7.360.1",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/libplacebo-7.360.1-LICENSE"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix libplacebo 7.360.1（tag v7.360.1 tarball）；Placebo 二进制内嵌 'v7.360.1'",
+      "note": "Placebo.framework；-Dauto_features=disabled -Ddovi=enabled（无 OpenGL/Vulkan/lcms/libdovi，二进制含 'compiled without OpenGL support' 与 'without LittleCMS 2 support'）。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "fast_float",
+      "version": "97b54ca9 (libplacebo v7.360.1 submodule)",
+      "license": "MIT OR Apache-2.0 OR BSL-1.0",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/fast_float-97b54ca9-LICENSE-MIT",
+        "native/third_party_licenses/texts/media_kit_mobile/fast_float-97b54ca9-LICENSE-APACHE",
+        "native/third_party_licenses/texts/media_kit_mobile/fast_float-97b54ca9-LICENSE-BOOST"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix fast-float 97b54ca9…（注释 'Exact submodule revision from libplacebo v7.360.1'）；nix/packages/mk-pkg-libplacebo/default.nix:15-26 拷入 3rdparty/fast_float",
+      "note": "header-only，编进 Placebo.framework。"
+    },
+    {
+      "name": "uchardet",
+      "version": "0.0.8",
+      "license": "MPL-1.1 OR GPL-2.0-or-later OR LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/media_kit_mobile/uchardet-0.0.8-COPYING"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@d186a42d620217ca953bb95e4bb46d32c98343ea packages.lock.nix uchardet 0.0.8（tarball sha256 e97a60cf… 本地复核一致）；Uchardet 二进制内嵌 nix 路径 'mk-pkg-uchardet-patched-source-0.0.8'",
+      "note": "Uchardet.framework，仅 Apple 有（mpv -Duchardet=enabled）。三选一许可；COPYING 依次含 MPL 1.1、GPL v2、LGPL v2.1 三份全文（第 473、815 行起）。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64_x86_64）"
+    },
+    {
+      "name": "ONNX Runtime",
+      "version": "1.31.0",
+      "license": "MIT",
+      "component": "pub:flutter_onnxruntime (third_party/flutter_onnxruntime)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/onnxruntime-1.31.0-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/onnxruntime-1.31.0-ThirdPartyNotices.txt"
+      ],
+      "source": "third_party/flutter_onnxruntime/windows/CMakeLists.txt:26-27,64,91 -> https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.31.0/microsoft.ml.onnxruntime.1.31.0.nupkg (sha256 7e35fdb4..., matches the CMake pin); texts = LICENSE / ThirdPartyNotices.txt at the nupkg root",
+      "note": "Bundles onnxruntime.dll + onnxruntime_providers_shared.dll (CPU core, /DELAYLOAD). ThirdPartyNotices.txt is the notice file ORT asks redistributors to ship. The onnxruntime.dll in the old reference build dir (srs-ios-kernel) is 1.22 (FileVersion 1.22.20250508.2) and does not reflect the current recipe."
+    },
+    {
+      "name": "ONNX Runtime",
+      "version": "1.23.0",
+      "license": "MIT",
+      "component": "pub:flutter_onnxruntime (third_party/flutter_onnxruntime)",
+      "platforms": [
+        "android",
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/onnxruntime-1.23.0-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/onnxruntime-1.23.0-ThirdPartyNotices.txt"
+      ],
+      "source": "android/build.gradle:50 com.microsoft.onnxruntime:onnxruntime-android:1.23.0 (APK lib/arm64-v8a/libonnxruntime.so 19242472 B == file in the cached aar); ios|macos podspec s.dependency 'onnxruntime-objc','1.23.0' -> onnxruntime-c 1.23.0 (Mac Podfile.lock); texts from raw.githubusercontent.com/microsoft/onnxruntime/v1.23.0/{LICENSE,ThirdPartyNotices.txt}; pod onnxruntime-c's own LICENSE is byte-identical",
+      "note": "Android: shared libonnxruntime.so + libonnxruntime4j_jni.so. iOS/macOS: static onnxruntime.xcframework linked into the main executable (onnxruntime symbols present in /Applications/fushi.app/Contents/MacOS/fushi). Neither the aar nor the pod ships ThirdPartyNotices.txt."
+    },
+    {
+      "name": "ONNX Runtime",
+      "version": "1.22.0",
+      "license": "MIT",
+      "component": "pub:flutter_onnxruntime (third_party/flutter_onnxruntime)",
+      "platforms": [
+        "linux"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/onnxruntime-1.22.0-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/onnxruntime-1.22.0-ThirdPartyNotices.txt"
+      ],
+      "source": "third_party/flutter_onnxruntime/linux/CMakeLists.txt:19 (USE_SYSTEM_ONNXRUNTIME ON), 71-79 (default 1.22.0), 106-108 https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-<arch>-1.22.0.tgz, 169-170 bundled",
+      "note": "Conditional: downloaded and bundled only when no system ORT is found at configure time; otherwise the system library is linked and nothing is bundled. Linux app is source-build only; no built artifact was inspected."
+    },
+    {
+      "name": "DirectML",
+      "version": "1.15.4",
+      "license": "LicenseRef-Microsoft-DirectML",
+      "component": "pub:flutter_onnxruntime (runtime GPU pack, fushi/lib/src/asr_host/gpu_runtime_pack.dart)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/DirectML-1.15.4-LICENSE.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/DirectML-1.15.4-ThirdPartyNotices.txt"
+      ],
+      "source": "gpu_runtime_pack.dart:244-250 https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg (bin/x64-win/DirectML.dll sha256 9c9e6d82...); texts = LICENSE.txt / ThirdPartyNotices.txt at the nupkg root",
+      "note": "NOT bundled by the current recipe (flutter_onnxruntime/windows/CMakeLists.txt:19-25); downloaded on demand inside the app. The DirectML.dll in the old reference build is byte-identical to this nupkg (stale recipe). Proprietary Microsoft Software License Terms: redistribution allowed in Windows/Xbox apps, data-collection clause, no reverse engineering."
+    },
+    {
+      "name": "ONNX Runtime (DirectML build)",
+      "version": "1.24.4",
+      "license": "MIT",
+      "component": "pub:flutter_onnxruntime (runtime GPU pack)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/onnxruntime-1.24.4-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/onnxruntime-1.24.4-ThirdPartyNotices.txt"
+      ],
+      "source": "gpu_runtime_pack.dart:229-234 microsoft.ml.onnxruntime.directml 1.24.4 nupkg; texts raw.githubusercontent.com/microsoft/onnxruntime/v1.24.4/",
+      "note": "Downloaded on demand, not bundled."
+    },
+    {
+      "name": "SQLite",
+      "version": "3.53.4",
+      "license": "blessing",
+      "component": "pub:sqlite3 3.5.2 (native-assets build hook)",
+      "platforms": [
+        "windows",
+        "android",
+        "macos",
+        "linux"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/SQLite-3.53.4-LICENSE.md",
+        "native/third_party_licenses/texts/pub_prebuilt/SQLite-3.53.4-sqlite.h.in-blessing.txt"
+      ],
+      "source": "sqlite3-3.5.2/lib/src/hook/asset_hashes.dart releaseTag='sqlite3-3.5.2'; default source=sqlite3 -> PrecompiledFromGithubAssets https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-3.5.2/<file> (compile/description.dart:29-31,289); CHANGELOG 3.5.1 'Upgrade SQLite to 3.53.4'; Windows Release/sqlite3.dll sha256 2bf39f2a... == asset_hashes 'sqlite3.x64.windows.dll', embeds '3.53.4' and source-id 2026-07-24 bf7c7f30...; APK libsqlite3.so and macOS sqlite3.framework (io.flutter.flutter.native-assets.sqlite3) embed the same source-id",
+      "note": "Prebuilt download; plain SQLite (not SQLCipher / sqlite3mc): the app sets no hooks.user_defines.sqlite3.source. Android .so hash differs from the asset (AGP strip) but source-id matches. Whether the hook asset ships on iOS is unverified. Texts: LICENSE.md and the sqlite.h.in header blessing (verbatim excerpt) at tag version-3.53.4."
+    },
+    {
+      "name": "SQLite",
+      "version": "3.52.0",
+      "license": "blessing",
+      "component": "pub:sqlite3_flutter_libs 0.5.42",
+      "platforms": [
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/SQLite-3.52.0-LICENSE.md",
+        "native/third_party_licenses/texts/pub_prebuilt/SQLite-3.52.0-sqlite.h.in-blessing.txt"
+      ],
+      "source": "sqlite3_flutter_libs-0.5.42/darwin/sqlite3_flutter_libs.podspec:23 s.dependency 'sqlite3','~> 3.52.0' (iOS Runner.app Frameworks/sqlite3.framework CFBundleShortVersionString 3.52.0, source-id 2026-03-06 557aeb43...); macOS via SPM CSQLite (github.com/simolus3/CSQLite) -> /Applications/fushi.app Frameworks/CSQLite.framework, same source-id; Windows/Linux CMake FetchContent https://sqlite.org/2026/sqlite-autoconf-3520000.tar.gz; Android eu.simonbinder:sqlite3-native-library:3.52.0",
+      "note": "Compiled from source. On Windows/Android/Linux the output name collides with the pub:sqlite3 hook asset; the inspected Windows Release dir and APK contain only the 3.53.4 copy. macOS ships both (sqlite3.framework=3.53.4 + CSQLite.framework=3.52.0)."
+    },
+    {
+      "name": "PDFium (pdfium-binaries)",
+      "version": "chromium/7811 (149.0.7811.0)",
+      "license": "BSD-3-Clause AND Apache-2.0 AND LicenseRef-AGG-2.3 AND MIT AND FTL AND Unicode-3.0 AND IJG AND BSD-2-Clause AND libpng-2.0 AND libtiff AND Apache-2.0 WITH LLVM-exception AND Zlib",
+      "component": "pub:pdfium_dart 0.2.5 (native-assets build hook)",
+      "platforms": [
+        "windows",
+        "android",
+        "linux",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-pdfium.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-abseil.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-agg23.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-fast_float.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-freetype.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-icu.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-lcms.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-libjpeg_turbo.ijg",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-libjpeg_turbo.md",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-libopenjpeg.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-libpng.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-libtiff.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-llvm-libc.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-simdutf.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-zlib.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-android-licenses-catapult.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-android-licenses-cpu_features.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-android-licenses-libunwind.txt"
+      ],
+      "source": "pdfium_dart-0.2.5/hook/build.dart:8 _pdfiumRelease='chromium%2F7811', :47-49 https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F7811/pdfium-<os>-<arch>.tgz; Windows Release/pdfium.dll == pdfium-win-x64.tgz bin/pdfium.dll (sha256 019b6ee6...); APK lib/arm64-v8a/libpdfium.so == pdfium-android-arm64.tgz (sha256 ef8c440d...); VERSION 149.0.7811.0; args.gn pdf_enable_v8=false pdf_enable_xfa=false",
+      "note": "Texts from the release tgz: LICENSE (pdfium-binaries build scripts, MIT, Benoit Blanchon) and licenses/* (win/linux/mac identical apart from line endings; android adds catapult/cpu_features/libunwind, Android-only). On macOS native-assets packages it as PDFium.framework (io.flutter.flutter.native-assets.pdfium, icu_7811 symbols)."
+    },
+    {
+      "name": "PDFium (pdfium-xcframework repackage)",
+      "version": "v144.0.7811.0-20260502-190206 (pdfium-binaries chromium/7811)",
+      "license": "MIT AND BSD-3-Clause AND Apache-2.0 AND LicenseRef-AGG-2.3 AND MIT AND FTL AND Unicode-3.0 AND IJG AND BSD-2-Clause AND libpng-2.0 AND libtiff AND Apache-2.0 WITH LLVM-exception AND Zlib",
+      "component": "pub:pdfium_flutter 0.2.3",
+      "platforms": [
+        "ios"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-xcframework-v144.0.7811.0-20260502-190206-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-pdfium.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-abseil.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-agg23.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-fast_float.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-freetype.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-icu.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-lcms.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-libjpeg_turbo.ijg",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-libjpeg_turbo.md",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-libopenjpeg.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-libpng.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-libtiff.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-llvm-libc.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-simdutf.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/pdfium-binaries-chromium7811-licenses-zlib.txt"
+      ],
+      "source": "pdfium_flutter-0.2.3/darwin/pdfium_flutter.podspec:3-4 https://github.com/espresso3389/pdfium-xcframework/releases/download/v144.0.7811.0-20260502-190206/PDFium-chromium-7811-20260502-190206.xcframework.zip (sha256 948d9257... verified); iOS Runner.app Frameworks/PDFium.framework com.pdfium.PDFium 144.0.7811; pdfium_dart hook/link.dart drops the hook asset on iOS",
+      "note": "The xcframework zip contains no license files; its build.sh repackages bblanchon/pdfium-binaries ios/mac tgz, so the third-party set is taken from pdfium-binaries chromium/7811 (the ios tgz licenses/ was not downloaded separately; assumed same as mac)."
+    },
+    {
+      "name": "WebRTC",
+      "version": "m150 (branch-heads/7871)",
+      "license": "BSD-3-Clause",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux",
+        "android",
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/WebRTC-m150.7871-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/WebRTC-m150.7871-PATENTS"
+      ],
+      "source": "Windows/Linux: flutter_webrtc third_party/libwebrtc_version.ini binary_version=libwebrtc.m150.7871.02 -> github.com/webrtc-sdk/libwebrtc/releases/download/libwebrtc.m150.7871.02/libwebrtc-{win,linux}-x64-release.zip (Windows Release/libwebrtc.dll sha256 dfdbcc96... == zip); Android: android/build.gradle:78 io.github.webrtc-sdk:android:150.7871.01 (APK libjingle_peerconnection_so.so == aar, 12287312 B); iOS/macOS: podspec 'WebRTC-SDK','150.7871.01'; texts webrtc.googlesource.com/src/+/refs/branch-heads/7871/{LICENSE,PATENTS} (?format=TEXT, head c6c0780f); WebRTC-SDK xcframework's own LICENSE is identical",
+      "note": "The win/linux zips carry only the webrtc-sdk wrapper MIT LICENSE (no WebRTC LICENSE/PATENTS, no third-party notices); the Android aar carries no license file (pom says BSD-3-Clause). PATENTS is Google's additional patent grant. Third parties listed separately below."
+    },
+    {
+      "name": "libwebrtc (webrtc-sdk C++ wrapper)",
+      "version": "libwebrtc.m150.7871.02",
+      "license": "MIT",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/libwebrtc-webrtc-sdk-m150.7871.02-LICENSE"
+      ],
+      "source": "libwebrtc-win-x64-release.zip libwebrtc-x64-release/LICENSE (Copyright (c) 2019 湖北捷智云技术有限公司)",
+      "note": ""
+    },
+    {
+      "name": "BoringSSL (in WebRTC)",
+      "version": "f91f1447",
+      "license": "OpenSSL AND ISC AND MIT AND BSD-3-Clause AND Apache-2.0",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux",
+        "android",
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/BoringSSL-f91f1447-LICENSE"
+      ],
+      "source": "revision pinned by webrtc.googlesource.com/src/+/refs/branch-heads/7871/DEPS; text fetched at that revision via googlesource ?format=TEXT",
+      "note": "third_party/boringssl path strings in the Windows dll and Android so; iOS/macOS assumed from the same WebRTC build"
+    },
+    {
+      "name": "Opus (in WebRTC)",
+      "version": "webrtc m150 third_party@7c927329",
+      "license": "BSD-3-Clause",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux",
+        "android",
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/Opus-webrtc-m150-COPYING"
+      ],
+      "source": "revision pinned by webrtc.googlesource.com/src/+/refs/branch-heads/7871/DEPS; text fetched at that revision via googlesource ?format=TEXT",
+      "note": "third_party/opus path strings"
+    },
+    {
+      "name": "Abseil (in WebRTC)",
+      "version": "webrtc m150 third_party@7c927329",
+      "license": "Apache-2.0",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux",
+        "android",
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/abseil-cpp-webrtc-m150-LICENSE"
+      ],
+      "source": "revision pinned by webrtc.googlesource.com/src/+/refs/branch-heads/7871/DEPS; text fetched at that revision via googlesource ?format=TEXT",
+      "note": "third_party/abseil-cpp path strings"
+    },
+    {
+      "name": "libvpx (in WebRTC)",
+      "version": "v1.16.0-132-g31af37b1b",
+      "license": "BSD-3-Clause",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux",
+        "android",
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/libvpx-v1.16.0-132-g31af37b1b-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/libvpx-v1.16.0-132-g31af37b1b-PATENTS"
+      ],
+      "source": "revision pinned by webrtc.googlesource.com/src/+/refs/branch-heads/7871/DEPS; text fetched at that revision via googlesource ?format=TEXT",
+      "note": "embeds 'WebM Project VP8/VP9 Encoder v1.16.0-132-g31af37b1b' (checked on Windows/Android/macOS/iOS), matches DEPS libvpx@31af37b1"
+    },
+    {
+      "name": "libaom (in WebRTC)",
+      "version": "3.14.1-41-gc213343c8d",
+      "license": "BSD-2-Clause",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux",
+        "android",
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/libaom-3.14.1-41-gc213343c8d-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/libaom-3.14.1-41-gc213343c8d-PATENTS"
+      ],
+      "source": "revision pinned by webrtc.googlesource.com/src/+/refs/branch-heads/7871/DEPS; text fetched at that revision via googlesource ?format=TEXT",
+      "note": "embeds 'AOMedia Project AV1 Encoder 3.14.1-41-gc213343c8d'; PATENTS = AOMedia Patent License 1.0"
+    },
+    {
+      "name": "dav1d (in WebRTC)",
+      "version": "1718ff9a",
+      "license": "BSD-2-Clause",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux",
+        "android",
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/dav1d-1718ff9a-COPYING"
+      ],
+      "source": "revision pinned by webrtc.googlesource.com/src/+/refs/branch-heads/7871/DEPS; text fetched at that revision via googlesource ?format=TEXT",
+      "note": "dav1d strings present; revision from DEPS"
+    },
+    {
+      "name": "libyuv (in WebRTC)",
+      "version": "de63bd90",
+      "license": "BSD-3-Clause",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux",
+        "android",
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/libyuv-de63bd90-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/libyuv-de63bd90-PATENTS"
+      ],
+      "source": "revision pinned by webrtc.googlesource.com/src/+/refs/branch-heads/7871/DEPS; text fetched at that revision via googlesource ?format=TEXT",
+      "note": "libyuv strings present; revision from DEPS"
+    },
+    {
+      "name": "libsrtp (in WebRTC)",
+      "version": "cd5d177b",
+      "license": "BSD-3-Clause",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux",
+        "android",
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/libsrtp-cd5d177b-LICENSE"
+      ],
+      "source": "revision pinned by webrtc.googlesource.com/src/+/refs/branch-heads/7871/DEPS; text fetched at that revision via googlesource ?format=TEXT",
+      "note": "srtp strings present; revision from DEPS"
+    },
+    {
+      "name": "libc++/libc++abi (in WebRTC)",
+      "version": "5abc7f83",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux",
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/libcxx-webrtc-m150-5abc7f83-LICENSE.TXT"
+      ],
+      "source": "revision pinned by webrtc.googlesource.com/src/+/refs/branch-heads/7871/DEPS; text fetched at that revision via googlesource ?format=TEXT",
+      "note": "Android so has third_party/libc++abi path strings; Chromium builds statically link their own libc++ by default; Windows/Linux not individually verified"
+    },
+    {
+      "name": "pffft / rnnoise / crc32c (in WebRTC)",
+      "version": "webrtc m150 DEPS",
+      "license": "LicenseRef-pffft AND BSD-3-Clause AND BSD-3-Clause",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux",
+        "android",
+        "ios",
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/pffft-webrtc-m150-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/rnnoise-webrtc-m150-COPYING",
+        "native/third_party_licenses/texts/pub_prebuilt/crc32c-d3d60ac6-LICENSE"
+      ],
+      "source": "revision pinned by webrtc.googlesource.com/src/+/refs/branch-heads/7871/DEPS; text fetched at that revision via googlesource ?format=TEXT",
+      "note": "NOT verified in the binaries (no recognisable strings); inferred only because WebRTC audio processing / dcSCTP depend on them by default. pffft is an FFTPACK-derived BSD-style text; SPDX mapping needs review"
+    },
+    {
+      "name": "FFmpeg (Chromium fork, in libwebrtc)",
+      "version": "chromium/third_party/ffmpeg@ad41607c",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/FFmpeg-chromium-ad41607c-LICENSE.md",
+        "native/third_party_licenses/texts/pub_prebuilt/FFmpeg-chromium-ad41607c-COPYING.LGPLv2.1"
+      ],
+      "source": "libwebrtc.dll has 35 third_party/ffmpeg path strings plus 'Update your FFmpeg version' message; libwebrtc.so (linux-x64) has 62; revision from webrtc DEPS:521-522",
+      "note": "Statically linked into libwebrtc.dll/.so (LGPL static linking, see open questions). No ffmpeg strings in the Android/iOS/macOS WebRTC binaries."
+    },
+    {
+      "name": "OpenH264 (in libwebrtc)",
+      "version": "652bdb77",
+      "license": "BSD-2-Clause",
+      "component": "pub:flutter_webrtc 1.6.2+hotfix.3",
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/openh264-652bdb77-LICENSE"
+      ],
+      "source": "libwebrtc.dll contains 'OpenH264 version is' (12 OpenH264 strings), linux .so 30; revision from webrtc DEPS:649",
+      "note": "Compiled from source into the binary, not Cisco's prebuilt binary, so Cisco's H.264 patent coverage does not apply (see open questions)."
+    },
+    {
+      "name": "ANGLE (libEGL.dll / libGLESv2.dll)",
+      "version": "2.1.18844 git 2693b03eba82 (chromium M104)",
+      "license": "BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video (third_party, vendored/ANGLE.7z)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/ANGLE-2693b03eba82-LICENSE"
+      ],
+      "source": "third_party/media_kit_libs_windows_video/windows/CMakeLists.txt:159-161 ANGLE.7z from https://github.com/alexmercerind/flutter-windows-ANGLE-OpenGL-ES/releases/download/v1.0.1/ANGLE.7z (md5 e866f13e...); DLL FileVersion '2.1.18844 git hash: 2693b03eba82'; LICENSE of google/angle 2693b03eba82a424a19febaacaab4115a45b7682 (2022-07-09 '[M104] ...')",
+      "note": "Neither ANGLE.7z nor the upstream repo carries a license file (the repo has no LICENSE). DLLs are byte-identical to the Release dir."
+    },
+    {
+      "name": "SwiftShader (vk_swiftshader.dll)",
+      "version": "5.0.0 (inferred ee0d0b41 from ANGLE DEPS)",
+      "license": "Apache-2.0",
+      "component": "pub:media_kit_libs_windows_video (third_party, vendored/ANGLE.7z)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/SwiftShader-ee0d0b41-LICENSE.txt"
+      ],
+      "source": "vk_swiftshader.dll ProductName 'SwiftShader Vulkan Dynamic Link Library' FileVersion 5.0.0, contains ..\\..\\third_party\\swiftshader paths; revision from ANGLE@2693b03e DEPS:508 SwiftShader@ee0d0b41a62640e0c37d1611f84e7533072c7256",
+      "note": "Revision inferred from ANGLE DEPS (no git hash in the binary). SwiftShader includes LLVM/Subzero, marl etc. whose third_party licenses were not fetched separately."
+    },
+    {
+      "name": "Vulkan-Loader (vulkan-1.dll)",
+      "version": "1.0.1111.2222.Dev Build (inferred c3601d4d)",
+      "license": "Apache-2.0",
+      "component": "pub:media_kit_libs_windows_video (third_party, vendored/ANGLE.7z)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/Vulkan-Loader-c3601d4d-LICENSE.txt"
+      ],
+      "source": "vulkan-1.dll ProductName 'Vulkan Runtime' (C) 2015-2022; revision from ANGLE DEPS:527 vulkan-deps@00594ab9 -> vulkan-deps DEPS:27 vulkan_loader_revision c3601d4d914212a22e0ebed5329847b9ce89596f",
+      "note": "Revision inferred."
+    },
+    {
+      "name": "zlib (zlib.dll)",
+      "version": "1.2.12 (chromium third_party/zlib@64bbf988)",
+      "license": "Zlib",
+      "component": "pub:media_kit_libs_windows_video (third_party, vendored/ANGLE.7z)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/zlib-1.2.12-chromium-64bbf988-LICENSE"
+      ],
+      "source": "zlib.dll embeds ' deflate 1.2.12 Copyright 1995-2022 Jean-loup Gailly and Mark Adler'; LICENSE of ANGLE DEPS:542-543 third_party/zlib@64bbf988543996eb8df9a86877b32917187eba8f",
+      "note": ""
+    },
+    {
+      "name": "D3DCompiler (d3dcompiler_47.dll)",
+      "version": "10.0.20348.1",
+      "license": "LicenseRef-Microsoft-WindowsSDK-Redist",
+      "component": "pub:media_kit_libs_windows_video (third_party, vendored/ANGLE.7z)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/d3dcompiler_47-WindowsSDK-10.0.22621.0-sdk_license.txt"
+      ],
+      "source": "d3dcompiler_47.dll FileVersion 10.0.20348.1 (WinBuild.160101.0800), Microsoft Corporation; text from local C:/Program Files (x86)/Windows Kits/10/Licenses/10.0.22621.0/sdk_license.rtf ('Distributable Code ... REDIST.TXT Files'; list at http://go.microsoft.com/fwlink/?LinkId=524842; the local SDK also has Redist/D3D/x64/d3dcompiler_47.dll)",
+      "note": "Version mismatch: the DLL is from Windows SDK 10.0.20348 but the text is the local SDK 10.0.22621.0 sdk_license.rtf; the 20348 terms were not obtained. Proprietary redistributable. License text is the Windows SDK 10.0.22621 sdk_license.rtf converted to plain text (striprtf); the DLL itself is from SDK 10.0.20348."
+    },
+    {
+      "name": "WebView2 Loader (WebView2Loader.dll)",
+      "version": "1.0.2792.45",
+      "license": "BSD-3-Clause",
+      "component": "pub:flutter_inappwebview_windows (packages/flutter_inappwebview_windows fork)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/Microsoft.Web.WebView2-1.0.2792.45-LICENSE.txt",
+        "native/third_party_licenses/texts/pub_prebuilt/Microsoft.Web.WebView2-1.0.2792.45-NOTICE.txt"
+      ],
+      "source": "packages/flutter_inappwebview_windows/windows/CMakeLists.txt:8 WEBVIEW_VERSION 1.0.2792.45, :34 nuget install Microsoft.Web.WebView2, :222 links the .targets (which copies WebView2Loader.dll); nupkg build/native/x64/WebView2Loader.dll sha256 9468470d... == Release; texts = nupkg root LICENSE.txt / NOTICE.txt",
+      "note": "nuspec <license type=file>LICENSE.txt, BSD-3-Clause form (Copyright Microsoft Corporation). The Edge WebView2 Runtime itself comes from the OS."
+    },
+    {
+      "name": "Windows Implementation Library (WIL)",
+      "version": "1.0.231216.1",
+      "license": "MIT",
+      "component": "pub:flutter_inappwebview_windows",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/Microsoft.Windows.ImplementationLibrary-1.0.231216.1-LICENSE"
+      ],
+      "source": "flutter_inappwebview_windows/windows/CMakeLists.txt:7,33 nuget Microsoft.Windows.ImplementationLibrary 1.0.231216.1; text = nupkg root LICENSE",
+      "note": "Header-only, compiled into flutter_inappwebview_windows_plugin.dll (not a prebuilt, but absent from LicenseRegistry). The nupkg also has a ThirdPartyNotices.txt (libc++ etc. for WIL's own tooling), not saved."
+    },
+    {
+      "name": "nlohmann/json",
+      "version": "3.11.2 (windows) / 3.11.3 (linux)",
+      "license": "MIT",
+      "component": "pub:flutter_inappwebview_windows / packages/flutter_inappwebview_linux",
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/nlohmann_json-3.11.2-LICENSE.MIT",
+        "native/third_party_licenses/texts/pub_prebuilt/nlohmann_json-3.11.3-LICENSE.MIT"
+      ],
+      "source": "flutter_inappwebview_windows/windows/CMakeLists.txt:9,35 nuget nlohmann.json 3.11.2; flutter_inappwebview_linux/linux/CMakeLists.txt:18,188 json.tar.xz v3.11.3; texts raw.githubusercontent.com/nlohmann/json/v3.11.{2,3}/LICENSE.MIT",
+      "note": "Header-only, compiled into the plugin binaries."
+    },
+    {
+      "name": "libbluray BD-J jars (libbluray-j2se / libbluray-awt-j2se)",
+      "version": "1.5.0",
+      "license": "LGPL-2.1-or-later",
+      "component": "pub:media_kit_libs_windows_video (third_party/media_kit_libs_windows_video/bdj)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/libbluray-j2se-1.5.0-COPYING"
+      ],
+      "source": "bdj/manifest.json libbluray 1.5.0, sourceUrl https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz; windows/CMakeLists.txt:221-222 both jars in bundled_libraries, :233 bdj/ installed to bluray/bdj; text = COPYING from bdj/source/libbluray-1.5.0.tar.xz (== bdj/COPYING.libbluray)",
+      "note": "Bundled twice (next to the exe and under bluray/bdj/). bdj-runtime-probe.jar is Fushi's own probe (bdj/BdjRuntimeProbe.java). Android media_kit_libs_android_video/android/native/bluray-menu-v1/*.jar belong to the libmpv/libbluray subtask and were not checked."
+    },
+    {
+      "name": "ASM (bundled in libbluray-j2se jar)",
+      "version": "libbluray 1.5.0 contrib/asm",
+      "license": "BSD-3-Clause",
+      "component": "pub:media_kit_libs_windows_video (bdj)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/asm-libbluray-1.5.0-contrib-LICENSE.txt"
+      ],
+      "source": "unzip -l libbluray-j2se-1.5.0.jar lists 23 org/objectweb/asm classes; text = libbluray-1.5.0.tar.xz contrib/asm/LICENSE.txt (Copyright (c) 2000-2011 INRIA, France Telecom)",
+      "note": ""
+    },
+    {
+      "name": "Eclipse Temurin JRE (BD-J private runtime)",
+      "version": "8u504-b01",
+      "license": "GPL-2.0-only WITH Classpath-exception-2.0",
+      "component": "pub:media_kit_libs_windows_video (bdj/bdj_runtime.ps1, on-demand install)",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/OpenJDK-jdk8u504-b01-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/OpenJDK-jdk8u504-b01-ASSEMBLY_EXCEPTION",
+        "native/third_party_licenses/texts/pub_prebuilt/OpenJDK-jdk8u504-b01-THIRD_PARTY_README"
+      ],
+      "source": "bdj/manifest.json runtime.url https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u504-b01/OpenJDK8U-jre_x64_windows_hotspot_8u504b01.zip; texts from raw.githubusercontent.com/openjdk/jdk8u/jdk8u504-b01/ source tag, NOT the files inside the Temurin zip",
+      "note": "Not bundled: downloaded only when the user installs the BD-J component, to %LOCALAPPDATA%/Fushi/components/bdj; bdj/README.md says the whole distribution incl. LICENSE/ASSEMBLY_EXCEPTION/THIRD_PARTY_README is preserved."
+    },
+    {
+      "name": "QuickJS",
+      "version": "2021-03-27",
+      "license": "MIT",
+      "component": "fushi/android/app/build.gradle (Maven, not a pub package): com.github.zhanghai.quickjs-java:quickjs-android:547f5b1597",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/QuickJS-quickjs-java-547f5b15-quickjs.c-header.txt"
+      ],
+      "source": "app/build.gradle:353; aar jni/arm64-v8a/libquickjs.so 988408 B == APK; quickjs-java@547f5b1597e7 quickjs/common/native/quickjs/VERSION = 2021-03-27; text = verbatim license header of quickjs.c",
+      "note": "Mihon extension host runtime. QuickJS has no standalone LICENSE file; the license is in the source headers."
+    },
+    {
+      "name": "quickjs-java",
+      "version": "547f5b1597",
+      "license": "Apache-2.0",
+      "component": "fushi/android/app/build.gradle (Maven, not a pub package)",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/quickjs-java-547f5b15-LICENSE"
+      ],
+      "source": "raw.githubusercontent.com/zhanghai/quickjs-java/547f5b1597e7f18984b1bdbee1ca5984b2175fa4/LICENSE",
+      "note": "JNI glue inside libquickjs.so."
+    },
+    {
+      "name": "zstd-kmp",
+      "version": "0.4.0",
+      "license": "Apache-2.0",
+      "component": "fushi/android/app/build.gradle (Maven, not a pub package): transitive of com.squareup.okhttp3:okhttp-zstd:5.3.2",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/zstd-kmp-0.4.0-LICENSE"
+      ],
+      "source": "okhttp-zstd 5.3.2 pom/module requires zstd-kmp-okio 0.4.0; APK lib/*/libzstd-kmp.so; text raw.githubusercontent.com/square/zstd-kmp/parent-0.4.0/LICENSE",
+      "note": ""
+    },
+    {
+      "name": "Zstandard (in libzstd-kmp.so)",
+      "version": "1.5.8-dev (facebook/zstd@1dbc2e09)",
+      "license": "BSD-3-Clause OR GPL-2.0-only",
+      "component": "fushi/android (via zstd-kmp 0.4.0)",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/zstd-1dbc2e09-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/zstd-1dbc2e09-COPYING"
+      ],
+      "source": "zstd-kmp@parent-0.4.0 submodule zstd -> 1dbc2e09084e843f6c0dcc2d0791610015c50979 (2025-06-25 dev commit); libzstd-kmp.so embeds '1.5.8'",
+      "note": "A separate copy from manifest's fushidicts zstd 1.6.0."
+    },
+    {
+      "name": "LLVM libc++ (libc++_shared.so, Android NDK)",
+      "version": "NDK r27 (binary marker r27-beta1)",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "component": "fushi/android (app/build.gradle:206 -DANDROID_STL=c++_shared, :248 pickFirst lib/**/libc++_shared.so)",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/libcxx-llvmorg-18.1.8-LICENSE.TXT"
+      ],
+      "source": "APK lib/arm64-v8a/libc++_shared.so 1253544 B, strings contain 'r27-beta1'; text = llvm-project llvmorg-18.1.8 libcxx/LICENSE.TXT (LLVM 18 line used by NDK r27; version approximate)",
+      "note": "NDK runtime, not a pub package; pickFirst takes one copy from several native builds, exact origin not located."
+    }
+  ]
+}

@@ -1,7 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 
@@ -117,7 +118,7 @@ List<String> buildFfmpegPcmEnvelopeArgs({
     '-hide_banner',
     '-nostats',
     '-i',
-    inputPath
+    inputPath,
   ];
   if (mapIndex != null) {
     args.addAll(<String>['-map', '0:a:$mapIndex']);
@@ -194,27 +195,29 @@ String escapeFfmpegFilterOptionValue(String value) {
 /// ```
 /// 按出现顺序收集 `RMS_level` 值（已随时间单调排序，与窗口次序一致）。`-inf`（纯静音
 /// 块的 dB）映射为一个很低的有限值（[silenceDb]），避免污染后续 min/max 归一化。
-/// 无匹配行返回空列表。
+/// 无匹配行返回空列表。匹配规则等价于正则
+/// `lavfi\.astats\.Overall\.RMS_level\s*=\s*(-?\d+(?:\.\d+)?|-?inf)`（`\s` 含 Unicode 空白）。
+///
+/// 解析在 Rust（native/fushi_compute `ffc_signal_parse_rms_log`，整段文本一次调用）。
+/// 库不可用抛 `FushiComputeUnavailableError`。
 List<double> parseAudioRmsEnvelopeFromFfmpegLog(
   String ffmpegStderr, {
   double silenceDb = -120.0,
 }) {
   if (ffmpegStderr.isEmpty) return const <double>[];
-  final List<double> values = <double>[];
-  final RegExp pattern = RegExp(
-      r'lavfi\.astats\.Overall\.RMS_level\s*=\s*(-?\d+(?:\.\d+)?|-?inf)');
-  for (final RegExpMatch m in pattern.allMatches(ffmpegStderr)) {
-    final String raw = m.group(1)!;
-    if (raw == '-inf' || raw == 'inf') {
-      values.add(silenceDb);
-      continue;
-    }
-    final double? v = double.tryParse(raw);
-    if (v == null) continue;
-    values.add(v.isFinite ? v : silenceDb);
-  }
-  return values;
+  return parseAudioRmsEnvelopeFromFfmpegLogBytes(
+    utf8.encode(ffmpegStderr),
+    silenceDb: silenceDb,
+  );
 }
+
+/// [parseAudioRmsEnvelopeFromFfmpegLog] 的字节版：直接吃 `file=` 写出的逐帧文件内容
+/// （UTF-8），省掉解码成 Dart 字符串再走正则的一趟。不是合法 UTF-8 抛 [FormatException]
+/// （与 `File.readAsStringSync` 同）。
+List<double> parseAudioRmsEnvelopeFromFfmpegLogBytes(
+  Uint8List utf8Bytes, {
+  double silenceDb = -120.0,
+}) => ffcParseRmsLog(utf8Bytes, silenceDb: silenceDb);
 
 /// **纯函数**：按容器字节数放大单趟探测的超时（与字幕抽取 `subtitleExtractTimeoutForBytes`
 /// 同范式，BUG-104）。逐帧 astats 要把整条音轨读穿，读时随容器体积增长；固定超时对大
@@ -249,13 +252,15 @@ Future<List<double>> extractAudioEnergyEnvelope({
   final Duration timeout = audioEnergyProbeTimeoutForBytes(sizeBytes);
   // 性能截断：limitMs 换算成 ffmpeg `-t` 秒数（向上取整，保证覆盖到上界那一格）；
   // <=0 或 null 表示抽整轨。与 [buildCueActivityEnvelope] 的 durationMs 上界须取同值。
-  final int? limitSeconds =
-      (limitMs != null && limitMs > 0) ? (limitMs + 999) ~/ 1000 : null;
+  final int? limitSeconds = (limitMs != null && limitMs > 0)
+      ? (limitMs + 999) ~/ 1000
+      : null;
   Directory? tempDir;
   try {
     tempDir = Directory.systemTemp.createTempSync('fushi_audio_energy_');
-    final File metadataFile =
-        File('${tempDir.path}${Platform.pathSeparator}rms.txt');
+    final File metadataFile = File(
+      '${tempDir.path}${Platform.pathSeparator}rms.txt',
+    );
     final FfmpegRunResult result = await resolveFfmpegBackend().run(
       buildFfmpegPcmEnvelopeArgs(
         inputPath: videoPath,
@@ -268,12 +273,16 @@ Future<List<double>> extractAudioEnergyEnvelope({
       timeout,
     );
     if (result.returnCode == null) {
-      debugPrint('[audio-energy] timed out for "$videoPath" '
-          '(size=$sizeBytes bytes) — auto-align skipped this time');
+      debugPrint(
+        '[audio-energy] timed out for "$videoPath" '
+        '(size=$sizeBytes bytes) — auto-align skipped this time',
+      );
       return const <double>[];
     }
     List<double> envelope = metadataFile.existsSync()
-        ? parseAudioRmsEnvelopeFromFfmpegLog(metadataFile.readAsStringSync())
+        ? parseAudioRmsEnvelopeFromFfmpegLogBytes(
+            metadataFile.readAsBytesSync(),
+          )
         : const <double>[];
     if (envelope.isEmpty) {
       envelope = parseAudioRmsEnvelopeFromFfmpegLog(result.output);
@@ -281,8 +290,10 @@ Future<List<double>> extractAudioEnergyEnvelope({
     if (envelope.isEmpty) {
       // 文件与 stderr 都没有逐帧 RMS 行：ffmpeg 失败（看 failureSummary）或输入无音轨。
       // 上层据空包络置信门控降级，不静默。
-      debugPrint('[audio-energy] no per-frame RMS for "$videoPath": '
-          '${result.failureSummary}; auto-align will degrade');
+      debugPrint(
+        '[audio-energy] no per-frame RMS for "$videoPath": '
+        '${result.failureSummary}; auto-align will degrade',
+      );
     }
     return envelope;
   } on ProcessException catch (e) {
@@ -298,34 +309,14 @@ Future<List<double>> extractAudioEnergyEnvelope({
   }
 }
 
-/// **纯函数**：把音频 RMS 电平（分贝 dBFS，≤0，越大越响）转成线性振幅（0..1）。
-///
-/// 波形可视化的关键契约：**必须在线性振幅域画，不能直接线性拉伸分贝**。分贝是对数量纲——
-/// 房间底噪（约 -60~-80dB）与语音峰值（约 -15~-30dB）在分贝轴上只差几十，直接线性归一化后
-/// 底噪仍有 ~40% 柱高，语音和静音糊成一条均匀带，看不出句子边界。成熟波形工具
-/// （Audacity / Aegisub）画的都是线性 PCM 振幅：`amp = 10^(dB/20)`——静音塌到接近 0、语音
-/// 尖峰凸出，句间静音一眼可辨。[silenceDb]=-120dB → 1e-6 ≈ 0。dBFS ≤ 0 → 结果 ∈ (0, 1]。
-double dbToLinearAmplitude(double db) => math.pow(10.0, db / 20.0).toDouble();
-
-/// **纯函数**：取 [values] 的第 [percentile] 分位值（0..1，就地排序副本，不改入参）。
-///
-/// 波形归一化的「上限」用高分位（而非绝对最大值）：单个响亮瞬态（音效 / 配乐重音 / 爆音）
-/// 不会把整段语音压成贴地一条线。分位落点四舍五入到最近样本，空列表返回 0。
-double _percentileValue(List<double> values, double percentile) {
-  if (values.isEmpty) return 0.0;
-  final double p = percentile.clamp(0.0, 1.0).toDouble();
-  final List<double> sorted = List<double>.of(values)..sort();
-  final int idx = ((sorted.length - 1) * p).round();
-  return sorted[idx];
-}
-
 /// **纯函数**：把逐帧 RMS 能量包络（[extractAudioEnergyEnvelope] 返回的 dB 序列，越大越响，
 /// 静音块为很低的有限值 [silenceDb]）降采样到 [targetBuckets] 个桶，并**归一化到 0..1**，
 /// 供波形 painter 直接按桶宽绘制（TODO-1051 阶段A / TODO-1244，字幕对轴波形可视化）。
 ///
-/// **分贝 → 线性振幅**（[dbToLinearAmplitude]）：先把每帧 dB 转成线性振幅再做峰值 / 归一化。
-/// 这是「波形密度 / 对比正确」的根因修——直接线性拉伸 dB 会让底噪几乎和语音一样高、糊成一条带
-/// （见 [dbToLinearAmplitude] 文档）；转到线性域后静音塌到接近 0、语音尖峰凸出，句子边界可辨。
+/// **分贝 → 线性振幅**（`amp = 10^(dB/20)`）：先把每帧 dB 转成线性振幅再做峰值 / 归一化。
+/// 这是「波形密度 / 对比正确」的根因修——分贝是对数量纲，房间底噪（约 -60~-80dB）与语音峰值
+/// （约 -15~-30dB）在分贝轴上只差几十，直接线性拉伸 dB 会让底噪几乎和语音一样高、糊成一条带；
+/// 成熟波形工具（Audacity / Aegisub）画的都是线性振幅，静音塌到接近 0、语音尖峰凸出，句子边界可辨。
 ///
 /// **桶内取峰值（max），不取桶内 RMS**：入参 [frames] 本身已是逐帧 RMS 包络（见
 /// [kSubtitleWaveformWindowMs]），再对每桶做二次 RMS 会二次平滑、淹没瞬态；波形可视化要让
@@ -333,9 +324,9 @@ double _percentileValue(List<double> values, double percentile) {
 ///
 /// **归一化**：以「桶内最小振幅」为地基、「第 [normalizeCeilingPercentile] 分位振幅」为上限做
 /// 线性拉伸 `(v - min) / (ceil - min)` 并 clamp 到 0..1。用高分位而非绝对峰值当上限，避免单个
-/// 响亮瞬态把整段语音压成贴地一线（[_percentileValue]，成熟波形工具同款离群点抑制）。全同值
-/// （含单一静音，`ceil == min`）时不除零、返回全 0。桶数很少（单测的 2~3 桶）时分位落到最大值，
-/// 退化为经典 min/max 归一化。
+/// 响亮瞬态把整段语音压成贴地一线（成熟波形工具同款离群点抑制；分位落点四舍五入到最近样本）。
+/// 全同值（含单一静音，`ceil == min`）时不除零、返回全 0。桶数很少（单测的 2~3 桶）时分位落到
+/// 最大值，退化为经典 min/max 归一化。
 ///
 /// **退化输入（一律 sane，不抛、不越界）**：
 /// - [frames] 空 或 [targetBuckets] <= 0 → 返回空列表 `[]`。
@@ -343,45 +334,18 @@ double _percentileValue(List<double> values, double percentile) {
 /// - 否则输出长度恰为 [targetBuckets]，第 i 桶覆盖 `frames[i*n/B .. (i+1)*n/B)`（末桶收尾到 n），
 ///   每桶至少含 1 帧，无空桶、无越界读。
 ///
-/// 幂等：无内部状态、无 IO，同输入恒定同输出。
+/// 幂等：无内部状态、无 IO，同输入恒定同输出。计算在 Rust（native/fushi_compute）。
+/// 同一条包络要按不同宽度反复降采样时（波形面板缩放 / 改宽）用 [FfcEnergyEnvelope]：
+/// dB → 振幅只在构造时算一遍，本函数每次调用都要重算。
 List<double> downsampleEnergyEnvelope(
   List<double> frames,
   int targetBuckets, {
   double normalizeCeilingPercentile = 0.99,
 }) {
-  final int n = frames.length;
-  if (n == 0 || targetBuckets <= 0) return <double>[];
-
-  // 桶数 >= 帧数：不上采样，每帧一桶（桶数收敛到帧数）。桶数 < 帧数：恰好 targetBuckets 桶。
-  final int buckets = targetBuckets >= n ? n : targetBuckets;
-
-  // 第一趟：每桶取区间**线性振幅**峰值（先 dB→线性，再取 max，保留瞬态）。用 i*n/B 均分
-  // 边界，末桶自然收尾到 n，且因 buckets <= n，每桶起点严格递增、至少含 1 帧，无空桶。
-  final List<double> peaks = List<double>.filled(buckets, 0.0);
-  double minPeak = double.infinity;
-  for (int b = 0; b < buckets; b++) {
-    final int start = (b * n) ~/ buckets;
-    final int end =
-        ((b + 1) * n) ~/ buckets; // exclusive；因 buckets<=n 必有 end>start
-    double peak = dbToLinearAmplitude(frames[start]);
-    for (int i = start + 1; i < end; i++) {
-      final double amp = dbToLinearAmplitude(frames[i]);
-      if (amp > peak) peak = amp;
-    }
-    peaks[b] = peak;
-    if (peak < minPeak) minPeak = peak;
-  }
-
-  // 第二趟：以最小振幅为地基、高分位振幅为上限线性归一化到 0..1（离群瞬态不压垮语音）。
-  // 全同值（含单一静音）时 ceil == min，不除零，返回全 0。
-  final double ceiling = _percentileValue(peaks, normalizeCeilingPercentile);
-  final double range = ceiling - minPeak;
-  if (range <= 0) return List<double>.filled(buckets, 0.0);
-  for (int b = 0; b < buckets; b++) {
-    final double v = (peaks[b] - minPeak) / range;
-    peaks[b] = v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
-  }
-  return peaks;
+  if (frames.isEmpty || targetBuckets <= 0) return <double>[];
+  return FfcEnergyEnvelope.fromDb(
+    frames,
+  ).downsample(targetBuckets, percentile: normalizeCeilingPercentile);
 }
 
 int _fileSizeOrZero(String path) {

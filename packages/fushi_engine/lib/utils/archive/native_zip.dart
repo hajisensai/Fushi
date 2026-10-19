@@ -10,6 +10,8 @@
 ///   才落盘，几百 MB 的条目在移动端直接 OOM。
 /// - `ZipEncoder` / `ZipFileEncoder`（level ≠ STORE）用纯 Dart `Deflate`，并且
 ///   先把整个文件 `toUint8List()` 再压缩。
+/// - `ZipFileEncoder.addFile(..., STORE)` 虽然真流式，但 CRC-32 由 archive 自己的
+///   纯 Dart `getCrc32` 逐字节算；[addFileStored] 换成 Rust 的 [ffcCrc32]。
 ///
 /// 本文件的函数只消费条目的原始压缩窗口 [ArchiveFile.rawContent]，内存峰值是
 /// 一个读块（解压）或压缩后的体积（压缩）。
@@ -20,6 +22,7 @@ import 'dart:io' as io show ZLibCodec, ZLibOption;
 import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:path/path.dart' as p;
 
 /// 读 / 写的分块大小：每块的堆峰值。
@@ -197,14 +200,14 @@ ArchiveFile nativeDeflatedArchiveFile(
     bytes.length,
     InputStream(compressed),
     ArchiveFile.DEFLATE,
-  )..crc32 = getCrc32(bytes);
+  )..crc32 = ffcCrc32(bytes);
 }
 
 /// 把磁盘文件 [file] 以 [name] 加进 [encoder]：原生 deflate 分块读文件、增量算
 /// CRC，内存峰值 = 压缩后体积 + 一个读块（archive 的 GZIP 档要整文件入内存再压）。
 ///
 /// 已是压缩格式（[kAlreadyCompressedExtensions]）或压缩后不变小的文件走 STORE，
-/// STORE 由 archive 真流式写出、不整文件入内存。
+/// STORE 走 [addFileStored]（真流式、不整文件入内存）。
 void addFileNativeDeflate(
   ZipFileEncoder encoder,
   File file,
@@ -214,7 +217,7 @@ void addFileNativeDeflate(
   final int size = file.lengthSync();
   if (size == 0 ||
       kAlreadyCompressedExtensions.contains(p.extension(name).toLowerCase())) {
-    _addStoredFile(encoder, file, name);
+    addFileStored(encoder, file, name);
     return;
   }
 
@@ -229,7 +232,7 @@ void addFileNativeDeflate(
     while (true) {
       final Uint8List chunk = raf.readSync(kNativeZipChunkBytes);
       if (chunk.isEmpty) break;
-      crc = getCrc32(chunk, crc);
+      crc = ffcCrc32(chunk, crc);
       deflater.add(chunk);
     }
   } finally {
@@ -238,7 +241,7 @@ void addFileNativeDeflate(
   deflater.close();
 
   if (compressed.length >= size) {
-    _addStoredFile(encoder, file, name);
+    addFileStored(encoder, file, name);
     return;
   }
   final ArchiveFile entry =
@@ -254,18 +257,41 @@ void addFileNativeDeflate(
   encoder.addArchiveFile(entry);
 }
 
-void _addStoredFile(ZipFileEncoder encoder, File file, String name) {
+/// [ZipFileEncoder.addFile]`(file, name, ZipFileEncoder.STORE)` 的替代：先按
+/// [kNativeZipChunkBytes] 分块读一遍文件、用 Rust 的 [ffcCrc32] 增量算 CRC，再交给
+/// archive 真流式拷贝进 zip（条目已带 CRC，archive 不会再用纯 Dart 重算）。
+/// 内存峰值 = 一个读块，不整文件入内存；条目元数据（mtime / mode）与 archive 原写法一致。
+void addFileStored(ZipFileEncoder encoder, File file, String name) {
+  final int crc = _fileCrc32(file);
   final InputFileStream stream = InputFileStream(file.path);
   try {
     final ArchiveFile entry =
         ArchiveFile.stream(name, file.lengthSync(), stream)
           ..compress = false
+          ..crc32 = crc
           ..lastModTime = file.lastModifiedSync().millisecondsSinceEpoch ~/ 1000
           ..mode = file.statSync().mode;
     encoder.addArchiveFile(entry);
   } finally {
     stream.closeSync();
   }
+}
+
+/// 整个文件的 CRC-32（Rust），分块读、内存峰值一个读块。
+int _fileCrc32(File file) {
+  int crc = 0;
+  final RandomAccessFile raf = file.openSync();
+  try {
+    final Uint8List chunk = Uint8List(kNativeZipChunkBytes);
+    while (true) {
+      final int n = raf.readIntoSync(chunk);
+      if (n == 0) break;
+      crc = ffcCrc32(Uint8List.sublistView(chunk, 0, n), crc);
+    }
+  } finally {
+    raf.closeSync();
+  }
+  return crc;
 }
 
 /// [ZipFileEncoder.addDirectory] 的原生 zlib 版：同样的条目集合与命名（含目录

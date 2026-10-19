@@ -152,8 +152,21 @@ void main() {
       expect(rule, contains('html::after'));
       expect(rule, contains('pointer-events: none'));
       expect(rule, contains('linear-gradient(to right'));
-      expect(rule, contains('width: 56px'));
+      // 阴影宽 = 栏间隙（默认 22px），只落在两页之间的空白里、不压正文。
+      expect(rule, contains('width: 22px'));
+      expect(rule, contains(' - 11.0px)'));
       expect(rule, contains('var(--page-width, 100vw)'));
+    });
+
+    test('书本姿态加宽栏间隙时阴影跟着加宽', () async {
+      final ReaderSettings s = await _settings(pageColumns: 2, crease: true);
+      final String css = ReaderContentStyles.css(
+        settings: s,
+        columnGapOverridePx: 47,
+      );
+      final String rule = css.substring(css.indexOf(_creaseMarker));
+      expect(rule, contains('width: 47px'));
+      expect(rule, contains(' - 23.5px)'));
     });
 
     test('书本姿态的自动 2 栏同样出折痕', () async {
@@ -177,7 +190,7 @@ void main() {
       final String css = ReaderContentStyles.css(settings: s);
       final String rule = css.substring(css.indexOf(_creaseMarker));
       expect(rule, contains('linear-gradient(to bottom'));
-      expect(rule, contains('height: 56px'));
+      expect(rule, contains('height: 22px'));
     });
 
     test('单栏 / 三栏 / 滚动 / VN 不发（没有「两页之间」）', () async {

@@ -21,6 +21,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
@@ -308,13 +309,16 @@ String _buildCompactJson(
   required String? lastModified,
   required int checkedAt,
 }) {
-  final Object? decoded = jsonDecode(body);
-  if (decoded is! List) {
+  final List<AnimeIdentityEntry> entries;
+  try {
+    entries = animeIdentityEntriesFromJsonUtf8(utf8.encode(body));
+  } on FfcFribbInvalidJson catch (error) {
+    throw FormatException('Fribb anime list is not valid JSON: $error');
+  } on FfcFribbNotAList {
     throw const FormatException('Fribb anime list must be a JSON list');
   }
   final Map<int, List<List<int>>> byMal = <int, List<List<int>>>{};
-  for (final AnimeIdentityEntry entry
-      in animeIdentityEntriesFromRows(decoded)) {
+  for (final AnimeIdentityEntry entry in entries) {
     final int? tmdb = entry.tmdbId;
     if (tmdb == null) continue;
     for (final int mal in entry.malIds) {

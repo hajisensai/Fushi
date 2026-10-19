@@ -1021,6 +1021,25 @@ void main() {
       await startSystemBall(tester);
       await fromNative(tester, 'systemBallClosedByUser', <String, Object?>{});
       expect(prefs.floatingBallSystem, isFalse);
+      expect(prefs.floatingBallInApp, isTrue, reason: '应用内球按「仅应用内」恢复');
+    });
+
+    testWidgets('「不自动恢复」：在应用外球上点关闭 → 应用内外两个显示开关一起关', (
+      WidgetTester tester,
+    ) async {
+      mockNative(tester);
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        ),
+      );
+      await prefs.setFloatingBallAutoRestore(FloatingBallAutoRestore.off);
+      await startSystemBall(tester);
+      expect(prefs.floatingBallInApp, isTrue);
+      await fromNative(tester, 'systemBallClosedByUser', <String, Object?>{});
+      expect(prefs.floatingBallSystem, isFalse);
+      expect(prefs.floatingBallInApp, isFalse, reason: '回到 Fushi 不应再看到同一颗球');
     });
 
     testWidgets('自动恢复「应用内外」：关闭不动开关，回到 Fushi 时重新起球', (

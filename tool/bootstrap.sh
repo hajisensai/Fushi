@@ -19,6 +19,23 @@ echo "==> flutter pub get (fushi/)"
 echo "==> Applying pub-cache patches"
 bash ci/apply-patches.sh
 
+# native/fushi_compute（Rust 计算内核）是 app 与 flutter test 的硬依赖：CMake / Xcode /
+# Gradle 缺库都直接构建失败。按主机平台编一次；没有 cargo 就失败。
+# 显式跳过：FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1（之后手动跑对应的 build_* 脚本）。
+if [ -n "${FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE:-}" ]; then
+  echo "WARNING: skipped native/fushi_compute (required); run native/fushi_compute/build_<platform> before flutter build/test" >&2
+else
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "error: cargo not found. native/fushi_compute (Rust compute kernel) is a required native dependency;" >&2
+    echo "       install Rust (https://rustup.rs) and re-run, or set FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1 to skip explicitly." >&2
+    exit 1
+  fi
+  case "$(uname -s)" in
+    Darwin) echo "==> native/fushi_compute (macOS arm64 dylib)"; bash native/fushi_compute/build_macos_dylib.sh ;;
+    *) echo "==> native/fushi_compute (Linux x64 .so)"; bash native/fushi_compute/build_linux_so.sh ;;
+  esac
+fi
+
 echo ""
 echo "Bootstrap complete. Build with, e.g.:"
 echo "  cd fushi && flutter build apk --release --split-per-abi"

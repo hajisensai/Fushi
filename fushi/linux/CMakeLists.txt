@@ -138,6 +138,19 @@ if(EXISTS "${FUSHI_FSRS_SO}")
     COMPONENT Runtime)
 endif()
 
+# 计算内核（哈希 / 图像 / 文本，**硬依赖**）：native/fushi_compute/build_linux_so.sh 产出
+# prebuilt/linux-x64/libfushi_compute.so 随包进 bundle/lib/（Dart 侧按裸名经 $ORIGIN/lib 定位）。
+# 与上面几个 copy-if-present 不同：没有 Dart 回退实现，缺库时在配置期直接失败。
+set(FUSHI_COMPUTE_SO
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so")
+if(NOT EXISTS "${FUSHI_COMPUTE_SO}")
+  message(FATAL_ERROR
+    "fushi_compute is a required native dependency, but ${FUSHI_COMPUTE_SO} is missing. "
+    "Build it first: bash native/fushi_compute/build_linux_so.sh (needs Rust/cargo).")
+endif()
+install(FILES "${FUSHI_COMPUTE_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
 # 内置 libtorrent 引擎（copy-if-present）：native/fushi_torrent/build_linux_so.sh 产出
 # prebuilt/linux-x64/libfushi_torrent_ffi.so（vcpkg 静态链 libtorrent/boost/openssl +
 # -static-libstdc++，只剩 glibc 动态），与无头服务端随包的是同一份。存在则随包进

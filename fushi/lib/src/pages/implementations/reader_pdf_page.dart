@@ -115,6 +115,10 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// 无文本层（扫描图 PDF）只提示一次。
   bool _noTextLayerNotified = false;
 
+  /// 顶栏 + 翻页胶囊是否显示。点页面外背景、或页内空白 / 图片（没命中字）时翻转，
+  /// 点到字照旧查词——与小说阅读器「点空白唤 / 收 chrome」同一手感。
+  bool _chromeVisible = true;
+
   /// PDF 自带目录（outline），懒加载一次；空列表 = 已加载但该 PDF 无目录。
   List<PdfOutlineNode>? _outline;
 
@@ -330,8 +334,11 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// [documentPosition] 是 pdfrx 的**文档坐标**（整册布局空间，未缩放）。流程：
   /// 文档点 → 命中页 → 页内 PDF 坐标 → 最近字符索引 → 从该字符起取子串当查询词 →
   /// 字符矩形换算成屏幕矩形当弹窗锚点。
-  Future<void> _lookupAtDocumentPosition(Offset documentPosition) async {
-    if (!_pdfController.isReady) return;
+  ///
+  /// 返回是否命中了字（发起了查词）；false = 点在空白 / 图片 / 无文本层页上，
+  /// 调用方据此切换 chrome 显隐。
+  Future<bool> _lookupAtDocumentPosition(Offset documentPosition) async {
+    if (!_pdfController.isReady) return false;
     final PdfPageLayout layout = _pdfController.layout;
     final List<PdfPage> pages = _pdfController.pages;
 
@@ -341,10 +348,10 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
       final PdfPage page = pages[i];
       final PdfPageText? text = await _pageText(i, page);
-      if (!mounted) return;
+      if (!mounted) return false;
       if (text == null || text.charRects.isEmpty) {
         _notifyNoTextLayer();
-        return;
+        return false;
       }
 
       // 文档坐标 → 页内 PDF 坐标（原点左下、Y 轴向上、单位 point）。
@@ -353,7 +360,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
           .toPdfPoint(page: page, scaledPageSize: pageRect.size);
 
       final int? charIndex = _closestCharIndex(text.charRects, pt);
-      if (charIndex == null) return; // 点在空白/图片上：不查词，也不关栈。
+      if (charIndex == null) return false; // 点在空白/图片上：不查词，也不关栈。
 
       await _lookupFromChar(
         page: page,
@@ -361,9 +368,25 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         text: text,
         charIndex: charIndex,
       );
-      return;
+      return true;
     }
+    return false;
   }
+
+  /// 正文单击：命中字就查词，否则翻转 chrome 显隐。
+  Future<void> _onDocumentTap(Offset documentPosition) async {
+    final bool lookedUp = await _lookupAtDocumentPosition(documentPosition);
+    if (lookedUp || !mounted) return;
+    _toggleChrome();
+  }
+
+  void _toggleChrome() {
+    setState(() => _chromeVisible = !_chromeVisible);
+  }
+
+  /// chrome 实际是否显示：文档未就绪（加载中 / 文件丢失）时没有可点的正文去唤回
+  /// 顶栏，而返回键是 iOS 上唯一出口（`canPop: false` 关了侧滑），此时恒显示。
+  bool get _chromeShown => _chromeVisible || !_pdfController.isReady;
 
   /// 在 [charRects] 里找命中（或容差内最近）的字符索引；超出容差返回 null。
   static int? _closestCharIndex(List<PdfRect> charRects, PdfPoint pt) {
@@ -779,38 +802,42 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         child: AnimatedBuilder(
           animation: _pdfController,
           builder: (BuildContext context, Widget? child) {
-            return FushiFloatingTopBar(
-              leading: <FushiToolbarItem>[
-                FushiToolbarItem(
-                  key: const ValueKey<String>('pdf_back'),
-                  icon: FushiIcons.back,
-                  label: t.back,
-                  onPressed: () => unawaited(Navigator.of(context).maybePop()),
-                ),
-              ],
-              title: title,
-              subtitle: _pageIndicatorText() ?? '',
-              titleTooltip: t.pdf_outline,
-              onTitleTap: () => unawaited(_showOutline()),
-              actions: <List<FushiToolbarItem>>[
-                <FushiToolbarItem>[
+            return FushiChromeReveal(
+              visible: _chromeShown,
+              child: FushiFloatingTopBar(
+                leading: <FushiToolbarItem>[
                   FushiToolbarItem(
-                    icon: FushiIcons.bookmarkAdd,
-                    label: t.pdf_bookmarks,
-                    onPressed: () => unawaited(_addBookmarkAtCurrentPage()),
-                  ),
-                  FushiToolbarItem(
-                    icon: FushiIcons.bookmark,
-                    label: t.pdf_bookmarks,
-                    onPressed: () => unawaited(_showBookmarks()),
-                  ),
-                  FushiToolbarItem(
-                    icon: FushiIcons.listView,
-                    label: t.pdf_outline,
-                    onPressed: () => unawaited(_showOutline()),
+                    key: const ValueKey<String>('pdf_back'),
+                    icon: FushiIcons.back,
+                    label: t.back,
+                    onPressed: () =>
+                        unawaited(Navigator.of(context).maybePop()),
                   ),
                 ],
-              ],
+                title: title,
+                subtitle: _pageIndicatorText() ?? '',
+                titleTooltip: t.pdf_outline,
+                onTitleTap: () => unawaited(_showOutline()),
+                actions: <List<FushiToolbarItem>>[
+                  <FushiToolbarItem>[
+                    FushiToolbarItem(
+                      icon: FushiIcons.bookmarkAdd,
+                      label: t.pdf_bookmarks,
+                      onPressed: () => unawaited(_addBookmarkAtCurrentPage()),
+                    ),
+                    FushiToolbarItem(
+                      icon: FushiIcons.bookmark,
+                      label: t.pdf_bookmarks,
+                      onPressed: () => unawaited(_showBookmarks()),
+                    ),
+                    FushiToolbarItem(
+                      icon: FushiIcons.listView,
+                      label: t.pdf_outline,
+                      onPressed: () => unawaited(_showOutline()),
+                    ),
+                  ],
+                ],
+              ),
             );
           },
         ),
@@ -821,8 +848,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// 拖动页码滑块时的预览页（1 起）；松手才真正跳页，null = 未在拖动。
   double? _scrubPage;
 
-  /// 底部悬浮翻页胶囊：上一页 / M3E 页码滑块 / 下一页。文档未就绪或只有一页时
-  /// 收起（弹簧下沉）。
+  /// 底部悬浮翻页胶囊：上一页 / M3E 页码滑块 / 下一页。文档未就绪、只有一页或
+  /// 用户点空白收起 chrome 时收起（弹簧下沉）。
   Widget _buildFloatingPager() {
     final EdgeInsets viewPadding = MediaQuery.viewPaddingOf(context);
     return Positioned(
@@ -837,7 +864,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
             final bool ready = _pdfController.isReady;
             final int pageCount = ready ? _pdfController.pageCount : 0;
             final int page = (ready ? _pdfController.pageNumber : null) ?? 1;
-            final bool show = ready && pageCount > 1;
+            final bool show = ready && pageCount > 1 && _chromeVisible;
             return FushiChromeReveal(
               visible: show,
               from: AxisDirection.down,
@@ -933,15 +960,19 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
             backgroundColor: const Color(0xFF3A3A3A),
             onViewerReady: (_, __) => _onViewerReady(),
             onPageChanged: _onPageChanged,
-            // 单击正文即查词；返回 true 吃掉 tap，阻止 pdfrx 默认清选区行为。
+            // 单击正文即查词（没命中字则切换 chrome）；点页面外背景切换 chrome。
+            // 返回 true 吃掉 tap，阻止 pdfrx 默认清选区行为。
             onGeneralTap: (
               BuildContext context,
               PdfViewerController controller,
               PdfViewerGeneralTapHandlerDetails details,
             ) {
               if (details.type != PdfViewerGeneralTapType.tap) return false;
-              if (details.tapOn == PdfViewerPart.background) return false;
-              unawaited(_lookupAtDocumentPosition(details.documentPosition));
+              if (details.tapOn == PdfViewerPart.background) {
+                _toggleChrome();
+                return false;
+              }
+              unawaited(_onDocumentTap(details.documentPosition));
               return true;
             },
           ),

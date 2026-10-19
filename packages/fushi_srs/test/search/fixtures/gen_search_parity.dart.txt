@@ -1,0 +1,429 @@
+// 一次性：用**旧的 Dart 实现**（search_matcher.dart / search_text.dart / style_dedup.dart，
+// 提交 efb95b0aef 时的版本）生成 Anki 搜索与查重规范形的固定向量，写到
+// test/search/fixtures/search_parity_vectors.json（入库前 gzip 成 .json.gz）。搬进 Rust 之后旧实现已删，本脚本只作留档。
+//
+//   （当时放在 tool/gen_search_parity.dart，`dart tool/gen_search_parity.dart` 运行；旧实现删除后
+//   编不过，改成 .txt 留档。）
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:fushi_srs/src/search/anki_search.dart';
+import 'package:fushi_srs/src/style_dedup.dart';
+
+class Card implements SrsSearchSubject {
+  Card(this.m);
+  final Map<String, Object?> m;
+  @override
+  String get deckName => m['deck']! as String;
+  @override
+  String get noteTypeName => m['noteType']! as String;
+  @override
+  Map<String, String> get fields =>
+      (m['fields']! as Map<String, Object?>).cast<String, String>();
+  @override
+  List<String> get tags => (m['tags']! as List<Object?>).cast<String>();
+  int get _s => m['state']! as int;
+  @override
+  bool get isNew => _s & 1 != 0;
+  @override
+  bool get isLearn => _s & 2 != 0;
+  @override
+  bool get isReview => _s & 4 != 0;
+  @override
+  bool get isDue => _s & 8 != 0;
+  @override
+  bool get isSuspended => _s & 16 != 0;
+  @override
+  bool get isBuried => _s & 32 != 0;
+  @override
+  int get noteId => m['noteId']! as int;
+  @override
+  int get cardId => m['cardId']! as int;
+  @override
+  int get addedDayIndex => m['added']! as int;
+  @override
+  int get todayDayIndex => m['today']! as int;
+  @override
+  int get flag => m['flag']! as int;
+  @override
+  int get cardOrdinal => m['ord']! as int;
+  @override
+  String get templateName => m['template']! as String;
+  @override
+  int get intervalDays => m['ivl']! as int;
+  @override
+  int? get dueInDays => m['due'] as int?;
+  @override
+  int get reps => m['reps']! as int;
+  @override
+  int get lapses => m['lapses']! as int;
+  @override
+  double? get stability => (m['s'] as num?)?.toDouble();
+  @override
+  double? get difficulty => (m['d'] as num?)?.toDouble();
+  @override
+  int get editedDayIndex => m['edited']! as int;
+}
+
+/// 旧求值器，唯一改动：未限定字段的 `re:` 用 0x1f 连接字段（rslib 对 `n.flds` 求值）。
+bool anki(SrsSearchNode node, SrsSearchSubject s) => switch (node) {
+  SrsSearchRegex(:final RegExp pattern) => pattern.hasMatch(
+    s.fields.values.join('\x1f'),
+  ),
+  SrsSearchAnd(:final List<SrsSearchNode> children) => children.every(
+    (SrsSearchNode c) => anki(c, s),
+  ),
+  SrsSearchOr(:final List<SrsSearchNode> children) => children.any(
+    (SrsSearchNode c) => anki(c, s),
+  ),
+  SrsSearchNot(:final SrsSearchNode child) => !anki(child, s),
+  _ => matchesAnkiSearch(node, s),
+};
+
+final Random rng = Random(20261018);
+T pick<T>(List<T> l) => l[rng.nextInt(l.length)];
+
+// 有意排除：孤立代理（Dart 字符串能装、UTF-8 装不下）、`<ſtyle>` 一类 Unicode 大小写折叠
+// 才能命中的标签名（Anki 的去 HTML 正则是 Unicode 模式）。这两类在单测里逐条写明。
+const List<String> atoms = <String>[
+  'a', 'B', 'c', 'D', 'e', 'x', 'Y', 'z', 's', 'S', 'k', 'K', '0', '7', //
+  ' ', ' ', '-', ':', '_', '*', '"', '(', ')', '\\', '.', ',', '/', '|',
+  'あ', 'い', 'た', 'べ', 'る', 'ア', 'ル', '食', '語', '日本', '。',
+  '１', '２', 'ſ', 'K', 'ß', 'ẞ', 'İ', 'ı', 'Σ', 'σ', 'ς', 'é', 'é',
+  'Ä', 'ä', '😀', '\x1f', '\n', '\r', '\t', ' ', ' ', '\u0085',
+  '﻿', '　', '&amp;', '&lt;', '&#x41;', '&#65;', '&nbsp;',
+  '&#160;', '&zz;', '&#0;', '&#1114112;', '<b>', '</b>', '<br>', '<i>',
+  '<span class="hl">', '</span>', '<!-- note -->', '<style>p{}</style>',
+  '<script>x()</script>', '<img src="a.jpg">', '<', '>', '<<', 'a<b',
+];
+
+String text(int maxAtoms) =>
+    List<String>.generate(rng.nextInt(maxAtoms + 1), (_) => pick(atoms)).join();
+
+String bigCss() => List<String>.generate(
+  30 + rng.nextInt(40),
+  (int i) => '.c$i{color:#${i}0${i};}',
+).join('\n');
+
+String smallCss() => List<String>.generate(
+  48 + rng.nextInt(8),
+  (int i) => '.c$i{x:$i}',
+).join();
+
+/// 查重规范形的输入：上面那些原子之外，再拼进够大 / 不够大的样式块、脚本块与畸形组合。
+String dupeInput() {
+  final List<String> parts = <String>[];
+  final int n = 1 + rng.nextInt(6);
+  for (int i = 0; i < n; i++) {
+    parts.add(switch (rng.nextInt(12)) {
+      0 => '<style>${bigCss()}</style>',
+      1 => '<style>${bigCss()}</STYLE>${text(3)}</style>',
+      2 => '<style>small</style>',
+      3 => '<script>${text(2)}<style>${bigCss()}</style></script>',
+      4 => '<script >${text(2)}</script\n>',
+      5 => '<scriptx><style>${bigCss()}</style></script>',
+      6 => '<style>${bigCss()}<style>${text(2)}</style>',
+      7 => '<!-- <style>${bigCss()}</style> -->',
+      8 => '<style>${bigCss()}',
+      9 => '<STYLE>${bigCss()}</style>',
+      _ => text(8),
+    });
+  }
+  return parts.join(pick(<String>['', ' ', '\n', '<br>']));
+}
+
+const List<String> fieldNames = <String>[
+  'Expression', 'Reading', 'Front', 'Back', 'Meaning', 'Glossary', //
+  'Ünï', '日本語', 'a_b', 'ſense',
+];
+const List<String> decks = <String>[
+  'Default', 'Japanese', 'Japanese::Mining', 'japanese::core::N5', //
+  '日本語::文法', 'A_B::c*d', 'Straße', 'STRASSE',
+];
+const List<String> tagPool = <String>[
+  'n5', 'verb::ichidan', 'Verb::godan', 'fushi', 'ſtag', '日本', 'a_b', //
+  'leech', 'marked', 'Ä',
+];
+const List<String> types = <String>['Lapis', 'Basic', 'Basic (and reversed)', 'Cloze', 'ſpecial'];
+const List<String> templates = <String>['Card 1', 'Card 2', 'Recognition', 'カード'];
+
+List<Map<String, Object?>> makeCards(int notes) {
+  final List<Map<String, Object?>> out = <Map<String, Object?>>[];
+  int cid = 1000;
+  for (int n = 0; n < notes; n++) {
+    final List<String> names = (List<String>.of(fieldNames)..shuffle(rng))
+        .take(2 + rng.nextInt(4))
+        .toList();
+    final Map<String, String> fields = <String, String>{
+      for (final String f in names)
+        // 卡片字段只放一个刚过去重门槛的样式块：KB 级字段上 `*x` 一类通配让旧 Dart 回溯引擎
+        // 每条查询耗时上百秒（平方级；Rust 线性），向量生成跑不完。
+        f: rng.nextInt(10) == 0
+            ? '${text(4)}<style>${smallCss()}</style>${text(4)}'
+            : text(12),
+    };
+    final List<String> tags = <String>[
+      for (final String t in tagPool)
+        if (rng.nextInt(5) == 0) t,
+    ];
+    final String type = pick(types);
+    final int noteId = 1700000000000 + rng.nextInt(1 << 30);
+    for (int c = 0, k = 1 + rng.nextInt(2); c < k; c++) {
+      final bool hasMemory = rng.nextBool();
+      out.add(<String, Object?>{
+        'noteKey': n,
+        'deck': pick(decks),
+        'noteType': type,
+        'fields': fields,
+        'tags': tags,
+        'state': rng.nextInt(64),
+        'noteId': noteId,
+        'cardId': noteId + 1 + cid++,
+        'added': 90 + rng.nextInt(12),
+        'edited': 90 + rng.nextInt(12),
+        'today': 100,
+        'flag': rng.nextInt(8),
+        'ord': 1 + rng.nextInt(3),
+        'template': pick(templates),
+        'ivl': rng.nextInt(40),
+        'due': rng.nextInt(4) == 0 ? null : rng.nextInt(30) - 10,
+        'reps': rng.nextInt(20),
+        'lapses': rng.nextInt(5),
+        's': hasMemory ? (rng.nextInt(400) / 4) : null,
+        'd': hasMemory ? 1 + rng.nextInt(91) / 10 : null,
+      });
+    }
+  }
+  return out;
+}
+
+/// 通配文本：从现成字段里截一段（保证有命中），随机插入通配、改大小写、转义。
+String globFrom(List<Map<String, Object?>> cards) {
+  final Map<String, Object?> c = pick(cards);
+  final List<String> values = (c['fields']! as Map<String, Object?>).values
+      .cast<String>()
+      .where((String v) => v.isNotEmpty)
+      .toList();
+  String base = values.isEmpty ? 'a' : pick(values);
+  final List<int> runes = base.runes.toList();
+  if (runes.length > 6) {
+    final int start = rng.nextInt(runes.length - 3);
+    base = String.fromCharCodes(
+      runes.sublist(start, min(runes.length, start + 1 + rng.nextInt(6))),
+    );
+  }
+  final StringBuffer b = StringBuffer();
+  for (final int r in base.runes) {
+    String ch = String.fromCharCode(r);
+    switch (rng.nextInt(14)) {
+      case 0:
+        ch = ch.toUpperCase();
+      case 1:
+        ch = ch.toLowerCase();
+      case 2:
+        // 最多一个内部 `*`：多个 `.*` 让 Dart 的回溯引擎在 KB 级字段上耗时数十秒（Rust 线性）。
+        if (!b.toString().contains('*')) ch = '*';
+      case 3:
+        ch = '_';
+    }
+    if (ch == r'\') {
+      ch = pick(<String>[r'\\', r'\*', r'\_']);
+    }
+    b.write(ch);
+  }
+  if (rng.nextBool() && !b.toString().contains('*')) b.write('*');
+  return b.toString();
+}
+
+/// 引号内文本：只有 `"` 需要转义（解析器的其它转义在通配阶段保留）。
+String quoted(String s) => '"${s.replaceAll('"', r'\"')}"';
+
+/// 只用 Dart RegExp 与 Rust regex 语义相同的构造：字面量、显式字符类、量词、分组、选择、锚点。
+/// `.` `\w` `\d` `\s` `\b`、环视、反向引用这些已知有差异的构造在单测里逐条写明。
+String regex(int depth) {
+  String literal() {
+    final String ch = pick(<String>[
+      'a', 'B', 'e', 's', 'S', 'k', 'K', 'x', '0', '7', 'あ', 'べ', 'る', '食', //
+      '語', 'ſ', 'K', 'ß', 'ẞ', 'Σ', 'ς', 'ä', 'Ä', '😀', ' ', ':', '<', '>', '&',
+      ';', r'\*', r'\.', r'\(', r'\)', r'\[', r'\?', r'\+', r'\|', r'\\', r'\^', r'\$',
+    ]);
+    return ch;
+  }
+
+  String atom() => switch (rng.nextInt(depth > 2 ? 6 : 9)) {
+    0 || 1 || 2 => literal(),
+    3 => '[${pick(<String>['abc', 'a-z', 'A-Z', 'ぁ-ん', 'sk', '^a', '^ ', 'ä-ö', 'σ'])}]',
+    4 => '^',
+    5 => r'$',
+    6 => '(${regex(depth + 1)})',
+    7 => '(?:${regex(depth + 1)}|${regex(depth + 1)})',
+    _ => '(${regex(depth + 1)})',
+  };
+  final StringBuffer b = StringBuffer();
+  for (int i = 0, n = 1 + rng.nextInt(4); i < n; i++) {
+    final String a = atom();
+    b.write(a);
+    // 分组不加量词：嵌套量词让 Dart 的回溯引擎指数爆炸（Rust regex 线性，没有这个问题）。
+    if (a != '^' && a != r'$' && !a.startsWith('(') && rng.nextInt(3) == 0) {
+      b.write(pick(<String>['?', '*', '+', '{1,3}', '*?', '+?', '{2}']));
+    }
+  }
+  return b.toString();
+}
+
+String leaf(List<Map<String, Object?>> cards) {
+  switch (rng.nextInt(19)) {
+    case 0 || 1 || 2:
+      return quoted(globFrom(cards));
+    case 3 || 4:
+      final String f = rng.nextBool()
+          ? pick(fieldNames)
+          : '${pick(fieldNames).substring(0, 2).toLowerCase()}*';
+      final String g = globFrom(cards);
+      return quoted('$f:${rng.nextBool() && !g.contains('*') ? '*' : ''}$g');
+    case 5:
+      return quoted('deck:${pick(<String>[...decks, 'japanese*', 'jap_nese', '*', '日本語'])}');
+    case 6:
+      return quoted('note:${pick(<String>[...types, 'basic*', 'LAPIS', 'ſpecial', 'SPECIAL'])}');
+    case 7:
+      return quoted('tag:${pick(<String>[...tagPool, 'verb', 'VERB::*', 'n_', 'none', '*', 'STAG', 'ä'])}');
+    case 8:
+      return 'is:${pick(<String>['new', 'learn', 'review', 'due', 'suspended', 'buried'])}';
+    case 9:
+      return 'flag:${rng.nextInt(8)}';
+    case 10:
+      return rng.nextBool()
+          ? 'card:${rng.nextInt(4)}'
+          : quoted('card:${pick(<String>[...templates, 'card*', 'CARD 1'])}');
+    case 11:
+      return 'prop:${pick(<String>['ivl', 'due', 'reps', 'lapses'])}'
+          '${pick(<String>['=', '!=', '<', '<=', '>', '>='])}${rng.nextInt(30) - 5}';
+    case 12:
+      return 'prop:${pick(<String>['s', 'd'])}'
+          '${pick(<String>['=', '!=', '<', '<=', '>', '>='])}'
+          '${pick(<String>['0', '0.5', '1', '10', '25.25', '0.45', '1.0', '99.75'])}';
+    case 13:
+      return '${pick(<String>['added', 'edited'])}:${1 + rng.nextInt(12)}';
+    case 14:
+      final Map<String, Object?> c = pick(cards);
+      final int nid = c['noteId']! as int;
+      return rng.nextBool()
+          ? 'nid:$nid,${nid + 1}'
+          : 'cid:${c['cardId']}';
+    case 15 || 16:
+      final String r = regex(0);
+      return quoted('re:${rng.nextInt(4) == 0 ? '(?-i)' : ''}$r');
+    case 17:
+      return quoted('${pick(fieldNames)}:re:${regex(0)}');
+    default:
+      return quoted(globFrom(cards));
+  }
+}
+
+String query(List<Map<String, Object?>> cards, int depth) {
+  final int n = 1 + rng.nextInt(depth == 0 ? 3 : 2);
+  final List<String> parts = <String>[];
+  for (int i = 0; i < n; i++) {
+    String t = depth < 2 && rng.nextInt(5) == 0
+        ? '(${query(cards, depth + 1)})'
+        : leaf(cards);
+    if (rng.nextInt(5) == 0) t = '-$t';
+    if (i > 0) parts.add(pick(<String>['', '', 'AND', 'OR', 'or']));
+    parts.add(t);
+  }
+  return parts.where((String s) => s.isNotEmpty).join(' ');
+}
+
+String bits(List<bool> v) {
+  final StringBuffer b = StringBuffer();
+  for (int i = 0; i < v.length; i += 4) {
+    int x = 0;
+    for (int k = 0; k < 4 && i + k < v.length; k++) {
+      if (v[i + k]) x |= 1 << k;
+    }
+    b.write(x.toRadixString(16));
+  }
+  return b.toString();
+}
+
+void main() {
+  stderr.writeln('start');
+  final List<Map<String, Object?>> cards = makeCards(160);
+  stderr.writeln('cards ${cards.length}');
+  final List<Card> subjects = <Card>[for (final Map<String, Object?> m in cards) Card(m)];
+  final List<String> realistic = <String>[
+    '"deck:Japanese::Mining" "Expression:食べる"',
+    '"note:Lapis" "Expression:食べる"',
+    '"Expression:食べる"',
+    '"Expression:*食*"',
+    '"Meaning:*to eat*"',
+    'deck:Japanese is:due -is:suspended',
+    'tag:verb* OR tag:n5',
+    'Expression:_* -Reading:',
+    '"Glossary:*<b>*"',
+    'deck:* note:* tag:*',
+  ];
+  final List<Map<String, Object?>> vectors = <Map<String, Object?>>[];
+  final List<Map<String, Object?>> regexRejected = <Map<String, Object?>>[];
+  int joinDiffs = 0;
+  final Set<String> seen = <String>{};
+  final List<String> queries = <String>[
+    ...realistic,
+    for (int i = 0; i < 6000; i++) query(cards, 0),
+  ];
+  int done = 0;
+  for (final String q in queries) {
+    if (++done % 500 == 0) stderr.writeln('$done / ${queries.length}');
+    final Stopwatch sw = Stopwatch()..start();
+    if (Platform.environment['GEN_TRACE'] != null) stderr.writeln('Q $q');
+    if (!seen.add(q)) continue;
+    final SrsSearchNode node;
+    try {
+      node = parseAnkiSearch(q);
+    } on SrsSearchUnsupported catch (e) {
+      if (e.reason.startsWith('invalid regular expression')) {
+        regexRejected.add(<String, Object?>{'q': q, 'reason': e.reason});
+      }
+      continue;
+    }
+    final List<bool> expected = <bool>[for (final Card c in subjects) anki(node, c)];
+    final List<bool> legacy = <bool>[
+      for (final Card c in subjects) matchesAnkiSearch(node, c),
+    ];
+    final bool joinDiff = bits(expected) != bits(legacy);
+    if (joinDiff) joinDiffs++;
+    if (sw.elapsedMilliseconds > 2000) stderr.writeln('slow ${sw.elapsedMilliseconds} ms: $q');
+    vectors.add(<String, Object?>{
+      'q': q,
+      'hits': bits(expected),
+      if (joinDiff) 'legacyHits': bits(legacy),
+    });
+  }
+  final List<Map<String, Object?>> dupes = <Map<String, Object?>>[];
+  for (int i = 0; i < 1500; i++) {
+    final String input = dupeInput();
+    dupes.add(<String, Object?>{
+      'in': input,
+      'out': ankiSearchStripHtml(srsDedupStyles(input).html).trim(),
+    });
+  }
+  final File out = File('test/search/fixtures/search_parity_vectors.json');
+  out.parent.createSync(recursive: true);
+  out.writeAsStringSync(
+    '${const JsonEncoder.withIndent(null).convert(<String, Object?>{
+      'generatedBy': 'test/search/fixtures/gen_search_parity.dart.txt @ efb95b0aef (legacy Dart matcher)',
+      'cards': cards,
+      'queries': vectors,
+      'regexRejectedByDart': regexRejected,
+      'dupeNorm': dupes,
+    })}\n',
+  );
+  final int nonEmpty = vectors
+      .where((Map<String, Object?> v) => (v['hits']! as String).contains(RegExp('[1-9a-f]')))
+      .length;
+  stdout.writeln(
+    'cards=${cards.length} queries=${vectors.length} (with hits: $nonEmpty, '
+    're: join diffs: $joinDiffs) regexRejected=${regexRejected.length} dupes=${dupes.length}',
+  );
+}

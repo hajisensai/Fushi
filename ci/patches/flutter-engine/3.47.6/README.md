@@ -1,7 +1,7 @@
 # Flutter 3.47.6 Windows 引擎补丁：合成器内 HDR 输出
 
 让 HDR 视频画在 Flutter **自己的**交换链里（R16G16B16A16_FLOAT + scRGB），
-不再需要把 libmpv 的 gpu-next 画进主窗后面的独立宿主窗。只改 Windows 嵌入层
+不再需要把 libmpv 的 gpu-next 画进主窗后面的独立宿主窗（该宿主窗已于 2026-10-18 删除）。只改 Windows 嵌入层
 （`flutter_windows.dll`），Dart 侧与其它平台不受影响。
 
 ## 基线
@@ -36,7 +36,7 @@
   状态切换以 `FML_LOG(IMPORTANT)` 记一行（只在变化时）。
 - Impeller 路径不支持（`SetHdrOutput` 直接返回 false）。Flutter 3.47 起 Windows **默认 Impeller**，
   所以 runner（`fushi/windows/runner/main.cpp`）显式 `set_impeller_switch(Disabled)` 钉 Skia——
-  删了它不会编译失败，只会让 HDR 静默退回宿主窗（守卫咬住）。
+  删了它不会编译失败，只会让 HDR 静默退回 SDR（守卫咬住）。
 
 ### `angle-scrgb-swapchain.patch`（ANGLE 仓库根目录 `git apply`）
 
@@ -70,7 +70,7 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 `-Manifest ci/patches/flutter-engine/3.47.6/artifacts.json`（下载 + SHA-256 校验），
 原文件备份到 `.stock-backup`，`-Restore` 还原。CI 走
 `.github/actions/flutter-engine-overlay`，`artifacts.json` 不存在时用原版引擎构建（app
-运行期回退宿主窗，并打 warning）。
+运行期只能 SDR 输出，并打 warning）。
 
 ## 当前产物
 
@@ -96,5 +96,5 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 ## 运行时契约
 
 - runner 用 `GetProcAddress` 解析 `FlutterDesktopViewSetHdrOutput`：原版引擎没有这个
-  导出 → 报告不支持，app 继续走宿主窗路径。补丁引擎与原版引擎都能跑同一份 app。
+  导出 → 报告不支持，app 留在 SDR 纹理路径。补丁引擎与原版引擎都能跑同一份 app。
 - media_kit 只在引擎报告支持之后才交出 format=3 的纹理描述符。

@@ -415,21 +415,33 @@ mixin _LocalLibraryHostVideos
     int updatedAtMs, {
     int episodeIndex = 0,
   }) async {
-    final ({int positionMs, int updatedAtMs}) current =
-        await getVideoPosition(id, episodeIndex: episodeIndex);
-    // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
-    final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
-      localPositionMs: current.positionMs,
-      localUpdatedAtMs:
-          trustedStoredSyncStamp(current.updatedAtMs, nowMs: nowMs),
-      remotePositionMs: positionMs < 0 ? 0 : positionMs,
-      remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: nowMs),
-    );
-    if (winner.updatedAtMs == current.updatedAtMs &&
-        winner.positionMs == current.positionMs) {
-      return; // host 已存更新或相等，no-op。
-    }
+    // 读-比较-写在同步状态窄锁内（与 [putBookProgress] 同纪律）：两个对端并发上报
+    // 不会互相用旧值盖掉对方；不用 _runExclusive，免得排在本机整轮同步后面超时。
+    await _runSyncStateExclusive(() async {
+      final ({int positionMs, int updatedAtMs}) current =
+          await getVideoPosition(id, episodeIndex: episodeIndex);
+      // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
+      final int nowMs = DateTime.now().millisecondsSinceEpoch;
+      final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
+        localPositionMs: current.positionMs,
+        localUpdatedAtMs:
+            trustedStoredSyncStamp(current.updatedAtMs, nowMs: nowMs),
+        remotePositionMs: positionMs < 0 ? 0 : positionMs,
+        remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: nowMs),
+      );
+      if (winner.updatedAtMs == current.updatedAtMs &&
+          winner.positionMs == current.positionMs) {
+        return; // host 已存更新或相等，no-op。
+      }
+      await _writeVideoPositionWinner(id, episodeIndex, winner);
+    });
+  }
+
+  Future<void> _writeVideoPositionWinner(
+    String id,
+    int episodeIndex,
+    ({int positionMs, int updatedAtMs}) winner,
+  ) async {
     await _db.setPrefTyped<int>(
         videoRemotePositionEpisodePrefKey(id, episodeIndex), winner.positionMs);
     await _db.setPrefTyped<int>(

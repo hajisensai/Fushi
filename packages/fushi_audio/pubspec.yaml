@@ -15,11 +15,12 @@ environment:
 dependencies:
   fushi_core:
     path: ../fushi_core
+  # Rust 计算内核（硬依赖）：cue↔EPUB 匹配的算法主体、EPUB 打包的 CRC-32、字幕 SRT / VTT / ASS 与行内 markup 解析。
+  # 纯 Dart FFI 绑定，不依赖 Flutter / 插件。
+  fushi_compute:
+    path: ../fushi_compute
   xml: ^6.3.0
   meta: ^1.9.0
-  # subtitle_markup.dart 用 package:characters 做字素簇切分；此前靠传递依赖
-  # （flutter → characters）碰运气解析，这里显式声明（与 fushi/pubspec.yaml 同约束）。
-  characters: ^1.3.0
   path: ^1.8.2
   drift: ">=2.33.0 <2.34.0"
 

@@ -237,4 +237,38 @@ void main() {
     expect(back.textColor, preset,
         reason: '用户选的字幕文字颜色必须持久化不丢（preferences 层往返）');
   });
+
+  // #2312：「关掉尊重字幕自带样式后字幕一会白一会黑」。旧数据 textColor 为 null 时
+  // 渲染端曾回落 `ColorScheme.onSurface`——字幕色跟着 App 主题明暗翻转（浅色主题黑字
+  // 压画面）。开着尊重样式时 ASS 主色把它盖住，一关就暴露。字幕画在视频上，与主题无关。
+  group('#2312 未指定文字色时恒为固定白，不随 App 主题', () {
+    for (final Brightness brightness in Brightness.values) {
+      for (final bool respect in <bool>[false, true]) {
+        testWidgets('$brightness · respectAssStyle=$respect',
+            (WidgetTester tester) async {
+          // 带 markup 但无 ASS 主色：respect 开时也走用户统一色这条回退。
+          final VideoPlayerController c = _stubWithCues(<AudioCue>[
+            _assCue(r'{\an2}字幕'),
+            _plainCue('无样式')
+              ..sentenceIndex = 1
+              ..textFragmentId = '[data-cue-id="1"]',
+          ]);
+          addTearDown(c.dispose);
+          await tester.pumpWidget(MaterialApp(
+            theme: ThemeData(brightness: brightness),
+            home: Scaffold(
+              body: VideoSubtitleOverlay(
+                controller: c,
+                respectAssStyle: respect,
+              ),
+            ),
+          ));
+          await tester.pump();
+          expect(_fillText(tester, '字').style?.color, kDefaultSubtitleTextColor,
+              reason: '未指定文字色的字幕填充必须是固定白，不得取主题 onSurface');
+          expect(_fillText(tester, '无').style?.color, kDefaultSubtitleTextColor);
+        });
+      }
+    }
+  });
 }

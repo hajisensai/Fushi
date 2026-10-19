@@ -139,7 +139,6 @@ class FushiApiServer {
     required int port,
     required FushiRemoteLookupService lookupService,
     required Tokenizer tokenizer,
-    required ReadingResolver readingResolver,
     FushiRemoteMiningService? miningService,
     FushiRemoteHistoryService? historyService,
     RemoteThemeColorsProvider? themeColorsProvider,
@@ -170,7 +169,6 @@ class FushiApiServer {
        _mining = miningService,
        _history = historyService,
        _tokenizer = tokenizer,
-       _readingResolver = readingResolver,
        _themeColorsProvider = themeColorsProvider,
        _audioSourcesProvider = audioSourcesProvider,
        _autoReadOnLookupProvider = autoReadOnLookupProvider,
@@ -196,7 +194,6 @@ class FushiApiServer {
   final FushiRemoteMiningService? _mining;
   final FushiRemoteHistoryService? _history;
   final Tokenizer _tokenizer;
-  final ReadingResolver _readingResolver;
   // BUG-530：当前 app 主题的 CSS 变量供给器，随查词响应下发给浏览器扩展弹窗。参数是
   // 扩展显式要求的明暗（请求体 `colorScheme`），null = 跟随 app 当前明暗。
   final RemoteThemeColorsProvider? _themeColorsProvider;
@@ -1020,7 +1017,6 @@ class FushiApiServer {
             text: text[i]?.toString() ?? '',
             index: i,
             tokenize: _tokenizer,
-            readingOf: _readingResolver,
           ),
         );
       }
@@ -1031,7 +1027,6 @@ class FushiApiServer {
         text: text?.toString() ?? '',
         index: 0,
         tokenize: _tokenizer,
-        readingOf: _readingResolver,
       ),
     );
   }

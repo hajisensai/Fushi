@@ -5,16 +5,36 @@
 /// （`filter.type = [1]` 书籍），把「搜书 → 拿封面」这条能力补给书族。动画元数据
 /// 刮削不使用 Bangumi。
 ///
-/// 先接 Bangumi（中文书 / 轻小说 / 漫画条目最全，免 API key）；接口按候选中间表示
-/// [BookScrapeCandidate] 设计，后续接 Google Books / OpenLibrary（ISBN / 西文书）只需
-/// 加一个映射器，传输/落地/UI 不变。
+/// 两个源（[BookScrapeSource]）：Bangumi（中文书 / 轻小说 / 漫画条目最全，免 API key）
+/// 与 DLsite（同人 / 商业的音声 ASMR、漫画、小说；有声书最常见的来源）。接口按候选中间
+/// 表示 [BookScrapeCandidate] 设计，再接 Google Books / OpenLibrary 只需加一个映射器，
+/// 传输/落地/UI 不变。
 library;
 
 import 'dart:convert';
 
 import 'package:fushi/src/media/metadata/bangumi_api_client.dart';
 import 'package:fushi/src/media/metadata/bangumi_cover_url.dart';
+import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:http/http.dart' as http;
+
+/// 书族封面刮削源。
+enum BookScrapeSource {
+  bangumi('Bangumi'),
+  dlsite('DLsite');
+
+  const BookScrapeSource(this.label);
+
+  /// 品牌名（不进 i18n）。
+  final String label;
+}
+
+/// 书族库页（书 / 漫画 / 有声书）接 DLsite 时只要这三类作品；游戏归 galgame 库。
+const Set<DlsiteWorkCategory> kBookDlsiteCategories = <DlsiteWorkCategory>{
+  DlsiteWorkCategory.voice,
+  DlsiteWorkCategory.manga,
+  DlsiteWorkCategory.novel,
+};
 
 /// 书籍刮削领域异常（网络失败 / 非 2xx / JSON 异常）。绝不吞异常，交上层给用户可见提示。
 class BookScrapeException implements Exception {
@@ -35,14 +55,19 @@ class BookScrapeCandidate {
     required this.subjectId,
     required this.title,
     required this.coverUrl,
+    this.source = BookScrapeSource.bangumi,
     this.originalTitle,
     this.author,
     this.year,
     this.summary,
+    this.isAdult = false,
   });
 
-  /// Bangumi subject id（字符串化）。
+  /// 源内条目 id：Bangumi subject id（字符串化）/ DLsite 作品编号。
   final String subjectId;
+
+  /// 候选来自哪个源。
+  final BookScrapeSource source;
 
   /// 展示用主标题（优先中文名）。
   final String title;
@@ -62,16 +87,27 @@ class BookScrapeCandidate {
   /// 简介摘要（搜索端点提供时）。
   final String? summary;
 
+  /// 源侧明确标成人向（DLsite 年龄分级）。
+  final bool isAdult;
+
   /// 条目详情页 URL（「查看条目」用）。
-  String get detailUrl => 'https://bgm.tv/subject/$subjectId';
+  String get detailUrl => switch (source) {
+        BookScrapeSource.bangumi => 'https://bgm.tv/subject/$subjectId',
+        BookScrapeSource.dlsite => DlsiteWorkId.tryParse(subjectId)?.pageUrl ??
+            'https://www.dlsite.com/maniax/work/=/product_id/$subjectId.html',
+      };
 }
 
 /// 书籍封面刮削客户端。构造注入 [http.Client]（默认自建），测试用 mock client。
 class BookMetadataScraper {
-  BookMetadataScraper({http.Client? client})
-      : _api = BangumiApiClient(client: client, userAgent: _userAgent);
+  BookMetadataScraper({http.Client? client, DlsiteClient? dlsiteClient})
+      : _api = BangumiApiClient(client: client, userAgent: _userAgent),
+        _dlsite = dlsiteClient ?? DlsiteClient(client: client),
+        _ownsDlsite = dlsiteClient == null;
 
   final BangumiApiClient _api;
+  final DlsiteClient _dlsite;
+  final bool _ownsDlsite;
 
   static const String _userAgent =
       'fushi-reader/book-scraper (https://github.com/hajisensai)';
@@ -131,8 +167,90 @@ class BookMetadataScraper {
     return parseBookSubjectResponse(response.body);
   }
 
+  /// 搜 DLsite 的音声 / 漫画 / 小说作品（输入是作品编号时直取该作）。
+  ///
+  /// suggest 端点不带图：RJ / VJ / BJ 按编号规则推主图 URL，其余（旧 RE）逐条补抓详情拿
+  /// 封面；补抓不到封面的条目对「刮封面」无用，跳过。失败抛 [BookScrapeException]。
+  Future<List<BookScrapeCandidate>> searchDlsite(
+    String keyword, {
+    int limit = 10,
+  }) async {
+    final List<DlsiteSearchCandidate> found;
+    try {
+      found = await _dlsite.search(
+        keyword,
+        categories: kBookDlsiteCategories,
+        sites: kDlsiteSuggestSitesBooks,
+        limit: limit,
+      );
+    } on DlsiteException catch (e) {
+      throw BookScrapeException(
+        'DLsite search ${e.message}',
+        statusCode: e.statusCode,
+      );
+    }
+    final List<BookScrapeCandidate> out = <BookScrapeCandidate>[];
+    for (final DlsiteSearchCandidate c in found) {
+      final String? guessed = c.guessedCoverUrl;
+      if (guessed != null) {
+        out.add(
+          BookScrapeCandidate(
+            subjectId: c.id.value,
+            title: c.title,
+            coverUrl: guessed,
+            source: BookScrapeSource.dlsite,
+            author: c.circle,
+            summary: c.description,
+            isAdult: c.ageCategory?.isAdult ?? false,
+          ),
+        );
+        continue;
+      }
+      final BookScrapeCandidate? detailed = await fetchDlsiteById(c.id.value);
+      if (detailed != null) out.add(detailed);
+    }
+    return out;
+  }
+
+  /// 按 DLsite 作品编号直取。编号非法 / 查无此作 / 无封面 → null；网络失败抛
+  /// [BookScrapeException]。
+  Future<BookScrapeCandidate?> fetchDlsiteById(String workId) async {
+    final DlsiteWorkId? id = DlsiteWorkId.tryParse(workId);
+    if (id == null) return null;
+    final DlsiteWork? work;
+    try {
+      work = await _dlsite.fetchWork(id);
+    } on DlsiteException catch (e) {
+      throw BookScrapeException(
+        'DLsite work ${e.message}',
+        statusCode: e.statusCode,
+      );
+    }
+    return work == null ? null : mapDlsiteWork(work);
+  }
+
   /// 关闭内部 client（若为默认自建）。
-  void close() => _api.close();
+  void close() {
+    _api.close();
+    if (_ownsDlsite) _dlsite.close();
+  }
+}
+
+/// 把 DLsite 作品映射为书族候选；无封面返回 null。作者位取作者 > 剧本 > 社团。
+BookScrapeCandidate? mapDlsiteWork(DlsiteWork work) {
+  final String? cover = work.coverUrl;
+  if (cover == null) return null;
+  final List<String> creators = work.primaryCreators;
+  return BookScrapeCandidate(
+    subjectId: work.id.value,
+    title: work.title,
+    coverUrl: cover,
+    source: BookScrapeSource.dlsite,
+    author: creators.isEmpty ? null : creators.join(', '),
+    year: work.releaseDate?.year,
+    summary: work.description,
+    isAdult: work.ageCategory?.isAdult ?? false,
+  );
 }
 
 /// 纯函数：把 Bangumi `/v0/subjects/{id}` **详情**响应体解析为单个候选（id 直连

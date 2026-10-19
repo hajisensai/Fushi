@@ -55,10 +55,10 @@ Future<List<PlaybackPositionConflictView>> loadPlaybackPositionConflicts({
     try {
       final PlaybackPosition local = await sync.localPosition(c.assetKey);
       final PlaybackPosition remote = await sync.remotePosition(c.assetKey);
-      final BookProgressSyncAction action = resolvePlaybackPositionThreeWay(
+      final BookProgressSyncAction action = await sync.decide(
+        c.assetKey,
         local: local,
         remote: remote,
-        basePositionMs: await sync.baseline(c.assetKey),
       );
       if (action != BookProgressSyncAction.conflict) continue;
       views.add(

@@ -23,6 +23,7 @@ library;
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:image/image.dart' as img;
 
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
@@ -64,7 +65,9 @@ class DvbSubtitleCue implements BitmapSubtitleCue {
         for (final DvbRegionPlacement r in _regions) ...r.objectBoxes(),
       ]);
 
-  img.Image _renderCanvas(int padding) => composeBitmapSubtitleImage(
+  img.Image _renderCanvas(int padding) => _render(padding).toImage();
+
+  BitmapSubtitleImage _render(int padding) => composeBitmapSubtitleRgba(
     bounds: bounds,
     padding: padding,
     layers: <BitmapSubtitleLayer>[
@@ -82,8 +85,7 @@ class DvbSubtitleCue implements BitmapSubtitleCue {
   );
 
   @override
-  BitmapSubtitleImage renderRgba({int padding = 16}) =>
-      bitmapSubtitleImageOf(_renderCanvas(padding));
+  BitmapSubtitleImage renderRgba({int padding = 16}) => _render(padding);
 
   @override
   Uint8List renderPng({int padding = 16}) =>
@@ -141,15 +143,17 @@ class DvbRegion {
   final int background;
   final List<DvbObjectPlacement> objects;
 
-  /// 合成区域的像素索引平面（填充色打底，再画各对象）。
-  Uint8List render() {
-    final Uint8List buffer = Uint8List(width * height);
-    if (background != 0) buffer.fillRange(0, buffer.length, background);
-    for (final DvbObjectPlacement o in objects) {
-      o.object.drawInto(buffer, width, height, depth, o.x, o.y);
-    }
-    return buffer;
-  }
+  /// 合成区域的像素索引平面（填充色打底，再画各对象），原生内核里做。
+  Uint8List render() => FushiComputeBitmapSubtitle.instance.renderDvbRegion(
+    width: width,
+    height: height,
+    depth: depth,
+    background: background,
+    objects: <FfcDvbObject>[
+      for (final DvbObjectPlacement o in objects)
+        (top: o.object.top, bottom: o.object.bottom, x: o.x, y: o.y),
+    ],
+  );
 
   bool sameContent(DvbRegion o) =>
       width == o.width &&
@@ -190,240 +194,9 @@ class DvbObject {
       (const ListEquality<int>().equals(top, o.top) &&
           const ListEquality<int>().equals(bottom, o.bottom));
 
-  /// 像素串实际覆盖的宽高（最长一行的像素数、行数）。只扫游程，不落像素。
-  ({int width, int height}) get size => _size ??= _measure();
-
-  ({int width, int height}) _measure() {
-    int width = 0;
-    int height = 0;
-    for (int field = 0; field < 2; field++) {
-      final Uint8List data = field == 0 ? top : (bottom ?? top);
-      int lines = 0;
-      walkDvbPixelData(data, 8, (int y, int x, int run, int code) {
-        if (x + run > width) width = x + run;
-      }, onLineEnd: (int line) => lines = line + 1);
-      final int fieldHeight = lines == 0 ? 0 : (lines - 1) * 2 + 1 + field;
-      if (fieldHeight > height) height = fieldHeight;
-    }
-    return (width: width, height: height);
-  }
-
-  /// 画进 [buffer]（区域平面，[regionWidth]×[regionHeight]，色深 [depth]）的 ([ox], [oy])。
-  void drawInto(
-    Uint8List buffer,
-    int regionWidth,
-    int regionHeight,
-    int depth,
-    int ox,
-    int oy,
-  ) {
-    for (int field = 0; field < 2; field++) {
-      final Uint8List data = field == 0 ? top : (bottom ?? top);
-      walkDvbPixelData(data, depth, (int line, int x, int run, int code) {
-        final int y = oy + line * 2 + field;
-        if (y < 0 || y >= regionHeight || code == 0) return;
-        final int start = (ox + x).clamp(0, regionWidth);
-        final int end = (ox + x + run).clamp(0, regionWidth);
-        if (end > start) {
-          buffer.fillRange(
-            y * regionWidth + start,
-            y * regionWidth + end,
-            code,
-          );
-        }
-      });
-    }
-  }
-}
-
-/// 默认映射表（EN 300 743 §10.4–10.6）。
-const List<int> _kMap2to4 = <int>[0x0, 0x7, 0x8, 0xF];
-const List<int> _kMap2to8 = <int>[0x00, 0x77, 0x88, 0xFF];
-final List<int> _kMap4to8 = <int>[for (int i = 0; i < 16; i++) i * 0x11];
-
-/// 遍历一场像素数据：每个游程回调 (场内行号, 行内起点, 长度, 映射到 [depth] 后的码)；
-/// 当前色深放不下的像素串（4 bit 串进 2 bit 区域等，规范不允许）只推进位置、码给 0。
-void walkDvbPixelData(
-  Uint8List data,
-  int depth,
-  void Function(int line, int x, int run, int code) onRun, {
-  void Function(int line)? onLineEnd,
-}) {
-  List<int> map2to4 = _kMap2to4;
-  List<int> map2to8 = _kMap2to8;
-  List<int> map4to8 = _kMap4to8;
-  int line = 0;
-  int x = 0;
-  int o = 0;
-  bool sawPixels = false;
-  while (o < data.length) {
-    final int type = data[o++];
-    switch (type) {
-      case 0x10:
-      case 0x11:
-      case 0x12:
-        final _BitReader r = _BitReader(data, o);
-        final int bits = type == 0x10 ? 2 : (type == 0x11 ? 4 : 8);
-        final List<int>? map = switch ((bits, depth)) {
-          (2, 4) => map2to4,
-          (2, 8) => map2to8,
-          (4, 8) => map4to8,
-          _ => null,
-        };
-        final bool fits = bits <= depth;
-        void emit(int run, int code) {
-          if (run <= 0) return;
-          final int mapped = !fits ? 0 : (map == null ? code : map[code]);
-          onRun(line, x, run, mapped);
-          x += run;
-        }
-
-        switch (bits) {
-          case 2:
-            _read2bit(r, emit);
-          case 4:
-            _read4bit(r, emit);
-          default:
-            _read8bit(r, emit);
-        }
-        sawPixels = true;
-        o = r.bytePosAligned;
-      case 0x20:
-        if (o + 2 > data.length) return;
-        map2to4 = <int>[
-          data[o] >> 4,
-          data[o] & 0x0F,
-          data[o + 1] >> 4,
-          data[o + 1] & 0x0F,
-        ];
-        o += 2;
-      case 0x21:
-        if (o + 4 > data.length) return;
-        map2to8 = <int>[data[o], data[o + 1], data[o + 2], data[o + 3]];
-        o += 4;
-      case 0x22:
-        if (o + 16 > data.length) return;
-        map4to8 = <int>[for (int i = 0; i < 16; i++) data[o + i]];
-        o += 16;
-      case 0xF0:
-        onLineEnd?.call(line);
-        line++;
-        x = 0;
-        sawPixels = false;
-      default:
-        // 未知数据类型：长度不可知，后面的字节不可信。
-        if (sawPixels) onLineEnd?.call(line);
-        return;
-    }
-  }
-  if (sawPixels) onLineEnd?.call(line);
-}
-
-void _read2bit(_BitReader r, void Function(int run, int code) emit) {
-  while (!r.exhausted) {
-    final int code = r.read(2);
-    if (code != 0) {
-      emit(1, code);
-      continue;
-    }
-    if (r.read(1) == 1) {
-      final int run = r.read(3) + 3;
-      emit(run, r.read(2));
-      continue;
-    }
-    if (r.read(1) == 1) {
-      emit(1, 0);
-      continue;
-    }
-    switch (r.read(2)) {
-      case 0:
-        return; // end of string
-      case 1:
-        emit(2, 0);
-      case 2:
-        final int run = r.read(4) + 12;
-        emit(run, r.read(2));
-      case 3:
-        final int run = r.read(8) + 29;
-        emit(run, r.read(2));
-    }
-  }
-}
-
-void _read4bit(_BitReader r, void Function(int run, int code) emit) {
-  while (!r.exhausted) {
-    final int code = r.read(4);
-    if (code != 0) {
-      emit(1, code);
-      continue;
-    }
-    if (r.read(1) == 0) {
-      final int run = r.read(3);
-      if (run == 0) return; // end of string
-      emit(run + 2, 0);
-      continue;
-    }
-    if (r.read(1) == 0) {
-      final int run = r.read(2) + 4;
-      emit(run, r.read(4));
-      continue;
-    }
-    switch (r.read(2)) {
-      case 0:
-        emit(1, 0);
-      case 1:
-        emit(2, 0);
-      case 2:
-        final int run = r.read(4) + 9;
-        emit(run, r.read(4));
-      case 3:
-        final int run = r.read(8) + 25;
-        emit(run, r.read(4));
-    }
-  }
-}
-
-void _read8bit(_BitReader r, void Function(int run, int code) emit) {
-  while (!r.exhausted) {
-    final int code = r.read(8);
-    if (code != 0) {
-      emit(1, code);
-      continue;
-    }
-    if (r.read(1) == 0) {
-      final int run = r.read(7);
-      if (run == 0) return; // end of string
-      emit(run, 0);
-      continue;
-    }
-    final int run = r.read(7);
-    emit(run, r.read(8));
-  }
-}
-
-class _BitReader {
-  _BitReader(this._data, int byteOffset) : _bit = byteOffset * 8;
-
-  final Uint8List _data;
-  int _bit;
-
-  bool get exhausted => (_bit >> 3) >= _data.length;
-
-  /// 串结束后按字节对齐的下一个字节位置。
-  int get bytePosAligned => (_bit + 7) >> 3;
-
-  int read(int n) {
-    int v = 0;
-    for (int i = 0; i < n; i++) {
-      final int byte = _bit >> 3;
-      final int bit = byte < _data.length
-          ? (_data[byte] >> (7 - (_bit & 7))) & 1
-          : 0;
-      v = (v << 1) | bit;
-      _bit++;
-    }
-    return v;
-  }
+  /// 像素串实际覆盖的宽高（最长一行的像素数、行数）。只扫游程，不落像素（原生内核）。
+  ({int width, int height}) get size =>
+      _size ??= FushiComputeBitmapSubtitle.instance.dvbObjectSize(top, bottom);
 }
 
 /// DVB extradata 里的页号（前 4 字节）。不足 4 字节为 null（不按页过滤）。
