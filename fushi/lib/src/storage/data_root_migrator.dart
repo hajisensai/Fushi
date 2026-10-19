@@ -1005,6 +1005,8 @@ class DataRootMigrator {
       await _rebaseCollectionRelations(db, docs);
       await _rebaseMediaImages(db, docs);
       await _rebaseVideoMetadataExtras(db, docs);
+      await _rebaseVideoDownloadJobFiles(db, docs);
+      await _rebaseVideoDownloadJobSubtitles(db, docs);
       await _rebaseMediaOpenHistory(db, docs);
       await _rebasePreferences(db, docs, newSupportRoot);
       await _rebaseProfileSettings(db, docs, newSupportRoot);
@@ -1260,6 +1262,61 @@ class DataRootMigrator {
         'UPDATE video_metadata_extras SET thumbnail_path = ? '
         'WHERE extra_key = ?',
         <Object?>[rebased, key],
+      );
+    }
+  }
+
+  /// video_download_job_files：final_absolute_path（下载任务与库行的唯一纽带）。
+  ///
+  /// 默认下载根是 `<documents>/anime_downloads/content`，`anime_downloads` 在搬移
+  /// 白名单里：文件随根搬走、`video_books.video_path` 也被改写，这列不改写就与库行
+  /// 对不上（下载后补抓字幕、库侧删除反查任务全部失配）。用户自选的外部下载根不在
+  /// 作用域内，[DocumentsPathRebaser] 天然跳过。
+  static Future<void> _rebaseVideoDownloadJobFiles(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT id, final_absolute_path FROM video_download_job_files '
+          'WHERE final_absolute_path IS NOT NULL',
+        )
+        .get();
+    for (final QueryRow row in rows) {
+      final String current = row.read<String>('final_absolute_path');
+      final String rebased = docs.rebase(current);
+      if (rebased == current) continue;
+      await db.customStatement(
+        'UPDATE video_download_job_files SET final_absolute_path = ? '
+        'WHERE id = ?',
+        <Object?>[rebased, row.read<int>('id')],
+      );
+    }
+  }
+
+  /// video_download_job_subtitles：staged_path / final_path。两者都与视频同目录
+  /// （sidecar），视频随数据根搬走时它们一起搬；作用域外的外部下载根原样保留。
+  static Future<void> _rebaseVideoDownloadJobSubtitles(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT subtitle_id, staged_path, final_path '
+          'FROM video_download_job_subtitles '
+          'WHERE staged_path IS NOT NULL OR final_path IS NOT NULL',
+        )
+        .get();
+    for (final QueryRow row in rows) {
+      final String? staged = row.read<String?>('staged_path');
+      final String? finalPath = row.read<String?>('final_path');
+      final String? newStaged = docs.rebaseNullable(staged);
+      final String? newFinal = docs.rebaseNullable(finalPath);
+      if (newStaged == staged && newFinal == finalPath) continue;
+      await db.customStatement(
+        'UPDATE video_download_job_subtitles SET staged_path = ?, '
+        'final_path = ? WHERE subtitle_id = ?',
+        <Object?>[newStaged, newFinal, row.read<String>('subtitle_id')],
       );
     }
   }
