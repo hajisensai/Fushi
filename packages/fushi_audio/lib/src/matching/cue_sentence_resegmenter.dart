@@ -1,4 +1,7 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'package:fushi_compute/fushi_compute.dart';
 
 import '../audiobook/audiobook_model.dart';
 import 'audio_text_normalizer.dart';
@@ -117,6 +120,15 @@ class CueSentenceResegmenter {
     final List<CueMatch> matches = closed.matches;
     bool eligible(int k) => eligibleIn(matches, k);
 
+    // 每条锚点 cue 都会进某个串、在 _appendTokens 里映射一次 token 位置；模糊命中
+    // （听写 ≠ 正文）的编辑距离对齐整本书在这里一次算完（Rust，一次 FFI 调用）。
+    final Map<int, _CueAlignment> alignments = _alignEligible(
+      cues: cues,
+      matches: matches,
+      eligible: eligible,
+      gapsFor: gapsFor,
+    );
+
     final List<AudioCue> outCues = <AudioCue>[];
     final List<CueMatch> outMatches = <CueMatch>[];
     int runs = 0;
@@ -143,6 +155,7 @@ class CueSentenceResegmenter {
         from: i,
         to: j,
         gaps: gapsFor(matches[i].sectionIndex),
+        alignments: alignments,
       );
       outCues.addAll(run.cues);
       outMatches.addAll(run.matches);
@@ -475,6 +488,7 @@ class CueSentenceResegmenter {
     required int from,
     required int to,
     required _SectionGaps gaps,
+    required Map<int, _CueAlignment> alignments,
   }) {
     final int runStart = matches[from].normCharStart;
     final int runEnd = matches[to].normCharEnd;
@@ -482,7 +496,7 @@ class CueSentenceResegmenter {
     // 1. token 流：每个 token 的发射时间与正文归一化偏移。
     final List<_Token> tokens = <_Token>[];
     for (int c = from; c <= to; c++) {
-      _appendTokens(tokens, c, cues[c], matches[c], gaps.norm.text);
+      _appendTokens(tokens, c, cues[c], matches[c], alignments[c]!);
     }
     if (tokens.isEmpty) return _RunOutput.unchanged(cues, matches, from, to);
 
@@ -679,23 +693,18 @@ class CueSentenceResegmenter {
 
   /// 把一条 cue 的 token 映射到正文归一化偏移。归一化后为空的 token（标点）
   /// 挂在前一个 token 上——句号属于它前面那句，不能因为映射到下一个保留字符而
-  /// 被甩到下一句。
+  /// 被甩到下一句。[alignment] 来自 [_alignEligible]。
   void _appendTokens(
     List<_Token> out,
     int cueIndex,
     AudioCue cue,
     CueMatch m,
-    String bookNorm,
+    _CueAlignment alignment,
   ) {
     final CueTokenTiming timing = cue.tokenTiming!;
-    final List<String> normTokens = <String>[
-      for (final String t in timing.tokens) AudioTextNormalizer.normalize(t),
-    ];
-    final String cueNorm = normTokens.join();
-    final String slice = bookNorm.substring(m.normCharStart, m.normCharEnd);
-    final List<int> posMap = cueNorm == slice
-        ? List<int>.generate(cueNorm.length + 1, (int i) => i)
-        : _alignPositions(cueNorm, slice);
+    final List<String> normTokens = alignment.normTokens;
+    final String slice = alignment.slice;
+    final List<int> posMap = alignment.posMap;
     int cursor = 0;
     for (int k = 0; k < timing.length; k++) {
       final int normLen = normTokens[k].length;
@@ -723,65 +732,82 @@ class CueSentenceResegmenter {
     }
   }
 
-  /// 编辑距离对齐：返回长度 `a.length + 1` 的映射，`map[i]` = `a[i]` 在 [b] 里
-  /// 对应的位置（删除的字符指向下一个对应位置），`map[a.length] = b.length`。
-  /// 单调不减。超过 [maxAlignCells] 退化为按比例线性映射。
-  List<int> _alignPositions(String a, String b) {
-    final int n = a.length;
-    final int m = b.length;
-    final List<int> map = List<int>.filled(n + 1, m);
-    if (n == 0) return map;
-    if (m == 0) {
-      for (int i = 0; i <= n; i++) {
-        map[i] = 0;
-      }
-      return map;
-    }
-    if (n * m > maxAlignCells) {
-      for (int i = 0; i <= n; i++) {
-        map[i] = (i * m / n).round();
-      }
-      return map;
-    }
-    final int w = m + 1;
-    final List<int> dp = List<int>.filled((n + 1) * w, 0);
-    for (int i = 1; i <= n; i++) {
-      dp[i * w] = i;
-    }
-    for (int j = 1; j <= m; j++) {
-      dp[j] = j;
-    }
-    for (int i = 1; i <= n; i++) {
-      final int ca = a.codeUnitAt(i - 1);
-      for (int j = 1; j <= m; j++) {
-        final int sub =
-            dp[(i - 1) * w + j - 1] + (ca == b.codeUnitAt(j - 1) ? 0 : 1);
-        final int del = dp[(i - 1) * w + j] + 1;
-        final int ins = dp[i * w + j - 1] + 1;
-        dp[i * w + j] = math.min(sub, math.min(del, ins));
-      }
-    }
-    // 回溯：a[i-1] 与 b[j-1] 配对 → map[i-1] = j-1；a[i-1] 被删 → map[i-1] = j。
-    int i = n;
-    int j = m;
-    while (i > 0) {
-      final int cur = dp[i * w + j];
-      if (j > 0 &&
-          cur ==
-              dp[(i - 1) * w + j - 1] +
-                  (a.codeUnitAt(i - 1) == b.codeUnitAt(j - 1) ? 0 : 1)) {
-        map[i - 1] = j - 1;
-        i--;
-        j--;
-      } else if (cur == dp[(i - 1) * w + j] + 1) {
-        map[i - 1] = j;
-        i--;
+  /// 给每条 [eligible] cue 备好 token 归一化结果、命中的正文切片与位置映射
+  /// （`map[i]` = 听写第 i 个码元在切片里的位置，`map[听写长度] = 切片长度`）。
+  /// 听写与切片相同取恒等映射；不同的（模糊命中）整本书攒成一批交给
+  /// `ffc_text_align_positions`：编辑距离 DP + 回溯（对角 → 删除 → 插入），
+  /// 听写长 × 切片长超过 [maxAlignCells] 的退化为按比例线性映射。
+  Map<int, _CueAlignment> _alignEligible({
+    required List<AudioCue> cues,
+    required List<CueMatch> matches,
+    required bool Function(int) eligible,
+    required _SectionGaps Function(int) gapsFor,
+  }) {
+    final Map<int, _CueAlignment> out = <int, _CueAlignment>{};
+    final List<int> fuzzy = <int>[];
+    final List<String> heard = <String>[];
+    final List<String> read = <String>[];
+    final Map<int, (List<String>, String, String)> prepared =
+        <int, (List<String>, String, String)>{};
+    for (int k = 0; k < cues.length; k++) {
+      if (!eligible(k)) continue;
+      final CueMatch m = matches[k];
+      final List<String> normTokens = <String>[
+        for (final String t in cues[k].tokenTiming!.tokens)
+          AudioTextNormalizer.normalize(t),
+      ];
+      final String cueNorm = normTokens.join();
+      final String slice = gapsFor(
+        m.sectionIndex,
+      ).norm.text.substring(m.normCharStart, m.normCharEnd);
+      if (cueNorm == slice) {
+        out[k] = _CueAlignment(
+          normTokens: normTokens,
+          slice: slice,
+          posMap: List<int>.generate(cueNorm.length + 1, (int i) => i),
+        );
       } else {
-        j--;
+        prepared[k] = (normTokens, cueNorm, slice);
+        fuzzy.add(k);
+        heard.add(cueNorm);
+        read.add(slice);
       }
     }
-    return map;
+    if (fuzzy.isEmpty) return out;
+    final List<Int32List> maps = FushiComputeText.instance.alignPositions(
+      heard,
+      read,
+      maxCells: maxAlignCells,
+    );
+    for (int n = 0; n < fuzzy.length; n++) {
+      final (List<String> normTokens, String _, String slice) =
+          prepared[fuzzy[n]]!;
+      out[fuzzy[n]] = _CueAlignment(
+        normTokens: normTokens,
+        slice: slice,
+        posMap: maps[n],
+      );
+    }
+    return out;
   }
+}
+
+/// 一条锚点 cue 的 token 位置映射原料（[CueSentenceResegmenter._alignEligible]）。
+class _CueAlignment {
+  const _CueAlignment({
+    required this.normTokens,
+    required this.slice,
+    required this.posMap,
+  });
+
+  /// 各 token 归一化后的文本（与 token 一一对应，可为空串）。
+  final List<String> normTokens;
+
+  /// 命中的正文归一化切片。
+  final String slice;
+
+  /// 听写码元 → 切片位置，长 `normTokens.join().length + 1`。
+  final List<int> posMap;
 }
 
 /// [CueSentenceResegmenter.resegment] 的产物：新 cue 列表 + 与之一一对应的

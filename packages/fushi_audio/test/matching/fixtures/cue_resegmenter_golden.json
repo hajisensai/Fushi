@@ -1,0 +1,2565 @@
+{
+ "generatedBy": "CueSentenceResegmenter with the pure-Dart _alignPositions, before the move to native/fushi_compute",
+ "cases": [
+  {
+   "seed": 0,
+   "maxAlignCells": 400000,
+   "inputHash": "578d8252e0b789d0",
+   "cuesOut": 80,
+   "stats": "CueResegmentStats(runs=3 cues=107→80 added=27 removed=54 gapsClosed=42)",
+   "sha256": "db27ef503847a2c552c9a19582c857781bfc52db00a5138b3276a13249c1bb3a"
+  },
+  {
+   "seed": 0,
+   "maxAlignCells": 40,
+   "inputHash": "578d8252e0b789d0",
+   "cuesOut": 80,
+   "stats": "CueResegmentStats(runs=3 cues=107→80 added=27 removed=54 gapsClosed=42)",
+   "sha256": "0631bdf75d56963b511c05b7c49736024eb1d885da87d2ce806fccd2f6d134b0"
+  },
+  {
+   "seed": 1,
+   "maxAlignCells": 400000,
+   "inputHash": "-6e59220eeb4afb90",
+   "cuesOut": 52,
+   "stats": "CueResegmentStats(runs=3 cues=62→52 added=16 removed=26 gapsClosed=19)",
+   "sha256": "9d9c6132ca5e43fe5a11683cf0cc9fb9ad4f7dcf7d4f626192fbd42f0e7fca02"
+  },
+  {
+   "seed": 1,
+   "maxAlignCells": 40,
+   "inputHash": "-6e59220eeb4afb90",
+   "cuesOut": 52,
+   "stats": "CueResegmentStats(runs=3 cues=62→52 added=16 removed=26 gapsClosed=19)",
+   "sha256": "9d9c6132ca5e43fe5a11683cf0cc9fb9ad4f7dcf7d4f626192fbd42f0e7fca02"
+  },
+  {
+   "seed": 2,
+   "maxAlignCells": 400000,
+   "inputHash": "36a2572dd84d519a",
+   "cuesOut": 47,
+   "stats": "CueResegmentStats(runs=4 cues=68→47 added=12 removed=32 gapsClosed=32)",
+   "sha256": "08b2509a4a1cd0162c31b7b2ce4e465df44d11952e70306830675cd920f786c2"
+  },
+  {
+   "seed": 2,
+   "maxAlignCells": 40,
+   "inputHash": "36a2572dd84d519a",
+   "cuesOut": 47,
+   "stats": "CueResegmentStats(runs=4 cues=68→47 added=12 removed=32 gapsClosed=32)",
+   "sha256": "3b5f9ff6755ecd64e9a3502265ce409d9c6750c2f921397bd5256857c64b553c"
+  },
+  {
+   "seed": 3,
+   "maxAlignCells": 400000,
+   "inputHash": "-6dde94a64b5c84f3",
+   "cuesOut": 102,
+   "stats": "CueResegmentStats(runs=6 cues=135→102 added=23 removed=54 gapsClosed=56)",
+   "sha256": "1fb39514f243a5c62d74b46f4f1700cafca15a51f211ba3678bb29e5009710f8"
+  },
+  {
+   "seed": 3,
+   "maxAlignCells": 40,
+   "inputHash": "-6dde94a64b5c84f3",
+   "cuesOut": 103,
+   "stats": "CueResegmentStats(runs=6 cues=135→103 added=23 removed=54 gapsClosed=56)",
+   "sha256": "eb6cac9ed8f1ba5222f9d0aede077ab6d3ea49f8d4e2cef76864cfb67208d921"
+  },
+  {
+   "seed": 4,
+   "maxAlignCells": 400000,
+   "inputHash": "21ea53f956715043",
+   "cuesOut": 55,
+   "stats": "CueResegmentStats(runs=2 cues=100→55 added=19 removed=63 gapsClosed=59)",
+   "sha256": "6281a137b4c23db0b2627610f267212e698d6f1a9d8a4671f11c59125b3b2381"
+  },
+  {
+   "seed": 4,
+   "maxAlignCells": 40,
+   "inputHash": "21ea53f956715043",
+   "cuesOut": 55,
+   "stats": "CueResegmentStats(runs=2 cues=100→55 added=19 removed=63 gapsClosed=59)",
+   "sha256": "6281a137b4c23db0b2627610f267212e698d6f1a9d8a4671f11c59125b3b2381"
+  },
+  {
+   "seed": 5,
+   "maxAlignCells": 400000,
+   "inputHash": "645488ff4f4cb2d5",
+   "cuesOut": 32,
+   "stats": "CueResegmentStats(runs=2 cues=40→32 added=7 removed=15 gapsClosed=15)",
+   "sha256": "19fb6852844a56812d811a7c99fb963df3d97ab3780dce69180ad43b24592a1b"
+  },
+  {
+   "seed": 5,
+   "maxAlignCells": 40,
+   "inputHash": "645488ff4f4cb2d5",
+   "cuesOut": 32,
+   "stats": "CueResegmentStats(runs=2 cues=40→32 added=7 removed=15 gapsClosed=15)",
+   "sha256": "19fb6852844a56812d811a7c99fb963df3d97ab3780dce69180ad43b24592a1b"
+  },
+  {
+   "seed": 6,
+   "maxAlignCells": 400000,
+   "inputHash": "-3898eafc17f14721",
+   "cuesOut": 88,
+   "stats": "CueResegmentStats(runs=3 cues=136→88 added=25 removed=73 gapsClosed=65)",
+   "sha256": "10eac352724e8c2d7121ec1a07c28f33b8a9c1da5607db9348c5cfc8a4931138"
+  },
+  {
+   "seed": 6,
+   "maxAlignCells": 40,
+   "inputHash": "-3898eafc17f14721",
+   "cuesOut": 88,
+   "stats": "CueResegmentStats(runs=3 cues=136→88 added=25 removed=73 gapsClosed=65)",
+   "sha256": "07c202ef3a305afa9c51965390dfa939bbc232ed93a154d5b4f5adcf366e45d3"
+  },
+  {
+   "seed": 7,
+   "maxAlignCells": 400000,
+   "inputHash": "-782e36068c2d5cac",
+   "cuesOut": 46,
+   "stats": "CueResegmentStats(runs=1 cues=45→46 added=6 removed=5 gapsClosed=4)",
+   "sha256": "e640b26ae898a8487032ea57038cc7adee7260cfc5991145d334b4f2ddc00466"
+  },
+  {
+   "seed": 7,
+   "maxAlignCells": 40,
+   "inputHash": "-782e36068c2d5cac",
+   "cuesOut": 46,
+   "stats": "CueResegmentStats(runs=1 cues=45→46 added=6 removed=5 gapsClosed=4)",
+   "sha256": "e640b26ae898a8487032ea57038cc7adee7260cfc5991145d334b4f2ddc00466"
+  },
+  {
+   "seed": 8,
+   "maxAlignCells": 400000,
+   "inputHash": "769d97ed502a970e",
+   "cuesOut": 103,
+   "stats": "CueResegmentStats(runs=3 cues=159→103 added=22 removed=78 gapsClosed=85)",
+   "sha256": "d5eef42069c016e8d9b651ad814c2cfd2b6199ee537524ddd1b5f692614e8d44"
+  },
+  {
+   "seed": 8,
+   "maxAlignCells": 40,
+   "inputHash": "769d97ed502a970e",
+   "cuesOut": 103,
+   "stats": "CueResegmentStats(runs=3 cues=159→103 added=22 removed=78 gapsClosed=85)",
+   "sha256": "d5eef42069c016e8d9b651ad814c2cfd2b6199ee537524ddd1b5f692614e8d44"
+  },
+  {
+   "seed": 9,
+   "maxAlignCells": 400000,
+   "inputHash": "-13f6a78476d3df30",
+   "cuesOut": 92,
+   "stats": "CueResegmentStats(runs=4 cues=148→92 added=16 removed=71 gapsClosed=62)",
+   "sha256": "3f506a23550fd48bf9aedfb55c9fef4fc22a1e3e5d4e59697ab7b9dcac40a3f0"
+  },
+  {
+   "seed": 9,
+   "maxAlignCells": 40,
+   "inputHash": "-13f6a78476d3df30",
+   "cuesOut": 92,
+   "stats": "CueResegmentStats(runs=4 cues=148→92 added=16 removed=71 gapsClosed=62)",
+   "sha256": "3f506a23550fd48bf9aedfb55c9fef4fc22a1e3e5d4e59697ab7b9dcac40a3f0"
+  },
+  {
+   "seed": 10,
+   "maxAlignCells": 400000,
+   "inputHash": "-1143bfaa3a5d900a",
+   "cuesOut": 103,
+   "stats": "CueResegmentStats(runs=6 cues=152→103 added=34 removed=82 gapsClosed=77)",
+   "sha256": "3b65cb2caead06f6243f0403aca30de66803ab2fcef5d8783933b766f1180b57"
+  },
+  {
+   "seed": 10,
+   "maxAlignCells": 40,
+   "inputHash": "-1143bfaa3a5d900a",
+   "cuesOut": 103,
+   "stats": "CueResegmentStats(runs=6 cues=152→103 added=34 removed=82 gapsClosed=77)",
+   "sha256": "5e54f09500197a7b45ce364d2d7bb9f0a8b5e525dea523324a86669190d8a3e1"
+  },
+  {
+   "seed": 11,
+   "maxAlignCells": 400000,
+   "inputHash": "-608bc051dfc9f156",
+   "cuesOut": 37,
+   "stats": "CueResegmentStats(runs=3 cues=99→37 added=4 removed=66 gapsClosed=64)",
+   "sha256": "57df9ab78ca56744b656ff99aa370915336135836dde722bfc9a25d5911016db"
+  },
+  {
+   "seed": 11,
+   "maxAlignCells": 40,
+   "inputHash": "-608bc051dfc9f156",
+   "cuesOut": 37,
+   "stats": "CueResegmentStats(runs=3 cues=99→37 added=4 removed=66 gapsClosed=64)",
+   "sha256": "57df9ab78ca56744b656ff99aa370915336135836dde722bfc9a25d5911016db"
+  },
+  {
+   "seed": 12,
+   "maxAlignCells": 400000,
+   "inputHash": "615ee066ceed72e",
+   "cuesOut": 79,
+   "stats": "CueResegmentStats(runs=3 cues=79→79 added=7 removed=7 gapsClosed=5)",
+   "sha256": "cb4b77c23b97a26efe7882a34ffc21f4071e1f1403b3d88dbb20e5dc71d81ee5"
+  },
+  {
+   "seed": 12,
+   "maxAlignCells": 40,
+   "inputHash": "615ee066ceed72e",
+   "cuesOut": 79,
+   "stats": "CueResegmentStats(runs=3 cues=79→79 added=7 removed=7 gapsClosed=5)",
+   "sha256": "9e71fcb30a893d9e2a8d6fdbfbc62d08edf2b1e3d09c9675b36fcbaef5e62f6b"
+  },
+  {
+   "seed": 13,
+   "maxAlignCells": 400000,
+   "inputHash": "6d39d9e868e02d02",
+   "cuesOut": 24,
+   "stats": "CueResegmentStats(runs=1 cues=42→24 added=1 removed=19 gapsClosed=21)",
+   "sha256": "050e8b1c02a0388a94ce9d22a519e9ffb4030cd542728ed72e2a436974e987be"
+  },
+  {
+   "seed": 13,
+   "maxAlignCells": 40,
+   "inputHash": "6d39d9e868e02d02",
+   "cuesOut": 24,
+   "stats": "CueResegmentStats(runs=1 cues=42→24 added=1 removed=19 gapsClosed=21)",
+   "sha256": "050e8b1c02a0388a94ce9d22a519e9ffb4030cd542728ed72e2a436974e987be"
+  },
+  {
+   "seed": 14,
+   "maxAlignCells": 400000,
+   "inputHash": "-3774aec7e619868a",
+   "cuesOut": 45,
+   "stats": "CueResegmentStats(runs=4 cues=41→45 added=7 removed=3 gapsClosed=2)",
+   "sha256": "8df69c411db60667b9f7217aa265da6194ce17910d89a3ecb30e39d24b09199e"
+  },
+  {
+   "seed": 14,
+   "maxAlignCells": 40,
+   "inputHash": "-3774aec7e619868a",
+   "cuesOut": 45,
+   "stats": "CueResegmentStats(runs=4 cues=41→45 added=7 removed=3 gapsClosed=2)",
+   "sha256": "8df69c411db60667b9f7217aa265da6194ce17910d89a3ecb30e39d24b09199e"
+  },
+  {
+   "seed": 15,
+   "maxAlignCells": 400000,
+   "inputHash": "-dea281270af1c05",
+   "cuesOut": 10,
+   "stats": "CueResegmentStats(runs=1 cues=8→10 added=5 removed=3 gapsClosed=3)",
+   "sha256": "62dcac7e59ee872e74949bbe4eec891d5b6b8547796eedb0908cc505d8a92a6c"
+  },
+  {
+   "seed": 15,
+   "maxAlignCells": 40,
+   "inputHash": "-dea281270af1c05",
+   "cuesOut": 10,
+   "stats": "CueResegmentStats(runs=1 cues=8→10 added=5 removed=3 gapsClosed=3)",
+   "sha256": "aeeac783e8a446d6d8873c82134eb9f04502f3861b5d832f4bb644e5073ac20b"
+  },
+  {
+   "seed": 16,
+   "maxAlignCells": 400000,
+   "inputHash": "1f8dcffa7f7e2475",
+   "cuesOut": 51,
+   "stats": "CueResegmentStats(runs=4 cues=106→51 added=7 removed=61 gapsClosed=60)",
+   "sha256": "22f2b414d4e28b1c9edfc097d93cd78c62865cba3f9e861d0d7759d5a2288e82"
+  },
+  {
+   "seed": 16,
+   "maxAlignCells": 40,
+   "inputHash": "1f8dcffa7f7e2475",
+   "cuesOut": 51,
+   "stats": "CueResegmentStats(runs=4 cues=106→51 added=7 removed=61 gapsClosed=60)",
+   "sha256": "276ffb5bc296d8b43062055894b1c57745540dceabcf07cd369ee2215fdd27f3"
+  },
+  {
+   "seed": 17,
+   "maxAlignCells": 400000,
+   "inputHash": "-6be62f5959e7a22",
+   "cuesOut": 60,
+   "stats": "CueResegmentStats(runs=2 cues=52→60 added=13 removed=5 gapsClosed=1)",
+   "sha256": "f7678051d35a282492e717fb65ba5eec5fe5091df44e98847e6a1cbde1effcd4"
+  },
+  {
+   "seed": 17,
+   "maxAlignCells": 40,
+   "inputHash": "-6be62f5959e7a22",
+   "cuesOut": 60,
+   "stats": "CueResegmentStats(runs=2 cues=52→60 added=13 removed=5 gapsClosed=1)",
+   "sha256": "f7678051d35a282492e717fb65ba5eec5fe5091df44e98847e6a1cbde1effcd4"
+  },
+  {
+   "seed": 18,
+   "maxAlignCells": 400000,
+   "inputHash": "7c8320fa09547fd6",
+   "cuesOut": 98,
+   "stats": "CueResegmentStats(runs=3 cues=133→98 added=23 removed=57 gapsClosed=52)",
+   "sha256": "5b1561c888ceec5c2b70a0947cfd5cba7517031eb0a5f3fae5c16e544f649d52"
+  },
+  {
+   "seed": 18,
+   "maxAlignCells": 40,
+   "inputHash": "7c8320fa09547fd6",
+   "cuesOut": 99,
+   "stats": "CueResegmentStats(runs=3 cues=133→99 added=23 removed=57 gapsClosed=52)",
+   "sha256": "d8c035fc8bf03d6d5c39e9d616ce34ab8aadad291fa23483b86c1665281a24af"
+  },
+  {
+   "seed": 19,
+   "maxAlignCells": 400000,
+   "inputHash": "66c33345977b4410",
+   "cuesOut": 47,
+   "stats": "CueResegmentStats(runs=4 cues=43→47 added=6 removed=2 gapsClosed=2)",
+   "sha256": "70c594ac95eb98533fa261de5050032365e8987859fba4023a159a5e3d2664da"
+  },
+  {
+   "seed": 19,
+   "maxAlignCells": 40,
+   "inputHash": "66c33345977b4410",
+   "cuesOut": 47,
+   "stats": "CueResegmentStats(runs=4 cues=43→47 added=6 removed=2 gapsClosed=2)",
+   "sha256": "824577a837025e24146a575a390d0435d4646112e7b936312a8ed611669c2009"
+  },
+  {
+   "seed": 20,
+   "maxAlignCells": 400000,
+   "inputHash": "1554862ac9b31da9",
+   "cuesOut": 87,
+   "stats": "CueResegmentStats(runs=4 cues=149→87 added=14 removed=75 gapsClosed=74)",
+   "sha256": "ef91b798ef7b58fd50a87499eeea967cc1fdd1ad2bc37ccda638edbbe04d6d17"
+  },
+  {
+   "seed": 20,
+   "maxAlignCells": 40,
+   "inputHash": "1554862ac9b31da9",
+   "cuesOut": 87,
+   "stats": "CueResegmentStats(runs=4 cues=149→87 added=14 removed=75 gapsClosed=74)",
+   "sha256": "6d2c21514e95a9382748c0da6c5e53a873b6eabebb47ff56a898e29f30817f0a"
+  },
+  {
+   "seed": 21,
+   "maxAlignCells": 400000,
+   "inputHash": "737f6244d616d863",
+   "cuesOut": 95,
+   "stats": "CueResegmentStats(runs=3 cues=99→95 added=27 removed=31 gapsClosed=31)",
+   "sha256": "767239ec21402d95aa198a5df543d8173fe7f7ff518c66cd794eb3a65015292b"
+  },
+  {
+   "seed": 21,
+   "maxAlignCells": 40,
+   "inputHash": "737f6244d616d863",
+   "cuesOut": 95,
+   "stats": "CueResegmentStats(runs=3 cues=99→95 added=27 removed=31 gapsClosed=31)",
+   "sha256": "cc0b83fc525c0f04f51fbf7a647b06e307474493fba21994733d874bdae7d224"
+  },
+  {
+   "seed": 22,
+   "maxAlignCells": 400000,
+   "inputHash": "-340a500abac4af83",
+   "cuesOut": 97,
+   "stats": "CueResegmentStats(runs=4 cues=184→97 added=21 removed=106 gapsClosed=104)",
+   "sha256": "2974f6aeaa3a01d066ea70199af8bc328150403500bdc956e08da14eac6202f4"
+  },
+  {
+   "seed": 22,
+   "maxAlignCells": 40,
+   "inputHash": "-340a500abac4af83",
+   "cuesOut": 97,
+   "stats": "CueResegmentStats(runs=4 cues=184→97 added=21 removed=106 gapsClosed=104)",
+   "sha256": "1282324d4553384d6c78ede5122736ea5d1684102acbf8292784c0a0ec112124"
+  },
+  {
+   "seed": 23,
+   "maxAlignCells": 400000,
+   "inputHash": "-65e6a5ed87f78cb6",
+   "cuesOut": 40,
+   "stats": "CueResegmentStats(runs=2 cues=50→40 added=7 removed=17 gapsClosed=16)",
+   "sha256": "2d868a8c205153042b429b8431ac379d928cb72f3abc44ba63a1ca41d6f7999d"
+  },
+  {
+   "seed": 23,
+   "maxAlignCells": 40,
+   "inputHash": "-65e6a5ed87f78cb6",
+   "cuesOut": 40,
+   "stats": "CueResegmentStats(runs=2 cues=50→40 added=7 removed=17 gapsClosed=16)",
+   "sha256": "2d868a8c205153042b429b8431ac379d928cb72f3abc44ba63a1ca41d6f7999d"
+  },
+  {
+   "seed": 24,
+   "maxAlignCells": 400000,
+   "inputHash": "151e622ed5418f4b",
+   "cuesOut": 86,
+   "stats": "CueResegmentStats(runs=2 cues=94→86 added=18 removed=24 gapsClosed=23)",
+   "sha256": "d61c54f63babc631fab04f1fb2592cbf2663071779e2239778bc815310ac8fbe"
+  },
+  {
+   "seed": 24,
+   "maxAlignCells": 40,
+   "inputHash": "151e622ed5418f4b",
+   "cuesOut": 86,
+   "stats": "CueResegmentStats(runs=2 cues=94→86 added=18 removed=24 gapsClosed=23)",
+   "sha256": "339dd17311494e1e91fd66497d8bfa3fb8b2a7784d3346eb7b2d0fca1cd2a7ae"
+  },
+  {
+   "seed": 25,
+   "maxAlignCells": 400000,
+   "inputHash": "-4f7515ebde49eb15",
+   "cuesOut": 32,
+   "stats": "CueResegmentStats(runs=1 cues=59→32 added=8 removed=35 gapsClosed=33)",
+   "sha256": "0b93eef5f293ee4dc38851aec5437c89066af0665d85193e46a88294de7ae58d"
+  },
+  {
+   "seed": 25,
+   "maxAlignCells": 40,
+   "inputHash": "-4f7515ebde49eb15",
+   "cuesOut": 32,
+   "stats": "CueResegmentStats(runs=1 cues=59→32 added=8 removed=35 gapsClosed=33)",
+   "sha256": "d1e1066778af45eac5c565feb2a61c8e751d02c039d25067e544e6fac20cbde0"
+  },
+  {
+   "seed": 26,
+   "maxAlignCells": 400000,
+   "inputHash": "347880e1e6b923b6",
+   "cuesOut": 72,
+   "stats": "CueResegmentStats(runs=3 cues=67→72 added=9 removed=4 gapsClosed=4)",
+   "sha256": "cf754590fa9ce23c91d522db2d13e71eac2f3fdf7ad1ec8df618324395af9433"
+  },
+  {
+   "seed": 26,
+   "maxAlignCells": 40,
+   "inputHash": "347880e1e6b923b6",
+   "cuesOut": 72,
+   "stats": "CueResegmentStats(runs=3 cues=67→72 added=9 removed=4 gapsClosed=4)",
+   "sha256": "cc3d8964a489336c92c68172832453211ab712ee3137b1771eb58cb7423da8e5"
+  },
+  {
+   "seed": 27,
+   "maxAlignCells": 400000,
+   "inputHash": "61302f3fb085ac1a",
+   "cuesOut": 126,
+   "stats": "CueResegmentStats(runs=5 cues=148→126 added=22 removed=44 gapsClosed=46)",
+   "sha256": "ac4d3fd8f3a1334687bab4bffaeb0a8250fd1e005f32b178f0fa809fd8ec5b64"
+  },
+  {
+   "seed": 27,
+   "maxAlignCells": 40,
+   "inputHash": "61302f3fb085ac1a",
+   "cuesOut": 126,
+   "stats": "CueResegmentStats(runs=5 cues=148→126 added=22 removed=44 gapsClosed=46)",
+   "sha256": "98a9be7da66c09b0e517f36960a4fcfc65fd7bbfbcf741c8cf3c0b132ac23f38"
+  },
+  {
+   "seed": 28,
+   "maxAlignCells": 400000,
+   "inputHash": "151817886925f095",
+   "cuesOut": 53,
+   "stats": "CueResegmentStats(runs=1 cues=76→53 added=7 removed=29 gapsClosed=31)",
+   "sha256": "d7d96c21c19b5e4dc26e381664a5fd4bc212b48c2e0da0ef62510db536e7ad5a"
+  },
+  {
+   "seed": 28,
+   "maxAlignCells": 40,
+   "inputHash": "151817886925f095",
+   "cuesOut": 53,
+   "stats": "CueResegmentStats(runs=1 cues=76→53 added=7 removed=29 gapsClosed=31)",
+   "sha256": "d7d96c21c19b5e4dc26e381664a5fd4bc212b48c2e0da0ef62510db536e7ad5a"
+  },
+  {
+   "seed": 29,
+   "maxAlignCells": 400000,
+   "inputHash": "2df04b4e6f5eb8b9",
+   "cuesOut": 173,
+   "stats": "CueResegmentStats(runs=5 cues=214→173 added=38 removed=79 gapsClosed=76)",
+   "sha256": "6fb5c3149f6a43bc42dd4c2d6433474b9606e41c161289a768b3db3f5caad44d"
+  },
+  {
+   "seed": 29,
+   "maxAlignCells": 40,
+   "inputHash": "2df04b4e6f5eb8b9",
+   "cuesOut": 173,
+   "stats": "CueResegmentStats(runs=5 cues=214→173 added=38 removed=79 gapsClosed=76)",
+   "sha256": "d68194efe19585439f532dd112a1a6c9ee652b468dd0afc53c0aec6cdaba6a34"
+  },
+  {
+   "seed": 30,
+   "maxAlignCells": 400000,
+   "inputHash": "5e47fd3444f75484",
+   "cuesOut": 77,
+   "stats": "CueResegmentStats(runs=4 cues=111→77 added=39 removed=67 gapsClosed=67)",
+   "sha256": "40ae52442252399da328ef7523e943048f4cd324a0c661cbb5b5367781905539"
+  },
+  {
+   "seed": 30,
+   "maxAlignCells": 40,
+   "inputHash": "5e47fd3444f75484",
+   "cuesOut": 77,
+   "stats": "CueResegmentStats(runs=4 cues=111→77 added=39 removed=67 gapsClosed=67)",
+   "sha256": "86bac57fdf83a3bb0b41fc729034dd3d0b900b356f9fdcc3460ccc20d2567187"
+  },
+  {
+   "seed": 31,
+   "maxAlignCells": 400000,
+   "inputHash": "-1e036b5639055665",
+   "cuesOut": 64,
+   "stats": "CueResegmentStats(runs=2 cues=50→64 added=16 removed=2 gapsClosed=2)",
+   "sha256": "e467a1ba9bcd98b39c38f996e32687e09fd9a5f08bee392331aefef711f94e6a"
+  },
+  {
+   "seed": 31,
+   "maxAlignCells": 40,
+   "inputHash": "-1e036b5639055665",
+   "cuesOut": 64,
+   "stats": "CueResegmentStats(runs=2 cues=50→64 added=16 removed=2 gapsClosed=2)",
+   "sha256": "acf2ac12a0519b8e7d1e1ea3b7fdda0b14e1b01d105ca405e2494dcc966dbf91"
+  },
+  {
+   "seed": 32,
+   "maxAlignCells": 400000,
+   "inputHash": "3963465fa0d78a0f",
+   "cuesOut": 32,
+   "stats": "CueResegmentStats(runs=3 cues=33→32 added=0 removed=1 gapsClosed=1)",
+   "sha256": "077417f46cc84dcf6471f35f20fe1a5cae60b407350ec4dfb8adfd5706deb544"
+  },
+  {
+   "seed": 32,
+   "maxAlignCells": 40,
+   "inputHash": "3963465fa0d78a0f",
+   "cuesOut": 32,
+   "stats": "CueResegmentStats(runs=3 cues=33→32 added=0 removed=1 gapsClosed=1)",
+   "sha256": "077417f46cc84dcf6471f35f20fe1a5cae60b407350ec4dfb8adfd5706deb544"
+  },
+  {
+   "seed": 33,
+   "maxAlignCells": 400000,
+   "inputHash": "-341e32b10606cf1b",
+   "cuesOut": 151,
+   "stats": "CueResegmentStats(runs=6 cues=203→151 added=32 removed=77 gapsClosed=71)",
+   "sha256": "61cdd191950bf36b69fff36a7647089cc2cdc5d75f36cf3279c7791bfcad6c92"
+  },
+  {
+   "seed": 33,
+   "maxAlignCells": 40,
+   "inputHash": "-341e32b10606cf1b",
+   "cuesOut": 156,
+   "stats": "CueResegmentStats(runs=6 cues=203→156 added=32 removed=77 gapsClosed=71)",
+   "sha256": "dc7cd2570bcbf0ba582d39ce34be0e313059e150e13780a9be87fbb01548a716"
+  },
+  {
+   "seed": 34,
+   "maxAlignCells": 400000,
+   "inputHash": "-117932ae3f9c45c0",
+   "cuesOut": 86,
+   "stats": "CueResegmentStats(runs=4 cues=121→86 added=17 removed=52 gapsClosed=44)",
+   "sha256": "de2c8ed8b146e7a915e362b5d7bd17b485aea8bc07a5cc8d94f61aab81155f77"
+  },
+  {
+   "seed": 34,
+   "maxAlignCells": 40,
+   "inputHash": "-117932ae3f9c45c0",
+   "cuesOut": 86,
+   "stats": "CueResegmentStats(runs=4 cues=121→86 added=17 removed=52 gapsClosed=44)",
+   "sha256": "45998bae3bf814d03a0686196884a2b02de5c64e7de7c64d5daa7f23f49ef1a5"
+  },
+  {
+   "seed": 35,
+   "maxAlignCells": 400000,
+   "inputHash": "66b9e068ac3154d",
+   "cuesOut": 20,
+   "stats": "CueResegmentStats(runs=2 cues=18→20 added=3 removed=1 gapsClosed=2)",
+   "sha256": "2bd037b85b6f2b3e87497943271ac4ae9df3fe3f04f721835c0ae61d6147b3bc"
+  },
+  {
+   "seed": 35,
+   "maxAlignCells": 40,
+   "inputHash": "66b9e068ac3154d",
+   "cuesOut": 20,
+   "stats": "CueResegmentStats(runs=2 cues=18→20 added=3 removed=1 gapsClosed=2)",
+   "sha256": "2bd037b85b6f2b3e87497943271ac4ae9df3fe3f04f721835c0ae61d6147b3bc"
+  },
+  {
+   "seed": 36,
+   "maxAlignCells": 400000,
+   "inputHash": "418ac134f680892f",
+   "cuesOut": 101,
+   "stats": "CueResegmentStats(runs=3 cues=189→101 added=21 removed=109 gapsClosed=103)",
+   "sha256": "97ab69dcca3f67cee9954f76c9b0e1dc3b48449740e41b1c9b3ad10429099e0a"
+  },
+  {
+   "seed": 36,
+   "maxAlignCells": 40,
+   "inputHash": "418ac134f680892f",
+   "cuesOut": 101,
+   "stats": "CueResegmentStats(runs=3 cues=189→101 added=21 removed=109 gapsClosed=103)",
+   "sha256": "97ab69dcca3f67cee9954f76c9b0e1dc3b48449740e41b1c9b3ad10429099e0a"
+  },
+  {
+   "seed": 37,
+   "maxAlignCells": 400000,
+   "inputHash": "6a35571db8765af8",
+   "cuesOut": 115,
+   "stats": "CueResegmentStats(runs=4 cues=193→115 added=19 removed=97 gapsClosed=99)",
+   "sha256": "008bc871ee398cc2cfcc1fe61163f848085c9532610bf76f3426caff2282db56"
+  },
+  {
+   "seed": 37,
+   "maxAlignCells": 40,
+   "inputHash": "6a35571db8765af8",
+   "cuesOut": 115,
+   "stats": "CueResegmentStats(runs=4 cues=193→115 added=19 removed=97 gapsClosed=99)",
+   "sha256": "6bb17f1022062a75e125b73397411ebbb346a75150003ccd3ee07c9389c139fc"
+  },
+  {
+   "seed": 38,
+   "maxAlignCells": 400000,
+   "inputHash": "-32619dccf218dc53",
+   "cuesOut": 94,
+   "stats": "CueResegmentStats(runs=4 cues=81→94 added=30 removed=16 gapsClosed=9)",
+   "sha256": "0231fef8278e6dd4beb9a12e21972b6b039c2212fa6ad6a7444cbcfc7f4a3a64"
+  },
+  {
+   "seed": 38,
+   "maxAlignCells": 40,
+   "inputHash": "-32619dccf218dc53",
+   "cuesOut": 93,
+   "stats": "CueResegmentStats(runs=4 cues=81→93 added=30 removed=16 gapsClosed=9)",
+   "sha256": "d78fa5ed4ce55d5c7951935045e2d1db64a36921b0162e373d7f33fbd44f8327"
+  },
+  {
+   "seed": 39,
+   "maxAlignCells": 400000,
+   "inputHash": "18d64f96fb1a8c02",
+   "cuesOut": 84,
+   "stats": "CueResegmentStats(runs=4 cues=128→84 added=15 removed=59 gapsClosed=53)",
+   "sha256": "b399b3128f605fb2f60513460760995335d5d70be0a8d026e05505307060730f"
+  },
+  {
+   "seed": 39,
+   "maxAlignCells": 40,
+   "inputHash": "18d64f96fb1a8c02",
+   "cuesOut": 84,
+   "stats": "CueResegmentStats(runs=4 cues=128→84 added=15 removed=59 gapsClosed=53)",
+   "sha256": "464a9d351ae01953977bf2b8c2b61be9947be9a2cc769071ff02ca9a52fddb01"
+  },
+  {
+   "seed": 40,
+   "maxAlignCells": 400000,
+   "inputHash": "7fb3af08287245f9",
+   "cuesOut": 30,
+   "stats": "CueResegmentStats(runs=2 cues=33→30 added=4 removed=7 gapsClosed=5)",
+   "sha256": "3a6358ec801f8aed9d4b4a8255b9219f7d7679d7cec033c0a2cc97bfd4b7f8d7"
+  },
+  {
+   "seed": 40,
+   "maxAlignCells": 40,
+   "inputHash": "7fb3af08287245f9",
+   "cuesOut": 30,
+   "stats": "CueResegmentStats(runs=2 cues=33→30 added=4 removed=7 gapsClosed=5)",
+   "sha256": "3a6358ec801f8aed9d4b4a8255b9219f7d7679d7cec033c0a2cc97bfd4b7f8d7"
+  },
+  {
+   "seed": 41,
+   "maxAlignCells": 400000,
+   "inputHash": "-6d4db9a7c0aa8095",
+   "cuesOut": 78,
+   "stats": "CueResegmentStats(runs=3 cues=92→78 added=21 removed=35 gapsClosed=33)",
+   "sha256": "4a465d1e1e61fb78d97cc29c28289f467f8d1e0ae31d7de32b07357d6c443d92"
+  },
+  {
+   "seed": 41,
+   "maxAlignCells": 40,
+   "inputHash": "-6d4db9a7c0aa8095",
+   "cuesOut": 78,
+   "stats": "CueResegmentStats(runs=3 cues=92→78 added=21 removed=35 gapsClosed=33)",
+   "sha256": "4ee75be1612c70ab191a9897169e17c7047739cf01ea3827b32e80e0fc5fbedb"
+  },
+  {
+   "seed": 42,
+   "maxAlignCells": 400000,
+   "inputHash": "5664b2095d664ebc",
+   "cuesOut": 149,
+   "stats": "CueResegmentStats(runs=4 cues=188→149 added=26 removed=65 gapsClosed=62)",
+   "sha256": "83c505212aaae33de052bbab5a6251ea814cd2bf65402234b195578192b9c4bb"
+  },
+  {
+   "seed": 42,
+   "maxAlignCells": 40,
+   "inputHash": "5664b2095d664ebc",
+   "cuesOut": 149,
+   "stats": "CueResegmentStats(runs=4 cues=188→149 added=26 removed=65 gapsClosed=62)",
+   "sha256": "4ef5f5ba9695f8c1200c3cc61cfaccd6b091f81e2a54fa0362bd8093669e2946"
+  },
+  {
+   "seed": 43,
+   "maxAlignCells": 400000,
+   "inputHash": "4b63e0c37e17bcd1",
+   "cuesOut": 78,
+   "stats": "CueResegmentStats(runs=4 cues=98→78 added=16 removed=34 gapsClosed=33)",
+   "sha256": "555f26651b1438a45e0f0f9692af87f712ec307c674c67446d596684041a363b"
+  },
+  {
+   "seed": 43,
+   "maxAlignCells": 40,
+   "inputHash": "4b63e0c37e17bcd1",
+   "cuesOut": 78,
+   "stats": "CueResegmentStats(runs=4 cues=98→78 added=16 removed=34 gapsClosed=33)",
+   "sha256": "34415c07cd8142c7fcd0ce1624bcd3ec3ac0065dd1d22c08251ba4ce05fd3706"
+  },
+  {
+   "seed": 44,
+   "maxAlignCells": 400000,
+   "inputHash": "-4ab340145bd9613",
+   "cuesOut": 23,
+   "stats": "CueResegmentStats(runs=1 cues=25→23 added=6 removed=8 gapsClosed=3)",
+   "sha256": "7eeb07d915a036e1d10a0499b20ba192c87257103a11d454d3382907107c343c"
+  },
+  {
+   "seed": 44,
+   "maxAlignCells": 40,
+   "inputHash": "-4ab340145bd9613",
+   "cuesOut": 23,
+   "stats": "CueResegmentStats(runs=1 cues=25→23 added=6 removed=8 gapsClosed=3)",
+   "sha256": "7eeb07d915a036e1d10a0499b20ba192c87257103a11d454d3382907107c343c"
+  },
+  {
+   "seed": 45,
+   "maxAlignCells": 400000,
+   "inputHash": "729138034ecc4593",
+   "cuesOut": 43,
+   "stats": "CueResegmentStats(runs=2 cues=44→43 added=2 removed=3 gapsClosed=1)",
+   "sha256": "a41d72e1f434cea42acfa7e2139794acdb35c467f3f6884231eb8c0a020c364f"
+  },
+  {
+   "seed": 45,
+   "maxAlignCells": 40,
+   "inputHash": "729138034ecc4593",
+   "cuesOut": 43,
+   "stats": "CueResegmentStats(runs=2 cues=44→43 added=2 removed=3 gapsClosed=1)",
+   "sha256": "a41d72e1f434cea42acfa7e2139794acdb35c467f3f6884231eb8c0a020c364f"
+  },
+  {
+   "seed": 46,
+   "maxAlignCells": 400000,
+   "inputHash": "-6cc23de8a2973304",
+   "cuesOut": 97,
+   "stats": "CueResegmentStats(runs=5 cues=145→97 added=20 removed=68 gapsClosed=67)",
+   "sha256": "962f22e3f179a938f166606959124b16b1b06f0f97cd4c36113c6ec82d5a0e52"
+  },
+  {
+   "seed": 46,
+   "maxAlignCells": 40,
+   "inputHash": "-6cc23de8a2973304",
+   "cuesOut": 97,
+   "stats": "CueResegmentStats(runs=5 cues=145→97 added=20 removed=68 gapsClosed=67)",
+   "sha256": "100cac337263af68b3d5eda9cd792d622b6f5101441dcb23d9d40b869b185588"
+  },
+  {
+   "seed": 47,
+   "maxAlignCells": 400000,
+   "inputHash": "472ece49690b4768",
+   "cuesOut": 35,
+   "stats": "CueResegmentStats(runs=1 cues=33→35 added=5 removed=3 gapsClosed=1)",
+   "sha256": "0f9a4e577e52de544d0de4cb3d2bf72829cec94453cfe7c233406061d93a7519"
+  },
+  {
+   "seed": 47,
+   "maxAlignCells": 40,
+   "inputHash": "472ece49690b4768",
+   "cuesOut": 35,
+   "stats": "CueResegmentStats(runs=1 cues=33→35 added=5 removed=3 gapsClosed=1)",
+   "sha256": "0f9a4e577e52de544d0de4cb3d2bf72829cec94453cfe7c233406061d93a7519"
+  },
+  {
+   "seed": 48,
+   "maxAlignCells": 400000,
+   "inputHash": "5b460fc9def7cbdb",
+   "cuesOut": 32,
+   "stats": "CueResegmentStats(runs=2 cues=44→32 added=9 removed=21 gapsClosed=20)",
+   "sha256": "e85fda4d50d9c3882c238f438c0792435bb799465f7cb302b43cd28d8041b616"
+  },
+  {
+   "seed": 48,
+   "maxAlignCells": 40,
+   "inputHash": "5b460fc9def7cbdb",
+   "cuesOut": 32,
+   "stats": "CueResegmentStats(runs=2 cues=44→32 added=9 removed=21 gapsClosed=20)",
+   "sha256": "e85fda4d50d9c3882c238f438c0792435bb799465f7cb302b43cd28d8041b616"
+  },
+  {
+   "seed": 49,
+   "maxAlignCells": 400000,
+   "inputHash": "2f31aec62584b0d9",
+   "cuesOut": 33,
+   "stats": "CueResegmentStats(runs=1 cues=28→33 added=10 removed=5 gapsClosed=6)",
+   "sha256": "e25e3ebdfaa71637d3b2194999495faa5400586c4383d9568458083bf1a529bb"
+  },
+  {
+   "seed": 49,
+   "maxAlignCells": 40,
+   "inputHash": "2f31aec62584b0d9",
+   "cuesOut": 33,
+   "stats": "CueResegmentStats(runs=1 cues=28→33 added=10 removed=5 gapsClosed=6)",
+   "sha256": "254ad8e17827ae81c47b4f94139d30d7fd4be84f8a8f6e3601e1f503212b679e"
+  },
+  {
+   "seed": 50,
+   "maxAlignCells": 400000,
+   "inputHash": "-510465927429f453",
+   "cuesOut": 83,
+   "stats": "CueResegmentStats(runs=3 cues=85→83 added=11 removed=13 gapsClosed=11)",
+   "sha256": "5e7e18a9cc4696da9487601db5d660c41f44975ad4747c896c6def77b53ff204"
+  },
+  {
+   "seed": 50,
+   "maxAlignCells": 40,
+   "inputHash": "-510465927429f453",
+   "cuesOut": 83,
+   "stats": "CueResegmentStats(runs=3 cues=85→83 added=11 removed=13 gapsClosed=11)",
+   "sha256": "5e7e18a9cc4696da9487601db5d660c41f44975ad4747c896c6def77b53ff204"
+  },
+  {
+   "seed": 51,
+   "maxAlignCells": 400000,
+   "inputHash": "7114d4b2e3845ebb",
+   "cuesOut": 75,
+   "stats": "CueResegmentStats(runs=3 cues=72→75 added=13 removed=10 gapsClosed=2)",
+   "sha256": "031c56aeefbde5ba23a2317b6a30e06307472d7d945847d354860aa54e9939b1"
+  },
+  {
+   "seed": 51,
+   "maxAlignCells": 40,
+   "inputHash": "7114d4b2e3845ebb",
+   "cuesOut": 75,
+   "stats": "CueResegmentStats(runs=3 cues=72→75 added=13 removed=10 gapsClosed=2)",
+   "sha256": "031c56aeefbde5ba23a2317b6a30e06307472d7d945847d354860aa54e9939b1"
+  },
+  {
+   "seed": 52,
+   "maxAlignCells": 400000,
+   "inputHash": "-5b7318f159a254a2",
+   "cuesOut": 84,
+   "stats": "CueResegmentStats(runs=3 cues=115→84 added=13 removed=44 gapsClosed=42)",
+   "sha256": "4ead941d1b3913fdfcc8a775646b406edc4d72007a83058d99b8038e66d5767d"
+  },
+  {
+   "seed": 52,
+   "maxAlignCells": 40,
+   "inputHash": "-5b7318f159a254a2",
+   "cuesOut": 84,
+   "stats": "CueResegmentStats(runs=3 cues=115→84 added=13 removed=44 gapsClosed=42)",
+   "sha256": "3ae5289c9fc5c0f54d6e557ea1a08c22fef35797a97ca3899aaceecca7447ff3"
+  },
+  {
+   "seed": 53,
+   "maxAlignCells": 400000,
+   "inputHash": "5a64b2b010b5d0ab",
+   "cuesOut": 54,
+   "stats": "CueResegmentStats(runs=2 cues=53→54 added=5 removed=4 gapsClosed=2)",
+   "sha256": "e4ee678f3578015760c2d12ae92afccaec14b81dd49acb12b63178c0bd7b0add"
+  },
+  {
+   "seed": 53,
+   "maxAlignCells": 40,
+   "inputHash": "5a64b2b010b5d0ab",
+   "cuesOut": 54,
+   "stats": "CueResegmentStats(runs=2 cues=53→54 added=5 removed=4 gapsClosed=2)",
+   "sha256": "e4ee678f3578015760c2d12ae92afccaec14b81dd49acb12b63178c0bd7b0add"
+  },
+  {
+   "seed": 54,
+   "maxAlignCells": 400000,
+   "inputHash": "6335f93a4d5e1035",
+   "cuesOut": 101,
+   "stats": "CueResegmentStats(runs=5 cues=97→101 added=29 removed=25 gapsClosed=22)",
+   "sha256": "ea6700758c57d801e80ef8b92f72bba79108a900327731d9423e4247bf8186ae"
+  },
+  {
+   "seed": 54,
+   "maxAlignCells": 40,
+   "inputHash": "6335f93a4d5e1035",
+   "cuesOut": 101,
+   "stats": "CueResegmentStats(runs=5 cues=97→101 added=29 removed=25 gapsClosed=22)",
+   "sha256": "e93413e78c532c12b137197aa2f187c64f87d4b301e00ce28e0df93187988754"
+  },
+  {
+   "seed": 55,
+   "maxAlignCells": 400000,
+   "inputHash": "-4ff0f45d7beff83f",
+   "cuesOut": 36,
+   "stats": "CueResegmentStats(runs=3 cues=36→36 added=2 removed=2 gapsClosed=0)",
+   "sha256": "5d410b38113c74d0d1f93839bb74b21eb98ce6b3fbe1c099725a17f8f2ff1cf0"
+  },
+  {
+   "seed": 55,
+   "maxAlignCells": 40,
+   "inputHash": "-4ff0f45d7beff83f",
+   "cuesOut": 36,
+   "stats": "CueResegmentStats(runs=3 cues=36→36 added=2 removed=2 gapsClosed=0)",
+   "sha256": "5d410b38113c74d0d1f93839bb74b21eb98ce6b3fbe1c099725a17f8f2ff1cf0"
+  },
+  {
+   "seed": 56,
+   "maxAlignCells": 400000,
+   "inputHash": "-36b4f3c134c6d472",
+   "cuesOut": 30,
+   "stats": "CueResegmentStats(runs=1 cues=26→30 added=9 removed=5 gapsClosed=1)",
+   "sha256": "edb00eada5d90c038a7af2601cd2741af36b098ccbaa38ee3b626691db40e839"
+  },
+  {
+   "seed": 56,
+   "maxAlignCells": 40,
+   "inputHash": "-36b4f3c134c6d472",
+   "cuesOut": 30,
+   "stats": "CueResegmentStats(runs=1 cues=26→30 added=9 removed=5 gapsClosed=1)",
+   "sha256": "edb00eada5d90c038a7af2601cd2741af36b098ccbaa38ee3b626691db40e839"
+  },
+  {
+   "seed": 57,
+   "maxAlignCells": 400000,
+   "inputHash": "-19a354fb714c831",
+   "cuesOut": 14,
+   "stats": "CueResegmentStats(runs=2 cues=15→14 added=3 removed=4 gapsClosed=0)",
+   "sha256": "be44360475fd35cc708688547a3c75ee3acc19c19ce5dc49bef0c04261272747"
+  },
+  {
+   "seed": 57,
+   "maxAlignCells": 40,
+   "inputHash": "-19a354fb714c831",
+   "cuesOut": 14,
+   "stats": "CueResegmentStats(runs=2 cues=15→14 added=3 removed=4 gapsClosed=0)",
+   "sha256": "be44360475fd35cc708688547a3c75ee3acc19c19ce5dc49bef0c04261272747"
+  },
+  {
+   "seed": 58,
+   "maxAlignCells": 400000,
+   "inputHash": "-3cb9dbb5b10eee0c",
+   "cuesOut": 73,
+   "stats": "CueResegmentStats(runs=2 cues=103→73 added=7 removed=37 gapsClosed=36)",
+   "sha256": "0db4fa22555c812ff8a2d6a59d7f451838a7a77bf2c79fd552313b29737841b7"
+  },
+  {
+   "seed": 58,
+   "maxAlignCells": 40,
+   "inputHash": "-3cb9dbb5b10eee0c",
+   "cuesOut": 73,
+   "stats": "CueResegmentStats(runs=2 cues=103→73 added=7 removed=37 gapsClosed=36)",
+   "sha256": "c3e13f666e58fe05ff1d0862b056024ace56773b9150cd61d82378427d979dbb"
+  },
+  {
+   "seed": 59,
+   "maxAlignCells": 400000,
+   "inputHash": "38d69c24e9442481",
+   "cuesOut": 48,
+   "stats": "CueResegmentStats(runs=3 cues=71→48 added=10 removed=33 gapsClosed=32)",
+   "sha256": "8de910a62158f536a5bbd2159696860e14b7315c6ce31dbdc5850f1185bf472b"
+  },
+  {
+   "seed": 59,
+   "maxAlignCells": 40,
+   "inputHash": "38d69c24e9442481",
+   "cuesOut": 48,
+   "stats": "CueResegmentStats(runs=3 cues=71→48 added=10 removed=33 gapsClosed=32)",
+   "sha256": "256de200577ac1d4239c361b198f0e427381fdfcf83fe739d27d0332b8de3e0e"
+  },
+  {
+   "seed": 60,
+   "maxAlignCells": 400000,
+   "inputHash": "21f8583e118b66a5",
+   "cuesOut": 92,
+   "stats": "CueResegmentStats(runs=2 cues=145→92 added=10 removed=63 gapsClosed=60)",
+   "sha256": "345b9dfdf304b5d4c4a5704d1c16703f42652dc036e590392c07ed5ef330077f"
+  },
+  {
+   "seed": 60,
+   "maxAlignCells": 40,
+   "inputHash": "21f8583e118b66a5",
+   "cuesOut": 92,
+   "stats": "CueResegmentStats(runs=2 cues=145→92 added=10 removed=63 gapsClosed=60)",
+   "sha256": "345b9dfdf304b5d4c4a5704d1c16703f42652dc036e590392c07ed5ef330077f"
+  },
+  {
+   "seed": 61,
+   "maxAlignCells": 400000,
+   "inputHash": "4c024f92a05e27bf",
+   "cuesOut": 27,
+   "stats": "CueResegmentStats(runs=1 cues=45→27 added=8 removed=26 gapsClosed=23)",
+   "sha256": "4fae2f567dd094f6aa93ac8c0ab6f2e43fdeeb7ce9950fd38b29b55d252b0463"
+  },
+  {
+   "seed": 61,
+   "maxAlignCells": 40,
+   "inputHash": "4c024f92a05e27bf",
+   "cuesOut": 27,
+   "stats": "CueResegmentStats(runs=1 cues=45→27 added=8 removed=26 gapsClosed=23)",
+   "sha256": "4fae2f567dd094f6aa93ac8c0ab6f2e43fdeeb7ce9950fd38b29b55d252b0463"
+  },
+  {
+   "seed": 62,
+   "maxAlignCells": 400000,
+   "inputHash": "270ca8e2fa3ace47",
+   "cuesOut": 83,
+   "stats": "CueResegmentStats(runs=3 cues=89→83 added=17 removed=23 gapsClosed=21)",
+   "sha256": "4cdb6bb397060924cc4aebc197988816ba7d378c8b303dc5266f389c2f4806f2"
+  },
+  {
+   "seed": 62,
+   "maxAlignCells": 40,
+   "inputHash": "270ca8e2fa3ace47",
+   "cuesOut": 82,
+   "stats": "CueResegmentStats(runs=3 cues=89→82 added=17 removed=23 gapsClosed=21)",
+   "sha256": "dc12a988b042c7a521a23abf07cebb90e328944a35ccfcd9135b02d936e0a83c"
+  },
+  {
+   "seed": 63,
+   "maxAlignCells": 400000,
+   "inputHash": "-5826e27c86c35d6b",
+   "cuesOut": 26,
+   "stats": "CueResegmentStats(runs=2 cues=25→26 added=4 removed=3 gapsClosed=1)",
+   "sha256": "1359ef6f62cb84b318592519552157d14b31b4ebd28dde3271b30212592c4b93"
+  },
+  {
+   "seed": 63,
+   "maxAlignCells": 40,
+   "inputHash": "-5826e27c86c35d6b",
+   "cuesOut": 26,
+   "stats": "CueResegmentStats(runs=2 cues=25→26 added=4 removed=3 gapsClosed=1)",
+   "sha256": "1359ef6f62cb84b318592519552157d14b31b4ebd28dde3271b30212592c4b93"
+  },
+  {
+   "seed": 64,
+   "maxAlignCells": 400000,
+   "inputHash": "-305fdaa31eeaf5d2",
+   "cuesOut": 58,
+   "stats": "CueResegmentStats(runs=2 cues=61→58 added=12 removed=15 gapsClosed=14)",
+   "sha256": "7f4e90f840d73725a799bb6bf66bb9db5f4ff33a3bc580be0cfd2385c9f007ec"
+  },
+  {
+   "seed": 64,
+   "maxAlignCells": 40,
+   "inputHash": "-305fdaa31eeaf5d2",
+   "cuesOut": 58,
+   "stats": "CueResegmentStats(runs=2 cues=61→58 added=12 removed=15 gapsClosed=14)",
+   "sha256": "7f4e90f840d73725a799bb6bf66bb9db5f4ff33a3bc580be0cfd2385c9f007ec"
+  },
+  {
+   "seed": 65,
+   "maxAlignCells": 400000,
+   "inputHash": "4fa425a23f803590",
+   "cuesOut": 104,
+   "stats": "CueResegmentStats(runs=3 cues=133→104 added=21 removed=50 gapsClosed=42)",
+   "sha256": "0a754b6a76fa1b750ba614f1d840decfc436bcb068a567986a49d4bf370e4130"
+  },
+  {
+   "seed": 65,
+   "maxAlignCells": 40,
+   "inputHash": "4fa425a23f803590",
+   "cuesOut": 104,
+   "stats": "CueResegmentStats(runs=3 cues=133→104 added=21 removed=50 gapsClosed=42)",
+   "sha256": "0a754b6a76fa1b750ba614f1d840decfc436bcb068a567986a49d4bf370e4130"
+  },
+  {
+   "seed": 66,
+   "maxAlignCells": 400000,
+   "inputHash": "2fe70f747d6d1cf9",
+   "cuesOut": 99,
+   "stats": "CueResegmentStats(runs=4 cues=96→99 added=10 removed=7 gapsClosed=3)",
+   "sha256": "456620d8171e0494f1092518a92d4106366e07d067d03db25386dd3471ce00f4"
+  },
+  {
+   "seed": 66,
+   "maxAlignCells": 40,
+   "inputHash": "2fe70f747d6d1cf9",
+   "cuesOut": 99,
+   "stats": "CueResegmentStats(runs=4 cues=96→99 added=10 removed=7 gapsClosed=3)",
+   "sha256": "7154b481905d86f4ffe1362128f83586939e810e8e02ab77d6b993d4382bdf6c"
+  },
+  {
+   "seed": 67,
+   "maxAlignCells": 400000,
+   "inputHash": "-dfa9e965bf145e0",
+   "cuesOut": 82,
+   "stats": "CueResegmentStats(runs=3 cues=90→82 added=10 removed=18 gapsClosed=19)",
+   "sha256": "415095ca3c999d31baea495a66e39f341108dc5a6467530cbc48323908ca53fd"
+  },
+  {
+   "seed": 67,
+   "maxAlignCells": 40,
+   "inputHash": "-dfa9e965bf145e0",
+   "cuesOut": 82,
+   "stats": "CueResegmentStats(runs=3 cues=90→82 added=10 removed=18 gapsClosed=19)",
+   "sha256": "415095ca3c999d31baea495a66e39f341108dc5a6467530cbc48323908ca53fd"
+  },
+  {
+   "seed": 68,
+   "maxAlignCells": 400000,
+   "inputHash": "29a40acd2f8de88e",
+   "cuesOut": 115,
+   "stats": "CueResegmentStats(runs=3 cues=187→115 added=18 removed=90 gapsClosed=89)",
+   "sha256": "48509da4523b326adfdf5050691b99648e4d659f8fbb7d091167bd79090f0a26"
+  },
+  {
+   "seed": 68,
+   "maxAlignCells": 40,
+   "inputHash": "29a40acd2f8de88e",
+   "cuesOut": 115,
+   "stats": "CueResegmentStats(runs=3 cues=187→115 added=18 removed=90 gapsClosed=89)",
+   "sha256": "44ab303a52c6198d72ac6e461ef9a25a3e0f88d515a3c297c3404857b31ffcc5"
+  },
+  {
+   "seed": 69,
+   "maxAlignCells": 400000,
+   "inputHash": "-3e4ab0baf9ce30c6",
+   "cuesOut": 73,
+   "stats": "CueResegmentStats(runs=3 cues=120→73 added=15 removed=62 gapsClosed=60)",
+   "sha256": "5f9aa89884f6e7ef78bd3a0acd9fdf4d40cd78f7a24082141816474b78cfc2cf"
+  },
+  {
+   "seed": 69,
+   "maxAlignCells": 40,
+   "inputHash": "-3e4ab0baf9ce30c6",
+   "cuesOut": 73,
+   "stats": "CueResegmentStats(runs=3 cues=120→73 added=15 removed=62 gapsClosed=60)",
+   "sha256": "d8937f4fff2161efb0e6fa55cd1bd3a59c6926141cdc122a3448fddefb7e1f25"
+  },
+  {
+   "seed": 70,
+   "maxAlignCells": 400000,
+   "inputHash": "-1a0b6e18331de5a1",
+   "cuesOut": 32,
+   "stats": "CueResegmentStats(runs=1 cues=57→32 added=6 removed=31 gapsClosed=33)",
+   "sha256": "e4109f3aba4c9e43a99ef0017f8a6118f7f730d7458e9b45b36a029b337d1391"
+  },
+  {
+   "seed": 70,
+   "maxAlignCells": 40,
+   "inputHash": "-1a0b6e18331de5a1",
+   "cuesOut": 32,
+   "stats": "CueResegmentStats(runs=1 cues=57→32 added=6 removed=31 gapsClosed=33)",
+   "sha256": "e4109f3aba4c9e43a99ef0017f8a6118f7f730d7458e9b45b36a029b337d1391"
+  },
+  {
+   "seed": 71,
+   "maxAlignCells": 400000,
+   "inputHash": "32d7ab3dcb897ed2",
+   "cuesOut": 125,
+   "stats": "CueResegmentStats(runs=5 cues=134→125 added=46 removed=54 gapsClosed=50)",
+   "sha256": "e4c4f515d43c939db1e7d3d9c4f31885f9996c9f5d5e6951461755171e5cc138"
+  },
+  {
+   "seed": 71,
+   "maxAlignCells": 40,
+   "inputHash": "32d7ab3dcb897ed2",
+   "cuesOut": 126,
+   "stats": "CueResegmentStats(runs=5 cues=134→126 added=46 removed=54 gapsClosed=50)",
+   "sha256": "f8b5ee3cab189c4e1b1d0e117ef57f0cbe4dffd18f8c179f1e6be18948185743"
+  },
+  {
+   "seed": 72,
+   "maxAlignCells": 400000,
+   "inputHash": "-3fb339214c1c74c3",
+   "cuesOut": 47,
+   "stats": "CueResegmentStats(runs=2 cues=45→47 added=7 removed=5 gapsClosed=5)",
+   "sha256": "38f7bdac96ce0b7972e588ccd34722f45b3de27d66eb3b45a08982245f2c89cd"
+  },
+  {
+   "seed": 72,
+   "maxAlignCells": 40,
+   "inputHash": "-3fb339214c1c74c3",
+   "cuesOut": 47,
+   "stats": "CueResegmentStats(runs=2 cues=45→47 added=7 removed=5 gapsClosed=5)",
+   "sha256": "147060982a57fd3098e177785bcdf3b732d3259f6d5e87a301f1c1cc6e13d728"
+  },
+  {
+   "seed": 73,
+   "maxAlignCells": 400000,
+   "inputHash": "-7a5976d4199e6f2f",
+   "cuesOut": 39,
+   "stats": "CueResegmentStats(runs=2 cues=46→39 added=13 removed=19 gapsClosed=14)",
+   "sha256": "c325a72e64d16a95eb226e498baa3e0c66615f9038dd8b24c37c0d805d77b18c"
+  },
+  {
+   "seed": 73,
+   "maxAlignCells": 40,
+   "inputHash": "-7a5976d4199e6f2f",
+   "cuesOut": 39,
+   "stats": "CueResegmentStats(runs=2 cues=46→39 added=13 removed=19 gapsClosed=14)",
+   "sha256": "c325a72e64d16a95eb226e498baa3e0c66615f9038dd8b24c37c0d805d77b18c"
+  },
+  {
+   "seed": 74,
+   "maxAlignCells": 400000,
+   "inputHash": "-8ac1afa9e48adf",
+   "cuesOut": 94,
+   "stats": "CueResegmentStats(runs=5 cues=87→94 added=27 removed=19 gapsClosed=19)",
+   "sha256": "0a2750b167cd2f1d5ae88d318bfd185fac98e608658c0157d1710f5009d48112"
+  },
+  {
+   "seed": 74,
+   "maxAlignCells": 40,
+   "inputHash": "-8ac1afa9e48adf",
+   "cuesOut": 94,
+   "stats": "CueResegmentStats(runs=5 cues=87→94 added=27 removed=19 gapsClosed=19)",
+   "sha256": "eecd59f2e99c6b8ca7d807085f5b8c137315969c2d231c35673526c5e99b2827"
+  },
+  {
+   "seed": 75,
+   "maxAlignCells": 400000,
+   "inputHash": "3fff328fe12f3917",
+   "cuesOut": 149,
+   "stats": "CueResegmentStats(runs=4 cues=198→149 added=25 removed=74 gapsClosed=73)",
+   "sha256": "27b622229471a24b9b42be45c3b81e4027b1e54a7f69df7c7e2fdac3adb53b39"
+  },
+  {
+   "seed": 75,
+   "maxAlignCells": 40,
+   "inputHash": "3fff328fe12f3917",
+   "cuesOut": 148,
+   "stats": "CueResegmentStats(runs=4 cues=198→148 added=25 removed=74 gapsClosed=73)",
+   "sha256": "760d4c72f9a1b506cb3ec38e82f6e7d56ce2b298c2abfa1f1d613322d41431b1"
+  },
+  {
+   "seed": 76,
+   "maxAlignCells": 400000,
+   "inputHash": "deefc83b5eeee4e",
+   "cuesOut": 58,
+   "stats": "CueResegmentStats(runs=3 cues=103→58 added=11 removed=56 gapsClosed=54)",
+   "sha256": "633b59a1c2e29c97c000d0b44eb746fbfecb4b6e3650450c20df8bcfedbebdf8"
+  },
+  {
+   "seed": 76,
+   "maxAlignCells": 40,
+   "inputHash": "deefc83b5eeee4e",
+   "cuesOut": 58,
+   "stats": "CueResegmentStats(runs=3 cues=103→58 added=11 removed=56 gapsClosed=54)",
+   "sha256": "ca89f16c65b305f012014410c4dbb007d76783adf9a85a05a026424a80969c73"
+  },
+  {
+   "seed": 77,
+   "maxAlignCells": 400000,
+   "inputHash": "2c8d5d5934db9926",
+   "cuesOut": 35,
+   "stats": "CueResegmentStats(runs=2 cues=60→35 added=8 removed=33 gapsClosed=34)",
+   "sha256": "beda25f874cf737f09c99b26d2a48a9a6f68a450b0680b372b0a246228a8d2b8"
+  },
+  {
+   "seed": 77,
+   "maxAlignCells": 40,
+   "inputHash": "2c8d5d5934db9926",
+   "cuesOut": 35,
+   "stats": "CueResegmentStats(runs=2 cues=60→35 added=8 removed=33 gapsClosed=34)",
+   "sha256": "5fe7c95efab54cee2fc2d40876c491a577e8df3a3dc803af2d6349b288ebbf4c"
+  },
+  {
+   "seed": 78,
+   "maxAlignCells": 400000,
+   "inputHash": "-27d888f10b3109b0",
+   "cuesOut": 78,
+   "stats": "CueResegmentStats(runs=4 cues=119→78 added=28 removed=67 gapsClosed=73)",
+   "sha256": "dc97697039b96309bd0c63bd812b768a9f2e0ecd8f044567be94c261584c5150"
+  },
+  {
+   "seed": 78,
+   "maxAlignCells": 40,
+   "inputHash": "-27d888f10b3109b0",
+   "cuesOut": 79,
+   "stats": "CueResegmentStats(runs=4 cues=119→79 added=28 removed=67 gapsClosed=73)",
+   "sha256": "032ca4bc899c87075afbf72e3ebdacd80b254f07461fbe53c815eafa987779ab"
+  },
+  {
+   "seed": 79,
+   "maxAlignCells": 400000,
+   "inputHash": "4d4618b2dd90558c",
+   "cuesOut": 35,
+   "stats": "CueResegmentStats(runs=2 cues=80→35 added=8 removed=53 gapsClosed=58)",
+   "sha256": "6211cdda47de05a44b0c28a1770f2bc2d6c06000e1db9b8f30b6fd951465d059"
+  },
+  {
+   "seed": 79,
+   "maxAlignCells": 40,
+   "inputHash": "4d4618b2dd90558c",
+   "cuesOut": 35,
+   "stats": "CueResegmentStats(runs=2 cues=80→35 added=8 removed=53 gapsClosed=58)",
+   "sha256": "6211cdda47de05a44b0c28a1770f2bc2d6c06000e1db9b8f30b6fd951465d059"
+  },
+  {
+   "seed": 80,
+   "maxAlignCells": 400000,
+   "inputHash": "-17a94f64fbb62df4",
+   "cuesOut": 58,
+   "stats": "CueResegmentStats(runs=4 cues=64→58 added=17 removed=22 gapsClosed=15)",
+   "sha256": "05ee33a0913e35927c6d3c2ae09b83eaa091a656f8a43229ee1b7efa6bd368a1"
+  },
+  {
+   "seed": 80,
+   "maxAlignCells": 40,
+   "inputHash": "-17a94f64fbb62df4",
+   "cuesOut": 58,
+   "stats": "CueResegmentStats(runs=4 cues=64→58 added=17 removed=22 gapsClosed=15)",
+   "sha256": "05ee33a0913e35927c6d3c2ae09b83eaa091a656f8a43229ee1b7efa6bd368a1"
+  },
+  {
+   "seed": 81,
+   "maxAlignCells": 400000,
+   "inputHash": "2bf63ffdfd18d7d9",
+   "cuesOut": 104,
+   "stats": "CueResegmentStats(runs=3 cues=140→104 added=21 removed=56 gapsClosed=40)",
+   "sha256": "790a2a1590572045c133c26158c13cb285c67bd4570e230d90e7403fe17c8e76"
+  },
+  {
+   "seed": 81,
+   "maxAlignCells": 40,
+   "inputHash": "2bf63ffdfd18d7d9",
+   "cuesOut": 104,
+   "stats": "CueResegmentStats(runs=3 cues=140→104 added=21 removed=56 gapsClosed=40)",
+   "sha256": "790a2a1590572045c133c26158c13cb285c67bd4570e230d90e7403fe17c8e76"
+  },
+  {
+   "seed": 82,
+   "maxAlignCells": 400000,
+   "inputHash": "-3d81a9505547b464",
+   "cuesOut": 91,
+   "stats": "CueResegmentStats(runs=2 cues=90→91 added=23 removed=22 gapsClosed=6)",
+   "sha256": "0528ba29cfcff60936e725ca537a01d3d46deadf86f2bf48e41093c04d0bbfed"
+  },
+  {
+   "seed": 82,
+   "maxAlignCells": 40,
+   "inputHash": "-3d81a9505547b464",
+   "cuesOut": 91,
+   "stats": "CueResegmentStats(runs=2 cues=90→91 added=23 removed=22 gapsClosed=6)",
+   "sha256": "8827199492e310e22f7946881bc9e608948bcfaf3ed5402cc34eaf32bde7c9e2"
+  },
+  {
+   "seed": 83,
+   "maxAlignCells": 400000,
+   "inputHash": "1e6f0003092871f5",
+   "cuesOut": 40,
+   "stats": "CueResegmentStats(runs=1 cues=62→40 added=10 removed=32 gapsClosed=29)",
+   "sha256": "36805419921675b40b8d5421eecb84d2368486f671b2d48b2bc18e57c32d9cfa"
+  },
+  {
+   "seed": 83,
+   "maxAlignCells": 40,
+   "inputHash": "1e6f0003092871f5",
+   "cuesOut": 40,
+   "stats": "CueResegmentStats(runs=1 cues=62→40 added=10 removed=32 gapsClosed=29)",
+   "sha256": "3331e31df3f5ddf863e9fde825b2c112f929853fad59b016d7d93c7aeaa57033"
+  },
+  {
+   "seed": 84,
+   "maxAlignCells": 400000,
+   "inputHash": "475921962d5b38d3",
+   "cuesOut": 132,
+   "stats": "CueResegmentStats(runs=5 cues=172→132 added=36 removed=75 gapsClosed=66)",
+   "sha256": "84c7948138b3877f10ba512dd045bdcc329d3156c533775e099798efc3e015de"
+  },
+  {
+   "seed": 84,
+   "maxAlignCells": 40,
+   "inputHash": "475921962d5b38d3",
+   "cuesOut": 132,
+   "stats": "CueResegmentStats(runs=5 cues=172→132 added=36 removed=75 gapsClosed=66)",
+   "sha256": "6cb48f758e2d25c9b98aaf487997a1c5d4021d0fd163f2c5479b9af61db2d34a"
+  },
+  {
+   "seed": 85,
+   "maxAlignCells": 400000,
+   "inputHash": "29984b2d7148947d",
+   "cuesOut": 39,
+   "stats": "CueResegmentStats(runs=2 cues=35→39 added=9 removed=5 gapsClosed=3)",
+   "sha256": "e08fea8329cc544ba3bfce8e747b95ab6f0040a27872fa47dfa2b19582891850"
+  },
+  {
+   "seed": 85,
+   "maxAlignCells": 40,
+   "inputHash": "29984b2d7148947d",
+   "cuesOut": 39,
+   "stats": "CueResegmentStats(runs=2 cues=35→39 added=9 removed=5 gapsClosed=3)",
+   "sha256": "dbba974ced28736cfceeb5db26abe13651397cd410b35b3e72165bddeeae96e0"
+  },
+  {
+   "seed": 86,
+   "maxAlignCells": 400000,
+   "inputHash": "-6dd1aa2386fb8710",
+   "cuesOut": 9,
+   "stats": "CueResegmentStats(runs=1 cues=9→9 added=0 removed=0 gapsClosed=0)",
+   "sha256": "a75ee8244170264b989d9bd237dd298ed60fa39d0ba7ae5fe880965017da3dbf"
+  },
+  {
+   "seed": 86,
+   "maxAlignCells": 40,
+   "inputHash": "-6dd1aa2386fb8710",
+   "cuesOut": 9,
+   "stats": "CueResegmentStats(runs=1 cues=9→9 added=0 removed=0 gapsClosed=0)",
+   "sha256": "a75ee8244170264b989d9bd237dd298ed60fa39d0ba7ae5fe880965017da3dbf"
+  },
+  {
+   "seed": 87,
+   "maxAlignCells": 400000,
+   "inputHash": "-65dba3483a647da6",
+   "cuesOut": 55,
+   "stats": "CueResegmentStats(runs=2 cues=63→55 added=7 removed=15 gapsClosed=11)",
+   "sha256": "45ac1e08a11b00d318d08c276cd26c1f735434a91136c8457df162bccceceebf"
+  },
+  {
+   "seed": 87,
+   "maxAlignCells": 40,
+   "inputHash": "-65dba3483a647da6",
+   "cuesOut": 55,
+   "stats": "CueResegmentStats(runs=2 cues=63→55 added=7 removed=15 gapsClosed=11)",
+   "sha256": "45ac1e08a11b00d318d08c276cd26c1f735434a91136c8457df162bccceceebf"
+  },
+  {
+   "seed": 88,
+   "maxAlignCells": 400000,
+   "inputHash": "15f9fb9b5927fb83",
+   "cuesOut": 62,
+   "stats": "CueResegmentStats(runs=2 cues=60→62 added=11 removed=9 gapsClosed=3)",
+   "sha256": "f7bfb924b3235fa74513f1d157500e2c05adb2fb0008fe178eaeea79d5ffa569"
+  },
+  {
+   "seed": 88,
+   "maxAlignCells": 40,
+   "inputHash": "15f9fb9b5927fb83",
+   "cuesOut": 62,
+   "stats": "CueResegmentStats(runs=2 cues=60→62 added=11 removed=9 gapsClosed=3)",
+   "sha256": "3c096b5b0e1a95df84b528950c6d46bc487d870e8f38abeec5ba850fd0e3d471"
+  },
+  {
+   "seed": 89,
+   "maxAlignCells": 400000,
+   "inputHash": "-5fafa212711f239",
+   "cuesOut": 106,
+   "stats": "CueResegmentStats(runs=3 cues=105→106 added=9 removed=8 gapsClosed=7)",
+   "sha256": "8702447bb811227b9e02a04e11560b0216c1601c4328adf0d903ef487c4fedf4"
+  },
+  {
+   "seed": 89,
+   "maxAlignCells": 40,
+   "inputHash": "-5fafa212711f239",
+   "cuesOut": 106,
+   "stats": "CueResegmentStats(runs=3 cues=105→106 added=9 removed=8 gapsClosed=7)",
+   "sha256": "5f531aa82deb40ee982e5b271ffc33916c34de4667f55f2901e216333578199c"
+  },
+  {
+   "seed": 90,
+   "maxAlignCells": 400000,
+   "inputHash": "28672568e6dcfdd3",
+   "cuesOut": 50,
+   "stats": "CueResegmentStats(runs=2 cues=45→50 added=9 removed=4 gapsClosed=4)",
+   "sha256": "e1f0b7095bc86864852e940070fd198d24963d8b03f30473f05c77afff5f0961"
+  },
+  {
+   "seed": 90,
+   "maxAlignCells": 40,
+   "inputHash": "28672568e6dcfdd3",
+   "cuesOut": 50,
+   "stats": "CueResegmentStats(runs=2 cues=45→50 added=9 removed=4 gapsClosed=4)",
+   "sha256": "f99fafbf1558543756becec5a8f289412b7debd06060ec19690bd3f0e9524b4d"
+  },
+  {
+   "seed": 91,
+   "maxAlignCells": 400000,
+   "inputHash": "b2efd8206cb028e",
+   "cuesOut": 85,
+   "stats": "CueResegmentStats(runs=2 cues=95→85 added=4 removed=14 gapsClosed=14)",
+   "sha256": "f63d96687e6f6dc2b012a0a3a1448abc744a85c851677b0dc84ae64298669875"
+  },
+  {
+   "seed": 91,
+   "maxAlignCells": 40,
+   "inputHash": "b2efd8206cb028e",
+   "cuesOut": 85,
+   "stats": "CueResegmentStats(runs=2 cues=95→85 added=4 removed=14 gapsClosed=14)",
+   "sha256": "3550e2e66ee87fad35ac2b7a44232625cac3634e2050e1f97236a240f03b09e4"
+  },
+  {
+   "seed": 92,
+   "maxAlignCells": 400000,
+   "inputHash": "40074d3d41068c98",
+   "cuesOut": 111,
+   "stats": "CueResegmentStats(runs=5 cues=158→111 added=20 removed=67 gapsClosed=62)",
+   "sha256": "3e61b468af44dc3d2a01242c48b239774951dec9095064f55cb1414022e18376"
+  },
+  {
+   "seed": 92,
+   "maxAlignCells": 40,
+   "inputHash": "40074d3d41068c98",
+   "cuesOut": 111,
+   "stats": "CueResegmentStats(runs=5 cues=158→111 added=20 removed=67 gapsClosed=62)",
+   "sha256": "3e61b468af44dc3d2a01242c48b239774951dec9095064f55cb1414022e18376"
+  },
+  {
+   "seed": 93,
+   "maxAlignCells": 400000,
+   "inputHash": "-22d99b06e696d872",
+   "cuesOut": 73,
+   "stats": "CueResegmentStats(runs=3 cues=121→73 added=23 removed=71 gapsClosed=63)",
+   "sha256": "c0de926f9167e33a9ff188423029d66347ff7afc33957b55a34661db583109d2"
+  },
+  {
+   "seed": 93,
+   "maxAlignCells": 40,
+   "inputHash": "-22d99b06e696d872",
+   "cuesOut": 73,
+   "stats": "CueResegmentStats(runs=3 cues=121→73 added=23 removed=71 gapsClosed=63)",
+   "sha256": "0274479823124e89f7d0a9044036aec612d4e6a63dcde04461e67710955253db"
+  },
+  {
+   "seed": 94,
+   "maxAlignCells": 400000,
+   "inputHash": "-4281a73af8395fd8",
+   "cuesOut": 79,
+   "stats": "CueResegmentStats(runs=3 cues=98→79 added=20 removed=39 gapsClosed=36)",
+   "sha256": "0d3ba6e2b17dc85f01b952032cd7d453edd04dde43687ad4d739cda4f898ccab"
+  },
+  {
+   "seed": 94,
+   "maxAlignCells": 40,
+   "inputHash": "-4281a73af8395fd8",
+   "cuesOut": 79,
+   "stats": "CueResegmentStats(runs=3 cues=98→79 added=20 removed=39 gapsClosed=36)",
+   "sha256": "5ee88c19c4b5da0fc4032665eff0db36c479281674418c089a284a5708ca2824"
+  },
+  {
+   "seed": 95,
+   "maxAlignCells": 400000,
+   "inputHash": "-296e8beb8b03bfec",
+   "cuesOut": 43,
+   "stats": "CueResegmentStats(runs=1 cues=45→43 added=2 removed=4 gapsClosed=2)",
+   "sha256": "d9cc1680f41f00c4f6faf37e6d9e7d761dc20ab7e7321e08a6693e93b3392d6f"
+  },
+  {
+   "seed": 95,
+   "maxAlignCells": 40,
+   "inputHash": "-296e8beb8b03bfec",
+   "cuesOut": 43,
+   "stats": "CueResegmentStats(runs=1 cues=45→43 added=2 removed=4 gapsClosed=2)",
+   "sha256": "d9cc1680f41f00c4f6faf37e6d9e7d761dc20ab7e7321e08a6693e93b3392d6f"
+  },
+  {
+   "seed": 96,
+   "maxAlignCells": 400000,
+   "inputHash": "-2a4a3535abce7e8d",
+   "cuesOut": 40,
+   "stats": "CueResegmentStats(runs=3 cues=56→40 added=12 removed=28 gapsClosed=23)",
+   "sha256": "fabd9e450f06ab743ce7ac95d46b886313c8077adc53e5b74c18b6ef3af9f471"
+  },
+  {
+   "seed": 96,
+   "maxAlignCells": 40,
+   "inputHash": "-2a4a3535abce7e8d",
+   "cuesOut": 40,
+   "stats": "CueResegmentStats(runs=3 cues=56→40 added=12 removed=28 gapsClosed=23)",
+   "sha256": "406cffe6891daafd2a5aa96465f5c114d0ecb439c7ce09f9f761bfb1556107ce"
+  },
+  {
+   "seed": 97,
+   "maxAlignCells": 400000,
+   "inputHash": "43b88252906c2e6f",
+   "cuesOut": 49,
+   "stats": "CueResegmentStats(runs=2 cues=50→49 added=9 removed=10 gapsClosed=7)",
+   "sha256": "02d2d26aad16620900bf7fda181f226fdf7fa928b6e13c713bb3acacb9a6c095"
+  },
+  {
+   "seed": 97,
+   "maxAlignCells": 40,
+   "inputHash": "43b88252906c2e6f",
+   "cuesOut": 49,
+   "stats": "CueResegmentStats(runs=2 cues=50→49 added=9 removed=10 gapsClosed=7)",
+   "sha256": "02d2d26aad16620900bf7fda181f226fdf7fa928b6e13c713bb3acacb9a6c095"
+  },
+  {
+   "seed": 98,
+   "maxAlignCells": 400000,
+   "inputHash": "-d079e1d15fb299",
+   "cuesOut": 68,
+   "stats": "CueResegmentStats(runs=2 cues=110→68 added=9 removed=51 gapsClosed=46)",
+   "sha256": "93dcac6caa263e79fc2580d94da2f33c7af1f4f9017c568423f12a775d7701d6"
+  },
+  {
+   "seed": 98,
+   "maxAlignCells": 40,
+   "inputHash": "-d079e1d15fb299",
+   "cuesOut": 68,
+   "stats": "CueResegmentStats(runs=2 cues=110→68 added=9 removed=51 gapsClosed=46)",
+   "sha256": "93dcac6caa263e79fc2580d94da2f33c7af1f4f9017c568423f12a775d7701d6"
+  },
+  {
+   "seed": 99,
+   "maxAlignCells": 400000,
+   "inputHash": "52decb7763d481d8",
+   "cuesOut": 114,
+   "stats": "CueResegmentStats(runs=3 cues=140→114 added=15 removed=41 gapsClosed=39)",
+   "sha256": "cd2905761efb2b84ec5fcdb17ee669465515a4fb41f1a6a61c1ab5e98b1890e4"
+  },
+  {
+   "seed": 99,
+   "maxAlignCells": 40,
+   "inputHash": "52decb7763d481d8",
+   "cuesOut": 114,
+   "stats": "CueResegmentStats(runs=3 cues=140→114 added=15 removed=41 gapsClosed=39)",
+   "sha256": "c14081a2c815cb95b7aad37170b5916da6cbb4eddaea6fcf241026e9e92b46a1"
+  },
+  {
+   "seed": 100,
+   "maxAlignCells": 400000,
+   "inputHash": "-18e76a2704068c33",
+   "cuesOut": 78,
+   "stats": "CueResegmentStats(runs=5 cues=120→78 added=23 removed=64 gapsClosed=50)",
+   "sha256": "ca63f644ee4b88aae73ea8e1b17cea53654b1aeae3a5af28347d02ee118449a2"
+  },
+  {
+   "seed": 100,
+   "maxAlignCells": 40,
+   "inputHash": "-18e76a2704068c33",
+   "cuesOut": 78,
+   "stats": "CueResegmentStats(runs=5 cues=120→78 added=23 removed=64 gapsClosed=50)",
+   "sha256": "71c7a9c270260b81c663520f4034aafc438d13f773686f47446d81ab39a3d308"
+  },
+  {
+   "seed": 101,
+   "maxAlignCells": 400000,
+   "inputHash": "41d4cfca5ad0696b",
+   "cuesOut": 18,
+   "stats": "CueResegmentStats(runs=1 cues=17→18 added=2 removed=1 gapsClosed=0)",
+   "sha256": "d84ed747dfbb7900fdb448ee00c36436a0dc27de6dab29a32465fe3dcf88ced3"
+  },
+  {
+   "seed": 101,
+   "maxAlignCells": 40,
+   "inputHash": "41d4cfca5ad0696b",
+   "cuesOut": 18,
+   "stats": "CueResegmentStats(runs=1 cues=17→18 added=2 removed=1 gapsClosed=0)",
+   "sha256": "d84ed747dfbb7900fdb448ee00c36436a0dc27de6dab29a32465fe3dcf88ced3"
+  },
+  {
+   "seed": 102,
+   "maxAlignCells": 400000,
+   "inputHash": "-125f947ef51b7127",
+   "cuesOut": 48,
+   "stats": "CueResegmentStats(runs=1 cues=49→48 added=4 removed=5 gapsClosed=2)",
+   "sha256": "98046bb04524ac4a67806b0703b89cea62d1ea57eb8e02e78e6f23cba16eff19"
+  },
+  {
+   "seed": 102,
+   "maxAlignCells": 40,
+   "inputHash": "-125f947ef51b7127",
+   "cuesOut": 48,
+   "stats": "CueResegmentStats(runs=1 cues=49→48 added=4 removed=5 gapsClosed=2)",
+   "sha256": "98046bb04524ac4a67806b0703b89cea62d1ea57eb8e02e78e6f23cba16eff19"
+  },
+  {
+   "seed": 103,
+   "maxAlignCells": 400000,
+   "inputHash": "-532482b031700b8b",
+   "cuesOut": 55,
+   "stats": "CueResegmentStats(runs=3 cues=86→55 added=6 removed=37 gapsClosed=33)",
+   "sha256": "cc19eaa774ec3b481e65d6c4b52e17d8f070a5bf82256fc82bd78ba2bc181d7b"
+  },
+  {
+   "seed": 103,
+   "maxAlignCells": 40,
+   "inputHash": "-532482b031700b8b",
+   "cuesOut": 55,
+   "stats": "CueResegmentStats(runs=3 cues=86→55 added=6 removed=37 gapsClosed=33)",
+   "sha256": "cc19eaa774ec3b481e65d6c4b52e17d8f070a5bf82256fc82bd78ba2bc181d7b"
+  },
+  {
+   "seed": 104,
+   "maxAlignCells": 400000,
+   "inputHash": "-763a4914526682fc",
+   "cuesOut": 39,
+   "stats": "CueResegmentStats(runs=1 cues=38→39 added=4 removed=3 gapsClosed=3)",
+   "sha256": "1eff135f4039b435bbca42b5ea2e6547a81c60de469835797251fec3e023d79a"
+  },
+  {
+   "seed": 104,
+   "maxAlignCells": 40,
+   "inputHash": "-763a4914526682fc",
+   "cuesOut": 39,
+   "stats": "CueResegmentStats(runs=1 cues=38→39 added=4 removed=3 gapsClosed=3)",
+   "sha256": "cca4e20e1422d5309f45aa35b2678f840cab949db1e5f7e33698400c971919fd"
+  },
+  {
+   "seed": 105,
+   "maxAlignCells": 400000,
+   "inputHash": "-75295f14e9eb8568",
+   "cuesOut": 95,
+   "stats": "CueResegmentStats(runs=2 cues=119→95 added=17 removed=41 gapsClosed=34)",
+   "sha256": "aeaa2c1e56d82a001e7d8c2f32d4b68d830aab6daaa33d6e71bc17aed15b8f28"
+  },
+  {
+   "seed": 105,
+   "maxAlignCells": 40,
+   "inputHash": "-75295f14e9eb8568",
+   "cuesOut": 95,
+   "stats": "CueResegmentStats(runs=2 cues=119→95 added=17 removed=41 gapsClosed=34)",
+   "sha256": "7ae2d12e07eaec6f1149a505885c3198bbc46c05fa180a7e483a37792138293c"
+  },
+  {
+   "seed": 106,
+   "maxAlignCells": 400000,
+   "inputHash": "-40581fde83bde969",
+   "cuesOut": 81,
+   "stats": "CueResegmentStats(runs=4 cues=108→81 added=18 removed=45 gapsClosed=38)",
+   "sha256": "8441b8efd788bb31563769f4577861636bd2e23d00c07740fb3711fe34b774d3"
+  },
+  {
+   "seed": 106,
+   "maxAlignCells": 40,
+   "inputHash": "-40581fde83bde969",
+   "cuesOut": 81,
+   "stats": "CueResegmentStats(runs=4 cues=108→81 added=18 removed=45 gapsClosed=38)",
+   "sha256": "8441b8efd788bb31563769f4577861636bd2e23d00c07740fb3711fe34b774d3"
+  },
+  {
+   "seed": 107,
+   "maxAlignCells": 400000,
+   "inputHash": "1aa17e61f3e555be",
+   "cuesOut": 84,
+   "stats": "CueResegmentStats(runs=2 cues=117→84 added=16 removed=49 gapsClosed=43)",
+   "sha256": "9ab7990c317dd3c9c6ebea3bf8b8b2b0473ca9276f8ae4fb89ef2ca8544aacba"
+  },
+  {
+   "seed": 107,
+   "maxAlignCells": 40,
+   "inputHash": "1aa17e61f3e555be",
+   "cuesOut": 84,
+   "stats": "CueResegmentStats(runs=2 cues=117→84 added=16 removed=49 gapsClosed=43)",
+   "sha256": "3747f545485c4c11103744ab762d3601cc2b6f9072c141caf02734f027285676"
+  },
+  {
+   "seed": 108,
+   "maxAlignCells": 400000,
+   "inputHash": "2ecbf0221e447048",
+   "cuesOut": 69,
+   "stats": "CueResegmentStats(runs=1 cues=90→69 added=14 removed=35 gapsClosed=32)",
+   "sha256": "e957c51127ef1d124f1a4930aaa5410e4581611e881cb7047ca9045db5ee80a5"
+  },
+  {
+   "seed": 108,
+   "maxAlignCells": 40,
+   "inputHash": "2ecbf0221e447048",
+   "cuesOut": 69,
+   "stats": "CueResegmentStats(runs=1 cues=90→69 added=14 removed=35 gapsClosed=32)",
+   "sha256": "e957c51127ef1d124f1a4930aaa5410e4581611e881cb7047ca9045db5ee80a5"
+  },
+  {
+   "seed": 109,
+   "maxAlignCells": 400000,
+   "inputHash": "-611deda9998da695",
+   "cuesOut": 88,
+   "stats": "CueResegmentStats(runs=3 cues=122→88 added=17 removed=51 gapsClosed=42)",
+   "sha256": "3dbf2fae5371fdb1b64b8f1cdd8f3eb2a8d6711733aec843c7fbc7eaa6767175"
+  },
+  {
+   "seed": 109,
+   "maxAlignCells": 40,
+   "inputHash": "-611deda9998da695",
+   "cuesOut": 88,
+   "stats": "CueResegmentStats(runs=3 cues=122→88 added=17 removed=51 gapsClosed=42)",
+   "sha256": "3dbf2fae5371fdb1b64b8f1cdd8f3eb2a8d6711733aec843c7fbc7eaa6767175"
+  },
+  {
+   "seed": 110,
+   "maxAlignCells": 400000,
+   "inputHash": "3bd705a4765a51e9",
+   "cuesOut": 6,
+   "stats": "CueResegmentStats(runs=1 cues=29→6 added=0 removed=23 gapsClosed=20)",
+   "sha256": "9b613ff9665b99e483ca7b029bef83d92d2880dc2014400070a8c02308346fcc"
+  },
+  {
+   "seed": 110,
+   "maxAlignCells": 40,
+   "inputHash": "3bd705a4765a51e9",
+   "cuesOut": 6,
+   "stats": "CueResegmentStats(runs=1 cues=29→6 added=0 removed=23 gapsClosed=20)",
+   "sha256": "9b613ff9665b99e483ca7b029bef83d92d2880dc2014400070a8c02308346fcc"
+  },
+  {
+   "seed": 111,
+   "maxAlignCells": 400000,
+   "inputHash": "-3948a3e2a0f0e282",
+   "cuesOut": 119,
+   "stats": "CueResegmentStats(runs=6 cues=145→119 added=35 removed=61 gapsClosed=57)",
+   "sha256": "0ce2d427393c2db8b42c63219ae359a087c58eb4bc3817d1e878dd45a80cc5fc"
+  },
+  {
+   "seed": 111,
+   "maxAlignCells": 40,
+   "inputHash": "-3948a3e2a0f0e282",
+   "cuesOut": 119,
+   "stats": "CueResegmentStats(runs=6 cues=145→119 added=35 removed=61 gapsClosed=57)",
+   "sha256": "6d0362ea2ad76799cc7bdcd18156944b90d8023fc5c2c141f780a6f1e15f67fb"
+  },
+  {
+   "seed": 112,
+   "maxAlignCells": 400000,
+   "inputHash": "3e87c4d8602f1493",
+   "cuesOut": 31,
+   "stats": "CueResegmentStats(runs=2 cues=35→31 added=6 removed=7 gapsClosed=6)",
+   "sha256": "6f3db7d1bb693cfa85754f01b3e2e4bf76327584b2a4a05c4ab158b4690d41bc"
+  },
+  {
+   "seed": 112,
+   "maxAlignCells": 40,
+   "inputHash": "3e87c4d8602f1493",
+   "cuesOut": 33,
+   "stats": "CueResegmentStats(runs=2 cues=35→33 added=6 removed=7 gapsClosed=6)",
+   "sha256": "0539c2bf342490d3b1dfbed980c2b6f1163597814602613af400ba4e86234771"
+  },
+  {
+   "seed": 113,
+   "maxAlignCells": 400000,
+   "inputHash": "58ec4534c308bb6f",
+   "cuesOut": 99,
+   "stats": "CueResegmentStats(runs=5 cues=108→99 added=20 removed=29 gapsClosed=24)",
+   "sha256": "b21d6b69b022182d0823525f45c6f894fb54e70faf9102a7134246871abb8192"
+  },
+  {
+   "seed": 113,
+   "maxAlignCells": 40,
+   "inputHash": "58ec4534c308bb6f",
+   "cuesOut": 99,
+   "stats": "CueResegmentStats(runs=5 cues=108→99 added=20 removed=29 gapsClosed=24)",
+   "sha256": "573b6ca2e93e0c2aaef17faf6ed21c75dc238b54b5ea9f654eddc335ba4c5033"
+  },
+  {
+   "seed": 114,
+   "maxAlignCells": 400000,
+   "inputHash": "1711f633a5086fe3",
+   "cuesOut": 37,
+   "stats": "CueResegmentStats(runs=1 cues=29→37 added=14 removed=6 gapsClosed=5)",
+   "sha256": "7be9ee5a7118b7a729de84473f5ac0754a9ab81820eba9103ce2722098783c56"
+  },
+  {
+   "seed": 114,
+   "maxAlignCells": 40,
+   "inputHash": "1711f633a5086fe3",
+   "cuesOut": 37,
+   "stats": "CueResegmentStats(runs=1 cues=29→37 added=14 removed=6 gapsClosed=5)",
+   "sha256": "829b848d2f920fa0ceeeb6d5dc9c0c9c9e537a1000fca3027c3854b1108477c7"
+  },
+  {
+   "seed": 115,
+   "maxAlignCells": 400000,
+   "inputHash": "6e679b4784fc0946",
+   "cuesOut": 85,
+   "stats": "CueResegmentStats(runs=4 cues=97→85 added=7 removed=19 gapsClosed=15)",
+   "sha256": "db4c2f33f9288432e98f5e8e578fb3e3f7f0a372628f2579a2cda895c2d302bd"
+  },
+  {
+   "seed": 115,
+   "maxAlignCells": 40,
+   "inputHash": "6e679b4784fc0946",
+   "cuesOut": 85,
+   "stats": "CueResegmentStats(runs=4 cues=97→85 added=7 removed=19 gapsClosed=15)",
+   "sha256": "9f6d31613279b63bbd4471511678fb283cc3a6b1a394175b66ca6032a97a389b"
+  },
+  {
+   "seed": 116,
+   "maxAlignCells": 400000,
+   "inputHash": "-41fdbf384c8893b0",
+   "cuesOut": 52,
+   "stats": "CueResegmentStats(runs=2 cues=49→52 added=3 removed=0 gapsClosed=1)",
+   "sha256": "cff4341f5a58b8ee29cdc903e59e098c3876887c56402638c7550dd8e5bce096"
+  },
+  {
+   "seed": 116,
+   "maxAlignCells": 40,
+   "inputHash": "-41fdbf384c8893b0",
+   "cuesOut": 52,
+   "stats": "CueResegmentStats(runs=2 cues=49→52 added=3 removed=0 gapsClosed=1)",
+   "sha256": "cff4341f5a58b8ee29cdc903e59e098c3876887c56402638c7550dd8e5bce096"
+  },
+  {
+   "seed": 117,
+   "maxAlignCells": 400000,
+   "inputHash": "-4c90468fde22589c",
+   "cuesOut": 73,
+   "stats": "CueResegmentStats(runs=3 cues=83→73 added=10 removed=20 gapsClosed=20)",
+   "sha256": "6ba47229beda7da42d4036bba4941b11d15d93ee62c572f2f33ed83e15c9920e"
+  },
+  {
+   "seed": 117,
+   "maxAlignCells": 40,
+   "inputHash": "-4c90468fde22589c",
+   "cuesOut": 73,
+   "stats": "CueResegmentStats(runs=3 cues=83→73 added=10 removed=20 gapsClosed=20)",
+   "sha256": "6ba47229beda7da42d4036bba4941b11d15d93ee62c572f2f33ed83e15c9920e"
+  },
+  {
+   "seed": 118,
+   "maxAlignCells": 400000,
+   "inputHash": "6db45fe21388f45c",
+   "cuesOut": 114,
+   "stats": "CueResegmentStats(runs=4 cues=123→114 added=11 removed=20 gapsClosed=20)",
+   "sha256": "658dfb6d5e8caafa69be3fed1bf307f11538d766af7f356258fea5af3e452380"
+  },
+  {
+   "seed": 118,
+   "maxAlignCells": 40,
+   "inputHash": "6db45fe21388f45c",
+   "cuesOut": 114,
+   "stats": "CueResegmentStats(runs=4 cues=123→114 added=11 removed=20 gapsClosed=20)",
+   "sha256": "64d55ebce4c34136348115184a435e0ef1b85cc9d0dca62d53d0a4be012c8ac0"
+  },
+  {
+   "seed": 119,
+   "maxAlignCells": 400000,
+   "inputHash": "a3df617ab0db7a6",
+   "cuesOut": 38,
+   "stats": "CueResegmentStats(runs=2 cues=44→38 added=10 removed=16 gapsClosed=15)",
+   "sha256": "01d23145c28fa4f53da7439cbcffc117265a2986e8d01075891a6961ab919784"
+  },
+  {
+   "seed": 119,
+   "maxAlignCells": 40,
+   "inputHash": "a3df617ab0db7a6",
+   "cuesOut": 38,
+   "stats": "CueResegmentStats(runs=2 cues=44→38 added=10 removed=16 gapsClosed=15)",
+   "sha256": "01d23145c28fa4f53da7439cbcffc117265a2986e8d01075891a6961ab919784"
+  },
+  {
+   "seed": 120,
+   "maxAlignCells": 400000,
+   "inputHash": "-81dd6cb2c260e70",
+   "cuesOut": 40,
+   "stats": "CueResegmentStats(runs=1 cues=60→40 added=15 removed=35 gapsClosed=34)",
+   "sha256": "9635dc900d375924e5d62bbf3ad1887bd8ee0a62bfcaa2ebd68fdbe08ac3a5ef"
+  },
+  {
+   "seed": 120,
+   "maxAlignCells": 40,
+   "inputHash": "-81dd6cb2c260e70",
+   "cuesOut": 40,
+   "stats": "CueResegmentStats(runs=1 cues=60→40 added=15 removed=35 gapsClosed=34)",
+   "sha256": "8489beee0dc711da45d76a2022059eeb8ac06e4e21e98851ce3256976cf2e81c"
+  },
+  {
+   "seed": 121,
+   "maxAlignCells": 400000,
+   "inputHash": "3552606ce031cb8a",
+   "cuesOut": 127,
+   "stats": "CueResegmentStats(runs=5 cues=125→127 added=30 removed=28 gapsClosed=21)",
+   "sha256": "d3488d89cff757d1409ed94f1f0ef8c8d507082b37a366032c0fcfe57971c85e"
+  },
+  {
+   "seed": 121,
+   "maxAlignCells": 40,
+   "inputHash": "3552606ce031cb8a",
+   "cuesOut": 127,
+   "stats": "CueResegmentStats(runs=5 cues=125→127 added=30 removed=28 gapsClosed=21)",
+   "sha256": "d3488d89cff757d1409ed94f1f0ef8c8d507082b37a366032c0fcfe57971c85e"
+  },
+  {
+   "seed": 122,
+   "maxAlignCells": 400000,
+   "inputHash": "-517e15796cf61ed0",
+   "cuesOut": 32,
+   "stats": "CueResegmentStats(runs=1 cues=30→32 added=6 removed=4 gapsClosed=6)",
+   "sha256": "54aa381881408cc7188bee5696e7d855750d6ac2c3dfc75dbf43efebd31127fc"
+  },
+  {
+   "seed": 122,
+   "maxAlignCells": 40,
+   "inputHash": "-517e15796cf61ed0",
+   "cuesOut": 32,
+   "stats": "CueResegmentStats(runs=1 cues=30→32 added=6 removed=4 gapsClosed=6)",
+   "sha256": "54aa381881408cc7188bee5696e7d855750d6ac2c3dfc75dbf43efebd31127fc"
+  },
+  {
+   "seed": 123,
+   "maxAlignCells": 400000,
+   "inputHash": "45057ab04dffd53a",
+   "cuesOut": 22,
+   "stats": "CueResegmentStats(runs=2 cues=20→22 added=7 removed=5 gapsClosed=3)",
+   "sha256": "ea27095cccb533bed32063b14f3c2821e4406cab303827baedaa154cebb125c6"
+  },
+  {
+   "seed": 123,
+   "maxAlignCells": 40,
+   "inputHash": "45057ab04dffd53a",
+   "cuesOut": 22,
+   "stats": "CueResegmentStats(runs=2 cues=20→22 added=7 removed=5 gapsClosed=3)",
+   "sha256": "587d705227d579751f810f3347773f9dc5e430a29e6edc33584ed49aba39a14b"
+  },
+  {
+   "seed": 124,
+   "maxAlignCells": 400000,
+   "inputHash": "d29add31196124e",
+   "cuesOut": 92,
+   "stats": "CueResegmentStats(runs=5 cues=113→92 added=13 removed=34 gapsClosed=27)",
+   "sha256": "1c75ae277f77311d614e3d19175752349d917e1a169a80d9ef5b7d0f4738a274"
+  },
+  {
+   "seed": 124,
+   "maxAlignCells": 40,
+   "inputHash": "d29add31196124e",
+   "cuesOut": 92,
+   "stats": "CueResegmentStats(runs=5 cues=113→92 added=13 removed=34 gapsClosed=27)",
+   "sha256": "c41a1889c20523af1ee0d9f53d96f6274d1c3ab5c521d4bd7eb5b287562a3d68"
+  },
+  {
+   "seed": 125,
+   "maxAlignCells": 400000,
+   "inputHash": "14a6c548dd2931a7",
+   "cuesOut": 139,
+   "stats": "CueResegmentStats(runs=3 cues=139→139 added=12 removed=12 gapsClosed=11)",
+   "sha256": "1301291b9c1560c282ea882b925eea1e7d6cee5f25aa041e715a50e01fe284a1"
+  },
+  {
+   "seed": 125,
+   "maxAlignCells": 40,
+   "inputHash": "14a6c548dd2931a7",
+   "cuesOut": 139,
+   "stats": "CueResegmentStats(runs=3 cues=139→139 added=12 removed=12 gapsClosed=11)",
+   "sha256": "b9e34a477d7faa50af87757252e540e762734cc191c078da947b414c0982ecd3"
+  },
+  {
+   "seed": 126,
+   "maxAlignCells": 400000,
+   "inputHash": "-3277a0382d1e5b19",
+   "cuesOut": 71,
+   "stats": "CueResegmentStats(runs=3 cues=70→71 added=16 removed=15 gapsClosed=7)",
+   "sha256": "552257c2c7c855e292c9ae6fa26eaa50bbf3c614338149d663ddc4ea6006917a"
+  },
+  {
+   "seed": 126,
+   "maxAlignCells": 40,
+   "inputHash": "-3277a0382d1e5b19",
+   "cuesOut": 71,
+   "stats": "CueResegmentStats(runs=3 cues=70→71 added=16 removed=15 gapsClosed=7)",
+   "sha256": "14822d967cf8d9c809bd021579376934e00e915039662864fa5af347f1b173ae"
+  },
+  {
+   "seed": 127,
+   "maxAlignCells": 400000,
+   "inputHash": "-4998552ff64ddbb2",
+   "cuesOut": 69,
+   "stats": "CueResegmentStats(runs=2 cues=97→69 added=8 removed=36 gapsClosed=39)",
+   "sha256": "d112966c377651dc41a9a9f5066209dcef2637ccc71ed67344bbb614efe5e6f1"
+  },
+  {
+   "seed": 127,
+   "maxAlignCells": 40,
+   "inputHash": "-4998552ff64ddbb2",
+   "cuesOut": 69,
+   "stats": "CueResegmentStats(runs=2 cues=97→69 added=8 removed=36 gapsClosed=39)",
+   "sha256": "d112966c377651dc41a9a9f5066209dcef2637ccc71ed67344bbb614efe5e6f1"
+  },
+  {
+   "seed": 128,
+   "maxAlignCells": 400000,
+   "inputHash": "-3d4a70bec971322b",
+   "cuesOut": 26,
+   "stats": "CueResegmentStats(runs=1 cues=33→26 added=6 removed=13 gapsClosed=12)",
+   "sha256": "3d0a533825cd3add1e328067512bee0c851ef3d34eb98b230b090ed34d5448bb"
+  },
+  {
+   "seed": 128,
+   "maxAlignCells": 40,
+   "inputHash": "-3d4a70bec971322b",
+   "cuesOut": 26,
+   "stats": "CueResegmentStats(runs=1 cues=33→26 added=6 removed=13 gapsClosed=12)",
+   "sha256": "3d0a533825cd3add1e328067512bee0c851ef3d34eb98b230b090ed34d5448bb"
+  },
+  {
+   "seed": 129,
+   "maxAlignCells": 400000,
+   "inputHash": "-1631ba0ecbd7fd54",
+   "cuesOut": 69,
+   "stats": "CueResegmentStats(runs=3 cues=76→69 added=17 removed=24 gapsClosed=24)",
+   "sha256": "642dcd024b3c25cf85a92df59d049c7fb1f014ffe85f71573feb03a06a6e10ee"
+  },
+  {
+   "seed": 129,
+   "maxAlignCells": 40,
+   "inputHash": "-1631ba0ecbd7fd54",
+   "cuesOut": 69,
+   "stats": "CueResegmentStats(runs=3 cues=76→69 added=17 removed=24 gapsClosed=24)",
+   "sha256": "e8380ff934b65ed1c4c3510bd8f8d2e08741c939d1fd5cd1a1f771a1479b812b"
+  },
+  {
+   "seed": 130,
+   "maxAlignCells": 400000,
+   "inputHash": "ef9efc1ca6ee218",
+   "cuesOut": 61,
+   "stats": "CueResegmentStats(runs=2 cues=57→61 added=7 removed=3 gapsClosed=3)",
+   "sha256": "79dca2fbd03820a59d79cc58cba61ccbe9055cb55999e012b03954877f63acc9"
+  },
+  {
+   "seed": 130,
+   "maxAlignCells": 40,
+   "inputHash": "ef9efc1ca6ee218",
+   "cuesOut": 61,
+   "stats": "CueResegmentStats(runs=2 cues=57→61 added=7 removed=3 gapsClosed=3)",
+   "sha256": "79dca2fbd03820a59d79cc58cba61ccbe9055cb55999e012b03954877f63acc9"
+  },
+  {
+   "seed": 131,
+   "maxAlignCells": 400000,
+   "inputHash": "-2e19621a6a3d658",
+   "cuesOut": 68,
+   "stats": "CueResegmentStats(runs=2 cues=65→68 added=11 removed=7 gapsClosed=6)",
+   "sha256": "75e92ba3b0c8d0eb08ccde2030791737f981b1116055f9146757c4d05d26abf5"
+  },
+  {
+   "seed": 131,
+   "maxAlignCells": 40,
+   "inputHash": "-2e19621a6a3d658",
+   "cuesOut": 69,
+   "stats": "CueResegmentStats(runs=2 cues=65→69 added=11 removed=7 gapsClosed=6)",
+   "sha256": "114b60d02e9d807498b43a38a69505548b52b096a746e3eaeaa5a7d9e7f00c74"
+  },
+  {
+   "seed": 132,
+   "maxAlignCells": 400000,
+   "inputHash": "1ace10a9e5a96b6c",
+   "cuesOut": 49,
+   "stats": "CueResegmentStats(runs=1 cues=48→49 added=6 removed=5 gapsClosed=2)",
+   "sha256": "f8317f936bc3ea5ea02191bbc97194b61835e6ec91e5d6e073e9cdfb71ce2227"
+  },
+  {
+   "seed": 132,
+   "maxAlignCells": 40,
+   "inputHash": "1ace10a9e5a96b6c",
+   "cuesOut": 49,
+   "stats": "CueResegmentStats(runs=1 cues=48→49 added=6 removed=5 gapsClosed=2)",
+   "sha256": "f8317f936bc3ea5ea02191bbc97194b61835e6ec91e5d6e073e9cdfb71ce2227"
+  },
+  {
+   "seed": 133,
+   "maxAlignCells": 400000,
+   "inputHash": "-5a5b63202af5c056",
+   "cuesOut": 46,
+   "stats": "CueResegmentStats(runs=2 cues=76→46 added=9 removed=38 gapsClosed=39)",
+   "sha256": "5527e7bc621f6d6cc42a500bdb6ee36328aa17b8b9624d347fdf48768072fea3"
+  },
+  {
+   "seed": 133,
+   "maxAlignCells": 40,
+   "inputHash": "-5a5b63202af5c056",
+   "cuesOut": 46,
+   "stats": "CueResegmentStats(runs=2 cues=76→46 added=9 removed=38 gapsClosed=39)",
+   "sha256": "5527e7bc621f6d6cc42a500bdb6ee36328aa17b8b9624d347fdf48768072fea3"
+  },
+  {
+   "seed": 134,
+   "maxAlignCells": 400000,
+   "inputHash": "-3b5a04886eef2e90",
+   "cuesOut": 30,
+   "stats": "CueResegmentStats(runs=1 cues=29→30 added=8 removed=5 gapsClosed=5)",
+   "sha256": "e530eeb2f7fc84b694fcd02324dd6c5f2d89f7330490e52f45559c2918247d64"
+  },
+  {
+   "seed": 134,
+   "maxAlignCells": 40,
+   "inputHash": "-3b5a04886eef2e90",
+   "cuesOut": 30,
+   "stats": "CueResegmentStats(runs=1 cues=29→30 added=8 removed=5 gapsClosed=5)",
+   "sha256": "61ec79c5689e07ad823d3e379dda80278f443190059987a60b580ff7e36b92d3"
+  },
+  {
+   "seed": 135,
+   "maxAlignCells": 400000,
+   "inputHash": "-19290a491e8a99f9",
+   "cuesOut": 81,
+   "stats": "CueResegmentStats(runs=3 cues=104→81 added=12 removed=35 gapsClosed=27)",
+   "sha256": "7adffd644d90ea139d89a1363ccce2941231b38bcf9facf44c28ca82bb63c956"
+  },
+  {
+   "seed": 135,
+   "maxAlignCells": 40,
+   "inputHash": "-19290a491e8a99f9",
+   "cuesOut": 81,
+   "stats": "CueResegmentStats(runs=3 cues=104→81 added=12 removed=35 gapsClosed=27)",
+   "sha256": "7adffd644d90ea139d89a1363ccce2941231b38bcf9facf44c28ca82bb63c956"
+  },
+  {
+   "seed": 136,
+   "maxAlignCells": 400000,
+   "inputHash": "-754a841918309a3d",
+   "cuesOut": 76,
+   "stats": "CueResegmentStats(runs=2 cues=81→76 added=17 removed=22 gapsClosed=13)",
+   "sha256": "dbdfe69e262b0fffa5b5a1124f9a4fa5070aa08c50ecb9926b6025615cd455de"
+  },
+  {
+   "seed": 136,
+   "maxAlignCells": 40,
+   "inputHash": "-754a841918309a3d",
+   "cuesOut": 76,
+   "stats": "CueResegmentStats(runs=2 cues=81→76 added=17 removed=22 gapsClosed=13)",
+   "sha256": "e943945cddfeb53464c6dc7c70eddceb5d1ce29483ec4a69343116a428786892"
+  },
+  {
+   "seed": 137,
+   "maxAlignCells": 400000,
+   "inputHash": "1dc72c420fa26dcc",
+   "cuesOut": 83,
+   "stats": "CueResegmentStats(runs=4 cues=91→83 added=16 removed=23 gapsClosed=25)",
+   "sha256": "2cf41b4e3af8ae434837c5a35d3e179f778ec71b104ad8e3129d8f98449b867e"
+  },
+  {
+   "seed": 137,
+   "maxAlignCells": 40,
+   "inputHash": "1dc72c420fa26dcc",
+   "cuesOut": 83,
+   "stats": "CueResegmentStats(runs=4 cues=91→83 added=16 removed=23 gapsClosed=25)",
+   "sha256": "9b55660e82a2f66db56f925b6d9eb4026d4d4a30b4017ddadb431c0b8c6a1af9"
+  },
+  {
+   "seed": 138,
+   "maxAlignCells": 400000,
+   "inputHash": "-10badcd990c0ce6e",
+   "cuesOut": 88,
+   "stats": "CueResegmentStats(runs=3 cues=81→88 added=17 removed=10 gapsClosed=9)",
+   "sha256": "385af1aefe4ef1ad737a811d0bc92a62ad6861d92f36e16e326053286952c759"
+  },
+  {
+   "seed": 138,
+   "maxAlignCells": 40,
+   "inputHash": "-10badcd990c0ce6e",
+   "cuesOut": 88,
+   "stats": "CueResegmentStats(runs=3 cues=81→88 added=17 removed=10 gapsClosed=9)",
+   "sha256": "96c0705b6136ecf6352e72832e431695bba68747b04502a0a6aabd5d33fa69d4"
+  },
+  {
+   "seed": 139,
+   "maxAlignCells": 400000,
+   "inputHash": "39f86b41642685e0",
+   "cuesOut": 55,
+   "stats": "CueResegmentStats(runs=2 cues=91→55 added=8 removed=44 gapsClosed=36)",
+   "sha256": "2c9df29025e213940a90fc999cfd04a31ab43f835fbdbf8fee114bd2bd7d021c"
+  },
+  {
+   "seed": 139,
+   "maxAlignCells": 40,
+   "inputHash": "39f86b41642685e0",
+   "cuesOut": 55,
+   "stats": "CueResegmentStats(runs=2 cues=91→55 added=8 removed=44 gapsClosed=36)",
+   "sha256": "846b0bca5f661b1cd1a352cb546574345cfca3cf907be84db48dba27ae1a5e56"
+  },
+  {
+   "seed": 140,
+   "maxAlignCells": 400000,
+   "inputHash": "-4e6d4b9f0bfce54b",
+   "cuesOut": 88,
+   "stats": "CueResegmentStats(runs=4 cues=135→88 added=27 removed=74 gapsClosed=73)",
+   "sha256": "07993d006853d23d9b7b9c1afe48487aef031b1afff19977fb6cf77b1cfd7d02"
+  },
+  {
+   "seed": 140,
+   "maxAlignCells": 40,
+   "inputHash": "-4e6d4b9f0bfce54b",
+   "cuesOut": 88,
+   "stats": "CueResegmentStats(runs=4 cues=135→88 added=27 removed=74 gapsClosed=73)",
+   "sha256": "55fcdb4be56c2c6e928cf7edb772a7cadeea784df892fd03d25a2efd5acaabc3"
+  },
+  {
+   "seed": 141,
+   "maxAlignCells": 400000,
+   "inputHash": "5a6bd0f99fb9db53",
+   "cuesOut": 130,
+   "stats": "CueResegmentStats(runs=5 cues=130→130 added=31 removed=31 gapsClosed=19)",
+   "sha256": "778ab096080017e3c49a8aba351298737945211ba1b14e2c0f3ffa7978fd03cc"
+  },
+  {
+   "seed": 141,
+   "maxAlignCells": 40,
+   "inputHash": "5a6bd0f99fb9db53",
+   "cuesOut": 130,
+   "stats": "CueResegmentStats(runs=5 cues=130→130 added=31 removed=31 gapsClosed=19)",
+   "sha256": "778ab096080017e3c49a8aba351298737945211ba1b14e2c0f3ffa7978fd03cc"
+  },
+  {
+   "seed": 142,
+   "maxAlignCells": 400000,
+   "inputHash": "-1c3ded281ccf663c",
+   "cuesOut": 125,
+   "stats": "CueResegmentStats(runs=3 cues=154→125 added=20 removed=48 gapsClosed=49)",
+   "sha256": "7eb40d2a5bdb386b5984f89b6b28dbced18211c7b8990deddf22f4e6ce46b27d"
+  },
+  {
+   "seed": 142,
+   "maxAlignCells": 40,
+   "inputHash": "-1c3ded281ccf663c",
+   "cuesOut": 126,
+   "stats": "CueResegmentStats(runs=3 cues=154→126 added=20 removed=48 gapsClosed=49)",
+   "sha256": "45e2e939d01e7ee0cc522518ce8d90767d513ef9695dc63fcdaae44f7cb90bb7"
+  },
+  {
+   "seed": 143,
+   "maxAlignCells": 400000,
+   "inputHash": "3b11ced60764d3b0",
+   "cuesOut": 123,
+   "stats": "CueResegmentStats(runs=5 cues=106→123 added=32 removed=15 gapsClosed=8)",
+   "sha256": "cede92cdb38e90f3e2d6bd37d4aaf93f1702c5a345a2c48a1a2a350065da8333"
+  },
+  {
+   "seed": 143,
+   "maxAlignCells": 40,
+   "inputHash": "3b11ced60764d3b0",
+   "cuesOut": 123,
+   "stats": "CueResegmentStats(runs=5 cues=106→123 added=32 removed=15 gapsClosed=8)",
+   "sha256": "cede92cdb38e90f3e2d6bd37d4aaf93f1702c5a345a2c48a1a2a350065da8333"
+  },
+  {
+   "seed": 144,
+   "maxAlignCells": 400000,
+   "inputHash": "3401366df9f8af26",
+   "cuesOut": 97,
+   "stats": "CueResegmentStats(runs=3 cues=136→97 added=26 removed=61 gapsClosed=63)",
+   "sha256": "edb058da014d3587a30378a1682396efe6d366e38f3025d4640aa06a87b1bf3e"
+  },
+  {
+   "seed": 144,
+   "maxAlignCells": 40,
+   "inputHash": "3401366df9f8af26",
+   "cuesOut": 100,
+   "stats": "CueResegmentStats(runs=3 cues=136→100 added=26 removed=61 gapsClosed=63)",
+   "sha256": "772beb40a7db60c022f325780cca0a5d344d943d41c8a7016ac516c1a9f045bc"
+  },
+  {
+   "seed": 145,
+   "maxAlignCells": 400000,
+   "inputHash": "21e4fe0c09bf43cf",
+   "cuesOut": 35,
+   "stats": "CueResegmentStats(runs=1 cues=27→35 added=11 removed=2 gapsClosed=4)",
+   "sha256": "19e5e92a2e5bf3b2c69f1454b2ca32526484d98864159baaa4870eac30a35bbb"
+  },
+  {
+   "seed": 145,
+   "maxAlignCells": 40,
+   "inputHash": "21e4fe0c09bf43cf",
+   "cuesOut": 35,
+   "stats": "CueResegmentStats(runs=1 cues=27→35 added=11 removed=2 gapsClosed=4)",
+   "sha256": "b74a8fe16ca71458e9783acfd62ea457dce908a83afd224cfe21b318111eba64"
+  },
+  {
+   "seed": 146,
+   "maxAlignCells": 400000,
+   "inputHash": "495f110ea6d8c52a",
+   "cuesOut": 45,
+   "stats": "CueResegmentStats(runs=1 cues=81→45 added=9 removed=45 gapsClosed=43)",
+   "sha256": "c08ed7554c8d0a0dd7a2e6874693b3358abd423108cedc73c686843b1eec7498"
+  },
+  {
+   "seed": 146,
+   "maxAlignCells": 40,
+   "inputHash": "495f110ea6d8c52a",
+   "cuesOut": 45,
+   "stats": "CueResegmentStats(runs=1 cues=81→45 added=9 removed=45 gapsClosed=43)",
+   "sha256": "c08ed7554c8d0a0dd7a2e6874693b3358abd423108cedc73c686843b1eec7498"
+  },
+  {
+   "seed": 147,
+   "maxAlignCells": 400000,
+   "inputHash": "67cd2f9a7a946ca1",
+   "cuesOut": 33,
+   "stats": "CueResegmentStats(runs=3 cues=31→33 added=10 removed=8 gapsClosed=3)",
+   "sha256": "e4790c78f5eaf2f073bfcf716759008c0d4924a2b995cf9f225ae096254fea11"
+  },
+  {
+   "seed": 147,
+   "maxAlignCells": 40,
+   "inputHash": "67cd2f9a7a946ca1",
+   "cuesOut": 33,
+   "stats": "CueResegmentStats(runs=3 cues=31→33 added=10 removed=8 gapsClosed=3)",
+   "sha256": "4f0ed413ba95cb340366a3453dfed5c17e5ffecd28af987933116d44d976ffe2"
+  },
+  {
+   "seed": 148,
+   "maxAlignCells": 400000,
+   "inputHash": "-60a39b1efe3c3a8b",
+   "cuesOut": 58,
+   "stats": "CueResegmentStats(runs=2 cues=72→58 added=10 removed=24 gapsClosed=21)",
+   "sha256": "045ddefd232121dfcc5d65b603cd9e97e384f23187a6bfbd43e4bbd01c97fcc1"
+  },
+  {
+   "seed": 148,
+   "maxAlignCells": 40,
+   "inputHash": "-60a39b1efe3c3a8b",
+   "cuesOut": 58,
+   "stats": "CueResegmentStats(runs=2 cues=72→58 added=10 removed=24 gapsClosed=21)",
+   "sha256": "a6fdbb6cb5fb7bc347d89449ed539e7edd240da366d591a95d225b9c56798133"
+  },
+  {
+   "seed": 149,
+   "maxAlignCells": 400000,
+   "inputHash": "5e2da8d83808de26",
+   "cuesOut": 54,
+   "stats": "CueResegmentStats(runs=1 cues=70→54 added=11 removed=27 gapsClosed=26)",
+   "sha256": "4dfe9f58a4e4d1f8a66100a7df23ca9012a1dc3e100b2902a2d188c3a8eeb451"
+  },
+  {
+   "seed": 149,
+   "maxAlignCells": 40,
+   "inputHash": "5e2da8d83808de26",
+   "cuesOut": 54,
+   "stats": "CueResegmentStats(runs=1 cues=70→54 added=11 removed=27 gapsClosed=26)",
+   "sha256": "4dfe9f58a4e4d1f8a66100a7df23ca9012a1dc3e100b2902a2d188c3a8eeb451"
+  },
+  {
+   "seed": 150,
+   "maxAlignCells": 400000,
+   "inputHash": "-1b5e2a7391de1d89",
+   "cuesOut": 42,
+   "stats": "CueResegmentStats(runs=1 cues=82→42 added=8 removed=48 gapsClosed=46)",
+   "sha256": "1197d9c40dbf3f9cf58cea08cf0100559eb33fe3bd348a321932466386831d9f"
+  },
+  {
+   "seed": 150,
+   "maxAlignCells": 40,
+   "inputHash": "-1b5e2a7391de1d89",
+   "cuesOut": 42,
+   "stats": "CueResegmentStats(runs=1 cues=82→42 added=8 removed=48 gapsClosed=46)",
+   "sha256": "1197d9c40dbf3f9cf58cea08cf0100559eb33fe3bd348a321932466386831d9f"
+  },
+  {
+   "seed": 151,
+   "maxAlignCells": 400000,
+   "inputHash": "7f4c964ee2eedf3e",
+   "cuesOut": 137,
+   "stats": "CueResegmentStats(runs=4 cues=179→137 added=24 removed=66 gapsClosed=63)",
+   "sha256": "7d2546ed395d26903c594ac283fed4e3e130a8716eddafdce22f0f6ac306b8b0"
+  },
+  {
+   "seed": 151,
+   "maxAlignCells": 40,
+   "inputHash": "7f4c964ee2eedf3e",
+   "cuesOut": 136,
+   "stats": "CueResegmentStats(runs=4 cues=179→136 added=24 removed=66 gapsClosed=63)",
+   "sha256": "97c8ee53a3ff54603e5cfc07cda510ef9c7453dce6aa92312a53d291e1f47130"
+  },
+  {
+   "seed": 152,
+   "maxAlignCells": 400000,
+   "inputHash": "af3df0ef92751a3",
+   "cuesOut": 100,
+   "stats": "CueResegmentStats(runs=5 cues=113→100 added=19 removed=32 gapsClosed=34)",
+   "sha256": "5a1b831a6a3c6a54e9ff3a6de35dc9cb7787cff80213d2b878346d7f3b66dd8d"
+  },
+  {
+   "seed": 152,
+   "maxAlignCells": 40,
+   "inputHash": "af3df0ef92751a3",
+   "cuesOut": 100,
+   "stats": "CueResegmentStats(runs=5 cues=113→100 added=19 removed=32 gapsClosed=34)",
+   "sha256": "5a1b831a6a3c6a54e9ff3a6de35dc9cb7787cff80213d2b878346d7f3b66dd8d"
+  },
+  {
+   "seed": 153,
+   "maxAlignCells": 400000,
+   "inputHash": "2c3791fa75d08230",
+   "cuesOut": 16,
+   "stats": "CueResegmentStats(runs=1 cues=15→16 added=2 removed=1 gapsClosed=1)",
+   "sha256": "f19e9c62a36cff3569ade26a9b218ede072606f264b9ed3b4263679fa6810025"
+  },
+  {
+   "seed": 153,
+   "maxAlignCells": 40,
+   "inputHash": "2c3791fa75d08230",
+   "cuesOut": 16,
+   "stats": "CueResegmentStats(runs=1 cues=15→16 added=2 removed=1 gapsClosed=1)",
+   "sha256": "d61afaaa1aeb6bd56ab68480d5cc9c3c73d4ce1ab7fd328bbb629fe93da0fe4a"
+  },
+  {
+   "seed": 154,
+   "maxAlignCells": 400000,
+   "inputHash": "-56215540d40a06e1",
+   "cuesOut": 94,
+   "stats": "CueResegmentStats(runs=3 cues=83→94 added=18 removed=6 gapsClosed=5)",
+   "sha256": "b0afb8da91340d7dafc576fee8624cdda37c3fa103b7f9e22456e8dde07d0ca4"
+  },
+  {
+   "seed": 154,
+   "maxAlignCells": 40,
+   "inputHash": "-56215540d40a06e1",
+   "cuesOut": 94,
+   "stats": "CueResegmentStats(runs=3 cues=83→94 added=18 removed=6 gapsClosed=5)",
+   "sha256": "b0afb8da91340d7dafc576fee8624cdda37c3fa103b7f9e22456e8dde07d0ca4"
+  },
+  {
+   "seed": 155,
+   "maxAlignCells": 400000,
+   "inputHash": "-689c2c245788f6ca",
+   "cuesOut": 22,
+   "stats": "CueResegmentStats(runs=2 cues=39→22 added=6 removed=23 gapsClosed=23)",
+   "sha256": "dd6f62fd3bc8c435447d025a51f226dee5b82a1216cebb8315535822ac0a2388"
+  },
+  {
+   "seed": 155,
+   "maxAlignCells": 40,
+   "inputHash": "-689c2c245788f6ca",
+   "cuesOut": 22,
+   "stats": "CueResegmentStats(runs=2 cues=39→22 added=6 removed=23 gapsClosed=23)",
+   "sha256": "9fa3f06ec7c868fcf418bcb8870d75819885a9815eefd52a7515bcd9067f2e68"
+  },
+  {
+   "seed": 156,
+   "maxAlignCells": 400000,
+   "inputHash": "-48fc55ddd5a55d61",
+   "cuesOut": 101,
+   "stats": "CueResegmentStats(runs=3 cues=138→101 added=12 removed=49 gapsClosed=46)",
+   "sha256": "b6e1a723d80ebfb0f8228055240f598a97a1de328236381380c1e3d099035d0c"
+  },
+  {
+   "seed": 156,
+   "maxAlignCells": 40,
+   "inputHash": "-48fc55ddd5a55d61",
+   "cuesOut": 101,
+   "stats": "CueResegmentStats(runs=3 cues=138→101 added=12 removed=49 gapsClosed=46)",
+   "sha256": "b6e1a723d80ebfb0f8228055240f598a97a1de328236381380c1e3d099035d0c"
+  },
+  {
+   "seed": 157,
+   "maxAlignCells": 400000,
+   "inputHash": "-1fc02ab3d19666ae",
+   "cuesOut": 76,
+   "stats": "CueResegmentStats(runs=3 cues=96→76 added=13 removed=33 gapsClosed=34)",
+   "sha256": "1c8035866b4a110bde3d1eeb9ac0d5fd6be14b5998bf977c89714d7e3e82c20f"
+  },
+  {
+   "seed": 157,
+   "maxAlignCells": 40,
+   "inputHash": "-1fc02ab3d19666ae",
+   "cuesOut": 76,
+   "stats": "CueResegmentStats(runs=3 cues=96→76 added=13 removed=33 gapsClosed=34)",
+   "sha256": "541c3a7aa7e8816c9e2903a61d7d4d96bffdf6d5221222f26c68dde1a756523a"
+  },
+  {
+   "seed": 158,
+   "maxAlignCells": 400000,
+   "inputHash": "62a7654e37b25e3b",
+   "cuesOut": 69,
+   "stats": "CueResegmentStats(runs=3 cues=77→69 added=10 removed=17 gapsClosed=11)",
+   "sha256": "4f031a9299dc607f04595283b0b243977bea378cfa59d3e8cd59f85a0721d291"
+  },
+  {
+   "seed": 158,
+   "maxAlignCells": 40,
+   "inputHash": "62a7654e37b25e3b",
+   "cuesOut": 69,
+   "stats": "CueResegmentStats(runs=3 cues=77→69 added=10 removed=17 gapsClosed=11)",
+   "sha256": "4f031a9299dc607f04595283b0b243977bea378cfa59d3e8cd59f85a0721d291"
+  },
+  {
+   "seed": 159,
+   "maxAlignCells": 400000,
+   "inputHash": "-dea6513e32f909b",
+   "cuesOut": 69,
+   "stats": "CueResegmentStats(runs=3 cues=72→69 added=6 removed=9 gapsClosed=6)",
+   "sha256": "92280d5eedfff9b05f349af1257d329940d550bc4dd1eaa7f48c7ce779e6d638"
+  },
+  {
+   "seed": 159,
+   "maxAlignCells": 40,
+   "inputHash": "-dea6513e32f909b",
+   "cuesOut": 69,
+   "stats": "CueResegmentStats(runs=3 cues=72→69 added=6 removed=9 gapsClosed=6)",
+   "sha256": "92280d5eedfff9b05f349af1257d329940d550bc4dd1eaa7f48c7ce779e6d638"
+  }
+ ]
+}

@@ -746,6 +746,7 @@ version = "0.1.0"
 dependencies = [
  "crc32fast",
  "md4",
+ "memchr",
  "sha1",
  "sha2 0.10.9",
 ]

@@ -61,6 +61,7 @@ version = "0.1.0"
 dependencies = [
  "crc32fast",
  "md4",
+ "memchr",
  "sha1",
  "sha2",
 ]
@@ -89,6 +90,12 @@ checksum = "7da5ac363534dce5fabf69949225e174fbf111a498bf0ff794c8ea1fba9f3dda"
 dependencies = [
  "digest",
 ]
+
+[[package]]
+name = "memchr"
+version = "2.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "sha1"

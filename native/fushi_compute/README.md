@@ -162,7 +162,7 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）。
   fushi_compute 加依赖时要同步更新 `native/fushi_ios_umbrella/Cargo.lock`（构建用 `--locked`）。
   因为三个 crate 编成一个 `.a`，iOS 上 fushi_p2p / fushi_fsrs 实际也随之变成必需。
 - `verify_abi.sh <二进制> [nm]` 递归抓 `packages/fushi_compute/lib/` 下所有 `'ffc_*'` 字面量，逐个核对
-  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 16。
+  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 18。
 
 ## CI
 

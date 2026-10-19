@@ -3,4 +3,5 @@
 library;
 
 export 'src/fushi_compute_library.dart';
+export 'src/text/cue_match.dart';
 export 'src/hash/ffc_hash.dart';

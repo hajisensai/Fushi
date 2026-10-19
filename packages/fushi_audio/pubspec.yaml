@@ -15,7 +15,8 @@ environment:
 dependencies:
   fushi_core:
     path: ../fushi_core
-  # Rust 计算内核（硬依赖）：EPUB 打包的 CRC-32。
+  # Rust 计算内核（硬依赖）：cue↔EPUB 匹配的算法主体与 EPUB 打包的 CRC-32。
+  # 纯 Dart FFI 绑定，不依赖 Flutter / 插件。
   fushi_compute:
     path: ../fushi_compute
   xml: ^6.3.0
