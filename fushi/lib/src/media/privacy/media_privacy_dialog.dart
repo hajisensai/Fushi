@@ -16,6 +16,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/privacy/media_privacy.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -147,7 +148,7 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
                 ),
                 title: Text(t.media_privacy_switch),
               ),
-              AnimatedSize(
+              FushiAnimatedSize(
                 duration: fushiMotionDuration(context, FushiMotion.short),
                 curve: FushiMotion.standard,
                 alignment: Alignment.topCenter,
@@ -171,7 +172,7 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
                       )
                     : const SizedBox(width: double.infinity),
               ),
-              AnimatedSize(
+              FushiAnimatedSize(
                 duration: fushiMotionDuration(context, FushiMotion.short),
                 curve: FushiMotion.standard,
                 alignment: Alignment.topCenter,
