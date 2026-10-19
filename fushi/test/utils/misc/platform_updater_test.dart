@@ -292,7 +292,7 @@ void main() {
         'lib/src/utils/misc/platform_updater.dart',
       ).readAsStringSync();
 
-      expect(source, contains('ensureWindowsInstallTargetWritable'));
+      expect(source, contains('isWindowsInstallTargetWritable'));
       expect(source, contains('administrator'));
       expect(source, contains('user-writable'));
     });

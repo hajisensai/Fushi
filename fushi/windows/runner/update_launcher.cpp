@@ -274,6 +274,9 @@ struct ParsedArgs {
   // DeleteFile code 5、静默 Abort、整包回滚），所以「同目录找 fushi.exe」这个旧判据
   // 在副本处失效，必须由 app 显式下发。空 = 老调用方，回退同目录（向后兼容）。
   std::wstring app_exe_path;
+  // 安装目录以普通权限写不进去（手动提权装进 Program Files）时由 app 下发 --elevate：
+  // 只把安装器经 UAC 提权，launcher 自己保持普通权限，装完再以普通权限拉回 app。
+  bool elevate_installer = false;
   std::vector<std::wstring> installer_args;
 };
 
@@ -303,6 +306,11 @@ bool ParseArgs(int argc, wchar_t** argv, ParsedArgs* parsed) {
     if (arg == L"--app-exe" && i + 1 < argc) {
       parsed->app_exe_path = argv[i + 1];
       i += 2;
+      continue;
+    }
+    if (arg == L"--elevate") {
+      parsed->elevate_installer = true;
+      i += 1;
       continue;
     }
     return false;
@@ -423,7 +431,49 @@ struct InstallerRun {
   HANDLE process = nullptr;
 };
 
+// 安装器的参数串（不含可执行文件本身）。ShellExecuteExW 把可执行与参数分开传。
+std::wstring BuildArgumentString(const std::vector<std::wstring>& args) {
+  std::wstring result;
+  for (const std::wstring& arg : args) {
+    if (!result.empty()) result.push_back(L' ');
+    result += QuoteArg(arg);
+  }
+  return result;
+}
+
+// 经 UAC 提权启动安装器。CreateProcessW 无法跨越完整性级别，必须走 ShellExecuteExW
+// 的 runas 动词；SEE_MASK_NOCLOSEPROCESS 让我们照样拿到进程句柄，后续「等安装器结束
+// → 把 app 拉回来」逻辑与非提权路径完全一致。用户在 UAC 里点「否」时返回
+// ERROR_CANCELLED，按启动失败处理（app 由 EnsureAppBack 拉回，并在 marker 里留因）。
+bool LaunchInstallerElevated(const ParsedArgs& args, InstallerRun* run) {
+  const std::wstring parameters = BuildArgumentString(args.installer_args);
+  SHELLEXECUTEINFOW info = {};
+  info.cbSize = sizeof(info);
+  info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+  info.lpVerb = L"runas";
+  info.lpFile = args.installer_path.c_str();
+  info.lpParameters = parameters.c_str();
+  info.nShow = SW_SHOWNORMAL;
+  if (!::ShellExecuteExW(&info)) {
+    const DWORD error = ::GetLastError();
+    AppendMarkerFields(args.marker_path,
+                       {{"installerElevationDeclined",
+                         error == ERROR_CANCELLED ? "true" : "false"}});
+    MarkLaunchFailed(args.marker_path,
+                     FormatErrorMessage(error, "ShellExecuteEx runas Inno"));
+    return false;
+  }
+  run->process = info.hProcess;
+  run->pid = info.hProcess != nullptr ? ::GetProcessId(info.hProcess) : 0;
+  return true;
+}
+
 bool LaunchInstaller(const ParsedArgs& args, InstallerRun* run) {
+  if (args.elevate_installer) {
+    AppendMarkerFields(args.marker_path,
+                       {{"installerElevationRequested", "true"}});
+    return LaunchInstallerElevated(args, run);
+  }
   std::wstring command_line =
       BuildCommandLine(args.installer_path, args.installer_args);
   STARTUPINFOW startup = {};
@@ -503,7 +553,10 @@ bool StartApp(const std::wstring& executable) {
 // 安装成功时 [Run] 已经把新版拉起来，互斥体被持有，这里自然什么都不做，不会有双实例。
 void EnsureAppBack(const ParsedArgs& args, DWORD installer_exit_code,
                    bool installer_exit_observed) {
-  if (WaitForAppAlive(kAppRelaunchWaitMs)) {
+  // 提权安装时 .iss 带 /FUSHINORELAUNCH 跳过 [Run]，没有人会自己回来：只看一眼就拉起，
+  // 不白等观察窗口。
+  if (args.elevate_installer ? SingleInstanceMutexHeld()
+                             : WaitForAppAlive(kAppRelaunchWaitMs)) {
     AppendMarkerFields(args.marker_path,
                        {{"appAliveAfterInstaller", "true"},
                         {"appAliveCheckedAt", JsonString(NowIsoUtc())}});

@@ -478,10 +478,14 @@ class AndroidInstaller {
 /// - `/NORESTARTAPPLICATIONS`：不让 RestartManager 自动拉起被它管理的应用。
 /// - `/NORESTART`：禁止安装器重启**操作系统**（我们只想重启 app，不重启系统）。
 /// - `/DIR=`：应用内更新只写当前运行 `fushi.exe` 所在目录，不追随注册表或历史路径。
+/// - [kWindowsInstallerNoRelaunchSwitch]（仅 [suppressAppRelaunch]）：提权安装时
+///   `fushi.iss` 跳过 `[Run]` 自启——被 UAC 提权的安装器拉起的 app 会继承管理员令牌，
+///   改由仍是普通权限的 launcher 在安装结束后拉回 app。
 List<String> windowsInstallerArgs(
   String installerPath, {
   String? logPath,
   String? targetInstallDir,
+  bool suppressAppRelaunch = false,
 }) =>
     <String>[
       '/VERYSILENT',
@@ -494,7 +498,14 @@ List<String> windowsInstallerArgs(
       if (targetInstallDir != null && targetInstallDir.trim().isNotEmpty)
         '/DIR=$targetInstallDir',
       '/LOG=${logPath ?? windowsInstallerLogPath(installerPath)}',
+      if (suppressAppRelaunch) kWindowsInstallerNoRelaunchSwitch,
     ];
+
+/// `fushi.iss` 的 `ShouldLaunchAppAfterInstall` 认的开关名，两侧须一致。
+const String kWindowsInstallerNoRelaunchSwitch = '/FUSHINORELAUNCH';
+
+/// launcher 的提权开关：用 UAC（`ShellExecuteExW` + `runas`）启动安装器。
+const String kWindowsUpdateLauncherElevateFlag = '--elevate';
 
 const String kWindowsUpdateLauncherExecutable = 'fushi_update_launcher.exe';
 
@@ -585,8 +596,10 @@ List<String> windowsUpdateLauncherArgs({
   required String installerPath,
   required List<String> installerArgs,
   String? appExecutablePath,
+  bool elevateInstaller = false,
 }) =>
     <String>[
+      if (elevateInstaller) kWindowsUpdateLauncherElevateFlag,
       '--marker',
       markerPath,
       '--parent-pid',
@@ -733,6 +746,7 @@ class WindowsInstaller {
       List<String> args,
     )? startProcess,
     void Function(int code)? exitProcess,
+    Future<bool> Function(Directory dir)? probeInstallDirWritable,
   }) async {
     final DateTime Function() clock = now ?? DateTime.now;
     final String innoLogPath = windowsInstallerLogPath(installerPath);
@@ -813,8 +827,31 @@ class WindowsInstaller {
     }
 
     try {
-      if (Platform.isWindows) {
-        await ensureWindowsInstallTargetWritable(Directory(targetInstallDir));
+      final bool useDelayedLauncher = handoffMarkerFile != null;
+      // 安装目录以当前权限写不进去（典型是手动提权装进了 C:\Program Files）：
+      // 不再让用户「以管理员身份重开 Fushi」——只把安装器本身经 UAC 提权，app 继续以
+      // 普通权限运行。提权只能由 launcher 做（它在 app 退出后才拉起安装器），所以没有
+      // launcher 的直启路径仍按旧行为报错。
+      bool elevateInstaller = false;
+      final Future<bool> Function(Directory dir)? probeWritable =
+          probeInstallDirWritable ??
+              (Platform.isWindows ? isWindowsInstallTargetWritable : null);
+      if (probeWritable != null &&
+          !await probeWritable(Directory(targetInstallDir))) {
+        if (!useDelayedLauncher) {
+          throw UpdateInstallerException(
+            'Cannot write to installation directory: $targetInstallDir. '
+            'Close Fushi and run the installer as administrator, or reinstall '
+            'Fushi to a user-writable folder.',
+          );
+        }
+        elevateInstaller = true;
+        ErrorLogService.instance.log(
+          'WindowsInstaller.elevate',
+          'Install dir $targetInstallDir is not writable with the current '
+              'privileges; the update launcher will start the installer '
+              'elevated (UAC) and relaunch Fushi unelevated afterwards.',
+        );
       }
       // 先收干净我们自己拉起的辅助子进程（ffmpeg/ffprobe 的可执行文件就在安装目录里），
       // 再把安装交出去。它们不随 app 退出而死（Dart 的 Process.start 不绑 job object），
@@ -837,8 +874,8 @@ class WindowsInstaller {
         installerPath,
         logPath: innoLogPath,
         targetInstallDir: Platform.isWindows ? targetInstallDir : null,
+        suppressAppRelaunch: elevateInstaller,
       );
-      final bool useDelayedLauncher = handoffMarkerFile != null;
       final String installedLauncherPath = windowsUpdateLauncherPath(
         currentExecutablePath: resolvedExecutablePath,
       );
@@ -888,6 +925,7 @@ class WindowsInstaller {
               installerPath: installerPath,
               installerArgs: args,
               appExecutablePath: resolvedExecutablePath,
+              elevateInstaller: elevateInstaller,
             )
           : args;
       if (useDelayedLauncher &&
@@ -1480,19 +1518,23 @@ String _normalizeWindowsPath(String path) {
       .toLowerCase();
 }
 
-Future<void> ensureWindowsInstallTargetWritable(Directory installDir) async {
+/// 以当前进程权限实测 [installDir] 是否可写。不可写返回 false（原因写进日志），
+/// 由调用方决定是提权交接还是报错。
+Future<bool> isWindowsInstallTargetWritable(Directory installDir) async {
   final File probe = File(
     '${installDir.path}${Platform.pathSeparator}.fushi-update-write-test',
   );
   try {
     await installDir.create(recursive: true);
     await probe.writeAsString('fushi updater preflight', flush: true);
+    return true;
   } catch (e) {
-    throw UpdateInstallerException(
-      'Cannot write to installation directory: ${installDir.path}. '
-      'Close Fushi and run the installer as administrator, or reinstall '
-      'Fushi to a user-writable folder. Details: $e',
+    ErrorLogService.instance.log(
+      'WindowsInstaller.installDirNotWritable',
+      'Cannot write to installation directory ${installDir.path} with the '
+          'current privileges: $e',
     );
+    return false;
   } finally {
     try {
       if (await probe.exists()) await probe.delete();

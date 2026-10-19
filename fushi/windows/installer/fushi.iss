@@ -222,7 +222,7 @@ Root: HKCU; Subkey: "Software\Classes\.ts\OpenWithProgids"; ValueType: none; Val
 Type: files; Name: "{app}\data_root.bootstrap"
 
 [Run]
-Filename: "{app}\fushi.exe"; Description: "启动 Fushi"; Flags: nowait postinstall
+Filename: "{app}\fushi.exe"; Description: "启动 Fushi"; Flags: nowait postinstall; Check: ShouldLaunchAppAfterInstall
 
 [Code]
 // -- TODO-549: app-internal self-update "AppMutex deadlock" root-cause layer --
@@ -760,6 +760,24 @@ begin
       Exit;
     Sleep(MutexReleasePollIntervalMs);
   end;
+end;
+
+{ [Run] 自启门：应用内更新发现安装目录普通权限不可写（手动提权装进 Program Files）时，
+  launcher 经 UAC 提权启动本安装器并带 /FUSHINORELAUNCH。此时由本安装器拉起的
+  fushi.exe 会继承管理员令牌（外部 runas 提权，Inno 不知道原用户，runasoriginaluser
+  不生效），所以跳过自启，改由仍是普通权限的 launcher 在安装结束后拉回 app。
+  开关名与 platform_updater.dart 的 kWindowsInstallerNoRelaunchSwitch 一致。 }
+function ShouldLaunchAppAfterInstall(): Boolean;
+var
+  I: Integer;
+begin
+  Result := True;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/FUSHINORELAUNCH') = 0 then
+    begin
+      Result := False;
+      Exit;
+    end;
 end;
 
 { BUG-1483: 选目录页写入预检。本安装器 PrivilegesRequired=lowest（不提权），
