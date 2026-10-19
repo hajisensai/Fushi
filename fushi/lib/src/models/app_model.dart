@@ -137,6 +137,8 @@ import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/torrent_fast_resume.dart'
+    show kEmbeddedTorrentFastResumeDirName;
 import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
 import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi_engine/media/torrent/public_trackers.dart';
@@ -5366,6 +5368,23 @@ class AppModel with ChangeNotifier {
   /// **不**跟用户配置的下载根走。
   String? _embeddedTorrentResumeDir;
 
+  /// 数据根迁移前已经释放内置引擎（见 [releaseEmbeddedTorrentForDataRootMove]）。
+  bool _embeddedTorrentReleasedForDataRootMove = false;
+
+  /// BUG-3541：数据根迁移搬文件**之前**停下内置 torrent 引擎。
+  ///
+  /// 引擎握着下载内容的文件句柄（Windows 上目录 rename 会因此失败），也会把
+  /// resume 按**旧绝对路径**落到旧 resume 目录。这里先强制落一次 resume（让迁移器
+  /// 改写的是最新状态），再关 session，并禁止本进程再懒建——迁移成功后进程重启，
+  /// 新进程按改写过的 resume 恢复。
+  void releaseEmbeddedTorrentForDataRootMove() {
+    _embeddedTorrentReleasedForDataRootMove = true;
+    _animeDownloadService?.stop();
+    _stopTorrentNetworkMonitor();
+    _embeddedTorrentHost?.dispose(keepIds: _animeDownloadPlanIds);
+    _embeddedTorrentHost = null;
+  }
+
   /// 当前仍存在的计划 id 集合（= infohash）。resume 剪枝的真相源：不在这个集合
   /// 里的 `.resume` 文件一律删，否则用户删掉的任务会在下次启动复活成一个 UI 里
   /// 看不见、却在后台做种的种子。每轮 tick 与启动时刷新。
@@ -5386,6 +5405,9 @@ class AppModel with ChangeNotifier {
   EmbeddedTorrentHost? _ensureEmbeddedTorrentHost() {
     final EmbeddedTorrentHost? existing = _embeddedTorrentHost;
     if (existing != null) return existing;
+    // 数据根迁移已把引擎停下、resume 交给迁移器改写（BUG-3541）：本进程随后
+    // 重启，不得再懒建一个按旧路径落盘的 session。
+    if (_embeddedTorrentReleasedForDataRootMove) return null;
     final TorrentSaveRoots? roots = _embeddedTorrentSaveRoots;
     final String? resumeDir = _embeddedTorrentResumeDir;
     if (roots == null || resumeDir == null || !_supportsEmbeddedTorrent()) {
@@ -5621,7 +5643,8 @@ class AppModel with ChangeNotifier {
       configuredRoot: configuredRoot,
       history: decodeSaveRootHistory(prefsRepo.downloadSaveRootHistory),
     );
-    _embeddedTorrentResumeDir = path.join(baseDir.path, 'resume');
+    _embeddedTorrentResumeDir =
+        path.join(baseDir.path, kEmbeddedTorrentFastResumeDirName);
 
     // schema v78 cut-over 必须先于两个 JSON service 的首次 tick。每个 JSON 文件
     // 事务提交后才归档；崩溃重放依靠稳定 legacy id 幂等，不移动字幕 staging。
