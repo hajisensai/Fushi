@@ -78,7 +78,11 @@ class SrsFieldDef {
   final int? ankiNum;
 
   /// 用户写的字段说明（这个字段装什么、在卡面哪里出现）；空串 = 没写。对应 Anki 的
-  /// Field.Config.description，随字段定义一起合并 / 同步 / 导入导出。
+  /// Field.Config.description。
+  ///
+  /// **不在字段定义的值里**（[toValue] 不写它）：说明是独立的修改记录键
+  /// [SrsFieldKeys.fieldDescription]，物化时并进来。分开存是为了改名 / 调序与改说明互不
+  /// 冲突，也让不认识说明的旧版本改名时不会把它抹掉。
   final String description;
   final bool deleted;
 
@@ -100,7 +104,6 @@ class SrsFieldDef {
     'name': name,
     'ord': ord,
     if (ankiNum != null) 'ankiNum': ankiNum,
-    if (description.isNotEmpty) 'description': description,
     if (deleted) 'deleted': true,
   };
 
@@ -111,7 +114,6 @@ class SrsFieldDef {
       name: (m['name'] as String?) ?? '',
       ord: (m['ord'] as int?) ?? 0,
       ankiNum: m['ankiNum'] as int?,
-      description: (m['description'] as String?) ?? '',
       deleted: m['deleted'] == true,
     );
   }
@@ -314,6 +316,16 @@ class SrsNoteTypeView {
         final String id = key.substring('tmplDef/'.length);
         templates[id] = SrsTemplateDef.fromValue(id, edits.value(key));
       }
+    }
+    // 字段说明是独立键，定义都物化完再并进去（键的遍历顺序不保证定义在前）。
+    for (final String key in edits.keys) {
+      if (!key.startsWith(SrsFieldKeys.fieldDescriptionPrefix)) continue;
+      final String id = key.substring(
+        SrsFieldKeys.fieldDescriptionPrefix.length,
+      );
+      final SrsFieldDef? f = fields[id];
+      final Object? v = edits.value(key);
+      if (f != null) fields[id] = f.copyWith(description: v is String ? v : '');
     }
     int byOrd(dynamic a, dynamic b) {
       final int c = (a.ord as int).compareTo(b.ord as int);

@@ -587,15 +587,17 @@ class _Importer {
         name: keepLocal ? have.name : f.name,
         ord: keepLocal ? have.ord : f.ord,
         ankiNum: f.configId ?? have?.ankiNum,
-        // 本地写过说明就保留本地的；没写过才取 Anki 里的（一次导入不清掉用户写的说明）。
-        description: (have?.description ?? '').isNotEmpty
-            ? have!.description
-            : f.description,
       );
       if (have == null ||
           srsCanonicalJson(have.toValue()) !=
               srsCanonicalJson(want.toValue())) {
         edits[SrsFieldKeys.fieldDef(id)] = want.toValue();
+      }
+      // 字段说明：本地从没写过（没有这个键的记录）才取 Anki 里的；本地写过（含主动清空）
+      // 一律保留，导入不覆盖也不复活。
+      final String descKey = SrsFieldKeys.fieldDescription(id);
+      if (f.description.isNotEmpty && view.edits[descKey] == null) {
+        edits[descKey] = f.description;
       }
     }
 

@@ -99,6 +99,18 @@ void main() {
     expect(_parse('sorry, I cannot').isEmpty, isTrue);
   });
 
+  test('填空类型：某一面缺填空块（只给了「正面内容」）时在开头补一个，答案不会丢', () {
+    final AiSrsTemplateSuggestion s = _parse(<String, Object?>{
+      'back': <Object?>[
+        <String, Object?>{'kind': 'frontSide'},
+        <String, Object?>{'kind': 'field', 'field': 'f2'},
+      ],
+    }, isCloze: true);
+    expect(s.back!.first.fieldId, 'f1');
+    expect(s.back!.first.filter, SrsVisualFilter.cloze);
+    expect(s.back!.length, 3);
+  });
+
   test('填空类型保留填空显示方式；JSON 裹在围栏和散文里也能抠出来', () {
     final AiSrsTemplateSuggestion s = _parse(
       'Sure!\n```json\n{"front":[{"kind":"field","field":"f1","filter":"cloze"}]}\n```',

@@ -110,6 +110,7 @@ class SrsVisualBlock {
     required this.id,
     required this.kind,
     this.fieldId,
+    this.fieldName,
     this.text = '',
     this.label = '',
     this.size = SrsVisualSize.body,
@@ -127,6 +128,11 @@ class SrsVisualBlock {
 
   /// [SrsVisualBlockKind.field] 用：引用的字段 id。
   final String? fieldId;
+
+  /// 编译时记下的字段名，只作 [fieldId] 失效时的回退：克隆笔记类型、跨 profile / 设备导入
+  /// .apkg 都会换字段 id（模板正文里的 `{{fld:…}}` 会被改写，注释里的不会），此时按名字
+  /// 认回同一个字段（读入时见 [srsReadVisualSide]）。
+  final String? fieldName;
 
   /// [SrsVisualBlockKind.text] 用：固定文字（纯文本，编译时转义）。
   final String text;
@@ -150,6 +156,7 @@ class SrsVisualBlock {
     String? id,
     SrsVisualBlockKind? kind,
     String? fieldId,
+    String? fieldName,
     String? text,
     String? label,
     SrsVisualSize? size,
@@ -163,6 +170,8 @@ class SrsVisualBlock {
     id: id ?? this.id,
     kind: kind ?? this.kind,
     fieldId: fieldId ?? this.fieldId,
+    // 换了字段就不再沿用旧名字（编译时会按新字段重新记）。
+    fieldName: fieldName ?? (fieldId == null ? this.fieldName : null),
     text: text ?? this.text,
     label: label ?? this.label,
     size: size ?? this.size,
@@ -179,6 +188,7 @@ class SrsVisualBlock {
     'id': id,
     'k': kind.name,
     if (fieldId != null) 'f': fieldId,
+    if (fieldName != null) 'n': fieldName,
     if (text.isNotEmpty) 't': text,
     if (label.isNotEmpty) 'l': label,
     if (size != SrsVisualSize.body) 's': size.name,
@@ -208,6 +218,7 @@ class SrsVisualBlock {
       id: id,
       kind: kind,
       fieldId: fieldId is String ? fieldId : null,
+      fieldName: raw['n'] is String ? raw['n'] as String : null,
       text: raw['t'] is String ? raw['t'] as String : '',
       label: raw['l'] is String ? raw['l'] as String : '',
       size: _byName(SrsVisualSize.values, raw['s']) ?? SrsVisualSize.body,
@@ -371,10 +382,43 @@ String srsCompileVisualBody(
 }
 
 /// 编译一面（注释标记 + 正文），名字形式。
+///
+/// 注释里的字段块顺手记下当前字段名（[SrsVisualBlock.fieldName]），供字段 id 换了之后回退。
 String srsCompileVisualSide(
   List<SrsVisualBlock> blocks,
   SrsVisualCompileContext ctx,
-) => '${srsVisualMarker(blocks)}\n${srsCompileVisualBody(blocks, ctx)}';
+) {
+  final List<SrsVisualBlock> named = <SrsVisualBlock>[
+    for (final SrsVisualBlock b in blocks)
+      ctx.fieldNameById[b.fieldId] == null
+          ? b
+          : b.copyWith(fieldName: ctx.fieldNameById[b.fieldId]),
+  ];
+  return '${srsVisualMarker(named)}\n${srsCompileVisualBody(named, ctx)}';
+}
+
+/// 把块里失效的字段 id 按记下的字段名认回当前笔记类型的字段（克隆 / 跨设备导入后 id 会换）。
+List<SrsVisualBlock> _resolveFieldIds(
+  List<SrsVisualBlock> blocks,
+  SrsVisualCompileContext ctx,
+) {
+  final Map<String, String> idByName = <String, String>{
+    for (final MapEntry<String, String> e in ctx.fieldNameById.entries)
+      e.value: e.key,
+  };
+  return <SrsVisualBlock>[
+    for (final SrsVisualBlock b in blocks)
+      if (b.kind != SrsVisualBlockKind.field ||
+          ctx.fieldNameById.containsKey(b.fieldId) ||
+          idByName[b.fieldName] == null)
+        b
+      else
+        b.copyWith(fieldId: idByName[b.fieldName], fieldName: b.fieldName),
+  ];
+}
+
+/// 去掉注释标记后的正文。
+String _bodyOf(String template) => template.replaceFirst(_markerPattern, '');
 
 /// 打开一面模板时的状态。
 class SrsVisualSideState {
@@ -394,15 +438,36 @@ SrsVisualSideState srsReadVisualSide(
   String template,
   SrsVisualCompileContext ctx,
 ) {
-  final List<SrsVisualBlock>? blocks = srsParseVisualMarker(template);
-  if (blocks == null) {
+  final List<SrsVisualBlock>? parsed = srsParseVisualMarker(template);
+  if (parsed == null) {
     return const SrsVisualSideState(blocks: null, edited: false);
   }
-  final String expected = srsCompileVisualSide(blocks, ctx);
+  final List<SrsVisualBlock> blocks = _resolveFieldIds(parsed, ctx);
+  // 只比正文：注释里的字段 id / 名字是元数据，克隆或导入后它们与正文不同步不算手改。
+  final String expected = srsCompileVisualBody(blocks, ctx);
   return SrsVisualSideState(
     blocks: blocks,
-    edited: _normalize(expected) != _normalize(template),
+    edited: _normalize(expected) != _normalize(_bodyOf(template)),
   );
+}
+
+/// 删字段时把可视化的一面里引用它的块去掉并整面重编；这一面不是可视化做的、或根本没
+/// 引用它时返回 null（不用改）。[template] 是名字形式的正文，[ctx] 仍含要删的字段。
+String? srsVisualDropField(
+  String template,
+  String fieldId,
+  SrsVisualCompileContext ctx,
+) {
+  final SrsVisualSideState state = srsReadVisualSide(template, ctx);
+  final List<SrsVisualBlock>? blocks = state.blocks;
+  if (blocks == null ||
+      !blocks.any((SrsVisualBlock b) => b.fieldId == fieldId)) {
+    return null;
+  }
+  return srsCompileVisualSide(<SrsVisualBlock>[
+    for (final SrsVisualBlock b in blocks)
+      if (b.fieldId != fieldId) b,
+  ], ctx);
 }
 
 String _normalize(String s) => s.replaceAll('\r\n', '\n').trim();
@@ -426,8 +491,9 @@ List<SrsVisualBlock> srsRenumberVisualBlocks(List<SrsVisualBlock> blocks) =>
         b.copyWith(id: 'b${i + 1}'),
     ];
 
-/// 自动布局（「按字段生成」）：正面放词条字段；背面先重复正面、一条分隔线，再按已知字段的
-/// 惯例顺序摆其余字段（开关 / 数据字段不放），未知字段按原顺序排在最后、带字段名小标题。
+/// 自动布局（「按字段生成」）：正面放词条字段；背面先重复正面（填空类型改放填空字段）、一条
+/// 分隔线，再按已知字段的惯例顺序摆其余字段（开关 / 数据字段不放），未知字段按原顺序排在
+/// 最后、带字段名小标题。
 ({List<SrsVisualBlock> front, List<SrsVisualBlock> back})
 srsSuggestVisualLayout(SrsNoteTypeView type) {
   final List<SrsFieldDef> fields = type.fields;
@@ -462,7 +528,12 @@ srsSuggestVisualLayout(SrsNoteTypeView type) {
     ((int, SrsFieldDef) a, (int, SrsFieldDef) b) => a.$1.compareTo(b.$1),
   );
   final List<SrsVisualBlock> back = <SrsVisualBlock>[
-    const SrsVisualBlock(id: 'b1', kind: SrsVisualBlockKind.frontSide),
+    // 填空类型的背面不能重复正面：{{FrontSide}} 展开的是问题面，挖空处仍是 [...]，答案
+    // 永远不出现。与 Anki 自带填空模板一样，背面自己放一次填空字段（答案面显示挖出的词）。
+    if (type.isCloze)
+      front.single
+    else
+      const SrsVisualBlock(id: 'b1', kind: SrsVisualBlockKind.frontSide),
     const SrsVisualBlock(id: 'b2', kind: SrsVisualBlockKind.divider),
     for (final (int _, SrsFieldDef f) in known)
       SrsVisualBlock(

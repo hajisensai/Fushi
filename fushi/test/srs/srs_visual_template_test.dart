@@ -253,4 +253,92 @@ void main() {
     expect(note.fieldId, 'b');
     expect(note.label, '我的笔记');
   });
+
+  test('字段 id 换了（克隆 / 跨设备导入）：按注释里记下的字段名认回，不算手改', () {
+    final String named = srsCompileVisualSide(<SrsVisualBlock>[
+      _field('b1', 'f1'),
+      _field('b2', 'f2'),
+    ], _ctx);
+    // 克隆后的类型：同名字段、全新 id；正文按名字形式不变。
+    const SrsVisualCompileContext cloned = SrsVisualCompileContext(
+      fieldNameById: <String, String>{
+        'n1': 'Front',
+        'n2': 'Back',
+        'n3': 'Reading',
+      },
+    );
+    final SrsVisualSideState state = srsReadVisualSide(named, cloned);
+    expect(state.blocks!.map((SrsVisualBlock b) => b.fieldId), <String>[
+      'n1',
+      'n2',
+    ]);
+    expect(state.edited, isFalse);
+    // 再编译一次，正文与原来一致（不会丢字段块）。
+    expect(
+      srsCompileVisualBody(state.blocks!, cloned),
+      srsCompileVisualBody(<SrsVisualBlock>[
+        _field('b1', 'f1'),
+        _field('b2', 'f2'),
+      ], _ctx),
+    );
+  });
+
+  test('删字段：可视化的一面去掉引用它的块整面重编（不留小标题空壳）；没引用 / 非可视化返回 null', () {
+    final String named = srsCompileVisualSide(<SrsVisualBlock>[
+      _field('b1', 'f1'),
+      const SrsVisualBlock(
+        id: 'b2',
+        kind: SrsVisualBlockKind.field,
+        fieldId: 'f2',
+        label: 'Meaning',
+      ),
+    ], _ctx);
+    final String dropped = srsVisualDropField(named, 'f2', _ctx)!;
+    expect(dropped, isNot(contains('Meaning')));
+    expect(dropped, isNot(contains('{{Back}}')));
+    expect(srsReadVisualSide(dropped, _ctx).edited, isFalse);
+    expect(srsReadVisualSide(dropped, _ctx).blocks!.length, 1);
+    expect(srsVisualDropField(named, 'f3', _ctx), isNull);
+    expect(srsVisualDropField('{{Back}}', 'f2', _ctx), isNull);
+  });
+
+  test('自动布局（填空类型）：背面自己放填空字段而不是重复正面，答案面显示挖出的词', () {
+    final SrsNoteTypeView type = SrsNoteTypeView(
+      id: 'nt',
+      ankiNum: 1,
+      kind: SrsNoteTypeKind.cloze,
+      name: 'Cloze',
+      fields: const <SrsFieldDef>[
+        SrsFieldDef(id: 'f1', name: 'Text', ord: 0),
+        SrsFieldDef(id: 'f2', name: 'Back Extra', ord: 1),
+      ],
+      templates: const <SrsTemplateDef>[],
+      css: '',
+      termFieldId: null,
+      deletedAt: null,
+      builtinKey: null,
+      edits: SrsEntityEdits(<String, SrsRegister>{}),
+    );
+    final ({List<SrsVisualBlock> front, List<SrsVisualBlock> back}) layout =
+        srsSuggestVisualLayout(type);
+    expect(
+      layout.back.any(
+        (SrsVisualBlock b) => b.kind == SrsVisualBlockKind.frontSide,
+      ),
+      isFalse,
+    );
+    final SrsVisualCompileContext ctx = SrsVisualCompileContext.of(type);
+    final AnkiRenderedCard card = renderAnkiCard(
+      questionTemplate: srsCompileVisualSide(layout.front, ctx),
+      answerTemplate: srsCompileVisualSide(layout.back, ctx),
+      noteFields: const <String, String>{
+        'Text': '猫は{{c1::動物}}です',
+        'Back Extra': '',
+      },
+      cardOrd: 0,
+      isCloze: true,
+    );
+    expect(_text(card.question), isNot(contains('動物')));
+    expect(_text(card.answer), contains('動物'));
+  });
 }

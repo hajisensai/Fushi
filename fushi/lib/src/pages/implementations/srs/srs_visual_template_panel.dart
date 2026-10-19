@@ -6,6 +6,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
@@ -145,9 +146,40 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
     super.dispose();
   }
 
+  /// 文字 / 小标题输入框 key 的代号：块被外部整体替换（AI、按字段生成、换了模板）时加一，
+  /// 让 `initialValue` 输入框按新内容重建。否则重编号后同 id 的新块会沿用旧块的输入框，
+  /// 一打字就把旧文字写进新块。
+  int _generation = 0;
+
+  /// 面板自己最近一次交出去的块（签名），用来区分「自己的改动回流」与「外部整体替换」。
+  String? _emitted;
+
   List<SrsVisualBlock> get _blocks => widget.blocks ?? const <SrsVisualBlock>[];
 
-  void _replace(SrsVisualBlock next) => widget.onChanged(<SrsVisualBlock>[
+  /// 块的签名：不含编译时补记的字段名（回流时它会多出来，不算外部改动）。
+  static String _signature(List<SrsVisualBlock>? blocks) =>
+      jsonEncode(<Object?>[
+        for (final SrsVisualBlock b in blocks ?? const <SrsVisualBlock>[])
+          b.toJson()..remove('n'),
+      ]);
+
+  @override
+  void didUpdateWidget(SrsVisualTemplatePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final String now = _signature(widget.blocks);
+    if (now != _signature(oldWidget.blocks) && now != _emitted) {
+      _expanded = null;
+      _generation++;
+    }
+    _emitted = now;
+  }
+
+  void _emit(List<SrsVisualBlock> blocks) {
+    _emitted = _signature(blocks);
+    widget.onChanged(blocks);
+  }
+
+  void _replace(SrsVisualBlock next) => _emit(<SrsVisualBlock>[
     for (final SrsVisualBlock b in _blocks) b.id == next.id ? next : b,
   ]);
 
@@ -156,12 +188,12 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
     if (from < 0 || from >= list.length) return;
     final SrsVisualBlock b = list.removeAt(from);
     list.insert(to.clamp(0, list.length), b);
-    widget.onChanged(list);
+    _emit(list);
   }
 
   void _remove(SrsVisualBlock block) {
     if (_expanded == block.id) _expanded = null;
-    widget.onChanged(<SrsVisualBlock>[
+    _emit(<SrsVisualBlock>[
       for (final SrsVisualBlock b in _blocks)
         if (b.id != block.id) b,
     ]);
@@ -184,7 +216,7 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
       filter: info?.suggestedFilter ?? SrsVisualFilter.plain,
     );
     setState(() => _expanded = block.id);
-    widget.onChanged(<SrsVisualBlock>[..._blocks, block]);
+    _emit(<SrsVisualBlock>[..._blocks, block]);
   }
 
   Future<void> _runAi() async {
@@ -404,7 +436,7 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
           ),
         if (b.kind == SrsVisualBlockKind.text)
           FushiTextField(
-            key: ValueKey<String>('srs-visual-text-${b.id}'),
+            key: ValueKey<String>('srs-visual-text-${b.id}-$_generation'),
             initialValue: b.text,
             labelText: t.srs_visual_prop_text,
             minLines: 1,
@@ -504,7 +536,7 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
             onChanged: (bool v) => _replace(b.copyWith(hideWhenEmpty: v)),
           ),
           FushiTextField(
-            key: ValueKey<String>('srs-visual-label-${b.id}'),
+            key: ValueKey<String>('srs-visual-label-${b.id}-$_generation'),
             initialValue: b.label,
             labelText: t.srs_visual_prop_label,
             hintText: t.srs_visual_prop_label_hint,

@@ -51,13 +51,11 @@ void main() {
     );
   });
 
-  test('字段说明随字段定义持久化：toValue / fromValue 往返，空说明不写键', () {
+  test('字段说明不进字段定义的值（独立键），改名的 copyWith 不丢说明', () {
     const SrsFieldDef f = SrsFieldDef(id: 'x', name: 'N', ord: 0, ankiNum: 7);
-    expect(f.toValue().containsKey('description'), isFalse);
     final SrsFieldDef d = f.copyWith(description: '说明');
-    final SrsFieldDef back = SrsFieldDef.fromValue('x', d.toValue());
-    expect(back.description, '说明');
-    expect(back.ankiNum, 7);
-    expect(back.copyWith(name: 'M').description, '说明', reason: '改名不丢说明');
+    expect(d.toValue().containsKey('description'), isFalse);
+    expect(SrsFieldDef.fromValue('x', d.toValue()).description, '');
+    expect(d.copyWith(name: 'M').description, '说明');
   });
 }
