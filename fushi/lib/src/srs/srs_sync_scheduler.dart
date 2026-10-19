@@ -97,8 +97,32 @@ Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
 ) => srsSyncMedia(backend: backend, store: store, mediaRoot: mediaRoot);
 
 /// 「对所有已认证通道跑一次」的入口（生产：`runOnAuthenticatedSyncChannels`）。
+/// 返回跑成功的通道数与抛错通道的异常。
 typedef SrsChannelRunner =
-    Future<int> Function(Future<void> Function(SyncAssetStore backend) body);
+    Future<({int ran, List<Object> errors})> Function(
+      Future<void> Function(SyncAssetStore backend) body,
+    );
+
+/// 一轮同步报告里带回的错误（[SrsSyncReport.error]）：引擎没抛异常，但这个目录这轮没同步成。
+class SrsSyncReportError implements Exception {
+  const SrsSyncReportError(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// 「立即同步」的结果：[ran] = 同步成功的目录数，[errors] = 没同步成的目录各自的原因。
+/// 两者都为空 = 没配置任何同步后端、本机也没开互联服务。
+class SrsSyncNowResult {
+  const SrsSyncNowResult({required this.ran, this.errors = const <Object>[]});
+
+  final int ran;
+  final List<Object> errors;
+
+  bool get unconfigured => ran == 0 && errors.isEmpty;
+}
 
 /// 只提示一次的通知类别。
 enum SrsSyncNotice {
@@ -252,25 +276,48 @@ class SrsSyncScheduler {
   }
 
   /// 对所有已认证通道、以及本机直接读写的目录（本机作为互联 host 时）各跑一轮（不节流）。
-  /// 返回跑过的目录数（0 = 没配置同步后端、本机也没开互联服务）。
-  Future<int> syncNow() async {
-    if (_disposed) return 0;
-    final int ran = await _channels((SyncAssetStore backend) async {
-      await syncWithBackend(backend);
+  /// 通道抛错与报告里带回错误的目录都记进 [SrsSyncNowResult.errors]，不算同步成功。
+  Future<SrsSyncNowResult> syncNow() async {
+    if (_disposed) return const SrsSyncNowResult(ran: 0);
+    int reportFailures = 0;
+    final List<Object> errors = <Object>[];
+    final ({int ran, List<Object> errors}) channels = await _channels((
+      SyncAssetStore backend,
+    ) async {
+      final String? error = (await syncWithBackend(backend))?.error;
+      if (error != null) {
+        reportFailures++;
+        errors.add(SrsSyncReportError(error));
+      }
     });
-    return ran + await syncLocalDirectories();
+    errors.addAll(channels.errors);
+    final SrsSyncNowResult local = await syncLocalDirectories();
+    errors.addAll(local.errors);
+    return SrsSyncNowResult(
+      ran: channels.ran - reportFailures + local.ran,
+      errors: errors,
+    );
   }
 
-  /// 只跑本机直接读写的目录（本机作为互联 host 时）。返回跑过的目录数。
-  Future<int> syncLocalDirectories() async {
+  /// 只跑本机直接读写的目录（本机作为互联 host 时）。
+  Future<SrsSyncNowResult> syncLocalDirectories() async {
     final Future<List<SrsLocalDirectory>> Function()? local = _localDirectories;
-    if (local == null || _disposed) return 0;
+    if (local == null || _disposed) return const SrsSyncNowResult(ran: 0);
     int ran = 0;
+    final List<Object> errors = <Object>[];
     for (final SrsLocalDirectory d in await local()) {
       try {
-        await syncWithBackend(d.store, directoryKey: d.directoryKey);
-        ran++;
+        final String? error = (await syncWithBackend(
+          d.store,
+          directoryKey: d.directoryKey,
+        ))?.error;
+        if (error != null) {
+          errors.add(SrsSyncReportError(error));
+        } else {
+          ran++;
+        }
       } catch (e, stack) {
+        errors.add(e);
         ErrorLogService.instance.log(
           'SrsSyncScheduler.localDirectory',
           e,
@@ -278,7 +325,7 @@ class SrsSyncScheduler {
         );
       }
     }
-    return ran;
+    return SrsSyncNowResult(ran: ran, errors: errors);
   }
 
   /// 节流版（进入复习 tab）：距上一次节流触发不足 [kSrsSyncMinInterval] 时跳过，返回 false。

@@ -37,6 +37,8 @@ import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mined_history_import.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_sync_scheduler.dart';
+import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
@@ -373,15 +375,41 @@ Future<void> openSrsMinedHistoryImport(
   }
 }
 
-/// 牌组列表 ⋯「立即同步」：没配置同步后端时提示一句。
-Future<void> openSrsSyncNow(Future<int> Function()? syncNow) async {
+/// 牌组列表 ⋯「立即同步」的结果提示：没配置、失败（带原因）、成功三种分开说。
+/// 配置了但这轮失败不能说成「没配置」——用户会去找一个其实已经配好的设置。
+({String msg, ToastSeverity severity}) srsSyncNowToast(
+  SrsSyncNowResult result,
+) {
+  if (result.errors.isNotEmpty) {
+    return (
+      msg: t.srs_sync_failed(reason: srsSyncErrorReason(result.errors.first)),
+      severity: ToastSeverity.error,
+    );
+  }
+  if (result.unconfigured) {
+    return (msg: t.srs_sync_no_backend, severity: ToastSeverity.info);
+  }
+  return (msg: t.srs_sync_done, severity: ToastSeverity.success);
+}
+
+/// 一个目录没同步成的原因（给用户看的一句话）。
+String srsSyncErrorReason(Object error) => switch (error) {
+  SrsSyncReportError(message: kSrsSyncServerTimeUnavailable) =>
+    t.srs_sync_backend_unsupported,
+  SrsSyncReportError(message: kSrsSyncDirectoryIdentityUnavailable) =>
+    t.srs_sync_directory_unidentified,
+  _ => friendlySyncErrorDetail(error),
+};
+
+Future<void> openSrsSyncNow(
+  Future<SrsSyncNowResult> Function()? syncNow,
+) async {
   if (syncNow == null) return;
   try {
-    final int channels = await syncNow();
-    FushiToast.show(
-      msg: channels == 0 ? t.srs_sync_no_backend : t.srs_sync_done,
-      severity: channels == 0 ? ToastSeverity.info : ToastSeverity.success,
+    final ({String msg, ToastSeverity severity}) toast = srsSyncNowToast(
+      await syncNow(),
     );
+    FushiToast.show(msg: toast.msg, severity: toast.severity);
   } catch (e, stack) {
     ErrorLogService.instance.log('openSrsSyncNow', e, stack);
     FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);

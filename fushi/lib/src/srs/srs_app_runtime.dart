@@ -249,7 +249,7 @@ class SrsAppRuntime {
         onSync: () => unawaited(
           sync.syncNow().catchError((Object e, StackTrace stack) {
             ErrorLogService.instance.log('SrsAnkiConnect.sync', e, stack);
-            return 0;
+            return const SrsSyncNowResult(ran: 0);
           }),
         ),
         onGuiBrowse: (String? query, List<String> cardIds) async {
@@ -267,8 +267,8 @@ class SrsAppRuntime {
     );
   }
 
-  /// 牌组列表「立即同步」：对所有已认证通道跑一轮。返回跑过的通道数（0 = 没配置）。
-  Future<int> syncNow() => sync.syncNow();
+  /// 牌组列表「立即同步」：对所有已认证通道跑一轮（结果区分没配置 / 失败 / 成功）。
+  Future<SrsSyncNowResult> syncNow() => sync.syncNow();
 
   void _onHomeTabChanged() {
     if (homeShellTabNotifier.value != HomeTab.srs) return;
