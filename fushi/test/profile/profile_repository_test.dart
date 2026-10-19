@@ -756,6 +756,56 @@ void main() {
           reason: 'metadataJson 会被重导/在线更新整体重建，快照不得回写');
     });
 
+    test(
+        'BUG-3573: 混合词典汉字部分的开关 / 位置跟 profile 走，'
+        'metadataJson 其余安装事实保持 live 值', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final pidA = await repo.createProfile('A');
+      final pidB = await repo.createProfile('B');
+
+      Future<void> seed(Map<String, String> metadata) =>
+          db.upsertDictionaryMeta(DictionaryMetadataCompanion(
+            name: const Value('Mixed'),
+            formatKey: const Value('yomitan'),
+            order: const Value(0),
+            type: const Value('term'),
+            metadataJson: Value(jsonEncode(metadata)),
+            hiddenLanguagesJson: const Value('[]'),
+            collapsedLanguagesJson: const Value('[]'),
+          ));
+      Future<Map<String, dynamic>> liveMeta() async =>
+          jsonDecode((await _dictByName(db))['Mixed']!.metadataJson)
+              as Map<String, dynamic>;
+
+      // A：汉字部分关掉、排到第 3 位。B：默认（两键都没有）。
+      await seed(<String, String>{
+        'hasKanji': 'true',
+        'kanjiHidden': 'true',
+        'kanjiOrder': '3',
+      });
+      await repo.snapshotCurrentSettings(pidA);
+      await seed(<String, String>{'hasKanji': 'true'});
+      await repo.snapshotCurrentSettings(pidB);
+
+      // 之后在线更新重建了 metadata（安装事实变了），当前停在 B。
+      await seed(<String, String>{'hasKanji': 'true', 'revision': 'v2'});
+
+      await repo.applyProfile(pidA);
+      Map<String, dynamic> live = await liveMeta();
+      expect(live['kanjiHidden'], 'true', reason: 'A 的汉字部分开关回到 A');
+      expect(live['kanjiOrder'], '3');
+      expect(live['revision'], 'v2', reason: '其余键是安装事实，不被旧快照盖回去');
+
+      await repo.applyProfile(pidB);
+      live = await liveMeta();
+      expect(live.containsKey('kanjiHidden'), isFalse,
+          reason: 'B 没关过汉字部分：切回 B 必须恢复默认，而不是沿用 A 的');
+      expect(live.containsKey('kanjiOrder'), isFalse);
+      expect(live['revision'], 'v2');
+      expect(live['hasKanji'], 'true');
+    });
+
     test('order change follows profile switch', () async {
       final db = await _openDb();
       final repo = _repo(db);

@@ -60,6 +60,14 @@ List<CtlRoute> buildDictionaryCtlRoutes(DesktopCtlContext context) {
       final String? displayName = call.optString('displayName');
       final bool resetDisplayName = call.optBool('resetDisplayName') ?? false;
       final String? language = call.optString('language');
+      // 混合词典的汉字部分（BUG-3573）：「汉字」分区里的开关与位置，与上面两项互不影响。
+      final bool? kanjiEnabled = call.optBool('kanjiEnabled');
+      final int? kanjiPosition = call.optInt('kanjiPosition');
+      ctlCheckKanjiPartParams(
+        target,
+        kanjiEnabled: kanjiEnabled,
+        kanjiPosition: kanjiPosition,
+      );
       if (displayName != null && resetDisplayName) {
         throw const CtlFailure.badRequest(
           'displayName 与 resetDisplayName 不能同时给',
@@ -69,9 +77,12 @@ List<CtlRoute> buildDictionaryCtlRoutes(DesktopCtlContext context) {
           position == null &&
           displayName == null &&
           !resetDisplayName &&
-          language == null) {
+          language == null &&
+          kanjiEnabled == null &&
+          kanjiPosition == null) {
         throw const CtlFailure.badRequest(
-          '至少给 enabled / position / displayName / resetDisplayName / language 之一',
+          '至少给 enabled / position / kanjiEnabled / kanjiPosition / '
+          'displayName / resetDisplayName / language 之一',
         );
       }
       if (displayName != null || resetDisplayName) {
@@ -97,11 +108,37 @@ List<CtlRoute> buildDictionaryCtlRoutes(DesktopCtlContext context) {
       if (position != null) {
         if (position < 1) throw const CtlFailure.badRequest('position 从 1 起算');
         // 与词典管理页 `_reorderDictionaries` 同语义：同类型分区内移动后整组改 order。
-        await model.updateDictionaryOrder(
+        // 「汉字」分区还含混合词典的汉字部分（BUG-3573），位置要按该分区数、写入
+        // 走分区专用的 updateKanjiSectionOrder，否则纯 kanji 词典的 order 与混合
+        // 词典的 kanjiOrder 各排各的。
+        final List<Dictionary> reordered = ctlReorderDictionaries(
+          _dictionariesOfType(model, target.type),
+          target,
+          position,
+        );
+        if (target.type == DictionaryType.kanji) {
+          await model.updateKanjiSectionOrder(reordered);
+        } else {
+          await model.updateDictionaryOrder(reordered);
+        }
+      }
+      if (kanjiEnabled != null) {
+        // 词典管理页「汉字」分区开关同一入口（只写 kanjiHidden，术语部分不动）。
+        await model.setDictionaryKanjiPartHidden(
+          resolveCtlDictionary(model.dictionaries, target.name),
+          !kanjiEnabled,
+        );
+      }
+      if (kanjiPosition != null) {
+        // 「汉字」分区重排同一入口：混合词典只写 kanjiOrder，纯 kanji 词典写 order。
+        final Dictionary current =
+            resolveCtlDictionary(model.dictionaries, target.name);
+        await model.updateKanjiSectionOrder(
           ctlReorderDictionaries(
-            _dictionariesOfType(model, target.type),
-            target,
-            position,
+            model.kanjiSectionDictionaries,
+            current,
+            kanjiPosition,
+            section: DictionaryType.kanji,
           ),
         );
       }
@@ -925,7 +962,7 @@ PendingMiningAnkiRepository _pendingRepo(BaseAnkiRepository repo) {
 List<Dictionary> _dictionariesOfType(AppModel model, DictionaryType type) =>
     switch (type) {
       DictionaryType.term => model.termDictionaries,
-      DictionaryType.kanji => model.kanjiDictionaries,
+      DictionaryType.kanji => model.kanjiSectionDictionaries,
       DictionaryType.frequency => model.freqDictionaries,
       DictionaryType.pitch => model.pitchDictionaries,
     };
