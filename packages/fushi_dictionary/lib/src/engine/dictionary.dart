@@ -1,8 +1,9 @@
 import 'dart:convert';
 
 import '../language/language_base.dart';
+import 'dictionary_buckets.dart';
 
-enum DictionaryType { term, frequency, pitch, kanji }
+export 'dictionary_buckets.dart';
 
 /// 一本词典在某个语言下的折叠三态（BUG-2158）。
 ///
@@ -50,6 +51,33 @@ const String kDictTypeProbeVersion = '1';
 /// 词典目录里，启动期读回来补上即可；这个键让「读过、包里本来就没有来源字段」的
 /// 词典不必每次启动再读一遍。
 const String kDictSourceProbeKey = 'sourceProbe';
+
+/// [previous] 里混合词典汉字部分的用户设置（[kDictKanjiHiddenKey] /
+/// [kDictKanjiOrderKey]）。重导 / 在线更新时 metadata 按新包整份重建，这两项属于
+/// 用户设置，要从旧记录带过去（与 hiddenLanguages / order 的继承同理）。
+Map<String, String> kanjiPartSettingsOf(Dictionary? previous) {
+  if (previous == null) return const <String, String>{};
+  return kanjiPartSettingsIn(previous.metadata);
+}
+
+/// 「汉字」分区的成员与顺序的唯一推导处：纯 kanji 词典 + 混合词典的汉字部分，按
+/// [Dictionary.kanjiSectionOrder] 稳定排序（同序按 [dictionaries] 里的先后）。
+///
+/// 词典管理页列表与引擎汉字桶的装载顺序都由它决定，两边不能各排各的。
+List<Dictionary> kanjiSectionDictionariesOf(Iterable<Dictionary> dictionaries) {
+  final List<Dictionary> members = <Dictionary>[
+    for (final Dictionary d in dictionaries)
+      if (d.isInKanjiSection) d,
+  ];
+  final Map<Dictionary, int> position = <Dictionary, int>{
+    for (int i = 0; i < members.length; i++) members[i]: i,
+  };
+  members.sort((Dictionary a, Dictionary b) {
+    final int byOrder = a.kanjiSectionOrder.compareTo(b.kanjiSectionOrder);
+    return byOrder != 0 ? byOrder : position[a]!.compareTo(position[b]!);
+  });
+  return members;
+}
 
 
 /// 改名投影：**真名 -> 显示名**，只含真正改过名的词典。
@@ -219,6 +247,25 @@ class Dictionary {
   bool isHidden(Language language) {
     return hiddenLanguages.contains(language.languageCode);
   }
+
+  /// term 词典里还带着汉字条目（混合词典，见 [kDictHasKanjiKey]）。
+  bool get hasEmbeddedKanji => hasEmbeddedKanjiIn(type, metadata);
+
+  /// 出现在「汉字」分区：纯 kanji 词典，或混合词典的汉字部分。
+  bool get isInKanjiSection =>
+      type == DictionaryType.kanji || hasEmbeddedKanji;
+
+  /// 混合词典的汉字部分是否被关掉（见 [kDictKanjiHiddenKey]）。纯 kanji 词典的
+  /// 开关仍是 [isHidden]。
+  bool get isKanjiPartHidden => isKanjiPartHiddenIn(metadata);
+
+  /// 在「汉字」分区里的排序键：混合词典取 [kDictKanjiOrderKey]（缺省退回 [order]），
+  /// 纯 kanji 词典就是 [order]。
+  int get kanjiSectionOrder => kanjiSectionOrderIn(type, metadata, order);
+
+  /// 这本词典在「汉字」分区里是否启用（决定它是否进引擎的汉字桶）。
+  bool isKanjiSectionEnabled(Language language) =>
+      hasEmbeddedKanji ? !isKanjiPartHidden : !isHidden(language);
 
   /// 这本词典在 [language] 下的折叠三态（BUG-2158）。
   ///

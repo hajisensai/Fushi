@@ -98,6 +98,13 @@ class DictionaryRepository {
       _dictionariesCache.where((d) => d.type == DictionaryType.kanji).map(_copyDictionary)
       .toList();
 
+  /// 词典管理「汉字」分区：纯 kanji 词典 + 混合词典的汉字部分，按分区顺序。
+  /// 成员与顺序的推导在 [kanjiSectionDictionariesOf]，引擎汉字桶用的是同一份。
+  List<Dictionary> get kanjiSectionDictionaries =>
+      kanjiSectionDictionariesOf(_dictionariesCache)
+          .map(_copyDictionary)
+          .toList();
+
   List<DictionarySearchResult> get dictionaryHistory =>
       List.unmodifiable(_dictionaryHistoryResults);
 
@@ -331,6 +338,48 @@ class DictionaryRepository {
       ]),
     );
   }
+
+  /// 「汉字」分区的重排写入：[newDictionaries] 是该分区的新顺序。纯 kanji 词典写
+  /// [Dictionary.order]；混合词典只写汉字部分自己的 [kDictKanjiOrderKey]，不动它在
+  /// 「术语」分区的 order（见 [kDictKanjiHiddenKey] 的说明）。
+  Future<void> updateKanjiSectionOrder(List<Dictionary> newDictionaries) {
+    final Map<String, int> positions = <String, int>{
+      for (int i = 0; i < newDictionaries.length; i++)
+        newDictionaries[i].name: i,
+    };
+    return _writeMetadata(
+      () => _commitDictionaries(<Dictionary>[
+        for (final Dictionary current in _dictionariesCache)
+          if (positions.containsKey(current.name))
+            current.hasEmbeddedKanji
+                ? _copyDictionary(current).copyWith(
+                    metadata: <String, String>{
+                      ...current.metadata,
+                      kDictKanjiOrderKey: '${positions[current.name]!}',
+                    },
+                  )
+                : (_copyDictionary(current)..order = positions[current.name]!),
+      ]),
+    );
+  }
+
+  /// 开关混合词典的汉字部分（[kDictKanjiHiddenKey]）。术语部分的开关不受影响。
+  Future<void> setDictionaryKanjiPartHidden(
+    Dictionary dictionary,
+    bool hidden,
+  ) =>
+      updateDictionaryMetadata(<String, Dictionary? Function(Dictionary)>{
+        dictionary.name: (Dictionary current) {
+          final Map<String, String> metadata =
+              Map<String, String>.of(current.metadata);
+          if (hidden) {
+            metadata[kDictKanjiHiddenKey] = 'true';
+          } else {
+            metadata.remove(kDictKanjiHiddenKey);
+          }
+          return current.copyWith(metadata: metadata);
+        },
+      });
 
   /// 用户手动指定这本词典的内容语言（BCP-47），null / 空串 = 恢复「自动」。
   ///

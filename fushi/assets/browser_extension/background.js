@@ -431,10 +431,33 @@ async function refreshUpdateBadge() {
 // - 逐页探测 window.__fushiExtension（content.js 注入后置真、隔离世界随 reload 被拆即丢），
 //   已有活着的 content script 就跳过，避免重复注入导致重复监听；
 // - 受限页（chrome:// / 扩展页 / file://）与注入被拒的 tab 逐个 try/catch 忽略。
+// 主 content script 组：<all_urls> 且只进顶层页的那组。frame-gate.js 那组（all_frames）不算——
+// 它只是内嵌 UI frame 的唤起闸门，顶层页里自己就早退。
+function fushiMainContentScriptGroups() {
+  return (chrome.runtime.getManifest().content_scripts || [])
+      .filter((g) => Array.isArray(g.matches) && g.matches.includes('<all_urls>') && !g.all_frames);
+}
+
+// 内嵌 UI frame 按需注入（frame-gate.js 发 fushiInjectEmbeddedFrame）：asbplayer「Anki Export」
+// 这类 about:blank 对话框 iframe 里用户按了 Shift，把主 content script 整套注入**那一个** frame。
+// 已注入（window.__fushiExtension）就跳过，避免重复监听。
+async function fushiInjectEmbeddedFrame(tabId, frameId) {
+  if (!chrome.scripting || !Number.isInteger(tabId) || !Number.isInteger(frameId) || frameId === 0) return false;
+  const target = { tabId, frameIds: [frameId] };
+  try {
+    const probe = await chrome.scripting.executeScript({ target, func: () => !!window.__fushiExtension });
+    if (probe && probe[0] && probe[0].result === true) return true;
+    for (const g of fushiMainContentScriptGroups()) {
+      if (Array.isArray(g.css) && g.css.length) await chrome.scripting.insertCSS({ target, files: g.css });
+      if (Array.isArray(g.js) && g.js.length) await chrome.scripting.executeScript({ target, files: g.js });
+    }
+    return true;
+  } catch (_) { return false; }
+}
+
 async function reinjectOpenTabs() {
   if (!chrome.scripting || !chrome.tabs) return;
-  const groups = (chrome.runtime.getManifest().content_scripts || [])
-      .filter((g) => Array.isArray(g.matches) && g.matches.includes('<all_urls>'));
+  const groups = fushiMainContentScriptGroups();
   if (!groups.length) return;
   let tabs = [];
   try { tabs = await chrome.tabs.query({}); } catch (_) { return; }
@@ -741,8 +764,10 @@ function fushiToastTab(tabId, text, opts) {
   if (!Number.isInteger(tabId)) return;
   const o = opts || {};
   try {
+    // 只发顶层 frame：内嵌 UI frame（frame-gate.js 按需注入）里的实例不重复弹。
     chrome.tabs.sendMessage(tabId,
       { type: 'fushiToastMsg', text, sticky: !!o.sticky, openSettings: !!o.openSettings },
+      { frameId: 0 },
       () => { try { void chrome.runtime.lastError; } catch (_) {} });
   } catch (_) {}
 }
@@ -816,7 +841,7 @@ async function fushiIconClick(tab) {
   if (got.fushiNfBatch && got.fushiNfBatch.active) {
     await stopTabCapture();
     try { await chrome.storage.local.remove(['fushiNfBatch']); } catch (_) {}
-    try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiToastMsg', text: bgT('bg_generation_cancelled') }); } catch (_) {}
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiToastMsg', text: bgT('bg_generation_cancelled') }, { frameId: 0 }); } catch (_) {}
     return;
   }
   const url = tab.url || '';
@@ -834,7 +859,7 @@ async function fushiIconClick(tab) {
     if (it && it.site === 'netflix' && it.netflixId && episodes.indexOf(it.netflixId) < 0) episodes.push(it.netflixId);
   }
   if (!episodes.length) {
-    try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiToastMsg', text: bgT('bg_no_netflix_pending') }); } catch (_) {}
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiToastMsg', text: bgT('bg_no_netflix_pending') }, { frameId: 0 }); } catch (_) {}
     return;
   }
   const curId = (url.match(/\/watch\/(\d+)/) || [])[1];
@@ -935,6 +960,12 @@ async function fushiResolveBilibiliPgcPlayurl(tabId, epId) {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 发给 offscreen 的消息由 offscreen 处理，background 不插手。
   if (msg && msg.target === 'offscreen') return false;
+  if (msg && msg.type === 'fushiInjectEmbeddedFrame') {
+    const tabId = _sender && _sender.tab ? _sender.tab.id : null;
+    const frameId = _sender ? _sender.frameId : null;
+    fushiInjectEmbeddedFrame(tabId, frameId).then((ok) => sendResponse({ ok }), () => sendResponse({ ok: false }));
+    return true;
+  }
   // TODO-1184：来自 action popup「开始生成/录制」按钮的手势入口（替代已失效的 onClicked）。
   // popup 已 query 到当前 tab（{id,url}），这里直接跑原 fushiIconClick（Netflix 就地录 / YouTube 队列）。
   if (msg && msg.type === 'fushiIconAction') {
