@@ -161,7 +161,13 @@ class InterconnectPlaybackPositionSync {
     await _recordPending(key, agreed.positionMs);
     await _putRemote(key, agreed);
     if (ts != local.updatedAtMs) {
-      await _db.setPrefTyped<int>(_localAtPrefKey(key), ts);
+      // 比较后写入（BUG-3522）：PUT 期间本端断点若已被改写，抬戳作废，本端留着
+      // 更新的那份，下一轮照常再推；host 此刻停在 [agreed]，基线照记。
+      await _db.runIfIntPrefUnchanged(
+        stampKey: _localAtPrefKey(key),
+        expectedStamp: local.updatedAtMs,
+        write: () => _db.setPrefTyped<int>(_localAtPrefKey(key), ts),
+      );
     }
     await recordBaseline(key, agreed.positionMs);
     return agreed;
@@ -183,10 +189,24 @@ class InterconnectPlaybackPositionSync {
     await recordBaseline(key, live.positionMs);
   }
 
-  /// host 胜出：落回本端，记基线。
-  Future<void> applyRemote(String key, PlaybackPosition remote) async {
-    await _writeLocal(key, remote);
-    await recordBaseline(key, remote.positionMs);
+  /// host 胜出：落回本端，记基线。返回是否真的落地。
+  ///
+  /// [local] 是判定时读到的本端断点。落地是「比较后写入」（BUG-3522，与书籍版
+  /// `InterconnectBookProgressSync.applyRemote` 同纪律）：判定前刚走过一次网络读
+  /// host，这期间本机播放器或本机作为互联 host 收到的对端 PUT 可能已写进更新的
+  /// 断点；本端时间戳一变就不落地、不记基线，交给下一轮重新判定。
+  Future<bool> applyRemote(
+    String key,
+    PlaybackPosition remote, {
+    required PlaybackPosition local,
+  }) async {
+    final bool landed = await _writeLocalIfUnchanged(
+      key,
+      remote,
+      expected: local,
+    );
+    if (landed) await recordBaseline(key, remote.positionMs);
+    return landed;
   }
 
   /// 两端位置一致、只是时间戳不同：把较新的时间戳对齐到另一端（沿用此前 LWW 路径
@@ -200,8 +220,8 @@ class InterconnectPlaybackPositionSync {
     if (local.updatedAtMs > remote.updatedAtMs) {
       await _putRemote(key, local);
     } else if (remote.updatedAtMs > local.updatedAtMs) {
-      await _writeLocal(key, remote);
-      localChanged = true;
+      // 比较后写入（BUG-3522）：判定后本端被改写就不对齐。
+      localChanged = await _writeLocalIfUnchanged(key, remote, expected: local);
     }
     await recordBaseline(key, local.positionMs);
     return localChanged;
@@ -224,6 +244,18 @@ class InterconnectPlaybackPositionSync {
     PlaybackPositionKind.video => videoRemotePositionAtPrefKey(key),
     PlaybackPositionKind.audiobook => audiobookPositionAtPrefKey(key),
   };
+
+  /// 本端落地的唯一写口：仅当本端时间戳 pref 仍是判定时读到的 [expected] 才写
+  /// （[FushiDatabase.runIfIntPrefUnchanged]，重读与写入同一事务，BUG-3522）。
+  Future<bool> _writeLocalIfUnchanged(
+    String key,
+    PlaybackPosition p, {
+    required PlaybackPosition expected,
+  }) => _db.runIfIntPrefUnchanged(
+    stampKey: _localAtPrefKey(key),
+    expectedStamp: expected.updatedAtMs,
+    write: () => _writeLocal(key, p),
+  );
 
   /// 把对端位置落到本端。视频写回 pref 键对，并**仅当本地有 VideoBooks 行时**
   /// 写穿 `lastPositionMs`（流式视频不强建行污染书架）；`playedAt` 用**对端的**

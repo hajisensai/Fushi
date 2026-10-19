@@ -889,8 +889,7 @@ Future<bool> _applyLiveProgressChoice({
     return true;
   }
   if (remote.updatedAtMs <= 0) return false;
-  await sync.applyRemote(book, remote);
-  return true;
+  return sync.applyRemote(book, remote, local: local);
 }
 
 /// 750a：互联下载远端独有书时补下其有声书包（若有）。
