@@ -70,6 +70,7 @@
 |---|:--:|:--:|---|
 | [BUG-3520](bugs/BUG-3520-subtitle-null-text-color-follows-theme.md) | ✅ | ✅ | 关掉「尊重字幕自带样式」后字幕文字色随 App 主题忽白忽黑 |
 | [BUG-3519](bugs/BUG-3519-srt-vtt-multiline-merged-one-row.md) | ✅ | ✅ | 双语 SRT / VTT 多行字幕在屏上并成一排 |
+| [BUG-3519](bugs/BUG-3519-reader-lazy-illustrations-premature-chapter-advance.md) | ✅ | ✅ | reader-lazy-illustrations-premature-chapter-advance |
 | [BUG-3518](bugs/BUG-3518-ios-audio-lane-page-bleed.md) | ✅ | ✅ | iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶 |
 | [BUG-3517](bugs/BUG-3517-video-chrome-double-click-fullscreen.md) | ✅ | ✅ | video-chrome-double-click-fullscreen |
 | [BUG-3516](bugs/BUG-3516-collection-member-touch-longpress-no-menu.md) | ✅ | ✅ | 合集详情页触屏长按成员只进多选，拿不到库页同一份卡片菜单 |

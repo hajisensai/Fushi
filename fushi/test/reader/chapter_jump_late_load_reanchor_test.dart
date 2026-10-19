@@ -15,9 +15,8 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 /// 便指向别的内容（Chromium 只在 scrollTop=0 自愈），随后 onReaderScroll 还会把这个漂
 /// 掉的读数落库。
 ///
-/// 案B 初版只覆盖分页 shell 的章首(0)/章末(≥0.99) 粗粒度 progress。BUG-1140 第二轮把
-/// `loading="lazy"` 提前写进 HTML 源码（webview.part.dart `markImagesLazy`），恢复从此
-/// **必然**跑在图片 decode 之前，于是覆盖面必须扩到全部恢复入口：
+/// 案B 初版只覆盖分页 shell 的章首(0)/章末(≥0.99) 粗粒度 progress。图片可能晚于恢复
+/// 才 load（BUG-1140 第二轮），于是覆盖面必须扩到全部恢复入口：
 ///   - 中段 progress（旧存档无精确锚）
 ///   - 精确字符锚 restoreToCharOffset（退出重进 / 收藏跳转 / 有声书 seek 落中段）
 ///   - fragment 跳转（目录 / 内链）

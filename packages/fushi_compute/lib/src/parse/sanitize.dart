@@ -65,8 +65,8 @@ final class ReaderSanitizeNative implements Finalizable {
   /// 自闭合非 void 元素展开成成对标签（BUG-079 / BUG-737）。
   static const int stepXhtml = 1;
 
-  /// 给正文 `<img>` 写 `loading="lazy" decoding="async"`（纯图片章不置这一位）。
-  static const int stepLazyImages = 2;
+  /// 去掉正文 `<img>` 的 `loading` 属性（连原书自带的 lazy 一起），插图一律 eager。
+  static const int stepStripImageLoading = 2;
 
   /// 合并前导插图插到 `<body…>` 之后（插图串为空时是空操作）。
   static const int stepBodyImages = 4;

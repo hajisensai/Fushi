@@ -10,7 +10,7 @@
 //! 1. UTF-8 宽松解码（= Dart `utf8.decode(allowMalformed: true)`，非法序列按
 //!    WHATWG「最大子段」规则各换一个 U+FFFD，开头的一个 BOM 去掉——Dart 解码器就是这样）；
 //! 2. [STEP_XHTML] 自闭合非 void 元素展开成成对标签（BUG-079 / BUG-737）；
-//! 3. [STEP_LAZY_IMAGES] 给 `<img>` 写 `loading="lazy" decoding="async"`；
+//! 3. [STEP_STRIP_IMAGE_LOADING] 去掉正文 `<img>` 的 `loading` 属性（插图一律 eager）；
 //! 4. [STEP_BODY_IMAGES] 合并前导插图插到 `<body …>` 之后（TODO-1174）；
 //! 5. [STEP_READER_HEAD] 阅读器 head 注入（`<head>` 后 / `</head>` 前）。
 //!
@@ -36,13 +36,14 @@ use crate::{guard, hand_over_bytes, status};
 
 /// 自闭合非 void 元素展开成成对标签（旧 `sanitizeXhtml`）。
 pub const STEP_XHTML: u32 = 1;
-/// 给 `<img>` 写 lazy / async（旧 `markImagesLazy`，`eagerAll` 时调用方不置这一位）。
-pub const STEP_LAZY_IMAGES: u32 = 2;
+/// 去掉正文 `<img>` 的 `loading` 属性（[strip_image_loading]）。
+pub const STEP_STRIP_IMAGE_LOADING: u32 = 2;
 /// 合并前导插图插到 `<body>` 后（旧 `injectImagesAfterBodyOpen`；插图串为空时是空操作）。
 pub const STEP_BODY_IMAGES: u32 = 4;
 /// 阅读器 head 注入（旧 `injectReaderHead`）。
 pub const STEP_READER_HEAD: u32 = 8;
-const ALL_STEPS: u32 = STEP_XHTML | STEP_LAZY_IMAGES | STEP_BODY_IMAGES | STEP_READER_HEAD;
+const ALL_STEPS: u32 =
+    STEP_XHTML | STEP_STRIP_IMAGE_LOADING | STEP_BODY_IMAGES | STEP_READER_HEAD;
 /// 输入是 Dart `String` 编出来的 UTF-8（已解码过的文本，不是磁盘字节）：开头的 U+FEFF 是正文
 /// 的一部分，不当 BOM 去掉。只给单步 String 入口用；生产路径的磁盘字节不置这一位。
 pub const INPUT_IS_TEXT: u32 = 0x100;
@@ -262,7 +263,7 @@ fn finish(s: &[u8], out: Option<Vec<u8>>, copied: usize) -> Cow<'_, [u8]> {
 }
 
 // ---------------------------------------------------------------------------
-// STEP_LAZY_IMAGES
+// STEP_STRIP_IMAGE_LOADING
 // ---------------------------------------------------------------------------
 
 /// 旧正则 `<img\b((?:"[^"]*"|'[^']*'|[^>"'])*)>`（不分大小写）在 [p] 的匹配：
@@ -290,52 +291,74 @@ fn match_img(s: &[u8], p: usize) -> Option<(usize, usize)> {
     None
 }
 
-/// 旧 `_loadingAttrPattern` `\bloading\s*=`（不分大小写）在属性串里有无匹配。
-fn has_loading_attr(attrs: &[u8]) -> bool {
-    (0..attrs.len()).any(|i| {
-        (i == 0 || !is_word(attrs[i - 1]))
-            && starts_with_ci(attrs, i, b"loading")
-            && attrs.get(skip_js_space(attrs, i + 7)) == Some(&b'=')
-    })
-}
-
-/// 旧 `_gaijiClassPattern`
-/// `\bclass\s*=\s*(?:"[^"]*\bgaiji|'[^']*\bgaiji|gaiji)`（不分大小写）有无匹配。
+/// 属性串（`match_img` 的组 1，引号都已闭合）里去掉落在引号外的
+/// `\s+loading\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"']+)`（不分大小写）。对应正则
+/// `("[^"]*"|'[^']*')|(\s+loading…)` 的 replaceAllMapped：引号串整段先被第一组吃掉原样保留，
+/// 属性值里的 `loading=` 字样不会被误删。没有改动时返回 None。
 ///
-/// 引号分支里 `[^"]*` 贪婪且可回溯，`\bgaiji` 只需在同一段引号内容里**某处**成立（`gaiji` 由
-/// 字母组成，不会越过引号），所以等价于「引号后到下一个同种引号（或串尾）之间存在一个前一字符
-/// 为非单词字符的 `gaiji`」。`=` 前后的 `\s*` 回溯后下一字符必为空白，三个分支都不可能以空白开头，
-/// 故回溯无用。
-fn has_gaiji_class(attrs: &[u8]) -> bool {
+/// 回溯分析：`\s+` 贪婪，之后必须是字母 `l`（非空白），回溯无用；同一段空白里更靠后的起点
+/// 后面是同一个串，也同样失败，所以一段空白只试一次。`=` 两侧的 `\s*` 同理；值三个分支由首字符
+/// 唯一决定。
+fn strip_loading_attrs(attrs: &[u8]) -> Option<Vec<u8>> {
     let len = attrs.len();
-    let gaiji_at = |m: usize| -> bool {
-        (m == 0 || !is_word(attrs[m - 1])) && starts_with_ci(attrs, m, b"gaiji")
-    };
-    for i in 0..len {
-        if (i > 0 && is_word(attrs[i - 1])) || !starts_with_ci(attrs, i, b"class") {
-            continue;
-        }
-        let eq = skip_js_space(attrs, i + 5);
-        if attrs.get(eq) != Some(&b'=') {
-            continue;
-        }
-        let v = skip_js_space(attrs, eq + 1);
-        match attrs.get(v) {
-            Some(&quote @ (b'"' | b'\'')) => {
-                let end = find_byte(attrs, v + 1, quote).unwrap_or(len);
-                if (v + 1..end).any(gaiji_at) {
-                    return true;
-                }
+    let mut out: Option<Vec<u8>> = None;
+    let mut copied = 0;
+    let mut i = 0;
+    while i < len {
+        match attrs[i] {
+            q @ (b'"' | b'\'') => {
+                i = find_byte(attrs, i + 1, q).map_or(i + 1, |e| e + 1);
+                continue;
             }
-            Some(_) if starts_with_ci(attrs, v, b"gaiji") => return true,
             _ => {}
         }
+        if js_space_len(attrs, i) == 0 {
+            i += 1;
+            continue;
+        }
+        let name = skip_js_space(attrs, i);
+        let mut removed_end = None;
+        if starts_with_ci(attrs, name, b"loading") {
+            let eq = skip_js_space(attrs, name + 7);
+            if attrs.get(eq) == Some(&b'=') {
+                let v = skip_js_space(attrs, eq + 1);
+                removed_end = match attrs.get(v) {
+                    Some(&q @ (b'"' | b'\'')) => find_byte(attrs, v + 1, q).map(|e| e + 1),
+                    Some(_) => {
+                        let mut e = v;
+                        while e < len
+                            && js_space_len(attrs, e) == 0
+                            && !matches!(attrs[e], b'>' | b'"' | b'\'')
+                        {
+                            e += 1;
+                        }
+                        (e > v).then_some(e)
+                    }
+                    None => None,
+                };
+            }
+        }
+        match removed_end {
+            Some(end) => {
+                let buf = out.get_or_insert_with(|| Vec::with_capacity(len));
+                buf.extend_from_slice(&attrs[copied..i]);
+                copied = end;
+                i = end;
+            }
+            None => i = name,
+        }
     }
-    false
+    let mut buf = out?;
+    buf.extend_from_slice(&attrs[copied..]);
+    Some(buf)
 }
 
-/// 旧 `markImagesLazy`（`eagerAll == false`）。
-pub fn mark_images_lazy(s: &[u8]) -> Cow<'_, [u8]> {
+/// 正文 `<img>` 去掉 `loading` 属性（连原书自带的 `loading="lazy"` 一起），全部插图按浏览器
+/// 默认（eager）加载。分页 / 连续 / VN 的章节几何（maxScroll、章首章末落点、跨章判定、VN
+/// 屏切分）都要靠每张图的真实尺寸：懒图在离视口远的分页列 / 脱离文档的 VN 源树里永不加载、
+/// 保持 0 尺寸，章节被算短，插图还没看完就被判到章末跨章（BUG-3519 志乃と恋）。标签名的
+/// 大小写原样保留。
+pub fn strip_image_loading(s: &[u8]) -> Cow<'_, [u8]> {
     let len = s.len();
     let mut out: Option<Vec<u8>> = None;
     let mut copied = 0;
@@ -343,12 +366,10 @@ pub fn mark_images_lazy(s: &[u8]) -> Cow<'_, [u8]> {
     while let Some(p) = find_byte(s, i, b'<') {
         match match_img(s, p) {
             Some((a, close)) => {
-                let attrs = &s[a..close];
-                if !has_loading_attr(attrs) && !has_gaiji_class(attrs) {
-                    let buf = out.get_or_insert_with(|| Vec::with_capacity(len + 1024));
-                    buf.extend_from_slice(&s[copied..p]);
-                    buf.extend_from_slice(b"<img loading=\"lazy\" decoding=\"async\"");
-                    buf.extend_from_slice(attrs);
+                if let Some(stripped) = strip_loading_attrs(&s[a..close]) {
+                    let buf = out.get_or_insert_with(|| Vec::with_capacity(len));
+                    buf.extend_from_slice(&s[copied..a]);
+                    buf.extend_from_slice(&stripped);
                     buf.push(b'>');
                     copied = close + 1;
                 }
@@ -465,8 +486,8 @@ pub fn sanitize_chapter(
             html = Cow::Owned(v);
         }
     }
-    if steps & STEP_LAZY_IMAGES != 0 {
-        if let Some(v) = changed(mark_images_lazy(&html)) {
+    if steps & STEP_STRIP_IMAGE_LOADING != 0 {
+        if let Some(v) = changed(strip_image_loading(&html)) {
             html = Cow::Owned(v);
         }
     }
@@ -701,8 +722,8 @@ mod tests {
     fn x(s: &str) -> String {
         String::from_utf8(sanitize_xhtml(s.as_bytes()).into_owned()).unwrap()
     }
-    fn lazy(s: &str) -> String {
-        String::from_utf8(mark_images_lazy(s.as_bytes()).into_owned()).unwrap()
+    fn strip(s: &str) -> String {
+        String::from_utf8(strip_image_loading(s.as_bytes()).into_owned()).unwrap()
     }
     fn css(s: &str) -> String {
         String::from_utf8(sanitize_css(s.as_bytes(), 0)).unwrap()
@@ -725,20 +746,34 @@ mod tests {
     }
 
     #[test]
-    fn lazy_marking() {
-        assert_eq!(lazy("<IMG SRC=a>"), "<img loading=\"lazy\" decoding=\"async\" SRC=a>");
-        assert_eq!(lazy("<img loading=\"eager\">"), "<img loading=\"eager\">");
-        assert_eq!(lazy("<img class=\"x gaiji-l\">"), "<img class=\"x gaiji-l\">");
+    fn image_loading_stripped() {
         assert_eq!(
-            lazy("<img class=\"xgaiji\">"),
-            "<img loading=\"lazy\" decoding=\"async\" class=\"xgaiji\">"
+            strip("<body><img loading=\"lazy\" src=\"a.png\" alt=\"a\"/></body>"),
+            "<body><img src=\"a.png\" alt=\"a\"/></body>"
         );
         assert_eq!(
-            lazy("<img xloading=1>"),
-            "<img loading=\"lazy\" decoding=\"async\" xloading=1>"
+            strip("<IMG src='a.png' LOADING='lazy' class='x'/>"),
+            "<IMG src='a.png' class='x'/>"
         );
-        assert_eq!(lazy("<imgx>"), "<imgx>");
-        assert_eq!(lazy("<img alt=\"a"), "<img alt=\"a");
+        assert_eq!(strip("<img src=\"a.png\" loading=lazy>"), "<img src=\"a.png\">");
+        assert_eq!(strip("<img src=a\u{3000}loading = eager>"), "<img src=a>");
+        // 引号内的 loading= 字样与 `>` 不误伤；没有前导空白 / 不是独立属性名的不动。
+        for kept in [
+            "<img alt=\"x loading=lazy>\" src=\"a.png\"/>",
+            "<img src=a.png/>",
+            "<img xloading=1 data-loading=2>",
+            "<img loading>",
+            "<image href=\"b.png\" loading=\"lazy\"/>",
+            "<iframe loading=\"lazy\"></iframe>",
+            "<imgx loading=lazy>",
+            "<img alt=\"a",
+        ] {
+            assert_eq!(strip(kept), kept);
+        }
+        assert_eq!(
+            strip("<img loading=\"lazy\" src=\"a.png\"/><img src=\"b.png\" loading=\"eager\"/>"),
+            "<img src=\"a.png\"/><img src=\"b.png\"/>"
+        );
     }
 
     #[test]
