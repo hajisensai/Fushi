@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/privacy/media_privacy.dart';
 
-/// v121 私密标记：成员的私密可以只是「在私密合集里」继承来的。合集被删 / 合并解散 /
+/// v122 私密标记：成员的私密可以只是「在私密合集里」继承来的。合集被删 / 合并解散 /
 /// 拆分（含刮削后台自动做的 AniDB 拆分）/ 成员被移出时，继承随成员关系消失——
 /// 这些路径必须先把私密落到成员自己身上，否则作品会在下一轮排行榜上传、Bangumi
 /// 推送里静默变回公开（fail-open）。

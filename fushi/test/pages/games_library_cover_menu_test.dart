@@ -89,7 +89,7 @@ void main() {
         t.game_scrape,
         t.add_to_collection,
         t.tag_label,
-        // 私密（v121 作品级标记：不上传排行榜、不推 Bangumi）：与标签同属「每作品
+        // 私密（v122 作品级标记：不上传排行榜、不推 Bangumi）：与标签同属「每作品
         // 归类」，紧随其后，与书架 / 视频卡同一条动作。
         t.media_privacy_action,
         // 内容语言（内容字体链）：决定这个游戏的 hook 文本 / 查词卡词头用哪条字体

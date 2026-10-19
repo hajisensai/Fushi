@@ -1956,7 +1956,7 @@ class BackupService {
         'DELETE FROM book_tags WHERE id NOT IN ('
         'SELECT tag_id FROM tag_assignments)',
       );
-      // v121 私密标记：同一套宿主逻辑外键，同口径收敛（不随包导出别人看不到的
+      // v122 私密标记：同一套宿主逻辑外键，同口径收敛（不随包导出别人看不到的
       // 内容的标记）。
       await db.customStatement(
         'DELETE FROM media_privacy_flags WHERE '

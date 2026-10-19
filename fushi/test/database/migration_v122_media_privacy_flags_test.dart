@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
-/// v121：作品级「私密」标记表 `media_privacy_flags`（不上传排行榜、不推 Bangumi）。
+/// v122：作品级「私密」标记表 `media_privacy_flags`（不上传排行榜、不推 Bangumi）。
 ///
 /// 迁移只建表、不动数据，重跑幂等；读写 API 的 LWW 语义（设 / 取消各推一只时钟、
 /// 合并逐戳取大、相等取消胜）在这里钉死——互联同步与排行榜过滤都只认这套口径。
@@ -20,9 +20,9 @@ void main() {
     <Object?>[table],
   ).isNotEmpty;
 
-  test('v120 → v121 建 media_privacy_flags；重跑幂等、不清数据', () async {
+  test('v121 → v122 建 media_privacy_flags；重跑幂等、不清数据', () async {
     final Directory directory = Directory.systemTemp.createTempSync(
-      'media_privacy_v121',
+      'media_privacy_v122',
     );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = '${directory.path}/test.db';
@@ -33,19 +33,19 @@ void main() {
     final sqlite.Database raw = sqlite.sqlite3.open(path);
     raw.execute('DROP TABLE media_privacy_flags');
     expect(tableExists(raw, 'media_privacy_flags'), isFalse);
-    raw.execute('PRAGMA user_version = 120');
+    raw.execute('PRAGMA user_version = 121');
     raw.dispose();
 
     final FushiDatabase migrated = FushiDatabase.atFile(
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 121);
+    expect(migrated.schemaVersion, 122);
     await migrated.setMediaPrivate(TagHostKind.epub, 'book-a', true, at: 10);
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 121);
+    expect(probe.select('PRAGMA user_version').first.values.first, 122);
     expect(columnsOf(probe, 'media_privacy_flags'), <String>{
       'media_kind',
       'entry_key',
@@ -60,8 +60,8 @@ void main() {
       'media_kind',
       'entry_key',
     ]);
-    // 重跑 v121 步：表已在，不得报错、不得清数据。
-    probe.execute('PRAGMA user_version = 120');
+    // 重跑 v122 步：表已在，不得报错、不得清数据。
+    probe.execute('PRAGMA user_version = 121');
     probe.dispose();
 
     final FushiDatabase reopened = FushiDatabase.atFile(

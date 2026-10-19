@@ -25,7 +25,7 @@ import 'package:fushi_engine/sync/sync_manifest_codec.dart';
 /// 只发布本机**存在**的宿主，只应用能解析到本机宿主的条目：本机没有的书 / 视频 /
 /// 游戏不落孤儿映射，等它到了本机后下一轮自然补上。
 ///
-/// 条目上可选的 `privacy`（`{"set": 毫秒, "cleared": 毫秒}`，v121 起）搭载作品级私密
+/// 条目上可选的 `privacy`（`{"set": 毫秒, "cleared": 毫秒}`，v122 起）搭载作品级私密
 /// 标记的两只时钟（`media_privacy_flags`），合并逐戳取大。只有一台设备是排行榜上传
 /// 设备，别处标的私密必须到得了它。加字段不升 [TagManifest.currentVersion]：旧版对端
 /// 只读已知字段、把它当没有；缺这个字段 = 没有私密知识，不是「取消私密」。

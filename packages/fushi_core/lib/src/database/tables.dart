@@ -3522,7 +3522,7 @@ class VideoSubtitleGlossaries extends Table {
   Set<Column> get primaryKey => <Column>{workKey};
 }
 
-// ── media_privacy_flags（v121：作品级「私密」标记）──────────────────────
+// ── media_privacy_flags（v122：作品级「私密」标记）──────────────────────
 /// 用户手动把一部作品标成私密：不上传排行榜、不推 Bangumi 进度（也不拿它的标题去
 /// Bangumi 搜自动映射）。外部分级（扩展 contentWarning / 刮削 contentRating / 游戏
 /// nsfw）只能模糊封面，本地书 / 本地漫画根本没有分级信号，所以要一个用户自己说了算

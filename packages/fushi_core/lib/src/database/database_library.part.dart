@@ -769,7 +769,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       (update(mediaCollections)..where((t) => t.id.equals(id)))
           .write(MediaCollectionsCompanion(coverPath: Value(coverPath)));
 
-  /// 私密合集（v121 `media_privacy_flags`）的成员离开它之前，把私密落到成员自己
+  /// 私密合集（v122 `media_privacy_flags`）的成员离开它之前，把私密落到成员自己
   /// 身上（fail-closed）。成员的私密原本只是「在私密合集里」继承来的：合集被删 /
   /// 合并解散 / 按季或按 AniDB 作品拆走 / 成员被移出时，继承随成员关系一起消失，
   /// 那部作品就会在下一轮排行榜上传、Bangumi 推送里静默变回公开——其中 AniDB 拆分

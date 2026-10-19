@@ -603,7 +603,7 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
       mergeRemoteTagClocks(TagHostKind.video, videoBookUid,
           remoteAddedAt: remoteAddedAt, remoteTombstones: remoteTombstones);
 
-  // ── media_privacy_flags（v121 作品级私密标记）─────────────────────
+  // ── media_privacy_flags（v122 作品级私密标记）─────────────────────
 
   /// 把宿主设为 / 取消私密：只推进对应那只时钟（[at] 缺省取当前时刻），另一只原样
   /// 保留，互联合并才能按 LWW 裁决并发的设 / 取消。
