@@ -3125,6 +3125,80 @@ void _playTrackerLaunchWiring() {
     harness.endpoints.dispose();
   });
 
+  test('BUG-3616：串流远端在场时游戏留在主机后台也计时，结算落 galgame_sessions', () async {
+    final FushiDatabase db = await openDbWithGame();
+    final harness = buildHarness(db);
+    // 串流默认只把输入投递到游戏窗口，主机前台是别的进程（不在游戏目录下）。
+    harness.probe.foregroundPid = 9999;
+
+    expect(
+      (await harness.controller.launchGame(
+        gameExe,
+        gameId: 'galgame-row-42',
+        gameTitle: '统一后的显示名',
+      )).launched,
+      isTrue,
+    );
+    final GalgamePlayTracker tracker = harness.controller.playTracker!;
+    for (int i = 0; i < 10; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(
+      tracker.machine?.activeSeconds ?? 0,
+      0,
+      reason: '无远端在场时主机后台不计时（既有前台语义不变）',
+    );
+
+    // 接收端连上：串流宿主转告在场，计时器按前台同等计时。
+    harness.controller.setRemotePlayPresence(true);
+    expect(tracker.remotePresent, isTrue);
+    await accrueUntil(tracker, kMinSessionSeconds);
+
+    // 断开：不再计时。
+    harness.controller.setRemotePlayPresence(false);
+    expect(tracker.remotePresent, isFalse);
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    final int frozen = tracker.machine!.activeSeconds;
+    for (int i = 0; i < 10; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(tracker.machine!.activeSeconds, frozen);
+
+    await harness.controller.close();
+    final List<GalgameSessionRow> sessions = await db.getGalgameSessions(
+      'galgame-row-42',
+    );
+    expect(sessions, hasLength(1));
+    expect(
+      sessions.single.durationSeconds,
+      greaterThanOrEqualTo(kMinSessionSeconds),
+    );
+    harness.endpoints.dispose();
+  });
+
+  test('BUG-3616：在场标记先于计时器设置时，新启动的计时器起步即带上', () async {
+    final FushiDatabase db = await openDbWithGame();
+    final harness = buildHarness(db);
+    harness.probe.foregroundPid = 9999;
+
+    harness.controller.setRemotePlayPresence(true);
+    expect(
+      (await harness.controller.launchGame(
+        gameExe,
+        gameId: 'galgame-row-42',
+        gameTitle: '统一后的显示名',
+      )).launched,
+      isTrue,
+    );
+    final GalgamePlayTracker tracker = harness.controller.playTracker!;
+    expect(tracker.remotePresent, isTrue);
+    expect(tracker.machine?.remotePresent, isTrue);
+    await accrueUntil(tracker, 1);
+
+    await harness.controller.close();
+    harness.endpoints.dispose();
+  });
+
   test('P4 B1：裸 exe 启动（无 galgames.id）不建计时器', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);

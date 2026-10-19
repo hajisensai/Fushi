@@ -15,8 +15,11 @@ void main() {
   final String launcherExe = p.join(gameDir, 'Launcher.exe');
   final String mainExe = p.join(gameDir, 'bin', 'SiglusEngine.exe');
   final String siblingExe = p.join(siblingDir, 'SiglusEngine.exe');
-  final String browserExe =
-      p.join(p.rootPrefix(p.current), 'Programs', 'browser.exe');
+  final String browserExe = p.join(
+    p.rootPrefix(p.current),
+    'Programs',
+    'browser.exe',
+  );
 
   test('playtime：只累计前台活跃秒；后台/无前台窗口不计', () async {
     final _Harness h = _Harness(gameDir, <int, String>{100: launcherExe});
@@ -37,11 +40,9 @@ void main() {
   });
 
   test('elapsed：墙钟计时，后台时间照算', () async {
-    final _Harness h = _Harness(
-      gameDir,
-      <int, String>{100: launcherExe},
-      mode: GalgamePlayTimingMode.elapsed,
-    );
+    final _Harness h = _Harness(gameDir, <int, String>{
+      100: launcherExe,
+    }, mode: GalgamePlayTimingMode.elapsed);
     h.run(10, (int _) => 100);
     h.run(170, (int _) => 777);
     await h.stop();
@@ -151,10 +152,10 @@ void main() {
   });
 
   test('候选组重建会剔除已退出的 PID，防 PID 回收后误判前台', () async {
-    final _Harness h = _Harness(
-      gameDir,
-      <int, String>{100: launcherExe, 200: mainExe},
-    );
+    final _Harness h = _Harness(gameDir, <int, String>{
+      100: launcherExe,
+      200: mainExe,
+    });
     h.run(4, (int _) => 100); // 跨过 3 秒扫描点
     expect(h.machine.candidatePids, containsAll(<int>[100, 200]));
 
@@ -164,8 +165,11 @@ void main() {
     h.probe.deadPids.add(100);
     h.run(kMaxConsecutiveFailures, (int _) => null);
 
-    expect(h.machine.candidatePids.contains(200), isFalse,
-        reason: '回收后的 PID 必须被重扫剔除，否则会被当成本游戏继续计时');
+    expect(
+      h.machine.candidatePids.contains(200),
+      isFalse,
+      reason: '回收后的 PID 必须被重扫剔除，否则会被当成本游戏继续计时',
+    );
     expect(h.machine.isEnded, isTrue);
   });
 
@@ -182,6 +186,45 @@ void main() {
     h.run(1, (int _) => 100);
     expect(h.machine.foregroundIsGame, isTrue);
     expect(h.machine.candidatePids.contains(100), isTrue);
+  });
+
+  test('BUG-3616：远端在场（串流到已连上的接收端）与前台同等计时，两者同时成立不双计', () async {
+    final _Harness h = _Harness(gameDir, <int, String>{100: launcherExe});
+    // 串流：主机前台是别的进程，游戏留在后台。
+    h.run(30, (int _) => 777);
+    expect(h.machine.activeSeconds, 0, reason: '无远端在场时后台不计（既有语义）');
+
+    h.machine.setRemotePresence(true);
+    h.run(90, (int _) => 777);
+    expect(h.machine.activeSeconds, 90);
+    // 主机前台恰好也是游戏：同一秒只记一次。
+    h.run(10, (int _) => 100);
+    expect(h.machine.activeSeconds, 100);
+
+    h.machine.setRemotePresence(false);
+    h.run(20, (int _) => 777);
+    expect(h.machine.activeSeconds, 100, reason: '接收端断开后不再计时');
+
+    await h.stop();
+    expect(h.results.single.durationSeconds, 100);
+  });
+
+  test('BUG-3616：计时器外壳在 start 前设置的远端在场带进状态机', () async {
+    final GalgamePlayTracker tracker = GalgamePlayTracker(
+      gameId: 'g1',
+      gameDirectory: gameDir,
+      isWindows: true,
+      probe: _FakeProcessProbe(processes: <int, String>{100: launcherExe}),
+      onSessionEnded: (GalgamePlaySessionResult _) async {},
+      foregroundInterval: const Duration(hours: 1),
+      accrualInterval: const Duration(hours: 1),
+    );
+    tracker.remotePresent = true;
+    tracker.start(mainPid: 100);
+    expect(tracker.machine!.remotePresent, isTrue);
+    tracker.remotePresent = false;
+    expect(tracker.machine!.remotePresent, isFalse);
+    await tracker.stop();
   });
 
   test('非 Windows 平台整体 no-op：不建状态机、不回调、stop 安全', () async {
@@ -211,11 +254,11 @@ class _Harness {
     GalgamePlayTimingMode mode = GalgamePlayTimingMode.playtime,
     int mainPid = 100,
     Map<String, String> canonicalMap = const <String, String>{},
-  })  : probe = _FakeProcessProbe(
-          processes: processes,
-          canonicalMap: canonicalMap,
-        ),
-        results = <GalgamePlaySessionResult>[] {
+  }) : probe = _FakeProcessProbe(
+         processes: processes,
+         canonicalMap: canonicalMap,
+       ),
+       results = <GalgamePlaySessionResult>[] {
     machine = GalgamePlaySessionMachine(
       gameId: 'g1',
       gameDirectory: gameDirectory,
