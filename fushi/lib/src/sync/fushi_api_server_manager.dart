@@ -9,14 +9,13 @@ import 'package:fushi/src/sync/extension_font_api.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
-/// 持有并按需启停 [FushiApiServer]。tokenizer/readingResolver 注入解耦 FFI。
+/// 持有并按需启停 [FushiApiServer]。tokenizer（带读音的分词）注入解耦 FFI。
 /// BUG-530：注入挖词/历史 service，让浏览器扩展的 `/api/mine` + `/api/lookup/dictionary`
 /// 在这个（扩展被自动配置指向的）server 上真正可用。
 class FushiApiServerManager {
   FushiApiServerManager({
     required FushiRemoteLookupService lookupService,
     required Tokenizer tokenizer,
-    required ReadingResolver readingResolver,
     FushiRemoteMiningService? miningService,
     FushiRemoteHistoryService? historyService,
     RemoteThemeColorsProvider? themeColorsProvider,
@@ -40,7 +39,6 @@ class FushiApiServerManager {
        _mining = miningService,
        _history = historyService,
        _tokenizer = tokenizer,
-       _readingResolver = readingResolver,
        _themeColorsProvider = themeColorsProvider,
        _audioSourcesProvider = audioSourcesProvider,
        _autoReadOnLookupProvider = autoReadOnLookupProvider,
@@ -63,7 +61,6 @@ class FushiApiServerManager {
   final FushiRemoteMiningService? _mining;
   final FushiRemoteHistoryService? _history;
   final Tokenizer _tokenizer;
-  final ReadingResolver _readingResolver;
   // BUG-530：主题 CSS 变量供给器，透传给 [FushiApiServer]，随查词响应下发给扩展弹窗。
   final RemoteThemeColorsProvider? _themeColorsProvider;
   // 单词音频：已启用音频源供给器，透传给 [FushiApiServer]，随查词响应下发给扩展。
@@ -125,7 +122,6 @@ class FushiApiServerManager {
       miningService: _mining,
       historyService: _history,
       tokenizer: _tokenizer,
-      readingResolver: _readingResolver,
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
       autoReadOnLookupProvider: _autoReadOnLookupProvider,

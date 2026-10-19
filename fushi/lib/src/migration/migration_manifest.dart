@@ -4,8 +4,8 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
-import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -84,16 +84,16 @@ class MigrationManifest {
   ];
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'version': version,
-        'batch': batch,
-        'sourcePackage': sourcePackage,
-        'sourceAppVersion': sourceAppVersion,
-        'sourceSchemaVersion': sourceSchemaVersion,
-        'createdAt': createdAt,
-        'archiveSize': archiveSize,
-        'archiveSha256': archiveSha256,
-        'tableCounts': tableCounts,
-      };
+    'version': version,
+    'batch': batch,
+    'sourcePackage': sourcePackage,
+    'sourceAppVersion': sourceAppVersion,
+    'sourceSchemaVersion': sourceSchemaVersion,
+    'createdAt': createdAt,
+    'archiveSize': archiveSize,
+    'archiveSha256': archiveSha256,
+    'tableCounts': tableCounts,
+  };
 
   factory MigrationManifest.fromJson(Map<String, Object?> json) {
     final Object? counts = json['tableCounts'];
@@ -107,8 +107,10 @@ class MigrationManifest {
       archiveSize: (json['archiveSize'] as num).toInt(),
       archiveSha256: json['archiveSha256'] as String,
       tableCounts: counts is Map
-          ? counts.map((Object? k, Object? v) =>
-              MapEntry<String, int>(k as String, (v as num).toInt()))
+          ? counts.map(
+              (Object? k, Object? v) =>
+                  MapEntry<String, int>(k as String, (v as num).toInt()),
+            )
           : const <String, int>{},
     );
   }
@@ -125,10 +127,7 @@ class MigrationManifest {
   /// 路径与结果都是字符串，可跨 isolate 传。
   static Future<String> sha256OfFile(File file) {
     final String path = file.path;
-    return Isolate.run(() async {
-      final Digest digest = await sha256.bind(File(path).openRead()).first;
-      return digest.toString();
-    });
+    return Isolate.run(() => ffcSha256FileSync(path));
   }
 
   /// 对归档做完整性校验（size + sha256）；一致返回空列表，否则返回人类可读的
@@ -167,8 +166,10 @@ class MigrationManifest {
   ///
   /// [dbPath] 必须是**未被占用**的库文件（导出复制件 / 导入落地件）。
   static Map<String, int> countTablesInDb(String dbPath) {
-    final sqlite.Database db =
-        sqlite.sqlite3.open(dbPath, mode: sqlite.OpenMode.readOnly);
+    final sqlite.Database db = sqlite.sqlite3.open(
+      dbPath,
+      mode: sqlite.OpenMode.readOnly,
+    );
     try {
       final Set<String> existing = db
           .select("SELECT name FROM sqlite_master WHERE type='table'")
@@ -177,8 +178,9 @@ class MigrationManifest {
       final Map<String, int> counts = <String, int>{};
       for (final String table in countedTables) {
         if (!existing.contains(table)) continue;
-        final sqlite.ResultSet rs =
-            db.select('SELECT COUNT(*) AS c FROM "$table"');
+        final sqlite.ResultSet rs = db.select(
+          'SELECT COUNT(*) AS c FROM "$table"',
+        );
         counts[table] = (rs.first['c'] as num).toInt();
       }
       return counts;
@@ -189,8 +191,10 @@ class MigrationManifest {
 
   /// 读取 SQLite 库的 `PRAGMA user_version`（Drift schema 版本落在这里）。
   static int schemaVersionOfDb(String dbPath) {
-    final sqlite.Database db =
-        sqlite.sqlite3.open(dbPath, mode: sqlite.OpenMode.readOnly);
+    final sqlite.Database db = sqlite.sqlite3.open(
+      dbPath,
+      mode: sqlite.OpenMode.readOnly,
+    );
     try {
       return (db.select('PRAGMA user_version').first.values.first as num)
           .toInt();
@@ -216,8 +220,9 @@ class MigrationManifest {
     try {
       final Archive zip = ZipDecoder().decodeBuffer(input);
       final ArchiveFile? entry = zip.files.cast<ArchiveFile?>().firstWhere(
-          (ArchiveFile? f) => _dbEntryNames.contains(f!.name),
-          orElse: () => null);
+        (ArchiveFile? f) => _dbEntryNames.contains(f!.name),
+        orElse: () => null,
+      );
       if (entry == null) return (const <String, int>{}, null);
       tmp = await Directory.systemTemp.createTemp('fushi_migration_manifest_');
       final String dbPath = p.join(tmp.path, entry.name);

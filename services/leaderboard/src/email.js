@@ -213,18 +213,20 @@ export function randomCode(fill = (b) => crypto.getRandomValues(b)) {
   }
 }
 
+// 验证码后面紧跟句末标点，下一句也不以数字开头：通知栏 / 邮件列表摘要会把换行吞掉，
+// 旧文案「…：123456\n\n10 分钟内有效」在摘要里读成「12345610 分钟内有效」，码和时长粘成一串数字。
 const MESSAGES = {
   zh: {
     subject: 'Fushi 验证码',
-    body: (code) => `你的 Fushi 验证码是：${code}\n\n10 分钟内有效。如果不是你本人操作，请忽略这封邮件。`,
+    body: (code) => `你的 Fushi 验证码是：${code}。\n\n有效期 10 分钟。如果不是你本人操作，请忽略这封邮件。`,
   },
   en: {
     subject: 'Your Fushi verification code',
-    body: (code) => `Your Fushi verification code is: ${code}\n\nIt expires in 10 minutes. If you did not request it, ignore this email.`,
+    body: (code) => `Your Fushi verification code is: ${code}.\n\nIt expires in 10 minutes. If you did not request it, ignore this email.`,
   },
   ja: {
     subject: 'Fushi 認証コード',
-    body: (code) => `Fushi の認証コード：${code}\n\n10 分間有効です。心当たりがない場合はこのメールを無視してください。`,
+    body: (code) => `Fushi の認証コード：${code}。\n\n有効期限は 10 分です。心当たりがない場合はこのメールを無視してください。`,
   },
 };
 

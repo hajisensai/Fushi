@@ -665,6 +665,45 @@ void main() {
       expect(sel?.version, '1.2.0-debug.200');
     });
 
+    test('same build shipped on stable and debug: debug user gets the debug one',
+        () async {
+      // 2026-10-18 实测：正式版 3.0.0 与 3.0.0-debug.19763 出自同一提交（同序号），
+      // 稳定排序保原序让排在前面的 stable 胜出，debug 用户被换进屏蔽复习的正式版。
+      final List<Map<String, dynamic>> releases = <Map<String, dynamic>>[
+        _relWithApks('v3.0.0',
+            prerelease: false,
+            apks: <String>['fushi-3.0.0-arm64-v8a.apk'],
+            releaseSequence: 19763),
+        _relWithApks('v3.0.0-debug.19763+725fcde',
+            prerelease: true,
+            apks: <String>['fushi-3.0.0-debug.19763-725fcde-debug.apk'],
+            releaseSequence: 19763),
+      ];
+      for (final List<Map<String, dynamic>> order
+          in <List<Map<String, dynamic>>>[
+        releases,
+        releases.reversed.toList(),
+      ]) {
+        final UpdateReleaseSelection? sel =
+            await selectUpdateReleaseForCurrentPlatform(
+          order,
+          currentVersion: '2.10.0-debug.19650',
+          channel: UpdateChannel.debug,
+          updater: arm64Updater(),
+        );
+        expect(sel?.version, '3.0.0-debug.19763');
+      }
+      // 正式版通道照旧只拿正式版。
+      final UpdateReleaseSelection? stable =
+          await selectUpdateReleaseForCurrentPlatform(
+        releases.reversed.toList(),
+        currentVersion: '2.10.0',
+        channel: UpdateChannel.stable,
+        updater: arm64Updater(),
+      );
+      expect(stable?.version, '3.0.0');
+    });
+
     test('BUG-846 乒乓收敛: debug user on stable 1.2.0 升到更晚的 debug.200', () async {
       // 装了正式版 1.2.0（本机 seq 150 由 currentReleaseSeq 提供），合集含同基 debug.200。
       // 谁后用谁：debug.200 更晚 → 升上去。

@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi_compute/fushi_compute.dart' show FfcImageFormat;
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/manga/import/image_size_probe.dart'
     show probeOrientedImageSize;
 
@@ -63,9 +63,9 @@ class LocalMangaPageProvider implements MangaPageProvider {
 
   @override
   Future<MangaReaderSession> open() async => LocalMangaReaderSession(
-        imagesRoot: imagesRoot,
-        relativePaths: List<String>.unmodifiable(relativePaths),
-      );
+    imagesRoot: imagesRoot,
+    relativePaths: List<String>.unmodifiable(relativePaths),
+  );
 }
 
 class LocalMangaReaderSession implements MangaReaderSession {
@@ -85,8 +85,9 @@ class LocalMangaReaderSession implements MangaReaderSession {
   Future<MangaPageBytes> page(int index) async {
     final File file = await _validatedFile(index);
     final Uint8List bytes = await file.readAsBytes();
-    final ({int width, int height})? dimensions =
-        await mangaImageDimensions(bytes);
+    final ({int width, int height})? dimensions = await mangaImageDimensions(
+      bytes,
+    );
     return MangaPageBytes(
       bytes: bytes,
       contentType: mangaImageContentType(bytes),
@@ -147,28 +148,20 @@ class LocalMangaReaderSession implements MangaReaderSession {
 /// 页图（按 EXIF 方向摆正后的）宽高。
 ///
 /// BUG-3041：阅读器每个页图请求（WebView 拦截 `/img/`、面板检测、在线直读首页）
-/// 都经 [MangaReaderSession.page] 走到这里。以前一律 `img.decodeImage` 整张纯
+/// 都经 [MangaReaderSession.page] 走到这里。以前一律 `decodeImage`（package:image）整张纯
 /// Dart 解码——2400×3400 的页在桌面要 0.5~0.7 s、几十 MB 堆，iOS 自定义 scheme
 /// 又没有 HTTP 缓存，大图卷每次装窗口 / 翻页都要重付，阅读与查词一起被拖慢。
 /// 宽高只需文件头：先走与导入同一口径的 [probeOrientedImageSize]（JPEG 读到
 /// SOF + EXIF 方向、PNG 读 IHDR、WebP 读 VP8 头，零像素解码），认不出的格式
 /// （GIF / 损坏头）才回退后台 isolate 整张解码，结果与从前一致。
-Future<({int width, int height})?> mangaImageDimensions(
-  Uint8List bytes,
-) async {
+Future<({int width, int height})?> mangaImageDimensions(Uint8List bytes) async {
   if (bytes.isEmpty) return null;
   final ({int width, int height})? probed = probeOrientedImageSize(bytes);
   if (probed != null) return probed;
-  return Isolate.run<({int width, int height})?>(() {
-    try {
-      final img.Image? decoded = img.decodeImage(bytes);
-      if (decoded == null) return null;
-      final img.Image oriented = img.bakeOrientation(decoded);
-      return (width: oriented.width, height: oriented.height);
-    } on Object {
-      return null;
-    }
-  });
+  // 认不出的格式（GIF / 损坏头）再问原生解码器的头（同样不解整图）。
+  final ({int width, int height, FfcImageFormat format})? native =
+      probeImageNative(bytes);
+  return native == null ? null : (width: native.width, height: native.height);
 }
 
 String mangaImageContentType(Uint8List bytes) {

@@ -5,9 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
-import 'package:fushi/src/models/preferences_repository.dart' show VideoFitMode;
 
-/// Windows HDR 直通 / 10-bit 输出（`video_hdr_output.dart`）。
+import '../../helpers/source_guard.dart';
+
+/// Windows HDR / 10-bit 输出（`video_hdr_output.dart`）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -41,11 +42,11 @@ void main() {
     });
   });
 
-  group('shouldUseHdrHostWindow（唯一判据）', () {
+  group('shouldUseHdrOutput（唯一判据）', () {
     test('非 Windows 恒 false，哪怕 always', () {
       for (final VideoHdrOutputMode m in VideoHdrOutputMode.values) {
         expect(
-          shouldUseHdrHostWindow(
+          shouldUseHdrOutput(
             isWindows: false,
             mode: m,
             displayHdr: true,
@@ -59,7 +60,7 @@ void main() {
 
     test('off 恒 false', () {
       expect(
-        shouldUseHdrHostWindow(
+        shouldUseHdrOutput(
           isWindows: true,
           mode: VideoHdrOutputMode.off,
           displayHdr: true,
@@ -69,9 +70,9 @@ void main() {
       );
     });
 
-    test('always 在 Windows 恒 true（SDR 片 / SDR 屏也走 10-bit 宿主窗）', () {
+    test('always 在 Windows 恒 true（SDR 片 / SDR 屏也出 10-bit）', () {
       expect(
-        shouldUseHdrHostWindow(
+        shouldUseHdrOutput(
           isWindows: true,
           mode: VideoHdrOutputMode.always,
           displayHdr: false,
@@ -85,7 +86,7 @@ void main() {
       for (final bool d in <bool>[false, true]) {
         for (final bool s in <bool>[false, true]) {
           expect(
-            shouldUseHdrHostWindow(
+            shouldUseHdrOutput(
               isWindows: true,
               mode: VideoHdrOutputMode.auto,
               displayHdr: d,
@@ -98,103 +99,58 @@ void main() {
       }
     });
 
-    // BUG-2691：DV Profile 5（IPTPQc2）只有 gpu-next 会做 RPU 重整，纹理路径出紫绿
-    // 反色；auto 下不论显示器是否 HDR 都得进宿主窗。
-    test('auto + Dolby Vision P5：SDR 屏也进宿主窗', () {
-      for (final bool d in <bool>[false, true]) {
-        expect(
-          shouldUseHdrHostWindow(
-            isWindows: true,
-            mode: VideoHdrOutputMode.auto,
-            displayHdr: d,
-            sourceHdr: true,
-            sourceDolbyVision: true,
-          ),
-          isTrue,
-          reason: 'display=$d',
-        );
+    // 宿主窗删除后的契约：没有第二个输出窗口，DV 也不再让判据改道。控制器的重判
+    // 里不得再出现切 VO / 拿 HWND 的路径，DV 也不得把合成器 HDR 排除在外（BUG-2691
+    // 的修法从「DV 改走 gpu-next 宿主窗」换成了「纹理渲染器自己重整」）。
+    test('控制器只走合成器 HDR：不切 vo、不建窗口、不按 DV 排除', () {
+      final String src = maskComments(
+        File(
+          'lib/src/media/video/video_player_controller.dart',
+        ).readAsStringSync(),
+      );
+      final int start = src.indexOf('Future<void> _evaluateHdrOutputNow()');
+      expect(start, greaterThan(0));
+      final int end = src.indexOf('Future<bool> _isCompositorHdrSupported()');
+      expect(end, greaterThan(start));
+      final String body = src.substring(start, end);
+      expect(body, contains('shouldUseHdrOutput('));
+      expect(body, isNot(contains('_hdrSourceIsDolbyVision &&')));
+      expect(body, isNot(contains('!_hdrSourceIsDolbyVision')));
+      for (final String forbidden in <String>["'vo'", 'gpu-next', "'wid'"]) {
+        expect(src, isNot(contains(forbidden)), reason: forbidden);
       }
-    });
-
-    test('Dolby Vision P5：off 仍尊重用户、非 Windows 仍不进', () {
-      expect(
-        shouldUseHdrHostWindow(
-          isWindows: true,
-          mode: VideoHdrOutputMode.off,
-          displayHdr: false,
-          sourceHdr: true,
-          sourceDolbyVision: true,
-        ),
-        isFalse,
-      );
-      expect(
-        shouldUseHdrHostWindow(
-          isWindows: false,
-          mode: VideoHdrOutputMode.auto,
-          displayHdr: false,
-          sourceHdr: true,
-          sourceDolbyVision: true,
-        ),
-        isFalse,
-      );
     });
   });
 
-  // BUG-2691 办法 4：没有 gpu-next 可切时提示用户，而不是让人以为片子坏了。
+  // BUG-2691 办法 4：纹理渲染器不会重整的平台提示用户，而不是让人以为片子坏了。
   group('dolbyVisionColorsUnsupported', () {
     test('非 DV 片源恒 false', () {
       for (final bool w in <bool>[false, true]) {
-        for (final VideoHdrOutputMode m in VideoHdrOutputMode.values) {
-          expect(
-            dolbyVisionColorsUnsupported(
-              isWindows: w,
-              mode: m,
-              sourceDolbyVision: false,
-            ),
-            isFalse,
-            reason: 'windows=$w mode=${m.name}',
-          );
-        }
-      }
-    });
-
-    test('Linux（系统 libmpv，无补丁）：任何模式都提示', () {
-      for (final VideoHdrOutputMode m in VideoHdrOutputMode.values) {
         expect(
-          dolbyVisionColorsUnsupported(
-            isWindows: false,
-            mode: m,
-            sourceDolbyVision: true,
-          ),
-          isTrue,
-          reason: m.name,
+          dolbyVisionColorsUnsupported(isWindows: w, sourceDolbyVision: false),
+          isFalse,
+          reason: 'windows=$w',
         );
       }
     });
 
-    test('macOS / iOS / Android：随包 gl_video 自带重整，任何模式都不提示', () {
-      for (final VideoHdrOutputMode m in VideoHdrOutputMode.values) {
-        expect(
-          dolbyVisionColorsUnsupported(
-            isWindows: false,
-            isApple: true,
-            mode: m,
-            sourceDolbyVision: true,
-          ),
-          isFalse,
-          reason: 'apple ${m.name}',
-        );
-        expect(
-          dolbyVisionColorsUnsupported(
-            isWindows: false,
-            isAndroid: true,
-            mode: m,
-            sourceDolbyVision: true,
-          ),
-          isFalse,
-          reason: 'android ${m.name}',
-        );
-      }
+    test('Linux（系统 libmpv，无补丁）：提示', () {
+      expect(dolbyVisionColorsUnsupported(sourceDolbyVision: true), isTrue);
+    });
+
+    test('Windows / macOS / iOS / Android：随包 gl_video 自带重整，不提示', () {
+      expect(
+        dolbyVisionColorsUnsupported(isWindows: true, sourceDolbyVision: true),
+        isFalse,
+      );
+      expect(
+        dolbyVisionColorsUnsupported(isApple: true, sourceDolbyVision: true),
+        isFalse,
+      );
+      expect(
+        dolbyVisionColorsUnsupported(isAndroid: true, sourceDolbyVision: true),
+        isFalse,
+      );
     });
 
     test('Android DV P5 强制软解（mediacodec 不解析 RPU），其它平台 / 非 DV 不动', () {
@@ -219,31 +175,6 @@ void main() {
         ),
         isFalse,
       );
-    });
-
-    test('Windows：只有用户关了 HDR 输出才提示', () {
-      expect(
-        dolbyVisionColorsUnsupported(
-          isWindows: true,
-          mode: VideoHdrOutputMode.off,
-          sourceDolbyVision: true,
-        ),
-        isTrue,
-      );
-      for (final VideoHdrOutputMode m in <VideoHdrOutputMode>[
-        VideoHdrOutputMode.auto,
-        VideoHdrOutputMode.always,
-      ]) {
-        expect(
-          dolbyVisionColorsUnsupported(
-            isWindows: true,
-            mode: m,
-            sourceDolbyVision: true,
-          ),
-          isFalse,
-          reason: m.name,
-        );
-      }
     });
   });
 
@@ -270,7 +201,7 @@ void main() {
   });
 
   group('requiresDolbyVisionReshape', () {
-    test('只认 mpv colormatrix=dolbyvision（P5 IPTPQc2）', () {
+    test('只认 mpv colormatrix=dolbyvision（P5 IPTPQc2 / P8.1）', () {
       expect(requiresDolbyVisionReshape('dolbyvision'), isTrue);
     });
 
@@ -299,41 +230,14 @@ void main() {
     });
   });
 
-  group('mpv 属性', () {
-    test('宿主窗属性：wid / gpu-context / 输出格式先下发，vo 恒最后', () {
-      final Map<String, String> props = hdrHostMpvProperties(0x1234);
-      expect(props.keys.last, 'vo');
-      expect(props['vo'], 'gpu-next');
-      expect(props['gpu-context'], 'd3d11');
-      expect(props['wid'], '4660');
-      expect(props['d3d11-output-format'], 'rgb10_a2');
-      expect(props['target-colorspace-hint'], 'auto');
-    });
-
-    test('退回纹理路径只切 vo=libmpv', () {
-      expect(kTextureMpvProperties, <String, String>{'vo': 'libmpv'});
-    });
-
-    test('fit 三态映射到 keepaspect / panscan', () {
-      expect(hdrHostFitProperties(VideoFitMode.contain), <String, String>{
-        'keepaspect': 'yes',
-        'panscan': '0',
-      });
-      expect(hdrHostFitProperties(VideoFitMode.cover), <String, String>{
-        'keepaspect': 'yes',
-        'panscan': '1',
-      });
-      expect(hdrHostFitProperties(VideoFitMode.fill), <String, String>{
-        'keepaspect': 'no',
-        'panscan': '0',
-      });
-    });
-  });
-
   group('compositorHdrFallback（合成器 HDR 失败的记忆范围）', () {
     test('三步都成：不退', () {
       expect(
-        compositorHdrFallback(engineOn: true, textureReady: true, textureOn: true),
+        compositorHdrFallback(
+          engineOn: true,
+          textureReady: true,
+          textureOn: true,
+        ),
         isNull,
       );
     });
@@ -458,18 +362,18 @@ void main() {
       sdrWhiteNits: 280,
     );
 
-    test('直通 + HDR 显示器：压到 203 / SDR 白（用户机实测 280 尼特）', () {
+    test('HDR 输出 + HDR 显示器：压到 203 / SDR 白（用户机实测 280 尼特）', () {
       expect(
-        hdrGraphicsWhiteScale(hostActive: true, display: hdr280),
+        hdrGraphicsWhiteScale(outputActive: true, display: hdr280),
         closeTo(203 / 280, 1e-9),
       );
     });
 
-    test('未直通 / SDR 显示器 / SDR 白未知：恒 1（视频与 Flutter 同在 SDR 基准）', () {
-      expect(hdrGraphicsWhiteScale(hostActive: false, display: hdr280), 1);
+    test('SDR 输出 / SDR 显示器 / SDR 白未知：恒 1（视频与 Flutter 同在 SDR 基准）', () {
+      expect(hdrGraphicsWhiteScale(outputActive: false, display: hdr280), 1);
       expect(
         hdrGraphicsWhiteScale(
-          hostActive: true,
+          outputActive: true,
           display: const HdrDisplayInfo(
             colorSpace: kDxgiColorSpaceSdr,
             maxLuminance: 400,
@@ -481,7 +385,7 @@ void main() {
       );
       expect(
         hdrGraphicsWhiteScale(
-          hostActive: true,
+          outputActive: true,
           display: const HdrDisplayInfo(
             colorSpace: kDxgiColorSpaceHdr10,
             maxLuminance: 1000,
@@ -492,10 +396,10 @@ void main() {
       );
     });
 
-    test('SDR 白低于 203：8-bit SDR 窗口无法更亮，取 1', () {
+    test('SDR 白低于 203：界面无法更亮，取 1', () {
       expect(
         hdrGraphicsWhiteScale(
-          hostActive: true,
+          outputActive: true,
           display: const HdrDisplayInfo(
             colorSpace: kDxgiColorSpaceHdr10,
             maxLuminance: 1000,
@@ -517,7 +421,7 @@ void main() {
       expect(hdrGraphicsEncodedGain(1.4), 1);
     });
 
-    testWidgets('系数 < 1 才套 ColorFiltered；进出直通子树 State 不重建', (
+    testWidgets('系数 < 1 才套 ColorFiltered；进出 HDR 输出子树 State 不重建', (
       WidgetTester tester,
     ) async {
       Widget host(double scale) => Directionality(
@@ -541,8 +445,8 @@ void main() {
     });
   });
 
-  group('HdrVideoHostChannel', () {
-    const MethodChannel channel = MethodChannel('test/hdr_video_host');
+  group('HdrOutputChannel', () {
+    const MethodChannel channel = MethodChannel('test/hdr_output');
     final List<MethodCall> calls = <MethodCall>[];
 
     setUp(() {
@@ -551,8 +455,6 @@ void main() {
           .setMockMethodCallHandler(channel, (MethodCall call) async {
             calls.add(call);
             switch (call.method) {
-              case 'create':
-                return 0xABCD;
               case 'compositorHdrSupported':
                 return true;
               case 'setCompositorHdrOutput':
@@ -576,35 +478,23 @@ void main() {
           .setMockMethodCallHandler(channel, null);
     });
 
-    test('create / setRect（四舍五入成整数像素）/ destroy / displayInfo', () async {
-      final HdrVideoHostChannel host = HdrVideoHostChannel(
+    test('displayInfo 解出色彩空间 / 峰值 / 位深 / SDR 白', () async {
+      final HdrOutputChannel host = HdrOutputChannel(
         channel: channel,
         isWindows: true,
       );
-      expect(await host.create(), 0xABCD);
-      await host.setRect(const Rect.fromLTWH(10.4, 20.6, 300.2, 199.5));
       final HdrDisplayInfo info = await host.displayInfo();
       expect(info.isHdr, isTrue);
       expect(info.maxLuminance, 1015.0);
       expect(info.bitsPerColor, 10);
       expect(info.sdrWhiteNits, 280.0);
-      await host.destroy();
       expect(calls.map((MethodCall c) => c.method).toList(), <String>[
-        'create',
-        'setRect',
         'displayInfo',
-        'destroy',
       ]);
-      expect(calls[1].arguments, <String, int>{
-        'x': 10,
-        'y': 21,
-        'width': 300,
-        'height': 200,
-      });
     });
 
     test('合成器内 HDR：能力查询与开关透传参数、回传引擎结果', () async {
-      final HdrVideoHostChannel host = HdrVideoHostChannel(
+      final HdrOutputChannel host = HdrOutputChannel(
         channel: channel,
         isWindows: true,
       );
@@ -629,8 +519,8 @@ void main() {
     });
 
     test('原版引擎 / 旧 runner（无此方法）报不支持，不抛', () async {
-      const MethodChannel bare = MethodChannel('test/hdr_video_host_bare');
-      final HdrVideoHostChannel host = HdrVideoHostChannel(
+      const MethodChannel bare = MethodChannel('test/hdr_output_bare');
+      final HdrOutputChannel host = HdrOutputChannel(
         channel: bare,
         isWindows: true,
       );
@@ -641,14 +531,11 @@ void main() {
       );
     });
 
-    test('非 Windows 全部 no-op：不碰通道，create 返回 0', () async {
-      final HdrVideoHostChannel host = HdrVideoHostChannel(
+    test('非 Windows 全部 no-op：不碰通道', () async {
+      final HdrOutputChannel host = HdrOutputChannel(
         channel: channel,
         isWindows: false,
       );
-      expect(await host.create(), 0);
-      await host.setRect(Rect.zero);
-      await host.destroy();
       expect((await host.displayInfo()).isHdr, isFalse);
       expect(await host.compositorHdrSupported(), isFalse);
       expect(
@@ -659,7 +546,7 @@ void main() {
     });
 
     test('runner 推 onDisplayChanged 触发回调', () async {
-      final HdrVideoHostChannel host = HdrVideoHostChannel(
+      final HdrOutputChannel host = HdrOutputChannel(
         channel: channel,
         isWindows: true,
       );
@@ -674,43 +561,6 @@ void main() {
             (_) {},
           );
       expect(fired, 1);
-    });
-  });
-
-  group('HdrHostRectReporter', () {
-    testWidgets('按 devicePixelRatio 回报物理像素矩形，只在变化时回调', (tester) async {
-      tester.view.devicePixelRatio = 2.0;
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final List<Rect> reported = <Rect>[];
-      Widget build(double left) => Directionality(
-        textDirection: TextDirection.ltr,
-        child: Stack(
-          children: <Widget>[
-            Positioned(
-              left: left,
-              top: 30,
-              width: 200,
-              height: 100,
-              child: HdrHostRectReporter(
-                onRect: reported.add,
-                child: const SizedBox.expand(),
-              ),
-            ),
-          ],
-        ),
-      );
-      await tester.pumpWidget(build(10));
-      await tester.pump();
-      expect(reported, <Rect>[const Rect.fromLTWH(20, 60, 400, 200)]);
-      // 同一矩形再画一次：不重复回调。
-      await tester.pumpWidget(build(10));
-      await tester.pump();
-      expect(reported.length, 1);
-      // 位置变了：回报一次新矩形。
-      await tester.pumpWidget(build(50));
-      await tester.pump();
-      expect(reported.last, const Rect.fromLTWH(100, 60, 400, 200));
-      expect(reported.length, 2);
     });
   });
 }

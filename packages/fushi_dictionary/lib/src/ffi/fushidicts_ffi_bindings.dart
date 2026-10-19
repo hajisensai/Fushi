@@ -106,6 +106,14 @@ final class FfiLookupResults extends Struct {
   external int count;
 }
 
+/// `fushidicts_tokenize` 的返回：每段的 UTF-16 码元数（+ 可选的每段读音）。
+final class FfiTokenizeResult extends Struct {
+  external Pointer<Int32> lengths;
+  external Pointer<Pointer<Utf8>> readings;
+  @Int32()
+  external int count;
+}
+
 final class FfiImportResult extends Struct {
   @Int32()
   external int success;
@@ -227,6 +235,20 @@ typedef _LookupPopupJsonDart = Pointer<Utf8> Function(Pointer<Void> handle,
 
 typedef _FreeStringDart = void Function(Pointer<Utf8> s);
 
+// [text] 是带长 UTF-8 缓冲（[textBytes] 字节，不靠结尾 NUL 定界）：Dart 字符串里
+// 合法的 U+0000 是正文的一部分（HBK-AUDIT-007）。
+typedef _TokenizeNative = FfiTokenizeResult Function(Pointer<Void> handle,
+    Pointer<Uint8> text, Int32 textBytes, Int32 scanLength, Int32 withReadings);
+typedef _TokenizeDart = FfiTokenizeResult Function(Pointer<Void> handle,
+    Pointer<Uint8> text, int textBytes, int scanLength, int withReadings);
+
+typedef _FreeTokenizeResultDart = void Function(Pointer<FfiTokenizeResult> r);
+
+typedef _MatchLengthNative = Int32 Function(
+    Pointer<Void> handle, Pointer<Utf8> text, Int32 scanLength);
+typedef _MatchLengthDart = int Function(
+    Pointer<Void> handle, Pointer<Utf8> text, int scanLength);
+
 // ── bindings class ──────────────────────────────────────────────────
 
 class FushidictsFfiBindings {
@@ -302,6 +324,13 @@ class FushidictsFfiBindings {
     freeString =
         _lib.lookupFunction<Void Function(Pointer<Utf8>), _FreeStringDart>(
             'fushidicts_free_string');
+    tokenize = _lib.lookupFunction<_TokenizeNative, _TokenizeDart>(
+        'fushidicts_tokenize');
+    freeTokenizeResult = _lib.lookupFunction<
+        Void Function(Pointer<FfiTokenizeResult>),
+        _FreeTokenizeResultDart>('fushidicts_free_tokenize_result');
+    matchLength = _lib.lookupFunction<_MatchLengthNative, _MatchLengthDart>(
+        'fushidicts_match_length');
   }
   late final DynamicLibrary _lib;
 
@@ -328,6 +357,9 @@ class FushidictsFfiBindings {
   late final _FreeKanjiResultsDart freeKanjiResults;
   late final _LookupPopupJsonDart lookupPopupJson;
   late final _FreeStringDart freeString;
+  late final _TokenizeDart tokenize;
+  late final _FreeTokenizeResultDart freeTokenizeResult;
+  late final _MatchLengthDart matchLength;
 }
 
 // ── zstd 文件解压（按需解析） ───────────────────────────────────────

@@ -49,9 +49,11 @@ void main() {
           final int notConfiguredIdx =
               src.indexOf("if (r === 'notConfigured')", classifyIdx);
           expect(doneBranchIdx, greaterThan(classifyIdx),
-              reason: '${content.parent.path} 缺 success||duplicate 组合出队判据（队列永不清根因）');
+              reason:
+                  '${content.parent.path} 缺 success||duplicate 组合出队判据（队列永不清根因）');
           expect(notConfiguredIdx, greaterThan(doneBranchIdx),
-              reason: '${content.parent.path} notConfigured 判据应在 success||duplicate 之后');
+              reason:
+                  '${content.parent.path} notConfigured 判据应在 success||duplicate 之后');
           expect(
             src
                 .substring(doneBranchIdx, notConfiguredIdx)
@@ -65,7 +67,8 @@ void main() {
               src.contains(
                   "if (r === 'notConfigured') return { cls: 'unconfigured'"),
               isTrue,
-              reason: '${content.parent.path} 未把 notConfigured 归为 unconfigured');
+              reason:
+                  '${content.parent.path} 未把 notConfigured 归为 unconfigured');
         });
 
         test('YouTube/Netflix 两条生成路径都走分类器出队', () {
@@ -126,7 +129,30 @@ void main() {
   });
 
   group('TODO-1185 查词弹窗容器有界（不再撑满全屏）', () {
-    for (final File css in <File>[assetsCss, toolsCss]) {
+    // popup-size.js 是扩展侧弹窗默认尺寸的真相源（与 app 的
+    // kLookupPopupDefaultWidth/Height 对齐）；CSS 兜底值从这里读，不另写数字。
+    final String popupSizeSrc =
+        File('../tools/browser-extension/popup-size.js').readAsStringSync();
+    int popupSizeDefault(String variable) {
+      final RegExpMatch? m =
+          RegExp(RegExp.escape("fushiParsePx(t['$variable'], ") + r'(\d+)\)')
+              .firstMatch(popupSizeSrc);
+      if (m == null) {
+        throw StateError('popup-size.js 找不到 $variable 的默认值');
+      }
+      return int.parse(m.group(1)!);
+    }
+
+    final int popupSizeDefaultWidth =
+        popupSizeDefault('--fushi-popup-max-width');
+    final int popupSizeDefaultHeight =
+        popupSizeDefault('--fushi-popup-max-height');
+
+    for (final File css in <File>[
+      assetsCss,
+      toolsCss,
+      File('../tools/browser-extension/scripts/content-css-overlay.css'),
+    ]) {
       test(
           'content.css ${css.path} #entries-container 有 max-height + overflow-y',
           () {
@@ -139,11 +165,20 @@ void main() {
         // （browserExtensionThemeColors 下发 --fushi-popup-max-width /
         //  --fushi-popup-max-height），否则查词响应下发的用户配置尺寸永远落不到
         //  弹窗上（历史 bug：content.css 曾读 --fushi-popup-width，服务端只发
-        //  --fushi-popup-max-width → 宽度死锁 400px）。默认 400×360 兜底保留。
-        expect(src.contains('var(--fushi-popup-max-width, 400px)'), isTrue,
-            reason: '${css.path} 弹窗宽度未消费服务端下发的 --fushi-popup-max-width');
-        expect(src.contains('var(--fushi-popup-max-height, 360px)'), isTrue,
-            reason: '${css.path} 弹窗高度未消费服务端下发的 --fushi-popup-max-height');
+        //  --fushi-popup-max-width → 宽度死锁 400px）。兜底值必须与 popup-size.js
+        //  的默认值同源（PR #2341 把默认改成 480×480 后 CSS 曾残留 400×360）。
+        expect(
+            src.contains(
+                'var(--fushi-popup-max-width, ${popupSizeDefaultWidth}px)'),
+            isTrue,
+            reason: '${css.path} 弹窗宽度未消费 --fushi-popup-max-width，'
+                '或兜底值与 popup-size.js 默认宽 ${popupSizeDefaultWidth}px 不一致');
+        expect(
+            src.contains(
+                'var(--fushi-popup-max-height, ${popupSizeDefaultHeight}px)'),
+            isTrue,
+            reason: '${css.path} 弹窗高度未消费 --fushi-popup-max-height，'
+                '或兜底值与 popup-size.js 默认高 ${popupSizeDefaultHeight}px 不一致');
         // 旧的不匹配变量名不得复活（服务端从不发 --fushi-popup-width）。
         expect(src.contains('var(--fushi-popup-width,'), isFalse,
             reason: '${css.path} 残留服务端从不下发的 --fushi-popup-width（宽度死锁根因）');

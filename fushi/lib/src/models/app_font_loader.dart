@@ -5,9 +5,9 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart' show FontLoader;
 import 'package:fushi/src/media/video/ass_font_metrics.dart';
 import 'package:fushi/src/models/font_decoder.dart';
-import 'package:fushi/src/models/woff2_decoder.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_compute/fushi_compute.dart' show FushiFont;
 import 'package:path/path.dart' as p;
 
 /// Registers a user-imported custom font with the Flutter engine so it can be
@@ -28,7 +28,7 @@ class AppFontLoader {
   static const Set<String> _directExtensions = <String>{'.ttf', '.otf', '.ttc'};
 
   /// Web-font containers decoded to sfnt before loading: WOFF 1.0 via
-  /// [FontDecoder] (zlib) and WOFF2 via [Woff2Decoder] (Brotli + glyf/loca
+  /// [FontDecoder] (zlib) and WOFF2 via [FushiFont] (native Brotli + glyf/loca
   /// transform). An entry that fails to decode is skipped, falling through to
   /// the next usable candidate.
   static const String _woffExtension = '.woff';
@@ -75,8 +75,9 @@ class AppFontLoader {
       if (!(font['enabled'] as bool? ?? true)) continue;
       final String? rawName = font['name'] as String?;
       if (rawName == null) continue;
-      final String family =
-          ReaderCustomFontCss.normalizedFontFamilyName(rawName);
+      final String family = ReaderCustomFontCss.normalizedFontFamilyName(
+        rawName,
+      );
       if (family.isEmpty) continue;
 
       final String? rawPath = font['path'] as String?;
@@ -195,8 +196,12 @@ class AppFontLoader {
       // 此时它已经把自己从 _inFlight 里摘掉了（finally），不会再互相等。
       return _loadFileFamily(file, family, isWoff: isWoff, isWoff2: isWoff2);
     }
-    final Future<String?> loading =
-        _loadFileFamily(file, family, isWoff: isWoff, isWoff2: isWoff2);
+    final Future<String?> loading = _loadFileFamily(
+      file,
+      family,
+      isWoff: isWoff,
+      isWoff2: isWoff2,
+    );
     _inFlight[family] = loading;
     try {
       return await loading;
@@ -215,26 +220,32 @@ class AppFontLoader {
       Uint8List bytes = await file.readAsBytes();
       if (isWoff || isWoff2) {
         // FontLoader only accepts raw sfnt, so unwrap the web-font
-        // container (WOFF2 first, then WOFF 1.0). Brotli + glyf/loca 变换是
-        // 纯 CPU、几十毫秒到几百毫秒，放后台 isolate，别占首帧前的 UI isolate。
+        // container (WOFF2 first, then WOFF 1.0). WOFF2 走原生 fushi_compute
+        // （CJK 字体解码仍要几十毫秒），WOFF 是 zlib：都放后台 isolate，别占首帧前的
+        // UI isolate。
         final Uint8List? sfnt = await Isolate.run(
           () => isWoff2
-              ? Woff2Decoder.toSfnt(bytes)
+              ? FushiFont.instance.woff2ToSfnt(bytes)
               : FontDecoder.woffToSfnt(bytes),
         );
         if (sfnt == null) return null;
         bytes = sfnt;
       }
       final FontLoader loader = FontLoader(family)
-        ..addFont(Future<ByteData>.value(
-            bytes.buffer.asByteData(bytes.offsetInBytes, bytes.lengthInBytes)));
+        ..addFont(
+          Future<ByteData>.value(
+            bytes.buffer.asByteData(bytes.offsetInBytes, bytes.lengthInBytes),
+          ),
+        );
       await loader.load();
       _loadedFamilies.add(family);
       // BUG-897：自定义字体不在系统字体目录（扫描不到），把字节同步喂进 ASS 字号
       // 换算索引（OS/2 win cell 语义），别名=本处注册的家族名——视频字幕用自定义
       // 字体时字号也与 mpv/libass 同源。
-      AssFontCellIndex.instance
-          .registerFontBytes(bytes, aliases: <String>[family]);
+      AssFontCellIndex.instance.registerFontBytes(
+        bytes,
+        aliases: <String>[family],
+      );
     } catch (e, stack) {
       ErrorLogService.instance.log('AppFontLoader.resolveAndLoad', e, stack);
       return null;

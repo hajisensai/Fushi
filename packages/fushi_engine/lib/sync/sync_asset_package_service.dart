@@ -1258,10 +1258,10 @@ DateTime? _nullableDate(Map<String, Object?> map, String key) {
 // 编解码链跑在 UI isolate。这里整体放进 Isolate.run（deflate/inflate 的 CPU 与
 // 磁盘 IO 都离开 UI isolate），不再整 zip 入内存，并按包类型选择压缩策略：
 //
-// - 音频包用 STORE（[storeResources]=true）：archive 3.6.1 的 STORE 分支对
-//   `ArchiveFile.stream` 真流式（getFileCrc32 分块读 + writeInputStream 直接转发，
-//   不 toUint8List），单个几百 MB 的音频/封面文件不会整入内存；音频/图片本就是
-//   压缩格式，deflate 也只是浪费 CPU。
+// - 音频包用 STORE（[storeResources]=true）：走 [addFileStored]——Rust ffcCrc32
+//   分块读文件算 CRC，再交给 archive 的 `ArchiveFile.stream` STORE 分支真流式拷贝
+//   （writeInputStream 直接转发，不 toUint8List），单个几百 MB 的音频/封面文件不会
+//   整入内存；音频/图片本就是压缩格式，deflate 也只是浪费 CPU。
 // - 词典包用 deflate（[storeResources]=false）：词典 JSON 可压缩省上传体积。走
 //   [addFileNativeDeflate]：原生 zlib 分块读文件压缩，内存峰值 = 压缩后体积；
 //   不用 archive 的 GZIP 档（纯 Dart `Deflate`，且先整文件 `toUint8List()`）。
@@ -1291,7 +1291,7 @@ Future<void> _zipPackageInIsolate({
         final File file = File(entry.value);
         if (!file.existsSync()) continue;
         if (storeResources) {
-          await encoder.addFile(file, entry.key, ZipFileEncoder.STORE);
+          addFileStored(encoder, file, entry.key);
         } else {
           addFileNativeDeflate(encoder, file, entry.key);
         }

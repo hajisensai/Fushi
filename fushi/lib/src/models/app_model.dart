@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
+import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
@@ -186,6 +187,7 @@ import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi/src/media/video/subtitle/download_subtitle_retry.dart';
 import 'package:fushi/src/media/video/subtitle/library_video_subtitle_backfill.dart';
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
@@ -3102,35 +3104,11 @@ class AppModel with ChangeNotifier {
   );
 
   /// Injects licenses to be displayed in the licenses page that aren't
-  /// pre-included by Flutter upon compilation but are included as assets.
+  /// pre-included by Flutter upon compilation but are included as assets:
+  /// every `assets/licenses/*.txt` plus the generated native-dependency
+  /// bundle `assets/licenses/native/` (see `asset_licenses.dart`).
   Future<void> injectAssetLicenses() async {
-    final packageNames = [
-      'ebook-reader',
-      // TODO-1368/BUG-691: "Hibiki Symbols" = renamed 3-glyph subset of
-      // DejaVu Sans 2.37, embedded as a data: URI @font-face in popup.css.
-      'dejavu-fonts',
-      // Windows galgame overlay toolbar: reduced official Google font subset.
-      'material-symbols-rounded',
-      // 内置 AnkiConnect 插件包（assets/anki/，GPLv3，新手引导一键安装用）。
-      'anki-connect',
-      // galgame 校准 OCR 的 NFKC 映射表（gal_lookup_ocr_unicode.dart）由
-      // Unicode Character Database 生成，Unicode License V3 要求随附许可。
-      'unicode-data',
-      // 复习（SRS）排程内核 native/fushi_fsrs 静态链进的两个 Rust crate：
-      // fsrs-rs（BSD-3-Clause，open-spaced-repetition）与 ruzstd（MIT，Anki 新格式包解压）。
-      'fsrs-rs',
-      'ruzstd',
-    ];
-
-    for (String packageName in packageNames) {
-      String licenseText =
-          await rootBundle.loadString('assets/licenses/$packageName.txt');
-      LicenseRegistry.addLicense(
-        () => Stream<LicenseEntry>.value(
-          LicenseEntryWithLineBreaks(<String>[packageName], licenseText),
-        ),
-      );
-    }
+    registerAssetLicenses(rootBundle);
   }
 
   /// TODO-1260：启动期对**数据根**做 IO 的关键 await 的超时上限。旧代码这些 await 若
@@ -4452,6 +4430,14 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleObscureReveal(bool value) =>
       prefsRepo.setVideoSubtitleObscureReveal(value);
 
+  /// 副字幕的「临时显形」开关。见
+  /// [PreferencesRepository.videoSecondarySubtitleObscureReveal]。
+  bool get videoSecondarySubtitleObscureReveal =>
+      prefsRepo.videoSecondarySubtitleObscureReveal;
+
+  Future<void> setVideoSecondarySubtitleObscureReveal(bool value) =>
+      prefsRepo.setVideoSecondarySubtitleObscureReveal(value);
+
   /// 显式全局广播（= 本 model 的 `notifyListeners`，对外可调用）。
   ///
   /// 给「写入方**刻意**不广播、但某个调用点确实需要全局刷新」的路径用：遮蔽模式两个
@@ -5288,6 +5274,45 @@ class AppModel with ChangeNotifier {
   /// 用户改了字幕来源/语言后 `reloadVideoDownloadPipelineRuntime` 会一起重建。
   VideoSubtitleBackfillService? _videoSubtitleBackfillService;
 
+  /// 下载后缺字幕的定期重试（[retryUnavailableDownloadSubtitles]），与下载管线
+  /// 同起停。每行自带退避间隔，这里的周期只决定多久看一眼有没有到期的行。
+  Timer? _downloadSubtitleRetryTimer;
+  bool _downloadSubtitleRetryRunning = false;
+
+  /// 跑一轮下载后缺字幕重试。闸门与刮削后补字幕相同：偏好关了 / 没配任何在线
+  /// 字幕来源时整轮静默跳过；上一轮还没跑完就不叠加。
+  Future<void> _retryDownloadSubtitles() async {
+    if (_downloadSubtitleRetryRunning || !videoSubtitleBackfillAfterScrape) {
+      return;
+    }
+    final VideoSubtitleBackfillService? service = _videoSubtitleBackfillService;
+    if (service == null || service.registry.providers.isEmpty) return;
+    _downloadSubtitleRetryRunning = true;
+    try {
+      final DownloadSubtitleRetryReport report =
+          await retryUnavailableDownloadSubtitles(
+        database: database,
+        // 内嵌轨选择不挡：这些分集本该由下载流水线装上 sidecar。
+        backfill: (String videoId) => backfillLibraryVideoSubtitle(
+          database: database,
+          service: service,
+          videoId: videoId,
+          seriesLanguage: _seriesSubtitleLanguage,
+          embeddedSelectionBlocks: false,
+        ),
+        now: DateTime.now(),
+      );
+      if (report.attempted > 0) {
+        debugPrint('[subtitle-retry] attempted ${report.attempted}, '
+            'installed ${report.installed}, settled ${report.settled}');
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel._retryDownloadSubtitles', e, stack);
+    } finally {
+      _downloadSubtitleRetryRunning = false;
+    }
+  }
+
   VideoSourceScrapeCoordinator? _videoDownloadScrapeCoordinator;
   TorrentBackend? _videoDownloadBackend;
   String? _videoDownloadBackendCacheKey;
@@ -5961,6 +5986,12 @@ class AppModel with ChangeNotifier {
       resourceRegistry: resources,
       enqueue: pipeline.enqueue,
     )..start();
+    // 下载那一刻没搜到字幕的分集，过几小时再找（连载番字幕常晚一两天上传）。
+    // 起管线时立刻看一轮：移动端很少连续前台 30 分钟，只靠周期首轮基本触发不到。
+    _downloadSubtitleRetryTimer?.cancel();
+    _downloadSubtitleRetryTimer = startDownloadSubtitleRetryLoop(
+      () => unawaited(_retryDownloadSubtitles()),
+    );
     // BrowsePage may have rendered while this fire-and-forget runtime was
     // still starting. Publish the new service identity so its cached resource
     // dependencies are rebuilt instead of remaining permanently unavailable.
@@ -6092,6 +6123,8 @@ class AppModel with ChangeNotifier {
   Future<void> _disposeVideoDownloadPipelineRuntime({
     Duration? pipelineDrainTimeout,
   }) async {
+    _downloadSubtitleRetryTimer?.cancel();
+    _downloadSubtitleRetryTimer = null;
     final VideoDownloadJobsKeepAliveBinding? keepAlive =
         _videoDownloadKeepAlive;
     _videoDownloadKeepAlive = null;
@@ -6347,7 +6380,15 @@ class AppModel with ChangeNotifier {
       // 出现一个既在清单里又被排除的幽灵条目。
       if (isPreferencesReady)
         for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
-          if (server.enabled) OpdsDiscoverySource(config: server),
+          if (server.enabled)
+            OpdsDiscoverySource(
+              config: server,
+              // 用户填的是服务端根 / 网页地址、探测打通了真正的目录端点时
+              // 写回（BUG-3525）。只落偏好不重建注册表：本实例已在内存里记住
+              // 打通的地址，重建只会打断正在进行的浏览。
+              onCatalogUrlResolved: (Uri resolved) =>
+                  unawaited(persistOpdsCatalogUrl(server.id, resolved)),
+            ),
       // 用户自配的 AList / OpenList 站点：同上，一条配置 = 一个源实例。
       if (isPreferencesReady)
         for (final AListSiteConfig site in prefsRepo.discoveryAListSites)
@@ -6409,6 +6450,17 @@ class AppModel with ChangeNotifier {
     await prefsRepo.setDiscoveryAudiobookshelfServers(servers);
     await reloadDiscoverySources();
   }
+
+  /// OPDS 地址探测（BUG-3525）打通了另一条目录地址时的写回：只改那一台服务器
+  /// 的 `catalogUrl` 并落偏好；不重建注册表（同 [persistAudiobookshelfTokens]
+  /// 的取舍——调用方就是正在跑请求的源实例，它已在内存里记住了打通的地址）。
+  Future<void> persistOpdsCatalogUrl(String configId, Uri catalogUrl) =>
+      prefsRepo.setDiscoveryOpdsServers(<OpdsServerConfig>[
+        for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
+          server.id == configId
+              ? server.copyWith(catalogUrl: catalogUrl)
+              : server,
+      ]);
 
   /// 协议层刷新令牌后的持久化：refresh token 每次刷新都轮换，不写回的话下次冷
   /// 启动拿的是已作废的旧值，宽限期一过就只能重新登录。
@@ -9257,13 +9309,7 @@ class AppModel with ChangeNotifier {
       fontApi: BrowserExtensionFontCatalog(this),
       // 复习（SRS）扩展端点：模块开着时 SrsAppHost.current 非 null；关着时 404。
       srsApiProvider: () => SrsAppHost.current,
-      tokenizer: JapaneseLanguage.instance.textToWords,
-      readingResolver: (String w) {
-        if (!FushiDicts.isInitialized) return '';
-        final List<FushiLookupResult> r =
-            FushiDicts.instance.lookup(w, maxResults: 1);
-        return r.isEmpty ? '' : r.first.term.reading;
-      },
+      tokenizer: JapaneseLanguage.instance.textToWordsWithReadings,
     )..ankiConnectEndpoint = _srsAnkiConnectEndpoint;
   }
 

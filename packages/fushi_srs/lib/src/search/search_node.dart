@@ -1,10 +1,9 @@
 /// Anki 搜索语法子集的语法树、错误类型与求值对象接口。
 ///
-/// 解析见 `search_parser.dart`（照 rslib `search/parser.rs`），求值见
-/// `search_matcher.dart`（语义照 rslib `search/sqlwriter.rs`）。
+/// 解析见 `search_parser.dart`（照 rslib `search/parser.rs`）；求值在原生内核
+/// native/fushi_fsrs/src/search.rs（语义照 rslib `search/sqlwriter.rs`，正则用与 Anki 相同的
+/// Rust `regex` crate），Dart 入口 `search_corpus.dart`。
 library;
-
-import 'search_text.dart';
 
 /// 解析失败的类别。
 enum SrsSearchErrorKind {
@@ -13,6 +12,9 @@ enum SrsSearchErrorKind {
 
   /// 合法的 Anki 语法，但本子集不支持（如 `rated:`、`prop:ease`、`nc:`）。
   unsupported,
+
+  /// 求值用的原生内核（native/fushi_fsrs）不可用或拒收了数据：与查询本身无关。
+  unavailable,
 }
 
 /// 搜索无法按 Anki 语义求值时抛出——**绝不静默退化成空集或全集**：查重靠
@@ -33,6 +35,10 @@ class SrsSearchUnsupported implements Exception {
 ///
 /// findNotes 语义 = 「笔记的任一张卡命中」，由调用方对每张卡求值后归并。
 abstract interface class SrsSearchSubject {
+  /// 所属笔记的标识：相同的卡**必须**有相同的 [fields] / [tags] / [noteTypeName]
+  /// （求值时同一条笔记的文本只装一次、笔记级条件只算一次）。
+  Object get noteKey;
+
   /// 牌组全路径，层级用 `::` 分隔（`日本語::語彙`）。
   String get deckName;
 
@@ -133,74 +139,52 @@ final class SrsSearchNot extends SrsSearchNode {
   final SrsSearchNode child;
 }
 
-/// `re:正则`：在全部字段原文（0x1f 连接）里做正则搜索，默认不区分大小写。
+/// `re:正则`：在全部字段原文（0x1f 连接，同 rslib 的 `n.flds`）里做正则搜索，默认不区分大小写
+/// （rslib：在正则前加 `(?i)`）。[source] 是查询里的原文，[pattern] 是解掉 `\"` 后交给正则引擎的。
 final class SrsSearchRegex extends SrsSearchNode {
-  SrsSearchRegex(this.source, this.pattern);
+  const SrsSearchRegex(this.source, this.pattern);
   final String source;
-  final RegExp pattern;
+  final String pattern;
 }
 
 /// `字段名:re:正则`：字段名通配；值按正则在字段原文里搜索（不锚定，默认不区分大小写）。
 final class SrsSearchFieldRegex extends SrsSearchNode {
-  SrsSearchFieldRegex(this.field, this.source, this.pattern)
-    : fieldPattern = ankiGlobRegExp(field);
+  const SrsSearchFieldRegex(this.field, this.source, this.pattern);
   final String field;
   final String source;
-  final RegExp pattern;
-  final RegExp fieldPattern;
+  final String pattern;
 }
 
 /// 裸词：在全部字段（原文）里做包含匹配，支持 `*` / `_`。
 final class SrsSearchText extends SrsSearchNode {
-  SrsSearchText(this.text) : pattern = ankiGlobRegExp(text, anchored: false);
+  const SrsSearchText(this.text);
   final String text;
-  final RegExp pattern;
 }
 
-/// `字段名:值`：字段名不区分大小写、可通配；值整值匹配、可通配。
+/// `字段名:值`：字段名不区分大小写、可通配；值整值匹配、可通配（去 HTML 后或原文命中都算）。
 final class SrsSearchField extends SrsSearchNode {
-  SrsSearchField(this.field, this.text)
-    : fieldPattern = ankiGlobRegExp(field),
-      valuePattern = ankiGlobRegExp(text);
+  const SrsSearchField(this.field, this.text);
   final String field;
   final String text;
-  final RegExp fieldPattern;
-  final RegExp valuePattern;
 }
 
 /// `deck:名`：匹配该牌组及其全部子牌组；`deck:*` 匹配全部。
 final class SrsSearchDeck extends SrsSearchNode {
-  SrsSearchDeck(this.deck)
-    : pattern = deck == '*'
-          ? null
-          : RegExp(
-              '^${ankiGlobToRegExpSource(deck)}(?:\$|::)',
-              caseSensitive: false,
-              unicode: true,
-              dotAll: true,
-            );
+  const SrsSearchDeck(this.deck);
   final String deck;
-  final RegExp? pattern;
 }
 
 /// `note:笔记类型名`。
 final class SrsSearchNoteType extends SrsSearchNode {
-  SrsSearchNoteType(this.name) : pattern = ankiGlobRegExp(name);
+  const SrsSearchNoteType(this.name);
   final String name;
-  final RegExp pattern;
 }
 
 /// `tag:标签`：匹配该标签及其子标签（`tag:a` 命中 `a`、`a::b`，不命中 `ab`）；
-/// `tag:none` 无标签；`tag:*` 全部。
+/// `tag:none` 无标签；`tag:*` 全部。通配 `_` / `*` 只匹配非空白。
 final class SrsSearchTag extends SrsSearchNode {
-  SrsSearchTag(this.tag)
-    : pattern = RegExp(
-        ' ${ankiGlobToRegExpSource(tag, wildcard: r'\S')}(?:::| )',
-        caseSensitive: false,
-        unicode: true,
-      );
+  const SrsSearchTag(this.tag);
   final String tag;
-  final RegExp pattern;
 }
 
 enum SrsSearchCardState { isNew, learn, review, due, suspended, buried }
@@ -238,13 +222,10 @@ final class SrsSearchFlag extends SrsSearchNode {
 
 /// `card:N`（从 1 起的卡片序号）或 `card:模板名`（通配）。
 final class SrsSearchCardTemplate extends SrsSearchNode {
-  SrsSearchCardTemplate.ordinal(int this.ordinal) : name = null, pattern = null;
-  SrsSearchCardTemplate.named(String this.name)
-    : ordinal = null,
-      pattern = ankiGlobRegExp(name);
+  const SrsSearchCardTemplate.ordinal(int this.ordinal) : name = null;
+  const SrsSearchCardTemplate.named(String this.name) : ordinal = null;
   final int? ordinal;
   final String? name;
-  final RegExp? pattern;
 }
 
 /// `edited:N`：最近 N 天（含今天）改过内容的笔记；N 至少为 1。

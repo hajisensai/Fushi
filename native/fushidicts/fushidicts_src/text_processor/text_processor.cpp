@@ -327,13 +327,22 @@ std::vector<TextProcessor> get_english_processors() {
 
 // NFKC 兼容分解 + 正则合成（utf8proc）：折叠全角拉丁/数字、合字、上下标等
 // 兼容字符到规范形（全角 Ａ -> 半角 A）。失败时回退原文。
+//
+// 带长调用 utf8proc_map，不用 utf8proc_NFKC：后者是 NULLTERM 模式，查询候选里的
+// U+0000 会被当成串尾，`日本語\0日本語` 的 NFKC 变体塌成 `日本語`，命中后
+// matched 却仍是整条候选——分词一段吞掉 NUL 和后面的词（HBK-AUDIT-007）。
 std::u32string nfkc(const std::u32string& text) {
-  std::string utf8 = utf8::utf32to8(text);
-  utf8proc_uint8_t* out = utf8proc_NFKC(reinterpret_cast<const utf8proc_uint8_t*>(utf8.c_str()));
-  if (!out) {
+  const std::string utf8 = utf8::utf32to8(text);
+  utf8proc_uint8_t* out = nullptr;
+  const utf8proc_ssize_t len =
+      utf8proc_map(reinterpret_cast<const utf8proc_uint8_t*>(utf8.data()),
+                   static_cast<utf8proc_ssize_t>(utf8.size()), &out,
+                   static_cast<utf8proc_option_t>(UTF8PROC_STABLE | UTF8PROC_COMPOSE | UTF8PROC_COMPAT));
+  if (len < 0 || !out) {
+    if (out) utf8proc_free(out);
     return text;
   }
-  std::string result(reinterpret_cast<char*>(out));
+  std::string result(reinterpret_cast<char*>(out), static_cast<std::size_t>(len));
   utf8proc_free(out);
   return utf8::utf8to32(result);
 }

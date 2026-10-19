@@ -202,6 +202,44 @@ void main() {
     source.close();
   });
 
+  test('根目录翻页：已打通根地址后第 2/3 页不再为拿 URL 重取根 feed', () async {
+    final List<String> requested = <String>[];
+    final OpdsDiscoverySource source = _source(
+      MockClient((http.Request request) async {
+        requested.add(request.url.toString());
+        final int page =
+            int.parse(request.url.queryParameters['cursor'] ?? '1');
+        final String next = page < 3
+            ? '<link rel="next" href="/api/v1/opds?cursor=${page + 1}"/>'
+            : '';
+        return _xml('''
+<feed xmlns="http://www.w3.org/2005/Atom">
+  $next
+  <entry><title>P$page</title><id>urn:p:$page</id>
+    <link rel="http://opds-spec.org/acquisition" href="/dl/$page"
+          type="application/epub+zip"/></entry>
+</feed>
+''');
+      }),
+    );
+
+    for (int page = 1; page <= 3; page++) {
+      final ProviderBatchResult<DiscoveryResultPage> result = await source
+          .browse(DiscoveryRequest(kind: DiscoveryMediaKind.novel, page: page));
+      expect(
+        (result.items.single.entries.single as DiscoveryResourceItem).title,
+        'P$page',
+      );
+    }
+    // 每页恰好一次请求：根 feed 只在第 1 页取过一次。
+    expect(requested, <String>[
+      'https://books.example.com/api/v1/opds',
+      'https://books.example.com/api/v1/opds?cursor=2',
+      'https://books.example.com/api/v1/opds?cursor=3',
+    ]);
+    source.close();
+  });
+
   test('search:经 OpenSearch 描述文档拿模板，再用模板发搜索', () async {
     final List<String> requested = <String>[];
     final OpdsDiscoverySource source = _source(

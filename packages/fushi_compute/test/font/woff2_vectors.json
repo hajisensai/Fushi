@@ -1,0 +1,67 @@
+{
+  "_comment": "WOFF2 -> sfnt regression vectors. sfnt_sha256 = output of the former pure-Dart decoder (fushi/lib/src/models/woff2_decoder.dart, deleted when decoding moved to native/fushi_compute); the Rust output was byte-identical on every entry before the Dart code was removed. 'committed' paths are relative to fixtures/. 'corpus' entries are large CJK fonts that are NOT committed: they were produced with fontTools 4.65 woff2.compress from Windows 11 system fonts (transform_tables shown); set FUSHI_WOFF2_CORPUS to a directory holding them to check these too.",
+  "committed": [
+    {
+      "file": "../../../../../fushi/test/fixtures/fonts/Roboto-Regular.woff2",
+      "woff2_sha256": "cc46322d5c4d41da447f26f7fa714827f2ec9a112968c12ef5736c7494985eca",
+      "sfnt_sha256": "6f6e5dd534787e99c62564f2ad196bc4332ff131c6ac139124197c179b7bca27",
+      "covers": "glyf/loca transform, composite glyphs"
+    },
+    {
+      "file": "Roboto-Regular-hmtx.woff2",
+      "woff2_sha256": "105be5e6c17452cd07763bccc65bd922da61a9381c06227a3bdb9924cb71acf0",
+      "sfnt_sha256": "4415b48b778759a16572145cd798ec6e4adf7bbfbdcbcb66f8ff9e39972332f8",
+      "covers": "glyf/loca + hmtx transform"
+    },
+    {
+      "file": "NotoSerifJP-subset-hmtx.woff2",
+      "woff2_sha256": "7c88cf815b2a0a71aaf679f0287b2fe13c6323aef4b0c3f98cd0a1961add1add",
+      "sfnt_sha256": "237d1d8d215dee6bdb2aa48522c9185f7a902c047122f20f88f314d225610ab6",
+      "covers": "CJK variable font subset (gvar), glyf/loca + hmtx transform"
+    },
+    {
+      "file": "NotoSansJP-subset-cff.woff2",
+      "woff2_sha256": "4843142b5b70843094d1b9870cb29e33d4b5acc31a3050c66821a1e0c6fd206f",
+      "sfnt_sha256": "d91442e46ceb89df11aea66c9fa365b5223945b2308999cabaa39e8c646576a2",
+      "covers": "CFF flavor (OTTO), Brotli only"
+    }
+  ],
+  "corpus": [
+    {
+      "file": "NotoSansSC-VF.woff2",
+      "source": "NotoSansSC-VF.ttf; glyf,loca",
+      "woff2_sha256": "f60542cafb96753ececde6befb4a4dece0da4fc3e457be997c6241d3d947d544",
+      "sfnt_sha256": "579251c5b8955a85674811bf10d49347892b73331b0a2a6a52f18319e298ef46"
+    },
+    {
+      "file": "yumin.woff2",
+      "source": "yumin.ttf; glyf,loca",
+      "woff2_sha256": "de386716af05a32b03fe02f9ffd2cdc5ebe965389432268a14c1d44eb20b1e56",
+      "sfnt_sha256": "8ed8afe9a5cb8d97f25e3a3a3ef2fd170263092e263a33c38bac2574541a7ece"
+    },
+    {
+      "file": "simsunb-hmtx.woff2",
+      "source": "simsunb.ttf; glyf,loca,hmtx",
+      "woff2_sha256": "a2c21047c2313b18754f7e2218607595df0d86093d0a5d6bc946e3c48161533c",
+      "sfnt_sha256": "5375803afd5f291189399e1c49aed25f97441c41926f96196b63502c3287f5ef"
+    },
+    {
+      "file": "NotoSansJP-Regular.woff2",
+      "source": "NotoSansJP-Regular.otf; CFF",
+      "woff2_sha256": "d150462318b39f88ede5de4a28796e29ef7b3404565fc36aa9a63f45b4ee616e",
+      "sfnt_sha256": "3950856cb26cd04b81cd6910c9248b73a949c76b08f1653ac972b16e39a8c28b"
+    },
+    {
+      "file": "msyh-0.woff2",
+      "source": "msyh.ttc font 0; glyf,loca",
+      "woff2_sha256": "9debfe3ea075b27a0e2d72120bc3fdad24dbda364c94591b90e56877a11d2952",
+      "sfnt_sha256": "108e0aa910decd57cbd91607bda17dbb19cdefdd71dfd7a04891214255354ec1"
+    },
+    {
+      "file": "NotoSerifJP-VF-hmtx.woff2",
+      "source": "NotoSerifJP-VF.ttf; glyf,loca,hmtx",
+      "woff2_sha256": "1feedb8613c03351f297b0626f668cee7044af9ce433ee1050da88a4693a1eaf",
+      "sfnt_sha256": "0d9c413eef88901f7f1703a504e41be05d3ed248b02aa63177e4faee23977822"
+    }
+  ]
+}

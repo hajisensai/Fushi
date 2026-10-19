@@ -88,6 +88,7 @@ add_library(fushidicts STATIC
     fushidicts_src/query.cpp
     fushidicts_src/lookup.cpp
     fushidicts_src/popup_json.cpp
+    fushidicts_src/tokenize.cpp
 )
 
 target_compile_features(fushidicts PUBLIC

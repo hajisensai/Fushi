@@ -2203,6 +2203,58 @@ mixin _FushiDbVideoDomain
                 t.subtitleId.equals(subtitleId)))
           .go();
 
+  /// 下载流水线当时没装上、值得稍后再找一次的字幕行，连同它的视频文件行。
+  ///
+  /// 只认**自动选片**的 `unavailable` 行（`selectedSubtitleId` 为空：用户手选的
+  /// 失效是另一类问题，交给任务面板）、所属任务已 `completed`、视频已落到最终路径；
+  /// 行首次记录不早于 [createdAfter]（重试窗口），上次尝试早于 [updatedBefore]
+  /// （退避间隔）。连载番的字幕常比片源晚一两天上传，下载那一刻搜不到不代表永远没有。
+  Future<
+      List<
+          ({
+            VideoDownloadJobSubtitleRow subtitle,
+            VideoDownloadJobFileRow file,
+          })>> getRetryableUnavailableDownloadSubtitles({
+    required int createdAfter,
+    required int updatedBefore,
+  }) async {
+    final List<TypedResult> rows = await (select(videoDownloadJobSubtitles)
+            .join(<Join>[
+      innerJoin(
+        videoDownloadJobFiles,
+        videoDownloadJobFiles.id.equalsExp(videoDownloadJobSubtitles.jobFileId),
+      ),
+      innerJoin(
+        videoDownloadJobs,
+        videoDownloadJobs.jobId.equalsExp(videoDownloadJobSubtitles.jobId),
+      ),
+    ])
+          ..where(videoDownloadJobSubtitles.status
+                  .equals(VideoDownloadJobSubtitleStatus.unavailable) &
+              videoDownloadJobSubtitles.selectedSubtitleId.isNull() &
+              videoDownloadJobSubtitles.createdAt
+                  .isBiggerOrEqualValue(createdAfter) &
+              videoDownloadJobSubtitles.updatedAt
+                  .isSmallerThanValue(updatedBefore) &
+              videoDownloadJobs.lifecycle
+                  .equals(VideoDownloadJobLifecycle.completed) &
+              videoDownloadJobFiles.finalAbsolutePath.isNotNull())
+          ..orderBy(<OrderingTerm>[
+            OrderingTerm(expression: videoDownloadJobSubtitles.updatedAt),
+          ]))
+        .get();
+    return <({
+      VideoDownloadJobSubtitleRow subtitle,
+      VideoDownloadJobFileRow file,
+    })>[
+      for (final TypedResult row in rows)
+        (
+          subtitle: row.readTable(videoDownloadJobSubtitles),
+          file: row.readTable(videoDownloadJobFiles),
+        ),
+    ];
+  }
+
   Future<void> upsertVideoDownloadSubscription(
     VideoDownloadSubscriptionsCompanion subscription,
   ) async {

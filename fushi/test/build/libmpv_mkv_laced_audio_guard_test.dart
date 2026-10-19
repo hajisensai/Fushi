@@ -147,7 +147,7 @@ void main() {
       );
     }
     final String cmake = File('$pkg/windows/CMakeLists.txt').readAsStringSync();
-    expect(cmake, contains('-mkvdts1.7z"'));
+    expect(cmake, contains('-mkvdts1'));
   });
 
   // 补丁的 trace / debug 字符串只在它编进去时出现在二进制里：直接打开构建实际

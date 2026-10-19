@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
+import 'package:fushi/src/sync/sync_utils.dart';
 
 // 一次性远端列举快照（TODO-2656）。
 //
@@ -115,15 +116,21 @@ void main() {
       expect(trio.audioBook, isNull);
     });
 
-    test('同一文件夹下多个同前缀文件时取第一个——与 findSyncFileByPrefix 同律', () {
+    // BUG-3528：多份同前缀文件时取时间戳最新的那份（旧律「取第一个」随后端
+    // 返回顺序时而读到旧进度）；快照与逐本列举仍须同律。
+    test('同一文件夹下多个同前缀文件时取最新——与 findSyncFileByPrefix 同律', () {
       final RemoteListingBuilder b = RemoteListingBuilder();
       b.addEntry(
-          parentName: 'Book A', name: 'progress_1_6_100_0.1.json', id: 'first');
+          parentName: 'Book A', name: 'progress_1_6_200_0.2.json', id: 'newer');
       b.addEntry(
-          parentName: 'Book A',
-          name: 'progress_1_6_200_0.2.json',
-          id: 'second');
-      expect(b.build().trioFor('Book A').progress?.id, 'first');
+          parentName: 'Book A', name: 'progress_1_6_100_0.1.json', id: 'older');
+      final RemoteListingSnapshot s = b.build();
+      expect(s.trioFor('Book A').progress?.id, 'newer');
+      final List<SyncFileRef> files = <SyncFileRef>[
+        for (final AssetEntry e in s.entriesOf('Book A'))
+          SyncFileRef(id: e.id, name: e.name),
+      ];
+      expect(findSyncFileByPrefix(files, 'progress_')?.id, 'newer');
     });
   });
 }

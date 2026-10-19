@@ -85,6 +85,9 @@ class LrcParser {
     // 第一步：收集所有 (startMs, text) 原始对
     final List<(int, String)> rawCues = [];
 
+    // 先收齐带时间标签的行（时间标签与去掉时间标签后的文本），整份一次剥离行内标签。
+    final List<List<RegExpMatch>> lineTags = <List<RegExpMatch>>[];
+    final List<String> lineTexts = <String>[];
     for (final String line in lines) {
       final String trimmed = line.trim();
       if (trimmed.isEmpty) continue;
@@ -93,18 +96,24 @@ class LrcParser {
       if (_metaTag.hasMatch(trimmed)) continue;
 
       // 找出本行全部时间标签
-      final Iterable<RegExpMatch> tagMatches = _timedTag.allMatches(trimmed);
+      final List<RegExpMatch> tagMatches = _timedTag
+          .allMatches(trimmed)
+          .toList();
       if (tagMatches.isEmpty) continue;
 
       // 将所有时间标签从行中移除，剩余部分即为文本
-      String rawText = trimmed.replaceAll(_timedTag, '');
-      // 再剥离增强 LRC 词级时间标签 <MM:SS.xx>（与 HTML 标签同形，
-      // 共享 [stripHtmlTags]）
-      rawText = stripHtmlTags(rawText);
+      lineTags.add(tagMatches);
+      lineTexts.add(trimmed.replaceAll(_timedTag, ''));
+    }
+    // 再剥离增强 LRC 词级时间标签 <MM:SS.xx>（与 HTML 标签同形，共享
+    // [stripHtmlTagsBatch]）：增强 LRC 每行都带，整份一次 FFI，不逐行跨边界。
+    final List<String> strippedTexts = stripHtmlTagsBatch(lineTexts);
 
+    for (int l = 0; l < lineTags.length; l++) {
+      final String rawText = strippedTexts[l];
       if (rawText.isEmpty) continue;
 
-      for (final RegExpMatch m in tagMatches) {
+      for (final RegExpMatch m in lineTags[l]) {
         final int? ms = _parseTimecodeToMs(m.group(1)!);
         if (ms != null) {
           rawCues.add((ms, rawText));

@@ -185,9 +185,9 @@ class _SubtitleStylePreviewState extends State<SubtitleStylePreview> {
         style.fontSize *
         subtitleScreenScaleFactor(window.isEmpty ? area : window);
     final ColorScheme cs = Theme.of(context).colorScheme;
-    // 颜色 null（TODO-051 之前的旧数据 =「跟随主题」）的回退与播放页一致：
-    // 正文 onSurface、投影 shadow、背景固定半透明黑。
-    final Color textColor = style.resolveTextColor(cs.onSurface);
+    // 颜色 null（TODO-051 之前的旧数据）的回退与播放页一致：正文固定白（#2312）、
+    // 投影 shadow、背景固定半透明黑。
+    final Color textColor = style.resolveTextColor();
     final Color shadowColor = style.resolveShadowColor(cs.shadow);
     final Color boxColor = style.backgroundOpacity <= 0
         ? Colors.transparent

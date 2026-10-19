@@ -1,7 +1,7 @@
 // BUG-3395：VN 插图屏与其后句子屏在真 Chrome 里的几何与有声书跟随行为跑手。
 // 由 vn_illustration_screen_test.dart 执行，argv[2] = payload.json（生产 VN shell +
 // 选区脚本 + 生产 VN CSS）。章首插图的注入形状照抄 webview.part.dart 的
-// _injectMergedChapterImages（单图片章并进下一章章首）。
+// _mergedChapterImagesHtml（单图片章并进下一章章首）。
 //
 // 断言依赖的生产行为（供变异实测对照）：
 // - 纯图片屏不再并进下一段（attachMediaScreensToAdjacentText 已删）：图独占一屏铺满，
@@ -24,7 +24,7 @@ const image = 'data:image/svg+xml,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="1600">' +
   '<rect width="1120" height="1600" fill="#888"/></svg>');
 const figure = '<div class="fushi-merged-image"><img src="' + image +
-  '" class="block-img" loading="eager"/></div>';
+  '" class="block-img"/></div>';
 const sentence = '<p>……さすがだ、<ruby>由<rt>ゆ</rt></ruby><ruby>比<rt>い</rt></ruby>' +
   'ヶ<ruby>浜<rt>はま</rt></ruby>。よく人を見ている。</p>';
 const reply = '<p>「あ、うん、え？」</p>';

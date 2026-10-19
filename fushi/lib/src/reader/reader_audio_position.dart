@@ -1,8 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_compute/fushi_compute.dart' show AudioTextFoldNative;
 import 'package:html/dom.dart' as dom;
 
 import 'package:fushi_engine/epub/epub_book.dart';
-import 'package:fushi_engine/stats/study_char_count.dart';
 
 /// Converts audio UTF-16 positions to the reader's completed learning units.
 /// Each original DOM text node retains its own word boundary, matching
@@ -12,10 +14,7 @@ class ReaderAudioPositionIndex {
 
   factory ReaderAudioPositionIndex.fromChapterHtml(String html) {
     final dom.Document document = EpubBook.parseChapterHtml(html);
-    final StringBuffer normalized = StringBuffer();
-    final List<int> offsets = <int>[];
-    final List<int> studyEnds = <int>[];
-    int studyOffset = 0;
+    final List<String> texts = <String>[];
 
     void visit(dom.Node node) {
       if (node is dom.Element &&
@@ -23,29 +22,7 @@ class ReaderAudioPositionIndex {
         return;
       }
       if (node is dom.Text) {
-        final List<int> runes = node.data.runes.toList(growable: false);
-        final List<int> kinds = runes.map(_classify).toList(growable: false);
-        final List<bool> ends = List<bool>.filled(runes.length, false);
-        int nextKind = 3;
-        for (int i = runes.length - 1; i >= 0; i--) {
-          final int kind = kinds[i];
-          ends[i] = kind == 1 || (kind == 2 && nextKind != 2);
-          if (kind != 0) nextKind = kind;
-        }
-        for (int i = 0; i < runes.length; i++) {
-          final int folded = AudioTextNormalizer.foldCodePoint(runes[i]);
-          final int studyEnd = studyOffset + (ends[i] ? 1 : 0);
-          if (folded >= 0) {
-            normalized.writeCharCode(folded);
-            offsets.add(studyOffset);
-            studyEnds.add(studyEnd);
-            if (folded > 0xffff) {
-              offsets.add(studyOffset);
-              studyEnds.add(studyEnd);
-            }
-          }
-          if (ends[i]) studyOffset++;
-        }
+        texts.add(node.data);
         return;
       }
       for (final dom.Node child in node.nodes) {
@@ -55,12 +32,17 @@ class ReaderAudioPositionIndex {
 
     final dom.Element? body = document.body;
     if (body != null) visit(body);
-    offsets.add(studyOffset);
-    return ReaderAudioPositionIndex._(
-      normalized.toString(),
-      offsets,
-      studyEnds,
-    );
+
+    // 整章文本一次 FFI 算完归一化与学习单位坐标（不逐码点跨 FFI，学习单位分类也在原生侧）。
+    // 节点之间插 U+0000：它是断词码点、不在归一化白名单里，所以整段一次扫描等于逐节点各自
+    // `runes` 解码、各自断词（与 fushiReader.buildNodeOffsets / fushiStudyUnits.isUnitEnd
+    // 一致），也挡住相邻节点首尾的孤立代理拼成一个代理对。
+    final ({String text, Uint32List offsets, Uint32List ends, int total})
+    folded = AudioTextFoldNative.instance.foldStudy(texts.join('\u0000'));
+    final Uint32List offsets = Uint32List(folded.offsets.length + 1)
+      ..setAll(0, folded.offsets);
+    offsets[folded.offsets.length] = folded.total;
+    return ReaderAudioPositionIndex._(folded.text, offsets, folded.ends);
   }
 
   final String _text;
@@ -103,11 +85,4 @@ class ReaderAudioPositionIndex {
       offset == _text.length ||
       _text.codeUnitAt(offset) < 0xdc00 ||
       _text.codeUnitAt(offset) > 0xdfff;
-
-  static int _classify(int rune) {
-    final String char = String.fromCharCode(rune);
-    if (kStudyTransparentPattern.hasMatch(char)) return 0;
-    if (!kStudyLetterOrNumberPattern.hasMatch(char)) return 3;
-    return kStudyNoSpaceScriptPattern.hasMatch(char) ? 1 : 2;
-  }
 }

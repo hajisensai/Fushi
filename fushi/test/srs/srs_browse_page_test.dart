@@ -18,6 +18,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_srs/fushi_srs.dart' show FushiFsrs, kFushiFsrsLibEnv;
 import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -147,6 +148,14 @@ void main() {
     testWidgets('[$ds] 搜索：字段限定语法、按字段的关键字搜索、语法错误给出提示', (
       WidgetTester tester,
     ) async {
+      // 搜索求值只有 Rust 实现（native/fushi_fsrs/src/search.rs）：库缺失直接判红，不 skip。
+      expect(
+        FushiFsrs.isAvailable,
+        isTrue,
+        reason:
+            'fushi_fsrs native library not loadable: build it with '
+            'native/fushi_fsrs/build_*.{ps1,sh} and set $kFushiFsrsLibEnv',
+      );
       final SrsDbStore store = await _openStore(tester);
       await _add(tester, store, '食べる', 'to eat');
       await _add(tester, store, '飲む', 'to drink');

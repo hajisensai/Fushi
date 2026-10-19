@@ -124,6 +124,11 @@ class HeadlessHost {
   ServerDictionaryHost? _dictionaries;
   final _AsyncMutex _mutex = _AsyncMutex();
 
+  /// 同步状态域的窄锁（对应 app 的 `runExclusiveWithSyncStateApply`）：对端聚合 /
+  /// 合集 / 进度与播放位置这类单行读-比较-写只彼此互斥，不排在 [_mutex] 罩着的
+  /// 书 / 视频大文件导入后面——那样对端 15s 内拿不到响应就判超时。
+  final _AsyncMutex _syncStateMutex = _AsyncMutex();
+
   /// 互联「配置文件」寄存处（对端推来 / 拉走的配置方案；WebUI 列表与指定也走它）。
   late final ServerProfileHub profiles = ServerProfileHub(
     directory: paths.interconnectProfiles,
@@ -596,6 +601,7 @@ class HeadlessHost {
         // 导入 / 删除词典后按 DB 重载引擎（没装引擎时是空操作，只改 DB 与目录）。
         refreshDictionaryCache: () async => _dictionaries?.refresh(),
         runExclusive: _mutex.run,
+        runSyncStateExclusive: _syncStateMutex.run,
         importBookFromFile: (File bookFile) async {
           if (await isMangaPackage(bookFile)) {
             return importMangaPackageFile(

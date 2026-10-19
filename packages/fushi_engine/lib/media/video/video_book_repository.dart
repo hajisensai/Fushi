@@ -600,6 +600,14 @@ class VideoBookRepository {
   /// 三列（videoPath / subtitleSource / secondarySubtitleSource）各自判断，
   /// 哨兵值（`embedded:<n>` / `off:`）与流媒体 URL 一律不动，规则见
   /// [remapVideoBookPaths]。整批在一个事务里写，中途失败不会留下改了一半的库。
+  ///
+  /// 同一事务里还改写下载任务表 `video_download_job_files.final_absolute_path`：
+  /// 任务与库行之间没有 id 级外键，唯一纽带就是这列与 `videoPath` 相等
+  /// （下载后补抓字幕、库侧删除时反查任务都按它）。只改库不改任务 = 纽带断开，
+  /// 补字幕永远对不上、删条目时找不到要 skip 的种子文件。只改 torrent 负载文件本身
+  /// 这一列（引擎真正搬动的东西），字幕 sidecar 不在 torrent 里、引擎不搬。
+  ///
+  /// 返回值仍是**库行**的改动数（UI 提示「迁移了几个条目」）。
   Future<int> migrateMediaPaths({
     required String fromPath,
     required String toPath,
@@ -617,8 +625,30 @@ class VideoBookRepository {
       );
       if (!remap.isEmpty) pending[row.bookUid] = remap;
     }
-    if (pending.isEmpty) return 0;
+    final Map<int, String> pendingJobFiles = <int, String>{};
+    for (final VideoDownloadJobFileRow file
+        in await _db.select(_db.videoDownloadJobFiles).get()) {
+      final String? remapped = remapMediaPath(
+        file.finalAbsolutePath,
+        fromPath: fromPath,
+        toPath: toPath,
+      );
+      if (remapped != null) pendingJobFiles[file.id] = remapped;
+    }
+    if (pending.isEmpty && pendingJobFiles.isEmpty) return 0;
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
     await _db.transaction(() async {
+      for (final MapEntry<int, String> entry in pendingJobFiles.entries) {
+        await (_db.update(
+          _db.videoDownloadJobFiles,
+        )..where((tbl) => tbl.id.equals(entry.key)))
+            .write(
+          VideoDownloadJobFilesCompanion(
+            finalAbsolutePath: Value<String?>(entry.value),
+            updatedAt: Value<int>(nowMs),
+          ),
+        );
+      }
       for (final MapEntry<String, VideoPathRemap> entry in pending.entries) {
         final VideoPathRemap remap = entry.value;
         await (_db.update(

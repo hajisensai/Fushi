@@ -31,6 +31,7 @@ class AcHarness {
     Map<String, List<InternetAddress>> dns =
         const <String, List<InternetAddress>>{},
     SrsStyleStore? styles,
+    List<String> Function(List<String> fields)? dupeNormBatch,
   }) async {
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -67,6 +68,7 @@ class AcHarness {
         h.fetched.add(uri);
         return SrsAnkiFetchResult.ok(Uint8List.fromList(<int>[1, 2, 3]));
       },
+      dupeNormBatch: dupeNormBatch,
     );
     return h;
   }

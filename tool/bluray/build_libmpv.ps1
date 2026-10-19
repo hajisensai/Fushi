@@ -34,6 +34,10 @@ Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_
 # which (without video_delay) set DTS = PTS and rejected every B-frame, so the
 # dump-cache snapshot of HEVC/H.264 with B-frames was mostly undecodable.
 Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\patches\recorder-video-dts.patch'))
+# BUG-2691: the texture renderer (gl_video) shows Dolby Vision profile 5 in
+# inverted purple/green IPT colours; the same patch Android / macOS / iOS ship
+# ports libplacebo's RPU reshaping into it, so DV no longer needs vo=gpu-next.
+Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'tool\bluray\platforms\patches\mpv-gl-dovi-p5.patch'))
 New-Item -ItemType Directory -Path $angle | Out-Null
 Push-Location $angle
 try { Run 'cmake' @('-E', 'tar', 'xzf', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\vendored\ANGLE.7z')) }
@@ -53,5 +57,9 @@ Run $python @((Join-Path $PSScriptRoot 'probe_libmpv.py'), (Join-Path $package '
 # and of Matroska B-frame video.
 Run $python @((Join-Path $PSScriptRoot 'verify_mkv_lace_dump.py'), '--library', $package,
   '--ffmpeg', (Join-Path $repoRoot 'third_party\ffmpeg-min\windows\ffmpeg.exe'))
+# BUG-2691: the texture renderer must reshape Dolby Vision profile 5 like
+# libplacebo under every hwdec mode Fushi uses.
+Run $python @((Join-Path $PSScriptRoot 'verify_dovi_p5.py'), '--library', $package,
+  '--angle', $angle, '--work', (Join-Path $out 'verify-dovi'))
 Write-Output "Verified native runtime directory: $package"
 Write-Output 'Run verify_menu_render.py against a readable real disc before repinning an archive.'

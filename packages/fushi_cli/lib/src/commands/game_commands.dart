@@ -295,7 +295,7 @@ const List<CtlCommandGroup> gameCommandGroups = <CtlCommandGroup>[
       CtlCommandSpec(
         name: 'source-remove',
         summary: '移除某个资料源快照（换数据源）',
-        usage: '<gameId> <bgm|vndb>',
+        usage: '<gameId> <bgm|vndb|dlsite>',
         build: _buildSourceRemove,
         render: _renderSources,
       ),
@@ -1275,16 +1275,19 @@ String _renderSessionDelete(Object? data) {
       : '已删除';
 }
 
+/// app 侧 `GalgameMetadataSource` 的持久化键（CLI 不依赖引擎包，只能镜像一份）。
+const Set<String> _metadataSources = <String>{'bgm', 'vndb', 'dlsite'};
+
 void _configureScrape(ArgParser parser) {
   parser
     ..addOption('query', abbr: 'q', help: '搜索词或资料源 ID（缺省用游戏显示名）')
-    ..addOption('source', help: '只查一个资料源：bgm | vndb');
+    ..addOption('source', help: '只查一个资料源：bgm | vndb | dlsite');
 }
 
 CtlRequestSpec _buildScrape(CtlCommandContext context) {
   final String? source = context.option('source')?.toLowerCase();
-  if (source != null && source != 'bgm' && source != 'vndb') {
-    throw CtlUsageError('--source 只能是 bgm | vndb：$source');
+  if (source != null && !_metadataSources.contains(source)) {
+    throw CtlUsageError('--source 只能是 bgm | vndb | dlsite：$source');
   }
   return CtlRequestSpec.get(
     _gamePath(context, '/scrape'),
@@ -1321,8 +1324,10 @@ String _renderScrape(Object? data) {
 
 CtlRequestSpec _buildScrapeApply(CtlCommandContext context) {
   final String candidate = context.positional(1, 'candidateId');
-  if (!RegExp(r'^(bgm|vndb):.+$').hasMatch(candidate)) {
-    throw CtlUsageError('候选 id 应为 bgm:<id> 或 vndb:<id>：$candidate');
+  if (!RegExp(r'^(bgm|vndb|dlsite):.+$').hasMatch(candidate)) {
+    throw CtlUsageError(
+      '候选 id 应为 bgm:<id> / vndb:<id> / dlsite:<编号>：$candidate',
+    );
   }
   return CtlRequestSpec.post(
     _gamePath(context, '/scrape'),
@@ -1334,9 +1339,9 @@ CtlRequestSpec _buildSources(CtlCommandContext context) =>
     CtlRequestSpec.get(_gamePath(context, '/sources'));
 
 CtlRequestSpec _buildSourceRemove(CtlCommandContext context) {
-  final String source = context.positional(1, 'bgm|vndb').toLowerCase();
-  if (source != 'bgm' && source != 'vndb') {
-    throw CtlUsageError('资料源只能是 bgm | vndb：$source');
+  final String source = context.positional(1, 'bgm|vndb|dlsite').toLowerCase();
+  if (!_metadataSources.contains(source)) {
+    throw CtlUsageError('资料源只能是 bgm | vndb | dlsite：$source');
   }
   return CtlRequestSpec.delete(_gamePath(context, '/sources/$source'));
 }

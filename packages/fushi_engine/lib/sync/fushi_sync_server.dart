@@ -777,11 +777,11 @@ class FushiSyncServer {
             type.contains('application/json') || type.contains('xml');
         if (!compressible) return response;
         if (response.headers['content-encoding'] != null) return response;
-        final List<int> body = <int>[
-          for (final List<int> chunk in await response.read().toList())
-            ...chunk,
-        ];
-        final List<int> gzipped = gzip.encode(body);
+        // 按块攒进 BytesBuilder：展开成 List<int> 会把每字节装箱成 8 字节槽，几百 KB
+        // 的清单要多拷一份、多占 8 倍内存（同 game_stream.part.dart 的上传体）。
+        final BytesBuilder body = BytesBuilder(copy: false);
+        await response.read().forEach(body.add);
+        final List<int> gzipped = gzip.encode(body.takeBytes());
         return response.change(
           headers: <String, String>{
             'Content-Encoding': 'gzip',

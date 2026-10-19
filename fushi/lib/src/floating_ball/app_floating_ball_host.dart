@@ -949,6 +949,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   }
 
   /// 系统球 / 常驻通知上点了关闭：服务已经自己停了，把「应用外」开关同步关掉。
+  ///
+  /// 「不自动恢复」时连「应用内显示」一起关：Fushi 在前台时系统球让位给应用内球
+  /// （BUG-3201），用户眼里两者是同一颗球，选了不恢复却在回到 Fushi 时又看到它，
+  /// 违背设置提示「关掉后要在这里重新打开」，与应用内球的「关闭」也不对称。
   void _onSystemBallClosedByUser() {
     unawaited(() async {
       // 清掉原生的持久标记，免得下次启动再处理一遍。
@@ -964,6 +968,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         return;
       }
       await prefs.setFloatingBallSystem(false);
+      if (!prefs.floatingBallAutoRestore.restoresInApp &&
+          prefs.floatingBallInApp) {
+        await prefs.setFloatingBallInApp(false);
+      }
     }());
   }
 

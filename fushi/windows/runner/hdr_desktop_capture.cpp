@@ -5,7 +5,7 @@
 
 #include "hdr_capture_policy.h"
 #include "hdr_tone_map.h"
-#include "hdr_video_host_window.h"
+#include "hdr_display_info.h"
 
 namespace fushi {
 
