@@ -40,6 +40,7 @@ void main() {
       aacsKeys().sublist(0, 3),
     );
     final List<String> outcomes = <String>[];
+    final List<int> statuses = <int>[];
     // 整段一次调用；失败处记下形态，从下一单元接着解（等价于旧实现逐单元调用）。
     int unit = 0;
     final int total = stream.length ~/ kAacsUnit;
@@ -50,8 +51,10 @@ void main() {
       outcomes.addAll(List<String>.filled(result.unitsDone, 'ok'));
       unit += result.unitsDone;
       if (result.ok) break;
+      statuses.add(result.status);
+      // 向量冻结的是旧实现的两类文案；新增的「数据损坏」码在旧实现里属于 key 不符那一类。
       outcomes.add(switch (result.status) {
-        FfcCryptoStatus.aacsNoMatchingKey =>
+        FfcCryptoStatus.aacsNoMatchingKey || FfcCryptoStatus.aacsUnitCorrupt =>
           'FormatException: AACS content decryption failed: disc key mismatch or unsupported protection',
         FfcCryptoStatus.aacsClearUnitInvalid =>
           'FormatException: Invalid unencrypted Blu-ray transport unit',
@@ -61,6 +64,81 @@ void main() {
     }
     expect(outcomes, units);
     expect(_sha(stream), expected['sha256']);
+    // 新分类：首单元就用 k1 解开了，之后哪个 key 都解不开的单元一律判数据损坏，
+    // 坏同步字节的明文单元判未加密单元无效；没有一处报「key 不符」。
+    expect(statuses, <int>[
+      for (final String outcome in units.where((String u) => u != 'ok'))
+        outcome.contains('unencrypted')
+            ? FfcCryptoStatus.aacsClearUnitInvalid
+            : FfcCryptoStatus.aacsUnitCorrupt,
+    ]);
+  });
+
+  group('AACS failure classes', () {
+    test('all-zero unit (read error fill) is an invalid clear unit', () {
+      final AacsUnitsResult result = FushiComputeCrypto.instance
+          .openAacs(aacsKeys().sublist(0, 1))
+          .decryptUnits(Uint8List(2 * kAacsUnit));
+      expect(result.status, FfcCryptoStatus.aacsClearUnitInvalid);
+      expect(result.unitsDone, 0);
+    });
+
+    test('undecodable unit after a decrypted one is corrupt, not a key '
+        'mismatch', () {
+      final List<Uint8List> keys = aacsKeys();
+      final Uint8List bad = encryptAacsUnit(keys[0], plainAacsUnit(9));
+      bad[192 + 4 - 16] ^= 0x01;
+      final Uint8List batch = Uint8List(2 * kAacsUnit)
+        ..setAll(0, encryptAacsUnit(keys[0], plainAacsUnit(8)))
+        ..setAll(kAacsUnit, bad);
+      final AacsUnitsResult result = FushiComputeCrypto.instance
+          .openAacs(<Uint8List>[keys[0]])
+          .decryptUnits(batch);
+      expect(result.status, FfcCryptoStatus.aacsUnitCorrupt);
+      expect(result.unitsDone, 1);
+    });
+
+    test('state carries across calls: a later batch failing is corrupt', () {
+      final List<Uint8List> keys = aacsKeys();
+      final AacsNativeDecoder decoder = FushiComputeCrypto.instance.openAacs(
+        <Uint8List>[keys[0]],
+      );
+      expect(
+        decoder.decryptUnits(encryptAacsUnit(keys[0], plainAacsUnit(1))).ok,
+        isTrue,
+      );
+      final AacsUnitsResult later = decoder.decryptUnits(
+        encryptAacsUnit(keys[3], plainAacsUnit(2)),
+      );
+      expect(later.status, FfcCryptoStatus.aacsUnitCorrupt);
+    });
+
+    test('first encrypted unit with the wrong key stays a key mismatch', () {
+      final List<Uint8List> keys = aacsKeys();
+      final AacsNativeDecoder decoder = FushiComputeCrypto.instance.openAacs(
+        <Uint8List>[keys[0]],
+      );
+      // 明文单元成功不证明 key 对。
+      expect(
+        decoder.decryptUnits(plainAacsUnit(3, encryptedFlag: false)).ok,
+        isTrue,
+      );
+      final AacsUnitsResult result = decoder.decryptUnits(
+        encryptAacsUnit(keys[3], plainAacsUnit(4)),
+      );
+      expect(result.status, FfcCryptoStatus.aacsNoMatchingKey);
+    });
+
+    test('encrypted unit with a zero-filled sector is corrupt from the '
+        'start', () {
+      final List<Uint8List> keys = aacsKeys();
+      final Uint8List unit = encryptAacsUnit(keys[0], plainAacsUnit(5))
+        ..fillRange(2048, 4096, 0);
+      final AacsUnitsResult result = FushiComputeCrypto.instance
+          .openAacs(<Uint8List>[keys[0]])
+          .decryptUnits(unit);
+      expect(result.status, FfcCryptoStatus.aacsUnitCorrupt);
+    });
   });
 
   test('AACS failed unit and everything after it stay untouched', () {
@@ -73,7 +151,8 @@ void main() {
     final AacsUnitsResult result = FushiComputeCrypto.instance
         .openAacs(<Uint8List>[keys[0]])
         .decryptUnits(batch);
-    expect(result.status, FfcCryptoStatus.aacsNoMatchingKey);
+    // 第 0 单元已用这把 key 解开：第 1 单元解不开判数据损坏。
+    expect(result.status, FfcCryptoStatus.aacsUnitCorrupt);
     expect(result.unitsDone, 1);
     final Uint8List plain = plainAacsUnit(1);
     for (int offset = 0; offset < kAacsUnit; offset += 192) {

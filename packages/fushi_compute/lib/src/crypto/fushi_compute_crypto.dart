@@ -8,11 +8,16 @@ import 'package:fushi_compute/src/fushi_compute_library.dart';
 
 /// `ffc_crypto_*` 的本域状态码（native/fushi_compute/src/crypto.rs）。
 abstract final class FfcCryptoStatus {
-  /// 未加密单元的 TS 同步字节不对。
+  /// 未加密单元的 TS 同步字节不对：数据损坏（全零单元落在这里）或不是 M2TS，与密钥无关。
   static const int aacsClearUnitInvalid = -20;
 
-  /// 所有 unit key 都解不出合法 TS。
+  /// 所有 unit key 都解不出合法 TS，且还没有证据表明 key 是对的：密钥不符、不支持的保护，
+  /// 或首个加密单元就坏了。
   static const int aacsNoMatchingKey = -21;
+
+  /// 所有 unit key 都解不出合法 TS，但这个解码器此前已用这批 key 解开过加密单元，或单元里
+  /// 有整扇区（2048 字节）全零：数据损坏，不是密钥问题。
+  static const int aacsUnitCorrupt = -23;
 
   /// ECDSA 验签不通过。
   static const int p256SignatureInvalid = -22;
@@ -437,7 +442,8 @@ final class AacsNativeDecoder implements Finalizable {
     final int code = _crypto._aacsDecrypt(_handle, buf, units.length, _done);
     if (code != FfcStatus.ok &&
         code != FfcCryptoStatus.aacsClearUnitInvalid &&
-        code != FfcCryptoStatus.aacsNoMatchingKey) {
+        code != FfcCryptoStatus.aacsNoMatchingKey &&
+        code != FfcCryptoStatus.aacsUnitCorrupt) {
       throw StateError('ffc_crypto_aacs_decrypt_units: $code');
     }
     final int done = _done.value;

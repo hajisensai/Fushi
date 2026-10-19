@@ -4,3 +4,8 @@
 # 变量时要自行带上同一个 cfg。
 [target.'cfg(target_arch = "aarch64")']
 rustflags = ["--cfg", "aes_armv8"]
+
+# rustdoc（doctest / cargo doc）不吃上面的 target rustflags：没有这条，aarch64 主机（Apple Silicon）上
+# `cargo test` 的 doctest 阶段会撞 src/crypto.rs 的 compile_error!。x86 上 aes 不看这个 cfg，无副作用。
+[build]
+rustdocflags = ["--cfg", "aes_armv8"]

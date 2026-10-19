@@ -91,7 +91,7 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）；`aacs
 
 | 符号 | 作用 | 调用方 |
 |---|---|---|
-| `ffc_crypto_aacs_open / _decrypt_units / _close` | AACS 1 内容解密：求单元密钥 + CBC + 0x47 校验 + 清 CPI + 多 key 轮换重试，一次处理一批 6144 字节单元 | `fushi_engine/.../aacs_content_decoder.dart`（relay 每 32 单元一次） |
+| `ffc_crypto_aacs_open / _decrypt_units / _close` | AACS 1 内容解密：求单元密钥 + CBC + 0x47 校验 + 清 CPI + 多 key 轮换重试，一次处理一批 6144 字节单元；遇坏即停，失败码分三类：-20 标为未加密却不是合法 TS（全零单元落这里，数据坏）、-21 哪个 key 都解不开且还没解开过加密单元（key 不符或首单元坏，分不清）、-23 哪个 key 都解不开但此前已解开过加密单元 / 单元含整扇区全零（数据坏，不是 key） | `fushi_engine/.../aacs_content_decoder.dart`（relay 每 32 单元一次） |
 | `ffc_crypto_aes128_ecb_decrypt` | unit key 表解密 | 同上 `fromVolumeUniqueKey` |
 | `ffc_crypto_aes_cbc_pkcs7_decrypt` | AES-128/192/256-CBC + PKCS7，原地 | HLS 分片（`anime_episode_downloader.dart`）、comico 根 URL |
 | `ffc_crypto_aes_cbc_encrypt` | AES-CBC 加密（不填充） | 只给测试造密文 |
@@ -111,7 +111,10 @@ pointycastle / basic_utils（pointycastle 仍经 dartssh2 等第三方包间接�
 检测），否则退回软件实现（结果相同、慢数倍）。本目录与 `native/fushi_ios_umbrella` 各有一份
 `.cargo/config.toml` 带上它；cargo 按**工作目录**找配置（构建脚本都 `cd` 到各自目录），且设了
 `RUSTFLAGS` / `CARGO_ENCODED_RUSTFLAGS` 环境变量时会**整个忽略**配置里的 rustflags，那时要在变量里
-自己带 `--cfg aes_armv8`。
+自己带 `--cfg aes_armv8`。丢了 cfg 不再静默：`src/crypto.rs` 在 aarch64 且无 `aes_armv8`（也没显式
+`--cfg aes_force_soft`）时 `compile_error!`；`verify_abi.sh` 对 aarch64 的独立 `libfushi_compute.{so,dylib}`
+另反汇编核对必有 `aese`/`aesd` 指令（arm64-v8a 实测硬件版 288 条、软件版 0 条；伞形 `.a` / Runner 混着别的
+crate 的 AES 指令，跳过）。
 
 基准（云同步混淆与 ECDSA，2026-10-19，i5-12600KF / Windows 11，AOT；旧实现从删除前的代码原样拷进仓库外的
 临时脚本，pointycastle 3.9.1；本机同时有其它会话占 CPU，数字有噪声）。混淆的对照是**最好的 Dart 写法**
