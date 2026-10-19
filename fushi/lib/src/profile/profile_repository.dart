@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show TableUpdateQuery, Value;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart'
+    show kDictKanjiPartSettingKeys, kanjiPartSettingsIn;
 import 'package:fushi_engine/profile/profile_document.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/models/preference_keys.dart'
@@ -244,6 +246,12 @@ class ProfileRepository {
       // `hasDictMeta` 保留：前 TODO-1077 的旧快照没有 dictionary_meta 行，跳过整
       // 段即可，不能被误当成「没有词典」。
       if (hasDictMeta) {
+        final Map<String, DictionaryMetaRow> liveDictRows =
+            <String, DictionaryMetaRow>{
+          for (final DictionaryMetaRow r
+              in await _db.getAllDictionaryMetadata())
+            r.name: r,
+        };
         for (final MapEntry<String, DictionaryMetadataCompanion> entry
             in dictMetaMap.entries) {
           final DictionaryMetadataCompanion companion = entry.value;
@@ -254,6 +262,10 @@ class ProfileRepository {
             collapsedLanguagesJson: companion.collapsedLanguagesJson.value,
             expandedLanguagesJson: companion.expandedLanguagesJson.value,
             languageOverride: companion.languageOverride.value,
+            metadataJson: _metadataWithProfileKanjiPartSettings(
+              liveDictRows[entry.key]?.metadataJson,
+              companion.metadataJson.value,
+            ),
           );
           if (updated == 0 &&
               (_isDictionaryInstalled?.call(entry.key) ?? false)) {
@@ -580,6 +592,44 @@ class ProfileRepository {
       'collapsedLanguagesJson': row.collapsedLanguagesJson,
       'expandedLanguagesJson': row.expandedLanguagesJson,
       'languageOverride': row.languageOverride,
+    });
+  }
+
+  /// live 行的 metadataJson 换上快照里混合词典汉字部分的开关 / 位置
+  /// （[kDictKanjiPartSettingKeys]）后的 JSON；无需改写时回 null（= 不写该列）。
+  ///
+  /// metadataJson 其余键是安装事实（重导 / 在线更新整份重建），profile 不回写；
+  /// 但这两项是与 hiddenLanguages / order 同级的用户设置——不跟 profile 的话，
+  /// 在一个 profile 里关掉混合词典的汉字卡，所有 profile 都一起关了，而它的术语
+  /// 部分却按 profile 各自开关。快照里没有这两个键 = 该 profile 用默认值。
+  static String? _metadataWithProfileKanjiPartSettings(
+    String? liveMetadataJson,
+    String snapshotMetadataJson,
+  ) {
+    if (liveMetadataJson == null) return null;
+    final Object? live;
+    final Object? snapshot;
+    try {
+      live = jsonDecode(liveMetadataJson);
+      snapshot = jsonDecode(snapshotMetadataJson);
+    } on FormatException {
+      // 损坏的 JSON 不在这里修：live 行由词典仓库读取时处理，这里只是不碰它。
+      return null;
+    }
+    if (live is! Map || snapshot is! Map) return null;
+    final Map<dynamic, dynamic> liveMap = live;
+    final Map<String, String> wanted = kanjiPartSettingsIn(<String, String>{
+      for (final MapEntry<dynamic, dynamic> e in snapshot.entries)
+        if (e.key is String && e.value is String)
+          e.key as String: e.value as String,
+    });
+    final bool unchanged = kDictKanjiPartSettingKeys
+        .every((String key) => liveMap[key] == wanted[key]);
+    if (unchanged) return null;
+    return jsonEncode(<String, dynamic>{
+      for (final MapEntry<dynamic, dynamic> e in liveMap.entries)
+        if (!kDictKanjiPartSettingKeys.contains(e.key)) '${e.key}': e.value,
+      ...wanted,
     });
   }
 
