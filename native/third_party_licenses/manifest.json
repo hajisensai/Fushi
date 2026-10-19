@@ -49,6 +49,13 @@
       }
     },
     "licenseTexts": {
+      "alloc-stdlib@0.3.0": {
+        "upstream": "https://github.com/dropbox/rust-alloc-no-stdlib/tree/0a81fd6928ea3b33c8cd484aa4575d50ffb98012",
+        "texts": [
+          "native/third_party_licenses/texts/crates/dropbox-rust-alloc-no-stdlib-0a81fd69/LICENSE"
+        ],
+        "note": "alloc-stdlib lives in a subdirectory of the alloc-no-stdlib repo and its crate ships no LICENSE; the repo-root LICENSE at tag 0.3.0 covers both crates (byte-identical to the one inside alloc-no-stdlib 3.0.0)"
+      },
       "block2@0.6.2": {
         "upstream": "https://github.com/madsmtm/objc2/tree/b4167b582b2f75f9a1be75495c41b765344fd03c",
         "texts": [
