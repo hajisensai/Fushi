@@ -11,6 +11,7 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/galgame_scrape_controller.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
+import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -56,6 +57,7 @@ Future<bool> showGalgameScrapeDialog({
 /// - Bangumi 条目页（`bgm.tv` / `bangumi.tv` / `chii.in` 的 `/subject/<数字>`，
 ///   允许尾随斜杠/多余路径段/query/fragment）→ 数字串裸 ID；
 /// - VNDB 条目页（`vndb.org` 的 `/v<数字>`，同样宽容尾随内容）→ `v<数字>`；
+/// - DLsite 作品页（`dlsite.com` 任意分站，路径里带 `product_id/<编号>`）→ 编号；
 /// - 其它输入（裸 ID、普通关键词、非条目 URL）**原样返回，零行为变化**。
 String normalizeGalgameScrapeQuery(String input) {
   final Uri? uri = _tryParseEntryUrl(input);
@@ -79,7 +81,25 @@ String normalizeGalgameScrapeQuery(String input) {
         RegExp(r'^v(\d+)$', caseSensitive: false).firstMatch(segments[0]);
     if (m != null) return 'v${m.group(1)!}';
   }
+  if (host == 'dlsite.com' || host.endsWith('.dlsite.com')) {
+    final DlsiteWorkId? id = DlsiteWorkId.findIn(uri.path);
+    if (id != null) return id.value;
+  }
   return input;
+}
+
+/// 纯函数：弹窗搜索框的预填词。
+///
+/// 预填词（缺省 = 显示名）里带 DLsite 编号就只填编号；否则游戏 exe 路径（安装目录多以
+/// 编号命名）里能认出编号也填编号——编号命中即按 ID 直取，比拿显示名去搜准得多。
+/// 都没有时原样用预填词。
+String galgameScrapeInitialQuery(GalgameEntry game, String? initialQuery) {
+  final String query = (initialQuery?.trim().isNotEmpty ?? false)
+      ? initialQuery!.trim()
+      : game.displayName;
+  final DlsiteWorkId? id =
+      DlsiteWorkId.findIn(query) ?? DlsiteWorkId.findIn(game.exePath);
+  return id?.value ?? query;
 }
 
 /// 把输入解析成 http/https URL；解析不出（裸词/裸 ID/含空格）返回 null。
@@ -230,9 +250,7 @@ class GalgameScrapeDialog extends StatefulWidget {
 
 class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
   late final TextEditingController _queryCtrl = TextEditingController(
-    text: (widget.initialQuery?.trim().isNotEmpty ?? false)
-        ? widget.initialQuery!.trim()
-        : widget.game.displayName,
+    text: galgameScrapeInitialQuery(widget.game, widget.initialQuery),
   );
 
   GalgameScrapeController get _controller =>
