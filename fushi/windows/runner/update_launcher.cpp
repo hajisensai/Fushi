@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <bcrypt.h>
 #include <shellapi.h>
 
 #include <cstdlib>
@@ -274,6 +275,12 @@ struct ParsedArgs {
   // DeleteFile code 5、静默 Abort、整包回滚），所以「同目录找 fushi.exe」这个旧判据
   // 在副本处失效，必须由 app 显式下发。空 = 老调用方，回退同目录（向后兼容）。
   std::wstring app_exe_path;
+  // 安装目录以普通权限写不进去（手动提权装进 Program Files）时由 app 下发 --elevate：
+  // 只把安装器经 UAC 提权，launcher 自己保持普通权限，装完再以普通权限拉回 app。
+  bool elevate_installer = false;
+  // --installer-sha256：发布方公布的安装包 SHA-256（小写十六进制）。提权路径必须有它，
+  // 见 LockAndVerifyInstaller（BUG-3567）。
+  std::wstring installer_sha256;
   std::vector<std::wstring> installer_args;
 };
 
@@ -302,6 +309,16 @@ bool ParseArgs(int argc, wchar_t** argv, ParsedArgs* parsed) {
     }
     if (arg == L"--app-exe" && i + 1 < argc) {
       parsed->app_exe_path = argv[i + 1];
+      i += 2;
+      continue;
+    }
+    if (arg == L"--elevate") {
+      parsed->elevate_installer = true;
+      i += 1;
+      continue;
+    }
+    if (arg == L"--installer-sha256" && i + 1 < argc) {
+      parsed->installer_sha256 = argv[i + 1];
       i += 2;
       continue;
     }
@@ -423,7 +440,251 @@ struct InstallerRun {
   HANDLE process = nullptr;
 };
 
-bool LaunchInstaller(const ParsedArgs& args, InstallerRun* run) {
+// 只读、拒绝他人写 / 删 / 改名地打开的安装包。析构时放开（launcher 退出前一直握着）。
+struct InstallerFileLock {
+  InstallerFileLock() = default;
+  InstallerFileLock(const InstallerFileLock&) = delete;
+  InstallerFileLock& operator=(const InstallerFileLock&) = delete;
+  ~InstallerFileLock() {
+    if (handle != INVALID_HANDLE_VALUE) ::CloseHandle(handle);
+  }
+  HANDLE handle = INVALID_HANDLE_VALUE;
+  // 由句柄解析出的真实路径（穿过所有 junction / 符号链接）。提权启动用它而不是
+  // app 下发的原始路径：原始路径的某一级若是 junction，校验后可以被改指到别处。
+  std::wstring final_path;
+};
+
+bool IsLowerHexSha256(const std::wstring& value) {
+  if (value.size() != 64) return false;
+  for (const wchar_t ch : value) {
+    if (!((ch >= L'0' && ch <= L'9') || (ch >= L'a' && ch <= L'f'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// 对已打开的 [file] 从头算 SHA-256，输出小写十六进制。
+bool Sha256OfHandle(HANDLE file, std::wstring* hex, std::string* error) {
+  LARGE_INTEGER zero = {};
+  if (!::SetFilePointerEx(file, zero, nullptr, FILE_BEGIN)) {
+    *error = LastErrorMessage("SetFilePointerEx installer");
+    return false;
+  }
+  BCRYPT_ALG_HANDLE algorithm = nullptr;
+  NTSTATUS status = ::BCryptOpenAlgorithmProvider(
+      &algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
+  if (!BCRYPT_SUCCESS(status)) {
+    *error = "BCryptOpenAlgorithmProvider failed (" +
+             std::to_string(static_cast<long>(status)) + ")";
+    return false;
+  }
+  BCRYPT_HASH_HANDLE hash = nullptr;
+  status = ::BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0);
+  if (!BCRYPT_SUCCESS(status)) {
+    ::BCryptCloseAlgorithmProvider(algorithm, 0);
+    *error = "BCryptCreateHash failed (" +
+             std::to_string(static_cast<long>(status)) + ")";
+    return false;
+  }
+  std::vector<unsigned char> buffer(1 << 20);
+  bool ok = true;
+  for (;;) {
+    DWORD read = 0;
+    if (!::ReadFile(file, buffer.data(), static_cast<DWORD>(buffer.size()),
+                    &read, nullptr)) {
+      *error = LastErrorMessage("ReadFile installer");
+      ok = false;
+      break;
+    }
+    if (read == 0) break;
+    status = ::BCryptHashData(hash, buffer.data(), read, 0);
+    if (!BCRYPT_SUCCESS(status)) {
+      *error = "BCryptHashData failed (" +
+               std::to_string(static_cast<long>(status)) + ")";
+      ok = false;
+      break;
+    }
+  }
+  unsigned char digest[32] = {};
+  if (ok) {
+    status = ::BCryptFinishHash(hash, digest, sizeof(digest), 0);
+    if (!BCRYPT_SUCCESS(status)) {
+      *error = "BCryptFinishHash failed (" +
+               std::to_string(static_cast<long>(status)) + ")";
+      ok = false;
+    }
+  }
+  ::BCryptDestroyHash(hash);
+  ::BCryptCloseAlgorithmProvider(algorithm, 0);
+  if (!ok) return false;
+  static const wchar_t kHex[] = L"0123456789abcdef";
+  hex->clear();
+  for (const unsigned char byte : digest) {
+    hex->push_back(kHex[byte >> 4]);
+    hex->push_back(kHex[byte & 0x0f]);
+  }
+  return true;
+}
+
+// 去掉 GetFinalPathNameByHandleW 的 `\\?\` 前缀，换回 ShellExecuteExW 认的普通形式。
+std::wstring StripExtendedPathPrefix(const std::wstring& path) {
+  static const std::wstring kUnc = L"\\\\?\\UNC\\";
+  static const std::wstring kLocal = L"\\\\?\\";
+  if (path.compare(0, kUnc.size(), kUnc) == 0) {
+    return L"\\\\" + path.substr(kUnc.size());
+  }
+  if (path.compare(0, kLocal.size(), kLocal) == 0) {
+    return path.substr(kLocal.size());
+  }
+  return path;
+}
+
+// 提权前的完整性门（BUG-3567）。安装包在用户可写的 updates 目录里，同用户的任何进程
+// 都能在「app 校验过」与「UAC 拉起」之间把它换掉，换成什么都会以管理员身份运行。所以：
+// 1. 只读打开、共享模式只给 FILE_SHARE_READ——从此刻起没人能写它、删它、给它改名，
+//    它所在的各级目录也因为里面有打开的文件而改不了名；
+// 2. 握着这个句柄重算 SHA-256，与 app 下发的发布方哈希比对；
+// 3. 用句柄解析出的真实路径去提权启动，并一直握着句柄直到 launcher 退出（安装器自己
+//    读 setup 数据、映像加载都只要读共享，不受影响）。
+bool LockAndVerifyInstaller(const ParsedArgs& args, InstallerFileLock* lock) {
+  auto fail = [&](const std::string& error) {
+    AppendMarkerFields(args.marker_path,
+                       {{"installerIntegrityCheckFailed", "true"}});
+    MarkLaunchFailed(args.marker_path, error);
+    return false;
+  };
+  if (!IsLowerHexSha256(args.installer_sha256)) {
+    return fail(
+        "Refusing to elevate the installer: no valid --installer-sha256 "
+        "digest was provided");
+  }
+  lock->handle = ::CreateFileW(args.installer_path.c_str(), GENERIC_READ,
+                               FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                               FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
+                               nullptr);
+  if (lock->handle == INVALID_HANDLE_VALUE) {
+    return fail(LastErrorMessage("CreateFile installer (exclusive read)"));
+  }
+  std::wstring actual;
+  std::string error;
+  if (!Sha256OfHandle(lock->handle, &actual, &error)) return fail(error);
+  if (actual != args.installer_sha256) {
+    return fail("Refusing to elevate the installer: SHA-256 mismatch (expected " +
+                ToUtf8(args.installer_sha256) + ", got " + ToUtf8(actual) + ")");
+  }
+  std::vector<wchar_t> buffer(MAX_PATH);
+  for (;;) {
+    const DWORD length = ::GetFinalPathNameByHandleW(
+        lock->handle, buffer.data(), static_cast<DWORD>(buffer.size()),
+        FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+    if (length == 0) {
+      return fail(LastErrorMessage("GetFinalPathNameByHandle installer"));
+    }
+    if (length < buffer.size()) {
+      lock->final_path =
+          StripExtendedPathPrefix(std::wstring(buffer.data(), length));
+      break;
+    }
+    buffer.resize(static_cast<size_t>(length) + 1);
+  }
+  AppendMarkerFields(args.marker_path,
+                     {{"installerIntegrityVerified", "true"}});
+  return true;
+}
+
+// UAC 同意框的前台锚点（BUG-3567）。consent 只在发起方传入的 hwnd 处于前台时才直接
+// 弹出，否则只在任务栏闪一个盾牌——而此刻 app 已经退出，launcher 本身没有窗口，用户
+// 看到的就是「Fushi 关掉了、什么都没发生」。Windows 前台锁规则下，一个后台进程能
+// SetForegroundWindow 只有几种情形：它是前台进程、前台进程用 AllowSetForegroundWindow
+// 把权限让给了它、或当前根本没有前台窗口。app 在退出前对 launcher 的 pid 调了
+// AllowSetForegroundWindow（platform_updater.dart），所以这里建一个 1x1 的不抢眼弹出
+// 窗口并把它置前台，作为 ShellExecuteExW 的 hwnd。拿不到前台也照常发起提权（退化为
+// 任务栏闪烁，与没有锚点时一样），结果记进 marker 供诊断。
+class ForegroundAnchor {
+ public:
+  ForegroundAnchor() {
+    HINSTANCE instance = ::GetModuleHandleW(nullptr);
+    WNDCLASSW window_class = {};
+    window_class.lpfnWndProc = ::DefWindowProcW;
+    window_class.hInstance = instance;
+    window_class.lpszClassName = kClassName;
+    ::RegisterClassW(&window_class);
+    const int x = ::GetSystemMetrics(SM_CXSCREEN) / 2;
+    const int y = ::GetSystemMetrics(SM_CYSCREEN) / 2;
+    hwnd_ = ::CreateWindowExW(WS_EX_TOOLWINDOW, kClassName, L"Fushi",
+                              WS_POPUP, x, y, 1, 1, nullptr, nullptr,
+                              instance, nullptr);
+    if (hwnd_ == nullptr) return;
+    ::ShowWindow(hwnd_, SW_SHOWNORMAL);
+    ::SetForegroundWindow(hwnd_);
+    foreground_ = ::GetForegroundWindow() == hwnd_;
+  }
+  ForegroundAnchor(const ForegroundAnchor&) = delete;
+  ForegroundAnchor& operator=(const ForegroundAnchor&) = delete;
+  ~ForegroundAnchor() {
+    if (hwnd_ != nullptr) ::DestroyWindow(hwnd_);
+  }
+  HWND hwnd() const { return hwnd_; }
+  bool foreground() const { return foreground_; }
+
+ private:
+  static constexpr wchar_t kClassName[] = L"FushiUpdateUacAnchor";
+  HWND hwnd_ = nullptr;
+  bool foreground_ = false;
+};
+
+// 安装器的参数串（不含可执行文件本身）。ShellExecuteExW 把可执行与参数分开传。
+std::wstring BuildArgumentString(const std::vector<std::wstring>& args) {
+  std::wstring result;
+  for (const std::wstring& arg : args) {
+    if (!result.empty()) result.push_back(L' ');
+    result += QuoteArg(arg);
+  }
+  return result;
+}
+
+// 经 UAC 提权启动安装器。CreateProcessW 无法跨越完整性级别，必须走 ShellExecuteExW
+// 的 runas 动词；SEE_MASK_NOCLOSEPROCESS 让我们照样拿到进程句柄，后续「等安装器结束
+// → 把 app 拉回来」逻辑与非提权路径完全一致。用户在 UAC 里点「否」时返回
+// ERROR_CANCELLED，按启动失败处理（app 由 EnsureAppBack 拉回，并在 marker 里留因）。
+bool LaunchInstallerElevated(const ParsedArgs& args, InstallerRun* run,
+                             InstallerFileLock* lock) {
+  if (!LockAndVerifyInstaller(args, lock)) return false;
+  const std::wstring parameters = BuildArgumentString(args.installer_args);
+  const ForegroundAnchor anchor;
+  AppendMarkerFields(
+      args.marker_path,
+      {{"installerElevationForeground", anchor.foreground() ? "true" : "false"}});
+  SHELLEXECUTEINFOW info = {};
+  info.cbSize = sizeof(info);
+  info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+  info.hwnd = anchor.hwnd();
+  info.lpVerb = L"runas";
+  info.lpFile = lock->final_path.c_str();
+  info.lpParameters = parameters.c_str();
+  info.nShow = SW_SHOWNORMAL;
+  if (!::ShellExecuteExW(&info)) {
+    const DWORD error = ::GetLastError();
+    AppendMarkerFields(args.marker_path,
+                       {{"installerElevationDeclined",
+                         error == ERROR_CANCELLED ? "true" : "false"}});
+    MarkLaunchFailed(args.marker_path,
+                     FormatErrorMessage(error, "ShellExecuteEx runas Inno"));
+    return false;
+  }
+  run->process = info.hProcess;
+  run->pid = info.hProcess != nullptr ? ::GetProcessId(info.hProcess) : 0;
+  return true;
+}
+
+bool LaunchInstaller(const ParsedArgs& args, InstallerRun* run,
+                     InstallerFileLock* lock) {
+  if (args.elevate_installer) {
+    AppendMarkerFields(args.marker_path,
+                       {{"installerElevationRequested", "true"}});
+    return LaunchInstallerElevated(args, run, lock);
+  }
   std::wstring command_line =
       BuildCommandLine(args.installer_path, args.installer_args);
   STARTUPINFOW startup = {};
@@ -503,7 +764,10 @@ bool StartApp(const std::wstring& executable) {
 // 安装成功时 [Run] 已经把新版拉起来，互斥体被持有，这里自然什么都不做，不会有双实例。
 void EnsureAppBack(const ParsedArgs& args, DWORD installer_exit_code,
                    bool installer_exit_observed) {
-  if (WaitForAppAlive(kAppRelaunchWaitMs)) {
+  // 提权安装时 .iss 带 /FUSHINORELAUNCH 跳过 [Run]，没有人会自己回来：只看一眼就拉起，
+  // 不白等观察窗口。
+  if (args.elevate_installer ? SingleInstanceMutexHeld()
+                             : WaitForAppAlive(kAppRelaunchWaitMs)) {
     AppendMarkerFields(args.marker_path,
                        {{"appAliveAfterInstaller", "true"},
                         {"appAliveCheckedAt", JsonString(NowIsoUtc())}});
@@ -558,7 +822,9 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, wchar_t*, int) {
        {"launcherMutexCheckedAt", JsonString(NowIsoUtc())}});
 
   InstallerRun run;
-  if (!LaunchInstaller(args, &run)) {
+  // 提权路径下锁住安装包直到本进程退出（析构放开），见 LockAndVerifyInstaller。
+  InstallerFileLock installer_lock;
+  if (!LaunchInstaller(args, &run, &installer_lock)) {
     // 安装器根本没起来：app 已经为这次更新退出了，必须把它拉回来，否则用户的 Fushi
     // 就这么没了（本函数的调用方是分离进程，没有人会看这个返回码）。
     EnsureAppBack(args, /*installer_exit_code=*/0,

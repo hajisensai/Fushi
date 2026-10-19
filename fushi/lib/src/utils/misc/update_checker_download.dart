@@ -466,7 +466,14 @@ Future<File> downloadUpdateAsset({
   );
   _activeUpdateDownloads[activeKey] = download;
   try {
-    return await download;
+    final File downloaded = await download;
+    // 每条返回路径（复用 / promote / 新下载）都已按 asset.sha256Digest 校验过内容；
+    // 把这个发布方公布的哈希登记给安装层（BUG-3567：Windows 提权安装只认它）。
+    final String? publishedDigest = asset.sha256Digest;
+    if (publishedDigest != null) {
+      UpdateDownloadTrust.recordVerified(downloaded, publishedDigest);
+    }
+    return downloaded;
   } finally {
     unawaited(keepAlive.stop());
     if (identical(_activeUpdateDownloads[activeKey], download)) {
