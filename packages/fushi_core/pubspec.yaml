@@ -9,8 +9,9 @@ environment:
 
 # 零 Flutter：本包被无头服务端（packages/fushi_server，dart compile exe）消费，
 # 不得依赖 flutter sdk / 任何 method-channel 插件。sqlite3 原生库由各消费方自己
-# 装配（Flutter app 在 fushi/pubspec.yaml 声明 sqlite3_flutter_libs；服务端走
-# sqlite3 包的 build hook / 系统库）。
+# 装配：app 与服务端都走 sqlite3 3.x 包的 build hook（native asset）。
+# 不要再加 sqlite3_flutter_libs——它只配 sqlite3 2.x，在 3.x 下只会往包里多塞一份
+# 没人用的 SQLite（macOS/iOS 上主程序启动即加载它）。
 dependencies:
   drift: ">=2.33.0 <2.34.0"
   sqlite3: ">=3.4.0 <4.0.0"
