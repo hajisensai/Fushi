@@ -34,11 +34,27 @@ class GalCalibrationImageFit {
 /// The lookup geometry code deliberately knows nothing about OCR.  The host
 /// may install a calibration-only assistant from `src/ocr/`; tests and headless
 /// builds leave this null and keep the deterministic pixel fallback below.
+///
+/// [isStale] 由调用方给（例如对话框的 `() => !mounted`）：返回 true 表示结果已经
+/// 没人要了，助手应尽快停下并返回 [kGalCalibrationImageFitStale] 结果。
 typedef GalCalibrationOcrAssist =
     Future<GalCalibrationImageFit?> Function(
       GalLookupCalibrationDraft draft, {
       required GalCalibrationPreviewBuilder build,
+      bool Function()? isStale,
     });
+
+/// [fitGalCalibrationImages] 的签名（校准对话框注入用）。
+typedef GalCalibrationImageFitter =
+    Future<GalCalibrationImageFit> Function(
+      GalLookupCalibrationDraft draft, {
+      GalCalibrationPreviewBuilder build,
+      bool Function()? isStale,
+    });
+
+/// 拟合因调用方 `isStale()` 变 true 而中途放弃时的 [GalCalibrationImageFit.reason]。
+/// 这个结果不是失败诊断，调用方（已关闭的对话框）应直接丢弃它。
+const String kGalCalibrationImageFitStale = 'stale';
 
 GalCalibrationOcrAssist? galCalibrationOcrAssist;
 
@@ -82,6 +98,7 @@ GalCalibrationOcrModelDownloader? galCalibrationOcrModelDownloader;
 Future<GalCalibrationImageFit> fitGalCalibrationImages(
   GalLookupCalibrationDraft draft, {
   GalCalibrationPreviewBuilder build = GalLookupCalibrationPreviewChannel.build,
+  bool Function()? isStale,
 }) async {
   final GalLookupCalibrationDraft fittingDraft = _quotedTextFittingDraft(draft);
   final GalCalibrationOcrAssist? ocr = galCalibrationOcrAssist;
@@ -93,11 +110,16 @@ Future<GalCalibrationImageFit> fitGalCalibrationImages(
     final GalCalibrationImageFit? assisted = await ocr(
       fittingDraft,
       build: build,
+      isStale: isStale,
     );
     if (assisted != null) {
+      if (assisted.reason == kGalCalibrationImageFitStale) return assisted;
       if (!draft.layout.quotedTextOnly) return assisted;
       return _restoreQuotedFit(assisted, draft, build: build);
     }
+  }
+  if (isStale?.call() ?? false) {
+    return const GalCalibrationImageFit(reason: kGalCalibrationImageFitStale);
   }
   final GalCalibrationImageFit fit = await compute(
     inferGalCalibrationGrid,

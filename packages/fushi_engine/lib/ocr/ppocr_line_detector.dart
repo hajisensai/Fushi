@@ -84,6 +84,37 @@ Float32List ppDetPreprocess(img.Image source, int width, int height) =>
       bake: source.width != width || source.height != height,
     );
 
+/// [PpOcrLineDetector.detect] 的前处理块（纯计算，不碰会话）：按 [ppDetInputSize]
+/// 定输入尺寸并转成 [ppDetPreprocess] 的 BGR CHW 张量。
+({Float32List data, int width, int height}) ppDetPrepareInput(img.Image crop) {
+  final ({int width, int height}) size = ppDetInputSize(
+    crop.width,
+    crop.height,
+  );
+  return (
+    data: ppDetPreprocess(crop, size.width, size.height),
+    width: size.width,
+    height: size.height,
+  );
+}
+
+/// [PpOcrLineDetector.detect] 的后处理块（纯计算，不碰会话）：概率图 [prob]
+/// （[ppDetPostprocess]）→ 行框，再按概率图与源图的比例反变换回
+/// [sourceWidth] × [sourceHeight] 的源图像素系。
+List<PpTextLine> ppDetDecodeOutput(
+  OcrTensor prob, {
+  required int sourceWidth,
+  required int sourceHeight,
+}) {
+  final int outH = prob.shape[prob.shape.length - 2];
+  final int outW = prob.shape[prob.shape.length - 1];
+  final List<PpTextLine> raw = ppDetPostprocess(prob.floatData!, outW, outH);
+  // 概率图与输入同尺寸；反变换回裁图像素系。
+  final double sx = sourceWidth / outW;
+  final double sy = sourceHeight / outH;
+  return <PpTextLine>[for (final PpTextLine l in raw) l.scaled(sx, sy)];
+}
+
 /// 一条检测到的文本行（坐标在**输入给检测器的那张图**的像素系）。
 class PpTextLine {
   const PpTextLine({
@@ -391,20 +422,36 @@ class PpOcrLineDetector {
   }
 
   /// 在 [crop]（一个文字块的裁图）内检测文本行，坐标为 [crop] 像素系。
+  ///
+  /// 三块的组合：[ppDetPrepareInput]（纯前处理）→ [runDetection]（只做推理）→
+  /// [ppDetDecodeOutput]（纯后处理）。两块纯计算不碰会话，调用方可以把它们挪到别的
+  /// isolate 上跑、只把推理留在会话所在的 isolate（galgame 校准 OCR 就这么拆）。
   Future<List<PpTextLine>> detect(img.Image crop) async {
-    final ({int width, int height}) size = ppDetInputSize(
-      crop.width,
-      crop.height,
+    final ({Float32List data, int width, int height}) input = ppDetPrepareInput(
+      crop,
     );
-    final Float32List input = ppDetPreprocess(crop, size.width, size.height);
+    final OcrTensor prob = await runDetection(
+      input.data,
+      width: input.width,
+      height: input.height,
+    );
+    return ppDetDecodeOutput(
+      prob,
+      sourceWidth: crop.width,
+      sourceHeight: crop.height,
+    );
+  }
+
+  /// 只做推理：[data] 是 [ppDetPrepareInput] 的 [1,3,height,width] 张量，返回唯一
+  /// 的输出（概率图）。输出个数不是 1 时抛 [StateError]。
+  Future<OcrTensor> runDetection(
+    Float32List data, {
+    required int width,
+    required int height,
+  }) async {
     final Map<String, OcrTensor> outputs = await _session.run(
       <String, OcrTensor>{
-        inputName: OcrTensor.float32(input, <int>[
-          1,
-          3,
-          size.height,
-          size.width,
-        ]),
+        inputName: OcrTensor.float32(data, <int>[1, 3, height, width]),
       },
     );
     if (outputs.length != 1) {
@@ -412,14 +459,7 @@ class PpOcrLineDetector {
         'PP-OCR det expected 1 output, got ${outputs.keys.toList()}',
       );
     }
-    final OcrTensor prob = outputs.values.single;
-    final int outH = prob.shape[prob.shape.length - 2];
-    final int outW = prob.shape[prob.shape.length - 1];
-    final List<PpTextLine> raw = ppDetPostprocess(prob.floatData!, outW, outH);
-    // 概率图与输入同尺寸；反变换回裁图像素系。
-    final double sx = crop.width / outW;
-    final double sy = crop.height / outH;
-    return <PpTextLine>[for (final PpTextLine l in raw) l.scaled(sx, sy)];
+    return outputs.values.single;
   }
 
   Future<void> close() => _session.close();
