@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3205 条。点号进各自文件。
+> 共 3206 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3576](bugs/BUG-3576-interconnect-srs-writer-dir-hash-propfind-404.md) | ✅ | ✅ | 互联客户端复习同步第二轮起 PROPFIND 404（写入者目录名带 `#`） |
 | [BUG-3575](bugs/BUG-3575-srs-sync-now-failure-says-unconfigured.md) | ✅ | ✅ | 复习「立即同步」失败时提示「还没有配置同步服务」 |
 | [BUG-3574](bugs/BUG-3574-manga-source-scan-skips-cbz-zip.md) | ✅ | ✅ | 漫画来源扫描跳过 .cbz / .zip 卷（显示 0 卷），漫画来源里的 .epub / .pdf 卷也被丢掉 |
 | [BUG-3573](bugs/BUG-3573-mixed-dict-kanji-section-missing.md) | ✅ | ✅ | mixed-dict-kanji-section-missing |
