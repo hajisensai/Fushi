@@ -252,6 +252,7 @@ import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
+import 'package:fushi/src/sync/video_remote_library_port.dart';
 import 'package:fushi/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:fushi/src/models/theme_notifier.dart'
     show ThemeNotifier, CustomThemeEntry, ThemePreset;
@@ -710,6 +711,12 @@ class AppModel with ChangeNotifier {
         .watchSingleOrNull()
         .map((PreferenceRow? row) => row?.value)
         .distinct(),
+    // 点播：手机遥控从电脑视频库里选片、让电脑播放（不必先在电脑上开视频）。
+    library: createVideoRemoteLibrary(
+      database: () => database,
+      navigatorKey: navigatorKey,
+      stopAudiobook: () => audiobookSession.stop(),
+    ),
   );
 
   /// App 级 Fushi LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
