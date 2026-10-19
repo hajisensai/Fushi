@@ -1044,11 +1044,15 @@ void main() {
           tester.getCenter(find.byKey(const ValueKey<String>('srs-rate-4'))).dx,
         ),
       );
-      // 评分按钮：评价词为主、间隔是副标签；整颗不高过 64（单行评价 + 小号间隔）。
-      expect(
-        find.byKey(const ValueKey<String>('srs-rate-3-interval')),
-        findsOneWidget,
-      );
+      // 评分按钮：间隔 + 评价词两行；整颗不高过 64（M3E 中号按钮）。关掉间隔后只剩评价词。
+      int rateTexts() => find
+          .descendant(
+            of: find.byKey(const ValueKey<String>('srs-rate-3')),
+            matching: find.byType(Text),
+          )
+          .evaluate()
+          .length;
+      expect(rateTexts(), 2, reason: '间隔 + 评价词');
       expect(
         tester.getSize(find.byKey(const ValueKey<String>('srs-rate-3'))).height,
         lessThanOrEqualTo(64),
@@ -1107,10 +1111,7 @@ void main() {
       expect(app.replay, SrsReviewReplayButton.start);
       await tester.tapAt(const Offset(195, 40));
       await _settle(tester);
-      expect(
-        find.byKey(const ValueKey<String>('srs-rate-3-interval')),
-        findsNothing,
-      );
+      expect(rateTexts(), 1, reason: '间隔关掉后只剩评价词');
       expect(
         tester.getCenter(replay).dx,
         lessThan(
@@ -1338,6 +1339,10 @@ class _RecordingAudio implements SrsCardAudioOutput {
   final List<String> played = <String>[];
   final List<Completer<bool>> _open = <Completer<bool>>[];
   int stops = 0;
+
+  /// 路径即文件名：[played] 记的仍是卡面上的音频名。
+  @override
+  Future<String?> resolve(String name) => Future<String?>.value(name);
 
   @override
   Future<bool> playToEnd(String name) {

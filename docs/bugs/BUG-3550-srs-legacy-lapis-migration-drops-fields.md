@@ -1,0 +1,15 @@
+## BUG-3550 · 旧 Lapis 迁到 Fushi 卡片时部分字段内容没跟过去，导入 / 改名的 Lapis 无法一键迁移
+- **报告**：2026-10-18（用户：「旧 lapis 迁移做一下。咱们支持的那些 lapis 迁移到新模板，正好旧的有些比如有些用户的『来源』没迁移，顺便帮用户迁移一下」；澄清：「来源」只是举例，要通用地查出旧版迁移漏掉的字段并补回，不为「来源」写特判）
+- **真实性**：✅ 真 bug（沿代码路径确认，非个案）。
+  - **丢字段**：Lapis → Fushi 卡片的预设映射对内置字段按字段键直映，其余**只认同名**（`packages/fushi_engine/lib/srs/srs_builtin_migration.dart` 旧版第 87–96 行「第二轮：剩下的按名字」，同名找不到就 `out[id] = null`）。用户在 Lapis 上自己加、与 Fushi 卡片某字段同义但不同名的字段（`来源` / `Source` / `出典` → MiscInfo，`例句翻译` → SentenceTranslation，`Word` / `Reading` / `Meaning` …）整列不迁；`srsPlanNoteTypeChange` 再把这些目标写成空串（`packages/fushi_srs/lib/src/note_type_ops.dart:425`）。主映射的内置字段为空、而同义的自加字段有内容时也一样丢（例：内置 MiscInfo 空、自加「来源」有出处）。
+  - **导入 / 改名的 Lapis 迁不了**：一键迁移只认内置 Lapis（`fushi/lib/src/srs/srs_change_note_type.dart` 旧版第 104 行 `lapisNoteIds()` 只取内置类型、第 116 行 `from.id != store.lapisNoteTypeId` 直接提示「只能迁移 Lapis 笔记」；笔记类型页菜单同样只给 `builtinKey == lapis` 的行，`srs_note_types_page.dart` 旧版第 453 行）。从 .apkg / AnkiConnect 导入的 Lapis、旧版 Hibiki / Fushi 在 Anki 里建的 Lapis、改过名的 Lapis 只能走通用「更改笔记类型」，它的默认映射在同名之外**按顺序**把剩下的旧字段塞给剩下的新字段（`note_type_ops.dart:381`），同义字段不是丢就是错位。
+  - Anki 侧（AnkiConnect / AnkiDroid）没有同类缺口可修：Fushi 只对 Anki 里**名为 `Lapis`** 的笔记类型做样式 / 模板升级（`fushi/lib/src/anki/lapis_template_service.dart:85/154/223`），从不迁字段内容；Anki 里也没有 Fushi 卡片笔记类型，本仓 AnkiConnect / AnkiDroid 客户端（`packages/fushi_anki`）也没有任何换笔记类型的调用，所以不存在「迁到新模板丢字段」的路径。改名后的 Anki Lapis 收不到模板升级是另一回事，本条只记录不修。
+- **[x] ① 已修复** — 新增 `packages/fushi_engine/lib/srs/srs_legacy_lapis_migration.dart`：
+  - 变体识别 `srsDetectLapisVariant`：内置 Lapis / 名字含 lapis / 字段含 Expression+MainDefinition+Sentence（与 Anki 侧 `LapisPreset.matches`，`packages/fushi_anki/lib/src/lapis_preset.dart:9`，同一口径），填空类型除外。
+  - 字段按语义槽映射 `srsLapisFieldSlot` / `srsLapisFieldPlan`：内置 fieldId > 归一同名 > 同义名表 `kSrsLapisFieldAliases`；`srsBuiltinMigrationMaps` 目标为 Fushi 卡片时改走它。
+  - 迁移后逐条兜底 + 已迁移笔记补迁 `applyLapisBackfill`：「更改笔记类型」不删旧字段的修改记录，笔记上仍留着迁移前各字段的值；Fushi 卡片笔记里为空、而它迁移前所属的 Lapis 变体（含已删除的类型）里同语义字段有内容的一律补上，已有内容绝不覆盖，重复执行零写入。`migrateToFushiCard` / `migrateLegacyLapis` 迁完自动对这些笔记跑一次。
+  - 入口：笔记类型页顶部「迁移旧 Lapis 到新模板」（有可迁移或待补迁笔记时出现）与每个 Lapis 变体行的菜单，打开 `SrsLegacyLapisMigrationPage`（`openSrsLegacyLapisMigrationPage`），逐个变体预演映射 / 卡片继承 / 迁不过去的字段后确认迁移，补迁也是预演 + 确认。浏览页批量迁移放宽到任意 Lapis 变体。
+  - 补迁不在启动时自动跑：它会改写用户内容并同步到所有设备，而且分辨不出「迁移后用户自己清空的字段」，所以放在迁移页显式预演 + 确认（幂等，多点无害）。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/srs_legacy_lapis_migration_test.dart`（变体识别、语义映射、迁移时逐条兜底、旧式同名迁移后补迁只补空字段且幂等、旧类型删掉后仍能补、非 Lapis 历史不补）；`fushi/test/srs/srs_legacy_lapis_migration_page_test.dart`（MD3 + Apple：迁移页预演并迁移、补迁按钮、笔记类型页入口）。
+- **备注**：已经被通用「更改笔记类型」**错位**写进非空字段的内容（例如同义字段被按顺序塞进 SentenceTranslation），补迁按「只补空字段」不会动它，需要用户在笔记里手改。从制卡历史导入（`srs_mined_history_import.dart:123`）只把作品标题写进 MiscInfo、章节名不迁，那是数据源本身没有更多内容，不属于本条。
+- **审查补修（PR #2336 合 develop 时）**：补迁原先只按「值是否为空」判断，分不清「从没写过」与「用户清空」（修改记录在、值为空串），用户清空迁移后的字段会被角标重新计入、点补迁写回原内容。改为目标字段有任何修改记录就不补（`srsPlanLapisFieldFill` 的 `authored`），测试 `a field the user cleared after migrating is never filled back`。

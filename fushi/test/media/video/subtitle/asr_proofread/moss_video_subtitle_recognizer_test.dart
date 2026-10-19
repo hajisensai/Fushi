@@ -165,6 +165,10 @@ void main() {
       moss: asr.MossRunner(
         cliPath: 'audiocpp_cli',
         modelPath: p.join(tmp.path, 'moss.gguf'),
+        // 显式钉后端与设备：不传时后端随平台清单变（Linux = vulkan），CUDA 不给
+        // device 还会先跑一次 `--list-devices` 选卡——都与本组要测的管线无关。
+        backend: asr.AudioCppBackend.cuda,
+        device: 0,
         startProcess: starter.call,
       ),
     );

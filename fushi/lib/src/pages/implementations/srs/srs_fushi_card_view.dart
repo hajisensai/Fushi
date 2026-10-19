@@ -707,6 +707,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         '${wide ? '' : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}'}',
     onWheel: wide ? null : _onDefsWheel,
     onSourceLink: widget.face.onSourceLink,
+    autoplayMedia: widget.face.autoplayMedia,
   );
 
   Widget? _definitions(BuildContext context, {required bool wide}) {
