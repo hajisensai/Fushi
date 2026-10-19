@@ -145,6 +145,7 @@ final class SrsEditDraft extends SrsEventDraft {
     this.key,
     this.value, {
     this.machine = false,
+    this.initial = false,
   });
 
   final SrsEntityKind kind;
@@ -152,6 +153,12 @@ final class SrsEditDraft extends SrsEventDraft {
   final String key;
   final Object? value;
   final bool machine;
+
+  /// 新建实体的初值：攒草稿时以为本机还没有这个实体的记录（[SrsDbStore.newEditDrafts] 不给
+  /// current）。落库时（[SrsDbStore.importDrafts] 的独占区里）若这个键已经有修改记录——攒批
+  /// 期间同步把对端的同一实体（ID 由 guid / 全名确定性派生）应用进来了——这条初值就不落：
+  /// 它在落库时才分配 HLC 与因果上下文，会支配对端的编辑、把用户的新值盖成源里的旧值。
+  final bool initial;
 }
 
 /// 长操作（删牌组）的进度：已完成 / 总数（同一单位，例如张卡）。
@@ -242,7 +249,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 插进别的写入，后分配的记录会先落库、先进发件箱（序号乱序），它的 ctx 还声称看见了尚未落库的
   /// 记录——同一字段上那条记录晚到时会被判为「被支配」而丢弃；中途崩溃时持久化的因果上下文里
   /// 还会留着永远不存在的 dot。以前逐条写的方法各自「await 读库 → 分配」，批量导入更是先攒一批
-  /// 已分配序号的事件再落库，都有这个窗口（BUG-3543）。
+  /// 已分配序号的事件再落库，都有这个窗口（BUG-3545）。
   ///
   /// 可重入：独占区里再调别的写方法直接执行（按 Zone 认）。在外面先开了数据库事务、再在事务里调
   /// 写方法的调用方（按时间点恢复）必须先进独占区再开事务，否则与排队等锁的写入互相等待。
@@ -903,16 +910,60 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 导入攒的一批草稿（[newNoteDrafts] / [newEditDrafts] + 已定稿的日志等）落库：同 [importEvents]，
   /// 但修改记录的序号 / HLC 在这里、落库的同一个独占区里才分配——攒批期间（读包、解析、别的写入）
-  /// 不占序号，落库顺序 = 序号顺序（BUG-3543，以前攒批时就分配，期间插进来的本机写入先落库）。
+  /// 不占序号，落库顺序 = 序号顺序（BUG-3545，以前攒批时就分配，期间插进来的本机写入先落库）。
   Future<void> importDrafts(List<SrsEventDraft> drafts) async {
     if (drafts.isEmpty) return;
     await runExclusive(() async {
+      final List<SrsEventDraft> live = await _dropAuthoredInitials(drafts);
       _receiveAll(<SrsEvent>[
-        for (final SrsEventDraft d in drafts)
+        for (final SrsEventDraft d in live)
           if (d case SrsReadyDraft(:final SrsEvent event)) event,
       ]);
-      await _emit(_finalize(drafts));
+      await _emit(_finalize(live));
     });
+  }
+
+  /// 去掉「初值」草稿（[SrsEditDraft.initial]）里键已有修改记录的：一次按实体分块查出现有的
+  /// (实体, 字段键)。只在独占区里、紧接着 [_finalize] 调用，查到的就是落库那一刻的真值。
+  Future<List<SrsEventDraft>> _dropAuthoredInitials(
+    List<SrsEventDraft> drafts,
+  ) async {
+    final Map<SrsEntityKind, Set<String>> byKind =
+        <SrsEntityKind, Set<String>>{};
+    for (final SrsEventDraft d in drafts) {
+      if (d is SrsEditDraft && d.initial) {
+        (byKind[d.kind] ??= <String>{}).add(d.entityId);
+      }
+    }
+    if (byKind.isEmpty) return drafts;
+    final $SrsFieldEditsTable t = db.srsFieldEdits;
+    final Set<String> authored = <String>{};
+    for (final MapEntry<SrsEntityKind, Set<String>> k in byKind.entries) {
+      for (final List<String> chunk in _chunks(k.value)) {
+        final List<TypedResult> rows =
+            await (db.selectOnly(t, distinct: true)
+                  ..addColumns(<Expression<Object>>[t.entityId, t.fieldKey])
+                  ..where(
+                    t.profileUid.equals(profileUid) &
+                        t.entityKind.equals(k.key.wire) &
+                        t.entityId.isIn(chunk),
+                  ))
+                .get();
+        for (final TypedResult r in rows) {
+          authored.add(
+            '${k.key.wire}/${r.read(t.entityId)!}/${r.read(t.fieldKey)!}',
+          );
+        }
+      }
+    }
+    if (authored.isEmpty) return drafts;
+    return <SrsEventDraft>[
+      for (final SrsEventDraft d in drafts)
+        if (d is! SrsEditDraft ||
+            !d.initial ||
+            !authored.contains('${d.kind.wire}/${d.entityId}/${d.key}'))
+          d,
+    ];
   }
 
   /// 草稿定稿：修改记录按序分配序号与 HLC（同一时刻、逐条 tick），其余原样。只在独占区里、
@@ -2021,7 +2072,8 @@ class SrsDbStore implements SrsSyncReplica {
   }
 
   /// 一个实体若干字段的本机修改记录草稿，**不落库、不占序号**（交给 [importDrafts] 成批落）。
-  /// [current] 同 [newNoteDrafts]：给了就跳过与现值相同的键；null = 实体刚由同一批事件新建、本机没有记录。
+  /// [current] 同 [newNoteDrafts]：给了就跳过与现值相同的键；null = 实体刚由同一批事件新建、本机没有记录
+  /// ——这时草稿标成初值（[SrsEditDraft.initial]），落库时键已有记录的不落。
   List<SrsEditDraft> newEditDrafts(
     SrsEntityKind kind,
     String entityId,
@@ -2030,7 +2082,7 @@ class SrsDbStore implements SrsSyncReplica {
   }) => <SrsEditDraft>[
     for (final MapEntry<String, Object?> e in values.entries)
       if (current == null || _changes(current, e.key, e.value))
-        SrsEditDraft(kind, entityId, e.key, e.value),
+        SrsEditDraft(kind, entityId, e.key, e.value, initial: current == null),
   ];
 
   /// 本 profile 某类实体的全部 ID（只读 ID 列；导入据此一次判断哪些笔记本机已有）。

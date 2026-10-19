@@ -265,6 +265,31 @@ void main() {
       },
     );
 
+    test(
+      'a field the user cleared after migrating is never filled back',
+      () async {
+        final SrsDbStore s = await device();
+        final String src = await s.addField(s.lapisNoteTypeId, 'Source');
+        final String n = await s.createNote(
+          noteTypeId: s.lapisNoteTypeId,
+          fieldsById: <String, String>{lapis('Expression'): '四', src: 'Book D'},
+        );
+        await oldStyleMigrate(s, <String>[n]);
+        expect(await s.applyLapisBackfill(), 1);
+        expect((await s.note(n))!.field(fushi('MiscInfo')), 'Book D');
+
+        // 用户特意清空：修改记录还在，值是空串。
+        await s.editFields(SrsEntityKind.note, n, <String, Object?>{
+          SrsFieldKeys.noteField(fushi('MiscInfo')): '',
+        });
+        expect((await s.note(n))!.field(fushi('MiscInfo')), '');
+        expect((await s.previewLapisBackfill()).notes, 0);
+        expect((await s.legacyLapisPendingCounts()).backfill, 0);
+        expect(await s.applyLapisBackfill(), 0);
+        expect((await s.note(n))!.field(fushi('MiscInfo')), '');
+      },
+    );
+
     test('works after the old note type was deleted', () async {
       final SrsDbStore s = await device();
       final String id = await importedLapis(s, 'Lapis import');

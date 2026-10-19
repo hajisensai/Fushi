@@ -12,3 +12,4 @@
   - 补迁不在启动时自动跑：它会改写用户内容并同步到所有设备，而且分辨不出「迁移后用户自己清空的字段」，所以放在迁移页显式预演 + 确认（幂等，多点无害）。
 - **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/srs_legacy_lapis_migration_test.dart`（变体识别、语义映射、迁移时逐条兜底、旧式同名迁移后补迁只补空字段且幂等、旧类型删掉后仍能补、非 Lapis 历史不补）；`fushi/test/srs/srs_legacy_lapis_migration_page_test.dart`（MD3 + Apple：迁移页预演并迁移、补迁按钮、笔记类型页入口）。
 - **备注**：已经被通用「更改笔记类型」**错位**写进非空字段的内容（例如同义字段被按顺序塞进 SentenceTranslation），补迁按「只补空字段」不会动它，需要用户在笔记里手改。从制卡历史导入（`srs_mined_history_import.dart:123`）只把作品标题写进 MiscInfo、章节名不迁，那是数据源本身没有更多内容，不属于本条。
+- **审查补修（PR #2336 合 develop 时）**：补迁原先只按「值是否为空」判断，分不清「从没写过」与「用户清空」（修改记录在、值为空串），用户清空迁移后的字段会被角标重新计入、点补迁写回原内容。改为目标字段有任何修改记录就不补（`srsPlanLapisFieldFill` 的 `authored`），测试 `a field the user cleared after migrating is never filled back`。

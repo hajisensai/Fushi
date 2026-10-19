@@ -18,7 +18,8 @@
 /// **遗漏字段补迁**（[SrsLegacyLapisMigrationOps.applyLapisBackfill]）：「更改笔记类型」只给新
 /// 字段写值，旧字段的修改记录原样留在笔记上（[SrsNoteView.fields] 里仍有旧 fieldId 的值）。
 /// 所以对已经是 Fushi 卡片的笔记，凡是新字段为空、而它迁移前所属的 Lapis 变体里同一语义槽的
-/// 字段有内容的，一律补上；已有内容绝不覆盖，重复执行不再写任何东西（幂等）。
+/// 字段有内容的，一律补上；已有内容绝不覆盖，**写过的字段（有修改记录，含用户清空成空串的）
+/// 也不碰**，重复执行不再写任何东西（幂等）。
 library;
 
 import 'package:drift/drift.dart';
@@ -434,11 +435,16 @@ class SrsLapisFieldValue {
 /// 字段一个都不碰，所以对补过的笔记再算一次结果为空（幂等）。
 ///
 /// [current]：目标字段此刻（或迁移写入后）的值。
+///
+/// [authored]：目标字段里**已有修改记录**的 fieldId。有记录就是写过——哪怕值是空串（用户
+/// 在本机或别的设备上特意清空），一律不补；只有从来没写过的字段才补。只看值是否为空分不清
+/// 「没写过」与「用户清空」，会把用户清掉的内容写回去。
 Map<String, String> srsPlanLapisFieldFill({
   required String profileUid,
   required SrsNoteTypeView target,
   required Map<String, String> current,
   required List<SrsLapisFieldValue> values,
+  Set<String> authored = const <String>{},
 }) {
   final List<SrsLapisFieldValue> usable =
       <SrsLapisFieldValue>[
@@ -450,6 +456,7 @@ Map<String, String> srsPlanLapisFieldFill({
       );
   final Map<String, String> out = <String, String>{};
   for (final SrsFieldDef f in target.fields) {
+    if (authored.contains(f.id)) continue;
     if ((current[f.id] ?? '').trim().isNotEmpty) continue;
     final String? key = _targetKey(profileUid, target, f);
     final SrsLapisFieldValue? hit = usable
@@ -725,6 +732,10 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
         target: to,
         current: n.fields,
         values: _historicalValues(n, owners),
+        authored: <String>{
+          for (final SrsFieldDef f in to.fields)
+            if (n.edits[SrsFieldKeys.noteField(f.id)] != null) f.id,
+        },
       );
       if (fill.isNotEmpty) fills[id] = fill;
     }

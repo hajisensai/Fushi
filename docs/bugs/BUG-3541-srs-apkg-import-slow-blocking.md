@@ -38,3 +38,4 @@
     未在本次改（改成并行 / isolate 需要改 `SrsImportMediaSink` 契约）。
   - 导入中途 app 被杀：已提交的批次留在库里，重新导入同一个包幂等补齐。
   - 未做设备肉眼复测（真实大包 + 导入时切到复习页评分），待补。
+- **审查补修（PR #2336 合 develop 时）**：导入开始时一次读出「本机已有笔记」，后台导入跑几分钟期间同步应用进来的同一条笔记（guid 派生同一 ID）仍被当新笔记，初值在落库时才分配 HLC，会支配对端的编辑。`newEditDrafts(current: null)` 的草稿标成初值（`SrsEditDraft.initial`），`importDrafts` 在独占区里落库前查一次已有的 (实体, 字段键)，已有记录的初值不落（`_dropAuthoredInitials`），测试 `packages/fushi_engine/test/srs/srs_import_drafts_initial_test.dart`。
