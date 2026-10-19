@@ -55,6 +55,24 @@
 | [BUG-3521](bugs/BUG-3521-opds-komga-api-key.md) | ✅ | ✅ | OPDS：Komga 只认 X-API-Key 头，配置只有用户名/密码；Basic 用户名须为登录邮箱 |
 | [BUG-3520](bugs/BUG-3520-mihon-sidecar-prefs-root-tachidesk.md) | ✅ | ✅ | 桌面 sidecar 来源偏好写到 %LOCALAPPDATA%\Tachidesk\settings，不在 Fushi 数据根；已有值永远盖不过 Drift 快照 |
 | [BUG-3519](bugs/BUG-3519-epub-image-index-cache-windows-replace-race.md) | ✅ | ✅ | Windows 上多个 isolate 同时读写同一本书的插图表缓存：读撞 errno 32、替换撞 errno 5 |
+| [BUG-3522](bugs/BUG-3522-outbound-progress-landing-overwrites-host-put.md) | ✅ | ✅ | 出站同步落地无条件写本地进度，盖掉刚到的互联对端 PUT（进度倒退） |
+| [BUG-3521](bugs/BUG-3521-opds-komga-api-key.md) | ✅ | ✅ | OPDS：Komga 只认 X-API-Key 头，配置只有用户名/密码；Basic 用户名须为登录邮箱 |
+| [BUG-3520](bugs/BUG-3520-subtitle-null-text-color-follows-theme.md) | ✅ | ✅ | 关掉「尊重字幕自带样式」后字幕文字色随 App 主题忽白忽黑 |
+| [BUG-3520](bugs/BUG-3520-signin-bad-code-error-off-screen.md) | ✅ | ✅ | signin-bad-code-error-off-screen |
+| [BUG-3520](bugs/BUG-3520-opds-cover-401-missing-headers.md) | ✅ | ✅ | OPDS：私有目录（Komga）封面无凭据请求回 401，发现页封面全是占位 |
+| [BUG-3520](bugs/BUG-3520-mihon-sidecar-prefs-root-tachidesk.md) | ✅ | ✅ | 桌面 sidecar 来源偏好写到 %LOCALAPPDATA%\Tachidesk\settings，不在 Fushi 数据根；已有值永远盖不过 Drift 快照 |
+| [BUG-3519](bugs/BUG-3519-updater-same-build-picks-stable-for-debug.md) | ✅ | ✅ | updater-same-build-picks-stable-for-debug |
+| [BUG-3519](bugs/BUG-3519-srt-vtt-multiline-merged-one-row.md) | ✅ | ✅ | 双语 SRT / VTT 多行字幕在屏上并成一排 |
+| [BUG-3519](bugs/BUG-3519-popup-trackpad-scroll-no-inertia.md) | ✅ | ✅ | Windows 触控板滚动查词弹窗松手即停（无惯性） |
+| [BUG-3519](bugs/BUG-3519-pdf-reader-chrome-cannot-hide.md) | ✅ | ✅ | pdf-reader-chrome-cannot-hide |
+| [BUG-3519](bugs/BUG-3519-opds-catalog-url-root-or-html.md) | ✅ | ✅ | OPDS：填服务器根地址/网页地址/带结尾斜杠时报「不是可读的 OPDS 目录」或 404，Komga 只认 /opds/v2/catalog |
+| [BUG-3519](bugs/BUG-3519-mihon-sidecar-java6-interface-static-verifyerror.md) | ✅ | ✅ | 桌面 sidecar 加载 keiyoushi Komga 扩展 VerifyError（dex2jar 产出 Java 6 类不能 invokestatic 接口方法），整个扩展装不上 |
+| [BUG-3519](bugs/BUG-3519-matcher-short-cue-far-jump.md) | ✅ | ✅ | matcher-short-cue-far-jump |
+| [BUG-3519](bugs/BUG-3519-lyrics-mode-drops-dashes.md) | ✅ | ✅ | lyrics-mode-drops-dashes |
+| [BUG-3519](bugs/BUG-3519-interconnect-lost-ack-phantom-conflict.md) | ✅ | ✅ | 互联进度推送「写入落地、确认丢失」被误判成冲突（远端是本机自己的旧写入） |
+| [BUG-3519](bugs/BUG-3519-host-progress-put-waits-whole-sync-lock.md) | ✅ | ✅ | 互联 host 的书进度 PUT 排在本机整轮自动同步后面，对端超时却已落库 → 下一轮误报进度冲突 |
+| [BUG-3519](bugs/BUG-3519-epub-image-index-cache-windows-replace-race.md) | ✅ | ✅ | Windows 上多个 isolate 同时读写同一本书的插图表缓存：读撞 errno 32、替换撞 errno 5 |
+| [BUG-3519](bugs/BUG-3519-email-code-digits-run-together.md) | ✅ | ✅ | email-code-digits-run-together |
 | [BUG-3518](bugs/BUG-3518-ios-audio-lane-page-bleed.md) | ✅ | ✅ | iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶 |
 | [BUG-3517](bugs/BUG-3517-video-chrome-double-click-fullscreen.md) | ✅ | ✅ | video-chrome-double-click-fullscreen |
 | [BUG-3516](bugs/BUG-3516-collection-member-touch-longpress-no-menu.md) | ✅ | ✅ | 合集详情页触屏长按成员只进多选，拿不到库页同一份卡片菜单 |

@@ -222,6 +222,26 @@ mixin _FushiDbPrefsMedia
   Future<void> setPrefTyped<T>(String key, T value) =>
       setPref(key, PrefCodec.encode(value));
 
+  /// 「比较后写入」（BUG-3522）：仅当 int 偏好 [stampKey]（缺省按 0 读）仍等于
+  /// [expectedStamp] 时执行 [write]，返回是否执行。
+  ///
+  /// 给「位置 + 时间戳」成对存在偏好里的播放断点（视频 / 有声书）用：出站同步在
+  /// 「读本地 → 等网络 → 写本地」之间，本机作为互联 host 的对端 PUT 或本机播放器
+  /// 可能已写进更新的断点；时间戳一变，旧决策即作废，放弃这次落地交给下一轮。
+  /// 重读与 [write] 同在一个事务里（[write] 内的 drift 写自动落进同一事务），
+  /// 中间不会有写者插队。
+  Future<bool> runIfIntPrefUnchanged({
+    required String stampKey,
+    required int expectedStamp,
+    required Future<void> Function() write,
+  }) =>
+      transaction(() async {
+        final int current = await getPrefTyped<int>(stampKey, 0);
+        if (current != expectedStamp) return false;
+        await write();
+        return true;
+      });
+
   Future<void> deletePref(String key) async {
     await (delete(preferences)..where((t) => t.key.equals(key))).go();
   }
