@@ -33,6 +33,8 @@ import 'package:fushi_audio/fushi_audio.dart' show platformCharsetDecoder;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+import '../../helpers/source_guard.dart';
+
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 SourceFileEntry _file(String path, {int size = 1}) => SourceFileEntry(
@@ -1934,13 +1936,11 @@ Attributes = A
     });
 
     test('载体定性不在调用方 isolate 上同步开包（只经后台 isolate 入口）', () {
-      final String src = File(
+      // 注释（含块注释与行尾注释）里提到被禁调用不算违规。
+      final String src = maskComments(File(
         p.join('lib', 'src', 'media', 'source_library',
             'source_library_scanner.dart'),
-      ).readAsLinesSync().where((String line) {
-        final String t = line.trimLeft();
-        return !t.startsWith('//');
-      }).join('\n');
+      ).readAsStringSync());
       // 直接调用与 tear-off（`isImageArchive: MangaArchiveImporter.looks…`）都算。
       expect(src, isNot(contains('MangaArchiveImporter.looksLikeImageArchive')),
           reason: '同步判定会在 UI isolate 上整本解析文字 EPUB');
