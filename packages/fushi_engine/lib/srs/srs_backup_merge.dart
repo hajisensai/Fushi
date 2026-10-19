@@ -220,6 +220,8 @@ const List<String> _kSrsProfileTables = <String>[
   'srs_local_state',
   'srs_notes_cache',
   'srs_cards_cache',
+  // v119：本机已冻结批次留存。
+  'srs_sent_batches',
 ];
 
 /// 把 [source] 里每个有 SRS 数据的 profile 合并进本机库 [local]（铁律 E，见库注释）。

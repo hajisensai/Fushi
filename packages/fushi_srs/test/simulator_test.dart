@@ -457,7 +457,9 @@ void main() {
       await w.quiesce();
       expect(w.check(), isEmpty);
       expect(
-        phone.replica.store.editsOf(SrsEntityKind.note, 'n1')['f/x']!.live
+        phone.replica.store
+            .editsOf(SrsEntityKind.note, 'n1')['f/x']!
+            .live
             .single
             .value,
         'later-cloud',

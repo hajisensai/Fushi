@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3167 条。点号进各自文件。
+> 共 3169 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3543](bugs/BUG-3543-srs-multi-channel-shared-state.md) | ✅ | ✅ | 云盘 + 互联同时开着时复习同步状态全局一份：批次只到先跑的目录、另一个目录每轮换化身 |
+| [BUG-3542](bugs/BUG-3542-srs-host-not-in-srs-sync.md) | ✅ | ✅ | 互联 host 自己不参与复习（SRS）同步：立即同步提示没配置、对端看不到它的卡 |
 | [BUG-3537](bugs/BUG-3537-outbound-progress-landing-overwrites-host-put.md) | ✅ | ✅ | 出站同步落地无条件写本地进度，盖掉刚到的互联对端 PUT（进度倒退） |
 | [BUG-3536](bugs/BUG-3536-subtitle-null-text-color-follows-theme.md) | ✅ | ✅ | 关掉「尊重字幕自带样式」后字幕文字色随 App 主题忽白忽黑 |
 | [BUG-3535](bugs/BUG-3535-opds-cover-401-missing-headers.md) | ✅ | ✅ | OPDS：私有目录（Komga）封面无凭据请求回 401，发现页封面全是占位 |

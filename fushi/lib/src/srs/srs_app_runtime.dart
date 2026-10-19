@@ -12,6 +12,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -22,6 +23,7 @@ import 'package:fushi_anki/fushi_anki_core.dart'
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -31,12 +33,14 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier;
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_backup.dart';
+import 'package:fushi/src/srs/srs_directory_key.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 
 /// 模块开着时的常驻装配（见文件头）；关着时为 null。
@@ -118,6 +122,9 @@ class SrsAppRuntime {
           db: app.database,
           body: (SyncBackend backend) => body(backend),
         ),
+    directoryKeyOf: (SyncAssetStore backend) =>
+        srsDirectoryKeyOf(backend, SyncRepository(app.database)),
+    localDirectories: _localDirectories,
     onDataChanged: _bumpRevision,
     onNotice: _showSyncNotice,
     readMediaRoot: () async => (await _readMedia())?.root,
@@ -145,6 +152,23 @@ class SrsAppRuntime {
 
   Future<void> _postRun(SyncBackend backend) async {
     await sync.syncWithBackend(backend);
+  }
+
+  /// 本机开着互联服务时，客户端经互联写进来的同步目录（host 自己不是任何一条通道的客户端，
+  /// 不在这里同步，它的复习数据就到不了连它的设备、也读不到它们的）。目录身份与客户端看到的
+  /// hostId 相同（host 的 hostId 就是本机设备 id）。
+  Future<List<SrsLocalDirectory>> _localDirectories() async {
+    final Directory? root = app.syncServerController.clientSyncRoot;
+    if (root == null) return const <SrsLocalDirectory>[];
+    final String hostId = await SyncRepository(
+      app.database,
+    ).getOrCreateDeviceId();
+    return <SrsLocalDirectory>[
+      SrsLocalDirectory(
+        directoryKey: srsInterconnectDirectoryKey(hostId),
+        store: LocalDirectoryAssetStore(root),
+      ),
+    ];
   }
 
   /// AnkiConnect 兼容端点的本实例 id（防自环）。

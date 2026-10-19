@@ -320,8 +320,13 @@ class SrsSyncEngine {
       await replica.requeue(<String>[
         for (final SrsEvent e in await replica.exportAll()) e.id,
       ]);
-      for (final String w in missing) {
-        ds.relayed[w] = st.cursors[w]!;
+      // 重新发布进的是本机批次流，会到达每一个目录：每个目录都按本机此刻的读取进度记账，
+      // 别的目录不必再各自重发一次。
+      for (final SrsDirectoryState d in st.directories.values) {
+        for (final MapEntry<String, int> c in st.cursors.entries) {
+          if (c.key == st.writerId) continue;
+          if ((d.relayed[c.key] ?? 0) < c.value) d.relayed[c.key] = c.value;
+        }
       }
       report.republished = true;
       await _freeze(st, s);
@@ -479,8 +484,7 @@ class SrsSyncEngine {
         return;
       }
       await replica.observeServerTimes(<String, int>{
-        for (final SrsEvent e in frozen.events)
-          e.id: frozen.serverTimeOf(e.id),
+        for (final SrsEvent e in frozen.events) e.id: frozen.serverTimeOf(e.id),
       });
       if ((st.cursors[st.writerId] ?? 0) < no) {
         st
@@ -669,9 +673,7 @@ class SrsSyncEngine {
             w,
             srsBatchName(cursor + 1),
           );
-          final SrsBatch? batch = bytes == null
-              ? null
-              : SrsBatch.decode(bytes);
+          final SrsBatch? batch = bytes == null ? null : SrsBatch.decode(bytes);
           if (batch == null || batch.writerId != w || batch.no != cursor + 1) {
             break;
           }

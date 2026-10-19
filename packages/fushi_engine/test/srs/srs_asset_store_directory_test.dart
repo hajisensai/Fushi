@@ -31,6 +31,7 @@ void main() {
     final SrsDbStore a = await device('a');
     final SrsDbStore b = await device('b');
     SrsSyncEngine engineOf(SrsDbStore s) => SrsSyncEngine(
+      directoryKey: 'test',
       directory: SrsAssetStoreDirectory(store: backend, profileUid: kProfile),
       replica: s,
     );

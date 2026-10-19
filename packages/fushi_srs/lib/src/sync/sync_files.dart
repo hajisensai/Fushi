@@ -100,8 +100,7 @@ class SrsBatch {
   final Map<String, int> knownServerTimes;
 
   /// 事件 [eventId] 在本批次里的 S。
-  int serverTimeOf(String eventId) =>
-      knownServerTimes[eventId] ?? serverTimeMs;
+  int serverTimeOf(String eventId) => knownServerTimes[eventId] ?? serverTimeMs;
 
   Uint8List encode() => _encode(<String, Object?>{
     'magic': srsBatchMagic,

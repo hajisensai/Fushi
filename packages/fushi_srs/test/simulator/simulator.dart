@@ -118,8 +118,7 @@ class SimWorld {
   int trueNow = kStart;
 
   /// 同步目录（云盘、互联 host……）：设备各用其中一部分。
-  final Map<String, MemorySyncDirectory> dirs =
-      <String, MemorySyncDirectory>{};
+  final Map<String, MemorySyncDirectory> dirs = <String, MemorySyncDirectory>{};
   final SrsSyncOptions options;
   final Map<String, SimDevice> devices = <String, SimDevice>{};
   final List<SrsFieldEdit> ledger = <SrsFieldEdit>[];
