@@ -51,6 +51,7 @@
 | [BUG-3520](bugs/BUG-3520-signin-bad-code-error-off-screen.md) | ✅ | ✅ | signin-bad-code-error-off-screen |
 | [BUG-3519](bugs/BUG-3519-email-code-digits-run-together.md) | ✅ | ✅ | email-code-digits-run-together |
 | [BUG-3519](bugs/BUG-3519-updater-same-build-picks-stable-for-debug.md) | ✅ | ✅ | updater-same-build-picks-stable-for-debug |
+| [BUG-3519](bugs/BUG-3519-popup-trackpad-scroll-no-inertia.md) | ✅ | ✅ | Windows 触控板滚动查词弹窗松手即停（无惯性） |
 | [BUG-3518](bugs/BUG-3518-ios-audio-lane-page-bleed.md) | ✅ | ✅ | iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶 |
 | [BUG-3517](bugs/BUG-3517-video-chrome-double-click-fullscreen.md) | ✅ | ✅ | video-chrome-double-click-fullscreen |
 | [BUG-3516](bugs/BUG-3516-collection-member-touch-longpress-no-menu.md) | ✅ | ✅ | 合集详情页触屏长按成员只进多选，拿不到库页同一份卡片菜单 |

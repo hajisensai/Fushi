@@ -7893,6 +7893,8 @@
   "video_setting_secondary_delay_follow": "Seguir al principal",
   "video_setting_secondary_subtitle_obscure": "Ocultar subtítulo secundario",
   "video_setting_secondary_subtitle_obscure_hint": "Difumina u oculta el subtítulo secundario (traducción)",
+  "video_setting_secondary_subtitle_obscure_reveal": "Secondary: reveal when paused or hovered",
+  "video_setting_secondary_subtitle_obscure_reveal_hint": "Same as the primary subtitle switch, but for the secondary (translation) subtitle. Turn it off to keep the translation obscured even while the primary subtitle is revealed.",
   "video_setting_seek_seconds": "Segundos de salto",
   "video_setting_shortcuts_hint": "Ver y personalizar los atajos de teclado y mando del reproductor",
   "video_setting_slim_progress_bar": "Barra de progreso fina en la parte inferior",

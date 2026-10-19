@@ -4430,6 +4430,14 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleObscureReveal(bool value) =>
       prefsRepo.setVideoSubtitleObscureReveal(value);
 
+  /// 副字幕的「临时显形」开关。见
+  /// [PreferencesRepository.videoSecondarySubtitleObscureReveal]。
+  bool get videoSecondarySubtitleObscureReveal =>
+      prefsRepo.videoSecondarySubtitleObscureReveal;
+
+  Future<void> setVideoSecondarySubtitleObscureReveal(bool value) =>
+      prefsRepo.setVideoSecondarySubtitleObscureReveal(value);
+
   /// 显式全局广播（= 本 model 的 `notifyListeners`，对外可调用）。
   ///
   /// 给「写入方**刻意**不广播、但某个调用点确实需要全局刷新」的路径用：遮蔽模式两个

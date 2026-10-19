@@ -10338,6 +10338,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _rebuild(() {});
   }
 
+  /// 副字幕「临时显形」开关，同 [_setVideoSubtitleObscureReveal]。
+  Future<void> _setVideoSecondarySubtitleObscureReveal(bool value) async {
+    await appModel.setVideoSecondarySubtitleObscureReveal(value);
+    if (!mounted) return;
+    _rebuild(() {});
+  }
+
   Future<void> _setVideoRespectAssStyle(bool value) async {
     await appModel.setVideoRespectAssStyle(value);
     if (!mounted) return;
@@ -10784,6 +10791,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onEnterSubtitleDelayBar: _enterSubtitleDelayBar,
       // TODO-1105：尊重 .ass 自带样式切换回调（持久化 + 重建让 overlay 即时生效）。
       onSubtitleObscureRevealChanged: _setVideoSubtitleObscureReveal,
+      onSecondarySubtitleObscureRevealChanged:
+          _setVideoSecondarySubtitleObscureReveal,
       onRespectAssStyleChanged: _setVideoRespectAssStyle,
       // 着色器/mpv 配置面板内嵌（不弹独立对话框）：着色器勾选 → 持久化启用集 +
       // 解析绝对路径 + 实时应用；mpv 配置即改即生效。

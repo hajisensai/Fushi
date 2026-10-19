@@ -7893,6 +7893,8 @@
   "video_setting_secondary_delay_follow": "Primaire volgen",
   "video_setting_secondary_subtitle_obscure": "Secundaire ondertitel verbergen",
   "video_setting_secondary_subtitle_obscure_hint": "Vervaag of verberg de secundaire (vertaling) ondertitel",
+  "video_setting_secondary_subtitle_obscure_reveal": "Secondary: reveal when paused or hovered",
+  "video_setting_secondary_subtitle_obscure_reveal_hint": "Same as the primary subtitle switch, but for the secondary (translation) subtitle. Turn it off to keep the translation obscured even while the primary subtitle is revealed.",
   "video_setting_seek_seconds": "Spoelstap (seconden)",
   "video_setting_shortcuts_hint": "Toetsenbord- en gamepadsnelkoppelingen van de speler bekijken en aanpassen",
   "video_setting_slim_progress_bar": "Dunne voortgangsbalk onderaan",

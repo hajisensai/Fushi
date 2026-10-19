@@ -77,6 +77,7 @@ Future<void> _pump(
   bool dragAdjustEnabled = false,
   bool hoverAutoLookupEnabled = false,
   bool obscureRevealOnInteraction = true,
+  bool secondaryObscureRevealOnInteraction = true,
   bool lookupPopupVisible = false,
   VideoSubtitleHitTester? hitTester,
   void Function(
@@ -94,6 +95,8 @@ Future<void> _pump(
         dragAdjustEnabled: dragAdjustEnabled,
         hoverAutoLookupEnabled: hoverAutoLookupEnabled,
         obscureRevealOnInteraction: obscureRevealOnInteraction,
+        secondaryObscureRevealOnInteraction:
+            secondaryObscureRevealOnInteraction,
         lookupPopupVisible: lookupPopupVisible,
         hitTester: hitTester,
         onCharTap: onCharTap,
@@ -629,6 +632,76 @@ void main() {
 
       expect(_obscured(tester, find.text('主')), isFalse,
           reason: '总闸开着时浮层期间字幕恒定让位（重播本句不把它遮回去）');
+    });
+  });
+
+  /// ⑫ 主 / 副字幕的显形开关分开配置（用户 2026-10-19：「支持一下主字幕和副字幕分开
+  /// 配置」）。典型用法：主字幕暂停时显形，副字幕（翻译）始终遮住。
+  group('⑫ 主 / 副显形开关各管各的层', () {
+    testWidgets('主开、副关 + 暂停：主字幕让位，副字幕仍隐藏', (tester) async {
+      final VideoPlayerController c = _controller(tester, secondary: '副');
+      c.debugSetIsPlayingForTesting(false);
+
+      await _pump(tester, c,
+          subtitleHidden: true,
+          secondaryHidden: true,
+          obscureRevealOnInteraction: true,
+          secondaryObscureRevealOnInteraction: false);
+
+      expect(_obscured(tester, find.text('主')), isFalse,
+          reason: '主字幕开关开着，暂停照常让位');
+      expect(_obscured(tester, find.text('副')), isTrue,
+          reason: '副字幕开关关掉，暂停也不揭开翻译');
+    });
+
+    testWidgets('主关、副开 + 暂停：反过来同样各自生效', (tester) async {
+      final VideoPlayerController c = _controller(tester, secondary: '副');
+      c.debugSetIsPlayingForTesting(false);
+
+      await _pump(tester, c,
+          subtitleHidden: true,
+          secondaryHidden: true,
+          obscureRevealOnInteraction: false,
+          secondaryObscureRevealOnInteraction: true);
+
+      expect(_obscured(tester, find.text('主')), isTrue);
+      expect(_obscured(tester, find.text('副')), isFalse);
+    });
+
+    testWidgets('副关：悬停 / 点击副字幕都不显形，主字幕悬停照常', (tester) async {
+      final VideoPlayerController c = _controller(tester, secondary: '副');
+
+      await _pump(tester, c,
+          subtitleHidden: true,
+          secondaryHidden: true,
+          secondaryObscureRevealOnInteraction: false);
+      final TestGesture gesture = await _hoverOver(tester, find.text('副'));
+      expect(_obscured(tester, find.text('副')), isTrue, reason: '副字幕悬停不显形');
+
+      await tester.tap(find.text('副').first, warnIfMissed: false);
+      await tester.pump();
+      expect(_obscured(tester, find.text('副')), isTrue, reason: '副字幕点击不显形');
+
+      await gesture.moveTo(tester.getCenter(find.text('主').first));
+      await tester.pump();
+      expect(_obscured(tester, find.text('主')), isFalse,
+          reason: '主字幕开关开着，悬停仍显形（防恒真）');
+    });
+
+    testWidgets('只关副开关：已显形的主字幕不被收回', (tester) async {
+      final VideoPlayerController c = _controller(tester, secondary: '副');
+
+      await _pump(tester, c, subtitleHidden: true, secondaryHidden: true);
+      await _hoverOver(tester, find.text('主'));
+      expect(_obscured(tester, find.text('主')), isFalse, reason: '前置：悬停显形');
+
+      await _pump(tester, c,
+          subtitleHidden: true,
+          secondaryHidden: true,
+          secondaryObscureRevealOnInteraction: false);
+
+      expect(_obscured(tester, find.text('主')), isFalse,
+          reason: '收回显形态只针对被关掉的那一层');
     });
   });
 }

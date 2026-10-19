@@ -7893,6 +7893,8 @@
   "video_setting_secondary_delay_follow": "ตามคำบรรยายหลัก",
   "video_setting_secondary_subtitle_obscure": "ซ่อนคำบรรยายรอง",
   "video_setting_secondary_subtitle_obscure_hint": "เบลอหรือซ่อนคำบรรยายรอง (คำแปล)",
+  "video_setting_secondary_subtitle_obscure_reveal": "Secondary: reveal when paused or hovered",
+  "video_setting_secondary_subtitle_obscure_reveal_hint": "Same as the primary subtitle switch, but for the secondary (translation) subtitle. Turn it off to keep the translation obscured even while the primary subtitle is revealed.",
   "video_setting_seek_seconds": "ระยะเลื่อนเวลา (วินาที)",
   "video_setting_shortcuts_hint": "ดูและปรับแต่งปุ่มลัดแป้นพิมพ์และเกมแพดของเครื่องเล่น",
   "video_setting_slim_progress_bar": "แถบความคืบหน้าบางที่ด้านล่าง",

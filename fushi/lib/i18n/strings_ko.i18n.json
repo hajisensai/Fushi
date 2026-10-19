@@ -7893,6 +7893,8 @@
   "video_setting_secondary_delay_follow": "기본 따르기",
   "video_setting_secondary_subtitle_obscure": "보조 자막 가리기",
   "video_setting_secondary_subtitle_obscure_hint": "보조(번역) 자막을 흐리게 하거나 숨깁니다",
+  "video_setting_secondary_subtitle_obscure_reveal": "Secondary: reveal when paused or hovered",
+  "video_setting_secondary_subtitle_obscure_reveal_hint": "Same as the primary subtitle switch, but for the secondary (translation) subtitle. Turn it off to keep the translation obscured even while the primary subtitle is revealed.",
   "video_setting_seek_seconds": "이동 간격(초)",
   "video_setting_shortcuts_hint": "플레이어의 키보드 및 게임패드 단축키 보기 및 사용자 지정",
   "video_setting_slim_progress_bar": "하단 얇은 진행 막대",

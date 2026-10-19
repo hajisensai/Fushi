@@ -373,6 +373,19 @@ Future<void> setVideoSubtitleObscureRevealDual(
   }
 }
 
+/// 副字幕「临时显形」开关的双通道写入，同构于 [setVideoSubtitleObscureRevealDual]。
+Future<void> setVideoSecondarySubtitleObscureRevealDual(
+  SettingsContext context,
+  bool value,
+) async {
+  final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  if (host?.onSecondarySubtitleObscureRevealChanged != null) {
+    await host!.onSecondarySubtitleObscureRevealChanged!(value);
+  } else {
+    await context.appModel.setVideoSecondarySubtitleObscureReveal(value);
+  }
+}
+
 Future<void> setVideoRespectAssStyleDual(
   SettingsContext context,
   bool value,
