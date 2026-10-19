@@ -31,6 +31,9 @@ mixin _FushiDbContentMisc
     required String collapsedLanguagesJson,
     required String expandedLanguagesJson,
     required String? languageOverride,
+    // metadataJson 整体是安装事实，profile 不回写；只有调用方已把其中属于用户
+    // 设置的键（混合词典汉字部分的开关 / 位置）合并进 live 值时才传，null = 不动。
+    String? metadataJson,
   }) =>
       (update(dictionaryMetadata)..where((t) => t.name.equals(name))).write(
         DictionaryMetadataCompanion(
@@ -39,6 +42,9 @@ mixin _FushiDbContentMisc
           collapsedLanguagesJson: Value(collapsedLanguagesJson),
           expandedLanguagesJson: Value(expandedLanguagesJson),
           languageOverride: Value(languageOverride),
+          metadataJson: metadataJson == null
+              ? const Value<String>.absent()
+              : Value<String>(metadataJson),
         ),
       );
 

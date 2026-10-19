@@ -246,6 +246,29 @@ out(h.posted.filter((m) => m.type === 'track' || m.type === 'trackFailed'));
     );
   }, skip: !hasNode);
 
+  test('YouTube 画质跟随「YouTube 画质」目标：起播带下、播放中改、自愈重入不丢', () async {
+    final Object? r = await run('''
+location.hostname = 'www.youtube.com';
+let tick = null;
+// 只截画质轮询（2 s）；自动连播守卫（1 s）不管。
+globalThis.setInterval = (fn, ms) => { if (ms === 2000) tick = fn; return 1; };
+const yt = { cur: 'auto', set: [],
+  getAvailableQualityLevels: () => ['hd2160', 'hd1440', 'hd1080', 'hd720', 'large', 'medium', 'auto'],
+  getPlaybackQuality() { return this.cur; },
+  setPlaybackQualityRange(a) { this.set.push(a); this.cur = a; } };
+h.styles.movie_player = yt;
+const picks = [];
+const step = () => { tick(); picks.push(yt.cur); };
+fw.setVideoOnly(true, 720); step();
+fw.setQualityTarget(1080); step();
+fw.setVideoOnly(true); step();
+fw.setQualityTarget(0); step();
+fw.setQualityTarget(240); step();
+out(picks);
+''');
+    expect(r, <String>['hd720', 'hd1080', 'hd1080', 'hd2160', 'medium']);
+  }, skip: !hasNode);
+
   test('站点 bridge 按当前文档 host 自判：别的站上包住的 bridge 不执行', () async {
     Future<Object?> probe(String host) async {
       final Directory dir = await Directory.systemTemp.createTemp(
