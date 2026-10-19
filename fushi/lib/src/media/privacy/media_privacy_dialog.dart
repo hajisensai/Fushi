@@ -76,6 +76,13 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
             : t.media_privacy_cleared_toast,
         severity: ToastSeverity.success,
       );
+    } on Object catch (error) {
+      // 写失败时开关保持原状态，但必须明说：用户以为已经藏起来了、其实下一轮照常
+      // 上传，正是这个开关要防的事。
+      FushiToast.show(
+        msg: t.media_privacy_save_failed(reason: error.toString()),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _writing = false);
     }

@@ -1,15 +1,18 @@
 // 作品级「私密」标记的读取口径（`media_privacy_flags`，v121）。
 //
-// 私密作品不离开本机：不上传排行榜（[buildLocalShelf] 跳过，已上传过的由书架同步
-// 自动从服务端删除），不推 Bangumi 进度、也不拿它的标题去 Bangumi 搜自动映射
-// （`MediaTrackingService`）。每日总字数只是「日期 → 字数」不带作品身份，照常计入。
+// 私密作品不进公开 / 绑定用户外部账户的出站路径：不上传排行榜（[buildLocalShelf]
+// 跳过，已上传过的由书架同步自动从服务端删除），不推 Bangumi 进度、也不拿它的标题
+// 去 Bangumi 搜自动映射（`MediaTrackingService`）。每日总字数只是「日期 → 字数」不带
+// 作品身份，照常计入。**不**管的范围：互联（自己配对的设备照常看得到、标记本身也搭
+// 标签清单同步过去）、备份 / 云盘、匿名元数据刮削请求、用户主动提交的反馈与日志。
 //
 // 判定口径（宁可多藏）：
 // - 书 / 漫画 / 在线漫画 / 在线小说（epub_books 行）：本书被标，或它所在的任一合集被标；
 // - 视频文件：本集被标，或它所在的任一合集被标；
 // - 视频作品单元 / 合集级追踪：合集被标，或单元里任一集是私密的；
-// - 游戏：本游戏被标。
+// - 游戏：本游戏被标，或它所在的任一合集被标（游戏也能加入合集）。
 
+import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 一次性读出的私密标记快照（几次批查，库规模几千行量级）。只读，读完不随库变化。
@@ -45,10 +48,22 @@ class MediaPrivacySnapshot {
     };
     final Map<String, Set<int>> collectionsOfEntry = <String, Set<int>>{};
     final Map<int, Set<String>> videoMembersOf = <int, Set<String>>{};
+    // v83 起 EPUB 合集成员键是 `epub_books.uid`（旧行仍可能是 bookKey），而私密
+    // 判定与排行榜 / 追踪都按 bookKey 问：成员键先归一到 bookKey，否则私密合集里
+    // 的书一本都命不中（fail-open）。
+    final Map<String, String> bookKeyByUid = <String, String>{
+      for (final TypedResult r in await (db.selectOnly(
+        db.epubBooks,
+      )..addColumns(<Expression<Object>>[db.epubBooks.uid, db.epubBooks.bookKey])).get())
+        if (r.read(db.epubBooks.uid) case final String uid when uid.isNotEmpty)
+          uid: r.read(db.epubBooks.bookKey)!,
+    };
     for (final MediaCollectionItemRow item
         in await db.getAllCollectionItems()) {
-      (collectionsOfEntry[_memberKey(item.mediaType, item.entryKey)] ??=
-              <int>{})
+      final String entryKey = item.mediaType == MediaKind.epub.dbValue
+          ? (bookKeyByUid[item.entryKey] ?? item.entryKey)
+          : item.entryKey;
+      (collectionsOfEntry[_memberKey(item.mediaType, entryKey)] ??= <int>{})
           .add(item.collectionId);
       if (item.mediaType == MediaKind.video.dbValue) {
         (videoMembersOf[item.collectionId] ??= <String>{}).add(item.entryKey);
@@ -110,5 +125,7 @@ class MediaPrivacySnapshot {
     collectionId: collectionId,
   );
 
-  bool isGamePrivate(String gameId) => _games.contains(gameId);
+  bool isGamePrivate(String gameId) =>
+      _games.contains(gameId) ||
+      _inPrivateCollection(MediaKind.game.dbValue, gameId);
 }

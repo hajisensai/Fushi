@@ -769,12 +769,51 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       (update(mediaCollections)..where((t) => t.id.equals(id)))
           .write(MediaCollectionsCompanion(coverPath: Value(coverPath)));
 
+  /// 私密合集（v121 `media_privacy_flags`）的成员离开它之前，把私密落到成员自己
+  /// 身上（fail-closed）。成员的私密原本只是「在私密合集里」继承来的：合集被删 /
+  /// 合并解散 / 按季或按 AniDB 作品拆走 / 成员被移出时，继承随成员关系一起消失，
+  /// 那部作品就会在下一轮排行榜上传、Bangumi 推送里静默变回公开——其中 AniDB 拆分
+  /// 是刮削后台自动做的，用户根本没表达过「公开」。取消私密只认用户在作品自己的私密
+  /// 开关上拨回去。合集本身不私密时什么都不做；成员已私密的不重写（不推进时钟）。
+  Future<void> _carryCollectionPrivacyToMembers(
+    int collectionId,
+    Iterable<({String mediaType, String entryKey})> leaving,
+  ) async {
+    if (!await isMediaPrivate(
+      TagHostKind.collection,
+      collectionTagEntryKey(collectionId),
+    )) {
+      return;
+    }
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    for (final (:String mediaType, :String entryKey) in leaving) {
+      final MediaKind? kind = MediaKind.tryParse(mediaType);
+      // 对端未知种类：本机没有对应宿主、也没有出站路径，无从落标记。
+      if (kind == null) continue;
+      // EPUB 成员键 v83 起是 uid，私密标记键是 bookKey；反查不上 = 透传行（原值
+      // 本就是 bookKey），照抄。
+      final String hostKey = kind == MediaKind.epub
+          ? (await resolveEpubBookKeyByUid(entryKey) ?? entryKey)
+          : entryKey;
+      final TagHostKind host = tagHostKindOfMediaKind(kind);
+      if (await isMediaPrivate(host, hostKey)) continue;
+      await setMediaPrivate(host, hostKey, true, at: now);
+    }
+  }
+
   /// 删合集：显式先删本合集全部成员引用行、再删合集（不依赖 FK cascade，测试/生产
   /// 一致；绝不删条目本身）。返回删除的合集行数。同事务写合集级删除墓碑（空哨兵行，
   /// schema v40 防对端并集同步复活），并清本合集残留成员墓碑（合集已删，成员墓碑
   /// 无意义；留着会误杀日后重建同名合集时对端的成员）。
   Future<int> deleteMediaCollection(int id) => transaction(() async {
         final MediaCollectionRow? col = await getMediaCollectionById(id);
+        await _carryCollectionPrivacyToMembers(
+          id,
+          <({String mediaType, String entryKey})>[
+            for (final MediaCollectionItemRow m in await getCollectionItems(id))
+              (mediaType: m.mediaType, entryKey: m.entryKey),
+          ],
+        );
         await (delete(mediaCollectionItems)
               ..where((t) => t.collectionId.equals(id)))
             .go();
@@ -1162,6 +1201,12 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       transaction(() async {
         final MediaCollectionRow? col =
             await getMediaCollectionById(collectionId);
+        await _carryCollectionPrivacyToMembers(
+          collectionId,
+          <({String mediaType, String entryKey})>[
+            (mediaType: mediaType, entryKey: entryKey),
+          ],
+        );
         await (delete(mediaCollectionItems)
               ..where((t) =>
                   t.collectionId.equals(collectionId) &
@@ -1446,6 +1491,13 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 墓碑状态由同步应用端按合并后清单镜像（对比用户路径
   /// [deleteMediaCollection] 会写 now 时间戳的合集级墓碑）。
   Future<void> deleteMediaCollectionRaw(int id) => transaction(() async {
+        await _carryCollectionPrivacyToMembers(
+          id,
+          <({String mediaType, String entryKey})>[
+            for (final MediaCollectionItemRow m in await getCollectionItems(id))
+              (mediaType: m.mediaType, entryKey: m.entryKey),
+          ],
+        );
         await (delete(mediaCollectionItems)
               ..where((t) => t.collectionId.equals(id)))
             .go();

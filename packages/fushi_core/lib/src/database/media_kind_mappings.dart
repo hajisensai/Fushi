@@ -65,6 +65,15 @@ String tagTombstoneDomainOf(TagHostKind kind) => switch (kind) {
       TagHostKind.collection => TagHostKind.collection.dbValue,
     };
 
+/// 合集/书架种类 → 标签宿主种类（四个值同串同义；宿主域多一个 `collection`）。
+/// 合集成员（`media_collection_items.mediaType`）落到私密标记 / 标签宿主键时用。
+TagHostKind tagHostKindOfMediaKind(MediaKind kind) => switch (kind) {
+      MediaKind.epub => TagHostKind.epub,
+      MediaKind.srt => TagHostKind.srt,
+      MediaKind.video => TagHostKind.video,
+      MediaKind.game => TagHostKind.game,
+    };
+
 /// 合集所属的**库页域**（书架 / 漫画库 / 视频库 / 游戏库）。合集表本身不带种类列
 /// （同一张 `media_collections` 承载全部库页），一个合集属于哪个库页由它的成员
 /// 推导：任一成员落在某域，该合集就在那个域的「加入合集」列表里出现（BUG-2974）。
