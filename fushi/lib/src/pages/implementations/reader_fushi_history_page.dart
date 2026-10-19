@@ -786,8 +786,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                         // 管理标签，搜索点开整行换成搜索栏；标签 chip 只在有
                         // 标签时在下面占一行。Cupertino 旧版面保留常驻搜索行。
                         if (!isCupertinoPlatform(context)) ...<Widget>[
-                          _buildPageHeader(),
-                          _buildSortMenuAnchor(allTags.valueOrNull ?? const []),
+                          _buildPageHeader(allTags.valueOrNull ?? const []),
                           _buildTagBar(allTags.valueOrNull ?? const []),
                         ] else
                           _buildSearchBar(allTags.valueOrNull ?? const []),
@@ -983,29 +982,21 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 「排序与筛选」菜单的零尺寸常驻锚点（贴在页头下沿右侧）：页头里的排序
-  /// 按钮可能被收进「⋯」，菜单挂在这里才总能打开。
+  /// 「排序与筛选」菜单的零尺寸锚点（[FushiPageHeader.menuAnchor]，叠在页头
+  /// 动作组右下角）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开。
   Widget _buildSortMenuAnchor(List<BookTagRow> allTags) {
-    return Align(
-      alignment: AlignmentDirectional.topEnd,
-      child: Padding(
-        padding: EdgeInsetsDirectional.only(
-          end: FushiDesignTokens.of(context).spacing.page,
-        ),
-        child: FushiTagFilterBar(
-          tags: allTags,
-          part: FushiTagFilterBarPart.sortMenuAnchor,
-          sortMenuController: _sortMenu,
-          onToggleFilter: _toggleFilter,
-          onReorder: _reorderTags,
-          sortMode: _sortMode,
-          sortModeLabel: _sortModeLabel,
-          onSortModeChanged: _setSortMode,
-          filterOptionsTitle: t.shelf_filter_read_status,
-          filterActive: _readStatusFilter != null,
-          filterOptions: _readStatusFilterOptions(),
-        ),
-      ),
+    return FushiTagFilterBar(
+      tags: allTags,
+      part: FushiTagFilterBarPart.sortMenuAnchor,
+      sortMenuController: _sortMenu,
+      onToggleFilter: _toggleFilter,
+      onReorder: _reorderTags,
+      sortMode: _sortMode,
+      sortModeLabel: _sortModeLabel,
+      onSortModeChanged: _setSortMode,
+      filterOptionsTitle: t.shelf_filter_read_status,
+      filterActive: _readStatusFilter != null,
+      filterOptions: _readStatusFilterOptions(),
     );
   }
 
@@ -1026,7 +1017,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           ),
       ];
 
-  Widget _buildPageHeader() {
+  Widget _buildPageHeader(List<BookTagRow> allTags) {
+    final Widget sortMenuAnchor = _buildSortMenuAnchor(allTags);
     final List<Widget> actions = <Widget>[
       // 原工具行行尾的「批量选择 / 排序与筛选 / 管理标签」并进页头（单行页头，
       // 2026-10-14），放不下时按优先级逐颗收进 ⋯：多选 > 排序 > 管理标签。
@@ -1094,12 +1086,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         title: navigation,
         actions: actions,
         search: _headerSearch,
+        menuAnchor: sortMenuAnchor,
       );
     }
     return FushiPageHeader(
       title: _mangaOnly ? t.manga_library : t.books,
       actions: actions,
       search: _headerSearch,
+      menuAnchor: sortMenuAnchor,
     );
   }
 

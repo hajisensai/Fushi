@@ -123,10 +123,14 @@ class _FakeNetworkBookFs implements SourceFileSystem {
 /// 虚拟网络 fs：把「远端命名空间路径」（`/remote/...` 或百分号编码的
 /// `https://...` href）映射到本地真文件。列目录 / 读文本 / 下载全部离线可测。
 class _FakeVirtualNetworkFs implements SourceFileSystem {
-  _FakeVirtualNetworkFs(this.files);
+  _FakeVirtualNetworkFs(this.files, {Map<String, String>? etags})
+      : etags = etags ?? <String, String>{};
 
   /// virtualPath → 本地真文件路径。
   final Map<String, String> files;
+
+  /// virtualPath → 列目录时报的 ETag（模拟 WebDAV `getetag`）；没有的条目不报。
+  final Map<String, String> etags;
 
   int copyToLocalCalls = 0;
 
@@ -157,6 +161,7 @@ class _FakeVirtualNetworkFs implements SourceFileSystem {
         name: _decodedName(vpath),
         path: vpath,
         isDirectory: false,
+        etag: etags[vpath],
       ));
     }
     return out;
@@ -613,6 +618,48 @@ void main() {
           reason: 're-scan must not re-download any page (title pre-check)');
       after = (await db.getMediaSourceById(sid))!;
       expect(after.lastScanError, isNull);
+    });
+
+    testWidgets(
+        '远端判过「不是漫画」的 .zip：ETag 不变就不再下载，ETag 变了才重新下载重判',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Archive dict = Archive();
+      for (final String name in <String>['index.json', 'term_bank_1.json']) {
+        final List<int> bytes =
+            utf8.encode(name == 'index.json' ? '{"title":"d"}' : '[]');
+        dict.addFile(ArchiveFile(name, bytes.length, bytes));
+      }
+      final String dictLocal = p.join(tmp.path, 'dict.zip');
+      File(dictLocal).writeAsBytesSync(ZipEncoder().encode(dict)!);
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(
+        <String, String>{'/remote/manga/dict.zip': dictLocal},
+        etags: <String, String>{'/remote/manga/dict.zip': '"v1"'},
+      );
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Remote Manga',
+        mediaKind: 'manga',
+        rootPath: '/remote/manga',
+        transport: const Value('webdav'),
+        createdAt: 1000,
+      ));
+      Future<void> scan() => tester.runAsync(() async {
+            await SourceLibraryScanner(db)
+                .scan((await db.getMediaSourceById(sid))!, fs: fs);
+          });
+
+      await scan();
+      expect(fs.copyToLocalCalls, 1, reason: '第一次要下载下来开包定性');
+      expect(await db.getAllEpubBooks(), isEmpty);
+      expect((await db.getMediaSourceById(sid))!.lastScanError, isNull);
+
+      await scan();
+      expect(fs.copyToLocalCalls, 1, reason: 'ETag 没变：负向结果命中，零下载');
+
+      fs.etags['/remote/manga/dict.zip'] = '"v2"';
+      await scan();
+      expect(fs.copyToLocalCalls, 2, reason: 'ETag 变了 = 远端文件被换过，必须重判');
     });
 
     testWidgets('远端漫画：页图真名含 % / 空格 / 中文也能镜像成功（不再二次解码）',

@@ -43,7 +43,8 @@ void main() {
   test('安装器根本没起来时也要把 app 拉回来', () {
     // CreateProcess 失败原本直接 return 4：launcher 是分离进程，没人读这个返回码，
     // 于是 app 就这么没了。
-    final int failIndex = source.indexOf('if (!LaunchInstaller(args, &run))');
+    // 只锚到实参前缀：#2369 给 LaunchInstaller 加了提权锁参数，整条调用写死会让锚点失效。
+    final int failIndex = source.indexOf('if (!LaunchInstaller(args, &run');
     expect(failIndex, greaterThan(0));
     final String branch = source.substring(failIndex, failIndex + 500);
     expect(branch, contains('EnsureAppBack('), reason: '启动安装器失败必须先恢复 app 再返回');
