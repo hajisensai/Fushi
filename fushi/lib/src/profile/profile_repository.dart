@@ -617,16 +617,17 @@ class ProfileRepository {
       return null;
     }
     if (live is! Map || snapshot is! Map) return null;
+    final Map<dynamic, dynamic> liveMap = live;
     final Map<String, String> wanted = kanjiPartSettingsIn(<String, String>{
       for (final MapEntry<dynamic, dynamic> e in snapshot.entries)
         if (e.key is String && e.value is String)
           e.key as String: e.value as String,
     });
     final bool unchanged = kDictKanjiPartSettingKeys
-        .every((String key) => live[key] == wanted[key]);
+        .every((String key) => liveMap[key] == wanted[key]);
     if (unchanged) return null;
     return jsonEncode(<String, dynamic>{
-      for (final MapEntry<dynamic, dynamic> e in live.entries)
+      for (final MapEntry<dynamic, dynamic> e in liveMap.entries)
         if (!kDictKanjiPartSettingKeys.contains(e.key)) '${e.key}': e.value,
       ...wanted,
     });
