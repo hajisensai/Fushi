@@ -98,7 +98,6 @@ class AppleLyricsPlayerDesign extends LyricsPlayerDesign {
       alignStart: true,
       contextBlurPx: 0,
       rowRadius: 16,
-      hoverFill: Colors.white.withValues(alpha: 0.08),
     );
   }
 }
