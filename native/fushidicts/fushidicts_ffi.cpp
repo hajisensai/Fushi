@@ -460,6 +460,11 @@ static std::atomic<int32_t> g_live_handles{0};
 // add_*_dict / load_transforms 取独占锁，不会与任何在飞查询交错（以前对此没有任何
 // 保证，add 时扩容 std::vector<Dictionary> 会让并发的遍历读到已释放的元素）。
 // 锁只在导出层取一次，导出之间不互相调用，不存在重入。
+//
+// 匿名命名空间（内部链接）：fushidicts_jni.cpp 有一个布局不同的同名结构体，两者的
+// 隐式成员函数若都以外部链接的弱符号导出，同进程里的两个 .so 可能被动态链接器解析到
+// 同一份实现上（ODR）。
+namespace {
 struct FushidictsHandle {
   FushidictsHandle() { g_live_handles.fetch_add(1, std::memory_order_relaxed); }
   ~FushidictsHandle() { g_live_handles.fetch_sub(1, std::memory_order_relaxed); }
@@ -476,6 +481,7 @@ struct FushidictsHandle {
   std::atomic<int32_t> refs{1};
   std::atomic<bool> retired{false};
 };
+}  // namespace
 
 // 还一个引用；归零时销毁。acq_rel：最后一个归还者必须看见其它借用方的全部写入
 // （match_cache 等）之后才 delete。
