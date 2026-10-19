@@ -97,7 +97,7 @@ List<CtlRoute> buildDictionaryCtlRoutes(DesktopCtlContext context) {
       if (position != null) {
         if (position < 1) throw const CtlFailure.badRequest('position 从 1 起算');
         // 与词典管理页 `_reorderDictionaries` 同语义：同类型分区内移动后整组改 order。
-        // 「汉字」分区还含混合词典的汉字部分（BUG-3567），位置要按该分区数、写入
+        // 「汉字」分区还含混合词典的汉字部分（BUG-3571），位置要按该分区数、写入
         // 走分区专用的 updateKanjiSectionOrder，否则纯 kanji 词典的 order 与混合
         // 词典的 kanjiOrder 各排各的。
         final List<Dictionary> reordered = ctlReorderDictionaries(
