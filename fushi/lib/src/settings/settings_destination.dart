@@ -32,6 +32,10 @@ enum SettingsDestinationId {
   // 页，同一组件甚至双挂载；用户配完一处不知道另一处还有（BUG-1712 的真根因）。
   // 本机后端（qBittorrent）、云盘备份后端、Anki/Yomitan 是各自域的核心，不归此。
   services,
+  // 「本机服务」一级分类：Fushi 对外开放的本机 HTTP 服务（Fushi API / yomitan-api /
+  // AnkiConnect 兼容端点）的开关、允许谁连、端口与密钥（settings_schema_local_services）。
+  // 此前寄生在「查词 › 外部集成」，监听范围与端口没有任何入口。
+  localServices,
   // 「游戏」一级分类（审计 K/Phase 3.12）：游戏库 / 捕获工作台 / 兼容性诊断此前
   // 完全没有 settings destination，页面与其中配置项不可搜。与 games 顶层 tab
   // 同门控（仅 Windows，galgame hook 平台边界）。
@@ -810,6 +814,7 @@ class SettingsTextItem extends SettingsItem {
     required this.value,
     required this.onChanged,
     this.secret = false,
+    this.copyable = false,
     this.debounce = const Duration(milliseconds: 500),
     this.resetValue,
     this.placeholder,
@@ -826,6 +831,9 @@ class SettingsTextItem extends SettingsItem {
 
   /// true = 敏感值：明文遮蔽渲染 + 行尾眼睛按钮切换显隐（API key 等）。
   final bool secret;
+
+  /// true = 行尾提供「复制」按钮，把当前输入框内容（遮蔽时也是明文）写进剪贴板。
+  final bool copyable;
 
   /// 击键到写穿的防抖间隔；[Duration.zero] = 每次击键立即写。提交（回车）恒立即写。
   final Duration debounce;

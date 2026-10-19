@@ -454,6 +454,7 @@ class SettingsSchemaItem extends StatefulWidget
       initialValue: text.value(settingsContext),
       obscureText: text.secret,
       revealToggle: text.secret,
+      copyable: text.copyable,
       keyboardType:
           text.keyboardType ??
           (text.secret ? TextInputType.visiblePassword : TextInputType.text),

@@ -36,8 +36,9 @@ import 'package:fushi/utils.dart';
 /// → 功能模块里的意愿一并合成为 `moduleVisibility`；此处不再另判平台，否则又是一份
 /// 会漂移的抄件。非 Windows 平台、或用户关掉游戏模块时，整个分类不可见、不进搜索索引。
 ///
-/// 浏览器扩展页不属于游戏域（它是查词域的桌面扩展安装助手），其搜索入口登记在
-/// 「查词」分类（settings_schema_lookup 的 `lookup.browser_extension`），不在此处。
+/// 浏览器扩展页不属于游戏域（它是 Fushi API 的桌面扩展安装助手），其搜索入口登记在
+/// 「本机服务」分类（settings_schema_local_services 的 `local_services.browser_extension`），
+/// 不在此处。
 SettingsDestination buildGameDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.game,

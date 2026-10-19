@@ -44,6 +44,7 @@ SettingsNavigationGroupId settingsNavigationGroupFor(
   SettingsDestinationId.models => SettingsNavigationGroupId.learning,
   SettingsDestinationId.downloads ||
   SettingsDestinationId.services ||
+  SettingsDestinationId.localServices ||
   SettingsDestinationId.ai => SettingsNavigationGroupId.connections,
   SettingsDestinationId.profiles ||
   SettingsDestinationId.syncBackup ||
