@@ -1,7 +1,7 @@
 ## BUG-3519 · OPDS：填服务器根地址/网页地址/带结尾斜杠时报「不是可读的 OPDS 目录」或 404，Komga 只认 /opds/v2/catalog
 - **报告**：2026-10-19（用户：OPDS 发现源接 Komga 连不上；在真 Komga 1.29.1 上实测证实）
 - **真实性**：✅ 真 bug。真 Komga 1.29.1 实测：`http://host:25600`(/) 回 200 `text/html`（Web UI），Fushi 报 invalidResponse「not a readable OPDS catalog」；`/opds`、`/opds/v1.2`、`/opds/v2`、`/api/v1/opds`、带结尾斜杠的 `/opds/v1.2/catalog/` 一律 404；只有 `/opds/v1.2/catalog` 与 `/opds/v2/catalog` 200。根因：`fushi/lib/src/media/discovery/sources/opds_discovery_source.dart` 的 `browse` 原样用 `config.catalogUrl`（基线 `ae55190552` 第 131 行），HTML 在 `_loadFeed`（:294）被当 Atom 送进 `parseOpdsAtomFeed`，`opds_atom_parser.dart:54` 抛 FormatException，:310 收成一句英文报错；没有任何端点探测，`discovery_opds_url_hint` 也只示例 BookOrbit 形态。
-- **[x] ① 已修复** — 见本 PR 提交（`pr/opds-komga`）。
+- **[x] ① 已修复** — 提交 `073fafc0fc`（`pr/opds-komga`）。
   - `opdsCatalogUrlCandidates`（`opds_server_config.dart`）：原样地址 → 去结尾斜杠 → 服务端根与各级路径前缀（反代子路径）上的已知端点。端点逐条核对官方出处：Komga `/opds/v2/catalog`、`/opds/v1.2/catalog`（komga.org/docs/guides/opds + 真机）；Calibre-Web `/opds`（`cps/opds.py` 路由）；Kavita `/api/opds/{apiKey}`（`OpdsController` + `BaseApiController` 路由，仅配了 API key 时拼）。
   - `OpdsDiscoverySource._loadRootFeed`：根目录第一次取用时按候选探测，只有 404 / 读不出 OPDS / 网页三类「地址不对」才试下一条，401/403/超时/连不上原样抛（不在密码错的服务器上挨个试）；打通后会话内记住，并经 `onCatalogUrlResolved` → `AppModel.persistOpdsCatalogUrl` 写回配置（只落偏好、不重建注册表）。设置页「测试连接」与控制通道 `config run` 同样写回（`DiscoveryProbeOutcome.resolvedUrl`），设置页输入框随之显示新地址。
   - 不在保存时盲目去结尾斜杠：没有依据说所有 OPDS 服务端把 `/x/` 与 `/x` 视为同一资源，只写回真打通的那条。
