@@ -46,10 +46,16 @@ Future<MangaStreamOcrSetup> _noPrepare(String _) =>
     throw StateError('recognizeFrame is injected; prepare must not run');
 
 class _Probe {
+  _Probe({this.failFirst = 0});
+
+  /// 前几次截帧返回 null（mpv 新帧还没显示时 `screenshot-raw` 无结果）。
+  final int failFirst;
+
   int captures = 0;
 
   Future<Uint8List?> capture() async {
     captures++;
+    if (captures <= failFirst) return null;
     return Uint8List.fromList(<int>[1, 2, 3]);
   }
 
@@ -61,6 +67,7 @@ Widget _overlay(
   _Probe probe, {
   VideoPauseOcrScope scope = VideoPauseOcrScope.graphicSubtitles,
   VoidCallback? onEnableRequested,
+  void Function(Object error, StackTrace stack)? onError,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -76,6 +83,7 @@ Widget _overlay(
           recognizeFrame: probe.recognize,
           scope: scope,
           onEnableRequested: onEnableRequested,
+          onError: onError,
         ),
       ),
     ),
@@ -202,6 +210,94 @@ void main() {
     expect(_hitBoxes, findsNWidgets(_frame.chars.length));
     expect(probe.captures, 1, reason: '同一帧（位置与字幕轨都没变）不该重识别');
     await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+  });
+
+  group('BUG-3544 截帧失败（新帧还没显示）按退避重截同一帧', () {
+    Future<void> pumpRetries(WidgetTester tester, int count) async {
+      for (final Duration delay in kGraphicSubtitleOcrCaptureRetryDelays.take(
+        count,
+      )) {
+        await tester.pump(delay);
+      }
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    testWidgets('前两次截帧无图：第三次拿到图后照常识别出可点区域', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: false);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe(failFirst: 2);
+      final List<Object> errors = <Object>[];
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          scope: VideoPauseOcrScope.all,
+          onError: (Object e, _) => errors.add(e),
+        ),
+      );
+      await tester.pump(kGraphicSubtitleOcrSettleDelay);
+      expect(probe.captures, 1);
+      expect(_hitBoxes, findsNothing);
+
+      await pumpRetries(tester, 2);
+      expect(probe.captures, 3);
+      expect(_hitBoxes, findsNWidgets(_frame.chars.length));
+      expect(errors, isEmpty);
+      await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+    });
+
+    testWidgets('一直截不到图：重截次数有上限，用完记一条错误', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: false);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe(failFirst: 1 << 20);
+      final List<Object> errors = <Object>[];
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          scope: VideoPauseOcrScope.all,
+          onError: (Object e, _) => errors.add(e),
+        ),
+      );
+      await tester.pump(kGraphicSubtitleOcrSettleDelay);
+      await pumpRetries(tester, kGraphicSubtitleOcrCaptureRetryDelays.length);
+      expect(probe.captures, 1 + kGraphicSubtitleOcrCaptureRetryDelays.length);
+      expect(errors, hasLength(1));
+
+      await tester.pump(const Duration(seconds: 10));
+      expect(
+        probe.captures,
+        1 + kGraphicSubtitleOcrCaptureRetryDelays.length,
+        reason: '不能无限重截',
+      );
+    });
+
+    testWidgets('重截途中继续播放：在途重截作废', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: false);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe(failFirst: 1 << 20);
+      await tester.pumpWidget(
+        _overlay(c, probe, scope: VideoPauseOcrScope.all),
+      );
+      await tester.pump(kGraphicSubtitleOcrSettleDelay);
+      expect(probe.captures, 1);
+
+      c.debugSetIsPlayingForTesting(true);
+      await tester.pump(const Duration(seconds: 10));
+      expect(probe.captures, 1);
+    });
+
+    testWidgets('网页播放后端（没有 mpv 截帧）：不截帧', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: false);
+      addTearDown(c.dispose);
+      c.debugSetWebBackendForTesting(true);
+      final _Probe probe = _Probe();
+      await tester.pumpWidget(
+        _overlay(c, probe, scope: VideoPauseOcrScope.all),
+      );
+      await tester.pump(const Duration(seconds: 5));
+      expect(probe.captures, 0);
+    });
   });
 
   group('BUG-3342 暂停 OCR 默认关闭、仅图片字幕提示开启', () {
