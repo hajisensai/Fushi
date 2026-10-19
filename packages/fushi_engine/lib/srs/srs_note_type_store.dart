@@ -374,7 +374,17 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
 
   /// 删字段：定义标删除，模板里对它的引用一起去掉（rslib 同语义）；笔记里残留的值读时忽略。
   /// 最后一个字段、内置字段不能删（抛 [StateError]）。
-  Future<void> deleteField(String noteTypeId, String fieldId) async {
+  ///
+  /// [prepareTemplate]：剥引用之前先对每个模板做一次改写（app 用它把可视化模板里引用该字段
+  /// 的块整块去掉、重编，免得剥完引用留下小标题 / 外框空壳）。它在校验通过**之后**、基于
+  /// 这次读到的同一份笔记类型调用，结果与字段删除标记同在一次 [writeEdits] 里落库：
+  /// 校验失败时什么都不写，不会出现「模板改了、字段还在」。返回 null = 这个模板不改写。
+  Future<void> deleteField(
+    String noteTypeId,
+    String fieldId, {
+    SrsTemplateDef? Function(SrsNoteTypeView type, SrsTemplateDef tpl)?
+    prepareTemplate,
+  }) async {
     final SrsNoteTypeView t = await _requireType(noteTypeId);
     final SrsFieldDef? f = t.fieldById(fieldId);
     if (f == null) throw ArgumentError.value(fieldId, 'fieldId');
@@ -392,18 +402,13 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
         f.copyWith(deleted: true).toValue(),
       ),
       for (final SrsTemplateDef tpl in t.templates)
-        if (srsRemoveFieldRefs(tpl.front, fieldId) != tpl.front ||
-            srsRemoveFieldRefs(tpl.back, fieldId) != tpl.back)
+        if (_templateAfterFieldDelete(t, tpl, fieldId, prepareTemplate)
+            case final SrsTemplateDef next)
           SrsEditSpec(
             SrsEntityKind.noteType,
             noteTypeId,
             SrsFieldKeys.templateDef(tpl.id),
-            tpl
-                .copyWith(
-                  front: srsRemoveFieldRefs(tpl.front, fieldId),
-                  back: srsRemoveFieldRefs(tpl.back, fieldId),
-                )
-                .toValue(),
+            next.toValue(),
           ),
       if (t.termFieldId == fieldId)
         SrsEditSpec(
@@ -413,6 +418,21 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
           null,
         ),
     ]);
+  }
+
+  /// 删字段后这个模板的新定义；没变返回 null（不写记录）。
+  static SrsTemplateDef? _templateAfterFieldDelete(
+    SrsNoteTypeView type,
+    SrsTemplateDef tpl,
+    String fieldId,
+    SrsTemplateDef? Function(SrsNoteTypeView type, SrsTemplateDef tpl)?
+    prepareTemplate,
+  ) {
+    final SrsTemplateDef prepared = prepareTemplate?.call(type, tpl) ?? tpl;
+    final String front = srsRemoveFieldRefs(prepared.front, fieldId);
+    final String back = srsRemoveFieldRefs(prepared.back, fieldId);
+    if (front == tpl.front && back == tpl.back) return null;
+    return tpl.copyWith(front: front, back: back);
   }
 
   /// 字段调序：只给 ord 真变了的字段写记录。

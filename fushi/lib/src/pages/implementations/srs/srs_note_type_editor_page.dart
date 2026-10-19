@@ -19,9 +19,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dar
 import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.dart'
     show srsFieldKindIcon;
 import 'package:fushi/src/srs/srs_field_catalog.dart';
-import 'package:fushi/src/srs/srs_visual_template.dart';
-import 'package:fushi_anki/fushi_anki_core.dart'
-    show templateIdsToNames, templateNamesToIds;
+import 'package:fushi/src/srs/srs_visual_template.dart'
+    show srsVisualTemplateWithoutField;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -258,45 +257,16 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
           destructive: true,
         );
         if (!ok) return;
-        _run('SrsNoteTypeEditor.deleteField', (SrsDbStore s) async {
-          await _dropFieldFromVisualTemplates(s, type, field.id);
-          await s.deleteField(type.id, field.id);
-        });
-    }
-  }
-
-  /// 删字段前先把可视化模板里引用它的块去掉、整面重编。
-  ///
-  /// [SrsDbStore.deleteField] 按 Anki 语义只剥掉 `{{#字段}}` 段标记与字段引用，段内的
-  /// 小标题 / 外框留在正文里：可视化编译的块会变成每张卡上都显示的空壳。
-  static Future<void> _dropFieldFromVisualTemplates(
-    SrsDbStore store,
-    SrsNoteTypeView type,
-    String fieldId,
-  ) async {
-    final SrsVisualCompileContext ctx = SrsVisualCompileContext.of(type);
-    final Map<String, String> idToName = ctx.fieldNameById;
-    final Map<String, String> nameToId = <String, String>{
-      for (final MapEntry<String, String> e in idToName.entries) e.value: e.key,
-    };
-    for (final SrsTemplateDef tpl in type.templates) {
-      final String? front = srsVisualDropField(
-        templateIdsToNames(tpl.front, idToName),
-        fieldId,
-        ctx,
-      );
-      final String? back = srsVisualDropField(
-        templateIdsToNames(tpl.back, idToName),
-        fieldId,
-        ctx,
-      );
-      if (front == null && back == null) continue;
-      await store.updateTemplate(
-        type.id,
-        tpl.id,
-        front: front == null ? null : templateNamesToIds(front, nameToId),
-        back: back == null ? null : templateNamesToIds(back, nameToId),
-      );
+        // 可视化模板的块与字段删除在同一次写入里落库：删不掉时模板也不动。
+        _run(
+          'SrsNoteTypeEditor.deleteField',
+          (SrsDbStore s) => s.deleteField(
+            type.id,
+            field.id,
+            prepareTemplate: (SrsNoteTypeView fresh, SrsTemplateDef tpl) =>
+                srsVisualTemplateWithoutField(fresh, tpl, field.id),
+          ),
+        );
     }
   }
 
