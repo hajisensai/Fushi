@@ -22,9 +22,6 @@ import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
     show buildInAppPopupThemeVariablesJs;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
-    show isEinkTheme;
-import 'package:fushi/src/utils/popup_theme_css.dart' show popupCardSurface;
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/src/models/audio_source_list_edit.dart';
 import 'package:fushi/utils.dart';
