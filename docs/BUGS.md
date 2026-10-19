@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3184 条。点号进各自文件。
+> 共 3186 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3556](bugs/BUG-3556-srs-anki-media-sync-io-on-ui-isolate.md) | ✅ | ✅ | 复习：从本机 Anki 迁移时媒体目录枚举与媒体文件在 UI isolate 上同步读，卡帧 |
+| [BUG-3555](bugs/BUG-3555-srs-anki-snapshot-size-mtime-fingerprint.md) | ✅ | ✅ | 复习：本机 Anki 集合快照的一致性只看大小 + 修改时刻，拷贝期间原位覆盖可能检测不出 |
 | [BUG-3554](bugs/BUG-3554-srs-reimport-reverts-user-card-moves.md) | ✅ | ✅ | 复习：重新导入 / 迁移 Anki 把用户在 Fushi 里挪过牌组 / 暂停过的卡改回 Anki 的状态 |
 | [BUG-3553](bugs/BUG-3553-srs-import-report-counts-unlanded-notes.md) | ✅ | ✅ | 复习：导入报告把落库时已存在的笔记也算作新增 |
 | [BUG-3552](bugs/BUG-3552-srs-import-deck-preset-not-atomic.md) | ✅ | ✅ | 复习：导入 Anki 包时牌组与牌组设置分两轮写，中途失败或被杀后设置永远不写 |

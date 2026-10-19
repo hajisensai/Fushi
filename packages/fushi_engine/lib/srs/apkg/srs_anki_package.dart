@@ -53,8 +53,8 @@ bool _isZstd(Uint8List b) =>
 /// fushi-ext 条目名（Fushi 导出时附带的完整日志与设置）。
 const String srsFushiExtEntry = 'fushi-ext';
 
-/// 按条目名取一个原始媒体文件（没有返回 null）。
-typedef SrsAnkiMediaEntryLoader = Uint8List? Function(String entry);
+/// 按条目名取一个原始媒体文件（没有返回 null）。异步：本机 Anki 媒体目录的文件读不能卡 UI isolate。
+typedef SrsAnkiMediaEntryLoader = Future<Uint8List?> Function(String entry);
 
 /// 解开的包。
 ///
@@ -194,7 +194,7 @@ class SrsAnkiPackage {
     }
     ArchiveFile? entryFile(String entry) => archive.findFile(entry);
     return SrsAnkiPackage._(
-      (String entry) {
+      (String entry) async {
         final ArchiveFile? f = entryFile(entry);
         return f == null ? null : _bytesOf(f);
       },
@@ -215,10 +215,10 @@ class SrsAnkiPackage {
   }
 
   /// 包里的媒体文件（zstd 压缩的自动解压；没有返回 null）。
-  Uint8List? mediaBytes(String name) {
+  Future<Uint8List?> mediaBytes(String name) async {
     final String? entry = mediaIndex[name];
     if (entry == null) return null;
-    final Uint8List? raw = _loadEntry(entry);
+    final Uint8List? raw = await _loadEntry(entry);
     if (raw == null) return null;
     if (!_isZstd(raw)) return raw;
     final Uint8List? out = _tryZstd(_zstd, raw);

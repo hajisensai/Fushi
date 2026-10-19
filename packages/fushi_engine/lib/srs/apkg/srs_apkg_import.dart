@@ -96,7 +96,7 @@ Future<SrsImportReport> importAnkiCollectionSnapshot({
 }) async {
   final AnkiMediaFolder media = AnkiMediaFolder(snapshot.mediaDir);
   final SrsAnkiPackage pkg = SrsAnkiPackage.fromCollectionFolder(
-    mediaIndex: media.index(),
+    mediaIndex: await media.index(),
     loadEntry: media.read,
   );
   final SrsAnkiCollection col = await SrsAnkiCollection.openFile(
@@ -397,7 +397,7 @@ class _Importer {
   Future<String> _media(String name) async {
     if (_mediaDone.contains(name)) return _mediaRenames[name] ?? name;
     _mediaDone.add(name);
-    final Uint8List? bytes = pkg.mediaBytes(name);
+    final Uint8List? bytes = await pkg.mediaBytes(name);
     if (bytes == null) {
       report.mediaMissing.add(name);
       return name;
@@ -409,7 +409,7 @@ class _Importer {
   }
 
   Future<String> _withMedia(String html, {bool includeStatic = false}) async {
-    html = _inlinePackagedStyles(html);
+    html = await _inlinePackagedStyles(html);
     final Set<String> refs = srsMediaRefsIn(html, includeStatic: includeStatic);
     if (refs.isEmpty) return html;
     for (final String r in refs) {
@@ -420,18 +420,26 @@ class _Importer {
 
   /// 包里带着共享样式文件、字段里是它的引用行（没展开就导出的包）：按包内文件展开回内联
   /// `<style>`，落库时再统一去重成本机的共享样式文件。文件缺失或内容与文件名的哈希不符时原样保留。
-  String _inlinePackagedStyles(String html) {
-    if (srsStyleRefsIn(html).isEmpty) return html;
-    return srsExpandStyles(html, (String name) {
-      final Uint8List? bytes = pkg.mediaBytes(name);
-      if (bytes == null) return null;
-      try {
-        final String css = utf8.decode(bytes);
-        return srsStyleMediaName(css) == name ? css : null;
-      } on FormatException {
-        return null;
+  ///
+  /// 包内文件先异步读齐（媒体读不卡 UI isolate），再用同步查表展开。
+  Future<String> _inlinePackagedStyles(String html) async {
+    final Set<String> names = srsStyleRefsIn(html);
+    if (names.isEmpty) return html;
+    final Map<String, String?> css = <String, String?>{};
+    for (final String name in names) {
+      final Uint8List? bytes = await pkg.mediaBytes(name);
+      String? text;
+      if (bytes != null) {
+        try {
+          final String decoded = utf8.decode(bytes);
+          if (srsStyleMediaName(decoded) == name) text = decoded;
+        } on FormatException {
+          text = null;
+        }
       }
-    });
+      css[name] = text;
+    }
+    return srsExpandStyles(html, (String name) => css[name]);
   }
 
   // ------------------------------------------------------------------ 笔记类型
