@@ -128,6 +128,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
 
   @override
   void dispose() {
+    _snapshot?.dispose();
     _debounce?.cancel();
     _query.dispose();
     _queryFocus.dispose();
@@ -166,14 +167,19 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return;
     final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(store);
+    // 首次搜索的大头是把字段文本传进原生内核：先在后台 isolate 上编好，再同步求值。
+    await snap.prepare(_effectiveQuery);
     if (!mounted) return;
-    final bool first = _snapshot == null;
+    final SrsBrowseSnapshot? previous = _snapshot;
+    final bool first = previous == null;
     setState(() {
       _snapshot = snap;
       _canSchedule = store.canSchedule;
       _loading = false;
       _applyQuery();
     });
+    // 旧快照的搜索语料（原生侧可能有几百 MB 字段文本）不等 GC，换下来就释放。
+    previous?.dispose();
     // 带着 initialCardId 打开：列表首次出现后把这一行滚进视口。
     if (first && widget.initialCardId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -203,7 +209,21 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     _currentId ??= _items.isEmpty ? null : _idOf(_items.first);
   }
 
-  void _requery() => setState(_applyQuery);
+  /// 每次重算的序号：慢的旧查询算完时若已有新查询，结果作废。
+  int _queryGeneration = 0;
+
+  /// 按当前查询重算：先异步备好字段文本（大集合的未限定字段搜索要编码几百 MB，分给多个 isolate），
+  /// 再同步求值。
+  void _requery() => unawaited(_prepareAndRequery());
+
+  Future<void> _prepareAndRequery() async {
+    final int generation = ++_queryGeneration;
+    final SrsBrowseSnapshot? snap = _snapshot;
+    if (snap != null) await snap.prepare(_effectiveQuery);
+    if (!mounted || generation != _queryGeneration) return;
+    if (!identical(snap, _snapshot)) return;
+    setState(_applyQuery);
+  }
 
   void _onQueryChanged(String _) {
     _debounce?.cancel();
@@ -813,10 +833,12 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
                   ),
                 );
                 if (picked == null || !mounted) return;
-                setState(() {
-                  _searchField = picked == kSrsBrowseAllFields ? null : picked;
-                  _applyQuery();
-                });
+                setState(
+                  () => _searchField = picked == kSrsBrowseAllFields
+                      ? null
+                      : picked,
+                );
+                _requery();
               }),
             ),
             FushiActionChip(

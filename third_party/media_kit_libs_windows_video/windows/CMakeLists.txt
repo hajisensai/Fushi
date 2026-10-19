@@ -98,16 +98,19 @@ get_filename_component(
 # patches/mkv-laced-audio-timestamps.patch (BUG-3499: laced Matroska audio
 # without DefaultDuration, e.g. mkvmerge Opus, lost every lace frame after the
 # first in dump-cache) and patches/recorder-video-dts.patch (BUG-3500: Matroska
-# video has no DTS, so dump-cache lost every B-frame). See NATIVE_BUILD.md.
+# video has no DTS, so dump-cache lost every B-frame) and
+# tool/bluray/platforms/patches/mpv-gl-dovi-p5.patch (BUG-2691: gl_video
+# reshapes Dolby Vision profile 5 like libplacebo, so DV needs no vo=gpu-next
+# window). See NATIVE_BUILD.md.
 # `ffu1`: built against the unified FFmpeg (tool/ffmpeg-unified, FFmpeg 9.0.1 +
 # Fushi patches); the archive also carries that FFmpeg's ffmpeg.exe / ffprobe.exe
 # on the same fbd*.dll, so card mining and playback share one FFmpeg and the
 # programs land beside fushi.exe through runtime-files.cmake.
-set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-ffu1.7z")
+set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu1.7z")
 
 # Upstream source provenance; the committed patched archive is the build input.
 set(LIBMPV_URL "https://github.com/mpv-player/mpv/tree/36abaa32d00a7229ee206aae12dc0e97e7962dca")
-set(LIBMPV_MD5 "324d09501a33c7ad9be3d69bf98df3d8")
+set(LIBMPV_MD5 "5de840423a4faa2cf0a2c96c030bc055")
 
 # Vendored archive (committed) + build-dir extraction target (TODO-1172).
 set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")

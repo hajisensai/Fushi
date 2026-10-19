@@ -1,0 +1,6 @@
+## BUG-3511 · video-mining-audio-follows-stale-track
+- **报告**：2026-10-18（用户：QQ 转来的第三方反馈，附 Lapis.apkg + 原片 mkv：「制卡怎么是英文的，明明用的日语音轨和字幕」）
+- **真实性**：✅ 真 bug。卡片句子文本是日语，**句子音频**取错轨：片子默认轨是英语（`#1 eac3 eng default`），日语是 `#2 aac jpn`。5 张卡与原片两条轨做能量包络相关：2 张对日语轨（0.98）、3 张对英语轨（0.97–0.99），编码参数完全一致，差别只在传给 ffmpeg 的音轨下标。根因 `fushi/lib/src/media/video/video_player_controller.dart` `currentAudioStreamIndex`：读的是 media_kit `state.track.audio`，它只随 `setAudioTrack` 更新、`open()` 时重置成 `auto`；而 mpv 的 `aid` 会沿用到之后加载的文件（本机 libmpv-2.dll 实测：选 aid=2 → stop + playlist-clear + loadfile 重开 → 仍 aid=2 / ja）。于是选过一次日语的用户重开 / 换片后耳朵里是日语，下标却是 null → 制卡 ffmpeg 不加 `-map` → 容器默认英语轨。
+- **[x] ① 已修复** — `VideoPlayerController.adoptNativeAudioSelection`：load 打开媒体后等真实音轨就绪，经 `getPropertyAsync('aid')`（不占 UI 线程内核锁，BUG-3507）读 mpv 实际选轨；media_kit 仍是 `auto` 时对齐到那条轨（写回同一 aid，不切轨）。显式选轨推进 `_audioSelectionSeq`，读 aid 期间有续播恢复 / 用户点选就放弃对齐。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/native_audio_selection_adopt_test.dart`：判定纯函数 3 条 + load 接线守卫 + 真 libmpv 回归（`FUSHI_TEST_LIBMPV` + `FUSHI_TEST_FFMPEG`，lavfi 造英语默认 / 日语第二轨样片，钉住「重开后 media_kit=auto、mpv aid 仍日语」前提，断言对齐后下标=1、aid 不变、并发选轨时放弃）。
+- **备注**：反馈人的平台 / 是否串流未知；该路径与平台、本地 / 串流无关（凡经 media_kit `open()` 的重开都中）。卡 1–2 对、3–5 错的分界恰在 ED 章节前后（视频走 201 s、现实 128 s，差值≈ED 88 s），中途发生过重开 / 换载的具体触发未能取证。网络流在缓存副本（`withCachedSnapshot`）路径上按副本唯一音轨取，本来就对；副本不覆盖回退远端抽取时同样吃这个下标，一并修复。

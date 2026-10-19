@@ -19,6 +19,20 @@ String fingerprintOfDer(List<int> der) {
 String _normalizeFingerprint(String fp) =>
     fp.replaceAll(':', '').replaceAll(RegExp(r'\s'), '').toLowerCase();
 
+final RegExp _sha256Hex = RegExp(r'^[0-9a-f]{64}$');
+
+/// 把任意写法的 SHA-256 指纹（`AA:BB:..`、裸 hex、首尾/中间带空白或多余冒号）
+/// 规范成**唯一形态**：64 位小写 hex、无分隔符；不是 SHA-256 指纹时返回 null。
+///
+/// 这是交给原生侧（ffmpeg `-tls_pin_sha256`）的输入契约：原生补丁只认这种形态
+/// 的超集，而「尾随冒号 / 空白」之类的容错不在补丁里——改补丁要重编四份二进制
+/// （桌面 ffmpeg-min ×2、ffmpeg-kit AAR、iOS xcframework），所以规范化集中在 Dart
+/// 这一处，与 [fingerprintEquals] 共用同一份归一化。
+String? canonicalSha256Fingerprint(String fp) {
+  final String normalized = _normalizeFingerprint(fp);
+  return _sha256Hex.hasMatch(normalized) ? normalized : null;
+}
+
 /// 两个指纹串是否指同一张证书（归一化后相等）。
 ///
 /// 指纹在仓里有两种写法（`aa:bb:..` 与裸 hex、大小写不一），比对必须先归一化；

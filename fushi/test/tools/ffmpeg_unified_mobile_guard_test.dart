@@ -67,6 +67,14 @@ const Map<String, String> _codecProof = <String, String>{
   'truehd': 'TrueHD 解码器（BUG-073：播放器）',
 };
 
+/// BUG-3503：dash demuxer 也要两证。在线视频源给 `manifest.mpd` 时制卡与播放都靠它，
+/// 它硬依赖 libxml2；configure 里的 `--enable-libxml2` 只说明声明了。判 dashdec.c 与
+/// libxml2 自身独有的串：dash **muxer** 没有这两个串，不会因 dashenc 而假绿。
+const Map<String, String> _dashDemuxerProof = <String, String>{
+  'missing root node': 'libavformat/dashdec.c 的 MPD 解析日志（dash demuxer 在）',
+  'xmlParseCharRef': 'libxml2 自身的错误串（证明真链进了 libxml2）',
+};
+
 String _text(List<int> bytes) => latin1.decode(bytes, allowInvalid: true);
 
 String _recipeVersion() => File('../tool/ffmpeg-unified/recipe.env')
@@ -119,6 +127,11 @@ void _expectUnified({
           '制卡快照）会恒失败');
   expect(format.contains('tls_pin_sha256'), isTrue,
       reason: '$label 缺补丁 0001（远端自签主机证书钉扎，BUG-891）');
+  _dashDemuxerProof.forEach((String needle, String what) {
+    expect(format.contains(needle), isTrue,
+        reason: '$label libavformat 里没有「$needle」（$what）——在线源 .mpd 制卡 / 播放'
+            '会报 Invalid data（BUG-3503）');
+  });
   if (android) {
     expect(format.contains('Android system CA certificates'), isTrue,
         reason: '$label 缺补丁 0001 的 Android 系统 CA 加载：FFmpeg 8+ 默认校验证书，'
@@ -175,6 +188,27 @@ void main() {
       expect(aar.files.where((ArchiveFile f) => f.name.contains('_neon')), isEmpty);
     });
 
+    test('GPL 许可、各外部库许可与源码获取声明随 AAR 分发', () {
+      final ArchiveFile? license = aar.findFile('res/raw/license.txt');
+      expect(license, isNotNull, reason: 'AAR 缺 res/raw/license.txt');
+      expect(_text(license!.content as List<int>), contains('GNU GENERAL PUBLIC LICENSE'),
+          reason: 'GPL 构建的 FFmpeg 必须带 GPL 许可原文');
+      for (final String extra in <String>[
+        'license_x264.txt',
+        'license_libvpx.txt',
+        'license_opus.txt',
+        'license_dav1d.txt',
+        'license_libsvtav1.txt',
+        'license_libwebp.txt',
+        'license_openssl.txt',
+        'license_libxml2.txt',
+        'source.txt',
+      ]) {
+        expect(aar.findFile('res/raw/$extra'), isNotNull,
+            reason: 'AAR 缺 res/raw/$extra：外部库许可 / GPL「源码获取途径」声明不得丢失');
+      }
+    });
+
     for (final String abi in <String>['arm64-v8a', 'armeabi-v7a', 'x86_64']) {
       test('$abi：统一配方 + 能力 + 全部补丁', () {
         List<int> so(String lib) {
@@ -212,6 +246,63 @@ void main() {
         );
       });
     }
+  });
+
+  // BUG-3503 审查跟进（从 ffmpeg_kit_flutter 守卫移植）：动态 framework 自带
+  // LC_LOAD_DYLIB，podspec 漏声明系统库不会链接失败，但 s.libraries 是「这个 pod 依赖
+  // 哪些系统库」的唯一声明处——重编后多出一个 /usr/lib 库时这里当场红，而不是等到某个
+  // iOS 版本上 dyld 找不到库才在真机启动时崩。
+  group('iOS podspec 声明了 framework 链接的全部 /usr/lib 系统库', () {
+    // libSystem / libobjc 由工具链隐式链接，podspec 不必（也不该）声明。
+    const Set<String> implicitLibs = <String>{'System', 'objc'};
+    final RegExp dylibRef =
+        RegExp(r'/usr/lib/lib([A-Za-z0-9_+]+)\.(?:[A-Za-z0-9]+\.)*dylib');
+
+    Set<String> podspecLibraries() {
+      final String podspec =
+          File('$_plugin/ios/ffmpeg_kit_next_flutter.podspec').readAsStringSync();
+      final RegExpMatch? line =
+          RegExp(r'^\s*s\.libraries\s*=\s*(.+)$', multiLine: true).firstMatch(podspec);
+      expect(line, isNotNull, reason: 'podspec 里找不到 s.libraries');
+      return RegExp(r"'([^']+)'")
+          .allMatches(line!.group(1)!)
+          .map((RegExpMatch m) => m.group(1)!)
+          .toSet();
+    }
+
+    Set<String> linkedSystemLibs() {
+      final Set<String> libs = <String>{};
+      for (final FileSystemEntity xc in Directory(_iosFrameworks).listSync()) {
+        if (xc is! Directory || !xc.path.endsWith('.xcframework')) continue;
+        final String name = xc.uri.pathSegments
+            .lastWhere((String s) => s.isNotEmpty)
+            .replaceAll('.xcframework', '');
+        for (final FileSystemEntity slice in xc.listSync()) {
+          if (slice is! Directory) continue;
+          final File bin = File('${slice.path}/$name.framework/$name');
+          if (!bin.existsSync()) continue;
+          for (final RegExpMatch m
+              in dylibRef.allMatches(_text(bin.readAsBytesSync()))) {
+            libs.add(m.group(1)!);
+          }
+        }
+      }
+      return libs;
+    }
+
+    test('linked ⊆ s.libraries ∪ 隐式库', () {
+      final Set<String> declared = podspecLibraries();
+      final Set<String> missing =
+          linkedSystemLibs().difference(declared).difference(implicitLibs);
+      expect(missing, isEmpty,
+          reason: 'framework 链接了 /usr/lib/lib{$missing} 但 podspec 的 '
+              's.libraries 没声明（${declared.join(', ')}）');
+    });
+
+    test('负向对照：扫描真读到了系统库（libc++ / libz / libiconv）', () {
+      // 扫描若读错路径会得到空集，上一条就恒绿；这里钉住它确实看见了库。
+      expect(linkedSystemLibs(), containsAll(<String>['c++', 'z', 'iconv']));
+    });
   });
 
   group('macOS（播放器 framework + ffmpeg/ffprobe 程序，同一套库）', () {

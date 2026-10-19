@@ -18,17 +18,22 @@
 //   同图变体（重编码 q20–q95、缩到 150 / 106 / 64 宽、缩小再放大、亮度 / 对比度 / 灰度、裁 2%）：
 //     NCC ≥ 0.9909、细节 ≥ 0.8623（最差都是缩到 64 宽这一档，真实缩略图长边 ≥ 150 时细节 ≥ 0.95）；
 //   审查给的伪造样本：
-//     forged.jpg（夹断藏质量）：Dart 解码器直接解不开 → 不符；
+//     forged.jpg（夹断藏质量）：解码器直接解不开 → 不符；
 //     inherent_0.15 / 0.25 / 0.35 / 0.5（老实伪造；后两档只在标定时跑过、未入库）：
 //       NCC 0.90 / 0.93 / 0.76 / 0.54，细节 0.17 / 0.22 / 0.22 / 0.11；
 //   不相关的封面：NCC 0.39–0.57，细节 0.11–0.17。
 // 只看 NCC 时伪造样本最高 0.93，离同图最低 0.99 不远；细节项把两边拉开到 0.86 对 0.22。
+//
+// 解码与两项相似度都在原生内核（native/fushi_compute `ffc_image_cover_signature` /
+// `ffc_image_cover_compare`，与旧 Dart 实现在同一份解码像素上逐位一致）。解码器是 Rust 的
+// `image` crate：PNG 等无损格式与旧的 `package:image` 逐字节相同；JPEG 有 ±1 级的差，灰度图
+// 展开成 RGB 后按真亮度算（旧 `package:image` 的单通道像素 g/b 读作 0，灰度封面只取到 0.299×亮度，
+// 与同一张图的彩色版本比不上）。
 
 import 'dart:isolate';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:image/image.dart' as img;
+import 'package:fushi_compute/fushi_compute.dart';
 
 /// 比对网格边长。
 const int kCoverCompareGrid = 32;
@@ -39,8 +44,8 @@ const double kCoverConfirmMinNcc = 0.95;
 /// 细节相似度（去掉 9×8 粗格均值后的 NCC）阈值。
 const double kCoverConfirmMinDetailNcc = 0.70;
 
-/// 方差低于它视为「平坦」（纯色封面、或全部内容都在粗格均值里）：NCC 无意义，改按均值比。
-const double _flatVariance = 1e-6;
+// 方差低于 1e-6 视为「平坦」（纯色封面、或全部内容都在粗格均值里）：NCC 无意义，改按均值比
+// （阈值在 image.rs `cover_ncc`）。
 
 /// 一张封面的比对特征：32×32 灰度网格（行优先，值域 0–1）。
 class CoverSignature {
@@ -69,50 +74,18 @@ class CoverSimilarity {
       'detail: ${detailNcc.toStringAsFixed(4)})';
 }
 
-/// 图片字节的比对特征；解不开（含解码器对畸形数据抛异常）返回 null。
+/// 图片字节的比对特征（解码时按 EXIF 方向摆正，按面积平均缩成 32×32 灰度；空格子取同行左侧
+/// 最近非空格，与 dHash 一致）；解不开（含畸形 / 恶意构造的数据）返回 null。
 CoverSignature? coverSignature(Uint8List bytes) {
-  img.Image? decoded;
-  try {
-    decoded = img.decodeImage(bytes);
-  } on Object {
-    // 畸形 / 恶意构造的 JPEG 会让解码器抛 RangeError 等：一律按解不开处理。
-    decoded = null;
-  }
-  if (decoded == null || decoded.width < 1 || decoded.height < 1) return null;
-  return coverSignatureOfImage(decoded);
-}
-
-/// 已解码图片的比对特征（面积平均缩成 32×32 灰度；空格子取同行左侧最近非空格，与 dHash 一致）。
-CoverSignature coverSignatureOfImage(img.Image image) {
-  const int n = kCoverCompareGrid;
-  final int w = image.width;
-  final int h = image.height;
-  final Float64List sum = Float64List(n * n);
-  final Int32List count = Int32List(n * n);
-  for (final img.Pixel p in image) {
-    final int cell = (p.y * n ~/ h) * n + p.x * n ~/ w;
-    sum[cell] +=
-        0.299 * p.rNormalized + 0.587 * p.gNormalized + 0.114 * p.bNormalized;
-    count[cell]++;
-  }
-  final Float64List grid = Float64List(n * n);
-  for (int y = 0; y < n; y++) {
-    double last = 0;
-    for (int x = 0; x < n; x++) {
-      final int i = y * n + x;
-      if (count[i] > 0) last = sum[i] / count[i];
-      grid[i] = last;
-    }
-  }
-  return CoverSignature(grid);
+  final Float64List? grid = FushiComputeImage.instance.coverSignature(bytes);
+  return grid == null ? null : CoverSignature(grid);
 }
 
 /// 两个特征的相似度（见文件头）。
 CoverSimilarity compareCoverSignatures(CoverSignature a, CoverSignature b) {
-  return CoverSimilarity(
-    ncc: _ncc(a.grid, b.grid),
-    detailNcc: _ncc(_detail(a.grid), _detail(b.grid)),
-  );
+  final ({double ncc, double detailNcc}) r = FushiComputeImage.instance
+      .compareCoverSignatures(a.grid, b.grid);
+  return CoverSimilarity(ncc: r.ncc, detailNcc: r.detailNcc);
 }
 
 /// 本地封面与候选缩略图是不是同一张图。[local] 解不开返回 null（本机问题，调用方不该据此记「不符」）；
@@ -125,58 +98,8 @@ CoverSimilarity? compareCoverBytes(Uint8List local, Uint8List remote) {
   return compareCoverSignatures(a, b);
 }
 
-/// [compareCoverBytes] 的后台 isolate 版本（解码两张图是纯 Dart CPU 重活）。
+/// [compareCoverBytes] 的后台 isolate 版本（解码两张图是 CPU 重活）。
 Future<CoverSimilarity?> compareCoverBytesInBackground(
   Uint8List local,
   Uint8List remote,
 ) => Isolate.run<CoverSimilarity?>(() => compareCoverBytes(local, remote));
-
-/// 减去 9×8 粗格（dHash 的格子划分）均值后的残差。
-Float64List _detail(Float64List g) {
-  const int n = kCoverCompareGrid;
-  final Float64List sum = Float64List(72);
-  final Int32List count = Int32List(72);
-  int cellOf(int x, int y) => (y * 8 ~/ n) * 9 + x * 9 ~/ n;
-  for (int y = 0; y < n; y++) {
-    for (int x = 0; x < n; x++) {
-      final int c = cellOf(x, y);
-      sum[c] += g[y * n + x];
-      count[c]++;
-    }
-  }
-  final Float64List out = Float64List(n * n);
-  for (int y = 0; y < n; y++) {
-    for (int x = 0; x < n; x++) {
-      final int c = cellOf(x, y);
-      out[y * n + x] = g[y * n + x] - sum[c] / count[c];
-    }
-  }
-  return out;
-}
-
-/// 归一化互相关。两边都平坦时按均值是否接近给 1 / 0；只有一边平坦给 0。
-double _ncc(Float64List a, Float64List b) {
-  double ma = 0;
-  double mb = 0;
-  for (int i = 0; i < a.length; i++) {
-    ma += a[i];
-    mb += b[i];
-  }
-  ma /= a.length;
-  mb /= b.length;
-  double sab = 0;
-  double saa = 0;
-  double sbb = 0;
-  for (int i = 0; i < a.length; i++) {
-    final double da = a[i] - ma;
-    final double db = b[i] - mb;
-    sab += da * db;
-    saa += da * da;
-    sbb += db * db;
-  }
-  final bool flatA = saa / a.length < _flatVariance;
-  final bool flatB = sbb / b.length < _flatVariance;
-  if (flatA && flatB) return (ma - mb).abs() < 0.05 ? 1 : 0;
-  if (flatA || flatB) return 0;
-  return sab / math.sqrt(saa * sbb);
-}

@@ -12,7 +12,7 @@ import 'package:material_ui/material_ui.dart';
 /// 两套设计系统：MD3 悬浮底栏 / Apple 胶囊。
 enum _Design { md3, apple }
 
-// 2026-10-15 底栏「分页滑动」：查词并进胶囊、所有目的地同级，每页 5 个；
+// 2026-10-15 底栏「分页滑动」：胶囊里每页 5 个（查词留在右下角固定钮）；
 // 底栏横滑翻页（跟手、过 1/4 页或甩一下就翻）；按住约 0.3 秒进入拖选，手指
 // 罩着哪一格就选哪一格，拖到边缘停一下自动翻页，松手切过去。
 //
@@ -202,20 +202,32 @@ void main() {
         expect(bar(), <int>[0, 1, 2, 3, 4]);
       });
 
-      testWidgets('查词并进胶囊、与其它目的地同级参与分页', (WidgetTester tester) async {
+      // 2026-10-17 用户「底部左边要分页右下角是查词」：查词不进分页，翻到
+      // 哪一页都钉在右侧（MD3 FAB / Apple 圆钮）。
+      testWidgets('查词固定在右侧，其余目的地分页', (WidgetTester tester) async {
         await pumpBar(tester, design, searchIndex: 6);
-        expect(bar(), <int>[0, 1, 2, 3, 4]);
-        expect(
-          find.byWidgetPredicate(
-            (Widget w) =>
-                w is FushiFocusTarget &&
-                w.id == const FushiFocusId('nav-bar-fab'),
-          ),
-          findsNothing,
-          reason: '分页样式不再把查词拆成 FAB / 圆钮',
+        final Finder lookup = design == _Design.apple
+            ? shown(6)
+            : find
+                  .byWidgetPredicate(
+                    (Widget w) =>
+                        w is FushiFocusTarget &&
+                        w.id == const FushiFocusId('nav-bar-fab'),
+                  )
+                  .hitTestable();
+        expect(lookup, findsOneWidget);
+        expect(bar().where((int i) => i != 6), <int>[0, 1, 2, 3, 4]);
+        final double lookupX = tester.getCenter(lookup).dx;
+        expect(lookupX, greaterThan(tester.getCenter(shown(4)).dx));
+        // 右侧让给查词钮，横滑要从胶囊里起手。
+        await tester.dragFrom(
+          tester.getCenter(shown(3)),
+          const Offset(-220, 0),
         );
-        await swipeBar(tester, -220);
-        expect(bar(), <int>[5, 6, 7, 8]);
+        await tester.pumpAndSettle();
+        expect(bar().where((int i) => i != 6), <int>[5, 7, 8]);
+        expect(lookup, findsOneWidget);
+        expect(tester.getCenter(lookup).dx, lookupX);
       });
 
       testWidgets('平铺样式下不分页（9 个目的地不会只剩 5 个）', (WidgetTester tester) async {

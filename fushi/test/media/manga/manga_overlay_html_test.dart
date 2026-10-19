@@ -619,6 +619,38 @@ void main() {
           reason: 'OCR 覆盖层仍需与原图保持同一宽高比');
     });
 
+    test('折叠屏铰链缝：双页每页让出半条缝，单页不受影响', () {
+      final String html = mangaPageDivHtml(_pageWithTwoBlocks(), 'p.jpg',
+          pagesInSpread: 2, isWebtoon: false, spreadGutterPx: 24);
+      expect(html, contains('width:min(calc(50vw - 12px),50vh)'));
+      expect(html, contains('height:min(100vh,calc((50vw - 12px) * 2))'));
+      final String solo = mangaPageDivHtml(_pageWithTwoBlocks(), 'p.jpg',
+          pagesInSpread: 1, isWebtoon: false, spreadGutterPx: 24);
+      expect(solo, contains('width:min(100vw,50vh)'),
+          reason: '宽页独占一屏没有「两页之间」');
+    });
+
+    test('折叠屏铰链缝：跨页容器两页之间留出整条缝', () {
+      final MokuroImage page = _pageWithTwoBlocks();
+      final String doc = mangaWindowDocument(
+        <MokuroImage>[page, page],
+        <String>['a.jpg', 'b.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+        spreadGutterPx: 24,
+      );
+      expect(doc, contains('column-gap:24px;'));
+      final String flat = mangaWindowDocument(
+        <MokuroImage>[page, page],
+        <String>['a.jpg', 'b.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+      );
+      expect(flat, isNot(contains('column-gap:')));
+    });
+
     test('spread 双页每页最多 50vw 且高度不超过 100vh', () {
       final String html = mangaPageDivHtml(_pageWithTwoBlocks(), 'p.jpg',
           pagesInSpread: 2, isWebtoon: false);

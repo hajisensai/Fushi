@@ -68,8 +68,7 @@ class _FakeFontApi implements ExtensionFontApi {
   }
 }
 
-List<String> _noopTokenize(String text) => const <String>[];
-String _noopReading(String word) => '';
+List<TokenizedSegment> _noopTokenize(String text) => const <TokenizedSegment>[];
 
 String _basic(String token) =>
     'Basic ${base64Encode(utf8.encode('fushi:$token'))}';
@@ -110,10 +109,13 @@ Future<List<int>> _collectBytes(HttpClientResponse resp) async {
 
 void main() {
   const Tokenizer tok = _noopTokenize;
-  const ReadingResolver rr = _noopReading;
-  final Uint8List ttfBytes = Uint8List.fromList(
-    <int>[0x00, 0x01, 0x00, 0x00, ...List<int>.filled(32, 0x42)],
-  );
+  final Uint8List ttfBytes = Uint8List.fromList(<int>[
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    ...List<int>.filled(32, 0x42),
+  ]);
 
   late Directory tmp;
   late _FakeFontApi api;
@@ -125,7 +127,6 @@ void main() {
       port: 0,
       lookupService: _FakeLookup(),
       tokenizer: tok,
-      readingResolver: rr,
       fontApi: withApi ? api : null,
       apiKey: apiKey,
     );

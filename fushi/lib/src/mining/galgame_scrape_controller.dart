@@ -11,6 +11,7 @@
 library;
 
 import 'package:fushi/src/mining/metadata/adapters/bangumi_adapter.dart';
+import 'package:fushi/src/mining/metadata/adapters/dlsite_adapter.dart';
 import 'package:fushi/src/mining/metadata/adapters/vndb_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
@@ -38,6 +39,7 @@ class GalgameScrapeController {
             <GalgameMetadataAdapter>[
               BangumiMetadataAdapter(),
               VndbMetadataAdapter(),
+              DlsiteMetadataAdapter(),
             ];
 
   /// 进程级单例（页面用）。测试注入假 adapter 时直接替换。

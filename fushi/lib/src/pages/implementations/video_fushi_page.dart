@@ -43,6 +43,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/video_advanced_mining.dart';
+import 'package:fushi/src/mining/pending_mine_overwrites.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart'
     show probeSynchronizedClipSupport;
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -94,6 +95,8 @@ import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
 import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
     show BlurayEncryptedStreamException;
 import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
+import 'package:fushi_engine/media/video/bluray/aacs_content_decoder.dart'
+    show AacsUnitDecryptException, AacsUnitFailure;
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:collection/collection.dart' show IterableExtension;
@@ -150,6 +153,7 @@ import 'package:fushi_engine/media/video/series_playback_prefs.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
+import 'package:fushi/src/media/video/video_chrome_hit_test.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
@@ -159,6 +163,8 @@ import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/media/video/video_control_layout_edit_overlay.dart';
 import 'package:fushi/src/media/video/video_control_popover_placement.dart';
 import 'package:fushi/src/media/video/video_controls_density.dart';
+import 'package:fushi/src/media/video/video_tabletop_panel.dart';
+import 'package:fushi/src/utils/adaptive/fushi_tabletop_split.dart';
 import 'package:fushi/src/media/video/video_controls_focus_gate.dart';
 import 'package:fushi/src/media/video/video_controls_theme_pair.dart';
 import 'package:fushi/src/media/video/video_slim_progress_bar.dart';
@@ -274,7 +280,11 @@ import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show safeDictionaryMediaPath;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult, DictionaryPopupWebViewState;
+    show
+        MinePopupResult,
+        DictionaryPopupWebViewState,
+        QueuedOverwriteReply,
+        QueuedOverwriteSettled;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/interconnect_adaptive_quality.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -1000,8 +1010,12 @@ abstract class VideoFushiTestHooks {
   int get debugSecondaryCueCount;
   bool get debugSecondaryPlayerDecodedSubtitleActive;
 
-  /// BUG-2691：当前是否已切到 gpu-next 宿主窗（Windows HDR / DV P5 路径）。
-  bool get debugHdrHostActive;
+  /// 当前是否在输出合成器内 HDR（Windows）。
+  bool get debugHdrCompositorActive;
+
+  /// BUG-2691：当前片源是否被识别为需要 DV 重整（libmpv colormatrix 或服务器元数据）
+  /// 且本平台画不对——Windows 纹理路径自带重整后恒为 false。
+  bool get debugDolbyVisionColorsUnsupported;
 }
 
 // TODO-314：字幕跳转列表不再走 overlay 面板系统，改 push-aside（[_subtitleListVisible]
@@ -1476,7 +1490,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           fontSize: _videoControlTitleFontSize,
         );
 
-  Color _subtitleTextColor(ColorScheme cs) => cs.onSurface;
   Color _subtitleShadowColor(ColorScheme cs) => cs.shadow;
   // TODO-1059 方案A：字幕盒默认底色不再跟随主题 `surface`（浅色主题下近白 → 字幕
   // 背景泛白违和），改用固定半透明黑 [kDefaultSubtitleBackgroundColor]。仅当
@@ -1616,7 +1629,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _controller?.isSecondaryPlayerDecodedTextSubtitleActive ?? false;
 
   @override
-  bool get debugHdrHostActive => _controller?.hdrHostActive.value ?? false;
+  bool get debugHdrCompositorActive =>
+      _controller?.hdrCompositorActive.value ?? false;
+
+  @override
+  bool get debugDolbyVisionColorsUnsupported =>
+      _controller?.dolbyVisionColorsUnsupportedNotifier.value ?? false;
 
   @override
   List<int> get debugRemoteEmbeddedStreamIndices => <int>[
@@ -2207,6 +2225,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 录制、鼠标绑定通道、右键菜单读的都是它）。左键与触摸在那里恒折不出按钮号，故
   /// 恒不入集合，双击全屏 / 双击 seek / 移动端双击暂停行为逐字不变。
   final Set<int> _nonPrimaryVideoPointers = <int>{};
+
+  /// 按下时落在控件上（控制条 / 浮层按钮）的指针集合，判据见 [videoPointerHitsChrome]。
+  /// 与 [_nonPrimaryVideoPointers] 同一套按下记账、抬起取走：落点是按下那一刻的渲染树
+  /// 说了算（与手势竞技场同一时刻），抬起前控件淡出或挪位都不改变这次点击的归属。
+  final Set<int> _chromeVideoPointers = <int>{};
   bool _videoFullscreenTransitioning = false;
 
   /// 全屏路由当前是否在栈上：进全屏置位、全屏路由 future 完成（任意退出路径：
@@ -2456,6 +2479,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 正开着的「高级制卡」对话框会话（锁住的查词画面、在线流缓冲副本、缩略图缓存）。
   /// [buildAdvancedMiningSections] 建，对话框 onClosed 释放；制卡在同步前缀里读它。
   _VideoAdvancedMiningSession? _advancedMiningSession;
+
+  /// BUG-3492：后台写入还没落地时排队的覆盖请求（每个词只留最后一次），落地后执行。
+  final PendingMineOverwrites<_QueuedVideoOverwrite> _pendingOverwrites =
+      PendingMineOverwrites<_QueuedVideoOverwrite>();
 
   /// 最近一次字幕查词命中的词在字幕上的范围（BUG-2091），由 [_lookupAt] 按引擎回报的
   /// 匹配长度写入；查无结果写 null。**不**在关栈路径复位——overlay 拿到的是
@@ -5192,11 +5219,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final bool isInitialVideoOpen = _controller == null;
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
-    // HDR 直通模式 + 画面 fit 交给控制器（宿主窗模式下 fit 由 mpv 自己算）。
-    controller.configureHdrOutput(
-      mode: _videoHdrOutputMode,
-      fitMode: _videoFitMode,
-    );
+    // HDR 输出模式交给控制器。
+    controller.configureHdrOutput(mode: _videoHdrOutputMode);
     controller.setSourceDolbyVisionHint(
       _isRemote && _remoteSourceRequiresDolbyVisionReshape,
     );
@@ -7079,6 +7103,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) =>
       _onMineEntryImpl(fields);
+
+  @override
+  Future<QueuedOverwriteReply> onQueueOverwrite(Map<String, String> fields) =>
+      _onQueueOverwriteImpl(fields);
 
   @override
   Future<MinePopupResult> onMinedCardAction(Map<String, String> fields) =>
@@ -10175,12 +10203,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<void> _setVideoFitMode(VideoFitMode mode) async {
     if (_videoFitMode == mode) return;
     _videoFitMode = mode;
-    _controller?.configureHdrOutput(fitMode: mode);
     await appModel.setVideoFitMode(mode);
     if (mounted) setState(() {});
   }
 
-  /// 切 HDR 直通 / 10-bit 输出模式：落盘 + 控制器当场重判（切宿主窗不重建播放器）。
+  /// 切 HDR / 10-bit 输出模式：落盘 + 控制器当场重判（不重建播放器）。
   Future<void> _setVideoHdrOutputMode(VideoHdrOutputMode mode) async {
     if (_videoHdrOutputMode == mode) return;
     _videoHdrOutputMode = mode;
@@ -10261,8 +10288,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) setState(() {});
   }
 
-  /// BUG-2691：DV Profile 5 片源在没有 gpu-next 的平台 / 设置下会紫绿反色，
-  /// 至少告诉用户这不是片子坏了。每次由假变真提示一次（换集会重新判断）。
+  /// BUG-2691：DV Profile 5 片源在纹理渲染器不会重整的平台（Linux 系统 libmpv）上
+  /// 会紫绿反色，至少告诉用户这不是片子坏了。每次由假变真提示一次（换集会重新判断）。
   void _onDolbyVisionColorsUnsupportedChanged() {
     final VideoPlayerController? controller = _controller;
     if (controller == null ||
@@ -10270,9 +10297,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     _showOsd(
-      Platform.isWindows
-          ? t.video_dolby_vision_colors_enable_hdr_output
-          : t.video_dolby_vision_colors_unsupported,
+      t.video_dolby_vision_colors_unsupported,
       severity: ToastSeverity.warning,
       prominent: true,
     );
@@ -10311,6 +10336,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// overlay 立刻按新值决定悬停 / 点击是否还能揭开遮蔽。
   Future<void> _setVideoSubtitleObscureReveal(bool value) async {
     await appModel.setVideoSubtitleObscureReveal(value);
+    if (!mounted) return;
+    _rebuild(() {});
+  }
+
+  /// 副字幕「临时显形」开关，同 [_setVideoSubtitleObscureReveal]。
+  Future<void> _setVideoSecondarySubtitleObscureReveal(bool value) async {
+    await appModel.setVideoSecondarySubtitleObscureReveal(value);
     if (!mounted) return;
     _rebuild(() {});
   }
@@ -10761,6 +10793,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onEnterSubtitleDelayBar: _enterSubtitleDelayBar,
       // TODO-1105：尊重 .ass 自带样式切换回调（持久化 + 重建让 overlay 即时生效）。
       onSubtitleObscureRevealChanged: _setVideoSubtitleObscureReveal,
+      onSecondarySubtitleObscureRevealChanged:
+          _setVideoSecondarySubtitleObscureReveal,
       onRespectAssStyleChanged: _setVideoRespectAssStyle,
       // 着色器/mpv 配置面板内嵌（不弹独立对话框）：着色器勾选 → 持久化启用集 +
       // 解析绝对路径 + 实时应用；mpv 配置即改即生效。
@@ -11044,56 +11078,49 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // topButtonBar），外层再叠一条 AppBar 等于两条顶栏、互相重复（BUG-102）。改为
     // 把返回/标题/剧集导航全部并入视频内顶栏（见 [_desktopControlsTheme] /
     // [_mobileControlsTheme]），与播放控制一起随鼠标/触摸显隐，单一顶栏。
-    // HDR 直通（video_hdr_output.dart）：libmpv 宿主窗钉在主窗正后方，视频洞必须
-    // 一路透到底，页面底色随之透明；失败 / 加载 / 缺资源态与非 HDR 播放不受影响。
     // 横幅卸载后会话仍在：继续观看期间的制卡/覆写照样走 [SourceReviewSession]，
     // 它的失败提示只认最后一次 attach 的 context。横幅是唯一 attach 点时，继续观看
     // 那一帧起 context 就是已卸载的，提示会被静默吞掉——由页面自己接管。
     _sourceReviewSession?.attachContext(context);
-    return ValueListenableBuilder<bool>(
-      valueListenable: controller?.hdrHostActive ?? _kHdrHostInactive,
-      builder: (BuildContext _, bool hdrHost, Widget? body) => Scaffold(
-        backgroundColor: hdrHost ? Colors.transparent : cs.surface,
-        body: Column(
-          children: <Widget>[
-            // 全局悬浮球的场景按钮（零尺寸，见 [_buildVideoFloatingBallScene]）。
-            _buildVideoFloatingBallScene(controller),
-            // 继续观看后这条栏必须整条消失：此刻已是普通观看，页面要和平时看视频
-            // 完全一样，不能再留第二条常驻顶栏把画面挤下去（BUG-102 的单一顶栏原
-            // 则）。要回卡片片段就重新点一次 Anki 里的来源链接，走完整回看链路。
-            if (_sourceReviewSession case final SourceReviewSession session
-                when session.isReview)
-              SafeArea(
-                bottom: false,
-                child: SourceReviewBanner(
-                  runHidden: runWithLookupPopupHidden,
-                  session: session,
-                  onReturn: () => unawaited(_handleBackOrExit()),
-                ),
+    final Widget body = _failed
+        ? _buildFailedBody(cs)
+        // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，
+        // _controller 维持 null 也会落进下面的 spinner 分支无限转圈）。
+        : _missingResource
+        ? _buildMissingResourceBody(cs)
+        // TODO-1276：首开时把 `!_videoReadyToShow` 并入转圈判据——页级加载态
+        // 保持到首帧真正解码出画再挂载 [Video]，杜绝与 media_kit 缓冲圈接力成
+        // 「转两次圈」。换集 [_videoReadyToShow] 恒 true 不进此分支（行为不变）。
+        : (controller == null || videoController == null || !_videoReadyToShow)
+        ? _buildLoadingBody()
+        // BUG-1864：裸空格覆盖不再挂这里——它已上提到窗口与全屏共用的
+        // [_wrapVideoGamepadControls]（全屏是独立路由，不经过本 Scaffold）。
+        : _pageDropTarget(
+            controller,
+            _buildVideoBody(controller, videoController),
+          );
+    return Scaffold(
+      backgroundColor: cs.surface,
+      body: Column(
+        children: <Widget>[
+          // 全局悬浮球的场景按钮（零尺寸，见 [_buildVideoFloatingBallScene]）。
+          _buildVideoFloatingBallScene(controller),
+          // 继续观看后这条栏必须整条消失：此刻已是普通观看，页面要和平时看视频
+          // 完全一样，不能再留第二条常驻顶栏把画面挤下去（BUG-102 的单一顶栏原
+          // 则）。要回卡片片段就重新点一次 Anki 里的来源链接，走完整回看链路。
+          if (_sourceReviewSession case final SourceReviewSession session
+              when session.isReview)
+            SafeArea(
+              bottom: false,
+              child: SourceReviewBanner(
+                runHidden: runWithLookupPopupHidden,
+                session: session,
+                onReturn: () => unawaited(_handleBackOrExit()),
               ),
-            Expanded(child: body ?? const SizedBox.shrink()),
-          ],
-        ),
-      ),
-      child: _failed
-          ? _buildFailedBody(cs)
-          // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，
-          // _controller 维持 null 也会落进下面的 spinner 分支无限转圈）。
-          : _missingResource
-          ? _buildMissingResourceBody(cs)
-          // TODO-1276：首开时把 `!_videoReadyToShow` 并入转圈判据——页级加载态
-          // 保持到首帧真正解码出画再挂载 [Video]，杜绝与 media_kit 缓冲圈接力成
-          // 「转两次圈」。换集 [_videoReadyToShow] 恒 true 不进此分支（行为不变）。
-          : (controller == null ||
-                videoController == null ||
-                !_videoReadyToShow)
-          ? _buildLoadingBody()
-          // BUG-1864：裸空格覆盖不再挂这里——它已上提到窗口与全屏共用的
-          // [_wrapVideoGamepadControls]（全屏是独立路由，不经过本 Scaffold）。
-          : _pageDropTarget(
-              controller,
-              _buildVideoBody(controller, videoController),
             ),
+          Expanded(child: body),
+        ],
+      ),
     );
   }
 
@@ -11234,6 +11261,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           t.video_bluray_config_invalid,
         AacsConfigurationError.missingConfiguration =>
           t.video_bluray_config_missing,
+      };
+    }
+    // 首个单元就解不开：数据坏了（全零 / 已被同一 key 解开过）直说是盘坏，只有无先例时
+    // 才提 KEYDB——那时数据本身分不清 key 错还是首单元坏，文案两种都说。
+    if (error is AacsUnitDecryptException) {
+      final String name = error.streamName ?? '';
+      final String offset = '${error.unitOffset}';
+      return switch (error.failure) {
+        AacsUnitFailure.corruptData => t.video_bluray_stream_corrupt(
+          name: name,
+          offset: offset,
+        ),
+        AacsUnitFailure.keyMismatchOrCorrupt =>
+          t.video_bluray_stream_undecryptable(name: name, offset: offset),
       };
     }
     // AACS 加密的蓝光码流：原因确定，libmpv 那边只会给黑屏不给错误。
@@ -11421,9 +11462,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ///
   /// 只记非主键：左键与触摸在 [domMouseButtonFromPointerButtons] 里恒折不出按钮号，
   /// 集合对它们始终为空，双击路径零改变。
+  ///
+  /// 同一处顺带记「按下是否落在控件上」（[_chromeVideoPointers]）：按真实 hit-test
+  /// 判，取代旧的顶 / 底两条按钮行高几何带——M3E 浮动底栏比那条带高，连点 ±10s
+  /// 的上半截会被当成双击画面切全屏。
   void _recordVideoPointerButton(PointerDownEvent event) {
     if (domMouseButtonFromPointerButtons(event.buttons) != null) {
       _nonPrimaryVideoPointers.add(event.pointer);
+    }
+    if (videoPointerHitsChrome(
+      globalPosition: event.position,
+      viewId: event.viewId,
+    )) {
+      _chromeVideoPointers.add(event.pointer);
     }
   }
 
@@ -11431,6 +11482,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 会一直留在集合里——抬起事件不会再来，[_handleVideoPointerUp] 也就没机会取走。
   void _forgetVideoPointerButton(PointerCancelEvent event) {
     _nonPrimaryVideoPointers.remove(event.pointer);
+    _chromeVideoPointers.remove(event.pointer);
   }
 
   void _handleVideoPointerUp(PointerUpEvent event) {
@@ -11441,6 +11493,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final bool nonPrimaryButton = _nonPrimaryVideoPointers.remove(
       event.pointer,
     );
+    final bool chromePointer = _chromeVideoPointers.remove(event.pointer);
     // 点视频区任意位置 = 用户把交互意图交还播放器：顺手收回键盘焦点（TODO-040 ①
     // 「点了外面/焦点丢失后」的恢复路径——与原生播放器一致，点一下画面即恢复键盘）。
     // 查词浮层打开时点击被根 Overlay barrier 拦截、到不了这里，guard 仅兜底；点
@@ -11481,10 +11534,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _lastVideoPointerUpPosition = null;
       return;
     }
+    // 按下落在控件上（控制条任意位置 / 任何可点浮层按钮）不是「点画面」：不参与双击
+    // 判定，并清掉双击追踪——否则连点 ±10s 这类按钮，两次抬起就凑成一次双击画面。
     final BuildContext? controlsContext = _videoControlsContext;
-    if (controlsContext == null ||
-        !controlsContext.mounted ||
-        _isVideoChromePointer(controlsContext, event.position)) {
+    if (controlsContext == null || !controlsContext.mounted || chromePointer) {
       _lastVideoPointerUpAt = null;
       _lastVideoPointerUpPosition = null;
       return;
@@ -11567,11 +11620,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_videoSidePanel.value != null) return;
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    final BuildContext? controlsContext = _videoControlsContext;
-    if (controlsContext != null &&
-        controlsContext.mounted &&
-        _isVideoChromePointer(controlsContext, event.position)) {
-      return; // 落在控制条 chrome 上：交回 chrome 自己的滚轮/滚动语义。
+    if (videoPointerHitsChrome(
+      globalPosition: event.position,
+      viewId: event.viewId,
+    )) {
+      return; // 落在控件上：交回控件自己的滚轮/滚动语义。
     }
     _onVolumeWheel(controller, event.scrollDelta.dy);
   }
@@ -11581,7 +11634,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 关闭，调用方继续走 BUG-221 的暂停 / 全屏分流。
   ///
   /// 用 [_videoControlsContext] 的 [RenderBox] 把双击点 [globalPosition] 换成本地坐标
-  /// 拿 dx 与可视区宽度（复用 [_isVideoChromePointer] 的 `globalToLocal` 范式），按
+  /// 拿 dx 与可视区宽度（`globalToLocal`），按
   /// 三等分判定：左 1/3 → 后退、右 1/3 → 前进、中间 1/3 → 中带（保留暂停 / 全屏）。
   /// [VideoAsbplayerConfig.doubleTapSeekSeconds]：0=关（整体跳过分区）、3/5/10=相对
   /// seek 该秒数、[VideoAsbplayerConfig.kDoubleTapSubtitle]=跳上 / 下一句。
@@ -11628,26 +11681,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       feedback('${forward ? '+' : '-'}${action}s');
     }
     return true;
-  }
-
-  bool _isVideoChromePointer(
-    BuildContext controlsContext,
-    Offset globalPosition,
-  ) {
-    final RenderObject? renderObject = controlsContext.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
-    final Offset local = renderObject.globalToLocal(globalPosition);
-    if (local.dx < 0 ||
-        local.dy < 0 ||
-        local.dx > renderObject.size.width ||
-        local.dy > renderObject.size.height) {
-      return false;
-    }
-    final EdgeInsets padding = MediaQuery.of(controlsContext).padding;
-    final double topChromeBottom = padding.top + _videoButtonBarHeight;
-    final double bottomChromeTop =
-        renderObject.size.height - padding.bottom - _videoButtonBarHeight;
-    return local.dy <= topChromeBottom || local.dy >= bottomChromeTop;
   }
 
   /// 桌面右键 = 视频上下文菜单（TODO-048c）。右键松手处 [globalPosition] 作锚点弹

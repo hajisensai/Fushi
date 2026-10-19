@@ -8,7 +8,7 @@
 ## 产品约束（用户 2026-10-14 追加）
 
 - SRS 整体是一个默认关闭的模块（`ModuleId.srs`，「外观 → 模块」里打开；`ModuleId.defaultEnabled` 只有它为 false）。没打开的用户看不到任何入口。
-  **2026-10-16 更新**：出厂默认改为开（新装默认 Fushi 复习；升级上来的老用户由 `PreferencesRepository.settleSrsMiningTargetInstallDefault` 一次性显式写关、不提醒），见 `ModuleId.srs` 文档；正式版构建仍整体屏蔽（`PrereleaseOnlyCapability.srs`）。
+  **2026-10-16 更新**：出厂默认改为开（新装默认 Fushi 复习；升级上来的老用户由 `PreferencesRepository.settleSrsMiningTargetInstallDefault` 一次性显式写关、不提醒），见 `ModuleId.srs` 文档。正式版构建屏蔽（PR #2237）已撤回，五端各通道都提供复习模块。
 - 新手引导里有 SRS 步骤，但只有模块已开启时才进入步骤序列；向导不替用户勾选 SRS 模块。
 - 所有页面同时适配 MD3 与 Apple 两套设计系统，并带动效（仓库规则）。
 
@@ -116,6 +116,18 @@ Yomitan 导出释义时每部词典内联一份 `<style>`，同一部词典的�
 - 代码：`fushi_srs/lib/src/style_dedup.dart`、`fushi_engine/lib/srs/srs_style_store.dart`、`srs_db_store.dart`；
   测试：`fushi_srs/test/style_dedup_test.dart`、`fushi_engine/test/srs/srs_style_dedup_test.dart`、
   `fushi/test/srs/srs_style_dedup_app_test.dart`。
+
+## 自动全量备份与按时间点恢复（2026-10-17，分支 `pr/srs-auto-backup`）
+
+对标 Anki 的「备份」：定期全量快照 + 恢复到某个时间点，详见 [2026-10-17-srs-auto-backup-restore.md](2026-10-17-srs-auto-backup-restore.md)。
+要点：恢复**不是**覆盖恢复（那样别的设备一同步，备份之后的事件就全回来了），而是先并入备份事件，再把差异写成新事件——
+字段写一条支配本机已见一切记录的修改记录（新建的软删除、删掉的恢复），备份之后的有效日志写 undo，
+仍不一致的卡写 manual 日志照抄备份时的状态。这些新事件随同步传播，恢复时本机已见过的旧数据被支配、回不来。
+
+**铁律 A 追加 ③′（恢复照抄状态的起点）**：带 `extra.restoreOf` 的 manual 日志（不是重置）是记忆状态 S/D 的起点，
+与导入锚点同一套规则：结果里有同算法（`extra.memAlg`）的记忆状态就直接用，否则由 ease + 间隔做 SM-2 换算，
+再接上它之后的有效评分（`valid_logs.dart` 的 `srsIsRestoreState`）。被它取代的评分已被撤销、不在有效历史里，
+不这样做下一次评分就从零重算。
 
 ## 实现现状（分支 worktree-fushi-srs）
 

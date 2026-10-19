@@ -22,6 +22,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
@@ -538,9 +539,10 @@ Future<shelf.Response> handleMangaOcrRequest(
     final int? index = int.tryParse(parts[2]);
     if (index == null || index < 0) return _ocrError(400, 'bad_index');
     final String name = request.url.queryParameters['name'] ?? '';
-    final List<int> bytes = <int>[
-      for (final List<int> chunk in await request.read().toList()) ...chunk,
-    ];
+    // 整页图片（MB 级）按块攒进 BytesBuilder，不展开成逐字节装箱的 List<int>。
+    final BytesBuilder body = BytesBuilder(copy: false);
+    await request.read().forEach(body.add);
+    final Uint8List bytes = body.takeBytes();
     if (bytes.isEmpty) return _ocrError(400, 'empty_body');
     final String? refusal =
         await manager.uploadPage(job, name: name, bytes: bytes);

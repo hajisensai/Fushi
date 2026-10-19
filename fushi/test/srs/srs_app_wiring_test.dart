@@ -13,14 +13,17 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
+import 'package:fushi/src/srs/srs_backup.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_term_status_bridge.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 import 'package:fushi_anki/fushi_anki_core.dart'
     show fushiAnkiConnectCompatInstanceId;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_engine/srs/srs_backup_retention.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
@@ -210,8 +213,7 @@ void main() {
       server = FushiApiServer(
         port: 0,
         lookupService: _NoLookup(),
-        tokenizer: (String t) => <String>[t],
-        readingResolver: (String w) => '',
+        tokenizer: (String t) => <TokenizedSegment>[(text: t, reading: '')],
         srsApiProvider: () => api,
       );
       await server.start();
@@ -276,6 +278,13 @@ void main() {
         readMedia: () async => null,
         engine: () => const SrsTestEngine(),
         bumpRevision: () {},
+        backup: SrsBackupController(
+          readStore: () async => null,
+          readBackups: () async => null,
+          autoEnabled: () => false,
+          limits: () => const SrsBackupLimits(),
+          profileName: (String uid) async => '',
+        ),
       );
       expect(app.srsAnkiConnectEndpoint, isNull);
       runtime.install();
@@ -288,8 +297,7 @@ void main() {
       final FushiApiServer server = FushiApiServer(
         port: 0,
         lookupService: _NoLookup(),
-        tokenizer: (String t) => <String>[t],
-        readingResolver: (String w) => '',
+        tokenizer: (String t) => <TokenizedSegment>[(text: t, reading: '')],
         ankiConnectEndpoint: app.srsAnkiConnectEndpoint,
       );
       await server.start();

@@ -423,6 +423,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'show_floating_lyric',
   'show_media_notification',
   'show_remote_entries',
+  // bool（默认 true）：复习自动备份（有变动后最多每 N 分钟一份、离开复习页时一份）。
+  // 设备本地（SyncRepository._deviceLocalFixedKeys）：备份文件本来就只存在本机。
+  'srs_backup_auto',
+  // String（JSON，SrsBackupLimits：daily / weekly / monthly / intervalMinutes）：复习自动备份的
+  // 间隔与保留份数；缺省 = Anki 默认（30 分钟；日 12 / 周 10 / 月 9）。设备本地，同上。
+  'srs_backup_limits',
   // String（JSON，SrsAnkiImportOptions.toJson）：上次「导入 Anki 包」选的五个选项，
   // 下次作对话框初值；缺省 = Anki 默认值。非凭据、跨设备（随 Profile / 备份）。
   // String（JSON，SrsCardAppearance.toJson）：复习卡面（Fushi 卡片模板）的外观：
@@ -578,6 +584,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_respect_ass_style',
   'video_secondary_subtitle_blur',
   'video_secondary_subtitle_obscure_hide',
+  // bool（未写过时继承 video_subtitle_obscure_reveal）：副字幕遮蔽态是否允许
+  // 暂停 / 查词 / 悬停 / 点击临时显形，与主字幕分开配置。
+  'video_secondary_subtitle_obscure_reveal',
   'video_shaders_enabled',
   // bool（默认 false）：控制条淡出后，在视频最下方留一条主题色细进度条
   // （B 站 / YouTube 同款）。默认关——控制条淡出就是要把画面让干净。小窗档不受

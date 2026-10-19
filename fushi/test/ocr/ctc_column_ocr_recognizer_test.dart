@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/ocr/ctc_column_ocr_recognizer.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
@@ -40,14 +41,17 @@ class _ColorReadingRecognizer extends PpOcrLineRecognizer {
   final Map<int, String> replies;
   final List<img.Image> lines = <img.Image>[];
 
-  // 生产路径调的是 recognizeLineScored（recognizeLine 转调它），假件重写这一个。
+  // 生产路径调的是 recognizeLinePositioned（recognizeLineScored / recognizeLine
+  // 都转调它），假件重写这一个。
   @override
-  Future<({String text, double? confidence})> recognizeLineScored(
-    img.Image line,
-  ) async {
+  Future<PpOcrPositionedLine> recognizeLinePositioned(img.Image line) async {
     lines.add(line);
     final int red = line.getPixel(line.width ~/ 2, line.height ~/ 2).r.toInt();
-    return (text: replies[red] ?? '?', confidence: null);
+    return PpOcrPositionedLine(
+      text: replies[red] ?? '?',
+      confidence: null,
+      tokens: const <OcrLineToken>[],
+    );
   }
 }
 
@@ -58,9 +62,59 @@ class _ConstLineRecognizer extends PpOcrLineRecognizer {
   final String reply;
 
   @override
-  Future<({String text, double? confidence})> recognizeLineScored(
-    img.Image line,
-  ) async => (text: reply, confidence: null);
+  Future<PpOcrPositionedLine> recognizeLinePositioned(img.Image line) async =>
+      PpOcrPositionedLine(
+        text: reply,
+        confidence: null,
+        tokens: const <OcrLineToken>[],
+      );
+}
+
+/// 按收到的行图中线上的颜色「认字」：绿色段读成「あ」、蓝色段读成「い」，token
+/// 位置就是该色段在行图上的 x 区间——用真实像素验证竖列转向后的坐标换算。
+class _InkPositionRecognizer extends PpOcrLineRecognizer {
+  _InkPositionRecognizer() : super(_DeadSession(), vocab: const <String>['']);
+
+  @override
+  Future<PpOcrPositionedLine> recognizeLinePositioned(img.Image line) async {
+    final StringBuffer text = StringBuffer();
+    final List<OcrLineToken> tokens = <OcrLineToken>[];
+    final int y = line.height ~/ 2;
+    String? current;
+    int runStart = 0;
+    void close(int x) {
+      final String? glyph = current;
+      if (glyph == null) return;
+      tokens.add(
+        OcrLineToken(
+          start: text.length,
+          end: text.length + glyph.length,
+          left: runStart.toDouble(),
+          right: x.toDouble(),
+        ),
+      );
+      text.write(glyph);
+    }
+
+    for (int x = 0; x <= line.width; x++) {
+      String? glyph;
+      if (x < line.width) {
+        final img.Pixel pixel = line.getPixel(x, y);
+        if (pixel.g.toInt() == 200) glyph = 'あ';
+        if (pixel.b.toInt() == 200) glyph = 'い';
+      }
+      if (glyph != current) {
+        close(x);
+        current = glyph;
+        runStart = x;
+      }
+    }
+    return PpOcrPositionedLine(
+      text: text.toString(),
+      confidence: null,
+      tokens: tokens,
+    );
+  }
 }
 
 typedef _LineCall = ({OcrRect box, bool vertical, List<OcrRect>? lineHints});
@@ -138,6 +192,16 @@ PpTextLine _line(double l, double t, double r, double b) => PpTextLine(
 );
 
 List<double> _ltrb(OcrRect r) => <double>[r.left, r.top, r.right, r.bottom];
+
+void _expectRects(List<OcrGlyphBox> glyphs, List<List<double>> expected) {
+  expect(glyphs, hasLength(expected.length));
+  for (int i = 0; i < glyphs.length; i++) {
+    final List<double> actual = _ltrb(glyphs[i].rect);
+    for (int k = 0; k < 4; k++) {
+      expect(actual[k], closeTo(expected[i][k], 1e-6), reason: 'glyph $i');
+    }
+  }
+}
 
 List<int> _rgb(img.Image image, int x, int y) {
   final img.Pixel pixel = image.getPixel(x, y);
@@ -274,6 +338,92 @@ void main() {
       // 列顶（绿）在左端、列底（蓝）在右端；顺时针转会正好反过来。
       expect(_rgb(line, 5, 16), <int>[0, 200, 0]);
       expect(_rgb(line, 246, 16), <int>[0, 0, 200]);
+    });
+
+    test('竖列：token 在转向后行图上的 x 换回页面 y，字格落在对应的字上', () async {
+      final img.Image page = img.Image(width: 400, height: 300);
+      // 列在页面 (104,24)-(136,276)：y 50..60 涂绿（あ）、y 200..210 涂蓝（い）。
+      _paint(
+        page,
+        const OcrRect(left: 104, top: 50, right: 136, bottom: 60),
+        0,
+        200,
+        0,
+      );
+      _paint(
+        page,
+        const OcrRect(left: 104, top: 200, right: 136, bottom: 210),
+        0,
+        0,
+        200,
+      );
+      final OcrRecognition out =
+          await CtcColumnOcrRecognizer(
+            lineDetector: _FakeLineDetector(<PpTextLine>[_line(4, 4, 36, 256)]),
+            lineRecognizer: _InkPositionRecognizer(),
+          ).recognizeWithLines(
+            page,
+            const OcrRect(left: 100, top: 20, right: 140, bottom: 280),
+            vertical: true,
+          );
+
+      expect(out.text, 'あい');
+      final List<OcrGlyphBox> glyphs = out.glyphBoxes!;
+      expect(glyphs.map((OcrGlyphBox g) => g.start), <int>[0, 1]);
+      // 字中心 55 / 205；列宽 32 → 每格离字中心最多 19.2，横向占满列宽。
+      _expectRects(glyphs, <List<double>>[
+        <double>[104, 35.8, 136, 74.2],
+        <double>[104, 185.8, 136, 224.2],
+      ]);
+      for (final (int index, double y) in <(int, double)>[(0, 55), (1, 205)]) {
+        expect(glyphs[index].rect.containsPoint(120, y), isTrue);
+      }
+    });
+
+    test('横行：token 的 x 加上行裁图左边就是页面 x', () async {
+      final img.Image page = img.Image(width: 400, height: 300);
+      // 行在页面 (40,100)-(300,130)：x 60..80 涂绿、x 250..270 涂蓝。
+      _paint(
+        page,
+        const OcrRect(left: 60, top: 100, right: 80, bottom: 130),
+        0,
+        200,
+        0,
+      );
+      _paint(
+        page,
+        const OcrRect(left: 250, top: 100, right: 270, bottom: 130),
+        0,
+        0,
+        200,
+      );
+      final OcrRecognition out =
+          await CtcColumnOcrRecognizer(
+            lineDetector: _FakeLineDetector(<PpTextLine>[
+              _line(10, 10, 270, 40),
+            ]),
+            lineRecognizer: _InkPositionRecognizer(),
+          ).recognizeWithLines(
+            page,
+            const OcrRect(left: 30, top: 90, right: 330, bottom: 140),
+            vertical: false,
+          );
+
+      expect(out.text, 'あい');
+      // 字中心 70 / 260；行高 30 → 每格离字中心最多 18。
+      _expectRects(out.glyphBoxes!, <List<double>>[
+        <double>[52, 100, 88, 130],
+        <double>[242, 100, 278, 130],
+      ]);
+    });
+
+    test('有一行拿不到位置：整块不给字格（覆盖层整块退回按行均分）', () async {
+      final OcrRecognition out = await CtcColumnOcrRecognizer(
+        lineDetector: _FakeLineDetector(_bubbleLines()),
+        lineRecognizer: _ColorReadingRecognizer(_columnText),
+      ).recognizeWithLines(_bubblePage(), _bubble, vertical: true);
+      expect(out.lines, hasLength(3));
+      expect(out.glyphBoxes, isNull);
     });
 
     test('读不出字的列连同列框一起丢，拼回的文本不含它', () async {

@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show Rect, Size;
+import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
@@ -18,7 +18,6 @@ import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/mpv_cache_snapshot.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show CachedMediaSnapshot;
-import 'package:fushi/src/models/preferences_repository.dart' show VideoFitMode;
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.dart'
     show bitmapSubtitleTrackHeaderPath;
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart'
@@ -634,32 +633,29 @@ class VideoPlayerController extends ChangeNotifier
   StreamSubscription<int?>? _widthSub;
   StreamSubscription<int?>? _heightSub;
 
-  // ── Windows HDR 直通 / 10-bit 输出（video_hdr_output.dart）──────────────────
+  // ── Windows HDR / 10-bit 输出（video_hdr_output.dart）──────────────────────
   //
-  // 纹理路径常驻；直通只是把 libmpv 的 VO 在运行时切到 runner 宿主窗
-  // （`vo=gpu-next --wid`），不重建 Player。唯一判据在 [shouldUseHdrHostWindow]，
-  // 四个输入分别来自：平台、用户设置（[configureHdrOutput]）、显示器色彩空间
-  // （runner `displayInfo`，每次重判现读）、片源 `video-params`（[_onVideoParams]）。
+  // 视频始终是 Flutter 纹理；HDR 输出只是把引擎交换链与这张纹理切到 FP16，不重建
+  // Player。唯一判据在 [shouldUseHdrOutput]，四个输入分别来自：平台、用户设置
+  // （[configureHdrOutput]）、显示器色彩空间（runner `displayInfo`，每次重判现读）、
+  // 片源 `video-params`（[_onVideoParams]）。
   /// `video-params` 订阅：primaries / gamma 决定片源是否 HDR。
   StreamSubscription<VideoParams>? _videoParamsSub;
 
-  /// 宿主窗模式是否激活（页面据此把 Scaffold / 全屏 Material 底色改透明）。
-  final ValueNotifier<bool> hdrHostActive = ValueNotifier<bool>(false);
-
   /// 合成器内 HDR 是否激活：视频留在 Flutter 纹理里（FP16 extended sRGB），Flutter
-  /// 自己的交换链出 FP16 scRGB（打了 `ci/patches/flutter-engine` 补丁的引擎）。与
-  /// [hdrHostActive] 互斥；不需要透明底色，界面与视频在同一张画布、同一次 present。
+  /// 自己的交换链出 FP16 scRGB（打了 `ci/patches/flutter-engine` 补丁的引擎），界面与
+  /// 视频在同一张画布、同一次 present。
   final ValueNotifier<bool> hdrCompositorActive = ValueNotifier<bool>(false);
 
-  /// 字幕 / 弹幕层要不要做 HDR 亮度归一（BUG-2951）：两条 HDR 路径都要。
-  bool get hdrOutputActive => hdrHostActive.value || hdrCompositorActive.value;
+  /// 字幕 / 弹幕层要不要做 HDR 亮度归一（BUG-2951）。
+  bool get hdrOutputActive => hdrCompositorActive.value;
 
   /// 主窗所在显示器的最近一次 runner 回报（每次重判现读）。页面据它与
-  /// [hdrHostActive] 派生字幕 / 弹幕层的 HDR 亮度系数（[hdrGraphicsWhiteScale]）。
+  /// [hdrCompositorActive] 派生字幕 / 弹幕层的 HDR 亮度系数（[hdrGraphicsWhiteScale]）。
   final ValueNotifier<HdrDisplayInfo> hdrDisplayInfo =
       ValueNotifier<HdrDisplayInfo>(HdrDisplayInfo.unknown);
 
-  /// 当前片源是 DV Profile 5 且本平台 / 设置下没有能正确还原颜色的渲染器
+  /// 当前片源是 DV Profile 5 且本平台的纹理渲染器不会重整
   /// （[dolbyVisionColorsUnsupported]）。页面据此提示用户，BUG-2691。
   final ValueNotifier<bool> dolbyVisionColorsUnsupportedNotifier =
       ValueNotifier<bool>(false);
@@ -700,32 +696,25 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   VideoHdrOutputMode _hdrOutputMode = VideoHdrOutputMode.auto;
-  VideoFitMode _hdrHostFitMode = VideoFitMode.contain;
   bool _hdrSourceIsHdr = false;
   bool _hdrSourceIsDolbyVision = false;
   bool _sourceDolbyVisionHint = false;
-  Rect? _hdrHostRect;
-  HdrVideoHostChannel? _hdrHostChannel;
+  HdrOutputChannel? _hdrOutputChannel;
 
-  /// 重判串行链：`video-params` 在切 VO 期间会连发多次（每次解码器重配都发一次），
-  /// 若并发重判，在途的进入/退出会被后来者打断、甚至互相拆窗。所有重判排进同一条
-  /// Future 链顺序执行，每一轮开始时重新读状态，状态已一致就直接返回。
+  /// 重判串行链：`video-params` 会连发多次（每次解码器重配都发一次），若并发重判，
+  /// 在途的进入/退出会被后来者打断。所有重判排进同一条 Future 链顺序执行，每一轮开始时
+  /// 重新读状态，状态已一致就直接返回。
   Future<void> _hdrEvalChain = Future<void>.value();
 
-  /// runner 只有**一个**宿主窗，这里记着当前占用它的控制器。外部打开等路径会在旧
-  /// 视频页仍在栈上时新建控制器：新控制器进入直通即接管宿主窗，旧控制器只把自己的
-  /// 直通位清掉（不拆窗、不改 VO——它的 Player 随页面弹出时一起释放）；旧控制器
-  /// dispose 时也只有仍是 owner 才拆窗，否则会拆掉新主人的窗。
-  static VideoPlayerController? _hdrHostOwner;
-
-  /// 引擎的 HDR 输出按窗口（view）开关，同样只有一份：语义与 [_hdrHostOwner] 相同，
-  /// 新控制器接管，旧控制器 dispose 时只有仍是 owner 才关引擎 HDR。
+  /// 引擎的 HDR 输出按窗口（view）开关，只有一份：外部打开等路径会在旧视频页仍在栈上
+  /// 时新建控制器，新控制器进入 HDR 即接管，旧控制器只清自己的位；旧控制器 dispose 时
+  /// 只有仍是 owner 才关引擎 HDR，否则会关掉新主人的输出。
   static VideoPlayerController? _hdrCompositorOwner;
 
   /// 引擎是否带合成器内 HDR（runner 解析补丁导出符号的结果，进程内不变，缓存）。
   static bool? _compositorHdrSupported;
 
-  /// 视频纹理拒绝切 HDR 的那个 [Player]（纹理与 Player 一一对应）：只对它退回宿主窗，
+  /// 视频纹理拒绝切 HDR 的那个 [Player]（纹理与 Player 一一对应）：只对它留在 SDR，
   /// 换片新建 Player 后重新尝试。与 [_compositorHdrSupported] 分开——那是**引擎**能力，
   /// 进程内不变；纹理失败只说明这一路输出做不到，不能把整个进程记成「不支持」。
   Player? _compositorTextureRefusedFor;
@@ -755,6 +744,26 @@ class VideoPlayerController extends ChangeNotifier
   );
   StreamSubscription<bool>? _bufferingIndicatorSub;
   StreamSubscription<bool>? _playingIndicatorSub;
+
+  /// 播放位置的事件源（毫秒，与 [positionMs] 同值）：见 [positionMsListenable]。
+  final ValueNotifier<int?> _positionMsNotifier = ValueNotifier<int?>(null);
+  bool _positionMsNotifierDisposed = false;
+  StreamSubscription<Duration>? _positionSub;
+
+  /// [positionMs] 变化的推送源：真 [Player] 跟 media_kit `stream.position`（libmpv
+  /// `time-pos` 事件），网页播放器跟 [applyExternalPlaybackState] 注入，蓝光导航跟
+  /// 导航态采样，测试覆盖跟 [debugSetPositionForTesting]。值恒等于此刻的
+  /// [positionMs]（同值不重复通知）。
+  ///
+  /// 给要显示连续位置的 UI（折叠屏桌面姿态面板等）订阅，替代各自起定时器轮询
+  /// [positionMs]——[ChangeNotifier] 本身只在 cue / 播放态变化时通知，不管位置。
+  ValueListenable<int?> get positionMsListenable => _positionMsNotifier;
+
+  /// 把此刻的 [positionMs] 发布到 [positionMsListenable]。
+  void _publishPosition() {
+    if (_positionMsNotifierDisposed) return;
+    _positionMsNotifier.value = positionMs;
+  }
 
   /// **纯函数**：缓冲圈显示判据（见 [bufferingIndicatorVisible]）。
   @visibleForTesting
@@ -807,6 +816,7 @@ class VideoPlayerController extends ChangeNotifier
   String? _discResolvedSubtitleCodec;
   int? _discResolvedTracksGeneration;
   Player? _discObservedPlayer;
+
   /// Serializes disc navigation snapshot reads without dropping a request that
   /// arrives mid-read (see `_sampleDiscMenu` in video_disc_menu.part.dart).
   final CoalescedRereader _discSampler = CoalescedRereader();
@@ -1219,6 +1229,7 @@ class VideoPlayerController extends ChangeNotifier
   @visibleForTesting
   void debugSetPositionForTesting(int? positionMs) {
     _debugPositionOverride = positionMs;
+    _publishPosition();
     notifyListeners();
   }
 
@@ -1247,6 +1258,7 @@ class VideoPlayerController extends ChangeNotifier
     _externalPositionMs = positionMs;
     _externalIsPlaying = playing;
     if (durationMs != null) _externalDurationMs = durationMs;
+    _publishPosition();
     updateCueForPosition(positionMs);
     if (playingChanged || durationChanged) notifyListeners();
   }
@@ -1854,7 +1866,7 @@ class VideoPlayerController extends ChangeNotifier
     final dynamic native = player.platform;
     if (native == null) return null;
     try {
-      final Object? value = await native.getProperty(
+      final Object? value = await native.getPropertyAsync(
         'file-format',
         waitForInitialization: false,
       );
@@ -2229,6 +2241,19 @@ class VideoPlayerController extends ChangeNotifier
     required Stream<Object?> changes,
     required int minTrackCount,
     Duration timeout = const Duration(seconds: 5),
+  }) => _waitForTrackCount(
+    currentRealCount: currentRealCount,
+    changes: changes,
+    minTrackCount: minTrackCount,
+    timeout: timeout,
+  );
+
+  /// [waitForSubtitleTrackCount] 的实现，音轨就绪等待（[waitForRealAudioTracks]）共用。
+  static Future<bool> _waitForTrackCount({
+    required int Function() currentRealCount,
+    required Stream<Object?> changes,
+    required int minTrackCount,
+    Duration timeout = const Duration(seconds: 5),
   }) async {
     if (currentRealCount() >= minTrackCount) return true;
     final Completer<bool> ready = Completer<bool>();
@@ -2258,7 +2283,84 @@ class VideoPlayerController extends ChangeNotifier
   /// 切换音轨。未 [load] 时 no-op 安全。
   Future<void> selectAudioTrack(AudioTrack track) async {
     claimDiscTrackOwnership();
+    _audioSelectionSeq++;
     await _player?.setAudioTrack(track);
+  }
+
+  /// 每次显式选轨（[selectAudioTrack]）+1。[adoptNativeAudioSelection] 读 mpv 实际
+  /// 选轨要跨一个 await，期间若有显式选轨（续播恢复 / 用户点选）就放弃对齐，不能拿
+  /// 读到的旧 `aid` 把刚选的轨盖回去。
+  int _audioSelectionSeq = 0;
+
+  /// 把 media_kit 的选轨状态对齐到 libmpv **实际在放**的音轨（BUG：视频卡句子音频
+  /// 是英语配音，用户听的是日语轨）。
+  ///
+  /// media_kit 的 `state.track.audio` 只在调用 `setAudioTrack` 时更新、不跟 mpv 的
+  /// `aid`；而 `open()` 会把它重置成 `auto`。mpv 这边，`aid` 一旦被设过就会沿用到之后
+  /// 加载的文件（实测：选日语 → stop + loadfile 重开 → `aid` 仍是日语轨）。于是「以前
+  /// 选过一次日语」的用户再打开默认轨是英语的片子：耳朵里是日语，[currentAudioStreamIndex]
+  /// 却是 null，制卡 ffmpeg 不加 `-map` 选了容器默认的英语轨。
+  ///
+  /// 只在 media_kit 仍是 `auto` 时对齐（app 已显式选过轨就以它为准）；写回的是 mpv
+  /// 当前同一个 `aid`，播放不会切轨。
+  @visibleForTesting
+  static Future<bool> adoptNativeAudioSelection(
+    Player player, {
+    required bool Function() isCurrent,
+    required int Function() selectionSeq,
+  }) async {
+    final int seqAtStart = selectionSeq();
+    try {
+      final bool ready = await waitForRealAudioTracks(player);
+      if (!ready || !isCurrent()) return false;
+      final dynamic native = player.platform;
+      if (native == null) return false;
+      final Object? aid = await native.getPropertyAsync('aid');
+      if (!isCurrent() || selectionSeq() != seqAtStart) return false;
+      final AudioTrack? track = adoptableNativeAudioTrack(
+        selectedId: player.state.track.audio.id,
+        nativeAid: aid?.toString(),
+        tracks: player.state.tracks.audio,
+      );
+      if (track == null) return false;
+      await player.setAudioTrack(track);
+      return true;
+    } catch (_) {
+      // 换片 / 销毁中途读写失败：保持原状，制卡按旧的「跟随默认」处理。
+      return false;
+    }
+  }
+
+  /// [adoptNativeAudioSelection] 的判定（纯函数）：media_kit 记的是 `auto`、mpv 实际
+  /// `aid` 是列表里一条真实轨时返回那条轨，否则 null（不动）。
+  @visibleForTesting
+  static AudioTrack? adoptableNativeAudioTrack({
+    required String selectedId,
+    required String? nativeAid,
+    required List<AudioTrack> tracks,
+  }) {
+    if (selectedId != 'auto') return null;
+    final String? aid = nativeAid?.trim();
+    if (aid == null || aid.isEmpty || aid == 'auto' || aid == 'no') {
+      return null;
+    }
+    for (final AudioTrack track in tracks) {
+      if (track.id == aid) return track;
+    }
+    return null;
+  }
+
+  /// 等 [player] 解析出至少两条真实音轨（单轨片子 ffmpeg 默认就选它，无需对齐）。
+  /// 最多 5 秒，事件驱动，与字幕轨就绪等待同一内核。
+  static Future<bool> waitForRealAudioTracks(Player player) {
+    int realCount() => player.state.tracks.audio
+        .where((AudioTrack t) => t.id != 'auto' && t.id != 'no')
+        .length;
+    return _waitForTrackCount(
+      currentRealCount: realCount,
+      changes: player.stream.tracks,
+      minTrackCount: 2,
+    );
   }
 
   /// 当前选中音轨在「真实音轨列表」中的 0-based 序号（ffmpeg `-map 0:a:<idx>`
@@ -2406,8 +2508,7 @@ class VideoPlayerController extends ChangeNotifier
   /// [miningCues]（BUG-1592 有效 cue 流）对应的生效调轴：主流非空用主轨
   /// [_delayMs]，主流为空落副字幕流时用 [effectiveSecondaryDelayMs]。制卡按位置
   /// 解析锚点 / 裁剪逆变换必须与该流的 cue 命中同一根时间轴（TODO-2837）。
-  int get miningDelayMs =>
-      _cues.isNotEmpty || _miningStreamIsGraphicTimings
+  int get miningDelayMs => _cues.isNotEmpty || _miningStreamIsGraphicTimings
       ? _delayMs
       : effectiveSecondaryDelayMs;
 
@@ -3054,6 +3155,8 @@ class VideoPlayerController extends ChangeNotifier
     _bufferingIndicatorSub = null;
     await _playingIndicatorSub?.cancel();
     _playingIndicatorSub = null;
+    await _positionSub?.cancel();
+    _positionSub = null;
     bufferingIndicatorVisible.value = false;
     await _durationReadySub?.cancel();
     _durationReadySub = null;
@@ -3111,7 +3214,7 @@ class VideoPlayerController extends ChangeNotifier
       );
       // 测试 / 取证钩子（与 runner 的 FUSHI_TEST_* 同类）：FUSHI_TEST_MPV_LOG_FILE 指定
       // 路径时让 libmpv 把 verbose 日志写到该文件（VO / 交换链 / hwdec 协商全在里面，
-      // HDR 直通真机取证靠它）。不设即零行为。
+      // HDR 输出真机取证靠它）。不设即零行为。
       //
       // 用户 2026-09-22 的「日志尽量全一点跟 mpv 一样」在这里落地：诊断开关打开后走
       // **同一条路**，只是路径改成用户可导出的 [VideoDiagLog.mpvLogFilePath]。产出的
@@ -3344,6 +3447,17 @@ class VideoPlayerController extends ChangeNotifier
       );
       if (!_isCurrentLoad(player, loadToken)) return; // 外挂音轨后换片/销毁。
     }
+    // mpv 沿用上一个文件选过的 `aid`，media_kit 却在 open 时把选轨重置成 auto：对齐
+    // 回实际在放的轨，制卡 / 音轨面板才和耳朵里的一致（见 [adoptNativeAudioSelection]）。
+    if (!openBlurayMenu) {
+      unawaited(
+        adoptNativeAudioSelection(
+          player,
+          isCurrent: () => _isCurrentLoad(player, loadToken),
+          selectionSeq: () => _audioSelectionSeq,
+        ),
+      );
+    }
 
     // 关闭 libmpv 画面字幕渲染——字幕统一走可点击 overlay（cue 同步 + 逐字查词）。
     // mkv 内嵌字幕会被 libmpv 默认渲染成画面像素（不可点）；用户点它会穿透到视频层
@@ -3474,7 +3588,7 @@ class VideoPlayerController extends ChangeNotifier
     _heightSub = player.stream.height.listen((_) {
       notifyListeners();
     });
-    // HDR 直通：片源色彩参数到位后重判是否切宿主窗（换集复用同一 Player 时只挂一次）。
+    // HDR 输出：片源色彩参数到位后重判要不要输出 HDR（换集复用同一 Player 时只挂一次）。
     // media_kit 的流是广播流：`video-params` 若在订阅前已到达就丢了，故订阅后立刻拿
     // 当前快照补判一次（快照为空时 [_onVideoParams] 自己会忽略）。
     _videoParamsSub ??= player.stream.videoParams.listen(_onVideoParams);
@@ -3494,6 +3608,11 @@ class VideoPlayerController extends ChangeNotifier
       (_) => _syncBufferingIndicator(player),
     );
     _syncBufferingIndicator(player);
+    // 位置推送源（positionMsListenable）：跟 libmpv time-pos 事件，不另起定时器。
+    _positionSub = player.stream.position.listen((_) {
+      if (_isCurrentLoad(player, loadToken)) _publishPosition();
+    });
+    _publishPosition();
 
     // 125ms 周期读位置，驱动 cue 同步（对齐有声书 createPositionStream 的节奏）。
     _tick = Timer.periodic(const Duration(milliseconds: 125), (_) {
@@ -3667,7 +3786,7 @@ class VideoPlayerController extends ChangeNotifier
       // + 可关闭提示兜底）。
       if (wantFlicker && _flickerHwdecActive == null) {
         try {
-          final String hwdec = (await native.getProperty(
+          final String hwdec = (await native.getPropertyAsync(
             'hwdec-current',
           )).toString();
           if (!_isCurrentLoad(player, loadToken)) return;
@@ -3685,16 +3804,17 @@ class VideoPlayerController extends ChangeNotifier
       final List<String> wanted = wantDiag
           ? VideoMpvStatsSnapshot.properties
           : const <String>['vo-delayed-frame-count', 'frame-drop-count'];
+      // BUG-3507：一次全部发出、经 `getPropertyAsync` 等回包。同步 `getProperty`
+      // 在 UI 线程上排 mpv 内核锁，内核一忙一轮 17 个属性就把事件循环堵 0.4–0.6 s，
+      // 视频纹理新帧排不上合成 = 画面冻住（音频在 mpv 自己的线程上照常）。
+      final List<Object?> values = await Future.wait<Object?>(
+        wanted.map((String name) => _readMpvPropertyAsync(native, name)),
+      );
+      if (!_isCurrentLoad(player, loadToken)) return;
       final Map<String, Object?> raw = <String, Object?>{};
-      for (final String name in wanted) {
-        Object? value;
-        try {
-          value = await native.getProperty(name);
-        } catch (_) {
-          value = null; // 该属性不可读（mpv 版本 / 当前状态），按缺失。
-        }
-        if (!_isCurrentLoad(player, loadToken)) return;
-        if (value != null) raw[name] = value;
+      for (int i = 0; i < wanted.length; i++) {
+        final Object? value = values[i];
+        if (value != null) raw[wanted[i]] = value;
       }
       final VideoMpvStatsSnapshot snapshot =
           VideoMpvStatsSnapshot.fromProperties(raw);
@@ -4793,46 +4913,25 @@ class VideoPlayerController extends ChangeNotifier
     await _mpvCommand(<String>[forward ? 'frame-step' : 'frame-back-step']);
   }
 
-  // ── HDR 直通 ────────────────────────────────────────────────────────────────
+  // ── HDR 输出 ────────────────────────────────────────────────────────────────
 
-  HdrVideoHostChannel get _hdrChannel {
-    return _hdrHostChannel ??= HdrVideoHostChannel()
+  HdrOutputChannel get _hdrChannel {
+    return _hdrOutputChannel ??= HdrOutputChannel()
       ..onDisplayChanged = () => unawaited(_evaluateHdrOutput());
   }
 
   /// 单测注入假通道（必须在任何重判之前调用）。
   @visibleForTesting
-  set debugHdrHostChannel(HdrVideoHostChannel channel) {
-    _hdrHostChannel = channel
+  set debugHdrOutputChannel(HdrOutputChannel channel) {
+    _hdrOutputChannel = channel
       ..onDisplayChanged = () => unawaited(_evaluateHdrOutput());
   }
 
-  /// 页面把用户设置（[mode]）和画面 fit（[fitMode]）交进来；任一变化都当场重判 /
-  /// 重下发，不重建播放器。
-  void configureHdrOutput({VideoHdrOutputMode? mode, VideoFitMode? fitMode}) {
-    bool modeChanged = false;
-    if (mode != null && mode != _hdrOutputMode) {
-      _hdrOutputMode = mode;
-      modeChanged = true;
-    }
-    if (fitMode != null && fitMode != _hdrHostFitMode) {
-      _hdrHostFitMode = fitMode;
-      if (hdrHostActive.value) {
-        unawaited(_setMpvProperties(hdrHostFitProperties(fitMode)));
-      }
-    }
-    if (modeChanged) {
-      _refreshDolbyVisionColorsUnsupported();
-      unawaited(_evaluateHdrOutput());
-    }
-  }
-
-  /// [HdrHostRectReporter] 回报的 Video 物理像素矩形（主窗客户区坐标系）。非直通时
-  /// 只记着，进入直通那一刻先把矩形下发再切 VO，画面不会先出现在错误位置。
-  void reportHdrHostRect(Rect physical) {
-    if (_hdrHostRect == physical) return;
-    _hdrHostRect = physical;
-    if (hdrHostActive.value) unawaited(_hdrChannel.setRect(physical));
+  /// 页面把用户设置交进来；变化时当场重判，不重建播放器。
+  void configureHdrOutput({required VideoHdrOutputMode mode}) {
+    if (mode == _hdrOutputMode) return;
+    _hdrOutputMode = mode;
+    unawaited(_evaluateHdrOutput());
   }
 
   void _onVideoParams(VideoParams params) {
@@ -4844,20 +4943,19 @@ class VideoPlayerController extends ChangeNotifier
     );
     // 新版 libmpv（Windows）会报 colormatrix=dolbyvision；mac / iOS 的 0.36 与
     // Android 的构建不报，只能靠调用方给的服务器元数据（[setSourceDolbyVisionHint]）。
+    // 只用于提示位：HDR 输出判据不看 DV（纹理路径自己重整）。
     final bool dolbyVision =
         requiresDolbyVisionReshape(params.colormatrix) ||
         _sourceDolbyVisionHint;
     final bool unchanged =
-        hdr == _hdrSourceIsHdr &&
-        dolbyVision == _hdrSourceIsDolbyVision &&
-        hdrHostActive.value == (hdr || dolbyVision);
+        hdr == _hdrSourceIsHdr && dolbyVision == _hdrSourceIsDolbyVision;
     _hdrSourceIsHdr = hdr;
     _hdrSourceIsDolbyVision = dolbyVision;
-    // 提示位与宿主窗无关，所有平台都要算（非 Windows 的重判会直接返回）。
+    // 提示位所有平台都要算（非 Windows 的重判会直接返回）。
     _refreshDolbyVisionColorsUnsupported();
     if (unchanged) return;
     debugPrint(
-      '[hdr-host] params primaries=${params.primaries} '
+      '[hdr] params primaries=${params.primaries} '
       'gamma=${params.gamma} matrix=${params.colormatrix} hdr=$hdr '
       'dolbyVision=$dolbyVision',
     );
@@ -4875,7 +4973,6 @@ class VideoPlayerController extends ChangeNotifier
       isWindows: Platform.isWindows,
       isApple: Platform.isMacOS || Platform.isIOS,
       isAndroid: Platform.isAndroid,
-      mode: _hdrOutputMode,
       sourceDolbyVision: _hdrSourceIsDolbyVision,
     );
   }
@@ -4893,49 +4990,36 @@ class VideoPlayerController extends ChangeNotifier
     if (!Platform.isWindows) return;
     final Player? player = _player;
     if (player == null) return;
-    // 所有模式都现读：auto 用它判要不要直通，字幕层的 HDR 亮度归一（always 模式在
+    // 所有模式都现读：auto 用它判要不要输出 HDR，字幕层的 HDR 亮度归一（always 模式在
     // HDR 显示器上同样需要）用它的 SDR 白电平。
     final HdrDisplayInfo display = await _hdrChannel.displayInfo();
     if (!identical(_player, player)) return;
     hdrDisplayInfo.value = display;
     final bool displayHdr = display.isHdr;
-    final bool want = shouldUseHdrHostWindow(
+    final bool want = shouldUseHdrOutput(
       isWindows: true,
       mode: _hdrOutputMode,
       displayHdr: displayHdr,
       sourceHdr: _hdrSourceIsHdr,
-      sourceDolbyVision: _hdrSourceIsDolbyVision,
     );
     debugPrint(
-      '[hdr-host] eval mode=${_hdrOutputMode.name} '
+      '[hdr] eval mode=${_hdrOutputMode.name} '
       'display=$displayHdr source=$_hdrSourceIsHdr '
       'dolbyVision=$_hdrSourceIsDolbyVision want=$want '
-      'active=${hdrHostActive.value} '
       'compositor=${hdrCompositorActive.value}',
     );
-    // Preferred: HDR inside Flutter's own swap chain (patched engine). Dolby
-    // Vision P5 needs libplacebo's RPU reshaping, which only the gpu-next host
-    // window has on Windows; the texture renderer (gl_video) would show the
-    // inverted IPT colours (BUG-2691).
+    // HDR lives inside Flutter's own swap chain (patched engine). When it cannot
+    // be turned on the video simply stays an SDR texture (mpv tone-maps HDR);
+    // Dolby Vision is reshaped by the texture renderer either way.
     final bool useCompositor =
         want &&
-        !_hdrSourceIsDolbyVision &&
         !identical(_compositorTextureRefusedFor, player) &&
         await _isCompositorHdrSupported();
     if (!identical(_player, player)) return;
     if (useCompositor) {
-      if (hdrHostActive.value) await _exitHdrHost(player);
-      if (!identical(_player, player)) return;
       await _enterOrUpdateHdrCompositor(player, display);
-      return;
-    }
-    if (hdrCompositorActive.value) await _exitHdrCompositor(player);
-    if (!identical(_player, player)) return;
-    if (want == hdrHostActive.value) return;
-    if (want) {
-      await _enterHdrHost(player);
-    } else {
-      await _exitHdrHost(player);
+    } else if (hdrCompositorActive.value) {
+      await _exitHdrCompositor(player);
     }
   }
 
@@ -4945,7 +5029,7 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   /// 进入（或按新显示器参数重下发）合成器内 HDR：引擎交换链 → 视频纹理 → mpv 目标。
-  /// 任何一步做不到就整体撤回并记成「不支持」，交还宿主窗路径重判。
+  /// 任何一步做不到就整体撤回、按失败层级记住（[compositorHdrFallback]），留在 SDR。
   Future<void> _enterOrUpdateHdrCompositor(
     Player player,
     HdrDisplayInfo display,
@@ -4978,7 +5062,7 @@ class VideoPlayerController extends ChangeNotifier
       debugPrint(
         '[hdr-compositor] unavailable (engine=$engineOn '
         'texture=${platform == null ? 'not-ready' : textureOn}); '
-        'falling back to the host window',
+        'staying on SDR output',
       );
       if (engineOn) {
         await _hdrChannel.setCompositorHdrOutput(
@@ -4991,10 +5075,14 @@ class VideoPlayerController extends ChangeNotifier
         case CompositorHdrFallback.engineUnsupported:
           _compositorHdrSupported = false;
         case CompositorHdrFallback.awaitTexture:
+          // 纹理就绪的 listener 负责重判。这里再重判一次只会原样再进来：判据的输入
+          // 一个都没变，于是引擎交换链被反复开 / 关直到纹理建好（每轮一次格式切换）。
           _retryCompositorWhenTextureReady(player);
+          return;
         case CompositorHdrFallback.textureRefused:
           _compositorTextureRefusedFor = player;
       }
+      // 记住失败后重判：判据现在排除了这一路，已激活的 HDR 会被正常退出到 SDR。
       unawaited(_evaluateHdrOutput());
       return;
     }
@@ -5055,58 +5143,6 @@ class VideoPlayerController extends ChangeNotifier
     notifyListeners();
   }
 
-  Future<void> _enterHdrHost(Player player) async {
-    final int hwnd = await _hdrChannel.create();
-    if (!identical(_player, player)) return;
-    if (hwnd == 0) {
-      debugPrint('[hdr-host] create failed (hwnd=0)');
-      return;
-    }
-    final Rect? rect = _hdrHostRect;
-    if (rect != null) await _hdrChannel.setRect(rect);
-    // fit 属性先于宿主属性；`vo` 在 [hdrHostMpvProperties] 里恒最后。
-    await _setMpvProperties(<String, String>{
-      ...hdrHostFitProperties(_hdrHostFitMode),
-      ...hdrHostMpvProperties(hwnd),
-    });
-    if (!identical(_player, player)) return;
-    final VideoPlayerController? previous = _hdrHostOwner;
-    if (previous != null && !identical(previous, this)) {
-      previous._releaseHdrHostOwnership();
-    }
-    _hdrHostOwner = this;
-    _videoController?.hidden.value = true;
-    hdrHostActive.value = true;
-    hdrHostActiveGlobal.value = true;
-    notifyListeners();
-    debugPrint(
-      '[hdr-host] enter hwnd=$hwnd rect=$rect fit=$_hdrHostFitMode '
-      'videoController=${_videoController != null}',
-    );
-  }
-
-  Future<void> _exitHdrHost(Player player) async {
-    // 先把 VO 切回 render API 再拆宿主窗：gpu-next 还在跑时销毁它的父窗会让 VO 报错。
-    await _setMpvProperties(kTextureMpvProperties);
-    if (!identical(_player, player)) return;
-    _videoController?.hidden.value = false;
-    hdrHostActive.value = false;
-    notifyListeners();
-    if (identical(_hdrHostOwner, this)) {
-      _hdrHostOwner = null;
-      hdrHostActiveGlobal.value = false;
-      await _hdrChannel.destroy();
-    }
-    debugPrint('[hdr-host] exit');
-  }
-
-  /// 被另一个控制器接管宿主窗：只清自己的直通位，窗和全局位归新主人。
-  void _releaseHdrHostOwnership() {
-    _videoController?.hidden.value = false;
-    hdrHostActive.value = false;
-    notifyListeners();
-  }
-
   /// 按 map **顺序**逐条下发 mpv 属性；单条失败跳过（与 [applyMpvConfigToPlayer] 同范式）。
   Future<void> _setMpvProperties(Map<String, String> props) async {
     final dynamic native = _player?.platform;
@@ -5133,11 +5169,20 @@ class VideoPlayerController extends ChangeNotifier
   Future<String> _getMpvProperty(String property) async {
     final dynamic native = _player?.platform;
     if (native == null) return '';
+    final Object? value = await _readMpvPropertyAsync(native, property);
+    return value is String ? value : (value?.toString() ?? '');
+  }
+
+  /// 不阻塞 UI 线程地读一条 libmpv 属性（BUG-3507）：走 media_kit 补丁的
+  /// `getPropertyAsync`（`mpv_get_property_async`，回包经事件循环到达），而不是同步
+  /// `getProperty`——后者在 UI 线程上排 mpv 内核锁。周期采样一律走这里。读不到 /
+  /// 播放器已销毁 / 非 libmpv 后端返回 null。
+  Future<Object?> _readMpvPropertyAsync(dynamic native, String property) async {
     try {
-      final dynamic value = await native.getProperty(property);
-      return value is String ? value : (value?.toString() ?? '');
+      final Object? value = await native.getPropertyAsync(property);
+      return value;
     } catch (_) {
-      return '';
+      return null;
     }
   }
 
@@ -6002,18 +6047,8 @@ class VideoPlayerController extends ChangeNotifier
     _heightSub = null;
     unawaited(_videoParamsSub?.cancel());
     _videoParamsSub = null;
-    // HDR 直通：播放器随后整个释放（VO 一起没了），只需拆宿主窗 + 还原主窗透明。
-    // （`_player = null` 在下面，排队中的重判到点后看到空 Player 直接返回。）
-    if (hdrHostActive.value) {
-      _videoController?.hidden.value = false;
-      hdrHostActive.value = false;
-    }
-    if (identical(_hdrHostOwner, this)) {
-      _hdrHostOwner = null;
-      hdrHostActiveGlobal.value = false;
-      unawaited(_hdrChannel.destroy());
-    }
     // 合成器内 HDR：纹理随 Player 一起释放，只需把引擎的 HDR 输出关回 8-bit。
+    // （`_player = null` 在下面，排队中的重判到点后看到空 Player 直接返回。）
     hdrCompositorActive.value = false;
     if (identical(_hdrCompositorOwner, this)) {
       _hdrCompositorOwner = null;
@@ -6030,6 +6065,8 @@ class VideoPlayerController extends ChangeNotifier
     _bufferingIndicatorSub = null;
     unawaited(_playingIndicatorSub?.cancel());
     _playingIndicatorSub = null;
+    unawaited(_positionSub?.cancel());
+    _positionSub = null;
     unawaited(_durationReadySub?.cancel());
     _durationReadySub = null;
     unawaited(_audioDeviceSub?.cancel());
@@ -6069,6 +6106,8 @@ class VideoPlayerController extends ChangeNotifier
     networkReadBytesPerSecond.dispose();
     networkCacheSeconds.dispose();
     bufferingIndicatorVisible.dispose();
+    _positionMsNotifierDisposed = true;
+    _positionMsNotifier.dispose();
     _videoPath = null;
     _chapters = const <VideoChapter>[];
     super.dispose();

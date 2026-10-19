@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.online.HttpSource
 import fi.iki.elonen.NanoHTTPD
+import mextensionserver.impl.HostPreferenceSnapshot
 import mextensionserver.impl.MExtensionServerLoader
 import mextensionserver.impl.MihonInvoker
 import mextensionserver.impl.MihonMetadataCache
@@ -42,8 +43,16 @@ class SourceDataHandler {
                         is AnimeSource -> source.id
                         else -> throw IllegalArgumentException("Unknown source type: ${source.javaClass}")
                     }
-                Injekt.get<Application>()
+                val application = Injekt.get<Application>()
+                application
                     .getSharedPreferences("source_$sourceId", 0)
+                    .edit()
+                    .clear()
+                    .commit()
+                // Without its ledger a later database snapshot that happens to
+                // repeat a pre-clear value would be taken as already applied.
+                application
+                    .getSharedPreferences(HostPreferenceSnapshot.ledgerName(sourceId), 0)
                     .edit()
                     .clear()
                     .commit()

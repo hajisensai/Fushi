@@ -30,6 +30,7 @@ import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier;
 import 'package:fushi/src/srs/srs_app_host.dart';
+import 'package:fushi/src/srs/srs_backup.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -63,6 +64,12 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
       },
       engine: () => ref.read(srsEngineProvider),
       bumpRevision: () => ref.read(srsRevisionProvider.notifier).state++,
+      backup: ref.read(srsBackupControllerProvider),
+    );
+    // 自动备份：库有变动（本机写 / 同步进来）就看一眼要不要备份（见 srs_backup.dart）。
+    ref.listen<int>(
+      srsRevisionProvider,
+      (int? previous, int next) => runtime.backup.onDataChanged(),
     );
     runtime.install();
     ref.onDispose(runtime.dispose);
@@ -86,6 +93,7 @@ class SrsAppRuntime {
     required Future<SrsMediaStore?> Function() readMedia,
     required FsrsEngine? Function() engine,
     required void Function() bumpRevision,
+    required this.backup,
   }) : _readStore = readStore,
        _readMedia = readMedia,
        _engine = engine,
@@ -96,6 +104,12 @@ class SrsAppRuntime {
   final Future<SrsMediaStore?> Function() _readMedia;
   final FsrsEngine? Function() _engine;
   final void Function() _bumpRevision;
+
+  /// 自动备份（离开复习页、库有变动时触发；见 srs_backup.dart）。
+  final SrsBackupController backup;
+
+  /// 上一次看到的复习页数量（从 >0 回到 0 = 离开复习页）。
+  int _reviewSessions = 0;
 
   late final SrsSyncScheduler sync = SrsSyncScheduler(
     readStore: _readStore,
@@ -154,6 +168,9 @@ class SrsAppRuntime {
     srsActiveReviewSessions.addListener(_onReviewSessionsChanged);
     _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
     optimizer.start();
+    _reviewSessions = srsActiveReviewSessions.value;
+    // 启动时看一次：上次退出前的改动还没备份、且已满间隔就补一份。
+    backup.onDataChanged();
   }
 
   void dispose() {
@@ -228,7 +245,11 @@ class SrsAppRuntime {
   }
 
   void _onReviewSessionsChanged() {
-    if (srsActiveReviewSessions.value > 0) optimizer.cancel();
+    final int now = srsActiveReviewSessions.value;
+    if (now > 0) optimizer.cancel();
+    // 离开复习页：有变动就立即备份一份（不等间隔）。
+    if (now == 0 && _reviewSessions > 0) backup.onLeftReview();
+    _reviewSessions = now;
   }
 
   void _onLifecycle(AppLifecycleState state) {

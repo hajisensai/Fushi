@@ -33,10 +33,45 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3132 条。点号进各自文件。
+> 共 3167 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3537](bugs/BUG-3537-outbound-progress-landing-overwrites-host-put.md) | ✅ | ✅ | 出站同步落地无条件写本地进度，盖掉刚到的互联对端 PUT（进度倒退） |
+| [BUG-3536](bugs/BUG-3536-subtitle-null-text-color-follows-theme.md) | ✅ | ✅ | 关掉「尊重字幕自带样式」后字幕文字色随 App 主题忽白忽黑 |
+| [BUG-3535](bugs/BUG-3535-opds-cover-401-missing-headers.md) | ✅ | ✅ | OPDS：私有目录（Komga）封面无凭据请求回 401，发现页封面全是占位 |
+| [BUG-3534](bugs/BUG-3534-signin-bad-code-error-off-screen.md) | ✅ | ✅ | signin-bad-code-error-off-screen |
+| [BUG-3533](bugs/BUG-3533-reader-lazy-illustrations-premature-chapter-advance.md) | ✅ | ✅ | reader-lazy-illustrations-premature-chapter-advance |
+| [BUG-3532](bugs/BUG-3532-srt-vtt-multiline-merged-one-row.md) | ✅ | ✅ | 双语 SRT / VTT 多行字幕在屏上并成一排 |
+| [BUG-3531](bugs/BUG-3531-lyrics-mode-drops-dashes.md) | ✅ | ✅ | lyrics-mode-drops-dashes |
+| [BUG-3530](bugs/BUG-3530-matcher-short-cue-far-jump.md) | ✅ | ✅ | matcher-short-cue-far-jump |
+| [BUG-3529](bugs/BUG-3529-host-progress-put-waits-whole-sync-lock.md) | ✅ | ✅ | 互联 host 的书进度 PUT 排在本机整轮自动同步后面，对端超时却已落库 → 下一轮误报进度冲突 |
+| [BUG-3528](bugs/BUG-3528-interconnect-lost-ack-phantom-conflict.md) | ✅ | ✅ | 互联进度推送「写入落地、确认丢失」被误判成冲突（远端是本机自己的旧写入） |
+| [BUG-3527](bugs/BUG-3527-pdf-reader-chrome-cannot-hide.md) | ✅ | ✅ | pdf-reader-chrome-cannot-hide |
+| [BUG-3526](bugs/BUG-3526-opds-catalog-url-root-or-html.md) | ✅ | ✅ | OPDS：填服务器根地址/网页地址/带结尾斜杠时报「不是可读的 OPDS 目录」或 404，Komga 只认 /opds/v2/catalog |
+| [BUG-3525](bugs/BUG-3525-popup-trackpad-scroll-no-inertia.md) | ✅ | ✅ | Windows 触控板滚动查词弹窗松手即停（无惯性） |
+| [BUG-3524](bugs/BUG-3524-updater-same-build-picks-stable-for-debug.md) | ✅ | ✅ | updater-same-build-picks-stable-for-debug |
+| [BUG-3523](bugs/BUG-3523-email-code-digits-run-together.md) | ✅ | ✅ | email-code-digits-run-together |
+| [BUG-3522](bugs/BUG-3522-mihon-sidecar-java6-interface-static-verifyerror.md) | ✅ | ✅ | 桌面 sidecar 加载 keiyoushi Komga 扩展 VerifyError（dex2jar 产出 Java 6 类不能 invokestatic 接口方法），整个扩展装不上 |
+| [BUG-3521](bugs/BUG-3521-opds-komga-api-key.md) | ✅ | ✅ | OPDS：Komga 只认 X-API-Key 头，配置只有用户名/密码；Basic 用户名须为登录邮箱 |
+| [BUG-3520](bugs/BUG-3520-mihon-sidecar-prefs-root-tachidesk.md) | ✅ | ✅ | 桌面 sidecar 来源偏好写到 %LOCALAPPDATA%\Tachidesk\settings，不在 Fushi 数据根；已有值永远盖不过 Drift 快照 |
+| [BUG-3519](bugs/BUG-3519-epub-image-index-cache-windows-replace-race.md) | ✅ | ✅ | Windows 上多个 isolate 同时读写同一本书的插图表缓存：读撞 errno 32、替换撞 errno 5 |
+| [BUG-3518](bugs/BUG-3518-ios-audio-lane-page-bleed.md) | ✅ | ✅ | iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶 |
+| [BUG-3517](bugs/BUG-3517-video-chrome-double-click-fullscreen.md) | ✅ | ✅ | video-chrome-double-click-fullscreen |
+| [BUG-3516](bugs/BUG-3516-collection-member-touch-longpress-no-menu.md) | ✅ | ✅ | 合集详情页触屏长按成员只进多选，拿不到库页同一份卡片菜单 |
+| [BUG-3515](bugs/BUG-3515-collection-episode-menu-download-on-local-file.md) | ✅ | ✅ | 合集详情集卡菜单对本机已有文件的集仍显示「下载本集」 |
+| [BUG-3514](bugs/BUG-3514-manga-ipad-pinch-zoom-broken.md) | ✅ | ✅ | iPad 漫画阅读器双指缩放失灵、大滑动后突然放大到上限并卡死 |
+| [BUG-3513](bugs/BUG-3513-collection-detail-duplicate-tag-button.md) | ✅ | ✅ | 合集详情页顶栏标签按钮与 hero「编辑标签」功能重复 |
+| [BUG-3512](bugs/BUG-3512-collection-overall-progress-and-continue-target.md) | ✅ | ✅ | 合集「整体进度」2/4 读完显示 100%，读完第二卷「继续」回到第一卷 |
+| [BUG-3511](bugs/BUG-3511-video-mining-audio-follows-stale-track.md) | ✅ | ✅ | video-mining-audio-follows-stale-track |
+| [BUG-3510](bugs/BUG-3510-manga-local-ocr-boxes-misaligned.md) | ✅ | ✅ | manga-local-ocr-boxes-misaligned |
+| [BUG-3509](bugs/BUG-3509-manga-volume-opens-other-volume-cached-pages.md) | ✅ | ✅ | manga-volume-opens-other-volume-cached-pages |
+| [BUG-3508](bugs/BUG-3508-deleted-book-returns-as-remote-placeholder.md) | ✅ | ✅ | deleted-book-returns-as-remote-placeholder |
+| [BUG-3507](bugs/BUG-3507-video-mpv-sync-getproperty-ui-stall.md) | ✅ | ✅ | Windows 视频播放偶发冻帧：UI 线程同步读写 mpv 排内核锁 |
+| [BUG-3506](bugs/BUG-3506-ios-stroke-highlight-stall.md) | ✅ | ✅ | iOS 笔触样式高亮停住不跟随、查词无高亮 |
+| [BUG-3505](bugs/BUG-3505-anki-crossref-deeplink-includes-furigana.md) | ✅ | ✅ | anki-crossref-deeplink-includes-furigana |
+| [BUG-3504](bugs/BUG-3504-ffmpeg-min-missing-decoders-tls-pin.md) | ✅ | ✅ | 桌面捆绑 ffmpeg-min 缺一批可导入格式的解码器 / muxer，且没打证书钉扎补丁（-tls_pin_sha256 不认） |
+| [BUG-3503](bugs/BUG-3503-dash-mpd-mining-demuxer.md) | ✅ | ✅ | 在线视频源给 DASH 清单（manifest.mpd）时制卡失败：捆绑 ffmpeg 缺 dash demuxer（required audio missing / Invalid data） |
 | [BUG-3502](bugs/BUG-3502-srs-deck-count-rollup.md) | ✅ | ✅ | 复习牌组列表：父牌组新卡/到期数没按子牌组截断后自底向上汇总 |
 | [BUG-3501](bugs/BUG-3501-settings-row-dialog-intrinsic-layout.md) | ✅ | ✅ | settings-row-dialog-intrinsic-layout |
 | [BUG-3500](bugs/BUG-3500-snapshot-mkv-video-missing-dts.md) | ✅ | ✅ | 在线视频同步片段画面花屏（缓冲副本丢掉 Matroska B 帧视频包） |

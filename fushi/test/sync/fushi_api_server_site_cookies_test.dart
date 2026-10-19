@@ -13,6 +13,7 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
 class _FakeLookup implements FushiRemoteLookupService {
   @override
@@ -29,8 +30,9 @@ class _FakeLookup implements FushiRemoteLookupService {
   }) async => null;
 }
 
-List<String> _noopTokenize(String text) => <String>[text];
-String _noopReading(String word) => '';
+List<TokenizedSegment> _noopTokenize(String text) => <TokenizedSegment>[
+  (text: text, reading: ''),
+];
 
 Future<HttpClientResponse> _post(int port, String path, Object body) async {
   final HttpClient c = HttpClient();
@@ -71,7 +73,6 @@ void main() {
       port: 0,
       lookupService: _FakeLookup(),
       tokenizer: _noopTokenize,
-      readingResolver: _noopReading,
     );
     await server.start();
   });

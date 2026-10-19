@@ -310,6 +310,78 @@ void main() {
       }
     });
   });
+
+  testWidgets('opds test: Kavita 探测写回的地址与列表输出都不含 API key，换 key 后照常可用', (
+    WidgetTester tester,
+  ) async {
+    await pumpContext(tester);
+    final HttpOverrides? saved = HttpOverrides.current;
+    HttpOverrides.global = _RealHttpOverrides();
+    addTearDown(() => HttpOverrides.global = saved);
+    const String oldKey = 'KAVITA-OLD-KEY-0001';
+    const String newKey = 'KAVITA-NEW-KEY-0002';
+    String acceptedKey = oldKey;
+    final List<String> paths = <String>[];
+    await tester.runAsync(() async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      server.listen((HttpRequest request) {
+        paths.add(request.uri.path);
+        if (request.uri.path == '/api/opds/$acceptedKey') {
+          request.response
+            ..headers.contentType = ContentType('application', 'atom+xml')
+            ..write('<feed xmlns="http://www.w3.org/2005/Atom"></feed>');
+        } else {
+          request.response.statusCode = HttpStatus.notFound;
+        }
+        request.response.close();
+      });
+      try {
+        final SettingsCliList cli = listOf(kCtlOpdsListId);
+        final Map<String, Object?> created =
+            await cli.add!(sc, <String, String>{
+                  'url': 'http://127.0.0.1:${server.port}',
+                  'api_key': oldKey,
+                })
+                as Map<String, Object?>;
+        final String id = created['id']! as String;
+
+        final Object? first = await actionOf(kCtlOpdsTestId).run!(
+          sc,
+          <String, String>{'id': id},
+        );
+        expect((first! as Map<String, Object?>)['ok'], isTrue);
+        expect(paths.last, '/api/opds/$oldKey', reason: '请求本身要带真 key');
+        expect(jsonEncode(first), isNot(contains(oldKey)));
+
+        // 写回的是占位形态：落盘的配置与控制通道列表都不含 key 明文。
+        final OpdsServerConfig stored = prefs.discoveryOpdsServers.single;
+        expect(stored.catalogUrl.pathSegments, <String>[
+          'api',
+          'opds',
+          kOpdsApiKeyPlaceholder,
+        ]);
+        expect(stored.toJson()['url'], isNot(contains(oldKey)));
+        expect(jsonEncode(await cli.list(sc)), isNot(contains(oldKey)));
+
+        // 服务端换了 key：只改 api_key，写回的地址自动跟着用新 key。
+        acceptedKey = newKey;
+        await cli.update!(sc, id, <String, String>{'api_key': newKey});
+        paths.clear();
+        final Object? second = await actionOf(kCtlOpdsTestId).run!(
+          sc,
+          <String, String>{'id': id},
+        );
+        expect((second! as Map<String, Object?>)['ok'], isTrue);
+        expect(paths, <String>['/api/opds/$newKey']);
+        expect(jsonEncode(await cli.list(sc)), isNot(contains(newKey)));
+      } finally {
+        await server.close(force: true);
+      }
+    });
+  });
 }
 
 class _RealHttpOverrides extends HttpOverrides {}

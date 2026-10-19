@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -55,10 +56,26 @@ void _writePng(String path, int width, int height) {
 }
 
 /// 写一张 [width]x[height] 的真实 BMP（BUG-1121：bmp 页必须走完整解码路径）。
+///
+/// 手写标准 24 位 BI_RGB（扫描仪 / 画图软件出的就是这种）。不用 `img.encodeBmp`：它写的是
+/// 24 位 + BI_BITFIELDS，不合 BMP 规范，原生解码器（2026-10-18 起）拒收。
 void _writeBmp(String path, int width, int height) {
+  final int stride = (width * 3 + 3) & ~3;
+  final int size = 54 + stride * height;
+  final ByteData b = ByteData(size)
+    ..setUint8(0, 0x42)
+    ..setUint8(1, 0x4d)
+    ..setUint32(2, size, Endian.little)
+    ..setUint32(10, 54, Endian.little)
+    ..setUint32(14, 40, Endian.little)
+    ..setInt32(18, width, Endian.little)
+    ..setInt32(22, height, Endian.little)
+    ..setUint16(26, 1, Endian.little)
+    ..setUint16(28, 24, Endian.little)
+    ..setUint32(34, stride * height, Endian.little);
   File(path)
     ..createSync(recursive: true)
-    ..writeAsBytesSync(img.encodeBmp(img.Image(width: width, height: height)));
+    ..writeAsBytesSync(b.buffer.asUint8List());
 }
 
 void main() {

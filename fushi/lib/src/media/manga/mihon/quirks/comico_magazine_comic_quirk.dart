@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:http/http.dart' as http;
-import 'package:pointycastle/export.dart';
 import 'package:xml/xml.dart';
 
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -78,16 +78,13 @@ class ComicoMagazineComicQuirk {
   static String decrypt(String base64Text) {
     final Uint8List key = Uint8List.fromList(utf8.encode(_aesKey));
     final Uint8List iv = Uint8List(16);
-    final PaddedBlockCipher cipher =
-        PaddedBlockCipherImpl(PKCS7Padding(), CBCBlockCipher(AESEngine()))
-          ..init(
-            false,
-            PaddedBlockCipherParameters<CipherParameters?, CipherParameters?>(
-              ParametersWithIV<KeyParameter>(KeyParameter(key), iv),
-              null,
-            ),
-          );
-    final String plain = utf8.decode(cipher.process(base64Decode(base64Text)));
+    final String plain = utf8.decode(
+      FushiComputeCrypto.instance.aesCbcPkcs7Decrypt(
+        base64Decode(base64Text),
+        key,
+        iv,
+      ),
+    );
     final int hash = plain.indexOf('#');
     return hash < 0 ? plain : plain.substring(0, hash);
   }

@@ -263,6 +263,48 @@ void main() {
     );
   });
 
+  testWidgets('已下载的章菜单出「打开文件位置」不出「下载」；未下载的章相反', (
+    WidgetTester tester,
+  ) async {
+    final List<String> revealed = <String>[];
+    Future<void> pumpOne({required bool downloaded}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MangaChapterList(
+                entry: entryWith(const <OnlineMangaChapter>[middle]),
+                states: const <String, MangaChapterStateRow>{},
+                newestFirst: true,
+                unreadOnly: false,
+                onChapterTap: (OnlineMangaChapter _) {},
+                downloadedChapterKeys:
+                    downloaded ? <String>{middle.key} : const <String>{},
+                onDownload: (OnlineMangaChapter _) {},
+                onRevealDownload: (OnlineMangaChapter chapter) =>
+                    revealed.add(chapter.key),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.byType(FushiOverflowMenu<String>));
+      await tester.pumpAndSettle();
+    }
+
+    await pumpOne(downloaded: true);
+    expect(find.text(t.manga_chapter_download_action), findsNothing);
+    await tester.tap(find.text(t.media_file_location_open));
+    await tester.pumpAndSettle();
+    expect(revealed, <String>[middle.key], reason: '菜单项必须回调到那一章');
+
+    await pumpOne(downloaded: false);
+    expect(find.text(t.manga_chapter_download_action), findsOneWidget);
+    expect(find.text(t.media_file_location_open), findsNothing,
+        reason: '没下载的章没有文件可定位');
+  });
+
   testWidgets('点某一行回调的是那一行对应的章', (WidgetTester tester) async {
     final List<String> tapped = <String>[];
     await pumpList(

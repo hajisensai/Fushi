@@ -3,7 +3,7 @@
 # Builds FFmpeg ${FFMPEG_VERSION} (tool/ffmpeg-unified/recipe.env + patches) with
 # FFmpegKitNext. The SAME FFmpeg shared libraries serve:
 #   - card mining / export: FFmpegKitNext's in-process ffmpeg/ffprobe runner
-#     (third_party/ffmpeg_kit_flutter),
+#     (third_party/ffmpeg_kit_next_flutter),
 #   - playback: libmpv, built against the ffmpeg-dev-* prefixes uploaded here
 #     (Android: hajisensai/libmpv-android-video-build; iOS/macOS: libmpv-darwin-build).
 #

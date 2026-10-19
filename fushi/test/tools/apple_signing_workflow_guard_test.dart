@@ -223,10 +223,38 @@ void main() {
       isTrue,
       reason: 'Release 资产必须来自 release-artifacts/（未签名打包路径）',
     );
+    // 2026-10-17 起签名 IPA 经 run artifact 交给独立的 `testflight` job（审批门），
+    // 所以 `fushi/build/ios/ipa` 会出现在 artifact 上传 / 下载里。守住的不变式不变：
+    // 签名 IPA 只能进 `ios-testflight-signed-ipa` 这一个 artifact，它不带
+    // publish job 收 Release 资产的 `desktop-artifacts-` 前缀，且 publish 只按该前缀收。
+    final List<RegExpMatch> signedUploads = RegExp(
+      r'\n(\s+)name: ([^\n]+)\n\s+path: fushi/build/ios/ipa/\*\.ipa\n',
+    ).allMatches(content).toList();
     expect(
-      content.contains('path: fushi/build/ios/ipa'),
+      signedUploads.map((RegExpMatch m) => m.group(2)).toList(),
+      <String>['ios-testflight-signed-ipa'],
+      reason: '签名 IPA 只能上传成 ios-testflight-signed-ipa 这一个 artifact',
+    );
+    expect(
+      'ios-testflight-signed-ipa'.startsWith('desktop-artifacts-'),
       isFalse,
-      reason: 'App Store 签名 IPA 不得作为 Release 资产上传',
+    );
+    expect(
+      RegExp(r'pattern: desktop-artifacts-\*\n').allMatches(content).length,
+      1,
+      reason: 'publish job 必须只按 desktop-artifacts-* 收 Release 资产',
+    );
+    expect(
+      RegExp(r'pattern: ios-testflight|pattern: \*\n').hasMatch(content),
+      isFalse,
+      reason: '不得有按通配收走签名 IPA 的下载',
+    );
+    final int publishAt = content.indexOf('\n  publish:\n');
+    expect(publishAt, greaterThan(-1));
+    expect(
+      content.substring(publishAt).contains('ios-testflight-signed-ipa'),
+      isFalse,
+      reason: 'App Store 签名 IPA 不得作为 Release 资产上传（publish job 不得下载它）',
     );
   });
 

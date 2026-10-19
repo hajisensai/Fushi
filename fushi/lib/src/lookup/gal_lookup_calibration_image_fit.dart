@@ -5,6 +5,8 @@ import 'package:fushi/src/lookup/gal_lookup_calibration_capture.dart';
 import 'package:fushi/src/lookup/gal_lookup_calibration_draft.dart';
 import 'package:fushi/src/lookup/gal_lookup_calibration_preview.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
+import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:image/image.dart' as img;
 
 /// Geometry measurement of a frozen sample, not text recognition. The Hook
@@ -195,7 +197,7 @@ class _InkRow {
   final int bottom;
   final int left;
   final int right;
-  final List<int> columns;
+  final Int32List columns;
   int get height => bottom - top;
 }
 
@@ -221,10 +223,6 @@ enum _InkMode { light, dark, brightColor, darkColor, localContrast, edge }
 bool _space(int unit) => unit == 0x20 || unit == 0x3000;
 bool _newline(int unit) => unit == 10 || unit == 13;
 bool _quoted(String text) => text.startsWith('「') || text.startsWith('『');
-bool _centered(int unit) =>
-    unit >= 0x3041 && unit <= 0x3096 ||
-    unit >= 0x30a1 && unit <= 0x30fa ||
-    unit >= 0x3400 && unit <= 0x9fff;
 
 bool _combining(int rune) =>
     rune >= 0x0300 && rune <= 0x036f ||
@@ -267,234 +265,76 @@ List<int> _logicalUnits(String text) {
   return units;
 }
 
-List<List<int>> _lines(String text, int capacity, int indent) {
+/// Hook 自带换行（去掉尾部空白后仍含 `\r` / `\n`）时只按换行切行、不按容量折行。
+bool _hookBreak(String text) {
   final String content = text.trimRight();
-  final bool hasHookBreak = content.contains('\r') || content.contains('\n');
-  final List<List<int>> lines = [[]];
-  int previous = 0;
-  for (final int unit in _logicalUnits(text)) {
-    if (_newline(unit)) {
-      if (unit != 10 || previous != 13) lines.add([]);
-    } else {
-      final int limit = capacity - (lines.length == 1 ? 0 : indent);
-      if (!hasHookBreak && lines.last.length == limit) lines.add([]);
-      lines.last.add(unit);
-    }
-    previous = unit;
-  }
-  while (lines.length > 1 && lines.last.isEmpty) {
-    lines.removeLast();
-  }
-  return lines;
+  return content.contains('\r') || content.contains('\n');
 }
 
-/// A rough selection can include a few bright pixels from the surrounding
-/// artwork. Discard only tiny, isolated islands, never another text-sized run.
-/// Punctuation near its neighbours stays part of the same run; a whole short
-/// line is also retained. The remaining ink still has to explain every cell.
-void _removeIsolatedSpecks(List<int> columns, int rowHeight) {
-  final List<(int, int)> groups = [];
-  int start = -1;
-  int previous = -1;
-  for (int x = 0; x < columns.length; x++) {
-    if (columns[x] < 2) continue;
-    if (start < 0) {
-      start = x;
-    } else if (x - previous > rowHeight * 1.5) {
-      groups.add((start, previous + 1));
-      start = x;
-    }
-    previous = x;
-  }
-  if (start >= 0) groups.add((start, previous + 1));
-  if (groups.length < 2) return;
-  final int total = columns.fold<int>(0, (int a, int b) => a + b);
-  for (final (int left, int right) in groups) {
-    if (right - left > rowHeight * 0.5) continue;
-    int ink = 0;
-    for (int x = left; x < right; x++) {
-      ink += columns[x];
-    }
-    if (ink <= math.max(4, rowHeight * 0.5) && ink <= total * 0.01) {
-      columns.fillRange(left, right, 0);
-    }
-  }
-}
-
-_SampleInk? _measure(
+/// The pixel measurement (decode, shrink to ≤1600 px wide, ink masks for all
+/// six [_InkMode]s, blank-scanline row bands, speck removal) runs in the
+/// native kernel (`ffc_gal_measure_ink`, bit-identical to the former Dart
+/// loops). A rough selection can include a few bright pixels from the
+/// surrounding artwork; only tiny, isolated islands are discarded, never
+/// another text-sized run, and the remaining ink still has to explain every
+/// cell. Returns one entry per mode, null where no text rows were found.
+List<_SampleInk?> _measureAllModes(
   GalCalibrationSample sample,
   GalLookupNormalizedRectV1 rect,
-  _InkMode mode,
 ) {
-  final img.Image? decoded = img.decodePng(sample.capture.pngBytes);
+  const List<_SampleInk?> none = <_SampleInk?>[
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+  ];
+  final img.Image? decoded = decodePngNative(sample.capture.pngBytes);
   if (decoded == null ||
       decoded.width != sample.capture.referenceClient.widthPx ||
       decoded.height != sample.capture.referenceClient.heightPx) {
-    return null;
+    return none;
   }
-  final double scale = math.min(1, 1600 / decoded.width);
-  final img.Image image = scale == 1
-      ? decoded
-      : img.copyResize(
-          decoded,
-          width: (decoded.width * scale).round(),
-          height: (decoded.height * scale).round(),
-        );
-  final int left = (rect.left * image.width).floor();
-  final int right = (rect.right * image.width).ceil().clamp(0, image.width);
-  final int top = (rect.top * image.height).floor();
-  final int bottom = (rect.bottom * image.height).ceil().clamp(0, image.height);
-  final int width = right - left;
-  final int height = bottom - top;
-  if (width < 16 || height < 8) return null;
-  final Uint8List mask = Uint8List(width * height);
-  final List<int> totals = List<int>.filled(height, 0);
-  Float64List? integral;
-  int integralStride = 0;
-  Float32List? luminance;
-  if (mode == _InkMode.localContrast) {
-    // The local window is queried only inside the selected body crop.  Keep
-    // the integral image crop-sized; allocating one for a full 32 MP capture
-    // would waste hundreds of MB while adding no signal to the fit.
-    integralStride = width + 1;
-    integral = Float64List((height + 1) * integralStride);
-    for (int y = 0; y < height; y++) {
-      double rowSum = 0;
-      for (int x = 0; x < width; x++) {
-        final img.Pixel pixel = image.getPixel(left + x, top + y);
-        final double value =
-            pixel.r * 0.299 + pixel.g * 0.587 + pixel.b * 0.114;
-        rowSum += value;
-        integral[(y + 1) * integralStride + x + 1] =
-            integral[y * integralStride + x + 1] + rowSum;
-      }
-    }
-  } else if (mode == _InkMode.edge) {
-    // A dialogue line without a panel can have nearly the same average
-    // brightness as the artwork behind it.  Keep one cheap grayscale plane
-    // for an edge mask so outlines/shadows remain detectable without OCR.
-    luminance = Float32List(width * height);
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        final img.Pixel pixel = image.getPixel(left + x, top + y);
-        luminance[y * width + x] =
-            pixel.r * 0.299 + pixel.g * 0.587 + pixel.b * 0.114;
-      }
-    }
-  }
-  for (int y = top; y < bottom; y++) {
-    for (int x = left; x < right; x++) {
-      final img.Pixel pixel = image.getPixel(x, y);
-      final num low = math.min(pixel.r, math.min(pixel.g, pixel.b));
-      final num high = math.max(pixel.r, math.max(pixel.g, pixel.b));
-      final double brightness =
-          pixel.r * 0.299 + pixel.g * 0.587 + pixel.b * 0.114;
-      bool ink;
-      switch (mode) {
-        case _InkMode.light:
-          ink = high - low < 65 && low >= 195;
-        case _InkMode.dark:
-          ink = high - low < 65 && high <= 60;
-        case _InkMode.brightColor:
-          ink = brightness >= 175;
-        case _InkMode.darkColor:
-          ink = brightness <= 100;
-        case _InkMode.localContrast:
-          final Float64List contrastIntegral = integral!;
-          const int radius = 4;
-          final int localX = x - left;
-          final int localY = y - top;
-          final int x0 = math.max(0, localX - radius);
-          final int y0 = math.max(0, localY - radius);
-          final int x1 = math.min(width - 1, localX + radius);
-          final int y1 = math.min(height - 1, localY + radius);
-          final double area = (x1 - x0 + 1) * (y1 - y0 + 1).toDouble();
-          final double sum =
-              contrastIntegral[(y1 + 1) * integralStride + x1 + 1] -
-              contrastIntegral[y0 * integralStride + x1 + 1] -
-              contrastIntegral[(y1 + 1) * integralStride + x0] +
-              contrastIntegral[y0 * integralStride + x0];
-          // Anti-aliased and saturated glyphs may have only a modest
-          // luminance delta from the artwork behind them.  Keep the local
-          // threshold below the old binary-mask cutoff; isolated background
-          // texture is removed by the row/grid consistency checks below.
-          ink = (brightness - sum / area).abs() >= 12;
-        case _InkMode.edge:
-          final Float32List edgeLuminance = luminance!;
-          final int localX = x - left;
-          final int localY = y - top;
-          final int offset = localY * width + localX;
-          final double center = edgeLuminance[offset];
-          double edge = 0;
-          if (localX > 0) {
-            edge = math.max(edge, (center - edgeLuminance[offset - 1]).abs());
-          }
-          if (localX + 1 < width) {
-            edge = math.max(edge, (center - edgeLuminance[offset + 1]).abs());
-          }
-          if (localY > 0) {
-            edge = math.max(
-              edge,
-              (center - edgeLuminance[offset - width]).abs(),
-            );
-          }
-          if (localY + 1 < height) {
-            edge = math.max(
-              edge,
-              (center - edgeLuminance[offset + width]).abs(),
-            );
-          }
-          ink = edge >= 10;
-      }
-      if (ink) {
-        mask[(y - top) * width + x - left] = 1;
-        totals[y - top]++;
-      }
-    }
-  }
-  // Blank scanlines separate text rows. A border alone cannot form a row.
-  final int peak = totals.fold<int>(0, math.max);
-  final double threshold = mode == _InkMode.edge
-      ? math.max(4, peak * 0.07)
-      : math.max(3, peak * 0.04);
-  final List<(int, int)> bands = [];
-  int start = -1;
-  int end = -1;
-  for (int y = 0; y <= height; y++) {
-    if (y < height && totals[y] >= threshold) {
-      if (start < 0) start = y;
-      end = y + 1;
-    } else if (start >= 0 && (y == height || y - end >= 2)) {
-      if (end - start >= math.max(6, image.height * 0.012)) {
-        bands.add((start, end));
-      }
-      start = -1;
-    }
-  }
-  final List<_InkRow> rows = [];
-  for (final (int a, int b) in bands) {
-    if (b - a > image.height * 0.12) continue;
-    final List<int> columns = List<int>.filled(image.width, 0);
-    for (int y = a; y < b; y++) {
-      for (int x = 0; x < width; x++) {
-        columns[left + x] += mask[y * width + x];
-      }
-    }
-    _removeIsolatedSpecks(columns, b - a);
-    final int first = columns.indexWhere((int v) => v >= 2);
-    final int last = columns.lastIndexWhere((int v) => v >= 2);
-    if (first < 0 || last - first < (b - a) * 1.2) continue;
-    rows.add(_InkRow(top + a, top + b, first, last + 1, columns));
-  }
-  if (rows.isEmpty) return null;
-  final int tallest = rows.map((_InkRow r) => r.height).reduce(math.max);
-  final List<_InkRow> textRows = rows
-      .where((_InkRow r) => r.height >= tallest * 0.7)
-      .toList();
-  if (textRows.isEmpty || textRows.length > 6) return null;
-  return _SampleInk(sample, textRows, image.width, image.height);
+  final ({Uint8List pixels, int stride, int channels, int width, int height})
+  px = uint8Pixels(decoded);
+  final List<FfcGalInk?> measured = FushiComputeGal.instance.measureInk(
+    px,
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+  );
+  return <_SampleInk?>[
+    for (final FfcGalInk? m in measured)
+      m == null
+          ? null
+          : _SampleInk(
+              sample,
+              <_InkRow>[
+                for (final FfcGalInkRow r in m.rows)
+                  _InkRow(r.top, r.bottom, r.left, r.right, r.columns),
+              ],
+              m.imageWidth,
+              m.imageHeight,
+            ),
+  ];
 }
 
+List<FfcGalInkRow> _nativeRows(_SampleInk sample) => <FfcGalInkRow>[
+  for (final _InkRow r in sample.rows)
+    (
+      top: r.top,
+      bottom: r.bottom,
+      left: r.left,
+      right: r.right,
+      columns: r.columns,
+    ),
+];
+
+/// Grid score of one sample (native `ffc_gal_score`): every visible stroke
+/// must be explained, spaces must stay empty, centred glyphs are penalised
+/// for drifting off their cell centre.
 double _score(
   _SampleInk sample,
   int capacity,
@@ -502,111 +342,33 @@ double _score(
   double pitch,
   double origin,
 ) {
-  final List<List<int>> lines = _lines(
-    sample.sample.capture.sourceText,
-    capacity,
-    indent,
+  final String text = sample.sample.capture.sourceText;
+  return FushiComputeGal.instance.score(
+    _nativeRows(sample),
+    sample.width,
+    units: _logicalUnits(text),
+    hookBreak: _hookBreak(text),
+    capacity: capacity,
+    indent: indent,
+    pitch: pitch,
+    origin: origin,
   );
-  if (lines.length != sample.rows.length) return double.infinity;
-  double score = 0;
-  int glyphs = 0;
-  for (int r = 0; r < lines.length; r++) {
-    final _InkRow row = sample.rows[r];
-    final List<int> units = lines[r];
-    final double start = origin + (r == 0 ? 0 : indent * pitch);
-    if (units.isEmpty ||
-        start > row.left + 1 ||
-        start + units.length * pitch < row.right - 1) {
-      return double.infinity;
-    }
-    // A match must explain every visible stroke, not only a convenient subset.
-    if (row.left - start > pitch * 0.85 ||
-        start + units.length * pitch - row.right > pitch * 0.85) {
-      return double.infinity;
-    }
-    for (int c = 0; c < units.length; c++) {
-      final int a = (start + c * pitch).round().clamp(0, sample.width);
-      final int b = (start + (c + 1) * pitch).round().clamp(0, sample.width);
-      int ink = 0;
-      int first = -1;
-      int last = -1;
-      int boundary = 0;
-      final int margin = math.max(1, (pitch * 0.055).round());
-      for (int x = a; x < b; x++) {
-        final int value = row.columns[x];
-        ink += value;
-        if (value >= 2) {
-          if (first < 0) first = x;
-          last = x;
-        }
-        if (x - a < margin || b - x <= margin) boundary += value;
-      }
-      if (_space(units[c])) {
-        if (ink > row.height * 0.3) return double.infinity;
-        continue;
-      }
-      if (first < 0 || ink < 4) return double.infinity;
-      glyphs++;
-      score += 4 * boundary / ink;
-      if (_centered(units[c])) {
-        final double offset = ((first + last + 1) / 2 - (a + b) / 2) / pitch;
-        score += offset * offset * 4;
-      }
-    }
-  }
-  return glyphs < 4 ? double.infinity : score / glyphs;
 }
 
+/// Searches capacity, continuation indent, pitch and phase for one sample
+/// (native `ffc_gal_fit_sample`). All visible rows provide the pitch
+/// estimate and the search runs on both sides of it; two equally plausible
+/// wrap/indent rules are rejected rather than turned into a saved profile.
 _GridFit? _fitSample(_SampleInk sample) {
-  if (sample.rows.length < 2) return null;
-  final int length = _logicalUnits(sample.sample.capture.sourceText).length;
-  final double inkHeight = _median(
-    sample.rows.map((_InkRow r) => r.height.toDouble()).toList(),
+  final String text = sample.sample.capture.sourceText;
+  final FfcGalGridFit? fit = FushiComputeGal.instance.fitSample(
+    _nativeRows(sample),
+    sample.width,
+    units: _logicalUnits(text),
+    hookBreak: _hookBreak(text),
   );
-  final List<_GridFit> candidates = [];
-  for (int capacity = 4; capacity <= math.min(128, length); capacity++) {
-    for (int indent = 0; indent <= 8 && indent < capacity; indent++) {
-      final List<List<int>> lines = _lines(
-        sample.sample.capture.sourceText,
-        capacity,
-        indent,
-      );
-      if (lines.length != sample.rows.length ||
-          lines.any((List<int> l) => l.isEmpty)) {
-        continue;
-      }
-      final double nominal = _median([
-        for (int row = 0; row < lines.length; row++)
-          (sample.rows[row].right - sample.rows[row].left) / lines[row].length,
-      ]);
-      _GridFit? best;
-      // Use all visible rows as the pitch estimate and search on both sides of
-      // it. The old first-row-only, positive-only search rejected games whose
-      // first line had punctuation/spacing unlike the continuation line.
-      for (int step = -50; step <= 50; step++) {
-        final double pitch = nominal * (1 + step * 0.003);
-        if (pitch < inkHeight * 0.65 || pitch > inkHeight * 1.6) continue;
-        for (int phase = 0; phase <= 20; phase++) {
-          final double origin = sample.rows.first.left - pitch * phase * 0.025;
-          if (origin < 0 || origin + capacity * pitch > sample.width) continue;
-          final double score = _score(sample, capacity, indent, pitch, origin);
-          if (best == null || score < best.score) {
-            best = _GridFit(capacity, indent, pitch, origin, score);
-          }
-        }
-      }
-      if (best != null && best.score.isFinite) candidates.add(best);
-    }
-  }
-  candidates.sort((_GridFit a, _GridFit b) => a.score.compareTo(b.score));
-  if (candidates.isEmpty || candidates.first.score >= 0.09) return null;
-  // E.g. explicit newlines reveal row locations but not the soft-wrap column.
-  // Do not turn two equally plausible wrap/indent rules into a saved profile.
-  if (candidates.length > 1 &&
-      candidates[1].score - candidates.first.score < 0.025) {
-    return null;
-  }
-  return candidates.first;
+  if (fit == null) return null;
+  return _GridFit(fit.columns, fit.indent, fit.pitch, fit.left, fit.score);
 }
 
 /// Pure worker entry point. Held-out samples never select the grid, but every
@@ -630,10 +392,17 @@ GalCalibrationImageFit inferGalCalibrationGrid(
   bool multilineEvidence = false;
   GalLookupCalibrationDraft? bestDraft;
   double bestQuality = double.infinity;
+  // Each sample is measured once for all six modes, on first use (the old
+  // per-mode loop reached a sample only after every earlier one succeeded).
+  final Map<int, List<_SampleInk?>> measuredModes = <int, List<_SampleInk?>>{};
   for (final _InkMode mode in _InkMode.values) {
     final List<_SampleInk> samples = [];
-    for (final GalCalibrationSample sample in draft.samples) {
-      final _SampleInk? measured = _measure(sample, draft.searchRect, mode);
+    for (int s = 0; s < draft.samples.length; s++) {
+      final GalCalibrationSample sample = draft.samples[s];
+      final _SampleInk? measured = (measuredModes[s] ??= _measureAllModes(
+        sample,
+        draft.searchRect,
+      ))[mode.index];
       if (measured == null) {
         if (failedSample == null) {
           failure = 'text_rows_not_found';

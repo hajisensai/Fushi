@@ -17,8 +17,8 @@ import 'package:fushi_engine/sync/ttu_models.dart';
 /// （对比 / 增量 / 冲突 / 删除全靠文件名）零影响。
 ///
 /// 混淆插入点（只有这 5 个数据入口，其余方法纯委托）：
-/// - [uploadContentFile] / [putAsset]：上传前把本地文件流式混淆到临时文件再传。
-/// - [downloadContentFile] / [getAsset]：inner 先落临时，再流式反混淆到目标。
+/// - [uploadContentFile] / [putAsset]：上传前把本地文件混淆到临时文件再传（Rust 整段读写）。
+/// - [downloadContentFile] / [getAsset]：inner 先落临时，再还原到目标（Rust 整段读写）。
 /// - [ensureBookFolder] 的 coverData：整块混淆（封面是小数据）。
 ///
 /// A2（JSON 正文混淆）是 follow-up：本装饰器不碰 [updateProgressFile] /
@@ -38,31 +38,20 @@ class ObfuscatingSyncBackend extends SyncBackend
 
   // ── 混淆临时文件辅助 ──────────────────────────────────────────────
 
-  /// 把 [source] 文件经 [SyncObfuscator.obfuscateStream] 写到一个临时文件，
-  /// 返回该临时文件；调用方用完须删。流式，不把大文件读进内存。
+  /// 把 [source] 文件经 [SyncObfuscator.obfuscateFile] 混淆到一个临时文件，返回该临时
+  /// 文件；调用方用完须删。整段在 Rust 里流式读写，不把大文件读进内存。
   Future<File> _obfuscateToTemp(File source) async {
     final tmp = await _createTempFile('obf_up_');
-    final sink = tmp.openWrite();
-    try {
-      await sink.addStream(SyncObfuscator.obfuscateStream(source.openRead()));
-    } finally {
-      await sink.close();
-    }
+    await SyncObfuscator.obfuscateFile(source, tmp);
     return tmp;
   }
 
-  /// 把 [obfuscated] 文件经 [SyncObfuscator.deobfuscateStream] 还原到 [destination]
-  /// （混读：无魔数的旧明文原样透传）。流式，不把大文件读进内存。
+  /// 把 [obfuscated] 文件经 [SyncObfuscator.deobfuscateFile] 还原到 [destination]
+  /// （混读：无魔数的旧明文原样复制）。整段在 Rust 里流式读写。
   Future<void> _deobfuscateToDestination(
       File obfuscated, File destination) async {
     await destination.parent.create(recursive: true);
-    final sink = destination.openWrite();
-    try {
-      await sink
-          .addStream(SyncObfuscator.deobfuscateStream(obfuscated.openRead()));
-    } finally {
-      await sink.close();
-    }
+    await SyncObfuscator.deobfuscateFile(obfuscated, destination);
   }
 
   Future<File> _createTempFile(String prefix) async {

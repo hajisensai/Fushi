@@ -1,7 +1,8 @@
 // 排行榜注册 / 换设备登录：邮箱 → 验证码（60 秒冷却）→（注册另要昵称）→ 提交。两种
 // 模式都展示公开清单与同意勾选：注册必须同意；登录可不勾（本机上传默认关闭）。
 // 服务端错误码就地翻成人话显示在表单里（不靠 toast：toast 转瞬即逝，验证码错了用户
-// 需要一直看得到原因）。走错路径时就地切换模式并带上邮箱：登录发码后提示「邮箱可能
+// 需要一直看得到原因）。验证码错 / 过期 / 试太多次挂在验证码输入框自己身上：页面底部
+// 那行隔着公开清单与同意勾选，手机上在屏幕外，等于没提醒。走错路径时就地切换模式并带上邮箱：登录发码后提示「邮箱可能
 // 尚未注册 → 去注册」，注册遇 `email_taken` 给「改为登录」。
 
 import 'dart:async';
@@ -18,6 +19,13 @@ import 'package:fushi/utils.dart';
 
 /// 验证码重发冷却（服务端另有按 IP / 邮箱的限流）。
 const int kLeaderboardCodeCooldownSeconds = 60;
+
+/// 显示在验证码输入框下（而不是页面底部）的服务端错误码。
+const Set<String> kLeaderboardCodeErrorCodes = <String>{
+  'bad_code',
+  'code_expired',
+  'too_many_attempts',
+};
 
 enum LeaderboardSignInMode { register, login }
 
@@ -46,6 +54,10 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
 
   /// 最近一次失败的服务端错误码（决定是否给「改为登录」）。
   String? _errorCode;
+
+  /// 验证码类错误（[kLeaderboardCodeErrorCodes]）；验证码一改就清掉。
+  String? _codeError;
+  String _codeErrorFor = '';
   String? _info;
   late LeaderboardSignInMode _mode = widget.mode;
 
@@ -62,15 +74,23 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
       _consent = false;
       _error = null;
       _errorCode = null;
+      _codeError = null;
       _info = null;
       _code.clear();
     });
   }
 
   void _showError(Object e) {
+    final String? code = e is LeaderboardApiException ? e.code : null;
+    final String text = leaderboardErrorText(e);
     setState(() {
-      _error = leaderboardErrorText(e);
-      _errorCode = e is LeaderboardApiException ? e.code : null;
+      if (kLeaderboardCodeErrorCodes.contains(code)) {
+        _codeError = text;
+        _codeErrorFor = _code.text;
+      } else {
+        _error = text;
+      }
+      _errorCode = code;
     });
   }
 
@@ -87,7 +107,10 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
   }
 
   void _onChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {
+      if (_codeError != null && _code.text != _codeErrorFor) _codeError = null;
+    });
   }
 
   @override
@@ -127,6 +150,7 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
       _sending = true;
       _error = null;
       _errorCode = null;
+      _codeError = null;
       _info = null;
     });
     try {
@@ -161,6 +185,7 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
       _submitting = true;
       _error = null;
       _errorCode = null;
+      _codeError = null;
     });
     final LeaderboardService service = ref.read(leaderboardServiceProvider);
     try {
@@ -274,6 +299,7 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
               readOnly: !_codeSent,
               keyboardType: TextInputType.number,
               labelText: t.leaderboard_signin_code,
+              errorText: _codeError,
             ),
             if (_register) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),

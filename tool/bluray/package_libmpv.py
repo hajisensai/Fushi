@@ -165,13 +165,16 @@ def main():
     patches = Path(__file__).resolve().parents[2] / "third_party/media_kit_libs_windows_video/patches"
     patch_file = patches / "disc-navigation-state.patch"
     # BUG-3296: render-path fixes applied on top of the navigation patch.
-    render_patches = ["gpu-dumb-mode-hwdec-crop.patch"]
+    # BUG-2691: the Dolby Vision profile 5 reshaping shared with Android/Darwin.
+    shared_patches = Path(__file__).resolve().parent / "platforms/patches"
+    render_patches = {"gpu-dumb-mode-hwdec-crop.patch": patches / "gpu-dumb-mode-hwdec-crop.patch",
+                      "mpv-gl-dovi-p5.patch": shared_patches / "mpv-gl-dovi-p5.patch"}
     # BUG-3499: demuxer fixes (timestamps of laced Matroska audio frames).
     # BUG-3500: the recorder behind dump-cache derives missing video DTS.
     demux_patches = ["mkv-laced-audio-timestamps.patch", "recorder-video-dts.patch"]
     (args.output / "source-provenance.json").write_text(json.dumps({
         "mpv_commit": commit, "patch_sha256": sha256(patch_file),
-        "render_patches": {name: sha256(patches / name) for name in render_patches},
+        "render_patches": {name: sha256(path) for name, path in render_patches.items()},
         "demux_patches": {name: sha256(patches / name) for name in demux_patches},
         "native_menu_schema": 1, "runtime_manifest": "runtime-manifest.json",
         "dependency_packages": "msys2-packages.json",

@@ -475,10 +475,24 @@ void main() {
     await tester.pump();
     expect(submit().onPressed, isNotNull, reason: '注册不强制勾公开同意（隐私：注册与公开上传分离）');
 
+    // 验证码类错误挂在验证码输入框下（底部那行在手机屏幕外），改验证码即清掉。
+    Finder codeFieldError(String text) => find.descendant(
+      of: byKey('leaderboard-signin-code'),
+      matching: find.text(text),
+    );
     server.registerError = (400, 'bad_code');
     await tester.tap(byKey('leaderboard-signin-submit'));
     await settle(tester);
-    expect(errorText(), t.leaderboard_error_bad_code);
+    expect(codeFieldError(t.leaderboard_error_bad_code), findsOneWidget);
+    expect(byKey('leaderboard-signin-error'), findsNothing);
+    await tester.enterText(field('leaderboard-signin-code'), '123457');
+    await tester.pump();
+    expect(codeFieldError(t.leaderboard_error_bad_code), findsNothing);
+
+    server.registerError = (410, 'code_expired');
+    await tester.tap(byKey('leaderboard-signin-submit'));
+    await settle(tester);
+    expect(codeFieldError(t.leaderboard_error_code_expired), findsOneWidget);
 
     server.registerError = (409, 'email_taken');
     await tester.tap(byKey('leaderboard-signin-submit'));

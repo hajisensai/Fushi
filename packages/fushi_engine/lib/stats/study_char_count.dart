@@ -22,7 +22,7 @@
 /// 1. **透明**——组合记号 \p{M}（阿拉伯 harakat、天城文 matra）、ZWJ / ZWNJ、
 ///    词内撇号。既不计数也不断词。撇号透明即可让 `don't` 记 1 个词；
 ///    `rock 'n' roll` 仍是 3（断词由两侧空白负责，不靠撇号）。
-/// 2. **每码点计 1**——\p{L} 或 \p{N}，且属于 [kNoSpaceScripts]（汉字 / 假名 /
+/// 2. **每码点计 1**——\p{L} 或 \p{N}，且属于不用空格分词的文字（汉字 / 假名 /
 ///    谚文 / 泰 / 老挝 / 高棉 / 缅甸 / 藏 / 注音 / 彝）。
 /// 3. **连续串计 1**——其余 \p{L} / \p{N}（拉丁、希腊、西里尔、阿拉伯、希伯来、
 ///    天城文、亚美尼亚、格鲁吉亚…）。一串连续的字母数字算一个词。
@@ -41,55 +41,43 @@
 /// 多少个学习单位」，谚文按码点计（沿用 galgame 路径的既有口径，不改动已有数字）。
 /// 两个问题不同，答案允许不同，但各自只有一份实现。
 ///
+/// ## 实现在哪
+///
+/// 分类表与计数循环只有一份，在 Rust（`native/fushi_compute/src/parse.rs`，表由
+/// `native/fushi_compute/tool/gen_study_char_table.dart` 按上面四条规则生成）。这里
+/// 只是 FFI 外壳，**没有 Dart 回退**：原生库缺失时 [countStudyChars] 抛 `FushiComputeUnavailableError`。
+/// 原 Dart 实现逐码点 `String.fromCharCode` + 三次 Unicode 属性正则，十几万字的一本
+/// 书光数字就要数百毫秒到数秒，比 `package:html` 建 DOM 还慢一个量级。
+///
 /// ## 计数口径版本
 ///
-/// 改动本文件的分类规则**必须**同步 +1 `kChapterCharCountCaliber`
+/// 改动分类规则（即重新生成上述表）**必须**同步 +1 `kChapterCharCountCaliber`
 /// （`package:fushi_engine/epub/epub_book.dart`），否则按旧口径算好的每章缓存永不重算。
 /// 阅读器 WebView 侧有一份等价的 JS 实现（`reader_pagination_scripts.dart` 的
 /// `countChars`），两份由 `fushi/test/stats/study_char_count_parity_test.dart` 逐样本
 /// 对拍钉死。
 library;
 
-/// 不用空格分词的文字：这些脚本里一个码点就是一个学习单位。
-///
-/// 其余带 \p{L} 的文字一律按空格分词处理——世界上绝大多数文字用空格分词，把
-/// 例外列成白名单比反过来更短，也让未列出的新文字落到更可能正确的那一侧。
-const List<String> kNoSpaceScripts = <String>[
-  'Han',
-  'Hiragana',
-  'Katakana',
-  'Hangul',
-  'Bopomofo',
-  'Yi',
-  'Thai',
-  'Lao',
-  'Khmer',
-  'Myanmar',
-  'Tibetan',
-];
+import 'package:fushi_compute/fushi_compute.dart' show StudyCharsNative;
 
-/// 组合记号 / 零宽连接符 / 词内撇号：既不计数也不断词。
-///
-/// 撇号必须透明，否则 `don't` 会被拆成 don + t 记 2 个词。它不需要「两侧都是字母」
-/// 那种上下文判据（取词扫描才需要，见 BUG-2056）——这里断词由真正的分隔符负责，
-/// 一个不断词也不计数的字符放在词首 / 词尾都不会改变结果。
-final RegExp kStudyTransparentPattern =
-    RegExp(r"[\p{M}\u200C\u200D'\u2019\u02BC]", unicode: true);
+/// 码点的字数分类（与 Rust `StudyCharClass` 同序同值）。
+enum StudyCharClass {
+  /// 断词且不计：标点 / 括号 / 空白 / 符号 / 未分配。
+  breaker,
 
-/// \p{L} 或 \p{N}：够格成为学习单位的码点（标点 / 符号 / 空白都不是）。
-final RegExp kStudyLetterOrNumberPattern =
-    RegExp(r'[\p{L}\p{N}]', unicode: true);
+  /// 透明：组合记号、ZWNJ / ZWJ、词内撇号——不计数也不断词。
+  transparent,
 
-/// 属于 [kNoSpaceScripts] 之一。用 Script **Extensions** 而不是 Script：长音符
-/// `ー`(U+30FC) 与迭代符 `々`(U+3005) 的 Script 是 Common，只有 Script Extensions
-/// 才把它们归到假名 / 汉字；半角片假名同理。
-final RegExp kStudyNoSpaceScriptPattern =
-    RegExp('[${kNoSpaceScripts.map(_scriptClass).join()}]', unicode: true);
+  /// 每码点计 1：\p{L}/\p{N} 且属于不用空格分词的文字（汉字 / 假名 / 谚文…）。
+  perCodePoint,
 
-/// 单个脚本的 Unicode 属性转义前缀（raw 字面量，避免在字符串里再转义反斜杠）。
-const String _kScriptExtensionsPrefix = r'\p{Script_Extensions=';
+  /// 连续串计 1：其余 \p{L}/\p{N}（拉丁 / 西里尔 / 阿拉伯…）。
+  word,
+}
 
-String _scriptClass(String script) => '$_kScriptExtensionsPrefix$script}';
+/// 码点 [rune] 的字数分类（孤立代理、越界值一律 [StudyCharClass.breaker]）。
+StudyCharClass studyCharClassOf(int rune) =>
+    StudyCharClass.values[StudyCharsNative.instance.classOf(rune)];
 
 /// 一段文本的学习单位数。纯函数；口径见库注释。
 int countStudyChars(String text) => (StudyCharCounter()..add(text)).count;
@@ -105,30 +93,17 @@ class StudyCharCounter {
   int _count = 0;
   bool _inWord = false;
 
-  /// 接着已加入的文本继续计数（词串可以跨段延续）。
+  /// 接着已加入的文本继续计数（词串可以跨段延续）。码点按 `String.runes` 解码：
+  /// 跨两次 [add] 的代理对按两个孤立代理处理（与逐段解码一致）。
   void add(String text) {
-    for (final int rune in text.runes) {
-      final String char = String.fromCharCode(rune);
-      if (kStudyTransparentPattern.hasMatch(char)) {
-        continue; // 不计数、不断词
-      }
-      if (kStudyLetterOrNumberPattern.hasMatch(char)) {
-        if (kStudyNoSpaceScriptPattern.hasMatch(char)) {
-          if (_inWord) {
-            _count++;
-            _inWord = false;
-          }
-          _count++;
-        } else {
-          _inWord = true;
-        }
-        continue;
-      }
-      if (_inWord) {
-        _count++;
-        _inWord = false;
-      }
-    }
+    if (text.isEmpty) return;
+    final ({int count, bool inWord}) next = StudyCharsNative.instance.add(
+      text,
+      _count,
+      _inWord,
+    );
+    _count = next.count;
+    _inWord = next.inWord;
   }
 
   /// 目前为止的学习单位数（未收尾的词串按 1 计，与 [countStudyChars] 结尾一致）。

@@ -155,6 +155,8 @@ class SrsDbStore implements SrsSyncReplica {
       styles: styles,
     );
     final bool hadLocalState = await s._loadLocal();
+    // 老版本存的本机状态没有纪元：当场落盘，否则每次打开都是新纪元、指纹每次都「变了」。
+    if (hadLocalState && s._epochMissing) await s._saveLocal();
     if (!hadLocalState && await s._hasAnyEvent()) {
       // 有事件却没有本机状态：覆盖恢复了备份（本机状态与缓存不进备份，恢复时清空）。
       // 换新化身、重新发布、重建缓存；绝不沿用备份来源设备的写入者身份。
@@ -184,6 +186,13 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 存量样式去重的进度：srs_field_edits 里已检查到的 rowid（本机状态，不进备份）。
   int _styleCursor = 0;
+
+  /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
+  int _revision = 0;
+
+  /// 本机状态的随机纪元：本机状态被清空重建（覆盖恢复）后换一个，修订号从 0 重数也不会撞上旧指纹。
+  String _epoch = '';
+  bool _epochMissing = false;
 
   String get writerId => _sync.writerId;
   SrsTrustedClock get trustedClock => _trusted;
@@ -243,6 +252,12 @@ class SrsDbStore implements SrsSyncReplica {
     );
     _outboxSeq = (j['outboxSeq'] as int?) ?? 0;
     _styleCursor = (j['styleCursor'] as int?) ?? 0;
+    _revision = (j['revision'] as int?) ?? 0;
+    _epochMissing = j['epoch'] is! String;
+    _epoch =
+        (j['epoch'] as String?) ??
+        '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}'
+            '${Random.secure().nextInt(1 << 30).toRadixString(36)}';
     final Object? anchor = j['anchor'];
     if (anchor is Map) {
       _trusted.restoreAnchor(
@@ -265,6 +280,8 @@ class SrsDbStore implements SrsSyncReplica {
       'hlc': _clock.last.encode(),
       'outboxSeq': _outboxSeq,
       'styleCursor': _styleCursor,
+      'revision': _revision,
+      'epoch': _epoch,
       'sync': <String, Object?>{
         'next': _sync.nextBatchNo,
         'cursors': _sync.cursors,
@@ -385,7 +402,14 @@ class SrsDbStore implements SrsSyncReplica {
   }
 
   /// 落一条事件（幂等）。返回是否新落（本机产生的事件据此决定进不进发件箱）。
+  /// 真落库时修订号 +1（[changeFingerprint]）；调用方随后 [_saveLocal]。
   Future<bool> _store(SrsEvent e) async {
+    final bool landed = await _storeRow(e);
+    if (landed) _revision++;
+    return landed;
+  }
+
+  Future<bool> _storeRow(SrsEvent e) async {
     switch (e) {
       case SrsEntityEvent(:final SrsEntityRecord record):
         final SrsEntityRow? old = await (db.select(
@@ -2111,6 +2135,108 @@ class SrsDbStore implements SrsSyncReplica {
     await _emit(<SrsEvent>[SrsEditEvent(e)]);
   }
 
+  // ------------------------------------------------------------------ 按时间点恢复（srs_point_in_time_restore.dart）
+
+  /// 本机写日志用的上下文（恢复写撤销 / manual 日志时用；不需要排程内核）。
+  Future<SrsLogContext> logContext() async => _logContext(await dayContext());
+
+  /// 把本机产生的一组日志落库、进发件箱（恢复计划写出的撤销 / manual 日志）。
+  Future<void> appendLocalLogs(List<SrsReviewLog> logs) async {
+    if (logs.isEmpty) return;
+    await _emit(<SrsEvent>[for (final SrsReviewLog l in logs) SrsLogEvent(l)]);
+  }
+
+  /// 库的变化指纹：本机状态纪元 + 单调修订号。任何事件真正落库（本机写、对端同步来的、导入）都会改变它；
+  /// 只读查询、被支配而丢弃的记录不会。不用 (行数, 最大 rowid)：修改记录落库时先删被支配的旧行再插新行，
+  /// TEXT 主键表会复用最大 rowid，同一字段连改两次 (行数, 最大 rowid) 不变。自动备份据此判断「有没有变动」。
+  Future<String> changeFingerprint() async => '$_epoch:$_revision';
+
+  /// 从库里重读本机状态（写入者、因果上下文、时钟、发件箱序号、修订号），丢掉内存里的影响面。
+  /// 事务回滚不回滚内存：恢复等多步写入中途失败后必须调它，否则 applied 里会留下已回滚的 dot，
+  /// 之后真正同步来的同一批记录会被本机新写的记录误判为「已看见」而支配丢弃。
+  Future<void> reloadLocal() async {
+    _dirtyNotes.clear();
+    _dirtyCards.clear();
+    _dirtyNoteTypes.clear();
+    await _loadLocal();
+  }
+
+  /// 本机已应用的因果上下文（测试核对回滚后状态用）。
+  SrsCausalContext get appliedContext => _writer.applied;
+
+  /// 备份清单里显示的计数：未删除的笔记、可见的卡片、有效的复习（评分且没被撤销）。
+  Future<({int notes, int cards, int reviews})> backupCounts() async {
+    final Variable<String> uid = Variable<String>(profileUid);
+    final int notes =
+        (await db
+                .customSelect(
+                  'SELECT COUNT(*) AS c FROM srs_notes_cache '
+                  'WHERE profile_uid = ? AND deleted_at IS NULL',
+                  variables: <Variable<Object>>[uid],
+                )
+                .getSingle())
+            .read<int>('c');
+    final int cards =
+        (await db
+                .customSelect(
+                  'SELECT COUNT(*) AS c FROM srs_cards_cache '
+                  'WHERE profile_uid = ? AND hidden = 0',
+                  variables: <Variable<Object>>[uid],
+                )
+                .getSingle())
+            .read<int>('c');
+    // 有效复习 = 有评分的 review 日志里没被 undo 撤销的。只解码 undo 日志（通常很少）拿被撤销的 ID，
+    // 其余全用计数查询，不把整张日志表读进内存。
+    final Set<String> revoked = <String>{};
+    for (final QueryRow r
+        in await db
+            .customSelect(
+              'SELECT json FROM srs_review_logs '
+              'WHERE profile_uid = ? AND kind = ?',
+              variables: <Variable<Object>>[
+                uid,
+                Variable<String>(SrsLogKind.undo),
+              ],
+            )
+            .get()) {
+      final Object? target =
+          (jsonDecode(r.read<String>('json')) as Map)['revokes'];
+      if (target is String) revoked.add(target);
+    }
+    const String validReview =
+        'profile_uid = ? AND kind = ? AND rating IS NOT NULL';
+    int reviews =
+        (await db
+                .customSelect(
+                  'SELECT COUNT(*) AS c FROM srs_review_logs WHERE $validReview',
+                  variables: <Variable<Object>>[
+                    uid,
+                    Variable<String>(SrsLogKind.review),
+                  ],
+                )
+                .getSingle())
+            .read<int>('c');
+    final List<String> ids = revoked.toList();
+    for (int i = 0; i < ids.length; i += 500) {
+      final List<String> chunk = ids.sublist(i, min(i + 500, ids.length));
+      reviews -=
+          (await db
+                  .customSelect(
+                    'SELECT COUNT(*) AS c FROM srs_review_logs '
+                    'WHERE $validReview AND id IN '
+                    '(${List<String>.filled(chunk.length, '?').join(',')})',
+                    variables: <Variable<Object>>[
+                      uid,
+                      Variable<String>(SrsLogKind.review),
+                      for (final String id in chunk) Variable<String>(id),
+                    ],
+                  )
+                  .getSingle())
+              .read<int>('c');
+    }
+    return (notes: notes, cards: cards, reviews: reviews);
+  }
+
   /// 本 profile 是否有用户笔记（铁律 E：只有内置行不算有数据）。
   Future<bool> hasUserNotes() async {
     final SrsEntityRow? any =
@@ -2302,6 +2428,115 @@ class SrsDbStore implements SrsSyncReplica {
     return out;
   }
 
+  /// 全部事件的规范 JSON 行（与 `SrsEvent.canonical()` 逐字节相同；按表、表内按 rowid 排）。
+  /// 一次全进内存，只给测试 / 小规模调用；备份走分页的 [forEachCanonicalLinePage]。
+  Future<List<String>> exportCanonicalLines() async {
+    final List<String> out = <String>[];
+    await forEachCanonicalLinePage(
+      (List<String> page) async => out.addAll(page),
+    );
+    return out;
+  }
+
+  /// 按页导出全部事件的规范 JSON 行（备份用）：每页最多 [pageSize] 行交给 [onPage]，内存只占一页。
+  /// 修改记录 / 复习日志 / 不认识的事件在库里本来就存规范编码，直接拼外层，不解析再编码。
+  /// 要一致快照就在同一个事务里调用（各页之间插不进别的写入）。
+  Future<void> forEachCanonicalLinePage(
+    Future<void> Function(List<String> lines) onPage, {
+    int pageSize = 2000,
+  }) async {
+    await _pageRows(
+      'srs_entities',
+      'id, profile_uid, kind, payload_json',
+      pageSize,
+      (List<QueryRow> rows) => onPage(<String>[
+        for (final QueryRow r in rows)
+          SrsEntityEvent(
+            SrsEntityRecord(
+              id: r.read<String>('id'),
+              profileUid: r.read<String>('profile_uid'),
+              kind:
+                  SrsEntityKind.tryParse(r.read<String>('kind')) ??
+                  SrsEntityKind.note,
+              payload: (jsonDecode(r.read<String>('payload_json')) as Map)
+                  .cast<String, Object?>(),
+            ),
+          ).canonical(),
+      ]),
+    );
+    await _pageRows(
+      'srs_field_edits',
+      'json',
+      pageSize,
+      (List<QueryRow> rows) => onPage(<String>[
+        for (final QueryRow r in rows)
+          '{"t":"edit","x":${r.read<String>('json')}}',
+      ]),
+    );
+    await _pageRows(
+      'srs_review_logs',
+      'json',
+      pageSize,
+      (List<QueryRow> rows) => onPage(<String>[
+        for (final QueryRow r in rows)
+          '{"t":"log","x":${r.read<String>('json')}}',
+      ]),
+    );
+    await _pageRows(
+      'srs_unknown_events',
+      'json',
+      pageSize,
+      (List<QueryRow> rows) => onPage(<String>[
+        for (final QueryRow r in rows) r.read<String>('json'),
+      ]),
+    );
+  }
+
+  /// 按页导出已知的「事件 ID → 服务器时间 S」（备份用，同 [exportServerTimes] 的内容）。
+  Future<void> forEachServerTimePage(
+    Future<void> Function(List<(String, int)> page) onPage, {
+    int pageSize = 5000,
+  }) => _pageRows(
+    'srs_event_local',
+    'event_id, server_time',
+    pageSize,
+    (List<QueryRow> rows) => onPage(<(String, int)>[
+      for (final QueryRow r in rows)
+        (r.read<String>('event_id'), r.read<int>('server_time')),
+    ]),
+    extraWhere: 'server_time IS NOT NULL',
+  );
+
+  /// 本 profile 在 [table] 里的行，按 rowid 键集分页（不用 OFFSET：深页不退化成 O(n²)）。
+  Future<void> _pageRows(
+    String table,
+    String columns,
+    int pageSize,
+    Future<void> Function(List<QueryRow> rows) onPage, {
+    String? extraWhere,
+  }) async {
+    int after = -1 << 62;
+    while (true) {
+      final List<QueryRow> rows = await db
+          .customSelect(
+            'SELECT rowid AS rid_, $columns FROM $table '
+            'WHERE profile_uid = ? AND rowid > ?'
+            '${extraWhere == null ? '' : ' AND $extraWhere'} '
+            'ORDER BY rowid LIMIT ?',
+            variables: <Variable<Object>>[
+              Variable<String>(profileUid),
+              Variable<int>(after),
+              Variable<int>(pageSize),
+            ],
+          )
+          .get();
+      if (rows.isEmpty) return;
+      await onPage(rows);
+      if (rows.length < pageSize) return;
+      after = rows.last.read<int>('rid_');
+    }
+  }
+
   @override
   Future<Map<String, int>> exportServerTimes() async {
     final List<SrsEventLocalRow> rows =
@@ -2330,8 +2565,13 @@ class SrsDbStore implements SrsSyncReplica {
   ///
   /// 本机发布元信息（srs_event_local）不进备份，恢复后不知道备份里哪些事件已经发布过：
   /// 一律由新化身重新发布（事件不可变、按 ID 取并集，重复发布无害；代价相当于写一次快照）。
-  Future<void> afterRestore() async {
-    _incarnation += 1;
+  ///
+  /// [freshIncarnation]：化身号跳到「当前秒数」量级而不只是 +1——本机状态是新建的（例如新装设备
+  /// 采用了别处的 profile 身份）时，`设备ID#2` 这类小号可能这台设备以前在同一个 profile 下用过。
+  Future<void> afterRestore({bool freshIncarnation = false}) async {
+    _incarnation = freshIncarnation
+        ? max(_incarnation + 1, DateTime.now().millisecondsSinceEpoch ~/ 1000)
+        : _incarnation + 1;
     _sync = SrsSyncLocalState(writerId: '$deviceId#$_incarnation');
     _writer = SrsEditWriter(writerId: _sync.writerId);
     for (final SrsEvent e in await exportAll()) {
@@ -2416,11 +2656,20 @@ class SrsDbStore implements SrsSyncReplica {
       db.srsNotesCache,
     )..where((n) => n.profileUid.equals(profileUid))).get();
     final List<SrsCardCacheRow> cards = await allCardRows();
+    // 整表一次批量派生（hash53 在 native/fushi_compute 里算）。
+    final List<String> noteIds = <String>[
+      for (final SrsNoteCacheRow n in notes) n.id,
+    ];
+    final List<String> cardIds = <String>[
+      for (final SrsCardCacheRow c in cards) c.id,
+    ];
+    final List<int> noteNums = SrsIds.ankiNumericIds(noteIds);
+    final List<int> cardNums = SrsIds.ankiNumericIds(cardIds);
     _ankiNoteIndex = <int, String>{
-      for (final SrsNoteCacheRow n in notes) SrsIds.ankiNumericId(n.id): n.id,
+      for (int i = 0; i < noteIds.length; i++) noteNums[i]: noteIds[i],
     };
     _ankiCardIndex = <int, String>{
-      for (final SrsCardCacheRow c in cards) SrsIds.ankiNumericId(c.id): c.id,
+      for (int i = 0; i < cardIds.length; i++) cardNums[i]: cardIds[i],
     };
   }
 

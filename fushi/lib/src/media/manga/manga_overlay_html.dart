@@ -650,6 +650,7 @@ String mangaPageDivHtml(
   bool cropBorders = false,
   bool splitWidePages = false,
   bool rotateWidePages = false,
+  double spreadGutterPx = 0,
 }) {
   // div 内联声明：
   // - position:relative —— OCR 框绝对定位的包含块。
@@ -666,18 +667,27 @@ String mangaPageDivHtml(
   // 的单位乘法语法（旧 WebView 不完整支持）。
   final int slots = pagesInSpread <= 1 ? 1 : pagesInSpread;
   final double slotVw = 100.0 / slots;
+  // 折叠屏书本姿态的铰链缝（见 mangaWindowDocument 的 spreadGutterPx）：双页时每页
+  // 槽宽让出半条缝，两页之间留出整条缝，铰链下不放页面像素。
+  final double gutter = slots == 2 && spreadGutterPx > 0 ? spreadGutterPx : 0;
+  final String slotWidth = gutter > 0
+      ? 'calc(${_num(slotVw)}vw - ${_num(gutter / 2)}px)'
+      : '${_num(slotVw)}vw';
+  final String slotHeightFromWidth = gutter > 0
+      ? 'calc((${_num(slotVw)}vw - ${_num(gutter / 2)}px) * ${_num(h / w)})'
+      : '${_num(slotVw * h / w)}vw';
   final String sizingCss = isWebtoon
       ? ''
       : switch (scaleType) {
           MangaScaleType.fitWidth =>
-            'width:${_num(slotVw)}vw;height:auto;max-height:100vh;',
+            'width:$slotWidth;height:auto;max-height:100vh;',
           MangaScaleType.fitHeight =>
-            'width:auto;height:100vh;max-width:${_num(slotVw)}vw;',
+            'width:auto;height:100vh;max-width:$slotWidth;',
           MangaScaleType.original => 'width:${_num(w)}px;height:${_num(h)}px;',
-          MangaScaleType.stretch => 'width:${_num(slotVw)}vw;height:100vh;',
+          MangaScaleType.stretch => 'width:$slotWidth;height:100vh;',
           MangaScaleType.fitScreen || MangaScaleType.smart =>
-            'width:min(${_num(slotVw)}vw,${_num(100 * w / h)}vh);'
-                'height:min(100vh,${_num(slotVw * h / w)}vw);',
+            'width:min($slotWidth,${_num(100 * w / h)}vh);'
+                'height:min(100vh,$slotHeightFromWidth);',
         };
   final String loading = eager && !isWebtoon ? 'eager' : 'lazy';
   final String fetchPriority = eager && !isWebtoon ? 'high' : 'auto';
@@ -765,6 +775,8 @@ String mangaWindowDocument(
   String zoomStartPosition = 'automatic',
   MangaReaderPreferences? readerPreferences,
   String? readingModeLabel,
+  // 折叠屏书本姿态：双页之间留出的铰链缝（逻辑像素，见 fushiHingeGutterPx）。0 = 无缝。
+  double spreadGutterPx = 0,
 }) {
   final MangaReaderPreferences preferences =
       readerPreferences ?? const MangaReaderPreferences();
@@ -846,6 +858,7 @@ String mangaWindowDocument(
       cropBorders: cropBorders,
       splitWidePages: splitWidePages,
       rotateWidePages: rotateWidePages,
+      spreadGutterPx: spreadGutterPx,
       // 当前 spread 与前后相邻 spread 立即解码；窗口里更远的页继续 lazy，
       // 兼顾无白屏翻页与超清页图内存。
       eager: !isWebtoon && (spreadIndex - currentSpread).abs() <= 1,
@@ -906,7 +919,8 @@ String mangaWindowDocument(
             'height:100vh;align-items:center;}'
             '.manga-spread{display:flex;flex:0 0 100vw;'
             'width:100vw;height:100vh;align-items:center;'
-            'justify-content:center;$pageDirectionCss}'
+            'justify-content:center;$pageDirectionCss'
+            '${spreadGutterPx > 0 ? 'column-gap:${_num(spreadGutterPx)}px;' : ''}}'
             // 「覆盖」翻页的克隆层：与 strip 同在 #manga-canvas 下（缩放 / 平移一致），
             // 不吃指针，带一圈投影压在下面那一屏上。
             '.manga-cover-layer{position:absolute;left:0;top:0;width:100vw;'
@@ -2430,6 +2444,18 @@ String _mangaGestureJs({
   }
   document.addEventListener('pointerdown', function(e){
     if (e.pointerType === 'touch') {
+      // 触点表只靠「松手 / 取消」事件删条目，而这两个事件不保证到得了 document：
+      // 手指按在随后被移出 DOM 的节点上（__mangaReplaceOcr 换掉 OCR 层、覆盖翻页
+      // 拆掉克隆层），松手事件派给已脱离文档的节点，传播路径里没有 document。
+      // 漏删的那根「幽灵指」会永久留在表里：下一次单指拖动被当成与它的捏合（大
+      // 滑动 = 指距暴涨 = 放大到上限），pinchGuard 又要等表清空才解除，之后一切点击
+      // 与滑动都被吞（卡死）。浏览器自己的 isPrimary 是权威信号：主触点 = 此刻屏上
+      // 没有任何其它触摸指针，所以这是新一轮手势，表里剩下的全是幽灵，清空重来。
+      if (e.isPrimary) {
+        touchPts = {};
+        pinch = null;
+        pinchGuard = false;
+      }
       touchPts[e.pointerId] = {x: e.clientX, y: e.clientY};
       var g = _pinchGeom();
       if (g && g.dist > 0) {
@@ -2491,6 +2517,16 @@ String _mangaGestureJs({
           var lastPinch = pinch;
           pinch = null;
           _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);
+        } else {
+          // 三指及以上抬起一指：参与几何的那一对换了人，按新的一对重定基准，
+          // 否则新指距 / 旧基准的比值会让倍率瞬间跳变。起点倍率保留，吸附判据
+          // 仍以整次捏合开始时为准。
+          var rg = _pinchGeom();
+          if (rg && rg.dist > 0) {
+            pinch.dist = rg.dist * Math.pow(pinch.zoom / ZOOM, 1 / ZOOM_SENS);
+            pinch.cx = rg.cx;
+            pinch.cy = rg.cy;
+          }
         }
         return;
       }

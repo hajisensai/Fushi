@@ -123,6 +123,9 @@ enum OpdsFileType {
 
   /// 按文件扩展名定型（服务端没给 MIME、或给了 `application/octet-stream`
   /// 时的兜底：很多自建服务端的 acquisition 链接末段仍带真实文件名）。
+  ///
+  /// `.zip` 归 [cbz]：OPDS 书库里裸 zip 就是图片压缩包漫画（Komga 把 `.zip`
+  /// 漫画与 `.cbz` 同等对待），EPUB 自有 `.epub` 扩展名，不会落到这里。
   static OpdsFileType? fromPath(String? path) {
     if (path == null) return null;
     final int dot = path.lastIndexOf('.');
@@ -130,6 +133,40 @@ enum OpdsFileType {
     final String ext = path.substring(dot).toLowerCase();
     for (final OpdsFileType type in OpdsFileType.values) {
       if (type.extension == ext) return type;
+    }
+    if (ext == '.zip') return OpdsFileType.cbz;
+    return null;
+  }
+
+  /// 通用容器 MIME：只说明「是个 zip / 二进制」，不说明是哪种书。
+  ///
+  /// Komga 的 OPDS 1.2 给 `.cbz` 与 `.zip` 漫画一律发 `application/zip`
+  /// （真 Komga 1.29.1 实测）。它不进 [_aliases]：一条带 `.epub` 末段的链接
+  /// 也标 `application/zip` 时，该信扩展名而不是一律当漫画。
+  static const Set<String> _genericContainerTypes = <String>{
+    'application/zip',
+    'application/x-zip-compressed',
+    'application/octet-stream',
+  };
+
+  /// acquisition 链接的定型：具体 MIME → 末段扩展名 → 通用 zip 容器按漫画。
+  ///
+  /// 两个解析器（1.2 / 2.0）共用这一处，不各写一遍兜底顺序。
+  static OpdsFileType? resolve({String? mediaType, String? path}) {
+    final String normalized = (mediaType ?? '')
+        .split(';')
+        .first
+        .trim()
+        .toLowerCase();
+    if (!_genericContainerTypes.contains(normalized)) {
+      final OpdsFileType? byType = fromMediaType(mediaType);
+      if (byType != null) return byType;
+    }
+    final OpdsFileType? byPath = fromPath(path);
+    if (byPath != null) return byPath;
+    if (normalized == 'application/zip' ||
+        normalized == 'application/x-zip-compressed') {
+      return OpdsFileType.cbz;
     }
     return null;
   }
@@ -257,7 +294,8 @@ final class OpdsPublicationEntry extends OpdsEntry {
       if (type == null || type.kind != kind) continue;
       // 分数越大越优先：importable 是硬门（+100），其余按枚举声明序倒排，
       // 让 epub(0) 得分高于 pdf(1) 高于 txt(2)。
-      final int score = (type.importable ? 100 : 0) +
+      final int score =
+          (type.importable ? 100 : 0) +
           (OpdsFileType.values.length - type.index);
       if (score > bestScore) {
         bestScore = score;
@@ -269,10 +307,10 @@ final class OpdsPublicationEntry extends OpdsEntry {
 
   /// 本条目覆盖到的所有媒体域（一条 OPDS 条目可能同时供 epub 与 cbz）。
   Set<DiscoveryMediaKind> get kinds => <DiscoveryMediaKind>{
-        for (final OpdsAcquisitionLink link in links)
-          if (link.rel.isDirectDownload && link.fileType != null)
-            link.fileType!.kind,
-      };
+    for (final OpdsAcquisitionLink link in links)
+      if (link.rel.isDirectDownload && link.fileType != null)
+        link.fileType!.kind,
+  };
 }
 
 /// 一页 OPDS 目录。

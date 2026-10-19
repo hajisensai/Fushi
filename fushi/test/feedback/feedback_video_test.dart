@@ -233,7 +233,7 @@ void main() {
     expect(v.bytes, 6000);
   });
 
-  test('转码参数提速：ultrafast、双线性缩放；高帧率源先降帧再缩放，低帧率不补帧', () {
+  test('转码参数：画质与旧方案同档（veryfast + 双三次），提速靠高帧率源先降帧再缩放，低帧率不补帧', () {
     List<String> argsFor(double? fps) => buildFeedbackVideoTranscodeArgs(
       input: 'in.mp4',
       output: 'out.mp4',
@@ -247,10 +247,12 @@ void main() {
 
     final List<String> args = argsFor(60);
     expect(args[args.indexOf('-preset') + 1], kFeedbackVideoPreset);
-    expect(kFeedbackVideoPreset, 'ultrafast');
+    // 画质门槛（BUG-3489 实测）：ultrafast / 双线性在密集小字上低于旧方案，不许换回去。
+    expect(kFeedbackVideoPreset, 'veryfast');
+    expect(kFeedbackVideoScaleFlags, 'bicubic');
     // 降帧必须在滤镜链最前面（先丢帧再缩放），不是输出端的 -fpsmax。
     expect(vf(60), startsWith('fps=$kFeedbackVideoMaxFps,scale='));
-    expect(vf(60), endsWith(':flags=bilinear'));
+    expect(vf(60), endsWith(':flags=bicubic'));
     expect(args, isNot(contains('-fpsmax')));
     expect(vf(120), startsWith('fps=30,'));
     // 30 / 29.97 / 24 fps 与探不到帧率：不加 fps 滤镜（它会把低帧率补帧升上去）。

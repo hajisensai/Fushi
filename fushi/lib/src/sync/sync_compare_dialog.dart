@@ -537,15 +537,10 @@ Future<_LiveProgressRow?> _fetchLiveProgress(
   try {
     final RemoteBookProgress remote = await sync.remoteProgress(book);
     final RemoteBookProgress local = await sync.localProgress(book);
-    final BookProgressBaseline? base = await sync.baseline(book);
     return _LiveProgressRow(
       local: local,
       remote: remote,
-      action: resolveBookProgressThreeWay(
-        local: local,
-        remote: remote,
-        base: base,
-      ),
+      action: await sync.decide(book, local: local, remote: remote),
     );
   } catch (e) {
     developer.log(
@@ -894,8 +889,7 @@ Future<bool> _applyLiveProgressChoice({
     return true;
   }
   if (remote.updatedAtMs <= 0) return false;
-  await sync.applyRemote(book, remote);
-  return true;
+  return sync.applyRemote(book, remote, local: local);
 }
 
 /// 750a：互联下载远端独有书时补下其有声书包（若有）。

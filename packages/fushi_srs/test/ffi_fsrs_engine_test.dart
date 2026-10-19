@@ -1,8 +1,9 @@
 // native/fushi_fsrs（fsrs-rs C ABI）的真实 FFI 调用测试。
 //
 // 库定位：环境变量 FUSHI_FSRS_LIB，缺省用本仓 native/fushi_fsrs/prebuilt/<平台>/ 下
-// 构建脚本的产物。库不可用时整组 skip 并打印原因（CI 用输出里的 'native library not found'
-// 断言没有被静默跳过，与 packages/fushi_p2p 同一约定）。
+// 构建脚本的产物。库不可用时排程那组 skip 并打印原因（CI 用输出里的 'native library not found'
+// 断言没有被静默跳过，与 packages/fushi_p2p 同一约定）；批量可提取度那组是搬进原生的新路径，
+// 库加载失败直接判红、不 skip。
 @TestOn('vm')
 library;
 
@@ -444,6 +445,79 @@ void main() {
       expect(
         FfiFsrsEngine.zstdDecompress(Uint8List(0), library: e.library),
         isNull,
+      );
+    });
+  });
+
+  // 批量可提取度是搬进原生的新路径（Dart 不留回退）：库加载失败直接判红，不跟上面那组一起 skip。
+  group('retrievabilityBatch (native library required)', () {
+    late FfiFsrsEngine e;
+    setUpAll(() {
+      final FfiFsrsEngine? loaded = engine;
+      if (loaded == null) {
+        throw StateError(
+          'fushi_fsrs native library not loadable at $libraryPath '
+          '(build it with native/fushi_fsrs/build_*.{ps1,sh} '
+          'or set $kFushiFsrsLibEnv)',
+        );
+      }
+      e = loaded;
+    });
+
+    for (final SrsAlgorithm a in SrsAlgorithm.values) {
+      test('retrievabilityBatch equals per-card calls (${a.wire})', () {
+        final List<double> params = e.defaultParams(a);
+        final List<SrsMemory> memories = <SrsMemory>[
+          for (int i = 0; i < 300; i++)
+            SrsMemory(
+              stability: 0.3 + (i % 70) * 2.9,
+              difficulty: 1 + (i % 10) * 0.9,
+              stabilityFast: i.isEven ? null : 0.2 + (i % 13) * 0.7,
+            ),
+        ];
+        final List<double> elapsed = <double>[
+          for (int i = 0; i < 300; i++) (i % 47) * 0.37,
+        ];
+        final List<double> batch = e.retrievabilityBatch(
+          algorithm: a,
+          params: params,
+          memories: memories,
+          elapsedDays: elapsed,
+        );
+        expect(batch, hasLength(300));
+        for (int i = 0; i < 300; i++) {
+          expect(
+            batch[i],
+            e.retrievability(
+              algorithm: a,
+              params: params,
+              memory: memories[i],
+              elapsedDays: elapsed[i],
+            ),
+            reason: 'card $i',
+          );
+        }
+      });
+    }
+
+    test('retrievabilityBatch: empty input and bad params', () {
+      expect(
+        e.retrievabilityBatch(
+          algorithm: SrsAlgorithm.fsrs7,
+          params: const <double>[],
+          memories: const <SrsMemory>[],
+          elapsedDays: const <double>[],
+        ),
+        isEmpty,
+      );
+      expect(
+        () => e.retrievabilityBatch(
+          algorithm: SrsAlgorithm.fsrs7,
+          params: const <double>[1, 2],
+          memories: const <SrsMemory>[SrsMemory(stability: 1, difficulty: 5)],
+          elapsedDays: const <double>[1],
+        ),
+        throwsA(isA<SrsFsrsException>()),
       );
     });
   });

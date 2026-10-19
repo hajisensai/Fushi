@@ -621,9 +621,26 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   /// 带 hostId 的条目删的是**那台 host**：同组其余地址都带着它的 token，只删一行
   /// 等于没解绑（剩下的照常同步，被删的 learned 地址 10 分钟内还会被学回来，
   /// 审查问题 8）。老条目（无 hostId）仍只删那一行，行为不变。
+  ///
+  /// 连带删掉不止一行时先确认：同一台 host 的地址在列表里是平铺的多行，不说清楚
+  /// 用户只会看到「删一行、整片消失」。
   Future<void> _deleteUrl(int index) async {
     final String url = _urls[index].url;
     final String? hostId = _urls[index].hostId;
+    final int removed = _urls.length -
+        withoutInterconnectHost(_urls, url: url, hostId: hostId).length;
+    if (removed > 1) {
+      final bool confirmed = await showFushiConfirmDialog(
+        context: context,
+        title: t.interconnect_peer_forget_title,
+        message: t.interconnect_peer_forget_confirm(count: removed),
+        confirmLabel: t.dialog_delete,
+        cancelLabel: t.cancel,
+        icon: FushiIcons.delete,
+        destructive: true,
+      );
+      if (!confirmed) return;
+    }
     await _mutateUrls((List<FushiClientUrl> current) =>
         withoutInterconnectHost(current, url: url, hostId: hostId));
   }
@@ -869,7 +886,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
           // 现在改为：已连接就只显示状态，原始令牌收进「手动填写」折叠项——手动粘贴对端令牌
           // 连接的回退路径仍在，只是不再和 host 端令牌摆成两个对不上的数字。per-peer 签发/
           // 鉴权/按设备吊销等后端安全机制一概不动。
-          if (_tokenPresent)
+          // 全局 token 是回退凭据，删光对端不会清它；没有任何对端时谈不上「已连接」。
+          if (_tokenPresent && _urls.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               // 「已连接」是成功态：M3E tertiary 色块（Apple 落系统绿淡染）。

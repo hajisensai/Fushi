@@ -1103,6 +1103,10 @@ class _Importer {
     final List<_SrcRevlog> revlogs = <_SrcRevlog>[
       for (final Row r in revlogOf.select(<Object?>[c.id])) _SrcRevlog(r),
     ];
+    // 整张卡的 revlog id 一次批量派生（UUIDv5 在 native/fushi_compute 里算）。
+    final List<String> revlogIds = SrsIds.importedRevlogs(cardId, <int>[
+      for (final _SrcRevlog r in revlogs) r.id,
+    ]);
     final (int nowMs, _) = store.now();
     final int latest = revlogs.isEmpty ? 0 : revlogs.last.id;
     if (latest > nowMs + srsClockToleranceMs) {
@@ -1133,7 +1137,8 @@ class _Importer {
     int reps = 0;
     int lapses = 0;
     int? lastRated;
-    for (final _SrcRevlog r in revlogs) {
+    for (int i = 0; i < revlogs.length; i++) {
+      final _SrcRevlog r = revlogs[i];
       final bool rating = r.isRating;
       if (rating) {
         reps++;
@@ -1153,6 +1158,7 @@ class _Importer {
           _revlogLog(
             cardId,
             r,
+            id: revlogIds[i],
             reps: reps,
             lapses: lapses,
             lastRated: lastRated,
@@ -1170,12 +1176,14 @@ class _Importer {
         if (extRevlogs.contains(last.id)) return true;
         final List<SrsReviewLog>? nat = native;
         if (nat == null || nat.isEmpty) return false;
-        final _SrcRevlog src = revlogs.lastWhere(
+        final int at = revlogs.lastIndexWhere(
           (_SrcRevlog r) => r.id == last.id,
         );
+        if (at < 0) throw StateError('No element');
         final SrsReviewLog imported = _revlogLog(
           cardId,
-          src,
+          revlogs[at],
+          id: revlogIds[at],
           reps: 0,
           lapses: 0,
           lastRated: null,
@@ -1240,13 +1248,14 @@ class _Importer {
   SrsReviewLog _revlogLog(
     String cardId,
     _SrcRevlog r, {
+    required String id,
     required int reps,
     required int lapses,
     required int? lastRated,
   }) {
     final bool manual = !r.isFiltered && !r.isRating;
     return SrsReviewLog(
-      id: SrsIds.importedRevlog(cardId, r.id),
+      id: id,
       profileUid: profileUid,
       cardId: cardId,
       kind: manual ? SrsLogKind.manual : SrsLogKind.review,

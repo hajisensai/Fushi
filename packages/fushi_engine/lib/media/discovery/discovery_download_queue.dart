@@ -18,11 +18,11 @@ library;
 import 'dart:async';
 import 'dart:io';
 
-
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/redirect_headers.dart';
 import 'package:meta/meta.dart';
 import 'package:fushi_engine/foundation/engine_notifier.dart';
 
@@ -35,22 +35,23 @@ const List<Duration> kDiscoveryDownloadRetryBackoff = <Duration>[
 
 /// 把条目物化成可执行 payload（生产接 `MediaDiscoverySource.resolvePayload`；
 /// 注入函数而非源对象，队列不依赖源注册表）。
-typedef DiscoveryPayloadResolver = Future<DiscoveryPayload> Function(
-  DiscoveryResourceItem item,
-);
+typedef DiscoveryPayloadResolver =
+    Future<DiscoveryPayload> Function(DiscoveryResourceItem item);
 
 /// 下载完成后的自动入库回调（按 [DiscoveryResourceItem.kind] 分派到各域导入器；
 /// 生产分派表在组装点注入，本队列不 import 任何域代码）。
-typedef DiscoveryDownloadImporter = Future<DiscoveryImportOutcome> Function(
-  DiscoveryDownloadTask task,
-  File file,
-);
+typedef DiscoveryDownloadImporter =
+    Future<DiscoveryImportOutcome> Function(
+      DiscoveryDownloadTask task,
+      File file,
+    );
 
 /// 测试注入口：替换真实网络（绕 HttpClient）。
-typedef DiscoveryDownloadOpen = Future<ResumableDownloadResponse> Function(
-  Uri uri,
-  Map<String, String> headers,
-);
+typedef DiscoveryDownloadOpen =
+    Future<ResumableDownloadResponse> Function(
+      Uri uri,
+      Map<String, String> headers,
+    );
 
 /// 一次自动入库的结果。
 class DiscoveryImportOutcome {
@@ -85,7 +86,7 @@ enum DiscoveryDownloadStatus {
 /// 队列中的一个下载任务（可变快照；变更经队列 notifyListeners 广播）。
 class DiscoveryDownloadTask {
   DiscoveryDownloadTask._({required this.item, required this.destinationDir})
-      : createdAt = DateTime.now().millisecondsSinceEpoch;
+    : createdAt = DateTime.now().millisecondsSinceEpoch;
 
   static int _nextTaskId = 0;
 
@@ -107,10 +108,7 @@ class DiscoveryDownloadTask {
     int? totalBytes,
     String? filePath,
   }) {
-    return DiscoveryDownloadTask._(
-      item: item,
-      destinationDir: destinationDir,
-    )
+    return DiscoveryDownloadTask._(item: item, destinationDir: destinationDir)
       ..status = status
       ..receivedBytes = receivedBytes
       ..totalBytes = totalBytes
@@ -166,10 +164,10 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
     required DiscoveryDownloadImporter importer,
     @visibleForTesting DiscoveryDownloadOpen? openOverride,
     @visibleForTesting List<Duration>? retryBackoffOverride,
-  })  : _resolvePayload = resolvePayload,
-        _importer = importer,
-        _openOverride = openOverride,
-        _retryBackoff = retryBackoffOverride ?? kDiscoveryDownloadRetryBackoff;
+  }) : _resolvePayload = resolvePayload,
+       _importer = importer,
+       _openOverride = openOverride,
+       _retryBackoff = retryBackoffOverride ?? kDiscoveryDownloadRetryBackoff;
 
   final DiscoveryPayloadResolver _resolvePayload;
   final DiscoveryDownloadImporter _importer;
@@ -342,11 +340,11 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
       final DiscoveryHttpPayload http = switch (payload) {
         DiscoveryHttpPayload() => payload,
         DiscoveryTorrentPayload() => throw StateError(
-            'source resolved a torrent payload for an httpFile item',
-          ),
+          'source resolved a torrent payload for an httpFile item',
+        ),
         DiscoverySelectedTorrentPayload() => throw StateError(
-            'source resolved a selected torrent payload for an httpFile item',
-          ),
+          'source resolved a selected torrent payload for an httpFile item',
+        ),
       };
       if (task._cancelRequested) throw const _DiscoveryDownloadCancelled();
 
@@ -421,39 +419,62 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
     }
   }
 
-  /// 发起下载请求；重定向交给 `HttpClient` 自动跟随。
+  /// 发起下载请求；重定向**逐跳手动跟随**，每跳按 origin 重算凭据头。
   ///
-  /// **凭据的 origin 边界由平台保证，不需要在这里手写。** 实测（见
-  /// `test/media/discovery/discovery_download_redirect_credentials_test.dart`）
-  /// Dart 的自动跟随在**跨 origin** 时会剥掉 `Authorization`/`Cookie`、在
-  /// **同 origin** 时保留，而 `Referer` 这类防盗链头恒转发——正好是私有媒体
-  /// 服务器需要的语义：自建服务端常把 `/opds/download/1` 302 到同机的真实文件
-  /// 路径（剥了就 401 下不动），而重定向到第三方对象存储时不能把用户密码带过去。
+  /// 曾经交给 `HttpClient.followRedirects` 自动跟随：它跨 origin 时会剥
+  /// `Authorization` / `Cookie`，但只认 SDK 写死的那张清单——Komga 的
+  /// `X-API-Key`（BUG-3521）不在其中，自动跟随会把它原样转发给 302 指向的
+  /// 第三方对象存储 / CDN。所以改回手动跟随，凭据头的剥离规则统一由
+  /// [headersForRedirectHop] 给出（[kOriginBoundHeaderNames]）：同 origin 保留
+  /// （自建服务端常把 `/opds/download/1` 302 到同机真实文件路径，剥了就 401
+  /// 下不动），跨 origin 剥掉；`Referer` 这类防盗链头与续传 `Range` 恒转发。
   ///
-  /// 那份测试是**契约测试**而非实现测试：它锁的是「凭据不跨 origin」这个结果。
-  /// 若将来把这条链路换成 `package:http` / dio（两者都会原样转发 header），它会红。
+  /// 契约测试见 `test/media/discovery/discovery_download_redirect_credentials_test.dart`。
   static Future<ResumableDownloadResponse> _openViaHttpClient(
     HttpClient client,
     Map<String, String> payloadHeaders,
     Uri uri,
     Map<String, String> headers,
   ) async {
-    final HttpClientRequest request = await client.getUrl(uri);
-    request.followRedirects = true;
-    request.maxRedirects = 8;
-    payloadHeaders.forEach(request.headers.set);
-    headers.forEach(request.headers.set);
-    final HttpClientResponse response = await request.close();
-    final Map<String, String> responseHeaders = <String, String>{};
-    response.headers.forEach(
-      (String name, List<String> values) =>
-          responseHeaders[name] = values.join(', '),
-    );
-    return ResumableDownloadResponse(
-      statusCode: response.statusCode,
-      headers: responseHeaders,
-      stream: response,
-    );
+    Uri current = uri;
+    Map<String, String> currentPayloadHeaders = payloadHeaders;
+    for (int hop = 0; ; hop++) {
+      final HttpClientRequest request = await client.getUrl(current);
+      request.followRedirects = false;
+      currentPayloadHeaders.forEach(request.headers.set);
+      headers.forEach(request.headers.set);
+      final HttpClientResponse response = await request.close();
+      final String? location = response.headers.value(
+        HttpHeaders.locationHeader,
+      );
+      if (isFollowableRedirectStatus(response.statusCode) &&
+          location != null &&
+          location.trim().isNotEmpty) {
+        // 不读的重定向响应体会把连接一直挂着。
+        await response.drain<void>();
+        if (hop >= kMaxManualRedirects) {
+          throw RedirectException('too many redirects', response.redirects);
+        }
+        final Uri next = current.resolve(location.trim());
+        currentPayloadHeaders = headersForRedirectHop(
+          currentPayloadHeaders,
+          from: current,
+          to: next,
+        );
+        current = next;
+        continue;
+      }
+      final Map<String, String> responseHeaders = <String, String>{};
+      response.headers.forEach(
+        (String name, List<String> values) =>
+            responseHeaders[name] = values.join(', '),
+      );
+      return ResumableDownloadResponse(
+        statusCode: response.statusCode,
+        headers: responseHeaders,
+        stream: response,
+      );
+    }
   }
 
   /// 从 payload / URL / 条目标题推导落盘文件名（按此优先级取第一个可用者）。
@@ -539,8 +560,9 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
   static bool _isTransientError(Object error) {
     if (error is ResumableDownloadIntegrityException) return false;
     if (error is HttpException) {
-      final RegExpMatch? match =
-          RegExp(r'download failed \((\d{3})\)').firstMatch(error.message);
+      final RegExpMatch? match = RegExp(
+        r'download failed \((\d{3})\)',
+      ).firstMatch(error.message);
       if (match != null) {
         final int code = int.parse(match.group(1)!);
         return code >= 500 || code == 408 || code == 429;

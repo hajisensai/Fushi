@@ -9,6 +9,7 @@ import 'package:fushi/src/pages/implementations/highlight_style_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
@@ -17,6 +18,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/fushi_fold_posture.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 SettingsDestination buildReadingDestination() {
@@ -28,6 +30,25 @@ SettingsDestination buildReadingDestination() {
   // _paginatedLayoutCss）。故非翻页模式下把该项隐藏，避免用户改了没反应、误判「功能坏了」。
   bool isPaginated(SettingsContext c) =>
       c.readerSource.readerViewMode == 'paginated';
+  // 「中缝折痕」只在翻页且本次排版实际恰好两栏时有效果（与 CSS 生成同一判据
+  // ReaderContentStyles.pageCreaseApplies）。「自动」列数在折叠屏书本姿态下会被解析
+  // 成两栏，所以要把当前窗口的折叠状态算进去（读 MediaQuery，姿态变化时宿主重建）。
+  bool pageCreaseApplies(SettingsContext c) {
+    final ReaderFushiSource source = c.readerSource;
+    final int effectiveColumns =
+        ReaderContentStyles.foldPageColumnsOverrideFor(
+              bookPosture: FushiFoldState.of(c.context).isBook,
+              viewMode: source.readerViewMode,
+              writingMode: source.readerWritingMode,
+              pageColumns: source.readerPageColumns,
+            ) ??
+            source.readerPageColumns;
+    return ReaderContentStyles.pageCreaseApplies(
+      viewMode: source.readerViewMode,
+      effectivePageColumns: effectiveColumns,
+    );
+  }
+
   bool isContinuous(SettingsContext c) =>
       c.readerSource.readerViewMode == 'continuous';
   bool isVisualNovel(SettingsContext c) =>
@@ -179,7 +200,7 @@ SettingsDestination buildReadingDestination() {
             icon: FushiIcons.textHorizontal,
             controlBelow: true,
             visible: isVertical,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 14),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 15),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
                 value: 'mixed',
@@ -204,7 +225,7 @@ SettingsDestination buildReadingDestination() {
             title: t.reader_furigana_mode,
             icon: FushiIcons.language,
             controlBelow: true,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 13),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 14),
             // 四态：Off / Toggle / Hidden（对齐 Hoshi Reader iOS）+ Dimmed
             // （2026-09-12 用户追加的「显示但淡」）。
             options: <SettingsSegmentOption<String>>[
@@ -257,7 +278,7 @@ SettingsDestination buildReadingDestination() {
             visible: isVisualNovel,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 22,
+              order: 23,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.readerVisualNovelRevealSpeed.toDouble(),
@@ -276,7 +297,7 @@ SettingsDestination buildReadingDestination() {
             visible: isVisualNovel,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 23,
+              order: 24,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -307,7 +328,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 24,
+              order: 25,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.readerVisualNovelSentencesPerScreen.toDouble(),
@@ -325,7 +346,7 @@ SettingsDestination buildReadingDestination() {
             visible: isVisualNovelSentenceMode,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 25,
+              order: 26,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.readerVisualNovelPreserveDialogue,
@@ -387,7 +408,7 @@ SettingsDestination buildReadingDestination() {
             icon: FushiIcons.font,
             // order 接在 layout 组末尾（组内 order 须连续无洞、无撞号，见
             // reader_settings_reorg_guard_test）；侧板里的位置由 IA 表决定。
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 26),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 27),
             onTap: (SettingsContext c) async {
               await pushSettingsPage(
                 c,
@@ -405,7 +426,7 @@ SettingsDestination buildReadingDestination() {
             subtitleBuilder: (SettingsContext c) =>
                 highlightStyleSummary(c.readerSource),
             icon: kHighlightStyleIcon,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 27),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 28),
             onTap: (SettingsContext c) async {
               await pushSettingsPage(
                 c,
@@ -498,7 +519,7 @@ SettingsDestination buildReadingDestination() {
             min: 0,
             max: 3,
             step: 0.1,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 19),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 20),
             value: (SettingsContext c) => c.readerSource.readerParagraphSpacing,
             format: (double v) => '${v.toStringAsFixed(1)}em',
             onChanged: (SettingsContext c, double v) {
@@ -528,6 +549,21 @@ SettingsDestination buildReadingDestination() {
               notifyReaderLayoutChanged(c);
             },
           ),
+          // 中缝折痕：一屏两栏（每页列数 = 2，或折叠屏书本姿态下的自动 2 栏）时在两页
+          // 之间画书脊阴影。纯 CSS，热下发不重排。只在真能生效时露出（pageCreaseApplies）。
+          SettingsSwitchItem(
+            id: 'reading_display.page_crease',
+            title: t.reader_page_crease,
+            subtitle: t.reader_page_crease_subtitle,
+            icon: FushiIcons.books,
+            visible: pageCreaseApplies,
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 9),
+            value: (SettingsContext c) => c.readerSource.readerPageCrease,
+            onChanged: (SettingsContext c, bool v) async {
+              await c.readerSource.setReaderPageCrease(v);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
           // TODO-362（PR#3 响应式页边距）：四个边距都是百分比（左右 = vw / 上下 = vh），
           // 默认左右各 2%、上下 0%。范围 0~50%，禁止负值（负值与百分比语义冲突，且
           // CSS padding 不接受负值）。格式带 `%` 提示用户这是百分比。
@@ -538,7 +574,7 @@ SettingsDestination buildReadingDestination() {
             min: 0,
             max: 50,
             step: 1,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 9),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 10),
             value: (SettingsContext c) => c.readerSource.readerMarginTop,
             format: (double v) => '${v.round()}%',
             onChanged: (SettingsContext c, double v) {
@@ -553,7 +589,7 @@ SettingsDestination buildReadingDestination() {
             min: 0,
             max: 50,
             step: 1,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 10),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 11),
             value: (SettingsContext c) => c.readerSource.readerMarginBottom,
             format: (double v) => '${v.round()}%',
             onChanged: (SettingsContext c, double v) {
@@ -568,7 +604,7 @@ SettingsDestination buildReadingDestination() {
             min: 0,
             max: 50,
             step: 1,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 11),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 12),
             value: (SettingsContext c) => c.readerSource.readerMarginLeft,
             format: (double v) => '${v.round()}%',
             onChanged: (SettingsContext c, double v) {
@@ -583,7 +619,7 @@ SettingsDestination buildReadingDestination() {
             min: 0,
             max: 50,
             step: 1,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 12),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 13),
             value: (SettingsContext c) => c.readerSource.readerMarginRight,
             format: (double v) => '${v.round()}%',
             onChanged: (SettingsContext c, double v) {
@@ -1144,7 +1180,7 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_display.text_justify',
             title: t.reader_text_justify,
             icon: FushiIcons.alignJustify,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 15),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 16),
             value: (SettingsContext c) =>
                 c.readerSource.readerEnableTextJustification,
             onChanged: (SettingsContext c, bool value) {
@@ -1157,7 +1193,7 @@ SettingsDestination buildReadingDestination() {
             title: t.reader_vert_kerning,
             icon: FushiIcons.spaceBar,
             visible: isVertical,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 16),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 17),
             value: (SettingsContext c) =>
                 c.readerSource.readerEnableVerticalFontKerning,
             onChanged: (SettingsContext c, bool value) {
@@ -1170,7 +1206,7 @@ SettingsDestination buildReadingDestination() {
             title: t.reader_font_vpal,
             icon: FushiIcons.formatShapes,
             visible: isVertical,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 17),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 18),
             value: (SettingsContext c) => c.readerSource.readerEnableFontVPAL,
             onChanged: (SettingsContext c, bool value) {
               c.readerSource.setReaderEnableFontVPAL(value);
@@ -1181,7 +1217,7 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_display.prioritize_reader_styles',
             title: t.reader_reader_styles,
             icon: FushiIcons.ankiCard,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 18),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 19),
             value: (SettingsContext c) =>
                 c.readerSource.readerPrioritizeReaderStyles,
             onChanged: (SettingsContext c, bool value) async {
@@ -1195,7 +1231,7 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_display.blur_images',
             title: t.reader_blur_images,
             icon: FushiIcons.blur,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 20),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 21),
             value: (SettingsContext c) => c.readerSource.readerBlurImages,
             onChanged: (SettingsContext c, bool value) async {
               await c.readerSource.setReaderBlurImages(value);
@@ -1212,7 +1248,7 @@ SettingsDestination buildReadingDestination() {
             title: t.reader_merge_image_pages,
             subtitle: t.reader_merge_image_pages_subtitle,
             icon: FushiIcons.collection,
-            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 21),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 22),
             value: (SettingsContext c) => c.readerSource.readerMergeImagePages,
             onChanged: (SettingsContext c, bool value) async {
               await c.readerSource.setReaderMergeImagePages(value);

@@ -135,6 +135,113 @@ void main() {
     expect(stored.single.hasUnseenReply, isFalse);
   });
 
+  // BUG-3489 审查：正文交上去之后的步骤（回执落盘）出错不能报成提交失败——用户会再点一次、
+  // 生成一条重复反馈。回执留在内存清单里，下一次落盘一起写下。
+  test('正文已交上去后回执落盘失败：不抛、回执在清单里；下一次落盘把它写下', () async {
+    handler = (http.Request r) async {
+      if (r.url.path == '/v1/feedback') {
+        return _json(<String, dynamic>{
+          'id': 'abcdefghij',
+          'ticket': 'T' * 32,
+          'status': 'open',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        }, 201);
+      }
+      return _json(<String, dynamic>{'slot': 'x'}, 201);
+    };
+    final FeedbackService s = service();
+    await s.load();
+    // 回执清单的临时文件位置被一个目录占住：本次落盘必然失败。
+    final Directory blocker = Directory(
+      '${root.path}/feedback/tickets.json.tmp',
+    )..createSync(recursive: true);
+    final FeedbackSubmitResult result = await s.submit(
+      const FeedbackDraft(
+        category: FeedbackCategory.bug,
+        title: 't',
+        body: 'b',
+        includeLogs: false,
+        includeDeviceInfo: false,
+      ),
+    );
+    expect(result.ticket.id, 'abcdefghij');
+    expect(s.byId('abcdefghij')?.ticket, 'T' * 32);
+    expect(FeedbackTicketStore(root).file.existsSync(), isFalse);
+
+    blocker.deleteSync();
+    handler = (http.Request r) async => _json(<String, dynamic>{
+      'id': 'klmnopqrst',
+      'ticket': 'U' * 32,
+      'status': 'open',
+      'createdAt': 2000,
+      'updatedAt': 2000,
+    }, 201);
+    await s.submit(
+      const FeedbackDraft(
+        category: FeedbackCategory.bug,
+        title: 't2',
+        body: 'b2',
+        includeLogs: false,
+        includeDeviceInfo: false,
+      ),
+    );
+    final List<FeedbackTicket> stored = await FeedbackTicketStore(root).read();
+    expect(
+      stored.map((FeedbackTicket t) => t.id),
+      unorderedEquals(<String>['abcdefghij', 'klmnopqrst']),
+      reason: '上次没落下的回执随下一次落盘写下',
+    );
+    expect(
+      stored.firstWhere((FeedbackTicket t) => t.id == 'abcdefghij').ticket,
+      'T' * 32,
+    );
+  });
+
+  test('幂等键随正文发出；服务端回同一条（重试）时清单里只有一条', () async {
+    handler = (http.Request r) async {
+      if (r.url.path == '/v1/feedback') {
+        return _json(<String, dynamic>{
+          'id': 'abcdefghij',
+          'ticket': 'T' * 32,
+          'status': 'open',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        }, 201);
+      }
+      return _json(<String, dynamic>{'slot': 'x'}, 201);
+    };
+    final FeedbackService s = service();
+    final String key = newFeedbackSubmissionKey();
+    expect(key, matches(RegExp(r'^[A-Za-z0-9_-]{32}$')));
+    expect(newFeedbackSubmissionKey(), isNot(key));
+    final FeedbackDraft draft = FeedbackDraft(
+      category: FeedbackCategory.bug,
+      title: 't',
+      body: 'b',
+      includeLogs: false,
+      includeDeviceInfo: false,
+      submissionKey: key,
+    );
+    await s.submit(draft);
+    await s.submit(draft);
+    final List<http.Request> submits = requests
+        .where((http.Request r) => r.url.path == '/v1/feedback')
+        .toList();
+    expect(submits, hasLength(2));
+    for (final http.Request r in submits) {
+      expect(
+        (jsonDecode(r.body) as Map<String, dynamic>)['submissionKey'],
+        key,
+      );
+    }
+    expect(
+      s.tickets.where((FeedbackTicket t) => t.id == 'abcdefghij'),
+      hasLength(1),
+    );
+    expect(await FeedbackTicketStore(root).read(), hasLength(1));
+  });
+
   test('关掉日志与设备信息：不传日志、meta 只剩计数、不带安装 id', () async {
     handler = (http.Request r) async => _json(<String, dynamic>{
       'id': 'abcdefghij',

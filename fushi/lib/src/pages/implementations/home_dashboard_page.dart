@@ -64,7 +64,9 @@ import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/sync/remote_deletion_filter.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/cover_image.dart';
@@ -1162,6 +1164,19 @@ class _HomeDashboardPageState
       // ① 过共享 TTL 缓存（书/视频清单与书架、视频页同槽，谁先拉到谁受益），
       // ② 请求并行而不是串行。
       final RemoteLibraryCache cache = ref.read(remoteLibraryCacheProvider);
+      // 与书架 / 视频库远端占位卡同一道过滤（BUG-3508）：本端「从所有设备删除」过的
+      // 书 / 视频在墓碑送达 host 前不能以远端「继续」卡复活。**先于取清单读**（见
+      // loadPendingRemoteDeletionKeys）。
+      final Set<String> deletedBookKeys = await loadPendingRemoteDeletionKeys(
+        appModel.database,
+        SyncTombstoneKind.book,
+        remoteLibrarySourceId: backend.remoteLibrarySourceId,
+      );
+      final Set<String> deletedVideoKeys = await loadPendingRemoteDeletionKeys(
+        appModel.database,
+        SyncTombstoneKind.video,
+        remoteLibrarySourceId: backend.remoteLibrarySourceId,
+      );
       final List<Object> results = await Future.wait<Object>(<Future<Object>>[
         // 首页只走互联（上面已 return 掉未启用的情况），来源身份仍从 backend 自己
         // 取而不是写字面量——书/视频两个域与书架、视频页同槽命中，靠的就是双方报出
@@ -1220,8 +1235,15 @@ class _HomeDashboardPageState
           remoteContinueCandidates(
         localBookKeys: localBookKeys,
         localVideoUids: localVideoUids,
-        remoteBooks: remoteBooks,
-        remoteVideos: remoteVideos,
+        remoteBooks: filterOutLocallyDeletedRemoteBooks(
+          remote: remoteBooks,
+          deletedKeys: deletedBookKeys,
+          keyOf: sanitizeTtuFilename,
+        ),
+        remoteVideos: filterOutLocallyDeletedRemoteVideos(
+          remote: remoteVideos,
+          deletedKeys: deletedVideoKeys,
+        ),
       );
       // 设备来源标注：配对时存下的 host 设备名（多地址时取第一个启用且有名的）。
       final List<FushiClientUrl> urls = await syncRepo.getFushiClientUrls();

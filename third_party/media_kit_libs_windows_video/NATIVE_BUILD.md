@@ -6,9 +6,9 @@ including upstream HDMV/BD-J navigation added on 2026-08-25. The previous
 2026-08-13 binary had neither `discnav` nor `disc-menu`; updating Flutter alone
 could not enable original menus.
 
-Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-ffu1.7z` (46,022,880 bytes).
-SHA-256: `aac249968e82b5d4d983be6faf29f47f73806502aa56dbf25c37f708747edc5c`.
-The `fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-ffu1` suffix identifies this patched build; it is not an
+Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu1.7z` (42,941,899 bytes).
+SHA-256: `24a4828b189f262f16db8524bd6c0fefc05bd90f9a219c6fb571a9d2213135e2`.
+The `fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu1` suffix identifies this patched build; it is not an
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
 
@@ -21,6 +21,15 @@ on exactly the FFmpeg the player decodes with (the separate
 `third_party/ffmpeg-min/windows` build is gone). The closure shrank from 123 to
 103 files: the unified configure mirrors MSYS2's minus whisper (ggml),
 librsvg (glib/cairo/pango), frei0r, libcaca and openal.
+
+`dovi1-ffu1` (2026-10-19): the `ffu1` unified-FFmpeg build and the `dovi1`
+Dolby Vision reshaping (below) were developed in parallel; this archive is one
+rebuild carrying both (same unified FFmpeg recipe and MSYS2 package set as
+`ffu1`, plus `mpv-gl-dovi-p5.patch` under `render_patches`). The build script
+ran every verifier below on it: capability floor, `smoke-test.sh`,
+`probe_libmpv.py`, `verify_mkv_lace_dump.py` and `verify_dovi_p5.py` (P5 mean
+error 0.36 / 255 under all three hwdec modes, P8.1 base layer 0.27 - the same
+numbers as the `dovi1` archive).
 
 `patches/mkv-laced-audio-timestamps.patch` (BUG-3499) fixes upstream
 `handle_block()` in `demux/demux_mkv.c`: when an audio track has no
@@ -56,6 +65,18 @@ This rebuild differs from the `lua1-mkvlace1` archive only in `libmpv-2.dll`,
 patches under `demux_patches`); the other 234 files are byte-identical (same
 MSYS2 package set). `verify_mkv_lace_dump.py` checks both fixes against the
 real library (`tests/laced-opus.mkv`, `tests/open-gop-hevc.mkv`).
+
+`tool/bluray/platforms/patches/mpv-gl-dovi-p5.patch` (BUG-2691, the same file
+Android / macOS / iOS ship) makes the texture renderer (`gl_video`, what
+`vo=libmpv` uses) reshape Dolby Vision profile 5: it reads the frame's
+`AV_FRAME_DATA_DOVI_METADATA` and ports libplacebo's RPU reshaping plus the
+IPT -> LMS -> RGB decode. Without it P5 shows inverted purple / green colours,
+which is why Windows used to switch DV sources to a separate `vo=gpu-next`
+host window. Profiles 7 / 8 are left alone and show their HDR10 base layer.
+`verify_dovi_p5.py` renders `tests/dovi-p5.mkv` / `tests/dovi-p81.mkv` through
+the render API with d3d11va zero-copy, d3d11va-copy and software decoding and
+compares them with libplacebo's own rendering (measured: P5 mean error
+0.36 / 255, an archive without the patch 114; P8.1 matches the base layer, 0.27).
 
 `patches/gpu-dumb-mode-hwdec-crop.patch` (BUG-3296) fixes upstream
 `pass_render_frame_dumb()` in `video/out/gpu/video.c`: the vo=gpu "dumb mode"

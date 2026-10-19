@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -403,6 +404,59 @@ bool _anchorMayClaimHostId(
   return true;
 }
 
+/// 同一网段（/64 前缀 + scheme + 端口）的 IPv6 地址只留一条。
+///
+/// 开着 IPv6 隐私扩展的主机（Windows / Android / macOS 默认）每天换一个临时地址，
+/// 旧的以「已弃用」状态再挂最多 7 天；`dart:io` 拿不到临时 / 弃用标志，host 会把
+/// 它们全部公布出来。逐条学下来，配对列表就会堆满同一台机器的十几行 IPv6，每次
+/// 选路还要逐条探测。同一 /64 里的地址可达性相同，留一条就够。
+///
+/// 选哪条：[preferUrls] 里最先出现的（已在列表里的那条，免得每次刷新换一条），
+/// 没有就取公布顺序的第一条。非 IPv6 字面量地址原样保留。
+List<InterconnectHostAddress> collapseRotatingIpv6Addresses(
+  List<InterconnectHostAddress> addresses, {
+  List<String> preferUrls = const <String>[],
+}) {
+  final Map<String, List<InterconnectHostAddress>> byPrefix =
+      <String, List<InterconnectHostAddress>>{};
+  for (final InterconnectHostAddress a in addresses) {
+    final String? key = _ipv6PrefixKey(a.url);
+    if (key != null) (byPrefix[key] ??= <InterconnectHostAddress>[]).add(a);
+  }
+  final Set<String> chosen = <String>{};
+  for (final List<InterconnectHostAddress> group in byPrefix.values) {
+    InterconnectHostAddress pick = group.first;
+    for (final String url in preferUrls) {
+      final int i = group.indexWhere(
+        (InterconnectHostAddress a) => a.url == url,
+      );
+      if (i >= 0) {
+        pick = group[i];
+        break;
+      }
+    }
+    chosen.add(pick.url);
+  }
+  return <InterconnectHostAddress>[
+    for (final InterconnectHostAddress a in addresses)
+      if (_ipv6PrefixKey(a.url) == null || chosen.contains(a.url)) a,
+  ];
+}
+
+/// `https://[2408:…]:38765` → `https|2408:821b:9a33:8900|38765`；非 IPv6 字面量 → null。
+String? _ipv6PrefixKey(String url) {
+  final Uri? uri = Uri.tryParse(url);
+  if (uri == null || !uri.host.contains(':')) return null;
+  final InternetAddress? ip = InternetAddress.tryParse(uri.host);
+  if (ip == null || ip.type != InternetAddressType.IPv6) return null;
+  final List<int> raw = ip.rawAddress;
+  final String prefix = <String>[
+    for (int i = 0; i < 8; i += 2)
+      ((raw[i] << 8) | raw[i + 1]).toRadixString(16),
+  ].join(':');
+  return '${uri.scheme}|$prefix|${uri.port}';
+}
+
 /// 把 host 公布的地址集合并进候选列表（纯函数，便于单测）。
 ///
 /// - [anchorUrl] 是本次拿到地址集时用的那条地址；它被标上 [hostId]。列表里找不
@@ -424,8 +478,15 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
   if (anchorIndex < 0) return list;
   if (!_anchorMayClaimHostId(list, anchorIndex, hostId)) return list;
   final FushiClientUrl anchor = list[anchorIndex].copyWith(hostId: hostId);
+  final List<InterconnectHostAddress> kept = collapseRotatingIpv6Addresses(
+    addresses,
+    preferUrls: <String>[
+      anchor.url,
+      for (final FushiClientUrl u in list) u.url,
+    ],
+  );
   final Set<String> published = <String>{
-    for (final InterconnectHostAddress a in addresses) a.url,
+    for (final InterconnectHostAddress a in kept) a.url,
   };
 
   final List<FushiClientUrl> out = <FushiClientUrl>[];
@@ -441,7 +502,7 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
     out.add(u);
   }
 
-  for (final InterconnectHostAddress a in addresses) {
+  for (final InterconnectHostAddress a in kept) {
     // 只学带密码学身份的地址（https / p2p）；明文地址一律不学，见
     // [isInterconnectLearnableUrl]。
     if (!isInterconnectLearnableUrl(a.url)) continue;

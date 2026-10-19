@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// - Flutter 本该自动补它的 `cmake_native_assets_migration.dart` 用
 ///   `replaceFirst('endforeach(bundled_library)')` 定位插入点，而 Windows 模板里
 ///   根本没有那个 foreach → 匹配不到 → **静默 return**，不写文件、不打日志。
-/// - `sqlite3.dll` 同时由 `sqlite3_flutter_libs` 走 `PLUGIN_BUNDLED_LIBRARIES` 装进
+/// - `sqlite3.dll` 当时同时由 `sqlite3_flutter_libs` 走 `PLUGIN_BUNDLED_LIBRARIES` 装进
 ///   bundle，于是 native-assets 这条通道从来没通过也看不出来。
 /// - 后果不是「PDF 功能缺失」而是「PDF 永久挂死」：pdfrx 的 worker isolate 在
 ///   `execute() => sendPort.send(callback(message))` 里没有 try/catch，加载失败时

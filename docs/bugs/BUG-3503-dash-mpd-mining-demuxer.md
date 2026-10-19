@@ -1,0 +1,18 @@
+## BUG-3503 · 在线视频源给 DASH 清单（manifest.mpd）时制卡失败：捆绑 ffmpeg 缺 dash demuxer（required audio missing / Invalid data）
+- **报告**：2026-10-17（用户：Android 截图「Gagal mengekspor kartu: required audio missing (ffmpeg exit 1; executable=ffmpeg-kit; attempted=ffmpeg-kit; stderr=http://cdn.animeonsen.xyz:443/video/mp4-dash/…/manifest.mpd: Invalid data found when processing input)」，在线源 AnimeOnsen）
+- **真实性**：✅ 真 bug，BUG-2642（hls）的 DASH 同型，**全平台**。制卡的句子音频 / 封面走捆绑 ffmpeg（Android/iOS ffmpeg-kit、桌面 ffmpeg-min），播放走 libmpv 自带的完整 FFmpeg 所以能放。FFmpeg 的 dash demuxer 硬依赖 libxml2，而两份配方都没带：
+  - Android：入库 `third_party/ffmpeg_kit_flutter/android/libs/ffmpeg-kit.aar` 的 libavutil 内嵌 configure 串无 `--enable-libxml2`；libavformat 里扫不到 dashdec.c 的 `missing root node` 与 libxml2 的 `xmlParseCharRef`（只有 dash **muxer** 的 `mediaPresentationDuration`）。配方 `third_party/ffmpeg_kit_flutter/patches/build_x264_android.sh:41`（iOS 同 `build_x264_ios.sh:43`）。
+  - 桌面：`tool/ffmpeg-min/build-ffmpeg-min.sh` 的 `DEMUXERS` 无 `dash`、configure 无 `--enable-libxml2`；`third_party/ffmpeg-min/windows/ffmpeg.exe -h demuxer=dash` → `Unknown format 'dash'`。
+  - 复现：完整 ffmpeg 把样片切成 fMP4 DASH，再照制卡参数（`-ss 0.1 -t 0.8 -i manifest.mpd -vn -c:a aac`）抽音频：完整 ffmpeg exit 0（7206 字节），入库 ffmpeg-min → `Error opening input files: Invalid data found when processing input`，与用户报错逐字一致。
+- **[x] ① 已修复** — 配方改动：
+  - 桌面 `DEMUXERS` 补 `dash` + `--enable-libxml2`。Windows 用 MSYS2 `mingw-w64-x86_64-libxml2` 静态链；macOS 在 `build_darwin_static_deps` 里自编最小静态 libxml2；Linux 用 apt 的 `libxml2-dev`。
+  - 移动端 `android.sh` / `ios.sh` 加 `--enable-libxml2`，ffmpeg-kit 会自动打开 dash demuxer。
+  - Android 另外两处修正：libxml2 会连带编 libiconv，它生成手册页要 groff 的 html 设备，workflow 改装完整 `groff`；ffmpeg-kit 的 `gitsub.sh pull` 会拉 gnulib **最新提交**，与 libiconv 1.17 不兼容（`gl_HOST_CPU_C_ABI_32BIT: command not found`），`build_x264_android.sh` 把 gnulib 钉在 v1.17 发布前的 `4bc2b6f`，经 `GNULIB_SRCDIR` 传入。
+  - 入库二进制已全部替换：
+    - Windows / macOS ffmpeg-min 来自 run 39026519730（三平台 smoke PASS）。macOS 产物只动态依赖系统的 libSystem / libz。
+    - Android AAR 来自 run 39023894107；iOS xcframework 来自 run 39021576169。两者 `verify_mobile_outputs.py` 全部通过，只多了 libxml2（Android 还有 libiconv）的许可文件。
+    - Android AAR 体积 29.8MB → 34.2MB。
+- **[x] ② 已加自动化测试** — 已全部转绿：`tool/ffmpeg-min/smoke-test.sh` 新增「从 DASH 清单抽句子音频」（本地对照：完整 ffmpeg 过、入库 ffmpeg-min 挂）；`fushi/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart` 必需开关加 `--enable-libxml2`（`DEMUXERS` 清单比对自动覆盖 `dash`）；`fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart` 与 CI 产物校验 `verify_mobile_outputs.py` 加 `--enable-libxml2` + libavformat 两证（`missing root node` / `xmlParseCharRef`）+ `license_libxml2.txt`。对现有 AAR 跑校验脚本恰好只在这 7 项上红（判据有效）。
+- **备注**：
+  - 远端 DASH 的 Referer/UA 与本机中继路由沿用 BUG-2625 / BUG-2642 的 `RemoteVideoStreamHeaders` + `ffmpegRemoteInputRouteResolver`，本 bug 只缺 demuxer。hls 专属的 `-allowed_extensions` 等选项只在播放器 `file-format` 为 hls 时加，不会误喂给 dash。
+  - 未在 AnimeOnsen 真实清单上验证（需要扩展签发的地址）；清单若是 SegmentTemplate + fMP4（路径 `mp4-dash/` 暗示如此），新 demuxer 即可处理。

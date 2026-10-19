@@ -262,83 +262,85 @@ void main() {
     });
   });
 
-  group('desktopControlsBottomStripHeight：点进度条上半截不再顺带暂停', () {
-    // 桌面默认几何：底栏顶边距底 = 56（按钮行）+ 16（底边距）= 72；进度条热区 36 高、
-    // 下压 16 → 上缘距底 72 + 20 = 92。旧口径只排除到 72 + 10 = 82，于是 82..92 这
-    // 10px 带里鼠标单击既 seek（Listener）又被点击层判成 playOrPause。
-    const double barOffset = 72;
+  group('控件区判定走真实 hit-test（VideoControlsChromeRegion）', () {
+    // 底栏控件区 120 高（远高于旧口径推出的条带），里面放一条只走 Listener、不进
+    // 手势竞技场的「进度条」——点击层照样会赢它的点击，只能靠控件区判据保持安静。
+    const double chromeHeight = 120;
 
-    double strip({
-      bool displaySeekBar = true,
-      bool hasBottomButtonBar = true,
-      double containerHeight = 36,
-      double overlap = 16,
-    }) => desktopControlsBottomStripHeight(
-      bottomBarOffset: barOffset,
-      displaySeekBar: displaySeekBar,
-      hasBottomButtonBar: hasBottomButtonBar,
-      seekBarContainerHeight: containerHeight,
-      seekBarBottomButtonBarOverlap: overlap,
-    );
-
-    test('排除带覆盖进度条整个热区（上缘 = 底栏顶边 + 热区高 − 下压）', () {
-      expect(strip(), 92);
-    });
-
-    test('进度条热区不高出底栏 10px 时保持原先的 10px 余量', () {
-      // 小窗 / 紧凑档等比缩小：36×0.5 − 16×0.5 = 10 → 与余量持平。
-      expect(strip(containerHeight: 18, overlap: 8), 82);
-      expect(strip(containerHeight: 20, overlap: 16), 82);
-    });
-
-    test('无进度条（mini 档）只留底栏 + 余量', () {
-      expect(strip(displaySeekBar: false), 82);
-    });
-
-    test('无底栏按钮行时进度条不下压，整条热区都排除', () {
-      expect(strip(hasBottomButtonBar: false), barOffset + 36);
-    });
-
-    testWidgets('真实点击层：鼠标点进度条热区最上缘不再 playOrPause', (WidgetTester tester) async {
-      final List<DesktopControlsTapAction> actions =
-          <DesktopControlsTapAction>[];
-      final GlobalKey surfaceKey = GlobalKey();
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Center(
-            child: SizedBox.fromSize(
-              key: surfaceKey,
-              size: surfaceSize,
-              child: MaterialDesktopTapRouter(
+    Widget routerHarness(List<DesktopControlsTapAction> actions) {
+      return MaterialApp(
+        home: Center(
+          child: SizedBox.fromSize(
+            size: surfaceSize,
+            child: Builder(
+              builder: (BuildContext context) => MaterialDesktopTapRouter(
                 playAndPauseOnTap: true,
                 touchTapTogglesControls: true,
                 controlsVisible: true,
                 // 与 material_desktop.dart 的 isInPlayPauseRegion 同式。
-                isInPlayPauseRegion: (Offset global) {
-                  final RenderBox box =
-                      surfaceKey.currentContext!.findRenderObject()!
-                          as RenderBox;
-                  return box.globalToLocal(global).dy <
-                      box.size.height - strip();
-                },
+                isInPlayPauseRegion: (Offset global) =>
+                    !VideoControlsChromeRegion.hitsRegion(
+                      globalPosition: global,
+                      viewId: View.of(context).viewId,
+                    ),
                 onAction: actions.add,
-                child: const ColoredBox(color: Color(0xFF000000)),
+                child: Stack(
+                  children: <Widget>[
+                    const Positioned.fill(
+                      child: ColoredBox(color: Color(0xFF000000)),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: chromeHeight,
+                      child: VideoControlsChromeRegion(
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: Listener(
+                            onPointerDown: (_) {},
+                            child: const SizedBox(
+                              height: 36,
+                              width: double.infinity,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
       );
-      final Offset topLeft = tester.getTopLeft(find.byKey(surfaceKey));
-      // 热区上缘往下 2px（旧口径下落在「播放区」里）。
+    }
+
+    testWidgets('鼠标点控件区（进度条上缘 / 按钮间空隙）不 playOrPause，区外照常', (
+      WidgetTester tester,
+    ) async {
+      final List<DesktopControlsTapAction> actions =
+          <DesktopControlsTapAction>[];
+      await tester.pumpWidget(routerHarness(actions));
+      final Offset topLeft = tester.getTopLeft(
+        find.byType(MaterialDesktopTapRouter),
+      );
+      // 进度条最上缘往下 2px。
       await tester.tapAt(
-        topLeft + Offset(400, surfaceSize.height - 92 + 2),
+        topLeft + Offset(400, surfaceSize.height - chromeHeight + 2),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(const Duration(seconds: 1));
+      // 控件区底部空隙。
+      await tester.tapAt(
+        topLeft + Offset(40, surfaceSize.height - 10),
         kind: PointerDeviceKind.mouse,
       );
       await tester.pump(const Duration(seconds: 1));
       expect(actions, isEmpty);
-      // 热区之上仍是画面：照常播放/暂停。
+      // 控件区之上是画面：照常播放/暂停。
       await tester.tapAt(
-        topLeft + Offset(400, surfaceSize.height - 92 - 4),
+        topLeft + Offset(400, surfaceSize.height - chromeHeight - 4),
         kind: PointerDeviceKind.mouse,
       );
       await tester.pump();
@@ -347,7 +349,24 @@ void main() {
       ]);
     });
 
-    test('material_desktop 的播放区判据走 desktopControlsBottomStripHeight', () {
+    testWidgets('触屏点控件区只续命，不收起', (WidgetTester tester) async {
+      final List<DesktopControlsTapAction> actions =
+          <DesktopControlsTapAction>[];
+      await tester.pumpWidget(routerHarness(actions));
+      final Offset topLeft = tester.getTopLeft(
+        find.byType(MaterialDesktopTapRouter),
+      );
+      await tester.tapAt(
+        topLeft + Offset(40, surfaceSize.height - 10),
+        kind: PointerDeviceKind.touch,
+      );
+      await tester.pump();
+      expect(actions, <DesktopControlsTapAction>[
+        DesktopControlsTapAction.keepControlsAlive,
+      ]);
+    });
+
+    test('material_desktop 的播放区判据走 hit-test，不再推几何条带', () {
       final String source = File(
         '../third_party/media_kit_video/lib/media_kit_video_controls/'
         'src/controls/material_desktop.dart',
@@ -357,12 +376,11 @@ void main() {
       final int end = source.indexOf('onAction:', start);
       final String body = source.substring(start, end);
       expect(
-        body.contains('desktopControlsBottomStripHeight('),
+        body.contains('VideoControlsChromeRegion.hitsRegion('),
         isTrue,
-        reason: '点击层排除带必须按进度条真实热区算，固定 10px 会让点进度条上缘暂停',
+        reason: '控件区必须按真实渲染树判，几何推导会随底栏改版漂移',
       );
-      expect(body.contains('seekBarContainerHeight'), isTrue);
-      expect(body.contains('seekBarBottomButtonBarOverlap'), isTrue);
+      expect(body.contains('globalToLocal'), isFalse, reason: '不要再按坐标推控件区');
     });
   });
 

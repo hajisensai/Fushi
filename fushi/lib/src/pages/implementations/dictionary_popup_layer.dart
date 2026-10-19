@@ -6,6 +6,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart'
+    show kLookupPopupDefaultHeight, kLookupPopupDefaultWidth;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -32,10 +34,10 @@ Rect calcPopupPosition({
   required Rect selectionRect,
   required Size screen,
   double padding = 6.0,
-  double maxWidth = 360.0,
-  // 默认与单一真相源（preferences_repository.defaultPopupMaxHeight=360）对齐；
-  // 两个真实调用方都显式传 appModel.popupMaxHeight，此默认仅兜底/测试用。
-  double maxHeight = 360.0,
+  double maxWidth = kLookupPopupDefaultWidth,
+  // 默认与单一真相源（kLookupPopupDefaultWidth/Height）对齐；两个真实调用方都显式
+  // 传 appModel.popupMaxWidth/Height，此默认仅兜底/测试用。
+  double maxHeight = kLookupPopupDefaultHeight,
   double bottomReserve = 0.0,
   double topReserve = 0.0,
 
@@ -1058,6 +1060,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onDuplicateCheck,
     this.onOverwriteTargetNoteId,
     this.onMinedCardAction,
+    this.onQueueOverwrite,
     this.onOpenInAnki,
     this.onUpdateEntry,
     this.onFavoriteEntry,
@@ -1166,6 +1169,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 命中多张让用户选。透传给 [DictionaryPopupWebView]。null 时回退旧两态行为。
   final Future<MinePopupResult> Function(Map<String, String> fields)?
   onMinedCardAction;
+
+  /// BUG-3492：卡还在后台写入时的覆盖请求（排队、落地后自动覆盖），透传给
+  /// [DictionaryPopupWebView.onQueueOverwrite]。null = 宿主没有后台写入这条路。
+  final Future<QueuedOverwriteReply> Function(Map<String, String> fields)?
+  onQueueOverwrite;
 
   /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮回调，透传给
   /// [DictionaryPopupWebView]。宿主把 Anki 浏览器过滤到「Anki 认为这个词已有的卡」
@@ -1899,6 +1907,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               onDuplicateCheck: onDuplicateCheck,
               onOverwriteTargetNoteId: onOverwriteTargetNoteId,
               onMinedCardAction: onMinedCardAction,
+              onQueueOverwrite: onQueueOverwrite,
               onOpenInAnki: onOpenInAnki,
               onFavoriteEntry: onFavoriteEntry,
               onFavoriteCheck: onFavoriteCheck,

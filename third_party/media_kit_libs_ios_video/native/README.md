@@ -5,8 +5,10 @@ rebuilt on branch `fushi/mkv-lace` with `mkv-laced-audio-timestamps.patch` (BUG-
 audio without DefaultDuration, e.g. mkvmerge Opus, lost every lace frame after the first in dump-cache)
 and `recorder-video-dts.patch` (BUG-3500: Matroska video has no DTS, so dump-cache lost every B-frame).
 The exact source commit, Actions run, archive checksum and inspection results are recorded in `provenance.json`.
-It contains iOS arm64 and arm64/x86_64 simulator slices, libbluray HDMV navigation,
-FFmpeg 6.1.6 full decoders, and the retained Dolby Vision profile 5 GL patch.
+It contains iOS arm64 and arm64/x86_64 simulator slices, libbluray HDMV navigation and the
+retained Dolby Vision profile 5 GL patch. It contains **no FFmpeg**: `Mpv.framework` links
+`@rpath/libav*.framework` shipped by `third_party/ffmpeg_kit_next_flutter` (the unified FFmpeg of
+`tool/ffmpeg-unified`), so playback and card mining load one libavcodec in the process.
 No Java runtime/BD-J jar is included. Device menu rendering has not been tested.
 
 Rebuild with `tool/bluray/platforms/build_darwin.sh` from the repository root and

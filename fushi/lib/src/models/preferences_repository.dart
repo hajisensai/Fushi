@@ -5,6 +5,7 @@ import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/srs/srs_backup_retention.dart';
 import 'package:fushi_engine/profile/profile_document.dart'
     show kProfileSettingCategoryPref;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
@@ -44,6 +45,8 @@ import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart'
     show GameStreamVideoSettings;
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart'
+    show kLookupPopupDefaultHeight, kLookupPopupDefaultWidth;
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
     show MediaServerVersionMemory, mediaServerVersionMemory;
@@ -1124,7 +1127,7 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  final double defaultPopupMaxWidth = 400;
+  final double defaultPopupMaxWidth = kLookupPopupDefaultWidth;
 
   double get popupMaxWidth =>
       getPref('popup_max_width', defaultValue: defaultPopupMaxWidth) as double;
@@ -1134,7 +1137,7 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  final double defaultPopupMaxHeight = 360;
+  final double defaultPopupMaxHeight = kLookupPopupDefaultHeight;
 
   double get popupMaxHeight =>
       getPref('popup_max_height', defaultValue: defaultPopupMaxHeight)
@@ -1678,8 +1681,8 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 遮蔽态「悬停 / 点击临时显形」总闸；**默认 true**（历史行为：显形是遮蔽的内建
   /// 行为、关不掉）。关掉后模糊 / 隐藏在整句期间恒定生效——听力沉浸时鼠标恰好停在
-  /// 字幕上或手指扫过盒面不再破功。主 / 副字幕共用一个开关（用户诉求是「显形这个
-  /// 行为」的总闸，不是逐层设置）。
+  /// 字幕上或手指扫过盒面不再破功。只管**主字幕**，副字幕见
+  /// [videoSecondarySubtitleObscureReveal]。
   ///
   /// 与遮蔽模式两个 setter 不同，本 setter **照常广播**：它是设置页 / 面板里的低频
   /// 开关（没有快捷键路径），一次全局重建换来所有读取方（overlay、面板回显）无条件
@@ -1689,6 +1692,17 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoSubtitleObscureReveal(bool value) async {
     await setPref('video_subtitle_obscure_reveal', value);
+    notifyListeners();
+  }
+
+  /// 副字幕的「临时显形」开关（用户要求主 / 副分开配置）。**未写过时继承主字幕的
+  /// 值**：拆分前这是主副共用的一个总闸，关过它的老用户副字幕也得继续保持遮蔽。
+  bool get videoSecondarySubtitleObscureReveal =>
+      getPref('video_secondary_subtitle_obscure_reveal',
+          defaultValue: videoSubtitleObscureReveal) as bool;
+
+  Future<void> setVideoSecondarySubtitleObscureReveal(bool value) async {
+    await setPref('video_secondary_subtitle_obscure_reveal', value);
     notifyListeners();
   }
 
@@ -2991,6 +3005,28 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setSrsReviewZoom(double value) async {
     await setPref('srs_review_zoom', value);
+    notifyListeners();
+  }
+
+  /// 复习自动备份开关（默认开）。设备本地。
+  static const String srsBackupAutoKey = 'srs_backup_auto';
+
+  /// 复习自动备份的间隔与保留份数（JSON，缺省 = Anki 默认）。设备本地。
+  static const String srsBackupLimitsKey = 'srs_backup_limits';
+
+  bool get srsBackupAuto =>
+      getPref(srsBackupAutoKey, defaultValue: true) as bool;
+
+  Future<void> setSrsBackupAuto(bool value) async {
+    await setPref(srsBackupAutoKey, value);
+    notifyListeners();
+  }
+
+  SrsBackupLimits get srsBackupLimits =>
+      srsBackupLimitsFromJson(getPref(srsBackupLimitsKey, defaultValue: ''));
+
+  Future<void> setSrsBackupLimits(SrsBackupLimits value) async {
+    await setPref(srsBackupLimitsKey, srsBackupLimitsToJson(value));
     notifyListeners();
   }
 

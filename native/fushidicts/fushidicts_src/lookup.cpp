@@ -481,6 +481,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // Pitch is not read by the comparator, so it waits until after the resize:
   // only the <=max_results terms the user actually receives get enriched
   // (BUG-1304).
+  if (!options.materialize) return results;
   for (auto& r : results) {
     query_.enrich_pitch(r.term);
     query_.materialize(r.term);

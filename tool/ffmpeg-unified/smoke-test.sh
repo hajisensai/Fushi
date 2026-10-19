@@ -302,6 +302,99 @@ run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y -i "$MP4_FIXTURE"   -map 0
 run "$FFMPEG_MIN" -hide_banner -loglevel error -y   -ss 0.100 -t 0.800 -i "$WORK/hls/index.m3u8" -vn -map_chapters -1   -c:a aac -ac 1 -b:a 64k "$WORK/hls.aac"
 assert_nonempty "$WORK/hls.aac"
 
+echo "[ffmpeg-min-smoke] exporting sentence audio from a DASH manifest"
+# BUG-3503: some online video sources (e.g. AnimeOnsen) hand mining a
+# `manifest.mpd`. Without the dash demuxer (+ libxml2) the bundled ffmpeg rejects
+# it with AVERROR_INVALIDDATA and the card aborts with `required audio missing`.
+# Segments are fMP4, read through the already-enabled mov demuxer.
+mkdir -p "$WORK/dash"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y -i "$MP4_FIXTURE"   -map 0:v:0 -map 0:a:0 -c:v copy -c:a copy -f dash -seg_duration 1   "$WORK/dash/manifest.mpd"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y   -ss 0.100 -t 0.800 -i "$WORK/dash/manifest.mpd" -vn -map_chapters -1   -c:a aac -ac 1 -b:a 64k "$WORK/dash.aac"
+assert_nonempty "$WORK/dash.aac"
+
+echo "[ffmpeg-min-smoke] decoding importable containers with non-mainstream codecs (BUG-3504)"
+# Each case: fixture-encode a short clip, then run the two mining shapes on it
+# (sentence audio, and a still frame when the case has video). Every codec here
+# was found missing by running the vendored binary against such a sample.
+mkdir -p "$WORK/codecs"
+SRC_V=(-f lavfi -i "testsrc=size=320x240:rate=24:duration=2")
+SRC_A=(-f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100")
+codec_case() {
+  local name="$1" out="$2" has_video="$3"; shift 3
+  run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y "$@" -t 2 "$WORK/codecs/$name.$out"
+  run "$FFMPEG_MIN" -hide_banner -loglevel error -y -ss 0.2 -t 1 \
+    -i "$WORK/codecs/$name.$out" -vn -map_chapters -1 -c:a aac -ac 1 -b:a 64k \
+    "$WORK/codecs/$name.aac"
+  assert_nonempty "$WORK/codecs/$name.aac"
+  if [ "$has_video" = 1 ]; then
+    run "$FFMPEG_MIN" -hide_banner -loglevel error -y -ss 0.5 \
+      -i "$WORK/codecs/$name.$out" -frames:v 1 "$WORK/codecs/$name.jpg"
+    assert_nonempty "$WORK/codecs/$name.jpg"
+  fi
+}
+codec_case latm ts 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v libx264 -g 12 -c:a aac -mpegts_flags latm
+codec_case adpcm_ms wav 0 "${SRC_A[@]}" -c:a adpcm_ms
+codec_case adpcm_ima_wav wav 0 "${SRC_A[@]}" -c:a adpcm_ima_wav
+codec_case adpcm_ima_qt mov 0 "${SRC_A[@]}" -c:a adpcm_ima_qt
+codec_case flv_swf flv 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v flv -c:a adpcm_swf
+codec_case flv_nelly flv 0 "${SRC_A[@]}" -c:a nellymoser
+codec_case prores mov 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v prores_ks -c:a pcm_s16le
+codec_case qtrle mov 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v qtrle -c:a aac
+codec_case ffv1 mkv 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v ffv1 -c:a flac
+codec_case huffyuv avi 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v huffyuv -c:a pcm_s16le
+
+echo "[ffmpeg-min-smoke] raw PCM muxer for ASR (s16le, BUG-3504)"
+# Same shape as fushi_asr_core's asr_pcm_source.dart: raw PCM muxers take exactly
+# one stream, hence the explicit -map (the fixture also carries a mov_text track).
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y -i "$MP4_FIXTURE" -map 0:a:0 -vn -sn -dn \
+  -ac 1 -ar 16000 -c:a pcm_s16le -f s16le "$WORK/asr.pcm"
+assert_nonempty "$WORK/asr.pcm"
+
+echo "[ffmpeg-min-smoke] TLS certificate pinning option (-tls_pin_sha256, BUG-3504)"
+# Desktop mining from a paired Fushi host passes the TOFU fingerprint of its
+# self-signed cert; an ffmpeg without the pin patch rejects the whole command.
+if ! "$FFMPEG_MIN" -hide_banner -h protocol=tls 2>&1 | grep -q tls_pin_sha256; then
+  echo "MISSING OPTION: tls protocol has no tls_pin_sha256 (patch not applied)" >&2
+  exit 1
+fi
+if command -v openssl >/dev/null 2>&1; then
+  mkdir -p "$WORK/tls"
+  # MSYS rewrites "/CN=..." into a Windows path unless conversion is disabled.
+  (cd "$WORK/tls" &&
+    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
+    openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem \
+      -days 1 -subj "/CN=fushi-pin-test" >/dev/null 2>&1)
+  # Text payload on purpose: Windows `s_server -WWW` reads files in text mode
+  # and truncates binary ones (a .wav came back as 40 bytes).
+  printf '1\n00:00:00,000 --> 00:00:01,000\npinned\n\n' >"$WORK/tls/cue.srt"
+  PIN="$(openssl x509 -in "$WORK/tls/cert.pem" -noout -fingerprint -sha256 | sed 's/.*=//')"
+  PORT=$((20000 + RANDOM % 20000))
+  (cd "$WORK/tls" && exec openssl s_server -quiet -accept "$PORT" \
+    -cert cert.pem -key key.pem -WWW) >/dev/null 2>&1 &
+  TLS_PID=$!
+  sleep 2
+  pin_status=0
+  "$FFMPEG_MIN" -hide_banner -loglevel error -y -tls_pin_sha256 "$PIN" \
+    -i "https://127.0.0.1:$PORT/cue.srt" "$WORK/tls/pinned.srt" \
+    || pin_status=$?
+  wrong_status=0
+  "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+    -tls_pin_sha256 "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff" \
+    -i "https://127.0.0.1:$PORT/cue.srt" "$WORK/tls/wrong.srt" \
+    >/dev/null 2>&1 || wrong_status=$?
+  kill "$TLS_PID" >/dev/null 2>&1 || true
+  if [ "$pin_status" -ne 0 ] || ! grep -q pinned "$WORK/tls/pinned.srt"; then
+    echo "TLS PIN: matching fingerprint was rejected (exit $pin_status)" >&2
+    exit 1
+  fi
+  if [ "$wrong_status" -eq 0 ]; then
+    echo "TLS PIN: mismatching fingerprint was accepted" >&2
+    exit 1
+  fi
+else
+  echo "  (openssl not on PATH: end-to-end pin check skipped, option presence verified)"
+fi
+
 echo "[ffmpeg-min-smoke] exporting sentence audio at playback tempo (atempo)"
 # Audiobook mining at playback speed (buildFfmpegClipArgs tempo=...) cuts the
 # sentence clip through `-af atempo=R`. A minimal build without the atempo

@@ -75,10 +75,17 @@ const int kFeedbackVideoShortSide = 720;
 /// 时不加滤镜（`fps` 滤镜会把低帧率素材补帧升上去）。
 const int kFeedbackVideoMaxFps = 30;
 
-/// x264 预设：移动端只有软编（见文件头），旧的 `veryfast` + 全帧率 + 双三次缩放在手机上
-/// 压一段几分钟的 60 fps 录屏要好几分钟（反馈 B5mf2su2Cm「压缩巨慢」）。码率是 ABR 定死的，
+/// x264 预设与缩放算法：反馈视频主要是录屏，标准是界面文字 / 字幕的清晰度不低于旧方案
+/// （`veryfast` + 双三次 + 原帧率）。2026-10 实测（BUG-3489；平板录屏与 60 fps 密集小字
+/// 素材，同码率 SSIM / PSNR 对比源）：`ultrafast` + 双线性在密集小字上 SSIM 0.940 / PSNR
+/// 23.6 dB，低于旧方案的 0.950 / 24.9 dB；`veryfast` + 双三次 + 先降 30 fps 是 0.952 /
+/// 25.0 dB（不低于旧方案），Xiaomi Pad 5 上 ffmpeg-kit 耗时比旧方案少约 12～38%。
+/// 视频选完就在后台压（提交页），单次耗时对用户的影响小，画质优先。码率是 ABR 定死的，
 /// 预设只换「同码率下的画质」而不影响大小上限。
-const String kFeedbackVideoPreset = 'ultrafast';
+const String kFeedbackVideoPreset = 'veryfast';
+
+/// 缩放算法（见 [kFeedbackVideoPreset]）：双三次，与旧方案一致。
+const String kFeedbackVideoScaleFlags = 'bicubic';
 
 /// 选的视频不是服务端收的格式（mp4 / webm / mov），而且转码也没成功。
 class FeedbackVideoUnsupportedException implements Exception {
@@ -201,8 +208,8 @@ int? feedbackVideoBitrateKbps(
 }
 
 /// 纯函数：转码参数表。源帧率 [sourceFps] 高于 [kFeedbackVideoMaxFps] 时先降帧，短边缩到
-/// ≤ [quality] 的短边（只缩不放、保持比例、偶数维度、双线性——录屏缩小时与双三次肉眼无差、
-/// 快得多），H.264 yuv420p 平均码率 [videoKbps]（maxrate 1.5 倍防尖峰，预设
+/// ≤ [quality] 的短边（只缩不放、保持比例、偶数维度、[kFeedbackVideoScaleFlags]），
+/// H.264 yuv420p 平均码率 [videoKbps]（maxrate 1.5 倍防尖峰，预设
 /// [kFeedbackVideoPreset]），AAC 双声道；没有音轨的视频照样能转（`0:a:0?` 可选映射）；
 /// `+faststart` 让开发者端边下边播。
 List<String> buildFeedbackVideoTranscodeArgs({
@@ -227,7 +234,8 @@ List<String> buildFeedbackVideoTranscodeArgs({
     '-vf',
     "${capFps ? 'fps=$kFeedbackVideoMaxFps,' : ''}"
         "scale=w='if(gte(iw,ih),-2,trunc(min($s,iw)/2)*2)'"
-        ":h='if(gte(iw,ih),trunc(min($s,ih)/2)*2,-2)':flags=bilinear",
+        ":h='if(gte(iw,ih),trunc(min($s,ih)/2)*2,-2)'"
+        ':flags=$kFeedbackVideoScaleFlags',
     '-c:v',
     'libx264',
     '-preset',

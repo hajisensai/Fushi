@@ -162,7 +162,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 ## 关键依赖与配置
 
 - **状态管理**：`flutter_riverpod: ^2.3.6`
-- **数据库**：`drift: ">=2.33.0 <2.34.0"` + `sqlite3_flutter_libs`（通过 `fushi_core`）
+- **数据库**：`drift: ">=2.33.0 <2.34.0"` + `sqlite3` 3.x（原生库由其 build hook 作为 native asset 随包；**不要**加 `sqlite3_flutter_libs`，它只配 2.x、会多塞一份 SQLite）
 - **WebView**：`flutter_inappwebview: ^6.1.5`
 - **音频**：`just_audio: ^0.9.31`（通过 `fushi_audio`）
 - **国际化**：`slang: ^3.13.0` / `slang_flutter`，17 种语言

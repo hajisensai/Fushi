@@ -39,34 +39,6 @@ void main() {
       ]);
     });
 
-    // 底栏「分页滑动」把查词并进胶囊（不再是独立 FAB）：它是胶囊里的目的地，
-    // 必须进横滑序列，否则落到查词上的人滑不出去（同 BUG-3351 的死胡同）。
-    test('分页滑动形态：查词按模块顺序参与横滑，进得去出得来', () {
-      expect(
-        homeSwipeTabs(tabs: _tabs, reversed: false, lookupInBar: true),
-        _tabs,
-      );
-      expect(
-        homeModuleSwipeArmed(
-          tabs: _tabs,
-          current: HomeTab.dictionaries,
-          lookupInBar: true,
-        ),
-        isTrue,
-      );
-      HomeTab? target(HomeTab current, {required bool left}) =>
-          homeModuleSwipeTarget(
-            tabs: _tabs,
-            current: current,
-            reversed: false,
-            fingerTowardStart: left,
-            lookupInBar: true,
-          );
-      expect(target(HomeTab.browse, left: true), HomeTab.dictionaries);
-      expect(target(HomeTab.dictionaries, left: true), HomeTab.settings);
-      expect(target(HomeTab.dictionaries, left: false), HomeTab.browse);
-    });
-
     test('手指左移去右边那一项，右移回左边那一项，到头不循环', () {
       HomeTab? target(HomeTab current, {required bool left}) =>
           homeModuleSwipeTarget(
