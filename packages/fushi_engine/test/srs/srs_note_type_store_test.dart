@@ -29,7 +29,11 @@ void main() {
   Future<void> syncAll(List<SrsDbStore> stores) async {
     for (int round = 0; round < 3; round++) {
       for (final SrsDbStore s in stores) {
-        await SrsSyncEngine(directory: dir, replica: s).syncOnce();
+        await SrsSyncEngine(
+          directoryKey: 'test',
+          directory: dir,
+          replica: s,
+        ).syncOnce();
       }
     }
   }
@@ -157,6 +161,157 @@ void main() {
         lapis2.edits.keys.where((String k) => k.startsWith('fieldDef/')),
         <String>[SrsFieldKeys.fieldDef(mine)],
       );
+    });
+
+    test('删字段带模板改写（prepareTemplate）：成功时改写与删除同一次落库；删不掉时模板与字段都不变', () async {
+      final SrsDbStore a = await device('a');
+      final String nt = await a.createStockNoteType(
+        SrsStockNoteType.basic,
+        '问答',
+      );
+      SrsNoteTypeView v = await type(a, nt);
+      final String front = v.fields[0].id;
+      final String back = v.fields[1].id;
+      final String tplId = v.templates.single.id;
+      Set<String> liveEditIds(SrsNoteTypeView x) => <String>{
+        for (final String k in x.edits.keys)
+          for (final SrsFieldEdit e in x.edits[k]!.live) e.id,
+      };
+      int calls = 0;
+      SrsTemplateDef rewrite(SrsNoteTypeView type, SrsTemplateDef tpl) {
+        calls++;
+        return tpl.copyWith(
+          front: '<!--rewritten-->${tpl.front}',
+          back: '<!--rewritten-->${tpl.back}',
+        );
+      }
+
+      // 成功：改写结果再剥掉被删字段的引用，一起落库。
+      final Set<String> editsBefore = liveEditIds(v);
+      await a.deleteField(nt, back, prepareTemplate: rewrite);
+      v = await type(a, nt);
+      expect(calls, 1);
+      expect(v.fieldById(back), isNull);
+      expect(v.templates.single.front, startsWith('<!--rewritten-->'));
+      expect(v.templates.single.back, startsWith('<!--rewritten-->'));
+      expect(v.templates.single.back, isNot(contains(back)));
+      expect(
+        liveEditIds(v).difference(editsBefore).length,
+        2,
+        reason: '字段删除标记 + 模板定义，同一批写入',
+      );
+
+      // 失败：只剩一个字段 → 抛错，改写从没被调用，模板与字段都原样。
+      final SrsTemplateDef tplBefore = v.templates.single;
+      final Set<String> editsBeforeFail = liveEditIds(v);
+      await expectLater(
+        a.deleteField(nt, front, prepareTemplate: rewrite),
+        throwsStateError,
+      );
+      v = await type(a, nt);
+      expect(calls, 1, reason: '校验先于改写');
+      expect(v.fieldById(front), isNotNull);
+      expect(v.templates.single.id, tplId);
+      expect(v.templates.single.front, tplBefore.front);
+      expect(v.templates.single.back, tplBefore.back);
+      expect(liveEditIds(v), editsBeforeFail, reason: '一条记录都不写');
+
+      // 内置字段同理。
+      final SrsNoteTypeView lapis = await type(a, a.lapisNoteTypeId);
+      final List<SrsTemplateDef> lapisTpls = lapis.templates;
+      await expectLater(
+        a.deleteField(
+          lapis.id,
+          srsLapisFieldId(kProfile, 'Sentence'),
+          prepareTemplate: rewrite,
+        ),
+        throwsStateError,
+      );
+      final SrsNoteTypeView lapisAfter = await type(a, lapis.id);
+      expect(
+        lapisAfter.templates.map((SrsTemplateDef x) => x.front),
+        lapisTpls.map((SrsTemplateDef x) => x.front),
+      );
+      expect(calls, 1);
+    });
+
+    test('字段说明：独立键，一台改说明一台改名不冲突；克隆带上；说明没变不写记录；导出 .apkg 带上', () async {
+      final SrsDbStore a = await device('a');
+      final SrsDbStore b = await device('b');
+      final String nt = await a.createStockNoteType(
+        SrsStockNoteType.basic,
+        '问答',
+      );
+      final SrsNoteTypeView v0 = await type(a, nt);
+      final String front = v0.fields[0].id;
+      final String back = v0.fields[1].id;
+      await a.setFieldDescription(nt, back, '  中文释义  ');
+      expect((await type(a, nt)).fieldById(back)!.description, '中文释义');
+      final String key = SrsFieldKeys.fieldDescription(back);
+      expect(
+        ((await type(a, nt)).edits.value(SrsFieldKeys.fieldDef(back))! as Map)
+            .containsKey('description'),
+        isFalse,
+        reason: '说明不写进字段定义',
+      );
+      final String before = (await type(
+        a,
+        nt,
+      )).edits[key]!.live.map((SrsFieldEdit e) => e.id).join();
+      await a.setFieldDescription(nt, back, '中文释义');
+      expect(
+        (await type(
+          a,
+          nt,
+        )).edits[key]!.live.map((SrsFieldEdit e) => e.id).join(),
+        before,
+        reason: '没变不写',
+      );
+      await syncAll(<SrsDbStore>[a, b]);
+      // 离线并发：a 改说明、b 改名 → 合并后两样都在，没有待裁决的冲突。
+      await a.setFieldDescription(nt, back, '中文释义（新）');
+      await b.renameField(nt, back, 'Meaning');
+      await syncAll(<SrsDbStore>[a, b]);
+      for (final SrsDbStore s in <SrsDbStore>[a, b]) {
+        final SrsNoteTypeView v = await type(s, nt);
+        expect(v.fieldById(back)!.name, 'Meaning');
+        expect(v.fieldById(back)!.description, '中文释义（新）');
+        expect(v.edits.conflicted, isEmpty);
+      }
+
+      final String clone = await a.cloneNoteType(nt, '问答 副本');
+      expect(
+        (await type(a, clone)).fields
+            .firstWhere((SrsFieldDef f) => f.name == 'Meaning')
+            .description,
+        '中文释义（新）',
+      );
+
+      await a.createNote(
+        noteTypeId: nt,
+        fieldsById: <String, String>{front: 'Q', back: 'A'},
+      );
+      final SrsAnkiPackage p = SrsAnkiPackage.open(
+        await exportAnkiPackage(store: a),
+        zstd: (Uint8List b) => null,
+      );
+      final SrsAnkiCollection col = await SrsAnkiCollection.open(
+        p.collectionBytes,
+      );
+      try {
+        final SrsAnkiNoteType exported = col.noteTypes.values.firstWhere(
+          (SrsAnkiNoteType x) => x.name == '问答',
+        );
+        expect(
+          exported.fields
+              .firstWhere((SrsAnkiField f) => f.name == 'Meaning')
+              .description,
+          '中文释义（新）',
+          reason: '导出时写进 Anki 的字段说明，再读回来一致',
+        );
+      } finally {
+        await col.close();
+      }
     });
 
     test('两台设备离线各加一个字段，合并后两个都在（按项合并，铁律 D）', () async {

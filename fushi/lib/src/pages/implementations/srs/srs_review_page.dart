@@ -38,12 +38,14 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -776,6 +778,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       _primary();
       return KeyEventResult.handled;
     }
+    if (key == LogicalKeyboardKey.keyR) {
+      // 重播音频（对齐 Anki 的 R）。
+      _replayAudio();
+      return KeyEventResult.handled;
+    }
     final int? rating = _ratingOfKey(key);
     if (rating != null && _showingAnswer) {
       _rate(rating);
@@ -823,6 +830,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         _zoomBy(-_kZoomStep);
       case 'Ctrl+Digit0' || 'Meta+Digit0':
         _setZoom(1);
+      case 'KeyR':
+        _replayAudio();
       default:
         final String digit = token.substring(token.length - 1);
         final int? rating = int.tryParse(digit);
@@ -986,6 +995,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
           ?_appearanceItem,
           ?_designSkinItem,
           _hideHardEasyItem,
+          FushiToolbarItem(
+            key: const ValueKey<String>('srs_review_layout'),
+            icon: FushiIcons.dashboardCustomize,
+            label: t.srs_review_layout_title,
+            onPressed: () => srsRunLogged(
+              'SrsReview.layout',
+              () => _focusOwnership.guardOverlay(
+                () => showSrsReviewLayoutSheet(context),
+              ),
+            ),
+          ),
           ..._audioSettingItems(),
         ];
 
@@ -1145,8 +1165,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             : null,
         body: Builder(
           builder: (BuildContext context) => Padding(
-            // 正文从浮动页头底下开始：卡面是 WebView（不能滚到页头下面），整体让位。
-            padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+            // 正文从浮动页头底下开始：整面 WebView 的卡面滚不到页头下面，整体让位。
+            // 原生 Fushi 卡面例外：铺到页头底下、把让位高度当滚动内边距（见
+            // [SrsFushiCardView.topInset]），往下翻页头收起后不留一条空带。
+            padding: EdgeInsets.only(
+              top: _cardScrollsUnderHeader
+                  ? 0
+                  : MediaQuery.paddingOf(context).top,
+            ),
             child: AnimatedSwitcher(
               duration: fushiMotionDuration(context, FushiMotion.medium),
               switchInCurve: FushiMotion.enter,
@@ -1169,6 +1195,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       ),
     );
   }
+
+  /// 当前显示的是原生 Fushi 卡面（Flutter 滚动，能滚到浮动页头底下）。
+  bool get _cardScrollsUnderHeader =>
+      !_loading &&
+      _error == null &&
+      !_finished &&
+      (_store?.canSchedule ?? false) &&
+      _detail != null &&
+      _rendered?.fushiCardDefinitions != null;
 
   Widget _buildBody(BuildContext context) {
     if (_loading) return const FushiLoadingView();
@@ -1301,6 +1336,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
                             face: face,
                             fields: rendered!.fields,
                             definitionsHtml: rendered.fushiCardDefinitions!,
+                            topInset: media.padding.top,
                           ),
                         )
                       : faceBuilder(context, face),
@@ -1317,13 +1353,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
                 tokens.spacing.page,
                 tokens.spacing.gap * 1.5,
               ),
-              child: AnimatedSwitcher(
-                duration: fushiMotionDuration(context, FushiMotion.short),
-                switchInCurve: FushiMotion.enter,
-                switchOutCurve: FushiMotion.exit,
-                child: _showingAnswer
-                    ? _buildRatingRow(context)
-                    : _buildShowAnswer(context),
+              child: _withBottomReplay(
+                context,
+                AnimatedSwitcher(
+                  duration: fushiMotionDuration(context, FushiMotion.short),
+                  switchInCurve: FushiMotion.enter,
+                  switchOutCurve: FushiMotion.exit,
+                  child: _showingAnswer
+                      ? _buildRatingRow(context)
+                      : _buildShowAnswer(context),
+                ),
               ),
             ),
           ),
@@ -1368,6 +1407,53 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     );
   }
 
+  /// 底部操作行一端的重播键（⋯「复习布局」里选左 / 右，默认不放）。翻面前后同一位置；
+  /// 这张卡没有可重播的音频时照样占位、只是不可点，评分按钮不会左右跳。设计系统按钮：
+  /// MD3 = M3E 中号色调方钮（56），Apple = 50 高的色调胶囊，与「显示答案」/ 评分按钮同高。
+  Widget _withBottomReplay(BuildContext context, Widget row) {
+    final SrsReviewReplayButton side = ref.watch(srsReviewReplayButtonProvider);
+    if (side == SrsReviewReplayButton.off || _detail == null) return row;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool apple = isGlassDesign(context);
+    final double extent = apple ? _kBarButtonHeightApple : 56;
+    final bool canReplay = _replayNames(
+      includeQuestion: _replayIncludesQuestion,
+    ).isNotEmpty;
+    final VoidCallback? onPressed = canReplay && !_busy ? _replayAudio : null;
+    final Widget replay = FushiPressScale(
+      enabled: onPressed != null,
+      child: FushiTooltip(
+        message: '${t.srs_review_replay_audio} (R)',
+        child: SizedBox.square(
+          dimension: extent,
+          child: FushiFilledButton.tonal(
+            key: const ValueKey<String>('srs-bottom-replay'),
+            onPressed: onPressed,
+            size: FushiButtonSize.m,
+            style: ButtonStyle(
+              minimumSize: WidgetStatePropertyAll<Size>(Size(extent, extent)),
+              padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+                EdgeInsets.zero,
+              ),
+            ),
+            child: FushiIcon(
+              FushiIcons.volumeUp,
+              semanticLabel: t.srs_review_replay_audio,
+            ),
+          ),
+        ),
+      ),
+    );
+    return Row(
+      spacing: tokens.spacing.gap,
+      children: <Widget>[
+        if (side == SrsReviewReplayButton.start) replay,
+        Expanded(child: row),
+        if (side == SrsReviewReplayButton.end) replay,
+      ],
+    );
+  }
+
   Widget _buildRatingRow(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsAnswerPreview? preview = _preview;
@@ -1383,11 +1469,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       );
     }
 
+    // 评分按钮的下次间隔可在 ⋯「复习布局」里关掉；关掉或调度器给不出间隔（预览缺失）
+    // 时按钮只剩评价词一行。
+    final bool showIntervals = ref.watch(srsReviewShowIntervalsProvider);
     Widget button(int rating, String label, SrsRatingTone tone) => Expanded(
       child: SrsRatingButton(
         key: ValueKey<String>('srs-rate-$rating'),
         tone: tone,
-        interval: interval(rating),
+        interval: showIntervals ? interval(rating) : '',
         label: label,
         tooltip: '$label ($rating)',
         onPressed: _busy ? null : () => _rate(rating),

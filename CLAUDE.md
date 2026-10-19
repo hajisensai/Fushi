@@ -43,7 +43,7 @@
 - reader source：`fushi/lib/src/media/sources/reader_fushi_source.dart`（`ReaderFushiSource`）。
 - 阅读器 JS/CSS：`fushi/lib/src/reader/`（17 个 JS/CSS 注入封装，`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.fushiReader`（2026-08 终局清算已改名；`hoshiCaret`/`__hoshi*` 等其余 hoshi 前缀运行时符号待后续批次）。
 - 全局状态：`fushi/lib/src/models/app_model.dart`（`AppModel`，初始化流程 + 子系统委托核心，改前先理解）。
-- Drift 数据库：`packages/fushi_core/lib/src/database/database.dart` 和 `tables.dart`（schema v122，100 张表，WAL）。
+- Drift 数据库：`packages/fushi_core/lib/src/database/database.dart` 和 `tables.dart`（schema v122，101 张表，WAL）。
 - 词典：Dart 封装 `packages/fushi_dictionary/lib/src/engine/fushidicts.dart` + FFI 绑定 `lib/src/ffi/fushidicts_ffi_bindings.dart`；C++ 引擎源码全在 `native/fushidicts/`（包内已无 C++），`fushidicts_external/` 是 vendored 第三方，上游同步基线见 `native/fushidicts/UPSTREAM.md`。
 - 有声书：`packages/fushi_audio/` + `fushi/lib/src/media/audiobook/`（导入入口 `book_import_dialog.dart` / `audiobook_import_dialog.dart`）。设备端语音转录生成字幕的**算法层已抽成独立仓库** [`hajisensai/fushi-subtitles`](https://github.com/hajisensai/fushi-subtitles)（GPL-3.0，纯 Dart，包 `fushi_asr_core` / `fushi_asr_align` / `fushi_asr_subtitles` / `fushi_asr_onnx_ffi`）。**七处 git 依赖钉同一个 sha**：`fushi/pubspec.yaml` 两条（`fushi_asr_core` / `fushi_asr_subtitles`）、`packages/fushi_engine/pubspec.yaml` 两条（同上两个包）、`packages/fushi_server/pubspec.yaml` 两条（多一个 `fushi_asr_onnx_ffi`）、根 `pubspec.yaml` 的 `dependency_overrides` 一条；**任一处不一致同一份算法会被解析成两个副本**。app 侧 ONNX 走 Flutter 插件后端，只有无头服务端用纯 Dart 的 `fushi_asr_onnx_ffi`——它把 `archive` 钉成 `^4.0.0` 而本仓钉 `^3.6.1`（升 4 实测要动 76 个文件，`archive_io` 在 4.x 已移除），所以根 `pubspec.yaml` 一条 `archive` override 钉回本仓版本，外加 `ci/patches/git/fushi-subtitles-<sha>/` 一行兼容补丁把上游唯一的 4.x 专有调用 `entry.readBytes()` 换成 `entry.content`——**两者是一套，缺一个就编译不过**；上游放宽约束后一起删。本仓只留三样：Flutter 插件后端 `fushi/lib/src/onnx/onnx_inference_ort.dart`（method channel → `flutter_onnxruntime`）、装配层 `fushi/lib/src/asr_host/asr_host.dart`、UI （`media/audiobook/asr_transcribe_sheet.dart` 等）。**改 ASR 算法一律去那个仓库改，本仓只改装配与 UI。** 下载字幕「按视频内嵌文本轨对时间轴」的算法（`decideSubtitleSync` / `retimeSubtitleBytes`，参照 Tsubasa）同样住在上游 `fushi_asr_subtitles`（2026-09-28 所有者拍板迁出）；本仓只留 `packages/fushi_engine/lib/media/video/subtitle/embedded_reference_subtitle_sync.dart`（ffmpeg 抽参考轨 + isolate + 自动路径开关）与 `subtitle_alignment_backup.dart`（原稿备份）。
   - 装配点（都在 `asr_host.dart`，两个生产实例化点共用 `createAsrTranscriptionService()`）：数据根 `asrSupportRootResolver`、出站 `asrHttpClientFactory`（必须经 `createAppHttpClient`，否则模型下载绕过全应用代理装配）、日志 `asrLogSink`、ffmpeg `FushiAsrFfmpegBackend`（**五端一律注入本仓后端**，包自带的裸 CLI 后端会丢掉子进程登记表、`FUSHI_FFMPEG` 覆盖与捆绑损坏回退；移动端更没有 ffmpeg CLI），以及后台 isolate 的 `AsrIsolateBackend`（顶层函数 `buildFushiOnnxFactory` + `BackgroundIsolateBinaryMessenger` 引导——**根 isolate 的全局装配点一个都带不过 isolate 边界**，那边只认这条）。
@@ -171,7 +171,7 @@
 | 模块 | 语言 | 职责 / 接入方式 | 文档 |
 |---|---|---|---|
 | `fushi/` | Dart | Flutter 主应用：UI/阅读器/视频/导入/设置 | [fushi/CLAUDE.md](fushi/CLAUDE.md) |
-| `packages/fushi_core/` | Dart | DB schema（98 表）/偏好/语言配置 | [CLAUDE.md](packages/fushi_core/CLAUDE.md) |
+| `packages/fushi_core/` | Dart | DB schema（100 表）/偏好/语言配置 | [CLAUDE.md](packages/fushi_core/CLAUDE.md) |
 | `packages/fushi_dictionary/` | Dart | 词典引擎 Dart 侧/FFI 绑定/多格式导入（C++ 在 `native/fushidicts/`） | [CLAUDE.md](packages/fushi_dictionary/CLAUDE.md) |
 | `packages/fushi_anki/` | Dart | Anki 集成（AnkiDroid + AnkiConnect） | [CLAUDE.md](packages/fushi_anki/CLAUDE.md) |
 | `packages/fushi_audio/` | Dart | 字幕解析/有声书播放/音频匹配 | [CLAUDE.md](packages/fushi_audio/CLAUDE.md) |

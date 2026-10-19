@@ -362,8 +362,16 @@ void main() {
 
       final _Dir dir = _Dir(() => t);
       for (int i = 0; i < 3; i++) {
-        await SrsSyncEngine(directory: dir, replica: a).syncOnce();
-        await SrsSyncEngine(directory: dir, replica: b).syncOnce();
+        await SrsSyncEngine(
+          directoryKey: 'test',
+          directory: dir,
+          replica: a,
+        ).syncOnce();
+        await SrsSyncEngine(
+          directoryKey: 'test',
+          directory: dir,
+          replica: b,
+        ).syncOnce();
       }
       for (final SrsCardCacheRow r in await b.cardRows(cards)) {
         expect(r.suspended, isTrue, reason: '批量写的是普通修改记录，照常同步');

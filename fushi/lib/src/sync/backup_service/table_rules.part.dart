@@ -315,6 +315,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'srs_local_state': BackupTableRule.deviceLocal(),
   'srs_notes_cache': BackupTableRule.deviceLocal(),
   'srs_cards_cache': BackupTableRule.deviceLocal(),
+  // v121：本机已冻结批次留存（SRS 多目录同步），设备本地、恢复后清空。
+  'srs_sent_batches': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

@@ -36,6 +36,8 @@ import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_root_migration.dart';
+import 'package:fushi/src/sync/sync_utils.dart' show kSyncRootFolderName;
+import 'package:path/path.dart' as p;
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -468,6 +470,26 @@ class FushiSyncServerController extends ChangeNotifier {
   bool get isRunning => _server?.isRunning ?? false;
   int? get boundPort => _server?.port;
 
+  /// 运行中的 host 上，客户端同步根（`<sync-data>/fushi-data`）在本机磁盘的位置；没运行 = null。
+  /// host 自己参与同一套资产协议（例如复习同步）时直接读写这块目录，不必经网络绕回自己。
+  Directory? get clientSyncRoot {
+    final FushiSyncServer? server = _server;
+    if (server == null || !server.isRunning) return null;
+    return Directory(p.join(server.syncDataDir, kSyncRootFolderName));
+  }
+
+  final StreamController<String> _clientSyncWrites =
+      StreamController<String>.broadcast();
+
+  /// 已配对设备经互联写入 / 删除了 [clientSyncRoot] 下的文件：路径相对 `<sync-data>`
+  /// （`fushi-data/...`）。跨 server 重启持续有效（每次 start 都接到这一条流上）。
+  Stream<String> get clientSyncWrites => _clientSyncWrites.stream;
+
+  void _onClientWrite(String relativePath) {
+    if (_clientSyncWrites.isClosed) return;
+    _clientSyncWrites.add(relativePath);
+  }
+
   @override
   void notifyListeners() {
     if (_disposed) return;
@@ -484,6 +506,7 @@ class FushiSyncServerController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    unawaited(_clientSyncWrites.close());
     final List<LanDiscoveryService> discoveries = _activeDiscoveries.toList(
       growable: false,
     );
@@ -722,6 +745,8 @@ class FushiSyncServerController extends ChangeNotifier {
       // TODO-961 M1b: confirm 成功后把 per-peer 凭据落库 + 供给 auth 校验的有效 token
       // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
       ..onPeerPaired = _persistPairedPeer
+      // 复习同步：已配对设备写进同步目录后，host 自己的 SRS 同步去抖跟一轮（srs_app_runtime.dart）。
+      ..onClientWrite = _onClientWrite
       ..pairedPeerTokensProvider = _loadPairedPeerTokens
       // 地址集（docs/specs/2026-09-28-interconnect-remote-reach.md §1）：公网 /
       // 反代地址每次 capabilities 实时读，改完不必重启互联服务。

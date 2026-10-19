@@ -60903,6 +60903,330 @@ class VideoSubtitleGlossariesCompanion
   }
 }
 
+class $SrsSentBatchesTable extends SrsSentBatches
+    with TableInfo<$SrsSentBatchesTable, SrsSentBatchRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrsSentBatchesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _writerIdMeta = const VerificationMeta(
+    'writerId',
+  );
+  @override
+  late final GeneratedColumn<String> writerId = GeneratedColumn<String>(
+    'writer_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _batchNoMeta = const VerificationMeta(
+    'batchNo',
+  );
+  @override
+  late final GeneratedColumn<int> batchNo = GeneratedColumn<int>(
+    'batch_no',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bytesMeta = const VerificationMeta('bytes');
+  @override
+  late final GeneratedColumn<Uint8List> bytes = GeneratedColumn<Uint8List>(
+    'bytes',
+    aliasedName,
+    false,
+    type: DriftSqlType.blob,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [profileUid, writerId, batchNo, bytes];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srs_sent_batches';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SrsSentBatchRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileUidMeta);
+    }
+    if (data.containsKey('writer_id')) {
+      context.handle(
+        _writerIdMeta,
+        writerId.isAcceptableOrUnknown(data['writer_id']!, _writerIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_writerIdMeta);
+    }
+    if (data.containsKey('batch_no')) {
+      context.handle(
+        _batchNoMeta,
+        batchNo.isAcceptableOrUnknown(data['batch_no']!, _batchNoMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_batchNoMeta);
+    }
+    if (data.containsKey('bytes')) {
+      context.handle(
+        _bytesMeta,
+        bytes.isAcceptableOrUnknown(data['bytes']!, _bytesMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bytesMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {profileUid, writerId, batchNo};
+  @override
+  SrsSentBatchRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrsSentBatchRow(
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
+      writerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}writer_id'],
+      )!,
+      batchNo: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}batch_no'],
+      )!,
+      bytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.blob,
+        data['${effectivePrefix}bytes'],
+      )!,
+    );
+  }
+
+  @override
+  $SrsSentBatchesTable createAlias(String alias) {
+    return $SrsSentBatchesTable(attachedDatabase, alias);
+  }
+}
+
+class SrsSentBatchRow extends DataClass implements Insertable<SrsSentBatchRow> {
+  final String profileUid;
+  final String writerId;
+
+  /// 批次号（写入者内从 1 起连续）。
+  final int batchNo;
+
+  /// 冻结后的批次文件字节（自校验格式，见 fushi_srs `SrsBatch`）。
+  final Uint8List bytes;
+  const SrsSentBatchRow({
+    required this.profileUid,
+    required this.writerId,
+    required this.batchNo,
+    required this.bytes,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['profile_uid'] = Variable<String>(profileUid);
+    map['writer_id'] = Variable<String>(writerId);
+    map['batch_no'] = Variable<int>(batchNo);
+    map['bytes'] = Variable<Uint8List>(bytes);
+    return map;
+  }
+
+  SrsSentBatchesCompanion toCompanion(bool nullToAbsent) {
+    return SrsSentBatchesCompanion(
+      profileUid: Value(profileUid),
+      writerId: Value(writerId),
+      batchNo: Value(batchNo),
+      bytes: Value(bytes),
+    );
+  }
+
+  factory SrsSentBatchRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrsSentBatchRow(
+      profileUid: serializer.fromJson<String>(json['profileUid']),
+      writerId: serializer.fromJson<String>(json['writerId']),
+      batchNo: serializer.fromJson<int>(json['batchNo']),
+      bytes: serializer.fromJson<Uint8List>(json['bytes']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'profileUid': serializer.toJson<String>(profileUid),
+      'writerId': serializer.toJson<String>(writerId),
+      'batchNo': serializer.toJson<int>(batchNo),
+      'bytes': serializer.toJson<Uint8List>(bytes),
+    };
+  }
+
+  SrsSentBatchRow copyWith({
+    String? profileUid,
+    String? writerId,
+    int? batchNo,
+    Uint8List? bytes,
+  }) => SrsSentBatchRow(
+    profileUid: profileUid ?? this.profileUid,
+    writerId: writerId ?? this.writerId,
+    batchNo: batchNo ?? this.batchNo,
+    bytes: bytes ?? this.bytes,
+  );
+  SrsSentBatchRow copyWithCompanion(SrsSentBatchesCompanion data) {
+    return SrsSentBatchRow(
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
+      writerId: data.writerId.present ? data.writerId.value : this.writerId,
+      batchNo: data.batchNo.present ? data.batchNo.value : this.batchNo,
+      bytes: data.bytes.present ? data.bytes.value : this.bytes,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsSentBatchRow(')
+          ..write('profileUid: $profileUid, ')
+          ..write('writerId: $writerId, ')
+          ..write('batchNo: $batchNo, ')
+          ..write('bytes: $bytes')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    profileUid,
+    writerId,
+    batchNo,
+    $driftBlobEquality.hash(bytes),
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrsSentBatchRow &&
+          other.profileUid == this.profileUid &&
+          other.writerId == this.writerId &&
+          other.batchNo == this.batchNo &&
+          $driftBlobEquality.equals(other.bytes, this.bytes));
+}
+
+class SrsSentBatchesCompanion extends UpdateCompanion<SrsSentBatchRow> {
+  final Value<String> profileUid;
+  final Value<String> writerId;
+  final Value<int> batchNo;
+  final Value<Uint8List> bytes;
+  final Value<int> rowid;
+  const SrsSentBatchesCompanion({
+    this.profileUid = const Value.absent(),
+    this.writerId = const Value.absent(),
+    this.batchNo = const Value.absent(),
+    this.bytes = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SrsSentBatchesCompanion.insert({
+    required String profileUid,
+    required String writerId,
+    required int batchNo,
+    required Uint8List bytes,
+    this.rowid = const Value.absent(),
+  }) : profileUid = Value(profileUid),
+       writerId = Value(writerId),
+       batchNo = Value(batchNo),
+       bytes = Value(bytes);
+  static Insertable<SrsSentBatchRow> custom({
+    Expression<String>? profileUid,
+    Expression<String>? writerId,
+    Expression<int>? batchNo,
+    Expression<Uint8List>? bytes,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (profileUid != null) 'profile_uid': profileUid,
+      if (writerId != null) 'writer_id': writerId,
+      if (batchNo != null) 'batch_no': batchNo,
+      if (bytes != null) 'bytes': bytes,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SrsSentBatchesCompanion copyWith({
+    Value<String>? profileUid,
+    Value<String>? writerId,
+    Value<int>? batchNo,
+    Value<Uint8List>? bytes,
+    Value<int>? rowid,
+  }) {
+    return SrsSentBatchesCompanion(
+      profileUid: profileUid ?? this.profileUid,
+      writerId: writerId ?? this.writerId,
+      batchNo: batchNo ?? this.batchNo,
+      bytes: bytes ?? this.bytes,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
+    if (writerId.present) {
+      map['writer_id'] = Variable<String>(writerId.value);
+    }
+    if (batchNo.present) {
+      map['batch_no'] = Variable<int>(batchNo.value);
+    }
+    if (bytes.present) {
+      map['bytes'] = Variable<Uint8List>(bytes.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsSentBatchesCompanion(')
+          ..write('profileUid: $profileUid, ')
+          ..write('writerId: $writerId, ')
+          ..write('batchNo: $batchNo, ')
+          ..write('bytes: $bytes, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MediaPrivacyFlagsTable extends MediaPrivacyFlags
     with TableInfo<$MediaPrivacyFlagsTable, MediaPrivacyFlagRow> {
   @override
@@ -61410,6 +61734,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $SrsCardsCacheTable srsCardsCache = $SrsCardsCacheTable(this);
   late final $VideoSubtitleGlossariesTable videoSubtitleGlossaries =
       $VideoSubtitleGlossariesTable(this);
+  late final $SrsSentBatchesTable srsSentBatches = $SrsSentBatchesTable(this);
   late final $MediaPrivacyFlagsTable mediaPrivacyFlags =
       $MediaPrivacyFlagsTable(this);
   @override
@@ -61516,6 +61841,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     srsNotesCache,
     srsCardsCache,
     videoSubtitleGlossaries,
+    srsSentBatches,
     mediaPrivacyFlags,
   ];
   @override
@@ -104535,6 +104861,195 @@ typedef $$VideoSubtitleGlossariesTableProcessedTableManager =
       VideoSubtitleGlossaryRow,
       PrefetchHooks Function()
     >;
+typedef $$SrsSentBatchesTableCreateCompanionBuilder =
+    SrsSentBatchesCompanion Function({
+      required String profileUid,
+      required String writerId,
+      required int batchNo,
+      required Uint8List bytes,
+      Value<int> rowid,
+    });
+typedef $$SrsSentBatchesTableUpdateCompanionBuilder =
+    SrsSentBatchesCompanion Function({
+      Value<String> profileUid,
+      Value<String> writerId,
+      Value<int> batchNo,
+      Value<Uint8List> bytes,
+      Value<int> rowid,
+    });
+
+class $$SrsSentBatchesTableFilterComposer
+    extends Composer<_$FushiDatabase, $SrsSentBatchesTable> {
+  $$SrsSentBatchesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get writerId => $composableBuilder(
+    column: $table.writerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get batchNo => $composableBuilder(
+    column: $table.batchNo,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<Uint8List> get bytes => $composableBuilder(
+    column: $table.bytes,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SrsSentBatchesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $SrsSentBatchesTable> {
+  $$SrsSentBatchesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get writerId => $composableBuilder(
+    column: $table.writerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get batchNo => $composableBuilder(
+    column: $table.batchNo,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<Uint8List> get bytes => $composableBuilder(
+    column: $table.bytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SrsSentBatchesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $SrsSentBatchesTable> {
+  $$SrsSentBatchesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get writerId =>
+      $composableBuilder(column: $table.writerId, builder: (column) => column);
+
+  GeneratedColumn<int> get batchNo =>
+      $composableBuilder(column: $table.batchNo, builder: (column) => column);
+
+  GeneratedColumn<Uint8List> get bytes =>
+      $composableBuilder(column: $table.bytes, builder: (column) => column);
+}
+
+class $$SrsSentBatchesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $SrsSentBatchesTable,
+          SrsSentBatchRow,
+          $$SrsSentBatchesTableFilterComposer,
+          $$SrsSentBatchesTableOrderingComposer,
+          $$SrsSentBatchesTableAnnotationComposer,
+          $$SrsSentBatchesTableCreateCompanionBuilder,
+          $$SrsSentBatchesTableUpdateCompanionBuilder,
+          (
+            SrsSentBatchRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $SrsSentBatchesTable,
+              SrsSentBatchRow
+            >,
+          ),
+          SrsSentBatchRow,
+          PrefetchHooks Function()
+        > {
+  $$SrsSentBatchesTableTableManager(
+    _$FushiDatabase db,
+    $SrsSentBatchesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrsSentBatchesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrsSentBatchesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrsSentBatchesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> profileUid = const Value.absent(),
+                Value<String> writerId = const Value.absent(),
+                Value<int> batchNo = const Value.absent(),
+                Value<Uint8List> bytes = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsSentBatchesCompanion(
+                profileUid: profileUid,
+                writerId: writerId,
+                batchNo: batchNo,
+                bytes: bytes,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String profileUid,
+                required String writerId,
+                required int batchNo,
+                required Uint8List bytes,
+                Value<int> rowid = const Value.absent(),
+              }) => SrsSentBatchesCompanion.insert(
+                profileUid: profileUid,
+                writerId: writerId,
+                batchNo: batchNo,
+                bytes: bytes,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SrsSentBatchesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $SrsSentBatchesTable,
+      SrsSentBatchRow,
+      $$SrsSentBatchesTableFilterComposer,
+      $$SrsSentBatchesTableOrderingComposer,
+      $$SrsSentBatchesTableAnnotationComposer,
+      $$SrsSentBatchesTableCreateCompanionBuilder,
+      $$SrsSentBatchesTableUpdateCompanionBuilder,
+      (
+        SrsSentBatchRow,
+        BaseReferences<_$FushiDatabase, $SrsSentBatchesTable, SrsSentBatchRow>,
+      ),
+      SrsSentBatchRow,
+      PrefetchHooks Function()
+    >;
 typedef $$MediaPrivacyFlagsTableCreateCompanionBuilder =
     MediaPrivacyFlagsCompanion Function({
       required String mediaKind,
@@ -104982,6 +105497,8 @@ class $FushiDatabaseManager {
         _db,
         _db.videoSubtitleGlossaries,
       );
+  $$SrsSentBatchesTableTableManager get srsSentBatches =>
+      $$SrsSentBatchesTableTableManager(_db, _db.srsSentBatches);
   $$MediaPrivacyFlagsTableTableManager get mediaPrivacyFlags =>
       $$MediaPrivacyFlagsTableTableManager(_db, _db.mediaPrivacyFlags);
 }
