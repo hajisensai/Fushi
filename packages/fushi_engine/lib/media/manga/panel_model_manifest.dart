@@ -5,7 +5,7 @@ library;
 
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 
 const String kMangaPanelModelRevision =
     '535bbe1fc1e922d2108f918cd1bce29ba3516196';
@@ -80,6 +80,6 @@ Future<bool> verifyMangaPanelModelFile(
 }) async {
   if (!manifest.isVerified || !await file.exists()) return false;
   if (await file.length() != manifest.bytes) return false;
-  final String digest = (await sha256.bind(file.openRead()).first).toString();
+  final String digest = await ffcSha256File(file.path);
   return digest == manifest.sha256;
 }

@@ -22,20 +22,17 @@ const int _kDefaultMinSegmentBytes = 4 * 1024 * 1024;
 /// 由 [_downloadCandidate] 整体退回单线程路径（绝不半成品 promote）。
 const int _kSegmentMaxAttempts = 3;
 
-typedef UpdateDownloadOpen = Future<UpdateDownloadResponse> Function(
-  Uri uri,
-  Map<String, String> headers,
-);
+typedef UpdateDownloadOpen =
+    Future<UpdateDownloadResponse> Function(
+      Uri uri,
+      Map<String, String> headers,
+    );
 
-typedef UpdateDownloadSourceFailure = void Function(
-  String url,
-  Object error,
-  StackTrace stack,
-);
+typedef UpdateDownloadSourceFailure =
+    void Function(String url, Object error, StackTrace stack);
 
-typedef UpdateDownloadDiagnosticsCallback = void Function(
-  UpdateDownloadDiagnostics diagnostics,
-);
+typedef UpdateDownloadDiagnosticsCallback =
+    void Function(UpdateDownloadDiagnostics diagnostics);
 
 @visibleForTesting
 class UpdateDownloadDiagnostics {
@@ -101,7 +98,9 @@ class UpdateDownloadPaths {
   });
 
   factory UpdateDownloadPaths.forAsset(
-      Directory updatesDir, UpdateAsset asset) {
+    Directory updatesDir,
+    UpdateAsset asset,
+  ) {
     final String fallbackName = _fileNameFromUrl(asset.url);
     final String name = safeUpdateAssetFileName(
       asset.name.isNotEmpty ? asset.name : fallbackName,
@@ -109,10 +108,12 @@ class UpdateDownloadPaths {
     return UpdateDownloadPaths(
       file: File('${updatesDir.path}${Platform.pathSeparator}$name'),
       partFile: File('${updatesDir.path}${Platform.pathSeparator}$name.part'),
-      metadataFile:
-          File('${updatesDir.path}${Platform.pathSeparator}$name.meta.json'),
-      ownerFile:
-          File('${updatesDir.path}${Platform.pathSeparator}$name.owner.json'),
+      metadataFile: File(
+        '${updatesDir.path}${Platform.pathSeparator}$name.meta.json',
+      ),
+      ownerFile: File(
+        '${updatesDir.path}${Platform.pathSeparator}$name.owner.json',
+      ),
       stagingRoot: Directory(
         '${updatesDir.path}${Platform.pathSeparator}.$name.staging',
       ),
@@ -145,9 +146,9 @@ class _UpdateDownloadStagingPaths {
 @visibleForTesting
 String safeUpdateAssetFileName(String name) {
   final String leaf = name.replaceAll(r'\', '/').split('/').last.trim();
-  final String sanitized = safeWindowsFileName(leaf)
-      .replaceAll(RegExp(r'-{2,}'), '-')
-      .replaceAll(RegExp(r'^[. ]+|[. ]+$'), '');
+  final String sanitized = safeWindowsFileName(
+    leaf,
+  ).replaceAll(RegExp(r'-{2,}'), '-').replaceAll(RegExp(r'^[. ]+|[. ]+$'), '');
   return sanitized.isEmpty ? 'fushi-update.bin' : sanitized;
 }
 
@@ -379,8 +380,9 @@ String _stripTrailingPathSeparators(String path) {
 /// 归一化路径用于「是否在 updates 目录下」的前缀比较：反斜杠转正斜杠、去尾部斜杠，
 /// Windows 大小写不敏感故统一小写（其余平台保持原样，避免破坏区分大小写的文件系统）。
 String _normalizeUpdatePathForCompare(String path) {
-  final String slashed =
-      path.replaceAll(r'\', '/').replaceAll(RegExp(r'/+$'), '');
+  final String slashed = path
+      .replaceAll(r'\', '/')
+      .replaceAll(RegExp(r'/+$'), '');
   return Platform.isWindows ? slashed.toLowerCase() : slashed;
 }
 
@@ -424,22 +426,28 @@ Future<File> downloadUpdateAsset({
 
   // BUG-2714：切到后台时 Android 会杀进程，自动更新下到一半就断。下载期间挂
   // 保活前台服务（与互联下载等其它来源经同一个 hub 汇总，互不撤对方的保活）。
-  final DownloadKeepAlive keepAlive =
-      downloadKeepAliveHub.lease('update:$activeKey');
-  final String keepAliveTitle =
-      t.update_download_notification_title(version: version);
-  unawaited(keepAlive.update(
-    title: keepAliveTitle,
-    text: t.download_task_status_downloading,
-  ));
+  final DownloadKeepAlive keepAlive = downloadKeepAliveHub.lease(
+    'update:$activeKey',
+  );
+  final String keepAliveTitle = t.update_download_notification_title(
+    version: version,
+  );
+  unawaited(
+    keepAlive.update(
+      title: keepAliveTitle,
+      text: t.download_task_status_downloading,
+    ),
+  );
   void reportProgress(double value) {
     onProgress?.call(value);
     final int percent = (value.clamp(0.0, 1.0) * 100).floor();
-    unawaited(keepAlive.update(
-      title: keepAliveTitle,
-      text: '${t.download_task_status_downloading} · $percent%',
-      percent: percent,
-    ));
+    unawaited(
+      keepAlive.update(
+        title: keepAliveTitle,
+        text: '${t.download_task_status_downloading} · $percent%',
+        percent: percent,
+      ),
+    );
   }
 
   final Future<File> download = _downloadUpdateAssetUncoalesced(
@@ -471,8 +479,7 @@ String _activeDownloadKey(
   Directory updatesDir,
   UpdateAsset asset,
   String version,
-) =>
-    '${updatesDir.absolute.path}|$version|${asset.name}|${asset.url}';
+) => '${updatesDir.absolute.path}|$version|${asset.name}|${asset.url}';
 
 Future<File> _downloadUpdateAssetUncoalesced({
   required UpdateAsset asset,
@@ -489,17 +496,15 @@ Future<File> _downloadUpdateAssetUncoalesced({
   UpdateDownloadCancellation? cancellation,
 }) async {
   await updatesDir.create(recursive: true);
-  final UpdateDownloadPaths paths =
-      UpdateDownloadPaths.forAsset(updatesDir, asset);
-  final _UpdateDownloadMetadata? metadata =
-      await _UpdateDownloadMetadata.read(paths.metadataFile);
-
-  if (await _isReusableCompleteDownload(
-    paths.file,
+  final UpdateDownloadPaths paths = UpdateDownloadPaths.forAsset(
+    updatesDir,
     asset,
-    version,
-    metadata,
-  )) {
+  );
+  final _UpdateDownloadMetadata? metadata = await _UpdateDownloadMetadata.read(
+    paths.metadataFile,
+  );
+
+  if (await _isReusableCompleteDownload(paths.file, asset, version, metadata)) {
     onProgress?.call(1);
     return paths.file;
   }
@@ -513,8 +518,11 @@ Future<File> _downloadUpdateAssetUncoalesced({
     await _deleteFile(paths.metadataFile);
   }
 
-  final _UpdateDownloadStagingPaths stagingPaths =
-      await _resolveStagingPaths(paths, asset, version);
+  final _UpdateDownloadStagingPaths stagingPaths = await _resolveStagingPaths(
+    paths,
+    asset,
+    version,
+  );
   if (metadata != null && metadata.matches(asset, version)) {
     await _seedStagingFromLegacyPart(
       paths,
@@ -582,8 +590,9 @@ Future<File> _downloadUpdateAssetUncoalesced({
       if (cancellation?.isCancelled ?? false) {
         throw const UpdateDownloadCancelledException();
       }
-      failures
-          .add(UpdateDownloadAttemptFailure(url: url, error: e, stack: stack));
+      failures.add(
+        UpdateDownloadAttemptFailure(url: url, error: e, stack: stack),
+      );
       onSourceFailure?.call(url, e, stack);
     }
   }
@@ -647,8 +656,9 @@ List<DownloadSegment> planDownloadSegments({
     return <DownloadSegment>[DownloadSegment(0, totalBytes - 1)];
   }
   final int maxByMinSegment = totalBytes ~/ safeMinSegment;
-  final int segmentCount =
-      connections < maxByMinSegment ? connections : maxByMinSegment;
+  final int segmentCount = connections < maxByMinSegment
+      ? connections
+      : maxByMinSegment;
   if (segmentCount <= 1) {
     return <DownloadSegment>[DownloadSegment(0, totalBytes - 1)];
   }
@@ -689,7 +699,8 @@ Future<File> _downloadCandidate({
   // 单线程行为与续传测试）。size 未知（纯 GFW 302 无 Content-Length）才让探针去拿
   // 总大小。
   final int? knownSize = asset.sizeBytes ?? metadata?.sizeBytes;
-  final bool sizePermitsSegmentation = knownSize == null ||
+  final bool sizePermitsSegmentation =
+      knownSize == null ||
       planDownloadSegments(
             totalBytes: knownSize,
             connectionCount: connectionCount,
@@ -829,12 +840,13 @@ Future<File> _downloadCandidateSingle({
     url: url,
     destination: stagingPaths.file,
     partFile: stagingPaths.partFile,
-    open: (Uri uri, Map<String, String> headers) => openUrl(uri, headers)
-        .then((UpdateDownloadResponse r) => ResumableDownloadResponse(
-              statusCode: r.statusCode,
-              headers: r.headers,
-              stream: r.stream,
-            )),
+    open: (Uri uri, Map<String, String> headers) => openUrl(uri, headers).then(
+      (UpdateDownloadResponse r) => ResumableDownloadResponse(
+        statusCode: r.statusCode,
+        headers: r.headers,
+        stream: r.stream,
+      ),
+    ),
     expectedSize: asset.sizeBytes ?? metadata?.sizeBytes,
     expectedSha256: asset.sha256Digest,
     resumeState: resumeState,
@@ -887,20 +899,23 @@ Future<File> _downloadCandidateSingle({
   // 引擎已做 size+sha 校验并落到 staging.file；重新组装完成 metadata（带实际大小）
   // 后走现有 staging→final 两段 promote（保 owner/metadata 清理语义不变）。
   final int actualSize = await completedInStaging.length();
-  final _UpdateDownloadMetadata? written =
-      await _UpdateDownloadMetadata.read(stagingPaths.metadataFile);
-  final _UpdateDownloadMetadata completeMetadata = (written ??
-          _UpdateDownloadMetadata(
-            version: version,
-            name: asset.name,
-            url: asset.url,
-            sizeBytes: asset.sizeBytes,
-            etag: metadata?.etag,
-            lastModified: metadata?.lastModified,
-            sha256Digest: asset.sha256Digest,
-          ))
-      .copyWith(
-          sizeBytes: (written?.sizeBytes ?? asset.sizeBytes) ?? actualSize);
+  final _UpdateDownloadMetadata? written = await _UpdateDownloadMetadata.read(
+    stagingPaths.metadataFile,
+  );
+  final _UpdateDownloadMetadata completeMetadata =
+      (written ??
+              _UpdateDownloadMetadata(
+                version: version,
+                name: asset.name,
+                url: asset.url,
+                sizeBytes: asset.sizeBytes,
+                etag: metadata?.etag,
+                lastModified: metadata?.lastModified,
+                sha256Digest: asset.sha256Digest,
+              ))
+          .copyWith(
+            sizeBytes: (written?.sizeBytes ?? asset.sizeBytes) ?? actualSize,
+          );
 
   // staging.file 是引擎 rename 出来的最终文件；_promoteCompleteDownload 期望从
   // staging.partFile rename，故把它重命名回 partFile 名再交给现有 promote。
@@ -993,11 +1008,12 @@ Future<File?> _downloadSegmented({
   }
   final int? total =
       _contentRangeTotal(probe.header(HttpHeaders.contentRangeHeader)) ??
-          asset.sizeBytes ??
-          metadata?.sizeBytes;
+      asset.sizeBytes ??
+      metadata?.sizeBytes;
   await probe.stream.drain<void>(); // 探针 body 丢弃；正式分段统一闭区间重取。
   // 验证器：优先探针返回的 ETag/Last-Modified，回退已有 metadata 的，让所有段 If-Range 一致。
-  final String? validator = probe.header(HttpHeaders.etagHeader) ??
+  final String? validator =
+      probe.header(HttpHeaders.etagHeader) ??
       probe.header(HttpHeaders.lastModifiedHeader) ??
       ifRange;
 
@@ -1212,8 +1228,10 @@ Future<int> _runSegmentRequest({
   required int appendOffset,
   required void Function(int delta) onChunk,
 }) async {
-  final UpdateDownloadResponse response =
-      await openUrl(uri, headers).timeout(_kFirstByteTimeout);
+  final UpdateDownloadResponse response = await openUrl(
+    uri,
+    headers,
+  ).timeout(_kFirstByteTimeout);
   if (response.statusCode == HttpStatus.ok) {
     await response.stream.drain<void>();
     throw const _SegmentRangeUnsupported();
@@ -1221,15 +1239,17 @@ Future<int> _runSegmentRequest({
   if (response.statusCode != HttpStatus.partialContent) {
     await response.stream.drain<void>();
     throw HttpException(
-        'segment request failed (${response.statusCode}): $uri');
+      'segment request failed (${response.statusCode}): $uri',
+    );
   }
   final IOSink sink = segFile.openWrite(
     mode: appendOffset > 0 ? FileMode.append : FileMode.write,
   );
   var written = appendOffset;
   try {
-    await for (final List<int> chunk
-        in response.stream.timeout(_kPerAttemptTimeout)) {
+    await for (final List<int> chunk in response.stream.timeout(
+      _kPerAttemptTimeout,
+    )) {
       sink.add(chunk);
       written += chunk.length;
       onChunk(chunk.length);
@@ -1299,18 +1319,22 @@ Future<_UpdateDownloadStagingPaths> _resolveStagingPaths(
   UpdateAsset asset,
   String version,
 ) async {
-  final _UpdateDownloadOwner? owner =
-      await _UpdateDownloadOwner.read(paths.ownerFile);
+  final _UpdateDownloadOwner? owner = await _UpdateDownloadOwner.read(
+    paths.ownerFile,
+  );
   if (owner != null &&
       owner.matches(asset, version) &&
       _isStagingDirectoryUnderRoot(paths, owner.directoryPath)) {
-    final _UpdateDownloadStagingPaths owned =
-        _stagingPathsForDirectory(paths, Directory(owner.directoryPath));
+    final _UpdateDownloadStagingPaths owned = _stagingPathsForDirectory(
+      paths,
+      Directory(owner.directoryPath),
+    );
     if (await owned.directory.exists()) return owned;
   }
 
-  final _UpdateDownloadStagingPaths stagingPaths =
-      await _createStagingPaths(paths);
+  final _UpdateDownloadStagingPaths stagingPaths = await _createStagingPaths(
+    paths,
+  );
   await _writeStagingOwnerBestEffort(
     paths,
     _UpdateDownloadOwner(
@@ -1356,8 +1380,9 @@ _UpdateDownloadStagingPaths _stagingPathsForDirectory(
     directory: directory,
     file: File('${directory.path}${Platform.pathSeparator}$name'),
     partFile: File('${directory.path}${Platform.pathSeparator}$name.part'),
-    metadataFile:
-        File('${directory.path}${Platform.pathSeparator}$name.meta.json'),
+    metadataFile: File(
+      '${directory.path}${Platform.pathSeparator}$name.meta.json',
+    ),
   );
 }
 
@@ -1368,8 +1393,9 @@ bool _isStagingDirectoryUnderRoot(
   final String root = paths.stagingRoot.absolute.path;
   final String directory = Directory(directoryPath).absolute.path;
   final String normalizedRoot = Platform.isWindows ? root.toLowerCase() : root;
-  final String normalizedDirectory =
-      Platform.isWindows ? directory.toLowerCase() : directory;
+  final String normalizedDirectory = Platform.isWindows
+      ? directory.toLowerCase()
+      : directory;
   return normalizedDirectory == normalizedRoot ||
       normalizedDirectory.startsWith(
         '$normalizedRoot${Platform.pathSeparator}',
@@ -1398,8 +1424,11 @@ Future<void> _seedStagingFromLegacyPart(
     await paths.partFile.copy(stagingPaths.partFile.path);
     await metadata.write(stagingPaths.metadataFile);
   } catch (e, stack) {
-    ErrorLogService.instance
-        .log('UpdateChecker.seedLegacyDownloadPart', e, stack);
+    ErrorLogService.instance.log(
+      'UpdateChecker.seedLegacyDownloadPart',
+      e,
+      stack,
+    );
     debugPrint('[Fushi] seed legacy update part failed: $e');
   }
 }
@@ -1412,11 +1441,7 @@ Future<File?> _promotePartIfComplete(
   _UpdateDownloadMetadata? metadata,
 ) async {
   if (metadata == null || !metadata.matches(asset, version)) return null;
-  if (!await _isValidCompleteDownload(
-    stagingPaths.partFile,
-    asset,
-    metadata,
-  )) {
+  if (!await _isValidCompleteDownload(stagingPaths.partFile, asset, metadata)) {
     return null;
   }
   return _promoteCompleteDownload(paths, stagingPaths, metadata);
@@ -1452,8 +1477,9 @@ Future<File> _promoteCompleteDownload(
   if (await stagingPaths.file.exists()) {
     await _deleteFile(stagingPaths.file);
   }
-  final File completed =
-      await stagingPaths.partFile.rename(stagingPaths.file.path);
+  final File completed = await stagingPaths.partFile.rename(
+    stagingPaths.file.path,
+  );
 
   await paths.file.parent.create(recursive: true);
   try {
@@ -1525,10 +1551,7 @@ Future<bool> _isValidCompleteDownload(
   return true;
 }
 
-Future<String> _sha256OfFile(File file) async {
-  final Digest digest = await sha256.bind(file.openRead()).first;
-  return digest.toString();
-}
+Future<String> _sha256OfFile(File file) => ffcSha256File(file.path);
 
 int? _contentRangeTotal(String? value) {
   final RegExpMatch? match = _contentRangeMatch(value);

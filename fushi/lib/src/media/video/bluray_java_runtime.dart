@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:crypto/crypto.dart';
 import 'package:fushi/src/utils/misc/child_process_containment.dart';
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:path/path.dart' as p;
@@ -129,8 +129,8 @@ class BlurayJavaRuntimeManager {
       final File file = File(p.join(temp.path, 'runtime.zip'));
       await _download(archive.url, file, onProgress);
       _checkCancelled();
-      final Digest hash = await sha256.bind(file.openRead()).first;
-      if (hash.toString() != archive.sha256) {
+      final String hash = await ffcSha256File(file.path);
+      if (hash != archive.sha256) {
         throw const BlurayJavaRuntimeException('archive-checksum-mismatch');
       }
       _checkCancelled();

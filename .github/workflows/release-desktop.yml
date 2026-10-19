@@ -561,6 +561,19 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File native/fushi_fsrs/build_windows_dll.ps1
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_fsrs) failed" }
+      # 计算内核（哈希 / 图像 / 文本）DLL：**硬依赖**——产物落 native/fushi_compute/prebuilt/windows-x64/，
+      # 缺了 fushi/windows/CMakeLists.txt 在配置期就让构建失败；构建失败即 job 失败，出包后再核对。
+      # 不进原生产物持久库，只靠 rust-cache；Rust 已由 fushi_fsrs 那组无条件装好。
+      - name: Cache Rust build (fushi_compute)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_compute -> target
+          key: fushi-compute-windows-x64
+      - name: Build fushi_compute DLL
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_compute/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_compute) failed" }
       # BUG-1589 根因（run 31700342531 的 -v 日志确证）：`aot_elf_release` 阶段
       # gen_snapshot.exe 以 -1073741571 = 0xC00000FD（栈溢出）退出——本仓 AOT 规模
       # 超出其默认栈保留。本机 SDK 早已用 `editbin /STACK:128M` 打过同款补丁
@@ -624,6 +637,14 @@ jobs:
           $dll = "fushi\build\windows\x64\runner\Release\fushi_fsrs.dll"
           if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
             throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_fsrs/prebuilt/windows-x64"
+          }
+          Get-Item -LiteralPath $dll | Select-Object FullName, Length
+      - name: Verify fushi_compute is in the Windows bundle
+        shell: pwsh
+        run: |
+          $dll = "fushi\build\windows\x64\runner\Release\fushi_compute.dll"
+          if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
+            throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_compute/prebuilt/windows-x64"
           }
           Get-Item -LiteralPath $dll | Select-Object FullName, Length
       # 持久库理由与名字契约见 build-multiplatform.yml windows job 同名步骤（名字逐字一致）。
@@ -1587,6 +1608,21 @@ jobs:
           set -euo pipefail
           bash native/fushi_fsrs/build_macos_dylib.sh
           bash native/fushi_fsrs/verify_abi.sh native/fushi_fsrs/prebuilt/macos/libfushi_fsrs.dylib nm
+      # 计算内核（哈希 / 图像 / 文本）arm64 dylib：**硬依赖**——Runner 的「Bundle fushi_compute
+      # dylib」构建阶段（fushi/macos/bundle_fushi_compute.sh）拷进 Contents/Frameworks，缺库时
+      # 那个阶段直接让 xcodebuild 失败；之后由下面的 Developer ID 签名循环随其它 Mach-O 一起签。
+      # Rust 已由 fushi_fsrs 那组无条件装好（同一工具链、同一 target）。
+      - name: Cache Rust build (fushi_compute)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_compute -> target
+          key: fushi-compute-macos
+      - name: Build fushi_compute (macOS arm64 dylib)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_compute/build_macos_dylib.sh
+          bash native/fushi_compute/verify_abi.sh native/fushi_compute/prebuilt/macos/libfushi_compute.dylib nm
       # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）arm64 dylib：Runner 的
       # 「Bundle fushi_torrent dylib」构建阶段 copy-if-present 进 Contents/Frameworks，之后由
       # 下面的 Developer ID 签名循环随其它 Mach-O 一起签。此前 macOS 包从没带过它，内置引擎
@@ -1698,6 +1734,26 @@ jobs:
           archs="$(lipo -archs "$dylib")"
           if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
           bash native/fushi_fsrs/verify_abi.sh "$dylib" nm
+      - name: Verify fushi_compute is in the macOS bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_compute.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_compute dylib' phase did not copy it"; exit 1; }
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_compute.dylib"
+          archs="$(lipo -archs "$dylib")"
+          if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
+          bash native/fushi_compute/verify_abi.sh "$dylib" nm
+          DYLIB_PATH="$dylib" python3 - <<'PY'
+          import ctypes
+          import os
+          lib = ctypes.CDLL(os.environ["DYLIB_PATH"])
+          lib.ffc_abi_version.restype = ctypes.c_int32
+          abi = lib.ffc_abi_version()
+          if abi != 1:
+              raise SystemExit(f"ffc_abi_version returned {abi}")
+          print("fushi_compute dylib smoke ok: abi", abi)
+          PY
       - name: Save fushi_p2p dylib to native artifact store
         if: steps.p2p_store.outputs.hit != 'true'
         continue-on-error: true
@@ -2493,7 +2549,9 @@ jobs:
       - name: Disable experimental Swift Package Manager (CocoaPods-managed iOS)
         run: flutter config --no-enable-swift-package-manager
       # iOS 伞形 Rust 静态库（device 切片）：互联 P2P 隧道（fushi_p2p，fp2p_*）+ SRS 排程内核
-      # （fushi_fsrs，ffsrs_*）合成一个 staticlib、Rust std 只有一份——两份单独的 .a 同时
+      # （fushi_fsrs，ffsrs_*）+ 计算内核（fushi_compute，ffc_*，硬依赖：伞形库缺失时 Runner 的
+      # 「Check fushi_compute (iOS umbrella)」构建阶段让构建失败）合成一个 staticlib、Rust std
+      # 只有一份——多份单独的 .a 同时
       # -force_load 会撞重复 std 符号。iOS 不能加载自带 dylib，以 staticlib 经 -force_load 链进
       # Runner；build_ios_staticlib.sh 顺带生成 xcconfig 片段，由 fushi/ios/Flutter/Release.xcconfig
       # 可选 include，给 OTHER_LDFLAGS 的 $(FUSHI_IOS_NATIVE_LDFLAGS)。
@@ -2521,7 +2579,7 @@ jobs:
         with:
           workspaces: native/fushi_ios_umbrella -> target
           key: fushi-ios-umbrella
-      - name: Build iOS umbrella staticlib (fushi_p2p + fushi_fsrs, device)
+      - name: Build iOS umbrella staticlib (fushi_p2p + fushi_fsrs + fushi_compute, device)
         if: steps.ios_native_store.outputs.hit != 'true'
         shell: bash
         run: |
@@ -2537,13 +2595,14 @@ jobs:
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       # 静态库 + -force_load 的失败形态是「链接成功、符号被 dead-strip / strip 掉」，
       # Release 配置下 dead-strip 与 strip 都开着，所以查的是真正要发出去的 Runner。
-      - name: Verify fushi_p2p + fushi_fsrs symbols are linked into Runner (iOS release)
+      - name: Verify fushi_p2p + fushi_fsrs + fushi_compute symbols are linked into Runner (iOS release)
         if: github.event.inputs.testflight_only != 'true'
         shell: bash
         run: |
           set -euo pipefail
           bash native/fushi_p2p/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
           bash native/fushi_fsrs/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
+          bash native/fushi_compute/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
       # 只在上面那道 Release Runner 符号核对真跑过之后才存（testflight_only 的 run 不走它）。
       - name: Save iOS umbrella staticlib to native artifact store
         if: steps.ios_native_store.outputs.hit != 'true' && github.event.inputs.testflight_only != 'true'
@@ -2817,7 +2876,7 @@ jobs:
           --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
-      - name: Verify fushi_p2p + fushi_fsrs symbols are linked into Runner (App Store archive)
+      - name: Verify fushi_p2p + fushi_fsrs + fushi_compute symbols are linked into Runner (App Store archive)
         if: steps.signing.outputs.testflight == 'true'
         shell: bash
         run: |
@@ -2825,6 +2884,7 @@ jobs:
           runner=fushi/build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app/Runner
           bash native/fushi_p2p/verify_abi.sh "$runner" nm
           bash native/fushi_fsrs/verify_abi.sh "$runner" nm
+          bash native/fushi_compute/verify_abi.sh "$runner" nm
       # TestFlight 上传是不可回收的外发，搬到下面的 `testflight` job：正式 / 测试版
       # dispatch 在那里等审批，这里只把签名 IPA 交给它。artifact 名刻意不叫
       # desktop-artifacts-*：publish job 按那个前缀收 Release 资产，App Store 签名包
