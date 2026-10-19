@@ -8,7 +8,7 @@
 ## 产品约束（用户 2026-10-14 追加）
 
 - SRS 整体是一个默认关闭的模块（`ModuleId.srs`，「外观 → 模块」里打开；`ModuleId.defaultEnabled` 只有它为 false）。没打开的用户看不到任何入口。
-  **2026-10-16 更新**：出厂默认改为开（新装默认 Fushi 复习；升级上来的老用户由 `PreferencesRepository.settleSrsMiningTargetInstallDefault` 一次性显式写关、不提醒），见 `ModuleId.srs` 文档；正式版构建仍整体屏蔽（`PrereleaseOnlyCapability.srs`）。
+  **2026-10-16 更新**：出厂默认改为开（新装默认 Fushi 复习；升级上来的老用户由 `PreferencesRepository.settleSrsMiningTargetInstallDefault` 一次性显式写关、不提醒），见 `ModuleId.srs` 文档。正式版构建屏蔽（PR #2237）已撤回，五端各通道都提供复习模块。
 - 新手引导里有 SRS 步骤，但只有模块已开启时才进入步骤序列；向导不替用户勾选 SRS 模块。
 - 所有页面同时适配 MD3 与 Apple 两套设计系统，并带动效（仓库规则）。
 

@@ -24,7 +24,7 @@ const image = 'data:image/svg+xml,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="1600">' +
   '<rect width="1120" height="1600" fill="#888"/></svg>');
 const figure = '<div class="fushi-merged-image"><img src="' + image +
-  '" class="block-img" loading="eager"/></div>';
+  '" class="block-img"/></div>';
 const sentence = '<p>……さすがだ、<ruby>由<rt>ゆ</rt></ruby><ruby>比<rt>い</rt></ruby>' +
   'ヶ<ruby>浜<rt>はま</rt></ruby>。よく人を見ている。</p>';
 const reply = '<p>「あ、うん、え？」</p>';

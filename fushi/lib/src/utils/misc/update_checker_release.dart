@@ -1762,9 +1762,15 @@ Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
       final String vb =
           normalizeReleaseVersionTag(b['tag_name'] as String? ?? '') ?? '';
       // 降序：新的在前。seq 从各自 release map 顶层取（正式版 302 回退无 → null）。
-      return _compareReleaseRecency(vb, va,
+      final int recency = _compareReleaseRecency(vb, va,
           seqA: b['releaseSequence'] as int?,
           seqB: a['releaseSequence'] as int?);
+      if (recency != 0) return recency;
+      // 同一次构建（同基同序号）出了多个轨道的包：优先用户自己的轨道。轨道之间不再
+      // 只是发布节奏不同——正式版会屏蔽预发布能力（`PrereleaseOnlyCapability`，如复习），
+      // 稳定排序保原序时合集里排在前面的 stable 会胜出，把 debug 通道用户换进正式版、
+      // 复习整块消失（2026-10-18 用户实测 3.0.0 vs 3.0.0-debug.19763）。
+      return _trackRank(vb, channel).compareTo(_trackRank(va, channel));
     });
 
   UpdateReleaseSelection? fallback;
@@ -1940,6 +1946,11 @@ List<UpdateChannel> _channelsAdmittedBy(UpdateChannel channel) {
       ],
   };
 }
+
+/// [version] 所属轨道在 [channel] 合集里的位置：越接近用户自己的通道越大（用户通道
+/// 本身最大），供同一次构建多轨并列时的选包平局判定。
+int _trackRank(String version, UpdateChannel channel) =>
+    _channelsAdmittedBy(channel).indexOf(channelForUpdateVersion(version));
 
 /// BUG-846：远端 [version] 所属轨道是否被 [channel] 的嵌套合集接纳。轨道由
 /// [channelForUpdateVersion] 推断（正式版 → stable，`-beta.N`/`-debug.N` → 对应轨），

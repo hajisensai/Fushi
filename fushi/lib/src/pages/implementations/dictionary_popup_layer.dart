@@ -6,6 +6,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart'
+    show kLookupPopupDefaultHeight, kLookupPopupDefaultWidth;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -32,10 +34,10 @@ Rect calcPopupPosition({
   required Rect selectionRect,
   required Size screen,
   double padding = 6.0,
-  double maxWidth = 360.0,
-  // 默认与单一真相源（preferences_repository.defaultPopupMaxHeight=360）对齐；
-  // 两个真实调用方都显式传 appModel.popupMaxHeight，此默认仅兜底/测试用。
-  double maxHeight = 360.0,
+  double maxWidth = kLookupPopupDefaultWidth,
+  // 默认与单一真相源（kLookupPopupDefaultWidth/Height）对齐；两个真实调用方都显式
+  // 传 appModel.popupMaxWidth/Height，此默认仅兜底/测试用。
+  double maxHeight = kLookupPopupDefaultHeight,
   double bottomReserve = 0.0,
   double topReserve = 0.0,
 

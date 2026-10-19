@@ -1010,8 +1010,12 @@ abstract class VideoFushiTestHooks {
   int get debugSecondaryCueCount;
   bool get debugSecondaryPlayerDecodedSubtitleActive;
 
-  /// BUG-2691：当前是否已切到 gpu-next 宿主窗（Windows HDR / DV P5 路径）。
-  bool get debugHdrHostActive;
+  /// 当前是否在输出合成器内 HDR（Windows）。
+  bool get debugHdrCompositorActive;
+
+  /// BUG-2691：当前片源是否被识别为需要 DV 重整（libmpv colormatrix 或服务器元数据）
+  /// 且本平台画不对——Windows 纹理路径自带重整后恒为 false。
+  bool get debugDolbyVisionColorsUnsupported;
 }
 
 // TODO-314：字幕跳转列表不再走 overlay 面板系统，改 push-aside（[_subtitleListVisible]
@@ -1486,7 +1490,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           fontSize: _videoControlTitleFontSize,
         );
 
-  Color _subtitleTextColor(ColorScheme cs) => cs.onSurface;
   Color _subtitleShadowColor(ColorScheme cs) => cs.shadow;
   // TODO-1059 方案A：字幕盒默认底色不再跟随主题 `surface`（浅色主题下近白 → 字幕
   // 背景泛白违和），改用固定半透明黑 [kDefaultSubtitleBackgroundColor]。仅当
@@ -1626,7 +1629,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _controller?.isSecondaryPlayerDecodedTextSubtitleActive ?? false;
 
   @override
-  bool get debugHdrHostActive => _controller?.hdrHostActive.value ?? false;
+  bool get debugHdrCompositorActive =>
+      _controller?.hdrCompositorActive.value ?? false;
+
+  @override
+  bool get debugDolbyVisionColorsUnsupported =>
+      _controller?.dolbyVisionColorsUnsupportedNotifier.value ?? false;
 
   @override
   List<int> get debugRemoteEmbeddedStreamIndices => <int>[
@@ -5211,11 +5219,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final bool isInitialVideoOpen = _controller == null;
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
-    // HDR 直通模式 + 画面 fit 交给控制器（宿主窗模式下 fit 由 mpv 自己算）。
-    controller.configureHdrOutput(
-      mode: _videoHdrOutputMode,
-      fitMode: _videoFitMode,
-    );
+    // HDR 输出模式交给控制器。
+    controller.configureHdrOutput(mode: _videoHdrOutputMode);
     controller.setSourceDolbyVisionHint(
       _isRemote && _remoteSourceRequiresDolbyVisionReshape,
     );
@@ -10198,12 +10203,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<void> _setVideoFitMode(VideoFitMode mode) async {
     if (_videoFitMode == mode) return;
     _videoFitMode = mode;
-    _controller?.configureHdrOutput(fitMode: mode);
     await appModel.setVideoFitMode(mode);
     if (mounted) setState(() {});
   }
 
-  /// 切 HDR 直通 / 10-bit 输出模式：落盘 + 控制器当场重判（切宿主窗不重建播放器）。
+  /// 切 HDR / 10-bit 输出模式：落盘 + 控制器当场重判（不重建播放器）。
   Future<void> _setVideoHdrOutputMode(VideoHdrOutputMode mode) async {
     if (_videoHdrOutputMode == mode) return;
     _videoHdrOutputMode = mode;
@@ -10284,8 +10288,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) setState(() {});
   }
 
-  /// BUG-2691：DV Profile 5 片源在没有 gpu-next 的平台 / 设置下会紫绿反色，
-  /// 至少告诉用户这不是片子坏了。每次由假变真提示一次（换集会重新判断）。
+  /// BUG-2691：DV Profile 5 片源在纹理渲染器不会重整的平台（Linux 系统 libmpv）上
+  /// 会紫绿反色，至少告诉用户这不是片子坏了。每次由假变真提示一次（换集会重新判断）。
   void _onDolbyVisionColorsUnsupportedChanged() {
     final VideoPlayerController? controller = _controller;
     if (controller == null ||
@@ -10293,9 +10297,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     _showOsd(
-      Platform.isWindows
-          ? t.video_dolby_vision_colors_enable_hdr_output
-          : t.video_dolby_vision_colors_unsupported,
+      t.video_dolby_vision_colors_unsupported,
       severity: ToastSeverity.warning,
       prominent: true,
     );
@@ -10334,6 +10336,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// overlay 立刻按新值决定悬停 / 点击是否还能揭开遮蔽。
   Future<void> _setVideoSubtitleObscureReveal(bool value) async {
     await appModel.setVideoSubtitleObscureReveal(value);
+    if (!mounted) return;
+    _rebuild(() {});
+  }
+
+  /// 副字幕「临时显形」开关，同 [_setVideoSubtitleObscureReveal]。
+  Future<void> _setVideoSecondarySubtitleObscureReveal(bool value) async {
+    await appModel.setVideoSecondarySubtitleObscureReveal(value);
     if (!mounted) return;
     _rebuild(() {});
   }
@@ -10784,6 +10793,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onEnterSubtitleDelayBar: _enterSubtitleDelayBar,
       // TODO-1105：尊重 .ass 自带样式切换回调（持久化 + 重建让 overlay 即时生效）。
       onSubtitleObscureRevealChanged: _setVideoSubtitleObscureReveal,
+      onSecondarySubtitleObscureRevealChanged:
+          _setVideoSecondarySubtitleObscureReveal,
       onRespectAssStyleChanged: _setVideoRespectAssStyle,
       // 着色器/mpv 配置面板内嵌（不弹独立对话框）：着色器勾选 → 持久化启用集 +
       // 解析绝对路径 + 实时应用；mpv 配置即改即生效。
@@ -11067,56 +11078,49 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // topButtonBar），外层再叠一条 AppBar 等于两条顶栏、互相重复（BUG-102）。改为
     // 把返回/标题/剧集导航全部并入视频内顶栏（见 [_desktopControlsTheme] /
     // [_mobileControlsTheme]），与播放控制一起随鼠标/触摸显隐，单一顶栏。
-    // HDR 直通（video_hdr_output.dart）：libmpv 宿主窗钉在主窗正后方，视频洞必须
-    // 一路透到底，页面底色随之透明；失败 / 加载 / 缺资源态与非 HDR 播放不受影响。
     // 横幅卸载后会话仍在：继续观看期间的制卡/覆写照样走 [SourceReviewSession]，
     // 它的失败提示只认最后一次 attach 的 context。横幅是唯一 attach 点时，继续观看
     // 那一帧起 context 就是已卸载的，提示会被静默吞掉——由页面自己接管。
     _sourceReviewSession?.attachContext(context);
-    return ValueListenableBuilder<bool>(
-      valueListenable: controller?.hdrHostActive ?? _kHdrHostInactive,
-      builder: (BuildContext _, bool hdrHost, Widget? body) => Scaffold(
-        backgroundColor: hdrHost ? Colors.transparent : cs.surface,
-        body: Column(
-          children: <Widget>[
-            // 全局悬浮球的场景按钮（零尺寸，见 [_buildVideoFloatingBallScene]）。
-            _buildVideoFloatingBallScene(controller),
-            // 继续观看后这条栏必须整条消失：此刻已是普通观看，页面要和平时看视频
-            // 完全一样，不能再留第二条常驻顶栏把画面挤下去（BUG-102 的单一顶栏原
-            // 则）。要回卡片片段就重新点一次 Anki 里的来源链接，走完整回看链路。
-            if (_sourceReviewSession case final SourceReviewSession session
-                when session.isReview)
-              SafeArea(
-                bottom: false,
-                child: SourceReviewBanner(
-                  runHidden: runWithLookupPopupHidden,
-                  session: session,
-                  onReturn: () => unawaited(_handleBackOrExit()),
-                ),
+    final Widget body = _failed
+        ? _buildFailedBody(cs)
+        // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，
+        // _controller 维持 null 也会落进下面的 spinner 分支无限转圈）。
+        : _missingResource
+        ? _buildMissingResourceBody(cs)
+        // TODO-1276：首开时把 `!_videoReadyToShow` 并入转圈判据——页级加载态
+        // 保持到首帧真正解码出画再挂载 [Video]，杜绝与 media_kit 缓冲圈接力成
+        // 「转两次圈」。换集 [_videoReadyToShow] 恒 true 不进此分支（行为不变）。
+        : (controller == null || videoController == null || !_videoReadyToShow)
+        ? _buildLoadingBody()
+        // BUG-1864：裸空格覆盖不再挂这里——它已上提到窗口与全屏共用的
+        // [_wrapVideoGamepadControls]（全屏是独立路由，不经过本 Scaffold）。
+        : _pageDropTarget(
+            controller,
+            _buildVideoBody(controller, videoController),
+          );
+    return Scaffold(
+      backgroundColor: cs.surface,
+      body: Column(
+        children: <Widget>[
+          // 全局悬浮球的场景按钮（零尺寸，见 [_buildVideoFloatingBallScene]）。
+          _buildVideoFloatingBallScene(controller),
+          // 继续观看后这条栏必须整条消失：此刻已是普通观看，页面要和平时看视频
+          // 完全一样，不能再留第二条常驻顶栏把画面挤下去（BUG-102 的单一顶栏原
+          // 则）。要回卡片片段就重新点一次 Anki 里的来源链接，走完整回看链路。
+          if (_sourceReviewSession case final SourceReviewSession session
+              when session.isReview)
+            SafeArea(
+              bottom: false,
+              child: SourceReviewBanner(
+                runHidden: runWithLookupPopupHidden,
+                session: session,
+                onReturn: () => unawaited(_handleBackOrExit()),
               ),
-            Expanded(child: body ?? const SizedBox.shrink()),
-          ],
-        ),
-      ),
-      child: _failed
-          ? _buildFailedBody(cs)
-          // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，
-          // _controller 维持 null 也会落进下面的 spinner 分支无限转圈）。
-          : _missingResource
-          ? _buildMissingResourceBody(cs)
-          // TODO-1276：首开时把 `!_videoReadyToShow` 并入转圈判据——页级加载态
-          // 保持到首帧真正解码出画再挂载 [Video]，杜绝与 media_kit 缓冲圈接力成
-          // 「转两次圈」。换集 [_videoReadyToShow] 恒 true 不进此分支（行为不变）。
-          : (controller == null ||
-                videoController == null ||
-                !_videoReadyToShow)
-          ? _buildLoadingBody()
-          // BUG-1864：裸空格覆盖不再挂这里——它已上提到窗口与全屏共用的
-          // [_wrapVideoGamepadControls]（全屏是独立路由，不经过本 Scaffold）。
-          : _pageDropTarget(
-              controller,
-              _buildVideoBody(controller, videoController),
             ),
+          Expanded(child: body),
+        ],
+      ),
     );
   }
 

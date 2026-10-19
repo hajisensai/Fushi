@@ -1542,16 +1542,16 @@
    "maxAlignCells": 400000,
    "inputHash": "-2a4a3535abce7e8d",
    "cuesOut": 40,
-   "stats": "CueResegmentStats(runs=3 cues=56→40 added=12 removed=28 gapsClosed=23)",
-   "sha256": "fabd9e450f06ab743ce7ac95d46b886313c8077adc53e5b74c18b6ef3af9f471"
+   "stats": "CueResegmentStats(runs=3 cues=56→40 added=3 removed=19 gapsClosed=18)",
+   "sha256": "b236b1c8596abf4a211f1370946cef4d4cc4f5b05bdf5762880c6d8e16653682"
   },
   {
    "seed": 96,
    "maxAlignCells": 40,
    "inputHash": "-2a4a3535abce7e8d",
    "cuesOut": 40,
-   "stats": "CueResegmentStats(runs=3 cues=56→40 added=12 removed=28 gapsClosed=23)",
-   "sha256": "406cffe6891daafd2a5aa96465f5c114d0ecb439c7ce09f9f761bfb1556107ce"
+   "stats": "CueResegmentStats(runs=3 cues=56→40 added=3 removed=19 gapsClosed=18)",
+   "sha256": "b236b1c8596abf4a211f1370946cef4d4cc4f5b05bdf5762880c6d8e16653682"
   },
   {
    "seed": 97,
@@ -1797,17 +1797,17 @@
    "seed": 112,
    "maxAlignCells": 400000,
    "inputHash": "3e87c4d8602f1493",
-   "cuesOut": 31,
-   "stats": "CueResegmentStats(runs=2 cues=35→31 added=6 removed=7 gapsClosed=6)",
-   "sha256": "6f3db7d1bb693cfa85754f01b3e2e4bf76327584b2a4a05c4ab158b4690d41bc"
+   "cuesOut": 34,
+   "stats": "CueResegmentStats(runs=1 cues=35→34 added=6 removed=4 gapsClosed=4)",
+   "sha256": "dae397e447ac52ed85fcfa95ede89c4e7fa9cedec37045f230ac3161c86b41d9"
   },
   {
    "seed": 112,
    "maxAlignCells": 40,
    "inputHash": "3e87c4d8602f1493",
-   "cuesOut": 33,
-   "stats": "CueResegmentStats(runs=2 cues=35→33 added=6 removed=7 gapsClosed=6)",
-   "sha256": "0539c2bf342490d3b1dfbed980c2b6f1163597814602613af400ba4e86234771"
+   "cuesOut": 36,
+   "stats": "CueResegmentStats(runs=1 cues=35→36 added=6 removed=4 gapsClosed=4)",
+   "sha256": "df721d8ed25e0c11a2dd4f2993ed89e384dfbd85cfb9e62a51d5b3215ee296c6"
   },
   {
    "seed": 113,
@@ -2277,17 +2277,17 @@
    "seed": 142,
    "maxAlignCells": 400000,
    "inputHash": "-1c3ded281ccf663c",
-   "cuesOut": 125,
-   "stats": "CueResegmentStats(runs=3 cues=154→125 added=20 removed=48 gapsClosed=49)",
-   "sha256": "7eb40d2a5bdb386b5984f89b6b28dbced18211c7b8990deddf22f4e6ce46b27d"
+   "cuesOut": 131,
+   "stats": "CueResegmentStats(runs=3 cues=154→131 added=22 removed=44 gapsClosed=46)",
+   "sha256": "d8278d0e61328232da6bfaffcfc23c683698c63e93f15f9c484f9760830b72ab"
   },
   {
    "seed": 142,
    "maxAlignCells": 40,
    "inputHash": "-1c3ded281ccf663c",
-   "cuesOut": 126,
-   "stats": "CueResegmentStats(runs=3 cues=154→126 added=20 removed=48 gapsClosed=49)",
-   "sha256": "45e2e939d01e7ee0cc522518ce8d90767d513ef9695dc63fcdaae44f7cb90bb7"
+   "cuesOut": 132,
+   "stats": "CueResegmentStats(runs=3 cues=154→132 added=22 removed=44 gapsClosed=46)",
+   "sha256": "00d50742d286012e57cbbee938a66540e4b585555e2e39fe7c79a0daf35715ed"
   },
   {
    "seed": 143,

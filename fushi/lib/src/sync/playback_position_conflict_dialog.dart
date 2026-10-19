@@ -55,10 +55,10 @@ Future<List<PlaybackPositionConflictView>> loadPlaybackPositionConflicts({
     try {
       final PlaybackPosition local = await sync.localPosition(c.assetKey);
       final PlaybackPosition remote = await sync.remotePosition(c.assetKey);
-      final BookProgressSyncAction action = resolvePlaybackPositionThreeWay(
+      final BookProgressSyncAction action = await sync.decide(
+        c.assetKey,
         local: local,
         remote: remote,
-        basePositionMs: await sync.baseline(c.assetKey),
       );
       if (action != BookProgressSyncAction.conflict) continue;
       views.add(
@@ -92,8 +92,11 @@ Future<int> applyPlaybackPositionDecisions(
           await v.sync.pushLocal(key, local: v.local, remote: v.remote);
           applied++;
         case SyncChoice.useRemote:
-          await v.sync.applyRemote(key, v.remote);
-          applied++;
+          // BUG-3537：弹窗展示后本端断点又被改写（本机播放 / 对端 PUT）则不落地，
+          // 这条仍算未解决，下一轮 sweep 按新事实重新判定。
+          if (await v.sync.applyRemote(key, v.remote, local: v.local)) {
+            applied++;
+          }
         case SyncChoice.skip:
           break;
       }

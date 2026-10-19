@@ -12,9 +12,9 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 通用「删除范围」确认弹窗：正文 + 「从所有设备删除」勾选框 +
-/// 「同时删除本地文件」勾选框（仅 [localFilesSubtitle] 非 null 时渲染）+
-/// 「记住这些选择」勾选框。未记住时两个删除选项都采用安全默认值 false；传 [db] 时
-/// 会恢复并更新用户明确要求记住的组合值。
+/// 「同时删除本地文件」勾选框（仅 [localFilesSubtitle] 非 null 时渲染）。传 [db] 时
+/// 两个勾选框沿用上次确认删除时的状态，确认后再把这次的状态写回；从没确认过就采用
+/// 安全默认值 false。取消不回写。
 /// 确认返回用户的 [DeleteDecision]（scope：勾选=syncEverywhere 传播 / 不勾=
 /// keepLocalOnly 仅本机；deleteLocalFiles：是否连磁盘上的原始文件一起删）；取消返回
 /// null。供书架/视频/有声书等各删除入口共用（书架另有 ReaderHistoryDeleteDialog
@@ -89,12 +89,11 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
   /// null = 这个入口不提供「同时删除统计数据」→ 恒 deleteStatistics=false。
   /// 非 null = 渲染勾选行，副标题如实说清删掉的是哪些统计口径。
   ///
-  /// 与另外两个勾选不同，它**不进**「记住这些选择」，每次都从未勾开始（见
+  /// 与另外两个勾选不同，它**不沿用**上次的状态，每次都从未勾开始（见
   /// [DeleteStatisticsRow]）。
   final String? statisticsSubtitle;
   final DeletePromptRememberedChoices? rememberedChoices;
-  final Future<void> Function(DeletePromptRememberedChoices?)?
-      onPersistChoices;
+  final Future<void> Function(DeletePromptRememberedChoices)? onPersistChoices;
 
   @override
   State<_DeleteScopeConfirmDialog> createState() =>
@@ -105,7 +104,6 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
   late bool _syncDelete;
   late bool _deleteLocalFiles;
   bool _deleteStatistics = false;
-  late bool _rememberChoices;
   bool _saving = false;
 
   @override
@@ -113,20 +111,17 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
     super.initState();
     _syncDelete = widget.rememberedChoices?.syncEverywhere ?? false;
     _deleteLocalFiles = widget.rememberedChoices?.deleteLocalFiles ?? false;
-    _rememberChoices = widget.rememberedChoices != null;
   }
 
   Future<void> _confirm() async {
     if (_saving) return;
     setState(() => _saving = true);
-    final DeletePromptRememberedChoices? choices = _rememberChoices
-        ? DeletePromptRememberedChoices(
-            syncEverywhere: _syncDelete,
-            deleteLocalFiles: _deleteLocalFiles,
-          )
-        : null;
     try {
-      await widget.onPersistChoices?.call(choices);
+      // 本次勾选状态即下次默认值；被隐藏的那一项保持加载来的旧值，不会被覆盖。
+      await widget.onPersistChoices?.call(DeletePromptRememberedChoices(
+        syncEverywhere: _syncDelete,
+        deleteLocalFiles: _deleteLocalFiles,
+      ));
     } catch (error, stackTrace) {
       debugPrint('Delete prompt preference write failed: $error\n$stackTrace');
     }
@@ -211,13 +206,6 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
                     subtitle: widget.statisticsSubtitle!,
                     onChanged: (bool v) =>
                         setState(() => _deleteStatistics = v),
-                  ),
-                if (widget.canSyncEverywhere ||
-                    widget.localFilesSubtitle != null)
-                  DeleteRememberChoicesRow(
-                    value: _rememberChoices,
-                    onChanged: (bool v) =>
-                        setState(() => _rememberChoices = v),
                   ),
               ],
             ),

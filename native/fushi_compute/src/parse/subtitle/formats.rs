@@ -99,7 +99,10 @@ fn split_blank_lines(s: &[u16]) -> Vec<&[u16]> {
     out
 }
 
-/// `lines.skip(from).where((l) => l.isNotEmpty).join(' ')`。
+/// `lines.skip(from).where((l) => l.isNotEmpty).join(r'\N')`：多行 cue 用 ASS 硬换行
+/// `\N` 连接（#2312）。markup 解析把换行处记进 `line_breaks`（渲染层据此按作者的行
+/// 分行），plain_text 里仍是空格——查词 / 制卡 / DB 文本与旧的空格连接逐字节一致。
+/// 此前直接以空格连接，双语字幕（原文一行 + 译文一行）在屏上并成一排。
 fn join_text_lines(lines: &[&[u16]], from: usize) -> Vec<u16> {
     let mut out = Vec::new();
     let mut first = true;
@@ -108,7 +111,8 @@ fn join_text_lines(lines: &[&[u16]], from: usize) -> Vec<u16> {
             continue;
         }
         if !first {
-            out.push(u(' '));
+            out.push(u('\\'));
+            out.push(u('N'));
         }
         out.extend_from_slice(l);
         first = false;
@@ -646,6 +650,9 @@ mod tests {
             String::from_utf16_lossy(&cues[1].markup.plain_text),
             "名前は まだない。"
         );
+        // 多行 cue 在原行边界处记硬换行（#2312），plain_text 仍以空格连接。
+        assert_eq!(cues[1].markup.line_breaks, Some(vec![3]));
+        assert_eq!(cues[0].markup.line_breaks, None);
     }
 
     #[test]

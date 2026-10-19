@@ -10,6 +10,10 @@ import 'package:fushi_core/fushi_core.dart';
 /// 可以同时启用，共用一行会互相污染冲突判定。assetKey 用互联 wire 键 `bookKey`。
 const String kInterconnectBookProgressDimension = 'progress_live';
 
+/// 「已发出、尚未确认」的推送位置（BUG-3528）。值形态同基线（[BookProgressBaseline]
+/// 编码）；推送成功并记下基线后删除。见 [InterconnectBookProgressSync.decide]。
+const String kInterconnectBookProgressPendingDimension = 'progress_live_pending';
+
 /// 互联书籍进度的三方同步落地层（BUG-2506）：sweep（[SyncOrchestrator]）与
 /// 冲突对比弹窗（`SyncCompareDialog`）共用同一份读 / 写 / 记基线，两处口径不会
 /// 漂移。判定本身是纯函数 [resolveBookProgressThreeWay]，这里只做 IO。
@@ -52,13 +56,50 @@ class InterconnectBookProgressSync {
         kInterconnectBookProgressDimension,
       ));
 
-  /// 记下两端此刻达成一致的位置。
-  Future<void> recordBaseline(EpubBookRow book, RemoteBookProgress agreed) =>
-      _db.setSyncBaseline(
-        book.bookKey,
-        kInterconnectBookProgressDimension,
-        BookProgressBaseline.of(agreed).encode(),
-      );
+  /// 三方判定的唯一入口：sweep 与冲突弹窗都走这里，不各自读基线。
+  ///
+  /// 「写入落地、确认丢失」（BUG-3528）：host 慢时 PUT 在 host 端已经提交，客户端
+  /// 却等到超时，[pushLocal] 在记基线之前就抛了，基线停在更早的位置。之后本机
+  /// 接着读，下一轮两端都偏离旧基线——host 那份其实是本机自己的写入——被判成
+  /// 冲突。所以推送前先记一条「待确认」位置；这里发现 host 正停在它上面，说明
+  /// 那次写入确实到了，把它提升为基线再判定。
+  Future<BookProgressSyncAction> decide(
+    EpubBookRow book, {
+    required RemoteBookProgress local,
+    required RemoteBookProgress remote,
+  }) async {
+    BookProgressBaseline? base = await baseline(book);
+    final BookProgressBaseline? pending =
+        BookProgressBaseline.decode(await _db.getSyncBaseline(
+      book.bookKey,
+      kInterconnectBookProgressPendingDimension,
+    ));
+    if (pending != null &&
+        remote.updatedAtMs > 0 &&
+        pending.matches(remote) &&
+        (base == null || !base.matches(remote))) {
+      await recordBaseline(book, remote);
+      base = pending;
+    }
+    return resolveBookProgressThreeWay(local: local, remote: remote, base: base);
+  }
+
+  /// 记下两端此刻达成一致的位置；同时作废「待确认」推送（两端已对齐，它不再
+  /// 携带信息）。
+  Future<void> recordBaseline(
+    EpubBookRow book,
+    RemoteBookProgress agreed,
+  ) async {
+    await _db.setSyncBaseline(
+      book.bookKey,
+      kInterconnectBookProgressDimension,
+      BookProgressBaseline.of(agreed).encode(),
+    );
+    await _db.deleteSyncBaseline(
+      book.bookKey,
+      kInterconnectBookProgressPendingDimension,
+    );
+  }
 
   /// 本端胜出：推给 host（时间戳抬到严格新于 host，见类头），本端行同步对齐，
   /// 记基线。返回两端对齐后的进度。
@@ -80,18 +121,40 @@ class InterconnectBookProgressSync {
       charOffset: local.charOffset,
       updatedAtMs: ts,
     );
+    // 先记「待确认」再发：PUT 超时而 host 已提交时，下一轮 [decide] 靠它认出
+    // host 上那份是本机自己的写入（BUG-3528）。
+    await _db.setSyncBaseline(
+      book.bookKey,
+      kInterconnectBookProgressPendingDimension,
+      BookProgressBaseline.of(agreed).encode(),
+    );
     await _backend.putRemoteBookProgress(book.bookKey, agreed);
     if (ts != local.updatedAtMs) {
-      await _upsertLocal(book, agreed);
+      // 比较后写入（BUG-3537）：PUT 期间本地若已被改写（本机阅读器 / 本机作为
+      // host 收到的对端 PUT），抬戳对齐作废——本地留着更新的那份，下一轮它偏离
+      // 基线、照常再推。host 此刻确实停在 [agreed]，基线照记。
+      await _upsertLocalIfUnchanged(book, agreed, expected: local);
     }
     await recordBaseline(book, agreed);
     return agreed;
   }
 
-  /// host 胜出：落回本端 `reader_positions`，记基线。
-  Future<void> applyRemote(EpubBookRow book, RemoteBookProgress remote) async {
-    await _upsertLocal(book, remote);
-    await recordBaseline(book, remote);
+  /// host 胜出：落回本端 `reader_positions`，记基线。返回是否真的落地。
+  ///
+  /// [local] 是判定时读到的本端进度。落地是「比较后写入」（BUG-3537）：判定与
+  /// 这里之间（sweep 里隔着 DB 往返，冲突弹窗里隔着用户思考），本地可能已被本机
+  /// 阅读器或本机作为互联 host 收到的对端 PUT 写进更新的进度；时间戳一变，这次
+  /// 判定作废——不落地、不记基线，交给下一轮按新的本地事实重新判定（届时两端都
+  /// 偏离基线就是真分叉，走冲突弹窗），绝不用 host 的旧值盖掉它。
+  Future<bool> applyRemote(
+    EpubBookRow book,
+    RemoteBookProgress remote, {
+    required RemoteBookProgress local,
+  }) async {
+    final bool landed =
+        await _upsertLocalIfUnchanged(book, remote, expected: local);
+    if (landed) await recordBaseline(book, remote);
+    return landed;
   }
 
   /// 两端位置一致、只是时间戳不同：把较新的时间戳对齐到另一端（沿用此前 LWW
@@ -110,21 +173,33 @@ class InterconnectBookProgressSync {
             winner.charOffset != remote.charOffset)) {
       await _backend.putRemoteBookProgress(book.bookKey, winner);
     }
-    final bool localChanged = winner.updatedAtMs != local.updatedAtMs ||
+    bool localChanged = winner.updatedAtMs != local.updatedAtMs ||
         winner.charOffset != local.charOffset;
     if (localChanged) {
-      await _upsertLocal(book, winner);
+      // 比较后写入（BUG-3537）：本地在判定后被改写就不对齐，下一轮再说。位置
+      // 一致这件事在判定时成立、host 也停在这个位置，基线照记。
+      localChanged =
+          await _upsertLocalIfUnchanged(book, winner, expected: local);
     }
     await recordBaseline(book, winner);
     return localChanged;
   }
 
-  Future<void> _upsertLocal(EpubBookRow book, RemoteBookProgress p) =>
-      _db.upsertReaderPosition(ReaderPositionsCompanion(
-        bookUid: Value(book.uid),
-        sectionIndex: Value(p.sectionIndex),
-        normCharOffset: Value(p.normCharOffset),
-        charOffset: Value(p.charOffset),
-        updatedAt: Value(p.updatedAtMs),
-      ));
+  /// 本端落地的唯一写口：仅当本地时间戳仍是判定时读到的 [expected] 才写
+  /// （[FushiDatabase.upsertReaderPositionIfUnchanged]，BUG-3537）。
+  Future<bool> _upsertLocalIfUnchanged(
+    EpubBookRow book,
+    RemoteBookProgress p, {
+    required RemoteBookProgress expected,
+  }) =>
+      _db.upsertReaderPositionIfUnchanged(
+        ReaderPositionsCompanion(
+          bookUid: Value(book.uid),
+          sectionIndex: Value(p.sectionIndex),
+          normCharOffset: Value(p.normCharOffset),
+          charOffset: Value(p.charOffset),
+          updatedAt: Value(p.updatedAtMs),
+        ),
+        expectedUpdatedAt: expected.updatedAtMs,
+      );
 }
