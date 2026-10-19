@@ -302,6 +302,16 @@ void main() {
     expect(srsVisualDropField('{{Back}}', 'f2', _ctx), isNull);
   });
 
+  test('删字段：在代码页手改过的可视化一面不重编（否则手写部分被整段丢掉），交回引用剥离', () {
+    final String named = srsCompileVisualSide(<SrsVisualBlock>[
+      _field('b1', 'f1'),
+      _field('b2', 'f2'),
+    ], _ctx);
+    final String handEdited = '$named\n<div class="mine">手写的提示</div>';
+    expect(srsReadVisualSide(handEdited, _ctx).edited, isTrue);
+    expect(srsVisualDropField(handEdited, 'f2', _ctx), isNull);
+  });
+
   test('自动布局（填空类型）：背面自己放填空字段而不是重复正面，答案面显示挖出的词', () {
     final SrsNoteTypeView type = SrsNoteTypeView(
       id: 'nt',

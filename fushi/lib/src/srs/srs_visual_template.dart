@@ -451,8 +451,12 @@ SrsVisualSideState srsReadVisualSide(
   );
 }
 
-/// 删字段时把可视化的一面里引用它的块去掉并整面重编；这一面不是可视化做的、或根本没
-/// 引用它时返回 null（不用改）。[template] 是名字形式的正文，[ctx] 仍含要删的字段。
+/// 删字段时把可视化的一面里引用它的块去掉并整面重编；这一面不是可视化做的、在代码页手改过
+/// （[SrsVisualSideState.edited]）、或根本没引用它时返回 null（不用改）。[template] 是名字形式
+/// 的正文，[ctx] 仍含要删的字段。
+///
+/// 手改过的一面不重编：重编只按注释里的块生成正文，会把手写的部分整段丢掉，而删字段这条路径
+/// 上用户看不到可视化页那条「再改会覆盖」的提示。这种面交回 Anki 语义的引用剥离处理。
 String? srsVisualDropField(
   String template,
   String fieldId,
@@ -461,6 +465,7 @@ String? srsVisualDropField(
   final SrsVisualSideState state = srsReadVisualSide(template, ctx);
   final List<SrsVisualBlock>? blocks = state.blocks;
   if (blocks == null ||
+      state.edited ||
       !blocks.any((SrsVisualBlock b) => b.fieldId == fieldId)) {
     return null;
   }
