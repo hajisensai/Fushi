@@ -412,7 +412,7 @@ void main() {
       expect(
           cmake,
           contains('target_link_libraries(fushi_update_launcher '
-              'PRIVATE shell32)'));
+              'PRIVATE shell32 bcrypt)'));
       expect(rootCmake, contains('fushi_update_launcher'));
     });
 

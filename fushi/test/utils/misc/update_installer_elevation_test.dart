@@ -331,6 +331,32 @@ void main() {
       expect(script, contains("'$kWindowsInstallerNoRelaunchSwitch'"));
     });
 
+    test('提权的安装器只结束本会话的进程，不碰别的登录用户的 Fushi（BUG-3567）', () {
+      final String control = File(
+        'windows/installer/process_control.iss',
+      ).readAsStringSync();
+      expect(
+        control,
+        contains("external 'ProcessIdToSessionId@kernel32.dll stdcall';"),
+      );
+      expect(
+        control,
+        contains('function FushiInOwnSession(const Pid: Cardinal): Boolean;'),
+      );
+      // 三个按镜像名 / 路径扫全机的入口都要过会话门：WM_CLOSE 目标、强杀主进程树、
+      // 安装目录下的 helper 清扫。
+      expect(
+        RegExp(
+          r"\(\(Names\[I\] = 'fushi\.exe'\) or \(Names\[I\] = 'hibiki\.exe'\)\) and\s+FushiInOwnSession\(Pids\[I\]\)",
+        ).allMatches(control).length,
+        2,
+      );
+      expect(
+        control,
+        contains('if not FushiInOwnSession(Pids[I]) then\n      Continue;'),
+      );
+    });
+
     test('launcher 认 --elevate 并以 runas 拉起安装器、提权时不白等自启', () {
       final String launcher = File(
         'windows/runner/update_launcher.cpp',
