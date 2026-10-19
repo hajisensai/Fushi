@@ -15,6 +15,7 @@
 /// 这些只从 `fushi_dictionary.dart` 导出。
 library fushi_dictionary_core;
 
+export 'src/engine/dictionary_buckets.dart';
 export 'src/engine/fushidicts.dart';
 export 'src/engine/fushidicts_models.dart';
 export 'src/language/language.dart';

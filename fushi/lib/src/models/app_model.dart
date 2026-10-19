@@ -434,58 +434,6 @@ enum BackgroundListenResult {
   loadFailed,
 }
 
-/// 一条词典在 FFI 引擎分桶时需要的信息：类型、资源路径、目录是否存在、是否隐藏。
-typedef DictPathEntry = ({
-  DictionaryType type,
-  String path,
-  bool exists,
-  bool hidden,
-  // TODO-622: a term dictionary that also contains kanji records (a mixed
-  // JA-JA 国語辞典) carries metadata['hasKanji']=='true'. Such an entry is
-  // routed into the kanji bucket too, so add_kanji_dict sees it.
-  bool hasKanji,
-});
-
-/// 把词典分桶成 FFI 引擎要的四组 path（term/freq/pitch/kanji）的单一真相。
-///
-/// 隐藏（被用户关掉）的词典**一律**不进引擎，四种类型同一规则。freq/pitch/kanji 没有
-/// 渲染期隐藏过滤，进了就会直接冒出来（BUG-177 / TODO-094 S4）；term 以前故意仍进桶、
-/// 靠渲染期过滤，但引擎在 Dart 过滤**之前**就按最长匹配排序并截断到 maxResults——
-/// 关掉的词典的长匹配会把可见词典的结果挤出 top-N，且每条新输出路径都得记得再滤一遍
-/// （BUG-419 / TODO-865 / BUG-2997 都是漏滤）。BUG-3454：源头不装载。不存在的目录跳过。同步 [AppModel._rebuildDictPathsCache] 与异步 `_rebuildDictPathsCacheAsync`
-/// 只差「怎么判目录存在」，分桶 switch 收口于此（之前两份逐字复制，改一处忘另一处即漂移）。
-@visibleForTesting
-({List<String> term, List<String> freq, List<String> pitch, List<String> kanji})
-    bucketDictPaths(List<DictPathEntry> entries) {
-  final term = <String>[];
-  final freq = <String>[];
-  final pitch = <String>[];
-  final kanji = <String>[];
-  for (final DictPathEntry e in entries) {
-    if (!e.exists) continue;
-    switch (e.type) {
-      case DictionaryType.term:
-        if (!e.hidden) term.add(e.path);
-      case DictionaryType.kanji:
-        if (!e.hidden) kanji.add(e.path);
-      case DictionaryType.frequency:
-        if (!e.hidden) freq.add(e.path);
-      case DictionaryType.pitch:
-        if (!e.hidden) pitch.add(e.path);
-    }
-    // TODO-622: a mixed dictionary (type==term but containing kanji records)
-    // must be registered in BOTH the term and kanji buckets so word lookup and
-    // single-character kanji lookup both hit. query_kanji has a type+char double
-    // guard (query.cpp), so a pure term dict (hasKanji==false) is never added
-    // here and a registered mixed dict produces zero false kanji hits. Honor
-    // hidden like the kanji case (kanji bucket has no render-time hide filter).
-    if (e.type == DictionaryType.term && e.hasKanji && !e.hidden) {
-      kanji.add(e.path);
-    }
-  }
-  return (term: term, freq: freq, pitch: pitch, kanji: kanji);
-}
-
 /// 词典查询前的查询串清洗单一真相：换行折空格 → emoji 去除 → 首尾标点/符号剥离 →
 /// 孤立代理项替换。此前 4 步 replaceAll 散在 [AppModel.searchDictionary] 内，无法单测
 /// （依赖整页 AppModel + FFI）。纯逻辑（输入→输出确定）凿到这里，返回清洗后的查询串。
@@ -2158,6 +2106,10 @@ class AppModel with ChangeNotifier {
   List<Dictionary> get pitchDictionaries => dictRepo.pitchDictionaries;
   List<Dictionary> get kanjiDictionaries => dictRepo.kanjiDictionaries;
 
+  /// 词典管理「汉字」分区：纯 kanji 词典 + 混合词典的汉字部分，按分区顺序。
+  List<Dictionary> get kanjiSectionDictionaries =>
+      dictRepo.kanjiSectionDictionaries;
+
   /// 被用户在词典管理里关掉的词典名集合，查词结果生成与弹窗注入共用这一个真相源。
   ///
   /// 隐藏词典已不进 FFI 引擎（[bucketDictPaths]，BUG-3454），这份名单只是查询后
@@ -2360,12 +2312,13 @@ class AppModel with ChangeNotifier {
     final List<DictPathEntry> entries = <DictPathEntry>[];
     for (final d in dictRepo.dictionaries) {
       final p = path.join(dictionaryResourceDirectory.path, d.name);
-      entries.add((
+      entries.add(dictPathEntryOf(
         type: d.type,
         path: p,
         exists: Directory(p).existsSync() && _dictDirMaterialized(p),
         hidden: d.isHidden(JapaneseLanguage.instance),
-        hasKanji: d.metadata['hasKanji'] == 'true',
+        metadata: d.metadata,
+        order: d.order,
       ));
     }
     final b = bucketDictPaths(entries);
@@ -2520,13 +2473,14 @@ class AppModel with ChangeNotifier {
     }
     final List<DictPathEntry> entries = <DictPathEntry>[
       for (var i = 0; i < dictList.length; i++)
-        (
+        dictPathEntryOf(
           type: dictList[i].type,
           path: paths[i],
           // 目录存在但没在预算内证明可读 → 本次当不存在处理，不进引擎。
           exists: existsResults[i] && readyDirs.contains(paths[i]),
           hidden: dictList[i].isHidden(JapaneseLanguage.instance),
-          hasKanji: dictList[i].metadata['hasKanji'] == 'true',
+          metadata: dictList[i].metadata,
+          order: dictList[i].order,
         ),
     ];
     final b = bucketDictPaths(entries);
@@ -2842,6 +2796,12 @@ class AppModel with ChangeNotifier {
     // its current result keeps the old order until it is reopened or the app
     // restarts. Mirrors the delete paths (BUG-355).
     await dictRepo.updateDictionaryOrder(newDictionaries);
+    dictionarySearchAgainNotifier.notifyListeners();
+  }
+
+  /// 「汉字」分区的重排（混合词典只动汉字部分的位置），其余同 [updateDictionaryOrder]。
+  Future<void> updateKanjiSectionOrder(List<Dictionary> newDictionaries) async {
+    await dictRepo.updateKanjiSectionOrder(newDictionaries);
     dictionarySearchAgainNotifier.notifyListeners();
   }
 
@@ -7091,6 +7051,11 @@ class AppModel with ChangeNotifier {
   Future<void> setDictionaryHidden(Dictionary dictionary, bool hidden) =>
       dictRepo.setDictionaryHidden(
           dictionary, JapaneseLanguage.instance.languageCode, hidden);
+
+  /// 开关混合词典的汉字部分（「汉字」分区里的开关），术语部分不受影响。
+  Future<void> setDictionaryKanjiPartHidden(
+          Dictionary dictionary, bool hidden) =>
+      dictRepo.setDictionaryKanjiPartHidden(dictionary, hidden);
 
   Future<void> toggleDictionaryHidden(Dictionary dictionary) async {
     await dictRepo.toggleDictionaryHidden(

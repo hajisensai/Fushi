@@ -23,6 +23,7 @@ import 'package:image/image.dart' as img;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
@@ -263,18 +264,108 @@ void main() {
       expect(plan.mangaFolders, isEmpty);
     });
 
-    test('.rar / .cbr / .cb7 classify as manga archives', () {
-      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
-        _file('/lib/vol1.rar'),
-        _file('/lib/vol2.cbr'),
-        _file('/lib/vol3.cb7'),
-      ]);
+    test('漫画来源：所有单文件载体（含 .cbz / .zip / .epub / .pdf）都计划成卷', () {
+      // 用户实报：`D:/MangaFushi/Veil/Veil（1）….zip` 扫描显示 0 卷——旧白名单只有
+      // rar / cbr / cb7。
+      final String root = p.join('lib');
+      final List<String> volumes = <String>[
+        p.join(root, 'Veil', 'Veil（1）オレンジの体温.zip'),
+        p.join(root, 'Veil', 'Veil（2）凪いだノワール.cbz'),
+        p.join(root, 'a.rar'),
+        p.join(root, 'b.cbr'),
+        p.join(root, 'c.cb7'),
+        p.join(root, 'd.epub'),
+        p.join(root, 'e.PDF'),
+      ];
+      final ScanPlan plan = planScanFromFileList(
+        <SourceFileEntry>[for (final String v in volumes) _file(v)],
+        mangaRootPath: root,
+      );
 
       expect(
         plan.mangaArchives
-            .map((ScanMangaArchiveItem item) => item.archivePath),
-        <String>['/lib/vol1.rar', '/lib/vol2.cbr', '/lib/vol3.cb7'],
+            .map((ScanMangaArchiveItem item) => item.archivePath)
+            .toSet(),
+        volumes.toSet(),
       );
+      expect(plan.books, isEmpty,
+          reason: '漫画来源里的 epub / pdf 是漫画卷，不能落进书籍清单后被丢掉');
+      expect(plan.mangaFolders, isEmpty);
+    });
+
+    test('载体表与手动导入同源（kMangaCarrierFileExtensions 去掉 .mokuro）', () {
+      expect(
+        kScanMangaCarrierExtensions,
+        <String>{'cbz', 'zip', 'rar', 'cbr', 'cb7', 'epub', 'pdf'},
+      );
+    });
+
+    test('书籍来源不受漫画载体影响：epub / pdf 仍是书，压缩包不计划', () {
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file('/lib/book.epub'),
+        _file('/lib/scan.pdf'),
+        _file('/lib/vol1.cbz'),
+        _file('/lib/vol2.rar'),
+      ]);
+
+      expect(
+        plan.books.map((ScanBookItem b) => b.bookPath),
+        <String>['/lib/book.epub', '/lib/scan.pdf'],
+      );
+      expect(plan.mangaArchives, isEmpty);
+    });
+
+    test('包旁同名 .mokuro 归那个 ZIP 容器卷，不再另算一卷', () {
+      final String root = p.join('lib');
+      final String cbz = p.join(root, 'vol1.cbz');
+      final String zip = p.join(root, 'vol2.zip');
+      final String rar = p.join(root, 'vol3.rar');
+      final ScanPlan plan = planScanFromFileList(
+        <SourceFileEntry>[
+          _file(cbz),
+          _file(p.join(root, 'vol1.mokuro')),
+          _file(zip),
+          _file(p.join(root, 'vol2.zip.mokuro')),
+          // 7-Zip 分支不读 sidecar：rar 旁的 mokuro 照旧是独立一卷。
+          _file(rar),
+          _file(p.join(root, 'vol3.mokuro')),
+        ],
+        mangaRootPath: root,
+      );
+
+      expect(
+        plan.mangaArchives,
+        <ScanMangaArchiveItem>[
+          ScanMangaArchiveItem(
+            archivePath: cbz,
+            mokuroSidecarPath: p.join(root, 'vol1.mokuro'),
+          ),
+          ScanMangaArchiveItem(
+            archivePath: zip,
+            mokuroSidecarPath: p.join(root, 'vol2.zip.mokuro'),
+          ),
+          ScanMangaArchiveItem(archivePath: rar),
+        ],
+      );
+      expect(
+        plan.mangas.map((ScanMangaItem m) => m.mokuroPath),
+        <String>[p.join(root, 'vol3.mokuro')],
+      );
+    });
+
+    test('与压缩包卷同目录的散图（封面）不再计划成一卷裸图', () {
+      final String root = p.join('lib', 'Veil');
+      final ScanPlan plan = planScanFromFileList(
+        <SourceFileEntry>[
+          _file(p.join(root, 'cover.jpg')),
+          _file(p.join(root, 'Veil (1).cbz')),
+          _file(p.join(root, 'Veil (2).cbz')),
+        ],
+        mangaRootPath: root,
+      );
+
+      expect(plan.mangaArchives, hasLength(2));
+      expect(plan.mangaFolders, isEmpty, reason: '只有一张封面的「漫画」是垃圾条目');
     });
 
     test('纯页图扫描根本身作为一卷', () {
@@ -1671,6 +1762,264 @@ Attributes = A
       expect(book.sourceId, sid);
     });
 
+    ArchiveFile pngEntry(String name, {int width = 20, int height = 40}) {
+      final List<int> png =
+          img.encodePng(img.Image(width: width, height: height));
+      return ArchiveFile(name, png.length, png);
+    }
+
+    Uint8List pagesZip(List<String> names) => _encodeArchive(<ArchiveFile>[
+          for (final String name in names) pngEntry(name),
+        ]);
+
+    Future<SourceLibraryRow> mangaSource(FushiDatabase db) async {
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Manga',
+        mediaKind: 'manga',
+        rootPath: tmp.path,
+        recursive: const Value(true),
+        createdAt: 1000,
+      ));
+      return (await db.getMediaSourceById(sid))!;
+    }
+
+    test('用户实报布局：系列目录下的 .zip / .cbz 卷逐卷入库（此前 0 卷）', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory series = Directory(p.join(tmp.path, 'Veil'))
+        ..createSync();
+      final File zip = File(p.join(series.path, 'Veil（1）オレンジの体温.zip'))
+        ..writeAsBytesSync(pagesZip(<String>['001.png', '002.png']));
+      final File cbz = File(p.join(series.path, 'Veil（2）凪いだノワール.cbz'))
+        ..writeAsBytesSync(pagesZip(<String>['001.png']));
+      // 系列目录里的封面图不能被当成一卷只有一页的漫画。
+      _writeMangaPage(series.path, 'cover.jpg');
+      final SourceLibraryRow source = await mangaSource(db);
+
+      final SourceScanSummary summary =
+          await SourceLibraryScanner(db).scan(source);
+
+      expect(summary.error, isNull);
+      expect(summary.importedMediaCount, 2);
+      expect(summary.discoveredPaths.toSet(), <String>{zip.path, cbz.path});
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(
+        books.map((EpubBookRow b) => b.title).toSet(),
+        <String>{'Veil（1）オレンジの体温', 'Veil（2）凪いだノワール'},
+      );
+      expect(books.every((EpubBookRow b) => b.sourceId == source.id), isTrue);
+      expect(
+        books.every((EpubBookRow b) => b.format == BookFormat.manga.dbValue),
+        isTrue,
+      );
+
+      // 重扫静默去重。
+      final SourceScanSummary again = await SourceLibraryScanner(db)
+          .scan((await db.getMediaSourceById(source.id))!);
+      expect(again.error, isNull);
+      expect(again.importedMediaCount, 0);
+      expect(await db.getAllEpubBooks(), hasLength(2));
+    });
+
+    test('重扫已在库的单文件卷不再开包（标题预检先于解压）', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final File cbz = File(p.join(tmp.path, 'vol-1.cbz'))
+        ..writeAsBytesSync(pagesZip(<String>['001.png', '002.png']));
+      final SourceLibraryRow source = await mangaSource(db);
+      expect(
+          (await SourceLibraryScanner(db).scan(source)).importedMediaCount, 1);
+
+      // 把同名包换成打不开的字节：只要重扫还去开包（此前每次重扫都整包解压到
+      // 临时目录、解压完才由导入器判重复），这里就会冒出一条导入失败。
+      cbz.writeAsBytesSync(<int>[1, 2, 3, 4, 5]);
+      final SourceScanSummary again = await SourceLibraryScanner(db)
+          .scan((await db.getMediaSourceById(source.id))!);
+
+      expect(again.error, isNull);
+      expect(again.importedMediaCount, 0);
+      expect(await db.getAllEpubBooks(), hasLength(1));
+    });
+
+    test('同一来源下同名的 Vol 1.cbz（不同系列目录）是两卷：都入库，重扫不再导入', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      for (final String series in <String>['SeriesA', 'SeriesB']) {
+        File(p.join(tmp.path, series, 'Vol 1.cbz'))
+          ..parent.createSync(recursive: true)
+          ..writeAsBytesSync(pagesZip(<String>['001.png']));
+      }
+      final SourceLibraryRow source = await mangaSource(db);
+
+      final SourceScanSummary first =
+          await SourceLibraryScanner(db).scan(source);
+
+      expect(first.error, isNull);
+      expect(first.importedMediaCount, 2,
+          reason: '此前只按标题判重复，SeriesB 的第 1 卷被静默跳过');
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(2));
+      expect(books.map((EpubBookRow b) => b.title), contains('Vol 1'));
+      expect(books.every((EpubBookRow b) => b.sourceId == source.id), isTrue);
+
+      final SourceScanSummary again = await SourceLibraryScanner(db)
+          .scan((await db.getMediaSourceById(source.id))!);
+      expect(again.error, isNull);
+      expect(again.importedMediaCount, 0);
+      expect(await db.getAllEpubBooks(), hasLength(2));
+    });
+
+    test('手动导入的同名漫画不被来源抢走：来源卷按重复跳过、手动那本仍无来源', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory manual = Directory(p.join(tmp.path, '..',
+          '${p.basename(tmp.path)}_manual', 'Vol 1'))
+        ..createSync(recursive: true);
+      addTearDown(() => manual.parent.deleteSync(recursive: true));
+      File(p.join(manual.path, '001.png'))
+          .writeAsBytesSync(img.encodePng(img.Image(width: 20, height: 40)));
+      await MangaImporter.importFromImageFolder(
+        db: db,
+        imageDirPath: manual.path,
+        title: 'Vol 1',
+      );
+      File(p.join(tmp.path, 'Vol 1.cbz'))
+          .writeAsBytesSync(pagesZip(<String>['001.png']));
+      final SourceLibraryRow source = await mangaSource(db);
+
+      final SourceScanSummary summary =
+          await SourceLibraryScanner(db).scan(source);
+
+      expect(summary.error, isNull);
+      expect(summary.importedMediaCount, 0);
+      final EpubBookRow book = (await db.getAllEpubBooks()).single;
+      expect(book.sourceId, isNull, reason: '手动导入的书不能被某个来源认领走');
+    });
+
+    test('判过「不是漫画」的 .zip 内容不变就不再开包；内容变了才重判', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Uint8List dict = _encodeArchive(<ArchiveFile>[
+        _textFile('index.json', '{"title":"d","revision":"1"}'),
+        _textFile('term_bank_1.json', '[]'),
+      ]);
+      final Uint8List pages = pagesZip(<String>['001.png']);
+      // 尾部补零让两份字节数相同（EOCD 从尾部回扫，尾随填充不影响读包）。换内容后
+      // 字节数与修改时刻都还原 → 指纹不变 → 不该重判。
+      final int size = dict.length > pages.length ? dict.length : pages.length;
+      List<int> padded(Uint8List bytes) =>
+          <int>[...bytes, ...List<int>.filled(size - bytes.length, 0)];
+      final File zip = File(p.join(tmp.path, 'vol.zip'))
+        ..writeAsBytesSync(padded(dict));
+      final DateTime mtime = DateTime(2026, 1, 2, 3, 4, 5);
+      zip.setLastModifiedSync(mtime);
+      final SourceLibraryRow source = await mangaSource(db);
+      Future<SourceScanSummary> rescan() async => SourceLibraryScanner(db)
+          .scan((await db.getMediaSourceById(source.id))!);
+
+      final SourceScanSummary first = await rescan();
+      expect(first.error, isNull);
+      expect(first.importedMediaCount, 0);
+
+      zip.writeAsBytesSync(padded(pages));
+      zip.setLastModifiedSync(mtime);
+      final SourceScanSummary second = await rescan();
+      expect(second.error, isNull);
+      expect(second.importedMediaCount, 0, reason: '指纹没变就不该再开包重判');
+
+      zip.setLastModifiedSync(mtime.add(const Duration(minutes: 1)));
+      final SourceScanSummary third = await rescan();
+      expect(third.error, isNull);
+      expect(third.importedMediaCount, 1, reason: '文件被换过（修改时刻变了）必须重判');
+    });
+
+    test('载体定性不在调用方 isolate 上同步开包（只经后台 isolate 入口）', () {
+      final String src = File(
+        p.join('lib', 'src', 'media', 'source_library',
+            'source_library_scanner.dart'),
+      ).readAsLinesSync().where((String line) {
+        final String t = line.trimLeft();
+        return !t.startsWith('//');
+      }).join('\n');
+      // 直接调用与 tear-off（`isImageArchive: MangaArchiveImporter.looks…`）都算。
+      expect(src, isNot(contains('MangaArchiveImporter.looksLikeImageArchive')),
+          reason: '同步判定会在 UI isolate 上整本解析文字 EPUB');
+      expect(src, contains('looksLikeImageArchiveInBackground('));
+    });
+
+    test('漫画来源里的词典 .zip / 文字 .epub 不是漫画：跳过且不算错误', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      // 带插图的 Yomitan 词典包：有图片但一票否决。
+      File(p.join(tmp.path, 'dict.zip')).writeAsBytesSync(_encodeArchive(
+        <ArchiveFile>[
+          _textFile('index.json', '{"title":"d","revision":"1"}'),
+          _textFile('term_bank_1.json', '[]'),
+          pngEntry('img/a.png', width: 4, height: 4),
+        ],
+      ));
+      _writeEpub(p.join(tmp.path, 'novel.epub'), 'Novel');
+      final SourceLibraryRow source = await mangaSource(db);
+
+      final SourceScanSummary summary =
+          await SourceLibraryScanner(db).scan(source);
+
+      expect(summary.error, isNull);
+      expect(summary.importedMediaCount, 0);
+      expect(await db.getAllEpubBooks(), isEmpty);
+    });
+
+    test('一卷坏包不中断其余卷：好卷照常入库，错误汇总指名坏卷', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      File(p.join(tmp.path, 'a-broken.cbz'))
+          .writeAsBytesSync(<int>[1, 2, 3, 4, 5]);
+      File(p.join(tmp.path, 'b-good.cbz'))
+          .writeAsBytesSync(pagesZip(<String>['001.png']));
+      final SourceLibraryRow source = await mangaSource(db);
+
+      final SourceScanSummary summary =
+          await SourceLibraryScanner(db).scan(source);
+
+      expect(summary.importedMediaCount, 1, reason: '排在坏包后面的卷此前会整批丢掉');
+      expect((await db.getAllEpubBooks()).single.title, 'b-good');
+      expect(summary.error, contains('1 failed'));
+      expect(summary.error, contains('a-broken.cbz'));
+      final SourceLibraryRow after = (await db.getMediaSourceById(source.id))!;
+      expect(after.mediaCount, 1);
+      expect(after.lastScanError, summary.error);
+    });
+
+    test('cbz + 包旁 .mokuro sidecar 只入库一卷', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      File(p.join(tmp.path, 'vol.cbz'))
+          .writeAsBytesSync(pagesZip(<String>['p001.png']));
+      File(p.join(tmp.path, 'vol.mokuro')).writeAsStringSync(jsonEncode(
+        <String, Object?>{
+          'version': '0.2.0',
+          'title': 'SidecarVolume',
+          'pages': <Object?>[
+            <String, Object?>{
+              'img_width': 20,
+              'img_height': 40,
+              'img_path': 'p001.png',
+              'blocks': <Object?>[],
+            },
+          ],
+        },
+      ));
+      final SourceLibraryRow source = await mangaSource(db);
+
+      final SourceScanSummary summary =
+          await SourceLibraryScanner(db).scan(source);
+
+      expect(summary.error, isNull);
+      expect(summary.importedMediaCount, 1);
+      expect(await db.getAllEpubBooks(), hasLength(1),
+          reason: 'sidecar 是包的文字层，不是第二卷');
+    });
+
     test('选择上级目录可逐卷导入纯页图子目录，重扫静默去重', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
@@ -1797,7 +2146,9 @@ Attributes = A
     expect(src.contains('MangaImporter.importFromImageFolder'), isTrue,
         reason: '纯页图扫描必须复用既有目录导入链');
     expect(src.contains('MangaArchiveImporter.importArchive'), isTrue,
-        reason: 'RAR/CBR/CB7 扫描必须复用既有压缩包导入链');
+        reason: '单文件卷扫描必须复用既有压缩包导入链');
+    expect(src.contains('classifyImportCarrier('), isTrue,
+        reason: '单文件卷的载体身份必须与手动导入同一份判据');
     expect(src.contains('policy: const DuplicatePolicy.skip()'), isTrue,
         reason: '后台扫描必须静默去重，不能重扫生成 X (2)');
   });
