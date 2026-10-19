@@ -17,6 +17,10 @@ window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window
 window.fushiSelection = {
     selection: null,
     highlightWrappers: [],
+    formImposter: null,
+    formImposterSource: null,
+    formImposterSig: '',
+    formImposterUnlisten: null,
     scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─\n\r"\'“”‘’«»‹›',
     // BUG-2196：换行不是句子边界（HTML 里它只是空白）。与
     // reader_selection_scripts.dart 的同名表保持一致。
@@ -178,7 +182,8 @@ window.fushiSelection = {
 
     findParagraph(node) {
         let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-        return el?.closest('p, .glossary-content') || null;
+        // 表单控件镜像自成一段：句子不越出字段去拼宿主页其它文字。
+        return el?.closest('p, .glossary-content, .fushi-form-imposter') || null;
     },
 
     createWalker(rootNode) {
@@ -237,7 +242,161 @@ window.fushiSelection = {
         return null;
     },
 
+    // 表单控件取词（asbplayer「Anki Export」对话框的 Sentence / Word 等字段）：<textarea> / 文字类
+    // <input> 的内容不是 DOM 文本节点（在 UA shadow 里），caret API 只给回控件或外层元素，下面三步
+    // 全部落空。仿 Yomitan TextSourceGenerator 的 imposter：叠一个复刻计算样式、文字 = value 的镜像
+    // div，在镜像上取词。镜像要活到下一次取词 / clearSelection——选区 ranges 指向镜像的文本节点，
+    // 高亮与锚点都按它量；平时 pointer-events:none，不挡用户点进控件输入。
+    // 选区高亮要看得见：镜像本身不透明度为 1，但字、背景、边框、阴影、滚动条全透明，只剩
+    // ::highlight(fushi-selection)（或无 Highlight API 时的 .fushi-dict-highlight）的半透明底色叠在
+    // 控件真字上——控件的值、焦点、选区一概不碰。控件被输入 / 滚动 / 视口变化后镜像几何就过期了，
+    // 当场拆掉（高亮随之消失），不留一块错位的高亮盖在别人的字段上。
+    formControlAt(x, y) {
+        const el = this.deepElementFromPoint(x, y);
+        if (!el || el.nodeType !== Node.ELEMENT_NODE) return null;
+        if (el.tagName === 'TEXTAREA') return el;
+        if (el.tagName === 'INPUT' && ['text', 'search', 'url', 'email', 'tel'].includes(String(el.type || 'text').toLowerCase())) return el;
+        return null;
+    },
+
+    removeFormImposter() {
+        if (this.formImposterUnlisten) { try { this.formImposterUnlisten(); } catch (_) {} }
+        this.formImposterUnlisten = null;
+        if (this.formImposter && this.formImposter.parentNode) this.formImposter.parentNode.removeChild(this.formImposter);
+        this.formImposter = null;
+        this.formImposterSource = null;
+        this.formImposterSig = '';
+    },
+
+    // 镜像是否还对得上控件：几何（视口坐标）+ 控件内滚动 + 值。
+    formControlSig(el) {
+        const rect = el.getBoundingClientRect();
+        return [rect.left, rect.top, rect.width, rect.height, el.scrollTop, el.scrollLeft, String(el.value || '')].join('|');
+    },
+
+    ensureFormImposter(el) {
+        const rect = el.getBoundingClientRect();
+        const value = String(el.value || '');
+        const sig = this.formControlSig(el);
+        // 同一控件、几何与内容都没变：复用，选区 ranges 指向的文本节点保持有效。
+        if (this.formImposter && this.formImposter.isConnected &&
+            this.formImposterSource === el && this.formImposterSig === sig) return this.formImposter;
+        this.removeFormImposter();
+        if (!value) return null;
+        const style = window.getComputedStyle(el);
+        const div = document.createElement('div');
+        for (let i = 0; i < style.length; i++) {
+            const prop = style[i];
+            try { div.style.setProperty(prop, style.getPropertyValue(prop)); } catch (_) {}
+        }
+        const isTextarea = el.tagName === 'TEXTAREA';
+        // textarea 末尾换行在 div 里不占行，补一个让最后一行几何对齐。
+        div.textContent = isTextarea && value.endsWith('\n') ? value + '\n' : value;
+        const set = (prop, v) => div.style.setProperty(prop, v, 'important');
+        set('position', 'fixed');
+        set('left', rect.left + 'px');
+        set('top', rect.top + 'px');
+        set('width', rect.width + 'px');
+        set('height', rect.height + 'px');
+        set('box-sizing', 'border-box');
+        set('margin', '0');
+        set('transform', 'none');
+        set('transition', 'none');
+        set('animation', 'none');
+        set('display', 'block');
+        set('visibility', 'visible');
+        set('opacity', '1');
+        // 墨水全透明：真字仍由控件自己画，镜像只贡献选区高亮的底色。
+        set('color', 'transparent');
+        set('-webkit-text-fill-color', 'transparent');
+        set('caret-color', 'transparent');
+        set('text-shadow', 'none');
+        set('text-decoration-color', 'transparent');
+        set('background', 'transparent');
+        set('border-color', 'transparent');
+        set('border-style', 'solid');
+        set('outline', 'none');
+        set('box-shadow', 'none');
+        set('filter', 'none');
+        set('backdrop-filter', 'none');
+        set('z-index', '2147483647');
+        set('pointer-events', 'none');
+        set('overflow-x', 'hidden');
+        if (isTextarea) {
+            set('white-space', 'pre-wrap');
+            set('overflow-wrap', 'break-word');
+            // 控件有竖滚动条时它占掉内容宽度：镜像不画滚动条（会盖在控件的滚动条上），改用等宽的
+            // 右内边距占位，换行位置才一致。
+            set('overflow-y', 'hidden');
+            const px = (v) => parseFloat(v) || 0;
+            const scrollbar = Math.max(0, el.offsetWidth - el.clientWidth -
+                px(style.borderLeftWidth) - px(style.borderRightWidth));
+            if (scrollbar > 0) set('padding-right', (px(style.paddingRight) + scrollbar) + 'px');
+        } else {
+            // 单行 input 文字竖直居中：行高 = 内容盒高度。
+            const px = (v) => parseFloat(v) || 0;
+            const inner = rect.height - px(style.paddingTop) - px(style.paddingBottom) -
+                px(style.borderTopWidth) - px(style.borderBottomWidth);
+            set('white-space', 'pre');
+            set('overflow-y', 'hidden');
+            set('line-height', Math.max(0, inner) + 'px');
+        }
+        div.className = 'fushi-form-imposter';
+        div.setAttribute('aria-hidden', 'true');
+        (document.body || document.documentElement).appendChild(div);
+        div.scrollTop = el.scrollTop;
+        div.scrollLeft = el.scrollLeft;
+        this.formImposter = div;
+        this.formImposterSource = el;
+        this.formImposterSig = sig;
+        // 几何过期即拆：控件被输入改值、控件或其祖先滚动、视口缩放后，按同一签名复核——真变了才拆
+        //（别处滚动、尺寸没变的 resize 不动它）。
+        const dropIfStale = () => {
+            if (this.formImposterSource === el && this.formControlSig(el) !== this.formImposterSig) this.removeFormImposter();
+        };
+        el.addEventListener('input', dropIfStale, true);
+        window.addEventListener('scroll', dropIfStale, true);
+        window.addEventListener('resize', dropIfStale, true);
+        this.formImposterUnlisten = () => {
+            el.removeEventListener('input', dropIfStale, true);
+            window.removeEventListener('scroll', dropIfStale, true);
+            window.removeEventListener('resize', dropIfStale, true);
+        };
+        return div;
+    },
+
+    caretRangeInFormControl(el, x, y) {
+        const imposter = this.ensureFormImposter(el);
+        if (!imposter) return null;
+        const inside = (node) => !!node && node.nodeType === Node.TEXT_NODE && imposter.contains(node);
+        // 只在测这一下时让镜像可命中（caret API 走命中测试，pointer-events:none 的元素会被跳过）。
+        imposter.style.setProperty('pointer-events', 'auto', 'important');
+        let range = null;
+        try {
+            if (document.caretPositionFromPoint) {
+                const pos = document.caretPositionFromPoint(x, y);
+                if (pos && inside(pos.offsetNode)) {
+                    range = document.createRange();
+                    range.setStart(pos.offsetNode, pos.offset);
+                    range.collapse(true);
+                }
+            }
+            if (!range && document.caretRangeFromPoint) {
+                const r = document.caretRangeFromPoint(x, y);
+                if (r && inside(r.startContainer)) range = r;
+            }
+            if (!range) range = this.charRangeInContainer(imposter, x, y);
+        } finally {
+            imposter.style.setProperty('pointer-events', 'none', 'important');
+        }
+        return range;
+    },
+
     getCaretRange(x, y) {
+        // 0) 命中表单控件：在镜像 div 上取词（见 formControlAt）。不是控件就丢掉上一次的镜像。
+        const control = this.formControlAt(x, y);
+        if (control) return this.caretRangeInFormControl(control, x, y);
+        this.removeFormImposter();
         // 1) 原生 caret 优先：命中普通文本最省事，部分新版浏览器也会自动穿透 shadow DOM。
         //    仅当命中的是真正的文本节点时采纳；命中元素（典型：shadow 宿主）则继续下探。
         if (document.caretPositionFromPoint) {
@@ -404,7 +563,8 @@ window.fushiSelection = {
             return null;
         }
 
-        this.clearSelection();
+        // 保留刚建的表单控件镜像：hit.node 就在它里面。
+        this.clearSelection(true);
         return this.selectFromPosition(hit.node, hit.offset, maxLength, x, y);
     },
 
@@ -575,7 +735,8 @@ window.fushiSelection = {
         this.highlightWrappers = [];
     },
 
-    clearSelection() {
+    clearSelection(keepFormImposter) {
+        if (!keepFormImposter) this.removeFormImposter();
         window.getSelection()?.removeAllRanges();
         if (window.__fushiCssHighlightsSupported) {
             CSS.highlights.delete('fushi-selection');

@@ -51,52 +51,73 @@ String bookSourceAbsPath(String rootPath, String rel) =>
 
 /// 一个书 / 漫画来源的扫描索引：源相对路径 → 书 `uid`。
 ///
-/// 多个源可以指向同一本书（同名书在两个子目录各放一份，第二份导入时判重复、被认领到
-/// 同一行）：只要还有一个源在，这本书就不算失效。
+/// 多个源可以指向同一本书（源文件挪了位置、旧路径的条目还没被对账清掉时，新路径
+/// 认领到同一行）：只要还有一个源在，这本书就不算失效。同一来源下**仍然在场**的
+/// 两个不同文件不会共用一本书——第二个是另一卷，换名另导（见 [isDuplicateSourceBook]）。
+///
+/// 另记一张**负向结果表**（[isRejected] / [reject]）：扩展名对得上、开包后判定
+/// 「不是这一类媒体」的源（漫画来源里的词典 `.zip`、文字 `.epub`）→ 当时的内容指纹。
+/// 指纹没变就不再开包 / 下载重判，变了（文件被换掉）才重判。同一个偏好键、同一份
+/// JSON，不升 schema。
 class BookSourceIndex {
-  BookSourceIndex._(this.sourceId, this._uidByRel);
+  BookSourceIndex._(this.sourceId, this._uidByRel, this._rejectedByRel);
 
   /// 空索引（测试 / 来源还没扫过）。
-  factory BookSourceIndex.empty(int sourceId) =>
-      BookSourceIndex._(sourceId, <String, String>{});
+  factory BookSourceIndex.empty(int sourceId) => BookSourceIndex._(
+    sourceId,
+    <String, String>{},
+    <String, String>{},
+  );
 
   final int sourceId;
   final Map<String, String> _uidByRel;
+
+  /// 源相对路径 → 判定「不是本类媒体」时的内容指纹（见 [sourceContentFingerprint]）。
+  final Map<String, String> _rejectedByRel;
 
   /// 读来源 [sourceId] 的索引；没有或损坏时返回空索引（损坏 = 当作没认领过，
   /// 只会少删、不会误删）。
   static Future<BookSourceIndex> load(FushiDatabase db, int sourceId) async {
     final String? raw = await db.getPref(bookSourceScanIndexPrefKey(sourceId));
     final Map<String, String> entries = <String, String>{};
+    final Map<String, String> rejected = <String, String>{};
+    void readMap(Object? map, Map<String, String> into) {
+      if (map is! Map<String, dynamic>) return;
+      map.forEach((String rel, Object? value) {
+        if (value is String && value.isNotEmpty) into[rel] = value;
+      });
+    }
+
     if (raw != null) {
       try {
         final Object? decoded = jsonDecode(PrefCodec.decode<String>(raw, ''));
-        final Object? map = decoded is Map<String, dynamic>
-            ? decoded['entries']
-            : null;
-        if (map is Map<String, dynamic>) {
-          map.forEach((String rel, Object? uid) {
-            if (uid is String && uid.isNotEmpty) entries[rel] = uid;
-          });
+        if (decoded is Map<String, dynamic>) {
+          readMap(decoded['entries'], entries);
+          // 旧版（只有 entries）读出来就是空负向表：最多多判一次，不会误跳。
+          readMap(decoded['rejected'], rejected);
         }
       } on FormatException {
         // 损坏的索引按空处理。
       }
     }
-    return BookSourceIndex._(sourceId, entries);
+    return BookSourceIndex._(sourceId, entries, rejected);
   }
 
-  /// 落库（空索引直接删键）。
+  /// 落库（认领与负向表都空时直接删键）。
   Future<void> save(FushiDatabase db) async {
     final String key = bookSourceScanIndexPrefKey(sourceId);
-    if (_uidByRel.isEmpty) {
+    if (_uidByRel.isEmpty && _rejectedByRel.isEmpty) {
       await db.deletePref(key);
       return;
     }
     await db.setPref(
       key,
       PrefCodec.encode(
-        jsonEncode(<String, Object?>{'v': 1, 'entries': _uidByRel}),
+        jsonEncode(<String, Object?>{
+          'v': 1,
+          'entries': _uidByRel,
+          if (_rejectedByRel.isNotEmpty) 'rejected': _rejectedByRel,
+        }),
       ),
     );
   }
@@ -131,6 +152,147 @@ class BookSourceIndex {
     _uidByRel.removeWhere((String _, String uid) => !liveUids.contains(uid));
     return before - _uidByRel.length;
   }
+
+  /// [rel] 上次被判「不是本类媒体」、且内容指纹仍是 [fingerprint]。指纹为 null
+  /// （传输给不出大小 / 时间 / ETag）时一律不算命中——宁可重判，不凭空跳过。
+  bool isRejected(String rel, String? fingerprint) =>
+      fingerprint != null && _rejectedByRel[rel] == fingerprint;
+
+  /// 记下 [rel] 在内容指纹 [fingerprint] 下不是本类媒体；指纹为 null 不记。
+  void reject(String rel, String? fingerprint) {
+    if (fingerprint == null) return;
+    _rejectedByRel[rel] = fingerprint;
+  }
+
+  /// 负向表快照（测试 / 诊断用）。
+  Map<String, String> get rejected =>
+      Map<String, String>.unmodifiable(_rejectedByRel);
+
+  /// 只留下本轮仍在场的源的负向结果（文件删了 / 改名了，旧判定随之作废）。
+  void retainRejected(Set<String> presentRels) =>
+      _rejectedByRel.removeWhere(
+        (String rel, String _) => !presentRels.contains(rel),
+      );
+}
+
+/// 一个源文件的内容指纹：ETag 优先，否则「字节数 + 修改时刻」能拿到几样拼几样；
+/// 一样都没有返回 null（调用方因此不缓存负向结果）。
+///
+/// 只拿传输**列目录时顺带给出**的元数据，不为算指纹多发请求 / 多读内容。
+String? sourceContentFingerprint({
+  int? sizeBytes,
+  int? modifiedAt,
+  String? etag,
+}) {
+  final String? tag = etag?.trim();
+  if (tag != null && tag.isNotEmpty) return 'e:$tag';
+  if (sizeBytes == null && modifiedAt == null) return null;
+  return 's:${sizeBytes ?? '-'}|m:${modifiedAt ?? '-'}';
+}
+
+/// 本地文件 [path] 的内容指纹（字节数 + 修改时刻微秒）；stat 失败返回 null。
+String? localSourceContentFingerprint(String path) {
+  try {
+    final FileStat stat = FileStat.statSync(path);
+    if (stat.type == FileSystemEntityType.notFound) return null;
+    return sourceContentFingerprint(
+      sizeBytes: stat.size,
+      modifiedAt: stat.modified.microsecondsSinceEpoch,
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+/// 来源扫描撞上同名书时，这个源与那本书的关系（[isDuplicateSourceBook] 的结论）。
+enum SourceDuplicateKind {
+  /// 标题没被占：不是重复，照常导入。
+  none,
+
+  /// 就是这个源早先导进来的那本（存量行回填 / 源文件挪了位置）：认领它，不再导入。
+  sameSource,
+
+  /// 同一来源下**另一个仍在场的文件**已经认领了这本书：两份是不同的卷 / 书，只是
+  /// 标题撞了（`系列A/Vol 1.cbz` 与 `系列B/Vol 1.cbz`、`Vol 1.cbz` 与 `Vol 1.pdf`）。
+  /// 不是重复，换名另导（`DuplicatePolicy.suffix()`）。
+  otherSourceFile,
+
+  /// 标题被别的库根 / 手动导入 / 不同格式的书占着：按重复处理，不导入、不认领。
+  foreign,
+}
+
+/// [isDuplicateSourceBook] 的结论：[kind] + 撞上的那本书的 uid（[SourceDuplicateKind.none]
+/// 时为 null）。
+class SourceDuplicateVerdict {
+  const SourceDuplicateVerdict(this.kind, {this.uid});
+
+  final SourceDuplicateKind kind;
+  final String? uid;
+
+  /// 是否按重复处理（不再导入这个源）。
+  bool get isDuplicate =>
+      kind == SourceDuplicateKind.sameSource ||
+      kind == SourceDuplicateKind.foreign;
+}
+
+/// 来源扫描的**重复判据**：来源 [sourceId] 里相对路径为 [rel] 的源，标题身份
+/// （`sanitizeTtuFilename(proposedTitle)`）若已被一本书占着，它是不是那本书。
+///
+/// 只读，不写库；认领（回填 `sourceId`）交给 [adoptExistingBookForSource]。
+///
+/// 重复身份 = 标题 **+ 来源路径**：同一来源里另一个本轮仍在场的源（[presentRels]）
+/// 已认领了那本书时，这个源是另一卷，不是重复——此前只看标题，`系列A/Vol 1.cbz`
+/// 导入后 `系列B/Vol 1.cbz`（或同目录的 `Vol 1.pdf`）被静默跳过，永远进不了库。
+///
+/// 认领判据仍保守（与 [adoptExistingBookForSource] 一致）：书身份格式相同、行的
+/// `sourceId` 为空或就是本来源；EPUB 还要源文件名一致。本来源的行源文件名对不上时，
+/// 那是本来源里另一个文件导进来的书（[SourceDuplicateKind.otherSourceFile]）。
+///
+/// [claimUnsourcedRows]：无来源（`sourceId` 为空）的同名行能不能被认领。无头服务端
+/// 要它（旧版服务端扫描进来的书没记来源，只能这样回填）；app 的来源扫描从一开始就
+/// 写 `sourceId`，无来源的行是**手动导入**的书，不该被某个来源抢走，传 false。
+Future<SourceDuplicateVerdict> isDuplicateSourceBook({
+  required FushiDatabase db,
+  required BookSourceIndex index,
+  required int sourceId,
+  required String rel,
+  required String proposedTitle,
+  required BookFormat format,
+  required Set<String> presentRels,
+  String? sourceFileName,
+  bool claimUnsourcedRows = true,
+}) async {
+  final EpubBookRow? row = await db.getEpubBook(
+    sanitizeTtuFilename(proposedTitle),
+  );
+  if (row == null || row.uid.isEmpty) {
+    return const SourceDuplicateVerdict(SourceDuplicateKind.none);
+  }
+  final String uid = row.uid;
+  final bool claimedByOtherPresentSource = index
+      .relsOf(uid)
+      .any((String other) => other != rel && presentRels.contains(other));
+  if (claimedByOtherPresentSource) {
+    return SourceDuplicateVerdict(
+      SourceDuplicateKind.otherSourceFile,
+      uid: uid,
+    );
+  }
+  if (row.format != format.dbValue ||
+      (row.sourceId == null && !claimUnsourcedRows) ||
+      (row.sourceId != null && row.sourceId != sourceId)) {
+    return SourceDuplicateVerdict(SourceDuplicateKind.foreign, uid: uid);
+  }
+  if (format != BookFormat.manga &&
+      (sourceFileName == null || row.epubPath != sourceFileName)) {
+    return SourceDuplicateVerdict(
+      row.sourceId == sourceId
+          ? SourceDuplicateKind.otherSourceFile
+          : SourceDuplicateKind.foreign,
+      uid: uid,
+    );
+  }
+  return SourceDuplicateVerdict(SourceDuplicateKind.sameSource, uid: uid);
 }
 
 /// 对账要用的书行瘦投影（不拉章节 JSON）。
@@ -244,7 +406,7 @@ Future<List<String>> listEpubSourceFiles(Directory root) async {
 }
 
 /// 枚举 [root] 下现存的书 / 漫画源（索引键形态，见 [bookSourceRelPath]）：书根是
-/// `.epub` 文件，漫画根是引擎归组出的 `.mokuro` 卷与纯页图卷目录——与扫描器导入的
+/// `.epub` 文件，漫画根是引擎归组出的 `.mokuro` 卷、单文件卷与纯页图卷目录——与扫描器导入的
 /// 口径逐一对应。
 Future<Set<String>> enumerateBookSourceRelPaths(
   Directory root, {
@@ -256,7 +418,13 @@ Future<Set<String>> enumerateBookSourceRelPaths(
       paths = await listEpubSourceFiles(root);
     case SourceLibraryKind.manga:
       final MangaFolderPlan plan = planMangaFoldersInDirectory(root);
-      paths = <String>[...plan.mokuroPaths, ...plan.imageFolders];
+      // 单文件卷（cbz / zip / rar …）同样是扫描器登记进索引的源；漏掉它们，
+      // 不带 foundRelPaths 的对账会把每一本压缩包卷都当成「源已不在」回收。
+      paths = <String>[
+        ...plan.mokuroPaths,
+        ...plan.carrierPaths,
+        ...plan.imageFolders,
+      ];
     case SourceLibraryKind.video:
       throw ArgumentError.value(kind, 'kind', 'video roots use video prune');
   }

@@ -1,20 +1,25 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-/// [bucketDictPaths] 是 FFI 引擎词典分桶的单一真相（同步 _rebuildDictPathsCache 与
+/// [bucketDictPaths]（fushi_dictionary，app 与无头服务端共用）是 FFI 引擎词典分桶的单一真相（app 同步 _rebuildDictPathsCache 与
 /// 异步 _rebuildDictPathsCacheAsync 共用）。此前分桶 switch 在两处逐字复制、无法单测
 /// （依赖真词典 + 真目录 + FFI）。本测试钉死分桶规则：隐藏的词典四种类型一律不进桶
 /// （BUG-177/TODO-094/BUG-3454）；不存在的目录跳过。
 void main() {
   DictPathEntry e(DictionaryType type, String path,
-          {bool exists = true, bool hidden = false, bool hasKanji = false}) =>
+          {bool exists = true,
+          bool hidden = false,
+          bool hasKanji = false,
+          bool kanjiHidden = false,
+          int kanjiOrder = 0}) =>
       (
         type: type,
         path: path,
         exists: exists,
         hidden: hidden,
         hasKanji: hasKanji,
+        kanjiHidden: kanjiHidden,
+        kanjiOrder: kanjiOrder,
       );
 
   group('bucketDictPaths 词典分桶单一真相', () {
@@ -90,12 +95,40 @@ void main() {
       expect(b.kanji, isEmpty, reason: '纯词条词典无 kanji,不得污染 kanji 桶');
     });
 
-    test('隐藏的混合词典不进 kanji 桶(kanji 桶无渲染期隐藏过滤,BUG-177)', () {
+    // 混合词典在词典管理里「术语」「汉字」两个分区各一行（Hoshi Reader 同款），
+    // 两部分的开关各管各的：hidden 只管术语部分，kanjiHidden 只管汉字部分。
+    test('关掉混合词典的汉字部分:不进 kanji 桶,术语部分照常', () {
+      final b = bucketDictPaths(<DictPathEntry>[
+        e(DictionaryType.term, '/mixed', hasKanji: true, kanjiHidden: true),
+      ]);
+      expect(b.term, <String>['/mixed']);
+      expect(b.kanji, isEmpty, reason: '关掉的汉字部分不得冒出(kanji 桶无渲染期过滤)');
+    });
+
+    test('关掉混合词典的术语部分:不进 term 桶,汉字部分照常', () {
       final b = bucketDictPaths(<DictPathEntry>[
         e(DictionaryType.term, '/mixed', hidden: true, hasKanji: true),
       ]);
       expect(b.term, isEmpty, reason: '隐藏的 term 不进 term 桶(BUG-3454)');
-      expect(b.kanji, isEmpty, reason: '隐藏的混合词典 kanji 部分不得冒出(kanji 桶无渲染期过滤)');
+      expect(b.kanji, <String>['/mixed'],
+          reason: '汉字分区里那一行仍开着,汉字卡就该照常出来');
+    });
+
+    test('kanji 桶按「汉字」分区顺序输出,而不是全局 order 的交错顺序', () {
+      final b = bucketDictPaths(<DictPathEntry>[
+        e(DictionaryType.kanji, '/kanjidic', kanjiOrder: 1),
+        e(DictionaryType.term, '/mixed', hasKanji: true, kanjiOrder: 0),
+        e(DictionaryType.kanji, '/other', kanjiOrder: 2),
+      ]);
+      expect(b.kanji, <String>['/mixed', '/kanjidic', '/other']);
+    });
+
+    test('分区顺序相同时按输入先后(与 kanjiSectionDictionariesOf 同一规则)', () {
+      final b = bucketDictPaths(<DictPathEntry>[
+        e(DictionaryType.kanji, '/a', kanjiOrder: 3),
+        e(DictionaryType.term, '/b', hasKanji: true, kanjiOrder: 3),
+      ]);
+      expect(b.kanji, <String>['/a', '/b']);
     });
 
     test('不存在目录的混合词典任何桶都跳过', () {

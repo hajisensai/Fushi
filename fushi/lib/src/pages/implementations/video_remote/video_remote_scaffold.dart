@@ -43,6 +43,7 @@ class VideoRemoteCallbacks {
     this.onMineLine,
     this.onLookupFavorite,
     this.onCustomizeControls,
+    this.onPickVideo,
   });
 
   /// 返回（退出遥控）。
@@ -78,6 +79,10 @@ class VideoRemoteCallbacks {
   /// ⋯ 菜单里的「自定义按钮」（通常 `showVideoRemoteControlEditor`）；null =
   /// 不显示该项。
   final VoidCallback? onCustomizeControls;
+
+  /// 顶栏「点播」：从电脑视频库里选片让电脑播放；null = 电脑不支持（旧版），
+  /// 不显示该按钮。
+  final VoidCallback? onPickVideo;
 }
 
 /// 手机字幕遥控器的整页脚手架（纯展示）。
@@ -332,6 +337,16 @@ class _VideoRemoteScaffoldState extends State<VideoRemoteScaffold> {
   Widget _topBar({required bool withTitle}) {
     final VideoRemoteCallbacks callbacks = widget.callbacks;
     final VoidCallback? customize = callbacks.onCustomizeControls;
+    final VoidCallback? pickVideo = callbacks.onPickVideo;
+    final List<FushiToolbarItem> pickGroup = <FushiToolbarItem>[
+      if (pickVideo != null)
+        FushiToolbarItem(
+          key: const ValueKey<String>('video-remote-pick-video'),
+          icon: FushiIcons.video,
+          label: t.video_remote_library_title,
+          onPressed: pickVideo,
+        ),
+    ];
     return FushiFloatingTopBar(
       key: const ValueKey<String>('video-remote-top-bar'),
       leading: <FushiToolbarItem>[
@@ -352,8 +367,9 @@ class _VideoRemoteScaffoldState extends State<VideoRemoteScaffold> {
       // ⋯——页签改由顶栏下方的连接式按钮组承担（[_tabSwitch]）；横屏顶栏没有
       // 标题，页签就在顶栏里。
       actions: withTitle
-          ? const <List<FushiToolbarItem>>[]
+          ? <List<FushiToolbarItem>>[if (pickGroup.isNotEmpty) pickGroup]
           : <List<FushiToolbarItem>>[
+              if (pickGroup.isNotEmpty) pickGroup,
               <FushiToolbarItem>[
                 FushiToolbarItem(
                   key: const ValueKey<String>('video-remote-tab-transcript'),
