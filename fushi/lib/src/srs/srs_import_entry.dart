@@ -374,10 +374,19 @@ Future<void> openSrsMinedHistoryImport(
 }
 
 /// 牌组列表 ⋯「立即同步」：没配置同步后端时提示一句。
-Future<void> openSrsSyncNow(Future<int> Function()? syncNow) async {
+///
+/// [onNoChannel]：一个可用通道都没有时调用（页面借它直达同步设置）；不给就只弹提示。
+Future<void> openSrsSyncNow(
+  Future<int> Function()? syncNow, {
+  Future<void> Function()? onNoChannel,
+}) async {
   if (syncNow == null) return;
   try {
     final int channels = await syncNow();
+    if (channels == 0 && onNoChannel != null) {
+      await onNoChannel();
+      return;
+    }
     FushiToast.show(
       msg: channels == 0 ? t.srs_sync_no_backend : t.srs_sync_done,
       severity: channels == 0 ? ToastSeverity.info : ToastSeverity.success,

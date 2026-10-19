@@ -44,6 +44,23 @@ class SrsFieldChange {
   final Object? value;
 }
 
+/// [SrsDbStore.moveDeck] 的结果。
+enum SrsDeckMoveResult {
+  moved,
+
+  /// 本来就在那里。
+  unchanged,
+
+  /// 牌组或目标牌组不存在（已删）。
+  missing,
+
+  /// 目标是它自己或它的子孙。
+  intoOwnSubtree,
+
+  /// 目标下已有同名牌组。
+  nameTaken,
+}
+
 /// 牌组列表的一行。
 class SrsDeckSummary {
   const SrsDeckSummary({
@@ -2695,6 +2712,41 @@ class SrsDbStore implements SrsSyncReplica {
       collapsed,
     );
   }
+
+  /// 把牌组（连同子树）挪到 [newParentId] 下；null = 挪到顶层（Anki 拖放牌组同语义）。
+  ///
+  /// 只改父牌组字段，ID 不变（卡、设置、同步身份都跟着走）。拒绝的情形返回对应
+  /// [SrsDeckMoveResult]，不写库：挪到自己或自己的子孙下（本地成环；跨设备并发成环由
+  /// [SrsDeckTree] 确定性打破）、目标下已有同名牌组。
+  Future<SrsDeckMoveResult> moveDeck(String deckId, String? newParentId) =>
+      runExclusive(() async {
+        final SrsDeckTree tree = await deckTree();
+        final SrsDeckView? deck = tree[deckId];
+        if (deck == null ||
+            (newParentId != null && tree[newParentId] == null)) {
+          return SrsDeckMoveResult.missing;
+        }
+        if (tree.parentOf(deckId) == newParentId) {
+          return SrsDeckMoveResult.unchanged;
+        }
+        for (String? p = newParentId; p != null; p = tree.parentOf(p)) {
+          if (p == deckId) return SrsDeckMoveResult.intoOwnSubtree;
+        }
+        for (final SrsDeckView d in tree.decks) {
+          if (d.id != deckId &&
+              d.name == deck.name &&
+              tree.parentOf(d.id) == newParentId) {
+            return SrsDeckMoveResult.nameTaken;
+          }
+        }
+        await editField(
+          SrsEntityKind.deck,
+          deckId,
+          SrsFieldKeys.deckParent,
+          newParentId,
+        );
+        return SrsDeckMoveResult.moved;
+      });
 
   /// 今天的活动：从新卡学起的卡（新卡配额）与复习了的复习卡（复习上限）。
   Future<(Set<String>, Set<String>)> _todayActivity(

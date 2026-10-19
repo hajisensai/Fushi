@@ -19,6 +19,7 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
@@ -536,6 +537,13 @@ class _SrsBackupsPageState extends ConsumerState<SrsBackupsPage> {
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<Widget> items = <Widget>[
+      // 本机备份不上云：用户找「云端备份」时在这里得到答案和去处。
+      Padding(
+        padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+        child: SrsSyncSettingsNotice(
+          modules: ref.watch(appProvider).moduleVisibility,
+        ),
+      ),
       _buildLocation(context),
       _buildSettings(context),
       Padding(

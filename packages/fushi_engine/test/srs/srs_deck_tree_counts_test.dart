@@ -214,4 +214,48 @@ void main() {
       expect(jp.parentId, isNotNull);
     });
   });
+
+  group('moveDeck（拖放牌组）', () {
+    test('挪到别的牌组下 / 挪回顶层：子树、卡与 ID 跟着走，全名随之变', () async {
+      final SrsDbStore s = await open();
+      final String jp = await s.ensureDeckPath('Lang::JP');
+      final String kanji = await s.ensureDeckPath('Lang::JP::Kanji');
+      final String other = await s.createDeck('Other');
+      final List<String> cards = await addNew(s, kanji, 2);
+
+      expect(await s.moveDeck(jp, other), SrsDeckMoveResult.moved);
+      Map<String, SrsDeckSummary> byName = await summaries(s);
+      expect(byName['Other::JP']!.deck.id, jp);
+      expect(byName['Other::JP::Kanji']!.deck.id, kanji);
+      expect(byName.containsKey('Lang::JP'), isFalse);
+      for (final String c in cards) {
+        expect((await s.cardRow(c))!.deckId, kanji);
+      }
+
+      expect(await s.moveDeck(jp, null), SrsDeckMoveResult.moved);
+      byName = await summaries(s);
+      expect(byName['JP']!.deck.id, jp);
+      expect(byName['JP::Kanji']!.deck.id, kanji);
+      expect(byName['JP']!.parentId, isNull);
+    });
+
+    test('拒绝：挪进自己 / 子孙、目标下有同名、原地不动；都不写库', () async {
+      final SrsDbStore s = await open();
+      final String jp = await s.ensureDeckPath('Lang::JP');
+      final String lang = (await s.deckTree()).parentOf(jp)!;
+      final String kanji = await s.ensureDeckPath('Lang::JP::Kanji');
+      await s.ensureDeckPath('Other::JP');
+      final String other = (await s.deckTree()).parentOf(
+        (await summaries(s))['Other::JP']!.deck.id,
+      )!;
+      final List<String> before = (await summaries(s)).keys.toList()..sort();
+
+      expect(await s.moveDeck(lang, kanji), SrsDeckMoveResult.intoOwnSubtree);
+      expect(await s.moveDeck(lang, lang), SrsDeckMoveResult.intoOwnSubtree);
+      expect(await s.moveDeck(jp, other), SrsDeckMoveResult.nameTaken);
+      expect(await s.moveDeck(jp, lang), SrsDeckMoveResult.unchanged);
+      expect(await s.moveDeck(jp, 'no-such-deck'), SrsDeckMoveResult.missing);
+      expect((await summaries(s)).keys.toList()..sort(), before);
+    });
+  });
 }

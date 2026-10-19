@@ -1126,12 +1126,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             ),
         ],
         actions: <List<FushiToolbarItem>>[_actionItems()],
-        overflow: _menuItems(),
+        // 卡片级操作与设置恒在 ⋯ 里（Anki「更多」菜单同款）：用 overflow 的话宽窗会把
+        // 十几项全平铺成图标，复习时顶栏一整排按钮。
+        menu: _menuItems(),
       ),
     );
   }
 
-  /// Apple：常驻项平铺成图标，其余与 MD3 一样收进 ⋯（以前十几项全平铺，挤满导航栏）。
+  /// Apple：常驻项平铺成图标，其余与 MD3 的 [FushiFloatingTopBar.menu] 一样恒在 ⋯ 里
+  /// （以前十几项全平铺，挤满导航栏）。
   List<Widget> _buildAppleActions() => <Widget>[
     for (final FushiToolbarItem item in _actionItems())
       FushiIconButton(
