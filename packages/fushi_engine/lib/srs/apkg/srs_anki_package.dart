@@ -236,13 +236,21 @@ class SrsAnkiPackage {
 // ---------------------------------------------------------------------- 模型
 
 class SrsAnkiField {
-  const SrsAnkiField({required this.name, required this.ord, this.configId});
+  const SrsAnkiField({
+    required this.name,
+    required this.ord,
+    this.configId,
+    this.description = '',
+  });
 
   final String name;
   final int ord;
 
   /// Field.Config.id（Anki 23.10+）。
   final int? configId;
+
+  /// Field.Config.description（Anki 2.1.50+ 编辑器里字段下方的说明）。
+  final String description;
 }
 
 class SrsAnkiTemplate {
@@ -522,6 +530,9 @@ class SrsAnkiCollection {
               name: '${f['name'] ?? ''}',
               ord: _int(f['ord']) ?? i,
               configId: _int(f['id']),
+              description: f['description'] is String
+                  ? f['description'] as String
+                  : '',
             ),
       ]..sort((SrsAnkiField a, SrsAnkiField b) => a.ord.compareTo(b.ord));
       final List<SrsAnkiTemplate> tmpls = <SrsAnkiTemplate>[
@@ -605,13 +616,14 @@ class SrsAnkiCollection {
     for (final Row row in db.select(
       'SELECT ntid, ord, name, config FROM fields',
     )) {
-      // Field.Config.id = 9（optional int64）。
+      // Field.Config.id = 9（optional int64）；description = 5（string）。
       final SrsProtoMessage cfg = SrsProtoMessage.parse(_blob(row['config']));
       (fields[row['ntid'] as int] ??= <SrsAnkiField>[]).add(
         SrsAnkiField(
           name: row['name'] as String,
           ord: row['ord'] as int,
           configId: cfg.optInt(9),
+          description: cfg.stringOf(5),
         ),
       );
     }

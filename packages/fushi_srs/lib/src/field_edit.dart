@@ -70,6 +70,12 @@ abstract final class SrsFieldKeys {
   // notetype
   static const String name = 'name';
   static String fieldDef(String fieldId) => 'fieldDef/$fieldId';
+
+  /// 字段说明（字符串；空串 = 清空）。与 [fieldDef] 分开：改名 / 调序与改说明互不冲突，
+  /// 不认识它的旧版本只是不显示，不会在改名时把它抹掉。
+  static String fieldDescription(String fieldId) =>
+      '$fieldDescriptionPrefix$fieldId';
+  static const String fieldDescriptionPrefix = 'fieldDesc/';
   static String templateDef(String templateId) => 'tmplDef/$templateId';
   static const String css = 'css';
   static const String termField = 'termField';

@@ -38,6 +38,12 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3560](bugs/BUG-3560-srs-review-top-band-and-phone-dict-tabs.md) | ✅ | ✅ | srs-review-top-band-and-phone-dict-tabs |
+> 共 3191 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3561](bugs/BUG-3561-video-pause-ocr-capture-null-never-retried.md) | ✅ | ✅ | video-pause-ocr-capture-null-never-retried |
+| [BUG-3560](bugs/BUG-3560-video-pause-ocr-all-skips-when-text-subtitle-on-screen.md) | ✅ | ✅ | video-pause-ocr-all-skips-when-text-subtitle-on-screen |
 | [BUG-3559](bugs/BUG-3559-srs-lapis-backfill-count-full-scan.md) | ✅ | ✅ | 复习：旧 Lapis 补迁角标每次全量物化 Fushi 卡片笔记且逐条重建内置笔记类型，1 万条笔记打开笔记类型页要 60 秒以上 |
 | [BUG-3558](bugs/BUG-3558-node-test-missing-runtime-inconsistent.md) | ✅ | ✅ | 测试：真跑 node / Chrome 的测试缺运行时时行为不一致，srs_card_design_skin_test 在 CI 上缺依赖静默跳过 |
 | [BUG-3557](bugs/BUG-3557-srs-card-autoplay-gate-bypass.md) | ✅ | ✅ | 复习：牌组关了自动播放，卡面脚本插入后再设 autoplay / 不进页面的 Audio / shadow DOM / iframe 的 play 仍会出声（BUG-3546 修得不完整） |
