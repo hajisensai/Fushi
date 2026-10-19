@@ -13,6 +13,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { execFileSync } = require('node:child_process');
+const zlib = require('node:zlib');
 
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf8'));
 const flush = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => setImmediate(r)); };
@@ -59,19 +60,29 @@ test('frame-gate：顶层页 / http 子 frame / 已注入的 frame 一律不挂�
   }
 });
 
-test('frame-gate：about: 子 frame 里按 Shift 才请求注入，只请求一次，之后摘掉监听', () => {
+test('frame-gate：about: 子 frame 里只有 Shift 悬停（查词手势）才请求注入，只请求一次，之后摘掉监听', () => {
   const h = loadGate({ top: false, protocol: 'about:' });
-  h.fire('mousemove', { shiftKey: false });
-  h.fire('keydown', { key: 'a' });
+  assert.strictEqual(h.count('keydown'), 0, '不监听键盘：单按 Shift 不是查词意图');
+  h.fire('mousemove', { shiftKey: false, buttons: 0 });
   assert.strictEqual(h.sent.length, 0, '不按 Shift 不注入（不查词的对话框零成本）');
-  h.fire('keydown', { key: 'Shift' });
-  h.fire('mousemove', { shiftKey: true });
+  h.fire('keydown', { key: 'Shift', shiftKey: true });
+  assert.strictEqual(h.sent.length, 0, '编辑器 iframe 里打大写字母（单按 Shift）不注入');
+  h.fire('mousemove', { shiftKey: true, buttons: 1 });
+  assert.strictEqual(h.sent.length, 0, 'Shift + 按住鼠标拖动是扩选文字，不是查词');
+  // asbplayer「Anki Export」对话框：按住 Shift 把指针挪到 Sentence 字段上。
+  h.fire('mousemove', { shiftKey: true, buttons: 0 });
   assert.strictEqual(h.sent.length, 1);
   assert.strictEqual(h.sent[0].type, 'fushiInjectEmbeddedFrame');
   assert.strictEqual(h.count('keydown') + h.count('mousemove'), 0);
-  const m = loadGate({ top: false, protocol: 'about:' });
-  m.fire('mousemove', { shiftKey: true });
-  assert.strictEqual(m.sent.length, 1, 'Shift 悬停同样唤起');
+  h.fire('mousemove', { shiftKey: true, buttons: 0 });
+  assert.strictEqual(h.sent.length, 1, '只请求一次');
+});
+
+test('frame-gate 注入后 content.js 认的就是同一个手势：查词修饰键是 shiftKey（Shift 悬停接得上）', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'content.js'), 'utf8');
+  assert.match(src, /const FUSHI_MOD = 'shiftKey';/);
+  assert.match(src, /document\.addEventListener\('mousemove', \(e\) => \{[\s\S]{0,200}if \(!e\[FUSHI_MOD\]\)/,
+    'content.js 的悬停查词按 mousemove 的 shiftKey 判（闸门唤起后按住 Shift 再挪一下即查词）');
 });
 
 function loadBackground(probeResult) {
@@ -269,6 +280,147 @@ test('真 Chrome：textarea / input 里能取词（镜像 div），密码框不�
     assert.strictEqual(res.find((r) => 'offControl' in r).offControl, 0, '移开控件即清镜像');
     assert.strictEqual(res.find((r) => 'clickGoesToInput' in r).clickGoesToInput, true, '镜像不挡点击输入');
     assert.strictEqual(res.find((r) => 'afterClear' in r).afterClear, 0, 'clearSelection 清镜像');
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
+// ── ③ 真 Chrome 像素：镜像上的选区高亮看得见、真字透得出来、控件值 / 焦点 / 点击都不受影响 ──
+// 最小 PNG 解码（8 bit RGB / RGBA，无隔行；headless Chrome 截图即此形态）。
+function decodePng(buf) {
+  let pos = 8;
+  let width = 0, height = 0, colorType = 0;
+  const idat = [];
+  while (pos < buf.length) {
+    const len = buf.readUInt32BE(pos);
+    const type = buf.toString('ascii', pos + 4, pos + 8);
+    const data = buf.subarray(pos + 8, pos + 8 + len);
+    if (type === 'IHDR') { width = data.readUInt32BE(0); height = data.readUInt32BE(4); colorType = data[9]; assert.strictEqual(data[8], 8); assert.strictEqual(data[12], 0); }
+    else if (type === 'IDAT') idat.push(data);
+    else if (type === 'IEND') break;
+    pos += 12 + len;
+  }
+  const bpp = colorType === 6 ? 4 : colorType === 2 ? 3 : 0;
+  assert.ok(bpp, 'unsupported PNG color type ' + colorType);
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const stride = width * bpp;
+  const px = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const f = raw[y * (stride + 1)];
+    const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x++) {
+      const a = x >= bpp ? px[y * stride + x - bpp] : 0;
+      const b = y > 0 ? px[(y - 1) * stride + x] : 0;
+      const c = x >= bpp && y > 0 ? px[(y - 1) * stride + x - bpp] : 0;
+      let v = line[x];
+      if (f === 1) v += a;
+      else if (f === 2) v += b;
+      else if (f === 3) v += (a + b) >> 1;
+      else if (f === 4) { const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c); v += (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c); }
+      px[y * stride + x] = v & 255;
+    }
+  }
+  return { width, height, at(x, y) { const i = y * stride + x * bpp; return [px[i], px[i + 1], px[i + 2]]; } };
+}
+
+const HIGHLIGHT_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#fff}
+textarea{position:absolute;left:40px;top:40px;width:420px;height:110px;font:24px/34px monospace;padding:10px;border:1px solid #888;box-sizing:border-box;color:#000;background:#fff;resize:none;outline:none}
+::highlight(fushi-selection){background-color:rgba(255,0,0,.45);color:inherit}
+.fushi-dict-highlight{background-color:rgba(255,0,0,.45)!important;color:inherit}
+#out{position:absolute;left:0;top:360px;font-size:4px;color:#fff}
+</style></head><body>
+<textarea id="t">ab日本語です。</textarea>
+<pre id="out"></pre>
+<script>window.flutter_inappwebview={callHandler(){}};</script>
+<script src="selection.js"></script>
+<script>
+const out={};
+try{
+  const el=document.getElementById('t');
+  const before=el.value;
+  const ctx=document.createElement('canvas').getContext('2d');ctx.font='24px monospace';
+  const r=el.getBoundingClientRect();
+  const x=r.left+11+ctx.measureText('ab').width+ctx.measureText('日').width/2, y=r.top+11+17;
+  const hit=fushiSelection.getCharacterAtPoint(x,y);
+  out.got=hit?hit.node.textContent[hit.offset]:null;
+  fushiSelection.selectFromPosition(hit.node,hit.offset,8,x,y);
+  const box=fushiSelection.highlightSelection(3);
+  out.box=box;
+  out.valueSame=el.value===before;
+  out.focusUntouched=document.activeElement===document.body;
+  out.clickGoesToField=document.elementFromPoint(x,y)===el;
+  const imp=document.querySelector('.fushi-form-imposter');
+  const cs=getComputedStyle(imp);
+  out.imposter={opacity:cs.opacity,color:cs.color,bg:cs.backgroundColor,pe:cs.pointerEvents};
+  const abRange=document.createRange();abRange.setStart(imp.firstChild,0);abRange.setEnd(imp.firstChild,2);
+  const ab=abRange.getBoundingClientRect(); out.abLeft=ab.left; out.abRight=ab.right;
+  if(location.hash==='#input'){
+    out.highlightRangesBefore=CSS.highlights.get('fushi-selection')?.size;
+    window.dispatchEvent(new Event('resize'));
+    out.afterNoopResize=document.querySelectorAll('.fushi-form-imposter').length;
+    el.value=el.value+'か';
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+    out.afterInput=document.querySelectorAll('.fushi-form-imposter').length;
+  }
+}catch(e){out.error=String(e&&e.stack||e);}
+document.getElementById('out').textContent='RESULT'+JSON.stringify(out)+'END';
+</script></body></html>`;
+
+test('真 Chrome 像素：输入框镜像选区有可见高亮，真字透得出来；不改值、不抢焦点、不挡点击；输入后高亮即撤', { timeout: 90000 }, (t) => {
+  const chrome = findChrome();
+  if (!chrome) { t.skip('no Chrome found (set CHROME_PATH)'); return; }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fushi-form-highlight-'));
+  try {
+    fs.copyFileSync(path.join(__dirname, 'vendor', 'selection.js'), path.join(dir, 'selection.js'));
+    fs.writeFileSync(path.join(dir, 'probe.html'), HIGHLIGHT_HTML);
+    const url = 'file:///' + path.join(dir, 'probe.html').replace(/\\/g, '/').replace(/^\//, '');
+    const common = ['--headless=new', '--disable-gpu', '--no-first-run', '--no-sandbox', '--hide-scrollbars',
+      '--force-device-scale-factor=1', '--window-size=600,400', '--allow-file-access-from-files', '--disable-lcd-text'];
+    const dom = execFileSync(chrome, [...common, '--user-data-dir=' + path.join(dir, 'ud1'), '--dump-dom', url + '#input'],
+      { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] });
+    const m = dom.match(/RESULT([\s\S]*?)END/);
+    assert.ok(m, 'probe page produced no result');
+    const res = JSON.parse(m[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"'));
+    assert.ok(!res.error, res.error);
+    assert.strictEqual(res.got, '日');
+    assert.strictEqual(res.valueSame, true, '不改控件的值');
+    assert.strictEqual(res.focusUntouched, true, '不抢焦点');
+    assert.strictEqual(res.clickGoesToField, true, '镜像不挡点击');
+    assert.strictEqual(res.imposter.opacity, '1');
+    assert.strictEqual(res.imposter.color, 'rgba(0, 0, 0, 0)', '镜像的字透明，真字由控件画');
+    assert.strictEqual(res.imposter.pe, 'none');
+    assert.ok(res.box && res.box.width > 20, '高亮框：' + JSON.stringify(res.box));
+    assert.strictEqual(res.highlightRangesBefore, 1);
+    assert.strictEqual(res.afterNoopResize, 1, '尺寸没变的 resize 不拆镜像');
+    assert.strictEqual(res.afterInput, 0, '控件被输入改值：镜像（连同其上的高亮）当场撤掉，不留错位高亮');
+
+    const shot = path.join(dir, 'shot.png');
+    execFileSync(chrome, [...common, '--user-data-dir=' + path.join(dir, 'ud2'), '--screenshot=' + shot, url],
+      { timeout: 60000, stdio: 'ignore' });
+    const img = decodePng(fs.readFileSync(shot));
+    const b = res.box;
+    let tinted = 0, ink = 0, total = 0;
+    for (let y = Math.ceil(b.y) + 2; y < Math.floor(b.y + b.height) - 2; y++) {
+      for (let x = Math.ceil(b.x) + 2; x < Math.floor(b.x + b.width) - 2; x++) {
+        const [r, g, bl] = img.at(x, y);
+        total++;
+        if (r > 200 && g < 190 && bl < 190) tinted++; // 白底 + 45% 红
+        if (r < 170 && g < 80 && bl < 80) ink++; // 黑字 + 45% 红：真字从高亮下透出来
+      }
+    }
+    assert.ok(total > 100, 'sample area too small');
+    assert.ok(tinted / total > 0.3, '选区高亮看得见：' + tinted + '/' + total);
+    assert.ok(ink > 10, '控件的真字在高亮下仍可见：' + ink);
+    // 高亮只在选中的词上：前面的「ab」不带红。
+    let redOutside = 0;
+    for (let y = Math.ceil(b.y) + 2; y < Math.floor(b.y + b.height) - 2; y++) {
+      for (let x = Math.ceil(res.abLeft) + 1; x < Math.floor(res.abRight) - 1; x++) {
+        const [r, g, bl] = img.at(x, y);
+        if (r > 150 && r - g > 60 && r - bl > 60) redOutside++;
+      }
+    }
+    assert.strictEqual(redOutside, 0, '选区之外没有高亮');
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
   }

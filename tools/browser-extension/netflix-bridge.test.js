@@ -163,6 +163,12 @@ function makeManifest() {
   };
 }
 
+// 按需取轨是 promise 链（每轮地址轮询 = 一次分片遍历 + 250 ms 间隔，harness 的 setTimeout 同步执行），
+// 链长随轮询次数变；一次宏任务把全部已排队微任务冲刷干净，不按固定拍数猜。
+function drainMicrotasks() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 async function settle() {
   // fetch().then 链两级微任务：多让几拍确保 postMessage 已发生。
   for (let i = 0; i < 5; i++) await Promise.resolve();
@@ -509,7 +515,7 @@ test('状态通道：fetchTrack 取无地址的轨 = 临时切过去等地址 �
     urlOnSelect: { 'T:en': 'https://cdn/en.imsc' },
   });
   for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
-  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await drainMicrotasks();
   assert.strictEqual(JSON.stringify(h.player.setCalls), JSON.stringify(['T:en', 'T:ja-cc']), '切过去再切回原轨');
   assert.strictEqual(h.fetched.length, 1);
   assert.strictEqual(h.fetched[0].url, 'https://cdn/en.imsc');
@@ -521,7 +527,7 @@ test('状态通道：fetchTrack 取无地址的轨 = 临时切过去等地址 �
 test('状态通道：地址始终不来 → 切回原轨并投 cuesFailed（不无限等）', async () => {
   const h = loadBridge({ track: NF_TRACKS[1], textTracks: NF_TRACKS, stateUrls: {} });
   for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
-  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await drainMicrotasks();
   assert.strictEqual(JSON.stringify(h.player.setCalls), JSON.stringify(['T:en', 'T:ja-cc']));
   const failed = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cuesFailed').map((p) => p.msg);
   assert.strictEqual(failed.length, 1);
@@ -553,7 +559,7 @@ test('状态通道：页面数据不可信——状态成环 / getter 抛错 / u
   await settle();
   assert.strictEqual(h.fetched.length, 0, '形状不对的 urls 不当成下载地址');
   for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
-  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await drainMicrotasks();
   const failed = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cuesFailed').map((p) => p.msg);
   assert.strictEqual(failed.length, 1);
   assert.strictEqual(failed[0].trackId, 'T:en');
@@ -561,6 +567,89 @@ test('状态通道：页面数据不可信——状态成环 / getter 抛错 / u
   delete h.windowObj.netflix;
   assert.doesNotThrow(() => h.tick());
   for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
-  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await drainMicrotasks();
   assert.strictEqual(h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cuesFailed').length, 2);
+});
+
+// ── 状态树节点预算（页面数据大小不由我们定：遍历分片、单次封顶） ──
+function useState(h, root) {
+  const api = h.windowObj.netflix.appContext.state.playerApp.getAPI;
+  h.windowObj.netflix = { appContext: { state: { playerApp: {
+    getState: () => ({ videoPlayer: { cadmiumPlayerRepository: { playersById: { 'watch-81001': root } } } }),
+    getAPI: api,
+  } } } };
+}
+
+test('状态通道：每拍只遍历一片（≤ 20000 节点），大状态分几拍走完、地址照样找到', async () => {
+  const h = loadBridge({ track: NF_TRACKS[1], textTracks: NF_TRACKS, stateUrls: {} });
+  let visits = 0;
+  const wide = [];
+  for (let i = 0; i < 50000; i++) {
+    const n = {};
+    Object.defineProperty(n, 'probe', { enumerable: true, get() { visits++; return 0; } });
+    wide.push(n);
+  }
+  // LIFO：wide 后压栈、先出栈，timedtext 所在的 x 排在 5 万个节点之后。
+  useState(h, { x: { y: { type: 'timedtext', trackId: 'T:ja-cc', urls: [{ url: 'https://cdn/ja-cc.imsc' }] } }, wide });
+  h.tick();
+  await settle();
+  assert.ok(visits > 0 && visits <= 20000, '第一拍只走一片：' + visits);
+  assert.strictEqual(h.fetched.length, 0, '一片走不到 5 万节点之后的地址');
+  h.tick();
+  h.tick();
+  await settle();
+  assert.strictEqual(visits, 50000, '三拍走完整棵树，每个节点只访问一次');
+  assert.strictEqual(h.fetched.length, 1);
+  assert.strictEqual(h.fetched[0].url, 'https://cdn/ja-cc.imsc');
+});
+
+test('状态通道：单次遍历超 1 000 000 节点即放弃并降级——只诊断一次，按需取轨不临时切轨、直接投 cuesFailed', async () => {
+  const h = loadBridge({ track: NF_TRACKS[1], textTracks: NF_TRACKS, stateUrls: {} });
+  const warns = [];
+  h.ctx.console = { warn: (...a) => warns.push(a.join(' ')), log() {}, error() {} };
+  const wide = new Array(1000005);
+  for (let i = 0; i < wide.length; i++) wide[i] = {};
+  useState(h, { x: { y: { type: 'timedtext', trackId: 'T:en', urls: [{ url: 'https://cdn/en.imsc' }] } }, wide });
+  for (const fn of h.listeners) fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'fetchTrack', trackId: 'T:en' } });
+  await drainMicrotasks();
+  assert.strictEqual(JSON.stringify(h.player.setCalls), '[]', '超预算不去切轨（切了也找不到地址）');
+  assert.strictEqual(h.fetched.length, 0, '放弃的遍历不会摸到排在后面的地址');
+  const failed = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cuesFailed').map((p) => p.msg);
+  assert.strictEqual(failed.length, 1);
+  assert.strictEqual(failed[0].err, 'player state too large');
+  assert.strictEqual(warns.filter((w) => w.includes('state channel degraded')).length, 1);
+  // 拍子里的遍历同样封顶、不抛，诊断不重复打。
+  assert.doesNotThrow(() => { for (let i = 0; i < 60; i++) h.tick(); });
+  assert.strictEqual(h.fetched.length, 0);
+  assert.strictEqual(warns.filter((w) => w.includes('state channel degraded')).length, 1);
+});
+
+test('轨身份三通道同源：清单条目 / 播放器当前轨 / 状态轨清单对同一条轨算出同一个 lang（bcp47 优先）', async () => {
+  // language 与 bcp47 不同的轨：旧实现清单通道取 language、状态通道取 bcp47，同一条轨落两个 key。
+  const track = { trackId: 'T:pt', bcp47: 'pt-BR', language: 'pt', displayName: 'Português (Brasil)' };
+  const h = loadBridge({ track, textTracks: [track], stateUrls: {} });
+  h.tick();
+  const placeholder = h.posted.find((p) => p.msg && p.msg.__fushiNf === 'tracks').msg.tracks[0];
+  vm.runInContext('JSON.parse(' + JSON.stringify(JSON.stringify({
+    movieId: 81001,
+    timedtexttracks: [{ new_track_id: 'T:pt', bcp47: 'pt-BR', language: 'pt', displayName: 'Português (Brasil)',
+      ttDownloadables: { 'webvtt-lssdh-ios8': { urls: [{ url: 'https://cdn/pt.vtt' }] } } }],
+  })) + ')', h.ctx);
+  await settle();
+  const manifestCue = cuesPosted(h).find((p) => p.msg.trackId === 'T:pt').msg;
+  assert.strictEqual(placeholder.lang, 'pt-BR');
+  assert.strictEqual(manifestCue.lang, placeholder.lang, '清单通道与状态通道同一个 lang');
+  assert.strictEqual(manifestCue.trackId, placeholder.trackId);
+  assert.strictEqual(manifestCue.label, placeholder.label);
+  // 正文嗅探取的是播放器当前轨，同样经共用函数。
+  const xhr = new h.FakeXhr();
+  xhr.open('GET', CDN_URL);
+  xhr.responseText = VTT_BODY;
+  xhr.send();
+  xhr.fire('load');
+  await settle();
+  const sniffed = cuesPosted(h).filter((p) => p.msg.text === VTT_BODY).map((p) => p.msg);
+  assert.strictEqual(sniffed.length, 1);
+  assert.strictEqual(sniffed[0].lang, 'pt-BR');
+  assert.strictEqual(sniffed[0].trackId, 'T:pt');
 });

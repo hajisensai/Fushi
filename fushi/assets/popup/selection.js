@@ -20,6 +20,7 @@ window.fushiSelection = {
     formImposter: null,
     formImposterSource: null,
     formImposterSig: '',
+    formImposterUnlisten: null,
     scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─\n\r"\'“”‘’«»‹›',
     // BUG-2196：换行不是句子边界（HTML 里它只是空白）。与
     // reader_selection_scripts.dart 的同名表保持一致。
@@ -243,9 +244,13 @@ window.fushiSelection = {
 
     // 表单控件取词（asbplayer「Anki Export」对话框的 Sentence / Word 等字段）：<textarea> / 文字类
     // <input> 的内容不是 DOM 文本节点（在 UA shadow 里），caret API 只给回控件或外层元素，下面三步
-    // 全部落空。仿 Yomitan TextSourceGenerator 的 imposter：叠一个复刻计算样式、文字 = value 的透明
-    // 镜像 div，在镜像上取词。镜像要活到下一次取词 / clearSelection——选区 ranges 指向镜像的文本
-    // 节点，高亮与锚点都按它量；平时 pointer-events:none，不挡用户点进控件输入。
+    // 全部落空。仿 Yomitan TextSourceGenerator 的 imposter：叠一个复刻计算样式、文字 = value 的镜像
+    // div，在镜像上取词。镜像要活到下一次取词 / clearSelection——选区 ranges 指向镜像的文本节点，
+    // 高亮与锚点都按它量；平时 pointer-events:none，不挡用户点进控件输入。
+    // 选区高亮要看得见：镜像本身不透明度为 1，但字、背景、边框、阴影、滚动条全透明，只剩
+    // ::highlight(fushi-selection)（或无 Highlight API 时的 .fushi-dict-highlight）的半透明底色叠在
+    // 控件真字上——控件的值、焦点、选区一概不碰。控件被输入 / 滚动 / 视口变化后镜像几何就过期了，
+    // 当场拆掉（高亮随之消失），不留一块错位的高亮盖在别人的字段上。
     formControlAt(x, y) {
         const el = this.deepElementFromPoint(x, y);
         if (!el || el.nodeType !== Node.ELEMENT_NODE) return null;
@@ -255,16 +260,24 @@ window.fushiSelection = {
     },
 
     removeFormImposter() {
+        if (this.formImposterUnlisten) { try { this.formImposterUnlisten(); } catch (_) {} }
+        this.formImposterUnlisten = null;
         if (this.formImposter && this.formImposter.parentNode) this.formImposter.parentNode.removeChild(this.formImposter);
         this.formImposter = null;
         this.formImposterSource = null;
         this.formImposterSig = '';
     },
 
+    // 镜像是否还对得上控件：几何（视口坐标）+ 控件内滚动 + 值。
+    formControlSig(el) {
+        const rect = el.getBoundingClientRect();
+        return [rect.left, rect.top, rect.width, rect.height, el.scrollTop, el.scrollLeft, String(el.value || '')].join('|');
+    },
+
     ensureFormImposter(el) {
         const rect = el.getBoundingClientRect();
         const value = String(el.value || '');
-        const sig = [rect.left, rect.top, rect.width, rect.height, el.scrollTop, el.scrollLeft, value].join('|');
+        const sig = this.formControlSig(el);
         // 同一控件、几何与内容都没变：复用，选区 ranges 指向的文本节点保持有效。
         if (this.formImposter && this.formImposter.isConnected &&
             this.formImposterSource === el && this.formImposterSig === sig) return this.formImposter;
@@ -292,15 +305,33 @@ window.fushiSelection = {
         set('animation', 'none');
         set('display', 'block');
         set('visibility', 'visible');
-        set('opacity', '0');
+        set('opacity', '1');
+        // 墨水全透明：真字仍由控件自己画，镜像只贡献选区高亮的底色。
+        set('color', 'transparent');
+        set('-webkit-text-fill-color', 'transparent');
+        set('caret-color', 'transparent');
+        set('text-shadow', 'none');
+        set('text-decoration-color', 'transparent');
+        set('background', 'transparent');
+        set('border-color', 'transparent');
+        set('border-style', 'solid');
+        set('outline', 'none');
+        set('box-shadow', 'none');
+        set('filter', 'none');
+        set('backdrop-filter', 'none');
         set('z-index', '2147483647');
         set('pointer-events', 'none');
         set('overflow-x', 'hidden');
         if (isTextarea) {
             set('white-space', 'pre-wrap');
             set('overflow-wrap', 'break-word');
-            // 控件有竖滚动条时它占掉内容宽度：镜像也留出滚动条，换行位置才一致。
-            set('overflow-y', el.scrollHeight > el.clientHeight ? 'scroll' : 'hidden');
+            // 控件有竖滚动条时它占掉内容宽度：镜像不画滚动条（会盖在控件的滚动条上），改用等宽的
+            // 右内边距占位，换行位置才一致。
+            set('overflow-y', 'hidden');
+            const px = (v) => parseFloat(v) || 0;
+            const scrollbar = Math.max(0, el.offsetWidth - el.clientWidth -
+                px(style.borderLeftWidth) - px(style.borderRightWidth));
+            if (scrollbar > 0) set('padding-right', (px(style.paddingRight) + scrollbar) + 'px');
         } else {
             // 单行 input 文字竖直居中：行高 = 内容盒高度。
             const px = (v) => parseFloat(v) || 0;
@@ -318,6 +349,19 @@ window.fushiSelection = {
         this.formImposter = div;
         this.formImposterSource = el;
         this.formImposterSig = sig;
+        // 几何过期即拆：控件被输入改值、控件或其祖先滚动、视口缩放后，按同一签名复核——真变了才拆
+        //（别处滚动、尺寸没变的 resize 不动它）。
+        const dropIfStale = () => {
+            if (this.formImposterSource === el && this.formControlSig(el) !== this.formImposterSig) this.removeFormImposter();
+        };
+        el.addEventListener('input', dropIfStale, true);
+        window.addEventListener('scroll', dropIfStale, true);
+        window.addEventListener('resize', dropIfStale, true);
+        this.formImposterUnlisten = () => {
+            el.removeEventListener('input', dropIfStale, true);
+            window.removeEventListener('scroll', dropIfStale, true);
+            window.removeEventListener('resize', dropIfStale, true);
+        };
         return div;
     },
 
