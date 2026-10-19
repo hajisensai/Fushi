@@ -189,6 +189,22 @@ add_test(NAME tokenize_ffi_nul_test
          COMMAND tokenize_ffi_nul_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
 
+# HBK-AUDIT-009：句柄引用计数（retain / release / 退役式 destroy）与读写锁，用真线程
+# 验证：借用期间退役不销毁、最后一次 release 才销毁且只销毁一次、重载与 add_*_dict
+# 和在飞分词并发时结果都正确。同样经真实导出符号，所以编进 fushidicts_ffi.cpp。
+find_package(Threads REQUIRED)
+add_executable(handle_lifecycle_concurrency_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/handle_lifecycle_concurrency_test.cpp"
+    "${FUSHI_ROOT}/fushidicts_ffi.cpp")
+target_link_libraries(handle_lifecycle_concurrency_test PRIVATE fushidicts libzstd_static Threads::Threads)
+target_include_directories(handle_lifecycle_concurrency_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(handle_lifecycle_concurrency_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME handle_lifecycle_concurrency_test
+         COMMAND handle_lifecycle_concurrency_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
 # BUG-3261：汉字 + 假名混写（棚にあげる → 棚に上げる）经读音通路命中。
 add_executable(ja_mixed_orthography_lookup_test
     "${CMAKE_CURRENT_SOURCE_DIR}/ja_mixed_orthography_lookup_test.cpp")
