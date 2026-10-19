@@ -32,7 +32,7 @@ class UpdateDownloadTimeouts {
 @visibleForTesting
 UpdateDownloadTimeouts? debugUpdateDownloadTimeoutsOverride;
 
-UpdateDownloadTimeouts get _updateDownloadTimeouts =>
+UpdateDownloadTimeouts get _dlTimeouts =>
     debugUpdateDownloadTimeoutsOverride ?? UpdateDownloadTimeouts.standard;
 
 /// 直连与镜像近乎同时返回 206 时的 tie-break 窗口（TODO-683）。最快候选是镜像时，再多
@@ -347,7 +347,7 @@ Future<List<String>?> raceSelectFastestCandidate({
       response = await openUrl(
         Uri.parse(url),
         headers,
-      ).timeout(_updateDownloadTimeouts.firstByte);
+      ).timeout(_dlTimeouts.firstByte);
     } catch (_) {
       // 探针失败（连不上 / 超时 / 非 206 前出错）：不参与胜出，留给串行回退处理。
       if (!isRelay) primaryProbeSettled();
