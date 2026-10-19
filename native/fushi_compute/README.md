@@ -143,6 +143,71 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）。
 | 内存 SHA-256 | 64 MiB | 1,173 ms | 43 ms | 27× |
 | 整文件 SHA-256（异步读，UI isolate 可用） | 256 MiB | 4,829 ms | 408 ms | 11.8× |
 
+## 字体域
+
+`ffc_font_woff2_to_sfnt(const u8*, usize, u8** out, usize* out_len) -> i32`：WOFF2 → 裸 sfnt
+（Brotli 解压 + 逆转 glyf / loca / hmtx 变换 + 按标签排序重组、4 字节对齐、重算
+`head.checkSumAdjustment`）。成功时输出由本库分配，`ffc_free_bytes` 释放；不是可解码的 WOFF2
+（含字体集合 `ttcf`）返回 -3（BAD_INPUT），Dart 侧 `FushiFont.woff2ToSfnt` 映射成 null。表校验和见下面「表校验和」。
+
+| 调用方 | 之前（纯 Dart） | 现在 |
+|---|---|---|
+| `fushi/lib/src/models/app_font_loader.dart`（App UI 自定义字体，`Isolate.run`） | `Woff2Decoder.toSfnt`（`package:brotli` + 手写 glyf 重建） | `FushiFont.instance.woff2ToSfnt` |
+| `fushi/lib/src/reader/font_vertical_baseline_flag.dart`（阅读器字体请求，BUG-3420 缓存的后台 isolate） | 同上 | 同上 |
+
+`fushi/lib/src/models/woff2_decoder.dart` 与 `package:brotli` 依赖已删除。Brotli 用
+`brotli-decompressor`（Dropbox，BSD-3-Clause / MIT，纯 Rust）。
+
+**逐字节一致**：删除前用 Dart 实现给 10 份字体生成 sfnt SHA-256（`packages/fushi_compute/test/font/woff2_vectors.json`）。
+4 份小字体入库（Roboto 两种变换、Noto Serif JP 可变字体子集 + hmtx 变换、Noto Sans JP CFF 子集，共 ≈ 90 KB）；
+6 份 5–9 MB 的 CJK 语料不入库（Windows 11 系统字体经 fontTools 4.65 `woff2.compress` 生成），设
+`FUSHI_WOFF2_CORPUS` 指向语料目录时额外比对。唯一有意的差异：glyf 变换头 `optionFlags` 第 0 位
+（overlapSimpleBitmap）——Dart 版把它误读成多一个 u32 长度、整条流错位解不出；Rust 按规范读位图并给
+对应字形首个 flag 置 `OVERLAP_SIMPLE`。语料与入库样本都不带这一位。
+
+基准（AOT `dart compile exe`，同一进程先 Dart 后 Rust，7 次取中位数；Rust 含拷入原生内存、拷出与释放；
+2026-10-18，i5-12600KF / Windows 11，本机同时有 3 个其它重任务在跑，绝对值偏高）：
+
+| 字体（WOFF2 → sfnt） | Dart 合计 | 其中 Brotli | 其中 glyf 重建 | Rust | 倍数 |
+|---|---|---|---|---|---|
+| Noto Sans SC VF（7.4 → 17.0 MB） | 1,102 ms | 349 ms | 742 ms | 327 ms | 3.4× |
+| Yu Mincho（5.0 → 12.5 MB） | 1,536 ms | 294 ms | 1,174 ms | 269 ms | 5.7× |
+| SimSun-ExtB，hmtx 变换（8.6 → 20.9 MB） | 2,083 ms | 350 ms | 1,671 ms | 412 ms | 5.1× |
+| Microsoft YaHei（8.4 → 18.7 MB） | 1,829 ms | 659 ms | 897 ms | 565 ms | 3.2× |
+| Noto Serif JP VF，hmtx 变换（5.7 → 13.0 MB） | 2,058 ms | 726 ms | 1,444 ms | 582 ms | 3.5× |
+| Noto Sans JP（CFF，3.2 → 4.3 MB，只有 Brotli） | 354 ms | 325 ms | — | 180 ms | 2.0× |
+
+glyf 重建是 Dart 的大头（Rust 里只剩几十毫秒）；Brotli 本身只快约 2×（`brotli-decompressor` 比 C 版
+libbrotli 慢约 1.5×），所以只走 Brotli 的 CFF 字体收益最小。
+
+### 表校验和
+
+`ffc_font_table_checksum(const u8*, usize, i32 head_table, u32* out) -> i32`：OpenType 表校验和（大端 u32
+回绕求和，尾部补零；`head_table != 0` 时偏移 8 的 `checkSumAdjustment` 按 0 算）。Dart 侧
+`FushiFont.tableChecksum(data, offset:, length:, headTable:)`，按区间拷进原生内存再算（`isLeaf`）。
+
+| 调用方 | 之前（纯 Dart） | 现在 |
+|---|---|---|
+| `fushi/lib/src/reader/font_vertical_baseline_flag.dart`（清竖排基线位后重算 head 表与整字体校验和，sfnt / TTC / WOFF） | `_tableChecksum`：逐字节拼大端字 | `FushiFont.instance.tableChecksum` |
+| `fushi/lib/src/models/font_decoder.dart`（WOFF 1.0 → sfnt 的 `checkSumAdjustment`） | `_checksum`：`ByteData.getUint32` | 同上 |
+
+两个 Dart 版都已删除。回归向量（`packages/fushi_compute/test/font/fushi_font_test.dart` 的 `tableChecksum` 组）由删除前的
+`_tableChecksum` 对确定性输入生成，覆盖补零尾字与「偏移 8 恰是补零尾字」；`FontDecoder._checksum` 只丢弃不足 4 字节的尾部，
+而它的输入总是 4 字节对齐，所以和补零语义等价（基准里对 8 份字体逐个核对三者相等）。
+
+基准（整字体一次求和，AOT，9 次取中位数，新实现含 malloc + 拷入；同上机器、同样有别的重任务在跑）：
+
+| 字体（sfnt） | 旧 `_tableChecksum` | 旧 `_checksum`（ByteData） | Rust | 倍数（对两者） |
+|---|---|---|---|---|
+| SimSun-ExtB（20.9 MB） | 54.2 ms | 17.0 ms | 9.2 ms | 5.9× / 1.8× |
+| Noto Sans SC VF（17.0 MB） | 56.0 ms | 15.5 ms | 8.2 ms | 6.9× / 1.9× |
+| Yu Mincho（12.5 MB） | 38.1 ms | 12.8 ms | 6.5 ms | 5.9× / 2.0× |
+| Microsoft YaHei 第 0 个（18.7 MB） | 50.1 ms | 14.5 ms | 8.6 ms | 5.8× / 1.7× |
+| Noto Serif JP VF（13.0 MB） | 42.0 ms | 18.4 ms | 11.3 ms | 3.7× / 1.6× |
+| Noto Sans JP（CFF，4.3 MB） | 11.3 ms | 3.4 ms | 1.8 ms | 6.3× / 1.9× |
+
+Rust 这边的时间大半是把 Dart 堆上的字节拷进原生内存（`DynamicLibrary` 绑定拿不到 Dart 数组的地址）。
+
 ## 构建
 
 | 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-18 实测） |
@@ -200,5 +265,6 @@ dart test                               # packages/fushi_compute 下（真 FFI�
 
 ## 许可
 
-本 crate GPL-3.0-only（随 app）。依赖：`md4` / `sha1` / `sha2`（RustCrypto）、`crc32fast`，均 MIT OR Apache-2.0，可链进
+本 crate GPL-3.0-only（随 app）。依赖：`md4` / `sha1` / `sha2`（RustCrypto）、`crc32fast`，均 MIT OR Apache-2.0；
+`brotli-decompressor`（及其 `alloc-no-stdlib` / `alloc-stdlib`）BSD-3-Clause / MIT；都可链进
 GPL-3.0 的 app 本体；发版前确认 app 开源许可页带上它们的声明。

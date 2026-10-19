@@ -50,3 +50,7 @@ opt-level = 3
 # 的逐 crate 优化。
 [profile.release.package.fushi_compute]
 opt-level = 3
+
+# WOFF2 解码（fushi_compute/src/font.rs）的 Brotli 是热点，同样按 3 编。
+[profile.release.package.brotli-decompressor]
+opt-level = 3

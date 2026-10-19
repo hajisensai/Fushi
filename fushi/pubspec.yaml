@@ -188,7 +188,6 @@ dependencies:
   # lib/src/feedback/feedback_reply_background.dart）。桌面不用它（运行中定时检查）。
   workmanager: ^0.10.10
   record: 6.0.0
-  brotli: ^0.6.0
   bonsoir: ^7.1.1
   media_kit: ^1.2.6
   media_kit_video: ^2.0.1

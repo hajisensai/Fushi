@@ -2,6 +2,7 @@
 /// 硬依赖、没有 Dart 回退：库或某域符号缺失时抛 [FushiComputeUnavailableError]。
 library;
 
+export 'src/font/fushi_font.dart';
 export 'src/fushi_compute_library.dart';
 export 'src/text/cue_match.dart';
 export 'src/hash/ffc_hash.dart';

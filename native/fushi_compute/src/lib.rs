@@ -16,6 +16,7 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+pub mod font;
 pub mod hash;
 pub mod image;
 pub mod text;
