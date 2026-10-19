@@ -51,7 +51,7 @@ void main() {
       expect(decoded.length, 32); // 256 bits
     });
 
-    test('onClientWrite：鉴权通过的 PUT / DELETE 成功后回调相对路径；未鉴权不回调', () async {
+    test('onClientWrite：鉴权通过的 PUT / DELETE 成功后回调相对路径；未鉴权或失败不回调', () async {
       final List<String> writes = <String>[];
       server.onClientWrite = writes.add;
       await server.start();
@@ -77,6 +77,9 @@ void main() {
       expect(await send('PUT', file), 201);
       expect(await send('GET', file), 200);
       expect(await send('DELETE', file), anyOf(200, 204));
+      expect(writes, <String>[file, file]);
+      // 鉴权通过、但写失败（删不存在的文件 → 404）：不回调。
+      expect(await send('DELETE', file), 404);
       expect(writes, <String>[file, file]);
       client.close();
     });
