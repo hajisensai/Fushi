@@ -23,7 +23,17 @@ impl Rgb8 {
     }
 }
 
-/// 解码失败 / 不认识的格式返回 None（调用方按「不是广告」处理）。
+/// 单张图解码的像素上限。依据：漫画页常见 ≤ 1600×2400（≈ 4 MP），条漫长图最长的一类
+/// 约 1100×30000（≈ 33 MP）；40 MP 把这些都留在内，超出的（多半是恶意构造的「小文件、巨尺寸」
+/// 图）不解码、按 Undecodable 处理（= 按正文保留，与「只许漏判」一致）。判定本来就先缩到
+/// `analysis_max_side`（900）再算，大图解码只是中间量。
+pub const MAX_DECODE_PIXELS: u64 = 40_000_000;
+
+/// 解码缓冲上限：上限像素 × 4 字节（RGBA8 是解码器最宽的 8 位输出）。`to_rgb8` 再拷一份
+/// ≤ 3 字节 / 像素，单张峰值约 280 MB；并行张数见 `detect_batch` 的按平台上限。
+const MAX_DECODE_ALLOC: u64 = MAX_DECODE_PIXELS * 4;
+
+/// 解码失败 / 不认识的格式 / 超过 [`MAX_DECODE_PIXELS`] 返回 None（调用方按「不是广告」处理）。
 pub fn decode_rgb8(bytes: &[u8]) -> Option<Rgb8> {
     if bytes.is_empty() {
         return None;
@@ -35,11 +45,18 @@ pub fn decode_rgb8(bytes: &[u8]) -> Option<Rgb8> {
         return None;
     }
     let paletted = is_paletted(format, bytes);
+    // 先只读头拿尺寸：按像素数拒绝要在分配解码缓冲之前。
+    let (w, h) = image::ImageReader::with_format(std::io::Cursor::new(bytes), format)
+        .into_dimensions()
+        .ok()?;
+    if u64::from(w) * u64::from(h) > MAX_DECODE_PIXELS {
+        return None;
+    }
     let mut reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), format);
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(30_000);
     limits.max_image_height = Some(30_000);
-    limits.max_alloc = Some(512 * 1024 * 1024);
+    limits.max_alloc = Some(MAX_DECODE_ALLOC);
     reader.limits(limits);
     let img = reader.decode().ok()?;
     let width = img.width() as usize;

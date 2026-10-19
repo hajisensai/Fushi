@@ -13,7 +13,6 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart'
     show hasAnyNavigationModule;
-import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
@@ -43,6 +42,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/web_browser/web_module_capabilities.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiDeck, AnkiNoteType, AnkiSettings;
@@ -1691,11 +1691,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       case OnboardingFeature.books:
         return t.onboarding_feature_books_hint;
       case OnboardingFeature.web:
-        // 浏览器模块五端都有，但网页漫画 / 小说导入是在线源能力（App Store 合规门），
-        // 门关着的平台（iOS）只介绍浏览 + 查词，不宣传不存在的能力。
-        return StoreRestrictedCapability.onlineMangaSource.isAvailable
-            ? t.onboarding_feature_web_hint
-            : t.onboarding_feature_web_basic_hint;
+        // 浏览器模块五端都有，但视频站点 / 网页阅读 / 浏览器扩展各有平台判据：只介绍
+        // 本平台真有的能力。
+        return webModuleOnboardingHint(WebModuleCapabilities.current());
       case OnboardingFeature.manga:
         return t.onboarding_feature_manga_hint;
       case OnboardingFeature.video:

@@ -144,3 +144,20 @@ fn a_panicking_image_is_undecodable_not_a_failed_batch() {
         ComicAdVerdict::Ad
     );
 }
+
+#[test]
+fn oversized_dimensions_are_rejected_before_decoding() {
+    // 一张 8000×8000（64 MP）的 PNG：文件很小，解码会要 ~256 MB。按头部尺寸直接拒绝。
+    let img = image::RgbImage::new(8000, 8000);
+    let mut png = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    assert!(decode::decode_rgb8(&png).is_none());
+    // 上限以内的照常解码。
+    let small = image::RgbImage::new(64, 64);
+    let mut png = Vec::new();
+    small
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    assert!(decode::decode_rgb8(&png).is_some());
+}

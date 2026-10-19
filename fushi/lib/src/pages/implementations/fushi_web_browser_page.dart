@@ -21,7 +21,6 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
-import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -40,6 +39,7 @@ import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi/src/web_adblock/web_adblock_wiring.dart';
 import 'package:fushi/src/web_browser/web_browser_sites.dart';
+import 'package:fushi/src/webview/web_payload_limits.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 
 /// app 内通用浏览器（五端：Windows / macOS / Linux / Android / iOS）。
@@ -552,7 +552,7 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
           FushiToolbarItem(
             key: const ValueKey<String>('web-browser-read-novel'),
             icon: FushiIcons.books,
-            label: t.novel_web_read_page,
+            label: t.novel_web_page_read,
             selected: _extractingNovel,
             onPressed: web && _currentUrl != null && !_extractingNovel
                 ? () => unawaited(_readNovelInFushi())
@@ -712,12 +712,16 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
           adblock.onWebViewCreated(controller);
           controller.addJavaScriptHandler(
             handlerName: 'onTextSelected',
-            callback: (List<dynamic> arguments) {
-              if (mounted && arguments.isNotEmpty) {
-                _onTextSelected(arguments.first);
-              }
-              return null;
-            },
+            callback: limitWebPayload(
+              'onTextSelected',
+              kWebPayloadSmallMaxChars,
+              (List<dynamic> arguments) {
+                if (mounted && arguments.isNotEmpty) {
+                  _onTextSelected(arguments.first);
+                }
+                return null;
+              },
+            ),
           );
           controller.addJavaScriptHandler(
             handlerName: 'onTapEmpty',
@@ -809,8 +813,8 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
                           child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
                       : const FushiIcon(FushiIcons.manga),
-                  label: Text(t.manga_web_read_chapter),
-                  tooltip: t.manga_web_read_chapter,
+                  label: Text(t.manga_web_chapter_read),
+                  tooltip: t.manga_web_chapter_read,
                   onPressed: _scanning
                       ? null
                       : () => unawaited(_readChapterInFushi()),
@@ -822,15 +826,3 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     );
   }
 }
-
-/// 推一页独立的 [FushiWebBrowserPage]（宿主 hub 挂载时直接把 widget 放进页签，
-/// 不经这里）。路由层中和界面整体缩放：WebView 纹理按原生密度栅格化（BUG-2522），
-/// 取词矩形与查词浮层同一坐标系。
-Future<void> openFushiWebBrowser(BuildContext context, {String? initialUrl}) =>
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (BuildContext _) => FushiAppUiScaleNeutralizer(
-          child: FushiWebBrowserPage(initialUrl: initialUrl),
-        ),
-      ),
-    );

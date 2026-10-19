@@ -5,6 +5,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
+import 'package:fushi/src/web_browser/web_module_capabilities.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
 
@@ -29,7 +30,8 @@ SettingsSection buildWebAdblockSection() {
       SettingsSwitchItem(
         id: 'system.web_adblock_enabled',
         title: t.web_adblock_enabled,
-        subtitle: t.web_adblock_enabled_hint,
+        // 只列本平台真有的网页浏览场景（iOS 没有网页漫画 / 小说，视频站点只在 Windows）。
+        subtitle: webAdblockEnabledHint(WebModuleCapabilities.current()),
         icon: FushiIcons.block,
         defaultValue: true,
         value: enabled,
