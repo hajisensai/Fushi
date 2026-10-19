@@ -521,7 +521,7 @@ class _DeckListState extends State<_DeckList> {
     ];
     final int visibleCount = visible.where((bool v) => v).length;
     final List<Widget> items = <Widget>[
-      // 后台导入任务（BUG-3541）：有任务时排在最前。
+      // 后台导入任务（BUG-3549）：有任务时排在最前。
       if (widget.showImportTasks)
         const SrsImportTasksBar(key: ValueKey<String>('srs-import-tasks')),
       if (!widget.data.store.canSchedule)

@@ -113,7 +113,7 @@ class SrsCardFace {
 
   /// 卡面页面自己发起的媒体播放（同步片段的 `oncanplay`、`autoplay` 属性）是否放行。
   /// false = 只放行用户在卡面上点按 / 按键直接引起的播放（牌组关了自动播放，
-  /// 见 srs_card_autoplay.dart 的 [kSrsCardAutoplayGateScript]，BUG-3538）。
+  /// 见 srs_card_autoplay.dart 的 [kSrsCardAutoplayGateScript]，BUG-3546）。
   final bool autoplayMedia;
 
   /// 同一面卡，换版式 / 页面 zoom。
@@ -610,7 +610,7 @@ String srsCardShellHtml({required String themeCss, required String classes}) {
       '<style id="fushi-theme-css">$themeCss</style>'
       '<style>$kSrsCardMediaCss</style>'
       '<script>$kSrsCardMediaScript</script>'
-      // 自动播放闸门要在卡片内容与卡片脚本之前装好（BUG-3538）。
+      // 自动播放闸门要在卡片内容与卡片脚本之前装好（BUG-3546）。
       '<script>$kSrsCardAutoplayGateScript</script>'
       // 样式注册表的两个锚点：模板 / 笔记类型 CSS 在前，卡片正文里抽出的样式在后
       // （与它们原本在文档里的先后一致）。
@@ -1142,7 +1142,7 @@ class SrsCardFaceDocumentInputs {
         a.bodyHtml == b.bodyHtml &&
         a.css == b.css &&
         a.hostCss == b.hostCss &&
-        // 复习中改牌组「自动播放」要立即重下发（BUG-3539）：不比它会命中旧文档。
+        // 复习中改牌组「自动播放」要立即重下发（BUG-3547）：不比它会命中旧文档。
         a.autoplayMedia == b.autoplayMedia &&
         identical(fonts, other.fonts) &&
         fontRoot == other.fontRoot &&
@@ -1646,7 +1646,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
           // 堆着上一张卡 / 正面，侧滑会把画面退回旧卡面而复习状态没动。卡面切换完全由
           // 宿主拥有，关掉。只作用于 iOS / macOS。
           allowsBackForwardNavigationGestures: false,
-          // 页面自己发起的播放由外壳里的自动播放闸门按牌组开关决定（BUG-3538），
+          // 页面自己发起的播放由外壳里的自动播放闸门按牌组开关决定（BUG-3546），
           // 不再交给各平台默认策略：Android / iOS 默认「要手势」会让开着自动播放的
           // 同步片段也不出声，Windows 默认放行又让关掉的照样出声。iOS 内嵌播放
           // （片段带 playsinline）不全屏接管。

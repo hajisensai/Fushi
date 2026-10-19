@@ -51,7 +51,7 @@ Future<SrsImportReport> importAnkiPackage({
   SrsZstdDecoder? zstdDecompress,
 }) async {
   // 解 zip、解 zstd、解出集合 SQLite 是纯 CPU 活（几十 MB 的包要几百毫秒到数秒）：放后台
-  // isolate，不卡 UI 帧；结果经 Isolate.exit 交回，不复制（BUG-3541）。
+  // isolate，不卡 UI 帧；结果经 Isolate.exit 交回，不复制（BUG-3549）。
   final SrsZstdDecoder zstd = zstdDecompress ?? _defaultZstd;
   final SrsAnkiPackage pkg = await Isolate.run(
     () => SrsAnkiPackage.open(bytes, zstd: zstd),
@@ -1063,7 +1063,7 @@ class _Importer {
     bool update = false;
     if (isNew) {
       // 新笔记的事件攒进本批，与它的卡片标志、日志同一个事务落库（以前每条笔记各自
-      // 落两三次库、各刷新一遍缓存，见 BUG-3541）。
+      // 落两三次库、各刷新一遍缓存，见 BUG-3549）。
       _pending.addAll(
         store.newNoteDrafts(
           noteTypeId: nt.id,

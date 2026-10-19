@@ -698,7 +698,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 每条真落库的事件修订号 +1（[changeFingerprint]）。返回真正新落的事件 ID（按序）。
   ///
   /// 以前每条事件「先查再写」各两三次往返（库在后台 isolate，每次往返都是一次跨 isolate 消息），
-  /// 导入一个几千条笔记的包、应用一批对端事件都要几万次往返（BUG-3541 / BUG-3543）。
+  /// 导入一个几千条笔记的包、应用一批对端事件都要几万次往返（BUG-3549 / BUG-3543）。
   Future<List<String>> _storeLocalBatch(List<SrsEvent> events) async {
     final Set<String> entityIds = <String>{};
     final Set<String> logIds = <String>{};
@@ -1188,7 +1188,7 @@ class SrsDbStore implements SrsSyncReplica {
     final Set<String> refreshed = <String>{};
     // 分块：每块先把这些笔记 / 它们的卡（连同全部前身卡）要读的行一次预读进内存（Zone 里的
     // [_RefreshPrefetch]），逐条算，写入攒成一个 Drift batch。以前每条笔记、每张卡各自查身份记录 /
-    // 修改记录 / 服务器时刻 / 日志、各写一两条语句，一条笔记十几次往返（BUG-3541 / BUG-3543）。
+    // 修改记录 / 服务器时刻 / 日志、各写一两条语句，一条笔记十几次往返（BUG-3549 / BUG-3543）。
     for (int i = 0; i < notes.length; i += _refreshChunk) {
       final List<String> chunk = notes.sublist(
         i,
@@ -1209,7 +1209,7 @@ class SrsDbStore implements SrsSyncReplica {
     final List<String> queue = _dirtyCards.toList();
     _dirtyCards.clear();
     // 「前身 → 后继」一次读全（走 v119 的部分索引，只碰前身链接那几行；以前每张脏卡各扫
-    // 一遍修改记录表，随表长成平方级，BUG-3541）。
+    // 一遍修改记录表，随表长成平方级，BUG-3549）。
     final Map<String, List<String>> successors = queue.isEmpty
         ? const <String, List<String>>{}
         : await _successorIndex();
@@ -2903,7 +2903,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 被支配的记录落库时就删了，所以一个字段键上还留着 ≥ 2 条记录的才可能有冲突：先在库里
   /// （SQLite 侧 GROUP BY）挑出这些字段键，只把它们的记录读回来解析。以前把本 profile 全部修改
   /// 记录（含每条笔记的字段正文）整表读回 UI isolate 逐条 JSON 解析，牌组列表每次重读都付一遍
-  /// O(全部修改记录) 的代价（BUG-3540）。
+  /// O(全部修改记录) 的代价（BUG-3548）。
   Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts() async {
     final List<QueryRow> rows = await db
         .customSelect(

@@ -692,7 +692,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
 
   /// 原地刷新当前这张（编辑 / 浏览 / 牌组设置回来后），保持正反面状态。
   ///
-  /// 除了卡面内容与音频设置，间隔预览、顶栏计数与标题也现读（BUG-3539）：它们是本页
+  /// 除了卡面内容与音频设置，间隔预览、顶栏计数与标题也现读（BUG-3547）：它们是本页
   /// 在出题时算好缓存的，牌组设置改了学习步长 / 记忆率 / 最大间隔 / 每日上限 / 名字，
   /// 浏览里改了期，都会让缓存值过期——原先只刷卡面，评分按钮上的间隔仍是旧设置算的。
   Future<void> _reloadCurrent() async {
@@ -1059,7 +1059,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     await _applyDeckSettingsChange();
   }
 
-  /// 牌组设置页回来后，当前会话立即按新设置走（BUG-3539）。
+  /// 牌组设置页回来后，当前会话立即按新设置走（BUG-3547）。
   ///
   /// 排程层没有跨调用的配置快照：`SrsDbStore.nextCard` / `answer` / `preview` 每次都现读
   /// 牌组树，所以「下一张选谁」（每日上限、学习卡优先）与「评分后的间隔」（学习步长、
@@ -1256,7 +1256,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       onZoomWheel: _zoomWheel,
       onSourceLink: _openSource,
       // 卡面页内自己出声的媒体（视频制卡的同步片段等）同样服从牌组的自动播放开关
-      // （BUG-3538）；`[sound:]` 由 [_autoplayAudio] 按同一开关处理。
+      // （BUG-3546）；`[sound:]` 由 [_autoplayAudio] 按同一开关处理。
       autoplayMedia: _autoplayEnabled,
     );
     final MediaQueryData media = MediaQuery.of(context);

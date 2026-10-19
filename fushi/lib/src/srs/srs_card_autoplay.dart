@@ -89,7 +89,7 @@ List<String> srsReplaySounds({
 
 /// 卡面音频的播放出口（测试覆写）。
 ///
-/// 解析与开播拆成两步（BUG-3538）：解析（找媒体库、查文件）是异步的，开播必须在
+/// 解析与开播拆成两步（BUG-3546）：解析（找媒体库、查文件）是异步的，开播必须在
 /// [SrsCardAudioSequencer] 确认「这组还没被取代」之后**同步地**交给播放器——否则
 /// 换卡 / 翻面 / 关自动播放时的 [stop] 先到、还在解析中的那段随后照样开播。
 abstract class SrsCardAudioOutput {
@@ -167,7 +167,7 @@ class SrsCardAudioSequencer {
         final String? path = await _output.resolve(name);
         // 解析期间被取代（换卡 / 翻面 / 关了自动播放 / 离开复习页）：不再开播。
         // 这一步必须紧挨着开播、中间没有 await，否则 cancel 的 stop 先到、
-        // 这段随后照样出声（BUG-3538）。
+        // 这段随后照样出声（BUG-3546）。
         if (generation != _generation || path == null) return;
         final bool finished = await _output.playToEnd(path);
         if (!finished) break;
@@ -192,7 +192,7 @@ class SrsCardAudioSequencer {
 
 // ------------------------------------------------------------------ 页内媒体闸门
 
-/// 卡面外壳里的「自动播放」闸门（BUG-3538）：牌组关了自动播放时，卡面页面**自己**
+/// 卡面外壳里的「自动播放」闸门（BUG-3546）：牌组关了自动播放时，卡面页面**自己**
 /// 发起的播放一律拒绝，只放行用户在卡面上的点按 / 按键直接引起的播放。
 ///
 /// 为什么需要：`[sound:]` 由宿主（[SrsCardAudioSequencer]）按牌组开关自动播，但卡面

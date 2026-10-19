@@ -1,4 +1,4 @@
-## BUG-3538 · SRS 牌组关了自动播放音频，卡面内嵌片段/音频仍自己播放，且时播时不播
+## BUG-3546 · SRS 牌组关了自动播放音频，卡面内嵌片段/音频仍自己播放，且时播时不播
 - **报告**：2026-10-18（用户：srs 卡组设置音频，自动播放音频关了音频还会播放，而且有时候会播有时候不播）
 - **真实性**：✅ 真 bug。两条独立根因：
   1. **卡面页面自己出声，不看牌组开关**（主因）。牌组开关只管宿主序列播 `[sound:]`（`fushi/lib/src/pages/implementations/srs/srs_review_page.dart` `_autoplayAudio`）。但视频制卡写进 Fushi 复习的同步片段是页内媒体：`packages/fushi_anki/lib/src/anki_note_composer.dart:138`（`inlineVideoCoverHtml`）/ `:190`（`inlineVideoWordAudioHtml`）/ `:235`（`inlineVideoSentenceAudioHtml`）在 `oncanplay` 里自己 `play()`，并约定「关了自动播放 = 宿主拒绝无手势播放（`NotAllowedError`）」（Anki 的行为，见 `:133` 注释）。卡面 WebView（`fushi/lib/src/pages/implementations/srs/srs_card_face.dart:1481` 起的 `InAppWebViewSettings`，修前）没有任何与牌组开关挂钩的闸门，放任平台默认策略：Windows WebView2 默认放行 → 关了照样播；Android / iOS 默认要手势 → 开着也不播。于是同步片段卡（视频来源）会播、普通 `[sound:]` 卡不播——「时播时不播」。

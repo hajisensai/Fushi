@@ -77,7 +77,7 @@ void main() {
       expect(
         inputs(face(autoplay: false)),
         isNot(base),
-        reason: '复习中关掉牌组自动播放要立即重下发，不能命中旧文档（BUG-3539）',
+        reason: '复习中关掉牌组自动播放要立即重下发，不能命中旧文档（BUG-3547）',
       );
     });
 

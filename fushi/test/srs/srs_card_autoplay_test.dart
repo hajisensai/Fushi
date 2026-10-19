@@ -156,7 +156,7 @@ void main() {
       expect(out.started, <String>['a']);
     });
 
-    test('BUG-3538：解析途中被 cancel，解析完也不再开播（stop 先到的那段不能随后出声）', () async {
+    test('BUG-3546：解析途中被 cancel，解析完也不再开播（stop 先到的那段不能随后出声）', () async {
       final _FakeOutput out = _FakeOutput(holdResolve: true);
       final SrsCardAudioSequencer seq = SrsCardAudioSequencer(out);
       final Future<void> done = seq.play(<String>['a', 'b']);
@@ -170,7 +170,7 @@ void main() {
       expect(seq.isPlaying, isFalse);
     });
 
-    test('BUG-3538：解析途中换成新序列，只有新序列开播', () async {
+    test('BUG-3546：解析途中换成新序列，只有新序列开播', () async {
       final _FakeOutput out = _FakeOutput(holdResolve: true);
       final SrsCardAudioSequencer seq = SrsCardAudioSequencer(out);
       final Future<void> first = seq.play(<String>['old']);

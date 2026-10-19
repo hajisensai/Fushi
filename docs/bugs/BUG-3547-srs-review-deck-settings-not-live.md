@@ -1,4 +1,4 @@
-## BUG-3539 · 复习中改牌组设置返回后不立即生效（间隔预览/计数/下一张仍按旧设置）
+## BUG-3547 · 复习中改牌组设置返回后不立即生效（间隔预览/计数/下一张仍按旧设置）
 - **报告**：2026-10-18（用户：背卡的时候修改卡组设置不会立马生效）
 - **真实性**：✅ 真 bug。排程层本身没有配置快照：`packages/fushi_engine/lib/srs/srs_db_store.dart` 的 `nextCard`（:1804）/ `answer`（:1491）/ `preview`（:1479）每次都经 `deckTree()` / `schedulingConfigFor()` 现读，**不存在预排好的队列**。过期的是复习页自己缓存的状态：
   - `fushi/lib/src/pages/implementations/srs/srs_review_page.dart:675`（修前 `_reloadCurrent`）从设置页回来只刷卡面与音频归属，不重算 `_preview`（评分按钮上的间隔，学习步长 / 记忆率 / 最大间隔算出来的）、不刷 `_newCount/_learnCount/_reviewCount`（每日上限）、标题一直是 `widget.deckName`（改名不变）。用户看到按钮间隔、计数都还是旧设置。
