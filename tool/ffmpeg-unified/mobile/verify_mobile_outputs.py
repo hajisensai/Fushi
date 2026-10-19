@@ -51,7 +51,9 @@ ANDROID_ONLY_MARKERS = (
 # store (Security.framework); OpenSSL's own default CA path is the CI machine's.
 APPLE_ONLY_MARKERS = (
     ("libavformat", b"System trust rejected the certificate", "patch 0004 Apple system trust"),
-    ("libavformat", b"/System/Library/Frameworks/Security.framework/Security",
+    # LC_LOAD_DYLIB: .../Security.framework/Security (iOS) or
+    # .../Security.framework/Versions/A/Security (macOS).
+    ("libavformat", b"/System/Library/Frameworks/Security.framework/",
      "patch 0004: libavformat links Security.framework"),
 )
 # capabilities.json key -> library that registers that component class.

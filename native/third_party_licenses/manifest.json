@@ -708,7 +708,7 @@
     },
     {
       "name": "FFmpeg",
-      "version": "9.0.1 (n9.0.1 + Fushi patches 0001-0003, tool/ffmpeg-unified)",
+      "version": "9.0.1 (n9.0.1 + Fushi patches 0001-0004, tool/ffmpeg-unified)",
       "license": "GPL-3.0-or-later",
       "component": "pub:media_kit_libs_windows_video",
       "platforms": [
@@ -1766,7 +1766,7 @@
     },
     {
       "name": "FFmpeg",
-      "version": "9.0.1 (n9.0.1 + Fushi patches 0001–0003)",
+      "version": "9.0.1 (n9.0.1 + Fushi patches 0001–0004)",
       "license": "GPL-3.0-or-later",
       "component": "third_party/ffmpeg_kit_next_flutter, third_party/media_kit_libs_macos_video",
       "platforms": [
@@ -1778,7 +1778,7 @@
         "third_party/ffmpeg_kit_next_flutter/LICENSE-GPLv3.txt",
         "native/third_party_licenses/texts/ffmpeg_unified/ffmpeg-9.0.1-LICENSE.md"
       ],
-      "source": "tool/ffmpeg-unified/recipe.env FFMPEG_TAG=n9.0.1 / FFMPEG_COMMIT=bf1b838f…；fushi 仓 .github/workflows/ffmpeg-unified-mobile.yml：Android run 39034160156，iOS / macOS run 39032008713（docs/specs/2026-10-17-unified-ffmpeg.md「落地实测」）。二进制内嵌版本串：Android libavutil.so 'n9.0.1-3-g1d9513b'、iOS libavutil 'n9.0.1-3-gcf82c94'、macOS libavutil / ffmpeg 'n9.0.1-3-g3cd2ea3'（n9.0.1 之上 3 个补丁提交）；三平台 configure 串均含 '--enable-gpl' 与 '--enable-version3'，无 --enable-nonfree （Android 另有 --enable-mediacodec --enable-jni，Apple 有 --enable-videotoolbox --enable-audiotoolbox --enable-bzlib，macOS 有 --enable-ffmpeg --enable-ffprobe）；外部库开关 --enable-libx264 --enable-libvpx --enable-libopus --enable-libdav1d --enable-libsvtav1 --enable-libwebp --enable-openssl --enable-libxml2 --enable-iconv --enable-zlib（tool/ffmpeg-unified/mobile/kit_options.sh）",
+      "source": "tool/ffmpeg-unified/recipe.env FFMPEG_TAG=n9.0.1 / FFMPEG_COMMIT=bf1b838f…；fushi 仓 .github/workflows/ffmpeg-unified-mobile.yml：Android / iOS / macOS run 39225163967（docs/specs/2026-10-17-unified-ffmpeg.md「落地实测」）。二进制内嵌版本串：Android libavutil.so 'n9.0.1-4-g79a6f40'、iOS libavutil 'n9.0.1-4-g5907999'、macOS libavutil 'n9.0.1-4-g326b7fb'（n9.0.1 之上 4 个补丁提交）；三平台 configure 串均含 '--enable-gpl' 与 '--enable-version3'，无 --enable-nonfree （Android 另有 --enable-mediacodec --enable-jni，Apple 有 --enable-videotoolbox --enable-audiotoolbox --enable-bzlib，macOS 有 --enable-ffmpeg --enable-ffprobe）；外部库开关 --enable-libx264 --enable-libvpx --enable-libopus --enable-libdav1d --enable-libsvtav1 --enable-libwebp --enable-openssl --enable-libxml2 --enable-iconv --enable-zlib（tool/ffmpeg-unified/mobile/kit_options.sh）",
       "note": "统一 FFmpeg：同一平台上播放器 libmpv 与制卡 / 导出共用这一份。--enable-gpl + --enable-version3 → 按 LICENSE.md 为 GPL v3（or later）。Android：AAR android/libs/ffmpeg-kit-next.aar 的 jni/<abi>/libav{codec,device,filter,format,util}.so + libsw{resample,scale}.so（arm64-v8a / armeabi-v7a / x86_64）；iOS：ios/ffmpeg_kit_next_flutter/Frameworks/libav*.xcframework（ios-arm64 + ios-arm64_x86_64-simulator）；macOS：third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz 的 Frameworks/libav*.framework 与 MacOS/ffmpeg、MacOS/ffprobe（arm64）。zlib / bzip2 / iconv 在 Apple 上链系统库（LC_LOAD_DYLIB /usr/lib/libz.1.dylib、libbz2.1.0.dylib、libiconv.2.dylib），Android 的 zlib 链系统 libz.so（DT_NEEDED），均不随包。FFmpegKitNext 为 libwebp 一并构建并在 AAR res/raw 与 framework Resources 里附了 giflib / libjpeg-turbo / libpng / libtiff 的许可文件，但二进制里查不到这些库的特征串，判定未链接，不登记。Windows 的 FFmpeg 9.0.1 见 pub:media_kit_libs_windows_video 条目。"
     },
     {
@@ -1793,7 +1793,7 @@
       "texts": [
         "third_party/ffmpeg_kit_next_flutter/LICENSE"
       ],
-      "source": "tool/ffmpeg-unified/recipe.env FFMPEG_KIT_NEXT_TAG=v9.0.0 / FFMPEG_KIT_NEXT_COMMIT=a724ed99…，补丁 tool/ffmpeg-unified/patches/ffmpeg-kit-next/；fushi 仓 .github/workflows/ffmpeg-unified-mobile.yml：Android run 39034160156，iOS / macOS run 39032008713（docs/specs/2026-10-17-unified-ffmpeg.md「落地实测」）。Android libffmpegkit.so / iOS ffmpegkit 二进制内嵌 '9.0.0'；源文件头（android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpegkit.c）为 'GNU Lesser General License ... either version 3 of the License, or (at your option) any later version'；third_party/ffmpeg_kit_next_flutter/LICENSE 与上游 a724ed99 根目录 LICENSE 逐字节一致（LGPL v3）",
+      "source": "tool/ffmpeg-unified/recipe.env FFMPEG_KIT_NEXT_TAG=v9.0.0 / FFMPEG_KIT_NEXT_COMMIT=a724ed99…，补丁 tool/ffmpeg-unified/patches/ffmpeg-kit-next/；fushi 仓 .github/workflows/ffmpeg-unified-mobile.yml：Android / iOS / macOS run 39225163967（docs/specs/2026-10-17-unified-ffmpeg.md「落地实测」）。Android libffmpegkit.so / iOS ffmpegkit 二进制内嵌 '9.0.0'；源文件头（android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpegkit.c）为 'GNU Lesser General License ... either version 3 of the License, or (at your option) any later version'；third_party/ffmpeg_kit_next_flutter/LICENSE 与上游 a724ed99 根目录 LICENSE 逐字节一致（LGPL v3）",
       "note": "进程内命令执行器：Android libffmpegkit.so + libffmpegkit_abidetect.so（每 ABI 一份），iOS ffmpegkit.xcframework。本身 LGPL v3，但链接的是 GPL 构建的 FFmpeg，随包分发按 GPL-3.0（ffmpegkit.framework/LICENSE 与 AAR res/raw/license.txt 即 GPL v3 全文）。macOS 不用它（CliFfmpegBackend 直接跑 ffmpeg / ffprobe 程序）。AAR 另带一份 NDK 的 libc++_shared.so，与 fushi/android 的 libc++_shared.so 条目是同一组件。"
     },
     {

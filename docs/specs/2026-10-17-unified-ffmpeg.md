@@ -63,6 +63,8 @@ GPL 对应源码声明：`tool/ffmpeg-unified/source_notice.py` 生成，写明 
 | iOS | run 39032008713；libmpv：`libmpv-darwin-build` run 39034287620（`fushi/unified-ffmpeg` 0f29c43） | libmpv 包 28 → 9.4 MB；进程内只剩一份 libavcodec | 产物字节守卫；`verify_darwin_archive.py` 拒绝打包 FFmpeg、要求链接 `@rpath/libavcodec.framework` |
 | macOS | run 39032008713；libmpv 同上 | libmpv 包 21.9 → 4.6 MB（只出 arm64）；FFmpeg 布局包 15.5 MB（替代 ffmpeg-min 的 28 MB） | CI Mac 上按 `fushi.app/Contents` 布局跑能力下限 + `smoke-test.sh`；libmpv 宿主探测：TrueHD、蓝光协议、碟片菜单、渲染 API |
 
+2026-10-19 补丁 0004 之后全部重编：Android / iOS / macOS 来自 `ffmpeg-unified-mobile.yml` run 39225163967（`ci/ffmpeg-unified-mobile` 80acd319；三平台 `verify_mobile_outputs.py` / macOS `https_trust_smoke.sh` 通过，版本串 Android `n9.0.1-4-g79a6f40`、iOS `n9.0.1-4-g5907999`、macOS `n9.0.1-4-g326b7fb`）；Windows 本机重编为 `-dovi1-ffu2`（`n9.0.1-4-gc0efa48`）。libmpv（Android jar、Darwin tar）不需要重编：它们按名字动态链接 libav*，库的 ABI / 导出符号没变，只有 Apple 的 libavformat 多了 Security.framework 依赖。
+
 公网 HTTPS 信任冒烟：`tool/ffmpeg-unified/https_trust_smoke.sh`——受信任的公网 HTTPS 媒体文件必须在 `tls_verify=1` 下打开，自签 / 过期 / 主机名不符的 badssl.com 站点必须被拒且错误输出匹配预期校验器（macOS：`System trust rejected the certificate`，即补丁 0004）。macOS CI 构建（`build_macos.sh`）里跑；iOS 不能在 CI 上跑程序，由字节守卫钉住补丁标记与 Security.framework 链接。
 
 移动端能力下限：`mobile/verify_mobile_outputs.py`（CI）与 `fushi/test/tools/ffmpeg_unified_mobile_guard_test.dart` 都按 `capabilities.json` 逐项找组件短名（前后都是 NUL 的 C 字符串；`--enable-small` 只剥长名，没编进去的组件不会留下它）。

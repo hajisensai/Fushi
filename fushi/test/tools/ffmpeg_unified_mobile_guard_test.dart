@@ -78,10 +78,11 @@ const Map<String, String> _dashDemuxerProof = <String, String>{
 /// 补丁 0004：Apple 上 OpenSSL 的默认 CA 目录是 CI 构建机的前缀（设备上不存在），
 /// FFmpeg 8+ 又默认校验证书——不改就是 iOS / macOS 公网 HTTPS 全挂。补丁改为交给
 /// 系统信任库（Security.framework SecTrust）校验；这两个串分别证明「校验代码在」与
-/// 「libavformat 真链了 Security.framework」。
+/// 「libavformat 真链了 Security.framework」（LC_LOAD_DYLIB：iOS 是
+/// `.../Security.framework/Security`，macOS 是 `.../Versions/A/Security`，取公共前缀）。
 const String _appleTrustMarker = 'System trust rejected the certificate';
 const String _securityFramework =
-    '/System/Library/Frameworks/Security.framework/Security';
+    '/System/Library/Frameworks/Security.framework/';
 
 /// capabilities.json 的类别 → 注册该类组件的库。
 const Map<String, String> _capabilityLibs = <String, String>{

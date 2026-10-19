@@ -7,7 +7,7 @@ all: Frameworks/*.xcframework Frameworks/.symlinks Frameworks/.unified-ffmpeg
 # fushi.app/Contents layout (Frameworks/ + MacOS/) built and verified by
 # .github/workflows/ffmpeg-unified-mobile.yml (tool/ffmpeg-unified/mobile/build_macos.sh).
 UNIFIED_FFMPEG_ARCHIVE=$(abspath ../native/ffmpeg-unified-macos.tar.gz)
-UNIFIED_FFMPEG_SHA256SUM=3442c8ecaa48203fb794bd0809d050b46c74673208096406c456b8b04573657d
+UNIFIED_FFMPEG_SHA256SUM=cddcbde3cc2f1b36d8d7c41027d68428a803a96464f6465243692ad858301484
 
 Frameworks/.unified-ffmpeg: $(UNIFIED_FFMPEG_ARCHIVE)
 	shasum -a 256 -c <<< '${UNIFIED_FFMPEG_SHA256SUM}  $(UNIFIED_FFMPEG_ARCHIVE)'
